@@ -943,7 +943,7 @@ defineExpose({ reload })
   background: rgba(0, 0, 0, 0.5);
   padding: 2px 4px;
   border-radius: 3px;
-  opacity: 0;
+  opacity: 1;
   transition: opacity 0.15s;
 }
 
@@ -961,8 +961,16 @@ defineExpose({ reload })
   color: var(--el-color-primary);
 }
 
+.thumb-tool-icon.danger {
+  background: var(--el-color-danger);
+  color: #fff;
+  padding: 3px;
+  border-radius: 50%;
+}
+
 .thumb-tool-icon.danger:hover {
-  color: var(--el-color-danger);
+  background: var(--el-color-danger);
+  color: #fff;
 }
 
 .thumb-label {

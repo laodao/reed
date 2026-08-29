@@ -12,9 +12,11 @@
  * 此 service 读写图谱，不直接 touch typeorm，保持业务层与 ORM 解耦。
  */
 
+import * as fs from 'fs'
 import { randomBytes } from 'crypto'
 import type { DataSource, Repository } from 'typeorm'
 import { getCurrentUserId } from '@core/context/user-context'
+import { resolveAssetPath, isAbsoluteAssetPath } from '@core/utils/asset-path'
 import {
   AssetImageEntity,
   type AssetType,
@@ -176,8 +178,12 @@ export class AssetImageService {
     return await this.repo.findOne({ where: { id: imageId } })
   }
 
-  /** 删除单张图 */
+  /** 删除单张图（方案A：连同落盘的图片文件与缩略图一并清理） */
   async deleteImage(imageId: string): Promise<void> {
+    const target = await this.repo.findOne({ where: { id: imageId } })
+    if (target) {
+      deleteImageFiles(target.imagePath, target.thumbnailPath)
+    }
     await this.repo.delete({ id: imageId })
   }
 
@@ -352,5 +358,34 @@ export class AssetImageService {
       updatedAt: null,
     } as Partial<AssetImageEntity>)
     return await this.repo.save(entity)
+  }
+}
+
+/**
+ * 删除 asset_image 落盘的图片文件（原图 + 缩略图）。
+ *
+ * 方案A：删除图集记录时顺带清理磁盘文件，避免"重新生成主图"把旧图片留在磁盘上。
+ * 安全假定：每次生成 / 上传都会写一个唯一文件名（timestamp + random），
+ * 因此同一 asset_image 行独占其图片文件，删除不会误伤他人的图。
+ *
+ * 容错：文件不存在 / 解析失败 / 删除失败都抛给调用方？不——这里静默忽略，
+ * 让"删记录"这一主操作不因孤儿文件报错而失败；孤儿文件由磁盘清理兜底。
+ */
+function deleteImageFiles(
+  imagePath?: string | null,
+  thumbnailPath?: string | null,
+): void {
+  for (const rel of [imagePath, thumbnailPath]) {
+    if (!rel || !rel.trim()) continue
+    try {
+      const abs = resolveAssetPath(rel)
+      // 仅在解析为绝对路径时才删：dataPath 提供者缺失时 resolveAssetPath 会原样返回相对路径，
+      // 此时强行 unlink 会误伤进程工作目录下的同名文件，这里跳过。
+      if (abs && isAbsoluteAssetPath(abs) && fs.existsSync(abs)) {
+        fs.unlinkSync(abs)
+      }
+    } catch (e) {
+      console.warn('[AssetImage] 删除图片文件失败（忽略）:', rel, e)
+    }
   }
 }

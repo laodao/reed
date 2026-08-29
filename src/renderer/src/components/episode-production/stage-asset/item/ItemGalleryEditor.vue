@@ -151,6 +151,14 @@
       :image="detailDialog.image"
       :all-images="allImages"
     />
+
+    <!-- 方案A：主图重新生成后新旧对比，用户确认保留哪张 -->
+    <MainRegenerateCompareDialog
+      v-model="mainCompareVisible"
+      :old-image="mainOldImg"
+      :new-image="mainNewImg"
+      @choose="chooseMainCompare"
+    />
   </el-card>
 </template>
 
@@ -172,11 +180,12 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { UploadFile } from 'element-plus'
 import { Delete, Download, InfoFilled, Plus, Refresh } from '@element-plus/icons-vue'
-import { generateMainFor } from '@/api/main-image-generator'
 import { uploadMainImageFile } from '@/api/main-image-upload'
 import { toImageUrl } from '@/utils/asset-url'
 import { useAssetImageActions } from '@/composables/use-asset-image-actions'
+import { useMainRegenerateCompare } from '@/composables/use-main-regenerate-compare'
 import GenerationDetailDialog from '../shared/GenerationDetailDialog.vue'
+import MainRegenerateCompareDialog from '../shared/MainRegenerateCompareDialog.vue'
 
 const props = defineProps<{
   bindingId: string
@@ -237,6 +246,22 @@ const busy = computed(() => busyKey.value !== null)
 
 const mainImage = computed(() => allImages.value.find((i) => i.isMain === 1) || null)
 
+/**
+ * 方案A · 主图重生成 + 新旧对比保留。
+ * getCurrentMain 用 getter（而非快照）：生成前实时取当前 isMain=1 主图作对比基准。
+ */
+const {
+  compareVisible: mainCompareVisible,
+  oldImg: mainOldImg,
+  newImg: mainNewImg,
+  regenerateMain,
+  choose: chooseMainCompare,
+} = useMainRegenerateCompare({
+  getAssetRef: () => ({ assetType: props.assetType, assetId: props.bindingId }),
+  getCurrentMain: () => mainImage.value,
+  onAfterRegenerate: reload,
+})
+
 function getApi() {
   return (window as any).electronAPI?.episodeProduction?.asset
 }
@@ -278,9 +303,8 @@ function getMissingLabels(cat: CategoryConfig): string[] {
 
 async function doGenerateMain() {
   try {
-    await generateMainFor(props.assetType, props.bindingId)
-    ElMessage.success('主图已生成')
-    await reload()
+    // 方案A：生成新主图后弹新旧对比，用户确认保留哪张，被舍弃的图（含磁盘文件）删除
+    await regenerateMain()
   } catch (e: any) {
     ElMessage.error('生成失败：' + (e?.message ?? '未知错误'))
   }
@@ -547,14 +571,14 @@ defineExpose({ reload })
   color: var(--el-text-color-secondary);
 }
 
-/* hover 工具条：右上角下载 / 删除 icon（仅在格子有图时显示） */
+/* 图片工具条：右上角 详情 / 下载 / 删除 icon（常驻可见，方便在资产界面直接删除图片） */
 .thumb-tools {
   position: absolute;
   top: 4px;
   right: 4px;
   display: flex;
   gap: 4px;
-  opacity: 0;
+  opacity: 1;
   transition: opacity 0.15s;
 }
 
@@ -574,6 +598,10 @@ defineExpose({ reload })
 
 .thumb-tool-icon:hover {
   background: var(--el-color-primary);
+}
+
+.thumb-tool-icon.danger {
+  background: var(--el-color-danger);
 }
 
 .thumb-tool-icon.danger:hover {

@@ -12,8 +12,23 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { DataSource } from 'typeorm'
+import * as fs from 'fs'
+import * as os from 'os'
+import * as path from 'path'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
+import { registerPathProvider, type IPathProvider } from '@core/interfaces/path.interface'
+
+class StubPathProvider implements IPathProvider {
+  constructor(private readonly dataPath: string) {}
+  getUserDataPath(): string { return this.dataPath }
+  getAppDataPath(): string { return this.dataPath }
+  getTempPath(): string { return this.dataPath }
+  getDataPath(): string { return this.dataPath }
+  getSubDirectories(): never { throw new Error('not used') }
+  getSubDirectoryPath(): never { throw new Error('not used') }
+  toAssetUrl(rel: string): string { return `/assets/${rel}` }
+}
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({
@@ -131,6 +146,53 @@ describe('AssetImageService', () => {
     await svc.deleteImage(img.id)
     const list = await svc.listByAsset('character', 'cb1')
     expect(list).toHaveLength(0)
+  })
+
+  it('deleteImage 方案A：删除记录时连同清理落盘的图片与缩略图文件', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'asset-img-del-'))
+    registerPathProvider(() => new StubPathProvider(tmpDir))
+    const imgDir = path.join(tmpDir, 'asset-images')
+    fs.mkdirSync(imgDir, { recursive: true })
+    const mainFile = path.join(imgDir, 'main.png')
+    const thumbFile = path.join(imgDir, 'thumb.png')
+    fs.writeFileSync(mainFile, 'x')
+    fs.writeFileSync(thumbFile, 'x')
+
+    const img = await svc.addImage({
+      assetType: 'character',
+      assetId: 'cb1',
+      category: 'main',
+      imagePath: 'asset-images/main.png',
+      thumbnailPath: 'asset-images/thumb.png',
+      isMain: true,
+    })
+    expect(fs.existsSync(mainFile)).toBe(true)
+    expect(fs.existsSync(thumbFile)).toBe(true)
+
+    await svc.deleteImage(img.id)
+
+    const list = await svc.listByAsset('character', 'cb1')
+    expect(list).toHaveLength(0)
+    // 文件也应被删除（方案A：老图片不留磁盘）
+    expect(fs.existsSync(mainFile)).toBe(false)
+    expect(fs.existsSync(thumbFile)).toBe(false)
+
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('deleteImage 方案A：文件缺失时删除记录不抛错（容错）', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'asset-img-del-'))
+    registerPathProvider(() => new StubPathProvider(tmpDir))
+    const img = await svc.addImage({
+      assetType: 'character',
+      assetId: 'cb1',
+      category: 'view',
+      imagePath: 'asset-images/not-there.png',
+      isMain: false,
+    })
+    await expect(svc.deleteImage(img.id)).resolves.toBeUndefined()
+    expect(await svc.listByAsset('character', 'cb1')).toHaveLength(0)
+    fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
   it('getMainImage 返回 main，没有则 null', async () => {

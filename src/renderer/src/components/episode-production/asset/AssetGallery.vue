@@ -33,7 +33,7 @@
           @click="onNavClick(item)"
         >
           <div class="nav-thumb" :class="{ derived: !!navImage(item.label)?.derivedFromImageId }">
-            <el-image v-if="navImage(item.label)?.imagePath" :src="toUrl(navImage(item.label)!.imagePath)" fit="cover" class="thumb-img" />
+            <el-image v-if="navImage(item.label)?.imagePath" :src="toUrl(navImage(item.label)!.imagePath)" fit="cover" class="thumb-img" title="双击放大查看" @dblclick.stop="openPreviewer(navImage(item.label))" />
             <div v-else class="thumb-empty"><el-icon :size="16"><Picture /></el-icon></div>
           </div>
           <div class="nav-info">
@@ -45,25 +45,46 @@
           <el-button v-if="!imageByLabel(item.label)?.imagePath" text circle size="small" class="nav-add" title="生成" @click.stop="onGenerate(item)">
             <el-icon><Plus /></el-icon>
           </el-button>
-          <el-button
-            v-else-if="imageByLabel(item.label)?.derivedFromImageId"
-            text
-            circle
-            size="small"
-            class="nav-regen"
-            :loading="generating"
-            title="重新生成"
-            @click.stop="onRegenerate(item)"
-          >
-            <el-icon><Refresh /></el-icon>
-          </el-button>
+          <template v-else>
+            <el-button
+              v-if="imageByLabel(item.label)?.derivedFromImageId"
+              text
+              circle
+              size="small"
+              class="nav-regen"
+              :loading="generating"
+              title="重新生成"
+              @click.stop="onRegenerate(item)"
+            >
+              <el-icon><Refresh /></el-icon>
+            </el-button>
+            <el-button
+              text
+              circle
+              size="small"
+              class="nav-del"
+              :loading="deletingLabel === item.label"
+              :disabled="deletingLabel !== ''"
+              title="删除图片"
+              @click.stop="onDeleteImage(item)"
+            >
+              <el-icon><Delete /></el-icon>
+            </el-button>
+          </template>
         </div>
       </aside>
 
       <!-- 右：大图预览 + 底部 prompt/生成 -->
       <main class="gallery-preview">
         <div class="preview-area">
-          <el-image v-if="selectedImage?.imagePath" :src="toUrl(selectedImage.imagePath)" fit="contain" class="preview-img" />
+          <el-image
+            v-if="selectedImage?.imagePath"
+            :src="toUrl(selectedImage.imagePath)"
+            fit="contain"
+            class="preview-img"
+            title="双击放大查看"
+            @dblclick="openPreviewer(selectedImage)"
+          />
           <div v-else class="preview-empty">
             <el-icon :size="44"><Picture /></el-icon>
             <span class="pe-text">{{ selectedItem?.title }} · 待生成</span>
@@ -71,9 +92,37 @@
           <div v-if="generating" class="gen-overlay">
             <el-icon class="is-loading" :size="28"><Loading /></el-icon>
           </div>
+          <el-button
+            v-if="selectedImage?.imagePath"
+            class="preview-dl"
+            :icon="Download"
+            circle
+            size="small"
+            title="下载图片"
+            @click.stop="onDownloadImage"
+          />
+          <el-button
+            v-if="selectedImage?.imagePath"
+            class="preview-del"
+            type="danger"
+            :icon="Delete"
+            circle
+            size="small"
+            title="删除当前图片"
+            :loading="deletingLabel === selectedItem?.label"
+            :disabled="deletingLabel !== ''"
+            @click.stop="onDeleteImage(selectedItem)"
+          />
         </div>
         <div class="preview-bottom">
           <el-input v-model="localPrompt" type="textarea" :rows="5" resize="vertical" placeholder="镜头提示词…" class="prompt-input" :disabled="!isMainSlot" :title="isMainSlot ? '' : '派生图提示词由系统固定，以主图为参考'" @blur="onSavePrompt" />
+          <el-button
+            v-if="selectedImage?.imagePath"
+            :icon="Download"
+            circle
+            title="下载图片"
+            @click="onDownloadImage"
+          />
           <el-button type="primary" circle :loading="generating" title="生成图片" :disabled="!isMainSlot" @click="onGenerateCurrent">
             <el-icon><MagicStick /></el-icon>
           </el-button>
@@ -111,6 +160,13 @@
       :asset-id="assetId || ''"
       @submitted="onAddOutfitSubmitted"
     />
+
+    <!-- 双击放大：大图查看器（与分镜界面资产图展示同款 el-image-viewer） -->
+    <el-image-viewer
+      v-if="openViewer"
+      :url-list="viewerUrlList"
+      @close="closePreviewer"
+    />
   </div>
 </template>
 
@@ -123,8 +179,8 @@
  */
 import { summarizeBatchResults } from '@/utils/batch-summary'
 import { ref, computed, watch, onMounted, onActivated } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Picture, MagicStick, Plus, Upload, Loading, Refresh, Link } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Picture, MagicStick, Plus, Upload, Loading, Refresh, Link, Delete, Download } from '@element-plus/icons-vue'
 import { toImageUrl } from '@/utils/asset-url'
 import { stripSystemConstraints } from '@core/modules/episode-production/assets/prompts/asset-identity-prompt'
 import { generateMainFor } from '@/api/main-image-generator'
@@ -142,6 +198,14 @@ const props = defineProps<{
 }>()
 
 const images = ref<any[]>([])
+/** 正在删除的槽位 label（避免并发/误触） */
+const deletingLabel = ref('')
+/** 双击放大查看器（与分镜界面资产图展示同款 el-image-viewer） */
+const openViewer = ref(false)
+const viewerUrlList = ref<string[]>([])
+
+/** 下载当前选中图（PC 保存对话框复制 / Web 浏览器下载，双端兼容） */
+const { downloadImage } = useAssetImageActions()
 const loading = ref(false)
 const generating = ref(false)
 const selectedLabel = ref('main')
@@ -366,6 +430,65 @@ async function onRegenerate(item: { label: string; category: string }): Promise<
   }
 }
 
+/** 删除某槽位当前显示的图片（连带磁盘文件）。主图删除后进入"缺主图"状态。 */
+async function onDeleteImage(item: { label: string; category: string }): Promise<void> {
+  if (!props.assetId || generating.value || deletingLabel.value) return
+  const img = navImage(item.label)
+  if (!img?.id || !img.imagePath) return
+  const isMain = img.category === 'main' || img.isMain === 1
+  try {
+    await ElMessageBox.confirm(
+      isMain
+        ? `删除主图后该资产将进入"缺主图"状态。确认删除"${item.title}"？`
+        : `确认删除"${item.title}"这张图？文件将一并删除，不可恢复。`,
+      '删除图片',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+    )
+  } catch {
+    return // 用户取消
+  }
+  const root = (window as any).electronAPI?.episodeProduction?.asset
+  if (!root?.image?.delete) {
+    ElMessage.error('image.delete IPC 未暴露')
+    return
+  }
+  deletingLabel.value = item.label
+  try {
+    const r = await root.image.delete(img.id)
+    if (r?.success) {
+      ElMessage.success('已删除')
+      await load()
+    } else {
+      ElMessage.error(r?.error || '删除失败')
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || '删除失败')
+  } finally {
+    deletingLabel.value = ''
+  }
+}
+
+/** 双击放大：用 el-image-viewer 展示大图（与分镜界面资产图展示同款样式） */
+function openPreviewer(img: any): void {
+  if (!img?.imagePath) return
+  viewerUrlList.value = [toUrl(img.imagePath)]
+  openViewer.value = true
+}
+
+function closePreviewer(): void {
+  openViewer.value = false
+}
+
+/** 下载当前选中的图片（双端兼容：PC 保存对话框 / Web 浏览器下载） */
+function onDownloadImage(): void {
+  const img = selectedImage.value
+  if (img?.imagePath) {
+    void downloadImage(img)
+  } else {
+    ElMessage.warning('当前无图片可下载')
+  }
+}
+
 /** 一键生成：按勾选的 slot 批量派生（以主图为参考，系统固定提示词） */
 async function onBatchDerive(labels: string[]): Promise<void> {
   if (!props.assetId || labels.length === 0 || generating.value) return
@@ -551,6 +674,7 @@ onActivated(() => {
   .nav-status { font-size: 11px; margin-top: 2px; &.done { color: var(--color-success); } &.pending { color: var(--text-color-placeholder); } }
   .nav-add { color: var(--color-primary); }
   .nav-regen { color: var(--color-info); }
+  .nav-del { color: var(--color-danger); }
 }
 
 .gallery-preview {
@@ -590,6 +714,18 @@ onActivated(() => {
     background: rgba(0,0,0,0.4);
     display: flex; align-items: center; justify-content: center;
     color: #fff; font-size: 28px;
+  }
+  .preview-del {
+    position: absolute;
+    top: 10px;
+    right: 14px;
+    z-index: 3;
+  }
+  .preview-dl {
+    position: absolute;
+    top: 10px;
+    left: 14px;
+    z-index: 3;
   }
 }
 .preview-bottom {
