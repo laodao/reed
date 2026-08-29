@@ -18,7 +18,6 @@ import { registerSearchEngineHandlers } from '@electron/ipc/handlers/search-engi
 import { registerTranslationHandlers } from '@electron/ipc/handlers/translation.handler'
 import { registerImageHandlers } from '@electron/ipc/handlers/image.handler'
 import { registerKnowledgeBaseHandlers } from '@electron/ipc/handlers/knowledge-base.handler'
-import { registerLongWritingHandlers } from '@electron/ipc/handlers/longwriting.handler'
 import { registerWorkflowHandlers } from '@electron/ipc/handlers/workflow.handler'
 import { registerAppHandlers } from '@electron/ipc/handlers/app.handler'
 import { registerToolHandlers } from '@electron/ipc/handlers/tool.handler'
@@ -44,7 +43,6 @@ export async function registerAllWebChannels(): Promise<void> {
   registerTranslationHandlers()
   registerImageHandlers()
   registerKnowledgeBaseHandlers()
-  registerLongWritingHandlers()
   registerWorkflowHandlers()
   registerAppHandlers()
   registerToolHandlers()
@@ -52,7 +50,7 @@ export async function registerAllWebChannels(): Promise<void> {
   registerAssetHandlers()
   registerNewsSourceHandlers()
   registerFaviconHandlers()
-  // skills/diary/portrait/chat/voice-design 五个业务的 handler 已迁移为内置业务包
+  // skills/diary/portrait/chat/voice-design/longwriting 六个业务的 handler 已迁移为内置业务包
   // （core/packs/builtin-packs），由包内核激活时注册，不再在此平铺（避免重复注册；
   // skill 系 channel 此前 Web 端未登记，迁移后随 skills 包激活在 Web 端补齐）
   registerEpisodeProductionHandlers()

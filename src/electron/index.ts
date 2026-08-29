@@ -111,7 +111,6 @@ import { registerDataPathHandlers } from './ipc/handlers/data-path.handler'
 import { registerKnowledgeBaseHandlers } from './ipc/handlers/knowledge-base.handler'
 import { registerExportHandlers } from './ipc/handlers/export.handler'
 import { registerSearchEngineHandlers } from './ipc/handlers/search-engine.handler'
-import { registerLongWritingHandlers } from './ipc/handlers/longwriting.handler'
 import { registerWorkflowHandlers } from './ipc/handlers/workflow.handler'
 import { registerAppHandlers } from './ipc/handlers/app.handler'
 import { registerToolHandlers } from './ipc/handlers/tool.handler'
@@ -340,10 +339,9 @@ function initIpcHandlers(): void {
   registerDataPathHandlers()
   registerKnowledgeBaseHandlers()
   registerExportHandlers()
-  // skills/diary/portrait/chat/voice-design 五个业务的 handler 已迁移为内置业务包
+  // skills/diary/portrait/chat/voice-design/longwriting 六个业务的 handler 已迁移为内置业务包
   // （core/packs/builtin-packs），由包内核激活时注册，不再在此平铺（避免重复注册）
   registerSearchEngineHandlers()
-  registerLongWritingHandlers()
   registerWorkflowHandlers()
   registerAppHandlers()
   registerToolHandlers()
