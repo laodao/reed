@@ -39,7 +39,7 @@ afterAll(async () => {
 describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
   it('插入 19 个内置工作流（user_id NULL + is_builtin=1 + published v1）', async () => {
     const rows = await ds.query(`SELECT id, name, user_id, is_builtin, published_version, draft_graph, published_graph FROM workflow_definitions WHERE is_builtin = 1`)
-    expect(rows.length).toBe(19)
+    expect(rows.length).toBe(20)
     for (const r of rows) {
       expect(r.user_id).toBeNull()
       expect(r.is_builtin).toBe(1)
@@ -51,7 +51,7 @@ describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
 
   it('插入 19 个内置应用（user_id NULL + is_builtin=1 + 会话渠道开 + 启用）', async () => {
     const rows = await ds.query(`SELECT id, name, user_id, is_builtin, enabled, channel_session, channel_api, source_id FROM apps WHERE is_builtin = 1`)
-    expect(rows.length).toBe(19)
+    expect(rows.length).toBe(20)
     for (const r of rows) {
       expect(r.user_id).toBeNull()
       expect(r.is_builtin).toBe(1)
@@ -83,8 +83,8 @@ describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
     const defs = await ds.query(`SELECT count(*) c FROM workflow_definitions WHERE is_builtin = 1`)
     const apps = await ds.query(`SELECT count(*) c FROM apps WHERE is_builtin = 1`)
     const tpls = await ds.query(`SELECT count(*) c FROM assets WHERE is_builtin = 1`)
-    expect(defs[0].c).toBe(19)
-    expect(apps[0].c).toBe(19)
+    expect(defs[0].c).toBe(20)
+    expect(apps[0].c).toBe(20)
     expect(tpls[0].c).toBe(3)
   })
 
@@ -97,7 +97,7 @@ describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
 
   it('内置应用带分类与标签种子（视频文案提取 → 视频处理/视频,文案）', async () => {
     const rows = await ds.query(`SELECT id, category, tags FROM apps WHERE is_builtin = 1`)
-    expect(rows.length).toBe(18)
+    expect(rows.length).toBe(20)
     for (const r of rows) {
       expect(r.category).toBeTruthy()
       const tags = JSON.parse(r.tags)
@@ -118,7 +118,7 @@ describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
 
   it('内置定义写入 template_version=1（跟随模板）', async () => {
     const rows = await ds.query(`SELECT template_version FROM workflow_definitions WHERE is_builtin = 1`)
-    expect(rows.length).toBe(18)
+    expect(rows.length).toBe(20)
     for (const r of rows) expect(r.template_version).toBe(1)
   })
 

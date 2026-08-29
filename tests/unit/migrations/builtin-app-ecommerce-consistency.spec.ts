@@ -76,6 +76,45 @@ describe('电商套图商品主体一致性（内置模板约束）', () => {
     expect(sp).toContain('禁止出现任何文字')
   })
 
+  it('场景设计应覆盖"多视角 + 多种用法 + 主题氛围统一"（防死板同角度）', () => {
+    const sp = llmPromptByName('场景设计')
+    expect(sp).toContain('视角与用法多样性')
+    expect(sp).toContain('整体主题与风格统一')
+    const pp = llmPromptByName('场景结构化')
+    expect(pp).toContain('视角与用法多样')
+  })
+
+  it('规划节点应把商品卖点转化为视觉表达重点（卖点不架空、不同商品图不雷同）', () => {
+    const plan1 = llmPromptByName('套图规划（非场景）')
+    expect(plan1).toContain('卖点视觉化')
+    expect(plan1).toContain('核心卖点')
+    const scenePlan = llmPromptByName('场景设计')
+    expect(scenePlan).toContain('卖点驱动的场景')
+    const sceneParse = llmPromptByName('场景结构化')
+    expect(sceneParse).toContain('卖点')
+  })
+
+  it('内置平台图片规格选择（start.specPreset 含主流平台 + 自定义）', () => {
+    const start = nodes.find(x => x.id === 'start')
+    const preset = (start?.config?.inputs as Array<{ key: string; options?: Array<{ value: string }> }> ?? []).find(i => i.key === 'specPreset')
+    expect(preset).toBeTruthy()
+    const vals = (preset?.options ?? []).map(o => o.value)
+    expect(vals).toEqual(expect.arrayContaining(['generic1x1', 'taobao_main', 'tmall_main', 'jd_main', 'pdd_main', 'douyin', 'xiaohongshu', 'amazon_main', 'custom']))
+    expect((start?.config?.inputs as Array<{ key: string }> ?? []).map(i => i.key)).toEqual(expect.arrayContaining(['customWidth', 'customHeight']))
+  })
+
+  it('规划节点内嵌各平台图片规格（尺寸/比例/白底/占比规范），按规格输出 width/height', () => {
+    const plan1 = llmPromptByName('套图规划（非场景）')
+    expect(plan1).toContain('图片规格')
+    expect(plan1).toContain('800x800')
+    expect(plan1).toContain('2000x2000')
+    expect(plan1).toContain('{{start.specPreset}}')
+    const scenePlan = llmPromptByName('场景设计')
+    expect(scenePlan).toContain('图片规格')
+    const sceneParse = llmPromptByName('场景结构化')
+    expect(sceneParse).toContain('{{start.specPreset}}')
+  })
+
   it('所有 image-gen 节点必须显式关闭 prompt 扩写（promptExtend=false）', () => {
     expect(imageGenNodes.length).toBeGreaterThan(0)
     for (const node of imageGenNodes) {

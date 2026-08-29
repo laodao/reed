@@ -35,6 +35,7 @@ import ecommercePoster from './builtin-apps/ecommerce-poster.json'
 import gossipEventReport from './builtin-apps/gossip-event-report.json'
 // 长文写作（2026-08-29 用户确认开工：分阶段写长文，多轮对话承接前文）
 import longFormWriting from './builtin-apps/long-form-writing.json'
+import ecommerceDetailLongImage from './builtin-apps/ecommerce-detail-long-image.json'
 
 /** 内置工作流 id 前缀（固定，幂等查重依据） */
 const BUILTIN_DEF_PREFIX = 'builtin_def_'
@@ -71,6 +72,8 @@ const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; icon: str
   { file: 'gossip-event-report.json', raw: gossipEventReport, appId: `${BUILTIN_APP_PREFIX}gossip_event_report`, icon: '🍉', name: '吃瓜热点速报', description: '热点事件关键词 → 搜索抓取 → AI 分析 → 吃瓜报告长图（娱乐小报/事件梳理/公众号三风格）', category: '娱乐八卦', tags: ['吃瓜', '热点', '八卦'] },
   // 长文写作（2026-08-29 用户确认开工：分阶段写长文，多轮对话承接前文）
   { file: 'long-form-writing.json', raw: longFormWriting, appId: `${BUILTIN_APP_PREFIX}long_form_writing`, icon: '✍️', name: '长文写作', description: '故事线 → 章节大纲 → 逐章写作（多轮对话承接前文）→ 合并完整长文入库', category: '内容创作', tags: ['长文', '写作', '小说'] },
+  // 电商详情长图（2026-08-29 用户确认开工：先按卖点/规格规划张数，再逐张生成并配图文，排版成竖版详情长图）
+  { file: 'ecommerce-detail-long-image.json', raw: ecommerceDetailLongImage, appId: `${BUILTIN_APP_PREFIX}ecommerce_detail_long_image`, icon: '🛍️', name: '电商详情长图', description: '商品图+卖点+规格 → 按卖点/规格规划 N 张介绍图 → 逐张生成（锁商品、图文对应）→ 排版成竖版详情长图', category: '电商', tags: ['电商', '详情', '长图'] },
 ]
 
 /** 默认模板资产（user_id=NULL，可复制修改） */
