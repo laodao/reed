@@ -207,4 +207,26 @@ describe('D1：xlsx 导入导出', () => {
     expect(back).toHaveLength(2)
     expect(back[0]).toMatchObject({ question: 'Q1', answer: 'A1', similarQuestions: 'sq1；sq2' })
   })
+
+  it('导入文件超过 10MB 上限 → 拒绝（评审#77）', async () => {
+    // 构造一个声明 10MB+ 的 Buffer（内容不必是合法 xlsx——大小校验在读解析器之前）
+    const big = Buffer.alloc(10 * 1024 * 1024 + 1, 0x61)
+    const res = await svc.importQaPairs('kb1', big)
+    expect(res.success).toBe(false)
+    expect(res.error).toContain('文件超出上限')
+    expect(qa.rows.size).toBe(0)
+  })
+
+  it('导入行数超过 1 万上限 → 拒绝（评审#77）', async () => {
+    const XLSX = await import('xlsx')
+    const rows = Array.from({ length: 10_001 }, (_, i) => ({ question: `q${i}`, answer: 'a' }))
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'QA')
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer
+    const res = await svc.importQaPairs('kb1', buf)
+    expect(res.success).toBe(false)
+    expect(res.error).toContain('行数超出上限')
+    expect(qa.rows.size).toBe(0)
+  })
 })

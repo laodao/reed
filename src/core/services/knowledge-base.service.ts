@@ -67,6 +67,10 @@ function tokenizeForIndex(text: string): string[] {
 const QA_CHUNK_ID_PREFIX = 'qa:'
 /** 文档召回补偿条数：抵偿 QA 命名空间向量占用的 topK 名额 */
 const QA_VECTOR_FETCH_PADDING = 10
+/** QA xlsx 导入文件大小上限（评审 #77：解析无上限是 DoS 面） */
+const QA_IMPORT_MAX_FILE_BYTES = 10 * 1024 * 1024
+/** QA xlsx 导入行数上限（评审 #77） */
+const QA_IMPORT_MAX_ROWS = 10_000
 
 /** BM25 参数（k1 词频饱和、b 长度归一；业界标准值） */
 const BM25_K1 = 1.2
@@ -1691,14 +1695,25 @@ export class KnowledgeBaseService {
     }
   }
 
-  /** xlsx 批量导入（表头：question / answer / similarQuestions——分号分隔的多问法） */
+  /**
+   * xlsx 批量导入（表头：question / answer / similarQuestions——分号分隔的多问法）
+   * 评审 #77：无上限的解析是 DoS 面——文件 10MB、行数 1 万双上限，超限明确报错。
+   * （xlsx@0.18.5 存在已知原型污染/ReDoS CVE，修复版仅发布于 sheetjs 官方源，
+   *   npm registry 无升级可用；上限是第一道缓解，升级路径见进度文档记录。）
+   */
   async importQaPairs(knowledgeBaseId: string, fileBuffer: Buffer): Promise<{ success: boolean; data?: { imported: number; failed: number }; error?: string }> {
     try {
+      if (fileBuffer.length > QA_IMPORT_MAX_FILE_BYTES) {
+        return { success: false, error: `文件超出上限：${(fileBuffer.length / 1024 / 1024).toFixed(1)}MB > ${QA_IMPORT_MAX_FILE_BYTES / 1024 / 1024}MB` }
+      }
       const XLSX = await import('xlsx')
       const wb = XLSX.read(fileBuffer)
       const sheet = wb.Sheets[wb.SheetNames[0]]
       if (!sheet) return { success: false, error: 'xlsx 中没有工作表' }
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet)
+      if (rows.length > QA_IMPORT_MAX_ROWS) {
+        return { success: false, error: `行数超出上限：${rows.length} 行 > ${QA_IMPORT_MAX_ROWS} 行，请拆分后分批导入` }
+      }
       let imported = 0
       let failed = 0
       for (const row of rows) {
