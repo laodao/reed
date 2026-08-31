@@ -1,7 +1,7 @@
 /**
  * 火山引擎视频生成 Provider
  * @module video-providers/sdk/volcengine-video-provider
- * @description 使用火山引擎 Vidol API 实现视频生成
+ * @description 使用火山方舟内容生成任务 API（Seedance）实现视频生成
  */
 
 import * as fs from 'fs'
@@ -10,23 +10,17 @@ import type {
   VideoModel,
   VideoGenerationRequest,
   VideoGenerationResponse,
-  VideoTaskStatus,
-  GeneratedVideo
+  VideoTaskStatus
 } from '@shared/types/video-provider.types'
 import { BaseVideoProvider } from '../base-video-provider'
 import { OSSService } from '@core/services/oss.service'
 
 /**
- * 火山引擎视频生成响应格式
+ * 火山引擎任务创建响应（POST /contents/generations/tasks）
+ * @see https://docs.volcengine.com/docs/82379/1520757
  */
 interface VolcengineVideoResponse {
-  id?: string
-  status?: string
-  video_url?: string
-  duration?: number
-  width?: number
-  height?: number
-  thumbnail_url?: string
+  id?: string // 任务 ID（cgt-...）
   error?: {
     message: string
     type: string
@@ -37,34 +31,30 @@ interface VolcengineVideoResponse {
 }
 
 /**
- * 火山引擎任务状态响应
+ * 火山引擎任务查询响应（GET /contents/generations/tasks/{id}）
+ * status: queued / running / succeeded / failed
  */
 interface VolcengineTaskResponse {
   id: string
-  status: 'pending' | 'processing' | 'completed' | 'failed'
-  progress?: number
-  video_url?: string
+  status: 'queued' | 'running' | 'succeeded' | 'failed'
+  content?: {
+    video_url?: string
+  }
   duration?: number
-  error?: string
-}
-
-/**
- * 火山引擎文件上传策略响应
- */
-interface VolcengineFileUploadResponse {
-  upload_url?: string
-  file_id?: string
-  url?: string
-  code?: string
-  message?: string
+  resolution?: string
+  error?: {
+    code?: string
+    message?: string
+  }
 }
 
 /**
  * 火山引擎视频生成 Provider
  *
- * 使用火山引擎方舟平台的视频生成 API。
+ * 使用火山方舟平台的视频生成任务 API（Seedance 系列）：
+ * 创建 POST /contents/generations/tasks，查询 GET /contents/generations/tasks/{id}。
  *
- * @see https://www.volcengine.com/docs/6561/1160818
+ * @see https://docs.volcengine.com/docs/82379/1520757
  */
 export class VolcengineVideoProvider extends BaseVideoProvider {
   /**
@@ -148,39 +138,27 @@ export class VolcengineVideoProvider extends BaseVideoProvider {
         }
       }
 
-      // 确定请求端点和请求体
-      let endpoint: string
-      let body: Record<string, any>
+      // 火山方舟视频任务统一端点（文生/图生同一路径，靠 content 区分）
+      // @see https://docs.volcengine.com/docs/82379/1520757
+      const endpoint = '/contents/generations/tasks'
+      const content: Array<Record<string, any>> = []
 
       if (imageUrl) {
-        // 图生视频
-        endpoint = '/video/generation/image-to-video'
-        body = {
-          model: request.model,
-          prompt: request.prompt,
-          duration: request.duration || 5,
-          aspect_ratio: request.aspectRatio || '16:9'
-        }
-
-        // 处理图片输入：可能是 URL 或 File ID
+        // 图生视频（首帧）
         if (imageUrl.startsWith('file://')) {
-          // 使用 File ID
-          const fileId = imageUrl.replace('file://', '')
-          body.file_id = fileId
-        } else {
-          // 使用 URL
-          body.image = imageUrl
+          // Files API 的 File ID 不被视频任务接口接受，需要公网可访问的 URL
+          return {
+            success: false,
+            error: '视频首帧图片需要公网可访问的 URL。请在设置中配置图床（OSS）服务后重试。'
+          }
         }
+        if (request.prompt) {
+          content.push({ type: 'text', text: request.prompt })
+        }
+        content.push({ type: 'image_url', image_url: { url: imageUrl } })
       } else if (request.prompt) {
         // 文生视频
-        endpoint = '/video/generation/text-to-video'
-        body = {
-          model: request.model,
-          prompt: request.prompt,
-          negative_prompt: request.negativePrompt,
-          duration: request.duration || 5,
-          aspect_ratio: request.aspectRatio || '16:9'
-        }
+        content.push({ type: 'text', text: request.prompt })
       } else {
         return {
           success: false,
@@ -188,9 +166,11 @@ export class VolcengineVideoProvider extends BaseVideoProvider {
         }
       }
 
-      // 添加可选参数
-      if (request.seed !== undefined) {
-        body.seed = request.seed
+      const body: Record<string, any> = {
+        model: request.model,
+        content,
+        ratio: request.aspectRatio || '16:9',
+        duration: request.duration || 5
       }
 
       const url = this.buildUrl(endpoint)
@@ -206,7 +186,7 @@ export class VolcengineVideoProvider extends BaseVideoProvider {
         }
       }
 
-      // 检查是否有任务 ID（异步模式）
+      // 异步任务：返回任务 ID（cgt-...）
       if (response.id) {
         return {
           success: true,
@@ -214,23 +194,9 @@ export class VolcengineVideoProvider extends BaseVideoProvider {
         }
       }
 
-      // 检查是否直接返回了视频（同步模式）
-      if (response.video_url) {
-        return {
-          success: true,
-          video: {
-            url: response.video_url,
-            duration: response.duration,
-            width: response.width,
-            height: response.height,
-            thumbnailUrl: response.thumbnail_url
-          }
-        }
-      }
-
       return {
         success: false,
-        error: '未获取到生成结果'
+        error: '未获取到任务 ID'
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '未知错误'
@@ -400,22 +366,29 @@ export class VolcengineVideoProvider extends BaseVideoProvider {
    */
   async getTaskStatus(taskId: string): Promise<VideoTaskStatus> {
     try {
-      const url = this.buildUrl(`/video/generation/tasks/${taskId}`)
+      const url = this.buildUrl(`/contents/generations/tasks/${taskId}`)
       const response = await this.sendRequest<VolcengineTaskResponse>(url, 'GET')
 
+      // 方舟状态映射：queued→pending、running→processing、succeeded→completed、failed→failed
+      const statusMap: Record<string, VideoTaskStatus['status']> = {
+        queued: 'pending',
+        running: 'processing',
+        succeeded: 'completed',
+        failed: 'failed'
+      }
       const result: VideoTaskStatus = {
         taskId,
-        status: response.status,
-        progress: response.progress
+        status: statusMap[response.status] ?? 'processing'
       }
 
-      if (response.status === 'completed' && response.video_url) {
+      const videoUrl = response.content?.video_url
+      if (response.status === 'succeeded' && videoUrl) {
         result.video = {
-          url: response.video_url,
+          url: videoUrl,
           duration: response.duration
         }
       } else if (response.status === 'failed') {
-        result.error = response.error || '视频生成失败'
+        result.error = response.error?.message || response.error?.code || '视频生成失败'
       }
 
       return result
