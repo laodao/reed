@@ -322,8 +322,14 @@ async function handleGenerateScript(
             const chapter = await db.lwChapters?.getByOutlineId(outlineId)
             if (chapter && chapter.content) chapterContent = chapter.content
           } else if (outline.nodeType === 'chapter') {
-            const sections = (await db.lwOutlines?.getChildren(outlineId)) || []
             const contents: string[] = []
+            // 一级 chapter 节点可直挂正文（无 section 子节点，长文模块 saveChapter
+            // 按 outlineId 存储）；chapter 自身有正文时先读自身，再遍历 section 子节点
+            const ownChapter = await db.lwChapters?.getByOutlineId(outlineId)
+            if (ownChapter && ownChapter.content) {
+              contents.push(`【${outline.name}】\n${ownChapter.content}`)
+            }
+            const sections = (await db.lwOutlines?.getChildren(outlineId)) || []
             for (const section of sections) {
               if (section.nodeType === 'section') {
                 const chapter = await db.lwChapters?.getByOutlineId(section.id)

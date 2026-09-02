@@ -6,9 +6,8 @@
  *
  * 本迁移：
  *   - PostgreSQL：ALTER COLUMN ... DROP NOT NULL（含 IF EXISTS 容错）
- *   - SQLite：列默认 nullable（除非 PRIMARY KEY），sqlite_master 检查更复杂；
- *     SQLite 已有大量 ALTER TABLE 限制，此处仅把空字符串占位回填为 NULL，
- *     真正强制 NULL 通过 entity 层处理。
+ *   - SQLite：不支持 ALTER COLUMN，走真正的表重建（sqlite-relax-notnull，
+ *     建新表 → 拷数据 → DROP 旧表 → 改名 → 重建索引，幂等），再把空字符串占位回填为 NULL。
  *
  * 幂等：检查列存在 + 当前是否已 nullable，已 nullable 时跳过。
  */
@@ -42,8 +41,9 @@ export async function relaxEpisodeScriptOutlineId(ds: DataSource): Promise<void>
     return
   }
 
-  // SQLite：列定义在 typeorm synchronize 时已根据 entity 重建（nullable=true），
-  // 仅做数据回填
+  // SQLite：production 库 synchronize 不改写既有 NOT NULL 约束，需真正重建表
+  // （sqlite-relax-notnull：建新表 → 拷数据 → DROP 旧表 → 改名 → 重建索引，幂等），
+  // 之后再把空字符串占位回填为 NULL
   try {
     const tables = await ds.query(
       `SELECT name FROM sqlite_master WHERE type='table' AND name='episode_scripts' LIMIT 1`,
@@ -52,8 +52,13 @@ export async function relaxEpisodeScriptOutlineId(ds: DataSource): Promise<void>
       console.log('[relax-episode-script-outline-id] sqlite episode_scripts 表不存在，跳过')
       return
     }
+    const { relaxSqliteNotNull } = await import('./sqlite-relax-notnull')
+    const result = await relaxSqliteNotNull(ds, 'episode_scripts', 'outline_id')
+    if (result === 'rebuilt') {
+      console.log('[relax-episode-script-outline-id] sqlite episode_scripts 表重建完成，outline_id 已放开 NOT NULL')
+    }
     await ds.query(`UPDATE episode_scripts SET outline_id = NULL WHERE outline_id = ''`)
   } catch (e) {
-    console.warn('[relax-episode-script-outline-id] sqlite 回填失败：', (e as Error).message)
+    console.warn('[relax-episode-script-outline-id] sqlite 处理失败：', (e as Error).message)
   }
 }

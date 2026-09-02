@@ -57,6 +57,7 @@ import { addStoryboardBackgroundRef } from '@core/database/migrations/add-storyb
 import { relaxBindingLwIdNullable } from '@core/database/migrations/relax-binding-lw-id-nullable'
 import { addNarrativeBindingFks } from '@core/database/migrations/add-narrative-binding-fks'
 import { relaxEpisodeScriptOutlineId } from '@core/database/migrations/relax-episode-script-outline-id'
+import { relaxVideoEpisodeOutlineId } from '@core/database/migrations/relax-video-episode-outline-id'
 import { addKeyframeUserPromptOverride } from '@core/database/migrations/add-keyframe-user-prompt-override'
 import { addCharacterBindingExtraFields } from '@core/database/migrations/add-character-binding-extra-fields'
 import { addCharacterBindingRace } from '@core/database/migrations/add-character-binding-race'
@@ -299,6 +300,8 @@ async function initDatabase(): Promise<void> {
   await addNarrativeBindingFks(ds)
   // P7-bug-1: episode_scripts.outline_id 改 nullable（uploaded 模式无 outlineId）
   await relaxEpisodeScriptOutlineId(ds)
+  // video_episodes.outline_id 改 nullable（uploaded 建集无 outlineId）
+  await relaxVideoEpisodeOutlineId(ds)
   // FU5-A9-L4: storyboard_keyframe 加 user_prompt_override（spec §4.5.7 持久化用户提示词）
   await addKeyframeUserPromptOverride(ds)
   // FU5-C2: character_bindings 加身份块 + 声音情感 + 风格锚点字段（spec §3.1/3.4/3.6）

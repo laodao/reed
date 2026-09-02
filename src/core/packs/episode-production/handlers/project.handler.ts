@@ -74,7 +74,7 @@ async function handleCreateProject(
   _event: any,
   name: string,
   longWritingProjectId: string | undefined,
-  config: VideoProjectConfig
+  config?: VideoProjectConfig // 可选：剧本导入等路径不传，repo 层默认 {}
 ): Promise<IpcResponse> {
   try {
     const db = getCoreDatabaseManager()

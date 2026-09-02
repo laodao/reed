@@ -537,6 +537,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/relax-episode-script-outline-id'
     )
     await relaxEpisodeScriptOutlineId(this.dataSource)
+    // video_episodes.outline_id 改 nullable（uploaded 建集无 outlineId；SQLite 走表重建）
+    const { relaxVideoEpisodeOutlineId } = await import(
+      '@core/database/migrations/relax-video-episode-outline-id'
+    )
+    await relaxVideoEpisodeOutlineId(this.dataSource)
     // FU5-A9-L4: storyboard_keyframe 加 user_prompt_override（spec §4.5.7 持久化用户提示词）
     const { addKeyframeUserPromptOverride } = await import(
       '@core/database/migrations/add-keyframe-user-prompt-override'
