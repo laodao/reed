@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>故事研讨室 · 界面原型 v2</title>
+<style>
+  :root {
+    --primary: #409eff; --primary-light: #ecf5ff; --primary-dark: #337ecc;
+    --success: #67c23a; --success-light: #f0f9eb;
+    --danger: #f56c6c; --danger-light: #fef0f0;
+    --warning: #e6a23c; --warning-light: #fdf6ec;
+    --text: #303133; --text-2: #606266; --text-3: #909399;
+    --border: #e4e7ed; --bg: #f5f7fa; --card: #ffffff;
+    --radius: 10px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px; overflow: hidden;
+  }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+
+  /* ============ 顶栏 ============ */
+  .topbar {
+    height: 52px; background: #fff; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; padding: 0 16px; gap: 14px; flex-shrink: 0;
+  }
+  .topbar .back { color: var(--text-3); cursor: pointer; font-size: 18px; user-select: none; }
+  .topbar .back:hover { color: var(--primary); }
+  .topbar .title { font-weight: 600; font-size: 15px; }
+  .topbar .tag {
+    font-size: 11px; padding: 2px 8px; border-radius: 4px;
+    background: var(--warning-light); color: var(--warning); border: 1px solid #f3d19e;
+  }
+  .phasebar { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+  .phase {
+    display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 16px;
+    font-size: 12px; color: var(--text-3); cursor: pointer; white-space: nowrap;
+  }
+  .phase .num {
+    width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--border);
+    display: inline-flex; align-items: center; justify-content: center; font-size: 11px;
+  }
+  .phase.done { color: var(--success); } .phase.done .num { border-color: var(--success); background: var(--success-light); }
+  .phase.active { color: var(--primary); font-weight: 600; background: var(--primary-light); }
+  .phase.active .num { border-color: var(--primary); background: var(--primary); color: #fff; }
+  .phase-arrow { color: var(--border); font-size: 12px; }
+  .topbar .model {
+    margin-left: 8px; font-size: 12px; color: var(--text-2); border: 1px solid var(--border);
+    padding: 4px 10px; border-radius: 6px; cursor: pointer;
+  }
+
+  /* ============ 主体 ============ */
+  .main { flex: 1; display: flex; min-height: 0; }
+
+  /* ---- 左：对话画布 ---- */
+  .chat-wrap { flex: 1.9; display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
+  .chat { flex: 1; overflow-y: auto; padding: 20px 26px 12px; scroll-behavior: smooth; }
+  .chat-inner { max-width: 860px; margin: 0 auto; }
+
+  .phase-divider {
+    display: flex; align-items: center; gap: 12px; margin: 18px 0 14px; color: var(--text-3); font-size: 12px;
+  }
+  .phase-divider::before, .phase-divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+  .phase-divider b { color: var(--primary); font-weight: 600; }
+
+  .msg { display: flex; margin: 14px 0; }
+  .msg.user { justify-content: flex-end; }
+  .avatar {
+    width: 34px; height: 34px; border-radius: 8px; flex-shrink: 0; display: flex;
+    align-items: center; justify-content: center; font-size: 13px; font-weight: 600;
+  }
+  .msg.editor .avatar { background: linear-gradient(135deg,#409eff,#7b5cff); color: #fff; margin-right: 10px; }
+  .msg.user .avatar { background: var(--success-light); color: var(--success); margin-left: 10px; order: 2; }
+  .bubble {
+    max-width: 78%; padding: 10px 14px; border-radius: var(--radius); line-height: 1.75;
+    animation: fadeUp .25s ease both;
+  }
+  .msg.editor .bubble { background: var(--card); border: 1px solid var(--border); border-top-left-radius: 2px; box-shadow: 0 1px 3px rgba(0,0,0,.04); }
+  .msg.user .bubble { background: var(--primary); color: #fff; border-top-right-radius: 2px; }
+  .bubble p { margin: 4px 0; }
+  .bubble b { color: var(--primary-dark); }
+  .msg.user .bubble b { color: #fff; }
+  .bubble ul { margin: 4px 0 4px 18px; }
+  .bubble li { margin: 3px 0; }
+  .options { margin: 8px 0; display: flex; flex-direction: column; gap: 6px; }
+  .option {
+    border: 1px solid var(--border); border-left: 3px solid var(--primary); border-radius: 8px;
+    padding: 8px 12px; background: var(--primary-light); cursor: default;
+  }
+  .option b { margin-right: 6px; }
+  .reminder {
+    margin: 8px 0; padding: 8px 12px; border-radius: 8px; background: var(--warning-light);
+    border: 1px dashed #e6c07b; font-size: 13px; color: #a16b1f;
+  }
+  .typing { display: inline-flex; gap: 4px; padding: 6px 2px; }
+  .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); animation: blink 1s infinite; }
+  .typing i:nth-child(2) { animation-delay: .2s; } .typing i:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%,80%,100% { opacity: .25; } 40% { opacity: 1; } }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  /* ---- 结构化卡片 ---- */
+  .artifact {
+    margin: 10px 0 10px 44px; background: var(--card); border: 1px solid var(--border);
+    border-left: 4px solid var(--primary); border-radius: var(--radius); overflow: hidden;
+    animation: fadeUp .3s ease both; max-width: 640px;
+  }
+  .artifact.outline { border-left-color: #7b5cff; }
+  .artifact.character { border-left-color: var(--warning); }
+  .artifact.adopted { border-left-color: var(--success); opacity: .92; }
+  .artifact.outdated { opacity: .55; border-left-color: var(--text-3); }
+  .artifact .head {
+    display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg,#fafbfd,#f5f7fa);
+  }
+  .artifact .head .ico { font-size: 15px; }
+  .artifact .head .name { font-weight: 600; }
+  .artifact .head .ver { font-size: 11px; color: var(--text-3); }
+  .artifact .head .src { margin-left: auto; font-size: 11px; color: var(--text-3); cursor: pointer; }
+  .artifact .head .src:hover { color: var(--primary); text-decoration: underline; }
+  .artifact .body { padding: 10px 14px; font-size: 13px; line-height: 1.8; }
+  .artifact .row { display: flex; gap: 8px; }
+  .artifact .row .k { color: var(--text-3); flex-shrink: 0; width: 44px; }
+  .artifact .foot { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border); align-items: center; }
+  .artifact .foot .note { margin-left: auto; font-size: 12px; color: var(--success); }
+
+  .btn {
+    border: 1px solid var(--border); background: #fff; color: var(--text-2); border-radius: 6px;
+    padding: 5px 12px; font-size: 12.5px; cursor: pointer; transition: all .15s;
+  }
+  .btn:hover { border-color: var(--primary); color: var(--primary); }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .btn.primary:hover { background: var(--primary-dark); }
+  .btn.success { background: var(--success); border-color: var(--success); color: #fff; }
+  .btn.ghost-success { border-color: var(--success); color: var(--success); background: var(--success-light); }
+  .btn.mini { padding: 2px 8px; font-size: 11.5px; }
+
+  /* ---- 输入区 ---- */
+  .composer { border-top: 1px solid var(--border); background: #fff; padding: 12px 26px 14px; flex-shrink: 0; }
+  .composer-inner { max-width: 860px; margin: 0 auto; }
+  .chips { display: flex; gap: 8px; margin-bottom: 9px; flex-wrap: wrap; min-height: 24px; }
+  .chip {
+    font-size: 12px; color: var(--primary); background: var(--primary-light);
+    border: 1px solid #d9ecff; border-radius: 14px; padding: 3px 12px; cursor: pointer; user-select: none;
+  }
+  .chip:hover { background: #dbeeff; }
+  .chip.play { background: var(--success-light); color: var(--success); border-color: #e1f3d8; font-weight: 600; }
+  .input-row { display: flex; gap: 10px; align-items: flex-end; }
+  .input-box {
+    flex: 1; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px;
+    font-size: 14px; outline: none; resize: none; height: 44px; line-height: 24px;
+    font-family: inherit; transition: border-color .15s;
+  }
+  .input-box:focus { border-color: var(--primary); }
+  .hint { font-size: 11.5px; color: var(--text-3); margin-top: 7px; text-align: center; }
+  .send-btn {
+    height: 44px; padding: 0 22px; border: none; border-radius: var(--radius);
+    background: var(--primary); color: #fff; font-size: 14px; cursor: pointer;
+  }
+  .send-btn:disabled { background: #a0cfff; cursor: not-allowed; }
+  .stop-btn {
+    height: 44px; padding: 0 16px; border: 1px solid var(--danger); border-radius: var(--radius);
+    background: #fff; color: var(--danger); font-size: 13px; cursor: pointer; display: none;
+  }
+
+  /* ---- 右：账本 + 圣经 ---- */
+  .side { width: 340px; flex-shrink: 0; border-left: 1px solid var(--border); background: #fff; display: flex; flex-direction: column; min-height: 0; }
+  .side-scroll { flex: 1; overflow-y: auto; }
+  .side h4 {
+    font-size: 12.5px; color: var(--text-3); font-weight: 600; letter-spacing: 1px;
+    padding: 14px 16px 8px; display: flex; align-items: center; gap: 6px;
+  }
+  .side h4 .legend { margin-left: auto; font-weight: 400; font-size: 11px; }
+  .ledger { padding: 0 12px 6px; }
+  .ledger-empty { color: var(--text-3); font-size: 12.5px; padding: 6px 6px 10px; line-height: 1.7; }
+  .lentry {
+    border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; margin: 6px 0;
+    cursor: pointer; transition: all .15s; animation: fadeUp .3s ease both; background: #fff;
+  }
+  .lentry:hover { border-color: var(--primary); box-shadow: 0 1px 4px rgba(64,158,255,.15); }
+  .lentry .t { font-size: 13px; display: flex; align-items: center; gap: 6px; }
+  .lentry .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); flex-shrink: 0; }
+  .lentry.tentative .dot { background: var(--text-3); }
+  .lentry.confirmed { border-color: #b3e19d; background: var(--success-light); }
+  .lentry.confirmed .dot { background: var(--success); }
+  .lentry.rejected { opacity: .65; }
+  .lentry.rejected .t { text-decoration: line-through; color: var(--text-3); }
+  .lentry.rejected .dot { background: var(--danger); }
+  .lentry .pts { font-size: 11.5px; color: var(--text-3); margin: 3px 0 0 13px; line-height: 1.5; }
+  .lentry .ops { margin: 6px 0 0 13px; display: none; gap: 6px; }
+  .lentry.open .ops { display: flex; }
+  .bible { border-top: 1px solid var(--border); margin-top: 4px; }
+  .bible-row {
+    display: flex; align-items: center; gap: 10px; padding: 9px 16px; cursor: pointer; font-size: 13px;
+  }
+  .bible-row:hover { background: var(--bg); }
+  .bible-row .st { margin-left: auto; font-size: 11.5px; }
+  .bible-row .st.in { color: var(--success); }
+  .bible-row .st.not { color: var(--text-3); }
+  .distill-btn { margin: 8px 16px 14px; width: calc(100% - 32px); }
+
+  /* ---- toast / modal ---- */
+  #toasts { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 99; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .toast {
+    background: #fff; border: 1px solid var(--border); border-left: 3px solid var(--success);
+    border-radius: 8px; padding: 9px 16px; font-size: 13px; box-shadow: 0 4px 14px rgba(0,0,0,.1);
+    animation: fadeUp .25s ease both; max-width: 480px;
+  }
+  .toast.info { border-left-color: var(--primary); }
+  .toast.warn { border-left-color: var(--warning); }
+  .help-fab {
+    position: fixed; right: 356px; bottom: 120px; width: 38px; height: 38px; border-radius: 50%;
+    background: #fff; border: 1px solid var(--border); color: var(--text-2); font-size: 17px;
+    cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.08); z-index: 50;
+  }
+  .help-fab:hover { color: var(--primary); border-color: var(--primary); }
+  .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 100; display: none; align-items: center; justify-content: center; }
+  .modal-mask.show { display: flex; }
+  .modal { width: 560px; max-width: 92vw; background: #fff; border-radius: 12px; padding: 22px 26px; max-height: 80vh; overflow-y: auto; }
+  .modal h3 { margin-bottom: 12px; font-size: 16px; }
+  .modal p { margin: 8px 0; line-height: 1.8; color: var(--text-2); font-size: 13.5px; }
+  .modal b { color: var(--text); }
+  .modal .close { float: right; cursor: pointer; color: var(--text-3); font-size: 18px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- 顶栏 -->
+  <div class="topbar">
+    <span class="back">←</span>
+    <span class="title">《洗冤录》</span>
+    <span class="tag">短剧</span>
+    <div class="phasebar" id="phasebar"></div>
+    <span class="model">主编模型：GLM-4.7 ▾</span>
+  </div>
+
+  <div class="main">
+    <!-- 对话画布 -->
+    <div class="chat-wrap">
+      <div class="chat" id="chat"><div class="chat-inner" id="chatInner"></div></div>
+      <div class="composer">
+        <div class="composer-inner">
+          <div class="chips">
+            <span class="chip play" id="playBtn">▶ 播放下一轮</span>
+            <span id="chips" style="display:contents"></span>
+          </div>
+          <div class="input-row">
+            <button class="stop-btn" id="stopBtn">⏹ 打断</button>
+            <textarea class="input-box" id="inputBox" placeholder="和主编继续讨论…（Enter 发送，Shift+Enter 换行）"></textarea>
+            <button class="send-btn" id="sendBtn">发 送</button>
+          </div>
+          <div class="hint">原型演示：任意输入（或点绿色按钮）播放下一段脚本 · 右侧「讨论成果」随对话自动沉淀 · 卡片按钮可点击 · <span style="color:var(--primary);cursor:pointer" onclick="document.getElementById('helpModal').classList.add('show')">设计说明 ↗</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右侧：共识账本 + 故事圣经 -->
+    <div class="side">
+      <div class="side-scroll">
+        <h4>讨论成果 <span class="legend">点条目确认 / 修改</span></h4>
+        <div class="ledger" id="ledger">
+          <div class="ledger-empty" id="ledgerEmpty">研讨中达成的共识会自动沉淀在这里——<br>灰色=待确认，绿色=已确认，红色删除线=已排除方向（AI 不会再提）。</div>
+        </div>
+        <div class="bible">
+          <h4>故事圣经 <span class="legend">结构化数据 · 与高级模式同库</span></h4>
+          <div id="bible"></div>
+          <button class="btn primary distill-btn" onclick="toast('整理器：把我们讨论的内容提炼成卡片，确认后入库（原型演示）','info')">📤 提炼入库</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<div class="modal-mask" id="helpModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal">
+    <span class="close" onclick="document.getElementById('helpModal').classList.remove('show')">✕</span>
+    <h3>这个原型在看什么</h3>
+    <p><b>核心理念：聊与存分离。</b>左侧是唯一的对话对象「主编」（有立场、会提问、会翻旧账），研讨期<b>零落库压力</b>；结构化写入只发生在卡片「采纳入库」等显式动作。</p>
+    <p><b>右侧上半：共识账本。</b>每轮对话后自动沉淀共识（可确认/修改/丢弃）；红色删除线是「已排除方向」，注入主编记忆后 AI 不会反复推荐同类方案。</p>
+    <p><b>右侧下半：故事圣经。</b>已入库的结构化数据（概要/人物/故事线/大纲），与高级模式表单读写同一批数据库表。</p>
+    <p><b>操作演示路径：</b>点绿色「▶ 下一轮」播放对话 → 概要卡出现后点「✓ 采纳入库」看阶段流转 → 人物卡试试「↻ 重新提炼」再看「✓ 采纳」→ 点右侧共识条目看确认交互。</p>
+    <p style="color:var(--text-3);font-size:12.5px;">设计文档：docs/design/2026-09-04-story-room-design.md（v2）</p>
+  </div>
+</div>
+
+<script>
+/* ================= 状态 ================= */
+const PHASES = [
+  { n: 1, name: '故事核' }, { n: 2, name: '人物' }, { n: 3, name: '故事线' },
+  { n: 4, name: '分集大纲' }, { n: 5, name: '写作' },
+];
+let curPhase = 1, turnNo = 0, stepIdx = 0, busy = false;
+const adopted = { overview: false, characters: 0 };
+
+/* ================= 工具 ================= */
+const $ = (id) => document.getElementById(id);
+function toast(text, type = 'ok') {
+  const el = document.createElement('div');
+  el.className = 'toast ' + (type === 'ok' ? '' : type);
+  el.textContent = text;
+  $('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 3400);
+}
+function scrollBottom() { const c = $('chat'); c.scrollTop = c.scrollHeight; }
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+function renderPhases() {
+  $('phasebar').innerHTML = PHASES.map((p, i) => {
+    const cls = p.n < curPhase ? 'done' : p.n === curPhase ? 'active' : '';
+    const num = p.n < curPhase ? '✓' : p.n;
+    return `<div class="phase ${cls}" onclick="jumpPhase(${p.n})"><span class="num">${num}</span>${p.n} ${p.name}</div>`
+      + (i < PHASES.length - 1 ? '<span class="phase-arrow">›</span>' : '');
+  }).join('');
+}
+function jumpPhase(n) { toast(`阶段可自由跳转/回退（正式版：回退时提示受影响的共识与大纲）`, 'info'); }
+
+function addDivider(phase) {
+  const el = document.createElement('div');
+  el.className = 'phase-divider';
+  el.innerHTML = `—— <b>阶段 ${phase.n} · ${phase.name}</b> ——`;
+  $('chatInner').appendChild(el);
+}
+function addUser(text) {
+  turnNo++;
+  const el = document.createElement('div');
+  el.className = 'msg user';
+  el.innerHTML = `<div class="bubble"></div><div class="avatar">我</div>`;
+  el.querySelector('.bubble').textContent = text;
+  $('chatInner').appendChild(el); scrollBottom();
+}
+async function addEditor(html) {
+  const el = document.createElement('div');
+  el.className = 'msg editor';
+  el.innerHTML = `<div class="avatar">主编</div><div class="bubble"><div class="typing"><i></i><i></i><i></i></div></div>`;
+  $('chatInner').appendChild(el); scrollBottom();
+  await sleep(650);
+  const bubble = el.querySelector('.bubble');
+  bubble.innerHTML = html;
+  // 分段渐显，模拟流式
+  const blocks = [...bubble.children];
+  blocks.forEach(b => b.style.opacity = 0);
+  for (const b of blocks) {
+    b.style.transition = 'opacity .35s'; b.style.opacity = 1;
+    scrollBottom(); await sleep(280);
+  }
+  scrollBottom();
+}
+
+/* ================= 账本 ================= */
+const LEDGER = {};
+function renderLedger() {
+  const box = $('ledger');
+  $('ledgerEmpty')?.remove();
+  const entries = Object.values(LEDGER);
+  box.innerHTML = entries.map(e => `
+    <div class="lentry ${e.status}" id="le-${e.id}" onclick="toggleLedger('${e.id}', event)">
+      <div class="t"><span class="dot"></span><span>${e.title}</span></div>
+      ${e.points?.length ? `<div class="pts">${e.points.join('；')}</div>` : ''}
+      <div class="ops">
+        ${e.status === 'tentative' ? `<button class="btn mini primary" onclick="setLedger('${e.id}','confirmed',event)">确认</button>` : ''}
+        ${e.status !== 'rejected' ? `<button class="btn mini" onclick="setLedger('${e.id}','rejected',event)">排除</button>` : ''}
+        <span style="font-size:11px;color:var(--text-3);align-self:center;margin-left:2px">第 ${e.turn} 轮</span>
+      </div>
+    </div>`).join('');
+}
+function ledgerAdd(id, title, points, status = 'tentative') {
+  if (LEDGER[id]) return;
+  LEDGER[id] = { id, title, points, status, turn: turnNo };
+  renderLedger();
+}
+function setLedger(id, status, ev) {
+  ev.stopPropagation();
+  LEDGER[id].status = status; renderLedger();
+  toast(status === 'confirmed' ? '共识已确认——将注入主编记忆与后续生成'
+    : '已标记为排除方向——AI 不会再推荐这类方案', status === 'confirmed' ? 'ok' : 'warn');
+}
+function toggleLedger(id) { document.getElementById('le-' + id).classList.toggle('open'); }
+
+/* ================= 圣经 ================= */
+function renderBible() {
+  const rows = [
+    { k: '概要', st: adopted.overview, extra: adopted.overview ? '《洗冤录》' : '' },
+    { k: '人物', st: adopted.characters > 0, extra: adopted.characters > 0 ? `${adopted.characters} 已入库` : '' },
+    { k: '故事线', st: false, extra: '' },
+    { k: '分集大纲', st: false, extra: '' },
+    { k: '章节', st: false, extra: '' },
+  ];
+  $('bible').innerHTML = rows.map(r => `
+    <div class="bible-row" onclick="toast('已入库数据与高级模式同表，点击可在高级模式查看/编辑','info')">
+      <span>${r.k}</span><span style="color:var(--text-3);font-size:12px">${r.extra}</span>
+      <span class="st ${r.st ? 'in' : 'not'}">${r.st ? '✓ 已入库' : '—'}</span>
+    </div>`).join('');
+}
+
+/* ================= 卡片 ================= */
+function artifactCard(cfg) {
+  const el = document.createElement('div');
+  el.className = `artifact ${cfg.kind}`;
+  el.innerHTML = `
+    <div class="head">
+      <span class="ico">${cfg.ico}</span><span class="name">${cfg.name}</span>
+      <span class="ver">${cfg.ver}</span>
+      <span class="src" onclick="toast('来源：${cfg.src}（正式版可跳回对应对话轮次）','info')">来源：${cfg.src} ↗</span>
+    </div>
+    <div class="body">${cfg.rows.map(r => `<div class="row"><span class="k">${r[0]}</span><span>${r[1]}</span></div>`).join('')}</div>
+    <div class="foot">
+      <button class="btn success" data-act="adopt">✓ 采纳入库</button>
+      <button class="btn" data-act="edit">✎ 编辑</button>
+      <button class="btn" data-act="regen">↻ 按反馈重新提炼</button>
+      <button class="btn" data-act="drop">✗ 忽略</button>
+      <span class="note"></span>
+    </div>`;
+  el.querySelector('[data-act=adopt]').onclick = () => cfg.onAdopt(el);
+  el.querySelector('[data-act=edit]').onclick = () => toast('正式版：字段行内编辑，改完再采纳', 'info');
+  el.querySelector('[data-act=drop]').onclick = () => {
+    el.classList.add('outdated'); el.querySelector('.foot').innerHTML = '<span class="note">已忽略（仍保留可回看）</span>';
+    toast('已忽略——这条提案也会进入主编记忆，避免重复推荐', 'warn');
+  };
+  el.querySelector('[data-act=regen]').onclick = () => cfg.onRegen(el);
+  $('chatInner').appendChild(el); scrollBottom();
+  return el;
+}
+function markAdopted(el, note) {
+  el.classList.add('adopted');
+  el.querySelector('.foot').innerHTML = `<span class="note">✓ ${note}</span>`;
+}
+
+/* 概要卡 */
+function overviewCard() {
+  artifactCard({
+    kind: 'outline', ico: '📘', name: '概要卡 ·《洗冤录》', ver: 'v1', src: '第 1-6 轮共识',
+    rows: [
+      ['一句话', '外门弟子<b>林晓</b>被冤偷宗门至宝、当众逐出师门；为洗冤踏上修行路，却发现真凶是护他长大的大师兄。'],
+      ['核心冲突', '洗冤自证 vs 师门恩义；第二层：真相揭开后「恨与恩」的撕扯。'],
+      ['钩子', '第 6 集反转（真凶=大师兄）；情绪底色：错位的自责。'],
+      ['体量', '短剧 · 预计 24 集 × 2 分钟'],
+    ],
+    onAdopt: (el) => {
+      markAdopted(el, '已入库 → lw_story_overviews（高级模式可编辑）');
+      adopted.overview = true; renderBible();
+      toast('概要已入库 lw_story_overviews · 分区：故事圣经 → 概要 ✓');
+      curPhase = 2; renderPhases(); addDivider(PHASES[1]);
+      ledgerConfirmAll();
+      playEditor(`<p>概要已入库。人物先立两根柱子：<b>林晓</b>和<b>大师兄</b>。先出林晓——基于共识直接提炼，<b>不用你填任何字段</b>。</p>`)
+        .then(() => setTimeout(characterCardV1, 400));
+    },
+    onRegen: (el) => toast('正式版：附加一句反馈（如"钩子再狠一点"）→ 整理器重新提炼 v2', 'info'),
+  });
+}
+function ledgerConfirmAll() {
+  Object.values(LEDGER).forEach(e => { if (e.status === 'tentative') e.status = 'confirmed'; });
+  renderLedger();
+}
+
+/* 人物卡 v1 / v2 */
+function characterCardV1() {
+  const c = artifactCard({
+    kind: 'character', ico: '🧑', name: '人物卡 · 林晓', ver: 'v1', src: '第 4、6 轮共识',
+    rows: [
+      ['身份', '青云宗外门弟子，被冤偷镇宗至宝「玄天鉴」当众逐出'],
+      ['动机', '洗冤 + 复仇（对象：真凶）'],
+      ['性格', '隐忍、重情；冤案后多疑，不轻信任何善意'],
+      ['弧光', '从「自证清白」到「放下自证、重建自己的秩序」'],
+      ['关系', '大师兄顾长风：亦师亦兄（不知其为真凶）'],
+    ],
+    onAdopt: () => toast('请先处理 v2 卡片（演示重新提炼流程）', 'warn'),
+    onRegen: (el) => {
+      el.classList.add('outdated');
+      el.querySelector('.foot').innerHTML = '<span class="note">已按反馈重新提炼 → v2</span>';
+      toast('整理器已按反馈重新提炼：动机更拧——"要的是洗冤，还是被承认？"');
+      setTimeout(characterCardV2, 700);
+    },
+  });
+}
+function characterCardV2() {
+  artifactCard({
+    kind: 'character', ico: '🧑', name: '人物卡 · 林晓', ver: 'v2', src: '第 4、6、8 轮 + 反馈',
+    rows: [
+      ['身份', '青云宗外门弟子，被冤偷镇宗至宝「玄天鉴」当众逐出'],
+      ['动机', '表层：洗冤；深层：<b>被宗门承认</b>——他洗的不是罪名，是"我配不配站在这里"'],
+      ['性格', '隐忍、重情；冤案后多疑，不轻信任何善意'],
+      ['弧光', '从「自证清白」到「放下自证、重建自己的秩序」'],
+      ['关系', '大师兄顾长风：亦师亦兄（不知其为真凶）→ 图谱关系边随入库自动建立'],
+    ],
+    onAdopt: (el) => {
+      markAdopted(el, '已入库 → lw_characters（去重通过 · 关系边已同步图谱）');
+      adopted.characters = 1; renderBible();
+      toast('人物「林晓」已入库 lw_characters · 与顾长风的关系边已写入图谱');
+      setChips(['出大师兄卡', '进 ③ 故事线', '加一个女主']);
+      playEditor(`<p>林晓立住了——注意 v2 里动机拧成了<b>「被承认」</b>，这比单纯的洗冤更能撑 24 集。</p><p>大师兄顾长风的卡我下一轮出；或者我们直接进<b>故事线</b>，把 24 集的因果链拉出来。</p>`);
+    },
+    onRegen: () => toast('正式版：附加反馈 → 重新提炼 v3', 'info'),
+  });
+}
+
+/* ================= 建议 chips ================= */
+function setChips(list) {
+  $('chips').innerHTML = list.map(c => `<span class="chip" onclick="sendText('${c}')">${c}</span>`).join('');
+}
+
+/* ================= 脚本 ================= */
+const SCRIPT = [
+  async () => {
+    addUser('想写一部玄幻短剧，主角废柴逆袭，先聊故事核');
+    await playEditor(`
+      <p>废柴逆袭是短剧最成熟的引擎之一，但要跑出来，先定两件事：</p>
+      <ul>
+        <li>他「废」的<b>代价</b>是什么——被退婚、被逐出师门、还是灵根被夺？代价决定情绪底色。</li>
+        <li>观众第 3 集对他该是<b>什么情绪</b>——同情，还是憋屈待爽？</li>
+      </ul>
+      <div class="options">
+        <div class="option"><b>A · 退婚流</b>爽感来得快、情绪直给，但同质化最重，前 3 秒 hook 要另做。</div>
+        <div class="option"><b>B · 沉冤流</b>慢热半集，但「冤」能给人物真实的弧光，反转空间大。</div>
+      </div>`);
+    ledgerAdd('genre', '题材：玄幻修仙', ['短剧体裁', '24 集 × 2 分钟候选']);
+    ledgerAdd('engine', '引擎：废柴逆袭（流派待定）');
+    setChips(['选 A', '选 B', '都不喜欢，换个方向', '让主编再问']);
+  },
+  async () => {
+    addUser('B。他被冤枉偷了宗门至宝，当众逐出师门');
+    await playEditor(`
+      <p>好选择——<b>「冤」比「废」强</b>：它给了主角一个必须行动的具体目标，而不只是等待变强。</p>
+      <p>接下来最关键的一根针：<b>真凶是谁</b>。俗套是「嫉妒他的同门」，我建议反着来——<b>真凶是从小护他长大的大师兄</b>。背叛感是短剧最强的前 3 集钩子，还给结局留了双层空间。</p>
+      <p>那么：主角什么时候发现真相——第 1 集就埋怀疑（悬念驱动），还是第 6 集一刀反转（情绪炸裂）？</p>`);
+    LEDGER['engine'] && (LEDGER['engine'].title = '引擎：沉冤洗白（B 流）', LEDGER['engine'].points = ['被冤偷至宝', '当众逐出师门'], LEDGER['engine'].status = 'confirmed');
+    ledgerAdd('villain', '真凶：大师兄（背叛钩子）', ['暂定：护他长大的大师兄']);
+    ledgerAdd('no-rival', '已排除：真凶=嫉妒同门（俗套）', [], 'rejected');
+    renderLedger();
+    setChips(['大师兄可以，第 6 集才反转', '第 1 集就埋怀疑', '真凶再想想']);
+  },
+  async () => {
+    addUser('大师兄可以。第 6 集才发现真相，前面他一直以为是自己倒霉');
+    await playEditor(`
+      <p>那前 5 集的情绪底色就是<b>错位的自责</b>——他越努力证明自己，越是在给真凶递刀。这个错位很值钱，别浪费。</p>
+      <div class="reminder">📋 翻旧账：你排除了「嫉妒同门」的俗套——大师兄这条线我建议动机也做双层：表面是护宝失职，深层是<b>为了救他</b>才动了至宝。这样第 6 集反转之后还有第二层可翻。</div>
+      <p>到这里<b>故事核三要素</b>齐了：引擎（洗冤）、钩子（大师兄背叛）、底色（错位自责）。我把它整理成概要卡，确认后入库，然后进人物——</p>`);
+    ledgerAdd('timing', '反转点：第 6 集揭真凶', ['前 5 集铺「错位自责」']);
+    setChips(['出概要卡']);
+    setTimeout(overviewCard, 900);
+  },
+];
+const END_REPLY = `<p style="color:var(--text-3)">（原型演示到这里。③故事线 → ④分集大纲（逐集确认卡）→ ⑤写作交接编辑器的完整交互，见设计文档 §6——欢迎反馈调整。）</p>`;
+
+async function playEditor(html) { await addEditor(html); }
+async function sendText(forced) {
+  if (busy) return;
+  busy = true; $('sendBtn').disabled = true;
+  const box = $('inputBox');
+  const text = (forced || box.value.trim());
+  if (text) { addUser(text); }
+  if (!forced) box.value = '';
+  $('chips').innerHTML = '';
+  if (stepIdx < SCRIPT.length) {
+    const fn = SCRIPT[stepIdx++];
+    await fn();
+  } else {
+    await playEditor(END_REPLY);
+  }
+  busy = false; $('sendBtn').disabled = false; box.focus();
+}
+
+/* ================= 初始化 ================= */
+renderPhases(); renderBible();
+addDivider(PHASES[0]);
+setChips([]);
+$('sendBtn').onclick = () => sendText();
+// 空态引导：主编开场白
+setTimeout(() => addEditor(`
+  <p>我是你的<b>故事主编</b>。用一两句话告诉我你想写什么——不用填任何表单，我们从<b>故事核</b>聊起：引擎、代价、钩子。</p>
+  <p style="color:var(--text-3);font-size:12.5px">点下方绿色「▶ 播放下一轮」看一段完整的研讨演示（概要提炼 → 入库 → 人物卡 → 重新提炼）。</p>`), 400);
+$('inputBox').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); }
+});
+// 常驻播放按钮（独立于建议 chips，不会被清空）
+document.getElementById('playBtn').onclick = () => sendText('');
+</script>
+</body>
+</html>
