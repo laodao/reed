@@ -48,7 +48,9 @@
             >
               <div class="shot-thumb">
                 <el-image v-if="frameUrl(shot)" :src="frameUrl(shot)" fit="cover" class="thumb-img" />
-                <div v-else class="thumb-empty"><el-icon :size="16"><Picture /></el-icon><span>待生成</span></div>
+                <!-- 无关键帧但所属片段已出片：用片段视频首帧作缩略图（片段级生成不写 shot.videoPath） -->
+                <video v-else-if="segmentVideoUrl(shot)" :src="segmentVideoUrl(shot)" class="thumb-img" muted preload="metadata" />
+                <div v-else class="thumb-empty"><el-icon :size="16"><Picture /></el-icon><span>{{ shotPlaceholder(shot) }}</span></div>
               </div>
               <div class="shot-meta">
                 <span class="shot-no">SHT-{{ pad(shot.shotNumber) }}</span>
@@ -243,6 +245,21 @@ const shotGroups = computed(() => {
 const selectedShotSegment = computed<SegmentInfo | null>(() =>
   selectedShot.value ? (segmentByShotId.value.get(selectedShot.value.id) ?? null) : null,
 )
+
+function segmentOf(sb: any): SegmentInfo | null {
+  return segmentByShotId.value.get(sb.id) ?? null
+}
+/** 所属片段的视频地址（缩略图回退用） */
+function segmentVideoUrl(sb: any): string | null {
+  const p = segmentOf(sb)?.videoPath
+  return p ? toVideoUrl(p) : null
+}
+/** 缩略图占位文字：跟随所属片段状态，未分段才固定"待生成" */
+function shotPlaceholder(sb: any): string {
+  const seg = segmentOf(sb)
+  if (!seg) return '待生成'
+  return ({ pending: '待生成', generating: '生成中', completed: '已完成', error: '失败' } as const)[seg.status]
+}
 
 /** 预览视频：镜头自身视频优先；无则回退所属片段的视频（片段级生成不写 shot.videoPath） */
 const previewVideoUrl = computed<string | null>(() => {
