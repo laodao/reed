@@ -34,10 +34,27 @@
       <aside class="edit-left">
         <div class="shot-list">
           <template v-for="group in shotGroups" :key="group.key">
-            <!-- 片段分组头（视频片段制：左侧列表从纯镜头改为片段分组） -->
-            <div class="seg-group-head" :data-status="group.status">
+            <!-- 片段卡片：左侧主条目 = 片段（唯一视频缩略图挂在片段上）；分镜只是片段下的脚本行 -->
+            <div
+              v-if="group.isSegment"
+              class="seg-card-item"
+              :class="{ active: group.shots.some(s => s.id === selectedShot?.id) }"
+              :data-status="group.status"
+              @click="selectShot(group.shots[0])"
+            >
+              <div class="seg-card-thumb">
+                <video v-if="group.videoUrl" :src="group.videoUrl" class="thumb-img" muted preload="metadata" />
+                <div v-else class="thumb-empty"><el-icon :size="16"><Picture /></el-icon><span>{{ group.statusLabel }}</span></div>
+              </div>
+              <div class="seg-card-info">
+                <span class="seg-group-title">{{ group.title }}</span>
+                <span class="seg-group-status" :class="`st-${group.status}`">{{ group.statusLabel }}</span>
+              </div>
+            </div>
+            <!-- 未分段提示头 -->
+            <div v-else class="seg-group-head">
               <span class="seg-group-title">{{ group.title }}</span>
-              <span class="seg-group-status" :class="`st-${group.status ?? 'none'}`">{{ group.statusLabel }}</span>
+              <span class="seg-group-status st-none">{{ group.statusLabel }}</span>
             </div>
             <div
               v-for="shot in group.shots"
@@ -46,11 +63,9 @@
               :class="{ active: selectedShot?.id === shot.id }"
               @click="selectShot(shot)"
             >
-              <div class="shot-thumb">
-                <el-image v-if="frameUrl(shot)" :src="frameUrl(shot)" fit="cover" class="thumb-img" />
-                <!-- 无关键帧但所属片段已出片：用片段视频首帧作缩略图（片段级生成不写 shot.videoPath） -->
-                <video v-else-if="segmentVideoUrl(shot)" :src="segmentVideoUrl(shot)" class="thumb-img" muted preload="metadata" />
-                <div v-else class="thumb-empty"><el-icon :size="16"><Picture /></el-icon><span>{{ shotPlaceholder(shot) }}</span></div>
+              <!-- 分镜行只展示关键帧缩略图（如有）；视频属于片段，不在分镜行重复展示 -->
+              <div v-if="frameUrl(shot)" class="shot-thumb">
+                <el-image :src="frameUrl(shot)" fit="cover" class="thumb-img" />
               </div>
               <div class="shot-meta">
                 <span class="shot-no">SHT-{{ pad(shot.shotNumber) }}</span>
@@ -209,9 +224,9 @@ const segmentByShotId = computed(() => {
   return map
 })
 
-/** 左侧列表：镜头按片段分组；未分段镜头归入"未分段"组（置顶提示） */
+/** 左侧列表：主条目 = 片段卡片（含视频缩略图）；分镜为片段下的脚本行；未分段镜头归入"未分段"组（置顶提示） */
 const shotGroups = computed(() => {
-  const groups: Array<{ key: string; title: string; status: SegmentInfo['status'] | null; statusLabel: string; shots: any[] }> = []
+  const groups: Array<{ key: string; title: string; status: SegmentInfo['status'] | null; statusLabel: string; isSegment: boolean; videoUrl: string | null; shots: any[] }> = []
   const bySeg = new Map<string, any[]>()
   const unsegmented: any[] = []
   for (const shot of shots.value) {
@@ -222,7 +237,7 @@ const shotGroups = computed(() => {
     bySeg.set(seg.segmentId, arr)
   }
   if (unsegmented.length > 0) {
-    groups.push({ key: '__unsegmented__', title: '未分段镜头', status: null, statusLabel: '回列表页点「重新分段」', shots: unsegmented })
+    groups.push({ key: '__unsegmented__', title: '未分段镜头', status: null, statusLabel: '回列表页点「重新分段」', isSegment: false, videoUrl: null, shots: unsegmented })
   }
   const statusLabelOf = (s: SegmentInfo['status']) =>
     ({ pending: '待生成', generating: '生成中', completed: '已完成', error: '失败' } as const)[s]
@@ -235,6 +250,8 @@ const shotGroups = computed(() => {
       title: `片段 ${seg.seq} · ${seg.shotCount} 镜 · 约${(seg.estDuration ?? 0).toFixed(0)}s`,
       status: seg.status,
       statusLabel: statusLabelOf(seg.status),
+      isSegment: true,
+      videoUrl: seg.videoPath ? toVideoUrl(seg.videoPath) : null,
       shots: bySeg.get(seg.segmentId)!,
     })
   }
@@ -245,21 +262,6 @@ const shotGroups = computed(() => {
 const selectedShotSegment = computed<SegmentInfo | null>(() =>
   selectedShot.value ? (segmentByShotId.value.get(selectedShot.value.id) ?? null) : null,
 )
-
-function segmentOf(sb: any): SegmentInfo | null {
-  return segmentByShotId.value.get(sb.id) ?? null
-}
-/** 所属片段的视频地址（缩略图回退用） */
-function segmentVideoUrl(sb: any): string | null {
-  const p = segmentOf(sb)?.videoPath
-  return p ? toVideoUrl(p) : null
-}
-/** 缩略图占位文字：跟随所属片段状态，未分段才固定"待生成" */
-function shotPlaceholder(sb: any): string {
-  const seg = segmentOf(sb)
-  if (!seg) return '待生成'
-  return ({ pending: '待生成', generating: '生成中', completed: '已完成', error: '失败' } as const)[seg.status]
-}
 
 /** 预览视频：镜头自身视频优先；无则回退所属片段的视频（片段级生成不写 shot.videoPath） */
 const previewVideoUrl = computed<string | null>(() => {
@@ -655,7 +657,29 @@ async function loadMentionEntities(): Promise<void> {
   border-bottom: 1px dashed var(--border-color-lighter);
   &:first-child { margin-top: 0; }
   .seg-group-title { font-weight: 600; color: var(--text-color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .seg-group-status { flex-shrink: 0; color: var(--text-color-placeholder); &.st-completed { color: var(--color-success); } &.st-error { color: var(--color-danger); } &.st-generating { color: var(--color-warning); } }
+  .seg-group-status { flex-shrink: 0; color: var(--text-color-placeholder); }
+}
+/* 片段卡片：左侧列表主条目（视频缩略图唯一挂载点） */
+.seg-card-item {
+  border: 1px solid var(--border-color-lighter);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  &:hover { border-color: var(--color-primary); }
+  &.active { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary-light-9); }
+  &[data-status='completed'] { border-left: 3px solid var(--color-success); }
+  &[data-status='error'] { border-left: 3px solid var(--color-danger); }
+  &[data-status='generating'] { border-left: 3px solid var(--color-warning); }
+  .seg-card-thumb {
+    height: 90px; background: #111;
+    display: flex; align-items: center; justify-content: center;
+    .thumb-img { width: 100%; height: 100%; object-fit: cover; }
+    .thumb-empty { display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--text-color-placeholder); font-size: 10px; }
+  }
+  .seg-card-info { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 5px 10px; }
+  .seg-group-title { font-size: 11px; font-weight: 600; color: var(--text-color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .seg-group-status { flex-shrink: 0; font-size: 11px; color: var(--text-color-placeholder); &.st-completed { color: var(--color-success); } &.st-error { color: var(--color-danger); } &.st-generating { color: var(--color-warning); } }
 }
 .shot-gen-btn {
   border: none; background: transparent; cursor: pointer; font-size: 12px;

@@ -42,7 +42,7 @@
       </div>
     </div>
 
-    <!-- 主体：左场次导航 + 中央片段卡/分镜组 -->
+    <!-- 主体：左场次导航 + 中央分镜组（原样式；片段功能内嵌为片段操作条） -->
     <div class="sb-body">
       <aside class="sb-left">
         <SceneNav :scenes="scenes" :selected-scene-id="null" @select="onSelectScene" />
@@ -68,68 +68,8 @@
             </template>
           </el-alert>
 
-          <!-- 片段分组卡片（已分段） -->
-          <div v-if="segments.length > 0" class="seg-cards">
-            <div
-              v-for="seg in segments"
-              :key="seg.segmentId"
-              class="seg-card"
-              :data-segment="seg.segmentId"
-              :data-status="seg.status"
-            >
-              <div class="seg-head" @click="toggleExpand(seg.segmentId)">
-                <span class="seg-caret">{{ expandedIds.has(seg.segmentId) ? '▾' : '▸' }}</span>
-                <span class="seg-title">片段 {{ seg.seq }}</span>
-                <span class="seg-scene">场景 {{ seg.sceneNumber }} · {{ seg.sceneLocation || '?' }}</span>
-                <span class="seg-meta">{{ seg.shotCount }} 镜</span>
-                <span class="seg-meta">约 {{ formatSec(seg.estDuration) }}</span>
-                <span v-if="seg.duration != null" class="seg-meta actual">实际 {{ formatSec(seg.duration) }}</span>
-                <el-tag size="small" :type="segStatusTagType(seg.status)" effect="light" class="seg-status-tag">
-                  {{ segStatusLabel(seg.status) }}
-                </el-tag>
-                <span class="seg-actions" @click.stop>
-                  <el-button
-                    v-if="seg.videoPath"
-                    size="small"
-                    text
-                    type="success"
-                    @click="onPlay(seg)"
-                  >
-                    <el-icon><VideoPlay /></el-icon>
-                    播放
-                  </el-button>
-                  <el-button
-                    v-if="seg.status !== 'generating'"
-                    size="small"
-                    :type="seg.status === 'completed' ? 'default' : 'primary'"
-                    :loading="generatingSegmentId === seg.segmentId"
-                    :disabled="generatingAll"
-                    @click="onGenerateSegment(seg)"
-                  >
-                    {{ seg.status === 'completed' ? '重新生成' : seg.status === 'error' ? '重试生成' : '生成视频' }}
-                  </el-button>
-                  <el-button v-else size="small" loading disabled>生成中</el-button>
-                </span>
-              </div>
-              <div v-if="expandedIds.has(seg.segmentId)" class="seg-shots">
-                <div
-                  v-for="sb in segmentShots(seg)"
-                  :key="sb.id"
-                  class="seg-shot-row"
-                  :title="`${shotTitle(sb)}（点击进入制作页微调）`"
-                  @click="onEnterSceneById(seg.sceneId)"
-                >
-                  <span class="shot-no">SHT-{{ String(sb.shotNumber).padStart(2, '0') }}</span>
-                  <span class="shot-dur">{{ durationLabel(sb.duration) }}</span>
-                  <span class="shot-desc">{{ shotExcerpt(sb) }}</span>
-                </div>
-                <div v-if="segmentShots(seg).length === 0" class="seg-shot-empty">（片段内分镜数据未加载）</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 未分段时回退：按场次分组的分镜格（保留原能力） -->
-          <div v-else class="sb-scenes">
+          <!-- 按场次分组（原样式） -->
+          <div class="sb-scenes">
             <div v-for="sc in scenes" :key="sc.id" class="sb-scene-group" :data-scene="sc.id">
               <div class="group-head" @click="onEnterScene(sc)">
                 <span class="group-title">场次 {{ sc.sceneNumber }}：{{ sc.location }}</span>
@@ -138,7 +78,59 @@
                   <span class="enter-link">进入制作 →</span>
                 </span>
               </div>
-              <div class="group-shots">
+
+              <!-- 已分段：每片段一条操作条 + 原样式分镜格 -->
+              <template v-if="segmentsByScene.get(sc.id)?.length">
+                <div
+                  v-for="seg in segmentsByScene.get(sc.id)"
+                  :key="seg.segmentId"
+                  class="seg-block"
+                  :data-segment="seg.segmentId"
+                  :data-status="seg.status"
+                >
+                  <div class="seg-bar">
+                    <span class="seg-bar-title">片段 {{ seg.seq }}</span>
+                    <span class="seg-bar-meta">
+                      {{ seg.shotCount }} 镜 · 约 {{ formatSec(seg.estDuration) }}
+                      <template v-if="seg.duration != null"> · 实际 {{ formatSec(seg.duration) }}</template>
+                    </span>
+                    <el-tag size="small" :type="segStatusTagType(seg.status)" effect="light">{{ segStatusLabel(seg.status) }}</el-tag>
+                    <span class="seg-bar-actions">
+                      <el-button v-if="seg.videoPath" size="small" text type="success" @click="onPlay(seg)">
+                        <el-icon><VideoPlay /></el-icon>
+                        播放
+                      </el-button>
+                      <el-button
+                        v-if="seg.status !== 'generating'"
+                        size="small"
+                        text
+                        :type="seg.status === 'completed' ? 'info' : 'primary'"
+                        :loading="generatingSegmentId === seg.segmentId"
+                        :disabled="generatingAll"
+                        @click="onGenerateSegment(seg)"
+                      >
+                        {{ seg.status === 'completed' ? '重新生成' : seg.status === 'error' ? '重试生成' : '生成视频' }}
+                      </el-button>
+                      <el-button v-else size="small" text loading disabled>生成中</el-button>
+                    </span>
+                  </div>
+                  <div class="group-shots">
+                    <div v-for="sb in segmentShots(seg)" :key="sb.id" class="shot-tile" @click="onEnterScene(sc)">
+                      <div class="tile-preview">
+                        <el-image v-if="frameUrl(sb)" :src="frameUrl(sb)" fit="cover" class="tile-img" />
+                        <div v-else class="tile-empty"><el-icon :size="18"><Picture /></el-icon><span>{{ segStatusLabel(seg.status) }}</span></div>
+                      </div>
+                      <div class="tile-meta">
+                        <span class="tile-no">SHT-{{ String(sb.shotNumber).padStart(2, '0') }}</span>
+                        <span class="tile-dur">{{ durationLabel(sb.duration) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </template>
+
+              <!-- 未分段：原样式分镜格 -->
+              <div v-else class="group-shots">
                 <div v-for="sb in (storyboards[sc.id] || [])" :key="sb.id" class="shot-tile" @click="onEnterScene(sc)">
                   <div class="tile-preview">
                     <el-image v-if="frameUrl(sb)" :src="frameUrl(sb)" fit="cover" class="tile-img" />
@@ -181,18 +173,19 @@
 <script setup lang="ts">
 /**
  * M4 分镜列表页（tab 宿主内的完整左+中央工作区，参照项目分镜列表页.png）。
- * 左：场次导航；中央：按视频片段分组的片段卡（视频片段制，2026-09-04 重构批次 B）。
+ * 左：场次导航；中央：按场次分组的分镜格（SHT 卡 + 时间码 + 状态）。
  *
- * 视频片段制（tasks/2026-09-04-ep-video-segment-redesign §6）：
- *   - 片段 = 制作/生成最小单元；片段卡显示场景名/镜数/预估+实际时长/状态/生成/重新生成/播放
+ * 视频片段制（tasks/2026-09-04-ep-video-segment-redesign §6）——2026-09-05 按用户反馈
+ * 恢复原有按场次分组样式，片段能力内嵌为每个片段的一条操作条（生成/重新生成/播放）：
+ *   - 片段 = 制作/生成最小单元；分镜格保持原样式，占位文字跟随所属片段状态
  *   - 顶部：时长预算（写 video_projects.config.segmentDurationBudgetSec，5-30s）
  *     + 重新分段（ep:recompute-segments，确认后执行——会清未生成段，completed 段保留）
  *     + 全部生成（片段串行，单段失败不阻断，最后汇总）
- *   - 未分段的存量项目 → 提示"未分段"并引导重新分段；下方回退原按场次分组视图
+ *   - 未分段的存量项目 → 提示"未分段"并引导重新分段
  *
  * 数据：getEpisode → scriptId → listScenes → listStoryboards(sceneId) + listSegments(episodeId)。
  */
-import { ref, computed, onMounted, watch, reactive } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { MagicStick, Picture, Plus, Scissor, VideoCamera, VideoPlay } from '@element-plus/icons-vue'
 import SceneNav from '@/components/episode-production/script/SceneNav.vue'
@@ -234,7 +227,6 @@ const generatingSegmentId = ref<string | null>(null)
 const generatingAll = ref(false)
 const genAllDone = ref(0)
 const genAllTotal = ref(0)
-const expandedIds = reactive(new Set<string>())
 const playDialogVisible = ref(false)
 const playSegment = ref<SegmentItem | null>(null)
 
@@ -253,7 +245,7 @@ const pendingSegments = computed(() =>
   segments.value.filter(s => s.status === 'pending' || s.status === 'error'),
 )
 
-/** storyboardId → storyboard 索引（片段卡镜头行展示用） */
+/** storyboardId → storyboard 索引（片段内分镜格展示用） */
 const storyboardById = computed(() => {
   const map = new Map<string, any>()
   for (const arr of Object.values(storyboards.value)) {
@@ -262,10 +254,21 @@ const storyboardById = computed(() => {
   return map
 })
 
+/** sceneId → 该场景的片段（按 seq 排序；分段永不跨场景） */
+const segmentsByScene = computed(() => {
+  const map = new Map<string, SegmentItem[]>()
+  for (const seg of [...segments.value].sort((a, b) => a.seq - b.seq)) {
+    const arr = map.get(seg.sceneId) ?? []
+    arr.push(seg)
+    map.set(seg.sceneId, arr)
+  }
+  return map
+})
+
 async function load(): Promise<void> {
   if (!props.episodeId) { script.value = null; scenes.value = []; storyboards.value = {}; segments.value = []; segmentsLoaded.value = false; return }
   const ep = await window.electronAPI.episodeProduction.getEpisode(props.episodeId)
-  if (!ep.success || !ep.data?.scriptId) { script.value = null; scenes.value = []; storyboards.value = []; segments.value = []; segmentsLoaded.value = false; return }
+  if (!ep.success || !ep.data?.scriptId) { script.value = null; scenes.value = []; storyboards.value = {}; segments.value = []; segmentsLoaded.value = false; return }
   script.value = ep.data
 
   const scResp = await window.electronAPI.episodeProduction.listScenes(ep.data.scriptId)
@@ -286,10 +289,6 @@ async function loadSegments(): Promise<void> {
     segments.value = r?.success ? (r.data?.segments ?? []) : []
     if (r?.success && typeof r.data?.budgetSec === 'number') {
       budgetSec.value = Math.round(r.data.budgetSec)
-    }
-    // 新出现的片段默认展开
-    for (const seg of segments.value) {
-      if (!expandedIds.has(seg.segmentId)) expandedIds.add(seg.segmentId)
     }
   } finally {
     segmentsLoaded.value = true
@@ -438,25 +437,10 @@ async function onGenerateAll(): Promise<void> {
   })
 }
 
-function toggleExpand(segmentId: string): void {
-  if (expandedIds.has(segmentId)) expandedIds.delete(segmentId)
-  else expandedIds.add(segmentId)
-}
-
 function segmentShots(seg: SegmentItem): any[] {
   return seg.storyboardIds
     .map(id => storyboardById.value.get(id))
     .filter(Boolean)
-}
-
-function shotTitle(sb: any): string {
-  return `SHT-${String(sb.shotNumber).padStart(2, '0')} · ${sb.duration ?? 0}s`
-}
-
-function shotExcerpt(sb: any): string {
-  const text = String(sb.frameDescription ?? '').replace(/\s+/g, ' ').trim()
-  if (!text) return '（无画面描述）'
-  return text.length > 60 ? `${text.slice(0, 60)}…` : text
 }
 
 function segStatusLabel(status: SegmentItem['status']): string {
@@ -485,10 +469,6 @@ function onSelectScene(sc: any): void {
 /** 点击场次 → 进入该场分镜制作 */
 function onEnterScene(sc: any): void {
   emit('enter-scene', sc.id)
-}
-
-function onEnterSceneById(sceneId: string): void {
-  emit('enter-scene', sceneId)
 }
 
 async function onGenerateAllStoryboards(): Promise<void> {
@@ -569,39 +549,7 @@ onMounted(() => {
 
 .seg-hint { max-width: 900px; margin-bottom: 14px; }
 
-/* ── 片段分组卡片 ── */
-.seg-cards { display: flex; flex-direction: column; gap: 14px; max-width: 900px; }
-.seg-card {
-  background: var(--bg-color);
-  border: 1px solid var(--border-color-lighter);
-  border-radius: var(--radius-lg);
-  padding: 12px 16px;
-  &[data-status='completed'] { border-left: 3px solid var(--color-success); }
-  &[data-status='error'] { border-left: 3px solid var(--color-danger); }
-  &[data-status='generating'] { border-left: 3px solid var(--color-warning); }
-  &[data-status='pending'] { border-left: 3px solid var(--border-color); }
-}
-.seg-head { display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
-.seg-caret { color: var(--text-color-placeholder); font-size: 12px; }
-.seg-title { font-size: 14px; font-weight: 600; color: var(--text-color-primary); }
-.seg-scene { font-size: 12px; color: var(--text-color-secondary); }
-.seg-meta { font-size: 12px; color: var(--text-color-placeholder); &.actual { color: var(--color-success); } }
-.seg-status-tag { margin-left: 2px; }
-.seg-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; }
-
-.seg-shots { margin-top: 10px; border-top: 1px dashed var(--border-color-lighter); padding-top: 8px; }
-.seg-shot-row {
-  display: flex; align-items: center; gap: 10px;
-  padding: 6px 8px; border-radius: var(--radius-md);
-  cursor: pointer; font-size: 12px;
-  &:hover { background: var(--fill-color-light); }
-  .shot-no { font-weight: 600; color: var(--text-color-primary); flex-shrink: 0; }
-  .shot-dur { color: var(--text-color-placeholder); flex-shrink: 0; }
-  .shot-desc { color: var(--text-color-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-}
-.seg-shot-empty { padding: 6px 8px; font-size: 12px; color: var(--text-color-placeholder); }
-
-/* ── 未分段回退：按场次分组 ── */
+/* ── 按场次分组（原样式） ── */
 .sb-scenes { display: flex; flex-direction: column; gap: 22px; max-width: 900px; }
 .sb-scene-group { background: var(--bg-color); border: 1px solid var(--border-color-lighter); border-radius: var(--radius-lg); padding: 16px 18px; }
 .group-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
@@ -628,6 +576,22 @@ onMounted(() => {
   .tile-dur { font-size: 11px; color: var(--text-color-placeholder); }
   &.empty-tile .tile-preview { height: 110px; }
 }
+
+/* ── 片段操作条（内嵌在场次分组内，不改变原样式骨架） ── */
+.seg-block { margin-bottom: 14px; &:last-child { margin-bottom: 0; } }
+.seg-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 10px; margin-bottom: 10px;
+  background: var(--fill-color-lighter);
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--border-color);
+}
+.seg-block[data-status='completed'] .seg-bar { border-left-color: var(--color-success); }
+.seg-block[data-status='error'] .seg-bar { border-left-color: var(--color-danger); }
+.seg-block[data-status='generating'] .seg-bar { border-left-color: var(--color-warning); }
+.seg-bar-title { font-size: 12px; font-weight: 600; color: var(--text-color-primary); }
+.seg-bar-meta { font-size: 12px; color: var(--text-color-placeholder); }
+.seg-bar-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; }
 
 .play-video { width: 100%; max-height: 60vh; background: #000; border-radius: var(--radius-md); }
 </style>
