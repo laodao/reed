@@ -11,7 +11,7 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type { Storyboard } from '@shared/types/story-to-video.types'
 import { StoryToVideoAIService } from '@core/services/story-to-video-ai.service'
-import { StoryboardService } from '@core/modules/episode-production/narrative/services/storyboard.service'
+import { StoryboardService, normalizeShotNumbers } from '@core/modules/episode-production/narrative/services/storyboard.service'
 
 export function registerStoryboardHandlers(): void {
   // ==================== 分镜管理 ====================
@@ -260,9 +260,9 @@ async function handleGenerateStoryboard(
       }
     )
 
-    // 创建分镜记录
+    // 创建分镜记录（shotNumber 按 AI 返回顺序强制重排为 1..N，AI 返回可能跳号）
     const storyboardRecords: Storyboard[] = []
-    for (const sb of result.storyboards) {
+    for (const sb of normalizeShotNumbers(result.storyboards)) {
       // 调试日志
       console.log(`[Handler] 分镜 ${sb.shotNumber} dialogueIds:`, sb.dialogueIds)
 
@@ -338,8 +338,8 @@ async function handleGenerateStoryboards(
       // 删除该场景的旧分镜
       await db.storyboards.deleteBySceneScriptId(sceneId)
 
-      // 创建新分镜
-      for (const sb of result.storyboards) {
+      // 创建新分镜（shotNumber 按 AI 返回顺序强制重排为 1..N，AI 返回可能跳号）
+      for (const sb of normalizeShotNumbers(result.storyboards)) {
         const storyboard = await db.storyboards.create({
           sceneScriptId: sceneId,
           shotNumber: sb.shotNumber,

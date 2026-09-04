@@ -83,6 +83,10 @@
 
           <!-- 操作 -->
           <div class="edit-actions">
+            <el-radio-group v-model="videoGenMode" size="small" class="gen-mode">
+              <el-radio-button value="t2v">文生视频</el-radio-button>
+              <el-radio-button value="ref">参考图模式</el-radio-button>
+            </el-radio-group>
             <el-button type="primary" :loading="generating" @click="onGenerate">
               <el-icon><VideoCamera /></el-icon>
               生成视频
@@ -139,6 +143,14 @@ const dirty = ref(false)
 const styleName = ref('cinematic')
 const stylePresets = ref<Array<{ id: string; name: string }>>([])
 const mentionEntities = ref<MentionEntity[]>([])
+/**
+ * 视频生成模式：
+ *  - t2v 文生视频（默认，向后兼容：forceMode=text2video，提示词直喂视频模型）
+ *  - ref 参考图模式：先确保关键帧存在（关键帧生成会吃提示词里的 @资产引用图），
+ *    然后不传 forceMode，由后端 pickVideoMode 按关键帧数量自动选
+ *    image2video / keyframes2video。
+ */
+const videoGenMode = ref<'t2v' | 'ref'>('t2v')
 // 视频 provider / model（生成视频用）
 const videoProviders = ref<Array<{ providerConfigId: string; name: string; ready: boolean; models: Array<{ id: string; name: string }> }>>([])
 const videoProviderId = ref('')
@@ -210,9 +222,38 @@ async function onGenerate(): Promise<void> {
   try {
     // 先保存字段（含提示词 → frameDescription），再用提示词直接生成视频
     await doSave()
+    const opts: Record<string, unknown> = {
+      providerConfigId: videoProviderId.value,
+      modelId: videoModelId.value,
+    }
+    if (videoGenMode.value === 'ref') {
+      // 参考图模式：确保有带图关键帧（@资产引用图在关键帧生成时作为参考图进入），
+      // 之后不传 forceMode，让后端 pickVideoMode 按关键帧数量自动选模式。
+      const kfResp = await window.electronAPI.episodeProduction
+        .listKeyframes(selectedShot.value.id)
+        .catch(() => null)
+      const hasKeyframeImage = (((kfResp as any)?.data || []) as any[]).some(
+        (k) => k.imagePath || k.imageAssetId,
+      )
+      if (!hasKeyframeImage) {
+        ElMessage.info('参考图模式：正在生成关键帧（@引用图作为参考），可能需要 1-2 分钟…')
+        const g = await window.electronAPI.episodeProduction.generateKeyframes(
+          selectedShot.value.id,
+          styleName.value,
+        )
+        if (!g?.success) {
+          ElMessage.error(g?.error || '关键帧生成失败')
+          return
+        }
+      }
+      // 不设置 opts.forceMode —— 后端按关键帧数量自动 pickVideoMode
+    } else {
+      // 文生视频（默认）：保持原有行为
+      opts.forceMode = 'text2video'
+    }
     const r = await window.electronAPI.episodeProduction.generateVideoSegment(
       selectedShot.value.id,
-      { forceMode: 'text2video', providerConfigId: videoProviderId.value, modelId: videoModelId.value },
+      opts,
     )
     if (r.success) {
       ElMessage.success('视频已生成')

@@ -16,6 +16,15 @@ import type { DataSource, Repository } from 'typeorm'
 import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
 
 /**
+ * AI 返回的分镜 shotNumber 不保证连续（实测返回过 2/3/5）。
+ * 落库前按返回数组顺序强制重排为 1..N（保持数组顺序，只改编号），
+ * 避免场景内分镜编号出现缝隙 / 跳号。
+ */
+export function normalizeShotNumbers<T extends { shotNumber: number }>(storyboards: T[]): T[] {
+  return storyboards.map((sb, i) => ({ ...sb, shotNumber: i + 1 }))
+}
+
+/**
  * 分镜业务 service。
  *
  * 当前仅实现 setBackgroundRefImage / getBackgroundRefImageId 两个方法，

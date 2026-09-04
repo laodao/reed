@@ -23,7 +23,31 @@
       </main>
     </div>
 
-    <!-- 新建资产（阶段 C：用 ElMessageBox 输入名称，走 createStandalone） -->
+    <!-- 新建资产弹窗：可选类型（角色/地点/物品）+ 名称，走 createStandalone -->
+    <el-dialog v-model="createDialog.visible" title="新建资产" width="380px" append-to-body>
+      <el-form label-width="60px" @submit.prevent>
+        <el-form-item label="类型">
+          <el-radio-group v-model="createDialog.kind">
+            <el-radio-button value="character">角色</el-radio-button>
+            <el-radio-button value="location">地点</el-radio-button>
+            <el-radio-button value="item">物品</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="名称">
+          <el-input
+            v-model="createDialog.name"
+            placeholder="输入资产名称"
+            maxlength="50"
+            autofocus
+            @keyup.enter="submitCreate"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="createDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="createDialog.submitting" @click="submitCreate">创建</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -33,8 +57,8 @@
  * 左：资产树（projectSummary 聚合，含 hasMain/缩略图）；中央：AssetGallery 图集。
  * 数据源：asset.projectSummary(projectId) → characters/locations/items。
  */
-import { ref, reactive, computed, watch, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ref, reactive, watch, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import AssetTree from '@/components/episode-production/asset/AssetTree.vue'
 import AssetGallery from '@/components/episode-production/asset/AssetGallery.vue'
 
@@ -86,27 +110,50 @@ function findSummary(kind: string, id: string): any | null {
   return list.find((i: any) => (i.bindingId || i.id) === id) || null
 }
 
-async function onCreate(): Promise<void> {
+const createDialog = reactive<{
+  visible: boolean
+  kind: 'character' | 'location' | 'item'
+  name: string
+  submitting: boolean
+}>({ visible: false, kind: 'character', name: '', submitting: false })
+
+/** 打开新建弹窗：类型默认跟随当前选中，可改（空项目下默认 character，可切地点/物品） */
+function onCreate(): void {
+  createDialog.kind = selected.value.kind || 'character'
+  createDialog.name = ''
+  createDialog.visible = true
+}
+
+async function submitCreate(): Promise<void> {
+  const name = createDialog.name.trim()
+  if (!name) {
+    ElMessage.warning('名称不能为空')
+    return
+  }
+  if (createDialog.submitting) return
+  createDialog.submitting = true
   try {
-    const { value } = await ElMessageBox.prompt('输入资产名称', '新建资产', {
-      confirmButtonText: '创建',
-      cancelButtonText: '取消',
-      inputPattern: /\S+/,
-      inputErrorMessage: '名称不能为空',
-    })
-    if (!value?.trim()) return
     const root = (window as any).electronAPI?.episodeProduction?.asset
-    const kind = selected.value.kind
+    const kind = createDialog.kind
     const api = kind === 'character' ? root.character : kind === 'location' ? root.location : root.item
-    const r = await api.createStandalone({ projectId: props.projectId, name: value.trim() })
+    const r = await api.createStandalone({ projectId: props.projectId, name })
     if (r?.success) {
       ElMessage.success('已创建')
+      createDialog.visible = false
       await load()
+      // 选中新创建的资产，方便直接进图集
+      const list = kind === 'character' ? summary.characters : kind === 'location' ? summary.locations : summary.items
+      const created = list.find((i: any) => i.name === name)
+      if (created) {
+        selected.value = { kind, id: created.bindingId || created.id, name: created.name, thumb: created.mainImagePath }
+      }
     } else {
       ElMessage.error(r?.error || '创建失败')
     }
-  } catch {
-    // 取消
+  } catch (e: any) {
+    ElMessage.error(e?.message || '创建失败')
+  } finally {
+    createDialog.submitting = false
   }
 }
 

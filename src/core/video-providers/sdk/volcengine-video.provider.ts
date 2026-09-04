@@ -127,11 +127,11 @@ export class VolcengineVideoProvider extends BaseVideoProvider {
         // 判断是本地文件还是公网 URL
         if (this.isLocalFilePath(request.image)) {
           const localPath = this.resolveLocalPath(request.image)
-          console.log(`[${this.id}] 检测到本地图片，正在上传:`, localPath)
+          console.log(`[${this.id}] 检测到本地图片，转 base64 data URI（超限走 OSS）:`, localPath)
 
           imageUrl = await this.uploadLocalFile(localPath)
           if (!imageUrl) {
-            return { success: false, error: '本地图片上传失败。请检查网络连接，或在设置中配置图床（OSS）服务作为备选方案。' }
+            return { success: false, error: '本地图片上传失败：base64 直传不可用（文件不存在 / 格式不支持 / 超过 20MB 上限）且 OSS 图床未配置或上传失败。请在设置中配置图床（OSS）服务后重试。' }
           }
         } else {
           imageUrl = request.image
@@ -139,19 +139,14 @@ export class VolcengineVideoProvider extends BaseVideoProvider {
       }
 
       // 火山方舟视频任务统一端点（文生/图生同一路径，靠 content 区分）
+      // image_url 支持公网 URL 与 base64 data URI（data:image/<格式小写>;base64,...）
       // @see https://docs.volcengine.com/docs/82379/1520757
+      // @see https://docs.volcengine.com/docs/82379/2607688（使用限制：传入方式=URL/Base64/素材 ID）
       const endpoint = '/contents/generations/tasks'
       const content: Array<Record<string, any>> = []
 
       if (imageUrl) {
         // 图生视频（首帧）
-        if (imageUrl.startsWith('file://')) {
-          // Files API 的 File ID 不被视频任务接口接受，需要公网可访问的 URL
-          return {
-            success: false,
-            error: '视频首帧图片需要公网可访问的 URL。请在设置中配置图床（OSS）服务后重试。'
-          }
-        }
         if (request.prompt) {
           content.push({ type: 'text', text: request.prompt })
         }
@@ -235,11 +230,24 @@ export class VolcengineVideoProvider extends BaseVideoProvider {
   }
 
   /**
-   * 上传本地文件
-   * 尝试使用火山引擎临时文件上传或 OSS 服务
+   * base64 直传的原始文件体积上限。
+   * 方舟限制：单张图片 < 30MB、请求体 < 64MB，且官方建议"大文件请勿使用 Base64 编码"
+   * （@see https://docs.volcengine.com/docs/82379/2607688）。
+   * base64 编码体积膨胀约 4/3，取原始文件 20MB 为安全上限（编码后 ≈27MB）。
+   */
+  private static MAX_BASE64_FILE_BYTES = 20 * 1024 * 1024
+
+  /**
+   * 本地图片 → 可用于视频任务接口的 image_url。
+   *
+   * 链：base64 data URI（首选，无需任何外部服务）→ OSS 图床（超限/格式不支持时）。
+   *
+   * 历史教训：此前先走火山 Files API 拿 file://<id>，但视频任务接口不接受 File ID，
+   * 该路径已被移除（2026-09 F6 修复）；方舟视频接口的 image_url 支持
+   * 公网 URL 与 base64 data URI 两种形式。
    *
    * @param localPath - 本地文件路径
-   * @returns 上传后的 URL
+   * @returns base64 data URI 或 OSS 公网 URL；均不可用时返回 null
    */
   private async uploadLocalFile(localPath: string): Promise<string | null> {
     try {
@@ -248,91 +256,57 @@ export class VolcengineVideoProvider extends BaseVideoProvider {
         return null
       }
 
-      // 尝试火山引擎临时文件上传
-      const tempUrl = await this.uploadViaTempPolicy(localPath)
-      if (tempUrl) {
-        console.log(`[${this.id}] 火山引擎临时上传成功:`, tempUrl)
-        return tempUrl
+      const dataUri = this.toBase64DataUri(localPath)
+      if (dataUri) {
+        console.log(`[${this.id}] 已转 base64 data URI（长度 ${dataUri.length}）`)
+        return dataUri
       }
 
-      // 尝试 OSS 服务
-      console.log(`[${this.id}] 火山引擎临时上传失败，尝试 OSS 服务`)
+      // base64 不可用（格式不支持 / 超体积上限）→ 回落 OSS
+      console.log(`[${this.id}] base64 直传不可用（格式不支持或超过 ${VolcengineVideoProvider.MAX_BASE64_FILE_BYTES / 1024 / 1024}MB），尝试 OSS 服务`)
       const ossUrl = await this.uploadViaOSS(localPath)
       if (ossUrl) {
         console.log(`[${this.id}] OSS 上传成功:`, ossUrl)
         return ossUrl
       }
 
-      console.error(`[${this.id}] 所有上传方式均失败`)
+      console.error(`[${this.id}] base64 与 OSS 均不可用`)
       return null
     } catch (error) {
-      console.error(`[${this.id}] 上传文件异常:`, error)
+      console.error(`[${this.id}] 处理本地图片异常:`, error)
       return null
     }
   }
 
   /**
-   * 通过火山引擎临时文件上传接口上传
-   * 参考: https://www.volcengine.com/docs/82379/1885708
-   *
-   * @param localPath - 本地文件路径
-   * @returns File ID，用于后续 API 调用
+   * 读本地文件转 base64 data URI（方舟要求格式名小写：data:image/<格式>;base64,...）。
+   * 格式不支持或文件超过 MAX_BASE64_FILE_BYTES 时返回 null（caller 回落 OSS）。
    */
-  private async uploadViaTempPolicy(localPath: string): Promise<string | null> {
-    try {
-      const fileName = path.basename(localPath)
-      const fileBuffer = fs.readFileSync(localPath)
-      const ext = path.extname(localPath).toLowerCase()
-      const mimeTypes: Record<string, string> = {
-        '.jpg': 'image/jpeg',
-        '.jpeg': 'image/jpeg',
-        '.png': 'image/png',
-        '.webp': 'image/webp',
-        '.gif': 'image/gif'
-      }
-      const mimeType = mimeTypes[ext] || 'application/octet-stream'
-
-      // 火山引擎 Files API
-      const uploadUrl = `${VolcengineVideoProvider.DEFAULT_API_URL}/files`
-      console.log(`[${this.id}] 上传文件到火山引擎:`, { fileName, size: fileBuffer.length })
-
-      // 构建 FormData
-      const formData = new FormData()
-      formData.append('purpose', 'user_data')
-      formData.append('file', new Blob([fileBuffer], { type: mimeType }), fileName)
-
-      const response = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.config.apiKey}`
-        },
-        body: formData
-      })
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error(`[${this.id}] 文件上传失败:`, response.status, errorText)
-        return null
-      }
-
-      const result = await response.json() as {
-        id?: string
-        status?: string
-        error?: { message: string }
-      }
-
-      if (result.id) {
-        console.log(`[${this.id}] 文件上传成功，File ID:`, result.id, '状态:', result.status)
-        // 返回 File ID 格式，用于视频生成 API
-        return `file://${result.id}`
-      }
-
-      console.error(`[${this.id}] 上传响应无效:`, result)
-      return null
-    } catch (error) {
-      console.error(`[${this.id}] 火山引擎临时上传异常:`, error)
+  private toBase64DataUri(localPath: string): string | null {
+    const ext = path.extname(localPath).toLowerCase()
+    // 方舟视频接口支持的图片格式：jpeg、png、webp、bmp、tiff、gif（+部分模型 heic/heif）
+    const mimeTypes: Record<string, string> = {
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.webp': 'image/webp',
+      '.gif': 'image/gif',
+      '.bmp': 'image/bmp',
+      '.tif': 'image/tiff',
+      '.tiff': 'image/tiff',
+    }
+    const mimeType = mimeTypes[ext]
+    if (!mimeType) {
+      console.warn(`[${this.id}] 不支持的图片格式（base64 直传跳过）:`, ext)
       return null
     }
+    const size = fs.statSync(localPath).size
+    if (size > VolcengineVideoProvider.MAX_BASE64_FILE_BYTES) {
+      console.warn(`[${this.id}] 图片 ${size}B 超过 base64 直传上限，跳过`)
+      return null
+    }
+    const b64 = fs.readFileSync(localPath).toString('base64')
+    return `data:${mimeType};base64,${b64}`
   }
 
   /**

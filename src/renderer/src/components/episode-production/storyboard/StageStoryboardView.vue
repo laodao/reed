@@ -115,10 +115,13 @@ function onEnterScene(sc: any): void {
 }
 
 async function onGenerateAll(): Promise<void> {
-  if (!script.value?.id || generating.value) return
+  // 注意：ep:generate-storyboards 需要的是剧本 id（episodeScriptId），不是 episode.id。
+  // getEpisode 返回的是剧集对象，剧本 id 在其 scriptId 字段上（load() 已保证存在）。
+  const scriptId = script.value?.scriptId
+  if (!scriptId || generating.value) return
   generating.value = true
   try {
-    const r = await window.electronAPI.episodeProduction.generateStoryboards(script.value.id)
+    const r = await window.electronAPI.episodeProduction.generateStoryboards(scriptId)
     if (r.success) {
       ElMessage.success('分镜已批量生成')
       await Promise.all(scenes.value.map(s => loadStoryboards(s.id)))
