@@ -258,18 +258,16 @@ html.dark .chip:hover { color: #ffffff; }
 }
 .input-row:focus-within { border-color: var(--sr-pri); box-shadow: 0 0 0 3px var(--sr-pri-l8); }
 .input-box {
-  flex: 1; border: none; outline: none; resize: none; height: 42px; line-height: 24px;
+  flex: 1; border: none; outline: none; resize: none; height: 64px; line-height: 24px;
   font-size: 14px; font-family: inherit; background: transparent; color: var(--sr-t1);
 }
 .input-box::placeholder { color: var(--el-text-color-placeholder); }
 .send-btn {
-  height: 42px; padding: 0 24px; border: none; border-radius: 10px;
+  height: 48px; padding: 0 24px; border: none; border-radius: 10px;
   background: var(--sr-pri); color: #fff; font-size: 14px; cursor: pointer; transition: all .15s;
 }
 .send-btn:hover { background: var(--sr-pri-d2); }
 .send-btn:disabled { opacity: .55; cursor: not-allowed; }
-.hint { font-size: 11.5px; color: var(--sr-t3); margin-top: 7px; text-align: center; }
-.hint .link { color: var(--sr-pri); cursor: pointer; }
 
 /* ---- 右：世界设定集 ---- */
 .side { width: 360px; flex-shrink: 0; border-left: 1px solid var(--sr-border-2); background: var(--sr-card); display: flex; flex-direction: column; min-height: 0; }
@@ -393,7 +391,6 @@ html.dark .chip:hover { color: #ffffff; }
             <textarea class="input-box" id="inputBox" placeholder="随便聊：讨论故事、加人物/门派/武功、查询设定、修改已有内容、生成大纲…"></textarea>
             <button class="send-btn" id="sendBtn">➤ 发送</button>
           </div>
-          <div class="hint">自由输入与全部按钮均可交互 · 右侧设定集随对话实时更新 · <span class="link" onclick="document.getElementById('helpModal').classList.add('show')">设计说明 ↗</span></div>
         </div>
       </div>
     </div>
