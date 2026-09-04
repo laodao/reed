@@ -79,55 +79,45 @@
                 </span>
               </div>
 
-              <!-- 已分段：每片段一条操作条 + 原样式分镜格 -->
-              <template v-if="segmentsByScene.get(sc.id)?.length">
+              <!-- 已分段：一片段一格（原 tile 样式；一个片段多个分镜 → 一段视频，不再逐镜展示） -->
+              <div v-if="segmentsByScene.get(sc.id)?.length" class="group-shots">
                 <div
                   v-for="seg in segmentsByScene.get(sc.id)"
                   :key="seg.segmentId"
-                  class="seg-block"
+                  class="shot-tile seg-tile"
                   :data-segment="seg.segmentId"
                   :data-status="seg.status"
                 >
-                  <div class="seg-bar">
-                    <span class="seg-bar-title">片段 {{ seg.seq }}</span>
-                    <span class="seg-bar-meta">
-                      {{ seg.shotCount }} 镜 · 约 {{ formatSec(seg.estDuration) }}
-                      <template v-if="seg.duration != null"> · 实际 {{ formatSec(seg.duration) }}</template>
-                    </span>
-                    <el-tag size="small" :type="segStatusTagType(seg.status)" effect="light">{{ segStatusLabel(seg.status) }}</el-tag>
-                    <span class="seg-bar-actions">
-                      <el-button v-if="seg.videoPath" size="small" text type="success" @click="onPlay(seg)">
-                        <el-icon><VideoPlay /></el-icon>
-                        播放
-                      </el-button>
-                      <el-button
-                        v-if="seg.status !== 'generating'"
-                        size="small"
-                        text
-                        :type="seg.status === 'completed' ? 'info' : 'primary'"
-                        :loading="generatingSegmentId === seg.segmentId"
-                        :disabled="generatingAll"
-                        @click="onGenerateSegment(seg)"
-                      >
-                        {{ seg.status === 'completed' ? '重新生成' : seg.status === 'error' ? '重试生成' : '生成视频' }}
-                      </el-button>
-                      <el-button v-else size="small" text loading disabled>生成中</el-button>
-                    </span>
+                  <div class="tile-preview" @click="onEnterScene(sc)">
+                    <video v-if="seg.videoPath" :src="toVideoUrl(seg.videoPath)" class="tile-img" muted preload="metadata" />
+                    <el-image v-else-if="segFrameUrl(seg)" :src="segFrameUrl(seg)" fit="cover" class="tile-img" />
+                    <div v-else class="tile-empty"><el-icon :size="18"><Picture /></el-icon><span>{{ segStatusLabel(seg.status) }}</span></div>
+                    <span class="tile-status" :class="`st-${seg.status}`">{{ segStatusLabel(seg.status) }}</span>
                   </div>
-                  <div class="group-shots">
-                    <div v-for="sb in segmentShots(seg)" :key="sb.id" class="shot-tile" @click="onEnterScene(sc)">
-                      <div class="tile-preview">
-                        <el-image v-if="frameUrl(sb)" :src="frameUrl(sb)" fit="cover" class="tile-img" />
-                        <div v-else class="tile-empty"><el-icon :size="18"><Picture /></el-icon><span>{{ segStatusLabel(seg.status) }}</span></div>
-                      </div>
-                      <div class="tile-meta">
-                        <span class="tile-no">SHT-{{ String(sb.shotNumber).padStart(2, '0') }}</span>
-                        <span class="tile-dur">{{ durationLabel(sb.duration) }}</span>
-                      </div>
-                    </div>
+                  <div class="tile-meta" @click="onEnterScene(sc)">
+                    <span class="tile-no">片段 {{ seg.seq }}</span>
+                    <span class="tile-dur">{{ seg.shotCount }} 镜 · {{ durationLabel(Math.round(seg.duration ?? seg.estDuration)) }}</span>
+                  </div>
+                  <div class="tile-actions">
+                    <el-button v-if="seg.videoPath" size="small" text type="success" @click="onPlay(seg)">
+                      <el-icon><VideoPlay /></el-icon>
+                      播放
+                    </el-button>
+                    <el-button
+                      v-if="seg.status !== 'generating'"
+                      size="small"
+                      text
+                      :type="seg.status === 'completed' ? 'info' : 'primary'"
+                      :loading="generatingSegmentId === seg.segmentId"
+                      :disabled="generatingAll"
+                      @click="onGenerateSegment(seg)"
+                    >
+                      {{ seg.status === 'completed' ? '重新生成' : seg.status === 'error' ? '重试' : '生成视频' }}
+                    </el-button>
+                    <el-button v-else size="small" text loading disabled>生成中</el-button>
                   </div>
                 </div>
-              </template>
+              </div>
 
               <!-- 未分段：原样式分镜格 -->
               <div v-else class="group-shots">
@@ -176,7 +166,8 @@
  * 左：场次导航；中央：按场次分组的分镜格（SHT 卡 + 时间码 + 状态）。
  *
  * 视频片段制（tasks/2026-09-04-ep-video-segment-redesign §6）——2026-09-05 按用户反馈
- * 恢复原有按场次分组样式，片段能力内嵌为每个片段的一条操作条（生成/重新生成/播放）：
+ * 恢复原有按场次分组样式，且一片段一格（一个片段多个分镜 → 一段视频，不逐镜展示，
+ * 镜数体现在格的 meta 里）：片段格 = 视频封面/状态角标 + 片段序号 + 镜数·时长 + 播放/生成。
  *   - 片段 = 制作/生成最小单元；分镜格保持原样式，占位文字跟随所属片段状态
  *   - 顶部：时长预算（写 video_projects.config.segmentDurationBudgetSec，5-30s）
  *     + 重新分段（ep:recompute-segments，确认后执行——会清未生成段，completed 段保留）
@@ -437,22 +428,14 @@ async function onGenerateAll(): Promise<void> {
   })
 }
 
-function segmentShots(seg: SegmentItem): any[] {
-  return seg.storyboardIds
-    .map(id => storyboardById.value.get(id))
-    .filter(Boolean)
+/** 片段封面：首镜关键帧（无视频时的预览图） */
+function segFrameUrl(seg: SegmentItem): string | null {
+  const first = seg.storyboardIds.map(id => storyboardById.value.get(id)).find(Boolean)
+  return first ? frameUrl(first) : null
 }
 
 function segStatusLabel(status: SegmentItem['status']): string {
   return ({ pending: '待生成', generating: '生成中', completed: '已完成', error: '失败' } as const)[status] ?? status
-}
-
-function segStatusTagType(status: SegmentItem['status']): 'info' | 'warning' | 'success' | 'danger' {
-  return ({ pending: 'info', generating: 'warning', completed: 'success', error: 'danger' } as const)[status] ?? 'info'
-}
-
-function formatSec(n?: number | null): string {
-  return `${(n ?? 0).toFixed(1)}s`
 }
 
 function onPlay(seg: SegmentItem): void {
@@ -577,21 +560,24 @@ onMounted(() => {
   &.empty-tile .tile-preview { height: 110px; }
 }
 
-/* ── 片段操作条（内嵌在场次分组内，不改变原样式骨架） ── */
-.seg-block { margin-bottom: 14px; &:last-child { margin-bottom: 0; } }
-.seg-bar {
-  display: flex; align-items: center; gap: 10px;
-  padding: 6px 10px; margin-bottom: 10px;
-  background: var(--fill-color-lighter);
-  border-radius: var(--radius-md);
-  border-left: 3px solid var(--border-color);
+/* ── 片段格（原 tile 样式；一片段一格，状态角标 + 操作行） ── */
+.seg-tile {
+  .tile-preview { position: relative; }
+  .tile-status {
+    position: absolute; left: 6px; top: 6px;
+    font-size: 10px; padding: 1px 6px; border-radius: 8px;
+    background: rgba(0, 0, 0, .55); color: #fff;
+    &.st-completed { background: var(--color-success); }
+    &.st-error { background: var(--color-danger); }
+    &.st-generating { background: var(--color-warning); }
+  }
+  &[data-status='completed'] { border-color: var(--color-success-light-5); }
+  &[data-status='error'] { border-color: var(--color-danger-light-5); }
+  .tile-actions {
+    display: flex; align-items: center; justify-content: center; gap: 2px;
+    padding: 2px 6px 4px; border-top: 1px dashed var(--border-color-lighter);
+  }
 }
-.seg-block[data-status='completed'] .seg-bar { border-left-color: var(--color-success); }
-.seg-block[data-status='error'] .seg-bar { border-left-color: var(--color-danger); }
-.seg-block[data-status='generating'] .seg-bar { border-left-color: var(--color-warning); }
-.seg-bar-title { font-size: 12px; font-weight: 600; color: var(--text-color-primary); }
-.seg-bar-meta { font-size: 12px; color: var(--text-color-placeholder); }
-.seg-bar-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; }
 
 .play-video { width: 100%; max-height: 60vh; background: #000; border-radius: var(--radius-md); }
 </style>

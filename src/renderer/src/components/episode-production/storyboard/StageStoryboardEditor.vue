@@ -34,7 +34,7 @@
       <aside class="edit-left">
         <div class="shot-list">
           <template v-for="group in shotGroups" :key="group.key">
-            <!-- 片段卡片：左侧主条目 = 片段（唯一视频缩略图挂在片段上）；分镜只是片段下的脚本行 -->
+            <!-- 片段卡片：左侧唯一条目（视频缩略图挂在片段上）；分镜脚本已在提示词中逐行展示，不再单列 -->
             <div
               v-if="group.isSegment"
               class="seg-card-item"
@@ -51,36 +51,36 @@
                 <span class="seg-group-status" :class="`st-${group.status}`">{{ group.statusLabel }}</span>
               </div>
             </div>
-            <!-- 未分段提示头 -->
-            <div v-else class="seg-group-head">
-              <span class="seg-group-title">{{ group.title }}</span>
-              <span class="seg-group-status st-none">{{ group.statusLabel }}</span>
-            </div>
-            <div
-              v-for="shot in group.shots"
-              :key="shot.id"
-              class="shot-item"
-              :class="{ active: selectedShot?.id === shot.id }"
-              @click="selectShot(shot)"
-            >
-              <!-- 分镜行只展示关键帧缩略图（如有）；视频属于片段，不在分镜行重复展示 -->
-              <div v-if="frameUrl(shot)" class="shot-thumb">
-                <el-image :src="frameUrl(shot)" fit="cover" class="thumb-img" />
+            <!-- 未分段提示头（未分段的存量项目仍按镜头列出，保留单镜生成入口） -->
+            <template v-else>
+              <div class="seg-group-head">
+                <span class="seg-group-title">{{ group.title }}</span>
+                <span class="seg-group-status st-none">{{ group.statusLabel }}</span>
               </div>
-              <div class="shot-meta">
-                <span class="shot-no">SHT-{{ pad(shot.shotNumber) }}</span>
-                <span class="shot-dur">{{ durationLabel(shot.duration) }}</span>
-                <!-- 单镜生成入口（保留既有单镜能力；默认生成入口已改为片段级） -->
-                <button
-                  class="shot-gen-btn"
-                  title="单镜生成（仅该镜头一段视频）"
-                  :disabled="generating"
-                  @click.stop="onGenerateSingle(shot)"
-                >
-                  🎬
-                </button>
+              <div
+                v-for="shot in group.shots"
+                :key="shot.id"
+                class="shot-item"
+                :class="{ active: selectedShot?.id === shot.id }"
+                @click="selectShot(shot)"
+              >
+                <div v-if="frameUrl(shot)" class="shot-thumb">
+                  <el-image :src="frameUrl(shot)" fit="cover" class="thumb-img" />
+                </div>
+                <div class="shot-meta">
+                  <span class="shot-no">SHT-{{ pad(shot.shotNumber) }}</span>
+                  <span class="shot-dur">{{ durationLabel(shot.duration) }}</span>
+                  <button
+                    class="shot-gen-btn"
+                    title="单镜生成（仅该镜头一段视频）"
+                    :disabled="generating"
+                    @click.stop="onGenerateSingle(shot)"
+                  >
+                    🎬
+                  </button>
+                </div>
               </div>
-            </div>
+            </template>
           </template>
         </div>
       </aside>

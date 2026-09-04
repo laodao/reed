@@ -80,6 +80,7 @@ import { useEpStudioContext, type EpStudioTab } from '@/composables/useEpStudioC
 import StageScriptView from '@/components/episode-production/script/StageScriptView.vue'
 import StageAssetView from '@/components/episode-production/asset/StageAssetView.vue'
 import StageStoryboardTab from '@/components/episode-production/storyboard/StageStoryboardTab.vue'
+import StageComposeTab from '@/components/episode-production/compose/StageComposeTab.vue'
 import PlaceholderTab from '@/components/episode-production/studio/PlaceholderTab.vue'
 
 const route = useRoute()
@@ -110,6 +111,7 @@ const centerPanel = computed(() => {
     case 'script': return StageScriptView
     case 'asset': return StageAssetView
     case 'storyboard': return StageStoryboardTab
+    case 'compose': return StageComposeTab
     default: return PlaceholderTab
   }
 })

@@ -622,6 +622,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.buildTimeline': { channel: 'ep:build-timeline' },
   'episodeProduction.previewSubtitle': { channel: 'ep:preview-subtitle' },
   'episodeProduction.exportMp4': { channel: 'ep:export-mp4' },
+  'episodeProduction.openExportFolder': { channel: 'ep:open-export-folder' },
   // P5-T14/T15 V3 binding-aware 场景音频
   'episodeProduction.generateSceneAudioV3': { channel: 'ep:generate-scene-audio-v3' },
   // P6-T13 顶部 6 段阶段进度条（spec §2.1）

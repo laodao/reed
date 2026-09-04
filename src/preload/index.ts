@@ -197,6 +197,7 @@ const IPC_CHANNELS = {
   EP_BUILD_TIMELINE: 'ep:build-timeline',
   EP_PREVIEW_SUBTITLE: 'ep:preview-subtitle',
   EP_EXPORT_MP4: 'ep:export-mp4',
+  EP_OPEN_EXPORT_FOLDER: 'ep:open-export-folder',
 
   // P5-T14/T15 V3 binding-aware 场景音频
   EP_GENERATE_SCENE_AUDIO_V3: 'ep:generate-scene-audio-v3',
@@ -2319,6 +2320,8 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.EP_PREVIEW_SUBTITLE, episodeScriptId),
     exportMp4: (episodeScriptId: string, outputPath: string, opts?: any) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_EXPORT_MP4, episodeScriptId, outputPath, opts),
+    openExportFolder: (filePath: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_OPEN_EXPORT_FOLDER, filePath),
 
     // P5-T14/T15 V3 binding-aware 场景音频
     generateSceneAudioV3: (sceneScriptId: string, opts?: any) =>

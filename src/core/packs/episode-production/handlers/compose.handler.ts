@@ -12,6 +12,7 @@
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
+import { isElectron, loadElectronModules } from '@electron/ipc/handlers/_platform'
 import { TimelineBuilderService } from '@core/modules/episode-production/compose/timeline-builder.service'
 import { SubtitleService } from '@core/modules/episode-production/compose/subtitle.service'
 import { EpisodeMp4ExporterService } from '@core/modules/episode-production/compose/episode-mp4-exporter.service'
@@ -27,6 +28,23 @@ export function registerComposeHandlers(): void {
   ipcBridge.handle('ep:build-timeline', handleBuildTimeline)
   ipcBridge.handle('ep:preview-subtitle', handlePreviewSubtitle)
   ipcBridge.handle('ep:export-mp4', handleExportMp4)
+  ipcBridge.handle('ep:open-export-folder', handleOpenExportFolder)
+}
+
+/** 在系统文件管理器中显示导出文件（仅 PC 端；Web 端不可用） */
+async function handleOpenExportFolder(
+  _event: any,
+  filePath: string,
+): Promise<IpcResponse> {
+  try {
+    if (!isElectron) return { success: false, error: 'Web 端不支持打开本地目录' }
+    if (!filePath) return { success: false, error: '缺少文件路径' }
+    const { shell } = loadElectronModules()
+    shell.showItemInFolder(filePath)
+    return { success: true }
+  } catch (e: any) {
+    return { success: false, error: e?.message || '打开目录失败' }
+  }
 }
 
 /** 装配整剧时间线（spec §5.3） */
@@ -94,7 +112,13 @@ async function handleExportMp4(
       burnSubtitles: opts?.burnSubtitles,
     })
 
-    return { success: true, data: result }
+    // 附带 dataPath 相对路径：渲染端 toVideoUrl(local-video://) 只认 dataPath 相对路径，
+    // 绝对路径会被错误拼到 dataPath 之后（resolveProtocolUrlToFile 不识别 POSIX 绝对路径）。
+    const dataPath = getPathProvider().getDataPath()
+    const rel = path.relative(dataPath, resolvedOutputPath)
+    const relPath = rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel : undefined
+
+    return { success: true, data: { ...result, outputPath: resolvedOutputPath, relPath } }
   } catch (e: any) {
     return { success: false, error: e?.message || 'MP4 导出失败' }
   }
