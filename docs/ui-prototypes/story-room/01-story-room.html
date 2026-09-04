@@ -3,15 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>故事研讨室 · 界面原型 v2</title>
+<title>故事研讨室 · 界面原型 v3（统一对话 + 动态设定集）</title>
 <style>
   :root {
     --primary: #409eff; --primary-light: #ecf5ff; --primary-dark: #337ecc;
     --success: #67c23a; --success-light: #f0f9eb;
     --danger: #f56c6c; --danger-light: #fef0f0;
     --warning: #e6a23c; --warning-light: #fdf6ec;
+    --violet: #7b5cff; --violet-light: #f1eeff;
     --text: #303133; --text-2: #606266; --text-3: #909399;
-    --border: #e4e7ed; --bg: #f5f7fa; --card: #ffffff;
+    --border: #e4e7ed; --bg: #f5f7fa; --card: #fff;
     --radius: 10px;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -22,49 +23,33 @@
   }
   #app { display: flex; flex-direction: column; height: 100vh; }
 
-  /* ============ 顶栏 ============ */
+  /* ============ 顶栏（无阶段条——AI 原生，流程由对话自然推进） ============ */
   .topbar {
     height: 52px; background: #fff; border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; padding: 0 16px; gap: 14px; flex-shrink: 0;
+    display: flex; align-items: center; padding: 0 16px; gap: 12px; flex-shrink: 0;
   }
-  .topbar .back { color: var(--text-3); cursor: pointer; font-size: 18px; user-select: none; }
+  .topbar .back { color: var(--text-3); cursor: pointer; font-size: 18px; }
   .topbar .back:hover { color: var(--primary); }
   .topbar .title { font-weight: 600; font-size: 15px; }
   .topbar .tag {
     font-size: 11px; padding: 2px 8px; border-radius: 4px;
     background: var(--warning-light); color: var(--warning); border: 1px solid #f3d19e;
   }
-  .phasebar { display: flex; align-items: center; gap: 4px; margin-left: auto; }
-  .phase {
-    display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 16px;
-    font-size: 12px; color: var(--text-3); cursor: pointer; white-space: nowrap;
+  .topbar .spacer { flex: 1; }
+  .topbar .model, .topbar .handoff {
+    font-size: 12.5px; color: var(--text-2); border: 1px solid var(--border);
+    padding: 5px 12px; border-radius: 6px; cursor: pointer; background: #fff;
   }
-  .phase .num {
-    width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--border);
-    display: inline-flex; align-items: center; justify-content: center; font-size: 11px;
-  }
-  .phase.done { color: var(--success); } .phase.done .num { border-color: var(--success); background: var(--success-light); }
-  .phase.active { color: var(--primary); font-weight: 600; background: var(--primary-light); }
-  .phase.active .num { border-color: var(--primary); background: var(--primary); color: #fff; }
-  .phase-arrow { color: var(--border); font-size: 12px; }
-  .topbar .model {
-    margin-left: 8px; font-size: 12px; color: var(--text-2); border: 1px solid var(--border);
-    padding: 4px 10px; border-radius: 6px; cursor: pointer;
-  }
+  .topbar .handoff { color: var(--primary); border-color: #b3d8ff; background: var(--primary-light); }
+  .topbar .model:hover { border-color: var(--primary); }
 
   /* ============ 主体 ============ */
   .main { flex: 1; display: flex; min-height: 0; }
 
-  /* ---- 左：对话画布 ---- */
-  .chat-wrap { flex: 1.9; display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
+  /* ---- 对话（唯一的创作界面） ---- */
+  .chat-wrap { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   .chat { flex: 1; overflow-y: auto; padding: 20px 26px 12px; scroll-behavior: smooth; }
-  .chat-inner { max-width: 860px; margin: 0 auto; }
-
-  .phase-divider {
-    display: flex; align-items: center; gap: 12px; margin: 18px 0 14px; color: var(--text-3); font-size: 12px;
-  }
-  .phase-divider::before, .phase-divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
-  .phase-divider b { color: var(--primary); font-weight: 600; }
+  .chat-inner { max-width: 840px; margin: 0 auto; }
 
   .msg { display: flex; margin: 14px 0; }
   .msg.user { justify-content: flex-end; }
@@ -75,7 +60,7 @@
   .msg.editor .avatar { background: linear-gradient(135deg,#409eff,#7b5cff); color: #fff; margin-right: 10px; }
   .msg.user .avatar { background: var(--success-light); color: var(--success); margin-left: 10px; order: 2; }
   .bubble {
-    max-width: 78%; padding: 10px 14px; border-radius: var(--radius); line-height: 1.75;
+    max-width: 80%; padding: 10px 14px; border-radius: var(--radius); line-height: 1.75;
     animation: fadeUp .25s ease both;
   }
   .msg.editor .bubble { background: var(--card); border: 1px solid var(--border); border-top-left-radius: 2px; box-shadow: 0 1px 3px rgba(0,0,0,.04); }
@@ -83,48 +68,59 @@
   .bubble p { margin: 4px 0; }
   .bubble b { color: var(--primary-dark); }
   .msg.user .bubble b { color: #fff; }
-  .bubble ul { margin: 4px 0 4px 18px; }
-  .bubble li { margin: 3px 0; }
-  .options { margin: 8px 0; display: flex; flex-direction: column; gap: 6px; }
-  .option {
-    border: 1px solid var(--border); border-left: 3px solid var(--primary); border-radius: 8px;
-    padding: 8px 12px; background: var(--primary-light); cursor: default;
-  }
-  .option b { margin-right: 6px; }
-  .reminder {
-    margin: 8px 0; padding: 8px 12px; border-radius: 8px; background: var(--warning-light);
-    border: 1px dashed #e6c07b; font-size: 13px; color: #a16b1f;
-  }
+  .bubble ul { margin: 4px 0 4px 18px; } .bubble li { margin: 3px 0; }
   .typing { display: inline-flex; gap: 4px; padding: 6px 2px; }
   .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); animation: blink 1s infinite; }
   .typing i:nth-child(2) { animation-delay: .2s; } .typing i:nth-child(3) { animation-delay: .4s; }
   @keyframes blink { 0%,80%,100% { opacity: .25; } 40% { opacity: 1; } }
   @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
-  /* ---- 结构化卡片 ---- */
-  .artifact {
-    margin: 10px 0 10px 44px; background: var(--card); border: 1px solid var(--border);
-    border-left: 4px solid var(--primary); border-radius: var(--radius); overflow: hidden;
-    animation: fadeUp .3s ease both; max-width: 640px;
+  /* ---- 工具调用（agent 透明度） ---- */
+  .tool-line {
+    display: inline-flex; align-items: center; gap: 6px; margin: 6px 0 2px;
+    font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px;
+    color: var(--text-3); background: #fafbfc; border: 1px dashed var(--border);
+    border-radius: 6px; padding: 3px 10px; animation: fadeUp .25s ease both; width: fit-content;
   }
-  .artifact.outline { border-left-color: #7b5cff; }
-  .artifact.character { border-left-color: var(--warning); }
-  .artifact.adopted { border-left-color: var(--success); opacity: .92; }
-  .artifact.outdated { opacity: .55; border-left-color: var(--text-3); }
+  .tool-line .fn { color: var(--violet); }
+  .tool-line .ok { color: var(--success); font-weight: 600; }
+  .tool-line .arg { color: var(--text-2); }
+
+  /* ---- 实体提案卡 ---- */
+  .artifact {
+    margin: 8px 0 10px; background: var(--card); border: 1px solid var(--border);
+    border-left: 4px solid var(--primary); border-radius: var(--radius); overflow: hidden;
+    animation: fadeUp .3s ease both; max-width: 620px;
+  }
+  .artifact.k-character { border-left-color: var(--warning); }
+  .artifact.k-faction { border-left-color: var(--violet); }
+  .artifact.k-skill { border-left-color: #f56c6c99; }
+  .artifact.k-item { border-left-color: #13c2c2; }
+  .artifact.k-location { border-left-color: var(--success); }
+  .artifact.k-plot { border-left-color: #f759ab; }
+  .artifact.k-outline { border-left-color: var(--primary-dark); }
+  .artifact.adopted { border-left-color: var(--success); opacity: .94; }
+  .artifact.outdated { opacity: .55; }
   .artifact .head {
-    display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-bottom: 1px solid var(--border);
     background: linear-gradient(180deg,#fafbfd,#f5f7fa);
   }
   .artifact .head .ico { font-size: 15px; }
   .artifact .head .name { font-weight: 600; }
+  .artifact .head .kname { font-size: 11px; color: var(--text-3); }
   .artifact .head .ver { font-size: 11px; color: var(--text-3); }
-  .artifact .head .src { margin-left: auto; font-size: 11px; color: var(--text-3); cursor: pointer; }
-  .artifact .head .src:hover { color: var(--primary); text-decoration: underline; }
-  .artifact .body { padding: 10px 14px; font-size: 13px; line-height: 1.8; }
+  .artifact .body { padding: 9px 14px; font-size: 13px; line-height: 1.8; }
   .artifact .row { display: flex; gap: 8px; }
-  .artifact .row .k { color: var(--text-3); flex-shrink: 0; width: 44px; }
-  .artifact .foot { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border); align-items: center; }
+  .artifact .row .k { color: var(--text-3); flex-shrink: 0; width: 52px; }
+  .artifact .foot { display: flex; gap: 8px; padding: 9px 14px; border-top: 1px solid var(--border); align-items: center; flex-wrap: wrap; }
   .artifact .foot .note { margin-left: auto; font-size: 12px; color: var(--success); }
+  .artifact pre.tree { font-family: inherit; font-size: 12.5px; line-height: 1.9; padding: 4px 0; }
+
+  /* diff 卡（修改确认） */
+  .diff-row { display: flex; gap: 10px; margin: 6px 0; font-size: 13px; align-items: baseline; }
+  .diff-row .field { color: var(--text-3); width: 52px; flex-shrink: 0; }
+  .diff-old { color: var(--danger); text-decoration: line-through; flex: 1; }
+  .diff-new { color: var(--success); font-weight: 600; flex: 1.4; }
 
   .btn {
     border: 1px solid var(--border); background: #fff; color: var(--text-2); border-radius: 6px;
@@ -134,74 +130,92 @@
   .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
   .btn.primary:hover { background: var(--primary-dark); }
   .btn.success { background: var(--success); border-color: var(--success); color: #fff; }
-  .btn.ghost-success { border-color: var(--success); color: var(--success); background: var(--success-light); }
   .btn.mini { padding: 2px 8px; font-size: 11.5px; }
 
   /* ---- 输入区 ---- */
-  .composer { border-top: 1px solid var(--border); background: #fff; padding: 12px 26px 14px; flex-shrink: 0; }
-  .composer-inner { max-width: 860px; margin: 0 auto; }
-  .chips { display: flex; gap: 8px; margin-bottom: 9px; flex-wrap: wrap; min-height: 24px; }
+  .composer { border-top: 1px solid var(--border); background: #fff; padding: 12px 26px 12px; flex-shrink: 0; }
+  .composer-inner { max-width: 840px; margin: 0 auto; }
+  .chips { display: flex; gap: 8px; margin-bottom: 9px; flex-wrap: wrap; }
   .chip {
     font-size: 12px; color: var(--primary); background: var(--primary-light);
     border: 1px solid #d9ecff; border-radius: 14px; padding: 3px 12px; cursor: pointer; user-select: none;
   }
   .chip:hover { background: #dbeeff; }
-  .chip.play { background: var(--success-light); color: var(--success); border-color: #e1f3d8; font-weight: 600; }
-  .input-row { display: flex; gap: 10px; align-items: flex-end; }
+  .input-row { display: flex; gap: 10px; }
   .input-box {
     flex: 1; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px;
-    font-size: 14px; outline: none; resize: none; height: 44px; line-height: 24px;
-    font-family: inherit; transition: border-color .15s;
+    font-size: 14px; outline: none; resize: none; height: 44px; line-height: 24px; font-family: inherit;
+    transition: border-color .15s;
   }
   .input-box:focus { border-color: var(--primary); }
-  .hint { font-size: 11.5px; color: var(--text-3); margin-top: 7px; text-align: center; }
   .send-btn {
     height: 44px; padding: 0 22px; border: none; border-radius: var(--radius);
     background: var(--primary); color: #fff; font-size: 14px; cursor: pointer;
   }
   .send-btn:disabled { background: #a0cfff; cursor: not-allowed; }
-  .stop-btn {
-    height: 44px; padding: 0 16px; border: 1px solid var(--danger); border-radius: var(--radius);
-    background: #fff; color: var(--danger); font-size: 13px; cursor: pointer; display: none;
-  }
+  .hint { font-size: 11.5px; color: var(--text-3); margin-top: 6px; text-align: center; }
+  .hint .link { color: var(--primary); cursor: pointer; }
 
-  /* ---- 右：账本 + 圣经 ---- */
-  .side { width: 340px; flex-shrink: 0; border-left: 1px solid var(--border); background: #fff; display: flex; flex-direction: column; min-height: 0; }
-  .side-scroll { flex: 1; overflow-y: auto; }
-  .side h4 {
-    font-size: 12.5px; color: var(--text-3); font-weight: 600; letter-spacing: 1px;
-    padding: 14px 16px 8px; display: flex; align-items: center; gap: 6px;
+  /* ---- 右：世界设定集 ---- */
+  .side { width: 360px; flex-shrink: 0; border-left: 1px solid var(--border); background: #fff; display: flex; flex-direction: column; min-height: 0; }
+  .side-head { padding: 12px 14px 8px; border-bottom: 1px solid var(--border); }
+  .side-head .row1 { display: flex; align-items: center; gap: 8px; }
+  .side-head h4 { font-size: 13px; font-weight: 600; }
+  .side-head .cnt { font-size: 11px; color: var(--text-3); margin-left: auto; }
+  .side-head .add {
+    border: 1px solid var(--border); background: #fff; border-radius: 6px; cursor: pointer;
+    font-size: 12px; color: var(--text-2); padding: 2px 8px;
   }
-  .side h4 .legend { margin-left: auto; font-weight: 400; font-size: 11px; }
-  .ledger { padding: 0 12px 6px; }
-  .ledger-empty { color: var(--text-3); font-size: 12.5px; padding: 6px 6px 10px; line-height: 1.7; }
-  .lentry {
-    border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; margin: 6px 0;
-    cursor: pointer; transition: all .15s; animation: fadeUp .3s ease both; background: #fff;
+  .side-head .add:hover { color: var(--primary); border-color: var(--primary); }
+  .side-search {
+    margin: 8px 0 2px; width: 100%; border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 10px; font-size: 12.5px; outline: none; font-family: inherit;
   }
-  .lentry:hover { border-color: var(--primary); box-shadow: 0 1px 4px rgba(64,158,255,.15); }
-  .lentry .t { font-size: 13px; display: flex; align-items: center; gap: 6px; }
-  .lentry .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); flex-shrink: 0; }
-  .lentry.tentative .dot { background: var(--text-3); }
-  .lentry.confirmed { border-color: #b3e19d; background: var(--success-light); }
-  .lentry.confirmed .dot { background: var(--success); }
-  .lentry.rejected { opacity: .65; }
-  .lentry.rejected .t { text-decoration: line-through; color: var(--text-3); }
-  .lentry.rejected .dot { background: var(--danger); }
-  .lentry .pts { font-size: 11.5px; color: var(--text-3); margin: 3px 0 0 13px; line-height: 1.5; }
-  .lentry .ops { margin: 6px 0 0 13px; display: none; gap: 6px; }
-  .lentry.open .ops { display: flex; }
-  .bible { border-top: 1px solid var(--border); margin-top: 4px; }
-  .bible-row {
-    display: flex; align-items: center; gap: 10px; padding: 9px 16px; cursor: pointer; font-size: 13px;
+  .side-search:focus { border-color: var(--primary); }
+  .side-scroll { flex: 1; overflow-y: auto; padding-bottom: 12px; }
+  .group { padding: 8px 10px 2px; }
+  .group-head {
+    display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2);
+    font-weight: 600; padding: 4px 4px 2px;
   }
-  .bible-row:hover { background: var(--bg); }
-  .bible-row .st { margin-left: auto; font-size: 11.5px; }
-  .bible-row .st.in { color: var(--success); }
-  .bible-row .st.not { color: var(--text-3); }
-  .distill-btn { margin: 8px 16px 14px; width: calc(100% - 32px); }
+  .group-head .gcnt { color: var(--text-3); font-weight: 400; font-size: 11px; }
+  .group-head .todo { margin-left: auto; font-size: 10.5px; color: var(--text-3); font-weight: 400; }
+  .entry {
+    display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 10px; margin: 5px 0; cursor: pointer; background: #fff; transition: all .15s;
+  }
+  .entry:hover { border-color: var(--primary); box-shadow: 0 1px 4px rgba(64,158,255,.15); }
+  .entry .eico { font-size: 14px; }
+  .entry .ename { font-size: 13px; font-weight: 500; white-space: nowrap; }
+  .entry .esub { font-size: 11px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .entry .src { font-size: 10px; color: var(--text-3); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; flex-shrink: 0; }
+  .entry .src.chat { color: var(--violet); border-color: #ddd6fe; background: var(--violet-light); }
+  .group-empty { font-size: 11px; color: var(--text-3); padding: 3px 6px 6px; line-height: 1.6; }
+  .no-result { text-align: center; color: var(--text-3); font-size: 12px; padding: 20px 0; }
 
-  /* ---- toast / modal ---- */
+  /* ---- 通用弹窗 ---- */
+  .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 100; display: none; align-items: center; justify-content: center; }
+  .modal-mask.show { display: flex; }
+  .modal { width: 520px; max-width: 92vw; background: #fff; border-radius: 12px; padding: 20px 24px; max-height: 82vh; overflow-y: auto; animation: fadeUp .2s ease both; }
+  .modal h3 { font-size: 15px; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+  .modal .sub { font-size: 11.5px; color: var(--text-3); margin-bottom: 12px; }
+  .modal .close { float: right; cursor: pointer; color: var(--text-3); font-size: 17px; }
+  .frow { display: flex; align-items: flex-start; gap: 10px; margin: 9px 0; }
+  .frow .fl { width: 64px; flex-shrink: 0; color: var(--text-3); font-size: 12.5px; padding-top: 7px; text-align: right; }
+  .frow textarea {
+    flex: 1; border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 13px;
+    font-family: inherit; outline: none; width: 100%;
+  }
+  .frow textarea:focus { border-color: var(--primary); }
+  .frow .fval { flex: 1; font-size: 13px; line-height: 1.7; padding-top: 6px; }
+  .modal .foot { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+  .kind-pick { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+  .kind-pick .kp {
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; font-size: 12.5px;
+    cursor: pointer; color: var(--text-2);
+  }
+  .kind-pick .kp.on { border-color: var(--primary); color: var(--primary); background: var(--primary-light); font-weight: 600; }
+
   #toasts { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 99; display: flex; flex-direction: column; gap: 8px; align-items: center; }
   .toast {
     background: #fff; border: 1px solid var(--border); border-left: 3px solid var(--success);
@@ -210,373 +224,563 @@
   }
   .toast.info { border-left-color: var(--primary); }
   .toast.warn { border-left-color: var(--warning); }
-  .help-fab {
-    position: fixed; right: 356px; bottom: 120px; width: 38px; height: 38px; border-radius: 50%;
-    background: #fff; border: 1px solid var(--border); color: var(--text-2); font-size: 17px;
-    cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.08); z-index: 50;
-  }
-  .help-fab:hover { color: var(--primary); border-color: var(--primary); }
-  .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 100; display: none; align-items: center; justify-content: center; }
-  .modal-mask.show { display: flex; }
-  .modal { width: 560px; max-width: 92vw; background: #fff; border-radius: 12px; padding: 22px 26px; max-height: 80vh; overflow-y: auto; }
-  .modal h3 { margin-bottom: 12px; font-size: 16px; }
-  .modal p { margin: 8px 0; line-height: 1.8; color: var(--text-2); font-size: 13.5px; }
-  .modal b { color: var(--text); }
-  .modal .close { float: right; cursor: pointer; color: var(--text-3); font-size: 18px; }
 </style>
 </head>
 <body>
 <div id="app">
-  <!-- 顶栏 -->
   <div class="topbar">
     <span class="back">←</span>
     <span class="title">《洗冤录》</span>
-    <span class="tag">短剧</span>
-    <div class="phasebar" id="phasebar"></div>
-    <span class="model">主编模型：GLM-4.7 ▾</span>
+    <span class="tag">武侠 · 复仇</span>
+    <span class="spacer"></span>
+    <span class="model" onclick="toast('正式版：按项目配置的主编模型（可换）','info')">主编模型：GLM-4.7 ▾</span>
+    <span class="handoff" onclick="toast('大纲就绪后从这里交接写作台（本原型聚焦研讨与设定集）','info')">✍ 写作台 ↗</span>
   </div>
 
   <div class="main">
-    <!-- 对话画布 -->
     <div class="chat-wrap">
       <div class="chat" id="chat"><div class="chat-inner" id="chatInner"></div></div>
       <div class="composer">
         <div class="composer-inner">
-          <div class="chips">
-            <span class="chip play" id="playBtn">▶ 播放下一轮</span>
-            <span id="chips" style="display:contents"></span>
-          </div>
+          <div class="chips" id="chips"></div>
           <div class="input-row">
-            <button class="stop-btn" id="stopBtn">⏹ 打断</button>
-            <textarea class="input-box" id="inputBox" placeholder="和主编继续讨论…（Enter 发送，Shift+Enter 换行）"></textarea>
+            <textarea class="input-box" id="inputBox" placeholder="随便聊：讨论故事、加人物/门派/武功、查询设定、修改已有内容、生成大纲…"></textarea>
             <button class="send-btn" id="sendBtn">发 送</button>
           </div>
-          <div class="hint">原型演示：任意输入（或点绿色按钮）播放下一段脚本 · 右侧「讨论成果」随对话自动沉淀 · 卡片按钮可点击 · <span style="color:var(--primary);cursor:pointer" onclick="document.getElementById('helpModal').classList.add('show')">设计说明 ↗</span></div>
+          <div class="hint">自由输入与全部按钮均可交互 · 右侧设定集随对话实时更新 · <span class="link" onclick="document.getElementById('helpModal').classList.add('show')">设计说明 ↗</span></div>
         </div>
       </div>
     </div>
 
-    <!-- 右侧：共识账本 + 故事圣经 -->
     <div class="side">
-      <div class="side-scroll">
-        <h4>讨论成果 <span class="legend">点条目确认 / 修改</span></h4>
-        <div class="ledger" id="ledger">
-          <div class="ledger-empty" id="ledgerEmpty">研讨中达成的共识会自动沉淀在这里——<br>灰色=待确认，绿色=已确认，红色删除线=已排除方向（AI 不会再提）。</div>
+      <div class="side-head">
+        <div class="row1">
+          <h4>🌏 世界设定集</h4>
+          <span class="cnt" id="sideCnt"></span>
+          <button class="add" onclick="openAddModal()">＋ 新增</button>
         </div>
-        <div class="bible">
-          <h4>故事圣经 <span class="legend">结构化数据 · 与高级模式同库</span></h4>
-          <div id="bible"></div>
-          <button class="btn primary distill-btn" onclick="toast('整理器：把我们讨论的内容提炼成卡片，确认后入库（原型演示）','info')">📤 提炼入库</button>
-        </div>
+        <input class="side-search" id="sideSearch" placeholder="搜索设定…" oninput="renderPanel()">
       </div>
+      <div class="side-scroll" id="sideBody"></div>
     </div>
   </div>
 </div>
 
 <div id="toasts"></div>
-
 <div class="modal-mask" id="helpModal" onclick="if(event.target===this)this.classList.remove('show')">
   <div class="modal">
     <span class="close" onclick="document.getElementById('helpModal').classList.remove('show')">✕</span>
-    <h3>这个原型在看什么</h3>
-    <p><b>核心理念：聊与存分离。</b>左侧是唯一的对话对象「主编」（有立场、会提问、会翻旧账），研讨期<b>零落库压力</b>；结构化写入只发生在卡片「采纳入库」等显式动作。</p>
-    <p><b>右侧上半：共识账本。</b>每轮对话后自动沉淀共识（可确认/修改/丢弃）；红色删除线是「已排除方向」，注入主编记忆后 AI 不会反复推荐同类方案。</p>
-    <p><b>右侧下半：故事圣经。</b>已入库的结构化数据（概要/人物/故事线/大纲），与高级模式表单读写同一批数据库表。</p>
-    <p><b>操作演示路径：</b>点绿色「▶ 下一轮」播放对话 → 概要卡出现后点「✓ 采纳入库」看阶段流转 → 人物卡试试「↻ 重新提炼」再看「✓ 采纳」→ 点右侧共识条目看确认交互。</p>
-    <p style="color:var(--text-3);font-size:12.5px;">设计文档：docs/design/2026-09-04-story-room-design.md（v2）</p>
+    <h3>这一版的设计思路（v3）</h3>
+    <div class="sub">按你的反馈重做：去掉阶段/步骤，一个统一对话 + 动态要素</div>
+    <p><b>1 · 一个统一的对话界面。</b>故事核、人物、故事线、世界观、大纲都在同一个对话流里聊，没有任何"下一步/阶段"——推进节奏由 AI 和你自然决定。</p>
+    <p><b>2 · 要素随题材动态生长。</b>没有固定表单分类：武侠会长出门派/武功/兵器，架空历史会长出国别/阵营——设定集右侧只显示<b>实际存在或框架内</b>的分组，说"设计一个门派"就新建对应分组。</p>
+    <p><b>3 · 系统提供工具，AI 调用、过程可见。</b>对话流里的紫色小标签是 AI 的工具调用（查询/保存/修改设定），结构化保存都经工具落到设定集——这就是"底层工具"的界面化。</p>
+    <p><b>4 · 设定集 = 展示 + 修改。</b>右侧是全部结构化成果：点条目看详情、直接编辑字段、删除、手动新增；修改也可以在对话里说，AI 出 diff 卡确认后应用。</p>
+    <p><b>试试：</b>「加一个反派」「设计一个新门派」「查一下人物」「把林晓的动机改成复仇」「生成大纲」「我想写架空历史」——自由输入也有回应。</p>
   </div>
 </div>
+<div class="modal-mask" id="editModal"></div>
 
 <script>
-/* ================= 状态 ================= */
-const PHASES = [
-  { n: 1, name: '故事核' }, { n: 2, name: '人物' }, { n: 3, name: '故事线' },
-  { n: 4, name: '分集大纲' }, { n: 5, name: '写作' },
-];
-let curPhase = 1, turnNo = 0, stepIdx = 0, busy = false;
-const adopted = { overview: false, characters: 0 };
+/* ================= 要素类型（数据驱动；正式版 = story-persist 落库映射） ================= */
+const KINDS = {
+  overview:  { label: '概要',   ico: '📘', fields: [['premise','一句话'],['conflict','核心冲突'],['hook','钩子'],['theme','题材']] },
+  character: { label: '人物',   ico: '🧑', fields: [['role','身份'],['motive','动机'],['persona','性格'],['arc','弧光'],['belong','归属']] },
+  plot:      { label: '故事线', ico: '🧵', fields: [['ptype','类型'],['arcDesc','走向'],['involve','涉及']] },
+  faction:   { label: '门派',   ico: '⛩️', fields: [['nature','性质'],['stance','立场'],['base','据点'],['rel','与主角关系']] },
+  skill:     { label: '武功',   ico: '⚔️', fields: [['stype','类型'],['grade','品阶'],['origin','来历'],['owner','持有者']] },
+  item:      { label: '物品',   ico: '💎', fields: [['grade','品级'],['power','能力'],['origin','来历'],['where','下落']] },
+  location:  { label: '地点',   ico: '🏔️', fields: [['ltype','类型'],['owner','归属'],['desc','描述']] },
+  nation:    { label: '国别',   ico: '🏯', fields: [['stance','立场'],['ruler','主君'],['note','概况']] },
+  camp:      { label: '阵营',   ico: '🚩', fields: [['stance','立场'],['goal','目标'],['note','概况']] },
+};
+const GROUP_ORDER = ['overview','character','plot','faction','skill','item','location','nation','camp'];
+/* 题材要素框架（正式版走字典配置；用于"要素建议清单"卡） */
+const GENRE_FRAMES = {
+  '武侠':   ['faction','skill','item','location'],
+  '修仙/玄幻': ['faction','skill','item','location'],
+  '架空历史': ['nation','camp','location','item'],
+  '都市':   ['location','camp'],
+};
 
-/* ================= 工具 ================= */
+/* ================= 数据仓 ================= */
+let seq = 100;
+const state = { frame: ['faction','skill','item','location'], entities: [] };
+function addEntity(kind, name, fields, src = '初始') {
+  const e = { id: ++seq, kind, name, fields, src, updated: now() };
+  state.entities.push(e); renderPanel(); return e;
+}
+function findByName(n) { return state.entities.find(e => e.name === n); }
+function countOf(kind) { return state.entities.filter(e => e.kind === kind).length; }
+
+/* ================= 基础 UI ================= */
 const $ = (id) => document.getElementById(id);
 function toast(text, type = 'ok') {
   const el = document.createElement('div');
   el.className = 'toast ' + (type === 'ok' ? '' : type);
-  el.textContent = text;
-  $('toasts').appendChild(el);
-  setTimeout(() => el.remove(), 3400);
+  el.textContent = text; $('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 3200);
 }
-function scrollBottom() { const c = $('chat'); c.scrollTop = c.scrollHeight; }
+function scrollBottom() { $('chat').scrollTop = $('chat').scrollHeight; }
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+function now() { return new Date().toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'}); }
 
-function renderPhases() {
-  $('phasebar').innerHTML = PHASES.map((p, i) => {
-    const cls = p.n < curPhase ? 'done' : p.n === curPhase ? 'active' : '';
-    const num = p.n < curPhase ? '✓' : p.n;
-    return `<div class="phase ${cls}" onclick="jumpPhase(${p.n})"><span class="num">${num}</span>${p.n} ${p.name}</div>`
-      + (i < PHASES.length - 1 ? '<span class="phase-arrow">›</span>' : '');
-  }).join('');
-}
-function jumpPhase(n) { toast(`阶段可自由跳转/回退（正式版：回退时提示受影响的共识与大纲）`, 'info'); }
-
-function addDivider(phase) {
-  const el = document.createElement('div');
-  el.className = 'phase-divider';
-  el.innerHTML = `—— <b>阶段 ${phase.n} · ${phase.name}</b> ——`;
-  $('chatInner').appendChild(el);
-}
 function addUser(text) {
-  turnNo++;
   const el = document.createElement('div');
   el.className = 'msg user';
   el.innerHTML = `<div class="bubble"></div><div class="avatar">我</div>`;
   el.querySelector('.bubble').textContent = text;
   $('chatInner').appendChild(el); scrollBottom();
 }
-async function addEditor(html) {
+async function addEditor(html, tools) {
   const el = document.createElement('div');
   el.className = 'msg editor';
   el.innerHTML = `<div class="avatar">主编</div><div class="bubble"><div class="typing"><i></i><i></i><i></i></div></div>`;
   $('chatInner').appendChild(el); scrollBottom();
-  await sleep(650);
+  await sleep(550);
   const bubble = el.querySelector('.bubble');
-  bubble.innerHTML = html;
-  // 分段渐显，模拟流式
+  bubble.innerHTML = (tools || '') + html;
   const blocks = [...bubble.children];
   blocks.forEach(b => b.style.opacity = 0);
-  for (const b of blocks) {
-    b.style.transition = 'opacity .35s'; b.style.opacity = 1;
-    scrollBottom(); await sleep(280);
-  }
+  for (const b of blocks) { b.style.transition = 'opacity .3s'; b.style.opacity = 1; scrollBottom(); await sleep(200); }
   scrollBottom();
 }
+function toolLine(fn, arg, done = '✓') {
+  return `<div class="tool-line">🔧 <span class="fn">${fn}</span>(<span class="arg">${arg}</span>) <span class="ok">${done}</span></div>`;
+}
 
-/* ================= 账本 ================= */
-const LEDGER = {};
-function renderLedger() {
-  const box = $('ledger');
-  $('ledgerEmpty')?.remove();
-  const entries = Object.values(LEDGER);
-  box.innerHTML = entries.map(e => `
-    <div class="lentry ${e.status}" id="le-${e.id}" onclick="toggleLedger('${e.id}', event)">
-      <div class="t"><span class="dot"></span><span>${e.title}</span></div>
-      ${e.points?.length ? `<div class="pts">${e.points.join('；')}</div>` : ''}
-      <div class="ops">
-        ${e.status === 'tentative' ? `<button class="btn mini primary" onclick="setLedger('${e.id}','confirmed',event)">确认</button>` : ''}
-        ${e.status !== 'rejected' ? `<button class="btn mini" onclick="setLedger('${e.id}','rejected',event)">排除</button>` : ''}
-        <span style="font-size:11px;color:var(--text-3);align-self:center;margin-left:2px">第 ${e.turn} 轮</span>
+/* ================= 设定集面板 ================= */
+function renderPanel() {
+  const kw = ($('sideSearch').value || '').trim();
+  const match = (e) => !kw || e.name.includes(kw) || Object.values(e.fields).some(v => String(v).includes(kw));
+  $('sideCnt').textContent = state.entities.length + ' 条';
+  let html = '', any = false;
+  for (const g of GROUP_ORDER) {
+    const def = KINDS[g];
+    const items = state.entities.filter(e => e.kind === g && match(e));
+    const inFrame = state.frame.includes(g);
+    if (items.length === 0 && !inFrame) continue;
+    any = true;
+    html += `<div class="group">
+      <div class="group-head">${def.ico} ${def.label} <span class="gcnt">${items.length}</span>
+        ${items.length === 0 ? '<span class="todo">待讨论 · 在对话里说「设计一个' + def.label + '」</span>' : ''}</div>`;
+    for (const e of items) {
+      const sub = e.fields[def.fields[0][0]] || '';
+      html += `<div class="entry" onclick="openDetail(${e.id})">
+        <span class="eico">${def.ico}</span><span class="ename">${e.name}</span>
+        <span class="esub">${String(sub).slice(0, 22)}</span>
+        <span class="src ${e.src === '对话' ? 'chat' : ''}">${e.src}</span>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+  $('sideBody').innerHTML = any ? html : `<div class="no-result">${kw ? '没有匹配的设定' : '设定集为空——从左侧对话开始'}</div>`;
+}
+
+/* ================= 详情 / 编辑 / 新增 弹窗 ================= */
+function openDetail(id) {
+  const e = state.entities.find(x => x.id === id); if (!e) return;
+  const def = KINDS[e.kind];
+  $('editModal').innerHTML = `
+    <div class="modal">
+      <span class="close" onclick="closeEdit()">✕</span>
+      <h3>${def.ico} ${def.label} · ${e.name}</h3>
+      <div class="sub">来源：${e.src} · 更新于 ${e.updated} · id: ${e.id}</div>
+      <div id="editBody">${def.fields.map(([k, label]) => `
+        <div class="frow"><span class="fl">${label}</span><div class="fval" data-k="${k}">${e.fields[k] || '—'}</div></div>`).join('')}
       </div>
-    </div>`).join('');
+      <div class="foot">
+        <button class="btn" onclick="delEntity(${e.id})">删除</button>
+        <button class="btn" id="editToggle" onclick="enableEdit()">✎ 编辑</button>
+        <button class="btn primary" id="editSave" style="display:none" onclick="saveEdit(${e.id})">保存修改</button>
+      </div>
+    </div>`;
+  $('editModal').classList.add('show');
 }
-function ledgerAdd(id, title, points, status = 'tentative') {
-  if (LEDGER[id]) return;
-  LEDGER[id] = { id, title, points, status, turn: turnNo };
-  renderLedger();
+function enableEdit() {
+  $('editBody').querySelectorAll('.fval').forEach(div => {
+    const cur = div.textContent === '—' ? '' : div.textContent;
+    div.innerHTML = `<textarea rows="2">${cur}</textarea>`;
+  });
+  $('editToggle').style.display = 'none'; $('editSave').style.display = '';
 }
-function setLedger(id, status, ev) {
-  ev.stopPropagation();
-  LEDGER[id].status = status; renderLedger();
-  toast(status === 'confirmed' ? '共识已确认——将注入主编记忆与后续生成'
-    : '已标记为排除方向——AI 不会再推荐这类方案', status === 'confirmed' ? 'ok' : 'warn');
+function saveEdit(id) {
+  const e = state.entities.find(x => x.id === id);
+  $('editBody').querySelectorAll('.fval').forEach(div => { e.fields[div.dataset.k] = div.querySelector('textarea').value.trim(); });
+  if (e.src !== '对话') e.src = '手动';
+  e.updated = now();
+  renderPanel(); closeEdit(); toast(`已更新「${e.name}」（正式版经 update_entity 工具落库）`);
 }
-function toggleLedger(id) { document.getElementById('le-' + id).classList.toggle('open'); }
+function delEntity(id) {
+  const i = state.entities.findIndex(x => x.id === id);
+  const name = state.entities[i].name;
+  state.entities.splice(i, 1); renderPanel(); closeEdit();
+  toast(`已删除「${name}」`, 'warn');
+}
+function openAddModal() {
+  $('editModal').innerHTML = `
+    <div class="modal" style="width:440px">
+      <span class="close" onclick="closeEdit()">✕</span>
+      <h3>＋ 新增设定</h3>
+      <div class="sub">选择要素类型（设定集分组随之创建）</div>
+      <div class="kind-pick" id="kindPick">
+        ${GROUP_ORDER.slice(1).map((k, i) => `<span class="kp ${i === 0 ? 'on' : ''}" data-k="${k}">${KINDS[k].ico} ${KINDS[k].label}</span>`).join('')}
+      </div>
+      <div class="frow"><span class="fl">名称</span><textarea rows="1" id="newName" placeholder="如：沧澜剑阁 / 听雨十三剑"></textarea></div>
+      <div id="newFields"></div>
+      <div class="foot"><button class="btn primary" onclick="saveNew()">保存</button></div>
+    </div>`;
+  const pick = $('kindPick');
+  pick.addEventListener('click', (ev) => {
+    const t = ev.target.closest('.kp'); if (!t) return;
+    pick.querySelectorAll('.kp').forEach(x => x.classList.remove('on')); t.classList.add('on');
+    renderNewFields(t.dataset.k);
+  });
+  renderNewFields('character');
+  $('editModal').classList.add('show');
+}
+function renderNewFields(kind) {
+  $('newFields').innerHTML = KINDS[kind].fields.map(([k, label]) =>
+    `<div class="frow"><span class="fl">${label}</span><textarea rows="1" data-k="${k}"></textarea></div>`).join('');
+}
+function saveNew() {
+  const kind = document.querySelector('#kindPick .kp.on').dataset.k;
+  const name = $('newName').value.trim();
+  if (!name) { toast('请填写名称', 'warn'); return; }
+  const fields = {};
+  document.querySelectorAll('#newFields textarea').forEach(i => fields[i.dataset.k] = i.value.trim());
+  addEntity(kind, name, fields, '手动');
+  closeEdit(); toast(`已新增${KINDS[kind].label}「${name}」`);
+}
+function closeEdit() { $('editModal').classList.remove('show'); }
 
-/* ================= 圣经 ================= */
-function renderBible() {
-  const rows = [
-    { k: '概要', st: adopted.overview, extra: adopted.overview ? '《洗冤录》' : '' },
-    { k: '人物', st: adopted.characters > 0, extra: adopted.characters > 0 ? `${adopted.characters} 已入库` : '' },
-    { k: '故事线', st: false, extra: '' },
-    { k: '分集大纲', st: false, extra: '' },
-    { k: '章节', st: false, extra: '' },
-  ];
-  $('bible').innerHTML = rows.map(r => `
-    <div class="bible-row" onclick="toast('已入库数据与高级模式同表，点击可在高级模式查看/编辑','info')">
-      <span>${r.k}</span><span style="color:var(--text-3);font-size:12px">${r.extra}</span>
-      <span class="st ${r.st ? 'in' : 'not'}">${r.st ? '✓ 已入库' : '—'}</span>
-    </div>`).join('');
-}
-
-/* ================= 卡片 ================= */
-function artifactCard(cfg) {
+/* ================= 提案卡 ================= */
+function proposalCard(kind, name, fields, ver = 'v1') {
+  const def = KINDS[kind];
   const el = document.createElement('div');
-  el.className = `artifact ${cfg.kind}`;
+  el.className = `artifact k-${kind}`;
+  el.dataset.cardData = JSON.stringify({ kind, name, fields, ver });
   el.innerHTML = `
-    <div class="head">
-      <span class="ico">${cfg.ico}</span><span class="name">${cfg.name}</span>
-      <span class="ver">${cfg.ver}</span>
-      <span class="src" onclick="toast('来源：${cfg.src}（正式版可跳回对应对话轮次）','info')">来源：${cfg.src} ↗</span>
-    </div>
-    <div class="body">${cfg.rows.map(r => `<div class="row"><span class="k">${r[0]}</span><span>${r[1]}</span></div>`).join('')}</div>
+    <div class="head"><span class="ico">${def.ico}</span><span class="name">${name}</span>
+      <span class="kname">${def.label}卡</span><span class="ver">${ver}</span></div>
+    <div class="body"></div>
     <div class="foot">
-      <button class="btn success" data-act="adopt">✓ 采纳入库</button>
+      <button class="btn success" data-act="adopt">✓ 保存到设定集</button>
       <button class="btn" data-act="edit">✎ 编辑</button>
-      <button class="btn" data-act="regen">↻ 按反馈重新提炼</button>
+      <button class="btn" data-act="regen">↻ 换一版</button>
       <button class="btn" data-act="drop">✗ 忽略</button>
       <span class="note"></span>
     </div>`;
-  el.querySelector('[data-act=adopt]').onclick = () => cfg.onAdopt(el);
-  el.querySelector('[data-act=edit]').onclick = () => toast('正式版：字段行内编辑，改完再采纳', 'info');
-  el.querySelector('[data-act=drop]').onclick = () => {
-    el.classList.add('outdated'); el.querySelector('.foot').innerHTML = '<span class="note">已忽略（仍保留可回看）</span>';
-    toast('已忽略——这条提案也会进入主编记忆，避免重复推荐', 'warn');
+  const renderBody = () => {
+    el.querySelector('.body').innerHTML = def.fields.filter(([k]) => fields[k]).map(([k, label]) =>
+      `<div class="row"><span class="k">${label}</span><span>${fields[k]}</span></div>`).join('');
   };
-  el.querySelector('[data-act=regen]').onclick = () => cfg.onRegen(el);
+  renderBody();
+  el.querySelector('[data-act=adopt]').onclick = () => {
+    const d = JSON.parse(el.dataset.cardData);
+    const exist = findByName(d.name);
+    if (exist) { Object.assign(exist.fields, d.fields); exist.updated = now(); renderPanel(); }
+    else addEntity(d.kind, d.name, d.fields, '对话');
+    el.classList.add('adopted');
+    el.querySelector('.foot').innerHTML = `<span class="note">✓ 已保存 → 设定集 · ${KINDS[d.kind].label}（正式版落 lw_* 表）</span>`;
+    toast(`已保存${KINDS[d.kind].label}「${d.name}」到设定集`);
+  };
+  el.querySelector('[data-act=edit]').onclick = () => {
+    const d = JSON.parse(el.dataset.cardData);
+    $('editModal').innerHTML = `
+      <div class="modal">
+        <span class="close" onclick="closeEdit()">✕</span>
+        <h3>✎ 编辑提案 · ${def.ico} ${d.name}</h3>
+        <div class="sub">改完保存即更新卡片，再点「保存到设定集」</div>
+        <div id="editBody">${def.fields.map(([k, label]) =>
+          `<div class="frow"><span class="fl">${label}</span><textarea rows="2" data-k="${k}">${d.fields[k] || ''}</textarea></div>`).join('')}</div>
+        <div class="foot"><button class="btn primary" onclick="applyCardEdit()">保存到卡片</button></div>
+      </div>`;
+    window._editingCard = el;
+    $('editModal').classList.add('show');
+  };
+  el.querySelector('[data-act=drop]').onclick = () => {
+    el.classList.add('outdated');
+    el.querySelector('.foot').innerHTML = '<span class="note">已忽略</span>';
+  };
+  el.querySelector('[data-act=regen]').onclick = () => {
+    const d = JSON.parse(el.dataset.cardData);
+    const ALT = {
+      motive: ['被承认——他洗的不是罪名，是"我配不配站在这里"', '复仇：亲手把真凶钉在告示墙上'],
+      persona: ['外冷内热，惯于藏拙', '话少，动手比动嘴快'],
+      stance: ['亦正亦邪，人浮于事', '表面中立，暗中下注'],
+      origin: ['前朝遗物，几经易主', '祖师闭关所创，从无外传'],
+      arcDesc: ['一路向上，代价是众叛亲离', '先堕后起，弃剑再悟剑'],
+    };
+    let changed = 0;
+    for (const k of Object.keys(d.fields)) {
+      if (ALT[k]) { d.fields[k] = ALT[k][changed % 2]; changed++; }
+    }
+    if (changed === 0) { toast('这一版没有更多变化了（正式版由 AI 重新生成）', 'info'); return; }
+    d.ver = 'v' + (parseInt(d.ver.slice(1)) + 1);
+    el.dataset.cardData = JSON.stringify(d);
+    el.classList.add('outdated');
+    el.querySelector('.foot').innerHTML = `<span class="note">已换一版 → ${d.ver}</span>`;
+    proposalCard(d.kind, d.name, d.fields, d.ver);
+    toast(`已重新生成 ${d.ver}（正式版：按反馈重新提炼）`, 'info');
+  };
   $('chatInner').appendChild(el); scrollBottom();
   return el;
 }
-function markAdopted(el, note) {
-  el.classList.add('adopted');
-  el.querySelector('.foot').innerHTML = `<span class="note">✓ ${note}</span>`;
+function applyCardEdit() {
+  const el = window._editingCard;
+  const d = JSON.parse(el.dataset.cardData);
+  document.querySelectorAll('#editBody textarea').forEach(t => d.fields[t.dataset.k] = t.value.trim());
+  el.dataset.cardData = JSON.stringify(d);
+  const def = KINDS[d.kind];
+  el.querySelector('.body').innerHTML = def.fields.filter(([k]) => d.fields[k]).map(([k, label]) =>
+    `<div class="row"><span class="k">${label}</span><span>${d.fields[k]}</span></div>`).join('');
+  closeEdit(); toast('卡片已更新');
 }
 
-/* 概要卡 */
-function overviewCard() {
-  artifactCard({
-    kind: 'outline', ico: '📘', name: '概要卡 ·《洗冤录》', ver: 'v1', src: '第 1-6 轮共识',
-    rows: [
-      ['一句话', '外门弟子<b>林晓</b>被冤偷宗门至宝、当众逐出师门；为洗冤踏上修行路，却发现真凶是护他长大的大师兄。'],
-      ['核心冲突', '洗冤自证 vs 师门恩义；第二层：真相揭开后「恨与恩」的撕扯。'],
-      ['钩子', '第 6 集反转（真凶=大师兄）；情绪底色：错位的自责。'],
-      ['体量', '短剧 · 预计 24 集 × 2 分钟'],
-    ],
-    onAdopt: (el) => {
-      markAdopted(el, '已入库 → lw_story_overviews（高级模式可编辑）');
-      adopted.overview = true; renderBible();
-      toast('概要已入库 lw_story_overviews · 分区：故事圣经 → 概要 ✓');
-      curPhase = 2; renderPhases(); addDivider(PHASES[1]);
-      ledgerConfirmAll();
-      playEditor(`<p>概要已入库。人物先立两根柱子：<b>林晓</b>和<b>大师兄</b>。先出林晓——基于共识直接提炼，<b>不用你填任何字段</b>。</p>`)
-        .then(() => setTimeout(characterCardV1, 400));
-    },
-    onRegen: (el) => toast('正式版：附加一句反馈（如"钩子再狠一点"）→ 整理器重新提炼 v2', 'info'),
-  });
+/* ================= 意图路由（原型的规则引擎；正式版 = 主编模型 + 工具调用） ================= */
+function extractName(text) {
+  const m = text.match(/[「“']([^」”']{1,12})[」”']/) || text.match(/(?:叫|名为|名字?是)(.{2,8})/);
+  return m ? m[1].replace(/[，。,.!！?？\s].*$/, '') : null;
 }
-function ledgerConfirmAll() {
-  Object.values(LEDGER).forEach(e => { if (e.status === 'tentative') e.status = 'confirmed'; });
-  renderLedger();
+function detectIntent(t) {
+  if (/^(你好|hi|hello|开始)/.test(t)) return 'greet';
+  if (/有哪些|查一下|查查|查看|看看|清单|列表|现在.*设定|设定.*现状/.test(t)) return 'query';
+  if (/大纲|目录|分集|章节规划/.test(t)) return 'outline';
+  if (/把.{1,10}(改|换)|修改|换成/.test(t)) return 'modify';
+  // 实体创建意图在前（"设计一个国别"不该被题材分支截胡）
+  if (/国别|王朝|国度|国家/.test(t)) return 'nation';
+  if (/阵营/.test(t)) return 'camp';
+  if (/门派|宗门|帮派|朝廷|机构|组织/.test(t)) return 'faction';
+  if (/武功|功法|剑法|心法|招式|武学/.test(t)) return 'skill';
+  if (/物品|兵器|法宝|神器|宝物|秘宝/.test(t)) return 'item';
+  if (/地点|城|山|关|秘境/.test(t)) return 'location';
+  if (/故事线|情节|主线|支线|剧情线/.test(t)) return 'plot';
+  if (/人物|主角|反派|配角|角色|女主|男主|加.{0,3}人/.test(t)) return 'character';
+  // 题材只在"换/写/做什么"的元话语时触发
+  if (/想写|想做|想创作|要写|题材|类型|换.*(题材|背景)|架空|武侠|修仙|玄幻|都市|言情/.test(t)) return 'genre';
+  if (/写作|正文|第一章|开写/.test(t)) return 'write';
+  return 'discuss';
 }
+function fLabel(kind, k) { return (KINDS[kind].fields.find(f => f[0] === k) || [, k])[1]; }
 
-/* 人物卡 v1 / v2 */
-function characterCardV1() {
-  const c = artifactCard({
-    kind: 'character', ico: '🧑', name: '人物卡 · 林晓', ver: 'v1', src: '第 4、6 轮共识',
-    rows: [
-      ['身份', '青云宗外门弟子，被冤偷镇宗至宝「玄天鉴」当众逐出'],
-      ['动机', '洗冤 + 复仇（对象：真凶）'],
-      ['性格', '隐忍、重情；冤案后多疑，不轻信任何善意'],
-      ['弧光', '从「自证清白」到「放下自证、重建自己的秩序」'],
-      ['关系', '大师兄顾长风：亦师亦兄（不知其为真凶）'],
-    ],
-    onAdopt: () => toast('请先处理 v2 卡片（演示重新提炼流程）', 'warn'),
-    onRegen: (el) => {
-      el.classList.add('outdated');
-      el.querySelector('.foot').innerHTML = '<span class="note">已按反馈重新提炼 → v2</span>';
-      toast('整理器已按反馈重新提炼：动机更拧——"要的是洗冤，还是被承认？"');
-      setTimeout(characterCardV2, 700);
-    },
-  });
-}
-function characterCardV2() {
-  artifactCard({
-    kind: 'character', ico: '🧑', name: '人物卡 · 林晓', ver: 'v2', src: '第 4、6、8 轮 + 反馈',
-    rows: [
-      ['身份', '青云宗外门弟子，被冤偷镇宗至宝「玄天鉴」当众逐出'],
-      ['动机', '表层：洗冤；深层：<b>被宗门承认</b>——他洗的不是罪名，是"我配不配站在这里"'],
-      ['性格', '隐忍、重情；冤案后多疑，不轻信任何善意'],
-      ['弧光', '从「自证清白」到「放下自证、重建自己的秩序」'],
-      ['关系', '大师兄顾长风：亦师亦兄（不知其为真凶）→ 图谱关系边随入库自动建立'],
-    ],
-    onAdopt: (el) => {
-      markAdopted(el, '已入库 → lw_characters（去重通过 · 关系边已同步图谱）');
-      adopted.characters = 1; renderBible();
-      toast('人物「林晓」已入库 lw_characters · 与顾长风的关系边已写入图谱');
-      setChips(['出大师兄卡', '进 ③ 故事线', '加一个女主']);
-      playEditor(`<p>林晓立住了——注意 v2 里动机拧成了<b>「被承认」</b>，这比单纯的洗冤更能撑 24 集。</p><p>大师兄顾长风的卡我下一轮出；或者我们直接进<b>故事线</b>，把 24 集的因果链拉出来。</p>`);
-    },
-    onRegen: () => toast('正式版：附加反馈 → 重新提炼 v3', 'info'),
-  });
-}
+const FLOWS = {
+  greet: async () => `<p>我一直在。当前设定集：概要 ${countOf('overview')}、人物 ${countOf('character')} 位、门派 ${countOf('faction')} 个、武功 ${countOf('skill')} 门、故事线 ${countOf('plot')} 条。</p><p>想聊哪块直接说——故事、人物、门派、武功、故事线、大纲，都在这一个对话里。</p>`,
+  query: async () => {
+    const kinds = [...new Set(state.entities.map(e => e.kind))];
+    const list = kinds.map(k => {
+      const items = state.entities.filter(e => e.kind === k);
+      return `<li><b>${KINDS[k].label}</b>（${items.length}）：${items.map(e => e.name).join('、')}</li>`;
+    }).join('');
+    return toolLine('query_setting', 'project:xyj, scope:all') + `<p>现在的设定集一览：</p><ul>${list}</ul><p>点右侧任意条目可看详情/编辑；也可以直接说"把××的××改成××"。</p>`;
+  },
+  genre: async (t) => {
+    const g = Object.keys(GENRE_FRAMES).find(k => t.includes(k.split('/')[0])) || '武侠';
+    const frame = GENRE_FRAMES[g];
+    const card = document.createElement('div');
+    card.className = 'artifact k-faction';
+    card.innerHTML = `
+      <div class="head"><span class="ico">🗺️</span><span class="name">要素框架 · ${g}</span><span class="kname">题材建议</span></div>
+      <div class="body">
+        <div class="row"><span class="k">建议要素</span><span>${frame.map(k => KINDS[k].label).join(' / ')}</span></div>
+        <div class="row"><span class="k">说明</span><span>只是建议清单——不需要的要素不会出现在设定集；聊到就建，随时可加。</span></div>
+      </div>
+      <div class="foot"><button class="btn success">✓ 按此框架继续</button><span class="note"></span></div>`;
+    card.querySelector('button').onclick = () => {
+      state.frame = frame; renderPanel();
+      card.classList.add('adopted');
+      card.querySelector('.foot').innerHTML = '<span class="note">✓ 框架已应用——设定集分组已就位</span>';
+      toast(`已按「${g}」框架更新设定集分组`);
+    };
+    return { html: `<p>按<b>${g}</b>题材，我建议的世界要素是这些——都是聊到才建、不要就不管：</p>`, extra: card };
+  },
+  character: async (t) => {
+    const name = extractName(t) || (/反派|对手/.test(t) ? '谢无咎' : /女主/.test(t) ? '沈青梧' : '新角色');
+    const isVillain = /反派|对手|坏人/.test(t), isFemale = /女主|女性/.test(t);
+    const fields = isVillain ? {
+      role: '悬镜司少卿，奉命复查玄天鉴失窃案',
+      motive: '把旧案钉死在林晓身上——真相牵着他自己的仕途',
+      persona: '温文尔雅，越客气越危险',
+      arc: '从执法者到局中人，被自己钉死的案子反噬',
+      belong: '悬镜司（朝廷）',
+    } : isFemale ? {
+      role: '江湖游医，悬壶济世也打探消息',
+      motive: '查师父死因，与林晓的冤案隐隐相接',
+      persona: '爽利毒舌，医人先诛心',
+      arc: '从旁观者到并肩者', belong: '无门无派',
+    } : {
+      role: '（基于你的描述）', motive: '（待讨论——他为什么要卷进这个故事？）',
+      persona: '（待讨论）', arc: '（待讨论）', belong: '（待讨论）',
+    };
+    const lead = isVillain ? '反派立起来故事才有骨。' : isFemale ? '好——先给她一个非她不可的理由。' : '人物从动机开始立。';
+    return { html: `<p>${lead}提一版${isVillain || isFemale ? '' : '骨架（空字段我们可以边聊边填）'}，不满意直接说或点「换一版」：</p>`, card: { kind: 'character', name, fields } };
+  },
+  nation: async (t) => {
+    const name = extractName(t) || '大玄王朝';
+    const fields = { stance: '表面盛世，暗地财政枯竭、军镇尾大不掉', ruler: '玄帝（晚年多疑，借悬镜司制衡朝堂）', note: '与前朝覆灭的玄天鉴案有直接因果——王朝合法性的秘密就藏在鉴中' };
+    return { html: `<p>架空历史的国别要自带<b>结构性矛盾</b>，故事才有底盘。这一版把国运和你已有的玄天鉴案直接挂钩：</p>`, card: { kind: 'nation', name, fields } };
+  },
+  camp: async (t) => {
+    const name = extractName(t) || '清流党';
+    const fields = { stance: '在野士人集团，握有舆情', goal: '借玄天鉴案动摇悬镜司，进而逼宫', note: '不是主角的朋友——只是暂时同路' };
+    return { html: `<p>阵营的价值在于<b>借力与背叛</b>。提一版：</p>`, card: { kind: 'camp', name, fields } };
+  },
+  faction: async (t) => {
+    const name = extractName(t) || '沧澜剑阁';
+    const fields = { nature: '新兴剑修门派，以快剑立身', stance: '中立偏正，与青云宗明盟暗争', base: '东海沧澜岛', rel: '欣赏林晓的剑骨，愿为其递刀——但有所图' };
+    return { html: `<p>门派设计的关键是<b>与主角的关系张力</b>，不只是设定堆料。提一版：</p>`, card: { kind: 'faction', name, fields } };
+  },
+  skill: async (t) => {
+    const name = extractName(t) || '听雨十三剑';
+    const fields = { stype: '攻击剑法，雨夜威力翻倍', grade: '上乘（残卷）', origin: '前朝剑圣雨夜绝笔，残页散落江湖', owner: '无主——建议林晓第 3 集后段机缘所得' };
+    return { html: `<p>武功不只是战力，最好是<b>剧情钩子</b>。这版把来历和下落都接进了你的冤案线：</p>`, card: { kind: 'skill', name, fields } };
+  },
+  item: async (t) => {
+    const name = extractName(t) || '玄天鉴残页';
+    const fields = { grade: '至宝部件', power: '单独无用，三页合一方可开启——夺宝结构自带', origin: '玄天鉴碎裂时散落的三页', where: '一页在悬镜司、一页在民间、一页下落不明' };
+    return { html: `<p>物品建议做成<b>三段式麦高芬</b>，天然撑起中段剧情：</p>`, card: { kind: 'item', name, fields } };
+  },
+  location: async (t) => {
+    const name = extractName(t) || '断云关';
+    const fields = { ltype: '边关要塞', owner: '朝廷（守将派系不明）', desc: '南下北上必经之地，关城之下有前朝地道——建议第 9 集大战发生地' };
+    return { html: `<p>地点要么承载冲突，要么藏秘密（最好都占）。提一版：</p>`, card: { kind: 'location', name, fields } };
+  },
+  plot: async (t) => {
+    const name = /支线/.test(t) ? '师父之死（支线）' : '朝堂暗线';
+    const fields = /支线/.test(t)
+      ? { ptype: '支线', arcDesc: '与主线第 12 集并轨：她查的师父之死，正是玄天鉴案的另一面', involve: '沈青梧、林晓' }
+      : { ptype: '暗线', arcDesc: '悬镜司借查案之名清洗青云宗，林晓的冤案只是棋盘一角', involve: '谢无咎、顾长风、朝廷' };
+    return { html: `<p>故事线的要点是<b>并轨点</b>——支线不能飘在外面，这一版把并轨集数都排好了：</p>`, card: { kind: 'plot', name, fields } };
+  },
+  outline: async () => {
+    const el = document.createElement('div');
+    el.className = 'artifact k-outline';
+    el.innerHTML = `
+      <div class="head"><span class="ico">🌳</span><span class="name">分集大纲</span><span class="kname">大纲卡</span><span class="ver">v1</span></div>
+      <div class="body"><pre class="tree">第一卷 · 蒙冤（1-8 集）
+├─ 1-2  冤案发生，当众逐出（错位自责的起点）
+├─ 3-5  江湖流浪，得听雨十三剑残页
+├─ 6    【反转】真凶线索指向大师兄
+└─ 7-8  断云关事件，与沈青梧并轨
+第二卷 · 查冤（9-16 集）
+├─ 9-12 三页玄天鉴争夺战
+├─ 13   谢无咎入场，官面重启"查案"
+└─ 14-16 悬镜司清洗青云宗，师门恩义崩塌
+第三卷 · 雪冤（17-24 集）
+├─ 17-20 真相全貌：大师兄的双重动机
+├─ 21-22 林晓的选择：自证 or 重建秩序
+└─ 23-24 终局：放下自证（弧光闭环）</pre></div>
+      <div class="foot"><button class="btn success">✓ 保存大纲</button><button class="btn" onclick="toast('正式版：逐卷确认 / 按反馈重提这一卷','info')">逐卷确认</button><span class="note"></span></div>`;
+    el.querySelector('.btn.success').onclick = () => {
+      el.classList.add('adopted');
+      el.querySelector('.foot').innerHTML = '<span class="note">✓ 大纲已保存（正式版落 lw_story_outlines 建树）</span>';
+      toast('大纲已保存');
+      addEntity('plot', '分集大纲（3 卷 24 集）', { ptype: '大纲', arcDesc: '蒙冤→查冤→雪冤三卷结构', involve: '全部' }, '对话');
+    };
+    return { html: `<p>基于设定集里的概要、${countOf('character')} 位人物和 ${countOf('plot')} 条故事线，我排了一版 24 集结构——<b>第 6 集反转</b>和<b>第 12 集并轨</b>都用上了：</p>`, extra: el };
+  },
+  modify: async (t) => {
+    const target = state.entities.find(e => t.includes(e.name));
+    if (!target) return `<p>要改哪一条？现有设定：${state.entities.slice(0, 8).map(e => e.name).join('、')}……也可以点右侧条目直接编辑。</p>`;
+    const def = KINDS[target.kind];
+    const fieldKey = def.fields.map(f => f[0]).find(k => t.includes(fLabel(target.kind, k))) || def.fields[0][0];
+    const newVal = (t.match(/(?:改成|改为|换成)(.+)/) || [])[1]?.slice(0, 40) || '（你指定的新值）';
+    const el = document.createElement('div');
+    el.className = `artifact k-${target.kind}`;
+    el.innerHTML = `
+      <div class="head"><span class="ico">${def.ico}</span><span class="name">修改确认 · ${target.name}</span><span class="kname">${def.label}</span></div>
+      <div class="body">
+        <div class="diff-row"><span class="field">${fLabel(target.kind, fieldKey)}</span>
+          <span class="diff-old">${target.fields[fieldKey] || '—'}</span>
+          <span class="diff-new">${newVal}</span></div>
+      </div>
+      <div class="foot"><button class="btn success">✓ 确认修改</button><button class="btn">取消</button><span class="note"></span></div>`;
+    const [ok, cancel] = el.querySelectorAll('button');
+    ok.onclick = () => {
+      target.fields[fieldKey] = newVal; target.updated = now(); renderPanel();
+      el.classList.add('adopted');
+      el.querySelector('.foot').innerHTML = '<span class="note">✓ 已应用（update_entity 工具落库）</span>';
+      toast(`已修改「${target.name}」的${fLabel(target.kind, fieldKey)}`);
+    };
+    cancel.onclick = () => { el.classList.add('outdated'); el.querySelector('.foot').innerHTML = '<span class="note">已取消</span>'; };
+    return { html: `<p>找到了——<b>${target.name}</b>。改动如下，确认后我更新设定集：</p>`, extra: el, tools: toolLine('update_entity', `${target.kind}:"${target.name}"`) };
+  },
+  write: async () => `<p>写作不在研讨室里硬写——<b>大纲就绪</b>时，顶栏「✍ 写作台」会把设定集整体带过去（概要/人物状态/关系图谱自动注入写作上下文），逐章写、逐章回来同步设定。</p><p>写之前想把设定再磨一磨吗？</p>`,
+  discuss: async () => {
+    const openers = [
+      `有意思。往深一层——这个设定对主角是<b>不得不接受</b>还是<b>主动选择</b>？前者写命运，后者写性格，走向完全不同。`,
+      `先别急着定。手上的牌：概要的"洗冤"和林晓的"被承认"是主线——你现在提的这点，会加强还是稀释它？`,
+      `可以。不过设定集里"真凶=嫉妒同门"是被排除的方向，这个新想法别把它绕回来。要不要基于现有人物先落一版试试？`,
+    ];
+    return openers[Math.floor(Math.random() * openers.length)];
+  },
+};
 
-/* ================= 建议 chips ================= */
+/* ================= 发送 ================= */
+let busy = false;
 function setChips(list) {
-  $('chips').innerHTML = list.map(c => `<span class="chip" onclick="sendText('${c}')">${c}</span>`).join('');
+  $('chips').innerHTML = list.map(c => `<span class="chip" onclick="sendText('${c.replace(/'/g, "\\'")}')">${c}</span>`).join('');
 }
-
-/* ================= 脚本 ================= */
-const SCRIPT = [
-  async () => {
-    addUser('想写一部玄幻短剧，主角废柴逆袭，先聊故事核');
-    await playEditor(`
-      <p>废柴逆袭是短剧最成熟的引擎之一，但要跑出来，先定两件事：</p>
-      <ul>
-        <li>他「废」的<b>代价</b>是什么——被退婚、被逐出师门、还是灵根被夺？代价决定情绪底色。</li>
-        <li>观众第 3 集对他该是<b>什么情绪</b>——同情，还是憋屈待爽？</li>
-      </ul>
-      <div class="options">
-        <div class="option"><b>A · 退婚流</b>爽感来得快、情绪直给，但同质化最重，前 3 秒 hook 要另做。</div>
-        <div class="option"><b>B · 沉冤流</b>慢热半集，但「冤」能给人物真实的弧光，反转空间大。</div>
-      </div>`);
-    ledgerAdd('genre', '题材：玄幻修仙', ['短剧体裁', '24 集 × 2 分钟候选']);
-    ledgerAdd('engine', '引擎：废柴逆袭（流派待定）');
-    setChips(['选 A', '选 B', '都不喜欢，换个方向', '让主编再问']);
-  },
-  async () => {
-    addUser('B。他被冤枉偷了宗门至宝，当众逐出师门');
-    await playEditor(`
-      <p>好选择——<b>「冤」比「废」强</b>：它给了主角一个必须行动的具体目标，而不只是等待变强。</p>
-      <p>接下来最关键的一根针：<b>真凶是谁</b>。俗套是「嫉妒他的同门」，我建议反着来——<b>真凶是从小护他长大的大师兄</b>。背叛感是短剧最强的前 3 集钩子，还给结局留了双层空间。</p>
-      <p>那么：主角什么时候发现真相——第 1 集就埋怀疑（悬念驱动），还是第 6 集一刀反转（情绪炸裂）？</p>`);
-    LEDGER['engine'] && (LEDGER['engine'].title = '引擎：沉冤洗白（B 流）', LEDGER['engine'].points = ['被冤偷至宝', '当众逐出师门'], LEDGER['engine'].status = 'confirmed');
-    ledgerAdd('villain', '真凶：大师兄（背叛钩子）', ['暂定：护他长大的大师兄']);
-    ledgerAdd('no-rival', '已排除：真凶=嫉妒同门（俗套）', [], 'rejected');
-    renderLedger();
-    setChips(['大师兄可以，第 6 集才反转', '第 1 集就埋怀疑', '真凶再想想']);
-  },
-  async () => {
-    addUser('大师兄可以。第 6 集才发现真相，前面他一直以为是自己倒霉');
-    await playEditor(`
-      <p>那前 5 集的情绪底色就是<b>错位的自责</b>——他越努力证明自己，越是在给真凶递刀。这个错位很值钱，别浪费。</p>
-      <div class="reminder">📋 翻旧账：你排除了「嫉妒同门」的俗套——大师兄这条线我建议动机也做双层：表面是护宝失职，深层是<b>为了救他</b>才动了至宝。这样第 6 集反转之后还有第二层可翻。</div>
-      <p>到这里<b>故事核三要素</b>齐了：引擎（洗冤）、钩子（大师兄背叛）、底色（错位自责）。我把它整理成概要卡，确认后入库，然后进人物——</p>`);
-    ledgerAdd('timing', '反转点：第 6 集揭真凶', ['前 5 集铺「错位自责」']);
-    setChips(['出概要卡']);
-    setTimeout(overviewCard, 900);
-  },
-];
-const END_REPLY = `<p style="color:var(--text-3)">（原型演示到这里。③故事线 → ④分集大纲（逐集确认卡）→ ⑤写作交接编辑器的完整交互，见设计文档 §6——欢迎反馈调整。）</p>`;
-
-async function playEditor(html) { await addEditor(html); }
 async function sendText(forced) {
   if (busy) return;
   busy = true; $('sendBtn').disabled = true;
   const box = $('inputBox');
-  const text = (forced || box.value.trim());
-  if (text) { addUser(text); }
-  if (!forced) box.value = '';
+  const text = forced || box.value.trim();
+  if (forced) box.value = ''; else box.value = '';
+  if (text) addUser(text);
   $('chips').innerHTML = '';
-  if (stepIdx < SCRIPT.length) {
-    const fn = SCRIPT[stepIdx++];
-    await fn();
+  const out = await FLOWS[detectIntent(text || '')](text || '');
+  if (typeof out === 'string') {
+    await addEditor(out);
   } else {
-    await playEditor(END_REPLY);
+    await addEditor(out.html, out.tools);
+    if (out.card) proposalCard(out.card.kind, out.card.name, out.card.fields);
+    if (out.extra) { $('chatInner').appendChild(out.extra); scrollBottom(); }
   }
+  setChips(['加一个反派', '设计一个门派', '查一下设定', '生成大纲']);
   busy = false; $('sendBtn').disabled = false; box.focus();
 }
-
-/* ================= 初始化 ================= */
-renderPhases(); renderBible();
-addDivider(PHASES[0]);
-setChips([]);
 $('sendBtn').onclick = () => sendText();
-// 空态引导：主编开场白
-setTimeout(() => addEditor(`
-  <p>我是你的<b>故事主编</b>。用一两句话告诉我你想写什么——不用填任何表单，我们从<b>故事核</b>聊起：引擎、代价、钩子。</p>
-  <p style="color:var(--text-3);font-size:12.5px">点下方绿色「▶ 播放下一轮」看一段完整的研讨演示（概要提炼 → 入库 → 人物卡 → 重新提炼）。</p>`), 400);
 $('inputBox').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); }
 });
-// 常驻播放按钮（独立于建议 chips，不会被清空）
-document.getElementById('playBtn').onclick = () => sendText('');
+
+/* ================= 种子数据（示例项目：武侠·复仇） ================= */
+addEntity('overview', '洗冤录', {
+  premise: '外门弟子林晓被冤偷镇宗至宝玄天鉴、当众逐出师门；为洗冤踏入江湖，却发现真凶是护他长大的大师兄',
+  conflict: '洗冤自证 vs 师门恩义；第二层：真相揭开后「恨与恩」的撕扯',
+  hook: '第 6 集反转（真凶=大师兄）；情绪底色：错位自责', theme: '武侠 · 复仇 · 24 集短剧',
+});
+addEntity('character', '林晓', {
+  role: '青云宗外门弟子，被冤偷玄天鉴逐出师门', motive: '表层洗冤，深层"被宗门承认"',
+  persona: '隐忍重情；冤案后多疑，不轻信善意', arc: '从「自证清白」到「放下自证、重建秩序」', belong: '青云宗（已逐）',
+});
+addEntity('character', '顾长风', {
+  role: '青云宗大师兄，众望所归的下一任掌门', motive: '动玄天鉴是为救林晓，代价却由林晓背',
+  persona: '端方君子，唯独对林晓心软', arc: '护短者成为加害者，恩与罪一体两面', belong: '青云宗',
+});
+addEntity('faction', '青云宗', {
+  nature: '正道魁首，剑修圣地', stance: '正道领袖', base: '青云山', rel: '主角的师门与伤心地',
+});
+addEntity('skill', '玄天诀', {
+  stype: '镇宗心法', grade: '绝学', origin: '开派祖师所创，与玄天鉴一体', owner: '掌门单传',
+});
+addEntity('item', '玄天鉴', {
+  grade: '镇宗至宝', power: '鉴内自成空间，藏前朝秘辛（麦高芬）', origin: '前朝皇室遗物', where: '失窃案后下落成谜',
+});
+addEntity('plot', '洗冤主线', {
+  ptype: '主线', arcDesc: '蒙冤(1-8)→查冤(9-16)→雪冤(17-24)，三卷结构', involve: '林晓、顾长风、谢无咎',
+});
+
+/* 开场 */
+(async function init() {
+  renderPanel();
+  await addEditor(`
+    <p>我是你的<b>故事主编</b>。《洗冤录》的设定集已带入：概要 ✓、人物 2 位（林晓、顾长风）、门派 1、武功 1、宝物 1、故事线 1 条。</p>
+    <p>没有步骤、没有表单——<b>一个对话聊到底</b>：加人物/门派/武功直接说；改设定说"把××的××改成××"；看全貌点右侧设定集，或问我"查一下设定"。</p>
+    <p style="color:var(--text-3);font-size:12.5px">chips 与自由输入均已可用；换题材（如「我想写架空历史」）设定集分组会跟着变。</p>`);
+  setChips(['加一个反派', '设计一个新门派', '查一下现有设定', '把林晓的动机改成复仇', '生成大纲', '我想写架空历史']);
+})();
 </script>
 </body>
 </html>
