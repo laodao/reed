@@ -45,6 +45,8 @@ export { StoryboardCharacterEntity } from './episode-production/storyboard-chara
 export { ScenePropEntity } from './episode-production/scene-prop.entity'
 export { AssetImageEntity } from './episode-production/asset-image.entity'
 export { StoryboardKeyframeEntity } from './episode-production/storyboard-keyframe.entity'
+// 视频片段制（tasks/2026-09-04-ep-video-segment-redesign §4）：制作/生成最小单元
+export { EpVideoSegmentEntity } from './episode-production/video-segment.entity'
 // Bug #4 修复（2026-05-10 e2e）：跨项目角色库 + 视频解析 entity 漏 barrel export
 export { UserAssetEntity } from './episode-production/user-asset.entity'
 export { ReferenceVideoAnalysisEntity } from './episode-production/reference-video-analysis.entity'

@@ -789,6 +789,14 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-pack-tables'
     )
     await createPackTables(this.dataSource)
+
+    // 视频片段制（tasks/2026-09-04-ep-video-segment-redesign §4/§7）：
+    // ep_video_segments 表 + storyboards.segment_id/segment_seq + 存量有视频分镜迁成单镜片段
+    // （幂等，双语种；Web 端 initDatabase 有同构调用，两处必须同步）
+    const { createEpVideoSegments } = await import(
+      '@core/database/migrations/create-ep-video-segments'
+    )
+    await createEpVideoSegments(this.dataSource)
   }
 
   /**

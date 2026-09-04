@@ -132,6 +132,9 @@ export class StoryboardRepository extends BaseRepository<
       includeInFinal: ((e as any).includeInFinal ?? 1) !== 0,
       transition: this.parseTransition(e),
       status: e.status as StoryboardStatus,
+      // 视频片段制（2026-09-04）：片段归属回填
+      segmentId: e.segmentId ?? null,
+      segmentSeq: e.segmentSeq ?? null,
       referenceImageIds: this.parseReferenceImageIds(e),
       locationBindingIds: ((e as any).locationBindingIds as string[] | null) ?? [],
       itemBindingIds: ((e as any).itemBindingIds as string[] | null) ?? [],
@@ -162,6 +165,48 @@ export class StoryboardRepository extends BaseRepository<
       { sceneScriptId } as any,
       { shotNumber: 'ASC' },
     )
+  }
+
+  /** 列出某视频片段内的分镜（按 segment_seq 升序；视频片段制 2026-09-04） */
+  async getBySegmentId(segmentId: string): Promise<Storyboard[]> {
+    return this.findManyByWhere(
+      { segmentId } as any,
+      { segmentSeq: 'ASC' },
+    )
+  }
+
+  /** 回填/清除分镜的片段归属（segmentId=null 表示清除） */
+  async assignSegment(
+    id: string,
+    segmentId: string | null,
+    segmentSeq: number | null,
+  ): Promise<void> {
+    await this.scoped.update({ id } as any, {
+      segmentId,
+      segmentSeq,
+      updatedAt: new Date(),
+    } as any)
+  }
+
+  /** 清除某片段下所有分镜的片段归属（重新分段时使用） */
+  async clearSegment(segmentId: string): Promise<number> {
+    return this.scoped.update({ segmentId } as any, {
+      segmentId: null,
+      segmentSeq: null,
+      updatedAt: new Date(),
+    } as any)
+  }
+
+  /**
+   * 置分镜状态。接受运行时扩展状态值（视频生成写回的 'completed' 不在
+   * StoryboardStatus 枚举里，但 UI shot-labels.statusLabels 已消费它，
+   * 与 video-segment.service 的写回保持一致）。
+   */
+  async setStatus(id: string, status: string): Promise<void> {
+    await this.scoped.update({ id } as any, {
+      status,
+      updatedAt: new Date(),
+    } as any)
   }
 
   async getById(id: string): Promise<Storyboard | null> {

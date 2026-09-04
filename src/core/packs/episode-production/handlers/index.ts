@@ -32,6 +32,7 @@ import { registerReferenceHandlers } from './narrative/reference.handler'
 import { registerKeyframeHandlers } from './render/keyframe.handler'
 import { registerVideoHandlers } from './render/video.handler'
 import { registerVideoSegmentHandlers } from './render/video-segment.handler'
+import { registerSegmentHandlers } from './render/segment.handler'
 import { registerAudioHandlers } from './render/audio.handler'
 import { registerComposeHandlers } from './compose.handler'
 import { registerWorkflowHandlers } from './workflow.handler'
@@ -79,6 +80,8 @@ export function registerEpisodeProductionHandlers(): void {
   registerVideoHandlers()
   // P5-T13 视频片段 + provider 列表
   registerVideoSegmentHandlers()
+  // 视频片段制（2026-09-04）：自动分段 + 片段级生成
+  registerSegmentHandlers()
   registerAudioHandlers()
   registerComposeHandlers()
   registerWorkflowHandlers()

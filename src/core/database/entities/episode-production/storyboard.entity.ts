@@ -145,6 +145,16 @@ export class StoryboardEntity {
   @Column({ name: 'video_mode', type: 'varchar', nullable: true })
   videoMode!: 'text2video' | 'image2video' | 'keyframes2video' | null
 
+  // ─── 视频片段制（tasks/2026-09-04-ep-video-segment-redesign §4）──────────────
+
+  /** 所属视频片段 ID（ep_video_segments.id；未分段时 NULL） */
+  @Column({ name: 'segment_id', type: 'varchar', nullable: true })
+  segmentId!: string | null
+
+  /** 片段内镜头序号（1-based；未分段时 NULL） */
+  @Column({ name: 'segment_seq', type: 'integer', nullable: true })
+  segmentSeq!: number | null
+
   // ─── 3D 接入点 2（spec §4.7）──────────────────────────────────────────────
 
   /** 是否启用 3D 分镜布局（0=否，1=是）*/

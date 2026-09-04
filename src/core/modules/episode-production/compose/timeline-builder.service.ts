@@ -42,6 +42,11 @@ export interface TimelineShot {
   transition: TransitionConfig | null
   /** 是否入最终成片（默认 true）— 用户可在 ⑥ 时间线上切换 */
   includeInFinal: boolean
+  /**
+   * 所属视频片段 ID（视频片段制 2026-09-04；未分段的老项目为 null）。
+   * 导出时同片段的分镜合并为一个合成单元（段内不 xfade）。
+   */
+  segmentId: string | null
 }
 
 /** 时间线上的一个场景 */
@@ -124,6 +129,8 @@ export class TimelineBuilderService {
           // 首镜无 transition；其它镜从 entity 读 transition_*
           transition: i === 0 ? null : this.buildTransitionFromEntity(sb),
           includeInFinal: ((sb as any).includeInFinal ?? 1) !== 0,
+          // 视频片段制（2026-09-04）：老库列由 create-ep-video-segments 迁移补齐
+          segmentId: (sb as any).segmentId ?? null,
         })
         cursorSec = shotEnd
       }

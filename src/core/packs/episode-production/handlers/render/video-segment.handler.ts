@@ -207,8 +207,7 @@ async function handleGenerateVideoSegment(
  *
  * 不支持的 provider 类型 / 未配置时返回 null（caller 给清晰错误）。
  */
-async function createAdapterForProviderWithReason(
-  providerConfigId?: string,
+export async function createAdapterForProviderWithReason(  providerConfigId?: string,
   modelId?: string,
 ): Promise<{ adapter: VideoProviderAdapter | null; reason: string }> {
   if (!providerConfigId || !modelId) {

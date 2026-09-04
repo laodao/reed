@@ -470,6 +470,14 @@ async function initDatabase(): Promise<void> {
   )
   await createPackTables(ds)
 
+  // 视频片段制（tasks/2026-09-04-ep-video-segment-redesign §4/§7）：
+  // ep_video_segments 表 + storyboards.segment_id/segment_seq + 存量有视频分镜迁成单镜片段
+  // （幂等，双语种；与 Electron 端 runMultiTenantMigrations 同构登记）
+  const { createEpVideoSegments } = await import(
+    '@core/database/migrations/create-ep-video-segments'
+  )
+  await createEpVideoSegments(ds)
+
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)
   console.log('[web-server] PostgreSQL 数据库初始化完成')
