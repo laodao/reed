@@ -188,6 +188,11 @@ const IPC_CHANNELS = {
   EP_GET_PROVIDER_CAPABILITIES: 'ep:get-provider-capabilities',
   EP_GENERATE_VIDEO_SEGMENT: 'ep:generate-video-segment',
 
+  // 视频片段制重构（tasks/2026-09-04-ep-video-segment-redesign §3/§5）：分段 + 片段级生成
+  EP_RECOMPUTE_SEGMENTS: 'ep:recompute-segments',
+  EP_LIST_SEGMENTS: 'ep:list-segments',
+  EP_GENERATE_SEGMENT_VIDEO: 'ep:generate-segment-video',
+
   // P6-T5 合成 + 导出 MP4
   EP_BUILD_TIMELINE: 'ep:build-timeline',
   EP_PREVIEW_SUBTITLE: 'ep:preview-subtitle',
@@ -2298,6 +2303,14 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.EP_GET_PROVIDER_CAPABILITIES, providerType),
     generateVideoSegment: (storyboardId: string, opts?: any) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_GENERATE_VIDEO_SEGMENT, storyboardId, opts),
+
+    // 视频片段制（2026-09-04 重构）：分段预览/重算 + 片段级一次视频调用
+    recomputeSegments: (episodeId: string, opts?: { budgetSec?: number }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_RECOMPUTE_SEGMENTS, episodeId, opts),
+    listSegments: (episodeId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_LIST_SEGMENTS, episodeId),
+    generateSegmentVideo: (segmentId: string, opts?: any) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_GENERATE_SEGMENT_VIDEO, segmentId, opts),
 
     // P6-T5 合成 + 导出 MP4
     buildTimeline: (episodeScriptId: string) =>

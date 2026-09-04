@@ -41,6 +41,8 @@ export interface SegmentPreviewItem {
   shotCount: number
   estDuration: number
   videoPath: string | null
+  /** 实际视频时长（生成完成后写回；未生成为 null） */
+  duration: number | null
   /** 片段内分镜 ID（按 segment_seq 升序） */
   storyboardIds: string[]
 }
@@ -89,6 +91,7 @@ export class EpSegmentationService {
         shotCount: seg.shotCount,
         estDuration: seg.estDuration ?? 0,
         videoPath: seg.videoPath,
+        duration: seg.duration ?? null,
         storyboardIds: shots.map(s => s.id),
       })
     }

@@ -33,22 +33,38 @@
 
       <aside class="edit-left">
         <div class="shot-list">
-          <div
-            v-for="shot in shots"
-            :key="shot.id"
-            class="shot-item"
-            :class="{ active: selectedShot?.id === shot.id }"
-            @click="selectShot(shot)"
-          >
-            <div class="shot-thumb">
-              <el-image v-if="frameUrl(shot)" :src="frameUrl(shot)" fit="cover" class="thumb-img" />
-              <div v-else class="thumb-empty"><el-icon :size="16"><Picture /></el-icon><span>待生成</span></div>
+          <template v-for="group in shotGroups" :key="group.key">
+            <!-- 片段分组头（视频片段制：左侧列表从纯镜头改为片段分组） -->
+            <div class="seg-group-head" :data-status="group.status">
+              <span class="seg-group-title">{{ group.title }}</span>
+              <span class="seg-group-status" :class="`st-${group.status ?? 'none'}`">{{ group.statusLabel }}</span>
             </div>
-            <div class="shot-meta">
-              <span class="shot-no">SHT-{{ pad(shot.shotNumber) }}</span>
-              <span class="shot-dur">{{ durationLabel(shot.duration) }}</span>
+            <div
+              v-for="shot in group.shots"
+              :key="shot.id"
+              class="shot-item"
+              :class="{ active: selectedShot?.id === shot.id }"
+              @click="selectShot(shot)"
+            >
+              <div class="shot-thumb">
+                <el-image v-if="frameUrl(shot)" :src="frameUrl(shot)" fit="cover" class="thumb-img" />
+                <div v-else class="thumb-empty"><el-icon :size="16"><Picture /></el-icon><span>待生成</span></div>
+              </div>
+              <div class="shot-meta">
+                <span class="shot-no">SHT-{{ pad(shot.shotNumber) }}</span>
+                <span class="shot-dur">{{ durationLabel(shot.duration) }}</span>
+                <!-- 单镜生成入口（保留既有单镜能力；默认生成入口已改为片段级） -->
+                <button
+                  class="shot-gen-btn"
+                  title="单镜生成（仅该镜头一段视频）"
+                  :disabled="generating"
+                  @click.stop="onGenerateSingle(shot)"
+                >
+                  🎬
+                </button>
+              </div>
             </div>
-          </div>
+          </template>
         </div>
       </aside>
 
@@ -57,8 +73,8 @@
           <!-- 预览区 -->
           <div class="preview-area">
             <video
-              v-if="videoUrl(selectedShot)"
-              :src="videoUrl(selectedShot)!"
+              v-if="previewVideoUrl"
+              :src="previewVideoUrl"
               class="preview-video"
               controls
               autoplay
@@ -68,9 +84,10 @@
             <el-image v-else-if="frameUrl(selectedShot)" :src="frameUrl(selectedShot)" fit="contain" class="preview-img" />
             <div v-else class="preview-empty">
               <el-icon :size="40"><VideoCamera /></el-icon>
-              <span class="pe-text">编辑提示词 + 生成视频</span>
+              <span class="pe-text">编辑提示词 + 生成片段视频</span>
             </div>
             <div v-if="generating" class="gen-overlay"><el-icon class="is-loading" :size="28"><Loading /></el-icon></div>
+            <span v-if="previewIsSegmentVideo" class="seg-video-badge">片段视频 · {{ selectedShotSegment?.shotCount ?? '?' }} 镜一段</span>
           </div>
 
           <!-- 提示词富文本（一个整体框，一行一个镜头；提示词本体就是一个字符串字段） -->
@@ -89,7 +106,7 @@
             </el-radio-group>
             <el-button type="primary" :loading="generating" @click="onGenerate">
               <el-icon><VideoCamera /></el-icon>
-              生成视频
+              生成片段视频
             </el-button>
             <el-button :disabled="!dirty" @click="onSave">保存</el-button>
           </div>
@@ -106,7 +123,11 @@
 <script setup lang="ts">
 /**
  * M5 分镜制作页（tab 宿主内的完整左+中央工作区，参照项目分镜制作页.png）。
- * 左：SHT 分镜列表（选中态）；中：大预览 + 片段提示词富文本 + 生成图像。
+ * 左：SHT 分镜列表按视频片段分组（视频片段制，2026-09-04 重构批次 B）；中：大预览 + 片段提示词富文本。
+ *
+ * 生成入口：主按钮「生成片段视频」走片段级（ep:generate-segment-video，多镜一段，
+ * 默认 text2video）；单镜生成保留在镜头行 🎬 按钮（ep:generate-video-segment，行为不动）。
+ * 预览：镜头自身视频优先，无则回退所属片段视频。
  *
  * 数据模型：编辑单位 = 视频片段（一段待生成视频，含多个镜头）。提示词本体就是一
  * 个字符串字段（一行一个镜头），富文本只做展示/交互。本组件把当前场次全部镜头的
@@ -163,6 +184,86 @@ const styleOptions = computed<ParamOption[]>(() =>
 
 const currentScene = computed(() => scenes.value.find(s => s.id === selectedShot.value?.sceneScriptId) || null)
 
+// ── 视频片段制（2026-09-04 重构批次 B）：左侧列表按片段分组，默认生成入口走片段级 ──
+/** 片段预览条目（与后端 SegmentPreviewItem 对齐，只取本页需要的字段） */
+interface SegmentInfo {
+  segmentId: string
+  seq: number
+  sceneId: string
+  status: 'pending' | 'generating' | 'completed' | 'error'
+  shotCount: number
+  estDuration: number
+  videoPath: string | null
+  storyboardIds: string[]
+}
+const segments = ref<SegmentInfo[]>([])
+
+/** storyboardId → 所属片段 */
+const segmentByShotId = computed(() => {
+  const map = new Map<string, SegmentInfo>()
+  for (const seg of segments.value) {
+    for (const id of seg.storyboardIds) map.set(id, seg)
+  }
+  return map
+})
+
+/** 左侧列表：镜头按片段分组；未分段镜头归入"未分段"组（置顶提示） */
+const shotGroups = computed(() => {
+  const groups: Array<{ key: string; title: string; status: SegmentInfo['status'] | null; statusLabel: string; shots: any[] }> = []
+  const bySeg = new Map<string, any[]>()
+  const unsegmented: any[] = []
+  for (const shot of shots.value) {
+    const seg = segmentByShotId.value.get(shot.id)
+    if (!seg) { unsegmented.push(shot); continue }
+    const arr = bySeg.get(seg.segmentId) ?? []
+    arr.push(shot)
+    bySeg.set(seg.segmentId, arr)
+  }
+  if (unsegmented.length > 0) {
+    groups.push({ key: '__unsegmented__', title: '未分段镜头', status: null, statusLabel: '回列表页点「重新分段」', shots: unsegmented })
+  }
+  const statusLabelOf = (s: SegmentInfo['status']) =>
+    ({ pending: '待生成', generating: '生成中', completed: '已完成', error: '失败' } as const)[s]
+  const segsSorted = [...segments.value]
+    .filter(seg => bySeg.has(seg.segmentId))
+    .sort((a, b) => a.seq - b.seq)
+  for (const seg of segsSorted) {
+    groups.push({
+      key: seg.segmentId,
+      title: `片段 ${seg.seq} · ${seg.shotCount} 镜 · 约${(seg.estDuration ?? 0).toFixed(0)}s`,
+      status: seg.status,
+      statusLabel: statusLabelOf(seg.status),
+      shots: bySeg.get(seg.segmentId)!,
+    })
+  }
+  return groups
+})
+
+/** 当前选中镜头所属片段 */
+const selectedShotSegment = computed<SegmentInfo | null>(() =>
+  selectedShot.value ? (segmentByShotId.value.get(selectedShot.value.id) ?? null) : null,
+)
+
+/** 预览视频：镜头自身视频优先；无则回退所属片段的视频（片段级生成不写 shot.videoPath） */
+const previewVideoUrl = computed<string | null>(() => {
+  if (!selectedShot.value) return null
+  return videoUrl(selectedShot.value)
+    ?? (selectedShotSegment.value?.videoPath ? toVideoUrl(selectedShotSegment.value.videoPath) : null)
+})
+const previewIsSegmentVideo = computed(() =>
+  !!selectedShot.value && !videoUrl(selectedShot.value) && !!selectedShotSegment.value?.videoPath,
+)
+
+async function loadSegments(): Promise<void> {
+  if (!props.episodeId) { segments.value = []; return }
+  try {
+    const r = await (window.electronAPI.episodeProduction as any).listSegments(props.episodeId)
+    segments.value = r?.success ? (r.data?.segments ?? []) : []
+  } catch {
+    segments.value = []
+  }
+}
+
 function pad(n?: number): string {
   return String(n || 0).padStart(2, '0')
 }
@@ -186,6 +287,7 @@ async function load(): Promise<void> {
 
   const scResp = await window.electronAPI.episodeProduction.listScenes(ep.data.scriptId)
   scenes.value = scResp.success ? (scResp.data || []) : []
+  void loadSegments()
   // 优先加载指定场次（来自列表页点击）；否则取第一个有分镜的场次
   const target = props.sceneId ? scenes.value.find(s => s.id === props.sceneId) : null
   const order = target ? [target, ...scenes.value.filter(s => s.id !== target.id)] : scenes.value
@@ -212,12 +314,82 @@ function syncPrompt(): void {
   promptText.value = buildPromptText(shots.value, styleName.value)
 }
 
+/**
+ * 默认生成入口：片段级生成（视频片段制 §5——一次视频调用产出多镜一段）。
+ * 选中镜头须已分段；未分段时引导回列表页「重新分段」（单镜生成走镜头行 🎬 按钮）。
+ */
 async function onGenerate(): Promise<void> {
   if (!selectedShot.value || generating.value) return
+  const seg = selectedShotSegment.value
+  if (!seg) {
+    ElMessage.warning('该镜头尚未分段：请返回分镜列表点「重新分段」（或用镜头行 🎬 单镜生成）')
+    return
+  }
   if (!videoProviderId.value || !videoModelId.value) {
     ElMessage.warning('请先在右上角选择视频模型')
     return
   }
+  generating.value = true
+  try {
+    // 先保存字段（含提示词 → frameDescription），片段提示词由后端按 segment_seq 聚合
+    await doSave()
+    const opts: Record<string, unknown> = {
+      providerConfigId: videoProviderId.value,
+      modelId: videoModelId.value,
+    }
+    if (videoGenMode.value === 'ref') {
+      // 参考图模式：片段级 V1 首帧=首镜头关键帧（§5）。确保首镜头有带图关键帧后不传
+      // forceMode，由后端 pickVideoMode 自动选 image2video / text2video。
+      const firstShotId = seg.storyboardIds[0]
+      if (firstShotId) {
+        const kfResp = await window.electronAPI.episodeProduction
+          .listKeyframes(firstShotId)
+          .catch(() => null)
+        const hasKeyframeImage = (((kfResp as any)?.data || []) as any[]).some(
+          (k) => k.imagePath || k.imageAssetId,
+        )
+        if (!hasKeyframeImage) {
+          ElMessage.info('参考图模式：正在为片段首镜头生成关键帧（@引用图作为参考），可能需要 1-2 分钟…')
+          const g = await window.electronAPI.episodeProduction.generateKeyframes(
+            firstShotId,
+            styleName.value,
+          )
+          if (!g?.success) {
+            ElMessage.error(g?.error || '关键帧生成失败')
+            return
+          }
+        }
+      }
+    } else {
+      // 文生视频（默认）：片段级默认走 text2video
+      opts.forceMode = 'text2video'
+    }
+    const r = await (window.electronAPI.episodeProduction as any).generateSegmentVideo(
+      seg.segmentId,
+      opts,
+    )
+    if (r?.success) {
+      ElMessage.success(`片段 ${seg.seq} 视频已生成（${seg.shotCount} 镜一段）`)
+      await Promise.all([loadSegments(), reloadShots()])
+    } else {
+      ElMessage.error(r?.error || '生成失败')
+      await loadSegments()
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || '生成失败')
+  } finally {
+    generating.value = false
+  }
+}
+
+/** 单镜生成（保留既有能力）：仅该镜头一段视频，写 storyboard.video_path */
+async function onGenerateSingle(shot: any): Promise<void> {
+  if (!shot || generating.value) return
+  if (!videoProviderId.value || !videoModelId.value) {
+    ElMessage.warning('请先在右上角选择视频模型')
+    return
+  }
+  selectShot(shot)
   generating.value = true
   try {
     // 先保存字段（含提示词 → frameDescription），再用提示词直接生成视频
@@ -230,7 +402,7 @@ async function onGenerate(): Promise<void> {
       // 参考图模式：确保有带图关键帧（@资产引用图在关键帧生成时作为参考图进入），
       // 之后不传 forceMode，让后端 pickVideoMode 按关键帧数量自动选模式。
       const kfResp = await window.electronAPI.episodeProduction
-        .listKeyframes(selectedShot.value.id)
+        .listKeyframes(shot.id)
         .catch(() => null)
       const hasKeyframeImage = (((kfResp as any)?.data || []) as any[]).some(
         (k) => k.imagePath || k.imageAssetId,
@@ -238,7 +410,7 @@ async function onGenerate(): Promise<void> {
       if (!hasKeyframeImage) {
         ElMessage.info('参考图模式：正在生成关键帧（@引用图作为参考），可能需要 1-2 分钟…')
         const g = await window.electronAPI.episodeProduction.generateKeyframes(
-          selectedShot.value.id,
+          shot.id,
           styleName.value,
         )
         if (!g?.success) {
@@ -252,12 +424,12 @@ async function onGenerate(): Promise<void> {
       opts.forceMode = 'text2video'
     }
     const r = await window.electronAPI.episodeProduction.generateVideoSegment(
-      selectedShot.value.id,
+      shot.id,
       opts,
     )
     if (r.success) {
       ElMessage.success('视频已生成')
-      await reloadShot(selectedShot.value.id)
+      await reloadShot(shot.id)
     } else {
       ElMessage.error(r.error || '生成失败')
     }
@@ -265,6 +437,18 @@ async function onGenerate(): Promise<void> {
     ElMessage.error(e?.message || '生成失败')
   } finally {
     generating.value = false
+  }
+}
+
+/** 重新拉取当前场次镜头列表（片段级生成后 shots status 联动置 completed） */
+async function reloadShots(): Promise<void> {
+  const sceneId = selectedShot.value?.sceneScriptId ?? currentScene.value?.id
+  if (!sceneId) return
+  const r = await window.electronAPI.episodeProduction.listStoryboards(sceneId)
+  if (r?.success && r.data?.length) {
+    shots.value = r.data
+    const cur = r.data.find((s: any) => s.id === selectedShot.value?.id)
+    if (cur) selectedShot.value = cur
   }
 }
 
@@ -447,6 +631,26 @@ async function loadMentionEntities(): Promise<void> {
   overflow-y: auto; padding: 8px;
 }
 .shot-list { display: flex; flex-direction: column; gap: 8px; }
+.seg-group-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  padding: 4px 6px; margin-top: 4px;
+  font-size: 11px; color: var(--text-color-secondary);
+  border-bottom: 1px dashed var(--border-color-lighter);
+  &:first-child { margin-top: 0; }
+  .seg-group-title { font-weight: 600; color: var(--text-color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .seg-group-status { flex-shrink: 0; color: var(--text-color-placeholder); &.st-completed { color: var(--color-success); } &.st-error { color: var(--color-danger); } &.st-generating { color: var(--color-warning); } }
+}
+.shot-gen-btn {
+  border: none; background: transparent; cursor: pointer; font-size: 12px;
+  padding: 0 2px; border-radius: 4px; line-height: 1.4;
+  &:hover { background: var(--fill-color); }
+  &:disabled { cursor: not-allowed; opacity: .4; }
+}
+.seg-video-badge {
+  position: absolute; left: 10px; top: 10px;
+  background: rgba(0, 0, 0, .55); color: #fff;
+  font-size: 11px; padding: 2px 8px; border-radius: 10px;
+}
 .shot-item {
   border: 1px solid var(--border-color-lighter);
   border-radius: var(--radius-md);

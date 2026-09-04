@@ -181,3 +181,64 @@ CREATE INDEX idx_evs_scene   ON ep_video_segments (scene_id);
 - `ep:generate-segment-video` `(segmentId, opts?: { providerConfigId, modelId, forceMode?, durationSec?, width?, height? })` → `SegmentVideoResult`
 - `SegmentPreview = { episodeId, budgetSec, sceneCount, totalShotCount, segments: [{ segmentId, seq, sceneId, sceneNumber, sceneLocation, status, shotCount, estDuration, videoPath, storyboardIds }] }`
 - 项目级预算读写：`video_projects.config.segmentDurationBudgetSec`（项目设置 UI 加表单项即可）
+
+---
+
+## 11. 批次 B 实施记录（2026-09-04，UI + 迁移试点 + 真机 e2e，已本地 commit 未 push）
+
+### 文件清单
+
+**IPC 暴露**
+- `src/preload/index.ts`（改）—— 新增 channel `EP_RECOMPUTE_SEGMENTS` / `EP_LIST_SEGMENTS` / `EP_GENERATE_SEGMENT_VIDEO`；`episodeProduction` API 加 `recomputeSegments` / `listSegments` / `generateSegmentVideo`
+- `src/web/client/channel-map.ts`（改）—— Web 端同 3 条映射（双端对齐）
+- `src/core/modules/episode-production/render/video/ep-segmentation.service.ts`（改）—— `SegmentPreviewItem` 加 `duration`（实际时长，片段卡"预估/实际时长"展示需要）
+
+**UI 改造（现行工作室 storyboard/ 目录，EpisodeStudio 路由实际使用）**
+- `src/renderer/src/components/episode-production/storyboard/StageStoryboardView.vue`（重写中央区）——
+  - 分镜列表按 segment 分组卡片：场景名/镜数/预估+实际时长/状态四态（待生成/生成中/已完成/失败，卡片左边条同色）；操作：生成视频/重试生成/重新生成/播放（el-dialog 内置 video）；展开显示各镜头脚本摘要（SHT 编号 + 时长 + frameDescription 摘要，点击进现有制作页）
+  - 顶部：时长预算 `el-input-number`（5-30s，变更即合并写 `video_projects.config.segmentDurationBudgetSec`）+ 视频模型选择（默认取 `config.videoModel`，否则第一个可用 provider）+「重新分段」（ElMessageBox 确认"清未生成段、completed 保留"后调 `ep:recompute-segments`，成功提示"N 场景 → M 片段 / 共 K 镜"）+「全部生成」（pending/error 片段串行，单段失败不阻断，结束 ElMessageBox 汇总成败清单）
+  - 兼容：`segmentsLoaded && 无片段 && 有分镜` → 黄色 alert"未分段"+「立即分段」按钮；下方回退原按场次分组视图（存量能力不删）
+- `src/renderer/src/components/episode-production/storyboard/StageStoryboardEditor.vue`（改）——
+  - 左侧镜头列表按片段分组（组头：片段 seq · N 镜 · 约 Xs + 状态；未分段镜头单列"未分段"组并提示回列表页分段）
+  - 主按钮改「生成片段视频」走片段级（`ep:generate-segment-video`，t2v 默认 forceMode=text2video；ref 模式先确保片段首镜头关键帧）；未分段镜头点击给引导提示
+  - 单镜生成保留在镜头行 🎬 按钮（原 `ep:generate-video-segment` 逻辑整体搬入 `onGenerateSingle`，行为不动）
+  - 预览：镜头自身 videoPath 优先，无则回退所属片段视频并显示"片段视频 · N 镜一段"角标
+
+**e2e**
+- `scripts/e2e-ui-ep-video-segment.cjs`（新）—— UI 驱动全流程（见下）
+
+### 迁移试点结果（真实库 ~/.config/the_bot/the_bot.db）
+
+- 重启后迁移幂等执行，日志：`ep_video_segments 表及索引已建立` / `storyboards 加列 segment_id、segment_seq` / `存量迁移：2 个有视频的 storyboard → 单镜 segment`
+- **与任务书预期的偏差**：任务书预期"演示-全流程"项目（vp_1788518694155_yaq03g1sg）存在"有 video_path 的 SHT-02 + 3 个分镜 SHT-02/03/05"；真实库中该项目只有 2 个分镜（SHT-01 5s / SHT-02 7s）且**均无 video_path**，故该项目无迁移产物（符合 §7"无视频不动"）。实际迁移命中的是存量"E2E真实-剧集-视频验证"项目（vp_1788168366147）：shot 1（t2v）与 shot 7（i2v）→ 2 个单镜 completed segment（`evs_mig_*`，video_path/video_mode/duration 搬移 + segment_id 回填），SQL 直验通过
+- "completed 不动"语义改在"演示-全流程"上验证（e2e Step 6，见下）：生成完成的片段在再次「重新分段」后 segmentId/状态原样保留
+
+### 真机 e2e 结果（scripts/e2e-ui-ep-video-segment.cjs，"演示-全流程"，一次通过）
+
+| 步骤 | 结果 |
+| --- | --- |
+| 未分段提示 + UI 点「重新分段」（确认框） | ✅ 1 场景 2 镜（5s+7s=12s ≤ 15s 预算）→ 合并为 1 个片段卡 |
+| 工具条选火山引擎 + Doubao-Seedance-2.0（ep-20260511121109-hchqf） | ✅ |
+| 片段级生成（text2video） | ✅ 190s 完成 |
+| 视频文件校验 | ✅ `~/.config/the_bot/episode-production/video-segments/seg_1788532543844_q2zcra.mp4`，3,910,189 B，ftyp ✓，ffprobe 时长 **12.096s > 单镜 5s**（2 镜一段实证），库内 duration=12s |
+| UI 片段卡状态「已完成」+ 播放对话框 video 可见 | ✅（截图 /tmp/ep-seg-flow-*.png） |
+| 再次「重新分段」→ completed 段保留 | ✅ segmentId `evs_1788532356988_9yixoncnb` 状态不变 |
+
+- 成本：视频生成 **1 段**（上限 ≤2）；AI 文本未调用（分镜已存在，无需重试机制）
+- 产物全部保留未清理
+
+### 常规验证
+
+- `npx electron-vite build` ✅（18.75s）
+- 重启应用（仅 `pkill -x electron`）→ 迁移在真实库执行（见上）
+- `node scripts/e2e-pack-smoke.cjs` ✅ 6/6
+- vitest（先 `npm rebuild better-sqlite3`，测后 `npm run rebuild:electron` 恢复，双 ABI 加载均验证）：`tests/unit/episode-production/{render,compose}` + `tests/unit/migrations/create-ep-video-segments.spec.ts` —— 20 文件 192 例全过
+- eslint 触及文件 0 error（仅存量风格 any warning）
+- typecheck 净增 0：全量计数 970 vs 批次 A 基线 969，逐一核对全部 970 条无一本批触及文件（preload 的 3 条 TS2554、stage-storyboard-v2 的存量错均在 HEAD 即存在；+1 为基线计数口径差，与本批无关）
+
+### 与设计的偏差
+
+1. **目标 UI 目录**：任务书写"StageStoryboardView / StageStoryboardEditor 等"，现行工作室（EpisodeStudio 路由）实际用的是 `storyboard/` 目录这一版（stage-storyboard-v2 是另一条 EpisodeWorkbench 路线的组件，未接入现行工作室 tab），本批只改现行路线；stage-storyboard-v2 未动。
+2. **片段卡封面帧**：设计 §6"封面帧（视频首帧或首镜关键帧）"未做——片段卡为信息行 + 展开镜头行（文字摘要），封面帧留 V2。
+3. **"微调后标已过期待重生成"**（§6 镜头行）：未做脏标记，留 V2。
+4. **迁移试点对象**：真实库"演示-全流程"无 video_path 分镜，迁移实证落在存量 E2E 项目（2 镜 → 2 个单镜 completed segment）；"completed 不动"交互在演示项目生成后验证（见上）。
