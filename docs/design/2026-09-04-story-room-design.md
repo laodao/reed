@@ -1,255 +1,278 @@
-# 故事研讨室（Story Room）设计方案 —— 对话式长文/剧本创作工作台
+# 故事研讨室（Story Room）设计方案 v2 —— 全新对话式创作工作台
 
-- 日期：2026-09-04
-- 作者：评审修复后的功能设计提案
+- 日期：2026-09-04（v2，推倒 v1 重新设计）
 - 状态：待评审
-- 关联代码：`src/core/services/longwriting/**`、`src/core/services/longwriting-ai.service.ts`、`src/renderer/src/components/longwriting/**`
+- 定位：长篇小说 / 短剧剧本**前期创作的主界面**——与 AI 多轮研讨核心故事、人物、故事线，逐步收敛，然后生成大纲、衔接逐章写作
+- 基本约束：结构化落库复用现有工具与 `lw_*` 表；**不复用旧版对话 Agent 的任何前端组件与交互模型**
 
 ---
 
-## 0. 一句话结论
+## 0. 为什么推倒重来：旧版的病根在哪
 
-不重写底层，复活并重做已被下线的对话式 Agent UI（4 个孤儿组件），在其上补三个它当年缺失的核心机制——**阶段化对话流、提案-确认循环、增强多轮上下文**——形成「故事研讨室」作为创作主入口；现有表单式高级模式保留为精修工具，两者读写同一套 `lw_*` 业务表，数据零迁移。
+旧版（含 v1 方案修补后的形态）本质上是：**把对话当成"填表单的另一种方式"**。每条用户消息都触发一次工具决策（decide→act→summarize），AI 的注意力永远在"我该调哪个 generate_* 动作"上。这带来无法修补的体验问题：
 
----
+1. **对话为库服务，而不是库为对话服务**——AI 是个"表单填充执行器"，不是创作伙伴。用户在斟酌"主角动机到底是复仇还是赎罪"时，AI 想的是"要不要现在生成人物卡"。
+2. **每轮一次 JSON 决策，把聊天变成了事务**——真讨论需要 AI 有立场、能坚持、能翻旧账（"你上一轮说不要师徒反目，这个新配角是不是又绕回去了？"），而决策式架构里 AI 每轮都是失忆重来。
+3. **结构化压力无处不在**——卡片、动作、建议 chips 每轮都在催促用户"确认点什么"，讨论节奏被打断。
 
-## 1. 背景与诊断：上一版对话模式为什么被下线
-
-代码考古（git 历史 + 现状核实）：
-
-- `3cac676f` 曾实现完整对话式 Agent（前端 `agent/AgentWorkspace + AgentChatView + AgentDataPanel + AgentPreviewCards`，后端 `AgentWorkflowService`），并设为 StoryEditor 默认模式。
-- `7076b241`（图谱改造）删除了挂载点，高级表单模式恢复默认。**4 个前端组件 + `useAgentChat` composable 共 2232 行至今完整保留但零引用**。
-- 后端 Agent 链路（决策→动作→流式总结）一直在维护（近期还修了并发互斥与可打断），只是没了 UI 消费者。
-
-它失败的根因不是"对话式不好"，而是当时的实现有四个结构性缺陷：
-
-| # | 缺陷 | 现状证据 | 后果 |
-|---|---|---|---|
-| 1 | **动作即落库，没有讨论环节** | `normalizeDecision` 只认 `{reply, actions}`，`generate_characters` 等动作决策出来立即写 `lw_characters`（agent-actions.ts） | 构思期用户要的是"反复讨论、逐步细化"，AI 却直接把半成品写进数据库；用户对数据没有确认权，只好退回表单模式自己掌控 |
-| 2 | **无阶段感** | 单一 `DECISION_SYSTEM_PROMPT` 覆盖全过程；`buildSuggestions` 是"缺什么补什么"的生产思维 | AI 在用户还在想核心冲突时就推"生成人物/生成故事线"，对话变成另一种形式的向导 |
-| 3 | **多轮上下文太弱** | 历史重放 = 最近 20 条 × 每条截 200 字纯文本（agent-context.ts L88-91），卡片内容、动作结果、被否决的方案都不进上下文 | 讨论三轮后 AI"失忆"，用户重复说明，体验崩塌 |
-| 4 | **卡片只读、无 markdown** | `AgentPreviewCards` 仅展示 `action.data`，无编辑/采纳/重生成；聊天气泡是 `pre-wrap` 纯文本 | AI 产物只能看不能用，改一个字要去高级模式开表单——两套 UI 割裂 |
-
-> 结论：方案 = 修复这四个缺陷，而不是发明新东西。底层工具（8 类动作、AI 生成函数、图谱一致性、全部 `lw_*` 表）全部复用。
+**v2 的回答：把"聊"和"存"彻底分离。** 对话本身是创作主体；数据库是对话成果的投影，只在用户明确的时刻（提炼/定稿/阶段门）通过现有工具写入。
 
 ---
 
-## 2. 目标与非目标
+## 1. 核心理念：三个分离
 
-**目标**
-1. 构思期（核心故事/人物/故事线）以多轮对话为主交互：AI 提问、给方向选项、出结构化提案，用户讨论/修改/确认后才落库。
-2. 大纲生成建立在"已确认的讨论成果"之上；逐章写作可从对话直接发起或跳转到现有编辑器。
-3. 同一研讨室支持长篇小说与短剧剧本两种内容目标（短剧经导出桥接）。
-4. 高级模式（表单）不动，作为精修/直改工具并存，同表读写。
-
-**非目标**
-- 不改 `lw_*` 表结构（仅扩展两个既有 JSON 字段）。
-- 不替换章节编辑器（ChapterStage/MarkdownEditor 仍是写作终局）。
-- 不动图谱/一致性子系统（作为写作阶段的既有能力接入提示）。
-- 不用工作流引擎重写（内置"长文写作"应用走资产/知识库，与 `lw_*` 表无关，二者并存）。
-
----
-
-## 3. 总体架构：复用与新增清单
-
-| 层 | 复用（不动/微调） | 新增/重做 |
+| 分离 | 含义 | 对应机制 |
 |---|---|---|
-| AI 生成 | `longwriting-ai.service.ts` 全部 generate* 函数（产出结构化 JSON） | 无 |
-| 动作层 | `agent-actions.ts` 落库代码段（characters 去重入库、plots 建边、outline 建树、write_chapter 流水线） | **拆分 draft/commit 两段**（§4.2）；新增 `agent:commitProposal` 入口 |
-| 编排 | `AgentWorkflowService.sendMessage`（互斥/取消/事件）已达标 | 决策协议扩展（proposals/questions/phaseSuggestion）；阶段 prompt 注册表 |
-| 上下文 | `stateToSummary`、`buildSuggestions` | 卡片摘要 + 锁定元素 + 开放问题注入；历史窗口升级 |
-| 持久化 | `lw_design_messages`（metadata JSON）、`lw_projects.wizard_state`（JSON） | metadata 扩展 `cards`；wizard_state 扩展 `phase/locked/contentTarget` |
-| 前端 | `useAgentChat`（事件订阅）、`AgentDataPanel`（右侧六分区，改为故事板）、EP 侧 `EpAgentPanel` 的 pendingChoice 确认模式 | `StoryRoom.vue` 主视图、可编辑 `StoryCard*` 卡片组件、markdown 渲染（复用 marked + sanitize-html） |
-| 路由/入口 | StoryEditor 高级模式 | `/longwriting/room/:projectId` 新路由；项目列表双入口 |
+| **聊与存分离** | 研讨期对话零落库压力；结构化写入只发生在显式动作（提炼、采纳、定稿、阶段门） | 共识账本（§3）+ 提炼器（§4） |
+| **主编与整理分离** | 对话角色（主编）只负责讨论；结构化角色（整理器）是独立的后台/按需过程，两者不抢戏 | 双角色模型（§2） |
+| **研讨与生产分离** | 研讨室管"从想法到大纲"；逐章正文生产交接给现有编辑器/写作链路，研讨室退居教练位 | 阶段门与交接（§6） |
+
+一句话：**对话是源，数据库是投影，投影动作永远由用户触发。**
 
 ---
 
-## 4. 核心机制一：阶段化对话流（Phase Machine）
+## 2. 双角色模型：主编 + 整理器
 
-### 4.1 阶段定义
+### 2.1 主编（Editor）——研讨期唯一的对话者
 
-```
-ideation(构思) → characters(人物) → world(世界·可选) → plots(故事线) → outline(大纲) → writing(写作)
-```
+一个有立场的故事主编人格，行为准则写进 system prompt：
 
-- 阶段状态持久化在 `lw_projects.wizard_state`（扩展现有 `{skipped}` 为 `{phase, locked, contentTarget, skipped}`，旧数据兼容读取）。已有 `wizard:getState` 通道，补 `wizard:setPhase`。
-- **每阶段一个专属 system prompt 模块**（阶段 prompt 注册表，替代单一 DECISION_SYSTEM_PROMPT）。要点：
+- **先问后提**：信息不足时每轮最多问 1-2 个**尖锐的具体问题**（"他'废'的代价是什么？"），不问问卷式问题（"请填写主角姓名/年龄/性别"——禁止）。
+- **给选项不给清单**：方向不明时给 2-3 个带取舍说明的选项（"A 退婚流：爽感快但俗；B 沉冤流：慢热但人物弧光厚"），而不是罗列维度。
+- **有记忆、会翻旧账**：引用此前共识与被否决方案（"你之前定了'不要师徒反目'，这个新配角是否绕回去了？"）——由共识账本 + 滚动摘要支撑（§3、§5）。
+- **敢反驳**：用户提出俗套时直接指出并给替代（"金手指直接无敌会杀死中段冲突，建议改为有代价的…"）。
+- **不碰表单**：主编输出永远是自然语言（流式 markdown），研讨期不产生任何结构化动作。
 
-| 阶段 | AI 行为约束 | 产出目标 |
-|---|---|---|
-| ideation | 每轮最多问 1-2 个聚焦问题；方向不明时给 2-3 个选项（A/B/C）各附一句理由；素材足够时输出 `draftOverview` 提案 | 故事概要定稿 |
-| characters | 围绕已定概要逐个讨论人物（主角→对手→关键配角）；每轮至多提案 2-3 人；人物动机/关系冲突在对话里磨，磨清才提案 | 人物卡全部采纳 |
-| world | 可跳过（stepper 上标"可选"）；按故事需要提案地点/势力/技能物品 | 世界设定够用即可 |
-| plots | 引导因果链而非事件罗列（"B 必须是 A 的后果"）；每轮 2-5 条故事线提案 | 故事线定稿 |
-| outline | 基于锁定 bible 生成大纲提案（逐卷确认，避免一次性巨树）；可回退（改人物后重生成后续卷） | 大纲树建成 |
-| writing | "写第 N 章"→ 章节卡片（预览开头 + 在编辑器打开）；一致性扫描结果以卡片提醒 | 章节产出（编辑器完成） |
+提问策略按题材加载（玄幻/都市/言情/短剧反转流各有问题库），**问题库做成数据配置**（复用现有字典机制 DictionaryEditor 管理），不硬编码。
 
-- **阶段迁移**：AI 可在决策里给 `phaseSuggestion`，前端渲染为确认卡（复用 EP pendingChoice 模式）；用户也可点 stepper 自由跳转（含回退）。
-- **定稿/锁定（locked）**：用户说"概要定了"或卡片点"定稿"→ 元素进 `wizard_state.locked`（如 `{overview: true, characters: ['id1']}`）。锁定元素在后续所有决策/生成 prompt 中**原样注入**（概要全文、人物核心字段），未锁定内容仍走摘要——这是"讨论成果不丢失"的锚点。随时可解锁重议。
+### 2.2 整理器（Distiller）——结构化的唯一来源
 
-### 4.2 动作层拆分：draft 与 commit 分离（本方案最关键的一步）
+独立于对话流的 AI 过程，三种触发：
 
-现状：`generate_*` 动作 = "AI 生成 + 立即落库"一体。拆为两段：
+1. **静默共识提取**（每轮对话后，后台轻量执行）：从刚才的对话增量中提取"共识条目"，更新**共识账本**。失败即跳过，不影响对话。
+2. **按需提炼**：用户点"提炼入库"或说"把我们定的整理一下"→ 产出**完整结构化卡片**（人物卡/概要卡/故事线卡）供确认。
+3. **阶段门整编**：进入下一阶段前的全量整理（§6）。
 
-```
-现状:  decide → generate_characters ──→ AI 生成 JSON → 去重入库 lw_characters（立即）
-拆分后: decide → draft_characters  ──→ AI 生成 JSON → 卡片进消息 metadata（不落库）
-        用户点[采纳] → agent:commitProposal ──→ 入库段（原代码，含去重/建边）→ lw_characters
-```
-
-- 新增 draft 前缀动作：`draft_overview / draft_characters / draft_world / draft_plots / draft_outline`（决策白名单扩到 13 类）。
-- 原 `generate_*` 直通动作保留（用户明确说"直接加上，不用问我"时走），prompt 在构思期引导优先 draft。
-- `update_entity / delete_entity / write_chapter` 不变（前两者改的是已确认数据；write_chapter 产物走章节卡片→编辑器）。
-- **落库必须经用户显式确认是架构保证而非 prompt 约束**：`commitProposal` 只接受前端显式调用，draft 路径物理上不写业务表。
+整理器输出与现有 AI 生成函数的 JSON 结构**同构**，采纳后直接走现有落库工具（§4.3）。
 
 ---
 
-## 5. 核心机制二：提案卡片协议
+## 3. 共识账本（Consensus Ledger）——讨论成果的轻量沉淀
 
-### 5.1 决策 JSON 扩展
-
-```json
-{
-  "reply": "简短回应",
-  "questions": ["1-2 个聚焦问题（构思期）"],
-  "proposals": [{ "type": "draft_characters", "params": { "requirements": "..." } }],
-  "actions": [{ "type": "write_chapter", "params": {} }],
-  "phaseSuggestion": "characters",
-  "lockSuggestions": ["overview"]
-}
-```
-
-`normalizeDecision` 容错解析（沿用 jsonMode 容错基建），未知字段忽略。
-
-### 5.2 消息 metadata 卡片结构
+研讨"逐步细化"的可感知载体。每条共识是一个轻量条目：
 
 ```ts
-// lw_design_messages.metadata（JSON 字符串，向后兼容旧格式）
-{
-  cards: [{
-    cardId: 'card_1693...',
-    type: 'overview' | 'character' | 'plot' | 'world' | 'outline' | 'chapter' | 'consistency',
-    status: 'draft' | 'adopted' | 'dismissed' | 'outdated',   // outdated: 后续同实体有新版本
-    version: 2,
-    data: { /* 与各 AI 生成函数的 JSON 输出同构 */ },
-    rationale: 'AI 一句话提案理由',
-    commitResult?: { ids: [...], summary: '已保存 2 位人物' }
-  }],
-  suggestions: [...],          // 既有 chips
-  phase: 'characters',         // 本轮所属阶段
+interface ConsensusEntry {
+  id: string
+  kind: 'premise' | 'character' | 'plot' | 'world' | 'tone' | 'taboo'
+  title: string            // 「主角动机 = 洗冤复仇」
+  points: string[]         // 支撑细节（最多 3 条）
+  status: 'tentative' | 'confirmed' | 'rejected'   // rejected = 被否决的方向（同样有价值）
+  sourceTurn: number       // 出自第几轮对话（可溯源）
 }
 ```
 
-- 卡片在 `reply:done` 后随消息一次性出现（流式期间只有正文），实现简单且稳定。
-- **卡片操作**：
-  - `采纳`：可先 `行内编辑`（字段就地改，编辑结果随 commit 提交）→ 调 `agent:commitProposal` → 卡片转 `adopted`，聊天流插入"✓ 已保存：林晓（主角）"，右侧故事板刷新。
-  - `重新生成`：附一句反馈（"动机改成复仇"）→ `agent:regenerateProposal` → 新卡片 v2，旧卡转 `outdated`（保留可回看）。
-  - `忽略`：转 `dismissed`——**被忽略的卡片摘要仍进决策上下文**（"用户否决过：修仙流开局"），避免 AI 反复提同类方案。
-  - `定稿`：采纳之上的锁定（§4.1）。
-- 人物/故事线支持一卡多人时的**逐项勾选采纳**（采纳 2/3）。
+- **呈现**：右侧面板顶部"讨论成果"区，紧凑 chip 列表（不是表单）。tentative 灰色、confirmed 高亮、rejected 划线保留（"已排除：开局无敌"）。
+- **操作**：点 chip 展开 → 确认 / 修改一句话 / 丢弃 /「在对话中追问」（把该共识插入输入框上下文）。
+- **作用**：
+  1. 用户随时看到"我们定下了什么"——研讨的进度感；
+  2. `confirmed` 条目注入主编上下文与后续所有生成 prompt（比全文注入省 token 且不跑偏）；
+  3. `rejected` 条目注入主编 prompt——这是"AI 不再重复推荐被否方案"的机制保证；
+  4. 阶段门提炼的种子。
+- **存储**：`lw_projects.wizard_state` JSON 扩展（`{ledger, summary, phase, contentTarget}`），不建新表。
 
 ---
 
-## 6. 核心机制三：上下文与多轮记忆增强
+## 4. 提炼与入库：卡片 → 现有工具
 
-分层注入决策上下文（`buildDecisionContext` 重构）：
+### 4.1 卡片（Artifact Cards）
 
-1. **项目状态**：`stateToSummary`（现状保留）+ 锁定元素全文（§4.1）。
-2. **对话历史**：窗口 20→30 条；用户消息截断 200→400 字；助手消息替换为一行结构化摘要：`助手：{reply}（提案：人物×3 → 采纳2/忽略1）`。
-3. **卡片摘要**：最近 N 张卡片的 `type + 标题字段 + status` 列表（如 `人物卡「林晓」已采纳 v2`），被忽略的方案显式标注。
-4. **开放问题**：`wizard_state.openQuestions`（AI 在 questions 里问过、用户未答的，跨轮保留，最多 3 条，防丢线）。
-5. （M3 可选增强）`agentDecide` 从"文本重放"升级为原生 messages 数组（借鉴工作流引擎 llmHistory 机制），进一步提升多轮连贯性——先用 1-4 项验证效果再决定是否做。
-
----
-
-## 7. UI 设计
-
-### 7.1 布局（新视图 `StoryRoom.vue`，路由 `/longwriting/room/:projectId`）
+提炼器产出的结构化草案，以卡片嵌在对话流末尾（或阶段门面板）：
 
 ```
-┌────────────────────────────────────────────────────────────────────┐
-│ ← 返回 │ 项目名 │ ●构思─○人物─○世界(可选)─○故事线─○大纲─○写作 │ 高级模式↗ │ 模型▾ │
-├──────────────────────────────────────────┬─────────────────────────┤
-│  对话流（markdown + 卡片）                  │  故事板（实时结构化视图）   │
-│                                          │  ▸ 故事概要      🔒已定稿 │
-│  ┌─ AI ─────────────────────────────┐    │  ▸ 人物(3)  林晓·主角 🔒  │
-│  │ 核心冲突我建议二选一：              │    │  ▸ 世界设定  背景✓ 地点2  │
-│  │ A. 复仇线：…  B. 救赎线：…         │    │  ▸ 故事线(2)             │
-│  └───────────────────────────────────┘    │  ▸ 大纲  12节点/已写0     │
-│  ┌─ [提案卡·人物 v1] 林晓 ───────────┐    │    点任意元素→带入对话讨论  │
-│  │ 身份: 青云宗外门弟子  [行内编辑]    │    │                         │
-│  │ 性格: 隐忍/重情      [行内编辑]    │    │                         │
-│  │ [✓采纳并保存] [↻重新生成…] [✗忽略] │    │                         │
-│  └───────────────────────────────────┘    │                         │
-│  ┌─ AI ── 已保存「林晓」。对手我建议…  ┐    │                         │
-├──────────────────────────────────────────┴─────────────────────────┤
-│ [输入框… Enter发送/Shift+Enter换行]  💡补充对手人物 · 让AI再问 · ⏹打断 │
-└─────────────────────────────────────────────────────────────────────┘
+┌─ 📇 人物卡 · 林晓（v2） ────────────────────┐
+│ 身份：青云宗外门弟子，被冤偷宗门至宝逐出师门    │
+│ 动机：洗冤 + 复仇（对大师兄）                 │
+│ 性格：隐忍、重情、多疑（背叛后遗症）           │
+│ 弧光：从"自证清白"到"放下自证、重建秩序"       │
+│ 来源：讨论第 7、9 轮共识                     │
+│ [✓ 采纳入库] [✎ 编辑] [↻ 按反馈重新提炼] [✗] │
+└──────────────────────────────────────────────┘
 ```
 
-### 7.2 组件拆分与复用
+- 卡片字段是**阅读态+轻编辑**（改一句话级别），不是表单回填——大改的正确路径是回对话里继续讨论再重新提炼。
+- 每张卡标注来源轮次（provenance），点击可跳到对应对话位置。
 
-| 新组件 | 复用基础 | 改造点 |
+### 4.2 采纳流程
+
+用户点"采纳入库"（可编辑后）→ 调用**现有落库工具** → 卡片转 adopted、显示落库结果（"已保存人物「林晓」并建立与大师兄的关系边"）→ 右侧"故事圣经"面板刷新。
+
+### 4.3 落库映射（全部复用现有代码）
+
+| 卡片 | 落库工具（现有） | 目标表 |
 |---|---|---|
-| `StoryRoom.vue`（外壳+stepper） | `AgentWorkspace.vue` | 阶段条替代进度带；双栏比例可拖 |
-| `StoryChat.vue`（消息流） | `AgentChatView.vue` + Chat.vue 的 markdown 渲染 | markdown（marked+sanitize-html 白名单消毒，复用评审 #15 基建）；卡片区 |
-| `StoryCard*.vue`（按类型：Overview/Character/Plot/World/Outline/Chapter/Consistency） | `AgentPreviewCards.vue` | 从只读改为可编辑+操作按钮；字段编辑用轻量行内控件 |
-| `StoryBoard.vue`（右栏） | `AgentDataPanel.vue`（六分区增量刷新） | 加锁定徽标、"讨论此元素"按钮（向输入框插入上下文 chip） |
-| `useStoryRoom.ts` | `useAgentChat.ts` | 增加卡片操作 API、阶段状态、`agent:${projectId}` 事件扩展处理 |
-| 阶段确认卡 | EP `EpAgentPanel` pendingChoice 模式 | phaseSuggestion 渲染 |
+| 概要卡 | `generate_overview` 的 upsert 段 | `lw_story_overviews` |
+| 人物卡 | 人物去重入库段 + `syncEntityRelations` 建边 | `lw_characters` + 图谱边 |
+| 故事线卡 | plots batchCreate + entityRelations | `lw_story_plots` + 图谱边 |
+| 世界卡 | 地点/势力/技能/物品入库段 | 各自表 |
+| 大纲卡 | `createOutlineTree` | `lw_story_outlines` |
+| 章节卡 | `write_chapter` 段（content/version/图谱流水线） | `lw_chapters` |
 
-### 7.3 入口与导流
-
-- `LongWriting.vue` 项目卡片双按钮：**「进入研讨室」(主)** / 「高级模式」；新建项目对话框直接选内容目标（长篇/短剧）后进研讨室。
-- StoryEditor 顶部加"↖ 返回研讨室"。
-- 旧 `WizardContainer` 六步组件维持孤儿，研讨室稳定一个版本后删除。
+> 工程动作：把 `agent-actions.ts` 中的"落库段"抽取为独立的 `story-persist.ts` 共享模块（纯函数、可单测），研讨室服务调用它。这是**复用经过测试的持久化逻辑**，与旧对话 UI 无关；旧 `AgentWorkflowService` 随之可退役（其 UI 已不存在）。
 
 ---
 
-## 8. 短剧剧本衔接（contentTarget = 'script'）
+## 5. 对话引擎：原生多轮 + 滚动摘要
 
-- 研讨室对两种目标**共用同一套构思/人物/故事线阶段**（故事圣经是共享资产，仍落 `lw_*` 表，项目即长文项目）。
-- 差异在出口：
-  - `novel`：outline 阶段生成小说卷/章/节大纲（现状）。
-  - `script`：outline 阶段改为"分集大纲"提案（集→场两级，复用 outline 树 + 专用 prompt），定稿后出现 **「转为短剧项目」** 按钮 → 调用 EP 侧既有"AI 生成剧本"链路（EpisodeCreator 已有），以概要+人物+故事线+分集大纲为种子生成剧本初稿，创建 episode 项目并跳转 EpisodeStudio。
-- 这样短剧的"前期讨论"复用全部本方案能力，剧本生产复用 EP 现有管线，两边都不重造。
-- 建议 **V1 只做 novel 目标，script 桥放 M5**（见开放问题 1）。
+旧版上下文 = "最近 20 条 × 每条 200 字文本重放"，这是讨论失忆的直接原因。v2 建一个真正的会话引擎：
+
+```
+StorySessionService（新增，core/services/longwriting/room/）
+├── 消息存储：lw_design_messages（conversation_id = room:{projectId}，复用表）
+├── 上下文组装（每轮主编调用）：
+│   [system] 主编人格 + 阶段策略 + 内容目标(长篇/短剧) + 题材问题库
+│   [system] 故事圣经摘要（stateToSummary 复用）+ confirmed/rejected 共识
+│   [system] 滚动摘要（前情提要，每 20 轮由后台压缩一次）
+│   [history] 最近 K 条完整消息（原生 messages 数组，非文本重放）
+│   [user]   本条消息
+└── 流式输出：复用 longwriting:generate:{eventId} 事件通道
+```
+
+- **主编调用是普通 chat completion**（非 JSON mode）——可靠、可流式、人格稳定；旧版"每轮决策 JSON"彻底取消。
+- **滚动摘要**：对话超过阈值（如 20 轮）后台把最老一段压缩为"前情提要"（发生了什么讨论、定/否了什么），无限对话不失控。摘要与共识账本互补：账本记结论，摘要记过程。
+- **取消**：复用 AbortController 机制（cancelAllForProject）。
+- **互斥**：同项目同时一轮（沿用项目级互斥）。
 
 ---
 
-## 9. IPC / API 变更清单
+## 6. 阶段与门（Phase Gates）
+
+```
+研讨 ────────────────────────────► 生产
+┌─────────┬─────────┬─────────┬─────────┐
+│ ① 故事核 │ ② 人物  │ ③ 故事线 │ ④ 大纲   │ → ⑤ 逐章写作（交接）
+└─────────┴─────────┴─────────┴─────────┘
+   每个阶段 = 同一连续对话中的一段（阶段分隔卡插入对话流）
+   阶段门 = 轻量确认卡，不是强制流程
+```
+
+- **一条连续对话**贯穿全程（创作讨论天然要回溯前文），阶段以"分隔卡"呈现在流中；顶部是可点击的阶段指示器（非阻塞，随时跳转/回退）。
+- **阶段门**：AI 判断素材成熟时建议推进（"概要三要素齐了，整理成概要卡？"）→ 整理器全量提炼 → 用户确认/补漏 → 落库 → 插入下一阶段分隔卡。用户也可以无视门直接聊。
+- **回退**：改了主角动机 → AI 主动提示受影响项（"第 3 条故事线和大纲第 2 卷依赖旧动机，建议重议"）——依赖检查复用现有图谱校验思路。
+- 阶段策略（每阶段的主编行为约束 + 门条件）做成**数据配置**（`room-phases.ts` 常量表 + 题材问题库走字典），非硬编码散落 prompt。
+
+## 6.1 大纲与写作衔接
+
+- **大纲阶段**：整理器以 confirmed 共识 + 圣经为种子产出大纲提案（复用 `generateOutlineStory` 的生成与建树逻辑，上下文换成研讨成果），**逐卷卡片确认**（一次一卷，可"按反馈重提这一卷"），采纳即建树。
+- **写作阶段**（研讨室的终点是交接，不是替代编辑器）：
+  - 对话里说"写第三章"→ 生成**章节卡**（开头预览 + 本章要点）→「在编辑器中打开」→ 跳转现有 ChapterStage 并定位节点（内容已写入草稿）；
+  - 研讨室同时是**写作教练位**：每章完成后自动跑 `scanContradictions`，矛盾以卡片提醒（"第 3 章说林晓左臂有伤，第 5 章他双手持剑"），点击跳转修改；
+  - 也可以全程不进研讨室写作——高级模式不受影响。
+
+## 6.2 短剧剧本目标（contentTarget = 'script'）
+
+- ①②③ 阶段与长篇完全共用（故事圣经不分文体）；
+- ④ 大纲阶段换"**分集大纲**"策略（集→场两级 + 每集钩子/反转标注，prompt 按短剧节奏设计）；
+- 定稿后出现「**转为短剧项目**」→ 以圣经（概要+人物+故事线+分集大纲）为种子调用 EP 已有的"AI 生成剧本"链路创建剧集项目 → 跳转 EpisodeStudio。
+- 研讨室不生产剧本正文，剧本生产完全复用 EP 管线。
+
+---
+
+## 7. UI 设计（全新组件，零复活）
+
+### 7.1 布局
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│ ← 项目列表 │ 《洗冤录》 · 短剧 │ ①故事核─②人物─③故事线─④大纲─⑤写作 │ ⚙模型 │
+├──────────────────────────────────────────────┬───────────────────────┤
+│                                              │ 讨论成果（共识账本）     │
+│  ── 阶段分隔卡：① 故事核 ──                    │ ✦ 动机=洗冤复仇         │
+│                                              │ ✦ 排除：开局无敌  ~~    │
+│  你：玄幻，主角废柴逆袭                         │ …                     │
+│  主编：废柴逆袭很成熟……先定两件事：              │───────────────────────│
+│    1) 他"废"的代价是什么？                     │ 故事圣经（已入库）       │
+│    A 退婚流… B 沉冤流…                         │ ▸ 概要  (未入库)       │
+│  你：B，被冤偷了至宝                           │ ▸ 人物  2 已入库       │
+│  主编：好，"冤"比"废"引擎更强……真凶建议         │ ▸ 故事线 (未入库)      │
+│    有亲密关系……                               │ ▸ 大纲  —             │
+│                                              │ （点条目→在对话中追问）  │
+│  ┌ 📇 人物卡·林晓 v1 [✓采纳][✎编辑][↻][✗] ┐    │                       │
+│                                              │ [提炼入库] 按钮         │
+├──────────────────────────────────────────────┴───────────────────────┤
+│ [ 和主编继续讨论… ]                    💡让主编提问 │ ⏹ │ Enter 发送     │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### 7.2 全新组件清单
+
+| 组件 | 职责 | 备注 |
+|---|---|---|
+| `views/StoryRoom.vue` | 外壳、阶段指示器、双栏 | 新路由 `/longwriting/room/:projectId` |
+| `room/ChatCanvas.vue` | 消息流（markdown 渲染 + 消毒复用既有基建）、流式、阶段分隔卡 | 不复用 AgentChatView |
+| `room/MessageBubble.vue` | 气泡 + markdown | |
+| `room/ArtifactCard*.vue` | 概要/人物/故事线/世界/大纲/章节/矛盾卡（阅读态+轻编辑+操作） | 全新 |
+| `room/LedgerPanel.vue` | 共识账本 chips | |
+| `room/BiblePanel.vue` | 故事圣经只读视图（含入库状态徽标、provenance、追问按钮） | 不复用 AgentDataPanel |
+| `room/PhaseBar.vue` | 阶段指示器 + 门确认卡 | |
+| `composables/useStoryRoom.ts` | 消息/流式/账本/卡片状态编排 | 订阅 `longwriting:room:{projectId}` 事件 |
+| `composables/useStorySession.ts` | 会话状态（阶段/滚动摘要感知/取消） | |
+
+复用的只有**基础设施**：markdown 消毒管道、事件订阅模式（preload 通道注册模式）、Element Plus 组件。旧 agent 四组件不引用、不改造，直接留在仓库等删除。
+
+---
+
+## 8. 存储与数据设计
+
+| 数据 | 存储 | 说明 |
+|---|---|---|
+| 对话消息 | `lw_design_messages`（`conversation_id = room:{projectId}`） | 复用表+新命名空间；metadata 扩展 `{cards, phase, turnNo}` |
+| 共识账本 / 滚动摘要 / 阶段 / 内容目标 | `lw_projects.wizard_state`（JSON 扩展） | 旧 `{skipped}` 兼容读取 |
+| 结构化成果 | 现有 `lw_story_overviews / lw_characters / lw_plots / lw_story_outlines / lw_chapters` 等 | 零 schema 变更 |
+| 落库函数 | 从 `agent-actions.ts` 抽取的 `story-persist.ts` | 唯一后端重构点 |
+
+高级模式（表单）与研讨室同表双入口；圣经面板每次操作后拉取，不做长驻缓存。
+
+---
+
+## 9. API / IPC 变更
 
 | 通道 | 类型 | 说明 |
 |---|---|---|
-| `longwriting:agent:send / history / cancel / state` | 复用 | 不变 |
-| `longwriting:agent:commitProposal` | 新增 | `{projectId, messageId, cardId, editedData?}` → 执行入库段，返回 `{ids, summary}`，卡片转 adopted |
-| `longwriting:agent:regenerateProposal` | 新增 | `{projectId, cardId, feedback}` → 重跑 draft，新卡片进新消息 |
-| `longwriting:agent:dismissProposal` | 新增 | `{projectId, cardId}` → 仅改卡片状态（metadata 更新） |
-| `longwriting:agent:setPhase` / `lockElement` | 新增 | wizard_state 写入 |
-| `wizard:getState` | 复用 | 返回值扩展 phase/locked |
-| 事件 `longwriting:agent:${projectId}` | 复用 | payload 扩展 cards（reply:done 时）；无需新事件类型 |
+| `longwriting:room:send / history / cancel / state` | 新增 | 会话主循环（原生多轮流式） |
+| `longwriting:room:ledger:get / update` | 新增 | 账本读取与条目确认/修改/丢弃 |
+| `longwriting:room:distill` | 新增 | 按需提炼（scope: overview/characters/plots/world/outline） |
+| `longwriting:room:adoptCard` | 新增 | 卡片采纳→story-persist 落库 |
+| `longwriting:room:regenerateCard` | 新增 | 带反馈重新提炼单卡 |
+| `longwriting:room:setPhase / export` | 新增 | 阶段切换 / 转短剧项目 |
+| 事件 `longwriting:room:{projectId}` | 新增 | message:delta / ledger:update / card:ready / phase:gate |
+| 现有 generate*/graph*/outline/chapter 通道 | 复用 | 提炼器与交接直接调服务层 |
+
+## 10. 与旧版的本质区别（为什么这次会不一样）
+
+| 维度 | 旧版（及 v1 方案） | v2 |
+|---|---|---|
+| 对话角色 | 工具决策执行器 | 有立场、有记忆的主编人格 |
+| 每轮机制 | decide(JSON)→act→summarize | 纯 chat completion + 后台静默共识提取 |
+| 落库时机 | 决策即落库（v1 改为提案确认，仍是每轮事务） | 仅用户显式动作（采纳/提炼/阶段门） |
+| 多轮记忆 | 20×200 字文本重放 | 原生 messages + 滚动摘要 + 共识账本 |
+| 结构化压力 | 卡片/chips 每轮出现 | 账本静默积累，卡片只在提炼时刻出现 |
+| 右侧面板 | 表单阶段的复制品 | 账本（讨论成果）+ 圣经（入库状态），provenance 可溯 |
+| UI | 旧组件修补 | 全新组件，旧四组件废弃待删 |
 
 ---
 
-## 10. 数据兼容
-
-- `lw_design_messages.metadata`：旧格式（actions/suggestions）原样可读；新读端对缺 `cards` 字段容错。
-- `lw_projects.wizard_state`：旧 `{skipped}` 兼容（phase 缺省按数据现状推断：无概要→ideation，有大纲→writing）。
-- 业务表零变更；高级模式与研讨室同表并发读写（已有 ALS 租户隔离），故事板每次操作后拉取最新，不做长驻缓存。
-
----
-
-## 11. 里程碑（TDD，每步含验收标准）
+## 11. 里程碑（TDD，每步独立可合并）
 
 | 里程碑 | 内容 | 验收标准 |
 |---|---|---|
-| **M1 后端提案协议**（约 2 天） | agent-actions 拆 draft/commit 段；决策白名单扩展 proposals/questions/phaseSuggestion/lockSuggestions；阶段 prompt 注册表；wizard_state 扩展；commitProposal/regenerate/dismiss/setPhase/lock IPC | 单测 ≥12 例：draft 全程不写业务表（断言各仓库零调用）；commit 落库断言（人物去重/建边不变）；阶段迁移与回退；锁定元素注入 prompt；决策解析容错（含非法 proposals） |
-| **M2 研讨室骨架**（约 2 天） | StoryRoom 路由+布局；StoryChat（markdown+消毒）；卡片只读渲染；StoryBoard 复用；入口双按钮 | 从项目列表进入可完整对话（发消息/流式/建议 chips/打断）；卡片随消息出现；旧项目（含历史 agent 消息）打开不报错 |
-| **M3 提案闭环**（约 3 天） | 卡片行内编辑/采纳/忽略/重新生成(带反馈)/逐项勾选/定稿锁定；阶段跳转 stepper；开放问题管理 | 端到端手测脚本：新建→讨论出概要→采纳→人物 3 轮讨论逐个采纳（其中 1 次编辑后采纳、1 次重生成）→故事板各分区实时正确；被忽略卡片影响后续提案（上下文断言单测） |
-| **M4 大纲与写作衔接**（约 2 天） | outline 阶段逐卷提案/确认/回退重生成；writing 阶段章节卡片→"在编辑器打开"（跳 ChapterStage 定位节点）；一致性扫描（scanContradictions）结果卡片化 | 大纲树最终结构正确（卷/章/节、涉及角色挂接）；章节卡片打开编辑器定位正确；矛盾卡片可跳转对应章节 |
-| **M5 短剧桥 + E2E**（约 2 天） | script 目标：分集大纲 prompt + 转短剧项目（EP AI 生成剧本 seeded）；Playwright E2E 主链路 | 长文 E2E：新建→两轮讨论→采纳概要+1 人物→生成大纲 1 卷→打开编辑器；短剧桥手动验收 |
+| **M1 会话引擎**（~2 天） | `StorySessionService`：原生多轮、上下文组装（人格/阶段/账本/摘要）、滚动摘要压缩、项目互斥与取消；`story-persist.ts` 抽取 | 单测 ≥10：上下文组装快照（人格+共识+摘要+K 条）、滚动摘要触发与压缩、取消中断、persist 各段与 agent-actions 原行为等价（对照测试） |
+| **M2 共识账本**（~1.5 天） | 静默提取器（增量、fail-soft）、账本状态机（tentative→confirmed/rejected）、rejected 注入人格 prompt | 单测 ≥6：提取 JSON 容错（坏输出不影响对话）、状态迁移、rejected 抑制重复提案（prompt 组装断言）、账本持久化往返 |
+| **M3 研讨室骨架 UI**（~2 天） | StoryRoom 路由+布局、ChatCanvas（markdown+流式+阶段分隔卡）、LedgerPanel、BiblePanel（只读）、入口（项目列表主按钮+新建对话框选内容目标） | 手测：新建→连续研讨 5 轮（含打断）→账本 chip 出现并确认→旧项目打开不报错 |
+| **M4 提炼与卡片闭环**（~3 天） | 按需提炼、七类卡片组件、采纳/编辑/重提/忽略、落库桥、provenance 跳转 | 端到端脚本：研讨→提炼人物卡→编辑一项→采纳→`lw_characters` 落库正确+关系边生成→圣经面板刷新；概要卡 upsert 幂等 |
+| **M5 大纲/写作/短剧衔接**（~3 天） | 逐卷大纲卡、章节卡→ChapterStage 交接、矛盾提醒卡、阶段门与回退依赖提示、转短剧项目桥、E2E | 大纲树结构正确且可回退重提单卷；章节交接定位正确；矛盾卡可跳章；短剧桥产出 EP 项目；Playwright E2E 主链路（研讨 3 轮→概要入库→1 卷大纲） |
 
-总量约 11 个工作日。每个里程碑独立可合并、可回退（旧 UI 全程可用）。
+总量约 11-12 个工作日。研讨期价值（M1-M3）约 5 天即可上手试用。
 
 ---
 
@@ -257,18 +280,16 @@ ideation(构思) → characters(人物) → world(世界·可选) → plots(故�
 
 | 风险 | 对策 |
 |---|---|
-| 决策 JSON 稳定性（新增字段后解析失败率上升） | normalizeDecision 逐字段容错（缺 proposals 当空数组）；沿用 jsonMode 重试基建；单测覆盖畸形输入 |
-| 提案生成延迟（人物卡 5-15s）破坏对话感 | draft 期间 UI 显示卡片骨架 + 阶段文案；决策 reply 先流式出来、卡片后到（事件顺序天然如此） |
-| 上下文膨胀（锁定全文 + 30 条历史） | 锁定元素按类型限注入量（人物卡只注核心 6 字段）；卡片只进摘要不进全文；token 预算监控（agentDecide maxTokens 提到 2048） |
-| 双 UI 数据竞争（高级模式同时改） | 同表 + 操作后即拉取；commitProposal 返回后故事板定向刷新该分区 |
-| AI 绕过提案直接落库 | 架构保证：构思期 prompt 引导 + draft 动作物理不写表；generate_* 直通仅当用户消息明确要求"直接保存" |
-| 阶段机变成新的束缚 | 自由跳转/回退；world 可跳过；AI 可建议回退（"你改了主角动机，第 2 卷大纲需要重议"） |
+| 主编人格"聊得太嗨不收敛" | 阶段策略约束 + 门建议机制（AI 判断素材成熟即引导结构化）；用户可随时手动提炼 |
+| 静默提取延迟/失败 | fail-soft（跳过本轮，账本不更新，对话无感）；提取用小上下文（只喂最近一轮+现有账本），秒级 |
+| 原生多轮 token 成本 | 滚动摘要压缩老对话；confirmed 共识替代全文注入；K 条窗口可配 |
+| 提炼结果与讨论有偏差 | 卡片带 provenance 可跳转核对；"按反馈重新提炼"单卡重生成；用户可在卡内轻编辑 |
+| 双入口数据一致 | 同表+操作后拉取；落库走同一 persist 模块 |
+| 对话被当万能入口滥用（用户要求直接写正文） | 写作阶段引导交接编辑器；研讨室内章节卡只做预览+交接 |
 
----
+## 13. 开放问题
 
-## 13. 开放问题（需产品拍板，不阻塞 M1-M4）
-
-1. **短剧目标是否进 V1**：建议 V1 只做长文（M5 做桥）。若短剧优先级高，M5 提前。
-2. **世界设定阶段**：独立阶段（本方案，可跳过）还是并入人物/故事线阶段按需触发？建议先独立，观察使用率。
-3. **旧六步向导（WizardContainer）**：确认研讨室上线一个版本后删除。
-4. **构思期多方案对比**：是否需要"方案 A/B 并列卡片、用户择一"的专用卡片形态（当前用文本选项即可），V2 再考虑。
+1. 短剧目标是否与长篇同版本交付（建议 M5 收尾，先长篇试用）。
+2. 账本静默提取的模型选择（同模型小调用 vs 配置便宜模型）——建议先同模型，量产后再配置化。
+3. 旧 `AgentWorkflowService` + 四个孤儿组件的删除时点（建议 M4 验收后一并清理，`story-persist.ts` 抽取后旧服务无存在必要）。
+4. 阶段问题库初版内容（玄幻/都市/言情/短剧四套）需要一次性编写，走字典配置。
