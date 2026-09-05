@@ -1,6 +1,6 @@
 /**
  * Agent 公共运行时（harness 层）
- * @module core/agent
+ * @module core/platform/agent-runtime
  *
  * 基于 Vercel AI SDK v6（`ai`）+ @openharness/core 的公共 agent 运行时，
  * 供长文写作 / EP / 故事研讨室等对话式功能复用（调研见 docs/design/2026-09-05-agent-harness-research.md）。
@@ -38,4 +38,15 @@
  * - 全部为 ESM-only 包：Electron 主进程（CJS 产物）以动态 `import()` 引入；Web 端 tsx 直接可用
  */
 
-export type { AgentDefinition, AgentToolDef, AgentToolContext, AgentSendResult } from './types'
+// —— 已实现（M1-P1）——
+export { LoopRunner, initState, normalizeDecision, buildSystem, truncateJson } from './runtime/loop'
+export { ProviderAdapter, AgentProviderNotConfiguredError } from './provider/provider-adapter'
+export type { LoopRunnerDeps } from './runtime/loop'
+export type { ProviderAdapterDeps, ResolveModelOptions, ProviderConfigLookup } from './provider/provider-adapter'
+
+// —— 契约类型（23 号接口契约层）——
+export type {
+  AgentDefinition, AgentToolDef, AgentToolContext, AgentTask, AgentHost, AgentLoopState,
+  AgentResult, AgentStreamEvent, HumanDecision, ParsedToolCall, SuspendRequest,
+  ToolDangerLevel, TrajectoryEntry,
+} from './types'

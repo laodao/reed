@@ -115,12 +115,16 @@
     "vue-virtual-scroller": "^2.0.0-beta.8",
     "vuedraggable": "^4.1.0",
     "ws": "^8.20.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "ai": "^6.0.277",
+    "@ai-sdk/openai-compatible": "^2.0.74",
+    "zod": "^4.5.4"
   },
   "overrides": {
     "imapflow": {
       "pino": "^9.0.0"
-    }
+    },
+    "ai": "^6.0.277"
   },
   "devDependencies": {
     "@electron-toolkit/utils": "^3.0.0",

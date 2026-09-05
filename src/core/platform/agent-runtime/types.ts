@@ -1,0 +1,165 @@
+/**
+ * Agent 运行时后端契约类型
+ * @module core/platform/agent-runtime/types
+ *
+ * 权威定义：tasks/2026-08-28-agent-loop-harness/23-interface-contracts.md。
+ * 跨进程类型（AgentEvent/审批/结果）在 @shared/types/agent.types，本文件只做后端侧扩展。
+ *
+ * 依赖纪律（22 号 §3 分层）：本文件零运行时依赖（仅 import type）；
+ * ESM-only 包（ai/zod）类型一律 import type，运行时经动态 import。
+ */
+
+import type { z } from 'zod'
+import type { ModelMessage } from 'ai'
+import type {
+  AgentLoopMode,
+  AgentSendResult,
+  PendingApproval,
+  SendMessageOptions,
+} from '@shared/types/agent.types'
+
+export type { AgentLoopMode, AgentSendResult, PendingApproval, SendMessageOptions }
+
+// ==================== 工具 ====================
+
+export type ToolDangerLevel = 'read' | 'write' | 'external-post' | 'exec'
+
+/** 业务工具定义（zod 为 schema 单一事实源；与 14 号 AgentToolSpec 统一模型的业务侧形态） */
+export interface AgentToolDef<TInput = unknown, TOutput = unknown> {
+  /** /^[a-z][a-z0-9_]{2,48}$/；经注册命名空间后变 pack:<packId>:<name> */
+  name: string
+  description: string
+  inputSchema: z.ZodType<TInput>
+  execute(input: TInput, ctx: AgentToolContext): Promise<TOutput>
+  requiresApproval?: boolean
+  dangerLevel?: ToolDangerLevel
+  approvalCard?: { title: string; summary?: (i: TInput) => string; editable?: string[] }
+  /** 工作流无人值守白名单（缺省 false；写库类一律 false） */
+  autoApprovableInWorkflow?: boolean
+}
+
+export interface AgentToolContext {
+  scopeId: string
+  rawInput: string
+  signal?: AbortSignal
+  logContext: Record<string, unknown>
+}
+
+// ==================== Agent 定义（业务包唯一要写的东西） ====================
+
+export interface AgentDefinition {
+  id: string
+  /** 定义版本（提示词/工具变更时 +1，排障用） */
+  version: number
+  systemPrompt: string | ((scopeId: string) => Promise<string>)
+  tools: Record<string, AgentToolDef>
+  /** F9：状态快照由库里重建，不由 AI 复述（防漂移原则） */
+  buildStateSnapshot(scopeId: string): Promise<string>
+  loopMode: AgentLoopMode
+  maxSteps?: number // react 缺省 6；single-pass 固定 2（决策+总结）
+  contextWindowTokens?: number
+  modelPreference?: { providerConfigId?: string; modelId?: string }
+  /** 事件通道命名（保持业务前缀，pack IPC 守卫友好） */
+  eventChannel(scopeId: string): string
+  streamChannel?: (scopeId: string) => string
+  buildSuggestions?(snapshot: string): string[]
+  approvalTimeoutMs?: number
+  summarizeTitle?(firstUserMessage: string): Promise<string>
+  onTurnEnd?(ctx: {
+    scopeId: string
+    userMessage: string
+    reply: string
+    toolCalls: Array<{ name: string; input: unknown; ok: boolean }>
+  }): Promise<void>
+}
+
+// ==================== 循环（12 号规格契约的运行时形态） ====================
+
+/** 一轮任务（agent-loop 节点 config 或 definition 构造） */
+export interface AgentTask {
+  definitionId: string
+  scopeId: string
+  /** 任务目标/用户消息 */
+  input: string
+  systemPrompt: string
+  /** 本轮工具集（已按命名空间注册） */
+  tools: Record<string, AgentToolDef>
+  maxSteps: number
+  modelPreference?: { providerConfigId?: string; modelId?: string }
+  /** 状态快照（L1 装配原料；每轮可刷新） */
+  snapshot?: string
+}
+
+export interface ParsedToolCall {
+  toolCallId: string
+  toolName: string
+  input: unknown
+}
+
+/** 12 号 §4.2 AgentLoopState（步级持久化的唯一依据） */
+export interface AgentLoopState {
+  version: 1
+  task: {
+    definitionId: string
+    scopeId: string
+    input: string
+    maxSteps: number
+    toolNames: string[]
+  }
+  /** 完整对话（system 不入列，启动时重建） */
+  messages: ModelMessage[]
+  iteration: number
+  usage: { promptTokens: number; completionTokens: number; toolCalls: number }
+  startedAtMs: number
+  converged: boolean
+  finalAnswer?: string
+  stagnantRounds: number
+  suspended?: { requestPayload: Record<string, unknown>; suspendedAt: string; waitMs: number }
+  stopReason?: string
+}
+
+export interface AgentResult {
+  output: string
+  stopReason: 'final' | 'max_steps' | 'stagnant' | 'human_rejected' | 'aborted' | 'error'
+  usage: { promptTokens: number; completionTokens: number; toolCalls: number }
+  iterations: number
+  error?: string
+}
+
+/** 轨迹条目（写 agent_trajectories；fire-and-forget） */
+export interface TrajectoryEntry {
+  iteration: number
+  kind: 'decision' | 'tool_call' | 'tool_result' | 'human_request' | 'human_decision' | 'guardrail_stop' | 'final'
+  name?: string
+  payload: Record<string, unknown>
+  promptTokens?: number
+  completionTokens?: number
+  durationMs?: number
+}
+
+export interface SuspendRequest {
+  reason: string
+  payload: Record<string, unknown>
+  timeoutMs: number | null
+}
+
+export type HumanDecision =
+  | { action: 'approve' | 'input'; values: Record<string, unknown>; comment?: string }
+  | { action: 'reject'; comment?: string }
+
+export type AgentStreamEvent =
+  | { kind: 'delta'; text: string }
+  | { kind: 'tool-start'; toolName: string; toolCallId: string }
+  | { kind: 'tool-end'; toolName: string; toolCallId: string; ok: boolean }
+  | { kind: 'step'; stepNumber: number }
+
+// ==================== 宿主契约（12 号 §5.2，一字不改） ====================
+
+export interface AgentHost {
+  loadState(): Promise<AgentLoopState | null>
+  saveState(state: AgentLoopState): Promise<void>
+  suspend(req: SuspendRequest): Promise<HumanDecision>
+  emitTrajectory(entry: TrajectoryEntry): void
+  emitStream(event: AgentStreamEvent): void
+  readonly signal: AbortSignal
+}
