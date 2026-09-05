@@ -378,3 +378,76 @@ Runtime                 agent-loop handler           引擎                    �
 3. 多并行 tool_call 的结果回填顺序：按完成序还是按调用序？本文定按**调用序**（确定性、可重放），实现上并发执行+按序收集；如某 provider 对顺序敏感需再评估。
 4. `agent_trajectories` 保留策略：跟随 `workflow_run_events` 的归档策略决策（02 开放问题 1），不单独定。
 5. stagnant 检测的 signature 规范化（args key 排序/数值容差）粗糙时可能误杀合法轮询型任务（如 kb-ingest 等待）；M1 先对"完全相同"判定，误杀案例出现后加白名单。
+
+---
+
+## 2026-09-06 修订（21 号决策落地：循环载体 = AI SDK v6 + @openharness/core）
+
+> 依据 [21-oss-adoption.md](./21-oss-adoption.md)。本节只改实现载体与宿主融合，
+> 本文的 AgentHost 契约（§5.2）、AgentLoopState（§4.2）、轨迹协议（§4.3）、
+> 护栏三级分层（§9.1）、错误分类法（§6.5）**全部保留为有效契约**。
+
+### R1 实现载体替换
+
+§5.1 的 `decision.ts`（自研归一化）与主循环 `while` 手写实现，替换为
+`ai@^6`（Agent/generateText/tools/stopWhen/prepareStep）+ `@openharness/core`
+（Session/Agent + withCompaction + SessionStore + ApproveFn）承载：
+
+- `llm.decide` → AI SDK 原生 tool-calling（协议细节由 AI SDK provider 层承担，见 13 号修订）；
+- 主循环 `while(!converged)` → Session.send 循环（`stopWhen: stepCountIs(maxIterations)`）；
+- `AgentLoopState.messages` → Session 消息历史（ModelMessage[]），每轮 `state_json` /
+  SessionStore 持久化语义不变（§6.3 时机契约照旧）；
+- `decision.type='human_request'` → 两条路：**快路径**（独立宿主/交互式场景）经
+  open-harness `approve` 回调（异步 Promise，spike 已验证拒绝语义=本文 §6.1 的
+  tool.error 回填）；**引擎路径**（agent-loop 节点）仍走 host.suspend → waiting_review
+  → E3 resume（本文 §6.2 时序不变）；
+- §6.4 无进展检测（stagnant）与 §9 护栏：以 `prepareStep` 每步钩子 + 自研 Guardrails
+  类实现，检查点与超限行为照本文；
+- §9 回填前压缩：open-harness `DefaultCompactionStrategy` 两阶段（先剪枝旧工具结果、
+  不足再 LLM 摘要）直接获得——本文开放问题 1 就此关闭（M1 即有摘要压缩，策略可换）。
+
+### R2 宿主融合（新增"独立宿主"）
+
+| 宿主 | state 落点 | approve/suspend |
+|---|---|---|
+| 工作流 agent-loop 节点（本文 §5.3，不变） | `workflow_node_runs.state_json`（E2） | 引擎 waiting_review（E3） |
+| **独立宿主（聊天 / 故事研讨室 / EP 对话，新增）** | `agent_sessions` 表（SessionStore 的 DB 实现，ALS 隔离；conversationId=`${definitionId}:${scopeId}`） | open-harness approve 回调快路径（挂起审批落库 pendingApproval，重启按"忽略"哨兵处理） |
+
+两宿主共用：tool-registry（14 号）、上下文装配（快照经 onBeforeSend 注入）、
+事件桥（agent-producer 双路径：IEventEmitter 直推 + 平台事件总线 `agent:*`）。
+
+### R3 对外 API（独立宿主的门面）
+
+```ts
+// platform/agent-runtime（模块入口，异步工厂隔离 ESM）
+initAgentRuntime(): Promise<AgentRuntime>
+interface AgentRuntime {
+  registerDefinition(def: AgentDefinition): void      // 业务包 activate 时注册
+  sendMessage(defId, scopeId, message, opts?): Promise<AgentSendResult>   // per-scope 互斥
+  cancel(defId, scopeId): boolean                     // AbortController 池
+  getHistory(defId, scopeId, limit?): Promise<AgentHistoryMessage[]>
+  decideApproval(approvalId, decision): boolean       // 提案卡（approve/approve_with_edit/reject）
+  listPendingApprovals(defId, scopeId): PendingApproval[]
+  subscribe(defId, scopeId, cb): () => void
+  health(): { activeSessions; busyScopes; pendingApprovals }
+}
+```
+
+`AgentDefinition`：`{ id, version, systemPrompt, tools: Record<string, AgentToolDef>,
+buildStateSnapshot(scopeId), loopMode: 'react'|'single-pass', maxSteps?, contextWindowTokens?,
+modelPreference?, eventChannel(scopeId), approvalTimeoutMs?, onTurnEnd? }`。
+事件协议 = 旧长文 AgentEvent 全兼容子集 + approval:*/compaction:* 新增（未知 type 前端忽略）。
+
+### R4 迁移与骨架现状
+
+- 骨架已建：`src/core/agent/`（13 文件，commit be56607f）——M0 第一步 `git mv` 至
+  `src/core/platform/agent-runtime/`（三期重构后的依赖铁律）；
+- 旧两套野生 agent 的行为等价映射与 G1-G5 迁移门禁（单测→冒烟→golden 对照→影子模式→
+  切换）见我方设计稿 §7（docs/design/2026-09-05-agent-harness-design.md），并入 M4 执行纪律；
+- spike 全部契约验证记录：21 号 §1.2。
+
+### R5 测试基线补充
+
+本文 §12 单测矩阵保留，另加：approve 快路径（通过/拒绝/编辑/超时/取消清理）、
+SessionStore 往返与跨租户隔离、compaction 触发与事件链、abortSignal 贯穿、
+ESM 动态 import 工厂（Electron CJS 产物冒烟）。目标语句覆盖 ≥85%、分支 ≥75%。

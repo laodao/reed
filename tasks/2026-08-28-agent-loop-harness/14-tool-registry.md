@@ -320,3 +320,45 @@ gateway: dangerLevel=exec, approval!=='never'
 2. `external-post` 默认需批准是否过严（大量正常业务是 POST）？可考虑按域名白名单豁免，待真实使用数据决定。
 3. forms 推导产物的 description 质量是否够用，还是 M2 直接把 15 种高频节点全量手工化、推导仅作长尾兜底？倾向后者。
 4. `agent_tool_calls` 与 `agent_trajectories` 长期是否合并为一表双视图？当前分两表是"审计不可丢、轨迹可归档"的保留策略差异，待 11-run-journal 的保留策略（02-plan 开放问题 1）落定后复评。
+
+---
+
+## 2026-09-06 修订（21 号决策落地：通用工具平台 + pack 来源 + 模型统一）
+
+> 依据 [21-oss-adoption.md](./21-oss-adoption.md) 决策二。**工具系统确认为通用平台模块**
+> （`src/core/platform/agent-runtime/tool-registry.ts`），本文的 AgentToolSpec /
+> AgentToolBinding / AgentToolResult / 错误码 / 状态机 / 审计表全部保留为本模块契约。
+
+### R1 服务面扩展：三类消费者 × 四种来源
+
+消费者（原设计只有 agent-loop 一类）：
+
+1. **agent 循环**：LLM 驱动选工具（本文原设计）；
+2. **工作流节点**：config 驱动——路线 A"受限直调"推广为节点 handler 的库化复用
+   （同一执行器、同一审计/SSRF/凭据纪律，任何业务代码可按 spec 直调）；
+3. **业务包代码**：AgentDefinition 声明工具后包内直接 execute（不经 LLM）。
+
+来源（§3 命名规范扩展）：`node:` / `tool:preset:` / `tool:custom:` / `oas:` /
+**新增 `pack:<packId>:<toolName>`（业务包工具）** / 后期 `mcp:`。
+
+### R2 AgentToolDef ↔ AgentToolSpec 统一模型
+
+我方设计稿的业务侧工具定义与本文的通用 spec 统一为一个模型（zod 与 JSON Schema
+双向转换：zod→jsonSchema 供 toLLMTools/推导缓存；jsonSchema→zod 供运行时校验）：
+
+| AgentToolDef（业务侧） | AgentToolSpec（本文） | 融合规则 |
+|---|---|---|
+| `inputSchema: z.ZodType` | `jsonSchema`（draft-07） | 单一事实源用 zod 编写，jsonSchema 派生缓存 |
+| `requiresApproval: boolean` | `dangerLevel` + 批准默认策略 | **取严**：requiresApproval=true 或 dangerLevel∈{exec, external-post} 均需批准 |
+| `approvalCard`（title/summary/editable） | 无 | 新增可选字段（审批 UI 渲染；引擎路径映射进 human-review payload） |
+| `execute(input, ctx)` | `executor: ToolExecutorRef` | 新增 `executor.kind='pack'`：包内函数引用 + AgentToolContext（scopeId/rawInput/signal） |
+
+统一后注册入口：业务包 activate → `registry.registerPackTools(packId, defs)`；
+agent-loop 白名单的 AgentToolBinding 可引用任何来源（含 pack:）。
+
+### R3 与 skills（src/agents/api）互操作预留
+
+`src/agents/skills/registry.ts` 的 SkillDefinition（name/inputSchema/execute）与统一模型
+近同构——提供 `skillToTool(skill): AgentToolDef` 适配器后，REST skills 反向成为工具来源
+（`skill:<name>`，dangerLevel 按 category 推导：asset=narrative→write、render/compose→write），
+长文/EP agent 可直接调用 EP 能力（21 号决策二的落点之一）。M2 实施。

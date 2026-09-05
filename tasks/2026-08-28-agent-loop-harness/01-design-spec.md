@@ -1,6 +1,6 @@
 # 01 · 设计方案（Design Spec）
 
-> Agent Loop Harness —— AI 原生通用业务平台 ｜ 2026-08-28 ｜ 状态：设计中
+> Agent Loop Harness —— AI 原生通用业务平台 ｜ 2026-08-28 ｜ 状态：设计定稿（2026-09-06 按 21 号决策整合修订：§7/§8 实现载体与路径更新）
 
 ## 0. 背景与目标
 
@@ -264,7 +264,7 @@ CREATE TABLE agent_tasks (
 
 ## 7. AgentRuntime 详设
 
-### 7.1 模块组成（`src/core/services/agent-runtime/`）
+### 7.1 模块组成（`src/core/platform/agent-runtime/`——2026-09-06 修订：三期重构后归属 platform 层）
 
 | 模块 | 职责 |
 |------|------|
@@ -315,6 +315,12 @@ agent-loop 节点 config：`maxIterations`（默认 20）、`maxTokens`、`maxTo
 ---
 
 ## 8. AI 层：tool-calling 协议层
+
+> **2026-09-06 修订（21 号决策）**：协议层实现载体改为 **AI SDK v6**（`ai@^6` +
+> `@ai-sdk/openai-compatible` + `@ai-sdk/anthropic` + `@ai-sdk/google`）。本节契约
+> （类型扩展/降级路径/能力标记）保留，逐家适配实现由 AI SDK provider 层承担——
+> 详见 13 号修订节与 21 号 §1。版本红线：钉 ai@6（ai@7 需 Node≥22，Electron 28 不可用）；
+> ESM-only 包在 agent-runtime 内动态 import。
 
 ### 8.1 类型扩展
 
@@ -382,6 +388,7 @@ agent-loop 节点 config：`maxIterations`（默认 20）、`maxTokens`、`maxTo
 - [18-business-pack.md](./18-business-pack.md) —— 业务包架构（业务无关内核之上，各类业务以包接入；本文 §2 业务包层）
 - [19-refactoring-assessment.md](./19-refactoring-assessment.md) —— 现有系统重构评估（模块盘点、修改清单、可行性与工作量）
 - [20-cordis-evaluation.md](./20-cordis-evaluation.md) —— cordis 插件框架调研评估（外部框架复用决策记录）
+- [21-oss-adoption.md](./21-oss-adoption.md) —— 开源采纳决策：AI SDK v6 路线、spike 证据、规格修订与里程碑映射（2026-09-06 定稿）
 
 ---
 

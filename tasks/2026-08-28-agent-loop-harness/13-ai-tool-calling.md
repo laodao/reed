@@ -424,3 +424,35 @@ M1 期 OpenAI 系用录制 SSE 流回放，anthropic/google 留接口占位到 M
 3. custom-model 迁移到 OpenAISdkProvider 是否影响存量用户自建兼容端点（旧 fetch 实现对非标准 SSE 容错更宽）？M2 迁移前需保留回退开关。
 4. 流式中 content 与 tool_calls 同时出现时的 UI 呈现（轨迹视图如何展示"边说边调"）——归轨迹视图设计，协议层已两者都上抛。
 5. prompt_fallback 下并行调用的执行语义（顺序执行 vs Promise.all）——归 11-agent-runtime / 14-tool-registry，本文仅在协议层保证数组顺序稳定。
+
+---
+
+## 2026-09-06 修订（21 号决策落地：协议层载体 = AI SDK v6）
+
+> 依据 [21-oss-adoption.md](./21-oss-adoption.md)。本文的**契约层全部保留**：
+> 类型扩展（§5.1 的 tools/toolChoice/role:'tool'/tool_call 增量）、错误分类、
+> 能力检测收敛（§5.4）、降级协议（§5.5）、token 口径（§5.6）、`agent_llm_calls` 审计表。
+> **实现载体变更**：不再自研 §5.2 协议模块与 §5.3 十家逐家适配，改用 AI SDK provider 层。
+
+### R1 载体映射
+
+| 本文原设计 | AI SDK 替代 | 说明 |
+|---|---|---|
+| §5.2 mode-resolver / stream-assembler / 序列化 | `ai@^6` 内置（LanguageModelV3 协议统一 tools/流式增量/usage） | AgentToolSpec 序列化经 `tool()` + zod（standard-schema） |
+| §5.3 OpenAI 兼容系 7 家 | `@ai-sdk/openai-compatible`（`createOpenAICompatible`，spike 验证按请求动态构造） | 挂在现有 getProviderConfig 之上（密钥解密/fallback 链/SSRF 不动，provider-adapter ~100 行） |
+| §5.3 anthropic（tool_use 块） | `@ai-sdk/anthropic` 官方包 | §5.3 差异点 1/2/3（id/并行/空 content）官方包已处理 |
+| §5.3 google（functionCall） | `@ai-sdk/google` 官方包 | 差异点 5（system 丢失）随包升级验证 |
+| §5.5 PromptToolCodec | **保留自研**，作为 harness 级降级：ai@6 middleware（wrapLanguageModel）拦截不支持原生 tools 的模型 | 协议模板/严格校验/重试 2 次照本文 §5.5；能力标记（§5.4）仍先行 |
+| §5.6 token 口径 | `usage` 从 stream `done` 事件统一上抛（spike 验证）；缺失记 NULL 照旧 | maxTokens 护栏 chars/4 兜底不变 |
+
+### R2 收益与剩余工作
+
+十家适配表坍缩为三个包依赖 + 一个 provider-adapter；剩余自研工作：
+① provider-adapter（getProviderConfig→LanguageModel，LRU 缓存+更新失效）；
+② 能力标记与降级路由（§5.4/§5.5 原样）；③ 审计表写入（llm-call-logger 原样）。
+
+### R3 版本红线（违者埋坑）
+
+钉 `ai@^6.0.277`（engines node>=18，Electron 28 可跑）；ai@7 需 Node≥22 **禁升**；
+overrides 锁传递依赖 + CI `npm ls ai` 单版本断言；ESM-only——agent-runtime 内
+动态 `import()`，类型 `import type`。详见 21 号 §1.3。

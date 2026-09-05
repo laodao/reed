@@ -1,6 +1,15 @@
 # 02 · 实施方案（Implementation Plan）
 
 > Agent Loop Harness ｜ 2026-08-28 ｜ 配套文档：[01-design-spec.md](./01-design-spec.md)
+>
+> **2026-09-06 修订（21 号决策落地）**：M1 第 3 项"tool-calling 协议层第一批"改为
+> "AI SDK v6 接入"（调研+运行级 spike 已完成，见 21 号；自研十家适配取消）；
+> M1 新增前置：骨架迁移（`src/core/agent/` → `platform/agent-runtime/`）与依赖钉版本。
+> M4 野生 agent 迁移执行 G1-G5 门禁（单测→冒烟→golden→影子→切换）。
+> 已完成前置：① 10-event-system（平台事件总线已实现，引擎已接入）；
+> ② 18-business-pack（插件架构三期落地：core/packs + core/platform）；
+> ③ 开源调研与 spike（21 号 + docs/design/2026-09-05 两份过程文档）；
+> ④ agent-runtime 骨架 13 文件（commit be56607f，M0 第一步迁移）。
 
 ## 分期总览
 
@@ -29,12 +38,13 @@
    - `workflow_node_runs.state_json` 列 + `WorkflowNodeContext.saveState/loadState`。
    - handler 契约加可选 `resume(decision, state)`；`applyReviewDecision` 优先回调，未声明维持旧语义。
    - 修订 handler 契约注释（禁存"仅内存"跨调用状态）。
-3. **tool-calling 协议层第一批（spec §8）**
-   - `ChatContext`/`ChatOptions`/`StreamCallback` 类型扩展（tools、tool_call 事件、role:'tool'）。
-   - `OpenAISdkProvider` 实现请求序列化与响应/流式解析（覆盖 openai 兼容系 7 家）。
-   - prompt-based JSON 降级路径 + `model-detector` capability 标记。
-4. **agent-loop 节点最小版（spec §7）**
-   - `AgentRuntime` 主循环骨架（无 Planner/Verifier/Memory，直接单任务循环）。
+3. **AI SDK v6 接入（2026-09-06 修订：替代原"tool-calling 协议层第一批"自研方案）**
+   - 依赖钉版本：`ai@^6.0.277` + `@ai-sdk/openai-compatible@^2` + `@openharness/core@^0.7` + `zod@^4`（overrides 锁 ai@6，CI 单版本断言）。
+   - provider-adapter：getProviderConfig → createOpenAICompatible → LanguageModel（LRU 缓存、SSRF 沿用、结构化日志）。
+   - 契约保留项照 13 号修订：能力标记（model-detector）、prompt 降级（ai@6 middleware）、`agent_llm_calls` 审计表。
+   - 骨架迁移：`git mv src/core/agent platform/agent-runtime`（13 文件已在 be56607f）。
+4. **agent-loop 节点最小版（spec §7，2026-09-06 修订：循环载体=open-harness Session）**
+   - 主循环经 ai@6 Agent + Session（stopWhen/prepareStep/approve），AgentHost 契约照 12 号修订 R1/R2。
    - 工具白名单：首批只接入 llm 无关的安全工具子集（http-request、web-search、code、data-table 内置模式）。
    - 护栏：maxIterations（默认 20）/ maxToolCalls / maxDurationMs。
    - catalog/types/handler/forms 四件套 + 一致性单测。

@@ -466,3 +466,73 @@ agent-loop 节点启动 → AgentRuntime.run → memory.assemble(goal, budget)
 3. **embedding 模型切换的存量重嵌**：`__memory__` 与文档 KB 同物理表，维度切换触发整表重建（`lance-db.service.ts:258`）会波及 KB——是否给记忆向量独立 LanceDB 表/pgvector 表？建议 M3 不动，M4 评估拆分。
 4. **L2 episode 是否进向量库**：摘要检索的价值密度未验证；M3 先按 task_id/时间窗精确关联（同根任务的前序 episode），向量召回作为增强项灰度。
 5. **多租户共享记忆**：是否存在组织级共享语义记忆（跨 user_id）？当前设计全部租户隔离；共享需另立可见性字段与审批链，M4 后再议。
+
+---
+
+## 2026-09-06 修订（21 号决策落地：图谱融合的结构化记忆存储）
+
+> 依据 [21-oss-adoption.md](./21-oss-adoption.md) 决策三。**记忆模块确认为通用平台模块**
+> （`src/core/platform/agent-runtime/memory/`）；本文的 L1-L4 分层、三表 DDL、蒸馏/闸门/
+> 装配/代谢四环、防污染指标全部保留。本节新增**结构化记忆存储（图谱）**与状态机扩展。
+
+### R1 动机与现状资产
+
+长文写作已有一套**项目级实体图谱**（一致性基础设施，非向量记忆）：
+
+- 表：`lw_events`（实体状态变迁事件，带章节号）+ `lw_graph_edges`（关系边，带生效/
+  失效章节；`lw_character_relations` 已收编，create-lw-graph-tables.ts）；
+- `GraphService`（graph/graph.service.ts）：`stateAt`（第 N 章时的实体状态）、`edgesAt`
+  （第 N 章时的关系）、`getTimeline`（实体时间线）、`resolveEntities`（按名解析）、
+  `syncEntityRelations`（章节完成回写）；
+- `ConsistencyService`：R1-R6 规则扫描（死亡再现/过期关系/物品转移/武功时间线/
+  回忆悖论/状态回退）+ `validateBeforeGeneration`（写作前门禁）。
+
+这套"时间点状态查询 + 规则一致性"正是长文前后一致性的核心，也是飞轮 L3 语义记忆
+缺的**结构化半边**（向量管"相关的经验文本"，图谱管"确证的事实状态"）。
+
+### R2 StructuralMemoryStore（新增一等存储）
+
+```ts
+/** platform/agent-runtime/memory/structural-store.ts（新增接口） */
+export interface StructuralMemoryStore {
+  upsertNode(scopeId: string, node: { entityType: string; entityId: string; name: string }): Promise<void>
+  addEvent(scopeId: string, ev: { entityId: string; chapter?: number; at?: number; kind: string; payload: Record<string, unknown> }): Promise<void>
+  addEdge(scopeId: string, edge: { source; target; relationType; fromChapter?: number; toChapter?: number }): Promise<void>
+  stateAt(scopeId: string, entityId: string, chapter?: number): Promise<Record<string, unknown> | null>
+  edgesAt(scopeId: string, entityId: string, chapter?: number): Promise<GraphEdge[]>
+  timeline(scopeId: string, entityId: string): Promise<TimelineEntry[]>
+}
+```
+
+- 表模式泛化：`agent_graph_events / agent_graph_edges`（`scope_id` + `user_id`（ALS）+
+  `entity_type/entity_id` + `chapter` 可空版本维）——以 lw 两表 DDL 为蓝本去业务化；
+- **长文图谱为第一个实现与迁移对象**：GraphService 内部切换到 StructuralMemoryStore
+  （lw_* 表数据迁移或视图兼容，行为不变）；故事研讨室的设定集一致性查询直接消费
+  `stateAt(当前章)`——12 号修订 R3 的 `buildStateSnapshot` 首选数据源；
+- 其他业务复用同一 schema 模式：EP 资产关系（asset→asset 边）、diary 人物事件、
+  chat 用户画像节点，均为 `scope_id` 隔离的图实例。
+
+### R3 一致性验证器通用化
+
+`ConsistencyService` 的 R1-R6 泛化为**可插拔验证器注册表**（`ConsistencyRule`）：
+
+- 双重身份：① 质量门（17 号）第 2 层"工具验证"的一种（写作类任务的必跑验证器）；
+  ② agent 工具 `pack:longwriting:check_consistency`（模型自查，read 级）；
+- 规则按 scopeType 注册（长文规则集 / EP 规则集各自声明），通用规则（时间悖论/
+  状态回退）进平台缺省集；
+- `validateBeforeGeneration` 保留为长文写作管线的门禁入口不变。
+
+### R4 状态机扩展：`conflicted`
+
+`memory_entries.status` 在本文四态 + rejected 之上**新增 `conflicted`**（我方调研借
+happyclaw 的状态机）：结构化存储的一致性验证发现新候选与既有 active 条目矛盾时，
+条目进 conflicted 待人工裁决（裁决路径：approve→active 并把旧条目 superseded；
+reject→rejected）。与 §6.4 代谢的 supersede 链共用版本链机制。
+（设计研讨室的"新设定与既有事实冲突"场景直接落此状态。）
+
+### R5 装配输入扩展
+
+§7 装配算法新增第三路输入（与 L2/L3/L4 并列，预算外单列、快照层承载）：
+`structural.stateAt(scopeId, 当前章/当前时间点)` 的实体状态摘要——由 12 号修订 R3 的
+`buildStateSnapshot` 供给，**不进向量检索**（它是确证事实，不走置信度排序）。
+"快照由工具落库后的数据重建、不由 AI 复述"的防漂移原则在此落地。
