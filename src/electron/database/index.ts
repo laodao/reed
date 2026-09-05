@@ -83,6 +83,7 @@ import { LwVectorIndexRepository } from '@core/database/repositories/lw-vector-i
 import { WorkflowDefinitionRepository } from '@core/database/repositories/workflow-definition.repository'
 import { WorkflowRunRepository } from '@core/database/repositories/workflow-run.repository'
 import { WorkflowNodeRunRepository } from '@core/database/repositories/workflow-node-run.repository'
+import { PackBindingRepository, PackRepository } from '@core/database/repositories/business-pack.repositories'
 import { DiaryFolderRepository } from '@core/database/repositories/diary-folder.repository'
 import { DiaryEntryRepository } from '@core/database/repositories/diary-entry.repository'
 import { DiaryLinkRepository } from '@core/database/repositories/diary-link.repository'
@@ -197,6 +198,10 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public workflowDefinitions: WorkflowDefinitionRepository | null = null
   public workflowRuns: WorkflowRunRepository | null = null
   public workflowNodeRuns: WorkflowNodeRunRepository | null = null
+
+  // 业务包内核（第一期）
+  public packs: PackRepository | null = null
+  public packBindings: PackBindingRepository | null = null
 
   // 新增：符合第三范式的长文写作关联表仓库
   public lwPlotCharacters: LwPlotCharacterRepository | null = null
@@ -532,6 +537,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/relax-episode-script-outline-id'
     )
     await relaxEpisodeScriptOutlineId(this.dataSource)
+    // video_episodes.outline_id 改 nullable（uploaded 建集无 outlineId；SQLite 走表重建）
+    const { relaxVideoEpisodeOutlineId } = await import(
+      '@core/database/migrations/relax-video-episode-outline-id'
+    )
+    await relaxVideoEpisodeOutlineId(this.dataSource)
     // FU5-A9-L4: storyboard_keyframe 加 user_prompt_override（spec §4.5.7 持久化用户提示词）
     const { addKeyframeUserPromptOverride } = await import(
       '@core/database/migrations/add-keyframe-user-prompt-override'
@@ -675,6 +685,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
     )
     await createWorkflowTables(this.dataSource)
 
+    // 通用事件系统：platform_events / cursors / dead_letters 三表（幂等，双语种；10-event-system §4）
+    const { createPlatformEventTables } = await import(
+      '@core/database/migrations/create-platform-event-tables'
+    )
+    await createPlatformEventTables(this.dataSource)
+
     // C3 免登录独立页：definitions 加 share_token 列 + 唯一索引（幂等，双语种）
     const { addWorkflowShareToken } = await import(
       '@core/database/migrations/add-workflow-share-token'
@@ -760,6 +776,27 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-kb-rerank-config'
     )
     await addKbRerankConfig(this.dataSource)
+
+    // provider_configs 补 default_model 列（存量库缺列会被 drift 检查阻断启动，幂等，双语种）
+    const { addProviderConfigDefaultModel } = await import(
+      '@core/database/migrations/add-provider-config-default-model'
+    )
+    await addProviderConfigDefaultModel(this.dataSource)
+
+    // 业务包内核（第一期）：business_packs / business_pack_bindings 两表（幂等，双语种；
+    // Web 端 initDatabase 有同构调用，两处必须同步）
+    const { createPackTables } = await import(
+      '@core/database/migrations/create-pack-tables'
+    )
+    await createPackTables(this.dataSource)
+
+    // 视频片段制（tasks/2026-09-04-ep-video-segment-redesign §4/§7）：
+    // ep_video_segments 表 + storyboards.segment_id/segment_seq + 存量有视频分镜迁成单镜片段
+    // （幂等，双语种；Web 端 initDatabase 有同构调用，两处必须同步）
+    const { createEpVideoSegments } = await import(
+      '@core/database/migrations/create-ep-video-segments'
+    )
+    await createEpVideoSegments(this.dataSource)
   }
 
   /**
@@ -2769,6 +2806,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
       this.db?.close()
 
       // 复制备份文件覆盖原文件
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const fs = require('fs')
       fs.copyFileSync(this.lastBackupPath, this.dbPath!)
 
@@ -3299,7 +3337,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     const columns = this.db.prepare("PRAGMA table_info(portrait_characters)").all() as { name: string; notnull: number }[]
     const providerIdCol = columns.find(col => col.name === 'provider_id')
     const modelIdCol = columns.find(col => col.name === 'model_id')
-    const promptCol = columns.find(col => col.name === 'prompt')
+    // 注：prompt 列未参与可空性早退检查（存量行为，保留原样；若 prompt 非空约束仍在则迁移照常执行）
 
     // 如果字段已经是可空的，则不需要迁移
     if (providerIdCol && providerIdCol.notnull === 0 && modelIdCol && modelIdCol.notnull === 0) {
@@ -4332,6 +4370,9 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.workflowDefinitions = new WorkflowDefinitionRepository(this.dataSource)
     this.workflowRuns = new WorkflowRunRepository(this.dataSource)
     this.workflowNodeRuns = new WorkflowNodeRunRepository(this.dataSource)
+    // 业务包内核（第一期）：包快照 + 启用/配置覆写
+    this.packs = new PackRepository(this.dataSource)
+    this.packBindings = new PackBindingRepository(this.dataSource)
 
     // 初始化符合第三范式的长文写作关联表仓库
     this.lwPlotCharacters = new LwPlotCharacterRepository(this.dataSource)
@@ -4399,7 +4440,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
   private initGlobalSettings(): void {
     if (!this.lwGlobalSettings) return
     // 获取或创建默认设置，如果不存在则自动创建
-    const settings = this.lwGlobalSettings.getOrCreate()
+    this.lwGlobalSettings.getOrCreate()
     console.log('[DatabaseManager] 全局设置已初始化')
   }
 

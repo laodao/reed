@@ -92,7 +92,7 @@ process.on('uncaughtException', (err: any) => {
 import { setFlagsFromString } from 'v8'
 setFlagsFromString('--max-old-space-size=4096')
 
-import { app, BrowserWindow, shell, ipcMain, protocol, net, dialog } from 'electron'
+import { app, BrowserWindow, shell, protocol, dialog } from 'electron'
 import { join } from 'path'
 import * as path from 'path'
 import { DataPathService } from './services/data-path.service'
@@ -103,33 +103,25 @@ import { ElectronBroadcastEventEmitter } from './services/electron-event-emitter
 import { SecureStorageService } from './services/secure-storage.service'
 import { registerSettingsHandlers } from './ipc/handlers/settings.handler'
 import { registerApiKeyHandlers } from './ipc/handlers/api-key.handler'
-import { registerDialogHandlers } from './ipc/handlers/dialog.handler'
-import { registerMessageHandlers } from './ipc/handlers/message.handler'
-import { registerRoleHandlers } from './ipc/handlers/role.handler'
 import { registerProviderConfigHandlers } from './ipc/handlers/provider-config.handler'
-import { registerChatHandlers } from './ipc/handlers/chat.handler'
 import { registerImageHandlers } from './ipc/handlers/image.handler'
 import { registerFileHandlers } from './ipc/handlers/file.handler'
 import { registerTranslationHandlers } from './ipc/handlers/translation.handler'
-import { registerVoiceHandlers } from './ipc/handlers/voice.handler'
 import { registerDataPathHandlers } from './ipc/handlers/data-path.handler'
 import { registerKnowledgeBaseHandlers } from './ipc/handlers/knowledge-base.handler'
 import { registerExportHandlers } from './ipc/handlers/export.handler'
-import { registerPortraitHandlers } from './ipc/handlers/portrait.handler'
 import { registerSearchEngineHandlers } from './ipc/handlers/search-engine.handler'
-import { registerLongWritingHandlers } from './ipc/handlers/longwriting.handler'
 import { registerWorkflowHandlers } from './ipc/handlers/workflow.handler'
 import { registerAppHandlers } from './ipc/handlers/app.handler'
 import { registerToolHandlers } from './ipc/handlers/tool.handler'
-import { registerSkillHandlers } from './ipc/handlers/skill.handler'
 import { registerEmailHandlers } from './ipc/handlers/email.handler'
 import { registerAssetHandlers } from './ipc/handlers/asset.handler'
 import { registerNewsSourceHandlers } from './ipc/handlers/news-source.handler'
 import { registerFaviconHandlers } from './ipc/handlers/favicon.handler'
-import { registerDiaryHandlers } from './ipc/handlers/diary.handler'
-import { registerEpisodeProductionHandlers } from './ipc/handlers/episode-production'
 import { registerOSSHandlers } from './ipc/handlers/oss.handler'
 import { registerDataSourceHandlers } from './ipc/handlers/datasource.handler'
+import { registerPackHandlers } from './ipc/handlers/pack.handler'
+import { registerEventAdminHandlers } from './ipc/handlers/event-admin.handler'
 import * as fs from 'fs'
 
 // 在 app ready 之前注册协议权限（重要！）
@@ -340,33 +332,29 @@ function createWindow(): void {
 function initIpcHandlers(): void {
   registerSettingsHandlers()
   registerApiKeyHandlers()
-  registerDialogHandlers()
-  registerMessageHandlers()
-  registerRoleHandlers()
   registerProviderConfigHandlers()
-  registerChatHandlers()
   registerImageHandlers()
   registerFileHandlers()
   registerTranslationHandlers()
-  registerVoiceHandlers()
   registerDataPathHandlers()
   registerKnowledgeBaseHandlers()
   registerExportHandlers()
-  registerPortraitHandlers()
+  // skills/diary/portrait/chat/voice-design/longwriting/episode-production 七个业务的
+  // handler 已迁移为内置业务包（core/packs/builtin-packs），由包内核激活时注册，
+  // 不再在此平铺（避免重复注册）
   registerSearchEngineHandlers()
-  registerLongWritingHandlers()
   registerWorkflowHandlers()
   registerAppHandlers()
   registerToolHandlers()
-  registerSkillHandlers()
   registerEmailHandlers()
   registerAssetHandlers()
   registerNewsSourceHandlers()
   registerFaviconHandlers()
-  registerDiaryHandlers()
-  registerEpisodeProductionHandlers()
   registerOSSHandlers()
   registerDataSourceHandlers()
+  registerPackHandlers()
+  // 事件系统管理面（10-event-system §5.3/§8）：DLQ 收口 + 消费者水位
+  registerEventAdminHandlers()
 }
 
 // 应用就绪
@@ -431,6 +419,16 @@ app.whenReady().then(async () => {
     console.warn('[boot] VoiceCloneJobScheduler 启动失败（不致命）:', e?.message ?? e)
   }
 
+  // 业务包子系统（第一期：包内核——注册表/快照物化/启用态恢复/IPC 守卫；失败不致命）。
+  // 不依赖 workflow，放在工作流子系统初始化之前（P4 起业务包的 activate 会复用 workflow 等设施）。
+  try {
+    const { initPackSubsystem } = await import('@core/packs/kernel')
+    const { builtinPacks } = await import('@core/packs/builtin-packs')
+    await initPackSubsystem(builtinPacks)
+  } catch (e: any) {
+    console.warn('[boot] 业务包子系统启动失败（不致命）', e)
+  }
+
   // 工作流子系统：引擎装配 + boot 恢复 + 触发调度器（失败不致命）
   try {
     // 文档工具层：注入 Electron 渲染器（长图/PDF 平台能力）
@@ -439,7 +437,9 @@ app.whenReady().then(async () => {
     registerDocumentTools(new DocumentToolsService(new ElectronDocumentRenderer()))
 
     const { initWorkflowSubsystem } = await import('@core/modules/workflow/workflow-boot')
-    await initWorkflowSubsystem()
+    const { IpcEventChannel } = await import('@core/services/event-system/channels/ipc.channel')
+    // ipc 通道（10-event-system §5.4）：平台事件 workflow.run.* → wf:run-event 推渲染进程
+    await initWorkflowSubsystem({ eventChannels: [new IpcEventChannel()] })
   } catch (e: any) {
     console.warn('[boot] 工作流子系统启动失败（不致命）', e)
   }

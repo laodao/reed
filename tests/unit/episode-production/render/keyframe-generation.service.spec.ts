@@ -312,6 +312,26 @@ describe('KeyframeGenerationService', () => {
     ).rejects.toThrow(/Storyboard not found/)
   })
 
+  it('F5：关键帧全部生成成功 → storyboard.status 写回 image_ready', async () => {
+    const { sbId } = await seedScene(ds)
+    await svc.generateKeyframesForStoryboard({ storyboardId: sbId })
+
+    const sb = await ds.getRepository(StoryboardEntity).findOne({ where: { id: sbId } })
+    expect(sb?.status).toBe('image_ready')
+  })
+
+  it('F5：关键帧生成中途失败 → storyboard.status 写回 error 且继续抛错', async () => {
+    const { sbId } = await seedScene(ds)
+    imageGen.generate.mockRejectedValueOnce(new Error('image provider boom'))
+
+    await expect(
+      svc.generateKeyframesForStoryboard({ storyboardId: sbId }),
+    ).rejects.toThrow(/image provider boom/)
+
+    const sb = await ds.getRepository(StoryboardEntity).findOne({ where: { id: sbId } })
+    expect(sb?.status).toBe('error')
+  })
+
   it('keyframeCountOverride 改变生成数量', async () => {
     const { sbId } = await seedScene(ds)
     const result = await svc.generateKeyframesForStoryboard({

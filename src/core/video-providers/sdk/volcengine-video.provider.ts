@@ -17,6 +17,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { getPathProvider } from '@core/interfaces/path.interface'
+import { OSSService } from '@core/services/oss.service'
 import type {
   VideoModel,
   VideoGenerationRequest,
@@ -53,21 +54,6 @@ interface VolcengineTaskResponse {
   ratio?: string
 }
 
-/** 图片（jpeg/png/webp/bmp/tiff/gif）MIME 推断 */
-function guessMime(ext: string): string {
-  switch (ext.toLowerCase()) {
-    case '.jpg':
-    case '.jpeg': return 'image/jpeg'
-    case '.png': return 'image/png'
-    case '.webp': return 'image/webp'
-    case '.bmp': return 'image/bmp'
-    case '.tiff':
-    case '.tif': return 'image/tiff'
-    case '.gif': return 'image/gif'
-    default: return 'image/png'
-  }
-}
-
 /** 从 width/height/aspectRatio 推断方舟 ratio（默认 9:16 竖版） */
 function inferRatio(width?: number, height?: number, aspectRatio?: string): string {
   if (aspectRatio && /^\d+:\d+$/.test(aspectRatio)) return aspectRatio
@@ -95,6 +81,14 @@ function inferResolution(width?: number, height?: number): string {
 export class VolcengineVideoProvider extends BaseVideoProvider {
   /** 默认 API URL（方舟 Ark） */
   private static DEFAULT_API_URL = 'https://ark.cn-beijing.volces.com/api/v3'
+
+  /**
+   * base64 直传的原始文件体积上限。
+   * 方舟限制：单张图片 < 30MB、请求体 < 64MB，且官方建议"大文件请勿使用 Base64 编码"
+   * （@see https://docs.volcengine.com/docs/82379/2607688）。
+   * base64 编码体积膨胀约 4/3，取原始文件 20MB 为安全上限（编码后 ≈27MB）。
+   */
+  private static MAX_BASE64_FILE_BYTES = 20 * 1024 * 1024
 
   get id(): string {
     return 'volcengine'
@@ -129,8 +123,9 @@ export class VolcengineVideoProvider extends BaseVideoProvider {
   }
 
   /**
-   * 处理输入图：base64 data URL 直接透传；本地路径 / local-image 协议 / file 协议读取转 base64 data URL。
-   * @returns 可直接放入 image_url.url 的值，或 null（未提供图）
+   * 处理输入图：公网 URL / data URI / asset:// 直接透传；本地路径（含 file:// / local-image:// / 绝对路径）
+   * 走 base64 data URI → OSS 图床回落链，避免大文件或格式不支持时直接失败。
+   * @returns 可直接放入 image_url.url 的值，或 null（未提供图或上传均不可用）
    */
   private async resolveImageUrl(request: VideoGenerationRequest): Promise<string | null> {
     const raw = request.image
@@ -139,17 +134,12 @@ export class VolcengineVideoProvider extends BaseVideoProvider {
     if (raw.startsWith('http://') || raw.startsWith('https://') || raw.startsWith('data:') || raw.startsWith('asset://')) {
       return raw
     }
-    // 本地文件 / local-image:// / file:// —— 读文件转 base64 data URL
+    // 本地文件 / local-image:// / file:// —— 读文件转 base64 data URI，超限或格式不支持则回落 OSS
     const localPath = this.resolveLocalPath(raw)
-    const absolute = path.isAbsolute(localPath) ? localPath : path.resolve(getPathProvider().getDataPath(), localPath)
-    if (!fs.existsSync(absolute)) {
-      // 仍可能是相对 app 数据根的路径，尽量解析过一次即可；不存在则由下游报错
-      return raw
-    }
-    const buf = fs.readFileSync(absolute)
-    const ext = path.extname(absolute)
-    const mime = guessMime(ext)
-    return `data:${mime};base64,${buf.toString('base64')}`
+    const absolute = path.isAbsolute(localPath)
+      ? localPath
+      : path.resolve(getPathProvider().getDataPath(), localPath)
+    return this.uploadLocalFile(absolute)
   }
 
   /** 生成视频（图生视频 / 文生视频） */
@@ -266,6 +256,101 @@ export class VolcengineVideoProvider extends BaseVideoProvider {
       return decoded.startsWith('/') ? decoded.substring(1) : decoded
     }
     return inputPath
+  }
+
+  /**
+   * 本地图片 → 可用于视频任务接口的 image_url。
+   *
+   * 链：base64 data URI（首选，无需任何外部服务）→ OSS 图床（超限/格式不支持时）。
+   *
+   * 历史教训：此前先走火山 Files API 拿 file://<id>，但视频任务接口不接受 File ID，
+   * 该路径已被移除（2026-09 F6 修复）；方舟视频接口的 image_url 支持
+   * 公网 URL 与 base64 data URI 两种形式。
+   *
+   * @param localPath - 本地文件路径
+   * @returns base64 data URI 或 OSS 公网 URL；均不可用时返回 null
+   */
+  private async uploadLocalFile(localPath: string): Promise<string | null> {
+    try {
+      if (!fs.existsSync(localPath)) {
+        console.error(`[${this.id}] 文件不存在:`, localPath)
+        return null
+      }
+
+      const dataUri = this.toBase64DataUri(localPath)
+      if (dataUri) {
+        console.log(`[${this.id}] 已转 base64 data URI（长度 ${dataUri.length}）`)
+        return dataUri
+      }
+
+      // base64 不可用（格式不支持 / 超体积上限）→ 回落 OSS
+      console.log(`[${this.id}] base64 直传不可用（格式不支持或超过 ${VolcengineVideoProvider.MAX_BASE64_FILE_BYTES / 1024 / 1024}MB），尝试 OSS 服务`)
+      const ossUrl = await this.uploadViaOSS(localPath)
+      if (ossUrl) {
+        console.log(`[${this.id}] OSS 上传成功:`, ossUrl)
+        return ossUrl
+      }
+
+      console.error(`[${this.id}] base64 与 OSS 均不可用`)
+      return null
+    } catch (error) {
+      console.error(`[${this.id}] 处理本地图片异常:`, error)
+      return null
+    }
+  }
+
+  /**
+   * 读本地文件转 base64 data URI（方舟要求格式名小写：data:image/<格式>;base64,...）。
+   * 格式不支持或文件超过 MAX_BASE64_FILE_BYTES 时返回 null（caller 回落 OSS）。
+   */
+  private toBase64DataUri(localPath: string): string | null {
+    const ext = path.extname(localPath).toLowerCase()
+    // 方舟视频接口支持的图片格式：jpeg、png、webp、bmp、tiff、gif（+部分模型 heic/heif）
+    const mimeTypes: Record<string, string> = {
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.webp': 'image/webp',
+      '.gif': 'image/gif',
+      '.bmp': 'image/bmp',
+      '.tif': 'image/tiff',
+      '.tiff': 'image/tiff',
+    }
+    const mimeType = mimeTypes[ext]
+    if (!mimeType) {
+      console.warn(`[${this.id}] 不支持的图片格式（base64 直传跳过）:`, ext)
+      return null
+    }
+    const size = fs.statSync(localPath).size
+    if (size > VolcengineVideoProvider.MAX_BASE64_FILE_BYTES) {
+      console.warn(`[${this.id}] 图片 ${size}B 超过 base64 直传上限，跳过`)
+      return null
+    }
+    const b64 = fs.readFileSync(localPath).toString('base64')
+    return `data:${mimeType};base64,${b64}`
+  }
+
+  /**
+   * 通过 OSS 服务上传文件
+   *
+   * @param localPath - 本地文件路径
+   * @returns 上传后的 URL
+   */
+  private async uploadViaOSS(localPath: string): Promise<string | null> {
+    try {
+      const ossService = OSSService.getInstance()
+      const result = await ossService.uploadFile({ localPath })
+
+      if (result.success && result.url) {
+        return result.url
+      }
+
+      console.log(`[${this.id}] OSS 上传失败:`, result.error)
+      return null
+    } catch (error) {
+      console.error(`[${this.id}] OSS 上传异常:`, error)
+      return null
+    }
   }
 
   /** 请求头 */

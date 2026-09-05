@@ -408,3 +408,25 @@ install 校验失败 → 不落库；物化中途失败 → status=failed，可�
 5. **内核契约版本号**的维护方式：手工递增还是由 E1-E6 落地状态自动推导？倾向手工（显式发布），M3 实施前定。
 
 *一致性自查：表名与列名（agent_tasks/quality_policies/memory_entries/memory_episodes/workflow_definitions/agent_tool_calls）、类型（AgentToolBinding/SkillContent/AcceptanceCheck/TaskBudget）、扩展点编号 E1-E6 与 E4 四件套、事件命名约定（10 §5.1）、lan-collab E1-E4、分期 M1-M4 均与 01/02/10-17 号文档一致；新增表/列/接口/事件/约定均已标注"（本文新增）"。*
+
+---
+
+## 13. 第一期落地范围对照（feat/plugin-arch，2026-08-29 实施）
+
+> 本节记录"插件架构第一期"对本设计的实际裁剪落地情况，供后续分期对照。
+
+**已落地**（分支 feat/plugin-arch，提交 39ead930..ee1af356）：
+
+- 共享契约 `src/shared/types/pack.types.ts`（manifest 校验 fail-fast，本文 §5.1 的子集）；
+- 后端内核 `src/core/packs/`：registry（依赖 pending + 级联 + disposer 逆序纪律）、pack.service（快照 UPSERT + 启用解析链）、ipc-guard（channel 前缀归属 + `PACK_DISABLED` 统一拦截）、kernel（双端装配）；
+- 表：`business_packs` + `business_pack_bindings`（本文 §4.1/§4.2；metrics 表未建）；
+- 前端内核 `src/renderer/src/packs/`：路由/菜单动态注册（壳静态 + 包贡献），pathTitleMap 第三处标题硬编码已消灭；
+- **7 个现有业务迁移为内置包**：skills / diary / portrait / chat / voice-design / longwriting / episode-production（原地登记式，业务代码未搬迁；EP 声明 dependencies=['voice-design']；各包 IPC channel 前缀全覆盖并有测试断言：skills 9、diary 16、portrait 26、chat 21、voice 20、longwriting 202、EP 175）。
+
+**与本文档的偏差**：
+
+- 启用/禁用本期到"入口消失 + IPC 拦截"为止，服务实例不卸载（静态类服务不可卸载，activate 未返回完整 disposer——`registerIpc` 桥表缺 removeHandler 逆操作，待补齐）；
+- per-user binding 仅落表与解析链，无管理 UI；uninstall/第三方包/metrics 未实现；
+- 禁用生效前端靠重启（applyPacks 一次性应用），运行时动态启停在管理 UI 落地时补齐。
+
+**顺带修复/发现**：better-sqlite3 原生模块环境缺陷已修复（npm rebuild）；skill:* 9 个 channel 此前 Web 端从未注册、随包激活补齐；存量 lint 错误 6 处清理；portrait_characters 迁移的 prompt 列可空性早退检查疑点已注释记录（存量行为未改）。

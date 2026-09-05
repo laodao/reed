@@ -1,6 +1,6 @@
 /**
  * PortraitService framing（取景范围 half/full）链路单元测试
- * @see src/core/services/portrait.service.ts
+ * @see src/core/packs/portrait/services/portrait.service.ts
  *
  * 验证目标（spec 2026-07-24 新版人像设计 §5.2）：
  * 1. buildPortraitPrompt：framing 决定取景后缀；overrides 可覆盖默认片段（不写死）
@@ -41,7 +41,7 @@ vi.mock('@core/interfaces/path.interface', () => ({
 
 import { ImageService } from '@core/services/image.service'
 import * as dbModule from '@core/database/database-manager.interface'
-import { PortraitService } from '@core/services/portrait.service'
+import { PortraitService } from '@core/packs/portrait/services/portrait.service'
 import type { PortraitCharacter, PortraitVariant } from '@shared/types/portrait.types'
 
 // ====================================================================

@@ -1,6 +1,6 @@
 /**
  * PortraitService 换衣/换背景可选参数（补充提示词 + 多参考图）单元测试
- * @see src/core/services/portrait.service.ts
+ * @see src/core/packs/portrait/services/portrait.service.ts
  *
  * 验证目标（spec 2026-07-24 新版人像设计 §5.2 D5b）：
  * 1. 不传新参数（prompt / referenceImages）时行为与现状一致 —— 存量行为锁定
@@ -46,7 +46,7 @@ vi.mock('@core/utils/asset-path', () => ({
 
 import { ImageService } from '@core/services/image.service'
 import * as dbModule from '@core/database/database-manager.interface'
-import { PortraitService } from '@core/services/portrait.service'
+import { PortraitService } from '@core/packs/portrait/services/portrait.service'
 import type { PortraitCharacter, PortraitVariant } from '@shared/types/portrait.types'
 
 // ====================================================================

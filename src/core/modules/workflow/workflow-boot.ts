@@ -17,6 +17,7 @@ import { WorkflowDefinitionService } from './workflow-definition.service'
 import { AppDefinitionService } from '../app/app-definition.service'
 import { AppSessionService } from '../app/app-session.service'
 import { getEventEmitter } from '@core/interfaces/event.interface'
+import type { EventChannel } from '@shared/types/event.types'
 import { assertNodeRegistryConsistent, createFullNodeRegistry } from './nodes'
 import { WorkflowTriggerScheduler } from './trigger/workflow-trigger-scheduler.service'
 import { createLogger } from '@core/utils/logger'
@@ -35,12 +36,25 @@ interface WorkflowSubsystem {
 
 let subsystem: WorkflowSubsystem | null = null
 let reviewTickerHandle: ReturnType<typeof setInterval> | null = null
+/** 已挂接的平台事件通道（reset 时 stop） */
+let attachedChannels: EventChannel[] = []
+/** 平台事件归档作业（M4，10-event-system §7.10；reset 时 stop） */
+let archiveJob: { stop(): void } | null = null
+
+export interface WorkflowBootOptions {
+  /**
+   * 平台事件投递通道（10-event-system §5.4；Electron 传 IpcEventChannel、Web 传
+   * WsEventChannel），在事件总线启动成功后挂接——把 workflow.run.* 平台事件
+   * 翻译回 wf:run-event 五型载荷推前端（前端零改动，§9）。
+   */
+  eventChannels?: EventChannel[]
+}
 
 /**
  * 初始化工作流子系统（幂等；重复调用返回既有实例）。
  * 必须在数据库管理器注册之后调用。
  */
-export async function initWorkflowSubsystem(): Promise<WorkflowSubsystem> {
+export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Promise<WorkflowSubsystem> {
   if (subsystem) return subsystem
 
   const db = getCoreDatabaseManager()
@@ -50,6 +64,42 @@ export async function initWorkflowSubsystem(): Promise<WorkflowSubsystem> {
   // 应用模块仓库（片1）：未接线则 fail-fast——避免 as any 掩盖 null 至首个调用才崩
   if (!db.appDefinitions || !db.appSessions || !db.messages) {
     throw new Error('应用模块仓库未初始化（数据库管理器缺少 apps/app_sessions/messages 仓库）')
+  }
+
+  // 0. 平台事件总线（10-event-system M1）：平台级公共底座，非工作流私有——
+  //    boot 装配借道此处（双端共用，失败不致命）。启动后 dispatcher 扫表补偿崩溃窗口漏投。
+  let eventBus: import('@shared/types/event.types').EventBus | null = null
+  try {
+    const { getEventBus } = await import('@core/services/event-system/event-bus.service')
+    eventBus = await getEventBus()
+  } catch (e) {
+    logger.error('[workflow-boot] 平台事件总线启动失败（继续启动）', e)
+  }
+
+  // 0.1 事件通道挂接（§5.4，紧随总线启动之后）：总线不可用/通道异常不致命——
+  //     producer 适配器会回退存量直推路径，前端推送不断（§9 契约）。
+  if (eventBus && opts.eventChannels) {
+    for (const channel of opts.eventChannels) {
+      try {
+        channel.start(eventBus)
+        attachedChannels.push(channel)
+      } catch (e) {
+        logger.error(
+          `[workflow-boot] 事件通道挂接失败（kind=${channel.kind}，继续启动）：${e instanceof Error ? e.stack : String(e)}`
+        )
+      }
+    }
+  }
+
+  // 0.2 事件保留与归档作业（M4，§6.1 archived / §7.10）：每日扫描——超保留期且所有
+  //     消费者游标均已越过的事件导出 JSONL.gz 后删行；失败不致命（下轮继续）。
+  if (eventBus) {
+    try {
+      const { startEventArchiveJob } = await import('@core/services/event-system/event-archive.service')
+      archiveJob = startEventArchiveJob()
+    } catch (e) {
+      logger.error('[workflow-boot] 事件归档作业启动失败（继续启动）', e)
+    }
   }
 
   // 1. 节点注册表 + 一致性自检（目录↔handler 漂移拒绝启动）
@@ -122,10 +172,17 @@ export async function initWorkflowSubsystem(): Promise<WorkflowSubsystem> {
     db.appDefinitions,
     db.workflowDefinitions,
   )
-  // 事件桥：闭包捕获 getEventEmitter() 的 tapEvents（直接传方法引用会丢 this）
-  appSessionService.attach((cb: (c: string, d: unknown, u: string | null) => void) =>
-    getEventEmitter().tapEvents?.(cb)
-  )
+  // 事件桥（M2，10-event-system §9 末行）：总线就绪 → 命名持久消费者
+  // 'app-session-bridge'（at-least-once，崩溃补投由游标保证；startFrom='latest' 不补历史）；
+  // 总线不可用 → 回退存量 tapEvents 桥（至多一次，与 M1 前行为一致）
+  if (eventBus) {
+    appSessionService.attachEventConsumer(eventBus)
+  } else {
+    // 闭包捕获 getEventEmitter() 的 tapEvents（直接传方法引用会丢 this）
+    appSessionService.attach((cb: (c: string, d: unknown, u: string | null) => void) =>
+      getEventEmitter().tapEvents?.(cb)
+    )
+  }
   // boot 恢复：重建 runId→session 映射 + running 会话终态收口（引擎 recoverOnBoot 已执行，失败不阻断启动）
   try {
     await appSessionService.recoverOnBoot()
@@ -217,6 +274,10 @@ export function getWorkflowSubsystem(): WorkflowSubsystem {
 /** 测试/关停用：清空单例 */
 export function resetWorkflowSubsystem(): void {
   if (subsystem?.scheduler) subsystem.scheduler.stop()
+  for (const channel of attachedChannels) channel.stop()
+  attachedChannels = []
+  archiveJob?.stop()
+  archiveJob = null
   if (reviewTickerHandle !== null) clearInterval(reviewTickerHandle)
   reviewTickerHandle = null
   subsystem = null

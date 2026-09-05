@@ -1,9 +1,15 @@
 /**
- * 应用菜单单一数据源
+ * 应用菜单单一数据源（注册表模式）
  * @module config/menu
  *
  * MainLayout 侧边栏和 Home 首页功能入口共用这份菜单定义，
  * 保证两处入口永远一致（历史上两处各自复制一份，频繁漂移）。
+ *
+ * 业务包架构（P3）改造：菜单从静态常量改为「壳条目 + 注册表」——
+ * 壳条目（首页/工作流/应用/知识库/资产/设置）留在本文件；
+ * 各业务包的菜单条目由 src/renderer/src/packs/<name>/index.ts 声明，
+ * 装配时经 registerMenuItems() 合入。mainMenuItems 为响应式数组，
+ * MainLayout/Home 的 computed 消费方无需改动即可自动刷新。
  *
  * 字段说明：
  * - hidden：整项（含子项）不显示（功能开发中暂不暴露入口；路由仍可访问）
@@ -11,19 +17,13 @@
  * - description：首页功能卡片的一句描述（侧边栏不用）
  */
 
-import { markRaw } from 'vue'
+import { markRaw, reactive } from 'vue'
 import { Connection,
   HomeFilled,
-  ChatDotRound,
   Setting,
   FolderOpened,
-  User,
-  EditPen,
-  Notebook,
-  VideoCamera,
   Box,
   Collection,
-  MagicStick,
 } from '@element-plus/icons-vue'
 
 export interface MenuItem {
@@ -39,36 +39,24 @@ export interface MenuItem {
   hideSelf?: boolean
 }
 
-/** 主菜单（侧边栏 + 首页共用） */
-export const mainMenuItems: MenuItem[] = [
+/** registerMenuItems 的定位选项 */
+export interface RegisterMenuItemsOptions {
+  /**
+   * 插入锚点：合入到该 path 的菜单项之前；找不到锚点时追加到末尾。
+   * 用于保持业务包菜单的历史排列位置（避免包化后菜单顺序漂移）。
+   */
+  before?: string
+}
+
+/**
+ * 壳主菜单（本文件私有）：只含壳功能的条目。
+ * 业务包条目不经由这里——由 registerMenuItems 在装配期合入 mainMenuItems。
+ */
+const shellMainMenuItems: MenuItem[] = [
   {
     path: '/',
     label: '首页',
     icon: markRaw(HomeFilled)
-  },
-  {
-    path: '/chat',
-    label: 'AI 对话',
-    description: '与 AI 进行智能对话，支持多种大模型',
-    icon: markRaw(ChatDotRound)
-  },
-  {
-    path: '/portrait',
-    label: '人像设计',
-    description: 'AI 角色人像设计与生成',
-    icon: markRaw(User)
-  },
-  {
-    path: '/longwriting',
-    label: '长文写作',
-    description: 'AI 辅助长篇小说创作',
-    icon: markRaw(EditPen)
-  },
-  {
-    path: '/episode-production',
-    label: '剧集制作',
-    description: '剧本生成与视频制作',
-    icon: markRaw(VideoCamera)
   },
   {
     path: '/knowledge-base',
@@ -89,24 +77,34 @@ export const mainMenuItems: MenuItem[] = [
     icon: markRaw(Box),
   },
   {
-    path: '/diary',
-    label: '日记',
-    description: '智能日记记录与管理',
-    icon: markRaw(Notebook)
-  },
-  {
     path: '/assets',
     label: '资产管理',
     description: '工作流成果统一沉淀——按分类查看、预览、复用',
     icon: markRaw(Collection)
-  },
-  {
-    path: '/skills',
-    label: '技能库',
-    description: 'AI 技能包管理——内置预置 + 自定义技能，工作流「技能调用」节点使用',
-    icon: markRaw(MagicStick)
   }
 ]
+
+/**
+ * 主菜单（侧边栏 + 首页共用，响应式注册表）：
+ * 初始为壳条目；业务包条目在 installBuiltinPackages() 时装配合入。
+ * 消费方（MainLayout/Home）经 computed + flattenMenuItems 使用，自动响应合入。
+ */
+export const mainMenuItems: MenuItem[] = reactive([...shellMainMenuItems])
+
+/**
+ * 注册菜单项（业务包装配时调用）。
+ * opts.before 指定锚点 path：插入到该菜单项之前，找不到则追加到末尾。
+ */
+export function registerMenuItems(items: MenuItem[], opts: RegisterMenuItemsOptions = {}): void {
+  const anchorIndex = opts.before
+    ? mainMenuItems.findIndex(item => item.path === opts.before)
+    : -1
+  if (anchorIndex >= 0) {
+    mainMenuItems.splice(anchorIndex, 0, ...items)
+  } else {
+    mainMenuItems.push(...items)
+  }
+}
 
 /** 底部菜单（仅侧边栏使用） */
 export const footerMenuItems: MenuItem[] = [
@@ -134,4 +132,9 @@ export function flattenMenuItems(items: MenuItem[]): MenuItem[] {
     }
   }
   return flat
+}
+
+/** 测试专用：恢复为仅壳条目（清空各测试用例合入的包菜单） */
+export function __resetMainMenuForTests(): void {
+  mainMenuItems.splice(0, mainMenuItems.length, ...shellMainMenuItems)
 }

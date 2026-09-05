@@ -15,7 +15,8 @@ import { BaseRepository } from '../base-repository'
 export interface CreateVideoProjectRequest {
   name: string
   longWritingProjectId?: string
-  config: VideoProjectConfig
+  /** 可选；不传时默认 {}（剧本导入等 UI 路径不带配置，config 列 NOT NULL 不能落空） */
+  config?: VideoProjectConfig
 }
 
 export interface UpdateVideoProjectRequest {
@@ -81,7 +82,7 @@ export class VideoProjectRepository extends BaseRepository<
       name: data.name,
       longWritingProjectId: data.longWritingProjectId ?? null,
       status: 'draft',
-      config: data.config as Record<string, unknown>,
+      config: (data.config ?? {}) as Record<string, unknown>,
       createdAt: now,
       updatedAt: now,
     })

@@ -57,6 +57,7 @@ import { addStoryboardBackgroundRef } from '@core/database/migrations/add-storyb
 import { relaxBindingLwIdNullable } from '@core/database/migrations/relax-binding-lw-id-nullable'
 import { addNarrativeBindingFks } from '@core/database/migrations/add-narrative-binding-fks'
 import { relaxEpisodeScriptOutlineId } from '@core/database/migrations/relax-episode-script-outline-id'
+import { relaxVideoEpisodeOutlineId } from '@core/database/migrations/relax-video-episode-outline-id'
 import { addKeyframeUserPromptOverride } from '@core/database/migrations/add-keyframe-user-prompt-override'
 import { addCharacterBindingExtraFields } from '@core/database/migrations/add-character-binding-extra-fields'
 import { addCharacterBindingRace } from '@core/database/migrations/add-character-binding-race'
@@ -226,10 +227,23 @@ async function bootstrap(): Promise<void> {
     )
   }
 
+  // 业务包子系统（第一期：包内核；失败不致命，与 Electron 端平级）。
+  // 不依赖 workflow，放在工作流子系统初始化之前（P4 起业务包的 activate 会复用 workflow 等设施）。
+  try {
+    const { initPackSubsystem } = await import('@core/packs/kernel')
+    const { builtinPacks } = await import('@core/packs/builtin-packs')
+    await initPackSubsystem(builtinPacks)
+  } catch (e: any) {
+    console.warn('[web-server] 业务包子系统启动失败（不致命）', e)
+  }
+
   // 工作流子系统：引擎装配 + boot 恢复 + 触发调度器（失败不致命，与 Electron 端平级）
   try {
     const { initWorkflowSubsystem } = await import('@core/modules/workflow/workflow-boot')
-    await initWorkflowSubsystem()
+    const { WsEventChannel } = await import('@core/services/event-system/channels/ws.channel')
+    // ws 通道（10-event-system §5.4）：平台事件 workflow.run.* → wf:run-event，
+    // 按事件自带 userId 路由到目标用户的 WS 连接（不再依赖 emit 时刻 ALS 上下文）
+    await initWorkflowSubsystem({ eventChannels: [new WsEventChannel()] })
   } catch (e: any) {
     console.warn('[web-server] 工作流子系统启动失败（不致命）', e)
   }
@@ -286,6 +300,8 @@ async function initDatabase(): Promise<void> {
   await addNarrativeBindingFks(ds)
   // P7-bug-1: episode_scripts.outline_id 改 nullable（uploaded 模式无 outlineId）
   await relaxEpisodeScriptOutlineId(ds)
+  // video_episodes.outline_id 改 nullable（uploaded 建集无 outlineId）
+  await relaxVideoEpisodeOutlineId(ds)
   // FU5-A9-L4: storyboard_keyframe 加 user_prompt_override（spec §4.5.7 持久化用户提示词）
   await addKeyframeUserPromptOverride(ds)
   // FU5-C2: character_bindings 加身份块 + 声音情感 + 风格锚点字段（spec §3.1/3.4/3.6）
@@ -353,6 +369,12 @@ async function initDatabase(): Promise<void> {
     '@core/database/migrations/create-workflow-tables'
   )
   await createWorkflowTables(ds)
+
+  // 通用事件系统：platform_events / cursors / dead_letters 三表（与 Electron 端同构；10-event-system §4）
+  const { createPlatformEventTables } = await import(
+    '@core/database/migrations/create-platform-event-tables'
+  )
+  await createPlatformEventTables(ds)
 
   // C3 免登录独立页：definitions 加 share_token 列 + 唯一索引（与 Electron 端同构）
   const { addWorkflowShareToken } = await import(
@@ -434,6 +456,27 @@ async function initDatabase(): Promise<void> {
     '@core/database/migrations/create-lw-graph-tables'
   )
   await createLwGraphTables(ds)
+
+  // provider_configs 补 default_model 列（与 Electron 端 runMultiTenantMigrations 同构登记）
+  const { addProviderConfigDefaultModel } = await import(
+    '@core/database/migrations/add-provider-config-default-model'
+  )
+  await addProviderConfigDefaultModel(ds)
+
+  // 业务包内核（第一期）：business_packs / business_pack_bindings 两表
+  // （synchronize 已按 entity 建表，此处幂等补索引；与 Electron 端 runMultiTenantMigrations 同构）
+  const { createPackTables } = await import(
+    '@core/database/migrations/create-pack-tables'
+  )
+  await createPackTables(ds)
+
+  // 视频片段制（tasks/2026-09-04-ep-video-segment-redesign §4/§7）：
+  // ep_video_segments 表 + storyboards.segment_id/segment_seq + 存量有视频分镜迁成单镜片段
+  // （幂等，双语种；与 Electron 端 runMultiTenantMigrations 同构登记）
+  const { createEpVideoSegments } = await import(
+    '@core/database/migrations/create-ep-video-segments'
+  )
+  await createEpVideoSegments(ds)
 
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)

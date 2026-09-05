@@ -1,6 +1,6 @@
 # 10 · 通用事件系统（Platform Event System）
 
-> Agent Loop Harness ｜ 2026-08-28 ｜ 状态：设计中 ｜ 配套：[01-design-spec.md](./01-design-spec.md)、[02-implementation-plan.md](./02-implementation-plan.md)
+> Agent Loop Harness ｜ 2026-08-28 ｜ 状态：M1 核心已实施（实施记录见文末） ｜ 配套：[01-design-spec.md](./01-design-spec.md)、[02-implementation-plan.md](./02-implementation-plan.md)
 > 定位：**平台级公共底座**，不属于工作流引擎私有。journal、任务树调度、记忆代谢、通知/待办等后续模块全部构建在本系统之上。
 
 ## 1. 目标与范围
@@ -387,7 +387,7 @@ AgentRuntime: decision=human_request
 ## 12. 开放问题
 
 1. **与 journal 的事务边界**：引擎 journal 追加与平台事件 publish 是否强制同事务？倾向：不强制（journal 是恢复事实源，事件丢失可接受，§7.3），但 `workflow.run.review-*` 两类（人工链路）建议同事务。待 M1 实施时按性能实测定。
-2. **保留策略默认值**：沿用 02 开放问题 #1 的建议——人工/挂起类 run 的事件全量保留，普通自动化 run 终态 30 天后归档为 JSONL.gz（落 `exports/` 还是 `data/` 待决）；通用默认 90 天。是否需要按租户配置？
+2. **保留策略默认值**：**已定（M4 落地，见 §16）**——通用默认 90 天；人工/挂起类（`workflow.run.review-*`）全量保留（`DEFAULT_KEEP_FOREVER_PATTERNS`）；归档目录 Electron=`<数据根>/event-archives`、Web=`<rootDataPath>/event-archives`（系统级跨租户归档不能落 Web 按用户隔离目录）。暂不按租户配置：阈值为代码常量 + 构造注入（`EventArchiveOptions`/`EventBusDriverOptions.rateLimits`），运营化配置（settings 表）留待后续有实际需求再做。
 3. **通配符语法分叉**：存量冒号名（`kb:*`）与点分层名（`workflow.run.*`）长期并存还是统一迁移？**已定**（与 15/16/17 号文档对齐后定稿）：并存为正式约定——领域事件冒号式（`agent:*`/`workflow:*`/`kb:*`）、引擎 run 生命周期点分层（`workflow.run.*`），见 §5.1；存量触发器定义的 `eventName` 不做数据迁移。
 4. **LAN ingest 的 seq 语义**：远端事件按本地 seq 插入会打乱"聚合内全局有序"（跨设备同聚合并发写）。V1 可接受（LAN 协作以人为节奏），严格有序需向量时钟，留待 lan-collab 立项评估。
 5. **系统级消费者清单治理**：`user_scope='*'` 的消费者是跨租户特权面，是否需要在 settings 表维护白名单并在 boot 时校验？倾向 M4 随权限体系一并处理。
@@ -395,3 +395,177 @@ AgentRuntime: decision=human_request
 ---
 
 *术语与契约一致性自查：`workflow_run_events`/`agent_tasks`/`memory_entries` 表名、E1-E6 扩展点、S1-S8 短板编号、M1-M4 分期均与 [01-design-spec.md](./01-design-spec.md) / [02-implementation-plan.md](./02-implementation-plan.md) 对齐；本文新增对象均已就地标注。*
+
+---
+
+## 13. M1 实施记录（2026-08-29）
+
+### 实际文件清单
+
+| 文件 | 内容 |
+|------|------|
+| `src/shared/types/event.types.ts` | §5 全部契约类型：PlatformEvent / PublishInput / SubscriptionFilter / SubscribeOptions / ReplayQuery / EventHandler / Subscription / DeadLetter / EventBus / QueryRunnerLike / ChannelKind / EventChannel / EventAdmin（后两者仅类型，实现属后续批次） |
+| `src/core/database/entities/platform-event.entities.ts` | 三表 Entity（platform_events / platform_event_cursors / platform_event_dead_letters），已登记 barrel `entities/index.ts` |
+| `src/core/database/migrations/create-platform-event-tables.ts` | 双端幂等迁移（ensureTable/ensureIndex 模式，SQLite/PG 双 DDL、isPg 开关、`?`/`$1` 占位符） |
+| `src/electron/database/index.ts` / `src/web/server/index.ts` | 迁移登记（runMultiTenantMigrations / initDatabase，紧随 createWorkflowTables） |
+| `src/core/database/repositories/platform-event.repository.ts` | BaseRepository 派生仓库：publish 走 scoped（ALS 注入 userId）；replay 走 scoped.qb；dispatcher 扫表/ingest 走裸 repo（§4.4 既定例外，注释已确认安全性） |
+| `src/core/services/event-system/event-matcher.ts` | 通配符匹配纯函数（`'*'`/前缀/全等 + 聚合 AND） |
+| `src/core/services/event-system/payload-guard.ts` | §8 守卫：密钥键名顶层拒绝 + 深层 warn、64KB 上限、循环引用拒绝；返回序列化结果复用 |
+| `src/core/services/event-system/event-bus.service.ts` | PlatformEventBus（publish/subscribe/replay/ingest + dispatcher pump + 退避/DLQ + 兜底扫描）+ 单例访问器（getEventBus / getEventBusIfReady / stopEventBus） |
+| `src/core/services/event-system/index.ts` | 公共出口 |
+| `src/core/modules/workflow/trigger/domain-event-bus.ts` | `publishDomainEvent` 适配器化（见偏差 1） |
+| `src/core/modules/workflow/workflow-boot.ts` | boot 装配 step 0：启动平台事件总线（双端共用入口，失败不致命） |
+| `tests/unit/migrations/create-platform-event-tables.spec.ts` | 迁移单测（建表/索引、连跑两次幂等、schema-drift 对齐、游标唯一键） |
+| `tests/unit/core/services/event-system/event-matcher.spec.ts` | 通配符匹配矩阵 + 聚合 AND |
+| `tests/unit/core/services/event-system/payload-guard.spec.ts` | 密钥键名矩阵 / 64KB / 循环引用 |
+| `tests/unit/core/services/event-system/event-bus.spec.ts` | 投递语义（含租户隔离、聚合过滤、tx 路径）、退避 5 次进 DLQ + 毒消息跳过、崩溃恢复（写库未分发→重建 bus→补偿投递）、replay、ingest 去重 |
+| `scripts/verify-pg-platform-event-tables.ts` | PG 无实体 DataSource 直验脚本（PG 全套件被存量 datetime 实体问题阻塞，按 §10 允许的替代路径） |
+
+### 与设计的偏差及原因
+
+1. **`publishDomainEvent` 保留进程内同步分发 + 追加平台落库，而非完全替换为 bus.publish**。§9 写"内部转 bus.publish"，但平台 bus.publish 是异步且依赖 DB；存量触发器测试套件（trigger-scheduler.spec.ts）无 DB 环境、断言同步分发语义。完全替换会导致存量套件全灭与触发器链路实时性回归。现实现：内存 EventEmitter 同步分发不变（订阅方零改动），同时转发 `bus.publish` 落库（fire-and-forget + try/catch，主流程不受影响语义保持）；平台总线未启动（boot 早期/无库测试）时静默跳过，行为与存量纯内存等价。聚合推导：kind 取事件名首段，id 取 payload 首个 `*Id` string 值（兜底事件名）。
+2. **PG 端 seq 实际为 SERIAL 而非 BIGSERIAL（Web 路径）**。Entity 声明 `type:'integer'`（better-sqlite3 自增主键强制 INTEGER，实测 bigint 报 "AUTOINCREMENT is only allowed on an INTEGER PRIMARY KEY"）；Web 端 `ds.synchronize()` 先于迁移建表 → 实际落 SERIAL。迁移 DDL 仍按 §4.1 写 BIGSERIAL（迁移先建表的场景，如 PG 直验脚本，实测 bigint ✓）。千条/日量级 int4（21 亿）足够；如需严格一致，后续把 Web 建表切到迁移优先。
+3. **SubscribeOptions 未加 userScope 字段**。消费者租户作用域按 §8 语义内部推导：订阅时刻 ALS userId，无 ALS 时 `'*'` 系统级（代码评审登记点即订阅调用处）。
+4. **匿名进程内订阅暂不做事件级租户过滤**（与存量 domain-event-bus 语义一致：发布捕获 userId、订阅方自行过滤）；命名消费者的 DB 侧 scope 过滤是完整实现的。M1 尚无匿名订阅用户（ipc/ws/sse 通道后续批次接入时再收紧）。
+5. **DLQ `first_failed_at` 用内存映射追踪首轮失败时刻**，重启后丢失则回落 last_failed_at（DDL 未含该列，游标表不含 first-failure 字段，M1 不扩表）。
+6. **tx 路径不做提交后即时分发**（提交时机对 bus 不可知）：统一由 dispatcher 兜底扫描补投（≤2s）。回滚即无幻影投递，语义比"乐观分发"更安全。
+7. **新建游标 last_seq=0 → 重放全部历史匹配事件**：§6.3 boot 扫表的直白语义。事件触发器后续迁移为命名消费者时需评估是否从"当前最大 seq"起订（届时再定，M1 无命名消费者接入存量链路）。
+8. **退避重试由兜底扫描驱动**（不另起 setTimeout 计时器）：重试粒度受 sweep 间隔约束（生产 2s，测试注入 10ms），配合注入式 `retryDelaysMs` 替代 fake timer（DB 异步与 fake timer 组合易挂起）。
+
+### 验证结果（2026-08-29，feat/plugin-arch）
+
+- 迁移单测：SQLite 内存库连跑两次幂等 ✓；schema-drift（Entity vs DDL）ok ✓；游标唯一键冲突拒绝 ✓
+- PG 直验（localhost:5439/the_bot_test）：3 表 + 6 索引齐全、seq=bigint（BIGSERIAL）、连跑两次幂等、写入冒烟 ✓
+- 新增单测：event-system + 迁移共 4 个 spec 全绿（55 用例）；存量 trigger-scheduler 套件 11/11 绿（适配器兼容）
+- 全套件抽样基线对比：app.repository / create-builtin-apps / app-list / tool-call / multi-tenant / workflow-repositories 等失败数与改动前基线完全一致（存量失败，非本次引入）
+- typecheck：974 → 974，净增 0（新文件 0 错误）
+- `npx electron-vite build` 通过
+- 恢复 Electron ABI（`npm run rebuild:electron`）后冒烟：`scripts/e2e-pack-smoke.cjs` 6/6 通过；boot 日志确认三表在真库创建 + `[EventBus] 平台事件总线已启动`
+
+### 实施中发现并修复的存量坑
+
+- TypeORM SelectQueryBuilder `.where()` 会清空既有 wheres——`scoped.qb` 注入的租户条件曾被 replayBatch 的 `.where()` 覆盖（已改 andWhere 并注释）；这是 scoped.qb 使用方的通用陷阱。
+- AsyncLocalStorage 不随异步生成器迭代传播——replay 的租户快照必须在同步调用点捕获（生成器体首次迭代时已不在调用方 ALS 内）。
+
+---
+
+## 14. M1 收尾实施记录（2026-08-29，第二批：ipc/ws 通道 + 引擎 producer 适配器）
+
+### 实际文件清单
+
+| 文件 | 内容 |
+|------|------|
+| `src/core/services/event-system/workflow-run-event-map.ts` | §9 事件类型映射表（五型 ↔ `workflow.run.*`，`WORKFLOW_RUN_EVENT_TYPE_MAP` 单一事实源 + 逆映射）+ `translateRunPlatformEvent`（平台事件 → 五型载荷重建 type）+ 通道默认订阅类型集 `workflow.run.*` + 聚合 kind 常量 `workflow_run` |
+| `src/core/services/event-system/channels/ipc.channel.ts` | ipc 通道（§5.4）：匿名订阅 `workflow.run.*` → 翻译回五型载荷 → `getEventEmitter().emit('wf:run-event', ...)`；emit 用事件自带 userId 包裹 ALS（tap 消费者租户上下文与存量直推一致）；未登记映射类型跳过；start/stop 幂等 |
+| `src/core/services/event-system/channels/ws.channel.ts` | ws 通道（§5.4）：同 ipc 角色，走 WebSocketEventEmitter；按事件自带 userId 路由（runWithUser 包裹 emit），不再依赖 emit 时刻 ALS 上下文；userId 为 null 不广播（emitter 既有防串数据语义） |
+| `src/core/services/event-system/workflow-run-producer.ts` | 引擎 producer 适配器 `createWorkflowRunEventProducer(fallbackEmit, {getBus})`：emit → 派生平台事件（映射表类型、aggregate={workflow_run,runId}、actor=workflow、correlationId=runId、载荷剥离 type）；Promise 链串行化保序；总线未就绪/落库 null/抛错 → 回退存量直推（前端推送不断、不影响恢复，§9 第一行契约） |
+| `src/core/modules/workflow/engine/ports.ts` | `WorkflowEventPort.emit` 增加可选 `opts.causationId`（journal 事件 id 透传位；引擎调用点零改动） |
+| `src/core/modules/workflow/workflow-run.service.ts` | `makeEngineDeps` 的 events 改用 producer 适配器包装存量直推（直推保留为兜底路径） |
+| `src/core/modules/workflow/workflow-boot.ts` | `initWorkflowSubsystem(opts?: { eventChannels? })`：总线启动成功后挂接通道（失败不致命）；`resetWorkflowSubsystem` 停通道 |
+| `src/electron/index.ts` / `src/web/server/index.ts` | 分别传入 `new IpcEventChannel()` / `new WsEventChannel()` |
+| `src/core/services/event-system/index.ts` | 公共出口补齐（映射表 / producer / 两通道） |
+| `src/core/services/event-system/event-bus.service.ts` + `src/core/database/repositories/platform-event.repository.ts` | 存量坑修复：`globalThis.crypto.randomUUID` → `node:crypto` randomUUID（见下方存量坑） |
+| `tests/unit/core/services/event-system/workflow-run-event-map.spec.ts` | 映射表单测：五型全集覆盖、双向往返、值唯一、未登记类型 null、翻译重建 |
+| `tests/unit/core/services/event-system/run-event-channels.spec.ts` | ipc/ws 通道同构断言：五型载荷字段级相等、按事件自带 userId 包裹 emit、未映射跳过、start/stop 幂等 |
+| `tests/unit/core/services/event-system/workflow-run-producer.spec.ts` | producer：派生字段断言、causationId 透传、保序链、三类失败隔离（落库 null / 抛错 / 总线未就绪均回退直推）、单事件失败不卡死后续 |
+| `scripts/e2e-event-system-run-push.cjs` | 前端实测脚本（CDP 9333）：建图发布 → preload `onRunEvent` 订阅 → startRun → 断言收到五型载荷至终态 |
+
+### 与设计的偏差及原因
+
+9. **causationId 暂为 undefined（journal 尚未实施）**。§9 约定"引擎在 journal 追加后派生平台事件、causationId 回填 journal 事件 id"，但 `workflow_run_events` journal 属 [11-run-journal](./11-run-journal.md)、本仓库尚无实现。本批派生点挂在 `makeEngineDeps` 的 `events.emit`（引擎事件唯一出口），`WorkflowEventPort.emit` 已加可选 `opts.causationId` 透传位，journal 落地后由引擎调用点补传即可，适配器与通道零改动。
+10. **存量直推保留为兜底而非删除**。producer 在总线未就绪 / publish 返回 null / publish 抛错时回退 `getEventEmitter().emit('wf:run-event')` 直推——§9"前端零改动"+"平台事件失败不影响恢复"的双重契约下，这是保证前端实时推送不断的最小代价；正常路径（总线就绪）事件只走"总线→通道"一条，无双发。
+11. **`app-notify` 节点的 notify 事件未走平台总线**（`ai-nodes.ts` 直接 `getEventEmitter().emit`，不经过引擎 events.emit）。保持原样不动（最小改动）；后续如需 notify 也入平台事件，改走 producer 即可，前端无感。
+12. **ipc/ws 通道为匿名订阅（至多一次）**，与存量 fire-and-forget 推送语义一致；崩溃窗口漏投由前端刷新/轮询兜底（UI 推送类本就至多一次，§5.2）。sse 通道平台化（streamRunEvents 改 replay+订阅混合流）仍属 M2。
+
+### 验证结果（2026-08-29，feat/plugin-arch）
+
+- 新增单测 21 用例全绿；event-system 目录合计 6 spec / 76 用例全绿；存量 workflow 模块套件 522 过 / 7 失败（tool-call、tool.service 加密、yt-dlp，与基线一致的存量失败，非本次引入）
+- typecheck：974 → 974，净增 0；`tsconfig.web-server.json` 无新增错误（351 存量为 esModuleInterop 等配置级问题）；`npx electron-vite build` 通过
+- 恢复 Electron ABI 后冒烟 `scripts/e2e-pack-smoke.cjs` 6/6 通过；boot 日志确认 `[EventBus] 平台事件总线已启动` + `[IpcEventChannel] 已挂接（订阅 workflow.run.* → wf:run-event）`
+- **wf:run-event 前端实测**（`scripts/e2e-event-system-run-push.cjs`）：真实 run（start→message→end）前端经 preload `onRunEvent` 收到 9 条事件（node-status×6 + node-progress×1 + run-status×2），序列为 running → 各节点 → succeeded；`platform_events` 表直查确认同 run 9 条 `workflow.run.*` 事件落库（aggregate/correlation=runId、actor=workflow）；全程无 producer 回退日志——前端推送链路已完整切换到"引擎 → 平台总线 → ipc 通道 → wf:run-event"
+
+### 实施中发现并修复的存量坑（第二批）
+
+- **Electron 主进程无 `globalThis.crypto`**（WebCrypto 全局未暴露）——M1 核心的 `generateUuid`（event-bus.service 与 platform-event.repository 两处）在真机 boot 挂接通道时抛 `TypeError: Cannot read properties of undefined (reading 'randomUUID')`，vitest（Node 24）不暴露此问题。已统一改 `node:crypto` 的 `randomUUID`（项目存量惯例）。
+- logger 对 Error 第二参数序列化为 `{}`（Error 属性不可枚举）——通道挂接失败的 catch 已改为显式拼接 `e.stack`，否则真机排障无栈可看。
+
+---
+
+## 15. M2 实施记录（2026-08-29：EventAdmin + SSE 平台化 + app-session 桥迁移）
+
+### 实际文件清单
+
+| 文件 | 内容 |
+|------|------|
+| `src/shared/types/event.types.ts` | `SubscribeOptions.startFrom`（'earliest' 缺省 / 'latest' 起订当前最大 seq，仅新建游标生效）；EventAdmin 注释更新为已落地 |
+| `src/core/database/repositories/platform-event.repository.ts` | 新增 `getMaxSeq` / `countEventsAfterSeq`（lag，与扫表同口径）/ `ensureCursor` 加 `initialLastSeq` / `rewindCursor`（管理面回拨，故意打破单调不退；无游标时按回拨位新建）/ `findDeadLetterById` / `updateDeadLetterStatus` |
+| `src/core/services/event-system/event-bus.service.ts` | subscribe 支持 `startFrom:'latest'`（ensureCursor 前读 maxSeq 作起始位；无竞态——之后发布的事件 seq 更大，pump 照常拾取）；新增 `kickConsumer(name, scope)` 管理面手动追赶入口（未订阅时静默跳过，兜底扫描收口） |
+| `src/core/services/event-system/event-admin.service.ts` | EventAdmin 实现（§5.3）：listDeadLetters（consumerName/status 过滤 + 快照解析回信封）/ requeue 两分支（在库→rewindCursor(event_seq-1)+kickConsumer；已归档→ingest 快照重放入库，保留原 id 去重键、分配新 seq）/ discard / consumerStats（lag=作用域内 seq>last_seq 事件数，retrying=retrying_seq 非空）；`getEventAdmin()` 惰性单例 |
+| `src/electron/ipc/handlers/event-admin.handler.ts` | 管理面 IPC：`event-admin:list-dead-letters` / `requeue-dead-letter` / `discard-dead-letter` / `consumer-stats`，统一 IpcResponse 包装 |
+| `src/electron/index.ts` / `src/web/server/api/register-channels.ts` | 双端注册管理面 handler。鉴权（§8）：Web 经 `POST /api/ipc/event-admin:*` 暴露，ipc-router 全局 `requireAuth`（ipc-router.ts:20）；Electron 走 ipcMain（单用户桌面信任模型，与既有全部 handler 同级） |
+| `src/core/services/event-system/run-event-stream.ts` | sse 通道平台化（§5.4 sse 行）：`createRunEventStream(bus, runId, ownerUserId)` ——先匿名订阅缓冲实时事件→replay 聚合 {workflow_run, runId} 历史（replay 用 runWithUser 包 ownerUserId，规避 async generator ALS 坑）→置 replayDone 后同步冲刷缓冲（seq 有序、event.id 去重）→实时直通；replay 失败降级纯实时（不致命）；异租户事件回调处过滤（匿名订阅无 DB 侧过滤，M1 偏差 4） |
+| `src/web/server/api/workflow-api-router.ts` | streamRunEvents 内部切换：bus 就绪 → createRunEventStream；未就绪 → 回退存量 tapEvents。端点契约不变（快照先行 / 25s 心跳 / 终态 done 关流 / 分享 token↔run 配对校验 / 五型载荷）；`createWorkflowApiRouter` 新增可注入 `getEventBus`（缺省 `getEventBusIfReady`） |
+| `src/core/modules/app/app-session.service.ts` | 事件桥迁移（§9 末行）：`attachEventConsumer(bus)` 注册命名持久消费者 `APP_SESSION_EVENT_CONSUMER='app-session-bridge'`（startFrom='latest'；系统级 user_scope='*'，§8 登记点即此）；幂等按 event.id 去重（内存 Map，1 万上限 FIFO 淘汰）；平台事件经 translateRunPlatformEvent 翻译后走原 handleRunEvent |
+| `src/core/modules/workflow/workflow-boot.ts` | 事件桥接线：总线就绪 → attachEventConsumer；不可用 → 回退存量 tapEvents 桥 |
+| `tests/unit/core/services/event-system/event-admin.spec.ts` | EventAdmin 全路径：list 过滤/DTO、requeue 在库分支（真实 DLQ 流 → 回拨 → 重投成功 → requeued）、无游标时按回拨位新建、归档分支（ingest 新 seq + 正常分发）、总线未就绪报错、状态守卫、discard、consumerStats（lag/租户口径/retrying） |
+| `tests/unit/core/services/event-system/run-event-stream.spec.ts` | 混合流源：replay 先行 + 窗口缓冲 seq 保序 + id 去重 + 异租户/未映射类型跳过 + 订阅过滤面断言 + close 注销 + replay 失败降级 |
+| `tests/unit/web/workflow-api-router-sse-bus.spec.ts` | 路由级集成（真实 bus + 内存 SQLite + express）：快照→replay 历史→实时→终态 done 关流、异租户过滤、终态即关流、他人 404 |
+| `tests/unit/core/modules/app/app-session-event-consumer.spec.ts` | 消费者订阅面（consumerName/startFrom/types）+ 挂接幂等 + event.id 去重（同 id 两投一卡）+ 扩展类型跳过 + 异常隔离 |
+| `tests/unit/core/services/event-system/event-bus.spec.ts` | +2 用例：startFrom='latest' 不补历史/之后正常投递；缺省 earliest 补投历史（偏差 7 语义保持） |
+
+### 与设计的偏差及原因
+
+13. **EventAdmin 落地提前到 M2**（§5.3 类型注释原写"M3 实现"）：本批任务范围含 EventAdmin，DLQ 无消费者观测无法闭环，故一并落地。
+14. **requeue 在库分支的连带重投**：游标回拨到 event_seq-1 后，pump 会重扫该 seq 之后本消费者"已跳过/已处理"的全部匹配事件（不只死信那一条）——§5.3 的直白语义，at-least-once 下由消费者幂等约定兜底（§5.5），EventAdmin 注释已写明。
+15. **归档重放入库走 `bus.ingest`**（保留快照原 id 作去重键）：归档已删行故无唯一键冲突；若 id 竟仍在库（归档半截）则 ingest 返回 duplicate，requeue 报"请人工核查"且不收口死信。总线未就绪时归档分支拒绝操作（rewind 分支不受影响——游标落库后由兜底扫描/下次订阅补投）。
+16. **app-session 幂等键为进程内存 event.id 集**（非持久化）：§7.2 的"handler 成功但 ack 前崩溃"窗口在重启后会重投一次，内存集丢失理论上可能重复写一张卡——接受该残余风险（窗口极小、卡片为用户可读副本、finishSucceeded 等终态收口本身幂等）；持久化幂等键（如 metadata 唯一约束）留待通知/待办迁移（M4）统一评估。
+17. **finishIfTerminal 补 closed 守卫**：混合流下 replay 历史可能含终态事件（快照非终态→replay 期间 run 已终态），不重入 send-after-end 才会安全；存量 tap 路径同受益（原实现存在双 done 隐患）。端点契约不变。
+18. **Web 管理面未开独立 REST 路由**：复用 ipc-router 的 `POST /api/ipc/<channel>`（全局 requireAuth）即满足 §8"鉴权 REST"；若后续要给 DLQ 做运营后台 UI，再按资源型 REST 风格单独开面（TODO，非本批阻塞项）。
+
+### 验证结果（2026-08-29，feat/plugin-arch）
+
+- 新增单测 23 用例全绿（event-admin 8 / run-event-stream 5 / sse-bus 路由级 4 / app-session 消费者 4 / event-bus startFrom 2）；event-system + app + web 路由相关 14 spec / 152 用例全绿（含存量 tap 回退路径 workflow-api-router.spec 与存量 app-session.spec 无回归）
+- 全套件（tests/unit，SKIP_PG_TESTS）：2676 过 / 68 失败——失败面（app.repository、assets/episode-production 资产系、tool-call、tool.service 加密、yt-dlp、StageHeaderBar/app-list 渲染系、create-builtin-apps）与 M1 记录的存量基线一致，无本批引入（本批触及面 event-system / app-session / workflow-api-router 全绿）
+- typecheck：974 → 974，净增 0；`tsconfig.web-server.json` 351 → 351 存量（无新增）
+- Web 侧 SSE 未做整机实测（应用占用 CDP 9333 不动）：以路由级集成测试（真实 bus + 内存 SQLite + express 真起服务）+ 编译覆盖代替，平台化前后端点契约由存量 tap 套件（回退路径）与新 bus 套件（平台路径）双侧锁定
+- Electron 侧 EventAdmin IPC 未做真机点击验证（本批不重启应用）：handler 为薄适配层，业务路径已被 event-admin.spec 覆盖
+
+---
+
+## 16. M3/M4 收口实施记录（2026-08-29：背压拉模式 + 限流泛化 + 保留与归档）
+
+### 实际文件清单
+
+| 文件 | 内容 |
+|------|------|
+| `src/core/services/event-system/event-rate-limit.ts` | §7.8 生产者侧限流：`EventRateLimiter`（滑动窗口，每 (type, aggregate) 每分钟 N 次）+ `DEFAULT_EVENT_RATE_LIMITS` 类型族默认阈值（首条命中生效：`system.event.*` 不限防自限死循环；`workflow.run.*` 不限——run 生命周期含高频 node-progress，前端实时推送依赖之，存量本无限流，误杀会卡死 UI 进度；其余 20/分钟沿袭 EVENT_TRIGGER_MAX_PER_MINUTE 语义）+ `RATE_LIMITED_EVENT_TYPE` marker 节流（每 key 每窗口至多一条，防限流自身成为风暴源） |
+| `src/core/services/event-system/event-bus.service.ts` | §7.7 背压：命名消费者 in-flight 水位（dispatch 踢泵 +1 / deliver ack·死信 -1，重试态不扣）达 maxInFlight（缺省 1000，SubscribeOptions 覆盖）→ 拉模式跳过实时踢泵、2s 兜底扫描按游标追赶；水位回落到一半以下（滞回）切回推模式并立即踢泵。匿名订阅者 in-flight 达 anonymousMaxInFlight（缺省 1000）→ 丢弃 + 按订阅者节流 warn。§7.8 接线：publish 载荷守卫后限流闸门，超限记 marker（沿用被限聚合、actor=system/event-rate-limiter、不进调用方事务）后丢弃返回 null。`getConsumerPressure` 水位观测口 |
+| `src/core/services/event-system/event-archive.service.ts` | §6.1 [archived] / §7.10 / §12.2 归档作业：`EventArchiveService`（setInterval 每日，与审核超时 ticker 同款基建；boot 不立即跑避免拖慢启动）——只清 seq < min(所有游标.last_seq) 且超保留期且不命中全量保留类型的事件，导出 JSONL.gz（`platform-events-<首seq>-<末seq>-<时间戳>.jsonl.gz`）落盘成功后才删行；删除前事务内重读游标下界（§7.10 竞态守卫），下界收紧则只删仍安全部分并本轮即停。默认策略：通用 90 天 + `workflow.run.review-*` 全量保留。归档目录：Electron=`<数据根>/event-archives`、Web=`getAppDataPath()`=rootDataPath（系统级跨租户，不落 Web 按用户隔离目录）。单例 `startEventArchiveJob/stopEventArchiveJob`（重启动幂等） |
+| `src/core/database/repositories/platform-event.repository.ts` | 归档配套：`getMinCursorLastSeq(manager?)`（无游标返回 null → 保守不归档）/ `findArchivableEvents`（seq 上界 + occurred_at 截止 + NOT 全量保留模式，跨租户裸扫描既定例外）/ `deleteEventsBySeqs(seqs, manager?)`（事务内删除） |
+| `src/core/modules/workflow/workflow-boot.ts` | boot 装配 step 0.2：总线启动成功后启动归档作业（失败不致命）；reset 停表 |
+| `src/shared/types/event.types.ts` | `SubscribeOptions.maxInFlight` 注释更新为 M3 已生效语义 |
+| `src/core/services/event-system/index.ts` | 公共出口补齐（限流 / 归档） |
+| `tests/unit/core/services/event-system/event-backpressure.spec.ts` | §7.7/§10 背压：阻塞 handler + 100 条事件 → 拉模式切入/切回断言（getConsumerPressure）+ 无丢失无重复 + 聚合内 seq 严格单调 + 游标追平；推模式正常路径不降级（关兜底验证实时分发）；匿名队列满丢弃不补投 |
+| `tests/unit/core/services/event-system/event-rate-limit.spec.ts` | §7.8：类型族默认阈值 / 首条命中生效 / 滑动窗口恢复 / marker 节流；bus 接线（超限返回 null 不落库 + 25 条洪峰只记 1 条 marker + marker 字段断言）；workflow.run.* 50 连发零误杀；不同聚合独立窗口 |
+| `tests/unit/core/services/event-system/event-archive.spec.ts` | §7.10：正常归档（游标上界/保留期/全量保留三维过滤 + JSONL.gz gunzip 还原 + 剩余行精确断言）；无游标保守跳过；**竞态单测**（beforeDelete 钩子新建 last_seq=0 游标 → 本轮一条不删）；多批次分文件；start/stop 幂等 + runArchiveOnce 防重入 |
+| `tests/unit/core/services/event-system/event-bus.spec.ts` | 既有用例去竞态：ack 游标断言改为 waitFor 追平（见偏差 20） |
+
+### 与设计的偏差及原因
+
+19. **限流 marker 节流为"每 key 每窗口至多一条"**。§7.8 原文"超限事件记 system.event.rate-limited 后丢弃"若逐条记，洪峰 1 万条会产生 1 万条 marker——限流自身成了事件风暴源。marker 语义是"该 key 本窗口发生过限流"的观测信号而非逐条审计（被限事件的载荷本就不落库）。ingest（LAN 远端事件）不过限流——远端已被其本端策略约束。
+20. **既有 event-bus 用例去竞态化**。「命名持久消费者…游标前移」用例原断言 `waitFor(received==2)` 后立即读游标，但 ack 落库在 handler push 之后（异步），本批 dispatch/deliver 链路插入水位计数后时序偏移暴露了该固有竞态（旧代码同样存在）。改为 waitFor 游标追平再断言，断言语义不变。
+21. **背压 in-flight 是水位估计而非精确队列**。命名消费者本就是游标驱动（pump 扫表），"in-flight 队列"为虚拟计数：实时分发每踢 +1、deliver 收口 -1、下界 0；tx 路径/崩溃补偿事件不经实时分发不计入。该计数只用于推/拉切换，投递正确性始终由游标保证——§7.7 的"无丢失"在本架构下天然成立，背压的实际收益是削掉慢消费者期间的无效踢泵抖动。
+22. **归档调度用 setInterval 而非 cron 库**。项目无 cron 依赖（现有调度基建=触发调度器 crontab 字段 + 各类 setInterval ticker），千条/日量级每日一次 setInterval 足够；boot 不立即跑（避免拖慢启动），手动触发走 `runArchiveOnce`。
+23. **无游标时保守不归档**。§7.10 只规定了"seq < min(游标)"上界，未定义零游标语义；取保守解（未来 startFrom='earliest' 消费者可能依赖历史，§13 偏差 7），文件头注释已写明。
+24. **已导出未删除的竞态残余允许跨文件冗余**。§7.10 竞态命中时本轮停删但文件已导出，下轮重扫会重复导出同一批（归档仅供审计，幂等删除由 seq 上界保证）；避免为去重引入归档清单表。
+
+### app-session 幂等键持久化评估（§15 偏差 16 的 M4 评估项）
+
+结论：**维持现状（内存 event.id 集），不做持久化**。理由：持久化需要去重存储（新表或 app_sessions 加约束列），触及存量表 DDL 且窗口极小（handler 成功→ack 之间的崩溃）；卡片为用户可读副本、终态收口（finishSucceeded 等）本身幂等，残余风险与改动成本不匹配。待通知/待办迁移（M4 后续）时若有 inbox 表天然唯一约束再统一收口。
+
+### 验证结果（2026-08-29，feat/plugin-arch）
+
+- 新增单测 15 用例全绿（backpressure 3 / rate-limit 7 / archive 5）；event-system 目录 11 spec / 106 用例全绿；相关存量套件（app-session、web 路由、迁移）无回归
+- 全套件（tests/unit，SKIP_PG_TESTS）：2691 过 / 68 失败——较 M2 基线（2676/68）净增 15 用例全绿，失败数 68 不变且失败面与存量基线一致（无本批引入）
+- typecheck：974 → 974，净增 0
+- 未做真机归档作业实测（应用占用 CDP 9333 不动、本批不重启）：boot 接线为薄装配（与事件通道同款模式，已真机验证过同类路径），作业业务路径由 event-archive.spec 全覆盖

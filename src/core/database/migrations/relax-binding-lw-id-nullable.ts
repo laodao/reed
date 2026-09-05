@@ -17,6 +17,7 @@
  */
 
 import type { DataSource } from 'typeorm'
+import { relaxSqliteNotNull } from './sqlite-relax-notnull'
 
 interface BindingTableSpec {
   table: string
@@ -77,32 +78,20 @@ async function relaxPg(ds: DataSource, spec: BindingTableSpec): Promise<void> {
 }
 
 /**
- * SQLite：不支持 ALTER COLUMN 改约束，需重建表。
- * 思路：BEGIN → 关 FK → CREATE 新表 → 拷数据 → DROP 旧表 → RENAME → 开 FK → COMMIT。
- *
- * 因为 typeorm `synchronize` 会按 entity 重新生成 schema，开发期 SQLite 通常已经
- * 同步过最新 entity 定义（nullable=true 由 entity 提供）；这里仅处理 entity 改完
- * 但 synchronize 没运行的边界（生产 / 用户数据库）。
+ * SQLite：不支持 ALTER COLUMN 改约束，走真正的表重建
+ * （建新表 → 拷数据 → DROP 旧表 → 改名 → 重建索引，详见 sqlite-relax-notnull）。
+ * 生产库 synchronize 不会改写既有 NOT NULL 约束，必须显式重建。
  */
 async function relaxSqlite(
   ds: DataSource,
   spec: BindingTableSpec,
 ): Promise<void> {
-  // 先看列当前是否已 nullable
-  const rows = await ds.query(
-    `SELECT "notnull" FROM pragma_table_info(?) WHERE name = ? LIMIT 1`,
-    [spec.table, spec.lwColumn],
-  )
-  if (!rows.length) return
-  if (rows[0].notnull === 0) return // 已 nullable，跳过
-
-  // SQLite 重建表（保留所有数据 + 索引）
-  // 注意：实际 entity synchronize 已经处理过的库不需要走到这里。
-  // 这段是为兼容老 sqlite 库。
-  console.log(
-    `[relax-binding-lw-id-nullable] ${spec.table}: SQLite 当前列仍 NOT NULL，但本迁移在` +
-      ` SQLite 上不做表重建（依赖 typeorm synchronize 应用最新 entity）。请确保 entity 已改 nullable: true。`,
-  )
+  const result = await relaxSqliteNotNull(ds, spec.table, spec.lwColumn)
+  if (result === 'rebuilt') {
+    console.log(
+      `[relax-binding-lw-id-nullable] ${spec.table}: SQLite 表重建完成，${spec.lwColumn} 已放开 NOT NULL`,
+    )
+  }
 }
 
 // ─── 工具函数 ──────────────────────────────────────────────────────────────────

@@ -13,7 +13,7 @@ import { describe, it, expect } from 'vitest'
 import {
   inferSubjectSupport,
   inferMaxSubjects,
-} from '@electron/ipc/handlers/episode-production/render/video-segment.handler'
+} from '@core/packs/episode-production/handlers/render/video-segment.handler'
 
 describe('inferSubjectSupport', () => {
   describe('Kling 系列', () => {

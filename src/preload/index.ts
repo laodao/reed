@@ -188,10 +188,16 @@ const IPC_CHANNELS = {
   EP_GET_PROVIDER_CAPABILITIES: 'ep:get-provider-capabilities',
   EP_GENERATE_VIDEO_SEGMENT: 'ep:generate-video-segment',
 
+  // 视频片段制重构（tasks/2026-09-04-ep-video-segment-redesign §3/§5）：分段 + 片段级生成
+  EP_RECOMPUTE_SEGMENTS: 'ep:recompute-segments',
+  EP_LIST_SEGMENTS: 'ep:list-segments',
+  EP_GENERATE_SEGMENT_VIDEO: 'ep:generate-segment-video',
+
   // P6-T5 合成 + 导出 MP4
   EP_BUILD_TIMELINE: 'ep:build-timeline',
   EP_PREVIEW_SUBTITLE: 'ep:preview-subtitle',
   EP_EXPORT_MP4: 'ep:export-mp4',
+  EP_OPEN_EXPORT_FOLDER: 'ep:open-export-folder',
 
   // P5-T14/T15 V3 binding-aware 场景音频
   EP_GENERATE_SCENE_AUDIO_V3: 'ep:generate-scene-audio-v3',
@@ -378,7 +384,11 @@ const IPC_CHANNELS = {
   DATASOURCE_UPDATE: 'datasource:update',
   DATASOURCE_DELETE: 'datasource:delete',
   DATASOURCE_TOGGLE_ENABLED: 'datasource:toggle-enabled',
-  DATASOURCE_TEST_CONNECTION: 'datasource:test-connection'
+  DATASOURCE_TEST_CONNECTION: 'datasource:test-connection',
+
+  // 业务包（包内核：启用态查询/切换）
+  PACK_LIST: 'pack:list',
+  PACK_SET_ENABLED: 'pack:setEnabled'
 } as const
 
 /**
@@ -2295,6 +2305,14 @@ const electronAPI = {
     generateVideoSegment: (storyboardId: string, opts?: any) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_GENERATE_VIDEO_SEGMENT, storyboardId, opts),
 
+    // 视频片段制（2026-09-04 重构）：分段预览/重算 + 片段级一次视频调用
+    recomputeSegments: (episodeId: string, opts?: { budgetSec?: number }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_RECOMPUTE_SEGMENTS, episodeId, opts),
+    listSegments: (episodeId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_LIST_SEGMENTS, episodeId),
+    generateSegmentVideo: (segmentId: string, opts?: any) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_GENERATE_SEGMENT_VIDEO, segmentId, opts),
+
     // P6-T5 合成 + 导出 MP4
     buildTimeline: (episodeScriptId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_BUILD_TIMELINE, episodeScriptId),
@@ -2302,6 +2320,8 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.EP_PREVIEW_SUBTITLE, episodeScriptId),
     exportMp4: (episodeScriptId: string, outputPath: string, opts?: any) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_EXPORT_MP4, episodeScriptId, outputPath, opts),
+    openExportFolder: (filePath: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_OPEN_EXPORT_FOLDER, filePath),
 
     // P5-T14/T15 V3 binding-aware 场景音频
     generateSceneAudioV3: (sceneScriptId: string, opts?: any) =>
@@ -2825,6 +2845,13 @@ const electronAPI = {
     delete: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.DATASOURCE_DELETE, id),
     toggleEnabled: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.DATASOURCE_TOGGLE_ENABLED, id),
     testConnection: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.DATASOURCE_TEST_CONNECTION, id)
+  },
+
+  // 业务包（包内核：启用态查询/切换——前端装配时据 pack:list 决定挂哪些包的路由/菜单）
+  pack: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.PACK_LIST),
+    setEnabled: (packId: string, enabled: boolean) =>
+      ipcRenderer.invoke(IPC_CHANNELS.PACK_SET_ENABLED, { packId, enabled })
   },
 
   // 错误处理

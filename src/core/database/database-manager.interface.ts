@@ -79,6 +79,7 @@ import type { LwTempLocationTemplateRepository } from './repositories/lw-temp-lo
 import type { LwTypeConfigRepository } from './repositories/lw-type-config.repository'
 import type { LwVectorIndexRepository } from './repositories/lw-vector-index.repository'
 import type { WorkflowDefinitionRepository } from './repositories/workflow-definition.repository'
+import type { PackBindingRepository, PackRepository } from './repositories/business-pack.repositories'
 import type { WorkflowRunRepository } from './repositories/workflow-run.repository'
 import type { WorkflowNodeRunRepository } from './repositories/workflow-node-run.repository'
 import type { MessageRepository } from './repositories/message.repository'
@@ -212,6 +213,12 @@ export interface ICoreDatabaseManager {
   workflowRuns: WorkflowRunRepository | null
   /** 节点级 checkpoint（断点续跑事实源） */
   workflowNodeRuns: WorkflowNodeRunRepository | null
+
+  // ---- 业务包内核（第一期） ----
+  /** 内置包快照（business_packs：manifest UPSERT + 全局启用态兜底） */
+  packs: PackRepository | null
+  /** 包启用/配置覆写（business_pack_bindings：user_id NULL = 全局默认行） */
+  packBindings: PackBindingRepository | null
 
   // ---- 长文写作关联表（第三范式） ----
   lwPlotCharacters: LwPlotCharacterRepository | null

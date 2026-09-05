@@ -14,9 +14,21 @@
 import type { AppSessionRecord } from '@shared/types/app.types'
 import { APP_SESSION_STATUSES, WORKFLOW_SESSION_CARDS, type SessionCardMeta } from '@shared/types/app.types'
 import { WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_EVENT_TYPES, WORKFLOW_RUN_STATUSES, WORKFLOW_RUN_TERMINAL_STATUSES, WORKFLOW_TRIGGER_TYPES, type WorkflowRunEvent } from '@shared/types/workflow.types'
+import type { EventBus, PlatformEvent, Subscription } from '@shared/types/event.types'
+import { DEFAULT_RUN_EVENT_CHANNEL_TYPES, translateRunPlatformEvent } from '@core/services/event-system/workflow-run-event-map'
 import { createLogger } from '@core/utils/logger'
 
 const logger = createLogger('AppSessionService')
+
+/**
+ * 事件桥的命名持久消费者名（10-event-system §9 末行，M2 迁移）。
+ * 系统级消费者（user_scope='*'，boot 无 ALS；§8 登记点即此）：Web 服务端需为全部
+ * 租户的会话写卡片，runToSession 映射本就跨用户。
+ */
+export const APP_SESSION_EVENT_CONSUMER = 'app-session-bridge'
+
+/** 幂等去重集上限（event.id 维；FIFO 淘汰。量级：人机交互千条/日，1 万足够覆盖重投窗口） */
+const PROCESSED_EVENT_IDS_CAP = 10_000
 
 type RunServiceLike = {
   startRun(input: {
@@ -111,6 +123,49 @@ export class AppSessionService {
         logger.error('[AppSessionService] 事件桥处理异常', e)
       }
     })
+  }
+
+  // ==================== 平台事件消费者（M2，10-event-system §9 末行） ====================
+
+  /** 平台事件订阅句柄（attachEventConsumer 幂等判定） */
+  private eventSubscription: Subscription | null = null
+  /** 已处理事件 id 去重集（§5.5 消费者幂等约定；Map 插入序即 FIFO 淘汰序） */
+  private readonly processedEventIds = new Map<string, true>()
+
+  /**
+   * 挂接平台事件总线（命名持久消费者 'app-session-bridge'，替代 tapEvents 桥）：
+   * - at-least-once：崩溃窗口的事件由游标在重启后补投，不再依赖前端在线/至多一次推送；
+   * - startFrom='latest'：新建游标从当前最大 seq 起订——只关心订阅之后的事件，
+   *   不补投历史（否则会"启动时狂补历史卡片"，§5.2 startFrom 语义）；
+   * - 幂等：按 event.id 去重（补投/重投不重复写会话卡片）。
+   */
+  attachEventConsumer(bus: EventBus): void {
+    if (this.eventSubscription) return
+    this.eventSubscription = bus.subscribe(
+      { types: [...DEFAULT_RUN_EVENT_CHANNEL_TYPES] },
+      event => this.handlePlatformEvent(event),
+      { consumerName: APP_SESSION_EVENT_CONSUMER, startFrom: 'latest' }
+    )
+    logger.info(`[AppSessionService] 平台事件消费者已挂接（consumer=${APP_SESSION_EVENT_CONSUMER}）`)
+  }
+
+  /** 平台事件 → 五型载荷 → 会话卡片（幂等键：event.id，§5.5） */
+  private handlePlatformEvent(event: PlatformEvent): void {
+    try {
+      if (this.processedEventIds.has(event.id)) return // at-least-once 补投去重
+      if (this.processedEventIds.size >= PROCESSED_EVENT_IDS_CAP) {
+        // FIFO 淘汰最旧条目（Map 迭代序 = 插入序）
+        const oldest = this.processedEventIds.keys().next()
+        if (!oldest.done) this.processedEventIds.delete(oldest.value)
+      }
+      this.processedEventIds.set(event.id, true)
+      const wfEvent = translateRunPlatformEvent(event)
+      if (!wfEvent) return // 未登记映射的扩展类型不写卡
+      this.handleRunEvent(wfEvent)
+    } catch (e) {
+      // 桥异常不扩散为毒消息（写卡失败已在 enqueueCard 内隔离，此处防意外同步抛错）
+      logger.error('[AppSessionService] 平台事件桥处理异常', e)
+    }
   }
 
   // ==================== 会话 CRUD ====================

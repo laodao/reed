@@ -1,6 +1,6 @@
 /**
  * PortraitService 提示词模板服务单元测试
- * @see src/core/services/portrait.service.ts
+ * @see src/core/packs/portrait/services/portrait.service.ts
  *
  * 验证目标（spec 2026-07-24 新版人像设计 §5.2）：
  * 1. listPromptTemplates 透传分类过滤
@@ -33,7 +33,7 @@ vi.mock('@core/interfaces/path.interface', () => ({
 }))
 
 import * as dbModule from '@core/database/database-manager.interface'
-import { PortraitService } from '@core/services/portrait.service'
+import { PortraitService } from '@core/packs/portrait/services/portrait.service'
 import type { PortraitPromptTemplate } from '@shared/types/portrait.types'
 
 // ====================================================================

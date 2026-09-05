@@ -71,9 +71,15 @@ export interface WorkflowNodeRunPort {
   ): Promise<void>
 }
 
+/** 引擎事件 emit 的可选透传位（10-event-system §9 producer 适配器契约） */
+export interface WorkflowEventEmitOptions {
+  /** 引发本事件的 journal 事件 id（回填平台事件 causationId；11-run-journal 落地后由引擎传入） */
+  causationId?: string
+}
+
 /** 引擎对"事件推送"的最小需求 */
 export interface WorkflowEventPort {
-  emit(event: WorkflowRunEvent): void
+  emit(event: WorkflowRunEvent, opts?: WorkflowEventEmitOptions): void
 }
 
 /** 引擎依赖集合（构造注入） */

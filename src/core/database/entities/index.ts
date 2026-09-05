@@ -45,6 +45,8 @@ export { StoryboardCharacterEntity } from './episode-production/storyboard-chara
 export { ScenePropEntity } from './episode-production/scene-prop.entity'
 export { AssetImageEntity } from './episode-production/asset-image.entity'
 export { StoryboardKeyframeEntity } from './episode-production/storyboard-keyframe.entity'
+// 视频片段制（tasks/2026-09-04-ep-video-segment-redesign §4）：制作/生成最小单元
+export { EpVideoSegmentEntity } from './episode-production/video-segment.entity'
 // Bug #4 修复（2026-05-10 e2e）：跨项目角色库 + 视频解析 entity 漏 barrel export
 export { UserAssetEntity } from './episode-production/user-asset.entity'
 export { ReferenceVideoAnalysisEntity } from './episode-production/reference-video-analysis.entity'
@@ -110,3 +112,12 @@ export { ToolCredentialEntity } from './tool-credential.entity'
 export { CustomToolEntity } from './custom-tool.entity'
 export { EmailAccountEntity } from './email-account.entity'
 export { WorkflowVariableEntity, DataTableDefEntity, DataTableRowEntity } from './variable.entities'
+// 业务包内核（第一期）：包快照 + 启用/配置覆写（binding user_id NULL = 全局默认行）
+export { BusinessPackEntity } from './business-pack.entity'
+export { BusinessPackBindingEntity } from './business-pack-binding.entity'
+// 通用事件系统（10-event-system §4）：事件存储 / 持久消费者游标 / 死信队列
+export {
+  PlatformEventEntity,
+  PlatformEventCursorEntity,
+  PlatformEventDeadLetterEntity,
+} from './platform-event.entities'

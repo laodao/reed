@@ -1,6 +1,6 @@
 /**
  * PortraitService.generateFullBody（基于半身扩展全身）单元测试
- * @see src/core/services/portrait.service.ts
+ * @see src/core/packs/portrait/services/portrait.service.ts
  *
  * 验证目标（spec 2026-07-24 新版人像设计 §5.2）：
  * 1. 以源半身 variant 为首参考图生成全身：prompt 含全身后缀与面部一致性约束
@@ -38,7 +38,7 @@ vi.mock('@core/utils/asset-path', () => ({
 
 import { ImageService } from '@core/services/image.service'
 import * as dbModule from '@core/database/database-manager.interface'
-import { PortraitService } from '@core/services/portrait.service'
+import { PortraitService } from '@core/packs/portrait/services/portrait.service'
 import type { PortraitCharacter, PortraitVariant } from '@shared/types/portrait.types'
 
 // ====================================================================

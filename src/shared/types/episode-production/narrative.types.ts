@@ -340,6 +340,15 @@ export interface Storyboard {
   status: StoryboardStatus
 
   /**
+   * 所属视频片段 ID（ep_video_segments.id；视频片段制，未分段时 null/缺失）。
+   * tasks/2026-09-04-ep-video-segment-redesign §4。
+   */
+  segmentId?: string | null
+
+  /** 片段内镜头序号（1-based；未分段时 null/缺失） */
+  segmentSeq?: number | null
+
+  /**
    * 用户在 ⑤ 制作 stage 为本分镜挑选的资产参考图覆盖。
    * key: `${kind}:${bindingId}`，value: imageId（asset_image.id）。
    * NULL/缺失 → 按现有 reference-image-selector 评分逻辑自动选图。

@@ -121,22 +121,31 @@ export class VideoSegmentService {
 
     const promptForVideo =
       sb.frameDescription || sb.subject || '' // 简化：后续可拼更详细的 prompt
-    const output = await this.invokeAdapter({
-      mode: match.mode,
-      durationSec,
-      width,
-      height,
-      keyframes: keyframesUsed,
-      prompt: promptForVideo,
-    })
+    let output: VideoSegmentOutput
+    try {
+      output = await this.invokeAdapter({
+        mode: match.mode,
+        durationSec,
+        width,
+        height,
+        keyframes: keyframesUsed,
+        prompt: promptForVideo,
+      })
+    } catch (e) {
+      // 失败写回 error 状态，UI 不再停留在"待生成/生成中"
+      await this.sbRepo.update(sb.id, { status: 'error', updatedAt: new Date() })
+      throw e
+    }
 
-    // 写回 storyboard.video_path + video_mode + duration（让 P6 合成域知道用什么模式产出的；
+    // 写回 storyboard.video_path + video_mode + duration + status（让 P6 合成域知道用什么模式产出的；
     // duration 同步成视频实际时长——避免 timeline 用过时的"理论"shot 时长导致 ffmpeg
-    // xfade 链 offset 错位、合成出来视频"画面只剩 5 秒、剩余黑屏"的 bug）
+    // xfade 链 offset 错位、合成出来视频"画面只剩 5 秒、剩余黑屏"的 bug；
+    // status='completed' 让列表状态从"待生成"变成"已完成"——见 shot-labels.statusLabels）
     await this.sbRepo.update(sb.id, {
       videoPath: output.videoPath,
       videoMode: match.mode,
       duration: output.durationSec,
+      status: 'completed',
       // 不在这里写 video_provider_id / model_id —— adapter 不暴露这些；UI 已知
       updatedAt: new Date(),
     })

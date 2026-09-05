@@ -146,35 +146,14 @@ const navigateTo = (path: string) => {
   router.push(path)
 }
 
-// 路由路径到标题的映射
-const pathTitleMap: Record<string, string> = {
-  '/workflow': '工作流',
-  '/workflow/run/:runId': '运行详情',
-  '/': '首页',
-  '/chat': 'AI 对话',
-  '/image': '图像生成',
-  '/portrait': '人像设计',
-  '/longwriting': '长文写作',
-  '/diary': '日记',
-  '/episode-production': '剧集制作',
-  '/translate': '文档翻译',
-  '/voice': '语音助手',
-  '/voice/tts': '文本转语音',
-  '/voice/stt': '语音转文本',
-  '/voice/clone': '声音复刻',
-  '/knowledge-base': '知识库',
-  '/portrait/geometry': '面部微调',
-  '/assistant': '智能助手',
-  '/assets': '资产管理',
-  '/settings': '设置'
-}
-
 // 监听路由变化，添加标签页
 watch(
   () => route.path,
   (path) => {
-    // 优先路由 meta.title（动态路由如 /workflow/editor/:id 精确匹配 map 永远落空——曾致 tab 全部"未命名"）
-    const title = (route.meta?.title as string) || pathTitleMap[path] || '未命名'
+    // 标题统一走 route.meta.title（第三处硬编码 pathTitleMap 已随包架构改造废弃——
+    // 历史上它与 route.meta.title 双写漂移；所有现存路由均已带 meta.title，
+    // 业务包动态注册的路由也自带 meta.title）
+    const title = (route.meta?.title as string) || '未命名'
     tabsStore.addTab({
       path,
       name: title,

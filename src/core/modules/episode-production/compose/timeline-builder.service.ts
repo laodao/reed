@@ -23,6 +23,7 @@
 import type { DataSource } from 'typeorm'
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
 import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
+import { EpVideoSegmentEntity } from '@core/database/entities/episode-production/video-segment.entity'
 import type {
   TransitionConfig,
   TransitionType,
@@ -42,6 +43,11 @@ export interface TimelineShot {
   transition: TransitionConfig | null
   /** 是否入最终成片（默认 true）— 用户可在 ⑥ 时间线上切换 */
   includeInFinal: boolean
+  /**
+   * 所属视频片段 ID（视频片段制 2026-09-04；未分段的老项目为 null）。
+   * 导出时同片段的分镜合并为一个合成单元（段内不 xfade）。
+   */
+  segmentId: string | null
 }
 
 /** 时间线上的一个场景 */
@@ -82,6 +88,7 @@ export class TimelineBuilderService {
   async buildEpisodeTimeline(episodeScriptId: string): Promise<Timeline> {
     const sceneRepo = this.ds.getRepository(SceneScriptEntity)
     const sbRepo = this.ds.getRepository(StoryboardEntity)
+    const segRepo = this.ds.getRepository(EpVideoSegmentEntity)
 
     const scenes = await sceneRepo.find({
       where: { episodeScriptId },
@@ -94,6 +101,18 @@ export class TimelineBuilderService {
     const timelineScenes: TimelineScene[] = []
     const missingVideoIds: string[] = []
     let cursorSec = 0
+
+    // 视频片段制：分镜自身无视频但所属片段已出片时不算缺失（导出用的是片段视频）
+    const segVideoCache = new Map<string, boolean>()
+    const segHasVideo = async (segmentId: string | null | undefined): Promise<boolean> => {
+      if (!segmentId) return false
+      const cached = segVideoCache.get(segmentId)
+      if (cached !== undefined) return cached
+      const seg = await segRepo.findOne({ where: { id: segmentId } as any })
+      const has = !!seg?.videoPath
+      segVideoCache.set(segmentId, has)
+      return has
+    }
 
     for (const scene of scenes) {
       // 时间线返回全部分镜（含未入选的，让 UI 能展示并切换）；
@@ -111,7 +130,8 @@ export class TimelineBuilderService {
         const shotStart = cursorSec
         const shotEnd = cursorSec + durationSec
 
-        if (!sb.videoPath) missingVideoIds.push(sb.id)
+        const segId = (sb as any).segmentId ?? null
+        if (!sb.videoPath && !(await segHasVideo(segId))) missingVideoIds.push(sb.id)
 
         shots.push({
           storyboardId: sb.id,
@@ -124,6 +144,8 @@ export class TimelineBuilderService {
           // 首镜无 transition；其它镜从 entity 读 transition_*
           transition: i === 0 ? null : this.buildTransitionFromEntity(sb),
           includeInFinal: ((sb as any).includeInFinal ?? 1) !== 0,
+          // 视频片段制（2026-09-04）：老库列由 create-ep-video-segments 迁移补齐
+          segmentId: segId,
         })
         cursorSec = shotEnd
       }

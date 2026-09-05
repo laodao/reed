@@ -145,6 +145,13 @@ export interface VideoProjectConfig {
   defaultShotDuration: number // 默认分镜时长（秒）
   defaultTransitionType: TransitionType // 默认转场类型
   defaultTransitionDuration: number // 默认转场时长（毫秒）
+
+  /**
+   * 视频片段时长预算（秒，5–30，默认 15）。
+   * 视频片段制（tasks/2026-09-04-ep-video-segment-redesign §3）：自动分段时
+   * 同场景内连续镜头累加时长不超过该预算。缺失/非法 → 15s。
+   */
+  segmentDurationBudgetSec?: number
 }
 
 /**

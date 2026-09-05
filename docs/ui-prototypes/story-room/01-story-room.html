@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>故事研讨室 · 界面原型 v3.1（统一对话 + 动态设定集 + 系统主题）</title>
+<style>
+/* ============================================================
+   主题层：全部消费 Element Plus 变量（正式版内嵌时自动跟随
+   系统主题色 useTheme.ts 写入的 --el-color-primary* 与 html.dark）。
+   独立打开时用下方兜底值；右上角"主题演示"可切换系统真实主题色。
+   ============================================================ */
+:root {
+  --el-color-primary: #4a90d9;
+  --el-color-primary-light-3: #7dabd9;
+  --el-color-primary-light-5: #a4c8eb;
+  --el-color-primary-light-7: #cfe3f5;
+  --el-color-primary-light-8: #e2eefb;
+  --el-color-primary-light-9: #eff6fd;
+  --el-color-primary-dark-2: #3b74af;
+  --el-color-success: #5cb88f; --el-color-success-light-9: #edf8f2;
+  --el-color-warning: #d4a574; --el-color-warning-light-9: #faf4ec;
+  --el-color-danger: #d06c6c;  --el-color-danger-light-9: #fbf0f0;
+  --el-bg-color: #ffffff; --el-bg-color-page: #f4f6f9; --el-bg-color-overlay: #ffffff;
+  --el-fill-color-light: #f5f7fa;
+  --el-border-color: #dcdfe6; --el-border-color-light: #e4e7ed; --el-border-color-lighter: #ebeef5;
+  --el-text-color-primary: #303133; --el-text-color-regular: #606266;
+  --el-text-color-secondary: #7d8087; --el-text-color-placeholder: #94979e;
+
+  /* 派生 token（原型内部一律用 --sr-*） */
+  --sr-bg: var(--el-bg-color-page);
+  --sr-card: var(--el-bg-color);
+  --sr-border: var(--el-border-color-light);
+  --sr-border-2: var(--el-border-color-lighter);
+  --sr-t1: var(--el-text-color-primary);
+  --sr-t2: var(--el-text-color-regular);
+  --sr-t3: var(--el-text-color-secondary);
+  --sr-pri: var(--el-color-primary);
+  --sr-pri-l5: var(--el-color-primary-light-5);
+  --sr-pri-l7: var(--el-color-primary-light-7);
+  --sr-pri-l8: var(--el-color-primary-light-8);
+  --sr-pri-l9: var(--el-color-primary-light-9);
+  --sr-pri-d2: var(--el-color-primary-dark-2);
+  --sr-ok: var(--el-color-success);
+  --sr-ok-l9: var(--el-color-success-light-9);
+  --sr-warn: var(--el-color-warning);
+  --sr-warn-l9: var(--el-color-warning-light-9);
+  --sr-danger: var(--el-color-danger);
+  --sr-danger-l9: var(--el-color-danger-light-9);
+  --sr-shadow: 0 1px 2px rgba(0,0,0,.04), 0 2px 8px rgba(0,0,0,.03);
+  --sr-shadow-pop: 0 4px 16px rgba(0,0,0,.10);
+  /* 要素卡侧色 */
+  --ka-overview: #7a8ba3; --ka-character: #cf8f3f; --ka-plot: #c66a95;
+  --ka-faction: #7b6cc9; --ka-skill: #c96a6a; --ka-item: #3fa9a9;
+  --ka-location: #5f9f62; --ka-nation: #a08050; --ka-camp: #b06060;
+  --ka-outline: #5580b8; --ka-frame: #7b6cc9;
+}
+html.dark {
+  --el-bg-color: #1d1f24; --el-bg-color-page: #141519; --el-bg-color-overlay: #26282e;
+  --el-fill-color-light: #26282e;
+  --el-border-color: #41444d; --el-border-color-light: #383b43; --el-border-color-lighter: #2f3239;
+  --el-text-color-primary: #e5e7eb; --el-text-color-regular: #c0c4cc;
+  --el-text-color-secondary: #9ba0ab; --el-text-color-placeholder: #7e828c;
+  --el-color-success-light-9: #1d2b24; --el-color-warning-light-9: #2e2820;
+  --el-color-danger-light-9: #30201f;
+  --sr-shadow: 0 1px 2px rgba(0,0,0,.35), 0 2px 8px rgba(0,0,0,.25);
+  --sr-shadow-pop: 0 4px 18px rgba(0,0,0,.45);
+  --ka-overview: #93a5bd; --ka-character: #e0aa6d; --ka-plot: #da8db1;
+  --ka-faction: #9c8fe0; --ka-skill: #e08d8d; --ka-item: #66c2c2;
+  --ka-location: #85bd88; --ka-nation: #c0a070; --ka-camp: #cf8585;
+  --ka-outline: #7ba3d8; --ka-frame: #9c8fe0;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  font-family: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  background:
+    radial-gradient(820px 400px at 16% -12%, color-mix(in srgb, var(--sr-pri) 5.5%, transparent), transparent 58%),
+    radial-gradient(700px 380px at 102% -4%, color-mix(in srgb, var(--sr-pri) 4%, transparent), transparent 55%),
+    var(--sr-bg);
+  color: var(--sr-t1); font-size: 14px; overflow: hidden;
+  transition: background-color .25s, color .25s;
+}
+#app { display: flex; flex-direction: column; height: 100vh; }
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--sr-t3) 34%, transparent); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--sr-t3) 58%, transparent); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ============ 顶栏 ============ */
+.topbar {
+  height: 54px; background: color-mix(in srgb, var(--sr-card) 80%, transparent);
+  backdrop-filter: blur(16px) saturate(170%); -webkit-backdrop-filter: blur(16px) saturate(170%);
+  border-bottom: 1px solid var(--sr-border-2); position: relative; z-index: 20;
+  display: flex; align-items: center; padding: 0 18px; gap: 12px; flex-shrink: 0;
+}
+.topbar .back { color: var(--sr-t3); cursor: pointer; font-size: 17px; transition: color .15s; }
+.topbar .back:hover { color: var(--sr-pri); }
+.topbar .title { font-weight: 600; font-size: 15px; letter-spacing: .3px; }
+.topbar .tag {
+  font-size: 11px; padding: 2.5px 9px; border-radius: 999px;
+  color: var(--sr-pri); background: var(--sr-pri-l9); border: 1px solid var(--sr-pri-l8);
+}
+.topbar .spacer { flex: 1; }
+.tb-btn {
+  font-size: 12.5px; color: var(--sr-t2); border: 1px solid var(--sr-border);
+  padding: 5px 12px; border-radius: 8px; cursor: pointer; background: transparent;
+  transition: all .15s; display: inline-flex; align-items: center; gap: 6px;
+}
+.tb-btn:hover { border-color: var(--sr-pri); color: var(--sr-pri); }
+.tb-btn.accent {
+  color: #fff; border-color: transparent; background: linear-gradient(135deg, var(--sr-pri), var(--sr-pri-d2));
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--sr-pri) 30%, transparent);
+}
+.tb-btn.accent:hover { filter: brightness(1.06); color: #fff; }
+.tb-btn .swatch { width: 12px; height: 12px; border-radius: 50%; background: var(--sr-pri); }
+
+/* 主题弹层 */
+.theme-pop {
+  position: absolute; top: 50px; right: 150px; width: 264px; background: var(--el-bg-color-overlay);
+  border: 1px solid var(--sr-border-2); border-radius: 12px; box-shadow: var(--sr-shadow-pop);
+  padding: 14px; z-index: 60; display: none;
+}
+.theme-pop.show { display: block; animation: fadeUp .18s ease both; }
+.theme-pop h5 { font-size: 12.5px; margin-bottom: 4px; }
+.theme-pop .note { font-size: 11px; color: var(--sr-t2); margin-bottom: 10px; line-height: 1.6; }
+.palette { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+.pal {
+  border: 1.5px solid var(--sr-border); border-radius: 10px; padding: 8px 4px 6px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 5px; font-size: 11px; color: var(--sr-t2);
+  transition: all .15s; background: var(--sr-card);
+}
+.pal:hover { transform: translateY(-1px); }
+.pal .dot { width: 22px; height: 22px; border-radius: 50%; box-shadow: inset 0 0 0 2px rgba(255,255,255,.25); }
+.pal.on { border-color: var(--sr-pri); box-shadow: 0 0 0 2px var(--sr-pri-l8); color: var(--sr-pri); font-weight: 600; }
+.mode-row { display: flex; gap: 8px; }
+.mode-row .mbtn {
+  flex: 1; text-align: center; border: 1px solid var(--sr-border); border-radius: 8px; padding: 6px 0;
+  cursor: pointer; font-size: 12px; color: var(--sr-t2);
+}
+.mode-row .mbtn.on { border-color: var(--sr-pri); color: var(--sr-pri); background: var(--sr-pri-l9); font-weight: 600; }
+
+/* ============ 主体 ============ */
+.main { flex: 1; display: flex; min-height: 0; }
+
+/* ---- 对话 ---- */
+.chat-wrap { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.chat { flex: 1; overflow-y: auto; padding: 22px 28px 12px; scroll-behavior: smooth; }
+.chat-inner { max-width: 820px; margin: 0 auto; }
+
+.msg { display: flex; margin: 16px 0; }
+.msg.user { justify-content: flex-end; }
+.avatar {
+  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0; display: flex;
+  align-items: center; justify-content: center; font-size: 12.5px; font-weight: 600;
+  box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--sr-card) 88%, transparent);
+}
+.msg.editor .avatar {
+  background: linear-gradient(135deg, var(--sr-pri), var(--ka-faction)); color: #fff;
+  margin-right: 12px; box-shadow: 0 2px 6px var(--sr-pri-l8);
+}
+.msg.user .avatar { background: var(--sr-ok-l9); color: var(--sr-ok); margin-left: 12px; order: 2; }
+.bubble {
+  max-width: 76%; padding: 10px 15px; border-radius: 14px; line-height: 1.8;
+  animation: fadeUp .25s ease both; font-size: 14px;
+}
+.msg.editor .bubble {
+  background: var(--sr-card); border: 1px solid var(--sr-border-2);
+  border-top-left-radius: 4px; box-shadow: var(--sr-shadow);
+}
+.msg.user .bubble {
+  background: linear-gradient(135deg, var(--sr-pri), var(--sr-pri-d2)); color: #fff;
+  border-top-right-radius: 4px; box-shadow: 0 4px 14px color-mix(in srgb, var(--sr-pri) 32%, transparent);
+}
+.bubble p { margin: 4px 0; }
+.bubble b { color: var(--sr-pri-d2); font-weight: 600; }
+.msg.user .bubble b { color: #fff; }
+.bubble ul { margin: 4px 0 4px 18px; } .bubble li { margin: 3px 0; }
+.typing { display: inline-flex; gap: 4px; padding: 7px 2px; }
+.typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--sr-pri); animation: bounce 1.1s infinite; }
+.typing i:nth-child(2) { animation-delay: .15s; } .typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes bounce { 0%,80%,100% { transform: translateY(0); opacity: .35; } 40% { transform: translateY(-4px); opacity: 1; } }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes popIn { from { opacity: 0; transform: translateY(12px) scale(.97); } to { opacity: 1; transform: none; } }
+
+/* ---- 工具调用 ---- */
+.tool-line {
+  display: inline-flex; align-items: center; gap: 6px; margin: 4px 0;
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px;
+  color: var(--sr-t3); background: var(--el-fill-color-light); border: 1px dashed var(--sr-border);
+  border-radius: 6px; padding: 3px 10px; animation: fadeUp .25s ease both; width: fit-content;
+}
+.tool-line .fn { color: var(--ka-faction); }
+.tool-line .ok { color: var(--sr-ok); font-weight: 600; }
+.tool-line .arg { color: var(--sr-t2); }
+
+/* ---- 提案卡 ---- */
+.artifact {
+  margin: 8px 0 12px; background: var(--sr-card); border: 1px solid var(--sr-border-2);
+  border-left: 4px solid var(--ka-overview); border-radius: 12px; overflow: hidden;
+  transition: transform .18s ease, box-shadow .18s ease;
+  animation: fadeUp .3s ease both; max-width: 640px; box-shadow: var(--sr-shadow);
+}
+.artifact.k-character { border-left-color: var(--ka-character); }
+.artifact.k-faction, .artifact.k-frame { border-left-color: var(--ka-faction); }
+.artifact.k-skill { border-left-color: var(--ka-skill); }
+.artifact.k-item { border-left-color: var(--ka-item); }
+.artifact.k-location { border-left-color: var(--ka-location); }
+.artifact.k-plot { border-left-color: var(--ka-plot); }
+.artifact.k-nation { border-left-color: var(--ka-nation); }
+.artifact.k-camp { border-left-color: var(--ka-camp); }
+.artifact.k-outline { border-left-color: var(--ka-outline); }
+.artifact:hover { transform: translateY(-2px); box-shadow: 0 8px 24px color-mix(in srgb, var(--sr-pri) 10%, rgba(0,0,0,.08)); }
+.artifact.adopted { border-left-color: var(--sr-ok); }
+.artifact.outdated { opacity: .55; }
+.artifact .head {
+  display: flex; align-items: center; gap: 8px; padding: 10px 15px; border-bottom: 1px solid var(--sr-border-2);
+}
+.artifact .head .ico {
+  width: 28px; height: 28px; border-radius: 8px; background: var(--el-fill-color-light);
+  display: flex; align-items: center; justify-content: center; font-size: 15px;
+}
+.artifact .head .name { font-weight: 600; font-size: 13.5px; }
+.artifact .head .kname {
+  font-size: 10.5px; color: var(--sr-t3); background: var(--el-fill-color-light);
+  padding: 1.5px 7px; border-radius: 999px;
+}
+.artifact .head .ver { font-size: 11px; color: var(--sr-t3); margin-left: auto; }
+.artifact .body { padding: 10px 15px; font-size: 13px; line-height: 1.8; }
+.artifact .row { display: flex; gap: 10px; padding: 2.5px 0; }
+.artifact .row .k { color: var(--sr-t3); flex-shrink: 0; width: 56px; font-size: 12px; padding-top: 1px; }
+.artifact .foot {
+  display: flex; gap: 8px; padding: 9px 15px; border-top: 1px solid var(--sr-border-2);
+  align-items: center; flex-wrap: wrap;
+}
+.artifact .foot .note { margin-left: auto; font-size: 12px; color: var(--sr-ok); }
+.artifact pre.tree { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.85; padding: 2px 0; color: var(--sr-t2); }
+
+/* diff 卡 */
+.diff-row { display: flex; gap: 10px; margin: 6px 0; font-size: 13px; align-items: baseline; }
+.diff-row .field { color: var(--sr-t3); width: 56px; flex-shrink: 0; }
+.diff-old { color: var(--sr-danger); text-decoration: line-through; flex: 1; opacity: .8; }
+.diff-new {
+  color: var(--sr-ok); font-weight: 600; flex: 1.3; outline: none;
+  border-bottom: 1.5px dashed var(--sr-border); min-width: 120px; padding: 0 2px 1px;
+}
+.diff-new:focus { border-bottom-color: var(--sr-pri); }
+
+.btn {
+  border: 1px solid var(--sr-border); background: transparent; color: var(--sr-t2);
+  border-radius: 8px; padding: 5.5px 13px; font-size: 12.5px; cursor: pointer; transition: all .15s;
+}
+.btn:hover { border-color: var(--sr-pri); color: var(--sr-pri); background: var(--sr-pri-l9); }
+.btn.primary { background: linear-gradient(135deg, var(--sr-pri), var(--sr-pri-d2)); border-color: transparent; color: #fff; box-shadow: 0 2px 8px color-mix(in srgb, var(--sr-pri) 26%, transparent); }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.success { background: var(--sr-ok); border-color: var(--sr-ok); color: #fff; }
+.btn.success:hover { filter: brightness(.95); }
+
+/* ---- 输入区 ---- */
+.composer {
+  border-top: 1px solid var(--sr-border-2); background: color-mix(in srgb, var(--sr-card) 82%, transparent);
+  backdrop-filter: blur(16px) saturate(170%); -webkit-backdrop-filter: blur(16px) saturate(170%);
+  padding: 12px 28px 14px; flex-shrink: 0; position: relative; z-index: 20;
+}
+.composer-inner { max-width: 820px; margin: 0 auto; }
+.chips { display: flex; gap: 8px; margin-bottom: 7px; flex-wrap: wrap; }
+.chip {
+  font-size: 12px; color: var(--sr-pri); background: var(--sr-pri-l9);
+  border: 1px solid var(--sr-pri-l8); border-radius: 999px; padding: 3.5px 13px;
+  cursor: pointer; user-select: none; transition: all .15s;
+}
+.chip:hover { background: var(--sr-pri-l8); transform: translateY(-1px); box-shadow: 0 3px 10px color-mix(in srgb, var(--sr-pri) 18%, transparent); }
+.chip:active { transform: translateY(0); }
+html.dark .chip { color: color-mix(in srgb, var(--sr-pri) 72%, #ffffff); }
+html.dark .theme-pop { border-color: var(--el-border-color); }
+html.dark .chip:hover { color: #ffffff; }
+.input-row {
+  display: flex; gap: 10px; align-items: flex-end;
+  border: 1.5px solid var(--sr-border); border-radius: 14px; padding: 8px 8px 8px 16px;
+  transition: border-color .2s, box-shadow .2s; background: var(--sr-card);
+}
+.input-row:focus-within { border-color: var(--sr-pri); box-shadow: 0 0 0 3px var(--sr-pri-l8); }
+.input-box {
+  flex: 1; border: none; outline: none; resize: none; height: 64px; line-height: 24px;
+  font-size: 14px; font-family: inherit; background: transparent; color: var(--sr-t1);
+}
+.input-box::placeholder { color: var(--el-text-color-placeholder); }
+.send-btn {
+  height: 48px; padding: 0 26px; border: none; border-radius: 12px;
+  background: linear-gradient(135deg, var(--sr-pri), var(--sr-pri-d2)); color: #fff; font-size: 14px;
+  cursor: pointer; transition: all .18s; box-shadow: 0 4px 14px color-mix(in srgb, var(--sr-pri) 34%, transparent);
+}
+.send-btn:hover { filter: brightness(1.06); transform: translateY(-1px); box-shadow: 0 6px 18px color-mix(in srgb, var(--sr-pri) 42%, transparent); }
+.send-btn:active { transform: translateY(0); }
+.send-btn:disabled { opacity: .55; cursor: not-allowed; }
+
+/* ---- 右：世界设定集 ---- */
+.side { width: 360px; flex-shrink: 0; border-left: 1px solid var(--sr-border-2); background: var(--sr-card); display: flex; flex-direction: column; min-height: 0; }
+.side-head { padding: 13px 16px 10px; border-bottom: 1px solid var(--sr-border-2); }
+.side-head .row1 { display: flex; align-items: center; gap: 8px; }
+.side-head h4 { font-size: 13.5px; font-weight: 600; letter-spacing: .5px; }
+.side-head .cnt { font-size: 11px; color: var(--sr-t3); margin-left: auto; }
+.side-head .add {
+  border: 1px solid var(--sr-border); background: transparent; border-radius: 7px; cursor: pointer;
+  font-size: 12px; color: var(--sr-t2); padding: 2.5px 9px; transition: all .15s;
+}
+.side-head .add:hover { color: var(--sr-pri); border-color: var(--sr-pri); background: var(--sr-pri-l9); }
+.side-search {
+  margin-top: 9px; width: 100%; border: 1px solid var(--sr-border); border-radius: 8px;
+  padding: 7px 12px; font-size: 12.5px; outline: none; font-family: inherit;
+  background: var(--el-fill-color-light); color: var(--sr-t1); transition: border-color .15s;
+}
+.side-search:focus { border-color: var(--sr-pri); background: var(--sr-card); }
+.side-scroll { flex: 1; overflow-y: auto; padding: 4px 12px 14px; }
+.group { padding: 7px 4px 0; }
+.group-head {
+  display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--sr-t2);
+  font-weight: 600; padding: 6px 4px 4px; letter-spacing: .5px;
+}
+.group-head .gico {
+  width: 24px; height: 24px; border-radius: 7px; background: var(--el-fill-color-light);
+  border: 1px solid var(--sr-border-2); display: inline-flex; align-items: center;
+  justify-content: center; font-size: 12.5px; font-weight: 400; flex-shrink: 0;
+}
+.group-head .gcnt {
+  color: var(--sr-t3); font-weight: 400; font-size: 10.5px; background: var(--el-fill-color-light);
+  border-radius: 999px; padding: 0 7px;
+}
+.group-head .todo { margin-left: auto; font-size: 10.5px; color: var(--sr-t3); font-weight: 400; }
+.entry {
+  display: flex; align-items: center; gap: 9px; border: 1px solid var(--sr-border-2);
+  border-radius: 10px; padding: 7px 11px; margin: 4px 0; cursor: pointer; background: var(--sr-card);
+  transition: all .15s;
+}
+.entry:hover { border-color: color-mix(in srgb, var(--sr-pri) 45%, var(--sr-border-2)); background: var(--sr-pri-l9); transform: translateY(-1px); box-shadow: 0 3px 10px color-mix(in srgb, var(--sr-pri) 14%, transparent); }
+.entry:hover .ename { color: var(--sr-pri); }
+.entry .eico {
+  width: 26px; height: 26px; border-radius: 7px; background: var(--el-fill-color-light);
+  display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0;
+}
+.entry .ename { font-size: 13px; font-weight: 500; white-space: nowrap; }
+.entry .esub { font-size: 11px; color: var(--sr-t3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.entry .src {
+  font-size: 10px; color: var(--sr-t3); border: 1px solid var(--sr-border-2); border-radius: 999px;
+  padding: 0 6px; flex-shrink: 0; line-height: 16px;
+}
+.entry .src.chat { color: var(--ka-faction); border-color: var(--sr-border); background: var(--el-fill-color-light); }
+.no-result { text-align: center; color: var(--sr-t3); font-size: 12px; padding: 24px 0; }
+
+/* ---- 弹窗 ---- */
+.modal-mask { position: fixed; inset: 0; background: rgba(15,18,26,.42); z-index: 100; display: none; align-items: center; justify-content: center; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.modal-mask.show { display: flex; }
+.modal {
+  width: 530px; max-width: 92vw; background: var(--el-bg-color-overlay); border: 1px solid var(--sr-border-2);
+  border-radius: 16px; padding: 22px 26px; max-height: 82vh; overflow-y: auto;
+  animation: popIn .24s cubic-bezier(.2,.9,.3,1.15) both; box-shadow: 0 12px 40px rgba(0,0,0,.18);
+}
+.modal h3 { font-size: 15px; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+.modal .sub { font-size: 11.5px; color: var(--sr-t3); margin-bottom: 13px; }
+.modal .close { float: right; cursor: pointer; color: var(--sr-t3); font-size: 16px; line-height: 1; }
+.modal .close:hover { color: var(--sr-danger); }
+.frow { display: flex; align-items: flex-start; gap: 10px; margin: 9px 0; }
+.frow .fl { width: 62px; flex-shrink: 0; color: var(--sr-t3); font-size: 12.5px; padding-top: 7px; text-align: right; }
+.frow textarea {
+  flex: 1; border: 1px solid var(--sr-border); border-radius: 8px; padding: 6px 11px; font-size: 13px;
+  font-family: inherit; outline: none; width: 100%; background: var(--sr-card); color: var(--sr-t1);
+  transition: border-color .15s; line-height: 1.6;
+}
+.frow textarea:focus { border-color: var(--sr-pri); }
+.frow .fval { flex: 1; font-size: 13px; line-height: 1.7; padding-top: 6px; color: var(--sr-t2); }
+.modal pre.tree {
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.85;
+  background: var(--el-fill-color-light); border: 1px solid var(--sr-border-2); border-radius: 10px;
+  padding: 12px 14px; color: var(--sr-t2); margin: 8px 0; white-space: pre-wrap;
+}
+.modal .foot { display: flex; gap: 8px; justify-content: flex-end; margin-top: 15px; }
+.kind-pick { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.kind-pick .kp {
+  border: 1px solid var(--sr-border); border-radius: 9px; padding: 6px 12px; font-size: 12.5px;
+  cursor: pointer; color: var(--sr-t2); transition: all .15s; background: var(--sr-card);
+}
+.kind-pick .kp.on { border-color: var(--sr-pri); color: var(--sr-pri); background: var(--sr-pri-l9); font-weight: 600; }
+
+#toasts { position: fixed; top: 66px; left: 50%; transform: translateX(-50%); z-index: 99; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.toast {
+  background: var(--el-bg-color-overlay); border: 1px solid var(--sr-border-2); border-left: 3px solid var(--sr-ok);
+  border-radius: 10px; padding: 9px 16px; font-size: 13px; box-shadow: var(--sr-shadow-pop);
+  animation: fadeUp .25s ease both; max-width: 480px; color: var(--sr-t1);
+}
+.toast.info { border-left-color: var(--sr-pri); }
+.toast.warn { border-left-color: var(--sr-warn); }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar" style="position:relative">
+    <span class="back">←</span>
+    <span class="title">《洗冤录》</span>
+    <span class="tag">武侠 · 复仇</span>
+    <span class="spacer"></span>
+    <span class="tb-btn" onclick="toggleThemePop()"><span class="swatch"></span>主题</span>
+    <span class="tb-btn" onclick="toast('正式版：按项目配置的主编模型（可换）','info')">主编模型：GLM-4.7 ▾</span>
+    <span class="tb-btn accent" onclick="toast('大纲就绪后从这里交接写作台（本原型聚焦研讨与设定集）','info')">✍ 写作台 ↗</span>
+    <div class="theme-pop" id="themePop">
+      <h5>主题（演示）</h5>
+      <div class="note">正式版内嵌时自动跟随系统设置的主题色与明暗模式（useTheme / html.dark），无需此开关。</div>
+      <div class="palette" id="palette"></div>
+      <div class="mode-row">
+        <div class="mbtn" id="modeLight" onclick="setMode(false)">☀️ 浅色</div>
+        <div class="mbtn" id="modeDark" onclick="setMode(true)">🌙 深色</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="chat-wrap">
+      <div class="chat" id="chat"><div class="chat-inner" id="chatInner"></div></div>
+      <div class="composer">
+        <div class="composer-inner">
+          <div class="chips" id="chips"></div>
+          <div class="input-row">
+            <textarea class="input-box" id="inputBox" placeholder="随便聊：讨论故事、加人物/门派/武功、查询设定、修改已有内容、生成大纲…"></textarea>
+            <button class="send-btn" id="sendBtn">➤ 发送</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="side-head">
+        <div class="row1">
+          <h4>🌏 世界设定集</h4>
+          <span class="cnt" id="sideCnt"></span>
+          <button class="add" onclick="openAddModal()">＋ 新增</button>
+        </div>
+        <input class="side-search" id="sideSearch" placeholder="搜索设定…" oninput="renderPanel()">
+      </div>
+      <div class="side-scroll" id="sideBody"></div>
+    </div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+<div class="modal-mask" id="helpModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal">
+    <span class="close" onclick="document.getElementById('helpModal').classList.remove('show')">✕</span>
+    <h3>设计说明（v3.1）</h3>
+    <div class="sub">统一对话 · 动态要素 · 系统主题兼容</div>
+    <p><b>1 · 一个统一的对话界面。</b>故事核、人物、故事线、世界观、大纲都在同一个对话流里聊，没有"下一步/阶段"——推进节奏由 AI 和你自然决定。</p>
+    <p><b>2 · 要素随题材动态生长。</b>武侠会长出门派/武功/兵器，架空历史会长出国别/阵营——设定集只显示实际存在或框架内的分组；说"设计一个国别"就新建分组。</p>
+    <p><b>3 · 工具调用可见。</b>紫色小标签是 AI 的工具调用（查询/保存/修改设定），结构化保存都经工具落库（正式版映射现有 story-persist 工具）。</p>
+    <p><b>4 · 设定集 = 展示 + 修改。</b>点条目看详情（大纲会显示完整树）、行内编辑、删除、手动新增、搜索；对话里说"把××的××改成××"出 diff 卡（新值可直接编辑再确认）。</p>
+    <p><b>5 · 主题兼容。</b>所有颜色消费 Element Plus 主题变量：正式版自动跟随系统设置的主题色与深浅模式；右上角"主题"开关为独立演示用。</p>
+    <p><b>试试：</b>「加一个反派」「设计一个新门派」「查一下人物」「把林晓的动机改成复仇」「生成大纲」「我想写架空历史」——写完大纲后问「开始写作」看交接卡。</p>
+  </div>
+</div>
+<div class="modal-mask" id="editModal"></div>
+
+<script>
+/* ================= 主题（演示开关：写系统同款 --el-color-primary* 变量） ================= */
+const PALETTES = [
+  { id: 'classic',  name: '经典蓝', hex: '#4a90d9' },
+  { id: 'sky',      name: '天空蓝', hex: '#6ba3d6' },
+  { id: 'mint',     name: '薄荷绿', hex: '#5cb88f' },
+  { id: 'lavender', name: '淡紫',   hex: '#9b8dc7' },
+  { id: 'coral',    name: '珊瑚',   hex: '#e08a8a' },
+  { id: 'amber',    name: '琥珀',   hex: '#d4a574' },
+];
+let curTheme = 'classic', curDark = false;
+function mix(hex, pct, base) {
+  const p = (h) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const [r1, g1, b1] = p(hex), [r2, g2, b2] = p(base);
+  const f = (a, b) => Math.round(a * pct + b * (1 - pct));
+  return '#' + [f(r1, r2), f(g1, g2), f(b1, b2)].map(v => v.toString(16).padStart(2, '0')).join('');
+}
+function applyTheme(id) {
+  curTheme = id;
+  const pal = PALETTES.find(p => p.id === id);
+  const base = curDark ? '#141519' : '#ffffff';
+  const root = document.documentElement;
+  root.style.setProperty('--el-color-primary', pal.hex);
+  root.style.setProperty('--el-color-primary-light-3', mix(pal.hex, .5, base));
+  root.style.setProperty('--el-color-primary-light-5', mix(pal.hex, .3, base));
+  root.style.setProperty('--el-color-primary-light-7', mix(pal.hex, .15, base));
+  root.style.setProperty('--el-color-primary-light-8', mix(pal.hex, .09, base));
+  root.style.setProperty('--el-color-primary-light-9', mix(pal.hex, .05, base));
+  root.style.setProperty('--el-color-primary-dark-2', mix(pal.hex, .8, '#000000'));
+  renderPalette();
+}
+function setMode(dark) {
+  curDark = dark;
+  document.documentElement.classList.toggle('dark', dark);
+  $('modeLight').classList.toggle('on', !dark);
+  $('modeDark').classList.toggle('on', dark);
+  applyTheme(curTheme); // 明暗切换后按新底色重算 light 梯度
+}
+function renderPalette() {
+  $('palette').innerHTML = PALETTES.map(p =>
+    `<div class="pal ${p.id === curTheme ? 'on' : ''}" onclick="applyTheme('${p.id}')">
+       <span class="dot" style="background:${p.hex}"></span>${p.name}</div>`).join('');
+}
+function toggleThemePop() { $('themePop').classList.toggle('show'); }
+document.addEventListener('click', (e) => {
+  const pop = $('themePop');
+  if (pop.classList.contains('show') && !pop.contains(e.target) && !e.target.closest('.tb-btn')) pop.classList.remove('show');
+});
+
+/* ================= 要素类型（数据驱动） ================= */
+const KINDS = {
+  overview:  { label: '概要',   ico: '📘', fields: [['premise','一句话'],['conflict','核心冲突'],['hook','钩子'],['theme','题材']] },
+  character: { label: '人物',   ico: '🧑', fields: [['role','身份'],['motive','动机'],['persona','性格'],['arc','弧光'],['belong','归属']] },
+  plot:      { label: '故事线', ico: '🧵', fields: [['ptype','类型'],['arcDesc','走向'],['involve','涉及']] },
+  outline:   { label: '大纲',   ico: '🌳', fields: [['ptype','类型'],['arcDesc','结构'],['involve','涉及']] },
+  faction:   { label: '门派',   ico: '⛩️', fields: [['nature','性质'],['stance','立场'],['base','据点'],['rel','与主角关系']] },
+  skill:     { label: '武功',   ico: '⚔️', fields: [['stype','类型'],['grade','品阶'],['origin','来历'],['owner','持有者']] },
+  item:      { label: '物品',   ico: '💎', fields: [['grade','品级'],['power','能力'],['origin','来历'],['where','下落']] },
+  location:  { label: '地点',   ico: '🏔️', fields: [['ltype','类型'],['owner','归属'],['desc','描述']] },
+  nation:    { label: '国别',   ico: '🏯', fields: [['stance','立场'],['ruler','主君'],['note','概况']] },
+  camp:      { label: '阵营',   ico: '🚩', fields: [['stance','立场'],['goal','目标'],['note','概况']] },
+};
+const GROUP_ORDER = ['overview','character','plot','outline','faction','skill','item','location','nation','camp'];
+const GENRE_FRAMES = {
+  '武侠':   ['faction','skill','item','location'],
+  '修仙/玄幻': ['faction','skill','item','location'],
+  '架空历史': ['nation','camp','location','item'],
+  '都市':   ['location','camp'],
+};
+
+/* ================= 数据仓 ================= */
+let seq = 100;
+const state = { frame: ['faction','skill','item','location'], entities: [] };
+function addEntity(kind, name, fields, src = '初始') {
+  const e = { id: ++seq, kind, name, fields, src, updated: now() };
+  state.entities.push(e); renderPanel(); return e;
+}
+function findByName(n) { return state.entities.find(e => e.name === n); }
+function countOf(kind) { return state.entities.filter(e => e.kind === kind).length; }
+
+/* ================= 基础 UI ================= */
+const $ = (id) => document.getElementById(id);
+function toast(text, type = 'ok') {
+  const el = document.createElement('div');
+  el.className = 'toast ' + (type === 'ok' ? '' : type);
+  el.textContent = text; $('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 3200);
+}
+function scrollBottom() { $('chat').scrollTop = $('chat').scrollHeight; }
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+function now() { return new Date().toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'}); }
+
+function addUser(text) {
+  const el = document.createElement('div');
+  el.className = 'msg user';
+  el.innerHTML = `<div class="bubble"></div><div class="avatar">我</div>`;
+  el.querySelector('.bubble').textContent = text;
+  $('chatInner').appendChild(el); scrollBottom();
+}
+async function addEditor(html, tools) {
+  const el = document.createElement('div');
+  el.className = 'msg editor';
+  el.innerHTML = `<div class="avatar">主</div><div class="bubble"><div class="typing"><i></i><i></i><i></i></div></div>`;
+  $('chatInner').appendChild(el); scrollBottom();
+  await sleep(550);
+  const bubble = el.querySelector('.bubble');
+  bubble.innerHTML = (tools || '') + html;
+  const blocks = [...bubble.children];
+  blocks.forEach(b => b.style.opacity = 0);
+  for (const b of blocks) { b.style.transition = 'opacity .3s'; b.style.opacity = 1; scrollBottom(); await sleep(200); }
+  scrollBottom();
+}
+function toolLine(fn, arg, done = '✓') {
+  return `<div class="tool-line">🔧 <span class="fn">${fn}</span>(<span class="arg">${arg}</span>) <span class="ok">${done}</span></div>`;
+}
+
+/* ================= 设定集面板 ================= */
+function renderPanel() {
+  const kw = ($('sideSearch').value || '').trim();
+  const match = (e) => !kw || e.name.includes(kw) || Object.values(e.fields).some(v => String(v).includes(kw));
+  $('sideCnt').textContent = state.entities.length + ' 条';
+  let html = '', any = false;
+  for (const g of GROUP_ORDER) {
+    const def = KINDS[g];
+    const items = state.entities.filter(e => e.kind === g && match(e));
+    const inFrame = state.frame.includes(g);
+    if (items.length === 0 && !inFrame) continue;
+    any = true;
+    html += `<div class="group">
+      <div class="group-head"><span class="gico">${def.ico}</span>${def.label} <span class="gcnt">${items.length}</span>
+        ${items.length === 0 ? '<span class="todo">待讨论 · 说「设计一个' + def.label + '」</span>' : ''}</div>`;
+    for (const e of items) {
+      const sub = e.kind === 'outline' ? (e.fields.arcDesc || '') : (e.fields[def.fields[0][0]] || '');
+      html += `<div class="entry" onclick="openDetail(${e.id})">
+        <span class="eico">${def.ico}</span><span class="ename">${e.name}</span>
+        <span class="esub">${String(sub).slice(0, 20)}</span>
+        <span class="src ${e.src === '对话' ? 'chat' : ''}">${e.src}</span>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+  $('sideBody').innerHTML = any ? html : `<div class="no-result">${kw ? '没有匹配的设定' : '设定集为空——从左侧对话开始'}</div>`;
+}
+
+/* ================= 详情 / 编辑 / 新增 ================= */
+function openDetail(id) {
+  const e = state.entities.find(x => x.id === id); if (!e) return;
+  const def = KINDS[e.kind];
+  const treeHtml = e.fields.tree ? `<pre class="tree">${e.fields.tree}</pre>` : '';
+  $('editModal').innerHTML = `
+    <div class="modal">
+      <span class="close" onclick="closeEdit()">✕</span>
+      <h3>${def.ico} ${def.label} · ${e.name}</h3>
+      <div class="sub">来源：${e.src} · 更新于 ${e.updated} · id: ${e.id}</div>
+      ${treeHtml}
+      <div id="editBody">${def.fields.map(([k, label]) => `
+        <div class="frow"><span class="fl">${label}</span><div class="fval" data-k="${k}">${e.fields[k] || '—'}</div></div>`).join('')}
+      </div>
+      <div class="foot">
+        <button class="btn" onclick="delEntity(${e.id})">删除</button>
+        <button class="btn" id="editToggle" onclick="enableEdit()">✎ 编辑</button>
+        <button class="btn primary" id="editSave" style="display:none" onclick="saveEdit(${e.id})">保存修改</button>
+      </div>
+    </div>`;
+  $('editModal').classList.add('show');
+}
+function enableEdit() {
+  $('editBody').querySelectorAll('.fval').forEach(div => {
+    const cur = div.textContent === '—' ? '' : div.textContent;
+    div.innerHTML = `<textarea rows="2">${cur}</textarea>`;
+  });
+  $('editToggle').style.display = 'none'; $('editSave').style.display = '';
+}
+function saveEdit(id) {
+  const e = state.entities.find(x => x.id === id);
+  $('editBody').querySelectorAll('.fval').forEach(div => { e.fields[div.dataset.k] = div.querySelector('textarea').value.trim(); });
+  if (e.src !== '对话') e.src = '手动';
+  e.updated = now();
+  renderPanel(); closeEdit(); toast(`已更新「${e.name}」（正式版经 update_entity 工具落库）`);
+}
+function delEntity(id) {
+  const i = state.entities.findIndex(x => x.id === id);
+  const name = state.entities[i].name;
+  state.entities.splice(i, 1); renderPanel(); closeEdit();
+  toast(`已删除「${name}」`, 'warn');
+}
+function openAddModal() {
+  $('editModal').innerHTML = `
+    <div class="modal" style="width:440px">
+      <span class="close" onclick="closeEdit()">✕</span>
+      <h3>＋ 新增设定</h3>
+      <div class="sub">选择要素类型（设定集分组随之创建）</div>
+      <div class="kind-pick" id="kindPick">
+        ${GROUP_ORDER.slice(1).map((k, i) => `<span class="kp ${i === 0 ? 'on' : ''}" data-k="${k}">${KINDS[k].ico} ${KINDS[k].label}</span>`).join('')}
+      </div>
+      <div class="frow"><span class="fl">名称</span><textarea rows="1" id="newName" placeholder="如：沧澜剑阁 / 听雨十三剑"></textarea></div>
+      <div id="newFields"></div>
+      <div class="foot"><button class="btn primary" onclick="saveNew()">保存</button></div>
+    </div>`;
+  const pick = $('kindPick');
+  pick.addEventListener('click', (ev) => {
+    const t = ev.target.closest('.kp'); if (!t) return;
+    pick.querySelectorAll('.kp').forEach(x => x.classList.remove('on')); t.classList.add('on');
+    renderNewFields(t.dataset.k);
+  });
+  renderNewFields('character');
+  $('editModal').classList.add('show');
+}
+function renderNewFields(kind) {
+  $('newFields').innerHTML = KINDS[kind].fields.map(([k, label]) =>
+    `<div class="frow"><span class="fl">${label}</span><textarea rows="1" data-k="${k}"></textarea></div>`).join('');
+}
+function saveNew() {
+  const kind = document.querySelector('#kindPick .kp.on').dataset.k;
+  const name = $('newName').value.trim();
+  if (!name) { toast('请填写名称', 'warn'); return; }
+  const fields = {};
+  document.querySelectorAll('#newFields textarea').forEach(i => fields[i.dataset.k] = i.value.trim());
+  addEntity(kind, name, fields, '手动');
+  closeEdit(); toast(`已新增${KINDS[kind].label}「${name}」`);
+}
+function closeEdit() { $('editModal').classList.remove('show'); }
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeEdit(); $('helpModal').classList.remove('show'); $('themePop').classList.remove('show'); } });
+
+/* ================= 提案卡 ================= */
+function proposalCard(kind, name, fields, ver = 'v1') {
+  const def = KINDS[kind];
+  const el = document.createElement('div');
+  el.className = `artifact k-${kind}`;
+  el.dataset.cardData = JSON.stringify({ kind, name, fields, ver });
+  el.innerHTML = `
+    <div class="head"><span class="ico">${def.ico}</span><span class="name">${name}</span>
+      <span class="kname">${def.label}卡</span><span class="ver">${ver}</span></div>
+    <div class="body"></div>
+    <div class="foot">
+      <button class="btn success" data-act="adopt">✓ 保存到设定集</button>
+      <button class="btn" data-act="edit">✎ 编辑</button>
+      <button class="btn" data-act="regen">↻ 换一版</button>
+      <button class="btn" data-act="drop">✗ 忽略</button>
+      <span class="note"></span>
+    </div>`;
+  const renderBody = (d) => {
+    el.querySelector('.body').innerHTML = def.fields.filter(([k]) => d.fields[k]).map(([k, label]) =>
+      `<div class="row"><span class="k">${label}</span><span>${d.fields[k]}</span></div>`).join('');
+  };
+  renderBody(JSON.parse(el.dataset.cardData));
+  el.querySelector('[data-act=adopt]').onclick = () => {
+    const d = JSON.parse(el.dataset.cardData);
+    const exist = findByName(d.name);
+    if (exist) { Object.assign(exist.fields, d.fields); exist.updated = now(); renderPanel(); }
+    else addEntity(d.kind, d.name, d.fields, '对话');
+    el.classList.add('adopted');
+    el.querySelector('.foot').innerHTML = `<span class="note">✓ 已保存 → 设定集 · ${KINDS[d.kind].label}（正式版落 lw_* 表）</span>`;
+    toast(`已保存${KINDS[d.kind].label}「${d.name}」到设定集`);
+  };
+  el.querySelector('[data-act=edit]').onclick = () => {
+    const d = JSON.parse(el.dataset.cardData);
+    $('editModal').innerHTML = `
+      <div class="modal">
+        <span class="close" onclick="closeEdit()">✕</span>
+        <h3>✎ 编辑提案 · ${def.ico} ${d.name}</h3>
+        <div class="sub">改完保存即更新卡片，再点「保存到设定集」</div>
+        <div id="editBody">${def.fields.map(([k, label]) =>
+          `<div class="frow"><span class="fl">${label}</span><textarea rows="2" data-k="${k}">${d.fields[k] || ''}</textarea></div>`).join('')}</div>
+        <div class="foot"><button class="btn primary" onclick="applyCardEdit()">保存到卡片</button></div>
+      </div>`;
+    window._editingCard = el;
+    $('editModal').classList.add('show');
+  };
+  el.querySelector('[data-act=drop]').onclick = () => {
+    el.classList.add('outdated');
+    el.querySelector('.foot').innerHTML = '<span class="note">已忽略</span>';
+  };
+  el.querySelector('[data-act=regen]').onclick = () => {
+    const d = JSON.parse(el.dataset.cardData);
+    const ALT = {
+      motive: ['被承认——他洗的不是罪名，是"我配不配站在这里"', '复仇：亲手把真凶钉在告示墙上'],
+      persona: ['外冷内热，惯于藏拙', '话少，动手比动嘴快'],
+      stance: ['亦正亦邪，人浮于事', '表面中立，暗中下注'],
+      origin: ['前朝遗物，几经易主', '祖师闭关所创，从无外传'],
+      arcDesc: ['一路向上，代价是众叛亲离', '先堕后起，弃剑再悟剑'],
+    };
+    let changed = 0;
+    for (const k of Object.keys(d.fields)) { if (ALT[k]) { d.fields[k] = ALT[k][changed % 2]; changed++; } }
+    if (changed === 0) { toast('这一版没有更多变化了（正式版由 AI 重新生成）', 'info'); return; }
+    d.ver = 'v' + (parseInt(d.ver.slice(1)) + 1);
+    el.dataset.cardData = JSON.stringify(d);
+    el.classList.add('outdated');
+    el.querySelector('.foot').innerHTML = `<span class="note">已换一版 → ${d.ver}</span>`;
+    proposalCard(d.kind, d.name, d.fields, d.ver);
+    toast(`已重新生成 ${d.ver}（正式版：按反馈重新提炼）`, 'info');
+  };
+  $('chatInner').appendChild(el); scrollBottom();
+  return el;
+}
+function applyCardEdit() {
+  const el = window._editingCard;
+  const d = JSON.parse(el.dataset.cardData);
+  document.querySelectorAll('#editBody textarea').forEach(t => d.fields[t.dataset.k] = t.value.trim());
+  el.dataset.cardData = JSON.stringify(d);
+  const def = KINDS[d.kind];
+  el.querySelector('.body').innerHTML = def.fields.filter(([k]) => d.fields[k]).map(([k, label]) =>
+    `<div class="row"><span class="k">${label}</span><span>${d.fields[k]}</span></div>`).join('');
+  closeEdit(); toast('卡片已更新');
+}
+
+/* ================= 意图路由（原型规则引擎；正式版 = 主编模型 + 工具调用） ================= */
+function extractName(text) {
+  const m = text.match(/[「“']([^」”']{1,12})[」”']/) || text.match(/(?:叫|名为|名字?是)(.{2,8})/);
+  return m ? m[1].replace(/[，。,.!！?？\s].*$/, '') : null;
+}
+function detectIntent(t) {
+  if (/写作|正文|第一章|开写/.test(t)) return 'write';
+  if (/^(你好|hi|hello)$|^开始$/.test(t)) return 'greet';
+  if (/大纲|目录|分集|章节规划/.test(t)) return 'outline';
+  if (/有哪些|查一下|查查|查看|看看|清单|列表|现在.*设定|设定.*现状/.test(t)) return 'query';
+  if (/把.{1,10}(改|换)|修改|换成/.test(t)) return 'modify';
+  if (/国别|王朝|国度|国家/.test(t)) return 'nation';
+  if (/阵营/.test(t)) return 'camp';
+  if (/门派|宗门|帮派|朝廷|机构|组织/.test(t)) return 'faction';
+  if (/武功|功法|剑法|心法|招式|武学/.test(t)) return 'skill';
+  if (/物品|兵器|法宝|神器|宝物|秘宝/.test(t)) return 'item';
+  if (/地点|城|山|关|秘境/.test(t)) return 'location';
+  if (/故事线|情节|主线|支线|剧情线/.test(t)) return 'plot';
+  if (/人物|主角|反派|配角|角色|女主|男主|加.{0,3}人/.test(t)) return 'character';
+  if (/想写|想做|想创作|要写|题材|类型|换.*(题材|背景)|架空|武侠|修仙|玄幻|都市|言情/.test(t)) return 'genre';
+  return 'discuss';
+}
+function fLabel(kind, k) { return (KINDS[kind].fields.find(f => f[0] === k) || [, k])[1]; }
+function kindFromText(t) {
+  for (const [k, def] of Object.entries(KINDS)) if (k !== 'overview' && t.includes(def.label)) return k;
+  return null;
+}
+
+const OUTLINE_TREE = `第一卷 · 蒙冤（1-8 集）
+├─ 1-2  冤案发生，当众逐出（错位自责的起点）
+├─ 3-5  江湖流浪，得听雨十三剑残页
+├─ 6    【反转】真凶线索指向大师兄
+└─ 7-8  断云关事件，与沈青梧并轨
+第二卷 · 查冤（9-16 集）
+├─ 9-12 三页玄天鉴争夺战
+├─ 13   谢无咎入场，官面重启"查案"
+└─ 14-16 悬镜司清洗青云宗，师门恩义崩塌
+第三卷 · 雪冤（17-24 集）
+├─ 17-20 真相全貌：大师兄的双重动机
+├─ 21-22 林晓的选择：自证 or 重建秩序
+└─ 23-24 终局：放下自证（弧光闭环）`;
+
+const FLOWS = {
+  greet: async () => ({
+    html: `<p>我一直在。当前设定集：概要 ${countOf('overview')}、人物 ${countOf('character')} 位、门派 ${countOf('faction')} 个、武功 ${countOf('skill')} 门、故事线 ${countOf('plot')} 条。</p><p>想聊哪块直接说——故事、人物、门派、武功、故事线、大纲，都在这一个对话里。</p>`,
+  }),
+  query: async (t) => {
+    const k = kindFromText(t);
+    const kinds = k ? [k] : [...new Set(state.entities.map(e => e.kind))];
+    const list = kinds.map(kk => {
+      const items = state.entities.filter(e => e.kind === kk);
+      return `<li><b>${KINDS[kk].label}</b>（${items.length}）：${items.map(e => e.name).join('、') || '（空）'}</li>`;
+    }).join('');
+    return {
+      html: toolLine('query_setting', `project:xyj${k ? ', kind:' + k : ', scope:all'}`) + `<p>${k ? KINDS[k].label + '一览' : '现在的设定集一览'}：</p><ul>${list}</ul><p>点右侧任意条目可看详情/编辑；也可以直接说"把××的××改成××"。</p>`,
+    };
+  },
+  genre: async (t) => {
+    const g = Object.keys(GENRE_FRAMES).find(k => t.includes(k.split('/')[0])) || '武侠';
+    const frame = GENRE_FRAMES[g];
+    const card = document.createElement('div');
+    card.className = 'artifact k-frame';
+    card.innerHTML = `
+      <div class="head"><span class="ico">🗺️</span><span class="name">要素框架 · ${g}</span><span class="kname">题材建议</span></div>
+      <div class="body">
+        <div class="row"><span class="k">建议要素</span><span>${frame.map(k => KINDS[k].label).join(' / ')}</span></div>
+        <div class="row"><span class="k">说明</span><span>只是建议清单——不需要的要素不会出现在设定集；聊到就建，随时可加。</span></div>
+      </div>
+      <div class="foot"><button class="btn success">✓ 按此框架继续</button><span class="note"></span></div>`;
+    card.querySelector('button').onclick = () => {
+      state.frame = frame; renderPanel();
+      card.classList.add('adopted');
+      card.querySelector('.foot').innerHTML = '<span class="note">✓ 框架已应用——设定集分组已就位</span>';
+      toast(`已按「${g}」框架更新设定集分组`);
+      setChips(frame.slice(0, 3).map(k => `设计一个${KINDS[k].label}`));
+    };
+    return { html: `<p>按<b>${g}</b>题材，我建议的世界要素是这些——都是聊到才建、不要就不管：</p>`, extra: card };
+  },
+  character: async (t) => {
+    const name = extractName(t) || (/反派|对手/.test(t) ? '谢无咎' : /女主/.test(t) ? '沈青梧' : '新角色');
+    const isVillain = /反派|对手|坏人/.test(t), isFemale = /女主|女性/.test(t);
+    const fields = isVillain ? {
+      role: '悬镜司少卿，奉命复查玄天鉴失窃案',
+      motive: '把旧案钉死在林晓身上——真相牵着他自己的仕途',
+      persona: '温文尔雅，越客气越危险',
+      arc: '从执法者到局中人，被自己钉死的案子反噬',
+      belong: '悬镜司（朝廷）',
+    } : isFemale ? {
+      role: '江湖游医，悬壶济世也打探消息',
+      motive: '查师父死因，与林晓的冤案隐隐相接',
+      persona: '爽利毒舌，医人先诛心',
+      arc: '从旁观者到并肩者', belong: '无门无派',
+    } : {
+      role: '（基于你的描述）', motive: '（待讨论——他为什么要卷进这个故事？）',
+      persona: '（待讨论）', arc: '（待讨论）', belong: '（待讨论）',
+    };
+    const lead = isVillain ? '反派立起来故事才有骨。' : isFemale ? '好——先给她一个非她不可的理由。' : '人物从动机开始立。';
+    return {
+      html: `<p>${lead}提一版${isVillain || isFemale ? '' : '骨架（空字段我们可以边聊边填）'}，不满意直接说或点「换一版」：</p>`,
+      card: { kind: 'character', name, fields },
+      chips: isVillain ? ['出一条故事线', '查一下人物', '生成大纲'] : ['再加一个反派', '给主角配一把兵器', '出一条故事线'],
+    };
+  },
+  faction: async (t) => {
+    const name = extractName(t) || '沧澜剑阁';
+    const fields = { nature: '新兴剑修门派，以快剑立身', stance: '中立偏正，与青云宗明盟暗争', base: '东海沧澜岛', rel: '欣赏林晓的剑骨，愿为其递刀——但有所图' };
+    return {
+      html: `<p>门派设计的关键是<b>与主角的关系张力</b>，不只是设定堆料。提一版：</p>`,
+      card: { kind: 'faction', name, fields },
+      chips: ['给门派配一门武功', '设计据点', '出一条故事线'],
+    };
+  },
+  skill: async (t) => {
+    const name = extractName(t) || '听雨十三剑';
+    const fields = { stype: '攻击剑法，雨夜威力翻倍', grade: '上乘（残卷）', origin: '前朝剑圣雨夜绝笔，残页散落江湖', owner: '无主——建议林晓第 3 集后段机缘所得' };
+    return {
+      html: `<p>武功不只是战力，最好是<b>剧情钩子</b>。这版把来历和下落都接进了你的冤案线：</p>`,
+      card: { kind: 'skill', name, fields },
+      chips: ['加一把兵器', '查一下武功', '生成大纲'],
+    };
+  },
+  item: async (t) => {
+    const name = extractName(t) || '玄天鉴残页';
+    const fields = { grade: '至宝部件', power: '单独无用，三页合一方可开启——夺宝结构自带', origin: '玄天鉴碎裂时散落的三页', where: '一页在悬镜司、一页在民间、一页下落不明' };
+    return {
+      html: `<p>物品建议做成<b>三段式麦高芬</b>，天然撑起中段剧情：</p>`,
+      card: { kind: 'item', name, fields },
+      chips: ['设计持有者（人物）', '出一条故事线', '查一下物品'],
+    };
+  },
+  location: async (t) => {
+    const name = extractName(t) || '断云关';
+    const fields = { ltype: '边关要塞', owner: '朝廷（守将派系不明）', desc: '南下北上必经之地，关城之下有前朝地道——建议第 9 集大战发生地' };
+    return {
+      html: `<p>地点要么承载冲突，要么藏秘密（最好都占）。提一版：</p>`,
+      card: { kind: 'location', name, fields },
+      chips: ['在断云关安排一场戏', '出一条故事线', '查一下地点'],
+    };
+  },
+  nation: async (t) => {
+    const name = extractName(t) || '大玄王朝';
+    const fields = { stance: '表面盛世，暗地财政枯竭、军镇尾大不掉', ruler: '玄帝（晚年多疑，借悬镜司制衡朝堂）', note: '与前朝覆灭的玄天鉴案有直接因果——王朝合法性的秘密就藏在鉴中' };
+    return {
+      html: `<p>架空历史的国别要自带<b>结构性矛盾</b>，故事才有底盘。这一版把国运和你已有的玄天鉴案直接挂钩：</p>`,
+      card: { kind: 'nation', name, fields },
+      chips: ['加一个阵营', '出一条故事线', '查一下设定'],
+    };
+  },
+  camp: async (t) => {
+    const name = extractName(t) || '清流党';
+    const fields = { stance: '在野士人集团，握有舆情', goal: '借玄天鉴案动摇悬镜司，进而逼宫', note: '不是主角的朋友——只是暂时同路' };
+    return {
+      html: `<p>阵营的价值在于<b>借力与背叛</b>。提一版：</p>`,
+      card: { kind: 'camp', name, fields },
+      chips: ['设计国别', '出一条故事线', '查一下设定'],
+    };
+  },
+  plot: async (t) => {
+    const name = /支线/.test(t) ? '师父之死（支线）' : '朝堂暗线';
+    const fields = /支线/.test(t)
+      ? { ptype: '支线', arcDesc: '与主线第 12 集并轨：她查的师父之死，正是玄天鉴案的另一面', involve: '沈青梧、林晓' }
+      : { ptype: '暗线', arcDesc: '悬镜司借查案之名清洗青云宗，林晓的冤案只是棋盘一角', involve: '谢无咎、顾长风、朝廷' };
+    return {
+      html: `<p>故事线的要点是<b>并轨点</b>——支线不能飘在外面，这一版把并轨集数都排好了：</p>`,
+      card: { kind: 'plot', name, fields },
+      chips: ['生成大纲', '加一个人物', '查一下故事线'],
+    };
+  },
+  outline: async () => {
+    const el = document.createElement('div');
+    el.className = 'artifact k-outline';
+    el.innerHTML = `
+      <div class="head"><span class="ico">🌳</span><span class="name">分集大纲</span><span class="kname">大纲卡</span><span class="ver">v1</span></div>
+      <div class="body"><pre class="tree">${OUTLINE_TREE}</pre></div>
+      <div class="foot"><button class="btn success">✓ 保存大纲</button><button class="btn" onclick="toast('正式版：逐卷确认 / 按反馈重提这一卷','info')">逐卷确认</button><span class="note"></span></div>`;
+    el.querySelector('.btn.success').onclick = () => {
+      const exist = findByName('分集大纲');
+      if (exist) { exist.fields.tree = OUTLINE_TREE; exist.updated = now(); renderPanel(); }
+      else addEntity('outline', '分集大纲', { ptype: '大纲', arcDesc: '蒙冤→查冤→雪冤，3 卷 24 集', involve: '全部', tree: OUTLINE_TREE }, '对话');
+      el.classList.add('adopted');
+      el.querySelector('.foot').innerHTML = '<span class="note">✓ 大纲已保存（正式版落 lw_story_outlines 建树）</span>';
+      toast('大纲已保存 → 设定集 · 大纲（点条目可看完整树）');
+      setChips(['开始写作', '调整第二卷', '加一条支线']);
+    };
+    return {
+      html: `<p>基于设定集里的概要、${countOf('character')} 位人物和 ${countOf('plot')} 条故事线，我排了一版 24 集结构——<b>第 6 集反转</b>和<b>第 12 集并轨</b>都用上了：</p>`,
+      extra: el,
+    };
+  },
+  modify: async (t) => {
+    const target = state.entities.find(e => t.includes(e.name));
+    if (!target) return {
+      html: `<p>要改哪一条？现有设定：${state.entities.slice(0, 8).map(e => e.name).join('、')}……也可以点右侧条目直接编辑。</p>`,
+    };
+    const def = KINDS[target.kind];
+    const fieldKey = def.fields.map(f => f[0]).find(k => t.includes(fLabel(target.kind, k))) || def.fields[0][0];
+    const rawNew = (t.match(/(?:改成|改为|换成)(.+)/) || [])[1]?.slice(0, 40) || '';
+    const el = document.createElement('div');
+    el.className = `artifact k-${target.kind}`;
+    el.innerHTML = `
+      <div class="head"><span class="ico">${def.ico}</span><span class="name">修改确认 · ${target.name}</span><span class="kname">${def.label}</span></div>
+      <div class="body">
+        <div class="diff-row"><span class="field">${fLabel(target.kind, fieldKey)}</span>
+          <span class="diff-old">${target.fields[fieldKey] || '—'}</span>
+          <span class="diff-new" contenteditable="true">${rawNew || '（在此填写新值）'}</span></div>
+        <p style="font-size:11.5px;color:var(--sr-t3);margin-top:6px">新值可直接编辑（正式版由 AI 预填，你随时改）</p>
+      </div>
+      <div class="foot"><button class="btn success">✓ 确认修改</button><button class="btn">取消</button><span class="note"></span></div>`;
+    const [ok, cancel] = el.querySelectorAll('button');
+    ok.onclick = () => {
+      const v = el.querySelector('.diff-new').textContent.trim();
+      if (!v || v.startsWith('（在此')) { toast('请先填写新值', 'warn'); return; }
+      target.fields[fieldKey] = v; target.updated = now(); renderPanel();
+      el.classList.add('adopted');
+      el.querySelector('.diff-new').setAttribute('contenteditable', 'false');
+      el.querySelector('.foot').innerHTML = '<span class="note">✓ 已应用（update_entity 工具落库）</span>';
+      toast(`已修改「${target.name}」的${fLabel(target.kind, fieldKey)}`);
+    };
+    cancel.onclick = () => { el.classList.add('outdated'); el.querySelector('.diff-new').setAttribute('contenteditable', 'false'); el.querySelector('.foot').innerHTML = '<span class="note">已取消</span>'; };
+    return {
+      html: `<p>找到了——<b>${target.name}</b>。改动如下，确认后我更新设定集：</p>`,
+      extra: el,
+      tools: toolLine('update_entity', `${target.kind}:"${target.name}"`),
+    };
+  },
+  write: async () => {
+    const hasOutline = countOf('outline') > 0;
+    const el = document.createElement('div');
+    el.className = 'artifact k-outline';
+    el.innerHTML = `
+      <div class="head"><span class="ico">✍</span><span class="name">交接 · 写作台</span><span class="kname">交接卡</span></div>
+      <div class="body">
+        <div class="row"><span class="k">将带入</span><span>概要、人物 ${countOf('character')} 位（含最新状态）、故事线 ${countOf('plot')} 条、图谱关系</span></div>
+        <div class="row"><span class="k">大纲</span><span>${hasOutline ? '✓ 已就绪（3 卷 24 集）——逐章写作时自动注入对应卷/章上下文' : '⚠ 尚未生成——建议先说「生成大纲」确认结构'}</span></div>
+        <div class="row"><span class="k">回写</span><span>每章完成后，新事件/状态变化自动同步回设定集（图谱流水线）</span></div>
+      </div>
+      <div class="foot"><button class="btn primary" onclick="toast('正式版：跳转写作台（ChapterStage），本原型不展开','info')">进入写作台 →</button><span class="note"></span></div>`;
+    return {
+      html: `<p>交接前给你对个账——设定集会整体带进写作台：</p>`,
+      extra: el,
+      chips: hasOutline ? ['回来继续磨设定', '查一下设定'] : ['生成大纲', '回来继续磨设定'],
+    };
+  },
+  discuss: async () => {
+    const openers = [
+      `有意思。往深一层——这个设定对主角是<b>不得不接受</b>还是<b>主动选择</b>？前者写命运，后者写性格，走向完全不同。`,
+      `先别急着定。手上的牌：概要的"洗冤"和林晓的"被承认"是主线——你现在提的这点，会加强还是稀释它？`,
+      `可以。不过设定集里"真凶=嫉妒同门"是被排除的方向，这个新想法别把它绕回来。要不要基于现有人物先落一版试试？`,
+    ];
+    return { html: openers[Math.floor(Math.random() * openers.length)] };
+  },
+};
+
+/* ================= 发送 ================= */
+let busy = false;
+function setChips(list) {
+  $('chips').innerHTML = list.map(c => `<span class="chip" onclick="sendText('${c.replace(/'/g, "\\'")}')">${c}</span>`).join('');
+}
+async function sendText(forced) {
+  if (busy) return;
+  busy = true; $('sendBtn').disabled = true;
+  const box = $('inputBox');
+  const text = forced || box.value.trim();
+  box.value = '';
+  if (text) addUser(text);
+  $('chips').innerHTML = '';
+  const out = await FLOWS[detectIntent(text || '')](text || '');
+  await addEditor(out.html, out.tools);
+  if (out.card) proposalCard(out.card.kind, out.card.name, out.card.fields);
+  if (out.extra) { $('chatInner').appendChild(out.extra); scrollBottom(); }
+  setChips(out.chips || ['加一个反派', '设计一个门派', '查一下设定', '生成大纲']);
+  busy = false; $('sendBtn').disabled = false; box.focus();
+}
+$('sendBtn').onclick = () => sendText();
+$('inputBox').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); }
+});
+
+/* ================= 种子数据（示例项目：武侠·复仇） ================= */
+addEntity('overview', '洗冤录', {
+  premise: '外门弟子林晓被冤偷镇宗至宝玄天鉴、当众逐出师门；为洗冤踏入江湖，却发现真凶是护他长大的大师兄',
+  conflict: '洗冤自证 vs 师门恩义；第二层：真相揭开后「恨与恩」的撕扯',
+  hook: '第 6 集反转（真凶=大师兄）；情绪底色：错位自责', theme: '武侠 · 复仇 · 24 集短剧',
+});
+addEntity('character', '林晓', {
+  role: '青云宗外门弟子，被冤偷玄天鉴逐出师门', motive: '表层洗冤，深层"被宗门承认"',
+  persona: '隐忍重情；冤案后多疑，不轻信善意', arc: '从「自证清白」到「放下自证、重建秩序」', belong: '青云宗（已逐）',
+});
+addEntity('character', '顾长风', {
+  role: '青云宗大师兄，众望所归的下一任掌门', motive: '动玄天鉴是为救林晓，代价却由林晓背',
+  persona: '端方君子，唯独对林晓心软', arc: '护短者成为加害者，恩与罪一体两面', belong: '青云宗',
+});
+addEntity('faction', '青云宗', {
+  nature: '正道魁首，剑修圣地', stance: '正道领袖', base: '青云山', rel: '主角的师门与伤心地',
+});
+addEntity('skill', '玄天诀', {
+  stype: '镇宗心法', grade: '绝学', origin: '开派祖师所创，与玄天鉴一体', owner: '掌门单传',
+});
+addEntity('item', '玄天鉴', {
+  grade: '镇宗至宝', power: '鉴内自成空间，藏前朝秘辛（麦高芬）', origin: '前朝皇室遗物', where: '失窃案后下落成谜',
+});
+addEntity('plot', '洗冤主线', {
+  ptype: '主线', arcDesc: '蒙冤(1-8)→查冤(9-16)→雪冤(17-24)，三卷结构', involve: '林晓、顾长风、谢无咎',
+});
+
+/* ================= 初始化 ================= */
+renderPalette();
+setMode(false);
+(async function init() {
+  renderPanel();
+  await addEditor(`
+    <p>我是你的<b>故事主编</b>。《洗冤录》的设定集已带入：概要 ✓、人物 2 位（林晓、顾长风）、门派 1、武功 1、宝物 1、故事线 1 条。</p>
+    <p>没有步骤、没有表单——<b>一个对话聊到底</b>：加人物/门派/武功直接说；改设定说"把××的××改成××"；看全貌点右侧设定集，或问我"查一下设定"。</p>
+    <p style="color:var(--sr-t3);font-size:12.5px">右上角「主题」可切换系统主题色与深浅模式（正式版自动跟随系统设置）。chips 与自由输入均已可用。</p>`);
+  setChips(['加一个反派', '设计一个新门派', '查一下现有设定', '把林晓的动机改成复仇', '生成大纲', '我想写架空历史']);
+})();
+</script>
+</body>
+</html>

@@ -24,6 +24,7 @@
 import * as path from 'path'
 import type { DataSource } from 'typeorm'
 import { getPathProvider } from '@core/interfaces/path.interface'
+import { EpVideoSegmentEntity } from '@core/database/entities/episode-production/video-segment.entity'
 import {
   TimelineBuilderService,
   type Timeline,
@@ -100,7 +101,7 @@ export class EpisodeMp4ExporterService {
   private readonly subtitleSvc: SubtitleService
 
   constructor(
-    ds: DataSource,
+    private readonly ds: DataSource,
     private readonly ffmpegRunner: FfmpegRunner,
     private readonly fileWriter: FileWriter,
   ) {
@@ -127,20 +128,26 @@ export class EpisodeMp4ExporterService {
     if (flatShots.length === 0) {
       throw new Error('导出阻断：当前没有任何"入选"分镜，请在时间线上勾选至少一个')
     }
-    // 入选分镜中若有缺视频的，提前阻断（buildEpisodeTimeline.missingVideoStoryboardIds
+
+    // 视频片段制（2026-09-04）：入选分镜已分段 → 按片段合并成合成单元，
+    // 段内不 xfade（视频模型保证连贯）；无 segment 的存量项目回退现有逐镜路径。
+    const units = await this.buildExportUnits(flatShots)
+    const exportShots = units ?? flatShots
+
+    // 入选单元中若有缺视频的，提前阻断（buildEpisodeTimeline.missingVideoStoryboardIds
     // 是全分镜的，过滤后要重新计算）
-    const missingInSelected = flatShots
+    const missingInSelected = exportShots
       .filter((s) => !s.videoPath)
       .map((s) => s.storyboardId)
     if (missingInSelected.length > 0) {
       throw new Error(
-        `导出阻断：${missingInSelected.length} 个入选分镜尚未生成视频（${
+        `导出阻断：${missingInSelected.length} 个入选${units ? '片段' : '分镜'}尚未生成视频（${
           missingInSelected.slice(0, 3).join(', ')
         }${missingInSelected.length > 3 ? '...' : ''}）`,
       )
     }
     // 把 user-rel 相对路径解析为绝对路径再交给 ffmpeg
-    const inputs = flatShots.map((s) => resolveUserRelPath(s.videoPath!))
+    const inputs = exportShots.map((s) => resolveUserRelPath(s.videoPath!))
 
     // 字幕（可选烧入）
     let srtPath: string | undefined
@@ -156,7 +163,7 @@ export class EpisodeMp4ExporterService {
     }
 
     const filterComplex = buildFilterComplex({
-      shots: flatShots,
+      shots: exportShots,
       width,
       height,
       srtPath,
@@ -177,6 +184,61 @@ export class EpisodeMp4ExporterService {
       srtPath,
       timeline,
     }
+  }
+
+  /**
+   * 把入选分镜合并成"片段级合成单元"（视频片段制 2026-09-04）：
+   *   - 任一入选分镜带 segmentId → 同 segment 的分镜合并为一个单元，
+   *     视频用 segment.video_path，时长用 segment.duration（缺失回退分镜时长求和）；
+   *     单元转场取组内首镜的 transition（即段间保持现有转场行为，段内不 xfade）。
+   *   - 同 segment 的分镜被 exclude 拆成不连续两段时仍合并为一个单元
+   *     （片段视频是整段产物，无法按镜裁剪）。
+   *   - 全部入选分镜都没有 segmentId（存量未分段项目）→ 返回 null，
+   *     调用方回退现有逐镜 xfade 路径，行为与改造前完全一致。
+   */
+  private async buildExportUnits(
+    flatShots: TimelineShot[],
+  ): Promise<TimelineShot[] | null> {
+    if (!flatShots.some((s) => s.segmentId)) return null
+
+    const segmentIds = [
+      ...new Set(flatShots.map((s) => s.segmentId).filter((v): v is string => !!v)),
+    ]
+    const segRepo = this.ds.getRepository(EpVideoSegmentEntity)
+    const segments = await segRepo.find({
+      where: segmentIds.map((id) => ({ id }) as any),
+    })
+    const segMap = new Map(segments.map((s) => [s.id, s]))
+
+    const units: TimelineShot[] = []
+    const unitBySegment = new Map<string, TimelineShot>()
+    for (const shot of flatShots) {
+      if (!shot.segmentId) {
+        // 未分段分镜：保持单镜单元（混合态过渡兼容）
+        units.push({ ...shot })
+        continue
+      }
+      const existing = unitBySegment.get(shot.segmentId)
+      if (existing) {
+        // segment.duration（实际视频时长）优先；缺失才按分镜时长求和
+        if (segMap.get(shot.segmentId)?.duration == null) {
+          existing.durationSec += shot.durationSec
+          existing.endSec = existing.startSec + existing.durationSec
+        }
+        continue
+      }
+      const seg = segMap.get(shot.segmentId)
+      const unit: TimelineShot = {
+        ...shot,
+        storyboardId: shot.segmentId, // 缺失阻断信息里展示片段 ID
+        videoPath: seg?.videoPath ?? null,
+        durationSec: seg?.duration ?? shot.durationSec,
+      }
+      unit.endSec = unit.startSec + unit.durationSec
+      unitBySegment.set(shot.segmentId, unit)
+      units.push(unit)
+    }
+    return units
   }
 }
 

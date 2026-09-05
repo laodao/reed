@@ -614,10 +614,15 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.listVideoProviders': { channel: 'ep:list-video-providers' },
   'episodeProduction.getProviderCapabilities': { channel: 'ep:get-provider-capabilities' },
   'episodeProduction.generateVideoSegment': { channel: 'ep:generate-video-segment' },
+  // 视频片段制重构（2026-09-04）：分段 + 片段级生成
+  'episodeProduction.recomputeSegments': { channel: 'ep:recompute-segments' },
+  'episodeProduction.listSegments': { channel: 'ep:list-segments' },
+  'episodeProduction.generateSegmentVideo': { channel: 'ep:generate-segment-video' },
   // P6-T5 合成 + 导出 MP4
   'episodeProduction.buildTimeline': { channel: 'ep:build-timeline' },
   'episodeProduction.previewSubtitle': { channel: 'ep:preview-subtitle' },
   'episodeProduction.exportMp4': { channel: 'ep:export-mp4' },
+  'episodeProduction.openExportFolder': { channel: 'ep:open-export-folder' },
   // P5-T14/T15 V3 binding-aware 场景音频
   'episodeProduction.generateSceneAudioV3': { channel: 'ep:generate-scene-audio-v3' },
   // P6-T13 顶部 6 段阶段进度条（spec §2.1）
@@ -765,4 +770,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'oss.toggleEnabled': { channel: 'oss:toggle-enabled' },
   'oss.testConnection': { channel: 'oss:test-connection' },
   'oss.uploadFile': { channel: 'oss:upload-file' },
+  // 业务包（pack:list 走兜底推导也能对上；setEnabled 因 camelCase 需显式映射 + 参数包对象）
+  'pack.list': { channel: 'pack:list' },
+  'pack.setEnabled': { channel: 'pack:setEnabled', wrap: (packId, enabled) => [{ packId, enabled }] },
 }

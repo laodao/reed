@@ -1,13 +1,13 @@
 /**
  * relaxBindingLwIdNullable migration 单测（follow-up #60）
  *
- * 用 better-sqlite3 内存库模拟"列已 NOT NULL"的旧 schema，验证：
+ * 用 better-sqlite3 内存库模拟"列已 nullable"的 schema，验证：
  *   1. 表 / 列不存在时静默跳过
  *   2. 把 standalone 行的 '' 占位回填为 NULL
  *   3. 幂等（重复执行不报错）
  *
- * SQLite 不支持 ALTER COLUMN DROP NOT NULL，迁移在 SQLite 上仅做数据回填，
- * 列约束依赖 typeorm synchronize 应用最新 entity（nullable: true）。
+ * NOT NULL → nullable 的 SQLite 表重建另见
+ * relax-ep-notnull-sqlite-rebuild.spec.ts。
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'

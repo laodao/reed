@@ -14,7 +14,8 @@ import { getEventEmitter } from '@core/interfaces/event.interface'
 import type { WorkflowGraph, WorkflowRunStatus, WorkflowStartInput, WorkflowTriggerType } from '@shared/types/workflow.types'
 import { WORKFLOW_DEFAULTS, WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_STATUSES, WORKFLOW_NODE_TYPES, WORKFLOW_TRIGGER_TYPES } from '@shared/types/workflow.types'
 import { WorkflowEngineService, type ExecuteRunInput, type ReviewDecisionInput } from './engine/workflow-engine.service'
-import type { WorkflowEngineDeps } from './engine/ports'
+import type { WorkflowEngineDeps, WorkflowEventPort } from './engine/ports'
+import { createWorkflowRunEventProducer } from '@core/services/event-system/workflow-run-producer'
 import type {
   CreateWorkflowRunInput,
   UpdateWorkflowRunInput,
@@ -526,11 +527,23 @@ export class WorkflowRunService {
  * 引擎依赖装配：仓库 → 引擎端口适配 + 事件推送到前端（wf:run-event 单通道）。
  * ⚠️ 事件 emit 依赖 ALS userId（Web 端按用户路由）——引擎调用链已在
  * runWithUserAsync 内，语义成立。
+ *
+ * M1 起（10-event-system §9）：emit 经 producer 适配器派生平台事件
+ * （workflow.run.*，总线就绪时），由 ipc/ws 通道翻译回五型载荷推前端；
+ * 总线未就绪/发布失败回退下方存量直推（前端实时推送不断、不影响恢复）。
  */
 export function makeEngineDeps(
   runs: WorkflowRunRepository,
   nodeRuns: WorkflowNodeRunRepository
 ): WorkflowEngineDeps {
+  // 存量直推路径（总线未启动/平台事件发布失败时的兜底；语义与改动前一致）
+  const legacyEmit = (event: Parameters<WorkflowEventPort['emit']>[0]): void => {
+    try {
+      getEventEmitter().emit(WORKFLOW_RUN_EVENT_CHANNEL, event)
+    } catch (e) {
+      logger.warn('[WorkflowRunService] 事件推送失败（不影响执行）', e)
+    }
+  }
   return {
     runs: {
       patchRun: (runId, patch) =>
@@ -541,15 +554,7 @@ export function makeEngineDeps(
       patchNode: (runId, nodeId, iterationIndex, patch) =>
         nodeRuns.update(runId, nodeId, iterationIndex, patch).then(() => undefined),
     },
-    events: {
-      emit: event => {
-        try {
-          getEventEmitter().emit(WORKFLOW_RUN_EVENT_CHANNEL, event)
-        } catch (e) {
-          logger.warn('[WorkflowRunService] 事件推送失败（不影响执行）', e)
-        }
-      },
-    },
+    events: createWorkflowRunEventProducer(legacyEmit),
   }
 }
 

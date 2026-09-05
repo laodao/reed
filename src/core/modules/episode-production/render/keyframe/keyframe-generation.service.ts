@@ -269,21 +269,31 @@ export class KeyframeGenerationService {
     }
 
     const created: StoryboardKeyframe[] = []
-    for (const planItem of plan) {
-      const kf = await this.generateOneKeyframe({
-        storyboard: sb,
-        scene,
-        plan: planItem,
-        sceneAssets,
-        styleConfig,
-        userPrompt: input.userPrompt ?? null,
-        referenceOverrides: effectiveOverrides.length > 0 ? effectiveOverrides : null,
-      })
-      created.push(kf)
-      if (effectiveOverrides.length > 0) {
-        await this.keyframeRepo.update(kf.id, { referenceOverrides: effectiveOverrides })
+    try {
+      for (const planItem of plan) {
+        const kf = await this.generateOneKeyframe({
+          storyboard: sb,
+          scene,
+          plan: planItem,
+          sceneAssets,
+          styleConfig,
+          userPrompt: input.userPrompt ?? null,
+          referenceOverrides: effectiveOverrides.length > 0 ? effectiveOverrides : null,
+        })
+        created.push(kf)
+        if (effectiveOverrides.length > 0) {
+          await this.keyframeRepo.update(kf.id, { referenceOverrides: effectiveOverrides })
+        }
       }
+    } catch (e) {
+      // 失败写回 error 状态（与 video-segment 的失败写回一致）
+      await this.sbRepo.update(sb.id, { status: 'error', updatedAt: new Date() })
+      throw e
     }
+    // 全部关键帧生成成功 → 分镜状态置 image_ready（与单图路径
+    // handleGenerateStoryboardImage 的写回一致；此前本路径不写 status，
+    // 导致列表状态停留在"待生成"）
+    await this.sbRepo.update(sb.id, { status: 'image_ready', updatedAt: new Date() })
     return created
   }
 

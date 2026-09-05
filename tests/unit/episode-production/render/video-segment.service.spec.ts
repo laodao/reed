@@ -275,4 +275,32 @@ describe('VideoSegmentService', () => {
       svc.generateForStoryboard({ storyboardId: sbId, forceMode: 'image2video' }),
     ).rejects.toThrow(/至少一帧/)
   })
+
+  it('F5：生成成功写回 status=completed（此前只写 video_path，列表永远"待生成"）', async () => {
+    const { sbId } = await seedStoryboardWithKeyframes(ds, 1)
+    const adapter = makeAdapter(FULL_CAP)
+    const svc = new VideoSegmentService(ds, adapter)
+
+    await svc.generateForStoryboard({ storyboardId: sbId })
+
+    const sb = await ds.getRepository(StoryboardEntity).findOne({ where: { id: sbId } })
+    expect(sb?.videoPath).toBeTruthy()
+    expect(sb?.status).toBe('completed')
+  })
+
+  it('F5：adapter 调用失败写回 status=error 且继续抛错', async () => {
+    const { sbId } = await seedStoryboardWithKeyframes(ds, 0)
+    const adapter = makeAdapter(FULL_CAP, {
+      textToVideo: vi.fn(async () => {
+        throw new Error('provider boom')
+      }),
+    })
+    const svc = new VideoSegmentService(ds, adapter)
+
+    await expect(svc.generateForStoryboard({ storyboardId: sbId })).rejects.toThrow(/provider boom/)
+
+    const sb = await ds.getRepository(StoryboardEntity).findOne({ where: { id: sbId } })
+    expect(sb?.status).toBe('error')
+    expect(sb?.videoPath).toBeNull()
+  })
 })
