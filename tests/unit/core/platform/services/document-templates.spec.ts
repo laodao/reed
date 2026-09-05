@@ -100,7 +100,7 @@ describe('排版模板选项与内置应用一致性', () => {
   })
 
   it('内置应用 report-image 节点的 templateId 全部有效（动态模板表达式跳过，运行时按输入解析）', () => {
-    const dir = resolve(__dirname, '../../../../src/core/database/migrations/builtin-apps')
+    const dir = resolve(__dirname, '../../../../../src/core/database/migrations/builtin-apps')
     const files = readdirSync(dir).filter(f => f.endsWith('.json'))
     expect(files.length).toBeGreaterThan(0)
     for (const f of files) {
@@ -117,7 +117,7 @@ describe('排版模板选项与内置应用一致性', () => {
   })
 
   it('内置吃瓜工作流：风格由提示词驱动（无 template 下拉），report1 用通用排版 templateId 有效', () => {
-    const raw = JSON.parse(readFileSync(resolve(__dirname, '../../../../src/core/database/migrations/builtin-apps/gossip-event-report.json'), 'utf-8')) as { graph: WorkflowGraph }
+    const raw = JSON.parse(readFileSync(resolve(__dirname, '../../../../../src/core/database/migrations/builtin-apps/gossip-event-report.json'), 'utf-8')) as { graph: WorkflowGraph }
     const start = raw.graph.nodes.find(n => n.type === 'start')
     const inputs = (start?.config?.inputs as Array<{ key?: string; type?: string }>) ?? []
     // 通用化：风格走 stylePrompt 提示词，不再绑定预设视觉模板下拉

@@ -123,6 +123,7 @@ src/
 
 - **包内核**：`src/core/packs/`（registry / pack.service / kernel / ipc-guard）+ `src/renderer/src/packs/`（前端注册表与各包路由/菜单贡献）；共享契约 `src/shared/types/pack.types.ts`。
 - **内置业务包**（11 个）：skills、diary、portrait、chat、voice-design、longwriting、episode-production、workflow、app（依赖 workflow）、knowledge-base、asset-center。清单在 `src/core/packs/builtin-packs.ts`（后端）与 `src/renderer/src/packs/index.ts`（前端）。平台级 handler（settings/api-key/provider-config/data-path/image/file/translation/export/search-engine/tool/email/news-source/favicon/oss/datasource/event-admin/pack）按裁决留壳。
+- **平台层**（2026-09 三期落地）：`src/core/platform/` 收拢全部被多包/壳共用的实现——`platform/services/`（kb/image/voice/longwriting/event-system/vector 等 26 项）、`platform/workflow/`（引擎/节点/数据源/工具/技能/触发器）、`platform/episode-production/`、`platform/assets/`、`platform/providers/{llm,image,video,voice,search}`（五类 provider）。`src/core/modules/` 与 `src/core/services/` 已清零删除；包专属服务收在包内 `services/`（packs/app/services、packs/episode-production/services、packs/chat/services）。
 - **新业务的接入规则**：新增业务功能须以包形式接入——manifest 声明 `contributions.ipcChannelPrefixes`，handler 注册放包的 `activate()`，路由/菜单放前端包模块；**禁止**再向 `initIpcHandlers()` / `registerAllWebChannels()` / 路由表 / 菜单表平铺业务条目（那里只剩壳级平台功能）。
 - **跨包纪律**：包间依赖须在 manifest `dependencies` 显式声明（现状实例：episode-production → voice-design、app → workflow）；禁止产生新的跨包私有引用，共享能力下沉壳/公共层。
 - **启用/禁用**：禁用 = 前端入口消失 + IPC 守卫按前缀统一拦截（`PACK_DISABLED`）；本期服务实例不卸载、在途数据不动。
