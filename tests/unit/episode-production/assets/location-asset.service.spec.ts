@@ -16,6 +16,7 @@ import { DataSource } from 'typeorm'
 import { LocationBindingEntity } from '@core/database/entities/episode-production/location-binding.entity'
 import { LwLocationEntity } from '@core/database/entities/lw-location.entity'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
+import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
 import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
 import { LocationAssetService } from '@core/modules/episode-production/assets/services/location-asset.service'
 
@@ -23,7 +24,7 @@ async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({
     type: 'better-sqlite3',
     database: ':memory:',
-    entities: [LocationBindingEntity, LwLocationEntity, AssetImageEntity],
+    entities: [VideoProjectEntity, LocationBindingEntity, LwLocationEntity, AssetImageEntity],
     synchronize: true,
   })
   await ds.initialize()

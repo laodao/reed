@@ -78,6 +78,30 @@ export const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
     header: title => `<h1 style="margin-top:0">${escapeHtml(title)}</h1>`,
   },
 
+  /** 电商卖点卡（深蓝科技风：附件式单卖点图文卡——大标题 + 说明 + 卖点特效图 + 参数表） */
+  ecommerceSellpoint: {
+    id: 'ecommerceSellpoint',
+    name: '电商卖点卡',
+    width: 1080,
+    css: `
+      ${BASE_CSS}
+      :root { --accent:#f5a623; --accent-soft:rgba(245,166,35,.16); --line:rgba(255,255,255,.16); }
+      body { font-family:'PingFang SC','Microsoft YaHei',sans-serif; background:linear-gradient(165deg,#0e1a3a 0%,#17244e 46%,#0c142c 100%); color:#eef2ff; padding:46px 50px; font-size:16px; }
+      h1 { font-size:34px; line-height:1.24; color:#fff; font-weight:800; letter-spacing:1px; margin:0 0 16px; }
+      p { color:#c4cfea; font-size:16px; line-height:1.8; margin:8px 0; }
+      img { display:block; max-width:100%; margin:22px auto; border-radius:14px; box-shadow:0 12px 34px rgba(0,0,0,.42); }
+      table { border-collapse:collapse; width:100%; margin:18px 0 8px; }
+      th { background:rgba(255,255,255,.10); color:#fff; border:1px solid var(--line); padding:10px 20px; text-align:left; font-size:14px; font-weight:700; }
+      td { border:1px solid var(--line); color:#c4cfea; padding:10px 20px; font-size:14px; }
+      strong { color:var(--accent); }
+      ul { padding-left:1.1em; }
+      li { margin:6px 0; color:#c4cfea; }
+      blockquote { border-left:4px solid var(--accent); background:var(--accent-soft); color:#ffe9c6; padding:10px 16px; border-radius:0 10px 10px 0; margin:14px 0; }
+      em { color:#8ea4d6; font-style:normal; }
+    `,
+    header: title => `<h1>${escapeHtml(title)}</h1>`,
+  },
+
   /** 早报/简报长图（竖版卡片风） */
   morningReport: {
     id: 'morningReport',

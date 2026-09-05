@@ -194,7 +194,7 @@ export class GalleryDerivationService {
     }
     if (baseList.length === 0) {
       throw new Error(
-        `无法派生：${input.assetType}/${input.assetId} 没有可用基图`,
+        `无法派生：${input.assetType}/${input.assetId} 没有可用基图（主图未生成或已删除）`,
       )
     }
     // 基图必须是真实图片：imagePath='' 的占位行（仅承载待生成提示词）不能当参考，

@@ -71,4 +71,43 @@ describe('datasource pool-cache', () => {
     await closeAllPools()
     expect(destroy).toHaveBeenCalledTimes(2)
   })
+
+  describe('isConnectionClassError（评审 #25 后续：仅连接类失败才驱逐池）', () => {
+    it('连接/网络/认证类错误 → true（应驱逐池）', async () => {
+      const { isConnectionClassError } = await import('@core/modules/workflow/datasource/drivers/pool-cache')
+      const connErrors = [
+        { code: 'ECONNREFUSED', message: 'connect ECONNREFUSED 127.0.0.1:5432' },
+        { code: 'ETIMEDOUT', message: 'Connection timed out' },
+        { code: 'PROTOCOL_CONNECTION_LOST', message: 'Connection lost: The server closed the connection.' },
+        { message: 'socket hang up' },
+        { code: 'ER_ACCESS_DENIED_ERROR', message: "Access denied for user 'u'@'localhost'" },
+        { code: '28P01', message: 'password authentication failed for user "u"' },
+        { code: 'ELOGIN', message: 'Login failed for user.' },
+      ]
+      for (const e of connErrors) {
+        expect(isConnectionClassError(e)).toBe(true)
+      }
+    })
+
+    it('SQL 语法/约束/参数类错误 → false（应保留池）', async () => {
+      const { isConnectionClassError } = await import('@core/modules/workflow/datasource/drivers/pool-cache')
+      const queryErrors = [
+        { code: 'ER_PARSE_ERROR', message: "You have an error in your SQL syntax; check the manual..." },
+        { code: 'ER_DUP_ENTRY', message: "Duplicate entry 'x' for key 'PRIMARY'" },
+        { code: '42703', message: 'column "name" does not exist' },
+        { code: '23505', message: 'duplicate key value violates unique constraint "uq_run"' },
+        { code: '1064', message: 'syntax error near ...' },
+      ]
+      for (const e of queryErrors) {
+        expect(isConnectionClassError(e)).toBe(false)
+      }
+    })
+
+    it('空/无信息错误 → false（保守：非连接类）', async () => {
+      const { isConnectionClassError } = await import('@core/modules/workflow/datasource/drivers/pool-cache')
+      expect(isConnectionClassError(null)).toBe(false)
+      expect(isConnectionClassError({})).toBe(false)
+      expect(isConnectionClassError(undefined)).toBe(false)
+    })
+  })
 })

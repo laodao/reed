@@ -147,8 +147,8 @@
           </button>
         </div>
 
-        <!-- 文档列表 -->
-        <div v-show="activeDataTab === 'docs'" class="document-section">
+        <!-- 文档列表（三段式：头部操作区 / 表格滚动区 / 底部固定分页栏） -->
+        <div v-show="activeDataTab === 'docs'" class="docs-panel">
           <div class="section-header">
             <h3>文档列表</h3>
             <span class="doc-count">共 {{ documentCount }} 个文档</span>
@@ -157,18 +157,21 @@
                 <el-icon><Link /></el-icon>
                 添加网页
               </el-button>
-              <el-button size="small" type="primary" @click="selectAndUploadFiles">
+              <el-button size="small" type="primary" @click="handleUploadDocuments">
                 <el-icon><Upload /></el-icon>
                 上传文档
               </el-button>
             </div>
           </div>
 
+          <!-- 表格滚动区：列表内部滚动，分页栏固定在底部不随列表滚动 -->
+          <div class="docs-table-region" v-loading="isLoading">
           <el-table
-            :data="documents"
-            v-loading="isLoading"
+            :data="paginatedDocuments"
+            empty-text="暂无文档，点击右上角「上传文档」添加"
             style="width: 100%"
           >
+            <el-table-column type="index" label="序号" width="70" align="center" />
             <el-table-column prop="name" label="文件名" min-width="200">
               <template #default="{ row }">
                 <div class="doc-name">
@@ -262,6 +265,21 @@
               </template>
             </el-table-column>
           </el-table>
+          </div>
+
+          <!-- 底部固定分页栏：列表内部滚动时保持可见 -->
+          <div v-if="documents.length > 0" class="docs-pagination-bar">
+            <el-pagination
+              :current-page="docPage"
+              :page-size="docPageSize"
+              :page-sizes="[10, 20, 50, 100]"
+              :total="documents.length"
+              layout="total, sizes, prev, pager, next"
+              background
+              @current-change="handleDocCurrentChange"
+              @size-change="handleDocSizeChange"
+            />
+          </div>
         </div>
 
         <!-- D1 QA 问答对列表 -->
@@ -641,7 +659,6 @@ import {
   Upload,
   Document,
   Loading,
-  View,
   Link
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
@@ -661,9 +678,7 @@ const {
   hasCurrentKnowledgeBase,
   documentCount,
   embeddingModels,
-  hasEmbeddingModels,
   error,
-  documentEstimatedTimes,
 
   // 对话框
   showCreateDialog,
@@ -678,15 +693,14 @@ const {
 
   // 方法
   selectKnowledgeBase,
+  loadKnowledgeBases,
   createKnowledgeBase,
   updateKnowledgeBase,
   deleteKnowledgeBase,
   openCreateDialog,
-  openEditDialog,
   selectAndUploadFiles,
   deleteDocument,
   reprocessDocument,
-  getDocumentChunks,
   searchKnowledgeBase,
   clearSearchResults,
   selectEmbeddingModel,
@@ -829,6 +843,51 @@ function fileToBase64(file: File): Promise<string> {
 // 表单引用
 const createFormRef = ref<FormInstance>()
 const editFormRef = ref<FormInstance>()
+
+// ==================== 文档列表分页 ====================
+// 说明：store 持有当前知识库的完整文档列表（处理进度/状态事件按 id 在全量中回写），
+// 页面在真实全量数据上做切片分页；列表内部滚动，分页栏固定在底部。
+const docPage = ref(1)
+const docPageSize = ref(10)
+
+/** 当前页文档（切片自全量 documents，进度回写实时反映到当前页） */
+const paginatedDocuments = computed(() => {
+  const start = (docPage.value - 1) * docPageSize.value
+  return documents.value.slice(start, start + docPageSize.value)
+})
+
+/** 页码越界修正：删除文档后当前页可能超出总页数，回退到最后一页 */
+watch(
+  [docPageSize, () => documents.value.length],
+  () => {
+    const lastPage = Math.max(1, Math.ceil(documents.value.length / docPageSize.value))
+    if (docPage.value > lastPage) docPage.value = lastPage
+  },
+)
+
+/** 切换知识库后回到第一页（store 会重载全量文档列表） */
+watch(
+  () => currentKnowledgeBase.value?.id,
+  () => {
+    docPage.value = 1
+  },
+)
+
+/** 点击页码/上一页/下一页 */
+function handleDocCurrentChange(page: number): void {
+  docPage.value = page
+}
+
+/**
+ * 切换每页条数：保持当前视野首条仍可见（按变化前的页码换算新页码），
+ * 而不是粗暴回到第 1 页丢位置。
+ */
+function handleDocSizeChange(newSize: number): void {
+  const oldSize = docPageSize.value
+  const firstIndex = (docPage.value - 1) * oldSize + 1
+  docPageSize.value = newSize
+  docPage.value = Math.max(1, Math.ceil(firstIndex / newSize))
+}
 
 // 检索面板
 const openSearchPanel = ref(false)
@@ -1176,6 +1235,17 @@ async function viewChunkContent(chunk: KbChunk): Promise<void> {
 }
 
 /**
+ * 选择并上传文档（页面级包装）：上传成功后 store 会按仓库顺序（createdAt DESC）
+ * 重载全量列表，新文档排在列表头部，翻回第一页即可看到。
+ */
+async function handleUploadDocuments(): Promise<void> {
+  const uploaded = await selectAndUploadFiles()
+  if (uploaded && uploaded.length > 0) {
+    docPage.value = 1
+  }
+}
+
+/**
  * 添加网页
  */
 async function handleAddWebpage(): Promise<void> {
@@ -1207,8 +1277,9 @@ async function handleAddWebpage(): Promise<void> {
       ElMessage.success('网页添加成功，正在处理中...')
       showAddWebpageDialog.value = false
       webpageUrl.value = ''
-      // 刷新文档列表
-      documents.value = [...documents.value, response.data]
+      // 仓库按 createdAt DESC 排序，新网页是最新文档：插入头部并回第一页展示
+      documents.value = [response.data, ...documents.value]
+      docPage.value = 1
     } else {
       ElMessage.error(response.error || '添加网页失败')
     }
@@ -1490,11 +1561,42 @@ onMounted(() => {
   color: var(--el-color-primary);
 }
 
-/* 文档区域 */
+/* 文档数据面（QA tab 沿用上方 .document-section 的整体滚动） */
 .document-section {
   flex: 1;
   padding: 20px 24px;
   overflow: auto;
+}
+
+/* 文档列表三段式：头部操作区固定，表格区内部滚动，分页栏固定在底部 */
+.docs-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 24px 0;
+}
+
+.docs-panel .section-header {
+  flex: none;
+  margin-bottom: 12px;
+}
+
+.docs-table-region {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background-color: var(--el-bg-color);
+}
+
+/* 分页栏固定底部：不随列表内部滚动 */
+.docs-pagination-bar {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 0;
 }
 
 .section-header {

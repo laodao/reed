@@ -154,24 +154,42 @@
     <el-dialog v-model="groupDialogVisible" :title="groupDialogName" width="880px" append-to-body>
       <div class="group-gallery" v-loading="groupLoading">
         <template v-if="groupDetail">
-          <div class="gallery-head">
-            <span class="gallery-head-name">{{ groupDetail.group.name }}</span>
-            <el-tag size="small" type="primary" effect="plain">{{ groupDetail.members.length }} 张</el-tag>
-            <span v-if="groupDetail.group.subCategory" class="gallery-head-sub">📁 {{ groupDetail.group.subCategory }}</span>
-          </div>
-          <div class="gallery-grid">
-            <div v-for="m in groupDetail.members" :key="m.id" class="gallery-item" @click="openPreview(m)">
-              <img v-if="m.category === 'image' && previewUrl(m)" :src="previewUrl(m)" loading="lazy" alt="" />
-              <div v-else class="gallery-text">{{ m.category === 'text' ? (m.textContent ?? '').slice(0, 300) : m.name }}</div>
-              <div class="gallery-name">
-                <span class="gallery-name-text" :title="m.name">{{ m.name }}</span>
-                <el-tag v-if="m.groupRole === 'cover'" size="small" type="warning" effect="plain" class="gallery-role">封面</el-tag>
-                <el-button text circle size="small" class="gallery-dl" title="下载" @click.stop="handleDownload(m)">
+          <div v-if="groupImageItems.length" class="ecom-viewer">
+            <div class="ecom-main">
+              <el-image
+                :src="currentGroupUrl"
+                :zoom-rate="1.25"
+                :min-scale="0.2"
+                :max-scale="4"
+                fit="contain"
+                class="ecom-main-img"
+                :preview-src-list="groupImageList"
+                :initial-index="groupActive"
+                preview-teleported
+                hide-on-click-modal
+              />
+              <div class="ecom-bar">
+                <span class="ecom-count">{{ groupActive + 1 }} / {{ groupImageItems.length }}</span>
+                <el-button class="ecom-dl" text circle size="small" :disabled="!currentGroupUrl" @click="groupImageItems[groupActive] && handleDownload(groupImageItems[groupActive])" title="下载">
                   <el-icon><Download /></el-icon>
                 </el-button>
               </div>
             </div>
+            <div class="ecom-thumbs">
+              <div
+                v-for="(m, i) in groupImageItems"
+                :key="m.id"
+                class="ecom-thumb"
+                :class="{ active: i === groupActive }"
+                :title="m.name"
+                @click="groupActive = i"
+              >
+                <img :src="previewUrl(m)" loading="lazy" alt="" />
+                <span v-if="m.groupRole === 'cover'" class="ecom-thumb-badge">封面</span>
+              </div>
+            </div>
           </div>
+          <div v-else class="empty"><p>组内暂无图片</p></div>
         </template>
         <div v-else-if="!groupLoading" class="empty"><p>组内暂无资产</p></div>
       </div>
@@ -396,6 +414,19 @@ const groupDialogVisible = ref(false)
 const groupDialogName = ref('')
 const groupDetail = ref<{ group: any; members: AssetRecord[] } | null>(null)
 const groupLoading = ref(false)
+
+/** 电商式浏览：当前缩略图索引 + 图片图集（过滤 image 成员，供主图/缩略图切换） */
+const groupActive = ref(0)
+const groupImageItems = computed<AssetRecord[]>(() =>
+  (groupDetail.value?.members ?? []).filter(m => m.category === 'image' && previewUrl(m))
+)
+const currentGroupUrl = computed<string>(() => {
+  const it = groupImageItems.value[groupActive.value]
+  return it ? previewUrl(it) : ''
+})
+const groupImageList = computed<string[]>(() =>
+  groupImageItems.value.map(m => previewUrl(m)).filter((u): u is string => !!u)
+)
 
 /** 组内成员（按 groupId 聚合，用于组卡片） */
 interface DisplayItem {
@@ -673,6 +704,7 @@ async function loadSourceLinks(): Promise<void> {
 /** 组画廊：拉组详情（组 + 成员） */
 async function openGroupGallery(groupId: string): Promise<void> {
   groupDialogVisible.value = true
+  groupActive.value = 0
   groupLoading.value = true
   groupDetail.value = null
   try {
@@ -704,8 +736,8 @@ async function goSource(asset: AssetRecord): Promise<void> {
   }
 }
 
-/** 删除组（连带成员资产；内置跳过） */
-async function handleDeleteGroup(groupId: string): Promise<void> {
+/** 删除组（连带成员资产；内置跳过）。成员取自当前打开的 groupDetail，groupId 仅为语义占位 */
+async function handleDeleteGroup(_groupId: string): Promise<void> {
   const detail = groupDetail.value
   const members = detail?.members ?? []
   if (members.some(m => m.isBuiltin)) {
@@ -1189,11 +1221,47 @@ onMounted(load)
 .empty .hint { font-size: 12px; margin-top: 6px; max-width: 460px; margin-left: auto; margin-right: auto; }
 
 /* 套图画廊（组资产展开）：头部 + 网格卡片 */
-.group-gallery { max-height: 70vh; overflow-y: auto; padding: 2px 4px 8px; }
+.group-gallery { padding: 2px 0 8px; overflow: hidden; }
 .gallery-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--el-border-color-lighter); }
-.gallery-head-name { font-size: 16px; font-weight: 600; }
 .gallery-head-sub { font-size: 12px; color: var(--el-text-color-secondary); }
 .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+.gallery-head-count { font-size: 12px; color: var(--el-text-color-secondary); margin-left: auto; }
+
+/* 电商式套图浏览：主图大图 + 缩略图图集切换（详情页式） */
+.ecom-viewer { display: flex; flex-direction: column; gap: 12px; }
+.ecom-main {
+  height: 46vh; min-height: 260px;
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--el-fill-color-lighter); border-radius: 10px; overflow: hidden;
+}
+.ecom-main-img { width: 100%; height: 100%; cursor: zoom-in; }
+.ecom-main :deep(.el-image__inner) { width: 100% !important; height: 100% !important; object-fit: contain !important; }
+.ecom-bar {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 1;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 12px 8px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, .45));
+  pointer-events: none;
+}
+.ecom-bar .ecom-count, .ecom-bar .ecom-dl { pointer-events: auto; }
+.ecom-count { font-size: 12px; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .55); }
+.ecom-dl { color: #fff !important; }
+.ecom-dl :deep(.el-icon) { font-size: 16px; }
+.ecom-thumbs { display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px; }
+.ecom-thumb {
+  position: relative; flex: 0 0 auto; width: 72px; height: 72px;
+  border: 2px solid var(--el-border-color-lighter); border-radius: 8px; overflow: hidden; cursor: pointer;
+  transition: border-color .15s, transform .15s;
+}
+.ecom-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ecom-thumb.active { border-color: var(--el-color-primary); box-shadow: 0 0 0 2px var(--el-color-primary-light-7); }
+.ecom-thumb:hover { transform: translateY(-1px); }
+.ecom-thumb-badge {
+  position: absolute; left: 4px; top: 4px; z-index: 1;
+  font-size: 10px; line-height: 1; padding: 3px 6px; border-radius: 999px;
+  color: #fff; background: var(--el-color-warning);
+}
 .gallery-item {
   border: 1px solid var(--el-border-color-lighter); border-radius: 10px; overflow: hidden;
   background: var(--el-bg-color); cursor: zoom-in;
@@ -1201,7 +1269,7 @@ onMounted(load)
   display: flex; flex-direction: column;
 }
 .gallery-item:hover { border-color: var(--el-color-primary-light-5); box-shadow: 0 4px 14px rgba(0, 0, 0, .1); transform: translateY(-1px); }
-.gallery-item img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; background: var(--el-fill-color-lighter); }
+.gallery-item img { width: 100%; aspect-ratio: 1 / 1; object-fit: contain; display: block; background: var(--el-fill-color-lighter); }
 .gallery-text { padding: 12px 14px; font-size: 12px; color: var(--el-text-color-regular); min-height: 80px; overflow: hidden; }
 .gallery-name {
   display: flex; align-items: center; justify-content: space-between; gap: 6px;

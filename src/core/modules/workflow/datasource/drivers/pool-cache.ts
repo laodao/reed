@@ -104,3 +104,35 @@ export async function closeAllPools(): Promise<void> {
       .catch(() => undefined)
   }
 }
+
+/**
+ * 判断错误是否为"连接/网络/认证类"失败（而非 SQL 查询/逻辑错误）。
+ *
+ * 评审 #25 后续修正：此前驱动的 query 在 catch 里无条件 evictPooled，导致 SQL 语法/约束/
+ * 参数这类与连接状态无关的错误也会销毁共享池，可能打断同池其它并发在途查询。
+ * 只有连接类失败才应驱逐池（连接可能已死），查询层错误应保留池。
+ *
+ * 采用"限定短语 + 错误码"保守匹配：优先命中明确的连接/认证短语（避免普通列名/表名误伤），
+ * 匹配不到则按"非连接类"处理（最坏情况是坏池滞留到 TTL 清扫或下次被检测到的连接错误驱逐）。
+ */
+export function isConnectionClassError(e: any): boolean {
+  if (!e) return false
+  const msg = String(e?.message ?? '').toLowerCase()
+  const code = String(e?.code ?? '').toLowerCase()
+  const hay = `${code}\n${msg}`
+  const connPatterns = [
+    // 网络/系统层
+    /econnrefused|econnreset|econnaborted|etimedout|epipe|eai_again|enotfound|ehostunreach|eaddrnotavail/,
+    // 常见连接短语
+    /socket hang up|connection (refused|reset|lost|closed|terminated|timed out|pool is closed|failed)|server closed the connection|client connection (closed|terminated)|connect (econn|refused|timed out|reset)/,
+    // 认证/权限（限定短语，避免误伤普通列名）
+    /access denied for user|authentication (failed|error|method)|login failed|password authentication failed|invalid (password|username|secret)|is not allowed to connect|too many connections|no pg_hba\.conf entry|role\s+\S+\s+does not exist|database\s+\S+\s+does not exist/,
+    // DNS
+    /getaddrinfo|dns lookup|no such host/,
+    // 驱动错误码
+    /protocol_connection_lost|handshake_error|er_access_denied_error|er_con_count_error|er_bad_db_error|er_host_not_privileged|prelogin|esocket|elogin/,
+    // PG/SQLServer 典型状态码
+    /57p0[1235]|53300|28p01|0800[01346]|08006/,
+  ]
+  return connPatterns.some(re => re.test(hay))
+}

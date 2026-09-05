@@ -427,31 +427,42 @@ export class WorkflowRunService {
    * 条件迁移保证与「用户先取消/续跑」并发时安全（状态已变则 no-op）。
    */
   private armWaitingReviewTimeout(run: WorkflowRunRecord): void {
-    if (!run.timeoutAt) return
-    const delay = run.timeoutAt.getTime() - Date.now()
-    if (delay <= 0) return
+    const timeoutAt = run.timeoutAt
+    if (!timeoutAt) return
     if (this.reviewTimeoutTimers.has(run.id)) return
-    // setTimeout 延迟上限 2^31-1 ms（≈24.8 天），钳到上限内
-    const timer = setTimeout(() => {
-      this.reviewTimeoutTimers.delete(run.id)
-      void runWithUserAsync(run.userId ?? LOCAL_DEFAULT_USER_ID, async () => {
-        const moved = await this.deps.runs.transitionIfStatus(
-          run.id,
-          [WORKFLOW_RUN_STATUSES.waiting_review],
-          {
-            status: WORKFLOW_RUN_STATUSES.interrupted,
-            finishedAt: new Date(),
-            error: '审核等待已超时（应用重启后中断）',
+
+    // 自重挂定时器：setTimeout 上限为 2^31-1 ms（≈24.8 天），若死线仍远超上限，
+    // 到期后重挂而非钳到上限提前终态（评审 #35 后续修正）。
+    const arm = (): void => {
+      const remaining = timeoutAt.getTime() - Date.now()
+      if (remaining <= 0) {
+        // 真正到期才转 interrupted（条件迁移，与用户取消/续跑并发安全）
+        this.reviewTimeoutTimers.delete(run.id)
+        void runWithUserAsync(run.userId ?? LOCAL_DEFAULT_USER_ID, async () => {
+          const moved = await this.deps.runs.transitionIfStatus(
+            run.id,
+            [WORKFLOW_RUN_STATUSES.waiting_review],
+            {
+              status: WORKFLOW_RUN_STATUSES.interrupted,
+              finishedAt: new Date(),
+              error: '审核等待已超时（应用重启后中断）',
+            }
+          )
+          if (moved) {
+            logger.info(`[WorkflowRunService] 重启后挂起审核运行 ${run.id} 到期转 interrupted，互斥槽已释放`)
           }
-        )
-        if (moved) {
-          logger.info(`[WorkflowRunService] 重启后挂起审核运行 ${run.id} 到期转 interrupted，互斥槽已释放`)
-        }
-      }).catch(() => {})
-    }, Math.min(delay, 2_147_483_647))
-    // 定时器不阻止进程退出
-    ;(timer as { unref?: () => void }).unref?.()
-    this.reviewTimeoutTimers.set(run.id, timer)
+        }).catch(() => {})
+        return
+      }
+      // 死线未到：注册一个定时器（超过上限则先等一个上限周期，到期后由 arm 决定重挂或终态）
+      const capped = Math.min(remaining, 2_147_483_647)
+      const timer = setTimeout(arm, capped)
+      // 定时器不阻止进程退出
+      ;(timer as { unref?: () => void }).unref?.()
+      this.reviewTimeoutTimers.set(run.id, timer)
+    }
+
+    arm()
   }
 
   /**

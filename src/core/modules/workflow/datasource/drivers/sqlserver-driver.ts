@@ -8,7 +8,7 @@
 
 import sql from 'mssql'
 import { replaceDollarPlaceholders } from '../placeholder-utils'
-import { acquirePooled, evictPooled } from './pool-cache'
+import { acquirePooled, evictPooled, isConnectionClassError } from './pool-cache'
 import type {
   DataSourceConnectionParams,
   DataSourceDriverAdapter,
@@ -93,8 +93,10 @@ export class SqlServerDriverAdapter implements DataSourceDriverAdapter {
         durationMs: Date.now() - started,
       }
     } catch (e) {
-      // 池内连接可能已死：驱逐坏池，下次调用重建
-      await evictPooled('sqlserver', params)
+      // 仅连接/网络/认证类失败才驱逐池；SQL 语法/约束等查询层错误保留池（评审 #25 后续）
+      if (isConnectionClassError(e)) {
+        await evictPooled('sqlserver', params)
+      }
       throw e
     }
   }

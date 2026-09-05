@@ -39,7 +39,7 @@ afterAll(async () => {
 describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
   it('插入 19 个内置工作流（user_id NULL + is_builtin=1 + published v1）', async () => {
     const rows = await ds.query(`SELECT id, name, user_id, is_builtin, published_version, draft_graph, published_graph FROM workflow_definitions WHERE is_builtin = 1`)
-    expect(rows.length).toBe(19)
+    expect(rows.length).toBe(21)
     for (const r of rows) {
       expect(r.user_id).toBeNull()
       expect(r.is_builtin).toBe(1)
@@ -51,7 +51,7 @@ describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
 
   it('插入 19 个内置应用（user_id NULL + is_builtin=1 + 会话渠道开 + 启用）', async () => {
     const rows = await ds.query(`SELECT id, name, user_id, is_builtin, enabled, channel_session, channel_api, source_id FROM apps WHERE is_builtin = 1`)
-    expect(rows.length).toBe(19)
+    expect(rows.length).toBe(21)
     for (const r of rows) {
       expect(r.user_id).toBeNull()
       expect(r.is_builtin).toBe(1)
@@ -83,8 +83,8 @@ describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
     const defs = await ds.query(`SELECT count(*) c FROM workflow_definitions WHERE is_builtin = 1`)
     const apps = await ds.query(`SELECT count(*) c FROM apps WHERE is_builtin = 1`)
     const tpls = await ds.query(`SELECT count(*) c FROM assets WHERE is_builtin = 1`)
-    expect(defs[0].c).toBe(19)
-    expect(apps[0].c).toBe(19)
+    expect(defs[0].c).toBe(21)
+    expect(apps[0].c).toBe(21)
     expect(tpls[0].c).toBe(3)
   })
 
@@ -97,7 +97,7 @@ describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
 
   it('内置应用带分类与标签种子（视频文案提取 → 视频处理/视频,文案）', async () => {
     const rows = await ds.query(`SELECT id, category, tags FROM apps WHERE is_builtin = 1`)
-    expect(rows.length).toBe(18)
+    expect(rows.length).toBe(21)
     for (const r of rows) {
       expect(r.category).toBeTruthy()
       const tags = JSON.parse(r.tags)
@@ -118,7 +118,7 @@ describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
 
   it('内置定义写入 template_version=1（跟随模板）', async () => {
     const rows = await ds.query(`SELECT template_version FROM workflow_definitions WHERE is_builtin = 1`)
-    expect(rows.length).toBe(18)
+    expect(rows.length).toBe(21)
     for (const r of rows) expect(r.template_version).toBe(1)
   })
 
@@ -140,5 +140,41 @@ describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
       `SELECT template_version FROM workflow_definitions WHERE id = 'builtin_def_industry-weekly'`
     )
     expect(untouched[0].template_version).toBe(1)
+  })
+
+  it('吃瓜工作流支持多平台文章 + 多平台视频脚本（头条/视频平台循环）', async () => {
+    const rows = await ds.query(`SELECT draft_graph FROM workflow_definitions WHERE id = 'builtin_def_gossip-event-report'`)
+    const g = JSON.parse(rows[0].draft_graph)
+    const start = g.nodes.find(n => n.id === 'start')
+    const keys = start.config.inputs.map(i => i.key)
+    expect(keys).toContain('videoPlatforms')
+    const platforms = start.config.inputs.find(i => i.key === 'platforms')
+    expect(platforms.options.map(o => o.value)).toEqual(['微信公众号', '今日头条', '小红书', '微博', '通用'])
+    const vp = start.config.inputs.find(i => i.key === 'videoPlatforms')
+    expect(vp.options.map(o => o.value)).toEqual(['抖音', 'B站', '快手', '视频号', 'YouTube'])
+    const ids = g.nodes.map(n => n.id)
+    expect(ids).toEqual(expect.arrayContaining(['loop3', 'scriptN', 'saveScriptN']))
+    const copyN = g.nodes.find(n => n.id === 'copyN')
+    expect(copyN.config.systemPrompt).toContain('今日头条')
+    const scriptN = g.nodes.find(n => n.id === 'scriptN')
+    expect(scriptN.config.systemPrompt).toContain('{{loop3.item}}')
+    // 自媒体产出统一打「自媒体文案」tag
+    for (const sid of ['save1', 'saveImg1', 'saveCopyN', 'saveScript1', 'saveScriptN']) {
+      const sn = g.nodes.find(n => n.id === sid)
+      expect(sn.config.tags).toContain('自媒体文案')
+    }
+    // 背景介绍 + 5 分钟时长支持
+    const vd = start.config.inputs.find(i => i.key === 'videoDuration')
+    expect(vd.options.map(o => o.value)).toContain(300)
+    const analyze = g.nodes.find(n => n.id === 'analyze1')
+    expect(analyze.config.systemPrompt).toContain('background')
+    expect(analyze.config.prompt).toContain('background')
+    const gen = g.nodes.find(n => n.id === 'gen1')
+    expect(gen.config.systemPrompt).toContain('背景速览')
+    for (const sid of ['script1', 'scriptN']) {
+      const s = g.nodes.find(n => n.id === sid)
+      expect(s.config.systemPrompt).toContain('背景铺垫')
+      expect(s.config.systemPrompt).toContain('时长秒数×4')
+    }
   })
 })

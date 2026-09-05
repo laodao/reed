@@ -10,13 +10,13 @@ import * as fs from 'fs'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
+import { detectImageFormat } from '@core/utils/image-format'
 import { PROVIDER_TEMPLATES } from '@core/services/provider-template.service'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { toAssetUrl } from '@core/utils/asset-path'
 import {
   createImageProvider,
   getProviderDefinition,
-  IMAGE_PROVIDER_DEFINITIONS,
   isProviderImplemented
 } from '@core/image-providers'
 import { getModelCapabilities } from '@core/image-providers/model-capabilities'
@@ -264,7 +264,6 @@ export class ImageService {
 
         // 为每个图像创建记录
         for (let i = 0; i < response.images.length; i++) {
-          const imageInfo = response.images[i]
           const imageRecord = await dbManager.images.create({
             prompt: request.prompt,
             negativePrompt: request.negativePrompt,
@@ -526,7 +525,8 @@ export class ImageService {
         }
 
         // 生成文件名
-        const fileName = `${imageId}.png`
+        // 生成文件名（按字节格式定扩展名，修复 JPEG/WebP 字节被存成 .png 的问题）
+        const fileName = `${imageId}.${detectImageFormat(buffer).ext}`
         const filePath = path.join(imagesDir, fileName)
 
         // 保存文件
@@ -542,7 +542,7 @@ export class ImageService {
           filePath: relativePath,
           fileName: fileName,
           fileSize: buffer.length,
-          mimeType: 'image/png',
+          mimeType: detectImageFormat(buffer).mime,
           status: 'completed'
         })
 
@@ -662,7 +662,8 @@ export class ImageService {
         }
 
         // 生成文件名
-        const fileName = `${imageId}.png`
+        // 生成文件名（按字节格式定扩展名，修复 JPEG/WebP 字节被存成 .png 的问题）
+        const fileName = `${imageId}.${detectImageFormat(buffer).ext}`
         const filePath = path.join(imagesDir, fileName)
 
         // 保存文件

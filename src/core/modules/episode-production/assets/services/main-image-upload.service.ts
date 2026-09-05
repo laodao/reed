@@ -83,7 +83,9 @@ export class MainImageUploadService {
    * 1) 体积校验（防止 20MB+ 滥用）
    * 2) sharp 探测 format / width / height
    * 3) format 白名单（jpeg/png/webp）
-   * 4) 写入 dataPath/asset-images/{assetType}-{assetId}-main-{timestamp}.{ext}
+   * 4) 写入 dataPath/asset-images/{assetType}-{assetId}-{timestamp}-{rand}.{ext}
+   *    （rand 为 8 位 hex：带资产归属前缀 + 随机后缀，避免 `-main-{ts}` 丢失归属、
+   *    也避免同毫秒并发上传互相覆盖）
    * 5) 旧主图 isMain 置 0（通过 AssetImageService.setAsMain 自动处理）
    * 6) 新行写入 isMain=1, category='main'
    */

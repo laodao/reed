@@ -16,14 +16,11 @@ import { getPathProvider } from '@core/interfaces/path.interface'
 import { toAssetUrl } from '@core/utils/asset-path'
 import {
   createVideoProvider,
-  getProviderDefinition,
-  VIDEO_PROVIDER_DEFINITIONS,
   isProviderImplemented
 } from '@core/video-providers'
 import type { BaseVideoProvider } from '@core/video-providers'
 import type {
   VideoProvider,
-  VideoModel,
   VideoGenerationRequest,
   VideoGenerationResponse,
   VideoTaskStatus,
@@ -300,12 +297,10 @@ export class VideoGenerationService {
    */
   private static async saveVideoFromUrl(
     videoUrl: string,
-    modelId: string
+    _modelId: string
   ): Promise<string | null> {
     try {
-      // @ts-expect-error DataPathService 原文件中未 import，此处保留原有行为
-      const dataPathService = DataPathService.getInstance()
-      const userDataPath = dataPathService.getDataPath()
+      const userDataPath = getPathProvider().getDataPath()
       const now = new Date()
       const year = now.getFullYear()
       const month = String(now.getMonth() + 1).padStart(2, '0')
