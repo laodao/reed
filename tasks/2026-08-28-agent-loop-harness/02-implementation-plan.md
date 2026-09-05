@@ -39,12 +39,12 @@
    - handler 契约加可选 `resume(decision, state)`；`applyReviewDecision` 优先回调，未声明维持旧语义。
    - 修订 handler 契约注释（禁存"仅内存"跨调用状态）。
 3. **AI SDK v6 接入（2026-09-06 修订：替代原"tool-calling 协议层第一批"自研方案）**
-   - 依赖钉版本：`ai@^6.0.277` + `@ai-sdk/openai-compatible@^2` + `@openharness/core@^0.7` + `zod@^4`（overrides 锁 ai@6，CI 单版本断言）。
+   - 依赖钉版本：`ai@^6.0.277` + `@ai-sdk/openai-compatible@^2` + `zod@^4`（overrides 锁 ai@6，CI 单版本断言）；压缩/重试形状/todos 走 vendor（22 号 §4），**不依赖** @openharness/core。
    - provider-adapter：getProviderConfig → createOpenAICompatible → LanguageModel（LRU 缓存、SSRF 沿用、结构化日志）。
    - 契约保留项照 13 号修订：能力标记（model-detector）、prompt 降级（ai@6 middleware）、`agent_llm_calls` 审计表。
    - 骨架迁移：`git mv src/core/agent platform/agent-runtime`（13 文件已在 be56607f）。
-4. **agent-loop 节点最小版（spec §7，2026-09-06 修订：循环载体=open-harness Session）**
-   - 主循环经 ai@6 Agent + Session（stopWhen/prepareStep/approve），AgentHost 契约照 12 号修订 R1/R2。
+4. **agent-loop 节点最小版（spec §7，2026-09-06 v2 修订：循环载体=ai@6 单步手动循环，见 22 号审计）**
+   - 主循环自研（不传 stopWhen=恰好一步；response.messages 步末拼接；步级 host.saveState），AgentHost 契约照 12 号 R2/R4b。
    - 工具白名单：首批只接入 llm 无关的安全工具子集（http-request、web-search、code、data-table 内置模式）。
    - 护栏：maxIterations（默认 20）/ maxToolCalls / maxDurationMs。
    - catalog/types/handler/forms 四件套 + 一致性单测。
@@ -61,7 +61,7 @@
 ### 风险
 
 - 引擎恢复路径改动是本批唯一侵入性改动——必须有"旧格式 run（无事件日志）重启"的兼容测试（降级为现有 interrupted 语义）。
-- OpenAI 兼容系各家流式 tool_call 增量格式有差异，需逐家冒烟。
+- （v2 更新）协议差异由 @ai-sdk/openai-compatible 承担，残余风险为个别国产端点兼容性：M1 用 GLM/DashScope 各跑一轮冒烟。
 
 ---
 
