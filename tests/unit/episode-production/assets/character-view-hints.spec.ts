@@ -10,7 +10,7 @@ import { describe, it, expect } from 'vitest'
 import {
   CHARACTER_VIEW_HINTS,
   viewHintForLabel,
-} from '@core/modules/episode-production/assets/prompts/character-view-hints'
+} from '@core/platform/episode-production/assets/prompts/character-view-hints'
 
 describe('character-view-hints · 角色图集 slot 语义', () => {
   it('main → 正面全身（fullBody）', () => {

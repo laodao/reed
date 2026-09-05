@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { normalizeShotNumbers } from '@core/modules/episode-production/narrative/services/storyboard.service'
+import { normalizeShotNumbers } from '@core/platform/episode-production/narrative/services/storyboard.service'
 
 describe('normalizeShotNumbers', () => {
   it('跳号输入（2/3/5）→ 重排为 1/2/3，保持数组顺序', () => {

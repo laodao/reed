@@ -5,9 +5,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DataSource } from 'typeorm'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
-import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
-import { MainImageGeneratorService } from '@core/modules/episode-production/assets/services/main-image-generator.service'
-import type { ImageGenerator } from '@core/modules/episode-production/assets/services/gallery-derivation.service'
+import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
+import { MainImageGeneratorService } from '@core/platform/episode-production/assets/services/main-image-generator.service'
+import type { ImageGenerator } from '@core/platform/episode-production/assets/services/gallery-derivation.service'
 
 interface ImageGenCall {
   prompt: string

@@ -17,7 +17,7 @@ import {
   buildKeyframePrompt,
   PRESET_STYLES,
   type BuildKeyframePromptInput,
-} from '@core/modules/episode-production/render/keyframe/keyframe-prompt-builder'
+} from '@core/platform/episode-production/render/keyframe/keyframe-prompt-builder'
 
 const STYLE = PRESET_STYLES.cinematic
 

@@ -14,7 +14,7 @@ import { DataSource } from 'typeorm'
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
 import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
 import { EpVideoSegmentEntity } from '@core/database/entities/episode-production/video-segment.entity'
-import { TimelineBuilderService } from '@core/modules/episode-production/compose/timeline-builder.service'
+import { TimelineBuilderService } from '@core/platform/episode-production/compose/timeline-builder.service'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({

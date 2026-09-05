@@ -1,6 +1,6 @@
 /**
  * 视频 Provider SDK 导出
- * @module video-providers/sdk
+ * @module platform/providers/video/sdk
  */
 
 export { VolcengineVideoProvider } from './volcengine-video.provider'

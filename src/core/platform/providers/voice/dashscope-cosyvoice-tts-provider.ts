@@ -1,6 +1,6 @@
 /**
  * DashScope CosyVoice TTS Provider
- * @module voice-providers/dashscope-cosyvoice-tts-provider
+ * @module platform/providers/voice/dashscope-cosyvoice-tts-provider
  *
  * 用于合成使用自定义音色（复刻/设计）的语音。
  * 与 DashScopeTTSProvider 不同，本 Provider：

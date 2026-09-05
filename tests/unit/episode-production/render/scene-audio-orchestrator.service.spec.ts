@@ -22,9 +22,9 @@ import { LwCharacterEntity } from '@core/database/entities/lw-character.entity'
 import { LwLocationEntity } from '@core/database/entities/lw-location.entity'
 import { LwItemEntity } from '@core/database/entities/lw-item.entity'
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
-import { SceneAudioOrchestratorService } from '@core/modules/episode-production/render/audio/scene-audio-orchestrator.service'
-import { NarrationSynthesisService } from '@core/modules/episode-production/render/audio/narration-synthesis.service'
-import { VoiceService } from '@core/services/voice.service'
+import { SceneAudioOrchestratorService } from '@core/platform/episode-production/render/audio/scene-audio-orchestrator.service'
+import { NarrationSynthesisService } from '@core/platform/episode-production/render/audio/narration-synthesis.service'
+import { VoiceService } from '@core/platform/services/voice.service'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({

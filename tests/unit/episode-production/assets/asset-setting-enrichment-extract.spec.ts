@@ -18,7 +18,7 @@ import { LocationBindingEntity } from '@core/database/entities/episode-productio
 import { ItemBindingEntity } from '@core/database/entities/episode-production/item-binding.entity'
 import { EpisodeScriptEntity } from '@core/database/entities/episode-production/episode-script.entity'
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
-import { AssetSettingEnrichmentService } from '@core/modules/episode-production/assets/services/asset-setting-enrichment.service'
+import { AssetSettingEnrichmentService } from '@core/platform/episode-production/assets/services/asset-setting-enrichment.service'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({

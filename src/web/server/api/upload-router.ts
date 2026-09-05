@@ -19,17 +19,17 @@ import multer from 'multer'
 import { runWithUserAsync } from '@core/context/user-context'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getPathProvider } from '@core/interfaces/path.interface'
-import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
-import { PanoramaGeneratorService } from '@core/modules/episode-production/assets/services/panorama-generator.service'
+import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
+import { PanoramaGeneratorService } from '@core/platform/episode-production/assets/services/panorama-generator.service'
 import {
   PanoramaUploadService,
   PanoramaUploadValidationError,
-} from '@core/modules/episode-production/assets/services/panorama-upload.service'
+} from '@core/platform/episode-production/assets/services/panorama-upload.service'
 import {
   MainImageUploadService,
   MainImageUploadValidationError,
-} from '@core/modules/episode-production/assets/services/main-image-upload.service'
-import { createPanoramaImageGenerator } from '@core/modules/episode-production/assets/services/image-provider-adapter'
+} from '@core/platform/episode-production/assets/services/main-image-upload.service'
+import { createPanoramaImageGenerator } from '@core/platform/episode-production/assets/services/image-provider-adapter'
 import { requireAuth } from '../auth/middleware'
 
 const router = Router()

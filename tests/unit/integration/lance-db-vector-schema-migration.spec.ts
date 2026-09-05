@@ -11,7 +11,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import * as lancedb from '@lancedb/lancedb'
-import { LanceDBService } from '@core/services/lance-db.service'
+import { LanceDBService } from '@core/platform/services/lance-db.service'
 
 let tmpDir: string
 

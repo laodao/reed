@@ -6,7 +6,7 @@
  */
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
-import { getFaviconService } from '@core/services/favicon.service'
+import { getFaviconService } from '@core/platform/services/favicon.service'
 import type { IpcResponse } from '@shared/types/ipc.types'
 
 export function registerFaviconHandlers(): void {

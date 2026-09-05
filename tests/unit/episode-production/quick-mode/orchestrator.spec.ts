@@ -10,7 +10,7 @@ import {
   type QuickModeStep,
   type QuickModeInput,
   type QuickModeStepName,
-} from '@core/modules/episode-production/quick-mode/orchestrator.service'
+} from '@core/platform/episode-production/quick-mode/orchestrator.service'
 
 const baseInput: QuickModeInput = {
   userPrompt: '少年阿白的成长',

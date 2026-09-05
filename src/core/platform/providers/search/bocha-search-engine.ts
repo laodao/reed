@@ -1,6 +1,6 @@
 /**
  * 博查 AI 搜索（Bocha）引擎
- * @module search-engines/bocha-search-engine
+ * @module platform/providers/search/bocha-search-engine
  * @description 博查（Bocha AI Search，https://open.bochaai.com）联网搜索 API：
  *              POST https://api.bochaai.com/v1/web-search
  *              - Header：Authorization: Bearer <API Key>

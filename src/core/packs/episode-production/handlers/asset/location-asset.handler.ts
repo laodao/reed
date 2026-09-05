@@ -17,8 +17,8 @@ import {
   type LocationStandalonePatch,
   type LocationExtraPatch,
   type PickVariantInput,
-} from '@core/modules/episode-production/assets/services/location-asset.service'
-import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
+} from '@core/platform/episode-production/assets/services/location-asset.service'
+import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
 
 export function registerLocationAssetHandlers(): void {
   // ==================== V2 地点绑定（保留：老 UI 在用） ====================

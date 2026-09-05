@@ -1,6 +1,6 @@
 /**
  * 阿里云百炼视频生成 Provider
- * @module video-providers/sdk/bailian-video-provider
+ * @module platform/providers/video/sdk/bailian-video-provider
  * @description 使用阿里云百炼 API 实现视频生成
  */
 
@@ -13,7 +13,7 @@ import type {
   VideoTaskStatus
 } from '@shared/types/video-provider.types'
 import { BaseVideoProvider } from '../base-video-provider'
-import { OSSService } from '@core/services/oss.service'
+import { OSSService } from '@core/platform/services/oss.service'
 
 
 /**

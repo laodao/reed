@@ -1,6 +1,6 @@
 /**
  * Google Custom Search JSON API 引擎
- * @module search-engines/google-cse-search-engine
+ * @module platform/providers/search/google-cse-search-engine
  * @description Google Custom Search JSON API：
  *              GET https://www.googleapis.com/customsearch/v1?key=<key>&cx=<cx>&q=<query>&num=<n>
  *              - API Key 走 query 参数；cx（Search Engine ID）为必填额外配置

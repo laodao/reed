@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildProjectSummary,
   episodeProgressPct,
-} from '../../../src/core/modules/episode-production/workflow/project-summary'
+} from '../../../src/core/platform/episode-production/workflow/project-summary'
 import type {
   EpisodeStatus,
   VideoEpisode,

@@ -12,7 +12,7 @@ import {
   visualMarkOfStage,
   ALL_EPISODE_STATUSES,
   STAGE_LABELS,
-} from '@core/modules/episode-production/workflow/episode-status.machine'
+} from '@core/platform/episode-production/workflow/episode-status.machine'
 
 describe('classifyTransition', () => {
   it('forward / backward / same', () => {

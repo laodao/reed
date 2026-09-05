@@ -3,7 +3,7 @@ import {
   characterConstraintSuffix,
   characterConstraintNegative,
   framingForCategory,
-} from '@core/modules/episode-production/assets/prompts/character-constraints'
+} from '@core/platform/episode-production/assets/prompts/character-constraints'
 
 describe('character-constraints · framing 语义', () => {
   it('fullBody → 直立全身 + 纯白背景（主图/派生图基准）', () => {

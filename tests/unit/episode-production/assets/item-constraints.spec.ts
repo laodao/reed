@@ -11,7 +11,7 @@ import {
   mergeItemIdentityNegative,
   appendItemConstraints,
   mergeItemNegative,
-} from '@core/modules/episode-production/assets/prompts/item-constraints'
+} from '@core/platform/episode-production/assets/prompts/item-constraints'
 
 describe('item-constraints · 主图硬约束（白背景 + 产品视角锚点）', () => {
   it('主图约束含纯白背景（非含糊纯色）', () => {

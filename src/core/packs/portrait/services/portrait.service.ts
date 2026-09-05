@@ -10,7 +10,7 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { toAssetUrl, resolveAssetPath } from '@core/utils/asset-path'
-import { ImageService } from '@core/services/image.service'
+import { ImageService } from '@core/platform/services/image.service'
 import type {
   PortraitProject,
   PortraitCharacter,

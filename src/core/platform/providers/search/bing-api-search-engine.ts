@@ -1,6 +1,6 @@
 /**
  * 必应 Web Search API 引擎
- * @module search-engines/bing-api-search-engine
+ * @module platform/providers/search/bing-api-search-engine
  * @description 微软必应 Web Search API（Azure Cognitive Services v7）：
  *              GET https://api.bing.microsoft.com/v7.0/search?q=<query>&count=<n>
  *              - Header：Ocp-Apim-Subscription-Key: <API Key>

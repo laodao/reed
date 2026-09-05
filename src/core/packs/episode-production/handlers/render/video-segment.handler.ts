@@ -27,14 +27,14 @@ import type { VideoProviderType } from '@shared/types/video-provider.types'
 import {
   VideoSegmentService,
   type GenerateVideoSegmentInput,
-} from '@core/modules/episode-production/render/video/video-segment.service'
+} from '@core/platform/episode-production/render/video/video-segment.service'
 import type {
   VideoMode,
   VideoProviderAdapter,
   VideoProviderCapabilities,
-} from '@core/modules/episode-production/render/video/video-provider-adapter'
-import { adaptBaseVideoProvider } from '@core/modules/episode-production/render/video/base-video-provider-bridge'
-import { getProviderConfig } from '@core/modules/episode-production/narrative/ai/_helpers'
+} from '@core/platform/episode-production/render/video/video-provider-adapter'
+import { adaptBaseVideoProvider } from '@core/platform/episode-production/render/video/base-video-provider-bridge'
+import { getProviderConfig } from '@core/platform/episode-production/narrative/ai/_helpers'
 
 export function registerVideoSegmentHandlers(): void {
   ipcBridge.handle('ep:list-video-providers', handleListVideoProviders)

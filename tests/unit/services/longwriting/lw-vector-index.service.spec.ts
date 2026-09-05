@@ -9,10 +9,10 @@ import type {
   IVectorStore,
   VectorRecord,
   VectorMetadataSearchResult,
-} from '@core/services/vector/vector-store.interface'
+} from '@core/platform/services/vector/vector-store.interface'
 
 // mock getVectorStore / getCoreDatabaseManager / KnowledgeBaseService
-vi.mock('@core/services/vector/vector-store.interface', async (orig) => {
+vi.mock('@core/platform/services/vector/vector-store.interface', async (orig) => {
   const actual: any = await orig()
   return {
     ...actual,
@@ -24,16 +24,16 @@ vi.mock('@core/database/database-manager.interface', () => ({
   getCoreDatabaseManager: vi.fn(),
 }))
 
-vi.mock('@core/services/knowledge-base.service', () => ({
+vi.mock('@core/platform/services/knowledge-base.service', () => ({
   KnowledgeBaseService: vi.fn().mockImplementation(() => ({
     getEmbeddingVectors: vi.fn(),
   })),
 }))
 
-import { LwVectorIndexService } from '@core/services/longwriting/lw-vector-index.service'
-import { getVectorStore } from '@core/services/vector/vector-store.interface'
+import { LwVectorIndexService } from '@core/platform/services/longwriting/lw-vector-index.service'
+import { getVectorStore } from '@core/platform/services/vector/vector-store.interface'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
-import { KnowledgeBaseService } from '@core/services/knowledge-base.service'
+import { KnowledgeBaseService } from '@core/platform/services/knowledge-base.service'
 
 function makeMockStore(): { store: any; calls: any } {
   const calls: any = { inserts: [], insertBatch: [], deletedByChunkIds: [], searchByMetadata: [], deletedByMetadata: [] }

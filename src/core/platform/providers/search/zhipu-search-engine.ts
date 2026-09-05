@@ -1,6 +1,6 @@
 /**
  * 智谱 AI 搜索引擎
- * @module search-engines/zhipu-search-engine
+ * @module platform/providers/search/zhipu-search-engine
  * @description 通过智谱 AI API 实现联网搜索
  */
 

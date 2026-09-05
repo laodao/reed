@@ -1,6 +1,6 @@
 /**
  * DashScope CosyVoice 声音设计 Provider
- * @module voice-providers/dashscope-voice-design-provider
+ * @module platform/providers/voice/dashscope-voice-design-provider
  *
  * 调阿里云百炼 voice-enrollment 接口实现声音设计（通过文本描述创建音色）：
  *   - create_voice  创建设计音色（使用 voice_prompt 而非音频样本）

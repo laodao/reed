@@ -15,8 +15,8 @@ import { CharacterBindingEntity } from '@core/database/entities/episode-producti
 import { LocationBindingEntity } from '@core/database/entities/episode-production/location-binding.entity'
 import { ItemBindingEntity } from '@core/database/entities/episode-production/item-binding.entity'
 import { LwCharacterEntity } from '@core/database/entities/lw-character.entity'
-import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
-import { GalleryDerivationService, type ImageGenerator } from '@core/modules/episode-production/assets/services/gallery-derivation.service'
+import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
+import { GalleryDerivationService, type ImageGenerator } from '@core/platform/episode-production/assets/services/gallery-derivation.service'
 
 class MockGen implements ImageGenerator {
   calls: Array<{ prompt: string; negativePrompt?: string; label: string; refs: string[] }> = []

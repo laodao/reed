@@ -15,7 +15,7 @@ import { ItemBindingEntity } from '@core/database/entities/episode-production/it
 import { LwCharacterEntity } from '@core/database/entities/lw-character.entity'
 import { LwLocationEntity } from '@core/database/entities/lw-location.entity'
 import { LwItemEntity } from '@core/database/entities/lw-item.entity'
-import { AssetProjectSummaryService } from '@core/modules/episode-production/assets/services/asset-project-summary.service'
+import { AssetProjectSummaryService } from '@core/platform/episode-production/assets/services/asset-project-summary.service'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({

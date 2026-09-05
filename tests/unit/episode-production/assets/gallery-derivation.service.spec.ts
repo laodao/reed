@@ -16,11 +16,11 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { DataSource } from 'typeorm'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
-import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
+import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
 import {
   GalleryDerivationService,
   type ImageGenerator,
-} from '@core/modules/episode-production/assets/services/gallery-derivation.service'
+} from '@core/platform/episode-production/assets/services/gallery-derivation.service'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({

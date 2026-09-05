@@ -10,10 +10,10 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type { UpdateVideoEpisodeData, EpAiGenerateTextRequest, EpBatchCreateEpisodesRequest, EpBatchIdentifyEntitiesRequest } from '@shared/types/episode-production'
 import { StoryToVideoAIService } from '@core/packs/episode-production/services/story-to-video-ai.service'
-import { generateStoryText } from '@core/modules/episode-production/narrative/ai/story-text-generator'
-import { EpisodeAutoBindingService } from '@core/modules/episode-production/auto-binding/episode-auto-binding.service'
-import { UploadedEntityService } from '@core/modules/episode-production/auto-binding/uploaded-entity.service'
-import { analyzeScriptToEpisodes } from '@core/modules/episode-production/narrative/services/script-splitter.service'
+import { generateStoryText } from '@core/platform/episode-production/narrative/ai/story-text-generator'
+import { EpisodeAutoBindingService } from '@core/platform/episode-production/auto-binding/episode-auto-binding.service'
+import { UploadedEntityService } from '@core/platform/episode-production/auto-binding/uploaded-entity.service'
+import { analyzeScriptToEpisodes } from '@core/platform/episode-production/narrative/services/script-splitter.service'
 import { extractTextFromFile, inferFileType } from '@core/utils/extract-text'
 
 const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron

@@ -14,8 +14,8 @@ import type { AssetImageEntity } from '@core/database/entities/episode-productio
 import {
   appendCharacterConstraints,
   mergeCharacterNegative,
-} from '@core/modules/episode-production/assets/prompts/character-constraints'
-import { buildAssetIdentityPrompt, appendEraConstraint } from '@core/modules/episode-production/assets/prompts/asset-identity-prompt'
+} from '@core/platform/episode-production/assets/prompts/character-constraints'
+import { buildAssetIdentityPrompt, appendEraConstraint } from '@core/platform/episode-production/assets/prompts/asset-identity-prompt'
 import { useEpEpisodeStore } from '@/stores/episode-production'
 
 type AssetType = 'character' | 'location' | 'item'

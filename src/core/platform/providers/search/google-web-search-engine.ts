@@ -1,6 +1,6 @@
 /**
  * Google 搜索引擎（网页抓取）
- * @module search-engines/google-web-search-engine
+ * @module platform/providers/search/google-web-search-engine
  * @description 通过网页抓取实现 Google 搜索
  */
 

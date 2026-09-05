@@ -5,7 +5,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import ecommerceDetailRaw from '../../../src/core/database/migrations/builtin-apps/ecommerce-detail-long-image.json'
-import { validateGraph } from '@core/modules/workflow/engine/graph-validator'
+import { validateGraph } from '@core/platform/workflow/engine/graph-validator'
 import type { WorkflowGraph } from '@shared/types/workflow.types'
 
 type Node = { id: string; type: string; name: string; config: Record<string, unknown> }

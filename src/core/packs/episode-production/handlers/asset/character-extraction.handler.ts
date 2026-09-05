@@ -15,7 +15,7 @@ import { getPathProvider } from '@core/interfaces/path.interface'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getCurrentUserId } from '@core/context/user-context'
 import type { IpcResponse } from '@shared/types/ipc.types'
-import { CharacterExtractionService } from '@core/modules/episode-production/reference-video/character-extraction.service'
+import { CharacterExtractionService } from '@core/platform/episode-production/reference-video/character-extraction.service'
 
 export function registerCharacterExtractionHandlers(): void {
   ipcBridge.handle('ep:asset:character-extract:frames', handleExtractFrames)

@@ -6,7 +6,7 @@
  */
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
-import { getToolService } from '@core/modules/workflow/tools/tool-registry'
+import { getToolService } from '@core/platform/workflow/tools/tool-registry'
 import type { IpcResponse } from '@shared/types/ipc.types'
 
 function svc() {

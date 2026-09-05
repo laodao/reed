@@ -4,4 +4,4 @@
  *             此文件保留为兼容 facade，转发所有导出。
  */
 
-export { VideoGenerationService as VideoService } from '@core/modules/episode-production/render/video/video-generation.service'
+export { VideoGenerationService as VideoService } from '@core/platform/episode-production/render/video/video-generation.service'

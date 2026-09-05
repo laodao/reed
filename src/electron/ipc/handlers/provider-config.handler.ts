@@ -11,7 +11,7 @@ import { getSecureStorage } from '@core/interfaces/storage.interface'
 import {
   providerTemplateService,
   PROVIDER_TEMPLATES
-} from '@core/services/provider-template.service'
+} from '@core/platform/services/provider-template.service'
 import type {
   ProviderTemplateListResponse,
   ProviderConfigListResponse,

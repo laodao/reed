@@ -28,9 +28,9 @@
  * - 本目录**禁止 import 业务模块**（longwriting/episode-production/...）；
  *   业务以 `AgentDefinition`（见 types.ts）声明式接入，定义文件放在各自业务目录。
  * - 业务定义文件位置：
- *   - 长文写作：`src/core/services/longwriting/agent/definition.ts`（M1 迁移时创建）
- *   - EP：`src/core/modules/episode-production/agent/definition.ts`（M2）
- *   - 故事研讨室：`src/core/services/longwriting/story-room/`（M4）
+ *   - 长文写作：`src/core/platform/services/longwriting/agent/definition.ts`（M1 迁移时创建）
+ *   - EP：`src/core/platform/episode-production/agent/definition.ts`（M2）
+ *   - 故事研讨室：`src/core/platform/services/longwriting/story-room/`（M4）
  *
  * ## 依赖红线（spike 实测，见调研文档 H 节）
  *

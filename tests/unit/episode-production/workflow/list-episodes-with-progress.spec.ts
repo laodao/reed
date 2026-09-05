@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { ProgressCalculator } from '@core/modules/episode-production/workflow/progress-calculator'
+import { ProgressCalculator } from '@core/platform/episode-production/workflow/progress-calculator'
 import { VideoEpisodeEntity } from '@core/database/entities/episode-production/video-episode.entity'
 import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
 import {

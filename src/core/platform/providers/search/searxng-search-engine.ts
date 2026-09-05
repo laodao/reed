@@ -1,6 +1,6 @@
 /**
  * SearXNG（自托管元搜索引擎）引擎
- * @module search-engines/searxng-search-engine
+ * @module platform/providers/search/searxng-search-engine
  * @description SearXNG 提供 JSON API：GET {base}/search?q=<query>&format=json
  *              - 无需 API Key，需要用户自建实例并配置 API 地址（extraConfig.apiUrl）
  *              - 响应：{ results: [{ title, url, content }] }

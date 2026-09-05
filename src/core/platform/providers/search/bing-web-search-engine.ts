@@ -1,6 +1,6 @@
 /**
  * 必应搜索引擎（网页抓取）
- * @module search-engines/bing-web-search-engine
+ * @module platform/providers/search/bing-web-search-engine
  * @description 通过网页抓取实现必应搜索
  */
 

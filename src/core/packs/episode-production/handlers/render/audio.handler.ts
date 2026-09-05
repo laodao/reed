@@ -12,7 +12,7 @@ import { getPathProvider } from '@core/interfaces/path.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type { CharacterBinding } from '@shared/types/story-to-video.types'
 import { StoryToVideoResourceService } from '@core/packs/episode-production/services/story-to-video-resource.service'
-import { SceneAudioOrchestratorService } from '@core/modules/episode-production/render/audio/scene-audio-orchestrator.service'
+import { SceneAudioOrchestratorService } from '@core/platform/episode-production/render/audio/scene-audio-orchestrator.service'
 
 export function registerAudioHandlers(): void {
   // ==================== 资源生成（音频） ====================

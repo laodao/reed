@@ -16,7 +16,7 @@ import {
   planKeyframes,
   planRegenPropagation,
   describeFrameMoment,
-} from '@core/modules/episode-production/render/keyframe/keyframe-chain-strategy'
+} from '@core/platform/episode-production/render/keyframe/keyframe-chain-strategy'
 
 describe('planKeyframes', () => {
   it('1 帧：仅 start，无参考', () => {

@@ -1,6 +1,6 @@
 /**
  * DashScope CosyVoice 声音复刻 Provider
- * @module voice-providers/dashscope-voice-clone-provider
+ * @module platform/providers/voice/dashscope-voice-clone-provider
  *
  * 调阿里云百炼 voice-enrollment 接口实现 4 个动作：
  *   - create_voice  创建复刻音色（异步，立刻返回 voice_id，状态 DEPLOYING）

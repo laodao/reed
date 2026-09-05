@@ -110,7 +110,7 @@
  */
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { STYLE_PRESETS } from '@core/modules/episode-production/assets/constants/style-presets'
+import { STYLE_PRESETS } from '@core/platform/episode-production/assets/constants/style-presets'
 import ReferenceImageField from '../../stage-asset-v2/shared/ReferenceImageField.vue'
 
 const props = defineProps<{ bindingId: string }>()

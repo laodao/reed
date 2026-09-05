@@ -25,9 +25,9 @@ import { Router, type Request, type Response } from 'express'
 import { runWithUserAsync } from '@core/context/user-context'
 import { requireAuth } from '../auth/middleware'
 import { WebSocketEventEmitter } from '../platform/web-event-emitter'
-import { getWorkflowSubsystem } from '@core/modules/workflow/workflow-boot'
-import { getEventBusIfReady } from '@core/services/event-system/event-bus.service'
-import { createRunEventStream } from '@core/services/event-system/run-event-stream'
+import { getWorkflowSubsystem } from '@core/platform/workflow/workflow-boot'
+import { getEventBusIfReady } from '@core/platform/services/event-system/event-bus.service'
+import { createRunEventStream } from '@core/platform/services/event-system/run-event-stream'
 import type { EventBus } from '@shared/types/event.types'
 import {
   WORKFLOW_NODE_TYPES,

@@ -4,17 +4,17 @@
  */
 
 import { describe, it, expect, vi } from 'vitest'
-import type { BuildContext } from '@core/services/longwriting/context/context.types'
-import { StoryOverviewProvider } from '@core/services/longwriting/context/providers/story-overview.provider'
-import { BackgroundProvider } from '@core/services/longwriting/context/providers/background.provider'
-import { CharacterProvider } from '@core/services/longwriting/context/providers/character.provider'
-import { LocationProvider } from '@core/services/longwriting/context/providers/location.provider'
-import { ItemProvider } from '@core/services/longwriting/context/providers/item.provider'
-import { EntityStateProvider } from '@core/services/longwriting/context/providers/entity-state.provider'
-import { PreviousChapterProvider } from '@core/services/longwriting/context/providers/previous-chapter.provider'
-import { PrewriteProvider } from '@core/services/longwriting/context/providers/prewrite.provider'
-import { MemoryProvider } from '@core/services/longwriting/context/providers/memory.provider'
-import { VectorSearchProvider } from '@core/services/longwriting/context/providers/vector-search.provider'
+import type { BuildContext } from '@core/platform/services/longwriting/context/context.types'
+import { StoryOverviewProvider } from '@core/platform/services/longwriting/context/providers/story-overview.provider'
+import { BackgroundProvider } from '@core/platform/services/longwriting/context/providers/background.provider'
+import { CharacterProvider } from '@core/platform/services/longwriting/context/providers/character.provider'
+import { LocationProvider } from '@core/platform/services/longwriting/context/providers/location.provider'
+import { ItemProvider } from '@core/platform/services/longwriting/context/providers/item.provider'
+import { EntityStateProvider } from '@core/platform/services/longwriting/context/providers/entity-state.provider'
+import { PreviousChapterProvider } from '@core/platform/services/longwriting/context/providers/previous-chapter.provider'
+import { PrewriteProvider } from '@core/platform/services/longwriting/context/providers/prewrite.provider'
+import { MemoryProvider } from '@core/platform/services/longwriting/context/providers/memory.provider'
+import { VectorSearchProvider } from '@core/platform/services/longwriting/context/providers/vector-search.provider'
 
 function makeCtx(overrides: Partial<BuildContext> = {}): BuildContext {
   return {

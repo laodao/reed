@@ -4,7 +4,7 @@
  * @description 物理收拢式：handler 已搬入包目录（./handlers/asset.handler，
  *              18 个 asset:* channel），本包在 activate 时调用其
  *              registerAssetHandlers()。
- *              通用资产服务层（@core/modules/assets：asset.service/asset-storage/
+ *              通用资产服务层（@core/platform/assets：asset.service/asset-storage/
  *              asset-registry 等）被工作流 save-asset/read-asset 节点与其他包
  *              （episode-production 等）共用，留在原地不搬——本包收编的是
  *              "资产中心"这个用户界面对应的 IPC 与 UI。

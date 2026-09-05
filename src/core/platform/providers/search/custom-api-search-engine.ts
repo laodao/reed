@@ -1,6 +1,6 @@
 /**
  * 通用 API 型搜索引擎（OpenAI 兼容 /chat/completions）
- * @module search-engines/custom-api-search-engine
+ * @module platform/providers/search/custom-api-search-engine
  * @description 用户自定义 API 搜索引擎：填 API 地址 + Key + 模型名即可接入
  *              任意 OpenAI 兼容搜索端点（如 Perplexity、DeepSeek 联网等）。
  *              配置项通用（apiUrl/model），支持在提示词中要求返回链接。

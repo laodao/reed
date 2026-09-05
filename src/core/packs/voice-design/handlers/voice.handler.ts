@@ -7,10 +7,10 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { ipcBridge } from '@core/ipc/bridge-adapter'
-import { VoiceService } from '@core/services/voice.service'
-import { VoiceCloneService } from '@core/services/voice-clone.service'
+import { VoiceService } from '@core/platform/services/voice.service'
+import { VoiceCloneService } from '@core/platform/services/voice-clone.service'
 import { VoiceDesignService } from '../services/voice-design.service'
-import { VoiceCloneJobScheduler } from '@core/services/voice-clone-job-scheduler'
+import { VoiceCloneJobScheduler } from '@core/platform/services/voice-clone-job-scheduler'
 import type {
   TTSRequest,
   STTRequest,

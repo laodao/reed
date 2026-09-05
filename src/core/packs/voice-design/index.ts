@@ -4,7 +4,7 @@
  * @description 物理收拢式：handler 已搬入包目录（./handlers/voice.handler），
  *              其专属的 VoiceDesignService 一并搬入（./services/voice-design.service）；
  *              VoiceService/VoiceCloneService 被剧集制作与 workflow 语音节点共用、
- *              VoiceCloneJobScheduler 被双端壳启动引用，均留在 @core/services 不搬。
+ *              VoiceCloneJobScheduler 被双端壳启动引用，收在 @core/platform/services。
  *              本包在 activate 时调用 registerVoiceHandlers()。
  *              manifest 的 id/name/version 与前端骨架（renderer/packs/voice-design）保持一致。
  *

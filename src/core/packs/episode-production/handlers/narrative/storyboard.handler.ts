@@ -11,7 +11,7 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type { Storyboard } from '@shared/types/story-to-video.types'
 import { StoryToVideoAIService } from '@core/packs/episode-production/services/story-to-video-ai.service'
-import { StoryboardService, normalizeShotNumbers } from '@core/modules/episode-production/narrative/services/storyboard.service'
+import { StoryboardService, normalizeShotNumbers } from '@core/platform/episode-production/narrative/services/storyboard.service'
 
 export function registerStoryboardHandlers(): void {
   // ==================== 分镜管理 ====================
@@ -408,7 +408,7 @@ async function handleFillStoryboard(
   try {
     // 调 storyboard-generator 的 fill 方法
     console.log('[handleFillStoryboard] 开始调用EpisodeStoryboardGenerator...')
-    const { EpisodeStoryboardGenerator } = await import('@core/modules/episode-production/narrative/ai/storyboard-generator')
+    const { EpisodeStoryboardGenerator } = await import('@core/platform/episode-production/narrative/ai/storyboard-generator')
     const result = await EpisodeStoryboardGenerator.getInstance().fillStoryboardFields(
       fillInput,
       providerConfigId,

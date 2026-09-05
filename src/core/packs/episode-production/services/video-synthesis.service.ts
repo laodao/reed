@@ -10,8 +10,8 @@ export type {
   TransitionType,
   TransitionConfig,
   SynthesisResult
-} from '@core/modules/episode-production/compose/types'
-export { PRESET_VIDEO_CONFIGS } from '@core/modules/episode-production/compose/types'
+} from '@core/platform/episode-production/compose/types'
+export { PRESET_VIDEO_CONFIGS } from '@core/platform/episode-production/compose/types'
 
 // 重新导出各专职 service
 export {
@@ -21,7 +21,7 @@ export {
   SceneShotsService,
   AudioMixService,
   SceneVideoService
-} from '@core/modules/episode-production/compose'
+} from '@core/platform/episode-production/compose'
 
 import {
   ShotVideoService,
@@ -30,7 +30,7 @@ import {
   AudioMixService,
   SceneVideoService,
   FfmpegAssemblerService
-} from '@core/modules/episode-production/compose'
+} from '@core/platform/episode-production/compose'
 
 /**
  * @deprecated 改用各专职 compose service。保留 facade 兼容现有调用方。

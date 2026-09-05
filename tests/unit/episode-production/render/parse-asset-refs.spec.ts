@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   parseAssetRefOverrides,
   toRefCandidates,
-} from '@core/modules/episode-production/render/keyframe/parse-asset-refs'
+} from '@core/platform/episode-production/render/keyframe/parse-asset-refs'
 
 const imageSvc = (map: Record<string, Array<{ id: string }>>) => ({
   listByAsset: vi.fn((kind: string, bindingId: string) => Promise.resolve(map[`${kind}:${bindingId}`] ?? [])),

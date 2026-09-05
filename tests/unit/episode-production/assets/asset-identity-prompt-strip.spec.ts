@@ -10,7 +10,7 @@ import { describe, it, expect } from 'vitest'
 import {
   stripSystemConstraints,
   appendEraConstraint,
-} from '@core/modules/episode-production/assets/prompts/asset-identity-prompt'
+} from '@core/platform/episode-production/assets/prompts/asset-identity-prompt'
 
 describe('asset-identity-prompt · stripSystemConstraints（剥离系统追加段）', () => {
   it('剥离主图完整 prompt 中的 bust 约束段，保留用户内容', () => {

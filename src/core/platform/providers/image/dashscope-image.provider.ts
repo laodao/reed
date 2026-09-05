@@ -1,6 +1,6 @@
 /**
  * DashScope 图像生成 Provider
- * @module image-providers/dashscope-image-provider
+ * @module platform/providers/image/dashscope-image-provider
  * @description 实现阿里云 DashScope 平台的图像生成 API（使用 Bearer Token 认证）
  */
 

@@ -1,6 +1,6 @@
 /**
  * DashScope STT Provider
- * @module voice-providers/dashscope-stt-provider
+ * @module platform/providers/voice/dashscope-stt-provider
  * @description 实现阿里云 DashScope 平台的语音转文本 API。
  *              同步识别走 qwen3-asr-flash（aigc/multimodal-generation 端点）：
  *              音频以 base64 放入 messages[].content[].audio，输出

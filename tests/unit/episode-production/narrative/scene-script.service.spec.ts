@@ -23,7 +23,7 @@ import { SceneCharacterEntity } from '@core/database/entities/episode-production
 import { SceneDialogueEntity } from '@core/database/entities/episode-production/scene-dialogue.entity'
 import { SceneActionEntity } from '@core/database/entities/episode-production/scene-action.entity'
 import { ScenePropEntity } from '@core/database/entities/episode-production/scene-prop.entity'
-import { SceneScriptService } from '@core/modules/episode-production/narrative/services/scene-script.service'
+import { SceneScriptService } from '@core/platform/episode-production/narrative/services/scene-script.service'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({

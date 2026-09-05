@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { DataSource } from 'typeorm'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
-import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
-import { MainImageGeneratorService } from '@core/modules/episode-production/assets/services/main-image-generator.service'
-import type { ImageGenerator } from '@core/modules/episode-production/assets/services/gallery-derivation.service'
+import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
+import { MainImageGeneratorService } from '@core/platform/episode-production/assets/services/main-image-generator.service'
+import type { ImageGenerator } from '@core/platform/episode-production/assets/services/gallery-derivation.service'
 
 interface Call {
   prompt: string
@@ -85,7 +85,7 @@ describe('MainImageGeneratorService · location 无人自动注入', () => {
 
   it('location 已含无人约束的 prompt：不重复追加', async () => {
     const { LOCATION_NO_HUMAN_SUFFIX } = await import(
-      '@core/modules/episode-production/assets/prompts/location-constraints'
+      '@core/platform/episode-production/assets/prompts/location-constraints'
     )
     await svc.generateMain({
       assetType: 'location',

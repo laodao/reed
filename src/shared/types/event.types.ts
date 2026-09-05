@@ -144,7 +144,7 @@ export interface DeadLetter {
 }
 
 /**
- * 事件总线（§5.1）。实现：src/core/services/event-system/event-bus.service.ts
+ * 事件总线（§5.1）。实现：src/core/platform/services/event-system/event-bus.service.ts
  */
 export interface EventBus {
   /**
@@ -170,7 +170,7 @@ export interface EventChannel {
   stop(): void
 }
 
-/** 运维 API（§5.3；实现：src/core/services/event-system/event-admin.service.ts） */
+/** 运维 API（§5.3；实现：src/core/platform/services/event-system/event-admin.service.ts） */
 export interface EventAdmin {
   listDeadLetters(filter: {
     consumerName?: string

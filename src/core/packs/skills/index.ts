@@ -4,7 +4,7 @@
  * @description 物理收拢式：handler 已搬入包目录（./handlers/skill.handler），
  *              本包在 activate 时调用其 registerSkillHandlers()。
  *              skill-registry/skill.service 属 workflow 模块（壳共用），留在
- *              @core/modules/workflow/skills 不搬。
+ *              @core/platform/workflow/skills 不搬。
  *              manifest 的 id/name/version 与前端骨架（renderer/packs/skills）保持一致。
  *
  *              禁用语义本期到"IPC 守卫统一拦截 skill:*"为止——handler 注册保留、

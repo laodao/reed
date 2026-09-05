@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   PanoramaGeneratorService,
   type PanoramaImageGenerator,
-} from '@core/modules/episode-production/assets/services/panorama-generator.service'
-import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
+} from '@core/platform/episode-production/assets/services/panorama-generator.service'
+import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
 import { DataSource } from 'typeorm'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 

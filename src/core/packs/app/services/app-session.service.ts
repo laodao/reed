@@ -15,7 +15,7 @@ import type { AppSessionRecord } from '@shared/types/app.types'
 import { APP_SESSION_STATUSES, WORKFLOW_SESSION_CARDS, type SessionCardMeta } from '@shared/types/app.types'
 import { WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_EVENT_TYPES, WORKFLOW_RUN_STATUSES, WORKFLOW_RUN_TERMINAL_STATUSES, WORKFLOW_TRIGGER_TYPES, type WorkflowRunEvent } from '@shared/types/workflow.types'
 import type { EventBus, PlatformEvent, Subscription } from '@shared/types/event.types'
-import { DEFAULT_RUN_EVENT_CHANNEL_TYPES, translateRunPlatformEvent } from '@core/services/event-system/workflow-run-event-map'
+import { DEFAULT_RUN_EVENT_CHANNEL_TYPES, translateRunPlatformEvent } from '@core/platform/services/event-system/workflow-run-event-map'
 import { createLogger } from '@core/utils/logger'
 
 const logger = createLogger('AppSessionService')

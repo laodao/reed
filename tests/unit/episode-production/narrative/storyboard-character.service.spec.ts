@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DataSource } from 'typeorm'
 import { StoryboardCharacterEntity } from '@core/database/entities/episode-production/storyboard-character.entity'
-import { StoryboardCharacterService } from '@core/modules/episode-production/narrative/services/storyboard-character.service'
+import { StoryboardCharacterService } from '@core/platform/episode-production/narrative/services/storyboard-character.service'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({

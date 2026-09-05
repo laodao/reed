@@ -1,6 +1,6 @@
 /**
  * DashScope 临时 OSS 上传器
- * @module voice-providers/dashscope-oss-uploader
+ * @module platform/providers/voice/dashscope-oss-uploader
  *
  * DashScope（阿里云百炼）的多模态接口要求音频/图像 / 视频以**公网 URL** 方式提供。
  * 平台为开发者提供了一个临时 OSS 桶（dashscope-instant），通过 2 步协议上传：

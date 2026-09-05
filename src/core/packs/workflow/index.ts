@@ -4,7 +4,7 @@
  * @description 物理收拢式：handler 已搬入包目录（./handlers/workflow.handler，
  *              27 个 wf:* channel），本包在 activate 时调用其
  *              registerWorkflowHandlers()。
- *              工作流引擎本体（@core/modules/workflow：engine/nodes/trigger/boot 等）
+ *              工作流引擎本体（@core/platform/workflow：engine/nodes/trigger/boot 等）
  *              是平台内核能力（harness 设计：引擎业务无关，供各业务包复用），
  *              留在壳中不搬——本包只收编"工作流编排"这块用户业务的 IPC 与 UI。
  *              manifest 的 id/name/version 与前端骨架（renderer/packs/workflow）保持一致。

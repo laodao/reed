@@ -8,7 +8,7 @@
  */
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
-import { getAssetService } from '@core/modules/assets'
+import { getAssetService } from '@core/platform/assets'
 import type { SaveAssetCategoryInput, SaveAssetInput, UpdateAssetCategoryInput } from '@shared/types/asset.types'
 import type { IpcResponse } from '@shared/types/ipc.types'
 

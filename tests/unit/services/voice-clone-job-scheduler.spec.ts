@@ -1,6 +1,6 @@
 /**
  * VoiceCloneJobScheduler 单元测试
- * @see src/core/services/voice-clone-job-scheduler.ts
+ * @see src/core/platform/services/voice-clone-job-scheduler.ts
  *
  * 用 vi.useFakeTimers 测周期触发 + boot resume + 超时降级。
  * mock VoiceCloneService.refreshClonedVoiceStatus 来模拟状态推进。
@@ -18,8 +18,8 @@ import {
 import {
   VoiceCloneJobScheduler,
   type SchedulerTimerSource,
-} from '@core/services/voice-clone-job-scheduler'
-import { VoiceCloneService } from '@core/services/voice-clone.service'
+} from '@core/platform/services/voice-clone-job-scheduler'
+import { VoiceCloneService } from '@core/platform/services/voice-clone.service'
 import * as dbModule from '@core/database/database-manager.interface'
 import * as eventModule from '@core/interfaces/event.interface'
 

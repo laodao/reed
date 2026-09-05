@@ -7,7 +7,7 @@
  */
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
-import { getWorkflowSubsystem } from '@core/modules/workflow/workflow-boot'
+import { getWorkflowSubsystem } from '@core/platform/workflow/workflow-boot'
 import type { IpcResponse } from '@shared/types/ipc.types'
 
 function subsystem() {

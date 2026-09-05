@@ -12,13 +12,13 @@ import type {
   UploadedItem
 } from '@shared/types/story-to-video.types'
 import type { AssetRosterForScript } from '@shared/types/episode-production'
-import { callAI, callAIWithContinue, extractJsonFromResponse } from '@core/modules/episode-production/narrative/ai/_helpers'
-import { EpisodeScriptGenerator } from '@core/modules/episode-production/narrative/ai/script-generator'
-import { EpisodeStoryboardGenerator } from '@core/modules/episode-production/narrative/ai/storyboard-generator'
+import { callAI, callAIWithContinue, extractJsonFromResponse } from '@core/platform/episode-production/narrative/ai/_helpers'
+import { EpisodeScriptGenerator } from '@core/platform/episode-production/narrative/ai/script-generator'
+import { EpisodeStoryboardGenerator } from '@core/platform/episode-production/narrative/ai/storyboard-generator'
 
-export * from '@core/modules/episode-production/narrative/ai/types'
-export { EpisodeScriptGenerator } from '@core/modules/episode-production/narrative/ai/script-generator'
-export { EpisodeStoryboardGenerator } from '@core/modules/episode-production/narrative/ai/storyboard-generator'
+export * from '@core/platform/episode-production/narrative/ai/types'
+export { EpisodeScriptGenerator } from '@core/platform/episode-production/narrative/ai/script-generator'
+export { EpisodeStoryboardGenerator } from '@core/platform/episode-production/narrative/ai/storyboard-generator'
 
 export type {
   ScriptGenerationResult,
@@ -28,7 +28,7 @@ export type {
   GenerationStreamEvent,
   EpisodeProductionTask,
   StoryToVideoTask
-} from '@core/modules/episode-production/narrative/ai/types'
+} from '@core/platform/episode-production/narrative/ai/types'
 
 // ==================== 场景拆分提示词（仅 facade 使用） ====================
 
@@ -226,7 +226,7 @@ export class StoryToVideoAIService {
   generateSingleStoryboard(
     sceneScript: SceneScript,
     shotNumber: number,
-    previousStoryboards?: import('@core/modules/episode-production/narrative/ai/types').StoryboardResult[],
+    previousStoryboards?: import('@core/platform/episode-production/narrative/ai/types').StoryboardResult[],
     providerConfigId?: string,
     modelId?: string
   ) {
@@ -237,7 +237,7 @@ export class StoryToVideoAIService {
     sceneScript: SceneScript,
     providerConfigId?: string,
     modelId?: string,
-    onProgress?: (shotNumber: number, total: number, storyboard?: import('@core/modules/episode-production/narrative/ai/types').StoryboardResult) => void
+    onProgress?: (shotNumber: number, total: number, storyboard?: import('@core/platform/episode-production/narrative/ai/types').StoryboardResult) => void
   ) {
     return this.storyboardGen.generateStoryboardsIncremental(sceneScript, providerConfigId, modelId, onProgress)
   }
@@ -262,7 +262,7 @@ export class StoryToVideoAIService {
     chapterContent: string,
     providerConfigId?: string,
     modelId?: string
-  ): Promise<{ scenes: import('@core/modules/episode-production/narrative/ai/types').SceneGenerationResult[] }> {
+  ): Promise<{ scenes: import('@core/platform/episode-production/narrative/ai/types').SceneGenerationResult[] }> {
     // 替换提示词中的变量
     const prompt = SCENE_SPLIT_PROMPT.replace('{chapterContent}', chapterContent)
 

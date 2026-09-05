@@ -9,9 +9,9 @@ import rawTranslate from '../../../src/renderer/src/assets/workflow-templates/ba
 import rawReview from '../../../src/renderer/src/assets/workflow-templates/content-review.json'
 import rawDigest from '../../../src/renderer/src/assets/workflow-templates/daily-digest.json'
 import rawVideo from '../../../src/renderer/src/assets/workflow-templates/video-transcript.json'
-import { validateGraph } from '@core/modules/workflow/engine/graph-validator'
+import { validateGraph } from '@core/platform/workflow/engine/graph-validator'
 import { NODE_TYPE_CATALOG_MAP } from '@shared/types/workflow-node-catalog'
-import { previewCronExpression } from '@core/modules/workflow/trigger/workflow-trigger-scheduler.service'
+import { previewCronExpression } from '@core/platform/workflow/trigger/workflow-trigger-scheduler.service'
 import type { WorkflowGraph, WorkflowTrigger } from '@shared/types/workflow.types'
 
 const templates = [

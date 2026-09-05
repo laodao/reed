@@ -8,8 +8,8 @@ import { isElectron, loadElectronModules, getBrowserWindowFromEvent } from '@ele
 import * as fs from 'fs'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { LongWritingService } from '../services/longwriting.service'
-import { LongWritingAIService } from '@core/services/longwriting-ai.service'
-import { AgentWorkflowService } from '@core/services/longwriting/agent/agent-workflow.service'
+import { LongWritingAIService } from '@core/platform/services/longwriting-ai.service'
+import { AgentWorkflowService } from '@core/platform/services/longwriting/agent/agent-workflow.service'
 import { MaterialProcessorService } from '../services/material-processor.service'
 import { markdownToDocx } from '@core/utils/markdown-to-docx'
 import {
@@ -734,7 +734,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       // 获取 BrowserWindow
 
       // 获取 ImageService
-      const { ImageService } = await import('@core/services/image.service')
+      const { ImageService } = await import('@core/platform/services/image.service')
 
       // 生成图片
       const result = await ImageService.generateImage({
@@ -2674,7 +2674,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     chapterNumber?: number
   ) => {
     try {
-      const { LwEntityDetectionService } = await import('@core/modules/episode-production/auto-binding/lw-entity-detection.service')
+      const { LwEntityDetectionService } = await import('@core/platform/episode-production/auto-binding/lw-entity-detection.service')
       const result = await LwEntityDetectionService.detectNewEntities(
         projectId,
         text,
@@ -2697,7 +2697,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     items?: any[]
   ) => {
     try {
-      const { LwEntityDetectionService } = await import('@core/modules/episode-production/auto-binding/lw-entity-detection.service')
+      const { LwEntityDetectionService } = await import('@core/platform/episode-production/auto-binding/lw-entity-detection.service')
       const result = await LwEntityDetectionService.autoAddEntities(
         projectId,
         characters,
@@ -2925,7 +2925,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   // 全量重建项目向量索引（进度通过事件流推送）
   ipcBridge.handle(CHANNELS.VECTOR_INDEX_REBUILD, async (event, eventId: string, projectId: string) => {
     try {
-      const { LwVectorIndexService } = await import('@core/services/longwriting/lw-vector-index.service')
+      const { LwVectorIndexService } = await import('@core/platform/services/longwriting/lw-vector-index.service')
       const { getEventEmitter } = await import('@core/interfaces/event.interface')
       const svc = LwVectorIndexService.getInstance()
       const win = getBrowserWindowFromEvent(event)
@@ -2966,7 +2966,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       scoreThreshold?: number
     }) => {
       try {
-        const { LwVectorIndexService } = await import('@core/services/longwriting/lw-vector-index.service')
+        const { LwVectorIndexService } = await import('@core/platform/services/longwriting/lw-vector-index.service')
         const svc = LwVectorIndexService.getInstance()
         const results = await svc.search(projectId, query, opts || {})
         return { success: true, data: results }
@@ -2980,7 +2980,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   // 向量索引统计
   ipcBridge.handle(CHANNELS.VECTOR_INDEX_STATS, async (_event, projectId: string) => {
     try {
-      const { LwVectorIndexService } = await import('@core/services/longwriting/lw-vector-index.service')
+      const { LwVectorIndexService } = await import('@core/platform/services/longwriting/lw-vector-index.service')
       const svc = LwVectorIndexService.getInstance()
       const stats = await svc.getStats(projectId)
       return { success: true, data: stats }
@@ -3005,7 +3005,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   }
 
   const graphService = async () => {
-    const { GraphService } = await import('@core/services/longwriting/graph/graph.service')
+    const { GraphService } = await import('@core/platform/services/longwriting/graph/graph.service')
     return GraphService.getInstance()
   }
 
@@ -3150,7 +3150,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   // 写前校验
   ipcBridge.handle(CHANNELS.GRAPH_VALIDATE_BEFORE_GENERATION, async (_event, projectId: string, outlineId: string, chapterNumber?: number) => {
     try {
-      const { ConsistencyService } = await import('@core/services/longwriting/graph/consistency.service')
+      const { ConsistencyService } = await import('@core/platform/services/longwriting/graph/consistency.service')
       return { success: true, data: await ConsistencyService.getInstance().validateBeforeGeneration(projectId, outlineId, chapterNumber) }
     } catch (error: any) {
       return { success: false, error: error.message }
@@ -3160,7 +3160,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   // 矛盾扫描
   ipcBridge.handle(CHANNELS.GRAPH_SCAN_CONTRADICTIONS, async (_event, projectId: string) => {
     try {
-      const { ConsistencyService } = await import('@core/services/longwriting/graph/consistency.service')
+      const { ConsistencyService } = await import('@core/platform/services/longwriting/graph/consistency.service')
       return { success: true, data: await ConsistencyService.getInstance().scanContradictions(projectId) }
     } catch (error: any) {
       return { success: false, error: error.message }
@@ -3178,7 +3178,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     modelId?: string
   ) => {
     try {
-      const { ChapterGraphProcessor } = await import('@core/services/longwriting/graph/chapter-graph.processor')
+      const { ChapterGraphProcessor } = await import('@core/platform/services/longwriting/graph/chapter-graph.processor')
       const result = await new ChapterGraphProcessor().process({
         projectId,
         outlineId,

@@ -1,6 +1,6 @@
 /**
  * 百度搜索引擎
- * @module search-engines/baidu-search-engine
+ * @module platform/providers/search/baidu-search-engine
  * @description 通过网页抓取实现百度搜索
  */
 

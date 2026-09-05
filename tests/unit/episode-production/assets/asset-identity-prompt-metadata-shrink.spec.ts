@@ -13,7 +13,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildAssetIdentityPrompt,
   type EffectiveAssetForPrompt,
-} from '@core/modules/episode-production/assets/prompts/asset-identity-prompt'
+} from '@core/platform/episode-production/assets/prompts/asset-identity-prompt'
 
 const fixture: EffectiveAssetForPrompt = {
   name: '李白',

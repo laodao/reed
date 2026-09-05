@@ -1,6 +1,6 @@
 /**
  * 图像生成 Provider 基类
- * @module image-providers/base-image-provider
+ * @module platform/providers/image/base-image-provider
  * @description 所有图像生成 Provider 的抽象基类，定义统一的接口规范
  */
 

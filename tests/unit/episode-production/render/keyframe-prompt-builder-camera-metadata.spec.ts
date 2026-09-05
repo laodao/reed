@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { buildKeyframePrompt } from '@core/modules/episode-production/render/keyframe/keyframe-prompt-builder'
+import { buildKeyframePrompt } from '@core/platform/episode-production/render/keyframe/keyframe-prompt-builder'
 
 const baseInput = {
   shotType: 'medium',

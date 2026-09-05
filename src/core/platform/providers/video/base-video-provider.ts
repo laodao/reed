@@ -1,6 +1,6 @@
 /**
  * 视频生成 Provider 基类
- * @module video-providers/base-video-provider
+ * @module platform/providers/video/base-video-provider
  * @description 所有视频生成 Provider 的抽象基类，定义统一的接口规范
  */
 

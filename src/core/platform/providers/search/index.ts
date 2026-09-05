@@ -1,6 +1,6 @@
 /**
  * 搜索引擎工厂和模板定义
- * @module search-engines/index
+ * @module platform/providers/search/index
  * @description 提供搜索引擎模板和创建搜索引擎实例的工厂函数
  */
 

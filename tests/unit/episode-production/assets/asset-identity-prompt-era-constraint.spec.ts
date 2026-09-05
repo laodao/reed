@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { appendEraConstraint } from '@core/modules/episode-production/assets/prompts/asset-identity-prompt'
+import { appendEraConstraint } from '@core/platform/episode-production/assets/prompts/asset-identity-prompt'
 
 describe('asset-identity-prompt · 时代特征约束 appendEraConstraint', () => {
   it('有年代 → 在末尾追加时代特征段（含服饰/发型/妆容）', () => {

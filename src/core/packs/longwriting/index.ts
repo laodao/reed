@@ -4,7 +4,7 @@
  * @description 物理收拢式：handler 已搬入包目录（./handlers/longwriting.handler），
  *              其专属的 LongWritingService / MaterialProcessorService / LwMigrationService
  *              一并搬入（./services/）；LongWritingAIService 与 AgentWorkflowService 被
- *              剧集制作包的 Agent 工作流复用，留在 @core/services 不搬。
+ *              剧集制作包的 Agent 工作流复用，收在 @core/platform/services。
  *              本包在 activate 时调用 registerLongWritingHandlers()。
  *              manifest 的 id/name/version 与前端骨架（renderer/packs/longwriting）保持一致。
  *
@@ -15,7 +15,7 @@
  *              longwriting:agent:* 等二级前缀，均落在 longwriting: 之下），单前缀即可完整覆盖。
  *
  *              已知跨业务耦合（本期不动，EP 包迁移时处理）：
- *              episode-production 的 Agent 工作流服务（core/modules/episode-production/agent/
+ *              episode-production 的 Agent 工作流服务（core/platform/episode-production/agent/
  *              ep-agent-workflow.service）复用本业务的 lw_design_messages 表存储对话历史
  *              （conversationId 约定 ep-agent:${episodeId}），表结构归长文写作所有。
  *

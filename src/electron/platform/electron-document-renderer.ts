@@ -11,8 +11,8 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 
-import type { IHtmlRenderer } from '@core/services/document-tools/document-tools'
-import { applyLongImageFix } from '@core/services/document-tools/document-tools'
+import type { IHtmlRenderer } from '@core/platform/services/document-tools/document-tools'
+import { applyLongImageFix } from '@core/platform/services/document-tools/document-tools'
 
 /** 渲染并发保护：隐藏窗口逐次创建销毁，简单串行即可（避免同时开多窗口） */
 let renderLock: Promise<unknown> = Promise.resolve()

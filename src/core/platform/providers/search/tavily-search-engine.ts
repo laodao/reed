@@ -1,6 +1,6 @@
 /**
  * Tavily 搜索引擎
- * @module search-engines/tavily-search-engine
+ * @module platform/providers/search/tavily-search-engine
  * @description 通过 Tavily API 实现联网搜索
  */
 

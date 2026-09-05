@@ -1,6 +1,6 @@
 /**
  * OpenAI DALL-E 图像 Provider
- * @module image-providers/sdk/openai-image-provider
+ * @module platform/providers/image/sdk/openai-image-provider
  * @description 使用 OpenAI SDK 实现 DALL-E 图像生成
  */
 

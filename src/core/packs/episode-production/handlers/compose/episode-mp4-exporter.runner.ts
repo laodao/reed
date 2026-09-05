@@ -20,7 +20,7 @@ import { getPathProvider } from '@core/interfaces/path.interface'
 import type {
   FfmpegRunner,
   FileWriter,
-} from '@core/modules/episode-production/compose/episode-mp4-exporter.service'
+} from '@core/platform/episode-production/compose/episode-mp4-exporter.service'
 
 /**
  * 选 ffmpeg / ffprobe 路径：

@@ -16,7 +16,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
-import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
+import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
 import { registerPathProvider, type IPathProvider } from '@core/interfaces/path.interface'
 
 class StubPathProvider implements IPathProvider {

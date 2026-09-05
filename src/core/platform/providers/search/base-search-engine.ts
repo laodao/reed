@@ -1,6 +1,6 @@
 /**
  * 搜索引擎基类
- * @module search-engines/base-search-engine
+ * @module platform/providers/search/base-search-engine
  * @description 定义搜索引擎的基本接口和通用方法
  */
 

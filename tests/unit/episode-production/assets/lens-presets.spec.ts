@@ -16,16 +16,16 @@ import {
   findLensFocalPreset,
   findAperturePreset,
   findCameraStylePreset,
-} from '@core/modules/episode-production/assets/constants/lens-presets'
+} from '@core/platform/episode-production/assets/constants/lens-presets'
 import {
   CAMERA_MOVEMENT_PRESETS,
   CAMERA_MOVEMENT_GROUPS,
   findCameraMovementPreset,
-} from '@core/modules/episode-production/assets/constants/camera-movements'
+} from '@core/platform/episode-production/assets/constants/camera-movements'
 import {
   LIGHTING_PRESETS,
   findLightingPreset,
-} from '@core/modules/episode-production/assets/constants/lighting-presets'
+} from '@core/platform/episode-production/assets/constants/lighting-presets'
 
 describe('lens-presets', () => {
   it('LENS_FOCAL_PRESETS 5 项；value 唯一', () => {

@@ -4,7 +4,7 @@ import {
   buildSettingEnrichmentUserPrompt,
   type EnrichmentTodo,
   type EnrichmentContext,
-} from '@core/modules/episode-production/assets/prompts/setting-enrichment-prompt'
+} from '@core/platform/episode-production/assets/prompts/setting-enrichment-prompt'
 
 describe('setting-enrichment-prompt', () => {
   it('system prompt 含设计师定位与忠实/合理设计/允许空缺三条规则', () => {

@@ -14,8 +14,8 @@ import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type { EpisodeStatus } from '@shared/types/episode-production'
-import { ProgressCalculator } from '@core/modules/episode-production/workflow/progress-calculator'
-import { StageGateService } from '@core/modules/episode-production/workflow/stage-gate.service'
+import { ProgressCalculator } from '@core/platform/episode-production/workflow/progress-calculator'
+import { StageGateService } from '@core/platform/episode-production/workflow/stage-gate.service'
 
 /**
  * 注册工作流相关 IPC 处理器

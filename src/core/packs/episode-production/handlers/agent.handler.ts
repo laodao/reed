@@ -13,7 +13,7 @@
  */
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
-import { EpisodeProductionAgentService } from '@core/modules/episode-production/agent/ep-agent-workflow.service'
+import { EpisodeProductionAgentService } from '@core/platform/episode-production/agent/ep-agent-workflow.service'
 
 /**
  * 注册剧集制作 Agent 相关 IPC 处理器

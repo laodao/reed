@@ -13,12 +13,12 @@
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
-import { EpSegmentationService } from '@core/modules/episode-production/render/video/ep-segmentation.service'
+import { EpSegmentationService } from '@core/platform/episode-production/render/video/ep-segmentation.service'
 import {
   SegmentVideoService,
   type GenerateSegmentVideoInput,
-} from '@core/modules/episode-production/render/video/segment-video.service'
-import type { VideoMode } from '@core/modules/episode-production/render/video/video-provider-adapter'
+} from '@core/platform/episode-production/render/video/segment-video.service'
+import type { VideoMode } from '@core/platform/episode-production/render/video/video-provider-adapter'
 import { createAdapterForProviderWithReason } from './video-segment.handler'
 
 export function registerSegmentHandlers(): void {

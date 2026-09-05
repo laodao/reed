@@ -20,7 +20,7 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { getCurrentUserId } from '@core/context/user-context'
 import type { IpcResponse } from '@shared/types/ipc.types'
-import { UserAssetService } from '@core/modules/episode-production/user-asset/user-asset.service'
+import { UserAssetService } from '@core/platform/episode-production/user-asset/user-asset.service'
 
 export function registerUserAssetHandlers(): void {
   ipcBridge.handle('ep:user-asset:list', handleList)

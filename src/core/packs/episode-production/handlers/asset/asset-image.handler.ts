@@ -14,16 +14,16 @@ import {
   type AssetType,
   type AssetImageCategory,
   type AddImageInput,
-} from '@core/modules/episode-production/assets/services/asset-image.service'
+} from '@core/platform/episode-production/assets/services/asset-image.service'
 import {
   MainImageGeneratorService,
   type GenerateMainInput,
-} from '@core/modules/episode-production/assets/services/main-image-generator.service'
+} from '@core/platform/episode-production/assets/services/main-image-generator.service'
 import {
   MainImageUploadService,
   MainImageUploadValidationError,
-} from '@core/modules/episode-production/assets/services/main-image-upload.service'
-import { createGalleryImageGenerator } from '@core/modules/episode-production/assets/services/image-provider-adapter'
+} from '@core/platform/episode-production/assets/services/main-image-upload.service'
+import { createGalleryImageGenerator } from '@core/platform/episode-production/assets/services/image-provider-adapter'
 import type { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 
 /** updateImage 接受的 patch 子集（与 AssetImageService.updateImage 第二参一致） */

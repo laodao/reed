@@ -17,8 +17,8 @@ import sharp from 'sharp'
 import {
   StoryboardThumbnailGeneratorService,
   type GenerateThumbnailsInput,
-} from '@core/modules/episode-production/narrative/ai/storyboard-thumbnail-generator'
-import type { ImageGenerator } from '@core/modules/episode-production/assets/services/gallery-derivation.service'
+} from '@core/platform/episode-production/narrative/ai/storyboard-thumbnail-generator'
+import type { ImageGenerator } from '@core/platform/episode-production/assets/services/gallery-derivation.service'
 
 class MockGen implements ImageGenerator {
   bigImagePath: string = ''

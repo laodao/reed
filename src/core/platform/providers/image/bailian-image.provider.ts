@@ -1,6 +1,6 @@
 /**
  * 百炼平台图像生成 Provider
- * @module image-providers/bailian-image-provider
+ * @module platform/providers/image/bailian-image-provider
  * @description 实现阿里云百炼平台的图像生成 API
  */
 

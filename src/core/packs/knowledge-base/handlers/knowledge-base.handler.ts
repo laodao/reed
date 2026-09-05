@@ -7,7 +7,7 @@
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import * as fs from 'fs'
 import * as path from 'path'
-import { KnowledgeBaseService } from '@core/services/knowledge-base.service'
+import { KnowledgeBaseService } from '@core/platform/services/knowledge-base.service'
 
 const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
 

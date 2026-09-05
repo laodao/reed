@@ -1,6 +1,6 @@
 /**
  * DashScope TTS Provider
- * @module voice-providers/dashscope-tts-provider
+ * @module platform/providers/voice/dashscope-tts-provider
  * @description 实现阿里云 DashScope 平台的文本转语音 API
  */
 

@@ -8,7 +8,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
-import { TranslationService } from '@core/services/translation.service'
+import { TranslationService } from '@core/platform/services/translation.service'
 import type {
   TextTranslationRequest,
   FileTranslationRequest,

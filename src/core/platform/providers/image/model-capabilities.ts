@@ -1,6 +1,6 @@
 /**
  * 模型级图像生成能力注册表
- * @module image-providers/model-capabilities
+ * @module platform/providers/image/model-capabilities
  * @description design docs/design/image-provider-capability-model-design.md §4
  *
  * 原则（评审确认）：**不隐瞒问题**

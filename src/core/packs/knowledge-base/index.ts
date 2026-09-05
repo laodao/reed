@@ -4,7 +4,7 @@
  * @description 物理收拢式：handler 已搬入包目录（./handlers/knowledge-base.handler，
  *              knowledge-base:* 19 个 + kb:* 4 个 + kb-qa:* 7 个 channel），
  *              本包在 activate 时调用其 registerKnowledgeBaseHandlers()。
- *              知识库服务层（@core/services/knowledge-base.service 与 vector/lancedb）
+ *              知识库服务层（@core/platform/services/knowledge-base.service 与 vector/lancedb）
  *              被工作流 kb-retrieve 节点等平台能力共用，留在原地不搬。
  *              manifest 的 id/name/version 与前端骨架（renderer/packs/knowledge-base）
  *              保持一致。

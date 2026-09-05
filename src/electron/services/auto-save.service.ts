@@ -1,6 +1,6 @@
 /**
  * 自动保存服务
- * @module services/auto-save.service
+ * @module platform/services/auto-save.service
  * @description 自动保存功能，支持定时保存和变更检测保存
  */
 

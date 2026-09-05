@@ -18,7 +18,7 @@ import { AssetImageEntity } from '@core/database/entities/episode-production/ass
 import { LwCharacterEntity } from '@core/database/entities/lw-character.entity'
 import { addCharacterBindingPreset } from '@core/database/migrations/add-character-binding-preset'
 import { seedPresetDigitalHumans } from '@core/database/migrations/seed-preset-digital-humans'
-import { PresetImageSeederService } from '@core/modules/episode-production/assets/services/preset-image-seeder.service'
+import { PresetImageSeederService } from '@core/platform/episode-production/assets/services/preset-image-seeder.service'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({

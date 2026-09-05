@@ -17,15 +17,15 @@ import * as os from 'os'
 import * as path from 'path'
 import sharp from 'sharp'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
-import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
+import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
 import {
   PanoramaGeneratorService,
   type PanoramaImageGenerator,
-} from '@core/modules/episode-production/assets/services/panorama-generator.service'
+} from '@core/platform/episode-production/assets/services/panorama-generator.service'
 import {
   PanoramaUploadService,
   PanoramaUploadValidationError,
-} from '@core/modules/episode-production/assets/services/panorama-upload.service'
+} from '@core/platform/episode-production/assets/services/panorama-upload.service'
 import type { IPathProvider } from '@core/interfaces/path.interface'
 
 class StubPathProvider implements IPathProvider {

@@ -1,6 +1,6 @@
 /**
  * 语音 Provider 基类
- * @module voice-providers/base-voice-provider
+ * @module platform/providers/voice/base-voice-provider
  * @description 所有语音提供商的基类。
  *
  * 设计文档：docs/superpowers/specs/2026-05-07-voice-cloning-design.md §5.1

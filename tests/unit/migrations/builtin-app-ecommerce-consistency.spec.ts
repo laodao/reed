@@ -8,7 +8,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import ecommerceRaw from '../../../src/core/database/migrations/builtin-apps/ecommerce-poster.json'
-import { validateGraph } from '@core/modules/workflow/engine/graph-validator'
+import { validateGraph } from '@core/platform/workflow/engine/graph-validator'
 import type { WorkflowGraph } from '@shared/types/workflow.types'
 
 type Node = {

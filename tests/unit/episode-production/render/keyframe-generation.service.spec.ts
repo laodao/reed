@@ -29,7 +29,7 @@ import { StoryboardEntity } from '@core/database/entities/episode-production/sto
 import { StoryboardKeyframeEntity } from '@core/database/entities/episode-production/storyboard-keyframe.entity'
 import { StoryboardCharacterEntity } from '@core/database/entities/episode-production/storyboard-character.entity'
 import { ImageAssetEntity } from '@core/database/entities/image-asset.entity'
-import { KeyframeGenerationService } from '@core/modules/episode-production/render/keyframe/keyframe-generation.service'
+import { KeyframeGenerationService } from '@core/platform/episode-production/render/keyframe/keyframe-generation.service'
 import { ImageAssetRepository } from '@core/database/repositories/image-asset.repository'
 import { StoryboardKeyframeRepository } from '@core/database/repositories/storyboard-keyframe.repository'
 

@@ -1,6 +1,6 @@
 /**
  * 临时实体模板服务
- * @module services/temporary-entity-template.service
+ * @module platform/services/temporary-entity-template.service
  * 为临时实体生成固定形象的模板管理服务
  * 所有模板数据存储在数据库中
  */

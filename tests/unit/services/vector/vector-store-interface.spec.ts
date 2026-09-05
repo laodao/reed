@@ -12,7 +12,7 @@ import type {
   VectorDeleteByFilter,
   VectorMetadataSearchResult,
   VectorSearchResult,
-} from '@core/services/vector/vector-store.interface'
+} from '@core/platform/services/vector/vector-store.interface'
 import type {
   LwVectorEntityType,
   LwVectorSearchResult,

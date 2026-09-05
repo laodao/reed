@@ -1,6 +1,6 @@
 /**
  * 火山引擎图像生成 Provider
- * @module image-providers/sdk/volcengine-image-provider
+ * @module platform/providers/image/sdk/volcengine-image-provider
  * @description 使用 OpenAI 兼容 API 实现火山引擎图像生成
  */
 

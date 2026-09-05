@@ -10,7 +10,7 @@ import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type { CharacterBinding } from '@shared/types/story-to-video.types'
-import { UploadedEntityService } from '@core/modules/episode-production/auto-binding/uploaded-entity.service'
+import { UploadedEntityService } from '@core/platform/episode-production/auto-binding/uploaded-entity.service'
 import {
   CharacterAssetService,
   type CreateStandaloneInput,
@@ -18,7 +18,7 @@ import {
   type OverridePatch,
   type StandalonePatch,
   type CharacterExtraPatch,
-} from '@core/modules/episode-production/assets/services/character-asset.service'
+} from '@core/platform/episode-production/assets/services/character-asset.service'
 
 export function registerCharacterAssetHandlers(): void {
   // ==================== V2 角色绑定（保留：老 UI 在用） ====================

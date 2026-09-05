@@ -3,7 +3,7 @@
  * 拆自 VideoProjectEditor.vue，供各组件复用
  */
 
-import { findCameraMovementPreset } from '@core/modules/episode-production/assets/constants/camera-movements'
+import { findCameraMovementPreset } from '@core/platform/episode-production/assets/constants/camera-movements'
 
 export const shotTypeLabels: Record<string, string> = {
   extreme_long: '大远景',

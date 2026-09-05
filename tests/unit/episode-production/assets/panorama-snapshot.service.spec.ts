@@ -15,11 +15,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { DataSource } from 'typeorm'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
-import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
+import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
 import {
   PanoramaSnapshotService,
   type SnapshotFileWriter,
-} from '@core/modules/episode-production/assets/services/panorama-snapshot.service'
+} from '@core/platform/episode-production/assets/services/panorama-snapshot.service'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({

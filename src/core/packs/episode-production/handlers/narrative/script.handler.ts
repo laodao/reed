@@ -11,11 +11,11 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type { SceneScript } from '@shared/types/story-to-video.types'
 import { StoryToVideoAIService } from '@core/packs/episode-production/services/story-to-video-ai.service'
-import { buildAssetRosterForProject } from '@core/modules/episode-production/narrative/asset-roster-builder'
-import { EpisodeScenePolisher } from '@core/modules/episode-production/narrative/ai/scene-polisher'
-import { EpisodeScriptGenerator } from '@core/modules/episode-production/narrative/ai/script-generator'
-import { SceneBindingWriter } from '@core/modules/episode-production/narrative/scene-binding-writer'
-import { analyzeScriptToEpisodes } from '@core/modules/episode-production/narrative/services/script-splitter.service'
+import { buildAssetRosterForProject } from '@core/platform/episode-production/narrative/asset-roster-builder'
+import { EpisodeScenePolisher } from '@core/platform/episode-production/narrative/ai/scene-polisher'
+import { EpisodeScriptGenerator } from '@core/platform/episode-production/narrative/ai/script-generator'
+import { SceneBindingWriter } from '@core/platform/episode-production/narrative/scene-binding-writer'
+import { analyzeScriptToEpisodes } from '@core/platform/episode-production/narrative/services/script-splitter.service'
 
 export function registerScriptHandlers(): void {
   // ==================== 剧本管理 ====================

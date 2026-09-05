@@ -1,6 +1,6 @@
 /**
  * 火山引擎（方舟 Ark）视频生成 Provider —— Seedance 支持
- * @module video-providers/sdk/volcengine-video-provider
+ * @module platform/providers/video/sdk/volcengine-video-provider
  * @description
  * 对接火山方舟 Ark 的内容生成视频 API（CreateContentsGenerationsTasks），
  * 支持 Seedance 2.0 / 2.0 fast / 1.5 pro 等模型的图生视频、文生视频。
@@ -25,7 +25,7 @@ import type {
   GeneratedVideo
 } from '@shared/types/video-provider.types'
 import { BaseVideoProvider } from '../base-video-provider'
-import { OSSService } from '@core/services/oss.service'
+import { OSSService } from '@core/platform/services/oss.service'
 
 /**
  * 方舟内容生成任务创建响应（CreateContentsGenerationsTasks）

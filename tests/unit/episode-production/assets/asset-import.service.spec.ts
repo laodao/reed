@@ -16,8 +16,8 @@ import { AssetImageEntity } from '@core/database/entities/episode-production/ass
 import { PortraitVariantEntity } from '@core/database/entities/portrait-variant.entity'
 import { ImageEntity } from '@core/database/entities/image.entity'
 import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
-import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
-import { AssetImportService } from '@core/modules/episode-production/assets/services/asset-import.service'
+import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
+import { AssetImportService } from '@core/platform/episode-production/assets/services/asset-import.service'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({

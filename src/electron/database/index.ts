@@ -106,7 +106,7 @@ import { ImageAssetRepository } from '@core/database/repositories/image-asset.re
 import { OSSConfigRepository } from '@core/database/repositories/oss-config.repository'
 import { DataSourceRepository } from '@core/database/repositories/datasource.repository'
 import { DataPathService } from '../services/data-path.service'
-import { LanceDBService } from '@core/services/lance-db.service'
+import { LanceDBService } from '@core/platform/services/lance-db.service'
 
 // === Phase 1: TypeORM 双方言迁移 ===
 import type { DataSource } from 'typeorm'
@@ -261,7 +261,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
   static getInstance(): DatabaseManager {
     if (!DatabaseManager.instance) {
       DatabaseManager.instance = new DatabaseManager()
-      // 注册到 core 层访问器，使 core/services 能够无 Electron 依赖地获取 DatabaseManager
+      // 注册到 core 层访问器，使 core 平台层服务能够无 Electron 依赖地获取 DatabaseManager
       registerCoreDatabaseManager(() => DatabaseManager.instance)
     }
     return DatabaseManager.instance
@@ -327,7 +327,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     // 人像内置提示词模板 seeder（幂等）：新版人像设计（spec 2026-07-24）。
     // 依赖 portraitPromptTemplates 仓库，必须在 initRepositories 之后。
     const { PortraitTemplateSeederService } = await import(
-      '@core/services/portrait-template-seeder.service'
+      '@core/platform/services/portrait-template-seeder.service'
     )
     await PortraitTemplateSeederService.seed()
 
@@ -804,7 +804,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
    */
   private async initializeLanceDB(dataPath: string): Promise<void> {
     try {
-      const { initVectorStore } = await import('@core/services/vector/registry')
+      const { initVectorStore } = await import('@core/platform/services/vector/registry')
       // PC 端永远走 LanceDB（无 pgvector 选择，离线优先）
       await initVectorStore({ mode: 'lance', dataPath })
       console.log('[DatabaseManager] LanceDB 向量库初始化完成')

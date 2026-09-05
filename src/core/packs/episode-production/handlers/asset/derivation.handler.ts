@@ -15,9 +15,9 @@ import {
   GalleryDerivationService,
   type DeriveSingleInput,
   type DeriveBatchInput,
-} from '@core/modules/episode-production/assets/services/gallery-derivation.service'
-import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
-import { createGalleryImageGenerator } from '@core/modules/episode-production/assets/services/image-provider-adapter'
+} from '@core/platform/episode-production/assets/services/gallery-derivation.service'
+import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
+import { createGalleryImageGenerator } from '@core/platform/episode-production/assets/services/image-provider-adapter'
 
 export function registerDerivationHandlers(): void {
   ipcBridge.handle('ep:asset:derive:single', handleDeriveSingle)

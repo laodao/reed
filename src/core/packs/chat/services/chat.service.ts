@@ -7,11 +7,11 @@
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import { createProvider } from '@core/platform/providers/llm'
-import { PROVIDER_TEMPLATES } from '@core/services/provider-template.service'
+import { PROVIDER_TEMPLATES } from '@core/platform/services/provider-template.service'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
-import { FileService } from '@core/services/file.service'
-import { KnowledgeBaseService } from '@core/services/knowledge-base.service'
-import { getSearchEngineService } from '@core/services/search-engine.service'
+import { FileService } from '@core/platform/services/file.service'
+import { KnowledgeBaseService } from '@core/platform/services/knowledge-base.service'
+import { getSearchEngineService } from '@core/platform/services/search-engine.service'
 import type {
   Dialog,
   ChatContext,

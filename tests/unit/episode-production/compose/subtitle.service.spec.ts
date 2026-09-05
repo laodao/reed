@@ -17,8 +17,8 @@ import { StoryboardEntity } from '@core/database/entities/episode-production/sto
 import {
   SubtitleService,
   formatSrtTime,
-} from '@core/modules/episode-production/compose/subtitle.service'
-import { TimelineBuilderService } from '@core/modules/episode-production/compose/timeline-builder.service'
+} from '@core/platform/episode-production/compose/subtitle.service'
+import { TimelineBuilderService } from '@core/platform/episode-production/compose/timeline-builder.service'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({

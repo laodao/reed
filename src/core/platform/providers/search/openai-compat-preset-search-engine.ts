@@ -1,6 +1,6 @@
 /**
  * OpenAI 兼容预置搜索引擎（Perplexity / DeepSeek 生成）
- * @module search-engines/openai-compat-preset-search-engine
+ * @module platform/providers/search/openai-compat-preset-search-engine
  * @description 复用 CustomApiSearchEngine 的 /chat/completions 实现，
  *              仅覆盖类型名与默认端点/模型，作为「模型式预置」搜索引擎模板。
  *

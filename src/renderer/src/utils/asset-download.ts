@@ -12,7 +12,7 @@ import {
   buildUrlShortcut,
   ensureExtension,
   sanitizeFileName,
-} from '@core/modules/assets/asset-download'
+} from '@core/platform/assets/asset-download'
 import type { AssetRecord } from '@shared/types/asset.types'
 
 export interface WebAssetDownload {

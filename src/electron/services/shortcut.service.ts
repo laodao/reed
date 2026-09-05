@@ -1,6 +1,6 @@
 /**
  * 快捷键服务
- * @module services/shortcut.service
+ * @module platform/services/shortcut.service
  * @description 管理应用级快捷键
  */
 

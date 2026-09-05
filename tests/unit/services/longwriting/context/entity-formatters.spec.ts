@@ -17,7 +17,7 @@ import {
   formatMemoryItem,
   getStoryTypeName,
   calculateStoryProgressStage,
-} from '@core/services/longwriting/context/entity-formatters'
+} from '@core/platform/services/longwriting/context/entity-formatters'
 
 describe('buildCharacterInfo', () => {
   it('完整角色：content 含名字/基本信息/外貌/状态', () => {

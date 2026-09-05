@@ -16,7 +16,7 @@ import { ItemBindingEntity } from '@core/database/entities/episode-production/it
 import { LwCharacterEntity } from '@core/database/entities/lw-character.entity'
 import { addCharacterBindingPreset } from '@core/database/migrations/add-character-binding-preset'
 import { seedPresetDigitalHumans } from '@core/database/migrations/seed-preset-digital-humans'
-import { PresetDigitalHumanService } from '@core/modules/episode-production/assets/services/preset-digital-human.service'
+import { PresetDigitalHumanService } from '@core/platform/episode-production/assets/services/preset-digital-human.service'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 
 async function buildDb(): Promise<DataSource> {

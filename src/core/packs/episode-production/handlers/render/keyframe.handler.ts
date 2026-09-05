@@ -11,8 +11,8 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type { CharacterBinding, Storyboard } from '@shared/types/story-to-video.types'
 import { StoryToVideoResourceService, PRESET_STYLES } from '@core/packs/episode-production/services/story-to-video-resource.service'
-import { KeyframeGenerationService } from '@core/modules/episode-production/render/keyframe/keyframe-generation.service'
-import { planRegenPropagation } from '@core/modules/episode-production/render/keyframe/keyframe-chain-strategy'
+import { KeyframeGenerationService } from '@core/platform/episode-production/render/keyframe/keyframe-generation.service'
+import { planRegenPropagation } from '@core/platform/episode-production/render/keyframe/keyframe-chain-strategy'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 
 export function registerKeyframeHandlers(): void {
