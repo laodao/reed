@@ -15,6 +15,7 @@ import { DataSource } from 'typeorm'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 import { PortraitVariantEntity } from '@core/database/entities/portrait-variant.entity'
 import { ImageEntity } from '@core/database/entities/image.entity'
+import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
 import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
 import { AssetImportService } from '@core/modules/episode-production/assets/services/asset-import.service'
 
@@ -22,7 +23,7 @@ async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({
     type: 'better-sqlite3',
     database: ':memory:',
-    entities: [AssetImageEntity, PortraitVariantEntity, ImageEntity],
+    entities: [VideoProjectEntity, AssetImageEntity, PortraitVariantEntity, ImageEntity],
     synchronize: true,
   })
   await ds.initialize()

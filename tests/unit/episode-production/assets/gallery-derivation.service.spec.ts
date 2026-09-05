@@ -15,6 +15,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { DataSource } from 'typeorm'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
+import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
 import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
 import {
   GalleryDerivationService,
@@ -25,7 +26,7 @@ async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({
     type: 'better-sqlite3',
     database: ':memory:',
-    entities: [AssetImageEntity],
+    entities: [VideoProjectEntity, AssetImageEntity],
     synchronize: true,
   })
   await ds.initialize()

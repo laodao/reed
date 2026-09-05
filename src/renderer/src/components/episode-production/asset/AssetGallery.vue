@@ -21,8 +21,9 @@
       </div>
     </div>
 
-    <!-- 主体：左图集导航 + 右大图预览 -->
-    <div class="gallery-body">
+    <!-- 主体：左图集导航 + 右大图预览（仅在选中资产时渲染；
+         否则 .empty 的 height:100% 会把本区挤成 0 高，提示词框/生成按钮漂浮在空态上方） -->
+    <div v-if="assetId" class="gallery-body">
       <!-- 左：图集导航（竖排缩略） -->
       <aside class="gallery-nav">
         <div
@@ -180,7 +181,7 @@
 import { summarizeBatchResults } from '@/utils/batch-summary'
 import { ref, computed, watch, onMounted, onActivated } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Picture, MagicStick, Plus, Upload, Loading, Refresh, Link, Delete, Download } from '@element-plus/icons-vue'
+import { Picture, MagicStick, Plus, Loading, Refresh, Link, Delete, Download } from '@element-plus/icons-vue'
 import { toImageUrl } from '@/utils/asset-url'
 import { stripSystemConstraints } from '@core/modules/episode-production/assets/prompts/asset-identity-prompt'
 import { generateMainFor } from '@/api/main-image-generator'
@@ -740,7 +741,8 @@ onActivated(() => {
 }
 
 .empty {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;

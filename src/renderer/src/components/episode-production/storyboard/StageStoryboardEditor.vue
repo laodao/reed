@@ -306,7 +306,7 @@ async function load(): Promise<void> {
 
   const scResp = await window.electronAPI.episodeProduction.listScenes(ep.data.scriptId)
   scenes.value = scResp.success ? (scResp.data || []) : []
-  void loadSegments()
+  await loadSegments()
   // 优先加载指定场次（来自列表页点击）；否则取第一个有分镜的场次
   const target = props.sceneId ? scenes.value.find(s => s.id === props.sceneId) : null
   const order = target ? [target, ...scenes.value.filter(s => s.id !== target.id)] : scenes.value
@@ -314,6 +314,13 @@ async function load(): Promise<void> {
     const sbResp = await window.electronAPI.episodeProduction.listStoryboards(sc.id)
     if (sbResp.success && sbResp.data?.length) {
       shots.value = sbResp.data
+      // 有分镜但未分段 → 静默补齐分段（片段是制作页最小单元；completed 段后端保留）
+      if (shots.value.some(sb => !segmentByShotId.value.get(sb.id))) {
+        try {
+          const r = await (window.electronAPI.episodeProduction as any).recomputeSegments(props.episodeId, {})
+          if (r?.success) await loadSegments()
+        } catch { /* 静默失败：保留未分段的单镜回退视图 */ }
+      }
       selectShot(shots.value[0])
       syncPrompt()
       return

@@ -16,14 +16,11 @@ import { getPathProvider } from '@core/interfaces/path.interface'
 import { toAssetUrl } from '@core/utils/asset-path'
 import {
   createVideoProvider,
-  getProviderDefinition,
-  VIDEO_PROVIDER_DEFINITIONS,
   isProviderImplemented
 } from '@core/video-providers'
 import type { BaseVideoProvider } from '@core/video-providers'
 import type {
   VideoProvider,
-  VideoModel,
   VideoGenerationRequest,
   VideoGenerationResponse,
   VideoTaskStatus,
@@ -300,7 +297,7 @@ export class VideoGenerationService {
    */
   private static async saveVideoFromUrl(
     videoUrl: string,
-    modelId: string
+    _modelId: string
   ): Promise<string | null> {
     try {
       const userDataPath = getPathProvider().getDataPath()

@@ -18,13 +18,14 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { DataSource } from 'typeorm'
 import { ItemBindingEntity } from '@core/database/entities/episode-production/item-binding.entity'
 import { LwItemEntity } from '@core/database/entities/lw-item.entity'
+import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
 import { ItemAssetService } from '@core/modules/episode-production/assets/services/item-asset.service'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({
     type: 'better-sqlite3',
     database: ':memory:',
-    entities: [ItemBindingEntity, LwItemEntity],
+    entities: [VideoProjectEntity, ItemBindingEntity, LwItemEntity],
     synchronize: true,
   })
   await ds.initialize()

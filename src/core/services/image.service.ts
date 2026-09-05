@@ -17,7 +17,6 @@ import { toAssetUrl } from '@core/utils/asset-path'
 import {
   createImageProvider,
   getProviderDefinition,
-  IMAGE_PROVIDER_DEFINITIONS,
   isProviderImplemented
 } from '@core/image-providers'
 import { getModelCapabilities } from '@core/image-providers/model-capabilities'
@@ -265,7 +264,6 @@ export class ImageService {
 
         // 为每个图像创建记录
         for (let i = 0; i < response.images.length; i++) {
-          const imageInfo = response.images[i]
           const imageRecord = await dbManager.images.create({
             prompt: request.prompt,
             negativePrompt: request.negativePrompt,

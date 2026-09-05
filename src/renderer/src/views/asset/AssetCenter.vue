@@ -736,8 +736,8 @@ async function goSource(asset: AssetRecord): Promise<void> {
   }
 }
 
-/** 删除组（连带成员资产；内置跳过） */
-async function handleDeleteGroup(groupId: string): Promise<void> {
+/** 删除组（连带成员资产；内置跳过）。成员取自当前打开的 groupDetail，groupId 仅为语义占位 */
+async function handleDeleteGroup(_groupId: string): Promise<void> {
   const detail = groupDetail.value
   const members = detail?.members ?? []
   if (members.some(m => m.isBuiltin)) {

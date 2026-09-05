@@ -22,7 +22,7 @@ import { stringifyValue } from '../engine/variable-resolver'
 /** 主进程 ffmpeg 可执行路径（@ffmpeg-installer 缓存了与平台匹配的二进制） */
 function ffmpegBin(): string {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
     const inst = require('@ffmpeg-installer/ffmpeg') as { path?: string }
     return inst.path || 'ffmpeg'
   } catch {

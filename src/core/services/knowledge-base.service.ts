@@ -170,6 +170,16 @@ export class KnowledgeBaseService {
         return { success: false, error: '已达到知识库数量上限' }
       }
 
+      // 防御性校验：缺 embedding 配置的库后续文档处理必然失败（"未配置 Embedding 提供商"），
+      // 创建时就拦下，避免产生永远不可用的库
+      const ec = req.embeddingConfig
+      if (!ec?.modelId) {
+        return { success: false, error: '缺少 Embedding 配置（embeddingConfig.modelId）' }
+      }
+      if (ec.provider !== 'local' && !ec.providerConfigId) {
+        return { success: false, error: '缺少 Embedding 提供商配置（embeddingConfig.providerConfigId）' }
+      }
+
       return { success: true, data: await db.knowledgeBases.create(req) }
     } catch (e: any) {
       return { success: false, error: e.message }
@@ -532,7 +542,12 @@ export class KnowledgeBaseService {
     try {
       let resolved = filePath
       if (!path.isAbsolute(resolved)) {
-        resolved = path.join(getPathProvider().getDataPath(), '..', resolved)
+        // 相对路径基准是 dataPath（与 asset-paths-to-relative 迁移约定一致）；
+        // 兼容更老的数据（可能相对 dataPath 上级）：先按 dataPath 解析，不存在再回退 '..'
+        const primary = path.join(getPathProvider().getDataPath(), resolved)
+        resolved = fs.existsSync(primary)
+          ? primary
+          : path.join(getPathProvider().getDataPath(), '..', resolved)
       }
       if (fs.existsSync(resolved)) {
         try {
@@ -618,8 +633,6 @@ export class KnowledgeBaseService {
       const chunkIdMap = new Map<string, string>()
 
       const chunkRequests: CreateChunkRequest[] = splitChunks.map(chunk => {
-        // 生成临时 ID 用于映射
-        const tempId = chunk.parentChunkId || ''
         return {
           documentId: doc.id,
           knowledgeBaseId: kb.id,
@@ -707,7 +720,12 @@ export class KnowledgeBaseService {
    * 注：原 decodeTextFile/hasGarbledChars 已迁入 extract-text，此处仅保留 parseFile 入口。
    */
   private async parseFile(filePath: string, fileType: FileType): Promise<string> {
-    return extractTextFromFile(filePath, fileType)
+    // file_path 入库约定为 dataPath 相对路径（asset-paths-to-relative 迁移会把绝对路径改写为相对），
+    // 从 DB 重读（重新处理/重启后续跑）必须解析回绝对路径，否则按进程 CWD 解析必 ENOENT
+    const resolved = path.isAbsolute(filePath)
+      ? filePath
+      : path.join(getPathProvider().getDataPath(), filePath)
+    return extractTextFromFile(resolved, fileType)
   }
 
   /**
@@ -723,6 +741,7 @@ export class KnowledgeBaseService {
 
     // 使用 jschardet 自动检测编码
     try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const jschardet = require('jschardet')
       const detected = jschardet.detect(buffer)
 
@@ -753,6 +772,7 @@ export class KnowledgeBaseService {
           }
         } else {
           try {
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
             const iconv = require('iconv-lite')
             if (iconv.encodingExists(targetEncoding)) {
               const text = iconv.decode(buffer, targetEncoding)
@@ -782,6 +802,7 @@ export class KnowledgeBaseService {
 
     // 尝试 GBK（最常见的中文字符编码）
     try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const iconv = require('iconv-lite')
       const gbkText = iconv.decode(buffer, 'gbk')
       if (!this.hasGarbledChars(gbkText)) {
@@ -803,6 +824,7 @@ export class KnowledgeBaseService {
     // 检查常见的乱码模式
     const garbledPatterns = [
       /\ufffd/,           // Unicode 替换字符
+      // eslint-disable-next-line no-control-regex
       /[\x00-\x08\x0b\x0c\x0e-\x1f]/, // 控制字符（换行、制表符除外）
     ]
 

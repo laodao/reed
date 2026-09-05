@@ -659,7 +659,6 @@ import {
   Upload,
   Document,
   Loading,
-  View,
   Link
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
@@ -679,9 +678,7 @@ const {
   hasCurrentKnowledgeBase,
   documentCount,
   embeddingModels,
-  hasEmbeddingModels,
   error,
-  documentEstimatedTimes,
 
   // 对话框
   showCreateDialog,
@@ -696,15 +693,14 @@ const {
 
   // 方法
   selectKnowledgeBase,
+  loadKnowledgeBases,
   createKnowledgeBase,
   updateKnowledgeBase,
   deleteKnowledgeBase,
   openCreateDialog,
-  openEditDialog,
   selectAndUploadFiles,
   deleteDocument,
   reprocessDocument,
-  getDocumentChunks,
   searchKnowledgeBase,
   clearSearchResults,
   selectEmbeddingModel,

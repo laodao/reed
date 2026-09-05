@@ -91,7 +91,7 @@
                   <div class="tile-preview" @click="onEnterScene(sc)">
                     <video v-if="seg.videoPath" :src="toVideoUrl(seg.videoPath)" class="tile-img" muted preload="metadata" />
                     <el-image v-else-if="segFrameUrl(seg)" :src="segFrameUrl(seg)" fit="cover" class="tile-img" />
-                    <div v-else class="tile-empty"><el-icon :size="18"><Picture /></el-icon><span>{{ segStatusLabel(seg.status) }}</span></div>
+                    <div v-else class="tile-empty"><el-icon :size="18"><Picture /></el-icon></div>
                     <span class="tile-status" :class="`st-${seg.status}`">{{ segStatusLabel(seg.status) }}</span>
                   </div>
                   <div class="tile-meta" @click="onEnterScene(sc)">
@@ -119,9 +119,9 @@
                 </div>
               </div>
 
-              <!-- 未分段：原样式分镜格 -->
-              <div v-else class="group-shots">
-                <div v-for="sb in (storyboards[sc.id] || [])" :key="sb.id" class="shot-tile" @click="onEnterScene(sc)">
+              <!-- 未入段分镜（自动分段失败时的兜底；正常会被 autoEnsureSegments 收编） -->
+              <div v-if="unsegmentedShotsOf(sc.id).length || !(storyboards[sc.id] || []).length" class="group-shots">
+                <div v-for="sb in unsegmentedShotsOf(sc.id)" :key="sb.id" class="shot-tile" @click="onEnterScene(sc)">
                   <div class="tile-preview">
                     <el-image v-if="frameUrl(sb)" :src="frameUrl(sb)" fit="cover" class="tile-img" />
                     <div v-else class="tile-empty"><el-icon :size="18"><Picture /></el-icon><span>待生成</span></div>
@@ -266,11 +266,42 @@ async function load(): Promise<void> {
   if (!scResp.success) { scenes.value = []; return }
   scenes.value = scResp.data || []
   await Promise.all([...scenes.value.map(s => loadStoryboards(s.id)), loadSegments(), loadProjectConfig()])
+  await autoEnsureSegments()
 }
 
 async function loadStoryboards(sceneId: string): Promise<void> {
   const r = await window.electronAPI.episodeProduction.listStoryboards(sceneId)
   storyboards.value[sceneId] = r.success ? (r.data || []) : []
+}
+
+/** 已入段的分镜 id 集 */
+const segmentedShotIds = computed(() => {
+  const set = new Set<string>()
+  for (const seg of segments.value) for (const id of seg.storyboardIds) set.add(id)
+  return set
+})
+
+/** 存在未入段的分镜（新生成的分镜未分段 / 部分分段存量）→ 需要自动补齐分段 */
+const hasUnsegmentedShots = computed(() => {
+  for (const arr of Object.values(storyboards.value)) {
+    for (const sb of arr ?? []) if (!segmentedShotIds.value.has(sb.id)) return true
+  }
+  return false
+})
+
+/**
+ * 自动补齐分段（幂等，每剧集每次会话最多一次）：
+ * 片段是分镜页的最小单元，未入段的分镜对用户不可见且无法片段级生成，
+ * 故加载后发现未入段分镜时静默重算（completed 段由后端保留，不受影响）。
+ */
+let autoSegDoneFor: string | null = null
+async function autoEnsureSegments(): Promise<void> {
+  if (!hasUnsegmentedShots.value || autoSegDoneFor === props.episodeId) return
+  autoSegDoneFor = props.episodeId
+  try {
+    const r = await (window.electronAPI.episodeProduction as any).recomputeSegments(props.episodeId, {})
+    if (r?.success) await loadSegments()
+  } catch { /* 静默失败：保留"立即分段"引导条兜底 */ }
 }
 
 async function loadSegments(): Promise<void> {
@@ -428,6 +459,11 @@ async function onGenerateAll(): Promise<void> {
   })
 }
 
+/** 该场景下未入段的分镜（兜底显示；正常会被自动分段收编为空） */
+function unsegmentedShotsOf(sceneId: string): any[] {
+  return (storyboards.value[sceneId] ?? []).filter(sb => !segmentedShotIds.value.has(sb.id))
+}
+
 /** 片段封面：首镜关键帧（无视频时的预览图） */
 function segFrameUrl(seg: SegmentItem): string | null {
   const first = seg.storyboardIds.map(id => storyboardById.value.get(id)).find(Boolean)
@@ -465,6 +501,9 @@ async function onGenerateAllStoryboards(): Promise<void> {
     if (r.success) {
       ElMessage.success('分镜已批量生成')
       await Promise.all(scenes.value.map(s => loadStoryboards(s.id)))
+      // 新生成的分镜立即自动分段（片段是分镜页最小单元，不允许出现裸分镜）
+      autoSegDoneFor = null
+      await autoEnsureSegments()
     } else {
       ElMessage.error(r.error || '生成失败')
     }

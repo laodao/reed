@@ -147,6 +147,9 @@ export class AssetImportService {
       isMain: false,
     })
     if (input.asMain) await this.imageSvc.setAsMain(newImage.id)
-    return newImage
+    // setAsMain 后 isMain 已升主图，重读返回（与上方 label 复用分支一致），避免返回过期的 isMain=false
+    return (input.asMain
+      ? ((await this.imageSvc.getById(newImage.id)) as AssetImageEntity)
+      : newImage)
   }
 }
