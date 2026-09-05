@@ -1,6 +1,6 @@
 /**
  * 知识库 IPC 处理器
- * @module ipc/handlers/knowledge-base
+ * @module core/packs/knowledge-base/handlers/knowledge-base.handler
  * @description 处理知识库相关的 IPC 请求
  */
 
@@ -13,7 +13,7 @@ const isElectron = !!(process.versions as Record<string, string | undefined>)?.e
 
 function loadElectron(): { BrowserWindow?: any; dialog?: any } {
   if (!isElectron) return {}
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
   const e = require('electron')
   return { BrowserWindow: e.BrowserWindow, dialog: e.dialog }
 }

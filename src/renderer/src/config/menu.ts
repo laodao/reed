@@ -6,8 +6,9 @@
  * 保证两处入口永远一致（历史上两处各自复制一份，频繁漂移）。
  *
  * 业务包架构（P3）改造：菜单从静态常量改为「壳条目 + 注册表」——
- * 壳条目（首页/工作流/应用/知识库/资产/设置）留在本文件；
- * 各业务包的菜单条目由 src/renderer/src/packs/<name>/index.ts 声明，
+ * 壳条目（首页；设置在底部菜单 footerMenuItems）留在本文件；
+ * 二期（2026-09-05）后知识库/工作流/应用/资产中心也已包化，
+ * 全部业务包的菜单条目由 src/renderer/src/packs/<name>/index.ts 声明，
  * 装配时经 registerMenuItems() 合入。mainMenuItems 为响应式数组，
  * MainLayout/Home 的 computed 消费方无需改动即可自动刷新。
  *
@@ -18,12 +19,9 @@
  */
 
 import { markRaw, reactive } from 'vue'
-import { Connection,
+import {
   HomeFilled,
   Setting,
-  FolderOpened,
-  Box,
-  Collection,
 } from '@element-plus/icons-vue'
 
 export interface MenuItem {
@@ -57,30 +55,6 @@ const shellMainMenuItems: MenuItem[] = [
     path: '/',
     label: '首页',
     icon: markRaw(HomeFilled)
-  },
-  {
-    path: '/knowledge-base',
-    label: '知识库',
-    description: '个人知识管理与检索',
-    icon: markRaw(FolderOpened)
-  },
-  {
-    path: '/workflow',
-    label: '工作流',
-    description: '可视化流程编排与自动化执行',
-    icon: markRaw(Connection),
-  },
-  {
-    path: '/apps',
-    label: '应用',
-    description: '已发布的工作流应用——会话/分享/API 分发',
-    icon: markRaw(Box),
-  },
-  {
-    path: '/assets',
-    label: '资产管理',
-    description: '工作流成果统一沉淀——按分类查看、预览、复用',
-    icon: markRaw(Collection)
   }
 ]
 

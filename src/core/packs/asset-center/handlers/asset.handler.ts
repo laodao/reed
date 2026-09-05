@@ -1,6 +1,6 @@
 /**
  * 通用资产模块 IPC 处理器
- * @module electron/ipc/handlers/asset.handler
+ * @module core/packs/asset-center/handlers/asset.handler
  * @description 薄适配层：asset:* 通道统一"单对象参数 → IpcResponse"，
  *              业务在 core 的 AssetService（架构铁律：handler 不写业务）。
  *              与 app.handler 同 via ipcBridge（Electron + Web 双端注册）；
@@ -110,9 +110,9 @@ export function registerAssetHandlers(): void {
       const record = await getAssetService().getAsset(p.id)
       if (!record) throw new Error('资产不存在')
       const payload = await getAssetService().buildDownloadPayload(record)
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
       const { dialog } = require('electron')
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
       const fs = require('fs/promises')
       const filters = payload.kind === 'file'
         ? [{ name: '文件', extensions: ['*'] }]
@@ -142,7 +142,7 @@ async function openAssetFolder(id: string): Promise<{ opened: boolean }> {
   if (!record) throw new Error('资产不存在')
   const absPath = getAssetService().resolveAssetPath(record)
   if (!absPath) throw new Error('该资产无本地文件')
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
   const { shell } = require('electron')
   shell.showItemInFolder(absPath)
   return { opened: true }
@@ -155,7 +155,7 @@ async function openGroupFolder(groupId: string): Promise<{ opened: boolean }> {
   }
   const absPath = await getAssetService().resolveGroupFolderPath(groupId)
   if (!absPath) throw new Error('该组内无本地文件（套图文件可能已删除）')
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
   const { shell } = require('electron')
   shell.showItemInFolder(absPath)
   return { opened: true }

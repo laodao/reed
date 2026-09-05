@@ -1,6 +1,6 @@
 /**
  * 应用模块 IPC 处理器（片3）
- * @module electron/ipc/handlers/app.handler
+ * @module core/packs/app/handlers/app.handler
  * @description 薄适配层：app:* 与 app-session:* 通道统一"单对象参数 → IpcResponse"，
  *              业务在 core 的 app-definition/app-session 服务（架构铁律：handler 不写业务）。
  *              与 workflow.handler 同 via ipcBridge（Electron + Web 双端注册）。

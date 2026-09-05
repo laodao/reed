@@ -1,6 +1,6 @@
 /**
  * 工作流 IPC 处理器（双端共用：ipcBridge 同时注册 Electron ipcMain 与 Web 路由表）
- * @module electron/ipc/handlers/workflow.handler
+ * @module core/packs/workflow/handlers/workflow.handler
  * @description 薄适配层：全部通道统一"单对象参数 → IpcResponse"契约，
  *              业务在 core 的 definition/run 服务（架构铁律：handler 不写业务）。
  *              子系统未初始化（boot 失败）时返回明确错误而非崩溃。
@@ -116,7 +116,7 @@ export function registerWorkflowHandlers(): void {
         throw new Error('非法上传目录')
       }
       mkdirSync(dir, { recursive: true })
-      const safeName = p.fileName.replace(/[\/:*?"<>|]/g, '_')
+      const safeName = p.fileName.replace(/[/:*?"<>|]/g, '_')
       const filePath = path.join(dir, `${p.nodeId}_${Date.now().toString(36)}_${safeName}`)
       writeFileSync(filePath, buffer)
       // 尽力解析文本（pdf/docx/xlsx/txt...）；解析失败不影响上传（值仍有 path/name）

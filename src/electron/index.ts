@@ -108,14 +108,10 @@ import { registerImageHandlers } from './ipc/handlers/image.handler'
 import { registerFileHandlers } from './ipc/handlers/file.handler'
 import { registerTranslationHandlers } from './ipc/handlers/translation.handler'
 import { registerDataPathHandlers } from './ipc/handlers/data-path.handler'
-import { registerKnowledgeBaseHandlers } from './ipc/handlers/knowledge-base.handler'
 import { registerExportHandlers } from './ipc/handlers/export.handler'
 import { registerSearchEngineHandlers } from './ipc/handlers/search-engine.handler'
-import { registerWorkflowHandlers } from './ipc/handlers/workflow.handler'
-import { registerAppHandlers } from './ipc/handlers/app.handler'
 import { registerToolHandlers } from './ipc/handlers/tool.handler'
 import { registerEmailHandlers } from './ipc/handlers/email.handler'
-import { registerAssetHandlers } from './ipc/handlers/asset.handler'
 import { registerNewsSourceHandlers } from './ipc/handlers/news-source.handler'
 import { registerFaviconHandlers } from './ipc/handlers/favicon.handler'
 import { registerOSSHandlers } from './ipc/handlers/oss.handler'
@@ -337,17 +333,13 @@ function initIpcHandlers(): void {
   registerFileHandlers()
   registerTranslationHandlers()
   registerDataPathHandlers()
-  registerKnowledgeBaseHandlers()
   registerExportHandlers()
-  // skills/diary/portrait/chat/voice-design/longwriting/episode-production 七个业务的
-  // handler 已迁移为内置业务包（core/packs/builtin-packs），由包内核激活时注册，
-  // 不再在此平铺（避免重复注册）
+  // skills/diary/portrait/chat/voice-design/longwriting/episode-production/
+  // workflow/app/knowledge-base/asset-center 十一个业务的 handler 已迁移为内置业务包
+  // （core/packs/builtin-packs），由包内核激活时注册，不再在此平铺（避免重复注册）
   registerSearchEngineHandlers()
-  registerWorkflowHandlers()
-  registerAppHandlers()
   registerToolHandlers()
   registerEmailHandlers()
-  registerAssetHandlers()
   registerNewsSourceHandlers()
   registerFaviconHandlers()
   registerOSSHandlers()

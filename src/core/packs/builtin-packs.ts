@@ -15,6 +15,13 @@
  *              - P4 第三批：longwriting（longwriting.handler 单文件 202 个 channel）。
  *              - P4 第四批：episode-production（episode-production/ 目录 25 个 handler
  *                文件 175 个 channel，统一入口 registerEpisodeProductionHandlers）。
+ *              - 二期（2026-09-05）：workflow（27 个 wf: 前缀）/ app（12 个 app: +
+ *                8 个 app-session: 前缀，dependencies: ['workflow']）/ knowledge-base
+ *                （knowledge-base: / kb: / kb-qa: 三前缀共 30 个）/ asset-center
+ *                （18 个 asset: 前缀）四包迁移；settings/api-key/provider-config/
+ *                data-path/image/file/translation/export/search-engine/tool/email/
+ *                news-source/favicon/oss/datasource/event-admin 等平台级 handler
+ *                按裁决留壳（无独立业务界面或禁用即自残）。
  */
 
 import type { PackDefinition } from './registry'
@@ -25,6 +32,10 @@ import { chatPack } from './chat'
 import { voiceDesignPack } from './voice-design'
 import { longwritingPack } from './longwriting'
 import { episodeProductionPack } from './episode-production'
+import { workflowPack } from './workflow'
+import { appPack } from './app'
+import { knowledgeBasePack } from './knowledge-base'
+import { assetCenterPack } from './asset-center'
 
 export const builtinPacks: PackDefinition[] = [
   skillsPack,
@@ -34,4 +45,10 @@ export const builtinPacks: PackDefinition[] = [
   voiceDesignPack,
   longwritingPack,
   episodeProductionPack,
+  workflowPack,
+  // app 依赖 workflow，登记在其后（registry 对未就绪依赖按 pending 处理，与顺序无关，
+  // 此排序只为可读性）
+  appPack,
+  knowledgeBasePack,
+  assetCenterPack,
 ]
