@@ -2,7 +2,7 @@
 
 - 日期：2026-09-05 · 分支：`feat/agent-harness`（基于 feat/plugin-arch @ f361915e）
 - 前置调研：[2026-09-05-agent-harness-research.md](./2026-09-05-agent-harness-research.md)（v5，含运行级 spike）
-- 状态：设计评审稿（待用户确认后进入 M0 实现）
+- 状态：设计评审稿 v2（v2 修订：事件双路径接入平台事件总线，§6.9.1；待与 tasks/2026-08-28-agent-loop-harness 12-17 号规格做对齐评审后进入 M0）
 - 骨架：`src/core/agent/`（be56607f 已提交 13 文件；本设计定稿后 M0 第一步迁移至 platform，见 §2.2）
 
 ---
@@ -117,7 +117,7 @@ multiTurn 历史注入。**调用层（ai-call.ts）已抽象，循环层没有*
 | F7 | 会话管理 | `memory/session-store.ts` | SessionStore 接口的自研实现 |
 | F8 | 记忆 | `memory/memory-service.ts` | schema 借 happyclaw（MIT）、策略借 qm（MIT） |
 | F9 | 状态快照 | `context/state-snapshot.ts` | 自研接口，业务注入 |
-| F10 | 事件流 | `runtime/event-bridge.ts` | 自研（Session 事件词汇表→业务通道） |
+| F10 | 事件流 | `runtime/event-bridge.ts` + `runtime/agent-producer.ts` | 自研（直推 + 平台事件总线双路径，§6.9.1） |
 | F11 | 中断与恢复 | 横切：agent-service（AbortController 池）+ context-manager（哨兵） | qm 哨兵模式 |
 | F12 | 可观测性 | `provider/provider-adapter.ts` + `runtime/agent-service.ts` 内埋点 | createLogger + usage 事件 |
 
@@ -286,6 +286,7 @@ export interface AgentRuntimeDeps {
   sessionStore?: AgentSessionStore                                     // 缺省 DB 实现；测试用内存版
   memoryService?: MemoryService                                        // 缺省 DB 实现
   eventEmitter?: { emit(channel: string, payload: unknown): void }     // 缺省 interfaces/event.interface
+  eventBus?: { publish(input: unknown): Promise<unknown> } | null      // 平台事件总线（§6.9.1）；null=仅直推
   clock?: () => number                                                 // 缺省 Date.now；测试注入假时钟
   logger?: Pick<Console, 'info' | 'warn' | 'error'>                    // 缺省 createLogger('agent-runtime')
 }
@@ -600,6 +601,54 @@ export class EventBridge {
 - 节流：text.delta 合并 30ms 窗口批量 emit（前端流畅性与事件量平衡）
 - 兼容层：长文迁移期 definition.eventChannel 仍返回 `longwriting:agent:${projectId}`，
   旧前端零改动；EP 同理 `ep-agent:${episodeId}`
+
+#### 6.9.1 双路径事件策略（v2 修订：接入平台事件总线）
+
+> 修订背景：设计初稿仅走 IEventEmitter 直推（内存态）。评审发现平台已有持久化事件总线
+> （`platform/services/event-system/`，规格 10-event-system 已实现，工作流引擎已降级为其
+> producer——`workflow-run-producer.ts` 为标准适配样例），且事件命名规范已预留 `agent:*`
+> 命名空间。本节把 harness 改造为该总线的第二个 producer。
+
+**事件分类与路径**（不是所有事件都值得持久化——按消费语义分流）：
+
+| 类别 | 事件 | 路径 | 理由 |
+|---|---|---|---|
+| UI 实时流 | reply:content（delta）、stage:*、compaction.phase | IEventEmitter 直推（传输层） | 流式 UI 推送至多一次即正确语义；持久化 delta 是浪费（正文全文已在 agent_sessions） |
+| 领域事件 | action:start/done、approval:request/resolved、reply:done、error | 发布到平台事件总线（`agent:*` 族）+ 直推 | 需要审计、跨模块反应、重放；信封带 aggregate/actor/causationId/correlationId |
+
+**producer 适配器**（`runtime/agent-producer.ts`，逐条照搬 workflow-run-producer 的可靠性契约）：
+
+```ts
+export function createAgentEventProducer(fallbackEmit: (e: AgentEvent, scopeKey: string) => void,
+                                         opts?: { getBus?: () => EventBus | null }): AgentEventPort
+// 可靠性契约（与引擎 producer 完全一致，§7.3/§9）：
+// - 总线未启动（boot 早期/无库测试）→ 回退直推，行为与接入前等价
+// - safePublish 落库失败（返回 null）→ 回退直推，前端实时推送不断
+// - 载荷违规（生产者 bug，fail-fast 抛错）→ warn + 直推兜底，绝不抛给 agent 主流程
+// - 同一 producer 的发布经 Promise 链串行化（保序：按 emit 顺序落库→按序分发）
+// - 每事件类型登记映射表 agentEventMap（AgentEvent.type → platform type），未登记类型只直推
+```
+
+平台事件信封映射：
+```
+type:      agent:turn.completed / agent:tool.executed / agent:approval.requested / ...
+aggregate: { kind: 'agent_session', id: `${definitionId}:${scopeId}` }
+actor:     { kind: 'agent', id: definitionId }
+correlationId: ${definitionId}:${scopeId}:turn:${turnNumber}
+causationId:   预留（对齐 journal 回填位，当前 null）
+```
+
+**接入后新增能力**（成本≈一个 100 行适配器 + 映射表）：
+1. **审计与重放**：全部工具执行/审批决定持久化，可按 aggregate 重放排障
+2. **跨模块反应**：命名消费者可订阅 `agent:*` 触发联动（如审批请求 → 通知/待办 pack；
+   turn 完成 → 触发工作流）——harness 与工作流的双向集成多一条事件驱动的路径
+3. **G4 影子模式对照自动化**：新旧实现各自发布（aggregate 隔离），一个命名消费者做
+   事件流 diff，替代人工观察
+4. **event-admin 控制台**与 90 天归档对 agent 事件直接生效（零额外开发）
+
+**不变项**：UI 状态恢复仍以 agent_sessions / getHistory / listPendingApprovals 为准，
+不用事件回放重建状态（会话表是事实源；事件流是旁路审计/联动通道）——与平台
+"重放只重建状态、handler 幂等去重"的既有约定一致。
 
 ---
 
