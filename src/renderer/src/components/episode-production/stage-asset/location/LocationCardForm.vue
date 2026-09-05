@@ -113,7 +113,7 @@ import { ElMessage } from 'element-plus'
 import {
   LOCATION_TIME_VARIANTS,
   LOCATION_WEATHER_VARIANTS,
-} from '@core/modules/episode-production/assets/constants/location-variants'
+} from '@core/platform/episode-production/assets/constants/location-variants'
 
 const props = defineProps<{ bindingId: string }>()
 const emit = defineEmits<{ saved: [] }>()

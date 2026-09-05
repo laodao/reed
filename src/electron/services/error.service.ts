@@ -1,6 +1,6 @@
 /**
  * 错误处理服务
- * @module services/error.service
+ * @module platform/services/error.service
  * @description 统一的错误处理和用户友好的错误提示
  */
 

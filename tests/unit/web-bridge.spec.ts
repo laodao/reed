@@ -16,7 +16,7 @@ describe('web bridge channel-map', () => {
     expect(entry, '缺少 longwriting.onGenerateEvent 配置').toBeDefined()
     expect(typeof entry.eventChannel).toBe('function')
     const ch = entry.eventChannel!('e-123')
-    // 与 src/core/services/longwriting-ai.service.ts 中的 emit channel 对齐
+    // 与 src/core/platform/services/longwriting-ai.service.ts 中的 emit channel 对齐
     expect(ch).toBe('longwriting:generate:e-123')
   })
 

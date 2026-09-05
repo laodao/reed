@@ -9,7 +9,7 @@ import { VideoEpisodeEntity } from '@core/database/entities/episode-production/v
 import {
   AssetSettingEnrichmentService,
   type CallAIFn,
-} from '@core/modules/episode-production/assets/services/asset-setting-enrichment.service'
+} from '@core/platform/episode-production/assets/services/asset-setting-enrichment.service'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({

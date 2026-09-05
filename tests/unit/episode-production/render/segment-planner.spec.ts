@@ -22,7 +22,7 @@ import {
   buildSegmentPrompt,
   clampBudgetSec,
   DEFAULT_SEGMENT_BUDGET_SEC,
-} from '@core/modules/episode-production/render/video/segment-planner'
+} from '@core/platform/episode-production/render/video/segment-planner'
 
 function shots(...durations: number[]): Array<{ id: string; duration: number }> {
   return durations.map((d, i) => ({ id: `sb${i + 1}`, duration: d }))

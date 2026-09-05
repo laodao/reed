@@ -3,7 +3,7 @@
  * @module database/repositories/asset-image.repository
  * @description 基于 BaseRepository（多租户 user_id scope 自动生效）。
  *              本 Repository 仅暴露最基础的 typeorm CRUD；高层业务逻辑统一封装在
- *              `AssetImageService`（src/core/modules/episode-production/assets/services/asset-image.service.ts）。
+ *              `AssetImageService`（src/core/platform/episode-production/assets/services/asset-image.service.ts）。
  */
 
 import type { DataSource } from 'typeorm'

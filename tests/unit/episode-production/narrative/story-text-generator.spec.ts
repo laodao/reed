@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { __test } from '@core/modules/episode-production/narrative/ai/story-text-generator'
+import { __test } from '@core/platform/episode-production/narrative/ai/story-text-generator'
 
 describe('story-text-generator buildStoryTextUserPrompt', () => {
   it('只有 prompt 时：不含【故事背景】段，仅【创作要求】', () => {

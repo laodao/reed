@@ -14,9 +14,9 @@
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
-import { ReferenceResolver } from '@core/modules/episode-production/narrative/reference-resolver'
-import { SceneScriptService } from '@core/modules/episode-production/narrative/services/scene-script.service'
-import type { ReferenceRef } from '@core/modules/episode-production/narrative/reference-resolver'
+import { ReferenceResolver } from '@core/platform/episode-production/narrative/reference-resolver'
+import { SceneScriptService } from '@core/platform/episode-production/narrative/services/scene-script.service'
+import type { ReferenceRef } from '@core/platform/episode-production/narrative/reference-resolver'
 
 export function registerReferenceHandlers(): void {
   ipcBridge.handle('ep:resolve-reference', handleResolveReference)

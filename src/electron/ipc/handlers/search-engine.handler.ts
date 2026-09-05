@@ -6,7 +6,7 @@
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getEventEmitter } from '@core/interfaces/event.interface'
-import { getSearchEngineService } from '@core/services/search-engine.service'
+import { getSearchEngineService } from '@core/platform/services/search-engine.service'
 import type {
   SearchEngineTemplateListResponse,
   SearchEngineConfigListResponse,

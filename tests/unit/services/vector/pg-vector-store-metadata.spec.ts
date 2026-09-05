@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest'
-import { PgVectorStore } from '@core/services/vector/pg-vector-store'
+import { PgVectorStore } from '@core/platform/services/vector/pg-vector-store'
 
 /** 构造一个 mock DataSource，记录所有 query 调用，可预设返回值 */
 function makeMockDs(returns: Record<string, any> = {}) {

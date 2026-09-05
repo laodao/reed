@@ -12,7 +12,7 @@
 import { describe, it, expect } from 'vitest'
 import { DataSource } from 'typeorm'
 import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
-import { StoryboardService } from '@core/modules/episode-production/narrative/services/storyboard.service'
+import { StoryboardService } from '@core/platform/episode-production/narrative/services/storyboard.service'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({

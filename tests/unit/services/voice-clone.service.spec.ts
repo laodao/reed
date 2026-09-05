@@ -1,6 +1,6 @@
 /**
  * VoiceCloneService 单元测试
- * @see src/core/services/voice-clone.service.ts
+ * @see src/core/platform/services/voice-clone.service.ts
  *
  * 跑真 sqlite/pg DataSource（与 KnowledgeBaseService 风格一致），
  * 注入 mock provider / mock secureStorage / mock pathProvider。
@@ -14,7 +14,6 @@
  */
 import {
   afterAll,
-  afterEach,
   beforeAll,
   beforeEach,
   describe,
@@ -32,7 +31,7 @@ import {
   type TestDataSource,
 } from '../helpers/create-test-data-source'
 
-import { VoiceCloneService } from '@core/services/voice-clone.service'
+import { VoiceCloneService } from '@core/platform/services/voice-clone.service'
 import { ClonedVoiceRepository } from '@core/database/repositories/cloned-voice.repository'
 import { ProviderConfigRepository } from '@core/database/repositories/provider-config.repository'
 import { CharacterBindingEntity } from '@core/database/entities/episode-production/character-binding.entity'
@@ -44,7 +43,7 @@ import * as storageModule from '@core/interfaces/storage.interface'
 import {
   DashScopeVoiceCloneError,
   type DashScopeVoiceCloneProvider,
-} from '@core/voice-providers/dashscope-voice-clone-provider'
+} from '@core/platform/providers/voice/dashscope-voice-clone-provider'
 
 /**
  * 简易 provider mock —— 模拟 cloneVoice / queryCloneStatus / deleteClonedVoice
@@ -70,7 +69,7 @@ function makeMockProvider() {
   let delBehavior: (voiceId: string) => Promise<void> = async () => undefined
 
   const provider = {
-    cloneVoice: async (input: any) => {
+    cloneVoice: async (_input: any) => {
       calls.clone++
       return cloneBehavior()
     },

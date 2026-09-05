@@ -17,8 +17,8 @@ import type { IpcResponse } from '@shared/types/ipc.types'
 import {
   StoryboardCharacterService,
   type StoryboardCharacterInput,
-} from '@core/modules/episode-production/narrative/services/storyboard-character.service'
-import { ScriptBindingFixerService } from '@core/modules/episode-production/narrative/services/script-binding-fixer.service'
+} from '@core/platform/episode-production/narrative/services/storyboard-character.service'
+import { ScriptBindingFixerService } from '@core/platform/episode-production/narrative/services/script-binding-fixer.service'
 
 export function registerStoryboardCharacterHandlers(): void {
   ipcBridge.handle('ep:list-storyboard-characters', handleList)

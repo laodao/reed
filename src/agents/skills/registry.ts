@@ -10,14 +10,14 @@
  */
 
 import type { DataSource } from 'typeorm'
-import { CharacterAssetService } from '@core/modules/episode-production/assets/services/character-asset.service'
-import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
-import { MainImageGeneratorService } from '@core/modules/episode-production/assets/services/main-image-generator.service'
-import { GalleryDerivationService } from '@core/modules/episode-production/assets/services/gallery-derivation.service'
-import { createGalleryImageGenerator } from '@core/modules/episode-production/assets/services/image-provider-adapter'
-import { ReferenceVideoAnalysisService } from '@core/modules/episode-production/reference-video/analysis.service'
-import { UserAssetService } from '@core/modules/episode-production/user-asset/user-asset.service'
-import { PresetDigitalHumanService } from '@core/modules/episode-production/assets/services/preset-digital-human.service'
+import { CharacterAssetService } from '@core/platform/episode-production/assets/services/character-asset.service'
+import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
+import { MainImageGeneratorService } from '@core/platform/episode-production/assets/services/main-image-generator.service'
+import { GalleryDerivationService } from '@core/platform/episode-production/assets/services/gallery-derivation.service'
+import { createGalleryImageGenerator } from '@core/platform/episode-production/assets/services/image-provider-adapter'
+import { ReferenceVideoAnalysisService } from '@core/platform/episode-production/reference-video/analysis.service'
+import { UserAssetService } from '@core/platform/episode-production/user-asset/user-asset.service'
+import { PresetDigitalHumanService } from '@core/platform/episode-production/assets/services/preset-digital-human.service'
 
 export type SkillContext = {
   ds: DataSource

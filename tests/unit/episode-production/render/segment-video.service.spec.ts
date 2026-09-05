@@ -17,7 +17,7 @@ import { StoryboardEntity } from '@core/database/entities/episode-production/sto
 import { StoryboardKeyframeEntity } from '@core/database/entities/episode-production/storyboard-keyframe.entity'
 import { ImageAssetEntity } from '@core/database/entities/image-asset.entity'
 import { EpVideoSegmentEntity } from '@core/database/entities/episode-production/video-segment.entity'
-import { SegmentVideoService } from '@core/modules/episode-production/render/video/segment-video.service'
+import { SegmentVideoService } from '@core/platform/episode-production/render/video/segment-video.service'
 import { EpVideoSegmentRepository } from '@core/database/repositories/video-segment.repository'
 import { StoryboardRepository } from '@core/database/repositories/storyboard.repository'
 import { StoryboardKeyframeRepository } from '@core/database/repositories/storyboard-keyframe.repository'
@@ -25,7 +25,7 @@ import { ImageAssetRepository } from '@core/database/repositories/image-asset.re
 import type {
   VideoProviderAdapter,
   VideoProviderCapabilities,
-} from '@core/modules/episode-production/render/video/video-provider-adapter'
+} from '@core/platform/episode-production/render/video/video-provider-adapter'
 
 const CAPS: VideoProviderCapabilities = {
   text: true,

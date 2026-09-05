@@ -12,7 +12,7 @@ import { LocationBindingEntity } from '@core/database/entities/episode-productio
 import { ItemBindingEntity } from '@core/database/entities/episode-production/item-binding.entity'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 import { LwCharacterEntity } from '@core/database/entities/lw-character.entity'
-import { CharacterAssetService } from '@core/modules/episode-production/assets/services/character-asset.service'
+import { CharacterAssetService } from '@core/platform/episode-production/assets/services/character-asset.service'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({

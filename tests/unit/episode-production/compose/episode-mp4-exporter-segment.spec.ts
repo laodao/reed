@@ -19,7 +19,7 @@ import {
   EpisodeMp4ExporterService,
   type FfmpegRunner,
   type FileWriter,
-} from '@core/modules/episode-production/compose/episode-mp4-exporter.service'
+} from '@core/platform/episode-production/compose/episode-mp4-exporter.service'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({

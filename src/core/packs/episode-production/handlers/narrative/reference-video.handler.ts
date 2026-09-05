@@ -19,9 +19,9 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { getCurrentUserId } from '@core/context/user-context'
 import type { IpcResponse } from '@shared/types/ipc.types'
-import { ReferenceVideoAnalysisService } from '@core/modules/episode-production/reference-video/analysis.service'
-import { createVlmShotInferrer } from '@core/modules/episode-production/reference-video/vlm-shot-inferrer'
-import { ImportFromParsedShotsService } from '@core/modules/episode-production/narrative/import-from-parsed-shots.service'
+import { ReferenceVideoAnalysisService } from '@core/platform/episode-production/reference-video/analysis.service'
+import { createVlmShotInferrer } from '@core/platform/episode-production/reference-video/vlm-shot-inferrer'
+import { ImportFromParsedShotsService } from '@core/platform/episode-production/narrative/import-from-parsed-shots.service'
 
 export function registerReferenceVideoHandlers(): void {
   ipcBridge.handle('ep:reference-video:analyze', handleAnalyze)

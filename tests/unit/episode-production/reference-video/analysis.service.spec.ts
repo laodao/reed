@@ -12,7 +12,7 @@ import { spawn } from 'child_process'
 import ffmpegPath from 'ffmpeg-static'
 import { DataSource } from 'typeorm'
 import { ReferenceVideoAnalysisEntity } from '@core/database/entities/episode-production/reference-video-analysis.entity'
-import { ReferenceVideoAnalysisService } from '@core/modules/episode-production/reference-video/analysis.service'
+import { ReferenceVideoAnalysisService } from '@core/platform/episode-production/reference-video/analysis.service'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({

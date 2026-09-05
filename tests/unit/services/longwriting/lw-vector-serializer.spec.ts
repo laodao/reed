@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { serializeEntity } from '@core/services/longwriting/lw-vector-serializer'
+import { serializeEntity } from '@core/platform/services/longwriting/lw-vector-serializer'
 
 describe('serializeEntity', () => {
   describe('character', () => {

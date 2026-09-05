@@ -15,7 +15,7 @@ import { StoryboardEntity } from '@core/database/entities/episode-production/sto
 import {
   ImportFromParsedShotsService,
   _testing,
-} from '@core/modules/episode-production/narrative/import-from-parsed-shots.service'
+} from '@core/platform/episode-production/narrative/import-from-parsed-shots.service'
 import type { ParsedShot } from '@core/database/entities/episode-production/reference-video-analysis.entity'
 
 async function buildDb(): Promise<DataSource> {

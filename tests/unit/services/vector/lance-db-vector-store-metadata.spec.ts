@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest'
-import { LanceDBVectorStore } from '@core/services/vector/lance-db-vector-store'
+import { LanceDBVectorStore } from '@core/platform/services/vector/lance-db-vector-store'
 
 /** mock LanceDBService：记录所有调用 */
 function makeMockLance() {

@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest'
 import {
   toFfmpegTransition,
   buildXfadeClause,
-} from '@core/modules/episode-production/compose/transition-translator'
+} from '@core/platform/episode-production/compose/transition-translator'
 import type { TransitionConfig } from '@shared/types/episode-production'
 
 describe('toFfmpegTransition', () => {

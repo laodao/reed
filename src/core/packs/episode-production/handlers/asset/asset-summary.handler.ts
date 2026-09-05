@@ -13,8 +13,8 @@ import {
   AssetProjectSummaryService,
   type ProjectAssetSummary,
   type VoiceSummary,
-} from '@core/modules/episode-production/assets/services/asset-project-summary.service'
-import { VoiceAssetService } from '@core/modules/episode-production/assets/services/voice-asset.service'
+} from '@core/platform/episode-production/assets/services/asset-project-summary.service'
+import { VoiceAssetService } from '@core/platform/episode-production/assets/services/voice-asset.service'
 
 export function registerAssetSummaryHandlers(): void {
   ipcBridge.handle('ep:asset:project-summary', handleProjectSummary)

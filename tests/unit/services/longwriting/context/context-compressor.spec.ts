@@ -3,8 +3,8 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { compressToBudget, applyForcedContext } from '@core/services/longwriting/context/context-compressor'
-import type { ContextSection } from '@core/services/longwriting/context/context.types'
+import { compressToBudget, applyForcedContext } from '@core/platform/services/longwriting/context/context-compressor'
+import type { ContextSection } from '@core/platform/services/longwriting/context/context.types'
 
 function makeItem(id: string, priority: number, content: string, score?: number) {
   return {

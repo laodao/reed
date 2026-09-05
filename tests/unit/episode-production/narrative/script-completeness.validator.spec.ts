@@ -24,8 +24,8 @@ import { SceneCharacterEntity } from '@core/database/entities/episode-production
 import { SceneDialogueEntity } from '@core/database/entities/episode-production/scene-dialogue.entity'
 import { SceneActionEntity } from '@core/database/entities/episode-production/scene-action.entity'
 import { ScenePropEntity } from '@core/database/entities/episode-production/scene-prop.entity'
-import { ReferenceResolver } from '@core/modules/episode-production/narrative/reference-resolver'
-import { ScriptCompletenessValidator } from '@core/modules/episode-production/narrative/validators/script-completeness.validator'
+import { ReferenceResolver } from '@core/platform/episode-production/narrative/reference-resolver'
+import { ScriptCompletenessValidator } from '@core/platform/episode-production/narrative/validators/script-completeness.validator'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({

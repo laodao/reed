@@ -7,7 +7,7 @@ import {
   appendLocationBaseComposition,
   mergeLocationBaseCompositionNegative,
   LOCATION_BASE_COMPOSITION_SUFFIX,
-} from '@core/modules/episode-production/assets/prompts/location-constraints'
+} from '@core/platform/episode-production/assets/prompts/location-constraints'
 
 describe('location-constraints · 主图基础构图锚点', () => {
   it('主图构图约束含标准全景 + 水平构图 + 无畸变', () => {

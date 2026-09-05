@@ -1,6 +1,6 @@
 /**
  * 安全存储服务
- * @module services/secure-storage
+ * @module platform/services/secure-storage
  * @description 用于管理加密密钥和加密解密操作，保护敏感数据
  */
 

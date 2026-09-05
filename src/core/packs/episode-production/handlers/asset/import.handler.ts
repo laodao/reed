@@ -13,8 +13,8 @@ import {
   AssetImportService,
   type ImportFromPortraitVariantInput,
   type ImportFromImageInput,
-} from '@core/modules/episode-production/assets/services/asset-import.service'
-import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
+} from '@core/platform/episode-production/assets/services/asset-import.service'
+import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
 
 export function registerImportHandlers(): void {
   ipcBridge.handle('ep:asset:import:from-portrait', handleImportFromPortrait)

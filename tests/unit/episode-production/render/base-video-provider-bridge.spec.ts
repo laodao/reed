@@ -10,12 +10,12 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { adaptBaseVideoProvider } from '@core/modules/episode-production/render/video/base-video-provider-bridge'
+import { adaptBaseVideoProvider } from '@core/platform/episode-production/render/video/base-video-provider-bridge'
 import type {
   BaseVideoProvider,
   VideoModel,
   VideoTaskStatus,
-} from '@core/video-providers'
+} from '@core/platform/providers/video'
 
 function makeMockProvider(opts: {
   features?: Partial<VideoModel['features']>

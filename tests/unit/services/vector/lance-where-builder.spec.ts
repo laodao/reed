@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildLanceWhere,
   escapeLanceValue,
-} from '@core/services/lance-db.service'
+} from '@core/platform/services/lance-db.service'
 
 describe('escapeLanceValue', () => {
   it('转义单引号（防注入）', () => {

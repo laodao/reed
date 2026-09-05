@@ -6,7 +6,7 @@
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
-import { OSSService } from '@core/services/oss.service'
+import { OSSService } from '@core/platform/services/oss.service'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type {

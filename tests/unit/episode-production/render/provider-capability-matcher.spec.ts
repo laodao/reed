@@ -13,11 +13,11 @@ import {
   pickVideoMode,
   isModeSupported,
   clampKeyframesToCapability,
-} from '@core/modules/episode-production/render/video/provider-capability-matcher'
+} from '@core/platform/episode-production/render/video/provider-capability-matcher'
 import type {
   VideoProviderCapabilities,
   KeyframeInput,
-} from '@core/modules/episode-production/render/video/video-provider-adapter'
+} from '@core/platform/episode-production/render/video/video-provider-adapter'
 
 const FULL_CAP: VideoProviderCapabilities = {
   text: true,

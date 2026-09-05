@@ -14,10 +14,10 @@ import { toAssetUrl } from '@core/utils/asset-path'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type { VideoProjectConfig } from '@shared/types/story-to-video.types'
-import { VideoSynthesisService, PRESET_VIDEO_CONFIGS } from '@core/services/video-synthesis.service'
-import { VideoService } from '@core/services/video.service'
+import { VideoSynthesisService, PRESET_VIDEO_CONFIGS } from '@core/packs/episode-production/services/video-synthesis.service'
+import { VideoService } from '@core/packs/episode-production/services/video.service'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
-import { createVideoProvider } from '@core/video-providers'
+import { createVideoProvider } from '@core/platform/providers/video'
 
 /**
  * 将本地路径转换为渲染端可加载的图像 URL（双端协议自适配）

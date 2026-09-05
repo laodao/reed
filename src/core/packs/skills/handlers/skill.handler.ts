@@ -6,8 +6,8 @@
  */
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
-import { getSkillService } from '@core/modules/workflow/skills/skill-registry'
-import type { UpsertSkillInput } from '@core/modules/workflow/skills/skill.service'
+import { getSkillService } from '@core/platform/workflow/skills/skill-registry'
+import type { UpsertSkillInput } from '@core/platform/workflow/skills/skill.service'
 import type { IpcResponse } from '@shared/types/ipc.types'
 
 /** 统一 { success, data, error } 包装 */

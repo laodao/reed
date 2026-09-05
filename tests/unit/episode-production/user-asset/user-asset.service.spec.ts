@@ -19,7 +19,7 @@ import { ItemBindingEntity } from '@core/database/entities/episode-production/it
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 import { UserAssetEntity } from '@core/database/entities/episode-production/user-asset.entity'
 import { LwCharacterEntity } from '@core/database/entities/lw-character.entity'
-import { UserAssetService } from '@core/modules/episode-production/user-asset/user-asset.service'
+import { UserAssetService } from '@core/platform/episode-production/user-asset/user-asset.service'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({

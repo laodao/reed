@@ -18,7 +18,7 @@
  */
 
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { normalizeAiCharacters } from '@core/modules/episode-production/narrative/ai/storyboard-generator'
+import { normalizeAiCharacters } from '@core/platform/episode-production/narrative/ai/storyboard-generator'
 import type { SceneCharacter } from '@shared/types/episode-production'
 
 const sceneCharacters: SceneCharacter[] = [

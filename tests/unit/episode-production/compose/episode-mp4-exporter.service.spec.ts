@@ -24,8 +24,8 @@ import {
   buildOutputArgs,
   type FfmpegRunner,
   type FileWriter,
-} from '@core/modules/episode-production/compose/episode-mp4-exporter.service'
-import type { TimelineShot } from '@core/modules/episode-production/compose/timeline-builder.service'
+} from '@core/platform/episode-production/compose/episode-mp4-exporter.service'
+import type { TimelineShot } from '@core/platform/episode-production/compose/timeline-builder.service'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({

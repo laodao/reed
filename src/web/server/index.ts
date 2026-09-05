@@ -63,7 +63,7 @@ import { addCharacterBindingExtraFields } from '@core/database/migrations/add-ch
 import { addCharacterBindingRace } from '@core/database/migrations/add-character-binding-race'
 import { addPortraitVariantFraming } from '@core/database/migrations/add-portrait-variant-framing'
 import { createPortraitPromptTemplates } from '@core/database/migrations/create-portrait-prompt-templates'
-import { PortraitTemplateSeederService } from '@core/services/portrait-template-seeder.service'
+import { PortraitTemplateSeederService } from '@core/platform/services/portrait-template-seeder.service'
 import { addStoryboardKeyframeCount } from '@core/database/migrations/add-storyboard-keyframe-count'
 import { addKbDocumentSource } from '@core/database/migrations/add-kb-document-source'
 import { addKeyframeReferenceOverrides } from '@core/database/migrations/add-keyframe-reference-overrides'
@@ -82,8 +82,8 @@ import { addAssetImageVariantCategoryAndMigrate } from '@core/database/migration
 import { addLocationBindingExtraFields } from '@core/database/migrations/add-location-binding-extra-fields'
 import { addItemBindingStyleAnchors } from '@core/database/migrations/add-item-binding-style-anchors'
 import { registerCoreDatabaseManager } from '@core/database/database-manager.interface'
-import { LanceDBService } from '@core/services/lance-db.service'
-import { initVectorStore } from '@core/services/vector/registry'
+import { LanceDBService } from '@core/platform/services/lance-db.service'
+import { initVectorStore } from '@core/platform/services/vector/registry'
 import { ensurePgvectorKbVectors } from '@core/database/migrations/ensure-pgvector-kb-vectors'
 import { registerAllWebChannels } from './api/register-channels'
 
@@ -177,13 +177,13 @@ async function bootstrap(): Promise<void> {
   app.use('/api/workflow/webhook', createWebhookTriggerRouter({
     definitions: {
       findByWebhookToken: async (token) => {
-        const { getWorkflowSubsystem } = await import('@core/modules/workflow/workflow-boot')
+        const { getWorkflowSubsystem } = await import('@core/platform/workflow/workflow-boot')
         return getWorkflowSubsystem().definitionService.findByWebhookToken(token)
       },
     },
     runService: {
       startRun: async (input) => {
-        const { getWorkflowSubsystem } = await import('@core/modules/workflow/workflow-boot')
+        const { getWorkflowSubsystem } = await import('@core/platform/workflow/workflow-boot')
         return getWorkflowSubsystem().runService.startRun(input as never)
       },
     },
@@ -216,7 +216,7 @@ async function bootstrap(): Promise<void> {
   // 设计文档：docs/superpowers/specs/2026-05-07-voice-cloning-design.md §5.5
   try {
     const { VoiceCloneJobScheduler } = await import(
-      '@core/services/voice-clone-job-scheduler'
+      '@core/platform/services/voice-clone-job-scheduler'
     )
     VoiceCloneJobScheduler.getInstance().start()
     console.log('[web-server] VoiceCloneJobScheduler 已启动')
@@ -239,8 +239,8 @@ async function bootstrap(): Promise<void> {
 
   // 工作流子系统：引擎装配 + boot 恢复 + 触发调度器（失败不致命，与 Electron 端平级）
   try {
-    const { initWorkflowSubsystem } = await import('@core/modules/workflow/workflow-boot')
-    const { WsEventChannel } = await import('@core/services/event-system/channels/ws.channel')
+    const { initWorkflowSubsystem } = await import('@core/platform/workflow/workflow-boot')
+    const { WsEventChannel } = await import('@core/platform/services/event-system/channels/ws.channel')
     // ws 通道（10-event-system §5.4）：平台事件 workflow.run.* → wf:run-event，
     // 按事件自带 userId 路由到目标用户的 WS 连接（不再依赖 emit 时刻 ALS 上下文）
     await initWorkflowSubsystem({ eventChannels: [new WsEventChannel()] })

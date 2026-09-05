@@ -4,7 +4,7 @@
  */
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
-import { DiaryService } from '@core/services/diary.service'
+import { DiaryService } from '@core/platform/services/diary.service'
 import { DiaryExportService } from '../services/diary-export.service'
 import type {
   CreateDiaryFolderRequest,

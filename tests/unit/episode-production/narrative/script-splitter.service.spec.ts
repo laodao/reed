@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { analyzeScriptToEpisodes } from '@core/modules/episode-production/narrative/services/script-splitter.service'
+import { analyzeScriptToEpisodes } from '@core/platform/episode-production/narrative/services/script-splitter.service'
 
 describe('analyzeScriptToEpisodes', () => {
   it('中文章节「第X章」→ 每章一集，title/content 正确', () => {

@@ -20,7 +20,7 @@ import { DataSource } from 'typeorm'
 import { CharacterBindingEntity } from '@core/database/entities/episode-production/character-binding.entity'
 import { LwCharacterEntity } from '@core/database/entities/lw-character.entity'
 import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
-import { CharacterAssetService } from '@core/modules/episode-production/assets/services/character-asset.service'
+import { CharacterAssetService } from '@core/platform/episode-production/assets/services/character-asset.service'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({

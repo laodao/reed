@@ -15,7 +15,7 @@ import {
   type CreateLinkedLwItemInput,
   type ItemOverridePatch,
   type ItemStandalonePatch,
-} from '@core/modules/episode-production/assets/services/item-asset.service'
+} from '@core/platform/episode-production/assets/services/item-asset.service'
 
 export function registerItemAssetHandlers(): void {
   // ==================== V2 物品绑定（保留：老 UI 在用） ====================

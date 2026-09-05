@@ -11,7 +11,7 @@ import os from 'os'
 import { spawn } from 'child_process'
 import ffmpegPath from 'ffmpeg-static'
 import { DataSource } from 'typeorm'
-import { CharacterExtractionService } from '@core/modules/episode-production/reference-video/character-extraction.service'
+import { CharacterExtractionService } from '@core/platform/episode-production/reference-video/character-extraction.service'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 
 async function generateTestVideo(outPath: string, durationSec = 4): Promise<void> {

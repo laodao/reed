@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { __test } from '@core/modules/episode-production/narrative/ai/script-generator'
+import { __test } from '@core/platform/episode-production/narrative/ai/script-generator'
 import type { AssetRosterForScript } from '@shared/types/episode-production'
 
 const ROSTER: AssetRosterForScript = {

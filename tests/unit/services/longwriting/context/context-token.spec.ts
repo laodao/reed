@@ -13,7 +13,7 @@ import {
   computeBudget,
   resolveModelWindow,
   DEFAULT_MODEL_WINDOW,
-} from '@core/services/longwriting/context/context-token'
+} from '@core/platform/services/longwriting/context/context-token'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 
 describe('estimateTokens', () => {

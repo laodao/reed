@@ -7,7 +7,7 @@
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
-import { DataSourceService, getDataSourceService } from '@core/modules/workflow/datasource/datasource.service'
+import { DataSourceService, getDataSourceService } from '@core/platform/workflow/datasource/datasource.service'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type {
   CreateDataSourceRequest,

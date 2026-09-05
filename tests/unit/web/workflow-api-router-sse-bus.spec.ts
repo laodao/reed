@@ -13,7 +13,7 @@ import { DataSource } from 'typeorm'
 import { attachUser } from '../../../src/web/server/auth/middleware'
 import { signToken, JWT_COOKIE_NAME, configureJwtSecret } from '../../../src/web/server/auth/jwt'
 import { createWorkflowApiRouter } from '../../../src/web/server/api/workflow-api-router'
-import { PlatformEventBus } from '@core/services/event-system/event-bus.service'
+import { PlatformEventBus } from '@core/platform/services/event-system/event-bus.service'
 import {
   PlatformEventCursorEntity,
   PlatformEventDeadLetterEntity,

@@ -11,7 +11,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // ---- 模块级 mock：必须在 import service 之前声明 ----
-vi.mock('@core/services/image.service', () => ({
+vi.mock('@core/platform/services/image.service', () => ({
   ImageService: { generateImage: vi.fn() },
 }))
 vi.mock('fs', async () => {

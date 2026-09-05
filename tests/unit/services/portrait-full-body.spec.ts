@@ -11,7 +11,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // ---- 模块级 mock：必须在 import service 之前声明 ----
-vi.mock('@core/services/image.service', () => ({
+vi.mock('@core/platform/services/image.service', () => ({
   ImageService: { generateImage: vi.fn() },
 }))
 vi.mock('fs', async () => {
@@ -36,7 +36,7 @@ vi.mock('@core/utils/asset-path', () => ({
   resolveAssetPath: (p: string) => p,
 }))
 
-import { ImageService } from '@core/services/image.service'
+import { ImageService } from '@core/platform/services/image.service'
 import * as dbModule from '@core/database/database-manager.interface'
 import { PortraitService } from '@core/packs/portrait/services/portrait.service'
 import type { PortraitCharacter, PortraitVariant } from '@shared/types/portrait.types'

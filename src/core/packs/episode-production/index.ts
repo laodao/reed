@@ -5,7 +5,7 @@
  *              project/episode/asset/narrative/render/compose/workflow/agent 共
  *              25 个 handler 文件），本包在 activate 时调用其统一入口
  *              registerEpisodeProductionHandlers()。业务服务层
- *              （@core/modules/episode-production/**）被 Web 端 upload-router 等
+ *              （@core/platform/episode-production/**）被 Web 端 upload-router 等
  *              壳代码直接引用且为双端共用，留在原地不搬。
  *              manifest 的 id/name/version/dependencies 与前端骨架
  *             （renderer/packs/episode-production）保持一致。
@@ -17,7 +17,7 @@
  *              本身由 EP handler 注册，仍归本包），单前缀即可完整覆盖。
  *
  *              已知跨业务耦合（本期只记录，不拆分）：
- *              1. Agent 工作流服务（core/modules/episode-production/agent/
+ *              1. Agent 工作流服务（core/platform/episode-production/agent/
  *                 ep-agent-workflow.service）复用长文写作的 lw_design_messages 表存储对话
  *                 历史（conversationId 约定 ep-agent:${episodeId}），表结构归长文写作所有。
  *              2. 前端引用 voice-design 包的 VoiceCloneDialog 组件

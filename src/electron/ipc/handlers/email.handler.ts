@@ -10,7 +10,7 @@
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
-import { getEmailService } from '@core/services/email.service'
+import { getEmailService } from '@core/platform/services/email.service'
 import type { EmailAccountRepository, CreateEmailAccountInput, UpdateEmailAccountInput } from '@core/database/repositories/email-account.repository'
 import type { EmailAccount } from '@shared/types/email.types'
 import type { IpcResponse } from '@shared/types/ipc.types'

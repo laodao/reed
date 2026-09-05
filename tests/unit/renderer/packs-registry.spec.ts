@@ -129,6 +129,12 @@ describe('applyPacks（路由动态注册 + 菜单锚点合入）', () => {
   })
 
   it('菜单按锚点插入，保持壳条目与包条目的相对顺序', () => {
+    // 二期包化后壳菜单只剩 '/'；锚点 '/knowledge-base' 已由 knowledge-base 包提供——
+    // 这里用一个无锚点的基础包模拟它（与 installBuiltinPackages 的先注册 4 个
+    // 原壳位包同一机制）
+    registerPack(makePack('knowledge-base', {
+      menuItems: [{ path: '/knowledge-base', label: 'KB', icon: null }],
+    }))
     registerPack(makePack('pack-a', {
       menuItems: [{ path: '/pack-a', label: 'A', icon: null }],
       menuInsertBefore: '/knowledge-base',
@@ -143,7 +149,7 @@ describe('applyPacks（路由动态注册 + 菜单锚点合入）', () => {
     applyPacks(makeRouter())
     const paths = flattenMenuItems(mainMenuItems).map(i => i.path)
     // 壳首位保持，锚点相同的包按注册序插入，无锚点追加末尾
-    expect(paths).toEqual(['/', '/pack-a', '/pack-b', '/knowledge-base', '/workflow', '/apps', '/assets', '/pack-c'])
+    expect(paths).toEqual(['/', '/pack-a', '/pack-b', '/knowledge-base', '/pack-c'])
   })
 
   it('幂等：重复 applyPacks 不重复挂路由/菜单', () => {
@@ -163,7 +169,7 @@ describe('installBuiltinPackages（内置包装配）', () => {
     __resetMainMenuForTests()
   })
 
-  it('IPC 不可用（无 electronAPI）→ 降级全启用：7 个包路由全部挂上', async () => {
+  it('IPC 不可用（无 electronAPI）→ 降级全启用：11 个包路由全部挂上', async () => {
     const { installBuiltinPackages } = await import('@/packs/index')
     const router = makeRouter()
     await installBuiltinPackages(router)
@@ -173,10 +179,15 @@ describe('installBuiltinPackages（内置包装配）', () => {
       '/longwriting', '/story-editor/s1', '/comment-editor/c1',
       '/diary', '/skills', '/voice/design',
       '/episode-production', '/episode-production/all', '/episode-production/p1/creator',
+      // 二期包化（2026-09-05）：知识库/工作流/应用/资产中心
+      '/knowledge-base',
+      '/workflow', '/workflow/editor/w1', '/workflow-run/tok', '/workflow/runs/d1', '/workflow/run/r1',
+      '/apps', '/apps/a1', '/apps/a1/session/s1', '/app-share/tok',
+      '/assets',
     ]) {
       expect(router.resolve(path).matched.length, `路由 ${path} 应已注册`).toBeGreaterThan(0)
     }
-    // 菜单顺序与原静态菜单一致
+    // 菜单顺序与原静态菜单一致（二期 4 个原壳位包先注册，锚点语义不变）
     const paths = flattenMenuItems(mainMenuItems).map(i => i.path)
     expect(paths).toEqual([
       '/', '/chat', '/portrait', '/longwriting', '/episode-production',

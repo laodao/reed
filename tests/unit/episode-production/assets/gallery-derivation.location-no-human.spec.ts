@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { DataSource } from 'typeorm'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
-import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
+import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
 import {
   GalleryDerivationService,
   type ImageGenerator,
-} from '@core/modules/episode-production/assets/services/gallery-derivation.service'
+} from '@core/platform/episode-production/assets/services/gallery-derivation.service'
 
 class MockGen implements ImageGenerator {
   calls: any[] = []
@@ -103,7 +103,7 @@ describe('GalleryDerivationService · location 派生无人约束', () => {
 
   it('location 已含无人约束的派生 prompt：不重复追加', async () => {
     const { LOCATION_NO_HUMAN_SUFFIX } = await import(
-      '@core/modules/episode-production/assets/prompts/location-constraints'
+      '@core/platform/episode-production/assets/prompts/location-constraints'
     )
     await svc.deriveSingle({
       assetType: 'location',

@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { DataSource } from 'typeorm'
 import { ClonedVoiceEntity } from '@core/database/entities/cloned-voice.entity'
 import { CharacterBindingEntity } from '@core/database/entities/episode-production/character-binding.entity'
-import { VoiceAssetService } from '@core/modules/episode-production/assets/services/voice-asset.service'
+import { VoiceAssetService } from '@core/platform/episode-production/assets/services/voice-asset.service'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({

@@ -15,7 +15,7 @@ import { describe, it, expect } from 'vitest'
 import {
   appendCharacterIdentityPreservation,
   mergeCharacterIdentityNegative,
-} from '@core/modules/episode-production/assets/prompts/character-constraints'
+} from '@core/platform/episode-production/assets/prompts/character-constraints'
 
 describe('character-constraints · 身份保持约束（v3 spec 缩减后）', () => {
   describe('appendCharacterIdentityPreservation', () => {

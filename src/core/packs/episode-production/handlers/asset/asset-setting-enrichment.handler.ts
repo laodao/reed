@@ -5,8 +5,8 @@
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
-import { AssetSettingEnrichmentService } from '@core/modules/episode-production/assets/services/asset-setting-enrichment.service'
-import { callAI } from '@core/modules/episode-production/narrative/ai/_helpers'
+import { AssetSettingEnrichmentService } from '@core/platform/episode-production/assets/services/asset-setting-enrichment.service'
+import { callAI } from '@core/platform/episode-production/narrative/ai/_helpers'
 
 export function registerAssetSettingEnrichmentHandlers(): void {
   ipcBridge.handle('ep:asset:enrich-settings', handleEnrich)

@@ -8,7 +8,7 @@ import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type { VideoProjectConfig } from '@shared/types/story-to-video.types'
-import { buildProjectSummary } from '@core/modules/episode-production/workflow/project-summary'
+import { buildProjectSummary } from '@core/platform/episode-production/workflow/project-summary'
 
 export function registerProjectHandlers(): void {
   // ==================== 项目管理 ====================

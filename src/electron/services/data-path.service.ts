@@ -1,6 +1,6 @@
 /**
  * 数据路径管理服务
- * @module services/data-path-service
+ * @module platform/services/data-path-service
  * @description 管理应用程序数据存储路径，支持自定义路径和数据迁移
  */
 

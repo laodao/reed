@@ -2,7 +2,7 @@
  * 平台事件管理面 IPC 处理器（10-event-system §5.3 / §8）
  * @module electron/ipc/handlers/event-admin.handler
  * @description EventAdmin（死信队列收口 / 消费者水位）的薄适配层，业务在
- *              core/services/event-system/event-admin.service（架构铁律：handler 不写业务）。
+ *              core/platform/services/event-system/event-admin.service（架构铁律：handler 不写业务）。
  *
  *              鉴权（§8"管理面仅注册到鉴权 IPC/REST"）：
  *              - Web：ipcBridge 同时注册到跨平台桥，经 POST /api/ipc/<channel> 暴露，
@@ -12,7 +12,7 @@
  */
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
-import { getEventAdmin } from '@core/services/event-system/event-admin.service'
+import { getEventAdmin } from '@core/platform/services/event-system/event-admin.service'
 import type { IpcResponse } from '@shared/types/ipc.types'
 
 /** 管理面就绪守卫：取实例或抛可读错误（boot 早期/总线未启动） */

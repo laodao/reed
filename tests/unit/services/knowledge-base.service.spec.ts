@@ -7,7 +7,7 @@ import {
   getTestDialects,
   type TestDataSource,
 } from '../helpers/create-test-data-source'
-import { KnowledgeBaseService } from '@core/services/knowledge-base.service'
+import { KnowledgeBaseService } from '@core/platform/services/knowledge-base.service'
 import { KnowledgeBaseRepository } from '@core/database/repositories/knowledge-base.repository'
 import { KbDocumentRepository } from '@core/database/repositories/kb-document.repository'
 import { KbChunkRepository } from '@core/database/repositories/kb-chunk.repository'

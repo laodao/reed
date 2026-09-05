@@ -13,9 +13,9 @@ import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import { isElectron, loadElectronModules } from '@electron/ipc/handlers/_platform'
-import { TimelineBuilderService } from '@core/modules/episode-production/compose/timeline-builder.service'
-import { SubtitleService } from '@core/modules/episode-production/compose/subtitle.service'
-import { EpisodeMp4ExporterService } from '@core/modules/episode-production/compose/episode-mp4-exporter.service'
+import { TimelineBuilderService } from '@core/platform/episode-production/compose/timeline-builder.service'
+import { SubtitleService } from '@core/platform/episode-production/compose/subtitle.service'
+import { EpisodeMp4ExporterService } from '@core/platform/episode-production/compose/episode-mp4-exporter.service'
 import {
   FluentFfmpegRunner,
   NodeFileWriter,

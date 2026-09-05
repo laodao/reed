@@ -15,13 +15,13 @@ import { DataSource } from 'typeorm'
 import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
 import { StoryboardKeyframeEntity } from '@core/database/entities/episode-production/storyboard-keyframe.entity'
 import { ImageAssetEntity } from '@core/database/entities/image-asset.entity'
-import { VideoSegmentService } from '@core/modules/episode-production/render/video/video-segment.service'
+import { VideoSegmentService } from '@core/platform/episode-production/render/video/video-segment.service'
 import { StoryboardKeyframeRepository } from '@core/database/repositories/storyboard-keyframe.repository'
 import { ImageAssetRepository } from '@core/database/repositories/image-asset.repository'
 import type {
   VideoProviderAdapter,
   VideoProviderCapabilities,
-} from '@core/modules/episode-production/render/video/video-provider-adapter'
+} from '@core/platform/episode-production/render/video/video-provider-adapter'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({

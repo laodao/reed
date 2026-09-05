@@ -6,12 +6,12 @@
 
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getEventEmitter } from '@core/interfaces/event.interface'
-import { createProvider } from '@core/providers'
-import { PROVIDER_TEMPLATES } from '@core/services/provider-template.service'
+import { createProvider } from '@core/platform/providers/llm'
+import { PROVIDER_TEMPLATES } from '@core/platform/services/provider-template.service'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
-import { FileService } from '@core/services/file.service'
-import { KnowledgeBaseService } from '@core/services/knowledge-base.service'
-import { getSearchEngineService } from '@core/services/search-engine.service'
+import { FileService } from '@core/platform/services/file.service'
+import { KnowledgeBaseService } from '@core/platform/services/knowledge-base.service'
+import { getSearchEngineService } from '@core/platform/services/search-engine.service'
 import type {
   Dialog,
   ChatContext,
@@ -519,7 +519,7 @@ export class ChatService {
 
       // 多模态能力校验：图片附件（含 @ 图片资产）要求模型支持 vision
       if (currentAttachmentContents?.some(a => a.type === 'image')) {
-        const { detectVisionSupport } = await import('@core/services/model-detector.service')
+        const { detectVisionSupport } = await import('@core/packs/chat/services/model-detector.service')
         if (modelId && !detectVisionSupport(modelId)) {
           throw new Error(
             '当前模型不支持图片输入，无法引用图片资产——请切换到支持多模态的模型（如 qwen-vl / gpt-4o），或移除图片附件'

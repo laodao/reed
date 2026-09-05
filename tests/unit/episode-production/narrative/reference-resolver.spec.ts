@@ -20,7 +20,7 @@ import { AssetImageEntity } from '@core/database/entities/episode-production/ass
 import { LwCharacterEntity } from '@core/database/entities/lw-character.entity'
 import { LwLocationEntity } from '@core/database/entities/lw-location.entity'
 import { LwItemEntity } from '@core/database/entities/lw-item.entity'
-import { ReferenceResolver } from '@core/modules/episode-production/narrative/reference-resolver'
+import { ReferenceResolver } from '@core/platform/episode-production/narrative/reference-resolver'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({

@@ -18,22 +18,22 @@ import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
-import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
+import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
 import {
   PanoramaGeneratorService,
   type GenerateForInput,
   type UploadForInput,
-} from '@core/modules/episode-production/assets/services/panorama-generator.service'
+} from '@core/platform/episode-production/assets/services/panorama-generator.service'
 import {
   PanoramaSnapshotService,
   type SnapshotFileWriter,
   type CreateSnapshotInput,
-} from '@core/modules/episode-production/assets/services/panorama-snapshot.service'
+} from '@core/platform/episode-production/assets/services/panorama-snapshot.service'
 import {
   PanoramaUploadService,
   PanoramaUploadValidationError,
-} from '@core/modules/episode-production/assets/services/panorama-upload.service'
-import { createPanoramaImageGenerator } from '@core/modules/episode-production/assets/services/image-provider-adapter'
+} from '@core/platform/episode-production/assets/services/panorama-upload.service'
+import { createPanoramaImageGenerator } from '@core/platform/episode-production/assets/services/image-provider-adapter'
 
 /**
  * 真实 SnapshotFileWriter：把 base64 字节落到 `<dataPath>/<targetDir>/<fileName>`，

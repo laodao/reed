@@ -12,8 +12,8 @@ import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getCurrentUserId } from '@core/context/user-context'
 import type { IpcResponse } from '@shared/types/ipc.types'
-import { PresetDigitalHumanService } from '@core/modules/episode-production/assets/services/preset-digital-human.service'
-import { PresetImageSeederService } from '@core/modules/episode-production/assets/services/preset-image-seeder.service'
+import { PresetDigitalHumanService } from '@core/platform/episode-production/assets/services/preset-digital-human.service'
+import { PresetImageSeederService } from '@core/platform/episode-production/assets/services/preset-image-seeder.service'
 
 export function registerPresetDigitalHandlers(): void {
   ipcBridge.handle('ep:asset:preset:list', handleList)

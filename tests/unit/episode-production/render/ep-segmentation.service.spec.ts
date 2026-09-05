@@ -17,7 +17,7 @@ import { EpisodeScriptEntity } from '@core/database/entities/episode-production/
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
 import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
 import { EpVideoSegmentEntity } from '@core/database/entities/episode-production/video-segment.entity'
-import { EpSegmentationService } from '@core/modules/episode-production/render/video/ep-segmentation.service'
+import { EpSegmentationService } from '@core/platform/episode-production/render/video/ep-segmentation.service'
 import { EpVideoSegmentRepository } from '@core/database/repositories/video-segment.repository'
 import { StoryboardRepository } from '@core/database/repositories/storyboard.repository'
 

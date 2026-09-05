@@ -17,9 +17,9 @@ import path from 'path'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
-import { StoryboardThumbnailGeneratorService } from '@core/modules/episode-production/narrative/ai/storyboard-thumbnail-generator'
-import { createGalleryImageGenerator } from '@core/modules/episode-production/assets/services/image-provider-adapter'
-import { ImportFromParsedShotsService } from '@core/modules/episode-production/narrative/import-from-parsed-shots.service'
+import { StoryboardThumbnailGeneratorService } from '@core/platform/episode-production/narrative/ai/storyboard-thumbnail-generator'
+import { createGalleryImageGenerator } from '@core/platform/episode-production/assets/services/image-provider-adapter'
+import { ImportFromParsedShotsService } from '@core/platform/episode-production/narrative/import-from-parsed-shots.service'
 
 export function registerStoryboardThumbnailHandlers(): void {
   ipcBridge.handle('ep:storyboard:generate-thumbnails', handleGenerate)

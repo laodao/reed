@@ -101,7 +101,7 @@ import type { UploadFile } from 'element-plus'
 import {
   buildAssetIdentityPrompt,
   prependIdentity,
-} from '@core/modules/episode-production/assets/prompts/asset-identity-prompt'
+} from '@core/platform/episode-production/assets/prompts/asset-identity-prompt'
 import { useEpEpisodeStore } from '@/stores/episode-production'
 
 const PRESETS = ['平面图', '正面外景', '正面内景', '鸟瞰', '侧面', '纵深', '入口']

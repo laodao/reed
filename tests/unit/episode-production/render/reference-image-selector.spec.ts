@@ -16,7 +16,7 @@ import {
   pickReferenceImage,
   scoreVariant,
   type ReferencePickInput,
-} from '@core/modules/episode-production/render/keyframe/reference-image-selector'
+} from '@core/platform/episode-production/render/keyframe/reference-image-selector'
 import type { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 
 function makeImg(opts: {

@@ -8,7 +8,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
-import { ImageService } from '@core/services/image.service'
+import { ImageService } from '@core/platform/services/image.service'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type {
   ImageGenerationRequest,

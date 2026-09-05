@@ -3,7 +3,7 @@
  * @module core/packs/diary
  * @description 物理收拢式：handler 已搬入包目录（./handlers/diary.handler），
  *              其专属的 DiaryExportService 一并搬入（./services/diary-export.service）；
- *              DiaryService 被 workflow 日记节点共用，留在 @core/services 不搬。
+ *              DiaryService 被 workflow 日记节点共用，收在 @core/platform/services。
  *              本包在 activate 时调用 registerDiaryHandlers()。
  *              manifest 的 id/name/version 与前端骨架（renderer/packs/diary）保持一致。
  *

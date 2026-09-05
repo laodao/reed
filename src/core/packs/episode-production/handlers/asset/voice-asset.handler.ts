@@ -11,7 +11,7 @@
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
-import { VoiceAssetService } from '@core/modules/episode-production/assets/services/voice-asset.service'
+import { VoiceAssetService } from '@core/platform/episode-production/assets/services/voice-asset.service'
 
 /**
  * 注册语音资产相关 IPC 处理器

@@ -850,13 +850,13 @@ import {
 import {
   CAMERA_MOVEMENT_GROUPS,
   findCameraMovementPreset,
-} from '@core/modules/episode-production/assets/constants/camera-movements'
+} from '@core/platform/episode-production/assets/constants/camera-movements'
 import {
   LENS_FOCAL_PRESETS,
   APERTURE_PRESETS,
   CAMERA_STYLE_PRESETS,
-} from '@core/modules/episode-production/assets/constants/lens-presets'
-import { LIGHTING_PRESETS } from '@core/modules/episode-production/assets/constants/lighting-presets'
+} from '@core/platform/episode-production/assets/constants/lens-presets'
+import { LIGHTING_PRESETS } from '@core/platform/episode-production/assets/constants/lighting-presets'
 import {
   getTimeOfDayLabel,
   getWeatherLabel,

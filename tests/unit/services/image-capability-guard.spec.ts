@@ -1,6 +1,6 @@
 /**
  * ImageService 生成边界能力校验 · 单元测试
- * @see src/core/services/image.service.ts
+ * @see src/core/platform/services/image.service.ts
  *
  * 验证目标（design image-provider-capability-model-design §8 不隐瞒原则）：
  * 1. 未登记模型调用 generateImage：返回明确错误（含模型 id 与登记指引），不静默、不假成功
@@ -17,14 +17,14 @@ vi.mock('@core/interfaces/storage.interface', () => ({
 vi.mock('@core/interfaces/event.interface', () => ({
   getEventEmitter: () => ({ emit: () => {} }),
 }))
-vi.mock('@core/image-providers', () => ({
+vi.mock('@core/platform/providers/image', () => ({
   createImageProvider: vi.fn(),
   getProviderDefinition: vi.fn(),
   IMAGE_PROVIDER_DEFINITIONS: {},
   isProviderImplemented: vi.fn(() => true),
 }))
 
-import { ImageService } from '@core/services/image.service'
+import { ImageService } from '@core/platform/services/image.service'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 

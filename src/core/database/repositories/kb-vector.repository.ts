@@ -13,7 +13,7 @@
 
 import { randomUUID } from 'crypto'
 import { getCoreDatabaseManager } from '../database-manager.interface'
-import { getVectorStore } from '@core/services/vector/vector-store.interface'
+import { getVectorStore } from '@core/platform/services/vector/vector-store.interface'
 
 /** 向量实体（兼容旧接口） */
 export interface KbVectorEntity {
