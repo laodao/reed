@@ -1099,7 +1099,26 @@ const electronAPI = {
       return () => ipcRenderer.removeListener('voice:clone-failed', handler)
     },
     // 下载音频
-    download: (audioPath: string) => ipcRenderer.invoke('voice:download', audioPath)
+    download: (audioPath: string) => ipcRenderer.invoke('voice:download', audioPath),
+
+    // ===== 声音设计（通过文本描述创建音色）=====
+    // 创建声音设计
+    designVoice: (request: {
+      name: string
+      voicePrompt: string
+      prefix: string
+      targetModel?: string
+      providerId?: string
+    }) => ipcRenderer.invoke('voice:design', request),
+    // 获取设计音色列表
+    getDesignedVoices: (status?: 'training' | 'ready' | 'failed') =>
+      ipcRenderer.invoke('voice:designed-list', status),
+    // 删除设计音色
+    deleteDesignedVoice: (id: string) => ipcRenderer.invoke('voice:designed-delete', id),
+    // 刷新设计音色状态
+    refreshDesignStatus: (id: string) => ipcRenderer.invoke('voice:design-refresh-status', id),
+    // 试听设计音色
+    previewDesignedVoice: (id: string) => ipcRenderer.invoke('voice:design-preview', id)
   },
 
   // 数据路径相关
