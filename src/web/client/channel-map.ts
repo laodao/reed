@@ -131,6 +131,12 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'voice.onSTTCompleted': { channel: 'voice:stt-completed' },
   'voice.onCloneCompleted': { channel: 'voice:clone-completed' },
   'voice.onCloneFailed': { channel: 'voice:clone-failed' },
+  // 声音设计
+  'voice.designVoice': { channel: 'voice:design' },
+  'voice.getDesignedVoices': { channel: 'voice:designed-list' },
+  'voice.deleteDesignedVoice': { channel: 'voice:designed-delete' },
+  'voice.refreshDesignStatus': { channel: 'voice:design-refresh-status' },
+  'voice.previewDesignedVoice': { channel: 'voice:design-preview' },
   'dataPath.getConfig': { channel: 'data-path:get-config' },
   'dataPath.select': { channel: 'data-path:select' },
   'dataPath.set': { channel: 'data-path:set' },
