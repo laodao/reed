@@ -30,6 +30,7 @@
 - [19-refactoring-assessment.md](./19-refactoring-assessment.md) —— 现有系统重构评估：全量模块盘点、A/B/C/D 四类修改清单、可行性结论、工作量估算（180-250 人日）与迁移策略
 - [20-cordis-evaluation.md](./20-cordis-evaluation.md) —— cordis 插件框架调研：时空可组合性机制与 business-pack 的范式错位分析、复用三选项、收缩后吸收的 3 条原则与终局参考定位
 - [21-oss-adoption.md](./21-oss-adoption.md) —— **开源采纳决策（2026-09-06 定稿）**：AI SDK v6 + @openharness/core 路线（调研+运行级 spike 证据）、12/13/14/15 号规格的修订依据、宿主融合、里程碑映射
+- [22-make-or-buy-audit.md](./22-make-or-buy-audit.md) —— **自研/开源逐模块审计（2026-09-06 定稿，修订 21 号决策一）**：open-harness 全量源码深读四项发现（轮级持久化/审批粒度/双组合 API/循环极薄）→ 依赖面收缩为 ai@6 三包 + 三模块 vendor；21 个模块逐一定型；架构统一性论证
 
 ## 核心结论（TL;DR）
 

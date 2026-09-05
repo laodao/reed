@@ -446,6 +446,16 @@ modelPreference?, eventChannel(scopeId), approvalTimeoutMs?, onTurnEnd? }`。
   切换）见我方设计稿 §7（docs/design/2026-09-05-agent-harness-design.md），并入 M4 执行纪律；
 - spike 全部契约验证记录：21 号 §1.2。
 
+### R4b v2 修正（22 号审计）：循环载体再修订
+
+R1 中"经 open-harness Session 载体"修正为：**ai@6 单步 streamText 手动循环自研**
+（不传 stopWhen=恰好一步；`await r.response.messages` 取本步消息；步末 host.saveState——
+与本文 §6.3 的轮末持久化点完全一致，spike 已验证）。open-harness 整包依赖取消，
+摘取三模块 vendor：DefaultCompactionStrategy（压缩，R1 压缩条不变）、retry 形状、todos。
+R2 宿主融合表修正：独立宿主的 state 落点仍为 agent_sessions，但由手动循环直接写
+（不经 Session）；approve 快路径修正为 registry 层审批包装（ai@6 tool execute 内挂起，
+支持分级与编辑后执行）。依据：22 号 §2 F1-F4 / §3 表 B1/B4/C2。
+
 ### R5 测试基线补充
 
 本文 §12 单测矩阵保留，另加：approve 快路径（通过/拒绝/编辑/超时/取消清理）、
