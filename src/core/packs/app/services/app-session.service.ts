@@ -1,6 +1,6 @@
 /**
  * 应用会话服务（片2）：应用下会话的创建/启动（多轮）/审核恢复 + 事件桥（引擎事件→会话卡片消息）
- * @module core/modules/app/app-session.service
+ * @module core/packs/app/services/app-session.service
  * @description
  *  - 会话消息复用 messages 表（dialog_id = session.id），卡片类型存 metadata.sessionCard（WORKFLOW_SESSION_CARDS）
  *  - 引擎事件经事件桥写入会话（不依赖任何前端在线）：run-status / review-requested(form) /

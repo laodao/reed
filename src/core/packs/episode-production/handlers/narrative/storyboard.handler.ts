@@ -10,7 +10,7 @@ import { getBrowserWindowFromEvent } from '@electron/ipc/handlers/_platform'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type { Storyboard } from '@shared/types/story-to-video.types'
-import { StoryToVideoAIService } from '@core/services/story-to-video-ai.service'
+import { StoryToVideoAIService } from '@core/packs/episode-production/services/story-to-video-ai.service'
 import { StoryboardService, normalizeShotNumbers } from '@core/modules/episode-production/narrative/services/storyboard.service'
 
 export function registerStoryboardHandlers(): void {

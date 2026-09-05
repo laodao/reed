@@ -7,8 +7,8 @@
  *              应用 = 工作流的发布产物（apps 表 share_token → 回源 workflow 定义），
  *              故 manifest 显式声明 dependencies: ['workflow']——工作流包被禁用/
  *              未就绪时，本包整体 pending（纪律 2：依赖未就绪 = pending）。
- *              业务服务层（@core/modules/app 的 app-definition/app-session）留在原地
- *              不搬（双端共用，壳中 workflow 分享解析也消费它）。
+ *              业务服务层（app-definition/app-session）已收拢进本包 services/ 下
+ *              （由壳中 workflow-boot 经别名实例化，双端共用）。
  *              manifest 的 id/name/version 与前端骨架（renderer/packs/app）保持一致。
  *
  *              禁用语义本期到"IPC 守卫统一拦截 app: / app-session: 两前缀"为止——

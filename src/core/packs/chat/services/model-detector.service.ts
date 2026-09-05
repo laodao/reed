@@ -1,6 +1,6 @@
 /**
  * 模型检测服务
- * @module core/services/model-detector
+ * @module core/packs/chat/services/model-detector
  * @description 自动检测模型能力和特性
  */
 

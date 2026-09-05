@@ -56,7 +56,7 @@ export class TempAssetService {
     }
 
     // 导入临时实体模板服务
-    const { TemporaryEntityTemplateService } = await import('@core/services/temporary-entity-template.service')
+    const { TemporaryEntityTemplateService } = await import('@core/packs/episode-production/services/temporary-entity-template.service')
     const templateService = TemporaryEntityTemplateService.getInstance()
 
     // 获取模板类型，如果没有则匹配
@@ -138,7 +138,7 @@ export class TempAssetService {
     }
 
     // 导入临时实体模板服务
-    const { TemporaryEntityTemplateService } = await import('@core/services/temporary-entity-template.service')
+    const { TemporaryEntityTemplateService } = await import('@core/packs/episode-production/services/temporary-entity-template.service')
     const templateService = TemporaryEntityTemplateService.getInstance()
 
     // 获取模板类型，如果没有则匹配

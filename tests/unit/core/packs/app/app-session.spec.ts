@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, vi } from 'vitest'
 
-import { AppSessionService } from '@core/modules/app/app-session.service'
+import { AppSessionService } from '@core/packs/app/services/app-session.service'
 // 隔离重构后不再有 dialog 占位行，APP_SESSION_DIALOG_ROLE_ID 不再被测试引用
 import { APP_SESSION_STATUSES, WORKFLOW_SESSION_CARDS } from '@shared/types/app.types'
 

@@ -3,17 +3,17 @@
  *             消费方 import 路径会在后续 task / phase 切换。
  */
 
-export { buildImagePrompt, PRESET_STYLES } from '../modules/episode-production/render/keyframe'
-export type { StyleConfig } from '../modules/episode-production/render/keyframe'
-export { KeyframeGeneratorService } from '../modules/episode-production/render/keyframe'
-export { NarrationSynthesisService, DialogueSynthesisService, SceneAudioService } from '../modules/episode-production/render/audio'
-export { TempAssetService } from '../modules/episode-production/assets/services'
+export { buildImagePrompt, PRESET_STYLES } from '@core/modules/episode-production/render/keyframe'
+export type { StyleConfig } from '@core/modules/episode-production/render/keyframe'
+export { KeyframeGeneratorService } from '@core/modules/episode-production/render/keyframe'
+export { NarrationSynthesisService, DialogueSynthesisService, SceneAudioService } from '@core/modules/episode-production/render/audio'
+export { TempAssetService } from '@core/modules/episode-production/assets/services'
 
-import { KeyframeGeneratorService } from '../modules/episode-production/render/keyframe'
-import { NarrationSynthesisService, DialogueSynthesisService, SceneAudioService } from '../modules/episode-production/render/audio'
-import { TempAssetService } from '../modules/episode-production/assets/services'
-import { buildImagePrompt } from '../modules/episode-production/render/keyframe'
-import type { StyleConfig } from '../modules/episode-production/render/keyframe'
+import { KeyframeGeneratorService } from '@core/modules/episode-production/render/keyframe'
+import { NarrationSynthesisService, DialogueSynthesisService, SceneAudioService } from '@core/modules/episode-production/render/audio'
+import { TempAssetService } from '@core/modules/episode-production/assets/services'
+import { buildImagePrompt } from '@core/modules/episode-production/render/keyframe'
+import type { StyleConfig } from '@core/modules/episode-production/render/keyframe'
 import type {
   Storyboard,
   SceneScript,

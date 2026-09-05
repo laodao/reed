@@ -18,10 +18,9 @@ import {
   LocationType,
   ItemType,
   TemporaryCharacterTemplateType,
-  TemporaryLocationTemplateType,
-  CharacterRolePosition
+  TemporaryLocationTemplateType
 } from '@shared/types/longwriting.types'
-import { TemporaryEntityTemplateService } from '@core/services/temporary-entity-template.service'
+import { TemporaryEntityTemplateService } from '@core/packs/episode-production/services/temporary-entity-template.service'
 
 /**
  * AI 提取实体结果
@@ -479,7 +478,7 @@ ${text.substring(0, 4000)}
   /**
    * 根据名称猜测地点类型
    */
-  private static guessLocationType(name: string, description: string): LocationType {
+  private static guessLocationType(name: string, _description: string): LocationType {
     if (name.includes('城') || name.includes('市')) return 'city'
     if (name.includes('村') || name.includes('镇')) return 'village'
     if (name.includes('山') || name.includes('峰')) return 'mountain'

@@ -519,7 +519,7 @@ export class ChatService {
 
       // 多模态能力校验：图片附件（含 @ 图片资产）要求模型支持 vision
       if (currentAttachmentContents?.some(a => a.type === 'image')) {
-        const { detectVisionSupport } = await import('@core/services/model-detector.service')
+        const { detectVisionSupport } = await import('@core/packs/chat/services/model-detector.service')
         if (modelId && !detectVisionSupport(modelId)) {
           throw new Error(
             '当前模型不支持图片输入，无法引用图片资产——请切换到支持多模态的模型（如 qwen-vl / gpt-4o），或移除图片附件'

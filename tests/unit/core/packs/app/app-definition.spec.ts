@@ -2,9 +2,9 @@
  * 应用定义服务测试（片1）：创建/幂等/渠道/分享/级联删除/聚合
  * @module tests/app/app-definition
  */
-import { describe, it, expect, beforeAll } from 'vitest'
+import { describe, it, expect } from 'vitest'
 
-import { AppDefinitionService } from '@core/modules/app/app-definition.service'
+import { AppDefinitionService } from '@core/packs/app/services/app-definition.service'
 import { APPLICATION_SOURCE_KINDS } from '@shared/types/app.types'
 
 // ---- 内存假仓库（结构与真仓库公共方法对齐的最小子集） ----

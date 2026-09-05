@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 
-import { AppDefinitionService } from '@core/modules/app/app-definition.service'
+import { AppDefinitionService } from '@core/packs/app/services/app-definition.service'
 import { APPLICATION_SOURCE_KINDS } from '@shared/types/app.types'
 
 // ---- 内存假仓库（与 app-definition.spec 同构的最小集） ----

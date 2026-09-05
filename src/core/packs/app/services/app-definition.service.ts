@@ -1,6 +1,6 @@
 /**
  * 应用定义服务（片1）
- * @module core/modules/app/app-definition.service
+ * @module core/packs/app/services/app-definition.service
  * @description 应用 = 发布单元（来源：已发布工作流）。提供创建（幂等）/渠道开关/
  *              分享令牌/启停/级联删除/列表聚合。会话渠道的运行时在 app-session.service（片2）。
  *
@@ -11,9 +11,9 @@
 import crypto from 'node:crypto'
 import type { AppRecord } from '@shared/types/app.types'
 import { APPLICATION_SOURCE_KINDS } from '@shared/types/app.types'
-import type { AppRepository, UpdateAppInput } from '../../database/repositories/app.repository'
-import type { AppSessionRepository } from '../../database/repositories/app-session.repository'
-import type { WorkflowDefinitionRepository } from '../../database/repositories/workflow-definition.repository'
+import type { AppRepository, UpdateAppInput } from '../../../database/repositories/app.repository'
+import type { AppSessionRepository } from '../../../database/repositories/app-session.repository'
+import type { WorkflowDefinitionRepository } from '../../../database/repositories/workflow-definition.repository'
 import { getCurrentUserId, LOCAL_DEFAULT_USER_ID } from '@core/context/user-context'
 import { createLogger } from '@core/utils/logger'
 

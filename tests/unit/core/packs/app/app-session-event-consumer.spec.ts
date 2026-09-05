@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, vi } from 'vitest'
 
-import { AppSessionService, APP_SESSION_EVENT_CONSUMER } from '@core/modules/app/app-session.service'
+import { AppSessionService, APP_SESSION_EVENT_CONSUMER } from '@core/packs/app/services/app-session.service'
 import { WORKFLOW_SESSION_CARDS } from '@shared/types/app.types'
 import type { EventBus, EventHandler, PlatformEvent, SubscribeOptions, SubscriptionFilter } from '@shared/types/event.types'
 
