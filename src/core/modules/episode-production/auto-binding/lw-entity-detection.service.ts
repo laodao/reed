@@ -5,7 +5,7 @@
  */
 
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
-import { createProvider } from '@core/providers'
+import { createProvider } from '@core/platform/providers/llm'
 import {
   NewCharacterInfo,
   NewLocationInfo,

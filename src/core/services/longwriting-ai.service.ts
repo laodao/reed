@@ -6,7 +6,7 @@
 
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getEventEmitter } from '@core/interfaces/event.interface'
-import { createProvider } from '@core/providers'
+import { createProvider } from '@core/platform/providers/llm'
 import { PROVIDER_TEMPLATES } from '@core/services/provider-template.service'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import type { ProviderTemplate, UserProviderConfig, ChatContext } from '@shared/types'
@@ -1643,7 +1643,7 @@ ${extraPrompt.trim()}` : ''}
     projectId: string,
     characters: any[],
     locations: any[],
-    chapterNumber: number,
+    _chapterNumber: number,
   ): string {
     const summary = outline?.summary || ''
     if (!this.recallKeywords.some(kw => summary.includes(kw))) return ''
@@ -2855,7 +2855,7 @@ ${previousStatesInfo || '无历史状态'}
     // 获取项目中的所有角色、地点和物品
     const characters = (await dbManager.lwCharacters?.getByProjectId(projectId)) || []
     const locations = (await dbManager.lwLocations?.getByProjectId(projectId)) || []
-    const items = (await dbManager.lwItems?.getByProjectId(projectId)) || []
+    await dbManager.lwItems?.getByProjectId(projectId)
 
     const systemPrompt = `你是一位专业的小说内容分析师。请分析章节正文，识别其中涉及的角色和地点。
 
@@ -3113,10 +3113,10 @@ ${previousInfo}
     // 读项目实体作参考（名称→ID 匹配用）
     const characters = (await dbManager.lwCharacters?.getByProjectId(projectId)) || []
     const locations = (await dbManager.lwLocations?.getByProjectId(projectId)) || []
-    const items = (await dbManager.lwItems?.getByProjectId(projectId)) || []
+    await dbManager.lwItems?.getByProjectId(projectId)
     const factions = (await dbManager.lwFactions?.getByProjectId(projectId)) || []
 
-    const entityRef = (list: Array<{ id: string; name: string }>, type: string): string =>
+    const entityRef = (list: Array<{ id: string; name: string }>, _type: string): string =>
       list.length > 0
         ? list.map(e => `- ${e.name}（ID: ${e.id}）`).join('\n')
         : ''

@@ -11,7 +11,7 @@ import {
   getSearchEngineTemplate,
   executeSearch,
   requiresApiKey
-} from '@core/search-engines'
+} from '@core/platform/providers/search'
 import type {
   SearchEngineTemplate,
   UserSearchEngineConfig,

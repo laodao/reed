@@ -22,7 +22,7 @@ import {
   VIDEO_PROVIDER_DEFINITIONS,
   isProviderImplemented,
   createVideoProvider,
-} from '@core/video-providers'
+} from '@core/platform/providers/video'
 import type { VideoProviderType } from '@shared/types/video-provider.types'
 import {
   VideoSegmentService,

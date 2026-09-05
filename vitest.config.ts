@@ -31,7 +31,7 @@ export default defineConfig({
         'src/core/modules/workflow/nodes/a2-nodes.ts',
         'src/core/modules/workflow/tools/video-url-resolver.ts',
         'src/core/services/document-tools/templates.ts',
-        'src/core/voice-providers/dashscope-stt-provider.ts',
+        'src/core/platform/providers/voice/dashscope-stt-provider.ts',
         'src/shared/types/news-topics.ts',
         'src/core/database/migrations/create-builtin-apps.ts',
         'src/core/database/migrations/create-assets-tables.ts',

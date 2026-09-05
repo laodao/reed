@@ -2,7 +2,7 @@
  * BaseVideoProvider → VideoProviderAdapter 桥接（spec §4.4 · P5-T12）
  * @module modules/episode-production/render/video/base-video-provider-bridge
  *
- * 把既有 src/core/video-providers/* 下的 BaseVideoProvider 实现（Bailian / DashScope /
+ * 把既有 src/core/platform/providers/video/* 下的 BaseVideoProvider 实现（Bailian / DashScope /
  * Volcengine 等）包装成 VideoProviderAdapter（spec 三模式契约），让 P5-T11
  * VideoSegmentService 能直接驱动它们生成视频片段。
  *
@@ -36,7 +36,7 @@ import type {
   KeyframesToVideoInput,
   VideoSegmentOutput,
 } from './video-provider-adapter'
-import type { BaseVideoProvider } from '@core/video-providers'
+import type { BaseVideoProvider } from '@core/platform/providers/video'
 import type {
   VideoModel,
   VideoTaskStatus,

@@ -18,9 +18,9 @@ import {
   createImageProvider,
   getProviderDefinition,
   isProviderImplemented
-} from '@core/image-providers'
-import { getModelCapabilities } from '@core/image-providers/model-capabilities'
-import type { BaseImageProvider } from '@core/image-providers'
+} from '@core/platform/providers/image'
+import { getModelCapabilities } from '@core/platform/providers/image/model-capabilities'
+import type { BaseImageProvider } from '@core/platform/providers/image'
 import type {
   ImageRecord,
   ImageProvider,

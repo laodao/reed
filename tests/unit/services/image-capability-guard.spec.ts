@@ -17,7 +17,7 @@ vi.mock('@core/interfaces/storage.interface', () => ({
 vi.mock('@core/interfaces/event.interface', () => ({
   getEventEmitter: () => ({ emit: () => {} }),
 }))
-vi.mock('@core/image-providers', () => ({
+vi.mock('@core/platform/providers/image', () => ({
   createImageProvider: vi.fn(),
   getProviderDefinition: vi.fn(),
   IMAGE_PROVIDER_DEFINITIONS: {},

@@ -5,9 +5,8 @@
  */
 
 import type { ProviderTemplate, ModelDefinition, ModelType } from '@shared/types/provider-template.types'
-import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getSecureStorage, type ISecureStorage } from '@core/interfaces/storage.interface'
-import { createProvider } from '@core/providers'
+import { createProvider } from '@core/platform/providers/llm'
 
 /**
  * 预定义的提供商模板

@@ -14,7 +14,6 @@
  */
 import {
   afterAll,
-  afterEach,
   beforeAll,
   beforeEach,
   describe,
@@ -44,7 +43,7 @@ import * as storageModule from '@core/interfaces/storage.interface'
 import {
   DashScopeVoiceCloneError,
   type DashScopeVoiceCloneProvider,
-} from '@core/voice-providers/dashscope-voice-clone-provider'
+} from '@core/platform/providers/voice/dashscope-voice-clone-provider'
 
 /**
  * 简易 provider mock —— 模拟 cloneVoice / queryCloneStatus / deleteClonedVoice
@@ -70,7 +69,7 @@ function makeMockProvider() {
   let delBehavior: (voiceId: string) => Promise<void> = async () => undefined
 
   const provider = {
-    cloneVoice: async (input: any) => {
+    cloneVoice: async (_input: any) => {
       calls.clone++
       return cloneBehavior()
     },

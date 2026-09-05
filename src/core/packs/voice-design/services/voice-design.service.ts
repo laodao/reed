@@ -31,7 +31,7 @@ import {
 import {
   DashScopeVoiceDesignError,
   DashScopeVoiceDesignProvider,
-} from '@core/voice-providers/dashscope-voice-design-provider'
+} from '@core/platform/providers/voice/dashscope-voice-design-provider'
 
 /** IPC 响应统一壳 */
 export interface ServiceResult<T> {

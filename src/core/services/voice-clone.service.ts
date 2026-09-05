@@ -46,7 +46,7 @@ import {
 import {
   DashScopeVoiceCloneError,
   DashScopeVoiceCloneProvider,
-} from '@core/voice-providers/dashscope-voice-clone-provider'
+} from '@core/platform/providers/voice/dashscope-voice-clone-provider'
 
 /** IPC 响应统一壳 — 与 VoiceService 风格保持一致 */
 export interface ServiceResult<T> {

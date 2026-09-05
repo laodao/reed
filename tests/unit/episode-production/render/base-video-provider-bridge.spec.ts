@@ -15,7 +15,7 @@ import type {
   BaseVideoProvider,
   VideoModel,
   VideoTaskStatus,
-} from '@core/video-providers'
+} from '@core/platform/providers/video'
 
 function makeMockProvider(opts: {
   features?: Partial<VideoModel['features']>

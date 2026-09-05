@@ -6,7 +6,7 @@
 
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getEventEmitter } from '@core/interfaces/event.interface'
-import { createProvider } from '@core/providers'
+import { createProvider } from '@core/platform/providers/llm'
 import { PROVIDER_TEMPLATES } from '@core/services/provider-template.service'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { FileService } from '@core/services/file.service'

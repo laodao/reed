@@ -17,8 +17,8 @@ import { toAssetUrl } from '@core/utils/asset-path'
 import {
   createVideoProvider,
   isProviderImplemented
-} from '@core/video-providers'
-import type { BaseVideoProvider } from '@core/video-providers'
+} from '@core/platform/providers/video'
+import type { BaseVideoProvider } from '@core/platform/providers/video'
 import type {
   VideoProvider,
   VideoGenerationRequest,

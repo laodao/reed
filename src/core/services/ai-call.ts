@@ -15,7 +15,7 @@
  *              日志走 createLogger('ai-call') 结构化落盘。
  */
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
-import { createProvider } from '@core/providers'
+import { createProvider } from '@core/platform/providers/llm'
 import { PROVIDER_TEMPLATES } from '@core/services/provider-template.service'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { createLogger } from '@core/utils/logger'

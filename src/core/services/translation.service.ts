@@ -8,7 +8,7 @@ import fs from 'fs'
 import path from 'path'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { TranslationRepository } from '@core/database/repositories/translation.repository'
-import { createProvider } from '@core/providers'
+import { createProvider } from '@core/platform/providers/llm'
 import { PROVIDER_TEMPLATES } from '@core/services/provider-template.service'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { getEventEmitter } from '@core/interfaces/event.interface'
@@ -17,7 +17,6 @@ import type {
   TextTranslationResponse,
   FileTranslationRequest,
   FileTranslationResponse,
-  TranslationRecord,
   LanguageCode
 } from '@shared/types/translation.types'
 import type { ChatContext } from '@shared/types'
