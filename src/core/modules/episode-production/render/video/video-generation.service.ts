@@ -303,9 +303,7 @@ export class VideoGenerationService {
     modelId: string
   ): Promise<string | null> {
     try {
-      // @ts-expect-error DataPathService 原文件中未 import，此处保留原有行为
-      const dataPathService = DataPathService.getInstance()
-      const userDataPath = dataPathService.getDataPath()
+      const userDataPath = getPathProvider().getDataPath()
       const now = new Date()
       const year = now.getFullYear()
       const month = String(now.getMonth() + 1).padStart(2, '0')

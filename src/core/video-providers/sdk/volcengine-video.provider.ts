@@ -1,11 +1,22 @@
 /**
- * 火山引擎视频生成 Provider
+ * 火山引擎（方舟 Ark）视频生成 Provider —— Seedance 支持
  * @module video-providers/sdk/volcengine-video-provider
- * @description 使用火山引擎 Vidol API 实现视频生成
+ * @description
+ * 对接火山方舟 Ark 的内容生成视频 API（CreateContentsGenerationsTasks），
+ * 支持 Seedance 2.0 / 2.0 fast / 1.5 pro 等模型的图生视频、文生视频。
+ *
+ * API 规范（方舟 Seedance）：
+ *  - 创建任务：POST {baseUrl}/contents/generations/tasks
+ *      body: { model, content:[{type:'text',text}, {type:'image_url',image_url:{url}}],
+ *              duration, resolution, ratio, generate_audio, watermark, seed, ... }
+ *      content[].image_url.url 支持公网 URL 或 data:image/png;base64,...
+ *  - 查询任务：GET {baseUrl}/contents/generations/tasks/{taskId}
+ *      resp: { id, status:'succeeded'|'running'|'failed', content:{ video_url, last_frame_url } }
  */
 
 import * as fs from 'fs'
 import * as path from 'path'
+import { getPathProvider } from '@core/interfaces/path.interface'
 import type {
   VideoModel,
   VideoGenerationRequest,
@@ -14,248 +25,237 @@ import type {
   GeneratedVideo
 } from '@shared/types/video-provider.types'
 import { BaseVideoProvider } from '../base-video-provider'
-import { OSSService } from '@core/services/oss.service'
 
 /**
- * 火山引擎视频生成响应格式
+ * 方舟内容生成任务创建响应（CreateContentsGenerationsTasks）
  */
-interface VolcengineVideoResponse {
+interface VolcengineCreateResponse {
   id?: string
   status?: string
-  video_url?: string
-  duration?: number
-  width?: number
-  height?: number
-  thumbnail_url?: string
-  error?: {
-    message: string
-    type: string
-    code: string
-  }
+  error?: { message?: string; code?: string }
   message?: string
   code?: string
 }
 
 /**
- * 火山引擎任务状态响应
+ * 方舟内容生成任务查询响应
  */
 interface VolcengineTaskResponse {
-  id: string
-  status: 'pending' | 'processing' | 'completed' | 'failed'
-  progress?: number
-  video_url?: string
+  id?: string
+  status?: 'queued' | 'running' | 'succeeded' | 'failed' | 'expired'
+  content?: {
+    video_url?: string
+    last_frame_url?: string
+  }
+  error?: { message?: string; code?: string }
   duration?: number
-  error?: string
+  resolution?: string
+  ratio?: string
+}
+
+/** 图片（jpeg/png/webp/bmp/tiff/gif）MIME 推断 */
+function guessMime(ext: string): string {
+  switch (ext.toLowerCase()) {
+    case '.jpg':
+    case '.jpeg': return 'image/jpeg'
+    case '.png': return 'image/png'
+    case '.webp': return 'image/webp'
+    case '.bmp': return 'image/bmp'
+    case '.tiff':
+    case '.tif': return 'image/tiff'
+    case '.gif': return 'image/gif'
+    default: return 'image/png'
+  }
+}
+
+/** 从 width/height/aspectRatio 推断方舟 ratio（默认 9:16 竖版） */
+function inferRatio(width?: number, height?: number, aspectRatio?: string): string {
+  if (aspectRatio && /^\d+:\d+$/.test(aspectRatio)) return aspectRatio
+  if (width && height) {
+    if (width === height) return '1:1'
+    if (width > height) return '16:9'
+    return '9:16'
+  }
+  return '9:16'
+}
+
+/** 从 width/height 推断分辨率档位（720p/1080p/480p） */
+function inferResolution(width?: number, height?: number): string {
+  const maxSide = Math.max(width ?? 0, height ?? 0)
+  if (maxSide >= 1000) return '1080p'
+  if (maxSide >= 600) return '720p'
+  return '480p'
 }
 
 /**
- * 火山引擎文件上传策略响应
- */
-interface VolcengineFileUploadResponse {
-  upload_url?: string
-  file_id?: string
-  url?: string
-  code?: string
-  message?: string
-}
-
-/**
- * 火山引擎视频生成 Provider
+ * 火山引擎（方舟 Ark）Seedance 视频生成 Provider
  *
- * 使用火山引擎方舟平台的视频生成 API。
- *
- * @see https://www.volcengine.com/docs/6561/1160818
+ * @see https://www.volcengine.com/docs/82379/1520758
  */
 export class VolcengineVideoProvider extends BaseVideoProvider {
-  /**
-   * 默认 API URL
-   */
+  /** 默认 API URL（方舟 Ark） */
   private static DEFAULT_API_URL = 'https://ark.cn-beijing.volces.com/api/v3'
 
-  /**
-   * Provider 唯一标识
-   */
   get id(): string {
     return 'volcengine'
   }
 
-  /**
-   * Provider 显示名称
-   */
   get name(): string {
-    return '火山引擎'
+    return '火山引擎（方舟 Seedance）'
   }
 
-  /**
-   * 获取默认 API URL
-   */
   protected getDefaultBaseUrl(): string {
     return VolcengineVideoProvider.DEFAULT_API_URL
   }
 
-  /**
-   * 获取支持的模型列表
-   */
+  /** 支持模型：Seedance 2.0（ep-* 端点 id 由用户配置，这里给默认能力说明） */
   async getModels(): Promise<VideoModel[]> {
-    // 火山引擎的视频生成模型
     return [
       {
-        id: 'vidol-v1',
-        name: 'Vidol v1',
+        id: 'ep-20260511121109-hchqf',
+        name: 'Doubao-Seedance-2.0',
         providerId: this.id,
         providerName: this.name,
         features: {
           textToVideo: true,
           imageToVideo: true,
           videoToVideo: false,
-          maxDuration: 10,
-          supportedResolutions: ['720p', '1080p'],
-          supportedAspectRatios: ['16:9', '9:16', '1:1']
-        }
-      }
+          maxDuration: 15,
+          supportedResolutions: ['480p', '720p', '1080p'],
+          supportedAspectRatios: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'],
+        },
+      },
     ]
   }
 
   /**
-   * 生成视频
-   *
-   * @param request - 视频生成请求
-   * @returns 生成响应，包含任务 ID 或视频
+   * 处理输入图：base64 data URL 直接透传；本地路径 / local-image 协议 / file 协议读取转 base64 data URL。
+   * @returns 可直接放入 image_url.url 的值，或 null（未提供图）
    */
+  private async resolveImageUrl(request: VideoGenerationRequest): Promise<string | null> {
+    const raw = request.image
+    if (!raw || raw.length === 0) return null
+    // 已是公网 URL 或 data:image/...;base64, 或 asset:// —— 直接使用
+    if (raw.startsWith('http://') || raw.startsWith('https://') || raw.startsWith('data:') || raw.startsWith('asset://')) {
+      return raw
+    }
+    // 本地文件 / local-image:// / file:// —— 读文件转 base64 data URL
+    const localPath = this.resolveLocalPath(raw)
+    const absolute = path.isAbsolute(localPath) ? localPath : path.resolve(getPathProvider().getDataPath(), localPath)
+    if (!fs.existsSync(absolute)) {
+      // 仍可能是相对 app 数据根的路径，尽量解析过一次即可；不存在则由下游报错
+      return raw
+    }
+    const buf = fs.readFileSync(absolute)
+    const ext = path.extname(absolute)
+    const mime = guessMime(ext)
+    return `data:${mime};base64,${buf.toString('base64')}`
+  }
+
+  /** 生成视频（图生视频 / 文生视频） */
   async generateVideo(request: VideoGenerationRequest): Promise<VideoGenerationResponse> {
     try {
       if (!request.model) {
-        return {
-          success: false,
-          error: '未指定模型'
-        }
+        return { success: false, error: '未指定模型' }
       }
 
-      // 处理图片输入
-      let imageUrl: string | null = null
-      if (request.image && request.image.length > 0) {
-        // 判断是本地文件还是公网 URL
-        if (this.isLocalFilePath(request.image)) {
-          const localPath = this.resolveLocalPath(request.image)
-          console.log(`[${this.id}] 检测到本地图片，正在上传:`, localPath)
-
-          imageUrl = await this.uploadLocalFile(localPath)
-          if (!imageUrl) {
-            return { success: false, error: '本地图片上传失败。请检查网络连接，或在设置中配置图床（OSS）服务作为备选方案。' }
-          }
-        } else {
-          imageUrl = request.image
-        }
-      }
-
-      // 确定请求端点和请求体
-      let endpoint: string
-      let body: Record<string, any>
+      const imageUrl = await this.resolveImageUrl(request)
+      const content: Array<Record<string, unknown>> = []
 
       if (imageUrl) {
-        // 图生视频
-        endpoint = '/video/generation/image-to-video'
-        body = {
-          model: request.model,
-          prompt: request.prompt,
-          duration: request.duration || 5,
-          aspect_ratio: request.aspectRatio || '16:9'
+        // 图生视频：文本提示词（可选）+ 图片首帧
+        if (request.prompt) {
+          content.push({ type: 'text', text: request.prompt })
         }
-
-        // 处理图片输入：可能是 URL 或 File ID
-        if (imageUrl.startsWith('file://')) {
-          // 使用 File ID
-          const fileId = imageUrl.replace('file://', '')
-          body.file_id = fileId
-        } else {
-          // 使用 URL
-          body.image = imageUrl
-        }
+        content.push({ type: 'image_url', image_url: { url: imageUrl } })
       } else if (request.prompt) {
         // 文生视频
-        endpoint = '/video/generation/text-to-video'
-        body = {
-          model: request.model,
-          prompt: request.prompt,
-          negative_prompt: request.negativePrompt,
-          duration: request.duration || 5,
-          aspect_ratio: request.aspectRatio || '16:9'
-        }
+        content.push({ type: 'text', text: request.prompt })
       } else {
-        return {
-          success: false,
-          error: '请提供图片或提示词'
-        }
+        return { success: false, error: '请提供图片或提示词' }
       }
 
-      // 添加可选参数
-      if (request.seed !== undefined) {
-        body.seed = request.seed
+      const body: Record<string, unknown> = {
+        model: request.model,
+        content,
+        // Seedance 2.0 duration 支持 [4,15]；用 s 智能时长（-1）会由模型决定，这里优先按请求时长
+        duration: request.duration && request.duration > 0 ? Math.min(15, Math.max(4, Math.round(request.duration))) : undefined,
+        resolution: inferResolution(request.width, request.height),
+        ratio: inferRatio(request.width, request.height, request.aspectRatio),
+        // 配音走独立 TTS 节点，不让模型内置生成音频；如需同步音效可改为 true
+        generate_audio: false,
+        watermark: false,
+      }
+      if (request.seed !== undefined && request.seed >= 0) body.seed = request.seed
+
+      const url = this.buildUrl('/contents/generations/tasks')
+      console.log(`[${this.id}] 发送视频生成请求:`, { url, model: request.model, hasImage: !!imageUrl })
+      console.log(`[${this.id}] 请求体:`, JSON.stringify(body, null, 2))
+
+      const response = await this.sendRequest<VolcengineCreateResponse>(url, 'POST', body)
+
+      // 错误检查（体含 error 或业务 code）
+      const bizErr = (response as { error?: { message?: string } }).error
+      if (bizErr?.message) {
+        return { success: false, error: bizErr.message }
+      }
+      if ((response as { code?: string }).code && (response as { code?: string }).code !== '0') {
+        return { success: false, error: (response as { message?: string }).message || `错误代码: ${(response as { code?: string }).code}` }
       }
 
-      const url = this.buildUrl(endpoint)
-      console.log(`[${this.id}] 发送视频生成请求:`, { url, model: request.model })
-
-      const response = await this.sendRequest<VolcengineVideoResponse>(url, 'POST', body)
-
-      // 检查错误
-      if (response.error) {
-        return {
-          success: false,
-          error: response.error.message || '视频生成失败'
-        }
-      }
-
-      // 检查是否有任务 ID（异步模式）
+      // 异步任务：返回 id
       if (response.id) {
-        return {
-          success: true,
-          taskId: response.id
-        }
+        console.log(`[${this.id}] 视频生成任务已创建，taskId:`, response.id)
+        return { success: true, taskId: response.id }
       }
 
-      // 检查是否直接返回了视频（同步模式）
-      if (response.video_url) {
-        return {
-          success: true,
-          video: {
-            url: response.video_url,
-            duration: response.duration,
-            width: response.width,
-            height: response.height,
-            thumbnailUrl: response.thumbnail_url
-          }
-        }
-      }
-
-      return {
-        success: false,
-        error: '未获取到生成结果'
-      }
+      return { success: false, error: '未获取到生成任务 ID' }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '未知错误'
-      return {
-        success: false,
-        error: `视频生成失败: ${errorMessage}`
+      return { success: false, error: `视频生成失败: ${errorMessage}` }
+    }
+  }
+
+  /** 查询异步任务状态 */
+  async getTaskStatus(taskId: string): Promise<VideoTaskStatus> {
+    try {
+      const url = this.buildUrl(`/contents/generations/tasks/${taskId}`)
+      const response = await this.sendRequest<VolcengineTaskResponse>(url, 'GET')
+
+      const status = this.mapStatus(response.status)
+      const result: VideoTaskStatus = { taskId, status }
+
+      if (status === 'completed' && response.content?.video_url) {
+        const video: GeneratedVideo = {
+          url: response.content.video_url,
+          duration: response.duration,
+        }
+        if (response.content.last_frame_url) video.thumbnailUrl = response.content.last_frame_url
+        result.video = video
+      } else if (status === 'failed') {
+        result.error = response.error?.message || '视频生成失败'
       }
+
+      return result
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误'
+      return { taskId, status: 'failed', error: errorMessage }
+    }
+  }
+
+  /** 测试 Provider 连接 */
+  async testConnection(): Promise<{ success: boolean; message: string }> {
+    try {
+      const models = await this.getModels()
+      return { success: true, message: `连接成功，支持 ${models.length} 个模型` }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误'
+      return { success: false, message: `连接失败: ${errorMessage}` }
     }
   }
 
   /**
-   * 判断是否为本地文件路径
-   */
-  private isLocalFilePath(filePath: string): boolean {
-    if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
-      return false
-    }
-    return filePath.startsWith('file://') ||
-           filePath.startsWith('local-image://') ||
-           /^[A-Za-z]:/.test(filePath) ||
-           filePath.startsWith('/')
-  }
-
-  /**
-   * 将本地路径转换为实际文件系统路径
+   * 将本地路径（file:// / local-image:// / 绝对路径）转换为实际文件系统路径
    */
   private resolveLocalPath(inputPath: string): string {
     if (inputPath.startsWith('file://')) {
@@ -268,194 +268,23 @@ export class VolcengineVideoProvider extends BaseVideoProvider {
     return inputPath
   }
 
-  /**
-   * 上传本地文件
-   * 尝试使用火山引擎临时文件上传或 OSS 服务
-   *
-   * @param localPath - 本地文件路径
-   * @returns 上传后的 URL
-   */
-  private async uploadLocalFile(localPath: string): Promise<string | null> {
-    try {
-      if (!fs.existsSync(localPath)) {
-        console.error(`[${this.id}] 文件不存在:`, localPath)
-        return null
-      }
-
-      // 尝试火山引擎临时文件上传
-      const tempUrl = await this.uploadViaTempPolicy(localPath)
-      if (tempUrl) {
-        console.log(`[${this.id}] 火山引擎临时上传成功:`, tempUrl)
-        return tempUrl
-      }
-
-      // 尝试 OSS 服务
-      console.log(`[${this.id}] 火山引擎临时上传失败，尝试 OSS 服务`)
-      const ossUrl = await this.uploadViaOSS(localPath)
-      if (ossUrl) {
-        console.log(`[${this.id}] OSS 上传成功:`, ossUrl)
-        return ossUrl
-      }
-
-      console.error(`[${this.id}] 所有上传方式均失败`)
-      return null
-    } catch (error) {
-      console.error(`[${this.id}] 上传文件异常:`, error)
-      return null
-    }
-  }
-
-  /**
-   * 通过火山引擎临时文件上传接口上传
-   * 参考: https://www.volcengine.com/docs/82379/1885708
-   *
-   * @param localPath - 本地文件路径
-   * @returns File ID，用于后续 API 调用
-   */
-  private async uploadViaTempPolicy(localPath: string): Promise<string | null> {
-    try {
-      const fileName = path.basename(localPath)
-      const fileBuffer = fs.readFileSync(localPath)
-      const ext = path.extname(localPath).toLowerCase()
-      const mimeTypes: Record<string, string> = {
-        '.jpg': 'image/jpeg',
-        '.jpeg': 'image/jpeg',
-        '.png': 'image/png',
-        '.webp': 'image/webp',
-        '.gif': 'image/gif'
-      }
-      const mimeType = mimeTypes[ext] || 'application/octet-stream'
-
-      // 火山引擎 Files API
-      const uploadUrl = `${VolcengineVideoProvider.DEFAULT_API_URL}/files`
-      console.log(`[${this.id}] 上传文件到火山引擎:`, { fileName, size: fileBuffer.length })
-
-      // 构建 FormData
-      const formData = new FormData()
-      formData.append('purpose', 'user_data')
-      formData.append('file', new Blob([fileBuffer], { type: mimeType }), fileName)
-
-      const response = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.config.apiKey}`
-        },
-        body: formData
-      })
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error(`[${this.id}] 文件上传失败:`, response.status, errorText)
-        return null
-      }
-
-      const result = await response.json() as {
-        id?: string
-        status?: string
-        error?: { message: string }
-      }
-
-      if (result.id) {
-        console.log(`[${this.id}] 文件上传成功，File ID:`, result.id, '状态:', result.status)
-        // 返回 File ID 格式，用于视频生成 API
-        return `file://${result.id}`
-      }
-
-      console.error(`[${this.id}] 上传响应无效:`, result)
-      return null
-    } catch (error) {
-      console.error(`[${this.id}] 火山引擎临时上传异常:`, error)
-      return null
-    }
-  }
-
-  /**
-   * 通过 OSS 服务上传文件
-   *
-   * @param localPath - 本地文件路径
-   * @returns 上传后的 URL
-   */
-  private async uploadViaOSS(localPath: string): Promise<string | null> {
-    try {
-      const ossService = OSSService.getInstance()
-      const result = await ossService.uploadFile({ localPath })
-
-      if (result.success && result.url) {
-        return result.url
-      }
-
-      console.log(`[${this.id}] OSS 上传失败:`, result.error)
-      return null
-    } catch (error) {
-      console.error(`[${this.id}] OSS 上传异常:`, error)
-      return null
-    }
-  }
-
-  /**
-   * 查询异步任务状态
-   *
-   * @param taskId - 任务 ID
-   * @returns 任务状态信息
-   */
-  async getTaskStatus(taskId: string): Promise<VideoTaskStatus> {
-    try {
-      const url = this.buildUrl(`/video/generation/tasks/${taskId}`)
-      const response = await this.sendRequest<VolcengineTaskResponse>(url, 'GET')
-
-      const result: VideoTaskStatus = {
-        taskId,
-        status: response.status,
-        progress: response.progress
-      }
-
-      if (response.status === 'completed' && response.video_url) {
-        result.video = {
-          url: response.video_url,
-          duration: response.duration
-        }
-      } else if (response.status === 'failed') {
-        result.error = response.error || '视频生成失败'
-      }
-
-      return result
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : '未知错误'
-      return {
-        taskId,
-        status: 'failed',
-        error: errorMessage
-      }
-    }
-  }
-
-  /**
-   * 测试 Provider 连接
-   */
-  async testConnection(): Promise<{ success: boolean; message: string }> {
-    try {
-      // 尝试获取模型列表验证连接
-      const models = await this.getModels()
-      return {
-        success: true,
-        message: `连接成功，支持 ${models.length} 个模型`
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : '未知错误'
-      return {
-        success: false,
-        message: `连接失败: ${errorMessage}`
-      }
-    }
-  }
-
-  /**
-   * 构建请求头
-   */
+  /** 请求头 */
   protected buildHeaders(): Record<string, string> {
     return {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${this.config.apiKey}`
+      'Authorization': `Bearer ${this.config.apiKey}`,
+    }
+  }
+
+  /** 映射方舟任务状态到统一枚举 */
+  private mapStatus(status?: string): 'pending' | 'processing' | 'completed' | 'failed' {
+    switch (status) {
+      case 'queued': return 'pending'
+      case 'running': return 'processing'
+      case 'succeeded': return 'completed'
+      case 'failed':
+      case 'expired': return 'failed'
+      default: return 'pending'
     }
   }
 }

@@ -70,6 +70,8 @@ export type WorkflowNodeType =
   | 'stt'
   | 'voice-clone'
   | 'video-extract-audio'
+  | 'video-gen'
+  | 'video-compose'
   // 技能（Skill 技能包调用）
   | 'skill-call'
   // 通用
@@ -869,6 +871,8 @@ export const WORKFLOW_NODE_TYPES = {
   'save-diary': 'save-diary',
   'crawl-news': 'crawl-news',
   'crawl-links': 'crawl-links',
+  'video-gen': 'video-gen',
+  'video-compose': 'video-compose',
 } as const satisfies Record<WorkflowNodeType, WorkflowNodeType>
 
 /** 出边类型常量（键=值，与 WorkflowEdgeKind 一一对应） */
