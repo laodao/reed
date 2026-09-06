@@ -17,7 +17,7 @@ import { AssetGroupRepository } from '@core/database/repositories/asset-group.re
 import { AssetCategoryRepository } from '@core/database/repositories/asset-category.repository'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { AssetStorageService } from './asset-storage.service'
-import { buildUrlShortcut, ensureExtension, sanitizeFileName, type AssetDownloadPayload } from './asset-download'
+import { buildUrlShortcut, ensureExtension, sanitizeFileName, type AssetDownloadPayload, type AssetDownloadView } from './asset-download'
 import { DOCUMENT_TEMPLATES } from '@core/platform/services/document-tools/templates'
 import { getDocumentTools } from '@core/platform/services/document-tools/document-tools'
 
@@ -264,14 +264,24 @@ export class AssetService {
   }
 
   /**
-   * 资产下载载荷（按存储形态生成文件名与内容）：
+   * 资产下载载荷（按存储形态 + 当前视图生成文件名与内容）：
+   * - view='preview'：若资产可渲染成长图（report 长图），下载渲染后的 PNG（"看啥下啥"）
    * - file：复制源文件（sourcePath=绝对路径，文件名取存储文件名）
    * - text：下载为 .md（内容 textContent）
    * - json：下载为 .json（内容 jsonContent）
    * - url ：下载为 .url 快捷方式（InternetShortcut）
-   * 无内容/无文件抛错（调用方提示）。
+   * view='source'/缺省按存储形态；无内容/无文件抛错（调用方提示）。
    */
-  async buildDownloadPayload(record: AssetRecord): Promise<AssetDownloadPayload> {
+  async buildDownloadPayload(record: AssetRecord, view?: AssetDownloadView): Promise<AssetDownloadPayload> {
+    // 预览态（图界面）下载：report 长图 → 直接下载渲染图；渲染不出图则回退按存储形态
+    if (view === 'preview') {
+      const rendered = await this.renderAssetPreview(record)
+      if (rendered && rendered.mode === 'image') {
+        const base64 = rendered.url.replace(/^data:image\/[^;]+;base64,/, '')
+        const mimeType = rendered.url.replace(/^data:([^;]+);.*$/, '$1') || 'image/png'
+        return { fileName: ensureExtension(record.name, 'png'), kind: 'image', base64Data: base64, mimeType }
+      }
+    }
     if (record.kind === ASSET_STORAGE_KINDS.file && record.storagePath) {
       const abs = this.resolveAssetPath(record)
       if (!abs) throw new Error('该资产无本地文件')
@@ -416,6 +426,50 @@ export class AssetService {
       const tplId = input.previewTemplateId?.trim()
       if (!tplId) throw new Error('报告预览模式必须指定渲染模板')
       if (!DOCUMENT_TEMPLATES[tplId]) throw new Error(`渲染模板不存在: ${tplId}`)
+    }
+  }
+
+  /**
+   * 把文本报告资产固化为长图图片资产（桌面端能力）：
+   * markdown 内容 + 排版模板 → PNG → 复制进资产库为 image 资产。
+   * 存量报告"补图"与工作流 save-img 产物的等价通道；Web 端无渲染器返回 null。
+   * @param record 文本报告资产（kind=text）
+   * @param opts.templateId DOCUMENT_TEMPLATES 键（缺省 generic）
+   * @param opts.subCategory / name / tags 图片资产元数据
+   * @param opts.sourceRef 来源 run（资产中心跳执行历史；缺省沿用原资产 sourceRef）
+   */
+  async materializeTextAsImage(
+    record: AssetRecord,
+    opts: { templateId?: string; subCategory?: string; name?: string; tags?: string[]; sourceRef?: string } = {}
+  ): Promise<AssetRecord | null> {
+    const content = record.textContent ?? ''
+    if (!content.trim()) throw new Error('资产没有可渲染的文本内容')
+    const tools = getDocumentTools()
+    if (!tools.canRenderBinary()) return null // Web 无渲染器：跳过（不做降级 HTML）
+    const templateId = opts.templateId ?? 'generic'
+    const template = DOCUMENT_TEMPLATES[templateId]
+    if (!template) throw new Error(`渲染模板不存在: ${templateId}`)
+    const rendered = await tools.renderImage({ markdown: content, template, title: record.name })
+    if (rendered.format !== 'image') return null
+    // 临时 PNG → 经 createAsset(file) 复制进资产目录
+    const pathMod = await import('path')
+    const { mkdtempSync, writeFileSync, rmSync } = await import('fs')
+    const tmpDir = mkdtempSync(pathMod.join(getPathProvider().getDataPath(), 'asset-materialize-'))
+    const tmpFile = pathMod.join(tmpDir, `${Date.now().toString(36)}.png`)
+    writeFileSync(tmpFile, rendered.buffer)
+    try {
+      return await this.createAsset({
+        category: ASSET_CATEGORIES.image,
+        subCategory: opts.subCategory?.trim() || undefined,
+        name: opts.name?.trim() || `${record.name}-长图`,
+        tags: opts.tags ?? [],
+        content: { kind: 'file', path: tmpFile },
+        sourceType: record.sourceType ?? undefined,
+        sourceRef: opts.sourceRef ?? record.sourceRef ?? undefined,
+        groupName: record.groupName ?? undefined,
+      })
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true })
     }
   }
 }

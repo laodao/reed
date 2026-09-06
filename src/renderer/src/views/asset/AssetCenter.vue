@@ -224,7 +224,7 @@
             <el-button size="small" :icon="ZoomIn" :disabled="previewZoom >= MAX_ZOOM" title="放大" @click="zoomIn" />
           </div>
         </div>
-        <el-button size="small" :disabled="!previewAsset" @click="handleDownload(previewAsset!)">
+        <el-button size="small" :disabled="!previewAsset" @click="handleDownload(previewAsset!, hasSourceView(previewAsset) ? previewMode : undefined)">
           <el-icon><Download /></el-icon> 下载
         </el-button>
       </div>
@@ -876,21 +876,23 @@ async function handleDelete(asset: AssetRecord): Promise<void> {
 }
 
 /**
- * 下载资产：
- * - 桌面端：主进程弹保存对话框 + 复制文件 / 写文本（file 型复制源文件，text/json/url 生成 .md/.json/.url）
+ * 下载资产（"看啥下啥"）：
+ * - view='preview'：预览态，report/图文类下载渲染长图 PNG（看图片下图片）
+ * - view='source'/缺省：按存储形态下载（file 复制源文件，text/json/url 生成 .md/.json/.url）
+ * - 桌面端：主进程弹保存对话框 + 复制文件 / 写文本 / 写渲染图
  * - Web 端：浏览器下载（file 型 fetch 资产 URL → Blob；text/json/url 组装文本 → Blob）
  */
-async function handleDownload(asset: AssetRecord): Promise<void> {
+async function handleDownload(asset: AssetRecord, view?: 'preview' | 'source'): Promise<void> {
   try {
     if (isElectronRenderer()) {
-      const resp = await api.assets.download(asset.id)
+      const resp = await api.assets.download(asset.id, view)
       if (!resp.success) { ElMessage.error(resp.error ?? '下载失败'); return }
       if (resp.data?.canceled) return // 用户取消保存对话框
       ElMessage.success('已下载')
       return
     }
     // Web 端：浏览器下载
-    const payload = buildWebAssetDownload(asset, previewUrl(asset))
+    const payload = buildWebAssetDownload(asset, previewUrl(asset), view, view === 'preview' ? previewImageUrl(asset.id) : null)
     if (!payload) { ElMessage.error('该资产暂不支持下载'); return }
     if (payload.fetchUrl) {
       const res = await fetch(payload.fetchUrl)

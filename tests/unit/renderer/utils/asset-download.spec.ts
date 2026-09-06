@@ -68,4 +68,18 @@ describe('buildWebAssetDownload', () => {
     const p = buildWebAssetDownload(makeAsset({ kind: 'text', textContent: 'x', name: 'a/b:c' }), '')
     expect(p!.fileName).toBe('a_b_c.md')
   })
+
+  it('view=preview 且有渲染图：下载渲染 PNG', () => {
+    const p = buildWebAssetDownload(makeAsset({ kind: 'text', name: '早报', textContent: 'x' }), '', 'preview', 'data:image/png;base64,AAAA')
+    expect(p!.fileName).toBe('早报.png')
+    expect(p!.fetchUrl).toBe('data:image/png;base64,AAAA')
+    expect(p!.mimeType).toBe('image/png')
+    expect(p!.content).toBeUndefined()
+  })
+
+  it('view=preview 但无渲染图：回退按存储形态（text→.md）', () => {
+    const p = buildWebAssetDownload(makeAsset({ kind: 'text', name: '早报', textContent: 'x' }), '', 'preview', null)
+    expect(p!.fileName).toBe('早报.md')
+    expect(p!.content).toBe('x')
+  })
 })

@@ -6,6 +6,7 @@
 
 import { contextBridge, ipcRenderer } from 'electron'
 import type { DocumentSource } from '@shared/types/knowledge-base.types'
+import type { NoticeListQuery } from '@shared/types'
 import type { EpAiGenerateTextRequest, EpBatchCreateEpisodesRequest, EpBatchIdentifyEntitiesRequest } from '@shared/types/episode-production'
 
 // IPC 通道名称常量
@@ -388,7 +389,13 @@ const IPC_CHANNELS = {
 
   // 业务包（包内核：启用态查询/切换）
   PACK_LIST: 'pack:list',
-  PACK_SET_ENABLED: 'pack:setEnabled'
+  PACK_SET_ENABLED: 'pack:setEnabled',
+
+  // ==================== 通知中心 ====================
+  NOTIFICATION_LIST: 'notification:list',
+  NOTIFICATION_MARK_READ: 'notification:mark-read',
+  NOTIFICATION_MARK_ALL_READ: 'notification:mark-all-read',
+  NOTIFICATION_UNREAD_COUNT: 'notification:unread-count'
 } as const
 
 /**
@@ -802,9 +809,10 @@ const electronAPI = {
     deleteCategory: (id: string) => ipcRenderer.invoke('asset:category-delete', { id }),
     previewRender: (assetId: string) => ipcRenderer.invoke('asset:preview-render', { assetId }),
     previewTemplates: () => ipcRenderer.invoke('asset:preview-templates'),
-    sourceLink: (assetId: string) => ipcRenderer.invoke('asset:source-link', { assetId }),
+    // 文本报告资产 → 长图图片资产（桌面端渲染；Web 返回 null）
+    materializeImage: (p: { assetId: string; templateId?: string; subCategory?: string; name?: string; tags?: string[] }) => ipcRenderer.invoke('asset:materialize-image', p),    sourceLink: (assetId: string) => ipcRenderer.invoke('asset:source-link', { assetId }),
     groupDetail: (groupId: string) => ipcRenderer.invoke('asset:group-detail', { groupId }),
-    download: (id: string) => ipcRenderer.invoke('asset:download', { id }),
+    download: (id: string, view?: 'preview' | 'source') => ipcRenderer.invoke('asset:download', { id, view }),
   },
 
   // ==================== 新闻来源库（内置应用 C1 早报 / C2 周报的数据源） ====================
@@ -2871,6 +2879,20 @@ const electronAPI = {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.PACK_LIST),
     setEnabled: (packId: string, enabled: boolean) =>
       ipcRenderer.invoke(IPC_CHANNELS.PACK_SET_ENABLED, { packId, enabled })
+  },
+
+  // 通知中心（顶栏铃铛 + 历史列表 + 点击跳转；已读状态由后端 user_notification_reads 持久化，
+  // 历史数据源 = 平台事件表 platform_events）
+  notification: {
+    // 通知列表（分页 + 未读优先）：入参 { page?, pageSize?, unreadFirst? }，
+    // 返回 { success, data?: { items, total, unread, hasMore } }
+    list: (q?: NoticeListQuery) => ipcRenderer.invoke(IPC_CHANNELS.NOTIFICATION_LIST, q),
+    // 标记一组 seq 已读：入参 { seqs: number[] } → { success, data?: { marked, unread } }
+    markRead: (seqs: number[]) => ipcRenderer.invoke(IPC_CHANNELS.NOTIFICATION_MARK_READ, { seqs }),
+    // 全部标记已读 → { success, data?: { marked, unread } }
+    markAllRead: () => ipcRenderer.invoke(IPC_CHANNELS.NOTIFICATION_MARK_ALL_READ),
+    // 未读计数（铃铛徽标）→ { success, data?: number }
+    unreadCount: () => ipcRenderer.invoke(IPC_CHANNELS.NOTIFICATION_UNREAD_COUNT)
   },
 
   // 错误处理

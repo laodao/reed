@@ -27,10 +27,17 @@ export function buildUrlShortcut(url: string): string {
 export interface AssetDownloadPayload {
   /** 默认文件名（已清洗 + 补扩展名） */
   fileName: string
-  /** file=复制源文件；text=写文本内容 */
-  kind: 'file' | 'text'
+  /** file=复制源文件；text=写文本内容；image=写渲染长图（base64） */
+  kind: 'file' | 'text' | 'image'
   /** kind=file 时：源文件绝对路径 */
   sourcePath?: string
   /** kind=text 时：要写入的文本内容 */
   content?: string
+  /** kind=image 时：渲染长图的裸 base64（已剥 data: 前缀） */
+  base64Data?: string
+  /** kind=image 时：图片 MIME（如 image/png） */
+  mimeType?: string
 }
+
+/** 资产下载的视图视角（「看啥下啥」：预览图 → 下载图；源码文本 → 下载文本） */
+export type AssetDownloadView = 'preview' | 'source'

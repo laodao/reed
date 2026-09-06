@@ -102,8 +102,9 @@ export interface AppApi {
     sourceLink(assetId: string): Promise<IpcResp<AssetSourceLink | null>>
     /** 资产组详情（需求 2：组卡片 → 组内成员画廊） */
     groupDetail(groupId: string): Promise<IpcResp<{ group: AssetGroupRecord; members: AssetRecord[] } | null>>
-    /** 下载资产到本地（桌面端弹保存对话框；Web 端由浏览器直接下载，不经过此通道） */
-    download(id: string): Promise<IpcResp<{ filePath?: string; canceled?: boolean }>>
+    /** 下载资产到本地（桌面端弹保存对话框；Web 端由浏览器直接下载，不经过此通道）
+     *  view：'preview'=预览态（看图片下图片，report 长图下载渲染 PNG）；'source'/缺省=按存储形态 */
+    download(id: string, view?: 'preview' | 'source'): Promise<IpcResp<{ filePath?: string; canceled?: boolean }>>
   }
   /** 新闻来源库（内置应用 C1 早报 / C2 周报的数据源管理） */
   newsSource: {

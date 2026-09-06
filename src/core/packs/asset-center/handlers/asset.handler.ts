@@ -86,6 +86,20 @@ export function registerAssetHandlers(): void {
       return getAssetService().renderAssetPreview(record)
     })
   )
+  // 把文本报告资产固化为长图图片资产（桌面端渲染；Web 端返回 null）。
+  // 存量报告补图 / 未来"文本→图片资产"复用同一服务能力。
+  ipcBridge.handle('asset:materialize-image', (_e, p: { assetId: string; templateId?: string; subCategory?: string; name?: string; tags?: string[] }) =>
+    wrap(async () => {
+      const record = await getAssetService().getAsset(p.assetId)
+      if (!record) throw new Error('资产不存在')
+      return getAssetService().materializeTextAsImage(record, {
+        templateId: p.templateId,
+        subCategory: p.subCategory,
+        name: p.name,
+        tags: p.tags,
+      })
+    })
+  )
   ipcBridge.handle('asset:preview-templates', () =>
     wrap(() => getAssetService().listPreviewTemplates())
   )
@@ -102,29 +116,34 @@ export function registerAssetHandlers(): void {
     wrap(() => getAssetService().getGroupDetail(p.groupId))
   )
   // 资产下载（桌面端弹保存对话框 + 复制/写文件；Web 端由浏览器直接下载，不经过本通道）
-  ipcBridge.handle('asset:download', (_e, p: { id: string }) =>
+  // view：'preview'=预览态（看图片下图片，figure/report 长图下载渲染 PNG）；'source'/缺省=按存储形态
+  ipcBridge.handle('asset:download', (_e, p: { id: string; view?: string }) =>
     wrap(async () => {
       if (!isElectron) {
         throw new Error('下载仅桌面端可用（Web 端由浏览器直接下载）')
       }
       const record = await getAssetService().getAsset(p.id)
       if (!record) throw new Error('资产不存在')
-      const payload = await getAssetService().buildDownloadPayload(record)
+      const payload = await getAssetService().buildDownloadPayload(record, (p.view ?? undefined) as never)
       // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
       const { dialog } = require('electron')
       // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
       const fs = require('fs/promises')
       const filters = payload.kind === 'file'
         ? [{ name: '文件', extensions: ['*'] }]
-        : payload.fileName.endsWith('.url')
-          ? [{ name: 'URL 快捷方式', extensions: ['url'] }]
-          : payload.fileName.endsWith('.json')
-            ? [{ name: 'JSON', extensions: ['json'] }]
-            : [{ name: 'Markdown / 文本', extensions: ['md', 'txt'] }]
+        : payload.kind === 'image'
+          ? [{ name: 'PNG 图片', extensions: ['png'] }]
+          : payload.fileName.endsWith('.url')
+            ? [{ name: 'URL 快捷方式', extensions: ['url'] }]
+            : payload.fileName.endsWith('.json')
+              ? [{ name: 'JSON', extensions: ['json'] }]
+              : [{ name: 'Markdown / 文本', extensions: ['md', 'txt'] }]
       const res = await dialog.showSaveDialog({ defaultPath: payload.fileName, filters })
       if (res.canceled || !res.filePath) return { canceled: true }
       if (payload.kind === 'file') {
         await fs.copyFile(payload.sourcePath!, res.filePath)
+      } else if (payload.kind === 'image') {
+        await fs.writeFile(res.filePath, Buffer.from(payload.base64Data!, 'base64'))
       } else {
         await fs.writeFile(res.filePath, payload.content!, 'utf-8')
       }
