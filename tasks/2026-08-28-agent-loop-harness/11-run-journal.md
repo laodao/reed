@@ -434,7 +434,19 @@ D3: 用户点批准 → reviewDecide → resumeReview=false（非活跃）
   走 handleReviewSuspend 完整现场（新 payload/timeout/事件）。
 - **不变量 4**：rehydrate 内 node_run 投影对齐（journal 为准修复滞后行）。
 - **已知近似**：run 行不持久化 settings——rehydrate 以缺省设置重建（护栏参数
-  回默认；definition.settings 覆盖 snapshotEveryEvents 暂未接线）；无快照的
-  循环重放以伪变量/收敛事件近似列表本体（含真实列表走快照路径——挂起强制
-  快照覆盖绝大多数中途崩溃场景）。verify_completed/task_escalated（17 号）
-  事件类型随质量门批次补。
+  回默认，且 multiTurn 丢失与快照保留 llmHistory 存在语义矛盾——接线批须连同
+  修复）；definition.settings 覆盖 snapshotEveryEvents 暂未接线；无快照且无伪
+  变量的循环列表不可复原时已 fail-fast（对抗 review 修复；曾 undefined 项静默
+  续跑）。verify_completed/task_escalated（17 号）事件类型随质量门批次补。
+- **§4.4 快照结构更新（对抗 review 回写）**：实现相对原表多出 states[].iterationIndex/
+  error、loopDrivers[].list（列表本体）、顶层 reexecNodeIds/reason/appliedThroughSeq
+  （threshold 快照时序语义的承载字段）；loopPseudoVars 存 {item,index,listSize}
+  （列表本体去引用——每迭代内嵌全列表曾二次方放大）。scopes[].iterationIndex
+  序列化但重放从 scopeKey 解析（半截字段，保留为消费者可读）。
+- **§5.1 端口偏差**：latestSnapshot 已落地（rehydrate O(1) 定位）；deleteTerminalBefore
+  未实现（§5.10 保留策略缺口）——终态 run 日志当前仅 deleteRun 级联清除，量级
+  估算 30 节点图 ≈100-150 事件/run、快照放大，年积累可达 GB 级，M3 清扫作业
+  落地前为已知缺口。
+- **对抗 review 修复定稿（b036b226）**：threshold 快照 appliedThroughSeq、循环
+  恢复排除 engineDriven、E3 多轮续驱条件、appendBatch 事务、并发双决策守卫、
+  跨租户决策守卫、variable-resolver 局部优先（既有缺陷）。

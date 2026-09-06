@@ -111,6 +111,19 @@
 > 全绿，工作流全套基线零新增回归。已知近似：run 行不持久化 settings
 > （rehydrate 以缺省重建）；无快照循环列表以伪变量近似（快照路径优先）。
 > 下一步：agent-loop 节点四件套（catalog/types/handler/forms）→ P4 冒烟。
+>
+> **进度（2026-09-06 批 5-7 对抗性深度 review 收口，b036b226）**：
+> 三路独立对抗审查（跨模块攻击/架构契约/安全性能，全部实证型）发现 P0×3 +
+> P1×8 + P2 一组，全部修复：threshold 快照死参数（批7a 修复因文本漂移未生效
+> ——教训：python replace 静默失败须 assert 锚点）、循环恢复双驱动、E3 多轮
+> 确定性塌缩（测试早退分支曾掩盖）、撕裂批/双决策/审批窗口/跨租户决策/快照
+> 二次方放大/resolver 优先级（既有缺陷）。文档回写：11号快照结构与保留缺口、
+> 12号 R6 硬顶行为指向、23号审计表 M1 缺口。R2 判定三批"文档-代码一致性未
+> 完全达标但距离不远"——修复后已达"文档即评审现场"标准。R1 判定 Run Journal
+> 修复后方可承接 agent-loop 节点（现已修复）。遗留（P3 级，记录在案）：
+> ContextManager 全量 stringify 每步开销（增量缓存待接线批）、engine↔journal-replay
+> 循环 import（类型抽离）、测试基建三份 Fake 重复（helpers 抽取）、
+> addColumnIfMissing 第三份（升 migration-utils）、恢复路径写失败语义模糊。
 
 ## 分期总览
 
