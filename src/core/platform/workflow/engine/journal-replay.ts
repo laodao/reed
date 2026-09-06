@@ -92,8 +92,12 @@ export function replayJournal(
   const exec = ctx.exec
 
   // ── 快照基线（其后同 seq 事件跳过——快照本身就是该 seq 的投影） ──
+  // v≠1（升级/降级版本偏斜）：快照视为不存在——走全量重放（宁慢勿错，§7-5；
+  // 此前仅 applySnapshot 忽略 payload 而 startSeq 仍按其计算 → 空投影静默重跑）
   let startSeq = 0
-  if (snapshot && snapshot.type === WORKFLOW_JOURNAL_EVENT_TYPES.snapshot) {
+  const snapshotUsable =
+    !!snapshot && snapshot.type === WORKFLOW_JOURNAL_EVENT_TYPES.snapshot && (snapshot.payload as { v?: number })?.v === 1
+  if (snapshotUsable && snapshot) {
     const payload = snapshot.payload as Record<string, unknown>
     applySnapshot(ctx, payload)
     // appliedThroughSeq：快照覆盖到的事件位（threshold 快照在触发事件落地前拍摄，
@@ -135,6 +139,10 @@ export function replayJournal(
     if (!node) continue
     const parentScope = exec.rootScope // 循环节点必在根作用域（校验器禁嵌套）
     const state = ctx.stateOf(parentScope, loopNodeId)
+    // 终态守卫（总收口 review P1）：loop_completed 已到 → 驱动使命完成，不重建。
+    // 此前对终态循环仍走 fail-fast（日志完好却整 run 标 interrupted）或用残缺
+    // 进度覆写 succeeded 为 running（重跑已收敛迭代、副作用翻倍）
+    if (terminal.has(state.status as string)) continue
     const listSize = ctx.loopListSize.get(loopNodeId) ?? results.length
     const recovered = pseudoVarList(ctx, loopNodeId)
     if (!recovered && !hasSnapshotDriver(ctx, loopNodeId)) {

@@ -231,6 +231,11 @@ export interface CompactionStrategy {                     // vendor 自 open-har
   `wf:list-agent-tools`（preload/web channel-map/编辑器 agentTools 源四端接线）。
 - 轨迹观测面：`trajectoriesSummary`（entries/byKind/toolCalls 计数）入节点输出；
   `agent_trajectories` 落表为 M1.5（当前 emitTrajectory = 摘要 + 结构化日志留痕）。
+- 2026-09-07 总收口补注：审批回调 throw 在 loop 包装层收口（终态事件必达——
+  并行双卡单卡断言不再裸穿，拒绝原因经 ApprovalDecision.reject.reason 透传
+  hint/detail）；`AgentLoopState.accumulatedWaitMs` 为净时长护栏累计字段；
+  ContextManager 压缩加无进展退避（零收益后本地估算增长 ≥1.5 倍或实测水位
+  回落才重试）；门面 resetSession 失败回滚 resetting 标记（防会话永久毒化）。
 
 ## 6. 持久化与记忆契约
 

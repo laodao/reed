@@ -541,10 +541,6 @@ describe('审批挂起与恢复（E3）', () => {
   })
 
   it('挂起状态落库失败：转结构化拒绝（模型改路收敛），节点不卡死', async () => {
-    slot.set(stepsModel([
-      () => toolParts('c1', 'danger_tool', { q: '删库' }),
-      () => txt('审批不可用，我直接给答案'),
-    ]))
     const ctx = mkCtx({ config: { toolWhitelist: ['danger_tool'] } })
     // 挂起写盘失败（如超 512KB 上限）：suspended 写入时抛错
     const origSave = ctx.saveState.bind(ctx)
@@ -552,11 +548,20 @@ describe('审批挂起与恢复（E3）', () => {
       if ((st as AgentLoopState).suspended) throw new Error('state 超过 512KB 上限')
       return origSave(st)
     }
+    const prompts: unknown[][] = []
+    slot.set(captureModel(prompts, [
+      () => toolParts('c1', 'danger_tool', { q: '删库' }),
+      () => txt('审批不可用，我直接给答案'),
+    ]))
     const r = await AGENT_LOOP_NODE_HANDLER.execute(ctx)
     expect(r.status).toBe('succeeded') // 不卡 running：拒绝回流 → 模型改路
     expect((r as { output: { answer: string } }).output.answer).toBe('审批不可用，我直接给答案')
     expect(dangerExecuted).toEqual([])
     expect(ctx.logs.some((l) => l.level === 'error' && l.msg.includes('挂起状态落库失败'))).toBe(true)
+    // P2-2 回归：真实原因（持久化故障）达模型——不再伪装成泛化"用户拒绝"
+    const step2 = JSON.stringify(prompts[1] ?? [])
+    expect(step2).toContain('挂起状态落库失败')
+    expect(step2).toContain('512KB')
   })
 
   it('批准恢复：模型重发同调用 → 一次性授权自动放行 → 工具执行 → 收敛', async () => {
@@ -716,6 +721,44 @@ describe('审批挂起与恢复（E3）', () => {
     expect(r).toMatchObject({ status: 'failed', retryable: false })
     expect((r as { error: string }).error).toContain('节点状态超限')
     expect((r as { error: string }).error).toContain('迭代历史过大')
+  })
+
+  it('多轮挂起净时长护栏：等待窗不计入（12 号 §6.2 waitMs 累计回归）', async () => {
+    // 第一次挂起
+    slot.set(stepsModel([
+      () => toolParts('c1', 'danger_tool', { q: '一' }),
+      () => txt('不应到达'),
+    ]))
+    const ctx = mkCtx({ config: { toolWhitelist: ['danger_tool'], maxDurationMs: 60_000 } })
+    const s1 = await AGENT_LOOP_NODE_HANDLER.execute(ctx)
+    expect(s1.status).toBe('waiting_review')
+    await sleep(120) // 人工等待窗 120ms >> maxDurationMs 与否无关——只应被累计扣除
+
+    // 批准 → 重发同调用放行 → 模型再发不同参 → 第二次挂起
+    slot.set(stepsModel([
+      () => toolParts('c2', 'danger_tool', { q: '一' }),
+      () => toolParts('c3', 'danger_tool', { q: '二' }),
+      () => txt('不应到达'),
+    ]))
+    const s2 = await AGENT_LOOP_NODE_HANDLER.resume(
+      ctx, { decision: 'approve', decidedAt: new Date().toISOString() }, ctx.saved[ctx.saved.length - 1],
+    )
+    expect(s2.status).toBe('waiting_review')
+    await sleep(120) // 第二次等待
+    const st = ctx.saved[ctx.saved.length - 1] as AgentLoopState
+    expect(st.suspended).toBeTruthy()
+    expect((st.accumulatedWaitMs ?? 0)).toBeGreaterThanOrEqual(100) // 两次等待已累计
+
+    // 第二次批准恢复：净时长 = 总时长 - 累计等待 ≈ 毫秒级，不得误判"已耗尽"
+    slot.set(stepsModel([
+      () => toolParts('c4', 'danger_tool', { q: '二' }),
+      () => txt('两轮批准后完成'),
+    ]))
+    const r = await AGENT_LOOP_NODE_HANDLER.resume(
+      ctx, { decision: 'approve', decidedAt: new Date().toISOString() }, ctx.saved[ctx.saved.length - 1],
+    )
+    expect(r.status).toBe('succeeded')
+    expect((r as { output: { answer: string } }).output.answer).toBe('两轮批准后完成')
   })
 
   it('恢复态缺失 / 损坏：failed 不可重试（契约：容忍缺失但明确失败）', async () => {

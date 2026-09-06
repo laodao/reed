@@ -9,8 +9,14 @@
 
 import { MoreThanOrEqual, type DataSource, type FindOptionsWhere } from 'typeorm'
 import type { WorkflowJournalEventType } from '@shared/types/workflow.types'
+import { getCurrentUserId } from '@core/context/user-context'
 import { WorkflowRunEventEntity } from '../entities/workflow-run-event.entity'
 import { BaseRepository } from '../base-repository'
+
+/** 事件行 id：run+seq 确定性主键（可读；同 run 重放不产生第二套 id） */
+function eventId(runId: string, seq: number): string {
+  return `j_${runId}_${seq}`
+}
 
 export interface WorkflowRunEventRow {
   id: string
@@ -38,18 +44,23 @@ export class WorkflowRunEventRepository extends BaseRepository<WorkflowRunEventE
     payload?: Record<string, unknown> | null
   }): Promise<void> {
     await this.scoped.insert({
+      id: eventId(input.runId, input.seq),
       runId: input.runId,
       seq: input.seq,
       type: input.type,
       nodeId: input.nodeId ?? null,
       scopeKey: input.scopeKey ?? null,
       payloadJson: input.payload ? JSON.stringify(input.payload) : null,
+      createdAt: new Date(),
     })
   }
 
   /**
    * 批量原子追加（单事务；对抗 review：撕裂批使恢复把残缺扇出当完整态）。
    * 逐条 insert 于同一事务，任一失败整体回滚。
+   * ⚠️ 裸 em.insert 不经 scoped——userId 必须在此显式注入（总收口 review P0-2：
+   * 此前批事件 user_id=NULL，属主上下文重放读不到任何 edge_activated → 恢复缺边
+   * 激活投影，run 无声挂死/假完成）。事务内 ALS 不会变，进事务前捕获一次。
    */
   async appendBatchAtomic(
     events: Array<{
@@ -61,15 +72,19 @@ export class WorkflowRunEventRepository extends BaseRepository<WorkflowRunEventE
       payload?: Record<string, unknown> | null
     }>
   ): Promise<void> {
+    const userId = getCurrentUserId()
     await this.dataSource.transaction(async (em) => {
       for (const e of events) {
         await em.insert(WorkflowRunEventEntity, {
+          id: eventId(e.runId, e.seq),
+          userId,
           runId: e.runId,
           seq: e.seq,
           type: e.type,
           nodeId: e.nodeId ?? null,
           scopeKey: e.scopeKey ?? null,
           payloadJson: e.payload ? JSON.stringify(e.payload) : null,
+          createdAt: new Date(),
         })
       }
     })
@@ -77,14 +92,14 @@ export class WorkflowRunEventRepository extends BaseRepository<WorkflowRunEventE
 
   /** 最近一条快照事件（无则 null；rehydrate O(1) 定位——对抗 review IO 全量读） */
   async latestSnapshot(runId: string): Promise<WorkflowRunEventRow | null> {
-    const rows = await this.scoped
-      .createQueryBuilder('e')
-      .where('e.runId = :runId', { runId })
+    const row = await this.scoped
+      .qb('e')
+      .where('e.run_id = :runId', { runId })
       .andWhere('e.type = :type', { type: 'snapshot' })
       .orderBy('e.seq', 'DESC')
-      .take(1)
-      .getMany()
-    return rows[0] ? this.toDto(rows[0]) : null
+      .limit(1)
+      .getOne()
+    return row ? this.toDto(row) : null
   }
 
   /** 按 seq 升序读取（fromSeq 起含——快照后增量重放用） */

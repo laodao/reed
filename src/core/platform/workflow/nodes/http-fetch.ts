@@ -83,6 +83,9 @@ function extForMime(mimeType: string): string {
 /**
  * 执行请求。网络层错误返回 error 字符串（节点语义失败，可走重试/fail 边）。
  */
+/** 重定向最大跟随跳数（每跳过 SSRF 闸门；防重定向环与跳板链） */
+const MAX_REDIRECTS = 5
+
 export async function executeHttpFetch(
   input: HttpFetchInput,
   cancelSignal: AbortSignal
@@ -96,14 +99,35 @@ export async function executeHttpFetch(
   const timeout = Math.min(input.timeoutMs ?? WORKFLOW_DEFAULTS.httpRequestTimeoutMs, WORKFLOW_LIMITS.httpTimeoutMs)
   // 运行取消信号 + 超时信号合并
   const signal = AbortSignal.any([cancelSignal, AbortSignal.timeout(timeout)])
+  // 重定向逐跳校验（总收口 review P2-3）：fetch 默认 follow 且不再过闸门——公网
+  // 域名 302 跳内网/环回可绕 SSRF 防护（agent 工具把 URL 来源放宽到模型输出后被
+  // 放大）。manual 跟随 ≤MAX_REDIRECTS 跳，每跳 Location 重过 validateOutboundUrl
+  let currentUrl = input.url
+  let currentBody = input.body && input.method !== 'GET' ? input.body : undefined
   let res: Response
   try {
-    res = await fetch(input.url, {
-      method: input.method,
-      headers: input.headers ?? {},
-      body: input.body && input.method !== 'GET' ? input.body : undefined,
-      signal,
-    })
+    for (let hop = 0; ; hop++) {
+      res = await fetch(currentUrl, {
+        method: input.method,
+        headers: input.headers ?? {},
+        body: currentBody,
+        redirect: 'manual',
+        signal,
+      })
+      if (res.status < 300 || res.status >= 400) break
+      const location = res.headers.get('location')
+      if (!location) break
+      if (hop >= MAX_REDIRECTS) {
+        return { ok: false, error: `重定向超过 ${MAX_REDIRECTS} 跳上限：${currentUrl}` }
+      }
+      const nextUrl = new URL(location, currentUrl).toString()
+      const nextGuard = validateOutboundUrl(nextUrl)
+      if (!nextGuard.ok) {
+        return { ok: false, error: `重定向目标未过 SSRF 闸门（${location}）：${nextGuard.reason}` }
+      }
+      currentUrl = nextUrl
+      currentBody = undefined // 303/302 对 POST 的语义降级为 GET；简化：重定向后不带体
+    }
   } catch (e) {
     return { ok: false, error: `请求失败: ${e instanceof Error ? e.message : String(e)}` }
   }

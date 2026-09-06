@@ -486,6 +486,18 @@ export class WorkflowRunService {
    * - running/pending 未超时 → interrupted（不自动续跑，等用户操作）
    * - waiting_review → 保持（重启后审核决策 V1 不支持，需续跑重驱）
    */
+  /** 过期挂起审核的旧格式收敛（新格式 ensureActive 重建交 ticker；返回 true=已处理） */
+  private async recoverExpiredReview(runId: string): Promise<boolean> {
+    const run = await this.deps.runs.getById(runId)
+    if (run?.status !== 'waiting_review') return true
+    if (await this.deps.engine.ensureActive(runId)) return true // 新格式：重建后 ticker 按策略处理
+    await this.deps.runs.update(runId, {
+      status: WORKFLOW_RUN_STATUSES.interrupted,
+      error: '审核等待已超时（应用重启后中断）',
+    })
+    return true
+  }
+
   async recoverOnBoot(): Promise<{ timedOut: number; interrupted: number; keptWaiting: number }> {
     // 先处理已过期的挂起审核：旧格式（无 journal）标 interrupted 续跑重驱；
     // 新格式（有日志）不动——走下方 ensureActive 重建后由 tickReviewTimeouts
@@ -494,13 +506,13 @@ export class WorkflowRunService {
       const expired = await this.deps.nodeRuns.scanExpiredWaitingReview(new Date())
       const expiredRunIds = [...new Set(expired.map(r => r.runId))]
       for (const runId of expiredRunIds) {
-        const run = await this.deps.runs.getById(runId)
-        if (run?.status !== 'waiting_review') continue
-        if (await this.deps.engine.ensureActive(runId)) continue // 新格式：重建后 ticker 按策略处理
-        await this.deps.runs.update(runId, {
-          status: WORKFLOW_RUN_STATUSES.interrupted,
-          error: '审核等待已超时（应用重启后中断）',
-        })
+        // Web 端 boot 无 ALS 上下文：runs 读写均为 scoped——先按行属主重建 ALS
+        //（总收口 review P3：此前缺包裹，属主查询恒 miss，该循环退化为 no-op）
+        const ownerId = (await this.deps.runs.getByIdRaw(runId))?.userId ?? null
+        const handled = ownerId
+          ? await runWithUserAsync(ownerId, () => this.recoverExpiredReview(runId))
+          : await this.recoverExpiredReview(runId)
+        if (handled) continue
       }
     } catch (e) {
       logger.error('[WorkflowRunService] 过期审核清理失败（继续 boot 恢复）', e)

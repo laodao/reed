@@ -44,6 +44,11 @@ const SAFE_GLOBALS: Record<string, unknown> = {
 }
 
 /** 沙箱执行：输入注入 context.inputs；返回用户代码的 return 值 */
+/** 桌面端运行判定（Electron 主进程；Web 多租户服务端禁任意 JS 执行） */
+export function isElectronRuntime(): boolean {
+  return !!(process.versions as Record<string, string | undefined>)?.electron
+}
+
 export function runCodeInSandbox(code: string, inputs: Record<string, unknown>, timeoutMs: number): unknown {
   const context: Record<string, unknown> = {
     ...SAFE_GLOBALS,
@@ -73,8 +78,7 @@ const codeNode: WorkflowNodeHandler = {
   async execute(ctx: WorkflowNodeContext) {
     // 平台门禁：vm 沙箱非完整安全边界（文件头注释已自认），仅桌面单用户场景可接受。
     // Web 端是多租户服务器，放行等于"服务端执行任意用户 JS"（RCE），必须禁用。
-    const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
-    if (!isElectron) {
+    if (!isElectronRuntime()) {
       return {
         status: 'failed',
         error: '代码（code）节点仅在桌面端可用（Web 端不支持在服务端执行任意 JS）',

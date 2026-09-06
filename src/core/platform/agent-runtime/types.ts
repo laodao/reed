@@ -159,6 +159,9 @@ export interface AgentLoopState {
   finalAnswer?: string
   stagnantRounds: number
   suspended?: { requestPayload: Record<string, unknown>; suspendedAt: string; waitMs: number }
+  /** 累计人工等待毫秒（多轮挂起求和；净时长护栏 = now - startedAtMs - 本值，12 号 §6.2）。
+   * 旧状态无此字段按 0（schema 向后兼容） */
+  accumulatedWaitMs?: number
   stopReason?: string
 }
 

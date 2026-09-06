@@ -45,6 +45,9 @@ export const USER_MESSAGE_BUDGET_TOKENS = 20_000
 /** 纯剪枝路径最小节省门槛（不足则进摘要阶段；vendor 同形语义） */
 export const MIN_PRUNE_SAVINGS_TOKENS = 4_000
 /** 近端保护预算（保护边界内的工具结果不剪枝） */
+/** 无进展退避重试门槛：本地估算较地板增长倍数（新内容值得再压） */
+const NO_PROGRESS_RETRY_GROWTH = 1.5
+
 export const PROTECTED_TAIL_TOKENS = 8_000
 /** 悬空工具调用哨兵（崩溃恢复注入） */
 export const INTERRUPTED_SENTINEL = '[interrupted — 结果未记录，先核实实际状态再重做]'
@@ -125,6 +128,8 @@ export class ContextManager implements LoopContextPort {
   private readonly deps: Pick<ContextManagerDeps, 'summarize' | 'emit'>
   /** 压缩后估算回填值（防抖动——12 号 R6：本地估算覆盖过期的模型实测） */
   private backfilledInputTokens = 0
+  /** 无进展退避指纹（上次压缩零收益时的本地估算/水位——见 maybeCompact 退避段） */
+  private noProgressAt: { messageCount: number; estimate: number; lastInputTokens: number } | null = null
 
   /** 硬顶夹取上限（水位不可能贴近 100%——为输出预留） */
   private static readonly HARD_CEILING = 0.99
@@ -183,6 +188,19 @@ export class ContextManager implements LoopContextPort {
     const tokensBefore = Math.max(this.estimate(input.messages), this.backfilledInputTokens, input.lastInputTokens)
     if (tokensBefore < this.softTokens || input.messages.length === 0) return null
 
+    // 无进展退避（总收口 review P2）：上次压缩已到本地地板（零/负收益）且水位未
+    // 回落时不再每步重试——此前两型空转：A 型模型实测水位含 system/工具 schema 等
+    // 固定成本，压缩永远压不回，本地 after vs 混合口径 before 恒判"成功"→每步一次
+    // 摘要 LLM 调用；B 型零变更分支回填高值却拦不住下一触发。重试仅当本地估算
+    // 显著增长（新内容值得再压）或模型实测水位回落（固定成本消失）
+    if (this.noProgressAt) {
+      const localNow = this.estimate(input.messages)
+      const grew = localNow >= this.noProgressAt.estimate * NO_PROGRESS_RETRY_GROWTH
+      const watermarkFell = input.lastInputTokens < this.noProgressAt.lastInputTokens
+      if (!grew && !watermarkFell) return null
+      this.noProgressAt = null
+    }
+
     const emit = this.deps.emit
     emit?.({ type: 'compaction', phase: 'start', tokensBefore })
 
@@ -232,13 +250,22 @@ export class ContextManager implements LoopContextPort {
       logger.warn(`[context] 压缩后仍超硬顶（${tokensAfter} > ${this.hardTokens}），用户保留集收缩到仅当轮输入`)
     }
 
-    // 零变更：返回 null（调用方跳过落盘与事件轰炸——review P1-3 的空转形态）
-    if (working === input.messages || tokensAfter >= tokensBefore) {
-      logger.warn(`[context] 压缩零效果（${tokensBefore}→${tokensAfter}），保留原历史`)
-      this.backfilledInputTokens = tokensBefore // 维持水位，避免每步空转重试
+    // 零/负收益：返回 null（调用方跳过落盘与事件轰炸——review P1-3 的空转形态）。
+    // 同口径比较（本地估算 vs 本地估算——曾 after 本地 vs before 混合模型实测，
+    // 恒判"成功"）并落无进展指纹供退避
+    const tokensBeforeLocal = this.estimate(input.messages)
+    if (working === input.messages || tokensAfter >= tokensBeforeLocal) {
+      logger.warn(`[context] 压缩零效果（水位 ${tokensBefore} / 本地 ${tokensBeforeLocal}→${tokensAfter}），保留原历史并退避`)
+      this.noProgressAt = {
+        messageCount: input.messages.length,
+        estimate: tokensBeforeLocal,
+        lastInputTokens: input.lastInputTokens,
+      }
+      this.backfilledInputTokens = tokensBeforeLocal
       emit?.({ type: 'compaction', phase: 'done', tokensBefore, tokensAfter })
       return null
     }
+    this.noProgressAt = null // 有收益：清除退避指纹
 
     // 回填：以本地估算覆盖（压完立即复查不再触发——R6 防抖动）
     this.backfilledInputTokens = tokensAfter

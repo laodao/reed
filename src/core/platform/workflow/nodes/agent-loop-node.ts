@@ -42,20 +42,14 @@ import { stringifyValue } from '../engine/variable-resolver'
 /** 状态持久化失败标记（mapAgentResult 据此判 retryable=false） */
 const STATE_PERSIST_FAIL_PREFIX = '[agent-loop-state-persist]'
 
+/** delta 流合批窗口（与 event-bridge 同款观测面节流） */
+const DELTA_BATCH_MS = 30
+
 /** 审批卡里任务上下文截断上限（观测面字段裁剪，非行为参数） */
 const APPROVAL_TASK_CONTEXT_MAX_CHARS = 200
 
-/** 'agent-loop' 节点 config（workflow.types.ts WorkflowNodeConfigMap 的运行时形态） */
-export type AgentLoopNodeConfig = {
-  task: string
-  systemPrompt?: string
-  toolWhitelist?: string[]
-  maxIterations?: number
-  maxToolCalls?: number
-  maxDurationMs?: number
-  providerConfigId?: string
-  modelId?: string
-}
+/** 'agent-loop' 节点 config——单一事实源取自 WorkflowNodeConfigMap（曾双声明漏 editableFields） */
+export type AgentLoopNodeConfig = import('@shared/types/workflow.types').WorkflowNodeConfigMap['agent-loop']
 
 // ==================== harness 注册（workflow-boot 装配；getter 纪律同 getToolService） ====================
 
@@ -164,7 +158,9 @@ export function mapAgentResult(
   }
   const fail = (error: string, retryable: boolean): WorkflowNodeExecutionResult => ({
     status: 'failed',
-    error,
+    // 附 token/轮次摘要（12 号 §6.4-2"护栏耗尽输出已收集信息"的最低限兑现——
+    // 引擎 failed 变体无 output 位，观测面只能从 error 文案取）
+    error: `${error}（已消耗 ${r.iterations} 轮 / ${usage.promptTokens}+${usage.completionTokens} tokens / ${usage.toolCalls} 次工具调用）`,
     retryable,
   })
   switch (r.stopReason) {
@@ -230,9 +226,16 @@ async function driveLoop(
     // 净时长窗口（12 号 §6.2：扣除挂起等待）：恢复段从挂起时刻回算已耗净时长，
     // 只给剩余量；已超限直接判护栏失败（对抗 review P2-1——原实现每段全额窗口可无限续命）
     const guardMs = Math.min(cfg.maxDurationMs, WORKFLOW_LIMITS.maxDurationMs)
-    const suspendedAtMs = opts.resumeFrom?.state.suspended ? Date.parse(opts.resumeFrom.state.suspended.suspendedAt) : NaN
+    const resumedState = opts.resumeFrom?.state
+    if (resumedState?.suspended) {
+      // 净时长口径（12 号 §6.2）：把本次人工等待窗累进累计字段——多轮挂起各自扣减
+      //（总收口 review P2：曾把等待窗计入净时长，第二次恢复即误判"已耗尽"）
+      const waited = Math.max(0, Date.now() - Date.parse(resumedState.suspended.suspendedAt))
+      resumedState.accumulatedWaitMs = (resumedState.accumulatedWaitMs ?? 0) + waited
+    }
+    const suspendedAtMs = resumedState?.suspended ? Date.parse(resumedState.suspended.suspendedAt) : NaN
     const activeElapsedMs = Number.isFinite(suspendedAtMs)
-      ? Math.max(0, suspendedAtMs - opts.resumeFrom!.state.startedAtMs)
+      ? Math.max(0, suspendedAtMs - resumedState!.startedAtMs - (resumedState!.accumulatedWaitMs ?? 0))
       : 0
     const remainingMs = guardMs - activeElapsedMs
     if (remainingMs <= 0) {
@@ -250,6 +253,18 @@ async function driveLoop(
   durationTimer?.unref?.()
 
   const trajectories: TrajectoryEntry[] = []
+  let deltaBuf = ''
+  let deltaTimer: ReturnType<typeof setTimeout> | null = null
+  const flushDelta = (): void => {
+    if (deltaTimer !== null) {
+      clearTimeout(deltaTimer)
+      deltaTimer = null
+    }
+    if (deltaBuf) {
+      ctx.emitProgress(-1, deltaBuf.slice(-50))
+      deltaBuf = ''
+    }
+  }
   let lastState: AgentLoopState | null = null
   let suspendResolve: ((s: SuspendSignal) => void) | null = null
   const suspendPromise = new Promise<SuspendSignal>((resolve) => {
@@ -280,8 +295,22 @@ async function driveLoop(
     emitStream: (event: AgentStreamEvent) => {
       if (ctx.signal.aborted) return // 真取消后禁副作用（挂起拆解的本地 abort 不拦——tool-end 属预期）
       if (event.kind === 'delta') {
-        ctx.emitProgress(-1, event.text.slice(-50))
-      } else if (event.kind === 'tool-start') {
+        // 30ms 合批（总收口 review P3：曾每 delta 一条广播——500 delta=500 条事件；
+        // 与 event-bridge 同款处置）
+        deltaBuf += event.text
+        if (deltaTimer === null) {
+          deltaTimer = setTimeout(() => {
+            deltaTimer = null
+            const buf = deltaBuf
+            deltaBuf = ''
+            if (buf) ctx.emitProgress(-1, buf.slice(-50))
+          }, DELTA_BATCH_MS)
+          deltaTimer.unref?.()
+        }
+        return
+      }
+      flushDelta()
+      if (event.kind === 'tool-start') {
         ctx.emitProgress(-1, `调用工具 ${event.toolName}`)
       } else if (event.kind === 'tool-end') {
         ctx.emitProgress(-1, `工具 ${event.toolName} ${event.ok ? '完成' : '失败'}`)
@@ -290,6 +319,8 @@ async function driveLoop(
       }
     },
     suspend: (req: SuspendRequest) =>
+      // 失败路径回流 ApprovalDecision.reject（reason 字段，loop 包装层消费）——
+      // 对 HumanDecision 契约位做结构兼容转换（运行时按 action 判定，字段超集无害）
       bridgeSuspend(req, {
         ctx,
         lastStateRef: () => lastState,
@@ -298,7 +329,7 @@ async function driveLoop(
           // 挂起已提交：本地 abort 止住在途模型流/工具 IO（挂起后禁止副作用扩散）
           localAbort.abort(new Error('agent-loop-suspended'))
         },
-      }),
+      }) as Promise<HumanDecision>,
   }
 
   // 审批桥：LoopRunner deps.requestApproval → host.suspend 语义
@@ -363,6 +394,7 @@ async function driveLoop(
     return mapAgentResult(winner.result, { maxSteps, timedOut, trajectories })
   } finally {
     if (durationTimer) clearTimeout(durationTimer)
+    if (deltaTimer !== null) clearTimeout(deltaTimer)
     ctx.signal.removeEventListener('abort', onEngineAbort)
   }
 }
@@ -380,7 +412,7 @@ async function bridgeSuspend(
     lastStateRef: () => AgentLoopState | null
     commit: (s: SuspendSignal) => void
   },
-): Promise<HumanDecision | never> {
+): Promise<ApprovalDecision | never> {
   const { ctx, lastStateRef, commit } = deps
   const payload = {
     title: req.reason,
@@ -400,7 +432,9 @@ async function bridgeSuspend(
       // 回滚挂起标记（否则步末 saveState 撞同一失败 → 循环被 error 击穿）
       state.suspended = undefined
       ctx.logger.error('[agent-loop] 挂起状态落库失败（转拒绝，模型需改路）', e)
-      return { action: 'reject', comment: `挂起状态落库失败: ${e instanceof Error ? e.message : String(e)}` }
+      // reason（非 comment）：ApprovalDecision.reject 变体字段——loop 包装层据此
+      // 透传进 hint/detail，模型收到真实原因而非泛化"用户拒绝"
+      return { action: 'reject', reason: `挂起状态落库失败: ${e instanceof Error ? e.message : String(e)}` }
     }
   } else {
     // 无已存状态（首步 saveState 后不可达；防御分支）——照常挂起但留 warn
@@ -447,7 +481,7 @@ export const AGENT_LOOP_NODE_HANDLER: WorkflowNodeHandler = {
     { key: 'answer', type: 'string', desc: '最终答案' },
     { key: 'iterations', type: 'number', desc: '实际迭代轮数' },
     { key: 'usage', type: 'json', desc: 'token 用量 { promptTokens, completionTokens, toolCalls }' },
-    { key: 'stopReason', type: 'string', desc: 'final / max_steps / stagnant / aborted / error' },
+    { key: 'stopReason', type: 'string', desc: 'final / max_steps / stagnant / aborted / human_rejected / error' },
     { key: 'trajectoriesSummary', type: 'json', desc: '轨迹摘要 { entries, byKind, toolCalls }' },
   ],
   validateConfig(config) {

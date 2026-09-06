@@ -63,7 +63,7 @@ const STAGNANT_NUDGE = '检测到你连续多轮执行完全相同的工具调�
 const TRAJECTORY_THOUGHT_MAX_CHARS = 500
 const TRAJECTORY_ANSWER_MAX_CHARS = 2000
 const TOOL_ERROR_DETAIL_MAX_CHARS = 300
-const ZOD_ISSUE_MAX = 8
+export const ZOD_ISSUE_MAX = 8
 
 export class LoopRunner {
   private readonly deps: LoopRunnerDeps
@@ -181,7 +181,7 @@ export class LoopRunner {
 
         // —— 单步决策（ai@6：不传 stopWhen = 恰好一步）——
         const stepStart = this.clock()
-        const tools = this.buildToolSet(task, host)
+        const tools = this.buildToolSet(task, host, state)
         const stream = ai.streamText({
           model,
           system,
@@ -313,7 +313,7 @@ export class LoopRunner {
 
   // ==================== 工具装配（审批/超时/容错包装层，22 号 §3-C2） ====================
 
-  private buildToolSet(task: AgentTask, host: AgentHost): ToolSet {
+  private buildToolSet(task: AgentTask, host: AgentHost, state: AgentLoopState): ToolSet {
     const ai = this.aiModule
     if (!ai) return {}
     const timeoutMs = this.deps.toolTimeoutMs ?? 120_000
@@ -331,20 +331,32 @@ export class LoopRunner {
         execute: async (input: unknown, options: { toolCallId: string }) => {
           host.emitStream({ kind: 'tool-start', toolName: name, toolCallId: options.toolCallId })
 
-          // ① 审批短路（requiresApproval；缺省回调=拒绝——安全默认）
+          // ① 审批短路（requiresApproval；缺省回调=拒绝——安全默认）。
+          // try 包裹（总收口 review P2）：requestApproval throw（并行双卡单卡断言/
+          // 审批通道异常）曾裸穿 execute——该动作的 tool-end 流事件与 tool_result
+          // 轨迹永不发出（前端动作卡无终态、审计配对缺行）
           if (def.requiresApproval) {
-            const decision = requestApproval
-              ? await requestApproval(def, input, {
-                  scopeId: task.scopeId,
-                  rawInput: task.input,
-                  toolCallId: options.toolCallId,
-                  signal: host.signal,
-                })
-              : ({ action: 'reject', reason: 'no_approval_coordinator' } as ApprovalDecision)
+            let decision: ApprovalDecision
+            try {
+              decision = requestApproval
+                ? await requestApproval(def, input, {
+                    scopeId: task.scopeId,
+                    rawInput: task.input,
+                    toolCallId: options.toolCallId,
+                    signal: host.signal,
+                  })
+                : ({ action: 'reject', reason: 'no_approval_coordinator' } as ApprovalDecision)
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e)
+              host.emitStream({ kind: 'tool-end', toolName: name, toolCallId: options.toolCallId, ok: false })
+              host.emitTrajectory({ iteration: state.iteration, kind: 'tool_result', name, payload: { toolCallId: options.toolCallId, denied: true, reason: msg } })
+              return { ok: false, error: 'denied', detail: msg, hint: '该操作暂时无法获得审批，请调整方案。' }
+            }
+            const denyReason = (decision as { reason?: string }).reason
             if (decision.action !== 'approve' && decision.action !== 'approve_with_edit') {
               host.emitStream({ kind: 'tool-end', toolName: name, toolCallId: options.toolCallId, ok: false })
-              host.emitTrajectory({ iteration: 0, kind: 'tool_result', name, payload: { toolCallId: options.toolCallId, denied: true, reason: (decision as { reason?: string }).reason } })
-              return { ok: false, error: 'denied', hint: '用户拒绝了该操作，请调整方案。' }
+              host.emitTrajectory({ iteration: state.iteration, kind: 'tool_result', name, payload: { toolCallId: options.toolCallId, denied: true, reason: denyReason } })
+              return { ok: false, error: 'denied', detail: denyReason, hint: denyReason ? `操作未获批准：${denyReason}` : '用户拒绝了该操作，请调整方案。' }
             }
             if (decision.action === 'approve_with_edit') {
               input = decision.input
@@ -388,13 +400,13 @@ export class LoopRunner {
             }
             const ok = registryWrapped ? (result as { ok?: boolean })?.ok !== false : true
             host.emitStream({ kind: 'tool-end', toolName: name, toolCallId: options.toolCallId, ok })
-            host.emitTrajectory({ iteration: 0, kind: 'tool_result', name, payload: { toolCallId: options.toolCallId, ok } })
+            host.emitTrajectory({ iteration: state.iteration, kind: 'tool_result', name, payload: { toolCallId: options.toolCallId, ok } })
             return registryWrapped ? result : { ok: true, data: truncateJson(result) }
           } catch (e: unknown) {
             const err = e as { message?: string; name?: string }
             const cancelled = err?.name === 'TimeoutError' ? false : host.signal.aborted
             host.emitStream({ kind: 'tool-end', toolName: name, toolCallId: options.toolCallId, ok: false })
-            host.emitTrajectory({ iteration: 0, kind: 'tool_result', name, payload: { toolCallId: options.toolCallId, ok: false, error: err?.message } })
+            host.emitTrajectory({ iteration: state.iteration, kind: 'tool_result', name, payload: { toolCallId: options.toolCallId, ok: false, error: err?.message } })
             return {
               ok: false,
               error: cancelled ? 'CANCELLED' : err?.name === 'TimeoutError' ? 'TIMEOUT' : 'INTERNAL',

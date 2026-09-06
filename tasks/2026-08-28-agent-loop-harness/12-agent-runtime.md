@@ -193,6 +193,14 @@ export type HumanDecision =
 
 节点 config（本文新增字段）：`task`（模板化目标）、`toolWhitelist: string[]`、`maxIterations=20`、`maxTokens`、`maxToolCalls`、`maxDurationMs`、`model: { providerConfigId, modelId }`。输出 schema：`{ answer, iterations, usage, stopReason, trajectoriesSummary }`。
 
+> **2026-09-07 总收口 review 注记**：净时长护栏落地为 AgentLoopState.accumulatedWaitMs
+> （多轮挂起各自累计等待窗，恢复时累加；旧状态无字段按 0 兼容）。§6.5 的"模型
+> 错误重试 ≤3 次指数退避/连续解析错误拉黑"**立项延期至接线批**（当前首个瞬时错误
+> 即整轮 stopReason='error'；工作流侧 retryCount=0 全链路无重试兜底为已知缺口）。
+> §9 单工具超时实现默认 120s（registry TOOL_EXECUTE_TIMEOUT_MS 与 loop 同值），
+> 本文"60s"表述以实现为准。审批回调 throw 不再裸穿 execute（终态事件必达，
+> 拒绝原因经 reason 字段透传模型）。
+
 > **2026-09-06 M1.4 实现注记**：config 落地为 `toolWhitelist: string[]`（M1 简形态；
 > `AgentToolBinding` 富配置随 M2——registry.buildToolDefs 已就绪）+ 补
 > `systemPrompt`/`editableFields`（引擎"修改后批准"白名单，固定 `input` 键）。

@@ -7,6 +7,11 @@
 /** 墙钟超时 + signal 中止（注意：超时不中止底层执行——仅切断等待，副作用由工具自身幂等保证） */
 export function withTimeout<T>(p: Promise<T>, ms: number, signal?: AbortSignal): Promise<T> {
   return new Promise<T>((resolve, reject) => {
+    // 已中止的 signal 永不再触发 abort 事件——立即拒绝（曾挂满墙钟才以 Timeout 收尾）
+    if (signal?.aborted) {
+      reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+      return
+    }
     const t = setTimeout(() => reject(Object.assign(new Error('tool timeout'), { name: 'TimeoutError' })), ms)
     t.unref?.() // 工具等待不阻止进程退出
     const onAbort = () => {

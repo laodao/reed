@@ -365,3 +365,46 @@ describe('LoopRunner', () => {
     expect(JSON.stringify(host.savedStates.at(-1)?.messages)).toContain('TIMEOUT')
   })
 })
+
+// ==================== 总收口 review 回归 ====================
+
+describe('并行双审批工具（P2：终态事件必达）', () => {
+  it('同一步两个需批准工具：第二卡断言 throw 不裸穿——两动作 tool-end/tool_result 终态齐备', async () => {
+    const saveTool: AgentToolDef = {
+      name: 'save_entity',
+      description: '存',
+      inputSchema: z.object({ name: z.string() }),
+      execute: async () => ({ ok: true }),
+      requiresApproval: true,
+    }
+    const host = new FakeHost()
+    // 单步双 tool-call（ai@6 并行执行）：审批回调第一次 approve，第二次 throw
+    //（模拟 ApprovalCoordinator 同 scope 单卡断言）
+    let approvalCalls = 0
+    const runner = mkRunner(
+      mkModel([
+        () => [
+          { type: 'stream-start', warnings: [] },
+          { type: 'tool-call', toolCallId: 'c1', toolName: 'save_entity', input: JSON.stringify({ name: 'a' }) },
+          { type: 'tool-call', toolCallId: 'c2', toolName: 'save_entity', input: JSON.stringify({ name: 'b' }) },
+          { type: 'finish', finishReason: { unified: 'tool-calls', raw: undefined }, usage },
+        ],
+        () => txt('两卡都处理完'),
+      ]),
+      {
+        requestApproval: async () => {
+          approvalCalls++
+          if (approvalCalls === 1) return { action: 'approve' }
+          throw new Error('ApprovalCoordinator: scope s1 已有挂起审批（同会话同时最多一张）')
+        },
+      },
+    )
+    const r = await runner.run(mkTask({ save_entity: saveTool }), host)
+    expect(r.stopReason).toBe('final') // 不被断言消息击穿
+    const toolEnds = host.streams.filter((e) => e.kind === 'tool-end')
+    const toolResults = host.trajectories.filter((t) => t.kind === 'tool_result')
+    expect(toolEnds.length).toBe(2) // 修复前：第二动作 tool-end 永不发出
+    expect(toolResults.length).toBe(2) // 修复前：tool_result 缺行（审计配对断裂）
+    expect(toolResults.some((t) => t.payload?.denied === true)).toBe(true)
+  })
+})

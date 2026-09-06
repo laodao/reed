@@ -450,3 +450,31 @@ D3: 用户点批准 → reviewDecide → resumeReview=false（非活跃）
 - **对抗 review 修复定稿（b036b226）**：threshold 快照 appliedThroughSeq、循环
   恢复排除 engineDriven、E3 多轮续驱条件、appendBatch 事务、并发双决策守卫、
   跨租户决策守卫、variable-resolver 局部优先（既有缺陷）。
+
+---
+
+## 实现注记（2026-09-07 总收口 review 修复）
+
+- **事件行主键**：仓储 append/appendBatchAtomic 显式生成 `j_{runId}_{seq}` 确定性
+  id（entity @PrimaryColumn 无生成策略、DDL 无默认——省略在 SQLite 产 NULL 主键
+  致 find 去重塌缩，在 PG 违 NOT NULL）。created_at 显式写入（不再恒 NULL）。
+- **批事件租户**：appendBatchAtomic 走裸 em.insert 绕过 scoped——事务前捕获
+  ALS userId 显式注入（批事件与单条事件同轨，属主重放可读）。
+- **latestSnapshot**：仓储经 scoped.qb 实现（曾调不存在的 createQueryBuilder，
+  TypeError 被 rehydrate 的 .catch 吞成"无快照"——O(1) 定位修复实为死代码）；
+  InMemoryJournal 同步实现（引擎级测试自此可覆盖快照恢复路径）。
+- **快照 loopPseudoVars**：序列化投影为 {item, index, listSize}（去列表本体引用
+  ——曾逐迭代内嵌全列表，N×N 二次方，实测 60 迭代单快照 708KB/3169 副本）；
+  列表权威副本在 loopDrivers[].list。
+- **重放循环终态守卫**：loop_completed 已到的循环不再参与驱动重建（曾对终态
+  循环 fail-fast 毒杀整 run，或用残缺进度覆写 succeeded 为 running 重跑已收敛迭代）。
+- **在途重执行 E2 注入**：rehydrate 删除 running 态时把 persistedState 存入
+  exec.reexecPersistedStates，launchNode 重建后回填——loadState 注入契约
+  （§5.9-f）此前对中途崩溃场景失效（agent-loop 从第 0 轮重跑）。
+- **C1 环恢复**：重执行节点恢复时镜像 computeReady 清理其出边激活记录（重放
+  只 set 不删，陈旧序号曾使 activateEdge 守卫跳过新激活→下游永不重执行、
+  journal/内存序号永久分叉）。
+- **v≠1 快照**：视为不存在（startSeq 不推进，走全量重放——宁慢勿错 §7-5）。
+- **completeLoop 清 loopDrivers**（防快照携带已完成驱动→恢复重复收口）；
+  tickReviewTimeouts reject/fail 路径补 try/catch；recoverOnBoot 过期挂起首循环
+  按行属主 runWithUserAsync 包裹（runs.getByIdRaw 跨租户裸读取属主）。

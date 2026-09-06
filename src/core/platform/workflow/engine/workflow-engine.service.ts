@@ -243,6 +243,10 @@ export class RunExecution {
   readonly reexecNodeIds = new Set<string>()
   /** 重执行时保留的重试预算（rehydrate 清态重建不回满已烧掉的重试次数） */
   reexecRetryCounts = new Map<string, number>()
+  /** 重执行节点的 E2 持久态缓存（key=nodeId:iterationIndex）：恢复删除 running 态时
+   * 抢救 persistedState，launchNode 重建后回填——loadState 注入契约（11 号 §5.9-f，
+   * 总收口 review P1：此前连 persistedState 一起删 → agent-loop 中途崩溃恢复从第 0 轮重跑） */
+  reexecPersistedStates = new Map<string, unknown>()
   /** 未恢复失败进行中：同步置位（先于任何 await），防漂浮 pump 把失败中止误判为用户取消 */
   pendingFailureError?: string
   /** 看门狗句柄（挂起时清除、续驱时重建——防失控时长对恢复后的运行仍生效） */
@@ -475,7 +479,16 @@ export class WorkflowEngineService {
       forcedMergeNodeIds: [...scope.forcedMergeNodeIds],
       loopOwnerId: scope.loopOwnerId,
       iterationSkippedByPolicy: scope.iterationSkippedByPolicy,
-      loopPseudoVars: Object.fromEntries(scope.loopPseudoVars),
+      // 投影去 list 引用：内存里 list 是共享引用（廉价），序列化会逐迭代内嵌全列表
+      // 本体（N 迭代 × N 项 = 二次方；总收口 review 实证 60 迭代单快照 708KB）。
+      // 列表权威副本在 loopDrivers[].list（快照独立承载一次）；重放侧 pseudoVarList
+      // 以 driver.list 优先，listSize 仅供体积观测
+      loopPseudoVars: Object.fromEntries(
+        [...scope.loopPseudoVars.entries()].map(([k, v]) => {
+          const { list, ...rest } = v as { list?: unknown }
+          return [k, { ...rest, listSize: Array.isArray(list) ? list.length : undefined }]
+        }),
+      ),
     })
     return {
       v: 1,
@@ -752,8 +765,17 @@ export class WorkflowEngineService {
         const st = scope.states.get(item.nodeId)
         if (st && st.status === 'running') {
           if (st.retryCount > 0) preservedRetryCounts.set(item.nodeId, st.retryCount)
+          // E2 持久态随 state 删除即蒸发——先抢救（launchNode 重建后 loadState 注入）
+          if (st.persistedState !== undefined) {
+            exec.reexecPersistedStates.set(`${item.nodeId}:${st.iterationIndex}`, st.persistedState)
+          }
           scope.states.delete(item.nodeId)
           exec.reexecNodeIds.add(item.nodeId) // 复用 node_run 行（唯一索引约束）
+          // 镜像 computeReady 重执行清理：删该节点出边激活记录（总收口 review P2-2——
+          // 崩溃前 C1 环已删、journal 重放只 set 不删 → 陈旧激活序号使 activateEdge
+          // 守卫跳过新激活、下游永不重执行，且 journal/内存序号永久分叉）。
+          // 不删 mergeArrivals：中途崩溃节点（非 C1 重入队）的到达输入仍有效
+          for (const out of exec.outgoingOf(item.nodeId)) scope.activationSeqs.delete(out.id)
         }
       }
       exec.reexecRetryCounts = preservedRetryCounts // 重试预算不因恢复回满（P2 修复）
@@ -1095,10 +1117,16 @@ export class WorkflowEngineService {
               await this.handleNodeFailure(exec, scope, exec.nodeById.get(state.nodeId)!, state, '审核超时批准失败（choose 节点无默认选项）', false)
             }
           } else if (policy === WORKFLOW_REVIEW_TIMEOUT_POLICIES.reject) {
-            await this.applyReviewDecision(exec, scope, state, {
-              decision: WORKFLOW_REVIEW_DECISIONS.timeoutReject,
-              decidedAt: now.toISOString(),
-            })
+            try {
+              await this.applyReviewDecision(exec, scope, state, {
+                decision: WORKFLOW_REVIEW_DECISIONS.timeoutReject,
+                decidedAt: now.toISOString(),
+              })
+            } catch (e) {
+              // 与 approve 路径同纪律：单 run 异常不中断本 tick 其余运行的超时扫描
+              logger.error('[engine] 审核超时驳回失败（转失败收敛）', e)
+              await this.handleNodeFailure(exec, scope, exec.nodeById.get(state.nodeId)!, state, `审核超时驳回失败: ${e instanceof Error ? e.message : String(e)}`, false)
+            }
           } else {
             await this.handleNodeFailure(exec, scope, exec.nodeById.get(state.nodeId)!, state, '审核超时（timeoutPolicy=fail）', false)
           }
@@ -1347,8 +1375,11 @@ export class WorkflowEngineService {
 
     const reexec = exec.reexecNodeIds.has(node.id)
     if (reexec) {
-      // C1 重执行：复用同一 node_run 行（唯一索引约束），重置状态与输出
+      // C1/恢复重执行：复用同一 node_run 行（唯一索引约束），重置状态与输出
       exec.reexecNodeIds.delete(node.id)
+      // E2：恢复重执行时回填崩溃前已落库的步级状态（loadState 注入；无则 undefined）
+      const persisted = exec.reexecPersistedStates.get(`${node.id}:${state.iterationIndex}`)
+      if (persisted !== undefined) state.persistedState = persisted
       await this.deps.nodeRuns.patchNode(exec.input.runId, node.id, scope.iterationIndex, {
         status: WORKFLOW_NODE_RUN_STATUSES.running,
         input: resolvedConfig as Record<string, unknown>,
@@ -1955,6 +1986,7 @@ export class WorkflowEngineService {
       { results, count: list.length },
       exec.settings.maxOutputChars
     )
+    exec.loopDrivers.delete(node.id) // 驱动使命完成（防快照携带已完成驱动 → 恢复重复收口）
     if (this.deps.journal) await this.appendEvent(exec, 'loopCompleted', {
       nodeId: node.id,
       scope,

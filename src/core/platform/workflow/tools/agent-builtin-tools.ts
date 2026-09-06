@@ -15,7 +15,7 @@
 
 import { z } from 'zod'
 import { executeHttpFetch } from '../nodes/http-fetch'
-import { runCodeInSandbox } from '../nodes/code-nodes'
+import { runCodeInSandbox, isElectronRuntime } from '../nodes/code-nodes'
 import { getVariableDataService } from '../variables/variable-data.service'
 import { getSearchEngineService } from '@core/platform/services/search-engine.service'
 import { WORKFLOW_LIMITS } from '@shared/types/workflow.types'
@@ -95,8 +95,7 @@ const codeRunTool: AgentToolDef<z.infer<typeof CodeRunInput>> = {
   dangerLevel: 'exec',
   requiresApproval: true,
   execute: async (input) => {
-    const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
-    if (!isElectron) {
+    if (!isElectronRuntime()) {
       throw new Error('code_run 仅桌面端可用（Web 端不支持在服务端执行任意 JS）')
     }
     return { result: runCodeInSandbox(input.code, input.inputs ?? {}, WORKFLOW_LIMITS.codeTimeoutMs) }
@@ -130,7 +129,7 @@ export function registerBuiltinAgentTools(registry: AgentToolRegistry): void {
   registry.register(dataTableQueryTool)
 }
 
-/** 首批工具名清单（编辑器 agentTools 数据源 / 文档 / 测试共用单一事实源） */
+/** 首批工具名清单（测试/文档参考；编辑器数据源走 IPC→registry.listSpecs 动态取） */
 export const BUILTIN_AGENT_TOOL_NAMES = [
   httpGetTool.name,
   webSearchTool.name,

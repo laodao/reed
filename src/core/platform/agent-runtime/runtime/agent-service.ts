@@ -167,6 +167,9 @@ interface SteerQueueItem {
 }
 
 /** 排队上限（mode=queue 失控客户端防线；超限 fail-fast） */
+/** resetting 让步上限（复位中的宏任务等待轮数；防标记泄漏时空转烧 CPU） */
+const RESET_YIELD_LIMIT = 10_000
+
 export const MAX_STEER_QUEUE = 8
 
 /** 关停时等待在途轮 settle 的时限（ms）——防僵尸轮补偿写覆盖新实例历史 */
@@ -244,13 +247,22 @@ export class AgentRuntimeImpl implements AgentRuntime {
       entry.steerQueue = []
       entry.subs.clear()
     }
+    let allSettledDone = false
+    const allSettled = Promise.allSettled(inFlight).then((r) => {
+      allSettledDone = true
+      return r
+    })
     await Promise.race([
-      Promise.allSettled(inFlight),
+      allSettled,
       new Promise<void>((res) => {
         const t = setTimeout(res, DISPOSE_SETTLE_TIMEOUT_MS)
         t.unref?.()
       }),
     ])
+    // 超时仍有残余轮：error 留痕（docblock 承诺曾未兑现——总收口 review P3）
+    if (!allSettledDone) {
+      logger.error(`[agent-runtime] dispose 超时后仍有 ${inFlight.length} 个在途轮未收敛（条目已清除，其后续落库/事件将被丢弃）`)
+    }
     for (const { bridge } of this.bridges.values()) {
       void bridge.flush().catch((e) => logger.warn('[agent-runtime] 关停冲刷总线链失败', e))
     }
@@ -311,6 +323,7 @@ export class AgentRuntimeImpl implements AgentRuntime {
     // 可重入互斥：interrupt 等待期间状态可能被续链/并发 interrupt/复位改变，
     // 每轮循环重取条目并复查（批 4 review P1/P2：恢复后不复查 = 双轮并发/复活已重置会话）
     let interruptedOnce = false
+    let resetYields = 0
     for (;;) {
       const entry = this.touchEntry(def, scopeId) // 复位后条目被删 → 此处重建
       if (!entry.busy && !entry.resetting) {
@@ -320,7 +333,11 @@ export class AgentRuntimeImpl implements AgentRuntime {
       if (mode === 'reject') throw new AgentBusyError(entry.scopeKey)
       if (entry.resetting) {
         // 复位进行中（先删库再删条目——深度 review P2-4）：宏任务让步等待，
-        // store.delete 完成条目被删后重取到干净条目
+        // store.delete 完成条目被删后重取到干净条目。让步次数封顶（防御：
+        // resetting 标记若因异常泄漏，曾退化为每秒百万次空转打满单核）
+        if (++resetYields > RESET_YIELD_LIMIT) {
+          throw new AgentBusyError(entry.scopeKey)
+        }
         await new Promise<void>((res) => setImmediate(res))
         continue
       }
@@ -373,8 +390,13 @@ export class AgentRuntimeImpl implements AgentRuntime {
   async resetSession(definitionId: string, scopeId: string): Promise<void> {
     const key = scopeKeyOf(definitionId, scopeId)
     const entry = this.requireOwnedEntry(definitionId, scopeId)
-    if (entry) {
-      entry.resetting = true // 拦截续链与新轮（sendMessage 等 store.delete 完成后再开）
+    if (!entry) {
+      await this.deps.sessionStore.delete(key)
+      logger.info(`[agent-runtime] 会话重置 def=${definitionId} scope=${scopeId}`)
+      return
+    }
+    entry.resetting = true // 拦截续链与新轮（sendMessage 等 store.delete 完成后再开）
+    try {
       if (entry.busy) {
         this.cancel(definitionId, scopeId)
         if (entry.currentTurn) await entry.currentTurn.catch(() => undefined)
@@ -382,14 +404,17 @@ export class AgentRuntimeImpl implements AgentRuntime {
       // 先删库再删条目（深度 review P2-4：原顺序在 delete 在途窗口内新轮可读到
       // 复活旧历史，随后又被 delete 抹掉新史——双重失效）
       await this.deps.sessionStore.delete(key)
-      for (const item of entry.steerQueue) item.reject(new AgentSessionResetError(key))
-      entry.steerQueue = []
-      entry.coordinator.cancelScope(key)
-      // 丢弃驻留条目（连同 Amendment 会话缓存）；订阅闭包变 no-op，重订阅会重建
-      this.entries.delete(key)
-    } else {
-      await this.deps.sessionStore.delete(key)
+    } catch (e) {
+      // 删库失败：回滚拦截标记（总收口 review P1——曾无回滚，resetting 永真，
+      // 该会话 queue/interrupt 消息陷入 setImmediate 无限自旋打满单核直到进程重启）
+      entry.resetting = false
+      throw e
     }
+    for (const item of entry.steerQueue) item.reject(new AgentSessionResetError(key))
+    entry.steerQueue = []
+    entry.coordinator.cancelScope(key)
+    // 丢弃驻留条目（连同 Amendment 会话缓存）；订阅闭包变 no-op，重订阅会重建
+    this.entries.delete(key)
     logger.info(`[agent-runtime] 会话重置 def=${definitionId} scope=${scopeId}`)
   }
 

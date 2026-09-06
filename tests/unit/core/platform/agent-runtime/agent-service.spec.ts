@@ -732,3 +732,23 @@ describe('单例生命周期', () => {
     expect(() => getAgentRuntime()).toThrow(AgentRuntimeNotInitializedError)
   })
 })
+
+// ==================== 总收口 review 回归 ====================
+
+describe('resetSession 失败回滚（P1：曾永久毒化会话 + setImmediate 自旋）', () => {
+  it('store.delete 抛错 → resetting 回滚 → 后续 sendMessage 可正常开轮', async () => {
+    const flakyStore = new InMemorySessionStore()
+    let failDelete = true
+    const originalDelete = flakyStore.delete.bind(flakyStore)
+    flakyStore.delete = async (key: string) => {
+      if (failDelete) throw new Error('sqlite busy')
+      return originalDelete(key)
+    }
+    const h = mkHarness(mkModel([() => txt('ok')]), { sessionStore: flakyStore }, { subscribe: false })
+    await expect(h.rt.resetSession(mkDef().id, 's1')).rejects.toThrow('sqlite busy')
+    // 修复前：resetting 永真 → queue 模式陷入 setImmediate 自旋；此处必须能正常开轮
+    failDelete = false
+    const r = await h.rt.sendMessage(mkDef().id, 's1', '重试成功', { mode: 'queue' })
+    expect(r.reply).toBe('ok')
+  })
+})

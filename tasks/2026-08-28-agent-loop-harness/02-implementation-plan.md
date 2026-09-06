@@ -159,6 +159,46 @@
 > 下一步：P4 真模型冒烟（GLM/DashScope"查资料→写摘要"≥5 轮收敛/杀进程恢复/
 > 挂起批准续跑/护栏生效）→ M1.5 agent_trajectories 落表。
 
+> **进度（2026-09-07 总收口深度 review：四路对抗审查 + P0×2/P1×6/P2×8 全修）**：
+> 四路独立 subagent（运行时核心/上下文与工具层/Journal 恢复/M1.4 焊接面+七条横切）
+> 全部实证型审查，发现 **P0×2 + P1×6 + P2×8 + P3 三十余项**，本批全部修复或收口：
+> - **P0（DbJournal 生产路径零测试覆盖的空洞）**：事件行从不生成 id（SQLite NULL
+>   主键 find 去重塌缩→重放空投影整图重跑；PG 违 NOT NULL 每 run 必败）；
+>   appendBatchAtomic 绕租户 scoped（批事件 user_id=NULL→属主读丢全部边激活）。
+>   修复：确定性 id + ALS 注入 + **真实 DataSource 契约测试**（4 例钉死）。
+> - **P1×6**：latestSnapshot 调不存在的 createQueryBuilder（死代码，tsc 基线噪音
+>   掩盖——教训：新增文件不得进基线对照，按文件归属判新错）；快照 loopPseudoVars
+>   二次方放大（b036b226 宣称修复实未落地——第三次"宣称已修未生效"，投影
+>   {item,index,listSize} 去列表引用）；重放循环终态守卫（终态循环曾 fail-fast
+>   毒杀整 run/覆写 succeeded 重跑）；rehydrate 在途重执行丢 persistedState
+>   （M1 验收"杀进程恢复"对中途崩溃失效——per-node 缓存回填 loadState 注入）；
+>   resetSession 失败永久毒化会话（resetting 永真+setImmediate 每秒百万次自旋
+>   ——try 回滚+让步封顶）；审批回调 throw 绕过工具终态事件（并行双卡场景
+>   tool-end/轨迹永不发——try 收口+拒绝原因透传 hint）。
+> - **P2×8**：压缩空转无退避（A 型实测水位含固定成本每步重摘——无进展指纹+
+>   同口径成功判定）；12 号 §6.5 模型错误重试未实现（**立项延期至接线批**，
+>   本块为显式记载）；多轮挂起等待窗计入净时长（accumulatedWaitMs 累计）；
+>   结构化拒绝 reason 字段错位（模型曾收虚假"用户拒绝"）；重定向绕 SSRF 闸门
+>   （继承缺陷被 agent 放大——redirect:manual 逐跳校验，4 例回归）；v≠1 快照
+>   违反宁慢勿错（视为不存在走全量）；C1 自由环崩溃恢复停摆+序号分叉（恢复
+>   镜像 computeReady 出边清理，引擎级两进程测试）。
+> - **P3 三十余项**：withTimeout 预中止、轨迹 iteration 一致、dispose 残留留痕、
+>   tick reject 路径 try/catch、recoverOnBoot 首循环 ALS（getByIdRaw）、
+>   InMemoryJournal latestSnapshot/appendBatch 原子性、completeLoop 清 drivers、
+>   void 结果归一、_oversize 字节截、maxCalls 拦截审计、delta 30ms 合批、
+>   DANGER_LABELS 消费服务端推导、isElectron 共用、config 双声明收口、
+>   stopReason desc 补全、护栏失败附 usage 摘要、zod 截断常量统一、
+>   vendor 第 4 处偏离标注等。
+> - 七条标准四路结论：架构统一/组件共用/设计合理 通过（含注记）；无写死参数/
+>   日志/不吞异常/无复制粘贴 基本通过（零散项已修）。
+> - 历史修复复核 33 项：29 已落地、3 未落地/部分（本批补齐）、1 文档措辞分歧。
+> 测试：全平台 1197 通过，15 失败=已知环境基线零新增；新增回归 20+
+> （仓储契约 4/journal-replay 6/loop 1/agent-service 1/agent-loop 3/redirect 4/
+> tool-registry 3）。文档回写：11 号实现注记、12 号 §6.2/§6.5/§9、14 号 §6、
+> 23 号 §5。遗留（显式立项）：§6.5 模型错误重试（接线批/vendor retry 形状）、
+> 审批先于校验的改序（M2，14 号 §6 已注记现状）、streamChannel 拆通道注记、
+> 会话卡编辑批准入口（前端）、ProviderAdapter.invalidateCache 接线（设置批）。
+
 ## 分期总览
 
 | 期 | 主题 | 目标 | 依赖 |

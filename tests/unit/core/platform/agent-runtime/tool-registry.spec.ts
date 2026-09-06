@@ -452,3 +452,36 @@ describe('registry × LoopRunner 集成（registryWrapped 所有权分层）', (
     expect(JSON.stringify(host.savedStates.at(-1)?.messages)).toContain('TIMEOUT')
   })
 })
+
+// ==================== 总收口 review 回归 ====================
+
+describe('结果序列化与上限拦截（P3 回归）', () => {
+  it('void 工具结果：data=null 且不误报 _unserializable/truncated', () => {
+    const r = serializeToolResult(undefined)
+    expect(r).toEqual({ data: null, truncated: false })
+  })
+
+  it('_oversize preview 按字节截：CJK 载荷最终 data 不超 16KB 字节上限', () => {
+    const cjk = '字'.repeat(20 * 2000) // 20 字段 × 2000 字（每字 3 字节）
+    const obj: Record<string, unknown> = {}
+    for (let i = 0; i < 20; i++) obj[`f${i}`] = cjk
+    const r = serializeToolResult(obj)
+    expect(r.truncated).toBe(true)
+    expect((r.data as { _oversize?: boolean })._oversize).toBe(true)
+    const bytes = Buffer.byteLength(JSON.stringify(r.data), 'utf8')
+    expect(bytes).toBeLessThanOrEqual(16384) // 修复前 ~24.7KB
+  })
+
+  it('maxCalls 拦截留审计痕（status=blocked errorCode=LIMIT_EXCEEDED）', async () => {
+    const audits: AgentToolCallAudit[] = []
+    const r = mkRegistry({ audit: (a) => audits.push(a) })
+    r.register(mkDef({ name: 'capped_tool' }))
+    const defs = r.buildToolDefs([{ tool: 'capped_tool', maxCalls: 1 }])
+    const call = { scopeId: 's', rawInput: 'x', signal: undefined, logContext: {} } as never
+    await defs.capped_tool.execute({ q: '一' }, call)
+    await defs.capped_tool.execute({ q: '二' }, call) // 超限
+    const blocked = audits.filter((a) => a.status === 'blocked')
+    expect(blocked.length).toBe(1)
+    expect(blocked[0].errorCode).toBe('LIMIT_EXCEEDED')
+  })
+})

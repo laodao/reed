@@ -336,3 +336,210 @@ describe('engine.rehydrate / ensureActive', () => {
     expect(calls.length).toBe(1)
   })
 })
+
+// ==================== 总收口 review 回归（终态循环 / v≠1 快照 / persistedState 注入 / C1 环） ====================
+
+/** 行级 Fake（含 listByRun——rehydrate 预载 state_json 需要） */
+class RowsFake implements WorkflowNodeRunPort {
+  rows = new Map<string, { status?: string; output?: unknown; stateJson?: string | null }>()
+  async listByRun(runId: string): Promise<Array<{ nodeId: string; iterationIndex: number; status: string; stateJson: string | null }>> {
+    void runId
+    return [...this.rows.entries()].map(([nodeId, r]) => ({ nodeId, iterationIndex: 0, status: r.status ?? 'running', stateJson: r.stateJson ?? null }))
+  }
+  async startNode(n: { nodeId: string }) { this.rows.set(n.nodeId, { status: 'running' }) }
+  async patchNode(_r: string, nodeId: string, _i: number, patch: Record<string, unknown>) {
+    const cur = this.rows.get(nodeId) ?? {}; Object.assign(cur, patch); this.rows.set(nodeId, cur)
+  }
+}
+
+describe('总收口 review：循环终态守卫', () => {
+  const graph = mkGraph(
+    [['start', 'start'], ['loop1', 'loop', { listSource: '{{start.items}}' }], ['after', 'echo'], ['end', 'end']],
+    [['start', 'loop1'], ['loop1', 'after', 'loop-done'], ['after', 'end']],
+  )
+  function loopEvents(runId: string, withCompletion: boolean): JournalEventRecord[] {
+    const evs: Array<Partial<JournalEventRecord>> = [
+      { seq: 0, type: 'run_started', payload: { triggerType: 'manual' } },
+      { seq: 1, type: 'loop_started', nodeId: 'loop1', payload: { parentScopeKey: 'root', listSize: 3 } },
+      { seq: 2, type: 'loop_iteration_settled', nodeId: 'loop1', payload: { iterationIndex: 0, result: { i: 0 }, skipped: false } },
+      { seq: 3, type: 'loop_iteration_settled', nodeId: 'loop1', payload: { iterationIndex: 1, result: { i: 1 }, skipped: false } },
+      { seq: 4, type: 'loop_iteration_settled', nodeId: 'loop1', payload: { iterationIndex: 2, result: { i: 2 }, skipped: false } },
+    ]
+    if (withCompletion) {
+      evs.push({ seq: 5, type: 'loop_completed', nodeId: 'loop1', payload: { output: { results: [{ i: 0 }, { i: 1 }, { i: 2 }] }, routeTaken: null } })
+    }
+    evs.push({ seq: 6, type: 'node_launched', nodeId: 'after', payload: { nodeType: 'echo', iterationIndex: 0 } })
+    return evs.map((e) => ({ id: `j_${runId}_${e.seq}`, runId, seq: e.seq!, type: e.type!, nodeId: e.nodeId ?? null, scopeKey: 'root', payload: e.payload ?? null, createdAt: new Date() })) as never
+  }
+
+  it('P1-A：无快照 + 已完成循环 + 尾节点在途 → 不再 fail-fast 毒杀整 run', () => {
+    const inputR = input(graph, 'run_c1')
+    expect(() => replayJournal(inputR, loopEvents('run_c1', true))).not.toThrow()
+    const re = replayJournal(inputR, loopEvents('run_c1', true))
+    expect(re.exec.loopDrivers.size).toBe(0) // 终态循环不重建驱动
+    expect(re.inflightNodes.map((n) => n.nodeId)).toEqual(['after'])
+  })
+
+  it('P1-B：快照中段 + 循环完成后崩溃 → succeeded 不被覆写 running、不重跑已收敛迭代', () => {
+    const snapshot: JournalEventRecord = {
+      id: 'j_run_c2_1', runId: 'run_c2', seq: 1, type: 'snapshot', nodeId: null, scopeKey: null,
+      payload: {
+        v: 1, suspended: false, variables: {}, llmHistory: [], runCounts: {},
+        scopes: [{ key: 'root', iterationIndex: 0, activationCounter: 0, activationSeqs: {}, states: [], mergeArrivals: {}, forcedMergeNodeIds: [], loopOwnerId: null, iterationSkippedByPolicy: false, loopPseudoVars: {} }],
+        // 快照时刻循环在途（迭代 2/5，driver.results=[r0,r1]）
+        loopDrivers: [{ loopNodeId: 'loop1', results: [{ i: 0 }, { i: 1 }], listSize: 3, list: [{ i: 0 }, { i: 1 }, { i: 2 }], parentScopeKey: 'root' }],
+        reexecNodeIds: [],
+      },
+      createdAt: new Date(),
+    } as never
+    const events = loopEvents('run_c2', true).map((e) => (e.seq === 1 ? { ...e, type: 'snapshot' } : e)).filter((e) => e.seq !== 1)
+    const re = replayJournal(input(graph, 'run_c2'), events, snapshot)
+    const loopState = re.exec.rootScope.states.get('loop1')
+    expect(loopState?.status).toBe('succeeded') // 不被重建块覆写 running
+    expect(re.exec.loopDrivers.size).toBe(0)
+    expect(re.inflightNodes.map((n) => n.nodeId)).toEqual(['after'])
+  })
+})
+
+describe('总收口 review：v≠1 快照视为不存在（宁慢勿错）', () => {
+  it('版本未知快照 → 全量重放（非空投影）', () => {
+    const graph = mkGraph([['start', 'start'], ['a', 'echo'], ['end', 'end']], [['start', 'a'], ['a', 'end']])
+    const mk = (runId: string) => [
+      { id: `j_${runId}_0`, runId, seq: 0, type: 'run_started', nodeId: null, scopeKey: 'root', payload: { triggerType: 'manual' }, createdAt: new Date() },
+      { id: `j_${runId}_1`, runId, seq: 1, type: 'node_launched', nodeId: 'start', scopeKey: 'root', payload: { nodeType: 'start', iterationIndex: 0 }, createdAt: new Date() },
+      { id: `j_${runId}_2`, runId, seq: 2, type: 'node_completed', nodeId: 'start', scopeKey: 'root', payload: { iterationIndex: 0, output: { ok: 1 }, routeTaken: null, completedSeq: 1 }, createdAt: new Date() },
+      { id: `j_${runId}_3`, runId, seq: 3, type: 'edge_activated', nodeId: null, scopeKey: 'root', payload: { edgeId: 'e0', seq: 2, sourceNodeId: 'start', targetNodeId: 'a' }, createdAt: new Date() },
+    ] as never as JournalEventRecord[]
+    const snap: JournalEventRecord = {
+      id: 'j_run_v_9', runId: 'run_v', seq: 9, type: 'snapshot', nodeId: null, scopeKey: null,
+      payload: { v: 2 }, createdAt: new Date(),
+    } as never
+    const re = replayJournal(input(graph, 'run_v'), mk('run_v'), snap)
+    // 全量重放：start 完成态在（此前 v≠1 快照把 startSeq 推到 10 → 空投影）
+    expect(re.exec.rootScope.states.get('start')?.status).toBe('succeeded')
+    expect(re.exec.variables.get('start')).toEqual({ ok: 1 })
+  })
+})
+
+describe('总收口 review：在途重执行 persistedState 注入（E2 §5.9-f）', () => {
+  it('崩溃于步间 → rehydrate 重执行 → loadState 返回已落库步级状态', async () => {
+    const journal = new InMemoryJournal()
+    const seen: unknown[] = []
+    const statful: WorkflowNodeHandler = {
+      type: 'statful' as never, controlKind: 'task', cancellable: false,
+      outputSchema: [], validateConfig: () => [],
+      execute: async (ctx) => { seen.push(await ctx.loadState()); return { status: 'succeeded' as never, output: { done: true } } },
+    } as never
+    const graph = mkGraph([['start', 'start'], ['ag1', 'statful'], ['end', 'end']], [['start', 'ag1'], ['ag1', 'end']])
+    // 手工构造崩溃现场：start 完成 + ag1 在途（journal），node_run 行带 state_json
+    const put = (seq: number, type: string, payload: Record<string, unknown> | null, nodeId: string | null = null) =>
+      journal.append({ runId: 'run_p', seq, type: type as never, nodeId, scopeKey: 'root', payload })
+    await put(0, 'run_started', { triggerType: 'manual' })
+    await put(1, 'node_launched', { nodeType: 'start', iterationIndex: 0 }, 'start')
+    await put(2, 'node_completed', { iterationIndex: 0, output: {}, routeTaken: null, completedSeq: 1 }, 'start')
+    await put(3, 'edge_activated', { edgeId: 'e0', seq: 2, sourceNodeId: 'start', targetNodeId: 'ag1' })
+    await put(4, 'node_launched', { nodeType: 'statful', iterationIndex: 0 }, 'ag1')
+
+    const rows = new RowsFake()
+    rows.rows.set('start', { status: 'succeeded', output: {} })
+    rows.rows.set('ag1', { status: 'running', stateJson: '{"step":3,"data":"断点"}' })
+    const runs = new FakeRuns()
+    runs.row = { runId: 'run_p', userId: 'u1', definitionId: 'd1', graphSnapshot: graph, startInputs: {}, settings: null, triggerInfo: null, status: 'running' }
+    const registry = createNodeRegistry([...CONTROL_NODE_HANDLERS, statful] as never)
+    const engine = new WorkflowEngineService({ runs, nodeRuns: rows, events: new FakeEvents(), journal } as unknown as WorkflowEngineDeps, registry)
+    await runWithUserAsync('u1', async () => {
+      expect(await engine.ensureActive('run_p')).toBe(true)
+      await settle(80)
+    })
+    expect(seen).toEqual([{ step: 3, data: '断点' }]) // 注入成功（此前恒 undefined → 从零重跑）
+    expect(runs.final.status).toBe('succeeded')
+  })
+})
+
+describe('总收口 review：C1 自由环崩溃恢复（环不静默截断）', () => {
+  it('A 二次执行中崩溃 → 恢复后 A 重执行激活新序号 → B 重执行（此前环停摆+序号分叉）', async () => {
+    const journal = new InMemoryJournal()
+    let aCalls = 0
+    let bCalls = 0
+    let crashGate = true // 第 2 次 A 调用吊死（模拟崩溃于执行中；engine1 被放弃）
+    const nodeA: WorkflowNodeHandler = {
+      type: 'nodeA' as never, controlKind: 'task', cancellable: false,
+      outputSchema: [], validateConfig: () => [],
+      execute: async () => {
+        aCalls++
+        if (aCalls === 2 && crashGate) await new Promise<void>(() => {}) // 永不 settle
+        if (aCalls >= 4) return { status: 'failed' as never, error: 'A 达到轮次上限（测试收口）' }
+        return { status: 'succeeded' as never, output: { round: aCalls } }
+      },
+    } as never
+    const nodeB: WorkflowNodeHandler = {
+      type: 'nodeB' as never, controlKind: 'task', cancellable: false,
+      outputSchema: [], validateConfig: () => [],
+      execute: async () => { bCalls++; return { status: 'succeeded' as never, output: { round: bCalls } } },
+    } as never
+    const graph = mkGraph(
+      [['start', 'start'], ['A', 'nodeA'], ['B', 'nodeB'], ['end', 'end']],
+      [['start', 'A'], ['A', 'B', 'normal'], ['B', 'A', 'normal'], ['B', 'end', 'normal']],
+    )
+    // 第一"进程"：A1 完成 → B1 完成 → B→A 重激活 A（C1）→ A2 吊死（崩溃点）。
+    // 不 await execute——A2 永不 settle，execute 会挂到泵空闲；放弃该进程即可
+    const first = mkEngine(journal, [nodeA, nodeB])
+    await runWithUserAsync('u1', async () => {
+      void first.engine.execute(input(graph, 'run_cycle')).catch(() => {})
+      await settle(150)
+    })
+    expect(aCalls).toBe(2) // 第 2 次已进入且吊死
+    expect(bCalls).toBe(1)
+
+    // 第二"进程"恢复：A2 在途重执行 → settle 激活新 A→B 序号 → B 重执行
+    crashGate = false
+    const second = mkEngine(journal, [nodeA, nodeB])
+    second.runs.row = { runId: 'run_cycle', userId: 'u1', definitionId: 'd1', graphSnapshot: graph, startInputs: {}, settings: null, triggerInfo: null, status: 'running' }
+    await runWithUserAsync('u1', async () => {
+      expect(await second.engine.ensureActive('run_cycle')).toBe(true)
+      await settle(200)
+    })
+    expect(bCalls).toBe(2) // B 重执行（修复前：陈旧激活序号使 B 永不重跑）
+    // 终态有界（end 与 A 第 4 轮失败并行竞争，两者皆合法收口——核心断言是 B 重跑）
+    expect(['succeeded', 'failed']).toContain(second.runs.final.status)
+    // journal 与内存一致：A→B 边存在大于 B 第一轮 completedSeq 的新激活
+    const e1Seqs = journal.all()
+      .filter((e) => e.type === 'edge_activated' && (e.payload as { edgeId?: string })?.edgeId === 'e1')
+      .map((e) => (e.payload as { seq?: number }).seq)
+    expect(e1Seqs.length).toBe(2)
+    expect(e1Seqs[1]!).toBeGreaterThan(e1Seqs[0]!)
+  })
+})
+
+describe('总收口 review：快照 loopPseudoVars 投影（二次方放大）', () => {
+  it('循环体内挂起 → on-suspend 快照：伪变量投影为 {item,index,listSize}，不内嵌列表本体', async () => {
+    const journal = new InMemoryJournal()
+    const graph = mkGraph(
+      [
+        ['start', 'start'],
+        ['loop1', 'loop', { listExpression: '{{start.items}}' }],
+        ['body', 'rev'],
+        ['end', 'end'],
+      ],
+      [['start', 'loop1'], ['loop1', 'body', 'loop-body'], ['body', 'loop1', 'loop-back'], ['loop1', 'end', 'loop-done']],
+    )
+    const e = mkEngine(journal, [review])
+    const runInput: ExecuteRunInput = { ...input(graph, 'run_snap'), startInputs: { items: ['甲', '乙'] } }
+    const status = await runWithUserAsync('u1', async () => {
+      const st = await e.engine.execute(runInput)
+      await settle()
+      return st
+    })
+    expect(status).toBe('waiting_review') // 第一迭代 body 挂起 → on-suspend 快照
+    const snap = journal.all().find((ev) => ev.type === 'snapshot')
+    expect(snap).toBeTruthy()
+    const scopes = (snap!.payload as { scopes?: Array<{ loopPseudoVars?: Record<string, Record<string, unknown>> }> }).scopes ?? []
+    const pseudos = scopes.flatMap((sc) => Object.values(sc.loopPseudoVars ?? {}))
+    expect(pseudos.length).toBe(1) // 挂起迭代一条
+    for (const pv of pseudos) {
+      expect(pv.list).toBeUndefined() // 不内嵌列表本体（曾逐迭代内嵌 → N×N 二次方）
+      expect(pv.listSize).toBe(2)
+      expect(pv.index).toBe(0)
+    }
+  })
+})

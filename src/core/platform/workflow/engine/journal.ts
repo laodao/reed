@@ -65,8 +65,28 @@ export class InMemoryJournal implements WorkflowJournalPort {
   }
 
   async appendBatch(events: JournalEventInput[]): Promise<void> {
-    for (const e of events) this.assertSeq(e.runId, e.seq)
-    for (const e of events) this.rows.push(this.toRecord(e))
+    // 两阶段：先校验全部（不标记），后标记+写入——冲突抛出时不留"已标记未写入"半态
+    for (const e of events) {
+      const key = `${e.runId}:${e.seq}`
+      if (this.seqSeen.has(key)) {
+        throw new Error(`journal seq 冲突：${key}（同 run 内必须严格单调）`)
+      }
+    }
+    for (const e of events) {
+      this.assertSeq(e.runId, e.seq)
+      this.rows.push(this.toRecord(e))
+    }
+  }
+
+  /** 最近快照（生产 DbJournal 对齐；使引擎级测试可覆盖快照恢复路径） */
+  async latestSnapshot(runId: string): Promise<JournalEventRecord | null> {
+    let latest: JournalEventRecord | null = null
+    for (const r of this.rows) {
+      if (r.runId === runId && r.type === 'snapshot' && (!latest || r.seq > latest.seq)) {
+        latest = r
+      }
+    }
+    return latest ? { ...latest, payload: latest.payload ? structuredClone(latest.payload) : null } : null
   }
 
   async listByRun(runId: string, fromSeq = 0): Promise<JournalEventRecord[]> {

@@ -87,6 +87,7 @@ function groupTitleOf(field: CatalogFormField, idx: number): string {
 const NODE_MODEL_TYPES: Record<string, string[]> = {
   'llm-chat': ['text', 'chat', 'multimodal'],
   translate: ['text', 'multimodal'],
+  'agent-loop': ['text', 'multimodal'],
   'kb-qa': ['text', 'multimodal'],
   'parameter-extractor': ['text', 'multimodal'],
   'web-extract': ['text', 'multimodal'],
@@ -199,10 +200,10 @@ async function loadDynamicOptions() {
     try {
       const resp = await api.workflow.listAgentTools()
       if (resp.success && resp.data) {
-        // 危险级工具标注审批语义：exec/external-post 默认挂起等人工批准
-        const DANGER_LABELS: Record<string, string> = { exec: '需批准', 'external-post': '需批准', write: '写操作' }
+        // 审批语义取服务端推导的 requiresApproval（registry 取严结果），不在前端
+        // 复刻 dangerLevel→审批 映射（避免双事实源漂移）
         dynamicOptions.value.agentTools = resp.data.map((t: any) => ({
-          label: `${t.name}${DANGER_LABELS[t.dangerLevel] ? `（${DANGER_LABELS[t.dangerLevel]}）` : ''}`,
+          label: `${t.name}${t.requiresApproval ? '（需批准）' : ''}`,
           value: t.name,
         }))
       }

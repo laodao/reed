@@ -254,6 +254,15 @@ export class WorkflowRunRepository extends BaseRepository<WorkflowRunEntity, Wor
    * 命中：pending / running / waiting_review（崩溃或退出时的在途运行）。
    * ⚠️ 结果按 userId 逐个 runWithUserAsync 后再由引擎处理。
    */
+  /**
+   * 跨租户裸读单行（boot 阶段无用户上下文时取属主用；与 scanBootRecoverable
+   * 同纪律：结果必须按 userId 逐个 runWithUserAsync 后再做 scoped 操作）。
+   */
+  async getByIdRaw(runId: string): Promise<WorkflowRunRecord | null> {
+    const row = await this.repo.findOneBy({ id: runId } as never)
+    return row ? this.toDto(row) : null
+  }
+
   async scanBootRecoverable(): Promise<WorkflowRunRecord[]> {
     const rows = await this.repo
       .createQueryBuilder('r')

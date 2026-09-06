@@ -98,9 +98,19 @@ describe('水位与阈值', () => {
     expect(m.assemble(dangling)).not.toBe(dangling)
   })
 
-  it('水位依据取 max(本地估算, 模型实测, 回填值)——模型实测可单独触发', async () => {
-    const m = mkManager({ summarize: async () => 'S' })
-    expect(await m.maybeCompact({ messages: [user('hi')], lastInputTokens: 9_000 })).not.toBeNull()
+  it('模型实测可单独触发尝试；本地无可压时零收益退避（不再每步重摘）', async () => {
+    let summarizeCalls = 0
+    const m = mkManager({ summarize: async () => { summarizeCalls++; return 'S' } })
+    // 微小历史 + 高实测水位（system/工具 schema 固定成本形态）：触发尝试但本地
+    // 无可压（摘要比原文还大）→ null + 退避指纹（总收口 review P2 的 A 型空转）
+    expect(await m.maybeCompact({ messages: [user('hi')], lastInputTokens: 9_000 })).toBeNull()
+    // 退避：水位未回落且估算未增长 → 不再调摘要
+    expect(await m.maybeCompact({ messages: [user('hi')], lastInputTokens: 9_000 })).toBeNull()
+    expect(summarizeCalls).toBe(1)
+    // 实测水位回落 → 重新放行尝试
+    const r = await m.maybeCompact({ messages: [user('hi')], lastInputTokens: 1 })
+    expect(r).toBeNull() // 仍无可压（水位未超线，根本不触发——退避指纹已不重要）
+    expect(summarizeCalls).toBe(1)
   })
 })
 

@@ -21,6 +21,7 @@
 
 import { createLogger } from '@core/utils/logger'
 import { withTimeout } from '../runtime/async'
+import { ZOD_ISSUE_MAX } from '../runtime/loop'
 import type { z } from 'zod'
 import type {
   AgentToolBinding,
@@ -169,6 +170,9 @@ export function mergeStaticConfig(
 // ==================== 结果序列化（14 号 §5.5 简化版；落盘引用化 M2） ====================
 
 export function serializeToolResult(raw: unknown): { data: unknown; truncated: boolean } {
+  // 无返回值工具（合法形态）：归一为 null——walk(undefined) 会走 catch 误报
+  // _unserializable + truncated（总收口 review P3 实证）
+  if (raw === undefined) return { data: null, truncated: false }
   let truncated = false
   const walk = (value: unknown, depth: number): unknown => {
     if (value === null || typeof value !== 'object') {
@@ -210,7 +214,13 @@ export function serializeToolResult(raw: unknown): { data: unknown; truncated: b
     const serialized = JSON.stringify(data)
     if (Buffer.byteLength(serialized, 'utf8') > TOOL_RESULT_MAX_BYTES) {
       truncated = true
-      return { data: { _oversize: true, preview: serialized.slice(0, TOOL_RESULT_MAX_BYTES / 2) }, truncated }
+      // preview 按字节截（字符切片对 CJK 是 3 倍差——曾产出 ~24KB 的"截断"结果）
+      const halfBytes = Math.floor(TOOL_RESULT_MAX_BYTES / 2)
+      let preview = serialized
+      while (Buffer.byteLength(preview, 'utf8') > halfBytes && preview.length > 0) {
+        preview = preview.slice(0, Math.floor(preview.length * 0.8))
+      }
+      return { data: { _oversize: true, preview }, truncated }
     }
   } catch {
     return { data: { _unserializable: true }, truncated: true }
@@ -446,7 +456,7 @@ export class AgentToolRegistry {
           code: 'INVALID_ARGS',
           message: 'INVALID_ARGS',
           hint: parsed.error.issues
-            .slice(0, 8)
+            .slice(0, ZOD_ISSUE_MAX)
             .map((i) => `${i.path.join('.')}: ${i.message}`)
             .join('; '),
           retryable: true,
@@ -552,6 +562,27 @@ export class AgentToolRegistry {
       registryWrapped: true, // loop 层据此跳过自身校验/超时/截断（所有权在 registry 管线）
       execute: async (input, ctx: AgentToolContext) => {
         if (binding.maxCalls !== undefined && counter.used >= binding.maxCalls) {
+          // 审计留痕（总收口 review P3：拦截曾绕过 finish——模型刷上限/借超限探测
+          // 在审计面不可见，与 NOT_WHITELISTED 的 blocked 留痕不对称）
+          if (this.deps.audit) {
+            try {
+              this.deps.audit({
+                toolName: binding.tool,
+                args: input as Record<string, unknown>,
+                dangerLevel: tool.spec.dangerLevel,
+                approval: 'not-required',
+                status: 'blocked',
+                errorCode: 'LIMIT_EXCEEDED',
+                durationMs: 0,
+                resultPreview: '',
+                truncated: false,
+                context: ctx.logContext ?? {},
+              })
+            } catch (e) {
+              logger.warn('[tool-registry] 审计 sink 异常（不影响调用结果）', e)
+            }
+          }
+          logger.warn(`[tool-registry] ${binding.tool} 调用被上限拦截（maxCalls=${binding.maxCalls}）`)
           return {
             ok: false,
             error: 'LIMIT_EXCEEDED',

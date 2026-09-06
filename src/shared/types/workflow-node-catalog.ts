@@ -272,7 +272,7 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
       { key: 'answer', type: 'string', desc: '最终答案' },
       { key: 'iterations', type: 'number', desc: '实际迭代轮数' },
       { key: 'usage', type: 'json', desc: 'token 用量 { promptTokens, completionTokens, toolCalls }' },
-      { key: 'stopReason', type: 'string', desc: 'final / max_steps / stagnant / aborted / error' },
+      { key: 'stopReason', type: 'string', desc: 'final / max_steps / stagnant / aborted / human_rejected / error' },
       { key: 'trajectoriesSummary', type: 'json', desc: '轨迹摘要 { entries, byKind, toolCalls }' },
     ],
   },

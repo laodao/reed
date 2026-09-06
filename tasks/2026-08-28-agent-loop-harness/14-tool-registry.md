@@ -229,6 +229,13 @@ export function buildOperationSchema(text: string, operationId: string): { ok: t
 - registry 侧：`buildOperationSchema` 的输出直接就是 `AgentToolSpec.jsonSchema`——oas 类工具的机器可读描述零手工成本，这是 V2 的主要动机。
 
 ## 6. 状态机与关键时序
+## 6. 状态机与关键时序
+
+> **2026-09-07 总收口 review 注记**：实现中管线顺序为 **审批 → 校验 → 静态合并 →
+> 执行**（§6 状态机的 validated→awaiting_approval 与此相反）。安全姿态不受影响
+> （两关都过才执行、approve_with_edit 后必重校验），但审批人见到的入参是模型
+> 原始 args（未校验形态）。改序（廉价 zod 前置到发卡前）立项 M2——涉及 loop
+> 层与 registry 管线两层所有权分层，与本批 registryWrapped 定案耦合。
 
 **单次工具调用状态机**（穷举迁移）：
 
