@@ -95,9 +95,11 @@ export {
   SOFT_WATERMARK,
   HARD_WATERMARK,
   USER_MESSAGE_BUDGET_TOKENS,
+  PROTECTED_TAIL_TOKENS,
+  MIN_PRUNE_SAVINGS_TOKENS,
   INTERRUPTED_SENTINEL,
 } from './context/context-manager'
-export type { ContextManagerDeps, LoopContextPort, ContextAssemblerInput, MessageKind } from './context/context-manager'
+export type { ContextManagerDeps, LoopContextPort, MessageKind } from './context/context-manager'
 export type { StateSnapshotBuilder } from './context/state-snapshot'
 export {
   DefaultCompactionStrategy,

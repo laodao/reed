@@ -138,6 +138,9 @@ export class LoopRunner {
     const system = buildSystem(task, state)
     let lastSignature = ''
     let nudged = false // 无进展提示只注入一次；再达限以 stagnant 终止
+    // 最近一步模型实测 inputTokens（压缩水位依据——state.usage.promptTokens 是
+    // 跨步累计和，用作水位会假触发+压缩空转，批 6 review P1-3）
+    let lastStepInputTokens = 0
 
     // 崩溃恢复装配：悬空工具调用哨兵修复（一次性持久化——幂等，返回原引用则跳过）
     if (this.deps.context) {
@@ -162,7 +165,7 @@ export class LoopRunner {
         if (this.deps.context) {
           const compacted = await this.deps.context.maybeCompact({
             messages: state.messages,
-            lastInputTokens: state.usage.promptTokens,
+            lastInputTokens: lastStepInputTokens,
             signal: host.signal,
           })
           if (compacted) {
@@ -202,6 +205,7 @@ export class LoopRunner {
         // usage 累计（缺失记 0；12 号 §5.6 口径在 13 号，chars/4 兜底由护栏层做）
         state.usage.promptTokens += usage.inputTokens ?? 0
         state.usage.completionTokens += usage.outputTokens ?? 0
+        lastStepInputTokens = usage.inputTokens ?? 0
 
         // 流级失败短路（12 号 §6.5 错误分类）：部分内容留痕后以 error 终止，
         // 绝不把截断文本当最终答案

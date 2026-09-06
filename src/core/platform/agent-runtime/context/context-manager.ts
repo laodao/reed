@@ -58,7 +58,13 @@ export const INTERRUPTED_SENTINEL = '[interrupted — 结果未记录，先核�
 export type MessageKind = 'user' | 'assistant' | 'tool' | 'system' | 'compaction.summary'
 
 export function classifyMessage(m: ModelMessage): MessageKind {
-  if (m.role === 'user' && typeof m.content === 'string' && m.content.startsWith('[Previous conversation summary]')) {
+  // 双端同检（批 6 review P2-2：单前缀可被用户粘贴伪造——双端同时命中才认定摘要标记）
+  if (
+    m.role === 'user' &&
+    typeof m.content === 'string' &&
+    m.content.startsWith('[Previous conversation summary]') &&
+    m.content.endsWith('[The conversation continues from here]')
+  ) {
     return 'compaction.summary'
   }
   return m.role
@@ -72,24 +78,19 @@ export function summaryMessage(summary: string): ModelMessage {
   }
 }
 
-// ==================== 契约（23 号 §5 ContextAssembler） ====================
-
-export interface ContextAssemblerInput {
-  history: ModelMessage[]
-  snapshot: string
-  systemPrompt: string
-}
-
 // ==================== 配置与实现 ====================
 
 export interface ContextManagerDeps {
-  /** 模型上下文窗口 tokens（必填——无窗口语义则不该启用压缩） */
+  /**
+   * 模型上下文窗口 tokens。>0 启用压缩；0 = 仅装配模式（悬空哨兵修复照常，
+   * 压缩不触发——批 6 review P2-3：崩溃恢复是正确性语义，不与压缩优化耦合门控）
+   */
   contextWindowTokens: number
-  /** 软限触发水位（缺省 0.9；外部配置被夹到 ≤0.9——12 号 R6"配置夹到"） */
+  /** 软限触发水位（缺省 0.9；外部配置被夹到 (0, 0.9]——12 号 R6"配置夹到"） */
   softWatermark?: number
-  /** 硬顶水位（缺省 0.95） */
+  /** 硬顶水位（缺省 0.95；压缩结果超硬顶时降级收缩用户保留集——见 maybeCompact） */
   hardWatermark?: number
-  /** 用户消息保留预算 tokens（缺省 20K） */
+  /** 用户消息保留预算 tokens（缺省 20K；当轮最后一条用户消息不受此预算约束） */
   userMessageBudgetTokens?: number
   /** token 估算器（缺省 JSON UTF-8 字节/4） */
   estimateTokens?: (messages: ModelMessage[]) => number
@@ -98,7 +99,6 @@ export interface ContextManagerDeps {
   summarize?: (conversationText: string, signal?: AbortSignal) => Promise<string>
   /** compaction 事件出口（门面分发；缺省仅日志） */
   emit?: (e: AgentEvent) => void
-  clock?: () => number
 }
 
 export interface LoopContextPort {
@@ -126,14 +126,20 @@ export class ContextManager implements LoopContextPort {
   /** 压缩后估算回填值（防抖动——12 号 R6：本地估算覆盖过期的模型实测） */
   private backfilledInputTokens = 0
 
+  /** 硬顶夹取上限（水位不可能贴近 100%——为输出预留） */
+  private static readonly HARD_CEILING = 0.99
+
   constructor(deps: ContextManagerDeps) {
-    if (deps.contextWindowTokens <= 0) {
-      throw new Error(`contextWindowTokens 必须为正（收到 ${deps.contextWindowTokens}）`)
+    if (!Number.isFinite(deps.contextWindowTokens) || deps.contextWindowTokens < 0) {
+      throw new Error(`contextWindowTokens 必须为非负有限数（收到 ${deps.contextWindowTokens}）`)
+    }
+    if (deps.softWatermark !== undefined && (!Number.isFinite(deps.softWatermark) || deps.softWatermark <= 0)) {
+      throw new Error(`softWatermark 必须为 (0,1] 区间（收到 ${deps.softWatermark}）`)
     }
     this.windowTokens = deps.contextWindowTokens
     // 软限夹到 ≤0.9（外部更激进的配置不允许——R6"配置被夹到"）；硬顶不高于软限
     const soft = Math.min(deps.softWatermark ?? SOFT_WATERMARK, SOFT_WATERMARK)
-    const hard = Math.min(deps.hardWatermark ?? HARD_WATERMARK, 0.99)
+    const hard = Math.min(deps.hardWatermark ?? HARD_WATERMARK, ContextManager.HARD_CEILING)
     this.softTokens = Math.floor(this.windowTokens * soft)
     this.hardTokens = Math.floor(this.windowTokens * Math.max(hard, soft))
     this.userBudget = deps.userMessageBudgetTokens ?? USER_MESSAGE_BUDGET_TOKENS
@@ -152,14 +158,15 @@ export class ContextManager implements LoopContextPort {
    * 幂等：无悬空时返回原引用（调用方可据此跳过落盘）。
    */
   assemble(messages: ModelMessage[]): ModelMessage[] {
-    const dangling = collectDanglingToolCallIds(messages)
-    if (dangling.size === 0) return messages
+    const dangling = collectDanglingToolCalls(messages)
+    if (dangling.length === 0) return messages
     const repaired = [...messages]
-    for (const [index, ids] of dangling) {
-      // 就近插在悬空 assistant 消息之后（保持配对相邻性）
-      repaired.splice(index + 1, 0, sentinelToolMessage(ids))
+    // 降序插入：splice 右移只影响更大下标——先插后面的，先前的下标不漂移
+    //（批 6 review P1-2：升序插入曾把第二条哨兵插到其 assistant 之前，配对倒挂）
+    for (const item of [...dangling].reverse()) {
+      repaired.splice(item.index + 1, 0, sentinelToolMessage(item.calls))
     }
-    logger.info(`[context] 崩溃恢复：修复 ${dangling.size} 条悬空工具调用（哨兵注入）`)
+    logger.info(`[context] 崩溃恢复：修复 ${dangling.length} 条悬空 assistant 消息的工具调用（哨兵注入）`)
     return repaired
   }
 
@@ -167,25 +174,32 @@ export class ContextManager implements LoopContextPort {
 
   async maybeCompact(input: {
     messages: ModelMessage[]
+    /** 模型侧最近一步的实测 inputTokens（非跨步累计——review P1-3） */
     lastInputTokens: number
     signal?: AbortSignal
   }): Promise<ModelMessage[] | null> {
+    // 仅装配模式（窗口 0）：不压缩（崩溃恢复哨兵修复不受此门控——review P2-3）
+    if (this.windowTokens === 0) return null
     const tokensBefore = Math.max(this.estimate(input.messages), this.backfilledInputTokens, input.lastInputTokens)
     if (tokensBefore < this.softTokens || input.messages.length === 0) return null
 
     const emit = this.deps.emit
     emit?.({ type: 'compaction', phase: 'start', tokensBefore })
 
-    // Phase 1：剪枝（近端保护 + 纯剪枝门槛——vendor 同形语义）
+    // Phase 1：剪枝（近端保护；节省未达门槛时返回原数组——vendor 同形）
     const pruned = pruneToolResults(input.messages, PROTECTED_TAIL_TOKENS, MIN_PRUNE_SAVINGS_TOKENS, this.estimate)
     let working = pruned.tokensSaved > 0 ? pruned.messages : input.messages
-
-    // Phase 2：守恒摘要（用户消息按预算从新到旧原样保留，其余折叠；摘要置尾）
     let summary: string | undefined
-    if (this.deps.summarize && this.estimate(working) >= this.softTokens) {
+
+    // Phase 2：守恒摘要——目标是把总量压回软限下（剪枝不足即摘要，目标导向而非
+    // "剪够门槛就停"——批 6 review P2-6 表述对齐）。门槛依据与触发同源：
+    // 本地估算仍超线，或模型实测超线（估算器对 system/工具 schema 膨胀不敏感时，
+    // 实测兜底触发摘要——review P1-3 修正的连带面）
+    if (this.deps.summarize && (this.estimate(working) >= this.softTokens || input.lastInputTokens >= this.softTokens)) {
+      // 滚动携带：前次摘要消息一并进入摘要输入（review P1-5——剔除曾使前次折叠
+      // 内容在二次压缩时永久蒸发）；真实用户原话也在输入中，摘要可转述
       const conversationText = working
-        .filter((m) => classifyMessage(m) !== 'compaction.summary')
-        .map((m) => `${m.role}: ${JSON.stringify(m.content)}`)
+        .map((m) => `${classifyMessage(m)}: ${JSON.stringify(m.content)}`)
         .join('\n')
       try {
         summary = await this.deps.summarize(conversationText, input.signal)
@@ -194,13 +208,38 @@ export class ContextManager implements LoopContextPort {
         logger.warn(`[context] 摘要失败，降级为纯剪枝：${e instanceof Error ? e.message : String(e)}`)
       }
       if (summary !== undefined) {
-        const preserved = preserveUserMessages(working, this.userBudget, this.estimate)
+        // 当轮最后一条用户消息无条件保留（review P2-1：超预算整体折叠会让当轮
+        // 输入只剩摘要转述）；其体量从预算中扣除
+        const lastUserIdx = findLastUserIndex(working)
+        const budget =
+          lastUserIdx >= 0
+            ? Math.max(this.userBudget - this.estimate([working[lastUserIdx]]), 0)
+            : this.userBudget
+        const preserved = preserveUserMessages(working, budget, this.estimate, lastUserIdx)
         working = [...preserved, summaryMessage(summary)]
         emit?.({ type: 'compaction', phase: 'summary' })
       }
     }
 
-    const tokensAfter = this.estimate(working)
+    let tokensAfter = this.estimate(working)
+
+    // 硬顶降级（review P1-4：硬顶此前只在日志出现无行为）：摘要后仍超硬顶 →
+    // 收缩用户保留集到仅当轮输入 + 摘要（保留语义让位于窗口可行性），一次性降级
+    if (summary !== undefined && tokensAfter > this.hardTokens && working.length > 2) {
+      const lastUser = working[working.length - 2] // 结构 [...preserved, lastUser, summary]
+      working = [lastUser, summaryMessage(summary)]
+      tokensAfter = this.estimate(working)
+      logger.warn(`[context] 压缩后仍超硬顶（${tokensAfter} > ${this.hardTokens}），用户保留集收缩到仅当轮输入`)
+    }
+
+    // 零变更：返回 null（调用方跳过落盘与事件轰炸——review P1-3 的空转形态）
+    if (working === input.messages || tokensAfter >= tokensBefore) {
+      logger.warn(`[context] 压缩零效果（${tokensBefore}→${tokensAfter}），保留原历史`)
+      this.backfilledInputTokens = tokensBefore // 维持水位，避免每步空转重试
+      emit?.({ type: 'compaction', phase: 'done', tokensBefore, tokensAfter })
+      return null
+    }
+
     // 回填：以本地估算覆盖（压完立即复查不再触发——R6 防抖动）
     this.backfilledInputTokens = tokensAfter
     emit?.({ type: 'compaction', phase: 'done', tokensBefore, tokensAfter })
@@ -220,8 +259,13 @@ export class ContextManager implements LoopContextPort {
 
 // ==================== 内部工具 ====================
 
-/** 悬空 tool-call 收集：Map<悬空 assistant 消息下标, 未应答 toolCallId 列表> */
-function collectDanglingToolCallIds(messages: ModelMessage[]): Map<number, string[]> {
+/** 悬空 tool-call 收集：下标 + 该消息内未应答调用（含 toolName——哨兵结果必填） */
+interface DanglingCall {
+  toolCallId: string
+  toolName: string
+}
+
+function collectDanglingToolCalls(messages: ModelMessage[]): Array<{ index: number; calls: DanglingCall[] }> {
   const answered = new Set<string>()
   for (const m of messages) {
     if (m.role !== 'tool' || !Array.isArray(m.content)) continue
@@ -229,51 +273,70 @@ function collectDanglingToolCallIds(messages: ModelMessage[]): Map<number, strin
       if (part.type === 'tool-result' && part.toolCallId) answered.add(part.toolCallId)
     }
   }
-  const dangling = new Map<number, string[]>()
+  const dangling: Array<{ index: number; calls: DanglingCall[] }> = []
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i]
     if (m.role !== 'assistant' || !Array.isArray(m.content)) continue
-    const ids = (m.content as Array<{ type?: string; toolCallId?: string }>)
+    const calls = (m.content as Array<{ type?: string; toolCallId?: string; toolName?: string }>)
       .filter((p) => p.type === 'tool-call' && p.toolCallId && !answered.has(p.toolCallId))
-      .map((p) => p.toolCallId!)
-    if (ids.length > 0) dangling.set(i, ids)
+      .map((p) => ({ toolCallId: p.toolCallId!, toolName: p.toolName ?? 'unknown' }))
+    if (calls.length > 0) dangling.push({ index: i, calls })
   }
   return dangling
 }
 
-/** 哨兵 tool 消息（补齐悬空配对；模型据此先核实再重做） */
-function sentinelToolMessage(toolCallIds: string[]): ModelMessage {
+/**
+ * 哨兵 tool 消息（补齐悬空配对；模型据此先核实再重做）。
+ * 形状必须符合 ai@6 ToolResultPart：toolName 必填、载荷在 output
+ * （批 6 review P0：手写 result 字段会被 ai@6 prompt schema 校验直接拒绝——
+ * 修复变"修死"；本函数经真实 streamText 集成测试验证）
+ */
+function sentinelToolMessage(calls: DanglingCall[]): ModelMessage {
   return {
     role: 'tool',
-    content: toolCallIds.map((toolCallId) => ({
+    content: calls.map((c) => ({
       type: 'tool-result',
-      toolCallId,
-      result: INTERRUPTED_SENTINEL,
+      toolCallId: c.toolCallId,
+      toolName: c.toolName,
+      output: { type: 'text', value: INTERRUPTED_SENTINEL },
     })),
   } as unknown as ModelMessage
 }
 
 /**
- * 用户消息守恒：从新到旧保留直至预算耗尽（真实用户原话永不折叠——12 号 R6）。
- * 保留者维持原相对顺序；预算外的老用户消息随 assistant/工具消息一起被折叠。
+ * 用户消息守恒：从新到旧保留直至预算耗尽（真实用户原话永不折叠——12 号 R6；
+ * 预算外的老用户消息随 assistant/工具消息一起折叠）。当轮保底位（excludeIndex）
+ * 无条件保留且不占预算。
  */
 function preserveUserMessages(
   messages: ModelMessage[],
   budgetTokens: number,
   estimate: (messages: ModelMessage[]) => number,
+  excludeIndex: number,
 ): ModelMessage[] {
-  const kept: Array<{ m: ModelMessage; tokens: number }> = []
+  const kept: ModelMessage[] = []
   let used = 0
   for (let i = messages.length - 1; i >= 0; i--) {
+    if (i === excludeIndex) continue
     const m = messages[i]
     if (classifyMessage(m) !== 'user') continue
     const t = estimate([m])
     if (used + t > budgetTokens) break
     used += t
-    kept.push({ m, tokens: t })
+    kept.push(m)
   }
-  // kept 为新→旧收集，反转恢复时间序
-  return kept.reverse().map((k) => k.m)
+  // kept 为新→旧收集，反转恢复时间序；保底位（若有）追加在尾（时间上它就是最新）
+  const ordered = kept.reverse()
+  if (excludeIndex >= 0) ordered.push(messages[excludeIndex])
+  return ordered
+}
+
+/** 最后一条真实用户消息下标（-1 = 无） */
+function findLastUserIndex(messages: ModelMessage[]): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (classifyMessage(messages[i]) === 'user') return i
+  }
+  return -1
 }
 
 /** 工厂：无摘要回调时仍是合法压缩器（纯剪枝模式） */

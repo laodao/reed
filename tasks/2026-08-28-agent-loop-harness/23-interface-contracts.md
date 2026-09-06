@@ -193,6 +193,24 @@ export interface CompactionStrategy {                     // vendor 自 open-har
 }
 ```
 
+**—— 2026-09-06 批 6 实现注记（ContextManager 落地，独立 review 定稿）——**
+- `ContextAssembler.assemble` 实现收窄为 `assemble(messages)`（L1 system 层在 loop 的
+  buildSystem，不经 ContextManager）；实际 loop 消费端口为 `LoopContextPort
+  = { assemble, maybeCompact }`（LoopRunnerDeps.context 可选注入）。
+- `CompactionStrategy`（vendor DefaultCompactionStrategy）是上游忠实件+审计件；
+  生产压缩路径为 ContextManager 守恒编排（pruneToolResults 复用 vendor + 自持
+  summarize 回调），不经 CompactionStrategy 接口。
+- 硬顶行为定稿（review P1-4）：摘要后仍超硬顶 → 用户保留集收缩到仅当轮输入 +
+  摘要（一次性降级 + warn），不再是无行为的观测位。
+- 悬空哨兵/装配修复与压缩解耦：窗口 0 = 仅装配模式（definition 未声明
+  contextWindowTokens 时 ContextManager 仍装配，仅不压缩）。
+- 守恒补充语义：当轮最后一条用户消息无条件保留（不占 20K 预算）；滚动压缩的
+  摘要输入包含前次摘要（防跨压缩内容蒸发）；摘要门槛与触发同源（本地估算或
+  模型实测任一超线）；零变更压缩返回 null（不落盘不重复发事件）。
+- vendor 偏离 upstream 三处已文件内标注：载荷字段 result→output（ai@6 真实形状，
+  上游同患此缺陷致剪枝恒 no-op）、保护边界初值 length→0（全史小于保护预算时语义
+  反转）、无摘要模型时 warn 降级（上游 TypeError）。upstream commit 026e8d9。
+
 ## 6. 持久化与记忆契约
 
 ```ts

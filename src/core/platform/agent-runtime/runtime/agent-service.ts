@@ -48,7 +48,8 @@ import { EventBridge, type PlatformBusPort } from './event-bridge'
 import type { AgentSessionStore } from '../memory/session-store'
 import { AgentMessageTooLargeError, MAX_MESSAGE_BYTES } from '../memory/session-store'
 import type { ResolveModelOptions } from '../provider/provider-adapter'
-import { ContextManager, type LoopContextPort } from '../context/context-manager'
+import { ContextManager } from '../context/context-manager'
+import { DEFAULT_SUMMARY_PROMPT } from '../runtime/vendor/compaction'
 
 const logger = createLogger('AgentRuntime')
 
@@ -480,25 +481,24 @@ export class AgentRuntimeImpl implements AgentRuntime {
       // 上下文管理（definition.contextWindowTokens 声明即启用——23 号 §5 / 12 号 R6）：
       // 装配/压缩守恒归 ContextManager；摘要经 resolveModel 动态 generateText；
       // compaction 事件走门面单点分发（bridge 仅对 phase=done 发总线）
-      let context: LoopContextPort | undefined
-      if (def.contextWindowTokens) {
-        const summarize = async (conversationText: string, signal?: AbortSignal): Promise<string> => {
-          const { generateText } = await import('ai')
-          const model = await this.deps.resolveModel(def.modelPreference)
-          const result = await generateText({
-            model,
-            system: 'Summarize this conversation for the next agent turn: goal, instructions, discoveries, accomplished, current state, relevant context.',
-            messages: [{ role: 'user', content: conversationText }],
-            abortSignal: signal,
-          })
-          return result.text
-        }
-        context = new ContextManager({
-          contextWindowTokens: def.contextWindowTokens,
-          summarize,
-          emit: (e) => this.dispatch(entry, e),
+      // 上下文管理总是装配（批 6 review P2-3：悬空哨兵修复是正确性语义，不随压缩
+      // 门控）；窗口未声明 = 0 → 仅装配模式（maybeCompact 直通 null）
+      const summarize = async (conversationText: string, signal?: AbortSignal): Promise<string> => {
+        const { generateText } = await import('ai')
+        const model = await this.deps.resolveModel(modelPreference) // 与本轮主模型一致（review P3）
+        const result = await generateText({
+          model,
+          system: DEFAULT_SUMMARY_PROMPT, // vendor 常量单一事实源（review P2-4，勿内联复本）
+          messages: [{ role: 'user', content: conversationText }],
+          abortSignal: signal,
         })
+        return result.text
       }
+      const context = new ContextManager({
+        contextWindowTokens: def.contextWindowTokens ?? 0,
+        summarize,
+        emit: (e) => this.dispatch(entry, e),
+      })
 
       // 循环（审批回调：requiresApproval 工具 → 本会话协调器）
       const runner = new LoopRunner({

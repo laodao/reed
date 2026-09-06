@@ -8,9 +8,12 @@
  *           pruneToolResults / DEFAULT_SUMMARY_PROMPT + utils.ts 的
  *           defaultEstimateTokens（22 号 B4 决策：不整包依赖，源码摘取）。
  *
- * 本地适配（不改变语义，仅工程约束）：
+ * 本地适配/修正（文件内注释逐处标注）：
  * - ai 为 ESM-only：generateText 经动态 import（原文件静态 import）
  * - 估算器字节口径对齐本项目（UTF-8 字节 / 4——12 号 R6）
+ * - pruneToolResults 载荷字段 result → output（ai@6 真实形状，上游同患此缺陷）
+ * - pruneToolResults 保护边界初值 length → 0（全史小于保护预算时语义反转）
+ * - 无摘要模型时 warn 降级返回剪枝结果（上游直接 TypeError）
  *
  * 注意：本文件的 DefaultCompactionStrategy 是上游忠实形态（无用户消息保留语义）；
  * harness 的压缩守恒（用户消息 20K 预算原样保留/摘要置尾）在
@@ -185,7 +188,10 @@ export function pruneToolResults(
     }
   }
 
-  // 边界之前的工具结果替换为占位符
+  // 边界之前的工具结果替换为占位符。
+  // 本地修正（批 6 review P1-1，测试实证）：载荷字段是 output（ai@6 ToolResultPart
+  // 形状），upstream 写 result 键——真实消息下替换不生效且估算反增（-5 tok），
+  // 剪枝恒为 no-op
   let tokensSaved = 0
   let modified = 0
   for (let i = 0; i < boundary; i++) {
@@ -194,7 +200,9 @@ export function pruneToolResults(
       const content = result[i].content
       if (Array.isArray(content)) {
         result[i].content = content.map((part) =>
-          part.type === 'tool-result' ? { ...part, result: '[pruned]' } : part,
+          part.type === 'tool-result'
+            ? { ...part, output: { type: 'text', value: '[pruned]' } }
+            : part,
         ) as never
       }
       const after = estimateMessageTokens(result[i], estimateTokens)

@@ -83,7 +83,21 @@
 > （两份复制已漂移）、静态合并改 parse 后合并（zod strip 曾丢宿主键）、16KB 改字节
 > 计量、5 处魔法数命名。测试 31 例（含 3 例穿 loop 包装层集成）+ 全套 251 绿。
 > 23 号补"批 5 实现注记"（execute 形态偏差/加法方法/所有权分层/合并语义/审批缺省/
-> jsonSchema 版本）。下一步：ContextManager（四层装配+两级压缩水位）。
+> jsonSchema 版本）。
+>
+> **进度（2026-09-06 批 6 ContextManager 完成并过审，feat/agent-harness）**：
+> 四层装配（悬空哨兵修复）+ 压缩守恒（两级水位 90/95、用户消息 20K 预算、摘要
+> 置尾、估算回填防抖动、滚动携带）+ vendor 剪枝件（open-harness 移植，MIT 标注）。
+> 独立 review 判"不能放行"：**P0 + 5×P1 全部修复**——核心教训是 ai@6 真实消息
+> 形状（ToolResultPart 必带 toolName、载荷在 output）的三个接点全失手且被手造
+> mock 挡在测试之外：哨兵消息形状（修复变修死）、vendor 剪枝 result 字段
+> （生产恒 no-op）、多悬空 splice 漂移（配对倒挂）。修复后以真实形状构造器
+> 重写测试（含真实 streamText 集成验证 schema 合法性）；其余修复：loop 传单步
+> 实测 inputTokens（累计和曾致假触发+空转）、硬顶从观测位升级为降级行为、
+> 滚动摘要保留前次内容、当轮输入无条件保底、前缀伪造双端防护、装配与压缩
+> 解耦（窗口 0=仅装配）、摘要提示词收口 vendor 常量。测试 162 绿（context 21
+> + 门面集成等）。vendor 偏离 upstream 三处文件内标注（boundary 修正为测试
+> 实证的上游缺陷）。下一步：P2 journal E1-E3（11 号）。
 
 ## 分期总览
 

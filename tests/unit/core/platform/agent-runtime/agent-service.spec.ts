@@ -617,7 +617,6 @@ describe('租户（ALS 红线）', () => {
 
 describe('上下文压缩集成（definition.contextWindowTokens 声明即启用）', () => {
   it('超水位轮内触发：compaction 事件链到达订阅者；用户消息守恒、摘要置尾', async () => {
-    const summarizeCalls: string[] = []
     // 窗口 600 tok（软限 540）：工具结果 8000 字符 ≈ 2000 tok → 第二步前触发
     const def = mkDef({ contextWindowTokens: 600 })
     // 第一步：assistant 大段正文 + 工具调用（体量在 assistant——剪枝阶段不可折，
@@ -657,7 +656,6 @@ describe('上下文压缩集成（definition.contextWindowTokens 声明即启用
     const history = await h.rt.getHistory('story-room', 's1')
     expect(history.some((m) => m.role === 'user' && m.content.includes('会触发压缩的问题'))).toBe(true)
     expect(JSON.stringify(await h.store.load('story-room:s1'))).toContain('[Previous conversation summary]')
-    void summarizeCalls
   })
 
   it('未声明 contextWindowTokens 的 definition：不压缩（纯 L3 直通）', async () => {
