@@ -590,6 +590,15 @@ export function makeEngineDeps(
         runs.update(runId, patch as UpdateWorkflowRunInput).then(() => undefined),
     },
     nodeRuns: {
+      listByRun: async runId => {
+        const rows = await nodeRuns.listByRun(runId)
+        return rows.map(r => ({
+          nodeId: r.nodeId,
+          iterationIndex: r.iterationIndex,
+          status: r.status,
+          stateJson: (r as { stateJson?: string | null }).stateJson ?? null,
+        }))
+      },
       startNode: input => nodeRuns.start(input).then(() => undefined),
       patchNode: (runId, nodeId, iterationIndex, patch) =>
         nodeRuns.update(runId, nodeId, iterationIndex, patch).then(() => undefined),

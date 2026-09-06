@@ -382,6 +382,12 @@ async function initDatabase(): Promise<void> {
   )
   await createWorkflowRunEvents(ds)
 
+  // E2：workflow_node_runs.state_json（与 Electron 端同构）
+  const { addWorkflowNodeRunStateJson } = await import(
+    '@core/database/migrations/add-workflow-node-run-state-json'
+  )
+  await addWorkflowNodeRunStateJson(ds)
+
   // 通用事件系统：platform_events / cursors / dead_letters 三表（与 Electron 端同构；10-event-system §4）
   const { createPlatformEventTables } = await import(
     '@core/database/migrations/create-platform-event-tables'

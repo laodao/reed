@@ -80,6 +80,10 @@ export class WorkflowNodeRunEntity {
   @Column({ name: 'review', type: 'text', nullable: true })
   review!: string | null
 
+  /** 节点内中间状态 JSON（E2：agent 循环历史/迭代计数——可变行，saveState 覆盖写） */
+  @Column({ name: 'state_json', type: 'text', nullable: true })
+  stateJson!: string | null
+
   @Column({ name: 'started_at', type: 'datetime', nullable: true })
   startedAt!: Date | null
 

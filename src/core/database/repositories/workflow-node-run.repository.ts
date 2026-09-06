@@ -29,6 +29,8 @@ export interface WorkflowReviewRecord {
 
 /** 节点运行 DTO（JSON 列已解析；userId 供跨租户扫描后按用户重建上下文） */
 export interface WorkflowNodeRunRecord {
+  /** 节点内中间状态 JSON（E2；可变行——saveState 覆盖写；旧行 null） */
+  stateJson?: string | null
   id: string
   userId: string | null
   runId: string
@@ -102,6 +104,7 @@ export class WorkflowNodeRunRepository extends BaseRepository<
       nodeType: e.nodeType,
       nodeName: e.nodeName,
       iterationIndex: e.iterationIndex,
+      stateJson: e.stateJson ?? null,
       status: e.status as WorkflowNodeRunStatus,
       input: safeParse<Record<string, unknown> | null>(e.inputJson, null),
       output: safeParse<Record<string, unknown> | null>(e.outputJson, null, `id=${e.id}.output`),

@@ -697,6 +697,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
     )
     await createWorkflowRunEvents(this.dataSource)
 
+    // E2：workflow_node_runs.state_json（节点内中间状态，11 号 §4.2）
+    const { addWorkflowNodeRunStateJson } = await import(
+      '@core/database/migrations/add-workflow-node-run-state-json'
+    )
+    await addWorkflowNodeRunStateJson(this.dataSource)
+
     // 通用事件系统：platform_events / cursors / dead_letters 三表（幂等，双语种；10-event-system §4）
     const { createPlatformEventTables } = await import(
       '@core/database/migrations/create-platform-event-tables'

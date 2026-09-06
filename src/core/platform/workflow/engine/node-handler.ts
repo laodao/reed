@@ -8,7 +8,8 @@
  *              1. execute 收到的 config 已由引擎完成 {{}} 模板解析——handler 不再自行解析
  *                 常规字段；仅动态拼接的二级模板（如循环节点内部的子模板）才用 resolveTemplate。
  *              2. execute 必须可重入：同一 handler 实例可能被多个运行并发调用，
- *                 禁止在 handler 内保存跨调用的可变状态。
+ *                 禁止把跨调用状态仅存于内存——跨调用/跨崩溃需保留的状态必须经
+ *                 ctx.saveState() 落库（E2），恢复时经 ctx.loadState() 取回。
  *              3. signal.aborted 后禁止产生副作用（写库/发事件/落盘）——
  *                 settle 前自查（引擎对不可取消节点有 orphan 兜底，但 handler 自律是第一道防线）。
  *              4. 返回 'failed' 时不要自行重试——重试由引擎统一管理（retryCount/retryDelayMs）。
@@ -62,6 +63,22 @@ export interface WorkflowNodeContext<TConfig = Record<string, unknown>> {
   getLLMHistory?(): Array<{ role: 'user' | 'assistant'; content: string }>
   /** 多轮对话：登记本轮 LLM 调用（user=发送给模型的 prompt；assistant=模型输出）。仅 multiTurn 开启时生效 */
   recordLLMTurn?(role: 'user' | 'assistant', content: string): void
+  /**
+   * 持久化节点内中间状态（E2，11 号 §4.2/§5.5）：覆盖写 node_run.state_json；
+   * 可 JSON 序列化；超 512KB 拒存。崩溃/重启后本次执行被重放恢复时由
+   * loadState 原样返回。每轮迭代末调用一次，勿高频调用。
+   */
+  saveState(state: unknown): Promise<void>
+  /**
+   * 读取本节点本次执行的已存状态（首次执行为 undefined）。
+   * 引擎在 relaunch/rehydrate 时从 state_json 预载并注入。
+   */
+  loadState(): Promise<unknown | undefined>
+  /**
+   * 本次执行的稳定幂等键（E2/§5.7）：`${runId}:${nodeId}:${iterationIndex}`，
+   * 重执行/重试/恢复间不变——天然非幂等节点把它传给支持幂等的下游。
+   */
+  readonly executionKey: string
 }
 
 /** 节点日志接口（引擎实现：写 node_run.error/logs + console） */
@@ -105,6 +122,28 @@ export interface WorkflowNodeHandler<
    * 配置深度校验（编辑器保存时 + 引擎启动前调用；返回错误信息数组，空=通过）。
    * 校验模板语法、枚举值、数值范围等 config 语义；图结构校验由 graph-validator 负责。
    */
+  /**
+   * 人工决策回调（E3，11 号 §5.5）。节点挂起（execute 返回 waiting_review）后
+   * 收到决策时：
+   * - 声明了 resume：引擎回调本方法，携带决策与最近 saveState 的状态；
+   *   返回值语义同 execute——可再次 waiting_review（多轮人机交互）、
+   *   succeeded（出边，route 由 handler 显式给）、failed（标准失败处理）。
+   * - 未声明：维持旧"一次性终态"语义（节点直接 succeeded + 按决策出边），向后兼容。
+   * - 抛异常：节点 failed（retryable=false——不静默重试人工决策路径）。
+   * - loadState 为空：state=undefined 正常回调——handler 必须容忍缺失
+   *   （旧库行/首挂起前未 saveState）。
+   */
+  resume?(
+    ctx: WorkflowNodeContext<TConfig>,
+    review: {
+      decision: 'approve' | 'approve_with_changes' | 'reject' | 'timeout_approve' | 'timeout_reject'
+      comment?: string
+      editedValues?: Record<string, unknown>
+      choice?: string
+      decidedAt: string
+    },
+    state: unknown | undefined
+  ): Promise<WorkflowNodeExecutionResult>
   validateConfig(config: TConfig): string[]
   /** 执行节点逻辑 */
   execute(ctx: WorkflowNodeContext<TConfig>): Promise<WorkflowNodeExecutionResult>

@@ -38,6 +38,7 @@ import type { WorkflowEngineDeps } from './ports'
 import { WORKFLOW_JOURNAL_EVENT_TYPES, WORKFLOW_JOURNAL_DEFAULTS } from '@shared/types/workflow.types'
 import type { WorkflowJournalPort, JournalEventInput } from './journal'
 import { replayJournal } from './journal-replay'
+import { MAX_STATE_JSON_CHARS } from '@core/database/migrations/add-workflow-node-run-state-json'
 import { WorkflowNodeRegistry } from './node-registry'
 import { VariableResolver, resolveConfigDeep, stringifyValue } from './variable-resolver'
 import {
@@ -125,6 +126,8 @@ export interface NodeExecutionState {
   waitExpiresAt?: Date | null
   /** 节点进入终态时的激活序号（C1 环：seq 更大的入边激活触发重执行） */
   completedSeq?: number
+  /** 节点内持久化状态（E2：state_json 反序列化预载；saveState 更新） */
+  persistedState?: unknown
   startedAtMs: number
 }
 
@@ -661,6 +664,52 @@ export class WorkflowEngineService {
       }
       const re = replayJournal(input, events, snapshot)
       const exec = re.exec
+
+      // E2 state 预载 + E1 遗留 node_run 行对齐（不变量 4：journal 为准修复投影）。
+      // 读行 → 预载 persistedState（节点内中间状态）→ 终态/挂起态行滞后则 patch 对齐
+      if (this.deps.nodeRuns.listByRun) {
+        const rows = await this.deps.nodeRuns.listByRun(runId)
+        const rowByKey = new Map(rows.map(r => [`${r.nodeId}:${r.iterationIndex}`, r]))
+        const aligned: Array<{ nodeId: string; iterationIndex: number; patch: Record<string, unknown> }> = []
+        const align = (scope: { states: Map<string, NodeExecutionState> }): void => {
+          for (const st of scope.states.values()) {
+            const row = rowByKey.get(`${st.nodeId}:${st.iterationIndex}`)
+            if (row?.stateJson && st.persistedState === undefined) {
+              try {
+                st.persistedState = JSON.parse(row.stateJson)
+              } catch {
+                logger.warn(`[WorkflowEngine] rehydrate ${runId}: 节点 ${st.nodeId} state_json 解析失败（忽略）`)
+              }
+            }
+            // 行滞后于 journal（崩溃在事件与 patchNode 之间）：以重建态对齐
+            if (row && row.status !== st.status) {
+              aligned.push({
+                nodeId: st.nodeId,
+                iterationIndex: st.iterationIndex,
+                patch: {
+                  status: st.status,
+                  output: st.output ?? null,
+                  error: st.error ?? null,
+                  routeTaken: st.routeTaken ?? null,
+                  finishedAt: ['succeeded', 'failed', 'failed_recovered', 'cancelled', 'timed_out'].includes(st.status)
+                    ? new Date()
+                    : null,
+                },
+              })
+            }
+          }
+        }
+        align(exec.rootScope)
+        for (const scope of exec.loopScopes.values()) align(scope)
+        for (const a of aligned) {
+          await this.deps.nodeRuns.patchNode(runId, a.nodeId, a.iterationIndex, a.patch as never).catch(e =>
+            logger.warn(`[WorkflowEngine] rehydrate ${runId}: 节点 ${a.nodeId} 投影对齐失败`, e),
+          )
+        }
+        if (aligned.length > 0) {
+          logger.info(`[WorkflowEngine] rehydrate ${runId}: 对齐 ${aligned.length} 条滞后 node_run 行（journal 为准）`)
+        }
+      }
       if (exec.finished) {
         // 日志已含终态锚点但 run 行未终（崩溃在 run_finished 与 patchRun 之间）——
         // 修复投影：按锚点终态化 run 行，不重执行
@@ -857,6 +906,38 @@ export class WorkflowEngineService {
         route,
       },
     })
+
+    // E3（11 号 §5.5）：handler 声明了 resume → 回调决定后续（多轮人机交互），
+    // 结果走标准 settle 分发；未声明 → 旧"一次性终态"语义原样（向后兼容）
+    const reviewHandler = this.registry.get(node.type)
+    if (reviewHandler?.resume) {
+      // 留痕：决策可见（review 字段），但不标 succeeded/不激活出边——状态权在 handler
+      await this.deps.nodeRuns.patchNode(exec.input.runId, state.nodeId, state.iterationIndex, {
+        review: { decision: review.decision, comment: review.comment, editedValues: filteredEdits, decidedAt: review.decidedAt },
+        waitExpiresAt: null,
+      } as never)
+      state.reviewPayload = undefined
+      state.reviewTimeoutMs = null
+      state.waitExpiresAt = null
+      // resume 语义下的路由由 handler 显式给（不再自动套 approve/reject 边）；
+      // 此处 node.config 未模板解析（interaction 节点 config 少模板——预载语义够用）
+      const ctx = this.buildContext(exec, scope, node, state, node.config)
+      try {
+        const result: WorkflowNodeExecutionResult = await reviewHandler.resume(ctx, {
+          decision: review.decision,
+          comment: review.comment,
+          editedValues: filteredEdits ?? undefined,
+          choice: (review as { choice?: string }).choice,
+          decidedAt: review.decidedAt,
+        }, await ctx.loadState())
+        await this.settle(exec, scope, node, state, result)
+      } catch (e) {
+        // resume 抛异常：failed 且不可重试（不静默重试人工决策路径——§5.6 兼容矩阵）
+        await this.handleNodeFailure(exec, scope, node, state, `人工决策回调异常: ${errorMessage(e)}`, false)
+      }
+      return
+    }
+
     if (this.deps.journal) await this.appendEvent(exec, 'nodeCompleted', {
       nodeId: state.nodeId,
       scope,
@@ -2084,6 +2165,16 @@ export class WorkflowEngineService {
     state: NodeExecutionState,
     resolvedConfig: unknown
   ): WorkflowNodeContext {
+    // E2 节点状态 API：预载 state_json（relaunch/rehydrate 恢复现场）；首次执行为 undefined
+    let loadedState: unknown | undefined
+    let stateLoaded = false
+    const loadStateOnce = async (): Promise<unknown | undefined> => {
+      if (!stateLoaded) {
+        stateLoaded = true
+        loadedState = state.persistedState
+      }
+      return loadedState
+    }
     return {
       runId: exec.input.runId,
       runKey: scope.isRoot ? node.id : `${node.id}:${scope.iterationIndex}`,
@@ -2119,6 +2210,23 @@ export class WorkflowEngineService {
       recordLLMTurn: (role, content) => {
         if (exec.settings.multiTurn) exec.llmHistory.push({ role, content })
       },
+      // E2：节点内中间状态——覆盖写 state_json（超限拒存 fail-fast）；loadState 预载缓存
+      saveState: async (st: unknown) => {
+        const serialized = JSON.stringify(st)
+        if (serialized.length > MAX_STATE_JSON_CHARS) {
+          throw new Error(
+            `节点状态超限（${node.id}: ${serialized.length} > ${MAX_STATE_JSON_CHARS} 字符）——请缩减状态体量或改存引用`
+          )
+        }
+        state.persistedState = st
+        stateLoaded = true
+        loadedState = st
+        await this.deps.nodeRuns.patchNode(exec.input.runId, node.id, state.iterationIndex, {
+          stateJson: serialized,
+        } as never)
+      },
+      loadState: loadStateOnce,
+      executionKey: `${exec.input.runId}:${node.id}:${state.iterationIndex}`,
     }
   }
 

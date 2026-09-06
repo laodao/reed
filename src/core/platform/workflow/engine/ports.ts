@@ -57,8 +57,21 @@ export interface WorkflowRunPort {
   ): Promise<void>
 }
 
+/** 引擎恢复所需的节点行最小形态（state 预载 + 投影对齐） */
+export interface EngineNodeRunRow {
+  nodeId: string
+  iterationIndex: number
+  status: string
+  stateJson: string | null
+}
+
 /** 引擎对"节点执行记录"的最小写需求 */
 export interface WorkflowNodeRunPort {
+  /**
+   * 按 run 读节点行（rehydrate 用：state_json 预载 + journal 为准的投影对齐；
+   * 可选——引擎单测可不实现）。
+   */
+  listByRun?(runId: string): Promise<EngineNodeRunRow[]>
   /** 节点开始执行：建 checkpoint 行 */
   startNode(input: {
     runId: string
