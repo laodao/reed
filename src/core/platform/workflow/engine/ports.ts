@@ -20,7 +20,24 @@ import type {
 import type { WorkflowReviewRecord } from '../../../database/repositories/workflow-node-run.repository'
 
 /** 引擎对"运行记录"的最小写需求 */
+/** 引擎恢复所需的最小 run 行形态（rehydrate 装配 ExecuteRunInput 用） */
+export interface EngineRunRow {
+  runId: string
+  userId: string
+  definitionId: string
+  graphSnapshot: import('@shared/types/workflow.types').WorkflowGraph
+  startInputs: Record<string, unknown> | null
+  settings: Record<string, unknown> | null
+  triggerInfo: Record<string, unknown> | null
+  status: string
+}
+
 export interface WorkflowRunPort {
+  /**
+   * 读取 run 行（rehydrate 用；可选——引擎单测可不实现）。
+   * 返回引擎所需最小形态（graph 快照/启动输入/设置/触发上下文）。
+   */
+  getById?(runId: string): Promise<EngineRunRow | null>
   /** 引擎推进运行状态（含终态） */
   patchRun(
     runId: string,

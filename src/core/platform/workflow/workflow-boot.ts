@@ -106,9 +106,22 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
   const registry = createFullNodeRegistry()
   assertNodeRegistryConsistent(registry)
 
-  // 2. 引擎与服务装配
+  // 2. 引擎与服务装配（journal 注入：Run Journal 恢复事实源，11 号 E1；
+  //    数据源缺失时 journal=null——引擎照跑但无跨重启恢复能力，warn 留痕）
+  let journal: import('./engine/journal').WorkflowJournalPort | null = null
+  try {
+    if (db.dataSource) {
+      const { WorkflowRunEventRepository } = await import('@core/database/repositories/workflow-run-event.repository')
+      const { DbJournal } = await import('./engine/journal')
+      journal = new DbJournal(new WorkflowRunEventRepository(db.dataSource))
+    } else {
+      logger.warn('[workflow-boot] 数据源不可用：Run Journal 未装配（无跨重启恢复能力）')
+    }
+  } catch (e) {
+    logger.warn('[workflow-boot] Run Journal 装配失败（无跨重启恢复能力）', e)
+  }
   const engine = new WorkflowEngineService(
-    makeEngineDeps(db.workflowRuns, db.workflowNodeRuns),
+    makeEngineDeps(db.workflowRuns, db.workflowNodeRuns, journal),
     registry
   )
   // settings 表 wf:defaults 全局执行设置（配置链：默认值 → 全局层 → definition 覆盖）

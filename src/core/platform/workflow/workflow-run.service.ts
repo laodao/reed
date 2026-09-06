@@ -308,6 +308,15 @@ export class WorkflowRunService {
       this.deps.engine.resumeReview(runId, nodeId, decision)
     )
     if (!applied) {
+      // rehydrate 重路由（11 号 §5.4）：库中仍为挂起且 run 有 journal 日志 →
+      // 重建式恢复后重试一次决策（跨重启挂起 run 不再要求"先续跑"）
+      const rerun = await runWithUserAsync(userId, async () => {
+        const run = await this.deps.runs.getById(runId)
+        if (run?.status !== 'waiting_review') return false
+        if (!(await this.deps.engine.ensureActive(runId))) return false
+        return this.deps.engine.resumeReview(runId, nodeId, decision)
+      })
+      if (rerun) return { success: true }
       return {
         success: false,
         error: '决策未生效：运行不在活动挂起状态（应用重启后请先续跑），或提交被校验拒绝（如必填缺失/选项非法）',
@@ -502,10 +511,21 @@ export class WorkflowRunService {
       await runWithUserAsync(userId, async () => {
         for (const run of runs) {
           if (run.status === 'waiting_review') {
+            // 新格式（有 journal 日志）：重建式恢复——内存态复活，决策/超时即时生效
+            if (await this.deps.engine.ensureActive(run.id)) {
+              result.keptWaiting++
+              // 评审 #35 语义在重建态下由引擎 tickReviewTimeouts 承接（内存态在）
+              this.armWaitingReviewTimeout(run)
+              continue
+            }
+            // 旧格式（无日志）：挂起态保留 + 外部死线处理（降级不变）
             result.keptWaiting++
-            // 评审 #35：重启后未到期的挂起审核也要在死线到点被处理——
-            // 否则 keptWaiting 运行永久占互斥槽堵死该定义（tickReviewTimeouts 只扫内存态）
             this.armWaitingReviewTimeout(run)
+            continue
+          }
+          // running/pending：新格式优先重建续驱（在途节点重执行——11 号 §5.3）
+          if (await this.deps.engine.ensureActive(run.id)) {
+            // rehydrate 已接管（后台续驱到终态）；超时死线由引擎看门狗约束
             continue
           }
           const timedOut = run.timeoutAt ? run.timeoutAt.getTime() < now : false
@@ -534,7 +554,8 @@ export class WorkflowRunService {
  */
 export function makeEngineDeps(
   runs: WorkflowRunRepository,
-  nodeRuns: WorkflowNodeRunRepository
+  nodeRuns: WorkflowNodeRunRepository,
+  journal?: import('@core/platform/workflow/engine/journal').WorkflowJournalPort | null
 ): WorkflowEngineDeps {
   // 存量直推路径（总线未启动/平台事件发布失败时的兜底；语义与改动前一致）
   const legacyEmit = (event: Parameters<WorkflowEventPort['emit']>[0]): void => {
@@ -546,15 +567,32 @@ export function makeEngineDeps(
   }
   return {
     runs: {
+      getById: async runId => {
+        const row = await runs.getById(runId)
+        if (!row) return null
+        return {
+          runId: row.id,
+          userId: row.userId ?? '',
+          definitionId: row.definitionId,
+          graphSnapshot: row.graphSnapshot,
+          startInputs: row.startInputs ?? null,
+          // workflow_runs 行不持久化 settings（启动时由 definition 链即时解析）——
+          // rehydrate 以缺省设置重建（护栏类参数回到默认；已知近似，11 号 §5.3 注记）
+          settings: null,
+          triggerInfo: (row.triggerInfo as Record<string, unknown> | null) ?? null,
+          status: row.status,
+        }
+      },
       patchRun: (runId, patch) =>
         runs.update(runId, patch as UpdateWorkflowRunInput).then(() => undefined),
     },
     nodeRuns: {
-      startNode: input => nodeRuns.start(input),
+      startNode: input => nodeRuns.start(input).then(() => undefined),
       patchNode: (runId, nodeId, iterationIndex, patch) =>
         nodeRuns.update(runId, nodeId, iterationIndex, patch).then(() => undefined),
     },
     events: createWorkflowRunEventProducer(legacyEmit),
+    journal: journal ?? null,
   }
 }
 

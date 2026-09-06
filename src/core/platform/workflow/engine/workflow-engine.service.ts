@@ -37,6 +37,7 @@ import type { WorkflowNodeContext, WorkflowNodeExecutionResult } from './node-ha
 import type { WorkflowEngineDeps } from './ports'
 import { WORKFLOW_JOURNAL_EVENT_TYPES, WORKFLOW_JOURNAL_DEFAULTS } from '@shared/types/workflow.types'
 import type { WorkflowJournalPort, JournalEventInput } from './journal'
+import { replayJournal } from './journal-replay'
 import { WorkflowNodeRegistry } from './node-registry'
 import { VariableResolver, resolveConfigDeep, stringifyValue } from './variable-resolver'
 import {
@@ -109,7 +110,7 @@ export interface ReviewDecisionInput {
 }
 
 /** 节点内存态（作用域内以 nodeId 为键） */
-interface NodeExecutionState {
+export interface NodeExecutionState {
   nodeId: string
   iterationIndex: number
   status: WorkflowNodeRunStatus
@@ -151,7 +152,7 @@ function makeDeferred(): Deferred {
 }
 
 /** 执行作用域：根作用域或某循环迭代 */
-class ScopeState {
+export class ScopeState {
   readonly states = new Map<string, NodeExecutionState>()
   /** 边激活序号（C1 环支持：完成后的新激活触发重执行） */
   readonly activationSeqs = new Map<string, number>()
@@ -195,7 +196,7 @@ class ScopeState {
 }
 
 /** 循环驱动进度（挂起后续驱用） */
-interface LoopDriver {
+export interface LoopDriver {
   node: WorkflowNode
   state: NodeExecutionState
   list: unknown[]
@@ -204,7 +205,7 @@ interface LoopDriver {
 }
 
 /** 一次运行的完整内存态 */
-class RunExecution {
+export class RunExecution {
   readonly nodeById: Map<string, WorkflowNode>
   readonly incomingByNode: Map<string, WorkflowEdge[]>
   readonly outgoingByNode: Map<string, WorkflowEdge[]>
@@ -467,6 +468,7 @@ export class WorkflowEngineService {
         loopNodeId: d.node.id,
         results: d.results,
         listSize: d.list.length,
+        list: d.list,
         parentScopeKey: d.parentScope.key,
       })),
       reexecNodeIds: [...exec.reexecNodeIds],
@@ -597,6 +599,102 @@ export class WorkflowEngineService {
 
   private statusOf(exec: RunExecution): WorkflowRunStatus {
     return exec.finalStatus ?? 'failed'
+  }
+
+  // ==================== 重放恢复（11 号 §5.3 E1） ====================
+
+  /** rehydrate 单飞（per-runId Promise 去重——并发 reviewDecide/ticker 只触发一次） */
+  private rehydrating = new Map<string, Promise<boolean>>()
+
+  /**
+   * 运行是否活跃；不活跃且库中为可恢复态（pending/running/waiting_review）且有
+   * journal 事件 → rehydrate 重建。旧格式 run（无日志）返回 false（调用方走
+   * 兼容降级——中断标记/手动续跑）。
+   */
+  async ensureActive(runId: string): Promise<boolean> {
+    if (this.activeExecutions.has(runId)) return true
+    const inflight = this.rehydrating.get(runId)
+    if (inflight) return inflight
+    const p = this.rehydrate(runId).finally(() => this.rehydrating.delete(runId))
+    this.rehydrating.set(runId, p)
+    return p
+  }
+
+  /**
+   * 重建式恢复：读 run 行 + journal → replayJournal → 注册 activeExecutions →
+   * 修复 node_run 投影 → 挂起等待 / 在途节点重执行。返回是否成功重建。
+   */
+  async rehydrate(runId: string): Promise<boolean> {
+    const journal = this.deps.journal
+    if (!journal || !this.deps.runs?.getById) return false
+    try {
+      if (!(await journal.hasEvents(runId))) return false
+      const row = await this.deps.runs.getById(runId)
+      if (!row) return false
+      if (!['pending', 'running', 'waiting_review'].includes(row.status)) return false
+      const events = await journal.listByRun(runId)
+      if (events.length === 0) return false
+      const snapshot = [...events].reverse().find(
+        (e) => e.type === WORKFLOW_JOURNAL_EVENT_TYPES.snapshot,
+      )
+      const input: ExecuteRunInput = {
+        runId,
+        userId: row.userId,
+        definitionId: row.definitionId,
+        graph: row.graphSnapshot,
+        startInputs: row.startInputs ?? {},
+        settings: row.settings as never,
+        triggerInfo: { ...(row.triggerInfo ?? {}), resumedByRehydrate: true },
+      }
+      const re = replayJournal(input, events, snapshot)
+      const exec = re.exec
+      if (exec.finished) {
+        // 日志已含终态锚点但 run 行未终（崩溃在 run_finished 与 patchRun 之间）——
+        // 修复投影：按锚点终态化 run 行，不重执行
+        await this.deps.runs.patchRun(runId, {
+          status: exec.finalStatus ?? 'failed',
+          finishedAt: new Date(),
+        })
+        logger.info(`[WorkflowEngine] rehydrate ${runId}: 日志含终态锚点，修复 run 行终态`)
+        return false
+      }
+      this.activeExecutions.set(runId, exec)
+      logger.info(
+        `[WorkflowEngine] rehydrate ${runId}: 事件 ${events.length} 条（快照=${snapshot ? 'yes' : 'no'}），` +
+          `挂起=${re.suspended}，在途 ${re.inflightNodes.length} 节点`
+      )
+
+      if (re.suspended) {
+        // 挂起等待：不重执行（reviewDecide/ticker 续驱）；重挂看门狗与超时扫描上下文
+        this.armWatchdog(exec)
+        return true
+      }
+
+      // 在途节点重执行（不变量 3：副作用只在真实执行时发生）——
+      // 清运行态后重入 pump（computeReady 将其视为可启动）
+      for (const item of re.inflightNodes) {
+        const scope = exec.rootScope.key === item.scopeKey
+          ? exec.rootScope
+          : exec.loopScopes.get(item.scopeKey)
+        if (!scope) continue
+        const st = scope.states.get(item.nodeId)
+        if (st && st.status === 'running') {
+          scope.states.delete(item.nodeId)
+          exec.reexecNodeIds.add(item.nodeId) // 复用 node_run 行（唯一索引约束）
+        }
+      }
+      // 循环驱动器在途：迭代间崩溃 → 由 resumeSuspended 语义续驱（决策已无需）。
+      // 直接重驱 root pump + 各 driver 继续（driveLoop 从 results.length 续）
+      this.armWatchdog(exec)
+      exec.suspended = true // 借用 resumeSuspended 的续驱编排（其内部会复位 suspended）
+      void this.resumeSuspended(exec).catch(e =>
+        logger.error(`[WorkflowEngine] rehydrate 续驱异常 ${runId}`, e)
+      )
+      return true
+    } catch (e) {
+      logger.error(`[WorkflowEngine] rehydrate ${runId} 失败`, e)
+      return false
+    }
   }
 
   // ==================== 审核：挂起 / 恢复 / 超时 ====================
