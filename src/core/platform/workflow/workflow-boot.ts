@@ -20,6 +20,7 @@ import { getEventEmitter } from '@core/interfaces/event.interface'
 import type { EventChannel } from '@shared/types/event.types'
 import { assertNodeRegistryConsistent, createFullNodeRegistry } from './nodes'
 import { WorkflowTriggerScheduler } from './trigger/workflow-trigger-scheduler.service'
+import { WorkflowRunLogger } from './workflow-run-logger'
 import { createLogger } from '@core/utils/logger'
 
 const logger = createLogger('WorkflowBoot')
@@ -32,6 +33,8 @@ interface WorkflowSubsystem {
   scheduler: WorkflowTriggerScheduler
   appDefinitionService: AppDefinitionService
   appSessionService: AppSessionService
+  /** 运行执行日志（每步时间线；IPC wf:list-run-logs 取用） */
+  runLogger: WorkflowRunLogger
 }
 
 let subsystem: WorkflowSubsystem | null = null
@@ -129,6 +132,11 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
     globalSettings,
   })
   const definitionService = new WorkflowDefinitionService(db.workflowDefinitions, registry)
+
+  // 运行执行日志记录器：订阅 wf:run-event（引擎/服务直发或平台总线转发），
+  // 与 app-session / video-gen 节点同机制，不改引擎。
+  const runLogger = new WorkflowRunLogger()
+  runLogger.attach(cb => getEventEmitter().tapEvents?.(cb))
 
   // 3. boot 恢复：在途运行标记 interrupted/timed_out；已过期的挂起审核标 interrupted
   //    （重启后引擎内存态丢失，未过期的 waiting 保持等待用户续跑）
@@ -258,7 +266,7 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
     logger.error('[workflow-boot] 资产服务装配失败（继续启动）', e)
   }
 
-  subsystem = { engine, runService, definitionService, scheduler, appDefinitionService, appSessionService }
+  subsystem = { engine, runService, definitionService, scheduler, appDefinitionService, appSessionService, runLogger }
   logger.info('[workflow-boot] 工作流子系统已启动')
   return subsystem
 }
@@ -274,6 +282,7 @@ export function getWorkflowSubsystem(): WorkflowSubsystem {
 /** 测试/关停用：清空单例 */
 export function resetWorkflowSubsystem(): void {
   if (subsystem?.scheduler) subsystem.scheduler.stop()
+  subsystem?.runLogger?.stop()
   for (const channel of attachedChannels) channel.stop()
   attachedChannels = []
   archiveJob?.stop()

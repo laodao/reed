@@ -121,3 +121,5 @@ export {
   PlatformEventCursorEntity,
   PlatformEventDeadLetterEntity,
 } from './platform-event.entities'
+// 通知中心：用户已读状态独立落表（用户要求后端持久化，不用 localStorage）
+export { UserNotificationReadEntity } from './user-notification-read.entity'

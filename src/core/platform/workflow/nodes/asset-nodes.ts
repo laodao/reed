@@ -165,7 +165,10 @@ const readAssetNode: WorkflowNodeHandler = {
     { key: 'assetId', type: 'string', desc: '资产 ID' },
     { key: 'name', type: 'string', desc: '资产名' },
     { key: 'category', type: 'string', desc: '资产大类' },
+    { key: 'subCategory', type: 'string', desc: '资产子分类（资产中心二级分组）' },
     { key: 'kind', type: 'string', desc: '存储形态' },
+    { key: 'tags', type: 'json', desc: '标签数组' },
+    { key: 'description', type: 'string', desc: '资产描述' },
     { key: 'url', type: 'string', desc: '可访问链接（url 模式）' },
     { key: 'path', type: 'string', desc: '本地文件路径（path 模式，文件型）' },
     { key: 'content', type: 'string', desc: '文本内容（content 模式，text 型）' },
@@ -192,7 +195,10 @@ const readAssetNode: WorkflowNodeHandler = {
       assetId: record.id,
       name: record.name,
       category: record.category,
+      subCategory: record.subCategory ?? '',
       kind: record.kind,
+      tags: record.tags ?? [],
+      description: record.description ?? '',
       url: '',
       path: '',
       content: '',
@@ -218,14 +224,105 @@ const readAssetNode: WorkflowNodeHandler = {
     if (mode === 'metadata') {
       out.sizeBytes = record.sizeBytes
       out.mimeType = record.mimeType
-      out.tags = record.tags
-      out.description = record.description
       out.createdAt = record.createdAt
       out.metadata = record.metadata
+      out.sourceRef = record.sourceRef
     }
     return { status: 'succeeded', output: out }
   },
 }
 
+// ==================== 读取多个资产（引用资产已有内容） ====================
+
+/**
+ * 归一化资产 id：数组原样；JSON 数组字符串 / 逗号 / 空白分隔 → 字符串数组。
+ */
+function normalizeAssetIds(input: unknown): string[] {
+  if (Array.isArray(input)) return input.map(x => String(x).trim()).filter(Boolean)
+  if (input === undefined || input === null) return []
+  const s = String(input).trim()
+  if (!s) return []
+  try {
+    const parsed = JSON.parse(s)
+    if (Array.isArray(parsed)) return parsed.map((x: unknown) => String(x).trim()).filter(Boolean)
+  } catch { /* 非 JSON 数组 */ }
+  return s.split(/[,，\s]+/).map(x => x.trim()).filter(Boolean)
+}
+
+const readAssetsNode: WorkflowNodeHandler = {
+  type: 'read-assets',
+  controlKind: 'task',
+  cancellable: false,
+  outputSchema: [
+    { key: 'count', type: 'number', desc: '成功读取的资产数（含缺失跳过）' },
+    { key: 'assets', type: 'json', desc: '资产明细 [{ assetId,name,category,subCategory,kind,tags,description,url,path,content }]' },
+    { key: 'texts', type: 'json', desc: '文本型资产正文数组（与 assets 顺序一致）' },
+    { key: 'textJoined', type: 'string', desc: '所有文本正文合并（供 LLM 引用）' },
+    { key: 'imagePaths', type: 'json', desc: '图片/文件型本地路径数组（作参考图/底图候选）' },
+    { key: 'imageUrls', type: 'json', desc: '图片/文件型可访问链接数组' },
+    { key: 'missingIds', type: 'json', desc: '未找到的资产 id' },
+  ],
+  validateConfig(config) {
+    void (config as { assetIds?: unknown }) // assetIds 可为空：未选择资产时静默通过
+    return []
+  },
+  async execute(ctx: WorkflowNodeContext) {
+    const cfg = ctx.config as { assetIds?: unknown }
+    const ids = normalizeAssetIds(cfg.assetIds)
+    const service = getAssetService()
+    const assets: Array<Record<string, unknown>> = []
+    const texts: string[] = []
+    const imagePaths: string[] = []
+    const imageUrls: string[] = []
+    const missingIds: string[] = []
+    for (const id of ids) {
+      const record = await service.getAsset(id)
+      if (!record) {
+        missingIds.push(id)
+        continue
+      }
+      const path = service.resolveAssetPath(record)
+      const url = service.assetPreviewUrl(record)
+      const item: Record<string, unknown> = {
+        assetId: record.id,
+        name: record.name,
+        category: record.category,
+        subCategory: record.subCategory ?? '',
+        kind: record.kind,
+        tags: record.tags ?? [],
+        description: record.description ?? '',
+        url,
+        path: path ?? '',
+      }
+      if (record.kind === 'text') {
+        const content = record.textContent ?? ''
+        item.content = content
+        texts.push(content)
+      } else if (record.kind === 'json' && record.jsonContent) {
+        item.content = record.jsonContent
+        texts.push(record.jsonContent)
+      } else if (record.kind === 'file') {
+        if (record.category === 'image' || /^image\//.test(record.mimeType ?? '')) {
+          imagePaths.push(path ?? '')
+          imageUrls.push(url)
+        }
+      }
+      assets.push(item)
+    }
+    return {
+      status: 'succeeded',
+      output: {
+        count: assets.length,
+        assets,
+        texts,
+        textJoined: texts.join('\n\n'),
+        imagePaths,
+        imageUrls,
+        missingIds,
+      },
+    }
+  },
+}
+
 /** 资产节点集合 */
-export const ASSET_NODE_HANDLERS: WorkflowNodeHandler[] = [saveAssetNode, readAssetNode]
+export const ASSET_NODE_HANDLERS: WorkflowNodeHandler[] = [saveAssetNode, readAssetNode, readAssetsNode]

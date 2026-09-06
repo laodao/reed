@@ -187,6 +187,13 @@ export function registerWorkflowHandlers(): void {
   ipcBridge.handle('wf:get-run', (_e, p: { runId: string }) =>
     wrap(() => subsystem().runService.getRunDetail(p.runId))
   )
+  // 运行执行日志（时间线：每步开始/完成/审核/错误；见 workflow-run-logger）
+  ipcBridge.handle('wf:list-run-logs', (_e, p: { runId: string }) =>
+    wrap(async () => {
+      const logs = subsystem().runLogger.readRun(p.runId)
+      return { total: logs.length, logs }
+    })
+  )
   ipcBridge.handle(
     'wf:list-runs',
     (_e, p: { definitionId?: string; status?: string; page: number; pageSize: number }) =>

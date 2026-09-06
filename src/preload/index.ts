@@ -728,6 +728,7 @@ const electronAPI = {
       editedValues?: Record<string, unknown>
     }) => ipcRenderer.invoke('wf:review-decide', p),
     getRun: (runId: string) => ipcRenderer.invoke('wf:get-run', { runId }),
+    listRunLogs: (runId: string) => ipcRenderer.invoke('wf:list-run-logs', { runId }),
     listRuns: (p: { definitionId?: string; status?: string; page: number; pageSize: number }) =>
       ipcRenderer.invoke('wf:list-runs', p),
     deleteRun: (runId: string) => ipcRenderer.invoke('wf:delete-run', { runId }),

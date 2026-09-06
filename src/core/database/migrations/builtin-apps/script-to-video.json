@@ -2,56 +2,64 @@
   "kind": "the-bot-workflow",
   "formatVersion": 1,
   "name": "[内置] 短视频脚本生成视频",
-  "description": "输入短视频脚本 markdown → AI 拆解分镜（画面/口播/字幕/时长）→ 每镜头文生图(Seedream) → 图生视频动化(火山 Seedance2.0) → 口播配音(TTS) → 生成字幕时间轴(SRT) → ffmpeg 合成(拼接+烧录字幕+配音/BGM) → 存入资产库。正式跑之前可审阅「素材预览」存档（各镜头文案+图片）。",
+  "description": "输入短视频脚本 markdown + 视频风格 → AI 拆解分镜（画面/口播/字幕/时长）→ 每镜头文生图(Seedream) → **逐镜头人工审核（看画面描述+参考图，批准后才生成视频）** → 图生视频动化(火山 Seedance2.0) → 口播配音(TTS) → 字幕时间轴(SRT) → ffmpeg 高质量合成(拼接+烧录字幕+配音/BGM) → 存入资产库。",
   "category": "视频制作",
   "graph": {
     "version": 1,
     "nodes": [
       { "id": "start", "type": "start", "name": "开始", "position": { "x": 40, "y": 400 }, "config": { "inputs": [
         { "key": "script", "label": "短视频脚本（markdown）", "type": "textarea", "required": true, "defaultValue": "", "help": "吃瓜工作流产出的脚本 markdown（含脚本概览/完整口播/分镜表/发布文案）" },
+        { "key": "videoStyle", "label": "视频风格（文字描述）", "type": "textarea", "required": true, "defaultValue": "", "help": "决定画面的构图/色调/氛围与镜头语言。示例：时政风（庄重、演播室/发布会场景、中近景）；事件追踪风（纪实感、现场抓拍、手持运镜）；技术讲解风（干净演播演示、明亮、示意图感）；知识科普风（明快配色、插画感、信息分层）。也可自定义任意风格描述。" },
+        { "key": "styleReferenceImage", "label": "风格参考图（本地路径，可选）", "type": "string", "required": false, "defaultValue": "", "help": "一张能代表目标视觉风格的参考图（jpg/png 本地路径），文生图阶段作为风格参考" },
         { "key": "videoProviderConfigId", "label": "视频 Provider（火山/Seedance）", "type": "select-dynamic", "source": "providerConfigs", "required": true },
         { "key": "videoModelId", "label": "视频模型 ID", "type": "string", "required": true, "defaultValue": "", "help": "如火山引擎 Seedance 2.0（ep-xxxx）" },
         { "key": "imageProviderConfigId", "label": "文生图 Provider（Seedream）", "type": "select-dynamic", "source": "providerConfigs", "required": true },
         { "key": "imageModelId", "label": "文生图模型 ID", "type": "string", "required": true, "defaultValue": "", "help": "如 Seedream-4.5（ep-xxxx）" },
         { "key": "voiceId", "label": "配音音色（voiceId）", "type": "string", "required": true, "defaultValue": "" },
         { "key": "voiceProviderConfigId", "label": "配音 Provider（CosyVoice/DashScope）", "type": "select-dynamic", "source": "providerConfigs", "required": true, "help": "音色所属的语音提供商配置（与 voiceId 匹配）" },
-        { "key": "width", "label": "视频宽度", "type": "number", "defaultValue": 1080 },
-        { "key": "height", "label": "视频高度", "type": "number", "defaultValue": 1920 },
+        { "key": "width", "label": "视频宽度", "type": "number", "defaultValue": 720 },
+        { "key": "height", "label": "视频高度", "type": "number", "defaultValue": 1280 },
         { "key": "bgmPath", "label": "背景音乐（本地路径，可选）", "type": "string", "required": false, "defaultValue": "" },
         { "key": "model", "label": "模型（拆解脚本用）", "type": "model", "modelTypes": ["text"], "required": true }
       ] } },
       { "id": "parse1", "type": "llm-chat", "name": "拆解脚本", "position": { "x": 300, "y": 400 }, "config": {
-        "systemPrompt": "你是视频分镜师。把短视频脚本解析为可执行的镜头序列，只输出 JSON：{\"narration\":\"完整口播文案(原样保留，可用 | 分隔句中停顿)\",\"shots\":[{\"visual\":\"画面描述(具体可执行: 主体/场景/光线/景别/运镜)\",\"caption\":\"该镜头字幕(短句)\",\"duration\":\"该镜头时长(秒，数字)\"}]}。时长按脚本分镜表；脚本未分时按口播句均分。镜头数按脚本实际分镜，最多 20。",
+        "systemPrompt": "你是资深视频分镜师。把短视频脚本解析为可执行的镜头序列，只输出 JSON：{\"narration\":\"完整口播文案(原样保留，可用 | 分隔句中停顿)\",\"shots\":[{\"visual\":\"画面描述\",\"caption\":\"该镜头字幕(短句)\",\"duration\":\"该镜头时长(秒，数字)\"}]}。\n\n【视频风格】整片必须服从用户指定的风格：{{start.videoStyle}}。所有镜头的构图、色调、氛围、镜头语言都要贴合该风格。\n\n【画面描述 visual 的硬性要求】\n1. 只描述“可实拍的物理场景”：主体及其动作、环境场景、光线、色调、构图与景别、氛围情绪、镜头运动方向（如缓慢推近/横移/俯拍下降）。\n2. 禁止出现任何文字/UI/图形元素（例如黑屏白字、印章文字、日历动画、信息卡片、LOGO、图例、图表标注、贴片字幕、水印等）——所有需要传达的文字一律写进 caption 字幕字段，由成片字幕层呈现，绝不写进画面。\n3. 每一镜画面描述 1~3 句，必须明确给出镜头运动。\n\n时长按脚本分镜表；脚本未分时按口播句均分。镜头数按脚本实际分镜，最多 20。",
         "prompt": "脚本：\n{{start.script}}\n\n请输出镜头序列 JSON，不要任何解释。",
         "jsonMode": true, "providerConfigId": "{{start.model.providerConfigId}}", "modelId": "{{start.model.modelId}}"
       } },
-      { "id": "htmlPre", "type": "code", "name": "素材预览存档", "position": { "x": 560, "y": 400 }, "config": { "code": "const shots=inputs.shots||[]; const html='<h3>素材预览</h3><div>'+(shots.map((x,i)=>'<div style=\"margin:6px 0\"><b>镜头'+(i+1)+'</b> · 时长'+(x.duration||'')+'s<br>画面：'+(x.visual||'')+'<br>字幕：'+(x.caption||'')+'</div>').join(''))+'</div>'; return { html }", "inputs": [ { "key": "shots", "value": "{{parse1.parsed.shots}}" } ] } },
+      { "id": "htmlPre", "type": "code", "name": "素材预览存档", "position": { "x": 560, "y": 400 }, "config": { "code": "const shots=inputs.shots||[]; const style=inputs.style||''; const html='<h3>素材预览（风格：'+(style||'未指定')+'）</h3><div>'+(shots.map((x,i)=>'<div style=\"margin:6px 0\"><b>镜头'+(i+1)+'</b> · 时长'+(x.duration||'')+'s<br>画面：'+(x.visual||'')+'<br>字幕：'+(x.caption||'')+'</div>').join(''))+'</div>'; return { html }", "inputs": [ { "key": "shots", "value": "{{parse1.parsed.shots}}" }, { "key": "style", "value": "{{start.videoStyle}}" } ] } },
       { "id": "loopShot", "type": "loop", "name": "逐镜头生成画面", "position": { "x": 820, "y": 400 }, "config": { "listExpression": "{{parse1.parsed.shots}}", "emptyPolicy": "skip", "errorPolicy": "fail" } },
-      { "id": "img1", "type": "image-gen", "name": "文生图(镜头画面)", "position": { "x": 1060, "y": 320 }, "config": { "prompt": "{{loopShot.item.visual}}（统一纪录片/资讯风：写实、干净、信息图质感；竖版构图）", "providerConfigId": "{{start.imageProviderConfigId}}", "modelId": "{{start.imageModelId}}", "width": "{{start.width}}", "height": "{{start.height}}", "promptExtend": false } },
-      { "id": "vid1", "type": "video-gen", "name": "图生视频(动化)", "position": { "x": 1320, "y": 320 }, "config": { "providerConfigId": "{{start.videoProviderConfigId}}", "model": "{{start.videoModelId}}", "image": "{{img1.images.0.localUrl}}", "prompt": "{{loopShot.item.visual}} 生成连贯自然运动", "duration": "{{loopShot.item.duration}}", "width": "{{start.width}}", "height": "{{start.height}}" } },
-      { "id": "tts1", "type": "tts", "name": "口播配音", "position": { "x": 1520, "y": 400 }, "config": { "text": "{{parse1.parsed.narration}}", "voiceId": "{{start.voiceId}}", "providerConfigId": "{{start.voiceProviderConfigId}}" } },
+      { "id": "img1", "type": "image-gen", "name": "文生图(镜头画面)", "position": { "x": 1060, "y": 260 }, "config": { "prompt": "{{loopShot.item.visual}}（整体风格：{{start.videoStyle}}；竖版构图；写实、干净、无任何文字）", "negativePrompt": "文字、字体、logo、水印、UI 元素、图标、按钮、弹窗、乱码、涂鸦、图形、表格、图表、标注、贴片字幕、卡通", "providerConfigId": "{{start.imageProviderConfigId}}", "modelId": "{{start.imageModelId}}", "width": "{{start.width}}", "height": "{{start.height}}", "referenceImages": "{{start.styleReferenceImage}}", "promptExtend": false } },
+      { "id": "review1", "type": "human-review", "name": "审核镜头(批准后生成视频)", "position": { "x": 1280, "y": 260 }, "config": {
+        "payload": { "stage": "逐镜头审核：图生视频前确认", "shotIndex": "{{loopShot.index}}", "visual": "{{loopShot.item.visual}}", "caption": "{{loopShot.item.caption}}", "duration": "{{loopShot.item.duration}}", "imageUrl": "{{img1.images.0.url}}", "imageLocalUrl": "{{img1.images.0.localUrl}}" },
+        "editableFields": [ { "key": "visual" }, { "key": "caption" }, { "key": "duration" } ],
+        "timeoutMs": null, "timeoutPolicy": "fail"
+      } },
+      { "id": "vid1", "type": "video-gen", "name": "图生视频(动化)", "position": { "x": 1500, "y": 260 }, "config": { "providerConfigId": "{{start.videoProviderConfigId}}", "model": "{{start.videoModelId}}", "image": "{{img1.images.0.localUrl}}", "prompt": "{{review1.visual}} 镜头风格：{{start.videoStyle}}。保持首帧主体一致，生成连贯自然运动（运动幅度与画面描述一致，避免剧烈形变）", "negativePrompt": "画面扭曲、形变、闪烁、乱码文字、多余文字", "duration": "{{review1.duration}}", "width": "{{start.width}}", "height": "{{start.height}}" } },
+      { "id": "tts1", "type": "tts", "name": "口播配音", "position": { "x": 1500, "y": 500 }, "config": { "text": "{{parse1.parsed.narration}}", "voiceId": "{{start.voiceId}}", "providerConfigId": "{{start.voiceProviderConfigId}}" } },
       { "id": "code1", "type": "code", "name": "组装镜头段", "position": { "x": 1780, "y": 400 }, "config": {
-        "code": "const shots=inputs.shots||[]; const res=inputs.results||[]; const segs=[];\nfor(let i=0;i<shots.length;i++){ const r=res[i]||{}; const s=shots[i]; const vid=(r.vid1&&r.vid1.videoPath)?r.vid1.videoPath:'';\n if(vid) segs.push({ source:vid, kind:'video', duration:Number(s.duration)||3, caption:s.caption||'' }); }\nreturn { segments: segs };",
+        "code": "const shots=inputs.shots||[]; const res=inputs.results||[]; const segs=[];\nfor(let i=0;i<shots.length;i++){ const r=res[i]||{}; const s=shots[i]; const vid=(r.videoPath||'');\n if(vid) segs.push({ source:vid, kind:'video', duration:Number(s.duration)||3, caption:s.caption||'' }); }\nreturn { segments: segs };",
         "inputs": [ { "key": "shots", "value": "{{parse1.parsed.shots}}" }, { "key": "results", "value": "{{loopShot.results}}" } ]
       } },
-      { "id": "comp1", "type": "video-compose", "name": "合成视频", "position": { "x": 2040, "y": 400 }, "config": { "segments": "{{code1.result.segments}}", "audioPath": "{{tts1.audioPath}}", "bgmPath": "{{start.bgmPath}}", "width": "{{start.width}}", "height": "{{start.height}}", "outputName": "脚本成片" } },
-      { "id": "save1", "type": "save-asset", "name": "视频存档", "position": { "x": 2300, "y": 400 }, "config": { "content": "{{comp1.videoPath}}", "kind": "file", "category": "video", "subCategory": "短视频", "name": "脚本成片", "tags": "短视频,视频" } },
-      { "id": "saveXml", "type": "save-asset", "name": "素材预览存档", "position": { "x": 2300, "y": 520 }, "config": { "content": "{{htmlPre.result.html}}", "kind": "text", "category": "text", "subCategory": "视频素材", "name": "素材预览", "tags": "视频,素材" } },
-      { "id": "end", "type": "end", "name": "结束", "position": { "x": 2560, "y": 400 }, "config": {} }
+      { "id": "comp1", "type": "video-compose", "name": "合成视频", "position": { "x": 2020, "y": 400 }, "config": { "segments": "{{code1.result.segments}}", "audioPath": "{{tts1.audioPath}}", "bgmPath": "{{start.bgmPath}}", "width": "{{start.width}}", "height": "{{start.height}}", "outputName": "脚本成片" } },
+      { "id": "save1", "type": "save-asset", "name": "视频存档", "position": { "x": 2280, "y": 400 }, "config": { "content": "{{comp1.videoPath}}", "kind": "file", "category": "video", "subCategory": "短视频", "name": "脚本成片", "tags": "短视频,视频" } },
+      { "id": "saveXml", "type": "save-asset", "name": "素材预览存档", "position": { "x": 2280, "y": 520 }, "config": { "content": "{{htmlPre.result.html}}", "kind": "text", "category": "text", "subCategory": "视频素材", "name": "素材预览", "tags": "视频,素材" } },
+      { "id": "end", "type": "end", "name": "结束", "position": { "x": 2540, "y": 400 }, "config": {} }
     ],
     "edges": [
       { "id": "e1", "sourceNodeId": "start", "targetNodeId": "parse1", "kind": "normal" },
       { "id": "e2", "sourceNodeId": "parse1", "targetNodeId": "htmlPre", "kind": "normal" },
       { "id": "e3", "sourceNodeId": "htmlPre", "targetNodeId": "loopShot", "kind": "normal" },
       { "id": "e4", "sourceNodeId": "loopShot", "targetNodeId": "img1", "kind": "loop-body" },
-      { "id": "e5", "sourceNodeId": "img1", "targetNodeId": "vid1", "kind": "normal" },
-      { "id": "e6", "sourceNodeId": "vid1", "targetNodeId": "loopShot", "kind": "loop-back" },
-      { "id": "e7", "sourceNodeId": "loopShot", "targetNodeId": "tts1", "kind": "loop-done" },
-      { "id": "e8", "sourceNodeId": "tts1", "targetNodeId": "code1", "kind": "normal" },
-      { "id": "e9", "sourceNodeId": "code1", "targetNodeId": "comp1", "kind": "normal" },
-      { "id": "e10", "sourceNodeId": "comp1", "targetNodeId": "save1", "kind": "normal" },
-      { "id": "e11", "sourceNodeId": "save1", "targetNodeId": "saveXml", "kind": "normal" },
-      { "id": "e12", "sourceNodeId": "saveXml", "targetNodeId": "end", "kind": "normal" }
+      { "id": "e5", "sourceNodeId": "img1", "targetNodeId": "review1", "kind": "normal" },
+      { "id": "e6", "sourceNodeId": "review1", "targetNodeId": "vid1", "kind": "approve" },
+      { "id": "e7", "sourceNodeId": "vid1", "targetNodeId": "loopShot", "kind": "loop-back" },
+      { "id": "e8", "sourceNodeId": "loopShot", "targetNodeId": "tts1", "kind": "loop-done" },
+      { "id": "e9", "sourceNodeId": "tts1", "targetNodeId": "code1", "kind": "normal" },
+      { "id": "e10", "sourceNodeId": "code1", "targetNodeId": "comp1", "kind": "normal" },
+      { "id": "e11", "sourceNodeId": "comp1", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e12", "sourceNodeId": "save1", "targetNodeId": "saveXml", "kind": "normal" },
+      { "id": "e13", "sourceNodeId": "saveXml", "targetNodeId": "end", "kind": "normal" }
     ]
   },
   "triggers": [],

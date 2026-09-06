@@ -5,6 +5,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { ElNotification } from 'element-plus'
+import router from '@/router'
 
 /** wf:run-event 载荷（判别联合的宽松形态） */
 export interface WfRunEvent {
@@ -27,6 +28,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const runStatusMap = ref<Map<string, string>>(new Map())
   /** 待审核数量（顶栏徽标用） */
   const pendingReviewCount = ref(0)
+  /** 最近一次待审核运行的 runId（通知点击直达运行详情） */
+  const pendingReviewRunId = ref('')
 
   let unsubscribers: Array<() => void> = []
   /** 订阅幂等标志：反复进出运行详情页/编辑器不再累积 ipcRenderer 监听器 */
@@ -44,14 +47,36 @@ export const useWorkflowStore = defineStore('workflow', () => {
     } else if (e.type === 'run-status' && e.runId) {
       runStatusMap.value.set(e.runId, e.status ?? '')
     } else if (e.type === 'notify') {
-      ElNotification({
+      const ins = ElNotification({
+        offset: 52, // 下移避开右上角 TabBar 铃铛（height 40px）
         title: e.title ?? '工作流通知',
         message: e.message ?? '',
         type: (e.level as 'success' | 'warning' | 'error' | 'info') ?? 'info',
+        // 点击即自动消失（用户需求：通知点击后自动消失）；有 runId 时顺带直达运行详情
+        onClick: () => {
+          ins.close()
+          if (e.runId) void router.push(`/workflow/run/${e.runId}`)
+        },
       })
     } else if (e.type === 'review-requested') {
       pendingReviewCount.value++
-      ElNotification({ title: '待审核', message: `工作流运行等待您的审核`, type: 'warning' })
+      pendingReviewRunId.value = e.runId ?? ''
+      const runId = e.runId ?? ''
+      const nodeName = (e as { nodeName?: string }).nodeName
+      const ins = ElNotification({
+        offset: 52, // 下移避开右上角 TabBar 铃铛（height 40px）
+        title: '待审核',
+        message: nodeName
+          ? `运行 ${runId} 在「${nodeName}」等待您的审核，点击查看`
+          : `运行 ${runId} 等待您的审核，点击查看`,
+        type: 'warning',
+        duration: 0,
+        // 点击：关闭弹窗（自动消失）+ 直达运行详情页审核
+        onClick: () => {
+          ins.close()
+          if (runId) void router.push(`/workflow/run/${runId}`)
+        },
+      })
     }
   }
 
@@ -77,5 +102,13 @@ export const useWorkflowStore = defineStore('workflow', () => {
     runStatusMap.value.delete(runId)
   }
 
-  return { nodeStatusMap, runStatusMap, pendingReviewCount, subscribe, unsubscribeAll, clearRun }
+  return {
+    nodeStatusMap,
+    runStatusMap,
+    pendingReviewCount,
+    pendingReviewRunId,
+    subscribe,
+    unsubscribeAll,
+    clearRun,
+  }
 })

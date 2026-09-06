@@ -62,6 +62,7 @@ export type WorkflowNodeType =
   // AI 能力（调用本系统已有服务）
   | 'llm-chat'
   | 'kb-retrieve'
+  | 'kb-query-multi'
   | 'kb-ingest'
   | 'web-search'
   | 'translate'
@@ -72,6 +73,7 @@ export type WorkflowNodeType =
   | 'video-extract-audio'
   | 'video-gen'
   | 'video-compose'
+  | 'video-preset'
   // 技能（Skill 技能包调用）
   | 'skill-call'
   // 通用
@@ -95,6 +97,7 @@ export type WorkflowNodeType =
   // 资产（通用资产库：工作流成果沉淀与复用）
   | 'save-asset'
   | 'read-asset'
+  | 'read-assets'
   // 日记（知识提炼存日记等场景：成果落日记库，/diary 阅读）
   | 'save-diary'
   // 新闻采集（内置应用 C1 早报 / C2 周报数据层：预置主题多源抓取链接）
@@ -291,6 +294,18 @@ export interface WorkflowNodeConfigMap {
     knowledgeBaseId: string
     query: string
     topK?: number
+    /** 相似度阈值 0-1 */
+    threshold?: number
+  }
+
+  'kb-query-multi': {
+    /** 知识库 id（多选数组；兼容逗号/空白分隔字符串或 JSON 数组字符串） */
+    knowledgeBaseIds: string[] | string
+    query: string
+    /** 每库检索条数（默认 5） */
+    topKPerKb?: number
+    /** 跨库合并后最多返回条数（默认 20） */
+    maxResults?: number
     /** 相似度阈值 0-1 */
     threshold?: number
   }
@@ -539,6 +554,11 @@ export interface WorkflowNodeConfigMap {
     output?: 'url' | 'path' | 'content' | 'metadata'
   }
 
+  'read-assets': {
+    /** 资产 ID 列表（多选；兼容数组/逗号或空白分隔字符串） */
+    assetIds: string[] | string
+  }
+
   'save-diary': {
     /** 目标日记文件夹 ID（缺省=自动创建/复用「AI 提炼」根文件夹） */
     folderId?: string
@@ -784,6 +804,16 @@ export type WorkflowRunEvent =
       title: string
       message: string
     }
+  | {
+      // 节点内部日志（引擎 ctx.logger 镜像 → 执行日志时间线；前端默认忽略展示）
+      type: 'node-log'
+      runId: string
+      nodeId: string
+      iterationIndex: number
+      level: 'debug' | 'info' | 'warn' | 'error'
+      message: string
+      detail?: string
+    }
 
 
 
@@ -818,6 +848,7 @@ export const WORKFLOW_RUN_EVENT_TYPES = {
   nodeProgress: 'node-progress',
   reviewRequested: 'review-requested',
   notify: 'notify',
+  nodeLog: 'node-log',
 } as const
 
 /** 导入导出文件格式标识 */
@@ -842,6 +873,7 @@ export const WORKFLOW_NODE_TYPES = {
   assign: 'assign',
   'llm-chat': 'llm-chat',
   'kb-retrieve': 'kb-retrieve',
+  'kb-query-multi': 'kb-query-multi',
   'kb-ingest': 'kb-ingest',
   'web-search': 'web-search',
   translate: 'translate',
@@ -868,11 +900,13 @@ export const WORKFLOW_NODE_TYPES = {
   'data-table': 'data-table',
   'save-asset': 'save-asset',
   'read-asset': 'read-asset',
+  'read-assets': 'read-assets',
   'save-diary': 'save-diary',
   'crawl-news': 'crawl-news',
   'crawl-links': 'crawl-links',
   'video-gen': 'video-gen',
   'video-compose': 'video-compose',
+  'video-preset': 'video-preset',
 } as const satisfies Record<WorkflowNodeType, WorkflowNodeType>
 
 /** 出边类型常量（键=值，与 WorkflowEdgeKind 一一对应） */

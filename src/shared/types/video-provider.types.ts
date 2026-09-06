@@ -98,6 +98,12 @@ export interface VideoGenerationRequest {
   // 其他参数
   seed?: number
   skipHistory?: boolean      // 是否跳过历史记录
+
+  // ComfyUI H3 画质档（评审 #105；其他 Provider 忽略）
+  /** 画质档：high=704x1248 全质量 | low=480x864（默认 high） */
+  quality?: 'high' | 'low'
+  /** 采样步数：20=全质量 | 4=turbo（默认 20；网关 steps 参数） */
+  steps?: number
 }
 
 /**
@@ -113,7 +119,7 @@ export interface VideoGenerationResponse {
 /**
  * 视频 Provider 类型标识
  */
-export type VideoProviderType = 'bailian' | 'dashscope' | 'volcengine' | 'runway' | 'pika' | 'kling' | 'luma' | 'minimax' | 'zhipu' | 'custom'
+export type VideoProviderType = 'bailian' | 'dashscope' | 'volcengine' | 'runway' | 'pika' | 'kling' | 'luma' | 'minimax' | 'zhipu' | 'comfyui' | 'custom'
 
 /**
  * 视频 Provider 定义（用于工厂创建）

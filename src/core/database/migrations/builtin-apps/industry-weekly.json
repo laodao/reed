@@ -106,6 +106,20 @@
         "config": { "title": "{{start.topic}} 行业周报 {{sys.week}}", "template": "# {{start.topic}} 行业周报（{{sys.week}}）\n\n{{gen1.content}}", "templateId": "industryWeekly" }
       },
       {
+        "id": "saveImgCustom",
+        "type": "save-asset",
+        "name": "周报长图存资产库（自定义模板）",
+        "position": { "x": 1540, "y": 580 },
+        "config": { "content": "{{report_custom.filePath}}", "kind": "file", "category": "image", "subCategory": "行业周报长图", "name": "{{start.topic}}周报长图-{{sys.week}}", "tags": "周报,{{start.topic}}" }
+      },
+      {
+        "id": "saveImgDefault",
+        "type": "save-asset",
+        "name": "周报长图存资产库（内置版式）",
+        "position": { "x": 1540, "y": 340 },
+        "config": { "content": "{{report_default.filePath}}", "kind": "file", "category": "image", "subCategory": "行业周报长图", "name": "{{start.topic}}周报长图-{{sys.week}}", "tags": "周报,{{start.topic}}" }
+      },
+      {
         "id": "save1",
         "type": "save-asset",
         "name": "保存到资产库",
@@ -138,8 +152,10 @@
       { "id": "e8", "sourceNodeId": "cond1", "targetNodeId": "read1", "kind": "branch", "branchId": "hasTemplate" },
       { "id": "e9", "sourceNodeId": "cond1", "targetNodeId": "report_default", "kind": "branch", "branchId": "noTemplate" },
       { "id": "e10", "sourceNodeId": "read1", "targetNodeId": "report_custom", "kind": "normal" },
-      { "id": "e11", "sourceNodeId": "report_custom", "targetNodeId": "save1", "kind": "normal" },
-      { "id": "e12", "sourceNodeId": "report_default", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e11", "sourceNodeId": "report_custom", "targetNodeId": "saveImgCustom", "kind": "normal" },
+      { "id": "e12", "sourceNodeId": "report_default", "targetNodeId": "saveImgDefault", "kind": "normal" },
+      { "id": "e15", "sourceNodeId": "saveImgCustom", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e16", "sourceNodeId": "saveImgDefault", "targetNodeId": "save1", "kind": "normal" },
       { "id": "e13", "sourceNodeId": "save1", "targetNodeId": "notify1", "kind": "normal" },
       { "id": "e14", "sourceNodeId": "notify1", "targetNodeId": "end", "kind": "normal" }
     ]

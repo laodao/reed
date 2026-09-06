@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="tab-bar">
     <div class="tab-list" ref="tabListRef">
       <div
@@ -18,6 +18,12 @@
           <Close />
         </el-icon>
       </div>
+    </div>
+
+
+    <!-- 通知中心（顶栏铃铛，双端常驻） -->
+    <div class="tab-actions tab-actions-notice">
+      <NotificationCenter />
     </div>
 
     <!--
@@ -98,6 +104,7 @@ import {
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useTabsStore } from '@/stores/tabs'
 import { useUserStore } from '@/stores/user'
+import NotificationCenter from '@/components/common/NotificationCenter.vue'
 import type { TabItem } from '@/stores/tabs'
 
 const router = useRouter()

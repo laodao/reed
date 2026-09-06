@@ -15,6 +15,7 @@
 
 import type { FormFieldDef } from '../nodes/interaction-nodes'
 import { runWithUserAsync } from '@core/context/user-context'
+import { getEventEmitter } from '@core/interfaces/event.interface'
 import type {
   WorkflowEdge,
   WorkflowGraph,
@@ -24,6 +25,7 @@ import type {
 } from '@shared/types/workflow.types'
 import {
   encodeWorkflowHandleId,
+  WORKFLOW_RUN_EVENT_CHANNEL,
   WORKFLOW_NODE_TYPES,
   WORKFLOW_RUN_STATUSES,
   WORKFLOW_NODE_RUN_STATUSES,
@@ -620,6 +622,13 @@ export class WorkflowEngineService {
         if (scope.settledAt?.done) continue
         await this.pump(exec, scope)
         if (exec.suspended) return // 又挂起了
+        if (scope.failed || exec.finished) return
+        // 评审 #102：审核批准后续驱——本迭代可能含异步任务节点（video-gen/web-extract 等
+        // fire-and-forget），须等待作用域静默（与 driveLoop 初次驱动语义一致），否则下一迭代
+        // 与在飞任务并发启动（同跑多次 approve 触发 node_run 唯一索引冲突），且
+        // collectIterationResult 读到 running 输出、results 汇聚丢失异步产物。
+        await this.waitScopeSettled(exec, scope)
+        if (exec.suspended) return // 同迭代再次挂起（二次审核），等待下次续驱
         if (scope.failed || exec.finished) return
         // 迭代收敛：继续驱动所属循环
         const loopNodeId = parseScopeLoopNodeId(scopeKey)
@@ -1657,10 +1666,23 @@ export class WorkflowEngineService {
       triggerInfo: exec.input.triggerInfo ?? {},
       signal: exec.abortController.signal,
       logger: {
-        debug: (msg, extra) => console.debug(`[wf:${node.id}] ${msg}`, extra ?? ''),
-        info: (msg, extra) => console.info(`[wf:${node.id}] ${msg}`, extra ?? ''),
-        warn: (msg, extra) => logger.warn(`[wf:${node.id}] ${msg}`, extra ?? ''),
-        error: (msg, extra) => logger.error(`[wf:${node.id}] ${msg}`, extra ?? ''),
+        // 节点内部日志：控制台照常输出，同时镜像为 node-log 事件（执行日志时间线收录）
+        debug: (msg, extra) => {
+          console.debug(`[wf:${node.id}] ${msg}`, extra ?? '')
+          this.emitNodeLog(exec, state, 'debug', msg, extra)
+        },
+        info: (msg, extra) => {
+          console.info(`[wf:${node.id}] ${msg}`, extra ?? '')
+          this.emitNodeLog(exec, state, 'info', msg, extra)
+        },
+        warn: (msg, extra) => {
+          logger.warn(`[wf:${node.id}] ${msg}`, extra ?? '')
+          this.emitNodeLog(exec, state, 'warn', msg, extra)
+        },
+        error: (msg, extra) => {
+          logger.error(`[wf:${node.id}] ${msg}`, extra ?? '')
+          this.emitNodeLog(exec, state, 'error', msg, extra)
+        },
       },
       emitProgress: (progress, message) => {
         this.deps.events.emit({
@@ -1681,6 +1703,30 @@ export class WorkflowEngineService {
       recordLLMTurn: (role, content) => {
         if (exec.settings.multiTurn) exec.llmHistory.push({ role, content })
       },
+    }
+  }
+
+  /** 节点内部日志镜像 → 执行日志时间线（node-log 事件；直发 wf:run-event，无需平台通道白名单） */
+  private emitNodeLog(
+    exec: RunExecution,
+    state: NodeExecutionState,
+    level: 'debug' | 'info' | 'warn' | 'error',
+    message: unknown,
+    extra?: unknown
+  ): void {
+    try {
+      const detail = extra === undefined || extra === null ? undefined : JSON.stringify(extra)
+      getEventEmitter().emit(WORKFLOW_RUN_EVENT_CHANNEL, {
+        type: 'node-log',
+        runId: exec.input.runId,
+        nodeId: state.nodeId,
+        iterationIndex: state.iterationIndex,
+        level,
+        message: String(message).slice(0, 2000),
+        ...(detail ? { detail: detail.slice(0, 2000) } : {}),
+      })
+    } catch {
+      /* 内部日志写入失败不影响节点执行 */
     }
   }
 

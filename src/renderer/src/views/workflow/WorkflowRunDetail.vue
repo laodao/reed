@@ -19,6 +19,22 @@
 
     <el-alert v-if="run?.error" :title="run.error" type="error" :closable="false" style="margin-bottom: 12px" />
 
+    <!-- 执行日志：每步时间线（运行中自动刷新；便于定位每步执行/内部日志） -->
+    <el-collapse style="margin-bottom: 12px">
+      <el-collapse-item :title="`🕒 执行日志（${runLogs.length} 条）`" name="logs">
+        <div v-if="runLogs.length === 0" class="log-empty">暂无执行日志（运行刚开始或环境不支持）</div>
+        <div v-else class="log-list">
+          <div v-for="(l, i) in runLogs" :key="i" class="log-row">
+            <span class="log-time">{{ formatLogTime(l.ts) }}</span>
+            <el-tag :type="logTag(l.level)" size="small" class="log-lv">{{ l.level }}</el-tag>
+            <span class="log-type">{{ l.type }}</span>
+            <span class="log-msg">{{ l.message }}</span>
+            <el-button v-if="l.detail" text size="small" @click="showLogDetail(l)">详情</el-button>
+          </div>
+        </div>
+      </el-collapse-item>
+    </el-collapse>
+
     <!-- 用户提交数据（startInputs） -->
     <el-collapse v-if="run?.startInputs && Object.keys(run.startInputs).length" style="margin-bottom: 12px">
       <el-collapse-item title="📋 用户提交数据" name="inputs">
@@ -31,6 +47,22 @@
       <el-table-column type="expand">
         <template #default="{ row }">
           <div class="node-io">
+            <!-- 素材板（逐镜图文）预览：waiting human-review 且 payload 含 cards -->
+            <div v-if="reviewCards(row).length" class="board-preview">
+              <div class="board-title">素材板（{{ reviewCards(row).length }} 镜）——可在「修改后批准」中按 cards JSON 逐条调整</div>
+              <div class="board-grid">
+                <div v-for="(c, i) in reviewCards(row)" :key="i" class="board-card">
+                  <img v-if="cardImage(c)" :src="cardImage(c)" class="board-img" alt="" />
+                  <div v-else class="board-noimg">无图（底图待生成/直用）</div>
+                  <div class="board-meta">
+                    <div class="board-caption"><b>镜头{{ i + 1 }}</b> {{ String(c.caption ?? '') }}</div>
+                    <div class="board-extra">时长 {{ String(c.duration ?? '') }}s</div>
+                    <div v-if="c.baseImagePath" class="board-extra">（底图：{{ String(c.imageAssetName ?? '') }}）</div>
+                    <div class="board-visual">{{ String(c.visual ?? '').slice(0, 120) }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
             <div class="io-block" v-if="row.input && Object.keys(row.input).length">
               <div class="io-title">输入</div>
               <pre class="io-json">{{ formatJson(row.input) }}</pre>
@@ -108,6 +140,7 @@ const router = useRouter()
 const store = useWorkflowStore()
 const run = ref<any>(null)
 const nodeRuns = ref<any[]>([])
+const runLogs = ref<Array<Record<string, unknown>>>([])
 const exporting = ref(false)
 
 // E1 form-collect：挂起表单
@@ -168,6 +201,23 @@ async function load() {
     run.value = resp.data.run
     nodeRuns.value = resp.data.nodeRuns
   } else if (resp.error) ElMessage.error(resp.error)
+  // 执行日志（失败不阻断主视图）
+  try {
+    const lr = await api().listRunLogs(runId.value)
+    if (lr.success && lr.data) runLogs.value = (lr.data.logs ?? []).slice(-500)
+  } catch { /* 忽略 */ }
+}
+
+function formatLogTime(ts: unknown): string {
+  if (!ts) return '—'
+  const d = new Date(String(ts))
+  return Number.isNaN(d.getTime()) ? String(ts) : d.toLocaleTimeString('zh-CN', { hour12: false })
+}
+function logTag(level: unknown): 'info' | 'warning' | 'error' | 'success' {
+  return level === 'error' ? 'error' : level === 'warn' ? 'warning' : level === 'info' ? 'info' : 'info'
+}
+async function showLogDetail(l: Record<string, unknown>): Promise<void> {
+  await ElMessageBox.alert(`<pre style="max-height:400px;overflow:auto">${escapeHtml(String(l.detail ?? l.message ?? ''))}</pre>`, '日志详情', { dangerouslyUseHTMLString: true })
 }
 
 async function doCancel() {
@@ -196,9 +246,10 @@ async function doReview(row: any, decision: 'approve' | 'reject', editedValues?:
 }
 
 async function doReviewEdit(row: any) {
-  const current = row.output ?? {}
+  // 送审内容：优先取挂起 payload（内存态），回退 row.output
+  const current = row.input?.payload ?? row.output ?? {}
   const { value } = await ElMessageBox.prompt(
-    '修改后的 JSON（浅覆盖送审内容顶层字段）',
+    '修改后的 JSON（浅覆盖送审内容顶层字段；素材板在 cards 数组中逐条改 visual/caption/duration）',
     '修改后批准',
     { inputValue: JSON.stringify(current) }
   )
@@ -207,6 +258,24 @@ async function doReviewEdit(row: any) {
   } catch {
     ElMessage.error('不是有效 JSON')
   }
+}
+
+/** 审核 payload 中的素材板卡片（cards 数组；兼容字符串化存储） */
+function reviewCards(row: any): Array<Record<string, unknown>> {
+  if (row.nodeType !== 'human-review') return []
+  const raw = row.input?.payload?.cards ?? row.output?.cards
+  if (Array.isArray(raw)) return raw as Array<Record<string, unknown>>
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? (parsed as Array<Record<string, unknown>>) : []
+    } catch { return [] }
+  }
+  return []
+}
+
+function cardImage(card: Record<string, unknown>): string {
+  return toImageUrl(String(card.imageUrl ?? card.imageLocalUrl ?? '') || '')
 }
 
 async function showOutput(row: any) {
@@ -373,4 +442,23 @@ h4 { margin: 12px 0 8px; }
   max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-all;
 }
 .io-empty { font-size: 12px; color: var(--el-text-color-placeholder); padding: 8px 0; }
+/* 执行日志时间线 */
+.log-empty { font-size: 12px; color: var(--el-text-color-placeholder); padding: 8px 0; }
+.log-list { max-height: 360px; overflow: auto; font-size: 12px; line-height: 1.8; }
+.log-row { display: flex; align-items: baseline; gap: 8px; padding: 2px 4px; border-bottom: 1px dashed var(--el-border-color-lighter); }
+.log-time { color: var(--el-text-color-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.log-lv { flex: none; }
+.log-type { color: var(--el-color-primary); flex: none; min-width: 90px; }
+.log-msg { flex: 1; word-break: break-all; }
+/* 素材板卡片预览 */
+.board-preview { margin-bottom: 10px; }
+.board-title { font-size: 12px; color: var(--el-text-color-secondary); margin-bottom: 6px; }
+.board-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 8px; }
+.board-card { border: 1px solid var(--el-border-color-lighter); border-radius: 8px; overflow: hidden; background: var(--el-bg-color); }
+.board-img { width: 100%; height: 150px; object-fit: cover; display: block; background: #f2f3f5; }
+.board-noimg { width: 100%; height: 150px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--el-text-color-placeholder); background: var(--el-fill-color-light); }
+.board-meta { padding: 6px 8px; font-size: 12px; line-height: 1.5; }
+.board-caption { font-weight: 500; }
+.board-extra { color: var(--el-text-color-secondary); }
+.board-visual { color: var(--el-text-color-regular); margin-top: 2px; }
 </style>

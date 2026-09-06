@@ -11,6 +11,7 @@
  */
 
 import type { WorkflowNodeType } from './workflow.types'
+import { VIDEO_TYPE_PRESETS } from './video-presets'
 
 /** 表单字段声明 */
 export interface CatalogFormField {
@@ -208,6 +209,15 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     { key: 'useRerank', label: '重排序（rerank）', type: 'switch', group: '参数', help: '知识库配置了 rerank 模型时对检索结果重排（默认开）' },
     { key: 'vectorWeight', label: '向量/关键词权重', type: 'slider', min: 0, max: 1, step: 0.05, group: '参数', help: '1=纯向量语义检索（默认）；0=纯 BM25 关键词；中间值=混合加权' },
   ],
+  'kb-query-multi': [
+    { key: 'knowledgeBaseIds', label: '知识库（多选）', type: 'select-dynamic', source: 'knowledgeBases', multi: true, help: '多选后逐库检索并按分数合并去重（结果带 knowledgeBaseId 来源）' },
+    T('query', '查询内容', { type: 'textarea', templateHint: true, placeholder: '{{start.query}}' }),
+    { key: 'topKPerKb', label: '每库返回条数', type: 'number', min: 1, max: 20, group: '参数' },
+    { key: 'maxResults', label: '合并后最多条数', type: 'number', min: 1, max: 60, group: '参数' },
+    { key: 'threshold', label: '相似度阈值', type: 'slider', min: 0, max: 1, step: 0.05, group: '参数' },
+    { key: 'useRerank', label: '重排序（rerank）', type: 'switch', group: '参数' },
+    { key: 'vectorWeight', label: '向量/关键词权重', type: 'slider', min: 0, max: 1, step: 0.05, group: '参数' },
+  ],
   'kb-ingest': [
     { key: 'knowledgeBaseId', label: '知识库', type: 'select-dynamic', source: 'knowledgeBases' },
     T('title', '文档标题', { templateHint: true }),
@@ -238,6 +248,44 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     { key: 'height', label: '高度', type: 'number', group: '参数' },
     { key: 'count', label: '生成数量', type: 'number', min: 1, max: 4, group: '参数' },
     T('modelId', '图像模型 ID', { group: '模型', help: '必填' }),
+  ],
+  'video-gen': [
+    T('providerConfigId', '视频 Provider 配置 ID', { help: '设置→AI 服务中已配置的视频 Provider（如 ComfyUI 生成网关配置 id）' }),
+    T('model', '视频模型 ID', { help: '如 ComfyUI/h3、火山 Seedance（ep-xxxx）' }),
+    T('image', '首帧/参考图', { type: 'textarea', templateHint: true, placeholder: '{{img1.images.0.localUrl}} 或本地路径', help: '图生视频时必填' }),
+    T('prompt', '提示词', { type: 'textarea', templateHint: true }),
+    T('negativePrompt', '负面提示词', { group: '参数' }),
+    { key: 'duration', label: '时长（秒）', type: 'number', min: 1, max: 15, group: '参数' },
+    { key: 'width', label: '宽度', type: 'number', group: '参数' },
+    { key: 'height', label: '高度', type: 'number', group: '参数' },
+  ],
+  'video-compose': [
+    T('segments', '片段列表', {
+      type: 'textarea', templateHint: true,
+      placeholder: '{{code1.result.segments}}', help: '[{ source, kind, duration, caption }]',
+    }),
+    T('audioPath', '配音音频（可选）', { templateHint: true, placeholder: '{{tts1.audioPath}}' }),
+    T('bgmPath', '背景音乐（可选）', { templateHint: true, placeholder: '本地 mp3 路径' }),
+    { key: 'width', label: '宽度', type: 'number', group: '参数' },
+    { key: 'height', label: '高度', type: 'number', group: '参数' },
+    T('outputName', '输出文件名', { group: '参数', help: '成片文件名（不含扩展名）' }),
+  ],
+  'video-preset': [
+    {
+      key: 'videoType',
+      label: '视频类型预设',
+      type: 'select',
+      options: [
+        { label: '（不选预设，仅用自由风格）', value: '' },
+        ...VIDEO_TYPE_PRESETS.map(p => ({ label: p.label, value: p.id })),
+      ],
+      help: '类型决定大纲结构与素材提示词规范；可再叠加自由风格',
+    },
+    T('freeStyle', '自由风格（叠加）', {
+      type: 'textarea',
+      placeholder: '可选：对预设的补充（色调/氛围/镜头语言/参考说明）',
+      help: '并入画面风格与提示词，可完全自定义',
+    }),
   ],
   tts: [
     T('text', '合成文本', { type: 'textarea', templateHint: true, placeholder: '{{llm1.content}}' }),
@@ -540,6 +588,13 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
         { label: '全部元数据 metadata', value: 'metadata' },
       ],
       help: 'url=前端可加载链接；path=供下游节点直接使用的本地路径',
+    }),
+  ],
+  'read-assets': [
+    T('assetIds', '资产 ID 列表（多选）', {
+      templateHint: true,
+      help: '数组/JSON 或逗号分隔均可；空=直接通过（未选择资产）',
+      placeholder: '{{start.scriptAssetIds}} / {{start.referenceAssetIds}}',
     }),
   ],
   'save-diary': [

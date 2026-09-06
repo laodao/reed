@@ -264,9 +264,20 @@ function dynamicLoading(item: WorkflowStartInput): boolean {
   return !!dynamicBusy[dynamicSourceOf(item)]
 }
 
-/** 动态下拉的空态文案（assets:template → 模板） */
+/** 动态下拉的空态文案（assets:* → 对应大类名，如 图片资产） */
+const ASSET_SOURCE_LABELS: Record<string, string> = {
+  template: '模板',
+  image: '图片',
+  text: '文本',
+  video: '视频',
+  audio: '音频',
+  document: '文档',
+  json: '数据',
+}
 function dynamicLabel(item: WorkflowStartInput): string {
-  return dynamicSourceOf(item) === 'assets:template' ? '模板' : '选项'
+  const src = dynamicSourceOf(item)
+  if (src.startsWith('assets:')) return `${ASSET_SOURCE_LABELS[src.slice('assets:'.length)] ?? '资产'}资产`
+  return src === 'assets:template' ? '模板' : '选项'
 }
 
 // ── 声明式联动（通用机制，字段声明驱动，不感知业务字段名） ──
@@ -316,19 +327,42 @@ async function loadDynamicOptions(keys: WorkflowStartInput[]): Promise<void> {
     if (!isDynamic) continue
     const src = dynamicSourceOf(item)
     if (dynamicCache[src] || dynamicBusy[src]) continue
-    if (src === 'assets:template') {
+    if (src.startsWith('assets:')) {
+      // assets:<category> → 资产中心某大类资产多选（值=资产 ID，供 read-assets 引用）
+      const category = src.slice('assets:'.length) || 'template'
       dynamicBusy[src] = true
       try {
-        const api = (window as never as { electronAPI: { assets: { list: (p: Record<string, unknown>) => Promise<{ success: boolean; data?: { items?: Array<{ id: string; name: string; subCategory?: string | null }> } }> } } }).electronAPI.assets
-        const resp = await api.list({ category: 'template', page: 1, pageSize: 200 })
+        const api = (window as never as { electronAPI: { assets: { list: (p: Record<string, unknown>) => Promise<{ success: boolean; data?: { items?: Array<{ id: string; name: string; subCategory?: string | null; category?: string }> } }> } } }).electronAPI.assets
+        const resp = await api.list({ category, page: 1, pageSize: 300 })
         if (resp.success && resp.data?.items) {
           dynamicCache[src] = resp.data.items.map(a => ({
             label: a.subCategory ? `${a.name}（${a.subCategory}）` : a.name,
             value: a.id,
+            category: a.category,
+            subCategory: a.subCategory ?? '',
           }))
         } else {
           dynamicCache[src] = []
         }
+      } catch {
+        dynamicCache[src] = []
+      } finally {
+        dynamicBusy[src] = false
+      }
+    } else if (src === 'providerConfigs') {
+      // 已启用的 Provider 配置（值=配置 id；video/image/voice 三类 start 输入共用）
+      dynamicBusy[src] = true
+      try {
+        const api = (window as never as { electronAPI: { providerConfig: { list: () => Promise<{ success: boolean; data?: Array<Record<string, unknown>> }> } } }).electronAPI.providerConfig
+        const resp = await api.list()
+        const list = resp.success ? (resp.data ?? []) : []
+        dynamicCache[src] = list
+          .filter(c => (c.isEnabled === true || c.isEnabled === 1 || c.isEnabled === undefined || c.isEnabled === null))
+          .map(c => ({
+            label: String(c.name ?? c.shortId ?? c.id ?? ''),
+            value: String(c.id ?? ''),
+          }))
+          .filter(o => o.value)
       } catch {
         dynamicCache[src] = []
       } finally {

@@ -77,6 +77,26 @@ function boom(): WorkflowNodeHandler {
   }
 }
 
+/**
+ * 可控异步节点：execute 挂起直到外部 resolve 才返回 succeeded
+ * （复刻 video-gen/web-extract 等 fire-and-forget 异步任务的节点形态）。
+ */
+function gateHandler() {
+  const resolvers = new Map<string, (output: Record<string, unknown>) => void>()
+  const handler: WorkflowNodeHandler = {
+    type: 'gate' as any, controlKind: 'task', cancellable: false,
+    outputSchema: [{ key: 'text', type: 'string', desc: '' }], validateConfig: () => [],
+    async execute(ctx) {
+      const key = String((ctx.config as { text?: unknown }).text ?? '')
+      return await new Promise<{ status: 'succeeded'; output: Record<string, unknown> }>(resolve => {
+        resolvers.set(key, output => resolve({ status: 'succeeded', output }))
+      })
+    },
+  }
+  const resolve = (key: string) => resolvers.get(key)?.({ text: key })
+  return { handler, resolve }
+}
+
 let seq = 0
 function n(id: string, type: string, config: Record<string, unknown> = {}): WorkflowNode {
   return { id, type, name: id, position: { x: 0, y: 0 }, config: config as any }
@@ -87,11 +107,11 @@ function g(nodes: WorkflowNode[], edges: Array<[string, string, string?]>): Work
     edges: edges.map(([s, t, k]) => ({ id: `e${seq++}`, sourceNodeId: s, targetNodeId: t, kind: (k ?? 'normal') as any })),
   }
 }
-function makeEngine() {
+function makeEngine(extraHandlers: WorkflowNodeHandler[] = []) {
   const runs = new FakeRuns()
   const nodeRuns = new FakeNodeRuns()
   const events = new FakeEvents()
-  const registry = createNodeRegistry([...CONTROL_NODE_HANDLERS, ...INTERACTION_NODE_HANDLERS, echo, review, boom()])
+  const registry = createNodeRegistry([...CONTROL_NODE_HANDLERS, ...INTERACTION_NODE_HANDLERS, echo, review, boom(), ...extraHandlers])
   const engine = new WorkflowEngineService({ runs, nodeRuns, events } as WorkflowEngineDeps, registry)
   return { engine, runs, nodeRuns, events }
 }
@@ -276,6 +296,69 @@ describe('人工审核', () => {
     await waitMs(50)
     expect(runs.final.status).toBe('succeeded')
     expect(nodeRuns.outputOf('loop1')).toMatchObject({ count: 2 })
+  })
+})
+
+// ==================== 循环体内审核 + 异步节点续驱（回归 评审#102） ====================
+
+describe('循环体内审核 + 后续异步节点（回归 评审#102）', () => {
+  /**
+   * 复现：短视频脚本→视频工作流在循环体内 [文生图 → 逐镜头审核 → 图生视频(异步)]
+   * 的形态。此前 resumeSuspended 批准审核后直接续驱下一迭代，未等待本迭代在飞的
+   * 异步任务收敛 → 下一迭代与视频任务并发（同跑多次 approve 触发 UNIQUE 冲突），
+   * 且 collectIterationResult 读到 running 输出，results 汇聚丢视频路径。
+   * 期望：批准后先等本迭代异步节点收敛，再驱动下一迭代。
+   */
+  it('批准后等异步节点收敛再进下一迭代；results 汇聚各迭代异步输出', async () => {
+    const gate = gateHandler()
+    const { engine, runs, nodeRuns } = makeEngine([gate.handler])
+    // start → loop1(items) ⇄ [rev(审核) → gate(异步)] → end
+    const graph = g(
+      [
+        n('start', 'start'),
+        n('loop1', 'loop', { listExpression: '{{start.items}}' }),
+        n('rev', 'rev', { text: '{{loop1.item}}' }),
+        n('gate', 'gate', { text: '{{loop1.item}}' }),
+        n('end', 'end'),
+      ],
+      [
+        ['start', 'loop1'],
+        ['loop1', 'rev', 'loop-body'],
+        ['rev', 'gate', 'approve'],
+        ['gate', 'loop1', 'loop-back'],
+        ['loop1', 'end', 'loop-done'],
+      ]
+    )
+
+    // 第 0 迭代在审核处挂起
+    const status = await exec2(engine, input(graph, { items: ['a', 'b'] }))
+    expect(status).toBe('waiting_review')
+    expect(nodeRuns.statusOf('rev', 0)).toBe('waiting_review')
+
+    // 批准第 0 迭代：gate(0) 进入在飞异步；下一迭代不得提前启动
+    const applied0 = await runWithUser('u1', () => engine.resumeReview('run_1', 'rev', { decision: 'approve' }))
+    expect(applied0).toBe(true)
+    await waitMs(60)
+    expect(nodeRuns.statusOf('gate', 0)).toBe('running')
+    // 回归断言：gate(0) 未收敛前，第 1 迭代的审核不应出现
+    expect(nodeRuns.statusOf('rev', 1)).toBeUndefined()
+
+    // gate(0) 完成 → 迭代收敛 → 第 1 迭代推进到审核挂起
+    gate.resolve('a')
+    await waitMs(120)
+    expect(nodeRuns.statusOf('rev', 1)).toBe('waiting_review')
+
+    // 批准第 1 迭代并完成异步节点
+    const applied1 = await runWithUser('u1', () => engine.resumeReview('run_1', 'rev', { decision: 'approve' }))
+    expect(applied1).toBe(true)
+    await waitMs(60)
+    expect(nodeRuns.statusOf('gate', 1)).toBe('running')
+    gate.resolve('b')
+    await waitMs(150)
+
+    expect(runs.final.status).toBe('succeeded')
+    // results 汇聚的是各迭代异步节点的输出（而非审核 payload）
+    expect((nodeRuns.outputOf('loop1')!.results as unknown[])).toEqual([{ text: 'a' }, { text: 'b' }])
   })
 })
 
