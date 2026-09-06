@@ -23,6 +23,9 @@
    `import type`，运行时经异步工厂。
 6. **错误语义**：接口错误用类型化错误类（本文 §9），不裸 throw 字符串；
    IPC 边界转为 `{ success:false, error }` 契约。
+7. **事件顺序契约**（2026-09-06 补）：同一 scope 的事件按发生序投递、不丢不重
+   （进程内）；跨重连的恢复不靠事件重放，靠 `getHistory` + `listPendingApprovals`
+   两个查询接口重建状态。
 
 ---
 
@@ -106,7 +109,12 @@ export interface ToolRegistry {                                          // 平�
   register(def: AgentToolDef, ns?: { packId: string }): void             // ns → name 变 pack:<packId>:<name>
   listSpecs(filter?: { source?: ToolSourceKind; packId?: string }): AgentToolSpec[]
   toLLMTools(specs: AgentToolSpec[]): LLMToolDescriptor[]                // 协议层序列化
-  execute(call: AgentToolCall): Promise<AgentToolResult>                 // 校验→审批短路→执行→截断→审计
+  execute(call: AgentToolCall): Promise<AgentToolResult>                 // 校验→审批短路→执行→截断→审计（包代码直调路径）
+  /** registry→loop 桥接（2026-09-06 补，P3 接线必需）：按白名单 bindings 装配
+   *  LoopRunner 需要的 AgentToolDef 映射——binding 静态 config 深合并（静态键优先）、
+   *  descriptionOverride 生效、审计/审批/截断经 registry 包装层。run 启动时快照，
+   *  运行中改白名单不影响在途 run（14 号 §7-11）。 */
+  buildToolDefs(bindings: AgentToolBinding[]): Record<string, AgentToolDef>
 }
 // AgentToolCall/AgentToolResult/错误码：14 号 §5.3-5.4 原样（含 binding 静态侧、resultRef 引用化）
 ```
@@ -213,3 +221,20 @@ export interface MemoryAssembler { assemble(spec: string, tokenBudget: number): 
 2. 经 AgentRuntimeDeps 注入灰度（影子模式，G4）→ 切换（G5）；
 3. 旧实现保留一个版本期作回退开关，之后删除；
 4. 契约本身要改：先在本文立项（动机+迁移方案+兼容期），再动代码——**本文即接口变更的评审现场**。
+
+
+---
+
+## 11. 已知边界与扩展位（2026-09-06 深度 review 补——不满足即需先扩契约再实现）
+
+| # | 边界 | 现状 | 演化方向（破坏性变更须走 §10-4 立项） |
+|---|---|---|---|
+| 1 | **会话模型**：per-(definitionId, scopeId) 单会话 | 满足长文/EP/故事研讨室（均单会话/项目） | 多会话（如多方案对比）：AgentTask 与门面加可选 `sessionId` 维度，缺省回退单会话；agent_sessions 表已带 conversation_id 天然支持 |
+| 2 | **输入形态**：`sendMessage(message: string)` 纯文本 | 三个消费者均纯文本（素材引用经工具查询） | 多模态输入：加 `attachments?: Array<{kind;ref}>` 可选参数，工具查询语义不变 |
+| 3 | **用量聚合查询**：仅单轮 `AgentSendResult.usage` + 轨迹表 | 历史聚合（成本面板）从 agent_trajectories/agent_tool_calls 查（实现层，非契约） | 需要时加 `getUsage(defId, scopeId, range)` 只读查询接口 |
+| 4 | **部署形态**：审批挂起态在进程内存 + pendingApproval 落库 | 单实例 Web/Electron 成立；进程重启经落库行+哨兵恢复（12 号） | 水平多实例需审批决定走事件/DB 回流（挂起 Promise 无法跨进程）——届时 ApprovalCoordinator 的 decide 改为落库驱动，接口签名不变 |
+| 5 | **provider 并发/配额**：门面不做全局限流 | 单 scope 互斥已有；多 scope 并发打满 provider 属 13 号 provider 层职责 | provider-adapter 内加并发闸（对契约透明） |
+
+**结论**：当前三大消费者（工作流 agent-loop 节点 / 长文·EP 迁移 / 故事研讨室）的完整生命周期
+——注册定义、发消息、流式回复、提案卡（含编辑/换一版/重连恢复）、查询/修改设定、取消、
+历史、快照注入、事件兼容、步级恢复——全部有契约覆盖；上述 5 项是明确标注的边界而非缺口。
