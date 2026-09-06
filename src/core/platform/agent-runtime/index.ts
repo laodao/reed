@@ -19,8 +19,8 @@
  * | runtime/agent-service | 对外门面：互斥/LRU 驻留/abort/审批路由/health + 单例 | ✅ | 自研（23 号 §1） |
  * | memory/session-store | AgentSessionStore 双实现（内存/DB，ALS 隔离） | ✅ | 自研（23 号 §6） |
  * | core/database/migrations/create-agent-tables | agent_sessions / agent_memories 建表 | ✅ | 自研 |
- * | context/context-manager | 四层上下文装配 + 两级压缩水位 | ⬜ ContextManager 批 | 自研 |
- * | context/state-snapshot | 业务状态快照接口（业务方注入 buildSnapshot） | ⬜ 随 ContextManager | 自研接口 |
+ * | context/context-manager | 四层装配 + 压缩守恒（两级水位/用户消息 20K 预算/悬空哨兵修复） | ✅ 批 6 | 自研（剪枝 vendor open-harness） |
+ * | context/state-snapshot | 业务状态快照接口（业务方注入 buildSnapshot） | ✅ 接口就位 | 自研接口 |
  * | memory/memory-service | 项目级长期记忆状态机（agent_memories 表已建） | ⬜ 记忆批 | 设计借 happyclaw（MIT） |
  * | tools/registry | 工具注册表 + buildToolDefs 桥接（14 号） | ⬜ 工具批 | 自研 |
  *
@@ -86,6 +86,25 @@ export {
 } from './tools/registry'
 export type { AgentToolRegistryDeps, AgentToolCallAudit } from './tools/registry'
 export type { AgentToolSpec, LLMToolDescriptor, ToolSourceKind } from './types'
+// —— 批 6：上下文管理（23 号 §5 / 12 号 R6）——
+export {
+  ContextManager,
+  createContextManager,
+  classifyMessage,
+  summaryMessage,
+  SOFT_WATERMARK,
+  HARD_WATERMARK,
+  USER_MESSAGE_BUDGET_TOKENS,
+  INTERRUPTED_SENTINEL,
+} from './context/context-manager'
+export type { ContextManagerDeps, LoopContextPort, ContextAssemblerInput, MessageKind } from './context/context-manager'
+export type { StateSnapshotBuilder } from './context/state-snapshot'
+export {
+  DefaultCompactionStrategy,
+  defaultEstimateTokens,
+  pruneToolResults,
+} from './runtime/vendor/compaction'
+export type { CompactionStrategy, CompactionContext, CompactionResult } from './runtime/vendor/compaction'
 
 // —— 契约类型（23 号接口契约层）——
 export type {

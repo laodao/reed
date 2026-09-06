@@ -31,6 +31,7 @@ import type {
   ParsedToolCall,
 } from '../types'
 import type { ApprovalDecision } from '@shared/types/agent.types'
+import type { LoopContextPort } from '../context/context-manager'
 
 const logger = createLogger('AgentLoop')
 
@@ -42,6 +43,12 @@ export interface LoopRunnerDeps {
   toolTimeoutMs?: number
   /** 无进展检测阈值（12 号 §6.4-3；缺省 3 轮完全相同 signature） */
   stagnantLimit?: number
+  /**
+   * 上下文管理端口（23 号 §5；缺省 null——不装配不压缩）。
+   * 所有权分层：装配（哨兵修复）/压缩（守恒水位）/估算归 ContextManager；
+   * loop 只在步边界调用并持久化压缩结果。compaction 事件经 emit 回调直发门面。
+   */
+  context?: LoopContextPort
   clock?: () => number
 }
 
@@ -132,6 +139,15 @@ export class LoopRunner {
     let lastSignature = ''
     let nudged = false // 无进展提示只注入一次；再达限以 stagnant 终止
 
+    // 崩溃恢复装配：悬空工具调用哨兵修复（一次性持久化——幂等，返回原引用则跳过）
+    if (this.deps.context) {
+      const repaired = this.deps.context.assemble(state.messages)
+      if (repaired !== state.messages) {
+        state.messages = repaired
+        await host.saveState(state)
+      }
+    }
+
     try {
       while (!state.converged) {
         // —— 护栏（12 号 §9：每步 LLM 调用前）——
@@ -142,13 +158,26 @@ export class LoopRunner {
           return this.stop(state, host, 'aborted')
         }
 
+        // —— 压缩守恒（12 号 R6：步边界水位检查；结果持久化）——
+        if (this.deps.context) {
+          const compacted = await this.deps.context.maybeCompact({
+            messages: state.messages,
+            lastInputTokens: state.usage.promptTokens,
+            signal: host.signal,
+          })
+          if (compacted) {
+            state.messages = compacted
+            await host.saveState(state)
+          }
+        }
+
         // —— 单步决策（ai@6：不传 stopWhen = 恰好一步）——
         const stepStart = this.clock()
         const tools = this.buildToolSet(task, host)
         const stream = ai.streamText({
           model,
           system,
-          messages: state.messages,
+          messages: this.deps.context ? this.deps.context.assemble(state.messages) : state.messages,
           tools: Object.keys(tools).length > 0 ? tools : undefined,
           abortSignal: host.signal,
         })

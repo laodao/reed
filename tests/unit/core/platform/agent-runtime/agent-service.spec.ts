@@ -42,7 +42,7 @@ import type { AgentEvent, PendingApproval } from '@shared/types/agent.types'
 
 // ==================== 测试基建（公共件见 ./helpers——与 loop.spec 共用） ====================
 
-import { txtChunks as txt, toolCallChunks as toolParts, mkModel } from './helpers' 
+import { txtChunks as txt, toolCallChunks as toolParts, mkModel, mockUsage as usage } from './helpers' 
 
 function mkTool(over: Partial<AgentToolDef> = {}): AgentToolDef {
   return {
@@ -612,6 +612,66 @@ describe('租户（ALS 红线）', () => {
     // load/save 全部发生在 user-77 上下文内（runWithUserAsync 包裹生效）
     expect(saveUserIds.length).toBeGreaterThan(0)
     expect(saveUserIds.every((u) => u === 'user-77')).toBe(true)
+  })
+})
+
+describe('上下文压缩集成（definition.contextWindowTokens 声明即启用）', () => {
+  it('超水位轮内触发：compaction 事件链到达订阅者；用户消息守恒、摘要置尾', async () => {
+    const summarizeCalls: string[] = []
+    // 窗口 600 tok（软限 540）：工具结果 8000 字符 ≈ 2000 tok → 第二步前触发
+    const def = mkDef({ contextWindowTokens: 600 })
+    // 第一步：assistant 大段正文 + 工具调用（体量在 assistant——剪枝阶段不可折，
+    // 迫使压缩进入摘要阶段；工具结果同样超线）
+    const step1 = () => [
+      { type: 'stream-start', warnings: [] },
+      { type: 'text-start', id: 't' },
+      { type: 'text-delta', id: 't', delta: '析'.repeat(6_000) },
+      { type: 'text-end', id: 't' },
+      ...toolParts('c1', 'lookup', { q: 'x' }),
+    ]
+    const model = mkModel([
+      step1 as () => Array<Record<string, unknown>>,
+      () => txt('压缩后完成'),
+    ]) as unknown as Record<string, unknown>
+    // 摘要路径走 generateText（doGenerate）——mock 需补齐（mkModel 只配了 doStream）
+    model.doGenerate = async () => ({
+      content: [{ type: 'text', text: '目标：完成用户请求；已查询设定；当前继续作答。' }],
+      finishReason: { unified: 'stop', raw: undefined },
+      usage,
+      warnings: [],
+    })
+    const h = mkHarness(model as never)
+    h.rt.unregisterDefinition('story-room')
+    h.rt.registerDefinition({
+      ...def,
+      tools: {
+        lookup: mkTool({ execute: async () => ({ rows: 'y'.repeat(8_000) }) }),
+      },
+    })
+    // 经事件观察：assemble 阶段的 compaction 事件应出现在订阅流
+    const r = await h.rt.sendMessage('story-room', 's1', '会触发压缩的问题')
+    expect(r.reply).toBe('压缩后完成')
+    const compactionEvents = h.events.filter((e) => e.type === 'compaction')
+    expect(compactionEvents.map((e) => (e as { phase: string }).phase)).toEqual(['start', 'summary', 'done'])
+    // 守恒：历史中用户消息仍在、大工具结果被折叠（第二轮 save 后历史应含摘要前缀）
+    const history = await h.rt.getHistory('story-room', 's1')
+    expect(history.some((m) => m.role === 'user' && m.content.includes('会触发压缩的问题'))).toBe(true)
+    expect(JSON.stringify(await h.store.load('story-room:s1'))).toContain('[Previous conversation summary]')
+    void summarizeCalls
+  })
+
+  it('未声明 contextWindowTokens 的 definition：不压缩（纯 L3 直通）', async () => {
+    const h = mkHarness(
+      mkModel([() => toolParts('c1', 'lookup', { q: 'x' }), () => txt('完成')]),
+    )
+    h.rt.unregisterDefinition('story-room')
+    h.rt.registerDefinition({
+      ...mkDef(),
+      tools: { lookup: mkTool({ execute: async () => ({ rows: 'y'.repeat(8_000) }) }) },
+    })
+    const r = await h.rt.sendMessage('story-room', 's1', 'q')
+    expect(r.reply).toBe('完成')
+    expect(h.events.filter((e) => e.type === 'compaction')).toEqual([])
   })
 })
 
