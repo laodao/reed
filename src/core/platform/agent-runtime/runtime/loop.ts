@@ -15,6 +15,7 @@
 
 import { createLogger } from '@core/utils/logger'
 import { stableStringify } from './approval'
+import { withTimeout } from './async'
 import type {
   streamText as aiStreamText,
   LanguageModel,
@@ -282,6 +283,10 @@ export class LoopRunner {
 
     const requestApproval = this.deps.requestApproval
     for (const [name, def] of Object.entries(task.tools)) {
+      // registry 桥接产物：校验/超时/截断的所有权在 registry 管线（深 review P1 定案——
+      // 两层各做一遍会出现失败被报 ok:true、双计时器隐式取 min、双重截断打架）。
+      // loop 只保留：审批短路 + 流事件/轨迹 + 错误形态归一
+      const registryWrapped = (def as { registryWrapped?: boolean }).registryWrapped === true
       out[name] = ai.tool({
         description: def.description,
         inputSchema: def.inputSchema,
@@ -308,28 +313,45 @@ export class LoopRunner {
             }
           }
 
-          // ② zod 校验（失败=结构化错误回填，模型自纠——14 号 §5.4 纪律）
-          const parsed = def.inputSchema.safeParse(input)
-          if (!parsed.success) {
-            host.emitStream({ kind: 'tool-end', toolName: name, toolCallId: options.toolCallId, ok: false })
-            return { ok: false, error: 'INVALID_ARGS', detail: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).slice(0, ZOD_ISSUE_MAX) }
+          // ② 原生工具：zod 校验（失败=结构化错误回填，模型自纠——14 号 §5.4 纪律）。
+          // registry 包装工具：registry 管线在静态合并后校验（更准确），此处跳过
+          if (!registryWrapped) {
+            const parsed = def.inputSchema.safeParse(input)
+            if (!parsed.success) {
+              host.emitStream({ kind: 'tool-end', toolName: name, toolCallId: options.toolCallId, ok: false })
+              return { ok: false, error: 'INVALID_ARGS', detail: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).slice(0, ZOD_ISSUE_MAX) }
+            }
+            input = parsed.data
           }
 
-          // ③ 执行（超时 + signal + 异常捕获——错误永不 throw 出包装层）
+          // ③ 执行（超时 + signal + 异常捕获——错误永不 throw 出包装层）。
+          // registry 包装工具：超时/截断在 registry 管线（executeTimeoutMs 旋钮），
+          // loop 层不再套第二层计时器；返回值已是 loop 回填形（{ok,data}|{ok,error,...}）
           try {
-            const result = await withTimeout(
-              def.execute(parsed.data as never, {
+            let result: unknown
+            if (registryWrapped) {
+              result = await def.execute(input as never, {
                 scopeId: task.scopeId,
                 rawInput: task.input,
                 signal: host.signal,
                 logContext: { definitionId: task.definitionId, tool: name },
-              }),
-              timeoutMs,
-              host.signal,
-            )
-            host.emitStream({ kind: 'tool-end', toolName: name, toolCallId: options.toolCallId, ok: true })
-            host.emitTrajectory({ iteration: 0, kind: 'tool_result', name, payload: { toolCallId: options.toolCallId, ok: true } })
-            return { ok: true, data: truncateJson(result) }
+              })
+            } else {
+              result = await withTimeout(
+                def.execute(input as never, {
+                  scopeId: task.scopeId,
+                  rawInput: task.input,
+                  signal: host.signal,
+                  logContext: { definitionId: task.definitionId, tool: name },
+                }),
+                timeoutMs,
+                host.signal,
+              )
+            }
+            const ok = registryWrapped ? (result as { ok?: boolean })?.ok !== false : true
+            host.emitStream({ kind: 'tool-end', toolName: name, toolCallId: options.toolCallId, ok })
+            host.emitTrajectory({ iteration: 0, kind: 'tool_result', name, payload: { toolCallId: options.toolCallId, ok } })
+            return registryWrapped ? result : { ok: true, data: truncateJson(result) }
           } catch (e: unknown) {
             const err = e as { message?: string; name?: string }
             const cancelled = err?.name === 'TimeoutError' ? false : host.signal.aborted
@@ -438,27 +460,4 @@ export function truncateJson(value: unknown, max = 8192): string {
   const head = Math.floor(max * 0.6)
   const tail = Math.floor(max * 0.25)
   return `${s.slice(0, head)}\n…[truncated ${s.length} chars]…\n${s.slice(-tail)}`
-}
-
-function withTimeout<T>(p: Promise<T>, ms: number, signal?: AbortSignal): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => reject(Object.assign(new Error('tool timeout'), { name: 'TimeoutError' })), ms)
-    const onAbort = () => {
-      clearTimeout(t)
-      reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
-    }
-    signal?.addEventListener('abort', onAbort, { once: true })
-    p.then(
-      (v) => {
-        clearTimeout(t)
-        signal?.removeEventListener('abort', onAbort)
-        resolve(v)
-      },
-      (e) => {
-        clearTimeout(t)
-        signal?.removeEventListener('abort', onAbort)
-        reject(e)
-      },
-    )
-  })
 }

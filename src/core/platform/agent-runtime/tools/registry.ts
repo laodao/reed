@@ -20,6 +20,7 @@
  */
 
 import { createLogger } from '@core/utils/logger'
+import { withTimeout } from '../runtime/async'
 import type { z } from 'zod'
 import type {
   AgentToolBinding,
@@ -48,6 +49,14 @@ export const TOOL_RESULT_FIELD_MAX_CHARS = 2_000
 export const TOOL_EXECUTE_TIMEOUT_MS = 120_000
 /** 工具基础名式样（14 号 §3 命名规范；命名空间前缀另拼） */
 export const TOOL_NAME_RE = /^[a-z][a-z0-9_]{2,48}$/
+/** 结果遍历深度上限（同时兜循环引用） */
+export const RESULT_WALK_DEPTH_LIMIT = 8
+/** 二进制字段判定最小长度（短值原样保留） */
+export const BINARY_FIELD_MIN_CHARS = 256
+/** 审计 resultPreview 截断（14 号 §4.1） */
+export const AUDIT_PREVIEW_MAX_CHARS = 500
+/** NOT_WHITELISTED hint 中可用工具列举上限 */
+export const HINT_TOOL_LIST_MAX = 10
 
 /** 需默认人工批准的危险级别（14 号 §8） */
 const APPROVAL_DANGER_LEVELS: ReadonlySet<ToolDangerLevel> = new Set(['exec', 'external-post'])
@@ -68,8 +77,9 @@ export class AgentToolConflictError extends Error {
 /** 单次工具调用审计记录（字段白名单制——禁记解密后凭据/完整响应体） */
 export interface AgentToolCallAudit {
   toolName: string
-  args: unknown // 已过 schema 校验的入参（{{credential}} 展开前形态）
-  dangerLevel: ToolDangerLevel
+  /** 实际执行的入参（LLM args 与宿主静态 config 合并后形态；INVALID_ARGS 路径为原始入参） */
+  args: unknown
+  dangerLevel: ToolDangerLevel | 'unknown' // unknown=未注册调用（blocked）
   approval: 'not-required' | 'approved' | 'rejected' | 'auto'
   status: 'succeeded' | 'failed' | 'blocked' | 'rejected'
   errorCode?: AgentToolErrorCode
@@ -83,7 +93,9 @@ export interface AgentToolCallAudit {
 export interface AgentToolRegistryDeps {
   /** 审计 sink（fire-and-forget；DB 落表 M2 接入，当前缺省仅结构化日志） */
   audit?: (record: AgentToolCallAudit) => void
-  /** 审批回调（与 LoopRunner 的 requestApproval 同形；缺省=拒绝——安全默认） */
+  /** 审批回调（与 LoopRunner 的 requestApproval 同形）。缺省=拒绝——与 loop 层同一
+   * 安全默认（深 review P2 对齐）：需批准工具直调而无回调时拒绝执行；宿主代码
+   * 显式直调可注入放行回调（审批责任显式化，且经审计面留痕） */
   requestApproval?: (
     tool: AgentToolDef,
     input: unknown,
@@ -99,16 +111,29 @@ interface RegisteredTool {
   spec: AgentToolSpec
 }
 
-/** zod → jsonSchema 派生（失败回退空 schema——不阻断注册，列表侧可见降级） */
+/**
+ * zod → jsonSchema 派生（io:'input'——含 .default() 的字段不进 required，参数是输入契约）。
+ * 加载期 fail-fast（14 号 §3）：派生不出（无 toJSONSchema 能力/不可序列化形态/
+ * 非 object 根）直接拒绝注册——非法 schema 在启动期报错，不等 LLM 调用时暴雷。
+ */
 function deriveJsonSchema(schema: z.ZodType<unknown>): Record<string, unknown> {
+  const zs = schema as unknown as { toJSONSchema?: (params?: { io?: string }) => Record<string, unknown> }
+  let derived: Record<string, unknown>
   try {
-    const zs = schema as unknown as { toJSONSchema?: () => Record<string, unknown> }
-    if (typeof zs.toJSONSchema === 'function') return zs.toJSONSchema()
-    return {}
+    if (typeof zs.toJSONSchema !== 'function') {
+      throw new Error('该 zod 版本/形态不支持 toJSONSchema')
+    }
+    derived = zs.toJSONSchema({ io: 'input' })
   } catch (e) {
-    logger.warn('[tool-registry] jsonSchema 派生失败（回退空 schema）', e)
-    return {}
+    throw new AgentToolConflictError(
+      (schema as unknown as { description?: string }).description ?? 'unknown',
+      `jsonSchema 派生失败（${e instanceof Error ? e.message : String(e)}）——工具参数须为可派生的 object 根 zod schema`,
+    )
   }
+  if (derived?.type !== 'object') {
+    throw new AgentToolConflictError('unknown', 'jsonSchema 非 object 根（工具参数必须是 object）')
+  }
+  return derived
 }
 
 /** 取严：requiresApproval ∨ dangerLevel∈{exec, external-post} */
@@ -153,7 +178,7 @@ export function serializeToolResult(raw: unknown): { data: unknown; truncated: b
       }
       return value
     }
-    if (depth > 8) {
+    if (depth > RESULT_WALK_DEPTH_LIMIT) {
       truncated = true // 深度上限同时兜住循环引用（walk 替换后 stringify 不再遇环）
       return '[depth-limit]'
     }
@@ -170,7 +195,7 @@ export function serializeToolResult(raw: unknown): { data: unknown; truncated: b
     const out: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
       // 二进制类字段永不进 LLM 上下文（http-fetch 的 base64/dataUrl 形态）
-      if ((k === 'base64' || k === 'dataUrl') && typeof v === 'string' && v.length > 256) {
+      if ((k === 'base64' || k === 'dataUrl') && typeof v === 'string' && v.length > BINARY_FIELD_MIN_CHARS) {
         truncated = true
         out[k] = { _omitted: 'binary', sizeBytes: v.length }
         continue
@@ -181,9 +206,11 @@ export function serializeToolResult(raw: unknown): { data: unknown; truncated: b
   }
   const data = walk(raw, 0)
   try {
-    if (JSON.stringify(data).length > TOOL_RESULT_MAX_BYTES) {
+    // 字节计量（中文场景 length 与 UTF-8 字节差 3 倍——对齐 SessionStore 批 3 先例）
+    const serialized = JSON.stringify(data)
+    if (Buffer.byteLength(serialized, 'utf8') > TOOL_RESULT_MAX_BYTES) {
       truncated = true
-      return { data: { _oversize: true, preview: JSON.stringify(data).slice(0, TOOL_RESULT_MAX_BYTES / 2) }, truncated }
+      return { data: { _oversize: true, preview: serialized.slice(0, TOOL_RESULT_MAX_BYTES / 2) }, truncated }
     }
   } catch {
     return { data: { _unserializable: true }, truncated: true }
@@ -288,6 +315,13 @@ export class AgentToolRegistry {
     return this.runPipeline(call, { skipApproval: false })
   }
 
+  /**
+   * 统一管线（校验→审批→静态合并→执行→截断→审计）。
+   * opts.tool：快照闭包直通已解析的工具（buildToolDefs 产物在注册表注销后仍可执行——
+   * 23 号 §3"运行中改白名单不影响在途 run"；公共 execute 走查表路径）。
+   * opts.staticConfig：parse 后合并（zod strip 不会丢宿主静态键——深 review P2）。
+   * opts.approvalAudit：loop 桥路径的审批结论（loop 层已审）。
+   */
   private async runPipeline(
     call: {
       toolName: string
@@ -295,28 +329,59 @@ export class AgentToolRegistry {
       context?: Record<string, unknown>
       signal?: AbortSignal
     },
-    opts: { skipApproval: boolean },
+    opts: {
+      skipApproval: boolean
+      tool?: RegisteredTool
+      staticConfig?: Record<string, unknown>
+      approvalAudit?: AgentToolCallAudit['approval']
+    },
   ): Promise<AgentToolResult> {
     const started = this.deps.clock()
-    const tool = this.tools.get(call.toolName)
+    const tool = opts.tool ?? this.tools.get(call.toolName)
     if (!tool) {
-      return this.finish(call, null, {
-        ok: false,
-        error: {
-          code: 'NOT_WHITELISTED',
-          message: `工具未注册：${call.toolName}`,
-          hint: `可用工具：${[...this.tools.keys()].slice(0, 10).join(', ')}${this.tools.size > 10 ? ' …' : ''}`,
-          retryable: false,
+      return this.finish(
+        call,
+        null,
+        {
+          ok: false,
+          error: {
+            code: 'NOT_WHITELISTED',
+            message: `工具未注册：${call.toolName}`,
+            hint: `可用工具：${[...this.tools.keys()].slice(0, HINT_TOOL_LIST_MAX).join(', ')}${this.tools.size > HINT_TOOL_LIST_MAX ? ' …' : ''}`,
+            retryable: false,
+          },
+          durationMs: 0,
         },
-        durationMs: 0,
-      })
+        'not-required',
+        false,
+        'blocked',
+      )
     }
 
-    // ① 审批短路（缺省回调=拒绝——安全默认，22 号 §3-C2 同源）。
-    // loop 桥接路径 skipApproval=true：loop 层的 requestApproval 已审过，
+    // ① 审批短路（缺省回调=拒绝——与 loop 层同一安全默认，深 review P2 对齐）。
+    // loop 桥路径 skipApproval=true：loop 层的 requestApproval 已审过，
     // 此处再审会双重发卡（破坏同 scope 单卡不变量）
     let args = call.args
-    if (!opts.skipApproval && tool.spec.requiresApproval && this.deps.requestApproval) {
+    let approvalAudit = opts.approvalAudit ?? 'not-required'
+    if (!opts.skipApproval && tool.spec.requiresApproval) {
+      if (!this.deps.requestApproval) {
+        // 安全默认：需批准而无审批通道 → 拒绝（宿主显式直调请注入放行回调）
+        return this.finish(
+          call,
+          tool,
+          {
+            ok: false,
+            error: {
+              code: 'INTERNAL',
+              message: '该工具需要人工批准，但当前调用方未提供审批通道',
+              hint: '请告知用户在对话中发起该操作（走审批流），或由宿主代码注入审批回调。',
+              retryable: false,
+            },
+            durationMs: this.deps.clock() - started,
+          },
+          'rejected',
+        )
+      }
       const decision = await this.deps.requestApproval(tool.def, args, {
         scopeId: String(call.context?.scopeId ?? ''),
         rawInput: String(call.context?.rawInput ?? ''),
@@ -340,6 +405,7 @@ export class AgentToolRegistry {
           'rejected',
         )
       }
+      approvalAudit = 'approved'
       if (decision.action === 'approve_with_edit' && decision.input) args = decision.input
     }
 
@@ -358,14 +424,19 @@ export class AgentToolRegistry {
           retryable: true,
         },
         durationMs: this.deps.clock() - started,
-      })
+      }, approvalAudit)
     }
 
-    // ③ 执行（超时 + signal；异常捕获为结构化错误——永不 throw 出注册表）
+    // ③ 静态合并（parse 后并入——zod strip 不丢宿主键；静态值不经 zod，宿主侧可信）
+    const effective = opts.staticConfig
+      ? (mergeStaticConfig(opts.staticConfig, parsed.data as Record<string, unknown>) as Record<string, unknown>)
+      : (parsed.data as Record<string, unknown>)
+
+    // ④ 执行（超时 + signal；异常捕获为结构化错误——永不 throw 出注册表）
     let raw: unknown
     try {
       raw = await withTimeout(
-        tool.def.execute(parsed.data as never, {
+        tool.def.execute(effective as never, {
           scopeId: String(call.context?.scopeId ?? ''),
           rawInput: String(call.context?.rawInput ?? ''),
           signal: call.signal,
@@ -378,7 +449,7 @@ export class AgentToolRegistry {
       const err = e as { name?: string; message?: string }
       const code: AgentToolErrorCode =
         err?.name === 'TimeoutError' ? 'TIMEOUT' : call.signal?.aborted ? 'CANCELLED' : 'INTERNAL'
-      return this.finish(call, tool, {
+      return this.finish({ ...call, args: effective }, tool, {
         ok: false,
         error: {
           code,
@@ -387,16 +458,16 @@ export class AgentToolRegistry {
           retryable: code !== 'CANCELLED',
         },
         durationMs: this.deps.clock() - started,
-      })
+      }, approvalAudit)
     }
 
-    // ④ 截断序列化
+    // ⑤ 截断序列化
     const { data, truncated } = serializeToolResult(raw)
     return this.finish(
-      call,
+      { ...call, args: effective },
       tool,
       { ok: true, data, truncated, durationMs: this.deps.clock() - started },
-      'not-required',
+      approvalAudit,
       truncated,
     )
   }
@@ -439,10 +510,18 @@ export class AgentToolRegistry {
         : binding.approval === 'never'
           ? false // 显式放宽（编辑器二次确认的契约位）
           : tool.spec.requiresApproval // inherit：取严默认
+    // 审批审计结论：loop 层审批过的记 approved；never 放宽记 auto（深 review P1——
+    // "这枚危险调用经过人工批准"在审计面不可丢）
+    const approvalAudit: AgentToolCallAudit['approval'] = needsApproval
+      ? 'approved'
+      : tool.spec.requiresApproval
+        ? 'auto'
+        : 'not-required'
     return {
       ...base,
       description: binding.descriptionOverride ?? base.description,
       requiresApproval: needsApproval,
+      registryWrapped: true, // loop 层据此跳过自身校验/超时/截断（所有权在 registry 管线）
       execute: async (input, ctx: AgentToolContext) => {
         if (binding.maxCalls !== undefined && counter.used >= binding.maxCalls) {
           return {
@@ -451,13 +530,13 @@ export class AgentToolRegistry {
             hint: `本工具单次运行上限 ${binding.maxCalls} 次已用尽，请改用其他方式完成任务。`,
           }
         }
-        counter.used++
-        const merged = mergeStaticConfig(binding.config, input as Record<string, unknown>)
-        // 复用 execute 管线（校验/超时/截断/审计），skipApproval——loop 层已审（见方法注释）
+        counter.used++ // 计数为"尝试"（校验失败也烧额度）——防模型用错误入参刷穿上限
+        // 复用 execute 管线（校验/超时/截断/审计），skipApproval——loop 层已审（防双重发卡）；
+        // tool 闭包直通（快照行为独立）+ staticConfig parse 后合并
         const result = await this.runPipeline(
           {
             toolName: binding.tool,
-            args: merged,
+            args: input as Record<string, unknown>,
             context: {
               ...ctx.logContext,
               scopeId: ctx.scopeId,
@@ -466,7 +545,7 @@ export class AgentToolRegistry {
             },
             signal: ctx.signal,
           },
-          { skipApproval: true },
+          { skipApproval: true, tool, staticConfig: binding.config, approvalAudit },
         )
         if (result.ok) return { ok: true, data: result.data }
         return {
@@ -479,25 +558,29 @@ export class AgentToolRegistry {
     }
   }
 
-  /** 审计收口：sink 异常不外泄（warn 留痕），缺省仅结构化日志 */
+  /**
+   * 审计收口：sink 异常不外泄（warn 留痕），缺省仅结构化日志。
+   * tool=null 的未注册调用也留痕（status=blocked——探测行为可审计，14 号 §4.1）。
+   */
   private finish(
     call: { toolName: string; args: Record<string, unknown>; context?: Record<string, unknown> },
     tool: RegisteredTool | null,
     result: AgentToolResult,
     approval: AgentToolCallAudit['approval'] = 'not-required',
     truncated = false,
+    statusOverride?: AgentToolCallAudit['status'],
   ): AgentToolResult {
-    if (tool && this.deps.audit) {
+    if (this.deps.audit) {
       try {
         this.deps.audit({
-          toolName: tool.spec.name,
+          toolName: tool?.spec.name ?? call.toolName,
           args: call.args,
-          dangerLevel: tool.spec.dangerLevel,
+          dangerLevel: tool?.spec.dangerLevel ?? 'unknown',
           approval,
-          status: result.ok ? 'succeeded' : approval === 'rejected' ? 'rejected' : 'failed',
+          status: statusOverride ?? (result.ok ? 'succeeded' : approval === 'rejected' ? 'rejected' : 'failed'),
           errorCode: result.error?.code,
           durationMs: result.durationMs,
-          resultPreview: JSON.stringify(result.data ?? result.error?.message ?? '').slice(0, 500),
+          resultPreview: JSON.stringify(result.data ?? result.error?.message ?? '').slice(0, AUDIT_PREVIEW_MAX_CHARS),
           truncated,
           context: call.context ?? {},
         })
@@ -515,27 +598,3 @@ export class AgentToolRegistry {
 }
 
 // ==================== 内部工具 ====================
-
-function withTimeout<T>(p: Promise<T>, ms: number, signal?: AbortSignal): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => reject(Object.assign(new Error('tool timeout'), { name: 'TimeoutError' })), ms)
-    t.unref?.()
-    const onAbort = () => {
-      clearTimeout(t)
-      reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
-    }
-    signal?.addEventListener('abort', onAbort, { once: true })
-    p.then(
-      (v) => {
-        clearTimeout(t)
-        signal?.removeEventListener('abort', onAbort)
-        resolve(v)
-      },
-      (e) => {
-        clearTimeout(t)
-        signal?.removeEventListener('abort', onAbort)
-        reject(e)
-      },
-    )
-  })
-}

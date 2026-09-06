@@ -74,6 +74,12 @@ export interface AgentToolDef<TInput = unknown, TOutput = unknown> {
   approvalCard?: { title: string; summary?: (i: TInput) => string; editable?: string[] }
   /** 工作流无人值守白名单（缺省 false；写库类一律 false） */
   autoApprovableInWorkflow?: boolean
+  /**
+   * 内部标记（registry 桥接产物，业务定义不写）：校验/超时/截断的所有权已在
+   * registry 管线——loop 包装层对它跳过自身 zod/withTimeout/truncateJson，
+   * 只保留审批短路 + 流事件（深度 review P1 定案，防失败被报 ok:true/双计时器）
+   */
+  registryWrapped?: boolean
 }
 
 export interface AgentToolContext {

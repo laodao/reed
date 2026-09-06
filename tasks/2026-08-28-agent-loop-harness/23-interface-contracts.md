@@ -130,6 +130,26 @@ export interface ToolRegistry {                                          // 平�
 // AgentToolCall/AgentToolResult/错误码：14 号 §5.3-5.4 原样（含 binding 静态侧、resultRef 引用化）
 ```
 
+**—— 2026-09-06 批 5 实现注记（ToolRegistry 落地，独立 review 定稿）——**
+- `execute(call)` 形态：`{toolName, args, context?, signal?}`——binding 静态侧经
+  `buildToolDefs` 消费（loop 形态），直调路径以 `context` 携带宿主信息（runId/nodeId/
+  scopeId）；14 号 AgentToolCall 的 binding 字段由 M2 直调-带配置场景再评估（加法）。
+- 加法方法：`unregister(name)` / `unregisterPack(packId)`（§1 "pack disable 时注销"所需）。
+- **包装所有权分层**（深 review P1 定案）：registry 桥接产物带 `registryWrapped` 标记，
+  loop 层对其跳过自身 zod/withTimeout/truncateJson——校验/超时/截断/审计归 registry
+  管线（超时旋钮 = `AgentToolDeps.executeTimeoutMs`，与 loop 的 `toolTimeoutMs` 分属
+  两类工具），loop 只保留审批短路 + 流事件/轨迹。防：失败被报 ok:true / 双计时器隐式
+  取 min / 双重截断打架。
+- 静态合并语义：**parse 后合并**（zod strip 不丢宿主静态键；静态值不经 zod——宿主侧
+  可信，"静态键须在 schema 声明"的限制取消）。
+- 审批缺省对齐：直调路径需批准工具无审批回调 = 拒绝（与 loop 层同一安全默认）；
+  审计 approval 四值齐用（approved/rejected/not-required/auto=never 放宽）。
+- jsonSchema：zod4 `toJSONSchema({io:'input'})`（.default() 不入 required）；
+  派生失败/非 object 根 → 注册期 fail-fast（14 号 §3 加载期校验纪律）；版本为
+  draft-2020-12（zod4 产出，14 号原文 draft-07 以此为准）。
+- 结果上限按 UTF-8 字节计量（对齐 SessionStore 批 3 先例）；审计含 blocked
+  （未注册调用，dangerLevel=unknown）。
+
 ## 4. 审批契约
 
 ```ts

@@ -68,6 +68,22 @@
 > 测试 220 全绿（+10：error 流/stagnant 终止/超时回填/并发双卡/跨租户矩阵六入口/
 > 消息门/Amendment 随 reset 销毁/dispose 僵尸写/InMemory 隔离/provider ④ 名实相符）。
 > 已知边界入 23 号 §11-10/11/12（scope 抢占/工具超时不中止底层/时间戳近似值）。
+>
+> **进度（2026-09-06 批 5 ToolRegistry 完成并过审，feat/agent-harness）**：
+> 通用工具注册表落地（23 号 §3 五方法 + unregister/unregisterPack 加法）：
+> builtin/pack 命名空间注册、zod→jsonSchema 派生（io:input，加载期 fail-fast）、
+> execute 直调管线（校验→审批→静态 parse 后合并→超时→三级截断→审计；错误永不
+> throw）、buildToolDefs 桥（快照行为独立/静态键优先/审批三态/maxCalls）。
+> 独立 review 判"有条件放行"，必修 6 项全部修复：审计 approval 四值齐用
+> （approved/auto 曾永不发出）；包装所有权分层（registryWrapped 标记——两层各做
+> 一遍曾致失败被报 ok:true/双计时器取 min/双截断打架，loop 集成测试实证后修复）；
+> 快照行为独立（runPipeline 闭包直通 tool 引用——注销后曾 NOT_WHITELISTED）；
+> 审批缺省对齐（直调无回调=拒绝）；NOT_WHITELISTED 补 blocked 审计；
+> deriveJsonSchema io:input+fail-fast。随批：withTimeout 抽 runtime/async 共用
+> （两份复制已漂移）、静态合并改 parse 后合并（zod strip 曾丢宿主键）、16KB 改字节
+> 计量、5 处魔法数命名。测试 31 例（含 3 例穿 loop 包装层集成）+ 全套 251 绿。
+> 23 号补"批 5 实现注记"（execute 形态偏差/加法方法/所有权分层/合并语义/审批缺省/
+> jsonSchema 版本）。下一步：ContextManager（四层装配+两级压缩水位）。
 
 ## 分期总览
 
