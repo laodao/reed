@@ -33,6 +33,33 @@ export type MemorySource = 'agent_runtime' | 'user' | 'seed' | 'migration'
 
 // ==================== 工具 ====================
 
+/** 工具来源（14 号 R1：通用平台，四类消费者 × 多来源） */
+export type ToolSourceKind = 'builtin' | 'pack' | 'node' | 'tool' | 'oas' | 'skill'
+
+/** 注册表内的工具名片（23 号 §3；jsonSchema 由 zod 单一事实源派生缓存，14 号 R2） */
+export interface AgentToolSpec {
+  /** 命名规范：builtin 直名 / pack:<packId>:<name>；后续来源 node: tool: oas: skill: */
+  name: string
+  source: ToolSourceKind
+  packId?: string
+  /** 人看（轨迹视图/审批弹窗） */
+  description: string
+  /** 模型看（缺省回退 description） */
+  llmDescription: string
+  /** JSON Schema（draft-2020-12 子集，object 根；zod.toJSONSchema 派生） */
+  jsonSchema: Record<string, unknown>
+  dangerLevel: ToolDangerLevel
+  /** 取严结果：requiresApproval ∨ dangerLevel∈{exec, external-post} */
+  requiresApproval: boolean
+}
+
+/** 协议层序列化形态（给 LLM 的工具描述；不含 executor/dangerLevel 等宿主侧信息） */
+export interface LLMToolDescriptor {
+  name: string
+  description: string
+  parameters: Record<string, unknown>
+}
+
 export type ToolDangerLevel = 'read' | 'write' | 'external-post' | 'exec'
 
 /** 业务工具定义（zod 为 schema 单一事实源；与 14 号 AgentToolSpec 统一模型的业务侧形态） */

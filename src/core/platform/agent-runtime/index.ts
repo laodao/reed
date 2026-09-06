@@ -72,6 +72,20 @@ export {
   AgentScopeOwnerMismatchError,
 } from './runtime/agent-service'
 export type { AgentRuntime, AgentRuntimeDeps } from './runtime/agent-service'
+// —— 批 5：工具注册表（23 号 §3 / 14 号 R1-R2）——
+export {
+  AgentToolRegistry,
+  AgentToolConflictError,
+  mergeStaticConfig,
+  serializeToolResult,
+  TOOL_RESULT_MAX_BYTES,
+  TOOL_RESULT_ARRAY_KEEP,
+  TOOL_RESULT_FIELD_MAX_CHARS,
+  TOOL_EXECUTE_TIMEOUT_MS,
+  TOOL_NAME_RE,
+} from './tools/registry'
+export type { AgentToolRegistryDeps, AgentToolCallAudit } from './tools/registry'
+export type { AgentToolSpec, LLMToolDescriptor, ToolSourceKind } from './types'
 
 // —— 契约类型（23 号接口契约层）——
 export type {

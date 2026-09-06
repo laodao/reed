@@ -102,3 +102,42 @@ export interface PendingApproval {
   createdAt: number
   expiresAt: number
 }
+
+// ==================== 工具绑定与调用结果（工作流 agent-loop 节点 config / IPC 需要） ====================
+
+/** 工具调用统一错误码（14 号 §5.4；模型可据此自我纠错） */
+export type AgentToolErrorCode =
+  | 'INVALID_ARGS' // 入参校验失败；hint 附逐字段问题
+  | 'NOT_WHITELISTED' // 未注册/不在本次白名单；hint 列出可用工具名
+  | 'GUARD_BLOCKED' // SSRF 等安全拦截
+  | 'CREDENTIAL_ERROR' // 凭据缺失/解密失败
+  | 'UPSTREAM_HTTP' // 上游 HTTP 错误（含状态码与响应摘要）
+  | 'TIMEOUT'
+  | 'CANCELLED'
+  | 'LIMIT_EXCEEDED' // 单 run 调用次数上限（maxCalls）
+  | 'INTERNAL'
+
+/** 统一工具调用结果（错误永不 throw，一律回填模型） */
+export interface AgentToolResult {
+  ok: boolean
+  data?: unknown // 已截断/引用化
+  error?: { code: AgentToolErrorCode; message: string; hint?: string; retryable: boolean }
+  truncated?: boolean
+  resultRef?: string // 完整结果引用（M2 落盘路径）
+  durationMs: number
+}
+
+/** agent-loop 白名单条目（节点 config；静态侧对 LLM 不可见不可改） */
+export interface AgentToolBinding {
+  tool: string // AgentToolSpec.name
+  /** 静态 config 片段：与 LLM args 深合并，静态键优先（LLM 不可覆盖宿主配置） */
+  config?: Record<string, unknown>
+  /** 凭据引用（仅 id，明文只在执行器局部变量） */
+  credentialId?: string
+  /** 批准策略：inherit=按 dangerLevel 默认 | always | never（never 为显式放宽，编辑器需二次确认） */
+  approval?: 'inherit' | 'always' | 'never'
+  /** 单 run 内此工具调用上限 */
+  maxCalls?: number
+  /** 宿主定制的模型侧描述 */
+  descriptionOverride?: string
+}
