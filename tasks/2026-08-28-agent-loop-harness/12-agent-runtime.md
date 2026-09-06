@@ -467,6 +467,28 @@ R2 宿主融合表修正：独立宿主的 state 落点仍为 agent_sessions，�
   本文 §6.3 的步末 saveState 直接消费该数组；③ 无进展检测按 §6.4-3 实现
   （signature=工具名+规范化入参；触发后注入提示并重置计数再给 2 轮）。
 
+### R6 借鉴 codex 的压缩守恒与事件纪律（24 号决策落地，2026-09-06）
+
+依据 [24-codex-borrowings.md](./24-codex-borrowings.md) 第一梯队，本文四处增强：
+
+1. **压缩守恒结构**（修正 §9"回填前压缩"与 §14 开放问题 1）：
+   - 全部真实用户消息按独立预算（默认 20K tokens）**从新到旧原样保留、永不折叠**；
+     折叠/摘要只作用于工具结果与 assistant 消息，摘要置尾；
+   - 两级水位：软限 = contextWindow×90%（自动压缩触发线）+ 硬顶 = 95%（有效窗口，
+     为 system/工具 schema/输出预留）；配置的触发值被夹到 ≤90%；
+   - 压缩完成后用本地估算（JSON 字节/4）**回填 token 计数**，防"压完立即再触发"抖动。
+2. **注入内容 content_kind 分类**：snapshot/记忆段/摘要等注入内容在 messages 元数据上携带
+   稳定 kind（`state.snapshot` / `memory.assembled` / `compaction.summary`），
+   压缩保留策略按 kind 决定（守恒靠结构而非校验）。
+3. **终态事件纪律**：每轮/每工具调用终态三选一必达（reply:done / action:done / error）
+   且自带失败原因；事件外发与轨迹落库同点同序（先落库后外发，单点函数）。
+4. **AgentLoopState.task 增字段**（§4.2 修订）：`modelPreference`（本轮启动时的
+   provider/model 快照）——resume 时与当前配置比对，跨模型恢复显式告警（轨迹记
+   `model_changed_on_resume`）。
+
+附注（投影纪律）：agent_trajectories 为审计/蒸馏真相源，任何派生视图（统计/索引）
+只读不回写——"可滞后、绝不超前"（codex/soft-fac 同判）。
+
 ### R5 测试基线补充
 
 本文 §12 单测矩阵保留，另加：approve 快路径（通过/拒绝/编辑/超时/取消清理）、

@@ -536,3 +536,15 @@ reject→rejected）。与 §6.4 代谢的 supersede 链共用版本链机制。
 `structural.stateAt(scopeId, 当前章/当前时间点)` 的实体状态摘要——由 12 号修订 R3 的
 `buildStateSnapshot` 供给，**不进向量检索**（它是确证事实，不走置信度排序）。
 "快照由工具落库后的数据重建、不由 AI 复述"的防漂移原则在此落地。
+
+### R5b 稳态注入趋零：快照 section 化 diff（24 号决策落地，2026-09-06）
+
+借鉴 codex WorldState section diff：`buildStateSnapshot` 的产物从"整段文本"升级为
+**带稳定 ID 的 section 列表**（如 `characters` / `factions` / `outline` / `memory.active`），
+装配时对照上一轮已注入的 section 快照（存 AgentLoopState 或会话表 metadata）：
+
+- 首轮 / 压缩后：全量注入（render_full）；
+- 后续轮：仅注入**发生变化的 section**，被移除的 section 发显式移除通知
+  （如"[设定已删除] xxx"），防模型沿用陈旧事实；
+- 设定集变大后 token 收益显著（codex 实测稳态注入趋零）；实现为 context-manager 的
+  装配策略，`buildStateSnapshot` 接口不变（返回结构化 sections 由 harness 装配渲染）。

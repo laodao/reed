@@ -1,0 +1,53 @@
+# 24 · codex 借鉴采纳决策（Cross-Project Research Adoption）
+
+> Agent Loop Harness ｜ 2026-09-06 ｜ 状态：**已定稿**
+> 来源：soft-fac 项目的 codex 深度调研（`/home/ubuntu/workdir/soft-fac/docs/research/2026-09-06/`，
+> 13 份文档 @ codex 008bbd58 实读）。本文经本项目场景过滤后映射到我们的规格集，
+> 修订 12/15/23 号（见文末落点清单）。
+> 过滤前提：我们是**业务 DB 工具**型 harness（无代码执行/无沙箱诉求）、双宿主
+> （工作流 agent-loop 节点 + 独立宿主）、AI SDK v6 底座、ALS 多租户、DB 为真相源。
+
+---
+
+## 一、第一梯队：直接补强已定设计的短板（采纳，落点已修订）
+
+| # | codex 机制 | 我们的现状缺口 | 落点 |
+|---|---|---|---|
+| 1 | **压缩守恒结构**：全部真实用户消息按独立预算（20K）从新到旧**原样保留**、摘要只置尾；两级水位（软限 90% 自动压缩 + 硬顶 95% 有效窗口，配置被夹到 ≤90%）；压缩后本地估算回填（字节/4）防"压完立即再触发"抖动 | 12 号 §9"回填前压缩"只有单阈值+占位符截断；vendor 的 DefaultCompactionStrategy 无用户消息保留语义 | 12 号 R6 |
+| 2 | **注入内容带 content_kind 元数据**：每段注入（AGENTS.md/摘要/规则）与稳定分类同持久化，压缩保留策略**按 kind 而非位置**决定 | 我们的 snapshot/system 注入无分类，压缩时无法区分保护级 | 12 号 R6 |
+| 3 | **WorldState section diff（稳态注入趋零）**：规则/环境/设定各为带稳定 ID 的 section，逐轮 diff，**变更才注入**（带 REPLACEMENT/REMOVAL 显式通知） | buildStateSnapshot 每轮全量注入——设定集变大后 token 浪费且干扰 | 15 号 R5b |
+| 4 | **审批三态 + Amendment 沉淀**：判定 `Skip/NeedsApproval/Forbidden`；`ReviewDecision::Amendment` 把"本次批准"编码为"未来同类免批"（会话级缓存或规则）；**available_decisions 由服务端下发**（前端零硬编码审批按钮集）；审批缓存键做规范化（防同命令换包装重复问） | ApprovalDecision 只有单次 approve/reject；每张提案卡都要点（审批疲劳）；前端按钮集合硬编码 | 23 号 §4b |
+| 5 | **无头审批三态**：never 强制（默认）/ **auto-review（评审 agent 当审批人则保留 on-request）** / 运行时对审批请求**确定性拒绝**（无人场景绝不挂死等人类） | 工作流 agent-chat 只有 fail/auto_approve 两态 | 设计稿 §8.2 对应位（02 号 M5 范围） |
+| 6 | **工具计划化 + 读写锁并行门**：每步不可变工具计划（模型可见面=可执行面同一份真相）；`supports_parallel` 声明式——read 锁可并行、write 锁自动串行 | buildToolDefs 已有 run 级快照 ✓（同构确认）；但 ai@6 并行工具调用时**写库工具无串行化保护**（同轮两个写工具并发打同一实体） | 23 号 §3b（AgentToolDef 加 supportsParallel）|
+| 7 | **终态事件完备契约**：每个执行单元终态三选一必达（Complete{error?}/Aborted{reason}/Error）+ duration；**事件外发与持久化同点同序（先落盘后外发，单点函数）**——审计/恢复/断线补齐三问题一解 | AgentEvent 有 done/error 但无"必达+自足"纪律；事件桥与轨迹落库顺序未约定 | 23 号 §7b |
+
+## 二、第二梯队：架构增强（采纳为扩展位/里程碑内实现）
+
+| # | codex 机制 | 映射 | 落点 |
+|---|---|---|---|
+| 8 | **steer 用户插话**：busy 时用户输入三模式准入（拒绝/排队下一轮边界合流注入/立即打断），pending 队列带全局接受序号 | 互斥现为"抛 AgentBusyError（等或取消）"——故事研讨室体验短板：用户想说"方向不对"只能打断重来 | 23 号 §1b（sendMessage opts.mode）|
+| 9 | **三级 ID 链 + UUIDv7**：thread→turn→item 全部内嵌事件字段（时间有序免排序）；条目化事件（断线重连拉条目快照而非重放增量流） | AgentEvent 无因果 ID 链；断线恢复靠 getHistory 重建 ✓ 但事件无 item 粒度 | 23 号 §7c（v2 事件增强，M3 前落地）|
+| 10 | **turn 级模型/参数快照正典化**：每 turn 记录模型与参数快照，跨模型 resume 显式告警 | AgentLoopState.task 有 toolNames/maxSteps，**无 modelPreference 快照**——切模型续跑会静默用不同模型 | 12 号 §4.2 增字段（P2 顺手）|
+| 11 | **投影"可滞后、绝不超前"单向依赖 + 单调 ordinal 幂等游标** | agent_trajectories 已有 (run_id,node_id,seq) 唯一 ✓（同构确认）；补"对账只修派生视图、永不回写真相"纪律 | 12 号 R6 附注 |
+| 12 | **记忆两阶段后台流水线**（rollout→摘要→整合代理后台编辑，模型用工具读而非 prompt 注入） | 飞轮 distiller 已设计为任务终态事件触发的后台作业 ✓（同构确认，无需改） | — |
+
+## 三、不采纳项（本项目场景过滤，与 soft-fac 结论同向但理由独立）
+
+| 项 | 不采纳理由 |
+|---|---|
+| 沙箱三平台/network-proxy/credential-broker | 我们无代码执行——工具操作自有 DB；出网仅 provider 侧且已有 SSRF 闸门；密钥经 getProviderConfig 单一事实源不入上下文 |
+| JSONL 真相源 + SQLite 投影双层 | 我们 PG/SQLite 即真相源（与 soft-fac 同判）；codex 双层是 CLI 单机"数据库坏了会话还在"的取舍 |
+| MCP server 侧 | codex 自己删了它（agent 互联不该走 MCP）；我们 client-only（@ai-sdk/mcp，M5）立场一致 |
+| wire 协议单协议收敛（仅 Responses） | codex 前提是"客户端事件模型只有一套"；我们多 provider 是立身之本（AI SDK 多协议并存） |
+| app-server/IDE/TUI 形态与宏表协议 | 我们是 Electron+Web 双宿主；"引擎无 UI 假设"我们已用 AgentHost+事件通道达成（同构确认），无需引入其传输层 |
+| code mode / tool_search 延迟加载 | 依赖 OpenAI Responses 特性，无对应物 |
+| 148 crate 拆分 / Bazel+Nix | 规模不同 |
+
+## 四、落点清单（本次修订）
+
+| 文档 | 修订内容 |
+|---|---|
+| 23 号 | §1b steer 模式；§3b supportsParallel；§4b 审批沉淀三件（scope/availableDecisions/缓存键规范化）；§7b 终态必达+同点同序；§7c ID 链条目化（v2 位） |
+| 12 号 | R6：压缩守恒（用户消息保留预算/两级水位/估算回填）+ content_kind 注入分类 + 同点同序纪律 + AgentLoopState 增 modelPreference 快照 |
+| 15 号 | R5b：WorldState section diff（设定快照稳态注入趋零） |
+| README | 索引 + 借鉴来源声明 |

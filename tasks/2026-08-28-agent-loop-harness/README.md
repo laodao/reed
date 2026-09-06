@@ -42,6 +42,7 @@
 - [21-oss-adoption.md](./21-oss-adoption.md) —— **开源采纳决策（2026-09-06 定稿）**：AI SDK v6 + @openharness/core 路线（调研+运行级 spike 证据）、12/13/14/15 号规格的修订依据、宿主融合、里程碑映射
 - [22-make-or-buy-audit.md](./22-make-or-buy-audit.md) —— **自研/开源逐模块审计（2026-09-06 定稿，修订 21 号决策一）**
 - [23-interface-contracts.md](./23-interface-contracts.md) —— **接口契约层（2026-09-06 定稿）**：全部模块对外接口的唯一权威定义（门面/AgentHost/工具/审批/循环/上下文/持久化/记忆/图谱/Provider/事件/M3 预留）+ 契约纪律（只加不改/最小面/可注入）与替换纪律——**接口先行，实现可重写替换**：open-harness 全量源码深读四项发现（轮级持久化/审批粒度/双组合 API/循环极薄）→ 依赖面收缩为 ai@6 三包 + 三模块 vendor；21 个模块逐一定型；架构统一性论证
+- [24-codex-borrowings.md](./24-codex-borrowings.md) —— **codex 借鉴采纳决策（2026-09-06 定稿）**：经 soft-fac 项目 13 份 codex 深度调研（@008bbd58 实读）映射过滤——第一梯队 7 项（压缩守恒/WorldState diff/审批 Amendment 沉淀/无头审批三态/工具并行门/终态事件必达）落 12/15/23 号修订；不采纳 7 项（沙箱/JSONL 双层/MCP server 等，场景不符）
 
 ## 核心结论（TL;DR）
 
@@ -92,6 +93,7 @@
 - [21-oss-adoption.md](./21-oss-adoption.md) —— **开源采纳决策（2026-09-06 定稿）**：AI SDK v6 + @openharness/core 路线（调研+运行级 spike 证据）、12/13/14/15 号规格的修订依据、宿主融合、里程碑映射
 - [22-make-or-buy-audit.md](./22-make-or-buy-audit.md) —— **自研/开源逐模块审计（2026-09-06 定稿，修订 21 号决策一）**
 - [23-interface-contracts.md](./23-interface-contracts.md) —— **接口契约层（2026-09-06 定稿）**：全部模块对外接口的唯一权威定义（门面/AgentHost/工具/审批/循环/上下文/持久化/记忆/图谱/Provider/事件/M3 预留）+ 契约纪律（只加不改/最小面/可注入）与替换纪律——**接口先行，实现可重写替换**：open-harness 全量源码深读四项发现（轮级持久化/审批粒度/双组合 API/循环极薄）→ 依赖面收缩为 ai@6 三包 + 三模块 vendor；21 个模块逐一定型；架构统一性论证
+- [24-codex-borrowings.md](./24-codex-borrowings.md) —— **codex 借鉴采纳决策（2026-09-06 定稿）**：经 soft-fac 项目 13 份 codex 深度调研（@008bbd58 实读）映射过滤——第一梯队 7 项（压缩守恒/WorldState diff/审批 Amendment 沉淀/无头审批三态/工具并行门/终态事件必达）落 12/15/23 号修订；不采纳 7 项（沙箱/JSONL 双层/MCP server 等，场景不符）
 
 ## 核心结论（TL;DR）
 

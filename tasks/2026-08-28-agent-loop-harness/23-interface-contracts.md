@@ -42,7 +42,9 @@ export interface AgentRuntime {
   // —— 一轮对话（独立宿主入口；工作流宿主走 §2 AgentHost）——
   sendMessage(definitionId: string, scopeId: string, message: string,
               opts?: SendMessageOptions): Promise<AgentSendResult>
-    // 契约：per-(definitionId,scopeId) 互斥，重入抛 AgentBusyError（同旧 busyProjects 语义与文案）
+    // 契约：per-(definitionId,scopeId) 互斥。busy 时按 opts.mode（24 号借鉴 codex steer）：
+    //   'reject'（缺省，抛 AgentBusyError，同旧语义）| 'queue'（排队至当前轮边界，
+    //   作为 steer 输入合流注入下一轮——交互宿主推荐）| 'interrupt'（先 cancel 再发送）
   cancel(definitionId: string, scopeId: string): boolean    // 中断当前轮：模型/工具/挂起审批全链
   getHistory(definitionId: string, scopeId: string, limit?: number): Promise<AgentHistoryMessage[]>
   resetSession(definitionId: string, scopeId: string): Promise<void>
@@ -92,6 +94,7 @@ export interface AgentHost {
 
 ```ts
 export interface AgentToolDef<TInput = unknown, TOutput = unknown> {   // 业务侧编写（zod 为源）
+  // …类型全量见 platform/agent-runtime/types.ts；24 号增补：supportsParallel?: boolean（false=写类同轮自动串行）
   name: string                       // /^[a-z][a-z0-9_]{2,48}$/；pack: 前缀经注册时命名空间化
   description: string                // 模型可见，写清"何时该用"
   inputSchema: z.ZodType<TInput>
@@ -123,9 +126,11 @@ export interface ToolRegistry {                                          // 平�
 
 ```ts
 export type ApprovalDecision =
-  | { action: 'approve' }
+  | { action: 'approve'; scope?: 'once' | 'session' }   // scope=session（24 号借鉴 codex Amendment）：本次批准沉淀为会话级同类免批（规范化键缓存），业务包可升级为持久规则
   | { action: 'approve_with_edit'; input: Record<string, unknown> }  // 编辑后经 inputSchema 重校验
   | { action: 'reject'; reason?: string }                             // 忽略/换一版/超时/取消均归此
+// 24 号增补：PendingApproval 增加 availableDecisions: string[]（引擎声明本卡可选决定集，
+// 前端零硬编码按钮）；审批缓存键 = 工具名 + 规范化入参（防同参数换包装重复问）
 
 export interface ApprovalCoordinator {   // registry 层消费；实现可整体替换
   request(scopeKey: string, tool: AgentToolDef, input: unknown, signal?: AbortSignal): Promise<ApprovalDecision>
@@ -194,6 +199,15 @@ export interface ModelResolver {                          // A1：ai-call 之上
 export interface AgentEventPort {                         // 双路径（21 号 §事件决策）
   emit(scopeKey: string, event: AgentEvent): void         // 直推 IEventEmitter；总线失败回退直推
 }
+
+// —— 24 号借鉴 codex 事件纪律 ——
+// §7b 终态必达：每个执行单元（轮/工具调用/审批往返）终态事件三选一必达且字段自足
+//   （reply:done / action:done(status) / error，自带失败原因；AgentResult.stopReason 同构），
+//   流式 delta 可丢可合并（30ms 节流既有），终态不可丢。
+// §7b 同点同序：事件外发与轨迹/领域事件落库在同一个单点函数内、先落库后外发
+//   （平台事件总线自身"先 INSERT 后分发"的语义在 bus 侧，此处约定 event-bridge 侧同序）。
+// §7c（v2 位，M3 前落地）：AgentEvent 增加三级 ID 链 turnId/itemId（UUIDv7 时间有序），
+//   断线重连按条目快照重建而非重放增量流。
 // AgentEvent 联合（旧协议兼容子集 + approval:*/compaction:* 新增）：设计稿 §4 定稿
 // 平台事件映射 agentEventMap（aggregate=agent_session）：22 号 §3-E1
 ```
@@ -230,7 +244,7 @@ export interface MemoryAssembler { assemble(spec: string, tokenBudget: number): 
 | # | 边界 | 现状 | 演化方向（破坏性变更须走 §10-4 立项） |
 |---|---|---|---|
 | 1 | **会话模型**：per-(definitionId, scopeId) 单会话 | 满足长文/EP/故事研讨室（均单会话/项目） | 多会话（如多方案对比）：AgentTask 与门面加可选 `sessionId` 维度，缺省回退单会话；agent_sessions 表已带 conversation_id 天然支持 |
-| 2 | **输入形态**：`sendMessage(message: string)` 纯文本 | 三个消费者均纯文本（素材引用经工具查询） | 多模态输入：加 `attachments?: Array<{kind;ref}>` 可选参数，工具查询语义不变 |
+| 2 | **输入形态**：`sendMessage(message: string)` 纯文本（steer 排队已按 §1b mode 支持） | 三个消费者均纯文本（素材引用经工具查询） | 多模态输入：加 `attachments?: Array<{kind;ref}>` 可选参数，工具查询语义不变 |
 | 3 | **用量聚合查询**：仅单轮 `AgentSendResult.usage` + 轨迹表 | 历史聚合（成本面板）从 agent_trajectories/agent_tool_calls 查（实现层，非契约） | 需要时加 `getUsage(defId, scopeId, range)` 只读查询接口 |
 | 4 | **部署形态**：审批挂起态在进程内存 + pendingApproval 落库 | 单实例 Web/Electron 成立；进程重启经落库行+哨兵恢复（12 号） | 水平多实例需审批决定走事件/DB 回流（挂起 Promise 无法跨进程）——届时 ApprovalCoordinator 的 decide 改为落库驱动，接口签名不变 |
 | 5 | **provider 并发/配额**：门面不做全局限流 | 单 scope 互斥已有；多 scope 并发打满 provider 属 13 号 provider 层职责 | provider-adapter 内加并发闸（对契约透明） |
