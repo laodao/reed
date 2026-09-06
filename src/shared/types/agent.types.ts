@@ -34,6 +34,13 @@ export interface AgentHistoryMessage {
 export interface SendMessageOptions {
   providerConfigId?: string
   modelId?: string
+  /**
+   * 同 scope 忙碌时的策略（24 号借鉴 codex steer；缺省 'reject'）：
+   * - 'reject'：抛 AgentBusyError（同旧语义）
+   * - 'queue'：排队至当前轮边界，作为下一轮输入合流（交互宿主推荐）
+   * - 'interrupt'：先 cancel 当前轮再发送
+   */
+  mode?: 'reject' | 'queue' | 'interrupt'
 }
 
 // ==================== 事件协议（前端订阅） ====================

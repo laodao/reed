@@ -46,6 +46,8 @@ export interface ApprovalStore {
   save(a: PendingApproval): Promise<void>
   clear(approvalId: string): Promise<void>
   listBySession(sessionId: string): Promise<PendingApproval[]>
+  /** 全量残留行（门面重启恢复扫描用，可选实现） */
+  listAll?(): Promise<PendingApproval[]>
 }
 
 export class InMemoryApprovalStore implements ApprovalStore {
@@ -58,6 +60,9 @@ export class InMemoryApprovalStore implements ApprovalStore {
   }
   async listBySession(sessionId: string): Promise<PendingApproval[]> {
     return [...this.rows.values()].filter((r) => r.sessionId === sessionId)
+  }
+  async listAll(): Promise<PendingApproval[]> {
+    return [...this.rows.values()]
   }
 }
 

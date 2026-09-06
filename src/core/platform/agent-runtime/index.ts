@@ -56,6 +56,18 @@ export {
   MAX_MESSAGE_BYTES,
 } from './memory/session-store'
 export type { AgentSessionStore, DbAgentSessionStoreDeps } from './memory/session-store'
+// —— 批 4：门面（23 号 §1）——
+export {
+  AgentRuntimeImpl,
+  initAgentRuntime,
+  getAgentRuntime,
+  disposeAgentRuntime,
+  AgentBusyError,
+  AgentDefinitionConflictError,
+  AgentDefinitionNotFoundError,
+  AgentRuntimeNotInitializedError,
+} from './runtime/agent-service'
+export type { AgentRuntime, AgentRuntimeDeps } from './runtime/agent-service'
 
 // —— 契约类型（23 号接口契约层）——
 export type {
