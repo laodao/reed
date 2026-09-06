@@ -40,6 +40,10 @@
 
 // —— 已实现（M1-P1）——
 export { LoopRunner, initState, normalizeDecision, buildSystem, truncateJson } from './runtime/loop'
+export { ApprovalCoordinator, InMemoryApprovalStore, amendmentKey, stableStringify, AVAILABLE_DECISIONS } from './runtime/approval'
+export type { ApprovalCoordinatorDeps, ApprovalStore } from './runtime/approval'
+export { EventBridge } from './runtime/event-bridge'
+export type { EventBridgeDeps, PlatformBusPort } from './runtime/event-bridge'
 export { ProviderAdapter, AgentProviderNotConfiguredError } from './provider/provider-adapter'
 export type { LoopRunnerDeps } from './runtime/loop'
 export type { ProviderAdapterDeps, ResolveModelOptions, ProviderConfigLookup } from './provider/provider-adapter'
