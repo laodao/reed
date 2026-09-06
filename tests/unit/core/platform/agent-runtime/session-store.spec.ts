@@ -227,6 +227,43 @@ describe('DbAgentSessionStore（真实 sqlite）', () => {
     })
   })
 
+  it('512KB 上限：恰好等于上限放行，超 1 字节拒绝（按 UTF-8 字节计量）', async () => {
+    await runWithUserAsync('user-1', async () => {
+      const overhead = JSON.stringify({ role: 'user', content: '' }).length // ASCII：长度=字节数
+      const exact: ModelMessage = { role: 'user', content: 'x'.repeat(MAX_MESSAGE_BYTES - overhead) }
+      await store.save('c-edge', [exact]) // 恰好 MAX：放行
+      expect((await store.load('c-edge'))!.length).toBe(1)
+
+      const over: ModelMessage = { role: 'user', content: 'x'.repeat(MAX_MESSAGE_BYTES - overhead + 1) }
+      await expect(store.save('c-edge', [over])).rejects.toThrow(AgentMessageTooLargeError)
+    })
+  })
+
+  it('中文按 UTF-8 字节计量：1000 汉字（3000 字节）不因 length 陷阱误判', async () => {
+    await runWithUserAsync('user-1', async () => {
+      const cjk: ModelMessage = { role: 'user', content: '汉'.repeat(1000) } // length≈1000，字节≈3000
+      await store.save('c-cjk', [cjk])
+      expect((await store.load('c-cjk'))!.length).toBe(1)
+    })
+  })
+
+  it('长会话批量插入分块：5000 条消息全量替换成功且顺序正确（回归 SQLite 变量上限）', async () => {
+    await runWithUserAsync('user-1', async () => {
+      const big: ModelMessage[] = Array.from({ length: 5000 }, (_, i) => ({
+        role: 'user' as const,
+        content: `msg-${i}`,
+      }))
+      await store.save('c-5k', big)
+      const loaded = await store.load('c-5k')
+      expect(loaded!.length).toBe(5000)
+      expect(loaded![0].content).toBe('msg-0')
+      expect(loaded![4999].content).toBe('msg-4999')
+      // 再全量替换一次（DELETE+分块 INSERT 双向路径）
+      await store.save('c-5k', big.slice(0, 4500))
+      expect((await store.load('c-5k'))!.length).toBe(4500)
+    })
+  })
+
   it('迁移幂等：重复执行 createAgentTables 不抛错', async () => {
     await createAgentTables(ds)
     await createAgentTables(ds)

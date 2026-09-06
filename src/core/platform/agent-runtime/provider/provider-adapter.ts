@@ -110,8 +110,8 @@ export class ProviderAdapter {
     }
 
     const model = await this.createModel({
-      name: template.id ?? config.id,
-      baseURL: config.baseUrl ?? template.apiConfig.baseUrl,
+      name: template.id,
+      baseURL: config.baseUrl || template.apiConfig.baseUrl,
       apiKey,
       modelId: effectiveModelId,
     })

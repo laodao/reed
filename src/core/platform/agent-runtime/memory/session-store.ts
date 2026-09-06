@@ -64,17 +64,17 @@ export interface AgentSessionStore {
   delete(sessionId: string): Promise<void>
 }
 
-/** 内存实现：单测 / 降级（无 DataSource 场景）用 */
+/** 内存实现：单测 / 降级（无 DataSource 场景）用；structuredClone 深隔离对齐 DB 实现的 JSON 往返语义 */
 export class InMemorySessionStore implements AgentSessionStore {
   private readonly map = new Map<string, ModelMessage[]>()
 
   async load(sessionId: string): Promise<ModelMessage[] | undefined> {
     const messages = this.map.get(sessionId)
-    return messages && messages.length > 0 ? [...messages] : undefined
+    return messages && messages.length > 0 ? structuredClone(messages) : undefined
   }
 
   async save(sessionId: string, messages: ModelMessage[]): Promise<void> {
-    this.map.set(sessionId, [...messages])
+    this.map.set(sessionId, structuredClone(messages))
   }
 
   async delete(sessionId: string): Promise<void> {
@@ -117,11 +117,12 @@ export class DbAgentSessionStore implements AgentSessionStore {
   async save(sessionId: string, messages: ModelMessage[]): Promise<void> {
     const rows: NewAgentSessionRow[] = messages.map((message, index) => {
       const content = JSON.stringify(message)
-      if (content.length > MAX_MESSAGE_BYTES) {
+      const bytes = Buffer.byteLength(content, 'utf8')
+      if (bytes > MAX_MESSAGE_BYTES) {
         logger.error(
-          `[AgentSessionStore] 消息超限 sessionId=${sessionId} index=${index} bytes=${content.length}`
+          `[AgentSessionStore] 消息超限 sessionId=${sessionId} index=${index} bytes=${bytes}`
         )
-        throw new AgentMessageTooLargeError(sessionId, index, messageRole(message), content.length)
+        throw new AgentMessageTooLargeError(sessionId, index, messageRole(message), bytes)
       }
       return {
         conversationId: sessionId,
@@ -138,9 +139,11 @@ export class DbAgentSessionStore implements AgentSessionStore {
   }
 }
 
-/** 会话存储工厂：有 DataSource 走 DB，无则内存（单测 / 降级） */
+/** 会话存储工厂：有 DataSource 走 DB，无则内存（单测 / 降级——降级即不落盘，必须留痕） */
 export function createSessionStore(deps?: { dataSource: DataSource }): AgentSessionStore {
-  return deps?.dataSource ? new DbAgentSessionStore(deps) : new InMemorySessionStore()
+  if (deps?.dataSource) return new DbAgentSessionStore(deps)
+  logger.warn('[AgentSessionStore] 未提供 DataSource，会话降级为内存实现（重启即失，不落盘）')
+  return new InMemorySessionStore()
 }
 
 function messageRole(message: ModelMessage): string {

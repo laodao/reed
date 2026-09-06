@@ -263,6 +263,20 @@ export interface MemoryAssembler { assemble(spec: string, tokenBudget: number): 
 | 3 | **用量聚合查询**：仅单轮 `AgentSendResult.usage` + 轨迹表 | 历史聚合（成本面板）从 agent_trajectories/agent_tool_calls 查（实现层，非契约） | 需要时加 `getUsage(defId, scopeId, range)` 只读查询接口 |
 | 4 | **部署形态**：审批挂起态在进程内存 + pendingApproval 落库 | 单实例 Web/Electron 成立；进程重启经落库行+哨兵恢复（12 号） | 水平多实例需审批决定走事件/DB 回流（挂起 Promise 无法跨进程）——届时 ApprovalCoordinator 的 decide 改为落库驱动，接口签名不变 |
 | 5 | **provider 并发/配额**：门面不做全局限流 | 单 scope 互斥已有；多 scope 并发打满 provider 属 13 号 provider 层职责 | provider-adapter 内加并发闸（对契约透明） |
+| 6 | **SessionStore 唯一索引 NULL 语义**：`uq_agent_sessions_conv_seq` 对 user_id NULL 行不生效（两方言 NULL≠NULL，2026-09-06 批 3 实证） | 桌面端 Electron 启动即注入默认用户（非 NULL），且 sqlite 串行门整体互斥事务；Web 端各入口强制 ALS userId | 若未来出现"匿名 + 跨进程并发"形态：改表达式唯一索引 `(COALESCE(user_id,''), conversation_id, seq)`（两方言均支持；需同步处理 web synchronize 与迁移两条建表路径的索引形态一致性） |
+
+**—— 2026-09-06 批 3 SessionStore 实现注记（§6 落地补充）——**
+- save() 事务内分块 INSERT（500 行/批）：单语句多值 INSERT 撞 SQLite 绑定变量上限
+  （32766 变量 ÷ 8 列 ≈ 4095 行），长会话（项目级 conversationId + 每步全量重写）必然
+  越界；分块在**同一事务内**，原子性不变（独立 review P2，已修复并加 5000 条回归）。
+- 512KB 上限按 **UTF-8 字节**计量（Buffer.byteLength）：中文场景 length 与字节差 3 倍，
+  按 length 计量实际放行 ≈1.5MB，与错误文案"字节"不符（review P3，已修复）。
+- InMemory 实现用 structuredClone 深隔离，对齐 DB 实现的 JSON 往返语义——两种实现
+  对"调用方原地改消息对象"的观察行为一致。
+- 损坏行（JSON 解析失败）/ seq 断档 → 拒绝加载（fail-fast 带定位），绝不静默跳过：
+  跳过中段消息会破坏 tool-call 配对导致后续模型调用 400。
+- 旧业务会话（lw_design_messages 等）的迁移读取属业务装配层职责，平台存储不耦合
+  业务表；迁移期由业务方接线时预灌（与 §8 焊接点 4 的接线方向一致）。
 
 **结论**：当前三大消费者（工作流 agent-loop 节点 / 长文·EP 迁移 / 故事研讨室）的完整生命周期
 ——注册定义、发消息、流式回复、提案卡（含编辑/换一版/重连恢复）、查询/修改设定、取消、

@@ -18,6 +18,20 @@
 > 待办：P2 journal E1-E3 → P3 agent-loop 节点 → 门面/审批协调器/持久化/事件桥 → P4 冒烟。
 > 另：Electron 已升 44（chore/upgrade-electron 分支 de7c47da，零测试回归），
 > 21 号 §1.3 红线依据已相应更新。
+>
+> **进度（2026-09-06 实施推进，feat/agent-harness 分支）**：
+> - 循环/审批/事件桥批（ApprovalCoordinator 含 Amendment 缓存与 ALS 捕获、
+>   EventBridge 复用平台 event-producer 公共底座、限流器 fail-fast 清晰报错）已提交并经
+>   独立 subagent 复审（双路径事件架构定稿，23 号 §7）。
+> - **批 3 SessionStore 已完成**：agent_sessions 表（create-agent-tables 迁移双方言幂等，
+>   agent_memories 一并建表）、AgentSessionRepository（scoped 读 + 事务全量替换、
+>   userId 同步捕获注入）、AgentSessionStore 双实现（InMemory structuredClone 深隔离 /
+>   DB）、fail-fast 错误纪律（512KB 按 UTF-8 字节拒存、损坏行/seq 断档拒读）；
+>   18 单测全绿（含 5000 条分块插入回归、跨租户 ALS 隔离、精确边界值）。
+>   独立 review 放行；P2（SQLite 绑定变量上限→事务内 500 行分块）已修复。
+>   已知边界（23 号 §11 增补）：uq_agent_sessions_conv_seq 对 user_id NULL 行不生效
+>   （NULL≠NULL 方言语义），桌面端由 sqlite 串行门 + 启动注入默认用户兜底。
+> - 下一批：AgentRuntime 门面（互斥/LRU 会话/abort 池/decideApproval/subscribe/health）。
 
 ## 分期总览
 

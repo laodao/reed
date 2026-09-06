@@ -174,7 +174,7 @@ export class LoopRunner {
         }
 
         // —— tool_calls：执行 → 回填 → 轨迹 → 步末 saveState ——
-        const calls = decision.calls ?? []
+        const calls = decision.calls
         state.usage.toolCalls += calls.length
 
         // 无进展检测（12 号 §6.4-3：signature = 工具名+入参规范化）

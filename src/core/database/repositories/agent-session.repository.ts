@@ -68,16 +68,20 @@ export class AgentSessionRepository extends BaseRepository<AgentSessionEntity, A
       } as FindOptionsWhere<AgentSessionEntity>)
 
       if (rows.length > 0) {
-        await em.insert(
-          AgentSessionEntity,
-          rows.map((r) => ({
-            ...r,
-            id: this.generateId(),
-            userId,
-            metadata: r.metadata ?? null,
-            createdAt: new Date(),
-          }))
-        )
+        // 分块插入：单语句多值 INSERT 撞 SQLite 绑定变量上限（32766/8 列 ≈ 4095 行），
+        // 长会话全量替换必然越界；500 行/批留足余量，同一事务内原子性不变
+        for (let i = 0; i < rows.length; i += 500) {
+          await em.insert(
+            AgentSessionEntity,
+            rows.slice(i, i + 500).map((r) => ({
+              ...r,
+              id: this.generateId(),
+              userId,
+              metadata: r.metadata ?? null,
+              createdAt: new Date(),
+            }))
+          )
+        }
       }
     })
   }
