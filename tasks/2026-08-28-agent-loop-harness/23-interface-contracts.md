@@ -196,6 +196,8 @@ export interface ModelResolver {                          // A1：ai-call 之上
 }
 // ToolCallingClient / prompt 降级 / 能力标记：13 号修订节契约原样
 
+// 2026-09-06 注：EventBridge 的总线保序链/失败降级复用平台公共底座
+// event-system/event-producer.ts（与 workflow-run-producer 同一骨架共用件，10 号修订节）
 export interface AgentEventPort {                         // 双路径（21 号 §事件决策）
   emit(scopeKey: string, event: AgentEvent): void         // 直推 IEventEmitter；总线失败回退直推
 }

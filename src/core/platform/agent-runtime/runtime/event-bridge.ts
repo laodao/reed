@@ -3,9 +3,9 @@
  * @module core/platform/agent-runtime/runtime/event-bridge
  *
  * 契约：23 号 §7（AgentEventPort）+ §7b（终态必达/同点同序）+ 21 号事件双路径决策。
- * 可靠性（对齐 workflow-run-producer 的纪律）：
+ * 总线发布的保序链与失败降级**复用平台公共底座**（event-system/event-producer.ts，
+ * 2026-09-06 架构统一性抽象——与 workflow-run-producer 同一骨架不再各写一份）。
  * - 直推（IEventEmitter）保 UI 实时；总线失败只丢审计/联动（warn 不抛）
- * - 领域事件发布经 Promise 链串行化（保序：按 emit 顺序落库→按序分发）
  * - text.delta 30ms 窗口合批（可配；reply:done/终态事件前强制冲刷）
  * 事件分类（21 号 §6.9.1）：
  * - UI 实时流（仅直推）：stage / action:start / reply:start / reply:content / compaction(start|summary)
@@ -13,20 +13,16 @@
  */
 
 import { createLogger } from '@core/utils/logger'
+import {
+  createPlatformEventProducer,
+  type PlatformBusPortLike,
+} from '@core/platform/services/event-system/event-producer'
 import type { AgentEvent } from '@shared/types/agent.types'
 
 const logger = createLogger('AgentEventBridge')
 
-/** 平台事件总线的最小注入面（实现侧包装 EventBus.publish 的信封构造） */
-export interface PlatformBusPort {
-  publish(input: {
-    type: string
-    aggregate: { kind: string; id: string }
-    actor: { kind: string; id: string }
-    correlationId: string
-    payload: Record<string, unknown>
-  }): Promise<unknown>
-}
+/** 平台事件总线的最小注入面（底座 event-producer 的总线获取器签名） */
+export type PlatformBusPort = PlatformBusPortLike
 
 export interface EventBridgeDeps {
   /** 直推出口（IEventEmitter.emit 包装） */
@@ -56,8 +52,8 @@ export class EventBridge {
     bus: PlatformBusPort | null
     streamChannel: (scopeId: string) => string
   }
-  /** 总线发布保序链（失败吞掉记 warn，不断链） */
-  private chain: Promise<unknown> = Promise.resolve()
+  /** 总线发布（保序+降级在公共底座内；agent 侧策略=仅 warn，直推已先行） */
+  private readonly producer: ReturnType<typeof createPlatformEventProducer>
   /** delta 合批缓冲：(scopeId, summaryEventId) → 累积文本 */
   private readonly deltaBuf = new Map<string, { scopeId: string; summaryEventId: string; text: string; timer: ReturnType<typeof setTimeout> | null }>()
 
@@ -70,6 +66,9 @@ export class EventBridge {
       bus: deps.bus ?? null,
       deltaThrottleMs: deps.deltaThrottleMs ?? 30,
     }
+    this.producer = createPlatformEventProducer({
+      getBus: () => this.deps.bus as never,
+    })
   }
 
   /** 唯一出口：门面/协调器只调它（同点同序的"同点"） */
@@ -96,29 +95,20 @@ export class EventBridge {
 
     const scopeKey = `${this.deps.definitionId}:${scopeId}`
     const payload = stripType(event)
-    this.chain = this.chain
-      .then(() =>
-        this.deps.bus!.publish({
-          type: platformType,
-          aggregate: { kind: 'agent_session', id: scopeKey },
-          actor: { kind: 'agent', id: this.deps.definitionId },
-          correlationId: scopeKey,
-          payload,
-        }),
-      )
-      .then((r) => {
-        if (r === null || r === undefined) logger.warn('[event-bridge] 总线 safePublish 未落库（继续）')
-        return r
-      })
-      .catch((e) => {
-        logger.warn('[event-bridge] 总线发布失败（直推已送达，仅丢审计/联动）', e)
-      })
+    // 底座默认降级=warn（agent 侧直推已先行，仅丢审计/联动）——与旧链行为等价
+    this.producer.publish({
+      type: platformType,
+      aggregate: { kind: 'agent_session', id: scopeKey },
+      actor: { kind: 'agent', id: this.deps.definitionId },
+      correlationId: scopeKey,
+      payload,
+    })
   }
 
   /** 等待总线发布链排空（测试/关停用） */
   async flush(): Promise<void> {
     this.flushDelta()
-    await this.chain
+    await this.producer.flush()
   }
 
   /** 强制冲刷 delta 缓冲（终态事件前调用；测试直接调用） */

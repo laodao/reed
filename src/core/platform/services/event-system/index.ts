@@ -24,6 +24,8 @@ export {
   translateRunPlatformEvent,
 } from './workflow-run-event-map'
 export { createWorkflowRunEventProducer } from './workflow-run-producer'
+export { createPlatformEventProducer } from './event-producer'
+export type { PlatformEventProducer, PublishHandlers, PlatformBusPortLike } from './event-producer'
 export type { WorkflowRunProducerOptions } from './workflow-run-producer'
 export { IpcEventChannel } from './channels/ipc.channel'
 export { WsEventChannel } from './channels/ws.channel'

@@ -22,6 +22,7 @@ import type { WorkflowRunEvent } from '@shared/types/workflow.types'
 import type { WorkflowEventPort } from '@core/platform/workflow/engine/ports'
 import { createLogger } from '@core/utils/logger'
 import { getEventBusIfReady } from './event-bus.service'
+import { createPlatformEventProducer } from './event-producer'
 import { toRunPlatformEventType, WORKFLOW_RUN_AGGREGATE_KIND } from './workflow-run-event-map'
 
 const logger = createLogger('WorkflowRunProducer')
@@ -39,17 +40,12 @@ export function createWorkflowRunEventProducer(
   fallbackEmit: (event: WorkflowRunEvent) => void,
   opts: WorkflowRunProducerOptions = {}
 ): WorkflowEventPort {
-  const getBus = opts.getBus ?? getEventBusIfReady
-  // 保序链：同一 producer 的事件按 emit 顺序落库（分发在各自 INSERT 提交后跟随）
-  let chain: Promise<unknown> = Promise.resolve()
+  // 保序链 + 失败降级改用公共底座（event-producer.ts，2026-09-06 架构统一性抽象）；
+  // 引擎的降级策略 = 回退存量直推通道（前端推送不断，§7.3/§9 语义不变）
+  const producer = createPlatformEventProducer({ getBus: opts.getBus ?? getEventBusIfReady })
 
   return {
     emit(event, emitOpts) {
-      const bus = getBus()
-      if (!bus) {
-        fallbackEmit(event) // 总线未启动：存量直推路径兜底（行为与改动前等价）
-        return
-      }
       const platformType = toRunPlatformEventType(event.type)
       if (!platformType) {
         fallbackEmit(event) // 未登记映射的类型：不进平台，直接走存量通道
@@ -58,27 +54,29 @@ export function createWorkflowRunEventProducer(
       // 平台事件载荷 = 五型载荷剥离 type（type 由平台类型承载，通道侧重建）
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { type: _wfType, ...payload } = event
-      chain = chain
-        .then(() =>
-          bus.publish({
-            type: platformType,
-            aggregate: { kind: WORKFLOW_RUN_AGGREGATE_KIND, id: event.runId },
-            actor: { kind: 'workflow', id: event.runId },
-            payload,
-            causationId: emitOpts?.causationId, // journal 事件 id（11 落地后回填；不传=undefined）
-            correlationId: event.runId,
-          })
-        )
-        .then(published => {
-          // 落库失败（safePublish 返回 null）→ 回退直推，前端推送不断（§7.3）
-          if (!published) fallbackEmit(event)
-        })
-        .catch(e => {
-          // 载荷违规等生产者 bug（fail-fast 抛错）也在此降级为 warn + 直推兜底，
-          // 绝不抛给引擎主流程（§9：平台事件失败不影响恢复）
-          logger.warn(`[WorkflowRunProducer] 平台事件发布失败，回退直推（type=${event.type}）`, e)
-          fallbackEmit(event)
-        })
+      const { queued } = producer.publish(
+        {
+          type: platformType,
+          aggregate: { kind: WORKFLOW_RUN_AGGREGATE_KIND, id: event.runId },
+          actor: { kind: 'workflow', id: event.runId },
+          payload,
+          causationId: emitOpts?.causationId, // journal 事件 id（11 落地后回填；不传=undefined）
+          correlationId: event.runId,
+        },
+        {
+          // 落库失败（safePublish null）/ 发布抛错 → 回退直推（异步链内）
+          onFailed: (_input, e) => {
+            if (e) {
+              logger.warn(
+                `[WorkflowRunProducer] 平台事件发布失败，回退直推（type=${event.type}）`,
+                e,
+              )
+            }
+            fallbackEmit(event)
+          },
+        },
+      )
+      if (!queued) fallbackEmit(event) // 总线未启动：存量直推路径兜底（行为与改动前等价）
     },
   }
 }

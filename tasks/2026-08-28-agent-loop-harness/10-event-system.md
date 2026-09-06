@@ -569,3 +569,15 @@ AgentRuntime: decision=human_request
 - 全套件（tests/unit，SKIP_PG_TESTS）：2691 过 / 68 失败——较 M2 基线（2676/68）净增 15 用例全绿，失败数 68 不变且失败面与存量基线一致（无本批引入）
 - typecheck：974 → 974，净增 0
 - 未做真机归档作业实测（应用占用 CDP 9333 不动、本批不重启）：boot 接线为薄装配（与事件通道同款模式，已真机验证过同类路径），作业业务路径由 event-archive.spec 全覆盖
+
+
+---
+
+## 2026-09-06 修订：producer 公共底座（架构统一性抽象）
+
+`event-system/event-producer.ts` 新增 `createPlatformEventProducer`：**保序链 +
+失败降级**的共用件——此前 workflow-run-producer（引擎）与 agent EventBridge
+（23 号 §7）各写一份同构骨架，按"能抽象共用就抽象共用"原则下沉到事件系统模块。
+职责边界：底座管"怎么安全有序地发布"；类型映射/直推通道/delta 合批/降级策略
+（引擎=回退存量直推，agent=仅 warn）仍属各 producer。重构以两侧既有测试为
+行为门（引擎 7 例 + bridge 12 例 + 底座新增 6 例，全绿；零新增失败）。
