@@ -32,6 +32,20 @@
 >   已知边界（23 号 §11 增补）：uq_agent_sessions_conv_seq 对 user_id NULL 行不生效
 >   （NULL≠NULL 方言语义），桌面端由 sqlite 串行门 + 启动注入默认用户兜底。
 > - 下一批：AgentRuntime 门面（互斥/LRU 会话/abort 池/decideApproval/subscribe/health）。
+>
+> **进度（2026-09-06 批 4 门面已完成，feat/agent-harness bc4805f7 + review 修复）**：
+> AgentRuntimeImpl 全量落地（23 号 §1 对外 API + init/get/dispose 单例），独立宿主
+> IndependentHost（历史重放/流事件翻译/actionSummaries 轨迹拉链）。独立 review
+> 发现 P1（interrupt 恢复后不复查互斥→同 scope 双轮并发，已实证）+ P2×3（错误分发
+> ALS 上下文、注销后终态改道默认通道、跨租户同 scope 共享提权面）——全部修复：
+> 可重入互斥循环（每轮重取条目复查 busy/resetting）、error 分发 runWithUser 包裹、
+> 桥缓存注销保留（仅新定义注册时重建）、条目属主认主 fail-fast
+> （AgentScopeOwnerMismatchError，23 号 §11-7）；P3 一组（queue 上限 8/suggestions
+> 单次计算防双终态/deltaBuf 空缓冲删除/孤儿审批只清构造前行/reset 排队者类型化
+> 拒绝/queue 逐条整轮语义入契约 §1+§11-8/Amendment 寿命 §11-9）。
+> 26 门面单测 + 210 全套全绿。已知接线注意：旧前端正文流走独立通道
+> （longwriting:generate:*），桥 reply:content 走 agent 主通道——接线批需适配。
+> 下一批：ToolRegistry.buildToolDefs / ContextManager / P2 journal E1-E3。
 
 ## 分期总览
 

@@ -128,9 +128,13 @@ export class EventBridge {
 
   /** 强制冲刷 delta 缓冲（终态事件前调用；测试直接调用） */
   flushDelta(): void {
-    for (const buf of this.deltaBuf.values()) {
+    for (const [key, buf] of this.deltaBuf) {
       if (buf.timer) clearTimeout(buf.timer)
-      if (buf.text.length === 0) continue
+      if (buf.text.length === 0) {
+        // 已冲刷的空缓冲即删（summaryEventId 每轮变化，残留条目会随轮数累积泄漏）
+        this.deltaBuf.delete(key)
+        continue
+      }
       const push = (): void => {
         try {
           this.deps.emitDirect(
@@ -145,6 +149,7 @@ export class EventBridge {
       if (buf.userId) this.runWithUserFn(buf.userId, push)
       else push()
       buf.text = ''
+      this.deltaBuf.delete(key)
     }
   }
 

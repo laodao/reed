@@ -37,8 +37,9 @@ export interface SendMessageOptions {
   /**
    * 同 scope 忙碌时的策略（24 号借鉴 codex steer；缺省 'reject'）：
    * - 'reject'：抛 AgentBusyError（同旧语义）
-   * - 'queue'：排队至当前轮边界，作为下一轮输入合流（交互宿主推荐）
-   * - 'interrupt'：先 cancel 当前轮再发送
+   * - 'queue'：排队至当前轮边界，逐条依次整轮执行（FIFO，各自独立终态/结果；
+   *   排队上限 8，超限 fail-fast）
+   * - 'interrupt'：取消当前轮，随后按 queue 同序等待执行（不插队）
    */
   mode?: 'reject' | 'queue' | 'interrupt'
 }

@@ -23,6 +23,9 @@ import {
   AgentDefinitionConflictError,
   AgentDefinitionNotFoundError,
   AgentRuntimeNotInitializedError,
+  AgentSessionResetError,
+  AgentScopeOwnerMismatchError,
+  MAX_STEER_QUEUE,
   initAgentRuntime,
   getAgentRuntime,
   disposeAgentRuntime,
@@ -109,7 +112,11 @@ interface Harness {
   unsub: () => void
 }
 
-function mkHarness(model: LanguageModel, depsOver: Partial<AgentRuntimeDeps> = {}): Harness {
+function mkHarness(
+  model: LanguageModel,
+  depsOver: Partial<AgentRuntimeDeps> = {},
+  opts: { subscribe?: boolean } = {},
+): Harness {
   const store = new InMemorySessionStore()
   const approvalStore = new InMemoryApprovalStore()
   const events: AgentEvent[] = []
@@ -123,8 +130,8 @@ function mkHarness(model: LanguageModel, depsOver: Partial<AgentRuntimeDeps> = {
     sweeperIntervalMs: 0,
     ...depsOver,
   })
-  rt.registerDefinition(mkDef(depsOver.sessionStore ? {} : {}))
-  const unsub = rt.subscribe('story-room', 's1', (e) => events.push(e))
+  rt.registerDefinition(mkDef())
+  const unsub = opts.subscribe === false ? () => undefined : rt.subscribe('story-room', 's1', (e) => events.push(e))
   return { rt, events, emitDirect, store, approvalStore, unsub }
 }
 
@@ -138,6 +145,43 @@ describe('定义注册', () => {
     h.rt.unregisterDefinition('story-room')
     await expect(h.rt.sendMessage('story-room', 's1', 'hi')).rejects.toThrow(AgentDefinitionNotFoundError)
     expect(() => h.rt.subscribe('story-room', 's1', () => undefined)).toThrow(AgentDefinitionNotFoundError)
+  })
+
+  it('注销时在途轮终态仍走业务通道（review P2 回归：终态必达）', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((res) => (release = res))
+    const tool = mkTool({ execute: async () => { await gate; return {} } })
+    const h = mkHarness(mkModel([() => toolParts('c1', 'lookup', { q: 'x' }), () => txt('完')]))
+    h.rt.unregisterDefinition('story-room')
+    h.rt.registerDefinition(
+      mkDef({ tools: { lookup: tool }, eventChannel: (s) => `biz:ch:${s}` }),
+    )
+    const p = h.rt.sendMessage('story-room', 's1', 'go')
+    await vi.waitFor(() => expect(h.rt.health().busyScopes.length).toBeGreaterThan(0))
+    h.rt.unregisterDefinition('story-room') // 在途时注销（abort 当前轮）
+    release()
+    const r = await p
+    expect(r.stopReason).toBe('aborted')
+    // 订阅者与直推都收到终态，且通道是业务通道（非默认 agent: 前缀）
+    expect(h.events.some((e) => e.type === 'reply:done')).toBe(true)
+    await new Promise((res) => setTimeout(res, 50))
+    const doneOnBiz = h.emitDirect.mock.calls.some(
+      ([channel, ev]) => channel === 'biz:ch:s1' && (ev as AgentEvent).type === 'reply:done',
+    )
+    expect(doneOnBiz).toBe(true)
+  })
+
+  it('跨租户同 scope：属主不匹配 fail-fast（review P2：互斥/审批/订阅不跨租户共享）', async () => {
+    const h = mkHarness(mkModel([() => txt('ok')]), {}, { subscribe: false })
+    await runWithUserAsync('user-a', async () => {
+      await h.rt.sendMessage('story-room', 's1', '属主消息')
+    })
+    await runWithUserAsync('user-b', async () => {
+      await expect(h.rt.sendMessage('story-room', 's1', '越权消息')).rejects.toThrow(AgentScopeOwnerMismatchError)
+      expect(() => h.rt.subscribe('story-room', 's1', () => undefined)).toThrow(AgentScopeOwnerMismatchError)
+    })
+    // 匿名（无 ALS）同样拦截——不因 null 属主放行
+    expect(() => h.rt.subscribe('story-room', 's1', () => undefined)).toThrow(AgentScopeOwnerMismatchError)
   })
 })
 
@@ -250,7 +294,7 @@ describe('互斥与 busy 模式', () => {
   it('queue：排队至轮边界 FIFO 合流，两次排队都拿到各自结果', async () => {
     const { h, release } = gatedHarness()
     const p1 = h.rt.sendMessage('story-room', 's1', '第一')
-    await vi.waitFor(() => expect(h.rt.health().busyScopes).length)
+    await vi.waitFor(() => expect(h.rt.health().busyScopes.length).toBeGreaterThan(0))
     const p2 = h.rt.sendMessage('story-room', 's1', '第二', { mode: 'queue' })
     const p3 = h.rt.sendMessage('story-room', 's1', '第三', { mode: 'queue' })
     release()
@@ -268,7 +312,7 @@ describe('互斥与 busy 模式', () => {
   it('interrupt：先取消当前轮再发送，旧轮 stopReason=aborted', async () => {
     const { h, release } = gatedHarness()
     const p1 = h.rt.sendMessage('story-room', 's1', '第一').catch((e) => e)
-    await vi.waitFor(() => expect(h.rt.health().busyScopes).length)
+    await vi.waitFor(() => expect(h.rt.health().busyScopes.length).toBeGreaterThan(0))
     const p2 = h.rt.sendMessage('story-room', 's1', '打断', { mode: 'interrupt' })
     const r1 = await p1
     expect(r1.stopReason).toBe('aborted')
@@ -279,12 +323,70 @@ describe('互斥与 busy 模式', () => {
   it('cancel：工具执行中中断为 aborted；空转 cancel 返回 false', async () => {
     const { h, release } = gatedHarness()
     const p1 = h.rt.sendMessage('story-room', 's1', '第一')
-    await vi.waitFor(() => expect(h.rt.health().busyScopes).length)
+    await vi.waitFor(() => expect(h.rt.health().busyScopes.length).toBeGreaterThan(0))
     expect(h.rt.cancel('story-room', 's1')).toBe(true)
     const r1 = await p1
     expect(r1.stopReason).toBe('aborted')
     expect(h.rt.cancel('story-room', 's1')).toBe(false)
     release() // 释放门（防悬挂 promise）
+  })
+
+  it('并发 interrupt 不双跑（review P1 回归）：工具执行从不重叠，全部消息都有终态', async () => {
+    let active = 0
+    let maxActive = 0
+    let release!: () => void
+    const gate = new Promise<void>((res) => (release = res))
+    const tool = mkTool({
+      execute: async () => {
+        active++
+        maxActive = Math.max(maxActive, active)
+        await gate
+        active--
+        return { done: true }
+      },
+    })
+    const h = mkHarness(mkModel([() => toolParts('c1', 'lookup', { q: 'x' }), () => txt('完')]))
+    h.rt.unregisterDefinition('story-room')
+    h.rt.registerDefinition(mkDef({ tools: { lookup: tool } }))
+
+    const p1 = h.rt.sendMessage('story-room', 's1', '第一')
+    await vi.waitFor(() => expect(h.rt.health().busyScopes.length).toBeGreaterThan(0))
+    // 双"打断重发"并发到达（旧实现恢复后无条件开轮 → 双轮并发）
+    const pi1 = h.rt.sendMessage('story-room', 's1', '打断1', { mode: 'interrupt' })
+    const pi2 = h.rt.sendMessage('story-room', 's1', '打断2', { mode: 'interrupt' })
+    release()
+    const results = await Promise.all([p1, pi1, pi2])
+    expect(maxActive).toBe(1) // 互斥不变量：任意时刻同 scope 至多一轮
+    expect(results.every((r) => typeof r.reply === 'string')).toBe(true)
+  })
+
+  it('interrupt 与 resetSession 交错（review P2 回归）：不复活已重置的旧历史', async () => {
+    const { h, release } = gatedHarness()
+    const p1 = h.rt.sendMessage('story-room', 's1', '旧消息内容')
+    await vi.waitFor(() => expect(h.rt.health().busyScopes.length).toBeGreaterThan(0))
+    const pi = h.rt.sendMessage('story-room', 's1', '打断后消息', { mode: 'interrupt' })
+    await h.rt.resetSession('story-room', 's1')
+    release()
+    await p1 // aborted settle
+    const ri = await pi // 重置后在干净会话上执行（语义：复位后到达的消息开新史）
+    expect(ri.reply).toBe('完工')
+    const history = await h.rt.getHistory('story-room', 's1')
+    // 关键：旧轮内容（"旧消息内容"）不得复活；只有打断消息及其回复
+    expect(history.map((m) => m.content)).toEqual(['打断后消息', '完工'])
+  })
+
+  it('queue 上限：超过 8 条排队 fail-fast 抛 AgentBusyError', async () => {
+    const { h, release } = gatedHarness()
+    const p1 = h.rt.sendMessage('story-room', 's1', '第一')
+    await vi.waitFor(() => expect(h.rt.health().busyScopes.length).toBeGreaterThan(0))
+    const queued: Array<Promise<unknown>> = []
+    for (let i = 0; i < MAX_STEER_QUEUE; i++) {
+      queued.push(h.rt.sendMessage('story-room', 's1', `排队${i}`, { mode: 'queue' }))
+    }
+    await expect(h.rt.sendMessage('story-room', 's1', '超限', { mode: 'queue' })).rejects.toThrow(AgentBusyError)
+    release()
+    await p1
+    await Promise.all(queued) // 在队的全部照常完成
   })
 })
 
@@ -398,12 +500,12 @@ describe('会话管理', () => {
     h.rt.registerDefinition(mkDef({ tools: { lookup: tool } }))
 
     const p1 = h.rt.sendMessage('story-room', 's1', '第一')
-    await vi.waitFor(() => expect(h.rt.health().busyScopes).length)
+    await vi.waitFor(() => expect(h.rt.health().busyScopes.length).toBeGreaterThan(0))
     const p2 = h.rt.sendMessage('story-room', 's1', '第二', { mode: 'queue' })
     await h.rt.resetSession('story-room', 's1')
     release()
     await expect(p1).resolves.toBeDefined() // abort 后 settled
-    await expect(p2).rejects.toThrow('会话已重置')
+    await expect(p2).rejects.toThrow(AgentSessionResetError)
     expect(await h.rt.getHistory('story-room', 's1')).toEqual([])
     const r3 = await h.rt.sendMessage('story-room', 's1', '新开始')
     expect(r3.reply).toBe('完')
@@ -432,7 +534,7 @@ describe('租户（ALS 红线）', () => {
       },
       delete: async () => undefined,
     }
-    const h = mkHarness(mkModel([() => txt('ok')]), { sessionStore: store })
+    const h = mkHarness(mkModel([() => txt('ok')]), { sessionStore: store }, { subscribe: false })
     await runWithUserAsync('user-77', async () => {
       await h.rt.sendMessage('story-room', 's1', 'hi')
     })

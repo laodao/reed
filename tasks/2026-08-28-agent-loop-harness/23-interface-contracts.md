@@ -44,7 +44,11 @@ export interface AgentRuntime {
               opts?: SendMessageOptions): Promise<AgentSendResult>
     // 契约：per-(definitionId,scopeId) 互斥。busy 时按 opts.mode（24 号借鉴 codex steer）：
     //   'reject'（缺省，抛 AgentBusyError，同旧语义）| 'queue'（排队至当前轮边界，
-    //   作为 steer 输入合流注入下一轮——交互宿主推荐）| 'interrupt'（先 cancel 再发送）
+    //   逐条依次整轮执行——FIFO、各自独立终态与结果、排队上限 8 超限 fail-fast；
+    //   批 4 实现注记：非"合并为单轮输入"，每个 sendMessage 保持独立 Promise 语义）|
+    //   'interrupt'（取消当前轮一次，随后按 queue 同序公平等待执行——不插队）
+    // 批 4 review 修订：interrupt 恢复后必须复查互斥（可重入循环），否则双轮并发
+    // （同 scope 事件序破坏/历史互覆）；reset 进行中到达的消息在干净会话上执行。
   cancel(definitionId: string, scopeId: string): boolean    // 中断当前轮：模型/工具/挂起审批全链
   getHistory(definitionId: string, scopeId: string, limit?: number): Promise<AgentHistoryMessage[]>
   resetSession(definitionId: string, scopeId: string): Promise<void>
@@ -73,6 +77,10 @@ export interface AgentRuntimeDeps {          // 全量可注入（22 号 §5）
   clock?: () => number
   logger?: Pick<Console, 'info' | 'warn' | 'error'>
 }
+// 批 4 实现偏差（已定稿，实现以此为准）：
+//   - resolveModel/sessionStore 实现为必填（无 DB/模型时无合理缺省，fail-fast）
+//   - memoryService 留待记忆批次接入；logger 用项目统一 createLogger（不注入）
+//   - 追加可注入项：approvalStore / sweeperIntervalMs / sessionCacheCapacity / sessionTtlMs
 ```
 
 ## 2. AgentHost（宿主契约——12 号 §5.2 原样，一字不改）
@@ -264,6 +272,9 @@ export interface MemoryAssembler { assemble(spec: string, tokenBudget: number): 
 | 4 | **部署形态**：审批挂起态在进程内存 + pendingApproval 落库 | 单实例 Web/Electron 成立；进程重启经落库行+哨兵恢复（12 号） | 水平多实例需审批决定走事件/DB 回流（挂起 Promise 无法跨进程）——届时 ApprovalCoordinator 的 decide 改为落库驱动，接口签名不变 |
 | 5 | **provider 并发/配额**：门面不做全局限流 | 单 scope 互斥已有；多 scope 并发打满 provider 属 13 号 provider 层职责 | provider-adapter 内加并发闸（对契约透明） |
 | 6 | **SessionStore 唯一索引 NULL 语义**：`uq_agent_sessions_conv_seq` 对 user_id NULL 行不生效（两方言 NULL≠NULL，2026-09-06 批 3 实证） | 桌面端 Electron 启动即注入默认用户（非 NULL），且 sqlite 串行门整体互斥事务；Web 端各入口强制 ALS userId | 若未来出现"匿名 + 跨进程并发"形态：改表达式唯一索引 `(COALESCE(user_id,''), conversation_id, seq)`（两方言均支持；需同步处理 web synchronize 与迁移两条建表路径的索引形态一致性） |
+| 7 | **scope 会话属主**：驻留会话条目（互斥锁/审批卡/Amendment 缓存/事件订阅）按首个触达者 userId 认主，跨租户同 (definitionId,scopeId) 抛 `AgentScopeOwnerMismatchError`（批 4 review 定稿） | 平台层不依赖 scopeId 全局唯一；业务定义需保证 scopeId 租户内唯一（如 story-room 的 p-xxx 项目 ID 本身按用户隔离） | 若出现合法的跨用户共享会话需求：门面加 `sharedScope` 声明位，属主校验按定义开关 |
+| 8 | **queue 语义粒度**：排队消息逐条依次整轮执行（各自终态/结果），非合并为单轮输入 | API 形态 sendMessage→独立 AgentSendResult 所需；交互宿主逐条展示 | 真"合流注入下一轮"（codex steer 原语义）需循环内 steer 缓冲区：LoopRunner 加可注入 steer 钩子，门面在轮边界合流未决消息——接线批按需立项 |
+| 9 | **Amendment 缓存寿命**：会话级免批缓存随驻留条目存活（空闲 30min/容量驱逐即失，不持久化） | "会话级"定位（进程内会话生命周期）；持久化升级位已在 §4 预留（业务包升级为持久规则） | 高频关键工具的免批规则走业务包持久化（M4 审批缺口批次） |
 
 **—— 2026-09-06 批 3 SessionStore 实现注记（§6 落地补充）——**
 - save() 事务内分块 INSERT（500 行/批）：单语句多值 INSERT 撞 SQLite 绑定变量上限

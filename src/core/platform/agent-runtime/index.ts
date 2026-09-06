@@ -62,10 +62,13 @@ export {
   initAgentRuntime,
   getAgentRuntime,
   disposeAgentRuntime,
+  MAX_STEER_QUEUE,
   AgentBusyError,
   AgentDefinitionConflictError,
   AgentDefinitionNotFoundError,
   AgentRuntimeNotInitializedError,
+  AgentSessionResetError,
+  AgentScopeOwnerMismatchError,
 } from './runtime/agent-service'
 export type { AgentRuntime, AgentRuntimeDeps } from './runtime/agent-service'
 

@@ -19,11 +19,12 @@
  */
 
 import { createLogger } from '@core/utils/logger'
-import { getCurrentUserId, runWithUserAsync } from '@core/context/user-context'
+import { getCurrentUserId, runWithUser, runWithUserAsync } from '@core/context/user-context'
 import type { LanguageModel, ModelMessage } from 'ai'
 import type {
   AgentEvent,
   AgentHistoryMessage,
+  AgentLoopMode,
   AgentSendResult,
   ApprovalDecision,
   PendingApproval,
@@ -89,12 +90,30 @@ export class AgentRuntimeNotInitializedError extends Error {
   }
 }
 
+/** 会话被重置（排队中的消息被拒绝） */
+export class AgentSessionResetError extends Error {
+  readonly code = 'AGENT_SESSION_RESET'
+  constructor(scopeKey: string) {
+    super(`会话已重置，排队消息被拒绝（${scopeKey}）`)
+    this.name = 'AgentSessionResetError'
+  }
+}
+
+/** 跨租户访问同一 scope（平台层不依赖 scopeId 全局唯一，属主不匹配 fail-fast） */
+export class AgentScopeOwnerMismatchError extends Error {
+  readonly code = 'AGENT_SCOPE_OWNER_MISMATCH'
+  constructor(scopeKey: string) {
+    super(`会话 ${scopeKey} 属于其他用户（scopeId 需在定义内保证租户内唯一）`)
+    this.name = 'AgentScopeOwnerMismatchError'
+  }
+}
+
 // ==================== 门面契约 ====================
 
 export interface AgentRuntime {
   registerDefinition(def: AgentDefinition): void
   unregisterDefinition(definitionId: string): void
-  listDefinitions(): Array<{ id: string; version: number; toolCount: number; loopMode: string }>
+  listDefinitions(): Array<{ id: string; version: number; toolCount: number; loopMode: AgentLoopMode }>
 
   sendMessage(definitionId: string, scopeId: string, message: string, opts?: SendMessageOptions): Promise<AgentSendResult>
   cancel(definitionId: string, scopeId: string): boolean
@@ -135,11 +154,16 @@ interface SteerQueueItem {
   reject: (e: unknown) => void
 }
 
+/** 排队上限（mode=queue 失控客户端防线；超限 fail-fast） */
+export const MAX_STEER_QUEUE = 8
+
 /** 驻留会话（LRU 条目） */
 interface SessionEntry {
   scopeKey: string
   definitionId: string
   scopeId: string
+  /** 首个触达者捕获的租户（跨租户同 scope fail-fast；Electron 单用户为 null） */
+  ownerUserId: string | null
   busy: boolean
   controller: AbortController | null
   currentTurn: Promise<AgentSendResult> | null
@@ -156,7 +180,9 @@ interface SessionEntry {
 export class AgentRuntimeImpl implements AgentRuntime {
   private readonly definitions = new Map<string, AgentDefinition>()
   private readonly entries = new Map<string, SessionEntry>() // scopeKey → entry
-  private readonly bridges = new Map<string, EventBridge>() // definitionId → bridge
+  /** 桥缓存（definitionId → { def, bridge }）：注销后保留给在途轮终态；
+   *  重新注册同名定义（def 引用变化）时重建——通道命名随新定义 */
+  private readonly bridges = new Map<string, { def: AgentDefinition | undefined; bridge: EventBridge }>()
   private readonly deps: Required<Pick<AgentRuntimeDeps, 'resolveModel' | 'sessionStore' | 'sweeperIntervalMs' | 'sessionCacheCapacity' | 'sessionTtlMs'>> & {
     eventEmitter: { emit(channel: string, payload: unknown): void } | null
     eventBus: PlatformBusPort | null
@@ -184,7 +210,11 @@ export class AgentRuntimeImpl implements AgentRuntime {
     }
   }
 
-  /** 关停：中断全部轮、清队列/订阅/定时器（disposeAgentRuntime 调用） */
+  /**
+   * 关停（best-effort，review P3）：中断全部轮（abort 后轮经 signal 路径自行 settle，
+   * 不在此 await）、拒绝排队者、清订阅与定时器、冲刷总线链。在途轮的终态事件
+   * 可能无人接收——关停语义下接受（消费方随进程一同退出）。
+   */
   dispose(): void {
     if (this.sweeper) clearInterval(this.sweeper)
     this.sweeper = null
@@ -194,11 +224,12 @@ export class AgentRuntimeImpl implements AgentRuntime {
       entry.steerQueue = []
       entry.subs.clear()
     }
-    for (const bridge of this.bridges.values()) {
+    for (const { bridge } of this.bridges.values()) {
       void bridge.flush().catch(() => undefined) // best-effort：总线链排空不阻塞关停
     }
     this.entries.clear()
     this.definitions.clear()
+    this.bridges.clear()
   }
 
   // —— 定义注册 ——
@@ -217,10 +248,11 @@ export class AgentRuntimeImpl implements AgentRuntime {
       entry.steerQueue = []
     }
     this.definitions.delete(definitionId)
-    this.bridges.delete(definitionId)
+    // 桥保留（review P2）：在途轮的终态事件仍走业务通道（§7b 终态必达）；
+    // bridgeFor 已缓存实例不依赖 definitions 在册——仅 dispose 时统一清理
   }
 
-  listDefinitions(): Array<{ id: string; version: number; toolCount: number; loopMode: string }> {
+  listDefinitions(): Array<{ id: string; version: number; toolCount: number; loopMode: AgentLoopMode }> {
     return [...this.definitions.values()].map((d) => ({
       id: d.id,
       version: d.version,
@@ -241,22 +273,37 @@ export class AgentRuntimeImpl implements AgentRuntime {
     if (!def) throw new AgentDefinitionNotFoundError(definitionId)
     // ALS 红线：入口同步捕获（排队/续链后 ALS 已丢）
     const userId = getCurrentUserId()
-    const entry = this.touchEntry(def, scopeId)
 
-    if (entry.busy) {
+    // 可重入互斥：interrupt 等待期间状态可能被续链/并发 interrupt/复位改变，
+    // 每轮循环重取条目并复查（批 4 review P1/P2：恢复后不复查 = 双轮并发/复活已重置会话）
+    let interruptedOnce = false
+    for (;;) {
+      const entry = this.touchEntry(def, scopeId) // 复位后条目被删 → 此处重建
+      if (!entry.busy && !entry.resetting) {
+        return this.runTurn(entry, def, message, opts, userId)
+      }
       const mode = opts?.mode ?? 'reject'
-      if (mode === 'reject') throw new AgentBusyError(entry.scopeKey)
-      if (mode === 'interrupt') {
+      if (mode === 'reject' && !interruptedOnce) throw new AgentBusyError(entry.scopeKey)
+      if (entry.resetting) {
+        // 复位进行中：等当前轮 settle 后重试（条目会被删除重建）
+        if (entry.currentTurn) await entry.currentTurn.catch(() => undefined)
+        else await Promise.resolve()
+        continue
+      }
+      if (mode === 'interrupt' && !interruptedOnce) {
+        interruptedOnce = true // 只取消一次；后续与 queue 同序公平等待
         this.cancel(definitionId, scopeId)
         if (entry.currentTurn) await entry.currentTurn.catch(() => undefined)
-      } else {
-        // queue：排队至当前轮边界（FIFO），续链用排队时刻的租户
-        return new Promise<AgentSendResult>((resolve, reject) => {
-          entry.steerQueue.push({ message, opts, userId, resolve, reject })
-        })
+        continue
       }
+      // queue（含 interrupt 的等待段）：排队至轮边界，逐条整轮执行（FIFO）
+      if (entry.steerQueue.length >= MAX_STEER_QUEUE) {
+        throw new AgentBusyError(entry.scopeKey) // 排队已满：fail-fast 防失控堆积
+      }
+      return new Promise<AgentSendResult>((resolve, reject) => {
+        entry.steerQueue.push({ message, opts, userId, resolve, reject })
+      })
     }
-    return this.runTurn(entry, def, message, opts, userId)
   }
 
   cancel(definitionId: string, scopeId: string): boolean {
@@ -294,7 +341,7 @@ export class AgentRuntimeImpl implements AgentRuntime {
         this.cancel(definitionId, scopeId)
         if (entry.currentTurn) await entry.currentTurn.catch(() => undefined)
       }
-      for (const item of entry.steerQueue) item.reject(new Error('会话已重置'))
+      for (const item of entry.steerQueue) item.reject(new AgentSessionResetError(key))
       entry.steerQueue = []
       entry.coordinator.cancelScope(key)
       // 丢弃驻留条目（连同 Amendment 会话缓存）；订阅闭包变 no-op，重订阅会重建
@@ -392,12 +439,13 @@ export class AgentRuntimeImpl implements AgentRuntime {
           entry.coordinator.request(entry.scopeKey, tool, input, call.signal),
       })
       const result = await runner.run(task, host)
+      // 只算一次：二次调用若抛错会在 reply:done 已发后再发 error（双终态，review P3）
+      const suggestions = result.stopReason === 'error' ? [] : def.buildSuggestions?.(snapshot) ?? []
 
       // 终态必达三选一（23 号 §7b）：error 轮发 error 不发 reply:done
       if (result.stopReason === 'error') {
         this.dispatch(entry, { type: 'error', error: result.error ?? '未知错误' })
       } else {
-        const suggestions = def.buildSuggestions?.(snapshot) ?? []
         this.dispatch(entry, { type: 'reply:done', suggestions })
         // onTurnEnd 钩子（fire-and-forget，失败仅告警；Promise.resolve 兜底同步实现）
         if (def.onTurnEnd) {
@@ -416,7 +464,7 @@ export class AgentRuntimeImpl implements AgentRuntime {
         conversationId: entry.scopeKey,
         reply: result.output,
         actionSummaries: host.actionSummaries,
-        suggestions: def.buildSuggestions?.(snapshot) ?? [],
+        suggestions,
         usage: {
           inputTokens: result.usage.promptTokens,
           outputTokens: result.usage.completionTokens,
@@ -439,14 +487,22 @@ export class AgentRuntimeImpl implements AgentRuntime {
       }
     }
 
-    // 异常（provider 未配置/快照失败等）：发 error 终态事件后原样上抛
+    // 异常（provider 未配置/快照失败等）：发 error 终态事件后原样上抛。
+    // rejection handler 运行在 .then 挂载点上下文（ALS 已丢）——dispatch 用捕获租户
+    // 同步包裹（review P2：queue 续链下错误分发曾落在错误租户上下文）
+    const emitError = (e: unknown): void => {
+      const dispatch = (): void =>
+        this.dispatch(entry, { type: 'error', error: e instanceof Error ? e.message : String(e) })
+      if (userId) runWithUser(userId, dispatch)
+      else dispatch()
+    }
     const turn = (userId ? runWithUserAsync(userId, exec) : exec()).then(
       (r) => {
         onSettled()
         return r
       },
       (e) => {
-        this.dispatch(entry, { type: 'error', error: e instanceof Error ? e.message : String(e) })
+        emitError(e)
         onSettled()
         throw e
       },
@@ -460,6 +516,11 @@ export class AgentRuntimeImpl implements AgentRuntime {
   private touchEntry(def: AgentDefinition, scopeId: string): SessionEntry {
     const key = scopeKeyOf(def.id, scopeId)
     let entry = this.entries.get(key)
+    if (entry && entry.ownerUserId !== getCurrentUserId()) {
+      // 平台层不依赖 scopeId 全局唯一：跨租户同 scope fail-fast
+      //（否则互斥锁/审批卡/Amendment 缓存/事件订阅全部跨租户共享——提权面）
+      throw new AgentScopeOwnerMismatchError(key)
+    }
     if (!entry) {
       // 先驱逐再插入：新条目尚未在册，不会被误驱逐（否则本轮刚建的会话即被清出，
       // health/cancel 找不到它——批 4 单测实证）
@@ -468,6 +529,7 @@ export class AgentRuntimeImpl implements AgentRuntime {
         scopeKey: key,
         definitionId: def.id,
         scopeId,
+        ownerUserId: getCurrentUserId(),
         busy: false,
         controller: null,
         currentTurn: null,
@@ -500,19 +562,23 @@ export class AgentRuntimeImpl implements AgentRuntime {
   }
 
   private bridgeFor(definitionId: string): EventBridge {
-    let bridge = this.bridges.get(definitionId)
-    if (!bridge) {
-      const def = this.definitions.get(definitionId)
-      bridge = new EventBridge({
-        emitDirect: (channel, event) => this.deps.eventEmitter?.emit(channel, event),
-        definitionId,
-        eventChannel: (scopeId) => def?.eventChannel(scopeId) ?? `agent:${definitionId}:${scopeId}`,
-        streamChannel: def?.streamChannel,
-        bus: this.deps.eventBus,
-      })
-      this.bridges.set(definitionId, bridge)
+    const def = this.definitions.get(definitionId)
+    let cached = this.bridges.get(definitionId)
+    // 注销后（def=undefined）保留旧桥给在途轮终态；仅在"新定义注册"（引用变化）时重建
+    if (!cached || (def !== undefined && cached.def !== def)) {
+      cached = {
+        def,
+        bridge: new EventBridge({
+          emitDirect: (channel, event) => this.deps.eventEmitter?.emit(channel, event),
+          definitionId,
+          eventChannel: (scopeId) => def?.eventChannel(scopeId) ?? `agent:${definitionId}:${scopeId}`,
+          streamChannel: def?.streamChannel,
+          bus: this.deps.eventBus,
+        }),
+      }
+      this.bridges.set(definitionId, cached)
     }
-    return bridge
+    return cached.bridge
   }
 
   private onSweepTick(): void {
@@ -551,12 +617,14 @@ export class AgentRuntimeImpl implements AgentRuntime {
     )
   }
 
-  /** 重启恢复：残留挂起行按「忽略」哨兵清理（12 号；Promise 已随进程消亡） */
+  /** 重启恢复：残留挂起行按「忽略」哨兵清理（12 号；Promise 已随进程消亡）。
+   *  只清构造时刻之前的行（fire-and-forget 窗口内新建的挂起卡不清——review P3）。 */
   private async recoverOrphanApprovals(): Promise<void> {
     const store = this.deps.approvalStore as ApprovalStore & { listAll?: () => Promise<PendingApproval[]> }
     if (!store.listAll) return
+    const bootAt = this.deps.clock()
     try {
-      const orphans = await store.listAll()
+      const orphans = (await store.listAll()).filter((p) => p.createdAt <= bootAt)
       for (const p of orphans) await store.clear(p.approvalId)
       if (orphans.length > 0) {
         logger.info(`[agent-runtime] 重启恢复：清理 ${orphans.length} 条残留挂起审批（忽略哨兵）`)
