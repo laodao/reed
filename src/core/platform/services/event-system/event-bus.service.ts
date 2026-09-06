@@ -725,7 +725,7 @@ export async function getEventBus(): Promise<PlatformEventBus | null> {
         logger.warn('[EventBus] 数据源未就绪，事件总线未启动')
         return null
       }
-      const bus = new PlatformEventBus(ds)
+      const bus = new PlatformEventBus(ds, { rateLimits: await loadRateLimitOverrides() })
       await bus.start()
       singleton = bus
       logger.info('[EventBus] 平台事件总线已启动')
@@ -757,4 +757,26 @@ export async function stopEventBus(): Promise<void> {
 /** sqlite 原生 SQL 路径的日期格式（对齐 TypeORM mixedDateToDatetimeString，UTC） */
 function formatSqliteDatetime(d: Date): string {
   return d.toISOString().replace('T', ' ').replace('Z', '')
+}
+
+
+/** settings 键：eventBus:rateLimits（JSON 规则数组，如 [{"pattern":"agent:*","maxPerMinute":0}]；0=不限）。读取失败/缺省回退代码默认（2026-09-06 增） */
+const RATE_LIMIT_SETTINGS_KEY = 'eventBus:rateLimits'
+
+async function loadRateLimitOverrides(): Promise<EventRateLimitRule[] | undefined> {
+  try {
+    const settings = getCoreDatabaseManager().settings
+    if (!settings) return undefined
+    const raw = await settings.get(RATE_LIMIT_SETTINGS_KEY)
+    if (!Array.isArray(raw)) return undefined
+    const rules = raw.filter(
+      (r): r is EventRateLimitRule =>
+        !!r && typeof r === 'object' && typeof (r as EventRateLimitRule).pattern === 'string' &&
+        typeof (r as EventRateLimitRule).maxPerMinute === 'number',
+    )
+    return rules.length > 0 ? rules : undefined
+  } catch (e) {
+    logger.warn('[EventBus] 读取限流覆盖配置失败，使用代码默认', e)
+    return undefined
+  }
 }

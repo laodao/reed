@@ -43,16 +43,17 @@ afterEach(async () => {
 })
 
 describe('EventRateLimiter 纯函数面（§7.8）', () => {
-  it('默认阈值按类型族区分：system.event.* 与 workflow.run.* 不限，其余 20/分钟', () => {
+  it('默认阈值按类型族区分：system.event.* 与 workflow.run.* 不限，其余为风暴兜底量级', () => {
     const l = new EventRateLimiter()
     // 不限流族：同 key 连发 100 次全放行
     for (let i = 0; i < 100; i++) {
       expect(l.allow('workflow.run.node-progress', 'workflow.run.node-progress|workflow_run|r1')).toBe(true)
       expect(l.allow('system.event.rate-limited', 'system.event.rate-limited|test|agg')).toBe(true)
     }
-    // 兜底族：20 次放行，第 21 次拒绝
+    // 兜底族：额度内全放行，超一次拒绝（阈值读常量——2026-09-06 起为风暴兜底量级 600）
     const key = 'kb:document-completed|kb_doc|d1'
-    for (let i = 0; i < 20; i++) expect(l.allow('kb:document-completed', key)).toBe(true)
+    const cap = DEFAULT_EVENT_RATE_LIMITS.find(r => r.pattern === '*')!.maxPerMinute
+    for (let i = 0; i < cap; i++) expect(l.allow('kb:document-completed', key)).toBe(true)
     expect(l.allow('kb:document-completed', key)).toBe(false)
   })
 
@@ -72,11 +73,13 @@ describe('EventRateLimiter 纯函数面（§7.8）', () => {
 
   it('滑动窗口：窗口滑出后额度恢复', () => {
     let t = 1_000_000
-    const l = new EventRateLimiter(DEFAULT_EVENT_RATE_LIMITS, 60_000, () => t)
+    // 注入显式小阈值，测试独立于默认常量（2026-09-06 默认上调为风暴兜底量级）
+    const l = new EventRateLimiter([{ pattern: '*', maxPerMinute: 2 }], 60_000, () => t)
     const key = 'kb:x|test|agg'
-    for (let i = 0; i < 20; i++) expect(l.allow('kb:x', key)).toBe(true)
+    expect(l.allow('kb:x', key)).toBe(true)
+    expect(l.allow('kb:x', key)).toBe(true)
     expect(l.allow('kb:x', key)).toBe(false)
-    t += 30_000 // 半窗口：最早 20 条仍在窗口内
+    t += 30_000 // 半窗口：最早 2 条仍在窗口内
     expect(l.allow('kb:x', key)).toBe(false)
     t += 31_000 // 整窗滑出
     expect(l.allow('kb:x', key)).toBe(true)
@@ -109,7 +112,7 @@ describe('publish 限流接线（§7.8）', () => {
       `SELECT type, COUNT(*) AS c FROM platform_events GROUP BY type ORDER BY type`
     )
     const byType = Object.fromEntries(rows.map((r: { type: string; c: number }) => [r.type, Number(r.c)]))
-    expect(byType['kb:flood']).toBe(20)
+    expect(byType['kb:flood']).toBe(DEFAULT_EVENT_RATE_LIMITS.find(r => r.pattern === '*')!.maxPerMinute)
     expect(byType[RATE_LIMITED_EVENT_TYPE]).toBe(1) // marker 节流：5 条超限只记 1 条
 
     const marker = await ds.query(
@@ -118,7 +121,7 @@ describe('publish 限流接线（§7.8）', () => {
     )
     const payload = JSON.parse(marker[0].payload_json)
     expect(payload.limitedType).toBe('kb:flood')
-    expect(payload.maxPerMinute).toBe(20)
+    expect(payload.maxPerMinute).toBe(DEFAULT_EVENT_RATE_LIMITS.find(r => r.pattern === '*')!.maxPerMinute)
     expect(marker[0].aggregate_id).toBe('agg-f') // 沿用被限事件聚合
     expect(marker[0].actor_kind).toBe('system')
   })

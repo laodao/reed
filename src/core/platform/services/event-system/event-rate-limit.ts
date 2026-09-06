@@ -31,13 +31,17 @@ export const DEFAULT_EVENT_RATE_LIMIT_WINDOW_MS = 60_000
  * - system.event.* 不限：限流自身的 marker 事件，防自限死循环；
  * - workflow.run.* 不限：run 生命周期含高频 node-progress 进度事件，前端实时推送依赖之，
  *   存量系统对 wf:run-event 本无限流——误杀会导致 UI 进度卡死，故默认放行；
- * - 其余一律 20/分钟/(type,aggregate)：沿袭 EVENT_TRIGGER_MAX_PER_MINUTE=20 语义，
- *   让自触发链/跨模块乒乓在 1 分钟内衰减到静默，而非无限烧存储与投递。
+ * - 其余 600/分钟/(type,aggregate)（2026-09-06 从 20 上调）：
+ *   定位是**自触发链/乒乓风暴的兜底**（事件→触发器→工作流→事件的 runaway 防护），
+ *   不是日常业务闸门——正常领域事件（agent 单会话 action:done 峰值 ~24/分）远够不着；
+ *   风暴场景（10-100 事件/秒）在数秒内触顶衰减。旧值 20 会误杀合法领域事件
+ *   （评审发现），且超限丢弃语义决定了它必须只对真风暴生效。
+ *   运行时可经 settings 键 eventBus:rateLimits 覆盖（JSON 规则数组，0=不限）。
  */
 export const DEFAULT_EVENT_RATE_LIMITS: EventRateLimitRule[] = [
   { pattern: 'system.event.*', maxPerMinute: 0 },
   { pattern: 'workflow.run.*', maxPerMinute: 0 },
-  { pattern: '*', maxPerMinute: 20 },
+  { pattern: '*', maxPerMinute: 600 },
 ]
 
 /** 窗口表内存上限防御：键数超限时会全表清理过期窗口（正常量级远达不到） */
