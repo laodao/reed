@@ -8,43 +8,15 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { MockLanguageModelV3, simulateReadableStream } from 'ai/test'
+import { MockLanguageModelV3 } from 'ai/test'
 import type { LanguageModel } from 'ai'
 import { z } from 'zod'
 import { LoopRunner, initState, normalizeDecision, truncateJson } from '@core/platform/agent-runtime/runtime/loop'
 import type { AgentHost, AgentLoopState, AgentTask, AgentToolDef, TrajectoryEntry, AgentStreamEvent } from '@core/platform/agent-runtime/types'
 
-// ==================== 测试基建 ====================
+// ==================== 测试基建（公共件见 ./helpers——与 agent-service.spec 共用） ====================
 
-const usage = {
-  inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 },
-  outputTokens: { total: 5, noCache: 5 },
-  totalTokens: { total: 15, noCache: 15 },
-}
-
-/** steps：每次 doStream 消费一个响应工厂（spike manual-loop.mjs 同款） */
-function mkModel(steps: Array<() => Array<Record<string, unknown>>>): LanguageModel {
-  let i = 0
-  return new MockLanguageModelV3({
-    provider: 'test',
-    modelId: 'mock',
-    doStream: async () => ({
-      stream: simulateReadableStream({ chunks: steps[Math.min(i++, steps.length - 1)]() }),
-    }),
-  }) as unknown as LanguageModel
-}
-const txt = (t: string) => [
-  { type: 'stream-start', warnings: [] },
-  { type: 'text-start', id: 't' },
-  { type: 'text-delta', id: 't', delta: t },
-  { type: 'text-end', id: 't' },
-  { type: 'finish', finishReason: { unified: 'stop', raw: undefined }, usage },
-]
-const toolParts = (id: string, name: string, input: unknown) => [
-  { type: 'stream-start', warnings: [] },
-  { type: 'tool-call', toolCallId: id, toolName: name, input: JSON.stringify(input) },
-  { type: 'finish', finishReason: { unified: 'tool-calls', raw: undefined }, usage },
-]
+import { mockUsage as usage, txtChunks as txt, toolCallChunks as toolParts, mkModel, streamErrorChunks } from './helpers'
 
 class FakeHost implements AgentHost {
   savedStates: AgentLoopState[] = []
@@ -291,7 +263,7 @@ describe('LoopRunner', () => {
     expect(r.stopReason).toBe('aborted')
   })
 
-  it('⑨ 无进展检测：连续相同 signature 触发 stagnant 终止', async () => {
+  it('⑨ 无进展检测：nudge 注入一次后仍原地打转 → 以 stagnant 终止（深度 review：原恒以 max_steps 兜底）', async () => {
     const tool: AgentToolDef = {
       name: 'same_call',
       description: '同',
@@ -301,8 +273,12 @@ describe('LoopRunner', () => {
     const host = new FakeHost()
     const runner = mkRunner(mkModel([() => toolParts('c1', 'same_call', {})]), { stagnantLimit: 2 })
     const r = await runner.run(mkTask({ same_call: tool }, 10), host)
-    // 3 轮相同调用（stagnantLimit=2 → 注入提示 + 2 轮机会）后终止
-    expect(['stagnant', 'max_steps']).toContain(r.stopReason)
+    expect(r.stopReason).toBe('stagnant') // nudge 一次后再次达限 → 确定性 stagnant 终止
+    // 提示只注入一次（messages 中 STAGNANT 提示恰一条）
+    const nudges = (host.savedStates.at(-1)?.messages ?? []).filter(
+      (m) => typeof m.content === 'string' && m.content.includes('相同的工具调用'),
+    )
+    expect(nudges.length).toBe(1)
   })
 
   it('⑩ 恢复：loadState 命中后从既有 iteration 续跑（不重放用户消息）', async () => {
@@ -328,5 +304,63 @@ describe('LoopRunner', () => {
     expect(r.usage.promptTokens).toBeGreaterThanOrEqual(100)
     // 消息历史保留恢复前的内容
     expect(JSON.stringify(host.savedStates.at(-1)?.messages)).toContain('已查两次')
+  })
+
+  it('⑪ 流中途失败（error part 收尾）→ 以 error 终止，绝不把部分文本当 final（深度 review P1 回归）', async () => {
+    const host = new FakeHost()
+    const runner = mkRunner(mkModel([() => streamErrorChunks('半截回答', 'provider 500')]))
+    const r = await runner.run(mkTask({}), host)
+    expect(r.stopReason).toBe('error')
+    expect(r.error).toContain('provider 500')
+    expect(r.output).toBe('') // 半截文本不得成为"最终答案"
+    // 部分内容仍留痕历史（宁可重放不丢史）
+    expect(JSON.stringify(host.savedStates.at(-1)?.messages)).toContain('半截回答')
+  })
+
+  it('⑫ finishReason=error（无 error part）→ 同样以 error 终止', async () => {
+    const host = new FakeHost()
+    const runner = mkRunner(mkModel([
+      () => [
+        { type: 'stream-start', warnings: [] },
+        { type: 'finish', finishReason: { unified: 'error', raw: undefined }, usage },
+      ],
+    ]))
+    const r = await runner.run(mkTask({}), host)
+    expect(r.stopReason).toBe('error')
+  })
+
+  it('⑬ finishReason=length → 按 final 收敛（截断答案可用，warn 可观测）', async () => {
+    const host = new FakeHost()
+    const runner = mkRunner(mkModel([
+      () => [
+        { type: 'stream-start', warnings: [] },
+        { type: 'text-start', id: 't' },
+        { type: 'text-delta', id: 't', delta: '被截断的答案' },
+        { type: 'text-end', id: 't' },
+        { type: 'finish', finishReason: { unified: 'length', raw: undefined }, usage },
+      ],
+    ]))
+    const r = await runner.run(mkTask({}), host)
+    expect(r.stopReason).toBe('final')
+    expect(r.output).toBe('被截断的答案')
+  })
+
+  it('⑭ 工具超时 → TIMEOUT 错误回填，循环继续收敛', async () => {
+    const never: AgentToolDef = {
+      name: 'slow',
+      description: '慢',
+      inputSchema: z.object({}),
+      // 永不 resolve——靠 withTimeout 墙钟切断（超时不中止底层执行，仅回填错误）
+      execute: () => new Promise<never>(() => undefined),
+    }
+    const host = new FakeHost()
+    const runner = mkRunner(mkModel([() => toolParts('c1', 'slow', {}), () => txt('超时后收敛')]), {
+      toolTimeoutMs: 30,
+    })
+    const r = await runner.run(mkTask({ slow: never }, 6), host)
+    expect(r.stopReason).toBe('final')
+    expect(r.output).toBe('超时后收敛')
+    // 超时错误已回填为 tool 结果（模型据此改路）
+    expect(JSON.stringify(host.savedStates.at(-1)?.messages)).toContain('TIMEOUT')
   })
 })

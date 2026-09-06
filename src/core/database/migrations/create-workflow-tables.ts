@@ -15,6 +15,7 @@
 
 import type { DataSource } from 'typeorm'
 import { createLogger } from '@core/utils/logger'
+import { ensureTable, ensureIndex, checkIndexExists, ensurePartialUniqueIndex } from './migration-utils'
 
 const logger = createLogger('create-workflow-tables')
 
@@ -227,17 +228,15 @@ async function ensureMutexUniqueIndex(ds: DataSource, isPg: boolean): Promise<vo
   } catch (e) {
     logger.warn('[createWorkflowTables] 互斥并发行收敛失败（继续尝试建索引）', e)
   }
-  try {
-    await ds.query(
-      `CREATE UNIQUE INDEX ${indexName} ON workflow_runs (user_id, definition_id) WHERE status IN ('pending','running','waiting_review')`
-    )
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e)
-    if (!/already exists|duplicate/i.test(message)) {
-      // 建不出来不阻断 boot（如存量脏数据残留），仅告警——应用层 check-then-create 仍在
-      logger.warn('[createWorkflowTables] 互斥部分唯一索引创建失败（互斥退回应用层检查）', e)
-    }
-  }
+  await ensurePartialUniqueIndex(
+    ds,
+    isPg,
+    indexName,
+    'workflow_runs',
+    '(user_id, definition_id)',
+    `status IN ('pending','running','waiting_review')`,
+    '互斥部分唯一索引创建失败（互斥退回应用层检查）'
+  )
 }
 
 async function ensureNodeRunIndexes(ds: DataSource, isPg: boolean): Promise<void> {
@@ -253,80 +252,4 @@ async function ensureNodeRunIndexes(ds: DataSource, isPg: boolean): Promise<void
     '(run_id, node_id, iteration_index)',
     true
   )
-}
-
-// ─── 内部工具（与项目其他 migration 同风格） ─────────────────────────────────
-
-async function ensureTable(
-  ds: DataSource,
-  isPg: boolean,
-  table: string,
-  ddl: string,
-  onExists: () => Promise<void>
-): Promise<void> {
-  const exists = await checkTableExists(ds, table, isPg)
-  if (exists) {
-    await onExists() // 表已存在 → 确保索引也存在（补齐旧库）
-    return
-  }
-  await ds.query(ddl)
-  await onExists()
-  console.log(`[create-workflow-tables] 表 ${table} 创建完成`)
-}
-
-async function checkTableExists(
-  ds: DataSource,
-  table: string,
-  isPg: boolean
-): Promise<boolean> {
-  if (isPg) {
-    const rows = await ds.query(
-      `SELECT 1 FROM information_schema.tables WHERE table_name = $1 AND table_schema = current_schema() LIMIT 1`,
-      [table]
-    )
-    return rows.length > 0
-  }
-  const rows = await ds.query(
-    `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1`,
-    [table]
-  )
-  return rows.length > 0
-}
-
-async function checkIndexExists(
-  ds: DataSource,
-  indexName: string,
-  isPg: boolean
-): Promise<boolean> {
-  if (isPg) {
-    const rows = await ds.query(
-      `SELECT 1 FROM pg_indexes WHERE indexname = $1 AND schemaname = current_schema() LIMIT 1`,
-      [indexName]
-    )
-    return rows.length > 0
-  }
-  const rows = await ds.query(
-    `SELECT 1 FROM sqlite_master WHERE type='index' AND name = ? LIMIT 1`,
-    [indexName]
-  )
-  return rows.length > 0
-}
-
-async function ensureIndex(
-  ds: DataSource,
-  isPg: boolean,
-  indexName: string,
-  table: string,
-  columns: string,
-  unique = false
-): Promise<void> {
-  if (await checkIndexExists(ds, indexName, isPg)) return
-  const uniqueKw = unique ? 'UNIQUE ' : ''
-  try {
-    await ds.query(`CREATE ${uniqueKw}INDEX ${indexName} ON ${table} ${columns}`)
-  } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : String(e)
-    // 索引可能已由 entity synchronize 建过（如 sqlite 测试库），忽略冲突
-    if (!/already exists|duplicate/i.test(message)) throw e
-  }
 }

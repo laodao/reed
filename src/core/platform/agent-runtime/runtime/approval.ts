@@ -26,6 +26,9 @@ import type { AgentToolDef } from '../types'
 
 const logger = createLogger('AgentApproval')
 
+/** 卡片摘要展示上限（观测面裁剪常量） */
+const CARD_SUMMARY_MAX_CHARS = 2000
+
 export interface ApprovalCoordinatorDeps {
   /** 事件出口（经 event-bridge 双路径） */
   emit: (e: AgentEvent) => void
@@ -122,6 +125,11 @@ export class ApprovalCoordinator {
     input: unknown,
     signal?: AbortSignal,
   ): Promise<ApprovalDecision> {
+    // 已中止的 signal 前置拒绝（否则白等整个超时窗口——深度 review P3-6）
+    if (signal?.aborted) {
+      return { action: 'reject', reason: 'cancelled' }
+    }
+
     // Amendment 命中：会话级同类免批（不发新卡，审计事件照发）
     const aKey = amendmentKey(tool.name, input)
     if (this.sessionCache.has(aKey)) {
@@ -129,7 +137,8 @@ export class ApprovalCoordinator {
       return { action: 'approve' }
     }
 
-    // 同 scope 同时最多一张挂起卡（12 号约定；违反=调用方 bug，fail-fast）
+    // 同 scope 同时最多一张挂起卡（12 号约定）。同步占位登记后才有 await——
+    // 否则 ai@6 并发执行两个审批工具时双双通过断言（深度 review P2-2 实证双卡）
     const existing = this.scopePending.get(scopeKey)
     if (existing && existing.size > 0) {
       throw new Error(`ApprovalCoordinator: scope ${scopeKey} 已有挂起审批（同会话同时最多一张）`)
@@ -144,44 +153,53 @@ export class ApprovalCoordinator {
       input,
       cardTitle: tool.approvalCard?.title ?? tool.name,
       cardSummary: tool.approvalCard?.summary ? safeSummary(tool.approvalCard.summary, input) : '',
+      availableDecisions: [...AVAILABLE_DECISIONS],
       createdAt: now,
       expiresAt: now + this.deps.timeoutMs,
     }
+    logger.info(`[approval] 发卡 scope=${scopeKey} tool=${tool.name} approvalId=${approvalId}`)
+
+    // 占位条目：同步进 pending/scopePending（决定/超时在 save 窗口内到达时
+    // 也有归属可查）；真 resolve 回调在 Promise 构造时回填
+    const holder: PendingEntry = {
+      userId: this.getUserId(),
+      info,
+      resolve: () => undefined,
+      timer: null,
+      onAbort: null,
+    }
+    this.pending.set(approvalId, holder)
+    if (!this.scopePending.has(scopeKey)) this.scopePending.set(scopeKey, new Set())
+    this.scopePending.get(scopeKey)!.add(approvalId)
 
     await this.deps.store.save(info).catch((e) => logger.warn('[approval] 落库失败（继续挂起）', e))
 
     return new Promise<ApprovalDecision>((resolve) => {
-      const entry: PendingEntry = {
-        userId: this.getUserId(),
-        info,
-        resolve: (d) => {
-          if (entry.timer) clearTimeout(entry.timer)
-          if (entry.onAbort && signal) signal.removeEventListener('abort', entry.onAbort)
-          this.cleanup(approvalId, scopeKey)
-          void this.deps.store.clear(approvalId).catch(() => undefined)
-          resolve(d)
-        },
-        timer: null,
-        onAbort: null,
+      holder.resolve = (d) => {
+        if (holder.timer) clearTimeout(holder.timer)
+        if (holder.onAbort && signal) signal.removeEventListener('abort', holder.onAbort)
+        this.cleanup(approvalId, scopeKey)
+        void this.deps.store.clear(approvalId).catch((e) =>
+          logger.warn(`[approval] 决定后清库失败 approvalId=${approvalId}（残留行由重启哨兵兜底）`, e),
+        )
+        resolve(d)
       }
-      this.pending.set(approvalId, entry)
-      if (!this.scopePending.has(scopeKey)) this.scopePending.set(scopeKey, new Set())
-      this.scopePending.get(scopeKey)!.add(approvalId)
 
       // 超时=拒绝（24 号/12 号语义）
-      entry.timer = setTimeout(() => {
-        this.wrapUser(entry.userId, () => this.deps.emit({ type: 'approval:resolved', approvalId, action: 'timeout' }))
-        entry.resolve({ action: 'reject', reason: 'timeout' })
+      holder.timer = setTimeout(() => {
+        logger.warn(`[approval] 超时拒绝 scope=${scopeKey} tool=${tool.name}`)
+        this.wrapUser(holder.userId, () => this.deps.emit({ type: 'approval:resolved', approvalId, action: 'timeout' }))
+        holder.resolve({ action: 'reject', reason: 'timeout' })
       }, this.deps.timeoutMs)
-      entry.timer.unref?.() // 挂起等待不阻止进程退出（与 event-bridge delta 定时器同纪律）
+      holder.timer.unref?.() // 挂起等待不阻止进程退出（与 event-bridge delta 定时器同纪律）
 
       // 会话取消/轮次中断：全部挂起卡补发拒绝
       if (signal) {
-        entry.onAbort = () => {
-          this.wrapUser(entry.userId, () => this.deps.emit({ type: 'approval:resolved', approvalId, action: 'cancelled' }))
-          entry.resolve({ action: 'reject', reason: 'cancelled' })
+        holder.onAbort = () => {
+          this.wrapUser(holder.userId, () => this.deps.emit({ type: 'approval:resolved', approvalId, action: 'cancelled' }))
+          holder.resolve({ action: 'reject', reason: 'cancelled' })
         }
-        signal.addEventListener('abort', entry.onAbort, { once: true })
+        signal.addEventListener('abort', holder.onAbort, { once: true })
       }
 
       this.deps.emit({
@@ -194,6 +212,7 @@ export class ApprovalCoordinator {
           summary: info.cardSummary ?? '',
           editable: tool.approvalCard?.editable,
         },
+        availableDecisions: [...AVAILABLE_DECISIONS],
         expiresAt: info.expiresAt,
       })
     })
@@ -204,6 +223,10 @@ export class ApprovalCoordinator {
     const entry = this.pending.get(approvalId)
     if (!entry) return false
     if (this.deps.clock() > entry.info.expiresAt) return false
+
+    logger.info(
+      `[approval] 决定到达 scope=${entry.info.sessionId} tool=${entry.info.toolName} action=${decision.action}`
+    )
 
     // Amendment 沉淀：approve + scope=session → 会话级同类免批
     if (decision.action === 'approve' && decision.scope === 'session') {
@@ -268,7 +291,7 @@ export class ApprovalCoordinator {
 
 function safeSummary(fn: (i: unknown) => string, input: unknown): string {
   try {
-    return String(fn(input) ?? '').slice(0, 2000)
+    return String(fn(input) ?? '').slice(0, CARD_SUMMARY_MAX_CHARS)
   } catch {
     return ''
   }

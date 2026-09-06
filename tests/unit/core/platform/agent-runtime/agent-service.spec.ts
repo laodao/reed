@@ -12,7 +12,6 @@
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { MockLanguageModelV3, simulateReadableStream } from 'ai/test'
 import type { LanguageModel } from 'ai'
 import { z } from 'zod'
 import { getCurrentUserId } from '@core/context/user-context'
@@ -32,7 +31,7 @@ import {
   type AgentRuntime,
   type AgentRuntimeDeps,
 } from '@core/platform/agent-runtime/runtime/agent-service'
-import { InMemorySessionStore } from '@core/platform/agent-runtime/memory/session-store'
+import { InMemorySessionStore, AgentMessageTooLargeError } from '@core/platform/agent-runtime/memory/session-store'
 import {
   InMemoryApprovalStore,
   type ApprovalStore,
@@ -41,43 +40,9 @@ import type { AgentSessionStore } from '@core/platform/agent-runtime/memory/sess
 import type { AgentDefinition, AgentToolDef } from '@core/platform/agent-runtime/types'
 import type { AgentEvent, PendingApproval } from '@shared/types/agent.types'
 
-// ==================== 测试基建 ====================
+// ==================== 测试基建（公共件见 ./helpers——与 loop.spec 共用） ====================
 
-const usage = {
-  inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 },
-  outputTokens: { total: 5, noCache: 5 },
-  totalTokens: { total: 15, noCache: 15 },
-}
-
-/** steps：每次 doStream 消费一个响应工厂；capture 记录每次调用的 prompt（断言历史重放） */
-function mkModel(
-  steps: Array<() => Array<Record<string, unknown>>>,
-  capture?: (prompt: unknown[]) => void,
-): LanguageModel {
-  let i = 0
-  return new MockLanguageModelV3({
-    provider: 'test',
-    modelId: 'mock',
-    doStream: async (opts: { prompt?: unknown }) => {
-      capture?.(structuredClone(opts.prompt ?? []))
-      return {
-        stream: simulateReadableStream({ chunks: steps[Math.min(i++, steps.length - 1)]() }),
-      }
-    },
-  }) as unknown as LanguageModel
-}
-const txt = (t: string) => [
-  { type: 'stream-start', warnings: [] },
-  { type: 'text-start', id: 't' },
-  { type: 'text-delta', id: 't', delta: t },
-  { type: 'text-end', id: 't' },
-  { type: 'finish', finishReason: { unified: 'stop', raw: undefined }, usage },
-]
-const toolParts = (id: string, name: string, input: unknown) => [
-  { type: 'stream-start', warnings: [] },
-  { type: 'tool-call', toolCallId: id, toolName: name, input: JSON.stringify(input) },
-  { type: 'finish', finishReason: { unified: 'tool-calls', raw: undefined }, usage },
-]
+import { txtChunks as txt, toolCallChunks as toolParts, mkModel } from './helpers' 
 
 function mkTool(over: Partial<AgentToolDef> = {}): AgentToolDef {
   return {
@@ -171,7 +136,7 @@ describe('定义注册', () => {
     expect(doneOnBiz).toBe(true)
   })
 
-  it('跨租户同 scope：属主不匹配 fail-fast（review P2：互斥/审批/订阅不跨租户共享）', async () => {
+  it('跨租户同 scope：属主不匹配 fail-fast（深度 review P0/P1：四方法越权路径全收口）', async () => {
     const h = mkHarness(mkModel([() => txt('ok')]), {}, { subscribe: false })
     await runWithUserAsync('user-a', async () => {
       await h.rt.sendMessage('story-room', 's1', '属主消息')
@@ -179,9 +144,115 @@ describe('定义注册', () => {
     await runWithUserAsync('user-b', async () => {
       await expect(h.rt.sendMessage('story-room', 's1', '越权消息')).rejects.toThrow(AgentScopeOwnerMismatchError)
       expect(() => h.rt.subscribe('story-room', 's1', () => undefined)).toThrow(AgentScopeOwnerMismatchError)
+      // cancel / resetSession / listPendingApprovals / getHistory（驻留条目存在时）
+      expect(() => h.rt.cancel('story-room', 's1')).toThrow(AgentScopeOwnerMismatchError)
+      await expect(h.rt.resetSession('story-room', 's1')).rejects.toThrow(AgentScopeOwnerMismatchError)
+      expect(() => h.rt.listPendingApprovals('story-room', 's1')).toThrow(AgentScopeOwnerMismatchError)
+      await expect(h.rt.getHistory('story-room', 's1')).rejects.toThrow(AgentScopeOwnerMismatchError)
     })
     // 匿名（无 ALS）同样拦截——不因 null 属主放行
     expect(() => h.rt.subscribe('story-room', 's1', () => undefined)).toThrow(AgentScopeOwnerMismatchError)
+    // 属主自己不受影响
+    await runWithUserAsync('user-a', async () => {
+      expect((await h.rt.getHistory('story-room', 's1')).length).toBeGreaterThan(0)
+      expect(h.rt.cancel('story-room', 's1')).toBe(false) // 无在途轮：false 而非抛错
+    })
+  })
+
+  it('跨租户 decideApproval：B 不能批准 A 的审批卡（深度 review P0 回归）', async () => {
+    const tool = mkTool({ requiresApproval: true })
+    const h = mkHarness(mkModel([() => toolParts('c1', 'lookup', { q: 'x' }), () => txt('完成')]), {}, { subscribe: false })
+    h.rt.unregisterDefinition('story-room')
+    h.rt.registerDefinition(mkDef({ tools: { lookup: tool } }))
+    const p = h.rt.sendMessage('story-room', 's1', '执行') // 属主为匿名（null）
+    await vi.waitFor(() => expect(h.rt.health().pendingApprovals).toBe(1))
+    const card = h.rt.listPendingApprovals('story-room', 's1')[0]
+    // user-B 拦截
+    await runWithUserAsync('user-b', async () => {
+      expect(() => h.rt.decideApproval(card.approvalId, { action: 'approve' })).toThrow(AgentScopeOwnerMismatchError)
+    })
+    // 属主决定正常
+    expect(h.rt.decideApproval(card.approvalId, { action: 'reject' })).toBe(true)
+    const r = await p
+    expect(r.actionSummaries[0].ok).toBe(false)
+  })
+
+  it('InMemory 存储租户隔离：B 的 getHistory 读不到 A 的会话（无驻留条目时）', async () => {
+    const h = mkHarness(mkModel([() => txt('甲的历史')]), {}, { subscribe: false })
+    await h.rt.sendMessage('story-room', 's9', 'hi') // owner = null（匿名）
+    // 删除驻留条目路径：直接以登录用户读——条目存在（s9 在册，owner null）→ 拦截；
+    // 换新 scope 验证存储层隔离：A 写入后 B 读（A/B 各自上下文）
+    await runWithUserAsync('user-a', async () => {
+      const store = h.store
+      await store.save('story-room:s10', [{ role: 'user', content: 'A 的隐私' }])
+    })
+    await runWithUserAsync('user-b', async () => {
+      expect(await h.store.load('story-room:s10')).toBeUndefined()
+    })
+    await runWithUserAsync('user-a', async () => {
+      expect((await h.store.load('story-room:s10'))?.length).toBe(1)
+    })
+  })
+
+  it('消息体量门：超限输入入口拒绝（不进 LLM/驻留）', async () => {
+    const h = mkHarness(mkModel([() => txt('不应到达')]))
+    const huge = 'x'.repeat(600 * 1024)
+    await expect(h.rt.sendMessage('story-room', 's1', huge)).rejects.toThrow(AgentMessageTooLargeError)
+    expect(h.rt.health().busyScopes).toEqual([]) // 未开轮
+  })
+
+  it('Amendment 缓存随 resetSession 销毁：同参数重新发卡', async () => {
+    const tool = mkTool({ requiresApproval: true })
+    const h = mkHarness(
+      mkModel([
+        () => toolParts('c1', 'lookup', { q: 'x' }),
+        () => txt('一轮完成'),
+        () => toolParts('c2', 'lookup', { q: 'x' }),
+        () => txt('二轮完成'),
+      ]),
+      {},
+      { subscribe: false },
+    )
+    h.rt.unregisterDefinition('story-room')
+    h.rt.registerDefinition(mkDef({ tools: { lookup: tool } }))
+    const p1 = h.rt.sendMessage('story-room', 's1', '一')
+    await vi.waitFor(() => expect(h.rt.health().pendingApprovals).toBe(1))
+    h.rt.decideApproval(h.rt.listPendingApprovals('story-room', 's1')[0].approvalId, {
+      action: 'approve',
+      scope: 'session',
+    })
+    await p1
+    await h.rt.resetSession('story-room', 's1')
+    // reset 后同参数再次调用 → 重新发卡（缓存已随条目销毁）
+    const p2 = h.rt.sendMessage('story-room', 's1', '二')
+    await vi.waitFor(() => expect(h.rt.health().pendingApprovals).toBe(1))
+    h.rt.decideApproval(h.rt.listPendingApprovals('story-room', 's1')[0].approvalId, { action: 'reject' })
+    const r2 = await p2
+    expect(r2.actionSummaries[0].ok).toBe(false)
+  })
+
+  it('dispose 限时等待在途轮：无僵尸补偿写覆盖新实例历史（深度 review P2-5 回归）', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((res) => (release = res))
+    const tool = mkTool({ execute: async () => { await gate; return {} } })
+    const store = new InMemorySessionStore()
+    const rt = new AgentRuntimeImpl({
+      resolveModel: async () => mkModel([() => toolParts('c1', 'lookup', { q: 'x' }), () => txt('完')]),
+      sessionStore: store,
+      eventEmitter: { emit: () => undefined },
+      sweeperIntervalMs: 0,
+    })
+    rt.registerDefinition(mkDef({ tools: { lookup: tool } }))
+    const p1 = rt.sendMessage('story-room', 's1', '第一')
+    await vi.waitFor(() => expect(rt.health().busyScopes.length).toBeGreaterThan(0))
+    const disposed = rt.dispose()
+    release()
+    await disposed // abort + 等待在途轮 settle（含其补偿 saveState）
+    await p1.catch(() => undefined)
+    const before = await store.load('story-room:s1')
+    // 等待一个宏任务窗口：无后续僵尸写
+    await new Promise((res) => setTimeout(res, 30))
+    expect(await store.load('story-room:s1')).toEqual(before)
   })
 })
 
@@ -588,8 +659,7 @@ describe('单例生命周期', () => {
     await disposeAgentRuntime()
   })
 
-  it('init 幂等返回同实例；未初始化 get 抛错；dispose 后再 get 抛错', async () => {
-    await expect(Promise.reject(new AgentRuntimeNotInitializedError())).rejects.toThrow()
+  it('init 幂等返回同实例；dispose 后再 get 抛错', async () => {
     const rt1 = await initAgentRuntime({
       resolveModel: async () => mkModel([() => txt('x')]),
       sessionStore: new InMemorySessionStore(),

@@ -51,32 +51,40 @@ describe('ProviderAdapter', () => {
     await expect(adapter.resolveModel()).rejects.toBeInstanceOf(AgentProviderNotConfiguredError)
   })
 
-  it('④ 无任何可用模型 → 抛错（引导用户配置）', async () => {
+  it('④ 无任何可用模型 → 抛错（引导用户配置；深度 review：原用例名实不符未真触发）', async () => {
     const adapter = new ProviderAdapter({
-      getProviderConfig: async () => fakeInfo({ defaultModel: undefined as never, models: [] }),
+      getProviderConfig: async () => {
+        const info = fakeInfo({ defaultModel: undefined as never, models: [] })
+        // 模板内置也置空——否则 fallback 链末位命中 tpl-m 不抛错
+        ;(info.template as { models?: unknown[] }).models = []
+        return info
+      },
     })
-    // 模板也空——伪造
-    await expect(
-      adapter.resolveModel(),
-    ).resolves.toBeTruthy() // 模板内置存在 tpl-m，故这里应成功
+    await expect(adapter.resolveModel()).rejects.toBeInstanceOf(AgentProviderNotConfiguredError)
+    await expect(adapter.resolveModel()).rejects.toThrow(/未指定模型/)
   })
 
-  it('⑤ LRU 缓存：同 key 二次解析不触发 lookup（计数验证）；invalidate 后重新 lookup', async () => {
+  it('⑤ LRU 缓存：双显式 (provider, model) 命中免 lookup；半显式每次 lookup（默认提供商可变，深度 review P2-8 回归）', async () => {
     let calls = 0
     const adapter = new ProviderAdapter({
       getProviderConfig: async () => {
         calls++
         return fakeInfo()
       },
-      cacheCapacity: 2,
+      cacheCapacity: 4,
     })
-    // 契约：显式 (provider, model) 命中缓存免 lookup；隐式解析需读配置（默认值可变）
+    // 双显式：第二次命中缓存，lookup 只发生一次
+    await adapter.resolveModel({ providerConfigId: 'pc-1', modelId: 'm-chat' })
+    await adapter.resolveModel({ providerConfigId: 'pc-1', modelId: 'm-chat' })
+    expect(calls).toBe(1)
+    // 半显式（仅 modelId）：默认提供商可被用户切换——不进前置缓存，每次完整 lookup
     await adapter.resolveModel({ modelId: 'm-chat' })
     await adapter.resolveModel({ modelId: 'm-chat' })
-    expect(calls).toBe(1) // 命中缓存
+    expect(calls).toBe(3)
+    // invalidate 后双显式也重新 lookup
     adapter.invalidateCache()
-    await adapter.resolveModel({ modelId: 'm-chat' })
-    expect(calls).toBe(2)
+    await adapter.resolveModel({ providerConfigId: 'pc-1', modelId: 'm-chat' })
+    expect(calls).toBe(4)
   })
 
   it('⑥ LRU 容量淘汰：容量 1 时切换模型触发重新构造', async () => {

@@ -20,9 +20,8 @@
  */
 
 import type { DataSource } from 'typeorm'
-import { createLogger } from '@core/utils/logger'
+import { ensureTable, ensureIndex, ensurePartialUniqueIndex } from './migration-utils'
 
-const logger = createLogger('create-agent-tables')
 
 /**
  * 创建 agent 两表（若不存在）。
@@ -140,92 +139,13 @@ async function ensureMemoryIndexes(ds: DataSource, isPg: boolean): Promise<void>
   // 同名事实唯一 active：partial unique（canonical_key 为 NULL 的行不参与——
   // 无规范化键的记忆不受"同名唯一"约束）。user_id 为 NULL 的行互不冲突
   // （两方言默认 NULL ≠ NULL，桌面单用户场景由应用层串行化兜底，同 uq_wf_run_mutex 先例）。
-  const indexName = 'uq_agent_memories_canonical'
-  if (await checkIndexExists(ds, indexName, isPg)) return
-  try {
-    await ds.query(
-      `CREATE UNIQUE INDEX ${indexName} ON agent_memories (user_id, scope_id, canonical_key) WHERE status = 'active' AND canonical_key IS NOT NULL`
-    )
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e)
-    if (!/already exists|duplicate/i.test(message)) {
-      logger.warn('[createAgentTables] 同名事实部分唯一索引创建失败（唯一性退回应用层检查）', e)
-    }
-  }
-}
-
-// ─── 内部工具（与 create-workflow-tables 同风格） ─────────────────────────────
-
-async function ensureTable(
-  ds: DataSource,
-  isPg: boolean,
-  table: string,
-  ddl: string,
-  onExists: () => Promise<void>
-): Promise<void> {
-  const exists = await checkTableExists(ds, table, isPg)
-  if (exists) {
-    await onExists() // 表已存在 → 确保索引也存在（补齐旧库）
-    return
-  }
-  await ds.query(ddl)
-  await onExists()
-  console.log(`[create-agent-tables] 表 ${table} 创建完成`)
-}
-
-async function checkTableExists(
-  ds: DataSource,
-  table: string,
-  isPg: boolean
-): Promise<boolean> {
-  if (isPg) {
-    const rows = await ds.query(
-      `SELECT 1 FROM information_schema.tables WHERE table_name = $1 AND table_schema = current_schema() LIMIT 1`,
-      [table]
-    )
-    return rows.length > 0
-  }
-  const rows = await ds.query(
-    `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1`,
-    [table]
+  await ensurePartialUniqueIndex(
+    ds,
+    isPg,
+    'uq_agent_memories_canonical',
+    'agent_memories',
+    '(user_id, scope_id, canonical_key)',
+    `status = 'active' AND canonical_key IS NOT NULL`,
+    '同名事实部分唯一索引创建失败'
   )
-  return rows.length > 0
-}
-
-async function checkIndexExists(
-  ds: DataSource,
-  indexName: string,
-  isPg: boolean
-): Promise<boolean> {
-  if (isPg) {
-    const rows = await ds.query(
-      `SELECT 1 FROM pg_indexes WHERE indexname = $1 AND schemaname = current_schema() LIMIT 1`,
-      [indexName]
-    )
-    return rows.length > 0
-  }
-  const rows = await ds.query(
-    `SELECT 1 FROM sqlite_master WHERE type='index' AND name = ? LIMIT 1`,
-    [indexName]
-  )
-  return rows.length > 0
-}
-
-async function ensureIndex(
-  ds: DataSource,
-  isPg: boolean,
-  indexName: string,
-  table: string,
-  columns: string,
-  unique = false
-): Promise<void> {
-  if (await checkIndexExists(ds, indexName, isPg)) return
-  const uniqueKw = unique ? 'UNIQUE ' : ''
-  try {
-    await ds.query(`CREATE ${uniqueKw}INDEX ${indexName} ON ${table} ${columns}`)
-  } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : String(e)
-    // 索引可能已由 entity synchronize 建过（如 sqlite 测试库），忽略冲突
-    if (!/already exists|duplicate/i.test(message)) throw e
-  }
 }

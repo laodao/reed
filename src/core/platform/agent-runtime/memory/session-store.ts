@@ -27,6 +27,7 @@
 import type { DataSource } from 'typeorm'
 import type { ModelMessage } from 'ai'
 import { createLogger } from '@core/utils/logger'
+import { getCurrentUserId } from '@core/context/user-context'
 import {
   AgentSessionRepository,
   type NewAgentSessionRow,
@@ -39,6 +40,7 @@ export const MAX_MESSAGE_BYTES = 512 * 1024
 
 /** 会话存储损坏（行 JSON 解析失败 / seq 断档）——拒绝加载，带定位信息 */
 export class AgentSessionCorruptionError extends Error {
+  readonly code = 'AGENT_SESSION_CORRUPTION'
   constructor(sessionId: string, detail: string) {
     super(`Agent 会话历史损坏（sessionId=${sessionId}）：${detail}。拒绝加载以避免破坏 tool-call 配对，请检查 agent_sessions 表该会话行。`)
     this.name = 'AgentSessionCorruptionError'
@@ -47,6 +49,7 @@ export class AgentSessionCorruptionError extends Error {
 
 /** 单条消息超过序列化上限——拒绝保存（绝不静默截断历史） */
 export class AgentMessageTooLargeError extends Error {
+  readonly code = 'AGENT_MESSAGE_TOO_LARGE'
   constructor(sessionId: string, index: number, role: string, bytes: number) {
     super(
       `Agent 消息超过序列化上限（sessionId=${sessionId}, 第 ${index} 条, role=${role}, ${bytes} > ${MAX_MESSAGE_BYTES} 字节）。` +
@@ -64,21 +67,29 @@ export interface AgentSessionStore {
   delete(sessionId: string): Promise<void>
 }
 
-/** 内存实现：单测 / 降级（无 DataSource 场景）用；structuredClone 深隔离对齐 DB 实现的 JSON 往返语义 */
+/**
+ * 内存实现：单测 / 降级（无 DataSource 场景）用；structuredClone 深隔离对齐 DB 实现的
+ * JSON 往返语义。键拼入当前租户（深度 review P2：原裸 sessionId 键在降级配置下
+ * 跨租户可读写全量对话）。
+ */
 export class InMemorySessionStore implements AgentSessionStore {
   private readonly map = new Map<string, ModelMessage[]>()
 
+  private key(sessionId: string): string {
+    return `${getCurrentUserId() ?? '_anon'}:${sessionId}`
+  }
+
   async load(sessionId: string): Promise<ModelMessage[] | undefined> {
-    const messages = this.map.get(sessionId)
+    const messages = this.map.get(this.key(sessionId))
     return messages && messages.length > 0 ? structuredClone(messages) : undefined
   }
 
   async save(sessionId: string, messages: ModelMessage[]): Promise<void> {
-    this.map.set(sessionId, structuredClone(messages))
+    this.map.set(this.key(sessionId), structuredClone(messages))
   }
 
   async delete(sessionId: string): Promise<void> {
-    this.map.delete(sessionId)
+    this.map.delete(this.key(sessionId))
   }
 }
 

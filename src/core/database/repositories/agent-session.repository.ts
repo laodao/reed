@@ -13,6 +13,12 @@ import { getCurrentUserId } from '@core/context/user-context'
 import { AgentSessionEntity } from '../entities/agent-session.entity'
 import { BaseRepository } from '../base-repository'
 
+/**
+ * 分块插入行数：单语句多值 INSERT 撞 SQLite 绑定变量上限（32766 变量 ÷ 8 列 ≈ 4095 行），
+ * 长会话全量替换必然越界；500 行/批留足余量，同一事务内原子性不变。
+ */
+const INSERT_CHUNK_SIZE = 500
+
 /** 行 DTO（content 仍为 JSON 字符串，解析在 SessionStore 层） */
 export interface AgentSessionRow {
   id: string
@@ -68,12 +74,10 @@ export class AgentSessionRepository extends BaseRepository<AgentSessionEntity, A
       } as FindOptionsWhere<AgentSessionEntity>)
 
       if (rows.length > 0) {
-        // 分块插入：单语句多值 INSERT 撞 SQLite 绑定变量上限（32766/8 列 ≈ 4095 行），
-        // 长会话全量替换必然越界；500 行/批留足余量，同一事务内原子性不变
-        for (let i = 0; i < rows.length; i += 500) {
+        for (let i = 0; i < rows.length; i += INSERT_CHUNK_SIZE) {
           await em.insert(
             AgentSessionEntity,
-            rows.slice(i, i + 500).map((r) => ({
+            rows.slice(i, i + INSERT_CHUNK_SIZE).map((r) => ({
               ...r,
               id: this.generateId(),
               userId,

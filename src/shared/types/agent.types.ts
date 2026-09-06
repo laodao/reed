@@ -70,6 +70,8 @@ export type AgentEvent =
       toolName: string
       input: unknown
       card: { title: string; summary: string; editable?: string[] }
+      /** 本卡可选决定集（前端零硬编码按钮） */
+      availableDecisions?: string[]
       expiresAt: number
     }
   | { type: 'approval:resolved'; approvalId: string; action: string }
@@ -84,7 +86,7 @@ export type AgentEvent =
 
 export type ApprovalDecision =
   | { action: 'approve'; scope?: 'once' | 'session' } // scope=session（24 号 Amendment）：本次批准沉淀为会话级同类免批
-  | { action: 'approve_with_edit'; input: Record<string, unknown> }
+  | { action: 'approve_with_edit'; input: Record<string, unknown> } // 编辑后经 inputSchema 重校验
   | { action: 'reject'; reason?: string }
 
 /** 挂起中的审批（前端重连恢复卡片用） */
@@ -95,6 +97,8 @@ export interface PendingApproval {
   input: unknown
   cardTitle?: string
   cardSummary?: string
+  /** 引擎声明的本卡可选决定集（前端零硬编码按钮；缺省全集） */
+  availableDecisions?: string[]
   createdAt: number
   expiresAt: number
 }

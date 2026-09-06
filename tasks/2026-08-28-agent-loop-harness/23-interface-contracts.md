@@ -138,7 +138,8 @@ export type ApprovalDecision =
   | { action: 'approve_with_edit'; input: Record<string, unknown> }  // 编辑后经 inputSchema 重校验
   | { action: 'reject'; reason?: string }                             // 忽略/换一版/超时/取消均归此
 // 24 号增补：PendingApproval 增加 availableDecisions: string[]（引擎声明本卡可选决定集，
-// 前端零硬编码按钮）；审批缓存键 = 工具名 + 规范化入参（防同参数换包装重复问）
+// 前端零硬编码按钮）——已落地（深度 review 后）：卡与 approval:request 事件均携带；
+// 审批缓存键 = 工具名 + 规范化入参（防同参数换包装重复问）
 
 export interface ApprovalCoordinator {   // registry 层消费；实现可整体替换
   request(scopeKey: string, tool: AgentToolDef, input: unknown, signal?: AbortSignal): Promise<ApprovalDecision>
@@ -154,8 +155,14 @@ export interface ApprovalCoordinator {   // registry 层消费；实现可整体
 ```ts
 export interface LoopRunner {   // 自研手动循环（22 号 B1）；签名稳定，实现可换（含未来换回开源封装）
   run(task: AgentTask, host: AgentHost): Promise<AgentResult>
-  resume(state: AgentLoopState, decision: HumanDecision, host: AgentHost): Promise<AgentResult>
+  // 2026-09-06 深度 review 修订：task 由宿主完整重建显式传入——state.task 是持久化
+  // 摘要态（无 tools/systemPrompt），旧签名驱动循环必然 TypeError（实证）
+  resume(state: AgentLoopState, decision: HumanDecision, task: AgentTask, host: AgentHost): Promise<AgentResult>
 }
+// 错误分类补充定稿（同日深度 review P1）：模型流以 error part / finishReason=error
+// 收尾时**以 stopReason='error' 终止**（部分文本留痕历史但绝不作为 finalAnswer）；
+// finishReason=length 按 final 收敛 + warn 打标。saveState 失败契约 = resolve 出
+// error 结果而非 reject（门面/宿主按 stopReason 分发，不靠 catch 区分）。
 // AgentLoopState / AgentDecision（final|tool_calls|human_request）/ 错误分类法：12 号 §4.2/§5.4/§6.5 原样
 
 export interface ContextAssembler {                       // 每次模型调用前装配（D1）
@@ -245,10 +252,14 @@ export interface MemoryAssembler { assemble(spec: string, tokenBudget: number): 
 
 ## 9. 类型化错误（跨接口统一）
 
-`AgentBusyError` / `AgentProviderNotConfiguredError` / `AgentDefinitionConflictError` /
-`AgentRuntimeNotInitializedError` / `ToolDeniedError` / `MemoryTransitionError` /
-`ToolProtocolError`（13 号 §5.2 kind 分类）。全部携带 `code` 字符串（IPC 边界扁平化）
-与原始 `cause`。
+`AgentBusyError`(AGENT_BUSY) / `AgentProviderNotConfiguredError`(AGENT_PROVIDER_NOT_CONFIGURED) /
+`AgentDefinitionConflictError`(AGENT_DEFINITION_CONFLICT) / `AgentDefinitionNotFoundError`(AGENT_DEFINITION_NOT_FOUND) /
+`AgentRuntimeNotInitializedError`(AGENT_RUNTIME_NOT_INITIALIZED) / `AgentRuntimeDisposedError`(AGENT_RUNTIME_DISPOSED) /
+`AgentSessionResetError`(AGENT_SESSION_RESET) / `AgentScopeOwnerMismatchError`(AGENT_SCOPE_OWNER_MISMATCH) /
+`AgentSessionCorruptionError`(AGENT_SESSION_CORRUPTION) / `AgentMessageTooLargeError`(AGENT_MESSAGE_TOO_LARGE) /
+`ToolDeniedError` / `MemoryTransitionError` / `ToolProtocolError`（13 号 §5.2 kind 分类）。
+全部携带 `code` 字符串（IPC 边界扁平化）；`cause` 透传为留待接线批的扩展位（当前
+错误均在消息内携带定位信息，无丢失原始 cause 的场景）。
 
 ---
 
@@ -269,12 +280,15 @@ export interface MemoryAssembler { assemble(spec: string, tokenBudget: number): 
 | 1 | **会话模型**：per-(definitionId, scopeId) 单会话 | 满足长文/EP/故事研讨室（均单会话/项目） | 多会话（如多方案对比）：AgentTask 与门面加可选 `sessionId` 维度，缺省回退单会话；agent_sessions 表已带 conversation_id 天然支持 |
 | 2 | **输入形态**：`sendMessage(message: string)` 纯文本（steer 排队已按 §1b mode 支持） | 三个消费者均纯文本（素材引用经工具查询） | 多模态输入：加 `attachments?: Array<{kind;ref}>` 可选参数，工具查询语义不变 |
 | 3 | **用量聚合查询**：仅单轮 `AgentSendResult.usage` + 轨迹表 | 历史聚合（成本面板）从 agent_trajectories/agent_tool_calls 查（实现层，非契约） | 需要时加 `getUsage(defId, scopeId, range)` 只读查询接口 |
-| 4 | **部署形态**：审批挂起态在进程内存 + pendingApproval 落库 | 单实例 Web/Electron 成立；进程重启经落库行+哨兵恢复（12 号） | 水平多实例需审批决定走事件/DB 回流（挂起 Promise 无法跨进程）——届时 ApprovalCoordinator 的 decide 改为落库驱动，接口签名不变 |
+| 4 | **部署形态**：审批挂起态在进程内存 + pendingApproval 落库 | 单实例 Web/Electron 成立；重启哨兵清理已实现（忽略残留行），**ApprovalStore 的 DB 落库实现随接线批接入**（当前默认 InMemory，重启恢复链在 DB 实现落地后才真正生效） | 水平多实例需审批决定走事件/DB 回流（挂起 Promise 无法跨进程）——届时 ApprovalCoordinator 的 decide 改为落库驱动，接口签名不变 |
 | 5 | **provider 并发/配额**：门面不做全局限流 | 单 scope 互斥已有；多 scope 并发打满 provider 属 13 号 provider 层职责 | provider-adapter 内加并发闸（对契约透明） |
 | 6 | **SessionStore 唯一索引 NULL 语义**：`uq_agent_sessions_conv_seq` 对 user_id NULL 行不生效（两方言 NULL≠NULL，2026-09-06 批 3 实证） | 桌面端 Electron 启动即注入默认用户（非 NULL），且 sqlite 串行门整体互斥事务；Web 端各入口强制 ALS userId | 若未来出现"匿名 + 跨进程并发"形态：改表达式唯一索引 `(COALESCE(user_id,''), conversation_id, seq)`（两方言均支持；需同步处理 web synchronize 与迁移两条建表路径的索引形态一致性） |
 | 7 | **scope 会话属主**：驻留会话条目（互斥锁/审批卡/Amendment 缓存/事件订阅）按首个触达者 userId 认主，跨租户同 (definitionId,scopeId) 抛 `AgentScopeOwnerMismatchError`（批 4 review 定稿） | 平台层不依赖 scopeId 全局唯一；业务定义需保证 scopeId 租户内唯一（如 story-room 的 p-xxx 项目 ID 本身按用户隔离） | 若出现合法的跨用户共享会话需求：门面加 `sharedScope` 声明位，属主校验按定义开关 |
 | 8 | **queue 语义粒度**：排队消息逐条依次整轮执行（各自终态/结果），非合并为单轮输入 | API 形态 sendMessage→独立 AgentSendResult 所需；交互宿主逐条展示 | 真"合流注入下一轮"（codex steer 原语义）需循环内 steer 缓冲区：LoopRunner 加可注入 steer 钩子，门面在轮边界合流未决消息——接线批按需立项 |
 | 9 | **Amendment 缓存寿命**：会话级免批缓存随驻留条目存活（空闲 30min/容量驱逐即失，不持久化） | "会话级"定位（进程内会话生命周期）；持久化升级位已在 §4 预留（业务包升级为持久规则） | 高频关键工具的免批规则走业务包持久化（M4 审批缺口批次） |
+| 10 | **scope 抢占（squatting）**：驻留条目按首个触达者认主——恶意用户先触达他人 scopeId 可倒挂属主（正主被拒） | 危害为可用性（DoS）非数据；资源 ID 枚举需接线层配合（scopeId 含用户维度即可根绝） | 接线批保证 scopeId 租户内唯一（如项目 ID 本身按用户隔离）；如需平台根治：mismatch 时回收非 busy 争用条目重建 |
+| 11 | **工具超时不中止底层执行**：withTimeout 仅墙钟切断，慢工具副作用可能照常落盘；aborted 轮的工具副作用不入史（步末才存），重放有重复执行风险 | 12 号"宁可重放"对幂等读工具成立；写类工具应声明 requiresApproval 走人工把关 | 循环层加 toolCallId 幂等键（24 号 availableDecisions 同批），或写类工具结果落"副作用日志"供重放去重 |
+| 12 | **getHistory.timestamp 为近似值**：全量替换存储模型下为查询时刻（顺序以 seq 为准） | 前端按数组序渲染即可 | 需真实时刻：facade 维护轮边界时间线或在 metadata 列存轮次时间戳 |
 
 **—— 2026-09-06 批 3 SessionStore 实现注记（§6 落地补充）——**
 - save() 事务内分块 INSERT（500 行/批）：单语句多值 INSERT 撞 SQLite 绑定变量上限

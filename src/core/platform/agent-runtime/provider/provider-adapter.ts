@@ -71,11 +71,15 @@ export class ProviderAdapter {
     this.cacheTtlMs = deps.cacheTtlMs ?? 10 * 60_000
   }
 
-  /** 解析模型对象（spike 验证按请求构造；命中缓存直接返回——显式 (provider,model) 先查缓存免 lookup） */
+  /** 解析模型对象（spike 验证按请求构造；命中缓存直接返回） */
   async resolveModel(opts: ResolveModelOptions = {}): Promise<LanguageModel> {
-    // 前置缓存：调用方显式给出 (providerConfigId, modelId) 时无需 lookup（避免重复 DB 读+解密）
-    const earlyKey = `${opts.providerConfigId ?? '*'}:${opts.modelId ?? '*'}`
-    if (opts.modelId) {
+    // 前置缓存仅对「双显式 (providerConfigId, modelId)」启用：键唯一确定配置。
+    // 半显式（仅 modelId）不启用——否则用户切换默认提供商后，`*:modelId` 命中
+    // 旧提供商实例（TTL 内 baseURL/apiKey 全错，深度 review P2-8 实证）；
+    // 半显式走完整 lookup（一次 DB 读换正确性）
+    const earlyKey =
+      opts.providerConfigId && opts.modelId ? `${opts.providerConfigId}:${opts.modelId}` : null
+    if (earlyKey) {
       const early = this.cache.get(earlyKey)
       if (early && Date.now() - early.createdAt < this.cacheTtlMs) {
         this.cache.delete(earlyKey)
@@ -119,7 +123,7 @@ export class ProviderAdapter {
     if (this.cacheCapacity > 0) {
       const entry = { model, createdAt: Date.now() }
       this.cache.set(cacheKey, entry)
-      this.cache.set(earlyKey, entry) // 前置键与解析键双登记（同一实例）
+      if (earlyKey) this.cache.set(earlyKey, entry) // 前置键与解析键双登记（同一实例；仅双显式）
       while (this.cache.size > this.cacheCapacity) {
         this.cache.delete(this.cache.keys().next().value as string)
       }

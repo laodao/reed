@@ -46,6 +46,7 @@ import {
 } from './approval'
 import { EventBridge, type PlatformBusPort } from './event-bridge'
 import type { AgentSessionStore } from '../memory/session-store'
+import { AgentMessageTooLargeError, MAX_MESSAGE_BYTES } from '../memory/session-store'
 import type { ResolveModelOptions } from '../provider/provider-adapter'
 
 const logger = createLogger('AgentRuntime')
@@ -108,6 +109,15 @@ export class AgentScopeOwnerMismatchError extends Error {
   }
 }
 
+/** 运行时已关停（排队中的消息被拒绝；区别于 busy——不可重试） */
+export class AgentRuntimeDisposedError extends Error {
+  readonly code = 'AGENT_RUNTIME_DISPOSED'
+  constructor(scopeKey: string) {
+    super(`Agent 运行时已关停，排队消息被拒绝（${scopeKey}）`)
+    this.name = 'AgentRuntimeDisposedError'
+  }
+}
+
 // ==================== 门面契约 ====================
 
 export interface AgentRuntime {
@@ -156,6 +166,12 @@ interface SteerQueueItem {
 
 /** 排队上限（mode=queue 失控客户端防线；超限 fail-fast） */
 export const MAX_STEER_QUEUE = 8
+
+/** 关停时等待在途轮 settle 的时限（ms）——防僵尸轮补偿写覆盖新实例历史 */
+const DISPOSE_SETTLE_TIMEOUT_MS = 3_000
+
+/** 动作摘要 brief 裁剪上限（观测面常量） */
+const ACTION_BRIEF_MAX_CHARS = 120
 
 /** 驻留会话（LRU 条目） */
 interface SessionEntry {
@@ -211,21 +227,30 @@ export class AgentRuntimeImpl implements AgentRuntime {
   }
 
   /**
-   * 关停（best-effort，review P3）：中断全部轮（abort 后轮经 signal 路径自行 settle，
-   * 不在此 await）、拒绝排队者、清订阅与定时器、冲刷总线链。在途轮的终态事件
-   * 可能无人接收——关停语义下接受（消费方随进程一同退出）。
+   * 关停：中断全部轮并**限时等待在途轮 settle**（深度 review P2-5：不等待则僵尸轮
+   * 的补偿 saveState 可全量覆盖新实例已落盘的历史），拒绝排队者、清订阅与定时器、
+   * 冲刷总线链。限时（3s）兜底防死等；超时仍有残余轮则 error 留痕。
    */
-  dispose(): void {
+  async dispose(): Promise<void> {
     if (this.sweeper) clearInterval(this.sweeper)
     this.sweeper = null
+    const inFlight: Array<Promise<unknown>> = []
     for (const entry of this.entries.values()) {
       entry.controller?.abort()
-      for (const item of entry.steerQueue) item.reject(new AgentBusyError(entry.scopeKey))
+      if (entry.currentTurn) inFlight.push(entry.currentTurn.catch(() => undefined))
+      for (const item of entry.steerQueue) item.reject(new AgentRuntimeDisposedError(entry.scopeKey))
       entry.steerQueue = []
       entry.subs.clear()
     }
+    await Promise.race([
+      Promise.allSettled(inFlight),
+      new Promise<void>((res) => {
+        const t = setTimeout(res, DISPOSE_SETTLE_TIMEOUT_MS)
+        t.unref?.()
+      }),
+    ])
     for (const { bridge } of this.bridges.values()) {
-      void bridge.flush().catch(() => undefined) // best-effort：总线链排空不阻塞关停
+      void bridge.flush().catch((e) => logger.warn('[agent-runtime] 关停冲刷总线链失败', e))
     }
     this.entries.clear()
     this.definitions.clear()
@@ -237,10 +262,12 @@ export class AgentRuntimeImpl implements AgentRuntime {
   registerDefinition(def: AgentDefinition): void {
     if (this.definitions.has(def.id)) throw new AgentDefinitionConflictError(def.id)
     this.definitions.set(def.id, def)
+    logger.info(`[agent-runtime] 注册定义 id=${def.id} v${def.version} tools=${Object.keys(def.tools).length}`)
   }
 
   unregisterDefinition(definitionId: string): void {
     if (!this.definitions.has(definitionId)) return
+    logger.info(`[agent-runtime] 注销定义 id=${definitionId}（挂起轮取消）`)
     for (const entry of this.entries.values()) {
       if (entry.definitionId !== definitionId) continue
       entry.controller?.abort() // 挂起轮先取消
@@ -273,6 +300,11 @@ export class AgentRuntimeImpl implements AgentRuntime {
     if (!def) throw new AgentDefinitionNotFoundError(definitionId)
     // ALS 红线：入口同步捕获（排队/续链后 ALS 已丢）
     const userId = getCurrentUserId()
+    // 入口体量门（深度 review P2：原实现 10MB 消息可直穿 LLM+驻留，落库才炸）——
+    // 与单条落库上限同一限额，fail-fast 拒收
+    if (Buffer.byteLength(message, 'utf8') > MAX_MESSAGE_BYTES) {
+      throw new AgentMessageTooLargeError(`${definitionId}:${scopeId}`, 0, 'user', Buffer.byteLength(message, 'utf8'))
+    }
 
     // 可重入互斥：interrupt 等待期间状态可能被续链/并发 interrupt/复位改变，
     // 每轮循环重取条目并复查（批 4 review P1/P2：恢复后不复查 = 双轮并发/复活已重置会话）
@@ -283,11 +315,11 @@ export class AgentRuntimeImpl implements AgentRuntime {
         return this.runTurn(entry, def, message, opts, userId)
       }
       const mode = opts?.mode ?? 'reject'
-      if (mode === 'reject' && !interruptedOnce) throw new AgentBusyError(entry.scopeKey)
+      if (mode === 'reject') throw new AgentBusyError(entry.scopeKey)
       if (entry.resetting) {
-        // 复位进行中：等当前轮 settle 后重试（条目会被删除重建）
-        if (entry.currentTurn) await entry.currentTurn.catch(() => undefined)
-        else await Promise.resolve()
+        // 复位进行中（先删库再删条目——深度 review P2-4）：宏任务让步等待，
+        // store.delete 完成条目被删后重取到干净条目
+        await new Promise<void>((res) => setImmediate(res))
         continue
       }
       if (mode === 'interrupt' && !interruptedOnce) {
@@ -307,14 +339,18 @@ export class AgentRuntimeImpl implements AgentRuntime {
   }
 
   cancel(definitionId: string, scopeId: string): boolean {
-    const entry = this.entries.get(scopeKeyOf(definitionId, scopeId))
+    const entry = this.requireOwnedEntry(definitionId, scopeId)
     if (!entry || !entry.controller || !entry.busy) return false
+    logger.info(`[agent-runtime] 取消轮 def=${definitionId} scope=${scopeId}`)
     entry.controller.abort()
     entry.coordinator.cancelScope(entry.scopeKey) // 审批挂起同步拒绝（signal 监听为双保险）
     return true
   }
 
   async getHistory(definitionId: string, scopeId: string, limit?: number): Promise<AgentHistoryMessage[]> {
+    // 驻留条目存在时校验属主（深度 review P2：InMemory 降级存储下跨租户可读全量对话；
+    // DB 存储由 ALS scoped WHERE 隔离，双保险）
+    this.requireOwnedEntry(definitionId, scopeId)
     const messages = (await this.deps.sessionStore.load(scopeKeyOf(definitionId, scopeId))) ?? []
     const out: AgentHistoryMessage[] = []
     for (let i = 0; i < messages.length; i++) {
@@ -334,20 +370,25 @@ export class AgentRuntimeImpl implements AgentRuntime {
 
   async resetSession(definitionId: string, scopeId: string): Promise<void> {
     const key = scopeKeyOf(definitionId, scopeId)
-    const entry = this.entries.get(key)
+    const entry = this.requireOwnedEntry(definitionId, scopeId)
     if (entry) {
-      entry.resetting = true // 拦截续链：轮结束不再自动执行排队者
+      entry.resetting = true // 拦截续链与新轮（sendMessage 等 store.delete 完成后再开）
       if (entry.busy) {
         this.cancel(definitionId, scopeId)
         if (entry.currentTurn) await entry.currentTurn.catch(() => undefined)
       }
+      // 先删库再删条目（深度 review P2-4：原顺序在 delete 在途窗口内新轮可读到
+      // 复活旧历史，随后又被 delete 抹掉新史——双重失效）
+      await this.deps.sessionStore.delete(key)
       for (const item of entry.steerQueue) item.reject(new AgentSessionResetError(key))
       entry.steerQueue = []
       entry.coordinator.cancelScope(key)
       // 丢弃驻留条目（连同 Amendment 会话缓存）；订阅闭包变 no-op，重订阅会重建
       this.entries.delete(key)
+    } else {
+      await this.deps.sessionStore.delete(key)
     }
-    await this.deps.sessionStore.delete(key)
+    logger.info(`[agent-runtime] 会话重置 def=${definitionId} scope=${scopeId}`)
   }
 
   // —— 提案卡 ——
@@ -355,6 +396,8 @@ export class AgentRuntimeImpl implements AgentRuntime {
   decideApproval(approvalId: string, decision: ApprovalDecision): boolean {
     for (const entry of this.entries.values()) {
       if (entry.coordinator.listPending(entry.scopeKey).some((p) => p.approvalId === approvalId)) {
+        // 属主校验（深度 review P0：跨租户批准他人审批卡 = 提权写类工具）
+        if (entry.ownerUserId !== getCurrentUserId()) throw new AgentScopeOwnerMismatchError(entry.scopeKey)
         return entry.coordinator.decide(approvalId, decision)
       }
     }
@@ -363,7 +406,8 @@ export class AgentRuntimeImpl implements AgentRuntime {
 
   listPendingApprovals(definitionId: string, scopeId: string): PendingApproval[] {
     const key = scopeKeyOf(definitionId, scopeId)
-    return this.entries.get(key)?.coordinator.listPending(key) ?? []
+    const entry = this.requireOwnedEntry(definitionId, scopeId)
+    return entry?.coordinator.listPending(key) ?? []
   }
 
   // —— 事件 ——
@@ -487,6 +531,10 @@ export class AgentRuntimeImpl implements AgentRuntime {
       }
     }
 
+    // 轮级运维日志（开始/结束各一条；失败 error 级另记）
+    const turnStart = clock()
+    logger.info(`[agent-runtime] 轮开始 def=${def.id} scope=${entry.scopeId}`)
+
     // 异常（provider 未配置/快照失败等）：发 error 终态事件后原样上抛。
     // rejection handler 运行在 .then 挂载点上下文（ALS 已丢）——dispatch 用捕获租户
     // 同步包裹（review P2：queue 续链下错误分发曾落在错误租户上下文）
@@ -498,10 +546,18 @@ export class AgentRuntimeImpl implements AgentRuntime {
     }
     const turn = (userId ? runWithUserAsync(userId, exec) : exec()).then(
       (r) => {
+        logger.info(
+          `[agent-runtime] 轮完成 def=${def.id} scope=${entry.scopeId} stop=${r.stopReason}` +
+            ` ${r.usage?.totalTokens ?? 0}tok ${clock() - turnStart}ms`
+        )
         onSettled()
         return r
       },
       (e) => {
+        logger.error(
+          `[agent-runtime] 轮异常 def=${def.id} scope=${entry.scopeId}`,
+          e instanceof Error ? e.message : e,
+        )
         emitError(e)
         onSettled()
         throw e
@@ -513,14 +569,22 @@ export class AgentRuntimeImpl implements AgentRuntime {
 
   // ==================== 内部：会话/事件/清理 ====================
 
+  /**
+   * 取条目并校验属主（跨租户读写统一收口——深度 review P0/P1：cancel/resetSession/
+   * decideApproval/listPendingApprovals/getHistory 原绕过 touchEntry 直取条目）。
+   * 条目不存在返回 null（无内存态可保护；数据面由存储层 ALS 隔离）。
+   */
+  private requireOwnedEntry(definitionId: string, scopeId: string): SessionEntry | null {
+    const entry: SessionEntry | undefined = this.entries.get(scopeKeyOf(definitionId, scopeId))
+    if (entry && entry.ownerUserId !== getCurrentUserId()) {
+      throw new AgentScopeOwnerMismatchError(entry.scopeKey)
+    }
+    return entry ?? null
+  }
+
   private touchEntry(def: AgentDefinition, scopeId: string): SessionEntry {
     const key = scopeKeyOf(def.id, scopeId)
-    let entry = this.entries.get(key)
-    if (entry && entry.ownerUserId !== getCurrentUserId()) {
-      // 平台层不依赖 scopeId 全局唯一：跨租户同 scope fail-fast
-      //（否则互斥锁/审批卡/Amendment 缓存/事件订阅全部跨租户共享——提权面）
-      throw new AgentScopeOwnerMismatchError(key)
-    }
+    let entry: SessionEntry | null = this.requireOwnedEntry(def.id, scopeId)
     if (!entry) {
       // 先驱逐再插入：新条目尚未在册，不会被误驱逐（否则本轮刚建的会话即被清出，
       // health/cancel 找不到它——批 4 单测实证）
@@ -582,10 +646,15 @@ export class AgentRuntimeImpl implements AgentRuntime {
   }
 
   private onSweepTick(): void {
-    for (const entry of [...this.entries.values()]) {
-      entry.coordinator.sweep()
+    // setInterval 回调内抛错会击穿进程——防御性包裹 + error 留痕（吞异常纪律）
+    try {
+      for (const entry of [...this.entries.values()]) {
+        entry.coordinator.sweep()
+      }
+      this.evictExpiredEntries()
+    } catch (e) {
+      logger.error('[agent-runtime] 审批超时扫描异常（不影响后续 tick）', e)
     }
-    this.evictExpiredEntries()
   }
 
   /** 容量驱逐：为新会话腾位（touchEntry 插入前调用；本条目尚未在册不会被误驱逐） */
@@ -708,7 +777,7 @@ class IndependentHost implements AgentHost {
       const failed = entry.payload.ok === false
       this.resultRows.push({
         ok: !denied && !failed,
-        brief: denied ? '已拒绝' : failed ? String(entry.payload.error ?? '').slice(0, 120) : '',
+        brief: denied ? '已拒绝' : failed ? String(entry.payload.error ?? '').slice(0, ACTION_BRIEF_MAX_CHARS) : '',
       })
     }
     logger.debug(`[agent-runtime] trajectory def=${this.def.id} kind=${entry.kind} name=${entry.name ?? ''}`)
@@ -761,7 +830,7 @@ export function getAgentRuntime(): AgentRuntime {
 }
 
 export async function disposeAgentRuntime(): Promise<void> {
-  if (instance && instance instanceof AgentRuntimeImpl) instance.dispose()
+  if (instance && instance instanceof AgentRuntimeImpl) await instance.dispose()
   instance = null
 }
 

@@ -16,6 +16,7 @@
  */
 
 import type { DataSource } from 'typeorm'
+import { ensureTable, ensureIndex } from './migration-utils'
 
 /**
  * 创建事件系统三表（若不存在）。
@@ -182,80 +183,4 @@ async function ensureDeadLetterIndexes(ds: DataSource, isPg: boolean): Promise<v
     'platform_event_dead_letters',
     '(consumer_name, status)'
   )
-}
-
-// ─── 内部工具（与项目其他 migration 同风格） ─────────────────────────────────
-
-async function ensureTable(
-  ds: DataSource,
-  isPg: boolean,
-  table: string,
-  ddl: string,
-  onExists: () => Promise<void>
-): Promise<void> {
-  const exists = await checkTableExists(ds, table, isPg)
-  if (exists) {
-    await onExists() // 表已存在 → 确保索引也存在（补齐旧库）
-    return
-  }
-  await ds.query(ddl)
-  await onExists()
-  console.log(`[create-platform-event-tables] 表 ${table} 创建完成`)
-}
-
-async function checkTableExists(
-  ds: DataSource,
-  table: string,
-  isPg: boolean
-): Promise<boolean> {
-  if (isPg) {
-    const rows = await ds.query(
-      `SELECT 1 FROM information_schema.tables WHERE table_name = $1 AND table_schema = current_schema() LIMIT 1`,
-      [table]
-    )
-    return rows.length > 0
-  }
-  const rows = await ds.query(
-    `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1`,
-    [table]
-  )
-  return rows.length > 0
-}
-
-async function checkIndexExists(
-  ds: DataSource,
-  indexName: string,
-  isPg: boolean
-): Promise<boolean> {
-  if (isPg) {
-    const rows = await ds.query(
-      `SELECT 1 FROM pg_indexes WHERE indexname = $1 AND schemaname = current_schema() LIMIT 1`,
-      [indexName]
-    )
-    return rows.length > 0
-  }
-  const rows = await ds.query(
-    `SELECT 1 FROM sqlite_master WHERE type='index' AND name = ? LIMIT 1`,
-    [indexName]
-  )
-  return rows.length > 0
-}
-
-async function ensureIndex(
-  ds: DataSource,
-  isPg: boolean,
-  indexName: string,
-  table: string,
-  columns: string,
-  unique = false
-): Promise<void> {
-  if (await checkIndexExists(ds, indexName, isPg)) return
-  const uniqueKw = unique ? 'UNIQUE ' : ''
-  try {
-    await ds.query(`CREATE ${uniqueKw}INDEX ${indexName} ON ${table} ${columns}`)
-  } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : String(e)
-    // 索引可能已由 entity synchronize 建过（如 sqlite 测试库），忽略冲突
-    if (!/already exists|duplicate/i.test(message)) throw e
-  }
 }

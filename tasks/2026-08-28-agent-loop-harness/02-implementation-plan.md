@@ -45,7 +45,29 @@
 > 拒绝/queue 逐条整轮语义入契约 §1+§11-8/Amendment 寿命 §11-9）。
 > 26 门面单测 + 210 全套全绿。已知接线注意：旧前端正文流走独立通道
 > （longwriting:generate:*），桥 reply:content 走 agent 主通道——接线批需适配。
-> 下一批：ToolRegistry.buildToolDefs / ContextManager / P2 journal E1-E3。
+> - 下一批：ToolRegistry.buildToolDefs / ContextManager / P2 journal E1-E3。
+>
+> **进度（2026-09-06 批 1-4 深度 review 收口，feat/agent-harness）**：
+> 用户追加七条裁决标准（架构统一/组件共用/设计合理/无写死参数/必要日志/不吞异常/
+> 不复制粘贴）后，三方独立 subagent（正确性/架构契约/安全性能）+ 主线自查全量复审。
+> **放行阻塞 2 项已修**：① 模型流 error part/finishReason=error 被静默映射为 final
+> （部分文本成"最终答案"，错误分类契约失效）——消费循环捕获 error part 短路为
+> stopReason=error，length 打标；② 跨租户越权链（cancel/resetSession/decideApproval/
+> listPendingApprovals/getHistory 绕过属主校验，B 可批准 A 的写类工具卡——探针实证）
+> ——requireOwnedEntry 统一收口六入口。
+> **P2 九项全修**：审批并发双卡窗口（同步占位登记）；reset 先删库再删条目（复活窗口）；
+> dispose 限时等待在途轮（僵尸轮覆盖新实例历史）；轨迹按 toolCallId 配对（并行乱序
+> 张冠李戴）+ stagnant 分支补轨迹；nudge 一次后确定性 stagnant 终止（原恒 max_steps）；
+> ProviderAdapter 前置缓存限双显式（默认提供商切换陈旧 10min）；resume 签名显式收
+> AgentTask（摘要态驱动必炸）；sendMessage 入口体量门 512KB；availableDecisions 落地。
+> **七条标准项**：迁移工具三处复制粘贴收口 migration-utils.ts（workflow/event/agent
+> 共用）；吞异常 7 处全部补日志；轮级/审计日志（轮起止/取消/决定/重置/注销）；
+> 轨迹截断魔法数命名常量化；session-factory 过时死桩删除；index 头部三处过期信息
+> 更正（@openharness 表述/业务定义落点指向 packs/模块表加状态列）；InMemory 存储
+> 键拼租户；测试公共件抽取 helpers.ts（loop/agent-service 两份复制收口）。
+> 测试 220 全绿（+10：error 流/stagnant 终止/超时回填/并发双卡/跨租户矩阵六入口/
+> 消息门/Amendment 随 reset 销毁/dispose 僵尸写/InMemory 隔离/provider ④ 名实相符）。
+> 已知边界入 23 号 §11-10/11/12（scope 抢占/工具超时不中止底层/时间戳近似值）。
 
 ## 分期总览
 

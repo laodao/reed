@@ -153,6 +153,30 @@ describe('ApprovalCoordinator 基础决定流', () => {
     await expect(coord.request('s1', saveTool, { name: 'y' })).rejects.toThrow(/最多一张/)
   })
 
+  it('⑧b 并发双卡窗口（深度 review P2-2 回归）：save 落库在途时第二个 request 仍被拒', async () => {
+    let releaseSave!: () => void
+    const saveGate = new Promise<void>((res) => (releaseSave = res))
+    const store = new InMemoryApprovalStore()
+    const { coord } = mkCoord({
+      store: {
+        save: async (a) => {
+          void a
+          await saveGate // 人为拉开发卡落库窗口
+        },
+        clear: async () => undefined,
+        listBySession: async () => [],
+      },
+    })
+    // 两个 request 几乎同时发起（都不等第一个完成）
+    const p1 = coord.request('s1', saveTool, { name: 'x' })
+    const p2 = coord.request('s1', saveTool, { name: 'y' })
+    releaseSave()
+    await expect(p2).rejects.toThrow(/最多一张/)
+    coord.cancelScope('s1')
+    await expect(p1).resolves.toEqual({ action: 'reject', reason: 'cancelled' })
+    void store
+  })
+
   it('⑨ sweep：过期卡由外部扫描触发拒绝', async () => {
     let now = 0
     const { coord } = mkCoord({ clock: () => now, timeoutMs: 100 })

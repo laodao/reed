@@ -14,6 +14,7 @@
  */
 
 import { createLogger } from '@core/utils/logger'
+import { stableStringify } from './approval'
 import type {
   streamText as aiStreamText,
   LanguageModel,
@@ -50,6 +51,12 @@ interface AiModule {
 
 const STAGNANT_NUDGE = '检测到你连续多轮执行完全相同的工具调用。请更换策略，或直接给出最终答案。'
 
+// —— 展示/轨迹截断上限（命名常量：观测面字段裁剪，非行为参数） ——
+const TRAJECTORY_THOUGHT_MAX_CHARS = 500
+const TRAJECTORY_ANSWER_MAX_CHARS = 2000
+const TOOL_ERROR_DETAIL_MAX_CHARS = 300
+const ZOD_ISSUE_MAX = 8
+
 export class LoopRunner {
   private readonly deps: LoopRunnerDeps
   private readonly clock: () => number
@@ -85,15 +92,21 @@ export class LoopRunner {
   async resume(
     state: AgentLoopState,
     decision: { action: string; values?: Record<string, unknown>; comment?: string },
+    task: AgentTask,
     host: AgentHost,
   ): Promise<AgentResult> {
-    return this.resumeFromSuspend(state, decision, host)
+    return this.resumeFromSuspend(state, decision, task, host)
   }
 
-  /** 挂起恢复入口：人工决策作为 tool 结果回填后继续（12 号 §6.2） */
+  /**
+   * 挂起恢复入口：人工决策作为 tool 结果回填后继续（12 号 §6.2）。
+   * task 由宿主完整重建传入（state.task 是持久化摘要态，无 tools/systemPrompt，
+   * 不能驱动循环——批 1-4 深度 review P2-9 实证原签名必然 TypeError）。
+   */
   async resumeFromSuspend(
     state: AgentLoopState,
     _decision: { action: string; values?: Record<string, unknown>; comment?: string },
+    task: AgentTask,
     host: AgentHost,
   ): Promise<AgentResult> {
     // 决策回填：批准=工具继续执行（挂起点在审批回调内部，恢复时回调已 resolve）；
@@ -105,7 +118,7 @@ export class LoopRunner {
     state.messages = [...state.messages, { role: 'assistant', content: `[系统] ${note}` } as ModelMessage]
     state.suspended = undefined
     await host.saveState(state)
-    return this.loop(state, state.task as never, host)
+    return this.loop(state, task, host)
   }
 
   // ==================== 主循环 ====================
@@ -116,6 +129,7 @@ export class LoopRunner {
     const stagnantLimit = this.deps.stagnantLimit ?? 3
     const system = buildSystem(task, state)
     let lastSignature = ''
+    let nudged = false // 无进展提示只注入一次；再达限以 stagnant 终止
 
     try {
       while (!state.converged) {
@@ -139,10 +153,16 @@ export class LoopRunner {
         })
 
         let stepText = ''
+        let streamError: string | undefined
         for await (const part of stream.fullStream) {
           if (part.type === 'text-delta') {
             stepText += part.text
             host.emitStream({ kind: 'delta', text: part.text })
+          } else if (part.type === 'error') {
+            // provider 中途失败（SSE error chunk）以 error part 收尾而非 throw——
+            // 不捕获则错误轮被当 final 收敛（批 1-4 深度 review P1 实证）
+            const err = (part as { error?: unknown }).error
+            streamError = err instanceof Error ? err.message : String(err)
           }
         }
         const finishReason = await stream.finishReason
@@ -153,12 +173,30 @@ export class LoopRunner {
         state.usage.promptTokens += usage.inputTokens ?? 0
         state.usage.completionTokens += usage.outputTokens ?? 0
 
+        // 流级失败短路（12 号 §6.5 错误分类）：部分内容留痕后以 error 终止，
+        // 绝不把截断文本当最终答案
+        if (streamError !== undefined || finishReason === 'error') {
+          const message = streamError ?? `模型流以 error 终止（finishReason=error）`
+          logger.error(`[agent-loop] 模型流失败 def=${task.definitionId} scope=${task.scopeId}: ${message}`)
+          state.messages = [...state.messages, ...stepMessages]
+          return this.stop(state, host, 'error', message)
+        }
+        if (finishReason === 'length') {
+          // 截断完成：仍按 final 收敛，但打标可观测（答案可能不完整）
+          logger.warn(`[agent-loop] 模型因长度上限截断（finishReason=length）def=${task.definitionId}`)
+        }
+
         const decision = normalizeDecision(finishReason, stepMessages)
         const decisionToolNames = decision.type === 'tool_calls' ? decision.calls.map((c) => c.toolName) : []
         host.emitTrajectory({
           iteration: state.iteration,
           kind: 'decision',
-          payload: { thought: stepText.slice(0, 500), finishReason, toolCalls: decisionToolNames },
+          payload: {
+            thought: stepText.slice(0, TRAJECTORY_THOUGHT_MAX_CHARS),
+            finishReason,
+            truncated: finishReason === 'length' || undefined,
+            toolCalls: decisionToolNames,
+          },
           promptTokens: usage.inputTokens,
           completionTokens: usage.outputTokens,
           durationMs: this.clock() - stepStart,
@@ -169,7 +207,7 @@ export class LoopRunner {
           state.finalAnswer = decision.answer
           state.messages = [...state.messages, ...stepMessages]
           await host.saveState(state)
-          host.emitTrajectory({ iteration: state.iteration, kind: 'final', payload: { answer: decision.answer.slice(0, 2000) } })
+          host.emitTrajectory({ iteration: state.iteration, kind: 'final', payload: { answer: decision.answer.slice(0, TRAJECTORY_ANSWER_MAX_CHARS) } })
           return resultOf(state, 'final')
         }
 
@@ -177,44 +215,59 @@ export class LoopRunner {
         const calls = decision.calls
         state.usage.toolCalls += calls.length
 
-        // 无进展检测（12 号 §6.4-3：signature = 工具名+入参规范化）
-        const signature = calls.map((c) => `${c.toolName}:${JSON.stringify(c.input)}`).sort().join('|')
+        // 无进展检测（12 号 §6.4-3：signature = 工具名+入参规范化；
+        // stableStringify 与审批缓存键同一实现——键序稳定防同语义漏检）
+        const signature = calls.map((c) => `${c.toolName}:${stableStringify(c.input)}`).sort().join('|')
         if (signature && signature === lastSignature) {
           state.stagnantRounds++
           if (state.stagnantRounds >= stagnantLimit) {
+            if (nudged) {
+              // 提示注入后仍原地打转：以 stagnant 终止（12 号 §6.4；
+              // 深度 review P3-4——原实现恒以 max_steps 兜底，stagnant 不可达）
+              logger.warn(`[agent-loop] 无进展终止 def=${task.definitionId} scope=${task.scopeId}`)
+              state.messages = [...state.messages, ...stepMessages]
+              return this.stop(state, host, 'stagnant')
+            }
             state.messages = [...state.messages, ...stepMessages, { role: 'assistant', content: STAGNANT_NUDGE } as ModelMessage]
-            state.stagnantRounds = -2 // 注入提示后再给 2 轮（12 号 §6.4）
+            state.stagnantRounds = 0
+            nudged = true
             await host.saveState(state)
+            state.iteration++
             continue
-          }
-          if (state.stagnantRounds === 0) {
-            state.stagnantRounds = 1
           }
         } else {
           state.stagnantRounds = 0
         }
-        if (state.stagnantRounds < 0) state.stagnantRounds++
         lastSignature = signature
 
         // ai@6 已在本步内执行工具（execute 内含审批/超时/容错包装），
         // stepMessages 已含 assistant(tool-call) + tool(result) —— 12 号 §6.3：工具全部 settle 后
         state.messages = [...state.messages, ...stepMessages]
         for (const c of calls) {
-          host.emitTrajectory({ iteration: state.iteration, kind: 'tool_call', name: c.toolName, payload: { args: c.input } })
+          // toolCallId 进轨迹：宿主按 id 配对 call/result（并行工具完成序 ≠ 决策序，
+          // 按下标配对会张冠李戴——深度 review P2-6 实证）
+          host.emitTrajectory({
+            iteration: state.iteration,
+            kind: 'tool_call',
+            name: c.toolName,
+            payload: { toolCallId: c.toolCallId, args: c.input },
+          })
         }
         await host.saveState(state) // —— 唯一持久化点（崩溃恢复边界）——
         state.iteration++
       }
       return resultOf(state, 'final')
     } catch (e: unknown) {
-      const err = e as { name?: string; message?: string; name_?: string }
+      const err = e as { name?: string; message?: string }
       const aborted = host.signal.aborted || err?.name === 'AbortError'
       if (aborted) {
         return this.stop(state, host, 'aborted')
       }
       logger.error('[agent-loop] 循环异常终止', e)
       state.stopReason = 'error'
-      await host.saveState(state).catch(() => undefined)
+      await host.saveState(state).catch((saveErr) =>
+        logger.warn('[agent-loop] 异常路径补偿落盘失败（历史可能停留上一 save 点）', saveErr),
+      )
       return resultOf(state, 'error', err?.message ?? String(e))
     }
   }
@@ -247,7 +300,7 @@ export class LoopRunner {
               : ({ action: 'reject', reason: 'no_approval_coordinator' } as ApprovalDecision)
             if (decision.action !== 'approve' && decision.action !== 'approve_with_edit') {
               host.emitStream({ kind: 'tool-end', toolName: name, toolCallId: options.toolCallId, ok: false })
-              host.emitTrajectory({ iteration: 0, kind: 'tool_result', name, payload: { denied: true, reason: (decision as { reason?: string }).reason } })
+              host.emitTrajectory({ iteration: 0, kind: 'tool_result', name, payload: { toolCallId: options.toolCallId, denied: true, reason: (decision as { reason?: string }).reason } })
               return { ok: false, error: 'denied', hint: '用户拒绝了该操作，请调整方案。' }
             }
             if (decision.action === 'approve_with_edit') {
@@ -259,7 +312,7 @@ export class LoopRunner {
           const parsed = def.inputSchema.safeParse(input)
           if (!parsed.success) {
             host.emitStream({ kind: 'tool-end', toolName: name, toolCallId: options.toolCallId, ok: false })
-            return { ok: false, error: 'INVALID_ARGS', detail: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).slice(0, 8) }
+            return { ok: false, error: 'INVALID_ARGS', detail: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).slice(0, ZOD_ISSUE_MAX) }
           }
 
           // ③ 执行（超时 + signal + 异常捕获——错误永不 throw 出包装层）
@@ -275,17 +328,17 @@ export class LoopRunner {
               host.signal,
             )
             host.emitStream({ kind: 'tool-end', toolName: name, toolCallId: options.toolCallId, ok: true })
-            host.emitTrajectory({ iteration: 0, kind: 'tool_result', name, payload: { ok: true } })
+            host.emitTrajectory({ iteration: 0, kind: 'tool_result', name, payload: { toolCallId: options.toolCallId, ok: true } })
             return { ok: true, data: truncateJson(result) }
           } catch (e: unknown) {
             const err = e as { message?: string; name?: string }
             const cancelled = err?.name === 'TimeoutError' ? false : host.signal.aborted
             host.emitStream({ kind: 'tool-end', toolName: name, toolCallId: options.toolCallId, ok: false })
-            host.emitTrajectory({ iteration: 0, kind: 'tool_result', name, payload: { ok: false, error: err?.message } })
+            host.emitTrajectory({ iteration: 0, kind: 'tool_result', name, payload: { toolCallId: options.toolCallId, ok: false, error: err?.message } })
             return {
               ok: false,
               error: cancelled ? 'CANCELLED' : err?.name === 'TimeoutError' ? 'TIMEOUT' : 'INTERNAL',
-              detail: err?.message?.slice(0, 300),
+              detail: err?.message?.slice(0, TOOL_ERROR_DETAIL_MAX_CHARS),
               hint: err?.name === 'TimeoutError' ? `工具执行超过 ${Math.round(timeoutMs / 1000)}s` : undefined,
             }
           }
@@ -299,12 +352,15 @@ export class LoopRunner {
     state: AgentLoopState,
     host: AgentHost,
     reason: AgentResult['stopReason'],
+    error?: string,
   ): Promise<AgentResult> {
     state.stopReason = reason
     state.converged = reason === 'final'
-    await host.saveState(state).catch(() => undefined)
+    await host.saveState(state).catch((e) =>
+      logger.warn(`[agent-loop] 终止补偿落盘失败（reason=${reason}，历史停留上一 save 点）`, e),
+    )
     host.emitTrajectory({ iteration: state.iteration, kind: 'guardrail_stop', payload: { reason } })
-    return resultOf(state, reason)
+    return resultOf(state, reason, error)
   }
 }
 
