@@ -121,6 +121,33 @@ describe('replayJournal 投影', () => {
     expect(reSnap.exec.variables.get('a')).toEqual(reFull.exec.variables.get('a'))
   })
 
+  it('真实快照等价（P0 回归）：快照+增量 ≡ 全量重放，appliedThroughSeq 语义正确', async () => {
+    // 挂起图产生真实 on-suspend 快照（引擎序列化路径，非手工构造）
+    const j2 = new InMemoryJournal()
+    const echo = makeEcho()
+    const { engine: e2 } = mkEngine(j2, [review, echo.handler])
+    const g2 = mkGraph([['start', 'start'], ['r1', 'rev'], ['end', 'end']], [['start', 'r1'], ['r1', 'end', 'approve']])
+    await runWithUserAsync('u1', async () => { await e2.execute(input(g2, 'run_2')); await settle() })
+    const ev2 = await j2.listByRun('run_2')
+    const snap = [...ev2].reverse().find(e => e.type === 'snapshot')!
+    expect(snap).toBeTruthy()
+    expect(snap.payload).toHaveProperty('appliedThroughSeq')
+    // 快照路径与全量路径的投影必须同构
+    const reFull = replayJournal(input(g2, 'run_2'), ev2, null)
+    const reSnap = replayJournal(input(g2, 'run_2'), ev2, snap)
+    expect(reSnap.suspended).toBe(reFull.suspended)
+    expect(reSnap.inflightNodes).toEqual(reFull.inflightNodes)
+    expect(reSnap.exec.variables.get('start')).toEqual(reFull.exec.variables.get('start'))
+    const stFull = reFull.exec.rootScope.states.get('r1')!
+    const stSnap = reSnap.exec.rootScope.states.get('r1')!
+    expect(stSnap.status).toBe(stFull.status)
+    expect(stSnap.reviewPayload).toEqual(stFull.reviewPayload)
+    // 续写序号一致（曾从 0 起撞唯一约束）
+    expect(reSnap.nextEventSeq).toBe(reFull.nextEventSeq)
+    // waitExpiresAt 绝对死线（P1）：重放不按重放时刻重锚
+    expect(stSnap.waitExpiresAt?.getTime()).toBe(stFull.waitExpiresAt?.getTime())
+  })
+
   it('挂起重放：suspended 置位、审核现场恢复、无终态锚点', async () => {
     const journal = new InMemoryJournal()
     const { engine } = mkEngine(journal, [review])
@@ -207,6 +234,41 @@ describe('engine.rehydrate / ensureActive', () => {
     }
     expect(await engine.ensureActive('run_1')).toBe(false)
     expect(runs.final.status).toBe('succeeded') // 修复投影
+  })
+
+  it('挂起+并行在途混合（review P1-1 回归）：重建后并行分支不丢', async () => {
+    const journal = new InMemoryJournal()
+    let slowCalls = 0
+    const slow: WorkflowNodeHandler = {
+      type: 'slow' as never, controlKind: 'task', cancellable: false,
+      outputSchema: [], validateConfig: () => [],
+      execute: async () => { slowCalls++; await settle(40); return { status: 'succeeded' as never, output: { v: 1 } } },
+    } as never
+    // start 分叉：rev（挂起）+ slow（并行在途）
+    const graph = mkGraph(
+      [['start', 'start'], ['rev1', 'rev'], ['slow1', 'slow'], ['end', 'end']],
+      [['start', 'rev1'], ['start', 'slow1'], ['rev1', 'end', 'approve'], ['slow1', 'end']],
+    )
+    const first = mkEngine(journal, [review, slow])
+    const status = await runWithUserAsync('u1', async () => {
+      const s = await first.engine.execute(input(graph, 'run_m'))
+      await settle() // 后台挂起任务落日志
+      return s
+    })
+    expect(status).toBe('waiting_review')
+
+    // 第二"进程"重建：挂起但 slow 在途（journal 有未收敛 node_launched）
+    const second = mkEngine(journal, [review, slow])
+    second.runs.row = {
+      runId: 'run_m', userId: 'u1', definitionId: 'd1', graphSnapshot: graph,
+      startInputs: {}, settings: null, triggerInfo: null, status: 'waiting_review',
+    }
+    expect(await second.engine.ensureActive('run_m')).toBe(true)
+    // 决策续驱：slow 分支须被执行（曾被静默丢弃）
+    expect(await second.engine.resumeReview('run_m', 'rev1', { decision: 'approve' })).toBe(true)
+    await settle(120)
+    expect(slowCalls).toBeGreaterThanOrEqual(1) // 第二进程重执行了 slow
+    expect(second.runs.final.status).toBe('succeeded')
   })
 
   it('旧格式（无日志）返回 false；终态 run 不重建；单飞去重', async () => {

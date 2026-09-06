@@ -426,6 +426,12 @@ export class WorkflowRunService {
   /** 删除运行历史（连带节点记录） */
   async deleteRun(runId: string): Promise<void> {
     await this.deps.nodeRuns.deleteByRun(runId)
+    // journal 级联（11 号 §5.10：保留策略与 run 生命周期绑定——孤儿事件日志会永久累积）
+    try {
+      await this.deps.engine.deleteJournal(runId)
+    } catch (e) {
+      logger.warn(`[WorkflowRunService] 删除运行日志失败（run ${runId}，孤儿事件将由保留策略清扫）`, e)
+    }
     await this.deps.runs.deleteById(runId)
   }
 
@@ -481,18 +487,20 @@ export class WorkflowRunService {
    * - waiting_review → 保持（重启后审核决策 V1 不支持，需续跑重驱）
    */
   async recoverOnBoot(): Promise<{ timedOut: number; interrupted: number; keptWaiting: number }> {
-    // 先处理已过期的挂起审核：标 interrupted（引擎内存态已丢失，续跑重驱）
+    // 先处理已过期的挂起审核：旧格式（无 journal）标 interrupted 续跑重驱；
+    // 新格式（有日志）不动——走下方 ensureActive 重建后由 tickReviewTimeouts
+    // 按 timeoutPolicy 处理（11 号 §5.9-2 行为变更，P1 修复）
     try {
       const expired = await this.deps.nodeRuns.scanExpiredWaitingReview(new Date())
       const expiredRunIds = [...new Set(expired.map(r => r.runId))]
       for (const runId of expiredRunIds) {
         const run = await this.deps.runs.getById(runId)
-        if (run?.status === 'waiting_review') {
-          await this.deps.runs.update(runId, {
-            status: WORKFLOW_RUN_STATUSES.interrupted,
-            error: '审核等待已超时（应用重启后中断）',
-          })
-        }
+        if (run?.status !== 'waiting_review') continue
+        if (await this.deps.engine.ensureActive(runId)) continue // 新格式：重建后 ticker 按策略处理
+        await this.deps.runs.update(runId, {
+          status: WORKFLOW_RUN_STATUSES.interrupted,
+          error: '审核等待已超时（应用重启后中断）',
+        })
       }
     } catch (e) {
       logger.error('[WorkflowRunService] 过期审核清理失败（继续 boot 恢复）', e)
@@ -511,14 +519,9 @@ export class WorkflowRunService {
       await runWithUserAsync(userId, async () => {
         for (const run of runs) {
           if (run.status === 'waiting_review') {
-            // 新格式（有 journal 日志）：重建式恢复——内存态复活，决策/超时即时生效
-            if (await this.deps.engine.ensureActive(run.id)) {
-              result.keptWaiting++
-              // 评审 #35 语义在重建态下由引擎 tickReviewTimeouts 承接（内存态在）
-              this.armWaitingReviewTimeout(run)
-              continue
-            }
-            // 旧格式（无日志）：挂起态保留 + 外部死线处理（降级不变）
+            // 挂起保留：新格式先重建（内存态复活，决策/超时即时生效——ticker 承接 #35 语义）；
+            // 旧格式（无日志）外部死线兜底。两路径计数一致，仅恢复能力不同
+            await this.deps.engine.ensureActive(run.id)
             result.keptWaiting++
             this.armWaitingReviewTimeout(run)
             continue

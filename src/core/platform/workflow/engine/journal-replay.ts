@@ -88,11 +88,15 @@ export function replayJournal(
   // ── 快照基线（其后同 seq 事件跳过——快照本身就是该 seq 的投影） ──
   let startSeq = 0
   if (snapshot && snapshot.type === WORKFLOW_JOURNAL_EVENT_TYPES.snapshot) {
-    applySnapshot(ctx, snapshot.payload as Record<string, unknown>)
-    startSeq = snapshot.seq + 1
+    const payload = snapshot.payload as Record<string, unknown>
+    applySnapshot(ctx, payload)
+    // appliedThroughSeq：快照覆盖到的事件位（threshold 快照在触发事件落地前拍摄，
+    // 显式携带 seq-2 语义；on-suspend 缺省 seq-1）。重放从其后再放，保证
+    // 快照+增量 ≡ 全量（P0 修复——曾按 snapshot.seq+1 起放丢失触发事件效果）
+    startSeq = typeof payload.appliedThroughSeq === 'number' ? payload.appliedThroughSeq + 1 : snapshot.seq + 1
     // 续写序号必须越过快照位（事件循环对 <startSeq 全部 continue，
     // 不更新 nextEventSeq——曾使续写从 0 起撞 (run_id, seq) 唯一约束）
-    ctx.nextEventSeq = startSeq
+    ctx.nextEventSeq = snapshot.seq + 1
   }
 
   for (const ev of events) {
@@ -197,7 +201,13 @@ function applyEvent(ctx: ReplayContext, ev: JournalEventRecord): void {
       st.reviewPayload = p.reviewPayload ?? undefined
       st.reviewTimeoutMs = p.timeoutMs
       st.reviewTimeoutPolicy = p.timeoutPolicy
-      st.waitExpiresAt = p.timeoutMs != null ? new Date(Date.now() + p.timeoutMs) : null
+      // 绝对死线优先（重放时刻重锚会推迟整个超时窗——P1 修复）；旧事件缺字段时回退推算
+      const absolute = (p as { waitExpiresAt?: number | null }).waitExpiresAt
+      st.waitExpiresAt = absolute != null
+        ? new Date(absolute)
+        : p.timeoutMs != null
+          ? new Date(Date.now() + p.timeoutMs)
+          : null
       exec.suspended = true
       return
     }

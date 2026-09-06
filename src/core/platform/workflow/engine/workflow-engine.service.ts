@@ -236,6 +236,8 @@ export class RunExecution {
   readonly runCounts = new Map<string, number>()
   /** C1 重执行节点集（本作用域内）：launchNode 对这些节点复用 node_run 行重置而非新建（唯一索引约束） */
   readonly reexecNodeIds = new Set<string>()
+  /** 重执行时保留的重试预算（rehydrate 清态重建不回满已烧掉的重试次数） */
+  reexecRetryCounts = new Map<string, number>()
   /** 未恢复失败进行中：同步置位（先于任何 await），防漂浮 pump 把失败中止误判为用户取消 */
   pendingFailureError?: string
   /** 看门狗句柄（挂起时清除、续驱时重建——防失控时长对恢复后的运行仍生效） */
@@ -409,17 +411,23 @@ export class WorkflowEngineService {
    * 快照是优化不是事实源——写失败仅 warn 降级为纯增量重放（与日志写失败的
    * run 失败语义刻意不同）。触发：每 snapshotEveryEvents 条 / 每次挂起强制。
    */
-  private async appendSnapshot(exec: RunExecution, reason: 'threshold' | 'on-suspend'): Promise<void> {
+  private async appendSnapshot(
+    exec: RunExecution,
+    reason: 'threshold' | 'on-suspend',
+    appliedThroughSeq?: number,
+  ): Promise<void> {
     const journal: WorkflowJournalPort | null = this.deps.journal ?? null
     if (!journal) return
     const payload = this.serializeExecution(exec)
     const seq = exec.nextEventSeq++
+    // appliedThroughSeq 缺省 = seq-1（on-suspend 拍摄点全部事件已落地）；
+    // threshold 路径显式传入 seq-2 语义（触发事件未落地）——重放按此增量起点
     try {
       await journal.append({
         runId: exec.input.runId,
         seq,
         type: WORKFLOW_JOURNAL_EVENT_TYPES.snapshot,
-        payload: { ...payload, reason },
+        payload: { ...payload, reason, appliedThroughSeq: appliedThroughSeq ?? seq - 1 },
       })
       exec.eventsSinceSnapshot = 0
     } catch (e) {
@@ -558,7 +566,7 @@ export class WorkflowEngineService {
 
       // 续跑装配：恢复已成功节点的变量与已激活边（已成功节点不再执行）
       if (input.resumedCheckpoints?.length) {
-        this.hydrateCheckpoints(exec, input.resumedCheckpoints)
+        await this.hydrateCheckpoints(exec, input.resumedCheckpoints)
       }
 
       try {
@@ -599,6 +607,11 @@ export class WorkflowEngineService {
 
   private statusOf(exec: RunExecution): WorkflowRunStatus {
     return exec.finalStatus ?? 'failed'
+  }
+
+  /** 随 run 删除级联清 journal（运行服务调用；run 属主由调用链校验） */
+  async deleteJournal(runId: string): Promise<number> {
+    return this.deps.journal?.deleteByRun(runId) ?? 0
   }
 
   // ==================== 重放恢复（11 号 §5.3 E1） ====================
@@ -664,14 +677,10 @@ export class WorkflowEngineService {
           `挂起=${re.suspended}，在途 ${re.inflightNodes.length} 节点`
       )
 
-      if (re.suspended) {
-        // 挂起等待：不重执行（reviewDecide/ticker 续驱）；重挂看门狗与超时扫描上下文
-        this.armWatchdog(exec)
-        return true
-      }
-
-      // 在途节点重执行（不变量 3：副作用只在真实执行时发生）——
-      // 清运行态后重入 pump（computeReady 将其视为可启动）
+      // 在途节点统一处理（挂起与运行两态共用——P1 修复：挂起时并行兄弟任务同样
+      // 需清理，否则决策续驱后 computeReady 跳过 running 态节点、作用域静默收敛丢分支）：
+      // 清运行态 + 复用行标记（决策/续驱的 pump 将其视为可启动）
+      const preservedRetryCounts = new Map<string, number>()
       for (const item of re.inflightNodes) {
         const scope = exec.rootScope.key === item.scopeKey
           ? exec.rootScope
@@ -679,10 +688,19 @@ export class WorkflowEngineService {
         if (!scope) continue
         const st = scope.states.get(item.nodeId)
         if (st && st.status === 'running') {
+          if (st.retryCount > 0) preservedRetryCounts.set(item.nodeId, st.retryCount)
           scope.states.delete(item.nodeId)
           exec.reexecNodeIds.add(item.nodeId) // 复用 node_run 行（唯一索引约束）
         }
       }
+      exec.reexecRetryCounts = preservedRetryCounts // 重试预算不因恢复回满（P2 修复）
+
+      if (re.suspended) {
+        // 挂起等待：不重执行（reviewDecide/ticker 续驱）；重挂看门狗与超时扫描上下文
+        this.armWatchdog(exec)
+        return true
+      }
+
       // 循环驱动器在途：迭代间崩溃 → 由 resumeSuspended 语义续驱（决策已无需）。
       // 直接重驱 root pump + 各 driver 继续（driveLoop 从 results.length 续）
       this.armWatchdog(exec)
@@ -1192,7 +1210,7 @@ export class WorkflowEngineService {
       nodeId: node.id,
       iterationIndex: scope.iterationIndex,
       status: WORKFLOW_NODE_RUN_STATUSES.running,
-      retryCount: 0,
+      retryCount: exec.reexecRetryCounts.get(node.id) ?? 0, // 恢复重执行不重置重试预算
       startedAtMs: Date.now(),
     }
     scope.states.set(node.id, state)
@@ -1398,11 +1416,15 @@ export class WorkflowEngineService {
       timeoutPolicy?: 'approve' | 'reject' | 'fail'
     }
     const suspResult = result as { payload?: Record<string, unknown>; timeoutMs?: number | null }
+    const suspendTimeoutMs =
+      suspResult.timeoutMs != null && Number(suspResult.timeoutMs) > 0 ? Number(suspResult.timeoutMs) : null
     const suspendPayload = {
       iterationIndex: state.iterationIndex,
       reviewPayload: suspResult.payload ?? null,
-      timeoutMs: suspResult.timeoutMs != null && Number(suspResult.timeoutMs) > 0 ? Number(suspResult.timeoutMs) : null,
+      timeoutMs: suspendTimeoutMs,
       timeoutPolicy: (cfg.timeoutPolicy ?? 'fail') as 'approve' | 'reject' | 'fail',
+      // 绝对死线（重放优先用它——按重放时刻+timeoutMs 重锚会推迟整个超时窗，P1 修复）
+      waitExpiresAt: suspendTimeoutMs != null ? Date.now() + suspendTimeoutMs : null,
     }
     if (this.deps.journal) await this.appendEvent(exec, 'nodeSuspended', {
       nodeId: node.id,
@@ -1518,6 +1540,16 @@ export class WorkflowEngineService {
         durationMs: Date.now() - state.startedAtMs,
       })
       this.emitNodeStatus(exec, state)
+      if (this.deps.journal) {
+        await this.appendEventBatch(
+          exec,
+          'edgeActivated',
+          failEdges.map((edge, i) => ({
+            scope,
+            payload: { edgeId: edge.id, seq: scope.activationCounter + 1 + i, sourceNodeId: edge.sourceNodeId, targetNodeId: edge.targetNodeId },
+          }))
+        )
+      }
       for (const edge of failEdges) {
         this.activateEdge(exec, scope, edge)
       }
@@ -1908,10 +1940,10 @@ export class WorkflowEngineService {
   // ==================== 续跑装配 ====================
 
   /** 恢复 checkpoint：根作用域变量 + 按 routeTaken 重放已激活边 */
-  private hydrateCheckpoints(
+  private async hydrateCheckpoints(
     exec: RunExecution,
     checkpoints: ExecuteRunInput['resumedCheckpoints']
-  ): void {
+  ): Promise<void> {
     if (!checkpoints) return
     for (const cp of checkpoints) {
       const state: NodeExecutionState = {
@@ -1956,6 +1988,18 @@ export class WorkflowEngineService {
     for (const cp of checkpoints) {
       const st = exec.rootScope.states.get(cp.nodeId)
       if (st) st.completedSeq = exec.rootScope.activationCounter
+    }
+    // checkpoint 激活落日志（11 号 §5.2 写入点——续跑 run 崩溃后重放依赖它重建，
+    // 曾缺事件致 fail：续跑 run 重放只剩 run_started、checkpoint 语义全丢）
+    if (this.deps.journal && exec.rootScope.activationSeqs.size > 0) {
+      const activations = [...exec.rootScope.activationSeqs.entries()].map(([edgeId, seq]) => {
+        const edge = exec.input.graph.edges.find(e => e.id === edgeId)
+        return {
+          scope: exec.rootScope as never,
+          payload: { edgeId, seq, sourceNodeId: edge?.sourceNodeId ?? '', targetNodeId: edge?.targetNodeId ?? '' },
+        }
+      })
+      if (this.deps.journal) await this.appendEventBatch(exec, 'edgeActivated', activations)
     }
   }
 
