@@ -97,7 +97,20 @@
 > 滚动摘要保留前次内容、当轮输入无条件保底、前缀伪造双端防护、装配与压缩
 > 解耦（窗口 0=仅装配）、摘要提示词收口 vendor 常量。测试 162 绿（context 21
 > + 门面集成等）。vendor 偏离 upstream 三处文件内标注（boundary 修正为测试
-> 实证的上游缺陷）。下一步：P2 journal E1-E3（11 号）。
+> 实证的上游缺陷）。
+>
+> **进度（2026-09-06 P2 journal 竣工：E1 三提交 + E2/E3 ff69ac62）**：
+> E1 事件日志（表/端口/十二类事件全写入点/先日志后内存/两级快照）+ 重放投影
+> 与重建式恢复（replayJournal/rehydrate/reviewDecide 重路由/boot 新旧格式分治）
+> ——独立 review P0+P1×5 全修（阈值快照 appliedThroughSeq 语义/挂起并行混合
+> 在途统一处理/fail 边与 checkpoint 激活落日志/过期挂起走 timeoutPolicy/
+> waitExpiresAt 绝对死线）。E2 节点状态 API（state_json 列/saveState 覆盖写/
+> loadState 预载/executionKey 幂等键）+ E3 handler.resume（多轮人机交互，
+> settle 三态分发，兼容矩阵全覆盖）+ E1 遗留 node_run 投影对齐（不变量 4）。
+> 测试 25 例（journal-write 6 + journal-replay 9 + node-state-and-resume 10）
+> 全绿，工作流全套基线零新增回归。已知近似：run 行不持久化 settings
+> （rehydrate 以缺省重建）；无快照循环列表以伪变量近似（快照路径优先）。
+> 下一步：agent-loop 节点四件套（catalog/types/handler/forms）→ P4 冒烟。
 
 ## 分期总览
 

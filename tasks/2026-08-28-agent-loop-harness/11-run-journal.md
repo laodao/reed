@@ -415,3 +415,26 @@ D3: 用户点批准 → reviewDecide → resumeReview=false（非活跃）
 3. **effect-log 是否引擎化**：§5.7 的幂等记账目前由 handler 自理；若 M3 出现第三个非幂等节点，抽象为 `ctx.effects.runOnce(key, fn)` 共享 helper。
 4. **Web 端多实例**：boot 恢复/rehydrate 的跨实例互斥（PG advisory lock 或 run 级 lease）本期不做——单实例是现行部署事实，水平扩展立项时一并设计。
 5. **保留策略默认值**：30 天 + 人工类全量是否合适，需运营数据校准（与 02 开放问题 1 同源，本文给出落地机制，阈值可配）。
+
+
+---
+
+## 2026-09-06 实现注记（E1-E3 落地定稿）
+
+- **E1**：写入面（§4/§5.1-5.2 全写入点含 fail 边/checkpoint 激活）+ 恢复面
+  （§5.3-5.4 replayJournal/rehydrate/reviewDecide 重路由/boot 新旧格式分治）。
+  两级快照落地为 appliedThroughSeq 语义（threshold 快照在触发事件效果落地前
+  拍摄——快照只覆盖到前一条；on-suspend 全部落地后拍摄）——review 实证
+  "快照+增量≡全量"曾是破坏项，修复后回归测试钉死。
+- **E2**：state_json 512KB 上限；ctx.saveState 覆盖写 + rehydrate 预载注入；
+  executionKey 即 §5.7 幂等键（方案 1 落地；方案 2"先记账后执行"由 handler
+  自行组合 saveState/loadState 实现，引擎不强制）。
+- **E3**：兼容矩阵（§5.6）全行落地含"回调抛异常不可重试"；resume 语义下路由
+  由 handler 显式给（不自动套 approve/reject 边）；多轮 waiting_review 再挂起
+  走 handleReviewSuspend 完整现场（新 payload/timeout/事件）。
+- **不变量 4**：rehydrate 内 node_run 投影对齐（journal 为准修复滞后行）。
+- **已知近似**：run 行不持久化 settings——rehydrate 以缺省设置重建（护栏参数
+  回默认；definition.settings 覆盖 snapshotEveryEvents 暂未接线）；无快照的
+  循环重放以伪变量/收敛事件近似列表本体（含真实列表走快照路径——挂起强制
+  快照覆盖绝大多数中途崩溃场景）。verify_completed/task_escalated（17 号）
+  事件类型随质量门批次补。
