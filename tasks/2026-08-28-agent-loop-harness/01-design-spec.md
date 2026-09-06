@@ -319,7 +319,7 @@ agent-loop 节点 config：`maxIterations`（默认 20）、`maxTokens`、`maxTo
 > **2026-09-06 修订（21 号决策）**：协议层实现载体改为 **AI SDK v6**（`ai@^6` +
 > `@ai-sdk/openai-compatible` + `@ai-sdk/anthropic` + `@ai-sdk/google`）。本节契约
 > （类型扩展/降级路径/能力标记）保留，逐家适配实现由 AI SDK provider 层承担——
-> 详见 13 号修订节与 21 号 §1。版本红线：钉 ai@6（ai@7 需 Node≥22，Electron 28 不可用）；
+> 详见 13 号修订节与 21 号 §1。版本红线：钉 ai@6（原因见 21 号 §1.3——Electron 已升 44，现依据为 @ai-sdk 配套生态）；
 > ESM-only 包在 agent-runtime 内动态 import。
 
 ### 8.1 类型扩展

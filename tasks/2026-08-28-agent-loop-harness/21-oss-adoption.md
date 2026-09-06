@@ -36,10 +36,13 @@
 
 ### 1.3 版本与工程红线（违者即埋坑）
 
-1. **钉 `ai@^6.0.277`**：ai@7 要求 Node≥22，Electron 28（内嵌 Node 18）不可用；
-   package.json `overrides` 锁传递依赖，CI 加 `npm ls ai` 单版本断言。
+1. **钉 `ai@^6.0.277`**（2026-09-06 深度 review 更新：Electron 已升 44、内嵌 Node 22，
+   **Node 版本约束解除**——继续钉 6.x 的现理由是 @ai-sdk 配套生态：我们依赖的
+   `@ai-sdk/openai-compatible` v2 线与 ai@6 配对，升 7 需整套 @ai-sdk 同步升线，
+   待 harness 稳定后单独立项）；package.json `overrides` 锁传递依赖继续有效。
 2. **ESM-only 包禁顶层 import**：主进程 CJS 产物会打包失败——agent-runtime 内部一律
-   `await import('ai')`（异步工厂），类型用 `import type`。
+   `await import('ai')`（异步工厂），类型用 `import type`。（Electron 44 已支持 ESM
+   主进程，此条从硬约束降级为既有架构选择：CJS 产物 + 动态 import 验证可用，不返工。）
 3. 归属：**`src/core/platform/agent-runtime/`**（三期重构后 packs→platform 依赖铁律；
    原 12 号规格的 `src/core/services/agent-runtime/` 路径已失效，全部按此迁移）。
    已有骨架 `src/core/agent/`（be56607f）M0 第一步 `git mv` 过去。

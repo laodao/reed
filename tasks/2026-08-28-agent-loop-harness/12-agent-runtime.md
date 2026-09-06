@@ -456,6 +456,17 @@ R2 宿主融合表修正：独立宿主的 state 落点仍为 agent_sessions，�
 （不经 Session）；approve 快路径修正为 registry 层审批包装（ai@6 tool execute 内挂起，
 支持分级与编辑后执行）。依据：22 号 §2 F1-F4 / §3 表 B1/B4/C2。
 
+### R4c 实施对齐记录（2026-09-06 深度 review，P1 已落地）
+
+- LoopRunner 已实现（`platform/agent-runtime/runtime/loop.ts`，46a66c05，14 单测）：
+  `run(task, host)` 按本规格 §6 状态机执行；`resumeFromSuspend(state, decision, host)`
+  即 §5.4 的 `resume`（已加契约别名 `resume` 对齐 23 号 §5）。
+- 实现澄清三条：① ai@6 对工具入参的 zod 校验发生在 execute **之前**（比本文预想的
+  包装层校验更早），包装层 safeParse 保留为纵深防御；② "工具全部 settle 后回填"
+  由 ai@6 自动完成——`response.messages` 已含 assistant(tool-call)+tool(result)，
+  本文 §6.3 的步末 saveState 直接消费该数组；③ 无进展检测按 §6.4-3 实现
+  （signature=工具名+规范化入参；触发后注入提示并重置计数再给 2 轮）。
+
 ### R5 测试基线补充
 
 本文 §12 单测矩阵保留，另加：approve 快路径（通过/拒绝/编辑/超时/取消清理）、

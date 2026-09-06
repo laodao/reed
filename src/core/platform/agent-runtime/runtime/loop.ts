@@ -81,6 +81,15 @@ export class LoopRunner {
     return this.loop(state, task, host)
   }
 
+  /** 契约别名（23 号 §5 LoopRunner.resume）——与 resumeFromSuspend 同一入口 */
+  async resume(
+    state: AgentLoopState,
+    decision: { action: string; values?: Record<string, unknown>; comment?: string },
+    host: AgentHost,
+  ): Promise<AgentResult> {
+    return this.resumeFromSuspend(state, decision, host)
+  }
+
   /** 挂起恢复入口：人工决策作为 tool 结果回填后继续（12 号 §6.2） */
   async resumeFromSuspend(
     state: AgentLoopState,

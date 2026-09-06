@@ -453,6 +453,6 @@ M1 期 OpenAI 系用录制 SSE 流回放，anthropic/google 留接口占位到 M
 
 ### R3 版本红线（违者埋坑）
 
-钉 `ai@^6.0.277`（engines node>=18，Electron 28 可跑）；ai@7 需 Node≥22 **禁升**；
+钉 `ai@^6.0.277`（Electron 44 后 Node 门槛已满足，钉 6.x 依据为 @ai-sdk 配套生态，见 21 号 §1.3 更新）；
 overrides 锁传递依赖 + CI `npm ls ai` 单版本断言；ESM-only——agent-runtime 内
 动态 `import()`，类型 `import type`。详见 21 号 §1.3。

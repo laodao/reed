@@ -10,6 +10,14 @@
 > ② 18-business-pack（插件架构三期落地：core/packs + core/platform）；
 > ③ 开源调研与 spike（21 号 + docs/design/2026-09-05 两份过程文档）；
 > ④ agent-runtime 骨架 13 文件（commit be56607f，M0 第一步迁移）。
+>
+> **进度（2026-09-06 深度 review 时点）**：M1-P1 已完成并提交（46a66c05）——契约类型
+> （shared/agent.types + runtime/types）、ProviderAdapter（fallback 链/LRU/类型化错误）、
+> LoopRunner 手动循环（步级 saveState/护栏/工具六层包装含审批短路），21 单测全绿，
+> 实测澄清：ai@6 对 zod 入参的校验先于 execute（包装层 safeParse 为纵深防御）。
+> 待办：P2 journal E1-E3 → P3 agent-loop 节点 → 门面/审批协调器/持久化/事件桥 → P4 冒烟。
+> 另：Electron 已升 44（chore/upgrade-electron 分支 de7c47da，零测试回归），
+> 21 号 §1.3 红线依据已相应更新。
 
 ## 分期总览
 
