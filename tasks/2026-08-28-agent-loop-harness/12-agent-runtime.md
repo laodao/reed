@@ -193,6 +193,14 @@ export type HumanDecision =
 
 节点 config（本文新增字段）：`task`（模板化目标）、`toolWhitelist: string[]`、`maxIterations=20`、`maxTokens`、`maxToolCalls`、`maxDurationMs`、`model: { providerConfigId, modelId }`。输出 schema：`{ answer, iterations, usage, stopReason, trajectoriesSummary }`。
 
+> **2026-09-06 M1.4 实现注记**：config 落地为 `toolWhitelist: string[]`（M1 简形态；
+> `AgentToolBinding` 富配置随 M2——registry.buildToolDefs 已就绪）+ 补
+> `systemPrompt`/`editableFields`（引擎"修改后批准"白名单，固定 `input` 键）。
+> `maxTokens` 护栏位暂缺省：LoopRunner 无 token 钩子，归 ContextManager 接线批
+> （压缩守恒承担硬顶语义，R6）。§7-8 驳回语义已在 resumeFromSuspend 落地
+> （reject → stop(human_rejected)）；§6.2/§6.4-2 的净时长与累计 toolCalls 护栏
+> 在适配器侧实现（挂起-恢复跨段累计）。
+
 ### 5.4 主循环签名与 Decision
 
 ```ts

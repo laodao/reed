@@ -195,6 +195,19 @@ async function loadDynamicOptions() {
       }
     } catch { /* 列表失败时退化为手填 */ }
   }
+  if (sources.has('agentTools')) {
+    try {
+      const resp = await api.workflow.listAgentTools()
+      if (resp.success && resp.data) {
+        // 危险级工具标注审批语义：exec/external-post 默认挂起等人工批准
+        const DANGER_LABELS: Record<string, string> = { exec: '需批准', 'external-post': '需批准', write: '写操作' }
+        dynamicOptions.value.agentTools = resp.data.map((t: any) => ({
+          label: `${t.name}${DANGER_LABELS[t.dangerLevel] ? `（${DANGER_LABELS[t.dangerLevel]}）` : ''}`,
+          value: t.name,
+        }))
+      }
+    } catch { /* 列表失败时退化为手填 */ }
+  }
 }
 watch(() => props.node.id, loadDynamicOptions, { immediate: true })
 

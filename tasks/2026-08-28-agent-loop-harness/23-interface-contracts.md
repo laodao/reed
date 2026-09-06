@@ -211,6 +211,27 @@ export interface CompactionStrategy {                     // vendor 自 open-har
   上游同患此缺陷致剪枝恒 no-op）、保护边界初值 length→0（全史小于保护预算时语义
   反转）、无摘要模型时 warn 降级（上游 TypeError）。upstream commit 026e8d9。
 
+**—— 2026-09-06 M1.4 实现注记（工作流宿主适配器 agent-loop 节点，22 号 §8 焊点①）——**
+- 宿主能力注入位：`registerAgentLoopHarness({ registry, resolveModel }) / getAgentLoopHarness()`
+  （workflow-boot 7.2 装配，getter 未装配抛错——getToolService 同纪律）。
+  适配器即 `nodes/agent-loop-node.ts`，是 workflow → agent-runtime 的唯一焊接点。
+- `resume` 决策语义定稿（12 号 §7-8 落地）：reject/timeout_reject → LoopRunner
+  `resumeFromSuspend` 直接 `stop(human_rejected)`，节点 failed（retryable=false）；
+  approve 系 → 注记注入 + 一次性授权（同名+同参匹配自动放行；编辑批准
+  `approve_with_changes` 只核名、以引擎 `editedValues.input` 覆盖入参）。
+  授权不匹配（改参重发）→ 再挂起（E3 多轮）。
+- 挂起桥定稿（探针实证 ai@6 吊流行为）：`host.suspend` = 落挂起点 state →
+  commit `waiting_review` → 本地 abort 止 IO → 返回**永不 settle** 的 promise
+  （悬挂链待 GC，状态冻结挂起点）；落库失败 → 回滚 suspended 标记 + 结构化
+  拒绝 decision（reject 会吊死流，不可用）。
+- 节点级护栏跨挂起-恢复累计：maxToolCalls 预算初值 = `state.usage.toolCalls`；
+  maxDurationMs 净时长剩余窗口（12 号 §6.2：扣挂起等待，恢复段从 suspendedAt 回算）。
+- 白名单 M1 形态：`toolWhitelist: string[]`（注册名直引）；`AgentToolBinding`
+  富配置（静态 config/approval/maxCalls）+ 写类工具随 M2。工具目录消费 IPC：
+  `wf:list-agent-tools`（preload/web channel-map/编辑器 agentTools 源四端接线）。
+- 轨迹观测面：`trajectoriesSummary`（entries/byKind/toolCalls 计数）入节点输出；
+  `agent_trajectories` 落表为 M1.5（当前 emitTrajectory = 摘要 + 结构化日志留痕）。
+
 ## 6. 持久化与记忆契约
 
 ```ts

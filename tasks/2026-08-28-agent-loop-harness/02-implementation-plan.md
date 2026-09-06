@@ -124,6 +124,40 @@
 > ContextManager 全量 stringify 每步开销（增量缓存待接线批）、engine↔journal-replay
 > 循环 import（类型抽离）、测试基建三份 Fake 重复（helpers 抽取）、
 > addColumnIfMissing 第三份（升 migration-utils）、恢复路径写失败语义模糊。
+>
+> **进度（2026-09-06 M1.4 竣工：agent-loop 节点四件套 + 首批内置工具）**：
+> 四件套全落地——catalog（'agent-loop' 条目，ai 类，可取消）+ types（config：
+> task/systemPrompt/toolWhitelist/maxIterations/maxToolCalls/maxDurationMs/
+> editableFields/model）+ forms（7 字段声明，select-dynamic source='agentTools'
+> 多选）+ handler（nodes/agent-loop-node.ts：WorkflowHost 适配器，LoopRunner 驱动，
+> E2 saveState 步级持久化、E3 resume 挂起恢复、审批挂起桥）。首批内置工具四件
+> （http_get/web_search/code_run/data_table_query，路线 A 直调现有执行器，
+> SSRF 闸门经 executeHttpFetch 单一入口）。boot 7.2 装配 harness
+> （AgentToolRegistry + ProviderAdapter），未装配时节点 fail-fast。
+> 配套：loop.run() 首步前 saveState（首轮审批挂起可恢复的前提）；registry.register
+> 泛型化（具体入参泛型 def 收口 unknown 形态）；引擎 applyReviewDecision 的
+> resume 路径 config 补模板解析（对齐 launchNode——agent-loop 是首个恢复后
+> 多轮消费模板字段的节点）；wf:list-agent-tools IPC（preload/web channel-map/
+> NodeConfigPanel agentTools 分支，四端接线）。
+> 对抗性 review（subagent，实证型）P1×3 全修：编辑批准被引擎 editableFields
+> 白名单滤空（defaultConfig 声明 input + 引擎级 E2E）、agentTools 数据源无消费者
+> （上述四端接线）、resume 段 systemPrompt 模板裸奔（引擎 resolveConfigDeep）。
+> P2×3 修：护栏跨挂起-恢复累计（预算初值=state.usage.toolCalls；时长护栏
+> 净时长剩余窗口）、reject 按 12 号 §7-8 干净终止 human_rejected（原实现注记
+> 续跑可致审核 ping-pong）、512KB 持久化超限转译 retryable=false（防重试烧钱）。
+> P3 修：上限常量收口 WORKFLOW_DEFAULTS.agentLoopMaxIterationsCeiling（500）/
+> maxDurationMs 上界 WORKFLOW_LIMITS.maxDurationMs、审批卡附任务上下文（200 字截断）。
+> 挂起拆解语义定稿（探针实证）：ai@6 会吊住工具 execute 永不 settle 的流——
+> 弃置式拆解（commit 后本地 abort 止 IO，悬挂链待 GC，状态冻结挂起点），
+> 落库失败路径转结构化拒绝（reject 会吊死流，P1 实证）。
+> 测试 27 例全绿（handler 级 21 + 引擎级 E3 4 + 一致性/内置工具 2），全仓回归
+> 零新增（15 失败=已知环境基线）。遗留（P3 级，记录在案）：审批先于参数校验
+> （廉价 zod 前置到发卡前，涉 registry 所有权分层，M2 处理）、
+> trajectoriesSummary 跨恢复段不累计（agent_trajectories 落表 M1.5 一并）、
+> binding 富配置（静态 config/批准策略/maxCalls）与写类工具 M2、
+> maxTokens 护栏位缺省（归 ContextManager 接线批，无 LoopRunner 钩子）。
+> 下一步：P4 真模型冒烟（GLM/DashScope"查资料→写摘要"≥5 轮收敛/杀进程恢复/
+> 挂起批准续跑/护栏生效）→ M1.5 agent_trajectories 落表。
 
 ## 分期总览
 

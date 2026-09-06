@@ -727,6 +727,7 @@ const electronAPI = {
     getPendingReviews: () => ipcRenderer.invoke('wf:get-pending-reviews'),
     // ==================== 触发器 ====================
     triggerPreview: (expression: string) => ipcRenderer.invoke('wf:trigger-preview', { expression }),
+    listAgentTools: () => ipcRenderer.invoke('wf:list-agent-tools'),
     enableShare: (id: string) => ipcRenderer.invoke('wf:enable-share', { id }),
     reportToPdf: (p: { markdown: string; title?: string }) => ipcRenderer.invoke('wf:report-to-pdf', p),
     uploadFormFile: (p: { runId: string; nodeId: string; fileName: string; base64: string }) => ipcRenderer.invoke('wf:form-upload', p),

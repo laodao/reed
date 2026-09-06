@@ -12,6 +12,7 @@ import { getCurrentUserId, LOCAL_DEFAULT_USER_ID } from '@core/context/user-cont
 import { WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_STATUSES, WORKFLOW_TRIGGER_TYPES } from '@shared/types/workflow.types'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import { previewCronExpression } from '@core/platform/workflow/trigger/workflow-trigger-scheduler.service'
+import { getAgentLoopHarness } from '@core/platform/workflow/nodes/agent-loop-node'
 import type { WorkflowGraph, WorkflowTrigger, WorkflowExecutionSettings } from '@shared/types/workflow.types'
 
 /** 子系统就绪守卫：取实例或抛可读错误 */
@@ -217,6 +218,18 @@ export function registerWorkflowHandlers(): void {
   // ==================== 触发器 ====================
   ipcBridge.handle('wf:trigger-preview', (_e, p: { expression: string }) =>
     wrap(() => previewCronExpression(p.expression ?? ''))
+  )
+  // agent-loop 节点工具白名单候选（编辑器 agentTools 动态数据源；harness 未装配时
+  // wrap 报错——面板按既有约定退化为手填）
+  ipcBridge.handle('wf:list-agent-tools', () =>
+    wrap(async () =>
+      getAgentLoopHarness().registry.listSpecs().map((spec) => ({
+        name: spec.name,
+        description: spec.description,
+        dangerLevel: spec.dangerLevel,
+        requiresApproval: spec.requiresApproval,
+      })),
+    )
   )
 }
 

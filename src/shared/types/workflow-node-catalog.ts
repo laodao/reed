@@ -251,6 +251,32 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
     ],
   },
   {
+    type: 'agent-loop',
+    label: 'Agent 循环',
+    description: 'LLM 自主多轮决策+工具调用循环（查资料→写摘要类任务）；需人工批准的工具会挂起工作流等待审核，批准后从挂起轮继续',
+    category: 'ai',
+    icon: 'Cpu',
+    controlKind: 'task',
+    cancellable: true,
+    ports: [
+      { kind: 'normal', label: '出', max: 1 },
+      { kind: 'fail', label: '失败' },
+    ],
+    requiredConfigKeys: ['task'],
+    defaultConfig: {
+      task: '', systemPrompt: '', toolWhitelist: [],
+      // 引擎 editedValues 白名单（「修改后批准」可改工具入参）；handler 按 payload.input 键消费
+      editableFields: [{ key: 'input', label: '工具入参', type: 'json' }],
+    },
+    outputSchema: [
+      { key: 'answer', type: 'string', desc: '最终答案' },
+      { key: 'iterations', type: 'number', desc: '实际迭代轮数' },
+      { key: 'usage', type: 'json', desc: 'token 用量 { promptTokens, completionTokens, toolCalls }' },
+      { key: 'stopReason', type: 'string', desc: 'final / max_steps / stagnant / aborted / error' },
+      { key: 'trajectoriesSummary', type: 'json', desc: '轨迹摘要 { entries, byKind, toolCalls }' },
+    ],
+  },
+  {
     type: 'kb-retrieve',
     label: '知识库检索',
     description: '向量检索知识库文档片段',

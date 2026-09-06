@@ -219,6 +219,24 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
   } catch (e) {
     logger.error('[workflow-boot] 技能服务装配失败（继续启动）', e)
   }
+  // 7.2 agent-loop 节点 harness（22 号 §8 焊点）：AgentToolRegistry + ProviderAdapter。
+  //     装配失败不阻断工作流子系统（其余节点不受影响）；agent-loop 节点执行时
+  //     getter fail-fast（getAgentLoopHarness 抛错 → 节点失败，留痕可排障）
+  try {
+    const { AgentToolRegistry } = await import('@core/platform/agent-runtime/tools/registry')
+    const { ProviderAdapter } = await import('@core/platform/agent-runtime/provider/provider-adapter')
+    const { registerBuiltinAgentTools } = await import('./tools/agent-builtin-tools')
+    const { registerAgentLoopHarness } = await import('./nodes/agent-loop-node')
+    const agentToolRegistry = new AgentToolRegistry()
+    registerBuiltinAgentTools(agentToolRegistry)
+    const providerAdapter = new ProviderAdapter()
+    registerAgentLoopHarness({
+      registry: agentToolRegistry,
+      resolveModel: (opts) => providerAdapter.resolveModel(opts),
+    })
+  } catch (e) {
+    logger.error('[workflow-boot] agent-loop harness 装配失败（agent-loop 节点将不可用）', e)
+  }
   // 8. P0 子工作流：runService 访问注册（sub-workflow 节点取用，避免循环依赖）
   try {
     const { registerRunServiceAccess } = await import('./run-service-access')

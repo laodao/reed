@@ -92,6 +92,10 @@ export class LoopRunner {
       initState(task, this.clock())
     if (existing) {
       host.emitStream({ kind: 'step', stepNumber: state.iteration })
+    } else {
+      // 首步前持久化初始状态：首步工具审批挂起（工作流宿主）与步 0 崩溃恢复
+      // 都要求宿主手上有 state 可写 suspended/续跑，否则恢复路径必然缺状态
+      await host.saveState(state)
     }
     return this.loop(state, task, host)
   }
@@ -117,12 +121,13 @@ export class LoopRunner {
     task: AgentTask,
     host: AgentHost,
   ): Promise<AgentResult> {
-    // 决策回填：批准=工具继续执行（挂起点在审批回调内部，恢复时回调已 resolve）；
-    // 驳回=注入 system 注记后进入下一轮（模型自行改路）
-    const note =
-      _decision.action === 'reject'
-        ? `人工驳回了该操作${_decision.comment ? `：${_decision.comment}` : ''}。请调整方案或直接给出最终答案。`
-        : `人工已确认该操作。`
+    // 驳回 = 干净终止（12 号 §7-8：不进入下一轮，直接 stopped(human_rejected)，
+    // 宿主节点 failed retryable=false——防固执模型与审核人 ping-pong）
+    if (_decision.action === 'reject') {
+      return this.stop(state, host, 'human_rejected')
+    }
+    // 批准：注入注记后进入下一轮（模型重发挂起调用，宿主的一次性授权放行）
+    const note = `人工已确认该操作。`
     state.messages = [...state.messages, { role: 'assistant', content: `[系统] ${note}` } as ModelMessage]
     state.suspended = undefined
     await host.saveState(state)

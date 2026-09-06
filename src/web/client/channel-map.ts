@@ -165,6 +165,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'workflow.deleteRun': { channel: 'wf:delete-run' },
   'workflow.getPendingReviews': { channel: 'wf:get-pending-reviews' },
   'workflow.triggerPreview': { channel: 'wf:trigger-preview' },
+  'workflow.listAgentTools': { channel: 'wf:list-agent-tools' },
   'workflow.enableShare': { channel: 'wf:enable-share' },
   'workflow.reportToPdf': { channel: 'wf:report-to-pdf' },
   'workflow.uploadFormFile': { channel: 'wf:form-upload' },

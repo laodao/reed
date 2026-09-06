@@ -74,6 +74,8 @@ export type WorkflowNodeType =
   | 'video-compose'
   // 技能（Skill 技能包调用）
   | 'skill-call'
+  // Agent 循环（LLM 自主多轮工具调用；22 号 §8 工作流↔harness 焊点）
+  | 'agent-loop'
   // 通用
   | 'http-request'
   | 'app-notify'
@@ -465,6 +467,25 @@ export interface WorkflowNodeConfigMap {
     modelId?: string
     temperature?: number
     maxTokens?: number
+  }
+
+  'agent-loop': {
+    /** 任务目标（模板化；驱动 Agent 的用户消息） */
+    task: string
+    /** 系统提示词（角色/约束/输出格式要求） */
+    systemPrompt?: string
+    /** 工具白名单（AgentToolRegistry 已注册工具名，如 http_get/web_search；缺省=无工具单轮直答） */
+    toolWhitelist?: string[]
+    /** 最大迭代轮数（缺省 WORKFLOW_DEFAULTS.agentLoopMaxIterations；到顶未收敛=节点失败） */
+    maxIterations?: number
+    /** 节点级工具调用总上限（跨挂起-恢复累计；超过回填 LIMIT_EXCEEDED，模型需直接作答） */
+    maxToolCalls?: number
+    /** 节点级最长时长护栏毫秒（净时长——扣除挂起等待；上界 WORKFLOW_LIMITS.maxDurationMs） */
+    maxDurationMs?: number
+    /** 审核人可编辑字段（引擎 editedValues 白名单；固定 input=工具入参，供「修改后批准」） */
+    editableFields?: Array<{ key: string; label: string; type: 'string' | 'number' | 'boolean' | 'json' }>
+    providerConfigId?: string
+    modelId?: string
   }
 
   'code': {
@@ -904,6 +925,8 @@ export const WORKFLOW_NODE_TYPES = {
   'crawl-links': 'crawl-links',
   'video-gen': 'video-gen',
   'video-compose': 'video-compose',
+  'skill-call': 'skill-call',
+  'agent-loop': 'agent-loop',
 } as const satisfies Record<WorkflowNodeType, WorkflowNodeType>
 
 /** 出边类型常量（键=值，与 WorkflowEdgeKind 一一对应） */
@@ -1085,6 +1108,10 @@ export const WORKFLOW_DEFAULTS = {
   maxNodeRuns: 100,
   /** 多轮对话默认关闭（节点间仅靠 {{变量}} 显式注入，保持无状态单轮） */
   multiTurn: false,
+  /** agent-loop 节点默认最大迭代轮数（12 号 §7.3：节点级护栏——引擎 maxNodeRuns 对节点内循环无效） */
+  agentLoopMaxIterations: 20,
+  /** agent-loop 节点 maxIterations 配置上限（护栏的护栏：防单节点配成千轮空转烧 token） */
+  agentLoopMaxIterationsCeiling: 500,
   /** cron 调度间隔 30s */
   cronTickMs: 30_000,
   /** cron 错过宽限窗口 = 2 × tick（超过视为错过，推进到未来首个触发点） */

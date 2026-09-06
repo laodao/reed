@@ -99,8 +99,9 @@ describe('LoopRunner', () => {
     expect(r.stopReason).toBe('final')
     expect(r.output).toBe('直接回答')
     expect(r.iterations).toBe(0)
-    expect(host.savedStates.length).toBe(1)
-    expect(host.savedStates[0].converged).toBe(true)
+    // 首步前初始态 + final 后收敛态 = 2 次
+    expect(host.savedStates.length).toBe(2)
+    expect(host.savedStates.at(-1)?.converged).toBe(true)
   })
 
   it('② 工具循环：两步工具一步收敛；每次工具 settle 后 saveState（步级持久化点）', async () => {
@@ -126,8 +127,8 @@ describe('LoopRunner', () => {
     expect(r.stopReason).toBe('final')
     expect(r.output).toBe('查完了')
     expect(executed).toEqual([{ name: '林晓' }, { name: '青云宗' }])
-    // saveState：步1后、步2后、final后 = 3 次；且步级状态的 messages 逐增长
-    expect(host.savedStates.length).toBe(3)
+    // saveState：初始态、步1后、步2后、final后 = 4 次；messages 逐增长
+    expect(host.savedStates.length).toBe(4)
     expect(host.savedStates[0].messages.length).toBeLessThan(host.savedStates[1].messages.length)
     // 工具轨迹：2 条 tool_call + decision 3 条 + final
     const kinds = host.trajectories.map((t) => t.kind)
@@ -160,7 +161,7 @@ describe('LoopRunner', () => {
     expect(r.stopReason).toBe('final')
     expect(r.output).toBe('好的不存了')
     // 拒绝以 tool error 结果进入消息（模型下一轮可读）
-    const toolResults = JSON.stringify(host.savedStates[0].messages)
+    const toolResults = JSON.stringify(host.savedStates[1].messages)
     expect(toolResults).toContain('denied')
   })
 
@@ -218,7 +219,7 @@ describe('LoopRunner', () => {
     const runner = mkRunner(mkModel([() => toolParts('c1', 'boom', {}), () => txt('工具挂了我换个方式')]))
     const r = await runner.run(mkTask({ boom: tool }), host)
     expect(r.stopReason).toBe('final')
-    expect(JSON.stringify(host.savedStates[0].messages)).toContain('业务炸了')
+    expect(JSON.stringify(host.savedStates[1].messages)).toContain('业务炸了')
   })
 
   it('⑦ maxSteps 护栏：不收敛循环干净终止并带原因', async () => {

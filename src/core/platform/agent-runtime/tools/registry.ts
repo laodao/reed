@@ -239,8 +239,11 @@ export class AgentToolRegistry {
 
   // —— 注册 ——
 
-  /** 注册工具；ns 传入时名称命名空间化为 pack:<packId>:<name>（业务包 activate 调用） */
-  register(def: AgentToolDef, ns?: { packId: string }): void {
+  /** 注册工具；ns 传入时名称命名空间化为 pack:<packId>:<name>（业务包 activate 调用）。
+   * 泛型 TInput：接受按具体入参类型编写的 def（execute(input: 具体类型)）——
+   * 经 safeCast 收口为注册表的 unknown 形态；运行时入参一律经 inputSchema
+   * safeParse（管线 ②），泛型差异无运行时泄漏 */
+  register<TInput = unknown>(def: AgentToolDef<TInput>, ns?: { packId: string }): void {
     const name = ns ? `pack:${ns.packId}:${def.name}` : def.name
     if (!TOOL_NAME_RE.test(def.name)) {
       throw new AgentToolConflictError(def.name, `基础名须匹配 ${TOOL_NAME_RE.source}（命名空间前缀另拼）`)
@@ -248,8 +251,9 @@ export class AgentToolRegistry {
     if (this.tools.has(name)) {
       throw new AgentToolConflictError(name, '同名工具已注册')
     }
+    const widened = def as AgentToolDef
     this.tools.set(name, {
-      def: { ...def, name },
+      def: { ...widened, name },
       spec: {
         name,
         source: ns ? 'pack' : 'builtin',
@@ -258,7 +262,7 @@ export class AgentToolRegistry {
         llmDescription: def.description,
         jsonSchema: deriveJsonSchema(def.inputSchema),
         dangerLevel: def.dangerLevel ?? 'read',
-        requiresApproval: deriveRequiresApproval(def),
+        requiresApproval: deriveRequiresApproval(widened),
       },
     })
     logger.info(`[tool-registry] 注册 ${name}（source=${ns ? 'pack' : 'builtin'} danger=${def.dangerLevel ?? 'read'}）`)

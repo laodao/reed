@@ -11,6 +11,7 @@
  */
 
 import type { WorkflowNodeType } from './workflow.types'
+import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from './workflow.types'
 
 /** 表单字段声明 */
 export interface CatalogFormField {
@@ -59,7 +60,7 @@ export interface CatalogFormField {
   /** select / select-dynamic 是否多选（提交值为数组） */
   multi?: boolean
   /** select-dynamic 的数据源标识（编辑器按 source 拉取选项） */
-  source?: 'knowledgeBases' | 'newsTopics' | 'assets' | 'newsSources' | 'assetCategories' | 'dataSources' | 'searchEngineConfigs' | 'skills'
+  source?: 'knowledgeBases' | 'newsTopics' | 'assets' | 'newsSources' | 'assetCategories' | 'dataSources' | 'searchEngineConfigs' | 'skills' | 'agentTools'
   help?: string
   /** 字段值支持 {{}} 模板的提示标记（表单角标） */
   templateHint?: boolean
@@ -198,6 +199,21 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     { key: 'providerConfigId', label: '模型', type: 'model-pair', group: '模型', help: '留空 = 按默认 Provider 自动回退选择' },
     { key: 'temperature', label: '温度', type: 'slider', min: 0, max: 2, step: 0.1, group: '参数' },
     { key: 'maxTokens', label: '最大 Token', type: 'number', group: '参数' },
+  ],
+  'agent-loop': [
+    T('task', '任务目标', {
+      type: 'textarea', templateHint: true, group: '任务',
+      placeholder: '例：围绕 {{start.topic}} 检索资料并写一份 300 字摘要',
+    }),
+    T('systemPrompt', '系统提示词', { type: 'textarea', group: '任务', placeholder: '角色/约束/输出格式要求（可选）' }),
+    {
+      key: 'toolWhitelist', label: '工具白名单', type: 'select-dynamic', source: 'agentTools', multi: true, group: '工具',
+      help: 'Agent 可自主调用的工具（首批内置：http_get / web_search / code_run / data_table_query）；需批准的工具调用会挂起等待人工审核',
+    },
+    { key: 'providerConfigId', label: '模型', type: 'model-pair', group: '模型', help: '留空 = 按默认 Provider 自动回退选择' },
+    { key: 'maxIterations', label: '最大迭代轮数', type: 'number', min: 1, max: WORKFLOW_DEFAULTS.agentLoopMaxIterationsCeiling, group: '护栏', help: `缺省 ${WORKFLOW_DEFAULTS.agentLoopMaxIterations}；到顶未收敛节点失败` },
+    { key: 'maxToolCalls', label: '工具调用总上限', type: 'number', min: 1, group: '护栏', help: '可选（跨挂起-恢复累计）；超过后工具调用被拒绝，Agent 需直接作答' },
+    { key: 'maxDurationMs', label: '最长时长（毫秒）', type: 'number', min: 1, max: WORKFLOW_LIMITS.maxDurationMs, group: '护栏', help: '可选（净时长，扣除挂起等待）；超过即中止并失败（运行级超时另算）' },
   ],
   'kb-retrieve': [
     { key: 'knowledgeBaseId', label: '知识库', type: 'select-dynamic', source: 'knowledgeBases' },

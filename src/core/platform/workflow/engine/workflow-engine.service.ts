@@ -957,9 +957,16 @@ export class WorkflowEngineService {
       state.reviewPayload = undefined
       state.reviewTimeoutMs = null
       state.waitExpiresAt = null
-      // resume 语义下的路由由 handler 显式给（不再自动套 approve/reject 边）；
-      // 此处 node.config 未模板解析（interaction 节点 config 少模板——预载语义够用）
-      const ctx = this.buildContext(exec, scope, node, state, node.config)
+      // resume 语义下的路由由 handler 显式给（不再自动套 approve/reject 边）。
+      // config 与 launchNode/重试路径同构地模板解析（agent-loop 恢复后续跑会多轮
+      // 消费 systemPrompt/task 等模板字段——原文 {{...}} 裸奔会导致同一运行内
+      // 挂起前后行为分裂，对抗 review P1-3 实证）
+      const resumeConfig = resolveConfigDeep(
+        node.config,
+        t => exec.resolver.resolve(t, this.localContextFor(exec, scope)),
+        templateSkipKeysFor(node.type),
+      )
+      const ctx = this.buildContext(exec, scope, node, state, resumeConfig)
       try {
         const result: WorkflowNodeExecutionResult = await reviewHandler.resume(ctx, {
           decision: review.decision,
