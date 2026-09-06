@@ -48,12 +48,12 @@ describe('通道分流与直推', () => {
     expect(direct[0].channel).toBe(`longwriting:agent:${scope}`)
   })
 
-  it('② reply:content 走 streamChannel（缺省 = 主通道+:stream）', async () => {
+  it('② reply:content 走 streamChannel（缺省 = 主通道——迁移期零改动承诺）', async () => {
     const { direct, bridge } = mkBridge({ deltaThrottleMs: 0 })
     bridge.emit(scope, { type: 'reply:content', summaryEventId: 'e1', delta: '你好' })
     await bridge.flush()
     const ch = direct.find((d) => d.event.type === 'reply:content')
-    expect(ch?.channel).toBe(`longwriting:agent:${scope}:stream`)
+    expect(ch?.channel).toBe(`longwriting:agent:${scope}`) // 旧前端只订阅业务主通道
   })
 
   it('③ delta 合批：窗口内两条合并为一条直推', async () => {
@@ -183,5 +183,50 @@ describe('领域事件 → 平台总线', () => {
       bus: null,
     })
     expect(() => bridge.emit(scope, { type: 'reply:done' })).not.toThrow()
+  })
+})
+
+
+describe('租户捕获（2026-09-06 修复回归：timer 回调 ALS 丢失不再静默丢事件）', () => {
+  it('⑬ delta 由 timer 冲刷时用缓冲时刻捕获的 userId 包裹 emitDirect', async () => {
+    vi.useFakeTimers()
+    try {
+      const wrapped: string[] = []
+      const direct: Array<{ channel: string; event: AgentEvent }> = []
+      const bridge = new EventBridge({
+        emitDirect: (channel, event) => direct.push({ channel, event }),
+        getUserId: () => 'u-77',
+        runWithUser: (uid, fn) => {
+          wrapped.push(uid)
+          fn()
+        },
+        definitionId: 'd',
+        eventChannel: (sc) => `ch:${sc}`,
+        bus: null,
+        deltaThrottleMs: 30,
+      })
+      bridge.emit(scope, { type: 'reply:content', summaryEventId: 'e1', delta: 'X' })
+      vi.advanceTimersByTime(31)
+      expect(wrapped).toEqual(['u-77']) // 冲刷时按捕获租户包裹（Web 端无 uid 即丢）
+      expect(direct).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('⑭ 总线发布信封携带显式 userId（异步链回调内 ALS 已丢）', async () => {
+    const published: Array<{ userId?: string | null }> = []
+    const bus = { publish: async (i: { userId?: string | null }) => (published.push(i), i) } as never
+    const bridge = new EventBridge({
+      emitDirect: () => undefined,
+      getUserId: () => 'u-88',
+      definitionId: 'd',
+      eventChannel: (sc) => `ch:${sc}`,
+      bus,
+      deltaThrottleMs: 0,
+    })
+    bridge.emit(scope, { type: 'reply:done' })
+    await bridge.flush()
+    expect(published[0]?.userId).toBe('u-88')
   })
 })

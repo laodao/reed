@@ -13,6 +13,7 @@
  */
 
 import { createLogger } from '@core/utils/logger'
+import { getCurrentUserId, runWithUser } from '@core/context/user-context'
 import {
   createPlatformEventProducer,
   type PlatformBusPortLike,
@@ -27,6 +28,14 @@ export type PlatformBusPort = PlatformBusPortLike
 export interface EventBridgeDeps {
   /** 直推出口（IEventEmitter.emit 包装） */
   emitDirect: (channel: string, event: AgentEvent) => void
+  /**
+   * 租户捕获（2026-09-06 修复 Web 静默丢事件）：delta 合批的 30ms timer 回调不在
+   * ALS 内，Web 端 emitter 无 uid 即丢——缓冲时刻同步捕获，冲刷时 runWithUser 包裹。
+   * 可注入测试（缺省真实 getCurrentUserId）。
+   */
+  getUserId?: () => string | null
+  /** 包裹器注入（测试观察用）；缺省真实 runWithUser */
+  runWithUser?: (userId: string, fn: () => void) => void
   /** definition 的事件通道命名 */
   definitionId: string
   eventChannel: (scopeId: string) => string
@@ -48,24 +57,29 @@ const AGENT_EVENT_MAP: Partial<Record<AgentEvent['type'], string>> = {
 }
 
 export class EventBridge {
-  private readonly deps: Required<Omit<EventBridgeDeps, 'bus' | 'streamChannel'>> & {
+  private readonly getUserId: () => string | null
+  private readonly runWithUserFn: (userId: string, fn: () => void) => void
+  private readonly deps: Required<Omit<EventBridgeDeps, 'bus' | 'streamChannel' | 'runWithUser' | 'getUserId'>> & {
     bus: PlatformBusPort | null
     streamChannel: (scopeId: string) => string
   }
   /** 总线发布（保序+降级在公共底座内；agent 侧策略=仅 warn，直推已先行） */
   private readonly producer: ReturnType<typeof createPlatformEventProducer>
   /** delta 合批缓冲：(scopeId, summaryEventId) → 累积文本 */
-  private readonly deltaBuf = new Map<string, { scopeId: string; summaryEventId: string; text: string; timer: ReturnType<typeof setTimeout> | null }>()
+  private readonly deltaBuf = new Map<string, { scopeId: string; summaryEventId: string; text: string; userId: string | null; timer: ReturnType<typeof setTimeout> | null }>()
 
   constructor(deps: EventBridgeDeps) {
     this.deps = {
       emitDirect: deps.emitDirect,
       definitionId: deps.definitionId,
       eventChannel: deps.eventChannel,
-      streamChannel: deps.streamChannel ?? ((scopeId: string) => `${deps.eventChannel(scopeId)}:stream`),
+      // 2026-09-06 修复：缺省=主通道（旧前端只订阅业务主通道，':stream' 分离是新前端的显式选择）
+      streamChannel: deps.streamChannel ?? ((scopeId: string) => deps.eventChannel(scopeId)),
       bus: deps.bus ?? null,
       deltaThrottleMs: deps.deltaThrottleMs ?? 30,
     }
+    this.getUserId = deps.getUserId ?? getCurrentUserId
+    this.runWithUserFn = deps.runWithUser ?? runWithUser
     this.producer = createPlatformEventProducer({
       getBus: () => this.deps.bus as never,
     })
@@ -102,6 +116,7 @@ export class EventBridge {
       actor: { kind: 'agent', id: this.deps.definitionId },
       correlationId: scopeKey,
       payload,
+      userId: this.getUserId(), // 异步链回调内 ALS 已丢——显式注入（2026-09-06 修复）
     })
   }
 
@@ -116,14 +131,19 @@ export class EventBridge {
     for (const buf of this.deltaBuf.values()) {
       if (buf.timer) clearTimeout(buf.timer)
       if (buf.text.length === 0) continue
-      try {
-        this.deps.emitDirect(
-          this.deps.streamChannel(buf.scopeId),
-          { type: 'reply:content', summaryEventId: buf.summaryEventId, delta: buf.text },
-        )
-      } catch (e) {
-        logger.warn('[event-bridge] delta 冲刷直推失败', e)
+      const push = (): void => {
+        try {
+          this.deps.emitDirect(
+            this.deps.streamChannel(buf.scopeId),
+            { type: 'reply:content', summaryEventId: buf.summaryEventId, delta: buf.text },
+          )
+        } catch (e) {
+          logger.warn('[event-bridge] delta 冲刷直推失败', e)
+        }
       }
+      // timer 回调不在 ALS 内：用缓冲时刻捕获的租户包裹（Web 端无 uid 即静默丢）
+      if (buf.userId) this.runWithUserFn(buf.userId, push)
+      else push()
       buf.text = ''
     }
   }
@@ -132,7 +152,7 @@ export class EventBridge {
     const key = `${scopeId}:${event.summaryEventId}`
     let buf = this.deltaBuf.get(key)
     if (!buf) {
-      buf = { scopeId, summaryEventId: event.summaryEventId, text: '', timer: null }
+      buf = { scopeId, summaryEventId: event.summaryEventId, text: '', userId: this.getUserId(), timer: null }
       this.deltaBuf.set(key, buf)
     }
     buf.text += event.delta

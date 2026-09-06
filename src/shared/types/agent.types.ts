@@ -75,7 +75,7 @@ export type AgentEvent =
 // ==================== 审批（提案卡） ====================
 
 export type ApprovalDecision =
-  | { action: 'approve' }
+  | { action: 'approve'; scope?: 'once' | 'session' } // scope=session（24 号 Amendment）：本次批准沉淀为会话级同类免批
   | { action: 'approve_with_edit'; input: Record<string, unknown> }
   | { action: 'reject'; reason?: string }
 

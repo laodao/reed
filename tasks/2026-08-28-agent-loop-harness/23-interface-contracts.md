@@ -202,6 +202,19 @@ export interface AgentEventPort {                         // 双路径（21 号 
   emit(scopeKey: string, event: AgentEvent): void         // 直推 IEventEmitter；总线失败回退直推
 }
 
+// —— 2026-09-06 独立评审定稿（双 subagent 复核后成文，堵住反复争议）——
+// 事件架构采用「双路径」为终局设计而非过渡形态：
+//   UI 实时流（delta/stage/start）= 直推 IEventEmitter（至多一次、单点同序、永不落库）；
+//   领域事实（action:done/approval:*/reply:done/error）= 总线（持久、审计、命名消费者）。
+// 依据：delta 走总线将被限流器（agent:* 默认 20/分）静默丢弃 99% + 写放大超总线设计
+// 量级 3-4 个数量级 + 重连恢复已定为快照重建（§7c）不重放 delta；而领域事件经总线
+// 的审计/联动收益已全额获得，无需为前端做通道翻译（ipc/ws 通道同为至多一次，中继
+// 不提升投递语义，反引入跨路径排序破坏）。
+// 配套纪律：所有 emit/publish 点在 timer/Promise 链回调内必须显式携带捕获的 userId
+// （ALS 已丢；Web 端无 uid 即静默丢）——PublishInput.userId 显式注入 + 冲刷包裹。
+// 领域事件总线发布失败=显式接受 best-effort（审批恢复有 ApprovalStore 落库兜底）。
+// 前瞻开关：若多个业务出现各自手写直推通道+timer/ALS 处理的苗头，重评通用投递通道。
+
 // —— 24 号借鉴 codex 事件纪律 ——
 // §7b 终态必达：每个执行单元（轮/工具调用/审批往返）终态事件三选一必达且字段自足
 //   （reply:done / action:done(status) / error，自带失败原因；AgentResult.stopReason 同构），

@@ -54,6 +54,11 @@ export interface PublishInput<P = unknown> {
   payload: P
   causationId?: string
   correlationId?: string
+  /**
+   * 显式租户（2026-09-06 增）：发布点在异步回调（timer/Promise 链）中 ALS 已丢失时注入；
+   * 未传（undefined）仍取发布时 getCurrentUserId() 快照——两语义都不破坏。
+   */
+  userId?: string | null
   /** 缺省 1 */
   schemaVersion?: number
 }

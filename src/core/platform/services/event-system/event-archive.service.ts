@@ -31,8 +31,8 @@ const logger = createLogger('EventArchive')
 
 /** 通用保留期（§12.2 已定：默认 90 天） */
 export const DEFAULT_EVENT_RETENTION_DAYS = 90
-/** 全量保留类型（§12.2 已定：人工/挂起类 run 事件永不归档） */
-export const DEFAULT_KEEP_FOREVER_PATTERNS = ['workflow.run.review-*']
+/** 全量保留类型（§12.2 已定：人工/挂起类事件永不归档；2026-09-06 追加 agent 审批——人机决策记录与 review 同级） */
+export const DEFAULT_KEEP_FOREVER_PATTERNS = ['workflow.run.review-*', 'agent:approval.*']
 /** 归档作业间隔（每日） */
 const DEFAULT_ARCHIVE_INTERVAL_MS = 24 * 60 * 60 * 1000
 /** 单批导出/删除大小 */

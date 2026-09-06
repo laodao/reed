@@ -16,6 +16,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { createLogger } from '@core/utils/logger'
+import { getCurrentUserId, runWithUser } from '@core/context/user-context'
 import type {
   ApprovalDecision,
   PendingApproval,
@@ -28,6 +29,9 @@ const logger = createLogger('AgentApproval')
 export interface ApprovalCoordinatorDeps {
   /** 事件出口（经 event-bridge 双路径） */
   emit: (e: AgentEvent) => void
+  /** 租户捕获（2026-09-06 修复）：超时/中止的 timer 回调不在 ALS 内——请求时刻捕获，回调时包裹 */
+  getUserId?: () => string | null
+  runWithUser?: (userId: string, fn: () => void) => void
   /** 挂起审批落库（重启恢复依据）；缺省内存实现（单测/无库场景） */
   store?: ApprovalStore
   clock?: () => number
@@ -62,6 +66,8 @@ interface PendingEntry {
   resolve: (d: ApprovalDecision) => void
   timer: ReturnType<typeof setTimeout> | null
   onAbort: (() => void) | null
+  /** 请求时刻的租户（timer/abort 回调内 ALS 已丢，Web 端无 uid 即静默丢） */
+  userId: string | null
 }
 
 /** 规范化入参（缓存键用：键排序稳定序列化） */
@@ -88,7 +94,13 @@ export class ApprovalCoordinator {
   private readonly scopePending = new Map<string, Set<string>>() // scopeKey → approvalIds
   private readonly sessionCache = new Map<string, true>() // amendment 缓存（LRU）
 
+  private readonly wrapUser: (userId: string | null, fn: () => void) => void
+  private readonly getUserId: () => string | null
+
   constructor(deps: ApprovalCoordinatorDeps) {
+    this.getUserId = deps.getUserId ?? getCurrentUserId
+    const runWith = deps.runWithUser ?? runWithUser
+    this.wrapUser = (userId, fn) => (userId ? runWith(userId, fn) : fn())
     this.deps = {
       emit: deps.emit,
       store: deps.store ?? new InMemoryApprovalStore(),
@@ -135,6 +147,7 @@ export class ApprovalCoordinator {
 
     return new Promise<ApprovalDecision>((resolve) => {
       const entry: PendingEntry = {
+        userId: this.getUserId(),
         info,
         resolve: (d) => {
           if (entry.timer) clearTimeout(entry.timer)
@@ -152,7 +165,7 @@ export class ApprovalCoordinator {
 
       // 超时=拒绝（24 号/12 号语义）
       entry.timer = setTimeout(() => {
-        this.deps.emit({ type: 'approval:resolved', approvalId, action: 'timeout' })
+        this.wrapUser(entry.userId, () => this.deps.emit({ type: 'approval:resolved', approvalId, action: 'timeout' }))
         entry.resolve({ action: 'reject', reason: 'timeout' })
       }, this.deps.timeoutMs)
       entry.timer.unref?.() // 挂起等待不阻止进程退出（与 event-bridge delta 定时器同纪律）
@@ -160,7 +173,7 @@ export class ApprovalCoordinator {
       // 会话取消/轮次中断：全部挂起卡补发拒绝
       if (signal) {
         entry.onAbort = () => {
-          this.deps.emit({ type: 'approval:resolved', approvalId, action: 'cancelled' })
+          this.wrapUser(entry.userId, () => this.deps.emit({ type: 'approval:resolved', approvalId, action: 'cancelled' }))
           entry.resolve({ action: 'reject', reason: 'cancelled' })
         }
         signal.addEventListener('abort', entry.onAbort, { once: true })
@@ -212,7 +225,7 @@ export class ApprovalCoordinator {
     let swept = 0
     for (const entry of [...this.pending.values()]) {
       if (now > entry.info.expiresAt) {
-        this.deps.emit({ type: 'approval:resolved', approvalId: entry.info.approvalId, action: 'timeout' })
+        this.wrapUser(entry.userId, () => this.deps.emit({ type: 'approval:resolved', approvalId: entry.info.approvalId, action: 'timeout' }))
         entry.resolve({ action: 'reject', reason: 'timeout' })
         swept++
       }
@@ -227,7 +240,7 @@ export class ApprovalCoordinator {
     for (const id of [...ids]) {
       const entry = this.pending.get(id)
       if (!entry) continue
-      this.deps.emit({ type: 'approval:resolved', approvalId: id, action: 'cancelled' })
+      this.wrapUser(entry.userId, () => this.deps.emit({ type: 'approval:resolved', approvalId: id, action: 'cancelled' }))
       entry.resolve({ action: 'reject', reason: 'cancelled' })
     }
   }

@@ -260,3 +260,34 @@ describe('卡片信息与决定集', () => {
     expect(AVAILABLE_DECISIONS).toContain('approve_with_edit')
   })
 })
+
+
+describe('租户捕获（2026-09-06 修复回归）', () => {
+  it('⑰ 超时回调的 resolved 事件按请求时刻租户包裹', async () => {
+    vi.useFakeTimers()
+    try {
+      const wrapped: string[] = []
+      const { coord, events } = (() => {
+        const events: import('@shared/types/agent.types').AgentEvent[] = []
+        const coord = new ApprovalCoordinator({
+          emit: (e) => events.push(e),
+          getUserId: () => 'u-9',
+          runWithUser: (uid, fn) => {
+            wrapped.push(uid)
+            fn()
+          },
+          timeoutMs: 100,
+        })
+        return { coord, events }
+      })()
+      const p = coord.request('s1', saveTool, { name: 'x' })
+      await tick()
+      vi.advanceTimersByTime(101)
+      await p
+      expect(wrapped).toContain('u-9')
+      expect(events.some((e) => e.type === 'approval:resolved' && e.action === 'timeout')).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

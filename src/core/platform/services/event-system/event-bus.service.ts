@@ -256,8 +256,9 @@ export class PlatformEventBus implements EventBus {
     const now = new Date()
     const row: Partial<PlatformEventEntity> = {
       id: generateUuid(),
-      // 租户作用域：发布时 ALS 快照（§8；机制同 domain-event-bus）
-      userId: getCurrentUserId(),
+      // 租户作用域：发布时 ALS 快照（§8；机制同 domain-event-bus）；
+      // 异步回调发布点 ALS 已丢失时经 input.userId 显式注入（2026-09-06 增）
+      userId: input.userId !== undefined ? input.userId : getCurrentUserId(),
       type: input.type,
       aggregateKind: input.aggregate.kind,
       aggregateId: input.aggregate.id,
