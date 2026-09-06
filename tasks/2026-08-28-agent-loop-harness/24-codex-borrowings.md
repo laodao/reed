@@ -37,6 +37,18 @@ codex = 静态指令注入（AGENTS.md）+ 工具化长期记忆（pull）；我
 
 同构确认 2 项（不需改）：写侧后台化（distiller 终态触发 ✓）；压缩不改写审阅依据（轨迹表终态留存 ✓，review_history 思想已覆盖）。
 
+### 一b-2 五维完备对照（保存/更新/分层/存储/查询——机制驱动之外的维度扫描）
+
+| 维度 | codex | 我们（15 号+图谱） | 判定 |
+|---|---|---|---|
+| **保存** | 三路径：模型代用户 `add_ad_hoc_note`（免闸门快速通道）/ 两阶段后台流水线 / AGENTS.md 人手写 | 两路径：onTurnEnd 蒸馏（经闸门）/ 用户显式（variable 偏好直通）。**缺"对话中模型即时记"的快速通道成文** | **M6 采纳**（补真空）：业务 definition 可声明 `remember` 工具（轻量笔记直达 propose，闸门按业务定）；架构已支持（AgentToolDef），补的是范式说明 |
+| **更新** | Phase2 整合代理编辑**单一 raw_memories.md 文件**（无版本链/无状态机） | 条目化状态机（pending→active→superseded/conflicted）+ supersedes 版本链 + 部分唯一索引 | **我们更优，不学 codex**：单文件编辑在多租户/可审计/可回滚上不可行；增量整合档已采纳（M2）与之互补 |
+| **分层** | 隐式三层：AGENTS.md 静态指令 / memories 单文件 / 会话历史+**history-notes 私有模型态**（"静默使用永不披露"，跨压缩存活的模型草稿） | 显式 L1-L4 + 图谱 + push/pull 分界。**缺 L1.5 模型私有草稿区**（L1 是 messages，压缩会折） | **M7 采纳**（补真空）：AgentLoopState 增 `scratch: string[]`（模型经 scratch 工具读写，不进装配、不推前端、随 saveState 步级持久化、压缩时原样保留）——故事研讨室"当前讨论焦点"的正位 |
+| **存储** | 文件系统（~/.codex/memories 受信根 + rollout JSONL 真相源），单用户本地 | 表存储（memory_entries/episodes/usage_log + agent_graph_* + 轨迹）+ 向量（LanceDB/pgvector）+ ALS 多租户 | **我们必然不同**：多租户/双端决定表存储；"受信可读根"概念映射为工具 scope 隔离（已有） |
+| **查询** | 工具（list/read/search）+ prompt 贡献 + `[memory:...]` 回链 | 装配（向量+置信度+新近度+预算分层 L2 25%/L3 45%/L4 30%）+ query 工具 + 图谱 stateAt + 回链（M5 已采纳） | 双向已覆盖；预算分层装配为我方优势 |
+
+**结论**：五维中"更新/存储"两维我们设计更强（多租户与可审计约束下的必然），"分层/查询"双向互补已采纳，"保存"与"分层"各补一个真空（M6 工具化快速通道、M7 私有草稿区）。
+
 ## 二、第二梯队：架构增强（采纳为扩展位/里程碑内实现）
 
 | # | codex 机制 | 映射 | 落点 |

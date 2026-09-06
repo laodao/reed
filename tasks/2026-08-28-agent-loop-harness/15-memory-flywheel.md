@@ -574,3 +574,12 @@ reject→rejected）。与 §6.4 代谢的 supersede 链共用版本链机制。
 5. **read_full_history 工具**（M1 pull 形态落点）：暴露给模型的只读工具，
    描述词显式"压缩前的完整历史，静默使用，用于回溯被压缩的上下文"——
    轨迹表是真相源且不被压缩改写（与 review_history 思想同构）。
+6. **保存快速通道**（M6，24 号一b-2）：业务 definition 可声明 `remember` 工具——
+   对话中模型即时记轻量笔记（kind=note），免蒸馏管线直达 propose（闸门策略按业务：
+   故事研讨室默认轻量直存、正式 fact 仍走完整闸门）；与 onTurnEnd 蒸馏、用户显式
+   写入并列第三条保存路径。
+7. **L1.5 模型私有草稿区**（M7，24 号一b-2）：AgentLoopState 增 `scratch: string[]`，
+   模型经 scratch 工具读写（"当前讨论焦点/未决问题"的草稿）；**不进装配、不推前端、
+   不入用户可见历史**（history-notes"私有模型态"语义），随 saveState 步级持久化且
+   **压缩时原样保留**（守恒纪律适用于草稿）。L1-L4 分层表补注：L1.5 归 L1 边界扩展，
+   由 12 号 AgentLoopState 承载，本模块不管理其存储。
