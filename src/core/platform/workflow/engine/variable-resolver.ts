@@ -96,11 +96,14 @@ export class VariableResolver {
     } else if (root === 'start') {
       source = this.ctx.startInputs
     } else {
-      source = this.ctx.variables.get(root)
-      if (source === undefined && local) {
+      // 局部（循环伪变量）优先，未命中回退根变量表——与文件头及 localContextFor
+      // 注释一致。曾先后倒置：根表先查，completeLoop 写入的节点输出（同名
+      // loopNodeId）遮蔽下一轮迭代伪变量 → item 取到旧输出而非列表项
+      if (local) {
         const found = local.lookup(root)
         if (found.hit) source = found.value
       }
+      if (source === undefined) source = this.ctx.variables.get(root)
     }
     if (source === undefined || source === null) {
       return undefined

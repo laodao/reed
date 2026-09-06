@@ -47,6 +47,46 @@ export class WorkflowRunEventRepository extends BaseRepository<WorkflowRunEventE
     })
   }
 
+  /**
+   * 批量原子追加（单事务；对抗 review：撕裂批使恢复把残缺扇出当完整态）。
+   * 逐条 insert 于同一事务，任一失败整体回滚。
+   */
+  async appendBatchAtomic(
+    events: Array<{
+      runId: string
+      seq: number
+      type: WorkflowJournalEventType | string
+      nodeId?: string | null
+      scopeKey?: string | null
+      payload?: Record<string, unknown> | null
+    }>
+  ): Promise<void> {
+    await this.dataSource.transaction(async (em) => {
+      for (const e of events) {
+        await em.insert(WorkflowRunEventEntity, {
+          runId: e.runId,
+          seq: e.seq,
+          type: e.type,
+          nodeId: e.nodeId ?? null,
+          scopeKey: e.scopeKey ?? null,
+          payloadJson: e.payload ? JSON.stringify(e.payload) : null,
+        })
+      }
+    })
+  }
+
+  /** 最近一条快照事件（无则 null；rehydrate O(1) 定位——对抗 review IO 全量读） */
+  async latestSnapshot(runId: string): Promise<WorkflowRunEventRow | null> {
+    const rows = await this.scoped
+      .createQueryBuilder('e')
+      .where('e.runId = :runId', { runId })
+      .andWhere('e.type = :type', { type: 'snapshot' })
+      .orderBy('e.seq', 'DESC')
+      .take(1)
+      .getMany()
+    return rows[0] ? this.toDto(rows[0]) : null
+  }
+
   /** 按 seq 升序读取（fromSeq 起含——快照后增量重放用） */
   async listByRun(runId: string, fromSeq = 0): Promise<WorkflowRunEventRow[]> {
     const where: FindOptionsWhere<WorkflowRunEventEntity> = { runId }

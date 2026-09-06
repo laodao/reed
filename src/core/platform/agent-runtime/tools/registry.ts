@@ -382,12 +382,36 @@ export class AgentToolRegistry {
           'rejected',
         )
       }
-      const decision = await this.deps.requestApproval(tool.def, args, {
-        scopeId: String(call.context?.scopeId ?? ''),
-        rawInput: String(call.context?.rawInput ?? ''),
-        toolCallId: String(call.context?.toolCallId ?? ''),
-        signal: call.signal,
-      })
+      // 审批通道异常不逃出 registry（对抗 review P2：曾直接 throw 逃出"错误永不
+      // throw"纪律；并行双卡的断言 throw 也经此收口为结构化错误——模型可换路，
+      // 整轮不再被 "No output generated" 击穿）
+      let decision: Awaited<ReturnType<NonNullable<AgentToolRegistryDeps['requestApproval']>>>
+      try {
+        decision = await this.deps.requestApproval(tool.def, args, {
+          scopeId: String(call.context?.scopeId ?? ''),
+          rawInput: String(call.context?.rawInput ?? ''),
+          toolCallId: String(call.context?.toolCallId ?? ''),
+          signal: call.signal,
+        })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        logger.warn(`[tool-registry] 审批通道异常（转结构化拒绝）：${msg}`)
+        return this.finish(
+          call,
+          tool,
+          {
+            ok: false,
+            error: {
+              code: 'INTERNAL',
+              message: `审批通道异常：${msg}`,
+              hint: '审批暂不可用或同会话已有挂起审批，请稍后重试或换用其他方式。',
+              retryable: true,
+            },
+            durationMs: this.deps.clock() - started,
+          },
+          'rejected',
+        )
+      }
       if (decision.action !== 'approve' && decision.action !== 'approve_with_edit') {
         return this.finish(
           call,

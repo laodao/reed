@@ -14,7 +14,7 @@
  */
 
 import type { FormFieldDef } from '../nodes/interaction-nodes'
-import { runWithUserAsync } from '@core/context/user-context'
+import { getCurrentUserId, runWithUserAsync } from '@core/context/user-context'
 import type {
   WorkflowEdge,
   WorkflowGraph,
@@ -128,6 +128,8 @@ export interface NodeExecutionState {
   completedSeq?: number
   /** 节点内持久化状态（E2：state_json 反序列化预载；saveState 更新） */
   persistedState?: unknown
+  /** 决策进行中（并发双决策守卫——瞬态，不序列化不落库） */
+  deciding?: boolean
   startedAtMs: number
 }
 
@@ -364,6 +366,14 @@ export class WorkflowEngineService {
   /** 日志写失败：run 立即失败终态（不变量 2——不可继续执行没有持久化日志的调度） */
   private static readonly JOURNAL_WRITE_FAILURE = '运行日志写入失败'
 
+  /** journal 写失败统一处理（appendEvent/appendEventBatch 共用——对抗 review 复制粘贴项） */
+  private onJournalWriteFailure(exec: RunExecution, e: unknown): void {
+    logger.error(`[WorkflowEngine] ${WorkflowEngineService.JOURNAL_WRITE_FAILURE}`, e)
+    void this.finalize(exec, WORKFLOW_RUN_STATUSES.failed, `${WorkflowEngineService.JOURNAL_WRITE_FAILURE}: ${errorMessage(e)}`).catch(fe =>
+      logger.error('[WorkflowEngine] 日志失败终态化异常', fe)
+    )
+  }
+
   constructor(
     private readonly deps: WorkflowEngineDeps,
     private readonly registry: WorkflowNodeRegistry
@@ -398,13 +408,12 @@ export class WorkflowEngineService {
     try {
       await journal.append(event)
       if (exec.eventsSinceSnapshot >= WORKFLOW_JOURNAL_DEFAULTS.snapshotEveryEvents) {
-        if (this.deps.journal) await this.appendSnapshot(exec, 'threshold')
+        // appliedThroughSeq = seq-1：触发事件此刻尚未被调用方落地（先日志后内存）——
+        // 快照只覆盖到前一条；重放从 seq 起重放触发事件（对抗 review P0：曾漏传死参数）
+        if (this.deps.journal) await this.appendSnapshot(exec, 'threshold', event.seq - 1)
       }
     } catch (e) {
-      logger.error(`[WorkflowEngine] ${WorkflowEngineService.JOURNAL_WRITE_FAILURE}`, e)
-      await this.finalize(exec, WORKFLOW_RUN_STATUSES.failed, `${WorkflowEngineService.JOURNAL_WRITE_FAILURE}: ${errorMessage(e)}`).catch(fe =>
-        logger.error('[WorkflowEngine] 日志失败终态化异常', fe)
-      )
+      this.onJournalWriteFailure(exec, e)
       throw new Error(WorkflowEngineService.JOURNAL_WRITE_FAILURE)
     }
   }
@@ -506,13 +515,11 @@ export class WorkflowEngineService {
     try {
       await journal.appendBatch(inputs)
       if (exec.eventsSinceSnapshot >= WORKFLOW_JOURNAL_DEFAULTS.snapshotEveryEvents) {
-        if (this.deps.journal) await this.appendSnapshot(exec, 'threshold')
+        const lastSeq = inputs[inputs.length - 1]?.seq ?? 0
+        if (this.deps.journal) await this.appendSnapshot(exec, 'threshold', lastSeq - 1)
       }
     } catch (e) {
-      logger.error(`[WorkflowEngine] ${WorkflowEngineService.JOURNAL_WRITE_FAILURE}`, e)
-      await this.finalize(exec, WORKFLOW_RUN_STATUSES.failed, `${WorkflowEngineService.JOURNAL_WRITE_FAILURE}: ${errorMessage(e)}`).catch(fe =>
-        logger.error('[WorkflowEngine] 日志失败终态化异常', fe)
-      )
+      this.onJournalWriteFailure(exec, e)
       throw new Error(WorkflowEngineService.JOURNAL_WRITE_FAILURE)
     }
   }
@@ -648,11 +655,13 @@ export class WorkflowEngineService {
       const row = await this.deps.runs.getById(runId)
       if (!row) return false
       if (!['pending', 'running', 'waiting_review'].includes(row.status)) return false
-      const events = await journal.listByRun(runId)
-      if (events.length === 0) return false
-      const snapshot = [...events].reverse().find(
-        (e) => e.type === WORKFLOW_JOURNAL_EVENT_TYPES.snapshot,
-      )
+      // 快照 O(1) 定位 + 增量读（对抗 review：全量拉取只为 reverse 找快照——
+      // 挂起数天的 run 每次决策都全表读；IO 层兑现 11 号"快照令挂起恢复 O(1)"）
+      const snapshot = journal.latestSnapshot
+        ? await journal.latestSnapshot(runId).catch(() => null)
+        : null
+      const events = await journal.listByRun(runId, snapshot ? snapshot.seq : 0)
+      if (events.length === 0 && !snapshot) return false
       const input: ExecuteRunInput = {
         runId,
         userId: row.userId,
@@ -731,6 +740,11 @@ export class WorkflowEngineService {
       // 清运行态 + 复用行标记（决策/续驱的 pump 将其视为可启动）
       const preservedRetryCounts = new Map<string, number>()
       for (const item of re.inflightNodes) {
+        const node = exec.nodeById.get(item.nodeId)
+        // engineDriven（loop）节点不重执行：其进度由重建的 driver 在 resumeSuspended
+        // 续驱中推进（对抗 review P0：曾把 loop 运行态当在途删除 → root pump 二次
+        // launch 整个循环 → 已收敛迭代副作用重复执行且 item 为 undefined）
+        if (node && semOf(node.type).engineDriven) continue
         const scope = exec.rootScope.key === item.scopeKey
           ? exec.rootScope
           : exec.loopScopes.get(item.scopeKey)
@@ -777,10 +791,24 @@ export class WorkflowEngineService {
   ): Promise<boolean> {
     const exec = this.activeExecutions.get(runId)
     if (!exec || !exec.suspended) return false
+    // 跨租户守卫（对抗 review P1：内存路径无属主校验——B 曾可直接决策 A 的
+    // 挂起 run，journal 被写入 B 的 user_id 造成租户污染 + DB 行锁死分裂脑）
+    if (exec.input.userId && getCurrentUserId() && exec.input.userId !== getCurrentUserId()) {
+      logger.warn(`[WorkflowEngine] 跨租户决策拒绝：run ${runId} 属主 ${exec.input.userId}，决策人 ${getCurrentUserId()}`)
+      return false
+    }
 
     const scope = this.findScopeOfNode(exec, nodeId)
     const state = scope?.states.get(nodeId)
     if (!scope || !state || state.status !== WORKFLOW_NODE_RUN_STATUSES.waiting_review) return false
+    // 并发双决策守卫（对抗 review P1）：applyReviewDecision 的 await 窗口内
+    // status 仍是 waiting_review——第二个并发决策曾双双通过。同步置 deciding，
+    // 结束后由路径自身恢复（再挂起→waiting_review / settle→终态）
+    if (state.deciding) {
+      logger.warn(`[WorkflowEngine] 决策进行中，拒绝并发重复决策：run ${runId} node ${nodeId}`)
+      return false
+    }
+    state.deciding = true
 
     // choose 模式无效 choice → 拒绝并保持挂起（不炸调用方）
     try {
@@ -793,11 +821,17 @@ export class WorkflowEngineService {
       })
     } catch (e) {
       logger.warn(`审核决策被拒绝（运行保持挂起）: ${e instanceof Error ? e.message : String(e)}`)
+      // 校验拒绝：节点仍挂起 → 恢复挂起态（入口已置 false；对抗 review 回归：
+      // 无效 choice 拒绝后 run 曾因 suspended=false 被 pump 收敛 succeeded）
+      if (state.status === WORKFLOW_NODE_RUN_STATUSES.waiting_review) exec.suspended = true
       return false
+    } finally {
+      state.deciding = false
     }
-    // 决策已应用 → 后台续驱到终态（驳回无承接边时 applyReviewDecision 内已 finalize，
-    // 不再续驱）；不阻塞调用方
-    if (!exec.finished) {
+    // 决策已应用 → 后台续驱到终态。E3 多轮再挂起（对抗 review P0：曾无条件续驱，
+    // resumeSuspended 开头 suspended=false 抹掉二次挂起 → run 塌缩 succeeded 而
+    // 节点停留 waiting_review）——再挂起时等待下一轮决策，不续驱
+    if (!exec.finished && !exec.suspended) {
       void this.resumeSuspended(exec).catch(e =>
         logger.error('[WorkflowEngine] 审核续驱异常', e)
       )
@@ -818,6 +852,10 @@ export class WorkflowEngineService {
       decidedAt: string
     }
   ): Promise<void> {
+    // 决策到达 = 离开挂起态（E3 再挂起经 settle→handleReviewSuspend 重新置位——
+    // resumeReview 据此区分"续驱"与"等待下一轮决策"；此前仅靠 resumeSuspended 复位，
+    // E3 分支不经过它导致 suspended 永真、run 停摆）
+    exec.suspended = false
     const node = exec.nodeById.get(state.nodeId)
     if (!node) return
     const payload = state.reviewPayload ?? {}
@@ -1058,8 +1096,8 @@ export class WorkflowEngineService {
             await this.handleNodeFailure(exec, scope, exec.nodeById.get(state.nodeId)!, state, '审核超时（timeoutPolicy=fail）', false)
           }
           handled++
-          if (exec.suspended) {
-            // 挂起解除，续驱
+          if (!exec.suspended && !exec.finished) {
+            // 决策已应用且未再挂起（入口统一离开挂起态）→ 续驱
             void this.resumeSuspended(exec)
           }
           break
@@ -1077,6 +1115,10 @@ export class WorkflowEngineService {
    */
   async cancelRun(runId: string, reason = '用户取消'): Promise<boolean> {
     const exec = this.activeExecutions.get(runId)
+    if (exec && exec.input.userId && getCurrentUserId() && exec.input.userId !== getCurrentUserId()) {
+      logger.warn(`[WorkflowEngine] 跨租户取消拒绝：run ${runId} 属主 ${exec.input.userId}`)
+      return false
+    }
     if (!exec) return false
     exec.forceRelease = true
     exec.abortController.abort()
@@ -2213,7 +2255,8 @@ export class WorkflowEngineService {
       // E2：节点内中间状态——覆盖写 state_json（超限拒存 fail-fast）；loadState 预载缓存
       saveState: async (st: unknown) => {
         const serialized = JSON.stringify(st)
-        if (serialized.length > MAX_STATE_JSON_CHARS) {
+        // 字节计量（UTF-8——与 SessionStore/registry 同口径；UTF-16 length 对中文差 3 倍）
+        if (Buffer.byteLength(serialized, 'utf8') > MAX_STATE_JSON_CHARS) {
           throw new Error(
             `节点状态超限（${node.id}: ${serialized.length} > ${MAX_STATE_JSON_CHARS} 字符）——请缩减状态体量或改存引用`
           )

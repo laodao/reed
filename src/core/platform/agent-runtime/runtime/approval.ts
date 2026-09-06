@@ -159,8 +159,10 @@ export class ApprovalCoordinator {
     }
     logger.info(`[approval] 发卡 scope=${scopeKey} tool=${tool.name} approvalId=${approvalId}`)
 
-    // 占位条目：同步进 pending/scopePending（决定/超时在 save 窗口内到达时
-    // 也有归属可查）；真 resolve 回调在 Promise 构造时回填
+    // 同步武装 + 异步落库（对抗 review P1：占位 resolve 曾是 no-op，落库窗口内
+    // abort/decide/cancelScope 全部打到占位被静默吞——用户批准被吞 5 分钟、
+    // abort 被拖到超时才拒）。真实 resolve/超时/abort 监听全部先于任何 await 就位；
+    // 落库 fire-and-forget（失败仅丢重启恢复，与既有降级语义一致）
     const holder: PendingEntry = {
       userId: this.getUserId(),
       info,
@@ -171,8 +173,6 @@ export class ApprovalCoordinator {
     this.pending.set(approvalId, holder)
     if (!this.scopePending.has(scopeKey)) this.scopePending.set(scopeKey, new Set())
     this.scopePending.get(scopeKey)!.add(approvalId)
-
-    await this.deps.store.save(info).catch((e) => logger.warn('[approval] 落库失败（继续挂起）', e))
 
     return new Promise<ApprovalDecision>((resolve) => {
       holder.resolve = (d) => {
@@ -201,6 +201,9 @@ export class ApprovalCoordinator {
         }
         signal.addEventListener('abort', holder.onAbort, { once: true })
       }
+
+      // 落库在武装完成后异步进行（窗口内到达的决定/中止已被真实回调接住）
+      void this.deps.store.save(info).catch((e) => logger.warn('[approval] 落库失败（继续挂起）', e))
 
       this.deps.emit({
         type: 'approval:request',

@@ -30,11 +30,14 @@ export interface WorkflowJournalPort {
   append(event: JournalEventInput): Promise<void>
   /**
    * 批量追加（同语义；seq 由引擎连续分配后整体传入——每批出边激活合并写，
-   * 控制写放大，11 号 §5.2 注）。实现可单事务，失败整体抛错。
+   * 控制写放大，11 号 §5.2 注）。实现必须整体原子（单事务）：撕裂批会使
+   * 恢复重放把残缺扇出当完整态（对抗 review P1）。
    */
   appendBatch(events: JournalEventInput[]): Promise<void>
   /** 按 seq 升序读取（fromSeq 起含——快照后增量重放用） */
   listByRun(runId: string, fromSeq?: number): Promise<JournalEventRecord[]>
+  /** 最近一条快照（无则 null；rehydrate 用——避免全量拉取只为找快照） */
+  latestSnapshot?(runId: string): Promise<JournalEventRecord | null>
   /** 该 run 是否已有任何事件（新/旧格式判据——旧格式走兼容降级） */
   hasEvents(runId: string): Promise<boolean>
   /** 随 run 历史删除（deleteRun 级联；返回删除数） */
@@ -123,9 +126,10 @@ export class DbJournal implements WorkflowJournalPort {
   }
 
   async appendBatch(events: JournalEventInput[]): Promise<void> {
-    // 逐条直写（无跨条事务语义要求；失败抛错由引擎判 run 失败——批内已写条目
-    // 成为重放前缀，恢复语义与逐条写一致）
-    for (const e of events) await this.repo.append(e)
+    // 单事务整体落库（对抗 review P1：逐条直写的撕裂批——批内第 N 条失败时
+    // 前缀已落库，恢复重放把残缺扇出当完整态、整条分支静默蒸发）
+    if (events.length === 0) return
+    await this.repo.appendBatchAtomic(events)
   }
 
   async listByRun(runId: string, fromSeq = 0): Promise<JournalEventRecord[]> {
@@ -140,6 +144,17 @@ export class DbJournal implements WorkflowJournalPort {
       payload: r.payload,
       createdAt: r.createdAt ?? new Date(0),
     }))
+  }
+
+  async latestSnapshot(runId: string): Promise<JournalEventRecord | null> {
+    const row = await this.repo.latestSnapshot(runId)
+    return row
+      ? {
+          id: row.id, runId: row.runId, seq: row.seq, type: row.type as never,
+          nodeId: row.nodeId, scopeKey: row.scopeKey, payload: row.payload,
+          createdAt: row.createdAt ?? new Date(0),
+        }
+      : null
   }
 
   async hasEvents(runId: string): Promise<boolean> {

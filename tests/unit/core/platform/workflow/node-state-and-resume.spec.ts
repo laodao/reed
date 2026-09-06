@@ -331,3 +331,54 @@ describe('rehydrate：state 预载 + node_run 行对齐', () => {
     expect(nr2.rows.get('start:0')?.status).toBe('succeeded')
   })
 })
+
+
+// ==================== 对抗 review 回归（并发双决策 / 跨租户） ====================
+
+describe('对抗 review 回归', () => {
+  const echoHandler: WorkflowNodeHandler = {
+    type: 'echo' as never, controlKind: 'task', cancellable: false,
+    outputSchema: [], validateConfig: () => [],
+    execute: async () => ({ status: 'succeeded' as never, output: {} }),
+  } as never
+  const revHandler: WorkflowNodeHandler = {
+    type: 'rev' as never, controlKind: 'interaction', cancellable: true,
+    outputSchema: [], validateConfig: () => [],
+    execute: async () => ({ status: 'waiting_review' as never, payload: {} }),
+  } as never
+  const g = () => mkGraph(
+    [['start', 'start'], ['r1', 'rev'], ['after', 'echo'], ['end', 'end']],
+    [['start', 'r1'], ['r1', 'after', 'approve'], ['after', 'end']],
+  )
+
+  it('并发双决策：第二个被守卫拒绝（单次决策单次生效）', async () => {
+    const journal = new InMemoryJournal()
+    let resumeCalls = 0
+    const slow: WorkflowNodeHandler = {
+      ...revHandler,
+      resume: async () => { resumeCalls++; await settle(60); return { status: 'succeeded' as never, output: {}, route: 'approve' } },
+    } as never
+    const { engine } = mkEngine(journal, [slow, echoHandler])
+    await runWithUserAsync('u1', async () => { await engine.execute(input(g())); await settle() })
+    const [r1, r2] = await Promise.all([
+      engine.resumeReview('run_1', 'r1', { decision: 'approve' }),
+      engine.resumeReview('run_1', 'r1', { decision: 'approve' }),
+    ])
+    expect([r1, r2].sort()).toEqual([false, true]) // 恰好一个生效
+    await settle(120)
+    expect(resumeCalls).toBe(1) // 回调单次执行
+    const events = await journal.listByRun('run_1')
+    expect(events.filter(e => e.type === 'review_decided').length).toBe(1) // 事件单份
+  })
+
+  it('跨租户决策：非属主被拒绝（journal 不被租户污染）', async () => {
+    const journal = new InMemoryJournal()
+    const { engine } = mkEngine(journal, [revHandler, echoHandler])
+    await runWithUserAsync('u1', async () => { await engine.execute(input(g())); await settle() })
+    const applied = await runWithUserAsync('user-b', () =>
+      engine.resumeReview('run_1', 'r1', { decision: 'approve' }))
+    expect(applied).toBe(false)
+    const events = await journal.listByRun('run_1')
+    expect(events.some(e => e.type === 'review_decided')).toBe(false) // 未产生任何决策事件
+  })
+})

@@ -27,6 +27,12 @@ export interface RehydratedExecution {
   inflightNodes: Array<{ nodeId: string; scopeKey: string; iterationIndex: number }>
 }
 
+/** engineDriven 节点类型集（与 control-semantics 同源语义——重放模块不 import 引擎内部表防环） */
+const ENGINE_DRIVEN_TYPES = new Set(['loop', 'start', 'end'])
+function semEngineDriven(type: string): boolean {
+  return ENGINE_DRIVEN_TYPES.has(type)
+}
+
 // ==================== 重放实现 ====================
 
 class ReplayContext {
@@ -112,6 +118,10 @@ export function replayJournal(
     for (const st of scope.states.values()) {
       if (terminal.has(st.status)) continue
       if (st.status === 'waiting_review') continue // 挂起等待决策，不重执行
+      // engineDriven（loop）节点不进在途清单：由重建 driver 在续驱中推进
+      // （对抗 review P0：曾作为在途删除 → 恢复后循环被 root pump 整体重跑）
+      const node = exec.nodeById.get(st.nodeId)
+      if (node && semEngineDriven(node.type)) continue
       ctx.inflight.push({ nodeId: st.nodeId, scopeKey: scope.key, iterationIndex: st.iterationIndex })
     }
   }
@@ -126,11 +136,16 @@ export function replayJournal(
     const parentScope = exec.rootScope // 循环节点必在根作用域（校验器禁嵌套）
     const state = ctx.stateOf(parentScope, loopNodeId)
     const listSize = ctx.loopListSize.get(loopNodeId) ?? results.length
-    // 无快照时列表本体不可复原：以占位数组承载长度（重放约束——driveLoop 续驱
-    // 只用到长度与 list[i] 伪变量；含真实列表的场景必须走快照路径）
-    const list = Array.from({ length: listSize }, (_, i) =>
-      pseudoVarList(ctx, loopNodeId)?.[i] ?? (i < results.length ? results[i] : undefined),
-    )
+    const recovered = pseudoVarList(ctx, loopNodeId)
+    if (!recovered && !hasSnapshotDriver(ctx, loopNodeId)) {
+      // 列表本体不可复原（无快照无伪变量）：fail-fast——undefined 项静默续跑会让
+      // body 带垃圾输入执行副作用（对抗 review P0：曾静默 succeeded）
+      throw new Error(
+        `循环 ${loopNodeId} 的遍历列表不可复原（无快照且无迭代伪变量）——该 run 无法安全恢复，` +
+          `已拒绝续驱。挂起场景有强制快照不受影响；请用 resumeRun 从 checkpoint 重建。`,
+      )
+    }
+    const list = recovered ?? Array.from({ length: listSize })
     const driver: LoopDriver = {
       node,
       state,
@@ -158,6 +173,12 @@ function applyEvent(ctx: ReplayContext, ev: JournalEventRecord): void {
     case WORKFLOW_JOURNAL_EVENT_TYPES.edgeActivated: {
       const scope = ctx.scopeOf(ev.scopeKey ?? null)
       const p = ev.payload as { edgeId: string; seq: number; sourceNodeId: string; targetNodeId: string }
+      // 最小 payload 校验（对抗 review P2：畸形 seq 字符串曾静默写入激活表 →
+      // computeReady 恒 false → run 无声挂死到看门狗）。数字字段非数 = 日志损坏，
+      // 显式抛错让 rehydrate 降级中断而非静默错
+      if (typeof p?.seq !== 'number') {
+        throw new Error(`journal 损坏：edge_activated seq 非数字（run ${ev.runId} seq=${ev.seq}）`)
+      }
       // 与 activateEdge 同构：记序号 + merge 到达（源输出此刻已在前序 node_completed 中）
       scope.activationSeqs.set(p.edgeId, p.seq)
       if (p.seq > scope.activationCounter) scope.activationCounter = p.seq
@@ -382,6 +403,12 @@ function applySnapshot(ctx: ReplayContext, payload: Record<string, unknown>): vo
   }
 
   for (const id of (payload.reexecNodeIds as string[]) ?? []) exec.reexecNodeIds.add(id)
+}
+
+/** 快照路径下该 loop 是否已有携带真实列表的 driver */
+function hasSnapshotDriver(ctx: ReplayContext, loopNodeId: string): boolean {
+  const d = ctx.exec.loopDrivers.get(loopNodeId)
+  return !!d && d.list.length > 0 && d.list.some((x) => x !== undefined)
 }
 
 // ==================== 内部工具 ====================

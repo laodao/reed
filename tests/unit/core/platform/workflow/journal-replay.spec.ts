@@ -271,6 +271,53 @@ describe('engine.rehydrate / ensureActive', () => {
     expect(second.runs.final.status).toBe('succeeded')
   })
 
+  it('threshold 快照等价（对抗 review P0 回归）：低事件量构造——验证 appliedThroughSeq 语义', async () => {
+    // threshold 快照需 200 事件，常规图难触发——直接手工构造"事件+阈值快照+后续事件"
+    // 的三段式，断言快照路径与全量重放同构（曾漏传第三参=死参数，触发事件效果丢失）
+    const graph = mkGraph([['start', 'start'], ['a', 'echo'], ['end', 'end']], [['start', 'a'], ['a', 'end']])
+    const j = new InMemoryJournal()
+    let seq = 0
+    const put = (type: string, payload: Record<string, unknown> | null, nodeId: string | null = null) =>
+      j.append({ runId: 'r_t', seq: seq++, type: type as never, nodeId, scopeKey: 'root', payload })
+    await put('run_started', { triggerType: 'manual' })
+    await put('node_launched', { nodeType: 'start', iterationIndex: 0 }, 'start')
+    await put('node_completed', { iterationIndex: 0, output: {}, routeTaken: null, completedSeq: 1 }, 'start')
+    await put('edge_activated', { edgeId: 'e0', seq: 2, sourceNodeId: 'start', targetNodeId: 'a' })
+    // threshold 快照：此刻内存未应用 e0 的激活（appliedThroughSeq = 3-1 = 2 的前一条语义——
+    // 即覆盖到 seq 2 的 edge_activated 为止？不——引擎语义：append(seq3=e0)后拍快照，
+    // 快照 appliedThroughSeq=2（覆盖事件 0..2，e0 尚未生效）。手工按此语义构造：
+    const snapPayload = {
+      v: 1, suspended: false,
+      variables: {}, llmHistory: [], runCounts: { start: 1 },
+      // 注意 states 里 a 无状态（未 launch）；start 已完成（事件 2 已生效）
+      scopes: [{
+        key: 'root', iterationIndex: 0, activationCounter: 1,
+        activationSeqs: {}, // e0 尚未激活（appliedThroughSeq=2 只覆盖到 node_completed）
+        states: [{ nodeId: 'start', iterationIndex: 0, status: 'succeeded', retryCount: 0, output: {}, routeTaken: null, reviewPayload: null, reviewTimeoutMs: null, reviewTimeoutPolicy: null, waitExpiresAt: null, completedSeq: 1, startedAtMs: 0 }],
+        mergeArrivals: {}, forcedMergeNodeIds: [], loopOwnerId: null,
+        iterationSkippedByPolicy: false, loopPseudoVars: {},
+      }],
+      loopDrivers: [], reexecNodeIds: [],
+      reason: 'threshold', appliedThroughSeq: 2,
+    }
+    await j.append({ runId: 'r_t', seq: seq++, type: 'snapshot', nodeId: null, scopeKey: null, payload: snapPayload })
+    // 后续事件（模拟 e0 生效 + a 完成）
+    await put('node_launched', { nodeType: 'echo', iterationIndex: 0 }, 'a')
+    await put('node_completed', { iterationIndex: 0, output: { text: 'ok' }, routeTaken: null, completedSeq: 3 }, 'a')
+    await put('edge_activated', { edgeId: 'e1', seq: 4, sourceNodeId: 'a', targetNodeId: 'end' })
+
+    const inputT = input(graph, 'r_t')
+    const events = await j.listByRun('r_t')
+    const snap = events.find(e => e.type === 'snapshot')!
+    const reSnap = replayJournal(inputT, events, snap)
+    const reFull = replayJournal(inputT, events, null)
+    // 同构：a 的完成态/变量/激活在两路径一致（曾快照路径丢 e0 → a 永不 ready）
+    expect(reSnap.exec.variables.get('a')).toEqual(reFull.exec.variables.get('a'))
+    expect(reSnap.exec.rootScope.states.get('a')?.status).toBe(reFull.exec.rootScope.states.get('a')?.status)
+    expect(reSnap.exec.rootScope.activationSeqs.get('e0')).toBe(reFull.exec.rootScope.activationSeqs.get('e0'))
+    expect(reSnap.inflightNodes).toEqual(reFull.inflightNodes)
+  })
+
   it('旧格式（无日志）返回 false；终态 run 不重建；单飞去重', async () => {
     const empty = new InMemoryJournal()
     const graph = mkGraph([['start', 'start'], ['end', 'end']], [['start', 'end']])
