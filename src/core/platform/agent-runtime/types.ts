@@ -20,6 +20,17 @@ import type {
 
 export type { AgentLoopMode, AgentSendResult, PendingApproval, SendMessageOptions }
 
+// ==================== 记忆（15 号 §5；实体/仓储随记忆批次接入） ====================
+
+/** 记忆种类：事实 / 决定 / 教训 / 待跟进开环 */
+export type MemoryKind = 'fact' | 'decision' | 'lesson' | 'open_loop'
+
+/** 记忆状态机：proposed → active（提案卡采纳）/ deleted（忽略）；active → superseded（版本链）/ conflicted（待裁决） */
+export type MemoryStatus = 'proposed' | 'active' | 'deleted' | 'superseded' | 'conflicted'
+
+/** 记忆来源：agent 运行时 / 用户手写 / 种子 / 迁移（前端"来源"徽标） */
+export type MemorySource = 'agent_runtime' | 'user' | 'seed' | 'migration'
+
 // ==================== 工具 ====================
 
 export type ToolDangerLevel = 'read' | 'write' | 'external-post' | 'exec'

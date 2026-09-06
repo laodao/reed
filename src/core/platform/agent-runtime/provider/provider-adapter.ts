@@ -12,7 +12,7 @@
 
 import { createLogger } from '@core/utils/logger'
 import type { LanguageModel } from 'ai'
-import type { ProviderInfo } from '@shared/types'
+import type { ProviderInfo } from '@core/platform/services/ai-call'
 
 const logger = createLogger('AgentProviderAdapter')
 
@@ -110,8 +110,8 @@ export class ProviderAdapter {
     }
 
     const model = await this.createModel({
-      name: template.id,
-      baseURL: config.baseUrl,
+      name: template.id ?? config.id,
+      baseURL: config.baseUrl ?? template.apiConfig.baseUrl,
       apiKey,
       modelId: effectiveModelId,
     })
@@ -133,7 +133,7 @@ export class ProviderAdapter {
     if (!info) throw new AgentProviderNotConfiguredError()
     const models = [
       ...((info.config.models as Array<{ id: string; label?: string; name?: string }>) ?? []),
-      ...(((info.template as { models?: Array<{ id: string; label?: string }> }).models) ?? []),
+      ...(((info.template as { models?: Array<{ id: string; label?: string; name?: string }> }).models) ?? []),
     ]
     const seen = new Set<string>()
     const out: Array<{ id: string; label?: string }> = []

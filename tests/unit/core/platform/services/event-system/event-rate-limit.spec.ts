@@ -148,7 +148,8 @@ describe('publish 限流接线（§7.8）', () => {
 
   it('限流键含 (type, aggregate)：不同聚合各自计数', async () => {
     const ds = await makeDs()
-    const bus = new PlatformEventBus(ds)
+    // 显式低阈值（20/分）：测"键含聚合"语义本身，与默认阈值解耦（默认已提到 600 风暴兜底）
+    const bus = new PlatformEventBus(ds, { rateLimits: [{ pattern: 'kb:*', maxPerMinute: 20 }] })
     cleanup.push(async () => { await bus.stop(); await ds.destroy() })
 
     for (let i = 0; i < 20; i++) {

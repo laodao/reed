@@ -685,6 +685,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
     )
     await createWorkflowTables(this.dataSource)
 
+    // Agent 公共运行时：agent_sessions / agent_memories 两表（幂等，双语种；23 号 §6）
+    const { createAgentTables } = await import(
+      '@core/database/migrations/create-agent-tables'
+    )
+    await createAgentTables(this.dataSource)
+
     // 通用事件系统：platform_events / cursors / dead_letters 三表（幂等，双语种；10-event-system §4）
     const { createPlatformEventTables } = await import(
       '@core/database/migrations/create-platform-event-tables'

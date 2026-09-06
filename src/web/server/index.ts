@@ -370,6 +370,12 @@ async function initDatabase(): Promise<void> {
   )
   await createWorkflowTables(ds)
 
+  // Agent 公共运行时：agent_sessions / agent_memories 两表（与 Electron 端同构；23 号 §6）
+  const { createAgentTables } = await import(
+    '@core/database/migrations/create-agent-tables'
+  )
+  await createAgentTables(ds)
+
   // 通用事件系统：platform_events / cursors / dead_letters 三表（与 Electron 端同构；10-event-system §4）
   const { createPlatformEventTables } = await import(
     '@core/database/migrations/create-platform-event-tables'

@@ -121,3 +121,5 @@ export {
   PlatformEventCursorEntity,
   PlatformEventDeadLetterEntity,
 } from './platform-event.entities'
+// Agent 公共运行时（23 号 §6）：会话消息（SessionStore 落点）
+export { AgentSessionEntity } from './agent-session.entity'

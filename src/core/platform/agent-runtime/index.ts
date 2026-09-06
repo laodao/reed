@@ -17,9 +17,9 @@
  * | runtime/event-bridge | Session 事件 → 统一 AgentEvent → 事件通道 | 自研 |
  * | context/context-manager | 四层上下文装配（system/快照/滚动摘要/近 N 轮），实现 onBeforeSend | 自研 |
  * | context/state-snapshot | 业务状态快照接口（业务方注入 buildSnapshot） | 自研接口 |
- * | memory/session-store | open-harness SessionStore 实现（多租户 ALS 隔离） | 自研实现 |
+ * | memory/session-store | AgentSessionStore 双实现（内存/DB，多租户 ALS 隔离） | 自研（23 号 §6 契约） |
  * | memory/memory-service | 项目级长期记忆：fact/decision/lesson/open_loop + active/proposed/conflicted/superseded 状态机 | 设计借 happyclaw memory-service（MIT） |
- * | memory/migrations | agent_memories 建表 | 自研 |
+ * | core/database/migrations/create-agent-tables | agent_sessions / agent_memories 建表 | 自研 |
  * | tools/registry | 工具注册：zod schema + execute + requiresApproval 标记 | 自研 |
  * | index | 公共出口 | — |
  *
@@ -47,6 +47,15 @@ export type { EventBridgeDeps, PlatformBusPort } from './runtime/event-bridge'
 export { ProviderAdapter, AgentProviderNotConfiguredError } from './provider/provider-adapter'
 export type { LoopRunnerDeps } from './runtime/loop'
 export type { ProviderAdapterDeps, ResolveModelOptions, ProviderConfigLookup } from './provider/provider-adapter'
+export {
+  createSessionStore,
+  InMemorySessionStore,
+  DbAgentSessionStore,
+  AgentSessionCorruptionError,
+  AgentMessageTooLargeError,
+  MAX_MESSAGE_BYTES,
+} from './memory/session-store'
+export type { AgentSessionStore, DbAgentSessionStoreDeps } from './memory/session-store'
 
 // —— 契约类型（23 号接口契约层）——
 export type {

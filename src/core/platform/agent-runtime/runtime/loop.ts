@@ -154,10 +154,11 @@ export class LoopRunner {
         state.usage.completionTokens += usage.outputTokens ?? 0
 
         const decision = normalizeDecision(finishReason, stepMessages)
+        const decisionToolNames = decision.type === 'tool_calls' ? decision.calls.map((c) => c.toolName) : []
         host.emitTrajectory({
           iteration: state.iteration,
           kind: 'decision',
-          payload: { thought: stepText.slice(0, 500), finishReason, toolCalls: decision.calls?.map((c) => c.toolName) ?? [] },
+          payload: { thought: stepText.slice(0, 500), finishReason, toolCalls: decisionToolNames },
           promptTokens: usage.inputTokens,
           completionTokens: usage.outputTokens,
           durationMs: this.clock() - stepStart,
