@@ -54,6 +54,7 @@ import {
   EventRateLimiter,
   RATE_LIMITED_EVENT_TYPE,
   type EventRateLimitRule,
+  EventRateLimitError,
 } from './event-rate-limit'
 
 const logger = createLogger('PlatformEventBus')
@@ -250,7 +251,15 @@ export class PlatformEventBus implements EventBus {
           true
         )
       }
-      return null
+      // 2026-09-06 用户要求：清晰报错而非静默 null。策略违反与载荷违规同走 fail-fast
+      //（safePublish 的 null 保留给基础设施故障）；producer 的 onFailed 分支收到明确原因，
+      // marker 与上方 warn 日志照旧（风暴观测双通道）。
+      throw new EventRateLimitError(
+        input.type,
+        rateKey,
+        this.rateLimiter.limitFor(input.type),
+        this.rateLimiter.windowMs,
+      )
     }
 
     const now = new Date()

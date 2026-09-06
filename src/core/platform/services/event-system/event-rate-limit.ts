@@ -104,3 +104,21 @@ export class EventRateLimiter {
     }
   }
 }
+
+
+/** 限流拒绝错误（2026-09-06 用户要求：清晰报错而非静默 null）——策略违反类，与载荷违规同走 fail-fast */
+export class EventRateLimitError extends Error {
+  readonly code = 'EVENT_RATE_LIMITED'
+  constructor(
+    readonly limitedType: string,
+    readonly rateKey: string,
+    readonly maxPerMinute: number,
+    readonly windowMs: number,
+  ) {
+    super(
+      `事件被限流拒绝：type=${limitedType}，key=${rateKey}，上限 ${maxPerMinute} 次/${Math.round(windowMs / 1000)}s` +
+        `（策略仅对风暴流量生效；如为合法高频请调整 settings 键 eventBus:rateLimits，0=不限）`,
+    )
+    this.name = 'EventRateLimitError'
+  }
+}

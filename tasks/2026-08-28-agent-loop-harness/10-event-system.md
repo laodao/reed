@@ -581,3 +581,14 @@ AgentRuntime: decision=human_request
 职责边界：底座管"怎么安全有序地发布"；类型映射/直推通道/delta 合批/降级策略
 （引擎=回退存量直推，agent=仅 warn）仍属各 producer。重构以两侧既有测试为
 行为门（引擎 7 例 + bridge 12 例 + 底座新增 6 例，全绿；零新增失败）。
+
+
+### 2026-09-06 第二次修订：限流器语义（用户裁定）
+
+超限行为从「marker 后丢弃返回 null」改为 **fail-fast 抛 `EventRateLimitError`**
+（清晰报错：type/key/上限/窗口 + 调整指引；marker 事件与 warn 日志照旧保留）。
+分类依据：safePublish 的 null 保留给**基础设施故障**（DB 不可用等，静默降级）；
+限流是**策略违反**，与载荷违规（EventPayloadError）同走 fail-fast——
+producer 的 onFailed 分支收到明确原因（workflow 回退直推/agent warn 记录）。
+配套：缺省通配 20→600（风暴兜底量级，正常领域流量不可达）+ settings 键
+`eventBus:rateLimits` 运行时覆盖（0=不限）。§7.8 原文按本节修订理解。

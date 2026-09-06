@@ -12,6 +12,7 @@ import {
   DEFAULT_EVENT_RATE_LIMITS,
   EventRateLimiter,
   RATE_LIMITED_EVENT_TYPE,
+  EventRateLimitError,
 } from '@core/platform/services/event-system/event-rate-limit'
 import {
   PlatformEventCursorEntity,
@@ -96,17 +97,21 @@ describe('EventRateLimiter 纯函数面（§7.8）', () => {
 })
 
 describe('publish 限流接线（§7.8）', () => {
-  it('超限事件丢弃（返回 null 不落库）+ 每 key 每窗口记一条 system.event.rate-limited', async () => {
+  it('超限抛 EventRateLimitError（清晰报错）+ 每 key 每窗口记一条 system.event.rate-limited', async () => {
     const ds = await makeDs()
     const bus = new PlatformEventBus(ds) // 默认规则
     cleanup.push(async () => { await bus.stop(); await ds.destroy() })
 
     let dropped = 0
-    for (let i = 0; i < 25; i++) {
-      const r = await bus.publish(input('kb:flood', 'agg-f'))
-      if (r === null) dropped++
+    for (let i = 0; i < DEFAULT_EVENT_RATE_LIMITS.find(r => r.pattern === '*')!.maxPerMinute + 5; i++) {
+      try {
+        await bus.publish(input('kb:flood', 'agg-f'))
+      } catch (e) {
+        if (e instanceof EventRateLimitError) dropped++ // 超限：清晰报错（fail-fast）
+        else throw e
+      }
     }
-    expect(dropped).toBe(5) // 20 放行 + 5 超限丢弃
+    expect(dropped).toBe(5) // 额度放行 + 5 超限拒绝（阈值读常量）
 
     const rows = await ds.query(
       `SELECT type, COUNT(*) AS c FROM platform_events GROUP BY type ORDER BY type`
@@ -133,7 +138,7 @@ describe('publish 限流接线（§7.8）', () => {
 
     for (let i = 0; i < 50; i++) {
       const r = await bus.publish(input('workflow.run.node-progress', 'run-1'))
-      expect(r).not.toBeNull()
+      expect(r).not.toBeNull() // 正常发布
     }
     const rows = await ds.query(
       `SELECT COUNT(*) AS c FROM platform_events WHERE type = 'system.event.rate-limited'`
@@ -150,8 +155,8 @@ describe('publish 限流接线（§7.8）', () => {
       expect(await bus.publish(input('kb:x', 'agg-a'))).not.toBeNull()
       expect(await bus.publish(input('kb:x', 'agg-b'))).not.toBeNull()
     }
-    expect(await bus.publish(input('kb:x', 'agg-a'))).toBeNull() // agg-a 超限
-    expect(await bus.publish(input('kb:x', 'agg-b'))).toBeNull() // agg-b 超限
+    await expect(bus.publish(input('kb:x', 'agg-a'))).rejects.toThrow(EventRateLimitError) // agg-a 超限：清晰报错
+    await expect(bus.publish(input('kb:x', 'agg-b'))).rejects.toThrow(EventRateLimitError) // agg-b 超限
     expect(await bus.publish(input('kb:x', 'agg-c'))).not.toBeNull() // 新聚合独立窗口
   })
 })
