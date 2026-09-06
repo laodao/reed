@@ -820,6 +820,37 @@ export const WORKFLOW_RUN_EVENT_TYPES = {
   notify: 'notify',
 } as const
 
+// ==================== Run Journal（11 号 §4.3，E1） ====================
+
+/**
+ * 引擎私有运行事件日志的类型全集（追加式；重放投影的判别依据）。
+ * 注意与 WORKFLOW_RUN_EVENT_TYPES（UI 推送载荷）分立——journal 是恢复事实源，
+ * 不进前端协议（11 号 §3.1 三套事件边界）。
+ */
+export const WORKFLOW_JOURNAL_EVENT_TYPES = {
+  runStarted: 'run_started',
+  edgeActivated: 'edge_activated',
+  nodeLaunched: 'node_launched',
+  nodeSuspended: 'node_suspended',
+  nodeCompleted: 'node_completed',
+  nodeFailed: 'node_failed',
+  reviewDecided: 'review_decided',
+  loopStarted: 'loop_started',
+  loopIterationSettled: 'loop_iteration_settled',
+  loopCompleted: 'loop_completed',
+  snapshot: 'snapshot',
+  runFinished: 'run_finished',
+} as const
+
+export type WorkflowJournalEventType =
+  (typeof WORKFLOW_JOURNAL_EVENT_TYPES)[keyof typeof WORKFLOW_JOURNAL_EVENT_TYPES]
+
+/** journal 缺省参数（快照节奏等；definition.settings 可覆盖项的缺省源） */
+export const WORKFLOW_JOURNAL_DEFAULTS = {
+  /** 每 run 每 N 条事件写一次投影快照（挂起时强制另计） */
+  snapshotEveryEvents: 200,
+} as const
+
 /** 导入导出文件格式标识 */
 export const WORKFLOW_EXPORT_KIND = 'the-bot-workflow'
 export const WORKFLOW_EXPORT_FORMAT_VERSION = 1

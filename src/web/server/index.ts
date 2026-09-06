@@ -376,6 +376,12 @@ async function initDatabase(): Promise<void> {
   )
   await createAgentTables(ds)
 
+  // Run Journal（11 号 §4.1 E1）：运行事件日志（与 Electron 端同构）
+  const { createWorkflowRunEvents } = await import(
+    '@core/database/migrations/create-workflow-run-events'
+  )
+  await createWorkflowRunEvents(ds)
+
   // 通用事件系统：platform_events / cursors / dead_letters 三表（与 Electron 端同构；10-event-system §4）
   const { createPlatformEventTables } = await import(
     '@core/database/migrations/create-platform-event-tables'

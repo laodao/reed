@@ -77,6 +77,8 @@ export interface WorkflowEventEmitOptions {
   causationId?: string
 }
 
+import type { WorkflowJournalPort } from './journal'
+
 /** 引擎对"事件推送"的最小需求 */
 export interface WorkflowEventPort {
   emit(event: WorkflowRunEvent, opts?: WorkflowEventEmitOptions): void
@@ -87,4 +89,10 @@ export interface WorkflowEngineDeps {
   runs: WorkflowRunPort
   nodeRuns: WorkflowNodeRunPort
   events: WorkflowEventPort
+  /**
+   * Run Journal（11 号 §5.1 E1）：引擎私有运行事件日志。
+   * 缺省 null = 不落日志（引擎单测/极简装配）；生产必须注入——先日志后内存
+   * 不变量仅在有 journal 时生效，恢复能力随之为空。
+   */
+  journal?: WorkflowJournalPort | null
 }

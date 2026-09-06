@@ -98,6 +98,8 @@ export { WorkflowDefinitionEntity } from './workflow-definition.entity'
 export { WorkflowDefinitionVersionEntity } from './workflow-definition-version.entity'
 export { WorkflowRunEntity } from './workflow-run.entity'
 export { WorkflowNodeRunEntity } from './workflow-node-run.entity'
+// Run Journal（11 号 §4.1 E1）：运行事件日志
+export { WorkflowRunEventEntity } from './workflow-run-event.entity'
 export { UserEntity } from './user.entity'
 export { AppEntity } from './app.entity'
 export { AppSessionEntity } from './app-session.entity'

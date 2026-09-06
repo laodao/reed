@@ -691,6 +691,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
     )
     await createAgentTables(this.dataSource)
 
+    // Run Journal（11 号 §4.1 E1）：运行事件日志（先日志后内存的恢复事实源）
+    const { createWorkflowRunEvents } = await import(
+      '@core/database/migrations/create-workflow-run-events'
+    )
+    await createWorkflowRunEvents(this.dataSource)
+
     // 通用事件系统：platform_events / cursors / dead_letters 三表（幂等，双语种；10-event-system §4）
     const { createPlatformEventTables } = await import(
       '@core/database/migrations/create-platform-event-tables'
