@@ -396,7 +396,7 @@ export class LoopRunner {
                   logContext: { definitionId: task.definitionId, tool: name, ...(task.runtimeContext ?? {}) },
                   toolCallId: options.toolCallId,
                 }),
-                timeoutMs,
+                def.executeTimeoutMs ?? timeoutMs,
                 host.signal,
               )
             }
@@ -413,7 +413,7 @@ export class LoopRunner {
               ok: false,
               error: cancelled ? 'CANCELLED' : err?.name === 'TimeoutError' ? 'TIMEOUT' : 'INTERNAL',
               detail: err?.message?.slice(0, TOOL_ERROR_DETAIL_MAX_CHARS),
-              hint: err?.name === 'TimeoutError' ? `工具执行超过 ${Math.round(timeoutMs / 1000)}s` : undefined,
+              hint: err?.name === 'TimeoutError' ? `工具执行超过 ${Math.round((def.executeTimeoutMs ?? timeoutMs) / 1000)}s` : undefined,
             }
           }
         },
