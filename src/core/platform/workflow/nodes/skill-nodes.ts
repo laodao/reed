@@ -10,6 +10,7 @@
 
 import { callAIStream } from '../../services/ai-call'
 import { getSkillService } from '../skills/skill-registry'
+import { renderSkillTemplate, withSkillReferences } from '../skills/render'
 import { stringifyValue } from '../engine/variable-resolver'
 import type { WorkflowNodeContext } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
@@ -61,18 +62,15 @@ const skillCallNode: WorkflowNodeHandler = {
     for (const p of cfg.inputs ?? []) {
       if (p.key) params[p.key] = stringifyValue(p.value)
     }
-    // 2. 渲染技能模板 {{param.xxx}}（缺参按空串处理并告警）
+    // 2. 渲染技能模板 {{param.xxx}}（缺参按空串处理并告警；渲染共用件与系统 agent
+    //    invoke_skill 工具同源——28 号 M5 批1 抽取）
     const render = (tpl: string): string =>
-      tpl.replace(/\{\{param\.([a-zA-Z0-9_]+)\}\}/g, (_, k: string) => {
-        if (!(k in params)) ctx.logger.warn(`技能 ${skillId} 缺少参数 ${k}（已按空处理）`)
-        return params[k] ?? ''
-      })
+      renderSkillTemplate(tpl, params, (k) => ctx.logger.warn(`技能 ${skillId} 缺少参数 ${k}（已按空处理）`))
     const body = render(skill.body)
     const systemPrompt = render(skill.systemPrompt)
 
     // 3. references 参考资料拼入正文（执行时自动附带技能包参考文档）
-    const refsText = (skill.references ?? []).map(r => `[${r.name}]\n${r.content}`).join('\n\n')
-    const finalPrompt = refsText ? `${body}\n\n===== 参考资料 =====\n${refsText}` : body
+    const finalPrompt = withSkillReferences(body, skill.references)
 
     // 4. AI 生成（公共调用层：modelId fallback 链 + AbortSignal 真取消 + 增量进度 + 多轮历史）
     const history = ctx.getLLMHistory?.() ?? []

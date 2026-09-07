@@ -480,8 +480,10 @@ export class AgentToolRegistry {
       ? (mergeStaticConfig(opts.staticConfig, parsed.data as Record<string, unknown>) as Record<string, unknown>)
       : (parsed.data as Record<string, unknown>)
 
-    // ④ 执行（超时 + signal；异常捕获为结构化错误——永不 throw 出注册表）
+    // ④ 执行（超时 + signal；异常捕获为结构化错误——永不 throw 出注册表）。
+    //    超时旋钮：def 级优先（长等待型工具如 run_workflow 轮询），注册表级兜底
     let raw: unknown
+    const effectiveTimeoutMs = tool.def.executeTimeoutMs ?? this.deps.executeTimeoutMs
     try {
       raw = await withTimeout(
         tool.def.execute(effective as never, {
@@ -492,7 +494,7 @@ export class AgentToolRegistry {
           toolCallId: String(call.context?.toolCallId ?? '') || undefined,
           credentialId: call.credentialId,
         }),
-        this.deps.executeTimeoutMs,
+        effectiveTimeoutMs,
         call.signal,
       )
     } catch (e: unknown) {
@@ -503,7 +505,7 @@ export class AgentToolRegistry {
         ok: false,
         error: {
           code,
-          message: code === 'TIMEOUT' ? `工具执行超过 ${Math.round(this.deps.executeTimeoutMs / 1000)}s` : (err?.message ?? String(e)),
+          message: code === 'TIMEOUT' ? `工具执行超过 ${Math.round(effectiveTimeoutMs / 1000)}s` : (err?.message ?? String(e)),
           hint: code === 'TIMEOUT' ? '工具过慢，建议换用更轻量的查询' : undefined,
           retryable: code !== 'CANCELLED',
         },

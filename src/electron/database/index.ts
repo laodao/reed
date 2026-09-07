@@ -724,6 +724,10 @@ export class DatabaseManager implements ICoreDatabaseManager {
     const { createAgentMemoryEntries } = await import('@core/database/migrations/create-agent-memory-entries')
     await createAgentMemoryEntries(this.dataSource)
 
+    // M5 系统 agent（28 号批2）：对话级 Agent 模式开关
+    const { addDialogAgentEnabled } = await import('@core/database/migrations/add-dialog-agent-enabled')
+    await addDialogAgentEnabled(this.dataSource)
+
     // 通用事件系统：platform_events / cursors / dead_letters 三表（幂等，双语种；10-event-system §4）
     const { createPlatformEventTables } = await import(
       '@core/database/migrations/create-platform-event-tables'

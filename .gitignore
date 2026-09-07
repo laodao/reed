@@ -32,3 +32,9 @@ coverage/
 
 # 运行日志（含 playwright console 日志）——不得入库
 *.log
+
+# 本地密钥/环境文件与编辑器产物（review P2：git add -A 曾扫入）
+.env
+.env.*
+.history/
+C:/

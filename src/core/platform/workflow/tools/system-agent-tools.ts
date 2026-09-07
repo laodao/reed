@@ -1,0 +1,377 @@
+/**
+ * 系统级 Agent 工具集（28 号 M5 批1）
+ * @module core/platform/workflow/tools/system-agent-tools
+ *
+ * 聊天宿主（对话框 Agent 模式）的可调度面：能力目录 / 运行工作流 / 查询运行 /
+ * 调用技能 / 创建任务树 + 直连只读白名单。注册点在 workflow-boot（组合根）——
+ * boot 顺序事实：业务包 activate 早于 workflow 子系统初始化，注册不能放 chat 包。
+ *
+ * 依赖方向（22 号 §3，同 builtin 工具）：本文件在 workflow 模块内装配并注册进
+ * agent-runtime 的 AgentToolRegistry——harness 不认识任何具体工具；chat 包只经
+ * registry.buildToolDefs 装配白名单（SYSTEM_AGENT_WHITELIST）。
+ *
+ * 边界（28 号 §7）：白名单无审批工具——聊天宿主 M5 无审批卡；写副作用仅
+ * run_workflow（工作流内部审批闸门照常生效）与 create_task_plan（强制人工批准）。
+ */
+
+import { z } from 'zod'
+import { createLogger } from '@core/utils/logger'
+import {
+  WORKFLOW_NODE_TYPES,
+  WORKFLOW_RUN_TERMINAL_STATUSES,
+  WORKFLOW_TRIGGER_TYPES,
+} from '@shared/types/workflow.types'
+import type { AgentToolDef, AgentToolContext } from '@core/platform/agent-runtime/types'
+import type { AgentToolRegistry } from '@core/platform/agent-runtime/tools/registry'
+import type { ResolveModelOptions } from '@core/platform/agent-runtime/provider/provider-adapter'
+import type { WorkflowRunService } from '../workflow-run.service'
+import type { WorkflowDefinitionService } from '../workflow-definition.service'
+import type { AgentTaskService } from '@core/platform/agent-runtime/tasks/task-service'
+import type { SkillService } from '../skills/skill.service'
+import type { WorkflowDefinitionRecord } from '@core/database/repositories/workflow-definition.repository'
+import type { WorkflowRunRecord } from '@core/database/repositories/workflow-run.repository'
+import type { WorkflowNodeRunRecord } from '@core/database/repositories/workflow-node-run.repository'
+import type { WorkflowStartInput } from '@shared/types/workflow.types'
+import type { LanguageModel } from 'ai'
+import { renderSkillTemplate, withSkillReferences } from '../skills/render'
+
+const logger = createLogger('SystemAgentTools')
+
+// —— 目录封顶（防上下文爆炸）——与 registry 管线的 TOOL_RESULT_ARRAY_KEEP=20 对齐：
+// 超出部分由管线截断并注记 _truncated，agent 可用 keyword 收窄再查，此处不再放大
+export const CATALOG_MAX_WORKFLOWS = 20
+export const CATALOG_MAX_SKILLS = 20
+export const CATALOG_MAX_TOOLS = 20
+// —— run_workflow 终态轮询 ——
+export const RUN_WORKFLOW_POLL_INTERVAL_MS = 2_000
+export const RUN_WORKFLOW_WAIT_TIMEOUT_MS = 180_000
+/** 节点摘要条数上限（超出的以 nodesTotal 注记） */
+export const NODE_SUMMARY_MAX = 20
+/** 节点 output 摘要字符上限（agent 汇报用的最小可信切片） */
+export const NODE_OUTPUT_DIGEST_MAX = 400
+/** 错误消息里的运行摘要上限（防失控错误串灌大模型上下文——对抗 review P2） */
+export const RUN_ERROR_DIGEST_MAX = 2_000
+/** getRunDetail 连续不可见次数上限（运行被删/异常数据——不再空等满超时） */
+export const RUN_MISSING_STREAK_LIMIT = 3
+
+/** 直连白名单（registry 既有工具，聊天宿主直接装配；写/审批工具一律不进） */
+export const SYSTEM_AGENT_TOOL_NAMES = [
+  'discover_capabilities',
+  'run_workflow',
+  'get_workflow_run',
+  'invoke_skill',
+  'create_task_plan',
+] as const
+
+export const SYSTEM_AGENT_PASSTHROUGH_TOOLS = [
+  'web_search',
+  'wf_web_extract',
+  'http_get',
+  'data_table_query',
+] as const
+
+export const SYSTEM_AGENT_WHITELIST: string[] = [...SYSTEM_AGENT_TOOL_NAMES, ...SYSTEM_AGENT_PASSTHROUGH_TOOLS]
+
+/**
+ * 每轮引用收集（前端卡片数据源，28 号 §2）：系统工具执行时把产生的运行/任务树/
+ * 技能引用推入本轮 sink。sink 由聊天宿主经 AgentTask.runtimeContext.turnRefs
+ * 注入（对象引用随 logContext 同步传播，无 ALS/timer 断链风险）。
+ */
+export interface SystemAgentTurnRef {
+  kind: 'workflow_run' | 'task_tree' | 'skill'
+  id: string
+  label: string
+}
+
+export function collectSystemAgentRef(ctx: AgentToolContext, ref: SystemAgentTurnRef): void {
+  const sink = (ctx.logContext as { turnRefs?: unknown } | undefined)?.turnRefs
+  if (Array.isArray(sink)) sink.push(ref)
+}
+
+export interface SystemAgentToolsDeps {
+  registry: AgentToolRegistry
+  runService: Pick<WorkflowRunService, 'startRun' | 'getRunDetail'>
+  definitions: Pick<WorkflowDefinitionService, 'list'>
+  /** 任务树子系统未装配（M3 降级）时为 null——create_task_plan 结构化报错 */
+  tasks: Pick<AgentTaskService, 'createPlan'> | null
+  skills: Pick<SkillService, 'list' | 'resolveSkill'>
+  resolveModel: (opts?: ResolveModelOptions) => Promise<LanguageModel>
+  clock?: () => number
+}
+
+// ==================== 入参 schema ====================
+
+const DiscoverCapabilitiesInput = z.object({
+  keyword: z.string().optional().describe('按名称/描述过滤工作流与技能（可选；目录被截断时用它收窄）'),
+})
+
+const RunWorkflowInput = z.object({
+  definitionId: z.string().describe('工作流定义 id（先 discover_capabilities 获取）'),
+  inputs: z.record(z.string(), z.unknown()).optional().describe('开始节点参数（key → 值，见目录中该工作流的 inputs）'),
+})
+
+const GetWorkflowRunInput = z.object({
+  runId: z.string().describe('运行 id（run_workflow 返回或用户提及）'),
+})
+
+const InvokeSkillInput = z.object({
+  skillId: z.string().describe('技能 id（先 discover_capabilities 获取）'),
+  params: z.record(z.string(), z.string()).optional().describe('技能参数（{{param.key}} 占位值）'),
+})
+
+const CreateTaskPlanInput = z.object({
+  goal: z.string().min(1).describe('完整、自含的目标描述（批准后将由任务树自主分解执行）'),
+  title: z.string().optional().describe('短标题（缺省取目标前若干字）'),
+})
+
+// ==================== 纯函数（可独立单测） ====================
+
+/** 提取工作流 start 节点参数 schema（目录展示 + agent 填参依据） */
+export function extractStartInputs(def: WorkflowDefinitionRecord): Array<{ key: string; label: string; type: string; required: boolean }> {
+  const graph = def.publishedGraph ?? def.draftGraph
+  if (!graph) return []
+  const start = graph.nodes.find((n) => n.type === WORKFLOW_NODE_TYPES.start)
+  const inputs = (start?.config as { inputs?: WorkflowStartInput[] } | undefined)?.inputs ?? []
+  return inputs.map((i) => ({
+    key: i.key,
+    label: i.label,
+    type: i.type,
+    required: i.required === true,
+  }))
+}
+
+/** 运行摘要（run_workflow 终态返回 / get_workflow_run 共用） */
+export function summarizeRun(detail: { run: WorkflowRunRecord; nodeRuns: WorkflowNodeRunRecord[] }): Record<string, unknown> {
+  const { run, nodeRuns } = detail
+  const nodes = nodeRuns.slice(0, NODE_SUMMARY_MAX).map((n) => ({
+    node: n.nodeName || n.nodeId,
+    type: n.nodeType,
+    status: n.status,
+    error: n.error ?? undefined,
+    output: n.output && Object.keys(n.output).length > 0 ? digest(n.output) : undefined,
+  }))
+  return {
+    runId: run.id,
+    definitionId: run.definitionId,
+    status: run.status,
+    startedAt: run.startedAt?.toISOString() ?? null,
+    finishedAt: run.finishedAt?.toISOString() ?? null,
+    error: run.error ?? undefined,
+    stats: run.stats ?? undefined,
+    nodes,
+    nodesTotal: nodeRuns.length,
+  }
+}
+
+function digest(value: unknown, max = NODE_OUTPUT_DIGEST_MAX): string {
+  let s: string
+  try {
+    s = JSON.stringify(value)
+  } catch {
+    return '[unserializable]'
+  }
+  return s.length <= max ? s : `${s.slice(0, max)}…[truncated]`
+}
+
+async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  await new Promise<void>((resolve) => {
+    // listener 用完即拆（对抗 review P2：180s 轮询曾堆 ~90 个 abort 监听器）
+    const onAbort = () => {
+      clearTimeout(timer)
+      resolve()
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+/**
+ * 等待运行到终态（waiting_review 视为"需人工"即时返回，不空等审批）。
+ * 运行连续不可见（被删/异常数据）→ 返回 unavailable，由调用方转结构化失败。
+ */
+export async function waitForRunTerminal(
+  deps: Pick<SystemAgentToolsDeps, 'runService' | 'clock'>,
+  runId: string,
+  signal?: AbortSignal,
+): Promise<{ run: WorkflowRunRecord; nodeRuns: WorkflowNodeRunRecord[] } | { status: string; note: string; unavailable?: boolean }> {
+  const clock = deps.clock ?? (() => Date.now())
+  const deadline = clock() + RUN_WORKFLOW_WAIT_TIMEOUT_MS
+  let lastStatus = 'pending'
+  let missingStreak = 0
+  while (clock() < deadline) {
+    const detail = await deps.runService.getRunDetail(runId)
+    if (detail) {
+      missingStreak = 0
+      lastStatus = detail.run.status
+      if (WORKFLOW_RUN_TERMINAL_STATUSES.has(lastStatus)) return detail
+      if (lastStatus === 'waiting_review') {
+        return { status: lastStatus, note: '运行等待人工审核（工作流内部审批闸门）——请在工作流运行详情页处理，稍后可用 get_workflow_run 查询结果。' }
+      }
+    } else if (++missingStreak >= RUN_MISSING_STREAK_LIMIT) {
+      return { status: 'unavailable', unavailable: true, note: `运行记录不可见（可能已删除）：${runId}` }
+    }
+    if (signal?.aborted) return { status: lastStatus, note: '等待已取消。' }
+    await sleep(RUN_WORKFLOW_POLL_INTERVAL_MS, signal)
+  }
+  return { status: lastStatus, note: `等待超时（${Math.round(RUN_WORKFLOW_WAIT_TIMEOUT_MS / 1000)}s）——工作流仍在运行，稍后可用 get_workflow_run 查询结果。` }
+}
+
+// ==================== 工具定义 ====================
+
+export function buildSystemAgentToolDefs(deps: SystemAgentToolsDeps): AgentToolDef<any>[] {
+  // AgentToolDef 的 TInput 在 execute 参数位逆变，具体入参类型无法直接赋给
+  // AgentToolDef<unknown>——本数组以 any 收口（运行时入参仍经 registry 管线
+  // zod safeParse 校验，any 不泄漏到校验路径）
+  const discoverTool: AgentToolDef<z.infer<typeof DiscoverCapabilitiesInput>> = {
+    name: 'discover_capabilities',
+    description:
+      '列出本系统可调度的能力：工作流（含开始节点参数 schema）、技能（含参数）、直连工具、任务树。执行任务前先查目录，匹配到既有工作流/技能就复用，不要重复造轮子。',
+    inputSchema: DiscoverCapabilitiesInput,
+    dangerLevel: 'read',
+    execute: async (input) => {
+      const keyword = input.keyword?.trim() || undefined
+      const wfPage = await deps.definitions.list({ keyword, page: 1, pageSize: CATALOG_MAX_WORKFLOWS })
+      const workflows = wfPage.items.slice(0, CATALOG_MAX_WORKFLOWS).map((d) => ({
+        id: d.id,
+        name: d.name,
+        description: d.description ?? '',
+        hasPublished: !!d.publishedGraph,
+        inputs: extractStartInputs(d),
+      }))
+      const kw = (keyword ?? '').toLowerCase()
+      const allSkills = deps.skills.list().filter((s) => s.modelInvocable)
+      const skills = allSkills
+        .filter((s) => !kw || s.name.toLowerCase().includes(kw) || s.description.toLowerCase().includes(kw))
+        .slice(0, CATALOG_MAX_SKILLS)
+        .map((s) => ({
+          id: s.id,
+          name: s.name,
+          description: s.description,
+          whenToUse: s.whenToUse ?? '',
+          inputs: (s.inputs ?? []).map((i) => ({ key: i.key, label: i.label, type: i.type, required: i.required === true })),
+        }))
+      const tools = deps.registry
+        .listSpecs()
+        // 只兜售聊天宿主白名单内的工具（对抗 review P3：列白名单外工具=诱导模型
+        // 调用必败的 NOT_WHITELISTED，白耗步数）
+        .filter((s) => (SYSTEM_AGENT_WHITELIST as readonly string[]).includes(s.name))
+        .filter((s) => !SYSTEM_AGENT_TOOL_NAMES.includes(s.name as (typeof SYSTEM_AGENT_TOOL_NAMES)[number]))
+        .slice(0, CATALOG_MAX_TOOLS)
+        .map((s) => ({ name: s.name, description: s.description, requiresApproval: s.requiresApproval }))
+      return {
+        workflows,
+        workflowsTotal: wfPage.total,
+        skills,
+        skillsTotal: allSkills.length,
+        tools,
+        taskPlan:
+          'create_task_plan 工具：把复杂的多步目标分解为任务树，逐任务执行并过质量门。创建后需用户在「Agent 任务树」页人工批准才会执行。',
+      }
+    },
+  }
+
+  const runWorkflowTool: AgentToolDef<z.infer<typeof RunWorkflowInput>> = {
+    name: 'run_workflow',
+    description:
+      '运行一个既有工作流（手动触发，优先已发布版本），等待其到终态并返回结果摘要。运行前先 discover_capabilities 确认 id 与所需参数；参数不全时先向用户澄清。',
+    inputSchema: RunWorkflowInput,
+    dangerLevel: 'write',
+    executeTimeoutMs: RUN_WORKFLOW_WAIT_TIMEOUT_MS + 30_000,
+    execute: async (input, ctx) => {
+      const run = await deps.runService.startRun({
+        definitionId: input.definitionId,
+        inputs: input.inputs,
+        triggerType: WORKFLOW_TRIGGER_TYPES.manual,
+        usePublishedGraph: true,
+      })
+      collectSystemAgentRef(ctx, { kind: 'workflow_run', id: run.id, label: `工作流运行 ${run.id}` })
+      logger.info(`[system-agent] run_workflow 启动 def=${input.definitionId} run=${run.id} status=${run.status}`)
+      if (run.status === 'skipped') {
+        // 约定（同 builtin 工具）：失败 throw——registry 管线收口为 {ok:false} 结构化错误
+        throw new Error(`运行被互斥跳过（同定义已有在途运行：${run.skipReason ?? '未知原因'}）——等待既有运行结束后再试，或告知用户手动处理。`)
+      }
+      const waited = await waitForRunTerminal(deps, run.id, ctx.signal)
+      if ('run' in waited) {
+        const summary = summarizeRun(waited)
+        if (waited.run.status !== 'succeeded') {
+          // 失败/取消/超时：摘要进错误消息（截断防灌上下文），模型可读节点错误
+          throw new Error(`工作流运行结束于 ${waited.run.status}：${digest(summary, RUN_ERROR_DIGEST_MAX)}`)
+        }
+        return summary
+      }
+      if (waited.unavailable) throw new Error(waited.note)
+      // 超时/取消/等待人工：运行本身仍在推进——返回状态让 agent 如实转告
+      return { runId: run.id, status: waited.status, note: waited.note }
+    },
+  }
+
+  const getWorkflowRunTool: AgentToolDef<z.infer<typeof GetWorkflowRunInput>> = {
+    name: 'get_workflow_run',
+    description: '查询一次工作流运行的状态与节点摘要（用于告知用户运行进展或排查失败）。',
+    inputSchema: GetWorkflowRunInput,
+    dangerLevel: 'read',
+    execute: async (input) => {
+      const detail = await deps.runService.getRunDetail(input.runId)
+      if (!detail) throw new Error(`运行不存在或无权访问：${input.runId}`)
+      return summarizeRun(detail)
+    },
+  }
+
+  const invokeSkillTool: AgentToolDef<z.infer<typeof InvokeSkillInput>> = {
+    name: 'invoke_skill',
+    description:
+      '执行一个既有技能（参数化任务模板，如写短视频脚本），返回模型生成内容。执行前先 discover_capabilities 确认技能 id 与参数；参数不全时先向用户澄清。',
+    inputSchema: InvokeSkillInput,
+    dangerLevel: 'read',
+    execute: async (input, ctx) => {
+      const skill = deps.skills.resolveSkill(input.skillId)
+      if (!skill) throw new Error(`技能 ${input.skillId} 不存在——用 discover_capabilities 查有效技能 id。`)
+      if (!skill.modelInvocable) throw new Error(`技能 ${input.skillId} 已禁用模型调用。`)
+      collectSystemAgentRef(ctx, { kind: 'skill', id: skill.id, label: skill.name })
+      const params = input.params ?? {}
+      const body = renderSkillTemplate(skill.body, params)
+      const systemPrompt = renderSkillTemplate(skill.systemPrompt, params)
+      const finalPrompt = withSkillReferences(body, skill.references)
+      const { generateText } = await import('ai')
+      // 模型跟随聊天轮所选（runtimeContext.turnModel，对抗 review P2：无参会落到
+      // 全局默认 provider）；可中止 + 产出上限
+      const turnModel = (ctx.logContext as { turnModel?: ResolveModelOptions } | undefined)?.turnModel
+      const model = await deps.resolveModel(turnModel)
+      const r = await generateText({ model, system: systemPrompt || undefined, prompt: finalPrompt, abortSignal: ctx.signal, maxOutputTokens: 4096 })
+      return { skillId: skill.id, content: r.text }
+    },
+  }
+
+  const createTaskPlanTool: AgentToolDef<z.infer<typeof CreateTaskPlanInput>> = {
+    name: 'create_task_plan',
+    description:
+      '把复杂的多步目标（需要分解、自主执行、逐任务验收）创建为任务树。创建后处于待批准状态，需用户在「Agent 任务树」页人工批准后才会执行——不要替用户批准，也不要重复创建相似计划。',
+    inputSchema: CreateTaskPlanInput,
+    dangerLevel: 'write',
+    execute: async (input, ctx) => {
+      if (!deps.tasks) throw new Error('任务树子系统未装配（数据库不可用或装配失败）。')
+      const root = await deps.tasks.createPlan(input.goal, { title: input.title })
+      collectSystemAgentRef(ctx, { kind: 'task_tree', id: root.id, label: root.title })
+      logger.info(`[system-agent] create_task_plan root=${root.id} goal=${input.goal.slice(0, 80)}`)
+      return {
+        rootId: root.id,
+        title: root.title,
+        status: root.status,
+        hint: '任务树已创建并等待人工批准：请告知用户到「Agent 任务树」页查看并批准，批准后自动开始执行。',
+      }
+    },
+  }
+
+  return [discoverTool, runWorkflowTool, getWorkflowRunTool, invokeSkillTool, createTaskPlanTool]
+}
+
+/** 注册进 registry（source='builtin'：平台系统工具；workflow-boot 组合根调用） */
+export function registerSystemAgentTools(deps: SystemAgentToolsDeps): void {
+  for (const def of buildSystemAgentToolDefs(deps)) {
+    deps.registry.register(def, { source: 'builtin' })
+  }
+  logger.info(`[system-agent] 系统工具集已注册（${SYSTEM_AGENT_TOOL_NAMES.length} 个）`)
+}

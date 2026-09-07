@@ -11,8 +11,7 @@ import type {
   Message,
   CreateDialogRequest,
   StreamEvent,
-  ContextConfig,
-  WebSearchEngine
+  MessageMetadata
 } from '../../../shared/types'
 import { useRoleStore } from './role'
 
@@ -204,6 +203,7 @@ export const useDialogStore = defineStore('dialog', () => {
           contextConfig: data.contextConfig ?? currentDialog.value.contextConfig,
           knowledgeBaseIds: data.knowledgeBaseIds ?? currentDialog.value.knowledgeBaseIds,
           webSearchConfig: data.webSearchConfig ?? currentDialog.value.webSearchConfig,
+          agentEnabled: data.agentEnabled ?? currentDialog.value.agentEnabled,
           title: data.title ?? currentDialog.value.title
         }
       }
@@ -459,7 +459,7 @@ export const useDialogStore = defineStore('dialog', () => {
           }
         }
         break
-      case 'delta':
+      case 'delta': {
         const currentContent = dialogStreamState.content + (data.content || '')
         streamStateCache.value.set(messageDialogId, {
           ...dialogStreamState,
@@ -478,6 +478,45 @@ export const useDialogStore = defineStore('dialog', () => {
           }
         }
         break
+      }
+      case 'tool-start': {
+        // Agent 模式（28 号 M5）：工具 chips 实时进消息 metadata（done 后服务端
+        // 落库的完整 metadata 经 loadMessages 覆盖）
+        if (data.messageId) {
+          const msgIndex = dialogMessages.findIndex(m => m.id === data.messageId)
+          if (msgIndex !== -1) {
+            const meta: MessageMetadata = { ...dialogMessages[msgIndex].metadata }
+            const agent = meta.agent ?? { toolCalls: [], refs: [] }
+            meta.agent = {
+              ...agent,
+              // ok 留空 = 执行中（渲染为 loading；对抗 review P2：曾误写 false 显示红叉）
+              toolCalls: [
+                ...agent.toolCalls,
+                { name: data.toolName || '', ok: undefined, toolCallId: data.toolCallId, argsDigest: data.argsDigest }
+              ]
+            }
+            dialogMessages[msgIndex] = { ...dialogMessages[msgIndex], metadata: meta }
+            messagesCache.value.set(messageDialogId, [...dialogMessages])
+          }
+        }
+        break
+      }
+      case 'tool-end': {
+        if (data.messageId) {
+          const msgIndex = dialogMessages.findIndex(m => m.id === data.messageId)
+          if (msgIndex !== -1 && dialogMessages[msgIndex].metadata?.agent) {
+            const meta: MessageMetadata = { ...dialogMessages[msgIndex].metadata }
+            const agent = meta.agent!
+            const call = [...agent.toolCalls].reverse().find(c => c.toolCallId === data.toolCallId && c.ok === undefined)
+            if (call) call.ok = data.ok !== false
+            meta.agent = { ...agent, toolCalls: [...agent.toolCalls] }
+            dialogMessages[msgIndex] = { ...dialogMessages[msgIndex], metadata: meta }
+            messagesCache.value.set(messageDialogId, [...dialogMessages])
+          }
+        }
+        streamStateVersion.value++
+        break
+      }
       case 'done':
         streamStateCache.value.set(messageDialogId, {
           ...dialogStreamState,

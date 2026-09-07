@@ -70,7 +70,8 @@
 
 <script setup lang="ts">
 defineOptions({ name: 'AgentTasksView' })
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { AgentTaskView } from '@shared/types/agent.types'
 
@@ -143,6 +144,11 @@ async function openTree(row: AgentTaskView): Promise<void> {
   } else ElMessage.error(resp.error ?? '加载失败')
 }
 
+/** 支持 /agent-tasks?focus=<rootId> 直达树详情（agent 引用卡片/待办中心跳转） */
+async function openTreeById(rootId: string): Promise<void> {
+  await openTree({ id: rootId } as AgentTaskView)
+}
+
 async function verifyDecide(node: AgentTaskView, decision: 'approve' | 'reject'): Promise<void> {
   const resp = await api().taskVerifyDecide({ taskId: node.id, decision })
   if (resp.success) { await openTree(treeRoot.value!); await load() }
@@ -155,7 +161,23 @@ async function escalateDecide(node: AgentTaskView, decision: 'pass' | 'fail' | '
   else ElMessage.error(resp.error ?? '操作失败')
 }
 
-onMounted(() => { void load() })
+const route = useRoute()
+
+onMounted(() => {
+  void (async () => {
+    await load()
+    const focus = route.query.focus
+    if (typeof focus === 'string' && focus) await openTreeById(focus)
+  })()
+})
+
+// 已在本页时再点引用卡片（query 变化不重挂载）也要打开对应树
+watch(
+  () => route.query.focus,
+  (focus) => {
+    if (typeof focus === 'string' && focus) void openTreeById(focus)
+  },
+)
 </script>
 
 <style scoped>

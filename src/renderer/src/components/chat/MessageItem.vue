@@ -81,6 +81,28 @@
 
         <!-- 正常显示模式 -->
         <div v-else class="message-text" ref="messageContentRef" @click="handleContentClick">
+          <!-- Agent 工具调用 chips（28 号 M5；内容上方，呼应执行顺序） -->
+          <div v-if="message.metadata?.agent?.toolCalls?.length" class="agent-tool-calls">
+            <el-tooltip
+              v-for="(call, index) in message.metadata.agent.toolCalls"
+              :key="index"
+              :content="call.argsDigest || call.name"
+              placement="top"
+              :disabled="!call.argsDigest"
+            >
+              <el-tag
+                size="small"
+                effect="plain"
+                :type="call.ok === false ? 'danger' : call.ok === true ? 'success' : 'info'"
+                class="tool-chip"
+              >
+                <el-icon v-if="call.ok === false"><CircleCloseFilled /></el-icon>
+                <el-icon v-else-if="call.ok === true"><CircleCheckFilled /></el-icon>
+                <el-icon v-else class="is-loading"><Loading /></el-icon>
+                <span class="tool-chip-name">{{ agentToolLabel(call.name) }}</span>
+              </el-tag>
+            </el-tooltip>
+          </div>
           <!-- AI 回答：根据模式切换显示 -->
           <template v-if="message.role === 'assistant'">
             <!-- 阅读模式：渲染 markdown -->
@@ -92,6 +114,22 @@
           <template v-else>
             <div v-html="formatSourceContent(message.content)"></div>
           </template>
+        </div>
+
+        <!-- Agent 引用卡片（工作流运行/任务树/技能，可跳转；28 号 M5） -->
+        <div v-if="message.metadata?.agent?.refs?.length" class="agent-refs">
+          <div
+            v-for="(ref, index) in message.metadata.agent.refs"
+            :key="index"
+            class="agent-ref-item"
+            :class="{ clickable: !!refTarget(ref) }"
+            @click="refTarget(ref) && gotoRef(ref)"
+          >
+            <el-icon><Link /></el-icon>
+            <span class="agent-ref-kind">{{ refKindLabel(ref.kind) }}</span>
+            <span class="agent-ref-label">{{ ref.label }}</span>
+            <el-icon v-if="refTarget(ref)" class="agent-ref-arrow"><ArrowRight /></el-icon>
+          </div>
         </div>
 
         <!-- 知识库来源标识（在内容下方，引用详情上方） -->
@@ -399,7 +437,8 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, watch, onMounted } from 'vue'
-import { Document, Edit, CopyDocument, Delete, Refresh, Switch, Coin, Collection, More, Picture, Notebook, ArrowRight, View, Tickets, Folder, Check, ArrowUp, ArrowDown, Top } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
+import { Document, Edit, CopyDocument, Delete, Refresh, Switch, Collection, More, Picture, Notebook, ArrowRight, Folder, ArrowUp, ArrowDown, Top, CircleCheckFilled, CircleCloseFilled, Loading, Link } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElImageViewer } from 'element-plus'
 import { marked } from 'marked'
 import type { Message, Attachment } from '../../../shared/types'
@@ -409,6 +448,47 @@ import { saveBlobAs } from '@/utils/file-saver'
 import { extractCodeBlocks, restoreCodeBlocks, escapeHtmlKeepPlaceholders } from './code-block'
 // 重型库（html2canvas/mermaid）按需加载：避免阻塞聊天页首次打开（模块求值耗时大）
 import { loadHtml2Canvas, loadMermaid } from '@/utils/lazy-libs'
+
+// ==================== Agent 工具 chips / 引用卡片（28 号 M5） ====================
+
+const router = useRouter()
+
+/** 工具名 → 展示名（系统工具给中文名，其余原样） */
+function agentToolLabel(name: string): string {
+  const labels: Record<string, string> = {
+    discover_capabilities: '查询能力目录',
+    run_workflow: '运行工作流',
+    get_workflow_run: '查询运行',
+    invoke_skill: '执行技能',
+    create_task_plan: '创建任务树',
+    web_search: '联网搜索',
+    wf_web_extract: '网页提取',
+    http_get: 'HTTP 获取',
+    data_table_query: '数据表查询'
+  }
+  return labels[name] ?? name
+}
+
+function refKindLabel(kind: string): string {
+  const labels: Record<string, string> = {
+    workflow_run: '工作流运行',
+    task_tree: '任务树',
+    skill: '技能'
+  }
+  return labels[kind] ?? kind
+}
+
+/** 引用跳转目标（不可跳转返回 null → 渲染为纯徽标） */
+function refTarget(ref: { kind: string; id: string }): string | null {
+  if (ref.kind === 'workflow_run') return `/workflow/run/${ref.id}`
+  if (ref.kind === 'task_tree') return `/agent-tasks?focus=${ref.id}`
+  return null
+}
+
+function gotoRef(ref: { kind: string; id: string }): void {
+  const target = refTarget(ref)
+  if (target) void router.push(target)
+}
 
 interface ModelOption {
   id: string
@@ -489,7 +569,7 @@ async function openExportToDiaryDialog() {
       const folderMap = new Map(folders.map(f => [f.id, { ...f, level: 0, fullName: f.name }]))
 
       // 递归计算层级和完整路径
-      function getLevelAndPath(folderId: string): { level: number; fullName: string } {
+      const getLevelAndPath = (folderId: string): { level: number; fullName: string } => {
         const folder = folderMap.get(folderId)
         if (!folder) return { level: 0, fullName: '' }
         if (folder.level > 0) return { level: folder.level, fullName: folder.fullName }
@@ -1225,7 +1305,6 @@ function renderContentForImage(content: string): string {
       const code = text
 
       if (language === 'mermaid') {
-        const encodedCode = btoa(unescape(encodeURIComponent(code)))
         return `
           <div class="mermaid-wrapper" style="background:#f8fafc;border-radius:8px;overflow:hidden;margin:10px 0;border:1px solid #e2e8f0;">
             <div class="mermaid-header" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#f1f5f9;border-bottom:1px solid #e2e8f0;">
@@ -2111,6 +2190,89 @@ function showKnowledgeBaseSnippet(ref: { documentId: string; documentName: strin
 
   .el-icon {
     font-size: 14px;
+  }
+}
+
+// ==================== Agent 工具 chips / 引用卡片（28 号 M5） ====================
+
+.agent-tool-calls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+
+  .tool-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+
+    .el-icon {
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+
+    .tool-chip-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+}
+
+.agent-refs {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  .agent-ref-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 6px;
+    background: var(--el-fill-color-lighter);
+    font-size: 12px;
+    width: fit-content;
+    max-width: 100%;
+
+    .el-icon {
+      font-size: 13px;
+      color: var(--el-color-primary);
+      flex-shrink: 0;
+    }
+
+    .agent-ref-kind {
+      color: var(--el-text-color-secondary);
+      flex-shrink: 0;
+
+      &::after {
+        content: '·';
+        margin-left: 6px;
+      }
+    }
+
+    .agent-ref-label {
+      color: var(--el-text-color-primary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .agent-ref-arrow {
+      color: var(--el-text-color-placeholder);
+    }
+
+    &.clickable {
+      cursor: pointer;
+
+      &:hover {
+        border-color: var(--el-color-primary-light-5);
+        background: var(--el-color-primary-light-9);
+      }
+    }
   }
 }
 

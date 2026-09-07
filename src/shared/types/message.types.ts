@@ -100,6 +100,15 @@ export interface MessageMetadata {
   knowledgeBase?: KnowledgeBaseReference[]  // 知识库引用
   /** 工作流会话卡片（应用模块；见 app.types SessionCardMeta——含 card 判别字段） */
   sessionCard?: import('./app.types').SessionCardMeta
+  /** 系统 agent 轮次元数据（28 号 M5）：工具调用与引用卡片（历史消息重渲染） */
+  agent?: AgentMessageMeta
+}
+
+/** 系统 agent 一轮的工具调用与引用（前端卡片渲染；28 号 §5） */
+export interface AgentMessageMeta {
+  /** toolCallId 用于流式期 start/end 配对；ok 缺省=执行中（pending，历史消息必有值） */
+  toolCalls: Array<{ name: string; ok?: boolean; toolCallId?: string; argsDigest?: string }>
+  refs: Array<{ kind: 'workflow_run' | 'task_tree' | 'skill'; id: string; label: string }>
 }
 
 /**
@@ -183,9 +192,9 @@ export interface TokenUsage {
 }
 
 /**
- * 流式事件类型
+ * 流式事件类型（28 号 M5 增 agent 工具事件：tool-start/tool-end——仅 agent 模式产生）
  */
-export type StreamEventType = 'start' | 'delta' | 'done' | 'error' | 'thinking'
+export type StreamEventType = 'start' | 'delta' | 'done' | 'error' | 'thinking' | 'tool-start' | 'tool-end'
 
 /**
  * 流式事件
@@ -202,6 +211,12 @@ export interface StreamEvent {
   interrupted?: boolean
   /** Token 使用量（在 done 事件中返回） */
   usage?: TokenUsage
+  /** —— 以下为 tool-start / tool-end 事件字段（agent 模式） —— */
+  toolName?: string
+  toolCallId?: string
+  ok?: boolean
+  /** 入参摘要（字符串化截断，流式展示用） */
+  argsDigest?: string
 }
 
 /**

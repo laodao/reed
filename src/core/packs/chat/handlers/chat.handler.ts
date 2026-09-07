@@ -45,7 +45,7 @@ async function handleChatSend(
 }
 
 /**
- * 处理停止流式响应
+ * 处理停止流式响应（普通对话与 agent 模式双通道——dialogId 同键）
  */
 async function handleChatStop(
   _event: any,
@@ -53,7 +53,9 @@ async function handleChatStop(
 ): Promise<{ success: boolean }> {
   try {
     const stopped = ChatService.stopStream(dialogId)
-    return { success: stopped }
+    const { SystemAgentChatService } = await import('../services/system-agent/system-agent.service')
+    const stoppedAgent = SystemAgentChatService.stopStream(dialogId)
+    return { success: stopped || stoppedAgent }
   } catch (error) {
     console.error('停止流式响应失败:', error)
     return { success: false }

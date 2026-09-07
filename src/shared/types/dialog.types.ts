@@ -38,6 +38,8 @@ export interface Dialog {
   contextConfig?: ContextConfig  // 上下文配置
   knowledgeBaseIds?: string[]  // 关联的知识库 ID 列表
   webSearchConfig?: DialogWebSearchConfig  // 联网搜索配置
+  /** Agent 模式（28 号 M5）：消息分流到系统 agent（工具调用/工作流/技能/任务树） */
+  agentEnabled?: boolean
   createdAt: Date
   updatedAt: Date
   messageCount: number
@@ -66,6 +68,7 @@ export interface UpdateDialogRequest {
   providerConfigId?: string
   knowledgeBaseIds?: string[]  // 关联的知识库 ID 列表
   webSearchConfig?: DialogWebSearchConfig  // 联网搜索配置
+  agentEnabled?: boolean  // Agent 模式开关（28 号 M5）
 }
 
 /**

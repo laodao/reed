@@ -49,4 +49,8 @@ export class DialogEntity {
 
   @Column({ name: 'message_count', type: 'integer', default: 0 })
   messageCount!: number
+
+  /** Agent 模式开关（28 号 M5）：开启后 sendMessage 分流到系统 agent 循环 */
+  @Column({ name: 'agent_enabled', type: 'boolean', nullable: true })
+  agentEnabled!: boolean | null
 }

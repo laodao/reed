@@ -75,6 +75,12 @@ export interface AgentToolDef<TInput = unknown, TOutput = unknown> {
   /** 工作流无人值守白名单（缺省 false；写库类一律 false） */
   autoApprovableInWorkflow?: boolean
   /**
+   * 单工具执行超时 ms（registry 管线旋钮；缺省走注册表级 executeTimeoutMs=120s）。
+   * 长等待型工具（如系统 agent 的 run_workflow 轮询至终态）按需调高——
+   * registryWrapped 工具的超时所有权在 registry，loop 层不再套第二层计时器。
+   */
+  executeTimeoutMs?: number
+  /**
    * 内部标记（registry 桥接产物，业务定义不写）：校验/超时/截断的所有权已在
    * registry 管线——loop 包装层对它跳过自身 zod/withTimeout/truncateJson，
    * 只保留审批短路 + 流事件（深度 review P1 定案，防失败被报 ok:true/双计时器）
@@ -202,7 +208,8 @@ export type HumanDecision =
 
 export type AgentStreamEvent =
   | { kind: 'delta'; text: string }
-  | { kind: 'tool-start'; toolName: string; toolCallId: string }
+  /** args 为工具入参原值（宿主可做摘要展示；28 号 M5 聊天宿主消费） */
+  | { kind: 'tool-start'; toolName: string; toolCallId: string; args?: unknown }
   | { kind: 'tool-end'; toolName: string; toolCallId: string; ok: boolean }
   | { kind: 'step'; stepNumber: number }
 

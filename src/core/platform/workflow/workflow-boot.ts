@@ -535,6 +535,37 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
     logger.warn('[workflow-boot] M3 任务树子系统装配失败（继续启动）', e)
   }
 
+  // 11. M5 系统 agent 工具集（28 号批1）：聊天宿主的可调度面——能力目录/运行工作流/
+  //     查询运行/调用技能/创建任务树。必须在 workflow-boot 注册（组合根已持有全部
+  //     依赖；业务包 activate 早于本函数，chat 包拿不到）。注册失败不阻断
+  //     （聊天 Agent 模式发消息时以"工具未注册"明确降级）。
+  try {
+    if (!providerAdapter) throw new Error('ProviderAdapter 未装配（M5 系统工具集需要模型解析）')
+    const { getAgentLoopHarness } = await import('./nodes/agent-loop-node')
+    const harness = getAgentLoopHarness()
+    const { registerSystemAgentTools } = await import('./tools/system-agent-tools')
+    // 技能服务失败只降级 invoke_skill（目录技能为空/调用报"不存在"），
+    // 不拖垮 run_workflow/discover 等无关工具（对抗 review P3）
+    let skills: Parameters<typeof registerSystemAgentTools>[0]['skills']
+    try {
+      const { getSkillService } = await import('./skills/skill-registry')
+      skills = getSkillService()
+    } catch {
+      skills = { list: () => [], resolveSkill: () => null }
+      logger.warn('[workflow-boot] 技能服务未注册，M5 invoke_skill 降级为不可用')
+    }
+    registerSystemAgentTools({
+      registry: harness.registry,
+      runService,
+      definitions: definitionService,
+      tasks: agentTasks,
+      skills,
+      resolveModel: (opts) => providerAdapter!.resolveModel(opts),
+    })
+  } catch (e) {
+    logger.warn('[workflow-boot] M5 系统 agent 工具集注册失败（继续启动）', e)
+  }
+
   subsystem = { engine, runService, definitionService, scheduler, appDefinitionService, appSessionService, agentTasks, memoryFlywheel }
   logger.info('[workflow-boot] 工作流子系统已启动')
   return subsystem

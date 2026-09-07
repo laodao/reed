@@ -52,6 +52,12 @@ export class ChatService {
         return { success: false, error: '对话不存在' }
       }
 
+      // Agent 模式（28 号 M5）：分流到系统 agent 循环（工具调用/工作流/技能/任务树）
+      if (dialog.agentEnabled) {
+        const { SystemAgentChatService } = await import('./system-agent/system-agent.service')
+        return await SystemAgentChatService.sendMessage(request)
+      }
+
       // 关键：优先使用前端传来的 modelId 和 providerConfigId（内存中的值）
       // 只有前端没传时才从数据库读取
       const effectiveModelId = request.modelId || dialog.modelId

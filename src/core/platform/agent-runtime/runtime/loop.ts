@@ -329,7 +329,7 @@ export class LoopRunner {
         description: def.description,
         inputSchema: def.inputSchema,
         execute: async (input: unknown, options: { toolCallId: string }) => {
-          host.emitStream({ kind: 'tool-start', toolName: name, toolCallId: options.toolCallId })
+          host.emitStream({ kind: 'tool-start', toolName: name, toolCallId: options.toolCallId, args: input })
 
           // ① 审批短路（requiresApproval；缺省回调=拒绝——安全默认）。
           // try 包裹（总收口 review P2）：requestApproval throw（并行双卡单卡断言/

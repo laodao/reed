@@ -45,6 +45,7 @@ export class DialogRepository extends BaseRepository<DialogEntity, Dialog> {
       knowledgeBaseIds: (e.knowledgeBaseIds as string[] | null) ?? undefined,
       webSearchConfig:
         (e.webSearchConfig as DialogWebSearchConfig | null) ?? undefined,
+      agentEnabled: e.agentEnabled === true,
       createdAt: this.toDate(e.createdAt),
       updatedAt: this.toDate(e.updatedAt),
       messageCount: e.messageCount ?? 0,
@@ -93,6 +94,7 @@ export class DialogRepository extends BaseRepository<DialogEntity, Dialog> {
       knowledgeBaseIds: dialog.knowledgeBaseIds ?? null,
       webSearchConfig:
         (dialog.webSearchConfig as Record<string, unknown> | null) ?? null,
+      agentEnabled: dialog.agentEnabled === true,
       messageCount: 0,
       createdAt: now,
       updatedAt: now,
@@ -122,6 +124,9 @@ export class DialogRepository extends BaseRepository<DialogEntity, Dialog> {
     if (data.webSearchConfig !== undefined) {
       existing.webSearchConfig =
         (data.webSearchConfig as Record<string, unknown> | null) ?? null
+    }
+    if (data.agentEnabled !== undefined) {
+      existing.agentEnabled = data.agentEnabled === true
     }
     existing.updatedAt = new Date()
     await this.scoped.save(existing)

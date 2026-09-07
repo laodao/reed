@@ -48,6 +48,17 @@
       </el-select>
     </div>
     <div class="header-right">
+      <!-- Agent 模式开关（28 号 M5）：开启后该对话可调用系统工具/工作流/技能/任务树 -->
+      <el-tooltip content="Agent 模式：助手可直接调用系统工具、运行工作流、执行技能、创建任务树" placement="bottom">
+        <div class="agent-switch">
+          <span class="agent-label">Agent</span>
+          <el-switch
+            :model-value="dialog.agentEnabled === true"
+            size="small"
+            @change="toggleAgent"
+          />
+        </div>
+      </el-tooltip>
       <el-dropdown trigger="click" @command="handleExportCommand">
         <el-button text size="small">
           <el-icon><Download /></el-icon>
@@ -111,7 +122,7 @@
 import { ref, reactive, watch, computed, onMounted, onUnmounted } from 'vue'
 import { Setting, Delete, Cpu, Search, SetUp, Download, Document, Picture } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import type { Dialog, ContextConfig, UserProviderConfig, ModelDefinition, ProviderTemplate, Message } from '../../../shared/types'
+import type { Dialog, ContextConfig, UserProviderConfig, ProviderTemplate, Message } from '../../../shared/types'
 import { useDialogStore } from '../../stores/dialog'
 // html2canvas 按需加载：模块求值耗时大（约 400ms），只在导出长图时才加载
 import { loadHtml2Canvas } from '@/utils/lazy-libs'
@@ -131,9 +142,19 @@ const emit = defineEmits<{
     providerConfigId?: string
     systemPrompt?: string
     contextConfig?: ContextConfig
+    agentEnabled?: boolean
   }): void
   (e: 'clearMessages'): void
 }>()
+
+// Agent 模式开关（28 号 M5）
+function toggleAgent(value: string | number | boolean): void {
+  const enabled = value === true
+  emit('updateConfig', props.dialog.id, { agentEnabled: enabled })
+  if (enabled) {
+    ElMessage.success('已开启 Agent 模式：助手可调用系统能力执行任务')
+  }
+}
 
 // 提供商配置列表
 const providerConfigs = ref<UserProviderConfig[]>([])
@@ -388,7 +409,7 @@ watch(
     () => props.dialog.modelId,
     () => props.dialog.providerConfigId
   ],
-  ([dialogId, modelId, providerConfigId], [oldDialogId]) => {
+  ([dialogId, _modelId, _providerConfigId], [oldDialogId]) => {
     // 更新设置表单
     settingsForm.title = props.dialog.title
     settingsForm.systemPrompt = props.dialog.systemPrompt || ''
@@ -825,6 +846,21 @@ onMounted(() => {
 .header-right {
   display: flex;
   gap: 4px;
+  align-items: center;
+}
+
+.agent-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 6px;
+  cursor: default;
+
+  .agent-label {
+    font-size: 12px;
+    color: #64748b;
+    user-select: none;
+  }
 }
 
 .setting-row {
