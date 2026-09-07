@@ -421,6 +421,7 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
       { key: 'styleText', type: 'string', desc: '紧凑画面风格句（图/视频提示词用）' },
       { key: 'promptBlock', type: 'string', desc: '完整规范 markdown（大纲/素材 LLM 用）' },
       { key: 'preset', type: 'json', desc: '原始预设 JSON（无预设=null）' },
+      { key: 'policy', type: 'json', desc: 'V3 视觉策略 JSON（visualPolicy；自定义兜底；两者皆无=null）' },
     ],
   },
   {

@@ -19,31 +19,67 @@
 
     <el-alert v-if="run?.error" :title="run.error" type="error" :closable="false" style="margin-bottom: 12px" />
 
-    <!-- 执行日志：每步时间线（运行中自动刷新；便于定位每步执行/内部日志） -->
-    <el-collapse style="margin-bottom: 12px">
-      <el-collapse-item :title="`🕒 执行日志（${runLogs.length} 条）`" name="logs">
-        <div v-if="runLogs.length === 0" class="log-empty">暂无执行日志（运行刚开始或环境不支持）</div>
-        <div v-else class="log-list">
-          <div v-for="(l, i) in runLogs" :key="i" class="log-row">
-            <span class="log-time">{{ formatLogTime(l.ts) }}</span>
-            <el-tag :type="logTag(l.level)" size="small" class="log-lv">{{ l.level }}</el-tag>
-            <span class="log-type">{{ l.type }}</span>
-            <span class="log-msg">{{ l.message }}</span>
-            <el-button v-if="l.detail" text size="small" @click="showLogDetail(l)">详情</el-button>
+    <!-- 工作流执行图（只读：可点击节点看详情，不可编辑） -->
+    <div class="run-graph-section">
+      <div class="section-head">
+        <h3>工作流执行图</h3>
+        <span class="section-hint">只读展示，按执行状态着色；点击节点查看「环节详情」</span>
+      </div>
+      <ReadonlyRunGraph
+        :graph="graphData"
+        :node-runs="nodeRuns"
+        :selected-node-id="selectedNodeId"
+        @node-click="onNodeClick"
+      />
+    </div>
+
+    <!-- 图下方信息区：Tab 布局（节点详情 / 执行日志 / 用户提交数据 / 节点执行记录）。
+         「节点详情」可见性由 selectedNodeId 单一来源驱动：点击图上任一节点必然置位并自动切到该 tab；
+         「关闭」仅清空 selectedNodeId（面板回空态 + 节点高亮取消），不切换 tab。:key 保证切换/重开节点时面板干净重建。 -->
+    <div class="run-tabs">
+      <el-tabs v-model="activeTab">
+        <!-- 1 节点详情 -->
+        <el-tab-pane label="节点详情" name="node">
+          <RunNodeDetail
+            v-if="selectedNodeId"
+            :key="selectedNodeId"
+            :selected-node-id="selectedNodeId"
+            :node="selectedGraphNode"
+            :runs="selectedNodeRuns"
+            :logs="selectedNodeLogs"
+            @close="selectedNodeId = null"
+          />
+          <div v-else class="tab-empty">
+            <el-empty :image-size="60" description="点击上方节点查看环节详情" />
           </div>
-        </div>
-      </el-collapse-item>
-    </el-collapse>
+        </el-tab-pane>
 
-    <!-- 用户提交数据（startInputs） -->
-    <el-collapse v-if="run?.startInputs && Object.keys(run.startInputs).length" style="margin-bottom: 12px">
-      <el-collapse-item title="📋 用户提交数据" name="inputs">
-        <pre class="io-json">{{ formatJson(run.startInputs) }}</pre>
-      </el-collapse-item>
-    </el-collapse>
+        <!-- 2 执行日志 -->
+        <el-tab-pane label="执行日志" name="logs">
+          <div class="logs-count">🕒 共 {{ runLogs.length }} 条执行日志</div>
+          <div v-if="runLogs.length === 0" class="log-empty">暂无执行日志（运行刚开始或环境不支持）</div>
+          <div v-else class="log-list">
+            <div v-for="(l, i) in runLogs" :key="i" class="log-row">
+              <span class="log-time">{{ formatLogTime(l.ts) }}</span>
+              <el-tag :type="logTag(l.level)" size="small" class="log-lv">{{ l.level }}</el-tag>
+              <span class="log-type">{{ l.type }}</span>
+              <span class="log-msg">{{ l.message }}</span>
+              <el-button v-if="l.detail" text size="small" @click="showLogDetail(l)">详情</el-button>
+            </div>
+          </div>
+        </el-tab-pane>
 
-    <h4>节点执行记录</h4>
-    <el-table :data="nodeRuns" size="small" empty-text="暂无执行记录" :row-key="rowKeyOf">
+        <!-- 3 用户提交数据 -->
+        <el-tab-pane label="用户提交数据" name="inputs">
+          <div v-if="run?.startInputs && Object.keys(run.startInputs).length">
+            <pre class="io-json">{{ formatJson(run.startInputs) }}</pre>
+          </div>
+          <div v-else class="tab-empty">暂无用户提交数据</div>
+        </el-tab-pane>
+
+        <!-- 4 节点执行记录 -->
+        <el-tab-pane label="节点执行记录" name="records">
+          <el-table :data="nodeRuns" size="small" empty-text="暂无执行记录" :row-key="rowKeyOf">
       <el-table-column type="expand">
         <template #default="{ row }">
           <div class="node-io">
@@ -111,7 +147,11 @@
           <el-button v-else text size="small" @click="showOutput(row)">输出</el-button>
         </template>
       </el-table-column>
-    </el-table>
+          </el-table>
+        </el-tab-pane>
+      </el-tabs>
+    </div>
+
     <!-- E1 form-collect 挂起表单 -->
     <el-dialog v-model="formDialogVisible" :title="formRow?.input?.formTitle || '请填写'" width="520px" :close-on-click-modal="false">
       <RunInputForm ref="formInputRef" :inputs="formRow?.input?.fields ?? []" @valid="v => formValid = v" />
@@ -119,6 +159,13 @@
         <el-button @click="cancelForm">取消流程</el-button>
         <el-button type="primary" :disabled="!formValid" :loading="formSubmitting" @click="submitForm">提交并继续</el-button>
       </template>
+    </el-dialog>
+
+    <!-- 执行日志「详情」：大尺寸 el-dialog + 内容区足够高可滚动 + JSON 格式化放大展示 -->
+    <el-dialog v-model="logDetailVisible" :title="logDetailTitle" width="min(900px, 94vw)" top="6vh" class="log-detail-dialog">
+      <div class="log-detail-body">
+        <pre class="log-detail-pre">{{ logDetailText }}</pre>
+      </div>
     </el-dialog>
 
   </div>
@@ -133,6 +180,8 @@ import { useWorkflowStore } from '@/stores/workflow'
 import { saveBlobAs } from '@/utils/file-saver'
 import { toImageUrl } from '../../utils/asset-url'
 import RunInputForm from '@/components/workflow/RunInputForm.vue'
+import ReadonlyRunGraph from '@/components/workflow/ReadonlyRunGraph.vue'
+import RunNodeDetail from '@/components/workflow/RunNodeDetail.vue'
 import { WORKFLOW_RUN_TERMINAL_STATUSES } from '@shared/types/workflow.types'
 
 const route = useRoute()
@@ -142,6 +191,18 @@ const run = ref<any>(null)
 const nodeRuns = ref<any[]>([])
 const runLogs = ref<Array<Record<string, unknown>>>([])
 const exporting = ref(false)
+
+// 图数据（run.graphSnapshot 优先；空/缺时用 definition.publishedGraph 兜底）
+const graphData = ref<any>(null)
+// 当前选中节点（点击只读图节点 → 显示环节详情面板）
+const selectedNodeId = ref<string | null>(null)
+// 图下方信息区当前激活的 Tab（默认「节点详情」）
+const activeTab = ref<'node' | 'logs' | 'inputs' | 'records'>('node')
+
+// 执行日志「详情」对话框（放大 + JSON 格式化）
+const logDetailVisible = ref(false)
+const logDetailTitle = ref('日志详情')
+const logDetailText = ref('')
 
 // E1 form-collect：挂起表单
 const formDialogVisible = ref(false)
@@ -195,17 +256,47 @@ const canResume = computed(() => ['failed', 'cancelled', 'interrupted', 'timed_o
 
 const api = () => (window as never as { electronAPI: any }).electronAPI.workflow
 
+// 选中节点的详情数据（图节点 + 其各次迭代记录 + 日志行）
+const selectedGraphNode = computed(() => graphData.value?.nodes?.find((n: any) => n.id === selectedNodeId.value) ?? null)
+const selectedNodeRuns = computed(() => nodeRuns.value.filter((r: any) => r.nodeId === selectedNodeId.value))
+const selectedNodeLogs = computed(() => runLogs.value.filter((l: any) => (l as any).nodeId === selectedNodeId.value))
+
 async function load() {
   const resp = await api().getRun(runId.value)
   if (resp.success && resp.data) {
     run.value = resp.data.run
     nodeRuns.value = resp.data.nodeRuns
+    await loadGraphData()
   } else if (resp.error) ElMessage.error(resp.error)
   // 执行日志（失败不阻断主视图）
   try {
     const lr = await api().listRunLogs(runId.value)
     if (lr.success && lr.data) runLogs.value = (lr.data.logs ?? []).slice(-500)
   } catch { /* 忽略 */ }
+}
+
+/** 加载图数据：run.graphSnapshot 优先；空/缺时用 definition.publishedGraph 兜底 */
+async function loadGraphData(): Promise<void> {
+  const snap = run.value?.graphSnapshot
+  if (snap?.nodes?.length) {
+    graphData.value = snap
+    return
+  }
+  const defId = run.value?.definitionId
+  if (!defId) { graphData.value = null; return }
+  try {
+    const d = await api().getDefinition(defId)
+    graphData.value = (d.success && d.data?.publishedGraph) || null
+  } catch { graphData.value = null }
+}
+
+/** 点击只读图节点：选中并自动切到「节点详情」tab；未执行时提示 */
+function onNodeClick(payload: { nodeId: string; node: any; state: string; label: string; runs: any[]; executed: boolean }) {
+  selectedNodeId.value = payload.nodeId
+  activeTab.value = 'node'
+  if (!payload.executed) {
+    ElMessage.info(`节点「${payload.node?.name ?? payload.nodeId}」本次运行未执行（未走到此环节）`)
+  }
 }
 
 function formatLogTime(ts: unknown): string {
@@ -216,8 +307,57 @@ function formatLogTime(ts: unknown): string {
 function logTag(level: unknown): 'info' | 'warning' | 'error' | 'success' {
   return level === 'error' ? 'error' : level === 'warn' ? 'warning' : level === 'info' ? 'info' : 'info'
 }
-async function showLogDetail(l: Record<string, unknown>): Promise<void> {
-  await ElMessageBox.alert(`<pre style="max-height:400px;overflow:auto">${escapeHtml(String(l.detail ?? l.message ?? ''))}</pre>`, '日志详情', { dangerouslyUseHTMLString: true })
+/**
+ * 格式化单条日志为可读文本：对象型字段（data/payload/extra/args 等）用 JSON.stringify(,2) 缩进；
+ * 字符串字段若可被 JSON.parse 也格式化为缩进 JSON（try/catch）；普通文本原样展示。
+ * 结果放入 <pre log-detail-pre>（等宽 + 自动换行 + 内滚动），以大尺寸 el-dialog 承载。
+ */
+function formatLogValue(v: unknown): string {
+  if (v === undefined || v === null) return ''
+  if (typeof v === 'string') {
+    try {
+      return JSON.stringify(JSON.parse(v), null, 2)
+    } catch {
+      return v
+    }
+  }
+  return JSON.stringify(v, null, 2)
+}
+function showLogDetail(l: Record<string, unknown>): void {
+  logDetailTitle.value = `日志详情 · ${String(l.type ?? '')}`
+  const out: string[] = []
+  const appendMeta = (label: string, val: unknown) => {
+    if (val === undefined || val === null || val === '') return
+    out.push(`${label}：${formatLogValue(val)}`)
+  }
+  appendMeta('时间', l.ts ?? l.time)
+  appendMeta('类型', l.type)
+  appendMeta('级别', l.level)
+  appendMeta('节点', l.nodeId)
+  if (l.iterationIndex != null) appendMeta('迭代', l.iterationIndex)
+  appendMeta('状态', l.status)
+  appendMeta('运行', l.runId)
+  if (out.length && (l.message != null || l.detail != null)) out.push('')
+  // 消息 / 详情：可能内嵌 JSON 文本，尽量格式化
+  if (l.message != null) {
+    out.push('消息：')
+    out.push(formatLogValue(l.message))
+  }
+  if (l.detail != null) {
+    if (l.message != null) out.push('')
+    out.push('详情：')
+    out.push(formatLogValue(l.detail))
+  }
+  // 其它可能含对象/JSON 的字段（node-log / run-status / notify 等）
+  for (const key of ['data', 'payload', 'extra', 'args', 'result', 'body', 'response', 'content', 'event']) {
+    if (l[key] !== undefined && l[key] !== null) {
+      if (out.length && out[out.length - 1] !== '') out.push('')
+      out.push(`${key}：`)
+      out.push(formatLogValue(l[key]))
+    }
+  }
+  logDetailText.value = out.join('\n')
+  logDetailVisible.value = true
 }
 
 async function doCancel() {
@@ -433,6 +573,17 @@ onUnmounted(() => {
 .meta { color: var(--el-text-color-secondary); font-size: 13px; }
 .sep { margin-left: 12px; }
 h4 { margin: 12px 0 8px; }
+/* 只读工作流执行图 + 环节详情区块 */
+.run-graph-section { margin-bottom: 14px; }
+.section-head { display: flex; align-items: baseline; gap: 10px; margin: 4px 0 10px; }
+.section-head h3 { margin: 0; }
+.section-hint { font-size: 12px; color: var(--el-text-color-secondary); }
+/* 图下方信息区 Tab */
+.run-tabs { margin-top: 4px; }
+.run-tabs :deep(.el-tabs__content) { padding-top: 10px; }
+.run-tabs :deep(.el-tabs__header) { margin-bottom: 4px; }
+.tab-empty { padding: 20px 0; color: var(--el-text-color-placeholder); font-size: 13px; text-align: center; }
+.logs-count { font-size: 13px; font-weight: 600; color: var(--el-text-color-regular); margin-bottom: 8px; }
 .node-io { padding: 4px 8px 8px 16px; }
 .io-block { margin-bottom: 8px; }
 .io-title { font-size: 12px; color: var(--el-text-color-secondary); margin-bottom: 4px; }
@@ -450,6 +601,15 @@ h4 { margin: 12px 0 8px; }
 .log-lv { flex: none; }
 .log-type { color: var(--el-color-primary); flex: none; min-width: 90px; }
 .log-msg { flex: 1; word-break: break-all; }
+/* 执行日志「详情」大尺寸对话框 */
+.log-detail-dialog :deep(.el-dialog__body) { padding-top: 8px; }
+.log-detail-body { max-height: 70vh; min-height: 200px; overflow: auto; }
+.log-detail-pre {
+  margin: 0; padding: 12px 14px; background: var(--el-fill-color-light); border-radius: 8px;
+  font-family: var(--el-font-family-mono, ui-monospace, 'SFMono-Regular', Menlo, Consolas, 'Courier New', monospace);
+  font-size: 12px; line-height: 1.7; color: var(--el-text-color-regular);
+  white-space: pre-wrap; word-break: break-word;
+}
 /* 素材板卡片预览 */
 .board-preview { margin-bottom: 10px; }
 .board-title { font-size: 12px; color: var(--el-text-color-secondary); margin-bottom: 6px; }

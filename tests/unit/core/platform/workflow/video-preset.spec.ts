@@ -3,7 +3,12 @@
  * @module tests/unit/core/platform/workflow/video-preset
  */
 import { describe, it, expect } from 'vitest'
-import { VIDEO_TYPE_PRESETS, assembleVideoPresetPrompt, getVideoPreset } from '@shared/types/video-presets'
+import {
+  VIDEO_TYPE_PRESETS,
+  assembleVideoPresetPrompt,
+  getVideoPreset,
+  CUSTOM_FALLBACK_POLICY,
+} from '@shared/types/video-presets'
 import { VIDEO_NODE_HANDLERS } from '@core/platform/workflow/nodes/video-nodes'
 import type { WorkflowNodeHandler } from '@core/platform/workflow/engine/node-handler'
 
@@ -46,9 +51,13 @@ describe('video-preset 节点', () => {
     expect(String(r.output.styleText)).toContain('清新插画感')
     expect(r.output.type).toBe('knowledge')
     expect((r.output.preset as { id: string }).id).toBe('knowledge')
+    // V3：policy=预设自带 visualPolicy
+    const pol = r.output.policy as { mode: string; assetDependency: string }
+    expect(pol.mode).toBe(getVideoPreset('knowledge')!.visualPolicy.mode)
+    expect(pol.assetDependency).toBe('none')
   })
 
-  it('仅自由风格（无预设）：走自定义分支', async () => {
+  it('仅自由风格（无预设）：走自定义分支；policy 用自定义兜底策略', async () => {
     const r = (await presetNode.execute({ config: { videoType: '', freeStyle: '复古胶片vlog' } } as never)) as {
       status: string
       output: Record<string, unknown>
@@ -57,6 +66,8 @@ describe('video-preset 节点', () => {
     expect(r.output.type).toBe('')
     expect(r.output.preset).toBeNull()
     expect(r.output.styleText).toBe('复古胶片vlog')
+    // V3：自定义类型 policy=CUSTOM_FALLBACK_POLICY（imagery/optional/通用意象表）
+    expect(r.output.policy).toEqual(CUSTOM_FALLBACK_POLICY)
   })
 
   it('validateConfig：无类型且无自由风格 → 报错；未知预设 → 报错', () => {

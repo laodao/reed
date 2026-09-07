@@ -40,6 +40,7 @@ import ecommerceDetailLongImage from './builtin-apps/ecommerce-detail-long-image
 import scriptToVideo from './builtin-apps/script-to-video.json'
 // V2 素材前置（2026-09-06 用户确认开工：保留 V1 为独立定义，V2 另立新 id）
 import scriptToVideoV2 from './builtin-apps/script-to-video-v2.json'
+import scriptToVideoV3 from './builtin-apps/script-to-video-v3.json'
 
 /** 内置工作流 id 前缀（固定，幂等查重依据） */
 const BUILTIN_DEF_PREFIX = 'builtin_def_'
@@ -78,6 +79,8 @@ const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; icon: str
   { file: 'script-to-video.json', raw: scriptToVideo, appId: `${BUILTIN_APP_PREFIX}script_to_video`, icon: '🎞️', name: '脚本生成视频', description: '短视频脚本 → 拆解分镜 → 文生图+图生视频(Seedance2.0) → 口播配音+字幕 → ffmpeg 合成成片', category: '视频制作', tags: ['视频', '脚本', '创作'] },
   // 短视频脚本生成视频 V2 素材前置（2026-09-06 用户确认开工；与 V1 并存，V1 定义不变）
   { file: 'script-to-video-v2.json', raw: scriptToVideoV2, appId: `${BUILTIN_APP_PREFIX}script_to_video_v2`, icon: '🎬', name: '脚本生成视频V2（素材前置）', description: '脚本/主题+多知识库 → 视频类型预设 → 大纲生成与审核 → 分镜拆解(底图资产自动匹配) → 逐镜素材生产(提示词包+文生图+参考图资产) → 图文素材板整体审核 → 逐片段视频(逐镜确认) → 配音+烧字幕+合成 → 大纲/素材板/成片存档', category: '视频制作', tags: ['视频', '脚本', '创作', '素材前置'] },
+  // 短视频脚本生成视频 V3 通用视觉策略（2026-09-06；与 V1/V2 并存）：imagery 意象空镜 / asset 素材驱动，按视频类型自动
+  { file: 'script-to-video-v3.json', raw: scriptToVideoV3, appId: `${BUILTIN_APP_PREFIX}script_to_video_v3`, icon: '🎬', name: '脚本生成视频V3（通用视觉策略）', description: '脚本/主题+多知识库 → 视频类型预设与视觉策略（imagery 意象化空镜 / asset 素材驱动，缺素材即拦截）→ 大纲审核 → 分镜拆解(concept/意象 或 素材引用) → 素材板(生成意象或素材直用)整体审核 → 逐片段视频(逐镜确认) → 配音+烧字幕+合成 → 存档', category: '视频制作', tags: ['视频', '脚本', '创作', '视觉策略', '素材驱动'] },
   // 长文写作（2026-08-29 用户确认开工：分阶段写长文，多轮对话承接前文）
   { file: 'long-form-writing.json', raw: longFormWriting, appId: `${BUILTIN_APP_PREFIX}long_form_writing`, icon: '✍️', name: '长文写作', description: '故事线 → 章节大纲 → 逐章写作（多轮对话承接前文）→ 合并完整长文入库', category: '内容创作', tags: ['长文', '写作', '小说'] },
   // 电商详情长图（2026-08-29 用户确认开工：先按卖点/规格规划张数，再逐张生成并配图文，排版成竖版详情长图）

@@ -19,7 +19,7 @@ import type { WorkflowNodeContext } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
 import { submitWithTransientRetry } from './retry-submit'
-import { getVideoPreset, assembleVideoPresetPrompt, VIDEO_TYPE_PRESETS } from '@shared/types/video-presets'
+import { getVideoPreset, assembleVideoPresetPrompt, VIDEO_TYPE_PRESETS, CUSTOM_FALLBACK_POLICY } from '@shared/types/video-presets'
 
 /** 主进程 ffmpeg 可执行路径（@ffmpeg-installer 缓存了与平台匹配的二进制） */
 function ffmpegBin(): string {
@@ -345,11 +345,13 @@ function rmSyncSafe(dir: string): void {
 }
 
 /**
- * 视频类型预设装配节点（V2：短视频脚本生成视频）
+ * 视频类型预设装配节点（V2/V3：短视频脚本生成视频）
  * 输入 videoType（预设 id）+ 可选 freeStyle（自由风格叠加），输出：
  *  - promptBlock：完整规范 markdown（定位/结构/画面/运镜/音乐/字幕/口吻），注入大纲与素材 LLM；
  *  - styleText：紧凑画面风格句（供 image-gen / video-gen 提示词）；
- *  - preset：原始预设 JSON（结构化取用）。
+ *  - preset：原始预设 JSON（结构化取用）；
+ *  - policy：V3 通用视觉策略 JSON（预设自带 visualPolicy；自定义类型用 CUSTOM_FALLBACK_POLICY；
+ *    两者皆无=null），供 strategy 节点决策模式/意象表/素材规则。
  * videoType 为空且 freeStyle 为空 → 校验失败；仅 freeStyle → 走自定义（无内置规范）。
  */
 const videoPresetNode: WorkflowNodeHandler = {
@@ -362,6 +364,7 @@ const videoPresetNode: WorkflowNodeHandler = {
     { key: 'styleText', type: 'string', desc: '紧凑画面风格句（图/视频提示词用）' },
     { key: 'promptBlock', type: 'string', desc: '完整规范 markdown（大纲/素材 LLM 用）' },
     { key: 'preset', type: 'json', desc: '原始预设 JSON（无预设=null）' },
+    { key: 'policy', type: 'json', desc: 'V3 视觉策略 JSON（visualPolicy；自定义兜底；两者皆无=null）' },
   ],
   validateConfig(config) {
     const cfg = config as { videoType?: string; freeStyle?: string }
@@ -384,6 +387,8 @@ const videoPresetNode: WorkflowNodeHandler = {
     const styleText = preset
       ? `${preset.visualStyle}${freeStyle ? `；用户自定义叠加：${freeStyle}` : ''}`
       : freeStyle
+    // V3 视觉策略：内置预设带 visualPolicy；自定义类型（仅自由风格）用通用兜底策略
+    const policy = preset?.visualPolicy ?? (freeStyle ? CUSTOM_FALLBACK_POLICY : null)
     return {
       status: 'succeeded',
       output: {
@@ -392,6 +397,7 @@ const videoPresetNode: WorkflowNodeHandler = {
         styleText,
         promptBlock: assembleVideoPresetPrompt(type, freeStyle),
         preset: preset ?? null,
+        policy,
       },
     }
   },
