@@ -126,8 +126,8 @@ const InvokeSkillInput = z.object({
 })
 
 const CreateTaskPlanInput = z.object({
-  goal: z.string().min(1).describe('完整、自含的目标描述（批准后将由任务树自主分解执行）'),
-  title: z.string().optional().describe('短标题（缺省取目标前若干字）'),
+  goal: z.string().min(1).max(4000).describe('完整、自含的目标描述（批准后将由任务树自主分解执行）'),
+  title: z.string().max(100).optional().describe('短标题（缺省取目标前若干字）'),
 })
 
 const CreateWorkflowDraftInput = z.object({

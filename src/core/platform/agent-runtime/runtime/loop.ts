@@ -227,11 +227,18 @@ export class LoopRunner {
 
         const decision = normalizeDecision(finishReason, stepMessages)
         const decisionToolNames = decision.type === 'tool_calls' ? decision.calls.map((c) => c.toolName) : []
+        // thought 先按字符截 4000，再按 payload 字节预算二次收紧（总收口 A-P2-7：
+        // 4 字节字符 4000 chars ≈ 16KB 可击穿 payload 字节预算退化为 _truncated 整行）
+        let thought = stepText.slice(0, TRAJECTORY_THOUGHT_MAX_CHARS)
+        const decisionPayload = { thought, finishReason, truncated: finishReason === 'length' || undefined, toolCalls: decisionToolNames }
+        if (JSON.stringify(decisionPayload).length > 14_000) {
+          thought = thought.slice(0, Math.floor(thought.length * 0.6))
+        }
         host.emitTrajectory({
           iteration: state.iteration,
           kind: 'decision',
           payload: {
-            thought: stepText.slice(0, TRAJECTORY_THOUGHT_MAX_CHARS),
+            thought,
             finishReason,
             truncated: finishReason === 'length' || undefined,
             toolCalls: decisionToolNames,

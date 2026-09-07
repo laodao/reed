@@ -16,6 +16,7 @@
  */
 
 import { LoopRunner } from '@core/platform/agent-runtime/runtime/loop'
+import { getCurrentUserId, runWithUserAsync } from '@core/context/user-context'
 import { stableStringify } from '@core/platform/agent-runtime/runtime/approval'
 import type { AgentToolRegistry } from '@core/platform/agent-runtime/tools/registry'
 import type { ResolveModelOptions } from '@core/platform/agent-runtime/provider/provider-adapter'
@@ -309,13 +310,19 @@ async function driveLoop(
   })
   let deltaBuf = ''
   let deltaTimer: ReturnType<typeof setTimeout> | null = null
+  // ALS 修复（总收口 B-P1-3，同 event-bridge）：timer 回调不在 ALS 内——缓冲时刻
+  // 同步捕获 userId，冲刷时 runWithUser 包裹，否则 Web 端 emitter 无 uid 静默丢流
+  let deltaUserId: string | null = getCurrentUserId()
   const flushDelta = (): void => {
     if (deltaTimer !== null) {
       clearTimeout(deltaTimer)
       deltaTimer = null
     }
     if (deltaBuf) {
-      ctx.emitProgress(-1, deltaBuf.slice(-50))
+      const uid = deltaUserId ?? getCurrentUserId()
+      const buf = deltaBuf
+      if (uid === null) ctx.emitProgress(-1, buf.slice(-50))
+      else void runWithUserAsync(uid, async () => ctx.emitProgress(-1, buf.slice(-50)))
       deltaBuf = ''
     }
   }
@@ -355,6 +362,7 @@ async function driveLoop(
         // 30ms 合批（总收口 review P3：曾每 delta 一条广播——500 delta=500 条事件；
         // 与 event-bridge 同款处置）
         deltaBuf += event.text
+        if (deltaUserId === null) deltaUserId = getCurrentUserId()
         if (deltaTimer === null) {
           deltaTimer = setTimeout(() => {
             deltaTimer = null

@@ -554,6 +554,8 @@ async function select(s: AgentConsoleSession): Promise<void> {
   if (resp.success && resp.dialog) {
     await store.selectDialog(resp.dialog)
   } else {
+    // 已删对话：清空 store 消息/refs（防上一会话数据污染当前时间线与右栏）
+    store.clearCurrentDialog()
     ElMessage.warning('该会话的对话已被删除，仅可查看过程时间线')
   }
 }

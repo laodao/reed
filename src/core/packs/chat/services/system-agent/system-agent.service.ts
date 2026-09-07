@@ -95,44 +95,9 @@ export function agentSessionId(dialogId: string): string {
   return `${SYSTEM_AGENT_DEFINITION_ID}:dialog:${dialogId}`
 }
 
-/**
- * 会话历史清洗（对抗 review P1：模型流中途失败可把「悬空 tool-call」持久化，
- * 下一轮直发 provider 将 400 且永续；Anthropic 系还要求消息严格交替）。
- * ① 丢弃没有对应 tool-result 的 assistant tool-call 段（全空则丢整条）；
- * ② 合并连续 user 消息（错误轮空历史会形成 [user, user]）。
- */
-export function sanitizeSessionHistory(messages: ModelMessage[]): ModelMessage[] {
-  const resultIds = new Set<string>()
-  for (const m of messages) {
-    if (m.role !== 'tool' || !Array.isArray(m.content)) continue
-    for (const p of m.content as Array<{ type?: string; toolCallId?: string }>) {
-      if (p?.type === 'tool-result' && p.toolCallId) resultIds.add(p.toolCallId)
-    }
-  }
-  const cleaned: ModelMessage[] = []
-  for (const m of messages) {
-    if (m.role === 'assistant' && Array.isArray(m.content)) {
-      const parts = (m.content as Array<{ type?: string; toolCallId?: string }>).filter(
-        (p) => p?.type !== 'tool-call' || resultIds.has(p.toolCallId ?? ''),
-      )
-      if (parts.length === 0) continue
-      cleaned.push(parts.length === (m.content as unknown[]).length ? m : ({ ...m, content: parts } as ModelMessage))
-      continue
-    }
-    cleaned.push(m)
-  }
-  const merged: ModelMessage[] = []
-  for (const m of cleaned) {
-    const prev = merged[merged.length - 1]
-    if (m.role === 'user' && prev?.role === 'user' && typeof prev.content === 'string' && typeof m.content === 'string') {
-      merged[merged.length - 1] = { role: 'user', content: `${prev.content}\n\n${m.content}` }
-      continue
-    }
-    merged.push(m)
-  }
-  return merged
-}
-
+/** 会话历史清洗已上移 agent-runtime/runtime/session-sanitize（总收口：多宿主共用） */
+import { sanitizeSessionHistory } from '@core/platform/agent-runtime/runtime/session-sanitize'
+export { sanitizeSessionHistory }
 /** 轮次消息持久化端口（db.messages 的消费子集；attachments 用宿主原始形态） */
 export interface AgentTurnMessagePort {
   create(m: { dialogId: string; role: 'user' | 'assistant'; content: string; modelId?: string; attachments?: import('@shared/types').Attachment[] }): Promise<{ id: string }>
@@ -187,9 +152,22 @@ export async function runAgentChatTurn(
     userMessageId?: string
   },
 ): Promise<AgentChatTurnResult> {
-  const defs = deps.registry.buildToolDefs(SYSTEM_AGENT_WHITELIST.map((tool) => ({ tool })))
+  // 写类工具每轮频控（总收口 C-P1-2：免审批 write 工具曾零频控——12 步×N 个
+  // run_workflow 的成本放大面；读类不限）
+  const WRITE_CALL_CAPS: Record<string, number> = {
+    run_workflow: 2,
+    create_task_plan: 1,
+    create_workflow_draft: 1,
+    invoke_skill: 3,
+  }
+  const defs = deps.registry.buildToolDefs(
+    SYSTEM_AGENT_WHITELIST.map((tool) => ({
+      tool,
+      ...(WRITE_CALL_CAPS[tool] !== undefined ? { maxCalls: WRITE_CALL_CAPS[tool] } : {}),
+    })),
+  )
   if (!defs['discover_capabilities']) {
-    return { success: false, error: '系统 Agent 工具集未注册（workflow-boot 装配失败），Agent 模式不可用', toolCalls: [], refs: [] }
+    return { success: false, error: '系统 Agent 工具集未注册（workflow-boot 装配失败），Agent 模式不可用', stopReason: 'error', toolCalls: [], refs: [] }
   }
 
   const scopeId = `dialog:${params.dialogId}`
@@ -278,7 +256,7 @@ export async function runAgentChatTurn(
         modelPreference: params.modelPreference,
         // turnModel：invoke_skill 等工具内模型与聊天页所选模型一致（对抗 review P2：
         // 无参 resolveModel 会落到全局默认 provider）；turnRefs 供工具收集引用卡片
-        runtimeContext: { dialogId: params.dialogId, turnRefs: refs, turnModel: params.modelPreference },
+        runtimeContext: { dialogId: params.dialogId, sessionKey: scopeId, turnRefs: refs, turnModel: params.modelPreference },
       },
       host,
     )
@@ -301,6 +279,7 @@ export async function runAgentChatTurn(
         return { success: false, error: result.error ?? 'Agent 执行失败', stopReason: result.stopReason, toolCalls, refs }
       }
       content += `\n\n[系统] 本轮中途失败：${result.error ?? '未知错误'}（以上为失败前的部分输出）。`
+      deps.emit({ type: 'error', messageId: aiMessage.id, dialogId: params.dialogId, error: result.error ?? 'Agent 执行失败' })
     }
 
     const metadata: MessageMetadata = { agent: { toolCalls, refs: [...refs] } }
@@ -428,7 +407,12 @@ export class SystemAgentChatService {
           resolveModel,
           emit: (event) => getEventEmitter().emit('chat:stream', event),
           onTrajectoryEntry: (scopeKey, entry) => {
-            try { getEventEmitter().emit('ac:trajectory', { scopeKey, entry }) } catch { /* 广播失败不影响主链路 */ }
+            try {
+              const slim = entry.payload && 'args' in entry.payload
+                ? { ...entry.payload, args: digestAgentArgs((entry.payload as { args?: unknown }).args, 2000) }
+                : entry
+              getEventEmitter().emit('ac:trajectory', { scopeKey, entry: slim })
+            } catch { /* 广播失败不影响主链路 */ }
           },
         },
         {
@@ -467,12 +451,14 @@ export class SystemAgentChatService {
     }
   }
 
-  /** 停止在途 agent 运行（chat:stop 与普通对话同一入口语义） */
+  /** 停止在途 agent 运行（chat:stop 与普通对话同一入口语义）。
+   *  只 abort 不删 Map：结算（finally 身份校验删除）前保持互斥占位——
+   *  「停止→立即重发」的旧轮补偿 saveState 与新轮 loadState 曾有 last-writer-wins
+   *  踩踏窗口（总收口 B-P2-1）。 */
   static stopStream(dialogId: string): boolean {
     const controller = activeAgentStreams.get(dialogId)
     if (controller) {
       controller.abort()
-      activeAgentStreams.delete(dialogId)
       return true
     }
     return false

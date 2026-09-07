@@ -139,8 +139,14 @@ export class WorkflowRunService {
 
     // 图快照：已发布用发布图；未发布允许手动跑草稿（触发必须已发布，片6 校验）。
     // C3b：分享/外部入口强制发布图——访客不能执行未发布的草稿内容
+    // usePublishedGraph=true（系统工具/任务树等无人值守面）必须有发布图：
+    // 曾静默回退草稿图，击穿「生成草稿→人工发布→运行」闸门（总收口 C-P1-1）
+    const publishedGraph = def.publishedGraph
+    if (input.usePublishedGraph && !publishedGraph) {
+      throw new Error(`工作流「${def.name}」尚未发布，无法运行（请先在编辑器中发布）`)
+    }
     const graph: WorkflowGraph = input.usePublishedGraph
-      ? (def.publishedGraph || def.draftGraph)
+      ? (publishedGraph || def.draftGraph)
       : ((input.triggerType === WORKFLOW_TRIGGER_TYPES.manual && def.draftGraph) || def.publishedGraph || def.draftGraph)
     if (!graph || graph.nodes.length === 0) throw new Error('工作流没有可执行的图')
     // start 输入参数：required + 扩展规则校验，defaultValue 合并（定时/事件触发无来源时用默认值）

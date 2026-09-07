@@ -37,7 +37,7 @@ export const PLANNER_SYSTEM_PROMPT = `你是任务规划器。把用户目标分
 }
 规则：
 - 每个叶节点的 spec.goal 必须自包含（一个 agent 独立可完成），acceptance 必须可客观验证
-- 叶子数不超过 6 个；树的深度不超过 {{maxDepth}}
+- 叶子数不超过 6 个；树的深度不超过 {maxDepth}（由宿主注入实际值）
 - 不要编造工具，toolWhitelist 只用：http_get / web_search / wf_web_extract / wf_translate / wf_kb_retrieve（留空=无工具纯生成）
 - 中间节点不需要 spec 的 toolWhitelist（它们只聚合子任务结果）`
 

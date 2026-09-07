@@ -452,7 +452,7 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
         verifier,
         flywheel: memoryFlywheel,
         executors: {
-          runAgentLoop: async ({ goal, systemPrompt, toolWhitelist, maxSteps, sessionKey, memoryLines, signal }) => {
+          runAgentLoop: async ({ goal, systemPrompt, toolWhitelist, maxSteps, sessionKey, memoryLines, signal, rootId }) => {
             const { LoopRunner } = await import('@core/platform/agent-runtime/runtime/loop')
             const { normalizeToolWhitelist, getAgentLoopHarness } = await import('./nodes/agent-loop-node')
             const { TrajectorySink } = await import('@core/platform/agent-runtime/trajectory/sink')
@@ -497,9 +497,13 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
               loadState: async () => {
                 const history = await taskSessionStore.load(scopeKey)
                 if (!history || history.length === 0) return null
-                const { initState } = await import('@core/platform/agent-runtime/runtime/loop')
+                const { initState, } = await import('@core/platform/agent-runtime/runtime/loop')
+                const { sanitizeSessionHistory } = await import('@core/platform/agent-runtime/runtime/session-sanitize')
                 const state = initState({ definitionId: 'agent-task', scopeId: scopeKey, input: goal, systemPrompt: systemPrompt ?? '', tools: defs, maxSteps: maxSteps ?? 12 }, Date.now())
-                state.messages = history
+                // 清洗（悬空 tool-call → provider 400 永续；总收口 B-P1-2）+ 追加本轮
+                // 目标为 user 消息（总收口 A-P1-3：带反馈重试的反馈曾因历史覆盖而
+                // 从未送达模型——retryOrFail 把反馈拼进 spec.goal，此处 input=goal）
+                state.messages = [...sanitizeSessionHistory(history), { role: 'user', content: goal } as import('ai').ModelMessage]
                 return state
               },
               saveState: async (state) => {
@@ -520,8 +524,11 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
                 maxSteps: maxSteps ?? 12,
               }, host)
               .catch((e: unknown) => {
-                // run() 本体抛出（loadState/saveState 链）也要落运行终态
-                runRegistry.finish(runId, { id: runId, scopeKey, status: 'error', error: e instanceof Error ? e.message : String(e) })
+                // run() 本体抛出（loadState/saveState 链）也要落运行终态（一次性）
+                if (registered) {
+                  registered = false
+                  runRegistry.finish(runId, { id: runId, scopeKey, status: 'error', error: e instanceof Error ? e.message : String(e) })
+                }
                 throw e
               })
               .finally(() => {

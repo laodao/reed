@@ -501,11 +501,13 @@ export class AgentToolRegistry {
       const err = e as { name?: string; message?: string }
       const code: AgentToolErrorCode =
         err?.name === 'TimeoutError' ? 'TIMEOUT' : call.signal?.aborted ? 'CANCELLED' : 'INTERNAL'
+      const rawMsg = code === 'TIMEOUT' ? `工具执行超过 ${Math.round(effectiveTimeoutMs / 1000)}s` : (err?.message ?? String(e))
       return this.finish({ ...call, args: effective }, tool, {
         ok: false,
         error: {
           code,
-          message: code === 'TIMEOUT' ? `工具执行超过 ${Math.round(effectiveTimeoutMs / 1000)}s` : (err?.message ?? String(e)),
+          // 错误通道截断（总收口 C-P2-3：不可信响应体经 message 无界入上下文）
+          message: rawMsg.length > 2000 ? `${rawMsg.slice(0, 2000)}…[truncated]` : rawMsg,
           hint: code === 'TIMEOUT' ? '工具过慢，建议换用更轻量的查询' : undefined,
           retryable: code !== 'CANCELLED',
         },

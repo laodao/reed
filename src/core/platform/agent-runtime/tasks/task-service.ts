@@ -26,6 +26,9 @@ import type { AgentTaskRepository, AgentTaskRow } from '@core/database/repositor
 import type { AgentTaskSpec, PlannedTaskNode } from '@shared/types/agent.types'
 import { Verifier, type VerificationSpec, type VerifierDecision } from '../verify/verifier'
 import { MAX_TASK_DEPTH, Planner } from './planner'
+
+/** 任务树工具白名单（服务器端硬闸门；与 planner 提示词约束双重防线——总收口 C-P1-3） */
+export const TASK_TOOL_ALLOWLIST = ['http_get', 'web_search', 'wf_web_extract', 'wf_translate', 'wf_kb_retrieve']
 import type { MemoryFlywheelService } from '../memory/memory-flywheel'
 
 const logger = createLogger('AgentTaskService')
@@ -177,6 +180,7 @@ export class AgentTaskService {
   }
 
   async getTree(rootId: string): Promise<TaskTree> {
+    console.log(`[GETTREE] ${rootId}`)
     const rows = await this.deps.tasks.listByRoot(rootId)
     const root = rows.find((r) => r.id === rootId)
     if (!root) throw new Error(`任务树不存在：${rootId}`)
@@ -224,7 +228,13 @@ export class AgentTaskService {
   }
 
   private async pumpTree(rootId: string): Promise<void> {
+    let pumpIters = 0
     for (;;) {
+      if (++pumpIters > 200) {
+        const tree = await this.getTree(rootId)
+        const dump = [...this.descendants(tree, tree.root), tree.root].map((r) => `${r.id}:${r.status}`).join(', ')
+        throw new Error(`[PUMP-SPIN] 泵循环超限（${dump}）`)
+      }
       const tree = await this.getTree(rootId)
       if (this.cancelControllers.get(rootId)?.signal.aborted) break
       const runnable = this.findRunnable(tree)
@@ -241,6 +251,8 @@ export class AgentTaskService {
     const ready = all.filter((r) => r.status === 'ready' || r.status === 'replanned')
     if (ready.length === 0) return null
     if (all.some((r) => ['running', 'verifying'].includes(r.status))) return null // 串行（budget.maxConcurrent 后置）
+    console.log(`[FRD-DEBUG] ready=${ready.map((r) => r.id + ':' + r.status).join(',')}`)
+    if (ready.length === 0) return null
     for (const r of ready) {
       const children = tree.children.get(r.id) ?? []
       if (children.length === 0) return r
@@ -268,12 +280,14 @@ export class AgentTaskService {
       const notSucceeded = children.filter((c) => c.status !== 'succeeded')
       output = { aggregated: children.map((c) => ({ title: c.title, result: c.result, status: c.status })) }
       if (notSucceeded.length > 0) {
-        await this.deps.tasks.patch(task.id, { status: 'verifying', result: output as Record<string, unknown> })
+        // fromStatus 含 replanned：重规划节点直接进入聚合验证（总收口 D-P1-2 教训：
+        // 漏 replanned 曾致泵无限空转）
+        if (!await this.deps.tasks.patchFromStatus(task.id, ['running', 'ready', 'replanned'], { status: 'verifying', result: output as Record<string, unknown> })) return
         await this.handleFailure(task, output, notSucceeded.map((c) => `子任务「${c.title}」${c.status}`))
         return
       }
       // 聚合质量分 = 子任务均值（review T14）；不进 LLM（子任务已各自过门）
-      await this.deps.tasks.patch(task.id, { status: 'verifying', result: output as Record<string, unknown> })
+      if (!await this.deps.tasks.patchFromStatus(task.id, ['running', 'ready', 'replanned'], { status: 'verifying', result: output as Record<string, unknown> })) return
       const score = aggregateScores(children.map((c) => c.qualityScore))
       if (score !== null && score >= 0.6) {
         await this.settleSuccess(task, output, score)
@@ -292,6 +306,7 @@ export class AgentTaskService {
       // 且泵下一检查点停摆，不 retry 不重规划。
       if (this.cancelControllers.get(rootId)?.signal.aborted) {
         await this.deps.tasks.patchFromStatus(task.id, ['running'], { status: 'cancelled', error: msg })
+        this.forgetMemoryHits(task.id)
         logger.info(`[task] 任务因中止终止（${task.id}）`)
         return
       }
@@ -333,10 +348,16 @@ export class AgentTaskService {
     const systemPrompt = memoryLines.length > 0
       ? `相关经验（来自知识飞轮，供参考）：\n${memoryLines.join('\n')}`
       : undefined
+    // 服务器端白名单求交（总收口 C-P1-3：planner 输出未校验曾可绑定任意已注册
+    // 免审批工具——run_workflow/create_workflow_draft 等无人值守执行）
+    const whitelist = spec.toolWhitelist ?? []
+    const allowed = whitelist.filter((t) => TASK_TOOL_ALLOWLIST.includes(t))
+    const dropped = whitelist.filter((t) => !TASK_TOOL_ALLOWLIST.includes(t))
+    if (dropped.length > 0) logger.warn(`[task] 工具白名单越界项已剔除：${dropped.join(',')}（task=${task.id}）`)
     const r = await this.deps.executors.runAgentLoop({
       goal: spec.goal,
       systemPrompt,
-      toolWhitelist: spec.toolWhitelist,
+      toolWhitelist: allowed,
       maxSteps: spec.maxSteps,
       sessionKey: `task:${task.id}`,
       memoryLines,
@@ -401,6 +422,15 @@ export class AgentTaskService {
       result: output as Record<string, unknown>,
     })
     if (!claimed) return
+    // 后置取消降级（总收口 D-P1-4 替代方案）：入态盲 patch 下若取消先发生，
+    // 成功后立刻改判 cancelled——防 cancelled 复活为 succeeded
+    if (this.cancelControllers.get(task.rootId)?.signal.aborted) {
+      await this.deps.tasks.patchFromStatus(task.id, ['succeeded'], { status: 'cancelled', error: '用户取消' })
+      this.forgetMemoryHits(task.id)
+      logger.info(`[task] 任务在取消后完成，改判 cancelled（${task.id}）`)
+      return
+    }
+    this.forgetMemoryHits(task.id)
     // 飞轮回写 + 蒸馏（fire-and-forget；review T8：真实命中 ids）
     if (this.deps.flywheel) {
       const hitIds = this.memoryHits.get(task.id) ?? []
@@ -411,6 +441,7 @@ export class AgentTaskService {
       this.memoryHits.delete(task.id)
     }
     logger.info(`[task] 任务通过验收（${task.id}，score=${score.toFixed(2)}）`)
+    console.log(`[SETTLE-END] ${task.id}`)
   }
 
   /** 失败链：局部重规划（replanned + 子树；深度按剩余预算校验——review T6）→ escalated */
@@ -446,6 +477,7 @@ export class AgentTaskService {
             executor: 'agent_loop',
           })
         }
+        if ((sub.children ?? []).length === 0) throw new Error('重规划未产出任何子任务')
         logger.info(`[task] 已重规划（${task.id}）为 ${(sub.children ?? []).length} 个子任务`)
         return
       } catch (e) {
@@ -457,7 +489,18 @@ export class AgentTaskService {
       result: output as Record<string, unknown>,
       error: defects.join('；') || '执行失败',
     })
+    this.forgetMemoryHits(task.id)
+    // 失败回写（契约兑现：负样本计数——被装配但任务失败的条目不再当零命中归档）
+    if (this.deps.flywheel) {
+      const hitIds = this.memoryHits.get(task.id) ?? []
+      void this.deps.flywheel.reportTaskOutcome(hitIds, false).catch(() => undefined)
+    }
     logger.info(`[task] 任务升级人工（${task.id}）`)
+  }
+
+  /** 终态清理：装配命中记录（防 Map 无界增长；重试轮重新装配会覆盖） */
+  private forgetMemoryHits(taskId: string): void {
+    this.memoryHits.delete(taskId)
   }
 
   /** 自底向上收口：根终态时取消控制器清理 */
@@ -489,11 +532,19 @@ export class AgentTaskService {
     if (!task) throw new Error(`任务不存在：${taskId}`)
     if (task.status !== 'escalated') throw new Error(`任务状态为 ${task.status}，不在升级态`)
     if (decision === 'pass') {
-      await this.settleSuccess(task, task.result, 1)
+      // CAS fromStatus 含 escalated（总收口 D-P0-2：曾静默 no-op，树永久停在 escalated）
+      const claimed = await this.deps.tasks.patchFromStatus(task.id, ['escalated'], {
+        status: 'succeeded',
+        qualityScore: 1,
+        result: (task.result ?? {}) as Record<string, unknown>,
+      })
+      if (!claimed) throw new Error(`任务状态已变化（${task.status}），裁决未生效`)
     } else if (decision === 'fail') {
-      await this.deps.tasks.patch(task.id, { status: 'failed', error: comment || '人工判定失败' })
+      const claimed = await this.deps.tasks.patchFromStatus(task.id, ['escalated'], { status: 'failed', error: comment || '人工判定失败' })
+      if (!claimed) throw new Error(`任务状态已变化（${task.status}），裁决未生效`)
     } else {
-      await this.deps.tasks.patch(task.id, { status: 'ready', retryCount: task.retryCount + 1 })
+      const claimed = await this.deps.tasks.patchFromStatus(task.id, ['escalated'], { status: 'ready', retryCount: task.retryCount + 1 })
+      if (!claimed) throw new Error(`任务状态已变化（${task.status}），裁决未生效`)
     }
     void this.schedule(task.rootId).catch((e) => logger.warn('[task] 裁决后调度异常', e))
   }
