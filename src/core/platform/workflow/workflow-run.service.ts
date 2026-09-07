@@ -602,8 +602,10 @@ export function makeEngineDeps(
         runs.update(runId, patch as UpdateWorkflowRunInput).then(() => undefined),
     },
     nodeRuns: {
+      // P4 冒烟实证：曾调用不存在的 listByRun（被 tsc 基线噪音掩盖）——rehydrate
+      // 预载读必炸；仓储实际方法为 getByRun（DTO 含 stateJson）
       listByRun: async runId => {
-        const rows = await nodeRuns.listByRun(runId)
+        const rows = await nodeRuns.getByRun(runId)
         return rows.map(r => ({
           nodeId: r.nodeId,
           iterationIndex: r.iterationIndex,

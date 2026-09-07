@@ -199,6 +199,28 @@
 > 审批先于校验的改序（M2，14 号 §6 已注记现状）、streamChannel 拆通道注记、
 > 会话卡编辑批准入口（前端）、ProviderAdapter.invalidateCache 接线（设置批）。
 
+> **进度（2026-09-07 P4 真模型冒烟竣工：四场景全过 + 抓修两个生产断点）**：
+> 真实链路 = DashScope compatible-mode（qwen-flash）× ai@6 streamText 手动循环 ×
+> 工作流引擎 + agent-loop 节点 + DbJournal（better-sqlite3）× scripts/p4-agent-smoke.ts。
+> M1 验收四条逐项实证：
+> - **收敛**：查资料→写摘要 5 轮 http_get 工具调用后 final 收敛（7-9s，摘要质量合格）✓
+> - **杀进程恢复**：SIGKILL 于 iteration=2（7 条消息已落库）→ 第二进程 ensureActive
+>   重放续跑 iteration 2→4 → succeeded，journal 11 事件 seq 无空洞 ✓
+> - **挂起批准续跑**：submit_report（需批准）首步挂起（挂起点落盘）→ 批准 →
+>   模型重发（参数漂移经一次性授权放行+warn 留痕）→ 工具恰好执行 1 次 → succeeded ✓
+> - **护栏**：maxIterations=3 不收敛场景干净终止，失败原因含护栏语义+用量摘要 ✓
+> 视频生成链路按用户指示未触碰。
+> **冒烟抓到并修复两个生产级断点**（均曾被 tsc 基线噪音掩盖，单测 Fake 全绿）：
+> ① WorkflowNodeRunRepository.update 缺 stateJson 映射——引擎 ctx.saveState 补丁被
+> 静默丢弃，E2 落库全链路生产失效（新增真实 DataSource 契约测试钉死）；
+> ② makeEngineDeps 适配层调用不存在的 nodeRuns.listByRun（实为 getByRun）——
+> rehydrate 预载读必 TypeError。
+> **grant 语义修订**（真模型实证）：严格同参匹配不可行（模型重发自由文本入参必
+> 逐字漂移 → 批准后再挂起死循环）→ 改同工具一次性授权：用后即焚、参数漂移
+> warn+轨迹 autoApprovedArgsDrift 留痕、不同工具仍发卡（E3 多轮不变）。
+> 测试：全平台+database 回归零新增（15+12 失败均为已知环境基线）；新增
+> node-run 仓储契约 1 例。**M1 全部验收项达成。**
+
 ## 分期总览
 
 | 期 | 主题 | 目标 | 依赖 |

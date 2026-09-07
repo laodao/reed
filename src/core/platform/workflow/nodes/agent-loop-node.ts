@@ -339,14 +339,25 @@ async function driveLoop(
     input: unknown,
     call: { toolCallId: string },
   ): Promise<ApprovalDecision> => {
-    // 一次性授权：批准恢复后模型重发同调用（同名+同参；编辑版只核名，入参换编辑版）
+    // 一次性授权：批准恢复后模型重发的同工具调用自动放行（P4 真模型实证——严格
+    // 同参匹配不可行：模型重发自由文本入参必逐字漂移，批准后再挂起成死循环）。
+    // 安全边界：一次性（用后即焚）、仅同名工具、参数漂移 warn+轨迹留痕可审计；
+    // 不同工具仍正常发卡（E3 多轮）
     if (grant && grant.tool === tool.name) {
-      const matches = grant.edited || stableStringify(input) === stableStringify(grant.input)
-      if (matches) {
-        const g = grant
-        grant = null
-        return g.edited ? { action: 'approve_with_edit', input: g.input as Record<string, unknown> } : { action: 'approve' }
+      const g = grant
+      grant = null
+      if (!g.edited && stableStringify(input) !== stableStringify(g.input)) {
+        ctx.logger.warn('[agent-loop] 批准后重发参数与送审版不一致（一次性授权按工具放行）', {
+          tool: tool.name,
+        })
+        host.emitTrajectory({
+          iteration: 0,
+          kind: 'tool_call',
+          name: tool.name,
+          payload: { autoApprovedArgsDrift: true },
+        })
       }
+      return g.edited ? { action: 'approve_with_edit', input: g.input as Record<string, unknown> } : { action: 'approve' }
     }
     // 失败路径 bridge 以 HumanDecision（reject/comment）值回流；loop 包装层按
     // action 判定（'reject' 走拒绝短路），对 ApprovalDecision 结构兼容

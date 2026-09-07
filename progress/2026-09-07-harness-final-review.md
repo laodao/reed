@@ -60,3 +60,19 @@ withTimeout 预中止、轨迹 iteration 硬编码 0、dispose 残留轮留痕�
 - ProviderAdapter.invalidateCache 接 provider 配置变更事件（设置批）
 - 轨迹 iteration 消费面（agent_trajectories 落表 M1.5）
 - 完整双标记伪造压缩摘要（结构校验，23 号批 6 注记边界）
+
+---
+
+## 附记：P4 真模型冒烟（2026-09-07 同日执行，四场景全过）
+
+DashScope qwen-flash 全链路（引擎+agent-loop 节点+DbJournal）四场景全过：
+收敛（5 轮工具调用 7s final）/ SIGKILL 崩溃恢复（iteration 2→4 续跑、journal 无空洞）/
+审批挂起批准续跑（工具恰好执行 1 次）/ maxIterations 护栏干净终止。
+
+冒烟追加抓到两个生产级断点（单测 Fake 掩盖、tsc 基线噪音掩盖，均已修复+契约测试钉死）：
+1. `WorkflowNodeRunRepository.update` 缺 `stateJson` 映射——ctx.saveState 补丁被静默丢弃（E2 生产失效）。
+2. `makeEngineDeps` 适配层调用不存在的 `nodeRuns.listByRun`（实为 `getByRun`）——rehydrate 必炸。
+
+grant 语义修订：同参匹配 → 同名一次性授权（真模型重发参数必漂移，详见 23 号 §5 注记）。
+
+**教训再确认**："预存 tsc 基线错误"里可能藏着真缺陷（本轮两条 P1 均如此）——基线债务需按文件归属清理，不能只看数量对比。

@@ -604,12 +604,13 @@ describe('审批挂起与恢复（E3）', () => {
     expect(prompts).toEqual([]) // 不进入下一轮——防固执模型与审核人 ping-pong
   })
 
-  it('批准后模型改参重发：授权不匹配 → 再次挂起（多轮人机交互）', async () => {
+  it('批准后同工具改参重发：一次性授权放行（P4 真模型实证——严格同参匹配死循环）；授权耗尽后再发 → 再挂起', async () => {
     const { ctx, result } = await suspendFirstRound()
     expect(result.status).toBe('waiting_review')
     await sleep(50)
     slot.set(stepsModel([
-      () => toolParts('c2', 'danger_tool', { q: '换了个更危险的参数' }),
+      () => toolParts('c2', 'danger_tool', { q: '模型重写的不同措辞参数' }),
+      () => toolParts('c3', 'danger_tool', { q: '授权已用尽的再次调用' }),
       () => txt('不应到达'),
     ]))
     const r = await AGENT_LOOP_NODE_HANDLER.resume(
@@ -617,8 +618,10 @@ describe('审批挂起与恢复（E3）', () => {
       { decision: 'approve', decidedAt: new Date().toISOString() },
       ctx.saved[ctx.saved.length - 1],
     )
+    // 首次重发（改参）放行执行；第二次无授权 → 再挂起（E3 多轮）
     expect(r.status).toBe('waiting_review')
-    expect(dangerExecuted).toEqual([]) // 改参调用未经新批准不执行
+    expect(dangerExecuted).toEqual([{ q: '模型重写的不同措辞参数' }])
+    expect(ctx.logs.some((l) => l.level === 'warn' && l.msg.includes('参数与送审版不一致'))).toBe(true)
   })
 
   it('编辑批准（approve_with_changes）：审核人改参 → 授权以编辑版入参执行', async () => {

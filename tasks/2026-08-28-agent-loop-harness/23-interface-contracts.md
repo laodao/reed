@@ -217,9 +217,11 @@ export interface CompactionStrategy {                     // vendor 自 open-har
   适配器即 `nodes/agent-loop-node.ts`，是 workflow → agent-runtime 的唯一焊接点。
 - `resume` 决策语义定稿（12 号 §7-8 落地）：reject/timeout_reject → LoopRunner
   `resumeFromSuspend` 直接 `stop(human_rejected)`，节点 failed（retryable=false）；
-  approve 系 → 注记注入 + 一次性授权（同名+同参匹配自动放行；编辑批准
-  `approve_with_changes` 只核名、以引擎 `editedValues.input` 覆盖入参）。
-  授权不匹配（改参重发）→ 再挂起（E3 多轮）。
+  approve 系 → 注记注入 + 一次性授权。**P4 真模型修订**：授权匹配从"同名+同参"
+  放宽为**同名一次性**（模型重发自由文本入参必逐字漂移，严格同参匹配致批准后
+  再挂起死循环）；编辑批准 `approve_with_changes` 以引擎 `editedValues.input`
+  覆盖入参；参数漂移 warn + 轨迹 autoApprovedArgsDrift 留痕；授权用后即焚，
+  不同工具或授权耗尽后再发卡（E3 多轮不变）。
 - 挂起桥定稿（探针实证 ai@6 吊流行为）：`host.suspend` = 落挂起点 state →
   commit `waiting_review` → 本地 abort 止 IO → 返回**永不 settle** 的 promise
   （悬挂链待 GC，状态冻结挂起点）；落库失败 → 回滚 suspended 标记 + 结构化

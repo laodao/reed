@@ -74,6 +74,8 @@ export interface UpdateNodeRunInput {
   review?: WorkflowReviewRecord | null
   finishedAt?: Date | null
   durationMs?: number | null
+  /** E2 节点内中间状态（引擎 ctx.saveState 覆盖写；P4 冒烟实证曾缺映射被静默丢弃） */
+  stateJson?: string | null
 }
 
 /** JSON 列安全解析（context 传实体定位信息，损坏可排查） */
@@ -171,6 +173,7 @@ export class WorkflowNodeRunRepository extends BaseRepository<
     }
     if (patch.finishedAt !== undefined) partial.finishedAt = patch.finishedAt
     if (patch.durationMs !== undefined) partial.durationMs = patch.durationMs
+    if (patch.stateJson !== undefined) partial.stateJson = patch.stateJson
 
     await this.scoped.update(
       {
