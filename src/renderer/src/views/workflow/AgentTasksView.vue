@@ -18,7 +18,7 @@
         </template>
       </el-table-column>
       <el-table-column label="质量分" width="90">
-        <template #default="{ row }">{{ row.qualityScore != null ? row.qualityScore.toFixed(2) : '—' }}</el-table-column>
+        <template #default="{ row }">{{ row.qualityScore != null ? row.qualityScore.toFixed(2) : '—' }}</template>
       </el-table-column>
       <el-table-column prop="error" label="错误" min-width="140" show-overflow-tooltip />
       <el-table-column label="创建时间" width="160">
