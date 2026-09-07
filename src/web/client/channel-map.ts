@@ -76,6 +76,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'workflow.agentConsole.stop': { channel: 'ac:stop', wrap: (p: unknown) => [p] },
   'workflow.agentConsole.onTrajectory': { channel: 'ac:trajectory' },
   'workflow.agentConsole.onRunUpdate': { channel: 'ac:run-update' },
+  'workflow.draftFromNl': { channel: 'wf:draft-from-nl', wrap: (p: unknown) => [p] },
   'image.generate': { channel: 'image:generate' },
   'image.getTaskStatus': { channel: 'image:task-status' },
   'image.stop': { channel: 'image:stop' },

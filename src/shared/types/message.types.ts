@@ -108,7 +108,7 @@ export interface MessageMetadata {
 export interface AgentMessageMeta {
   /** toolCallId 用于流式期 start/end 配对；ok 缺省=执行中（pending，历史消息必有值） */
   toolCalls: Array<{ name: string; ok?: boolean; toolCallId?: string; argsDigest?: string }>
-  refs: Array<{ kind: 'workflow_run' | 'task_tree' | 'skill'; id: string; label: string }>
+  refs: Array<{ kind: 'workflow_run' | 'task_tree' | 'skill' | 'workflow_draft'; id: string; label: string }>
 }
 
 /**

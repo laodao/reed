@@ -13,6 +13,7 @@ export function agentToolLabel(name: string): string {
     get_workflow_run: '查询运行',
     invoke_skill: '执行技能',
     create_task_plan: '创建任务树',
+    create_workflow_draft: '生成工作流草稿',
     web_search: '联网搜索',
     wf_web_extract: '网页提取',
     http_get: 'HTTP 获取',

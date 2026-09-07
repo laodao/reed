@@ -52,6 +52,17 @@ export function registerWorkflowHandlers(): void {
         return result.definition
       })
   )
+  // NL→工作流草稿（31 号 M7）：描述生成 DSL → 校验 → 草稿落库（不自动发布）
+  ipcBridge.handle('wf:draft-from-nl', async (_e, p: { description: string; name?: string }) => {
+    try {
+      const svc = subsystem().draftService
+      if (!svc) return { success: false, error: '工作流草稿服务未装配' }
+      const result = await svc.draftFromDescription(p)
+      return { success: true, data: result }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
   ipcBridge.handle('wf:validate-graph', (_e, p: { graph: WorkflowGraph }) =>
     wrap(() => subsystem().definitionService.validate(p.graph))
   )

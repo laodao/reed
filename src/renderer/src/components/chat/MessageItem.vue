@@ -481,6 +481,7 @@ const collapsedToolCalls = computed(() => {
 function refKindLabel(kind: string): string {
   const labels: Record<string, string> = {
     workflow_run: '工作流运行',
+    workflow_draft: '工作流草稿',
     task_tree: '任务树',
     skill: '技能'
   }
@@ -490,6 +491,7 @@ function refKindLabel(kind: string): string {
 /** 引用跳转目标（不可跳转返回 null → 渲染为纯徽标） */
 function refTarget(ref: { kind: string; id: string }): string | null {
   if (ref.kind === 'workflow_run') return `/workflow/run/${ref.id}`
+  if (ref.kind === 'workflow_draft') return `/workflow/editor/${ref.id}`
   if (ref.kind === 'task_tree') return `/agent-tasks?focus=${ref.id}`
   return null
 }

@@ -182,7 +182,7 @@ function mkTextModel(text: string): LanguageModel {
 
 describe('系统 Agent 工具集（28 号 M5 批1）', () => {
   it('白名单：系统工具 + 直连只读工具，且不含写/审批工具', () => {
-    expect(SYSTEM_AGENT_TOOL_NAMES).toHaveLength(5)
+    expect(SYSTEM_AGENT_TOOL_NAMES).toHaveLength(6)
     expect(SYSTEM_AGENT_WHITELIST).toContain('web_search')
     expect(SYSTEM_AGENT_WHITELIST).not.toContain('http_post')
     expect(SYSTEM_AGENT_WHITELIST).not.toContain('code_run')

@@ -10,8 +10,10 @@
  * agent-runtime 的 AgentToolRegistry——harness 不认识任何具体工具；chat 包只经
  * registry.buildToolDefs 装配白名单（SYSTEM_AGENT_WHITELIST）。
  *
- * 边界（28 号 §7）：白名单无审批工具——聊天宿主 M5 无审批卡；写副作用仅
- * run_workflow（工作流内部审批闸门照常生效）与 create_task_plan（强制人工批准）。
+ * 边界（28 号 §7 + 31 号增补）：白名单无审批工具——聊天宿主无审批卡；写副作用
+ * 为 run_workflow（工作流内部审批闸门照常生效）、create_task_plan（强制人工批准）
+ * 与 create_workflow_draft（产物仅草稿，发布/运行是人的决定；无每轮频控——
+ * maxSteps 隐式限 ~11 次/轮，登记为后续频控项）。
  */
 
 import { z } from 'zod'
@@ -34,6 +36,7 @@ import type { WorkflowNodeRunRecord } from '@core/database/repositories/workflow
 import type { WorkflowStartInput } from '@shared/types/workflow.types'
 import type { LanguageModel } from 'ai'
 import { renderSkillTemplate, withSkillReferences } from '../skills/render'
+import type { WorkflowDraftService } from '../draft/workflow-draft.service'
 
 const logger = createLogger('SystemAgentTools')
 
@@ -61,6 +64,7 @@ export const SYSTEM_AGENT_TOOL_NAMES = [
   'get_workflow_run',
   'invoke_skill',
   'create_task_plan',
+  'create_workflow_draft',
 ] as const
 
 export const SYSTEM_AGENT_PASSTHROUGH_TOOLS = [
@@ -78,7 +82,7 @@ export const SYSTEM_AGENT_WHITELIST: string[] = [...SYSTEM_AGENT_TOOL_NAMES, ...
  * 注入（对象引用随 logContext 同步传播，无 ALS/timer 断链风险）。
  */
 export interface SystemAgentTurnRef {
-  kind: 'workflow_run' | 'task_tree' | 'skill'
+  kind: 'workflow_run' | 'task_tree' | 'skill' | 'workflow_draft'
   id: string
   label: string
 }
@@ -96,6 +100,8 @@ export interface SystemAgentToolsDeps {
   tasks: Pick<AgentTaskService, 'createPlan'> | null
   skills: Pick<SkillService, 'list' | 'resolveSkill'>
   resolveModel: (opts?: ResolveModelOptions) => Promise<LanguageModel>
+  /** NL→工作流草稿生成（31 号 M7；未装配为 undefined——工具结构化报错） */
+  drafts?: WorkflowDraftService
   clock?: () => number
 }
 
@@ -122,6 +128,11 @@ const InvokeSkillInput = z.object({
 const CreateTaskPlanInput = z.object({
   goal: z.string().min(1).describe('完整、自含的目标描述（批准后将由任务树自主分解执行）'),
   title: z.string().optional().describe('短标题（缺省取目标前若干字）'),
+})
+
+const CreateWorkflowDraftInput = z.object({
+  description: z.string().min(1).max(4000).describe('工作流的完整功能描述：做什么、输入是什么、产出什么'),
+  name: z.string().max(100).optional().describe('工作流名称（缺省从描述提炼）'),
 })
 
 // ==================== 纯函数（可独立单测） ====================
@@ -365,7 +376,35 @@ export function buildSystemAgentToolDefs(deps: SystemAgentToolsDeps): AgentToolD
     },
   }
 
-  return [discoverTool, runWorkflowTool, getWorkflowRunTool, invokeSkillTool, createTaskPlanTool]
+  const createWorkflowDraftTool: AgentToolDef<z.infer<typeof CreateWorkflowDraftInput>> = {
+    name: 'create_workflow_draft',
+    description:
+      '根据自然语言描述生成一个新工作流草稿（自动编排节点与连线）。生成后为草稿状态，需用户在编辑器中检查并发布后才能运行。适合可复用的自动化流程；一次性的多步任务请用 create_task_plan。',
+    inputSchema: CreateWorkflowDraftInput,
+    dangerLevel: 'write',
+    executeTimeoutMs: 300_000,
+    execute: async (input, ctx) => {
+      if (!deps.drafts) {
+        throw new Error('工作流草稿生成未装配')
+      }
+      const r = await deps.drafts.draftFromDescription({ description: input.description, name: input.name }, { signal: ctx.signal }).catch((e: unknown) => {
+        // create 与 saveDraft 非原子（review P3-6）：保存失败时提示定义已存在
+        throw new Error(`${e instanceof Error ? e.message : String(e)}`)
+      })
+      collectSystemAgentRef(ctx, { kind: 'workflow_draft', id: r.definitionId, label: r.name })
+      logger.info(`[system-agent] create_workflow_draft id=${r.definitionId} nodes=${r.nodeCount} repair=${r.repairRounds}`)
+      const risky = r.nodeTypes.filter((t) => t === 'code' || t === 'http-request')
+      const extra = risky.length > 0 ? `（含 ${risky.join('/')} 节点，请提醒用户重点检查其内容）` : ''
+      return {
+        definitionId: r.definitionId,
+        name: r.name,
+        nodeCount: r.nodeCount,
+        hint: `工作流草稿已生成：请告知用户到工作流编辑器中检查并发布后才能运行。${extra}`,
+      }
+    },
+  }
+
+  return [discoverTool, runWorkflowTool, getWorkflowRunTool, invokeSkillTool, createTaskPlanTool, createWorkflowDraftTool]
 }
 
 /** 注册进 registry（source='builtin'：平台系统工具；workflow-boot 组合根调用） */

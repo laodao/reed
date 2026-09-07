@@ -7,6 +7,7 @@
           @keyup.enter="onSearch" @clear="onSearch" />
         <el-button @click="showImport = true">导入</el-button>
         <el-button @click="showTemplates = true">从模板创建</el-button>
+        <el-button type="success" plain @click="showDraftNl = true">从描述创建</el-button>
         <el-button type="primary" @click="handleCreate">新建工作流</el-button>
       </div>
     </div>
@@ -125,7 +126,24 @@
       <input type="file" accept=".json" @change="onImportFile" />
       <p class="hint">选择此前导出的工作流 JSON 文件；同名时将创建"（导入）"副本</p>
     </el-dialog>
-  </div>
+  
+    <!-- 从描述创建（31 号 M7）：NL → 工作流草稿 → 编辑器 -->
+    <el-dialog v-model="showDraftNl" title="从描述创建工作流" width="520px" :close-on-click-modal="!draftNlLoading" :close-on-press-escape="!draftNlLoading" :show-close="!draftNlLoading">
+      <div class="draft-nl-hint">描述你想自动化的流程（做什么、输入是什么、产出什么），AI 会生成工作流草稿，创建后进入编辑器检查并发布。</div>
+      <el-input
+        v-model="draftNlDescription"
+        type="textarea"
+        :rows="4"
+        maxlength="1000"
+        show-word-limit
+        placeholder="例：抓取某个网页的正文，翻译成英文，再把结果存进数据表"
+      />
+      <template #footer>
+        <el-button @click="showDraftNl = false">取消</el-button>
+        <el-button type="primary" :loading="draftNlLoading" @click="handleDraftFromNl">生成草稿</el-button>
+      </template>
+    </el-dialog>
+</div>
 </template>
 
 <script setup lang="ts">
@@ -173,6 +191,9 @@ import sttAppTpl from '@/assets/workflow-templates/stt-app.json'
 import voiceCloneAppTpl from '@/assets/workflow-templates/voice-clone-app.json'
 
 const showTemplates = ref(false)
+const showDraftNl = ref(false)
+const draftNlDescription = ref('')
+const draftNlLoading = ref(false)
 const builtinTemplates = [
   { name: ragTpl.name, title: ragTpl.name, desc: ragTpl.description, nodeCount: ragTpl.graph.nodes.length, raw: ragTpl },
   { name: translateTpl.name, title: translateTpl.name, desc: translateTpl.description, nodeCount: translateTpl.graph.nodes.length, raw: translateTpl },
@@ -237,6 +258,31 @@ function handleSortChange({ prop, order }: { prop: string | null; order: string 
 
 function handlePageChange() {
   void load()
+}
+
+// 从描述创建（31 号 M7）：NL → 工作流草稿 → 跳编辑器
+async function handleDraftFromNl(): Promise<void> {
+  const description = draftNlDescription.value.trim()
+  if (!description) {
+    ElMessage.warning('请先描述你想要的工作流')
+    return
+  }
+  draftNlLoading.value = true
+  try {
+    const resp = await (window as never as { electronAPI: { workflow: { draftFromNl: (p: { description: string }) => Promise<{ success: boolean; data?: { definitionId: string; name: string }; error?: string }> } } }).electronAPI.workflow.draftFromNl({ description })
+    if (resp.success && resp.data) {
+      showDraftNl.value = false
+      draftNlDescription.value = ''
+      ElMessage.success('草稿已生成，请在编辑器中检查并发布')
+      void router.push(`/workflow/editor/${resp.data.definitionId}`)
+    } else {
+      ElMessage.error(resp.error ?? '生成失败')
+    }
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '生成失败')
+  } finally {
+    draftNlLoading.value = false
+  }
 }
 
 async function handleCreate() {
@@ -338,6 +384,7 @@ onMounted(load)
 </script>
 
 <style scoped>
+.draft-nl-hint { font-size: 12px; color: var(--el-text-color-secondary); margin-bottom: 10px; line-height: 1.6; }
 /* 三区固定布局：header 固定 / 表格内部滚动（表头 sticky）/ 分页固定底部 */
 .page-container { padding: 20px; height: 100%; display: flex; flex-direction: column; overflow: hidden; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-shrink: 0; }

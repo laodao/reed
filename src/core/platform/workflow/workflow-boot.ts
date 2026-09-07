@@ -40,6 +40,8 @@ interface WorkflowSubsystem {
   agentSessions: import('@core/database/repositories/agent-session.repository').AgentSessionRepository | null
   /** Agent 轨迹仓储（29 号 M5.5 工作台数据源；未装配为 null） */
   agentTrajectories: import('@core/database/repositories/agent-trajectory.repository').AgentTrajectoryRepository | null
+  /** NL→工作流草稿生成（31 号 M7；M5 块装配） */
+  draftService: import('@core/platform/workflow/draft/workflow-draft.service').WorkflowDraftService | null
 }
 
 let subsystem: WorkflowSubsystem | null = null
@@ -367,6 +369,7 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
   let agentTasks: import('@core/platform/agent-runtime/tasks/task-service').AgentTaskService | null = null
   let memoryFlywheel: import('@core/platform/agent-runtime/memory/memory-flywheel').MemoryFlywheelService | null = null
   let agentSessionRepo: import('@core/database/repositories/agent-session.repository').AgentSessionRepository | null = null
+  let draftService: import('@core/platform/workflow/draft/workflow-draft.service').WorkflowDraftService | null = null
   try {
     if (db.dataSource && db.agentTasks && db.agentMemoryEntries) {
       // M2 harness 必须就位（review W7：否则每任务执行时才爆炸并白烧重规划 LLM）
@@ -619,6 +622,13 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
     const { getAgentLoopHarness } = await import('./nodes/agent-loop-node')
     const harness = getAgentLoopHarness()
     const { registerSystemAgentTools } = await import('./tools/system-agent-tools')
+    const { WorkflowDraftService } = await import('./draft/workflow-draft.service')
+    draftService = new WorkflowDraftService({
+      resolveModel: (opts) => providerAdapter!.resolveModel(opts),
+      validate: (graph) => definitionService.validate(graph).errors,
+      create: (input) => definitionService.create(input),
+      saveDraft: (id, graph) => definitionService.saveDraft(id, graph),
+    })
     // 技能服务失败只降级 invoke_skill（目录技能为空/调用报"不存在"），
     // 不拖垮 run_workflow/discover 等无关工具（对抗 review P3）
     let skills: Parameters<typeof registerSystemAgentTools>[0]['skills']
@@ -635,13 +645,14 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
       definitions: definitionService,
       tasks: agentTasks,
       skills,
+      drafts: draftService,
       resolveModel: (opts) => providerAdapter!.resolveModel(opts),
     })
   } catch (e) {
     logger.warn('[workflow-boot] M5 系统 agent 工具集注册失败（继续启动）', e)
   }
 
-  subsystem = { engine, runService, definitionService, scheduler, appDefinitionService, appSessionService, agentTasks, memoryFlywheel, agentSessions: agentSessionRepo, agentTrajectories: trajectoryRepo }
+  subsystem = { engine, runService, definitionService, scheduler, appDefinitionService, appSessionService, agentTasks, memoryFlywheel, agentSessions: agentSessionRepo, agentTrajectories: trajectoryRepo, draftService }
   logger.info('[workflow-boot] 工作流子系统已启动')
   return subsystem
 }
