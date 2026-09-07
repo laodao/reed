@@ -60,7 +60,7 @@ interface AiModule {
 const STAGNANT_NUDGE = '检测到你连续多轮执行完全相同的工具调用。请更换策略，或直接给出最终答案。'
 
 // —— 展示/轨迹截断上限（命名常量：观测面字段裁剪，非行为参数） ——
-const TRAJECTORY_THOUGHT_MAX_CHARS = 500
+const TRAJECTORY_THOUGHT_MAX_CHARS = 4000
 const TRAJECTORY_ANSWER_MAX_CHARS = 2000
 const TOOL_ERROR_DETAIL_MAX_CHARS = 300
 export const ZOD_ISSUE_MAX = 8

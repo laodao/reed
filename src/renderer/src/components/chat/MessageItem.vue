@@ -452,6 +452,7 @@ import type { Message, Attachment } from '../../../shared/types'
 import ModelSelectDialog from './ModelSelectDialog.vue'
 import ExportToObsidianDialog from './ExportToObsidianDialog.vue'
 import { saveBlobAs } from '@/utils/file-saver'
+import { agentToolLabel } from '@/utils/agent-tool-labels'
 import { extractCodeBlocks, restoreCodeBlocks, escapeHtmlKeepPlaceholders } from './code-block'
 // 重型库（html2canvas/mermaid）按需加载：避免阻塞聊天页首次打开（模块求值耗时大）
 import { loadHtml2Canvas, loadMermaid } from '@/utils/lazy-libs'
@@ -475,21 +476,7 @@ const collapsedToolCalls = computed(() => {
   return out
 })
 
-/** 工具名 → 展示名（系统工具给中文名，其余原样） */
-function agentToolLabel(name: string): string {
-  const labels: Record<string, string> = {
-    discover_capabilities: '查询能力目录',
-    run_workflow: '运行工作流',
-    get_workflow_run: '查询运行',
-    invoke_skill: '执行技能',
-    create_task_plan: '创建任务树',
-    web_search: '联网搜索',
-    wf_web_extract: '网页提取',
-    http_get: 'HTTP 获取',
-    data_table_query: '数据表查询'
-  }
-  return labels[name] ?? name
-}
+
 
 function refKindLabel(kind: string): string {
   const labels: Record<string, string> = {

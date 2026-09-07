@@ -198,6 +198,8 @@ export async function runAgentChatTurn(
     scopeKey: scopeId,
     onEntry: deps.onTrajectoryEntry,
   })
+  // 轮次起点标记（29 号对话流按它切轮次段：iteration 每轮从 0 重来不可作边界）
+  sink.append({ iteration: 0, kind: 'decision', name: 'turn_start', payload: { dialogId: params.dialogId } })
 
   const refs: SystemAgentTurnRef[] = []
   const toolCalls: AgentMessageMeta['toolCalls'] = []

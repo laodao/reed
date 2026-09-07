@@ -141,3 +141,25 @@ abort 中途落点 error/aborted 存疑（依赖 ai@6 行为）；对账不跳�
 - 真机验收（CDP）：聊天发起 agent 轮次 → 工作台会话列表出现会话、时间线实时追加
   decision/tool_call/tool_result/final；任务树执行同样可见；「停止」对话轮即时中断；
   关窗 → 托盘存活 → 重开 → 回放完整轨迹；杀进程重启 → 任务 running 行被对账重置重跑。
+
+### 10.3 对话页重构（用户澄清后，2026-09-08，049ce685 + 后续）
+
+用户对照 deepseek-harness 截图提出三点：①对话框要显示完整执行过程（非只显最终结果）；
+②不得照搬 AI 对话的 MessageItem 渲染；③右侧不放执行过程，改为会话上下文/记忆/子任务/
+工作流。落地：
+
+- **中栏活动流**：轨迹按 `turn_start` 标记切段（iteration 每轮从 0 重来不可作边界；
+  聊天宿主每轮起点写入标记），与用户消息按 createdAt 交织。段内：decision 的 thought
+  = 步内叙述 → 全显（超 340px 折叠展开）；tool_call/tool_result 按 toolCallId 配对 →
+  ZCode 式一行卡片（⏺/✗/⟳ 状态 + 参数摘要 + 耗时，点击展开入参/返回 JSON）；
+  guardrail_stop → 系统提示条；memory_assembly → 淡标注。TRALLENGE：thought 轨迹上限
+  500→4000 字符（叙述即输出，前端折叠承担展示）。
+- **右栏上下文检查器**：会话上下文（模型/轮次/执行步骤/Tokens 求和）、记忆（装配引用
+  + 知识飞轮入口）、子任务规划（refs→任务树迷你状态树）、工作流（refs→运行状态标签）、
+  技能（refs 清单）。
+- **弃用 MessageItem**：本页自建活动流渲染；工具展示名抽 `utils/agent-tool-labels.ts`
+  共用。旧格式会话（无 turn_start）回退纯消息渲染。
+- 修复：`api()` 返回 workflow 命名空间后调用点未加 `agentConsole.` 前缀（页面全空）、
+  TimelineItem `kind`/模板 `type` 字段错位（用户气泡不渲染）、新建会话零消息选不中
+  （合成会话项）。
+- 真机验收：用户气泡 + 叙述/工具交织 + 右栏五区块全部渲染正常（截图核验）。
