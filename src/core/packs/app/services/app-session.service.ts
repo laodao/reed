@@ -39,6 +39,8 @@ type RunServiceLike = {
   }): Promise<{ id: string; status: string; skipReason?: string | null }>
   /** 运行详情（含节点执行记录）——finishSucceeded 聚合 report/message 输出用 */
   getRunDetail?(runId: string): Promise<{ run: { status: string; error?: string | null }; nodeRuns: Array<{ nodeType?: string; output?: Record<string, unknown> | null }> } | null>
+  /** 审核决策（review M3：走 runService 以经过 S7 指派校验，而非直通引擎） */
+  reviewDecide(runId: string, nodeId: string, decision: { decision: 'approve' | 'approve_with_changes' | 'reject'; editedValues?: Record<string, unknown>; choice?: string }, userId: string): Promise<{ success: boolean; error?: string }>
 }
 
 type EngineLike = {
@@ -324,7 +326,8 @@ export class AppSessionService {
     }
   }
 
-  /** 审核恢复（runId 从会话 last_run_id 取；成功后由事件桥继续） */
+  /** 审核恢复（runId 从会话 last_run_id 取；成功后由事件桥继续）。
+   *  委托 WorkflowRunService.reviewDecide（review M3：直通 engine 曾绕过 S7 指派校验）。 */
   async reviewDecide(
     sessionId: string,
     nodeId: string,
@@ -332,7 +335,9 @@ export class AppSessionService {
   ): Promise<boolean> {
     const session = await this.deps.appSessions.findById(sessionId)
     if (!session?.lastRunId) throw new Error('会话没有运行中的任务')
-    return this.deps.engine.resumeReview(session.lastRunId, nodeId, decision)
+    const result = await this.deps.runService.reviewDecide(session.lastRunId, nodeId, decision, session.userId ?? '')
+    if (!result.success) throw new Error(result.error ?? '决策未生效')
+    return true
   }
 
   // ==================== 事件桥 ====================

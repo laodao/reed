@@ -338,6 +338,23 @@ export class WorkflowRunService {
     decision: ReviewDecisionInput,
     userId: string
   ): Promise<{ success: boolean; error?: string }> {
+    // S7 指派校验（27 号）：节点声明 assigneeId 时仅被指派人可决策。
+    // 数据源 = 专用 status 过滤查询（review M1/M4：无序 findOne 曾可能取到历史
+    // 迭代行使授权检查失效）。⚠️ 跨用户边界（review M2）：assignee≠owner 时
+    // resumeReview 的引擎守卫仍按属主拒绝——指派机制当前生效域为单用户/
+    // 同属主会话，跨用户代执行需共享 token 立项（27 号 §0 注记）。
+    const pending = await this.deps.nodeRuns.findWaitingReviewByNode(runId, nodeId)
+    if (pending && pending.nodeType === 'human-review') {
+      const assigneeId = (pending.input as { assigneeId?: unknown } | null)?.assigneeId
+      if (assigneeId !== undefined && assigneeId !== null && String(assigneeId).trim() !== '') {
+        if (String(assigneeId) !== userId) {
+          logger.warn(`[review] S7 指派拒绝：assignee=${String(assigneeId)} operator=${userId}（run ${runId}/${nodeId}）`)
+          return { success: false, error: '该审批已指派给其他成员，仅被指派人可决策' }
+        }
+      } else if (assigneeId !== undefined) {
+        logger.warn(`[review] S7 assigneeId 非字符串被忽略（run ${runId}/${nodeId}）`)
+      }
+    }
     const applied = await runWithUserAsync(userId, () =>
       this.deps.engine.resumeReview(runId, nodeId, decision)
     )

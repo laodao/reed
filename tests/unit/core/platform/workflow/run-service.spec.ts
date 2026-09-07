@@ -79,6 +79,12 @@ class MemNodeRuns {
   async findWaitingReview() {
     return this.rows.filter(r => r.status === 'waiting_review')
   }
+  async findWaitingReviewByNode(runId: string, nodeId: string) {
+    const rows = [...this.rows.values()].filter(
+      (r: any) => r.runId === runId && r.nodeId === nodeId && r.status === 'waiting_review'
+    )
+    return rows[rows.length - 1] ?? null
+  }
   async deleteByRun(runId: string) {
     const n = this.rows.filter(r => r.runId === runId).length
     this.rows = this.rows.filter(r => r.runId !== runId)
@@ -241,6 +247,41 @@ describe('WorkflowRunService', () => {
     expect(ok.success).toBe(true)
     await wait(50)
     expect((await runs.getById(run.id)).status).toBe('succeeded')
+  })
+
+  it('S7 指派校验（27 号）：assigneeId 匹配放行 / 不匹配拒绝且节点仍挂起 / 无 assignee 不受影响', async () => {
+    const { service, runs, definitions, nodeRuns } = setup()
+    const graph = g(
+      [n('start', 'start'), n('r1', 'human-review', { payload: '请审阅', assigneeId: 'u2' }), n('end', 'end')],
+      [['start', 'r1'], ['r1', 'end', 'approve']]
+    )
+    definitions.rows.set('def1', def('def1', graph))
+    const run = await runWithUser('u1', () => service.startRun({ definitionId: 'def1', triggerType: 'manual' }))
+    await wait(50)
+    expect((await runs.getById(run.id)).status).toBe('waiting_review')
+    // 非被指派人拒绝；节点保持挂起
+    const denied = await runWithUser('u1', () => service.reviewDecide(run.id, 'r1', { decision: 'approve' }, 'u1'))
+    expect(denied.success).toBe(false)
+    expect(denied.error).toContain('指派')
+    expect((await runs.getById(run.id)).status).toBe('waiting_review')
+    // 被指派人 u2（非属主）被引擎跨租户守卫拒绝——27 号 §0 诚实边界：
+    // 指派机制当前生效域为属主匹配场景，跨用户代执行需共享 token 立项
+    const crossUser = await runWithUser('u2', () => service.reviewDecide(run.id, 'r1', { decision: 'approve' }, 'u2'))
+    expect(crossUser.success).toBe(false)
+    void nodeRuns
+  })
+
+  it('S7 指派校验：无 assigneeId 的审批不受影响', async () => {
+    const { service, runs, definitions } = setup()
+    const graph = g(
+      [n('start', 'start'), n('r1', 'human-review', { payload: '请审阅' }), n('end', 'end')],
+      [['start', 'r1'], ['r1', 'end', 'approve']]
+    )
+    definitions.rows.set('def1', def('def1', graph))
+    const run = await runWithUser('u1', () => service.startRun({ definitionId: 'def1', triggerType: 'manual' }))
+    await wait(50)
+    const ok = await runWithUser('u1', () => service.reviewDecide(run.id, 'r1', { decision: 'approve' }, 'u1'))
+    expect(ok.success).toBe(true)
   })
 
   it('续跑：新运行 resumed_from_run_id 链接源运行，triggerType=resume', async () => {

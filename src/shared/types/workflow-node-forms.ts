@@ -167,6 +167,7 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
       templateHint: true,
       placeholder: '对象 JSON 或 {{上游节点.字段}}',
     }),
+    { key: 'assigneeId', label: '指派审批人（可选）', type: 'text', templateHint: true, placeholder: '用户 id 或 {{start.assignee}}；留空 = 不限', help: '非空时仅被指派用户可批准/驳回（27 号 S7）' },
     { key: 'timeoutMs', label: '超时（毫秒）', type: 'number', placeholder: '留空 = 无限等待' },
     T('timeoutPolicy', '超时策略', {
       type: 'select',
@@ -335,8 +336,8 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     { key: 'dataSourceId', label: '数据源', type: 'select-dynamic', source: 'dataSources', help: '选外部数据库=读写第三方库；留空=读写本应用内置数据表', group: '数据源' },
     { key: 'sql', label: 'SQL', type: 'textarea', noTemplate: true, help: '外部数据源模式用：SELECT/DML，参数统一用 $1,$2 占位（各库自动翻译），值取自下方 params。sql 不支持 {{}} 模板，防止上游变量被拼接进 SQL 文本', group: '外部数据库' },
     { key: 'params', label: '参数（JSON 数组）', type: 'textarea', help: '与 $1,$2 占位符一一对应，如 [123, "2024-01-01"]；留空=无参数', group: '外部数据库' },
-    { key: 'tableId', label: '表 ID', group: '内置数据表', help: 'insert 可留空按 tableName 自动建表；query/update/delete 必填其一' },
-    { key: 'tableName', label: '表名', group: '内置数据表', help: '表不存在时 insert 自动创建（列从 row 键推导）' },
+    { key: 'tableId', label: '表 ID', type: 'text', group: '内置数据表', help: 'insert 可留空按 tableName 自动建表；query/update/delete 必填其一' },
+    { key: 'tableName', label: '表名', type: 'text', group: '内置数据表', help: '表不存在时 insert 自动创建（列从 row 键推导）' },
     { key: 'row', label: '行 JSON', type: 'textarea', templateHint: true, group: '内置数据表', help: 'insert/update 用，如 {"name":"{{start.name}}","qty":3}' },
     { key: 'rowId', label: '行 ID', group: '内置数据表', help: 'update/delete 用' },
   ],

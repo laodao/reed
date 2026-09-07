@@ -255,6 +255,8 @@ export interface WorkflowNodeConfigMap {
   'human-review': {
     /** 送审内容：对象模板的 JSON 字符串或纯文本模板 */
     payload: string
+    /** 指派审批人（可选；用户 id，支持 {{模板}}。非空时仅该用户可决策——S7） */
+    assigneeId?: string
     /** 审核超时毫秒；null=无限等待（默认） */
     timeoutMs?: number | null
     /** 超时策略：approve=视为批准 | reject=视为驳回 | fail=节点失败（默认 fail） */

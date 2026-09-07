@@ -199,6 +199,18 @@ export class WorkflowNodeRunRepository extends BaseRepository<
     return e ? this.toDto(e) : null
   }
 
+  /**
+   * 节点当前挂起行（迭代无关——review M1/M4：按 status 过滤直达 waiting_review 行，
+   * 避免无序 findOne 取到历史迭代行把授权检查变成掷骰子）。S7 指派校验数据源。
+   */
+  async findWaitingReviewByNode(runId: string, nodeId: string): Promise<WorkflowNodeRunRecord | null> {
+    const rows = await this.scoped.find({
+      where: { runId, nodeId, status: 'waiting_review' } as FindOptionsWhere<WorkflowNodeRunEntity>,
+      order: { iterationIndex: 'ASC' },
+    })
+    return rows.length > 0 ? this.toDto(rows[rows.length - 1]) : null
+  }
+
   /** 某运行的全部节点执行记录（历史回放/装配） */
   async getByRun(runId: string): Promise<WorkflowNodeRunRecord[]> {
     const rows = await this.scoped.find({

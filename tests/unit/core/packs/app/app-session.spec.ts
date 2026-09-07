@@ -63,7 +63,8 @@ const tapSource = { tapEvents: (cb: any) => { tapCb = cb; return () => { tapCb =
 
 let startRunImpl: (input: any) => Promise<any>
 let getRunDetailImpl: (runId: string) => Promise<any>
-const fakeRunService = { startRun: (i: any) => startRunImpl(i), getRunDetail: (r: string) => getRunDetailImpl(r) }
+const reviewDecideImpl = vi.fn(async () => ({ success: true }))
+const fakeRunService = { startRun: (i: any) => startRunImpl(i), getRunDetail: (r: string) => getRunDetailImpl(r), reviewDecide: (runId: string, nodeId: string, d: any, userId: string) => reviewDecideImpl(runId, nodeId, d, userId) }
 const fakeEngine = { resumeReview: vi.fn(async () => true) }
 const defs = { getById: vi.fn(async () => ({ id: 'd1', publishedGraph: { version: 1, nodes: [{ id: 'start', type: 'start', config: { inputs: [{ key: 'q', type: 'string' }] } }], edges: [] } })) }
 
@@ -275,12 +276,15 @@ describe('AppSessionService：startRun 与多轮', () => {
 })
 
 describe('AppSessionService：审核恢复', () => {
-  it('reviewDecide 透传 engine.resumeReview（runId=lastRunId + nodeId + 决策）', async () => {
+  it('reviewDecide 委托 runService.reviewDecide（review M3：经 S7 指派校验而非直通引擎）', async () => {
     const { apps, svc } = makeService()
     const s = await bootRun(apps, svc)
-    fakeEngine.resumeReview.mockClear()
+    reviewDecideImpl.mockClear()
     await svc.reviewDecide(s.id, 'form', { decision: 'approve_with_changes', editedValues: { doc: 'v' } } as any)
-    expect(fakeEngine.resumeReview).toHaveBeenCalledWith('run_1', 'form', expect.objectContaining({ decision: 'approve_with_changes', editedValues: { doc: 'v' } }))
+    expect(reviewDecideImpl).toHaveBeenCalledWith('run_1', 'form', expect.objectContaining({ decision: 'approve_with_changes', editedValues: { doc: 'v' } }), expect.any(String))
+    // 决策被 S7 拒绝 → 抛错（会话入口拿到明确原因）
+    reviewDecideImpl.mockResolvedValueOnce({ success: false, error: '该审批已指派给其他成员，仅被指派人可决策' })
+    await expect(svc.reviewDecide(s.id, 'form', { decision: 'approve' } as any)).rejects.toThrow('指派')
   })
 })
 
