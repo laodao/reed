@@ -84,8 +84,8 @@
           <!-- Agent 工具调用 chips（28 号 M5；内容上方，呼应执行顺序） -->
           <div v-if="message.metadata?.agent?.toolCalls?.length" class="agent-tool-calls">
             <el-tooltip
-              v-for="(call, index) in message.metadata.agent.toolCalls"
-              :key="index"
+              v-for="call in collapsedToolCalls"
+              :key="call.key"
               :content="call.argsDigest || call.name"
               placement="top"
               :disabled="!call.argsDigest"
@@ -99,7 +99,7 @@
                 <el-icon v-if="call.ok === false"><CircleCloseFilled /></el-icon>
                 <el-icon v-else-if="call.ok === true"><CircleCheckFilled /></el-icon>
                 <el-icon v-else class="is-loading"><Loading /></el-icon>
-                <span class="tool-chip-name">{{ agentToolLabel(call.name) }}</span>
+                <span class="tool-chip-name">{{ agentToolLabel(call.name) }}<template v-if="call.count > 1"> ×{{ call.count }}</template></span>
               </el-tag>
             </el-tooltip>
           </div>
@@ -459,6 +459,21 @@ import { loadHtml2Canvas, loadMermaid } from '@/utils/lazy-libs'
 // ==================== Agent 工具 chips / 引用卡片（28 号 M5） ====================
 
 const router = useRouter()
+
+/** 连续同名工具调用折叠为一条 ×N（review 真机：模型连环查目录曾刷出 39 枚同款 chips） */
+const collapsedToolCalls = computed(() => {
+  const calls = props.message.metadata?.agent?.toolCalls ?? []
+  const out: Array<{ key: string; name: string; ok?: boolean; argsDigest?: string; count: number }> = []
+  for (const call of calls) {
+    const last = out[out.length - 1]
+    if (last && last.name === call.name && last.ok === call.ok) {
+      last.count++
+      continue
+    }
+    out.push({ key: `tc-${out.length}`, name: call.name, ok: call.ok, argsDigest: call.argsDigest, count: 1 })
+  }
+  return out
+})
 
 /** 工具名 → 展示名（系统工具给中文名，其余原样） */
 function agentToolLabel(name: string): string {

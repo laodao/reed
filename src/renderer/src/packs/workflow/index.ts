@@ -85,8 +85,8 @@ export const workflowPack: RendererPackDefinition = {
     },
     {
       path: '/agent-console',
-      label: 'Agent 工作台',
-      description: 'Agent 会话过程时间线（工具调用/决策/结果）',
+      label: 'Agent 对话',
+      description: '独立的 Agent 会话——直接派活，过程时间线全程可见',
       icon: markRaw(Connection),
     },
     {
