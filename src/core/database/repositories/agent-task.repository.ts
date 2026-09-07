@@ -12,6 +12,8 @@ import { BaseRepository } from '../base-repository'
 
 export interface AgentTaskRow {
   id: string
+  /** 所有者（29 号 M5.5 启动对账按行属主重放 ALS；scoped 写入时注入） */
+  userId: string | null
   parentId: string | null
   rootId: string
   depth: number
@@ -101,6 +103,15 @@ export class AgentTaskRepository extends BaseRepository<AgentTaskEntity, AgentTa
   }
 
   /**
+   * 裸查指定状态（跨租户；29 号 M5.5 启动对账专用——启动时无 ALS 用户上下文，
+   * scoped 查询会漏掉所有用户的行）。仅用于对账路径，业务读一律走 scoped。
+   */
+  async listByStatusRaw(status: string): Promise<AgentTaskRow[]> {
+    const rows = await this.repo.find({ where: { status } as FindOptionsWhere<AgentTaskEntity>, order: { createdAt: 'ASC' } })
+    return this.toDtoList(rows)
+  }
+
+  /**
    * CAS 状态前置迁移（review T3/W4：盲 patch 曾使人工裁决被在途 LLM 验证覆盖、
    * 取消被结算复活）。仅当当前 status ∈ fromStatuses 时应用，返回是否应用。
    */
@@ -144,6 +155,7 @@ export class AgentTaskRepository extends BaseRepository<AgentTaskEntity, AgentTa
   protected toDto(e: AgentTaskEntity): AgentTaskRow {
     return {
       id: e.id,
+      userId: e.userId,
       parentId: e.parentId,
       rootId: e.rootId,
       depth: e.depth,

@@ -51,6 +51,8 @@ export interface TaskExecutorPorts {
     sessionKey: string
     memoryLines?: string[]
     signal?: AbortSignal
+    /** 所属树根 id（29 号 M5.5：工作台停止按钮路由到 cancelTree 用） */
+    rootId?: string
   }) => Promise<{ output: unknown; stopReason: string; error?: string }>
   /** sub_workflow 执行器：startRun + 等终态（skipped 即败；waiting_review 继续等） */
   runSubWorkflow?: (input: {
@@ -132,7 +134,47 @@ export class AgentTaskService {
     void this.schedule(rootId).catch((e) => logger.warn(`[task] 调度链异常（${rootId}）`, e))
   }
 
+  /**
+   * 启动对账（29 号 M5.5 批1）：崩溃/强退时 running 行永久滞留——重启后重置为
+   * ready 并重新调度（任务执行有会话续写 + retry 语义，重跑幂等可接受）。
+   * verifying/escalated 等待人工态不动；跨租户裸查（启动时无 ALS 上下文）。
+   */
+  async recoverInterrupted(): Promise<{ recovered: number; rootIds: string[] }> {
+    const stale = await this.deps.tasks.listByStatusRaw('running')
+    const rootOwners = new Map<string, string | null>()
+    for (const row of stale) {
+      // CAS：仅 running 可迁移——对账与"理论上仍可能存活的写"互斥保护
+      const applied = await this.deps.tasks.patchFromStatus(row.id, ['running'], { status: 'ready' })
+      if (applied) rootOwners.set(row.rootId, row.userId)
+    }
+    if (rootOwners.size > 0) {
+      logger.warn(`[task] 启动对账：${rootOwners.size} 棵树有崩溃残留的 running 任务，已重置 ready 并重调度`)
+      for (const [rootId, ownerId] of rootOwners) {
+        // 按行属主重放 ALS（29 号 review P1-4：Web 启动链无用户上下文——scoped 读
+        // 空转、新轨迹/会话行写 null 租户、广播被无 uid 分支丢弃）
+        void this.recoverAsUser(rootId, ownerId)
+          .catch((e) => logger.warn(`[task] 对账重调度异常（${rootId}）`, e))
+      }
+    }
+    return { recovered: stale.length, rootIds: [...rootOwners.keys()] }
+  }
+
+  /** 对账重调度的 ALS 重放（按行属主；null 属主为历史/无主行，退化为直接调度） */
+  private async recoverAsUser(rootId: string, ownerId: string | null): Promise<void> {
+    if (ownerId === null) {
+      await this.schedule(rootId)
+      return
+    }
+    const { runWithUserAsync } = await import('@core/context/user-context')
+    await runWithUserAsync(ownerId, () => this.schedule(rootId))
+  }
+
   // ==================== 查询 ====================
+
+  /** 单任务行（29 号 M5.5 工作台 label/rootId 查询；scoped） */
+  async getById(taskId: string): Promise<AgentTaskRow | null> {
+    return this.deps.tasks.getById(taskId)
+  }
 
   async getTree(rootId: string): Promise<TaskTree> {
     const rows = await this.deps.tasks.listByRoot(rootId)
@@ -245,6 +287,14 @@ export class AgentTaskService {
       output = await this.execute(task, rootId)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
+      // 中止优先（29 号 review P0-1：工作台停止/cancelTree 的 abort 曾被当普通
+      // 失败走重试→重规划——用户每按一次停止树长一层）。中止 = 任务 cancelled
+      // 且泵下一检查点停摆，不 retry 不重规划。
+      if (this.cancelControllers.get(rootId)?.signal.aborted) {
+        await this.deps.tasks.patchFromStatus(task.id, ['running'], { status: 'cancelled', error: msg })
+        logger.info(`[task] 任务因中止终止（${task.id}）`)
+        return
+      }
       logger.warn(`[task] 执行异常（${task.id}）：${msg}`)
       // 执行异常先走带反馈重试（review T5：曾直接重规划——瞬时故障即烧规划 LLM）
       await this.retryOrFail(task, [msg], output)
@@ -291,6 +341,7 @@ export class AgentTaskService {
       sessionKey: `task:${task.id}`,
       memoryLines,
       signal: this.cancelControllers.get(rootId)?.signal,
+      rootId,
     })
     if (r.stopReason !== 'final') throw new Error(r.error ?? `Agent 循环未收敛（${r.stopReason}）`)
     return r.output
@@ -332,7 +383,8 @@ export class AgentTaskService {
     const isAggregate = (tree.children.get(task.id) ?? []).length > 0
     const spec = task.spec as unknown as AgentTaskSpec
     if (!isAggregate && task.retryCount < MAX_RETRIES) {
-      await this.deps.tasks.patchFromStatus(task.id, ['verifying'], {
+      // fromStatuses 含 running：execute 抛异常时行还在 running（verify 流程才先迁 verifying）
+      await this.deps.tasks.patchFromStatus(task.id, ['verifying', 'running'], {
         status: 'ready',
         retryCount: task.retryCount + 1,
         spec: { ...spec, goal: `${spec.goal}\n\n（上一轮产出未通过验收，请修正以下问题：${feedback ?? defects.join('；')}）` },

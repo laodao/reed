@@ -42,6 +42,11 @@ export interface TrajectoryAppendPort {
 export interface TrajectorySinkOptions {
   scope: 'workflow' | 'session'
   scopeKey: string
+  /**
+   * 逐条外推回调（29 号 M5.5：工作台实时时间线）——append 时同步触发，
+   * 异常只 warn 不影响缓冲/落库（fire-and-forget）。宿主注入（如广播到前端）。
+   */
+  onEntry?: (scopeKey: string, entry: TrajectoryEntry) => void
 }
 
 export class TrajectorySink {
@@ -59,6 +64,13 @@ export class TrajectorySink {
   /** 同步入缓冲（emitTrajectory 直通；永不 throw） */
   append(entry: TrajectoryEntry): void {
     this.buffer.push(entry)
+    if (this.opts.onEntry) {
+      try {
+        this.opts.onEntry(this.opts.scopeKey, entry)
+      } catch (e) {
+        logger.warn('[TrajectorySink] onEntry 回调异常（不影响落库）', e)
+      }
+    }
   }
 
   /**

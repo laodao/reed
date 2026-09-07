@@ -739,6 +739,22 @@ const electronAPI = {
     listMemoryActive: () => ipcRenderer.invoke('am:list-active'),
     approveMemory: (id: string) => ipcRenderer.invoke('am:approve', { id }),
     archiveMemory: (id: string) => ipcRenderer.invoke('am:archive', { id }),
+    // ==================== M5.5 Agent 工作台 ====================
+    agentConsole: {
+      listSessions: () => ipcRenderer.invoke('ac:list-sessions'),
+      getTrajectory: (p: { scopeKey: string }) => ipcRenderer.invoke('ac:get-trajectory', p),
+      stop: (p: { scopeKey: string }) => ipcRenderer.invoke('ac:stop', p),
+      onTrajectory: (callback: (data: any) => void) => {
+        const handler = (_event: any, data: any) => callback(data)
+        ipcRenderer.on('ac:trajectory', handler)
+        return () => ipcRenderer.removeListener('ac:trajectory', handler)
+      },
+      onRunUpdate: (callback: (data: any) => void) => {
+        const handler = (_event: any, data: any) => callback(data)
+        ipcRenderer.on('ac:run-update', handler)
+        return () => ipcRenderer.removeListener('ac:run-update', handler)
+      },
+    },
     // ==================== 触发器 ====================
     triggerPreview: (expression: string) => ipcRenderer.invoke('wf:trigger-preview', { expression }),
     listAgentTools: () => ipcRenderer.invoke('wf:list-agent-tools'),

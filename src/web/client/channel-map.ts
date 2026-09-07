@@ -69,6 +69,13 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   // chat.onStream(cb) — 后端 emit('chat:stream', event)
   // PC preload 透传 (event, data)，渲染端按 (event, data) 解构 → 标 legacyEventArg
   'chat.onStream': { channel: 'chat:stream', legacyEventArg: true },
+  // M5.5 Agent 工作台（29 号）。键名必须含全层级（bridge 按 dot path 精确查找）；
+  // preload 契约已是对象入参（wrap 只透传）；preload 已 strip event（无 legacyEventArg）
+  'workflow.agentConsole.listSessions': { channel: 'ac:list-sessions' },
+  'workflow.agentConsole.getTrajectory': { channel: 'ac:get-trajectory', wrap: (p: unknown) => [p] },
+  'workflow.agentConsole.stop': { channel: 'ac:stop', wrap: (p: unknown) => [p] },
+  'workflow.agentConsole.onTrajectory': { channel: 'ac:trajectory' },
+  'workflow.agentConsole.onRunUpdate': { channel: 'ac:run-update' },
   'image.generate': { channel: 'image:generate' },
   'image.getTaskStatus': { channel: 'image:task-status' },
   'image.stop': { channel: 'image:stop' },

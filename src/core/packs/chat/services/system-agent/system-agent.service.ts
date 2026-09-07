@@ -146,6 +146,9 @@ export interface AgentTurnSessionPort {
   save(sessionId: string, messages: ModelMessage[]): Promise<void>
 }
 
+/** 轨迹逐条外推回调（29 号 M5.5 工作台实时时间线；fire-and-forget） */
+export type OnTrajectoryEntry = (scopeKey: string, entry: import('@core/platform/agent-runtime/types').TrajectoryEntry) => void
+
 /** 一轮对话的可注入端口（单测全 fake；生产由 sendMessage 装配） */
 export interface AgentChatTurnDeps {
   messages: AgentTurnMessagePort
@@ -154,6 +157,8 @@ export interface AgentChatTurnDeps {
   registry: AgentToolRegistry
   resolveModel: (opts?: { providerConfigId?: string; modelId?: string }) => Promise<LanguageModel>
   emit: (event: StreamEvent) => void
+  /** 轨迹逐条外推（工作台实时时间线；可选——缺省不推） */
+  onTrajectoryEntry?: OnTrajectoryEntry
 }
 
 export interface AgentChatTurnResult {
@@ -188,7 +193,11 @@ export async function runAgentChatTurn(
 
   const scopeId = `dialog:${params.dialogId}`
   const sessionId = agentSessionId(params.dialogId)
-  const sink = new TrajectorySink(deps.trajectoryPort, { scope: 'session', scopeKey: scopeId })
+  const sink = new TrajectorySink(deps.trajectoryPort, {
+    scope: 'session',
+    scopeKey: scopeId,
+    onEntry: deps.onTrajectoryEntry,
+  })
 
   const refs: SystemAgentTurnRef[] = []
   const toolCalls: AgentMessageMeta['toolCalls'] = []
@@ -392,8 +401,22 @@ export class SystemAgentChatService {
     const abortController = new AbortController()
     activeAgentStreams.set(request.dialogId, abortController)
 
+    // 运行登记（29 号 M5.5：工作台运行中徽标 + 实时轨迹）
+    const { getAgentRunRegistry } = await import('@core/platform/agent-runtime/runtime/run-registry')
+    const { getCurrentUserId } = await import('@core/context/user-context')
+    const runRegistry = getAgentRunRegistry()
+    const runId = `ar_chat_${request.dialogId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    runRegistry.register({
+      id: runId,
+      definitionId: SYSTEM_AGENT_DEFINITION_ID,
+      scopeKey: `dialog:${request.dialogId}`,
+      label: request.content.slice(0, 40),
+      userId: getCurrentUserId(),
+      abort: () => abortController.abort(),
+    })
+
     try {
-      return await runAgentChatTurn(
+      const result = await runAgentChatTurn(
         {
           messages: dbManager.messages,
           sessions: getSessionStore(),
@@ -401,6 +424,9 @@ export class SystemAgentChatService {
           registry,
           resolveModel,
           emit: (event) => getEventEmitter().emit('chat:stream', event),
+          onTrajectoryEntry: (scopeKey, entry) => {
+            try { getEventEmitter().emit('ac:trajectory', { scopeKey, entry }) } catch { /* 广播失败不影响主链路 */ }
+          },
         },
         {
           dialogId: request.dialogId,
@@ -414,6 +440,22 @@ export class SystemAgentChatService {
           userMessageId: userMessage.id,
         },
       )
+      runRegistry.finish(runId, {
+        id: runId,
+        scopeKey: `dialog:${request.dialogId}`,
+        // human_rejected 是正常终止（对话内拒绝操作），归 done 不计 error（review P2-2）
+        status: result.stopReason === 'error' ? 'error' : result.stopReason === 'aborted' ? 'aborted' : 'done',
+        ...(result.error ? { error: result.error } : {}),
+      })
+      return result
+    } catch (e) {
+      runRegistry.finish(runId, {
+        id: runId,
+        scopeKey: `dialog:${request.dialogId}`,
+        status: 'error',
+        error: e instanceof Error ? e.message : String(e),
+      })
+      throw e
     } finally {
       // 身份校验删除（对抗 review P1：交叠轮曾会误删后一轮的 controller）
       if (activeAgentStreams.get(request.dialogId) === abortController) {

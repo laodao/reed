@@ -17,7 +17,7 @@ export const workflowPack: RendererPackDefinition = {
     version: '1.0.0',
     description: '可视化流程编排与自动化执行——定义/版本/触发器/运行/分享',
     contributions: {
-      routePaths: ['/workflow', '/workflow/editor/:id', '/workflow-run/:token', '/workflow/runs/:definitionId', '/workflow/run/:runId', '/agent-tasks', '/agent-memory', '/agent-todos'],
+      routePaths: ['/workflow', '/workflow/editor/:id', '/workflow-run/:token', '/workflow/runs/:definitionId', '/workflow/run/:runId', '/agent-tasks', '/agent-memory', '/agent-todos', '/agent-console'],
     },
   },
   routes: [
@@ -69,12 +69,24 @@ export const workflowPack: RendererPackDefinition = {
       component: () => import('@/views/workflow/AgentTodosView.vue'),
       meta: { title: '待办中心' },
     },
+    {
+      path: '/agent-console',
+      name: 'AgentConsole',
+      component: () => import('@/views/workflow/AgentConsoleView.vue'),
+      meta: { title: 'Agent 工作台' },
+    },
   ],
   menuItems: [
     {
       path: '/agent-todos',
       label: '待办中心',
       description: '审批/任务裁决/记忆审批集中处理',
+      icon: markRaw(Connection),
+    },
+    {
+      path: '/agent-console',
+      label: 'Agent 工作台',
+      description: 'Agent 会话过程时间线（工具调用/决策/结果）',
       icon: markRaw(Connection),
     },
     {

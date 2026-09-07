@@ -207,3 +207,46 @@ export interface PlannedTaskNode {
   executor?: AgentTaskExecutor
   children?: PlannedTaskNode[]
 }
+
+// ==================== Agent 工作台（29 号 M5.5） ====================
+
+/** 工作台会话列表项（agent_sessions distinct + 运行状态合成） */
+export interface AgentConsoleSession {
+  /** 轨迹 scopeKey（dialog:<id> / task:<taskId> / 其他宿主原生键） */
+  scopeKey: string
+  /** 会话族：聊天宿主 / 任务树执行器 / 其他宿主（story-room 等） */
+  kind: 'chat' | 'task' | 'other'
+  /** 展示名（聊天=对话标题，任务=任务标题，其他=conversationId） */
+  label: string
+  /** 跳转引用：chat→dialogId，task→taskId（叶子），other→null */
+  refId: string | null
+  /** 任务树的根 id（task 会话专有；跳任务树详情用——叶子 id 不能直接当 root） */
+  rootId: string | null
+  /** 最近的对话消息时间（agent_sessions 最新行） */
+  updatedAt: string | null
+  /** 会话消息行数 */
+  messageCount: number
+  /** 是否有在途运行（run registry） */
+  running: boolean
+}
+
+/** 轨迹条目（ac:trajectory 广播 / get-trajectory 返回行的 payload 形态）。
+ *  seq：回放行有值；实时广播条目在落库前为 null（按到达序展示） */
+export interface AgentConsoleTrajectoryEntry {
+  seq: number | null
+  iteration: number
+  kind: string
+  name?: string | null
+  payload?: Record<string, unknown> | null
+  promptTokens?: number | null
+  completionTokens?: number | null
+  durationMs?: number | null
+}
+
+/** 运行状态广播（ac:run-update） */
+export interface AgentRunUpdateEvent {
+  scopeKey: string
+  status: 'running' | 'done' | 'error' | 'aborted'
+  label?: string
+  error?: string
+}

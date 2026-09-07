@@ -117,7 +117,7 @@
         </div>
 
         <!-- Agent 引用卡片（工作流运行/任务树/技能，可跳转；28 号 M5） -->
-        <div v-if="message.metadata?.agent?.refs?.length" class="agent-refs">
+        <div v-if="message.metadata?.agent?.refs?.length || message.metadata?.agent?.toolCalls?.length" class="agent-refs">
           <div
             v-for="(ref, index) in message.metadata.agent.refs"
             :key="index"
@@ -129,6 +129,13 @@
             <span class="agent-ref-kind">{{ refKindLabel(ref.kind) }}</span>
             <span class="agent-ref-label">{{ ref.label }}</span>
             <el-icon v-if="refTarget(ref)" class="agent-ref-arrow"><ArrowRight /></el-icon>
+          </div>
+          <!-- 过程时间线深链（29 号 M5.5 工作台） -->
+          <div class="agent-ref-item clickable" @click="gotoConsole">
+            <el-icon><View /></el-icon>
+            <span class="agent-ref-kind">执行过程</span>
+            <span class="agent-ref-label">在工作台查看完整时间线</span>
+            <el-icon class="agent-ref-arrow"><ArrowRight /></el-icon>
           </div>
         </div>
 
@@ -438,7 +445,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Document, Edit, CopyDocument, Delete, Refresh, Switch, Collection, More, Picture, Notebook, ArrowRight, Folder, ArrowUp, ArrowDown, Top, CircleCheckFilled, CircleCloseFilled, Loading, Link } from '@element-plus/icons-vue'
+import { Document, Edit, CopyDocument, Delete, Refresh, Switch, Collection, More, Picture, Notebook, ArrowRight, Folder, ArrowUp, ArrowDown, Top, CircleCheckFilled, CircleCloseFilled, Loading, Link, View } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElImageViewer } from 'element-plus'
 import { marked } from 'marked'
 import type { Message, Attachment } from '../../../shared/types'
@@ -488,6 +495,11 @@ function refTarget(ref: { kind: string; id: string }): string | null {
 function gotoRef(ref: { kind: string; id: string }): void {
   const target = refTarget(ref)
   if (target) void router.push(target)
+}
+
+/** 过程时间线深链（29 号 M5.5 工作台）：聊天会话 scopeKey = dialog:<dialogId> */
+function gotoConsole(): void {
+  void router.push({ path: '/agent-console', query: { session: `dialog:${props.message.dialogId}` } })
 }
 
 interface ModelOption {

@@ -19,6 +19,7 @@
 
 import { registerWorkflowHandlers } from './handlers/workflow.handler'
 import { registerAgentTaskHandlers } from './handlers/agent-tasks.handler'
+import { registerAgentConsoleHandlers } from './handlers/agent-console.handler'
 import type { PackDefinition } from '../registry'
 
 export const workflowPack: PackDefinition = {
@@ -28,11 +29,12 @@ export const workflowPack: PackDefinition = {
     version: '1.0.0',
     description: '可视化流程编排与自动化执行——定义/版本/触发器/运行/分享',
     contributions: {
-      ipcChannelPrefixes: ['wf:', 'at:', 'am:'],
+      ipcChannelPrefixes: ['wf:', 'at:', 'am:', 'ac:'],
     },
   },
   activate() {
     registerWorkflowHandlers()
     registerAgentTaskHandlers()
+    registerAgentConsoleHandlers()
   },
 }

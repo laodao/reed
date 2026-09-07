@@ -202,6 +202,10 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "resources/tray.png",
+        "to": "tray.png"
       }
     ],
     "win": {

@@ -60,6 +60,30 @@ export class AgentSessionRepository extends BaseRepository<AgentSessionEntity, A
   }
 
   /**
+   * 会话列表（29 号 M5.5 工作台数据源）：distinct conversation_id + 最近活动时间 +
+   * 行数，按最近活动倒序。groupBy 聚合超出 ScopedRepoApi 能力——raw qb + 显式
+   * userId 过滤（ALS 同步捕获，语义与 scoped 等价）。
+   */
+  async listSessions(): Promise<Array<{ conversationId: string; updatedAt: Date | null; messageCount: number }>> {
+    const userId = getCurrentUserId()
+    const qb = this.repo
+      .createQueryBuilder('s')
+      .select('s.conversation_id', 'conversationId')
+      .addSelect('MAX(s.created_at)', 'updatedAt')
+      .addSelect('COUNT(*)', 'messageCount')
+      .groupBy('s.conversation_id')
+      .orderBy('MAX(s.created_at)', 'DESC')
+    if (userId === null) qb.where('s.user_id IS NULL')
+    else qb.where('s.user_id = :uid', { uid: userId })
+    const rows = await qb.getRawMany<{ conversationId: string; updatedAt: string | Date | null; messageCount: string }>()
+    return rows.map((r) => ({
+      conversationId: r.conversationId,
+      updatedAt: r.updatedAt ? new Date(r.updatedAt) : null,
+      messageCount: Number(r.messageCount ?? 0),
+    }))
+  }
+
+  /**
    * 全量替换：事务内 DELETE 该会话全部行 + 按下标重排 INSERT。
    * "宁可重放不丢史"（23 号 §6）——事务保证任意时刻磁盘上只有旧版或新版完整历史。
    */

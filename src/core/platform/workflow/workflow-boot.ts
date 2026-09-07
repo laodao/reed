@@ -36,6 +36,10 @@ interface WorkflowSubsystem {
   agentTasks: import('@core/platform/agent-runtime/tasks/task-service').AgentTaskService | null
   /** M3 知识飞轮（26 号批4；null 同上） */
   memoryFlywheel: import('@core/platform/agent-runtime/memory/memory-flywheel').MemoryFlywheelService | null
+  /** Agent 会话仓储（29 号 M5.5 工作台数据源；数据源缺失为 null） */
+  agentSessions: import('@core/database/repositories/agent-session.repository').AgentSessionRepository | null
+  /** Agent 轨迹仓储（29 号 M5.5 工作台数据源；未装配为 null） */
+  agentTrajectories: import('@core/database/repositories/agent-trajectory.repository').AgentTrajectoryRepository | null
 }
 
 let subsystem: WorkflowSubsystem | null = null
@@ -362,6 +366,7 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
   //     agentTasks=null 时 IPC 层返回明确错误——数据源缺失/仓储异常均降级）
   let agentTasks: import('@core/platform/agent-runtime/tasks/task-service').AgentTaskService | null = null
   let memoryFlywheel: import('@core/platform/agent-runtime/memory/memory-flywheel').MemoryFlywheelService | null = null
+  let agentSessionRepo: import('@core/database/repositories/agent-session.repository').AgentSessionRepository | null = null
   try {
     if (db.dataSource && db.agentTasks && db.agentMemoryEntries) {
       // M2 harness 必须就位（review W7：否则每任务执行时才爆炸并白烧重规划 LLM）
@@ -435,6 +440,9 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
       // 任务循环崩溃后 retry 从零开始；DbAgentSessionStore 即 M1 的 agent_sessions 表）
       const { DbAgentSessionStore } = await import('@core/platform/agent-runtime/memory/session-store')
       const taskSessionStore = new DbAgentSessionStore({ dataSource: db.dataSource })
+      // 工作台会话列表数据源（29 号 M5.5）
+      const { AgentSessionRepository } = await import('@core/database/repositories/agent-session.repository')
+      agentSessionRepo = new AgentSessionRepository(db.dataSource)
       agentTasks = new AgentTaskService({
         tasks: db.agentTasks,
         planner,
@@ -445,16 +453,43 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
             const { LoopRunner } = await import('@core/platform/agent-runtime/runtime/loop')
             const { normalizeToolWhitelist, getAgentLoopHarness } = await import('./nodes/agent-loop-node')
             const { TrajectorySink } = await import('@core/platform/agent-runtime/trajectory/sink')
+            const { getAgentRunRegistry } = await import('@core/platform/agent-runtime/runtime/run-registry')
             const harness = getAgentLoopHarness()
             const defs = harness.registry.buildToolDefs(normalizeToolWhitelist(toolWhitelist ?? []))
             const scopeKey = `task:${sessionKey.replace(/^task:/, '')}`
-            const sink = new TrajectorySink(trajectoryRepo, { scope: 'session', scopeKey })
+            // 轨迹逐条外推（29 号 M5.5：工作台实时时间线；异常在 sink 内收口）
+            // 运行登记（29 号 M5.5：工作台运行中徽标 + 停止按钮）。内层 controller
+            // 链接服务级取消信号（cancelTree）与工作台 abort——两者都能停掉本轮。
+            // 已中止的外层 signal 不再发 abort 事件——立即检查同步（review P1-1）
+            const inner = new AbortController()
+            const onOuterAbort = () => inner.abort(new Error('任务树已取消'))
+            signal?.addEventListener('abort', onOuterAbort, { once: true })
+            if (signal?.aborted) onOuterAbort()
+            const { getCurrentUserId } = await import('@core/context/user-context')
+            const runRegistry = getAgentRunRegistry()
+            const runId = `ar_task_${scopeKey}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+            runRegistry.register({
+              id: runId,
+              definitionId: 'agent-task',
+              scopeKey,
+              label: goal.slice(0, 40),
+              userId: getCurrentUserId(),
+              abort: () => inner.abort(new Error('已从工作台停止')),
+              metadata: { rootId },
+            })
+            const sink = new TrajectorySink(trajectoryRepo, {
+              scope: 'session',
+              scopeKey,
+              onEntry: (sk, entry) => {
+                try { getEventEmitter().emit('ac:trajectory', { scopeKey: sk, entry }) } catch { /* 广播失败不影响落库 */ }
+              },
+            })
             // 装配留痕（26 号 §4 验收：轨迹中可见引用——review T9）
             if (memoryLines && memoryLines.length > 0) {
               sink.append({ iteration: 0, kind: 'decision', name: 'memory_assembly', payload: { memoryRefs: memoryLines } })
             }
             const host: import('@core/platform/agent-runtime/types').AgentHost = {
-              signal: signal ?? new AbortController().signal,
+              signal: inner.signal,
               // 会话持久化（review W6）：崩溃恢复 + retry 续写
               loadState: async () => {
                 const history = await taskSessionStore.load(scopeKey)
@@ -481,7 +516,21 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
                 tools: defs,
                 maxSteps: maxSteps ?? 12,
               }, host)
-              .finally(() => sink.flush())
+              .catch((e: unknown) => {
+                // run() 本体抛出（loadState/saveState 链）也要落运行终态
+                runRegistry.finish(runId, { id: runId, scopeKey, status: 'error', error: e instanceof Error ? e.message : String(e) })
+                throw e
+              })
+              .finally(() => {
+                signal?.removeEventListener('abort', onOuterAbort)
+                void sink.flush()
+              })
+            runRegistry.finish(runId, {
+              id: runId,
+              scopeKey,
+              status: result.stopReason === 'final' ? 'done' : result.stopReason === 'aborted' ? 'aborted' : 'error',
+              ...(result.error ? { error: result.error } : {}),
+            })
             if (result.stopReason !== 'final') throw new Error(result.error ?? `Agent 循环未收敛（${result.stopReason}）`)
             return { output: result.output, stopReason: result.stopReason }
           },
@@ -535,6 +584,32 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
     logger.warn('[workflow-boot] M3 任务树子系统装配失败（继续启动）', e)
   }
 
+  // 10.5 M5.5 运行可见性（29 号批1/批3）：崩溃对账 + 运行注册表广播接线
+  try {
+    const subsystemForRecover = agentTasks
+    if (subsystemForRecover) {
+      void subsystemForRecover
+        .recoverInterrupted()
+        .catch((e) => logger.warn('[workflow-boot] 启动对账异常（不阻断）', e))
+    }
+    // 运行注册表变更 → 平台广播（工作台实时徽标；harness 不知道广播通道存在——依赖倒置）
+    const { getAgentRunRegistry } = await import('@core/platform/agent-runtime/runtime/run-registry')
+    getAgentRunRegistry().onChange((event) => {
+      try {
+        getEventEmitter().emit(
+          'ac:run-update',
+          event.kind === 'started'
+            ? { scopeKey: event.run.scopeKey, definitionId: event.run.definitionId, label: event.run.label, status: 'running' }
+            : { scopeKey: event.run.scopeKey, status: event.run.status, error: event.run.error },
+        )
+      } catch {
+        /* 广播失败不影响登记 */
+      }
+    })
+  } catch (e) {
+    logger.warn('[workflow-boot] M5.5 运行可见性接线失败（继续启动）', e)
+  }
+
   // 11. M5 系统 agent 工具集（28 号批1）：聊天宿主的可调度面——能力目录/运行工作流/
   //     查询运行/调用技能/创建任务树。必须在 workflow-boot 注册（组合根已持有全部
   //     依赖；业务包 activate 早于本函数，chat 包拿不到）。注册失败不阻断
@@ -566,7 +641,7 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
     logger.warn('[workflow-boot] M5 系统 agent 工具集注册失败（继续启动）', e)
   }
 
-  subsystem = { engine, runService, definitionService, scheduler, appDefinitionService, appSessionService, agentTasks, memoryFlywheel }
+  subsystem = { engine, runService, definitionService, scheduler, appDefinitionService, appSessionService, agentTasks, memoryFlywheel, agentSessions: agentSessionRepo, agentTrajectories: trajectoryRepo }
   logger.info('[workflow-boot] 工作流子系统已启动')
   return subsystem
 }

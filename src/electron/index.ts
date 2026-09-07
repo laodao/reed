@@ -92,7 +92,7 @@ process.on('uncaughtException', (err: any) => {
 import { setFlagsFromString } from 'v8'
 setFlagsFromString('--max-old-space-size=4096')
 
-import { app, BrowserWindow, shell, protocol, dialog } from 'electron'
+import { app, BrowserWindow, Tray, Menu, nativeImage, shell, protocol, dialog } from 'electron'
 import { join } from 'path'
 import * as path from 'path'
 import { DataPathService } from './services/data-path.service'
@@ -155,6 +155,9 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 let mainWindow: BrowserWindow | null = null
+/** 真退出标志（close 拦截据它放行——29 号 M5.5 批3 托盘最小化） */
+let isQuitting = false
+let tray: Tray | null = null
 
 /**
  * 把 protocol URL 解析为本地文件绝对路径。
@@ -263,6 +266,50 @@ function registerVideoProtocol(): void {
 }
 
 /**
+ * 创建托盘（29 号 M5.5 批3）：关闭=最小化到托盘的前提——托盘不可用时不拦截
+ * close（否则窗口隐藏后无任何途径找回/退出）。
+ */
+function createTray(): boolean {
+  try {
+    // dev: out/main → 项目根 resources/；打包：extraResources 落 process.resourcesPath
+    const iconPath = app.isPackaged
+      ? join(process.resourcesPath, 'tray.png')
+      : join(__dirname, '../../resources/tray.png')
+    const icon = nativeImage.createFromPath(iconPath)
+    if (icon.isEmpty()) {
+      console.warn('[tray] 托盘图标加载失败（不启用关窗最小化）:', iconPath)
+      return false
+    }
+    tray = new Tray(icon)
+    tray.setToolTip('The Bot')
+    tray.setContextMenu(Menu.buildFromTemplate([
+      {
+        label: '显示主窗口',
+        click: () => {
+          mainWindow?.show()
+          mainWindow?.focus()
+        },
+      },
+      {
+        label: '退出',
+        click: () => {
+          isQuitting = true
+          app.quit()
+        },
+      },
+    ]))
+    tray.on('double-click', () => {
+      mainWindow?.show()
+      mainWindow?.focus()
+    })
+    return true
+  } catch (e) {
+    console.warn('[tray] 托盘创建失败（不启用关窗最小化）:', e)
+    return false
+  }
+}
+
+/**
  * 创建主窗口
  */
 function createWindow(): void {
@@ -302,6 +349,16 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
+  })
+
+  // 关闭=最小化到托盘（29 号 M5.5 批3）：主进程在途工作（聊天 agent/任务树/工作流运行）
+  // 不随窗口关闭被 app.quit 杀掉；托盘菜单「退出」才是真退出。
+  // 托盘不可用时不拦截（否则窗口隐藏后无途径找回）
+  mainWindow.on('close', (e) => {
+    // macOS 保持现状（红叉=关窗走 darwin 惯例）；Win/Linux 关窗=隐藏到托盘
+    if (isQuitting || tray === null || process.platform === 'darwin') return
+    e.preventDefault()
+    mainWindow?.hide()
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -436,30 +493,42 @@ app.whenReady().then(async () => {
     console.warn('[boot] 工作流子系统启动失败（不致命）', e)
   }
 
-  // 创建窗口
+  // 创建窗口 + 托盘（托盘先建：close 拦截以 tray 就位为前提；托盘失败=关窗直接退出的旧行为）
+  createTray()
   createWindow()
 
-  // macOS 激活应用时重新创建窗口
+  // macOS 激活应用：无窗重建，有窗（被隐藏）恢复显示
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow()
+    } else {
+      mainWindow?.show()
     }
   })
 })
 
-// 所有窗口关闭时退出应用（Windows & Linux）
+// 窗口全部关闭：托盘可用（Win/Linux）时最小化存活，在途工作跑完；否则回旧行为退出
+// （29 号 M5.5 review P0-2：兜底缺失曾致"无窗无托盘僵尸进程"）
 app.on('window-all-closed', () => {
-  // 关闭数据库连接
-  const dbManager = getDatabaseManager()
-  dbManager.close()
-
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
+  if (process.platform === 'darwin') return // macOS 惯例
+  if (tray === null) app.quit() // 无托盘：保留进程没有任何 UI 途径找回，直接退出
 })
 
 // 应用退出前清理
-app.on('before-quit', async () => {
-  const dbManager = getDatabaseManager()
-  await dbManager.close()
+app.on('before-quit', () => {
+  isQuitting = true
+})
+
+let dbClosed = false
+// 退出前清理数据库（close 被拦截后唯一到达路径 = 托盘退出/cmd-q）。
+// 超时兜底（review P2-4）：close 挂死也不能把进程留在"点了退出却退不出"的状态
+app.on('will-quit', (e) => {
+  if (dbClosed) return
+  e.preventDefault()
+  const timeout = new Promise<void>((resolve) => setTimeout(resolve, 3000))
+  const close = Promise.resolve(getDatabaseManager().close()).catch(() => undefined)
+  void Promise.race([close, timeout]).then(() => {
+    dbClosed = true
+    app.exit(0)
+  })
 })
