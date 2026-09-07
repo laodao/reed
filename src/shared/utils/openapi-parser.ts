@@ -2,9 +2,10 @@
  * OpenAPI/Swagger 最小解析器（C5 自定义接口节点，spec v2 §5）
  * @module shared/utils/openapi-parser
  * @description 纯函数、零依赖——core 的 oas-tool handler 与前端表单共用。
- *              支持 Swagger 2.0（host+basePath）与 OpenAPI 3.x（servers[0].url）；
- *              V1 限制（与 Bisheng 对齐）：不支持 $ref 引用与复杂 schema
- *              （ requestBody.content['application/json'].schema.$ref 等）。
+ *              支持 Swagger 2.0（host+basePath）与 OpenAPI 3.x（servers[0].url）。
+ *              V2（25 号 M2 批3）：解析期展开文档内 $ref（#/components/schemas、
+ *              #/definitions 及任意 JSON 指针），循环引用/外部引用报可读错误；
+ *              下游 listOperations/listParameters/buildRequest 看到的始终是已展开形态。
  */
 
 /** 解析出的操作项 */
@@ -36,8 +37,81 @@ interface OasSpecShape {
 
 const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete'] as const
 
-/** 解析 JSON 文本为规范对象；不合法/非对象返回 error（不抛异常） */
+/** $ref 展开深度上限（非循环的病态深链防御） */
+const REF_DEPTH_LIMIT = 64
+/** 展开节点数预算（review B7：菱形引用 A→[B,B]→… 深度有限但 2^depth 指数重复展开） */
+const REF_NODE_BUDGET = 100_000
+/** OAS 文本大小上限（同步 IPC 校验路径的 DoS 防线） */
+const SPEC_TEXT_MAX_BYTES = 1_000_000
+
+/** 原型链危险键（review B6：'__proto__' 普通赋值会触发 setter 污染产物原型） */
+function isDangerousKey(key: string): boolean {
+  return key === '__proto__' || key === 'constructor' || key === 'prototype'
+}
+
+/** JSON 指针定位（RFC 6901；只支持文档内 '#/...' 引用；危险段拒绝） */
+function resolveJsonPointer(root: unknown, pointer: string): unknown {
+  const path = pointer.slice(2).split('/').map((p) => p.replace(/~1/g, '/').replace(/~0/g, '~'))
+  if (path.some(isDangerousKey)) return undefined
+  let cur: unknown = root
+  for (const seg of path) {
+    if (cur === null || typeof cur !== 'object') return undefined
+    cur = (cur as Record<string, unknown>)[seg]
+  }
+  return cur
+}
+
+/** 深度展开 $ref（解析期一次性；循环/外部引用/超深链/超预算报可读错误） */
+function dereferenceRefs(
+  node: unknown,
+  root: unknown,
+  stack: string[],
+  depth: number,
+  budget: { nodes: number },
+): { ok: true; value: unknown } | { ok: false; error: string } {
+  if (depth > REF_DEPTH_LIMIT) return { ok: false, error: `$ref 展开深度超过 ${REF_DEPTH_LIMIT}（病态嵌套）` }
+  if (budget.nodes-- <= 0) return { ok: false, error: `spec 展开节点数超过 ${REF_NODE_BUDGET}（疑似病态引用结构）` }
+  if (Array.isArray(node)) {
+    const out: unknown[] = []
+    for (const item of node) {
+      const r = dereferenceRefs(item, root, stack, depth + 1, budget)
+      if (!r.ok) return r
+      out.push(r.value)
+    }
+    return { ok: true, value: out }
+  }
+  if (node !== null && typeof node === 'object') {
+    const ref = (node as Record<string, unknown>)['$ref']
+    if (typeof ref === 'string') {
+      if (!ref.startsWith('#/')) {
+        return { ok: false, error: `不支持外部 $ref（仅支持文档内 #/... 引用）：${ref}` }
+      }
+      if (stack.includes(ref)) {
+        return { ok: false, error: `$ref 循环引用：${[...stack, ref].join(' → ')}` }
+      }
+      const target = resolveJsonPointer(root, ref)
+      if (target === undefined) {
+        return { ok: false, error: `$ref 无法解析（文档内不存在该路径）：${ref}` }
+      }
+      return dereferenceRefs(target, root, [...stack, ref], depth + 1, budget)
+    }
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+      const r = dereferenceRefs(v, root, stack, depth + 1, budget)
+      if (!r.ok) return r
+      // defineProperty 绕开 '__proto__' 的 setter（review B6：普通赋值会改写产物原型）
+      Object.defineProperty(out, k, { value: r.value, enumerable: true, writable: true, configurable: true })
+    }
+    return { ok: true, value: out }
+  }
+  return { ok: true, value: node }
+}
+
+/** 解析 JSON 文本为规范对象（含 $ref 展开）；不合法/非对象返回 error（不抛异常） */
 export function parseSpecJson(text: string): { ok: true; spec: OasSpecShape } | { ok: false; error: string } {
+  if (text.length > SPEC_TEXT_MAX_BYTES) {
+    return { ok: false, error: `OAS 文本超过 ${Math.floor(SPEC_TEXT_MAX_BYTES / 1024)}KB 上限（同步解析防 DoS）` }
+  }
   let spec: unknown
   try {
     spec = JSON.parse(text)
@@ -50,7 +124,9 @@ export function parseSpecJson(text: string): { ok: true; spec: OasSpecShape } | 
   const s = spec as OasSpecShape
   if (!s.openapi && !s.swagger) return { ok: false, error: '缺少 openapi/swagger 版本字段（不是合法的 OAS 文档）' }
   if (!s.paths || typeof s.paths !== 'object') return { ok: false, error: '缺少 paths 字段（没有可调用的接口）' }
-  return { ok: true, spec: s }
+  const resolved = dereferenceRefs(spec, spec, [], 0, { nodes: REF_NODE_BUDGET })
+  if (!resolved.ok) return resolved
+  return { ok: true, spec: resolved.value as OasSpecShape }
 }
 
 /**
@@ -158,9 +234,7 @@ export function buildRequest(
   // 定位操作（locateOperations 统一消歧口径）
   const located = locateOperations(parsed.spec).get(operationId)
   if (!located) return { ok: false, error: `OAS 中不存在 operationId：${operationId}` }
-  if (JSON.stringify(located.raw).includes('"$ref"')) {
-    return { ok: false, error: 'V1 不支持 $ref 引用：请展开为内联 schema 后粘贴' }
-  }
+  // $ref 已在 parseSpecJson 解析期展开（V2）——此处不再拒绝
   const found = { method: located.method.toUpperCase(), path: located.path }
 
   const base = baseUrlOverride?.trim() || defaultBaseUrl(parsed.spec)

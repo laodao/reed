@@ -384,7 +384,8 @@ export class LoopRunner {
                 scopeId: task.scopeId,
                 rawInput: task.input,
                 signal: host.signal,
-                logContext: { definitionId: task.definitionId, tool: name },
+                logContext: { definitionId: task.definitionId, tool: name, ...(task.runtimeContext ?? {}) },
+                toolCallId: options.toolCallId,
               })
             } else {
               result = await withTimeout(
@@ -392,7 +393,8 @@ export class LoopRunner {
                   scopeId: task.scopeId,
                   rawInput: task.input,
                   signal: host.signal,
-                  logContext: { definitionId: task.definitionId, tool: name },
+                  logContext: { definitionId: task.definitionId, tool: name, ...(task.runtimeContext ?? {}) },
+                  toolCallId: options.toolCallId,
                 }),
                 timeoutMs,
                 host.signal,

@@ -372,3 +372,29 @@ export interface MemoryAssembler { assemble(spec: string, tokenBudget: number): 
 **结论**：当前三大消费者（工作流 agent-loop 节点 / 长文·EP 迁移 / 故事研讨室）的完整生命周期
 ——注册定义、发消息、流式回复、提案卡（含编辑/换一版/重连恢复）、查询/修改设定、取消、
 历史、快照注入、事件兼容、步级恢复——全部有契约覆盖；上述 5 项是明确标注的边界而非缺口。
+
+---
+
+## 12. M2 观测面与工具生态契约增补（2026-09-07，25 号）
+
+### 12.1 轨迹落库（M1.5 兑现）
+- `AgentTrajectoryRepository`（agent-trajectory.repository）：`appendBatch`（确定性 id `tr_<scopeKey>_<seq>` + orIgnore 幂等）/ `maxSeq`（**跨租户裸查**——scopeKey 全局唯一，seq 语义与租户无关）/ `listByScope`（scoped）/ `deleteByRunRaw`（deleteRun 级联，属主校验在 run 服务）/ `deleteByScope`（scoped，会话重置级联）。
+- `TrajectorySink`（agent-runtime/trajectory/sink）：append 入缓冲（永不 throw）→ flush 同步快照屏障批写（chained 串行；失败批丢弃只 warn）。flush 点 = step-end saveState 搭车 / 挂起提交前 / 节点终态；seq 首批从 maxSeq 续接。
+- scopeKey 约定：workflow = `<runId>:<nodeId>:<iterationIndex>`；session = `session:<definitionId>:<scopeId>`。
+
+### 12.2 工具审计
+- `agent_tool_calls` 表 + registry audit sink（workflow-boot 装配）：runId/nodeId 来自 `AgentTask.runtimeContext`（宿主填 runId/nodeId/iterationIndex 或 sessionKey）→ `AgentToolContext.logContext`；toolCallId 经 `AgentToolContext.toolCallId` 透传（与轨迹 tool_call 配对）。
+- `AgentToolContext.credentialId`：宿主绑定凭据引用位（binding.credentialId 经 wrapForLoop 下传；custom-tool-adapter 执行时 `ctx.credentialId ?? tool.credentialId` 注入 ToolService；LLM args 不参与凭据决策）。
+
+### 12.3 工具白名单 binding（配置形态变更）
+- `toolWhitelist: Array<string | AgentToolBinding>`（向后兼容：string 归一为 {tool}）。归一入口 `normalizeToolWhitelist`（agent-loop-node）：maxCalls 正整数收口 / config 须 plain object / approval 枚举 / **'never' 必须伴随 approvalNeverConfirmed=true 否则降级 inherit**（持久化通道不能只凭 approval 字段关闭人工审批）。
+- AgentToolRegistry.register 第二参扩展：`{ packId }` | `{ source }`（'node' 节点即工具 / 'tool' 自定义工具桥）。
+
+### 12.4 查询面（双端成对）
+- IPC `wf:get-node-trajectories {runId, nodeId, iterationIndex?=0}` → `AgentTrajectoryRow[]`（seq 升序）；preload `workflow.getNodeTrajectories`；Web `GET /api/workflow/run/:runId/trajectories?nodeId=&iterationIndex=`（requireAuth + 租户 404）。
+- `getRunDetail` 返回增补 `tokenUsage: { promptTokens, completionTokens, toolCalls, billedNodes, byNode }`（output_json.usage 聚合；byNode 同 nodeId 多轮 last-wins——观测口径注记）。
+- `deleteRun` 增属主校验（scoped getById 非属主抛错）——级联含 journal/轨迹/审计三路 raw 删除。
+
+### 12.5 provider 契约
+- `createModel` 按 `template.category` 分派：anthropic/google → 原生 SDK（@ai-sdk/anthropic、@ai-sdk/google 动态 import）；官方根地址省略 baseURL（SDK 规范路径），自定义地址剥尾斜杠透传；其余类别 → openai-compatible。
+- ⚠️ 红线复述：**模块内禁用运行时 `require('@core/...')`**——vite 只重写 import 语句，产物中别名不可解析（defaultLookup 曾因此使 agent-loop 在真实应用不可用）；延迟绑定一律 `await import`。

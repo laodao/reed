@@ -58,6 +58,8 @@ export interface WorkflowApiDeps {
     }): Promise<{ id: string; status: string; skipReason?: string | null }>
     cancelRun(runId: string, userId: string): Promise<boolean>
     getRunDetail(runId: string): Promise<{ run: { id: string; userId?: string | null; status: string; triggerInfo?: Record<string, unknown> | null } ; nodeRuns: unknown[] } | null>
+    /** agent-loop 节点轨迹（25 号 M2；GET /run/:runId/trajectories 数据源） */
+    getNodeTrajectories(runId: string, nodeId: string, iterationIndex?: number): Promise<unknown[]>
   }
   /** C3 免登录分享面（getByShareToken 跨租户；返回含 userId 供所有者身份运行） */
   definitions?: {
@@ -268,6 +270,32 @@ export function createWorkflowApiRouter(deps: {
         runService.cancelRun(String(req.params.runId), req.user!.userId)
       )
       res.json({ ok: true, data: { cancelled } })
+    } catch (e) {
+      fail(res, e)
+    }
+  })
+
+  // ---- agent-loop 节点轨迹（轨迹视图数据源，25 号 M2 批2） ----
+  router.get('/run/:runId/trajectories', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { runService } = deps.getDeps()
+      const runId = String(req.params.runId)
+      const nodeId = String(req.query.nodeId ?? '')
+      if (!nodeId) {
+        res.status(400).json({ ok: false, error: '缺少必填参数 nodeId' })
+        return
+      }
+      const iterationIndex = Number(req.query.iterationIndex ?? 0) || 0
+      // 租户校验：非本人运行返回 404（不泄露存在性）
+      const detail = await runWithUserAsync(req.user!.userId, () => runService.getRunDetail(runId))
+      if (!detail || detail.run.userId !== req.user!.userId) {
+        res.status(404).json({ ok: false, error: '运行不存在' })
+        return
+      }
+      const entries = await runWithUserAsync(req.user!.userId, () =>
+        runService.getNodeTrajectories(runId, nodeId, iterationIndex)
+      )
+      res.json({ ok: true, data: entries })
     } catch (e) {
       fail(res, e)
     }

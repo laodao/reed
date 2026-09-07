@@ -53,16 +53,23 @@ async function boot() {
   const { WorkflowRunEntity } = await import('@core/database/entities/workflow-run.entity')
   const { WorkflowNodeRunEntity } = await import('@core/database/entities/workflow-node-run.entity')
   const { WorkflowRunEventEntity } = await import('@core/database/entities/workflow-run-event.entity')
+  const { AgentTrajectoryEntity } = await import('@core/database/entities/agent-trajectory.entity')
+  const { AgentToolCallEntity } = await import('@core/database/entities/agent-tool-call.entity')
   const ds = new DataSource({
     type: 'better-sqlite3',
     database: DB_PATH,
-    entities: [WorkflowRunEntity, WorkflowNodeRunEntity, WorkflowRunEventEntity],
+    entities: [WorkflowRunEntity, WorkflowNodeRunEntity, WorkflowRunEventEntity, AgentTrajectoryEntity, AgentToolCallEntity],
     synchronize: false,
   })
   await ds.initialize()
   await createWorkflowTables(ds)
   await addWorkflowNodeRunStateJson(ds)
   await createWorkflowRunEvents(ds)
+  // M2 批1/批2：轨迹 + 工具审计表（真模型冒烟同步验证观测面落库）
+  const { createAgentTrajectories } = await import('@core/database/migrations/create-agent-trajectories')
+  const { createAgentToolCalls } = await import('@core/database/migrations/create-agent-tool-calls')
+  await createAgentTrajectories(ds)
+  await createAgentToolCalls(ds)
 
   // 引擎端口经 makeEngineDeps 适配（与 boot 同构——直连仓储缺 patchRun 等端口方法）
   const { makeEngineDeps } = await import('@core/platform/workflow/workflow-run.service')
@@ -99,7 +106,30 @@ async function boot() {
       return { accepted: true }
     },
   }
-  const agentRegistry = new AgentToolRegistry()
+  const { AgentTrajectoryRepository } = await import('@core/database/repositories/agent-trajectory.repository')
+  const { AgentToolCallRepository } = await import('@core/database/repositories/agent-tool-call.repository')
+  const trajectoryRepo = new AgentTrajectoryRepository(ds)
+  const auditRepo = new AgentToolCallRepository(ds)
+  const agentRegistry = new AgentToolRegistry({
+    audit: (record) => {
+      void auditRepo
+        .append({
+          runId: (record.context?.runId as string) ?? null,
+          nodeId: (record.context?.nodeId as string) ?? null,
+          toolName: record.toolName,
+          dangerLevel: record.dangerLevel,
+          approval: record.approval,
+          status: record.status,
+          errorCode: record.errorCode ?? null,
+          argsPreview: JSON.stringify(record.args ?? null).slice(0, 500),
+          resultPreview: record.resultPreview,
+          truncated: record.truncated,
+          durationMs: record.durationMs,
+          context: record.context,
+        })
+        .catch(() => undefined)
+    },
+  })
   registerBuiltinAgentTools(agentRegistry) // http_get 等（web_search/data_table 未入白名单不会触达）
   agentRegistry.register(probeTool)
   agentRegistry.register(submitTool)
@@ -112,9 +142,9 @@ async function boot() {
     }) as never,
     cacheCapacity: 1,
   })
-  registerAgentLoopHarness({ registry: agentRegistry, resolveModel: (opts) => adapter.resolveModel(opts) })
+  registerAgentLoopHarness({ registry: agentRegistry, resolveModel: (opts) => adapter.resolveModel(opts), trajectoryRepo })
 
-  return { ds, runs, nodeRuns, journal, engine }
+  return { ds, runs, nodeRuns, journal, engine, trajectoryRepo }
 }
 
 type Ctx = Awaited<ReturnType<typeof boot>>

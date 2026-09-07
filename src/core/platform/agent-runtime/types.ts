@@ -87,6 +87,10 @@ export interface AgentToolContext {
   rawInput: string
   signal?: AbortSignal
   logContext: Record<string, unknown>
+  /** 本次调用 id（loop 层透传；审计面据此与轨迹 tool_call 配对——review B12） */
+  toolCallId?: string
+  /** 宿主绑定凭据引用（custom 工具执行层注入；LLM 永不可见——review B2） */
+  credentialId?: string
 }
 
 // ==================== Agent 定义（业务包唯一要写的东西） ====================
@@ -132,6 +136,8 @@ export interface AgentTask {
   modelPreference?: { providerConfigId?: string; modelId?: string }
   /** 状态快照（L1 装配原料；每轮可刷新） */
   snapshot?: string
+  /** 宿主运行上下文（并入工具审计 logContext：runId/nodeId/sessionKey 等——review D3） */
+  runtimeContext?: Record<string, unknown>
 }
 
 export interface ParsedToolCall {

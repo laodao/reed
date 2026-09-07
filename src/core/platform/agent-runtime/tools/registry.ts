@@ -204,7 +204,8 @@ export function serializeToolResult(raw: unknown): { data: unknown; truncated: b
         out[k] = { _omitted: 'binary', sizeBytes: v.length }
         continue
       }
-      out[k] = walk(v, depth + 1)
+      // defineProperty 绕开 '__proto__' setter（review B6：外部工具结果可为任意 JSON）
+      Object.defineProperty(out, k, { value: walk(v, depth + 1), enumerable: true, writable: true, configurable: true })
     }
     return out
   }
@@ -249,12 +250,19 @@ export class AgentToolRegistry {
 
   // —— 注册 ——
 
-  /** 注册工具；ns 传入时名称命名空间化为 pack:<packId>:<name>（业务包 activate 调用）。
+  /** 注册工具；ns 传入时名称命名空间化：
+   * - { packId }: pack:<packId>:<name>（业务包 activate 调用，source='pack'）
+   * - { source }: 指定来源（'node' 节点即工具 / 'tool' 自定义工具桥，25 号 M2）。
    * 泛型 TInput：接受按具体入参类型编写的 def（execute(input: 具体类型)）——
    * 经 safeCast 收口为注册表的 unknown 形态；运行时入参一律经 inputSchema
    * safeParse（管线 ②），泛型差异无运行时泄漏 */
-  register<TInput = unknown>(def: AgentToolDef<TInput>, ns?: { packId: string }): void {
-    const name = ns ? `pack:${ns.packId}:${def.name}` : def.name
+  register<TInput = unknown>(
+    def: AgentToolDef<TInput>,
+    ns?: { packId: string } | { source: AgentToolSpec['source'] },
+  ): void {
+    const packId = ns && 'packId' in ns ? ns.packId : undefined
+    const source: AgentToolSpec['source'] = packId ? 'pack' : (ns && 'source' in ns ? ns.source : 'builtin')
+    const name = packId ? `pack:${packId}:${def.name}` : def.name
     if (!TOOL_NAME_RE.test(def.name)) {
       throw new AgentToolConflictError(def.name, `基础名须匹配 ${TOOL_NAME_RE.source}（命名空间前缀另拼）`)
     }
@@ -266,8 +274,8 @@ export class AgentToolRegistry {
       def: { ...widened, name },
       spec: {
         name,
-        source: ns ? 'pack' : 'builtin',
-        packId: ns?.packId,
+        source,
+        packId: ns && 'packId' in ns ? ns.packId : undefined,
         description: def.description,
         llmDescription: def.description,
         jsonSchema: deriveJsonSchema(def.inputSchema),
@@ -275,7 +283,7 @@ export class AgentToolRegistry {
         requiresApproval: deriveRequiresApproval(widened),
       },
     })
-    logger.info(`[tool-registry] 注册 ${name}（source=${ns ? 'pack' : 'builtin'} danger=${def.dangerLevel ?? 'read'}）`)
+    logger.info(`[tool-registry] 注册 ${name}（source=${source} danger=${def.dangerLevel ?? 'read'}）`)
   }
 
   /** 按名注销（pack disable / 测试用） */
@@ -342,6 +350,8 @@ export class AgentToolRegistry {
       args: Record<string, unknown>
       context?: Record<string, unknown>
       signal?: AbortSignal
+      /** 宿主绑定凭据引用（binding.credentialId；LLM args 不参与——review B2） */
+      credentialId?: string
     },
     opts: {
       skipApproval: boolean
@@ -479,6 +489,8 @@ export class AgentToolRegistry {
           rawInput: String(call.context?.rawInput ?? ''),
           signal: call.signal,
           logContext: { tool: tool.spec.name, ...call.context },
+          toolCallId: String(call.context?.toolCallId ?? '') || undefined,
+          credentialId: call.credentialId,
         }),
         this.deps.executeTimeoutMs,
         call.signal,
@@ -603,6 +615,9 @@ export class AgentToolRegistry {
               toolCallId: (ctx as { toolCallId?: string }).toolCallId ?? '',
             },
             signal: ctx.signal,
+            // 凭据引用随宿主绑定下传（review B2：binding.credentialId 此前无消费者；
+            // LLM args 永不参与凭据决策——zod strip 之外该字段也不在工具入参 schema 位）
+            credentialId: binding.credentialId,
           },
           { skipApproval: true, tool, staticConfig: binding.config, approvalAudit },
         )

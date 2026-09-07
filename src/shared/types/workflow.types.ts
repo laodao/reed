@@ -474,8 +474,9 @@ export interface WorkflowNodeConfigMap {
     task: string
     /** 系统提示词（角色/约束/输出格式要求） */
     systemPrompt?: string
-    /** 工具白名单（AgentToolRegistry 已注册工具名，如 http_get/web_search；缺省=无工具单轮直答） */
-    toolWhitelist?: string[]
+    /** 工具白名单：工具名（存量形态）或绑定对象（approval/maxCalls/config 富配置，25 号 M2）；
+     *  引擎侧 normalizeToolWhitelist 归一；缺省=无工具单轮直答 */
+    toolWhitelist?: Array<string | import('./agent.types').AgentToolBinding>
     /** 最大迭代轮数（缺省 WORKFLOW_DEFAULTS.agentLoopMaxIterations；到顶未收敛=节点失败） */
     maxIterations?: number
     /** 节点级工具调用总上限（跨挂起-恢复累计；超过回填 LIMIT_EXCEEDED，模型需直接作答） */

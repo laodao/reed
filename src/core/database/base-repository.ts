@@ -115,21 +115,53 @@ function makeScopedApiForRepo<E extends object>(
     async exists(where) {
       return (await this.count(where)) > 0
     },
-    qb(alias) {
-      const builder = repo.createQueryBuilder(alias)
-      if (shouldScope()) {
-        const userId = getCurrentUserId()
-        if (userId) {
-          builder.andWhere(`${alias}.user_id = :__scopedUserId`, {
-            __scopedUserId: userId,
-          })
-        } else {
-          // 没有 ALS userId（PC 单用户测试场景或 anonymous）→ user_id IS NULL
-          builder.andWhere(`${alias}.user_id IS NULL`)
+  qb(alias) {
+    const builder = repo.createQueryBuilder(alias)
+    if (!shouldScope()) return builder
+    const userId = getCurrentUserId()
+    const scopeSql = userId
+      ? `${alias}.user_id = :__scopedUserId`
+      : // 没有 ALS userId（PC 单用户测试场景或 anonymous）→ user_id IS NULL
+        `${alias}.user_id IS NULL`
+    const scopeParams = userId ? { __scopedUserId: userId } : {}
+    // 急切挂载（既有 andWhere-only 调用点的依赖）
+    const applyScope = (b: SelectQueryBuilder<E>): void => {
+      b.andWhere(scopeSql, scopeParams)
+    }
+    applyScope(builder)
+    // 租户条件免疫 .where() 覆盖（25 号 M2 review 发现的基座缺陷家族）：TypeORM 的
+    // where() 语义是"替换全部条件"，调用方在 scoped.qb 后链 .where() 会把租户过滤
+    // 整个冲掉（agent-trajectory 首踩，run-event/app-session/workflow-run/variable
+    // 等既有仓储同款潜伏）。代理 where()：先执行调用方替换、再重新挂上租户条件
+    // （最终 SQL 租户条件恰好一份）；流式方法返回代理防中途逃逸。
+    // orWhere() 同样拦截并重挂（review A5：OR 以 SQL 优先级可翻出租户围栏，
+    // 需要跨租户 OR 的查询应使用 useRawRepo() 显式声明）；clone() 代理化克隆。
+    const proxy: SelectQueryBuilder<E> = new Proxy(builder, {
+      get(target, prop) {
+        const value = Reflect.get(target, prop, target)
+        if (typeof value !== 'function') return value
+        if (prop === 'where' || prop === 'orWhere') {
+          return (...args: unknown[]) => {
+            const result = (value as (...a: unknown[]) => SelectQueryBuilder<E>).apply(target, args)
+            applyScope(result)
+            return proxy
+          }
         }
-      }
-      return builder
-    },
+        if (prop === 'clone') {
+          return () => {
+            const cloned = (value as () => SelectQueryBuilder<E>).call(target)
+            cloned.andWhere(scopeSql, scopeParams)
+            return cloned
+          }
+        }
+        return (...args: unknown[]) => {
+          const result = (value as (...a: unknown[]) => unknown).apply(target, args)
+          return result === target ? proxy : result // 流式方法（返回 this）继续走代理
+        }
+      },
+    }) as SelectQueryBuilder<E>
+    return proxy
+  },
   }
 }
 

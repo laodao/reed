@@ -388,6 +388,16 @@ async function initDatabase(): Promise<void> {
   )
   await addWorkflowNodeRunStateJson(ds)
 
+  // agent 轨迹 + 工具调用审计（25 号 M2 批1；与 Electron 端同构）
+  const { createAgentTrajectories } = await import(
+    '@core/database/migrations/create-agent-trajectories'
+  )
+  await createAgentTrajectories(ds)
+  const { createAgentToolCalls } = await import(
+    '@core/database/migrations/create-agent-tool-calls'
+  )
+  await createAgentToolCalls(ds)
+
   // 通用事件系统：platform_events / cursors / dead_letters 三表（与 Electron 端同构；10-event-system §4）
   const { createPlatformEventTables } = await import(
     '@core/database/migrations/create-platform-event-tables'

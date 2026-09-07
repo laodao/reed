@@ -50,6 +50,8 @@ export interface CatalogFormField {
     | 'skill-select'
     /** 技能参数编辑（按选中技能 inputs schema 生成行，值支持 {{模板}}） */
     | 'skill-params'
+    /** agent 工具绑定编辑器（多选工具 + 逐工具批准策略/调用上限/静态入参，25 号 M2） */
+    | 'tool-bindings'
   placeholder?: string
   /** kv-list 的键占位提示（如 headers / assignments） */
   keyPlaceholder?: string
@@ -207,10 +209,10 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     }),
     T('systemPrompt', '系统提示词', { type: 'textarea', group: '任务', placeholder: '角色/约束/输出格式要求（可选）' }),
     {
-      key: 'toolWhitelist', label: '工具白名单', type: 'select-dynamic', source: 'agentTools', multi: true, group: '工具',
-      help: 'Agent 可自主调用的工具（首批内置：http_get / web_search / code_run / data_table_query）；需批准的工具调用会挂起等待人工审核',
+      key: 'toolWhitelist', label: '工具白名单', type: 'tool-bindings', source: 'agentTools', group: '工具',
+      help: 'Agent 可自主调用的工具；出网/写类/exec 级工具默认需人工批准，可为每个工具配置批准策略、调用上限与静态入参（LLM 不可覆盖）',
     },
-    { key: 'providerConfigId', label: '模型', type: 'model-pair', group: '模型', help: '留空 = 按默认 Provider 自动回退选择' },
+    { key: 'providerConfigId', label: '模型', type: 'model-pair', group: '模型', help: '留空 = 按默认 Provider 自动回退；建议选用原生 tool-calling 模型（GPT-4/Claude/Gemini/GLM-4/Qwen 等）工具调用更可靠' },
     { key: 'maxIterations', label: '最大迭代轮数', type: 'number', min: 1, max: WORKFLOW_DEFAULTS.agentLoopMaxIterationsCeiling, group: '护栏', help: `缺省 ${WORKFLOW_DEFAULTS.agentLoopMaxIterations}；到顶未收敛节点失败` },
     { key: 'maxToolCalls', label: '工具调用总上限', type: 'number', min: 1, group: '护栏', help: '可选（跨挂起-恢复累计）；超过后工具调用被拒绝，Agent 需直接作答' },
     { key: 'maxDurationMs', label: '最长时长（毫秒）', type: 'number', min: 1, max: WORKFLOW_LIMITS.maxDurationMs, group: '护栏', help: '可选（净时长，扣除挂起等待）；超过即中止并失败（运行级超时另算）' },

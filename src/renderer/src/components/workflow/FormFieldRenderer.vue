@@ -302,6 +302,40 @@
     </div>
     <div v-if="!skillParamRows.length" class="oas-hint">选择技能后按参数 schema 自动带出；参数值支持 {{变量}} 引用</div>
   </div>
+
+  <!-- agent 工具绑定编辑器（25 号 M2：多选 + 逐工具批准策略/上限/静态入参） -->
+  <div v-else-if="field.type === 'tool-bindings'" class="bindings-editor">
+    <el-select
+      :model-value="bindings.map(b => b.tool)"
+      multiple filterable collapse-tags clearable placeholder="选择工具（可多选）" style="width: 100%"
+      @update:model-value="onBindingToolsChange"
+    >
+      <el-option v-for="o in dynamicOptions[field.source ?? ''] ?? []" :key="o.value" :label="o.label" :value="o.value" />
+    </el-select>
+    <div v-for="b in bindings" :key="b.tool" class="binding-card">
+      <div class="binding-head">
+        <span class="binding-name">{{ b.tool }}</span>
+        <el-tag v-if="bindingRequiresApproval(b.tool)" size="small" type="warning" disable-transitions>默认需批准</el-tag>
+        <span class="binding-spacer" />
+        <el-button text type="danger" size="small" title="移除工具" @click="removeBinding(b.tool)">✕</el-button>
+      </div>
+      <div class="binding-row">
+        <el-select v-model="b.approval" size="small" style="width: 150px" title="批准策略" @change="syncBindings">
+          <el-option label="按危险级默认" value="inherit" />
+          <el-option label="每次调用需批准" value="always" />
+          <el-option label="免批准（放宽）" value="never" />
+        </el-select>
+        <el-input-number v-model="b.maxCalls" :min="1" size="small" controls-position="right"
+          placeholder="调用上限" style="width: 120px" @change="syncBindings" />
+        <span class="binding-hint">上限留空 = 不限</span>
+      </div>
+      <el-input v-model="b.configText" type="textarea" :rows="2" size="small"
+        placeholder='静态入参 JSON（可选）。如 {"maxResults":5}；静态键优先，LLM 不可覆盖'
+        @change="syncBindingConfig(b)" />
+      <div v-if="b.configError" class="binding-err">{{ b.configError }}</div>
+    </div>
+    <div v-if="!bindings.length" class="oas-hint">未选择工具；Agent 将只能直接回答，无法调用外部能力</div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -617,6 +651,117 @@ function syncSkillParams() {
   emit('change')
 }
 
+// ── tool-bindings（agent-loop 工具白名单，25 号 M2 批3）──
+interface BindingRow {
+  tool: string
+  approval: 'inherit' | 'always' | 'never'
+  maxCalls: number | undefined
+  configText: string
+  configError: string
+  /** 非 UI 编辑位但契约存在的字段原样透传（review C7：credentialId/descriptionOverride
+   *  曾被全量重建抹掉——导入/手编 JSON 的存量配置一次普通编辑即失） */
+  rest: Record<string, unknown>
+}
+/** 动态选项扩展位（NodeConfigPanel 映射时带出 requiresApproval） */
+type ToolOption = { label: string; value: string; requiresApproval?: boolean }
+const toolOptions = computed<ToolOption[]>(() => (props.dynamicOptions[props.field.source ?? ''] ?? []) as ToolOption[])
+
+/** 兼容读：存量 string[] 与新 AgentToolBinding[] 归一为编辑行 */
+const bindings = computed<BindingRow[]>(() => {
+  const raw = props.model[props.field.key]
+  const list = Array.isArray(raw) ? raw : []
+  const rows: BindingRow[] = list.map((item: unknown): BindingRow => {
+    if (typeof item === 'string') return { tool: item, approval: 'inherit', maxCalls: undefined, configText: '', configError: '', rest: {} }
+    const b = (item ?? {}) as { tool?: string; approval?: BindingRow['approval']; maxCalls?: number; config?: Record<string, unknown>; configTextDraft?: string }
+    const knownKeys = new Set(['tool', 'approval', 'maxCalls', 'config'])
+    const rest: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(b as Record<string, unknown>)) {
+      if (!knownKeys.has(k)) rest[k] = v
+    }
+    let configText = ''
+    let configError = ''
+    if (b.config && typeof b.config === 'object' && Object.keys(b.config).length) {
+      configText = JSON.stringify(b.config, null, 0)
+    } else if (typeof b.configTextDraft === 'string') {
+      // 未解析成功的 JSON 草稿回显（review C6：曾随行重建静默清空用户输入）
+      configText = b.configTextDraft
+      configError = 'JSON 未保存：请修正格式'
+    }
+    return {
+      tool: String(b.tool ?? ''),
+      approval: b.approval ?? 'inherit',
+      maxCalls: b.maxCalls,
+      configText,
+      configError,
+      rest,
+    }
+  }).filter(b => b.tool)
+  return rows
+})
+
+function bindingRequiresApproval(tool: string): boolean {
+  return !!toolOptions.value.find(o => o.value === tool)?.requiresApproval
+}
+
+/** 编辑行 → 持久化形态（缺省值不落 JSON，保持配置干净） */
+function bindingToValue(b: BindingRow): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...b.rest, tool: b.tool }
+  if (b.approval !== 'inherit') {
+    out.approval = b.approval
+    // never 放宽必须带显式确认位（review B3：引擎对无确认位的 never 降级 inherit）
+    if (b.approval === 'never') out.approvalNeverConfirmed = true
+  }
+  if (b.maxCalls !== undefined && b.maxCalls !== null && Number(b.maxCalls) > 0) out.maxCalls = Number(b.maxCalls)
+  if (b.configText.trim()) {
+    try {
+      const parsed = JSON.parse(b.configText)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Object.keys(parsed).length) out.config = parsed
+    } catch {
+      // 非法草稿落 configTextDraft 占位（review C6：曾静默丢配置且错误提示消失）
+      out.configTextDraft = b.configText
+    }
+  }
+  return out
+}
+
+function syncBindings() {
+  props.model[props.field.key] = bindings.value.map(bindingToValue)
+  emit('change')
+}
+
+/** 多选变化：新增工具追加 inherit 空绑定；取消勾选移除（保持选择序） */
+function onBindingToolsChange(names: unknown) {
+  const selected = Array.isArray(names) ? names.map(String) : []
+  props.model[props.field.key] = selected.map(tool => {
+    const existing = bindings.value.find(b => b.tool === tool)
+    return existing ? bindingToValue(existing) : { tool }
+  })
+  emit('change')
+}
+
+function removeBinding(tool: string) {
+  props.model[props.field.key] = bindings.value.filter(b => b.tool !== tool).map(bindingToValue)
+  emit('change')
+}
+
+/** 静态入参 JSON 校验 + 回写：合法即落 config；非法只标行内错误——
+ *  不会清掉用户正在编辑的草稿（草稿经 configTextDraft 存续，review C6） */
+function syncBindingConfig(b: BindingRow) {
+  const text = b.configText.trim()
+  if (!text) { b.configError = ''; syncBindings(); return }
+  try {
+    const parsed = JSON.parse(text)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      b.configError = '须是 JSON 对象（如 {"maxResults":5}）'
+      return
+    }
+    b.configError = ''
+    syncBindings()
+  } catch {
+    b.configError = 'JSON 解析失败，请检查格式'
+  }
+}
+
 onMounted(() => { loadTools(); loadSkills() })
 </script>
 
@@ -666,4 +811,12 @@ onMounted(() => { loadTools(); loadSkills() })
 /* 开始输入字段：数据来源 / 级联（联动）配置行 */
 .input-card-linkage { display: flex; gap: 8px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
 .input-card-linkage .model-types-hint { width: 100%; }
+/* agent 工具绑定卡片 */
+.binding-card { border: 1px solid var(--el-border-color-lighter); border-radius: 6px; padding: 8px; margin-top: 6px; background: var(--el-fill-color-lighter); }
+.binding-head { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.binding-name { font-size: 12px; font-weight: 600; word-break: break-all; }
+.binding-spacer { flex: 1; }
+.binding-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+.binding-hint { font-size: 11px; color: var(--el-text-color-secondary); }
+.binding-err { color: var(--el-color-danger); font-size: 12px; margin-top: 4px; }
 </style>

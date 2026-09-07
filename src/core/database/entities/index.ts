@@ -125,3 +125,6 @@ export {
 } from './platform-event.entities'
 // Agent 公共运行时（23 号 §6）：会话消息（SessionStore 落点）
 export { AgentSessionEntity } from './agent-session.entity'
+// Agent 观测面（25 号 M2 批1）：轨迹落库 / 工具调用审计
+export { AgentTrajectoryEntity } from './agent-trajectory.entity'
+export { AgentToolCallEntity } from './agent-tool-call.entity'

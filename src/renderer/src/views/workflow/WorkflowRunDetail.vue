@@ -8,6 +8,12 @@
           <span class="sep">触发：{{ run.triggerType }}</span>
           <span class="sep">开始：{{ formatTime(run.startedAt) }}</span>
           <span class="sep">耗时：{{ run.durationMs ? `${(run.durationMs / 1000).toFixed(1)}s` : '—' }}</span>
+          <span class="sep" v-if="tokenUsage && (tokenUsage.promptTokens > 0 || tokenUsage.completionTokens > 0)">
+            tokens：<el-tag size="small" type="info" disable-transitions>
+              ↑{{ tokenUsage.promptTokens.toLocaleString() }} ↓{{ tokenUsage.completionTokens.toLocaleString() }}
+              <template v-if="tokenUsage.toolCalls > 0">· 工具 {{ tokenUsage.toolCalls }}</template>
+            </el-tag>
+          </span>
         </span>
       </div>
       <div class="actions" v-if="run">
@@ -71,12 +77,17 @@
             <el-button text type="success" size="small" @click="doReview(row, 'approve')">批准</el-button>
             <el-button text type="warning" size="small" @click="doReviewEdit(row)">修改后批准</el-button>
             <el-button text type="danger" size="small" @click="doReview(row, 'reject')">驳回</el-button>
+            <!-- 审批挂起正是最需要回看轨迹的时刻（review C5） -->
+            <el-button v-if="row.nodeType === 'agent-loop'" text type="primary" size="small" @click="openTrajectory(row)">轨迹</el-button>
           </template>
           <template v-else-if="isReportRow(row)">
             <el-button text type="primary" size="small" @click="previewReport(row)">预览</el-button>
             <el-button text size="small" :loading="exporting" @click="printReport(row)">导出PDF</el-button>
           </template>
-          <el-button v-else text size="small" @click="showOutput(row)">输出</el-button>
+          <template v-else>
+            <el-button v-if="row.nodeType === 'agent-loop'" text type="primary" size="small" @click="openTrajectory(row)">轨迹</el-button>
+            <el-button text size="small" @click="showOutput(row)">输出</el-button>
+          </template>
         </template>
       </el-table-column>
     </el-table>
@@ -88,6 +99,15 @@
         <el-button type="primary" :disabled="!formValid" :loading="formSubmitting" @click="submitForm">提交并继续</el-button>
       </template>
     </el-dialog>
+
+    <!-- agent-loop 逐轮轨迹（25 号 M2 批2） -->
+    <AgentTrajectoryDrawer
+      v-model="trajectoryVisible"
+      :run-id="String(route.params.runId)"
+      :node-id="trajectoryRow?.nodeId ?? ''"
+      :iteration-index="trajectoryRow?.iterationIndex ?? 0"
+      :node-name="trajectoryRow?.nodeName"
+    />
 
   </div>
 </template>
@@ -101,6 +121,7 @@ import { useWorkflowStore } from '@/stores/workflow'
 import { saveBlobAs } from '@/utils/file-saver'
 import { toImageUrl } from '../../utils/asset-url'
 import RunInputForm from '@/components/workflow/RunInputForm.vue'
+import AgentTrajectoryDrawer from '@/components/workflow/AgentTrajectoryDrawer.vue'
 import { WORKFLOW_RUN_TERMINAL_STATUSES } from '@shared/types/workflow.types'
 
 const route = useRoute()
@@ -109,6 +130,17 @@ const store = useWorkflowStore()
 const run = ref<any>(null)
 const nodeRuns = ref<any[]>([])
 const exporting = ref(false)
+
+// agent-loop 轨迹抽屉（25 号 M2 批2）
+const trajectoryVisible = ref(false)
+const trajectoryRow = ref<any>(null)
+function openTrajectory(row: any): void {
+  trajectoryRow.value = row
+  trajectoryVisible.value = true
+}
+
+// run 级 token 汇总（getRun 返回 tokenUsage；旧版后端无此字段时隐藏芯片）
+const tokenUsage = ref<{ promptTokens: number; completionTokens: number; toolCalls: number } | null>(null)
 
 // E1 form-collect：挂起表单
 const formDialogVisible = ref(false)
@@ -167,6 +199,7 @@ async function load() {
   if (resp.success && resp.data) {
     run.value = resp.data.run
     nodeRuns.value = resp.data.nodeRuns
+    tokenUsage.value = resp.data.tokenUsage ?? null
   } else if (resp.error) ElMessage.error(resp.error)
 }
 

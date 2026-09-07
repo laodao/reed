@@ -28,6 +28,14 @@ const HttpGetInput = z.object({
   timeoutMs: z.number().int().positive().max(60_000).optional().describe('超时毫秒（缺省 30s）'),
 })
 
+const HttpPostInput = z.object({
+  url: z.string().describe('完整 http(s) 地址（https 优先）'),
+  body: z.string().describe('请求体（JSON 字符串或表单文本）'),
+  contentType: z.string().optional().describe('Content-Type（缺省 application/json）'),
+  headers: z.record(z.string(), z.string()).optional().describe('附加请求头'),
+  timeoutMs: z.number().int().positive().max(60_000).optional().describe('超时毫秒（缺省 30s）'),
+})
+
 const WebSearchInput = z.object({
   query: z.string().describe('搜索关键词'),
   maxResults: z.number().int().min(1).max(20).optional().describe('返回条数（缺省 5）'),
@@ -43,6 +51,12 @@ const DataTableQueryInput = z.object({
   tableName: z.string().optional().describe('表名'),
 })
 
+const DataTableWriteInput = z.object({
+  tableId: z.string().optional().describe('表 id'),
+  tableName: z.string().optional().describe('表名'),
+  row: z.record(z.string(), z.unknown()).describe('一行数据：列名 → 值'),
+})
+
 /** GET 网页/API（读操作；SSRF 闸门经 executeHttpFetch 强制生效） */
 const httpGetTool: AgentToolDef<z.infer<typeof HttpGetInput>> = {
   name: 'http_get',
@@ -56,6 +70,29 @@ const httpGetTool: AgentToolDef<z.infer<typeof HttpGetInput>> = {
         method: 'GET',
         url: input.url,
         headers: input.headers,
+        timeoutMs: input.timeoutMs,
+        responseType: 'auto',
+      },
+      ctx.signal ?? new AbortController().signal,
+    )
+    if (!r.ok) throw new Error(r.error)
+    return r.output
+  },
+}
+
+/** POST 写出（external-post 级：默认需人工批准——对外可产生副作用，14 号 §8 取严） */
+const httpPostTool: AgentToolDef<z.infer<typeof HttpPostInput>> = {
+  name: 'http_post',
+  description: '发起 HTTP POST 请求（向外部 API 提交数据，会产生副作用）。需人工批准后执行。',
+  inputSchema: HttpPostInput,
+  dangerLevel: 'external-post',
+  execute: async (input, ctx) => {
+    const r = await executeHttpFetch(
+      {
+        method: 'POST',
+        url: input.url,
+        headers: { 'Content-Type': input.contentType ?? 'application/json', ...(input.headers ?? {}) },
+        body: input.body,
         timeoutMs: input.timeoutMs,
         responseType: 'auto',
       },
@@ -121,18 +158,41 @@ const dataTableQueryTool: AgentToolDef<z.infer<typeof DataTableQueryInput>> = {
   },
 }
 
+/** 内置数据表写入（write 级 + 显式 requiresApproval：单行插入；binding.approval='never' 可经编辑器二次确认放宽） */
+const dataTableWriteTool: AgentToolDef<z.infer<typeof DataTableWriteInput>> = {
+  name: 'data_table_write',
+  description: '向本应用内置数据表插入一行（tableId 或 tableName 二选一，row 为列名→值对象）。写入会产生副作用，需人工批准后执行。',
+  inputSchema: DataTableWriteInput,
+  dangerLevel: 'write',
+  requiresApproval: true,
+  execute: async (input) => {
+    if (!input.tableId && !input.tableName) {
+      throw new Error('tableId 与 tableName 至少提供一个')
+    }
+    return getVariableDataService().insertRow({
+      tableId: input.tableId,
+      tableName: input.tableName,
+      row: input.row,
+    })
+  },
+}
+
 /** 注册首批内置工具（workflow-boot 装配调用；重复注册由 registry 冲突检测拦截） */
 export function registerBuiltinAgentTools(registry: AgentToolRegistry): void {
   registry.register(httpGetTool)
+  registry.register(httpPostTool)
   registry.register(webSearchTool)
   registry.register(codeRunTool)
   registry.register(dataTableQueryTool)
+  registry.register(dataTableWriteTool)
 }
 
 /** 首批工具名清单（测试/文档参考；编辑器数据源走 IPC→registry.listSpecs 动态取） */
 export const BUILTIN_AGENT_TOOL_NAMES = [
   httpGetTool.name,
+  httpPostTool.name,
   webSearchTool.name,
   codeRunTool.name,
   dataTableQueryTool.name,
+  dataTableWriteTool.name,
 ] as const

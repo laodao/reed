@@ -214,6 +214,12 @@ export function registerWorkflowHandlers(): void {
   ipcBridge.handle('wf:get-pending-reviews', () =>
     wrap(() => subsystem().runService.findWaitingReviews())
   )
+  // agent-loop 节点轨迹（轨迹视图数据源，25 号 M2 批2）
+  ipcBridge.handle(
+    'wf:get-node-trajectories',
+    (_e, p: { runId: string; nodeId: string; iterationIndex?: number }) =>
+      wrap(() => subsystem().runService.getNodeTrajectories(p.runId, p.nodeId, p.iterationIndex ?? 0)),
+  )
 
   // ==================== 触发器 ====================
   ipcBridge.handle('wf:trigger-preview', (_e, p: { expression: string }) =>

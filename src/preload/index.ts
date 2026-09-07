@@ -725,6 +725,8 @@ const electronAPI = {
       ipcRenderer.invoke('wf:list-runs', p),
     deleteRun: (runId: string) => ipcRenderer.invoke('wf:delete-run', { runId }),
     getPendingReviews: () => ipcRenderer.invoke('wf:get-pending-reviews'),
+    getNodeTrajectories: (p: { runId: string; nodeId: string; iterationIndex?: number }) =>
+      ipcRenderer.invoke('wf:get-node-trajectories', p),
     // ==================== 触发器 ====================
     triggerPreview: (expression: string) => ipcRenderer.invoke('wf:trigger-preview', { expression }),
     listAgentTools: () => ipcRenderer.invoke('wf:list-agent-tools'),

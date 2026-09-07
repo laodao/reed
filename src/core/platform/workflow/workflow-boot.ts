@@ -120,6 +120,18 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
   } catch (e) {
     logger.warn('[workflow-boot] Run Journal 装配失败（无跨重启恢复能力）', e)
   }
+  // 轨迹仓储（25 号 M2 批1/批2）：harness 落库与 runService 查询共用同一实例；
+  // 数据源缺失时不创建——sink 降级为仅摘要，查询降级返回空
+  let trajectoryRepo: import('@core/database/repositories/agent-trajectory.repository').AgentTrajectoryRepository | null = null
+  if (db.dataSource) {
+    try {
+      trajectoryRepo = new (
+        await import('@core/database/repositories/agent-trajectory.repository')
+      ).AgentTrajectoryRepository(db.dataSource)
+    } catch (e) {
+      logger.warn('[workflow-boot] 轨迹仓储装配失败（轨迹仅留内存摘要）', e)
+    }
+  }
   const engine = new WorkflowEngineService(
     makeEngineDeps(db.workflowRuns, db.workflowNodeRuns, journal),
     registry
@@ -140,6 +152,7 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
     definitions: db.workflowDefinitions,
     engine,
     globalSettings,
+    trajectories: trajectoryRepo,
   })
   const definitionService = new WorkflowDefinitionService(db.workflowDefinitions, registry)
 
@@ -227,13 +240,63 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
     const { ProviderAdapter } = await import('@core/platform/agent-runtime/provider/provider-adapter')
     const { registerBuiltinAgentTools } = await import('./tools/agent-builtin-tools')
     const { registerAgentLoopHarness } = await import('./nodes/agent-loop-node')
-    const agentToolRegistry = new AgentToolRegistry()
+
+    // 工具调用审计落库（25 号 M2 批1 / 14 号 §4.1）：registry 审计面 → DB sink
+    //（fire-and-forget；数据源缺失/写失败只 warn，不影响工具调用）
+    const auditRepo = db.dataSource
+      ? new (
+          await import('@core/database/repositories/agent-tool-call.repository')
+        ).AgentToolCallRepository(db.dataSource)
+      : null
+    const agentToolRegistry = new AgentToolRegistry({
+      audit: auditRepo
+        ? (record) => {
+            void auditRepo
+              .append({
+                runId: (record.context?.runId as string) ?? null,
+                nodeId: (record.context?.nodeId as string) ?? null,
+                sessionKey: (record.context?.sessionKey as string) ?? null,
+                toolName: record.toolName,
+                dangerLevel: record.dangerLevel,
+                approval: record.approval,
+                status: record.status,
+                errorCode: record.errorCode ?? null,
+                argsPreview: JSON.stringify(record.args ?? null).slice(0, 500),
+                resultPreview: record.resultPreview,
+                truncated: record.truncated,
+                durationMs: record.durationMs,
+                context: record.context,
+              })
+              .catch((e) => logger.warn('[workflow-boot] 工具审计落库失败', e))
+          }
+        : undefined,
+    })
+
     registerBuiltinAgentTools(agentToolRegistry)
     const providerAdapter = new ProviderAdapter()
+    // 核心 harness 先注册（review C8：可选扩展桥的失败不得降级核心功能——
+    // 此前 registerCustomAgentTools 抛错会跳过 registerAgentLoopHarness，
+    // agent-loop 节点整体不可用）
     registerAgentLoopHarness({
       registry: agentToolRegistry,
       resolveModel: (opts) => providerAdapter.resolveModel(opts),
+      // 轨迹落库端口（25 号 M2 批1，创建于引擎装配区；未装配时 sink 降级仅摘要）
+      trajectoryRepo: trajectoryRepo ?? undefined,
     })
+    // 节点即工具 + 自定义工具桥（25 号 M2 批3）：source='node'/'tool'；
+    // 各自 try 隔离（可选增强，失败 warn 留痕——核心工具面不受影响）
+    try {
+      const { registerNodeAgentTools } = await import('./tools/node-tool-adapter')
+      registerNodeAgentTools(agentToolRegistry)
+    } catch (e) {
+      logger.warn('[workflow-boot] 节点工具注册失败（核心工具面不受影响）', e)
+    }
+    try {
+      const { registerCustomAgentTools } = await import('./tools/custom-tool-adapter')
+      await registerCustomAgentTools(agentToolRegistry)
+    } catch (e) {
+      logger.warn('[workflow-boot] 自定义工具桥装配失败（核心工具面不受影响）', e)
+    }
   } catch (e) {
     logger.error('[workflow-boot] agent-loop harness 装配失败（agent-loop 节点将不可用）', e)
   }

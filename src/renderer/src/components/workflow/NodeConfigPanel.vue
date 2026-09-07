@@ -201,10 +201,12 @@ async function loadDynamicOptions() {
       const resp = await api.workflow.listAgentTools()
       if (resp.success && resp.data) {
         // 审批语义取服务端推导的 requiresApproval（registry 取严结果），不在前端
-        // 复刻 dangerLevel→审批 映射（避免双事实源漂移）
+        // 复刻 dangerLevel→审批 映射（避免双事实源漂移）；requiresApproval 供
+        // tool-bindings 编辑器渲染"默认需批准"标记
         dynamicOptions.value.agentTools = resp.data.map((t: any) => ({
           label: `${t.name}${t.requiresApproval ? '（需批准）' : ''}`,
           value: t.name,
+          requiresApproval: !!t.requiresApproval,
         }))
       }
     } catch { /* 列表失败时退化为手填 */ }

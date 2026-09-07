@@ -14,6 +14,11 @@
  */
 
 import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from '@shared/types/workflow.types'
+import { validateOutboundUrl } from '@core/utils/outbound-url'
+
+/** 重定向逐跳上限（与 http-fetch executeHttpFetch 同款收口——review B1：
+ *  redirect:'follow' 会对 302 目标自动重连，攻击页可跳内网/云元数据） */
+const MAX_REDIRECTS = 5
 
 /** 单 host 并发信号量（并发槽位） */
 class HostThrottle {
@@ -67,12 +72,18 @@ export interface PolitenessOptions {
 /**
  * 礼貌抓取：同 host 排队（默认单线程）+ 请求前随机间隔。
  * 签名与全局 fetch 兼容（url + RequestInit + 可选礼貌参数）。
+ * SSRF：入口与每一跳重定向都过 validateOutboundUrl（redirect:'manual'
+ * 手动跟随——review B1，URL 可能来自 LLM/模板注入，302 跳内网必须拦截）。
  */
 export async function politeFetch(
   url: string,
   init?: RequestInit,
   opts: PolitenessOptions = {},
 ): Promise<Response> {
+  const guard = validateOutboundUrl(url)
+  if (!guard.ok) {
+    throw new Error(`URL 校验失败：${guard.reason}`)
+  }
   const host = hostOf(url)
   const concurrency = Math.min(
     Math.max(1, Math.floor(opts.hostConcurrency ?? WORKFLOW_DEFAULTS.crawlHostConcurrency)),
@@ -96,7 +107,20 @@ export async function politeFetch(
       await sleep(ms)
     }
     try {
-      return await fetch(url, init)
+      let current = url
+      for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+        const res = await fetch(current, { ...init, redirect: 'manual' })
+        if (res.status < 300 || res.status >= 400) return res
+        const location = res.headers.get('location')
+        if (!location) return res
+        const next = new URL(location, current).toString()
+        const hopGuard = validateOutboundUrl(next)
+        if (!hopGuard.ok) {
+          throw new Error(`重定向目标被 SSRF 闸门拦截：${hopGuard.reason}`)
+        }
+        current = next
+      }
+      throw new Error(`重定向次数超过 ${MAX_REDIRECTS} 跳上限`)
     } catch (e) {
       // 包装网络错误：附 URL + 底层原因（如 DNS/TLS/超时），供节点错误信息与日志排查
       const cause = e instanceof Error ? (e.cause instanceof Error ? e.cause.message : e.message) : String(e)

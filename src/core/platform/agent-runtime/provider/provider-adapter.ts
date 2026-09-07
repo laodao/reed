@@ -64,6 +64,15 @@ export class ProviderAdapter {
     (modelId: string): LanguageModel
   }) | null = null
   private compatLoading: Promise<void> | null = null
+  /** anthropic / google 原生工厂（25 号 M2 批4；动态 import 后填充） */
+  private anthropicFactory: ((opts: { apiKey: string; baseURL?: string }) => {
+    (modelId: string): LanguageModel
+  }) | null = null
+  private anthropicLoading: Promise<void> | null = null
+  private googleFactory: ((opts: { apiKey: string; baseURL?: string }) => {
+    (modelId: string): LanguageModel
+  }) | null = null
+  private googleLoading: Promise<void> | null = null
 
   constructor(deps: ProviderAdapterDeps = {}) {
     this.lookup = deps.getProviderConfig ?? defaultLookup
@@ -118,6 +127,7 @@ export class ProviderAdapter {
       baseURL: config.baseUrl || template.apiConfig.baseUrl,
       apiKey,
       modelId: effectiveModelId,
+      category: (template as { category?: string }).category,
     })
 
     if (this.cacheCapacity > 0) {
@@ -159,7 +169,44 @@ export class ProviderAdapter {
     baseURL: string
     apiKey: string
     modelId: string
+    /** 提供商模板类别（25 号 M2 批4）：anthropic/google 走原生 SDK，其余 OpenAI 兼容 */
+    category?: string
   }): Promise<LanguageModel> {
+    const category = opts.category ?? 'openai-compatible'
+    if (category === 'anthropic') {
+      this.anthropicLoading ??= import('@ai-sdk/anthropic').then((m) => {
+        this.anthropicFactory = m.createAnthropic as never
+      })
+      try {
+        await this.anthropicLoading
+      } catch (e) {
+        this.anthropicLoading = null // 允许重试
+        logger.error('[provider-adapter] 加载 @ai-sdk/anthropic 失败', e)
+        throw new AgentProviderNotConfiguredError('AI SDK provider 模块加载失败（anthropic）')
+      }
+      const factory = this.anthropicFactory
+      if (!factory) throw new AgentProviderNotConfiguredError('AI SDK provider 模块加载失败（anthropic）')
+      // 官方根地址省略 baseURL（SDK 默认含 /v1 路径）；自定义地址（中转/代理）原样透传
+      const provider = factory({ apiKey: opts.apiKey, ...anthropicBaseURLOpts(opts.baseURL) })
+      return provider(opts.modelId)
+    }
+    if (category === 'google') {
+      this.googleLoading ??= import('@ai-sdk/google').then((m) => {
+        this.googleFactory = m.createGoogleGenerativeAI as never
+      })
+      try {
+        await this.googleLoading
+      } catch (e) {
+        this.googleLoading = null // 允许重试
+        logger.error('[provider-adapter] 加载 @ai-sdk/google 失败', e)
+        throw new AgentProviderNotConfiguredError('AI SDK provider 模块加载失败（google）')
+      }
+      const factory = this.googleFactory
+      if (!factory) throw new AgentProviderNotConfiguredError('AI SDK provider 模块加载失败（google）')
+      const provider = factory({ apiKey: opts.apiKey, ...googleBaseURLOpts(opts.baseURL) })
+      return provider(opts.modelId)
+    }
+    // openai-compatible / custom 及未知类别：同一协议族（兼容面最大）
     this.compatLoading ??= import('@ai-sdk/openai-compatible').then((m) => {
       this.compatFactory = m.createOpenAICompatible as never
     })
@@ -177,6 +224,23 @@ export class ProviderAdapter {
   }
 }
 
+/** 官方根地址（模板缺省值）——此时省略 baseURL，让 SDK 使用其规范 API 路径
+ *（anthropic 默认 https://api.anthropic.com/v1、google 默认 .../v1beta；
+ *  误拼根地址会把请求打到 /messages 而 404） */
+const ANTHROPIC_OFFICIAL_ROOTS = new Set(['https://api.anthropic.com', 'https://api.anthropic.com/'])
+const GOOGLE_OFFICIAL_ROOTS = new Set([
+  'https://generativelanguage.googleapis.com',
+  'https://generativelanguage.googleapis.com/',
+])
+
+function anthropicBaseURLOpts(baseURL: string): { baseURL?: string } {
+  return ANTHROPIC_OFFICIAL_ROOTS.has(baseURL) ? {} : { baseURL: baseURL.replace(/\/$/, '') }
+}
+
+function googleBaseURLOpts(baseURL: string): { baseURL?: string } {
+  return GOOGLE_OFFICIAL_ROOTS.has(baseURL) ? {} : { baseURL: baseURL.replace(/\/$/, '') }
+}
+
 /** 类型化错误（23 号 §9；IPC 边界扁平化为 code+message） */
 export class AgentProviderNotConfiguredError extends Error {
   readonly code = 'AGENT_PROVIDER_NOT_CONFIGURED'
@@ -186,11 +250,9 @@ export class AgentProviderNotConfiguredError extends Error {
   }
 }
 
-/** 缺省查找：延迟 require ai-call（避免模块加载期绑定数据库单例） */
-function defaultLookup(providerConfigId?: string): Promise<ProviderInfo | null> {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { getProviderConfig } = require('@core/platform/services/ai-call') as {
-    getProviderConfig: ProviderConfigLookup
-  }
+/** 缺省查找：动态 import（延迟绑定数据库单例；⚠️ 不能用 require——vite 只重写
+ * import 语句，运行时 require('@core/...') 在产物里无法解析，UI 实跑实证） */
+async function defaultLookup(providerConfigId?: string): Promise<ProviderInfo | null> {
+  const { getProviderConfig } = await import('@core/platform/services/ai-call')
   return getProviderConfig(providerConfigId)
 }

@@ -30,7 +30,8 @@ import type {
   SuspendRequest,
   TrajectoryEntry,
 } from '@core/platform/agent-runtime/types'
-import type { ApprovalDecision } from '@shared/types/agent.types'
+import type { ApprovalDecision, AgentToolBinding } from '@shared/types/agent.types'
+import { TrajectorySink, type TrajectoryAppendPort } from '@core/platform/agent-runtime/trajectory/sink'
 import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from '@shared/types/workflow.types'
 import type {
   WorkflowNodeContext,
@@ -59,6 +60,8 @@ export interface AgentLoopHarness {
   registry: AgentToolRegistry
   /** Provider 配置 → AI SDK LanguageModel（ProviderAdapter.resolveModel 直传） */
   resolveModel(opts?: ResolveModelOptions): Promise<import('ai').LanguageModel>
+  /** 轨迹落库端口（25 号 M2 批1；缺省=不落库仅摘要——降级不阻断执行） */
+  trajectoryRepo?: TrajectoryAppendPort
 }
 
 let harness: AgentLoopHarness | null = null
@@ -95,20 +98,65 @@ export function summarizeTrajectories(entries: TrajectoryEntry[]): Record<string
   return { entries: entries.length, byKind, toolCalls }
 }
 
+/** approval 合法值与 never 放宽的确认位（review B3：持久化通道不能只凭
+ *  approval:'never' 关闭人工审批——必须伴随编辑器写入的显式确认） */
+const APPROVAL_VALUES = new Set(['inherit', 'always', 'never'])
+
+/**
+ * 工具白名单归一化（25 号 M2 批3；review B11 类型收口）：
+ * - 存量 string 与新 AgentToolBinding 混合数组 → 纯 binding 数组
+ * - maxCalls 收口为正整数（NaN/字符串/非正数丢弃——护栏静默失效比报错更危险）
+ * - config 仅接受 plain object（字符串/数组按脏配置丢弃）
+ * - approval 枚举校验；'never' 无 approvalNeverConfirmed 降级 'inherit'
+ * - 无工具名/空名的项跳过；同名工具后者覆盖前者（buildToolDefs 按名建表语义）
+ */
+export function normalizeToolWhitelist(list: unknown): AgentToolBinding[] {
+  if (!Array.isArray(list)) return []
+  const out: AgentToolBinding[] = []
+  for (const item of list) {
+    if (typeof item === 'string') {
+      if (item.trim()) out.push({ tool: item.trim() })
+      continue
+    }
+    const b = item as Partial<AgentToolBinding> | null
+    if (b && typeof b.tool === 'string' && b.tool.trim()) {
+      const approval = typeof b.approval === 'string' && APPROVAL_VALUES.has(b.approval) ? b.approval : undefined
+      const maxCalls =
+        typeof b.maxCalls === 'number' && Number.isFinite(b.maxCalls) && b.maxCalls >= 1
+          ? Math.floor(b.maxCalls)
+          : undefined
+      const config =
+        b.config !== null && typeof b.config === 'object' && !Array.isArray(b.config)
+          ? (b.config as Record<string, unknown>)
+          : undefined
+      const needsNeverConfirm = approval === 'never' && b.approvalNeverConfirmed === true
+      out.push({
+        tool: b.tool.trim(),
+        ...(config !== undefined ? { config } : {}),
+        ...(b.credentialId ? { credentialId: b.credentialId } : {}),
+        ...(approval === 'always' || needsNeverConfirm ? { approval } : {}),
+        ...(maxCalls !== undefined ? { maxCalls } : {}),
+        ...(b.descriptionOverride ? { descriptionOverride: b.descriptionOverride } : {}),
+      })
+    }
+  }
+  return out
+}
+
 /**
  * 白名单 → AgentToolDef 映射 + 节点级调用预算包装（预算只包 execute，registry 管线所有权不动）。
  * initialUsed：挂起-恢复续段以 state.usage.toolCalls 为初值——护栏跨会话累计
- * （12 号 §6.4-2"累计 toolCalls ≥ maxToolCalls"，对抗 review P2-1）
+ * （12 号 §6.4-2"累计 toolCalls ≥ maxToolCalls"，对抗 review P2-1）。
+ * binding 富配置（approval/maxCalls/config/descriptionOverride）由
+ * registry.buildToolDefs 生效；节点预算与 binding.maxCalls 独立计数（取并集约束）。
  */
 export function assembleTools(
   registry: AgentToolRegistry,
-  toolWhitelist: string[] | undefined,
+  toolWhitelist: Array<string | AgentToolBinding> | undefined,
   maxToolCalls: number | undefined,
   initialUsed = 0,
 ): Record<string, AgentToolDef> {
-  const defs = registry.buildToolDefs(
-    (toolWhitelist ?? []).filter((t): t is string => typeof t === 'string' && t.length > 0).map((tool) => ({ tool })),
-  )
+  const defs = registry.buildToolDefs(normalizeToolWhitelist(toolWhitelist))
   const budget =
     maxToolCalls !== undefined && Number.isFinite(maxToolCalls) && maxToolCalls > 0
       ? { used: initialUsed, max: Math.floor(maxToolCalls) }
@@ -213,7 +261,7 @@ async function driveLoop(
   } = {},
 ): Promise<WorkflowNodeExecutionResult> {
   const cfg = ctx.config as AgentLoopNodeConfig
-  const { resolveModel, registry } = getAgentLoopHarness()
+  const { resolveModel, registry, trajectoryRepo } = getAgentLoopHarness()
   const maxSteps = Math.max(1, Math.floor(cfg.maxIterations ?? WORKFLOW_DEFAULTS.agentLoopMaxIterations))
 
   // 护栏信号：引擎取消 ∨ 节点时长护栏，本地合成（不篡改引擎 ctx.signal）
@@ -253,6 +301,12 @@ async function driveLoop(
   durationTimer?.unref?.()
 
   const trajectories: TrajectoryEntry[] = []
+  // 轨迹落库（25 号 M2 批1）：flush 点 = step-end saveState 搭车 / 挂起提交前 / 节点终态
+  // ——崩溃至多丢最后一步；seq 从库内续接 + 幂等主键，重放不重不漏
+  const trajectorySink = new TrajectorySink(trajectoryRepo ?? null, {
+    scope: 'workflow',
+    scopeKey: `${ctx.runId}:${ctx.nodeId}:${ctx.iterationIndex}`,
+  })
   let deltaBuf = ''
   let deltaTimer: ReturnType<typeof setTimeout> | null = null
   const flushDelta = (): void => {
@@ -278,6 +332,8 @@ async function driveLoop(
       lastState = state
       try {
         await ctx.saveState(state)
+        // flush 搭车（TrajectorySink.flush 不 throw）：步末存续点顺带落轨迹
+        await trajectorySink.flush()
       } catch (e) {
         // 持久化失败按契约继续抛（循环按崩溃处理），但带上可识别标记——
         // 节点级据此判 retryable=false（超限/DB 故障重试必再撞，对抗 review P2-3）
@@ -286,8 +342,9 @@ async function driveLoop(
       }
     },
     emitTrajectory: (entry) => {
-      // fire-and-forget 契约：轨迹落库 M1.5；当前入节点输出摘要 + 结构化日志留痕
+      // fire-and-forget 契约：入节点输出摘要（内存）+ 轨迹落库缓冲（步末搭车 flush）
       trajectories.push(entry)
+      trajectorySink.append(entry)
       ctx.logger.debug(`[agent-loop] 轨迹 ${entry.kind}${entry.name ? `:${entry.name}` : ''}`, {
         iteration: entry.iteration,
       })
@@ -324,6 +381,7 @@ async function driveLoop(
       bridgeSuspend(req, {
         ctx,
         lastStateRef: () => lastState,
+        flushTrajectories: () => trajectorySink.flush(),
         commit: (s) => {
           suspendResolve?.(s)
           // 挂起已提交：本地 abort 止住在途模型流/工具 IO（挂起后禁止副作用扩散）
@@ -351,7 +409,7 @@ async function driveLoop(
           tool: tool.name,
         })
         host.emitTrajectory({
-          iteration: 0,
+          iteration: lastState?.iteration ?? 0,
           kind: 'tool_call',
           name: tool.name,
           payload: { autoApprovedArgsDrift: true },
@@ -361,6 +419,14 @@ async function driveLoop(
     }
     // 失败路径 bridge 以 HumanDecision（reject/comment）值回流；loop 包装层按
     // action 判定（'reject' 走拒绝短路），对 ApprovalDecision 结构兼容
+    // 轨迹留痕（review A3：human_request 此前从不产生——"模型为什么想调这个
+    // 工具、人工审了什么"是轨迹视图最需要复盘的环节）
+    host.emitTrajectory({
+      iteration: lastState?.iteration ?? 0,
+      kind: 'human_request',
+      name: tool.name,
+      payload: { tool: tool.name, input },
+    })
     return host.suspend({
       reason: `工具 ${tool.name} 需要人工批准`,
       payload: {
@@ -383,6 +449,21 @@ async function driveLoop(
       tools: assembleTools(registry, cfg.toolWhitelist, cfg.maxToolCalls, opts.resumeFrom?.state.usage.toolCalls ?? 0),
       maxSteps,
       modelPreference: { providerConfigId: cfg.providerConfigId || undefined, modelId: cfg.modelId || undefined },
+      // 工具审计 logContext（review D3：审计行 run_id/node_id 据此落库）
+      runtimeContext: { runId: ctx.runId, nodeId: ctx.nodeId, iterationIndex: ctx.iterationIndex },
+    }
+
+    // 审批决策轨迹（review A3：恢复段把人工决策补进时间线；挂起段已发 human_request）
+    if (opts.resumeFrom) {
+      const suspendedTool = (
+        (opts.resumeFrom.state.suspended?.requestPayload as { tool?: string } | undefined)?.tool
+      ) ?? undefined
+      trajectorySink.append({
+        iteration: opts.resumeFrom.state.iteration ?? 0,
+        kind: 'human_decision',
+        name: suspendedTool,
+        payload: { action: opts.resumeFrom.decision.action, comment: opts.resumeFrom.decision.comment },
+      })
     }
 
     const runner = new LoopRunner({ resolveModel, requestApproval })
@@ -402,6 +483,7 @@ async function driveLoop(
     if (winner.kind === 'suspend') {
       return { status: 'waiting_review', payload: winner.req.payload, timeoutMs: winner.req.timeoutMs }
     }
+    await trajectorySink.flush() // 终态排空（挂起路径已在 bridgeSuspend 排空）
     return mapAgentResult(winner.result, { maxSteps, timedOut, trajectories })
   } finally {
     if (durationTimer) clearTimeout(durationTimer)
@@ -421,6 +503,8 @@ async function bridgeSuspend(
   deps: {
     ctx: WorkflowNodeContext
     lastStateRef: () => AgentLoopState | null
+    /** 挂起提交前排空轨迹缓冲（挂起段不再有 flush 点） */
+    flushTrajectories: () => Promise<void>
     commit: (s: SuspendSignal) => void
   },
 ): Promise<ApprovalDecision | never> {
@@ -450,6 +534,11 @@ async function bridgeSuspend(
   } else {
     // 无已存状态（首步 saveState 后不可达；防御分支）——照常挂起但留 warn
     ctx.logger.warn('[agent-loop] 挂起时无已存状态（恢复将不可用）')
+  }
+  try {
+    await deps.flushTrajectories()
+  } catch (e) {
+    ctx.logger.warn('[agent-loop] 挂起前排空轨迹失败（不影响挂起）', e)
   }
   commit({ payload, timeoutMs: req.timeoutMs })
   // commit 内已本地 abort：模型流/在途工具 IO 停摆（挂起后禁止副作用扩散）。
@@ -516,9 +605,29 @@ export const AGENT_LOOP_NODE_HANDLER: WorkflowNodeHandler = {
     }
     if (cfg.toolWhitelist !== undefined) {
       if (!Array.isArray(cfg.toolWhitelist)) {
-        errors.push('toolWhitelist 必须是字符串数组')
+        errors.push('toolWhitelist 必须是数组（工具名或绑定对象）')
       } else {
-        const names = cfg.toolWhitelist.map((t) => String(t))
+        // 按 binding 形态校验（review C11：String() 口径下对象变 '[object Object]'，
+        // 空 tool 名/重复项全部漏检）；脏配置项由运行时 normalizeToolWhitelist 容错
+        const names: string[] = []
+        for (const item of cfg.toolWhitelist) {
+          if (typeof item === 'string') {
+            names.push(item)
+            continue
+          }
+          const b = item as Partial<AgentToolBinding> | null
+          if (!b || typeof b.tool !== 'string' || !b.tool.trim()) {
+            errors.push('toolWhitelist 绑定项缺少有效工具名')
+            continue
+          }
+          if (b.approval !== undefined && !APPROVAL_VALUES.has(b.approval)) {
+            errors.push(`toolWhitelist[${b.tool}] approval 必须是 inherit/always/never`)
+          }
+          if (b.maxCalls !== undefined && (!Number.isFinite(b.maxCalls) || b.maxCalls < 1)) {
+            errors.push(`toolWhitelist[${b.tool}] maxCalls 必须是正数`)
+          }
+          names.push(b.tool)
+        }
         if (names.some((n) => !n.trim())) errors.push('toolWhitelist 含空工具名')
         if (new Set(names).size !== names.length) errors.push('toolWhitelist 存在重复工具名')
       }

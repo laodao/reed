@@ -136,6 +136,12 @@ export interface AgentToolBinding {
   credentialId?: string
   /** 批准策略：inherit=按 dangerLevel 默认 | always | never（never 为显式放宽，编辑器需二次确认） */
   approval?: 'inherit' | 'always' | 'never'
+  /**
+   * approval='never' 的显式确认位（review B3：编辑器选择放宽时写入 true；
+   * 引擎侧 normalizeToolWhitelist 对未带确认位的 never 降级 inherit——
+   * 持久化通道（导入 JSON/API）不能只凭一个 approval 字段关闭人工审批）
+   */
+  approvalNeverConfirmed?: boolean
   /** 单 run 内此工具调用上限 */
   maxCalls?: number
   /** 宿主定制的模型侧描述 */

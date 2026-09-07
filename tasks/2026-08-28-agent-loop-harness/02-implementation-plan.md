@@ -275,6 +275,19 @@
 
 ---
 
+> **进度（2026-09-07 M2 完成，feat/agent-harness）**：
+> M2 四批全部落地并过四路对抗 review（25 号 §7 修复账目）：M1.5 轨迹落表 +
+> 审计落库 + run 级 token 聚合（批1）、轨迹视图 UI + 查询契约（批2）、写类工具 +
+> 节点即工具（wf_ 前缀 5 个）+ ToolService 桥 + binding 富配置（never 确认位）+
+> oas $ref V2（批3）、provider 三家分派 anthropic/google（批4）。
+> 验证：单测 31 例新增全绿（全量与基线零差异）；DashScope 真模型冒烟 4 场景
+> 全过（33 轨迹 + 9 审计落库）；真机 UI 端到端——agent-loop 首次在真实应用
+> 跑通（轨迹抽屉/token 芯片/绑定编辑器），抓修两个生产 P1（entities 漏注册、
+> provider defaultLookup 运行时 require 别名不可解析）。
+> 遗留（25 号 §7.2）：B4/B5 审批容差与合并封闭（M3 审批批）、会话宿主装配
+> （A6）、agent_tool_calls 读取面（C12）、prompt 降级协议与 resultRef 落盘。
+> Anthropic/Google 无真机 key，mock 契约单测验收（02 号 M2 验收第 2 条注记）。
+
 ## M2 · 工具生态与观测
 
 ### 范围

@@ -45,7 +45,7 @@ function toMs(d: Date | string | number | null | undefined): number {
 }
 
 /** LIKE 前缀转义（事件名按规范不含 %/_，仍防御性转义） */
-function escapeLikePrefix(prefix: string): string {
+export function escapeLikePrefix(prefix: string): string {
   return prefix.replace(/[\\%_]/g, ch => `\\${ch}`)
 }
 

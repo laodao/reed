@@ -39,6 +39,8 @@ export interface WorkflowRunServiceDeps {
   maxConcurrentRuns?: number
   /** settings 表 wf:defaults 的全局执行设置覆盖层（boot 读取注入；优先级介于默认值与 definition.settings 之间） */
   globalSettings?: import('@shared/types/workflow.types').WorkflowExecutionSettings | null
+  /** 轨迹查询端口（25 号 M2 批2；缺省/未装配时查询返回空——观测面降级） */
+  trajectories?: { listByScope(scopeKey: string): Promise<import('@core/database/repositories/agent-trajectory.repository').AgentTrajectoryRow[]> } | null
 }
 
 /** 启动入参 */
@@ -54,6 +56,38 @@ export interface StartRunInput {
    * 手动触发缺省允许跑草稿（编辑器试运行的既有语义）。
    */
   usePublishedGraph?: boolean
+}
+
+/** run 级 token 汇总（25 号 M2 批1；来源 = 各节点 output_json.usage，无表变更） */
+export interface RunTokenUsage {
+  promptTokens: number
+  completionTokens: number
+  toolCalls: number
+  /** 有用量声明的节点数（output.usage 存在的 node run） */
+  billedNodes: number
+  byNode: Record<string, { promptTokens: number; completionTokens: number; toolCalls: number }>
+}
+
+/**
+ * 从节点执行记录聚合 run 级 token 用量（agent-loop/llm-chat/skill-call 同构 usage 字段）。
+ * 解析失败/字段缺失按 0 计（观测面容错——历史 run 与非 AI 节点无 usage）。
+ */
+export function aggregateRunTokenUsage(nodeRuns: WorkflowNodeRunRecord[]): RunTokenUsage {
+  const out: RunTokenUsage = { promptTokens: 0, completionTokens: 0, toolCalls: 0, billedNodes: 0, byNode: {} }
+  for (const nr of nodeRuns) {
+    const usage = (nr.output as { usage?: Record<string, unknown> } | null | undefined)?.usage
+    if (!usage || typeof usage !== 'object') continue
+    const p = Number(usage.promptTokens) || 0
+    const c = Number(usage.completionTokens) || 0
+    const t = Number(usage.toolCalls) || 0
+    if (p === 0 && c === 0 && t === 0) continue
+    out.promptTokens += p
+    out.completionTokens += c
+    out.toolCalls += t
+    out.billedNodes += 1
+    out.byNode[nr.nodeId] = { promptTokens: p, completionTokens: c, toolCalls: t }
+  }
+  return out
 }
 
 /** 唯一约束冲突识别（评审 #31/#40）：SQLite 与 PG 的报错形态 */
@@ -403,11 +437,13 @@ export class WorkflowRunService {
   }
 
   /** 运行详情（含节点执行记录，历史回放用） */
-  async getRunDetail(runId: string): Promise<{ run: WorkflowRunRecord; nodeRuns: WorkflowNodeRunRecord[] } | null> {
+  async getRunDetail(runId: string): Promise<
+    { run: WorkflowRunRecord; nodeRuns: WorkflowNodeRunRecord[]; tokenUsage: RunTokenUsage } | null
+  > {
     const run = await this.deps.runs.getById(runId)
     if (!run) return null
     const nodeRuns = await this.deps.nodeRuns.getByRun(runId)
-    return { run, nodeRuns }
+    return { run, nodeRuns, tokenUsage: aggregateRunTokenUsage(nodeRuns) }
   }
 
   listByDefinition(definitionId: string, params: { status?: WorkflowRunStatus; page: number; pageSize: number }) {
@@ -423,14 +459,43 @@ export class WorkflowRunService {
     return this.deps.nodeRuns.findWaitingReview()
   }
 
-  /** 删除运行历史（连带节点记录） */
+  /**
+   * agent-loop 节点轨迹（轨迹视图数据源，25 号 M2 批2）。
+   * 属主校验：getRun 走 scoped 读，非属主/不存在同 404 语义（抛错由 IPC 层扁平化）。
+   */
+  async getNodeTrajectories(runId: string, nodeId: string, iterationIndex = 0): Promise<
+    import('@core/database/repositories/agent-trajectory.repository').AgentTrajectoryRow[]
+  > {
+    if (!this.deps.trajectories) return [] // 未装配（无数据源）：观测面降级为空
+    const run = await this.getRun(runId)
+    if (!run) throw new Error(`运行不存在或无权访问：${runId}`)
+    return this.deps.trajectories.listByScope(`${runId}:${nodeId}:${iterationIndex}`)
+  }
+
+  /** 删除运行历史（连带节点记录）。属主校验前置（review C1/D2：级联含跨租户
+   *  raw 删除——journal/轨迹/审计，非属主绝不可触达）。 */
   async deleteRun(runId: string): Promise<void> {
+    const run = await this.deps.runs.getById(runId)
+    if (!run) throw new Error(`运行不存在或无权访问：${runId}`)
     await this.deps.nodeRuns.deleteByRun(runId)
     // journal 级联（11 号 §5.10：保留策略与 run 生命周期绑定——孤儿事件日志会永久累积）
     try {
       await this.deps.engine.deleteJournal(runId)
     } catch (e) {
       logger.warn(`[WorkflowRunService] 删除运行日志失败（run ${runId}，孤儿事件将由保留策略清扫）`, e)
+    }
+    // 轨迹/审计级联（25 号 M2 批1；fire-and-forget——观测面失败不阻断删除）
+    try {
+      const { AgentTrajectoryRepository } = await import('@core/database/repositories/agent-trajectory.repository')
+      const { AgentToolCallRepository } = await import('@core/database/repositories/agent-tool-call.repository')
+      const { getCoreDatabaseManager } = await import('@core/database/database-manager.interface')
+      const ds = getCoreDatabaseManager().dataSource
+      if (ds) {
+        await new AgentTrajectoryRepository(ds).deleteByRunRaw(runId)
+        await new AgentToolCallRepository(ds).deleteByRunRaw(runId)
+      }
+    } catch (e) {
+      logger.warn(`[WorkflowRunService] 删除运行轨迹/审计失败（run ${runId}）`, e)
     }
     await this.deps.runs.deleteById(runId)
   }

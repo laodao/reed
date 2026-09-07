@@ -703,6 +703,16 @@ export class DatabaseManager implements ICoreDatabaseManager {
     )
     await addWorkflowNodeRunStateJson(this.dataSource)
 
+    // agent 轨迹 + 工具调用审计（25 号 M2 批1：轨迹视图/token 观测的落库底座）
+    const { createAgentTrajectories } = await import(
+      '@core/database/migrations/create-agent-trajectories'
+    )
+    await createAgentTrajectories(this.dataSource)
+    const { createAgentToolCalls } = await import(
+      '@core/database/migrations/create-agent-tool-calls'
+    )
+    await createAgentToolCalls(this.dataSource)
+
     // 通用事件系统：platform_events / cursors / dead_letters 三表（幂等，双语种；10-event-system §4）
     const { createPlatformEventTables } = await import(
       '@core/database/migrations/create-platform-event-tables'

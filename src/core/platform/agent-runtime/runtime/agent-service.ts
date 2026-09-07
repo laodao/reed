@@ -20,6 +20,7 @@
 
 import { createLogger } from '@core/utils/logger'
 import { getCurrentUserId, runWithUser, runWithUserAsync } from '@core/context/user-context'
+import { TrajectorySink } from '../trajectory/sink'
 import type { LanguageModel, ModelMessage } from 'ai'
 import type {
   AgentEvent,
@@ -155,6 +156,8 @@ export interface AgentRuntimeDeps {
   /** 会话 LRU 容量 / 驻留 TTL（缺省 32 / 30min） */
   sessionCacheCapacity?: number
   sessionTtlMs?: number
+  /** 轨迹落库端口（25 号 M2 批1；缺省=不落库——观测面降级不阻断会话） */
+  trajectoryRepo?: import('@core/platform/agent-runtime/trajectory/sink').TrajectoryAppendPort | null
 }
 
 interface SteerQueueItem {
@@ -209,6 +212,7 @@ export class AgentRuntimeImpl implements AgentRuntime {
     eventBus: PlatformBusPort | null
     approvalStore: ApprovalStore
     clock: () => number
+    trajectoryRepo: import('@core/platform/agent-runtime/trajectory/sink').TrajectoryAppendPort | null
   }
   private sweeper: ReturnType<typeof setInterval> | null = null
 
@@ -223,6 +227,7 @@ export class AgentRuntimeImpl implements AgentRuntime {
       sweeperIntervalMs: deps.sweeperIntervalMs ?? 30_000,
       sessionCacheCapacity: deps.sessionCacheCapacity ?? 32,
       sessionTtlMs: deps.sessionTtlMs ?? 30 * 60_000,
+      trajectoryRepo: deps.trajectoryRepo ?? null,
     }
     void this.recoverOrphanApprovals()
     if (this.deps.sweeperIntervalMs > 0) {
@@ -392,6 +397,7 @@ export class AgentRuntimeImpl implements AgentRuntime {
     const entry = this.requireOwnedEntry(definitionId, scopeId)
     if (!entry) {
       await this.deps.sessionStore.delete(key)
+      this.deleteTrajectories(`session:${key}`) // fire-and-forget（观测面级联）
       logger.info(`[agent-runtime] 会话重置 def=${definitionId} scope=${scopeId}`)
       return
     }
@@ -404,6 +410,7 @@ export class AgentRuntimeImpl implements AgentRuntime {
       // 先删库再删条目（深度 review P2-4：原顺序在 delete 在途窗口内新轮可读到
       // 复活旧历史，随后又被 delete 抹掉新史——双重失效）
       await this.deps.sessionStore.delete(key)
+      this.deleteTrajectories(`session:${key}`)
     } catch (e) {
       // 删库失败：回滚拦截标记（总收口 review P1——曾无回滚，resetting 永真，
       // 该会话 queue/interrupt 消息陷入 setImmediate 无限自旋打满单核直到进程重启）
@@ -494,7 +501,12 @@ export class AgentRuntimeImpl implements AgentRuntime {
         snapshot,
       }
       const host = new IndependentHost(
-        { store: this.deps.sessionStore, clock: this.deps.clock, dispatch: (e, ev) => this.dispatch(e, ev) },
+        {
+          store: this.deps.sessionStore,
+          clock: this.deps.clock,
+          dispatch: (e, ev) => this.dispatch(e, ev),
+          trajectoryRepo: this.deps.trajectoryRepo ?? null,
+        },
         entry,
         def,
         controller,
@@ -532,7 +544,7 @@ export class AgentRuntimeImpl implements AgentRuntime {
           entry.coordinator.request(entry.scopeKey, tool, input, call.signal),
         context,
       })
-      const result = await runner.run(task, host)
+      const result = await runner.run(task, host).finally(() => host.flushTrajectories())
       // 只算一次：二次调用若抛错会在 reply:done 已发后再发 error（双终态，review P3）
       const suggestions = result.stopReason === 'error' ? [] : def.buildSuggestions?.(snapshot) ?? []
 
@@ -618,6 +630,14 @@ export class AgentRuntimeImpl implements AgentRuntime {
   }
 
   // ==================== 内部：会话/事件/清理 ====================
+
+  /** 轨迹级联删除（fire-and-forget；scoped 过滤租户 + 失败只 warn——review A1：
+   *  resetSession 空条目分支无属主校验，raw 删会跨租户清他人轨迹，改 scoped 版） */
+  private deleteTrajectories(scopeKey: string): void {
+    void this.deps.trajectoryRepo?.deleteByScope?.(scopeKey).catch((e: unknown) =>
+      logger.warn(`[agent-runtime] 会话轨迹清理失败（${scopeKey}）`, e),
+    )
+  }
 
   /**
    * 取条目并校验属主（跨租户读写统一收口——深度 review P0/P1：cancel/resetSession/
@@ -761,6 +781,7 @@ interface HostPorts {
   store: AgentSessionStore
   clock: () => number
   dispatch: (entry: SessionEntry, event: AgentEvent) => void
+  trajectoryRepo?: import('@core/platform/agent-runtime/trajectory/sink').TrajectoryAppendPort | null
 }
 
 class IndependentHost implements AgentHost {
@@ -768,6 +789,8 @@ class IndependentHost implements AgentHost {
   private readonly callRows: Array<{ type: string; params: unknown; brief: string }> = []
   private readonly resultRows: Array<{ ok: boolean; brief: string }> = []
   private replyStarted = false
+  /** 轨迹落库缓冲（25 号 M2 批1；flush 点 = saveState 搭车 + turn 终态） */
+  private readonly trajectorySink: TrajectorySink
 
   /** 本轮动作摘要（AgentSendResult.actionSummaries；轮结束后读取） */
   get actionSummaries(): AgentSendResult['actionSummaries'] {
@@ -791,7 +814,12 @@ class IndependentHost implements AgentHost {
     private readonly controller: AbortController,
     private readonly task: AgentTask,
     private readonly summaryEventId: string,
-  ) {}
+  ) {
+    this.trajectorySink = new TrajectorySink(ports.trajectoryRepo ?? null, {
+      scope: 'session',
+      scopeKey: `session:${entry.scopeKey}`,
+    })
+  }
 
   get signal(): AbortSignal {
     return this.controller.signal
@@ -808,6 +836,13 @@ class IndependentHost implements AgentHost {
 
   async saveState(state: AgentLoopState): Promise<void> {
     await this.ports.store.save(this.entry.scopeKey, state.messages)
+    // flush 搭车（TrajectorySink.flush 不 throw）：步末存续点顺带落轨迹
+    await this.trajectorySink.flush()
+  }
+
+  /** turn 终态/异常路径排空轨迹缓冲（观测面：不外泄 flush 失败） */
+  flushTrajectories(): Promise<void> {
+    return this.trajectorySink.flush()
   }
 
   /** 独立宿主无进程级挂起（审批经协调器进程内等待）；循环不应调到 */
@@ -830,6 +865,7 @@ class IndependentHost implements AgentHost {
         brief: denied ? '已拒绝' : failed ? String(entry.payload.error ?? '').slice(0, ACTION_BRIEF_MAX_CHARS) : '',
       })
     }
+    this.trajectorySink.append(entry)
     logger.debug(`[agent-runtime] trajectory def=${this.def.id} kind=${entry.kind} name=${entry.name ?? ''}`)
   }
 
