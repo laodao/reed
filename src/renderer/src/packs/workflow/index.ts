@@ -17,7 +17,7 @@ export const workflowPack: RendererPackDefinition = {
     version: '1.0.0',
     description: '可视化流程编排与自动化执行——定义/版本/触发器/运行/分享',
     contributions: {
-      routePaths: ['/workflow', '/workflow/editor/:id', '/workflow-run/:token', '/workflow/runs/:definitionId', '/workflow/run/:runId'],
+      routePaths: ['/workflow', '/workflow/editor/:id', '/workflow-run/:token', '/workflow/runs/:definitionId', '/workflow/run/:runId', '/workflow/review/:runId'],
     },
   },
   routes: [
@@ -50,6 +50,12 @@ export const workflowPack: RendererPackDefinition = {
       name: 'WorkflowRunDetail',
       component: () => import('@/views/workflow/WorkflowRunDetail.vue'),
       meta: { title: '运行详情' },
+    },
+    {
+      path: '/workflow/review/:runId',
+      name: 'WorkflowReviewPage',
+      component: () => import('@/views/workflow/WorkflowReviewPage.vue'),
+      meta: { title: '审核确认' },
     },
   ],
   menuItems: [

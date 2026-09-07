@@ -130,6 +130,25 @@ export class NotificationService {
 
   // ─── 未读数 ─────────────────────────────────────────────────────────────
 
+  /**
+   * 运行相关通知批量已读（"自动消失"）：当某运行的审核被处理（approve/reject/取消）后调用，
+   * 把该运行名下所有通知事件标记已读 → 铃铛未读回落、待审核条目不再置顶显示。
+   * @returns 已标记条数
+   */
+  async resolveRunNotices(runId: string): Promise<number> {
+    if (!runId) return 0
+    const events = await this.eventRepo.listAllNotices([...NOTICE_EVENT_TYPES])
+    const seqs: number[] = []
+    for (const e of events) {
+      const payload = this.parsePayload(e)
+      const evRun = str(payload.runId ?? e.aggregateId)
+      if (evRun === runId) seqs.push(Number(e.seq))
+    }
+    if (seqs.length === 0) return 0
+    await this.readRepo.markRead(seqs)
+    return seqs.length
+  }
+
   /** 当前用户未读通知数（顶栏铃铛徽标） */
   async unreadCount(): Promise<number> {
     const readSet = await this.readRepo.readSeqSet()
@@ -162,7 +181,7 @@ export class NotificationService {
           title: '待审核',
           message: `运行 ${runId} 在「${nodeName}」等待审核`,
           runId,
-          route: `/workflow/run/${runId}`,
+          route: `/workflow/review/${runId}`,
           occurredAt,
           read: false,
         }

@@ -39,6 +39,21 @@ describe('技能服务', () => {
       expect(s?.body).toContain('{{param.material}}')
       expect(s?.systemPrompt).toContain('公众号')
     })
+
+    it('视频写作技能：standard/investigative 均内置可解析，investigative 带态度档与质疑纪律', () => {
+      const list = svc.list().filter(s => s.source === 'builtin')
+      const standard = list.find(s => s.id === 'video-writer-standard')
+      const inv = list.find(s => s.id === 'video-writer-investigative')
+      expect(standard).toBeTruthy()
+      expect(inv).toBeTruthy()
+      expect(standard!.body).toContain('{{param.material}}')
+      expect(inv!.body).toContain('{{param.attitude}}')
+      expect(inv!.systemPrompt).toContain('调查')
+      expect(inv!.inputs.some(i => i.key === 'attitude' && i.options?.some(o => o.value === '犀利质疑'))).toBe(true)
+      // 零括注纪律贯穿正文与系统提示词
+      expect(inv!.body).toContain('零括注')
+      expect(inv!.systemPrompt).toContain('口播正文')
+    })
   })
 
   describe('用户技能（目录管理）', () => {

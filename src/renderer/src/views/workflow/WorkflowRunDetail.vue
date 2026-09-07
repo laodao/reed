@@ -19,6 +19,19 @@
 
     <el-alert v-if="run?.error" :title="run.error" type="error" :closable="false" style="margin-bottom: 12px" />
 
+    <!-- 有 human-review 待审：引导进入独立审批页 -->
+    <el-alert
+      v-if="run?.status === 'waiting_review' && pendingReviewCount > 0"
+      type="warning"
+      :closable="false"
+      style="margin-bottom: 12px"
+    >
+      <template #title>
+        {{ pendingReviewCount }} 个环节等待审核确认
+        <el-button size="small" type="primary" style="margin-left: 10px" @click="goReview">去审核确认 →</el-button>
+      </template>
+    </el-alert>
+
     <!-- 工作流执行图（只读：可点击节点看详情，不可编辑） -->
     <div class="run-graph-section">
       <div class="section-head">
@@ -253,6 +266,14 @@ let pollTimer: ReturnType<typeof setInterval> | null = null
 const runId = computed(() => route.params.runId as string)
 const canCancel = computed(() => ['pending', 'running', 'waiting_review'].includes(run.value?.status))
 const canResume = computed(() => ['failed', 'cancelled', 'interrupted', 'timed_out', 'waiting_review'].includes(run.value?.status))
+
+/** human-review 待审数量（不含 form-collect 表单行）；>0 时显示去审批页入口 */
+const pendingReviewCount = computed(() =>
+  nodeRuns.value.filter(n => n.status === 'waiting_review' && n.nodeType === 'human-review').length
+)
+function goReview(): void {
+  void router.push(`/workflow/review/${runId.value}`)
+}
 
 const api = () => (window as never as { electronAPI: any }).electronAPI.workflow
 

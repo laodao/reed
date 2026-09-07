@@ -141,6 +141,62 @@
               "help": "auto=按 videoType 预设默认：财经/资讯/知识/文旅→意象化空镜；电商/品牌→素材驱动(需提供素材图)。可手动强制。"
             },
             {
+              "key": "writerSkill",
+              "label": "脚本文体技能",
+              "type": "select",
+              "required": false,
+              "defaultValue": "auto",
+              "help": "auto=按视频类型默认映射；也可直接选技能",
+              "options": [
+                {
+                  "label": "自动（按视频类型）",
+                  "value": "auto"
+                },
+                {
+                  "label": "新闻调查·财经（video-writer-investigative）",
+                  "value": "video-writer-investigative"
+                },
+                {
+                  "label": "通用标准（video-writer-standard）",
+                  "value": "video-writer-standard"
+                }
+              ]
+            },
+            {
+              "key": "writerAttitude",
+              "label": "写作态度档",
+              "type": "select",
+              "required": false,
+              "defaultValue": "auto",
+              "help": "新闻调查技能的态度档：冷静调查/犀利质疑/共情叙事",
+              "options": [
+                {
+                  "label": "自动",
+                  "value": "auto"
+                },
+                {
+                  "label": "冷静调查",
+                  "value": "冷静调查"
+                },
+                {
+                  "label": "犀利质疑",
+                  "value": "犀利质疑"
+                },
+                {
+                  "label": "共情叙事",
+                  "value": "共情叙事"
+                }
+              ]
+            },
+            {
+              "key": "writerAngle",
+              "label": "报道角度/想质疑的点（可空）",
+              "type": "textarea",
+              "required": false,
+              "defaultValue": "",
+              "help": "自由描述报道主线/立场/想强调的质疑；空=技能默认角度"
+            },
+            {
               "key": "referenceAssetIds",
               "label": "参考图资产（多选，作风格/主体参考）",
               "type": "select-dynamic",
@@ -383,40 +439,6 @@
         }
       },
       {
-        "id": "outlineGen",
-        "type": "llm-chat",
-        "name": "大纲生成（脚本/主题+知识库）",
-        "position": {
-          "x": 900,
-          "y": 560
-        },
-        "config": {
-          "systemPrompt": "你是资深短视频策划。输出可执行大纲 JSON。\n【视频类型/风格规范】\n{{preset.promptBlock}}\n【脚本来源】已有脚本则精炼为大纲；仅有主题/要点时结合知识库参考生成完整口播与大纲。\n【知识库参考】（为空则忽略，不为空则事实口径须以其为准并标注来源：官方通报/当事人自述/媒体报道/年报数据等）\n{{kbText.result.text}}\n【脚本/文案资产或粘贴文本参考】（为空则忽略）\n{{scriptSrc.result.text}}\n【主题与要点】\n主题：{{start.topic}}\n要点：{{start.keyPoints}}\n【产出 JSON】{\"title\":\"标题\",\"positioning\":\"一句话定位\",\"narration\":\"全片完整口播（可分段，用 | 分句）\",\"sections\":[{\"role\":\"段落作用\",\"keyPoint\":\"本段要点\",\"narration\":\"本段口播句\"}],\"structureNote\":\"结构说明\"}\n口播面向中文普通话，总时长估算 ≤300 秒（约 ≤20 镜）；事实与观点分离，涉来源口径标注。",
-          "prompt": "请综合以上素材输出大纲 JSON（无脚本文案且无知识库参考时，直接按主题与视频类型创作）。",
-          "jsonMode": true,
-          "providerConfigId": "{{start.model.providerConfigId}}",
-          "modelId": "{{start.model.modelId}}"
-        }
-      },
-      {
-        "id": "outlineMd",
-        "type": "code",
-        "name": "大纲渲染 markdown",
-        "position": {
-          "x": 1180,
-          "y": 560
-        },
-        "config": {
-          "code": "const o = inputs.outline || {};\nconst secs = Array.isArray(o.sections) ? o.sections : [];\nconst rows = secs.map((s, i) => '- **段落' + (i + 1) + '** ' + String(s.role || '') + '｜' + String(s.keyPoint || '') + '｜口播：' + String(s.narration || '')).join('\\n');\nreturn { md: '## ' + String(o.title || '') + '\\n\\n**定位**：' + String(o.positioning || '') + '\\n\\n**结构**：' + String(o.structureNote || '') + '\\n\\n## 口播全文\\n\\n' + String(o.narration || '') + '\\n\\n## 分段\\n\\n' + rows };",
-          "inputs": [
-            {
-              "key": "outline",
-              "value": "{{outlineGen.parsed}}"
-            }
-          ]
-        }
-      },
-      {
         "id": "outlineReview",
         "type": "human-review",
         "name": "大纲审核",
@@ -427,7 +449,7 @@
         "config": {
           "payload": {
             "stage": "大纲审核：批准后进入分镜拆解",
-            "md": "{{outlineMd.result.md}}"
+            "md": "{{writerMd.result.md}}"
           },
           "editableFields": [
             {
@@ -467,7 +489,7 @@
           "y": 560
         },
         "config": {
-          "systemPrompt": "你是资深视频分镜师。依据用户确认的大纲把视频拆为 1~20 个镜头。\n【视频类型/风格规范】\n{{preset.promptBlock}}\n【视觉策略（当前模式 {{strategy.result.mode}}）】\n{{strategy.result.policyText}}\n【素材池（asset 模式引用；imagery 模式可参考）】（名称/描述/索引）\n{{baseList.result.text}}\n【大纲全文（用户已审核）】\n{{outlineReview.md}}\n【画面硬性要求】visual 只描述可实拍物理场景（主体/动作/环境/光线/色调/构图景别/情绪/镜头运动），禁止任何文字/UI/图形/图表/水印/贴片字幕（所有文字一律走 caption 字幕层）；每镜 1~3 句并给出运镜。\n【镜头规则】字幕 caption 为画面要传达的文字（烧录为字幕）；duration 整数秒 4~16；每镜给出 concept（该镜语义主题）。\n【模式化镜头输出】依据上方“视觉策略”里的模式：\n - imagery 模式：每镜另给 imagery（意象对象：按意象表命中 + concept 细化的代表性意象画面，可拍无文字）与 visual（=该意象的可执行画面描述）。\n - asset 模式：每镜必须给 assetIdx（引用素材池索引，取值 0..{{strategy.result.baseCount}}-1）与 visual（描述该镜展示素材的角度/景别/运镜/氛围，主体来自素材，不新增文字）。\n输出 JSON 数组结构：{\"narration\":\"全片口播（原样保留可用 | 分句）\",\"shots\":[{\"concept\":\"语义主题\",\"visual\":\"画面描述\",\"caption\":\"字幕短句\",\"duration\":秒,\"imagery\":\"意象对象(仅 imagery)\",\"assetIdx\":素材索引(仅 asset)}]}。镜头总数 1~20。",
+          "systemPrompt": "你是资深视频分镜师。依据用户确认的大纲把视频拆为 1~20 个镜头。\n【视频类型/风格规范】\n{{preset.promptBlock}}\n【视觉策略（当前模式 {{strategy.result.mode}}）】\n{{strategy.result.policyText}}\n【素材池（asset 模式引用；imagery 模式可参考）】（名称/描述/索引）\n{{baseList.result.text}}\n【大纲全文（用户已审核）】\n{{outlineReview.md}}\n【画面硬性要求】visual 只描述可实拍物理场景（主体/动作/环境/光线/色调/构图景别/情绪/镜头运动），禁止任何文字/UI/图形/图表/水印/贴片字幕（所有文字一律走 caption 字幕层）；每镜 1~3 句并给出运镜。\n【镜头规则】字幕 caption 为画面要传达的文字（烧录为字幕）；duration 整数秒 4~16；每镜给出 concept（该镜语义主题）。\n【模式化镜头输出】依据上方“视觉策略”里的模式：\n - imagery 模式：每镜另给 imagery（意象对象：按意象表命中 + concept 细化的代表性意象画面，可拍无文字）与 visual（=该意象的可执行画面描述）。\n - asset 模式：每镜必须给 assetIdx（引用素材池索引，取值 0..{{strategy.result.baseCount}}-1）与 visual（描述该镜展示素材的角度/景别/运镜/氛围，主体来自素材，不新增文字）。\n输出 JSON 数组结构：{\"narration\":\"全片口播（原样保留可用 | 分句）\",\"shots\":[{\"concept\":\"语义主题\",\"visual\":\"画面描述\",\"caption\":\"字幕短句\",\"duration\":秒,\"imagery\":\"意象对象(仅 imagery)\",\"assetIdx\":素材索引(仅 asset)}]}。镜头总数 1~20。\n【分镜原子纪律】以“口播的 | 分句/大纲段落”为镜头原子：同一镜只承载一个事件、一个地点、一个语义点；一句口播含多个事件或地点时必须拆成多个镜头，禁止把多个场景塞进同一镜的 visual。",
           "prompt": "请基于大纲与视觉策略输出镜头 JSON（concept/imagery 或 assetIdx 依模式填写）。",
           "jsonMode": true,
           "providerConfigId": "{{start.model.providerConfigId}}",
@@ -522,7 +544,7 @@
           "y": 420
         },
         "config": {
-          "systemPrompt": "为单个镜头产出可执行素材包（JSON）：{\"concept\":\"语义主题\",\"visual\":\"画面描述（服从大纲/风格；仅实拍物理场景、无文字、含运镜）\",\"imagery\":\"意象对象（imagery 模式：依意象表命中细化为可执行画面；asset 模式填空）\",\"caption\":\"字幕短句\",\"duration\":秒,\"prompt\":\"给文生图的完整画面提示词（已含风格与参考图说明；asset 模式此字段可空）\"}\n【预设规范】\n{{preset.promptBlock}}\n【视觉策略】\n{{strategy.result.policyText}}\n【参考图提示】画面风格与主体须贴合参考图（若有）；意象化空镜禁止出现文字。",
+          "systemPrompt": "为单个镜头产出可执行素材包（JSON）：{\"concept\":\"语义主题\",\"visual\":\"画面描述（服从大纲/风格；仅实拍物理场景、无文字、含运镜）\",\"imagery\":\"意象对象（imagery 模式：依意象表命中细化为可执行画面；asset 模式填空）\",\"caption\":\"字幕短句\",\"duration\":秒,\"prompt\":\"给文生图的完整画面提示词（已含风格与参考图说明；asset 模式此字段可空）\"}\n【预设规范】\n{{preset.promptBlock}}\n【视觉策略】\n{{strategy.result.policyText}}\n【参考图提示】画面风格与主体须贴合参考图（若有）；意象化空镜禁止出现文字。\n【单场景纪律】visual 与 imagery 只描述“一个主体 + 一处环境”的单一可拍场景；严禁“先…随后…/接着切到…/再出现…”这类多场景转场拼接；对比性修辞句只取一个代表性意象。",
           "prompt": "大纲段落：{{loopMat.item.sectionIdx}}\n语义主题：{{loopMat.item.concept}}\n画面要点：{{loopMat.item.visual}}\n意象对象：{{loopMat.item.imagery}}\n字幕：{{loopMat.item.caption}}\n时长：{{loopMat.item.duration}}秒\n\n输出该镜头素材包 JSON。",
           "jsonMode": true,
           "providerConfigId": "{{start.model.providerConfigId}}",
@@ -885,6 +907,86 @@
             }
           ]
         }
+      },
+      {
+        "id": "writerPick",
+        "type": "code",
+        "name": "按类型选写作技能",
+        "position": {
+          "x": 340,
+          "y": 260
+        },
+        "config": {
+          "inputs": [
+            {
+              "key": "videoType",
+              "value": "{{start.videoType}}"
+            },
+            {
+              "key": "writerSkill",
+              "value": "{{start.writerSkill}}"
+            }
+          ],
+          "code": "const t = String(inputs.videoType || '');\nconst w = String(inputs.writerSkill || 'auto');\nconst map = { 'financial-deep': 'video-writer-investigative' };\nif (w && w !== 'auto') return { skillId: w };\nreturn { skillId: map[t] || 'video-writer-standard' };"
+        }
+      },
+      {
+        "id": "writerCall",
+        "type": "skill-call",
+        "name": "写作技能调用",
+        "position": {
+          "x": 380,
+          "y": 290
+        },
+        "config": {
+          "skillId": "{{writerPick.result.skillId}}",
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}",
+          "inputs": [
+            {
+              "key": "material",
+              "value": "{{scriptSrc.result.text}}"
+            },
+            {
+              "key": "context",
+              "value": "{{kbText.result.text}}"
+            },
+            {
+              "key": "topic",
+              "value": "{{start.topic}}"
+            },
+            {
+              "key": "keyPoints",
+              "value": "{{start.keyPoints}}"
+            },
+            {
+              "key": "attitude",
+              "value": "{{start.writerAttitude}}"
+            },
+            {
+              "key": "angle",
+              "value": "{{start.writerAngle}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "writerMd",
+        "type": "code",
+        "name": "大纲规整",
+        "position": {
+          "x": 420,
+          "y": 320
+        },
+        "config": {
+          "inputs": [
+            {
+              "key": "content",
+              "value": "{{writerCall.content}}"
+            }
+          ],
+          "code": "const raw = String(inputs.content || '');\nconst cleaned = raw.replace(/^```[a-zA-Z]*\\n?/, '').replace(/```$/, '').trim();\nif (!cleaned) throw new Error('写作技能输出为空，请重试或更换技能');\nreturn { md: cleaned };"
+        }
       }
     ],
     "edges": [
@@ -991,14 +1093,8 @@
         "kind": "normal"
       },
       {
-        "id": "e19",
-        "sourceNodeId": "outlineGen",
-        "targetNodeId": "outlineMd",
-        "kind": "normal"
-      },
-      {
         "id": "e20",
-        "sourceNodeId": "outlineMd",
+        "sourceNodeId": "writerMd",
         "targetNodeId": "outlineReview",
         "kind": "normal"
       },
@@ -1119,7 +1215,19 @@
       {
         "id": "emtpzor1i2i8o",
         "sourceNodeId": "strategy",
-        "targetNodeId": "outlineGen",
+        "targetNodeId": "writerPick",
+        "kind": "normal"
+      },
+      {
+        "id": "w1",
+        "sourceNodeId": "writerPick",
+        "targetNodeId": "writerCall",
+        "kind": "normal"
+      },
+      {
+        "id": "w2",
+        "sourceNodeId": "writerCall",
+        "targetNodeId": "writerMd",
         "kind": "normal"
       }
     ]

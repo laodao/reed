@@ -26,6 +26,7 @@ import type { WorkflowRunRepository } from '../../database/repositories/workflow
 import type { WorkflowNodeRunRepository, WorkflowNodeRunRecord } from '../../database/repositories/workflow-node-run.repository'
 import type { WorkflowDefinitionRepository } from '../../database/repositories/workflow-definition.repository'
 import { createLogger } from '@core/utils/logger'
+import { getNotificationService } from '@core/platform/services/notification.service'
 
 const logger = createLogger('WorkflowRunService')
 
@@ -279,7 +280,10 @@ export class WorkflowRunService {
     const cancelledByEngine = await runWithUserAsync(userId, () =>
       this.deps.engine.cancelRun(runId)
     )
-    if (cancelledByEngine) return true
+    if (cancelledByEngine) {
+      this.autoClearRunNotices(runId)
+      return true
+    }
     // 排队中未启动：从队列移除并落库
     const idx = this.queue.findIndex(q => q.runId === runId)
     if (idx >= 0) this.queue.splice(idx, 1)
@@ -288,11 +292,13 @@ export class WorkflowRunService {
     if ([WORKFLOW_RUN_STATUSES.pending, WORKFLOW_RUN_STATUSES.waiting_review].includes(run.status)) {
       // 评审 #34：原子条件迁移（UPDATE ... WHERE status IN），
       // 消除「读-判-写」窗口里与 resumeReview/引擎完结交错的终态覆盖
-      return this.deps.runs.transitionIfStatus(runId, [WORKFLOW_RUN_STATUSES.pending, WORKFLOW_RUN_STATUSES.waiting_review], {
+      const ok = await this.deps.runs.transitionIfStatus(runId, [WORKFLOW_RUN_STATUSES.pending, WORKFLOW_RUN_STATUSES.waiting_review], {
         status: WORKFLOW_RUN_STATUSES.cancelled,
         finishedAt: new Date(),
         cancelRequestedAt: new Date(),
       })
+      if (ok) this.autoClearRunNotices(runId)
+      return ok
     }
     return false
   }
@@ -313,7 +319,19 @@ export class WorkflowRunService {
         error: '决策未生效：运行不在活动挂起状态（应用重启后请先续跑），或提交被校验拒绝（如必填缺失/选项非法）',
       }
     }
+    // 该审核已处理 → 运行名下待审核通知自动已读（消失，铃铛回落）；失败不影响运行
+    this.autoClearRunNotices(runId)
     return { success: true }
+  }
+
+  /** 通知"自动消失"：把该运行名下所有通知事件标已读（fire-and-forget，失败仅告警） */
+  private autoClearRunNotices(runId: string): void {
+    try {
+      const svc = getNotificationService()
+      if (svc) void svc.resolveRunNotices(runId).catch(() => undefined)
+    } catch (e) {
+      logger.warn('[WorkflowRunService] 通知自动已读失败（不影响运行）', e)
+    }
   }
 
   /**
