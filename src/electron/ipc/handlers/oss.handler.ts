@@ -145,7 +145,7 @@ async function handleUpdateConfig(
       return { success: false, error: '数据库未初始化' }
     }
 
-    // 如果有新密钥，需要加密
+    // 如果有新密钥，需要加密；为空/未提供则视为不修改，剔除避免覆盖
     let updateData: any = { ...request }
     if (request.accessKeySecret) {
       const secureStorage = getSecureStorage()
@@ -153,6 +153,11 @@ async function handleUpdateConfig(
         await secureStorage.initialize()
       }
       updateData.accessKeySecret = secureStorage.encrypt(request.accessKeySecret)
+    } else {
+      delete updateData.accessKeySecret
+    }
+    if (!request.accessKeyId) {
+      delete updateData.accessKeyId
     }
 
     const success = await db.ossConfigs.update(request.id, updateData)

@@ -125,10 +125,19 @@ export class OSSConfigRepository extends BaseRepository<
   }
 
   async getDefault(): Promise<OSSConfig | null> {
-    const entity = await this.repo.findOne({
+    // 优先返回已启用且标记为默认的配置
+    const def = await this.repo.findOne({
       where: { isEnabled: 1, isDefault: 1 } as any,
     })
-    return entity ? this.toDto(entity) : null
+    if (def) return this.toDto(def)
+
+    // 没有标记默认时，仅当启用配置恰好一条才回退（避免多配置下误选）
+    const enabled = await this.repo
+      .createQueryBuilder('o')
+      .where('o.is_enabled = :e', { e: 1 })
+      .orderBy('o.created_at', 'DESC')
+      .getMany()
+    return enabled.length === 1 ? this.toDto(enabled[0]!) : null
   }
 
   async update(
@@ -139,8 +148,8 @@ export class OSSConfigRepository extends BaseRepository<
     if (!existing) return false
 
     if (request.name !== undefined) existing.name = request.name
-    if (request.accessKeyId !== undefined) existing.accessKeyId = request.accessKeyId
-    if (request.accessKeySecret !== undefined) existing.accessKeySecret = request.accessKeySecret
+    if (request.accessKeyId) existing.accessKeyId = request.accessKeyId
+    if (request.accessKeySecret) existing.accessKeySecret = request.accessKeySecret
     if (request.region !== undefined) existing.region = request.region
     if (request.bucket !== undefined) existing.bucket = request.bucket
     if (request.endpoint !== undefined) existing.endpoint = request.endpoint || null

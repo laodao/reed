@@ -75,6 +75,36 @@ describe.each(getTestDialects())('OSSConfigRepository [%s]', dialect => {
     expect(def!.id).toBe('a')
   })
 
+  it('getDefault 无默认标记时：单条启用回退、多条启用返回 null', async () => {
+    // 仅一条启用且未标记默认 → 回退返回该条
+    await repo.create(fixture({ id: 'single' }) as any)
+    const single = await repo.getDefault()
+    expect(single?.id).toBe('single')
+
+    // 两条启用且都未标记默认 → 返回 null（避免误选）
+    await repo.create(fixture({ id: 'another' }) as any)
+    expect(await repo.getDefault()).toBeNull()
+
+    // 标记默认后命中默认
+    await repo.setDefault('another')
+    expect((await repo.getDefault())!.id).toBe('another')
+  })
+
+  it('update 空 accessKeyId / accessKeySecret 不清空已有密钥', async () => {
+    const c = await repo.create(fixture({ id: 'a' }) as any)
+    await repo.update('a', { name: '改名', accessKeyId: '', accessKeySecret: '' } as any)
+    const got = await repo.getById(c.id)!
+    expect(got!.name).toBe('改名')
+    expect(got!.accessKeyId).toBe('AK')
+    expect(got!.accessKeySecret).toBe('SK')
+
+    // 提供新值时正常更新
+    await repo.update('a', { accessKeyId: 'AK2', accessKeySecret: 'SK2' } as any)
+    const got2 = await repo.getById(c.id)!
+    expect(got2!.accessKeyId).toBe('AK2')
+    expect(got2!.accessKeySecret).toBe('SK2')
+  })
+
   it('update + delete + toggleEnabled', async () => {
     const c = await repo.create(fixture({ id: 'a' }) as any)
     expect(await repo.update(c.id, { name: 'New' } as any)).toBe(true)
