@@ -147,3 +147,63 @@ export interface AgentToolBinding {
   /** 宿主定制的模型侧描述 */
   descriptionOverride?: string
 }
+
+// ==================== M3 任务树（26 号批2 / 01 号 §5） ====================
+
+/** 任务状态机（TaskService 收口变迁） */
+export const AGENT_TASK_STATUSES = [
+  'pending_review', 'ready', 'running', 'verifying', 'succeeded', 'failed', 'cancelled', 'escalated', 'replanned',
+] as const
+export type AgentTaskStatus = (typeof AGENT_TASK_STATUSES)[number]
+
+/** 任务执行器：agent_loop=LoopRunner 直驱 | sub_workflow:<definitionId>=引擎运行 | human=人工 */
+export type AgentTaskExecutor = 'agent_loop' | `sub_workflow:${string}` | 'human'
+
+/** 任务契约（规划期声明——验收标准在这里） */
+export interface AgentTaskSpec {
+  goal: string
+  /** 验收标准（LLM 评判 rubric 与规则层依据） */
+  acceptance?: string
+  /** agent_loop 执行器的工具白名单（AgentToolRegistry 工具名） */
+  toolWhitelist?: string[]
+  /** 本任务执行的迭代上限（agent_loop） */
+  maxSteps?: number
+  /** 依赖：同树中须先终态的任务 id（缺省=按树序，父依赖子全部终态） */
+  deps?: string[]
+  /** 质量门配置（透传 Verifier 的 VerificationSpec 子集） */
+  verification?: {
+    requiredFields?: string[]
+    minLength?: number
+    llmJudge?: boolean
+    rubricHints?: string[]
+    humanRequired?: boolean
+    grayZone?: { low: number; high: number }
+  }
+}
+
+/** 任务树渲染/查询 DTO（与 AgentTaskRow 同构） */
+export interface AgentTaskView {
+  id: string
+  parentId: string | null
+  rootId: string
+  depth: number
+  title: string
+  spec: AgentTaskSpec
+  status: AgentTaskStatus
+  executor: string
+  runId: string | null
+  qualityScore: number | null
+  result: Record<string, unknown> | null
+  retryCount: number
+  error: string | null
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+/** 规划器生成的任务树节点（LLM JSON 契约） */
+export interface PlannedTaskNode {
+  title: string
+  spec: AgentTaskSpec
+  executor?: AgentTaskExecutor
+  children?: PlannedTaskNode[]
+}

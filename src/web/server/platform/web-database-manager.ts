@@ -67,6 +67,8 @@ import { LwVectorIndexRepository } from '@core/database/repositories/lw-vector-i
 import { WorkflowDefinitionRepository } from '@core/database/repositories/workflow-definition.repository'
 import { WorkflowRunRepository } from '@core/database/repositories/workflow-run.repository'
 import { WorkflowNodeRunRepository } from '@core/database/repositories/workflow-node-run.repository'
+import { AgentTaskRepository } from '@core/database/repositories/agent-task.repository'
+import { AgentMemoryEntryRepository } from '@core/database/repositories/agent-memory-entry.repository'
 import { PackBindingRepository, PackRepository } from '@core/database/repositories/business-pack.repositories'
 import { LwPlotCharacterRepository } from '@core/database/repositories/lw-plot-character.repository'
 import { LwPlotLocationRepository } from '@core/database/repositories/lw-plot-location.repository'
@@ -185,6 +187,8 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   workflowDefinitions: WorkflowDefinitionRepository | null
   workflowRuns: WorkflowRunRepository | null
   workflowNodeRuns: WorkflowNodeRunRepository | null
+  agentTasks: import('@core/database/repositories/agent-task.repository').AgentTaskRepository | null
+  agentMemoryEntries: import('@core/database/repositories/agent-memory-entry.repository').AgentMemoryEntryRepository | null
   // 业务包内核（第一期）
   packs: PackRepository | null
   packBindings: PackBindingRepository | null
@@ -298,6 +302,8 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.workflowDefinitions = new WorkflowDefinitionRepository(ds)
     this.workflowRuns = new WorkflowRunRepository(ds)
     this.workflowNodeRuns = new WorkflowNodeRunRepository(ds)
+    this.agentTasks = new AgentTaskRepository(ds)
+    this.agentMemoryEntries = new AgentMemoryEntryRepository(ds)
     // 业务包内核（第一期）：包快照 + 启用/配置覆写
     this.packs = new PackRepository(ds)
     this.packBindings = new PackBindingRepository(ds)

@@ -11,22 +11,26 @@ import { resolve } from 'path'
 import { workflowPack } from '@core/packs/workflow'
 
 /** 从 handler 源码提取全部 channel 字面量（兼容单行/多行 ipcBridge.handle 调用） */
-function extractHandlerChannels(): string[] {
-  const source = readFileSync(
-    resolve(process.cwd(), 'src/core/packs/workflow/handlers/workflow.handler.ts'),
-    'utf-8',
-  )
-  return [...source.matchAll(/ipcBridge\.handle\(\s*'([^']+)'/g)].map((m) => m[1])
+function extractHandlerChannels(files: string[]): string[] {
+  const out: string[] = []
+  for (const file of files) {
+    const source = readFileSync(resolve(process.cwd(), file), 'utf-8')
+    out.push(...[...source.matchAll(/ipcBridge\.handle\(\s*'([^']+)'/g)].map((m) => m[1]))
+  }
+  return out
 }
 
 describe('workflow 包 IPC 前缀覆盖', () => {
-  it('handler 全部 channel 被 manifest 前缀覆盖', () => {
-    const channels = extractHandlerChannels()
-    // 防静默漂移：handler 目前注册 27 个 channel，正则失效时不应拿到空表
-    expect(channels.length, '未提取到 channel，请检查正则与 handler 写法').toBeGreaterThanOrEqual(27)
+  it('handler 全部 channel 被 manifest 前缀覆盖（26 号：含 at:/am: 任务树/飞轮）', () => {
+    const channels = extractHandlerChannels([
+      'src/core/packs/workflow/handlers/workflow.handler.ts',
+      'src/core/packs/workflow/handlers/agent-tasks.handler.ts',
+    ])
+    // 防静默漂移：handler 目前注册 27（wf:*）+ 11（at:*/am:*）个 channel，正则失效时不应拿到空表
+    expect(channels.length, '未提取到 channel，请检查正则与 handler 写法').toBeGreaterThanOrEqual(38)
 
     const prefixes = workflowPack.manifest.contributions?.ipcChannelPrefixes ?? []
-    expect(prefixes).toEqual(['wf:'])
+    expect(new Set(prefixes)).toEqual(new Set(['wf:', 'at:', 'am:']))
 
     for (const channel of channels) {
       const covered = prefixes.some((p) => channel.startsWith(p))

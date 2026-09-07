@@ -191,7 +191,8 @@ describe('installBuiltinPackages（内置包装配）', () => {
     const paths = flattenMenuItems(mainMenuItems).map(i => i.path)
     expect(paths).toEqual([
       '/', '/chat', '/portrait', '/longwriting', '/episode-production',
-      '/knowledge-base', '/workflow', '/apps', '/diary', '/assets', '/skills',
+      '/knowledge-base', '/agent-tasks', '/agent-memory', '/workflow', '/apps',
+      '/diary', '/assets', '/skills',
     ])
   })
 

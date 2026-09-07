@@ -213,6 +213,10 @@ export interface ICoreDatabaseManager {
   workflowRuns: WorkflowRunRepository | null
   /** 节点级 checkpoint（断点续跑事实源） */
   workflowNodeRuns: WorkflowNodeRunRepository | null
+  /** M3 任务树（26 号批1） */
+  agentTasks: import('./repositories/agent-task.repository').AgentTaskRepository | null
+  /** M3 知识飞轮（26 号批1） */
+  agentMemoryEntries: import('./repositories/agent-memory-entry.repository').AgentMemoryEntryRepository | null
 
   // ---- 业务包内核（第一期） ----
   /** 内置包快照（business_packs：manifest UPSERT + 全局启用态兜底） */

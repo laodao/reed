@@ -128,3 +128,7 @@ export { AgentSessionEntity } from './agent-session.entity'
 // Agent 观测面（25 号 M2 批1）：轨迹落库 / 工具调用审计
 export { AgentTrajectoryEntity } from './agent-trajectory.entity'
 export { AgentToolCallEntity } from './agent-tool-call.entity'
+
+// M3 任务树与知识飞轮（26 号批1）
+export { AgentTaskEntity } from './agent-task.entity'
+export { AgentMemoryEntryEntity } from './agent-memory-entry.entity'

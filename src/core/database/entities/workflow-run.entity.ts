@@ -88,6 +88,14 @@ export class WorkflowRunEntity {
   @Column({ name: 'resumed_from_run_id', type: 'varchar', nullable: true })
   resumedFromRunId!: string | null
 
+  /** 关联任务 id（M3 任务树：sub_workflow 执行器的 run 回填；26 号批1） */
+  @Column({ name: 'task_id', type: 'varchar', nullable: true })
+  taskId!: string | null
+
+  /** 父运行 ID（任务树递归派生的子运行；运行森林镜像任务树） */
+  @Column({ name: 'parent_run_id', type: 'varchar', nullable: true })
+  parentRunId!: string | null
+
   @Column({ name: 'created_at', type: 'datetime', nullable: true })
   createdAt!: Date | null
 

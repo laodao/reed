@@ -51,6 +51,8 @@ export interface WorkflowRunRecord {
   stats: WorkflowRunStats | null
   cancelRequestedAt: Date | null
   resumedFromRunId: string | null
+  taskId: string | null
+  parentRunId: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -79,6 +81,10 @@ export interface UpdateWorkflowRunInput {
   timeoutAt?: Date | null
   stats?: WorkflowRunStats | null
   cancelRequestedAt?: Date | null
+  /** 关联任务 id（M3 任务树；26 号批1） */
+  taskId?: string | null
+  /** 父运行 ID（任务树递归派生） */
+  parentRunId?: string | null
 }
 
 /** 占用同工作流互斥的状态集合（新触发命中即跳过）——从唯一常量源构建 */
@@ -124,6 +130,8 @@ export class WorkflowRunRepository extends BaseRepository<WorkflowRunEntity, Wor
       stats: safeParse<WorkflowRunStats | null>(e.stats, null),
       cancelRequestedAt: e.cancelRequestedAt,
       resumedFromRunId: e.resumedFromRunId,
+      taskId: e.taskId,
+      parentRunId: e.parentRunId,
       createdAt: e.createdAt,
       updatedAt: e.updatedAt,
     }
@@ -173,6 +181,8 @@ export class WorkflowRunRepository extends BaseRepository<WorkflowRunEntity, Wor
       partial.stats = patch.stats ? JSON.stringify(patch.stats) : null
     }
     if (patch.cancelRequestedAt !== undefined) partial.cancelRequestedAt = patch.cancelRequestedAt
+    if (patch.taskId !== undefined) partial.taskId = patch.taskId
+    if (patch.parentRunId !== undefined) partial.parentRunId = patch.parentRunId
     await this.scoped.update({ id } as FindOptionsWhere<WorkflowRunEntity>, partial)
     return this.getById(id)
   }

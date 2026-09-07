@@ -727,6 +727,18 @@ const electronAPI = {
     getPendingReviews: () => ipcRenderer.invoke('wf:get-pending-reviews'),
     getNodeTrajectories: (p: { runId: string; nodeId: string; iterationIndex?: number }) =>
       ipcRenderer.invoke('wf:get-node-trajectories', p),
+    // ==================== M3 任务树/知识飞轮 ====================
+    createPlan: (p: { goal: string; title?: string }) => ipcRenderer.invoke('at:create-plan', p),
+    approvePlan: (rootId: string) => ipcRenderer.invoke('at:approve-plan', { rootId }),
+    getTaskTree: (rootId: string) => ipcRenderer.invoke('at:get-tree', { rootId }),
+    listTaskRoots: () => ipcRenderer.invoke('at:list-roots'),
+    taskVerifyDecide: (p: { taskId: string; decision: 'approve' | 'reject'; comment?: string }) => ipcRenderer.invoke('at:verify-decide', p),
+    taskEscalateDecide: (p: { taskId: string; decision: 'pass' | 'fail' | 'retry'; comment?: string }) => ipcRenderer.invoke('at:escalate-decide', p),
+    cancelTask: (rootId: string) => ipcRenderer.invoke('at:cancel', { rootId }),
+    listMemoryPending: () => ipcRenderer.invoke('am:list-pending'),
+    listMemoryActive: () => ipcRenderer.invoke('am:list-active'),
+    approveMemory: (id: string) => ipcRenderer.invoke('am:approve', { id }),
+    archiveMemory: (id: string) => ipcRenderer.invoke('am:archive', { id }),
     // ==================== 触发器 ====================
     triggerPreview: (expression: string) => ipcRenderer.invoke('wf:trigger-preview', { expression }),
     listAgentTools: () => ipcRenderer.invoke('wf:list-agent-tools'),

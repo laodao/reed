@@ -32,6 +32,10 @@ interface WorkflowSubsystem {
   scheduler: WorkflowTriggerScheduler
   appDefinitionService: AppDefinitionService
   appSessionService: AppSessionService
+  /** M3 任务树子系统（26 号；数据源缺失时不装配——null 降级） */
+  agentTasks: import('@core/platform/agent-runtime/tasks/task-service').AgentTaskService | null
+  /** M3 知识飞轮（26 号批4；null 同上） */
+  memoryFlywheel: import('@core/platform/agent-runtime/memory/memory-flywheel').MemoryFlywheelService | null
 }
 
 let subsystem: WorkflowSubsystem | null = null
@@ -123,6 +127,8 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
   // 轨迹仓储（25 号 M2 批1/批2）：harness 落库与 runService 查询共用同一实例；
   // 数据源缺失时不创建——sink 降级为仅摘要，查询降级返回空
   let trajectoryRepo: import('@core/database/repositories/agent-trajectory.repository').AgentTrajectoryRepository | null = null
+  /** provider 适配单例（7.2 harness 与 M3 规划/验证/蒸馏共用；构造廉价但 LRU 缓存收敛一处） */
+  let providerAdapter: import('@core/platform/agent-runtime/provider/provider-adapter').ProviderAdapter | null = null
   if (db.dataSource) {
     try {
       trajectoryRepo = new (
@@ -273,13 +279,13 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
     })
 
     registerBuiltinAgentTools(agentToolRegistry)
-    const providerAdapter = new ProviderAdapter()
+    providerAdapter = new ProviderAdapter()
     // 核心 harness 先注册（review C8：可选扩展桥的失败不得降级核心功能——
     // 此前 registerCustomAgentTools 抛错会跳过 registerAgentLoopHarness，
     // agent-loop 节点整体不可用）
     registerAgentLoopHarness({
       registry: agentToolRegistry,
-      resolveModel: (opts) => providerAdapter.resolveModel(opts),
+      resolveModel: (opts) => providerAdapter!.resolveModel(opts),
       // 轨迹落库端口（25 号 M2 批1，创建于引擎装配区；未装配时 sink 降级仅摘要）
       trajectoryRepo: trajectoryRepo ?? undefined,
     })
@@ -352,7 +358,184 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
     logger.error('[workflow-boot] 资产服务装配失败（继续启动）', e)
   }
 
-  subsystem = { engine, runService, definitionService, scheduler, appDefinitionService, appSessionService }
+  // 10. M3 任务树 + 知识飞轮（26 号批2/批4）：装配失败不阻断（子系统照常启动，
+  //     agentTasks=null 时 IPC 层返回明确错误——数据源缺失/仓储异常均降级）
+  let agentTasks: import('@core/platform/agent-runtime/tasks/task-service').AgentTaskService | null = null
+  let memoryFlywheel: import('@core/platform/agent-runtime/memory/memory-flywheel').MemoryFlywheelService | null = null
+  try {
+    if (db.dataSource && db.agentTasks && db.agentMemoryEntries) {
+      // M2 harness 必须就位（review W7：否则每任务执行时才爆炸并白烧重规划 LLM）
+      const { getAgentLoopHarness } = await import('./nodes/agent-loop-node')
+      getAgentLoopHarness()
+      const { AgentTaskService } = await import('@core/platform/agent-runtime/tasks/task-service')
+      const { Planner } = await import('@core/platform/agent-runtime/tasks/planner')
+      const { Verifier } = await import('@core/platform/agent-runtime/verify/verifier')
+      const { MemoryFlywheelService } = await import('@core/platform/agent-runtime/memory/memory-flywheel')
+      const { generateText } = await import('ai')
+
+      const resolveBootModel = async () => {
+        if (!providerAdapter) throw new Error('ProviderAdapter 未装配')
+        return providerAdapter.resolveModel()
+      }
+      const planner = new Planner({ plan: async ({ goal, signal }) => {
+        const model = await resolveBootModel()
+        const r = await generateText({
+          model,
+          system: (await import('@core/platform/agent-runtime/tasks/planner')).PLANNER_SYSTEM_PROMPT,
+          prompt: `目标：${goal}`,
+          maxOutputTokens: 4096,
+          abortSignal: signal ?? undefined,
+        })
+        return r.text
+      } })
+      const verifier = new Verifier({
+        llmJudge: async ({ goal, acceptance, output, rubricHints, signal }) => {
+          const rubric = [
+            '按相关性、完整性、事实性给产出打分（0-1 的小数）并列出具体缺陷。',
+            `任务目标：${goal}`,
+            acceptance ? `验收标准：${acceptance}` : '',
+            ...(rubricHints ?? []),
+            '输出严格 JSON：{"score": <0-1>, "defects": ["缺陷1", ...]}',
+          ].filter(Boolean).join('\n')
+          const model = await resolveBootModel()
+          const r = await generateText({ model, system: rubric, prompt: `产出：\n${output}`, maxOutputTokens: 1024, abortSignal: signal ?? undefined })
+          return (await import('@core/platform/agent-runtime/verify/verifier')).parseJudgeResponse(r.text)
+        },
+      })
+      memoryFlywheel = new MemoryFlywheelService({
+        repo: db.agentMemoryEntries,
+        distill: async ({ goal, output, signal }) => {
+          const prompt = [
+            `任务目标：${goal}`,
+            `任务产出（节选）：${output}`,
+            '从中提取最多 3 条可复用经验（做法/事实/SOP），只提取确实可迁移的内容；没有就返回空数组。',
+            '输出严格 JSON：{"items": [{"kind": "fact|sop|preference|skill", "title": "...", "content": "一段可执行的经验描述", "confidence": <0-1>}]}',
+          ].join('\n')
+          const model = await resolveBootModel()
+          const r = await generateText({ model, system: '你是经验蒸馏器。', prompt, maxOutputTokens: 2048, abortSignal: signal ?? undefined })
+          const text = r.text
+          const start = text.indexOf('{')
+          const end = text.lastIndexOf('}')
+          if (start < 0 || end <= start) return []
+          try {
+            const parsed = JSON.parse(text.slice(start, end + 1)) as { items?: Array<{ kind?: string; title?: string; content?: string; confidence?: number }> }
+            return (parsed.items ?? []).slice(0, 3).map((it) => ({
+              kind: (['fact', 'sop', 'preference', 'skill'].includes(String(it.kind)) ? it.kind : 'fact') as 'fact' | 'sop' | 'preference' | 'skill',
+              title: String(it.title ?? ''),
+              content: String(it.content ?? ''),
+              confidence: Math.max(0, Math.min(1, Number(it.confidence) || 0)),
+            }))
+          } catch {
+            return []
+          }
+        },
+      })
+
+      // 会话存储（review W6：宿主 saveState/loadState 曾只 flush 轨迹不落库——
+      // 任务循环崩溃后 retry 从零开始；DbAgentSessionStore 即 M1 的 agent_sessions 表）
+      const { DbAgentSessionStore } = await import('@core/platform/agent-runtime/memory/session-store')
+      const taskSessionStore = new DbAgentSessionStore({ dataSource: db.dataSource })
+      agentTasks = new AgentTaskService({
+        tasks: db.agentTasks,
+        planner,
+        verifier,
+        flywheel: memoryFlywheel,
+        executors: {
+          runAgentLoop: async ({ goal, systemPrompt, toolWhitelist, maxSteps, sessionKey, memoryLines, signal }) => {
+            const { LoopRunner } = await import('@core/platform/agent-runtime/runtime/loop')
+            const { normalizeToolWhitelist, getAgentLoopHarness } = await import('./nodes/agent-loop-node')
+            const { TrajectorySink } = await import('@core/platform/agent-runtime/trajectory/sink')
+            const harness = getAgentLoopHarness()
+            const defs = harness.registry.buildToolDefs(normalizeToolWhitelist(toolWhitelist ?? []))
+            const scopeKey = `task:${sessionKey.replace(/^task:/, '')}`
+            const sink = new TrajectorySink(trajectoryRepo, { scope: 'session', scopeKey })
+            // 装配留痕（26 号 §4 验收：轨迹中可见引用——review T9）
+            if (memoryLines && memoryLines.length > 0) {
+              sink.append({ iteration: 0, kind: 'decision', name: 'memory_assembly', payload: { memoryRefs: memoryLines } })
+            }
+            const host: import('@core/platform/agent-runtime/types').AgentHost = {
+              signal: signal ?? new AbortController().signal,
+              // 会话持久化（review W6）：崩溃恢复 + retry 续写
+              loadState: async () => {
+                const history = await taskSessionStore.load(scopeKey)
+                if (!history || history.length === 0) return null
+                const { initState } = await import('@core/platform/agent-runtime/runtime/loop')
+                const state = initState({ definitionId: 'agent-task', scopeId: scopeKey, input: goal, systemPrompt: systemPrompt ?? '', tools: defs, maxSteps: maxSteps ?? 12 }, Date.now())
+                state.messages = history
+                return state
+              },
+              saveState: async (state) => {
+                await taskSessionStore.save(scopeKey, state.messages)
+                await sink.flush()
+              },
+              emitTrajectory: (entry) => { sink.append(entry) },
+              emitStream: () => {},
+              suspend: () => Promise.reject(new Error('任务执行不支持挂起审批（审批工具会被静默拒绝，白名单请用免批准工具）')),
+            }
+            const result = await new LoopRunner({ resolveModel: (opts) => harness.resolveModel(opts) })
+              .run({
+                definitionId: 'agent-task',
+                scopeId: scopeKey,
+                input: goal,
+                systemPrompt: systemPrompt ?? '',
+                tools: defs,
+                maxSteps: maxSteps ?? 12,
+              }, host)
+              .finally(() => sink.flush())
+            if (result.stopReason !== 'final') throw new Error(result.error ?? `Agent 循环未收敛（${result.stopReason}）`)
+            return { output: result.output, stopReason: result.stopReason }
+          },
+          runSubWorkflow: async ({ definitionId, inputs, taskId, signal }) => {
+            const run = await runService.startRun({ definitionId, triggerType: 'manual', triggerInfo: { source: 'agent-task' }, inputs })
+            // 回填任务镜像列（运行森林）+ 任务行 run_id（记忆溯源——review W9/T20）
+            if (db.workflowRuns) {
+              try { await db.workflowRuns.update(run.id, { taskId, parentRunId: null }) } catch { /* 观测列 */ }
+            }
+            try { await db.agentTasks?.patch(taskId, { runId: run.id }) } catch { /* 观测列 */ }
+            // 等终态（review W1：skipped 即败 / waiting_review·pending 属等待态放宽死线 /
+            // 超时取消僵尸运行）
+            let deadline = Date.now() + 10 * 60_000
+            for (;;) {
+              if (signal?.aborted) throw new Error('任务树已取消')
+              await new Promise((r) => setTimeout(r, 3000))
+              const detail = await runService.getRunDetail(run.id)
+              if (!detail) throw new Error(`子工作流运行不存在：${run.id}`)
+              const st = detail.run.status
+              if (st === 'succeeded') {
+                const outputs: Record<string, unknown> = {}
+                for (const n of detail.nodeRuns) if (n.output) outputs[n.nodeId] = n.output
+                return { output: outputs, status: st, error: null }
+              }
+              if (['failed', 'cancelled', 'timed_out', 'interrupted'].includes(st)) {
+                return { output: null, status: st, error: detail.run.error ?? st }
+              }
+              // 互斥命中：假运行（skipped）不会流转——立即失败
+              if (st === 'skipped') {
+                return { output: null, status: 'skipped', error: '子工作流互斥跳过（同定义已有在途运行）' }
+              }
+              // 等待态（pending 排队 / waiting_review 人工审核）：放宽死线到 30min
+              if (['pending', 'waiting_review'].includes(st) && Date.now() > deadline) {
+                deadline = Date.now() + 20 * 60_000
+                logger.warn(`[task] 子工作流处于 ${st}，等待死线放宽（task=${taskId}）`)
+              }
+              if (Date.now() > deadline) {
+                const { getCurrentUserId } = await import('@core/context/user-context')
+                await runService.cancelRun(run.id, getCurrentUserId() ?? '').catch(() => undefined)
+                return { output: null, status: 'timed_out', error: '子工作流等待超时（已取消僵尸运行）' }
+              }
+            }
+          },
+        },
+      })
+      logger.info('[workflow-boot] M3 任务树子系统已装配')
+    } else {
+      logger.warn('[workflow-boot] M3 任务树子系统未装配（数据源/仓储缺失）')
+    }
+  } catch (e) {
+    logger.warn('[workflow-boot] M3 任务树子系统装配失败（继续启动）', e)
+  }
+
+  subsystem = { engine, runService, definitionService, scheduler, appDefinitionService, appSessionService, agentTasks, memoryFlywheel }
   logger.info('[workflow-boot] 工作流子系统已启动')
   return subsystem
 }

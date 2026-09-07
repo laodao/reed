@@ -398,6 +398,14 @@ async function initDatabase(): Promise<void> {
   )
   await createAgentToolCalls(ds)
 
+  // M3 任务树 + 运行森林镜像列 + 知识飞轮（26 号批1；与 Electron 端同构）
+  const { createAgentTasks } = await import('@core/database/migrations/create-agent-tasks')
+  await createAgentTasks(ds)
+  const { addWorkflowRunTaskColumns } = await import('@core/database/migrations/add-workflow-run-task-columns')
+  await addWorkflowRunTaskColumns(ds)
+  const { createAgentMemoryEntries } = await import('@core/database/migrations/create-agent-memory-entries')
+  await createAgentMemoryEntries(ds)
+
   // 通用事件系统：platform_events / cursors / dead_letters 三表（与 Electron 端同构；10-event-system §4）
   const { createPlatformEventTables } = await import(
     '@core/database/migrations/create-platform-event-tables'

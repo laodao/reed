@@ -17,7 +17,7 @@ export const workflowPack: RendererPackDefinition = {
     version: '1.0.0',
     description: '可视化流程编排与自动化执行——定义/版本/触发器/运行/分享',
     contributions: {
-      routePaths: ['/workflow', '/workflow/editor/:id', '/workflow-run/:token', '/workflow/runs/:definitionId', '/workflow/run/:runId'],
+      routePaths: ['/workflow', '/workflow/editor/:id', '/workflow-run/:token', '/workflow/runs/:definitionId', '/workflow/run/:runId', '/agent-tasks', '/agent-memory'],
     },
   },
   routes: [
@@ -51,8 +51,32 @@ export const workflowPack: RendererPackDefinition = {
       component: () => import('@/views/workflow/WorkflowRunDetail.vue'),
       meta: { title: '运行详情' },
     },
+    {
+      path: '/agent-tasks',
+      name: 'AgentTasks',
+      component: () => import('@/views/workflow/AgentTasksView.vue'),
+      meta: { title: 'Agent 任务树' },
+    },
+    {
+      path: '/agent-memory',
+      name: 'AgentMemory',
+      component: () => import('@/views/workflow/AgentMemoryView.vue'),
+      meta: { title: '知识飞轮' },
+    },
   ],
   menuItems: [
+    {
+      path: '/agent-tasks',
+      label: 'Agent 任务树',
+      description: '长程任务分解与质量门',
+      icon: markRaw(Connection),
+    },
+    {
+      path: '/agent-memory',
+      label: '知识飞轮',
+      description: '任务经验的沉淀与审批',
+      icon: markRaw(Connection),
+    },
     {
       path: '/workflow',
       label: '工作流',

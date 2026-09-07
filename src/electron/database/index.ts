@@ -168,6 +168,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public portraitProjects: PortraitProjectRepository | null = null
   public portraitCharacters: PortraitCharacterRepository | null = null
   public portraitVariants: PortraitVariantRepository | null = null
+  public portraitPromptTemplates: import('@core/database/repositories/portrait-prompt-template.repository').PortraitPromptTemplateRepository | null = null
   public searchEngineConfigs: SearchEngineConfigRepository | null = null
   public lwProjects: LwProjectRepository | null = null
   public lwStoryOverviews: LwStoryOverviewRepository | null = null
@@ -198,6 +199,8 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public workflowDefinitions: WorkflowDefinitionRepository | null = null
   public workflowRuns: WorkflowRunRepository | null = null
   public workflowNodeRuns: WorkflowNodeRunRepository | null = null
+  public agentTasks: import('@core/database/repositories/agent-task.repository').AgentTaskRepository | null = null
+  public agentMemoryEntries: import('@core/database/repositories/agent-memory-entry.repository').AgentMemoryEntryRepository | null = null
 
   // 业务包内核（第一期）
   public packs: PackRepository | null = null
@@ -712,6 +715,14 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-agent-tool-calls'
     )
     await createAgentToolCalls(this.dataSource)
+
+    // M3 任务树 + 运行森林镜像列 + 知识飞轮（26 号批1）
+    const { createAgentTasks } = await import('@core/database/migrations/create-agent-tasks')
+    await createAgentTasks(this.dataSource)
+    const { addWorkflowRunTaskColumns } = await import('@core/database/migrations/add-workflow-run-task-columns')
+    await addWorkflowRunTaskColumns(this.dataSource)
+    const { createAgentMemoryEntries } = await import('@core/database/migrations/create-agent-memory-entries')
+    await createAgentMemoryEntries(this.dataSource)
 
     // 通用事件系统：platform_events / cursors / dead_letters 三表（幂等，双语种；10-event-system §4）
     const { createPlatformEventTables } = await import(
@@ -4398,6 +4409,8 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.workflowDefinitions = new WorkflowDefinitionRepository(this.dataSource)
     this.workflowRuns = new WorkflowRunRepository(this.dataSource)
     this.workflowNodeRuns = new WorkflowNodeRunRepository(this.dataSource)
+    this.agentTasks = new (await import('@core/database/repositories/agent-task.repository')).AgentTaskRepository(this.dataSource)
+    this.agentMemoryEntries = new (await import('@core/database/repositories/agent-memory-entry.repository')).AgentMemoryEntryRepository(this.dataSource)
     // 业务包内核（第一期）：包快照 + 启用/配置覆写
     this.packs = new PackRepository(this.dataSource)
     this.packBindings = new PackBindingRepository(this.dataSource)
