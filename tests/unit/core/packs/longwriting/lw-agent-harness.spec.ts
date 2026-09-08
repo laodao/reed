@@ -145,7 +145,7 @@ describe('LwAgentHarnessService（30 号 M6）', () => {
   it('G3 golden：generate_overview 动作等价——落库 + 富摘要 + assistant 消息 metadata', async () => {
     const db = makeFakeDb()
     installEventCapture()
-    const svc = harness(toolThenTextModel('generate_overview', { input: '修仙题材，凡人流' }, '概要已生成，请查看。'), db)
+    const svc = harness(toolThenTextModel('pack:lw-agent:generate_overview', { input: '修仙题材，凡人流' }, '概要已生成，请查看。'), db)
 
     const r = await send(svc, '帮我生成故事概要，主题是修仙凡人流')
 
@@ -170,7 +170,7 @@ describe('LwAgentHarnessService（30 号 M6）', () => {
   it('G1 事件序列：单工具轮的精确序列（stage/reply:start 每工具步重置）', async () => {
     const db = makeFakeDb()
     const captured = installEventCapture()
-    const svc = harness(toolThenTextModel('generate_overview', { input: '题材' }, '完成。'), db)
+    const svc = harness(toolThenTextModel('pack:lw-agent:generate_overview', { input: '题材' }, '完成。'), db)
 
     await send(svc, '生成概要')
 
@@ -190,7 +190,7 @@ describe('LwAgentHarnessService（30 号 M6）', () => {
   it('流式总结正文经 longwriting:generate:summaryEventId 的 content 事件流出（前端既有订阅点）', async () => {
     const db = makeFakeDb()
     const captured = installEventCapture()
-    const svc = harness(toolThenTextModel('generate_overview', { input: '题材' }, '最终总结文本'), db)
+    const svc = harness(toolThenTextModel('pack:lw-agent:generate_overview', { input: '题材' }, '最终总结文本'), db)
 
     await send(svc, '生成概要')
 
@@ -203,10 +203,9 @@ describe('LwAgentHarnessService（30 号 M6）', () => {
   it('G1 依赖 skipped：空状态下 generate_outline 标 skipped 且不落库', async () => {
     const db = makeFakeDb()
     installEventCapture()
-    const svc = harness(toolThenTextModel('generate_outline', { structureLevel: 3 }, '需要先生成故事概要。'), db)
+    const svc = harness(toolThenTextModel('pack:lw-agent:generate_outline', { structureLevel: 3 }, '需要先生成故事概要。'), db)
 
     const r = await send(svc, '直接生成细纲')
-
     expect(r.actionSummaries[0].status).toBe('skipped')
     expect(r.actionSummaries[0].message).toContain('缺少')
     expect(r.stopReason).toBe('final')
@@ -221,14 +220,14 @@ describe('LwAgentHarnessService（30 号 M6）', () => {
     const chunks: Array<() => Array<Record<string, unknown>>> = [
       () => [
         { type: 'stream-start', warnings: [] },
-        { type: 'tool-call', toolCallId: 'a', toolName: 'generate_overview', input: JSON.stringify({ input: '甲' }) },
-        { type: 'tool-call', toolCallId: 'b', toolName: 'generate_overview', input: JSON.stringify({ input: '乙' }) },
-        { type: 'tool-call', toolCallId: 'c', toolName: 'generate_overview', input: JSON.stringify({ input: '丙' }) },
+        { type: 'tool-call', toolCallId: 'a', toolName: 'pack:lw-agent:generate_overview', input: JSON.stringify({ input: '甲' }) },
+        { type: 'tool-call', toolCallId: 'b', toolName: 'pack:lw-agent:generate_overview', input: JSON.stringify({ input: '乙' }) },
+        { type: 'tool-call', toolCallId: 'c', toolName: 'pack:lw-agent:generate_overview', input: JSON.stringify({ input: '丙' }) },
         { type: 'finish', finishReason: { unified: 'tool-calls', raw: undefined }, usage: { inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 5, noCache: 5 }, totalTokens: { total: 15, noCache: 15 } } },
       ],
       () => [
         { type: 'stream-start', warnings: [] },
-        { type: 'tool-call', toolCallId: 'd', toolName: 'generate_overview', input: JSON.stringify({ input: '丁' }) },
+        { type: 'tool-call', toolCallId: 'd', toolName: 'pack:lw-agent:generate_overview', input: JSON.stringify({ input: '丁' }) },
         { type: 'finish', finishReason: { unified: 'tool-calls', raw: undefined }, usage: { inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 5, noCache: 5 }, totalTokens: { total: 15, noCache: 15 } } },
       ],
       () => [
@@ -257,7 +256,7 @@ describe('LwAgentHarnessService（30 号 M6）', () => {
   it('G1 多轮历史注入：第二次 sendMessage 的模型 prompt 携带上一轮问答', async () => {
     const db = makeFakeDb()
     installEventCapture()
-    const model1 = toolThenTextModel('generate_overview', { input: '题材' }, '第一轮完成')
+    const model1 = toolThenTextModel('pack:lw-agent:generate_overview', { input: '题材' }, '第一轮完成')
     // 第二轮的模型：捕获 prompt
     let secondPrompt: unknown[] | null = null
     const model2 = new MockLanguageModelV3({
@@ -323,7 +322,7 @@ describe('LwAgentHarnessService（30 号 M6）', () => {
       modelId: 'mock',
       doStream: async () => ({ stream: simulateReadableStream({ chunks: [
         { type: 'stream-start', warnings: [] },
-        { type: 'tool-call', toolCallId: 'tc', toolName: 'generate_overview', input: JSON.stringify({ input: 'x' }) },
+        { type: 'tool-call', toolCallId: 'tc', toolName: 'pack:lw-agent:generate_overview', input: JSON.stringify({ input: 'x' }) },
         { type: 'finish', finishReason: { unified: 'tool-calls', raw: undefined }, usage: { inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 1, noCache: 1 }, totalTokens: { total: 2, noCache: 2 } } },
       ] }) }),
     }) as unknown as LanguageModel
@@ -359,7 +358,7 @@ describe('LwAgentHarnessService 取消/中断（30 号 review P0-1 补钉）', (
       modelId: 'mock',
       doStream: async () => ({ stream: simulateReadableStream({ chunks: [
         { type: 'stream-start', warnings: [] },
-        { type: 'tool-call', toolCallId: 'tc', toolName: 'generate_overview', input: JSON.stringify({ input: 'x' }) },
+        { type: 'tool-call', toolCallId: 'tc', toolName: 'pack:lw-agent:generate_overview', input: JSON.stringify({ input: 'x' }) },
         { type: 'finish', finishReason: { unified: 'tool-calls', raw: undefined }, usage: { inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 1, noCache: 1 }, totalTokens: { total: 2, noCache: 2 } } },
       ] }) }),
     }) as unknown as LanguageModel
@@ -392,7 +391,7 @@ describe('LwAgentHarnessService 取消/中断（30 号 review P0-1 补钉）', (
         { type: 'text-start', id: 't1' },
         { type: 'text-delta', id: 't1', delta: '第一步叙述' },
         { type: 'text-end', id: 't1' },
-        { type: 'tool-call', toolCallId: 'tc', toolName: 'generate_overview', input: JSON.stringify({ input: '题材' }) },
+        { type: 'tool-call', toolCallId: 'tc', toolName: 'pack:lw-agent:generate_overview', input: JSON.stringify({ input: '题材' }) },
         { type: 'finish', finishReason: { unified: 'tool-calls', raw: undefined }, usage: { inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 1, noCache: 1 }, totalTokens: { total: 2, noCache: 2 } } },
       ],
       () => [

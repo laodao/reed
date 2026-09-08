@@ -32,7 +32,7 @@ import { computeProductionState, buildSuggestions } from '@core/platform/service
 import { stateToSummary } from '@core/platform/services/longwriting/agent/agent-context'
 import type { AgentActionSummary, AgentProductionState } from '@core/platform/services/longwriting/agent/agent.types'
 import type { ModelMessage } from 'ai'
-import { buildLwAgentToolDefs } from './lw-agent-tools'
+import { registerLwAgentTools, LW_AGENT_PACK_ID } from './lw-agent-tools'
 
 const logger = createLogger('LwAgentHarness')
 
@@ -165,23 +165,16 @@ export class LwAgentHarnessService {
     // 2. 保存用户消息（UI 历史源不变）
     await m.lwDesignMessages.add(conversationId, { role: 'user', content: message, timestamp: Date.now() })
 
-    // 3. 状态快照 + 工具
+    // 3. 状态快照 + 工具（M6.5-d：共享 registry 形态——懒注册 + pack 白名单 + runtimeContext 注入）
     const state = await computeProductionState(m, projectId)
     const actionSummaries: AgentActionSummary[] = []
-    const defs = buildLwAgentToolDefs({
-      projectId,
-      providerConfigId: opts.providerConfigId,
-      modelId: opts.modelId,
-      db: m,
-      ai,
-      emit: (event: any) => {
-        emitAgentEvent(projectId, event)
-      },
-      // 摘要收集单一出口（emit 的 action:done 与此同源——双路会重复计数）
-      onSummary: (summary) => actionSummaries.push(summary),
-      state,
-    })
-    const toolMap: Record<string, AgentToolDef> = Object.fromEntries(defs.map((d) => [d.name, d]))
+    registerLwAgentTools(harness.registry)
+    const bindings = harness.registry
+      .listSpecs({ packId: LW_AGENT_PACK_ID })
+      .map((s) => ({ tool: s.name }))
+    const toolMap: Record<string, AgentToolDef> = harness.registry.buildToolDefs(bindings)
+
+    const counter = { calls: 0 }
 
     // 4. 观测面（工作台时间线）+ 会话持久化
     const sink = new TrajectorySink(harness.trajectoryRepo ?? null, { scope: 'session', scopeKey: scopeId })
@@ -267,7 +260,22 @@ export class LwAgentHarnessService {
             tools: toolMap,
             maxSteps: LW_AGENT_MAX_STEPS,
             modelPreference: { providerConfigId: opts.providerConfigId, modelId: opts.modelId },
-            runtimeContext: { projectId, turnRefs: [] },
+            runtimeContext: {
+              projectId,
+              turnRefs: [],
+              catalogPacks: [LW_AGENT_PACK_ID],
+              lwTurn: {
+                providerConfigId: opts.providerConfigId,
+                modelId: opts.modelId,
+                db: m,
+                ai,
+                emit: (event: unknown) => { emitAgentEvent(projectId, event as never) },
+                state,
+                // 摘要收集单一出口（emit 的 action:done 与此同源——双路会重复计数）
+                onSummary: (summary: AgentActionSummary) => actionSummaries.push(summary),
+                counter,
+              },
+            },
           },
           host,
         )
