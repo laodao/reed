@@ -119,19 +119,7 @@
             </div>
           </div>
         </el-popover>
-        <el-popover trigger="click" width="320" @show="loadStats">
-          <template #reference>
-            <el-button plain>统计</el-button>
-          </template>
-          <div class="stats-body" v-if="store.spaceStats">
-            <div class="stat-row"><span>概念</span><b>{{ store.spaceStats.concepts.total }}</b><small>已掌握 {{ store.spaceStats.concepts.mastered }} · 学习中 {{ store.spaceStats.concepts.learning }} · 需复习 {{ store.spaceStats.concepts.review }} · 未开始 {{ store.spaceStats.concepts.untouched }}</small></div>
-            <div class="stat-row"><span>讲义</span><b>{{ store.spaceStats.cards.published + store.spaceStats.cards.draft }}</b><small>已发布 {{ store.spaceStats.cards.published }} · 草稿 {{ store.spaceStats.cards.draft }}</small></div>
-            <div class="stat-row"><span>关系</span><b>{{ store.spaceStats.relations.total }}</b><small>前置 {{ store.spaceStats.relations.prerequisite }} · 已确认 {{ store.spaceStats.relations.verified }}</small></div>
-            <div class="stat-row"><span>问答</span><b>{{ store.spaceStats.questions.total }}</b><small>已回答 {{ store.spaceStats.questions.answered }} · 未解 {{ store.spaceStats.questions.open }}</small></div>
-            <div class="stat-row"><span>复习到期</span><b>{{ store.spaceStats.reviewDueCount }}</b></div>
-          </div>
-          <div v-else class="stats-body empty">统计加载失败或为空</div>
-        </el-popover>
+        <SpaceStatsPopover :space-id="spaceId" />
         <el-button plain :loading="exporting" @click="exportLessonDigest">导出讲义</el-button>
         <el-button plain @click="exportAtlasPng">导出 PNG</el-button>
         <span v-if="exportNote" class="export-note">{{ exportNote }}</span>
@@ -327,6 +315,7 @@ import { useDomainLearningStore } from '@/stores/domain-learning'
 import { nodeTypeMeta, relLabel } from './domain-learning-ui'
 import AtlasGraph from './AtlasGraph.vue'
 import AtlasEnhancedViews from './AtlasEnhancedViews.vue'
+import SpaceStatsPopover from './SpaceStatsPopover.vue'
 import { downloadBlob, graphSvgToPngBlob } from './atlas-export'
 import type {
   DlAtlasGraph,
@@ -524,14 +513,10 @@ async function needReview(conceptId: string): Promise<void> {
   if (await store.needReviewOf(spaceId.value, conceptId)) reviewNote.value = '已标记为需复习'
 }
 
-// ==================== 统计与导出（M3-C） ====================
+// ==================== 统计与导出（M3-C；统计入口已抽 SpaceStatsPopover） ====================
 
 const exporting = ref(false)
 const exportNote = ref('')
-
-function loadStats(): void {
-  void store.fetchSpaceStats(spaceId.value)
-}
 
 async function exportLessonDigest(): Promise<void> {
   if (exporting.value) return
@@ -1250,28 +1235,6 @@ onMounted(() => {
   p {
     margin: 0;
     font-size: 14px;
-  }
-}
-
-.stats-body {
-  .stat-row {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    padding: 4px 0;
-    font-size: 12.5px;
-    color: var(--el-text-color-regular);
-    b {
-      min-width: 20px;
-      color: var(--el-color-primary);
-    }
-    small {
-      color: var(--el-text-color-secondary);
-    }
-  }
-  &.empty {
-    color: var(--el-text-color-placeholder);
-    font-size: 12.5px;
   }
 }
 
