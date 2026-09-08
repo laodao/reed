@@ -89,6 +89,11 @@ export class BailianImageProvider extends BaseImageProvider {
    */
   async generateImage(request: ImageGenerationRequest): Promise<ImageGenerationResponse> {
     try {
+      // qwen-image 系（bailian 专属网关）：走多模态生成同步 API（input.contents 形态，
+      // KE-4 实测：网关对该模型要求 input.contents，text2image 形态报 InvalidParameter）
+      if (/^qwen-image/.test(request.model ?? '')) {
+        return await this.generateQwenImageMultimodal(request)
+      }
       const endpoint = '/api/v1/images/generations'
       const body = this.buildRequestBody(request)
 
@@ -119,6 +124,43 @@ export class BailianImageProvider extends BaseImageProvider {
         error: `图像生成失败: ${errorMessage}`
       }
     }
+  }
+
+  /**
+   * qwen-image 系同步多模态生成（input.contents 形态）。
+   * 响应：output.choices[0].message.content[] 内含 { image: url }。
+   */
+  private async generateQwenImageMultimodal(request: ImageGenerationRequest): Promise<ImageGenerationResponse> {
+    const contents: Array<Record<string, unknown>> = [{ text: request.prompt }]
+    if (request.negativePrompt) contents.push({ text: `避免出现：${request.negativePrompt}` })
+    const body = {
+      model: request.model,
+      input: { contents },
+      parameters: {
+        size: `${request.width}x${request.height}`,
+        n: request.count || 1,
+        ...(request.seed !== undefined ? { seed: request.seed } : {}),
+      },
+    }
+    const endpoint = '/api/v1/services/aigc/multimodal-generation/generation'
+    const response = await this.sendRequest<Record<string, any>>(endpoint, 'POST', body)
+    if (response.Code && response.Code !== 'Success') {
+      return { success: false, error: response.Message || 'qwen-image 生成请求失败' }
+    }
+    const parts = response?.output?.choices?.[0]?.message?.content
+    const images: Array<{ url: string }> = []
+    if (Array.isArray(parts)) {
+      for (const part of parts) {
+        if (typeof part.image === 'string') images.push({ url: part.image })
+        else if (typeof part === 'string') images.push({ url: part })
+      }
+    } else if (typeof parts === 'string') {
+      images.push({ url: parts })
+    }
+    if (images.length === 0) {
+      return { success: false, error: response?.message || 'qwen-image 未返回图像' }
+    }
+    return { success: true, images }
   }
 
   /**

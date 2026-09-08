@@ -71,7 +71,8 @@ export class LwDesignMessageRepository extends BaseRepository<
     // ep-agent:/agent: 等工具化会话无父行时首条消息即 FK 失败）
     await this.ensureConversationRow(conversationId, opts?.projectId)
 
-    await this.scoped.save({
+    try {
+      await this.scoped.save({
         id,
         conversationId,
         role: message.role,
@@ -80,6 +81,10 @@ export class LwDesignMessageRepository extends BaseRepository<
         sortOrder,
         metadata: message.metadata ?? null,
       })
+    } catch (e) {
+      console.error('[DBG-lwdm] 消息落库失败:', e)
+      throw e
+    }
     return {
       role: message.role as 'user' | 'assistant',
       content: message.content,
@@ -172,7 +177,13 @@ export class LwDesignMessageRepository extends BaseRepository<
   /** 确保父会话行存在（INSERT OR IGNORE，SQLite/PG 双方言；工具化会话首条消息前置） */
   private async ensureConversationRow(conversationId: string, projectId?: string): Promise<void> {
     const repo = this.dataSource.getRepository(LwDesignConversationEntity)
-    const exists = await repo.findOne({ where: { id: conversationId } as never })
+    let exists = null
+    try {
+      exists = await repo.findOne({ where: { id: conversationId } as never })
+    } catch (e) {
+      console.error('[DBG-lwdm] 父行查询失败:', e)
+      throw e
+    }
     if (exists) return
     // project_id 无外键：从会话 id 尾段推导占位（ep-agent:<episodeId> 场景由调用方传真值），
     // 推导不出用 'agent'——仅作容器字段，不参与 LW 项目过滤
@@ -186,8 +197,9 @@ export class LwDesignMessageRepository extends BaseRepository<
         createdAt: now,
         updatedAt: now,
       } as never)
-    } catch {
-      /* 并发下父行已存在——INSERT 无 orIgnore 通道（PK 冲突即可忽略） */
+    } catch (e) {
+      console.error('[DBG-lwdm] 父行插入失败:', e)
+      throw e
     }
   }
 

@@ -45,6 +45,14 @@
 `Invalid API-key provided`（tokenplan 图像密钥无效——用户侧配置问题）。agent 行为完全正确：
 判定为外部配置问题不盲目重试、如实上报、给出修复后继续与先行分镜两个替代方案。
 
+**实测后续（2026-09-08 下午）**：
+- 生图切换至「阿里百炼平台」qwen-image-3.0（默认提供商已切换）——发现并修复两处：
+  ① capabilities 表缺 bailian 的 /^qwen-image/ 条目（未登记模型显式报错拦截）
+  ② bailian 图像 provider 缺 qwen-image 多模态同步分支（网关要求 input.contents 形态）
+- 另修：EP 宿主文本模型兜底（默认提供商可能只有 embedding/image 模型，agent 的 LLM 必须是文本对话模型）
+- 重发实测：generate_char_asset:ok ✅ 定妆图落库 images/2026/09/08/img_*.png（1 张，预算内）
+- agent 行为：tokenplan 密钥失败时不盲试、切换配置后一次成功并汇报资产 ID/路径
+
 **待用户处理**：
 1. tokenplan 图像/语音 API 密钥修复后，重发"为林骁生成定妆图"即可（agent 已承诺继续）
 2. 「阿里百炼平台」提供商需添加 wan3.0-video 模型配置（当前模型清单无此项）

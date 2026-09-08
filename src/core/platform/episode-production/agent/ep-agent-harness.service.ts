@@ -187,6 +187,33 @@ export class EpAgentHarnessService {
     const harness = getAgentLoopHarness()
     registerEpAgentTools(harness.registry)
 
+    // 0. 文本模型兜底（实测 P0：默认提供商可能只有 embedding/image 模型——
+    // agent 的 LLM 必须是文本对话模型，缺省时取第一个 enabled 提供商的 text 模型）
+    if (!opts.providerConfigId || !opts.modelId) {
+      try {
+        const cfgs = await m.providerConfigs?.getEnabled?.()
+        for (const c of cfgs ?? []) {
+          const textModel = (c.models ?? []).find((mm: { type?: string }) => mm.type === 'text')
+          if (textModel?.id) {
+            opts = {
+              ...opts,
+              providerConfigId: opts.providerConfigId ?? c.id,
+              modelId: opts.modelId ?? textModel.id,
+            }
+            break
+          }
+        }
+      } catch { /* 解析失败走 resolveModel 默认路径 */ }
+    }
+
+    // 0.5 会话归属（干跑实测 P0：lw_design_messages.project_id FK→lw_projects，
+    // EP 视频项目需映射回 longWritingProjectId）
+    let conversationProjectId = projectId
+    try {
+      const vp = await m.videoProjects?.getById?.(projectId)
+      if (vp?.longWritingProjectId) conversationProjectId = vp.longWritingProjectId
+    } catch { /* 保持 projectId 兜底 */ }
+
     // 1. 历史（保存用户消息前取——当前消息由 initState 播种）
     const history = await m.lwDesignMessages.getByConversationId(conversationId)
     const seeded = history
@@ -198,7 +225,7 @@ export class EpAgentHarnessService {
       } as ModelMessage))
 
     // 2. 保存用户消息（UI 历史源不变）
-    await m.lwDesignMessages.add(conversationId, { role: 'user', content: message, timestamp: Date.now() }, { projectId })
+    await m.lwDesignMessages.add(conversationId, { role: 'user', content: message, timestamp: Date.now() }, { projectId: conversationProjectId })
 
     // 3. 状态快照 + 工具白名单（模块域 pack 全名 + 规划类系统工具）
     const state = await computeEpProductionState(m, projectId, episodeId)
@@ -349,7 +376,7 @@ export class EpAgentHarnessService {
         content,
         timestamp: Date.now(),
         metadata: JSON.stringify({ actions: actionSummaries, suggestions }),
-      }, { projectId })
+      }, { projectId: conversationProjectId })
       if (result.stopReason === 'error' || result.stopReason === 'aborted') {
         emitEpAgentEvent(projectId, episodeId, { type: 'error', error: result.error ?? (result.stopReason === 'aborted' ? '本轮已中断' : '执行失败') })
       }
@@ -370,7 +397,7 @@ export class EpAgentHarnessService {
           role: 'assistant',
           content: `抱歉，本轮执行遇到问题：${msg}`,
           timestamp: Date.now(),
-        }, { projectId })
+        }, { projectId: conversationProjectId })
       } catch { /* 兜底失败仅留日志 */ }
       emitEpAgentEvent(projectId, episodeId, { type: 'error', error: msg })
       throw e

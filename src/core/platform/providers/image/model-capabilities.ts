@@ -67,6 +67,13 @@ const MODEL_CAPABILITIES: CapabilityEntry[] = [
     watermark: 'optional', promptRewrite: 'none', sequentialGeneration: false,
   }},
   { provider: 'bailian', match: /^wan/, caps: WAN_CAPS },
+  // KE-4 实测补充：bailian 专属网关的 qwen-image 系（与 dashscope 同能力面）
+  { provider: 'bailian', match: /^qwen-image/, caps: {
+    negativePrompt: true, seed: true, quality: false, style: false,
+    guidanceScale: false, strength: false,
+    sizeMode: 'pixels', maxReferenceImages: 4,
+    watermark: 'optional', promptRewrite: 'optional', sequentialGeneration: false,
+  }},
 
   // ==================== volcengine（Seedream，模型级差异） ====================
   { provider: 'volcengine', match: /^(doubao-)?seedream-3-0/, caps: {
