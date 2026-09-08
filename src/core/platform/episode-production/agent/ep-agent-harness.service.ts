@@ -1,14 +1,14 @@
 /**
- * EP Agent 宿主（harness 直驱，M6.5-a，35 号 subtasks/ep-1）
+ * EP Agent 宿主（HostKit 直驱，36 号收敛；原 M6.5-a 手工装配迁移）
  * @module platform/episode-production/agent/ep-agent-harness.service
  *
  * 旧「JSON 决策 + 批量动作 + 总结」三段式（ep-agent-workflow.service）→ LoopRunner 多轮循环。
  * 与长文宿主（lw-agent-harness.service）同构，EP 特有：
  * - scopeKey/会话按 project+episode 二维（ep-agent:<projectId>:<episodeId>）
  * - 工具来自共享 registry 的 ep-agent pack（懒注册，见 ep-agent-tools.ts）
- * - **四大能力接线**（35 号 §4 硬性）：
- *   ①上下文管理：loop.deps.context = ContextManager（剧本/分镜大文本必须窗口化）
- *   ②记忆管理：装配/沉淀 stub——KE-2 的 scope 装配就位后在此接 L1/L2/L3（标注 TODO）
+ * - **四大能力接线**（35 号 §4 硬性；①②④由 HostKit 内置——36 号）：
+ *   ①上下文管理：kit 内置 ContextManager（剧本/分镜大文本必须窗口化）
+ *   ②记忆管理：kit 内置装配——scope 分层（L1 用户级恒含；EP 域/项目级记忆入列后自动生效）
  *   ③任务规划 + ④工作流规划：白名单透出 create_task_plan / create_workflow_draft，
  *     是否使用由 agent 按任务复杂度决定（提示词只写判断纪律，不写死必须规划）
  * - 事件面与旧协议对齐（前端零改动）：reply 流式正文走 longwriting:generate:${eventId}
@@ -19,13 +19,12 @@
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import { createLogger } from '@core/utils/logger'
-import type { AgentHost, AgentToolDef } from '@core/platform/agent-runtime/types'
+import { createHostKit, formatStopNote } from '@core/platform/agent-runtime'
+import type { AgentToolDef } from '@core/platform/agent-runtime/types'
 import type { AgentToolBinding } from '@shared/types/agent.types'
-import { LoopRunner, initState } from '@core/platform/agent-runtime/runtime/loop'
 import { getAgentLoopHarness } from '@core/platform/workflow/nodes/agent-loop-node'
+import { getMemoryFlywheel } from '@core/platform/workflow/workflow-boot'
 import { DbAgentSessionStore } from '@core/platform/agent-runtime/memory/session-store'
-import { TrajectorySink } from '@core/platform/agent-runtime/trajectory/sink'
-import { ContextManager } from '@core/platform/agent-runtime/context/context-manager'
 import { ApprovalCoordinator } from '@core/platform/agent-runtime/runtime/approval'
 import type { PendingApproval } from '@shared/types/agent.types'
 import type { ModelMessage } from 'ai'
@@ -45,8 +44,6 @@ const logger = createLogger('EpAgentHarness')
 
 /** 历史单条注入截断 */
 const HISTORY_CONTENT_MAX = 600
-/** 上下文窗口默认值（env 可调；EP 剧本/分镜文本大，32K 起步） */
-const EP_CONTEXT_WINDOW_DEFAULT = 32768
 
 /** 系统提示词：角色 + 纪律（含规划判断纪律——能力透出，使用由 agent 按复杂度决定） */
 export function epAgentSystemPrompt(): string {
@@ -84,6 +81,15 @@ function getSessionStore(): DbAgentSessionStore | null {
     return sessionStore
   } catch (e) {
     logger.warn('[ep-agent] 会话存储初始化失败（观测面降级）', e)
+    return null
+  }
+}
+
+/** 飞轮安全获取（子系统未装配时 null——kit 记忆装配降级为仅结构化提供方） */
+function safeFlywheel() {
+  try {
+    return getMemoryFlywheel()
+  } catch {
     return null
   }
 }
@@ -261,10 +267,8 @@ export class EpAgentHarnessService {
     this.coordinators.set(`${projectId}:${episodeId}`, approvalCoordinator)
     const toolMap: Record<string, AgentToolDef> = harness.registry.buildToolDefs(bindings)
 
-    // 4. 观测面 + 会话持久化
-    const sink = new TrajectorySink(harness.trajectoryRepo ?? null, { scope: 'session', scopeKey: scopeId })
+    // 4. 观测面 + 会话持久化（sink/会话存储由 HostKit 承接——36 号）
     const store = getSessionStore()
-    const sessionId = scopeId
 
     // 5. 事件流映射（reply 流式走 longwriting:generate 通道——评审 P1-1）
     let summaryEventId = ''
@@ -275,100 +279,74 @@ export class EpAgentHarnessService {
     }
     const emitStage = (stage: 'deciding' | 'acting') => emitEpAgentEvent(projectId, episodeId, { type: 'stage', stage })
 
-    const host: AgentHost = {
-      signal: controller.signal,
-      loadState: async () => {
-        const st = initState(
-          {
-            definitionId: EP_AGENT_DEFINITION_ID,
-            scopeId,
-            input: message,
-            snapshot: epStateToSnapshot(state),
-            systemPrompt: epAgentSystemPrompt(),
-            tools: toolMap,
-            maxSteps: EP_AGENT_MAX_STEPS,
-          },
-          Date.now(),
-        )
-        st.messages = [...seeded, { role: 'user', content: message } as ModelMessage]
-        return st
-      },
-      saveState: async (st) => {
-        if (store) await store.save(sessionId, st.messages).catch((e) => logger.warn('[ep-agent] 会话持久化失败（观测面）', e))
-        await sink.flush()
-      },
-      suspend: () => Promise.reject(new Error('EP Agent 白名单不含需挂起工具（choice 审批在 EP-2 引入）')),
-      emitTrajectory: (entry) => {
-        sink.append(entry)
-        if (entry.kind === 'decision' && entry.name !== 'turn_start') {
-          const toolCalls = entry.payload?.toolCalls
-          if (Array.isArray(toolCalls) && toolCalls.length > 0) {
-            emitStage('deciding')
-            newSummaryEvent()
-          }
-        }
-      },
-      emitStream: (event) => {
-        if (event.kind === 'delta' && summaryEventId) {
-          allText += event.text
-          getEventEmitter().emit(`longwriting:generate:${summaryEventId}`, { type: 'content', content: event.text })
-        }
-        if (event.kind === 'tool-start') emitStage('acting')
-        // tool-end 不映射 action:done：动作内 ctx.emit 已发富 summary 事件（评审 P1-6）
-      },
-    }
-
     emitStage('deciding')
     newSummaryEvent()
     tapActionDone()
 
-    try {
-      // 上下文管理（四大能力①）：assemble 做悬空哨兵修复 + 窗口压缩（纯剪枝；摘要化待评估）
-      const context = new ContextManager({
-        contextWindowTokens: Number(process.env.EP_AGENT_CONTEXT_WINDOW ?? EP_CONTEXT_WINDOW_DEFAULT) || EP_CONTEXT_WINDOW_DEFAULT,
-      })
-      // 记忆管理（四大能力②）：装配 stub——KE-2 scope 装配就位后在此接 L1/L2/L3（35 号 §4）
-      const memoryLines: string[] = []
-
-      const result = await new LoopRunner({
-        resolveModel: (o) => harness.resolveModel({
-          providerConfigId: o?.providerConfigId ?? opts.providerConfigId,
-          modelId: o?.modelId ?? opts.modelId,
-        }),
-        context,
+    // 6. HostKit 装配（36 号）：脊柱（sink/turn_start/记忆装配/ContextManager/RunRegistry/
+    //    abort 桥/AgentHost 骨架）内置；EP 只声明差异面。记忆 stub 在此补齐——
+    //    scope 分层召回：L1 用户级恒含，EP 域/项目级记忆入列（蒸馏打标）后自动生效
+    const kit = createHostKit<{ input: string }>(
+      {
+        definitionId: EP_AGENT_DEFINITION_ID,
+        scopeKey: () => scopeId,
+        tools: () => toolMap,
+        resolveModel: (o) => harness.resolveModel({ providerConfigId: o?.providerConfigId, modelId: o?.modelId }),
+        systemPrompt: () => epAgentSystemPrompt(),
+        snapshot: () => epStateToSnapshot(state),
+        seededHistory: () => seeded,
+        maxSteps: EP_AGENT_MAX_STEPS,
+        // EP 剧本/分镜文本大，32K 起步（保留 EP 专属旋钮，缺省回落全局——评审 P2-3）
+        contextWindowTokens:
+          Number(process.env.EP_AGENT_CONTEXT_WINDOW ?? process.env.AGENT_CONTEXT_WINDOW ?? 32_768) || 32_768,
+        memory: {
+          scope: () => ({ bizModule: 'episode-production', projectId }),
+          recallText: () => `${message}\n${epStateToSnapshot(state)}`,
+        },
         requestApproval: (tool, input, call) => approvalCoordinator.request(call.scopeId, tool, input, call.signal),
-      })
-        .run(
-          {
-            definitionId: EP_AGENT_DEFINITION_ID,
-            scopeId,
-            input: message,
-            snapshot: epStateToSnapshot(state),
-            systemPrompt: epAgentSystemPrompt() + (memoryLines.length ? `\n\n[相关经验]\n${memoryLines.join('\n')}` : ''),
-            tools: toolMap,
-            maxSteps: EP_AGENT_MAX_STEPS,
-            modelPreference: { providerConfigId: opts.providerConfigId, modelId: opts.modelId },
-            runtimeContext: {
-              projectId,
-              episodeId,
-              providerConfigId: opts.providerConfigId,
-              modelId: opts.modelId,
-              catalogPacks: [EP_AGENT_PACK_ID],
-            },
-          },
-          host,
-        )
-        .finally(() => sink.flush())
+        onStream: (_t, event) => {
+          if (event.kind === 'delta' && summaryEventId) {
+            allText += event.text
+            getEventEmitter().emit(`longwriting:generate:${summaryEventId}`, { type: 'content', content: event.text })
+          }
+          if (event.kind === 'tool-start') emitStage('acting')
+          // tool-end 不映射 action:done：动作内 ctx.emit 已发富 summary 事件（评审 P1-6）
+        },
+        onTrajectoryEntry: (_t, entry) => {
+          // 步起点：仅当该步调用了工具（后面还有一步）才重置流式气泡——
+          // 最后一步（无工具调用）的文本就是总结，重置会把总结清空（review 自查）
+          if (entry.kind === 'decision' && entry.name !== 'turn_start') {
+            const toolCalls = entry.payload?.toolCalls
+            if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+              emitStage('deciding')
+              newSummaryEvent()
+            }
+          }
+        },
+        runtimeContext: () => ({
+          projectId,
+          episodeId,
+          providerConfigId: opts.providerConfigId,
+          modelId: opts.modelId,
+          catalogPacks: [EP_AGENT_PACK_ID],
+        }),
+        modelPreference: () => ({ providerConfigId: opts.providerConfigId, modelId: opts.modelId }),
+      },
+      { trajectoryPort: harness.trajectoryRepo ?? null, sessionStore: store, flywheel: safeFlywheel() },
+    )
+
+    try {
+      const result = await kit.runTurn({ input: message }, { signal: controller.signal })
 
       const newState = await computeEpProductionState(m, projectId, episodeId)
       const suggestions = buildEpSuggestions(newState)
       let content = allText || (result.output ?? '')
       if (result.stopReason === 'max_steps' || result.stopReason === 'stagnant') {
-        content += `\n\n[系统] 本轮达到步数/进展护栏（${result.stopReason}）而停止，可继续对话让助理接着做。`
+        content += formatStopNote(result.stopReason)
       } else if (result.stopReason === 'aborted') {
-        content = content || '（本轮已中断）'
+        content = content || formatStopNote('aborted')
       } else if (result.stopReason === 'error') {
-        content = content || `抱歉，我在组织回复时遇到问题：${result.error ?? '未知错误'}`
+        content = content || formatStopNote('error', result.error)
       }
 
       const assistantMessage = await m.lwDesignMessages.add(conversationId, {
@@ -404,7 +382,6 @@ export class EpAgentHarnessService {
     } finally {
       tap.untap?.()
       this.coordinators.delete(`${projectId}:${episodeId}`)
-      await sink.flush().catch(() => undefined)
     }
   }
 

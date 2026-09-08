@@ -101,6 +101,16 @@ export {
 } from './context/context-manager'
 export type { ContextManagerDeps, LoopContextPort, MessageKind } from './context/context-manager'
 export type { StateSnapshotBuilder } from './context/state-snapshot'
+// —— 宿主装配套件（36 号）：四大能力默认内置的组装配方 ——
+export { createHostKit, extractRecallTopics, formatStopNote } from './host/host-kit'
+export type {
+  HostKitConfig,
+  HostKitDeps,
+  HostKitTurnBase,
+  HostKitTurnOptions,
+  HostKitTurnResult,
+  HostKitMemoryConfig,
+} from './host/host-kit'
 export {
   DefaultCompactionStrategy,
   defaultEstimateTokens,

@@ -1,5 +1,5 @@
 /**
- * 长文写作 Agent 宿主（harness 直驱版，30 号 M6）
+ * 长文写作 Agent 宿主（HostKit 直驱版，30 号 M6 → 36 号收敛）
  * @module core/packs/longwriting/agent-harness/lw-agent-harness.service
  *
  * 旧「JSON 决策 + 动作 + 总结」两段式协议 → LoopRunner react 循环：
@@ -16,19 +16,18 @@
  *
  * 多轮记忆仍以 lw_design_messages 为权威源（每轮取最近 20 条注入），harness 的
  * agent_sessions（scopeKey=lw-agent:<projectId>）仅作运行观测（工作台时间线）。
+ * 装配脊柱（sink/turn_start/记忆双通道/ContextManager/RunRegistry）由 HostKit
+ * 内置（36 号）——记忆图谱通道A经平台结构化提供方注册表生效。
  */
 
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import { createLogger } from '@core/utils/logger'
-import type { AgentHost, AgentToolDef } from '@core/platform/agent-runtime/types'
-import { LoopRunner, initState } from '@core/platform/agent-runtime/runtime/loop'
+import { createHostKit, formatStopNote } from '@core/platform/agent-runtime'
+import type { AgentToolDef } from '@core/platform/agent-runtime/types'
 import { getAgentLoopHarness } from '@core/platform/workflow/nodes/agent-loop-node'
 import { getMemoryFlywheel } from '@core/platform/workflow/workflow-boot'
-import { listStructuredProviders } from '@core/platform/agent-runtime/memory/structured-provider'
-import { ContextManager } from '@core/platform/agent-runtime/context/context-manager'
 import { DbAgentSessionStore } from '@core/platform/agent-runtime/memory/session-store'
-import { TrajectorySink } from '@core/platform/agent-runtime/trajectory/sink'
 import { LongWritingAIService } from '@core/platform/services/longwriting-ai.service'
 import { emitAgentEvent } from '@core/platform/services/longwriting/agent/agent-events'
 import { computeProductionState, buildSuggestions } from '@core/platform/services/longwriting/agent/agent-deps'
@@ -74,6 +73,15 @@ function getSessionStore(): DbAgentSessionStore | null {
     return sessionStore
   } catch (e) {
     logger.warn('[lw-agent] 会话存储初始化失败（观测面降级）', e)
+    return null
+  }
+}
+
+/** 飞轮安全获取（子系统未装配时 null——kit 记忆装配降级为仅结构化提供方） */
+function safeFlywheel() {
+  try {
+    return getMemoryFlywheel()
+  } catch {
     return null
   }
 }
@@ -182,10 +190,8 @@ export class LwAgentHarnessService {
 
     const counter = { calls: 0 }
 
-    // 4. 观测面（工作台时间线）+ 会话持久化
-    const sink = new TrajectorySink(harness.trajectoryRepo ?? null, { scope: 'session', scopeKey: scopeId })
+    // 4. 观测面（工作台时间线）+ 会话持久化（sink/会话存储由 HostKit 承接——36 号）
     const store = getSessionStore()
-    const sessionId = scopeId // lw-agent:<projectId>（含定义语义前缀，不再叠加）
 
     // 5. 事件流映射
     let summaryEventId = ''
@@ -196,130 +202,72 @@ export class LwAgentHarnessService {
     }
     const emitStageDeciding = () => emitAgentEvent(projectId, { type: 'stage', stage: 'deciding' } as never)
 
-      // 四大能力补接（KE-2）：①上下文压缩 ②记忆装配（通道A 图谱结构化事实 + 通道B 记忆召回）
-      const memoryLines: string[] = []
-      try {
-        // 通道A：图谱结构化事实（KE-4 provider；topics 取状态里的资产名 + 用户消息关键词）
-        const topics = message.slice(0, 60).split(/[^\u4e00-\u9fa5a-zA-Z0-9]+/).filter((w) => w.length >= 2).slice(0, 5)
-        for (const provider of listStructuredProviders()) {
-          if (!provider.supports({ bizModule: 'longwriting', projectId })) continue
-          try {
-            const segments = await provider.query({
-              scope: { bizModule: 'longwriting', projectId },
-              topics,
-              budget: { maxSegments: 2, maxChars: 600 },
-            })
-            for (const seg of segments) memoryLines.push(`[设定事实] ${seg.text}`)
-          } catch (e) {
-            logger.warn('[lw-agent] 图谱结构化装配失败（跳过）', e)
+    // 6. HostKit 装配（36 号）：记忆双通道（通道A 结构化提供方=图谱 + 通道B 飞轮召回）
+    //    收敛为 kit 内置装配——LW 只声明 scope 与召回语料，装配行为与平台一致
+    const kit = createHostKit<{ input: string }>(
+      {
+        definitionId: LW_AGENT_DEFINITION_ID,
+        scopeKey: () => scopeId,
+        tools: () => toolMap,
+        resolveModel: (o) => harness.resolveModel({ providerConfigId: o?.providerConfigId, modelId: o?.modelId }),
+        systemPrompt: () => lwAgentSystemPrompt(),
+        snapshot: () => stateToSummary(state),
+        seededHistory: () => seeded,
+        maxSteps: LW_AGENT_MAX_STEPS,
+        memory: {
+          scope: () => ({ bizModule: 'longwriting', projectId }),
+          recallText: () => `${message}\n${stateToSummary(state)}`,
+          // 通道A topics 只取前 60 字——摘要前缀会污染主题（评审 P1-1：与迁移前
+          // 「topics 取用户消息」保真）
+          topicsText: () => message,
+        },
+        onStream: (_t, event) => {
+          if (event.kind === 'delta' && summaryEventId) {
+            // 前端既有订阅点：longwriting:generate:${summaryEventId} 的 content 事件
+            allText += event.text
+            getEventEmitter().emit(`longwriting:generate:${summaryEventId}`, { type: 'content', content: event.text })
           }
-        }
-        // 通道B：记忆向量/关键词召回
-        const flywheel = getMemoryFlywheel()
-        if (flywheel) {
-          const entries = await flywheel.assemble(`${message}\n${stateToSummary(state)}`, 3, { bizModule: 'longwriting', projectId })
-          for (const e of entries) {
-            const c = e.content as { title?: string; content?: string }
-            memoryLines.push(`- ${c.title ?? ''}：${c.content ?? ''}`)
+          // 工具执行阶段提示（review P2-2：write_chapter 900s 期间应显示 acting 而非 thinking）
+          if (event.kind === 'tool-start') emitAgentEvent(projectId, { type: 'stage', stage: 'acting' } as never)
+          // tool-end 不映射 action:done：executeActions 已发富 summary 事件
+        },
+        onTrajectoryEntry: (_t, entry) => {
+          // 步起点：仅当该步调用了工具（后面还有一步）才重置流式气泡——
+          // 最后一步（无工具调用）的文本就是总结，重置会把总结清空（review 自查）
+          if (entry.kind === 'decision' && entry.name !== 'turn_start') {
+            const toolCalls = entry.payload?.toolCalls
+            if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+              emitStageDeciding()
+              newSummaryEvent()
+            }
           }
-        }
-      } catch (e) {
-        logger.warn('[lw-agent] 记忆装配失败（不影响主链路）', e)
-      }
-      const context = new ContextManager({
-        contextWindowTokens: Number(process.env.AGENT_CONTEXT_WINDOW ?? 32_768) || 32_768,
-      })
-    const host: AgentHost = {
-      signal: controller.signal,
-      loadState: async () => {
-        const st = initState(
-          {
-            definitionId: LW_AGENT_DEFINITION_ID,
-            scopeId,
-            input: message,
-            snapshot: stateToSummary(state),
-            systemPrompt: lwAgentSystemPrompt() + (memoryLines.length ? `\n\n[相关经验]\n${memoryLines.join('\n')}` : ''),
-            tools: toolMap,
-            maxSteps: LW_AGENT_MAX_STEPS,
+        },
+        runtimeContext: () => ({
+          projectId,
+          turnRefs: [],
+          catalogPacks: [LW_AGENT_PACK_ID],
+          lwTurn: {
+            providerConfigId: opts.providerConfigId,
+            modelId: opts.modelId,
+            db: m,
+            ai,
+            emit: (event: unknown) => { emitAgentEvent(projectId, event as never) },
+            state,
+            // 摘要收集单一出口（emit 的 action:done 与此同源——双路会重复计数）
+            onSummary: (summary: AgentActionSummary) => actionSummaries.push(summary),
+            counter,
           },
-          Date.now(),
-        )
-        // 多轮记忆：lw_design_messages 为权威源（run 不再消费 agent_sessions 历史）
-        st.messages = [...seeded, { role: 'user', content: message } as ModelMessage]
-        return st
+        }),
+        modelPreference: () => ({ providerConfigId: opts.providerConfigId, modelId: opts.modelId }),
       },
-      saveState: async (st) => {
-        if (store) await store.save(sessionId, st.messages).catch((e) => logger.warn('[lw-agent] 会话持久化失败（观测面）', e))
-        await sink.flush()
-      },
-      suspend: () => Promise.reject(new Error('长文 Agent 白名单不含需审批工具')),
-      emitTrajectory: (entry) => {
-        sink.append(entry)
-        // 步起点：仅当该步调用了工具（后面还有一步）才重置流式气泡——
-        // 最后一步（无工具调用）的文本就是总结，重置会把总结清空（review 自查）
-        if (entry.kind === 'decision' && entry.name !== 'turn_start') {
-          const toolCalls = entry.payload?.toolCalls
-          if (Array.isArray(toolCalls) && toolCalls.length > 0) {
-            emitStageDeciding()
-            newSummaryEvent()
-          }
-        }
-      },
-      emitStream: (event) => {
-        if (event.kind === 'delta' && summaryEventId) {
-          // 前端既有订阅点：longwriting:generate:${summaryEventId} 的 content 事件
-          allText += event.text
-          getEventEmitter().emit(`longwriting:generate:${summaryEventId}`, { type: 'content', content: event.text })
-        }
-        // 工具执行阶段提示（review P2-2：write_chapter 900s 期间应显示 acting 而非 thinking）
-        if (event.kind === 'tool-start') {
-          emitAgentEvent(projectId, { type: 'stage', stage: 'acting' } as never)
-        }
-        // tool-end 不映射 action:done：executeActions 已发富 summary 事件
-      },
-    }
+      { trajectoryPort: harness.trajectoryRepo ?? null, sessionStore: store, flywheel: safeFlywheel() },
+    )
 
     emitStageDeciding()
     newSummaryEvent()
 
     try {
-      const result = await new LoopRunner({
-        resolveModel: (o) => harness.resolveModel({
-          providerConfigId: o?.providerConfigId ?? opts.providerConfigId,
-          modelId: o?.modelId ?? opts.modelId,
-        }),
-        context,
-      })
-        .run(
-          {
-            definitionId: LW_AGENT_DEFINITION_ID,
-            scopeId,
-            input: message,
-            snapshot: stateToSummary(state),
-            systemPrompt: lwAgentSystemPrompt() + (memoryLines.length ? `\n\n[相关经验]\n${memoryLines.join('\n')}` : ''),
-            tools: toolMap,
-            maxSteps: LW_AGENT_MAX_STEPS,
-            modelPreference: { providerConfigId: opts.providerConfigId, modelId: opts.modelId },
-            runtimeContext: {
-              projectId,
-              turnRefs: [],
-              catalogPacks: [LW_AGENT_PACK_ID],
-              lwTurn: {
-                providerConfigId: opts.providerConfigId,
-                modelId: opts.modelId,
-                db: m,
-                ai,
-                emit: (event: unknown) => { emitAgentEvent(projectId, event as never) },
-                state,
-                // 摘要收集单一出口（emit 的 action:done 与此同源——双路会重复计数）
-                onSummary: (summary: AgentActionSummary) => actionSummaries.push(summary),
-                counter,
-              },
-            },
-          },
-          host,
-        )
-        .finally(() => sink.flush())
+      const result = await kit.runTurn({ input: message }, { signal: controller.signal })
 
       // 终态分流（review P0-1：error/aborted 曾走 resolve 且落空消息、reply:done 照发）
       const newState = await computeProductionState(m, projectId)
@@ -327,11 +275,11 @@ export class LwAgentHarnessService {
       // 落库内容 = 全部步文本（与流式气泡所见一致——review P1-2(a)）
       let content = allText || (result.output ?? '')
       if (result.stopReason === 'max_steps' || result.stopReason === 'stagnant') {
-        content += `\n\n[系统] 本轮达到步数/进展护栏（${result.stopReason}）而停止，可继续对话让助理接着做。`
+        content += formatStopNote(result.stopReason)
       } else if (result.stopReason === 'aborted') {
-        content = content || '（本轮已中断）'
+        content = content || formatStopNote('aborted')
       } else if (result.stopReason === 'error') {
-        content = content || `抱歉，我在组织回复时遇到问题：${result.error ?? '未知错误'}`
+        content = content || formatStopNote('error', result.error)
       }
 
       const assistantMessage = await m.lwDesignMessages.add(conversationId, {
@@ -368,8 +316,6 @@ export class LwAgentHarnessService {
       } catch { /* 兜底失败仅留日志 */ }
       emitAgentEvent(projectId, { type: 'error', error: msg } as never)
       throw e
-    } finally {
-      await sink.flush().catch(() => undefined)
     }
   }
 

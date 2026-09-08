@@ -537,9 +537,10 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
                 try { getEventEmitter().emit('ac:trajectory', { scopeKey: sk, entry }) } catch { /* 广播失败不影响落库 */ }
               },
             })
-            // 装配留痕（26 号 §4 验收：轨迹中可见引用——review T9）
+            // 装配留痕（26 号 §4 验收：轨迹中可见引用——review T9）。
+            // kind 用语义化 memory_assembly（36 号对齐：decision 形态会被工作台误计步数）
             if (memoryLines && memoryLines.length > 0) {
-              sink.append({ iteration: 0, kind: 'decision', name: 'memory_assembly', payload: { memoryRefs: memoryLines } })
+              sink.append({ iteration: 0, kind: 'memory_assembly', name: 'memory_assembly', payload: { memoryRefs: memoryLines } })
             }
             const host: import('@core/platform/agent-runtime/types').AgentHost = {
               signal: inner.signal,

@@ -188,7 +188,8 @@ export interface AgentResult {
 /** 轨迹条目（写 agent_trajectories；fire-and-forget） */
 export interface TrajectoryEntry {
   iteration: number
-  kind: 'decision' | 'tool_call' | 'tool_result' | 'human_request' | 'human_decision' | 'guardrail_stop' | 'final'
+  /** memory_assembly：记忆装配留痕（36 号 HostKit——语义化 kind，decision 形态会被工作台误计步数） */
+  kind: 'decision' | 'tool_call' | 'tool_result' | 'human_request' | 'human_decision' | 'guardrail_stop' | 'final' | 'memory_assembly'
   name?: string
   payload: Record<string, unknown>
   promptTokens?: number

@@ -24,18 +24,13 @@ import type {
   StreamEvent,
   MessageMetadata,
 } from '@shared/types'
-import type { ModelMessage } from 'ai'
-import type { LanguageModel } from 'ai'
+import type { ModelMessage, LanguageModel } from 'ai'
 import { createLogger } from '@core/utils/logger'
 import type {
-  AgentHost,
-  AgentLoopState,
-  AgentStreamEvent,
   TrajectoryEntry,
 } from '@core/platform/agent-runtime/types'
-import { LoopRunner, initState } from '@core/platform/agent-runtime/runtime/loop'
+import { createHostKit } from '@core/platform/agent-runtime'
 import { DbAgentSessionStore } from '@core/platform/agent-runtime/memory/session-store'
-import { TrajectorySink } from '@core/platform/agent-runtime/trajectory/sink'
 import type { TrajectoryAppendPort } from '@core/platform/agent-runtime/trajectory/sink'
 import { getMemoryFlywheel } from '@core/platform/workflow/workflow-boot'
 import { getAgentLoopHarness } from '@core/platform/workflow/nodes/agent-loop-node'
@@ -106,6 +101,15 @@ export function slimTrajectoryForBroadcast(entry: TrajectoryEntry): TrajectoryEn
 /** 会话 id 约定（session-store 头注：{definitionId}:{scopeId}） */
 export function agentSessionId(dialogId: string): string {
   return `${SYSTEM_AGENT_DEFINITION_ID}:dialog:${dialogId}`
+}
+
+/** 飞轮安全获取（子系统未装配时 null——kit 记忆装配降级为仅 L0 行） */
+function safeFlywheel() {
+  try {
+    return getMemoryFlywheel()
+  } catch {
+    return null
+  }
 }
 
 /** 会话历史清洗已上移 agent-runtime/runtime/session-sanitize（总收口：多宿主共用） */
@@ -184,15 +188,8 @@ export async function runAgentChatTurn(
   }
 
   const scopeId = `dialog:${params.dialogId}`
-  const sessionId = agentSessionId(params.dialogId)
-  const sink = new TrajectorySink(deps.trajectoryPort, {
-    scope: 'session',
-    scopeKey: scopeId,
-    onEntry: deps.onTrajectoryEntry,
-  })
-  // 轮次起点标记（29 号对话流按它切轮次段：iteration 每轮从 0 重来不可作边界）
-  sink.append({ iteration: 0, kind: 'decision', name: 'turn_start', payload: { dialogId: params.dialogId } })
-
+  // 轨迹 sink / turn_start 轮次标记 / 记忆装配留痕 / RunRegistry 登记由 HostKit 内置（36 号）；
+  // 会话存储键保留旧键（system-chat-agent:dialog:<id>——工作台会话列表与「查看上下文」的解析约定）
   const refs: SystemAgentTurnRef[] = []
   const toolCalls: AgentMessageMeta['toolCalls'] = []
 
@@ -209,70 +206,63 @@ export async function runAgentChatTurn(
   /** 流式期 pending 工具（toolCallId → 名称/入参摘要），tool-end 时合流成完整记录 */
   const pendingCalls = new Map<string, { name: string; argsDigest?: string }>()
 
-  const host: AgentHost = {
-    signal: params.signal,
-    loadState: async (): Promise<AgentLoopState | null> => {
-      const history = await deps.sessions.load(sessionId)
-      if (!history || history.length === 0) return null // 首轮：initState 以 input 播种
-      const state = initState(
-        {
-          definitionId: SYSTEM_AGENT_DEFINITION_ID,
-          scopeId,
-          input: params.content,
-          systemPrompt: params.systemPrompt,
-          tools: defs,
-          maxSteps: SYSTEM_AGENT_MAX_STEPS,
-        },
-        Date.now(),
-      )
-      // 多轮续聊：既有历史（清洗悬空 tool-call/连续 user）+ 本轮用户消息
-      state.messages = [...sanitizeSessionHistory(history), { role: 'user', content: params.content } as ModelMessage]
-      return state
+  // HostKit 装配（36 号）：脊柱内置——聊天侧保留面 = 消息生命周期（占位/流式/终稿/
+  // metadata/token 回写）与 chat:stream 事件包装。ContextManager 此前缺位，由 kit 补齐
+  const kit = createHostKit<{ input: string }>(
+    {
+      definitionId: SYSTEM_AGENT_DEFINITION_ID,
+      scopeKey: () => scopeId,
+      sessionKey: () => agentSessionId(params.dialogId),
+      tools: () => defs,
+      resolveModel: deps.resolveModel,
+      systemPrompt: () => params.systemPrompt,
+      maxSteps: SYSTEM_AGENT_MAX_STEPS,
+      // 记忆装配（原 sendMessage 层 L0+L1）收敛 kit 内置 + memory_assembly 统一留痕
+      memory: {
+        scope: null,
+        systemLine:
+          '[系统能力] 可用工具/工作流/技能以 discover_capabilities 目录为准；复杂多步目标可用 create_task_plan 拆解为任务树。',
+      },
+      // 会话存储=多轮续聊权威源（保存失败上抛——静默丢历史会破坏下一轮记忆）
+      sessionStoreCritical: true,
+      onStream: (_t, event) => {
+        const emit = (e: StreamEvent) => deps.emit({ ...e, messageId: aiMessage.id, dialogId: params.dialogId })
+        if (event.kind === 'delta') {
+          // 步间分隔（对抗 review P2：多步文本无分隔会粘连成一段）
+          if (lastEventKind !== null && lastEventKind !== 'delta') streamedText += '\n\n'
+          streamedText += event.text
+          emit({ type: 'delta', content: event.text })
+        } else if (event.kind === 'tool-start') {
+          const digest = digestAgentArgs(event.args)
+          pendingCalls.set(event.toolCallId, { name: event.toolName, argsDigest: digest })
+          emit({ type: 'tool-start', toolName: event.toolName, toolCallId: event.toolCallId, argsDigest: digest })
+        } else if (event.kind === 'tool-end') {
+          const pending = pendingCalls.get(event.toolCallId)
+          pendingCalls.delete(event.toolCallId)
+          toolCalls.push({ name: event.toolName, ok: event.ok, toolCallId: event.toolCallId, argsDigest: pending?.argsDigest })
+          emit({ type: 'tool-end', toolName: event.toolName, toolCallId: event.toolCallId, ok: event.ok })
+        }
+        // kind==='step'（续跑提示）无聊天 UI 映射，忽略
+        lastEventKind = event.kind
+      },
+      runtimeContext: () => ({
+        dialogId: params.dialogId,
+        sessionKey: scopeId,
+        turnRefs: refs,
+        turnModel: params.modelPreference,
+      }),
+      modelPreference: () => params.modelPreference,
     },
-    saveState: async (state) => {
-      await deps.sessions.save(sessionId, state.messages)
-      await sink.flush()
+    {
+      trajectoryPort: deps.trajectoryPort,
+      sessionStore: deps.sessions,
+      flywheel: safeFlywheel(),
+      onEntry: deps.onTrajectoryEntry,
     },
-    suspend: () => Promise.reject(new Error('聊天 Agent 模式白名单不含需审批工具')),
-    emitTrajectory: (entry) => sink.append(entry),
-    emitStream: (event: AgentStreamEvent) => {
-      const emit = (e: StreamEvent) => deps.emit({ ...e, messageId: aiMessage.id, dialogId: params.dialogId })
-      if (event.kind === 'delta') {
-        // 步间分隔（对抗 review P2：多步文本无分隔会粘连成一段）
-        if (lastEventKind !== null && lastEventKind !== 'delta') streamedText += '\n\n'
-        streamedText += event.text
-        emit({ type: 'delta', content: event.text })
-      } else if (event.kind === 'tool-start') {
-        const digest = digestAgentArgs(event.args)
-        pendingCalls.set(event.toolCallId, { name: event.toolName, argsDigest: digest })
-        emit({ type: 'tool-start', toolName: event.toolName, toolCallId: event.toolCallId, argsDigest: digest })
-      } else if (event.kind === 'tool-end') {
-        const pending = pendingCalls.get(event.toolCallId)
-        pendingCalls.delete(event.toolCallId)
-        toolCalls.push({ name: event.toolName, ok: event.ok, toolCallId: event.toolCallId, argsDigest: pending?.argsDigest })
-        emit({ type: 'tool-end', toolName: event.toolName, toolCallId: event.toolCallId, ok: event.ok })
-      }
-      // kind==='step'（续跑提示）无聊天 UI 映射，忽略
-      lastEventKind = event.kind
-    },
-  }
+  )
 
   try {
-    const result = await new LoopRunner({ resolveModel: deps.resolveModel }).run(
-      {
-        definitionId: SYSTEM_AGENT_DEFINITION_ID,
-        scopeId,
-        input: params.content,
-        systemPrompt: params.systemPrompt,
-        tools: defs,
-        maxSteps: SYSTEM_AGENT_MAX_STEPS,
-        modelPreference: params.modelPreference,
-        // turnModel：invoke_skill 等工具内模型与聊天页所选模型一致（对抗 review P2：
-        // 无参 resolveModel 会落到全局默认 provider）；turnRefs 供工具收集引用卡片
-        runtimeContext: { dialogId: params.dialogId, sessionKey: scopeId, turnRefs: refs, turnModel: params.modelPreference },
-      },
-      host,
-    )
+    const result = await kit.runTurn({ input: params.content }, { signal: params.signal })
 
     let content = streamedText
     if (result.stopReason === 'max_steps' || result.stopReason === 'stagnant') {
@@ -329,8 +319,6 @@ export async function runAgentChatTurn(
     }
     deps.emit({ type: 'error', messageId: aiMessage.id, dialogId: params.dialogId, error: message })
     return { success: false, error: message, toolCalls, refs }
-  } finally {
-    await sink.flush().catch(() => undefined)
   }
 }
 
@@ -396,38 +384,9 @@ export class SystemAgentChatService {
     const abortController = new AbortController()
     activeAgentStreams.set(request.dialogId, abortController)
 
-    // 运行登记（29 号 M5.5：工作台运行中徽标 + 实时轨迹）
-    const { getAgentRunRegistry } = await import('@core/platform/agent-runtime/runtime/run-registry')
-    const { getCurrentUserId } = await import('@core/context/user-context')
-    const runRegistry = getAgentRunRegistry()
-    const runId = `ar_chat_${request.dialogId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-    runRegistry.register({
-      id: runId,
-      definitionId: SYSTEM_AGENT_DEFINITION_ID,
-      scopeKey: `dialog:${request.dialogId}`,
-      label: request.content.slice(0, 40),
-      userId: getCurrentUserId(),
-      abort: () => abortController.abort(),
-    })
-
     try {
-      // KE-2 记忆装配（34 号）：chat 未绑定业务，装配 L0 摘要+L1 用户级经验
-      let memoryLines: string[] = []
-      try {
-        // L0 系统知识最小摘要（M-Ke3 v1：计数级；详细目录走 discover_capabilities）
-        memoryLines.push('[系统能力] 可用工具/工作流/技能以 discover_capabilities 目录为准；复杂多步目标可用 create_task_plan 拆解为任务树。')
-        const flywheel = getMemoryFlywheel()
-        if (flywheel) {
-          const entries = await flywheel.assembleUserLevel(request.content, 3)
-          memoryLines = entries.map((e) => {
-            const c = e.content as { title?: string; content?: string }
-            return `- ${c.title ?? ''}：${c.content ?? ''}`
-          })
-        }
-      } catch (e) {
-        logger.warn('[system-agent] 记忆装配失败（不影响主链路）', e)
-      }
-
+      // 记忆装配已收敛 HostKit 内置（36 号）：runAgentChatTurn 经 kit memory 配置
+      // （L0 系统能力行 + L1 用户级召回），并统一 memory_assembly 留痕
       const result = await runAgentChatTurn(
         {
           messages: dbManager.messages,
@@ -445,9 +404,7 @@ export class SystemAgentChatService {
         {
           dialogId: request.dialogId,
           content: request.content,
-          systemPrompt:
-            buildSystemPrompt(dialog.systemPrompt) +
-            (memoryLines.length ? `\n\n[相关经验（来自知识飞轮，供参考）]\n${memoryLines.join('\n')}` : ''),
+          systemPrompt: buildSystemPrompt(dialog.systemPrompt),
           modelPreference: {
             providerConfigId: request.providerConfigId || dialog.providerConfigId,
             modelId: request.modelId || dialog.modelId,
@@ -456,22 +413,8 @@ export class SystemAgentChatService {
           userMessageId: userMessage.id,
         },
       )
-      runRegistry.finish(runId, {
-        id: runId,
-        scopeKey: `dialog:${request.dialogId}`,
-        // human_rejected 是正常终止（对话内拒绝操作），归 done 不计 error（review P2-2）
-        status: result.stopReason === 'error' ? 'error' : result.stopReason === 'aborted' ? 'aborted' : 'done',
-        ...(result.error ? { error: result.error } : {}),
-      })
+      // RunRegistry 登记/结算由 kit 接管（36 号）——工作台徽标/停止语义不变
       return result
-    } catch (e) {
-      runRegistry.finish(runId, {
-        id: runId,
-        scopeKey: `dialog:${request.dialogId}`,
-        status: 'error',
-        error: e instanceof Error ? e.message : String(e),
-      })
-      throw e
     } finally {
       // 身份校验删除（对抗 review P1：交叠轮曾会误删后一轮的 controller）
       if (activeAgentStreams.get(request.dialogId) === abortController) {

@@ -130,15 +130,23 @@ function mkDeps(overrides: {
   const messages = mkMessagesPort()
   const sessions = mkSessionsPort(overrides.history ?? [])
   const emitted: StreamEvent[] = []
+  /** 轨迹捕获（37 号：turn_start 需携带 systemPrompt 快照供工作台「查看上下文」） */
+  const trajectoryRows: Array<{ kind: string; name?: string | null; payload?: Record<string, unknown> | null }> = []
+  const trajectoryPort = {
+    appendBatch: async (rows: Array<{ kind: string; name?: string | null; payload?: Record<string, unknown> | null }>) => {
+      trajectoryRows.push(...rows)
+    },
+    maxSeq: async () => 0,
+  }
   const deps: AgentChatTurnDeps = {
     messages: messages.port,
     sessions: sessions.port,
-    trajectoryPort: null,
+    trajectoryPort,
     registry: overrides.registry,
     resolveModel: async () => overrides.model,
     emit: (e) => emitted.push(e),
   }
-  return { deps, messages, sessions, emitted }
+  return { deps, messages, sessions, emitted, trajectoryRows }
 }
 
 function turn(deps: AgentChatTurnDeps, content: string, signal?: AbortSignal) {
@@ -270,6 +278,17 @@ describe('runAgentChatTurn', () => {
     expect(emitted.map((e) => e.type)).toEqual(['start', 'tool-start', 'tool-end', 'delta', 'done'])
     expect((emitted[2] as { ok?: boolean }).ok).toBe(true)
     expect(emitted[1].dialogId).toBe('d1')
+  })
+
+  it('turn_start 留痕带 systemPrompt 快照（37 号：工作台「查看上下文」数据源）', async () => {
+    const { registry } = mkRegistryWithCatalogTool()
+    const { deps, trajectoryRows } = mkDeps({ model: txtModel('好的'), registry })
+    await turn(deps, '你好')
+    const turnStart = trajectoryRows.find((row) => row.name === 'turn_start')
+    expect(turnStart).toBeDefined()
+    const sp = turnStart?.payload?.systemPrompt
+    expect(typeof sp).toBe('string')
+    expect(sp as string).toContain('Agent') // buildSystemPrompt 的路由纪律在前
   })
 
   it('多轮续聊：既有历史 + 本轮用户消息进入 state（save 可见）', async () => {
