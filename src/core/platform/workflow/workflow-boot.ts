@@ -699,6 +699,7 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
       validate: (graph) => definitionService.validate(graph).errors,
       create: (input) => definitionService.create(input),
       saveDraft: (id, graph) => definitionService.saveDraft(id, graph),
+      remove: (id) => definitionService.delete(id),
     })
     // 技能服务失败只降级 invoke_skill（目录技能为空/调用报"不存在"），
     // 不拖垮 run_workflow/discover 等无关工具（对抗 review P3）

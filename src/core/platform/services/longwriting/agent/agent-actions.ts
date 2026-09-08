@@ -724,6 +724,14 @@ async function executeUpdateEntity(ctx: AgentExecutionContext, action: AgentActi
     }
   }
 
+  // M8 越权加固：id 直传路径必须校验实体归属当前项目（与 delete_entity 同款——防跨项目 id 改写）
+  if (targetId && type !== 'overview') {
+    const owned = await repo.getById(targetId)
+    if (owned && owned.projectId !== projectId) {
+      return { type: 'update_entity', status: 'error', message: `${ENTITY_TYPE_LABELS[type] || type}不存在于当前项目（id 越界已拒绝）` }
+    }
+  }
+
   const updated = await repo.update(targetId, patch)
   if (!updated) {
     return { type: 'update_entity', status: 'error', message: `${ENTITY_TYPE_LABELS[type] || type}不存在或更新失败` }
@@ -767,6 +775,14 @@ async function executeDeleteEntity(ctx: AgentExecutionContext, action: AgentActi
     }
     if (!targetId) {
       return { type: 'delete_entity', status: 'error', message: `${ENTITY_TYPE_LABELS[type] || type}不存在：未找到 id「${id ?? ''}」或名称「${params.name ?? ''}」对应的实体` }
+    }
+  }
+
+  // M8 越权加固：id 直传路径必须校验实体归属当前项目（防跨项目 id 直删）
+  if (targetId && type !== 'overview') {
+    const owned = await repo.getById(targetId)
+    if (owned && owned.projectId !== projectId) {
+      return { type: 'delete_entity', status: 'error', message: `${ENTITY_TYPE_LABELS[type] || type}不存在于当前项目（id 越界已拒绝）` }
     }
   }
 

@@ -170,6 +170,15 @@ async function handleDeleteDialog(
     }
 
     await dbManager.dialogs.delete(dialogId)
+    // M8 级联清理：agent_sessions/trajectories 残留会造成工作台幽灵会话（32 号登记）
+    try {
+      const { purgeAgentDataForScopes } = await import('@core/platform/agent-runtime/memory/session-purge')
+      await purgeAgentDataForScopes(dbManager.dataSource, [
+        { conversationId: `system-chat-agent:dialog:${dialogId}`, scopeKey: `dialog:${dialogId}` },
+      ])
+    } catch (purgeError) {
+      console.error('Agent 数据级联清理失败（不影响删除）:', purgeError)
+    }
     return { success: true }
   } catch (error) {
     console.error('删除对话失败:', error)

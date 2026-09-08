@@ -327,6 +327,22 @@ export class AgentToolRegistry {
 
   // —— 执行（校验→审批短路→执行→截断→审计；错误永不 throw） ——
 
+  /** NOT_WHITELISTED 提示（M8 越权加固）：不再枚举注册表全量工具名——宿主的真实
+   *  工具集已随本轮 tools 参数注入，全量枚举只对越权调用方泄露其他模块的工具名。
+   *  声明了 catalogPacks 的域内仍可列（同域名称不越权）。 */
+  private notWhitelistedHint(context?: Record<string, unknown>): string {
+    const packs = Array.isArray(context?.catalogPacks) ? (context!.catalogPacks as string[]) : null
+    if (packs && packs.length > 0) {
+      const scoped = this.listSpecs().filter((s) => s.packId && packs.includes(s.packId))
+      const names = scoped.map((s) => s.name)
+      if (names.length > 0) {
+        return `可用工具：${names.slice(0, HINT_TOOL_LIST_MAX).join(', ')}${names.length > HINT_TOOL_LIST_MAX ? ' …' : ''}`
+      }
+      return '本轮域内无可列举工具；请使用本轮注入的工具集。'
+    }
+    return `该工具不在本轮授权清单中；请使用本轮注入的工具集（运行时共注册 ${this.tools.size} 个）。`
+  }
+
   async execute(call: {
     toolName: string
     args: Record<string, unknown>
@@ -371,7 +387,7 @@ export class AgentToolRegistry {
           error: {
             code: 'NOT_WHITELISTED',
             message: `工具未注册：${call.toolName}`,
-            hint: `可用工具：${[...this.tools.keys()].slice(0, HINT_TOOL_LIST_MAX).join(', ')}${this.tools.size > HINT_TOOL_LIST_MAX ? ' …' : ''}`,
+            hint: this.notWhitelistedHint(call.context),
             retryable: false,
           },
           durationMs: 0,

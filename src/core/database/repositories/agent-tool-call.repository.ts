@@ -29,6 +29,28 @@ export interface AgentToolCallAppend {
   context?: Record<string, unknown>
 }
 
+/** 深度受限 + 循环引用安全的 context 序列化（M8）：宿主注入的 logContext 可能含
+ *  非序列化对象（如 lwTurn.db 的 TypeORM DataSource 循环引用）——裸 stringify 抛错
+ *  会让整条审计落库被 fire-and-forget 吞掉，LW 工具审计行全部丢失 */
+function safeContextJson(value: unknown): string | null {
+  if (value === undefined || value === null) return null
+  const seen = new WeakSet<object>()
+  const walk = (v: unknown, depth: number): unknown => {
+    if (v === null || typeof v !== 'object') return v
+    if (seen.has(v as object) || depth > 6) return '[circular/depth]'
+    seen.add(v as object)
+    if (Array.isArray(v)) return v.map((x) => walk(x, depth + 1))
+    const out: Record<string, unknown> = {}
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) out[k] = walk(val, depth + 1)
+    return out
+  }
+  try {
+    return JSON.stringify(walk(value, 0))
+  } catch {
+    return '[unserializable context]'
+  }
+}
+
 export class AgentToolCallRepository extends BaseRepository<AgentToolCallEntity, AgentToolCallEntity> {
   constructor(dataSource: DataSource) {
     super(dataSource, AgentToolCallEntity)
@@ -51,7 +73,7 @@ export class AgentToolCallRepository extends BaseRepository<AgentToolCallEntity,
     entity.resultPreview = input.resultPreview ?? null
     entity.truncated = input.truncated ?? false
     entity.durationMs = input.durationMs ?? null
-    entity.contextJson = input.context ? JSON.stringify(input.context) : null
+    entity.contextJson = safeContextJson(input.context)
     entity.createdAt = new Date()
     await this.repo.insert(entity)
   }

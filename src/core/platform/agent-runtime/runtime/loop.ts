@@ -59,6 +59,9 @@ interface AiModule {
 
 const STAGNANT_NUDGE = '检测到你连续多轮执行完全相同的工具调用。请更换策略，或直接给出最终答案。'
 
+/** 轮询豁免工具（M8）：等待长任务终态的合法只读轮询，不计无进展（maxSteps 仍兜底） */
+const POLLING_EXEMPT_TOOLS: ReadonlySet<string> = new Set(['get_workflow_run'])
+
 // —— 展示/轨迹截断上限（命名常量：观测面字段裁剪，非行为参数） ——
 const TRAJECTORY_THOUGHT_MAX_CHARS = 4000
 const TRAJECTORY_ANSWER_MAX_CHARS = 2000
@@ -263,8 +266,11 @@ export class LoopRunner {
 
         // 无进展检测（12 号 §6.4-3：signature = 工具名+入参规范化；
         // stableStringify 与审批缓存键同一实现——键序稳定防同语义漏检）
+        // 轮询豁免（M8）：等待长工作流终态的合法轮询（入参不变是轮询语义本身，
+        // 进展体现在返回值里）不计无进展；护栏仍有 maxSteps 兜底
+        const isPollingStep = calls.every((c) => POLLING_EXEMPT_TOOLS.has(c.toolName))
         const signature = calls.map((c) => `${c.toolName}:${stableStringify(c.input)}`).sort().join('|')
-        if (signature && signature === lastSignature) {
+        if (signature && signature === lastSignature && !isPollingStep) {
           state.stagnantRounds++
           if (state.stagnantRounds >= stagnantLimit) {
             if (nudged) {
@@ -281,7 +287,7 @@ export class LoopRunner {
             state.iteration++
             continue
           }
-        } else {
+        } else if (!isPollingStep) {
           state.stagnantRounds = 0
         }
         lastSignature = signature

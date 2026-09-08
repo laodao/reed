@@ -139,7 +139,17 @@ export class LongWritingService {
     if (!this.db.lwProjects) {
       throw new Error('数据库未初始化')
     }
-    return await this.db.lwProjects.delete(id)
+    const ok = await this.db.lwProjects.delete(id)
+    // M8 级联清理：agent_sessions/trajectories 残留会造成工作台幽灵会话（32 号登记）
+    try {
+      const { purgeAgentDataForScopes } = await import('@core/platform/agent-runtime/memory/session-purge')
+      await purgeAgentDataForScopes(this.db.dataSource, [
+        { conversationId: `lw-agent:${id}`, scopeKey: `lw-agent:${id}` },
+      ])
+    } catch (e) {
+      console.error('[longwriting] Agent 数据级联清理失败（不影响删除）:', e)
+    }
+    return ok
   }
 
   // ==================== 故事概要 ====================
