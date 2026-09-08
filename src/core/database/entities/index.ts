@@ -125,6 +125,9 @@ export {
 } from './platform-event.entities'
 // Agent 公共运行时（23 号 §6）：会话消息（SessionStore 落点）
 export { AgentSessionEntity } from './agent-session.entity'
+// Agent 原始流水（39 号 P0-2）：append-only 会话记录 + 工具产物归档
+export { AgentSessionEventEntity } from './agent-session-event.entity'
+export { AgentToolArtifactEntity } from './agent-tool-artifact.entity'
 // Agent 观测面（25 号 M2 批1）：轨迹落库 / 工具调用审计
 export { AgentTrajectoryEntity } from './agent-trajectory.entity'
 export { AgentToolCallEntity } from './agent-tool-call.entity'

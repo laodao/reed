@@ -168,6 +168,12 @@ export interface AgentTaskSpec {
   toolWhitelist?: string[]
   /** 本任务执行的迭代上限（agent_loop） */
   maxSteps?: number
+  /**
+   * 模型档位（39 号 P2，场景⑦）：cheap=轻量档（机械/阅读类子任务），
+   * strong=强力档（难推理）；inherit/缺省=默认模型。档位→实际模型的映射
+   * 在宿主装配层（workflow-boot 读 AGENT_MODEL_CHEAP / AGENT_MODEL_STRONG env）。
+   */
+  model?: 'cheap' | 'strong' | 'inherit'
   /** 依赖：同树中须先终态的任务 id（缺省=按树序，父依赖子全部终态） */
   deps?: string[]
   /** 质量门配置（透传 Verifier 的 VerificationSpec 子集） */

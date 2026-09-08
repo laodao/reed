@@ -410,6 +410,12 @@ async function initDatabase(): Promise<void> {
   const { addAgentMemoryScopeColumns } = await import('@core/database/migrations/add-agent-memory-scope-columns')
   await addAgentMemoryScopeColumns(ds)
 
+  // 39 号：会话原始流水（append-only 审计）+ 工具产物归档（与 Electron 端同构）
+  const { createAgentSessionEvents } = await import('@core/database/migrations/create-agent-session-events')
+  await createAgentSessionEvents(ds)
+  const { createAgentToolArtifacts } = await import('@core/database/migrations/create-agent-tool-artifacts')
+  await createAgentToolArtifacts(ds)
+
   // M5 系统 agent（28 号批2）：对话级 Agent 模式开关（与 Electron 端同构）
   const { addDialogAgentEnabled } = await import('@core/database/migrations/add-dialog-agent-enabled')
   await addDialogAgentEnabled(ds)

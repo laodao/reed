@@ -140,8 +140,15 @@ export interface AgentTask {
   tools: Record<string, AgentToolDef>
   maxSteps: number
   modelPreference?: { providerConfigId?: string; modelId?: string }
-  /** 状态快照（L1 装配原料；每轮可刷新） */
+  /** 状态快照（L1 装配原料；每轮可刷新）。随 dynamicContext 注入消息尾，不进 system
+   *  （39 号 P0-1：system 保持跨轮稳定是前缀缓存的前提） */
   snapshot?: string
+  /**
+   * 当轮动态上下文（记忆召回/业务注入段；39 号 P0-1）。宿主拼好一段文本，
+   * 循环与 snapshot 一起组装为轮次上下文块（turn context block）注入消息尾——
+   * 每轮刷新、落历史；system 只承载跨轮稳定段（人设/规则）。
+   */
+  dynamicContext?: string
   /** 宿主运行上下文（并入工具审计 logContext：runId/nodeId/sessionKey 等——review D3） */
   runtimeContext?: Record<string, unknown>
 }
@@ -218,7 +225,12 @@ export type AgentStreamEvent =
 
 export interface AgentHost {
   loadState(): Promise<AgentLoopState | null>
-  saveState(state: AgentLoopState): Promise<void>
+  /**
+   * meta.appended（39 号 P0-2）：自上次 save 后新进入历史的消息（含轮次上下文块/
+   * 崩溃恢复哨兵/挂起注记）——append-only 原始流水的增量来源。未传 = 无新增或
+   * 宿主不关心；实现方可忽略第二参（既有宿主形态不变）。
+   */
+  saveState(state: AgentLoopState, meta?: { appended?: ModelMessage[] }): Promise<void>
   suspend(req: SuspendRequest): Promise<HumanDecision>
   emitTrajectory(entry: TrajectoryEntry): void
   emitStream(event: AgentStreamEvent): void

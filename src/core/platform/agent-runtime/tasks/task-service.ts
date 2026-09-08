@@ -56,6 +56,8 @@ export interface TaskExecutorPorts {
     signal?: AbortSignal
     /** 所属树根 id（29 号 M5.5：工作台停止按钮路由到 cancelTree 用） */
     rootId?: string
+    /** 模型档位（39 号 P2）：宿主装配层映射为具体 provider/modelId */
+    modelTier?: 'cheap' | 'strong'
   }) => Promise<{ output: unknown; stopReason: string; error?: string }>
   /** sub_workflow 执行器：startRun + 等终态（skipped 即败；waiting_review 继续等） */
   runSubWorkflow?: (input: {
@@ -378,6 +380,8 @@ export class AgentTaskService {
       memoryLines,
       signal: this.cancelControllers.get(rootId)?.signal,
       rootId,
+      // 模型档位透传（39 号 P2）：inherit/缺省不下发——宿主用默认模型
+      ...(spec.model === 'cheap' || spec.model === 'strong' ? { modelTier: spec.model } : {}),
     })
     if (r.stopReason !== 'final') throw new Error(r.error ?? `Agent 循环未收敛（${r.stopReason}）`)
     return r.output

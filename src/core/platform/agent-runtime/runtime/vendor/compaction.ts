@@ -201,7 +201,15 @@ export function pruneToolResults(
       if (Array.isArray(content)) {
         result[i].content = content.map((part) =>
           part.type === 'tool-result'
-            ? { ...part, output: { type: 'text', value: '[pruned]' } }
+            ? {
+                ...part,
+                // 占位带回查指引（39 号 P1-1）：toolCallId 就在 part 上，配合
+                // get_tool_result（产物归档已装配的宿主）可回查全文
+                output: {
+                  type: 'text',
+                  value: '[pruned — 已从上下文移除以省空间；若本轮可用 get_tool_result，可按 toolCallId 回查全文]',
+                },
+              }
             : part,
         ) as never
       }

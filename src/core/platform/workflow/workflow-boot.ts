@@ -21,9 +21,18 @@ import type { EventChannel } from '@shared/types/event.types'
 import { assertNodeRegistryConsistent, createFullNodeRegistry } from './nodes'
 import { WorkflowTriggerScheduler } from './trigger/workflow-trigger-scheduler.service'
 import { WorkflowRunLogger } from './workflow-run-logger'
+import { truncateTranscriptContent } from '@core/platform/agent-runtime/memory/transcript-store'
 import { createLogger } from '@core/utils/logger'
 
 const logger = createLogger('WorkflowBoot')
+
+/** 模型档位 env 解析（39 号 P2）：`providerConfigId/modelId` 或裸 `modelId`；空/非法返回 undefined */
+export function parseModelTierEnv(raw: string | undefined): { providerConfigId?: string; modelId?: string } | undefined {
+  if (!raw || raw.trim() === '') return undefined
+  const [providerConfigId, modelId] = raw.trim().split('/')
+  if (!modelId) return { modelId: providerConfigId }
+  return { providerConfigId, modelId }
+}
 
 /** 子系统单例（boot 后可用；未 boot 时 getter 抛错提示） */
 interface WorkflowSubsystem {
@@ -268,6 +277,17 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
           await import('@core/database/repositories/agent-tool-call.repository')
         ).AgentToolCallRepository(db.dataSource)
       : null
+    // 工具产物归档端口（39 号 P1-1）：registry 管线截断前落全文；数据源缺失降级
+    // null = 不归档（宿主也不注入 get_tool_result——占位指引无死链）
+    const artifactStore = db.dataSource
+      ? (
+          await import('@core/platform/agent-runtime/tools/artifacts')
+        ).createToolArtifactStore({
+          repo: new (
+            await import('@core/database/repositories/agent-tool-artifact.repository')
+          ).AgentToolArtifactRepository(db.dataSource),
+        })
+      : null
     const agentToolRegistry = new AgentToolRegistry({
       audit: auditRepo
         ? (record) => {
@@ -290,6 +310,8 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
               .catch((e) => logger.warn('[workflow-boot] 工具审计落库失败', e))
           }
         : undefined,
+      // 产物归档（39 号 P1-1）：截断序列化前落完整结果
+      artifacts: artifactStore,
     })
 
     registerBuiltinAgentTools(agentToolRegistry)
@@ -496,6 +518,12 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
       // 任务循环崩溃后 retry 从零开始；DbAgentSessionStore 即 M1 的 agent_sessions 表）
       const { DbAgentSessionStore } = await import('@core/platform/agent-runtime/memory/session-store')
       const taskSessionStore = new DbAgentSessionStore({ dataSource: db.dataSource })
+      // 原始流水（39 号 P0-2）：任务循环的 append-only 记录——压缩改写工作集后原文可回放
+      const taskTranscriptRepo = db.dataSource
+        ? new (
+            await import('@core/database/repositories/agent-session-event.repository')
+          ).AgentSessionEventRepository(db.dataSource)
+        : null
       // 工作台会话列表数据源（29 号 M5.5）
       const { AgentSessionRepository } = await import('@core/database/repositories/agent-session.repository')
       agentSessionRepo = new AgentSessionRepository(db.dataSource)
@@ -505,7 +533,7 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
         verifier,
         flywheel: memoryFlywheel,
         executors: {
-          runAgentLoop: async ({ goal, systemPrompt, toolWhitelist, maxSteps, sessionKey, memoryLines, signal, rootId }) => {
+          runAgentLoop: async ({ goal, systemPrompt, toolWhitelist, maxSteps, sessionKey, memoryLines, signal, rootId, modelTier }) => {
             // KE-2 全宿主上下文管理（四大能力①）：任务执行循环同样窗口化+压缩
             const { LoopRunner } = await import('@core/platform/agent-runtime/runtime/loop')
             const { normalizeToolWhitelist, getAgentLoopHarness } = await import('./nodes/agent-loop-node')
@@ -552,6 +580,9 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
             if (memoryLines && memoryLines.length > 0) {
               sink.append({ iteration: 0, kind: 'memory_assembly', name: 'memory_assembly', payload: { memoryRefs: memoryLines } })
             }
+            // 原始流水（39 号 P0-2）：宿主侧 pending（本轮 goal user 消息）+ loop meta 增量
+            let hostPendingAppended: import('ai').ModelMessage[] = []
+            let transcriptSeq: number | null = null
             const host: import('@core/platform/agent-runtime/types').AgentHost = {
               signal: inner.signal,
               // 会话持久化（review W6）：崩溃恢复 + retry 续写
@@ -564,17 +595,39 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
                 // 清洗（悬空 tool-call → provider 400 永续；总收口 B-P1-2）+ 追加本轮
                 // 目标为 user 消息（总收口 A-P1-3：带反馈重试的反馈曾因历史覆盖而
                 // 从未送达模型——retryOrFail 把反馈拼进 spec.goal，此处 input=goal）
-                state.messages = [...sanitizeSessionHistory(history), { role: 'user', content: goal } as import('ai').ModelMessage]
+                const userMsg = { role: 'user', content: goal } as import('ai').ModelMessage
+                state.messages = [...sanitizeSessionHistory(history), userMsg]
+                hostPendingAppended = [userMsg]
                 return state
               },
-              saveState: async (state) => {
+              saveState: async (state, meta) => {
                 await taskSessionStore.save(scopeKey, state.messages)
+                // 原始流水增量（39 号 P0-2）：宿主 pending 在前、loop meta 在后——时间序
+                const appended = meta?.appended?.length ? [...hostPendingAppended, ...meta.appended] : hostPendingAppended
+                hostPendingAppended = []
+                if (appended.length > 0 && taskTranscriptRepo) {
+                  try {
+                    if (transcriptSeq === null) transcriptSeq = await taskTranscriptRepo.maxSeq(scopeKey)
+                    const rows = appended.map((m) => {
+                      const role = typeof (m as { role?: unknown }).role === 'string' ? String((m as { role?: unknown }).role) : 'unknown'
+                      return { conversationId: scopeKey, seq: transcriptSeq!++, role, content: truncateTranscriptContent(JSON.stringify(m)) }
+                    })
+                    await taskTranscriptRepo.appendBatch(rows)
+                  } catch (e) {
+                    logger.warn('[workflow-boot] 任务原始流水落库失败（观测面不外泄）', e)
+                  }
+                }
                 await sink.flush()
               },
               emitTrajectory: (entry) => { sink.append(entry) },
               emitStream: () => {},
               suspend: () => Promise.reject(new Error('任务执行不支持挂起审批（审批工具会被静默拒绝，白名单请用免批准工具）')),
             }
+            // 叶节点模型档位（39 号 P2）：spec.model → env 映射的 provider/modelId；
+            // 未配置档位回退默认模型
+            const tierPref = modelTier === 'cheap' ? parseModelTierEnv(process.env.AGENT_MODEL_CHEAP)
+              : modelTier === 'strong' ? parseModelTierEnv(process.env.AGENT_MODEL_STRONG)
+              : undefined
             const result = await new LoopRunner({
               resolveModel: (opts) => harness.resolveModel(opts),
               context: taskContext,
@@ -586,6 +639,7 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
                 systemPrompt: systemPrompt ?? '',
                 tools: defs,
                 maxSteps: maxSteps ?? 12,
+                ...(tierPref ? { modelPreference: tierPref } : {}),
               }, host)
               .catch((e: unknown) => {
                 // run() 本体抛出（loadState/saveState 链）也要落运行终态（一次性）

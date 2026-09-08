@@ -33,7 +33,13 @@ import type { TrajectoryAppendPort } from '../trajectory/sink'
 import { getAgentRunRegistry } from '../runtime/run-registry'
 import { ContextManager } from '../context/context-manager'
 import type { LoopContextPort } from '../context/context-manager'
+import { DEFAULT_SUMMARY_PROMPT } from '../runtime/vendor/compaction'
 import { listStructuredProviders } from '../memory/structured-provider'
+import type { RawTranscriptPort } from '../memory/transcript-store'
+import type { ToolArtifactPort } from '../tools/artifacts'
+import { createGetToolResultTool } from '../tools/artifact-lookup'
+import { createSpawnSubagentTool } from '../tools/subagent'
+import type { SubagentModelTiers } from '../tools/subagent'
 import type { AgentToolDef, AgentHost, AgentResult, AgentStreamEvent, TrajectoryEntry } from '../types'
 import type { ApprovalDecision } from '@shared/types/agent.types'
 
@@ -113,6 +119,24 @@ export interface HostKitConfig<TTurn extends HostKitTurnBase> {
   modelPreference?: (turn: TTurn) => { providerConfigId?: string; modelId?: string } | undefined
   /** 会话存储语义：observation=保存失败仅告警（业务表权威，缺省）；authority=上抛（聊天形态） */
   sessionStoreCritical?: boolean
+  /**
+   * 内部调用模型档位（39 号 P2）：summary=上下文压缩摘要用的（便宜）模型。
+   * 未配置 = 不注入摘要阶段（ContextManager 退化为纯剪枝——36 号以来既有行为）；
+   * HostKitDeps.summarize 可整体覆盖。
+   */
+  models?: {
+    summary?: { providerConfigId?: string; modelId?: string }
+  }
+  /**
+   * 子代理委派（39 号 P1-2）：配置即在轮次工具集注入 spawn_subagent。
+   * tools 是子代理可用工具基集（每轮解析；spawn_subagent 防御性剔除——深度恒 1）。
+   */
+  subagent?: {
+    tools: (turn: TTurn) => Record<string, AgentToolDef>
+    systemPrompt?: (turn: TTurn) => string
+    maxSteps?: number
+    models?: SubagentModelTiers
+  }
 }
 
 export interface HostKitDeps {
@@ -127,6 +151,18 @@ export interface HostKitDeps {
   onEntry?: (scopeKey: string, entry: TrajectoryEntry) => void
   /** 单测注入口（绕过真实 ContextManager） */
   contextOverride?: LoopContextPort
+  /**
+   * 工具产物归档（39 号 P1-1）：装配后完整工具结果落档 + 自动注入 get_tool_result
+   * 回查工具 + spawn_subagent 子代理产物同源归档。
+   */
+  artifacts?: ToolArtifactPort | null
+  /**
+   * 原始流水（39 号 P0-2）：append-only 会话记录——压缩/剪枝改写工作集后原文仍可
+   * 回放审计。缺省 null = 不落流水（不破坏既有宿主）。
+   */
+  rawTranscript?: RawTranscriptPort | null
+  /** 摘要回调覆盖（单测/宿主自持模型）；缺省按 config.models.summary 构造 */
+  summarize?: (conversationText: string, signal?: AbortSignal) => Promise<string>
 }
 
 export interface HostKitTurnOptions {
@@ -148,6 +184,24 @@ export function extractRecallTopics(text: string, max = 5): string[] {
     .split(/[^\u4e00-\u9fa5a-zA-Z0-9]+/)
     .filter((w) => w.length >= 2)
     .slice(0, max)
+}
+
+/** 守恒摘要回调（39 号 P2）：独立便宜模型跑摘要——与主模型解耦（聊天门面同形） */
+function makeSummarize(
+  resolveModel: (opts?: { providerConfigId?: string; modelId?: string }) => Promise<LanguageModel>,
+  preference: { providerConfigId?: string; modelId?: string },
+): (conversationText: string, signal?: AbortSignal) => Promise<string> {
+  return async (conversationText, signal) => {
+    const { generateText } = await import('ai')
+    const model = await resolveModel(preference)
+    const r = await generateText({
+      model: model as never,
+      system: DEFAULT_SUMMARY_PROMPT,
+      messages: [{ role: 'user', content: conversationText }],
+      abortSignal: signal,
+    })
+    return r.text
+  }
 }
 
 /** 护栏终态尾注（聊天/LW/EP 同款文案，收敛为单一出处） */
@@ -262,16 +316,21 @@ export function createHostKit<TTurn extends HostKitTurnBase>(
         // —— 四大能力②：记忆装配（留痕与提示词同源）——
         const memoryLines = await assembleMemoryLines(config.memory, deps.flywheel, turn)
         const basePrompt = config.systemPrompt(turn)
-        const finalPrompt = memoryLines.length
-          ? `${basePrompt}\n\n[相关经验（来自知识飞轮，供参考）]\n${memoryLines.join('\n')}`
-          : basePrompt
+        // 39 号 P0-1：记忆/快照出 system、入轮次上下文块（消息尾）——system 跨轮
+        // 稳定是前缀缓存的前提。effectivePrompt 仅作观测快照与返回值（模型实际
+        // 所见 = system + 上下文块，内容一致）。
+        const snapshotText = config.snapshot?.(turn)
+        const dynamicParts: string[] = []
+        if (memoryLines.length > 0) dynamicParts.push(`[相关经验（来自知识飞轮，供参考）]\n${memoryLines.join('\n')}`)
+        if (snapshotText) dynamicParts.push(`[当前项目状态快照（来自数据库，确证事实）]\n${snapshotText}`)
+        const effectivePrompt = dynamicParts.length > 0 ? `${basePrompt}\n\n${dynamicParts.join('\n\n')}` : basePrompt
 
         // 统一轮次标记（工作台时间线切段依据；快照供「查看上下文」）
         append({
           iteration: 0,
           kind: 'decision',
           name: 'turn_start',
-          payload: { systemPrompt: finalPrompt.slice(0, SNAPSHOT_MAX) },
+          payload: { systemPrompt: effectivePrompt.slice(0, SNAPSHOT_MAX) },
         })
         if (memoryLines.length > 0) {
           // kind 用语义化的 memory_assembly（对抗 review P1-2：decision 会被工作台
@@ -281,36 +340,83 @@ export function createHostKit<TTurn extends HostKitTurnBase>(
 
         // —— AgentHost 骨架 ——
         const sessionId = config.sessionKey?.(turn) ?? scopeKey
-        const tools = config.tools(turn)
+        // 工具集：业务白名单 + 产物回查（39 号 P1-1，归档装配时自动注入）+ 子代理
+        const tools: Record<string, AgentToolDef> = { ...config.tools(turn) }
+        if (deps.artifacts && !tools.get_tool_result) {
+          tools.get_tool_result = createGetToolResultTool(deps.artifacts) as unknown as AgentToolDef
+        }
+        if (config.subagent && !tools.spawn_subagent) {
+          tools.spawn_subagent = createSpawnSubagentTool({
+            resolveModel: config.resolveModel,
+            tools: config.subagent.tools(turn),
+            ...(config.subagent.systemPrompt ? { systemPrompt: config.subagent.systemPrompt(turn) } : {}),
+            ...(config.subagent.maxSteps !== undefined ? { maxSteps: config.subagent.maxSteps } : {}),
+            ...(config.subagent.models ? { models: config.subagent.models } : {}),
+            trajectoryPort: deps.trajectoryPort,
+            scopeKey,
+            ...(config.requestApproval ? { requestApproval: config.requestApproval } : {}),
+            ...(deps.artifacts ? { artifacts: deps.artifacts } : {}),
+          }) as unknown as AgentToolDef
+        }
         const taskBase = {
           definitionId: config.definitionId,
           scopeId: scopeKey,
           input: turn.input,
-          systemPrompt: finalPrompt,
+          systemPrompt: basePrompt,
           tools,
           maxSteps: config.maxSteps,
-          ...(config.snapshot?.(turn) ? { snapshot: config.snapshot(turn)! } : {}),
+          ...(dynamicParts.length > 0 ? { dynamicContext: dynamicParts.join('\n\n') } : {}),
           ...(config.modelPreference?.(turn) ? { modelPreference: config.modelPreference(turn)! } : {}),
           ...(config.runtimeContext?.(turn) ? { runtimeContext: config.runtimeContext(turn)! } : {}),
         }
         const seeded = config.seededHistory?.(turn)
+        // 原始流水宿主侧增量（39 号 P0-2）：本轮 user 输入（及首轮迁移的种子史）由
+        // 宿主诚实上报；loop 产生的增量经 saveState meta 到达。两层合并 = 完整流水。
+        let hostPendingAppended: ModelMessage[] = []
+        let transcriptSeq: number | null = null
+        const appendTranscript = async (messages: ModelMessage[]): Promise<void> => {
+          const port = deps.rawTranscript
+          if (!port || messages.length === 0) return
+          if (transcriptSeq === null) {
+            transcriptSeq = await port.maxSeq(sessionId).catch(() => 0)
+          }
+          const rows = messages.map((m) => ({
+            conversationId: sessionId,
+            seq: transcriptSeq!++,
+            role: typeof (m as { role?: unknown }).role === 'string' ? String((m as { role?: unknown }).role) : 'unknown',
+            content: JSON.stringify(m),
+          }))
+          try {
+            await port.appendBatch(rows)
+          } catch (e) {
+            logger.warn(`[HostKit] 原始流水落库失败（观测面不外泄）scope=${scopeKey}`, e)
+          }
+        }
         const host: AgentHost = {
           signal: inner.signal,
           loadState: async () => {
             if (seeded) {
               // 业务权威历史形态（LW/EP）：种子历史 + 本轮 user 消息
+              const userMsg = { role: 'user', content: turn.input } as ModelMessage
               const st = initState(taskBase, Date.now())
-              st.messages = [...seeded, { role: 'user', content: turn.input } as ModelMessage]
+              st.messages = [...seeded, userMsg]
+              // 流水空 = 首轮：整段业务史入流水（迁移语义）；否则只补本轮输入
+              const transcriptEmpty = deps.rawTranscript
+                ? (await deps.rawTranscript.maxSeq(sessionId).catch(() => 0)) === 0
+                : false
+              hostPendingAppended = transcriptEmpty ? [...seeded, userMsg] : [userMsg]
               return st
             }
             // 会话存储续聊形态（聊天）：清洗悬空 tool-call 后追加本轮
             const history = deps.sessionStore ? await deps.sessionStore.load(sessionId) : undefined
-            if (!history || history.length === 0) return null // 首轮：LoopRunner initState 播种
+            if (!history || history.length === 0) return null // 首轮：LoopRunner initState 播种（run() 初始 save 上报 user）
+            const userMsg = { role: 'user', content: turn.input } as ModelMessage
             const st = initState(taskBase, Date.now())
-            st.messages = [...sanitizeSessionHistory(history), { role: 'user', content: turn.input } as ModelMessage]
+            st.messages = [...sanitizeSessionHistory(history), userMsg]
+            hostPendingAppended = [userMsg]
             return st
           },
-          saveState: async (st) => {
+          saveState: async (st, meta) => {
             if (deps.sessionStore) {
               try {
                 await deps.sessionStore.save(sessionId, st.messages)
@@ -319,6 +425,10 @@ export function createHostKit<TTurn extends HostKitTurnBase>(
                 logger.warn(`[HostKit] 会话持久化失败（observation 形态，仅告警）scope=${scopeKey}`, e)
               }
             }
+            // 原始流水：宿主 pending（user/种子迁移）在前、loop meta 增量在后——时间序
+            const appended = meta?.appended?.length ? [...hostPendingAppended, ...meta.appended] : hostPendingAppended
+            hostPendingAppended = []
+            await appendTranscript(appended)
             await sink.flush()
           },
           suspend: () => Promise.reject(new Error(`${config.definitionId} 白名单不含需挂起审批工具`)),
@@ -329,19 +439,24 @@ export function createHostKit<TTurn extends HostKitTurnBase>(
           emitStream: (event) => config.onStream?.(turn, event),
         }
 
-        // —— 四大能力①：上下文窗口化（每轮独立 ContextManager）——
+        // —— 四大能力①：上下文窗口化（每轮独立 ContextManager；39 号 P2：models.summary
+        // 配置时注入守恒摘要阶段，缺省保持纯剪枝既有行为）——
+        const summarize = deps.summarize
+          ?? (config.models?.summary ? makeSummarize(config.resolveModel, config.models.summary) : undefined)
         const context = deps.contextOverride
           ?? new ContextManager({
             contextWindowTokens:
               config.contextWindowTokens ?? (Number(process.env.AGENT_CONTEXT_WINDOW ?? DEFAULT_CONTEXT_WINDOW) || DEFAULT_CONTEXT_WINDOW),
+            ...(summarize ? { summarize } : {}),
           })
 
         result = await new LoopRunner({
           resolveModel: config.resolveModel,
           ...(config.requestApproval ? { requestApproval: config.requestApproval } : {}),
+          ...(deps.artifacts ? { artifacts: deps.artifacts } : {}),
           context,
         }).run(taskBase, host)
-        return { ...result, memoryLines, systemPrompt: finalPrompt }
+        return { ...result, memoryLines, systemPrompt: effectivePrompt }
       } catch (e) {
         // 循环外异常（装配/钩子抛错）：result 为 null——保留原因给工作台结算
         failure = e instanceof Error ? e.message : String(e)

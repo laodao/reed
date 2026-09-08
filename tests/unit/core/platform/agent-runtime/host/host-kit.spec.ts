@@ -345,3 +345,129 @@ describe('HostKit 纯函数', () => {
     expect(formatStopNote('final')).toBe('')
   })
 })
+
+// ==================== 39 号：提示词分层 / 流水 / 产物回查 / 子代理注入 / 摘要分级 ====================
+
+import { TURN_CONTEXT_PREFIX } from '@core/platform/agent-runtime/context/turn-context'
+import type { RawTranscriptPort } from '@core/platform/agent-runtime/memory/transcript-store'
+import type { ToolArtifactPort } from '@core/platform/agent-runtime/tools/artifacts'
+
+function capturingModel(): { model: LanguageModel; prompts: string[]; toolNames: string[][] } {
+  const prompts: string[] = []
+  const toolNames: string[][] = []
+  const model = new MockLanguageModelV3({
+    provider: 'test',
+    modelId: 'mock',
+    doStream: async (opts: { prompt?: unknown; tools?: unknown }) => {
+      prompts.push(JSON.stringify(opts.prompt ?? []))
+      const tools = Array.isArray(opts.tools) ? (opts.tools as Array<{ name?: string }>).map((t) => t.name ?? '') : Object.keys((opts.tools as Record<string, unknown>) ?? {})
+      toolNames.push(tools)
+      return {
+        stream: simulateReadableStream({
+          chunks: [
+            { type: 'stream-start', warnings: [] },
+            { type: 'text-start', id: 't' },
+            { type: 'text-delta', id: 't', delta: '好的' },
+            { type: 'text-end', id: 't' },
+            { type: 'finish', finishReason: { unified: 'stop', raw: undefined }, usage: { inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 5, noCache: 5 }, totalTokens: { total: 15, noCache: 15 } } },
+          ],
+        }),
+      }
+    },
+  }) as unknown as LanguageModel
+  return { model, prompts, toolNames }
+}
+
+describe('39 号 P0-1/P1/P2：HostKit 装配', () => {
+  it('system 只含稳定段；快照/记忆经轮次上下文块注入消息尾', async () => {
+    const turnDeps = mkDeps({
+      flywheel: {
+        assemble: async () => [{ content: { title: '偏好', content: '短句' } }],
+        assembleUserLevel: async () => [],
+      },
+    })
+    const cap = capturingModel()
+    const { kit } = mkKit(turnDeps, {
+      resolveModel: async () => cap.model,
+      snapshot: () => '人物：林晓',
+      memory: { scope: { bizModule: 'test', projectId: 'p1' } },
+    })
+    const r = await kit.runTurn({ input: '你好' })
+    // 观测面：effectivePrompt 仍含全部段（工作台「查看上下文」不回归）
+    expect(r.systemPrompt).toContain('你是测试宿主')
+    expect(r.systemPrompt).toContain('[相关经验（来自知识飞轮，供参考）]')
+    expect(r.systemPrompt).toContain('[当前项目状态快照（来自数据库，确证事实）]')
+    // 模型实际所见：system 段 = 纯人设；记忆/快照在末尾的轮次上下文块
+    const prompt = JSON.parse(cap.prompts[0]) as Array<{ role: string; content: unknown }>
+    const systemEntry = prompt.find((m) => m.role === 'system')
+    expect(JSON.stringify(systemEntry)).toContain('你是测试宿主')
+    expect(JSON.stringify(systemEntry)).not.toContain('林晓')
+    const lastUser = [...prompt].reverse().find((m) => m.role === 'user')
+    expect(JSON.stringify(lastUser)).toContain(TURN_CONTEXT_PREFIX)
+    expect(JSON.stringify(lastUser)).toContain('林晓')
+    expect(JSON.stringify(lastUser)).toContain('短句')
+  })
+
+  it('artifacts 装配 → 自动注入 get_tool_result；subagent 配置 → 注入 spawn_subagent', async () => {
+    const artifacts = { save: async () => {}, load: async () => undefined, deleteByScope: async () => 0 } as unknown as ToolArtifactPort
+    const turnDeps = mkDeps()
+    turnDeps.deps.artifacts = artifacts
+    const cap = capturingModel()
+    const { kit } = mkKit(turnDeps, {
+      resolveModel: async () => cap.model,
+      subagent: { tools: () => ({ discover_capabilities: catalogTool() }) },
+    })
+    await kit.runTurn({ input: '你好' })
+    expect(cap.toolNames[0]).toContain('get_tool_result')
+    expect(cap.toolNames[0]).toContain('spawn_subagent')
+    expect(cap.toolNames[0]).toContain('discover_capabilities')
+  })
+
+  it('rawTranscript 装配 → 会话流水 append-only（user 首行 + 轮次上下文块，seq 连续）', async () => {
+    const rows: Array<{ conversationId: string; seq: number; role: string; content: string }> = []
+    const transcript: RawTranscriptPort = {
+      appendBatch: async (batch) => rows.push(...batch),
+      maxSeq: async () => 0,
+    }
+    const turnDeps = mkDeps()
+    turnDeps.deps.rawTranscript = transcript
+    const cap = capturingModel()
+    const { kit } = mkKit(turnDeps, {
+      resolveModel: async () => cap.model,
+      snapshot: () => '人物：林晓',
+    })
+    await kit.runTurn({ input: '你好' })
+    expect(rows.length).toBeGreaterThanOrEqual(2)
+    expect(rows[0].role).toBe('user')
+    expect(rows[0].content).toContain('你好')
+    expect(rows.map((r) => r.seq)).toEqual(rows.map((_, i) => i)) // seq 从 0 连续
+    // 快照块也入流水（模型所见上下文可完整回放）
+    expect(rows.some((r) => r.content.includes('林晓'))).toBe(true)
+  })
+
+  it('models.summary 配置 → ContextManager 注入守恒摘要阶段（窗口超限触发摘要回调）', async () => {
+    const summarizeCalls: string[] = []
+    // 大体积在历史 assistant 消息（可折叠）；当轮输入保持短（保底保留不阻碍压缩收益）
+    const fillerAssistant = { role: 'assistant', content: '冗'.repeat(600) } as ModelMessage
+    const historyUser = { role: 'user', content: '史'.repeat(300) } as ModelMessage
+    const turnDeps = mkDeps({ history: [historyUser, fillerAssistant] })
+    turnDeps.deps.summarize = async (text: string) => {
+      summarizeCalls.push(text)
+      return '此前：用户在测试摘要装配。'
+    }
+    const cap = capturingModel()
+    const { kit } = mkKit(turnDeps, {
+      resolveModel: async () => cap.model,
+      contextWindowTokens: 200,
+    })
+    const r = await kit.runTurn({ input: '继续' })
+    expect(r.stopReason).toBe('final')
+    expect(summarizeCalls).toHaveLength(1)
+    // 压缩产物落历史：历史用户消息守恒保留 + 摘要置尾 + 当轮输入保底
+    const messages = turnDeps.saved.at(-1)
+    expect(messages).toBeDefined()
+    const summaryMsg = messages!.find((m) => typeof m.content === 'string' && (m.content as string).includes('[Previous conversation summary]'))
+    expect(summaryMsg).toBeDefined()
+    expect(messages!.some((m) => m.role === 'user' && m.content === '继续')).toBe(true)
+  })
+})

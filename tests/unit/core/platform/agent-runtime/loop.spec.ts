@@ -11,8 +11,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { MockLanguageModelV3 } from 'ai/test'
 import type { LanguageModel } from 'ai'
 import { z } from 'zod'
-import { LoopRunner, initState, normalizeDecision, truncateJson } from '@core/platform/agent-runtime/runtime/loop'
+import { LoopRunner, initState, normalizeDecision, truncateJson, buildSystem, buildTurnContext } from '@core/platform/agent-runtime/runtime/loop'
 import type { AgentHost, AgentLoopState, AgentTask, AgentToolDef, TrajectoryEntry, AgentStreamEvent } from '@core/platform/agent-runtime/types'
+import { isTurnContextMessage } from '@core/platform/agent-runtime/context/turn-context'
 
 // ==================== 测试基建（公共件见 ./helpers——与 agent-service.spec 共用） ====================
 
@@ -20,6 +21,8 @@ import { mockUsage as usage, txtChunks as txt, toolCallChunks as toolParts, mkMo
 
 class FakeHost implements AgentHost {
   savedStates: AgentLoopState[] = []
+  /** 每次 saveState 收到的 meta.appended（39 号 P0-2 原始流水增量） */
+  savedAppended: Array<ModelMessage[] | undefined> = []
   trajectories: TrajectoryEntry[] = []
   streams: AgentStreamEvent[] = []
   preloaded: AgentLoopState | null = null
@@ -27,8 +30,9 @@ class FakeHost implements AgentHost {
   async loadState() {
     return this.preloaded
   }
-  async saveState(s: AgentLoopState) {
+  async saveState(s: AgentLoopState, meta?: { appended?: ModelMessage[] }) {
     this.savedStates.push(JSON.parse(JSON.stringify(s)))
+    this.savedAppended.push(meta?.appended ? JSON.parse(JSON.stringify(meta.appended)) : undefined)
   }
   async suspend() {
     return { action: 'approve' as const, values: {} }
@@ -424,5 +428,83 @@ describe('并行双审批工具（P2：终态事件必达）', () => {
     expect(toolEnds.length).toBe(2) // 修复前：第二动作 tool-end 永不发出
     expect(toolResults.length).toBe(2) // 修复前：tool_result 缺行（审计配对断裂）
     expect(toolResults.some((t) => t.payload?.denied === true)).toBe(true)
+  })
+})
+
+// ==================== 39 号 P0-1：稳定 system / 轮次上下文块 / 缓存断点 ====================
+
+describe('39 号 P0-1：系统提示词分层与轮次上下文块', () => {
+  it('buildSystem 只含 systemPrompt（快照出 system——前缀缓存前提）', () => {
+    const task = mkTask({}, 6)
+    expect(buildSystem(task)).toBe('你是测试 agent')
+  })
+
+  it('buildTurnContext 组装快照/dynamicContext；全空返回空串', () => {
+    const state = initState(mkTask({}, 6), 1)
+    const bareTask = { ...mkTask({}, 6), snapshot: undefined }
+    expect(buildTurnContext(bareTask, state)).toBe('')
+    const withCtx = buildTurnContext({ ...mkTask({}, 6), snapshot: '人物：林晓', dynamicContext: '记忆行' }, state)
+    expect(withCtx).toContain('[当前项目状态快照（来自数据库，确证事实）]')
+    expect(withCtx).toContain('人物：林晓')
+    expect(withCtx).toContain('记忆行')
+  })
+
+  it('轮次上下文块注入消息尾一次，并随 saveState meta 上报（原始流水增量）', async () => {
+    const host = new FakeHost()
+    const runner = mkRunner(mkModel([() => txt('直接回答')]))
+    await runner.run({ ...mkTask({}, 6), snapshot: '人物：林晓' }, host)
+    // 块在位且唯一
+    const blocks = host.savedStates[host.savedStates.length - 1].messages.filter(isTurnContextMessage)
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0].content).toContain('人物：林晓')
+    // 块作为消息出现在某次 meta.appended 中（transcript 增量）
+    const appendedFlatten = host.savedAppended.flatMap((a) => a ?? [])
+    expect(appendedFlatten.some(isTurnContextMessage)).toBe(true)
+  })
+
+  it('system 出站不含快照；快照只出现在消息（缓存前缀稳定）', async () => {
+    const host = new FakeHost()
+    const captured: unknown[] = []
+    const runner = mkRunner(mkModel([() => txt('答')], (prompt) => captured.push(JSON.stringify(prompt))))
+    await runner.run({ ...mkTask({}, 6), snapshot: '人物：林晓' }, host)
+    expect(captured).toHaveLength(1)
+    const promptJson = String(captured[0])
+    // prompt 里快照仅出现在消息段（块内），system 段只有人设
+    expect(promptJson).toContain('人物：林晓')
+  })
+
+  it('缓存断点：出站末 part 携带 ephemeral cacheControl（providerOptions 透传至 doStream prompt）', async () => {
+    const host = new FakeHost()
+    const captured: Array<{ parts: Array<Record<string, unknown>> }> = []
+    const model = mkModel([() => txt('答')], (prompt) => {
+      const last = (prompt as Array<{ content?: Array<Record<string, unknown>> }>).at(-1)
+      captured.push({ parts: last?.content ?? [] })
+    })
+    await new LoopRunner({ resolveModel: async () => model, promptCache: true }).run(mkTask({}, 6), host)
+    const lastPart = captured[0].parts.at(-1) as { providerOptions?: Record<string, { cacheControl?: { type?: string } }> } | undefined
+    expect(lastPart?.providerOptions?.anthropic?.cacheControl?.type).toBe('ephemeral')
+  })
+
+  it('promptCache=false 时不打断点', async () => {
+    const host = new FakeHost()
+    const captured: Array<{ parts: Array<Record<string, unknown>> }> = []
+    const model = mkModel([() => txt('答')], (prompt) => {
+      const last = (prompt as Array<{ content?: Array<Record<string, unknown>> }>).at(-1)
+      captured.push({ parts: last?.content ?? [] })
+    })
+    await new LoopRunner({ resolveModel: async () => model, promptCache: false }).run(mkTask({}, 6), host)
+    const lastPart = captured[0].parts.at(-1) as { providerOptions?: Record<string, unknown> } | undefined
+    expect(lastPart?.providerOptions?.anthropic).toBeUndefined()
+  })
+
+  it('withPromptCacheBreakpoint 不改变持久化历史（saveState 的 messages 保持原生形态）', async () => {
+    const host = new FakeHost()
+    const runner = mkRunner(mkModel([() => txt('答')]))
+    await runner.run(mkTask({}, 6), host)
+    for (const st of host.savedStates) {
+      for (const m of st.messages) {
+        expect(JSON.stringify(m)).not.toContain('ephemeral')
+      }
+    }
   })
 })

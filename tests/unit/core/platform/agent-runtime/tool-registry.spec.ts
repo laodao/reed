@@ -485,3 +485,46 @@ describe('结果序列化与上限拦截（P3 回归）', () => {
     expect(blocked[0].errorCode).toBe('LIMIT_EXCEEDED')
   })
 })
+
+// ==================== 39 号 P1-1：产物归档（截断前落全文） ====================
+
+describe('39 号 P1-1：registry 管线产物归档', () => {
+  function bigTool(): AgentToolDef {
+    return {
+      name: 'log_read',
+      description: '返回大结果',
+      inputSchema: z.object({}),
+      dangerLevel: 'read',
+      execute: async () => ({ lines: Array.from({ length: 200 }, (_, i) => `line-${i}: ${'x'.repeat(200)}`) }),
+    }
+  }
+
+  it('截断前归档完整结果（16KB 截断发生时归档体仍完整）', async () => {
+    const saved: Array<{ toolCallId: string; result: unknown; ok: boolean; scopeKey: string }> = []
+    const artifacts = {
+      save: async (r: { toolCallId: string; result: unknown; ok: boolean; scopeKey: string }) => { saved.push(r) },
+      load: async () => undefined,
+      deleteByScope: async () => 0,
+    }
+    const registry = new AgentToolRegistry({ artifacts: artifacts as never })
+    registry.register(bigTool())
+    const r = await registry.execute({ toolName: 'log_read', args: {}, context: { toolCallId: 'tc_1', sessionKey: 'session:t' } })
+    expect(r.ok).toBe(true)
+    expect(r.truncated).toBe(true) // 上下文侧已截断
+    expect(saved).toHaveLength(1)
+    expect(saved[0].toolCallId).toBe('tc_1')
+    expect(saved[0].ok).toBe(true)
+    // 归档体完整：200 行都在（截断只发生在 data）
+    const archived = saved[0].result as { lines: string[] }
+    expect(archived.lines).toHaveLength(200)
+  })
+
+  it('无 toolCallId（无 loop 上下文的直调）不归档', async () => {
+    const saved: unknown[] = []
+    const artifacts = { save: async (r: unknown) => { saved.push(r) }, load: async () => undefined, deleteByScope: async () => 0 }
+    const registry = new AgentToolRegistry({ artifacts: artifacts as never })
+    registry.register(bigTool())
+    await registry.execute({ toolName: 'log_read', args: {} })
+    expect(saved).toHaveLength(0)
+  })
+})

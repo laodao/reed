@@ -731,6 +731,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
     const { addAgentMemoryScopeColumns } = await import('@core/database/migrations/add-agent-memory-scope-columns')
     await addAgentMemoryScopeColumns(this.dataSource)
 
+    // 39 号：会话原始流水（append-only 审计）+ 工具产物归档（resultRef 回查）
+    const { createAgentSessionEvents } = await import('@core/database/migrations/create-agent-session-events')
+    await createAgentSessionEvents(this.dataSource)
+    const { createAgentToolArtifacts } = await import('@core/database/migrations/create-agent-tool-artifacts')
+    await createAgentToolArtifacts(this.dataSource)
+
     // M5 系统 agent（28 号批2）：对话级 Agent 模式开关
     const { addDialogAgentEnabled } = await import('@core/database/migrations/add-dialog-agent-enabled')
     await addDialogAgentEnabled(this.dataSource)

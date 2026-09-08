@@ -48,6 +48,9 @@ import {
 import { EventBridge, type PlatformBusPort } from './event-bridge'
 import type { AgentSessionStore } from '../memory/session-store'
 import { AgentMessageTooLargeError, MAX_MESSAGE_BYTES } from '../memory/session-store'
+import { truncateTranscriptContent } from '../memory/transcript-store'
+import { isTurnContextMessage } from '../context/turn-context'
+import { createGetToolResultTool } from '../tools/artifact-lookup'
 import type { ResolveModelOptions } from '../provider/provider-adapter'
 import { ContextManager } from '../context/context-manager'
 import { DEFAULT_SUMMARY_PROMPT } from '../runtime/vendor/compaction'
@@ -158,6 +161,10 @@ export interface AgentRuntimeDeps {
   sessionTtlMs?: number
   /** 轨迹落库端口（25 号 M2 批1；缺省=不落库——观测面降级不阻断会话） */
   trajectoryRepo?: import('@core/platform/agent-runtime/trajectory/sink').TrajectoryAppendPort | null
+  /** 原始流水端口（39 号 P0-2；缺省=不落流水） */
+  transcriptRepo?: import('@core/platform/agent-runtime/memory/transcript-store').RawTranscriptPort | null
+  /** 工具产物归档（39 号 P1-1；缺省=不归档、不注入 get_tool_result） */
+  artifacts?: import('@core/platform/agent-runtime/tools/artifacts').ToolArtifactPort | null
 }
 
 interface SteerQueueItem {
@@ -213,6 +220,8 @@ export class AgentRuntimeImpl implements AgentRuntime {
     approvalStore: ApprovalStore
     clock: () => number
     trajectoryRepo: import('@core/platform/agent-runtime/trajectory/sink').TrajectoryAppendPort | null
+    transcriptRepo: import('@core/platform/agent-runtime/memory/transcript-store').RawTranscriptPort | null
+    artifacts: import('@core/platform/agent-runtime/tools/artifacts').ToolArtifactPort | null
   }
   private sweeper: ReturnType<typeof setInterval> | null = null
 
@@ -228,6 +237,8 @@ export class AgentRuntimeImpl implements AgentRuntime {
       sessionCacheCapacity: deps.sessionCacheCapacity ?? 32,
       sessionTtlMs: deps.sessionTtlMs ?? 30 * 60_000,
       trajectoryRepo: deps.trajectoryRepo ?? null,
+      transcriptRepo: deps.transcriptRepo ?? null,
+      artifacts: deps.artifacts ?? null,
     }
     void this.recoverOrphanApprovals()
     if (this.deps.sweeperIntervalMs > 0) {
@@ -380,6 +391,7 @@ export class AgentRuntimeImpl implements AgentRuntime {
     for (let i = 0; i < messages.length; i++) {
       const m = messages[i]
       if (m.role !== 'user' && m.role !== 'assistant') continue
+      if (isTurnContextMessage(m)) continue // 轮次上下文块是系统注入状态（39 号 P0-1），不进前端历史
       const text = messageText(m)
       if (!text) continue // 纯工具调用载体消息（无正文）不进前端历史
       out.push({
@@ -495,7 +507,10 @@ export class AgentRuntimeImpl implements AgentRuntime {
         scopeId: entry.scopeId,
         input: message,
         systemPrompt,
-        tools: def.tools,
+        // 产物回查工具（39 号 P1-1）：归档装配时自动注入（占位指引才有对应能力）
+        tools: this.deps.artifacts
+          ? ({ ...def.tools, get_tool_result: createGetToolResultTool(this.deps.artifacts) } as typeof def.tools)
+          : def.tools,
         maxSteps: def.maxSteps ?? (def.loopMode === 'react' ? 6 : 2),
         modelPreference,
         snapshot,
@@ -506,6 +521,7 @@ export class AgentRuntimeImpl implements AgentRuntime {
           clock: this.deps.clock,
           dispatch: (e, ev) => this.dispatch(e, ev),
           trajectoryRepo: this.deps.trajectoryRepo ?? null,
+          transcriptRepo: this.deps.transcriptRepo,
         },
         entry,
         def,
@@ -543,6 +559,7 @@ export class AgentRuntimeImpl implements AgentRuntime {
         requestApproval: (tool, input, call) =>
           entry.coordinator.request(entry.scopeKey, tool, input, call.signal),
         context,
+        ...(this.deps.artifacts ? { artifacts: this.deps.artifacts } : {}),
       })
       const result = await runner.run(task, host).finally(() => host.flushTrajectories())
       // 只算一次：二次调用若抛错会在 reply:done 已发后再发 error（双终态，review P3）
@@ -636,6 +653,13 @@ export class AgentRuntimeImpl implements AgentRuntime {
   private deleteTrajectories(scopeKey: string): void {
     void this.deps.trajectoryRepo?.deleteByScope?.(scopeKey).catch((e: unknown) =>
       logger.warn(`[agent-runtime] 会话轨迹清理失败（${scopeKey}）`, e),
+    )
+    // 原始流水/产物归档随会话重置级联（39 号 P0-2/P1-1；scoped 过滤同上）
+    void this.deps.transcriptRepo?.deleteByConversation?.(scopeKey).catch((e: unknown) =>
+      logger.warn(`[agent-runtime] 会话原始流水清理失败（${scopeKey}）`, e),
+    )
+    void this.deps.artifacts?.deleteByScope(scopeKey).catch((e: unknown) =>
+      logger.warn(`[agent-runtime] 工具产物清理失败（${scopeKey}）`, e),
     )
   }
 
@@ -782,6 +806,7 @@ interface HostPorts {
   clock: () => number
   dispatch: (entry: SessionEntry, event: AgentEvent) => void
   trajectoryRepo?: import('@core/platform/agent-runtime/trajectory/sink').TrajectoryAppendPort | null
+  transcriptRepo?: import('@core/platform/agent-runtime/memory/transcript-store').RawTranscriptPort | null
 }
 
 class IndependentHost implements AgentHost {
@@ -807,6 +832,10 @@ class IndependentHost implements AgentHost {
     return out
   }
 
+  /** 原始流水（39 号 P0-2）：宿主自产消息 pending（本轮 user 输入）+ seq 续接 */
+  private hostPendingAppended: ModelMessage[] = []
+  private transcriptSeq: number | null = null
+
   constructor(
     private readonly ports: HostPorts,
     private readonly entry: SessionEntry,
@@ -829,13 +858,36 @@ class IndependentHost implements AgentHost {
   async loadState(): Promise<AgentLoopState | null> {
     const history = await this.ports.store.load(this.entry.scopeKey)
     if (!history || history.length === 0) return null
+    const userMsg = { role: 'user', content: this.task.input } as ModelMessage
     const state = initState(this.task, this.ports.clock())
-    state.messages = [...history, { role: 'user', content: this.task.input } as ModelMessage]
+    state.messages = [...history, userMsg]
+    this.hostPendingAppended = [userMsg] // 原始流水（39 号 P0-2）：本轮 user 输入由宿主上报
     return state
   }
 
-  async saveState(state: AgentLoopState): Promise<void> {
+  async saveState(state: AgentLoopState, meta?: { appended?: ModelMessage[] }): Promise<void> {
     await this.ports.store.save(this.entry.scopeKey, state.messages)
+    // 原始流水增量（39 号 P0-2）：宿主 pending 在前、loop meta 在后——时间序。
+    // 流水是审计安全网：失败只 warn，绝不外泄进循环。
+    const appended = meta?.appended?.length ? [...this.hostPendingAppended, ...meta.appended] : this.hostPendingAppended
+    this.hostPendingAppended = []
+    if (appended.length > 0 && this.ports.transcriptRepo) {
+      try {
+        if (this.transcriptSeq === null) this.transcriptSeq = await this.ports.transcriptRepo.maxSeq(this.entry.scopeKey)
+        const rows = appended.map((m) => {
+          const role = typeof (m as { role?: unknown }).role === 'string' ? String((m as { role?: unknown }).role) : 'unknown'
+          return {
+            conversationId: this.entry.scopeKey,
+            seq: this.transcriptSeq!++,
+            role,
+            content: truncateTranscriptContent(JSON.stringify(m)),
+          }
+        })
+        await this.ports.transcriptRepo.appendBatch(rows)
+      } catch (e) {
+        logger.warn('[agent-runtime] 原始流水落库失败（观测面不外泄）', e)
+      }
+    }
     // flush 搭车（TrajectorySink.flush 不 throw）：步末存续点顺带落轨迹
     await this.trajectorySink.flush()
   }

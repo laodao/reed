@@ -35,6 +35,7 @@ import type {
   LLMToolDescriptor,
   ToolDangerLevel,
 } from '../types'
+import type { ToolArtifactPort } from './artifacts'
 
 const logger = createLogger('AgentToolRegistry')
 
@@ -95,8 +96,8 @@ export interface AgentToolRegistryDeps {
   /** 审计 sink（fire-and-forget；DB 落表 M2 接入，当前缺省仅结构化日志） */
   audit?: (record: AgentToolCallAudit) => void
   /** 审批回调（与 LoopRunner 的 requestApproval 同形）。缺省=拒绝——与 loop 层同一
-   * 安全默认（深 review P2 对齐）：需批准工具直调而无回调时拒绝执行；宿主代码
-   * 显式直调可注入放行回调（审批责任显式化，且经审计面留痕） */
+   *  安全默认（深 review P2 对齐）：需批准工具直调而无回调时拒绝执行；宿主代码
+   *  显式直调可注入放行回调（审批责任显式化，且经审计面留痕） */
   requestApproval?: (
     tool: AgentToolDef,
     input: unknown,
@@ -104,6 +105,11 @@ export interface AgentToolRegistryDeps {
   ) => Promise<{ action: string; reason?: string; input?: Record<string, unknown> }>
   /** 直调执行超时 ms */
   executeTimeoutMs?: number
+  /**
+   * 工具产物归档（39 号 P1-1）：registry 管线的截断发生在 ⑤，此处 ④ 执行后
+   * 立即归档完整结果（只归成功）——loop 包装工具与直调共用此路径。fire-and-forget。
+   */
+  artifacts?: ToolArtifactPort | null
   clock?: () => number
 }
 
@@ -236,6 +242,7 @@ export class AgentToolRegistry {
   private readonly deps: Required<Pick<AgentToolRegistryDeps, 'executeTimeoutMs'>> & {
     audit: ((record: AgentToolCallAudit) => void) | null
     requestApproval: AgentToolRegistryDeps['requestApproval'] | null
+    artifacts: ToolArtifactPort | null
     clock: () => number
   }
 
@@ -244,6 +251,7 @@ export class AgentToolRegistry {
       audit: deps.audit ?? null,
       requestApproval: deps.requestApproval ?? null,
       executeTimeoutMs: deps.executeTimeoutMs ?? TOOL_EXECUTE_TIMEOUT_MS,
+      artifacts: deps.artifacts ?? null,
       clock: deps.clock ?? (() => Date.now()),
     }
   }
@@ -531,7 +539,25 @@ export class AgentToolRegistry {
       }, approvalAudit)
     }
 
-    // ⑤ 截断序列化
+    // ⑤ 完整结果归档（39 号 P1-1）：截断序列化之前落档（只归成功）——上下文内的
+    //    8K/16KB 截断与后续剪枝/折叠占位可经 get_tool_result 回查全文。
+    //    fire-and-forget：归档失败只 warn，不影响工具调用。
+    const archiveToolCallId = String(call.context?.toolCallId ?? '')
+    if (this.deps.artifacts && archiveToolCallId) {
+      const scopeKey = String(call.context?.sessionKey ?? call.context?.scopeId ?? '')
+      void this.deps.artifacts
+        .save({
+          scopeKey,
+          toolCallId: archiveToolCallId,
+          toolName: tool.spec.name,
+          args: effective,
+          result: raw,
+          ok: true,
+        })
+        .catch((e: unknown) => logger.warn(`[tool-registry] 产物归档失败（不影响调用）tool=${tool.spec.name}`, e))
+    }
+
+    // ⑥ 截断序列化
     const { data, truncated } = serializeToolResult(raw)
     return this.finish(
       { ...call, args: effective },
