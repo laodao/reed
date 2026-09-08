@@ -455,6 +455,7 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
         flywheel: memoryFlywheel,
         executors: {
           runAgentLoop: async ({ goal, systemPrompt, toolWhitelist, maxSteps, sessionKey, memoryLines, signal, rootId }) => {
+            // KE-2 全宿主上下文管理（四大能力①）：任务执行循环同样窗口化+压缩
             const { LoopRunner } = await import('@core/platform/agent-runtime/runtime/loop')
             const { normalizeToolWhitelist, getAgentLoopHarness } = await import('./nodes/agent-loop-node')
             const { TrajectorySink } = await import('@core/platform/agent-runtime/trajectory/sink')
@@ -470,6 +471,10 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
             const onOuterAbort = () => inner.abort(new Error('任务树已取消'))
             signal?.addEventListener('abort', onOuterAbort, { once: true })
             if (signal?.aborted) onOuterAbort()
+            const { ContextManager } = await import('@core/platform/agent-runtime/context/context-manager')
+            const taskContext = new ContextManager({
+              contextWindowTokens: Number(process.env.AGENT_CONTEXT_WINDOW ?? 32_768) || 32_768,
+            })
             const { getCurrentUserId } = await import('@core/context/user-context')
             const runRegistry = getAgentRunRegistry()
             const runId = `ar_task_${scopeKey}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
@@ -516,7 +521,10 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
               emitStream: () => {},
               suspend: () => Promise.reject(new Error('任务执行不支持挂起审批（审批工具会被静默拒绝，白名单请用免批准工具）')),
             }
-            const result = await new LoopRunner({ resolveModel: (opts) => harness.resolveModel(opts) })
+            const result = await new LoopRunner({
+              resolveModel: (opts) => harness.resolveModel(opts),
+              context: taskContext,
+            })
               .run({
                 definitionId: 'agent-task',
                 scopeId: scopeKey,
@@ -684,4 +692,9 @@ export function resetWorkflowSubsystem(): void {
   if (reviewTickerHandle !== null) clearInterval(reviewTickerHandle)
   reviewTickerHandle = null
   subsystem = null
+}
+
+/** 飞轮 getter（KE-2：chat/LW/EP 宿主记忆装配用；未装配为 null） */
+export function getMemoryFlywheel(): import('@core/platform/agent-runtime/memory/memory-flywheel').MemoryFlywheelService | null {
+  return getWorkflowSubsystem().memoryFlywheel ?? null
 }

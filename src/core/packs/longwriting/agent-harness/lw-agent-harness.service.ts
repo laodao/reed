@@ -24,6 +24,8 @@ import { createLogger } from '@core/utils/logger'
 import type { AgentHost, AgentToolDef } from '@core/platform/agent-runtime/types'
 import { LoopRunner, initState } from '@core/platform/agent-runtime/runtime/loop'
 import { getAgentLoopHarness } from '@core/platform/workflow/nodes/agent-loop-node'
+import { getMemoryFlywheel } from '@core/platform/workflow/workflow-boot'
+import { ContextManager } from '@core/platform/agent-runtime/context/context-manager'
 import { DbAgentSessionStore } from '@core/platform/agent-runtime/memory/session-store'
 import { TrajectorySink } from '@core/platform/agent-runtime/trajectory/sink'
 import { LongWritingAIService } from '@core/platform/services/longwriting-ai.service'
@@ -190,6 +192,23 @@ export class LwAgentHarnessService {
     }
     const emitStageDeciding = () => emitAgentEvent(projectId, { type: 'stage', stage: 'deciding' } as never)
 
+      // 四大能力补接（KE-2）：①上下文压缩 ②记忆装配（L1 用户级 + L3 项目级经验）
+      let memoryLines: string[] = []
+      try {
+        const flywheel = getMemoryFlywheel()
+        if (flywheel) {
+          const entries = await flywheel.assemble(`${message}\n${stateToSummary(state)}`, 3, { bizModule: 'longwriting', projectId })
+          memoryLines = entries.map((e) => {
+            const c = e.content as { title?: string; content?: string }
+            return `- ${c.title ?? ''}：${c.content ?? ''}`
+          })
+        }
+      } catch (e) {
+        logger.warn('[lw-agent] 记忆装配失败（不影响主链路）', e)
+      }
+      const context = new ContextManager({
+        contextWindowTokens: Number(process.env.AGENT_CONTEXT_WINDOW ?? 32_768) || 32_768,
+      })
     const host: AgentHost = {
       signal: controller.signal,
       loadState: async () => {
@@ -199,7 +218,7 @@ export class LwAgentHarnessService {
             scopeId,
             input: message,
             snapshot: stateToSummary(state),
-            systemPrompt: lwAgentSystemPrompt(),
+            systemPrompt: lwAgentSystemPrompt() + (memoryLines.length ? `\n\n[相关经验]\n${memoryLines.join('\n')}` : ''),
             tools: toolMap,
             maxSteps: LW_AGENT_MAX_STEPS,
           },
@@ -249,6 +268,7 @@ export class LwAgentHarnessService {
           providerConfigId: o?.providerConfigId ?? opts.providerConfigId,
           modelId: o?.modelId ?? opts.modelId,
         }),
+        context,
       })
         .run(
           {
@@ -256,7 +276,7 @@ export class LwAgentHarnessService {
             scopeId,
             input: message,
             snapshot: stateToSummary(state),
-            systemPrompt: lwAgentSystemPrompt(),
+            systemPrompt: lwAgentSystemPrompt() + (memoryLines.length ? `\n\n[相关经验]\n${memoryLines.join('\n')}` : ''),
             tools: toolMap,
             maxSteps: LW_AGENT_MAX_STEPS,
             modelPreference: { providerConfigId: opts.providerConfigId, modelId: opts.modelId },

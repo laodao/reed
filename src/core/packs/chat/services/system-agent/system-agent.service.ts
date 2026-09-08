@@ -37,6 +37,7 @@ import { LoopRunner, initState } from '@core/platform/agent-runtime/runtime/loop
 import { DbAgentSessionStore } from '@core/platform/agent-runtime/memory/session-store'
 import { TrajectorySink } from '@core/platform/agent-runtime/trajectory/sink'
 import type { TrajectoryAppendPort } from '@core/platform/agent-runtime/trajectory/sink'
+import { getMemoryFlywheel } from '@core/platform/workflow/workflow-boot'
 import { getAgentLoopHarness } from '@core/platform/workflow/nodes/agent-loop-node'
 import type { AgentToolRegistry } from '@core/platform/agent-runtime/tools/registry'
 import {
@@ -410,6 +411,21 @@ export class SystemAgentChatService {
     })
 
     try {
+      // KE-2 记忆装配（34 号）：chat 未绑定业务，装配 L0 摘要+L1 用户级经验
+      let memoryLines: string[] = []
+      try {
+        const flywheel = getMemoryFlywheel()
+        if (flywheel) {
+          const entries = await flywheel.assembleUserLevel(request.content, 3)
+          memoryLines = entries.map((e) => {
+            const c = e.content as { title?: string; content?: string }
+            return `- ${c.title ?? ''}：${c.content ?? ''}`
+          })
+        }
+      } catch (e) {
+        logger.warn('[system-agent] 记忆装配失败（不影响主链路）', e)
+      }
+
       const result = await runAgentChatTurn(
         {
           messages: dbManager.messages,
@@ -427,7 +443,9 @@ export class SystemAgentChatService {
         {
           dialogId: request.dialogId,
           content: request.content,
-          systemPrompt: buildSystemPrompt(dialog.systemPrompt),
+          systemPrompt:
+            buildSystemPrompt(dialog.systemPrompt) +
+            (memoryLines.length ? `\n\n[相关经验（来自知识飞轮，供参考）]\n${memoryLines.join('\n')}` : ''),
           modelPreference: {
             providerConfigId: request.providerConfigId || dialog.providerConfigId,
             modelId: request.modelId || dialog.modelId,

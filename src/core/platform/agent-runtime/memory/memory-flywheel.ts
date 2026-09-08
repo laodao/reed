@@ -124,6 +124,11 @@ export class MemoryFlywheelService {
     return saved
   }
 
+  /** 用户层装配（chat 宿主：对话未绑定业务，只取 L1 用户级经验） */
+  async assembleUserLevel(taskText: string, topK = ASSEMBLE_TOP_K): Promise<AgentMemoryEntryRow[]> {
+    return this.assemble(taskText, topK, { bizModule: '' })
+  }
+
   /** 查重：与既有 active 及待审条目重叠率超阈值判重（review T18：曾对 pending 盲视，
    *  多条相似候选可同时过闸堆积） */
   async isDuplicate(content: string): Promise<boolean> {
@@ -140,9 +145,14 @@ export class MemoryFlywheelService {
    * 读取装配：按任务文本关键词匹配 active 条目 top-k（命中词数排序）。
    * 命中条目 use_count 在任务 succeeded 时回写（防装配即计数虚增）。
    */
-  async assemble(taskText: string, topK = ASSEMBLE_TOP_K): Promise<AgentMemoryEntryRow[]> {
-    const active = await this.deps.repo.listActive()
+  async assemble(taskText: string, topK = ASSEMBLE_TOP_K, scope?: { bizModule?: string; projectId?: string } | null): Promise<AgentMemoryEntryRow[]> {
+    // KE-2 分层装配（34 号 v2）：候选按 scope 三层过滤，得分 = 命中数 × 层级权重，
+    // 分层配额（每层 topK 总 3×topK）——同题冲突时项目级事实优先
+    const active = scope
+      ? await this.deps.repo.listActiveByScope(scope)
+      : await this.deps.repo.listActive()
     if (active.length === 0) return []
+    const layerWeight = (r: AgentMemoryEntryRow): number => (r.projectId ? 1.3 : r.bizModule ? 1.15 : 1.0)
     const tokens = tokenize(taskText)
     const scored = active
       .map((e) => {
@@ -150,11 +160,22 @@ export class MemoryFlywheelService {
         const entryTokens = tokenize(content)
         let hits = 0
         for (const w of tokens) if (entryTokens.has(w)) hits++
-        return { entry: e, hits }
+        return { entry: e, hits, weight: layerWeight(e) }
       })
       .filter((s) => s.hits > 0)
-      .sort((a, b) => b.hits - a.hits)
-      .slice(0, topK)
+      .sort((a, b) => b.hits * b.weight - a.hits * a.weight)
+    if (!scope) return scored.slice(0, topK).map((s) => s.entry)
+    // 分层配额：L1/L2/L3 各 topK，总量 3×topK
+    const quota = { l1: topK, l2: topK, l3: topK }
+    const picked: AgentMemoryEntryRow[] = []
+    for (const s of scored) {
+      const slot = s.entry.projectId ? 'l3' : s.entry.bizModule ? 'l2' : 'l1'
+      if (quota[slot as keyof typeof quota] <= 0) continue
+      quota[slot as keyof typeof quota]--
+      picked.push(s.entry)
+      if (picked.length >= topK * 3) break
+    }
+    return picked
     return scored.map((s) => s.entry)
   }
 

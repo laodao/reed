@@ -346,7 +346,8 @@ export class AgentTaskService {
     // agent_loop 直驱 + 飞轮装配（读取侧：相关经验注入提示词，轨迹由宿主留痕）
     let memoryLines: string[] = []
     if (this.deps.flywheel) {
-      const entries = await this.deps.flywheel.assemble(`${task.title}\n${spec.goal}`)
+      const scopeTag = (spec as unknown as { scopeTag?: { bizModule?: string; projectId?: string } }).scopeTag
+      const entries = await this.deps.flywheel.assemble(`${task.title}\n${spec.goal}`, undefined, scopeTag)
       memoryLines = entries.map((e) => `- [${e.kind}] ${(e.content as { title?: string }).title ?? ''}: ${(e.content as { content?: string }).content ?? ''}`)
       if (entries.length > 0) {
         this.memoryHits.set(task.id, entries.map((e) => e.id)) // 终态回写（review T8）
