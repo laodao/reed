@@ -13,6 +13,7 @@ import { BaseImageProvider } from './base-image-provider'
 // SDK Provider 导入
 import { OpenAIImageProvider } from './sdk/openai-image.provider'
 import { VolcengineImageProvider } from './sdk/volcengine-image.provider'
+import { ComfyUIImageProvider } from './sdk/comfyui-image.provider'
 
 // DashScope Provider（使用 Bearer Token 认证）
 import { DashScopeImageProvider } from './dashscope-image.provider'
@@ -35,6 +36,7 @@ export { DashScopeImageProvider, BailianImageProvider, VolcengineImageProvider }
  * bailian: 使用百炼平台 API（阿里云签名认证，需要 AccessKeyId:AccessKeySecret）
  * volcengine: 使用火山引擎方舟平台 API（OpenAI 兼容格式）
  * openai: 使用 OpenAI DALL-E API
+ * comfyui: 本地 ComfyUI 生成网关（无密钥，baseUrl 指向局域网网关）
  */
 const PROVIDER_CLASSES: Record<string, new (config: ImageProviderConfig) => BaseImageProvider> = {
   // DashScope 使用 Bearer Token 认证（推荐）
@@ -44,7 +46,9 @@ const PROVIDER_CLASSES: Record<string, new (config: ImageProviderConfig) => Base
   // 火山引擎使用 OpenAI 兼容 API
   volcengine: VolcengineImageProvider,
   // OpenAI DALL-E 使用官方 SDK
-  openai: OpenAIImageProvider
+  openai: OpenAIImageProvider,
+  // ComfyUI 本地生成网关（局域网自建，免密钥）
+  comfyui: ComfyUIImageProvider
 }
 
 /**
@@ -85,6 +89,12 @@ export const IMAGE_PROVIDER_DEFINITIONS: Record<ImageProviderType, {
     name: '智谱 AI',
     description: '智谱 AI 图像生成服务',
     requiresApiKey: true
+  },
+  comfyui: {
+    type: 'comfyui',
+    name: 'ComfyUI 生成网关',
+    description: '局域网自建 ComfyUI 生成网关（Krea2/Flux Kontext），无需 API Key',
+    requiresApiKey: false
   },
   custom: {
     type: 'custom',

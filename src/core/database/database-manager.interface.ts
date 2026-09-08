@@ -41,6 +41,7 @@ import type { ToolCredentialRepository } from './repositories/tool-credential.re
 import type { CustomToolRepository } from './repositories/custom-tool.repository'
 import type { EmailAccountRepository } from './repositories/email-account.repository'
 import type { VariableRepository, DataTableDefRepository, DataTableRowRepository } from './repositories/variable.repositories'
+import type { UserNotificationReadRepository } from './repositories/user-notification-read.repository'
 import type { KnowledgeBaseRepository } from './repositories/knowledge-base.repository'
 import type { LocationBindingRepository } from './repositories/location-binding.repository'
 import type { LwBackgroundRepository } from './repositories/lw-background.repository'
@@ -223,6 +224,10 @@ export interface ICoreDatabaseManager {
   packs: PackRepository | null
   /** 包启用/配置覆写（business_pack_bindings：user_id NULL = 全局默认行） */
   packBindings: PackBindingRepository | null
+
+  // ---- 通知中心（用户已读状态独立落表，通知历史 = platform_events） ----
+  /** 用户通知已读状态（user_notification_reads：复合主键 user_id+seq） */
+  notificationReads: UserNotificationReadRepository | null
 
   // ---- 长文写作关联表（第三范式） ----
   lwPlotCharacters: LwPlotCharacterRepository | null

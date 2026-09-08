@@ -35,8 +35,13 @@
           <span class="err" :title="row.error">{{ row.error || '—' }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="170">
+      <el-table-column label="操作" width="230">
         <template #default="{ row }">
+          <el-tooltip content="查看产物" placement="top">
+            <el-button circle size="small" type="info" plain @click="openArtifacts(row.id)">
+              <el-icon><FolderOpened /></el-icon>
+            </el-button>
+          </el-tooltip>
           <el-tooltip content="重跑（使用该次运行的输入）" placement="top">
             <el-button circle size="small" type="success" plain :loading="rerunningId === row.id" @click="handleRerun(row)">
               <el-icon><RefreshRight /></el-icon>
@@ -60,6 +65,11 @@
       <el-pagination layout="prev, pager, next, total" :total="total" :page-size="pageSize"
         :current-page="page" @current-change="p => { page = p; load() }" />
     </div>
+
+    <!-- 查看产物抽屉（点击某条运行 → 展示该 run 的产出物） -->
+    <el-drawer v-model="artifactsOpen" size="min(720px, 92vw)" :title="`运行产物 · ${abbrevRunId(artifactsRunId)}`">
+      <RunArtifactsPanel :key="artifactsRunId" :run-id="artifactsRunId" />
+    </el-drawer>
   </div>
 </template>
 
@@ -70,8 +80,9 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, View, Delete, RefreshRight } from '@element-plus/icons-vue'
+import { ArrowLeft, View, Delete, RefreshRight, FolderOpened } from '@element-plus/icons-vue'
 import { toPlainData } from '../../utils/plain-data'
+import RunArtifactsPanel from '@/components/workflow/RunArtifactsPanel.vue'
 
 const STATUS_LABEL: Record<string, string> = {
   pending: '排队中', running: '运行中', waiting_review: '待审核', succeeded: '成功',
@@ -94,6 +105,10 @@ const pageSize = 20
 const loading = ref(false)
 const defName = ref('')
 
+// 查看产物抽屉
+const artifactsOpen = ref(false)
+const artifactsRunId = ref('')
+
 async function load(): Promise<void> {
   loading.value = true
   try {
@@ -112,6 +127,17 @@ async function handleDelete(row: any): Promise<void> {
   const resp = await api().deleteRun(row.id)
   if (resp.success) { ElMessage.success('已删除'); await load() }
   else ElMessage.error(resp.error ?? '删除失败')
+}
+
+/** 打开「查看产物」抽屉（每条历史运行） */
+function openArtifacts(id: string): void {
+  artifactsRunId.value = id
+  artifactsOpen.value = true
+}
+
+/** 运行 id 缩写（抽屉标题用） */
+function abbrevRunId(id: string): string {
+  return id && id.length > 10 ? `${id.slice(0, 10)}…` : id
 }
 
 /** 重跑：使用该次运行的输入（startInputs）直接重新运行该工作流，并跳转详情 */

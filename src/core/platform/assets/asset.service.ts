@@ -17,7 +17,7 @@ import { AssetGroupRepository } from '@core/database/repositories/asset-group.re
 import { AssetCategoryRepository } from '@core/database/repositories/asset-category.repository'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { AssetStorageService } from './asset-storage.service'
-import { buildUrlShortcut, ensureExtension, sanitizeFileName, type AssetDownloadPayload } from './asset-download'
+import { buildUrlShortcut, ensureExtension, sanitizeFileName, type AssetDownloadPayload, type AssetDownloadView } from './asset-download'
 import { DOCUMENT_TEMPLATES } from '@core/platform/services/document-tools/templates'
 import { getDocumentTools } from '@core/platform/services/document-tools/document-tools'
 
@@ -75,6 +75,52 @@ export class AssetService {
     return { group, members }
   }
 
+  /**
+   * 按收藏源 URL 查最新一条「网页收藏」资产（幂等查重键：url 列）。
+   */
+  async findWebCollectBySourceUrl(url: string): Promise<AssetRecord | null> {
+    const u = url.trim()
+    if (!u) return null
+    return this.repo.findLatestByUrl('document', '网页收藏', u)
+  }
+
+  /**
+   * 就地重写 file 型资产内容（网页收藏「更新快照」）：
+   * 新内容（data: URL）落盘 → 删除旧文件 → 行内更新 storagePath/textContent/metadata 等。
+   * 资产 ID 保持不变（关联引用不失效）；任何一步失败前不破坏旧档。
+   */
+  async updateAssetContent(
+    id: string,
+    input: {
+      dataUrl: string
+      name?: string
+      textContent?: string | null
+      metadata?: Record<string, unknown> | null
+      sourceRef?: string | null
+    },
+  ): Promise<AssetRecord | null> {
+    const existing = await this.repo.findById(id)
+    if (!existing) throw new Error(`资产不存在: ${id}`)
+    if (existing.isBuiltin) throw new Error('内置资产不可修改（可复制为自有后刷新）')
+
+    const targetName = input.name?.trim() || existing.name
+    const saved = await this.storage.saveFileFromSource(input.dataUrl, existing.category, targetName)
+    // 新文件落盘成功后再删旧文件（删除失败不阻断——旧文件成孤儿由清理兜底，记录无损）
+    if (existing.storagePath && existing.storagePath !== saved.storagePath) {
+      this.storage.deleteStoredFile(existing.storagePath)
+    }
+    const updated = await this.repo.update(id, {
+      name: targetName,
+      storagePath: saved.storagePath,
+      sizeBytes: saved.sizeBytes,
+      mimeType: saved.mimeType,
+      textContent: input.textContent !== undefined ? (input.textContent ?? null) : undefined,
+      metadata: input.metadata !== undefined ? (input.metadata ?? null) : undefined,
+      sourceRef: input.sourceRef !== undefined ? (input.sourceRef ?? null) : undefined,
+    })
+    return updated
+  }
+
   /** 保存资产（四种形态统一入口；groupName 归组支持） */
   async createAsset(input: SaveAssetInput): Promise<AssetRecord> {
     const content = input.content
@@ -101,6 +147,8 @@ export class AssetService {
       metadata = Object.keys(saved.metadata).length ? saved.metadata : null
       // 落盘后以实际存储文件名作为资产名（含去重序号时更直观）
       name = name || basenameOf(storagePath)
+      // 网页收藏等"文件 + 正文"形态：正文写入 text_content 列（删除随行清理）
+      textContent = input.textContent?.trim() ? input.textContent : null
     } else if (content.kind === 'url') {
       const u = content.url.trim()
       if (!/^https?:\/\//i.test(u) && !/^local-(image|file|video):\/\//i.test(u)) {
@@ -161,6 +209,11 @@ export class AssetService {
       }
     }
 
+    // 附加元数据（调用方传入）与存储探测元数据合并，调用方优先
+    if (input.metadata && Object.keys(input.metadata).length > 0) {
+      metadata = { ...(metadata ?? {}), ...input.metadata }
+    }
+
     const record = await this.repo.create({
       category: category as AssetCategory,
       subCategory: input.subCategory ?? null,
@@ -169,7 +222,8 @@ export class AssetService {
       tags: input.tags ?? [],
       kind: content.kind,
       storagePath,
-      url,
+      // url 列：url 型取链接；file 型可携带源链接（网页收藏幂等键，见 SaveAssetInput.url）
+      url: content.kind === 'url' ? url : (input.url?.trim() || null),
       textContent,
       jsonContent,
       mimeType,
@@ -264,14 +318,24 @@ export class AssetService {
   }
 
   /**
-   * 资产下载载荷（按存储形态生成文件名与内容）：
+   * 资产下载载荷（按存储形态 + 当前视图生成文件名与内容）：
+   * - view='preview'：若资产可渲染成长图（report 长图），下载渲染后的 PNG（"看啥下啥"）
    * - file：复制源文件（sourcePath=绝对路径，文件名取存储文件名）
    * - text：下载为 .md（内容 textContent）
    * - json：下载为 .json（内容 jsonContent）
    * - url ：下载为 .url 快捷方式（InternetShortcut）
-   * 无内容/无文件抛错（调用方提示）。
+   * view='source'/缺省按存储形态；无内容/无文件抛错（调用方提示）。
    */
-  async buildDownloadPayload(record: AssetRecord): Promise<AssetDownloadPayload> {
+  async buildDownloadPayload(record: AssetRecord, view?: AssetDownloadView): Promise<AssetDownloadPayload> {
+    // 预览态（图界面）下载：report 长图 → 直接下载渲染图；渲染不出图则回退按存储形态
+    if (view === 'preview') {
+      const rendered = await this.renderAssetPreview(record)
+      if (rendered && rendered.mode === 'image') {
+        const base64 = rendered.url.replace(/^data:image\/[^;]+;base64,/, '')
+        const mimeType = rendered.url.replace(/^data:([^;]+);.*$/, '$1') || 'image/png'
+        return { fileName: ensureExtension(record.name, 'png'), kind: 'image', base64Data: base64, mimeType }
+      }
+    }
     if (record.kind === ASSET_STORAGE_KINDS.file && record.storagePath) {
       const abs = this.resolveAssetPath(record)
       if (!abs) throw new Error('该资产无本地文件')
@@ -382,10 +446,13 @@ export class AssetService {
       || mode === ASSET_PREVIEW_MODES.video || mode === ASSET_PREVIEW_MODES.none) {
       return null
     }
-    // 需要渲染的内容：text 形态取 textContent；文件形态读取（md/html/txt 等）
-    let content = record.textContent ?? ''
-    if (!content && record.kind === ASSET_STORAGE_KINDS.file) {
-      content = this.storage.readStoredText(record.storagePath)
+    // 需要渲染的内容：文件形态读磁盘文件全文（single-file 网页快照等"文件即主体"场景），
+    // 文本形态读 text_content 列；文件缺失时回退 text_content（textContent 可为 md 正文伴存）。
+    let content = ''
+    if (record.kind === ASSET_STORAGE_KINDS.file) {
+      content = (this.storage.readStoredText(record.storagePath) || record.textContent) ?? ''
+    } else {
+      content = record.textContent ?? ''
     }
     if (!content.trim()) return null
 
@@ -416,6 +483,50 @@ export class AssetService {
       const tplId = input.previewTemplateId?.trim()
       if (!tplId) throw new Error('报告预览模式必须指定渲染模板')
       if (!DOCUMENT_TEMPLATES[tplId]) throw new Error(`渲染模板不存在: ${tplId}`)
+    }
+  }
+
+  /**
+   * 把文本报告资产固化为长图图片资产（桌面端能力）：
+   * markdown 内容 + 排版模板 → PNG → 复制进资产库为 image 资产。
+   * 存量报告"补图"与工作流 save-img 产物的等价通道；Web 端无渲染器返回 null。
+   * @param record 文本报告资产（kind=text）
+   * @param opts.templateId DOCUMENT_TEMPLATES 键（缺省 generic）
+   * @param opts.subCategory / name / tags 图片资产元数据
+   * @param opts.sourceRef 来源 run（资产中心跳执行历史；缺省沿用原资产 sourceRef）
+   */
+  async materializeTextAsImage(
+    record: AssetRecord,
+    opts: { templateId?: string; subCategory?: string; name?: string; tags?: string[]; sourceRef?: string } = {}
+  ): Promise<AssetRecord | null> {
+    const content = record.textContent ?? ''
+    if (!content.trim()) throw new Error('资产没有可渲染的文本内容')
+    const tools = getDocumentTools()
+    if (!tools.canRenderBinary()) return null // Web 无渲染器：跳过（不做降级 HTML）
+    const templateId = opts.templateId ?? 'generic'
+    const template = DOCUMENT_TEMPLATES[templateId]
+    if (!template) throw new Error(`渲染模板不存在: ${templateId}`)
+    const rendered = await tools.renderImage({ markdown: content, template, title: record.name })
+    if (rendered.format !== 'image') return null
+    // 临时 PNG → 经 createAsset(file) 复制进资产目录
+    const pathMod = await import('path')
+    const { mkdtempSync, writeFileSync, rmSync } = await import('fs')
+    const tmpDir = mkdtempSync(pathMod.join(getPathProvider().getDataPath(), 'asset-materialize-'))
+    const tmpFile = pathMod.join(tmpDir, `${Date.now().toString(36)}.png`)
+    writeFileSync(tmpFile, rendered.buffer)
+    try {
+      return await this.createAsset({
+        category: ASSET_CATEGORIES.image,
+        subCategory: opts.subCategory?.trim() || undefined,
+        name: opts.name?.trim() || `${record.name}-长图`,
+        tags: opts.tags ?? [],
+        content: { kind: 'file', path: tmpFile },
+        sourceType: record.sourceType ?? undefined,
+        sourceRef: opts.sourceRef ?? record.sourceRef ?? undefined,
+        groupName: record.groupName ?? undefined,
+      })
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true })
     }
   }
 }

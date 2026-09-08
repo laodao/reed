@@ -28,6 +28,7 @@ export const WORKFLOW_RUN_EVENT_TYPE_MAP = {
   [WORKFLOW_RUN_EVENT_TYPES.nodeProgress]: 'workflow.run.node-progress',
   [WORKFLOW_RUN_EVENT_TYPES.reviewRequested]: 'workflow.run.review-requested',
   [WORKFLOW_RUN_EVENT_TYPES.notify]: 'workflow.run.notify',
+  [WORKFLOW_RUN_EVENT_TYPES.nodeLog]: 'workflow.run.node-log',
 } as const satisfies Record<WorkflowRunEvent['type'], string>
 
 /** 平台类型 → 五型（映射表逆运算，启动时构建一次） */

@@ -105,6 +105,7 @@ import { StoryboardKeyframeRepository } from '@core/database/repositories/storyb
 import { ImageAssetRepository } from '@core/database/repositories/image-asset.repository'
 import { OSSConfigRepository } from '@core/database/repositories/oss-config.repository'
 import { DataSourceRepository } from '@core/database/repositories/datasource.repository'
+import { UserNotificationReadRepository } from '@core/database/repositories/user-notification-read.repository'
 import { DataPathService } from '../services/data-path.service'
 import { LanceDBService } from '@core/platform/services/lance-db.service'
 
@@ -164,6 +165,8 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public variables: VariableRepository | null = null
   public dataTableDefs: DataTableDefRepository | null = null
   public dataTableRows: DataTableRowRepository | null = null
+  /** 用户通知已读状态（通知中心；已读独立落表，历史数据源为 platform_events） */
+  public notificationReads: UserNotificationReadRepository | null = null
   public kbInvertedIndex: KbInvertedIndexRepository | null = null
   public portraitProjects: PortraitProjectRepository | null = null
   public portraitCharacters: PortraitCharacterRepository | null = null
@@ -737,6 +740,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-platform-event-tables'
     )
     await createPlatformEventTables(this.dataSource)
+
+    // 通知中心：user_notification_reads 用户已读状态表（幂等，双语种；已读独立落表）
+    const { createUserNotificationReads } = await import(
+      '@core/database/migrations/create-user-notification-reads'
+    )
+    await createUserNotificationReads(this.dataSource)
 
     // C3 免登录独立页：definitions 加 share_token 列 + 唯一索引（幂等，双语种）
     const { addWorkflowShareToken } = await import(
@@ -4468,6 +4477,10 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.ossConfigs = new OSSConfigRepository(this.dataSource)
     await this.ossConfigs.initTable()
     console.log('[DatabaseManager] OSS 配置仓库已初始化')
+
+    // 初始化通知已读仓库（用户已读状态独立落表，表由迁移创建/同步）
+    this.notificationReads = new UserNotificationReadRepository(this.dataSource)
+    console.log('[DatabaseManager] 通知已读仓库已初始化')
 
     // 初始化数据源仓库（第三方数据库连接；表通过 initTable 创建）
     this.dataSources = new DataSourceRepository(this.dataSource)

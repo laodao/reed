@@ -20,6 +20,7 @@ import { getEventEmitter } from '@core/interfaces/event.interface'
 import type { EventChannel } from '@shared/types/event.types'
 import { assertNodeRegistryConsistent, createFullNodeRegistry } from './nodes'
 import { WorkflowTriggerScheduler } from './trigger/workflow-trigger-scheduler.service'
+import { WorkflowRunLogger } from './workflow-run-logger'
 import { createLogger } from '@core/utils/logger'
 
 const logger = createLogger('WorkflowBoot')
@@ -42,6 +43,8 @@ interface WorkflowSubsystem {
   agentTrajectories: import('@core/database/repositories/agent-trajectory.repository').AgentTrajectoryRepository | null
   /** NL→工作流草稿生成（31 号 M7；M5 块装配） */
   draftService: import('@core/platform/workflow/draft/workflow-draft.service').WorkflowDraftService | null
+  /** 运行执行日志（每步时间线；IPC wf:list-run-logs 取用） */
+  runLogger: WorkflowRunLogger
 }
 
 let subsystem: WorkflowSubsystem | null = null
@@ -167,6 +170,11 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
     trajectories: trajectoryRepo,
   })
   const definitionService = new WorkflowDefinitionService(db.workflowDefinitions, registry)
+
+  // 运行执行日志记录器：订阅 wf:run-event（引擎/服务直发或平台总线转发），
+  // 与 app-session / video-gen 节点同机制，不改引擎。
+  const runLogger = new WorkflowRunLogger()
+  runLogger.attach(cb => getEventEmitter().tapEvents?.(cb))
 
   // 3. boot 恢复：在途运行标记 interrupted/timed_out；已过期的挂起审核标 interrupted
   //    （重启后引擎内存态丢失，未过期的 waiting 保持等待用户续跑）
@@ -350,16 +358,18 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
   }
   try {
     const { AssetService, AssetStorageService, registerAssetService } = await import('../assets')
+    const { WebCollectService, registerWebCollectService } = await import('../assets')
     const { createAssetSourceLinkResolver } = await import('../assets/asset-source-link')
-    registerAssetService(
-      new AssetService(
-        new AssetStorageService(),
-        db.assets,
-        db.assetCategories,
-        db.assetGroups ?? undefined,
-        createAssetSourceLinkResolver({ runs: db.workflowRuns!, apps: db.appDefinitions! }),
-      )
+    const assetService = new AssetService(
+      new AssetStorageService(),
+      db.assets,
+      db.assetCategories,
+      db.assetGroups ?? undefined,
+      createAssetSourceLinkResolver({ runs: db.workflowRuns!, apps: db.appDefinitions! }),
     )
+    registerAssetService(assetService)
+    // 网页收藏服务（collect-webpage 节点 / 运行页一键收藏）：依赖资产服务
+    registerWebCollectService(new WebCollectService({ assetService }))
   } catch (e) {
     logger.error('[workflow-boot] 资产服务装配失败（继续启动）', e)
   }
@@ -713,7 +723,7 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
     logger.warn('[workflow-boot] M5 系统 agent 工具集注册失败（继续启动）', e)
   }
 
-  subsystem = { engine, runService, definitionService, scheduler, appDefinitionService, appSessionService, agentTasks, memoryFlywheel, agentSessions: agentSessionRepo, agentTrajectories: trajectoryRepo, draftService }
+  subsystem = { engine, runService, definitionService, scheduler, appDefinitionService, appSessionService, runLogger, agentTasks, memoryFlywheel, agentSessions: agentSessionRepo, agentTrajectories: trajectoryRepo, draftService }
   logger.info('[workflow-boot] 工作流子系统已启动')
   return subsystem
 }
@@ -729,6 +739,7 @@ export function getWorkflowSubsystem(): WorkflowSubsystem {
 /** 测试/关停用：清空单例 */
 export function resetWorkflowSubsystem(): void {
   if (subsystem?.scheduler) subsystem.scheduler.stop()
+  subsystem?.runLogger?.stop()
   for (const channel of attachedChannels) channel.stop()
   attachedChannels = []
   archiveJob?.stop()

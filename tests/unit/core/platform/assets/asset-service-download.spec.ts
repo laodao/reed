@@ -105,4 +105,33 @@ describe('AssetService.buildDownloadPayload', () => {
     const a = await svc.createAsset({ content: { kind: 'text', text: '   ' }, name: '空白' })
     await expect(svc.buildDownloadPayload(a)).rejects.toThrow(/无文本内容/)
   })
+
+  it('view=preview 且可渲染长图：下载渲染 PNG（看图片下图片）', async () => {
+    const a = await svc.createAsset({ content: { kind: 'text', text: '# 早报\n内容' }, name: '每日早报' })
+    const spy = vi.spyOn(svc, 'renderAssetPreview').mockResolvedValue({ mode: 'image', url: 'data:image/png;base64,AAAA', html: '' })
+    const payload = await svc.buildDownloadPayload(a, 'preview')
+    expect(payload.kind).toBe('image')
+    expect(payload.fileName).toBe('每日早报.png')
+    expect(payload.base64Data).toBe('AAAA')
+    expect(payload.mimeType).toBe('image/png')
+    expect(spy).toHaveBeenCalledWith(a)
+  })
+
+  it('view=source 时按存储形态下载文本（看文本下文本），不触发渲染', async () => {
+    const a = await svc.createAsset({ content: { kind: 'text', text: '# 早报\n内容' }, name: '每日早报' })
+    const spy = vi.spyOn(svc, 'renderAssetPreview')
+    const payload = await svc.buildDownloadPayload(a, 'source')
+    expect(payload.kind).toBe('text')
+    expect(payload.fileName).toBe('每日早报.md')
+    expect(payload.content).toBe('# 早报\n内容')
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('view=preview 但渲染不出图：回退按存储形态', async () => {
+    const a = await svc.createAsset({ content: { kind: 'text', text: '# 早报\n内容' }, name: '每日早报' })
+    vi.spyOn(svc, 'renderAssetPreview').mockResolvedValue(null)
+    const payload = await svc.buildDownloadPayload(a, 'preview')
+    expect(payload.kind).toBe('text')
+    expect(payload.fileName).toBe('每日早报.md')
+  })
 })

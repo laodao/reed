@@ -37,12 +37,26 @@ export interface UpdateAssetInput {
   name?: string
   description?: string | null
   tags?: string[]
+  /** 内容/元数据就地重写（file 刷新等场景；显式 undefined = 不修改） */
+  storagePath?: string | null
+  url?: string | null
+  textContent?: string | null
+  jsonContent?: string | null
+  mimeType?: string | null
+  sizeBytes?: number | null
+  metadata?: Record<string, unknown> | null
+  sourceType?: string | null
+  sourceRef?: string | null
 }
 
 export interface ListAssetParams {
   category?: AssetCategory | ''
   subCategory?: string | ''
+  /** 精确 url 列匹配（网页收藏幂等查重） */
+  url?: string
   keyword?: string
+  /** 排除某子分类（如「全部 / 文档」视图默认不含网页收藏池） */
+  excludeSubCategory?: string | ''
   page: number
   pageSize: number
 }
@@ -168,6 +182,12 @@ export class AssetRepository extends BaseRepository<AssetEntity, AssetRecord> {
     if (params.subCategory) {
       qb.andWhere('a.sub_category = :sub', { sub: params.subCategory })
     }
+    if (params.url) {
+      qb.andWhere('a.url = :url', { url: params.url })
+    }
+    if (params.excludeSubCategory) {
+      qb.andWhere('(a.sub_category IS NULL OR a.sub_category <> :exSub)', { exSub: params.excludeSubCategory })
+    }
     const kw = params.keyword?.trim()
     if (kw) {
       qb.andWhere('(LOWER(a.name) LIKE LOWER(:kw) OR LOWER(a.description) LIKE LOWER(:kw) OR LOWER(a.tags) LIKE LOWER(:kw))', { kw: `%${kw}%` })
@@ -260,9 +280,34 @@ export class AssetRepository extends BaseRepository<AssetEntity, AssetRecord> {
     if (patch.name !== undefined) partial.name = patch.name
     if (patch.description !== undefined) partial.description = patch.description
     if (patch.tags !== undefined) partial.tags = patch.tags.length ? JSON.stringify(patch.tags) : null
+    // 内容/元数据就地重写（file 刷新；undefined = 不改，null = 清空）
+    if (patch.storagePath !== undefined) partial.storagePath = patch.storagePath
+    if (patch.url !== undefined) partial.url = patch.url
+    if (patch.textContent !== undefined) partial.textContent = patch.textContent
+    if (patch.jsonContent !== undefined) partial.jsonContent = patch.jsonContent
+    if (patch.mimeType !== undefined) partial.mimeType = patch.mimeType
+    if (patch.sizeBytes !== undefined) partial.sizeBytes = patch.sizeBytes
+    if (patch.metadata !== undefined) {
+      partial.metadata = patch.metadata ? JSON.stringify(patch.metadata) : null
+    }
+    if (patch.sourceType !== undefined) partial.sourceType = patch.sourceType
+    if (patch.sourceRef !== undefined) partial.sourceRef = patch.sourceRef
 
     await this.scoped.update({ id } as FindOptionsWhere<AssetEntity>, partial)
     return this.findById(id)
+  }
+
+  /**
+   * 按 url 列精确查最新一条（网页收藏幂等查重键；url 列对 file 型网页收藏承载源链接）。
+   * 走成熟 listAsset 查询管线（卡片分页语义：单资产=自身）。
+   */
+  async findLatestByUrl(
+    category: AssetCategory,
+    subCategory: string,
+    url: string,
+  ): Promise<AssetRecord | null> {
+    const { items } = await this.listAsset({ category, subCategory, url, page: 1, pageSize: 1 })
+    return items[0] ?? null
   }
 
   async delete(id: string): Promise<number> {

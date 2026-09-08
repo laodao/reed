@@ -450,6 +450,40 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     },
     models: [],
     allowCustomModels: true
+  },
+  // ComfyUI 生成网关（本地/局域网自建，图片+视频，免密钥）：文档 gen-gateway-api.md
+  {
+    id: 'comfyui',
+    siteUrl: '',
+    name: 'ComfyUI 生成网关',
+    description: '局域网自建 ComfyUI 生成网关（Krea2/Flux Kontext 图片、MiniMax-H3 视频），无需 API Key',
+    category: 'custom',
+    capabilities: ['image'],
+    icon: '🎨',
+    isOfficial: false,
+    apiConfig: {
+      baseUrl: '',
+      imageBaseUrl: 'http://127.0.0.1:8190',
+      videoBaseUrl: 'http://127.0.0.1:8190',
+      authType: 'none',
+      authHeader: '',
+      authPrefix: '',
+      requestFormat: 'custom',
+      chatEndpoint: ''
+    },
+    supportedParams: {
+      stream: false,
+      temperature: false,
+      maxTokens: false,
+      topP: false,
+      custom: []
+    },
+    models: [
+      { id: 'krea2', name: 'Krea2 文生图', type: 'image', contextWindow: 0, maxOutputTokens: 0, features: ['image'] },
+      { id: 'flux-kontext', name: 'Flux Kontext 参考图生图', type: 'image', contextWindow: 0, maxOutputTokens: 0, features: ['image'] },
+      { id: 'h3', name: 'MiniMax-H3 图生视频（自带配音）', type: 'video', contextWindow: 0, maxOutputTokens: 0, features: ['video'] }
+    ],
+    allowCustomModels: true
   }
 ]
 

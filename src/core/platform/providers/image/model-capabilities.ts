@@ -90,6 +90,20 @@ const MODEL_CAPABILITIES: CapabilityEntry[] = [
     watermark: 'default_on', promptRewrite: 'optional', sequentialGeneration: true,
   }},
 
+  // ==================== comfyui（Krea2 / Flux Kontext，局域网生成网关） ====================
+  { provider: 'comfyui', match: /^krea/, caps: {
+    negativePrompt: false, seed: false, quality: false, style: false,
+    guidanceScale: false, strength: false,
+    sizeMode: 'aspect_ratio_resolution', maxReferenceImages: 0,
+    watermark: 'not_supported', promptRewrite: 'none', sequentialGeneration: false,
+  }},
+  { provider: 'comfyui', match: /^flux-kontext/, caps: {
+    negativePrompt: false, seed: false, quality: false, style: false,
+    guidanceScale: false, strength: false,
+    sizeMode: 'pixels', maxReferenceImages: 1,
+    watermark: 'not_supported', promptRewrite: 'none', sequentialGeneration: false,
+  }},
+
   // ==================== openai（DALL-E / gpt-image；minimax/zhipu 映射同格式） ====================
   { provider: 'openai', match: /^gpt-image/, caps: {
     negativePrompt: false, seed: false, quality: true, style: false,

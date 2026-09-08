@@ -107,6 +107,7 @@ import { AssetGroupRepository } from '@core/database/repositories/asset-group.re
 import { AssetCategoryRepository } from '@core/database/repositories/asset-category.repository'
 import { NewsSourceRepository } from '@core/database/repositories/news-source.repository'
 import { NewsTopicRepository } from '@core/database/repositories/news-topic.repository'
+import { UserNotificationReadRepository } from '@core/database/repositories/user-notification-read.repository'
 
 export class WebDatabaseManager implements ICoreDatabaseManager {
   readonly dataSource: DataSource | null
@@ -225,6 +226,8 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   storyboardKeyframes: StoryboardKeyframeRepository | null
   imageAssets: ImageAssetRepository | null
   assetImage: AssetImageRepository | null
+  // 通知中心（用户已读状态独立落表，历史数据源为 platform_events）
+  notificationReads: UserNotificationReadRepository | null
 
   constructor(ds: DataSource) {
     this.dataSource = ds
@@ -340,5 +343,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.storyboardKeyframes = new StoryboardKeyframeRepository(ds)
     this.imageAssets = new ImageAssetRepository(ds)
     this.assetImage = new AssetImageRepository(ds)
+    // 通知中心：用户已读状态独立落表（表由迁移创建/同步）
+    this.notificationReads = new UserNotificationReadRepository(ds)
   }
 }

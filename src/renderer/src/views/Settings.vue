@@ -660,14 +660,17 @@
         </el-form-item>
 
         <el-form-item label="AccessKey ID" prop="accessKeyId">
-          <el-input v-model="ossForm.accessKeyId" placeholder="请输入 AccessKey ID" />
+          <el-input
+            v-model="ossForm.accessKeyId"
+            :placeholder="editingOSSConfig ? '留空表示不修改' : '请输入 AccessKey ID'"
+          />
         </el-form-item>
 
         <el-form-item label="AccessKey Secret" prop="accessKeySecret">
           <el-input
             v-model="ossForm.accessKeySecret"
             type="password"
-            placeholder="请输入 AccessKey Secret"
+            :placeholder="editingOSSConfig ? '留空表示不修改（已保存的密钥不回显）' : '请输入 AccessKey Secret'"
             show-password
           />
         </el-form-item>
@@ -681,7 +684,7 @@
         </el-form-item>
 
         <el-form-item label="Endpoint">
-          <el-input v-model="ossForm.endpoint" placeholder="可选，自定义 Endpoint" />
+          <el-input v-model="ossForm.endpoint" placeholder="可选，如 oss-cn-hangzhou.aliyuncs.com（无需 https://）" />
         </el-form-item>
 
         <el-form-item label="自定义域名">
@@ -970,11 +973,20 @@ const ossForm = reactive({
 })
 
 // OSS 表单验证规则
+// 编辑模式：AccessKey ID / Secret 留空视为「不修改」，放行校验
+const ossKeyRequiredRule = (message: string) => ({
+  validator: (_rule: any, value: string, callback: (err?: Error) => void) => {
+    if (editingOSSConfig.value && !value) return callback() // 编辑留空 = 不修改
+    if (!value) return callback(new Error(message))
+    callback()
+  },
+  trigger: 'blur'
+})
 const ossFormRules = {
   name: [{ required: true, message: '请输入配置名称', trigger: 'blur' }],
   provider: [{ required: true, message: '请选择提供商', trigger: 'change' }],
-  accessKeyId: [{ required: true, message: '请输入 AccessKey ID', trigger: 'blur' }],
-  accessKeySecret: [{ required: true, message: '请输入 AccessKey Secret', trigger: 'blur' }],
+  accessKeyId: [ossKeyRequiredRule('请输入 AccessKey ID')],
+  accessKeySecret: [ossKeyRequiredRule('请输入 AccessKey Secret')],
   region: [{ required: true, message: '请输入地域', trigger: 'blur' }],
   bucket: [{ required: true, message: '请输入 Bucket 名称', trigger: 'blur' }]
 }
@@ -1322,17 +1334,17 @@ const saveOSSConfig = async () => {
     ossSaving.value = true
 
     if (editingOSSConfig.value) {
-      // 编辑模式
-      const updateData = {
+      // 编辑模式：AccessKey ID / Secret 留空表示不修改，不提交该字段
+      const updateData: Record<string, unknown> = {
         name: ossForm.name,
-        accessKeyId: ossForm.accessKeyId,
-        accessKeySecret: ossForm.accessKeySecret,
         region: ossForm.region,
         bucket: ossForm.bucket,
         endpoint: ossForm.endpoint || undefined,
         customDomain: ossForm.customDomain || undefined,
         pathPrefix: ossForm.pathPrefix || undefined
       }
+      if (ossForm.accessKeyId) updateData.accessKeyId = ossForm.accessKeyId
+      if (ossForm.accessKeySecret) updateData.accessKeySecret = ossForm.accessKeySecret
       const result = await window.electronAPI.oss.updateConfig(editingOSSConfig.value.id, updateData)
       if (result.success) {
         await loadOSSConfigs()

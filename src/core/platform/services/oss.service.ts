@@ -1,7 +1,10 @@
 /**
  * OSS 上传服务
  * @module platform/services/oss.service
- * @description 提供统一的图床/OSS文件上传服务，支持阿里云OSS和火山引擎TOS
+ * @description 提供统一的图床/OSS文件上传服务，支持阿里云OSS和火山引擎TOS。
+ * 注意：阿里云/火山均要求以「Bucket 三级域名」（vhost）寻址，例如
+ * https://{bucket}.oss-cn-hangzhou.aliyuncs.com；endpoint 允许用户填写
+ * 不带协议的 host（如 oss-cn-hangzhou.aliyuncs.com），服务内部统一归一化。
  */
 
 import * as fs from 'fs'
@@ -26,6 +29,15 @@ const logger = {
   warn: (...args: any[]) => console.warn('[OSSService]', ...args),
   error: (...args: any[]) => console.error('[OSSService]', ...args),
   debug: (...args: any[]) => console.debug('[OSSService]', ...args),
+}
+
+/** 带签名的对象请求结果 */
+interface SignedObjectResponse {
+  ok: boolean
+  status: number
+  body: string
+  /** 实际请求的完整 URL（含协议、vhost、对象路径） */
+  url: string
 }
 
 /**
@@ -96,11 +108,7 @@ export class OSSService {
       }
 
       // 解密密钥
-      const secureStorage = getSecureStorage()
-      if (!secureStorage.isInitialized()) {
-        await secureStorage.initialize()
-      }
-      const accessKeySecret = secureStorage.decrypt(config.accessKeySecret)
+      const accessKeySecret = await this.decryptSecret(config)
 
       // 根据提供商选择上传方法
       if (config.provider === 'aliyun') {
@@ -139,52 +147,27 @@ export class OSSService {
       // 构建云存储路径
       const cloudPath = this.buildCloudPath(config.pathPrefix, fileName, request.customPath)
 
-      // 构建签名和请求
-      const endpoint = config.endpoint || `https://oss-${config.region}.aliyuncs.com`
-      const bucketUrl = `${endpoint.replace('https://', `https://${config.bucket}.`)}`
-      const url = `${bucketUrl}/${cloudPath}`
-
       // 获取内容类型
       const contentType = this.getContentType(ext)
 
-      // 生成签名
-      const date = new Date().toUTCString()
-      const signature = this.generateAliyunSignature(
-        'PUT',
-        cloudPath,
-        config.accessKeyId,
-        accessKeySecret,
-        config.bucket,
-        date,
-        contentType
-      )
-
       logger.info('[OSSService] 上传到阿里云 OSS:', { bucket: config.bucket, path: cloudPath })
 
-      // 发送请求
-      const response = await fetch(url, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': contentType,
-          'Date': date,
-          'Authorization': signature
-        },
+      // 发送签名 PUT 请求
+      const res = await this.sendSignedRequest(config, accessKeySecret, 'PUT', cloudPath, {
+        contentType,
         body: fileBuffer
       })
 
-      if (!response.ok) {
-        const errorText = await response.text()
-        logger.error('[OSSService] 阿里云上传失败:', response.status, errorText)
+      if (!res.ok) {
+        logger.error('[OSSService] 阿里云上传失败:', res.status, res.body)
         return {
           success: false,
-          error: `上传失败: ${response.status} ${errorText}`
+          error: this.describeOssError(res.body, `上传失败: HTTP ${res.status}`)
         }
       }
 
-      // 返回公网 URL
-      const publicUrl = config.customDomain
-        ? `https://${config.customDomain}/${cloudPath}`
-        : url
+      // 返回公网 URL（优先自定义域名）
+      const publicUrl = this.toPublicUrl(config, cloudPath, res.url)
 
       logger.info('[OSSService] 阿里云上传成功:', publicUrl)
 
@@ -219,51 +202,27 @@ export class OSSService {
       // 构建云存储路径
       const cloudPath = this.buildCloudPath(config.pathPrefix, fileName, request.customPath)
 
-      // 构建请求 URL
-      const endpoint = config.endpoint || `https://tos-${config.region}.volces.com`
-      const url = `${endpoint}/${config.bucket}/${cloudPath}`
-
       // 获取内容类型
       const contentType = this.getContentType(ext)
 
-      // 生成签名
-      const date = new Date().toUTCString()
-      const signature = this.generateVolcengineSignature(
-        'PUT',
-        cloudPath,
-        config.accessKeyId,
-        accessKeySecret,
-        config.bucket,
-        date,
-        contentType
-      )
-
       logger.info('[OSSService] 上传到火山引擎 TOS:', { bucket: config.bucket, path: cloudPath })
 
-      // 发送请求
-      const response = await fetch(url, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': contentType,
-          'Date': date,
-          'Authorization': signature
-        },
+      // 发送签名 PUT 请求
+      const res = await this.sendSignedRequest(config, accessKeySecret, 'PUT', cloudPath, {
+        contentType,
         body: fileBuffer
       })
 
-      if (!response.ok) {
-        const errorText = await response.text()
-        logger.error('[OSSService] 火山引擎上传失败:', response.status, errorText)
+      if (!res.ok) {
+        logger.error('[OSSService] 火山引擎上传失败:', res.status, res.body)
         return {
           success: false,
-          error: `上传失败: ${response.status} ${errorText}`
+          error: this.describeOssError(res.body, `上传失败: HTTP ${res.status}`)
         }
       }
 
-      // 返回公网 URL
-      const publicUrl = config.customDomain
-        ? `https://${config.customDomain}/${cloudPath}`
-        : url
+      // 返回公网 URL（优先自定义域名）
+      const publicUrl = this.toPublicUrl(config, cloudPath, res.url)
 
       logger.info('[OSSService] 火山引擎上传成功:', publicUrl)
 
@@ -319,47 +278,8 @@ export class OSSService {
   }
 
   /**
-   * 生成阿里云 OSS 签名
-   */
-  private generateAliyunSignature(
-    method: string,
-    objectPath: string,
-    accessKeyId: string,
-    accessKeySecret: string,
-    bucket: string,
-    date: string,
-    contentType: string
-  ): string {
-    // 简化的签名算法，实际生产环境建议使用 OSS SDK
-    const stringToSign = `${method}\n\n${contentType}\n${date}\n/${bucket}/${objectPath}`
-    const hmac = crypto.createHmac('sha1', accessKeySecret)
-    hmac.update(stringToSign)
-    const signature = hmac.digest('base64')
-    return `OSS ${accessKeyId}:${signature}`
-  }
-
-  /**
-   * 生成火山引擎 TOS 签名
-   */
-  private generateVolcengineSignature(
-    method: string,
-    objectPath: string,
-    accessKeyId: string,
-    accessKeySecret: string,
-    bucket: string,
-    date: string,
-    contentType: string
-  ): string {
-    // 简化的签名算法
-    const stringToSign = `${method}\n\n${contentType}\n${date}\n/${bucket}/${objectPath}`
-    const hmac = crypto.createHmac('sha1', accessKeySecret)
-    hmac.update(stringToSign)
-    const signature = hmac.digest('base64')
-    return `TOS ${accessKeyId}:${signature}`
-  }
-
-  /**
    * 测试 OSS 连接
+   * 通过真实上传并删除一个探针对象来验证：endpoint/bucket/密钥/写权限全部可用。
    */
   async testConnection(configId: string): Promise<OSSTestResult> {
     try {
@@ -371,84 +291,190 @@ export class OSSService {
       }
 
       // 解密密钥
-      const secureStorage = getSecureStorage()
-      if (!secureStorage.isInitialized()) {
-        await secureStorage.initialize()
-      }
-      const accessKeySecret = secureStorage.decrypt(config.accessKeySecret)
+      const accessKeySecret = await this.decryptSecret(config)
 
-      // 尝试获取 Bucket 信息来验证连接
       if (config.provider === 'aliyun') {
-        return await this.testAliyunConnection(config as AliyunOSSConfig, accessKeySecret)
+        return await this.testByProbe(config as AliyunOSSConfig, accessKeySecret)
       } else if (config.provider === 'volcengine') {
-        return await this.testVolcengineConnection(config as VolcengineTOSConfig, accessKeySecret)
+        return await this.testByProbe(config as VolcengineTOSConfig, accessKeySecret)
       }
 
       return { success: false, message: '不支持的提供商' }
     } catch (error: any) {
-      return { success: false, message: error.message || '测试失败' }
+      return { success: false, message: `连接失败: ${error.message}` }
     }
   }
 
   /**
-   * 测试阿里云连接
+   * 通过探针对象验证连接（PUT 成功后尽力 DELETE 清理）
    */
-  private async testAliyunConnection(config: AliyunOSSConfig, accessKeySecret: string): Promise<OSSTestResult> {
+  private async testByProbe(config: OSSConfig, accessKeySecret: string): Promise<OSSTestResult> {
+    const probeKey = `.connection-test/probe-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.txt`
     try {
-      const endpoint = config.endpoint || `https://oss-${config.region}.aliyuncs.com`
-      const date = new Date().toUTCString()
-
-      const stringToSign = `GET\n\n\n${date}\n/${config.bucket}/`
-      const hmac = crypto.createHmac('sha1', accessKeySecret)
-      hmac.update(stringToSign)
-      const signature = hmac.digest('base64')
-
-      const response = await fetch(`${endpoint}/${config.bucket}/?max-keys=1`, {
-        method: 'GET',
-        headers: {
-          'Date': date,
-          'Authorization': `OSS ${config.accessKeyId}:${signature}`
-        }
+      const put = await this.sendSignedRequest(config, accessKeySecret, 'PUT', probeKey, {
+        contentType: 'text/plain',
+        body: 'probe'
       })
 
-      if (response.ok) {
-        return { success: true, message: '连接成功，Bucket 可访问' }
+      if (!put.ok) {
+        const detail = this.describeOssError(put.body, `HTTP ${put.status}`)
+        return { success: false, message: `连接失败: ${detail}` }
       }
 
-      return { success: false, message: `连接失败: ${response.status}` }
+      // 尽力清理探针（无删除权限不判失败）
+      try {
+        await this.sendSignedRequest(config, accessKeySecret, 'DELETE', probeKey)
+      } catch (e: any) {
+        logger.warn('[OSSService] 探针清理失败（可忽略）:', e.message)
+      }
+
+      return { success: true, message: '连接成功：Bucket 可读可写（已上传探针并清理）' }
     } catch (error: any) {
       return { success: false, message: `连接失败: ${error.message}` }
     }
   }
 
   /**
-   * 测试火山引擎连接
+   * 解密配置中的 AccessKey Secret
    */
-  private async testVolcengineConnection(config: VolcengineTOSConfig, accessKeySecret: string): Promise<OSSTestResult> {
-    try {
-      const endpoint = config.endpoint || `https://tos-${config.region}.volces.com`
-      const date = new Date().toUTCString()
+  private async decryptSecret(config: OSSConfig): Promise<string> {
+    const secureStorage = getSecureStorage()
+    if (!secureStorage.isInitialized()) {
+      await secureStorage.initialize()
+    }
+    return secureStorage.decrypt(config.accessKeySecret)
+  }
 
-      const stringToSign = `GET\n\n\n${date}\n/${config.bucket}/`
-      const hmac = crypto.createHmac('sha1', accessKeySecret)
-      hmac.update(stringToSign)
-      const signature = hmac.digest('base64')
+  /**
+   * 归一化 endpoint：返回可寻址的 bucket 三级域名 host（不带协议、不含路径/尾斜杠）。
+   * 兼容的填写形态：
+   *  1. 不填 → 按 provider + region 自动生成地域 endpoint host（oss-{region}.aliyuncs.com）
+   *  2. 不带协议的 host：oss-cn-hangzhou.aliyuncs.com
+   *  3. 带协议：https://oss-cn-hangzhou.aliyuncs.com
+   *  4. 已是 bucket 三级域名：https://the-bot.oss-cn-hangzhou.aliyuncs.com（原样保留）
+   *  5. 自定义域名（非 *.aliyuncs.com / *.volces.com 后缀）：视为已绑定该 bucket，原样保留
+   */
+  private normalizeEndpointHost(config: OSSConfig): string {
+    const bucket = (config.bucket || '').trim()
+    const region = (config.region || '').trim()
 
-      const response = await fetch(`${endpoint}/${config.bucket}/?max-keys=1`, {
-        method: 'GET',
-        headers: {
-          'Date': date,
-          'Authorization': `TOS ${config.accessKeyId}:${signature}`
-        }
-      })
-
-      if (response.ok) {
-        return { success: true, message: '连接成功，Bucket 可访问' }
+    let host = ''
+    if (config.endpoint && config.endpoint.trim()) {
+      host = config.endpoint
+        .trim()
+        .replace(/^https?:\/\//i, '')
+        .replace(/\/.*$/, '') // 去掉可能的路径
+        .replace(/\/+$/, '')
+    } else {
+      if (config.provider === 'volcengine') {
+        host = region.startsWith('tos-') ? `${region}.volces.com` : `tos-${region}.volces.com`
+      } else {
+        host = region.startsWith('oss-') ? `${region}.aliyuncs.com` : `oss-${region}.aliyuncs.com`
       }
+    }
 
-      return { success: false, message: `连接失败: ${response.status}` }
-    } catch (error: any) {
-      return { success: false, message: `连接失败: ${error.message}` }
+    // 已是 bucket 三级域名 → 原样
+    if (bucket && host.startsWith(`${bucket}.`)) {
+      return host
+    }
+    // 阿里云 / 火山官方地域 endpoint → 转 vhost 三级域名
+    if (bucket && (host.endsWith('.aliyuncs.com') || host.endsWith('.volces.com'))) {
+      return `${bucket}.${host}`
+    }
+    // 自定义域名（CNAME/内网等）→ 不加 bucket 前缀
+    return host
+  }
+
+  /**
+   * 生成公网访问 URL（有自定义域名则优先）
+   */
+  private toPublicUrl(config: OSSConfig, cloudPath: string, fallbackUrl: string): string {
+    if (config.customDomain && config.customDomain.trim()) {
+      const domain = config.customDomain
+        .trim()
+        .replace(/^https?:\/\//i, '')
+        .replace(/\/+$/, '')
+      return `https://${domain}/${cloudPath}`
+    }
+    return fallbackUrl
+  }
+
+  /**
+   * 发送带 V1 签名的对象请求（PUT/DELETE/GET）。
+   * 签名 CanonicalizedResource 一律为 /{bucket}/{objectKey}，与访问域名风格无关。
+   */
+  private async sendSignedRequest(
+    config: OSSConfig,
+    accessKeySecret: string,
+    method: 'PUT' | 'DELETE' | 'GET',
+    objectKey: string,
+    options: { contentType?: string; body?: Buffer | string } = {}
+  ): Promise<SignedObjectResponse> {
+    const host = this.normalizeEndpointHost(config)
+    const url = `https://${host}/${objectKey}`
+    const date = new Date().toUTCString()
+
+    // V1 签名：VERB\nContent-MD5\nContent-Type\nDate\nCanonicalizedResource
+    const contentType = options.contentType || ''
+    const stringToSign = `${method}\n\n${contentType}\n${date}\n/${config.bucket}/${objectKey}`
+    const signature = crypto
+      .createHmac('sha1', accessKeySecret)
+      .update(stringToSign)
+      .digest('base64')
+    const authPrefix = config.provider === 'volcengine' ? 'TOS' : 'OSS'
+    const authorization = `${authPrefix} ${config.accessKeyId}:${signature}`
+
+    const headers: Record<string, string> = {
+      'Date': date,
+      'Authorization': authorization
+    }
+    if (contentType) {
+      headers['Content-Type'] = contentType
+    }
+
+    logger.info(`[OSSService] ${method} ${url}`)
+
+    const response = await fetch(url, {
+      method,
+      headers,
+      body: options.body !== undefined ? options.body : undefined
+    })
+
+    const body = await response.text()
+    return { ok: response.ok, status: response.status, body, url }
+  }
+
+  /**
+   * 将 OSS 错误响应（XML）解析为可读信息
+   */
+  private describeOssError(body: string, fallback: string): string {
+    const code = /<Code>([^<]+)<\/Code>/.exec(body)?.[1]
+    const message = /<Message>([^<]+)<\/Message>/.exec(body)?.[1]
+    if (!code && !message) {
+      return `${fallback}${body ? `: ${body.slice(0, 200)}` : ''}`
+    }
+    const friendly = this.friendlyOssError(code)
+    return `${friendly}${message ? `（${message.slice(0, 150)}）` : ''}`
+  }
+
+  /**
+   * 将 OSS 错误码映射为可读原因
+   */
+  private friendlyOssError(code?: string): string {
+    if (!code) return '未知错误'
+    switch (code) {
+      case 'SignatureDoesNotMatch':
+      case 'InvalidAccessKeyId':
+        return 'AccessKey ID 或 Secret 不正确'
+      case 'AccessDenied':
+        return '无访问权限：请检查 RAM/子账号是否授权了该 Bucket 的读写'
+      case 'NoSuchBucket':
+      case 'InvalidBucketName':
+        return 'Bucket 不存在或名称不正确'
+      case 'SecondLevelDomainForbidden':
+        return 'Bucket 须使用三级域名访问（请勿填写含 Bucket 的完整域名作为 endpoint）'
+      default:
+        return code
     }
   }
 }

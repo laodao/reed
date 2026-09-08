@@ -120,24 +120,33 @@ export class ImageService {
         return { success: false, error: '未配置图像生成 Provider，请先在设置中添加图像生成服务配置' }
       }
 
-      if (!providerConfig.apiKey) {
+      // 按模板定义判定是否需要 API Key（ComfyUI 等本地网关免密钥）
+      const authProviderType = providerConfig.templateId.replace('image-', '') as ImageProviderType
+      const authDefinition = getProviderDefinition(authProviderType)
+      const needsApiKey = authDefinition ? authDefinition.requiresApiKey : true
+
+      if (needsApiKey && !providerConfig.apiKey) {
         logger.error('[ImageService.generateImage] 错误: Provider 未配置 API 密钥')
         return { success: false, error: `Provider "${providerConfig.name}" 未配置 API 密钥` }
       }
 
-      // 解密 API 密钥
+      // 解密 API 密钥（免密钥 Provider 跳过解密，传空串给实例）
       logger.info('[ImageService.generateImage] 开始解密 API 密钥')
       let decryptedApiKey: string
-      try {
-        const secureStorage = getSecureStorage()
-        if (!secureStorage.isInitialized()) {
-          await secureStorage.initialize()
+      if (!needsApiKey) {
+        decryptedApiKey = ''
+      } else {
+        try {
+          const secureStorage = getSecureStorage()
+          if (!secureStorage.isInitialized()) {
+            await secureStorage.initialize()
+          }
+          decryptedApiKey = secureStorage.decrypt(providerConfig.apiKey!)
+          logger.info('[ImageService.generateImage] API 密钥解密成功')
+        } catch (decryptError) {
+          logger.error('[ImageService.generateImage] API 密钥解密失败:', decryptError)
+          return { success: false, error: 'API 密钥解密失败，请重新配置 Provider' }
         }
-        decryptedApiKey = secureStorage.decrypt(providerConfig.apiKey)
-        logger.info('[ImageService.generateImage] API 密钥解密成功')
-      } catch (decryptError) {
-        logger.error('[ImageService.generateImage] API 密钥解密失败:', decryptError)
-        return { success: false, error: 'API 密钥解密失败，请重新配置 Provider' }
       }
 
       // 确定 Provider 类型

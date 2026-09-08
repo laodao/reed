@@ -16,6 +16,7 @@ import { getPathProvider } from '@core/interfaces/path.interface'
 import { toAssetUrl } from '@core/utils/asset-path'
 import {
   createVideoProvider,
+  getProviderDefinition,
   isProviderImplemented
 } from '@core/platform/providers/video'
 import type { BaseVideoProvider } from '@core/platform/providers/video'
@@ -97,24 +98,33 @@ export class VideoGenerationService {
         return { success: false, error: '未配置视频生成 Provider，请先在设置中添加视频生成服务配置' }
       }
 
-      if (!providerConfig.apiKey) {
+      // 按模板定义判定是否需要 API Key（ComfyUI 等本地网关免密钥）
+      const authProviderType = providerConfig.templateId.replace('video-', '') as VideoProviderType
+      const authDefinition = getProviderDefinition(authProviderType)
+      const needsApiKey = authDefinition ? authDefinition.requiresApiKey : true
+
+      if (needsApiKey && !providerConfig.apiKey) {
         logger.error('[VideoService.generateVideo] 错误: Provider 未配置 API 密钥')
         return { success: false, error: `Provider "${providerConfig.name}" 未配置 API 密钥` }
       }
 
-      // 解密 API 密钥
+      // 解密 API 密钥（免密钥 Provider 跳过解密，传空串给实例）
       logger.info('[VideoService.generateVideo] 开始解密 API 密钥')
       let decryptedApiKey: string
-      try {
-        const secureStorage = getSecureStorage()
-        if (!secureStorage.isInitialized()) {
-          await secureStorage.initialize()
+      if (!needsApiKey) {
+        decryptedApiKey = ''
+      } else {
+        try {
+          const secureStorage = getSecureStorage()
+          if (!secureStorage.isInitialized()) {
+            await secureStorage.initialize()
+          }
+          decryptedApiKey = secureStorage.decrypt(providerConfig.apiKey!)
+          logger.info('[VideoService.generateVideo] API 密钥解密成功')
+        } catch (decryptError) {
+          logger.error('[VideoService.generateVideo] API 密钥解密失败:', decryptError)
+          return { success: false, error: 'API 密钥解密失败，请重新配置 Provider' }
         }
-        decryptedApiKey = secureStorage.decrypt(providerConfig.apiKey)
-        logger.info('[VideoService.generateVideo] API 密钥解密成功')
-      } catch (decryptError) {
-        logger.error('[VideoService.generateVideo] API 密钥解密失败:', decryptError)
-        return { success: false, error: 'API 密钥解密失败，请重新配置 Provider' }
       }
 
       // 确定 Provider 类型
@@ -131,11 +141,11 @@ export class VideoGenerationService {
         return { success: false, error: `视频生成服务 ${providerType} 暂未实现` }
       }
 
-      // 创建 Provider 实例
+      // 创建 Provider 实例（baseUrl 优先取 videoBaseUrl——视频专用端点；回落 baseUrl）
       const provider = createVideoProvider(providerType, {
         id: providerConfig.id,
         apiKey: decryptedApiKey,
-        baseUrl: providerConfig.baseUrl,
+        baseUrl: providerConfig.videoBaseUrl || providerConfig.baseUrl,
         customHeaders: providerConfig.customHeaders,
         customParams: providerConfig.customParams
       })
@@ -207,7 +217,9 @@ export class VideoGenerationService {
     }
 
     let pollCount = 0
-    const maxPolls = 120 // 最多轮询 120 次（约 10 分钟）
+    // 评审 #103：局域网 ComfyUI 网关 H3 全质量单镜实测 15~25 分钟（10s 片段 872s 未完成），
+    // 原 120 次×5s=10 分钟必然超时。提至 900 次（约 75 分钟），需大于 video-gen 节点等待上限。
+    const maxPolls = 900 // 最多轮询 900 次（约 75 分钟）
 
     const pollTask = async () => {
       pollCount++
@@ -225,28 +237,40 @@ export class VideoGenerationService {
         })
 
         if (status.status === 'completed') {
-          // 停止轮询
-          const interval = activePollingTasks.get(taskId)
-          if (interval) {
-            clearInterval(interval)
-            activePollingTasks.delete(taskId)
-          }
-
-          // 保存视频
-          if (status.video?.url) {
-            const savedPath = await this.saveVideoFromUrl(status.video.url, 'unknown')
-            if (savedPath) {
+          // 评审 #104：先取回产物再结束轮询。下载失败不清 interval——
+          // 网关状态持续 done，下一轮自动重试下载，直到成功或达 maxPolls，
+          // 避免"完成了但产物没落盘/节点永久挂起"。
+          const videoUrl = status.video?.url
+          if (videoUrl) {
+            const savedPath = await this.saveVideoFromUrl(videoUrl, 'unknown')
+            if (savedPath && status.video) {
               status.video.localPath = savedPath
               status.video.url = localPathToUrl(savedPath)
+              const interval = activePollingTasks.get(taskId)
+              if (interval) {
+                clearInterval(interval)
+                activePollingTasks.delete(taskId)
+              }
+              this.sendVideoEvent({
+                type: 'generation-completed',
+                taskId: taskId,
+                video: status.video
+              })
             }
+            // 下载失败：不结束轮询，等下轮再试（5s 后）
+          } else {
+            // 网关没给下载地址：按失败收敛
+            const interval = activePollingTasks.get(taskId)
+            if (interval) {
+              clearInterval(interval)
+              activePollingTasks.delete(taskId)
+            }
+            this.sendVideoEvent({
+              type: 'generation-failed',
+              taskId: taskId,
+              error: '视频生成完成但缺少下载地址'
+            })
           }
-
-          // 发送完成事件
-          this.sendVideoEvent({
-            type: 'generation-completed',
-            taskId: taskId,
-            video: status.video
-          })
         } else if (status.status === 'failed') {
           // 停止轮询
           const interval = activePollingTasks.get(taskId)
@@ -317,12 +341,13 @@ export class VideoGenerationService {
       const fileName = `${videoId}.mp4`
       const filePath = path.join(videosDir, fileName)
 
-      // 下载视频
+      // 下载视频（评审 #104：180s 超时，悬挂/断连不无限等）
       logger.info('[VideoService] 下载视频:', videoUrl)
       const response = await fetch(videoUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
+        },
+        signal: AbortSignal.timeout(180_000)
       })
 
       if (!response.ok) {

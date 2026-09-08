@@ -162,3 +162,58 @@
   web-extract 相关测试 21 项全过；`npm run build` 成功。
 - 数据库读回确认：extract1.config.onError="skip"、
   saveKb1.passthrough.skipped 已生效。
+
+
+---
+
+## 图床 OSS：阿里云测试连接失败 + 编辑留空密钥被清（2026-09-07）
+
+### 现象
+- 图床设置添加阿里云 OSS（region=cn-chengdu，endpoint=`oss-cn-chengdu.aliyuncs.com`，
+  bucket=the-bot）后点「测试」失败；用户确认 AK/SK 有效。
+- 编辑配置时 AccessKey Secret 不显示（掩码），保存又因必填校验无法保存；
+  用户期望「留空 = 不修改」。
+
+### 根因（均为代码缺陷，非用户配置错误）
+1. **endpoint 未归一化**：用户按阿里云控制台习惯填不带协议的 host
+   （`oss-cn-chengdu.aliyuncs.com`）。`oss.service.ts` 直接拼
+   `${endpoint}/${bucket}/?max-keys=1` → `fetch` 抛 `Failed to parse URL`。
+2. **寻址风格错误**：阿里云 OSS 要求 bucket 三级域名（vhost）寻址；
+   即使补协议用 path 式 `endpoint/bucket/` 也实测返回
+   403 `SecondLevelDomainForbidden`（"must be addressed using OSS third level domain"）。
+   而 `https://{bucket}.{endpoint}/...` + 正确 V1 签名实测 **PUT=200 / DELETE=204**。
+3. **测试方法依赖 ListObjects 权限**：旧测试 GET bucket list，可能因 RAM 授权
+   不含 list 而误报失败。
+4. **编辑保存会清空密钥（隐性 bug）**：旧 UI rules 必填拦截只是表象；后端
+   handler/repo 用空字符串覆盖已有 `access_key_secret` / `access_key_id` 才是隐患。
+
+### 修复
+- `src/core/platform/services/oss.service.ts`：重写为
+  - `normalizeEndpointHost()`：兼容不带协议 / 带 https / 已是三级域名 / 自定义域名，
+    统一输出 `https://{bucket}.{host}/...`（官方地域域名自动加 bucket 前缀）。
+  - `sendSignedRequest()`：统一 V1 签名请求（PUT/DELETE/GET）。
+  - 测试连接改为**真实上传探针** `.connection-test/probe-*.txt`（PUT 成功后
+    best-effort DELETE，无删除权限不判失败），更贴近真实用途、不依赖 list 权限。
+  - `describeOssError()`：解析 OSS 错误 XML，把 SignatureDoesNotMatch /
+    AccessDenied / NoSuchBucket 等映射为可读中文提示。
+- `src/core/database/repositories/oss-config.repository.ts`：
+  - `update` 仅在 `accessKeyId/Secret` 非空时更新（空串不再清空）；
+  - `getDefault` 在无默认标记时回退到唯一启用配置（单配置场景可直接上传）。
+- `src/electron/ipc/handlers/oss.handler.ts`：update 时空串 secret/akid 直接剔除，
+  不传给 repo。
+- `src/renderer/src/views/Settings.vue`：编辑模式 Secret/AccessKeyID 留空 =
+  不修改（动态 placeholder + 动态必填校验 + 保存时不提交空字段）。
+
+### 验证
+- 新增单测 `tests/unit/core/platform/services/oss.service.spec.ts`（9 例）：
+  无协议/带协议/已是三级域名/留空 region/自定义域名/403 错误解析/探针成功/403/网络异常。
+- repository spec 新增 2 例（update 空值不清空、getDefault 回退），
+  Electron Node 下 7/7 通过（宿主 Node 因 better-sqlite3 ABI 不匹配需用
+  `ELECTRON_RUN_AS_NODE=1 npx electron node_modules/vitest/vitest.mjs run ...`）。
+- `npm run typecheck` / lint：改动文件无新增错误（仓库存在并行会话遗留的
+  workflow/shared-types 类型错误，与本任务无关）。
+- `npm run build` 成功。
+- **真机 CDP 验证**（dev 实例重启后）：`oss.testConnection` 返回
+  `success:true`「连接成功：Bucket 可读可写（已上传探针并清理）」；
+  模拟编辑保存（secret 空串 / 不提交字段）均 success，库中密文
+  `djEw...`（84 字符）未被覆盖。

@@ -118,6 +118,7 @@ import { registerOSSHandlers } from './ipc/handlers/oss.handler'
 import { registerDataSourceHandlers } from './ipc/handlers/datasource.handler'
 import { registerPackHandlers } from './ipc/handlers/pack.handler'
 import { registerEventAdminHandlers } from './ipc/handlers/event-admin.handler'
+import { registerNotificationHandlers } from './ipc/handlers/notification.handler'
 import * as fs from 'fs'
 
 // 在 app ready 之前注册协议权限（重要！）
@@ -404,6 +405,8 @@ function initIpcHandlers(): void {
   registerPackHandlers()
   // 事件系统管理面（10-event-system §5.3/§8）：DLQ 收口 + 消费者水位
   registerEventAdminHandlers()
+  // 通知中心（顶栏铃铛 + 历史列表 + 点击跳转）：平台事件翻译 + 已读独立落表
+  registerNotificationHandlers()
 }
 
 // 应用就绪

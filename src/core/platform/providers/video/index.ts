@@ -13,6 +13,7 @@ import { BaseVideoProvider } from './base-video-provider'
 // SDK Provider 导入
 import { VolcengineVideoProvider } from './sdk/volcengine-video.provider'
 import { BailianVideoProvider } from './sdk/bailian-video.provider'
+import { ComfyUIVideoProvider } from './sdk/comfyui-video.provider'
 
 // 导出基类
 export { BaseVideoProvider }
@@ -26,7 +27,8 @@ export * from './sdk'
 const PROVIDER_CLASSES: Record<string, new (config: VideoProviderConfig) => BaseVideoProvider> = {
   volcengine: VolcengineVideoProvider,
   bailian: BailianVideoProvider,
-  dashscope: BailianVideoProvider  // dashscope 使用相同的 Provider（百炼平台的 Bearer Token 认证）
+  dashscope: BailianVideoProvider,  // dashscope 使用相同的 Provider（百炼平台的 Bearer Token 认证）
+  comfyui: ComfyUIVideoProvider,    // ComfyUI 本地生成网关（MiniMax-H3）
 }
 
 /**
@@ -91,6 +93,12 @@ export const VIDEO_PROVIDER_DEFINITIONS: Record<VideoProviderType, {
     name: '智谱 AI',
     description: '智谱 CogVideoX 视频生成服务',
     requiresApiKey: true
+  },
+  comfyui: {
+    type: 'comfyui',
+    name: 'ComfyUI 生成网关',
+    description: '局域网自建 ComfyUI 生成网关（MiniMax-H3 图生视频），无需 API Key',
+    requiresApiKey: false
   },
   custom: {
     type: 'custom',

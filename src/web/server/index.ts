@@ -420,6 +420,12 @@ async function initDatabase(): Promise<void> {
   )
   await createPlatformEventTables(ds)
 
+  // 通知中心：user_notification_reads 用户已读状态表（与 Electron 端同构；已读独立落表）
+  const { createUserNotificationReads } = await import(
+    '@core/database/migrations/create-user-notification-reads'
+  )
+  await createUserNotificationReads(ds)
+
   // C3 免登录独立页：definitions 加 share_token 列 + 唯一索引（与 Electron 端同构）
   const { addWorkflowShareToken } = await import(
     '@core/database/migrations/add-workflow-share-token'

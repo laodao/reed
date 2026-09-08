@@ -26,6 +26,7 @@ import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
 import { WORKFLOW_DEFAULTS, WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_EVENT_TYPES } from '@shared/types/workflow.types'
 import { pollUntil } from '../engine/async-utils'
+import { submitWithTransientRetry } from './retry-submit'
 import { getEventEmitter } from '@core/interfaces/event.interface'
 
 /** 长任务节点'提交即返回'的输出状态值（三处共用唯一写法） */
@@ -90,6 +91,116 @@ const kbRetrieveNode: WorkflowNodeHandler = {
       output: {
         results: merged,
         count: merged.length,
+      },
+    }
+  },
+}
+
+// ==================== 知识库多库合并检索 ====================
+
+/**
+ * 归一化知识库选择：数组原样；JSON 数组字符串/逗号/空白分隔 → 字符串数组。
+ * 引擎 resolveConfigDeep 对单个模板占位符会透传数组/字符串原值，双保险兼容两种形态。
+ */
+function normalizeKbIds(input: unknown): string[] {
+  if (Array.isArray(input)) return input.map(x => String(x).trim()).filter(Boolean)
+  if (input === undefined || input === null) return []
+  const s = String(input).trim()
+  if (!s) return []
+  try {
+    const parsed = JSON.parse(s)
+    if (Array.isArray(parsed)) return parsed.map((x: unknown) => String(x).trim()).filter(Boolean)
+  } catch { /* 非 JSON 数组，走分隔符解析 */ }
+  return s
+    .split(/[,，\s]+/)
+    .map(x => x.trim())
+    .filter(Boolean)
+}
+
+const kbQueryMultiNode: WorkflowNodeHandler = {
+  type: 'kb-query-multi',
+  controlKind: 'task',
+  cancellable: true,
+  outputSchema: [
+    { key: 'results', type: 'json', desc: '[{ content, score, documentId, documentName, knowledgeBaseId }]（按分数降序，跨库去重合并）' },
+    { key: 'count', type: 'number', desc: '合并后命中数量' },
+    { key: 'sources', type: 'json', desc: '命中的知识库 id 去重列表（供来源标注）' },
+  ],
+  validateConfig(config) {
+    const cfg = config as { knowledgeBaseIds?: unknown; query?: string }
+    const errors: string[] = []
+    if (normalizeKbIds(cfg.knowledgeBaseIds).length === 0) errors.push('必须至少选择一个知识库')
+    if (cfg.query === undefined || stringifyValue(cfg.query).trim() === '') errors.push('查询内容不能为空')
+    return errors
+  },
+  async execute(ctx: WorkflowNodeContext) {
+    const cfg = ctx.config as {
+      knowledgeBaseIds: unknown
+      query: string
+      /** 每库检索条数（默认 5） */
+      topKPerKb?: number
+      /** 跨库合并后最多返回条数（默认 20） */
+      maxResults?: number
+      threshold?: number
+      useRerank?: boolean
+      vectorWeight?: number
+    }
+    const ids = normalizeKbIds(cfg.knowledgeBaseIds)
+    if (ids.length === 0) {
+      // 用户未选择知识库：合法场景（脚本/大纲纯文案生成），直通空结果
+      return { status: 'succeeded', output: { results: [], count: 0, sources: [] } }
+    }
+    if (ctx.signal.aborted) throw new Error('已取消')
+    const service = new KnowledgeBaseService()
+    const query = stringifyValue(cfg.query)
+    const perKb = Math.max(1, Math.min(20, Number(cfg.topKPerKb) || 5))
+    const mergedCap = Math.max(1, Math.min(60, Number(cfg.maxResults) || 20))
+
+    const rows: Array<{
+      content: string
+      score: number
+      documentId: string
+      documentName: string
+      knowledgeBaseId: string
+    }> = []
+    for (const kbId of ids) {
+      if (ctx.signal.aborted) throw new Error('已取消')
+      const resp = await service.search({
+        knowledgeBaseId: kbId,
+        query,
+        topK: perKb,
+        threshold: cfg.threshold,
+        useRerank: cfg.useRerank,
+        vectorWeight: cfg.vectorWeight,
+        signal: ctx.signal, // 与 kb-retrieve 同语义：HTTP 级取消
+      })
+      if (ctx.signal.aborted) throw new Error('已取消')
+      const hits = unwrap(resp, '知识库检索') ?? []
+      for (const r of hits) {
+        rows.push({
+          content: r.content,
+          score: r.score,
+          documentId: r.documentId,
+          documentName: r.documentName,
+          knowledgeBaseId: kbId,
+        })
+      }
+    }
+    // 跨库合并：按分数降序（同文档内容去重——优先保留高分记录）
+    rows.sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+    const seen = new Set<string>()
+    const merged = rows.filter(r => {
+      const key = `${r.knowledgeBaseId}|${r.documentId}|${r.content.slice(0, 80)}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    }).slice(0, mergedCap)
+    return {
+      status: 'succeeded',
+      output: {
+        results: merged,
+        count: merged.length,
+        sources: [...new Set(merged.map(r => r.knowledgeBaseId))],
       },
     }
   },
@@ -327,7 +438,7 @@ const imageGenNode: WorkflowNodeHandler = {
       if (resolved.length > 0) referenceImages = resolved
     }
     const actualPrompt = stringifyValue(cfg.prompt)
-    const resp = await ImageService.generateImage({
+    const request = {
       model: cfg.modelId,
       prompt: actualPrompt,
       ...(cfg.negativePrompt ? { negativePrompt: cfg.negativePrompt } : {}),
@@ -338,7 +449,13 @@ const imageGenNode: WorkflowNodeHandler = {
       ...(cfg.promptExtend !== undefined ? { promptExtend: cfg.promptExtend } : {}),
       ...(cfg.seed !== undefined && cfg.seed >= 0 ? { seed: cfg.seed } : {}),
       ...(referenceImages ? { referenceImages } : {}),
-    } as never)
+    } as never
+    // 评审 #105（图像侧）：提交阶段的瞬时网络失败（fetch/连接/网关 5xx/超时）
+    // 内部重试一次，避免偶发抖动直接让整场工作流失败（与 video-gen 共用 retry-submit）
+    const resp = await submitWithTransientRetry(() => ImageService.generateImage(request), {
+      label: '图像',
+      logger: ctx.logger,
+    })
     if (!resp.success) {
       return { status: 'failed', error: `图像生成失败: ${resp.error ?? '未知错误'}` }
     }
@@ -586,6 +703,7 @@ const appNotifyNode: WorkflowNodeHandler = {
 /** AI 能力节点集合 */
 export const AI_NODE_HANDLERS: WorkflowNodeHandler[] = [
   kbRetrieveNode,
+  kbQueryMultiNode,
   kbIngestNode,
   webSearchNode,
   translateNode,

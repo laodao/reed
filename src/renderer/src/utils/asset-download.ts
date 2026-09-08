@@ -35,11 +35,19 @@ function basenameOf(rel: string): string {
  * 渲染端下载载荷组装。返回 null 表示该资产暂不支持下载（调用方提示）。
  * @param asset 资产记录
  * @param fileUrl file 形态的资产可访问 URL（Web 端 /assets/...，Electron 端 local-*://）
+ * @param view 'preview'=预览态（report 长图下渲染图）；'source'/缺省按存储形态
+ * @param renderedImageUrl 预览态下 report 渲染长图的 data URL（Web 端）
  */
 export function buildWebAssetDownload(
   asset: AssetRecord,
   fileUrl: string,
+  view?: 'preview' | 'source',
+  renderedImageUrl?: string | null,
 ): WebAssetDownload | null {
+  // 预览态（图界面）：下载渲染长图（report/图文类）
+  if (view === 'preview' && renderedImageUrl) {
+    return { fileName: ensureExtension(asset.name, 'png'), mimeType: 'image/png', fetchUrl: renderedImageUrl }
+  }
   if (asset.kind === 'file' && asset.storagePath) {
     if (!fileUrl) return null
     return {

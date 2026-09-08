@@ -140,6 +140,22 @@ export class PlatformEventRepository extends BaseRepository<PlatformEventEntity,
     })
   }
 
+  // ─── 通知中心查询（scoped：只返回当前用户事件，走 ALS userId 过滤） ──────────────
+
+  /**
+   * 取当前用户全部"通知类"事件（按 seq 倒序）。通知 = 仅匹配类型集合；
+   * 翻译（是否真是一条可展示通知，如 run-status 仅终态）由 NotificationService 负责，
+   * 此处只做类型集过滤 + 租户隔离。
+   * 说明：unreadFirst 排序需要在内存中把"未读/已读"拆组，且 run-status 需按
+   * payload.status 过滤终态——无法用端口可移植 SQL 完成，故取全集在服务层组合。
+   */
+  async listAllNotices(types: string[]): Promise<PlatformEventEntity[]> {
+    if (types.length === 0) return []
+    const qb = this.scoped.qb('e')
+    applyTypeCondition(qb, types)
+    return await qb.orderBy('e.seq', 'DESC').getMany()
+  }
+
   /**
    * 重放查询（§5.2；scoped.qb 自动按 ALS userId 过滤——订阅方默认只见自己租户）。
    * 类型模式：'*' 全量；'前缀*' LIKE 前缀；其余全等（与订阅匹配规则一致）。

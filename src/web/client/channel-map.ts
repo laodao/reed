@@ -170,6 +170,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'workflow.resumeRun': { channel: 'wf:resume-run' },
   'workflow.reviewDecide': { channel: 'wf:review-decide' },
   'workflow.getRun': { channel: 'wf:get-run' },
+  'workflow.listRunLogs': { channel: 'wf:list-run-logs' },
+  'workflow.collectNodeOutput': { channel: 'wf:collect-node-output' },
   'workflow.listRuns': { channel: 'wf:list-runs' },
   'workflow.deleteRun': { channel: 'wf:delete-run' },
   'workflow.getPendingReviews': { channel: 'wf:get-pending-reviews' },
@@ -325,10 +327,12 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'assets.updateCategory': { channel: 'asset:category-update' },
   'assets.deleteCategory': { channel: 'asset:category-delete', wrap: (id) => [{ id }] },
   'assets.previewRender': { channel: 'asset:preview-render', wrap: (assetId) => [{ assetId }] },
+  'assets.materializeImage': { channel: 'asset:materialize-image' },
   'assets.previewTemplates': { channel: 'asset:preview-templates' },
   'assets.sourceLink': { channel: 'asset:source-link', wrap: (assetId) => [{ assetId }] },
   'assets.groupDetail': { channel: 'asset:group-detail', wrap: (groupId) => [{ groupId }] },
-  'assets.download': { channel: 'asset:download', wrap: (id) => [{ id }] },
+  'assets.download': { channel: 'asset:download', wrap: (id, view) => [{ id, view }] },
+  'assets.refreshWebpage': { channel: 'asset:webpage-refresh', wrap: (assetId) => [{ assetId }] },
   'longwriting.getProjects': { channel: 'longwriting:getProjects' },
   'longwriting.getProject': { channel: 'longwriting:getProject' },
   'longwriting.createProject': { channel: 'longwriting:createProject' },
@@ -805,4 +809,9 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   // 业务包（pack:list 走兜底推导也能对上；setEnabled 因 camelCase 需显式映射 + 参数包对象）
   'pack.list': { channel: 'pack:list' },
   'pack.setEnabled': { channel: 'pack:setEnabled', wrap: (packId, enabled) => [{ packId, enabled }] },
+  // ==================== 通知中心（与 preload notification 命名空间严格同步） ====================
+  'notification.list': { channel: 'notification:list' },
+  'notification.markRead': { channel: 'notification:mark-read', wrap: (seqs) => [{ seqs }] },
+  'notification.markAllRead': { channel: 'notification:mark-all-read' },
+  'notification.unreadCount': { channel: 'notification:unread-count' },
 }

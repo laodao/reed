@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="main-layout" :data-theme="currentTheme">
     <!-- 侧边栏：纯图标模式，悬停显示菜单名 tooltip -->
     <aside class="sidebar">
@@ -101,11 +101,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from '@/composables/useTheme'
 import { useSkin } from '@/composables/useSkin'
 import { useTabsStore } from '@/stores/tabs'
+import { useWorkflowStore } from '@/stores/workflow'
 import TabBar from '@/components/common/TabBar.vue'
 import {
   mainMenuItems,
@@ -120,6 +121,16 @@ const { currentTheme } = useTheme()
 // 皮肤（data-skin）启动加载与持久化由 useSkin 负责
 useSkin()
 const tabsStore = useTabsStore()
+// 全局工作流事件订阅：任何页面都能收到运行状态 / 待审核通知（不再依赖进入详情页）。
+// 通知展示统一走右上角通知中心（TabBar 铃铛），实时弹窗由 workflow store 负责。
+const wfStore = useWorkflowStore()
+
+onMounted(() => {
+  wfStore.subscribe()
+})
+onUnmounted(() => {
+  wfStore.unsubscribeAll()
+})
 
 /**
  * 需要缓存的页面组件名（对应各页面 defineOptions({ name })）。
@@ -431,4 +442,5 @@ watch(
     height: 24px;
   }
 }
+
 </style>

@@ -141,6 +141,20 @@
         "config": { "title": "{{start.topic}} 热点早报 {{sys.today}}", "template": "# {{start.topic}} 热点早报（{{sys.today}}）\n\n{{gen1.content}}", "templateId": "morningReport" }
       },
       {
+        "id": "saveImgCustom",
+        "type": "save-asset",
+        "name": "早报长图存资产库（自定义模板）",
+        "position": { "x": 1720, "y": 660 },
+        "config": { "content": "{{report_custom.filePath}}", "kind": "file", "category": "image", "subCategory": "早报长图", "name": "{{start.topic}}早报长图-{{sys.today}}", "tags": "早报,{{start.topic}}" }
+      },
+      {
+        "id": "saveImgDefault",
+        "type": "save-asset",
+        "name": "早报长图存资产库（内置版式）",
+        "position": { "x": 1720, "y": 440 },
+        "config": { "content": "{{report_default.filePath}}", "kind": "file", "category": "image", "subCategory": "早报长图", "name": "{{start.topic}}早报长图-{{sys.today}}", "tags": "早报,{{start.topic}}" }
+      },
+      {
         "id": "saveKb2",
         "type": "kb-ingest",
         "name": "报告存知识库",
@@ -189,11 +203,13 @@
       { "id": "e11", "sourceNodeId": "cond1", "targetNodeId": "read1", "kind": "branch", "branchId": "hasTemplate" },
       { "id": "e12", "sourceNodeId": "cond1", "targetNodeId": "report_default", "kind": "branch", "branchId": "noTemplate" },
       { "id": "e13", "sourceNodeId": "read1", "targetNodeId": "report_custom", "kind": "normal" },
-      { "id": "e14", "sourceNodeId": "report_custom", "targetNodeId": "saveKb2", "kind": "normal" },
-      { "id": "e15", "sourceNodeId": "report_default", "targetNodeId": "saveKb2", "kind": "normal" },
-      { "id": "e16", "sourceNodeId": "saveKb2", "targetNodeId": "save1", "kind": "normal" },
-      { "id": "e17", "sourceNodeId": "save1", "targetNodeId": "notify1", "kind": "normal" },
-      { "id": "e18", "sourceNodeId": "notify1", "targetNodeId": "end", "kind": "normal" }
+      { "id": "e14", "sourceNodeId": "report_custom", "targetNodeId": "saveImgCustom", "kind": "normal" },
+      { "id": "e15", "sourceNodeId": "report_default", "targetNodeId": "saveImgDefault", "kind": "normal" },
+      { "id": "e16", "sourceNodeId": "saveImgCustom", "targetNodeId": "saveKb2", "kind": "normal" },
+      { "id": "e17", "sourceNodeId": "saveImgDefault", "targetNodeId": "saveKb2", "kind": "normal" },
+      { "id": "e18", "sourceNodeId": "saveKb2", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e19", "sourceNodeId": "save1", "targetNodeId": "notify1", "kind": "normal" },
+      { "id": "e20", "sourceNodeId": "notify1", "targetNodeId": "end", "kind": "normal" }
     ]
   },
   "triggers": [{ "type": "cron", "expression": "0 8 * * *", "preset": "daily", "enabled": false }],
