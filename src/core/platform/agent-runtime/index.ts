@@ -137,6 +137,8 @@ export {
 export { createToolArtifactStore, ARTIFACT_MAX_BYTES } from './tools/artifacts'
 export type { ToolArtifactPort, ToolArtifactRecord } from './tools/artifacts'
 export { createGetToolResultTool } from './tools/artifact-lookup'
+export { WIRE_NAME_RE, WIRE_NAME_MAX, toWireName, buildWireNameMap } from './tools/wire-name'
+export type { WireNameMap } from './tools/wire-name'
 export {
   createSpawnSubagentTool,
   SUBAGENT_DEFAULT_MAX_STEPS,

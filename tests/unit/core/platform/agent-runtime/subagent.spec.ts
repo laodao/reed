@@ -119,6 +119,42 @@ describe('spawn_subagent（39 号 P1-2）', () => {
     expect(data.note).toContain('provider 500')
   })
 
+  it('tool_names 兼容线上名（41 号）：冒号规范名的折叠形态可过滤；子循环再做线上名折叠', async () => {
+    // 模型可见的是子代理 provider 边界的线上名（冒号名折叠）：pack:demo:read → pack_demo_read
+    let childToolNames: string[] = []
+    const { MockLanguageModelV3, simulateReadableStream } = await import('ai/test')
+    const childModel = new MockLanguageModelV3({
+      provider: 'test',
+      modelId: 'mock',
+      doStream: async (opts: { tools?: Array<{ name?: string }> }) => {
+        childToolNames = (opts.tools ?? []).map((t) => t.name ?? '')
+        return {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: 'stream-start', warnings: [] },
+              { type: 'text-start', id: 't' },
+              { type: 'text-delta', id: 't', delta: 'ok' },
+              { type: 'text-end', id: 't' },
+              { type: 'finish', finishReason: { unified: 'stop', raw: undefined }, usage },
+            ],
+          }),
+        }
+      },
+    }) as unknown as LanguageModel
+    const toolWithColon = createSpawnSubagentTool({
+      resolveModel: async () => childModel,
+      tools: { 'pack:demo:read': readTool() },
+      trajectoryPort: null,
+      scopeKey: 's',
+    })
+    // 以线上名请求过滤（模型只见过线上名）——命中规范名基集
+    const r = await toolWithColon.execute({ goal: 'g', tool_names: ['pack_demo_read'] }, CTX as never)
+    expect(r.ok).toBe(true)
+    expect((r as { data: { stopReason: string } }).data.stopReason).toBe('final')
+    // 子代理 provider 边界看到的仍是线上名（子 LoopRunner 的线上名映射）
+    expect(childToolNames).toEqual(['pack_demo_read'])
+  })
+
   it('子代理 max_steps 硬顶 16（超出夹取）', async () => {
     const cap = spawnTool(scriptedModel([txt('x')]))
     // 步数经 AgentTask 传入 LoopRunner；直接验证不炸 + 正常返回（上限夹取在实现内）

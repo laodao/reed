@@ -25,6 +25,7 @@ import type { TrajectoryAppendPort } from '../trajectory/sink'
 import type { AgentToolDef, AgentStreamEvent, AgentTask, AgentHost, AgentLoopState } from '../types'
 import type { ApprovalDecision } from '@shared/types/agent.types'
 import type { ToolArtifactPort } from './artifacts'
+import { buildWireNameMap } from './wire-name'
 
 const SpawnSubagentInput = z.object({
   goal: z
@@ -95,6 +96,8 @@ export function createSpawnSubagentTool(deps: SpawnSubagentDeps): AgentToolDef<{
     baseTools[name] = def
   }
   const availableNames = Object.keys(baseTools)
+  // tool_names 兼容线上名（41 号）：模型可见的是 provider 函数名（冒号名折叠形态）
+  const wireLookup = buildWireNameMap(availableNames).wireToCanonical
   let childSeq = 0
 
   return {
@@ -111,9 +114,10 @@ export function createSpawnSubagentTool(deps: SpawnSubagentDeps): AgentToolDef<{
       if (input.tool_names && input.tool_names.length > 0) {
         tools = {}
         const missing: string[] = []
-        for (const name of input.tool_names) {
+        for (const requested of input.tool_names) {
+          const name = baseTools[requested] ? requested : (wireLookup.get(requested) ?? requested)
           if (baseTools[name]) tools[name] = baseTools[name]
-          else missing.push(name)
+          else missing.push(requested)
         }
         if (missing.length > 0) {
           return {

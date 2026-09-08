@@ -39,6 +39,7 @@ import {
   isPromptCacheEnabled,
 } from '../context/turn-context'
 import { classifyMessage, collapseSupersededToolResults } from '../context/context-manager'
+import { buildWireNameMap } from '../tools/wire-name'
 import type { ToolArtifactPort } from '../tools/artifacts'
 
 const logger = createLogger('AgentLoop')
@@ -162,6 +163,9 @@ export class LoopRunner {
     const stagnantLimit = this.deps.stagnantLimit ?? 3
     const system = buildSystem(task)
     const cacheEnabled = this.deps.promptCache ?? isPromptCacheEnabled()
+    // 线上名映射（41 号）：provider 函数名规范 ^[a-zA-Z0-9_-]{1,64}$——pack:<id>:<name>
+    // 冒号名整单 400。装配用线上名、回呼还原规范名（每轮重建：工具集本轮固定）
+    const { canonicalToWire, wireToCanonical } = buildWireNameMap(Object.keys(task.tools))
     let lastSignature = ''
     let nudged = false // 无进展提示只注入一次；再达限以 stagnant 终止
     // 最近一步模型实测 inputTokens（压缩水位依据——state.usage.promptTokens 是
@@ -225,7 +229,7 @@ export class LoopRunner {
 
         // —— 单步决策（ai@6：不传 stopWhen = 恰好一步）——
         const stepStart = this.clock()
-        const tools = this.buildToolSet(task, host, state)
+        const tools = this.buildToolSet(task, host, state, canonicalToWire)
         const outbound = this.deps.context ? this.deps.context.assemble(state.messages) : state.messages
         const stream = ai.streamText({
           model,
@@ -272,6 +276,13 @@ export class LoopRunner {
         }
 
         const decision = normalizeDecision(finishReason, stepMessages)
+        // 线上名还原（41 号）：模型回呼的是 provider 函数名（线上名），下游
+        // （轨迹/轮询豁免/无进展签名）全程只见规范名
+        if (decision.type === 'tool_calls') {
+          for (const c of decision.calls) {
+            c.toolName = wireToCanonical.get(c.toolName) ?? c.toolName
+          }
+        }
         const decisionToolNames = decision.type === 'tool_calls' ? decision.calls.map((c) => c.toolName) : []
         // thought 先按字符截 4000，再按 payload 字节预算二次收紧（总收口 A-P2-7：
         // 4 字节字符 4000 chars ≈ 16KB 可击穿 payload 字节预算退化为 _truncated 整行）
@@ -381,7 +392,12 @@ export class LoopRunner {
 
   // ==================== 工具装配（审批/超时/容错包装层，22 号 §3-C2） ====================
 
-  private buildToolSet(task: AgentTask, host: AgentHost, state: AgentLoopState): ToolSet {
+  private buildToolSet(
+    task: AgentTask,
+    host: AgentHost,
+    state: AgentLoopState,
+    canonicalToWire: Map<string, string>,
+  ): ToolSet {
     const ai = this.aiModule
     if (!ai) return {}
     const timeoutMs = this.deps.toolTimeoutMs ?? 120_000
@@ -389,11 +405,14 @@ export class LoopRunner {
 
     const requestApproval = this.deps.requestApproval
     for (const [name, def] of Object.entries(task.tools)) {
+      // key 用线上名（41 号）：provider 函数名不允许冒号（pack:<id>:<name> 形态）；
+      // 闭包内 name 仍是规范名——流事件/轨迹/审计全程规范名
+      const wireName = canonicalToWire.get(name) ?? name
       // registry 桥接产物：校验/超时/截断的所有权在 registry 管线（深 review P1 定案——
       // 两层各做一遍会出现失败被报 ok:true、双计时器隐式取 min、双重截断打架）。
       // loop 只保留：审批短路 + 流事件/轨迹 + 错误形态归一
       const registryWrapped = (def as { registryWrapped?: boolean }).registryWrapped === true
-      out[name] = ai.tool({
+      out[wireName] = ai.tool({
         description: def.description,
         inputSchema: def.inputSchema,
         execute: async (input: unknown, options: { toolCallId: string }) => {

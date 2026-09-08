@@ -508,3 +508,47 @@ describe('39 号 P0-1：系统提示词分层与轮次上下文块', () => {
     }
   })
 })
+
+// ==================== 41 号：线上名兼容（pack 冒号名 → provider 函数名） ====================
+
+describe('41 号：线上名兼容（provider 边界别名化）', () => {
+  function colonTool(): AgentToolDef {
+    return {
+      name: 'pack:lw-agent:generate_overview',
+      description: '包工具（冒号规范名）',
+      inputSchema: z.object({}),
+      dangerLevel: 'read',
+      execute: async () => ({ ok: true, data: { overview: '第一章概览' } }),
+    }
+  }
+
+  it('装配给 provider 的函数名无冒号（线上名）；模型按线上名回呼可执行', async () => {
+    const host = new FakeHost()
+    const { MockLanguageModelV3 } = await import('ai/test')
+    const { simulateReadableStream } = await import('ai/test')
+    let step = 0
+    const toolNamesSeen: string[][] = []
+    const model2 = new MockLanguageModelV3({
+      provider: 'test',
+      modelId: 'mock',
+      doStream: async (opts: { prompt?: unknown; tools?: Array<{ name?: string }> }) => {
+        toolNamesSeen.push((opts.tools ?? []).map((t) => t.name ?? ''))
+        const chunks = step++ === 0
+          ? toolParts('c1', 'pack_lw-agent_generate_overview', {})
+          : txt('概览已生成')
+        return { stream: simulateReadableStream({ chunks }) }
+      },
+    }) as unknown as LanguageModel
+    const runner = new LoopRunner({ resolveModel: async () => model2 })
+    const result = await runner.run(mkTask({ 'pack:lw-agent:generate_overview': colonTool() }, 4), host)
+    expect(result.stopReason).toBe('final')
+    // provider 函数名合法（无冒号）
+    expect(toolNamesSeen[0]).toContain('pack_lw-agent_generate_overview')
+    expect(toolNamesSeen[0].some((n) => n.includes(':'))).toBe(false)
+    // 轨迹/流事件全程规范名（回呼线上名已还原）
+    const toolCalls = host.trajectories.filter((t) => t.kind === 'tool_call')
+    expect(toolCalls[0].name).toBe('pack:lw-agent:generate_overview')
+    const starts = host.streams.filter((e) => e.kind === 'tool-start')
+    expect((starts[0] as { toolName: string }).toolName).toBe('pack:lw-agent:generate_overview')
+  })
+})
