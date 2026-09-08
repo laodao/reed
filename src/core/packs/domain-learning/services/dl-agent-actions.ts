@@ -73,15 +73,24 @@ export async function executeDlAction(
   const spaceId = ctx.spaceId
   if (!spaceId) throw new Error('缺少空间上下文（spaceId 未注入）——dl 工具只能在领域学习宿主内调用')
 
+  // 未解问题研究：模型可省 questionId，从宿主 runtimeContext（ctx.questionId）兜底回填
+  let params = action.params
+  if (action.type === 'dl_answer_question') {
+    const q = (action.params.question ?? {}) as Record<string, unknown>
+    if (!q.questionId && ctx.questionId) {
+      params = { ...action.params, question: { ...q, questionId: ctx.questionId } }
+    }
+  }
+
   switch (action.type) {
     case 'dl_save_concept':
-      return saveConcept(db, spaceId, action.params)
+      return saveConcept(db, spaceId, params)
     case 'dl_save_relation':
-      return saveRelation(db, spaceId, action.params)
+      return saveRelation(db, spaceId, params)
     case 'dl_save_card':
-      return saveCard(db, spaceId, action.params)
+      return saveCard(db, spaceId, params)
     case 'dl_answer_question':
-      return answerQuestion(db, spaceId, action.params)
+      return answerQuestion(db, spaceId, params)
     default:
       throw new Error(`未知 dl 动作：${String(action.type)}`)
   }

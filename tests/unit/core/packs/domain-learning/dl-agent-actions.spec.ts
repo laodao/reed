@@ -191,4 +191,33 @@ describe('dl-agent-actions', () => {
       expect(await db.dlQuestions!.countOpenByProject('sp1')).toBe(1)
     })
   })
+
+  it('answer_question（未解问题研究）：模型省 questionId 时从 ctx.questionId 兜底回填', async () => {
+    ds = await buildDs()
+    await seedProject(ds, 'sp1')
+    const db = buildDb(ds)
+    await runWithUserAsync('u1', () =>
+      db.dlQuestions!.create({ id: 'q_open1', projectId: 'sp1', conceptId: 'c-x', question: '为什么 A 与 B 矛盾？' }))
+
+    // 开子研究模式：宿主注入 ctx.questionId，模型参数不带 questionId → 回填到该问题
+    const ctx: DlAgentExecutionContext = {
+      spaceId: 'sp1',
+      questionId: 'q_open1',
+      db,
+      emit: () => {},
+    }
+    await runWithUserAsync('u1', async () => {
+      const r = await executeDlAction(ctx, {
+        type: 'dl_answer_question',
+        params: {
+          question: { conceptId: 'c-x', question: '为什么 A 与 B 矛盾？', answerMd: '有据答案：…', answerSource: 'ai_verified' },
+        },
+      })
+      expect(r.summary.data).toMatchObject({ questionId: 'q_open1', status: 'answered' })
+      const saved = await db.dlQuestions!.getById('q_open1')
+      expect(saved?.status).toBe('answered')
+      expect(saved?.answerMd).toBe('有据答案：…')
+      expect(saved?.answerSource).toBe('ai_verified')
+    })
+  })
 })

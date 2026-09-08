@@ -24,12 +24,15 @@ import type { ModelMessage } from 'ai'
 import type { AgentToolBinding } from '@shared/types/agent.types'
 import { getAgentLoopHarness } from '@core/platform/workflow/nodes/agent-loop-node'
 import { getMemoryFlywheel } from '@core/platform/workflow/workflow-boot'
-import { registerDlAgentTools, dlToolMaxCalls, dlAgentToolNames } from './dl-agent-tools'
+import { registerDlAgentTools } from './dl-agent-tools'
+import { buildDlBindings } from './dl-agent-bindings'
 import {
   buildDlSuggestions,
+  buildFocusQuestionLines,
   computeDlSpaceSnapshot,
   dlResearchSystemPrompt,
   dlTutorSystemPrompt,
+  researchSourceHint,
 } from './dl-agent-deps'
 import { emitDlAgentEvent, emitDlStream } from './dl-agent-events'
 import {
@@ -37,8 +40,6 @@ import {
   DL_AGENT_MAX_STEPS,
   DL_HISTORY_LIMIT,
   DL_HISTORY_CONTENT_MAX,
-  DL_TOOL_DISCOVER,
-  DL_TOOL_INVOKE_SKILL,
   dlScopeKey,
   type DlAgentMode,
   type DlAgentSendResult,
@@ -47,9 +48,6 @@ import {
 } from './dl-agent.types'
 
 const logger = createLogger('DlAgentHarness')
-
-/** 规划/技能透出（系统工具，裸名；dl 动作工具已由 registerDlAgentTools 注册为 pack:dl-agent:*） */
-const SYSTEM_PASSTHROUGH = [DL_TOOL_DISCOVER, DL_TOOL_INVOKE_SKILL]
 
 function systemPromptOf(mode: DlAgentMode): string {
   return mode === 'research' ? dlResearchSystemPrompt() : dlTutorSystemPrompt()
@@ -77,12 +75,12 @@ export class DlAgentHarnessService {
     return this.busy.has(dlScopeKey(mode, scope))
   }
 
-  /** 发送一轮（research：研究推进；tutor：追问）。整轮 await 到落库返回。 */
+  /** 发送一轮（research：研究推进/未解问题开子研究；tutor：追问）。整轮 await 到落库返回。 */
   async sendMessage(
     mode: DlAgentMode,
     scope: DlScopeRef,
     message: string,
-    opts: { providerConfigId?: string; modelId?: string } = {},
+    opts: { providerConfigId?: string; modelId?: string; focusQuestionId?: string } = {},
   ): Promise<DlAgentSendResult> {
     const key = dlScopeKey(mode, scope)
     if (this.busy.has(key)) {
@@ -101,7 +99,7 @@ export class DlAgentHarnessService {
     mode: DlAgentMode,
     scope: DlScopeRef,
     message: string,
-    opts: { providerConfigId?: string; modelId?: string },
+    opts: { providerConfigId?: string; modelId?: string; focusQuestionId?: string },
     controller: AbortController,
   ): Promise<DlAgentSendResult> {
     const m = getCoreDatabaseManager()
@@ -156,12 +154,35 @@ export class DlAgentHarnessService {
       emitDlAgentEvent(spaceId, conceptForEvent, { type: 'question:open', questionId })
     }
 
-    // 快照 + 白名单（dl 动作工具裸名 + 系统技能/规划透出）
+    // 快照 + 白名单（research 带读工具：KB/网页/API + 有默认搜索源才 web_search；
+    // tutor 不带读工具——答疑引证 = 快照注入讲义/图，M1 口径不变）
     const snapshot = await computeDlSpaceSnapshot(m, spaceId, conceptId)
-    const bindings: AgentToolBinding[] = [
-      ...dlAgentToolNames().map((name) => ({ tool: name, maxCalls: dlToolMaxCalls(name) })),
-      ...SYSTEM_PASSTHROUGH.map((tool) => ({ tool })),
-    ]
+    let snapshotText = snapshot.text
+    let bindings: AgentToolBinding[] = []
+    if (mode === 'research') {
+      const registered = new Set(harness.registry.listSpecs().map((s) => s.name))
+      let webSearchAvailable = false
+      try {
+        webSearchAvailable = !!(await m.searchEngineConfigs?.getDefault?.())
+      } catch {
+        webSearchAvailable = false
+      }
+      bindings = buildDlBindings({ mode, availableToolNames: registered, webSearchAvailable })
+      snapshotText += `\n${researchSourceHint(webSearchAvailable)}`
+      if (opts.focusQuestionId) {
+        const focus = (await m.dlQuestions?.getById(opts.focusQuestionId)) ?? null
+        if (focus && focus.projectId === spaceId) {
+          const focusConcept = focus.conceptId ? ((await m.dlConcepts?.getById(focus.conceptId)) ?? null) : null
+          snapshotText += `\n${buildFocusQuestionLines({
+            question: focus.question,
+            questionId: focus.id,
+            conceptName: focusConcept?.name ?? null,
+          })}`
+        }
+      }
+    } else {
+      bindings = buildDlBindings({ mode, webSearchAvailable: false })
+    }
 
     // seededHistory：tutor 用该空间/概念最近的 answered 问答对（dl_question 历史源）
     let seeded: ModelMessage[] = []
@@ -210,7 +231,7 @@ export class DlAgentHarnessService {
         },
         resolveModel: (o) => harness.resolveModel({ providerConfigId: o?.providerConfigId, modelId: o?.modelId }),
         systemPrompt: () => systemPromptOf(mode),
-        snapshot: () => snapshot.text,
+        snapshot: () => snapshotText,
         seededHistory: () => seeded,
         maxSteps: DL_AGENT_MAX_STEPS,
         contextWindowTokens: Number(process.env.AGENT_CONTEXT_WINDOW ?? 24_000) || 24_000,
@@ -228,6 +249,7 @@ export class DlAgentHarnessService {
         runtimeContext: () => ({
           spaceId,
           ...(conceptId ? { conceptId } : {}),
+          ...(opts.focusQuestionId ? { questionId: opts.focusQuestionId } : {}),
           providerConfigId: opts.providerConfigId,
           modelId: opts.modelId,
         }),

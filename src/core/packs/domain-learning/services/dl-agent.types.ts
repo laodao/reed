@@ -36,6 +36,9 @@ export const DL_TOOL_MAX_CALLS: Record<string, number> = {
 /** 工具名常量 */
 export const DL_TOOL_DISCOVER = 'discover_capabilities'
 export const DL_TOOL_INVOKE_SKILL = 'invoke_skill'
+
+/** 系统透出工具（规划/技能；裸名，宿主白名单直接引用） */
+export const DL_SYSTEM_PASSTHROUGH = [DL_TOOL_DISCOVER, DL_TOOL_INVOKE_SKILL] as const
 export const DL_TOOL_SAVE_CONCEPT = 'dl_save_concept'
 export const DL_TOOL_SAVE_RELATION = 'dl_save_relation'
 export const DL_TOOL_SAVE_CARD = 'dl_save_card'
@@ -84,6 +87,8 @@ export interface DlAgentActionSummary {
 export interface DlAgentExecutionContext {
   spaceId: string
   conceptId?: string | null
+  /** 未解问题研究：本轮聚焦的 dl_question id（dl_answer_question 缺省回填） */
+  questionId?: string | null
   providerConfigId?: string
   modelId?: string
   db: import('@core/database/database-manager.interface').ICoreDatabaseManager

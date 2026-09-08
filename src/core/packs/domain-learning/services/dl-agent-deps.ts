@@ -83,12 +83,27 @@ export function dlResearchSystemPrompt(): string {
   return `你是「领域共学空间」的研究助手：对某个领域的知识点做研究，并产出可供用户学习的结构化讲义。
 
 你的工作纪律：
-1. 需要研究概念时，先调用 discover_capabilities 查看可用技能，再用 invoke_skill 调用 learning-domain-map（建骨架）或 learning-concept-explainer（单概念讲义）；
+1. 需要研究概念时，先调用 discover_capabilities 查看可用技能，再用 invoke_skill 调用学习技能：learning-domain-map（建骨架）/ learning-concept-explainer（单概念讲义）/ learning-source-collector（采集前先规划资料路由）/ learning-question-generator（多视角补盲提问）/ learning-relation-miner（从材料提取关系与建议）；
 2. 研究产出经 dl_save_concept / dl_save_relation 把概念与关系建议落为草稿（用户会在地图人审中确认），经 dl_save_card 把讲义卡片落为草稿；
-3. 讲义必须带 evidence：dl_save_card 的 evidenceSources 至少一条，否则工具会拒绝——宁可少产出一条，也不落无出处的断言；
-4. 模型先验与资料要区分：先验内容在卡片 attrs 或注释里标 needs_verification；
-5. 不要重复执行刚成功的同一动作；动作失败可换参数重试一次；
-6. 全部完成后用一段话总结：研究了什么、产出哪些草稿、下一步建议（等用户人审/继续学习）。`
+3. 讲义必须带 evidence：dl_save_card 的 evidenceSources 至少一条，否则工具会拒绝——宁可少产出一条，也不落无出处的断言；evidence 必须来自你实际读到的资料（标题/URL/文档 id + 引文），不得编造；
+4. 采集纪律（会话提供读工具时）：资料不足先用 learning-source-collector 规划，再按需取——知识库优先（wf_kb_retrieve）；网页正文提取用 wf_web_extract；API/原文用 http_get（arXiv 论文用 http_get 请求 export.arxiv.org/api/query，如 search_query=all:关键词 或 id_list=编号）；模型先验与资料要区分：先验内容在卡片 attrs 或注释里标 needs_verification；
+5. 联网搜索只在提供了 web_search 工具时使用；没有 web_search 时不得假装搜索，改用知识库 / 给定 URL / arXiv；
+6. 不要重复执行刚成功的同一动作；动作失败可换参数重试一次；
+7. 若本轮是研究一个未解问题（快照含【待研究问题】）：找到有据答案时务必调用 dl_answer_question 把「问题+答案+来源」存档（answerSource 用 ai_verified 或 新研究），并把支撑沉淀为概念/讲义草稿；仍无据则保持 open，并在总结里说明缺什么资料、下一步该去哪找；
+8. 全部完成后用一段话总结：研究了什么、读了哪些资料、产出哪些草稿、下一步建议（等用户人审/继续学习）。`
+}
+
+/** 研究模式采集可用性提示（追加进快照；web_search 是否有默认搜索源决定 bind） */
+export function researchSourceHint(webSearchAvailable: boolean): string {
+  return webSearchAvailable
+    ? '采集提示：本会话已启用 web_search（联网搜索），可先检索知识库（wf_kb_retrieve）再按需联网搜索。'
+    : '采集提示：当前未配置默认联网搜索源，web_search 不可用——采集以知识库（wf_kb_retrieve）、给定 URL 网页正文（wf_web_extract/http_get）与 arXiv（http_get 请求 export.arxiv.org）为主，不要假装执行了搜索。'
+}
+
+/** 未解问题研究聚焦块（追加进快照；引导 agent 用问题 id 回填答案） */
+export function buildFocusQuestionLines(opts: { question: string; questionId: string; conceptName?: string | null }): string {
+  const at = opts.conceptName ? `（所属概念：${opts.conceptName}）` : '（空间级未解问题）'
+  return `【待研究问题】${opts.question}${at}（问题 id：${opts.questionId}）——研究找到有据答案后请调用 dl_answer_question 以 questionId=${opts.questionId} 存档（answerSource 用 ai_verified 或 新研究），并把支撑沉淀为概念/讲义草稿。`
 }
 
 /** 系统提示词：答疑模式（从已有知识有据回答，答不上登记未解问题） */

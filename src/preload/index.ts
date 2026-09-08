@@ -1320,8 +1320,8 @@ const electronAPI = {
       ipcRenderer.invoke('dl:confirm-relation', p),
     // 未解问题队列（→ DlQuestionRow[]）
     listQuestions: (id: string) => ipcRenderer.invoke('dl:list-questions', { id }),
-    // Agent 发送（research=研究概念产出讲义草稿；tutor=追问答疑 → DlAgentSendResult）
-    agentSend: (p: { mode: 'research' | 'tutor'; spaceId: string; conceptId?: string | null; message: string; providerConfigId?: string; modelId?: string }) =>
+    // Agent 发送（research=研究概念/未解问题产出讲义草稿；tutor=追问答疑 → DlAgentSendResult）
+    agentSend: (p: { mode: 'research' | 'tutor'; spaceId: string; conceptId?: string | null; message: string; providerConfigId?: string; modelId?: string; focusQuestionId?: string }) =>
       ipcRenderer.invoke('dl:agent-send', p),
     // Agent 取消（该 scope 在途轮次）
     agentCancel: (p: { mode: 'research' | 'tutor'; spaceId: string; conceptId?: string | null }) =>

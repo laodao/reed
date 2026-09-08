@@ -86,6 +86,7 @@ interface DomainLearningApi {
     message: string
     providerConfigId?: string
     modelId?: string
+    focusQuestionId?: string
   }): Promise<IpcLike<DlAgentSendResultUi>>
   agentCancel(p: { mode: 'research' | 'tutor'; spaceId: string; conceptId?: string | null }): Promise<IpcLike<{ ok: boolean }>>
   agentBusy(p: { mode: 'research' | 'tutor'; spaceId: string; conceptId?: string | null }): Promise<IpcLike<boolean>>
@@ -279,7 +280,8 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
 
   /**
    * Agent 发送（整轮 await，事件面走 subscribeAgentEvent/subscribeStream）：
-   * - mode='research'：研究概念/未解问题 → 产出讲义草稿落库；
+   * - mode='research'：研究概念/未解问题 → 产出讲义草稿落库（focusQuestionId 指定
+   *   未解问题时即「开子研究」，宿主引导用问题 id 回填答案）；
    * - mode='tutor'：追问答疑 → 问题入 dl_question 队列，答上留 answered。
    */
   async function sendAgent(p: {
@@ -287,6 +289,7 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     spaceId: string
     conceptId?: string | null
     message: string
+    focusQuestionId?: string
   }): Promise<DlAgentSendResultUi | null> {
     const a = api()
     if (!a) return null

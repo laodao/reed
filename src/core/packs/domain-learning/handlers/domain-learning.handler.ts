@@ -104,10 +104,11 @@ export function registerDomainLearningHandlers(): void {
     }))
 
   // ---- 研究/追问（agent 宿主；research 与 tutor 两模式） ----
-  ipcBridge.handle('dl:agent-send', (_e, p: { mode: DlAgentMode; spaceId: string; conceptId?: string | null; message: string; providerConfigId?: string; modelId?: string }) =>
+  ipcBridge.handle('dl:agent-send', (_e, p: { mode: DlAgentMode; spaceId: string; conceptId?: string | null; message: string; providerConfigId?: string; modelId?: string; focusQuestionId?: string }) =>
     wrap(() => services().agent.sendMessage(p.mode, { spaceId: p.spaceId, conceptId: p.conceptId ?? null }, p.message, {
       providerConfigId: p.providerConfigId,
       modelId: p.modelId,
+      focusQuestionId: p.focusQuestionId,
     })))
   ipcBridge.handle('dl:agent-cancel', (_e, p: { mode: DlAgentMode; spaceId: string; conceptId?: string | null }) => {
     services().agent.cancel(p.mode, { spaceId: p.spaceId, conceptId: p.conceptId ?? null })

@@ -38,6 +38,7 @@ function dlCtxFrom(ctx: AgentToolContext): DlAgentExecutionContext {
   return {
     spaceId,
     conceptId,
+    questionId: typeof log.questionId === 'string' ? log.questionId : null,
     providerConfigId: typeof log.providerConfigId === 'string' ? log.providerConfigId : undefined,
     modelId: typeof log.modelId === 'string' ? log.modelId : undefined,
     db: getCoreDatabaseManager(),
