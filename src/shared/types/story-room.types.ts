@@ -142,3 +142,10 @@ export interface RoomStateView {
 
 /** 按需提炼范围（设计文档 §9） */
 export type DistillScope = 'overview' | 'characters' | 'plots' | 'world' | 'outline'
+
+/** 账本用户操作（确认/否决/丢弃/修改一句话） */
+export type LedgerOpInput =
+  | { action: 'confirm'; entryId: string }
+  | { action: 'reject'; entryId: string }
+  | { action: 'discard'; entryId: string }
+  | { action: 'revise'; entryId: string; title?: string; points?: string[] }

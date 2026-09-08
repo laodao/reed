@@ -24,6 +24,7 @@
  */
 
 import { registerLongWritingHandlers } from './handlers/longwriting.handler'
+import { registerStoryRoomHandlers } from './story-room/room.handler'
 import type { PackDefinition } from '../registry'
 
 export const longwritingPack: PackDefinition = {
@@ -39,5 +40,7 @@ export const longwritingPack: PackDefinition = {
   },
   activate() {
     registerLongWritingHandlers()
+    // 故事研讨室（v2.1）：room:* 二级前缀，仍落在 longwriting: 之下
+    registerStoryRoomHandlers()
   },
 }

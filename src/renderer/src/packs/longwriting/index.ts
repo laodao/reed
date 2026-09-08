@@ -15,7 +15,7 @@ export const longwritingPack: RendererPackDefinition = {
     version: '1.0.0',
     description: 'AI 辅助长篇小说创作',
     contributions: {
-      routePaths: ['/longwriting', '/story-editor/:id', '/comment-editor/:id'],
+      routePaths: ['/longwriting', '/longwriting/room/:projectId', '/story-editor/:id', '/comment-editor/:id'],
     },
   },
   routes: [
@@ -25,6 +25,15 @@ export const longwritingPack: RendererPackDefinition = {
       component: () => import('@/views/LongWriting.vue'),
       meta: {
         title: '长文写作'
+      }
+    },
+    {
+      // 故事研讨室（v2.1）：统一对话研讨主界面
+      path: '/longwriting/room/:projectId',
+      name: 'StoryRoom',
+      component: () => import('@/views/StoryRoom.vue'),
+      meta: {
+        title: '故事研讨室'
       }
     },
     {

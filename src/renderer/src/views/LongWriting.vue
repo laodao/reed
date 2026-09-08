@@ -41,6 +41,14 @@
             </div>
           </div>
           <div class="project-actions">
+            <el-button
+              v-if="project.type === 'story'"
+              type="primary"
+              size="small"
+              @click.stop="openRoom(project)"
+            >
+              进入研讨室
+            </el-button>
             <el-button text @click.stop="editProject(project)">
               <el-icon><Edit /></el-icon>
             </el-button>
@@ -266,6 +274,13 @@ async function createProject() {
 }
 
 // 打开项目
+/** 进入故事研讨室（v2.1：story 类项目主入口） */
+function openRoom(project: LongWritingProject) {
+  const path = `/longwriting/room/${project.id}`
+  tabsStore.preloadTab(path, `研讨室 · ${project.name}`)
+  router.push(path)
+}
+
 function openProject(project: LongWritingProject) {
   // 预先设置 tab 标题为项目名称
   const path = project.type === 'story' ? `/story-editor/${project.id}` : `/comment-editor/${project.id}`

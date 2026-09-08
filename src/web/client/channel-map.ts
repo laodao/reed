@@ -549,6 +549,17 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'longwriting.onAgentEvent': {
     eventChannel: (projectId) => `longwriting:agent:${projectId}`,
   },
+  // ==================== 故事研讨室（v2.1） ====================
+  'longwriting.roomSend': { channel: 'longwriting:room:send' },
+  'longwriting.roomHistory': { channel: 'longwriting:room:history' },
+  'longwriting.roomState': { channel: 'longwriting:room:state' },
+  'longwriting.roomCancel': { channel: 'longwriting:room:cancel' },
+  'longwriting.roomLedgerUpdate': { channel: 'longwriting:room:ledger:update' },
+  'longwriting.roomSetPhase': { channel: 'longwriting:room:setPhase' },
+  // longwriting.onRoomEvent(projectId, cb) — 后端 emit(`longwriting:room:${projectId}`, ...)
+  'longwriting.onRoomEvent': {
+    eventChannel: (projectId) => `longwriting:room:${projectId}`,
+  },
   'diary.listFolders': { channel: 'diary:list-folders' },
   'diary.getAllFolders': { channel: 'diary:get-all-folders' },
   'diary.createFolder': { channel: 'diary:create-folder' },

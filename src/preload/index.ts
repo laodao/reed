@@ -2043,6 +2043,26 @@ const electronAPI = {
       const listener = (_event: any, data: any) => callback(data)
       ipcRenderer.on(channel, listener)
       return () => ipcRenderer.removeListener(channel, listener)
+    },
+
+    // ==================== 故事研讨室（v2.1） ====================
+    roomSend: (projectId: string, message: string, opts?: { providerConfigId?: string; modelId?: string }) =>
+      ipcRenderer.invoke('longwriting:room:send', projectId, message, opts),
+    roomHistory: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:room:history', projectId),
+    roomState: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:room:state', projectId),
+    roomCancel: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:room:cancel', projectId),
+    roomLedgerUpdate: (projectId: string, op: unknown) =>
+      ipcRenderer.invoke('longwriting:room:ledger:update', projectId, op),
+    roomSetPhase: (projectId: string, phase: string) =>
+      ipcRenderer.invoke('longwriting:room:setPhase', projectId, phase),
+    onRoomEvent: (projectId: string, callback: (event: unknown) => void) => {
+      const channel = `longwriting:room:${projectId}`
+      const listener = (_event: any, data: unknown) => callback(data)
+      ipcRenderer.on(channel, listener)
+      return () => ipcRenderer.removeListener(channel, listener)
     }
   },
 

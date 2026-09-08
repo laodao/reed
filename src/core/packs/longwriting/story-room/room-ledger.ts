@@ -11,7 +11,7 @@
  */
 
 import { createLogger } from '@core/utils/logger'
-import type { ConsensusEntry, ConsensusKind, ConsensusStatus } from '@shared/types/story-room.types'
+import type { ConsensusEntry, ConsensusKind, ConsensusStatus, LedgerOpInput } from '@shared/types/story-room.types'
 import { extractJsonArray } from '@core/platform/services/longwriting/story-persist'
 import { generateRoomText } from './room-llm'
 import { getRoomState, patchRoomState } from './room-state'
@@ -140,11 +140,7 @@ export async function silentExtractLedger(
 
 // ==================== 用户操作（账本状态机） ====================
 
-export type LedgerOp =
-  | { action: 'confirm'; entryId: string }
-  | { action: 'reject'; entryId: string }
-  | { action: 'discard'; entryId: string }
-  | { action: 'revise'; entryId: string; title?: string; points?: string[] }
+export type LedgerOp = LedgerOpInput
 
 /** 用户操作账本条目：确认 / 否决 / 修改一句话 / 丢弃。返回更新后的账本。 */
 export async function applyLedgerOp(
