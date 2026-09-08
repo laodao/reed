@@ -35,6 +35,7 @@ export const EP_TOOL_MAX_CALLS: Record<string, number> = {
   update_entity: 3,
   delete_entity: 2,
   query_database: 3,
+  ep_confirm_choice: 2,
 }
 
 /** 从工具执行上下文还原 EP 执行上下文（共享注册：项目上下文只能来自 runtimeContext） */
@@ -118,6 +119,21 @@ export function buildEpAgentToolDefs(): AgentToolDef[] {
   ]
 }
 
+/**
+ * ep_confirm_choice（EP-2，choice→审批映射）：LLM 需要用户先选一个候选时调用。
+ * requiresApproval → 审批卡挂起；用户选定经 approve_with_edit 的**整体替换** input 回填
+ * （评审 P1-3：schema 一形两用——LLM 首呼与用户编辑同构，前端必须回传完整 input）。
+ */
+export const EP_CONFIRM_CHOICE_TOOL = 'ep_confirm_choice'
+
+const EpConfirmChoiceSchema = z.object({
+  actionType: z.enum(['generate_script', 'split_scenes', 'generate_storyboards', 'generate_char_asset', 'generate_location_asset', 'generate_item_asset', 'update_entity', 'delete_entity', 'query_database']),
+  param: z.string().describe('需要用户填充的参数名（如 name/dataSourceId）'),
+  choices: z.array(z.string()).min(1).describe('候选清单'),
+  prompt: z.string().optional().describe('给用户的选择提示'),
+  selected: z.string().optional().describe('用户选定的候选——由审批卡回填，模型首呼留空'),
+})
+
 /** 懒注册（幂等）：宿主首次 sendMessage 时调用——boot 时序上 pack activate 早于 workflow-boot，
  * 共享 registry 当时还不存在（评审 P0-1），因此注册只能发生在宿主首次用到 harness 之后 */
 export function registerEpAgentTools(registry: AgentToolRegistry): void {
@@ -127,4 +143,30 @@ export function registerEpAgentTools(registry: AgentToolRegistry): void {
     if (existing.has(namespaced)) continue
     registry.register(def, { packId: EP_AGENT_PACK_ID })
   }
+  if (!existing.has(`pack:${EP_AGENT_PACK_ID}:${EP_CONFIRM_CHOICE_TOOL}`)) {
+    registry.register(buildEpConfirmChoiceDef(), { packId: EP_AGENT_PACK_ID })
+  }
+}
+
+/** ep_confirm_choice 工具定义（独立导出：单测直调 execute 验证选择校验，绕过审批管线） */
+export function buildEpConfirmChoiceDef(): AgentToolDef {
+  return {
+        name: EP_CONFIRM_CHOICE_TOOL,
+        description: '当用户请求里缺少必要选项（如"生成定妆图"但没说哪个角色）时，向用户发起选择请求。发起后本工具会挂起等待用户在审批卡中选定；返回的 selected 即用户选择，请据此继续调用对应动作工具。',
+        inputSchema: EpConfirmChoiceSchema,
+        dangerLevel: 'read',
+        requiresApproval: true,
+        approvalCard: {
+          title: '需要你的选择',
+          summary: (i: { prompt?: string; choices?: string[] }) => `${i.prompt || '请选择'}（候选：${(i.choices ?? []).join('、')}）`,
+          editable: ['selected'],
+        },
+        execute: async (input) => {
+          const selected = (input as { selected?: string }).selected
+          const choices = (input as { choices?: string[] }).choices ?? []
+          if (!selected) throw new Error('等待用户选择：请在审批卡中选定一个候选')
+          if (!choices.includes(selected)) throw new Error(`所选「${selected}」不在候选清单中`)
+          return summaryToResult({ status: 'ok', message: `用户已选择：${selected}`, data: { selected } })
+        },
+      } as AgentToolDef
 }

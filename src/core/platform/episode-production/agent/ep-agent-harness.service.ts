@@ -26,9 +26,12 @@ import { getAgentLoopHarness } from '@core/platform/workflow/nodes/agent-loop-no
 import { DbAgentSessionStore } from '@core/platform/agent-runtime/memory/session-store'
 import { TrajectorySink } from '@core/platform/agent-runtime/trajectory/sink'
 import { ContextManager } from '@core/platform/agent-runtime/context/context-manager'
+import { ApprovalCoordinator } from '@core/platform/agent-runtime/runtime/approval'
+import type { PendingApproval } from '@shared/types/agent.types'
 import type { ModelMessage } from 'ai'
 import type {
   EpAgentActionSummary,
+  EpAgentActionType,
   EpAgentProductionState,
   EpAgentSendResult,
 } from './ep-agent.types'
@@ -36,7 +39,7 @@ import { EP_AGENT_DEFINITION_ID, EP_AGENT_HISTORY_LIMIT, EP_AGENT_MAX_STEPS } fr
 import { computeEpProductionState, buildEpSuggestions } from './ep-agent-deps'
 import { emitEpAgentEvent, epAgentEventChannel } from './ep-agent-events'
 import { epAgentConversationId } from './ep-agent-workflow.service'
-import { EP_AGENT_PACK_ID, EP_TOOL_MAX_CALLS, registerEpAgentTools } from './ep-agent-tools'
+import { EP_AGENT_PACK_ID, EP_TOOL_MAX_CALLS, registerEpAgentTools, EP_CONFIRM_CHOICE_TOOL } from './ep-agent-tools'
 
 const logger = createLogger('EpAgentHarness')
 
@@ -89,6 +92,8 @@ export class EpAgentHarnessService {
   private static instance: EpAgentHarnessService | null = null
 
   private readonly busy = new Map<string, AbortController>()
+  /** 进行中的审批协调器（ep_confirm_choice 挂起卡；decide/cancel 用） */
+  private readonly coordinators = new Map<string, ApprovalCoordinator>()
 
   static getInstance(db?: any): EpAgentHarnessService {
     if (!EpAgentHarnessService.instance) {
@@ -104,7 +109,34 @@ export class EpAgentHarnessService {
   }
 
   cancel(projectId: string, episodeId: string): void {
-    this.busy.get(`${projectId}:${episodeId}`)?.abort(new Error('用户取消'))
+    const key = `${projectId}:${episodeId}`
+    this.busy.get(key)?.abort(new Error('用户取消'))
+    this.coordinators.get(key)?.cancelScope(`ep-agent:${projectId}:${episodeId}`)
+  }
+
+  /** 审批决定（EP-2）：action='select' 时回传完整 input+selected（approve_with_edit 整体替换语义） */
+  decideChoice(
+    projectId: string,
+    episodeId: string,
+    approvalId: string,
+    action: 'select' | 'reject',
+    selected?: string,
+  ): boolean {
+    const coordinator = this.coordinators.get(`${projectId}:${episodeId}`)
+    if (!coordinator) return false
+    if (action === 'reject') return coordinator.decide(approvalId, { action: 'reject', reason: '用户未选择' })
+    const pending = coordinator.listPending(`ep-agent:${projectId}:${episodeId}`).find((p) => p.approvalId === approvalId)
+    if (!pending) return false
+    const baseInput = (pending.input ?? {}) as Record<string, unknown>
+    const input = { ...baseInput, selected }
+    return coordinator.decide(approvalId, { action: 'approve_with_edit', input })
+  }
+
+  /** 挂起中的选择卡（前端恢复用） */
+  listPendingChoices(projectId: string, episodeId: string): PendingApproval[] {
+    const coordinator = this.coordinators.get(`${projectId}:${episodeId}`)
+    if (!coordinator) return []
+    return coordinator.listPending(`ep-agent:${projectId}:${episodeId}`).filter((p) => p.toolName === EP_CONFIRM_CHOICE_TOOL)
   }
 
   async sendMessage(
@@ -172,6 +204,28 @@ export class EpAgentHarnessService {
       ...packNames.map((name) => ({ tool: name, maxCalls: EP_TOOL_MAX_CALLS[name.replace(`pack:${EP_AGENT_PACK_ID}:`, '')] })),
       ...planningTools.map((tool) => ({ tool })),
     ]
+
+    // choice→审批（EP-2）：协调器按轮创建；approval:request 转译为前端 choice:request
+    // （带 approvalId+完整 input——前端 decide 回传整体替换 input，评审 P0-2/P1-2/P1-3）
+    const approvalCoordinator = new ApprovalCoordinator({
+      timeoutMs: Number(process.env.EP_AGENT_APPROVAL_TIMEOUT_MS ?? 30 * 60_000),
+      emit: (e) => {
+        if (e.type === 'approval:request' && e.toolName === EP_CONFIRM_CHOICE_TOOL) {
+          const input = e.input as { actionType: string; param: string; choices: string[]; prompt?: string }
+          emitEpAgentEvent(projectId, episodeId, {
+            type: 'choice:request',
+            choice: { actionType: input.actionType as EpAgentActionType, param: input.param, choices: input.choices, prompt: input.prompt },
+            approvalId: e.approvalId,
+            pendingInput: e.input as Record<string, unknown>,
+          })
+          return
+        }
+        if (e.type === 'approval:resolved') {
+          logger.info(`[ep-agent] 审批结案 approvalId=${e.approvalId} action=${e.action}`)
+        }
+      },
+    })
+    this.coordinators.set(`${projectId}:${episodeId}`, approvalCoordinator)
     const toolMap: Record<string, AgentToolDef> = harness.registry.buildToolDefs(bindings)
 
     // 4. 观测面 + 会话持久化
@@ -248,6 +302,7 @@ export class EpAgentHarnessService {
           modelId: o?.modelId ?? opts.modelId,
         }),
         context,
+        requestApproval: (tool, input, call) => approvalCoordinator.request(call.scopeId, tool, input, call.signal),
       })
         .run(
           {

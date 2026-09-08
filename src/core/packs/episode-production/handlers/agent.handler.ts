@@ -49,6 +49,25 @@ export function registerEpisodeAgentHandlers(): void {
     }
   })
 
+  ipcBridge.handle('ep:agent:decide', async (_event, projectId: string, episodeId: string, approvalId: string, action: 'select' | 'reject', selected?: string) => {
+    try {
+      if (!isEpAgentHarnessEnabled()) return { success: false, error: '审批通路仅在 harness 模式可用' }
+      const ok = EpAgentHarnessService.getInstance().decideChoice(projectId, episodeId, approvalId, action, selected)
+      return ok ? { success: true, data: { decided: true } } : { success: false, error: '审批不存在或已过期' }
+    } catch (error: any) {
+      return { success: false, error: error?.message ?? String(error) }
+    }
+  })
+
+  ipcBridge.handle('ep:agent:list-pending', async (_event, projectId: string, episodeId: string) => {
+    try {
+      if (!isEpAgentHarnessEnabled()) return { success: true, data: [] }
+      return { success: true, data: EpAgentHarnessService.getInstance().listPendingChoices(projectId, episodeId) }
+    } catch (error: any) {
+      return { success: false, error: error?.message ?? String(error) }
+    }
+  })
+
   ipcBridge.handle('ep:agent:cancel', async (_event, projectId: string, episodeId: string) => {
     try {
       if (isEpAgentHarnessEnabled()) {

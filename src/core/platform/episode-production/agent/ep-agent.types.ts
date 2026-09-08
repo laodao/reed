@@ -100,7 +100,7 @@ export type EpAgentEvent =
   | { type: 'reply:content'; content: string }
   | { type: 'reply:done'; suggestions: string[] }
   | { type: 'error'; error: string }
-  | { type: 'choice:request'; choice: EpAgentChoice }
+  | { type: 'choice:request'; choice: EpAgentChoice; approvalId?: string; pendingInput?: Record<string, unknown> }
 
 // ==================== 生产状态（引擎实时计算，不持久化） ====================
 

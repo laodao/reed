@@ -37,6 +37,10 @@ export interface EpAgentPendingChoice {
   param: string
   choices: string[]
   prompt?: string
+  /** EP-2：审批型 choice（harness 模式）——选定后经 decide 通路回填，非文本重入 */
+  approvalId?: string
+  /** 审批挂起的完整工具入参（decide 回传整体替换 input 必需——评审 P1-3） */
+  pendingInput?: Record<string, unknown>
 }
 
 interface EpAgentChatOptions {
@@ -200,8 +204,10 @@ export function useEpAgentChat(options: EpAgentChatOptions) {
         stage.value = 'idle'
         break
       case 'choice:request':
-        // AI 请求用户先选择候选再执行动作
-        pendingChoice.value = event.choice || null
+        // AI 请求用户先选择候选再执行动作（审批型带 approvalId；规则型走文本重入）
+        pendingChoice.value = event.choice
+          ? { ...event.choice, approvalId: (event as { approvalId?: string }).approvalId, pendingInput: (event as { pendingInput?: Record<string, unknown> }).pendingInput }
+          : null
         if (currentAssistant) {
           currentAssistant.status = 'done'
           currentAssistant.content = (event.choice?.prompt || '请选择：') + '\n' + (event.choice?.choices || []).join('、')
@@ -229,9 +235,16 @@ export function useEpAgentChat(options: EpAgentChatOptions) {
     await send(text)
   }
 
-  /** 多轮确认：用户选定候选 → 拼成带参指令发送（带 choice 标记让引擎直接执行） */
+  /** 多轮确认：用户选定候选。审批型（harness）走 decide 通路回填完整 input；
+   *  规则型（旧路径）拼带参指令文本重入 */
   async function sendChoice(choice: EpAgentPendingChoice, selected: string): Promise<void> {
     if (sending.value) return
+    if (choice.approvalId) {
+      pendingChoice.value = null
+      const api = (window.electronAPI as { episodeProduction: { agentDecide: (p: string, e: string, a: string, act: 'select' | 'reject', s?: string) => Promise<unknown> } }).episodeProduction
+      await api.agentDecide(projectIdRef.value, episodeIdRef.value, choice.approvalId, 'select', selected)
+      return
+    }
     pendingChoice.value = null
     const param = choice.param
     // 把选择结果作为明确指令发送（引擎决策时应直接执行对应动作）

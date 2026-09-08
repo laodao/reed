@@ -784,6 +784,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.agentHistory': { channel: 'ep:agent:history' },
   'episodeProduction.agentCancel': { channel: 'ep:agent:cancel' },
   'episodeProduction.agentState': { channel: 'ep:agent:state' },
+  'episodeProduction.agentDecide': { channel: 'ep:agent:decide' },
+  'episodeProduction.agentListPending': { channel: 'ep:agent:list-pending' },
   // episodeProduction.onAgentEvent(projectId, episodeId, cb) — 后端 emit(`ep-agent:${projectId}:${episodeId}`, event)
   'episodeProduction.onAgentEvent': {
     eventChannel: (projectId: string, episodeId: string) => `ep-agent:${projectId}:${episodeId}`,

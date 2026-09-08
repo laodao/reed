@@ -2813,6 +2813,10 @@ const electronAPI = {
       ipcRenderer.invoke('ep:agent:cancel', projectId, episodeId),
     agentState: (projectId: string, episodeId: string) =>
       ipcRenderer.invoke('ep:agent:state', projectId, episodeId),
+    agentDecide: (projectId: string, episodeId: string, approvalId: string, action: 'select' | 'reject', selected?: string) =>
+      ipcRenderer.invoke('ep:agent:decide', projectId, episodeId, approvalId, action, selected),
+    agentListPending: (projectId: string, episodeId: string) =>
+      ipcRenderer.invoke('ep:agent:list-pending', projectId, episodeId),
     onAgentEvent: (projectId: string, episodeId: string, callback: (event: any, data: any) => void) => {
       const channel = `ep-agent:${projectId}:${episodeId}`
       const listener = (_event: any, data: any) => callback(data)

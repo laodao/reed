@@ -9,7 +9,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { AgentToolRegistry } from '@core/platform/agent-runtime/tools/registry'
 import { registerCoreDatabaseManager, type ICoreDatabaseManager } from '@core/database/database-manager.interface'
 import { registerEventEmitter } from '@core/interfaces/event.interface'
-import { registerEpAgentTools, EP_AGENT_PACK_ID } from '@core/platform/episode-production/agent/ep-agent-tools'
+import { registerEpAgentTools, buildEpConfirmChoiceDef, EP_AGENT_PACK_ID } from '@core/platform/episode-production/agent/ep-agent-tools'
 
 // computeEpProductionState 可控化（依赖检查/重算断言）；checkEpActionDependency 保持真实实现
 const computeStateMock = vi.hoisted(() => vi.fn())
@@ -65,14 +65,30 @@ beforeEach(() => {
 const errMsg = (res: { ok: boolean; error?: unknown }) => String((res.error as { message?: string } | undefined)?.message ?? res.error)
 
 describe('ep-agent-tools 共享注册（M6.5-a）', () => {
-  it('懒注册幂等：重复注册不重复；9 动作带 pack 全名', () => {
+  it('懒注册幂等：重复注册不重复；9 动作+choice 工具带 pack 全名', () => {
     const registry = new AgentToolRegistry()
     registerEpAgentTools(registry)
     registerEpAgentTools(registry)
     const names = registry.listSpecs({ packId: EP_AGENT_PACK_ID }).map((s) => s.name)
-    expect(names).toHaveLength(9)
+    expect(names).toHaveLength(10)
     expect(names).toContain('pack:ep-agent:generate_script')
-    expect(new Set(names).size).toBe(9)
+    expect(names).toContain('pack:ep-agent:ep_confirm_choice')
+    expect(new Set(names).size).toBe(10)
+  })
+
+  it('ep_confirm_choice：需审批注册；未选择/越候选清单被拒、有效选择回显（直调 execute）', async () => {
+    const registry = mkRegistry()
+    const specs = registry.listSpecs({ packId: EP_AGENT_PACK_ID }).find((s) => s.name === 'pack:ep-agent:ep_confirm_choice')
+    expect(specs?.requiresApproval).toBe(true) // 挂起语义（EP-2 通路在宿主桥接）
+    const def = buildEpConfirmChoiceDef()
+    const ctx = { scopeId: 's1', rawInput: '', logContext: { projectId: 'p1', episodeId: 'e1' } } as never
+    // 模型首呼（无 selected）→ 明确等待语义
+    await expect(def.execute({ actionType: 'generate_char_asset', param: 'name', choices: ['张三', '李四'] } as never, ctx)).rejects.toThrow('等待用户选择')
+    // selected 不在候选清单 → 拒绝
+    await expect(def.execute({ actionType: 'generate_char_asset', param: 'name', choices: ['张三', '李四'], selected: '王五' } as never, ctx)).rejects.toThrow('不在候选清单')
+    // 有效选择 → 回显
+    const ok = await def.execute({ actionType: 'generate_char_asset', param: 'name', choices: ['张三', '李四'], selected: '张三' } as never, ctx)
+    expect((ok as { data: { data: { selected: string } } }).data.data.selected).toBe('张三')
   })
 
   it('缺项目上下文必须拒绝（聊天宿主不可误调——共享注册红线）', async () => {
