@@ -28,3 +28,24 @@
 ## 验收
 
 全链路状态机走完 + 产物落库 + console/EP 面板可观测；成本对账 ≤ 预算表。
+
+---
+
+## 实测记录（2026-09-08）
+
+**EP-1 干跑 ✅ 全链通过**（真模型 deepseek-v4-flash，tokenplan）：
+- 第一轮：generate_script 失败（测试项目章节原文缺失——真实数据前置）→ agent 未调用依赖动作 → 如实汇报根因与两条出路
+- 第二轮（用户提供章节底稿）：generate_script 超时 → **模型自主重试成功** → split_scenes ✓ → 完成汇报 ✅
+- 落库验证：剧本（梗概 99 字/正文 1519 字）+ 3 场场景全部落库；消息持久化正常
+- 修复（实测发现 P0）：lw_design_messages.conversation_id FK 缺父行——工具化会话首条消息必败
+  （旧协议同病，从未在真实库测过）→ LwDesignMessageRepository.add 前置 ensureConversationRow；
+  EP 宿主映射 longWritingProjectId 作会话归属（lw_design_conversations.project_id FK→lw_projects）
+
+**资产链 ⚠️ 被外部配置阻塞**：generate_char_asset（林骁）→ 图像服务返回
+`Invalid API-key provided`（tokenplan 图像密钥无效——用户侧配置问题）。agent 行为完全正确：
+判定为外部配置问题不盲目重试、如实上报、给出修复后继续与先行分镜两个替代方案。
+
+**待用户处理**：
+1. tokenplan 图像/语音 API 密钥修复后，重发"为林骁生成定妆图"即可（agent 已承诺继续）
+2. 「阿里百炼平台」提供商需添加 wan3.0-video 模型配置（当前模型清单无此项）
+3. 语音（qwen-audio-tts）与视频实测在密钥/配置就绪后各执行 1 次（红线不变）

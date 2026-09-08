@@ -16,7 +16,7 @@ KE 轨（34 号）：KE-1 ──→ KE-2 ──→ KE-3 ──→ KE-4
 | --- | --- | --- | --- |
 | EP-1 EP 工具化+宿主+四大能力（不含 choice） | ep-1-tools-host.md | M6.5-a | ✅ 代码完成+评审修复；干跑待应用重启后执行 |
 | EP-2 choice→审批通路 | ep-2-choice-approval.md | M6.5-b | ✅ 代码完成+评审修复（decide 三件套/前端分流）|
-| EP-3 资产生成全链路实测 | ep-3-e2e-run.md | M6.5-c | 待开工 |
+| EP-3 资产生成全链路实测 | ep-3-e2e-run.md | M6.5-c | 文本链 ✅ 干跑通过；资产链 ⚠️ 待 tokenplan 密钥修复 |
 | EP-4 长文工具迁移共享注册 | ep-4-lw-migration.md | M6.5-d | ✅ 完成（pack:lw-agent:* 全名工具，10/10）|
 | KE-1 数据模型与仓库 | ke-1-schema-repo.md | M-Ke1 前半 | ✅ 完成（迁移双端+scope+手工录入/驳回）|
 | KE-2 scope 装配+宿主补接 | ke-2-assembly-wiring.md | M-Ke1 后半 | ✅ 完成（分层装配+chat 补接+全宿主 ContextManager）|
