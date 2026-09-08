@@ -149,14 +149,15 @@ export function buildDlAgentToolDefs(): AgentToolDef[] {
 }
 
 /** 懒注册（幂等）：宿主首次 sendMessage 时调用（activate 早于 workflow boot）；
- * 裸名域（source='tool'）规避 pack 命名空间冒号被 LLM API 拒绝的平台缺口 */
+ * M4-A P1-2：平台 registry 已支持包工具 LLM 侧别名（bare 名），回归标准
+ * { packId } 注册语义（内部 namespaced、可整包注销/审计归属） */
 export function registerDlAgentTools(registry: AgentToolRegistry): void {
-  const existing = new Set(registry.listSpecs({ source: 'tool' }).map((s) => s.name))
+  const existing = new Set(registry.listSpecs({ packId: DL_AGENT_PACK_ID }).map((s) => s.name))
   for (const def of buildDlAgentToolDefs()) {
-    if (existing.has(def.name)) continue
-    registry.register(def, { source: 'tool' })
+    const namespaced = `pack:${DL_AGENT_PACK_ID}:${def.name}`
+    if (existing.has(namespaced)) continue
+    registry.register(def, { packId: DL_AGENT_PACK_ID })
   }
-  void DL_AGENT_PACK_ID // packId 仅作归属注释保留；注册域=source 'tool'
 }
 
 /** dl 工具白名单（裸名清单；宿主 bindings 直接引用——工具集固定，无需 listSpecs 动态拼） */

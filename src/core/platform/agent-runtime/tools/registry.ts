@@ -233,6 +233,8 @@ export function serializeToolResult(raw: unknown): { data: unknown; truncated: b
 
 export class AgentToolRegistry {
   private readonly tools = new Map<string, RegisteredTool>()
+  /** 包工具的 LLM 侧别名：基础名(bare) → 注册项（M4-A P1-2；内部仍 namespaced） */
+  private readonly byBare = new Map<string, RegisteredTool>()
   private readonly deps: Required<Pick<AgentToolRegistryDeps, 'executeTimeoutMs'>> & {
     audit: ((record: AgentToolCallAudit) => void) | null
     requestApproval: AgentToolRegistryDeps['requestApproval'] | null
@@ -283,20 +285,39 @@ export class AgentToolRegistry {
         requiresApproval: deriveRequiresApproval(widened),
       },
     })
+    // 包工具别名：LLM 层可用 bare 名（协议名白名单 ^[a-zA-Z0-9_-]+$），内部保持 namespaced
+    if (packId) {
+      const entry = this.tools.get(name)!
+      const prev = this.byBare.get(def.name)
+      if (prev && prev.spec.name !== name) {
+        logger.warn(`[tool-registry] 包工具基础名 ${def.name} 多注册：${prev.spec.name} 与 ${name}（以新注册为准）`)
+      }
+      this.byBare.set(def.name, entry)
+    }
     logger.info(`[tool-registry] 注册 ${name}（source=${source} danger=${def.dangerLevel ?? 'read'}）`)
   }
 
   /** 按名注销（pack disable / 测试用） */
   unregister(name: string): void {
-    if (this.tools.delete(name)) logger.info(`[tool-registry] 注销 ${name}`)
+    const t = this.tools.get(name)
+    if (this.tools.delete(name)) {
+      for (const [bare, entry] of this.byBare) {
+        if (entry === t) this.byBare.delete(bare)
+      }
+      logger.info(`[tool-registry] 注销 ${name}`)
+    }
   }
 
   /** 整包注销（pack disable 时调用；返回注销数量） */
   unregisterPack(packId: string): number {
     let n = 0
     for (const name of [...this.tools.keys()]) {
-      if (this.tools.get(name)?.spec.packId === packId) {
+      const t = this.tools.get(name)
+      if (t?.spec.packId === packId) {
         this.tools.delete(name)
+        for (const [bare, entry] of this.byBare) {
+          if (entry === t) this.byBare.delete(bare)
+        }
         n++
       }
     }
@@ -361,7 +382,7 @@ export class AgentToolRegistry {
     },
   ): Promise<AgentToolResult> {
     const started = this.deps.clock()
-    const tool = opts.tool ?? this.tools.get(call.toolName)
+    const tool = opts.tool ?? this.tools.get(call.toolName) ?? this.byBare.get(call.toolName)
     if (!tool) {
       return this.finish(
         call,
@@ -540,7 +561,7 @@ export class AgentToolRegistry {
     const out: Record<string, AgentToolDef> = {}
     const counters = new Map<string, { used: number }>()
     for (const binding of bindings) {
-      const tool = this.tools.get(binding.tool)
+      const tool = this.tools.get(binding.tool) ?? this.byBare.get(binding.tool)
       if (!tool) {
         logger.warn(`[tool-registry] 白名单引用未注册工具，跳过：${binding.tool}`)
         continue
@@ -573,6 +594,7 @@ export class AgentToolRegistry {
         : 'not-required'
     return {
       ...base,
+      name: binding.tool, // 别名面：pack 工具以 bare 名出现在 LLM 协议层（P1-2）
       description: binding.descriptionOverride ?? base.description,
       requiresApproval: needsApproval,
       registryWrapped: true, // loop 层据此跳过自身校验/超时/截断（所有权在 registry 管线）
