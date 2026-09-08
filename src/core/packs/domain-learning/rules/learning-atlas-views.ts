@@ -196,7 +196,7 @@ function deriveLayers(concepts: AtlasViewInputConcept[]): { groups: DlLayersGrou
       root.concepts.push(concept)
     }
   }
-  const out = [...groups.values()].filter((g) => g.concepts.length > 0 || true)
+  const out = [...groups.values()]
   out.sort((a, b) => (a.groupName ?? '').localeCompare(b.groupName ?? '', 'zh'))
   if (root.concepts.length > 0) out.unshift(root)
   return { groups: out }

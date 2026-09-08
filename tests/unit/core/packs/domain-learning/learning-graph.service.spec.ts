@@ -194,6 +194,32 @@ describe('LearningProjectService', () => {
       expect(await projectSvc.listSpaces()).toHaveLength(0)
     })
   })
+
+  it('ensureOwned/设置方法：不存在或跨租户抛错；pace/profile 写读回一致(M4-A P1-1/P2-1)', async () => {
+    ds = await buildDs()
+    const svc = makeServices(ds)
+    const projectSvc = new LearningProjectService(svc.projects, svc.concepts)
+    const id = await runWithUserAsync('u1', async () =>
+      projectSvc.createSpace({ name: '设置域', goal: '入门' }))
+    await runWithUserAsync('u1', async () => {
+      // 不存在 → 抛错(不再静默 ok)
+      await expect(projectSvc.ensureOwned('ghost')).rejects.toThrow(/空间不存在/)
+      await expect(projectSvc.setPaceSettings('ghost', { enabled: true, intervalMin: 5, autoResearchConcepts: true, autoResolveOpenQuestions: true })).rejects.toThrow(/空间不存在/)
+      // pace 写读回
+      const saved = await projectSvc.setPaceSettings(id, { enabled: true, intervalMin: 5, autoResearchConcepts: true, autoResolveOpenQuestions: false })
+      expect(saved.autoResolveOpenQuestions).toBe(false)
+      expect((await projectSvc.getPaceSettings(id)).intervalMin).toBe(5)
+      // profile 写读回
+      await projectSvc.setProfile(id, 'theory', { kindLabel: '理论体系', nature: 'x', emphasis: ['流程'] })
+      const row = await projectSvc.getSpace(id)
+      expect(row?.profileId).toBe('theory')
+      expect(row?.profile?.kindLabel).toBe('理论体系')
+    })
+    // 跨租户(他人空间=不可见→抛)
+    await runWithUserAsync('u2', async () => {
+      await expect(projectSvc.getPaceSettings(id)).rejects.toThrow(/空间不存在/)
+    })
+  })
 })
 
 describe('LearningGraphService 间隔复习（M3-B）', () => {

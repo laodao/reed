@@ -9,6 +9,9 @@
 
 import type { DlProjectRepository, DlProjectRow } from '@core/database/repositories/dl-project.repository'
 import type { DlConceptRepository } from '@core/database/repositories/dl-concept.repository'
+import type { DlPaceSettings, DlReviewSettings } from '@shared/types/domain-learning.types'
+import { normalizeDlReviewSettings } from '../rules/learning-review.rules'
+import { normalizePaceSettings } from './dl-pace-scheduler.service'
 import { randomUUID } from 'crypto'
 
 export interface CreateSpaceInput {
@@ -60,6 +63,45 @@ export class LearningProjectService {
 
   async getSpace(id: string): Promise<DlProjectRow | null> {
     return this.projects.getById(id)
+  }
+
+  /** 空间存在/属主校验(仓储走 ALS,getById 已按租户过滤;跨租户=null) */
+  async ensureOwned(id: string): Promise<DlProjectRow> {
+    const row = await this.projects.getById(id)
+    if (!row) throw new Error('空间不存在或无权访问')
+    return row
+  }
+
+  /** 改画像(预设 id + 自定义 JSON;校验空间存在) */
+  async setProfile(id: string, profileId: string | null | undefined, profile: Record<string, unknown> | null | undefined): Promise<void> {
+    await this.ensureOwned(id)
+    await this.projects.patch(id, { profileId: profileId ?? null, profile: profile ?? null })
+  }
+
+  /** 自动推进配置(读写均校验空间,归一化兜底) */
+  async getPaceSettings(id: string): Promise<DlPaceSettings> {
+    const row = await this.ensureOwned(id)
+    return normalizePaceSettings(row.pace)
+  }
+
+  async setPaceSettings(id: string, pace: DlPaceSettings): Promise<DlPaceSettings> {
+    const saved = normalizePaceSettings(pace)
+    await this.ensureOwned(id)
+    await this.projects.patch(id, { pace: saved })
+    return saved
+  }
+
+  /** 间隔复习配置(读写均校验空间,归一化兜底) */
+  async getReviewSettings(id: string): Promise<DlReviewSettings> {
+    const row = await this.ensureOwned(id)
+    return normalizeDlReviewSettings(row.review)
+  }
+
+  async setReviewSettings(id: string, review: DlReviewSettings): Promise<DlReviewSettings> {
+    const saved = normalizeDlReviewSettings(review)
+    await this.ensureOwned(id)
+    await this.projects.patch(id, { review: saved })
+    return saved
   }
 
   async listSpaces(): Promise<SpaceSummaryRow[]> {

@@ -14,13 +14,11 @@ import { DlProjectRepository } from '@core/database/repositories/dl-project.repo
 import { DlConceptRepository } from '@core/database/repositories/dl-concept.repository'
 import { DlRelationRepository } from '@core/database/repositories/dl-relation.repository'
 import { DlMasteryLogRepository } from '@core/database/repositories/dl-mastery-log.repository'
-import { DlCardRepository } from '@core/database/repositories/dl-card.repository'
 import { LearningProjectService } from '../services/learning-project.service'
 import { LearningGraphService } from '../services/learning-graph.service'
 import { LearningViewService } from '../services/learning-view.service'
 import { DlAgentHarnessService } from '../services/dl-agent-harness.service'
-import { DlPaceSchedulerService, normalizePaceSettings } from '../services/dl-pace-scheduler.service'
-import { normalizeDlReviewSettings } from '../rules/learning-review.rules'
+import { DlPaceSchedulerService } from '../services/dl-pace-scheduler.service'
 import type { DlPaceSettings, DlReviewSettings } from '@shared/types/domain-learning.types'
 import type { DlAgentMode } from '../services/dl-agent.types'
 
@@ -58,7 +56,6 @@ function services(): DlServiceBundle {
     const concepts = new DlConceptRepository(db.dataSource)
     const relations = new DlRelationRepository(db.dataSource)
     const masteryLogs = new DlMasteryLogRepository(db.dataSource)
-    const cards = new DlCardRepository(db.dataSource)
     const agent = DlAgentHarnessService.getInstance()
     const scheduler = DlPaceSchedulerService.getInstance()
     scheduler.configure({
@@ -88,7 +85,6 @@ function services(): DlServiceBundle {
       agent,
       scheduler,
     }
-    void cards
   }
   return bundle
 }
@@ -111,8 +107,7 @@ export function registerDomainLearningHandlers(): void {
   // ---- 空间画像（M2-E：建空间带 profile 之外，可对已建空间改画像/侧重） ----
   ipcBridge.handle('dl:set-space-profile', (_e, p: { id: string; profileId?: string | null; profile?: Record<string, unknown> | null }) =>
     wrap(async () => {
-      const db = getCoreDatabaseManager()
-      await db.dlProjects!.patch(p.id, { profileId: p.profileId ?? null, profile: p.profile ?? null })
+      await services().projects.setProfile(p.id, p.profileId, p.profile)
       return { ok: true }
     }))
 
@@ -143,37 +138,37 @@ export function registerDomainLearningHandlers(): void {
   // ---- 未解问题队列 ----
   ipcBridge.handle('dl:list-questions', (_e, p: { id: string }) =>
     wrap(async () => {
-      const db = getCoreDatabaseManager()
-      return db.dlQuestions!.listByProject(p.id)
+      await services().projects.ensureOwned(p.id)
+      return getCoreDatabaseManager().dlQuestions!.listByProject(p.id)
     }))
 
-  // ---- 研究/追问（agent 宿主；research 与 tutor 两模式） ----
+  // ---- 研究/追问（agent 宿主；research 与 tutor 两模式；写路径先校验空间属主） ----
   ipcBridge.handle('dl:agent-send', (_e, p: { mode: DlAgentMode; spaceId: string; conceptId?: string | null; message: string; providerConfigId?: string; modelId?: string; focusQuestionId?: string }) =>
-    wrap(() => services().agent.sendMessage(p.mode, { spaceId: p.spaceId, conceptId: p.conceptId ?? null }, p.message, {
-      providerConfigId: p.providerConfigId,
-      modelId: p.modelId,
-      focusQuestionId: p.focusQuestionId,
-    })))
-  ipcBridge.handle('dl:agent-cancel', (_e, p: { mode: DlAgentMode; spaceId: string; conceptId?: string | null }) => {
-    services().agent.cancel(p.mode, { spaceId: p.spaceId, conceptId: p.conceptId ?? null })
-    return wrap(async () => ({ ok: true }))
-  })
+    wrap(async () => {
+      await services().projects.ensureOwned(p.spaceId)
+      return services().agent.sendMessage(p.mode, { spaceId: p.spaceId, conceptId: p.conceptId ?? null }, p.message, {
+        providerConfigId: p.providerConfigId,
+        modelId: p.modelId,
+        focusQuestionId: p.focusQuestionId,
+      })
+    }))
+  ipcBridge.handle('dl:agent-cancel', (_e, p: { mode: DlAgentMode; spaceId: string; conceptId?: string | null }) =>
+    wrap(async () => {
+      await services().projects.ensureOwned(p.spaceId)
+      services().agent.cancel(p.mode, { spaceId: p.spaceId, conceptId: p.conceptId ?? null })
+      return { ok: true }
+    }))
   ipcBridge.handle('dl:agent-busy', (_e, p: { mode: DlAgentMode; spaceId: string; conceptId?: string | null }) =>
-    wrap(async () => services().agent.isBusy(p.mode, { spaceId: p.spaceId, conceptId: p.conceptId ?? null })))
+    wrap(async () => {
+      await services().projects.ensureOwned(p.spaceId)
+      return services().agent.isBusy(p.mode, { spaceId: p.spaceId, conceptId: p.conceptId ?? null })
+    }))
 
-  // ---- 周期推进（M2-C；pace 配置读写 + 调度器状态） ----
+  // ---- 周期推进（M2-C；pace 配置读写 + 调度器状态；读写经服务层校验） ----
   ipcBridge.handle('dl:get-space-pace', (_e, p: { id: string }) =>
-    wrap(async () => {
-      const row = await getCoreDatabaseManager().dlProjects!.getById(p.id)
-      if (!row) throw new Error('空间不存在')
-      return normalizePaceSettings(row.pace)
-    }))
+    wrap(() => services().projects.getPaceSettings(p.id)))
   ipcBridge.handle('dl:set-space-pace', (_e, p: { id: string; pace: DlPaceSettings }) =>
-    wrap(async () => {
-      const saved = normalizePaceSettings(p.pace)
-      await getCoreDatabaseManager().dlProjects!.patch(p.id, { pace: saved })
-      return saved
-    }))
+    wrap(() => services().projects.setPaceSettings(p.id, p.pace)))
   ipcBridge.handle('dl:scheduler-state', () =>
     wrap(async () => {
       const s = services()
@@ -184,27 +179,17 @@ export function registerDomainLearningHandlers(): void {
       }
     }))
 
-  // ---- 间隔复习（M3-B：配置/到期队列/标记与完成流转） ----
+  // ---- 间隔复习（M3-B：配置/到期队列/标记与完成流转；读写经服务层校验） ----
   ipcBridge.handle('dl:get-space-review', (_e, p: { id: string }) =>
-    wrap(async () => {
-      const row = await getCoreDatabaseManager().dlProjects!.getById(p.id)
-      if (!row) throw new Error('空间不存在')
-      return normalizeDlReviewSettings(row.review)
-    }))
+    wrap(() => services().projects.getReviewSettings(p.id)))
   ipcBridge.handle('dl:set-space-review', (_e, p: { id: string; review: DlReviewSettings }) =>
-    wrap(async () => {
-      const saved = normalizeDlReviewSettings(p.review)
-      await getCoreDatabaseManager().dlProjects!.patch(p.id, { review: saved })
-      return saved
-    }))
+    wrap(() => services().projects.setReviewSettings(p.id, p.review)))
   ipcBridge.handle('dl:review-due', (_e, p: { id: string }) =>
     wrap(async () => {
-      const db = getCoreDatabaseManager()
-      const row = await db.dlProjects!.getById(p.id)
-      if (!row) throw new Error('空间不存在')
-      const settings = normalizeDlReviewSettings(row.review)
+      const s = services()
+      const settings = await s.projects.getReviewSettings(p.id)
       const items = settings.enabled
-        ? await services().graph.listReviewDue(p.id, { intervalMin: settings.intervalMin, limit: settings.limit })
+        ? await s.graph.listReviewDue(p.id, { intervalMin: settings.intervalMin, limit: settings.limit })
         : []
       return { settings, items }
     }))

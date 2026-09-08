@@ -1294,8 +1294,8 @@ const electronAPI = {
   domainLearning: {
     // 空间列表（Home 卡片；无参 → DlSpaceSummary[]）
     listSpaces: () => ipcRenderer.invoke('dl:list-spaces'),
-    // 新建空间（name/goal 必填 → { id }）
-    createSpace: (p: { name: string; goal: string; tagline?: string; description?: string; profileId?: string }) =>
+    // 新建空间（name/goal 必填 → { id }；profileId/profile 用于画像预设+自定义侧重）
+    createSpace: (p: { name: string; goal: string; tagline?: string; description?: string; profileId?: string; profile?: Record<string, unknown> | null }) =>
       ipcRenderer.invoke('dl:create-space', p),
     // 空间行详情（DlProjectRow；本版界面少用）
     getSpace: (id: string) => ipcRenderer.invoke('dl:get-space', { id }),
