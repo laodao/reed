@@ -24,8 +24,12 @@ import { registerFileHandlers } from '@electron/ipc/handlers/file.handler'
 describe('file:write-binary', () => {
   beforeAll(() => {
     // 模拟 Electron 环境：registerFileHandlers 按环境分流，
-    // 非 Electron（Web）端为安全边界不注册本地文件读写通道
-    ;(process.versions as Record<string, string | undefined>).electron = '28.0.0'
+    // 非 Electron（Web）端为安全边界不注册本地文件读写通道。
+    // 注：单测若跑在 Electron-as-Node（ELECTRON_RUN_AS_NODE=1）上，versions.electron
+    // 已存在且只读（Electron 28 = '28.3.3'），无需也不可再赋值 → 仅 host Node 时伪造。
+    if (!(process.versions as Record<string, string | undefined>).electron) {
+      ;(process.versions as Record<string, string | undefined>).electron = '28.0.0'
+    }
     registerFileHandlers()
   })
 
@@ -33,7 +37,7 @@ describe('file:write-binary', () => {
     // invokeIpc 对未注册通道会抛错；调用一个非法参数让 handler 返回错误而非抛"未注册"
     const tmp = path.join(os.tmpdir(), `wb-test-${Date.now()}.png`)
     const result = await invokeIpc('file:write-binary', [
-      { filePath: tmp, base64: Buffer.from('hello').toString('base64') },
+      { filePath: tmp, base64: Buffer.from('hello').toString('base64') }
     ])
     expect(result).toBeDefined()
     expect((result as { success: boolean }).success).toBe(true)
@@ -46,7 +50,7 @@ describe('file:write-binary', () => {
     const tmp = path.join(os.tmpdir(), `wb-test-${Date.now()}.png`)
 
     const result = (await invokeIpc('file:write-binary', [
-      { filePath: tmp, base64: bytes.toString('base64') },
+      { filePath: tmp, base64: bytes.toString('base64') }
     ])) as { success: boolean; error?: string }
 
     expect(result.success).toBe(true)
@@ -60,9 +64,10 @@ describe('file:write-binary', () => {
     const dataUri = `data:image/png;base64,${bytes.toString('base64')}`
     const tmp = path.join(os.tmpdir(), `wb-test-${Date.now()}.png`)
 
-    const result = (await invokeIpc('file:write-binary', [
-      { filePath: tmp, base64: dataUri },
-    ])) as { success: boolean; error?: string }
+    const result = (await invokeIpc('file:write-binary', [{ filePath: tmp, base64: dataUri }])) as {
+      success: boolean
+      error?: string
+    }
 
     expect(result.success).toBe(true)
     const written = fs.readFileSync(tmp)
@@ -75,7 +80,7 @@ describe('file:write-binary', () => {
     // （旧用例 Z:\不存在的目录\x.png 在 Linux 上是合法相对文件名，会真实落盘 + 污染仓库）
     const bad = path.join(os.tmpdir(), 'wb-nonexistent-dir-xx', 'sub', 'x.png')
     const result = (await invokeIpc('file:write-binary', [
-      { filePath: bad, base64: Buffer.from('x').toString('base64') },
+      { filePath: bad, base64: Buffer.from('x').toString('base64') }
     ])) as { success: boolean; error?: string }
 
     expect(result.success).toBe(false)

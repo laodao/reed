@@ -40,20 +40,27 @@ const SAFE_GLOBALS: Record<string, unknown> = {
   decodeURIComponent,
   RegExp,
   Map,
-  Set,
+  Set
 }
 
 /** 沙箱执行：输入注入 context.inputs；返回用户代码的 return 值 */
-/** 桌面端运行判定（Electron 主进程；Web 多租户服务端禁任意 JS 执行） */
+/** 桌面端运行判定（真·Electron 主进程；Web 多租户服务端禁任意 JS 执行） */
 export function isElectronRuntime(): boolean {
-  return !!(process.versions as Record<string, string | undefined>)?.electron
+  // ELECTRON_RUN_AS_NODE=1（vitest/tsx 跑在 Electron 内置 Node 上）语义仍是 Node，
+  // 不是桌面主进程 → 按非桌面处理，保留"服务端/测试不执行任意 JS"的 RCE 门禁。
+  const v = process.versions as Record<string, string | undefined>
+  return !!v.electron && process.env.ELECTRON_RUN_AS_NODE !== '1'
 }
 
-export function runCodeInSandbox(code: string, inputs: Record<string, unknown>, timeoutMs: number): unknown {
+export function runCodeInSandbox(
+  code: string,
+  inputs: Record<string, unknown>,
+  timeoutMs: number
+): unknown {
   const context: Record<string, unknown> = {
     ...SAFE_GLOBALS,
     inputs,
-    result: undefined,
+    result: undefined
   }
   vm.createContext(context)
   // 包装：用户代码以 (function(inputs){...}) 调用，return 值写回 result
@@ -82,7 +89,7 @@ const codeNode: WorkflowNodeHandler = {
       return {
         status: 'failed',
         error: '代码（code）节点仅在桌面端可用（Web 端不支持在服务端执行任意 JS）',
-        retryable: false,
+        retryable: false
       }
     }
     const cfg = ctx.config as {
@@ -97,7 +104,7 @@ const codeNode: WorkflowNodeHandler = {
     ctx.logger.info('代码节点执行', { inputs })
     const result = runCodeInSandbox(code, inputs, WORKFLOW_LIMITS.codeTimeoutMs)
     return { status: 'succeeded', output: { result } }
-  },
+  }
 }
 
 export const CODE_NODE_HANDLERS: WorkflowNodeHandler[] = [codeNode]
