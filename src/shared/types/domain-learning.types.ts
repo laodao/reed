@@ -490,6 +490,16 @@ export const DL_EMPHASIS_VIEW_ALIASES: Record<DlAtlasViewKind, string[]> = {
   layers: ['三层结构', '层级', '结构', '体系', '目录'],
 }
 
+/** Atlas 增强视图固定顺序与展示词（前端选项/切换条单源） */
+export const DL_VIEW_KIND_ORDER: DlAtlasViewKind[] = ['timeline', 'flow', 'matrix', 'layers']
+
+export const DL_VIEW_KIND_LABELS: Record<DlAtlasViewKind, string> = {
+  timeline: '时间线',
+  flow: '流程',
+  matrix: '矩阵',
+  layers: '三层结构',
+}
+
 /** 画像预设（建空间/画像配置用；emphasis 用上面别名能识别的展示词） */
 export interface DlProfilePreset {
   id: string

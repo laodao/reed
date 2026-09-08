@@ -121,7 +121,7 @@ import { useRouter } from 'vue-router'
 import { Reading, Plus, ArrowRight } from '@element-plus/icons-vue'
 import { useDomainLearningStore } from '@/stores/domain-learning'
 import type { DlProjectStatus } from '@shared/types/domain-learning.types'
-import { DL_PROFILE_PRESETS } from '@shared/types/domain-learning.types'
+import { DL_PROFILE_PRESETS, DL_VIEW_KIND_LABELS, DL_VIEW_KIND_ORDER } from '@shared/types/domain-learning.types'
 
 const router = useRouter()
 const store = useDomainLearningStore()
@@ -129,8 +129,8 @@ const store = useDomainLearningStore()
 /** 学习目标档位（dl_goal 枚举：入门 / 工作应用 / 前沿） */
 const GOAL_OPTIONS = ['入门', '工作应用', '前沿'] as const
 
-/** 画像侧重视图选项（建空间 M2-E；与 preset.emphasis 词汇一致） */
-const EMPHASIS_OPTIONS = ['时间线', '流程', '矩阵', '三层结构'] as const
+/** 画像侧重视图选项（建空间 M2-E；由 shared 派生单源） */
+const EMPHASIS_OPTIONS = DL_VIEW_KIND_ORDER.map((k) => DL_VIEW_KIND_LABELS[k])
 
 /** 空间状态展示文案 */
 const STATUS_LABELS: Record<DlProjectStatus, string> = {

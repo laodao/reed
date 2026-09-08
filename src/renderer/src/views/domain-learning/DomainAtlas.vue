@@ -340,19 +340,14 @@ import type {
 } from '@shared/types/domain-learning.types'
 import {
   DEFAULT_DL_PACE_SETTINGS,
+  DEFAULT_DL_REVIEW_SETTINGS,
   DL_PROFILE_PRESETS,
+  DL_VIEW_KIND_LABELS,
+  DL_VIEW_KIND_ORDER,
 } from '@shared/types/domain-learning.types'
 
-/** 增强视图种类 → 中文标签（图谱模式另加） */
-const VIEW_KIND_LABELS: Record<DlAtlasViewKind, string> = {
-  timeline: '时间线',
-  flow: '流程',
-  matrix: '矩阵',
-  layers: '三层结构',
-}
-
-/** 画像侧重视图选项（与 DL_PROFILE_PRESETS.emphasis 词汇一致） */
-const EMPHASIS_OPTIONS = ['时间线', '流程', '矩阵', '三层结构'] as const
+/** 画像侧重视图选项（由 shared DL_VIEW_KIND_ORDER/LABELS 派生，单源 M4-A P2-6） */
+const EMPHASIS_OPTIONS = DL_VIEW_KIND_ORDER.map((k) => DL_VIEW_KIND_LABELS[k])
 
 const route = useRoute()
 const router = useRouter()
@@ -404,7 +399,7 @@ const atlasViews = computed(() => store.currentAtlasViews)
 const viewTabs = computed<Array<{ kind: ViewMode; label: string }>>(() => {
   const tabs: Array<{ kind: ViewMode; label: string }> = [{ kind: 'graph', label: '图谱' }]
   for (const k of atlasViews.value?.enabled ?? []) {
-    tabs.push({ kind: k, label: VIEW_KIND_LABELS[k] })
+    tabs.push({ kind: k, label: DL_VIEW_KIND_LABELS[k] })
   }
   return tabs
 })
@@ -429,7 +424,7 @@ const paceDraft = ref<DlPaceSettings>({ ...DEFAULT_DL_PACE_SETTINGS })
 
 // ==================== 间隔复习（M3-B） ====================
 
-const reviewDraft = ref<{ enabled: boolean; intervalMin: number; limit: number }>({ enabled: false, intervalMin: 1440, limit: 10 })
+const reviewDraft = ref<{ enabled: boolean; intervalMin: number; limit: number }>({ ...DEFAULT_DL_REVIEW_SETTINGS })
 const reviewBusyId = ref<string | null>(null)
 const reviewNote = ref('')
 const reviewDueItems = computed(() => store.reviewDue?.items ?? [])
