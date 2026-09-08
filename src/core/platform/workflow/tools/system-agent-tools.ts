@@ -239,10 +239,10 @@ export function buildSystemAgentToolDefs(deps: SystemAgentToolsDeps): AgentToolD
   const discoverTool: AgentToolDef<z.infer<typeof DiscoverCapabilitiesInput>> = {
     name: 'discover_capabilities',
     description:
-      '列出本系统可调度的能力：工作流（含开始节点参数 schema）、技能（含参数）、直连工具、任务树。执行任务前先查目录，匹配到既有工作流/技能就复用，不要重复造轮子。',
+      '列出本系统可调度的能力：工作流（含开始节点参数 schema）、技能（含参数）、直连工具、本宿主开放的模块域工具、任务树。执行任务前先查目录，匹配到既有工作流/技能就复用，不要重复造轮子。',
     inputSchema: DiscoverCapabilitiesInput,
     dangerLevel: 'read',
-    execute: async (input) => {
+    execute: async (input, ctx) => {
       const keyword = input.keyword?.trim() || undefined
       const wfPage = await deps.definitions.list({ keyword, page: 1, pageSize: CATALOG_MAX_WORKFLOWS })
       const workflows = wfPage.items.slice(0, CATALOG_MAX_WORKFLOWS).map((d) => ({
@@ -272,12 +272,24 @@ export function buildSystemAgentToolDefs(deps: SystemAgentToolsDeps): AgentToolD
         .filter((s) => !SYSTEM_AGENT_TOOL_NAMES.includes(s.name as (typeof SYSTEM_AGENT_TOOL_NAMES)[number]))
         .slice(0, CATALOG_MAX_TOOLS)
         .map((s) => ({ name: s.name, description: s.description, requiresApproval: s.requiresApproval }))
+      // 模块域工具（pack 命名空间，M6.5 共享注册）：只列当前宿主经 runtimeContext
+      // 声明开放的 pack（catalogPacks）——不声明的宿主（如聊天）一律为空，
+      // 沿用"列白名单外工具=诱导必败调用"的 review P3 红线
+      const catalogPacks = Array.isArray((ctx.logContext as { catalogPacks?: unknown } | undefined)?.catalogPacks)
+        ? ((ctx.logContext as { catalogPacks?: unknown }).catalogPacks as string[]).filter((x) => typeof x === 'string')
+        : []
+      const moduleTools = catalogPacks
+        .flatMap((pid) => deps.registry.listSpecs({ packId: pid }))
+        .slice(0, CATALOG_MAX_TOOLS)
+        .map((s) => ({ name: s.name, description: s.description, requiresApproval: s.requiresApproval }))
       return {
         workflows,
         workflowsTotal: wfPage.total,
         skills,
         skillsTotal: allSkills.length,
         tools,
+        moduleTools,
+        moduleToolsNote: moduleTools.length > 0 ? '以上模块域工具仅在本宿主可用；跨模块操作请用 create_task_plan。' : '',
         taskPlan:
           'create_task_plan 工具：把复杂的多步目标分解为任务树，逐任务执行并过质量门。创建后需用户在「Agent 任务树」页人工批准才会执行。',
       }

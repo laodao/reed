@@ -7,6 +7,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
+import { z } from 'zod'
 import { AgentToolRegistry } from '@core/platform/agent-runtime/tools/registry'
 import { MockLanguageModelV3, simulateReadableStream } from 'ai/test'
 import type { LanguageModel } from 'ai'
@@ -240,6 +241,34 @@ describe('discover_capabilities', () => {
     const res = await registry.execute({ toolName: 'discover_capabilities', args: {} })
     const data = res.data as { workflows: Array<{ id: string; inputs: Array<{ key: string; required: boolean }> }> }
     expect(data.workflows[0].inputs).toEqual([{ key: 'topic', label: '主题', type: 'string', required: true }])
+  })
+
+  it('模块域工具节：只列 catalogPacks 声明的 pack，未声明宿主为空（M6.5 共享注册）', async () => {
+    const { registry } = setup()
+    // 模拟 EP 包共享注册（pack 命名空间）
+    registry.register(
+      { name: 'generate_storyboards', description: '生成分镜画面描述', inputSchema: z.object({}), dangerLevel: 'write', execute: async () => ({}) },
+      { packId: 'ep-agent' },
+    )
+    registry.register(
+      { name: 'generate_script', description: '生成剧本', inputSchema: z.object({}), dangerLevel: 'write', execute: async () => ({}) },
+      { packId: 'ep-agent' },
+    )
+    // 未声明 catalogPacks 的宿主（如聊天）：模块域节为空（review P3 红线：不诱导必败调用）
+    const res0 = await registry.execute({ toolName: 'discover_capabilities', args: {} })
+    const data0 = res0.data as { moduleTools: unknown[]; moduleToolsNote: string }
+    expect(data0.moduleTools).toEqual([])
+    expect(data0.moduleToolsNote).toBe('')
+    // 声明了 catalogPacks 的宿主（EP 宿主）：列出该 pack 的工具
+    const res = await registry.execute({
+      toolName: 'discover_capabilities',
+      args: {},
+      context: { catalogPacks: ['ep-agent'] },
+    })
+    const data = res.data as { moduleTools: Array<{ name: string; description: string }>; moduleToolsNote: string }
+    expect(data.moduleTools.map((t) => t.name).sort()).toEqual(['pack:ep-agent:generate_script', 'pack:ep-agent:generate_storyboards'])
+    expect(data.moduleTools[0].description.length).toBeGreaterThan(0)
+    expect(data.moduleToolsNote).toContain('仅在本宿主可用')
   })
 })
 
