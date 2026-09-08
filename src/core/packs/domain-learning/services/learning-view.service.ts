@@ -7,6 +7,7 @@
  */
 
 import type { ICoreDatabaseManager } from '@core/database/database-manager.interface'
+import { createLogger } from '@core/utils/logger'
 import type {
   DlSpaceView,
   DlTreeNode,
@@ -31,6 +32,8 @@ import {
 } from '../rules/learning-atlas-views'
 import { normalizeDlReviewSettings, pickReviewCandidates } from '../rules/learning-review.rules'
 import { buildConceptTree, conceptStats, latestCardsByConcept } from '../rules/learning-aggregation.rules'
+
+const logger = createLogger('DlView')
 
 export class LearningViewService {
   constructor(private readonly db: ICoreDatabaseManager) {}
@@ -244,6 +247,7 @@ export class LearningViewService {
       ).length
     }
 
+    logger.info(`[view] buildSpaceStats space=${spaceId} total=${leaves.length} mastered=${leaves.filter((c) => c.mastery === 'mastered').length} cards=${latest.size} reviewDue=${reviewDueCount}`)
     return {
       spaceId,
       name: project.name,
@@ -346,6 +350,7 @@ export class LearningViewService {
 
     const digest = lines.join('\n').trim()
     const title = `# ${project.name} · 讲义合集\n\n> 学习目标：${project.goal} · 收录 ${count} 个概念 · 导出于 ${new Date().toISOString()}\n\n${digest}`.trim()
+    logger.info(`[view] buildLessonDigest space=${spaceId} count=${count} len=${title.length}`)
     return {
       markdown: `${title}\n`,
       filename: `讲义合集-${project.name.replace(/[\\/:*?"<>|]/g, '_')}.md`,

@@ -15,10 +15,13 @@ import {
 } from '../rules/learning-sequence.rules'
 import { pickReviewCandidates } from '../rules/learning-review.rules'
 import { buildConceptTree, conceptStats } from '../rules/learning-aggregation.rules'
+import { createLogger } from '@core/utils/logger'
 import type { DlConceptRepository, DlConceptRow } from '@core/database/repositories/dl-concept.repository'
 import type { DlRelationRepository, DlRelationRow } from '@core/database/repositories/dl-relation.repository'
 import type { DlMasteryLogRepository } from '@core/database/repositories/dl-mastery-log.repository'
 import type { DlReviewDueItem } from '@shared/types/domain-learning.types'
+
+const logger = createLogger('DlGraph')
 
 export interface AckConfusedInput {
   reason?: string
@@ -64,6 +67,7 @@ export class LearningGraphService {
         trigger,
       })
     }
+    logger.info(`[graph] ackMastered space=${projectId} concept=${conceptId} ${from}→mastered (${trigger})`)
   }
 
   /** [没懂]：计数 +1、mastery → learning；达阈值提示拆解（不自动拆，用户触发） */
@@ -89,6 +93,7 @@ export class LearningGraphService {
         trigger: 'lesson_ack_failed',
       })
     }
+    logger.info(`[graph] ackConfused space=${projectId} concept=${conceptId} count=${next} split=${shouldSuggestSplit(next)}`)
     return { confusedCount: next, splitSuggested: shouldSuggestSplit(next) }
   }
 
@@ -106,6 +111,7 @@ export class LearningGraphService {
         trigger: 'manual',
       })
     }
+    logger.info(`[graph] markReview space=${projectId} concept=${conceptId} ${c.mastery}→review`)
   }
 
   /** 到期复习候选（M3-B）：mastered/review 且逾期；规则见 rules/learning-review.rules */
@@ -151,6 +157,7 @@ export class LearningGraphService {
       toMastery: 'mastered',
       trigger: 'review',
     })
+    logger.info(`[graph] reviewDone space=${projectId} concept=${conceptId} ${c.mastery}→mastered (review)`)
   }
 
   // ==================== 排程 ====================

@@ -9,6 +9,7 @@
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { createLogger } from '@core/utils/logger'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import { DlProjectRepository } from '@core/database/repositories/dl-project.repository'
 import { DlConceptRepository } from '@core/database/repositories/dl-concept.repository'
@@ -22,12 +23,16 @@ import { DlPaceSchedulerService } from '../services/dl-pace-scheduler.service'
 import type { DlPaceSettings, DlReviewSettings } from '@shared/types/domain-learning.types'
 import type { DlAgentMode } from '../services/dl-agent.types'
 
+const logger = createLogger('DlHandlers')
+
 /** 统一 { success, data, error } 包装 */
 async function wrap<T>(fn: () => Promise<T>): Promise<IpcResponse<T>> {
   try {
     return { success: true, data: await fn() }
   } catch (e) {
-    return { success: false, error: e instanceof Error ? e.message : String(e) }
+    const msg = e instanceof Error ? e.message : String(e)
+    logger.warn(`[dl] handler 失败：${msg}`)
+    return { success: false, error: msg }
   }
 }
 
