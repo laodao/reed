@@ -327,6 +327,7 @@ import { useDomainLearningStore } from '@/stores/domain-learning'
 import { nodeTypeMeta, relLabel } from './domain-learning-ui'
 import AtlasGraph from './AtlasGraph.vue'
 import AtlasEnhancedViews from './AtlasEnhancedViews.vue'
+import { downloadBlob, graphSvgToPngBlob } from './atlas-export'
 import type {
   DlAtlasGraph,
   DlAtlasNode,
@@ -549,19 +550,7 @@ async function exportLessonDigest(): Promise<void> {
   }
 }
 
-function downloadBlob(content: string, filename: string, mime: string): void {
-  const blob = new Blob([content], { type: mime })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
-}
-
-/** 图谱 PNG 导出：序列化当前 force-graph-svg 并把计算样式内联后画到 canvas */
+/** 图谱 PNG 导出（DOM/文件工具已抽至 ./atlas-export，M4-A P1-6） */
 async function exportAtlasPng(): Promise<void> {
   const svg = document.querySelector('svg.force-graph-svg')
   if (!svg) {
@@ -569,62 +558,11 @@ async function exportAtlasPng(): Promise<void> {
     return
   }
   try {
-    const vb = (svg.getAttribute('viewBox') ?? '0 0 920 600').split(/\s+/).map(Number)
-    const w = vb[2] || 920
-    const h = vb[3] || 600
-    const clone = svg.cloneNode(true) as SVGSVGElement
-    inlineComputedStyles(svg, clone)
-    const xml = new XMLSerializer().serializeToString(clone)
-    const img = new Image()
-    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(xml)}`
-    await new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve()
-      img.onerror = () => reject(new Error('svg 渲染失败'))
-    })
-    const scale = 2
-    const cv = document.createElement('canvas')
-    cv.width = Math.round(w * scale)
-    cv.height = Math.round(h * scale)
-    const cx = cv.getContext('2d')
-    if (!cx) throw new Error('canvas 不可用')
-    cx.fillStyle = '#fff'
-    cx.fillRect(0, 0, cv.width, cv.height)
-    cx.scale(scale, scale)
-    cx.drawImage(img, 0, 0, w, h)
-    cv.toBlob((blob) => {
-      if (!blob) {
-        exportNote.value = 'PNG 生成失败'
-        return
-      }
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `图谱-${spaceView.value?.name ?? 'space'}.png`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(url)
-      exportNote.value = '图谱 PNG 已导出'
-    }, 'image/png')
+    const blob = await graphSvgToPngBlob(svg as SVGSVGElement)
+    downloadBlob(blob, `图谱-${spaceView.value?.name ?? 'space'}.png`, 'image/png')
+    exportNote.value = '图谱 PNG 已导出'
   } catch (e: any) {
     exportNote.value = `PNG 导出失败：${e?.message ?? String(e)}`
-  }
-}
-
-/** 把原图元素的计算样式按元素序内联进克隆（PNG 才可见） */
-function inlineComputedStyles(orig: Element, clone: Element): void {
-  if (orig.nodeType !== 1 || clone.nodeType !== 1) return
-  const cs = window.getComputedStyle(orig)
-  const props = ['fill', 'stroke', 'stroke-width', 'stroke-dasharray', 'opacity', 'font-size', 'text-anchor'] as const
-  const ce = clone as HTMLElement
-  for (const p of props) {
-    const v = cs.getPropertyValue(p)
-    if (v && v !== 'none') ce.style.setProperty(p, v)
-  }
-  const oe = [...orig.children]
-  const ceArr = [...clone.children]
-  for (let i = 0; i < oe.length && i < ceArr.length; i++) {
-    if (oe[i].tagName === ceArr[i].tagName) inlineComputedStyles(oe[i], ceArr[i])
   }
 }
 
