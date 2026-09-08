@@ -30,6 +30,7 @@ import {
   type AtlasViewInputRelation,
 } from '../rules/learning-atlas-views'
 import { normalizeDlReviewSettings, pickReviewCandidates } from '../rules/learning-review.rules'
+import { buildConceptTree, conceptStats, latestCardsByConcept } from '../rules/learning-aggregation.rules'
 
 export class LearningViewService {
   constructor(private readonly db: ICoreDatabaseManager) {}
@@ -128,30 +129,14 @@ export class LearningViewService {
     }
   }
 
-  /** 概念树聚合（group 内层、概念为叶；顶层 parent=null） */
+  /** 概念树聚合（group 内层、概念为叶；顶层 parent=null；保持仓储序） */
   buildTree(concepts: Pick<DlConceptView, 'id' | 'parentId' | 'nodeType' | 'name'>[]): DlTreeNode[] {
-    const byParent = new Map<string | null, Array<Pick<DlConceptView, 'id' | 'parentId' | 'nodeType' | 'name'>>>()
-    for (const c of concepts) {
-      const list = byParent.get(c.parentId) ?? []
-      list.push(c)
-      byParent.set(c.parentId, list)
-    }
-    const build = (parentId: string | null): DlTreeNode[] =>
-      (byParent.get(parentId) ?? []).map((c) =>
-        c.nodeType === 'group'
-          ? { id: c.id, name: c.name, children: build(c.id) }
-          : { id: c.id, name: c.name, conceptId: c.id },
-      )
-    return build(null)
+    return buildConceptTree(concepts)
   }
 
   /** 统计（叶子=知识节点；group 不计） */
   stats(concepts: Pick<DlConceptView, 'mastery' | 'nodeType'>[]): { mastered: number; total: number } {
-    const leaves = concepts.filter((c) => c.nodeType !== 'group')
-    return {
-      total: leaves.length,
-      mastered: leaves.filter((c) => c.mastery === 'mastered').length,
-    }
+    return conceptStats(concepts)
   }
 
   /** Atlas 图谱投影（dl_concept+dl_relation → 图） */
@@ -239,12 +224,8 @@ export class LearningViewService {
     const research: Record<string, number> = {}
     for (const c of leaves) research[c.researchState] = (research[c.researchState] ?? 0) + 1
 
-    // 每概念最新版卡片状态计数
-    const latest = new Map<string, (typeof cards)[number]>()
-    for (const card of cards) {
-      const cur = latest.get(card.conceptId)
-      if (!cur || card.version > cur.version) latest.set(card.conceptId, card)
-    }
+    // 每概念最新版卡片状态计数（M4-A：latestCardsByConcept 单源）
+    const latest = latestCardsByConcept(cards)
     let published = 0
     let draft = 0
     for (const card of latest.values()) {
@@ -299,11 +280,7 @@ export class LearningViewService {
       this.db.dlConcepts!.listByProject(spaceId),
       this.db.dlCards!.listByProject(spaceId),
     ])
-    const latest = new Map<string, typeof cards[number]>()
-    for (const card of cards) {
-      const cur = latest.get(card.conceptId)
-      if (!cur || card.version > cur.version) latest.set(card.conceptId, card)
-    }
+    const latest = latestCardsByConcept(cards)
     const cardOfConcept = (id: string) => latest.get(id) ?? null
     const byId = new Map(concepts.map((c) => [c.id, c]))
 

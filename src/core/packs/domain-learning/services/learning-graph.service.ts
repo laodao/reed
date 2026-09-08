@@ -14,6 +14,7 @@ import {
   shouldSuggestSplit,
 } from '../rules/learning-sequence.rules'
 import { pickReviewCandidates } from '../rules/learning-review.rules'
+import { buildConceptTree, conceptStats } from '../rules/learning-aggregation.rules'
 import type { DlConceptRepository, DlConceptRow } from '@core/database/repositories/dl-concept.repository'
 import type { DlRelationRepository, DlRelationRow } from '@core/database/repositories/dl-relation.repository'
 import type { DlMasteryLogRepository } from '@core/database/repositories/dl-mastery-log.repository'
@@ -163,37 +164,16 @@ export class LearningGraphService {
 
   // ==================== 树/统计 ====================
 
-  /** 聚合大纲树（group 为内层、概念为叶；顶层 parent=null） */
+  /** 聚合大纲树（group 为内层、概念为叶；顶层 parent=null；children 按 createdAt 排序） */
   async buildTree(projectId: string): Promise<TreeNode[]> {
     const all = await this.concepts.listByProject(projectId)
-    const byParent = new Map<string | null, DlConceptRow[]>()
-    for (const c of all) {
-      const list = byParent.get(c.parentId) ?? []
-      list.push(c)
-      byParent.set(c.parentId, list)
-    }
-    const build = (parentId: string | null): TreeNode[] =>
-      (byParent.get(parentId) ?? [])
-        .sort((a, b) => a.createdAt!.getTime() - b.createdAt!.getTime())
-        .map((c) => ({
-          id: c.id,
-          name: c.name,
-          ...(c.nodeType === 'group'
-            ? { children: build(c.id) }
-            : { conceptId: c.id }),
-        }))
-    return build(null)
+    return buildConceptTree(all, { sortChildren: true })
   }
 
   /** 掌握度统计（叶子=知识节点，group 不计） */
   async stats(projectId: string): Promise<{ total: number; mastered: number; learning: number }> {
     const all = await this.concepts.listByProject(projectId)
-    const leaves = all.filter((c) => c.nodeType !== 'group')
-    return {
-      total: leaves.length,
-      mastered: leaves.filter((c) => c.mastery === 'mastered').length,
-      learning: leaves.filter((c) => c.mastery === 'learning').length,
-    }
+    return conceptStats(all)
   }
 
   /** 概念在树中的祖先路径（面包屑/展开路径用） */
