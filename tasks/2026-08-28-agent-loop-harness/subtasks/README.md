@@ -14,14 +14,33 @@ KE 轨（34 号）：KE-1 ──→ KE-2 ──→ KE-3 ──→ KE-4
 
 | 子任务 | 文件 | 对应里程碑 | 状态 |
 | --- | --- | --- | --- |
-| EP-1 EP 工具化+宿主+四大能力（不含 choice） | ep-1-tools-host.md | M6.5-a | 代码完成，单测 6/6 绿；干跑待验（需应用重启） |
-| EP-2 choice→审批通路 | ep-2-choice-approval.md | M6.5-b | 代码完成，单测 54/54 绿（1514d7d9）|
+| EP-1 EP 工具化+宿主+四大能力（不含 choice） | ep-1-tools-host.md | M6.5-a | ✅ 代码完成+评审修复；干跑待应用重启后执行 |
+| EP-2 choice→审批通路 | ep-2-choice-approval.md | M6.5-b | ✅ 代码完成+评审修复（decide 三件套/前端分流）|
 | EP-3 资产生成全链路实测 | ep-3-e2e-run.md | M6.5-c | 待开工 |
-| EP-4 长文工具迁移共享注册 | ep-4-lw-migration.md | M6.5-d | 代码完成，单测 10/10 绿 |
-| KE-1 数据模型与仓库 | ke-1-schema-repo.md | M-Ke1 前半 | 代码完成（57/57 绿）|
-| KE-2 scope 装配+宿主补接 | ke-2-assembly-wiring.md | M-Ke1 后半 | 代码完成（42/42 绿）|
-| KE-3 向量化检索 | ke-3-vector-retrieval.md | M-Ke2 主体 | 代码完成（71/71 绿；端口由 AGENT_MEMORY_EMBEDDING 配置启用）|
+| EP-4 长文工具迁移共享注册 | ep-4-lw-migration.md | M6.5-d | ✅ 完成（pack:lw-agent:* 全名工具，10/10）|
+| KE-1 数据模型与仓库 | ke-1-schema-repo.md | M-Ke1 前半 | ✅ 完成（迁移双端+scope+手工录入/驳回）|
+| KE-2 scope 装配+宿主补接 | ke-2-assembly-wiring.md | M-Ke1 后半 | ✅ 完成（分层装配+chat 补接+全宿主 ContextManager）|
+| KE-3 向量化检索 | ke-3-vector-retrieval.md | M-Ke2 主体 | ✅ 完成（分区键+混合检索；AGENT_MEMORY_EMBEDDING 配置启用）|
 | KE-4 图谱 provider+L0+分层 UI | ke-4-graph-l0-ui.md | M-Ke3 | 代码完成（契约+长文实现+L0 摘要+UI）|
 
 共同纪律：每子任务实现→单测（mock 零 API 成本）→subagent 对抗 review→修复→文档同步→提交 push；
 真模型验证只在 EP-3 与各 KE 子任务的冒烟步，遵守成本红线（34/35 号）。
+
+
+## 对抗评审（2026-09-08，两路并行）
+
+EP 轨 + KE 轨全部子任务实施完成后执行（范围 1ca4e851..223a4325）。结论：P0×4 / P1×4 / P2×16，
+**全部修复**（d548493a）：
+- EP：emitter on/off 不存在（改 tapEvents 惰性订阅）/审批转译裸名比较恒 false（改全名）/
+  动作工具缺 executeTimeoutMs/越权与契约等
+- KE：飞轮构造器丢弃 vector 端口（KE-3 整体失效）/am:reject 三件套契约错位/
+  图谱 provider 未安装且名称-ID 错配（重写：resolveEntities 解析+getNode 关系段）/
+  缺省装配全量泄漏/重规划丢 scopeTag/分区键 default 对称等
+- 修复后回归：全部新套件 + 相关目录 263+ 绿（workflow 目录 12 个失败为既有基线，
+  stash 验证与本次无关）
+
+## 待办（下阶段）
+
+1. 应用重启后：EP-1 干跑（真模型纯文本链）→ EP-3 全链路实测（成本红线见 ep-3 文件）
+2. LW 侧 update/delete 的 byId 越权洞（评审 EP P2-4 同款，列下阶段）
+3. L0 快照变更钩子与 24h 超龄重算（当前为最小摘要版）
