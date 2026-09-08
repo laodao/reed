@@ -136,6 +136,9 @@
                     @click="markConfused"
                   />
                 </el-tooltip>
+                <el-tooltip v-if="currentConcept.card" content="讲义生成演示（在线浏览）" placement="bottom" :show-after="300">
+                  <el-button circle size="small" plain :icon="Promotion" @click="slidesVisible = true" />
+                </el-tooltip>
                 <span v-if="lastFeedback" class="feedback-toast" :class="{ warn: lastFeedbackIsWarn }">{{ lastFeedback }}</span>
               </div>
             </div>
@@ -263,6 +266,19 @@
           <el-button type="primary" :loading="noteSaving" @click="saveSelectionNote">保存笔记</el-button>
         </template>
       </el-dialog>
+
+      <!-- 讲义演示（M4-UX3：HTML 幻灯片在线浏览） -->
+      <el-dialog v-model="slidesVisible" title="讲义演示" width="70%" top="3vh" destroy-on-close append-to-body>
+        <div class="slides-holder">
+          <LessonSlides
+            v-if="currentConcept?.card"
+            :title="currentConcept.name"
+            :sub-title="`${currentConcept.nodeType} · ${currentConcept.mastery}${currentConcept.en ? ' · ' + currentConcept.en : ''}`"
+            :sections="currentConcept.card.sections"
+            :works="currentConcept.card.works ?? null"
+          />
+        </div>
+      </el-dialog>
     </div>
   </div>
 </template>
@@ -310,6 +326,7 @@ import {
   relLabel,
 } from './domain-learning-ui'
 import SectionLesson from './SectionLesson.vue'
+import LessonSlides from './LessonSlides.vue'
 import type {
   DlCardSection,
   DlChatTurn,
@@ -871,6 +888,7 @@ const sel = reactive({ show: false, x: 0, y: 0, text: '' })
 const noteDlg = reactive({ visible: false, anchor: '' })
 const noteText = ref('')
 const noteSaving = ref(false)
+const slidesVisible = ref(false)
 
 function hideSel(): void {
   sel.show = false
@@ -1499,5 +1517,10 @@ async function toggleFavTurn(t: DlChatTurn): Promise<void> {
   font-size: 12px;
   line-height: 1.7;
   border-radius: 0 6px 6px 0;
+}
+
+.slides-holder {
+  height: 74vh;
+  min-height: 420px;
 }
 </style>
