@@ -67,14 +67,30 @@
 
 **结论：无接口缺口。** 唯一的语义变化（单步→多轮）是能力升级而非功能缺失；唯一的工程量在桥接层与工具化包装。
 
-## 4. 文件级改动清单（全部）
+## 4. 四大能力接线清单（用户纪律，硬性）
+
+> 用户原则：所有用到 agent 的功能都需要**上下文管理、任务规划、工作流规划、记忆管理（知识管理）**，
+> 否则 AI 调用质量会很差。接线 ≠ 把 loop 跑起来，四大能力逐一接齐才算完成。
+> 现状核实（33 号后补查）：ContextManager 已实现但**无任何生产宿主接线**（loop 的 deps.context 全部空缺）；
+> 记忆装配仅任务树执行器接入（task-service:341），chat/长文宿主均未接。
+
+| 能力 | harness 挂点 | EP 接线动作 | 期 |
+| --- | --- | --- | --- |
+| **上下文管理** | `loop.deps.context: LoopContextPort`（现成，ContextManager.assemble 含压缩） | EP 宿主接线 ContextManager——EP 对话携带剧本/分镜大文本，无窗口管理必然爆上下文；历史播种后经 assemble 窗口化+压缩 | M6.5-a |
+| **记忆管理** | flywheel.assemble（34 号 M-Ke1 后支持 scope） | EP 宿主装配 L1 用户偏好 + L2 剧集制作业务知识 + L3 项目知识（设定集事实）；沉淀侧：制作经验 distill 打标 ep:projectId；设定集将来按 34 号 §4.2 契约注册结构化提供方 | M6.5-a 接 L1/L2+沉淀；L3 待 34 号 M-Ke1 |
+| **任务规划** | create_task_plan 工具（registry 白名单）+ planner | EP 宿主白名单透出任务规划（跨集制作计划拆解为任务树，scope 打 ep:projectId 标签）；单集内的步骤拆解由 loop 多轮自担 | M6.5-a |
+| **工作流规划** | create_workflow_draft / run_workflow 工具 | EP 宿主白名单透出：可复用生产流水线沉淀为工作流草稿、调用已发布工作流（如固定题材的剧本→分镜流水线） | M6.5-a |
+
+注：四大能力中的规划类（任务/工作流）通过 registry 白名单透出即接（工具已存在），但**系统提示词必须同步写明何时该规划**——只透工具不写纪律等于没接（M5 系统提示词的路由纪律是同款先例）。
+
+## 5. 文件级改动清单（全部）
 
 ### 新建（2 个文件）
 
 | 文件 | 内容 |
 | --- | --- |
 | `src/core/platform/episode-production/agent/ep-agent-tools.ts`（新，约 300 行） | 9 动作 + ep_confirm_choice 共 10 个 `AgentToolDef`：zod schema 从现 action params 平移；execute 闭包捕获 `{projectId, episodeId, providerConfigId, modelId, db, ai, emit}` 复用 executeXxx；dangerLevel 全部 'write'（沿长文 M6 先例，lw-agent-tools.ts:72-170）+ maxCalls 频控（资产生成类 1、文本类 3）；ep_confirm_choice requiresApproval=true；`buildEpAgentToolDefs(ctx)` 导出 |
-| `src/core/platform/episode-production/agent/ep-agent-harness.service.ts`（新，约 400 行） | 宿主服务（对照 lw-agent-harness.service.ts 形态）：`isEpAgentHarnessEnabled()` 开关读取；`sendMessage()` 直驱 LoopRunner——历史播种/生产状态进 system/registry 组装/host.emitStream→ep-agent 事件桥（delta 合批→generate 通道；tool-start/end→action:start/done）/轨迹 TrajectorySink/DbAgentSessionStore/RunRegistry 注册/busy 互斥/AbortController；choice 审批事件桥（pending 时发 choice:request） |
+| `src/core/platform/episode-production/agent/ep-agent-harness.service.ts`（新，约 400 行） | 宿主服务（对照 lw-agent-harness.service.ts 形态）：`isEpAgentHarnessEnabled()` 开关读取；`sendMessage()` 直驱 LoopRunner 并接线四大能力（ContextManager 上下文窗口/记忆装配 L1+L2/任务与工作流规划工具白名单+提示词纪律）——历史播种/生产状态进 system/registry 组装/host.emitStream→ep-agent 事件桥（delta 合批→generate 通道；tool-start/end→action:start/done）/轨迹 TrajectorySink/DbAgentSessionStore/RunRegistry 注册/busy 互斥/AbortController；choice 审批事件桥（pending 时发 choice:request） |
 
 ### 修改（6 个文件）
 
@@ -94,7 +110,7 @@
 - `LongWritingAIService`（仍被决策降级/旧路径使用；新宿主直接 resolveModel 不经它）
 - `agent-console.handler.ts`——列表已过滤 chat，EP 会话不进列表；轨迹查询天然按 scopeKey 可查，无需改 parseConversation
 
-## 5. 测试策略（一次性跑通，成本红线）
+## 6. 测试策略（一次性跑通，成本红线）
 
 1. **单测（零 API 成本，先行）**：10 工具 schema 校验、projectId 越权拒绝、choice 审批映射（approve_with_edit 回填→execute 断言）、开关回退（'0' 走旧路径）、emitStream→事件桥快照断言。mock 模型（MockLanguageModelV3 需 doGenerate，33 号教训）。
 2. **干跑（近零成本）**：真模型但只跑纯文本链（generate_script→split_scenes→storyboards），tokenplan 便宜文本模型；断言轨迹落库+事件序列。
@@ -103,13 +119,13 @@
    - 通过标准：状态机走完+产物落库+轨迹完整；**不评判质量不重跑**；失败只登记证据，修复后单点重跑失败段
    - 成本红线：视频 1 次、图像 ≤2、语音 ≤1；测试脚本与断言清单先写好后一次执行
 
-## 6. 分期与风险
+## 7. 分期与风险
 
 | 期 | 内容 | 退出条件 |
 | --- | --- | --- |
-| M6.5-a | 工具化 + 宿主 + 事件桥 + 开关 | 单测全绿；干跑通过 |
+| M6.5-a | 工具化 + 宿主 + 事件桥 + 开关 + **四大能力接线**（§4） | 单测全绿；干跑通过且装配留痕/上下文压缩断言可见 |
 | M6.5-b | choice→审批映射 + 前端点击改造 | 单测全绿；带 choice 干跑通过 |
-| M6.5-c | 资产生成全链路一次实测 | §5.3 通过并留证 |
+| M6.5-c | 资产生成全链路一次实测 | §6.3 通过并留证 |
 
 风险：
 - choice 审批卡与 EP 面板现有交互冲突 → 回退开关保通路，UI 适配单独处理
