@@ -98,7 +98,7 @@ function services(): DlServiceBundle {
 export function registerDomainLearningHandlers(): void {
   // ---- 空间 CRUD ----
   ipcBridge.handle('dl:list-spaces', () => wrap(() => services().projects.listSpaces()))
-  ipcBridge.handle('dl:create-space', (_e, p: { name: string; goal: string; tagline?: string; description?: string; profileId?: string; profile?: Record<string, unknown> | null }) =>
+  ipcBridge.handle('dl:create-space', (_e, p: { name: string; goal: string; tagline?: string; description?: string; profileId?: string; profile?: Record<string, unknown> | null; kbId?: string | null }) =>
     wrap(async () => {
       const id = await services().projects.createSpace(p)
       return { id }
@@ -115,6 +115,12 @@ export function registerDomainLearningHandlers(): void {
     wrap(async () => {
       await services().projects.setProfile(p.id, p.profileId, p.profile)
       return { ok: true }
+    }))
+  // ---- 项目知识库绑定（M4-B：建绑/改绑，供研究/核验 wf_kb_retrieve） ----
+  ipcBridge.handle('dl:set-space-kb', (_e, p: { id: string; kbId?: string | null }) =>
+    wrap(async () => {
+      const kbId = await services().projects.setKb(p.id, p.kbId)
+      return { kbId }
     }))
 
   // ---- 空间聚合视图（Home 卡片/Space 三栏/Atlas 图与档案） ----

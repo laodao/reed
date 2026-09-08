@@ -220,6 +220,21 @@ describe('LearningProjectService', () => {
       await expect(projectSvc.getPaceSettings(id)).rejects.toThrow(/空间不存在/)
     })
   })
+
+  it('createSpace 可带 kbId；setKb 建绑/解除持久化（M4-B）', async () => {
+    ds = await buildDs()
+    const svc = makeServices(ds)
+    const projectSvc = new LearningProjectService(svc.projects, svc.concepts)
+    const id = await runWithUserAsync('u1', async () =>
+      projectSvc.createSpace({ name: 'KB 域', goal: '入门', kbId: 'kbA' }))
+    await runWithUserAsync('u1', async () => {
+      expect((await projectSvc.getSpace(id))?.kbId).toBe('kbA')
+      expect(await projectSvc.setKb(id, 'kbB')).toBe('kbB')
+      expect((await projectSvc.getSpace(id))?.kbId).toBe('kbB')
+      expect(await projectSvc.setKb(id, null)).toBeNull()
+      expect((await projectSvc.getSpace(id))?.kbId).toBeNull()
+    })
+  })
 })
 
 describe('LearningGraphService 间隔复习（M3-B）', () => {

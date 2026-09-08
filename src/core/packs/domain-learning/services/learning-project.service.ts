@@ -21,6 +21,8 @@ export interface CreateSpaceInput {
   description?: string
   profileId?: string | null
   profile?: Record<string, unknown> | null
+  /** 绑定的项目知识库 id（M4-B：研究/核验按此 kbId 检索） */
+  kbId?: string | null
 }
 
 export interface SpaceSummaryRow {
@@ -49,6 +51,7 @@ export class LearningProjectService {
       goal: input.goal,
       profileId: input.profileId,
       profile: input.profile,
+      kbId: input.kbId ?? null,
       description: input.description,
     })
     await this.concepts.create({
@@ -76,6 +79,14 @@ export class LearningProjectService {
   async setProfile(id: string, profileId: string | null | undefined, profile: Record<string, unknown> | null | undefined): Promise<void> {
     await this.ensureOwned(id)
     await this.projects.patch(id, { profileId: profileId ?? null, profile: profile ?? null })
+  }
+
+  /** 绑定/改绑项目知识库（M4-B；null = 解除绑定） */
+  async setKb(id: string, kbId: string | null | undefined): Promise<string | null> {
+    await this.ensureOwned(id)
+    const next = kbId?.trim() || null
+    await this.projects.patch(id, { kbId: next })
+    return next
   }
 
   /** 自动推进配置(读写均校验空间,归一化兜底) */

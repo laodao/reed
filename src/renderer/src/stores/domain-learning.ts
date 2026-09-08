@@ -35,7 +35,7 @@ interface IpcLike<T = unknown> {
   error?: string
 }
 
-/** 新建空间入参（对齐 dl:create-space；M2-E：可带预设 id 与自定义画像 JSON） */
+/** 新建空间入参（对齐 dl:create-space；M2-E：画像；M4-B：可绑项目知识库） */
 export interface DlCreateSpaceInput {
   name: string
   goal: string
@@ -43,6 +43,7 @@ export interface DlCreateSpaceInput {
   description?: string
   profileId?: string
   profile?: Record<string, unknown> | null
+  kbId?: string | null
 }
 
 /** dl agent 动作事件（通道 dl:agent:<spaceId>[:<conceptId>]；契约对齐后端 dl-agent.types） */
@@ -82,6 +83,7 @@ export interface DlAckConfusedResultUi {
 interface DomainLearningApi {
   listSpaces(): Promise<IpcLike<DlSpaceSummary[]>>
   createSpace(p: DlCreateSpaceInput): Promise<IpcLike<{ id: string }>>
+  setSpaceKb(p: { id: string; kbId?: string | null }): Promise<IpcLike<{ kbId: string | null }>>
   getSpaceView(id: string): Promise<IpcLike<DlSpaceView | null>>
   getAtlasGraph(id: string): Promise<IpcLike<DlAtlasGraph | null>>
   getNodeProfile(id: string, nodeId: string): Promise<IpcLike<DlNodeProfile | null>>
@@ -354,6 +356,19 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
 
   /** 当前空间到期复习载荷（dl:review-due；settings + items） */
   const reviewDue = ref<{ settings: DlReviewSettings; items: DlReviewDueItem[] } | null>(null)
+
+  /** 绑定/改绑项目知识库（M4-B；null=解除；返回新 kbId） */
+  async function saveKbOf(id: string, kbId?: string | null): Promise<string | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.setSpaceKb({ id, kbId: kbId ?? null })
+      return r?.success && r.data ? r.data.kbId : null
+    } catch (e: any) {
+      error.value = e?.message ?? '保存知识库绑定失败'
+      return null
+    }
+  }
 
   /** 当前空间统计载荷（dl:get-space-stats） */
   const spaceStats = ref<DlSpaceStats | null>(null)
@@ -683,6 +698,7 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     saveSpaceProfile,
     paceOf,
     savePaceOf,
+    saveKbOf,
     // 间隔复习
     reviewDue,
     reviewSettingsOf,

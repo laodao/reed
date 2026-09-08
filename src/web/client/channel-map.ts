@@ -271,6 +271,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   // 'domain-learning:list-spaces'（kebab）与后端 'dl:list-spaces' 不匹配，Web 端整体不可用。
   'domainLearning.listSpaces': { channel: 'dl:list-spaces' },
   'domainLearning.createSpace': { channel: 'dl:create-space' },
+  'domainLearning.setSpaceKb': { channel: 'dl:set-space-kb' },
   'domainLearning.getSpace': { channel: 'dl:get-space', wrap: (id) => [{ id }] },
   'domainLearning.setSpaceStatus': { channel: 'dl:set-space-status', wrap: (id, status) => [{ id, status }] },
   'domainLearning.getSpaceView': { channel: 'dl:get-space-view', wrap: (id) => [{ id }] },
