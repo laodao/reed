@@ -144,7 +144,9 @@ export class DlAgentHarnessService {
             break
           }
         }
-      } catch { /* resolveModel 默认路径 */ }
+      } catch (e) {
+        logger.debug(`[dl-agent] 模型兜底探测不可用（走 resolveModel 默认路径）：${e instanceof Error ? e.message : String(e)}`)
+      }
     }
 
     // tutor：用户问题先落 dl_question(open)；research 不落对话
@@ -170,7 +172,8 @@ export class DlAgentHarnessService {
       let webSearchAvailable = false
       try {
         webSearchAvailable = !!(await m.searchEngineConfigs?.getDefault?.())
-      } catch {
+      } catch (e) {
+        logger.debug(`[dl-agent] 默认搜索源探测失败，按无源处理：${e instanceof Error ? e.message : String(e)}`)
         webSearchAvailable = false
       }
       bindings = buildDlBindings({ mode, availableToolNames: registered, webSearchAvailable })
