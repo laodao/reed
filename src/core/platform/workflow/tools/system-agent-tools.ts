@@ -254,8 +254,13 @@ export function buildSystemAgentToolDefs(deps: SystemAgentToolsDeps): AgentToolD
       }))
       const kw = (keyword ?? '').toLowerCase()
       const allSkills = deps.skills.list().filter((s) => s.modelInvocable)
-      const skills = allSkills
-        .filter((s) => !kw || s.name.toLowerCase().includes(kw) || s.description.toLowerCase().includes(kw))
+      // keyword 命中面扩大到 id / whenToUse（历史缺口：learning-* id 英文、展示名中文，
+      // 只按名称/描述过滤会 0 命中而总数却报全量——M3-A）
+      const kwHit = (s: (typeof allSkills)[number]): boolean =>
+        !kw ||
+        [s.id, s.name, s.description, s.whenToUse ?? ''].some((f) => f.toLowerCase().includes(kw))
+      const matchedSkills = allSkills.filter(kwHit)
+      const skills = matchedSkills
         .slice(0, CATALOG_MAX_SKILLS)
         .map((s) => ({
           id: s.id,
@@ -286,7 +291,7 @@ export function buildSystemAgentToolDefs(deps: SystemAgentToolsDeps): AgentToolD
         workflows,
         workflowsTotal: wfPage.total,
         skills,
-        skillsTotal: allSkills.length,
+        skillsTotal: matchedSkills.length,
         tools,
         moduleTools,
         moduleToolsNote: moduleTools.length > 0 ? '以上模块域工具仅在本宿主可用；跨模块操作请用 create_task_plan。' : '',
@@ -355,8 +360,20 @@ export function buildSystemAgentToolDefs(deps: SystemAgentToolsDeps): AgentToolD
       if (!skill.modelInvocable) throw new Error(`技能 ${input.skillId} 已禁用模型调用。`)
       collectSystemAgentRef(ctx, { kind: 'skill', id: skill.id, label: skill.name })
       const params = input.params ?? {}
-      const body = renderSkillTemplate(skill.body, params)
-      const systemPrompt = renderSkillTemplate(skill.systemPrompt, params)
+      // 参数契约（M3-A）：按 discover 目录暴露的 inputs 校验必填项，缺失 → 结构化报错
+      // 让模型按可用 key 自纠重试（历史缺口：缺参静默空串渲染 → 空骨架 + 先验硬凑）
+      const inputs = skill.inputs ?? []
+      const required = inputs.filter((i) => i.required === true)
+      const missing = required
+        .filter((i) => params[i.key] === undefined || params[i.key] === '')
+        .map((i) => i.key)
+      if (missing.length > 0) {
+        const usable = inputs.map((i) => `${i.key}${i.required === true ? '(必填)' : ''}`).join('、') || '（无参数）'
+        throw new Error(`技能 ${skill.id} 缺少必填参数：${missing.join('、')}；可用参数：${usable}——请用 discover_capabilities 核对 inputs.key 后补全重试。`)
+      }
+      const warnMissing = (key: string): void => logger.warn(`[system-agent] invoke_skill ${skill.id} 可选参数 ${key} 缺失，已按空串处理`)
+      const body = renderSkillTemplate(skill.body, params, warnMissing)
+      const systemPrompt = renderSkillTemplate(skill.systemPrompt, params, warnMissing)
       const finalPrompt = withSkillReferences(body, skill.references)
       const { generateText } = await import('ai')
       // 模型跟随聊天轮所选（runtimeContext.turnModel，对抗 review P2：无参会落到

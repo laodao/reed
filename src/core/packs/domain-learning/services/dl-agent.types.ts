@@ -25,7 +25,7 @@ export const DL_HISTORY_LIMIT = 20
 
 /** 每轮工具频控（成本/防抖；bind 时写入 maxCalls） */
 export const DL_TOOL_MAX_CALLS: Record<string, number> = {
-  discover_capabilities: 1,
+  discover_capabilities: 2, // M3-A：允许目录纠错重查（id 直接调用命中）
   invoke_skill: 6,
   dl_save_concept: 8,
   dl_save_relation: 10,

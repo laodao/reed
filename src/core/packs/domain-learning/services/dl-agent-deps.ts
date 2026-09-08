@@ -59,6 +59,13 @@ export async function computeDlSpaceSnapshot(
     relations.map((r) => ({ source: r.sourceId, target: r.targetId, type: r.relationType })),
   )
 
+  // 目录分组（研究侧引导归属用：dl_save_concept 的 parentId 可填目录 id；M3-A）
+  const rootGroups = concepts.filter((c) => c.nodeType === 'group' && !c.parentId)
+  const groupLines =
+    rootGroups.length > 0
+      ? [`目录分组（dl_save_concept 的 parentId 可填其中 id）：${rootGroups.map((g) => `${g.name}(${g.id})`).join('；')}`]
+      : []
+
   const head = [
     `学习空间：${project?.name ?? spaceId}（目标：${project?.goal ?? '—'}）`,
     `掌握度：${masteredCount}/${leafCount} 个知识概念已理解`,
@@ -66,7 +73,7 @@ export async function computeDlSpaceSnapshot(
   ]
 
   return {
-    text: [...head, ...conceptText].join('\n'),
+    text: [...head, ...groupLines, ...conceptText].join('\n'),
     nextConceptId: ready,
   }
 }
@@ -90,7 +97,8 @@ export function dlResearchSystemPrompt(): string {
 5. 联网搜索只在提供了 web_search 工具时使用；没有 web_search 时不得假装搜索，改用知识库 / 给定 URL / arXiv；
 6. 不要重复执行刚成功的同一动作；动作失败可换参数重试一次；
 7. 若本轮是研究一个未解问题（快照含【待研究问题】）：找到有据答案时务必调用 dl_answer_question 把「问题+答案+来源」存档（answerSource 用 ai_verified 或 新研究），并把支撑沉淀为概念/讲义草稿；仍无据则保持 open，并在总结里说明缺什么资料、下一步该去哪找；
-8. 全部完成后用一段话总结：研究了什么、读了哪些资料、产出哪些草稿、下一步建议（等用户人审/继续学习）。`
+8. 全部完成后用一段话总结：研究了什么、读了哪些资料、产出哪些草稿、下一步建议（等用户人审/继续学习）；
+9. 归属（M3-A）：快照「目录分组」里若存在契合的目录，dl_save_concept 的 parentId 填其目录 id；不确定就保持 null（根层），地图人审会再归类。`
 }
 
 /** 研究模式采集可用性提示（追加进快照；web_search 是否有默认搜索源决定 bind） */

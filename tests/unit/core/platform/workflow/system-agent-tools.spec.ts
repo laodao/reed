@@ -270,6 +270,33 @@ describe('discover_capabilities', () => {
     expect(data.moduleTools[0].description.length).toBeGreaterThan(0)
     expect(data.moduleToolsNote).toContain('仅在本宿主可用')
   })
+
+  it('keyword 命中扩大到技能英文 id/whenToUse；skillsTotal=匹配数（M3-A）', async () => {
+    const { registry } = setup({
+      skills: {
+        list: () => [
+          mkSkill({ id: 'learning-domain-map', name: '领域地图生成', description: '为领域生成学习骨架', whenToUse: '需要建立学习骨架时' }),
+          mkSkill({ id: 'short-video-script', name: '短视频脚本', description: '写口播稿', whenToUse: '要写短视频脚本时' }),
+        ] as never[],
+      },
+    })
+    // 用英文 id 前缀收窄（历史缺口：只匹配中文 name/description → 0 命中）
+    const byId = await registry.execute({ toolName: 'discover_capabilities', args: { keyword: 'learning-domain' } })
+    const d1 = byId.data as { skills: Array<{ id: string }>; skillsTotal: number }
+    expect(d1.skills.map((s) => s.id)).toEqual(['learning-domain-map'])
+    expect(d1.skillsTotal).toBe(1)
+
+    // whenToUse 命中
+    const byWtu = await registry.execute({ toolName: 'discover_capabilities', args: { keyword: '学习骨架' } })
+    const d2 = byWtu.data as { skills: Array<{ id: string }>; skillsTotal: number }
+    expect(d2.skills.map((s) => s.id)).toEqual(['learning-domain-map'])
+
+    // 无关 keyword：skills 空且总数也报 0（不再全量虚高）
+    const none = await registry.execute({ toolName: 'discover_capabilities', args: { keyword: '不存在的词xyz' } })
+    const d3 = none.data as { skills: unknown[]; skillsTotal: number }
+    expect(d3.skills).toHaveLength(0)
+    expect(d3.skillsTotal).toBe(0)
+  })
 })
 
 // ==================== run_workflow / get_workflow_run ====================
@@ -412,6 +439,21 @@ describe('invoke_skill', () => {
     const res = await registry.execute({ toolName: 'invoke_skill', args: { skillId: 'nope' } })
     expect(res.ok).toBe(false)
     expect((res.error as { message: string }).message).toContain('不存在')
+  })
+
+  it('缺必填参数/错误键名 → 结构化失败并列出可用参数（M3-A：不再静默空渲染）', async () => {
+    const { registry } = setup()
+    const miss = await registry.execute({ toolName: 'invoke_skill', args: { skillId: 'skill-1' } })
+    expect(miss.ok).toBe(false)
+    expect((miss.error as { message: string }).message).toContain('缺少必填参数')
+    expect((miss.error as { message: string }).message).toContain('topic')
+
+    const wrongKey = await registry.execute({
+      toolName: 'invoke_skill',
+      args: { skillId: 'skill-1', params: { domain: '短视频' } },
+    })
+    expect(wrongKey.ok).toBe(false)
+    expect((wrongKey.error as { message: string }).message).toContain('topic')
   })
 })
 

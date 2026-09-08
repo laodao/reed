@@ -33,6 +33,9 @@ describe('dl-agent-deps（M2-B）', () => {
     }
     // 采集纪律是有条件启用（会话提供读工具时），仍是研究模式的默认口径
     expect(p).toContain('采集纪律')
+    // M3-A：归属纪律引导 agent 使用快照目录分组
+    expect(p).toContain('目录分组')
+    expect(p).toContain('parentId')
   })
 
   it('researchSourceHint：无默认搜索源提示不可用且不得假装搜索；有则提示已启用', () => {
