@@ -4,6 +4,9 @@
  *
  * 动作 → 现有生成方法（流式）→ 解析 → 落库（生成类按名称去重，只入新增）。
  * 每个动作独立 try/catch：失败不阻断后续动作，错误进执行摘要。
+ *
+ * v2.1（故事研讨室 M1）：落库段抽取为 `../story-persist`（纯函数、研讨室
+ * adoptCard 共用），本文件保留 AI 生成调用与动作编排，落库委托之。
  */
 
 import type {
@@ -13,42 +16,27 @@ import type {
   AgentProductionState,
 } from './agent.types'
 import { checkActionDependency } from './agent-deps'
+import {
+  persistOverview,
+  persistCharacters,
+  persistPlots,
+  persistWorld,
+  persistOutlineTree,
+  persistChapter,
+  extractJsonObject,
+  extractJsonArray,
+  type StoryPersistResult,
+} from '../story-persist'
 
-// ==================== JSON 容错解析 ====================
+// JSON 容错解析已迁至 story-persist（研讨室共用），此处保持旧导入面
+export { extractJsonObject, extractJsonArray }
 
-/** 从 AI 输出提取 JSON 对象（容忍 markdown 代码块/前后杂文） */
-export function extractJsonObject(text: string): any | null {
-  if (!text) return null
-  let s = text.trim()
-  s = s.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
-  const first = s.indexOf('{')
-  const last = s.lastIndexOf('}')
-  if (first !== -1 && last > first) {
-    try {
-      return JSON.parse(s.substring(first, last + 1))
-    } catch {
-      /* 继续尝试数组提取 */
-    }
+/** 落库结果 → 动作执行摘要（ok 带变更面/数据，skipped/error 仅文案） */
+function toSummary(type: string, r: StoryPersistResult): AgentActionSummary {
+  if (r.ok) {
+    return { type, status: 'ok', message: r.message, changed: r.changed, data: r.data } as AgentActionSummary
   }
-  return null
-}
-
-/** 从 AI 输出提取 JSON 数组 */
-export function extractJsonArray(text: string): any[] | null {
-  if (!text) return null
-  let s = text.trim()
-  s = s.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
-  const first = s.indexOf('[')
-  const last = s.lastIndexOf(']')
-  if (first !== -1 && last > first) {
-    try {
-      const v = JSON.parse(s.substring(first, last + 1))
-      return Array.isArray(v) ? v : null
-    } catch {
-      return null
-    }
-  }
-  return null
+  return { type, status: r.skipped ? 'skipped' : 'error', message: r.message } as AgentActionSummary
 }
 
 // ==================== 动作执行 ====================
@@ -132,7 +120,7 @@ async function dispatchAction(ctx: AgentExecutionContext, action: AgentAction): 
   }
 }
 
-// ==================== 具体动作 ====================
+// ==================== 具体动作（生成 + 委托 story-persist 落库） ====================
 
 async function executeGenerateOverview(ctx: AgentExecutionContext, action: AgentAction): Promise<AgentActionSummary> {
   const { db, ai, projectId, providerConfigId, modelId } = ctx
@@ -146,37 +134,8 @@ async function executeGenerateOverview(ctx: AgentExecutionContext, action: Agent
   if (!resp.success || !resp.data) {
     return { type: 'generate_overview', status: 'error', message: resp.error || '故事概要生成失败' }
   }
-  const d = resp.data
 
-  let overview = await db?.lwStoryOverviews?.getByProjectId(projectId)
-  const patch = {
-    title: d.title || overview?.title || '未命名',
-    storyType: d.storyType || overview?.storyType || null,
-    summary: d.summary || overview?.summary || '',
-    coreConflict: d.coreConflict || overview?.coreConflict || '',
-    coreIdea: input || overview?.coreIdea || null,
-    keyCharacters: d.keyCharacters || [],
-    keyLocations: d.keyLocations || [],
-    estimatedChapters: d.estimatedChapters ?? overview?.estimatedChapters ?? null,
-    isSaved: true,
-  }
-  if (overview) {
-    await db.lwStoryOverviews.update(overview.id, patch)
-  } else {
-    // overview 行缺失（历史遗留/异常库）：先建行再更新——否则 AI 生成结果被丢弃，
-    // 却仍返回 status:'ok'（假成功反馈，前端按 changed 刷新拿到的是空数据）
-    overview = await db.lwStoryOverviews.create(projectId)
-    await db.lwStoryOverviews.update(overview.id, patch)
-  }
-
-  const title = d.title || '未命名'
-  return {
-    type: 'generate_overview',
-    status: 'ok',
-    message: `已生成故事概要「${title}」（预估 ${d.estimatedChapters || '?'} 章）`,
-    changed: ['overview'],
-    data: { title, estimatedChapters: d.estimatedChapters },
-  }
+  return toSummary('generate_overview', await persistOverview(db, projectId, resp.data, input))
 }
 
 async function executeGenerateCharacters(ctx: AgentExecutionContext, action: AgentAction): Promise<AgentActionSummary> {
@@ -190,68 +149,13 @@ async function executeGenerateCharacters(ctx: AgentExecutionContext, action: Age
   }
 
   const list = Array.isArray(resp.data) ? resp.data : extractJsonArray(resp.data)
-  if (!list || list.length === 0) {
-    return { type: 'generate_characters', status: 'error', message: 'AI 未返回有效的人物数据' }
-  }
-
-  // 按名称去重：只入库新增（支持"再补一个女二号"这类增量需求）
-  const existing = await db?.lwCharacters?.getByProjectId(projectId) || []
-  const existingNames = new Set(existing.map((c: any) => c.name))
-  const newChars = list.filter((c: any) => c?.name?.trim() && !existingNames.has(c.name))
-
-  if (newChars.length === 0) {
-    return { type: 'generate_characters', status: 'skipped', message: '没有新人物需要添加（AI 返回的人物都已存在）' }
-  }
-
-  const created: any[] = []
-  for (const c of newChars) {
-    const saved = await db?.lwCharacters?.create({
-      projectId,
-      name: c.name.trim(),
-      gender: c.gender || 'other',
-      age: c.age ?? 0,
-      height: c.height,
-      weight: c.weight,
-      race: c.race,
-      occupation: c.occupation,
-      position: c.position,
-      rolePosition: c.rolePosition,
-      appearance: c.appearance,
-      background: c.background,
-      personality: c.personality,
-      abilities: c.abilities,
-      majorEvents: c.majorEvents,
-    })
-    if (saved) created.push(saved)
-  }
-
-  // 图谱动态更新：角色间关系（AI 输出 relations）→ 幂等落库
-  await syncRelationsFromInput(db, projectId, newChars, (c: any) =>
-    (c.relations || []).map((rel: any) => ({
-      sourceType: 'character',
-      sourceName: c.name.trim(),
-      targetType: 'character',
-      targetName: String(rel.targetName || '').trim(),
-      relationType: rel.relationType || '关联',
-      description: rel.description || '',
-    })),
-  )
-
-  return {
-    type: 'generate_characters',
-    status: 'ok',
-    message: `新增人物：${created.map((c: any) => c.name).join('、')}`,
-    changed: ['characters'],
-    data: created.map((c: any) => ({ id: c.id, name: c.name, rolePosition: c.rolePosition })),
-  }
+  return toSummary('generate_characters', await persistCharacters(db, projectId, list || []))
 }
 
 async function executeGenerateWorld(ctx: AgentExecutionContext): Promise<AgentActionSummary> {
   const { db, ai, projectId, providerConfigId, modelId } = ctx
-  const done: string[] = []
-  const changed: any[] = ['world']
 
-  // 1. 背景（无背景行时先建空行，再润色时代描述）
+  // 背景（无背景行时先建空行，再润色时代描述）——生成段，非落库
   try {
     const bg = await db?.lwBackgrounds?.getByProjectId(projectId)
     if (!bg) {
@@ -271,112 +175,39 @@ async function executeGenerateWorld(ctx: AgentExecutionContext): Promise<AgentAc
       const content = resp?.data?.content
       if (content) {
         await db?.lwBackgrounds?.update(bgRow.id, { eraDescription: content })
-        done.push('时代背景')
       }
-    } else if (bgRow) {
-      done.push('时代背景')
     }
   } catch (e) {
     console.error('[AgentAction] 背景生成失败:', e)
   }
 
-  // 2. 地点
+  // 四类设定生成
+  let locations: any[] = []
+  let factions: any[] = []
+  let skills: any[] = []
+  let items: any[] = []
   try {
     const resp = await ai.generateLocations(makeEventId(projectId, 'locations'), projectId, providerConfigId, modelId)
-    const list = Array.isArray(resp?.data) ? resp.data : extractJsonArray(resp?.data)
-    if (list && list.length > 0) {
-      const existing = await db?.lwLocations?.getByProjectId(projectId) || []
-      const names = new Set(existing.map((l: any) => l.name))
-      const fresh = list.filter((l: any) => l?.name?.trim() && !names.has(l.name))
-      for (const l of fresh) {
-        await db?.lwLocations?.create({
-          projectId,
-          name: l.name.trim(),
-          type: l.type || 'other',
-          importance: l.importance || 'auxiliary',
-          description: l.description || '',
-          mapId: l.suggestedMapId,
-        })
-      }
-      if (fresh.length > 0) done.push(`地点${fresh.length}个`)
-    }
+    locations = (Array.isArray(resp?.data) ? resp.data : extractJsonArray(resp?.data)) || []
   } catch (e) {
     console.error('[AgentAction] 地点生成失败:', e)
   }
-
-  // 3. 势力
   try {
     const resp = await ai.generateFactions(makeEventId(projectId, 'factions'), projectId, providerConfigId, modelId)
-    const list = Array.isArray(resp?.data) ? resp.data : extractJsonArray(resp?.data)
-    if (list && list.length > 0) {
-      const existing = await db?.lwFactions?.getByProjectId(projectId) || []
-      const names = new Set(existing.map((f: any) => f.name))
-      const fresh = list.filter((f: any) => f?.name?.trim() && !names.has(f.name))
-      for (const f of fresh) {
-        await db?.lwFactions?.create({
-          projectId,
-          factionType: f.factionType || 'other',
-          name: f.name.trim(),
-          description: f.description || '',
-        })
-      }
-      if (fresh.length > 0) done.push(`势力${fresh.length}个`)
-    }
+    factions = (Array.isArray(resp?.data) ? resp.data : extractJsonArray(resp?.data)) || []
   } catch (e) {
     console.error('[AgentAction] 势力生成失败:', e)
   }
-
-  // 4. 技能 + 物品
   try {
     const resp = await ai.generateSkillsItems(makeEventId(projectId, 'skillsitems'), projectId, providerConfigId, modelId)
     const data = extractJsonObject(resp?.data) ?? (typeof resp?.data === 'object' ? resp.data : null)
-    const skills = Array.isArray(data?.skills) ? data.skills : []
-    const items = Array.isArray(data?.items) ? data.items : []
-    if (skills.length > 0) {
-      const existing = await db?.lwSkills?.getByProjectId(projectId) || []
-      const names = new Set(existing.map((s: any) => s.name))
-      const fresh = skills.filter((s: any) => s?.name?.trim() && !names.has(s.name))
-      for (const s of fresh) {
-        await db?.lwSkills?.create({
-          projectId,
-          name: s.name.trim(),
-          type: s.type || 'ability',
-          level: s.level || 'beginner',
-          description: s.description || '',
-          system: s.system || '',
-          characterIds: [],
-        })
-      }
-      if (fresh.length > 0) done.push(`技能${fresh.length}个`)
-    }
-    if (items.length > 0) {
-      const existing = await db?.lwItems?.getByProjectId(projectId) || []
-      const names = new Set(existing.map((i: any) => i.name))
-      const fresh = items.filter((i: any) => i?.name?.trim() && !names.has(i.name))
-      for (const i of fresh) {
-        await db?.lwItems?.create({
-          projectId,
-          name: i.name.trim(),
-          type: i.type || 'artifact',
-          level: i.level || 'common',
-          description: i.description || '',
-        })
-      }
-      if (fresh.length > 0) done.push(`物品${fresh.length}个`)
-    }
+    skills = Array.isArray(data?.skills) ? data.skills : []
+    items = Array.isArray(data?.items) ? data.items : []
   } catch (e) {
     console.error('[AgentAction] 技能物品生成失败:', e)
   }
 
-  if (done.length === 0) {
-    return { type: 'generate_world', status: 'error', message: '世界设定生成失败：AI 未返回有效数据' }
-  }
-  return {
-    type: 'generate_world',
-    status: 'ok',
-    message: `已生成世界设定：${done.join('、')}`,
-    changed,
-  }
+  return toSummary('generate_world', await persistWorld(db, projectId, { locations, factions, skills, items }))
 }
 
 async function executeGeneratePlots(ctx: AgentExecutionContext): Promise<AgentActionSummary> {
@@ -388,89 +219,7 @@ async function executeGeneratePlots(ctx: AgentExecutionContext): Promise<AgentAc
     return { type: 'generate_plots', status: 'error', message: resp.error || '故事线生成失败' }
   }
   const list = Array.isArray(resp.data) ? resp.data : extractJsonArray(resp.data)
-  if (!list || list.length === 0) {
-    return { type: 'generate_plots', status: 'error', message: 'AI 未返回有效的故事线数据' }
-  }
-
-  const existing = await db?.lwPlots?.getByProjectId(projectId) || []
-  const existingTitles = new Set(existing.map((p: any) => p.title))
-  const newPlots = list.filter((p: any) => p?.title?.trim() && !existingTitles.has(p.title))
-
-  if (newPlots.length === 0) {
-    return { type: 'generate_plots', status: 'skipped', message: '没有新的故事线需要添加（都已存在）' }
-  }
-
-  await db?.lwPlots?.batchCreate(
-    projectId,
-    newPlots.map((p: any) => ({
-      title: p.title.trim(),
-      summary: p.summary || '',
-      involvedCharacters: p.involvedCharacters || [],
-    })),
-  )
-
-  // 图谱动态更新：情节中体现的实体关系 → 幂等落库
-  await syncRelationsFromInput(db, projectId, newPlots, (p: any) =>
-    (p.entityRelations || []).map((rel: any) => ({
-      sourceType: rel.sourceType || 'character',
-      sourceName: String(rel.sourceName || '').trim(),
-      targetType: rel.targetType || 'character',
-      targetName: String(rel.targetName || '').trim(),
-      relationType: rel.relationType || '关联',
-      description: rel.description || '',
-    })),
-  )
-
-  return {
-    type: 'generate_plots',
-    status: 'ok',
-    message: `新增故事线 ${newPlots.length} 条：${newPlots.map((p: any) => p.title).join('、')}`,
-    changed: ['plots'],
-    data: newPlots.map((p: any) => ({ title: p.title })),
-  }
-}
-
-/**
- * 从生成结果提取实体关系并幂等落库（图谱动态更新）。
- * 提取器失败/无关系时不抛错（不阻断主流程）。
- */
-async function syncRelationsFromInput(
-  db: any,
-  projectId: string,
-  items: any[],
-  extractor: (item: any) => Array<{
-    sourceType: string
-    sourceName: string
-    targetType: string
-    targetName: string
-    relationType: string
-    description?: string
-  }>,
-): Promise<void> {
-  if (!db?.lwGraphEdges || !Array.isArray(items) || items.length === 0) return
-  try {
-    const relations: any[] = []
-    for (const item of items) {
-      for (const rel of extractor(item)) {
-        const src = rel.sourceName.trim()
-        const tgt = rel.targetName.trim()
-        if (!src || !tgt || src === tgt) continue
-        relations.push({
-          sourceType: rel.sourceType || 'character',
-          sourceName: src,
-          targetType: rel.targetType || 'character',
-          targetName: tgt,
-          relationType: rel.relationType || '关联',
-          description: rel.description || '',
-        })
-      }
-    }
-    if (relations.length === 0) return
-    const { GraphService } = await import('../graph/graph.service')
-    await new GraphService(db).syncEntityRelations(projectId, relations)
-  } catch (e) {
-    console.error('[AgentAction] 实体关系同步失败（不影响主流程）:', e)
-  }
+  return toSummary('generate_plots', await persistPlots(db, projectId, list || []))
 }
 
 async function executeGenerateOutline(ctx: AgentExecutionContext, action: AgentAction): Promise<AgentActionSummary> {
@@ -497,7 +246,7 @@ async function executeGenerateOutline(ctx: AgentExecutionContext, action: AgentA
     return { type: 'generate_outline', status: 'error', message: 'AI 未返回有效的大纲数据' }
   }
 
-  const created = await createOutlineTree(db, projectId, tree, level)
+  const created = await persistOutlineTree(db, projectId, tree, level)
 
   return {
     type: 'generate_outline',
@@ -506,61 +255,6 @@ async function executeGenerateOutline(ctx: AgentExecutionContext, action: AgentA
     changed: ['outline'],
     data: { structureLevel: level, nodes: created },
   }
-}
-
-/** 大纲建树（复刻 OutlineStage 前端逻辑：卷→章→节 / 章→节 / 章） */
-async function createOutlineTree(db: any, projectId: string, tree: any[], level: number): Promise<number> {
-  let count = 0
-  if (level === 3) {
-    for (const vol of tree) {
-      const v = await db?.lwOutlines?.create({
-        projectId, name: vol.name, nodeType: 'volume',
-        summary: vol.summary || '', estimatedWords: vol.estimatedWords || 0,
-      })
-      if (!v) continue
-      count++
-      for (const ch of vol.chapters || []) {
-        const c = await db?.lwOutlines?.create({
-          projectId, parentId: v.id, name: ch.name, nodeType: 'chapter',
-          summary: ch.summary || '', estimatedWords: ch.estimatedWords || 0,
-        })
-        if (!c) continue
-        count++
-        for (const sec of ch.sections || []) {
-          await db?.lwOutlines?.create({
-            projectId, parentId: c.id, name: sec.name, nodeType: 'section',
-            summary: sec.summary || '', estimatedWords: sec.estimatedWords || 0,
-          })
-          count++
-        }
-      }
-    }
-  } else if (level === 2) {
-    for (const ch of tree) {
-      const c = await db?.lwOutlines?.create({
-        projectId, name: ch.name, nodeType: 'chapter',
-        summary: ch.summary || '', estimatedWords: ch.estimatedWords || 0,
-      })
-      if (!c) continue
-      count++
-      for (const sec of ch.sections || []) {
-        await db?.lwOutlines?.create({
-          projectId, parentId: c.id, name: sec.name, nodeType: 'section',
-          summary: sec.summary || '', estimatedWords: sec.estimatedWords || 0,
-        })
-        count++
-      }
-    }
-  } else {
-    for (const ch of tree) {
-      await db?.lwOutlines?.create({
-        projectId, name: ch.name, nodeType: 'chapter',
-        summary: ch.summary || '', estimatedWords: ch.estimatedWords || 0,
-      })
-      count++
-    }
-  }
-  return count
 }
 
 async function executeWriteChapter(ctx: AgentExecutionContext, action: AgentAction): Promise<AgentActionSummary> {
@@ -581,11 +275,6 @@ async function executeWriteChapter(ctx: AgentExecutionContext, action: AgentActi
     outlineId = next.id
   }
 
-  const outline = await db?.lwOutlines?.getById(outlineId)
-  if (!outline) {
-    return { type: 'write_chapter', status: 'error', message: '大纲节点不存在（outlineId 无效）' }
-  }
-
   const targetWords = action.params?.targetWords
   const style = action.params?.style
   const extraPrompt = action.params?.extraPrompt
@@ -595,51 +284,8 @@ async function executeWriteChapter(ctx: AgentExecutionContext, action: AgentActi
     return { type: 'write_chapter', status: 'error', message: resp.error || '章节生成失败' }
   }
   const content = typeof resp.data === 'string' ? resp.data : resp.data?.content || ''
-  if (!content.trim()) {
-    return { type: 'write_chapter', status: 'error', message: 'AI 未返回章节正文' }
-  }
 
-  // 落库（复刻 saveChapter 语义：create/updateContent + createVersion）
-  const existingChapter = await db?.lwChapters?.getByOutlineId(outlineId)
-  let chapter = existingChapter
-  if (!chapter) {
-    chapter = await db?.lwChapters?.create(outlineId, content)
-  } else {
-    chapter = await db?.lwChapters?.updateContent(chapter.id, content)
-  }
-  if (chapter) {
-    await db?.lwChapters?.createVersion(chapter.id, content, 'manual')
-  }
-
-  // 图谱流水线：事件提取 → 状态切片 → 自动建边 → 章节状态摘要（分步容错，失败不阻断）
-  try {
-    const { ChapterGraphProcessor } = await import('../graph/chapter-graph.processor')
-    const processor = new ChapterGraphProcessor(db, ai)
-    const tree = await db?.lwOutlines?.getTreeByProjectId(projectId) || []
-    const leaves = (tree || [])
-      .filter((n: any) => n.nodeType === 'chapter' || n.nodeType === 'section')
-      .sort((a: any, b: any) => a.orderIndex - b.orderIndex)
-    const chapterNumber = leaves.findIndex((l: any) => l.id === outlineId) + 1 || 1
-    await processor.process({
-      projectId,
-      outlineId,
-      chapterContent: content,
-      chapterNumber,
-      providerConfigId,
-      modelId,
-    })
-  } catch (e) {
-    console.error('[AgentAction] 章节图谱流水线失败（正文已保存）:', e)
-  }
-
-  const words = content.length
-  return {
-    type: 'write_chapter',
-    status: 'ok',
-    message: `已写好「${outline.name}」（约 ${Math.round(words / 100) / 10} 千字）`,
-    changed: ['chapters', 'outline'],
-    data: { outlineId, name: outline.name, words },
-  }
+  return toSummary('write_chapter', await persistChapter(db, projectId, { outlineId, content, providerConfigId, modelId }, ai))
 }
 
 /**
