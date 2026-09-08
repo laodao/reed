@@ -213,6 +213,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public dlCards: import('@core/database/repositories/dl-card.repository').DlCardRepository | null = null
   public dlDocs: import('@core/database/repositories/dl-doc.repository').DlDocRepository | null = null
   public dlQuestions: import('@core/database/repositories/dl-question.repository').DlQuestionRepository | null = null
+  public dlNotes: import('@core/database/repositories/dl-note.repository').DlNoteRepository | null = null
 
   // 业务包内核（第一期）
   public packs: PackRepository | null = null
@@ -4452,6 +4453,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.dlCards = new (await import('@core/database/repositories/dl-card.repository')).DlCardRepository(this.dataSource)
     this.dlDocs = new (await import('@core/database/repositories/dl-doc.repository')).DlDocRepository(this.dataSource)
     this.dlQuestions = new (await import('@core/database/repositories/dl-question.repository')).DlQuestionRepository(this.dataSource)
+    this.dlNotes = new (await import('@core/database/repositories/dl-note.repository')).DlNoteRepository(this.dataSource)
     // 业务包内核（第一期）：包快照 + 启用/配置覆写
     this.packs = new PackRepository(this.dataSource)
     this.packBindings = new PackBindingRepository(this.dataSource)

@@ -76,6 +76,7 @@ import { DlMasteryLogRepository } from '@core/database/repositories/dl-mastery-l
 import { DlCardRepository } from '@core/database/repositories/dl-card.repository'
 import { DlDocRepository } from '@core/database/repositories/dl-doc.repository'
 import { DlQuestionRepository } from '@core/database/repositories/dl-question.repository'
+import { DlNoteRepository } from '@core/database/repositories/dl-note.repository'
 import { PackBindingRepository, PackRepository } from '@core/database/repositories/business-pack.repositories'
 import { LwPlotCharacterRepository } from '@core/database/repositories/lw-plot-character.repository'
 import { LwPlotLocationRepository } from '@core/database/repositories/lw-plot-location.repository'
@@ -205,6 +206,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   dlCards: import('@core/database/repositories/dl-card.repository').DlCardRepository | null
   dlDocs: import('@core/database/repositories/dl-doc.repository').DlDocRepository | null
   dlQuestions: import('@core/database/repositories/dl-question.repository').DlQuestionRepository | null
+  dlNotes: import('@core/database/repositories/dl-note.repository').DlNoteRepository | null
   // 业务包内核（第一期）
   packs: PackRepository | null
   packBindings: PackBindingRepository | null
@@ -330,6 +332,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.dlCards = new DlCardRepository(ds)
     this.dlDocs = new DlDocRepository(ds)
     this.dlQuestions = new DlQuestionRepository(ds)
+    this.dlNotes = new DlNoteRepository(ds)
     // 业务包内核（第一期）：包快照 + 启用/配置覆写
     this.packs = new PackRepository(ds)
     this.packBindings = new PackBindingRepository(ds)

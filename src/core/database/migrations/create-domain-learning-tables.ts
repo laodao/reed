@@ -21,6 +21,7 @@ export async function createDomainLearningTables(ds: DataSource): Promise<void> 
   await ensureTable(ds, isPg, 'dl_card', ddlCard(isPg), () => cardIndexes(ds, isPg))
   await ensureTable(ds, isPg, 'dl_doc', ddlDoc(isPg), () => docIndexes(ds, isPg))
   await ensureTable(ds, isPg, 'dl_question', ddlQuestion(isPg), () => questionIndexes(ds, isPg))
+  await ensureTable(ds, isPg, 'dl_note', ddlNote(isPg), () => noteIndexes(ds, isPg))
   // M2-C：pace_settings 列（老库升级路径——ensureTable 只补索引，新增列显式 ALTER）
   await ensureColumn(
     ds,
@@ -357,4 +358,46 @@ function ddlQuestion(pg: boolean): string {
 async function questionIndexes(ds: DataSource, isPg: boolean): Promise<void> {
   await ensureIndex(ds, isPg, 'idx_dl_question_user', 'dl_question', '(user_id)')
   await ensureIndex(ds, isPg, 'idx_dl_question_project_status', 'dl_question', '(project_id, status)')
+}
+
+// ==================== dl_note ====================
+
+function ddlNote(pg: boolean): string {
+  if (pg) {
+    return `
+      CREATE TABLE dl_note (
+        id           varchar PRIMARY KEY,
+        user_id      varchar,
+        project_id   varchar NOT NULL,
+        concept_id   varchar,
+        source       varchar NOT NULL,
+        anchor_text  text,
+        anchor_start integer,
+        anchor_end   integer,
+        question_id  varchar,
+        content_md   text NOT NULL,
+        created_at   timestamp
+      )
+    `
+  }
+  return `
+    CREATE TABLE dl_note (
+      id           TEXT PRIMARY KEY,
+      user_id      TEXT,
+      project_id   TEXT NOT NULL,
+      concept_id   TEXT,
+      source       TEXT NOT NULL,
+      anchor_text  TEXT,
+      anchor_start INTEGER,
+      anchor_end   INTEGER,
+      question_id  TEXT,
+      content_md   TEXT NOT NULL,
+      created_at   DATETIME
+    )
+  `
+}
+
+async function noteIndexes(ds: DataSource, isPg: boolean): Promise<void> {
+  await ensureIndex(ds, isPg, 'idx_dl_note_user', 'dl_note', '(user_id)')
+  await ensureIndex(ds, isPg, 'idx_dl_note_project_concept', 'dl_note', '(project_id, concept_id)')
 }

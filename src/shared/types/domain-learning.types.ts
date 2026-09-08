@@ -354,6 +354,33 @@ export interface DlLessonDigest {
   count: number
 }
 
+/** 笔记来源：讲义选区笔记 / 答疑回答收藏 */
+export type DlNoteSource = 'selection' | 'qna'
+
+/** 概念笔记（dl_note；M4-UX1 #3/#6） */
+export interface DlNote {
+  id: string
+  projectId: string
+  /** 所属概念（选区笔记或收藏回答所属概念；可空=空间级） */
+  conceptId: string | null
+  source: DlNoteSource
+  /** 选区原文快照（selection 类） */
+  anchorText: string | null
+  /** 选区起止（讲义正文内可选偏移） */
+  anchorStart: number | null
+  anchorEnd: number | null
+  /** 收藏回答引用的答疑问题 id（qna 类） */
+  questionId: string | null
+  contentMd: string
+  createdAt: string | null
+}
+
+/** dl:list-notes 载荷（按概念/空间） */
+export interface DlNoteQueryResult {
+  notes: DlNote[]
+  total: number
+}
+
 // ==================== Atlas 增强视图（M2-E，按画像启用） ====================
 
 /** Atlas 增强视图种类（图谱之外的可视化形态） */

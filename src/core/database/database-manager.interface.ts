@@ -227,6 +227,7 @@ export interface ICoreDatabaseManager {
   dlCards: import('./repositories/dl-card.repository').DlCardRepository | null
   dlDocs: import('./repositories/dl-doc.repository').DlDocRepository | null
   dlQuestions: import('./repositories/dl-question.repository').DlQuestionRepository | null
+  dlNotes: import('./repositories/dl-note.repository').DlNoteRepository | null
 
   // ---- 业务包内核（第一期） ----
   /** 内置包快照（business_packs：manifest UPSERT + 全局启用态兜底） */
