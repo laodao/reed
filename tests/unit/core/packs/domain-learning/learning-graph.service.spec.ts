@@ -189,6 +189,7 @@ describe('LearningProjectService', () => {
       const root = (await svc.concepts.listByProject(id)).find((c) => c.nodeType === 'group' && c.parentId === null)
       expect(root).toBeTruthy()
       expect(await projectSvc.listSpaces()).toHaveLength(1)
+      expect((await projectSvc.listSpaces())[0].stats).toEqual({ mastered: 0, total: 0 }) // 仅根 group → 0 知识节点
     })
     await runWithUserAsync('u2', async () => {
       expect(await projectSvc.listSpaces()).toHaveLength(0)

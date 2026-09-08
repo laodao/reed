@@ -33,6 +33,7 @@ export interface SpaceSummaryRow {
   profileId: string | null
   status: string
   createdAt: Date | null
+  stats?: { mastered: number; total: number }
 }
 
 export class LearningProjectService {
@@ -117,15 +118,26 @@ export class LearningProjectService {
 
   async listSpaces(): Promise<SpaceSummaryRow[]> {
     const rows = await this.projects.listAll()
-    return rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      goal: r.goal,
-      tagline: r.description ?? '',
-      profileId: r.profileId,
-      status: r.status,
-      createdAt: r.createdAt,
-    }))
+    const out: SpaceSummaryRow[] = []
+    for (const r of rows) {
+      // 统计补齐（契约-DlSpaceSummary.stats，Home 进度条依赖；空间级概念量小,逐空间取一次可接受）
+      const concepts = await this.concepts.listByProject(r.id)
+      const leaves = concepts.filter((c) => c.nodeType !== 'group')
+      out.push({
+        id: r.id,
+        name: r.name,
+        goal: r.goal,
+        tagline: r.description ?? '',
+        profileId: r.profileId,
+        status: r.status,
+        createdAt: r.createdAt,
+        stats: {
+          total: leaves.length,
+          mastered: leaves.filter((c) => c.mastery === 'mastered').length,
+        },
+      })
+    }
+    return out
   }
 
   async setStatus(id: string, status: 'active' | 'paused' | 'archived'): Promise<void> {
