@@ -534,7 +534,9 @@ function runLabel(status: string): string {
 async function loadSessions(): Promise<void> {
   const resp = await api().agentConsole.listSessions()
   if (resp.success) {
-    sessions.value = resp.data ?? []
+    // 只显示对话会话（33 号实测反馈）：任务是某个对话主题下的执行详情，
+    // 入口在右侧检查器「子任务规划」与页头「任务树」按钮，不在左侧列表占位
+    sessions.value = (resp.data ?? []).filter((s) => s.kind === 'chat')
     if (selected.value) {
       const fresh = sessions.value.find((s) => s.scopeKey === selected.value!.scopeKey)
       if (fresh) selected.value.running = fresh.running
