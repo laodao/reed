@@ -27,8 +27,15 @@ export interface RoomStreamMessage {
   turnNo: number
 }
 
+export interface RoomModelOpts {
+  providerConfigId?: string
+  modelId?: string
+}
+
 export function useStoryRoom(projectId: string) {
   const messages = ref<RoomMessageView[]>([])
+  /** 主编/整理器模型偏好（顶栏选择；缺省 undefined 走宿主默认） */
+  const modelOpts = ref<RoomModelOpts>({})
   const state = ref<RoomStateView | null>(null)
   const status = ref<RoomStatus>('loading')
   const streamMessage = ref<RoomStreamMessage | null>(null)
@@ -98,6 +105,10 @@ export function useStoryRoom(projectId: string) {
     }
   }
 
+  function setModelOpts(opts: RoomModelOpts): void {
+    modelOpts.value = opts
+  }
+
   async function send(text: string): Promise<void> {
     const content = text.trim()
     if (!content || busy.value) return
@@ -107,7 +118,7 @@ export function useStoryRoom(projectId: string) {
     status.value = 'streaming'
     streamMessage.value = { content: '', turnNo: (state.value?.turnNo ?? 0) + 1 }
     try {
-      const res = await api().roomSend(projectId, content)
+      const res = await api().roomSend(projectId, content, { ...modelOpts.value })
       if (!res.success) throw new Error(res.error || '发送失败')
     } catch (e: any) {
       status.value = 'error'
@@ -185,7 +196,7 @@ export function useStoryRoom(projectId: string) {
 
   async function distill(scope?: DistillScope): Promise<ArtifactCard[]> {
     const target = scope || suggestScope()
-    const res = await api().roomDistill(projectId, target)
+    const res = await api().roomDistill(projectId, target, { ...modelOpts.value })
     if (!res.success) {
       ElMessage.warning(res.error || '提炼失败')
       return []
@@ -195,7 +206,7 @@ export function useStoryRoom(projectId: string) {
   }
 
   async function adoptCard(card: ArtifactCard, patch?: Record<string, unknown>): Promise<boolean> {
-    const res = await api().roomAdoptCard(projectId, card.id, patch)
+    const res = await api().roomAdoptCard(projectId, card.id, patch, { ...modelOpts.value })
     if (!res.success) {
       ElMessage.error(res.error || '采纳失败')
       return false
@@ -205,7 +216,7 @@ export function useStoryRoom(projectId: string) {
   }
 
   async function regenerateCard(card: ArtifactCard, feedback: string): Promise<void> {
-    const res = await api().roomRegenerateCard(projectId, card.id, feedback)
+    const res = await api().roomRegenerateCard(projectId, card.id, feedback, { ...modelOpts.value })
     if (!res.success) ElMessage.error(res.error || '重提失败')
   }
 
@@ -225,6 +236,8 @@ export function useStoryRoom(projectId: string) {
     streamMessage,
     busy,
     chips,
+    modelOpts,
+    setModelOpts,
     gateSuggestion,
     conflicts,
     load,

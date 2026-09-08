@@ -102,8 +102,8 @@ onMounted(async () => {
   groups.value = [
     {
       key: 'overview', label: '概要', ico: '📘', stage: 'overview',
-      entries: overview
-        ? [{ id: 'overview', name: String(overview.title || '未命名'), sub: String(overview.summary || '').slice(0, 30) }]
+      entries: overview && String(overview.title || '').trim()
+        ? [{ id: 'overview', name: String(overview.title), sub: String(overview.summary || '').slice(0, 30) }]
         : [],
     },
     {

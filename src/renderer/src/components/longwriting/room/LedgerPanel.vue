@@ -31,9 +31,7 @@
       </div>
     </div>
     <div class="footer">
-      <el-button size="small" type="primary" plain :disabled="ledger.length === 0" @click="$emit('distill')">
-        ⚡ 提炼入库
-      </el-button>
+      <button class="btn-distill" :disabled="ledger.length === 0" @click="$emit('distill')">⚡ 提炼入库</button>
     </div>
   </div>
 </template>
@@ -91,5 +89,11 @@ void props
 .pop-meta { font-size: 11px; color: var(--el-text-color-secondary); margin-bottom: 8px; }
 .pop-ops { display: flex; flex-wrap: wrap; gap: 4px; }
 .footer { padding: 8px 12px 10px; border-top: 1px solid var(--el-border-color-lighter); display: flex; }
-.footer .el-button { flex: 1; }
+.btn-distill {
+  flex: 1; border: 1px solid var(--el-color-primary-light-5); background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary); border-radius: 8px; padding: 6px 0; font-size: 12.5px; cursor: pointer;
+  transition: all 0.15s; font-family: inherit;
+}
+.btn-distill:hover { background: var(--el-color-primary-light-8); }
+.btn-distill:disabled { opacity: 0.45; cursor: not-allowed; }
 </style>

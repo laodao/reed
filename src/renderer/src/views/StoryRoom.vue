@@ -9,6 +9,22 @@
         {{ store.state.value.contentTarget === 'script' ? '短剧剧本' : '长篇小说' }}
       </span>
       <span class="spacer"></span>
+      <el-dropdown trigger="click" @command="onPickModel">
+        <span class="tb-btn model-btn">主编模型：{{ modelLabel }} ▾</span>
+        <template #dropdown>
+          <el-dropdown-menu class="model-menu">
+            <el-dropdown-item
+              v-for="opt in modelOptions"
+              :key="opt.value"
+              :command="opt.value"
+              :class="{ 'model-on': opt.value === modelSel }"
+            >
+              {{ opt.label }}
+            </el-dropdown-item>
+            <el-dropdown-item v-if="modelOptions.length === 0" disabled>暂无可用模型（设置里配置 AI 提供商）</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
       <el-button v-if="canExportScript" size="small" type="warning" plain @click="exportToEp">转为短剧项目 ↗</el-button>
       <PhaseBar
         v-if="store.state.value"
@@ -128,6 +144,77 @@ const storyType = ref('')
 const input = ref('')
 const chips = ref<string[]>(['先定主角的动机与代价', '让主编提问', '把我们定下的整理一下'])
 
+// ==================== 主编模型选择（原型顶栏「主编模型 ▾」） ====================
+
+const providerConfigs = ref<Array<Record<string, any>>>([])
+const modelSel = ref('')
+/** 非对话模型（嵌入/重排）不能当主编——按 id/name/features 过滤 */
+function isChatModel(m: { id?: string; name?: string; features?: string[] }): boolean {
+  const blob = `${m.id || ''} ${m.name || ''}`.toLowerCase()
+  if (/embed|embedding|rerank|whisper|tts|asr|video|image|audio|flux|ocr|dall/.test(blob)) return false
+  if (Array.isArray(m.features) && m.features.length > 0 && !m.features.some((f) => /chat|text|completion|reason/i.test(f))) return false
+  return true
+}
+
+const modelOptions = computed(() => {
+  const out: Array<{ value: string; label: string }> = []
+  for (const c of providerConfigs.value) {
+    for (const m of Array.isArray(c.models) ? c.models : []) {
+      if (!isChatModel(m)) continue
+      out.push({ value: `${c.id}|${m.id}`, label: `${c.name} / ${m.name || m.id}` })
+    }
+  }
+  return out
+})
+const modelLabel = computed(() => {
+  const hit = modelOptions.value.find((o) => o.value === modelSel.value)
+  if (hit) return hit.label.split(' / ')[1] || hit.label
+  return modelSel.value ? '已选' : '未配置'
+})
+
+function onPickModel(v: string): void {
+  modelSel.value = v
+  applyModelOpts()
+  const [providerConfigId, modelId] = v.split('|')
+  window.electronAPI.longwriting
+    .setStageModelConfig(projectId.value, 'story-room', providerConfigId, modelId)
+    .catch(() => undefined)
+}
+
+function applyModelOpts(): void {
+  const [providerConfigId, modelId] = modelSel.value.split('|')
+  store.setModelOpts(modelSel.value ? { providerConfigId, modelId } : {})
+}
+
+async function loadModels(): Promise<void> {
+  try {
+    const [cfgRes, listRes] = await Promise.all([
+      window.electronAPI.longwriting.getStageModelConfigs(projectId.value),
+      window.electronAPI.providerConfig.list(),
+    ])
+    if (listRes.success && listRes.data) {
+      providerConfigs.value = (listRes.data as Array<Record<string, any>>).filter((c) => c.isEnabled)
+    }
+    // 兜底链：story-room 专属配置 → 复用既有写作阶段配置（overview/chapter——用户配过的
+    // 一定是可用对话模型）→ 第一个过滤后的模型
+    if (cfgRes.success && Array.isArray(cfgRes.data)) {
+      const cfgs = cfgRes.data as Array<Record<string, any>>
+      const pick = (stage: string) => {
+        const hit = cfgs.find((c) => c.stage === stage)
+        const v = hit ? `${hit.providerConfigId}|${hit.modelId}` : ''
+        return modelOptions.value.some((o) => o.value === v) ? v : ''
+      }
+      modelSel.value = pick('story-room') || pick('overview') || pick('chapter') || ''
+    }
+    if (!modelSel.value && modelOptions.value.length > 0) {
+      modelSel.value = modelOptions.value[0].value
+    }
+    applyModelOpts()
+  } catch {
+    applyModelOpts()
+  }
+}
+
 const reviseVisible = ref(false)
 const reviseEntry = ref<ConsensusEntry | null>(null)
 const reviseTitle = ref('')
@@ -136,6 +223,7 @@ const revisePoints = ref<string[]>([])
 onMounted(async () => {
   await store.load()
   store.loadConflictsIfWriting()
+  await loadModels()
   try {
     const res = await window.electronAPI.longwriting.getProject(projectId.value)
     if (res.success && res.data) {
@@ -146,6 +234,10 @@ onMounted(async () => {
 })
 
 function doSend(): void {
+  if (!modelSel.value) {
+    ElMessage.warning('请先在顶栏选择主编模型（设置里可配置 AI 提供商）')
+    return
+  }
   const text = input.value
   input.value = ''
   store.send(text)
@@ -372,6 +464,9 @@ html.dark .story-room { --sr-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rg
   font-size: 12.5px; color: var(--el-text-color-regular); border: 1px solid var(--el-border-color);
   padding: 5px 12px; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
 }
+.model-btn { cursor: pointer; user-select: none; }
+.model-btn:hover { border-color: var(--el-color-primary); color: var(--el-color-primary); }
+.model-on { color: var(--el-color-primary); font-weight: 600; }
 .tb-btn.accent {
   color: #fff; border-color: transparent;
   background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-dark-2));

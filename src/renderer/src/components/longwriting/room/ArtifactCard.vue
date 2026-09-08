@@ -59,10 +59,11 @@ const rows = computed<Array<{ k: string; v: string }>>(() => {
       out.push({ k: label, v: String(v).slice(0, 160) })
     }
   }
-  // 有未映射字段时补充展示（截断）
+  // 有未映射字段时补充展示（截断；数组/对象/空值不进文本行）
   for (const [field, v] of Object.entries(data)) {
     if (labels[field] || out.length >= 8) continue
     if (typeof v === 'string' && v.trim()) out.push({ k: field, v: v.slice(0, 160) })
+    else if (typeof v === 'number') out.push({ k: field, v: String(v) })
   }
   return out
 })

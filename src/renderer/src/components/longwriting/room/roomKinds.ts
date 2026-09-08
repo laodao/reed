@@ -40,11 +40,11 @@ export const KIND_META: Record<string, { label: string; ico: string; colorVar: s
 
 /** 卡片 data → 阅读态行（字段标签映射） */
 export const CARD_FIELD_LABELS: Record<string, Record<string, string>> = {
-  overview: { premise: '一句话', conflict: '核心冲突', hook: '钩子', summary: '概要' },
-  character: { role: '身份', motive: '动机', persona: '性格', arc: '弧光', belong: '归属', background: '背景', personality: '性格' },
-  plot: { arcDesc: '走向', summary: '走向', involve: '涉及' },
-  outline: { structure: '结构' },
-  chapter: { preview: '开头预览', points: '本章要点' },
+  overview: { title: '作品名', storyType: '题材', premise: '一句话', conflict: '核心冲突', coreConflict: '核心冲突', hook: '钩子', summary: '概要', estimatedChapters: '预估章节' },
+  character: { name: '姓名', role: '身份', motive: '动机', persona: '性格', arc: '弧光', belong: '归属', background: '背景', personality: '性格', occupation: '身份', rolePosition: '定位', appearance: '外貌', gender: '性别', age: '年龄' },
+  plot: { title: '故事线名', arcDesc: '走向', summary: '走向', involve: '涉及' },
+  outline: { name: '卷名', structure: '结构', summary: '本卷概述', estimatedWords: '预估字数' },
+  chapter: { outlineName: '章节名', name: '章节名', hook: '开场钩子', preview: '开头预览', points: '本章要点' },
   conflict: { description: '矛盾描述' },
   world: {},
 }
