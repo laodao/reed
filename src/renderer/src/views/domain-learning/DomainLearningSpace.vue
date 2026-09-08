@@ -154,7 +154,7 @@
           </div>
 
           <!-- 已发布/草稿讲义（DlCardView） -->
-          <div v-if="currentConcept.card" class="lesson-body block-body-pad">
+          <div v-if="currentConcept.card" ref="lessonBodyRef" class="lesson-body block-body-pad" @mouseup="onLessonMouseUp">
             <SectionLesson
               :card="currentConcept.card"
               :related="currentRelated"
@@ -206,6 +206,19 @@
               <div v-if="t.suggestsResearch" class="qa-research">
                 <el-icon><Promotion /></el-icon>已登记为新研究方向
               </div>
+              <!-- 好回答可收藏为笔记（qna → dl_note；再次点击取消收藏） -->
+              <div
+                v-if="t.role === 'assistant' && t.questionId && !tutorStreaming && t.text"
+                class="qa-fav"
+              >
+                <el-button
+                  link
+                  size="small"
+                  :type="favOfTurn(t.questionId) ? '' : 'success'"
+                  :icon="favOfTurn(t.questionId) ? StarFilled : Star"
+                  @click="toggleFavTurn(t)"
+                >{{ favOfTurn(t.questionId) ? '已收藏' : '收藏为笔记' }}</el-button>
+              </div>
             </div>
           </div>
           <div v-if="displayTurns.length === 0" class="qa-empty">
@@ -230,6 +243,26 @@
           </div>
         </div>
       </aside>
+
+      <!-- 讲义选区浮层：提问 / 做笔记（M4-UX1） -->
+      <div
+        v-if="sel.show"
+        class="sel-bar"
+        :style="{ left: sel.x + 'px', top: sel.y + 'px' }"
+      >
+        <el-button size="small" type="primary" :icon="QuestionFilled" @click="askSelection">提问</el-button>
+        <el-button size="small" :icon="Notebook" @click="openNoteSelection">做笔记</el-button>
+      </div>
+
+      <!-- 选区笔记编辑 -->
+      <el-dialog v-model="noteDlg.visible" title="记笔记" width="460px" append-to-body>
+        <div v-if="noteDlg.anchor" class="note-anchor">「{{ noteDlg.anchor }}」</div>
+        <el-input v-model="noteText" type="textarea" :rows="5" placeholder="写下你的想法、疑问或总结……" />
+        <template #footer>
+          <el-button @click="noteDlg.visible = false">取消</el-button>
+          <el-button type="primary" :loading="noteSaving" @click="saveSelectionNote">保存笔记</el-button>
+        </template>
+      </el-dialog>
     </div>
   </div>
 </template>
@@ -245,7 +278,7 @@
  *              新问答实时流式拼 dl:generate，事件走 dl:agent 通道）。
  *              掌握度推进（懂了/没懂）、继续学习（dl:pick-next）均调后端。
  */
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowLeft,
@@ -260,6 +293,9 @@ import {
   Position,
   Promotion,
   Document,
+  Notebook,
+  Star,
+  StarFilled,
 } from '@element-plus/icons-vue'
 import { useTabsStore } from '@/stores/tabs'
 import {
@@ -620,11 +656,14 @@ function selectConcept(c: DlConceptView): void {
   currentConceptId.value = c.id
   lastFeedback.value = ''
   lastFeedbackIsWarn.value = false
+  void store.fetchNotesOf(spaceId.value, c.id)
 }
 
 // ---------- 交互：掌握度反馈（后端推进 + 重拉视图） ----------
 async function refreshView(): Promise<void> {
   await store.fetchSpaceView(spaceId.value)
+  // 笔记/收藏态随视图刷新（追问落库后 qna 笔记可见）
+  if (currentConceptId.value) await store.fetchNotesOf(spaceId.value, currentConceptId.value)
 }
 
 async function markMastered(): Promise<void> {
@@ -824,6 +863,120 @@ function scrollQaToBottom(): void {
     if (qaListRef.value) qaListRef.value.scrollTop = qaListRef.value.scrollHeight
   }, 50)
 }
+
+// ==================== M4-UX1：讲义选区交互 / 答疑收藏 ====================
+
+const lessonBodyRef = ref<HTMLElement | null>(null)
+const sel = reactive({ show: false, x: 0, y: 0, text: '' })
+const noteDlg = reactive({ visible: false, anchor: '' })
+const noteText = ref('')
+const noteSaving = ref(false)
+
+function hideSel(): void {
+  sel.show = false
+  sel.text = ''
+}
+
+/** 讲义区 mouseup：选区非空且落在讲义内 → 浮出 提问/做笔记 工具条 */
+function onLessonMouseUp(): void {
+  const s = window.getSelection()
+  const el = lessonBodyRef.value
+  if (!s || s.isCollapsed || s.rangeCount === 0 || !el) {
+    hideSel()
+    return
+  }
+  const text = s.toString().trim()
+  if (text.length < 2 || text.length > 400) {
+    hideSel()
+    return
+  }
+  const an = s.anchorNode
+  const fn = s.focusNode
+  if (an && fn && !(el.contains(an) && el.contains(fn))) {
+    hideSel()
+    return
+  }
+  const rect = s.getRangeAt(0).getBoundingClientRect()
+  sel.text = text
+  sel.x = Math.min(rect.left, window.innerWidth - 280)
+  sel.y = Math.min(rect.bottom + 6, window.innerHeight - 46)
+  sel.show = true
+}
+
+function focusQaInput(): void {
+  void nextTick(() => {
+    const inner = document.querySelector('.pane-qa .el-textarea__inner') as HTMLTextAreaElement | null
+    inner?.focus()
+    ;(document.querySelector('.pane-qa') as HTMLElement | null)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  })
+}
+
+/** #1 提问：把选中文字填入右侧答疑输入框（不自动发送，由用户编辑后发送） */
+function askSelection(): void {
+  if (!sel.text) return
+  draft.value = sel.text
+  hideSel()
+  focusQaInput()
+}
+
+/** #3 做笔记：打开笔记编辑，预置选区原文 */
+function openNoteSelection(): void {
+  if (!sel.text) return
+  noteDlg.anchor = sel.text
+  noteText.value = ''
+  noteDlg.visible = true
+  hideSel()
+}
+
+async function saveSelectionNote(): Promise<void> {
+  const c = currentConcept.value
+  if (noteSaving.value || !noteDlg.anchor) return
+  noteSaving.value = true
+  try {
+    await store.saveNote({
+      id: spaceId.value,
+      conceptId: c?.id ?? null,
+      source: 'selection',
+      anchorText: noteDlg.anchor,
+      contentMd: noteText.value.trim() || '',
+    })
+    noteDlg.visible = false
+    await store.fetchNotesOf(spaceId.value, c?.id ?? null)
+  } finally {
+    noteSaving.value = false
+  }
+}
+
+/** #6 收藏态：当前概念下是否已收藏该问答 */
+function favOfTurn(qid: string | null | undefined): boolean {
+  if (!qid) return false
+  const cid = currentConcept.value?.id
+  return store.notes.some((n) => n.source === 'qna' && n.questionId === qid && n.conceptId === (cid ?? null))
+}
+
+function questionTextOf(qid: string): string {
+  const t = view.value?.turns.find((x) => x.role === 'user' && x.questionId === qid)
+  return t?.text ?? ''
+}
+
+/** #6 收藏 / 取消收藏回答（qna 笔记；再次点击取消） */
+async function toggleFavTurn(t: DlChatTurn): Promise<void> {
+  const c = currentConcept.value
+  if (!t.questionId) return
+  const existing = store.notes.find((n) => n.source === 'qna' && n.questionId === t.questionId && n.conceptId === (c?.id ?? null))
+  if (existing) {
+    await store.removeNoteOf(spaceId.value, existing.id)
+  } else {
+    await store.saveNote({
+      id: spaceId.value,
+      conceptId: c?.id ?? null,
+      source: 'qna',
+      questionId: t.questionId,
+      contentMd: `> 问答收藏（答疑于「${c?.name ?? '空间'}」）\n\n**问题**：${questionTextOf(t.questionId)}\n\n**回答**：\n${t.text}`,
+    })
+  }
+  await store.fetchNotesOf(spaceId.value, c?.id ?? null)
+}
 </script>
 
 <style scoped lang="scss">
@@ -883,7 +1036,7 @@ function scrollQaToBottom(): void {
 }
 
 .pane-qa {
-  width: 330px;
+  width: 400px;
   flex-shrink: 0;
   border-left: 1px solid var(--el-border-color-lighter);
 }
@@ -1229,7 +1382,7 @@ function scrollQaToBottom(): void {
 }
 
 .qa-bubble {
-  max-width: 85%;
+  max-width: 88%;
   padding: 8px 11px;
   border-radius: 10px;
   font-size: 13px;
@@ -1238,6 +1391,8 @@ function scrollQaToBottom(): void {
 
   .qa-text {
     white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
     color: var(--el-text-color-primary);
   }
 
@@ -1309,5 +1464,40 @@ function scrollQaToBottom(): void {
       flex-shrink: 0;
     }
   }
+}
+
+// M4-UX1：回答收藏入口
+.qa-fav {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 3px;
+  border-top: 1px dashed var(--el-border-color-lighter);
+  padding-top: 2px;
+}
+
+// M4-UX1：讲义选区浮层（fixed 定位在选区下方）
+.sel-bar {
+  position: fixed;
+  z-index: 3000;
+  display: flex;
+  gap: 6px;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  padding: 4px 6px;
+  box-shadow: var(--el-box-shadow-light);
+}
+
+.note-anchor {
+  max-height: 120px;
+  overflow: auto;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border-left: 3px solid var(--el-color-primary-light-5);
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.7;
+  border-radius: 0 6px 6px 0;
 }
 </style>
