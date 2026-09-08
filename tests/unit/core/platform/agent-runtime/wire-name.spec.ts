@@ -29,7 +29,7 @@ describe('toWireName', () => {
     const wb = toWireName(b)
     expect(wa.length).toBeLessThanOrEqual(WIRE_NAME_MAX)
     expect(wb.length).toBeLessThanOrEqual(WIRE_NAME_MAX)
-    expect(wa).toBe(wb.slice(0, wa.length - 0) === wa ? wa : wa) // 长度约束已断言
+    expect(wa.slice(0, 57)).toBe(wb.slice(0, 57)) // 截断前缀同形，靠摘要后缀区分
     expect(wa).not.toBe(wb) // 摘要后缀区分
     expect(toWireName(a)).toBe(wa) // 确定性
     expect(WIRE_NAME_RE.test(wa)).toBe(true)
@@ -62,5 +62,41 @@ describe('buildWireNameMap', () => {
     const m1 = buildWireNameMap(names)
     const m2 = buildWireNameMap(names)
     expect([...m1.canonicalToWire.entries()]).toEqual([...m2.canonicalToWire.entries()])
+  })
+})
+
+describe('42号 review 回归：碰撞消解不击穿 64 上限 + 内容派生后缀', () => {
+  it('折叠碰撞且折叠长 ≥63：消解后线上名恒合法（曾叠出 65 字符）', () => {
+    const longA = 'pack:' + 'a'.repeat(58)
+    const longB = 'pack_' + 'a'.repeat(58) // 与 longA 折叠同形（63 字符）
+    const { canonicalToWire, wireToCanonical } = buildWireNameMap([longA, longB])
+    const w1 = canonicalToWire.get(longA)!
+    const w2 = canonicalToWire.get(longB)!
+    for (const w of [w1, w2]) {
+      expect(w.length).toBeLessThanOrEqual(64)
+      expect(WIRE_NAME_RE.test(w)).toBe(true)
+    }
+    expect(w1).not.toBe(w2)
+    expect(wireToCanonical.get(w1)).toBe(longA)
+    expect(wireToCanonical.get(w2)).toBe(longB)
+  })
+
+  it('内容派生后缀：同集合内与顺序无关（序号后缀曾按序翻转归属）', () => {
+    const a = 'pack:x:y'
+    const b = 'pack_x_y'
+    const m1 = buildWireNameMap([a, b]).canonicalToWire.get(b)!
+    const m2 = buildWireNameMap([b, a]).canonicalToWire.get(b)!  // 顺序翻转
+    expect(m1).toBe(m2) // 同集合确定性：b 的后缀由 b 的内容派生，不因声明顺序改变
+    expect(canonicalToWireCheck(a)).toBe(canonicalToWireCheck(a))
+    function canonicalToWireCheck(name: string): string | undefined {
+      return buildWireNameMap([a, b]).canonicalToWire.get(name)
+    }
+    // 孤立集合无碰撞 → 无后缀（成员变化下的确定语义：按集合内容派生）
+    expect(buildWireNameMap([b]).canonicalToWire.get(b)).toBe('pack_x_y')
+  })
+
+  it('空/全非法规范名折叠不产生空线上名（{1,64} 下限）', () => {
+    expect(WIRE_NAME_RE.test(toWireName(''))).toBe(true)
+    expect(WIRE_NAME_RE.test(toWireName(':::'))).toBe(true)
   })
 })

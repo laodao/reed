@@ -66,6 +66,8 @@ export interface SpawnSubagentDeps {
   models?: SubagentModelTiers
   /** 子代理轨迹落库端口（独立 scopeKey——工作台可独立查看子代理全程） */
   trajectoryPort: TrajectoryAppendPort | null
+  /** 子代理上下文窗口（继承宿主配置——42号 review P2：曾各读各的 env） */
+  contextWindowTokens?: number
   /** 父 scopeKey（子 scopeKey = `${父}:sub_<rand>`） */
   scopeKey: string
   /** 审批路由：子代理的需批准工具走主代理同一通道 */
@@ -167,8 +169,8 @@ export function createSpawnSubagentTool(deps: SpawnSubagentDeps): AgentToolDef<{
         emitStream: (event) => deps.onChildStream?.(event),
       }
       const childContext = new ContextManager({
-        contextWindowTokens:
-          Number(process.env.AGENT_CONTEXT_WINDOW ?? 32_768) || 32_768,
+        contextWindowTokens: deps.contextWindowTokens
+          ?? (Number(process.env.AGENT_CONTEXT_WINDOW ?? 32_768) || 32_768),
       })
 
       try {

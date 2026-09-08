@@ -28,6 +28,8 @@ export interface ChapterContextItem {
 /** 组装原料（compose 的输入；条目文本与 items 同源） */
 export interface ChapterPromptParts {
   overviewText: string
+  /** 世界观设定（独立受控段——42号 review 修复：曾内嵌 overviewText 致 'background' 勾选失效） */
+  backgroundText: string
   taskText: string
   characterItems: ChapterContextItem[]
   locationItems: ChapterContextItem[]
@@ -84,6 +86,10 @@ export function composeChapterPrompt(
 ## 一、故事宏观背景
 
 ${isEnabled('overview') ? parts.overviewText : '（故事宏观背景已由用户禁用——按通识写作，避免虚构项目设定）'}
+
+### 世界观设定
+
+${isEnabled('background') ? (parts.backgroundText || '暂无世界观设定') : '（世界观设定已由用户禁用——按通识写作）'}
 
 ---
 

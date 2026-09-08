@@ -541,9 +541,14 @@ export class AgentToolRegistry {
 
     // ⑤ 完整结果归档（39 号 P1-1）：截断序列化之前落档（只归成功）——上下文内的
     //    8K/16KB 截断与后续剪枝/折叠占位可经 get_tool_result 回查全文。
+    //    业务失败形态（{ok:false,...} 不 throw 的工具返回，如 tool.service）不入档——
+    //    与 collapse 的 isFailedToolResult 同一口径（42号 review P2）。args 记 effective
+    //    （实际执行口径；审计面 finish 另记 LLM 原始入参——两口径用途不同）。
     //    fire-and-forget：归档失败只 warn，不影响工具调用。
+    const businessFailed =
+      raw !== null && typeof raw === 'object' && (raw as { ok?: unknown }).ok === false
     const archiveToolCallId = String(call.context?.toolCallId ?? '')
-    if (this.deps.artifacts && archiveToolCallId) {
+    if (this.deps.artifacts && archiveToolCallId && !businessFailed) {
       const scopeKey = String(call.context?.sessionKey ?? call.context?.scopeId ?? '')
       void this.deps.artifacts
         .save({

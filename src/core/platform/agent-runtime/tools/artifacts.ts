@@ -35,12 +35,16 @@ export interface ToolArtifactPort {
   load(toolCallId: string): Promise<ToolArtifactRecord | undefined>
   /** 随 scope（会话/任务）级联删除——宿主生命周期清理用 */
   deleteByScope(scopeKey: string): Promise<number>
+  /** 会话树级联（含 `${scope}:sub_*` 子代理产物）；未实现时退化为 deleteByScope */
+  deleteByScopeTree?(scopeKey: string): Promise<number>
 }
 
 interface ArtifactRepoLike {
   upsert(record: ToolArtifactRecord & { userId: string | null }): Promise<void>
   findByToolCallId(toolCallId: string): Promise<ToolArtifactRecord | undefined>
   deleteByScope(scopeKey: string): Promise<number>
+  /** 会话树级联（含 `${scope}:sub_*` 子代理产物）；未实现时 store 退化为 deleteByScope */
+  deleteByScopeTree?(scopeKey: string): Promise<number>
 }
 
 export interface ToolArtifactStoreDeps {
@@ -65,6 +69,10 @@ export function createToolArtifactStore(deps: ToolArtifactStoreDeps): ToolArtifa
       return deps.repo.findByToolCallId(toolCallId)
     },
     async deleteByScope(scopeKey) {
+      return deps.repo.deleteByScope(scopeKey)
+    },
+    async deleteByScopeTree(scopeKey) {
+      if (typeof deps.repo.deleteByScopeTree === 'function') return deps.repo.deleteByScopeTree(scopeKey)
       return deps.repo.deleteByScope(scopeKey)
     },
   }

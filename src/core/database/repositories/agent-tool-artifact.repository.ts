@@ -10,6 +10,7 @@
 import { type DataSource } from 'typeorm'
 import { AgentToolArtifactEntity } from '../entities/agent-tool-artifact.entity'
 import { BaseRepository } from '../base-repository'
+import { escapeLikePrefix } from './platform-event.repository'
 import type { ToolArtifactRecord } from '@core/platform/agent-runtime/tools/artifacts'
 
 /** 读取行 DTO */
@@ -75,6 +76,31 @@ export class AgentToolArtifactRepository extends BaseRepository<AgentToolArtifac
   /** 随 scope（会话/任务）级联删除（scoped 租户过滤） */
   async deleteByScope(scopeKey: string): Promise<number> {
     return this.scoped.delete({ scopeKey })
+  }
+
+  /** 会话树级联删除（42号 review P2：子代理产物挂 `${parent}:sub_*` 前缀，父 reset 曾成孤儿）。
+   *  scoped SELECT 校验属主后按选出的 scopeKey 集合裸删。 */
+  async deleteByScopeTree(scopeKey: string): Promise<number> {
+    const rows: Array<{ sk: string }> = await this.scoped
+      .qb('a')
+      .select('DISTINCT a.scope_key', 'sk')
+      .where('a.scope_key = :root OR a.scope_key LIKE :prefix', {
+        root: scopeKey,
+        prefix: `${escapeLikePrefix(scopeKey)}:%`,
+      })
+      .getRawMany()
+    let n = 0
+    for (const r of rows) n += await this.rawDelete(r.sk)
+    return n
+  }
+
+  private async rawDelete(scopeKey: string): Promise<number> {
+    const result = await this.repo
+      .createQueryBuilder()
+      .delete()
+      .where('scope_key = :scopeKey', { scopeKey })
+      .execute()
+    return result.affected ?? 0
   }
 
   protected toDto(e: AgentToolArtifactEntity): AgentToolArtifactRow {

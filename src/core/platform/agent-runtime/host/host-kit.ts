@@ -36,6 +36,7 @@ import type { LoopContextPort } from '../context/context-manager'
 import { DEFAULT_SUMMARY_PROMPT } from '../runtime/vendor/compaction'
 import { listStructuredProviders } from '../memory/structured-provider'
 import type { RawTranscriptPort } from '../memory/transcript-store'
+import { truncateTranscriptContent } from '../memory/transcript-store'
 import type { ToolArtifactPort } from '../tools/artifacts'
 import { createGetToolResultTool } from '../tools/artifact-lookup'
 import { createSpawnSubagentTool } from '../tools/subagent'
@@ -345,10 +346,13 @@ export function createHostKit<TTurn extends HostKitTurnBase>(
         if (deps.artifacts && !tools.get_tool_result) {
           tools.get_tool_result = createGetToolResultTool(deps.artifacts) as unknown as AgentToolDef
         }
+        const childWindowTokens =
+          config.contextWindowTokens ?? (Number(process.env.AGENT_CONTEXT_WINDOW ?? DEFAULT_CONTEXT_WINDOW) || DEFAULT_CONTEXT_WINDOW)
         if (config.subagent && !tools.spawn_subagent) {
           tools.spawn_subagent = createSpawnSubagentTool({
             resolveModel: config.resolveModel,
             tools: config.subagent.tools(turn),
+            contextWindowTokens: childWindowTokens,
             ...(config.subagent.systemPrompt ? { systemPrompt: config.subagent.systemPrompt(turn) } : {}),
             ...(config.subagent.maxSteps !== undefined ? { maxSteps: config.subagent.maxSteps } : {}),
             ...(config.subagent.models ? { models: config.subagent.models } : {}),
@@ -374,22 +378,27 @@ export function createHostKit<TTurn extends HostKitTurnBase>(
         // 宿主诚实上报；loop 产生的增量经 saveState meta 到达。两层合并 = 完整流水。
         let hostPendingAppended: ModelMessage[] = []
         let transcriptSeq: number | null = null
+        let transcriptDisabled = false
         const appendTranscript = async (messages: ModelMessage[]): Promise<void> => {
           const port = deps.rawTranscript
-          if (!port || messages.length === 0) return
-          if (transcriptSeq === null) {
-            transcriptSeq = await port.maxSeq(sessionId).catch(() => 0)
-          }
-          const rows = messages.map((m) => ({
-            conversationId: sessionId,
-            seq: transcriptSeq!++,
-            role: typeof (m as { role?: unknown }).role === 'string' ? String((m as { role?: unknown }).role) : 'unknown',
-            content: JSON.stringify(m),
-          }))
+          // fail-close（42号 review P2）：maxSeq 失败不吞——吞成 0 会让 seeded 宿主误判
+          // 首轮整段重种子 + seq 从 1 续写与已有行碰撞（orIgnore 静默丢行出洞）。
+          // 瞬时故障宁可本 turn 停写流水（留痕），也不写错。
+          if (!port || messages.length === 0 || transcriptDisabled) return
           try {
+            if (transcriptSeq === null) {
+              transcriptSeq = await port.maxSeq(sessionId)
+            }
+            const rows = messages.map((m) => ({
+              conversationId: sessionId,
+              seq: transcriptSeq!++,
+              role: typeof (m as { role?: unknown }).role === 'string' ? String((m as { role?: unknown }).role) : 'unknown',
+              content: truncateTranscriptContent(JSON.stringify(m)),
+            }))
             await port.appendBatch(rows)
           } catch (e) {
-            logger.warn(`[HostKit] 原始流水落库失败（观测面不外泄）scope=${scopeKey}`, e)
+            transcriptDisabled = true
+            logger.warn(`[HostKit] 原始流水写入失败，本 turn 停写（fail-close 防静默出洞）scope=${scopeKey}`, e)
           }
         }
         const host: AgentHost = {
@@ -400,10 +409,16 @@ export function createHostKit<TTurn extends HostKitTurnBase>(
               const userMsg = { role: 'user', content: turn.input } as ModelMessage
               const st = initState(taskBase, Date.now())
               st.messages = [...seeded, userMsg]
-              // 流水空 = 首轮：整段业务史入流水（迁移语义）；否则只补本轮输入
-              const transcriptEmpty = deps.rawTranscript
-                ? (await deps.rawTranscript.maxSeq(sessionId).catch(() => 0)) === 0
-                : false
+              // 流水空 = 首轮：整段业务史入流水（迁移语义）；否则只补本轮输入。
+              // maxSeq 失败按「不停写但只补本轮」处理（误判首轮会整段重种子碰撞）
+              let transcriptEmpty = false
+              if (deps.rawTranscript) {
+                try {
+                  transcriptEmpty = (await deps.rawTranscript.maxSeq(sessionId)) === 0
+                } catch (e) {
+                  logger.warn(`[HostKit] 流水 maxSeq 失败（按续聊处理，不重种子）scope=${scopeKey}`, e)
+                }
+              }
               hostPendingAppended = transcriptEmpty ? [...seeded, userMsg] : [userMsg]
               return st
             }

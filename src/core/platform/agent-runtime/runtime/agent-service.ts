@@ -651,14 +651,19 @@ export class AgentRuntimeImpl implements AgentRuntime {
   /** 轨迹级联删除（fire-and-forget；scoped 过滤租户 + 失败只 warn——review A1：
    *  resetSession 空条目分支无属主校验，raw 删会跨租户清他人轨迹，改 scoped 版） */
   private deleteTrajectories(scopeKey: string): void {
-    void this.deps.trajectoryRepo?.deleteByScope?.(scopeKey).catch((e: unknown) =>
+    const trajTree = this.deps.trajectoryRepo as unknown as { deleteByScopeTree?: (k: string) => Promise<number> } | null
+    void (trajTree?.deleteByScopeTree
+      ? trajTree.deleteByScopeTree(scopeKey)
+      : this.deps.trajectoryRepo?.deleteByScope?.(scopeKey)
+    )?.catch?.((e: unknown) =>
       logger.warn(`[agent-runtime] 会话轨迹清理失败（${scopeKey}）`, e),
     )
-    // 原始流水/产物归档随会话重置级联（39 号 P0-2/P1-1；scoped 过滤同上）
+    // 原始流水/产物归档随会话重置级联（39 号 P0-2/P1-1；scoped 过滤同上）；
+    // 轨迹与产物按会话树删（`${scope}:sub_*` 子代理行不再是孤儿——42号 review P2）
     void this.deps.transcriptRepo?.deleteByConversation?.(scopeKey).catch((e: unknown) =>
       logger.warn(`[agent-runtime] 会话原始流水清理失败（${scopeKey}）`, e),
     )
-    void this.deps.artifacts?.deleteByScope(scopeKey).catch((e: unknown) =>
+    void this.deps.artifacts?.deleteByScopeTree?.(scopeKey).catch((e: unknown) =>
       logger.warn(`[agent-runtime] 工具产物清理失败（${scopeKey}）`, e),
     )
   }

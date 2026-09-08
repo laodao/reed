@@ -22,6 +22,7 @@ function mkParts(): ChapterPromptParts {
   })
   return {
     overviewText: '【宏观】标题/类型/冲突/进度',
+    backgroundText: '【世界观】蚁路航运网络与萤火事变',
     taskText: '【任务】3.1 码头夜话',
     characterItems: [char('c1', '林锋'), char('c2', '陈雪')],
     locationItems: [
@@ -86,5 +87,20 @@ describe('composeChapterPrompt（38 号：勾选重组）', () => {
     const parts = mkParts()
     const p = composeChapterPrompt(parts, (id) => id !== 'prewrite', { targetWords: 3000 })
     expect(p).not.toContain('预写提纲内容')
+  })
+})
+
+describe('42号 review：background 独立门控（死开关回归）', () => {
+  it('启用 background → 世界观原文入 prompt；禁用 → 占位文案且原文不出现', () => {
+    const parts = mkParts()
+    const on = composeChapterPrompt(parts, () => true, { targetWords: 3000 })
+    expect(on).toContain('【世界观】蚁路航运网络与萤火事变')
+    expect(on).not.toContain('世界观设定已由用户禁用')
+    const off = composeChapterPrompt(parts, (id) => id !== 'background', { targetWords: 3000 })
+    expect(off).toContain('世界观设定已由用户禁用')
+    expect(off).not.toContain('【世界观】蚁路航运网络与萤火事变')
+    // overview 独立禁用不再连带背景（互不内嵌）
+    const offOverview = composeChapterPrompt(parts, (id) => id !== 'overview', { targetWords: 3000 })
+    expect(offOverview).toContain('【世界观】蚁路航运网络与萤火事变')
   })
 })

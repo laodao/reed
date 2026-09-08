@@ -31,13 +31,28 @@ export function createGetToolResultTool(port: ToolArtifactPort): AgentToolDef<{
       '回查历史工具调用的完整结果。当早前工具结果在上下文中显示为截断（…[truncated]）、剪枝（[pruned…]）或被取代（[superseded…]）时，用其 toolCallId 取回全文（支持 offset 翻页）。',
     inputSchema: GetToolResultInput,
     dangerLevel: 'read',
-    async execute(input) {
+    async execute(input, ctx) {
       const record = await port.load(input.toolCallId)
       if (!record) {
         return {
           ok: false as const,
           error: 'NOT_FOUND',
           hint: '该 toolCallId 无归档产物（可能来自未启用归档的宿主，或产物超限拒存）。',
+        }
+      }
+      // scope 钉扎（42号 review P2）：租户内跨会话不可互读——本会话或本会话的子代理
+      // （scopeKey 前缀 `parent:`）才可回查；scopeId 为空（registry 直调无会话上下文）放行
+      const scopeId = String(ctx.scopeId ?? '')
+      if (
+        scopeId &&
+        record.scopeKey !== scopeId &&
+        !record.scopeKey.startsWith(`${scopeId}:`) &&
+        !scopeId.startsWith(`${record.scopeKey}:`)
+      ) {
+        return {
+          ok: false as const,
+          error: 'NOT_FOUND',
+          hint: '该 toolCallId 的产物不属于当前会话（跨会话回查已拒绝）。',
         }
       }
       let text: string

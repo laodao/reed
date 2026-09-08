@@ -159,6 +159,22 @@ export class AgentTrajectoryRepository extends BaseRepository<AgentTrajectoryEnt
     return result.affected ?? 0
   }
 
+  /** 会话树级联删除（42号 review P2：子代理轨迹挂 `${parent}:sub_*`，父 reset 曾成孤儿）。
+   *  scoped SELECT 先校验属主，再按选出的 scopeKey 集合裸删——删除面不越过租户。 */
+  async deleteByScopeTree(scopeKey: string): Promise<number> {
+    const rows: Array<{ sk: string }> = await this.scoped
+      .qb('t')
+      .select('DISTINCT t.scope_key', 'sk')
+      .where('t.scope_key = :root OR t.scope_key LIKE :prefix', {
+        root: scopeKey,
+        prefix: `${escapeLikePrefix(scopeKey)}:%`,
+      })
+      .getRawMany()
+    let n = 0
+    for (const r of rows) n += await this.deleteByScopeRaw(r.sk)
+    return n
+  }
+
   protected toDto(e: AgentTrajectoryEntity): AgentTrajectoryRow {
     return {
       id: e.id,

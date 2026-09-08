@@ -1596,7 +1596,8 @@ ${plotInfo || '暂无相关情节'}
     const recallSection = this.buildRecallSection(outline, projectId, characters, locations, chapterNumber)
 
     // —— 38 号：可控制上下文项清单（与下方 prompt 组装共用同源文本） ——
-    const overviewText = `**故事标题**：${overview?.title || '未命名'}\n**故事类型**：${storyTypeName}\n**核心冲突**：${overview?.coreConflict || '未指定'}\n\n${backgroundContext || '暂无世界观设定'}\n\n**预估总章节数**：${totalChapters}章\n**当前进度**：第${chapterNumber}章（${progressStage}）`
+    // 背景独立成段（42号 review：曾内嵌于此——'background' 勾选是死开关）
+    const overviewText = `**故事标题**：${overview?.title || '未命名'}\n**故事类型**：${storyTypeName}\n**核心冲突**：${overview?.coreConflict || '未指定'}\n\n**预估总章节数**：${totalChapters}章\n**当前进度**：第${chapterNumber}章（${progressStage}）`
     const taskText = `**章节名称**：${outline.name}\n**章节概要**：${outline.summary}`
     const prevEndingText = previousChapterEnding || '这是开篇章节'
     const constraintsText = `${memoryContext}${entityStateContext}${chapterStateSummaryContext}`
@@ -1617,6 +1618,7 @@ ${plotInfo || '暂无相关情节'}
 
     const parts: ChapterPromptParts = {
       overviewText,
+      backgroundText: backgroundContext || '',
       taskText,
       characterItems,
       locationItems,

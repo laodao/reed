@@ -39,7 +39,7 @@ import {
   isPromptCacheEnabled,
 } from '../context/turn-context'
 import { classifyMessage, collapseSupersededToolResults } from '../context/context-manager'
-import { buildWireNameMap } from '../tools/wire-name'
+import { buildWireNameMap, toWireName } from '../tools/wire-name'
 import type { ToolArtifactPort } from '../tools/artifacts'
 
 const logger = createLogger('AgentLoop')
@@ -280,7 +280,11 @@ export class LoopRunner {
         // （轨迹/轮询豁免/无进展签名）全程只见规范名
         if (decision.type === 'tool_calls') {
           for (const c of decision.calls) {
-            c.toolName = wireToCanonical.get(c.toolName) ?? c.toolName
+            // 二次查表（42号 review P2）：模型照抄目录/提示里的规范冒号名时，按同规则
+            // 折叠后可命中映射（pack:demo:read → pack_demo_read）
+            c.toolName = wireToCanonical.get(c.toolName)
+              ?? wireToCanonical.get(toWireName(c.toolName))
+              ?? c.toolName
           }
         }
         const decisionToolNames = decision.type === 'tool_calls' ? decision.calls.map((c) => c.toolName) : []

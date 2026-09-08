@@ -111,7 +111,21 @@ E2E 用夹具文本）→ 角色 4 / 地点 3 / 情节 3（真模型生成落库
 - 涉及关系驱动实体分区：updateOutline 挂 involvedCharacters/involvedLocations 后，
   character/location 分区出现在清单中（此前 4 分区，挂后 6 分区）；
 - 勾选重组生效：停用 overview+background（启用 4 项）→ generateChapterWithContext
-  真模型 22.8s 生成 461 字正文 → saveChapter 落库 → getChapter 读回一致。
+  真模型生成 487 字正文 → saveChapter 落库 → getChapter 读回一致；
+- **负控断言（42号 review 后补）**：停用 background/overview 各自触发 prompt 占位文案
+  （「世界观设定已由用户禁用」/「故事宏观背景已由用户禁用」）——勾选真实生效由实测
+  支撑而非读码推断。负控揪出并修复了真实缺陷：background 勾选曾是死开关（世界观文本
+  内嵌概要文本，只受 overview 门控）——修法=背景独立成段（compose §一### 世界观设定 +
+  parts.backgroundText），回归锚在 chapter-context.spec。
+
+对 38 号 §3 设计的差异与未测项（如实登记）：
+- **分区 8→6**：'outline' 为死键（章节任务并入固定骨架不受控）；'recall' 并入 'graph'
+  分区展示；prewrite 为数据驱动条件分区（本项目无预写数据故未出现）；
+- promptText 默认分支（不传 enabledItemIds）= 全部条目而非 defaultChecked 子集——面板
+  实际总是显式传勾选集，影响可忽略，登记为设计漂移；
+- 预览一致性（promptText == 实际下发 prompt）与 token 预算条 UI 未在本轮实测范围；
+- 背景使用夹具文本（renderer 无背景生成入口），且勾选重组轮次停用了 background——
+  背景→生成链路未被真模型有效覆盖。
 
 实测顺带修正的认知：
 - generateChapter/WithContext 的 invoke 只返回内容，**落库由调用方 saveChapter 负责**

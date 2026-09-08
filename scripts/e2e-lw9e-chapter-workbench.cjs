@@ -180,6 +180,15 @@ const INPUT = '写一个温暖的科幻短篇：近未来，星际快递员小�
   assert(sections.includes('overview'), '含概要分区')
   assert(items.every(i => typeof i.id === 'string' && i.id.length > 0), `条目 id 稳定（单件分区=裸节名，实体项=section:id；实际 [${items.map(i => i.id).join(',')}]）`)
 
+  // 7.5 42号 负控：停用 overview+background 后 promptText 必须出现占位文案
+  //（死开关回归——曾因背景内嵌概要文本，停用 background 无任何效果且断言测不出）
+  const negIds = items.map(i => i.id).filter(id => id !== 'background' && id !== 'overview')
+  const negCtx = await callAsync('chapterContextPreview', projectId, target.id,
+    { targetWords: 300, enabledItemIds: negIds })
+  const negText = (negCtx.data && negCtx.data.promptText) || negCtx.promptText || ''
+  assert(negText.includes('世界观设定已由用户禁用'), '负控：停用 background → prompt 出现占位文案（勾选真实生效）')
+  assert(negText.includes('故事宏观背景已由用户禁用'), '负控：停用 overview → prompt 出现占位文案')
+
   // 8. 勾选重组：去掉 1-2 项再生成，验证 enabledItemIds 生效（正文不空）
   const disabled = defaultChecked.slice(0, Math.min(2, defaultChecked.length - 1)).map(i => i.id)
   const enabledItemIds = defaultChecked.map(i => i.id).filter(id => !disabled.includes(id))

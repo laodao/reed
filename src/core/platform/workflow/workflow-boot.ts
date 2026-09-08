@@ -26,10 +26,16 @@ import { createLogger } from '@core/utils/logger'
 
 const logger = createLogger('WorkflowBoot')
 
-/** 模型档位 env 解析（39 号 P2）：`providerConfigId/modelId` 或裸 `modelId`；空/非法返回 undefined */
+/** 模型档位 env 解析（39 号 P2）：`providerConfigId/modelId` 或裸 `modelId`；空/非法返回 undefined。
+ *  多段输入判非法（42号 review P2：曾静默截断——modelId 含 `/` 的 openrouter 形态必须写全前缀） */
 export function parseModelTierEnv(raw: string | undefined): { providerConfigId?: string; modelId?: string } | undefined {
   if (!raw || raw.trim() === '') return undefined
-  const [providerConfigId, modelId] = raw.trim().split('/')
+  const parts = raw.trim().split('/')
+  if (parts.length > 2) {
+    logger.warn(`[workflow-boot] AGENT_MODEL 档位格式非法（应为 providerConfigId/modelId 或裸 modelId）：${raw}——回退默认模型`)
+    return undefined
+  }
+  const [providerConfigId, modelId] = parts
   if (!modelId) return { modelId: providerConfigId }
   return { providerConfigId, modelId }
 }

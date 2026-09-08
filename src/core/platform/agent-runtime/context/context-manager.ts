@@ -373,14 +373,18 @@ export function collapseSupersededToolResults(
   const result = [...messages]
   let changed = false
   for (const c of collapses) {
-    const content = result[c.index].content as Array<Record<string, unknown>>
+    const source = result[c.index]
+    const content = source.content as Array<Record<string, unknown>>
     const part = content[c.partIdx]
     if (!part || estimate([{ role: 'tool', content: [part] } as ModelMessage]) < minTokens) continue
-    content[c.partIdx] = {
-      ...part,
-      output: { type: 'text', value: SUPERSEDED_PLACEHOLDER },
-    }
-    result[c.index] = { ...result[c.index], content } as ModelMessage
+    // 深一层拷贝（42号 review P1）：stepMessages 与 pendingAppended 共享同一消息对象，
+    // 原地改写会让「尚未入流水的原文」被占位符覆盖——原始流水必须记到截断/折叠前的原文
+    const newContent = content.map((p, i) =>
+      i === c.partIdx
+        ? { ...p, output: { type: 'text', value: SUPERSEDED_PLACEHOLDER } }
+        : p,
+    )
+    result[c.index] = { ...source, content: newContent } as ModelMessage
     changed = true
   }
   return changed ? result : messages
