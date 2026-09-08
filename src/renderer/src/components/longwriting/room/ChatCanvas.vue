@@ -34,6 +34,19 @@
       <div v-else-if="busy" class="typing">
         <i></i><i></i><i></i>
       </div>
+
+      <!-- 提炼卡片（对话流末尾） -->
+      <template v-if="cards.length > 0">
+        <div class="cards-head">── 提炼结果（确认后入库）──</div>
+        <ArtifactCard v-for="c in cards" :key="c.id" :card="c">
+          <template #actions>
+            <el-button size="small" type="success" @click="$emit('adopt', c)">✓ 采纳入库</el-button>
+            <el-button size="small" @click="$emit('edit', c)">✎ 编辑</el-button>
+            <el-button size="small" @click="$emit('regen', c)">↻ 换一版</el-button>
+            <el-button size="small" text type="danger" @click="$emit('ignore', c)">忽略</el-button>
+          </template>
+        </ArtifactCard>
+      </template>
     </div>
   </div>
 </template>
@@ -41,8 +54,9 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick } from 'vue'
 import MessageBubble from './MessageBubble.vue'
+import ArtifactCard from './ArtifactCard.vue'
 import { ROOM_PHASE_META } from './roomKinds'
-import type { RoomMessageView } from '@shared/types/story-room.types'
+import type { ArtifactCard as ArtifactCardData, RoomMessageView } from '@shared/types/story-room.types'
 
 defineOptions({ name: 'RoomChatCanvas' })
 
@@ -51,6 +65,14 @@ const props = defineProps<{
   streamMessage: { content: string; turnNo: number } | null
   status: string
   busy: boolean
+  cards: ArtifactCardData[]
+}>()
+
+defineEmits<{
+  (e: 'adopt', card: ArtifactCardData): void
+  (e: 'edit', card: ArtifactCardData): void
+  (e: 'regen', card: ArtifactCardData): void
+  (e: 'ignore', card: ArtifactCardData): void
 }>()
 
 type TimelineItem =
@@ -117,6 +139,7 @@ watch(() => [props.messages.length, props.streamMessage?.content.length], scroll
   font-size: 11.5px; color: var(--el-color-primary); background: var(--el-color-primary-light-9);
   border: 1px solid var(--el-color-primary-light-8); border-radius: 999px; padding: 2.5px 13px;
 }
+.cards-head { text-align: center; font-size: 12px; color: var(--el-text-color-secondary); margin: 18px 0 6px; }
 .typing { display: inline-flex; gap: 4px; padding: 10px 4px; }
 .typing i {
   width: 6px; height: 6px; border-radius: 50%; background: var(--el-color-primary);

@@ -22,6 +22,11 @@
           :stream-message="store.streamMessage.value"
           :status="store.status.value"
           :busy="store.busy.value"
+          :cards="pendingCards"
+          @adopt="onAdopt"
+          @edit="openEdit"
+          @regen="openFeedback"
+          @ignore="store.ignoreCard"
         />
         <div class="composer">
           <div class="composer-inner">
@@ -48,6 +53,7 @@
           @op="store.ledgerOp"
           @revise="openRevise"
           @ask="askAbout"
+          @distill="onDistill"
         />
         <div class="side-split"></div>
         <BiblePanel :project-id="projectId" @ask="askAbout" @open-editor="goEditor" />
@@ -71,19 +77,33 @@
         <el-button type="primary" @click="saveRevise">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 卡片轻编辑（阅读态+改一句话级别） -->
+    <el-dialog v-model="editVisible" :title="`编辑卡片 · ${editCard?.title || ''}`" width="540px">
+      <div class="edit-rows">
+        <div v-for="(f, i) in editFields" :key="i" class="edit-row">
+          <span class="edit-label">{{ f.label }}</span>
+          <el-input v-model="editFields[i].value" :rows="f.value.length > 40 ? 3 : 1" type="textarea" :autosize="{ minRows: 1, maxRows: 4 }" />
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="editVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveEditAndAdopt">保存并采纳</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import ChatCanvas from '@/components/longwriting/room/ChatCanvas.vue'
 import PhaseBar from '@/components/longwriting/room/PhaseBar.vue'
 import LedgerPanel from '@/components/longwriting/room/LedgerPanel.vue'
 import BiblePanel from '@/components/longwriting/room/BiblePanel.vue'
 import { useStoryRoom } from '@/composables/useStoryRoom'
-import type { ConsensusEntry } from '@shared/types/story-room.types'
+import type { ArtifactCard, ConsensusEntry } from '@shared/types/story-room.types'
 
 defineOptions({ name: 'StoryRoom' })
 
@@ -125,7 +145,7 @@ function applyChip(c: string): void {
     return
   }
   if (c === '把我们定下的整理一下') {
-    ElMessage.info('按需提炼（整理成卡片）随 M4 提炼闭环提供')
+    onDistill()
     return
   }
   input.value = c
@@ -153,6 +173,68 @@ function saveRevise(): void {
     points: revisePoints.value.filter((p) => p.trim()),
   })
   reviseVisible.value = false
+}
+
+// ==================== 提炼与卡片闭环 ====================
+
+const pendingCards = computed(() => store.state.value?.pendingCards || [])
+const distilling = ref(false)
+
+async function onDistill(): Promise<void> {
+  if (distilling.value) return
+  distilling.value = true
+  try {
+    await store.distill()
+  } finally {
+    distilling.value = false
+  }
+}
+
+async function onAdopt(card: ArtifactCard): Promise<void> {
+  await store.adoptCard(card)
+}
+
+const editVisible = ref(false)
+const editCard = ref<ArtifactCard | null>(null)
+const editFields = ref<Array<{ field: string; label: string; value: string }>>([])
+
+function openEdit(card: ArtifactCard): void {
+  editCard.value = card
+  const data = (card.data || {}) as Record<string, unknown>
+  editFields.value = Object.entries(data)
+    .filter(([, v]) => typeof v === 'string' || typeof v === 'number')
+    .map(([field, v]) => ({ field, label: field, value: String(v ?? '') }))
+  editVisible.value = true
+}
+
+async function saveEditAndAdopt(): Promise<void> {
+  if (!editCard.value) return
+  const patch: Record<string, unknown> = {}
+  for (const f of editFields.value) {
+    const origin = (editCard.value.data as Record<string, unknown>)[f.field]
+    if (typeof origin === 'number') {
+      const n = Number(f.value)
+      if (!Number.isNaN(n)) patch[f.field] = n
+    } else {
+      patch[f.field] = f.value
+    }
+  }
+  const ok = await store.adoptCard(editCard.value, patch)
+  if (ok) editVisible.value = false
+}
+
+async function openFeedback(card: ArtifactCard): Promise<void> {
+  try {
+    const res = await ElMessageBox.prompt('按什么方向重新提炼这张卡片？', '换一版', {
+      confirmButtonText: '重新提炼',
+      cancelButtonText: '取消',
+      inputPlaceholder: '例如：动机改成"赎罪"而不是"复仇"',
+    })
+    const value = (res as unknown as { value?: string }).value
+    if (value?.trim()) await store.regenerateCard(card, value.trim())
+  } catch {
+    /* 取消 */
+  }
 }
 
 function goBack(): void {
@@ -246,4 +328,7 @@ html.dark .story-room { --sr-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rg
 .side-split { border-top: 1px solid var(--el-border-color-lighter); }
 
 .revise-points { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.edit-rows { display: flex; flex-direction: column; gap: 10px; max-height: 55vh; overflow-y: auto; }
+.edit-row { display: flex; gap: 10px; align-items: flex-start; }
+.edit-label { width: 90px; flex-shrink: 0; font-size: 12.5px; color: var(--el-text-color-secondary); padding-top: 7px; text-align: right; }
 </style>

@@ -11,6 +11,7 @@ import { ElMessage } from 'element-plus'
 import type {
   ArtifactCard,
   ConsensusEntry,
+  DistillScope,
   LedgerOpInput,
   RoomEvent,
   RoomMessageView,
@@ -133,9 +134,43 @@ export function useStoryRoom(projectId: string) {
     return base
   })
 
-  /** 卡片操作（M4 接 distill/adoptCard 通道；M3 先占位） */
-  async function adoptCard(_card: ArtifactCard): Promise<void> {
-    ElMessage.info('卡片采纳将在提炼闭环（M4）后可用')
+  /** 按需提炼：按当前阶段推荐范围（或显式 scope） */
+  function suggestScope(): DistillScope {
+    const phase = state.value?.phase ?? 'story-core'
+    if (phase === 'characters') return 'characters'
+    if (phase === 'plots') return 'plots'
+    if (phase === 'outline' || phase === 'writing') return 'outline'
+    return 'overview'
+  }
+
+  async function distill(scope?: DistillScope): Promise<ArtifactCard[]> {
+    const target = scope || suggestScope()
+    const res = await api().roomDistill(projectId, target)
+    if (!res.success) {
+      ElMessage.warning(res.error || '提炼失败')
+      return []
+    }
+    ElMessage.success(`已整理出 ${res.data.cards.length} 张卡片，请确认`)
+    return res.data.cards
+  }
+
+  async function adoptCard(card: ArtifactCard, patch?: Record<string, unknown>): Promise<boolean> {
+    const res = await api().roomAdoptCard(projectId, card.id, patch)
+    if (!res.success) {
+      ElMessage.error(res.error || '采纳失败')
+      return false
+    }
+    ElMessage.success(res.data.card.resultNote || '已采纳入库')
+    return res.data.card.status === 'adopted'
+  }
+
+  async function regenerateCard(card: ArtifactCard, feedback: string): Promise<void> {
+    const res = await api().roomRegenerateCard(projectId, card.id, feedback)
+    if (!res.success) ElMessage.error(res.error || '重提失败')
+  }
+
+  async function ignoreCard(card: ArtifactCard): Promise<void> {
+    await api().roomIgnoreCard(projectId, card.id)
   }
 
   onBeforeUnmount(() => {
@@ -155,7 +190,11 @@ export function useStoryRoom(projectId: string) {
     cancel,
     ledgerOp,
     setPhase,
+    suggestScope,
+    distill,
     adoptCard,
+    regenerateCard,
+    ignoreCard,
   }
 }
 

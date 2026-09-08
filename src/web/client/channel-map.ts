@@ -556,6 +556,10 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'longwriting.roomCancel': { channel: 'longwriting:room:cancel' },
   'longwriting.roomLedgerUpdate': { channel: 'longwriting:room:ledger:update' },
   'longwriting.roomSetPhase': { channel: 'longwriting:room:setPhase' },
+  'longwriting.roomDistill': { channel: 'longwriting:room:distill' },
+  'longwriting.roomAdoptCard': { channel: 'longwriting:room:adoptCard' },
+  'longwriting.roomRegenerateCard': { channel: 'longwriting:room:regenerateCard' },
+  'longwriting.roomIgnoreCard': { channel: 'longwriting:room:ignoreCard' },
   // longwriting.onRoomEvent(projectId, cb) — 后端 emit(`longwriting:room:${projectId}`, ...)
   'longwriting.onRoomEvent': {
     eventChannel: (projectId) => `longwriting:room:${projectId}`,

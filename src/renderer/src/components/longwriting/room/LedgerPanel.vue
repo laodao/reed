@@ -30,6 +30,11 @@
         </el-popover>
       </div>
     </div>
+    <div class="footer">
+      <el-button size="small" type="primary" plain :disabled="ledger.length === 0" @click="$emit('distill')">
+        ⚡ 提炼入库
+      </el-button>
+    </div>
   </div>
 </template>
 
@@ -44,6 +49,7 @@ defineEmits<{
   (e: 'op', op: LedgerOpInput): void
   (e: 'revise', entry: ConsensusEntry): void
   (e: 'ask', text: string): void
+  (e: 'distill'): void
 }>()
 
 const counts = computed(() => ({
@@ -84,4 +90,6 @@ void props
 .pop-points { margin: 6px 0 6px 18px; font-size: 12.5px; color: var(--el-text-color-regular); line-height: 1.7; }
 .pop-meta { font-size: 11px; color: var(--el-text-color-secondary); margin-bottom: 8px; }
 .pop-ops { display: flex; flex-wrap: wrap; gap: 4px; }
+.footer { padding: 8px 12px 10px; border-top: 1px solid var(--el-border-color-lighter); display: flex; }
+.footer .el-button { flex: 1; }
 </style>

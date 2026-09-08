@@ -2058,6 +2058,14 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:room:ledger:update', projectId, op),
     roomSetPhase: (projectId: string, phase: string) =>
       ipcRenderer.invoke('longwriting:room:setPhase', projectId, phase),
+    roomDistill: (projectId: string, scope: string, opts?: { providerConfigId?: string; modelId?: string }) =>
+      ipcRenderer.invoke('longwriting:room:distill', projectId, scope, opts),
+    roomAdoptCard: (projectId: string, cardId: string, patch?: Record<string, unknown>) =>
+      ipcRenderer.invoke('longwriting:room:adoptCard', projectId, cardId, patch),
+    roomRegenerateCard: (projectId: string, cardId: string, feedback: string, opts?: { providerConfigId?: string; modelId?: string }) =>
+      ipcRenderer.invoke('longwriting:room:regenerateCard', projectId, cardId, feedback, opts),
+    roomIgnoreCard: (projectId: string, cardId: string) =>
+      ipcRenderer.invoke('longwriting:room:ignoreCard', projectId, cardId),
     onRoomEvent: (projectId: string, callback: (event: unknown) => void) => {
       const channel = `longwriting:room:${projectId}`
       const listener = (_event: any, data: unknown) => callback(data)

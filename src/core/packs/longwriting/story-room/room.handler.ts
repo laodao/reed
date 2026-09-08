@@ -9,6 +9,7 @@
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { StoryRoomSessionService } from './room-session'
+import { StoryRoomDistillerService } from './room-distiller'
 import { applyLedgerOp } from './room-ledger'
 import type { RoomPhaseId } from '@shared/types/story-room.types'
 
@@ -19,6 +20,10 @@ export const ROOM_CHANNELS = {
   ROOM_CANCEL: 'longwriting:room:cancel',
   ROOM_LEDGER_UPDATE: 'longwriting:room:ledger:update',
   ROOM_SET_PHASE: 'longwriting:room:setPhase',
+  ROOM_DISTILL: 'longwriting:room:distill',
+  ROOM_ADOPT_CARD: 'longwriting:room:adoptCard',
+  ROOM_REGENERATE_CARD: 'longwriting:room:regenerateCard',
+  ROOM_IGNORE_CARD: 'longwriting:room:ignoreCard',
 } as const
 
 export function registerStoryRoomHandlers(): void {
@@ -69,6 +74,45 @@ export function registerStoryRoomHandlers(): void {
   ipcBridge.handle(ROOM_CHANNELS.ROOM_SET_PHASE, async (_event, projectId: string, phase: RoomPhaseId) => {
     try {
       return { success: true, data: await StoryRoomSessionService.getInstance().setPhase(projectId, phase) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 提炼与卡片闭环（M4） ====================
+
+  ipcBridge.handle(ROOM_CHANNELS.ROOM_DISTILL, async (_event, projectId: string, scope: string, opts?: { providerConfigId?: string; modelId?: string }) => {
+    try {
+      const result = await StoryRoomDistillerService.getInstance().distill(projectId, scope as never, opts || {})
+      return { success: true, data: result }
+    } catch (error: any) {
+      console.error('[StoryRoomHandler] room:distill 失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcBridge.handle(ROOM_CHANNELS.ROOM_ADOPT_CARD, async (_event, projectId: string, cardId: string, patch?: Record<string, any>) => {
+    try {
+      const card = await StoryRoomDistillerService.getInstance().adoptCard(projectId, cardId, patch)
+      return { success: true, data: { card } }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcBridge.handle(ROOM_CHANNELS.ROOM_REGENERATE_CARD, async (_event, projectId: string, cardId: string, feedback: string, opts?: { providerConfigId?: string; modelId?: string }) => {
+    try {
+      const result = await StoryRoomDistillerService.getInstance().regenerateCard(projectId, cardId, feedback, opts || {})
+      return { success: true, data: result }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcBridge.handle(ROOM_CHANNELS.ROOM_IGNORE_CARD, async (_event, projectId: string, cardId: string) => {
+    try {
+      const card = await StoryRoomDistillerService.getInstance().ignoreCard(projectId, cardId)
+      return { success: true, data: { card } }
     } catch (error: any) {
       return { success: false, error: error.message }
     }
