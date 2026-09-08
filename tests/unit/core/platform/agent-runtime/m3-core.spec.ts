@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from 'vitest'
 import { Verifier, runRuleChecks, parseJudgeResponse } from '@core/platform/agent-runtime/verify/verifier'
-import { MemoryFlywheelService, tokenize, overlapRatio, CONFIDENCE_GATE } from '@core/platform/agent-runtime/memory/memory-flywheel'
+import { MemoryFlywheelService, tokenize, overlapRatio } from '@core/platform/agent-runtime/memory/memory-flywheel'
 import { parsePlanTree, MAX_TASK_NODES } from '@core/platform/agent-runtime/tasks/planner'
 import { AgentTaskService, aggregateScores, MAX_RETRIES } from '@core/platform/agent-runtime/tasks/task-service'
 import { AgentTaskRepository, type AgentTaskRow } from '@core/database/repositories/agent-task.repository'
@@ -61,6 +61,16 @@ describe('Verifier 四层', () => {
   it('parseJudgeResponse：包裹文本中提取 JSON / 不可解析按 0 分', () => {
     expect(parseJudgeResponse('评测结论 {"score": 0.85, "defects": ["a"]} 完')).toEqual({ score: 0.85, defects: ['a'] })
     expect(parseJudgeResponse('no json')).toEqual({ score: 0, defects: ['评判输出不可解析'] })
+  })
+
+  it('parseJudgeResponse：截断 JSON 正则兜底读出 score（33 号实测回归）', () => {
+    // 截断场景：maxOutputTokens 打断，JSON 无收尾括号
+    const truncated = '{"score": 0.75, "defects": ["缺来源", "结论过粗'
+    const r = parseJudgeResponse(truncated)
+    expect(r.score).toBe(0.75)
+    expect(r.defects).toEqual(['缺来源', '结论过粗'])
+    // score 值非法 → 兜底仍夹紧到 [0,1]
+    expect(parseJudgeResponse('{"score": "abc", "defects": [').score).toBe(0)
   })
 
   it('aggregateScores：忽略 null 与负分', () => {
@@ -283,7 +293,7 @@ describe('AgentTaskService 状态机（注入 executor，fake LLM 语义）', ()
     seed(rows, 'root2', { status: 'ready' })
     // 灰区挂起的叶子（质量门 human 分流的落库形态）
     seed(rows, 'leaf2', { parentId: 'root2', rootId: 'root2', depth: 1, title: '叶', status: 'verifying', retryCount: 2 })
-    const { svc, repo } = buildService(rows, 'x')
+    const { repo } = buildService(rows, 'x')
     await svc.verifyDecide('leaf2', 'approve', '人工认可')
     expect((await repo.getById('leaf2'))?.status).toBe('succeeded')
     expect((await waitSettled(repo, 'root2'))?.status).toBe('succeeded')
@@ -293,7 +303,7 @@ describe('AgentTaskService 状态机（注入 executor，fake LLM 语义）', ()
     const rows: FakeRow[] = []
     seed(rows, 'root3')
     seed(rows, 'leaf3', { parentId: 'root3', rootId: 'root3', depth: 1, title: '叶', status: 'ready', retryCount: MAX_RETRIES })
-    const { svc, repo } = buildService(rows, 'x')
+    const { repo } = buildService(rows, 'x')
     // 覆盖 verifier 为持续低分（模拟怎么改都过不了验收的必败子任务）
     const svc2 = new AgentTaskService({
       tasks: repo,

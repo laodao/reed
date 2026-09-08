@@ -17,6 +17,7 @@ import {
   runAgentChatTurn,
   buildSystemPrompt,
   digestAgentArgs,
+  slimTrajectoryForBroadcast,
   agentSessionId,
   sanitizeSessionHistory,
   SYSTEM_AGENT_DEFINITION_ID,
@@ -170,6 +171,28 @@ describe('系统 Agent 宿主（28 号 M5 批2）纯函数', () => {
     const cyclic: Record<string, unknown> = {}
     cyclic['self'] = cyclic
     expect(digestAgentArgs(cyclic)).toBeUndefined()
+  })
+
+  it('slimTrajectoryForBroadcast：只收窄 payload.args，entry 本体字段必须保留（33 号实测 P1 回归）', () => {
+    const call = {
+      iteration: 2,
+      kind: 'tool_call',
+      name: 'web_search',
+      payload: { toolCallId: 'c1', args: { query: 'x'.repeat(3000) } },
+    }
+    const slim = slimTrajectoryForBroadcast(call as never)
+    // 旧实现错展开 payload 顶层——kind/name/iteration 全部丢失，时间线沦为无名孤儿卡
+    expect(slim.kind).toBe('tool_call')
+    expect(slim.name).toBe('web_search')
+    expect(slim.iteration).toBe(2)
+    const args = (slim.payload as { args?: unknown }).args
+    expect(typeof args).toBe('string')
+    expect(String(args).length).toBeLessThanOrEqual(2001)
+
+    const result = { iteration: 2, kind: 'tool_result', name: 'web_search', payload: { toolCallId: 'c1', ok: false, error: 'X' } }
+    expect(slimTrajectoryForBroadcast(result as never)).toBe(result) // 无 args 原样返回
+    const bare = { iteration: 0, kind: 'decision', payload: null }
+    expect(slimTrajectoryForBroadcast(bare as never)).toBe(bare)
   })
 
   it('agentSessionId：遵循 {definitionId}:{scopeId} 约定', () => {

@@ -403,10 +403,12 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
             `任务目标：${goal}`,
             acceptance ? `验收标准：${acceptance}` : '',
             ...(rubricHints ?? []),
-            '输出严格 JSON：{"score": <0-1>, "defects": ["缺陷1", ...]}',
+            '输出严格 JSON：{"score": <0-1>, "defects": ["缺陷1", ...]}。缺陷最多 5 条、每条不超过 20 字；不要输出 JSON 以外的任何文字。',
           ].filter(Boolean).join('\n')
           const model = await resolveBootModel()
-          const r = await generateText({ model, system: rubric, prompt: `产出：\n${output}`, maxOutputTokens: 1024, abortSignal: signal ?? undefined })
+          // maxOutputTokens 曾为 1024——话痨模型写长缺陷清单被截断，2/2 评判解析失败（33 号实测）
+          const r = await generateText({ model, system: rubric, prompt: `产出：\n${output}`, maxOutputTokens: 2048, abortSignal: signal ?? undefined })
+          if (r.finishReason === 'length') logger.warn('[workflow-boot] llmJudge 输出因长度截断（parseJudge 有正则兜底）')
           return (await import('@core/platform/agent-runtime/verify/verifier')).parseJudgeResponse(r.text)
         },
       })

@@ -409,7 +409,21 @@ export class LoopRunner {
             }
             const ok = registryWrapped ? (result as { ok?: boolean })?.ok !== false : true
             host.emitStream({ kind: 'tool-end', toolName: name, toolCallId: options.toolCallId, ok })
-            host.emitTrajectory({ iteration: state.iteration, kind: 'tool_result', name, payload: { toolCallId: options.toolCallId, ok } })
+            // 失败必须把原因带进轨迹（33 号长程实测：ok:false 曾不带 error——
+            // 草稿生成连败两轮，排障只能靠模型自己的转述）
+            const fail = !ok && result && typeof result === 'object' ? (result as { error?: unknown; detail?: unknown; hint?: unknown }) : null
+            host.emitTrajectory({
+              iteration: state.iteration,
+              kind: 'tool_result',
+              name,
+              payload: {
+                toolCallId: options.toolCallId,
+                ok,
+                ...(fail?.error !== undefined ? { error: String(fail.error).slice(0, 200) } : {}),
+                ...(typeof fail?.detail === 'string' && fail.detail ? { detail: fail.detail.slice(0, 300) } : {}),
+                ...(typeof fail?.hint === 'string' && fail.hint ? { hint: fail.hint.slice(0, 200) } : {}),
+              },
+            })
             return registryWrapped ? result : { ok: true, data: truncateJson(result) }
           } catch (e: unknown) {
             const err = e as { message?: string; name?: string }

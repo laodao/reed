@@ -183,6 +183,36 @@ describe('WorkflowDraftService', () => {
     await expect(svc.draftFromDescription({ description: 'x' })).rejects.toThrow('生成失败')
   })
 
+  it('finishReason=length 截断：截断文案抛出 + 修复轮喂长度提示（33 号长程实测回归）', async () => {
+    const usage = { inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 1, noCache: 1 }, totalTokens: { total: 2, noCache: 2 } }
+    const prompts: string[] = []
+    // 两轮都输出"截断的 JSON 半截"（无收尾括号 → parse 失败），finishReason=length
+    const truncated = '{"nodes": [{"id": "a"'
+    const lenModel = new MockLanguageModelV3({
+      provider: 'test',
+      modelId: 'mock',
+      doStream: async () => {
+        // generateText 不走流式；此 mock 仅供类型完备
+        return { stream: simulateReadableStream({ chunks: [
+          { type: 'stream-start', warnings: [] },
+          { type: 'text-start', id: 't' },
+          { type: 'text-delta', id: 't', delta: truncated },
+          { type: 'text-end', id: 't' },
+          { type: 'finish', finishReason: { unified: 'length', raw: undefined }, usage },
+        ] }) }
+      },
+      doGenerate: (opts: { prompt?: unknown }) => {
+        prompts.push(JSON.stringify(opts.prompt))
+        return { content: [{ type: 'text', text: truncated }], finishReason: { unified: 'length', raw: undefined }, usage, warnings: [] }
+      },
+    }) as unknown as LanguageModel
+    const { deps } = makeDeps(lenModel)
+    const svc = new WorkflowDraftService(deps)
+    await expect(svc.draftFromDescription({ description: '调研流程' })).rejects.toThrow('截断')
+    // 第二轮 prompt 带上了截断针对性修复提示（而非笼统的"严格 JSON"）
+    expect(prompts[1]).toContain('因长度被截断')
+  })
+
   it('空描述直接拒绝', async () => {
     const { deps } = makeDeps(textModel('{}'))
     const svc = new WorkflowDraftService(deps)

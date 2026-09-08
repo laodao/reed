@@ -31,6 +31,7 @@ import type {
   AgentHost,
   AgentLoopState,
   AgentStreamEvent,
+  TrajectoryEntry,
 } from '@core/platform/agent-runtime/types'
 import { LoopRunner, initState } from '@core/platform/agent-runtime/runtime/loop'
 import { DbAgentSessionStore } from '@core/platform/agent-runtime/memory/session-store'
@@ -88,6 +89,17 @@ export function digestAgentArgs(args: unknown, max = AGENT_ARGS_DIGEST_MAX): str
     return undefined
   }
   return s.length <= max ? s : `${s.slice(0, max)}…`
+}
+
+/** 轨迹条目的广播瘦身：仅收窄 payload.args，entry 本体字段（kind/name/iteration…）必须原样保留
+ * （33 号长程实测 P1：曾错展开 payload 顶层——tool_call 广播后 kind 丢失，时间线沦为无名孤儿卡） */
+export function slimTrajectoryForBroadcast(entry: TrajectoryEntry): TrajectoryEntry {
+  const payload = entry.payload
+  if (!payload || !('args' in payload)) return entry
+  return {
+    ...entry,
+    payload: { ...payload, args: digestAgentArgs((payload as { args?: unknown }).args, 2000) },
+  }
 }
 
 /** 会话 id 约定（session-store 头注：{definitionId}:{scopeId}） */
@@ -408,10 +420,7 @@ export class SystemAgentChatService {
           emit: (event) => getEventEmitter().emit('chat:stream', event),
           onTrajectoryEntry: (scopeKey, entry) => {
             try {
-              const slim = entry.payload && 'args' in entry.payload
-                ? { ...entry.payload, args: digestAgentArgs((entry.payload as { args?: unknown }).args, 2000) }
-                : entry
-              getEventEmitter().emit('ac:trajectory', { scopeKey, entry: slim })
+              getEventEmitter().emit('ac:trajectory', { scopeKey, entry: slimTrajectoryForBroadcast(entry) })
             } catch { /* 广播失败不影响主链路 */ }
           },
         },

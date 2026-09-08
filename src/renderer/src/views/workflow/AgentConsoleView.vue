@@ -317,6 +317,14 @@ const segments = computed(() => {
 function buildBlocks(entriesIn: Entry[]): Block[] {
   const blocks: Block[] = []
   const toolByKey = new Map<string, Extract<Block, { type: 'tool' }>>()
+  // 预扫 tool_result：发射序不保证 call 在前（ai@6 流内执行工具，轨迹里结果行
+  // 常落在调用行之前——33 号长程实测），配对不能依赖条目顺序
+  const resultByKey = new Map<string, { ok: boolean; payload: unknown; durationMs?: number }>()
+  for (const e of entriesIn) {
+    if (e.kind !== 'tool_result') continue
+    const callId = String(e.payload?.toolCallId ?? '')
+    if (callId) resultByKey.set(callId, { ok: e.payload?.ok !== false, payload: e.payload, durationMs: e.durationMs ?? undefined })
+  }
   const pushText = (key: string, text: string) => {
     if (!text) return
     const last = blocks[blocks.length - 1]
@@ -342,6 +350,13 @@ function buildBlocks(entriesIn: Entry[]): Block[] {
         pending: true,
       }
       if (callId) toolByKey.set(callId, block)
+      const ready = callId ? resultByKey.get(callId) : undefined
+      if (ready) {
+        block.pending = false
+        block.ok = ready.ok
+        block.result = ready.payload
+        block.durationMs = ready.durationMs
+      }
       blocks.push(block)
     } else if (e.kind === 'tool_result') {
       const callId = String(e.payload?.toolCallId ?? '')

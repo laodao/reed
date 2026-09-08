@@ -102,11 +102,24 @@ export class WorkflowDraftService {
 
     for (let attempt = 0; attempt < DRAFT_MAX_ATTEMPTS; attempt++) {
       const prompt = buildDraftPrompt(description, repairErrors)
-      const resp = await generateText({ model, prompt, abortSignal: opts.signal, maxOutputTokens: 8192 })
+      // 16384：思考型模型（deepseek-v4 等）会把推理算进输出预算——8192 曾被全部烧在
+      // 思考上，正文恒为空（33 号实测 finishReason=length 输出长度=0 连续复现）
+      const resp = await generateText({ model, prompt, abortSignal: opts.signal, maxOutputTokens: 16384 })
       const raw = parseDraftJson(resp.text)
       if (!raw) {
-        lastError = '模型输出不是合法 JSON'
-        repairErrors = ['输出必须是严格的 JSON 对象（无 markdown 代码块与解释文字）']
+        // 33 号长程实测：解析失败曾是排障黑洞——落一条 finishReason/长度，截断给针对性修复提示
+        logger.warn(
+          `[wf-draft] 第 ${attempt + 1} 次生成解析失败 finishReason=${resp.finishReason} 输出长度=${resp.text.length}`,
+        )
+        if (resp.finishReason === 'length') {
+          lastError = '模型输出因长度上限被截断，未形成完整 JSON'
+          repairErrors = [
+            '上次输出因长度被截断。请大幅精简：只输出 JSON 本体，不要任何解释文字；节点数不超过 12 个，每个节点 description 压缩到 30 字以内',
+          ]
+        } else {
+          lastError = '模型输出不是合法 JSON'
+          repairErrors = ['输出必须是严格的 JSON 对象（无 markdown 代码块与解释文字）']
+        }
         continue
       }
       const norm = normalizeDraft(raw)

@@ -222,6 +222,24 @@ describe('LoopRunner', () => {
     expect(JSON.stringify(host.savedStates[1].messages)).toContain('业务炸了')
   })
 
+  it('⑥b registry 包装工具 ok:false：error/detail/hint 进轨迹（33 号长程实测回归）', async () => {
+    const tool: AgentToolDef = {
+      name: 'draft_tool',
+      description: '失败的内部分析',
+      inputSchema: z.object({}),
+      registryWrapped: true,
+      execute: async () => ({ ok: false, error: 'LIMIT_EXCEEDED', detail: '模型输出不是合法 JSON', hint: '单次运行上限已用尽' }),
+    }
+    const host = new FakeHost()
+    const runner = mkRunner(mkModel([() => toolParts('c1', 'draft_tool', {}), () => txt('明白，不再重试')]))
+    const r = await runner.run(mkTask({ draft_tool: tool }), host)
+    expect(r.stopReason).toBe('final')
+    const tr = host.trajectories.filter((t) => t.kind === 'tool_result')
+    expect(tr.length).toBe(1)
+    // 修复前：ok:false 不带原因——草稿生成连败两轮只能靠模型转述排障
+    expect(tr[0].payload).toMatchObject({ toolCallId: 'c1', ok: false, error: 'LIMIT_EXCEEDED', detail: '模型输出不是合法 JSON', hint: '单次运行上限已用尽' })
+  })
+
   it('⑦ maxSteps 护栏：不收敛循环干净终止并带原因', async () => {
     const tool: AgentToolDef = {
       name: 'loop_forever',

@@ -88,8 +88,23 @@ export function parseJudgeResponse(text: string): { score: number; defects: stri
       const defects = Array.isArray(parsed.defects) ? parsed.defects.map(String).slice(0, 10) : []
       return { score, defects }
     } catch {
-      // fallthrough
+      // fallthrough——常见于输出被 maxOutputTokens 截断（JSON 无收尾括号）
     }
+  }
+  // 截断兜底：正则直接抠 score 与缺陷串（33 号长程实测：截断导致 2/2 评判解析失败，
+  // 全部降级 0 分进升级/重规划——能读到分就不该浪费整轮产出）
+  const scoreMatch = text.match(/"score"\s*:\s*([0-9]*\.?[0-9]+)/)
+  if (scoreMatch) {
+    const score = Math.max(0, Math.min(1, Number(scoreMatch[1]) || 0))
+    const defects: string[] = []
+    const defectRe = /"defects"\s*:\s*\[([\s\S]*?)(\]|$)/g
+    const arr = defectRe.exec(text)?.[1] ?? ''
+    for (const m of arr.matchAll(/"([^"\\]*(?:\\.[^"\\]*)*)"?/g)) {
+      defects.push(m[1])
+      if (defects.length >= 10) break
+    }
+    logger.warn(`[verifier] 评判输出疑似截断，正则兜底 score=${score} defects=${defects.length} 条`)
+    return { score, defects }
   }
   logger.warn('[verifier] 评判输出解析失败，按 0 分处理')
   return { score: 0, defects: ['评判输出不可解析'] }
