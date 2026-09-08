@@ -20,6 +20,7 @@ import { episodeProductionPack } from './episode-production'
 import { voiceDesignPack } from './voice-design'
 import { diaryPack } from './diary'
 import { skillsPack } from './skills'
+import { domainLearningPack } from './domain-learning'
 
 /** pack IPC namespace 的最小契约（preload 暴露的 electronAPI.pack） */
 interface PackApi {
@@ -67,6 +68,7 @@ export async function installBuiltinPackages(router: Router): Promise<void> {
   registerPack(voiceDesignPack)
   registerPack(diaryPack)
   registerPack(skillsPack)
+  registerPack(domainLearningPack)
 
   setPackInfos(await fetchPackInfos())
   applyPacks(router)
