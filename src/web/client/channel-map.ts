@@ -288,6 +288,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'domainLearning.setSpacePace': { channel: 'dl:set-space-pace' },
   'domainLearning.getAtlasViews': { channel: 'dl:get-atlas-views', wrap: (id) => [{ id }] },
   'domainLearning.setSpaceProfile': { channel: 'dl:set-space-profile' },
+  'domainLearning.getSpaceStats': { channel: 'dl:get-space-stats', wrap: (id) => [{ id }] },
+  'domainLearning.exportLessonDigest': { channel: 'dl:export-lesson-digest', wrap: (id) => [{ id }] },
   'domainLearning.getSpaceReview': { channel: 'dl:get-space-review', wrap: (id) => [{ id }] },
   'domainLearning.setSpaceReview': { channel: 'dl:set-space-review' },
   'domainLearning.reviewDue': { channel: 'dl:review-due', wrap: (id) => [{ id }] },

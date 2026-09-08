@@ -1340,6 +1340,9 @@ const electronAPI = {
     getAtlasViews: (id: string) => ipcRenderer.invoke('dl:get-atlas-views', { id }),
     setSpaceProfile: (p: { id: string; profileId?: string | null; profile?: Record<string, unknown> | null }) =>
       ipcRenderer.invoke('dl:set-space-profile', p),
+    // 统计与导出（M3-C）
+    getSpaceStats: (id: string) => ipcRenderer.invoke('dl:get-space-stats', { id }),
+    exportLessonDigest: (id: string) => ipcRenderer.invoke('dl:export-lesson-digest', { id }),
     // 间隔复习（M3-B）
     getSpaceReview: (id: string) => ipcRenderer.invoke('dl:get-space-review', { id }),
     setSpaceReview: (p: {

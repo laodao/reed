@@ -118,6 +118,15 @@ export class DlCardRepository extends BaseRepository<DlCardEntity, DlCardRow> {
     return this.toDtoList(rows)
   }
 
+  /** 某项目全部卡片（统计/导出用；个人规模全量内存遍历） */
+  async listByProject(projectId: string): Promise<DlCardRow[]> {
+    const rows = await this.scoped.find({
+      where: { projectId } as CardWhere,
+      order: { createdAt: 'ASC' },
+    })
+    return this.toDtoList(rows)
+  }
+
   async patch(id: string, patch: DlCardPatch): Promise<void> {
     const partial: Partial<DlCardEntity> = { updatedAt: new Date() }
     if (patch.essenceType !== undefined) partial.essenceType = patch.essenceType

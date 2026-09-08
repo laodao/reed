@@ -18,13 +18,18 @@ import type {
   DlAtlasGraph,
   DlAtlasNode,
   DlAtlasViews,
+  DlSpaceStats,
+  DlLessonDigest,
   DlRelationType,
+  DlWorkRef,
+  DlEvidenceRef,
 } from '@shared/types/domain-learning.types'
 import {
   buildAtlasViews as deriveAtlasViews,
   type AtlasViewInputConcept,
   type AtlasViewInputRelation,
 } from '../rules/learning-atlas-views'
+import { normalizeDlReviewSettings, pickReviewCandidates } from '../rules/learning-review.rules'
 
 export class LearningViewService {
   constructor(private readonly db: ICoreDatabaseManager) {}
@@ -215,6 +220,160 @@ export class LearningViewService {
     const views = deriveAtlasViews({ concepts: inputConcepts, relations: inputRelations, profile: project.profile })
     views.spaceId = spaceId
     return views
+  }
+
+  /** 学习统计快照（M3-C：进度/研究/讲义/关系/问答/复习到期） */
+  async buildSpaceStats(spaceId: string): Promise<DlSpaceStats | null> {
+    const project = await this.db.dlProjects?.getById(spaceId)
+    if (!project) return null
+    const [concepts, relations, questions, cards, logs] = await Promise.all([
+      this.db.dlConcepts!.listByProject(spaceId),
+      this.db.dlRelations!.listByProject(spaceId),
+      this.db.dlQuestions!.listByProject(spaceId),
+      this.db.dlCards!.listByProject(spaceId),
+      this.db.dlMasteryLogs!.listByProject(spaceId),
+    ])
+    const leaves = concepts.filter((c) => c.nodeType !== 'group')
+    const groups = concepts.length - leaves.length
+
+    const research: Record<string, number> = {}
+    for (const c of leaves) research[c.researchState] = (research[c.researchState] ?? 0) + 1
+
+    // 每概念最新版卡片状态计数
+    const latest = new Map<string, (typeof cards)[number]>()
+    for (const card of cards) {
+      const cur = latest.get(card.conceptId)
+      if (!cur || card.version > cur.version) latest.set(card.conceptId, card)
+    }
+    let published = 0
+    let draft = 0
+    for (const card of latest.values()) {
+      if (card.status === 'published') published++
+      else draft++
+    }
+
+    // 复习到期（review 启用才计）
+    let reviewDueCount = 0
+    const review = normalizeDlReviewSettings(project.review)
+    if (review.enabled) {
+      reviewDueCount = pickReviewCandidates(
+        concepts,
+        logs.map((l) => ({ conceptId: l.conceptId, trigger: l.trigger, toMastery: l.toMastery, at: l.at })),
+        { intervalMs: Math.max(1, review.intervalMin) * 60_000, limit: Number.MAX_SAFE_INTEGER, now: new Date() },
+      ).length
+    }
+
+    return {
+      spaceId,
+      name: project.name,
+      updatedAt: project.updatedAt?.toISOString() ?? null,
+      concepts: {
+        total: leaves.length,
+        groups,
+        mastered: leaves.filter((c) => c.mastery === 'mastered').length,
+        learning: leaves.filter((c) => c.mastery === 'learning').length,
+        review: leaves.filter((c) => c.mastery === 'review').length,
+        untouched: leaves.filter((c) => c.mastery === 'untouched').length,
+      },
+      research,
+      cards: { published, draft },
+      relations: {
+        total: relations.length,
+        prerequisite: relations.filter((r) => r.relationType === 'prerequisite').length,
+        verified: relations.filter((r) => r.verified).length,
+      },
+      questions: {
+        total: questions.length,
+        open: questions.filter((q) => q.status === 'open').length,
+        answered: questions.filter((q) => q.status === 'answered').length,
+      },
+      reviewDueCount,
+    }
+  }
+
+  /** 讲义合集导出（M3-C：按目录树顺序收录有讲义的概念，拼接 md） */
+  async buildLessonDigest(spaceId: string): Promise<DlLessonDigest | null> {
+    const project = await this.db.dlProjects?.getById(spaceId)
+    if (!project) return null
+    const [concepts, cards] = await Promise.all([
+      this.db.dlConcepts!.listByProject(spaceId),
+      this.db.dlCards!.listByProject(spaceId),
+    ])
+    const latest = new Map<string, typeof cards[number]>()
+    for (const card of cards) {
+      const cur = latest.get(card.conceptId)
+      if (!cur || card.version > cur.version) latest.set(card.conceptId, card)
+    }
+    const cardOfConcept = (id: string) => latest.get(id) ?? null
+    const byId = new Map(concepts.map((c) => [c.id, c]))
+
+    const lines: string[] = []
+    const pushConcept = (conceptId: string, depth: number): void => {
+      const c = byId.get(conceptId)
+      const card = c ? cardOfConcept(c.id) : null
+      if (!c || !card || c.nodeType === 'group') return
+      lines.push(`${'#'.repeat(Math.min(depth, 6))} ${c.name}`)
+      lines.push('')
+      lines.push(`> 类型：${c.nodeType} · 掌握度：${c.mastery} · 讲义状态：${card.status}（v${card.version}）`)
+      if (c.definitionShort) lines.push(`> 一句话定义：${c.definitionShort}`)
+      lines.push('')
+      for (const s of card.sections) {
+        lines.push(`${'#'.repeat(Math.min(depth + 1, 6))} ${s.title ?? s.key}`)
+        lines.push('')
+        lines.push(s.md)
+        lines.push('')
+      }
+      if (card.works?.length) {
+        lines.push(`**相关著作**：${card.works.map((w: DlWorkRef) => `${w.title}${w.year ? `（${w.year}）` : ''}${w.kind ? ` [${w.kind}]` : ''}`).join('；')}`)
+        lines.push('')
+      }
+      if (card.evidenceSources?.length) {
+        lines.push(`**证据来源**：${card.evidenceSources.map((e: DlEvidenceRef) => `${e.title}${e.url ? `（${e.url}）` : ''}`).join('；')}`)
+        lines.push('')
+      }
+      lines.push('---')
+      lines.push('')
+    }
+
+    // 目录树序遍历：顶层 group → 子概念/子 group；无 group 概念归「根层」
+    const childrenOf = (parentId: string | null) =>
+      concepts.filter((c) => c.parentId === parentId).sort((a, b) => a.createdAt!.getTime() - b.createdAt!.getTime())
+    let count = 0
+    const walkGroups = (parentId: string | null, depth: number): void => {
+      for (const node of childrenOf(parentId)) {
+        if (node.nodeType === 'group') {
+          lines.push(`${'#'.repeat(Math.min(depth, 6))} ${node.name}`)
+          lines.push('')
+          walkGroups(node.id, depth + 1)
+        } else if (cardOfConcept(node.id)) {
+          pushConcept(node.id, depth + 1)
+          count++
+        }
+      }
+    }
+    // 顶层：目录 group 与根层概念分组输出
+    for (const node of childrenOf(null)) {
+      if (node.nodeType === 'group') {
+        lines.push(`## ${node.name}`)
+        lines.push('')
+        walkGroups(node.id, 3)
+      } else if (cardOfConcept(node.id)) {
+        if (count === 0) {
+          lines.push('## 根层概念')
+          lines.push('')
+        }
+        pushConcept(node.id, 3)
+        count++
+      }
+    }
+
+    const digest = lines.join('\n').trim()
+    const title = `# ${project.name} · 讲义合集\n\n> 学习目标：${project.goal} · 收录 ${count} 个概念 · 导出于 ${new Date().toISOString()}\n\n${digest}`.trim()
+    return {
+      markdown: `${title}\n`,
+      filename: `讲义合集-${project.name.replace(/[\\/:*?"<>|]/g, '_')}.md`,
+      count,
+    }
   }
 
   /** 节点档案（Atlas 右栏 / 概念详情）：关联内容 + 直接关系 */

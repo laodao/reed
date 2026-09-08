@@ -106,6 +106,22 @@
             </div>
           </div>
         </el-popover>
+        <el-popover trigger="click" width="320" @show="loadStats">
+          <template #reference>
+            <el-button plain>统计</el-button>
+          </template>
+          <div class="stats-body" v-if="store.spaceStats">
+            <div class="stat-row"><span>概念</span><b>{{ store.spaceStats.concepts.total }}</b><small>已掌握 {{ store.spaceStats.concepts.mastered }} · 学习中 {{ store.spaceStats.concepts.learning }} · 需复习 {{ store.spaceStats.concepts.review }} · 未开始 {{ store.spaceStats.concepts.untouched }}</small></div>
+            <div class="stat-row"><span>讲义</span><b>{{ store.spaceStats.cards.published + store.spaceStats.cards.draft }}</b><small>已发布 {{ store.spaceStats.cards.published }} · 草稿 {{ store.spaceStats.cards.draft }}</small></div>
+            <div class="stat-row"><span>关系</span><b>{{ store.spaceStats.relations.total }}</b><small>前置 {{ store.spaceStats.relations.prerequisite }} · 已确认 {{ store.spaceStats.relations.verified }}</small></div>
+            <div class="stat-row"><span>问答</span><b>{{ store.spaceStats.questions.total }}</b><small>已回答 {{ store.spaceStats.questions.answered }} · 未解 {{ store.spaceStats.questions.open }}</small></div>
+            <div class="stat-row"><span>复习到期</span><b>{{ store.spaceStats.reviewDueCount }}</b></div>
+          </div>
+          <div v-else class="stats-body empty">统计加载失败或为空</div>
+        </el-popover>
+        <el-button plain :loading="exporting" @click="exportLessonDigest">导出讲义</el-button>
+        <el-button plain @click="exportAtlasPng">导出 PNG</el-button>
+        <span v-if="exportNote" class="export-note">{{ exportNote }}</span>
         <el-button type="primary" :icon="Back" @click="goBackToSpace">回到讲义空间</el-button>
       </div>
     </div>
@@ -464,6 +480,111 @@ async function doneReview(conceptId: string): Promise<void> {
 
 async function needReview(conceptId: string): Promise<void> {
   if (await store.needReviewOf(spaceId.value, conceptId)) reviewNote.value = '已标记为需复习'
+}
+
+// ==================== 统计与导出（M3-C） ====================
+
+const exporting = ref(false)
+const exportNote = ref('')
+
+function loadStats(): void {
+  void store.fetchSpaceStats(spaceId.value)
+}
+
+async function exportLessonDigest(): Promise<void> {
+  if (exporting.value) return
+  exporting.value = true
+  exportNote.value = ''
+  try {
+    const r = await store.exportLessonDigestOf(spaceId.value)
+    if (!r) {
+      exportNote.value = '导出失败'
+      return
+    }
+    downloadBlob(r.markdown, r.filename, 'text/markdown;charset=utf-8')
+    exportNote.value = `已导出 ${r.count} 个概念 · ${r.filename}`
+  } finally {
+    exporting.value = false
+  }
+}
+
+function downloadBlob(content: string, filename: string, mime: string): void {
+  const blob = new Blob([content], { type: mime })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
+/** 图谱 PNG 导出：序列化当前 force-graph-svg 并把计算样式内联后画到 canvas */
+async function exportAtlasPng(): Promise<void> {
+  const svg = document.querySelector('svg.force-graph-svg')
+  if (!svg) {
+    exportNote.value = '当前无图谱可导出——请切回「图谱」视图'
+    return
+  }
+  try {
+    const vb = (svg.getAttribute('viewBox') ?? '0 0 920 600').split(/\s+/).map(Number)
+    const w = vb[2] || 920
+    const h = vb[3] || 600
+    const clone = svg.cloneNode(true) as SVGSVGElement
+    inlineComputedStyles(svg, clone)
+    const xml = new XMLSerializer().serializeToString(clone)
+    const img = new Image()
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(xml)}`
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve()
+      img.onerror = () => reject(new Error('svg 渲染失败'))
+    })
+    const scale = 2
+    const cv = document.createElement('canvas')
+    cv.width = Math.round(w * scale)
+    cv.height = Math.round(h * scale)
+    const cx = cv.getContext('2d')
+    if (!cx) throw new Error('canvas 不可用')
+    cx.fillStyle = '#fff'
+    cx.fillRect(0, 0, cv.width, cv.height)
+    cx.scale(scale, scale)
+    cx.drawImage(img, 0, 0, w, h)
+    cv.toBlob((blob) => {
+      if (!blob) {
+        exportNote.value = 'PNG 生成失败'
+        return
+      }
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `图谱-${spaceView.value?.name ?? 'space'}.png`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      exportNote.value = '图谱 PNG 已导出'
+    }, 'image/png')
+  } catch (e: any) {
+    exportNote.value = `PNG 导出失败：${e?.message ?? String(e)}`
+  }
+}
+
+/** 把原图元素的计算样式按元素序内联进克隆（PNG 才可见） */
+function inlineComputedStyles(orig: Element, clone: Element): void {
+  if (orig.nodeType !== 1 || clone.nodeType !== 1) return
+  const cs = window.getComputedStyle(orig)
+  const props = ['fill', 'stroke', 'stroke-width', 'stroke-dasharray', 'opacity', 'font-size', 'text-anchor'] as const
+  const ce = clone as HTMLElement
+  for (const p of props) {
+    const v = cs.getPropertyValue(p)
+    if (v && v !== 'none') ce.style.setProperty(p, v)
+  }
+  const oe = [...orig.children]
+  const ceArr = [...clone.children]
+  for (let i = 0; i < oe.length && i < ceArr.length; i++) {
+    if (oe[i].tagName === ceArr[i].tagName) inlineComputedStyles(oe[i], ceArr[i])
+  }
 }
 
 function toggleEmphasis(word: string): void {
@@ -1151,5 +1272,36 @@ onMounted(() => {
     margin: 0;
     font-size: 14px;
   }
+}
+
+.stats-body {
+  .stat-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 12.5px;
+    color: var(--el-text-color-regular);
+    b {
+      min-width: 20px;
+      color: var(--el-color-primary);
+    }
+    small {
+      color: var(--el-text-color-secondary);
+    }
+  }
+  &.empty {
+    color: var(--el-text-color-placeholder);
+    font-size: 12.5px;
+  }
+}
+
+.export-note {
+  font-size: 11px;
+  color: var(--el-color-success);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

@@ -14,10 +14,12 @@ import { defineStore } from 'pinia'
 import type {
   DlAtlasGraph,
   DlAtlasViews,
+  DlLessonDigest,
   DlNodeProfile,
   DlPaceSettings,
   DlReviewDueItem,
   DlReviewSettings,
+  DlSpaceStats,
   DlSpaceSummary,
   DlSpaceView,
 } from '@shared/types/domain-learning.types'
@@ -98,6 +100,8 @@ interface DomainLearningApi {
   getSpacePace(id: string): Promise<IpcLike<DlPaceSettings>>
   setSpacePace(p: { id: string; pace: DlPaceSettings }): Promise<IpcLike<DlPaceSettings>>
   getAtlasViews(id: string): Promise<IpcLike<DlAtlasViews | null>>
+  getSpaceStats(id: string): Promise<IpcLike<DlSpaceStats | null>>
+  exportLessonDigest(id: string): Promise<IpcLike<DlLessonDigest | null>>
   setSpaceProfile(p: { id: string; profileId?: string | null; profile?: Record<string, unknown> | null }): Promise<IpcLike<{ ok: boolean }>>
   getSpaceReview(id: string): Promise<IpcLike<DlReviewSettings>>
   setSpaceReview(p: { id: string; review: DlReviewSettings }): Promise<IpcLike<DlReviewSettings>>
@@ -336,6 +340,41 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
 
   /** 当前空间到期复习载荷（dl:review-due；settings + items） */
   const reviewDue = ref<{ settings: DlReviewSettings; items: DlReviewDueItem[] } | null>(null)
+
+  /** 当前空间统计载荷（dl:get-space-stats） */
+  const spaceStats = ref<DlSpaceStats | null>(null)
+
+  /** 拉取学习统计（写 spaceStats；失败 → null） */
+  async function fetchSpaceStats(id: string): Promise<DlSpaceStats | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.getSpaceStats(id)
+      if (r?.success && r.data) {
+        spaceStats.value = r.data
+        return r.data
+      }
+      return null
+    } catch (e: any) {
+      error.value = e?.message ?? '获取统计失败'
+      console.error('[domain-learning] 拉取统计失败:', e)
+      return null
+    }
+  }
+
+  /** 讲义合集导出（dl:export-lesson-digest；返回 md 载荷，失败 → null） */
+  async function exportLessonDigestOf(id: string): Promise<DlLessonDigest | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.exportLessonDigest(id)
+      return r?.success && r.data ? r.data : null
+    } catch (e: any) {
+      error.value = e?.message ?? '导出讲义失败'
+      console.error('[domain-learning] 导出讲义失败:', e)
+      return null
+    }
+  }
 
   /** 读空间复习配置（dl:get-space-review） */
   async function reviewSettingsOf(id: string): Promise<DlReviewSettings | null> {
@@ -583,6 +622,10 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     fetchReviewDue,
     needReviewOf,
     reviewDoneOf,
+    // 统计与导出
+    spaceStats,
+    fetchSpaceStats,
+    exportLessonDigestOf,
     // 掌握度反馈
     ackMastered,
     ackConfused,

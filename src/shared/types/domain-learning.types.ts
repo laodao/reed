@@ -330,6 +330,30 @@ export interface DlReviewDueItem {
   overdueMs: number
 }
 
+// ==================== 统计与导出（M3-C） ====================
+
+/** dl:get-space-stats 载荷（学习进度快照聚合） */
+export interface DlSpaceStats {
+  spaceId: string
+  name: string
+  updatedAt: string | null
+  concepts: { total: number; groups: number; mastered: number; learning: number; review: number; untouched: number }
+  research: Record<string, number>
+  cards: { published: number; draft: number }
+  relations: { total: number; prerequisite: number; verified: number }
+  questions: { total: number; open: number; answered: number }
+  /** 当前复习到期条数（review_settings 启用时按规则计，否则 0） */
+  reviewDueCount: number
+}
+
+/** dl:export-lesson-digest 载荷（讲义合集 md） */
+export interface DlLessonDigest {
+  markdown: string
+  filename: string
+  /** 收录概念数 */
+  count: number
+}
+
 // ==================== Atlas 增强视图（M2-E，按画像启用） ====================
 
 /** Atlas 增强视图种类（图谱之外的可视化形态） */

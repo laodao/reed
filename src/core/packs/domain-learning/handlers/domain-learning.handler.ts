@@ -122,6 +122,8 @@ export function registerDomainLearningHandlers(): void {
   ipcBridge.handle('dl:get-atlas-views', (_e, p: { id: string }) => wrap(() => services().view.buildAtlasViews(p.id)))
   ipcBridge.handle('dl:get-node-profile', (_e, p: { id: string; nodeId: string }) =>
     wrap(() => services().view.buildNodeProfile(p.id, p.nodeId)))
+  ipcBridge.handle('dl:get-space-stats', (_e, p: { id: string }) => wrap(() => services().view.buildSpaceStats(p.id)))
+  ipcBridge.handle('dl:export-lesson-digest', (_e, p: { id: string }) => wrap(() => services().view.buildLessonDigest(p.id)))
 
   // ---- 图谱/掌握度 ----
   ipcBridge.handle('dl:pick-next', (_e, p: { id: string }) => wrap(() => services().graph.pickNextToLearn(p.id)))
