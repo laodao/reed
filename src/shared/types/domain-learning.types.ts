@@ -301,3 +301,106 @@ export const DEFAULT_DL_PACE_SETTINGS: DlPaceSettings = {
   autoResearchConcepts: true,
   autoResolveOpenQuestions: true,
 }
+
+// ==================== Atlas 增强视图（M2-E，按画像启用） ====================
+
+/** Atlas 增强视图种类（图谱之外的可视化形态） */
+export type DlAtlasViewKind = 'timeline' | 'flow' | 'matrix' | 'layers'
+
+/** 时间线条目（依 attrs 时间类字段派生） */
+export interface DlTimelineViewItem {
+  id: string
+  name: string
+  nodeType: string
+  /** 所属 group（无则空） */
+  group: string | null
+  /** 展示用时间文本（原样/提取的年份） */
+  dateText: string
+  /** 数值年份（可空：无法解析时按 dateText 排序靠后） */
+  year: number | null
+  desc: string | null
+  attrs: Record<string, unknown> | null
+}
+
+export interface DlTimelineView {
+  items: DlTimelineViewItem[]
+}
+
+/** 流程阶段（prerequisite 链按层分组：同层概念可并行学） */
+export interface DlFlowStage {
+  /** 层序（0 起 = 无前置的源头） */
+  order: number
+  conceptIds: string[]
+}
+
+export interface DlFlowView {
+  stages: DlFlowStage[]
+  /** 流程内源头/终点概念（供前端标注） */
+  sourceIds: string[]
+  sinkIds: string[]
+}
+
+/** 矩阵单元格 = 某 nodeType × 某 relationType 的边计数（双向合计） */
+export interface DlMatrixView {
+  nodeTypes: string[]
+  relationTypes: string[]
+  /** 行 = nodeType；列值经 cell(nodeType, relationType) 取 */
+  cells: Record<string, Record<string, number>>
+}
+
+/** 三层结构：目录(group)/概念/概念附件（讲义=卡片 + 著作） */
+export interface DlLayersConcept {
+  id: string
+  name: string
+  nodeType: string
+  hasCard: boolean
+  worksCount: number
+}
+
+export interface DlLayersGroup {
+  /** 目录节点 id（null = 根层概念，无目录归属） */
+  groupId: string | null
+  groupName: string | null
+  concepts: DlLayersConcept[]
+}
+
+export interface DlLayersView {
+  groups: DlLayersGroup[]
+}
+
+/** dl:get-atlas-views 载荷：可启用/数据可用 + 各增强视图派生数据 */
+export interface DlAtlasViews {
+  spaceId: string
+  /** 数据上能派生出的视图 */
+  available: DlAtlasViewKind[]
+  /** 画像侧重 → 实际启用（available ∩ 侧重；无侧重则取 available） */
+  enabled: DlAtlasViewKind[]
+  timeline: DlTimelineView | null
+  flow: DlFlowView | null
+  matrix: DlMatrixView | null
+  layers: DlLayersView | null
+}
+
+/** 画像侧重词 → 视图种类（宽容映射；加别名只影响是否显式启用） */
+export const DL_EMPHASIS_VIEW_ALIASES: Record<DlAtlasViewKind, string[]> = {
+  timeline: ['时间线', '时间', '时序', '沿革', '大事记', '历史脉络'],
+  flow: ['流程', '步骤', '工序', '操作', '推导链', '证明链', '学习顺序'],
+  matrix: ['矩阵', '对比', '比较', '对照', '关系矩阵'],
+  layers: ['三层结构', '层级', '结构', '体系', '目录'],
+}
+
+/** 画像预设（建空间/画像配置用；emphasis 用上面别名能识别的展示词） */
+export interface DlProfilePreset {
+  id: string
+  kindLabel: string
+  nature: string
+  emphasis: string[]
+}
+
+export const DL_PROFILE_PRESETS: DlProfilePreset[] = [
+  { id: 'theory', kindLabel: '理论体系', nature: '概念—命题—推演层层递进，重视结构与证明链', emphasis: ['流程', '三层结构'] },
+  { id: 'regulation', kindLabel: '法规标准', nature: '条款解读、效力层级与施行时间线', emphasis: ['时间线', '三层结构'] },
+  { id: 'practice', kindLabel: '实践技能', nature: '方法步骤、操作流程与工具案例', emphasis: ['流程', '矩阵'] },
+  { id: 'frontier', kindLabel: '前沿研究', nature: '论文脉络、方法流派对比与开放问题', emphasis: ['时间线', '矩阵'] },
+  { id: 'custom', kindLabel: '自定义领域', nature: '按自己侧重勾选要启用的图谱视图', emphasis: [] },
+]

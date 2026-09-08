@@ -14,6 +14,68 @@
       </div>
       <div class="atlas-actions">
         <el-button plain :icon="Share" @click="resetFocus">全图</el-button>
+        <el-popover v-model:visible="settingsVisible" placement="bottom-end" width="400" trigger="click">
+          <template #reference>
+            <el-button plain :icon="Setting">空间设置</el-button>
+          </template>
+          <div class="settings-body">
+            <div class="set-block">
+              <div class="set-title">领域画像（侧重 → Atlas 增强视图）</div>
+              <div class="set-row">
+                <span class="set-label">画像预设</span>
+                <el-select v-model="draft.presetId" size="small" style="width: 220px" @change="fillDraftFromPreset">
+                  <el-option v-for="p in DL_PROFILE_PRESETS" :key="p.id" :label="p.kindLabel" :value="p.id" />
+                </el-select>
+              </div>
+              <div class="set-row">
+                <span class="set-label">类型标签</span>
+                <el-input v-model="draft.kindLabel" size="small" style="width: 220px" />
+              </div>
+              <div class="set-row">
+                <span class="set-label">领域特质</span>
+                <el-input v-model="draft.nature" type="textarea" :rows="2" size="small" style="width: 220px" />
+              </div>
+              <div class="set-row">
+                <span class="set-label">侧重视图</span>
+                <span
+                  v-for="em in EMPHASIS_OPTIONS"
+                  :key="em"
+                  class="em-chip"
+                  :class="{ on: draft.emphasis.includes(em) }"
+                  @click="toggleEmphasis(em)"
+                >{{ em }}</span>
+              </div>
+              <div class="set-actions">
+                <el-button size="small" type="primary" @click="applyProfile">应用画像</el-button>
+              </div>
+            </div>
+            <div class="set-block">
+              <div class="set-title">自动推进（周期研究 · M2-C）</div>
+              <div class="set-row">
+                <span class="set-label">启用</span>
+                <el-switch v-model="paceDraft.enabled" size="small" />
+              </div>
+              <div class="set-row">
+                <span class="set-label">周期（分钟）</span>
+                <el-input-number v-model="paceDraft.intervalMin" :min="5" :max="1440" :step="5" size="small" style="width: 140px" />
+              </div>
+              <div class="set-row">
+                <span class="set-label">自动研究无卡概念</span>
+                <el-switch v-model="paceDraft.autoResearchConcepts" size="small" />
+              </div>
+              <div class="set-row">
+                <span class="set-label">自动开子研究（未解问题）</span>
+                <el-switch v-model="paceDraft.autoResolveOpenQuestions" size="small" />
+              </div>
+              <div class="set-actions">
+                <el-button size="small" type="primary" @click="applyPace">保存自动推进</el-button>
+                <span class="pace-state" v-if="schedulerState">
+                  {{ schedulerState.mode === 'web' ? '（Web 端不支持周期任务）' : schedulerState.running ? `调度运行中 · 在途 ${schedulerState.runningCount}` : '调度未运行' }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </el-popover>
         <el-button type="primary" :icon="Back" @click="goBackToSpace">回到讲义空间</el-button>
       </div>
     </div>
@@ -73,22 +135,39 @@
         </div>
       </aside>
 
-      <!-- 中：主图（AtlasGraph：dl:get-atlas-graph 节点/边） -->
+      <!-- 中：主图（图谱 / 按画像启用的增强视图） -->
       <section class="pane pane-graph">
-        <!-- 面包屑：全局 > 子图谱（聚焦节点） -->
-        <div v-if="focusNode" class="crumb-bar">
+        <div class="view-switch">
+          <span
+            v-for="v in viewTabs"
+            :key="v.kind"
+            class="view-chip"
+            :class="{ on: viewMode === v.kind }"
+            @click="viewMode = v.kind"
+          >{{ v.label }}</span>
+        </div>
+        <!-- 面包屑：全局 > 子图谱（聚焦节点；仅图谱模式显示） -->
+        <div v-if="viewMode === 'graph' && focusNode" class="crumb-bar">
           <span class="crumb-root" @click="resetFocus">全领域</span>
           <el-icon><ArrowRight /></el-icon>
           <span class="crumb-now">{{ focusNode.name }}</span>
           <span class="crumb-tip">· 子图谱（{{ focusNode.name }} 与其直接关联）</span>
         </div>
         <AtlasGraph
+          v-if="viewMode === 'graph'"
           :nodes="graph?.nodes ?? []"
           :edges="graph?.edges ?? []"
           :focus-id="focusId"
           @select="onSelect"
           @dblclick="onDrill"
         />
+        <AtlasEnhancedViews
+          v-else-if="atlasViews"
+          :views="atlasViews"
+          :kind="viewMode"
+          @open-concept="onOpenConceptFromViews"
+        />
+        <div v-else class="graph-empty"><el-icon><Share /></el-icon><p>暂无图谱数据</p></div>
       </section>
 
       <!-- 右：节点档案（dl:get-node-profile） -->
@@ -168,7 +247,7 @@
  *              单击选中聚焦一阶邻居；双击/"聚焦局部图谱"进入局部图（面包屑可回退）；
  *              「去学它」回到讲义空间并定位该概念。
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowLeft,
@@ -182,21 +261,40 @@ import {
   Loading,
   Mouse,
   Reading,
+  Setting,
   Share,
 } from '@element-plus/icons-vue'
 import { useTabsStore } from '@/stores/tabs'
 import { useDomainLearningStore } from '@/stores/domain-learning'
 import { nodeTypeMeta, relLabel } from './domain-learning-ui'
 import AtlasGraph from './AtlasGraph.vue'
+import AtlasEnhancedViews from './AtlasEnhancedViews.vue'
 import type {
   DlAtlasGraph,
   DlAtlasNode,
+  DlAtlasViewKind,
   DlConceptView,
   DlNodeProfile,
+  DlPaceSettings,
   DlProfileView,
   DlRelationType,
   DlTreeNode,
 } from '@shared/types/domain-learning.types'
+import {
+  DEFAULT_DL_PACE_SETTINGS,
+  DL_PROFILE_PRESETS,
+} from '@shared/types/domain-learning.types'
+
+/** 增强视图种类 → 中文标签（图谱模式另加） */
+const VIEW_KIND_LABELS: Record<DlAtlasViewKind, string> = {
+  timeline: '时间线',
+  flow: '流程',
+  matrix: '矩阵',
+  layers: '三层结构',
+}
+
+/** 画像侧重视图选项（与 DL_PROFILE_PRESETS.emphasis 词汇一致） */
+const EMPHASIS_OPTIONS = ['时间线', '流程', '矩阵', '三层结构'] as const
 
 const route = useRoute()
 const router = useRouter()
@@ -235,6 +333,98 @@ const legendTypes = computed<string[]>(() => {
   }
   return seen
 })
+
+// ==================== Atlas 增强视图（M2-E：按画像侧重启用） ====================
+
+type ViewMode = 'graph' | DlAtlasViewKind
+const viewMode = ref<ViewMode>('graph')
+
+/** 增强视图载荷（dl:get-atlas-views） */
+const atlasViews = computed(() => store.currentAtlasViews)
+
+/** 中部视图切换条：图谱 + enabled 的增强视图 */
+const viewTabs = computed<Array<{ kind: ViewMode; label: string }>>(() => {
+  const tabs: Array<{ kind: ViewMode; label: string }> = [{ kind: 'graph', label: '图谱' }]
+  for (const k of atlasViews.value?.enabled ?? []) {
+    tabs.push({ kind: k, label: VIEW_KIND_LABELS[k] })
+  }
+  return tabs
+})
+
+/** 增强视图点概念：回全图 + 右栏档案（视图本身不切走） */
+function onOpenConceptFromViews(id: string): void {
+  focusId.value = null
+  void selectNode(id)
+}
+
+// ==================== 空间设置（画像 / 自动推进） ====================
+
+const settingsVisible = ref(false)
+const schedulerState = ref<{ mode: string; running: boolean; runningCount: number } | null>(null)
+const draft = reactive({
+  presetId: 'custom',
+  kindLabel: '自定义领域',
+  nature: '',
+  emphasis: ['流程', '三层结构'] as string[],
+})
+const paceDraft = ref<DlPaceSettings>({ ...DEFAULT_DL_PACE_SETTINGS })
+
+function fillDraftFromPreset(presetId: string): void {
+  const preset = DL_PROFILE_PRESETS.find((p) => p.id === presetId) ?? DL_PROFILE_PRESETS[DL_PROFILE_PRESETS.length - 1]
+  draft.presetId = preset.id
+  draft.kindLabel = preset.kindLabel
+  draft.nature = preset.nature
+  draft.emphasis = [...preset.emphasis]
+}
+
+watch(settingsVisible, async (v) => {
+  if (!v) return
+  const id = spaceId.value
+  // 画像草稿：当前空间画像为准（无 → 自定义空模板）
+  const cur = spaceProfile.value
+  fillDraftFromPreset(cur?.id ?? 'custom')
+  if (cur && !cur.custom) {
+    // 预设空间：保持展示词可再调
+    draft.kindLabel = cur.kindLabel || draft.kindLabel
+    draft.nature = cur.nature || draft.nature
+    if (cur.emphasis.length) draft.emphasis = [...cur.emphasis]
+  }
+  paceDraft.value = { ...DEFAULT_DL_PACE_SETTINGS, ...((await store.paceOf(id)) ?? {}) }
+  const st = await (window as any).electronAPI?.domainLearning?.schedulerState?.()
+  schedulerState.value = st?.data ?? null
+})
+
+function toggleEmphasis(word: string): void {
+  const i = draft.emphasis.indexOf(word)
+  if (i >= 0) draft.emphasis.splice(i, 1)
+  else draft.emphasis.push(word)
+}
+
+async function applyProfile(): Promise<void> {
+  const profile = { kindLabel: draft.kindLabel, nature: draft.nature, emphasis: [...draft.emphasis] }
+  const ok = await store.saveSpaceProfile({
+    id: spaceId.value,
+    profileId: draft.presetId === 'custom' ? null : draft.presetId,
+    profile,
+  })
+  if (ok) {
+    await store.fetchAtlasViews(spaceId.value)
+    settingsVisible.value = false
+  }
+}
+
+async function applyPace(): Promise<void> {
+  const saved = await store.savePaceOf(spaceId.value, {
+    enabled: paceDraft.value.enabled,
+    intervalMin: Math.max(1, Math.round(paceDraft.value.intervalMin)),
+    autoResearchConcepts: paceDraft.value.autoResearchConcepts,
+    autoResolveOpenQuestions: paceDraft.value.autoResolveOpenQuestions,
+  })
+  if (saved) {
+    const st = await (window as any).electronAPI?.domainLearning?.schedulerState?.()
+    schedulerState.value = st?.data ?? null
+  }
+}
 
 /** 左栏结构索引（空间视图大纲树扁平化：群组行 + 概念叶行） */
 interface TreeRow {
@@ -357,6 +547,8 @@ async function loadAtlas(): Promise<void> {
     await store.fetchSpaceView(id)
     // 图谱节点/边
     graph.value = await store.fetchAtlasGraph(id)
+    // Atlas 增强视图（时间线/流程/矩阵/三层）
+    await store.fetchAtlasViews(id)
   } finally {
     loading.value = false
   }
@@ -367,6 +559,7 @@ watch(
   () => {
     selectedId.value = null
     focusId.value = null
+    viewMode.value = 'graph'
     nodeProfile.value = null
     void loadAtlas()
   }
@@ -754,5 +947,103 @@ onMounted(() => {
 .p-actions {
   display: flex;
   gap: 8px;
+}
+
+// ==================== 增强视图切换与空间设置（M2-E） ====================
+
+.view-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px 4px;
+  flex-wrap: wrap;
+
+  .view-chip {
+    padding: 3px 12px;
+    font-size: 12px;
+    border-radius: 12px;
+    border: 1px solid var(--el-border-color-lighter);
+    color: var(--el-text-color-regular);
+    cursor: pointer;
+    transition: all 0.15s;
+    &:hover {
+      border-color: var(--el-color-primary-light-5);
+      color: var(--el-color-primary);
+    }
+    &.on {
+      background: var(--el-color-primary);
+      border-color: var(--el-color-primary);
+      color: #fff;
+    }
+  }
+}
+
+.settings-body {
+  .set-block {
+    padding: 6px 0 10px;
+    + .set-block {
+      border-top: 1px dashed var(--el-border-color-lighter);
+    }
+  }
+  .set-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+    margin-bottom: 8px;
+  }
+  .set-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    .set-label {
+      width: 120px;
+      flex-shrink: 0;
+      font-size: 12px;
+      color: var(--el-text-color-regular);
+    }
+  }
+  .set-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+    .pace-state {
+      font-size: 11px;
+      color: var(--el-text-color-placeholder);
+    }
+  }
+  .em-chip {
+    display: inline-block;
+    padding: 2px 10px;
+    font-size: 12px;
+    border-radius: 10px;
+    border: 1px solid var(--el-border-color-lighter);
+    cursor: pointer;
+    margin-right: 6px;
+    &.on {
+      background: var(--el-color-success);
+      border-color: var(--el-color-success);
+      color: #fff;
+    }
+  }
+}
+
+.graph-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--el-text-color-placeholder);
+  .el-icon {
+    font-size: 32px;
+    opacity: 0.5;
+  }
+  p {
+    margin: 0;
+    font-size: 14px;
+  }
 }
 </style>

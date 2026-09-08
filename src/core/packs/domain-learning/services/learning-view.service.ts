@@ -17,8 +17,14 @@ import type {
   DlNodeProfile,
   DlAtlasGraph,
   DlAtlasNode,
+  DlAtlasViews,
   DlRelationType,
 } from '@shared/types/domain-learning.types'
+import {
+  buildAtlasViews as deriveAtlasViews,
+  type AtlasViewInputConcept,
+  type AtlasViewInputRelation,
+} from '../rules/learning-atlas-views'
 
 export class LearningViewService {
   constructor(private readonly db: ICoreDatabaseManager) {}
@@ -168,9 +174,51 @@ export class LearningViewService {
     return { spaceId, nodes, edges }
   }
 
+  /** Atlas 增强视图聚合（M2-E：按画像侧重启用；派生规则见 rules/learning-atlas-views） */
+  async buildAtlasViews(spaceId: string): Promise<DlAtlasViews | null> {
+    const project = await this.db.dlProjects?.getById(spaceId)
+    if (!project) return null
+    const [concepts, relations] = await Promise.all([
+      this.db.dlConcepts!.listByProject(spaceId),
+      this.db.dlRelations!.listByProject(spaceId),
+    ])
+
+    const inputConcepts: AtlasViewInputConcept[] = []
+    for (const c of concepts) {
+      let card: AtlasViewInputConcept['card'] = null
+      if (c.nodeType !== 'group') {
+        const row = c.cardId
+          ? await this.db.dlCards?.getById(c.cardId)
+          : await this.db.dlCards?.getCurrentByConcept(spaceId, c.id)
+        if (row) {
+          card = { version: row.version, status: row.status, worksCount: row.works?.length ?? 0 }
+        }
+      }
+      inputConcepts.push({
+        id: c.id,
+        name: c.name,
+        nodeType: c.nodeType,
+        parentId: c.parentId,
+        mastery: c.mastery,
+        desc: c.definitionShort,
+        attrs: c.attrs,
+        card,
+      })
+    }
+    const inputRelations: AtlasViewInputRelation[] = relations.map((r) => ({
+      source: r.sourceId,
+      target: r.targetId,
+      relationType: r.relationType,
+      verified: r.verified,
+    }))
+
+    const views = deriveAtlasViews({ concepts: inputConcepts, relations: inputRelations, profile: project.profile })
+    views.spaceId = spaceId
+    return views
+  }
+
   /** 节点档案（Atlas 右栏 / 概念详情）：关联内容 + 直接关系 */
-  async buildNodeProfile(spaceId: string, nodeId: string): Promise<DlNodeProfile | null> {
-    const [conceptRows, relationRows, project] = await Promise.all([
+  async buildNodeProfile(spaceId: string, nodeId: string): Promise<DlNodeProfile | null> {    const [conceptRows, relationRows, project] = await Promise.all([
       this.db.dlConcepts!.listByProject(spaceId),
       this.db.dlRelations!.listByProject(spaceId),
       this.db.dlProjects?.getById(spaceId),

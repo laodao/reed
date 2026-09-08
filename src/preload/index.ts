@@ -1336,6 +1336,10 @@ const electronAPI = {
       pace: { enabled: boolean; intervalMin: number; autoResearchConcepts: boolean; autoResolveOpenQuestions: boolean }
     }) => ipcRenderer.invoke('dl:set-space-pace', p),
     schedulerState: () => ipcRenderer.invoke('dl:scheduler-state'),
+    // Atlas 增强视图与画像（M2-E）
+    getAtlasViews: (id: string) => ipcRenderer.invoke('dl:get-atlas-views', { id }),
+    setSpaceProfile: (p: { id: string; profileId?: string | null; profile?: Record<string, unknown> | null }) =>
+      ipcRenderer.invoke('dl:set-space-profile', p),
     // 订阅 agent 动作事件（通道 dl:agent:<spaceId>[:<conceptId>]；返回取消订阅函数）
     onAgentEvent: (
       spaceId: string,

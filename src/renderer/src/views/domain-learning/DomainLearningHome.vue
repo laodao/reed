@@ -76,6 +76,28 @@
             placeholder="你希望这个主题覆盖什么 / 为什么学它（展示在列表卡片上）"
           />
         </el-form-item>
+        <el-form-item label="领域画像">
+          <el-select v-model="createProfile.presetId" style="width: 100%" @change="applyPreset">
+            <el-option v-for="p in DL_PROFILE_PRESETS" :key="p.id" :label="`${p.kindLabel} — ${p.nature}`" :value="p.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="类型标签">
+          <el-input v-model="createProfile.kindLabel" placeholder="如：理论体系 / 法规标准 / 前沿研究……" maxlength="24" />
+        </el-form-item>
+        <el-form-item label="领域特质">
+          <el-input v-model="createProfile.nature" placeholder="一句话描述领域侧重（用于图谱侧重条）" />
+        </el-form-item>
+        <el-form-item label="侧重视图">
+          <div class="emphasis-picker">
+            <span
+              v-for="em in EMPHASIS_OPTIONS"
+              :key="em"
+              class="em-chip"
+              :class="{ on: createProfile.emphasis.includes(em) }"
+              @click="toggleEmphasis(em)"
+            >{{ em }}</span>
+          </div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="createVisible = false">取消</el-button>
@@ -99,12 +121,16 @@ import { useRouter } from 'vue-router'
 import { Reading, Plus, ArrowRight } from '@element-plus/icons-vue'
 import { useDomainLearningStore } from '@/stores/domain-learning'
 import type { DlProjectStatus } from '@shared/types/domain-learning.types'
+import { DL_PROFILE_PRESETS } from '@shared/types/domain-learning.types'
 
 const router = useRouter()
 const store = useDomainLearningStore()
 
 /** 学习目标档位（dl_goal 枚举：入门 / 工作应用 / 前沿） */
 const GOAL_OPTIONS = ['入门', '工作应用', '前沿'] as const
+
+/** 画像侧重视图选项（建空间 M2-E；与 preset.emphasis 词汇一致） */
+const EMPHASIS_OPTIONS = ['时间线', '流程', '矩阵', '三层结构'] as const
 
 /** 空间状态展示文案 */
 const STATUS_LABELS: Record<DlProjectStatus, string> = {
@@ -125,10 +151,33 @@ const createForm = reactive<{ name: string; goal: string; tagline: string }>({
   tagline: '',
 })
 
+/** 建空间画像草稿（M2-E：预设 + 自定义字段 + 侧重视图 chips） */
+const createProfile = reactive<{ presetId: string; kindLabel: string; nature: string; emphasis: string[] }>({
+  presetId: 'custom',
+  kindLabel: '自定义领域',
+  nature: '',
+  emphasis: [],
+})
+
+function applyPreset(presetId: string): void {
+  const preset = DL_PROFILE_PRESETS.find((p) => p.id === presetId) ?? DL_PROFILE_PRESETS[DL_PROFILE_PRESETS.length - 1]
+  createProfile.presetId = preset.id
+  createProfile.kindLabel = preset.kindLabel
+  createProfile.nature = preset.nature
+  createProfile.emphasis = [...preset.emphasis]
+}
+
+function toggleEmphasis(word: string): void {
+  const i = createProfile.emphasis.indexOf(word)
+  if (i >= 0) createProfile.emphasis.splice(i, 1)
+  else createProfile.emphasis.push(word)
+}
+
 function openCreate(): void {
   createForm.name = ''
   createForm.goal = '入门'
   createForm.tagline = ''
+  applyPreset('custom')
   createVisible.value = true
 }
 
@@ -143,6 +192,12 @@ async function submitCreate(): Promise<void> {
       goal: createForm.goal,
       tagline: createForm.tagline.trim(),
       description: createForm.tagline.trim(),
+      profileId: createProfile.presetId === 'custom' ? undefined : createProfile.presetId,
+      profile: {
+        kindLabel: createProfile.kindLabel,
+        nature: createProfile.nature,
+        emphasis: [...createProfile.emphasis],
+      },
     })
     if (id) {
       createVisible.value = false
@@ -302,5 +357,28 @@ onMounted(() => {
 
 .goal-select {
   width: 100%;
+}
+
+.emphasis-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+
+  .em-chip {
+    padding: 2px 10px;
+    font-size: 12px;
+    border-radius: 10px;
+    border: 1px solid var(--el-border-color-lighter);
+    color: var(--el-text-color-regular);
+    cursor: pointer;
+    &:hover {
+      border-color: var(--el-color-primary-light-5);
+    }
+    &.on {
+      background: var(--el-color-success);
+      border-color: var(--el-color-success);
+      color: #fff;
+    }
+  }
 }
 </style>

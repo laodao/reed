@@ -13,6 +13,7 @@ import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import type {
   DlAtlasGraph,
+  DlAtlasViews,
   DlNodeProfile,
   DlPaceSettings,
   DlSpaceSummary,
@@ -28,13 +29,14 @@ interface IpcLike<T = unknown> {
   error?: string
 }
 
-/** 新建空间入参（对齐 dl:create-space） */
+/** 新建空间入参（对齐 dl:create-space；M2-E：可带预设 id 与自定义画像 JSON） */
 export interface DlCreateSpaceInput {
   name: string
   goal: string
   tagline?: string
   description?: string
   profileId?: string
+  profile?: Record<string, unknown> | null
 }
 
 /** dl agent 动作事件（通道 dl:agent:<spaceId>[:<conceptId>]；契约对齐后端 dl-agent.types） */
@@ -93,6 +95,8 @@ interface DomainLearningApi {
   agentBusy(p: { mode: 'research' | 'tutor'; spaceId: string; conceptId?: string | null }): Promise<IpcLike<boolean>>
   getSpacePace(id: string): Promise<IpcLike<DlPaceSettings>>
   setSpacePace(p: { id: string; pace: DlPaceSettings }): Promise<IpcLike<DlPaceSettings>>
+  getAtlasViews(id: string): Promise<IpcLike<DlAtlasViews | null>>
+  setSpaceProfile(p: { id: string; profileId?: string | null; profile?: Record<string, unknown> | null }): Promise<IpcLike<{ ok: boolean }>>
   schedulerState(): Promise<IpcLike<{ mode: 'desktop' | 'web'; running: boolean; runningCount: number }>>
   onAgentEvent(spaceId: string, conceptId: string | null | undefined, cb: (event: DlAgentUiEvent) => void): () => void
   onStream(eventId: string, cb: (event: DlGenerateUiEvent) => void): () => void
@@ -244,6 +248,83 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     }
   }
 
+  // ==================== Atlas 增强视图 / 空间设置（M2-E） ====================
+
+  /** 当前空间增强视图载荷（dl:get-atlas-views） */
+  const currentAtlasViews = ref<DlAtlasViews | null>(null)
+
+  /** 拉取增强视图（时间线/流程/矩阵/三层；写回 currentAtlasViews，失败 → null） */
+  async function fetchAtlasViews(id: string): Promise<DlAtlasViews | null> {
+    const a = api()
+    if (!a) return null
+    error.value = null
+    try {
+      const r = await a.getAtlasViews(id)
+      if (r?.success && r.data) {
+        currentAtlasViews.value = r.data
+        return r.data
+      }
+      currentAtlasViews.value = null
+      error.value = r?.error ?? '获取图谱增强视图失败'
+      return null
+    } catch (e: any) {
+      currentAtlasViews.value = null
+      error.value = e?.message ?? '获取图谱增强视图失败'
+      console.error('[domain-learning] 拉取增强视图失败:', e)
+      return null
+    }
+  }
+
+  /** 保存空间画像（预设 id + 自定义 JSON；成功后刷新空间视图以更新标签/侧重） */
+  async function saveSpaceProfile(p: {
+    id: string
+    profileId?: string | null
+    profile?: Record<string, unknown> | null
+  }): Promise<boolean> {
+    const a = api()
+    if (!a) return false
+    error.value = null
+    try {
+      const r = await a.setSpaceProfile(p)
+      if (r?.success) {
+        await fetchSpaceView(p.id)
+        return true
+      }
+      error.value = r?.error ?? '保存画像失败'
+      return false
+    } catch (e: any) {
+      error.value = e?.message ?? '保存画像失败'
+      console.error('[domain-learning] 保存画像失败:', e)
+      return false
+    }
+  }
+
+  /** 读取空间周期推进配置（dl:get-space-pace；失败 → null） */
+  async function paceOf(id: string): Promise<DlPaceSettings | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.getSpacePace(id)
+      return r?.success && r.data ? r.data : null
+    } catch {
+      return null
+    }
+  }
+
+  /** 保存空间周期推进配置（dl:set-space-pace；返回保存值，失败 → null） */
+  async function savePaceOf(id: string, pace: DlPaceSettings): Promise<DlPaceSettings | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.setSpacePace({ id, pace })
+      return r?.success && r.data ? r.data : null
+    } catch (e: any) {
+      error.value = e?.message ?? '保存自动推进失败'
+      console.error('[domain-learning] 保存自动推进失败:', e)
+      return null
+    }
+  }
+
   // ==================== 掌握度反馈 ====================
 
   /** 标记「懂了」（mastered）；成功后由调用方自行刷新视图 */
@@ -381,6 +462,7 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     // 状态
     spaces,
     currentSpaceView,
+    currentAtlasViews,
     loadingSpaces,
     loadingView,
     error,
@@ -393,6 +475,11 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     // Atlas
     fetchAtlasGraph,
     fetchNodeProfile,
+    fetchAtlasViews,
+    // 空间设置
+    saveSpaceProfile,
+    paceOf,
+    savePaceOf,
     // 掌握度反馈
     ackMastered,
     ackConfused,

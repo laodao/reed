@@ -95,7 +95,7 @@ function services(): DlServiceBundle {
 export function registerDomainLearningHandlers(): void {
   // ---- 空间 CRUD ----
   ipcBridge.handle('dl:list-spaces', () => wrap(() => services().projects.listSpaces()))
-  ipcBridge.handle('dl:create-space', (_e, p: { name: string; goal: string; tagline?: string; description?: string; profileId?: string }) =>
+  ipcBridge.handle('dl:create-space', (_e, p: { name: string; goal: string; tagline?: string; description?: string; profileId?: string; profile?: Record<string, unknown> | null }) =>
     wrap(async () => {
       const id = await services().projects.createSpace(p)
       return { id }
@@ -107,9 +107,18 @@ export function registerDomainLearningHandlers(): void {
       return { ok: true }
     }))
 
+  // ---- 空间画像（M2-E：建空间带 profile 之外，可对已建空间改画像/侧重） ----
+  ipcBridge.handle('dl:set-space-profile', (_e, p: { id: string; profileId?: string | null; profile?: Record<string, unknown> | null }) =>
+    wrap(async () => {
+      const db = getCoreDatabaseManager()
+      await db.dlProjects!.patch(p.id, { profileId: p.profileId ?? null, profile: p.profile ?? null })
+      return { ok: true }
+    }))
+
   // ---- 空间聚合视图（Home 卡片/Space 三栏/Atlas 图与档案） ----
   ipcBridge.handle('dl:get-space-view', (_e, p: { id: string }) => wrap(() => services().view.buildSpaceView(p.id)))
   ipcBridge.handle('dl:get-atlas-graph', (_e, p: { id: string }) => wrap(() => services().view.buildAtlasGraph(p.id)))
+  ipcBridge.handle('dl:get-atlas-views', (_e, p: { id: string }) => wrap(() => services().view.buildAtlasViews(p.id)))
   ipcBridge.handle('dl:get-node-profile', (_e, p: { id: string; nodeId: string }) =>
     wrap(() => services().view.buildNodeProfile(p.id, p.nodeId)))
 
