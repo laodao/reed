@@ -54,6 +54,10 @@ export class DlProjectEntity {
   @Column({ name: 'pace_settings', type: 'text', nullable: true })
   paceSettings!: string | null
 
+  /** 间隔复习配置 JSON（DlReviewSettings；M3-B；可空 = 默认关闭） */
+  @Column({ name: 'review_settings', type: 'text', nullable: true })
+  reviewSettings!: string | null
+
   @Column({ name: 'created_at', type: 'datetime', nullable: true })
   createdAt!: Date | null
 

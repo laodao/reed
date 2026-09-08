@@ -29,6 +29,14 @@ export async function createDomainLearningTables(ds: DataSource): Promise<void> 
     'pace_settings',
     isPg ? 'pace_settings text' : 'pace_settings TEXT',
   )
+  // M3-B：review_settings 列
+  await ensureColumn(
+    ds,
+    isPg,
+    'dl_project',
+    'review_settings',
+    isPg ? 'review_settings text' : 'review_settings TEXT',
+  )
 }
 
 // ==================== dl_project ====================
@@ -48,6 +56,7 @@ function ddlProject(pg: boolean): string {
         kb_id         varchar,
         default_model text,
         pace_settings text,
+        review_settings text,
         created_at    timestamp,
         updated_at    timestamp
       )
@@ -66,6 +75,7 @@ function ddlProject(pg: boolean): string {
       kb_id         TEXT,
       default_model TEXT,
       pace_settings TEXT,
+      review_settings TEXT,
       created_at    DATETIME,
       updated_at    DATETIME
     )

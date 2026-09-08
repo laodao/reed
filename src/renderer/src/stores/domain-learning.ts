@@ -16,6 +16,8 @@ import type {
   DlAtlasViews,
   DlNodeProfile,
   DlPaceSettings,
+  DlReviewDueItem,
+  DlReviewSettings,
   DlSpaceSummary,
   DlSpaceView,
 } from '@shared/types/domain-learning.types'
@@ -97,6 +99,11 @@ interface DomainLearningApi {
   setSpacePace(p: { id: string; pace: DlPaceSettings }): Promise<IpcLike<DlPaceSettings>>
   getAtlasViews(id: string): Promise<IpcLike<DlAtlasViews | null>>
   setSpaceProfile(p: { id: string; profileId?: string | null; profile?: Record<string, unknown> | null }): Promise<IpcLike<{ ok: boolean }>>
+  getSpaceReview(id: string): Promise<IpcLike<DlReviewSettings>>
+  setSpaceReview(p: { id: string; review: DlReviewSettings }): Promise<IpcLike<DlReviewSettings>>
+  reviewDue(id: string): Promise<IpcLike<{ settings: DlReviewSettings; items: DlReviewDueItem[] }>>
+  ackNeedReview(p: { id: string; conceptId: string }): Promise<IpcLike<{ ok: boolean }>>
+  reviewDone(p: { id: string; conceptId: string }): Promise<IpcLike<{ ok: boolean }>>
   schedulerState(): Promise<IpcLike<{ mode: 'desktop' | 'web'; running: boolean; runningCount: number }>>
   onAgentEvent(spaceId: string, conceptId: string | null | undefined, cb: (event: DlAgentUiEvent) => void): () => void
   onStream(eventId: string, cb: (event: DlGenerateUiEvent) => void): () => void
@@ -325,6 +332,95 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     }
   }
 
+  // ==================== 间隔复习（M3-B） ====================
+
+  /** 当前空间到期复习载荷（dl:review-due；settings + items） */
+  const reviewDue = ref<{ settings: DlReviewSettings; items: DlReviewDueItem[] } | null>(null)
+
+  /** 读空间复习配置（dl:get-space-review） */
+  async function reviewSettingsOf(id: string): Promise<DlReviewSettings | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.getSpaceReview(id)
+      return r?.success && r.data ? r.data : null
+    } catch {
+      return null
+    }
+  }
+
+  /** 保存空间复习配置并刷新到期队列（dl:set-space-review + dl:review-due） */
+  async function saveReviewSettingsOf(id: string, review: DlReviewSettings): Promise<DlReviewSettings | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.setSpaceReview({ id, review })
+      const saved = r?.success && r.data ? r.data : null
+      if (saved) await fetchReviewDue(id)
+      return saved
+    } catch (e: any) {
+      error.value = e?.message ?? '保存间隔复习失败'
+      console.error('[domain-learning] 保存间隔复习失败:', e)
+      return null
+    }
+  }
+
+  /** 刷新到期复习队列（写 reviewDue，失败 → null） */
+  async function fetchReviewDue(id: string): Promise<{ settings: DlReviewSettings; items: DlReviewDueItem[] } | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.reviewDue(id)
+      if (r?.success && r.data) {
+        reviewDue.value = r.data
+        return r.data
+      }
+      return null
+    } catch (e: any) {
+      error.value = e?.message ?? '获取到期复习失败'
+      console.error('[domain-learning] 拉取到期复习失败:', e)
+      return null
+    }
+  }
+
+  /** 标为需复习（dl:ack-need-review） */
+  async function needReviewOf(id: string, conceptId: string): Promise<boolean> {
+    const a = api()
+    if (!a) return false
+    try {
+      const r = await a.ackNeedReview({ id, conceptId })
+      if (r?.success) {
+        await fetchSpaceView(id)
+        await fetchReviewDue(id)
+        return true
+      }
+      error.value = r?.error ?? '标记需复习失败'
+      return false
+    } catch (e: any) {
+      error.value = e?.message ?? '标记需复习失败'
+      return false
+    }
+  }
+
+  /** 复习完成（dl:review-done；刷新视图与到期队列） */
+  async function reviewDoneOf(id: string, conceptId: string): Promise<boolean> {
+    const a = api()
+    if (!a) return false
+    try {
+      const r = await a.reviewDone({ id, conceptId })
+      if (r?.success) {
+        await fetchSpaceView(id)
+        await fetchReviewDue(id)
+        return true
+      }
+      error.value = r?.error ?? '完成复习失败'
+      return false
+    } catch (e: any) {
+      error.value = e?.message ?? '完成复习失败'
+      return false
+    }
+  }
+
   // ==================== 掌握度反馈 ====================
 
   /** 标记「懂了」（mastered）；成功后由调用方自行刷新视图 */
@@ -480,6 +576,13 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     saveSpaceProfile,
     paceOf,
     savePaceOf,
+    // 间隔复习
+    reviewDue,
+    reviewSettingsOf,
+    saveReviewSettingsOf,
+    fetchReviewDue,
+    needReviewOf,
+    reviewDoneOf,
     // 掌握度反馈
     ackMastered,
     ackConfused,

@@ -288,6 +288,11 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'domainLearning.setSpacePace': { channel: 'dl:set-space-pace' },
   'domainLearning.getAtlasViews': { channel: 'dl:get-atlas-views', wrap: (id) => [{ id }] },
   'domainLearning.setSpaceProfile': { channel: 'dl:set-space-profile' },
+  'domainLearning.getSpaceReview': { channel: 'dl:get-space-review', wrap: (id) => [{ id }] },
+  'domainLearning.setSpaceReview': { channel: 'dl:set-space-review' },
+  'domainLearning.reviewDue': { channel: 'dl:review-due', wrap: (id) => [{ id }] },
+  'domainLearning.ackNeedReview': { channel: 'dl:ack-need-review' },
+  'domainLearning.reviewDone': { channel: 'dl:review-done' },
   'domainLearning.schedulerState': { channel: 'dl:scheduler-state' },
   // domainLearning.onAgentEvent(spaceId, conceptId?, cb) — 后端 emit(`dl:agent:<spaceId>[:<conceptId>]`, event)
   'domainLearning.onAgentEvent': {

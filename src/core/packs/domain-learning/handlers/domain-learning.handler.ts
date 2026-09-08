@@ -20,7 +20,8 @@ import { LearningGraphService } from '../services/learning-graph.service'
 import { LearningViewService } from '../services/learning-view.service'
 import { DlAgentHarnessService } from '../services/dl-agent-harness.service'
 import { DlPaceSchedulerService, normalizePaceSettings } from '../services/dl-pace-scheduler.service'
-import type { DlPaceSettings } from '@shared/types/domain-learning.types'
+import { normalizeDlReviewSettings } from '../rules/learning-review.rules'
+import type { DlPaceSettings, DlReviewSettings } from '@shared/types/domain-learning.types'
 import type { DlAgentMode } from '../services/dl-agent.types'
 
 /** 统一 { success, data, error } 包装 */
@@ -179,5 +180,40 @@ export function registerDomainLearningHandlers(): void {
         running: s.scheduler.isRunning(),
         runningCount: s.scheduler.runningCount(),
       }
+    }))
+
+  // ---- 间隔复习（M3-B：配置/到期队列/标记与完成流转） ----
+  ipcBridge.handle('dl:get-space-review', (_e, p: { id: string }) =>
+    wrap(async () => {
+      const row = await getCoreDatabaseManager().dlProjects!.getById(p.id)
+      if (!row) throw new Error('空间不存在')
+      return normalizeDlReviewSettings(row.review)
+    }))
+  ipcBridge.handle('dl:set-space-review', (_e, p: { id: string; review: DlReviewSettings }) =>
+    wrap(async () => {
+      const saved = normalizeDlReviewSettings(p.review)
+      await getCoreDatabaseManager().dlProjects!.patch(p.id, { review: saved })
+      return saved
+    }))
+  ipcBridge.handle('dl:review-due', (_e, p: { id: string }) =>
+    wrap(async () => {
+      const db = getCoreDatabaseManager()
+      const row = await db.dlProjects!.getById(p.id)
+      if (!row) throw new Error('空间不存在')
+      const settings = normalizeDlReviewSettings(row.review)
+      const items = settings.enabled
+        ? await services().graph.listReviewDue(p.id, { intervalMin: settings.intervalMin, limit: settings.limit })
+        : []
+      return { settings, items }
+    }))
+  ipcBridge.handle('dl:ack-need-review', (_e, p: { id: string; conceptId: string }) =>
+    wrap(async () => {
+      await services().graph.markReview(p.id, p.conceptId)
+      return { ok: true }
+    }))
+  ipcBridge.handle('dl:review-done', (_e, p: { id: string; conceptId: string }) =>
+    wrap(async () => {
+      await services().graph.reviewDone(p.id, p.conceptId)
+      return { ok: true }
     }))
 }

@@ -195,3 +195,51 @@ describe('LearningProjectService', () => {
     })
   })
 })
+
+describe('LearningGraphService 间隔复习（M3-B）', () => {
+  it('listReviewDue：mastered 且逾期才出列；reviewDone 刷新基准并从队列移除', async () => {
+    ds = await buildDs()
+    const pid = await seedSpace('u1', ds)
+    const svc = makeServices(ds)
+    const graph = makeGraph(svc)
+    await runWithUserAsync('u1', async () => {
+      // 直接造：mastered 且最近掌握记录在 2026-01-01（逾 59 天）
+      await svc.concepts.patch('c-attn', { mastery: 'mastered' })
+      await svc.masteryLogs.append({ id: 'log-old', projectId: pid, conceptId: 'c-attn', fromMastery: 'untouched', toMastery: 'mastered', trigger: 'lesson_ack', at: new Date('2026-01-01T00:00:00Z') })
+      // 未掌握的概念不入列
+      await svc.concepts.patch('c-tf', { mastery: 'untouched' })
+
+      const due = await graph.listReviewDue(pid, { intervalMin: 1440, limit: 10, now: new Date('2026-03-01T00:00:00Z') })
+      expect(due.map((d) => d.conceptId)).toEqual(['c-attn'])
+
+      // reviewDone：mastered→mastered + trigger=review 审计（下一次基准刷新）
+      await graph.reviewDone(pid, 'c-attn')
+      const logs = await svc.masteryLogs.listByConcept(pid, 'c-attn')
+      expect(logs[logs.length - 1]).toMatchObject({ fromMastery: 'mastered', toMastery: 'mastered', trigger: 'review' })
+      const dueAfter = await graph.listReviewDue(pid, { intervalMin: 1440, limit: 10, now: new Date('2026-03-01T00:00:00Z') })
+      expect(dueAfter).toHaveLength(0)
+
+      // 非 mastered/review 概念不能完成复习
+      await expect(graph.reviewDone(pid, 'c-tf')).rejects.toThrow(/已掌握\/需复习/)
+    })
+  })
+
+  it('markReview：mastered→review；reviewDone 从 review 收回 mastered', async () => {
+    ds = await buildDs()
+    const pid = await seedSpace('u1', ds)
+    const svc = makeServices(ds)
+    const graph = makeGraph(svc)
+    await runWithUserAsync('u1', async () => {
+      await svc.concepts.patch('c-attn', { mastery: 'mastered' })
+      await graph.markReview(pid, 'c-attn')
+      expect((await svc.concepts.getById('c-attn'))?.mastery).toBe('review')
+      const logs1 = await svc.masteryLogs.listByConcept(pid, 'c-attn')
+      expect(logs1[logs1.length - 1]).toMatchObject({ toMastery: 'review', trigger: 'manual' })
+
+      await graph.reviewDone(pid, 'c-attn')
+      expect((await svc.concepts.getById('c-attn'))?.mastery).toBe('mastered')
+      const logs2 = await svc.masteryLogs.listByConcept(pid, 'c-attn')
+      expect(logs2[logs2.length - 1]).toMatchObject({ fromMastery: 'review', toMastery: 'mastered', trigger: 'review' })
+    })
+  })
+})

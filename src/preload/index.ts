@@ -1340,6 +1340,15 @@ const electronAPI = {
     getAtlasViews: (id: string) => ipcRenderer.invoke('dl:get-atlas-views', { id }),
     setSpaceProfile: (p: { id: string; profileId?: string | null; profile?: Record<string, unknown> | null }) =>
       ipcRenderer.invoke('dl:set-space-profile', p),
+    // 间隔复习（M3-B）
+    getSpaceReview: (id: string) => ipcRenderer.invoke('dl:get-space-review', { id }),
+    setSpaceReview: (p: {
+      id: string
+      review: { enabled: boolean; intervalMin: number; limit: number }
+    }) => ipcRenderer.invoke('dl:set-space-review', p),
+    reviewDue: (id: string) => ipcRenderer.invoke('dl:review-due', { id }),
+    ackNeedReview: (p: { id: string; conceptId: string }) => ipcRenderer.invoke('dl:ack-need-review', p),
+    reviewDone: (p: { id: string; conceptId: string }) => ipcRenderer.invoke('dl:review-done', p),
     // 订阅 agent 动作事件（通道 dl:agent:<spaceId>[:<conceptId>]；返回取消订阅函数）
     onAgentEvent: (
       spaceId: string,

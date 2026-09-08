@@ -36,6 +36,8 @@ export class DlMasteryLogRepository extends BaseRepository<DlMasteryLogEntity, D
     fromMastery: string
     toMastery: string
     trigger: string
+    /** 审计时间（测试/回填可注入；缺省当前时刻） */
+    at?: Date | null
   }): Promise<DlMasteryLogRow> {
     const e = new DlMasteryLogEntity()
     e.id = input.id
@@ -45,7 +47,7 @@ export class DlMasteryLogRepository extends BaseRepository<DlMasteryLogEntity, D
     e.fromMastery = input.fromMastery
     e.toMastery = input.toMastery
     e.trigger = input.trigger
-    e.at = new Date()
+    e.at = input.at ?? new Date()
     await this.scoped.insert(e)
     return this.toDto(e)
   }
@@ -54,6 +56,15 @@ export class DlMasteryLogRepository extends BaseRepository<DlMasteryLogEntity, D
   async listByConcept(projectId: string, conceptId: string): Promise<DlMasteryLogRow[]> {
     const rows = await this.scoped.find({
       where: { projectId, conceptId } as LogWhere,
+      order: { at: 'ASC' },
+    })
+    return this.toDtoList(rows)
+  }
+
+  /** 某项目全部掌握度日志（复习到期/统计用；个人规模全量内存遍历） */
+  async listByProject(projectId: string): Promise<DlMasteryLogRow[]> {
+    const rows = await this.scoped.find({
+      where: { projectId } as LogWhere,
       order: { at: 'ASC' },
     })
     return this.toDtoList(rows)

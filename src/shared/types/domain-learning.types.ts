@@ -302,6 +302,34 @@ export const DEFAULT_DL_PACE_SETTINGS: DlPaceSettings = {
   autoResolveOpenQuestions: true,
 }
 
+/** 间隔复习配置（dl_project.review_settings；M3-B） */
+export interface DlReviewSettings {
+  /** 是否启用间隔复习队列 */
+  enabled: boolean
+  /** 复习间隔（分钟，>=1；默认 1440 = 隔日回访） */
+  intervalMin: number
+  /** 每轮展示条数上限 */
+  limit: number
+}
+
+export const DEFAULT_DL_REVIEW_SETTINGS: DlReviewSettings = {
+  enabled: false,
+  intervalMin: 1440,
+  limit: 10,
+}
+
+/** dl:review-due 载荷（到期候选明细） */
+export interface DlReviewDueItem {
+  conceptId: string
+  name: string
+  /** 当前掌握态（mastered 或 review） */
+  mastery: string
+  /** 最近掌握确认/复习时间（距复习间隔的基准） */
+  lastReviewedAt: string
+  /** 已逾期 ms（>0 = 到期） */
+  overdueMs: number
+}
+
 // ==================== Atlas 增强视图（M2-E，按画像启用） ====================
 
 /** Atlas 增强视图种类（图谱之外的可视化形态） */

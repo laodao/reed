@@ -13,9 +13,11 @@ import {
   prereqsReady,
   shouldSuggestSplit,
 } from '../rules/learning-sequence.rules'
+import { pickReviewCandidates } from '../rules/learning-review.rules'
 import type { DlConceptRepository, DlConceptRow } from '@core/database/repositories/dl-concept.repository'
 import type { DlRelationRepository, DlRelationRow } from '@core/database/repositories/dl-relation.repository'
 import type { DlMasteryLogRepository } from '@core/database/repositories/dl-mastery-log.repository'
+import type { DlReviewDueItem } from '@shared/types/domain-learning.types'
 
 export interface AckConfusedInput {
   reason?: string
@@ -103,6 +105,51 @@ export class LearningGraphService {
         trigger: 'manual',
       })
     }
+  }
+
+  /** 到期复习候选（M3-B）：mastered/review 且逾期；规则见 rules/learning-review.rules */
+  async listReviewDue(
+    projectId: string,
+    opts: { intervalMin: number; limit?: number; now?: Date },
+  ): Promise<DlReviewDueItem[]> {
+    const [all, logs] = await Promise.all([
+      this.concepts.listByProject(projectId),
+      this.masteryLogs.listByProject(projectId),
+    ])
+    const intervalMs = Math.max(1, opts.intervalMin) * 60_000
+    const candidates = pickReviewCandidates(
+      all,
+      logs.map((l) => ({ conceptId: l.conceptId, trigger: l.trigger, toMastery: l.toMastery, at: l.at })),
+      { intervalMs, limit: Math.max(1, opts.limit ?? 10), now: opts.now ?? new Date() },
+    )
+    const byId = new Map(all.map((c) => [c.id, c]))
+    return candidates.map((r) => {
+      const c = byId.get(r.id)!
+      return {
+        conceptId: r.id,
+        name: r.name,
+        mastery: c.mastery,
+        lastReviewedAt: r.lastReviewedAt.toISOString(),
+        overdueMs: r.overdueMs,
+      }
+    })
+  }
+
+  /** 复习完成（M3-B）：mastered/review → mastered；审计 trigger=review（作为下次间隔基准） */
+  async reviewDone(projectId: string, conceptId: string): Promise<void> {
+    const c = await this.mustConcept(projectId, conceptId)
+    if (c.mastery !== 'mastered' && c.mastery !== 'review') {
+      throw new Error('仅「已掌握/需复习」的概念可完成复习——先学习后再标记')
+    }
+    await this.concepts.patch(conceptId, { mastery: 'mastered' })
+    await this.masteryLogs.append({
+      id: randomUUID(),
+      projectId,
+      conceptId,
+      fromMastery: c.mastery,
+      toMastery: 'mastered',
+      trigger: 'review',
+    })
   }
 
   // ==================== 排程 ====================

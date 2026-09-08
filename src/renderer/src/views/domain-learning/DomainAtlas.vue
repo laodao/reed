@@ -74,6 +74,36 @@
                 </span>
               </div>
             </div>
+            <div class="set-block">
+              <div class="set-title">间隔复习（M3-B）</div>
+              <div class="set-row">
+                <span class="set-label">启用复习队列</span>
+                <el-switch v-model="reviewDraft.enabled" size="small" />
+              </div>
+              <div class="set-row">
+                <span class="set-label">复习周期（分钟）</span>
+                <el-input-number v-model="reviewDraft.intervalMin" :min="60" :max="43200" :step="60" size="small" style="width: 140px" />
+              </div>
+              <div class="set-row">
+                <span class="set-label">每轮条数</span>
+                <el-input-number v-model="reviewDraft.limit" :min="1" :max="50" size="small" style="width: 120px" />
+              </div>
+              <div class="set-actions">
+                <el-button size="small" type="primary" @click="applyReviewSettings">保存复习设置</el-button>
+              </div>
+              <div class="review-list" v-if="reviewDueItems.length">
+                <div class="review-head">到期复习（{{ reviewDueItems.length }}）</div>
+                <div v-for="it in reviewDueItems" :key="it.conceptId" class="review-item">
+                  <span class="review-name">{{ it.name }}</span>
+                  <el-tag v-if="it.mastery === 'review'" size="small" type="warning" effect="plain">需复习</el-tag>
+                  <el-button link size="small" :loading="reviewBusyId === it.conceptId" @click="startReview(it.conceptId)">开始复习</el-button>
+                  <el-button link size="small" type="success" @click="doneReview(it.conceptId)">完成</el-button>
+                  <el-button link size="small" @click="needReview(it.conceptId)">标需复习</el-button>
+                </div>
+              </div>
+              <div v-else class="review-empty">{{ reviewDraft.enabled ? '暂无到期复习' : '未启用（开启后到期自动入队）' }}</div>
+              <div v-if="reviewNote" class="review-note">{{ reviewNote }}</div>
+            </div>
           </div>
         </el-popover>
         <el-button type="primary" :icon="Back" @click="goBackToSpace">回到讲义空间</el-button>
@@ -369,6 +399,13 @@ const draft = reactive({
 })
 const paceDraft = ref<DlPaceSettings>({ ...DEFAULT_DL_PACE_SETTINGS })
 
+// ==================== 间隔复习（M3-B） ====================
+
+const reviewDraft = ref<{ enabled: boolean; intervalMin: number; limit: number }>({ enabled: false, intervalMin: 1440, limit: 10 })
+const reviewBusyId = ref<string | null>(null)
+const reviewNote = ref('')
+const reviewDueItems = computed(() => store.reviewDue?.items ?? [])
+
 function fillDraftFromPreset(presetId: string): void {
   const preset = DL_PROFILE_PRESETS.find((p) => p.id === presetId) ?? DL_PROFILE_PRESETS[DL_PROFILE_PRESETS.length - 1]
   draft.presetId = preset.id
@@ -390,9 +427,44 @@ watch(settingsVisible, async (v) => {
     if (cur.emphasis.length) draft.emphasis = [...cur.emphasis]
   }
   paceDraft.value = { ...DEFAULT_DL_PACE_SETTINGS, ...((await store.paceOf(id)) ?? {}) }
+  const rev = await store.reviewSettingsOf(id)
+  if (rev) reviewDraft.value = { ...reviewDraft.value, ...rev }
+  await store.fetchReviewDue(id)
   const st = await (window as any).electronAPI?.domainLearning?.schedulerState?.()
   schedulerState.value = st?.data ?? null
 })
+
+async function applyReviewSettings(): Promise<void> {
+  const saved = await store.saveReviewSettingsOf(spaceId.value, {
+    enabled: reviewDraft.value.enabled,
+    intervalMin: Math.max(1, Math.round(reviewDraft.value.intervalMin)),
+    limit: Math.max(1, Math.round(reviewDraft.value.limit)),
+  })
+  if (saved) reviewNote.value = '复习设置已保存'
+}
+
+/** 开始复习 = agent tutor 一轮（仍基于 agent-harness）；结束后可「完成」刷新基准 */
+async function startReview(conceptId: string): Promise<void> {
+  if (reviewBusyId.value) return
+  reviewBusyId.value = conceptId
+  reviewNote.value = ''
+  const r = await store.sendAgent({
+    mode: 'tutor',
+    spaceId: spaceId.value,
+    conceptId,
+    message: '（间隔复习）请用提问/自测的方式带我复习这个概念，讲清后请总结我仍需注意的薄弱点。',
+  })
+  reviewBusyId.value = null
+  reviewNote.value = r?.content ? r.content.slice(0, 160) + (r.content.length > 160 ? '…' : '') : '复习会话不可用（请先在空间页学习）'
+}
+
+async function doneReview(conceptId: string): Promise<void> {
+  if (await store.reviewDoneOf(spaceId.value, conceptId)) reviewNote.value = '已记录复习完成'
+}
+
+async function needReview(conceptId: string): Promise<void> {
+  if (await store.needReviewOf(spaceId.value, conceptId)) reviewNote.value = '已标记为需复习'
+}
 
 function toggleEmphasis(word: string): void {
   const i = draft.emphasis.indexOf(word)
@@ -1026,6 +1098,40 @@ onMounted(() => {
       border-color: var(--el-color-success);
       color: #fff;
     }
+  }
+  // 间隔复习（M3-B）
+  .review-list {
+    margin-top: 8px;
+    border-top: 1px solid var(--el-border-color-lighter);
+    padding-top: 6px;
+    .review-head {
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+      margin-bottom: 4px;
+    }
+    .review-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12.5px;
+      padding: 3px 0;
+      .review-name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+    }
+  }
+  .review-empty,
+  .review-note {
+    font-size: 11.5px;
+    color: var(--el-text-color-placeholder);
+    margin-top: 6px;
+  }
+  .review-note {
+    color: var(--el-color-primary);
   }
 }
 
