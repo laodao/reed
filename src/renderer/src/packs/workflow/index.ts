@@ -19,8 +19,7 @@ export const workflowPack: RendererPackDefinition = {
     version: '1.0.0',
     description: '可视化流程编排与自动化执行——定义/版本/触发器/运行/分享',
     contributions: {
-      routePaths: ['/workflow', '/workflow/editor/:id', '/workflow-run/:token', '/workflow/runs/:definitionId', '/workflow/run/:runId', '/agent-tasks', '/agent-memory', '/agent-todos', '/agent-console'],
-      routePaths: ['/workflow', '/workflow/editor/:id', '/workflow-run/:token', '/workflow/runs/:definitionId', '/workflow/run/:runId', '/workflow/review/:runId'],
+      routePaths: ['/workflow', '/workflow/editor/:id', '/workflow-run/:token', '/workflow/runs/:definitionId', '/workflow/run/:runId', '/workflow/review/:runId', '/agent-tasks', '/agent-memory', '/agent-todos', '/agent-console'],
     },
   },
   routes: [
@@ -77,6 +76,8 @@ export const workflowPack: RendererPackDefinition = {
       name: 'AgentConsole',
       component: () => import('@/views/workflow/AgentConsoleView.vue'),
       meta: { title: 'Agent 工作台' },
+    },
+    {
       path: '/workflow/review/:runId',
       name: 'WorkflowReviewPage',
       component: () => import('@/views/workflow/WorkflowReviewPage.vue'),
