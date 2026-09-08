@@ -293,7 +293,7 @@ describe('AgentTaskService 状态机（注入 executor，fake LLM 语义）', ()
     seed(rows, 'root2', { status: 'ready' })
     // 灰区挂起的叶子（质量门 human 分流的落库形态）
     seed(rows, 'leaf2', { parentId: 'root2', rootId: 'root2', depth: 1, title: '叶', status: 'verifying', retryCount: 2 })
-    const { repo } = buildService(rows, 'x')
+    const { svc, repo } = buildService(rows, 'x')
     await svc.verifyDecide('leaf2', 'approve', '人工认可')
     expect((await repo.getById('leaf2'))?.status).toBe('succeeded')
     expect((await waitSettled(repo, 'root2'))?.status).toBe('succeeded')
