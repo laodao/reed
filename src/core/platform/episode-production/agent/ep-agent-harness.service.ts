@@ -326,6 +326,8 @@ export class EpAgentHarnessService {
         runtimeContext: () => ({
           projectId,
           episodeId,
+          // KE 分层打标（37 号）：create_task_plan 据此把 scopeTag 盖进任务树 spec
+          memoryScope: { bizModule: 'episode-production', projectId },
           providerConfigId: opts.providerConfigId,
           modelId: opts.modelId,
           catalogPacks: [EP_AGENT_PACK_ID],

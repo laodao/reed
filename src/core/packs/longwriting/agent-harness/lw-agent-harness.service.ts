@@ -60,7 +60,8 @@ export function lwAgentSystemPrompt(): string {
 2. 不要重复调用刚刚成功过的同一工具；工具失败后可换参数重试一次，仍失败就如实告知。
 3. 所有动作完成后，用一段话向用户总结：本轮做了什么、结果如何、下一步建议。
 4. 用户意图或关键参数不明确时，先用一句话确认，不要编造参数。
-5. 修改/删除设定前先对照状态快照确认目标存在。`
+5. 修改/删除设定前先对照状态快照确认目标存在。
+6. 简单请求直接执行对应工具，不要拆解规划；只有跨章节/跨阶段的大型创作目标（如"从大纲到完本推进"）才考虑 create_task_plan 创建任务树（创建后需用户在「Agent 任务树」页批准才会执行）。`
 }
 
 /** 会话存储单例（懒建；观测面，不回读） */
@@ -183,9 +184,15 @@ export class LwAgentHarnessService {
     registerLwAgentTools(harness.registry)
     // KE-4：安装长文图谱结构化提供方（幂等；章节推导 v1 省略——全时段有效关系）
     installGraphKnowledgeProvider({})
-    const bindings = harness.registry
-      .listSpecs({ packId: LW_AGENT_PACK_ID })
-      .map((s) => ({ tool: s.name }))
+    // 规划工具透出（37 号评审 P1-1）：pack 绑定不含 builtin 规划工具——需显式追加，
+    // 否则 runtimeContext.memoryScope 无消费者，L2/L3 记忆渠道在 LW 断裂
+    const planningTools = ['create_task_plan']
+    const bindings = [
+      ...harness.registry
+        .listSpecs({ packId: LW_AGENT_PACK_ID })
+        .map((s) => ({ tool: s.name })),
+      ...planningTools.map((tool) => ({ tool })),
+    ]
     const toolMap: Record<string, AgentToolDef> = harness.registry.buildToolDefs(bindings)
 
     const counter = { calls: 0 }
@@ -244,6 +251,9 @@ export class LwAgentHarnessService {
         },
         runtimeContext: () => ({
           projectId,
+          // KE 分层打标（37 号）：create_task_plan 经此把 scopeTag 盖进任务树 spec——
+          // 任务蒸馏的经验落 L2/L3，而非全部退化为用户级
+          memoryScope: { bizModule: 'longwriting', projectId },
           turnRefs: [],
           catalogPacks: [LW_AGENT_PACK_ID],
           lwTurn: {

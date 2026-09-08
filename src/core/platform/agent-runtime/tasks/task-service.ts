@@ -502,6 +502,9 @@ export class AgentTaskService {
             // 子任务继承失败任务的验证契约（验收标准随目标走——否则重规划链断裂）
             spec: {
               ...(node.spec as unknown as Record<string, unknown>),
+              // 层级继承（37 号评审 P2-2）：planner 不产 scopeTag，重规划子节点从失败任务
+              // 继承——否则重规划链的蒸馏全部退化用户级 L1（node 自身产出优先）
+              ...(scopeTagOf(failedSpec) ? { scopeTag: scopeTagOf(failedSpec) } : {}),
               ...(scopeTagOf(node.spec) ? { scopeTag: scopeTagOf(node.spec) } : {}),
               ...(failedSpec.verification ? { verification: failedSpec.verification } : {}),
             },
