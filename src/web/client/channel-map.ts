@@ -308,6 +308,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'assets.sourceLink': { channel: 'asset:source-link', wrap: (assetId) => [{ assetId }] },
   'assets.groupDetail': { channel: 'asset:group-detail', wrap: (groupId) => [{ groupId }] },
   'assets.download': { channel: 'asset:download', wrap: (id, view) => [{ id, view }] },
+  'assets.refreshWebpage': { channel: 'asset:webpage-refresh', wrap: (assetId) => [{ assetId }] },
   'longwriting.getProjects': { channel: 'longwriting:getProjects' },
   'longwriting.getProject': { channel: 'longwriting:getProject' },
   'longwriting.createProject': { channel: 'longwriting:createProject' },

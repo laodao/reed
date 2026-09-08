@@ -224,6 +224,7 @@ export function registerWorkflowHandlers(): void {
           subCategory: result.record.subCategory ?? '',
           url: getAssetService().assetPreviewUrl(result.record),
           markdownChars: result.markdown.length,
+          skipped: result.skipped,
           warnings: result.warnings,
         }
       })

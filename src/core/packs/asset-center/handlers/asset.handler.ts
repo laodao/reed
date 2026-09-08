@@ -8,21 +8,34 @@
  */
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
-import { getAssetService } from '@core/platform/assets'
+import { getAssetService, getWebCollectService } from '@core/platform/assets'
 import type { SaveAssetCategoryInput, SaveAssetInput, UpdateAssetCategoryInput } from '@shared/types/asset.types'
 import type { IpcResponse } from '@shared/types/ipc.types'
 
 const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
 
 export function registerAssetHandlers(): void {
-  ipcBridge.handle('asset:list', (_e, p: { category?: string; subCategory?: string; keyword?: string; page: number; pageSize: number }) =>
+  ipcBridge.handle('asset:list', (_e, p: { category?: string; subCategory?: string; excludeSubCategory?: string; keyword?: string; page: number; pageSize: number }) =>
     wrap(() => getAssetService().listAssets({
       category: (p.category || '') as never,
       subCategory: p.subCategory || '',
+      excludeSubCategory: p.excludeSubCategory || '',
       keyword: p.keyword,
       page: p.page ?? 1,
       pageSize: p.pageSize ?? 20,
     }))
+  )
+  // 网页收藏「更新快照」：按收藏记录的 sourceUrl 重新抓取并就地刷新（资产 ID 不变）
+  ipcBridge.handle('asset:webpage-refresh', (_e, p: { assetId: string }) =>
+    wrap(async () => {
+      const r = await getWebCollectService().refreshExisting(p.assetId)
+      return {
+        assetId: r.record.id,
+        name: r.record.name,
+        fetchedAt: (r.record.metadata as Record<string, unknown> | null)?.fetchedAt ?? null,
+        warnings: r.warnings,
+      }
+    })
   )
   ipcBridge.handle('asset:get', (_e, p: { id: string }) =>
     wrap(() => getAssetService().getAsset(p.id))

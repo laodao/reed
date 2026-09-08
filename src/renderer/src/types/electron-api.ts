@@ -59,11 +59,12 @@ export interface AppApi {
       subCategory: string
       url: string
       markdownChars: number
+      skipped?: boolean
       warnings?: string[]
     } | null>>
   }
   assets: {
-    list(p: { category?: string; subCategory?: string; keyword?: string; page: number; pageSize: number }): Promise<IpcResp<{ items: AssetRecord[]; total: number }>>
+    list(p: { category?: string; subCategory?: string; excludeSubCategory?: string; keyword?: string; page: number; pageSize: number }): Promise<IpcResp<{ items: AssetRecord[]; total: number }>>
     get(id: string): Promise<IpcResp<AssetRecord | null>>
     create(p: {
       category?: string
@@ -72,6 +73,8 @@ export interface AppApi {
       description?: string
       tags?: string[]
       content: { kind: 'file'; path: string } | { kind: 'url'; url: string } | { kind: 'text'; text: string } | { kind: 'json'; json: string }
+      textContent?: string
+      metadata?: Record<string, unknown>
     }): Promise<IpcResp<AssetRecord | null>>
     update(p: { id: string; name?: string; description?: string | null; tags?: string[]; category?: string; subCategory?: string | null }): Promise<IpcResp<AssetRecord | null>>
     delete(id: string): Promise<IpcResp<{ deleted: boolean }>>
@@ -80,6 +83,8 @@ export interface AppApi {
     openFolder(id: string): Promise<IpcResp<{ opened: boolean }>>
     /** 打开套图/组图所在目录（组内首个文件成员定位） */
     groupOpenFolder(groupId: string): Promise<IpcResp<{ opened: boolean }>>
+    /** 网页收藏「更新快照」：按 sourceUrl 重新抓取并就地刷新（资产 ID 不变） */
+    refreshWebpage(assetId: string): Promise<IpcResp<{ assetId: string; name: string; fetchedAt: string | null; warnings?: string[] } | null>>
     /** 分类定义（业务分类实体：驱动资产中心分组与预览） */
     listCategories(p?: { category?: string }): Promise<IpcResp<AssetCategoryDef[]>>
     createCategory(p: {

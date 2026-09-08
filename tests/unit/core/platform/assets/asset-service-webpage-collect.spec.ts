@@ -66,6 +66,7 @@ function fileAssetInput() {
     subCategory: '网页收藏',
     name: '示例页.html',
     content: { kind: 'file' as const, path: `data:text/html;base64,${b64}` },
+    url: 'https://example.com/article',
     textContent: MD_BODY,
     metadata: { sourceUrl: 'https://example.com/article', sourceTitle: '示例页', fetchedAt: '2026-09-05T00:00:00.000Z', sourceRunId: 'run_1' },
     sourceType: 'workflow',
@@ -106,6 +107,7 @@ describe('网页收藏资产（file + textContent + metadata）', () => {
     expect(rec.storagePath).toBeTruthy()
     expect(rec.textContent).toBe(MD_BODY)
     expect(rec.metadata).toMatchObject({ sourceUrl: 'https://example.com/article' })
+    expect(rec.url).toBe('https://example.com/article')
     expect(rec.sourceRef).toBe('run_1')
     // 磁盘文件真实存在且为归档 html
     const abs = path.join(tmpRoot, ...rec.storagePath!.split('/'))
@@ -142,5 +144,41 @@ describe('网页收藏资产（file + textContent + metadata）', () => {
     const rec = await svc.createAsset({ content: { kind: 'text', text: '<h1>原生HTML</h1>' }, category: 'text', subCategory: cat.name, name: 'h' })
     const result = await svc.renderAssetPreview(rec)
     expect(result).toEqual({ mode: 'html', html: '<h1>原生HTML</h1>' })
+  })
+
+  it('findWebCollectBySourceUrl：按 metadata.sourceUrl 精确命中最新一条', async () => {
+    await svc.createAsset(fileAssetInput())
+    // 同名 URL 的旧档（更早 created_at）也应命中最新
+    await svc.createAsset(fileAssetInput())
+    const hit = await svc.findWebCollectBySourceUrl('https://example.com/article')
+    expect(hit).not.toBeNull()
+    expect(hit?.subCategory).toBe('网页收藏')
+    expect(await svc.findWebCollectBySourceUrl('https://other.example/x')).toBeNull()
+  })
+
+  it('updateAssetContent：就地刷新同一资产（新 html 落盘、旧文件清理、id 不变）', async () => {
+    const rec = await svc.createAsset(fileAssetInput())
+    const oldAbs = path.join(tmpRoot, ...rec.storagePath!.split('/'))
+    expect(fs.existsSync(oldAbs)).toBe(true)
+
+    const html2 = '<!doctype html><html><body><h1>刷新后快照</h1></body></html>'
+    const b64 = Buffer.from(html2, 'utf-8').toString('base64')
+    const updated = await svc.updateAssetContent(rec.id, {
+      dataUrl: `data:text/html;base64,${b64}`,
+      textContent: '# 刷新后快照',
+      metadata: { sourceUrl: 'https://example.com/article', sourceTitle: '示例页', fetchedAt: '2026-09-06T00:00:00.000Z' },
+    })
+    expect(updated?.id).toBe(rec.id)
+    expect(updated?.textContent).toBe('# 刷新后快照')
+    // 新文件落盘、旧文件已清理（无孤儿）
+    expect(updated?.storagePath).toBeTruthy()
+    expect(updated?.storagePath).not.toBe(rec.storagePath)
+    const newAbs = path.join(tmpRoot, ...updated!.storagePath!.split('/'))
+    expect(fs.existsSync(newAbs)).toBe(true)
+    expect(fs.readFileSync(newAbs, 'utf-8')).toContain('刷新后快照')
+    expect(fs.existsSync(oldAbs)).toBe(false)
+    // 删除资产后新文件一并清理
+    expect(await svc.deleteAsset(updated!.id)).toBe(true)
+    expect(fs.existsSync(newAbs)).toBe(false)
   })
 })

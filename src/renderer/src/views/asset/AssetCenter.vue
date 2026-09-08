@@ -15,21 +15,34 @@
       </div>
     </div>
 
-    <!-- 分类筛选（带计数） -->
+    <!-- 分类筛选（带计数）：左侧=成果大类；右侧=网页收藏独立入口（分隔 + 独立配色） -->
     <div class="cat-bar">
-      <div
-        v-for="cat in categoryTabs"
-        :key="cat.value"
-        class="cat-tab"
-        :class="{ active: activeCategory === cat.value }"
-        @click="switchCategory(cat.value)"
-      >
-        {{ cat.label }}<span class="cat-count">{{ cat.count }}</span>
+      <div class="cat-bar-main">
+        <div
+          v-for="cat in categoryTabs"
+          :key="cat.value"
+          class="cat-tab"
+          :class="{ active: activeCategory === cat.value }"
+          @click="switchCategory(cat.value)"
+        >
+          {{ cat.label }}<span class="cat-count">{{ cat.count }}</span>
+        </div>
+      </div>
+      <div class="cat-bar-collect">
+        <div
+          class="cat-tab collect"
+          :class="{ active: isWebpageView }"
+          title="网页抓取收藏池（与工作流成果分开存放）"
+          @click="switchCategory(collectTab.value)"
+        >
+          <el-icon class="collect-star"><Star /></el-icon>
+          {{ collectTab.label }}<span class="cat-count">{{ collectTab.count }}</span>
+        </div>
       </div>
     </div>
 
-    <!-- 二级业务分类（选择大类后展示；由分类定义 + 资产聚合驱动，未定义的标「未定义」） -->
-    <div v-if="activeCategory && subCategoryTabs.length > 1" class="sub-cat-bar">
+    <!-- 二级业务分类（选择大类后展示；网页收藏独立视图无二级） -->
+    <div v-if="!isWebpageView && activeCategory && subCategoryTabs.length > 1" class="sub-cat-bar">
       <div
         v-for="sub in subCategoryTabs"
         :key="sub.value"
@@ -225,9 +238,17 @@
           </div>
         </div>
         <div class="pt-actions">
-          <!-- 网页收藏专属操作：打开原文 / 复制 Markdown / 按需入知识库 -->
+          <!-- 网页收藏专属操作：打开原文 / 更新快照 / 复制 Markdown / 按需入知识库 -->
           <el-button v-if="originalUrlOf(previewAsset)" size="small" @click="openOriginalUrl">
             <el-icon><Link /></el-icon> 打开原文
+          </el-button>
+          <el-button
+            v-if="isWebpageCollect(previewAsset) && originalUrlOf(previewAsset)"
+            size="small"
+            :loading="webpageRefreshing"
+            @click="refreshWebpageSnapshot"
+          >
+            更新快照
           </el-button>
           <el-button
             v-if="isWebpageCollect(previewAsset) && previewAsset?.textContent"
@@ -422,7 +443,7 @@
  */
 import { ref, onMounted, computed, reactive, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, EditPen, FolderOpened, CopyDocument, Delete, Download, ZoomIn, ZoomOut, Link } from '@element-plus/icons-vue'
+import { Search, EditPen, FolderOpened, CopyDocument, Delete, Download, ZoomIn, ZoomOut, Link, Star } from '@element-plus/icons-vue'
 import { toFileUrl, toImageUrl, toVideoUrl, isElectronRenderer } from '@/utils/asset-url'
 import { saveBlobAs } from '@/utils/file-saver'
 import { buildWebAssetDownload } from '@/utils/asset-download'
@@ -439,7 +460,11 @@ const api = electronApi()
 
 const items = ref<AssetRecord[]>([])
 const loading = ref(false)
-const activeCategory = ref<AssetCategory | ''>('')
+
+/** 独立视图标识：网页收藏（不属大类枚举——收藏池与成果视图隔离，避免互相淹没） */
+const WEBPAGE_VIEW = '__webpage__' as const
+type ActiveCategoryView = AssetCategory | '' | typeof WEBPAGE_VIEW
+const activeCategory = ref<ActiveCategoryView>('')
 const activeSubCategory = ref<string>('')
 const keyword = ref('')
 const page = ref(1)
@@ -448,6 +473,11 @@ const total = ref(0)
 /** 资产中心统计（total + 各大类计数；「全部」标签取 total） */
 const stats = ref<AssetStats>({ total: 0, byCategory: {} })
 const subStats = ref<Array<{ subCategory: string | null; count: number }>>([])
+/** 「网页收藏」独立入口计数（document 大类下该子分类资产数） */
+const webpageCount = ref(0)
+
+/** 当前是否为「网页收藏」独立视图 */
+const isWebpageView = computed(() => activeCategory.value === WEBPAGE_VIEW)
 
 /** 来源跳转缓存：assetId → 来源链接（需求 3） */
 const sourceLinks = reactive<Record<string, { type: string; label: string; appId?: string; sessionId?: string; runId?: string } | null>>({})
@@ -599,8 +629,25 @@ function escapeHtmlMd(s: string): string {
 const KIND_LABELS: Record<string, string> = { file: '文件', url: '链接', text: '文本', json: '数据' }
 const PREVIEW_MODE_LABELS = ASSET_PREVIEW_MODE_LABELS
 
-/** 分类标签（全部 + 各大类带计数；统一走 buildCategoryTabs，保证 total 生效） */
-const categoryTabs = computed(() => buildCategoryTabs(stats.value, ASSET_CATEGORY_LABELS))
+/** 成果大类标签（全部 + 各大类带计数）。
+ *  计数按"成果视图"口径：全部/文档扣除收藏池（与默认列表一致）；
+ *  网页收藏不在大类序列内——右侧独立入口展示（见 collectTab）。 */
+const categoryTabs = computed(() => {
+  const collected = webpageCount.value
+  const displayStats: AssetStats = collected > 0
+    ? {
+        total: Math.max(0, stats.value.total - collected),
+        byCategory: {
+          ...stats.value.byCategory,
+          document: Math.max(0, (stats.value.byCategory.document ?? 0) - collected),
+        },
+      }
+    : stats.value
+  return buildCategoryTabs(displayStats, ASSET_CATEGORY_LABELS)
+})
+
+/** 右侧独立入口：网页收藏池（非成果大类，独立配色区分） */
+const collectTab = computed(() => ({ value: WEBPAGE_VIEW, label: '网页收藏', count: webpageCount.value }))
 
 /** 二级业务分类标签：已定义分类（带计数）+ 未定义但有资产的子分类（标未定义） */
 const subCategoryTabs = computed<Array<{ value: string; label: string; count: number | null; defined: boolean }>>(() => {
@@ -682,13 +729,45 @@ function formatDate(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+/** 列表请求参数：网页收藏独立视图固定查收藏池；成果视图（全部/文档总览）默认排除收藏池 */
+function listParams(): {
+  category: AssetCategory | ''
+  subCategory: string
+  excludeSubCategory: string
+  keyword: string
+  page: number
+  pageSize: number
+} {
+  if (isWebpageView.value) {
+    return {
+      category: 'document',
+      subCategory: '网页收藏',
+      excludeSubCategory: '',
+      keyword: keyword.value,
+      page: page.value,
+      pageSize: pageSize.value,
+    }
+  }
+  // 成果隔离：收藏池在「全部 / 文档大类总览」中不出现；显式选中网页收藏子分类（或独立入口）才展示
+  const exclude = !activeSubCategory.value && (activeCategory.value === '' || activeCategory.value === 'document') ? '网页收藏' : ''
+  return {
+    category: activeCategory.value === WEBPAGE_VIEW ? '' : (activeCategory.value as AssetCategory),
+    subCategory: activeSubCategory.value,
+    excludeSubCategory: exclude,
+    keyword: keyword.value,
+    page: page.value,
+    pageSize: pageSize.value,
+  }
+}
+
 async function load(): Promise<void> {
   loading.value = true
   try {
+    const catsQueryCategory = isWebpageView.value ? 'document' : activeCategory.value || undefined
     const [listResp, statsResp, catsResp] = await Promise.all([
-      api.assets.list({ category: activeCategory.value, subCategory: activeSubCategory.value, keyword: keyword.value, page: page.value, pageSize: pageSize.value }),
+      api.assets.list(listParams()),
       api.assets.stats(),
-      api.assets.listCategories({ category: activeCategory.value || undefined }),
+      api.assets.listCategories({ category: catsQueryCategory }),
     ])
     if (listResp.success) {
       items.value = listResp.data?.items ?? []
@@ -699,11 +778,19 @@ async function load(): Promise<void> {
     // 二级业务分类：当前大类下的已定义分类（带计数）+ 资产聚合补差
     if (catsResp.success) definedCategories.value = catsResp.data ?? []
     else definedCategories.value = []
-    if (activeCategory.value) {
-      const subResp = await api.assets.subCategoryStats(activeCategory.value)
+    if (isWebpageView.value) {
+      subStats.value = []
+    } else if (activeCategory.value) {
+      const subResp = await api.assets.subCategoryStats(activeCategory.value as AssetCategory)
       if (subResp.success) subStats.value = subResp.data ?? []
     } else {
       subStats.value = []
+    }
+    // 「网页收藏」入口计数（收藏池总量，恒需）
+    const docSub = await api.assets.subCategoryStats('document')
+    if (docSub.success) {
+      const found = (docSub.data ?? []).find(s => s.subCategory === '网页收藏')
+      webpageCount.value = found?.count ?? 0
     }
     // 全量分类定义（预览模式查询 + 分类管理共用）
     const allResp = await api.assets.listCategories()
@@ -800,7 +887,7 @@ async function handleDeleteGroup(_groupId: string): Promise<void> {
   }
 }
 
-function switchCategory(cat: AssetCategory | ''): void {
+function switchCategory(cat: ActiveCategoryView): void {
   activeCategory.value = cat
   activeSubCategory.value = ''
   page.value = 1
@@ -966,6 +1053,29 @@ function originalUrlOf(asset: AssetRecord | null): string {
 function openOriginalUrl(): void {
   const u = originalUrlOf(previewAsset.value)
   if (u) window.open(u, '_blank', 'noopener')
+}
+
+/** 更新快照：按收藏 sourceUrl 重新抓取并就地刷新（资产 ID 不变、不产生重复档） */
+const webpageRefreshing = ref(false)
+async function refreshWebpageSnapshot(): Promise<void> {
+  const a = previewAsset.value
+  if (!a || webpageRefreshing.value) return
+  webpageRefreshing.value = true
+  try {
+    const resp = await api.assets.refreshWebpage(a.id)
+    if (resp.success && resp.data) {
+      ElMessage.success('快照已更新（重新抓取并覆盖原档）')
+      await load()
+      const got = await api.assets.get(a.id)
+      if (got.success && got.data) previewAsset.value = got.data
+    } else {
+      ElMessage.error(resp.error ?? '刷新失败')
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '刷新失败')
+  } finally {
+    webpageRefreshing.value = false
+  }
 }
 
 /** 复制收藏资产的 markdown 正文 */
@@ -1233,12 +1343,20 @@ onMounted(load)
 .toolbar-right { display: flex; gap: 10px; align-items: center; }
 .search { width: 220px; }
 
-/* 分类条 */
-.cat-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; flex-shrink: 0; }
+/* 分类条：左侧成果大类 / 右侧网页收藏独立入口（分隔 + 独立配色） */
+.cat-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-shrink: 0; }
+.cat-bar-main { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .cat-tab { padding: 5px 12px; border-radius: 14px; font-size: 13px; cursor: pointer; color: var(--el-text-color-regular); background: var(--el-fill-color); transition: all .15s; }
 .cat-tab:hover { color: var(--el-color-primary); }
 .cat-tab.active { background: var(--el-color-primary); color: #fff; }
 .cat-count { font-size: 11px; opacity: .75; margin-left: 4px; }
+.cat-tab.active .cat-count { opacity: .9; }
+/* 右侧收藏入口：竖分隔线 + 琥珀色（与成果大类主蓝明显区分） */
+.cat-bar-collect { margin-left: auto; padding-left: 14px; border-left: 1px solid var(--el-border-color); display: flex; align-items: center; }
+.cat-tab.collect { display: flex; align-items: center; gap: 4px; color: var(--el-color-warning-dark-2, #b88230); background: var(--el-color-warning-light-9, #fdf6ec); }
+.cat-tab.collect:hover { color: var(--el-color-warning, #e6a23c); background: var(--el-color-warning-light-8, #faecd8); }
+.cat-tab.collect.active { background: var(--el-color-warning, #e6a23c); color: #fff; }
+.cat-tab.collect .collect-star { font-size: 13px; }
 
 /* 二级业务分类条 */
 .sub-cat-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; flex-shrink: 0; padding-left: 4px; }

@@ -572,6 +572,8 @@ export interface WorkflowNodeConfigMap {
     description?: string
     /** 收藏开关（false=不落库，流程继续） */
     enabled?: boolean
+    /** 重复 URL 策略：skip=已收藏则跳过（缺省）| replace=覆盖刷新快照 */
+    existingPolicy?: 'skip' | 'replace'
   }
 
   'save-diary': {

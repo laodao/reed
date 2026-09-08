@@ -75,6 +75,52 @@ export class AssetService {
     return { group, members }
   }
 
+  /**
+   * 按收藏源 URL 查最新一条「网页收藏」资产（幂等查重键：url 列）。
+   */
+  async findWebCollectBySourceUrl(url: string): Promise<AssetRecord | null> {
+    const u = url.trim()
+    if (!u) return null
+    return this.repo.findLatestByUrl('document', '网页收藏', u)
+  }
+
+  /**
+   * 就地重写 file 型资产内容（网页收藏「更新快照」）：
+   * 新内容（data: URL）落盘 → 删除旧文件 → 行内更新 storagePath/textContent/metadata 等。
+   * 资产 ID 保持不变（关联引用不失效）；任何一步失败前不破坏旧档。
+   */
+  async updateAssetContent(
+    id: string,
+    input: {
+      dataUrl: string
+      name?: string
+      textContent?: string | null
+      metadata?: Record<string, unknown> | null
+      sourceRef?: string | null
+    },
+  ): Promise<AssetRecord | null> {
+    const existing = await this.repo.findById(id)
+    if (!existing) throw new Error(`资产不存在: ${id}`)
+    if (existing.isBuiltin) throw new Error('内置资产不可修改（可复制为自有后刷新）')
+
+    const targetName = input.name?.trim() || existing.name
+    const saved = await this.storage.saveFileFromSource(input.dataUrl, existing.category, targetName)
+    // 新文件落盘成功后再删旧文件（删除失败不阻断——旧文件成孤儿由清理兜底，记录无损）
+    if (existing.storagePath && existing.storagePath !== saved.storagePath) {
+      this.storage.deleteStoredFile(existing.storagePath)
+    }
+    const updated = await this.repo.update(id, {
+      name: targetName,
+      storagePath: saved.storagePath,
+      sizeBytes: saved.sizeBytes,
+      mimeType: saved.mimeType,
+      textContent: input.textContent !== undefined ? (input.textContent ?? null) : undefined,
+      metadata: input.metadata !== undefined ? (input.metadata ?? null) : undefined,
+      sourceRef: input.sourceRef !== undefined ? (input.sourceRef ?? null) : undefined,
+    })
+    return updated
+  }
+
   /** 保存资产（四种形态统一入口；groupName 归组支持） */
   async createAsset(input: SaveAssetInput): Promise<AssetRecord> {
     const content = input.content
@@ -176,7 +222,8 @@ export class AssetService {
       tags: input.tags ?? [],
       kind: content.kind,
       storagePath,
-      url,
+      // url 列：url 型取链接；file 型可携带源链接（网页收藏幂等键，见 SaveAssetInput.url）
+      url: content.kind === 'url' ? url : (input.url?.trim() || null),
       textContent,
       jsonContent,
       mimeType,

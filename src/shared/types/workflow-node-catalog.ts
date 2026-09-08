@@ -880,7 +880,7 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
     cancellable: false,
     ports: [{ kind: 'normal', label: '出', max: 1 }, { kind: 'fail', label: '失败' }],
     requiredConfigKeys: ['url'],
-    defaultConfig: { url: '', title: '', tags: '', description: '', enabled: true },
+    defaultConfig: { url: '', title: '', tags: '', description: '', enabled: true, existingPolicy: 'skip' },
     outputSchema: [
       { key: 'assetId', type: 'string', desc: '资产 ID' },
       { key: 'name', type: 'string', desc: '资产名（网页标题.html）' },
@@ -889,6 +889,7 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
       { key: 'url', type: 'string', desc: '资产可访问链接' },
       { key: 'markdownChars', type: 'number', desc: 'markdown 正文字符数' },
       { key: 'sourceUrl', type: 'string', desc: '原始网页 URL' },
+      { key: 'skipped', type: 'boolean', desc: '该 URL 已收藏且策略为跳过（true=未改写）' },
       { key: 'warnings', type: 'json', desc: '资源内联失败提示（可选）' },
     ],
   },

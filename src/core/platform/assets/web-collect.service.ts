@@ -41,14 +41,17 @@ export async function defaultPageFetcher(url: string): Promise<FetchedPage> {
 }
 
 export interface CollectWebpageInput {
-  /** 目标网页 URL（metadata.sourceUrl 与相对资源基准） */
+  /** 目标网页 URL（幂等键与 metadata.sourceUrl；资源相对解析基于最终页） */
   url: string
+  /**
+   * 已收藏过同一 URL 时的策略：
+   * - skip（缺省）：跳过，不新建也不改写（跑流程重复爬网不会重复入池）
+   * - replace：就地刷新快照（同一资产 ID 更新 html/markdown/抓取时间）
+   */
+  existingPolicy?: 'skip' | 'replace'
   /** 标题；缺省从页面 <title>/og:title 提取 */
   title?: string
-  /**
-   * 已抓取的页面 HTML（运行页一键收藏传上游完整正文时用，跳过二次抓取）；
-   * 缺省按 url 现抓。
-   */
+  /** 已抓取的页面 HTML（运行页一键收藏传上游完整正文时用，跳过二次抓取）；缺省按 url 现抓 */
   html?: string
   /** 资产名；缺省 <标题>.html */
   name?: string
@@ -61,10 +64,12 @@ export interface CollectWebpageInput {
 export interface CollectWebpageResult {
   record: AssetRecord
   warnings: string[]
-  /** 是否实际抓取页面（false = 使用了传入 html） */
+  /** 是否实际抓取页面（false = 使用了传入 html 或命中已有档直接跳过） */
   fetched: boolean
   /** 生成的 markdown 正文（供调用方提示字数等） */
   markdown: string
+  /** 命中已有收藏且按策略跳过（true = 未产生任何写入/改写） */
+  skipped: boolean
 }
 
 export interface WebCollectServiceDeps {
@@ -91,13 +96,27 @@ export class WebCollectService {
 
   /**
    * 收藏网页：single-file html 落盘 + markdown 正文入库。
+   * 幂等：同一 sourceUrl 已收藏时按 existingPolicy 跳过或就地刷新快照。
    */
   async collectWebpage(input: CollectWebpageInput): Promise<CollectWebpageResult> {
-    const rawUrl = input.url.trim()
-    if (!/^https?:\/\//i.test(rawUrl)) throw new Error('仅支持 http(s) 网页收藏')
+    const keyUrl = input.url.trim()
+    if (!/^https?:\/\//i.test(keyUrl)) throw new Error('仅支持 http(s) 网页收藏')
+
+    // 抓取前查重：跳过策略命中则不发任何网络请求、不产生写入
+    const existing = await this.assetService.findWebCollectBySourceUrl(keyUrl)
+    const policy = input.existingPolicy ?? 'skip'
+    if (existing && policy === 'skip') {
+      return {
+        record: existing,
+        warnings: [],
+        fetched: false,
+        markdown: existing.textContent ?? '',
+        skipped: true,
+      }
+    }
 
     const fetched = input.html == null
-    const page = fetched ? await this.fetchPage(rawUrl) : { url: rawUrl, html: input.html! }
+    const page = fetched ? await this.fetchPage(keyUrl) : { url: keyUrl, html: input.html! }
     if (!page.html || !page.html.trim()) throw new Error('页面内容为空，无法收藏')
 
     // 1) 自包含归档（CSS/图片内联 + 静态化）
@@ -109,16 +128,30 @@ export class WebCollectService {
     // 2) markdown 正文（预剥噪声容器；相对链接基于页面 URL 解析）
     const markdown = htmlToMarkdown(inlined.html, page.url)
 
-    // 3) 元数据与标题
-    const title = input.title?.trim() || extractPageTitle(inlined.html) || titleFromUrl(page.url)
+    // 3) 元数据与标题：sourceUrl 固定存输入 URL（幂等键稳定，重定向 final 只作资源基准）
+    const title = input.title?.trim() || extractPageTitle(inlined.html) || titleFromUrl(keyUrl)
     const sourceRef = input.sourceRef?.trim() || null
     const nowIso = this.now().toISOString()
     const metadata: Record<string, unknown> = {
-      sourceUrl: page.url,
+      sourceUrl: keyUrl,
       sourceTitle: title,
       fetchedAt: nowIso,
       ...(sourceRef ? { sourceRunId: sourceRef } : {}),
       ...(markdown ? { markdownChars: markdown.length } : {}),
+    }
+    const dataUrl = `data:text/html;base64,${Buffer.from(inlined.html, 'utf-8').toString('base64')}`
+
+    // 4) 写入：首次收藏建新资产；已存在（replace 策略）就地刷新同一记录
+    if (existing && policy === 'replace') {
+      const updated = await this.assetService.updateAssetContent(existing.id, {
+        dataUrl,
+        name: input.name?.trim() || undefined, // 缺省保留原名
+        textContent: markdown || null,
+        metadata,
+        sourceRef: sourceRef ?? undefined,
+      })
+      if (!updated) throw new Error(`资产更新失败: ${existing.id}`)
+      return { record: updated, warnings: inlined.warnings, fetched, markdown, skipped: false }
     }
 
     const saveInput: SaveAssetInput = {
@@ -127,10 +160,9 @@ export class WebCollectService {
       name: input.name?.trim() || `${title}.html`,
       description: input.description?.trim() || undefined,
       tags: input.tags ?? [],
-      content: {
-        kind: 'file',
-        path: `data:text/html;base64,${Buffer.from(inlined.html, 'utf-8').toString('base64')}`,
-      },
+      content: { kind: 'file', path: dataUrl },
+      // 源链接同时入 url 列：普通列等值查询做幂等键（免 JSON/LIKE 扫描）
+      url: keyUrl,
       // markdown 正文进 text_content 列（删除随行清理；预览以文件 html 为准）
       textContent: markdown || undefined,
       metadata,
@@ -138,7 +170,28 @@ export class WebCollectService {
       sourceRef: sourceRef ?? undefined,
     }
     const record = await this.assetService.createAsset(saveInput)
-    return { record, warnings: inlined.warnings, fetched, markdown }
+    return { record, warnings: inlined.warnings, fetched, markdown, skipped: false }
+  }
+
+  /**
+   * 刷新已有收藏的快照（资产中心「更新快照」）：
+   * 按记录 metadata.sourceUrl 重新抓取并就地更新同一资产（不新建、不产生孤儿文件）。
+   */
+  async refreshExisting(assetId: string): Promise<CollectWebpageResult> {
+    const record = await this.assetService.getAsset(assetId)
+    if (!record) throw new Error(`资产不存在: ${assetId}`)
+    if (record.category !== WEBPAGE_COLLECT_CATEGORY || record.subCategory !== WEBPAGE_COLLECT_SUB_CATEGORY) {
+      throw new Error('仅「网页收藏」资产可刷新快照')
+    }
+    const url = typeof record.metadata?.sourceUrl === 'string' ? record.metadata.sourceUrl : ''
+    if (!/^https?:\/\//i.test(url)) throw new Error('该收藏缺少原始网页 URL，无法刷新')
+    return this.collectWebpage({
+      url,
+      name: record.name, // 保留原标题（页面标题可能已变化，避免反复改名）
+      tags: record.tags,
+      sourceRef: record.sourceRef ?? undefined,
+      existingPolicy: 'replace',
+    })
   }
 }
 

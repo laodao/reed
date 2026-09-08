@@ -480,7 +480,11 @@ async function collectRow(row: any): Promise<void> {
       iterationIndex: row.iterationIndex ?? undefined,
     })
     if (resp.success && resp.data) {
-      ElMessage.success(`已收藏「${resp.data.name}」，可在 资产管理→文档→网页收藏 查看`)
+      if (resp.data.skipped) {
+        ElMessage.info('该网页已在收藏池中（未重复添加；可在 资产管理→网页收藏 更新快照）')
+      } else {
+        ElMessage.success(`已收藏「${resp.data.name}」，可在 资产管理→网页收藏 查看`)
+      }
     } else {
       ElMessage.error(resp.error ?? '收藏失败')
     }

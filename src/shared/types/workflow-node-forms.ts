@@ -585,6 +585,14 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     }),
     T('title', '标题', { placeholder: '留空自动从页面提取' }),
     T('tags', '标签', { help: '逗号分隔，资产中心可按标签搜索' }),
+    T('existingPolicy', '重复 URL 策略', {
+      type: 'select',
+      options: [
+        { label: '跳过（已收藏则不重复入池，推荐）', value: 'skip' },
+        { label: '更新快照（覆盖刷新同一收藏）', value: 'replace' },
+      ],
+      help: '频繁跑流程时同一网页会被反复抓取——默认跳过避免收藏池膨胀；需最新快照用「更新快照」',
+    }),
     T('description', '描述', { group: '其他' }),
     T('enabled', '收藏到网页收藏', {
       type: 'switch',

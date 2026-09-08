@@ -33,6 +33,8 @@ describe.each(getTestDialects())('AssetRepository [%s]', dialect => {
   /** 直接插资产记录（可控 created_at / is_builtin / 组归属），返回 id */
   async function insertAsset(over: Partial<AssetEntity> = {}): Promise<string> {
     const now = new Date()
+    // 实体列 metadata 为 TEXT：对象入参需先序列化（与仓库写入纪律一致）；显式覆盖 spread
+    const metadata = over.metadata != null && typeof over.metadata === 'object' ? JSON.stringify(over.metadata) : over.metadata
     const entity = await tds.ds.getRepository(AssetEntity).save({
       id: `asset_${now.getTime()}_${Math.random().toString(36).slice(2, 8)}`,
       userId: null,
@@ -48,7 +50,6 @@ describe.each(getTestDialects())('AssetRepository [%s]', dialect => {
       jsonContent: null,
       mimeType: null,
       sizeBytes: null,
-      metadata: null,
       sourceType: null,
       sourceRef: null,
       isBuiltin: 0,
@@ -57,6 +58,7 @@ describe.each(getTestDialects())('AssetRepository [%s]', dialect => {
       createdAt: now,
       updatedAt: now,
       ...over,
+      metadata,
     } as Partial<AssetEntity>)
     return entity.id
   }
@@ -149,5 +151,57 @@ describe.each(getTestDialects())('AssetRepository [%s]', dialect => {
     const r = await repo.listAsset({ page: 99, pageSize: 10 })
     expect(r.total).toBe(1)
     expect(r.items).toHaveLength(0)
+  })
+
+  it('excludeSubCategory 排除指定子分类（其余照常）', async () => {
+    await insertAsset({ category: 'document', subCategory: '网页收藏' })
+    await insertAsset({ category: 'document', subCategory: '早报' })
+    await insertAsset({ category: 'image' })
+
+    const doc = await repo.listAsset({ page: 1, pageSize: 10, category: 'document', excludeSubCategory: '网页收藏' })
+    expect(doc.total).toBe(1)
+    expect(doc.items[0].subCategory).toBe('早报')
+
+    const all = await repo.listAsset({ page: 1, pageSize: 10, excludeSubCategory: '网页收藏' })
+    expect(all.total).toBe(2)
+  })
+
+  it('findLatestByUrl：url 列精确命中最新一条（含通配符字符的 URL）', async () => {
+    await insertAsset({
+      category: 'document',
+      subCategory: '网页收藏',
+      url: 'https://example.com/a%20b?x=1_y',
+      metadata: { sourceUrl: 'https://example.com/a%20b?x=1_y' },
+    })
+    // 干扰项：不同 URL / url 列为空
+    await insertAsset({ category: 'document', subCategory: '网页收藏', url: 'https://other.com/' })
+    await insertAsset({ category: 'document', subCategory: '网页收藏', url: null })
+
+    const hit = await repo.findLatestByUrl('document', '网页收藏', 'https://example.com/a%20b?x=1_y')
+    expect(hit).not.toBeNull()
+    expect(hit?.url).toBe('https://example.com/a%20b?x=1_y')
+    expect(await repo.findLatestByUrl('document', '网页收藏', 'https://nope.com/')).toBeNull()
+    expect(await repo.findLatestByUrl('document', '网页收藏', 'https://other.com/')).not.toBeNull()
+  })
+
+  it('update 支持重写 file 内容字段（storagePath/textContent/mime/size/metadata/sourceRef）', async () => {
+    const id = await insertAsset({ category: 'document', kind: 'file', storagePath: 'assets/document/202609/old.html' })
+    const upd = await repo.update(id, {
+      storagePath: 'assets/document/202609/new.html',
+      mimeType: 'text/html',
+      sizeBytes: 123,
+      textContent: '# md',
+      metadata: { sourceUrl: 'https://a.com/', fetchedAt: 't' },
+      sourceType: 'workflow',
+      sourceRef: 'run_x',
+      name: '新名.html',
+    })
+    expect(upd?.storagePath).toBe('assets/document/202609/new.html')
+    expect(upd?.mimeType).toBe('text/html')
+    expect(upd?.sizeBytes).toBe(123)
+    expect(upd?.textContent).toBe('# md')
+    expect((upd?.metadata as Record<string, unknown>).sourceUrl).toBe('https://a.com/')
+    expect(upd?.sourceRef).toBe('run_x')
+    expect(upd?.name).toBe('新名.html')
   })
 })

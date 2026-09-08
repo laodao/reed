@@ -40,10 +40,10 @@ describe('createAssetCategories 迁移', () => {
     await createAssetCategories(ds)
   })
 
-  it('内置种子：10 个业务分类，早报=report+morningReport，行业周报=report+industryWeekly，吃瓜报告=report+gossipTabloid', async () => {
+  it('内置种子：11 个业务分类，早报=report+morningReport，行业周报=report+industryWeekly，吃瓜报告=report+gossipTabloid，网页收藏=html', async () => {
     await createAssetCategories(ds)
     const rows = (await ds.query(`SELECT name, preview_mode, preview_template_id, is_builtin, sort_order FROM asset_categories ORDER BY sort_order`)) as Array<Record<string, unknown>>
-    expect(rows).toHaveLength(10)
+    expect(rows).toHaveLength(11)
     const byName = Object.fromEntries(rows.map(r => [r.name, r]))
     expect(byName['早报']).toMatchObject({ preview_mode: 'report', preview_template_id: 'morningReport', is_builtin: 1 })
     expect(byName['行业周报']).toMatchObject({ preview_mode: 'report', preview_template_id: 'industryWeekly' })
@@ -55,6 +55,14 @@ describe('createAssetCategories 迁移', () => {
     expect(byName['网页转写']).toMatchObject({ preview_mode: 'markdown' })
     expect(byName['图文卡片']).toMatchObject({ preview_mode: 'markdown' })
     expect(byName['润色稿']).toMatchObject({ preview_mode: 'markdown' })
+    expect(byName['网页收藏']).toMatchObject({ preview_mode: 'html', is_builtin: 1 })
+  })
+
+  it('内置分类网页收藏：allowed_kinds=["file","text"]、allowed_categories=["document","text"]', async () => {
+    await createAssetCategories(ds)
+    const row = (await ds.query(`SELECT allowed_kinds, allowed_categories FROM asset_categories WHERE name = '网页收藏'`))[0] as { allowed_kinds: string; allowed_categories: string }
+    expect(JSON.parse(row.allowed_kinds)).toEqual(['file', 'text'])
+    expect(JSON.parse(row.allowed_categories)).toEqual(['document', 'text'])
   })
 
   it('内置分类 allowed_kinds 存 JSON 数组 ["text"]', async () => {
@@ -73,7 +81,7 @@ describe('createAssetCategories 迁移', () => {
     // 迁移会把定义同步回内置版（早报应回到 report 渲染长图）
     expect(rows[0].preview_mode).toBe('report')
     const total = (await ds.query(`SELECT COUNT(*) AS c FROM asset_categories`))[0] as { c: number }
-    expect(Number(total.c)).toBe(10)
+    expect(Number(total.c)).toBe(11)
   })
 
   it('name 唯一索引存在', async () => {

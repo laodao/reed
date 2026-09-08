@@ -344,11 +344,16 @@ const collectWebpageNode: WorkflowNodeHandler = {
     { key: 'url', type: 'string', desc: '资产可访问链接' },
     { key: 'markdownChars', type: 'number', desc: 'markdown 正文字符数' },
     { key: 'sourceUrl', type: 'string', desc: '原始网页 URL' },
+    { key: 'skipped', type: 'boolean', desc: '该 URL 已收藏且策略为跳过（true=未改写）' },
     { key: 'warnings', type: 'json', desc: '资源内联失败提示（可选）' },
   ],
   validateConfig(config) {
     const errors: string[] = []
     if (stringifyValue((config as { url?: string }).url).trim() === '') errors.push('网页 URL 不能为空')
+    const policy = (config as { existingPolicy?: string }).existingPolicy
+    if (policy !== undefined && policy !== '' && policy !== 'skip' && policy !== 'replace') {
+      errors.push('重复 URL 策略不合法')
+    }
     return errors
   },
   async execute(ctx: WorkflowNodeContext) {
@@ -358,6 +363,7 @@ const collectWebpageNode: WorkflowNodeHandler = {
       tags?: string
       description?: string
       enabled?: boolean
+      existingPolicy?: 'skip' | 'replace'
     }
     if (cfg.enabled === false) {
       return {
@@ -371,6 +377,7 @@ const collectWebpageNode: WorkflowNodeHandler = {
       title: cfg.title?.trim() || undefined,
       description: cfg.description?.trim() || undefined,
       tags: parseTags(cfg.tags),
+      existingPolicy: cfg.existingPolicy === 'replace' ? 'replace' : 'skip',
       sourceType: 'workflow',
       sourceRef: ctx.runId,
     })
@@ -383,8 +390,11 @@ const collectWebpageNode: WorkflowNodeHandler = {
         category: record.category,
         subCategory: record.subCategory ?? '网页收藏',
         url: getAssetService().assetPreviewUrl(record),
-        markdownChars: record.metadata?.markdownChars ? Number(record.metadata.markdownChars) : result.markdown.length,
+        markdownChars: result.skipped
+          ? (typeof record.metadata?.markdownChars === 'number' ? record.metadata.markdownChars : result.markdown.length)
+          : result.markdown.length,
         sourceUrl: String(record.metadata?.sourceUrl ?? cfg.url),
+        skipped: result.skipped,
         ...(result.warnings.length > 0 ? { warnings: result.warnings } : {}),
       },
     }

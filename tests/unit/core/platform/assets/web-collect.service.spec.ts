@@ -16,7 +16,13 @@ const SITE_CSS = '.hero{background:url(/bg.png)}'
 const NOW_ISO = '2026-09-05T08:00:00.000Z'
 
 function buildService(assetCreateMock: ReturnType<typeof vi.fn>) {
-  const assetService = { createAsset: assetCreateMock } as unknown as AssetService
+  const assetService = {
+    createAsset: assetCreateMock,
+    // 幂等/刷新路径：缺省"无既有档" + 记录调用
+    findWebCollectBySourceUrl: vi.fn(async () => null),
+    updateAssetContent: vi.fn(async () => null),
+    getAsset: vi.fn(async () => null),
+  } as unknown as AssetService
   const svc = new WebCollectService({
     assetService,
     fetchPage: async () => ({ url: 'https://news.example.com/a', html: PAGE_HTML }),
@@ -35,6 +41,48 @@ function buildService(assetCreateMock: ReturnType<typeof vi.fn>) {
     now: () => new Date(NOW_ISO),
   })
   return svc
+}
+
+/** 构造一条已存在的「网页收藏」记录 */
+function existingRecord(url = 'https://news.example.com/a'): AssetRecord {
+  return {
+    id: 'asset-existing',
+    category: 'document',
+    subCategory: '网页收藏',
+    name: '深色模式下的资讯页.html',
+    kind: 'file',
+    tags: [],
+    textContent: '# 旧版正文',
+    metadata: { sourceUrl: url, sourceTitle: '深色模式下的资讯页' },
+    createdAt: NOW_ISO,
+    updatedAt: NOW_ISO,
+  } as AssetRecord
+}
+
+/** 可配置幂等行为的构建器：existing/更新回调可控 */
+function buildBehavedService(opts: {
+  existing?: AssetRecord | null
+  onUpdate?: (id: string, input: Record<string, unknown>) => AssetRecord | null
+}) {
+  const createMock = vi.fn(async (): Promise<AssetRecord> => ({ ...existingRecord(), id: 'asset-new' }))
+  const findMock = vi.fn(async () => opts.existing ?? null)
+  const updateMock = vi.fn(async (id: string, input: Record<string, unknown>): Promise<AssetRecord | null> =>
+    opts.onUpdate ? opts.onUpdate(id, input) : { ...existingRecord(), id, ...(input as object) },
+  )
+  const getMock = vi.fn(async () => opts.existing ?? null)
+  const assetService = {
+    createAsset: createMock,
+    findWebCollectBySourceUrl: findMock,
+    updateAssetContent: updateMock,
+    getAsset: getMock,
+  } as unknown as AssetService
+  const svc = new WebCollectService({
+    assetService,
+    fetchPage: async () => ({ url: 'https://news.example.com/a', html: PAGE_HTML }),
+    fetchResource: async () => ({ ok: false, reason: 'not-called' }),
+    now: () => new Date(NOW_ISO),
+  })
+  return { svc, findMock, updateMock, createMock, getMock }
 }
 
 describe('WebCollectService.collectWebpage', () => {
@@ -101,6 +149,70 @@ describe('WebCollectService.collectWebpage', () => {
     const svc = buildService(assetCreateMock)
     await expect(svc.collectWebpage({ url: 'file:///etc/passwd' })).rejects.toThrow('仅支持 http(s)')
     await expect(svc.collectWebpage({ url: 'https://a.com' })).resolves.toBeTruthy()
+  })
+})
+
+describe('幂等收藏与快照刷新', () => {
+  it('已收藏 + 默认 skip：不抓页、不写库，返回 skipped=true 与既有档', async () => {
+    const ex = existingRecord()
+    const { svc, findMock, updateMock, createMock } = buildBehavedService({ existing: ex })
+    const result = await svc.collectWebpage({ url: 'https://news.example.com/a' })
+    expect(result.skipped).toBe(true)
+    expect(result.record.id).toBe('asset-existing')
+    expect(result.fetched).toBe(false)
+    expect(findMock).toHaveBeenCalledWith('https://news.example.com/a')
+    expect(updateMock).not.toHaveBeenCalled()
+    expect(createMock).not.toHaveBeenCalled()
+  })
+
+  it('已收藏 + existingPolicy=replace：就地刷新同一资产（不新建）', async () => {
+    const ex = existingRecord()
+    const { svc, updateMock, createMock } = buildBehavedService({
+      existing: ex,
+      onUpdate: (id, input) => ({ ...ex, id, textContent: String(input.textContent ?? '') }),
+    })
+    const result = await svc.collectWebpage({ url: 'https://news.example.com/a', existingPolicy: 'replace' })
+    expect(result.skipped).toBe(false)
+    expect(createMock).not.toHaveBeenCalled()
+    const args = updateMock.mock.calls[0]
+    expect(args[0]).toBe('asset-existing')
+    const input = args[1] as Record<string, unknown>
+    expect((input.dataUrl as string).startsWith('data:text/html;base64,')).toBe(true)
+    expect(String(input.textContent)).toContain('标题甲')
+    expect((input.metadata as Record<string, unknown>).sourceUrl).toBe('https://news.example.com/a')
+    expect((input.metadata as Record<string, unknown>).sourceTitle).toBe('深色模式下的资讯页')
+  })
+
+  it('replace 后 metadata.sourceUrl 仍为输入 URL（幂等键稳定）', async () => {
+    const ex = existingRecord()
+    const { svc, updateMock } = buildBehavedService({ existing: ex })
+    await svc.collectWebpage({ url: 'https://news.example.com/a', existingPolicy: 'replace' })
+    const metadata = (updateMock.mock.calls[0][1] as { metadata: Record<string, unknown> }).metadata
+    expect(metadata.sourceUrl).toBe('https://news.example.com/a')
+  })
+
+  it('refreshExisting：按记录 sourceUrl 重抓并就地更新，保留原名', async () => {
+    const ex = existingRecord()
+    const { svc, updateMock } = buildBehavedService({
+      existing: ex,
+      onUpdate: (id, input) => ({ ...ex, id, name: String((input as { name?: string }).name ?? ex.name) }),
+    })
+    const result = await svc.refreshExisting('asset-existing')
+    expect(result.skipped).toBe(false)
+    const args = updateMock.mock.calls[0]
+    expect(args[0]).toBe('asset-existing')
+    const input = args[1] as { name?: string; textContent?: string }
+    expect(input.name).toBe('深色模式下的资讯页.html')
+    expect(String(input.textContent)).toContain('标题甲')
+  })
+
+  it('refreshExisting：非网页收藏/缺 sourceUrl 报错', async () => {
+    const other = { ...existingRecord(), subCategory: '早报' } as AssetRecord
+    const { svc } = buildBehavedService({ existing: other })
+    await expect(svc.refreshExisting('asset-other')).rejects.toThrow('仅「网页收藏」')
+    const noUrl = { ...existingRecord(), metadata: {} } as AssetRecord
+    const { svc: svc2 } = buildBehavedService({ existing: noUrl })
+    await expect(svc2.refreshExisting('asset-no-url')).rejects.toThrow('缺少原始网页 URL')
   })
 })
 

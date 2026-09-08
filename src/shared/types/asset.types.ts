@@ -258,6 +258,11 @@ export interface SaveAssetInput {
   /** 内容来源（四种形态按 kind 判别） */
   content: { kind: 'file'; path: string } | { kind: 'url'; url: string } | { kind: 'text'; text: string } | { kind: 'json'; json: string }
   /**
+   * 仅 kind=file 时使用：把源链接写入 url 列（如网页收藏存 sourceUrl，供精确幂等查重）；
+   * url 型资产自动使用 content.url，无需本字段。
+   */
+  url?: string
+  /**
    * 正文（仅 kind=file 时使用）：文件落盘的同时把提取的正文文本（如 markdown）写入
    * text_content 列——"一资产一文件一正文"形态（网页收藏归档：html 文件 + md 正文），
    * 删除随资产行自动清理，预览渲染也优先取文件内容（见 renderAssetPreview）。

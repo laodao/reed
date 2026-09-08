@@ -816,6 +816,8 @@ const electronAPI = {
     materializeImage: (p: { assetId: string; templateId?: string; subCategory?: string; name?: string; tags?: string[] }) => ipcRenderer.invoke('asset:materialize-image', p),    sourceLink: (assetId: string) => ipcRenderer.invoke('asset:source-link', { assetId }),
     groupDetail: (groupId: string) => ipcRenderer.invoke('asset:group-detail', { groupId }),
     download: (id: string, view?: 'preview' | 'source') => ipcRenderer.invoke('asset:download', { id, view }),
+    // 网页收藏「更新快照」：按 sourceUrl 重新抓取并就地刷新
+    refreshWebpage: (assetId: string) => ipcRenderer.invoke('asset:webpage-refresh', { assetId }),
   },
 
   // ==================== 新闻来源库（内置应用 C1 早报 / C2 周报的数据源） ====================
