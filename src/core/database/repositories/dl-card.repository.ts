@@ -9,7 +9,7 @@
 import { type DataSource, type FindOptionsWhere } from 'typeorm'
 import { DlCardEntity } from '../entities/domain-learning/dl-card.entity'
 import { BaseRepository } from '../base-repository'
-import type { DlCardSection, DlWorkRef, DlEvidenceRef } from '@shared/types/domain-learning.types'
+import type { DlCardSection, DlWorkRef, DlEvidenceRef, DlCardVerification } from '@shared/types/domain-learning.types'
 
 /** content-template-design v4 §3：区集元素（契约同 shared DlCardSection） */
 export type DlCardSectionDto = DlCardSection
@@ -33,6 +33,8 @@ export interface DlCardRow {
   evidenceSources: DlCardEvidenceDto[] | null
   version: number
   status: string
+  /** 内部核验记录（M4-UX2；可空=未核验） */
+  verification: DlCardVerification | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -44,6 +46,7 @@ export type DlCardPatch = Partial<{
   contentMd: string | null
   evidenceSources: DlCardEvidenceDto[] | null
   status: string
+  verification: DlCardVerification | null
 }>
 
 type CardWhere = FindOptionsWhere<DlCardEntity>
@@ -53,6 +56,28 @@ function safeParseArray<T>(json: string | null): T[] | null {
   try {
     const v = JSON.parse(json) as unknown
     return Array.isArray(v) ? (v as T[]) : null
+  } catch {
+    return null
+  }
+}
+
+const VERIFY_STATUSES = ['unverified', 'verifying', 'verified', 'needs_review'] as const
+
+function parseVerification(json: string | null): DlCardVerification | null {
+  if (!json) return null
+  try {
+    const v = JSON.parse(json) as Record<string, unknown>
+    if (!v || typeof v !== 'object') return null
+    const issues = Array.isArray(v.issues)
+      ? (v.issues as DlCardVerification['issues']).filter((i) => i && typeof i === 'object' && i.verdict)
+      : []
+    const status = VERIFY_STATUSES.includes(v.status as (typeof VERIFY_STATUSES)[number]) ? (v.status as DlCardVerification['status']) : 'unverified'
+    return {
+      status,
+      issues,
+      checkedAt: typeof v.checkedAt === 'string' ? v.checkedAt : null,
+      note: typeof v.note === 'string' ? v.note : null,
+    }
   } catch {
     return null
   }
@@ -74,6 +99,7 @@ export class DlCardRepository extends BaseRepository<DlCardEntity, DlCardRow> {
     evidenceSources?: DlCardEvidenceDto[] | null
     version?: number
     status?: string
+    verification?: DlCardVerification | null
   }): Promise<DlCardRow> {
     const now = new Date()
     const e = new DlCardEntity()
@@ -88,6 +114,7 @@ export class DlCardRepository extends BaseRepository<DlCardEntity, DlCardRow> {
     e.evidenceSources = input.evidenceSources ? JSON.stringify(input.evidenceSources) : null
     e.version = input.version ?? 1
     e.status = input.status ?? 'draft'
+    e.verification = input.verification ? JSON.stringify(input.verification) : null
     e.createdAt = now
     e.updatedAt = now
     await this.scoped.insert(e)
@@ -139,6 +166,8 @@ export class DlCardRepository extends BaseRepository<DlCardEntity, DlCardRow> {
         ? JSON.stringify(patch.evidenceSources)
         : null
     if (patch.status !== undefined) partial.status = patch.status
+    if (patch.verification !== undefined)
+      partial.verification = patch.verification ? JSON.stringify(patch.verification) : null
     await this.scoped.update({ id }, partial)
   }
 
@@ -155,6 +184,7 @@ export class DlCardRepository extends BaseRepository<DlCardEntity, DlCardRow> {
       evidenceSources: safeParseArray<DlCardEvidenceDto>(e.evidenceSources),
       version: e.version,
       status: e.status,
+      verification: parseVerification(e.verification),
       createdAt: e.createdAt,
       updatedAt: e.updatedAt,
     }

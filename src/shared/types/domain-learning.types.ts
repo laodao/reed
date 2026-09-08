@@ -381,6 +381,28 @@ export interface DlNoteQueryResult {
   total: number
 }
 
+/** 讲义内部核验状态（M4-UX2：仅后端使用,不向用户展示） */
+export type DlVerificationStatus = 'unverified' | 'verifying' | 'verified' | 'needs_review'
+
+/** 单条存疑点结论 */
+export interface DlVerificationIssue {
+  /** 被核验的论断/片段（可空=整体性结论） */
+  claim?: string | null
+  verdict: 'supported' | 'unsupported' | 'needs_review'
+  reason: string
+  /** 支撑来源引用（KB 文档/URL/段落） */
+  sourceRef?: string | null
+}
+
+/** 讲义核验记录（dl_card.verification 内部 JSON；UI 不展示细节） */
+export interface DlCardVerification {
+  status: DlVerificationStatus
+  issues: DlVerificationIssue[]
+  checkedAt: string | null
+  /** 触发核验的材料摘要（如 KB/URL 数），仅诊断用 */
+  note?: string | null
+}
+
 // ==================== Atlas 增强视图（M2-E，按画像启用） ====================
 
 /** Atlas 增强视图种类（图谱之外的可视化形态） */

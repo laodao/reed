@@ -52,6 +52,10 @@ export class DlCardEntity {
   @Column({ name: 'status', type: 'varchar', default: 'draft' })
   status!: string
 
+  /** 内部核验 JSON（DlCardVerification；M4-UX2 后端自动核验，不向用户展示） */
+  @Column({ name: 'verification', type: 'text', nullable: true })
+  verification!: string | null
+
   @Column({ name: 'created_at', type: 'datetime', nullable: true })
   createdAt!: Date | null
 

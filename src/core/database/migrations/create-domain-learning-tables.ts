@@ -38,6 +38,14 @@ export async function createDomainLearningTables(ds: DataSource): Promise<void> 
     'review_settings',
     isPg ? 'review_settings text' : 'review_settings TEXT',
   )
+  // M4-UX2：dl_card.verification 列（内部核验 JSON）
+  await ensureColumn(
+    ds,
+    isPg,
+    'dl_card',
+    'verification',
+    isPg ? 'verification text' : 'verification TEXT',
+  )
 }
 
 // ==================== dl_project ====================
@@ -253,6 +261,7 @@ function ddlCard(pg: boolean): string {
         evidence_sources text,
         version         integer NOT NULL DEFAULT 1,
         status          varchar NOT NULL DEFAULT 'draft',
+        verification    text,
         created_at      timestamp,
         updated_at      timestamp
       )
@@ -271,6 +280,7 @@ function ddlCard(pg: boolean): string {
       evidence_sources TEXT,
       version         INTEGER NOT NULL DEFAULT 1,
       status          TEXT NOT NULL DEFAULT 'draft',
+      verification    TEXT,
       created_at      DATETIME,
       updated_at      DATETIME
     )
