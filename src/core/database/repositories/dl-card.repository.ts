@@ -9,34 +9,16 @@
 import { type DataSource, type FindOptionsWhere } from 'typeorm'
 import { DlCardEntity } from '../entities/domain-learning/dl-card.entity'
 import { BaseRepository } from '../base-repository'
+import type { DlCardSection, DlWorkRef, DlEvidenceRef } from '@shared/types/domain-learning.types'
 
-/** content-template-design v4 §3：区集元素 */
-export interface DlCardSectionDto {
-  key: string
-  title?: string
-  style?: string
-  md: string
-  folded?: boolean
-}
+/** content-template-design v4 §3：区集元素（契约同 shared DlCardSection） */
+export type DlCardSectionDto = DlCardSection
 
-/** content-template-design v4 §3：相关著作条目 */
-export interface DlCardWorkDto {
-  kind: string
-  title: string
-  authors?: string
-  year?: string
-  url?: string
-  note?: string
-}
+/** content-template-design v4 §3：相关著作条目（契约同 shared DlWorkRef） */
+export type DlCardWorkDto = DlWorkRef
 
-/** content-template-design v4 §3：证据来源摘要 */
-export interface DlCardEvidenceDto {
-  kind: string
-  title: string
-  url?: string
-  kbDocId?: string
-  quote?: string
-}
+/** content-template-design v4 §3：证据来源摘要（契约同 shared DlEvidenceRef） */
+export type DlCardEvidenceDto = DlEvidenceRef
 
 /** dl_card 行 DTO（JSON 列已解析） */
 export interface DlCardRow {
