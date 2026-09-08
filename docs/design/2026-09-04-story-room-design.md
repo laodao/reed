@@ -1,9 +1,25 @@
 # 故事研讨室（Story Room）设计方案 v2 —— 全新对话式创作工作台
 
-- 日期：2026-09-04（v2，推倒 v1 重新设计）
-- 状态：待评审
+- 日期：2026-09-04（v2，推倒 v1 重新设计）；2026-09-09 v2.1 修订（对话引擎 harness 化）
+- 状态：已评审通过（v2.1 修订见下节），随 `feat/story-room` 分支实施
 - 定位：长篇小说 / 短剧剧本**前期创作的主界面**——与 AI 多轮研讨核心故事、人物、故事线，逐步收敛，然后生成大纲、衔接逐章写作
 - 基本约束：结构化落库复用现有工具与 `lw_*` 表；**不复用旧版对话 Agent 的任何前端组件与交互模型**
+
+---
+
+## 0.0 v2.1 修订记录（2026-09-09，评审定案）
+
+本轮评审对 v2 的产品形态（聊/存分离、主编+整理器、共识账本、卡片落库、阶段门）**全部维持**，仅对话引擎从「裸 chat completion」改为 **agent-harness（HostKit 宿主）**，并定案以下事项：
+
+1. **主编 = HostKit 宿主 `story-room-editor`，零工具**（研讨期不产生结构化动作 → 纯 chat 轮）。落库段照 §4.3 不变；宿主位于平台预留的 `src/core/packs/longwriting/story-room/`。白拿 36 号以来平台能力：记忆双通道装配（图谱结构化提供方 + 飞轮 L1/L2/L3）、轨迹留痕与 Agent 工作台可见（RunRegistry）、prompt cache 断点、`models.summary` 便宜摘要档。
+2. **整理器 = HostKit 宿主 `story-room-distiller`，零工具，JSON-in-prompt**；按需提炼/阶段门整编/单卡重提均走它（可观测、模型分档）。**静默共识提取例外**：每轮成功后的后台微任务直调 LLM（fail-soft），不走 agent run——避免工作台噪音，对齐开放问题 #2「先同模型」。
+3. **滚动摘要业务级实现**：未摘要消息超阈值（20 轮）时用便宜模型压缩最老一段为前情提要，存 `wizard_state`，经 `snapshot` 注入；不依赖 ContextManager 的会话内压缩（每轮从业务表重播种，压缩结果不跨轮）。
+4. **存储嵌套偏差**：房间状态以 `lw_projects.wizard_state` 的 **`room` 子键**存放（`{ledger, summary, summarizedUntilTurn, phase, contentTarget, pendingCards, cardSeq, turnNo}`），不按 §3 的平铺写法——与旧向导状态 `{skipped}` 隔离，零 schema 变更不变。
+5. **流式通道**：主编 delta 直接走新事件通道 `longwriting:room:{projectId}`（message:delta），**不复用** `longwriting:generate:{eventId}` 二次订阅（新 UI 无历史包袱）。
+6. **转短剧桥定案**：渲染层编排，零后端改动——`ep:create-project(name, longWritingProjectId, {styleAnchors})` → 分集大纲拆种子（每集 ≤15000 字）`ep:batch-create-episodes`（uploaded 模式）→ 可选 `ep:identify-uploaded-entities` → 跳转 EpisodeStudio；§9 的 `longwriting:room:export` 通道**取消**。
+7. **圣经面板定案**：只读 + 追问（插入输入框）+ 跳转高级编辑器定位；不做编辑弹窗（与高级模式不重复建表单）。
+8. **旧链路随本轮清理**（开放问题 #3 定案）：`AgentWorkflowService`、`longwriting:agent:*` 四通道、`LwAgentHarnessService` + `lw-agent-tools`、`useAgentChat`、旧四组件；保留 `stateToSummary`（room 复用）。
+9. **短剧目标纳入本轮交付**（开放问题 #1 定案）：大纲阶段按 contentTarget 切「分集大纲」策略。
 
 ---
 
