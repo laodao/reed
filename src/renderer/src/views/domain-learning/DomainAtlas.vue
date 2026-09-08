@@ -139,7 +139,6 @@
       >
         {{ nodeTypeMeta(t).label }}
       </el-tag>
-      <span class="emphasis-hint">（节点类型 → 图例色；点击图中节点查看档案）</span>
     </div>
 
     <div class="atlas-body">

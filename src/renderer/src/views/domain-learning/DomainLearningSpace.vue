@@ -176,7 +176,6 @@
               >
                 研究此概念
               </el-button>
-              <p class="empty-hint">系统将检索资料并产出讲义草稿（可在本页查看更新）</p>
             </el-empty>
           </div>
         </template>
@@ -225,7 +224,7 @@
             </div>
           </div>
           <div v-if="displayTurns.length === 0" class="qa-empty">
-            还没有追问记录——读完讲义仍不懂时，在这里问，答不上会登记为未解问题并建议研究。
+            还没有追问记录——读完讲义后在这里提问。
           </div>
         </div>
         <div class="qa-input">
