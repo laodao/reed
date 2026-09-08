@@ -414,6 +414,8 @@ export class SystemAgentChatService {
       // KE-2 记忆装配（34 号）：chat 未绑定业务，装配 L0 摘要+L1 用户级经验
       let memoryLines: string[] = []
       try {
+        // L0 系统知识最小摘要（M-Ke3 v1：计数级；详细目录走 discover_capabilities）
+        memoryLines.push('[系统能力] 可用工具/工作流/技能以 discover_capabilities 目录为准；复杂多步目标可用 create_task_plan 拆解为任务树。')
         const flywheel = getMemoryFlywheel()
         if (flywheel) {
           const entries = await flywheel.assembleUserLevel(request.content, 3)

@@ -25,6 +25,7 @@ import type { AgentHost, AgentToolDef } from '@core/platform/agent-runtime/types
 import { LoopRunner, initState } from '@core/platform/agent-runtime/runtime/loop'
 import { getAgentLoopHarness } from '@core/platform/workflow/nodes/agent-loop-node'
 import { getMemoryFlywheel } from '@core/platform/workflow/workflow-boot'
+import { listStructuredProviders } from '@core/platform/agent-runtime/memory/structured-provider'
 import { ContextManager } from '@core/platform/agent-runtime/context/context-manager'
 import { DbAgentSessionStore } from '@core/platform/agent-runtime/memory/session-store'
 import { TrajectorySink } from '@core/platform/agent-runtime/trajectory/sink'
@@ -192,16 +193,32 @@ export class LwAgentHarnessService {
     }
     const emitStageDeciding = () => emitAgentEvent(projectId, { type: 'stage', stage: 'deciding' } as never)
 
-      // 四大能力补接（KE-2）：①上下文压缩 ②记忆装配（L1 用户级 + L3 项目级经验）
-      let memoryLines: string[] = []
+      // 四大能力补接（KE-2）：①上下文压缩 ②记忆装配（通道A 图谱结构化事实 + 通道B 记忆召回）
+      const memoryLines: string[] = []
       try {
+        // 通道A：图谱结构化事实（KE-4 provider；topics 取状态里的资产名 + 用户消息关键词）
+        const topics = message.slice(0, 60).split(/[^\u4e00-\u9fa5a-zA-Z0-9]+/).filter((w) => w.length >= 2).slice(0, 5)
+        for (const provider of listStructuredProviders()) {
+          if (!provider.supports({ bizModule: 'longwriting', projectId })) continue
+          try {
+            const segments = await provider.query({
+              scope: { bizModule: 'longwriting', projectId },
+              topics,
+              budget: { maxSegments: 2, maxChars: 600 },
+            })
+            for (const seg of segments) memoryLines.push(`[设定事实] ${seg.text}`)
+          } catch (e) {
+            logger.warn('[lw-agent] 图谱结构化装配失败（跳过）', e)
+          }
+        }
+        // 通道B：记忆向量/关键词召回
         const flywheel = getMemoryFlywheel()
         if (flywheel) {
           const entries = await flywheel.assemble(`${message}\n${stateToSummary(state)}`, 3, { bizModule: 'longwriting', projectId })
-          memoryLines = entries.map((e) => {
+          for (const e of entries) {
             const c = e.content as { title?: string; content?: string }
-            return `- ${c.title ?? ''}：${c.content ?? ''}`
-          })
+            memoryLines.push(`- ${c.title ?? ''}：${c.content ?? ''}`)
+          }
         }
       } catch (e) {
         logger.warn('[lw-agent] 记忆装配失败（不影响主链路）', e)

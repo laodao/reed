@@ -3,8 +3,12 @@
     <div class="page-header">
       <div>
         <h2>知识飞轮</h2>
-        <span class="meta">任务经验的沉淀与复用——蒸馏候选经人工批准才生效（宁可慢不可脏）</span>
+        <span class="meta">分层知识（系统/用户/业务/项目）——候选经人工批准才生效（宁可慢不可脏）</span>
       </div>
+    </div>
+
+    <div class="toolbar">
+      <el-button type="primary" size="small" @click="manualVisible = true">手工录入</el-button>
     </div>
 
     <el-tabs v-model="tab">
@@ -22,10 +26,14 @@
           <el-table-column label="置信度" width="90">
             <template #default="{ row }">{{ row.confidence != null ? row.confidence.toFixed(2) : '—' }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="150" fixed="right">
+          <el-table-column label="层级" width="140">
+            <template #default="{ row }">{{ layerLabel(row) }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="200" fixed="right">
             <template #default="{ row }">
               <el-button text type="success" size="small" @click="approve(row)">批准</el-button>
-              <el-button text type="danger" size="small" @click="archive(row)">归档</el-button>
+              <el-button text type="danger" size="small" @click="reject(row)">驳回</el-button>
+              <el-button text size="small" @click="archive(row)">归档</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -44,6 +52,9 @@
           <el-table-column label="命中/成功" width="100">
             <template #default="{ row }">{{ row.useCount }} / {{ row.successCount }}</template>
           </el-table-column>
+          <el-table-column label="层级" width="140">
+            <template #default="{ row }">{{ layerLabel(row) }}</template>
+          </el-table-column>
           <el-table-column label="操作" width="90" fixed="right">
             <template #default="{ row }">
               <el-button text type="danger" size="small" @click="archive(row)">归档</el-button>
@@ -52,6 +63,26 @@
         </el-table>
       </el-tab-pane>
     </el-tabs>
+    <el-dialog v-model="manualVisible" title="手工录入知识" width="480">
+      <el-form label-width="80" size="small">
+        <el-form-item label="类型">
+          <el-select v-model="manual.kind" style="width: 100%">
+            <el-option label="事实 fact" value="fact" />
+            <el-option label="做法 sop" value="sop" />
+            <el-option label="偏好 preference" value="preference" />
+            <el-option label="技能 skill" value="skill" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="标题"><el-input v-model="manual.title" maxlength="60" /></el-form-item>
+        <el-form-item label="内容"><el-input v-model="manual.content" type="textarea" :rows="3" /></el-form-item>
+        <el-form-item label="业务"><el-input v-model="manual.bizModule" placeholder="留空=用户级（如 longwriting）" /></el-form-item>
+        <el-form-item label="项目"><el-input v-model="manual.projectId" placeholder="留空=不限（业务级须同时填业务）" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button size="small" @click="manualVisible = false">取消</el-button>
+        <el-button type="primary" size="small" :disabled="!manual.title.trim() || !manual.content.trim()" @click="submitManual">提交（待审）</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -68,6 +99,47 @@ interface MemoryRow {
   status: string
   useCount: number
   successCount: number
+  bizModule?: string | null
+  projectId?: string | null
+}
+
+const manualVisible = ref(false)
+const manual = ref({ kind: 'fact', title: '', content: '', bizModule: '', projectId: '' })
+
+function layerLabel(row: MemoryRow): string {
+  if (!row.bizModule) return '用户级'
+  return row.projectId ? `项目 ${row.projectId.slice(0, 10)}` : `业务 ${row.bizModule}`
+}
+
+async function submitManual(): Promise<void> {
+  const m = manual.value
+  const apiObj = api()
+  const resp = await (apiObj as unknown as { addManualMemory?: WfMethod }).addManualMemory?.({
+    kind: m.kind,
+    title: m.title.trim(),
+    content: m.content.trim(),
+    bizModule: m.bizModule.trim() || undefined,
+    projectId: m.projectId.trim() || undefined,
+  })
+  if (resp?.success) {
+    ElMessage.success('已提交待审')
+    manualVisible.value = false
+    manual.value = { kind: 'fact', title: '', content: '', bizModule: '', projectId: '' }
+    await load()
+  } else {
+    ElMessage.error(resp?.error ?? '提交失败')
+  }
+}
+
+async function reject(row: MemoryRow): Promise<void> {
+  const apiObj = api()
+  const resp = await (apiObj as unknown as { rejectMemory?: WfMethod }).rejectMemory?.({ id: row.id })
+  if (resp?.success) {
+    ElMessage.success('已驳回')
+    await load()
+  } else {
+    ElMessage.error(resp?.error ?? '驳回失败')
+  }
 }
 
 type WfResp = { success: boolean; data?: unknown; error?: string }
