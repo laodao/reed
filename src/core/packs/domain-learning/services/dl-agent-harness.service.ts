@@ -36,6 +36,7 @@ import {
   researchSourceHint,
 } from './dl-agent-deps'
 import { emitDlAgentEvent, emitDlStream } from './dl-agent-events'
+import { dlPublishNotice } from './dl-notice'
 import { parseVerifyOutcome } from '../rules/learning-verify.rules'
 import type { DlCardVerification } from '@shared/types/domain-learning.types'
 import {
@@ -289,6 +290,12 @@ export class DlAgentHarnessService {
 
       // M4-UX2：研究产出讲义卡后自动触发内部核验（异步，失败仅记日志，不影响主流程）
       if (mode === 'research' && conceptId) {
+        const savedAny = actionSummaries.some((a) => a.tool === 'dl_save_card' && a.status === 'ok')
+        if (savedAny) {
+          const spaceName = (await m.dlProjects?.getById(spaceId))?.name ?? undefined
+          const conceptName = (await m.dlConcepts?.getById(conceptId))?.name
+          void dlPublishNotice('dl:card-ready', { spaceId, spaceName, conceptName })
+        }
         for (const s of actionSummaries.filter((a) => a.tool === 'dl_save_card' && a.status === 'ok')) {
           const cardId = (s.data as { cardId?: string } | undefined)?.cardId
           if (!cardId) continue
@@ -303,6 +310,9 @@ export class DlAgentHarnessService {
       const msg = e instanceof Error ? e.message : String(e)
       logger.error(`[dl-agent] 轮次异常 mode=${mode} space=${spaceId}: ${msg}`)
       emitDlAgentEvent(spaceId, conceptForEvent, { type: 'error', error: msg })
+      if (mode === 'research') {
+        void dlPublishNotice('dl:research-failed', { spaceId, conceptName: conceptId ?? undefined })
+      }
       throw e
     } finally {
       tap.untap?.()

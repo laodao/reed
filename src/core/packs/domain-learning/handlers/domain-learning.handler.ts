@@ -21,10 +21,14 @@ import { LearningGraphService } from '../services/learning-graph.service'
 import { LearningViewService } from '../services/learning-view.service'
 import { DlAgentHarnessService } from '../services/dl-agent-harness.service'
 import { DlPaceSchedulerService } from '../services/dl-pace-scheduler.service'
+import { dlPublishNotice } from '../services/dl-notice'
 import type { DlPaceSettings, DlReviewSettings } from '@shared/types/domain-learning.types'
 import type { DlAgentMode } from '../services/dl-agent.types'
 
 const logger = createLogger('DlHandlers')
+
+/** 复习到期通知节流：每空间最近一次发布时间（避免每次拉取都通知） */
+const lastReviewNoticeAt = new Map<string, number>()
 
 /** 统一 { success, data, error } 包装 */
 async function wrap<T>(fn: () => Promise<T>): Promise<IpcResponse<T>> {
@@ -203,6 +207,16 @@ export function registerDomainLearningHandlers(): void {
       const items = settings.enabled
         ? await s.graph.listReviewDue(p.id, { intervalMin: settings.intervalMin, limit: settings.limit })
         : []
+      // 平台通知（P1-5）：有到期且超过一个复习周期未提示 → 发一次（不刷屏）
+      if (items.length > 0 && settings.enabled) {
+        const now = Date.now()
+        const last = lastReviewNoticeAt.get(p.id) ?? 0
+        if (now - last >= Math.max(1, settings.intervalMin) * 60_000) {
+          lastReviewNoticeAt.set(p.id, now)
+          const spaceName = (await s.projects.getSpace(p.id))?.name ?? undefined
+          void dlPublishNotice('dl:review-due', { spaceId: p.id, spaceName, conceptName: items[0]?.name })
+        }
+      }
       return { settings, items }
     }))
   ipcBridge.handle('dl:ack-need-review', (_e, p: { id: string; conceptId: string }) =>
