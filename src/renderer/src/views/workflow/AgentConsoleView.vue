@@ -5,7 +5,10 @@
         <h2>Agent 对话</h2>
         <span class="meta">独立的 Agent 会话——完整执行过程流（参考 ZCode / Codex / DeepSeek-harness）</span>
       </div>
-      <el-button type="primary" size="small" @click="createSession">新建会话</el-button>
+      <div class="header-actions">
+        <el-button size="small" @click="gotoTaskTree">任务树</el-button>
+        <el-button type="primary" size="small" @click="createSession">新建会话</el-button>
+      </div>
     </div>
 
     <div class="console-layout">
@@ -633,6 +636,11 @@ function onRunUpdateEvent(data: AgentRunUpdateEvent): void {
   if (selected.value?.scopeKey === data.scopeKey) selected.value.running = data.status === 'running'
 }
 
+/** 页头「任务树」：任务树不再占独立菜单，从这里进（33 号实测反馈） */
+function gotoTaskTree(): void {
+  void router.push('/agent-tasks')
+}
+
 function gotoTasks(rootId: string): void {
   if (!rootId) return
   void router.push({ path: '/agent-tasks', query: { focus: rootId } })
@@ -743,6 +751,7 @@ onUnmounted(() => {
 <style scoped>
 .page-container { padding: 16px 20px; height: 100%; display: flex; flex-direction: column; overflow: hidden; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.header-actions { display: flex; align-items: center; gap: 8px; }
 .page-header h2 { margin: 0 0 2px; font-size: 18px; }
 .meta { color: var(--el-text-color-secondary); font-size: 13px; }
 

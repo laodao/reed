@@ -7,7 +7,9 @@
  *              （应用分享页），已随 app 包登记，见 renderer/packs/app。
  */
 import { markRaw } from 'vue'
-import { Connection } from '@element-plus/icons-vue'
+// 图标区分（33 号实测反馈）：待办=工单（注意 Tickets 与 Notebook 同形，须用单数 Ticket）、
+// Agent 对话=派活、知识飞轮=循环沉淀；工作流保留 Connection
+import { Connection, Promotion, RefreshRight, Ticket } from '@element-plus/icons-vue'
 import type { RendererPackDefinition } from '../registry'
 
 export const workflowPack: RendererPackDefinition = {
@@ -81,25 +83,21 @@ export const workflowPack: RendererPackDefinition = {
       path: '/agent-todos',
       label: '待办中心',
       description: '审批/任务裁决/记忆审批集中处理',
-      icon: markRaw(Connection),
+      icon: markRaw(Ticket),
     },
     {
       path: '/agent-console',
       label: 'Agent 对话',
       description: '独立的 Agent 会话——直接派活，过程时间线全程可见',
-      icon: markRaw(Connection),
+      icon: markRaw(Promotion),
     },
     {
-      path: '/agent-tasks',
-      label: 'Agent 任务树',
-      description: '长程任务分解与质量门',
-      icon: markRaw(Connection),
-    },
-    {
+      // 任务树不占独立菜单：入口在 Agent 对话页右上角「任务树」按钮（33 号实测反馈）；
+      // 路由保留（gotoTasks/批准流跳转仍需）
       path: '/agent-memory',
       label: '知识飞轮',
       description: '任务经验的沉淀与审批',
-      icon: markRaw(Connection),
+      icon: markRaw(RefreshRight),
     },
     {
       path: '/workflow',
