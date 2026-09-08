@@ -10,8 +10,9 @@
  *              AssetService（workflow-boot 装配后经 asset-registry 取用）。
  */
 
-import { ASSET_CATEGORIES, type AssetCategory, type AssetRecord } from '@shared/types/asset.types'
+import { ASSET_CATEGORIES, type AssetCategory } from '@shared/types/asset.types'
 import { getAssetService } from '../../assets/asset-registry'
+import { getWebCollectService } from '../../assets/web-collect-registry'
 import type { WorkflowNodeContext, WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
 
@@ -324,5 +325,71 @@ const readAssetsNode: WorkflowNodeHandler = {
   },
 }
 
+// ==================== 收藏网页 ====================
+
+/**
+ * 把网页收藏为资产中心「网页收藏」资产（single-file html + markdown 正文）。
+ * 节点是薄适配器：抓取/内联/入库全部委托 WebCollectService（save-asset 之外的
+ * 网页专属语义——自动 title/正文提取、固定 网页收藏 分类，画布上无需配 kind/分类）。
+ */
+const collectWebpageNode: WorkflowNodeHandler = {
+  type: 'collect-webpage',
+  controlKind: 'task',
+  cancellable: false,
+  outputSchema: [
+    { key: 'assetId', type: 'string', desc: '资产 ID' },
+    { key: 'name', type: 'string', desc: '资产名（网页标题.html）' },
+    { key: 'category', type: 'string', desc: '资产大类（document）' },
+    { key: 'subCategory', type: 'string', desc: '资产子分类（网页收藏）' },
+    { key: 'url', type: 'string', desc: '资产可访问链接' },
+    { key: 'markdownChars', type: 'number', desc: 'markdown 正文字符数' },
+    { key: 'sourceUrl', type: 'string', desc: '原始网页 URL' },
+    { key: 'warnings', type: 'json', desc: '资源内联失败提示（可选）' },
+  ],
+  validateConfig(config) {
+    const errors: string[] = []
+    if (stringifyValue((config as { url?: string }).url).trim() === '') errors.push('网页 URL 不能为空')
+    return errors
+  },
+  async execute(ctx: WorkflowNodeContext) {
+    const cfg = ctx.config as {
+      url?: string
+      title?: string
+      tags?: string
+      description?: string
+      enabled?: boolean
+    }
+    if (cfg.enabled === false) {
+      return {
+        status: 'succeeded',
+        output: { assetId: '', name: '', category: '', subCategory: '', url: '', markdownChars: 0, sourceUrl: '', skipped: true },
+      }
+    }
+    const service = getWebCollectService()
+    const result = await service.collectWebpage({
+      url: stringifyValue(cfg.url),
+      title: cfg.title?.trim() || undefined,
+      description: cfg.description?.trim() || undefined,
+      tags: parseTags(cfg.tags),
+      sourceType: 'workflow',
+      sourceRef: ctx.runId,
+    })
+    const record = result.record
+    return {
+      status: 'succeeded',
+      output: {
+        assetId: record.id,
+        name: record.name,
+        category: record.category,
+        subCategory: record.subCategory ?? '网页收藏',
+        url: getAssetService().assetPreviewUrl(record),
+        markdownChars: record.metadata?.markdownChars ? Number(record.metadata.markdownChars) : result.markdown.length,
+        sourceUrl: String(record.metadata?.sourceUrl ?? cfg.url),
+        ...(result.warnings.length > 0 ? { warnings: result.warnings } : {}),
+      },
+    }
+  },
+}
+
 /** 资产节点集合 */
-export const ASSET_NODE_HANDLERS: WorkflowNodeHandler[] = [saveAssetNode, readAssetNode, readAssetsNode]
+export const ASSET_NODE_HANDLERS: WorkflowNodeHandler[] = [saveAssetNode, readAssetNode, readAssetsNode, collectWebpageNode]

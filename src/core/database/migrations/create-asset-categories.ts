@@ -23,6 +23,10 @@ const BUILTIN_CATEGORIES: Array<{
   previewMode: string
   previewTemplateId: string | null
   sortOrder: number
+  /** 允许的存储形态（缺省 ['text']，与 INSERT 旧硬编码一致） */
+  allowedKinds?: string[]
+  /** 允许的资产大类（可选，缺省不限定） */
+  allowedCategories?: string[]
 }> = [
   { code: 'morning_report', name: '早报', previewMode: 'auto', previewTemplateId: null, sortOrder: 10 },
   { code: 'industry_weekly', name: '行业周报', previewMode: 'auto', previewTemplateId: null, sortOrder: 20 },
@@ -34,6 +38,16 @@ const BUILTIN_CATEGORIES: Array<{
   { code: 'image_card', name: '图文卡片', previewMode: 'markdown', previewTemplateId: null, sortOrder: 80 },
   { code: 'polished_article', name: '润色稿', previewMode: 'markdown', previewTemplateId: null, sortOrder: 90 },
   { code: 'gossip_report', name: '吃瓜报告', previewMode: 'auto', previewTemplateId: null, sortOrder: 95 },
+  // 网页收藏：single-file HTML（kind=file 落盘）+ markdown 正文（text_content 列），html 原样预览
+  {
+    code: 'webpage_collect',
+    name: '网页收藏',
+    previewMode: 'html',
+    previewTemplateId: null,
+    sortOrder: 65,
+    allowedKinds: ['file', 'text'],
+    allowedCategories: ['document', 'text'],
+  },
 ]
 
 export async function createAssetCategories(ds: DataSource): Promise<void> {
@@ -87,17 +101,25 @@ export async function createAssetCategories(ds: DataSource): Promise<void> {
     )
     if (existing.length === 0) {
       const id = `builtin_cat_${c.code}`
+      const kinds = JSON.stringify(c.allowedKinds ?? ['text'])
+      const allowedCategories = c.allowedCategories?.length ? JSON.stringify(c.allowedCategories) : null
       await ds.query(
         `INSERT INTO asset_categories
-          (id, name, code, allowed_kinds, previewable, preview_mode, preview_template_id, sort_order, is_builtin, created_at, updated_at)
-         VALUES (${ph(1)}, ${ph(2)}, ${ph(3)}, ${ph(4)}, ${ph(5)}, ${ph(6)}, ${ph(7)}, ${ph(8)}, ${ph(9)}, ${ph(10)}, ${ph(11)})`,
-        [id, c.name, c.code, JSON.stringify(['text']), 1, c.previewMode, c.previewTemplateId, c.sortOrder, 1, now, now],
+          (id, name, code, allowed_kinds, allowed_categories, previewable, preview_mode, preview_template_id, sort_order, is_builtin, created_at, updated_at)
+         VALUES (${ph(1)}, ${ph(2)}, ${ph(3)}, ${ph(4)}, ${ph(5)}, ${ph(6)}, ${ph(7)}, ${ph(8)}, ${ph(9)}, ${ph(10)}, ${ph(11)}, ${ph(12)})`,
+        [id, c.name, c.code, kinds, allowedCategories, 1, c.previewMode, c.previewTemplateId, c.sortOrder, 1, now, now],
       )
       inserted++
     } else {
+      // 同步定义（含允许形态/大类）：老库以旧定义先插过的行也能收敛到最新约束
+      const kinds = JSON.stringify(c.allowedKinds ?? ['text'])
+      const allowedCategories = c.allowedCategories?.length ? JSON.stringify(c.allowedCategories) : null
       await ds.query(
-        `UPDATE asset_categories SET preview_mode = ${ph(1)}, preview_template_id = ${ph(2)}, sort_order = ${ph(3)}, updated_at = ${ph(4)} WHERE name = ${ph(5)}`,
-        [c.previewMode, c.previewTemplateId, c.sortOrder, now, c.name],
+        `UPDATE asset_categories SET
+           allowed_kinds = ${ph(1)}, allowed_categories = ${ph(2)}, preview_mode = ${ph(3)},
+           preview_template_id = ${ph(4)}, sort_order = ${ph(5)}, updated_at = ${ph(6)}
+         WHERE name = ${ph(7)}`,
+        [kinds, allowedCategories, c.previewMode, c.previewTemplateId, c.sortOrder, now, c.name],
       )
     }
   }

@@ -101,6 +101,8 @@ export class AssetService {
       metadata = Object.keys(saved.metadata).length ? saved.metadata : null
       // 落盘后以实际存储文件名作为资产名（含去重序号时更直观）
       name = name || basenameOf(storagePath)
+      // 网页收藏等"文件 + 正文"形态：正文写入 text_content 列（删除随行清理）
+      textContent = input.textContent?.trim() ? input.textContent : null
     } else if (content.kind === 'url') {
       const u = content.url.trim()
       if (!/^https?:\/\//i.test(u) && !/^local-(image|file|video):\/\//i.test(u)) {
@@ -159,6 +161,11 @@ export class AssetService {
       } else {
         groupRole = 'member'
       }
+    }
+
+    // 附加元数据（调用方传入）与存储探测元数据合并，调用方优先
+    if (input.metadata && Object.keys(input.metadata).length > 0) {
+      metadata = { ...(metadata ?? {}), ...input.metadata }
     }
 
     const record = await this.repo.create({
@@ -392,10 +399,13 @@ export class AssetService {
       || mode === ASSET_PREVIEW_MODES.video || mode === ASSET_PREVIEW_MODES.none) {
       return null
     }
-    // 需要渲染的内容：text 形态取 textContent；文件形态读取（md/html/txt 等）
-    let content = record.textContent ?? ''
-    if (!content && record.kind === ASSET_STORAGE_KINDS.file) {
-      content = this.storage.readStoredText(record.storagePath)
+    // 需要渲染的内容：文件形态读磁盘文件全文（single-file 网页快照等"文件即主体"场景），
+    // 文本形态读 text_content 列；文件缺失时回退 text_content（textContent 可为 md 正文伴存）。
+    let content = ''
+    if (record.kind === ASSET_STORAGE_KINDS.file) {
+      content = (this.storage.readStoredText(record.storagePath) || record.textContent) ?? ''
+    } else {
+      content = record.textContent ?? ''
     }
     if (!content.trim()) return null
 

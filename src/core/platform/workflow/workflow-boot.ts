@@ -252,16 +252,18 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
   }
   try {
     const { AssetService, AssetStorageService, registerAssetService } = await import('../assets')
+    const { WebCollectService, registerWebCollectService } = await import('../assets')
     const { createAssetSourceLinkResolver } = await import('../assets/asset-source-link')
-    registerAssetService(
-      new AssetService(
-        new AssetStorageService(),
-        db.assets,
-        db.assetCategories,
-        db.assetGroups ?? undefined,
-        createAssetSourceLinkResolver({ runs: db.workflowRuns!, apps: db.appDefinitions! }),
-      )
+    const assetService = new AssetService(
+      new AssetStorageService(),
+      db.assets,
+      db.assetCategories,
+      db.assetGroups ?? undefined,
+      createAssetSourceLinkResolver({ runs: db.workflowRuns!, apps: db.appDefinitions! }),
     )
+    registerAssetService(assetService)
+    // 网页收藏服务（collect-webpage 节点 / 运行页一键收藏）：依赖资产服务
+    registerWebCollectService(new WebCollectService({ assetService }))
   } catch (e) {
     logger.error('[workflow-boot] 资产服务装配失败（继续启动）', e)
   }

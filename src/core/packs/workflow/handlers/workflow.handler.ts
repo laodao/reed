@@ -8,6 +8,8 @@
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getWorkflowSubsystem } from '@core/platform/workflow/workflow-boot'
+import { getWebCollectService } from '@core/platform/assets/web-collect-registry'
+import { getAssetService } from '@core/platform/assets/asset-registry'
 import { getCurrentUserId, LOCAL_DEFAULT_USER_ID } from '@core/context/user-context'
 import { WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_STATUSES, WORKFLOW_TRIGGER_TYPES } from '@shared/types/workflow.types'
 import type { IpcResponse } from '@shared/types/ipc.types'
@@ -187,6 +189,45 @@ export function registerWorkflowHandlers(): void {
   ipcBridge.handle('wf:get-run', (_e, p: { runId: string }) =>
     wrap(() => subsystem().runService.getRunDetail(p.runId))
   )
+  // 运行页"一键收藏"：把网页型节点的执行结果归档为资产中心「网页收藏」资产。
+  // 后端直读 node_run 记录（不走 IPC 传大正文），html 完整且未截断时直接归档，
+  // 否则（web-extract 文本型 / 大页被截断）按 url 重新抓取归档。
+  ipcBridge.handle(
+    'wf:collect-node-output',
+    (_e, p: { runId: string; nodeId: string; iterationIndex?: number }) =>
+      wrap(async () => {
+        const detail = await subsystem().runService.getRunDetail(p.runId)
+        const nodeRuns = detail?.nodeRuns ?? []
+        const nodeRun = nodeRuns.find(
+          n => n.nodeId === p.nodeId && (p.iterationIndex === undefined || n.iterationIndex === p.iterationIndex),
+        )
+        if (!nodeRun || nodeRun.status !== 'succeeded') {
+          throw new Error('未找到已成功的节点执行结果，无法收藏')
+        }
+        const input = (nodeRun.input ?? {}) as Record<string, unknown>
+        const output = (nodeRun.output ?? {}) as Record<string, unknown>
+        const url = pickCollectUrl(input, output)
+        if (!url) throw new Error('该节点没有网页 URL（仅网页抓取类节点可收藏）')
+
+        const result = await getWebCollectService().collectWebpage({
+          url,
+          title: typeof input.title === 'string' && input.title.trim() ? input.title : undefined,
+          html: pickHtmlSnapshot(output) ?? undefined,
+          sourceType: 'workflow',
+          sourceRef: p.runId,
+          tags: [String(nodeRun.nodeType ?? 'workflow')],
+        })
+        return {
+          assetId: result.record.id,
+          name: result.record.name,
+          category: result.record.category,
+          subCategory: result.record.subCategory ?? '',
+          url: getAssetService().assetPreviewUrl(result.record),
+          markdownChars: result.markdown.length,
+          warnings: result.warnings,
+        }
+      })
+  )
   // 运行执行日志（时间线：每步开始/完成/审核/错误；见 workflow-run-logger）
   ipcBridge.handle('wf:list-run-logs', (_e, p: { runId: string }) =>
     wrap(async () => {
@@ -239,6 +280,29 @@ async function wrap<T>(fn: () => Promise<T>): Promise<IpcResponse<T>> {
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : String(e) }
   }
+}
+
+/** 收藏目标 URL：节点已解析 config 的 url 优先，其次输出 url */
+function pickCollectUrl(input: Record<string, unknown>, output: Record<string, unknown>): string {
+  const fromInput = typeof input.url === 'string' ? input.url.trim() : ''
+  if (/^https?:\/\//i.test(fromInput)) return fromInput
+  const fromOutput = typeof output.url === 'string' ? output.url.trim() : ''
+  return /^https?:\/\//i.test(fromOutput) ? fromOutput : ''
+}
+
+/**
+ * 运行记录里的可归档页面 HTML 快照：
+ * http-request 类节点 output.body 是完整响应体——仅当它确实是 HTML 且未被引擎截断时采用
+ * （截断会追加「…[已截断]」并打 __truncated；大页快照不全时改为按 url 重新抓取）。
+ */
+function pickHtmlSnapshot(output: Record<string, unknown>): string | null {
+  if (output.__truncated === true) return null
+  const body = typeof output.body === 'string' ? output.body : ''
+  const mime = typeof output.mimeType === 'string' ? output.mimeType.toLowerCase() : ''
+  const looksHtml = mime.includes('html')
+    || /^\s*(<!doctype\s+html|<html[\s>])/i.test(body)
+  if (!looksHtml || body.includes('…[已截断]')) return null
+  return body || null
 }
 
 /** 运行事件通道名（片 7 前端 store 订引用；常量再导出防裸字符串） */

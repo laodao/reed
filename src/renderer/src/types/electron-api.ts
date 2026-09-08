@@ -52,6 +52,15 @@ export interface AppApi {
   workflow: {
     listDefinitions(p: { page: number; pageSize: number }): Promise<IpcResp<{ items: WorkflowSummary[]; total: number }>>
     onRunEvent(cb: (e: { runId?: string } & Record<string, unknown>) => void): () => void
+    collectNodeOutput(p: { runId: string; nodeId: string; iterationIndex?: number }): Promise<IpcResp<{
+      assetId: string
+      name: string
+      category: string
+      subCategory: string
+      url: string
+      markdownChars: number
+      warnings?: string[]
+    } | null>>
   }
   assets: {
     list(p: { category?: string; subCategory?: string; keyword?: string; page: number; pageSize: number }): Promise<IpcResp<{ items: AssetRecord[]; total: number }>>

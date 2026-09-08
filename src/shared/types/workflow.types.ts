@@ -98,6 +98,8 @@ export type WorkflowNodeType =
   | 'save-asset'
   | 'read-asset'
   | 'read-assets'
+  // 网页收藏（把网页归档为资产中心「网页收藏」：single-file html + markdown 正文）
+  | 'collect-webpage'
   // 日记（知识提炼存日记等场景：成果落日记库，/diary 阅读）
   | 'save-diary'
   // 新闻采集（内置应用 C1 早报 / C2 周报数据层：预置主题多源抓取链接）
@@ -559,6 +561,19 @@ export interface WorkflowNodeConfigMap {
     assetIds: string[] | string
   }
 
+  'collect-webpage': {
+    /** 网页 URL（模板可用，如 {{httpReq1.url}}） */
+    url: string
+    /** 标题（可选；缺省从页面 <title>/og:title 自动提取） */
+    title?: string
+    /** 标签（逗号分隔） */
+    tags?: string
+    /** 描述 */
+    description?: string
+    /** 收藏开关（false=不落库，流程继续） */
+    enabled?: boolean
+  }
+
   'save-diary': {
     /** 目标日记文件夹 ID（缺省=自动创建/复用「AI 提炼」根文件夹） */
     folderId?: string
@@ -901,6 +916,7 @@ export const WORKFLOW_NODE_TYPES = {
   'save-asset': 'save-asset',
   'read-asset': 'read-asset',
   'read-assets': 'read-assets',
+  'collect-webpage': 'collect-webpage',
   'save-diary': 'save-diary',
   'crawl-news': 'crawl-news',
   'crawl-links': 'crawl-links',

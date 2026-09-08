@@ -157,6 +157,12 @@
             <el-button text type="primary" size="small" @click="previewReport(row)">预览</el-button>
             <el-button text size="small" :loading="exporting" @click="printReport(row)">导出PDF</el-button>
           </template>
+          <template v-else-if="isCollectableRow(row)">
+            <el-button text type="primary" size="small" :loading="collectingId === row.id" @click="collectRow(row)">
+              收藏网页
+            </el-button>
+            <el-button text size="small" @click="showOutput(row)">输出</el-button>
+          </template>
           <el-button v-else text size="small" @click="showOutput(row)">输出</el-button>
         </template>
       </el-table-column>
@@ -447,6 +453,44 @@ function isReportRow(row: any): boolean {
   // report（markdown/docx）与 report-image（长图）共用报告操作区
   return ['report', 'report-image'].includes(row.nodeType) && !!row.output?.markdown
 }
+
+// ==================== 网页收藏（运行页一键收藏） ====================
+
+/** 可收藏的网页抓取型节点：其 config/output 携带原始网页 URL */
+const COLLECTABLE_WEB_NODE_TYPES = new Set([
+  'http-request', 'web-extract', 'tool-call', 'oas-tool', 'crawl-links', 'crawl-news',
+])
+
+function isCollectableRow(row: any): boolean {
+  if (row.status !== 'succeeded' || !COLLECTABLE_WEB_NODE_TYPES.has(row.nodeType)) return false
+  const u = String(row.input?.url ?? row.output?.url ?? '')
+  return /^https?:\/\//i.test(u)
+}
+
+/** 正在收藏的行 id（按钮 loading） */
+const collectingId = ref<string | null>(null)
+
+/** 一键收藏：后端读 node_run 输出 → 归档为资产中心「网页收藏」 */
+async function collectRow(row: any): Promise<void> {
+  collectingId.value = row.id
+  try {
+    const resp = await api().collectNodeOutput({
+      runId: runId.value,
+      nodeId: row.nodeId,
+      iterationIndex: row.iterationIndex ?? undefined,
+    })
+    if (resp.success && resp.data) {
+      ElMessage.success(`已收藏「${resp.data.name}」，可在 资产管理→文档→网页收藏 查看`)
+    } else {
+      ElMessage.error(resp.error ?? '收藏失败')
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '收藏失败')
+  } finally {
+    collectingId.value = null
+  }
+}
+
 /** 打开带标题的报告窗口（修复：原实现无 <title> 导致窗口全部"未命名"） */
 async function openReportWindow(row: any): Promise<Window | null> {
   const w = window.open('', '_blank')

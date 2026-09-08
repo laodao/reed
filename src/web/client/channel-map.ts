@@ -162,6 +162,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'workflow.reviewDecide': { channel: 'wf:review-decide' },
   'workflow.getRun': { channel: 'wf:get-run' },
   'workflow.listRunLogs': { channel: 'wf:list-run-logs' },
+  'workflow.collectNodeOutput': { channel: 'wf:collect-node-output' },
   'workflow.listRuns': { channel: 'wf:list-runs' },
   'workflow.deleteRun': { channel: 'wf:delete-run' },
   'workflow.getPendingReviews': { channel: 'wf:get-pending-reviews' },

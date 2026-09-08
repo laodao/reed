@@ -224,9 +224,31 @@
             <el-button size="small" :icon="ZoomIn" :disabled="previewZoom >= MAX_ZOOM" title="放大" @click="zoomIn" />
           </div>
         </div>
-        <el-button size="small" :disabled="!previewAsset" @click="handleDownload(previewAsset!, hasSourceView(previewAsset) ? previewMode : undefined)">
-          <el-icon><Download /></el-icon> 下载
-        </el-button>
+        <div class="pt-actions">
+          <!-- 网页收藏专属操作：打开原文 / 复制 Markdown / 按需入知识库 -->
+          <el-button v-if="originalUrlOf(previewAsset)" size="small" @click="openOriginalUrl">
+            <el-icon><Link /></el-icon> 打开原文
+          </el-button>
+          <el-button
+            v-if="isWebpageCollect(previewAsset) && previewAsset?.textContent"
+            size="small"
+            @click="copyWebpageMarkdown"
+          >
+            复制 Markdown
+          </el-button>
+          <el-button
+            v-if="isWebpageCollect(previewAsset)"
+            size="small"
+            type="primary"
+            plain
+            @click="openKbImport"
+          >
+            入知识库
+          </el-button>
+          <el-button size="small" :disabled="!previewAsset" @click="handleDownload(previewAsset!, hasSourceView(previewAsset) ? previewMode : undefined)">
+            <el-icon><Download /></el-icon> 下载
+          </el-button>
+        </div>
       </div>
       <div class="big-preview" v-loading="previewRendering">
         <!-- 源码模式：显示原文（report 长图/HTML 渲染类 或 markdown 文档的 textContent） -->
@@ -259,7 +281,27 @@
         <div class="meta-row"><span class="k">大小</span><span class="v">{{ formatSize(previewAsset.sizeBytes) }}</span></div>
         <div class="meta-row"><span class="k">创建</span><span class="v">{{ formatDate(previewAsset.createdAt) }}</span></div>
         <div class="meta-row" v-if="previewAsset.subCategory"><span class="k">分类</span><span class="v">{{ previewAsset.subCategory }}</span></div>
+        <div class="meta-row" v-if="originalUrlOf(previewAsset)"><span class="k">原文</span><span class="v">{{ originalUrlOf(previewAsset) }}</span></div>
       </div>
+    </el-dialog>
+
+    <!-- 网页收藏 → 知识库：选目标 KB，用已存 markdown 正文直入（免二次抓取；重复导入按资产 id 覆盖） -->
+    <el-dialog v-model="kbImportVisible" title="收藏入知识库" width="480px" append-to-body>
+      <p class="kb-import-hint">
+        「{{ kbImportTarget?.name }}」将以 markdown 正文加入所选知识库（向量化按需发生）；已入过库可重复导入（覆盖更新）。
+      </p>
+      <div v-loading="kbImportLoading" class="kb-import-list">
+        <el-radio-group v-model="kbImportSelected" class="kb-import-radios">
+          <el-radio v-for="kb in kbImportList" :key="kb.id" :value="kb.id">{{ kb.name }}</el-radio>
+        </el-radio-group>
+        <div v-if="kbImportList.length === 0 && !kbImportLoading" class="kb-import-empty">暂无知识库，请先在「知识库」页创建</div>
+      </div>
+      <template #footer>
+        <el-button @click="kbImportVisible = false">取消</el-button>
+        <el-button type="primary" :loading="kbImporting" :disabled="!kbImportSelected" @click="confirmKbImport">
+          加入知识库
+        </el-button>
+      </template>
     </el-dialog>
 
     <!-- 模板编辑弹窗（新建/编辑：名称 + 子分类 + markdown 内容 + 实时预览） -->
@@ -380,7 +422,7 @@
  */
 import { ref, onMounted, computed, reactive, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, EditPen, FolderOpened, CopyDocument, Delete, Download, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
+import { Search, EditPen, FolderOpened, CopyDocument, Delete, Download, ZoomIn, ZoomOut, Link } from '@element-plus/icons-vue'
 import { toFileUrl, toImageUrl, toVideoUrl, isElectronRenderer } from '@/utils/asset-url'
 import { saveBlobAs } from '@/utils/file-saver'
 import { buildWebAssetDownload } from '@/utils/asset-download'
@@ -907,6 +949,92 @@ async function handleDownload(asset: AssetRecord, view?: 'preview' | 'source'): 
   }
 }
 
+// ==================== 网页收藏专属操作（预览抽屉） ====================
+
+/** 是否为「网页收藏」资产（document 大类 + 网页收藏 子分类） */
+function isWebpageCollect(asset: AssetRecord | null): boolean {
+  return !!asset && asset.category === 'document' && asset.subCategory === '网页收藏'
+}
+
+/** 收藏资产的原始网页 URL（metadata.sourceUrl） */
+function originalUrlOf(asset: AssetRecord | null): string {
+  const u = asset?.metadata?.sourceUrl
+  return typeof u === 'string' && /^https?:\/\//i.test(u) ? u : ''
+}
+
+/** 打开原文（外部浏览器；与 RunArtifactsPanel 打开 http 链接同一做法） */
+function openOriginalUrl(): void {
+  const u = originalUrlOf(previewAsset.value)
+  if (u) window.open(u, '_blank', 'noopener')
+}
+
+/** 复制收藏资产的 markdown 正文 */
+async function copyWebpageMarkdown(): Promise<void> {
+  const a = previewAsset.value
+  const content = a?.textContent
+  if (!content) return
+  try {
+    await navigator.clipboard.writeText(content)
+    ElMessage.success('Markdown 正文已复制')
+  } catch {
+    ElMessage.error('复制失败')
+  }
+}
+
+// ---- 入知识库：选择目标 KB → knowledgeBase.addDocument（用已存 markdown，免二次抓取） ----
+const kbImportVisible = ref(false)
+const kbImportLoading = ref(false)
+const kbImporting = ref(false)
+const kbImportTarget = ref<AssetRecord | null>(null)
+const kbImportList = ref<Array<{ id: string; name: string }>>([])
+const kbImportSelected = ref('')
+
+async function openKbImport(): Promise<void> {
+  const a = previewAsset.value
+  if (!a?.textContent) {
+    ElMessage.warning('该收藏没有 markdown 正文，无法入知识库')
+    return
+  }
+  kbImportTarget.value = a
+  kbImportVisible.value = true
+  kbImportLoading.value = true
+  kbImportSelected.value = ''
+  try {
+    const kbApi = (window as never as { electronAPI: any }).electronAPI.knowledgeBase
+    const resp = await kbApi.list()
+    kbImportList.value = (resp.success ? (resp.data ?? []) : []).map((kb: any) => ({ id: kb.id, name: kb.name }))
+    if (!resp.success) ElMessage.error(resp.error ?? '加载知识库列表失败')
+  } finally {
+    kbImportLoading.value = false
+  }
+}
+
+async function confirmKbImport(): Promise<void> {
+  const a = kbImportTarget.value
+  if (!a || !kbImportSelected.value) return
+  kbImporting.value = true
+  try {
+    const kbApi = (window as never as { electronAPI: any }).electronAPI.knowledgeBase
+    const resp = await kbApi.addDocument(kbImportSelected.value, {
+      name: a.name.replace(/\.html$/i, ''),
+      type: 'text',
+      content: a.textContent,
+      // 以收藏资产 id 为源键：重复导入覆盖更新，不产生重复文档
+      source: { type: 'workflow', id: `webpage-collect:${a.id}` },
+    })
+    if (resp.success) {
+      ElMessage.success('已加入知识库，正在后台处理（向量化按需发生）')
+      kbImportVisible.value = false
+    } else {
+      ElMessage.error(resp.error ?? '导入失败')
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '导入失败')
+  } finally {
+    kbImporting.value = false
+  }
+}
+
 // ---- 模板编辑器（新建/编辑/保存） ----
 const templateEditorVisible = ref(false)
 const templateEditing = ref<AssetRecord | null>(null)
@@ -1181,6 +1309,11 @@ onMounted(load)
 .text-preview :deep(blockquote) { border-left: 3px solid var(--el-border-color); margin: 2px 0; padding-left: 8px; color: var(--el-text-color-secondary); }
 .preview-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; min-height: 28px; gap: 10px; }
 .pt-left { display: flex; align-items: center; gap: 8px; }
+.pt-actions { display: flex; align-items: center; gap: 8px; }
+.kb-import-hint { color: var(--el-text-color-secondary); font-size: 13px; margin: 0 0 12px; }
+.kb-import-list { max-height: 320px; overflow: auto; min-height: 60px; }
+.kb-import-radios { display: flex; flex-direction: column; gap: 6px; }
+.kb-import-empty { color: var(--el-text-color-secondary); padding: 24px; text-align: center; }
 .zoom-ctrl { display: flex; align-items: center; gap: 2px; }
 .big-md-preview {
   width: 100%; max-height: 70vh; overflow: auto; padding: 20px 24px;

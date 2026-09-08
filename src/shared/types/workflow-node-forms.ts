@@ -577,6 +577,20 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     }),
     T('description', '描述', { group: '其他' }),
   ],
+  'collect-webpage': [
+    T('url', '网页 URL', {
+      templateHint: true,
+      placeholder: 'https://example.com/article 或 {{httpReq1.url}}',
+      help: '抓取该网页并归档：single-file HTML（CSS/图片内联）+ Markdown 正文，存入资产中心「网页收藏」',
+    }),
+    T('title', '标题', { placeholder: '留空自动从页面提取' }),
+    T('tags', '标签', { help: '逗号分隔，资产中心可按标签搜索' }),
+    T('description', '描述', { group: '其他' }),
+    T('enabled', '收藏到网页收藏', {
+      type: 'switch',
+      help: '关闭后本节点不写资产库（流程继续）；用于条件收藏',
+    }),
+  ],
   'read-asset': [
     T('assetId', '资产 ID', { templateHint: true, placeholder: '{{saveAsset1.assetId}} 或 {{start.assetId}}' }),
     T('output', '输出模式', {

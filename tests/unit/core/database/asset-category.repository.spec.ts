@@ -60,7 +60,7 @@ describe('AssetCategoryRepository', () => {
   it('listAll 按 sortOrder,name 排序且含内置', async () => {
     await repo.create({ name: '自定义分类', sortOrder: 999 })
     const all = await repo.listAll()
-    expect(all.length).toBe(10) // 9 内置 + 1 自定义
+    expect(all.length).toBe(12) // 11 内置（含网页收藏）+ 1 自定义
     expect(all[0].name).toBe('早报')
     expect(all[all.length - 1].name).toBe('自定义分类')
   })
