@@ -15,6 +15,7 @@ import { DlProjectRepository } from '@core/database/repositories/dl-project.repo
 import { DlConceptRepository } from '@core/database/repositories/dl-concept.repository'
 import { DlRelationRepository } from '@core/database/repositories/dl-relation.repository'
 import { DlMasteryLogRepository } from '@core/database/repositories/dl-mastery-log.repository'
+import { toDlNote } from '@core/database/repositories/dl-note.repository'
 import { LearningProjectService } from '../services/learning-project.service'
 import { LearningGraphService } from '../services/learning-graph.service'
 import { LearningViewService } from '../services/learning-view.service'
@@ -207,5 +208,42 @@ export function registerDomainLearningHandlers(): void {
     wrap(async () => {
       await services().graph.reviewDone(p.id, p.conceptId)
       return { ok: true }
+    }))
+
+  // ---- 概念笔记（M4-UX1 #3 选区笔记 / #6 收藏回答；经项目属主校验） ----
+  ipcBridge.handle('dl:list-notes', (_e, p: { id: string; conceptId?: string | null }) =>
+    wrap(async () => {
+      const db = getCoreDatabaseManager()
+      await services().projects.ensureOwned(p.id)
+      const rows = p.conceptId ? await db.dlNotes!.listByConcept(p.id, p.conceptId) : await db.dlNotes!.listByProject(p.id)
+      return { notes: rows.map((r) => toDlNote(r)), total: rows.length }
+    }))
+  ipcBridge.handle('dl:create-note', (_e, p: { id: string; conceptId?: string | null; source: 'selection' | 'qna'; anchorText?: string | null; anchorStart?: number | null; anchorEnd?: number | null; questionId?: string | null; contentMd: string }) =>
+    wrap(async () => {
+      const db = getCoreDatabaseManager()
+      await services().projects.ensureOwned(p.id)
+      if (p.source === 'qna' && p.questionId) {
+        const existing = await db.dlNotes!.findByQuestion(p.id, p.questionId)
+        if (existing) return { note: toDlNote(existing), created: false } // 收藏幂等
+      }
+      const row = await db.dlNotes!.create({
+        id: `n_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        projectId: p.id,
+        conceptId: p.conceptId,
+        source: p.source,
+        anchorText: p.anchorText,
+        anchorStart: p.anchorStart,
+        anchorEnd: p.anchorEnd,
+        questionId: p.questionId,
+        contentMd: p.contentMd,
+      })
+      return { note: toDlNote(row), created: true }
+    }))
+  ipcBridge.handle('dl:delete-note', (_e, p: { id: string; noteId: string }) =>
+    wrap(async () => {
+      const db = getCoreDatabaseManager()
+      await services().projects.ensureOwned(p.id)
+      const deleted = await db.dlNotes!.deleteById(p.noteId) // scoped:他人笔记删不到
+      return { ok: deleted > 0 }
     }))
 }

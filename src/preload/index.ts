@@ -1352,6 +1352,19 @@ const electronAPI = {
     reviewDue: (id: string) => ipcRenderer.invoke('dl:review-due', { id }),
     ackNeedReview: (p: { id: string; conceptId: string }) => ipcRenderer.invoke('dl:ack-need-review', p),
     reviewDone: (p: { id: string; conceptId: string }) => ipcRenderer.invoke('dl:review-done', p),
+    // 概念笔记（M4-UX1）
+    listNotes: (p: { id: string; conceptId?: string | null }) => ipcRenderer.invoke('dl:list-notes', p),
+    createNote: (p: {
+      id: string
+      conceptId?: string | null
+      source: 'selection' | 'qna'
+      anchorText?: string | null
+      anchorStart?: number | null
+      anchorEnd?: number | null
+      questionId?: string | null
+      contentMd: string
+    }) => ipcRenderer.invoke('dl:create-note', p),
+    deleteNote: (p: { id: string; noteId: string }) => ipcRenderer.invoke('dl:delete-note', p),
     // 订阅 agent 动作事件（通道 dl:agent:<spaceId>[:<conceptId>]；返回取消订阅函数）
     onAgentEvent: (
       spaceId: string,

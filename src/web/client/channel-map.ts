@@ -295,6 +295,9 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'domainLearning.reviewDue': { channel: 'dl:review-due', wrap: (id) => [{ id }] },
   'domainLearning.ackNeedReview': { channel: 'dl:ack-need-review' },
   'domainLearning.reviewDone': { channel: 'dl:review-done' },
+  'domainLearning.listNotes': { channel: 'dl:list-notes' },
+  'domainLearning.createNote': { channel: 'dl:create-note' },
+  'domainLearning.deleteNote': { channel: 'dl:delete-note' },
   'domainLearning.schedulerState': { channel: 'dl:scheduler-state' },
   // domainLearning.onAgentEvent(spaceId, conceptId?, cb) — 后端 emit(`dl:agent:<spaceId>[:<conceptId>]`, event)
   'domainLearning.onAgentEvent': {

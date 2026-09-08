@@ -16,6 +16,8 @@ import type {
   DlAtlasViews,
   DlLessonDigest,
   DlNodeProfile,
+  DlNote,
+  DlNoteQueryResult,
   DlPaceSettings,
   DlReviewDueItem,
   DlReviewSettings,
@@ -108,6 +110,18 @@ interface DomainLearningApi {
   reviewDue(id: string): Promise<IpcLike<{ settings: DlReviewSettings; items: DlReviewDueItem[] }>>
   ackNeedReview(p: { id: string; conceptId: string }): Promise<IpcLike<{ ok: boolean }>>
   reviewDone(p: { id: string; conceptId: string }): Promise<IpcLike<{ ok: boolean }>>
+  listNotes(p: { id: string; conceptId?: string | null }): Promise<IpcLike<DlNoteQueryResult>>
+  createNote(p: {
+    id: string
+    conceptId?: string | null
+    source: 'selection' | 'qna'
+    anchorText?: string | null
+    anchorStart?: number | null
+    anchorEnd?: number | null
+    questionId?: string | null
+    contentMd: string
+  }): Promise<IpcLike<{ note: DlNote; created: boolean }>>
+  deleteNote(p: { id: string; noteId: string }): Promise<IpcLike<{ ok: boolean }>>
   schedulerState(): Promise<IpcLike<{ mode: 'desktop' | 'web'; running: boolean; runningCount: number }>>
   onAgentEvent(spaceId: string, conceptId: string | null | undefined, cb: (event: DlAgentUiEvent) => void): () => void
   onStream(eventId: string, cb: (event: DlGenerateUiEvent) => void): () => void
@@ -376,6 +390,65 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     }
   }
 
+  // ==================== 概念笔记（M4-UX1） ====================
+
+  /** 当前空间笔记（按概念过滤时只含该概念） */
+  const notes = ref<DlNote[]>([])
+
+  /** 拉取笔记并写回 notes（conceptId 传概念则只取该概念） */
+  async function fetchNotesOf(id: string, conceptId?: string | null): Promise<DlNote[]> {
+    const a = api()
+    if (!a) return []
+    try {
+      const r = await a.listNotes({ id, conceptId: conceptId ?? null })
+      notes.value = r?.success && r.data ? r.data.notes : []
+      return notes.value
+    } catch (e: any) {
+      error.value = e?.message ?? '获取笔记失败'
+      return []
+    }
+  }
+
+  /** 新建/收藏笔记（source=selection 选区笔记；qna 收藏回答，同问题幂等） */
+  async function saveNote(p: {
+    id: string
+    conceptId?: string | null
+    source: 'selection' | 'qna'
+    anchorText?: string | null
+    anchorStart?: number | null
+    anchorEnd?: number | null
+    questionId?: string | null
+    contentMd: string
+  }): Promise<DlNote | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.createNote(p)
+      return r?.success && r.data ? r.data.note : null
+    } catch (e: any) {
+      error.value = e?.message ?? '保存笔记失败'
+      console.error('[domain-learning] 保存笔记失败:', e)
+      return null
+    }
+  }
+
+  /** 删除笔记（qna 收藏取消也走这里） */
+  async function removeNoteOf(id: string, noteId: string): Promise<boolean> {
+    const a = api()
+    if (!a) return false
+    try {
+      const r = await a.deleteNote({ id, noteId })
+      if (r?.success && r.data?.ok) {
+        notes.value = notes.value.filter((n) => n.id !== noteId)
+        return true
+      }
+      return false
+    } catch (e: any) {
+      error.value = e?.message ?? '删除笔记失败'
+      return false
+    }
+  }
+
   /** 读空间复习配置（dl:get-space-review） */
   async function reviewSettingsOf(id: string): Promise<DlReviewSettings | null> {
     const a = api()
@@ -626,6 +699,11 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     spaceStats,
     fetchSpaceStats,
     exportLessonDigestOf,
+    // 概念笔记
+    notes,
+    fetchNotesOf,
+    saveNote,
+    removeNoteOf,
     // 掌握度反馈
     ackMastered,
     ackConfused,
