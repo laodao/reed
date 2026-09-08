@@ -2066,6 +2066,8 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:room:regenerateCard', projectId, cardId, feedback, opts),
     roomIgnoreCard: (projectId: string, cardId: string) =>
       ipcRenderer.invoke('longwriting:room:ignoreCard', projectId, cardId),
+    roomSetTarget: (projectId: string, target: string) =>
+      ipcRenderer.invoke('longwriting:room:setTarget', projectId, target),
     onRoomEvent: (projectId: string, callback: (event: unknown) => void) => {
       const channel = `longwriting:room:${projectId}`
       const listener = (_event: any, data: unknown) => callback(data)

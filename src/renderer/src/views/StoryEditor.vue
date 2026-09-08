@@ -319,7 +319,8 @@ const imageProviderModels = computed(() => {
   return result
 })
 
-// 格式化上下文窗口大小
+// 格式化上下文窗口大小（38 号配套，待章节工作台接线；先压 lint 以免阻塞同文件提交）
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function formatContext(contextWindow: number): string {
   if (contextWindow >= 1000000) {
     return `${(contextWindow / 1000000).toFixed(1)}M`
@@ -467,6 +468,11 @@ onMounted(() => {
   loadProviderConfigs().then(() => {
     loadStageModelConfigs()
   })
+  // 研讨室交接：?stage=chapters 直达章节工作台（v2.1 章节卡「在编辑器中打开」）
+  const qStage = route.query.stage as string | undefined
+  if (qStage) {
+    setStage(qStage as StoryStage)
+  }
 })
 </script>
 

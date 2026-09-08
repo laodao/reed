@@ -560,6 +560,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'longwriting.roomAdoptCard': { channel: 'longwriting:room:adoptCard' },
   'longwriting.roomRegenerateCard': { channel: 'longwriting:room:regenerateCard' },
   'longwriting.roomIgnoreCard': { channel: 'longwriting:room:ignoreCard' },
+  'longwriting.roomSetTarget': { channel: 'longwriting:room:setTarget' },
   // longwriting.onRoomEvent(projectId, cb) — 后端 emit(`longwriting:room:${projectId}`, ...)
   'longwriting.onRoomEvent': {
     eventChannel: (projectId) => `longwriting:room:${projectId}`,

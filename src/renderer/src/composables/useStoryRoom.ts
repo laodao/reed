@@ -32,6 +32,10 @@ export function useStoryRoom(projectId: string) {
   const state = ref<RoomStateView | null>(null)
   const status = ref<RoomStatus>('loading')
   const streamMessage = ref<RoomStreamMessage | null>(null)
+  /** 阶段门建议（提取器产出，用户确认后推进） */
+  const gateSuggestion = ref<{ toPhase: RoomPhaseId; reason: string } | null>(null)
+  /** 矛盾提醒（写作教练位：scanContradictions 结果） */
+  const conflicts = ref<Array<{ id?: string; description?: string; message?: string }>>([])
 
   const busy = computed(() => status.value === 'streaming')
 
@@ -63,7 +67,12 @@ export function useStoryRoom(projectId: string) {
         }
         break
       case 'phase:changed':
+        gateSuggestion.value = null
         if (state.value) state.value = { ...state.value, phase: event.phase }
+        loadConflictsIfWriting()
+        break
+      case 'gate:suggest':
+        gateSuggestion.value = { toPhase: event.toPhase, reason: event.reason }
         break
       case 'error':
         status.value = 'error'
@@ -123,8 +132,39 @@ export function useStoryRoom(projectId: string) {
   }
 
   async function setPhase(phase: RoomPhaseId): Promise<void> {
+    gateSuggestion.value = null
     const res = await api().roomSetPhase(projectId, phase)
     if (res.success && state.value) state.value = { ...state.value, phase: res.data.phase }
+  }
+
+  async function setTarget(target: 'novel' | 'script'): Promise<void> {
+    const res = await api().roomSetTarget(projectId, target)
+    if (res.success && state.value) state.value = { ...state.value, contentTarget: target }
+  }
+
+  /** 门确认：提炼下一阶段范围 + 推进阶段 */
+  async function acceptGate(): Promise<void> {
+    const to = gateSuggestion.value?.toPhase
+    if (!to) return
+    gateSuggestion.value = null
+    const scope = to === 'characters' ? 'characters' : to === 'plots' ? 'plots' : to === 'outline' ? 'outline' : undefined
+    if (scope) await distill(scope)
+    await setPhase(to)
+  }
+
+  /** 写作教练位：拉取矛盾提醒（writing 阶段） */
+  async function loadConflictsIfWriting(): Promise<void> {
+    if (state.value?.phase !== 'writing') {
+      conflicts.value = []
+      return
+    }
+    try {
+      const res = await api().graphScanContradictions(projectId)
+      const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : []
+      conflicts.value = list.slice(0, 10)
+    } catch {
+      conflicts.value = []
+    }
   }
 
   /** 提问建议 chips：让主编提问 / 按阶段提示 */
@@ -185,11 +225,16 @@ export function useStoryRoom(projectId: string) {
     streamMessage,
     busy,
     chips,
+    gateSuggestion,
+    conflicts,
     load,
     send,
     cancel,
     ledgerOp,
     setPhase,
+    setTarget,
+    acceptGate,
+    loadConflictsIfWriting,
     suggestScope,
     distill,
     adoptCard,

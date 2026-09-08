@@ -140,8 +140,8 @@ export interface RoomStateView {
   pendingCards: ArtifactCard[]
 }
 
-/** 按需提炼范围（设计文档 §9） */
-export type DistillScope = 'overview' | 'characters' | 'plots' | 'world' | 'outline'
+/** 按需提炼范围（设计文档 §9 + v2.1 章节卡） */
+export type DistillScope = 'overview' | 'characters' | 'plots' | 'world' | 'outline' | 'chapter'
 
 /** 账本用户操作（确认/否决/丢弃/修改一句话） */
 export type LedgerOpInput =

@@ -58,6 +58,8 @@ const SCOPE_PROMPTS: Record<DistillScope, string> = {
   world: `整理「世界设定卡」（地点/势力/技能/物品四类，只收讨论中明确提到的）。输出：
 {"locations":[{"name":"名称","type":"类型","importance":"core/main/auxiliary","description":"描述"}],"factions":[{"name":"名称","factionType":"类型","description":"描述"}],"skills":[{"name":"名称","type":"类型","level":"等级","description":"描述"}],"items":[{"name":"名称","type":"类型","level":"品级","description":"描述"}]}`,
   outline: '大纲（分卷/分集策略见任务说明）',
+  chapter: `整理「章节卡」——研讨室不产出正文，本卡是写作交接凭据（开头预览+本章要点）。输出：
+{"outlineId":"对应大纲节点id（若上下文给了）","outlineName":"章节名","hook":"开场钩子","points":["本章要点1","本章要点2"],"preview":"开头两三句的预览（可写正文时直接续写）"}`,
 }
 
 function taskInstruction(scope: DistillScope, state: RoomWorkspaceState, extra: string): string {
@@ -188,6 +190,14 @@ export class StoryRoomDistillerService {
 
   /** 范围素材：大纲需知道当前卷/集序号与已有结构 */
   private async scopeContext(m: any, projectId: string, scope: DistillScope, state: RoomWorkspaceState): Promise<string> {
+    if (scope === 'chapter') {
+      const tree = (await m?.lwOutlines?.getTreeByProjectId(projectId)) || []
+      const leaves = tree
+        .filter((n: any) => n.nodeType === 'chapter' || n.nodeType === 'section')
+        .slice(0, 30)
+      if (leaves.length === 0) return '\n【大纲】（空）——请先让用户完成大纲，或把章节对应到讨论中的章节划分'
+      return `\n【大纲叶子节点】（章节卡对应其中一个）\n${leaves.map((n: any) => `- id=${n.id} ${n.name}`).join('\n')}`
+    }
     if (scope !== 'outline') return ''
     if (state.contentTarget === 'script') {
       const adoptedCount = state.pendingCards.filter((c) => c.kind === 'outline' && c.status !== 'ignored').length
@@ -232,6 +242,8 @@ export class StoryRoomDistillerService {
       } else {
         out.push(mk('outline', `大纲卡 · ${String(parsed.name || '').trim() || '未命名卷'}`, parsed))
       }
+    } else if (scope === 'chapter') {
+      out.push(mk('chapter', `章节卡 · ${String(parsed.outlineName || parsed.name || '').trim() || '未命名章节'}`, parsed))
     }
     return out.slice(0, MAX_CARDS_PER_DISTILL)
   }
@@ -298,6 +310,8 @@ export class StoryRoomDistillerService {
         const created = await persistOutlineTree(m, projectId, [data], 3)
         return { ok: true, message: `已建大纲卷「${data.name || ''}」（${created} 个节点）`, changed: ['outline'], data: { nodes: created } }
       }
+      case 'chapter':
+        return { ok: true, message: '章节卡已定稿——在编辑器中打开即可按要点写作', changed: ['chapters'] }
       default:
         return { ok: false, message: `卡片类型不支持采纳：${card.kind}`, changed: [] }
     }

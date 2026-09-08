@@ -256,6 +256,32 @@ describe('adoptCard 采纳落库', () => {
   })
 })
 
+// ==================== 章节卡（M5 写作交接） ====================
+
+describe('chapter scope（章节卡）', () => {
+  it('章节卡提炼：带上大纲叶子节点上下文，采纳为交接凭据（不落正文）', async () => {
+    installEventCapture()
+    const db = makeFakeDb()
+    // 预置大纲树：一章
+    db._outlines.push({ id: 'ol1', name: '第3章 夜审', nodeType: 'chapter', orderIndex: 2 })
+    const model = scriptedModel([
+      '{"outlineId":"ol1","outlineName":"第3章 夜审","hook":"公堂之上他突然笑了","points":["洗冤证据亮相","大师兄反水"],"preview":"夜色压城，刑房烛火未熄。"}',
+    ])
+    const svc = harness(model, db)
+
+    const r = await svc.distill('p1', 'chapter')
+    expect(r.cards).toHaveLength(1)
+    expect(r.cards[0].kind).toBe('chapter')
+    expect(r.cards[0].title).toContain('夜审')
+
+    const card = await svc.adoptCard('p1', r.cards[0].id)
+    expect(card.status).toBe('adopted')
+    expect(card.resultNote).toContain('编辑器')
+    // 不写章节正文
+    expect(db._outlines).toHaveLength(1)
+  })
+})
+
 // ==================== 重提 / 忽略 ====================
 
 describe('regenerateCard / ignoreCard', () => {

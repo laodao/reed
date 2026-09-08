@@ -89,6 +89,13 @@
             </el-radio>
           </el-radio-group>
         </el-form-item>
+        <el-form-item v-if="createForm.type === 'story'" label="内容目标">
+          <el-radio-group v-model="createForm.contentTarget">
+            <el-radio value="novel">长篇小说</el-radio>
+            <el-radio value="script">短剧剧本</el-radio>
+          </el-radio-group>
+          <div class="form-tip">短剧目标：研讨室大纲阶段改出「分集大纲」，定稿后一键转短剧项目</div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showCreateDialog = false">取消</el-button>
@@ -191,7 +198,8 @@ const projects = ref<LongWritingProject[]>([])
 const showCreateDialog = ref(false)
 const createForm = ref({
   name: '',
-  type: 'story' as 'story' | 'comment'
+  type: 'story' as 'story' | 'comment',
+  contentTarget: 'novel' as 'novel' | 'script'
 })
 
 // 设置对话框
@@ -256,13 +264,27 @@ async function createProject() {
       name: createForm.value.name,
       type: createForm.value.type
     }
+    const contentTarget = createForm.value.contentTarget || 'novel'
     const result = await window.electronAPI.longwriting.createProject(requestData)
     console.log('createProject result:', result)
 
     if (result.success && result.data) {
       projects.value.unshift(result.data)
+      // 短剧目标：写入房间状态（wizard_state.room.contentTarget，新项目 wizardState 为空，安全覆盖）
+      if (contentTarget === 'script') {
+        try {
+          await window.electronAPI.longwriting.updateProject(result.data.id, {
+            wizardState: {
+              room: {
+                ledger: [], summary: '', summarizedTurn: 0, turnNo: 0,
+                phase: 'story-core', contentTarget: 'script', pendingCards: [], cardSeq: 0,
+              },
+            },
+          } as never)
+        } catch { /* 目标设置失败不阻断创建 */ }
+      }
       showCreateDialog.value = false
-      createForm.value = { name: '', type: 'story' }
+      createForm.value = { name: '', type: 'story', contentTarget: 'novel' }
       ElMessage.success('项目创建成功')
     } else {
       ElMessage.error('创建失败：' + (result.error || '未知错误'))

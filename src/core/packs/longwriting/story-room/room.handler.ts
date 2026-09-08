@@ -24,6 +24,7 @@ export const ROOM_CHANNELS = {
   ROOM_ADOPT_CARD: 'longwriting:room:adoptCard',
   ROOM_REGENERATE_CARD: 'longwriting:room:regenerateCard',
   ROOM_IGNORE_CARD: 'longwriting:room:ignoreCard',
+  ROOM_SET_TARGET: 'longwriting:room:setTarget',
 } as const
 
 export function registerStoryRoomHandlers(): void {
@@ -66,6 +67,16 @@ export function registerStoryRoomHandlers(): void {
     try {
       const ledger = await applyLedgerOp(getDb(), projectId, op)
       return { success: true, data: { ledger } }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcBridge.handle(ROOM_CHANNELS.ROOM_SET_TARGET, async (_event, projectId: string, target: 'novel' | 'script') => {
+    try {
+      const { patchRoomState } = await import('./room-state')
+      await patchRoomState(getDb(), projectId, { contentTarget: target })
+      return { success: true }
     } catch (error: any) {
       return { success: false, error: error.message }
     }

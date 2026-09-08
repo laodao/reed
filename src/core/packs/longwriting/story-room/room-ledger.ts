@@ -11,10 +11,12 @@
  */
 
 import { createLogger } from '@core/utils/logger'
-import type { ConsensusEntry, ConsensusKind, ConsensusStatus, LedgerOpInput } from '@shared/types/story-room.types'
-import { extractJsonArray } from '@core/platform/services/longwriting/story-persist'
+import type { ConsensusEntry, ConsensusKind, ConsensusStatus, LedgerOpInput, RoomPhaseId } from '@shared/types/story-room.types'
+import { extractJsonObject, extractJsonArray } from '@core/platform/services/longwriting/story-persist'
 import { generateRoomText } from './room-llm'
 import { getRoomState, patchRoomState } from './room-state'
+import { nextPhase, getPhaseDef } from './room-phases'
+import { emitRoomEvent } from './room-events'
 
 const logger = createLogger('StoryRoomLedger')
 
@@ -55,6 +57,12 @@ export interface SilentExtractInput {
   llmOpts?: { providerConfigId?: string; modelId?: string }
 }
 
+/** 门建议（阶段成熟时由提取器顺带产出） */
+export interface GateSuggestion {
+  toPhase: RoomPhaseId
+  reason: string
+}
+
 const EXTRACT_SYSTEM = `你是创作研讨记录员。从刚结束的一轮对话增量中提取"共识条目"——讨论中双方明确达成、明确否决、或新提出待定的方向性结论。
 
 只提取方向级结论（如"主角动机=洗冤复仇"），不记录寒暄、不确定的随口设想、纯事实问答。
@@ -62,9 +70,12 @@ const EXTRACT_SYSTEM = `你是创作研讨记录员。从刚结束的一轮对�
 points（支撑细节，最多 3 条）、status（tentative=新提出待确认 / confirmed=双方明确同意 / rejected=明确否决）。
 已有账本里已有的条目不要重复输出；若本轮与某条已定共识矛盾，输出一条 op=conflict 的条目（title 指出矛盾）。
 
-只输出 JSON 数组，无其他文字：
-[{"op":"add","kind":"premise","title":"...","points":["..."],"status":"tentative"}]
-没有可提取的结论就输出 []。`
+另外，判断当前阶段素材是否成熟（阶段门，设计文档 §6）：若当前阶段的门条件已满足，
+输出 gate 字段建议推进到下一阶段并给一句理由；不确定就不输出 gate。
+
+只输出一个 JSON 对象，无其他文字：
+{"entries":[{"op":"add","kind":"premise","title":"...","points":["..."],"status":"tentative"}],"gate":{"toPhase":"characters","reason":"概要三要素齐了"}}
+没有可提取的结论且不建议推进就输出 {"entries":[]}。`
 
 /**
  * 静默共识提取（每轮后调用）：从增量对话提取条目并入账本。
@@ -78,6 +89,7 @@ export async function silentExtractLedger(
 ): Promise<ConsensusEntry[] | null> {
   try {
     const state = await getRoomState(db, projectId)
+    const currentPhase = state.phase
     const existingText = state.ledger.length > 0
       ? state.ledger.map((e) => `- [${e.status}] ${e.title}`).join('\n')
       : '（空）'
@@ -86,8 +98,28 @@ export async function silentExtractLedger(
       `【本轮对话】第 ${input.turnNo} 轮\n用户：${input.userText.slice(0, 2000)}\n主编：${input.assistantText.slice(0, 2000)}`,
     ].join('\n\n')
 
-    const raw = await generateRoomText('ledger-extract', { system: EXTRACT_SYSTEM, user, maxTokens: 1000 }, input.llmOpts, signal)
-    const ops = extractJsonArray(raw) || []
+    const raw = await generateRoomText('ledger-extract', { system: EXTRACT_SYSTEM, user, maxTokens: 1200 }, input.llmOpts, signal)
+    // 兼容两种形态：{"entries":[...],"gate":{...}}（现约定）与裸数组（容错）
+    const parsed = extractJsonObject(raw)
+    const ops: any[] = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray(parsed?.entries)
+        ? parsed.entries
+        : (extractJsonArray(raw) || [])
+    const gate = (!Array.isArray(parsed) && parsed?.gate || null) as GateSuggestion | null
+
+    // 门建议：只朝下一阶段建议（不允许跳跃/回退），当前已是最后阶段则忽略
+    if (gate?.toPhase) {
+      const allowed = nextPhase(currentPhase)
+      if (allowed && gate.toPhase === allowed) {
+        emitRoomEvent(projectId, {
+          type: 'gate:suggest',
+          toPhase: allowed,
+          reason: String(gate.reason || `${getPhaseDef(allowed).label}阶段素材已成熟`).slice(0, 120),
+        })
+      }
+    }
+
     if (!Array.isArray(ops) || ops.length === 0) return null
 
     const seen = new Set(state.ledger.map((e) => normalizeTitle(e.title)))

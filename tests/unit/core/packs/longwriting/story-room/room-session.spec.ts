@@ -284,6 +284,34 @@ describe('静默账本提取（fail-soft）', () => {
     expect(update).toBeTruthy()
   })
 
+  it('阶段门建议：门条件满足 → gate:suggest 事件（只允许下一阶段）', async () => {
+    const captured = installEventCapture()
+    const traj: Array<Record<string, unknown>> = []
+    const db = makeFakeDb() // 预置 phase=story-core
+    const svc = harness(scriptedModel(['主编发言'], [
+      '{"entries":[],"gate":{"toPhase":"characters","reason":"概要三要素齐了"}}',
+    ]), db, traj)
+
+    await svc.sendMessage('p1', '故事核定得差不多了')
+    const gate = captured.filter((c) => c.channel === CHANNEL).find((e) => e.event.type === 'gate:suggest')
+    expect(gate).toBeTruthy()
+    expect((gate!.event as any).toPhase).toBe('characters')
+    expect((gate!.event as any).reason).toContain('三要素')
+  })
+
+  it('阶段门建议：跳跃/回退目标被拒（不发光）', async () => {
+    const captured = installEventCapture()
+    const traj: Array<Record<string, unknown>> = []
+    const db = makeFakeDb()
+    const svc = harness(scriptedModel(['主编发言'], [
+      '{"entries":[],"gate":{"toPhase":"writing","reason":"想直接写"}}',
+    ]), db, traj)
+
+    await svc.sendMessage('p1', '直接写吧')
+    const gate = captured.filter((c) => c.channel === CHANNEL).find((e) => e.event.type === 'gate:suggest')
+    expect(gate).toBeUndefined()
+  })
+
   it('提取输出坏 JSON：对话不受影响，账本不更新', async () => {
     const captured = installEventCapture()
     const traj: Array<Record<string, unknown>> = []

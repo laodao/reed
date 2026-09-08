@@ -5,7 +5,11 @@
       <span class="back" @click="goBack">←</span>
       <span class="title">《{{ projectName }}》</span>
       <span v-if="storyType" class="tag">{{ storyType }}</span>
+      <span v-if="store.state.value" class="tag target" @click="toggleTargetMenu">
+        {{ store.state.value.contentTarget === 'script' ? '短剧剧本' : '长篇小说' }}
+      </span>
       <span class="spacer"></span>
+      <el-button v-if="canExportScript" size="small" type="warning" plain @click="exportToEp">转为短剧项目 ↗</el-button>
       <PhaseBar
         v-if="store.state.value"
         :model-value="store.state.value.phase"
@@ -17,6 +21,13 @@
     <!-- 主体：对话 + 右栏 -->
     <div class="main" v-loading="store.status.value === 'loading'">
       <div class="chat-wrap">
+        <div v-if="store.gateSuggestion.value" class="gate-banner">
+          <span class="gate-text">✦ 主编建议进入「{{ phaseLabel(store.gateSuggestion.value.toPhase) }}」：{{ store.gateSuggestion.value.reason }}</span>
+          <div class="gate-ops">
+            <el-button size="small" type="primary" @click="store.acceptGate()">提炼并推进</el-button>
+            <el-button size="small" @click="dismissGate">继续讨论</el-button>
+          </div>
+        </div>
         <ChatCanvas
           :messages="store.messages.value"
           :stream-message="store.streamMessage.value"
@@ -97,7 +108,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import ChatCanvas from '@/components/longwriting/room/ChatCanvas.vue'
 import PhaseBar from '@/components/longwriting/room/PhaseBar.vue'
 import LedgerPanel from '@/components/longwriting/room/LedgerPanel.vue'
@@ -124,6 +135,7 @@ const revisePoints = ref<string[]>([])
 
 onMounted(async () => {
   await store.load()
+  store.loadConflictsIfWriting()
   try {
     const res = await window.electronAPI.longwriting.getProject(projectId.value)
     if (res.success && res.data) {
@@ -175,6 +187,82 @@ function saveRevise(): void {
   reviseVisible.value = false
 }
 
+// ==================== 阶段门 / 内容目标 / 转短剧桥 ====================
+
+import { ROOM_PHASE_META } from '@/components/longwriting/room/roomKinds'
+
+function phaseLabel(id: string): string {
+  return ROOM_PHASE_META.find((p) => p.id === id)?.label || id
+}
+
+function dismissGate(): void {
+  store.gateSuggestion.value = null
+}
+
+const targetMenuVisible = ref(false)
+function toggleTargetMenu(): void {
+  targetMenuVisible.value = !targetMenuVisible.value
+  if (!targetMenuVisible.value) return
+  const next = store.state.value?.contentTarget === 'script' ? 'novel' : 'script'
+  ElMessageBox.confirm(`内容目标将切换为「${next === 'script' ? '短剧剧本' : '长篇小说'}」，大纲阶段策略随之改变。确认？`, '切换内容目标', {
+    confirmButtonText: '切换', cancelButtonText: '取消', type: 'info',
+  })
+    .then(() => store.setTarget(next as 'novel' | 'script'))
+    .catch(() => undefined)
+    .finally(() => { targetMenuVisible.value = false })
+}
+
+/** 转短剧桥（设计文档 §6.2 v2.1 定案：渲染层编排，零后端改动） */
+const canExportScript = computed(
+  () => store.state.value?.contentTarget === 'script'
+    && (store.state.value?.pendingCards || []).some((c) => c.kind === 'outline' && c.status === 'adopted'),
+)
+
+async function exportToEp(): Promise<void> {
+  try {
+    const epApi = window.electronAPI.episodeProduction
+    const overviewRes = await window.electronAPI.longwriting.getStoryOverview(projectId.value)
+    const overview = overviewRes.success ? overviewRes.data : null
+    const adoptedEpisodes = (store.state.value?.pendingCards || [])
+      .filter((c) => c.kind === 'outline' && c.status === 'adopted' && c.data?.index)
+      .sort((a, b) => Number(a.data.index) - Number(b.data.index))
+
+    // 1) 建剧集项目（回链长文项目）
+    const created = await epApi.createProject(projectName.value, projectId.value, {
+      styleAnchors: storyType.value ? [storyType.value] : [],
+    })
+    if (!created.success) throw new Error(created.error || '创建剧集项目失败')
+    const epProjectId = created.data?.id ?? (created.data as any)
+
+    // 2) 每集种子：概要+人物小传+故事线+该集大纲（uploaded 模式，单集 ≤15000 字）
+    const episodes = adoptedEpisodes.map((c) => {
+      const d = c.data as Record<string, any>
+      const parts = [
+        `【作品概要】${overview?.summary || ''}`,
+        `【人物】${(d.characters || []).join('、')}`,
+        `【本集钩子】${d.hook || ''}`,
+        `【本集反转/卡点】${d.reversal || ''}`,
+        `【场景】${(d.scenes || []).map((sc: any) => `${sc.name}（${sc.timeOfDay || ''}）：${sc.summary || ''}`).join('；')}`,
+      ]
+      return { title: `第${d.index}集 ${d.title || ''}`.trim(), content: parts.filter(Boolean).join('\n').slice(0, 15000) }
+    })
+    if (episodes.length === 0) {
+      ElMessage.warning('没有已定稿的分集大纲卡——先逐集提炼并采纳')
+      return
+    }
+    const batch = await epApi.batchCreateEpisodes({ projectId: epProjectId, episodes })
+    if (!batch.success) throw new Error(batch.error || '创建分集失败')
+
+    ElMessageBox.confirm(`已创建剧集项目《${projectName.value}》与 ${episodes.length} 个分集（种子文本就绪）。现在去 EpisodeStudio 逐集生成剧本？`, '转短剧成功', {
+      confirmButtonText: '前往 EpisodeStudio', cancelButtonText: '留在研讨室', type: 'success',
+    })
+      .then(() => router.push(`/episode-production/${epProjectId}`))
+      .catch(() => undefined)
+  } catch (e: any) {
+    ElMessage.error(e?.message || '转短剧失败')
+  }
+}
+
 // ==================== 提炼与卡片闭环 ====================
 
 const pendingCards = computed(() => store.state.value?.pendingCards || [])
@@ -191,7 +279,14 @@ async function onDistill(): Promise<void> {
 }
 
 async function onAdopt(card: ArtifactCard): Promise<void> {
-  await store.adoptCard(card)
+  const ok = await store.adoptCard(card)
+  if (ok && card.kind === 'chapter') {
+    goEditorChapters()
+  }
+}
+
+function goEditorChapters(): void {
+  router.push({ path: `/story-editor/${projectId.value}`, query: { stage: 'chapters' } })
 }
 
 const editVisible = ref(false)
@@ -327,6 +422,13 @@ html.dark .story-room { --sr-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rg
 }
 .side-split { border-top: 1px solid var(--el-border-color-lighter); }
 
+.gate-banner {
+  display: flex; align-items: center; gap: 12px; padding: 9px 16px; flex-shrink: 0;
+  background: var(--el-color-warning-light-9, #faf4ec); border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.gate-text { font-size: 13px; color: var(--el-text-color-primary); flex: 1; min-width: 0; }
+.gate-ops { display: flex; gap: 6px; flex-shrink: 0; }
+.tag.target { cursor: pointer; }
 .revise-points { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .edit-rows { display: flex; flex-direction: column; gap: 10px; max-height: 55vh; overflow-y: auto; }
 .edit-row { display: flex; gap: 10px; align-items: flex-start; }
