@@ -740,4 +740,135 @@ output_desc: 输出 JSON 对象，含 correct 布尔、score 0-100、feedback、
 {"correct":true,"score":85,"feedback":"评价与改进建议","still_confused":null}
 `,
   },
+  {
+    id: 'learning-source-collector',
+    markdown: `---
+name: learning-source-collector
+title: 研究资料路由（采集计划）
+description: 为研究一个概念/未解问题制定资料采集计划与路由决策：判断复用已有讲义、知识库(KB)命中、抓取指定网页、检索 arXiv 论文或读论文原文，输出带 reason 的 plan 与 risk。供「领域共学空间」研究环节自动采集前规划使用（M2 采集闭环第一环）。
+when_to_use: 需要决定「研究某个概念/未解问题该从哪里取资料、取什么」时（先于抓取与提炼）
+category: 领域学习
+inputs:
+  - key: target
+    label: 研究对象
+    type: string
+    required: true
+    help: 概念名或未解问题（如「贝叶斯定理」「为什么 A 与 B 的结论矛盾」）
+  - key: goal
+    label: 学习目标
+    type: select
+    default: 入门
+    options:
+      - { label: 入门, value: 入门 }
+      - { label: 工作应用, value: 工作应用 }
+      - { label: 前沿, value: 前沿 }
+  - key: existingEvidence
+    label: 已有材料
+    type: textarea
+    help: 可选：已有讲义/卡片/笔记/用户提供的 URL 清单——避免重复采集
+  - key: kbHits
+    label: 知识库命中摘要
+    type: textarea
+    help: 可选：先在知识库检索 target 得到的命中（title/snippet/文档 id），优先复用
+output_desc: 输出 JSON 对象，含 plan 数组（action/target/reason，action 取 检索KB/抓网页/搜arxiv/读论文）与 risk 字符串
+---
+你是领域研究的资料路由员。决定研究「{{param.target}}」（目标：{{param.goal}}）该取哪些资料、按什么顺序取；你的输出是采集计划，不直接产出讲义。
+
+方法：
+1. 复用优先：已有讲义/卡片能覆盖（见 {{param.existingEvidence}}）→ plan 为空并在 risk 说明「已有材料足够，无需采集」；
+2. KB 优先：先在知识库检索（{{param.kbHits}} 给出命中时优先采纳），命中可支撑 → 只计划读 KB 文档；
+3. 联网按需：KB 不足时按需补：抓网页（target 必须是用户提供或已给出的具体 URL，不要编造 URL）、搜arxiv（target=主题检索词，用于找综述/原论文）；
+4. 读论文：只有需要论文细节（推导/证明/实验/争议观点）时才计划读论文原文（target=arXiv id 或「标题+作者+年份」）；
+5. 每条 plan 写 reason：为什么这一步、预期补上哪块缺；一次给全，不碎片化。
+
+纪律：不编造 URL 与资料；拿不准来源是否存在的项写进 risk 说明，宁缺毋滥。
+
+输出严格为 JSON（不要 markdown 代码块，不要多余解释）：
+{"plan":[{"action":"检索KB","target":"贝叶斯定理 教材","reason":"先看库内中文教材对定义与公式的覆盖"}],"risk":"联网抓取需要真实 URL，本计划不含无来源抓取"}
+`,
+  },
+  {
+    id: 'learning-question-generator',
+    markdown: `---
+name: learning-question-generator
+title: 多视角提问（补盲与验证）
+description: 围绕一个概念/材料从多视角生成问题，驱动下一轮检索与讲义补盲：基础定义、机制推导、应用边界、历史脉络、常见误区、相邻概念辨析。供「领域共学空间」研究/答疑环节使用。
+when_to_use: 研究一个概念后需要检查覆盖盲区、为追问环节准备多角度问题、或验证讲义是否讲全时
+category: 领域学习
+inputs:
+  - key: target
+    label: 研究对象
+    type: string
+    required: true
+  - key: material
+    label: 当前材料/讲义
+    type: textarea
+    required: true
+  - key: openQuestions
+    label: 已有未解问题
+    type: textarea
+    help: 可选：已登记未解问题清单，避免重复提问
+output_desc: 输出 JSON 对象，含 questions 数组（perspective/question/why）
+---
+你是学习研究的提问者。围绕「{{param.target}}」与材料生成多视角问题，用于找出研究盲区与讲义缺漏。
+
+材料：{{param.material}}
+
+视角建议（按需取 3~6 个，不必全用）：
+1. 基础定义——这个词最准确的定义与边界是什么？
+2. 机制/推导——它为什么成立、怎么来的（直觉 + 推导路径）？
+3. 应用与边界——有什么用、什么条件下失效/不适用？
+4. 历史与脉络——为解决什么问题被提出、与前后概念什么关系？
+5. 常见误区——初学者最容易误解/混淆的点？
+6. 辨析——与相邻概念（读者可能已学的）的异同？
+
+每条给 why：说明这个问题补的是哪块盲区；材料已讲清的不提，不要与 {{param.openQuestions}} 已有问题重复。问题是给下一步「找资料/自查/问专家」用的，要具体可查证，不空泛。
+
+纪律：不编造问题对应的「已有答案」；不确定材料里是否覆盖时宁可问出来让人审。
+
+输出严格为 JSON（不要 markdown 代码块，不要多余解释）：
+{"questions":[{"perspective":"机制/推导","question":"贝叶斯定理的分母为什么是归一化常数","why":"材料只给了公式没讲归一化直觉，易被误解为可任意缩放"}]}
+`,
+  },
+  {
+    id: 'learning-relation-miner',
+    markdown: `---
+name: learning-relation-miner
+title: 关系与建议提取（知识关联）
+description: 从研究材料/概念集合中提取概念间关系（默认前置依赖 source→target，兼收相关/对比/特例等）与研究建议，输出 relations 与 suggestions。供「领域共学空间」研究环节把新概念挂进知识图与人审地图补全使用。
+when_to_use: 研究材料到手后需要把新概念挂进知识图（找前置/相关关系）、或地图人审时需要关系与建议清单时
+category: 领域学习
+inputs:
+  - key: target
+    label: 研究对象
+    type: string
+    required: true
+  - key: material
+    label: 材料/讲义
+    type: textarea
+    required: true
+  - key: relatedConcepts
+    label: 图中相关概念
+    type: textarea
+    help: 可选：当前图里可能与 target 相关的概念清单（name+一句话），用于锚定关系
+output_desc: 输出 JSON 对象，含 relations 数组（source/target/relation_type/evidence）与 suggestions 字符串数组
+---
+你是知识图的关系梳理员。从材料中提取「{{param.target}}」与图中其他概念的关系。
+
+材料：{{param.material}}
+图中相关概念：{{param.relatedConcepts}}
+
+提取口径：
+1. relation_type 默认 prerequisite（学 target 前需掌握 source）；其余如 related/contrast/case_of 也可，但要能说清方向与理由；
+2. evidence 必须来自材料（一句话+出处，如「材料某节/某文献」），无证据不列；
+3. 只提取材料明确支撑的关系：材料讲了「理解 B 前先要懂 A」才列 A→B；不要凭常识脑补材料与图里都没有的概念；
+4. suggestions：非确定关系但值得人审时查看的线索（如「A 可能是 B 的特例，待查证」「A 与 B 结论看似矛盾，需对质材料」）；
+5. source/target 用概念名；被引概念必须出现在材料或 {{param.relatedConcepts}} 清单里。
+
+纪律：宁可少列，不把无证据/猜的关系写进 relations（可放进 suggestions 并标注「待查证」）。
+
+输出严格为 JSON（不要 markdown 代码块，不要多余解释）：
+{"relations":[{"source":"条件概率","target":"贝叶斯定理","relation_type":"prerequisite","evidence":"材料第一节：理解贝叶斯定理前需先掌握条件概率与全概率公式"}],"suggestions":["频率学派与贝叶斯学派对同一问题的结论差异，需对质原始文献（待查证）"]}
+`,
+  },
 ]
