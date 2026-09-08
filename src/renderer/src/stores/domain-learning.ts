@@ -82,6 +82,7 @@ export interface DlAckConfusedResultUi {
 /** domainLearning 命名空间 API 形状（electronAPI 实为 any，此处仅作守卫/类型提示） */
 interface DomainLearningApi {
   listSpaces(): Promise<IpcLike<DlSpaceSummary[]>>
+  getSpace(id: string): Promise<IpcLike<Record<string, unknown> | null>>
   createSpace(p: DlCreateSpaceInput): Promise<IpcLike<{ id: string }>>
   setSpaceKb(p: { id: string; kbId?: string | null }): Promise<IpcLike<{ kbId: string | null }>>
   getSpaceView(id: string): Promise<IpcLike<DlSpaceView | null>>
@@ -366,6 +367,19 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
       return r?.success && r.data ? r.data.kbId : null
     } catch (e: any) {
       error.value = e?.message ?? '保存知识库绑定失败'
+      return null
+    }
+  }
+
+  /** 读当前空间绑定的知识库 id（dl:get-space；失败 → null） */
+  async function spaceMetaKbOf(id: string): Promise<string | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.getSpace(id)
+      const row = r?.success && r.data ? r.data : null
+      return (row?.kbId as string | null | undefined) ?? null
+    } catch {
       return null
     }
   }
@@ -699,6 +713,7 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     paceOf,
     savePaceOf,
     saveKbOf,
+    spaceMetaKbOf,
     // 间隔复习
     reviewDue,
     reviewSettingsOf,

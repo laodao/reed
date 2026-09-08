@@ -75,6 +75,19 @@
               </div>
             </div>
             <div class="set-block">
+              <div class="set-title">关联知识库（研究资料源 · M4-B）</div>
+              <div class="set-row">
+                <span class="set-label">知识库</span>
+                <el-select v-model="kbIdDraft" clearable filterable size="small" placeholder="选择（可空=不绑定）" style="width: 220px">
+                  <el-option v-for="k in kbs" :key="k.id" :label="k.name" :value="k.id" />
+                </el-select>
+              </div>
+              <div class="set-actions">
+                <el-button size="small" type="primary" @click="saveKb">保存绑定</el-button>
+                <span class="pace-state" v-if="kbNote">{{ kbNote }}</span>
+              </div>
+            </div>
+            <div class="set-block">
               <div class="set-title">间隔复习（M3-B）</div>
               <div class="set-row">
                 <span class="set-label">启用复习队列</span>
@@ -421,6 +434,40 @@ const reviewBusyId = ref<string | null>(null)
 const reviewNote = ref('')
 const reviewDueItems = computed(() => store.reviewDue?.items ?? [])
 
+// ==================== 关联知识库（M4-B） ====================
+
+interface KbOption {
+  id: string
+  name: string
+}
+const kbs = ref<KbOption[]>([])
+const kbIdDraft = ref('')
+const kbNote = ref('')
+
+/** 读系统知识库列表 + 当前空间绑定值 */
+async function loadKbsAndBinding(): Promise<void> {
+  const kbApi = (window as unknown as {
+    electronAPI?: { knowledgeBase?: { list: () => Promise<{ success?: boolean; data?: KbOption[] }> } }
+  }).electronAPI?.knowledgeBase
+  try {
+    const r = kbApi ? await kbApi.list() : null
+    kbs.value = r?.data ?? []
+  } catch {
+    kbs.value = []
+  }
+  kbIdDraft.value = (await store.spaceMetaKbOf(spaceId.value)) ?? ''
+}
+
+async function saveKb(): Promise<void> {
+  const saved = await store.saveKbOf(spaceId.value, kbIdDraft.value || null)
+  if (saved !== null) {
+    kbNote.value = kbIdDraft.value ? '已绑定该知识库' : '已解除绑定'
+    kbIdDraft.value = saved
+  } else {
+    kbNote.value = '保存失败（知识库可能无效）'
+  }
+}
+
 function fillDraftFromPreset(presetId: string): void {
   const preset = DL_PROFILE_PRESETS.find((p) => p.id === presetId) ?? DL_PROFILE_PRESETS[DL_PROFILE_PRESETS.length - 1]
   draft.presetId = preset.id
@@ -431,6 +478,7 @@ function fillDraftFromPreset(presetId: string): void {
 
 watch(settingsVisible, async (v) => {
   if (!v) return
+  await loadKbsAndBinding()
   const id = spaceId.value
   // 画像草稿：当前空间画像为准（无 → 自定义空模板）
   const cur = spaceProfile.value
