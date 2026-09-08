@@ -445,8 +445,7 @@ watch(settingsVisible, async (v) => {
   const rev = await store.reviewSettingsOf(id)
   if (rev) reviewDraft.value = { ...reviewDraft.value, ...rev }
   await store.fetchReviewDue(id)
-  const st = await (window as any).electronAPI?.domainLearning?.schedulerState?.()
-  schedulerState.value = st?.data ?? null
+  schedulerState.value = await store.fetchSchedulerState()
 })
 
 async function applyReviewSettings(): Promise<void> {

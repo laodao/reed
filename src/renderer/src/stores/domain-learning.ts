@@ -608,18 +608,6 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     } catch { /* 静默：取消无副作用 */ }
   }
 
-  /** 查询某 scope 是否有在途 Agent 轮次（后端内存态；查询失败视为无） */
-  async function agentBusyOf(mode: 'research' | 'tutor', spaceId: string, conceptId?: string | null): Promise<boolean> {
-    const a = api()
-    if (!a) return false
-    try {
-      const r = await a.agentBusy({ mode, spaceId, conceptId })
-      return !!r?.success && r.data === true
-    } catch {
-      return false
-    }
-  }
-
   // ==================== 事件订阅生命周期 ====================
 
   /**
@@ -661,9 +649,16 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     }
   }
 
-  /** 清除最近错误信息 */
-  function clearError(): void {
-    error.value = null
+  /** 查询调度器运行态（dl:scheduler-state；失败 → null） */
+  async function fetchSchedulerState(): Promise<{ mode: 'desktop' | 'web'; running: boolean; runningCount: number } | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.schedulerState()
+      return r?.success && r.data ? r.data : null
+    } catch {
+      return null
+    }
   }
 
   return {
@@ -710,11 +705,10 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     // Agent
     sendAgent,
     cancelAgent,
-    agentBusyOf,
     subscribeAgentEvent,
     subscribeStream,
     unsubscribeAll,
-    // 工具
-    clearError,
+    // 调度器状态（空间设置用）
+    fetchSchedulerState,
   }
 })
