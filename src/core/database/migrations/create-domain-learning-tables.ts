@@ -9,7 +9,7 @@
  * electron runMultiTenantMigrations / web initDatabase（与两端调用保持同构）。
  */
 import type { DataSource } from 'typeorm'
-import { ensureTable, ensureIndex } from './migration-utils'
+import { ensureTable, ensureIndex, ensureColumn } from './migration-utils'
 
 /** 创建全部 7 张 dl_* 表（若不存在）。 */
 export async function createDomainLearningTables(ds: DataSource): Promise<void> {
@@ -21,6 +21,14 @@ export async function createDomainLearningTables(ds: DataSource): Promise<void> 
   await ensureTable(ds, isPg, 'dl_card', ddlCard(isPg), () => cardIndexes(ds, isPg))
   await ensureTable(ds, isPg, 'dl_doc', ddlDoc(isPg), () => docIndexes(ds, isPg))
   await ensureTable(ds, isPg, 'dl_question', ddlQuestion(isPg), () => questionIndexes(ds, isPg))
+  // M2-C：pace_settings 列（老库升级路径——ensureTable 只补索引，新增列显式 ALTER）
+  await ensureColumn(
+    ds,
+    isPg,
+    'dl_project',
+    'pace_settings',
+    isPg ? 'pace_settings text' : 'pace_settings TEXT',
+  )
 }
 
 // ==================== dl_project ====================
@@ -39,6 +47,7 @@ function ddlProject(pg: boolean): string {
         description   text,
         kb_id         varchar,
         default_model text,
+        pace_settings text,
         created_at    timestamp,
         updated_at    timestamp
       )
@@ -56,6 +65,7 @@ function ddlProject(pg: boolean): string {
       description   TEXT,
       kb_id         TEXT,
       default_model TEXT,
+      pace_settings TEXT,
       created_at    DATETIME,
       updated_at    DATETIME
     )

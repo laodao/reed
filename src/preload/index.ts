@@ -1329,6 +1329,13 @@ const electronAPI = {
     // Agent 忙碌查询（该 scope 是否有在途轮次）
     agentBusy: (p: { mode: 'research' | 'tutor'; spaceId: string; conceptId?: string | null }) =>
       ipcRenderer.invoke('dl:agent-busy', p),
+    // 周期推进配置（M2-C：dl:get-space-pace / dl:set-space-pace / dl:scheduler-state）
+    getSpacePace: (id: string) => ipcRenderer.invoke('dl:get-space-pace', { id }),
+    setSpacePace: (p: {
+      id: string
+      pace: { enabled: boolean; intervalMin: number; autoResearchConcepts: boolean; autoResolveOpenQuestions: boolean }
+    }) => ipcRenderer.invoke('dl:set-space-pace', p),
+    schedulerState: () => ipcRenderer.invoke('dl:scheduler-state'),
     // 订阅 agent 动作事件（通道 dl:agent:<spaceId>[:<conceptId>]；返回取消订阅函数）
     onAgentEvent: (
       spaceId: string,

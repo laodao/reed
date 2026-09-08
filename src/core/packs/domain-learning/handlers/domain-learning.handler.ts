@@ -19,6 +19,8 @@ import { LearningProjectService } from '../services/learning-project.service'
 import { LearningGraphService } from '../services/learning-graph.service'
 import { LearningViewService } from '../services/learning-view.service'
 import { DlAgentHarnessService } from '../services/dl-agent-harness.service'
+import { DlPaceSchedulerService, normalizePaceSettings } from '../services/dl-pace-scheduler.service'
+import type { DlPaceSettings } from '@shared/types/domain-learning.types'
 import type { DlAgentMode } from '../services/dl-agent.types'
 
 /** 统一 { success, data, error } 包装 */
@@ -30,11 +32,18 @@ async function wrap<T>(fn: () => Promise<T>): Promise<IpcResponse<T>> {
   }
 }
 
+/** 桌面端（Electron 主进程；非 ELECTRON_RUN_AS_NODE 的测试/工具进程）判定 */
+function isDesktopRuntime(): boolean {
+  const v = process.versions as Record<string, string | undefined>
+  return !!v.electron && process.env.ELECTRON_RUN_AS_NODE !== '1'
+}
+
 interface DlServiceBundle {
   projects: LearningProjectService
   graph: LearningGraphService
   view: LearningViewService
   agent: DlAgentHarnessService
+  scheduler: DlPaceSchedulerService
 }
 
 let bundle: DlServiceBundle | null = null
@@ -49,11 +58,34 @@ function services(): DlServiceBundle {
     const relations = new DlRelationRepository(db.dataSource)
     const masteryLogs = new DlMasteryLogRepository(db.dataSource)
     const cards = new DlCardRepository(db.dataSource)
+    const agent = DlAgentHarnessService.getInstance()
+    const scheduler = DlPaceSchedulerService.getInstance()
+    scheduler.configure({
+      db,
+      // 自动推进任务 = dl 宿主 research 直跑（动作仍经 dl 服务校验落 dl_* 库）
+      runJob: async (job) => {
+        const proj = (await db.dlProjects?.getById(job.spaceId)) ?? null
+        const dm = (proj?.defaultModel ?? null) as { providerConfigId?: string; modelId?: string } | null
+        await agent.sendMessage(
+          'research',
+          { spaceId: job.spaceId, conceptId: job.conceptId ?? null },
+          job.message,
+          {
+            providerConfigId: dm?.providerConfigId,
+            modelId: dm?.modelId,
+            focusQuestionId: job.questionId ?? undefined,
+          },
+        )
+      },
+    })
+    // 仅桌面端自动启停；Web 多租户无进程级定时器语义（IPC 读写配置不受影响）
+    if (isDesktopRuntime()) scheduler.start()
     bundle = {
       projects: new LearningProjectService(projects, concepts),
       graph: new LearningGraphService(concepts, relations, masteryLogs),
       view: new LearningViewService(db),
-      agent: DlAgentHarnessService.getInstance(),
+      agent,
+      scheduler,
     }
     void cards
   }
@@ -116,4 +148,27 @@ export function registerDomainLearningHandlers(): void {
   })
   ipcBridge.handle('dl:agent-busy', (_e, p: { mode: DlAgentMode; spaceId: string; conceptId?: string | null }) =>
     wrap(async () => services().agent.isBusy(p.mode, { spaceId: p.spaceId, conceptId: p.conceptId ?? null })))
+
+  // ---- 周期推进（M2-C；pace 配置读写 + 调度器状态） ----
+  ipcBridge.handle('dl:get-space-pace', (_e, p: { id: string }) =>
+    wrap(async () => {
+      const row = await getCoreDatabaseManager().dlProjects!.getById(p.id)
+      if (!row) throw new Error('空间不存在')
+      return normalizePaceSettings(row.pace)
+    }))
+  ipcBridge.handle('dl:set-space-pace', (_e, p: { id: string; pace: DlPaceSettings }) =>
+    wrap(async () => {
+      const saved = normalizePaceSettings(p.pace)
+      await getCoreDatabaseManager().dlProjects!.patch(p.id, { pace: saved })
+      return saved
+    }))
+  ipcBridge.handle('dl:scheduler-state', () =>
+    wrap(async () => {
+      const s = services()
+      return {
+        mode: isDesktopRuntime() ? 'desktop' : 'web',
+        running: s.scheduler.isRunning(),
+        runningCount: s.scheduler.runningCount(),
+      }
+    }))
 }

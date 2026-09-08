@@ -14,6 +14,7 @@ import { defineStore } from 'pinia'
 import type {
   DlAtlasGraph,
   DlNodeProfile,
+  DlPaceSettings,
   DlSpaceSummary,
   DlSpaceView,
 } from '@shared/types/domain-learning.types'
@@ -90,6 +91,9 @@ interface DomainLearningApi {
   }): Promise<IpcLike<DlAgentSendResultUi>>
   agentCancel(p: { mode: 'research' | 'tutor'; spaceId: string; conceptId?: string | null }): Promise<IpcLike<{ ok: boolean }>>
   agentBusy(p: { mode: 'research' | 'tutor'; spaceId: string; conceptId?: string | null }): Promise<IpcLike<boolean>>
+  getSpacePace(id: string): Promise<IpcLike<DlPaceSettings>>
+  setSpacePace(p: { id: string; pace: DlPaceSettings }): Promise<IpcLike<DlPaceSettings>>
+  schedulerState(): Promise<IpcLike<{ mode: 'desktop' | 'web'; running: boolean; runningCount: number }>>
   onAgentEvent(spaceId: string, conceptId: string | null | undefined, cb: (event: DlAgentUiEvent) => void): () => void
   onStream(eventId: string, cb: (event: DlGenerateUiEvent) => void): () => void
 }

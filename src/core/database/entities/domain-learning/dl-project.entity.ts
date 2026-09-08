@@ -50,6 +50,10 @@ export class DlProjectEntity {
   @Column({ name: 'default_model', type: 'text', nullable: true })
   defaultModel!: string | null
 
+  /** 周期推进配置 JSON（DlPaceSettings；M2-C；可空 = 默认关闭） */
+  @Column({ name: 'pace_settings', type: 'text', nullable: true })
+  paceSettings!: string | null
+
   @Column({ name: 'created_at', type: 'datetime', nullable: true })
   createdAt!: Date | null
 

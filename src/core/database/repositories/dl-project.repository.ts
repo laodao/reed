@@ -9,6 +9,7 @@
 import { type DataSource } from 'typeorm'
 import { DlProjectEntity } from '../entities/domain-learning/dl-project.entity'
 import { BaseRepository } from '../base-repository'
+import type { DlPaceSettings } from '@shared/types/domain-learning.types'
 
 /** dl_project 行 DTO（JSON 列已解析） */
 export interface DlProjectRow {
@@ -24,6 +25,8 @@ export interface DlProjectRow {
   kbId: string | null
   /** 默认模型：{ providerConfigId?, modelId? }（可空） */
   defaultModel: Record<string, unknown> | null
+  /** 周期推进配置（M2-C；可空 = 未配置，默认关闭） */
+  pace: DlPaceSettings | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -37,6 +40,7 @@ export type DlProjectPatch = Partial<{
   description: string | null
   kbId: string | null
   defaultModel: Record<string, unknown> | null
+  pace: DlPaceSettings | null
 }>
 
 function safeParse(json: string | null): Record<string, unknown> | null {
@@ -46,6 +50,16 @@ function safeParse(json: string | null): Record<string, unknown> | null {
   } catch {
     return null
   }
+}
+
+function parsePace(json: string | null): DlPaceSettings | null {
+  const raw = safeParse(json)
+  if (!raw || typeof raw !== 'object') return null
+  const enabled = typeof raw.enabled === 'boolean' ? raw.enabled : false
+  const intervalMin = typeof raw.intervalMin === 'number' && raw.intervalMin >= 1 ? raw.intervalMin : 30
+  const autoResearchConcepts = typeof raw.autoResearchConcepts === 'boolean' ? raw.autoResearchConcepts : true
+  const autoResolveOpenQuestions = typeof raw.autoResolveOpenQuestions === 'boolean' ? raw.autoResolveOpenQuestions : true
+  return { enabled, intervalMin, autoResearchConcepts, autoResolveOpenQuestions }
 }
 
 export class DlProjectRepository extends BaseRepository<DlProjectEntity, DlProjectRow> {
@@ -63,6 +77,7 @@ export class DlProjectRepository extends BaseRepository<DlProjectEntity, DlProje
     description?: string | null
     kbId?: string | null
     defaultModel?: Record<string, unknown> | null
+    pace?: DlPaceSettings | null
   }): Promise<DlProjectRow> {
     const now = new Date()
     const e = new DlProjectEntity()
@@ -76,6 +91,7 @@ export class DlProjectRepository extends BaseRepository<DlProjectEntity, DlProje
     e.description = input.description ?? null
     e.kbId = input.kbId ?? null
     e.defaultModel = input.defaultModel ? JSON.stringify(input.defaultModel) : null
+    e.paceSettings = input.pace ? JSON.stringify(input.pace) : null
     e.createdAt = now
     e.updatedAt = now
     await this.scoped.insert(e)
@@ -107,6 +123,8 @@ export class DlProjectRepository extends BaseRepository<DlProjectEntity, DlProje
     if (patch.kbId !== undefined) partial.kbId = patch.kbId
     if (patch.defaultModel !== undefined)
       partial.defaultModel = patch.defaultModel ? JSON.stringify(patch.defaultModel) : null
+    if (patch.pace !== undefined)
+      partial.paceSettings = patch.pace ? JSON.stringify(patch.pace) : null
     await this.scoped.update({ id }, partial)
   }
 
@@ -126,6 +144,7 @@ export class DlProjectRepository extends BaseRepository<DlProjectEntity, DlProje
       description: e.description,
       kbId: e.kbId,
       defaultModel: safeParse(e.defaultModel),
+      pace: parsePace(e.paceSettings),
       createdAt: e.createdAt,
       updatedAt: e.updatedAt,
     }

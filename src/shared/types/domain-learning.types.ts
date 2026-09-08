@@ -281,3 +281,23 @@ export interface DlNodeProfile {
   /** 是否有子图谱（下层 group） */
   hasChildren: boolean
 }
+
+/** 周期推进配置（dl_project.pace_settings；M2-C 自动研究调度） */
+export interface DlPaceSettings {
+  /** 是否启用自动推进 */
+  enabled: boolean
+  /** 推进周期（分钟，>=1） */
+  intervalMin: number
+  /** 自动研究「尚无讲义」的知识概念（产出草稿待人审） */
+  autoResearchConcepts: boolean
+  /** 自动对未解问题开子研究（找到有据答案回填原问题） */
+  autoResolveOpenQuestions: boolean
+}
+
+/** 默认推进配置（未配置 = 关闭） */
+export const DEFAULT_DL_PACE_SETTINGS: DlPaceSettings = {
+  enabled: false,
+  intervalMin: 30,
+  autoResearchConcepts: true,
+  autoResolveOpenQuestions: true,
+}
