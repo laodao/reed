@@ -59,6 +59,22 @@
       </div>
     </div>
 
+    <!-- evidence 区：证据来源（含 KB 文档回链标识，M4-B） -->
+    <div v-if="props.card.evidenceSources?.length" class="sec sec-evidence">
+      <div class="sec-head">
+        <span class="sec-title">证据来源（{{ props.card.evidenceSources.length }}）</span>
+        <span class="sec-actions"></span>
+      </div>
+      <div class="sec-body">
+        <div v-for="(e, i) in props.card.evidenceSources" :key="i" class="evidence-item">
+          <span class="work-kind">{{ e.kind }}</span>
+          <span class="work-title">{{ e.title }}</span>
+          <el-tag v-if="e.kbDocId" size="small" type="info" effect="plain">知识库文档</el-tag>
+          <span v-if="e.quote" class="evidence-quote">「{{ e.quote }}」</span>
+        </div>
+      </div>
+    </div>
+
     <!-- 模板空态兜底：已挂卡但无区内容 -->
     <el-empty v-if="props.card.sections.length === 0" description="讲义内容整理中" />
   </div>
@@ -244,6 +260,26 @@ function gotoRelated(r: DlRelatedRef): void {
     .work-meta {
       color: var(--el-text-color-placeholder);
       font-size: 12px;
+    }
+  }
+}
+
+// M4-B：证据来源条目（复用著作配色语义）
+.sec-evidence {
+  .evidence-item {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 13px;
+
+    .evidence-quote {
+      width: 100%;
+      color: var(--el-text-color-secondary);
+      font-size: 12px;
+      border-left: 2px solid var(--el-color-info-light-5);
+      padding-left: 8px;
     }
   }
 }
