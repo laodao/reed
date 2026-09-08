@@ -57,6 +57,8 @@ export {
 } from './memory/session-store'
 export type { AgentSessionStore, DbAgentSessionStoreDeps } from './memory/session-store'
 // —— 批 4：门面（23 号 §1）——
+// 【M8 决策（39 号 §2）】门面为「已测试的预留面」：生产装配已由 HostKit（36 号）承接，
+// 门面保留互斥/steer/多会话等语义供未来接线，当前勿在生产代码新增对它的依赖。
 export {
   AgentRuntimeImpl,
   initAgentRuntime,

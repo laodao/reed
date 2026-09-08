@@ -326,6 +326,11 @@ export class MemoryFlywheelService {
     return this.deps.repo.listActive()
   }
 
+  /** 已归档条目列表（M8 用户反馈①：生命周期全量可见） */
+  async listArchivedEntries() {
+    return this.deps.repo.listByStatus('archived')
+  }
+
   /** 代谢：零命中且超期条目归档（cron 接线后置；TaskService 批处理入口） */
   async archiveStale(): Promise<number> {
     const cutoff = new Date(this.deps.clock() - ARCHIVE_STALE_DAYS * 86_400_000)

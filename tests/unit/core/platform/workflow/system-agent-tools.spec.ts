@@ -435,6 +435,29 @@ describe('create_task_plan', () => {
     const res2 = await registry2.execute({ toolName: 'create_task_plan', args: { goal: 'g' } })
     expect(res2.ok).toBe(false)
   })
+
+  it('runtimeContext.memoryScope → createPlan scope 透传（37 号：L2/L3 记忆产生渠道）', async () => {
+    const captured: Array<Record<string, unknown> | undefined> = []
+    const { registry } = setup({
+      tasks: {
+        createPlan: async (_goal: string, opts: { scope?: { bizModule?: string; projectId?: string } } = {}) => {
+          captured.push(opts.scope)
+          return { id: 'root-2', title: 'EP 制作计划', status: 'pending_review' }
+        },
+      },
+    } as never)
+    // EP 宿主形态：runtimeContext.memoryScope 注入（loop 并入 logContext）
+    await registry.execute({
+      toolName: 'create_task_plan',
+      args: { goal: '生成第二集剧本' },
+      context: { turnRefs: [], memoryScope: { bizModule: 'episode-production', projectId: 'vp1' } },
+    })
+    expect(captured[0]).toEqual({ bizModule: 'episode-production', projectId: 'vp1' })
+
+    // 聊天宿主形态：无 memoryScope → 不传 scope（用户级 L1）
+    await registry.execute({ toolName: 'create_task_plan', args: { goal: '通用调研' }, context: { turnRefs: [] } })
+    expect(captured[1]).toBeUndefined()
+  })
 })
 
 // ==================== waitForRunTerminal（纯函数直测） ====================

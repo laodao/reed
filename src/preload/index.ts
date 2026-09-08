@@ -748,6 +748,7 @@ const electronAPI = {
     cancelTask: (rootId: string) => ipcRenderer.invoke('at:cancel', { rootId }),
     listMemoryPending: () => ipcRenderer.invoke('am:list-pending'),
     listMemoryActive: () => ipcRenderer.invoke('am:list-active'),
+    listMemoryArchived: () => ipcRenderer.invoke('am:list-archived'),
     approveMemory: (id: string) => ipcRenderer.invoke('am:approve', { id }),
     archiveMemory: (id: string) => ipcRenderer.invoke('am:archive', { id }),
     addManualMemory: (p: { kind: string; title: string; content: string; bizModule?: string; projectId?: string }) => ipcRenderer.invoke('am:add-manual', p),
@@ -1728,6 +1729,11 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:generateOutlineComment', eventId, projectId, providerConfigId, modelId),
     generateChapter: (eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string, style?: string, extraPrompt?: string) =>
       ipcRenderer.invoke('longwriting:generateChapter', eventId, projectId, outlineId, targetWords, providerConfigId, modelId, style, extraPrompt),
+    // 章节工作台（38 号）：上下文预览 + 按勾选上下文生成
+    chapterContextPreview: (projectId: string, outlineId: string, opts?: { targetWords?: number; style?: string; extraPrompt?: string }) =>
+      ipcRenderer.invoke('longwriting:chapterContextPreview', projectId, outlineId, opts),
+    generateChapterWithContext: (eventId: string, projectId: string, outlineId: string, params: { targetWords?: number; style?: string; extraPrompt?: string; enabledItemIds?: string[]; providerConfigId?: string; modelId?: string }) =>
+      ipcRenderer.invoke('longwriting:generateChapterWithContext', eventId, projectId, outlineId, params),
     generateSection: (eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generateSection', eventId, projectId, outlineId, targetWords, providerConfigId, modelId),
     generateChapterPrewrite: (eventId: string, projectId: string, outlineId: string, providerConfigId?: string, modelId?: string) =>

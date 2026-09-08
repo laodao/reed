@@ -185,6 +185,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'workflow.cancelTask': { channel: 'at:cancel', wrap: (...args: unknown[]) => [{ rootId: args[0] }] },
   'workflow.listMemoryPending': { channel: 'am:list-pending' },
   'workflow.listMemoryActive': { channel: 'am:list-active' },
+  'workflow.listMemoryArchived': { channel: 'am:list-archived' },
   'workflow.approveMemory': { channel: 'am:approve', wrap: (...args: unknown[]) => [{ id: args[0] }] },
   'workflow.archiveMemory': { channel: 'am:archive', wrap: (...args: unknown[]) => [{ id: args[0] }] },
   'workflow.addManualMemory': { channel: 'am:add-manual', wrap: (...args: unknown[]) => [args[0]] },
@@ -424,6 +425,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'longwriting.generateOutlineStory': { channel: 'longwriting:generateOutlineStory' },
   'longwriting.generateOutlineComment': { channel: 'longwriting:generateOutlineComment' },
   'longwriting.generateChapter': { channel: 'longwriting:generateChapter' },
+  'longwriting.chapterContextPreview': { channel: 'longwriting:chapterContextPreview', wrap: (p: unknown) => (Array.isArray(p) ? p : [p]) },
+  'longwriting.generateChapterWithContext': { channel: 'longwriting:generateChapterWithContext' },
   'longwriting.generateSection': { channel: 'longwriting:generateSection' },
   'longwriting.generateChapterPrewrite': { channel: 'longwriting:generateChapterPrewrite' },
   // longwriting.onGenerateEvent(eventId, cb) — 后端 emit(`longwriting:generate:${eventId}`, ...)

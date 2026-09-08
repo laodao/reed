@@ -168,6 +168,8 @@ const CHANNELS = {
   GENERATE_OUTLINE_STORY: 'longwriting:generateOutlineStory',
   GENERATE_OUTLINE_COMMENT: 'longwriting:generateOutlineComment',
   GENERATE_CHAPTER: 'longwriting:generateChapter',
+  GENERATE_CHAPTER_WITH_CONTEXT: 'longwriting:generateChapterWithContext',
+  CHAPTER_CONTEXT_PREVIEW: 'longwriting:chapterContextPreview',
   GENERATE_CHAPTER_PREWRITE: 'longwriting:generateChapterPrewrite',
   GENERATE_SECTION: 'longwriting:generateSection',
 
@@ -1415,6 +1417,45 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     async (event, eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string, style?: string, extraPrompt?: string) => {
       try {
         const result = await aiService.generateChapter(eventId, projectId, outlineId, targetWords, providerConfigId, modelId, style, extraPrompt)
+        return { ...result, eventId }
+      } catch (error: any) {
+        return { success: false, error: error.message }
+      }
+    }
+  )
+
+  // 章节工作台（38 号）：上下文预览（结构化条目 + token 预算）
+  ipcBridge.handle(
+    CHANNELS.CHAPTER_CONTEXT_PREVIEW,
+    async (_event, projectId: string, outlineId: string, opts?: { targetWords?: number; style?: string; extraPrompt?: string }) => {
+      try {
+        const result = await aiService.getChapterContextItems(projectId, outlineId, opts ?? {})
+        return { ...result, error: 'error' in result && result.error ? result.error : undefined }
+      } catch (error: any) {
+        return { success: false, error: error.message }
+      }
+    }
+  )
+
+  // 章节工作台（38 号）：按勾选上下文生成（流式与 GENERATE_CHAPTER 同链路）
+  ipcBridge.handle(
+    CHANNELS.GENERATE_CHAPTER_WITH_CONTEXT,
+    async (
+      _event,
+      eventId: string,
+      projectId: string,
+      outlineId: string,
+      params: {
+        targetWords?: number
+        style?: string
+        extraPrompt?: string
+        enabledItemIds?: string[]
+        providerConfigId?: string
+        modelId?: string
+      }
+    ) => {
+      try {
+        const result = await aiService.generateChapterWithContext(eventId, projectId, outlineId, params)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }

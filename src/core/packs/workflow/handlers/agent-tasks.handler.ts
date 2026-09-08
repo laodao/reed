@@ -93,6 +93,9 @@ export function registerAgentTaskHandlers(): void {
   ipcBridge.handle('am:list-active', () =>
     wrap(async () => flywheel().listActiveEntries()),
   )
+  ipcBridge.handle('am:list-archived', () =>
+    wrap(async () => flywheel().listArchivedEntries()),
+  )
   ipcBridge.handle('am:approve', (_e, p: { id: string }) =>
     wrap(async () => { await flywheel().approve(p.id); return { approved: true } }),
   )
