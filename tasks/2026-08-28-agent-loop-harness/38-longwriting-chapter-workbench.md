@@ -93,3 +93,31 @@ interface ChapterContextResult {
 - 上下文项的持久化保存（勾选/覆写仅本轮生效——原型语义如此）；
 - 替换 Agent 宿主写章路径（write_chapter 工具继续走既有组装；面板控制的是主界面
   手动生成路径——两条路径的最终统一登记为后续演进）。
+
+## 6. LW-9e 真机实测结论（2026-09-09，PASS）
+
+驱动：`scripts/e2e-lw9e-chapter-workbench.cjs`（Playwright CDP 9333 → 真机 Electron →
+真实 IPC → deepseek-v4-flash-0731）。测试项目「星际快递员与机器狗」（lw_1788875862832_ln6w1sn2a）。
+
+流程：概要（真模型生成落库）→ 背景（renderer 无生成入口，agent 动作路径 p7 已冒烟，
+E2E 用夹具文本）→ 角色 4 / 地点 3 / 情节 3（真模型生成落库）→ 大纲 3 章（真模型，一级章）→
+目标章挂涉及关系（2 角色 + 1 地点）→ 面板预览 → 勾选重组 → 按勾选生成 → 落库读回。
+
+结果（LW9E_RESULT=PASS）：
+- 面板契约：6 分区 [overview, background, character, location, prevChapters, graph]，
+  7 项，估算 731 tok，默认勾选 6；
+- 条目 id 形态实测：单件分区=裸节名（overview/background/prevEnding/memory），
+  实体项=`section:entityId`（character:char_xxx）——面板勾选/勾选重组按此工作；
+- 涉及关系驱动实体分区：updateOutline 挂 involvedCharacters/involvedLocations 后，
+  character/location 分区出现在清单中（此前 4 分区，挂后 6 分区）；
+- 勾选重组生效：停用 overview+background（启用 4 项）→ generateChapterWithContext
+  真模型 22.8s 生成 461 字正文 → saveChapter 落库 → getChapter 读回一致。
+
+实测顺带修正的认知：
+- generateChapter/WithContext 的 invoke 只返回内容，**落库由调用方 saveChapter 负责**
+  （ChapterStage 的 autoSave 即此语义）；
+- 面板前置=选中章节点（isEditableNode && activeOutlineId），无大纲项目走不到面板——
+  与 38 号 §3 设计一致。
+
+剩余（与原型差距清单，等设计确认后做）：提取状态徽章（✓记忆/✗重试）、必填标记、
+条目正文预览行、分区 token 汇总行、toast「已加载 N 分区 M 项」、空态引导文案。
