@@ -50,6 +50,7 @@ export class LwDesignMessageRepository extends BaseRepository<
   async add(
     conversationId: string,
     message: Omit<DesignMessage, 'timestamp'> & { timestamp?: number },
+    opts?: { projectId?: string },
   ): Promise<DesignMessage> {
     const id = this.generateId()
     const now = Date.now()
@@ -65,6 +66,10 @@ export class LwDesignMessageRepository extends BaseRepository<
       .andWhere(userId === null ? 'm.user_id IS NULL' : 'm.user_id = :uid', userId === null ? {} : { uid: userId })
       .getRawOne()
     const sortOrder = (Number(maxOrder?.max) || -1) + 1
+
+    // FK 前置（M6.5 实测：lw_design_messages.conversation_id 外键指向本表，
+    // ep-agent:/agent: 等工具化会话无父行时首条消息即 FK 失败）
+    await this.ensureConversationRow(conversationId, opts?.projectId)
 
     await this.scoped.save({
         id,
@@ -162,6 +167,28 @@ export class LwDesignMessageRepository extends BaseRepository<
 
     await this.batchAdd(conversationId, messages)
     return messages.length
+  }
+
+  /** 确保父会话行存在（INSERT OR IGNORE，SQLite/PG 双方言；工具化会话首条消息前置） */
+  private async ensureConversationRow(conversationId: string, projectId?: string): Promise<void> {
+    const repo = this.dataSource.getRepository(LwDesignConversationEntity)
+    const exists = await repo.findOne({ where: { id: conversationId } as never })
+    if (exists) return
+    // project_id 无外键：从会话 id 尾段推导占位（ep-agent:<episodeId> 场景由调用方传真值），
+    // 推导不出用 'agent'——仅作容器字段，不参与 LW 项目过滤
+    const derived = conversationId.includes(':') ? conversationId.split(':').pop()! : 'agent'
+    const now = new Date()
+    try {
+      await repo.insert({
+        id: conversationId,
+        projectId: projectId ?? derived,
+        stage: 'agent',
+        createdAt: now,
+        updatedAt: now,
+      } as never)
+    } catch {
+      /* 并发下父行已存在——INSERT 无 orIgnore 通道（PK 冲突即可忽略） */
+    }
   }
 
   private generateId(): string {

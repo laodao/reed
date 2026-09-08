@@ -198,7 +198,7 @@ export class EpAgentHarnessService {
       } as ModelMessage))
 
     // 2. 保存用户消息（UI 历史源不变）
-    await m.lwDesignMessages.add(conversationId, { role: 'user', content: message, timestamp: Date.now() })
+    await m.lwDesignMessages.add(conversationId, { role: 'user', content: message, timestamp: Date.now() }, { projectId })
 
     // 3. 状态快照 + 工具白名单（模块域 pack 全名 + 规划类系统工具）
     const state = await computeEpProductionState(m, projectId, episodeId)
@@ -349,7 +349,7 @@ export class EpAgentHarnessService {
         content,
         timestamp: Date.now(),
         metadata: JSON.stringify({ actions: actionSummaries, suggestions }),
-      })
+      }, { projectId })
       if (result.stopReason === 'error' || result.stopReason === 'aborted') {
         emitEpAgentEvent(projectId, episodeId, { type: 'error', error: result.error ?? (result.stopReason === 'aborted' ? '本轮已中断' : '执行失败') })
       }
@@ -370,7 +370,7 @@ export class EpAgentHarnessService {
           role: 'assistant',
           content: `抱歉，本轮执行遇到问题：${msg}`,
           timestamp: Date.now(),
-        })
+        }, { projectId })
       } catch { /* 兜底失败仅留日志 */ }
       emitEpAgentEvent(projectId, episodeId, { type: 'error', error: msg })
       throw e
