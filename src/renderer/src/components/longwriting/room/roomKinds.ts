@@ -43,7 +43,7 @@ export const CARD_FIELD_LABELS: Record<string, Record<string, string>> = {
   overview: { title: '作品名', storyType: '题材', premise: '一句话', conflict: '核心冲突', coreConflict: '核心冲突', hook: '钩子', summary: '概要', estimatedChapters: '预估章节' },
   character: { name: '姓名', role: '身份', motive: '动机', persona: '性格', arc: '弧光', belong: '归属', background: '背景', personality: '性格', occupation: '身份', rolePosition: '定位', appearance: '外貌', gender: '性别', age: '年龄' },
   plot: { title: '故事线名', arcDesc: '走向', summary: '走向', involve: '涉及' },
-  outline: { name: '卷名', structure: '结构', summary: '本卷概述', estimatedWords: '预估字数' },
+  outline: { name: '卷名', index: '集号', title: '集名', hook: '钩子', reversal: '反转/卡点', characters: '出场人物', summary: '概述', estimatedWords: '预估字数' },
   chapter: { outlineName: '章节名', name: '章节名', hook: '开场钩子', preview: '开头预览', points: '本章要点' },
   conflict: { description: '矛盾描述' },
   world: {},

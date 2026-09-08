@@ -4,8 +4,9 @@
  *
  * 房间状态存 `lw_projects.wizard_state` 的 `room` 子键（零 schema 变更，与旧
  * 向导 `{skipped}` 隔离）。读-合并-写全程走项目仓库（租户 scoped）。
- * 并发约定：单机单用户，写路径由会话互斥保证不并发；账本/卡片等独立 IPC
- * 理论上可与运行轮并发——以最后一次写为准（可接受）。
+ * 并发：读-合并-写有丢更新窗口（发送轮收尾的 patch 与用户侧 ledger/卡片操作
+ * 可并发）——写路径经 per-project promise 串行队列（评审 P1-1），同进程内
+ * 严格串行；跨进程并发由单机单用户约定兜底。
  */
 
 import { createLogger } from '@core/utils/logger'
@@ -39,12 +40,25 @@ export async function getRoomState(db: any, projectId: string): Promise<RoomWork
 }
 
 /** 写整个 room 子键（先读项目，保留 wizardState 其余键） */
+/** per-project 写串行队列（同项目写严格按提交顺序执行，消除读-合并-写丢更新） */
+const writeChains = new Map<string, Promise<unknown>>()
+
+function enqueueWrite<T>(projectId: string, task: () => Promise<T>): Promise<T> {
+  const prev = writeChains.get(projectId) ?? Promise.resolve()
+  const next = prev.then(task, task)
+  writeChains.set(projectId, next.catch(() => undefined))
+  void prev
+  return next
+}
+
 export async function saveRoomState(db: any, projectId: string, next: RoomWorkspaceState): Promise<void> {
-  const project = await db?.lwProjects?.getById(projectId)
-  if (!project) throw new Error(`长文项目不存在：${projectId}`)
-  const merged: WizardStateFull = { ...(project.wizardState || {}), room: next }
-  const updated = await db.lwProjects.update(projectId, { wizardState: merged })
-  if (!updated) throw new Error(`房间状态保存失败（项目不存在）：${projectId}`)
+  await enqueueWrite(projectId, async () => {
+    const project = await db?.lwProjects?.getById(projectId)
+    if (!project) throw new Error(`长文项目不存在：${projectId}`)
+    const merged: WizardStateFull = { ...(project.wizardState || {}), room: next }
+    const updated = await db.lwProjects.update(projectId, { wizardState: merged })
+    if (!updated) throw new Error(`房间状态保存失败（项目不存在）：${projectId}`)
+  })
 }
 
 export async function patchRoomState(
@@ -52,10 +66,16 @@ export async function patchRoomState(
   projectId: string,
   patch: Partial<RoomWorkspaceState>,
 ): Promise<RoomWorkspaceState> {
-  const current = await getRoomState(db, projectId)
-  const next = { ...current, ...patch }
-  await saveRoomState(db, projectId, next)
-  return next
+  return enqueueWrite(projectId, async () => {
+    const project = await db?.lwProjects?.getById(projectId)
+    if (!project) throw new Error(`长文项目不存在：${projectId}`)
+    const current = extractRoomState(project.wizardState)
+    const next = { ...current, ...patch }
+    const merged: WizardStateFull = { ...(project.wizardState || {}), room: next }
+    const updated = await db.lwProjects.update(projectId, { wizardState: merged })
+    if (!updated) throw new Error(`房间状态保存失败（项目不存在）：${projectId}`)
+    return next
+  })
 }
 
 /** 读失败仅告警并返回 null（fail-soft，用于轮后静默任务） */

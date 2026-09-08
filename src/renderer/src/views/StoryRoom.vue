@@ -83,7 +83,7 @@
           @distill="onDistill"
         />
         <div class="side-split"></div>
-        <BiblePanel :project-id="projectId" @ask="askAbout" @open-editor="goEditor" />
+        <BiblePanel :project-id="projectId" :refresh-key="bibleRefresh" @ask="askAbout" @open-editor="goEditor" />
       </div>
     </div>
 
@@ -142,7 +142,7 @@ const store = useStoryRoom(projectId.value)
 const projectName = ref('…')
 const storyType = ref('')
 const input = ref('')
-const chips = ref<string[]>(['先定主角的动机与代价', '让主编提问', '把我们定下的整理一下'])
+const chips = computed(() => store.chips.value)
 
 // ==================== 主编模型选择（原型顶栏「主编模型 ▾」） ====================
 
@@ -313,11 +313,16 @@ const canExportScript = computed(
 async function exportToEp(): Promise<void> {
   try {
     const epApi = window.electronAPI.episodeProduction
-    const overviewRes = await window.electronAPI.longwriting.getStoryOverview(projectId.value)
-    const overview = overviewRes.success ? overviewRes.data : null
+    // 0) 先校验分集卡（评审 P2-16：空时不要先建出孤儿剧集项目）
     const adoptedEpisodes = (store.state.value?.pendingCards || [])
       .filter((c) => c.kind === 'outline' && c.status === 'adopted' && c.data?.index)
       .sort((a, b) => Number(a.data.index) - Number(b.data.index))
+    if (adoptedEpisodes.length === 0) {
+      ElMessage.warning('没有已定稿的分集大纲卡——先逐集提炼并采纳')
+      return
+    }
+    const overviewRes = await window.electronAPI.longwriting.getStoryOverview(projectId.value)
+    const overview = overviewRes.success ? overviewRes.data : null
 
     // 1) 建剧集项目（回链长文项目）
     const created = await epApi.createProject(projectName.value, projectId.value, {
@@ -338,10 +343,6 @@ async function exportToEp(): Promise<void> {
       ]
       return { title: `第${d.index}集 ${d.title || ''}`.trim(), content: parts.filter(Boolean).join('\n').slice(0, 15000) }
     })
-    if (episodes.length === 0) {
-      ElMessage.warning('没有已定稿的分集大纲卡——先逐集提炼并采纳')
-      return
-    }
     const batch = await epApi.batchCreateEpisodes({ projectId: epProjectId, episodes })
     if (!batch.success) throw new Error(batch.error || '创建分集失败')
 
@@ -370,10 +371,13 @@ async function onDistill(): Promise<void> {
   }
 }
 
+const bibleRefresh = ref(0)
+
 async function onAdopt(card: ArtifactCard): Promise<void> {
   const ok = await store.adoptCard(card)
-  if (ok && card.kind === 'chapter') {
-    goEditorChapters()
+  if (ok) {
+    bibleRefresh.value++ // 圣经面板重拉（评审 P2-18：采纳后面板刷新）
+    if (card.kind === 'chapter') goEditorChapters()
   }
 }
 

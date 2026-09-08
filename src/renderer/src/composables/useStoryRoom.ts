@@ -112,9 +112,9 @@ export function useStoryRoom(projectId: string) {
   async function send(text: string): Promise<void> {
     const content = text.trim()
     if (!content || busy.value) return
-    // 本地先上屏（乐观），message:done 时由后端消息替代——后端回执带 id/metadata，
-    // 为避免重复，done 后重整一次（done 只 push assistant，用户消息不回推）
-    messages.value.push({ role: 'user', content, timestamp: Date.now() })
+    // 本地先上屏（乐观），失败时回滚（评审 P2-15）；message:done 只推 assistant
+    const optimistic: RoomMessageView = { role: 'user', content, timestamp: Date.now() }
+    messages.value.push(optimistic)
     status.value = 'streaming'
     streamMessage.value = { content: '', turnNo: (state.value?.turnNo ?? 0) + 1 }
     try {
@@ -123,6 +123,8 @@ export function useStoryRoom(projectId: string) {
     } catch (e: any) {
       status.value = 'error'
       streamMessage.value = null
+      const idx = messages.value.indexOf(optimistic)
+      if (idx !== -1 && !optimistic.id) messages.value.splice(idx, 1)
       ElMessage.error(e.message || '本轮研讨出错')
     } finally {
       if (status.value === 'streaming') status.value = 'idle'
@@ -206,13 +208,16 @@ export function useStoryRoom(projectId: string) {
   }
 
   async function adoptCard(card: ArtifactCard, patch?: Record<string, unknown>): Promise<boolean> {
-    const res = await api().roomAdoptCard(projectId, card.id, patch, { ...modelOpts.value })
+    const res = await api().roomAdoptCard(projectId, card.id, patch)
     if (!res.success) {
       ElMessage.error(res.error || '采纳失败')
       return false
     }
-    ElMessage.success(res.data.card.resultNote || '已采纳入库')
-    return res.data.card.status === 'adopted'
+    // 失败态用错误色提示（评审 P2-10：失败文案不再冒充成功 toast）
+    const done = res.data.card.status === 'adopted'
+    if (done) ElMessage.success(res.data.card.resultNote || '已采纳入库')
+    else ElMessage.error(res.data.card.resultNote || '落库失败，可修改后重试')
+    return done
   }
 
   async function regenerateCard(card: ArtifactCard, feedback: string): Promise<void> {

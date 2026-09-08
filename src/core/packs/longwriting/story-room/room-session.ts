@@ -38,8 +38,8 @@ export const ROOM_EDITOR_DEFINITION_ID = 'story-room-editor'
 export const ROOM_CONVERSATION_PREFIX = 'room:'
 /** 每轮注入的历史条数（原生 messages 窗口） */
 export const ROOM_HISTORY_LIMIT = 40
-/** 历史单条注入截断 */
-const HISTORY_CONTENT_MAX = 4000
+/** 历史单条注入截断（上限保护；实际生效窗口由 ContextManager 水位决定，评审 P2-12） */
+const HISTORY_CONTENT_MAX = 1200
 /** 未摘要轮数达到该值触发滚动摘要 */
 export const SUMMARY_THRESHOLD_TURNS = 20
 /** 每次滚动摘要压缩的轮数 */
@@ -102,14 +102,14 @@ function safeFlywheel() {
   }
 }
 
-/** 圣经摘要（fail-soft：状态读取失败时返回空——研讨会话不应被生产状态拖垮） */
-async function safeBibleSummary(db: any, projectId: string): Promise<string> {
+/** 圣经上下文（fail-soft）：摘要 + 题材（问题库选择用，评审 P1-2） */
+async function safeBibleContext(db: any, projectId: string): Promise<{ summary: string; storyType?: string }> {
   try {
     const ps = await computeProductionState(db, projectId)
-    return stateToSummary(ps)
+    return { summary: stateToSummary(ps), storyType: ps.overview?.storyType ?? undefined }
   } catch (e) {
     logger.warn(`[story-room] 圣经摘要读取失败（降级为空）project=${projectId}`, e)
-    return ''
+    return { summary: '' }
   }
 }
 
@@ -244,14 +244,12 @@ export class StoryRoomSessionService {
       role: 'user', content: message, timestamp: Date.now(), metadata: meta,
     }, { projectId })
 
-    // 4. 上下文组装：圣经摘要 + 账本 + 前情提要
-    const [bibleSummary, questionBank] = await Promise.all([
-      safeBibleSummary(m, projectId),
-      loadQuestionBank(m, undefined),
-    ])
+    // 4. 上下文组装：圣经摘要 + 账本 + 前情提要 + 题材问题库（按项目题材选）
+    const bible = await safeBibleContext(m, projectId)
+    const questionBank = await loadQuestionBank(m, bible.storyType)
     const snapshot = buildEditorSnapshot(
       { phase: roomState.phase, contentTarget: roomState.contentTarget, turnNo },
-      bibleSummary,
+      bible.summary,
       ledgerSnapshotText(roomState.ledger),
       roomState.summary,
     )
@@ -264,6 +262,8 @@ export class StoryRoomSessionService {
 
     // 7. 跑轮（delta 累积 + 转发事件通道）
     let allText = ''
+    // assistant 是否已落库——落库后发生的异常只发 error 事件，不再补道歉气泡（评审 P2-5）
+    let assistantSaved = false
     const kit = createHostKit<{ input: string }>(
       {
         definitionId: ROOM_EDITOR_DEFINITION_ID,
@@ -312,6 +312,8 @@ export class StoryRoomSessionService {
       const saved = await m.lwDesignMessages.add(conversationId, {
         role: 'assistant', content, timestamp: Date.now(), metadata: meta,
       }, { projectId })
+      assistantSaved = true
+
       const assistantView: RoomMessageView = {
         id: saved.id, role: 'assistant', content: saved.content, timestamp: saved.timestamp, metadata: meta,
       }
@@ -344,6 +346,16 @@ export class StoryRoomSessionService {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       logger.error(`[story-room] 轮次异常 project=${projectId}: ${msg}`)
+      if (assistantSaved) {
+        // 主回复已落库：只发错误事件（前端 toast），不再追加道歉气泡
+        emitRoomEvent(projectId, { type: 'error', error: msg })
+        return {
+          conversationId,
+          assistantMessage: { role: 'assistant', content: allText, timestamp: Date.now(), metadata: meta },
+          ledgerUpdated: false,
+          stopReason: 'error',
+        }
+      }
       // 兜底 assistant（前端气泡必有终态，用户消息不悬空）
       try {
         const saved = await m.lwDesignMessages.add(conversationId, {

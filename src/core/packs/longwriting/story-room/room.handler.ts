@@ -74,6 +74,9 @@ export function registerStoryRoomHandlers(): void {
 
   ipcBridge.handle(ROOM_CHANNELS.ROOM_SET_TARGET, async (_event, projectId: string, target: 'novel' | 'script') => {
     try {
+      if (target !== 'novel' && target !== 'script') {
+        return { success: false, error: `未知的内容目标：${target}` }
+      }
       const { patchRoomState } = await import('./room-state')
       await patchRoomState(getDb(), projectId, { contentTarget: target })
       return { success: true }
@@ -92,8 +95,13 @@ export function registerStoryRoomHandlers(): void {
 
   // ==================== 提炼与卡片闭环（M4） ====================
 
+  const DISTILL_SCOPES = ['overview', 'characters', 'plots', 'world', 'outline', 'chapter']
+
   ipcBridge.handle(ROOM_CHANNELS.ROOM_DISTILL, async (_event, projectId: string, scope: string, opts?: { providerConfigId?: string; modelId?: string }) => {
     try {
+      if (!DISTILL_SCOPES.includes(scope)) {
+        return { success: false, error: `未知的提炼范围：${scope}` }
+      }
       const result = await StoryRoomDistillerService.getInstance().distill(projectId, scope as never, opts || {})
       return { success: true, data: result }
     } catch (error: any) {

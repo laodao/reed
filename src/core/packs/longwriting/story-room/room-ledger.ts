@@ -148,18 +148,8 @@ export async function silentExtractLedger(
     }
     if (added.length === 0 && !ops.some((op: any) => op?.op === 'conflict')) return null
 
-    let ledger = [...state.ledger, ...added]
-    // 容量控制：超限时先丢最老 tentative，再丢最老 rejected，confirmed 不动
-    if (ledger.length > LEDGER_CAP) {
-      const keepConfirmed = ledger.filter((e) => e.status === 'confirmed')
-      const rest = ledger.filter((e) => e.status !== 'confirmed')
-      const byAge = (a: ConsensusEntry, b: ConsensusEntry) => a.sourceTurn - b.sourceTurn
-      const tentatives = rest.filter((e) => e.status === 'tentative').sort(byAge)
-      const rejecteds = rest.filter((e) => e.status === 'rejected').sort(byAge)
-      const budget = LEDGER_CAP - keepConfirmed.length
-      const keptRest = [...rejecteds, ...tentatives].slice(Math.max(0, rest.length - budget))
-      ledger = [...keepConfirmed, ...keptRest]
-    }
+    // 容量控制：超限先丢最老 tentative，tentative 丢尽才丢最老 rejected（评审 P2-4）
+    const ledger = compactLedger([...state.ledger, ...added])
 
     await patchRoomState(db, projectId, { ledger })
     logger.info(`[story-room] 账本静默提取 +${added.length} project=${projectId} turn=${input.turnNo}`)
@@ -168,6 +158,25 @@ export async function silentExtractLedger(
     logger.warn(`[story-room] 账本静默提取失败（fail-soft 跳过）project=${projectId}`, e)
     return null
   }
+}
+
+/**
+ * 账本容量控制（纯函数）：超限时从最老 tentative 开始丢，tentative 丢尽才丢
+ * 最老 rejected（rejected 是"防重复推荐"的机制载体，尽量保留）；confirmed 不动，
+ * budget 按 CAP - confirmed 夹紧（confirmed 自身不因超限被挤掉）。
+ */
+export function compactLedger(ledger: ConsensusEntry[], cap = LEDGER_CAP): ConsensusEntry[] {
+  if (ledger.length <= cap) return ledger
+  const keepConfirmed = ledger.filter((e) => e.status === 'confirmed')
+  const rest = ledger.filter((e) => e.status !== 'confirmed')
+  const byAge = (a: ConsensusEntry, b: ConsensusEntry) => a.sourceTurn - b.sourceTurn
+  const dropOrder = [
+    ...rest.filter((e) => e.status === 'tentative').sort(byAge),
+    ...rest.filter((e) => e.status === 'rejected').sort(byAge),
+  ]
+  const budget = Math.max(0, cap - keepConfirmed.length)
+  const dropSet = new Set(dropOrder.slice(0, Math.max(0, rest.length - budget)).map((e) => e.id))
+  return [...keepConfirmed, ...rest.filter((e) => !dropSet.has(e.id))]
 }
 
 // ==================== 用户操作（账本状态机） ====================

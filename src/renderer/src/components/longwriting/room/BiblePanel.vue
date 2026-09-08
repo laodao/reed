@@ -31,11 +31,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 
 defineOptions({ name: 'RoomBiblePanel' })
 
-const props = defineProps<{ projectId: string; storyType?: string }>()
+const props = defineProps<{ projectId: string; storyType?: string; refreshKey?: number }>()
 const emit = defineEmits<{
   (e: 'ask', text: string): void
   (e: 'open-editor', stage?: string): void
@@ -85,7 +85,13 @@ async function ok(p: Promise<{ success: boolean; data?: unknown }>): Promise<any
   }
 }
 
+watch(() => props.refreshKey, () => { void load() })
+
 onMounted(async () => {
+  await load()
+})
+
+async function load(): Promise<void> {
   const [overview, characters, plots, factions, skills, items, locations, outlineTree] = await Promise.all([
     ok(api().getStoryOverview(props.projectId)),
     ok(api().getCharacters(props.projectId)),
@@ -135,7 +141,7 @@ onMounted(async () => {
       entries: outlineNodes.map((n) => ({ id: n.id, name: String(n.name || ''), sub: String(n.nodeType || '') })),
     },
   ]
-})
+}
 </script>
 
 <style scoped>

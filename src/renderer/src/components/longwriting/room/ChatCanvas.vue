@@ -116,13 +116,18 @@ function safeParse(metadata: string): Record<string, unknown> {
   }
 }
 
-function scrollToBottom(): void {
+function scrollToBottom(force = false): void {
   nextTick(() => {
-    if (scrollEl.value) scrollEl.value.scrollTop = scrollEl.value.scrollHeight
+    const el = scrollEl.value
+    if (!el) return
+    // 流式中用户上翻即不再拽回（评审 P2-18：仅在近底部或强制时跟随）
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120
+    if (force || nearBottom) el.scrollTop = el.scrollHeight
   })
 }
 
-watch(() => [props.messages.length, props.streamMessage?.content.length], scrollToBottom, { flush: 'post' })
+watch(() => props.messages.length, () => scrollToBottom(true), { flush: 'post' })
+watch(() => props.streamMessage?.content.length, () => scrollToBottom(false), { flush: 'post' })
 </script>
 
 <style scoped>

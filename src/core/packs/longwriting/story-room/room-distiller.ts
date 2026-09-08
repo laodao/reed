@@ -147,7 +147,7 @@ export class StoryRoomDistillerService {
         resolveModel: (o) => harness.resolveModel({ providerConfigId: o?.providerConfigId, modelId: o?.modelId }),
         systemPrompt: () => system,
         snapshot: () => '',
-        seededHistory: () => [{ role: 'user', content: user } as never],
+        seededHistory: () => [],
         maxSteps: 1,
         memory: null,
         modelPreference: () => ({ providerConfigId: opts.providerConfigId, modelId: opts.modelId }),
@@ -155,7 +155,8 @@ export class StoryRoomDistillerService {
       { trajectoryPort: harness.trajectoryRepo ?? null, sessionStore: this.getSessionStore(), flywheel: this.safeFlywheel() },
     )
 
-    const result = await kit.runTurn({ input: scope }, { signal: controller.signal })
+    // 整理上下文经 input 播种（seededHistory 留空——评审 P2-13，避免 scope 孤儿消息）
+    const result = await kit.runTurn({ input: user }, { signal: controller.signal })
     const raw = result.output || ''
     if (result.stopReason === 'error' || result.stopReason === 'aborted') {
       throw new Error(result.error || `整理失败（${result.stopReason}）`)
@@ -255,7 +256,6 @@ export class StoryRoomDistillerService {
     projectId: string,
     cardId: string,
     patch?: Record<string, any>,
-    opts: { providerConfigId?: string; modelId?: string } = {},
   ): Promise<ArtifactCard> {
     const m = this.manager()
     const state = await getRoomState(m, projectId)
@@ -266,20 +266,18 @@ export class StoryRoomDistillerService {
     const data = mergePatch(card.data, patch || {})
     let r: StoryPersistResult
     try {
-      void opts
       r = await this.persistByKind(m, projectId, card, data)
     } catch (e: any) {
       r = { ok: false, message: e?.message || '落库异常', changed: [] }
     }
 
+    // skipped（全部已存在）视为已入库；失败置 failed（可再次采纳重试——find 不筛状态）
     const updated: ArtifactCard = {
       ...card,
       data,
-      status: r.ok ? 'adopted' : card.status === 'adopted' ? 'adopted' : 'failed',
-      resultNote: r.ok ? r.message : `${r.message}${r.skipped ? '（可修改后重试）' : ''}`,
+      status: r.ok || r.skipped ? 'adopted' : 'failed',
+      resultNote: r.ok || r.skipped ? r.message : r.message,
     }
-    // failed 保留 pending 以便重试；skipped（全部已存在）视为已入库
-    if (!r.ok && !r.skipped && card.status !== 'adopted') updated.status = 'pending'
 
     const pendingCards = state.pendingCards.map((c) => (c.id === cardId ? updated : c))
     await patchRoomState(m, projectId, { pendingCards })

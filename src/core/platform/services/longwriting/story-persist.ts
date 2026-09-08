@@ -5,7 +5,9 @@
  * 纯落库函数：输入 = 解析后的结构化数据（整理器卡片与旧 agent 生成结果同构），
  * 内部不做任何 AI 调用（章节图谱流水线例外，经参数注入 ai）。旧 agent-actions
  * 与研讨室 adoptCard 共用本模块——「复用经过测试的持久化逻辑，与旧对话 UI 无关」。
- * 各函数行为与原内联实现逐字段等价（对照单测 + 旧 workflow spec 回归双保险）。
+ * 落库行为与原内联实现逐字段等价（对照单测 + 旧 workflow spec 回归双保险）；
+ * 两处已登记的刻意差异：回执 data 形状（characters/plots 包一层对象键）与
+ * write_chapter 的 outlineId 校验时机（提前到生成前）——消费方均已核实不受影响。
  */
 
 import { createLogger } from '@core/utils/logger'

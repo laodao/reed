@@ -43,7 +43,7 @@ const props = defineProps<{ card: ArtifactCard }>()
 
 const meta = computed(() => KIND_META[props.card.kind] || KIND_META.overview)
 const accent = computed(() => meta.value.colorVar)
-const isScript = computed(() => props.card.kind === 'outline' && Array.isArray((props.card.data as any).episodes))
+const isScript = computed(() => props.card.kind === 'outline' && (props.card.data as any).index !== undefined)
 
 const rows = computed<Array<{ k: string; v: string }>>(() => {
   const labels = CARD_FIELD_LABELS[props.card.kind] || {}
@@ -53,8 +53,8 @@ const rows = computed<Array<{ k: string; v: string }>>(() => {
     const v = data[field]
     if (v === undefined || v === null || v === '') continue
     if (Array.isArray(v)) {
-      if (v.length === 0) continue
-      out.push({ k: label, v: v.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join('；').slice(0, 120) })
+      if (v.length === 0 || v.some((x) => typeof x === 'object')) continue // 对象数组（如场景表）不进文本行
+      out.push({ k: label, v: v.map((x) => String(x)).join('；').slice(0, 120) })
     } else {
       out.push({ k: label, v: String(v).slice(0, 160) })
     }

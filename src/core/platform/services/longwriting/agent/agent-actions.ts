@@ -155,7 +155,9 @@ async function executeGenerateCharacters(ctx: AgentExecutionContext, action: Age
 async function executeGenerateWorld(ctx: AgentExecutionContext): Promise<AgentActionSummary> {
   const { db, ai, projectId, providerConfigId, modelId } = ctx
 
-  // 背景（无背景行时先建空行，再润色时代描述）——生成段，非落库
+  // 背景（无背景行时先建空行，再润色时代描述）——生成段，非落库；
+  // 仅背景成功时也算 ok（等价原动作"已生成世界设定：时代背景"分支，评审 P2-7）
+  let bgDone = false
   try {
     const bg = await db?.lwBackgrounds?.getByProjectId(projectId)
     if (!bg) {
@@ -175,6 +177,7 @@ async function executeGenerateWorld(ctx: AgentExecutionContext): Promise<AgentAc
       const content = resp?.data?.content
       if (content) {
         await db?.lwBackgrounds?.update(bgRow.id, { eraDescription: content })
+        bgDone = true
       }
     }
   } catch (e) {
@@ -207,7 +210,11 @@ async function executeGenerateWorld(ctx: AgentExecutionContext): Promise<AgentAc
     console.error('[AgentAction] 技能物品生成失败:', e)
   }
 
-  return toSummary('generate_world', await persistWorld(db, projectId, { locations, factions, skills, items }))
+  const r = await persistWorld(db, projectId, { locations, factions, skills, items })
+  if (!r.ok && bgDone) {
+    return { type: 'generate_world', status: 'ok', message: '已生成世界设定：时代背景', changed: ['world'] } as AgentActionSummary
+  }
+  return toSummary('generate_world', r)
 }
 
 async function executeGeneratePlots(ctx: AgentExecutionContext): Promise<AgentActionSummary> {
@@ -273,6 +280,12 @@ async function executeWriteChapter(ctx: AgentExecutionContext, action: AgentActi
       return { type: 'write_chapter', status: 'error', message: '没有待写的章节（请先生成大纲，或指定章节重写）' }
     }
     outlineId = next.id
+  }
+
+  // 生成前快速校验（等价原动作顺序：无效 outlineId 不白打一次生成，评审 P2-8）
+  const outline = await db?.lwOutlines?.getById(outlineId)
+  if (!outline) {
+    return { type: 'write_chapter', status: 'error', message: '大纲节点不存在（outlineId 无效）' }
   }
 
   const targetWords = action.params?.targetWords
