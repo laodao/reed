@@ -205,6 +205,15 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public agentTasks: import('@core/database/repositories/agent-task.repository').AgentTaskRepository | null = null
   public agentMemoryEntries: import('@core/database/repositories/agent-memory-entry.repository').AgentMemoryEntryRepository | null = null
 
+  // 领域共学空间（design-v3 §9）：空间/概念/关系/掌握度日志/讲义/文档/追问
+  public dlProjects: import('@core/database/repositories/dl-project.repository').DlProjectRepository | null = null
+  public dlConcepts: import('@core/database/repositories/dl-concept.repository').DlConceptRepository | null = null
+  public dlRelations: import('@core/database/repositories/dl-relation.repository').DlRelationRepository | null = null
+  public dlMasteryLogs: import('@core/database/repositories/dl-mastery-log.repository').DlMasteryLogRepository | null = null
+  public dlCards: import('@core/database/repositories/dl-card.repository').DlCardRepository | null = null
+  public dlDocs: import('@core/database/repositories/dl-doc.repository').DlDocRepository | null = null
+  public dlQuestions: import('@core/database/repositories/dl-question.repository').DlQuestionRepository | null = null
+
   // 业务包内核（第一期）
   public packs: PackRepository | null = null
   public packBindings: PackBindingRepository | null = null
@@ -853,6 +862,13 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-ep-video-segments'
     )
     await createEpVideoSegments(this.dataSource)
+
+    // 领域共学空间（tasks/2026-09-07-domain-learning-space/design-v3.md §9）：7 张 dl_* 表
+    // （幂等，双语种；Web 端 initDatabase 有同构调用，两处必须同步）
+    const { createDomainLearningTables } = await import(
+      '@core/database/migrations/create-domain-learning-tables'
+    )
+    await createDomainLearningTables(this.dataSource)
   }
 
   /**
@@ -4428,6 +4444,14 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.workflowNodeRuns = new WorkflowNodeRunRepository(this.dataSource)
     this.agentTasks = new (await import('@core/database/repositories/agent-task.repository')).AgentTaskRepository(this.dataSource)
     this.agentMemoryEntries = new (await import('@core/database/repositories/agent-memory-entry.repository')).AgentMemoryEntryRepository(this.dataSource)
+    // 领域共学空间（design-v3 §9）：7 仓储
+    this.dlProjects = new (await import('@core/database/repositories/dl-project.repository')).DlProjectRepository(this.dataSource)
+    this.dlConcepts = new (await import('@core/database/repositories/dl-concept.repository')).DlConceptRepository(this.dataSource)
+    this.dlRelations = new (await import('@core/database/repositories/dl-relation.repository')).DlRelationRepository(this.dataSource)
+    this.dlMasteryLogs = new (await import('@core/database/repositories/dl-mastery-log.repository')).DlMasteryLogRepository(this.dataSource)
+    this.dlCards = new (await import('@core/database/repositories/dl-card.repository')).DlCardRepository(this.dataSource)
+    this.dlDocs = new (await import('@core/database/repositories/dl-doc.repository')).DlDocRepository(this.dataSource)
+    this.dlQuestions = new (await import('@core/database/repositories/dl-question.repository')).DlQuestionRepository(this.dataSource)
     // 业务包内核（第一期）：包快照 + 启用/配置覆写
     this.packs = new PackRepository(this.dataSource)
     this.packBindings = new PackBindingRepository(this.dataSource)

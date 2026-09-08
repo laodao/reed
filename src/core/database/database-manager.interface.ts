@@ -219,6 +219,15 @@ export interface ICoreDatabaseManager {
   /** M3 知识飞轮（26 号批1） */
   agentMemoryEntries: import('./repositories/agent-memory-entry.repository').AgentMemoryEntryRepository | null
 
+  // ---- 领域共学空间（tasks/2026-09-07-domain-learning-space/design-v3.md §9） ----
+  dlProjects: import('./repositories/dl-project.repository').DlProjectRepository | null
+  dlConcepts: import('./repositories/dl-concept.repository').DlConceptRepository | null
+  dlRelations: import('./repositories/dl-relation.repository').DlRelationRepository | null
+  dlMasteryLogs: import('./repositories/dl-mastery-log.repository').DlMasteryLogRepository | null
+  dlCards: import('./repositories/dl-card.repository').DlCardRepository | null
+  dlDocs: import('./repositories/dl-doc.repository').DlDocRepository | null
+  dlQuestions: import('./repositories/dl-question.repository').DlQuestionRepository | null
+
   // ---- 业务包内核（第一期） ----
   /** 内置包快照（business_packs：manifest UPSERT + 全局启用态兜底） */
   packs: PackRepository | null

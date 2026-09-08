@@ -134,3 +134,11 @@ export { AgentTaskEntity } from './agent-task.entity'
 export { AgentMemoryEntryEntity } from './agent-memory-entry.entity'
 // 通知中心：用户已读状态独立落表（用户要求后端持久化，不用 localStorage）
 export { UserNotificationReadEntity } from './user-notification-read.entity'
+// 领域共学空间（tasks/2026-09-07-domain-learning-space/design-v3.md §9）
+export { DlProjectEntity } from './domain-learning/dl-project.entity'
+export { DlConceptEntity } from './domain-learning/dl-concept.entity'
+export { DlRelationEntity } from './domain-learning/dl-relation.entity'
+export { DlMasteryLogEntity } from './domain-learning/dl-mastery-log.entity'
+export { DlCardEntity } from './domain-learning/dl-card.entity'
+export { DlDocEntity } from './domain-learning/dl-doc.entity'
+export { DlQuestionEntity } from './domain-learning/dl-question.entity'
