@@ -81,6 +81,11 @@
 | **记忆管理** | **必接**（每次调用都需要） | flywheel.assemble（34 号 M-Ke1 后支持 scope） | EP 宿主装配 L1 用户偏好 + L2 剧集制作业务知识 + L3 项目知识（设定集事实）；沉淀侧：制作经验 distill 打标 ep:projectId；设定集将来按 34 号 §4.2 契约注册结构化提供方 | M6.5-a 接 L1/L2+沉淀；L3 待 34 号 M-Ke1 |
 | **任务规划** | 能力就位，**调用由 agent 决定** | create_task_plan 工具（registry 白名单）+ planner | 白名单透出工具；系统提示词写判断纪律："简单请求直接执行，跨集/多环节的复杂制作才拆任务树" | M6.5-a |
 | **工作流规划** | 能力就位，**调用由 agent 决定** | create_workflow_draft / run_workflow 工具 | 白名单透出工具；提示词纪律："固定可复用的流水线才沉淀工作流，一次性需求不做" | M6.5-a |
+| **模块域工具共享注册** | EP 9 动作注册进共享 registry（pack 命名空间 `pack:ep-agent:*`，机制现成）；**projectId/episodeId 不闭包捕获**，从 `ctx.logContext`（runtimeContext 注入）运行时读取，越权执行器内拒绝；宿主白名单经 `registry.listByPack('ep-agent')` 组装；discover_capabilities 目录新增"模块域工具"节（与 34 号 L0 同源） | M6.5-a |
+
+> 共享注册形态（已确认）：模块域动作进共享 registry 是"工具包含系统所有能力"的实现路径——
+> 聊天 agent 的跨模块操作走任务树（白名单不开业务域工具），模块宿主开自己的 pack 工具；
+> 长文 M6 的宿主本地工具随后迁到同一形态（M6.5-d），迁完 discover 目录即覆盖全系统可调用能力。
 
 验收口径随性质区分：上下文/记忆看**接线证据**（装配留痕轨迹 + 压缩断言，每轮都应生效）；
 规划类看**能力可用 + 判断纪律在提示词中**——简单任务的干跑里不应出现规划调用（出现了反而是过度规划）。
@@ -91,17 +96,19 @@
 
 | 文件 | 内容 |
 | --- | --- |
-| `src/core/platform/episode-production/agent/ep-agent-tools.ts`（新，约 300 行） | 9 动作 + ep_confirm_choice 共 10 个 `AgentToolDef`：zod schema 从现 action params 平移；execute 闭包捕获 `{projectId, episodeId, providerConfigId, modelId, db, ai, emit}` 复用 executeXxx；dangerLevel 全部 'write'（沿长文 M6 先例，lw-agent-tools.ts:72-170）+ maxCalls 频控（资产生成类 1、文本类 3）；ep_confirm_choice requiresApproval=true；`buildEpAgentToolDefs(ctx)` 导出 |
+| `src/core/platform/episode-production/agent/ep-agent-tools.ts`（新，约 300 行） | 9 动作 + ep_confirm_choice 共 10 个 `AgentToolDef`：zod schema 从现 action params 平移；**共享注册形态——def 不捕获项目**，execute 从 `ctx.logContext` 读 projectId/episodeId（缺失即 throw），经 `executeEpActions` 同款执行器落库；dangerLevel 全部 'write'（沿长文 M6 先例）+ maxCalls 频控（资产生成类 1、文本类 3）；ep_confirm_choice requiresApproval=true；以 `registry.register(def, { packId: 'ep-agent' })` 注册 |
 | `src/core/platform/episode-production/agent/ep-agent-harness.service.ts`（新，约 400 行） | 宿主服务（对照 lw-agent-harness.service.ts 形态）：`isEpAgentHarnessEnabled()` 开关读取；`sendMessage()` 直驱 LoopRunner 并接线四大能力（ContextManager 上下文窗口/记忆装配 L1+L2/任务与工作流规划工具白名单+提示词纪律）——历史播种/生产状态进 system/registry 组装/host.emitStream→ep-agent 事件桥（delta 合批→generate 通道；tool-start/end→action:start/done）/轨迹 TrajectorySink/DbAgentSessionStore/RunRegistry 注册/busy 互斥/AbortController；choice 审批事件桥（pending 时发 choice:request） |
 
-### 修改（6 个文件）
+### 修改（7 个文件）
 
 | 文件 | 改动 |
 | --- | --- |
 | `src/core/platform/episode-production/agent/ep-agent-workflow.service.ts` | `sendMessage` 头部加开关分叉：`if (isEpAgentHarnessEnabled()) return epAgentHarness.sendMessage(...)`；旧三段式代码**一行不动**（回退路径）。约 +5 行 |
 | `src/core/platform/episode-production/agent/ep-agent-actions.ts` | executeXxx 函数体**全部不动**；仅 3 处加固：delete_entity 补 projectId 强绑定（删除前校验实体归属，同长文登记教训）；抽出 `EpActionCtx` 类型导出供 tools 引用；query_database 的 emit 调用改为可选注入（工具化后 action:start 由 registry 管线发，避免双发）。约 +30/-10 行 |
 | `src/core/platform/episode-production/agent/ep-agent.types.ts` | +`EP_AGENT_HARNESS` 开关读取函数、maxSteps（12，与全局一致）、各类 maxCalls 常量、轨迹 scopeKey 约定。约 +20 行 |
-| `src/core/platform/episode-production/agent/index.ts` | 导出新宿主与开关。+2 行 |
+| `src/core/platform/episode-production/agent/index.ts` | 导出新宿主与开关；EP 包启动时向共享 registry 注册 ep-agent pack 工具。+6 行 |
+| `src/core/platform/agent-runtime/tools/registry.ts` | +`listByPack(packId): Array<{ name, description, dangerLevel }>`（宿主拼白名单 + discover 目录用；unregisterPack 已有）。约 +15 行 |
+| `src/core/platform/workflow/tools/system-agent-tools.ts` | discover_capabilities 目录新增"模块域工具"节（registry.listByPack 各包汇总，与 34 号 L0 同源）。约 +25 行 |
 | `src/core/packs/episode-production/handlers/agent.handler.ts` | `ep:agent:send` 加开关分叉（长文 handler 同款，longwriting.handler.ts:3283 先例）；cancel 桥 runRegistry（保留旧 cancelGeneration 兜底）。约 +15 行 |
 | `src/renderer/src/components/episode-production/agent/EpAgentPanel.vue` + `composables/useEpAgentChat.ts` | choice 卡点击行为：从"把选择当新消息发送"改为"调审批 decide（approve_with_edit 携带所选值）"；无 choice 时交互不变。约 +40/-20 行 |
 
@@ -128,6 +135,7 @@
 | M6.5-a | 工具化 + 宿主 + 事件桥 + 开关 + **四大能力接线**（§4） | 单测全绿；干跑通过且装配留痕/上下文压缩断言可见 |
 | M6.5-b | choice→审批映射 + 前端点击改造 | 单测全绿；带 choice 干跑通过 |
 | M6.5-c | 资产生成全链路一次实测 | §6.3 通过并留证 |
+| M6.5-d | 长文 M6 宿主本地工具迁移到共享注册形态（pack:lw-agent）+ discover 目录覆盖核对 | 长文干跑通过；目录含 lw/ep 全部模块域工具 |
 
 风险：
 - choice 审批卡与 EP 面板现有交互冲突 → 回退开关保通路，UI 适配单独处理
