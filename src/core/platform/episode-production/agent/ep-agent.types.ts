@@ -166,6 +166,17 @@ export interface EpAgentHistoryItem {
 
 /** 对话上下文注入的历史条数上限 */
 export const EP_AGENT_HISTORY_LIMIT = 20
+
+// ==================== harness 直驱（M6.5-a，35 号） ====================
+
+/** harness 模式的 definition id（轨迹/会话定位用） */
+export const EP_AGENT_DEFINITION_ID = 'ep-agent'
+/** harness 模式每轮最大步数（研究/制作混合负载；12=chat 宿主同量级） */
+export const EP_AGENT_MAX_STEPS = 12
+/** 切换开关：env EP_AGENT_HARNESS='0' 回退旧三段式协议（默认 harness） */
+export function isEpAgentHarnessEnabled(): boolean {
+  return process.env.EP_AGENT_HARNESS !== '0'
+}
 /** 生成动作的并发言上限（动作串行执行，此值保留语义） */
 export const EP_AGENT_MAX_ACTIONS_PER_TURN = 3
 

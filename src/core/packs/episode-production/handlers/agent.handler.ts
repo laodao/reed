@@ -14,6 +14,8 @@
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { EpisodeProductionAgentService } from '@core/platform/episode-production/agent/ep-agent-workflow.service'
+import { isEpAgentHarnessEnabled } from '@core/platform/episode-production/agent/ep-agent.types'
+import { EpAgentHarnessService } from '@core/platform/episode-production/agent/ep-agent-harness.service'
 
 /**
  * 注册剧集制作 Agent 相关 IPC 处理器
@@ -21,7 +23,9 @@ import { EpisodeProductionAgentService } from '@core/platform/episode-production
 export function registerEpisodeAgentHandlers(): void {
   ipcBridge.handle('ep:agent:send', async (_event, projectId: string, episodeId: string, message: string, providerConfigId?: string, modelId?: string) => {
     try {
-      const result = await EpisodeProductionAgentService.getInstance().sendMessage(projectId, episodeId, message, { providerConfigId, modelId })
+      const result = isEpAgentHarnessEnabled()
+        ? await EpAgentHarnessService.getInstance().sendMessage(projectId, episodeId, message, { providerConfigId, modelId })
+        : await EpisodeProductionAgentService.getInstance().sendMessage(projectId, episodeId, message, { providerConfigId, modelId })
       return { success: true, data: result }
     } catch (error: any) {
       console.error('[EpAgentHandler] agent:send 失败:', error)
@@ -47,6 +51,10 @@ export function registerEpisodeAgentHandlers(): void {
 
   ipcBridge.handle('ep:agent:cancel', async (_event, projectId: string, episodeId: string) => {
     try {
+      if (isEpAgentHarnessEnabled()) {
+        EpAgentHarnessService.getInstance().cancel(projectId, episodeId)
+        return { success: true }
+      }
       EpisodeProductionAgentService.getInstance().cancel(projectId, episodeId)
       return { success: true }
     } catch (error: any) {

@@ -14,7 +14,7 @@ KE 轨（34 号）：KE-1 ──→ KE-2 ──→ KE-3 ──→ KE-4
 
 | 子任务 | 文件 | 对应里程碑 | 状态 |
 | --- | --- | --- | --- |
-| EP-1 EP 工具化+宿主+四大能力（不含 choice） | ep-1-tools-host.md | M6.5-a | 待开工 |
+| EP-1 EP 工具化+宿主+四大能力（不含 choice） | ep-1-tools-host.md | M6.5-a | 代码完成，单测 6/6 绿；干跑待验（需应用重启） |
 | EP-2 choice→审批通路 | ep-2-choice-approval.md | M6.5-b | 待开工 |
 | EP-3 资产生成全链路实测 | ep-3-e2e-run.md | M6.5-c | 待开工 |
 | EP-4 长文工具迁移共享注册 | ep-4-lw-migration.md | M6.5-d | 待开工 |

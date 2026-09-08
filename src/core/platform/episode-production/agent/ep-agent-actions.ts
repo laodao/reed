@@ -131,6 +131,46 @@ export async function executeEpActions(
   return summaries
 }
 
+/**
+ * 单动作执行（M6.5-a 工具化路径，35 号）：语义与 executeEpActions 循环体一致——
+ * 依赖检查（skipped 不执行）→ action:start → dispatch → 重算生产状态（#49 同轮依赖）→ action:done。
+ * 工具每次调用前由调用方传"当前"状态（工具自身不缓存快照）。
+ */
+export async function executeSingleEpAction(
+  ctx: EpAgentExecutionContext,
+  action: EpAgentAction,
+  currentState: EpAgentProductionState,
+): Promise<{ summary: EpAgentActionSummary; nextState: EpAgentProductionState }> {
+  if (!action?.type) throw new Error('动作缺少 type')
+  const dep = checkEpActionDependency(action.type, currentState)
+  if (!dep.ok) {
+    const s: EpAgentActionSummary = {
+      type: action.type,
+      status: 'skipped',
+      message: `「${ACTION_LABELS[action.type] || action.type}」暂缓：缺少${dep.missing.join('、')}`,
+    }
+    ctx.emit({ type: 'action:done', summary: s })
+    return { summary: s, nextState: currentState }
+  }
+  ctx.emit({ type: 'action:start', actionType: action.type, label: ACTION_LABELS[action.type] || action.type })
+  let summary: EpAgentActionSummary
+  try {
+    summary = await dispatchEpAction(ctx, action)
+  } catch (e: any) {
+    summary = {
+      type: action.type,
+      status: 'error',
+      message: `「${ACTION_LABELS[action.type] || action.type}」执行失败：${e.message || '未知错误'}`,
+      error: e.message || '未知错误',
+    }
+  }
+  ctx.emit({ type: 'action:done', summary })
+  const nextState = summary.status !== 'skipped'
+    ? await computeEpProductionState(ctx.db, ctx.projectId, ctx.episodeId)
+    : currentState
+  return { summary, nextState }
+}
+
 /** 按类型分发到具体执行函数 */
 async function dispatchEpAction(
   ctx: EpAgentExecutionContext,
@@ -213,7 +253,7 @@ async function executeGenerateScript(
 
   // ⑤ 删旧场景 → ⑥ 写新场景+桥接表
   if (existingScript) await m.sceneScripts?.deleteByEpisodeScriptId(existingScript.id)
-  const sceneRecords = await SceneBindingWriter.createScenesWithBindings(
+  await SceneBindingWriter.createScenesWithBindings(
     m.dataSource,
     script.id,
     result.scenes,
@@ -596,7 +636,13 @@ async function resolveBindingId(
 ): Promise<string | null> {
   if (params.id && typeof params.id === 'string') {
     const byId = await getBindingById(m, kind, params.id)
-    if (byId) return byId.id
+    if (byId) {
+      // 越权校验（M6.5 评审 P2-4）：byId 直取不经过项目过滤，id 指向他项目资产必须拒绝
+      if (byId.projectId && byId.projectId !== projectId) {
+        throw new Error(`越权：目标${kind}资产不属于当前项目`)
+      }
+      return byId.id
+    }
   }
   if (params.name && typeof params.name === 'string') {
     const byName = await findBindingByName(m, kind, projectId, params.name)

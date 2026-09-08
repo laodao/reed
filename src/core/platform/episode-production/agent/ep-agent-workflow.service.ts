@@ -27,6 +27,7 @@ import type {
 } from './ep-agent.types'
 import { EP_AGENT_HISTORY_LIMIT, EP_AGENT_MAX_ACTIONS_PER_TURN } from './ep-agent.types'
 import { emitEpAgentEvent } from './ep-agent-events'
+import { isEpAgentHarnessEnabled } from './ep-agent.types'
 import { computeEpProductionState, buildEpSuggestions } from './ep-agent-deps'
 import { buildEpDecisionContext, buildEpSummaryContext } from './ep-agent-context'
 import { executeEpActions, extractJsonObject } from './ep-agent-actions'
@@ -164,6 +165,11 @@ export class EpisodeProductionAgentService {
     message: string,
     opts?: { providerConfigId?: string; modelId?: string },
   ): Promise<EpAgentSendResult> {
+    // M6.5-a 开关分叉（35 号）：默认 harness 直驱；EP_AGENT_HARNESS='0' 回退本文件旧三段式
+    if (isEpAgentHarnessEnabled()) {
+      const { EpAgentHarnessService } = await import('./ep-agent-harness.service')
+      return EpAgentHarnessService.getInstance(this.db ?? undefined).sendMessage(projectId, episodeId, message, opts ?? {})
+    }
     const m = this.manager()
     if (!m?.lwDesignMessages) {
       throw new Error('数据库未初始化')

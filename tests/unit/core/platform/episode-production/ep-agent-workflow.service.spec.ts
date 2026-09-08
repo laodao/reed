@@ -5,6 +5,9 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+// 本文件专测旧三段式协议——M6.5 起默认走 harness 直驱，此处显式回退（35 号开关语义）
+process.env.EP_AGENT_HARNESS = '0'
+
 // mock 事件发射器（ep-agent-events 依赖 getEventEmitter）
 const emitted: Array<{ channel: string; data: any }> = []
 vi.mock('@core/interfaces/event.interface', () => ({
