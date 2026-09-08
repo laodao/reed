@@ -73,6 +73,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   // preload 契约已是对象入参（wrap 只透传）；preload 已 strip event（无 legacyEventArg）
   'workflow.agentConsole.listSessions': { channel: 'ac:list-sessions' },
   'workflow.agentConsole.getTrajectory': { channel: 'ac:get-trajectory', wrap: (p: unknown) => [p] },
+  'workflow.agentConsole.getContext': { channel: 'ac:get-context', wrap: (p: unknown) => [p] },
   'workflow.agentConsole.stop': { channel: 'ac:stop', wrap: (p: unknown) => [p] },
   'workflow.agentConsole.onTrajectory': { channel: 'ac:trajectory' },
   'workflow.agentConsole.onRunUpdate': { channel: 'ac:run-update' },

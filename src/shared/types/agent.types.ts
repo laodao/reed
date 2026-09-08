@@ -241,6 +241,8 @@ export interface AgentConsoleTrajectoryEntry {
   promptTokens?: number | null
   completionTokens?: number | null
   durationMs?: number | null
+  /** 落库行时间（回放排序用；实时广播条目可能缺省） */
+  createdAt?: string | null
 }
 
 /** 运行状态广播（ac:run-update） */
@@ -249,4 +251,32 @@ export interface AgentRunUpdateEvent {
   status: 'running' | 'done' | 'error' | 'aborted'
   label?: string
   error?: string
+}
+
+// ==================== 会话上下文查看（ac:get-context） ====================
+
+/** 模型侧历史单条消息的展示投影（长文本截断，仅摘要不回传全文） */
+export interface AgentConsoleContextMessage {
+  /** 在会话历史中的序号（=agent_sessions.seq） */
+  seq: number
+  role: string
+  /** 文本部分拼接（超长截断） */
+  text: string
+  /** 消息内 tool-call 部件 */
+  toolCalls: Array<{ name: string; argsDigest: string }>
+  /** 消息内 tool-result 部件 */
+  toolResults: Array<{ name: string; digest: string }>
+  /** 无法归类的内容部件类型名（未来新部件类型兜底可见） */
+  otherParts: string[]
+  /** text 是否被截断 */
+  truncated: boolean
+  /** 原始序列化字节数（体量感） */
+  bytes: number
+}
+
+/** 会话上下文（模型实际看到的消息历史，读自 agent_sessions 会话存储） */
+export interface AgentConsoleContext {
+  /** 会话存储键（chat=system-chat-agent:dialog:<id>，task=task:<id>） */
+  conversationId: string
+  messages: AgentConsoleContextMessage[]
 }

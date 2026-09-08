@@ -746,6 +746,7 @@ const electronAPI = {
     agentConsole: {
       listSessions: () => ipcRenderer.invoke('ac:list-sessions'),
       getTrajectory: (p: { scopeKey: string }) => ipcRenderer.invoke('ac:get-trajectory', p),
+      getContext: (p: { scopeKey: string }) => ipcRenderer.invoke('ac:get-context', p),
       stop: (p: { scopeKey: string }) => ipcRenderer.invoke('ac:stop', p),
       onTrajectory: (callback: (data: any) => void) => {
         const handler = (_event: any, data: any) => callback(data)

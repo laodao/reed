@@ -12,7 +12,8 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import { getCurrentUserId } from '@core/context/user-context'
 import { getWorkflowSubsystem } from '@core/platform/workflow/workflow-boot'
 import { getAgentRunRegistry } from '@core/platform/agent-runtime/runtime/run-registry'
-import type { AgentConsoleSession } from '@shared/types/agent.types'
+import { contextConversationId, describeContextMessage } from './agent-console-context'
+import type { AgentConsoleContext, AgentConsoleSession } from '@shared/types/agent.types'
 import type { IpcResponse } from '@shared/types/ipc.types'
 
 function subsystem() {
@@ -108,6 +109,21 @@ export function registerAgentConsoleHandlers(): void {
         return { stopped: true }
       }
       return { stopped: getAgentRunRegistry().abortByScope(p.scopeKey, userId) }
+    }),
+  )
+
+  // 会话上下文查看（37 号实测反馈：右栏「查看」按钮）——模型侧消息历史投影
+  ipcBridge.handle('ac:get-context', (_e, p: { scopeKey: string }) =>
+    wrap(async (): Promise<AgentConsoleContext> => {
+      const db = getCoreDatabaseManager()
+      if (!db.dataSource) throw new Error('数据库未就绪，无法读取会话上下文')
+      const { DbAgentSessionStore } = await import('@core/platform/agent-runtime/memory/session-store')
+      const conversationId = contextConversationId(p.scopeKey)
+      const history = await new DbAgentSessionStore({ dataSource: db.dataSource }).load(conversationId)
+      return {
+        conversationId,
+        messages: (history ?? []).map((m, seq) => describeContextMessage(m, seq)),
+      }
     }),
   )
 }

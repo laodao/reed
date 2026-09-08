@@ -103,7 +103,7 @@
             />
             <div class="input-actions">
               <span class="input-hint">{{ streamState.isStreaming ? 'Agent 执行中…' : '' }}</span>
-              <el-button v-if="streamState.isStreaming" size="small" type="danger" @click="stopGeneration">停止</el-button>
+              <el-button v-if="streamState.isStreaming" size="small" type="danger" @click="stopRun">停止</el-button>
               <el-button v-else size="small" type="primary" :disabled="!draft.trim()" @click="send">发送</el-button>
             </div>
           </div>
@@ -114,7 +114,7 @@
             <span class="cv-label">{{ selected.label }}</span>
             <el-tag size="small" type="warning" effect="plain">任务会话（只读）</el-tag>
             <div class="cv-actions">
-              <el-button v-if="selected.rootId || selected.refId" text size="small" @click="gotoTasks(selected.rootId ?? selected.refId!)">任务树详情</el-button>
+              <el-button v-if="selected.rootId || selected.refId" text size="small" @click="openDrawer('tree')">任务树详情</el-button>
               <el-button v-if="selected.running" text type="danger" size="small" @click="stopRun">停止</el-button>
             </div>
           </div>
@@ -155,7 +155,10 @@
       <aside class="inspector-pane">
         <div class="insp-scroll">
           <div class="insp-sec">
-            <div class="insp-title">会话上下文</div>
+            <div class="insp-title">
+              会话上下文
+              <a class="insp-link" @click="openDrawer('context')">查看</a>
+            </div>
             <div class="kv-grid">
               <span class="kv-k">模型</span><span class="kv-v">{{ contextInfo.model }}</span>
               <span class="kv-k">轮次</span><span class="kv-v">{{ contextInfo.turns }}</span>
@@ -167,7 +170,7 @@
           <div class="insp-sec">
             <div class="insp-title">
               记忆
-              <a class="insp-link" @click="router.push('/agent-memory')">知识飞轮 →</a>
+              <a class="insp-link" @click="openDrawer('memory')">知识飞轮</a>
             </div>
             <div v-if="memoryLines.length > 0" class="insp-list">
               <div v-for="(line, i) in memoryLines" :key="i" class="insp-item">{{ line }}</div>
@@ -178,10 +181,10 @@
           <div class="insp-sec">
             <div class="insp-title">
               子任务规划
-              <a v-if="taskTreeItems.length > 0" class="insp-link" @click="gotoTasks(taskTreeItems[0]?.rootId ?? '')">任务树 →</a>
+              <a v-if="taskTreeItems.length > 0" class="insp-link" @click="openDrawer('tree')">任务树</a>
             </div>
             <div v-for="t in taskTreeItems" :key="t.rootId" class="insp-card">
-              <div class="tree-root" @click="gotoTasks(t.rootId)">
+              <div class="tree-root" @click="openDrawer('tree')">
                 <span class="tree-status" :class="`st-${t.status}`" />
                 <span class="tree-title">{{ t.title }}</span>
                 <span v-if="t.score != null" class="tree-score">{{ t.score.toFixed(2) }}</span>
@@ -215,6 +218,65 @@
         </div>
       </aside>
     </div>
+
+    <!-- 会话详情抽屉（37 号实测反馈：知识飞轮/任务树/上下文就地弹出，不跳页，只看当前会话） -->
+    <el-drawer v-model="drawerVisible" :title="drawerTitle" direction="rtl" size="460px">
+      <!-- 任务树（当前会话创建的规划树，层级完整渲染） -->
+      <template v-if="drawerMode === 'tree'">
+        <div v-for="t in taskTreeItems" :key="t.rootId" class="drawer-tree">
+          <div v-for="n in treeRows(t)" :key="n.id" class="drawer-tree-row" :style="{ paddingLeft: n.depth * 16 + 'px' }">
+            <span class="tree-status" :class="`st-${n.status}`" />
+            <span class="drawer-tree-title" :class="{ 'drawer-tree-root': n.depth === 0 }">{{ n.title }}</span>
+            <span v-if="n.qualityScore != null" class="tree-score">{{ n.qualityScore.toFixed(2) }}</span>
+            <span class="drawer-tree-status">{{ taskStatusLabel(n.status) }}</span>
+          </div>
+        </div>
+        <div v-if="taskTreeItems.length === 0" class="insp-empty">当前会话尚未创建任务规划</div>
+        <div class="drawer-foot">
+          <a class="insp-link" @click="gotoTaskTree">在任务树管理页查看全局 →</a>
+        </div>
+      </template>
+
+      <!-- 知识飞轮（本会话各轮装配的记忆引用） -->
+      <template v-else-if="drawerMode === 'memory'">
+        <template v-if="memoryGroups.length > 0">
+          <div v-for="g in memoryGroups" :key="g.key" class="drawer-mem-group">
+            <div class="drawer-sec-hint">{{ g.label }}</div>
+            <div v-for="(line, i) in g.refs" :key="i" class="insp-item">{{ line }}</div>
+          </div>
+        </template>
+        <div v-else class="insp-empty">本会话暂未装配记忆——Agent 执行任务时会自动从知识飞轮召回相关经验</div>
+        <div class="drawer-foot">
+          <a class="insp-link" @click="router.push('/agent-memory')">打开知识飞轮管理页 →</a>
+        </div>
+      </template>
+
+      <!-- 会话上下文（模型实际看到的消息历史） -->
+      <template v-else>
+        <div v-loading="contextLoading">
+          <div class="drawer-sec-hint">系统提示词（最近一轮动态装配，含知识飞轮记忆）</div>
+          <template v-if="contextSystemPrompt">
+            <pre class="drawer-pre" :class="{ 'drawer-pre-clamped': !sysExpanded }">{{ contextSystemPrompt }}</pre>
+            <a class="text-toggle" @click="sysExpanded = !sysExpanded">{{ sysExpanded ? '收起' : '展开全文' }}</a>
+          </template>
+          <div v-else class="insp-empty">暂无快照——新轮次执行后会在此显示最近一轮装配的系统提示词（历史轮次生成于该能力上线前）</div>
+
+          <div class="drawer-sec-hint drawer-sec-gap">模型消息历史（{{ contextData?.messages.length ?? 0 }} 条，读自会话存储）</div>
+          <div v-for="m in contextData?.messages ?? []" :key="m.seq" class="ctx-msg">
+            <div class="ctx-msg-head">
+              <el-tag size="small" :type="roleTag(m.role)" effect="plain">{{ m.role }}</el-tag>
+              <span class="ctx-msg-seq">#{{ m.seq }} · {{ m.bytes }}B</span>
+              <span v-if="m.truncated" class="ctx-trunc">已截断</span>
+            </div>
+            <pre v-if="m.text" class="drawer-pre ctx-msg-text">{{ m.text }}</pre>
+            <div v-for="(c, i) in m.toolCalls" :key="`c${i}`" class="ctx-tool">⚙ 调用 {{ c.name }}({{ c.argsDigest }})</div>
+            <div v-for="(r, i) in m.toolResults" :key="`r${i}`" class="ctx-tool">↩ 返回 {{ r.name }}: {{ r.digest }}</div>
+            <div v-if="m.otherParts.length > 0" class="ctx-tool">其他部件：{{ m.otherParts.join('、') }}</div>
+          </div>
+          <div v-if="contextData && contextData.messages.length === 0" class="insp-empty">会话存储为空——还没有完成的 Agent 轮次</div>
+        </div>
+      </template>
+    </el-drawer>
   </div>
 </template>
 
@@ -226,6 +288,7 @@ import { useDialogStore } from '@/stores/dialog'
 import { agentToolLabel } from '@/utils/agent-tool-labels'
 import { renderMarkdown } from '@/utils/markdown'
 import type {
+  AgentConsoleContext,
   AgentConsoleSession,
   AgentConsoleTrajectoryEntry,
   AgentRunUpdateEvent,
@@ -235,6 +298,7 @@ import type { Message } from '@shared/types'
 type ConsoleApi = {
   listSessions: () => Promise<{ success: boolean; data?: AgentConsoleSession[]; error?: string }>
   getTrajectory: (p: { scopeKey: string }) => Promise<{ success: boolean; data?: AgentConsoleTrajectoryEntry[]; error?: string }>
+  getContext: (p: { scopeKey: string }) => Promise<{ success: boolean; data?: AgentConsoleContext; error?: string }>
   stop: (p: { scopeKey: string }) => Promise<{ success: boolean; data?: { stopped: boolean }; error?: string }>
   onTrajectory: (cb: (data: { scopeKey: string; entry: AgentConsoleTrajectoryEntry }) => void) => () => void
   onRunUpdate: (cb: (data: AgentRunUpdateEvent) => void) => () => void
@@ -256,6 +320,8 @@ const store = useDialogStore()
 
 interface TaskNode {
   id: string
+  parentId: string | null
+  depth: number
   title: string
   status: string
   qualityScore: number | null
@@ -352,7 +418,12 @@ function buildBlocks(entriesIn: Entry[]): Block[] {
   for (const e of entriesIn) {
     const suffix = String(e.seq ?? e.key)
     if (e.name === 'turn_start') continue
-    if (e.kind === 'decision') {
+    // 记忆装配留痕（36 号 kit 与任务执行器统一 name 判定——旧任务轨迹 kind=decision
+    // 也按 name 兼容；必须先于 decision 分支，否则永远不可达且误计步数）
+    if (e.kind === 'memory_assembly' || e.name === 'memory_assembly') {
+      const refs = e.payload?.memoryRefs
+      if (Array.isArray(refs) && refs.length > 0) blocks.push({ type: 'memory', key: `mem-${suffix}`, count: refs.length })
+    } else if (e.kind === 'decision') {
       pushText(`txt-${suffix}`, thoughtOf(e))
     } else if (e.kind === 'tool_call') {
       const callId = String(e.payload?.toolCallId ?? '')
@@ -386,9 +457,6 @@ function buildBlocks(entriesIn: Entry[]): Block[] {
       }
     } else if (e.kind === 'guardrail_stop') {
       blocks.push({ type: 'notice', key: `notice-${suffix}`, text: `本轮执行终止：${String(e.payload?.reason ?? '未知原因')}` })
-    } else if (e.kind === 'memory_assembly') {
-      const refs = e.payload?.memoryRefs
-      if (Array.isArray(refs) && refs.length > 0) blocks.push({ type: 'memory', key: `mem-${suffix}`, count: refs.length })
     }
   }
   return blocks
@@ -429,7 +497,7 @@ const contextInfo = computed(() => {
   return {
     model: store.currentDialog?.modelId ?? '—',
     turns: messages.value.filter((m) => m.role === 'user').length,
-    steps: entries.value.filter((e) => e.kind === 'decision' && e.name !== 'turn_start').length,
+    steps: entries.value.filter((e) => e.kind === 'decision' && e.name !== 'turn_start' && e.name !== 'memory_assembly').length,
     tokens: tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : String(tokens),
   }
 })
@@ -450,7 +518,8 @@ const allRefs = computed<RefItem[]>(() => {
 const memoryLines = computed(() => {
   const out = new Set<string>()
   for (const e of entries.value) {
-    if (e.kind !== 'memory_assembly') continue
+    // name 双兼容：36 号 kit=kind memory_assembly；旧任务轨迹行 kind=decision
+    if (e.kind !== 'memory_assembly' && e.name !== 'memory_assembly') continue
     const refs = e.payload?.memoryRefs
     if (Array.isArray(refs)) refs.forEach((r) => out.add(String(r)))
   }
@@ -459,12 +528,24 @@ const memoryLines = computed(() => {
 
 const skillLabels = computed(() => allRefs.value.filter((r) => r.kind === 'skill').map((r) => r.label))
 
+interface TreeNode {
+  id: string
+  parentId: string | null
+  depth: number
+  title: string
+  status: string
+  qualityScore: number | null
+}
+
 interface TreeItem {
   rootId: string
   title: string
   status: string
   score: number | null
+  /** 右栏卡片预览（前 8 个子任务标题） */
   children: Array<{ title: string; status: string }>
+  /** 全量节点（抽屉层级渲染用） */
+  nodes: TreeNode[]
 }
 const taskTreeItems = ref<TreeItem[]>([])
 
@@ -474,7 +555,11 @@ interface RunItem {
 }
 const runItems = ref<RunItem[]>([])
 
-async function loadInspectorData(): Promise<void> {
+/**
+ * 装配右栏检查器数据（37 号串数据修复：所有 await 后校验 req——旧实现读
+ * store.messages 时对话还在加载，拿到的是上一个会话的 refs，任务树因此串台）
+ */
+async function loadInspectorData(req: number): Promise<void> {
   const rootIds = new Set<string>()
   for (const r of allRefs.value) if (r.kind === 'task_tree') rootIds.add(r.id)
   if (selected.value?.kind === 'task' && selected.value.rootId) rootIds.add(selected.value.rootId)
@@ -482,23 +567,34 @@ async function loadInspectorData(): Promise<void> {
   for (const rootId of rootIds) {
     try {
       const resp = await api().getTaskTree(rootId)
+      if (req !== selectReqId) return
       if (resp.success && resp.data) {
         const root = resp.data.root
+        const nodes: TreeNode[] = resp.data.nodes.map((n) => ({
+          id: n.id,
+          parentId: n.parentId,
+          depth: n.depth,
+          title: n.title,
+          status: n.status,
+          qualityScore: n.qualityScore,
+        }))
         trees.push({
           rootId,
           title: root.title,
           status: root.status,
           score: root.qualityScore,
-          children: resp.data.nodes
+          children: nodes
             .filter((n) => n.id !== root.id)
             .slice(0, 8)
             .map((n) => ({ title: n.title, status: n.status })),
+          nodes,
         })
       }
     } catch {
       /* 树已删除等：跳过 */
     }
   }
+  if (req !== selectReqId) return
   taskTreeItems.value = trees
 
   const runs: RunItem[] = []
@@ -506,11 +602,13 @@ async function loadInspectorData(): Promise<void> {
     if (r.kind !== 'workflow_run') continue
     try {
       const resp = await api().getRun(r.id)
+      if (req !== selectReqId) return
       runs.push({ runId: r.id, status: resp.success && resp.data ? resp.data.run.status : 'unknown' })
     } catch {
       runs.push({ runId: r.id, status: 'unknown' })
     }
   }
+  if (req !== selectReqId) return
   runItems.value = runs
 }
 
@@ -575,15 +673,29 @@ async function createSession(): Promise<void> {
 }
 
 async function select(s: AgentConsoleSession): Promise<void> {
+  const req = ++selectReqId
   selected.value = s
   entries.value = []
+  // 右栏同步清空（防上一会话的任务树/运行列表闪现）
+  taskTreeItems.value = []
+  runItems.value = []
+  contextData.value = null
+  drawerVisible.value = false
   mdCache.clear()
   liveSeq = 0
   expanded.clear()
   expandedTool.clear()
-  void loadTrajectory(s.scopeKey).then(() => loadInspectorData())
+  // 轨迹与会话消息并行加载，两者都落定后再装配右栏——refs 读的是当前会话的消息
+  await Promise.all([loadTrajectory(s.scopeKey, req), loadSessionDialog(s, req)])
+  if (req !== selectReqId) return
+  await loadInspectorData(req)
+}
+
+/** 加载会话对应的对话（chat 会话的消息/refs 数据面） */
+async function loadSessionDialog(s: AgentConsoleSession, req: number): Promise<void> {
   if (s.kind !== 'chat' || !s.refId) return
   const resp = await window.electronAPI.dialog.get(s.refId)
+  if (req !== selectReqId) return
   if (resp.success && resp.dialog) {
     await store.selectDialog(resp.dialog)
   } else {
@@ -593,10 +705,9 @@ async function select(s: AgentConsoleSession): Promise<void> {
   }
 }
 
-async function loadTrajectory(scopeKey: string): Promise<void> {
-  const reqId = ++selectReqId
+async function loadTrajectory(scopeKey: string, req: number): Promise<void> {
   const resp = await api().agentConsole.getTrajectory({ scopeKey })
-  if (reqId !== selectReqId) return
+  if (req !== selectReqId) return
   if (resp.success) {
     entries.value = (resp.data ?? []).map((e, i) => ({
       ...e,
@@ -612,7 +723,10 @@ function send(): void {
   const content = draft.value.trim()
   if (!content || streamState.value.isStreaming) return
   draft.value = ''
-  void store.sendMessage(content).then(() => loadInspectorData())
+  const req = selectReqId
+  void store.sendMessage(content).then(() => {
+    if (req === selectReqId) void loadInspectorData(req)
+  })
 }
 
 function onInputKeydown(e: KeyboardEvent): void {
@@ -656,9 +770,111 @@ function gotoTaskTree(): void {
   void router.push('/agent-tasks')
 }
 
-function gotoTasks(rootId: string): void {
-  if (!rootId) return
-  void router.push({ path: '/agent-tasks', query: { focus: rootId } })
+// ============ 会话详情抽屉（37 号实测反馈：就地弹出，仅当前会话内容） ============
+
+type DrawerMode = 'tree' | 'memory' | 'context'
+const drawerVisible = ref(false)
+const drawerMode = ref<DrawerMode>('tree')
+const sysExpanded = ref(false)
+
+const drawerTitle = computed(() => {
+  const base = selected.value?.label ?? ''
+  return drawerMode.value === 'tree' ? `任务树 · ${base}` : drawerMode.value === 'memory' ? `知识飞轮 · ${base}` : `会话上下文 · ${base}`
+})
+
+function openDrawer(mode: DrawerMode): void {
+  if (!selected.value) return
+  drawerMode.value = mode
+  drawerVisible.value = true
+  if (mode === 'context') void loadContext()
+}
+
+/** 任务树抽屉：nodes 按 parentId 从根 DFS 排出渲染序（后端返回序不保证） */
+function treeRows(t: TreeItem): TreeNode[] {
+  const byParent = new Map<string | null, TreeNode[]>()
+  for (const n of t.nodes) {
+    const key = byParent.get(n.parentId) ?? []
+    key.push(n)
+    byParent.set(n.parentId, key)
+  }
+  const out: TreeNode[] = []
+  const walk = (parentId: string | null): void => {
+    for (const n of byParent.get(parentId) ?? []) {
+      out.push(n)
+      walk(n.id)
+    }
+  }
+  walk(null)
+  // 根缺失（异常数据）兜底：把孤立节点也补进显示，避免整树消失
+  if (out.length === 0) return [...t.nodes].sort((a, b) => a.depth - b.depth)
+  return out
+}
+
+const TASK_STATUS_LABELS: Record<string, string> = {
+  pending_review: '待审核',
+  ready: '待执行',
+  running: '执行中',
+  verifying: '验证中',
+  succeeded: '完成',
+  failed: '失败',
+  cancelled: '已取消',
+  escalated: '待人工',
+  replanned: '已重规划',
+}
+function taskStatusLabel(status: string): string {
+  return TASK_STATUS_LABELS[status] ?? status
+}
+
+/** 知识飞轮抽屉：按轮分组的记忆装配记录（最新一轮在前） */
+const memoryGroups = computed(() => {
+  const groups: Array<{ key: string; label: string; refs: string[] }> = []
+  let turn = 0
+  for (const e of [...entries.value].sort((a, b) => a.ts - b.ts)) {
+    if (e.name === 'turn_start') turn++
+    // name 双兼容（36 号 kit 与旧任务轨迹行）
+    if (e.kind !== 'memory_assembly' && e.name !== 'memory_assembly') continue
+    const refs = Array.isArray(e.payload?.memoryRefs) ? (e.payload!.memoryRefs as unknown[]).map(String) : []
+    if (refs.length > 0) groups.push({ key: e.key, label: `第 ${turn} 轮装配 · ${refs.length} 条`, refs })
+  }
+  return groups.reverse()
+})
+
+// ---- 上下文抽屉 ----
+
+const contextData = ref<AgentConsoleContext | null>(null)
+const contextLoading = ref(false)
+
+/** 系统提示词快照：最近一轮 turn_start 的动态装配态（聊天宿主在轨迹留痕） */
+const contextSystemPrompt = computed(() => {
+  let prompt: string | null = null
+  for (const e of entries.value) {
+    if (e.name !== 'turn_start') continue
+    const p = e.payload?.systemPrompt
+    if (typeof p === 'string' && p) prompt = p
+  }
+  return prompt
+})
+
+async function loadContext(): Promise<void> {
+  const scopeKey = selected.value?.scopeKey
+  if (!scopeKey) return
+  contextLoading.value = true
+  sysExpanded.value = false
+  try {
+    const resp = await api().agentConsole.getContext({ scopeKey })
+    if (selected.value?.scopeKey !== scopeKey) return // 会话已切换，丢弃
+    if (resp.success && resp.data) contextData.value = resp.data
+    else ElMessage.error(resp.error ?? '读取会话上下文失败')
+  } finally {
+    contextLoading.value = false
+  }
+}
+
+function roleTag(role: string): 'primary' | 'success' | 'warning' | 'info' {
+  if (role === 'user') return 'primary'
+  if (role === 'assistant') return 'success'
+  if (role === 'tool') return 'warning'
+  return 'info'
 }
 
 function toggleText(key: string): void {
@@ -883,4 +1099,23 @@ onUnmounted(() => {
 .run-status.rs-running, .run-status.rs-pending { background: var(--el-color-primary-light-9); color: var(--el-color-primary); }
 
 .empty-tip { color: var(--el-text-color-secondary); font-size: 13px; padding: 24px; text-align: center; }
+
+/* ---- 会话详情抽屉 ---- */
+.drawer-sec-hint { font-size: 12px; color: var(--el-text-color-secondary); margin: 4px 0 8px; }
+.drawer-sec-gap { margin-top: 18px; }
+.drawer-tree { border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; }
+.drawer-tree-row { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 3px 0; }
+.drawer-tree-title { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drawer-tree-root { font-weight: 600; }
+.drawer-tree-status { font-size: 11px; color: var(--el-text-color-secondary); margin-left: auto; flex-shrink: 0; }
+.drawer-mem-group { margin-bottom: 14px; }
+.drawer-foot { margin-top: 16px; padding-top: 10px; border-top: 1px dashed var(--el-border-color-lighter); }
+.drawer-pre { margin: 0; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; background: var(--el-fill-color-light); border: 1px solid var(--el-border-color-lighter); border-radius: 6px; padding: 8px 10px; max-height: none; overflow: visible; }
+.drawer-pre-clamped { max-height: 200px; overflow: hidden; -webkit-mask-image: linear-gradient(180deg, #000 70%, transparent); mask-image: linear-gradient(180deg, #000 70%, transparent); }
+.ctx-msg { border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
+.ctx-msg-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.ctx-msg-seq { font-size: 11px; color: var(--el-text-color-placeholder); }
+.ctx-trunc { font-size: 11px; color: var(--el-color-warning); }
+.ctx-msg-text { border: none; background: var(--el-fill-color-lighter); max-height: 220px; overflow: auto; }
+.ctx-tool { font-size: 12px; color: var(--el-text-color-secondary); background: var(--el-fill-color-lighter); border-radius: 4px; padding: 4px 7px; margin-top: 4px; word-break: break-all; }
 </style>
