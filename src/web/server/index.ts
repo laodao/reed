@@ -406,6 +406,10 @@ async function initDatabase(): Promise<void> {
   const { createAgentMemoryEntries } = await import('@core/database/migrations/create-agent-memory-entries')
   await createAgentMemoryEntries(ds)
 
+  // KE-1 分层知识（34 号 v2）：scope 两列 + 嵌入增量/漂移列（与 Electron 端同构）
+  const { addAgentMemoryScopeColumns } = await import('@core/database/migrations/add-agent-memory-scope-columns')
+  await addAgentMemoryScopeColumns(ds)
+
   // M5 系统 agent（28 号批2）：对话级 Agent 模式开关（与 Electron 端同构）
   const { addDialogAgentEnabled } = await import('@core/database/migrations/add-dialog-agent-enabled')
   await addDialogAgentEnabled(ds)

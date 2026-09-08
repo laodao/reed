@@ -83,6 +83,8 @@ export class MemoryFlywheelService {
     outputText: string
     sourceRunId?: string | null
     sourceTaskId?: string | null
+    /** KE-1 分层（34 号 v2）：任务归属 → L2/L3 打标；缺省落用户级 L1 */
+    scope?: { bizModule?: string; projectId?: string } | null
     signal?: AbortSignal
   }): Promise<number> {
     if (!this.deps.distill) return 0
@@ -114,6 +116,8 @@ export class MemoryFlywheelService {
         sourceTaskId: input.sourceTaskId ?? null,
         confidence: c.confidence,
         status: 'pending_review', // 闸门③：默认人工批准
+        bizModule: input.scope?.bizModule ?? null,
+        projectId: input.scope?.projectId ?? null,
       })
       saved++
     }
@@ -170,6 +174,32 @@ export class MemoryFlywheelService {
   }
 
   /** 任务终态回写：succeeded → success_count++；failed 仅计数（负样本留痕） */
+  /** 手工录入（KE-1）：默认 pending_review 走人工批准闸门（宁可慢不可脏） */
+  async addManual(input: {
+    kind: MemoryCandidate['kind']
+    title: string
+    content: string
+    confidence?: number | null
+    scope?: { bizModule?: string; projectId?: string } | null
+  }): Promise<AgentMemoryEntryRow> {
+    if (!input.title?.trim() || !input.content?.trim()) throw new Error('标题与内容不能为空')
+    if (await this.isDuplicate(input.content)) throw new Error('与既有条目重复')
+    return this.deps.repo.create({
+      id: `mem_${randomUUID()}`,
+      kind: input.kind,
+      content: { title: input.title.trim(), content: input.content.trim() },
+      confidence: input.confidence ?? 1,
+      status: 'pending_review',
+      bizModule: input.scope?.bizModule ?? null,
+      projectId: input.scope?.projectId ?? null,
+    })
+  }
+
+  /** 失效（KE-1：评审 P2-7——原只有 approve/archive，无"驳回"语义；reject 归 archive） */
+  async reject(id: string): Promise<void> {
+    await this.deps.repo.patch(id, { status: 'archived' })
+  }
+
   async reportTaskOutcome(entryIds: string[], succeeded: boolean): Promise<void> {
     for (const id of entryIds) {
       const entry = await this.deps.repo.getById(id)

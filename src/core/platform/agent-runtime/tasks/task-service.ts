@@ -99,8 +99,16 @@ export class AgentTaskService {
   // ==================== 规划与批准 ====================
 
   /** LLM 静态规划 → 整树落库（pending_review；根节点 id === rootId——review T1） */
-  async createPlan(goal: string, opts: { title?: string; budget?: Record<string, unknown>; signal?: AbortSignal } = {}): Promise<AgentTaskRow> {
+  async createPlan(goal: string, opts: { title?: string; budget?: Record<string, unknown>; scope?: { bizModule?: string; projectId?: string }; signal?: AbortSignal } = {}): Promise<AgentTaskRow> {
     const tree = await this.deps.planner.planTree(goal, opts.signal)
+    // KE-1 分层（34 号）：scope 盖进每节点 spec（落库持久化，蒸馏打标与装配过滤共用）
+    if (opts.scope) {
+      const stampScope = (n: PlannedTaskNode): void => {
+        (n.spec as unknown as Record<string, unknown>).scopeTag = { ...opts.scope }
+        for (const c of n.children ?? []) stampScope(c)
+      }
+      stampScope(tree)
+    }
     const rootId = `at_${randomUUID()}`
     const insertTree = async (node: PlannedTaskNode, id: string, parentId: string | null, depth: number): Promise<AgentTaskRow> => {
       const row = await this.deps.tasks.create({
@@ -435,8 +443,17 @@ export class AgentTaskService {
     if (this.deps.flywheel) {
       const hitIds = this.memoryHits.get(task.id) ?? []
       void this.deps.flywheel.reportTaskOutcome(hitIds, true).catch(() => undefined)
+      // KE-1 分层打标（34 号）：scope 在 createPlan 时盖进 spec（spec 落库持久化；
+      // runtimeContext 仅进程内不落库）。缺省用户级 L1
+      const scopeTag = ((task.spec as unknown as { scopeTag?: { bizModule?: string; projectId?: string } }).scopeTag) ?? undefined
       void this.deps.flywheel
-        .distillFromTask({ goal: (task.spec as unknown as AgentTaskSpec).goal, outputText: JSON.stringify(output ?? ''), sourceTaskId: task.id, sourceRunId: task.runId })
+        .distillFromTask({
+          goal: (task.spec as unknown as AgentTaskSpec).goal,
+          outputText: JSON.stringify(output ?? ''),
+          sourceTaskId: task.id,
+          sourceRunId: task.runId,
+          scope: scopeTag,
+        })
         .catch((e) => logger.warn(`[task] 飞轮蒸馏失败（不影响任务）：${e instanceof Error ? e.message : String(e)}`))
       this.memoryHits.delete(task.id)
     }

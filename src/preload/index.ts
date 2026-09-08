@@ -740,6 +740,8 @@ const electronAPI = {
     listMemoryActive: () => ipcRenderer.invoke('am:list-active'),
     approveMemory: (id: string) => ipcRenderer.invoke('am:approve', { id }),
     archiveMemory: (id: string) => ipcRenderer.invoke('am:archive', { id }),
+    addManualMemory: (p: { kind: string; title: string; content: string; bizModule?: string; projectId?: string }) => ipcRenderer.invoke('am:add-manual', p),
+    rejectMemory: (id: string) => ipcRenderer.invoke('am:reject', { id }),
     // ==================== M5.5 Agent 工作台 ====================
     agentConsole: {
       listSessions: () => ipcRenderer.invoke('ac:list-sessions'),

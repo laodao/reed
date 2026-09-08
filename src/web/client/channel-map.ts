@@ -184,6 +184,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'workflow.listMemoryActive': { channel: 'am:list-active' },
   'workflow.approveMemory': { channel: 'am:approve', wrap: (...args: unknown[]) => [{ id: args[0] }] },
   'workflow.archiveMemory': { channel: 'am:archive', wrap: (...args: unknown[]) => [{ id: args[0] }] },
+  'workflow.addManualMemory': { channel: 'am:add-manual' },
+  'workflow.rejectMemory': { channel: 'am:reject' },
   'workflow.triggerPreview': { channel: 'wf:trigger-preview' },
   'workflow.listAgentTools': { channel: 'wf:list-agent-tools' },
   'workflow.enableShare': { channel: 'wf:enable-share' },

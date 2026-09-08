@@ -12,6 +12,7 @@ import { Column, Entity, Index, PrimaryColumn } from 'typeorm'
 @Index('idx_agent_memory_user', ['userId'])
 @Index('idx_agent_memory_status', ['status'])
 @Index('idx_agent_memory_kind', ['kind'])
+@Index('idx_agent_memory_scope', ['userId', 'status', 'bizModule', 'projectId'])
 export class AgentMemoryEntryEntity {
   /**
    * 所属用户 ID（多租户隔离）。Web 端通过 ALS 注入，Electron 单用户为 null。
@@ -63,4 +64,22 @@ export class AgentMemoryEntryEntity {
 
   @Column({ name: 'updated_at', type: 'datetime', nullable: true })
   updatedAt!: Date | null
+
+  // ==================== KE-1 分层知识（34 号 v2） ====================
+
+  /** 业务模块（如 longwriting / episode-production）；NULL=用户级 L1 */
+  @Column({ name: 'biz_module', type: 'varchar', nullable: true })
+  bizModule!: string | null
+
+  /** 项目 id（与 bizModule 联用；NULL 且 bizModule NULL=用户级） */
+  @Column({ name: 'project_id', type: 'varchar', nullable: true })
+  projectId!: string | null
+
+  /** 内容哈希（M-Ke2 向量增量嵌入判据：变了才重嵌入） */
+  @Column({ name: 'content_hash', type: 'varchar', nullable: true })
+  contentHash!: string | null
+
+  /** 嵌入模型指纹（换提供商后旧向量失配——漂移检测触发重嵌入） */
+  @Column({ name: 'embed_model', type: 'varchar', nullable: true })
+  embedModel!: string | null
 }

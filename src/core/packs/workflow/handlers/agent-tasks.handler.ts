@@ -96,6 +96,12 @@ export function registerAgentTaskHandlers(): void {
   ipcBridge.handle('am:approve', (_e, p: { id: string }) =>
     wrap(async () => { await flywheel().approve(p.id); return { approved: true } }),
   )
+  ipcBridge.handle('am:add-manual', (_e, p: { kind: string; title: string; content: string; bizModule?: string; projectId?: string }) =>
+    wrap(async () => { await flywheel().addManual({ kind: p.kind as never, title: p.title, content: p.content, scope: { bizModule: p.bizModule, projectId: p.projectId } }); return { added: true } }),
+  )
+  ipcBridge.handle('am:reject', (_e, p: { id: string }) =>
+    wrap(async () => { await flywheel().reject(p.id); return { rejected: true } }),
+  )
   ipcBridge.handle('am:archive', (_e, p: { id: string }) =>
     wrap(async () => { await flywheel().archive(p.id); return { archived: true } }),
   )
