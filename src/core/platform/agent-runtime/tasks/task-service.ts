@@ -81,6 +81,12 @@ export interface TaskTree {
   children: Map<string, AgentTaskRow[]>
 }
 
+/** KE-1：读节点 spec 上的分层标记（34 号 v2；蒸馏打标与装配过滤共用） */
+function scopeTagOf(spec: unknown): { bizModule?: string; projectId?: string } | null {
+  const tag = (spec as { scopeTag?: { bizModule?: string; projectId?: string } } | null)?.scopeTag
+  return tag && (tag.bizModule || tag.projectId) ? tag : null
+}
+
 export class AgentTaskService {
   private readonly deps: Required<Pick<TaskServiceDeps, 'tasks' | 'planner' | 'verifier' | 'executors'>> &
     Pick<TaskServiceDeps, 'flywheel' | 'clock'>
@@ -347,7 +353,7 @@ export class AgentTaskService {
     let memoryLines: string[] = []
     if (this.deps.flywheel) {
       const scopeTag = (spec as unknown as { scopeTag?: { bizModule?: string; projectId?: string } }).scopeTag
-      const entries = await this.deps.flywheel.assemble(`${task.title}\n${spec.goal}`, undefined, scopeTag)
+      const entries = await this.deps.flywheel.assemble(`${task.title}\n${spec.goal}`, undefined, scopeTag ?? {})
       memoryLines = entries.map((e) => `- [${e.kind}] ${(e.content as { title?: string }).title ?? ''}: ${(e.content as { content?: string }).content ?? ''}`)
       if (entries.length > 0) {
         this.memoryHits.set(task.id, entries.map((e) => e.id)) // 终态回写（review T8）
@@ -417,7 +423,11 @@ export class AgentTaskService {
       await this.deps.tasks.patchFromStatus(task.id, ['verifying', 'running'], {
         status: 'ready',
         retryCount: task.retryCount + 1,
-        spec: { ...spec, goal: `${spec.goal}\n\n（上一轮产出未通过验收，请修正以下问题：${feedback ?? defects.join('；')}）` },
+        spec: {
+          ...spec,
+          ...(scopeTagOf(spec) ? { scopeTag: scopeTagOf(spec) } : {}),
+          goal: `${spec.goal}\n\n（上一轮产出未通过验收，请修正以下问题：${feedback ?? defects.join('；')}）`,
+        },
       } as never)
       return
     }
@@ -490,7 +500,11 @@ export class AgentTaskService {
             depth: task.depth + 1,
             title: node.title,
             // 子任务继承失败任务的验证契约（验收标准随目标走——否则重规划链断裂）
-            spec: { ...(node.spec as unknown as Record<string, unknown>), ...(failedSpec.verification ? { verification: failedSpec.verification } : {}) },
+            spec: {
+              ...(node.spec as unknown as Record<string, unknown>),
+              ...(scopeTagOf(node.spec) ? { scopeTag: scopeTagOf(node.spec) } : {}),
+              ...(failedSpec.verification ? { verification: failedSpec.verification } : {}),
+            },
             status: 'ready',
             executor: 'agent_loop',
           })

@@ -107,8 +107,9 @@ const manualVisible = ref(false)
 const manual = ref({ kind: 'fact', title: '', content: '', bizModule: '', projectId: '' })
 
 function layerLabel(row: MemoryRow): string {
-  if (!row.bizModule) return '用户级'
-  return row.projectId ? `项目 ${row.projectId.slice(0, 10)}` : `业务 ${row.bizModule}`
+  if (row.projectId) return `项目 ${row.projectId.slice(0, 10)}`
+  if (row.bizModule) return `业务 ${row.bizModule}`
+  return '用户级'
 }
 
 async function submitManual(): Promise<void> {
@@ -133,7 +134,7 @@ async function submitManual(): Promise<void> {
 
 async function reject(row: MemoryRow): Promise<void> {
   const apiObj = api()
-  const resp = await (apiObj as unknown as { rejectMemory?: WfMethod }).rejectMemory?.({ id: row.id })
+  const resp = await (apiObj as unknown as { rejectMemory?: WfMethod }).rejectMemory?.(row.id)
   if (resp?.success) {
     ElMessage.success('已驳回')
     await load()

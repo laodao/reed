@@ -172,10 +172,16 @@ export class EpAgentHarnessService {
     // 动作摘要收集：工具内 ctx.emit 的富 action:done 事件（经事件总线）回流为本轮结果
     const channel = epAgentEventChannel(projectId, episodeId)
     const actionSummaries: EpAgentActionSummary[] = []
-    const onActionDone = (ev: { type?: string; summary?: EpAgentActionSummary }) => {
-      if (ev?.type === 'action:done' && ev.summary) actionSummaries.push(ev.summary)
+    // 生产 emitter 只实现 tapEvents（评审 P0-1：IEventEmitter 无 on/off）；
+    // 惰性 tap：try 内首个副作用前调用（getAgentLoopHarness 抛错时订阅不泄漏）
+    const tap = { untap: null as (() => void) | null }
+    const tapActionDone = (): void => {
+      tap.untap = getEventEmitter().tapEvents?.((c, data) => {
+        if (c !== channel) return
+        const ev = data as { type?: string; summary?: EpAgentActionSummary }
+        if (ev?.type === 'action:done' && ev.summary) actionSummaries.push(ev.summary)
+      }) ?? null
     }
-    ;(getEventEmitter() as unknown as { on: (c: string, fn: (e: unknown) => void) => void }).on(channel, onActionDone as (e: unknown) => void)
 
     // harness 就位 + 模块域工具懒注册（评审 P0-1：pack activate 时 registry 尚不存在）
     const harness = getAgentLoopHarness()
@@ -287,6 +293,7 @@ export class EpAgentHarnessService {
 
     emitStage('deciding')
     newSummaryEvent()
+    tapActionDone()
 
     try {
       // 上下文管理（四大能力①）：assemble 做悬空哨兵修复 + 窗口压缩（纯剪枝；摘要化待评估）
@@ -368,7 +375,8 @@ export class EpAgentHarnessService {
       emitEpAgentEvent(projectId, episodeId, { type: 'error', error: msg })
       throw e
     } finally {
-      ;(getEventEmitter() as unknown as { off: (c: string, fn: (e: unknown) => void) => void }).off(channel, onActionDone as (e: unknown) => void)
+      tap.untap?.()
+      this.coordinators.delete(`${projectId}:${episodeId}`)
       await sink.flush().catch(() => undefined)
     }
   }

@@ -108,7 +108,7 @@ export class AgentMemoryEntryRepository extends BaseRepository<AgentMemoryEntryE
     return rows.filter((r) => {
       if (r.bizModule === null) return true // L1 用户级
       if (scope.bizModule && r.bizModule === scope.bizModule && r.projectId === null) return true // L2
-      if (scope.projectId && r.projectId === scope.projectId) return true // L3
+      if (scope.projectId && scope.bizModule && r.projectId === scope.projectId && r.bizModule === scope.bizModule) return true // L3
       return false
     })
   }

@@ -638,7 +638,7 @@ async function resolveBindingId(
     const byId = await getBindingById(m, kind, params.id)
     if (byId) {
       // 越权校验（M6.5 评审 P2-4）：byId 直取不经过项目过滤，id 指向他项目资产必须拒绝
-      if (byId.projectId && byId.projectId !== projectId) {
+      if (byId.projectId !== projectId) {
         throw new Error(`越权：目标${kind}资产不属于当前项目`)
       }
       return byId.id

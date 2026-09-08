@@ -85,8 +85,7 @@ export class MemoryFlywheelService {
   private readonly deps: Required<Pick<MemoryFlywheelDeps, 'repo' | 'clock'>> & Pick<MemoryFlywheelDeps, 'distill' | 'vector'>
 
   constructor(deps: MemoryFlywheelDeps) {
-    void deps.vector
-    this.deps = { repo: deps.repo, distill: deps.distill, clock: deps.clock ?? (() => Date.now()) }
+    this.deps = { repo: deps.repo, distill: deps.distill, vector: deps.vector, clock: deps.clock ?? (() => Date.now()) }
   }
 
   /**
@@ -176,7 +175,7 @@ export class MemoryFlywheelService {
     if (vp && partitions) {
       try {
         const embedded = await vp.embedTexts([taskText])
-        if (embedded) {
+        if (embedded && embedded.vectors.length > 0 && embedded.vectors[0].length > 0) {
           for (const kbId of partitions) {
             for (const hit of await vp.search(kbId, embedded.vectors[0], topK * 2)) {
               const entryId = hit.id.replace(/^memvec_/, '')
@@ -203,7 +202,6 @@ export class MemoryFlywheelService {
         return { entry: e, hits, weight: layerWeight(e) }
       })
       .filter((s) => s.hits > 0 || vectorScores.has(s.entry.id))
-      .map((s) => ({ ...s, score: s.hits + 0.6 * (vectorScores.get(s.entry.id) ?? 0) }))
       .sort((a, b) => (b.hits + 0.6 * (vectorScores.get(b.entry.id) ?? 0)) * b.weight - (a.hits + 0.6 * (vectorScores.get(a.entry.id) ?? 0)) * a.weight)
     if (!scope) return scored.slice(0, topK).map((s) => s.entry)
     // 分层配额：L1/L2/L3 各 topK，总量 3×topK
@@ -234,11 +232,16 @@ export class MemoryFlywheelService {
           : entry.bizModule
             ? `mem:${uid}:biz:${entry.bizModule}`
             : `mem:${uid}`
+        const contentHash = stableStringify(entry.content).slice(0, 64)
+        // 增量+漂移纪律（评审 P2-8）：内容与模型都没变就不重嵌入
+        if (entry.contentHash === contentHash && entry.embedModel && entry.embeddingId) {
+          logger.info(`[memory] 条目未变化，跳过重嵌入（${entry.id}）`)
+          return
+        }
         const embedded = await vp.embedTexts([text])
         if (!embedded || embedded.vectors.length === 0) return
         const recordId = `memvec_${entry.id}`
         await vp.upsert([{ id: recordId, kbId: partition, vector: embedded.vectors[0], content: text, model: embedded.model }])
-        const contentHash = stableStringify(entry.content).slice(0, 64)
         await this.deps.repo.patch(entry.id, { embeddingId: recordId, contentHash, embedModel: embedded.model })
         logger.info(`[memory] 条目已向量化（${entry.id}，partition=${partition.slice(0, 24)}…）`)
       } catch (e) {
@@ -256,7 +259,7 @@ export class MemoryFlywheelService {
     this.embedEntry({ ...entry, status: 'active' })
   }
 
-  /** 人工归档（拒绝入库） */
+  /** 人工归档（拒绝入库）；已向量化条目同步清向量（评审 P2：存储无界增长） */
   async archive(id: string): Promise<void> {
     const entry = await this.deps.repo.getById(id)
     if (!entry) throw new Error(`记忆条目不存在：${id}`)
@@ -273,14 +276,18 @@ export class MemoryFlywheelService {
     scope?: { bizModule?: string; projectId?: string } | null
   }): Promise<AgentMemoryEntryRow> {
     if (!input.title?.trim() || !input.content?.trim()) throw new Error('标题与内容不能为空')
+    const validKinds = ['fact', 'sop', 'preference', 'skill', 'episode-ref']
+    if (!validKinds.includes(input.kind)) throw new Error(`未知类型：${input.kind}`)
     if (await this.isDuplicate(input.content)) throw new Error('与既有条目重复')
+    // 分区对称（评审 P2）：projectId 无 bizModule 时归入 default 分区，保证嵌入/检索同键
+    const bizModule = input.scope?.projectId ? (input.scope.bizModule ?? 'default') : (input.scope?.bizModule ?? null)
     return this.deps.repo.create({
       id: `mem_${randomUUID()}`,
       kind: input.kind,
       content: { title: input.title.trim(), content: input.content.trim() },
       confidence: input.confidence ?? 1,
       status: 'pending_review',
-      bizModule: input.scope?.bizModule ?? null,
+      bizModule,
       projectId: input.scope?.projectId ?? null,
     })
   }
@@ -288,6 +295,14 @@ export class MemoryFlywheelService {
   /** 失效（KE-1：评审 P2-7——原只有 approve/archive，无"驳回"语义；reject 归 archive） */
   async reject(id: string): Promise<void> {
     await this.deps.repo.patch(id, { status: 'archived' })
+    void this.removeVectors(id)
+  }
+
+  /** 清条目向量（fire-and-forget） */
+  private removeVectors(id: string): void {
+    const vp = this.deps.vector
+    if (!vp) return
+    void vp.remove([`memvec_${id}`]).catch((e) => logger.warn(`[memory] 清向量失败：${e instanceof Error ? e.message : String(e)}`))
   }
 
   async reportTaskOutcome(entryIds: string[], succeeded: boolean): Promise<void> {

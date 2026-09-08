@@ -62,6 +62,19 @@ function summaryToResult(summary: { status: string; message: string; data?: unkn
   return { ok: true, data: { status: summary.status, message: summary.message, data: summary.data ?? null } }
 }
 
+/** 各动作超时（对齐 LW 300–900s 先例——评审 P1-1：缺省 120s 会让整集剧本生成被截断） */
+const EP_ACTION_TIMEOUT_MS: Record<string, number> = {
+  generate_script: 600_000,
+  split_scenes: 300_000,
+  generate_storyboards: 600_000,
+  generate_char_asset: 600_000,
+  generate_location_asset: 600_000,
+  generate_item_asset: 600_000,
+  update_entity: 120_000,
+  delete_entity: 120_000,
+  query_database: 120_000,
+}
+
 /** 单个动作工具定义（actionType 即工具名；params schema 平移自 executeXxx 的参数约定） */
 function epActionTool(actionType: EpAgentActionType, description: string, schema: z.ZodTypeAny): AgentToolDef {
   return {
@@ -69,6 +82,7 @@ function epActionTool(actionType: EpAgentActionType, description: string, schema
     description,
     inputSchema: schema,
     dangerLevel: 'write',
+    executeTimeoutMs: EP_ACTION_TIMEOUT_MS[actionType] ?? 300_000,
     autoApprovableInWorkflow: false,
     execute: async (input, ctx) => {
       const epCtx = epCtxFrom(ctx)

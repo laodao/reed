@@ -36,6 +36,7 @@ import { stateToSummary } from '@core/platform/services/longwriting/agent/agent-
 import type { AgentActionSummary, AgentProductionState } from '@core/platform/services/longwriting/agent/agent.types'
 import type { ModelMessage } from 'ai'
 import { registerLwAgentTools, LW_AGENT_PACK_ID } from './lw-agent-tools'
+import { installGraphKnowledgeProvider } from '@core/platform/services/longwriting/graph/graph-knowledge-provider'
 
 const logger = createLogger('LwAgentHarness')
 
@@ -172,6 +173,8 @@ export class LwAgentHarnessService {
     const state = await computeProductionState(m, projectId)
     const actionSummaries: AgentActionSummary[] = []
     registerLwAgentTools(harness.registry)
+    // KE-4：安装长文图谱结构化提供方（幂等；章节推导 v1 省略——全时段有效关系）
+    installGraphKnowledgeProvider({})
     const bindings = harness.registry
       .listSpecs({ packId: LW_AGENT_PACK_ID })
       .map((s) => ({ tool: s.name }))
