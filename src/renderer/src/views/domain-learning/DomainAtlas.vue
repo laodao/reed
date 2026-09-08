@@ -578,8 +578,7 @@ async function applyPace(): Promise<void> {
     autoResolveOpenQuestions: paceDraft.value.autoResolveOpenQuestions,
   })
   if (saved) {
-    const st = await (window as any).electronAPI?.domainLearning?.schedulerState?.()
-    schedulerState.value = st?.data ?? null
+    schedulerState.value = await store.fetchSchedulerState()
   }
 }
 
