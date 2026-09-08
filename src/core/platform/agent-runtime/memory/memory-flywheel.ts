@@ -16,12 +16,24 @@
 
 import { randomUUID } from 'crypto'
 import { createLogger } from '@core/utils/logger'
+import { getCurrentUserId } from '@core/context/user-context'
+import { stableStringify } from '@core/platform/agent-runtime/runtime/approval'
 import type { AgentMemoryEntryRepository, AgentMemoryEntryRow, MemoryEntryKind } from '@core/database/repositories/agent-memory-entry.repository'
 
 const logger = createLogger('AgentMemoryFlywheel')
 
 /** 置信度闸门（低于直接丢弃，不入待审） */
 export const CONFIDENCE_GATE = 0.7
+
+/** KE-3 向量端口（34 号 v2 §3）：宿主适配层注入（KB 嵌入 + IVectorStore）；缺省=纯关键词检索 */
+export interface MemoryVectorPort {
+  /** 嵌入文本批次；返回向量与模型指纹；null=嵌入不可用（降级关键词） */
+  embedTexts(texts: string[]): Promise<{ vectors: number[][]; model: string } | null>
+  /** 按分区写入（kbId=分区键 mem:{userId}[:biz:...][:proj:...]） */
+  upsert(records: Array<{ id: string; kbId: string; vector: number[]; content: string; model: string }>): Promise<void>
+  search(kbId: string, vector: number[], topK: number): Promise<Array<{ id: string; score: number }>>
+  remove(ids: string[]): Promise<void>
+}
 /** 查重的关键词重叠率阈值（Jaccard 简化实现） */
 export const DEDUP_OVERLAP_THRESHOLD = 0.6
 /** 读取装配条数上限 */
@@ -40,6 +52,8 @@ export interface MemoryCandidate {
 
 /** 依赖端口：蒸馏 LLM / 仓储 / 时钟（宿主注入） */
 export interface MemoryFlywheelDeps {
+  /** KE-3 向量端口（可选；缺省纯关键词） */
+  vector?: MemoryVectorPort
   repo: AgentMemoryEntryRepository
   /** 蒸馏：轨迹/结果文本 → 候选条目（宿主封装 resolveModel + generateText） */
   distill?: (input: { goal: string; output: string; signal?: AbortSignal }) => Promise<MemoryCandidate[]>
@@ -68,9 +82,10 @@ export function overlapRatio(a: Set<string>, b: Set<string>): number {
 }
 
 export class MemoryFlywheelService {
-  private readonly deps: Required<Pick<MemoryFlywheelDeps, 'repo' | 'clock'>> & Pick<MemoryFlywheelDeps, 'distill'>
+  private readonly deps: Required<Pick<MemoryFlywheelDeps, 'repo' | 'clock'>> & Pick<MemoryFlywheelDeps, 'distill' | 'vector'>
 
   constructor(deps: MemoryFlywheelDeps) {
+    void deps.vector
     this.deps = { repo: deps.repo, distill: deps.distill, clock: deps.clock ?? (() => Date.now()) }
   }
 
@@ -148,6 +163,31 @@ export class MemoryFlywheelService {
   async assemble(taskText: string, topK = ASSEMBLE_TOP_K, scope?: { bizModule?: string; projectId?: string } | null): Promise<AgentMemoryEntryRow[]> {
     // KE-2 分层装配（34 号 v2）：候选按 scope 三层过滤，得分 = 命中数 × 层级权重，
     // 分层配额（每层 topK 总 3×topK）——同题冲突时项目级事实优先
+    // KE-3 混合检索：向量召回分（0.6 权重）与关键词命中并集融合；向量不可用纯关键词
+    const partitions = scope
+      ? [
+          `mem:${getCurrentUserId() ?? 'local'}`,
+          ...(scope.bizModule ? [`mem:${getCurrentUserId() ?? 'local'}:biz:${scope.bizModule}`] : []),
+          ...(scope.projectId ? [`mem:${getCurrentUserId() ?? 'local'}:proj:${scope.bizModule ?? 'default'}:${scope.projectId}`] : []),
+        ]
+      : null
+    const vectorScores = new Map<string, number>()
+    const vp = this.deps.vector
+    if (vp && partitions) {
+      try {
+        const embedded = await vp.embedTexts([taskText])
+        if (embedded) {
+          for (const kbId of partitions) {
+            for (const hit of await vp.search(kbId, embedded.vectors[0], topK * 2)) {
+              const entryId = hit.id.replace(/^memvec_/, '')
+              vectorScores.set(entryId, Math.max(vectorScores.get(entryId) ?? 0, hit.score))
+            }
+          }
+        }
+      } catch (e) {
+        logger.warn(`[memory] 向量召回失败（降级关键词）：${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
     const active = scope
       ? await this.deps.repo.listActiveByScope(scope)
       : await this.deps.repo.listActive()
@@ -162,8 +202,9 @@ export class MemoryFlywheelService {
         for (const w of tokens) if (entryTokens.has(w)) hits++
         return { entry: e, hits, weight: layerWeight(e) }
       })
-      .filter((s) => s.hits > 0)
-      .sort((a, b) => b.hits * b.weight - a.hits * a.weight)
+      .filter((s) => s.hits > 0 || vectorScores.has(s.entry.id))
+      .map((s) => ({ ...s, score: s.hits + 0.6 * (vectorScores.get(s.entry.id) ?? 0) }))
+      .sort((a, b) => (b.hits + 0.6 * (vectorScores.get(b.entry.id) ?? 0)) * b.weight - (a.hits + 0.6 * (vectorScores.get(a.entry.id) ?? 0)) * a.weight)
     if (!scope) return scored.slice(0, topK).map((s) => s.entry)
     // 分层配额：L1/L2/L3 各 topK，总量 3×topK
     const quota = { l1: topK, l2: topK, l3: topK }
@@ -180,11 +221,39 @@ export class MemoryFlywheelService {
   }
 
   /** 人工批准（闸门③的唯一放行路径） */
+  /** KE-3：条目生效后异步嵌入（fire-and-forget；失败降级关键词，不阻塞主链路） */
+  private embedEntry(entry: AgentMemoryEntryRow): void {
+    const vp = this.deps.vector
+    if (!vp) return
+    void (async () => {
+      try {
+        const text = String((entry.content as { title?: string }).title ?? '') + '\n' + String((entry.content as { content?: string }).content ?? '')
+        const uid = getCurrentUserId() ?? 'local'
+        const partition = entry.projectId
+          ? `mem:${uid}:proj:${entry.bizModule ?? 'default'}:${entry.projectId}`
+          : entry.bizModule
+            ? `mem:${uid}:biz:${entry.bizModule}`
+            : `mem:${uid}`
+        const embedded = await vp.embedTexts([text])
+        if (!embedded || embedded.vectors.length === 0) return
+        const recordId = `memvec_${entry.id}`
+        await vp.upsert([{ id: recordId, kbId: partition, vector: embedded.vectors[0], content: text, model: embedded.model }])
+        const contentHash = stableStringify(entry.content).slice(0, 64)
+        await this.deps.repo.patch(entry.id, { embeddingId: recordId, contentHash, embedModel: embedded.model })
+        logger.info(`[memory] 条目已向量化（${entry.id}，partition=${partition.slice(0, 24)}…）`)
+      } catch (e) {
+        logger.warn(`[memory] 向量化失败（降级关键词检索）：${e instanceof Error ? e.message : String(e)}`)
+      }
+    })()
+  }
+
   async approve(id: string): Promise<void> {
     const entry = await this.deps.repo.getById(id)
     if (!entry) throw new Error(`记忆条目不存在：${id}`)
     if (entry.status !== 'pending_review') throw new Error(`条目状态为 ${entry.status}，不可批准`)
     await this.deps.repo.patch(id, { status: 'active' })
+    // KE-3：生效即向量化（fire-and-forget，失败降级关键词）
+    this.embedEntry({ ...entry, status: 'active' })
   }
 
   /** 人工归档（拒绝入库） */

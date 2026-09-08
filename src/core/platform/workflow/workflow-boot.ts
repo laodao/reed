@@ -412,8 +412,49 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
           return (await import('@core/platform/agent-runtime/verify/verifier')).parseJudgeResponse(r.text)
         },
       })
+      // KE-3 向量端口（34 号 v2）：AGENT_MEMORY_EMBEDDING 配置了嵌入模型才启用；
+      // 未配置/向量存储未注册 → null → 纯关键词检索（降级语义）
+      let memoryVectorPort: import('@core/platform/agent-runtime/memory/memory-flywheel').MemoryVectorPort | null = null
+      try {
+        const cfgRaw = process.env.AGENT_MEMORY_EMBEDDING
+        if (cfgRaw) {
+          const embedCfg = JSON.parse(cfgRaw) as { providerConfigId: string; modelId?: string }
+          const { KnowledgeBaseService } = await import('@core/platform/services/knowledge-base.service')
+          const { getVectorStore } = await import('@core/platform/services/vector/vector-store.interface')
+          const kbService = new KnowledgeBaseService()
+          const model = embedCfg.modelId ?? 'text-embedding-v3'
+          memoryVectorPort = {
+            embedTexts: async (texts) => {
+              const vectors = await kbService.getEmbeddingVectors(texts, embedCfg)
+              return vectors ? { vectors, model } : null
+            },
+            upsert: async (records) => {
+              await getVectorStore().insertBatch(records.map((r) => ({
+                id: r.id,
+                chunkId: r.id,
+                knowledgeBaseId: r.kbId,
+                vector: r.vector,
+                content: r.content,
+                model: r.model,
+                createdAt: new Date(),
+              })))
+            },
+            search: async (kbId, vector, topK) => {
+              const hits = await getVectorStore().searchSimilar(kbId, vector, topK)
+              return hits.map((h) => ({ id: h.chunkId, score: h.score }))
+            },
+            remove: async (ids) => {
+              await getVectorStore().deleteByChunkIds(ids)
+            },
+          }
+          logger.info('[workflow-boot] 记忆向量化端口已启用（embedding 模型：' + model + '）')
+        }
+      } catch (e) {
+        logger.warn('[workflow-boot] 记忆向量化端口初始化失败（降级关键词检索）:', e instanceof Error ? e.message : String(e))
+      }
       memoryFlywheel = new MemoryFlywheelService({
         repo: db.agentMemoryEntries,
+        vector: memoryVectorPort ?? undefined,
         distill: async ({ goal, output, signal }) => {
           const prompt = [
             `任务目标：${goal}`,
@@ -477,6 +518,7 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
             })
             const { getCurrentUserId } = await import('@core/context/user-context')
             const runRegistry = getAgentRunRegistry()
+            let registered = false
             const runId = `ar_task_${scopeKey}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
             runRegistry.register({
               id: runId,
@@ -487,6 +529,7 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
               abort: () => inner.abort(new Error('已从工作台停止')),
               metadata: { rootId },
             })
+            registered = true
             const sink = new TrajectorySink(trajectoryRepo, {
               scope: 'session',
               scopeKey,
