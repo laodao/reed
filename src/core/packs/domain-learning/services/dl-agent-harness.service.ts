@@ -24,7 +24,7 @@ import type { ModelMessage } from 'ai'
 import type { AgentToolBinding } from '@shared/types/agent.types'
 import { getAgentLoopHarness } from '@core/platform/workflow/nodes/agent-loop-node'
 import { getMemoryFlywheel } from '@core/platform/workflow/workflow-boot'
-import { registerDlAgentTools, dlToolMaxCalls } from './dl-agent-tools'
+import { registerDlAgentTools, dlToolMaxCalls, dlAgentToolNames } from './dl-agent-tools'
 import {
   buildDlSuggestions,
   computeDlSpaceSnapshot,
@@ -35,7 +35,6 @@ import { emitDlAgentEvent, emitDlStream } from './dl-agent-events'
 import {
   DL_AGENT_DEFINITION_ID,
   DL_AGENT_MAX_STEPS,
-  DL_AGENT_PACK_ID,
   DL_HISTORY_LIMIT,
   DL_HISTORY_CONTENT_MAX,
   DL_TOOL_DISCOVER,
@@ -157,16 +156,10 @@ export class DlAgentHarnessService {
       emitDlAgentEvent(spaceId, conceptForEvent, { type: 'question:open', questionId })
     }
 
-    // 快照 + 白名单（dl 动作工具 pack:dl-agent:* + 系统技能/规划透出）
+    // 快照 + 白名单（dl 动作工具裸名 + 系统技能/规划透出）
     const snapshot = await computeDlSpaceSnapshot(m, spaceId, conceptId)
-    const packTools = harness.registry
-      .listSpecs({ packId: DL_AGENT_PACK_ID })
-      .map((s) => s.name)
     const bindings: AgentToolBinding[] = [
-      ...packTools.map((name) => ({
-        tool: name,
-        maxCalls: dlToolMaxCalls(name.replace(`pack:${DL_AGENT_PACK_ID}:`, '')),
-      })),
+      ...dlAgentToolNames().map((name) => ({ tool: name, maxCalls: dlToolMaxCalls(name) })),
       ...SYSTEM_PASSTHROUGH.map((tool) => ({ tool })),
     ]
 

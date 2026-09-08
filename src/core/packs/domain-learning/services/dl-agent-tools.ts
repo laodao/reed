@@ -1,8 +1,11 @@
 /**
- * 领域学习 Agent 工具定义（共享 registry：pack:dl-agent:*）
+ * 领域学习 Agent 工具定义
  * @module packs/domain-learning/services/dl-agent-tools
  *
- * 与 EP/LW 同构：
+ * 与 EP/LW 宿主同构，但**以裸名注册（source='tool'，dl_ 前缀天然防跨包冲突）**——
+ * 平台 registry 对 pack 工具会强制命名空间 `pack:<packId>:<name>` 且 loop 直接把它
+ * 当 LLM function.name 透传，OpenAI 兼容 API 拒绝冒号（agent-harness 待修缺口，
+ * EP/LW 同受影响；本包先裸名规避，工具域归属用 dl_ 前缀与 source 域表达）。
  * - def 不捕获空间——spaceId/conceptId 从 ctx.logContext（宿主 runtimeContext 注入）运行时还原；
  * - 懒注册幂等（boot 时序：pack activate 早于 workflow-boot，注册只能发生在宿主首次 sendMessage 之后）；
  * - 动作一律经 executeDlAction 落库（校验/人审草稿语义集中，见 dl-agent-actions）。
@@ -144,13 +147,20 @@ export function buildDlAgentToolDefs(): AgentToolDef[] {
   ]
 }
 
-/** 懒注册（幂等）：宿主首次 sendMessage 时调用（activate 早于 workflow boot） */
+/** 懒注册（幂等）：宿主首次 sendMessage 时调用（activate 早于 workflow boot）；
+ * 裸名域（source='tool'）规避 pack 命名空间冒号被 LLM API 拒绝的平台缺口 */
 export function registerDlAgentTools(registry: AgentToolRegistry): void {
-  const existing = new Set(registry.listSpecs({ packId: DL_AGENT_PACK_ID }).map((s) => s.name))
+  const existing = new Set(registry.listSpecs({ source: 'tool' }).map((s) => s.name))
   for (const def of buildDlAgentToolDefs()) {
-    if (existing.has(`pack:${DL_AGENT_PACK_ID}:${def.name}`)) continue
-    registry.register(def, { packId: DL_AGENT_PACK_ID })
+    if (existing.has(def.name)) continue
+    registry.register(def, { source: 'tool' })
   }
+  void DL_AGENT_PACK_ID // packId 仅作归属注释保留；注册域=source 'tool'
+}
+
+/** dl 工具白名单（裸名清单；宿主 bindings 直接引用——工具集固定，无需 listSpecs 动态拼） */
+export function dlAgentToolNames(): string[] {
+  return buildDlAgentToolDefs().map((d) => d.name)
 }
 
 /** 工具频控（bind 时写入 maxCalls；动作工具由包内频控覆盖） */
