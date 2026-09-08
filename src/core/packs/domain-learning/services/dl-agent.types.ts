@@ -44,8 +44,8 @@ export const DL_TOOL_SAVE_RELATION = 'dl_save_relation'
 export const DL_TOOL_SAVE_CARD = 'dl_save_card'
 export const DL_TOOL_ANSWER_QUESTION = 'dl_answer_question'
 
-/** 宿主模式 */
-export type DlAgentMode = 'research' | 'tutor'
+/** 宿主模式（verify：内部自动核验只读会话，不面向 IPC/UI） */
+export type DlAgentMode = 'research' | 'tutor' | 'verify'
 
 /** 会话作用域：research=目标概念/问题研究；tutor=空间+概念（可空=空间级泛问） */
 export interface DlScopeRef {

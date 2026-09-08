@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildFocusQuestionLines,
   dlResearchSystemPrompt,
+  dlVerifySystemPrompt,
   researchSourceHint,
 } from '@core/packs/domain-learning/services/dl-agent-deps'
 
@@ -60,5 +61,12 @@ describe('dl-agent-deps（M2-B）', () => {
 
     const spaceLevel = buildFocusQuestionLines({ question: '泛问', questionId: 'q_2', conceptName: null })
     expect(spaceLevel).toContain('空间级未解问题')
+  })
+
+  it('核验提示词：只读交叉核验、verdict 词与严格 JSON 契约（M4-UX2）', () => {
+    const p = dlVerifySystemPrompt()
+    for (const token of ['supported', 'unsupported', 'needs_review', 'wf_kb_retrieve', 'issues', 'sourceRef', '不编造']) {
+      expect(p).toContain(token)
+    }
   })
 })

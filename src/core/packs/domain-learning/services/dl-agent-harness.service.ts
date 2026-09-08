@@ -32,9 +32,12 @@ import {
   computeDlSpaceSnapshot,
   dlResearchSystemPrompt,
   dlTutorSystemPrompt,
+  dlVerifySystemPrompt,
   researchSourceHint,
 } from './dl-agent-deps'
 import { emitDlAgentEvent, emitDlStream } from './dl-agent-events'
+import { parseVerifyOutcome } from '../rules/learning-verify.rules'
+import type { DlCardVerification } from '@shared/types/domain-learning.types'
 import {
   DL_AGENT_DEFINITION_ID,
   DL_AGENT_MAX_STEPS,
@@ -50,7 +53,9 @@ import {
 const logger = createLogger('DlAgentHarness')
 
 function systemPromptOf(mode: DlAgentMode): string {
-  return mode === 'research' ? dlResearchSystemPrompt() : dlTutorSystemPrompt()
+  if (mode === 'research') return dlResearchSystemPrompt()
+  if (mode === 'verify') return dlVerifySystemPrompt()
+  return dlTutorSystemPrompt()
 }
 
 export class DlAgentHarnessService {
@@ -154,12 +159,12 @@ export class DlAgentHarnessService {
       emitDlAgentEvent(spaceId, conceptForEvent, { type: 'question:open', questionId })
     }
 
-    // 快照 + 白名单（research 带读工具：KB/网页/API + 有默认搜索源才 web_search；
+    // 快照 + 白名单（research/verify 带读工具：KB/网页/API + 有默认搜索源才 web_search；
     // tutor 不带读工具——答疑引证 = 快照注入讲义/图，M1 口径不变）
     const snapshot = await computeDlSpaceSnapshot(m, spaceId, conceptId)
     let snapshotText = snapshot.text
     let bindings: AgentToolBinding[] = []
-    if (mode === 'research') {
+    if (mode === 'research' || mode === 'verify') {
       const registered = new Set(harness.registry.listSpecs().map((s) => s.name))
       let webSearchAvailable = false
       try {
@@ -169,7 +174,7 @@ export class DlAgentHarnessService {
       }
       bindings = buildDlBindings({ mode, availableToolNames: registered, webSearchAvailable })
       snapshotText += `\n${researchSourceHint(webSearchAvailable)}`
-      if (opts.focusQuestionId) {
+      if (mode === 'research' && opts.focusQuestionId) {
         const focus = (await m.dlQuestions?.getById(opts.focusQuestionId)) ?? null
         if (focus && focus.projectId === spaceId) {
           const focusConcept = focus.conceptId ? ((await m.dlConcepts?.getById(focus.conceptId)) ?? null) : null
@@ -281,6 +286,18 @@ export class DlAgentHarnessService {
       emitDlAgentEvent(spaceId, conceptForEvent, { type: 'reply:done', suggestions })
 
       logger.info(`[dl-agent] 轮次完成 mode=${mode} space=${spaceId} concept=${conceptId ?? '-'} stop=${result.stopReason} steps=${result.iterations}`)
+
+      // M4-UX2：研究产出讲义卡后自动触发内部核验（异步，失败仅记日志，不影响主流程）
+      if (mode === 'research' && conceptId) {
+        for (const s of actionSummaries.filter((a) => a.tool === 'dl_save_card' && a.status === 'ok')) {
+          const cardId = (s.data as { cardId?: string } | undefined)?.cardId
+          if (!cardId) continue
+          void this.verifyCard(spaceId, conceptId, cardId, { providerConfigId: opts.providerConfigId, modelId: opts.modelId }).catch((e) =>
+            logger.warn(`[dl-agent] 自动核验失败 card=${cardId}：${e instanceof Error ? e.message : String(e)}`),
+          )
+        }
+      }
+
       return { actionSummaries, content, questionId, suggestions }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -290,5 +307,42 @@ export class DlAgentHarnessService {
     } finally {
       tap.untap?.()
     }
+  }
+
+  /**
+   * 内部自动核验（M4-UX2）：只读核验会话对讲义卡交叉检查（KB/联网），
+   * 结果写 dl_card.verification；用户不可见、不阻塞主流程。
+   */
+  async verifyCard(
+    spaceId: string,
+    conceptId: string,
+    cardId: string,
+    opts: { providerConfigId?: string; modelId?: string } = {},
+  ): Promise<DlCardVerification | null> {
+    const m = getCoreDatabaseManager()
+    const row = await m.dlCards?.getById(cardId)
+    const concept = conceptId ? ((await m.dlConcepts?.getById(conceptId)) ?? null) : null
+    if (!row || row.projectId !== spaceId) return null
+
+    const sectionsText = row.sections
+      .slice(0, 30)
+      .map((s) => `### ${s.title ?? s.key}\n${s.md}`)
+      .join('\n\n')
+    const evidenceText = (row.evidenceSources ?? [])
+      .map((e) => `- ${e.kind}「${e.title}」${e.url ? `(${e.url})` : ''}${e.kbDocId ? ` kbDocId=${e.kbDocId}` : ''}`)
+      .join('\n')
+    const message = `核验对象（概念「${concept?.name ?? conceptId}」，讲义 v${row.version}）：\n\n${sectionsText}\n\n【证据来源】\n${evidenceText}`
+
+    const res = await this.sendMessage('verify', { spaceId, conceptId }, message, opts)
+    const outcome = parseVerifyOutcome(res.content)
+    if (outcome) {
+      await m.dlCards!.patch(cardId, { verification: outcome })
+      logger.info(`[dl-agent] 核验完成 card=${cardId} status=${outcome.status} issues=${outcome.issues.length}`)
+    } else {
+      // 解析失败：保持未核验并记录（不误标 verified）
+      logger.warn(`[dl-agent] 核验结果无法解析 card=${cardId}，保持未核验`)
+      await m.dlCards!.patch(cardId, { verification: null })
+    }
+    return outcome
   }
 }

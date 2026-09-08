@@ -44,10 +44,6 @@ export function buildDlBindings(o: DlBindingOptions): AgentToolBinding[] {
   const actionBindings = dlAgentToolNames().map((tool) => ({ tool, maxCalls: dlToolMaxCalls(tool) }))
   const systemBindings = DL_SYSTEM_PASSTHROUGH.map((tool) => ({ tool }))
 
-  if (o.mode !== 'research') {
-    return [...actionBindings, ...systemBindings]
-  }
-
   const available = o.availableToolNames ? new Set(o.availableToolNames) : null
   const keep = (name: string): boolean => !available || available.has(name)
   const readWanted = [
@@ -57,6 +53,14 @@ export function buildDlBindings(o: DlBindingOptions): AgentToolBinding[] {
   const readBindings = readWanted
     .filter(keep)
     .map((tool) => ({ tool, maxCalls: DL_READ_TOOL_MAX_CALLS[tool] ?? 3 }))
+
+  if (o.mode === 'verify') {
+    // 内部核验：只读(读工具+系统透出),不带任何 dl 写动作
+    return [...readBindings, ...systemBindings]
+  }
+  if (o.mode !== 'research') {
+    return [...actionBindings, ...systemBindings]
+  }
 
   return [...actionBindings, ...readBindings, ...systemBindings]
 }

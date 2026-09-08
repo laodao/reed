@@ -85,4 +85,13 @@ describe('dl-agent-bindings', () => {
       expect(names).not.toContain(t)
     }
   })
+
+  it('verify（内部核验）：只带读工具 + 系统透出，不带任何 dl 写动作（M4-UX2）', () => {
+    const bindings = buildDlBindings({ mode: 'verify', availableToolNames: ALL_TOOLS, webSearchAvailable: true })
+    const names = namesOf(bindings)
+    for (const t of [...DL_READ_TOOL_NAMES, DL_WEB_SEARCH_TOOL, ...DL_SYSTEM_PASSTHROUGH]) {
+      expect(names).toContain(t)
+    }
+    for (const t of dlAgentToolNames()) expect(names).not.toContain(t)
+  })
 })
