@@ -52,7 +52,7 @@
               <div v-else class="agent-turn">
                 <div v-for="block in item.blocks" :key="block.key" class="block">
                   <template v-if="block.type === 'text'">
-                    <div class="text-block" :class="{ clamped: textClamped.has(block.key) && !expanded.has(block.key) }" :data-key="block.key">{{ block.text }}</div>
+                    <div class="text-block markdown-body" :class="{ clamped: textClamped.has(block.key) && !expanded.has(block.key) }" :data-key="block.key" v-html="mdHtml(block.key, block.text)"></div>
                     <div v-if="textClamped.has(block.key)" class="text-toggle" @click="toggleText(block.key)">
                       {{ expanded.has(block.key) ? '收起' : '展开全文' }}
                     </div>
@@ -122,8 +122,8 @@
             <div class="agent-turn">
               <div v-for="block in taskBlocks" :key="block.key" class="block">
                 <template v-if="block.type === 'text'">
-                  <div class="text-block">{{ block.text }}</div>
-                </template>
+                    <div class="text-block markdown-body" v-html="mdHtml(block.key, block.text)"></div>
+                  </template>
                 <template v-else-if="block.type === 'tool'">
                   <div class="tool-card" @click="toggleTool(block.key)">
                     <div class="tool-line">
@@ -224,6 +224,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useDialogStore } from '@/stores/dialog'
 import { agentToolLabel } from '@/utils/agent-tool-labels'
+import { renderMarkdown } from '@/utils/markdown'
 import type {
   AgentConsoleSession,
   AgentConsoleTrajectoryEntry,
@@ -296,6 +297,17 @@ let liveSeq = 0
 const expanded = reactive(new Set<string>())
 const expandedTool = reactive(new Set<string>())
 const textClamped = reactive(new Set<string>())
+
+/** markdown 渲染缓存（key=轨迹块 key，select 会话时清空） */
+const mdCache = new Map<string, string>()
+function mdHtml(key: string, text: string): string {
+  let html = mdCache.get(key)
+  if (html === undefined) {
+    html = renderMarkdown(text)
+    mdCache.set(key, html)
+  }
+  return html
+}
 
 let offTrajectory: (() => void) | null = null
 let offRunUpdate: (() => void) | null = null
@@ -563,6 +575,7 @@ async function createSession(): Promise<void> {
 async function select(s: AgentConsoleSession): Promise<void> {
   selected.value = s
   entries.value = []
+  mdCache.clear()
   liveSeq = 0
   expanded.clear()
   expandedTool.clear()
@@ -787,6 +800,25 @@ onUnmounted(() => {
 
 /* 步内叙述文本：正文段落（超长折叠） */
 .text-block { font-size: 14px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; color: var(--el-text-color-primary); }
+/* 渲染态文本块：markdown 自管换行，关掉容器的 pre-wrap */
+.text-block.markdown-body { white-space: normal; }
+.markdown-body :deep(p) { margin: 0 0 8px; }
+.markdown-body :deep(p:last-child) { margin-bottom: 0; }
+.markdown-body :deep(h1), .markdown-body :deep(h2), .markdown-body :deep(h3), .markdown-body :deep(h4) { margin: 12px 0 6px; font-size: 15px; font-weight: 600; }
+.markdown-body :deep(h1:first-child), .markdown-body :deep(h2:first-child), .markdown-body :deep(h3:first-child) { margin-top: 0; }
+.markdown-body :deep(ul), .markdown-body :deep(ol) { margin: 4px 0 8px; padding-left: 20px; }
+.markdown-body :deep(li) { margin: 2px 0; }
+.markdown-body :deep(blockquote) { margin: 6px 0; padding: 4px 10px; border-left: 3px solid var(--el-border-color); color: var(--el-text-color-secondary); }
+.markdown-body :deep(table) { border-collapse: collapse; margin: 8px 0; font-size: 13px; display: block; overflow-x: auto; max-width: 100%; }
+.markdown-body :deep(th), .markdown-body :deep(td) { border: 1px solid var(--el-border-color-lighter); padding: 4px 10px; text-align: left; }
+.markdown-body :deep(th) { background: var(--el-fill-color-light); font-weight: 600; }
+.markdown-body :deep(a) { color: var(--el-color-primary); }
+.markdown-body :deep(code) { background: var(--el-fill-color); border-radius: 4px; padding: 1px 5px; font-size: 13px; }
+.markdown-body :deep(.md-code-block) { border: 1px solid var(--el-border-color-lighter); border-radius: 8px; overflow: hidden; margin: 8px 0; background: var(--el-fill-color-light); }
+.markdown-body :deep(.md-code-lang) { font-size: 11px; color: var(--el-text-color-secondary); padding: 3px 10px; border-bottom: 1px solid var(--el-border-color-lighter); }
+.markdown-body :deep(.md-code-block pre) { margin: 0; padding: 10px 12px; overflow-x: auto; }
+.markdown-body :deep(.md-code-block code) { background: transparent; padding: 0; font-size: 12.5px; line-height: 1.55; }
+.markdown-body :deep(hr) { border: none; border-top: 1px solid var(--el-border-color-lighter); margin: 10px 0; }
 .text-block.clamped { max-height: 320px; overflow: hidden; -webkit-mask-image: linear-gradient(180deg, #000 70%, transparent); mask-image: linear-gradient(180deg, #000 70%, transparent); }
 .text-toggle { font-size: 12px; color: var(--el-color-primary); cursor: pointer; margin-top: 4px; user-select: none; }
 
