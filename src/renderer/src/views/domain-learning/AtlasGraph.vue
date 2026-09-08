@@ -49,7 +49,7 @@
           :y="(pos(e.source).y + pos(e.target).y) / 2 - 6"
           text-anchor="middle"
           class="edge-label"
-        >{{ e.type }}</text>
+        >{{ relLabel(e.type) }}</text>
       </g>
       <!-- 节点 -->
       <g
@@ -63,12 +63,12 @@
       >
         <circle
           :r="nodeR"
-          :fill="nodeTypeMeta(node.type).color"
+          :fill="nodeTypeMeta(node.nodeType).color"
           class="node-circle"
           stroke="#fff"
           stroke-width="1.5"
         >
-          <title>{{ node.name }}（{{ nodeTypeMeta(node.type).label }}）</title>
+          <title>{{ node.name }}（{{ nodeTypeMeta(node.nodeType).label }}）</title>
         </circle>
         <!-- 掌握度外圈（学习态才有） -->
         <circle
@@ -92,22 +92,24 @@
  * @description 技术与长文写作 GraphView 同源（自绘 SVG，无图库依赖）：
  *              力导向布局（排斥+边吸引+中心引力+碰撞分离）、viewBox 缩放/平移/适应、
  *              节点拖动、点击选中→高亮一阶邻居+其余淡化、双击上抛（子图谱下钻由父级接管）。
- *              节点按知识类型着色（atlas-data 类型元数据）。
+ *              节点按知识类型着色（domain-learning-ui 类型图例）；数据源 = dl:get-atlas-graph
+ *              返回的 DlAtlasNode/DlAtlasEdge。
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { ZoomIn, ZoomOut, FullScreen, Share } from '@element-plus/icons-vue'
-import { nodeTypeMeta, type AtlasNode, type AtlasEdge, type AtlasNodeType } from './atlas-data'
+import { nodeTypeMeta, relLabel } from './domain-learning-ui'
+import type { DlAtlasEdge, DlAtlasNode, DlNodeType } from '@shared/types/domain-learning.types'
 
 const props = defineProps<{
-  nodes: AtlasNode[]
-  edges: AtlasEdge[]
+  nodes: DlAtlasNode[]
+  edges: DlAtlasEdge[]
   /** 父级下钻控制：置为非空 = 只显示该节点及其一阶邻居（子图谱模式） */
   focusId?: string | null
 }>()
 
 const emit = defineEmits<{
-  select: [node: AtlasNode | null]
-  dblclick: [node: AtlasNode]
+  select: [node: DlAtlasNode | null]
+  dblclick: [node: DlAtlasNode]
 }>()
 
 const W = 1000
@@ -162,7 +164,7 @@ function mouseToGraph(e: MouseEvent): { x: number; y: number } {
   }
 }
 
-function onNodeMouseDown(node: AtlasNode, e: MouseEvent): void {
+function onNodeMouseDown(node: DlAtlasNode, e: MouseEvent): void {
   e.stopPropagation()
   // 与长文 GraphView 同源：按下即选中（高亮/档案立即生效），拖动/点击区分在 mouseup
   selectedId.value = node.id
@@ -259,7 +261,7 @@ function isDimmedNode(id: string): boolean {
   return !neighborSet.value.has(id)
 }
 
-function isActiveEdge(e: AtlasEdge): boolean {
+function isActiveEdge(e: DlAtlasEdge): boolean {
   return !!selectedId.value && (e.source === selectedId.value || e.target === selectedId.value)
 }
 
@@ -271,10 +273,10 @@ function pos(id: string): { x: number; y: number } {
 }
 
 /** 图例类型（按出现序） */
-const legendTypes = computed<AtlasNodeType[]>(() => {
-  const seen: AtlasNodeType[] = []
+const legendTypes = computed<DlNodeType[]>(() => {
+  const seen: DlNodeType[] = []
   for (const n of props.nodes) {
-    if (!seen.includes(n.type)) seen.push(n.type)
+    if (!seen.includes(n.nodeType)) seen.push(n.nodeType)
   }
   return seen
 })
@@ -346,7 +348,7 @@ function layout(): void {
   positions.value = next
 }
 
-function collidePass(next: Record<string, { x: number; y: number }>, list: AtlasNode[]): boolean {
+function collidePass(next: Record<string, { x: number; y: number }>, list: DlAtlasNode[]): boolean {
   let moved = false
   for (let i = 0; i < list.length; i++) {
     for (let j = i + 1; j < list.length; j++) {

@@ -75,16 +75,18 @@
  */
 import { reactive } from 'vue'
 import MarkdownViewer from './MarkdownViewer.vue'
-import type { CardSection, ConceptCard, RelatedRef } from './mock-data'
+import type { DlCardSection, DlCardView, DlRelatedRef } from '@shared/types/domain-learning.types'
 
-const props = defineProps<{
-  card: ConceptCard
+const props = withDefaults(defineProps<{
+  card: DlCardView
   /** 相关知识点（父级由关系边派生后传入） */
-  related?: RelatedRef[]
-}>()
+  related?: DlRelatedRef[]
+}>(), {
+  related: () => [],
+})
 
 const emit = defineEmits<{
-  notUnderstand: [section: CardSection]
+  notUnderstand: [section: DlCardSection]
   gotoConcept: [conceptId: string]
 }>()
 
@@ -111,10 +113,10 @@ function styleByKey(key: string): string {
   return key === 'edge' ? 'note' : key === 'essence' ? 'intro' : key === 'review' ? 'review' : 'body'
 }
 
-function notUnderstand(sec: CardSection): void {
+function notUnderstand(sec: DlCardSection): void {
   emit('notUnderstand', sec)
 }
-function gotoRelated(r: RelatedRef): void {
+function gotoRelated(r: DlRelatedRef): void {
   emit('gotoConcept', r.conceptId)
 }
 </script>

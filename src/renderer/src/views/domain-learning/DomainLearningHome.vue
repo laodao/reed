@@ -1,20 +1,19 @@
 <template>
   <div class="domain-learning-home">
-    <!-- 原型角标 -->
-    <div class="proto-banner">
-      <el-tag size="small" type="warning" effect="plain">界面原型 · 后端未接入 · 演示数据</el-tag>
-    </div>
-
     <div class="home-header">
       <h2>领域共学空间</h2>
       <p class="home-sub">
         选择一个想学的领域——系统持续研究并整理成讲义，一步步教到你懂；随时回来继续。
       </p>
+      <div class="home-actions">
+        <el-button type="primary" :icon="Plus" @click="openCreate">新建学习主题</el-button>
+      </div>
     </div>
 
-    <div class="topic-grid">
+    <!-- 空间列表（后端 dl:list-spaces 真实数据） -->
+    <div v-loading="store.loadingSpaces" class="topic-grid">
       <div
-        v-for="s in spaces"
+        v-for="s in store.spaces"
         :key="s.id"
         class="topic-card"
         @click="enter(s.id)"
@@ -24,72 +23,146 @@
             <el-icon class="topic-icon"><Reading /></el-icon>
             <span>{{ s.name }}</span>
           </div>
-          <el-tag size="small" type="info" effect="plain">{{ s.goalLevel }}</el-tag>
+          <el-tag size="small" type="info" effect="plain">{{ s.goal }}</el-tag>
+          <el-tag v-if="s.status !== 'active'" size="small" type="warning" effect="plain">
+            {{ statusLabel(s.status) }}
+          </el-tag>
         </div>
 
-        <p class="topic-tagline">{{ s.tagline }}</p>
-        <p class="topic-goal">目标：{{ s.goal }}</p>
+        <p class="topic-tagline">{{ s.tagline || '（暂无说明）' }}</p>
 
-        <div class="card-progress">
-          <el-progress :percentage="stats(s).percent" :stroke-width="8" />
+        <div v-if="s.stats" class="card-progress">
+          <el-progress
+            :percentage="s.stats.total ? Math.round((s.stats.mastered / s.stats.total) * 100) : 0"
+            :stroke-width="8"
+          />
           <div class="progress-labels">
-            <span><i class="dot dot-mastered" />已理解 {{ stats(s).mastered }}</span>
-            <span><i class="dot dot-learning" />学习中 {{ stats(s).learning }}</span>
-            <span><i class="dot dot-todo" />待学 {{ stats(s).todo }}</span>
+            <span><i class="dot dot-mastered" />已理解 {{ s.stats.mastered }}</span>
+            <span>共 {{ s.stats.total }} 个知识点</span>
           </div>
         </div>
 
         <div class="card-actions">
-          <el-button type="primary" size="small" :icon="ArrowRight">继续学习 →</el-button>
+          <el-button type="primary" size="small" :icon="ArrowRight" @click.stop="enter(s.id)">
+            继续学习 →
+          </el-button>
         </div>
       </div>
 
-      <!-- 新建主题占位卡（后端接入后可用） -->
-      <div class="topic-card topic-card-new">
-        <div class="topic-name">
-          <el-icon class="topic-icon"><Plus /></el-icon>
-          <span>新建学习主题</span>
-        </div>
-        <p class="topic-tagline">例如：量子计算 / 某开源框架 / 一门学科……</p>
-        <div class="card-actions">
-          <el-button size="small" disabled>（正式版：后端接入后可用）</el-button>
-        </div>
+      <!-- 空态：还没有任何学习主题 -->
+      <div v-if="!store.loadingSpaces && store.spaces.length === 0" class="topic-empty">
+        <el-empty description="还没有学习主题，先建一个吧">
+          <el-button type="primary" :icon="Plus" @click="openCreate">新建学习主题</el-button>
+        </el-empty>
       </div>
     </div>
 
-    <!-- 底层演示说明 -->
-    <div class="home-note">
-      <el-alert
-        type="info"
-        :closable="false"
-        title="界面原型说明"
-        description="当前为多主题列表原型：点卡片进入该主题的三栏学习空间（概念图 / 讲义 / 追问）。「新建主题」与主题数据来自后端的部分尚未实现。"
-      />
-    </div>
+    <!-- 新建学习主题对话框 -->
+    <el-dialog v-model="createVisible" title="新建学习主题" width="520px" append-to-body>
+      <el-form label-width="90px" @submit.prevent>
+        <el-form-item label="主题名称" required>
+          <el-input v-model="createForm.name" placeholder="例如：量子计算 / 某开源框架 / 一门学科……" maxlength="60" show-word-limit />
+        </el-form-item>
+        <el-form-item label="学习目标">
+          <el-select v-model="createForm.goal" class="goal-select">
+            <el-option v-for="g in GOAL_OPTIONS" :key="g" :label="g" :value="g" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="一句话说明">
+          <el-input
+            v-model="createForm.tagline"
+            type="textarea"
+            :rows="2"
+            placeholder="你希望这个主题覆盖什么 / 为什么学它（展示在列表卡片上）"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="createVisible = false">取消</el-button>
+        <el-button type="primary" :loading="creating" :disabled="!createForm.name.trim()" @click="submitCreate">
+          创建并进入
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 /**
- * 领域共学空间 —— 主题列表页（前端原型）
+ * 领域共学空间 —— 空间列表页（Home）
  * @module views/domain-learning/DomainLearningHome
- * @description 多个学习主题的入口列表：卡片展示主题目标与掌握度进度，点击进入三栏空间页。
+ * @description 主题列表卡片（数据源 dl:list-spaces → DlSpaceSummary）：展示目标/说明/掌握度，
+ *              点击进入三栏空间页；「新建学习主题」调 dl:create-space 后直达新空间。
  */
-import { Reading, Plus, ArrowRight } from '@element-plus/icons-vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { demoSpaces, spaceStats, type SpaceProject } from './mock-data'
+import { Reading, Plus, ArrowRight } from '@element-plus/icons-vue'
+import { useDomainLearningStore } from '@/stores/domain-learning'
+import type { DlProjectStatus } from '@shared/types/domain-learning.types'
 
 const router = useRouter()
+const store = useDomainLearningStore()
 
-const spaces: SpaceProject[] = demoSpaces
+/** 学习目标档位（dl_goal 枚举：入门 / 工作应用 / 前沿） */
+const GOAL_OPTIONS = ['入门', '工作应用', '前沿'] as const
 
-function stats(s: SpaceProject) {
-  return spaceStats(s)
+/** 空间状态展示文案 */
+const STATUS_LABELS: Record<DlProjectStatus, string> = {
+  active: '进行中',
+  paused: '已暂停',
+  archived: '已归档',
+}
+function statusLabel(s: DlProjectStatus): string {
+  return STATUS_LABELS[s] ?? s
 }
 
+// ---------- 新建空间 ----------
+const createVisible = ref(false)
+const creating = ref(false)
+const createForm = reactive<{ name: string; goal: string; tagline: string }>({
+  name: '',
+  goal: '入门',
+  tagline: '',
+})
+
+function openCreate(): void {
+  createForm.name = ''
+  createForm.goal = '入门'
+  createForm.tagline = ''
+  createVisible.value = true
+}
+
+async function submitCreate(): Promise<void> {
+  const name = createForm.name.trim()
+  if (!name || creating.value) return
+  creating.value = true
+  try {
+    // tagline 同时写入 description（列表卡片读 description 展示）
+    const id = await store.createSpace({
+      name,
+      goal: createForm.goal,
+      tagline: createForm.tagline.trim(),
+      description: createForm.tagline.trim(),
+    })
+    if (id) {
+      createVisible.value = false
+      enter(id)
+    } else if (store.error) {
+      console.error('[domain-learning] 新建失败:', store.error)
+    }
+  } finally {
+    creating.value = false
+  }
+}
+
+// ---------- 进入空间 ----------
 function enter(id: string): void {
   router.push(`/domain-learning/${id}`)
 }
+
+onMounted(() => {
+  void store.fetchSpaces()
+})
 </script>
 
 <style scoped lang="scss">
@@ -101,24 +174,27 @@ function enter(id: string): void {
   background: var(--el-bg-color);
 }
 
-.proto-banner {
-  position: absolute;
-  top: 8px;
-  right: 16px;
-}
-
 .home-header {
   margin-bottom: 20px;
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
 
   h2 {
     margin: 0 0 6px;
     font-size: 22px;
     color: var(--el-text-color-primary);
+    width: 100%;
   }
   .home-sub {
     margin: 0;
     font-size: 13px;
     color: var(--el-text-color-secondary);
+    flex: 1;
+  }
+  .home-actions {
+    flex-shrink: 0;
   }
 }
 
@@ -126,6 +202,7 @@ function enter(id: string): void {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 16px;
+  min-height: 120px;
 }
 
 .topic-card {
@@ -140,24 +217,18 @@ function enter(id: string): void {
     box-shadow: var(--el-box-shadow-light);
     transform: translateY(-2px);
   }
+}
 
-  &.topic-card-new {
-    cursor: default;
-    border-style: dashed;
-    background: transparent;
-    &:hover {
-      transform: none;
-      box-shadow: none;
-    }
-  }
+.topic-empty {
+  grid-column: 1 / -1;
 }
 
 .card-top {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   margin-bottom: 8px;
+  flex-wrap: wrap;
 }
 
 .topic-name {
@@ -168,6 +239,7 @@ function enter(id: string): void {
   font-weight: 600;
   color: var(--el-text-color-primary);
   min-width: 0;
+  flex: 1;
   span {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -182,15 +254,10 @@ function enter(id: string): void {
 }
 
 .topic-tagline {
-  margin: 0 0 6px;
+  margin: 0 0 14px;
   font-size: 13px;
   color: var(--el-text-color-regular);
-}
-
-.topic-goal {
-  margin: 0 0 14px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
+  min-height: 18px;
 }
 
 .card-progress {
@@ -233,7 +300,7 @@ function enter(id: string): void {
   justify-content: flex-end;
 }
 
-.home-note {
-  margin-top: 24px;
+.goal-select {
+  width: 100%;
 }
 </style>

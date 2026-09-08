@@ -1,15 +1,16 @@
 <template>
   <div class="domain-atlas">
-    <!-- 顶栏：返回 + 领域信息 + 画像 -->
+    <!-- 顶栏：返回 + 空间信息 + 画像 -->
     <div class="atlas-header">
       <el-button text :icon="ArrowLeft" @click="goBackToSpace">返回学习空间</el-button>
       <div class="atlas-title">
-        <h2>{{ space?.name }}</h2>
+        <h2>{{ spaceView?.name ?? '领域学习' }}</h2>
         <span class="atlas-sub">知识体系全景</span>
+        <el-tag v-if="spaceView?.goal" size="small" type="info" effect="plain">{{ spaceView.goal }}</el-tag>
       </div>
-      <div class="profile-tag" :title="profile.nature">
-        <el-tag type="warning" effect="plain">{{ profile.kindLabel }}</el-tag>
-        <span class="profile-nature">{{ profile.nature }}</span>
+      <div v-if="spaceProfile" class="profile-tag" :title="spaceProfile.nature">
+        <el-tag type="warning" effect="plain">{{ spaceProfile.kindLabel || '自定义领域' }}</el-tag>
+        <span class="profile-nature">{{ spaceProfile.nature }}</span>
       </div>
       <div class="atlas-actions">
         <el-button plain :icon="Share" @click="resetFocus">全图</el-button>
@@ -17,11 +18,11 @@
       </div>
     </div>
 
-    <!-- 画像侧重提示条 -->
-    <div class="emphasis-bar">
+    <!-- 画像侧重提示条（有画像才显示） -->
+    <div v-if="spaceProfile" class="emphasis-bar">
       <span class="emphasis-label">本领域侧重</span>
       <el-tag
-        v-for="t in profile.emphasis"
+        v-for="t in emphasisTags"
         :key="t"
         size="small"
         effect="plain"
@@ -30,11 +31,11 @@
       >
         {{ nodeTypeMeta(t).label }}
       </el-tag>
-      <span class="emphasis-hint">（节点类型 → 档案侧重：{{ profileHint }}）</span>
+      <span class="emphasis-hint">（节点类型 → 图例色；点击图中节点查看档案）</span>
     </div>
 
     <div class="atlas-body">
-      <!-- 左：大纲树（提纲挈领文字版） -->
+      <!-- 左：结构索引（后端空间视图树；群组嵌套 + 概念叶） -->
       <aside class="pane pane-tree">
         <div class="pane-title">
           <span>结构索引</span>
@@ -42,32 +43,37 @@
             <el-icon><InfoFilled /></el-icon>
           </el-tooltip>
         </div>
-        <div class="tree-legend">
-          <span v-for="t in emphasisTypes" :key="t" class="legend-item">
+        <div v-if="graph?.nodes.length" class="tree-legend">
+          <span v-for="t in legendTypes" :key="t" class="legend-item">
             <i class="dot" :style="{ background: nodeTypeMeta(t).color }" />
             {{ nodeTypeMeta(t).label }}
           </span>
         </div>
-        <div class="tree-scroll">
-          <div v-for="g in groupedNodes" :key="g.group" class="tree-group">
-            <div class="tree-group-title">{{ g.group }}</div>
-            <div
-              v-for="n in g.nodes"
-              :key="n.id"
-              class="tree-node"
-              :class="{ active: selectedId === n.id }"
-              @click="selectFromTree(n)"
-            >
-              <i class="dot" :style="{ background: nodeTypeMeta(n.type).color }" />
-              <span class="tree-name">{{ n.name }}</span>
-              <i v-if="n.mastery === 'mastered'" class="check el-icon"><CircleCheckFilled /></i>
-              <i v-else-if="n.mastery === 'learning'" class="check learning"><Loading /></i>
-            </div>
+        <div v-loading="loading" class="tree-scroll">
+          <div
+            v-for="row in treeRows"
+            :key="row.node.id"
+            class="tree-row"
+            :class="{ group: row.isGroup, active: selectedId === row.node.conceptId }"
+            :style="{ paddingLeft: 8 + row.depth * 14 + 'px' }"
+            @click="selectFromTree(row.node)"
+          >
+            <template v-if="row.isGroup">
+              <el-icon class="group-icon"><Folder /></el-icon>
+              <span class="group-name">{{ row.node.name }}</span>
+            </template>
+            <template v-else-if="row.concept">
+              <i class="dot" :style="{ background: nodeTypeMeta(row.concept.nodeType).color }" />
+              <span class="tree-name">{{ row.concept.name }}</span>
+              <i v-if="row.concept.mastery === 'mastered'" class="check el-icon"><CircleCheckFilled /></i>
+              <i v-else-if="row.concept.mastery === 'learning'" class="check learning"><Loading /></i>
+            </template>
           </div>
+          <div v-if="!loading && treeRows.length === 0" class="tree-empty">暂无知识节点</div>
         </div>
       </aside>
 
-      <!-- 中：主图（AtlasGraph） -->
+      <!-- 中：主图（AtlasGraph：dl:get-atlas-graph 节点/边） -->
       <section class="pane pane-graph">
         <!-- 面包屑：全局 > 子图谱（聚焦节点） -->
         <div v-if="focusNode" class="crumb-bar">
@@ -85,54 +91,56 @@
         />
       </section>
 
-      <!-- 右：节点档案 -->
+      <!-- 右：节点档案（dl:get-node-profile） -->
       <aside class="pane pane-profile">
-        <template v-if="selected">
+        <template v-if="nodeProfile">
           <div class="profile-header">
-            <span class="profile-name">{{ selected.name }}</span>
-            <el-tag size="small" :style="{ background: nodeTypeMeta(selected.type).color, border: 'none', color: '#fff' }">
-              {{ nodeTypeMeta(selected.type).label }}
+            <span class="profile-name">{{ nodeProfile.node.name }}</span>
+            <el-tag size="small" :style="{ background: nodeTypeMeta(nodeProfile.node.nodeType).color, border: 'none', color: '#fff' }">
+              {{ nodeTypeMeta(nodeProfile.node.nodeType).label }}
             </el-tag>
-            <el-button size="small" text class="profile-close" @click="onSelect(null)"><el-icon><Close /></el-icon></el-button>
+            <el-button size="small" text class="profile-close" @click="clearSelection"><el-icon><Close /></el-icon></el-button>
           </div>
-          <div class="profile-body">
+          <div v-loading="profileLoading" class="profile-body">
             <!-- 定义 -->
             <div class="p-block">
               <div class="p-label">定义 / 要点</div>
-              <div class="p-text">{{ selected.desc }}</div>
+              <div class="p-text">{{ nodeProfile.node.desc || '（暂无定义）' }}</div>
             </div>
-            <!-- 类型专属字段 -->
-            <div v-if="selected.attrs && Object.keys(selected.attrs).length" class="p-block">
+            <!-- 类型专属属性 -->
+            <div v-if="attrRows.length" class="p-block">
               <div class="p-label">关键属性</div>
-              <div v-for="(v, k) in selected.attrs" :key="k" class="attr-row">
-                <span class="attr-key">{{ k }}</span>
-                <span class="attr-val">{{ v }}</span>
+              <div v-for="a in attrRows" :key="a.key" class="attr-row">
+                <span class="attr-key">{{ a.key }}</span>
+                <span class="attr-val">{{ a.value }}</span>
               </div>
             </div>
-            <!-- 关联内容（随画像侧重） -->
-            <div v-if="selected.related?.length" class="p-block">
+            <!-- 关联内容（论文/法规/案例…按 nodeType 聚合） -->
+            <div v-if="nodeProfile.relatedContent.length" class="p-block">
               <div class="p-label">关联内容</div>
-              <div v-for="(r, i) in selected.related" :key="i" class="related-item">
+              <div v-for="(r, i) in nodeProfile.relatedContent" :key="i" class="related-item">
                 <el-icon><Document /></el-icon>
-                <span>{{ r }}</span>
+                <span class="work-kind">{{ r.kind }}</span>
+                <span class="work-title">{{ r.title }}</span>
+                <span v-if="r.year" class="work-meta">· {{ r.year }}</span>
               </div>
             </div>
             <!-- 直接关系 -->
             <div class="p-block">
-              <div class="p-label">直接关系（{{ directRels.length }}）</div>
-              <div v-for="rel in directRels" :key="rel.key" class="rel-item" @click="jumpTo(rel)">
-                <span class="rel-direction">{{ rel.dir }}</span>
-                <span class="rel-type">{{ rel.type }}</span>
+              <div class="p-label">直接关系（{{ nodeProfile.relations.length }}）</div>
+              <div v-for="rel in nodeProfile.relations" :key="rel.conceptId + rel.rel + rel.direction" class="rel-item" @click="jumpTo(rel)">
+                <span class="rel-direction">{{ rel.direction === 'out' ? '→' : '←' }}</span>
+                <span class="rel-type">{{ relLabel(rel.rel) }}</span>
                 <span class="rel-name">{{ rel.name }}</span>
               </div>
-              <div v-if="directRels.length === 0" class="p-empty">暂无直接关系</div>
+              <div v-if="nodeProfile.relations.length === 0" class="p-empty">暂无直接关系</div>
             </div>
             <!-- 操作 -->
             <div class="p-actions">
               <el-button size="small" type="primary" plain :icon="Share" @click="drillSelected">
-                打开子图谱
+                聚焦局部图谱
               </el-button>
-              <el-button size="small" :icon="Reading" @click="goLearn(selected)">
+              <el-button size="small" :icon="Reading" @click="goLearn(nodeProfile.node)">
                 去学它
               </el-button>
             </div>
@@ -141,7 +149,7 @@
         <div v-else class="profile-placeholder">
           <el-icon><Mouse /></el-icon>
           <p>点击图中的知识点查看档案</p>
-          <span>展示定义、关键属性、关联内容与直接关系；双击或「打开子图谱」进入该知识点的局部图谱。</span>
+          <span>展示定义、关键属性、关联内容与直接关系；双击或「聚焦局部图谱」进入该知识点的局部图谱。</span>
         </div>
       </aside>
     </div>
@@ -150,14 +158,17 @@
 
 <script setup lang="ts">
 /**
- * 知识全景 Atlas（前端原型）——独立 Tab 页
+ * 知识全景 Atlas —— 独立 Tab 页
  * @module views/domain-learning/DomainAtlas
- * @description 领域知识体系化展示：左大纲树 / 中自绘力导向主图 / 右节点档案；
- *              单击选中聚焦一阶邻居；双击或"打开子图谱"进入局部图（面包屑可回退）；
- *              顶栏与侧重条按"领域画像"呈现（T5 法规驱动 / T7 论文驱动等差异）。
- *              样例数据 atlas-data.ts；后端未接入。
+ * @description 领域知识体系化展示：左结构索引（空间视图大纲树）/ 中自绘力导向主图 /
+ *              右节点档案。数据源：
+ *              - 空间元信息 + 结构索引 + 画像：dl:get-space-view（store.currentSpaceView）
+ *              - 图谱节点/边：dl:get-atlas-graph
+ *              - 右栏档案：dl:get-node-profile
+ *              单击选中聚焦一阶邻居；双击/"聚焦局部图谱"进入局部图（面包屑可回退）；
+ *              「去学它」回到讲义空间并定位该概念。
  */
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowLeft,
@@ -166,6 +177,7 @@ import {
   CircleCheckFilled,
   Close,
   Document,
+  Folder,
   InfoFilled,
   Loading,
   Mouse,
@@ -173,105 +185,114 @@ import {
   Share,
 } from '@element-plus/icons-vue'
 import { useTabsStore } from '@/stores/tabs'
-import { findSpace } from './mock-data'
-import {
-  atlasForSpace,
-  profileForSpace,
-  nodeTypeMeta,
-  type AtlasEdge,
-  type AtlasNode,
-  type AtlasNodeType,
-} from './atlas-data'
+import { useDomainLearningStore } from '@/stores/domain-learning'
+import { nodeTypeMeta, relLabel } from './domain-learning-ui'
 import AtlasGraph from './AtlasGraph.vue'
+import type {
+  DlAtlasGraph,
+  DlAtlasNode,
+  DlConceptView,
+  DlNodeProfile,
+  DlProfileView,
+  DlRelationType,
+  DlTreeNode,
+} from '@shared/types/domain-learning.types'
 
 const route = useRoute()
 const router = useRouter()
 const tabsStore = useTabsStore()
+const store = useDomainLearningStore()
 
 const spaceId = computed(() => String(route.params.id ?? ''))
-const space = computed(() => findSpace(spaceId.value))
-const profile = computed(() => profileForSpace(spaceId.value))
-const graph = computed(() => atlasForSpace(spaceId.value))
+
+/** 空间元信息/画像/结构索引来源（三栏页共用视图缓存，本页进入时强制刷新） */
+const spaceView = computed(() => store.currentSpaceView)
+const spaceProfile = computed<DlProfileView | null>(() => spaceView.value?.profile ?? null)
+
+/** Atlas 图（节点/边来自后端 dl:get-atlas-graph） */
+const graph = ref<DlAtlasGraph | null>(null)
+const loading = ref(false)
+/** 右栏节点档案（dl:get-node-profile） */
+const nodeProfile = ref<DlNodeProfile | null>(null)
+const profileLoading = ref(false)
 
 const selectedId = ref<string | null>(null)
 /** 下钻：非空 = 子图谱模式（该节点 + 一阶邻居） */
 const focusId = ref<string | null>(null)
 
-const selected = computed<AtlasNode | null>(
-  () => graph.value?.nodes.find(n => n.id === selectedId.value) ?? null
-)
-const focusNode = computed<AtlasNode | null>(
+const focusNode = computed<DlAtlasNode | null>(
   () => graph.value?.nodes.find(n => n.id === focusId.value) ?? null
 )
 
-/** 侧重类型（在图中出现的顺序） */
-const emphasisTypes = computed<AtlasNodeType[]>(() => {
-  const order = profile.value.emphasis
-  const set = new Set(order)
-  const present = graph.value?.nodes.map(n => n.type).filter(t => set.has(t as AtlasNodeType)) ?? []
-  return [...new Set(present as AtlasNodeType[])]
-})
+/** 侧重类型（画像 emphasis；未匹配图例时回退显示 key 本身） */
+const emphasisTags = computed<string[]>(() => spaceProfile.value?.emphasis ?? [])
 
-const profileHint = computed(() => {
-  const labels = profile.value.emphasis.map(t => nodeTypeMeta(t).label)
-  return labels.slice(0, 4).join(' / ') + (labels.length > 4 ? '…' : '')
-})
-
-/** 左栏分组 */
-const groupedNodes = computed(() => {
-  const order: string[] = []
-  const map = new Map<string, AtlasNode[]>()
+/** 图谱中出现的节点类型（图例行，按出现序） */
+const legendTypes = computed<string[]>(() => {
+  const seen: string[] = []
   for (const n of graph.value?.nodes ?? []) {
-    if (!map.has(n.group)) {
-      map.set(n.group, [])
-      order.push(n.group)
-    }
-    map.get(n.group)!.push(n)
+    if (!seen.includes(n.nodeType)) seen.push(n.nodeType)
   }
-  return order.map(g => ({ group: g, nodes: map.get(g)! }))
+  return seen
 })
 
-/** 直接关系（含方向信息） */
-const directRels = computed(() => {
-  const id = selectedId.value
-  if (!id || !graph.value) return []
-  const out: Array<{ key: string; dir: string; type: string; name: string; targetId: string }> = []
-  for (const e of graph.value.edges) {
-    if (e.source === id) {
-      const t = graph.value.nodes.find(n => n.id === e.target)
-      if (t) out.push({ key: `o${e.target}-${e.type}`, dir: '→', type: e.type, name: t.name, targetId: t.id })
-    } else if (e.target === id) {
-      const s = graph.value.nodes.find(n => n.id === e.source)
-      if (s) out.push({ key: `i${e.source}-${e.type}`, dir: '←', type: e.type, name: s.name, targetId: s.id })
+/** 左栏结构索引（空间视图大纲树扁平化：群组行 + 概念叶行） */
+interface TreeRow {
+  node: DlTreeNode
+  depth: number
+  isGroup: boolean
+  concept?: DlConceptView
+}
+const treeRows = computed<TreeRow[]>(() => {
+  const rows: TreeRow[] = []
+  const walk = (list: DlTreeNode[], depth: number) => {
+    for (const n of list) {
+      if (n.conceptId) {
+        const c = spaceView.value?.concepts.find(x => x.id === n.conceptId)
+        if (c) rows.push({ node: n, depth, isGroup: false, concept: c })
+      } else {
+        rows.push({ node: n, depth, isGroup: true })
+        if (n.children?.length) walk(n.children, depth + 1)
+      }
     }
   }
-  return out
+  walk(spaceView.value?.tree ?? [], 0)
+  return rows
 })
 
-function onSelect(node: AtlasNode | null): void {
-  selectedId.value = node?.id ?? null
+// ==================== 档案/选中 ====================
+
+/** 选中图中/树中节点 → 拉节点档案 */
+async function selectNode(id: string | null): Promise<void> {
+  selectedId.value = id
+  if (!id) {
+    nodeProfile.value = null
+    return
+  }
+  profileLoading.value = true
+  try {
+    const p = await store.fetchNodeProfile(spaceId.value, id)
+    nodeProfile.value = p
+  } finally {
+    profileLoading.value = false
+  }
 }
 
-function onDrill(node: AtlasNode): void {
-  selectedId.value = node.id
-  focusId.value = node.id
+function onSelect(node: DlAtlasNode | null): void {
+  void selectNode(node?.id ?? null)
 }
 
-function drillSelected(): void {
-  if (selected.value) focusId.value = selected.value.id
+function clearSelection(): void {
+  void selectNode(null)
 }
 
-function resetFocus(): void {
-  focusId.value = null
-}
-
-/** 从大纲树选中（不自动下钻，只聚焦显示档案） */
-function selectFromTree(n: AtlasNode): void {
-  selectedId.value = n.id
-  // 若当前处于子图谱且该节点不在其中，则退到全图
-  if (focusId.value && !neighborOfFocus(n.id) && n.id !== focusId.value) {
+/** 从结构索引选中（不自动下钻；若处于子图谱且节点不在其中则退回全图） */
+function selectFromTree(node: DlTreeNode): void {
+  if (!node.conceptId) return
+  if (focusId.value && !neighborOfFocus(node.conceptId) && node.conceptId !== focusId.value) {
     focusId.value = null
   }
+  void selectNode(node.conceptId)
 }
 
 function neighborOfFocus(id: string): boolean {
@@ -280,19 +301,80 @@ function neighborOfFocus(id: string): boolean {
   return graph.value.edges.some(e => (e.source === f && e.target === id) || (e.target === f && e.source === id))
 }
 
-function jumpTo(rel: { targetId: string }): void {
-  selectedId.value = rel.targetId
+// ==================== 下钻 / 局部图谱 ====================
+
+function onDrill(node: DlAtlasNode): void {
+  focusId.value = node.id
+  void selectNode(node.id)
 }
 
+function drillSelected(): void {
+  if (nodeProfile.value) focusId.value = nodeProfile.value.node.id
+}
+
+function resetFocus(): void {
+  focusId.value = null
+}
+
+/** 档案直接关系点击 → 跳到邻居节点（不在当前子图谱则退回全图） */
+function jumpTo(rel: { conceptId: string; rel: DlRelationType; direction: 'out' | 'in' }): void {
+  if (focusId.value && !neighborOfFocus(rel.conceptId) && rel.conceptId !== focusId.value) {
+    focusId.value = null
+  }
+  void selectNode(rel.conceptId)
+}
+
+/** 档案属性记录 → 可展示键值对 */
+const attrRows = computed(() => {
+  const attrs = nodeProfile.value?.attrs ?? nodeProfile.value?.node.attrs
+  if (!attrs) return []
+  return Object.entries(attrs).map(([k, v]) => ({
+    key: k,
+    value: typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v ?? ''),
+  }))
+})
+
+// ==================== 跳转 ====================
+
 function goBackToSpace(): void {
-  tabsStore.preloadTab(`/domain-learning/${spaceId.value}`, space.value?.name ?? '领域学习')
+  tabsStore.preloadTab(`/domain-learning/${spaceId.value}`, spaceView.value?.name ?? '领域学习')
   router.push(`/domain-learning/${spaceId.value}`)
 }
 
-function goLearn(node: AtlasNode): void {
-  tabsStore.preloadTab(`/domain-learning/${spaceId.value}`, space.value?.name ?? '领域学习')
+function goLearn(node: DlAtlasNode): void {
+  tabsStore.preloadTab(`/domain-learning/${spaceId.value}`, spaceView.value?.name ?? '领域学习')
   router.push({ path: `/domain-learning/${spaceId.value}`, query: { concept: node.id } })
 }
+
+// ==================== 加载 ====================
+
+async function loadAtlas(): Promise<void> {
+  const id = spaceId.value
+  if (!id) return
+  loading.value = true
+  try {
+    // 空间元信息/画像/结构索引
+    await store.fetchSpaceView(id)
+    // 图谱节点/边
+    graph.value = await store.fetchAtlasGraph(id)
+  } finally {
+    loading.value = false
+  }
+}
+
+watch(
+  () => route.params.id,
+  () => {
+    selectedId.value = null
+    focusId.value = null
+    nodeProfile.value = null
+    void loadAtlas()
+  }
+)
+
+onMounted(() => {
+  void loadAtlas()
+})
 </script>
 
 <style scoped lang="scss">
@@ -429,13 +511,7 @@ function goLearn(node: AtlasNode): void {
   min-height: 0;
 }
 
-.tree-group-title {
-  font-size: 11px;
-  color: var(--el-text-color-placeholder);
-  padding: 8px 2px 3px;
-}
-
-.tree-node {
+.tree-row {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -452,6 +528,22 @@ function goLearn(node: AtlasNode): void {
     background: var(--el-color-primary-light-9);
     color: var(--el-color-primary);
   }
+  &.group {
+    cursor: default;
+    color: var(--el-text-color-primary);
+    font-weight: 600;
+
+    .group-icon {
+      color: var(--el-text-color-placeholder);
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+    .group-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
   .tree-name {
     flex: 1;
     min-width: 0;
@@ -466,6 +558,13 @@ function goLearn(node: AtlasNode): void {
       color: var(--el-color-warning);
     }
   }
+}
+
+.tree-empty {
+  padding: 16px 4px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
 }
 
 .dot {
@@ -545,6 +644,7 @@ function goLearn(node: AtlasNode): void {
 
 .profile-body {
   padding: 12px 14px;
+  min-height: 120px;
 }
 
 .p-block {
@@ -581,19 +681,39 @@ function goLearn(node: AtlasNode): void {
   }
   .attr-val {
     color: var(--el-text-color-regular);
+    word-break: break-all;
   }
 }
 
 .related-item {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 6px;
   font-size: 12.5px;
   color: var(--el-text-color-regular);
   padding: 3px 0;
+  flex-wrap: wrap;
+
   .el-icon {
     color: var(--el-color-primary);
     font-size: 13px;
+    flex-shrink: 0;
+  }
+  .work-kind {
+    font-size: 10.5px;
+    color: #fff;
+    background: var(--el-color-primary);
+    border-radius: 4px;
+    padding: 0 5px;
+    flex-shrink: 0;
+  }
+  .work-title {
+    flex: 1;
+    min-width: 0;
+  }
+  .work-meta {
+    color: var(--el-text-color-placeholder);
+    font-size: 12px;
   }
 }
 

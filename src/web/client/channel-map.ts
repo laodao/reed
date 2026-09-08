@@ -265,6 +265,33 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'knowledgeBase.getRerankModels': { channel: 'knowledge-base:get-rerank-models' },
   'knowledgeBase.selectFiles': { channel: 'knowledge-base:select-files' },
   'knowledgeBase.getFileLimits': { channel: 'knowledge-base:get-file-limits' },
+  // ==================== 领域共学空间（与 preload domainLearning 命名空间严格同步） ====================
+  // preload 命名空间是 domainLearning，但后端通道全部为 dl:*，且单 id 参数方法
+  // 需要包裹成 { id } 对象形态——必须显式覆盖，否则 Web 端 fallback 生成
+  // 'domain-learning:list-spaces'（kebab）与后端 'dl:list-spaces' 不匹配，Web 端整体不可用。
+  'domainLearning.listSpaces': { channel: 'dl:list-spaces' },
+  'domainLearning.createSpace': { channel: 'dl:create-space' },
+  'domainLearning.getSpace': { channel: 'dl:get-space', wrap: (id) => [{ id }] },
+  'domainLearning.setSpaceStatus': { channel: 'dl:set-space-status', wrap: (id, status) => [{ id, status }] },
+  'domainLearning.getSpaceView': { channel: 'dl:get-space-view', wrap: (id) => [{ id }] },
+  'domainLearning.getAtlasGraph': { channel: 'dl:get-atlas-graph', wrap: (id) => [{ id }] },
+  'domainLearning.getNodeProfile': { channel: 'dl:get-node-profile', wrap: (id, nodeId) => [{ id, nodeId }] },
+  'domainLearning.pickNext': { channel: 'dl:pick-next', wrap: (id) => [{ id }] },
+  'domainLearning.ackMastered': { channel: 'dl:ack-mastered', wrap: (id, conceptId) => [{ id, conceptId }] },
+  'domainLearning.ackConfused': { channel: 'dl:ack-confused', wrap: (id, conceptId, sectionKey) => [{ id, conceptId, sectionKey }] },
+  'domainLearning.confirmRelation': { channel: 'dl:confirm-relation' },
+  'domainLearning.listQuestions': { channel: 'dl:list-questions', wrap: (id) => [{ id }] },
+  'domainLearning.agentSend': { channel: 'dl:agent-send' },
+  'domainLearning.agentCancel': { channel: 'dl:agent-cancel' },
+  'domainLearning.agentBusy': { channel: 'dl:agent-busy' },
+  // domainLearning.onAgentEvent(spaceId, conceptId?, cb) — 后端 emit(`dl:agent:<spaceId>[:<conceptId>]`, event)
+  'domainLearning.onAgentEvent': {
+    eventChannel: (spaceId, conceptId) => `dl:agent:${spaceId}${conceptId ? `:${conceptId}` : ''}`,
+  },
+  // domainLearning.onStream(eventId, cb) — 后端 emit(`dl:generate:${eventId}`, { type:'content', content })
+  'domainLearning.onStream': {
+    eventChannel: (eventId) => `dl:generate:${eventId}`,
+  },
   'portrait.createProject': { channel: 'portrait:create-project' },
   'portrait.listProjects': { channel: 'portrait:list-projects' },
   'portrait.getProject': { channel: 'portrait:get-project' },
