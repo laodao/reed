@@ -57,4 +57,43 @@ describe('routeDlIntent 意图路由', () => {
     expect(routeDlIntent('')).toBe('tutor')
     expect(routeDlIntent('   ')).toBe('tutor')
   })
+
+  // ===== 复盘修复（2026-09-09）：意图路由误判反例（会话层审计 5 句实测 + 边界） =====
+
+  it('对话性"梳理/归纳/整理"无产出宾语 → tutor（不再被强词误伤）', () => {
+    const cases = [
+      '我不太懂贝叶斯公式，帮我把推导的思路再梳理一遍', // 审计句1：答疑重讲被误路由 task
+      '把全概率公式的证明再给我归纳一下',
+      '这段讲义的逻辑帮我理一理',
+      '先验概率和似然有什么不同？哪个更常被搞混', // 审计句3
+      '贝叶斯公式的分母为什么这样展开，再讲讲',
+    ]
+    for (const q of cases) expect(routeDlIntent(q), q).toBe('tutor')
+  })
+
+  it('产出型宾语（提纲/表格/大纲/笔记/合集）配弱词 → task', () => {
+    const cases = [
+      '把这周学的内容整理成一份复习提纲，发我', // 审计句4
+      '把这几篇论文的核心观点做成一张对比表给我', // 审计句2：对比表漏检
+      '梳理一下这门课的知识大纲',
+      '把答疑里好的讲解收集成一份学习笔记',
+      '归纳最近学过的几个定理，做一份合集',
+    ]
+    for (const q of cases) expect(routeDlIntent(q), q).toBe('task')
+  })
+
+  it('时效检索（查最近/最新+资讯词）→ task', () => {
+    const cases = [
+      '查一下最近三天这个领域有什么新论文', // 审计句5：字面粘连漏检
+      '搜索一下最新的开源大模型进展',
+      '最近这个方向有什么新动态？帮我查查',
+      '查查这几天领域内有什么重要新闻',
+    ]
+    for (const q of cases) expect(routeDlIntent(q), q).toBe('task')
+  })
+
+  it('纯"最近进展"资讯问但无检索动作词且无产出 → tutor 不误送（拿不准回 tutor）', () => {
+    const cases = ['这个领域最近难学吗', '最近的复习安排要调整吗']
+    for (const q of cases) expect(routeDlIntent(q), q).toBe('tutor')
+  })
 })

@@ -220,4 +220,117 @@ describe('dl-agent-actions', () => {
       expect(saved?.answerSource).toBe('ai_verified')
     })
   })
+
+  // ===== 复盘修复（2026-09-09）：归属校验 + saveCard 升版留档（不覆盖旧稿） =====
+
+  it('save_card：再次研究 → 升版新建 v2 留档 v1（旧内容/旧核验不丢，v2 无核验）', async () => {
+    ds = await buildDs()
+    await seedProject(ds, 'sp1')
+    const db = buildDb(ds)
+    await runWithUserAsync('u1', async () => {
+      await db.dlConcepts!.create({ id: 'c-bayes', projectId: 'sp1', nodeType: 'concept', name: '贝叶斯定理' })
+      // 首次落 v1
+      const ctx = execCtx(db, 'sp1')
+      const r1 = await executeDlAction(ctx, {
+        type: 'dl_save_card',
+        params: {
+          card: {
+            conceptId: 'c-bayes',
+            essenceType: 'K-stmt',
+            sections: [{ key: 'statement', md: 'v1 内容' }],
+            evidenceSources: [{ kind: '论文', title: 'S1', url: 'https://e.org/1' }],
+          },
+        },
+      })
+      const v1 = await db.dlCards!.getCurrentByConcept('sp1', 'c-bayes')
+      expect(r1.summary.data).toMatchObject({ version: 1 })
+      // 模拟 v1 已自动核验（旧判定）
+      await db.dlCards!.patch(v1!.id, { verification: { status: 'verified', issues: [], checkedAt: '2026-09-09', note: null } })
+      // 概念挂 v1
+      await db.dlConcepts!.patch('c-bayes', { cardId: v1!.id, researchState: 'extracted' })
+
+      // 再次研究（新证据/新内容）→ 升版新建 v2，不覆盖 v1
+      const r2 = await executeDlAction(ctx, {
+        type: 'dl_save_card',
+        params: {
+          card: {
+            conceptId: 'c-bayes',
+            essenceType: 'K-stmt',
+            sections: [{ key: 'statement', md: 'v2 修订内容' }],
+            evidenceSources: [{ kind: '论文', title: 'S2', url: 'https://e.org/2' }],
+          },
+        },
+      })
+      expect(r2.summary.data).toMatchObject({ version: 2 })
+      const versions = await db.dlCards!.listVersionsByConcept('sp1', 'c-bayes')
+      expect(versions).toHaveLength(2)
+      const [oldV, newV] = versions
+      expect(oldV.sections[0].md).toBe('v1 内容') // 旧稿留档
+      expect(oldV.verification?.status).toBe('verified') // 旧核验仍挂在旧稿
+      expect(newV.sections[0].md).toBe('v2 修订内容')
+      expect(newV.verification).toBeNull() // 新稿核验待重跑，不得继承旧判定
+      const current = await db.dlCards!.getCurrentByConcept('sp1', 'c-bayes')
+      expect(current?.id).toBe(newV.id)
+      const concept = await db.dlConcepts!.getById('c-bayes')
+      expect(concept?.cardId).toBe(newV.id) // 概念指向最新稿
+    })
+  })
+
+  it('save_card/relation/concept：空间与概念归属校验（不落孤儿/跨界数据）', async () => {
+    ds = await buildDs()
+    await seedProject(ds, 'sp1')
+    await seedProject(ds, 'sp2')
+    const db = buildDb(ds)
+    await runWithUserAsync('u1', async () => {
+      await db.dlConcepts!.create({ id: 'c-a', projectId: 'sp1', nodeType: 'concept', name: 'A' })
+      await db.dlConcepts!.create({ id: 'c-b', projectId: 'sp1', nodeType: 'concept', name: 'B' })
+      await db.dlConcepts!.create({ id: 'c-other', projectId: 'sp2', nodeType: 'concept', name: '他空间概念' })
+    })
+    const ev = (): unknown => ({ ok: true })
+    const ctx1 = { spaceId: 'sp1', db, emit: ev } as unknown as DlAgentExecutionContext
+    await runWithUserAsync('u1', async () => {
+      // card：conceptId 不存在 → 拒绝
+      await expect(
+        executeDlAction(ctx1, {
+          type: 'dl_save_card',
+          params: { card: { conceptId: 'ghost', essenceType: 'K-stmt', sections: [{ key: 's', md: 'x' }], evidenceSources: [{ kind: '论文', title: 'S', url: 'https://e.org/1' }] } },
+        }),
+      ).rejects.toThrow(/不存在|不属/)
+      // card：conceptId 属他空间 → 拒绝
+      await expect(
+        executeDlAction(ctx1, {
+          type: 'dl_save_card',
+          params: { card: { conceptId: 'c-other', essenceType: 'K-stmt', sections: [{ key: 's', md: 'x' }], evidenceSources: [{ kind: '论文', title: 'S', url: 'https://e.org/1' }] } },
+        }),
+      ).rejects.toThrow(/不属|不存在/)
+      // card：研究模式注入 ctx.conceptId 与落库 conceptId 不一致 → 拒绝（防跨概念写）
+      const ctxA = { spaceId: 'sp1', conceptId: 'c-a', db, emit: ev } as unknown as DlAgentExecutionContext
+      await expect(
+        executeDlAction(ctxA, {
+          type: 'dl_save_card',
+          params: { card: { conceptId: 'c-b', essenceType: 'K-stmt', sections: [{ key: 's', md: 'x' }], evidenceSources: [{ kind: '论文', title: 'S', url: 'https://e.org/1' }] } },
+        }),
+      ).rejects.toThrow(/不一致|不是当前/)
+      // relation：端点不存在/他空间 → 拒绝
+      await expect(
+        executeDlAction(ctx1, { type: 'dl_save_relation', params: { relation: { sourceId: 'c-a', targetId: 'ghost' } } }),
+      ).rejects.toThrow(/不存在/)
+      await expect(
+        executeDlAction(ctx1, { type: 'dl_save_relation', params: { relation: { sourceId: 'c-a', targetId: 'c-other' } } }),
+      ).rejects.toThrow(/不属/)
+      // concept：parentId 不存在 → 拒绝
+      await expect(
+        executeDlAction(ctx1, { type: 'dl_save_concept', params: { concept: { name: '孤儿子概念', parentId: 'ghost-group' } } }),
+      ).rejects.toThrow(/不存在/)
+      // concept：parentId 属他空间 → 拒绝
+      await expect(
+        executeDlAction(ctx1, { type: 'dl_save_concept', params: { concept: { name: '跨空间子概念', parentId: 'c-other' } } }),
+      ).rejects.toThrow(/不属/)
+      // 合法路径仍可落（回归）
+      const okR = await executeDlAction(ctx1, { type: 'dl_save_relation', params: { relation: { sourceId: 'c-a', targetId: 'c-b' } } })
+      expect(okR.summary.status).toBe('ok')
+      const okC = await executeDlAction(ctx1, { type: 'dl_save_concept', params: { concept: { name: '正常概念', parentId: null } } })
+      expect(okC.summary.status).toBe('ok')
+    })
+  })
 })

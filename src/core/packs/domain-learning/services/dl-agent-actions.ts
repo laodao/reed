@@ -88,7 +88,7 @@ export async function executeDlAction(
     case 'dl_save_relation':
       return saveRelation(db, spaceId, params)
     case 'dl_save_card':
-      return saveCard(db, spaceId, params)
+      return saveCard(db, spaceId, params, ctx.conceptId ?? null)
     case 'dl_answer_question':
       return answerQuestion(db, spaceId, params)
     default:
@@ -105,6 +105,14 @@ async function saveConcept(
 ): Promise<{ summary: DlAgentActionSummary }> {
   const c = (raw.concept ?? {}) as NonNullable<DlAgentActionParams['concept']>
   if (!c.name?.trim()) throw new Error('dl_save_concept：概念 name 必填')
+
+  // 归属校验（2026-09-09 复盘）：parentId 必须存在且属于本空间（不落跨空间/孤儿父）
+  if (c.parentId) {
+    const parent = await db.dlConcepts!.getById(c.parentId)
+    if (!parent || parent.projectId !== spaceId) {
+      throw new Error(`dl_save_concept：parentId 不存在或不属于本空间（${c.parentId}）`)
+    }
+  }
 
   const rows = await db.dlConcepts!.listByProject(spaceId)
   const existing = rows.find((r) => r.name === c.name.trim() && r.parentId === (c.parentId ?? null))
@@ -144,6 +152,12 @@ async function saveRelation(
   if (!r.sourceId || !r.targetId) throw new Error('dl_save_relation：sourceId/targetId 必填')
   if (r.sourceId === r.targetId) throw new Error('dl_save_relation：不能建立自环')
 
+  // 归属校验（2026-09-09 复盘）：两端必须存在且属于本空间（不落孤儿/跨界边）
+  const src = await db.dlConcepts!.getById(r.sourceId)
+  if (!src || src.projectId !== spaceId) throw new Error(`dl_save_relation：sourceId 不存在或不属于本空间（${r.sourceId}）`)
+  const tgt = await db.dlConcepts!.getById(r.targetId)
+  if (!tgt || tgt.projectId !== spaceId) throw new Error(`dl_save_relation：targetId 不存在或不属于本空间（${r.targetId}）`)
+
   const relationType = r.relationType ?? PREREQUISITE_TYPE
   const row = await db.dlRelations!.create({
     id: randomUUID(),
@@ -166,6 +180,7 @@ async function saveCard(
   db: ReturnType<typeof getCoreDatabaseManager>,
   spaceId: string,
   raw: Record<string, unknown>,
+  expectedConceptId?: string | null,
 ): Promise<{ summary: DlAgentActionSummary }> {
   const card = (raw.card ?? {}) as NonNullable<DlAgentActionParams['card']>
   if (!card.conceptId) throw new Error('dl_save_card：conceptId 必填')
@@ -176,48 +191,47 @@ async function saveCard(
     throw new Error('dl_save_card：evidenceSources 为空——讲义无出处不落库；请先研究获取资料再产讲义')
   }
 
+  // 归属校验（2026-09-09 复盘）：conceptId 必须存在且属于本空间；
+  // 研究/概念级任务（runtimeContext 注入 conceptId）只能写当前研究概念，防跨界写
+  const targetConcept = await db.dlConcepts!.getById(card.conceptId)
+  if (!targetConcept || targetConcept.projectId !== spaceId) {
+    throw new Error(`dl_save_card：概念不存在或不属于本空间（${card.conceptId}）`)
+  }
+  if (expectedConceptId && expectedConceptId !== card.conceptId) {
+    throw new Error(`dl_save_card：目标概念（${card.conceptId}）与当前研究概念（${expectedConceptId}）不一致——请先切到该概念再研究它`)
+  }
+
+  // 升版留档（2026-09-09 复盘）：一律新建 version=旧+1 行，旧稿/旧核验保留；
+  // 新稿 verification 置空（核验需针对新内容重跑，不继承旧判定）
   const existingCard = await db.dlCards!.getCurrentByConcept(spaceId, card.conceptId)
   const version = (existingCard?.version ?? 0) + 1
-  const cardId = existingCard?.id ?? randomUUID()
+  const cardId = randomUUID()
   const attrs: Record<string, unknown> = {}
   if (card.needsVerification) attrs.needsVerification = true
 
-  if (existingCard) {
-    await db.dlCards!.patch(existingCard.id, {
-      essenceType: card.essenceType,
-      sections: card.sections,
-      works: card.works ?? null,
-      evidenceSources: card.evidenceSources,
-      status: 'draft', // 新研究覆盖旧稿 → 回草稿待用户确认发布
-    })
-  } else {
-    await db.dlCards!.create({
-      id: cardId,
-      projectId: spaceId,
-      conceptId: card.conceptId,
-      essenceType: card.essenceType,
-      sections: card.sections,
-      works: card.works ?? null,
-      evidenceSources: card.evidenceSources,
-      version,
-      status: 'draft',
-    })
-  }
-  // 概念挂 card（研究态 → 已提炼）
-  const concept = await db.dlConcepts!.getById(card.conceptId)
-  if (concept && concept.projectId === spaceId) {
-    await db.dlConcepts!.patch(concept.id, {
-      cardId,
-      researchState: 'extracted',
-      attrs: { ...(concept.attrs ?? {}), ...attrs },
-    })
-  }
+  await db.dlCards!.create({
+    id: cardId,
+    projectId: spaceId,
+    conceptId: card.conceptId,
+    essenceType: card.essenceType,
+    sections: card.sections,
+    works: card.works ?? null,
+    evidenceSources: card.evidenceSources,
+    version,
+    status: 'draft',
+  })
+  // 概念挂最新 card（研究态 → 已提炼）
+  await db.dlConcepts!.patch(targetConcept.id, {
+    cardId,
+    researchState: 'extracted',
+    attrs: { ...(targetConcept.attrs ?? {}), ...attrs },
+  })
   return {
     summary: {
       tool: 'dl_save_card',
       status: 'ok',
-      message: `讲义已落库（v${version} 草稿，${card.sections.length} 区，证据 ${card.evidenceSources.length} 条）`,
-      data: { cardId, version },
+      message: `讲义已落库（v${version} 草稿，${card.sections.length} 区，证据 ${card.evidenceSources.length} 条）${existingCard ? '，旧稿 v' + existingCard.version + ' 留档' : ''}`,
+      data: { cardId, version, conceptId: card.conceptId },
     },
   }
 }

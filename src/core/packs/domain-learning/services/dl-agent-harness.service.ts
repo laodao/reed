@@ -30,6 +30,7 @@ import {
   buildDlSuggestions,
   buildFocusQuestionLines,
   computeDlSpaceSnapshot,
+  dlBootstrapSkillBody,
   dlEmptySpaceMission,
   dlResearchSystemPrompt,
   dlTaskSystemPrompt,
@@ -115,6 +116,8 @@ export class DlAgentHarnessService {
     const { spaceId, conceptId } = scope
     const scopeId = dlScopeKey(mode, scope)
     const conceptForEvent = conceptId ?? undefined
+    /** 本轮是否为空空间起步研究（research + 尚无知识概念叶；收尾做产物断言） */
+    let wasEmpty = false
 
     // 动作摘要收集：工具内 ctx.emit 的 action:done 富事件回流汇总
     const channelEvent = conceptId ? `dl:agent:${spaceId}:${conceptId}` : `dl:agent:${spaceId}`
@@ -181,9 +184,17 @@ export class DlAgentHarnessService {
       }
       bindings = buildDlBindings({ mode, availableToolNames: registered, webSearchAvailable })
       snapshotText += `\n${researchSourceHint(webSearchAvailable)}`
-      // 空空间起步研究：尚无任何知识点时注入「先骨架后讲义」任务引导（空主题补全）
+      // 空空间起步研究：注入「先骨架后讲义」任务引导 + bootstrap 技能正文
+      // （2026-09-09 复盘：bootstrap 为过程型技能，invoke_skill 内层无工具会假完成——
+      //  这里直接把技能正文注入本会话，由带工具的外层模型真执行 S1~S5；wasEmpty 供收尾产物断言）
       if (mode === 'research' && snapshot.isEmptySpace) {
-        snapshotText += `\n${dlEmptySpaceMission({ spaceName: snapshot.spaceName ?? spaceId })}`
+        wasEmpty = true
+        const bootBody = dlBootstrapSkillBody()
+        let mission = dlEmptySpaceMission({ spaceName: snapshot.spaceName ?? spaceId })
+        if (bootBody) {
+          mission += `\n\n【learning-space-bootstrap 技能正文（宿主注入，直接按其执行）】\n${bootBody}`
+        }
+        snapshotText += `\n${mission}`
       }
       if (mode === 'research' && opts.focusQuestionId) {
         const focus = (await m.dlQuestions?.getById(opts.focusQuestionId)) ?? null
@@ -214,15 +225,19 @@ export class DlAgentHarnessService {
       ])
     }
 
-    // 事件流
+    // 事件流（2026-09-09 复盘：verify=内部核验会话，事件只回宿主侧、不上用户可见通道，
+    // 避免核验 JSON/阶段流被前端当助手回复展示；research/tutor/task 照常广播）
+    const suppressUserEvents = mode === 'verify'
     let summaryEventId = ''
     let allText = ''
     const newSummaryEvent = () => {
       summaryEventId = `dl-agent-summary-${spaceId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-      emitDlAgentEvent(spaceId, conceptForEvent, { type: 'reply:start', summaryEventId })
+      if (!suppressUserEvents) emitDlAgentEvent(spaceId, conceptForEvent, { type: 'reply:start', summaryEventId })
     }
-    const emitStage = (stage: 'deciding' | 'acting') =>
+    const emitStage = (stage: 'deciding' | 'acting') => {
+      if (suppressUserEvents) return
       emitDlAgentEvent(spaceId, conceptForEvent, { type: 'stage', stage })
+    }
 
     emitStage('deciding')
     newSummaryEvent()
@@ -258,7 +273,7 @@ export class DlAgentHarnessService {
         onStream: (_t, event) => {
           if (event.kind === 'delta' && summaryEventId) {
             allText += event.text
-            emitDlStream(summaryEventId, event.text)
+            if (!suppressUserEvents) emitDlStream(summaryEventId, event.text)
           }
           if (event.kind === 'tool-start') emitStage('acting')
         },
@@ -289,29 +304,47 @@ export class DlAgentHarnessService {
       }
 
       if (result.stopReason === 'error' || result.stopReason === 'aborted') {
-        emitDlAgentEvent(spaceId, conceptForEvent, {
-          type: 'error',
-          error: result.error ?? (result.stopReason === 'aborted' ? '本轮已中断' : '执行失败'),
-        })
+        if (!suppressUserEvents) {
+          emitDlAgentEvent(spaceId, conceptForEvent, {
+            type: 'error',
+            error: result.error ?? (result.stopReason === 'aborted' ? '本轮已中断' : '执行失败'),
+          })
+        }
       }
-      emitDlAgentEvent(spaceId, conceptForEvent, { type: 'reply:done', suggestions })
+      if (!suppressUserEvents) emitDlAgentEvent(spaceId, conceptForEvent, { type: 'reply:done', suggestions })
 
       logger.info(`[dl-agent] 轮次完成 mode=${mode} space=${spaceId} concept=${conceptId ?? '-'} stop=${result.stopReason} steps=${result.iterations}`)
 
-      // M4-UX2：研究产出讲义卡后自动触发内部核验（异步，失败仅记日志，不影响主流程）
-      if (mode === 'research' && conceptId) {
-        const savedAny = actionSummaries.some((a) => a.tool === 'dl_save_card' && a.status === 'ok')
-        if (savedAny) {
+      // M4-UX2：研究产出讲义卡后自动触发内部核验（异步，失败仅记日志，不影响主流程）。
+      // （2026-09-09 复盘：空空间起步研究 conceptId=null 也可能落首卡——按卡自带 conceptId
+      //   逐个核验并发 card-ready 通知，不再要求本轮 scope 必须有 conceptId）
+      if (mode === 'research') {
+        const savedCards = actionSummaries.filter((a) => a.tool === 'dl_save_card' && a.status === 'ok')
+        if (savedCards.length > 0) {
           const spaceName = (await m.dlProjects?.getById(spaceId))?.name ?? undefined
-          const conceptName = (await m.dlConcepts?.getById(conceptId))?.name
+          const firstCard = savedCards[0]
+          const firstConceptId = (firstCard.data as { conceptId?: string } | undefined)?.conceptId
+          const conceptName = firstConceptId ? (await m.dlConcepts?.getById(firstConceptId))?.name : undefined
           void dlPublishNotice('dl:card-ready', { spaceId, spaceName, conceptName })
         }
-        for (const s of actionSummaries.filter((a) => a.tool === 'dl_save_card' && a.status === 'ok')) {
+        for (const s of savedCards) {
           const cardId = (s.data as { cardId?: string } | undefined)?.cardId
-          if (!cardId) continue
-          void this.verifyCard(spaceId, conceptId, cardId, { providerConfigId: opts.providerConfigId, modelId: opts.modelId }).catch((e) =>
+          const cardConceptId = (s.data as { conceptId?: string } | undefined)?.conceptId
+          if (!cardId || !cardConceptId) continue
+          void this.verifyCard(spaceId, cardConceptId, cardId, { providerConfigId: opts.providerConfigId, modelId: opts.modelId }).catch((e) =>
             logger.warn(`[dl-agent] 自动核验失败 card=${cardId}：${e instanceof Error ? e.message : String(e)}`),
           )
+        }
+      }
+
+      // 空空间起步研究收尾产物断言（2026-09-09 复盘）：
+      // 起步任务结束空间仍无概念叶且本轮无任何 dl_* 成功动作 → 明确告知零产出，不静默"成功"
+      if (wasEmpty) {
+        const stillEmpty = newSnapshot.isEmptySpace
+        const savedAny = actionSummaries.some((a) => a.status === 'ok')
+        if (stillEmpty && !savedAny) {
+          content += `\n\n⚠️ 本轮起步研究未能产生任何落库产出（空间仍无知识概念）。可能原因：资料源不可达 / 采集工具失败 / 本轮被中断。建议检查绑定知识库与网络后重试，或直接下达具体任务（如"先建 3-6 个核心概念"）。`
+          logger.warn(`[dl-agent] 空空间起步研究零产出 space=${spaceId} stop=${result.stopReason}`)
         }
       }
 
@@ -319,7 +352,7 @@ export class DlAgentHarnessService {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       logger.error(`[dl-agent] 轮次异常 mode=${mode} space=${spaceId}: ${msg}`)
-      emitDlAgentEvent(spaceId, conceptForEvent, { type: 'error', error: msg })
+      if (!suppressUserEvents) emitDlAgentEvent(spaceId, conceptForEvent, { type: 'error', error: msg })
       if (mode === 'research') {
         void dlPublishNotice('dl:research-failed', { spaceId, conceptName: conceptId ?? undefined })
       }

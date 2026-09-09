@@ -9,6 +9,23 @@
 
 import { pickNextToLearn } from '../rules/learning-sequence.rules'
 import type { ICoreDatabaseManager } from '@core/database/database-manager.interface'
+import { BUILTIN_SKILLS } from '@core/platform/workflow/skills/builtin-skills'
+import { splitSkillFrontmatter } from '@core/platform/workflow/skills/skill-parser'
+
+/** 领域起步研究技能 id（dlEmptySpaceMission / 宿主注入共用） */
+export const DL_BOOTSTRAP_SKILL_ID = 'learning-space-bootstrap'
+
+/**
+ * 取 learning-space-bootstrap 技能正文（S1~S5 全文，去掉 frontmatter）。
+ * 宿主在空空间研究轮直接注入快照 → 外层带工具模型真执行五阶段。
+ * （2026-09-09 复盘：invoke_skill 的内层是无工具单次生成，对 bootstrap 这类
+ *  过程型技能会"看似完成实则零落库"，故不再依赖 invoke_skill 执行它。）
+ */
+export function dlBootstrapSkillBody(): string | null {
+  const entry = BUILTIN_SKILLS.find((s) => s.id === DL_BOOTSTRAP_SKILL_ID)
+  if (!entry) return null
+  return splitSkillFrontmatter(entry.markdown).body.trim() || null
+}
 
 /** 快照信息（宿主每轮装配时调用） */
 export interface DlSpaceSnapshot {
@@ -29,7 +46,7 @@ export function hasConceptLeaves(concepts: Array<{ nodeType: string }>): boolean
 /** 空空间起步研究指令（research 会话在快照为空时追加；指向 learning-space-bootstrap 技能并保留兜底） */
 export function dlEmptySpaceMission(opts: { spaceName: string }): string {
   return `【空领域起步研究】学习空间「${opts.spaceName}」当前还没有任何知识点，本次任务=给整个领域做一次"起步研究"。
-执行方式：先 discover_capabilities 查看可用技能，再 invoke_skill 调用技能 learning-space-bootstrap（领域起步研究），按该技能的 S1~S5 阶段执行并在每阶段向用户回报进度；
+执行方式：宿主已把 learning-space-bootstrap 技能正文注入本会话快照（见下方【learning-space-bootstrap 技能正文】），请直接按该技能 S1~S5 阶段执行、每阶段向用户回报进度，不要再 discover/invoke 重复调用该技能；
 若技能不可用，按此摘要执行（同技能口径）：
 1. 先规划并落库 3-6 个最核心的知识点（dl_save_concept，parentId 优先填快照"目录分组"里的领域根 group id，没有则留 null）；
 2. 再为它们建立学习顺序关系（dl_save_relation，前置关系 prerequisite）；

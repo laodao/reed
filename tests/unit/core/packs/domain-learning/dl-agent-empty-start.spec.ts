@@ -11,6 +11,8 @@
 
 import { describe, it, expect } from 'vitest'
 import {
+  DL_BOOTSTRAP_SKILL_ID,
+  dlBootstrapSkillBody,
   dlEmptySpaceMission,
   hasConceptLeaves,
 } from '@core/packs/domain-learning/services/dl-agent-deps'
@@ -67,18 +69,45 @@ describe('空主题启动引导', () => {
     })
   })
 
-  describe('dlEmptySpaceMission 指向平台技能（M7：起步研究固化为 learning-space-bootstrap）', () => {
+  describe('dlEmptySpaceMission 指向平台技能（M7 固化为 learning-space-bootstrap；复盘后改宿主注入语义）', () => {
     const mission = dlEmptySpaceMission({ spaceName: '量子计算入门' })
 
-    it('引导先 discover 可用技能再 invoke_skill 调用 learning-space-bootstrap', () => {
-      expect(mission).toContain('discover_capabilities')
-      expect(mission).toContain('invoke_skill')
+    it('说明技能正文已由宿主注入、直接按 S1~S5 执行，不再引导 discover/invoke（防假完成）', () => {
       expect(mission).toContain('learning-space-bootstrap')
-    })
-
-    it('要求按技能 S1~S5 阶段执行并在每阶段向用户回报进度', () => {
       expect(mission).toContain('S1~S5')
       expect(mission).toContain('回报进度')
+      expect(mission).toContain('宿主已把 learning-space-bootstrap 技能正文注入本会话快照')
+      expect(mission).not.toContain('invoke_skill')
+    })
+
+    it('保留兜底摘要：技能正文缺失时按同口径直接执行', () => {
+      expect(mission).toContain('按此摘要执行')
+      expect(mission).toContain('dl_save_concept')
+      expect(mission).toContain('dl_save_card')
+    })
+  })
+
+  describe('dlBootstrapSkillBody（复盘：宿主把 bootstrap 技能正文注入空空间研究会话）', () => {
+    it('能取到 learning-space-bootstrap 技能正文（去 frontmatter）', () => {
+      const body = dlBootstrapSkillBody()
+      expect(body).not.toBeNull()
+      expect(body).not.toContain('---') // 已去 frontmatter 围栏
+      expect(body).toContain('S1 资料探查')
+      expect(body).toContain('S5 自检')
+    })
+
+    it('正文五阶段产物契约：dl_save_concept/relation/card + 证据纪律', () => {
+      const body = dlBootstrapSkillBody() ?? ''
+      expect(body).toContain('dl_save_concept')
+      expect(body).toContain('dl_save_relation')
+      expect(body).toContain('dl_save_card')
+      expect(body).toMatch(/evidence|证据/)
+      expect(body).toContain('不编造')
+    })
+
+    it('技能 id 常量与注册一致', () => {
+      expect(DL_BOOTSTRAP_SKILL_ID).toBe('learning-space-bootstrap')
+      expect(dlBootstrapSkillBody()).toBeTruthy()
     })
   })
 })
