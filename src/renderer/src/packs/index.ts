@@ -54,8 +54,8 @@ export async function installBuiltinPackages(router: Router): Promise<void> {
   // 必须先注册这 4 个包（无锚点追加，复刻原壳条目位置），再注册以它们为锚点的包：
   //   chat/portrait/longwriting/episode-production 依次插到 '/knowledge-base' 之前；
   //   diary 插到 '/assets' 之前；voice-design/skills 无锚点追加到末尾。
-  // 最终菜单顺序与一期完全一致：
-  //   首页 → AI对话 → 人像设计 → 长文写作 → 剧集制作 → 知识库 → 工作流 → 应用
+  // 最终菜单顺序（2026-09-08 起 domain-learning 以 knowledge-base 为锚点插入其前）：
+  //   首页 → AI对话 → 人像设计 → 长文写作 → 剧集制作 → 领域学习 → 知识库 → 工作流 → 应用
   //   → 日记 → 资产管理 → 声音设计 → 技能库
   registerPack(knowledgeBasePack)
   registerPack(workflowPack)

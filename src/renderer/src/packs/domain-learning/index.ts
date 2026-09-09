@@ -12,10 +12,10 @@ export const domainLearningPack: RendererPackDefinition = {
   manifest: {
     id: 'domain-learning',
     name: '领域学习',
-    version: '0.0.2',
+    version: '0.0.3',
     description: '领域共学空间（界面原型）——多主题列表 + 三栏学习空间 + 知识全景',
     contributions: {
-      routePaths: ['/domain-learning'],
+      routePaths: ['/domain-learning', '/domain-learning/:id', '/domain-learning/:id/atlas'],
     },
   },
   routes: [
@@ -29,13 +29,14 @@ export const domainLearningPack: RendererPackDefinition = {
       path: '/domain-learning/:id',
       name: 'DomainLearningSpace',
       component: () => import('@/views/domain-learning/DomainLearningSpace.vue'),
-      meta: { title: '领域学习空间' },
+      // keepAlive：学习进度/追问在组件实例内，空间 ↔ 全景往返不丢（组件同名匹配缓存）
+      meta: { title: '领域学习空间', keepAlive: true },
     },
     {
       path: '/domain-learning/:id/atlas',
       name: 'DomainLearningAtlas',
       component: () => import('@/views/domain-learning/DomainAtlas.vue'),
-      meta: { title: '知识全景' },
+      meta: { title: '知识全景', keepAlive: true },
     },
   ],
   menuItems: [

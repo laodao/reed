@@ -1,5 +1,10 @@
 <template>
   <div class="domain-atlas">
+    <!-- 无效主题 id 深链：显式空态而非静默残壳 -->
+    <el-empty v-if="!space" description="主题不存在或已下线" class="atlas-missing">
+      <el-button type="primary" :icon="ArrowLeft" @click="router.push('/domain-learning')">回主题列表</el-button>
+    </el-empty>
+    <template v-else>
     <!-- 顶栏：返回 + 领域信息 + 画像 -->
     <div class="atlas-header">
       <el-button text :icon="ArrowLeft" @click="goBackToSpace">返回学习空间</el-button>
@@ -80,6 +85,7 @@
           :nodes="graph?.nodes ?? []"
           :edges="graph?.edges ?? []"
           :focus-id="focusId"
+          :selected-id="selectedId"
           @select="onSelect"
           @dblclick="onDrill"
         />
@@ -90,7 +96,7 @@
         <template v-if="selected">
           <div class="profile-header">
             <span class="profile-name">{{ selected.name }}</span>
-            <el-tag size="small" :style="{ background: nodeTypeMeta(selected.type).color, border: 'none', color: '#fff' }">
+            <el-tag size="small" :style="{ background: nodeTypeMeta(selected.type).color, border: 'none', color: 'var(--el-bg-color)' }">
               {{ nodeTypeMeta(selected.type).label }}
             </el-tag>
             <el-button size="small" text class="profile-close" @click="onSelect(null)"><el-icon><Close /></el-icon></el-button>
@@ -145,6 +151,7 @@
         </div>
       </aside>
     </div>
+    </template>
   </div>
 </template>
 
@@ -178,11 +185,13 @@ import {
   atlasForSpace,
   profileForSpace,
   nodeTypeMeta,
-  type AtlasEdge,
   type AtlasNode,
   type AtlasNodeType,
 } from './atlas-data'
 import AtlasGraph from './AtlasGraph.vue'
+
+// keep-alive 缓存按组件名匹配（与路由名一致）
+defineOptions({ name: 'DomainLearningAtlas' })
 
 const route = useRoute()
 const router = useRouter()
@@ -280,8 +289,12 @@ function neighborOfFocus(id: string): boolean {
   return graph.value.edges.some(e => (e.source === f && e.target === id) || (e.target === f && e.source === id))
 }
 
+/** 从大纲树/关系列表定位（子图谱下目标不可见则退回全图，行为一致） */
 function jumpTo(rel: { targetId: string }): void {
   selectedId.value = rel.targetId
+  if (focusId.value && !neighborOfFocus(rel.targetId) && rel.targetId !== focusId.value) {
+    focusId.value = null
+  }
 }
 
 function goBackToSpace(): void {
@@ -302,6 +315,14 @@ function goLearn(node: AtlasNode): void {
   height: 100%;
   overflow: hidden;
   background: var(--el-bg-color);
+}
+
+.atlas-missing {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
 .atlas-header {

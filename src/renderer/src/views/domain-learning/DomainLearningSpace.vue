@@ -1,5 +1,10 @@
 <template>
   <div class="domain-learning-space">
+    <!-- 无效主题 id 深链：显式空态而非静默残壳 -->
+    <el-empty v-if="!space" description="主题不存在或已下线" class="space-missing">
+      <el-button type="primary" :icon="ArrowLeft" @click="goBack">回主题列表</el-button>
+    </el-empty>
+    <template v-else>
     <!-- 原型角标：明确"界面原型 · 后端未接入 · 数据为演示样例" -->
     <div class="proto-banner">
       <el-tag size="small" type="warning" effect="plain">界面原型 · 后端未接入 · 演示数据</el-tag>
@@ -78,9 +83,9 @@
               :style="{ paddingLeft: 10 + row.depth * 14 + 'px' }"
               @click="selectTreeLeaf(row.concept)"
             >
-              <i class="dot" :class="dotClass(row.concept.mastery)" />
-              <span class="leaf-name">{{ row.concept.name }}</span>
-              <el-icon v-if="row.concept.mastery === 'mastered'" class="leaf-check"><CircleCheckFilled /></el-icon>
+              <i class="dot" :class="dotClass(row.concept?.mastery)" />
+              <span class="leaf-name">{{ row.concept?.name }}</span>
+              <el-icon v-if="row.concept?.mastery === 'mastered'" class="leaf-check"><CircleCheckFilled /></el-icon>
             </div>
           </template>
           <div v-if="mapRows.length === 0" class="tree-empty">无匹配概念</div>
@@ -148,9 +153,10 @@
             </div>
           </div>
 
-          <div v-if="currentConcept?.card" class="lesson-body block-body-pad">
-            <!-- 类型化模板讲义（content-template-design v4） -->
+          <div v-if="currentConcept?.card" ref="lessonBodyRef" class="lesson-body block-body-pad">
+            <!-- 类型化模板讲义（content-template-design v4）；:key 使切换概念时重建（折叠态不串味） -->
             <SectionLesson
+              :key="currentConcept.id"
               :card="currentConcept.card"
               :related="currentRelated"
               @not-understand="onSectionNotUnderstand"
@@ -200,7 +206,7 @@
             :rows="4"
             resize="none"
             placeholder="追问：还有哪里不懂？例如“为什么……”（Enter 发送）"
-            @keydown.enter.exact.prevent="ask"
+            @keydown.enter.exact.prevent="ask($event)"
           />
           <div class="qa-send-row">
             <span class="qa-hint">支持追问 · 换种讲法 · 拆细一点</span>
@@ -209,6 +215,7 @@
         </div>
       </aside>
     </div>
+    </template>
   </div>
 </template>
 
@@ -217,10 +224,11 @@
  * 领域共学空间 —— 三栏学习空间（前端原型）
  * @module views/domain-learning/DomainLearningSpace
  * @description 按路由参数加载主题（mock-data 多主题）。三栏：左概念图 / 中讲义 / 右追问。
- *              「知识全景」按钮 → 新开 Tab 打开该主题的 Atlas 页（类型化知识图谱，见 DomainAtlas）。
- *              样例数据本地填充；后端业务（dl_* 服务/skill/AI）未接入。
+ *              「知识全景」按钮 → 新开 Tab 打开该主题的 Atlas 页（类型化知识图谱，见 DomainAtlas）；
+ *              Atlas「去学它」经 query.concept 深链回本页定位概念。
+ *              学习进度/追问直接读写 mock 响应式单例（会话内跨页共享）；后端业务（dl_* 服务/skill/AI）未接入。
  */
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowLeft,
@@ -240,7 +248,6 @@ import SectionLesson from './SectionLesson.vue'
 import {
   fallbackTreeOf,
   findSpace,
-  spaceStats,
   type CardSection,
   type ConceptNode,
   type KnowledgeTreeNode,
@@ -250,11 +257,17 @@ import {
 } from './mock-data'
 import { useTabsStore } from '@/stores/tabs'
 
+defineOptions({ name: 'DomainLearningSpace' })
+
 const route = useRoute()
 const router = useRouter()
 const tabsStore = useTabsStore()
 
 const space = computed<SpaceProject | undefined>(() => findSpace(String(route.params.id ?? '')))
+
+// keep-alive 缓存按实例隔离（MainLayout :key=route.path）：记录本实例路径，
+// 全局路由变化时不串改缓存实例的状态（ deactivated 实例的 watch 仍会触发）
+const ownPath = route.path
 
 // ---------- 由主题数据派生的本地状态（原型：reactive 演示） ----------
 const concepts = ref<ConceptNode[]>([])
@@ -263,6 +276,11 @@ const currentConceptId = ref<string | null>(null)
 const lastFeedback = ref('')
 const draft = ref('')
 const qaListRef = ref<HTMLElement | null>(null)
+const lessonBodyRef = ref<HTMLElement | null>(null)
+
+/** 区级「没懂」累计（conceptId:sectionKey → 次数；达阈值提示拆子概念） */
+const notUnderstandCounts = reactive(new Map<string, number>())
+const NOT_UNDERSTAND_THRESHOLD = 2
 
 // ---------- 大纲树状态（左栏知识地图） ----------
 /** 展开的分支/模块节点 id 集合 */
@@ -272,13 +290,16 @@ const mapKeyword = ref('')
 /** 掌握度过滤：all / todo / learning / mastered */
 const mapFilter = ref<'all' | 'todo' | 'learning' | 'mastered'>('all')
 
-/** 加载主题数据（路由切换时重建） */
+/** 加载主题数据（路由切换/本实例重新激活时）。
+ *  原型：直接引用 mock 响应式单例（不拷贝）——「懂了」等写操作即全局进度，
+ *  主题列表页与知识全景实时反映；正式版改为唯一 IPC 数据源 + 事件刷新。 */
 function loadSpace(): void {
   if (!space.value) return
-  concepts.value = space.value.concepts.map(c => ({ ...c }))
-  turns.value = space.value.turns.map(t => ({ ...t }))
+  concepts.value = space.value.concepts
+  turns.value = space.value.turns
   currentConceptId.value = null
   lastFeedback.value = ''
+  notUnderstandCounts.clear()
   expandedBranches.clear()
   // 默认选中第一个有讲义的概念；无则选第一个待学/学习中（演示）
   const firstWithLesson = concepts.value.find(c => c.lessonId)
@@ -293,11 +314,27 @@ function loadSpace(): void {
   }
 }
 
+/** Atlas「去学它」深链：query.concept 定位到目标概念后清掉 query */
+function consumeConceptQuery(): void {
+  if (route.path !== ownPath) return
+  const cid = route.query.concept
+  if (typeof cid !== 'string' || !cid) return
+  const c = concepts.value.find(x => x.id === cid)
+  if (c) {
+    expandPathTo(c.id)
+    selectConcept(c)
+  }
+  router.replace({ path: ownPath })
+}
+
 watch(
   () => route.params.id,
-  () => loadSpace()
-  // 首次加载由 onMounted 触发（此时 treeRoots 等 computed 已初始化）
+  () => {
+    // 仅当路由落在本实例自己的路径上才重载（keep-alive 下其他实例不串状态）
+    if (route.path === ownPath) loadSpace()
+  }
 )
+watch(() => route.query.concept, consumeConceptQuery)
 
 // ==================== 大纲树渲染逻辑 ====================
 
@@ -346,8 +383,9 @@ function branchStats(node: KnowledgeTreeNode): { mastered: number; total: number
   return { mastered, total }
 }
 
-/** 分支下是否存在"通过过滤的可见叶子" */
+/** 分支下是否存在"通过过滤的可见叶子"（有关键词时，分支自身命中也算可见） */
 function hasVisibleLeaf(node: KnowledgeTreeNode): boolean {
+  if (mapKeyword.value.trim() && keywordHit(node)) return true
   if (!node.children?.length) return false
   return node.children.some(n => {
     if (n.conceptId) {
@@ -477,12 +515,11 @@ const masteryPercent = computed(() => {
   return Math.round((mastered / concepts.value.length) * 100)
 })
 
-const stats = computed(() => space.value ? spaceStats(space.value) : null)
+const masteredCount = computed(() => concepts.value.filter(c => c.mastery === 'mastered').length)
 
 const progressText = computed(() => {
-  if (!stats.value) return ''
   const learningNames = concepts.value.filter(c => c.mastery === 'learning').map(c => c.name)
-  return `已理解 ${stats.value.mastered} / ${concepts.value.length} 个概念${learningNames.length ? ` · 学习中：${learningNames.join('、')}` : ''}`
+  return `已理解 ${masteredCount.value} / ${concepts.value.length} 个概念${learningNames.length ? ` · 学习中：${learningNames.join('、')}` : ''}`
 })
 
 const currentLearningName = computed(() =>
@@ -491,12 +528,21 @@ const currentLearningName = computed(() =>
 
 const openQuestionCount = computed(() => turns.value.filter(t => t.suggestsResearch).length)
 
-/** 区级没懂：记录反馈，原型演示提示（正式版 → dl 拆解信号） */
+/** 区级没懂：按 (概念,区) 累计，达阈值提示拆子概念（正式版 → dl 拆解信号） */
 function onSectionNotUnderstand(sec: CardSection): void {
   const c = concepts.value.find(x => x.id === currentConceptId.value)
-  lastFeedback.value = c
-    ? `已记下：你在「${c.name}」的「${sec.title ?? sec.key}」区没懂——之后会拆细这块单独讲`
-    : '已记录'
+  if (!c) {
+    lastFeedback.value = '已记录'
+    return
+  }
+  const key = `${c.id}:${sec.key}`
+  const count = (notUnderstandCounts.get(key) ?? 0) + 1
+  notUnderstandCounts.set(key, count)
+  const sectionName = sec.title ?? sec.key
+  lastFeedback.value =
+    count >= NOT_UNDERSTAND_THRESHOLD
+      ? `「${c.name}」的「${sectionName}」区已 ${count} 次没懂——将拆成更小的子概念单独讲（演示）`
+      : `已记下：你在「${c.name}」的「${sectionName}」区没懂——之后会拆细这块单独讲`
 }
 
 /** 当前概念的直接关系邻居（related 区数据：图关系边派生，与门控/图谱一致） */
@@ -536,11 +582,7 @@ function spaceId(): string {
   return String(route.params.id ?? '')
 }
 
-function conceptById(id: string): ConceptNode | undefined {
-  return concepts.value.find(c => c.id === id)
-}
-
-function dotClass(m: Mastery): string {
+function dotClass(m?: Mastery): string {
   return m === 'mastered' ? 'dot-mastered' : m === 'learning' ? 'dot-learning' : 'dot-todo'
 }
 
@@ -552,6 +594,10 @@ function goBack(): void {
 function selectConcept(c: ConceptNode): void {
   currentConceptId.value = c.id
   lastFeedback.value = ''
+  // 讲义滚动复位：读完长文切下一个概念，应从头看起
+  nextTick(() => {
+    if (lessonBodyRef.value) lessonBodyRef.value.scrollTop = 0
+  })
 }
 
 // ---------- 交互：掌握度反馈 ----------
@@ -570,7 +616,9 @@ function markConfused(): void {
 }
 
 // ---------- 交互：追问（原型：追加演示回复；无 AI 后端） ----------
-function ask(): void {
+function ask(e?: Event): void {
+  // 中文 IME 组合期间的 Enter 是"确认候选词"，不是发送
+  if (e instanceof KeyboardEvent && e.isComposing) return
   const q = draft.value.trim()
   if (!q) return
   turns.value.push({ role: 'user', text: q })
@@ -583,7 +631,8 @@ function ask(): void {
   scrollQaToBottom()
 }
 
-/** 找下一个可学知识点：前置已就绪（或无前置）且未掌握；按树顺序优先 */
+/** 找下一个可学知识点：前置已就绪（或无前置）且未掌握；按树顺序优先。
+ *  兜底（全锁场景）落到第一个未掌握者时，显式提示门控未就绪而非静默带过去。 */
 function simulateNextLesson(): void {
   if (!space.value) return
   const masteredIds = new Set(concepts.value.filter(c => c.mastery === 'mastered').map(c => c.id))
@@ -592,9 +641,14 @@ function simulateNextLesson(): void {
   const ready = (c: ConceptNode): boolean =>
     c.mastery !== 'mastered' && prereqIdsOf(c.id).every(p => masteredIds.has(p))
   const next = concepts.value.find(ready) ?? concepts.value.find(c => c.mastery !== 'mastered')
-  if (next) {
-    expandPathTo(next.id)
-    selectConcept(next)
+  if (!next) return
+  expandPathTo(next.id)
+  selectConcept(next)
+  if (!ready(next)) {
+    const missing = prereqIdsOf(next.id)
+      .filter(p => !masteredIds.has(p))
+      .map(p => concepts.value.find(c => c.id === p)?.name ?? p)
+    lastFeedback.value = `「${next.name}」的前置还没掌握：${missing.join('、')}——先学前置再来`
   }
 }
 
@@ -606,6 +660,13 @@ function scrollQaToBottom(): void {
 
 onMounted(() => {
   loadSpace()
+  consumeConceptQuery()
+  scrollQaToBottom()
+})
+
+/** keep-alive 回流（全景 → 学习空间）：消费可能在离开期间带来的深链参数 */
+onActivated(() => {
+  consumeConceptQuery()
   scrollQaToBottom()
 })
 </script>
@@ -617,6 +678,14 @@ onMounted(() => {
   height: 100%;
   overflow: hidden;
   background: var(--el-bg-color);
+}
+
+.space-missing {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
 .proto-banner {
@@ -929,9 +998,7 @@ onMounted(() => {
         font-size: 12px;
         color: var(--el-color-success);
         max-width: 240px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        line-height: 1.5;
       }
     }
   }

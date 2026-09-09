@@ -1,5 +1,5 @@
 <template>
-  <div ref="wrapperRef" class="markdown-viewer">
+  <div class="markdown-viewer">
     <!-- bytemd 只读渲染：懒加载（模块求值较重，避免阻塞首开） -->
     <component :is="viewerComp" v-if="viewerComp" :value="md" :plugins="plugins" />
     <el-skeleton v-else :rows="6" animated />
@@ -12,16 +12,20 @@
  * @module views/domain-learning/MarkdownViewer
  * @description 讲义渲染用（图文 / mermaid / 表格 / 公式）。bytemd 模块较重，
  *              故懒加载，避免阻塞页面首开。
+ *              注意：接入 AI 生成内容前需给 Viewer 配 sanitize（原型数据可信暂缺）。
  */
-import { ref, shallowRef, onMounted } from 'vue'
+import { shallowRef, onMounted, type Component } from 'vue'
+// CSS 静态副作用引入：随本组件 chunk 懒加载（组件本身已动态 import），且对 typecheck 友好
+import 'bytemd/dist/index.css'
+import 'highlight.js/styles/github.css'
+import 'katex/dist/katex.css'
 
-const props = defineProps<{
+defineProps<{
   md: string
 }>()
 
-const wrapperRef = ref<HTMLElement | null>(null)
-const viewerComp = shallowRef<any>(null)
-const plugins = shallowRef<any[]>([])
+const viewerComp = shallowRef<Component | null>(null)
+const plugins = shallowRef<unknown[]>([])
 
 function loadViewer(): void {
   Promise.all([
@@ -31,9 +35,6 @@ function loadViewer(): void {
     import('@bytemd/plugin-frontmatter'),
     import('@bytemd/plugin-math'),
     import('@bytemd/plugin-mermaid'),
-    import('bytemd/dist/index.css'),
-    import('highlight.js/styles/github.css'),
-    import('katex/dist/katex.css'),
   ]).then(([bytemd, gfm, highlight, frontmatter, math, mermaid]) => {
     plugins.value = [
       gfm.default(),
@@ -42,7 +43,9 @@ function loadViewer(): void {
       math.default(),
       mermaid.default(),
     ]
-    viewerComp.value = bytemd.Viewer
+    // 模块形态因构建互操作而异：ESM 命名导出或 CJS default 挂载，二者兜底
+    const mod = bytemd as unknown as { Viewer?: Component; default?: { Viewer: Component } }
+    viewerComp.value = mod.Viewer ?? mod.default?.Viewer ?? null
   })
 }
 

@@ -5,6 +5,7 @@
  *              演示领域：RAG（主示例，完整）+ 扩散模型（第二示例，轻量）。
  *              结构：一个主题 = 概念节点 + 关系边 + 讲义 + 追问对话。
  */
+import { reactive } from 'vue'
 
 /** 概念掌握度：mastered=已理解（绿） learning=学习中（橙） todo=待学（灰） */
 export type Mastery = 'mastered' | 'learning' | 'todo'
@@ -121,19 +122,6 @@ export interface KnowledgeTreeNode {
   children?: KnowledgeTreeNode[]
 }
 
-/** 收集树中全部叶子概念 id（深度优先） */
-export function collectLeafConceptIds(nodes: KnowledgeTreeNode[]): string[] {
-  const out: string[] = []
-  const walk = (list: KnowledgeTreeNode[]) => {
-    for (const n of list) {
-      if (n.conceptId) out.push(n.conceptId)
-      if (n.children?.length) walk(n.children)
-    }
-  }
-  walk(nodes)
-  return out
-}
-
 /** 由概念表构建默认两级大纲树（分组 = 树一级），老主题兼容 */
 export function fallbackTreeOf(space: SpaceProject): KnowledgeTreeNode[] {
   const byGroup = new Map<string, ConceptNode[]>()
@@ -197,12 +185,12 @@ const ragLessons: LessonDoc[] = [
 
 \`\`\`mermaid
 flowchart LR
-  U[用户提问] --> Q[问题处理]
-  Q --> R[检索: 向量库 TopK]
-  R --> C[组装上下文]
-  C --> G[大模型生成答案]
-  G --> A[带引用的回答]
-  D[(文档库)] --> CH[切分] --> EM[向量化] --> DB[(向量库)]
+  U["用户提问"] --> Q["问题处理"]
+  Q --> R["检索：向量库 TopK"]
+  R --> C["组装上下文"]
+  C --> G["大模型生成答案"]
+  G --> A["带引用的回答"]
+  D[("文档库")] --> CH["切分"] --> EM["向量化"] --> DB[("向量库")]
   DB -.-> R
 \`\`\`
 
@@ -379,14 +367,14 @@ const dmLessons: LessonDoc[] = [
 
 \`\`\`mermaid
 flowchart LR
-  A[真实图像] -->|逐步加噪声| N[纯噪声]
-  N -->|模型学去噪| A2[还原图像]
-  subgraph 训练
+  A["真实图像"] -->|逐步加噪声| N["纯噪声"]
+  N -->|模型学去噪| A2["还原图像"]
+  subgraph SG1["训练"]
     A
     N
   end
-  subgraph 生成
-    Z[随机噪声] --> D[去噪网络] --> O[新图像]
+  subgraph SG2["生成"]
+    Z["随机噪声"] --> D["去噪网络"] --> O["新图像"]
   end
 \`\`\`
 
@@ -770,7 +758,7 @@ function buildMlConcepts(): ConceptNode[] {
   const out: ConceptNode[] = []
   ML_GROUPS.forEach((g, bi) => {
     g.modules.forEach((m, mi) => {
-      m.leaves.forEach(([suf, name, en, kind, desc], li) => {
+      m.leaves.forEach(([suf, name, en, kind, desc], _li) => {
         // 演示进度：数学基础分支 mastered，监督学习部分 learning，其余 todo
         let mastery: Mastery = 'todo'
         if (bi === 0) mastery = 'mastered'
@@ -814,7 +802,7 @@ function buildMlTree(): KnowledgeTreeNode[] {
     children: g.modules.map(m => ({
       id: `m-${m.module}`,
       name: m.module,
-      children: m.leaves.map(([suf, name]) => {
+      children: m.leaves.map(([suf, _name]) => {
         const c = mlConcepts.find(x => x.id === `ml-${suf}`)!
         return { id: `c-${c.id}`, name: c.name, conceptId: c.id }
       }),
@@ -850,12 +838,12 @@ const mlLessons: LessonDoc[] = [
 
 \`\`\`mermaid
 flowchart LR
-  X[特征 x] --> L[线性组合 z = w·x+b]
-  L --> S[Sigmoid σ(z)]
-  S --> P[概率 p ∈ 0~1]
-  P --> D{>0.5?}
-  D -->|是| C1[类别 1]
-  D -->|否| C2[类别 0]
+  X["特征 x"] --> L["线性组合 z = w·x+b"]
+  L --> S["Sigmoid σ(z)"]
+  S --> P["概率 p ∈ 0~1"]
+  P --> D{"大于 0.5 ?"}
+  D -->|是| C1["类别 1"]
+  D -->|否| C2["类别 0"]
 \`\`\`
 
 ## 为什么输出能当概率
@@ -877,7 +865,7 @@ Sigmoid 是平滑、单调、有界的；配合**交叉熵损失**训练后，�
 // 全部主题 + 工具函数
 // ===================================================================
 
-export const demoSpaces: SpaceProject[] = [
+export const demoSpaces: SpaceProject[] = reactive([
   {
     id: 'rag',
     name: '检索增强生成（RAG）入门',
@@ -934,7 +922,7 @@ export const demoSpaces: SpaceProject[] = [
     turns: mlTurns,
     tree: mlTree,
   },
-]
+])
 
 // ===================================================================
 // 块化知识卡片示例（content-template-design v2：essence_type + blocks）
@@ -989,14 +977,14 @@ attachCard('llmfrontier', 'moe', {
 
 \`\`\`mermaid
 flowchart LR
-  X[token] --> R[Router]
-  X --> E1[专家1]
-  X --> E2[专家2]
-  R -- top-2 --> E1
-  R -- top-2 --> E2
-  E1 --> O((加权和))
+  X["token"] --> R["Router"]
+  X --> E1["专家1"]
+  X --> E2["专家2"]
+  R -- "top-2" --> E1
+  R -- "top-2" --> E2
+  E1 --> O(("加权和"))
   E2 --> O
-  O --> Y[输出]
+  O --> Y["输出"]
 \`\`\`
 
 第 $i$ 个专家的门控概率为 softmax：
@@ -1097,59 +1085,12 @@ export function findSpace(id: string): SpaceProject | undefined {
   return demoSpaces.find(s => s.id === id)
 }
 
-/** 主题学习进度统计（列表卡片用） */
+/** 主题学习进度统计（列表卡片用；空概念主题守卫除零） */
 export function spaceStats(space: SpaceProject): { mastered: number; learning: number; todo: number; percent: number } {
+  const total = space.concepts.length
   const mastered = space.concepts.filter(c => c.mastery === 'mastered').length
   const learning = space.concepts.filter(c => c.mastery === 'learning').length
   const todo = space.concepts.filter(c => c.mastery === 'todo').length
-  const percent = Math.round((mastered / space.concepts.length) * 100)
+  const percent = total > 0 ? Math.round((mastered / total) * 100) : 0
   return { mastered, learning, todo, percent }
-}
-
-/** mermaid 节点 id 安全化（概念 id 已是 kebab 形式，转驼峰防歧义） */
-function safeNodeId(id: string): string {
-  return id.replace(/[^a-zA-Z0-9]/g, '_')
-}
-
-/** 概念 → mermaid 节点标签（显示名 + 英文，纯文本避免 mermaid 渲染 html 标签问题） */
-function nodeLabel(c: ConceptNode): string {
-  return `${c.name}·${c.en}`
-}
-
-/**
- * 生成"知识体系全景图"的 mermaid 源码：
- * - 按概念分组做 subgraph；
- * - 节点按掌握度着色（mastered 绿 / learning 橙 / todo 灰）；
- * - 关系边带类型标签。
- */
-export function buildKnowledgeGraphMermaid(space: SpaceProject): string {
-  const groupOrder: string[] = []
-  const groups = new Map<string, ConceptNode[]>()
-  for (const c of space.concepts) {
-    if (!groups.has(c.group)) {
-      groups.set(c.group, [])
-      groupOrder.push(c.group)
-    }
-    groups.get(c.group)!.push(c)
-  }
-
-  const lines: string[] = ['flowchart LR']
-  lines.push('  classDef mastered fill:#e1f3d8,stroke:#67c23a,color:#1f5130')
-  lines.push('  classDef learning fill:#fdf3e0,stroke:#e6a23c,color:#7a4d00')
-  lines.push('  classDef todo fill:#f4f4f5,stroke:#a8abb2,color:#606266')
-
-  for (const g of groupOrder) {
-    const cs = groups.get(g)!
-    lines.push(`  subgraph sg_${safeNodeId(g)}["${g}"]`)
-    for (const c of cs) {
-      lines.push(`    ${safeNodeId(c.id)}["${nodeLabel(c)}"]:::${c.mastery}`)
-    }
-    lines.push('  end')
-  }
-
-  for (const r of space.relations) {
-    lines.push(`  ${safeNodeId(r.source)} -->|${r.type}| ${safeNodeId(r.target)}`)
-  }
-
-  return lines.join('\n')
 }

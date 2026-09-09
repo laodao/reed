@@ -109,12 +109,12 @@ const finNodes: AtlasNode[] = [
   { id: 'aml', name: '反洗钱', type: 'concept', group: '核心概念', mastery: 'mastered', desc: '识别并把阻断"非法所得合法化"的行为与资金链。', related: ['义务主体范围', '三大洗钱阶段'] },
   { id: 'cdd', name: '客户尽职调查', type: 'concept', group: '核心概念', mastery: 'learning', desc: '建立业务关系前识别客户身份、了解交易目的并评估风险。', related: ['KYC 与 CDD 差异', '强化尽调 EDD'] },
   { id: 'kyc', name: '客户身份识别', type: 'concept', group: '核心概念', desc: '核实客户真实身份，是 CDD 的第一步。' },
-  { id: 'uboC', name: '受益所有人识别', type: 'concept', group: '核心概念', desc: '穿透识别实际控制人/受益所有人。' },
-  { id: 'amlLaw', name: '《反洗钱法》(2025 修订)', type: 'regulation', group: '法规依据', desc: '反洗钱义务的法律源头；新法强化特定非金融机构义务。', attrs: { 效力: '法律', 施行: '2026-01-01' }, related: ['义务主体扩展', '处罚力度变化'] },
+  { id: 'ubo', name: '受益所有人识别', type: 'concept', group: '核心概念', desc: '穿透识别实际控制人/受益所有人。' },
+  { id: 'law', name: '《反洗钱法》(2025 修订)', type: 'regulation', group: '法规依据', desc: '反洗钱义务的法律源头；新法强化特定非金融机构义务。', attrs: { 效力: '法律', 施行: '2026-01-01' }, related: ['义务主体扩展', '处罚力度变化'] },
   { id: 'pbocRule', name: '人民银行反洗钱规定', type: 'regulation', group: '法规依据', desc: '将法律落到金融机构具体内控与报告要求。', attrs: { 效力: '部门规章' } },
   { id: 'fatf', name: 'FATF 国际标准', type: 'standard', group: '法规依据', desc: '四十条建议：反洗钱/反恐融资国际基线，各国互评估依据。', attrs: { 组织: '金融行动特别工作组' } },
   { id: 'cddProc', name: '客户尽调作业流程', type: 'procedure', group: '操作要求', desc: '接洽→KYC→风险评级→(高风险)EDD→持续监测的落地步骤。', attrs: { 触发: '建立业务关系前' }, related: ['评级矩阵'] },
-  { id: 'strProc', name: '可疑交易报告流程', type: 'procedure', group: '操作要求', desc: '监测→甄别→内部报告→向监测中心提交 STR 的时限化流程。', attrs: { 时限: '可疑交易发生后规定时限内' } },
+  { id: 'str', name: '可疑交易报告流程', type: 'procedure', group: '操作要求', desc: '监测→甄别→内部报告→向监测中心提交 STR 的时限化流程。', attrs: { 时限: '可疑交易发生后规定时限内' } },
   { id: 'sancCheck', name: '制裁名单筛查', type: 'procedure', group: '操作要求', desc: '交易对手/受益人与制裁名单比对，命中即冻结拒绝。' },
   { id: 'amlCase', name: '某外资银行反洗钱罚单', type: 'case', group: '案例', desc: '因 CDD 缺失与可疑监测失效被重罚——合规失效的典型样本。', attrs: { 领域: '跨境支付' }, related: ['处罚要点拆解'] },
   { id: 'camlm', name: '反洗钱监测分析中心', type: 'person', group: '监管与主体', desc: '接收并分析金融机构报送的可疑交易报告。', attrs: { 性质: '监测机构' } },
@@ -122,17 +122,17 @@ const finNodes: AtlasNode[] = [
 ]
 
 const finEdges: AtlasEdge[] = [
-  { source: 'amlLaw', target: 'aml', type: '约束' },
-  { source: 'amlLaw', target: 'cdd', type: '要求' },
+  { source: 'law', target: 'aml', type: '约束' },
+  { source: 'law', target: 'cdd', type: '要求' },
   { source: 'pbocRule', target: 'cddProc', type: '细化' },
-  { source: 'fatf', target: 'amlLaw', type: '对标' },
+  { source: 'fatf', target: 'law', type: '对标' },
   { source: 'cdd', target: 'kyc', type: '包含' },
-  { source: 'cdd', target: 'uboC', type: '深化' },
+  { source: 'cdd', target: 'ubo', type: '深化' },
   { source: 'cdd', target: 'cddProc', type: '落地为' },
   { source: 'cddProc', target: 'rp', type: '遵循' },
-  { source: 'aml', target: 'strProc', type: '手段' },
+  { source: 'aml', target: 'str', type: '手段' },
   { source: 'aml', target: 'sancCheck', type: '手段' },
-  { source: 'strProc', target: 'camlm', type: '报送' },
+  { source: 'str', target: 'camlm', type: '报送' },
   { source: 'amlCase', target: 'aml', type: '反面印证' },
   { source: 'amlCase', target: 'cddProc', type: '失效点' },
   { source: 'kyc', target: 'cddProc', type: '步骤' },
@@ -146,10 +146,10 @@ const llmNodes: AtlasNode[] = [
   { id: 'moe', name: '混合专家 MoE', type: 'method', group: '基础理论', desc: '稀疏激活子网络：同算力更多参数。', attrs: { 典型: 'Switch/GShard/Mixtral' } },
   { id: 'rft', name: '推理时扩展', type: 'method', group: '训练与对齐', desc: '推理时多步思考/搜索换取更强能力（o1 类）。', related: ['测试时计算'] },
   { id: 'rftPaper', name: 'OpenAI o1 技术报告', type: 'paper', group: '训练与对齐', attrs: { 年份: '2024', 组织: 'OpenAI' }, desc: '首次系统展示推理时扩展（test-time scaling）。' },
-  { id: 'rhlf', name: 'RLHF/DPO 对齐', type: 'method', group: '训练与对齐', desc: '让模型行为符合人类偏好与意图。' },
+  { id: 'alignment', name: 'RLHF/DPO 对齐', type: 'method', group: '训练与对齐', desc: '让模型行为符合人类偏好与意图。' },
   { id: 'instructPaper', name: 'InstructGPT 论文', type: 'paper', group: '训练与对齐', attrs: { 年份: '2022', 组织: 'OpenAI' }, desc: 'RLHF 规模化应用的奠基工作。' },
-  { id: 'hallu', name: '幻觉与可验证性', type: 'controversy', group: '评估与开放问题', desc: '模型生成无依据内容；RAG/引用是缓解方向。', related: ['可验证生成'] },
-  { id: 'bench', name: 'MMLU/GSM8K 等基准', type: 'benchmark', group: '评估与开放问题', desc: '标准评测集；前沿模型渐趋饱和。', attrs: { 用途: '衡量知识与推理' } },
+  { id: 'hallucination', name: '幻觉与可验证性', type: 'controversy', group: '评估与开放问题', desc: '模型生成无依据内容；RAG/引用是缓解方向。', related: ['可验证生成'] },
+  { id: 'benchmark', name: 'MMLU/GSM8K 等基准', type: 'benchmark', group: '评估与开放问题', desc: '标准评测集；前沿模型渐趋饱和。', attrs: { 用途: '衡量知识与推理' } },
   { id: 'benchSat', name: '基准饱和之争', type: 'controversy', group: '评估与开放问题', desc: '静态基准区分度下降，评测方法论面临更新。' },
   { id: 'kv', name: 'KV Cache 优化', type: 'method', group: '工程实践', desc: '推理吞吐/显存优化的关键课题。' },
   { id: 'scalingPaper', name: 'Scaling Laws(Kaplan)', type: 'paper', group: '基础理论', attrs: { 年份: '2020' }, desc: '提出参数量-数据-算力的幂律关系。' },
@@ -160,15 +160,15 @@ const llmEdges: AtlasEdge[] = [
   { source: 'scalingPaper', target: 'scaling', type: '提出' },
   { source: 'scaling', target: 'arch', type: '驱动' },
   { source: 'arch', target: 'moe', type: '分支' },
-  { source: 'scaling', target: 'rhlf', type: '伴生问题' },
-  { source: 'instructPaper', target: 'rhlf', type: '奠基' },
-  { source: 'rhlf', target: 'hallu', type: '相关议题' },
+  { source: 'scaling', target: 'alignment', type: '伴生问题' },
+  { source: 'instructPaper', target: 'alignment', type: '奠基' },
+  { source: 'alignment', target: 'hallucination', type: '相关议题' },
   { source: 'rftPaper', target: 'rft', type: '提出' },
   { source: 'rft', target: 'benchSat', type: '触发争议' },
-  { source: 'bench', target: 'hallu', type: '暴露' },
-  { source: 'benchSat', target: 'bench', type: '质疑' },
+  { source: 'benchmark', target: 'hallucination', type: '暴露' },
+  { source: 'benchSat', target: 'benchmark', type: '质疑' },
   { source: 'arch', target: 'kv', type: '工程制约' },
-  { source: 'agent', target: 'hallu', type: '放大风险' },
+  { source: 'agent', target: 'hallucination', type: '放大风险' },
   { source: 'agent', target: 'rft', type: '受益' },
 ]
 
@@ -202,9 +202,22 @@ function buildFallbackAtlas(spaceId: string): AtlasGraph | null {
   return { spaceId, nodes, edges: space.relations }
 }
 
-/** 取某空间的 Atlas 图谱（深度优先，回退基础） */
+/** 取某空间的 Atlas 图谱（深度优先，回退基础）。
+ *  深度图谱节点 id 与学习空间概念池对齐（dl_concept.id 语义），
+ *  掌握度以学习侧实时值为准（无概念对应的纯图谱节点保留演示值）。 */
 export function atlasForSpace(spaceId: string): AtlasGraph | null {
-  return DEEP_ATLAS[spaceId] ?? buildFallbackAtlas(spaceId)
+  const deep = DEEP_ATLAS[spaceId]
+  if (deep) {
+    const space = findSpace(spaceId)
+    if (!space) return deep
+    const masteryById = new Map(space.concepts.map(c => [c.id, c.mastery]))
+    const nodes = deep.nodes.map(n => {
+      const m = masteryById.get(n.id)
+      return m && m !== n.mastery ? { ...n, mastery: m } : n
+    })
+    return { ...deep, nodes }
+  }
+  return buildFallbackAtlas(spaceId)
 }
 
 /** 取某空间的领域画像（无深度画像时给通用） */

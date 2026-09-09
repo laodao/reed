@@ -31,11 +31,11 @@
         <p class="topic-goal">目标：{{ s.goal }}</p>
 
         <div class="card-progress">
-          <el-progress :percentage="stats(s).percent" :stroke-width="8" />
+          <el-progress :percentage="statsOf(s.id).percent" :stroke-width="8" />
           <div class="progress-labels">
-            <span><i class="dot dot-mastered" />已理解 {{ stats(s).mastered }}</span>
-            <span><i class="dot dot-learning" />学习中 {{ stats(s).learning }}</span>
-            <span><i class="dot dot-todo" />待学 {{ stats(s).todo }}</span>
+            <span><i class="dot dot-mastered" />已理解 {{ statsOf(s.id).mastered }}</span>
+            <span><i class="dot dot-learning" />学习中 {{ statsOf(s.id).learning }}</span>
+            <span><i class="dot dot-todo" />待学 {{ statsOf(s.id).todo }}</span>
           </div>
         </div>
 
@@ -74,17 +74,28 @@
  * 领域共学空间 —— 主题列表页（前端原型）
  * @module views/domain-learning/DomainLearningHome
  * @description 多个学习主题的入口列表：卡片展示主题目标与掌握度进度，点击进入三栏空间页。
+ *              进度读响应式 mock 单例——学习空间标记「懂了」后回列表即见更新。
  */
+import { computed } from 'vue'
 import { Reading, Plus, ArrowRight } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { demoSpaces, spaceStats, type SpaceProject } from './mock-data'
+
+// keep-alive 缓存按组件名匹配（与路由名一致）
+defineOptions({ name: 'DomainLearningHome' })
 
 const router = useRouter()
 
 const spaces: SpaceProject[] = demoSpaces
 
-function stats(s: SpaceProject) {
-  return spaceStats(s)
+/** 进度统计一次算全（demoSpaces 是响应式单例，学习侧写回后此处自动刷新） */
+const statsById = computed(() => {
+  const map = new Map<string, ReturnType<typeof spaceStats>>()
+  for (const s of spaces) map.set(s.id, spaceStats(s))
+  return map
+})
+function statsOf(id: string) {
+  return statsById.value.get(id) ?? { mastered: 0, learning: 0, todo: 0, percent: 0 }
 }
 
 function enter(id: string): void {

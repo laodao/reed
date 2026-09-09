@@ -65,8 +65,6 @@
           :r="nodeR"
           :fill="nodeTypeMeta(node.type).color"
           class="node-circle"
-          stroke="#fff"
-          stroke-width="1.5"
         >
           <title>{{ node.name }}（{{ nodeTypeMeta(node.type).label }}）</title>
         </circle>
@@ -75,7 +73,7 @@
           v-if="node.mastery === 'learning'"
           :r="nodeR + 3"
           fill="none"
-          stroke="#E6A23C"
+          class="mastery-ring"
           stroke-width="1.5"
           stroke-dasharray="3 2"
         />
@@ -103,6 +101,8 @@ const props = defineProps<{
   edges: AtlasEdge[]
   /** 父级下钻控制：置为非空 = 只显示该节点及其一阶邻居（子图谱模式） */
   focusId?: string | null
+  /** 选中态由父级持有（受控）：树/关系列表/图内点击三方同步高亮 */
+  selectedId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -164,8 +164,8 @@ function mouseToGraph(e: MouseEvent): { x: number; y: number } {
 
 function onNodeMouseDown(node: AtlasNode, e: MouseEvent): void {
   e.stopPropagation()
-  // 与长文 GraphView 同源：按下即选中（高亮/档案立即生效），拖动/点击区分在 mouseup
-  selectedId.value = node.id
+  // 与长文 GraphView 同源：按下即选中（高亮/档案立即生效），拖动/点击区分在 mouseup；
+  // 选中态由父级持有，这里只上抛
   emit('select', node)
   const p = positions.value[node.id] || { x: W / 2, y: H / 2 }
   dragNode = { id: node.id, sx: e.clientX, sy: e.clientY, px: p.x, py: p.y, moved: false }
@@ -199,7 +199,6 @@ function onSvgMouseUp(e: MouseEvent): void {
   }
   const moved = panStart && (Math.abs(e.clientX - panStart.x) > 4 || Math.abs(e.clientY - panStart.y) > 4)
   if (panStart && !moved) {
-    selectedId.value = null
     emit('select', null)
   }
   panStart = null
@@ -235,32 +234,27 @@ const visibleEdges = computed(() => {
   return props.edges.filter(e => ids.has(e.source) && ids.has(e.target))
 })
 
-/** 选中态（父级回写 props.focusId 与本地 selectedId 保持一致；用本地 ref 由父同步） */
-const selectedId = ref<string | null>(null)
-watch(
-  () => props.focusId,
-  v => (selectedId.value = v ?? null)
-)
+/** 选中态（父级持有，经 props.selectedId 下发；模板与高亮逻辑直接读 prop） */
 
 /** 一阶邻居集合（用于高亮/淡化） */
 const neighborSet = computed(() => {
   const set = new Set<string>()
-  if (!selectedId.value) return set
+  if (!props.selectedId) return set
   for (const e of props.edges) {
-    if (e.source === selectedId.value) set.add(e.target)
-    if (e.target === selectedId.value) set.add(e.source)
+    if (e.source === props.selectedId) set.add(e.target)
+    if (e.target === props.selectedId) set.add(e.source)
   }
   return set
 })
 
 function isDimmedNode(id: string): boolean {
-  if (!selectedId.value) return false
-  if (id === selectedId.value) return false
+  if (!props.selectedId) return false
+  if (id === props.selectedId) return false
   return !neighborSet.value.has(id)
 }
 
 function isActiveEdge(e: AtlasEdge): boolean {
-  return !!selectedId.value && (e.source === selectedId.value || e.target === selectedId.value)
+  return !!props.selectedId && (e.source === props.selectedId || e.target === props.selectedId)
 }
 
 /** 节点位置（布局后 + 手动拖动共用） */
@@ -380,9 +374,13 @@ function collidePass(next: Record<string, { x: number; y: number }>, list: Atlas
   return moved
 }
 
-// 数据或聚焦变化时重布局
-watch([() => props.nodes, () => props.edges, () => props.focusId], () => {
+// 数据变化时重布局；focusId（下钻/回全图）不重排——保留既有位置（含手工拖动），
+// 仅当切换后存在无位置的可见节点（如深度链接直入子图谱）时兜底重算
+watch([() => props.nodes, () => props.edges], () => {
   layout()
+})
+watch(() => props.focusId, () => {
+  if (visibleNodes.value.some(n => !positions.value[n.id])) layout()
 })
 onMounted(layout)
 </script>
@@ -506,6 +504,14 @@ onMounted(layout)
   &.selected .node-circle {
     stroke: var(--el-color-primary);
     stroke-width: 3;
+  }
+  .node-circle {
+    // 节点描边用背景色做"呼吸感"分隔（跟随主题，深浅色都对）
+    stroke: var(--el-bg-color);
+    stroke-width: 1.5;
+  }
+  .mastery-ring {
+    stroke: var(--el-color-warning);
   }
   &.dim {
     opacity: 0.18;

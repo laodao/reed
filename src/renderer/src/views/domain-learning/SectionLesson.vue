@@ -77,11 +77,14 @@ import { reactive } from 'vue'
 import MarkdownViewer from './MarkdownViewer.vue'
 import type { CardSection, ConceptCard, RelatedRef } from './mock-data'
 
-const props = defineProps<{
-  card: ConceptCard
-  /** 相关知识点（父级由关系边派生后传入） */
-  related?: RelatedRef[]
-}>()
+const props = withDefaults(
+  defineProps<{
+    card: ConceptCard
+    /** 相关知识点（父级由关系边派生后传入） */
+    related?: RelatedRef[]
+  }>(),
+  { related: () => [] }
+)
 
 const emit = defineEmits<{
   notUnderstand: [section: CardSection]

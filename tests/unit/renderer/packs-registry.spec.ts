@@ -184,14 +184,17 @@ describe('installBuiltinPackages（内置包装配）', () => {
       '/workflow', '/workflow/editor/w1', '/workflow-run/tok', '/workflow/runs/d1', '/workflow/run/r1',
       '/apps', '/apps/a1', '/apps/a1/session/s1', '/app-share/tok',
       '/assets',
+      // 领域共学空间原型（2026-09-08）
+      '/domain-learning', '/domain-learning/rag', '/domain-learning/rag/atlas',
     ]) {
       expect(router.resolve(path).matched.length, `路由 ${path} 应已注册`).toBeGreaterThan(0)
     }
-    // 菜单顺序与原静态菜单一致（二期 4 个原壳位包先注册，锚点语义不变）
+    // 菜单顺序（domain-learning 以 knowledge-base 为锚点插入其前；
+    // agent-tasks 菜单位已于 M5.5 由 agent-console 取代）
     const paths = flattenMenuItems(mainMenuItems).map(i => i.path)
     expect(paths).toEqual([
       '/', '/chat', '/portrait', '/longwriting', '/episode-production',
-      '/knowledge-base', '/agent-todos', '/agent-tasks', '/agent-memory', '/workflow',
+      '/domain-learning', '/knowledge-base', '/agent-todos', '/agent-console', '/agent-memory', '/workflow',
       '/apps', '/diary', '/assets', '/skills',
     ])
   })
