@@ -132,6 +132,7 @@ describe('BibleQueryService（统一读模型）', () => {
 const USAGE = { inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 5, noCache: 5 }, totalTokens: { total: 15, noCache: 15 } }
 
 function textStream(text: string): LanguageModel {
+  // 整理器直调（doGenerate）——两种实现都给，防路径切换脆断
   return new MockLanguageModelV3({
     provider: 'test', modelId: 'mock',
     doStream: async () => ({
@@ -142,6 +143,12 @@ function textStream(text: string): LanguageModel {
         { type: 'text-end', id: 't' },
         { type: 'finish', finishReason: { unified: 'stop', raw: undefined }, usage: USAGE },
       ] }),
+    }),
+    doGenerate: async () => ({
+      content: [{ type: 'text', text }],
+      finishReason: { unified: 'stop', raw: undefined },
+      usage: USAGE,
+      warnings: [],
     }),
   }) as unknown as LanguageModel
 }
@@ -166,15 +173,14 @@ describe('整理器 kind:<key>（动态分类）', () => {
     const seen: string[] = []
     const model = new MockLanguageModelV3({
       provider: 'test', modelId: 'mock',
-      doStream: async (opts: any) => {
+      doGenerate: async (opts: any) => {
         seen.push(JSON.stringify(opts.prompt))
-        return { stream: simulateReadableStream({ chunks: [
-          { type: 'stream-start', warnings: [] },
-          { type: 'text-start', id: 't' },
-          { type: 'text-delta', id: 't', delta: '{"name":"大周王朝","stance":"中立","note":"分封诸侯"}' },
-          { type: 'text-end', id: 't' },
-          { type: 'finish', finishReason: { unified: 'stop', raw: undefined }, usage: USAGE },
-        ] }) }
+        return {
+          content: [{ type: 'text', text: '{"name":"大周王朝","stance":"中立","note":"分封诸侯"}' }],
+          finishReason: { unified: 'stop', raw: undefined },
+          usage: USAGE,
+          warnings: [],
+        }
       },
     }) as unknown as LanguageModel
     const svc = harness(model, db)

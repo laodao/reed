@@ -38,11 +38,19 @@ function textStreamChunks(text: string): Array<Record<string, unknown>> {
 }
 
 function scriptedModel(streams: string[]): LanguageModel {
+  // 整理器直调（generateText→doGenerate）与 loop（streamText→doStream）共用同一脚本队列
   const q = [...streams]
+  const next = () => (q.length > 0 ? q.shift()! : '{}')
   return new MockLanguageModelV3({
     provider: 'test',
     modelId: 'mock',
-    doStream: async () => ({ stream: simulateReadableStream({ chunks: textStreamChunks(q.length > 0 ? q.shift()! : '{}') }) }),
+    doStream: async () => ({ stream: simulateReadableStream({ chunks: textStreamChunks(next()) }) }),
+    doGenerate: async () => ({
+      content: [{ type: 'text', text: next() }],
+      finishReason: { unified: 'stop', raw: undefined },
+      usage: { inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 5, noCache: 5 }, totalTokens: { total: 15, noCache: 15 } },
+      warnings: [],
+    }),
   }) as unknown as LanguageModel
 }
 

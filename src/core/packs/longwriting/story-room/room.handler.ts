@@ -30,7 +30,8 @@ export const ROOM_CHANNELS = {
 export function registerStoryRoomHandlers(): void {
   ipcBridge.handle(ROOM_CHANNELS.ROOM_SEND, async (_event, projectId: string, message: string, opts?: { providerConfigId?: string; modelId?: string }) => {
     try {
-      const result = await StoryRoomSessionService.getInstance().sendMessage(projectId, message, opts || {})
+      const modelOpts = await resolveRoomModelOpts(projectId, opts)
+      const result = await StoryRoomSessionService.getInstance().sendMessage(projectId, message, modelOpts)
       return { success: true, data: result }
     } catch (error: any) {
       console.error('[StoryRoomHandler] room:send 失败:', error)
@@ -178,7 +179,8 @@ export function registerStoryRoomHandlers(): void {
       } else if (!DISTILL_SCOPES.includes(scope)) {
         return { success: false, error: `未知的提炼范围：${scope}` }
       }
-      const result = await StoryRoomDistillerService.getInstance().distill(projectId, scope as never, opts || {})
+      const modelOpts = await resolveRoomModelOpts(projectId, opts)
+      const result = await StoryRoomDistillerService.getInstance().distill(projectId, scope as never, modelOpts)
       return { success: true, data: result }
     } catch (error: any) {
       console.error('[StoryRoomHandler] room:distill 失败:', error)
@@ -216,4 +218,22 @@ export function registerStoryRoomHandlers(): void {
 
 function getDb(): any {
   return getCoreDatabaseManager()
+}
+
+/**
+ * 默认模型治理（评审实测 400 根因）：无显式模型时回退项目阶段配置
+ * （story-room → overview → chapter → 首行），绝不落到 provider 默认
+ * （可能是嵌入/多媒体端点——"input.contents" 400 教训）。
+ */
+async function resolveRoomModelOpts(projectId: string, opts?: { providerConfigId?: string; modelId?: string }): Promise<{ providerConfigId?: string; modelId?: string }> {
+  if (opts?.providerConfigId && opts?.modelId) return opts
+  try {
+    const configs = (await getDb().lwProjectModelConfigs?.getByProjectId(projectId)) || []
+    const pick = (stage: string) => configs.find((c: any) => c.stage === stage)
+    const hit = pick('story-room') || pick('overview') || pick('chapter') || configs[0]
+    if (hit?.providerConfigId && hit?.modelId) {
+      return { providerConfigId: hit.providerConfigId, modelId: hit.modelId }
+    }
+  } catch { /* 配置读取失败 → 原样返回，由宿主默认兜底 */ }
+  return opts || {}
 }

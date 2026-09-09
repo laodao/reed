@@ -15,7 +15,7 @@ export interface ForeshadowDto {
   plantedChapter: number | null
   payoffChapter: number | null
   status: 'open' | 'paid' | 'dropped'
-  origin: { type: 'discussion' | 'extract' | 'manual'; cardId?: string; turns?: number[] } | null
+  origin: { type: 'discussion' | 'extract' | 'manual'; cardId?: string; turns?: number[]; chapter?: number } | null
   createdAt: number
   updatedAt: number
 }
@@ -74,6 +74,18 @@ export class LwForeshadowRepository extends BaseRepository<LwForeshadowEntity, F
     } as never) as never)
     const row = await this.scoped.findOne({ where: { id } } as any)
     return this.toDto(row!)
+  }
+
+  /** 删除某章的提取段伏笔（流水线重跑幂等；只动 origin.type='extract' 的行） */
+  async deleteExtractByChapter(projectId: string, chapterNumber: number): Promise<number> {
+    const rows = await this.getByProjectId(projectId)
+    let n = 0
+    for (const r of rows) {
+      if (r.origin?.type === 'extract' && r.origin.chapter === chapterNumber) {
+        if (await this.deleteRow(r.id)) n++
+      }
+    }
+    return n
   }
 
   async setStatus(id: string, status: 'open' | 'paid' | 'dropped', payoffChapter?: number | null): Promise<ForeshadowDto | null> {

@@ -3190,6 +3190,49 @@ ${previousInfo}
    * 事件 = 已发生的事实（谁/在哪/发生什么/结果），随章节确认累积；
    * 与创作层情节（plot，计划中的故事线）区分。
    */
+  /**
+   * 提取章节伏笔（42 号 P1：写作教练位——每章完成自动登记"埋了什么"）
+   * 与 extractChapterEvents 同构：callAIStream + JSON 容错解析。
+   */
+  async extractChapterForeshadows(
+    eventId: string,
+    projectId: string,
+    chapterContent: string,
+    chapterNumber: number,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<GenerateResponse> {
+    void projectId
+    const systemPrompt = `你是小说连载顾问。分析章节正文，识别本章"新埋下的伏笔"——被刻意强调但未在本章解释的人/物/话/异常，且对后续剧情有明确回收价值。
+只识别新埋设（本章首次出现的悬念装置），不把普通情节当伏笔。
+
+## 输出格式
+返回 JSON 数组，每条：
+{"content":"伏笔内容一句话（含关键物证/台词）","plantedChapter":${chapterNumber}}
+
+要求：
+1. 0-3 条；没有就返回 []
+2. 宁缺毋滥：只登记有明确回收意图的
+3. 直接输出 JSON 数组，不要任何额外文字`
+
+    const prompt = `【本章正文（第 ${chapterNumber} 章）】
+${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容已截断)' : ''}
+
+请识别本章新埋下的伏笔，直接返回 JSON 数组。`
+
+    try {
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, 1024, providerConfigId, modelId)
+      const jsonMatch = result.match(/\[[\s\S]*\]/)
+      if (!jsonMatch) {
+        return { success: false, error: '未返回有效 JSON' }
+      }
+      const parsed = JSON.parse(jsonMatch[0])
+      return { success: true, data: Array.isArray(parsed) ? parsed : [] }
+    } catch (e: any) {
+      return { success: false, error: e?.message || '伏笔提取失败' }
+    }
+  }
+
   async extractChapterEvents(
     eventId: string,
     projectId: string,

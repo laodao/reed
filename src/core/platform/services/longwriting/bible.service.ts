@@ -298,8 +298,8 @@ export class BibleQueryService {
     return { kind, fields: fields || {}, relations: relations as never }
   }
 
-  customCreate(projectId: string, kindKey: string, name: string, fields: Record<string, unknown> | null, origin?: CustomEntityDto['origin']) {
-    return this.manager().lwCustomEntities.createRow(projectId, kindKey, name, fields, origin)
+  customCreate(projectId: string, kindKey: string, name: string, fields: Record<string, unknown> | null, origin?: CustomEntityDto['origin'], parentId?: string | null) {
+    return this.manager().lwCustomEntities.createRow(projectId, kindKey, name, fields, origin, parentId)
   }
 
   customUpdate(projectId: string, id: string, patch: { name?: string; fields?: Record<string, unknown> | null }) {
