@@ -185,64 +185,110 @@
         </template>
       </section>
 
-      <!-- 右栏：追问对话（tutor Agent：历史 = view.turns，新问答实时流式） -->
+      <!-- 右栏：追问答疑（tutor）/ 概念笔记（dl_note 浏览，M4-UX1 补全） -->
       <aside class="pane pane-qa">
         <div class="qa-head">
-          <div class="qa-title">
-            <h3>追问 · 答疑</h3>
+          <div class="head-tabs" role="tablist">
+            <button
+              class="head-tab"
+              :class="{ active: rightPane === 'qa' }"
+              @click="rightPane = 'qa'"
+            >追问 · 答疑</button>
+            <button
+              class="head-tab"
+              :class="{ active: rightPane === 'notes' }"
+              @click="rightPane = 'notes'"
+            >
+              笔记<span v-if="noteCountOfCurrent > 0" class="head-tab-count">{{ noteCountOfCurrent }}</span>
+            </button>
           </div>
           <div class="qa-head-right">
-            <span class="qa-badge">未解问题 {{ openQuestionCount }}</span>
+            <span v-if="rightPane === 'qa'" class="qa-badge">未解问题 {{ openQuestionCount }}</span>
+            <span v-else class="qa-badge">当前概念 {{ noteCountOfCurrent }} 条</span>
           </div>
         </div>
-        <div ref="qaListRef" class="qa-list">
-          <div v-for="(t, i) in displayTurns" :key="i" class="qa-turn" :class="t.role">
-            <div class="qa-bubble">
-              <div class="qa-text">{{ t.text || '…' }}</div>
-              <div v-if="i === displayTurns.length - 1 && t.role === 'assistant' && tutorStreaming" class="qa-streaming">
-                <el-icon class="is-loading"><Loading /></el-icon>正在组织回答…
-              </div>
-              <div v-if="t.sourceLabel && !tutorStreaming" class="qa-source">
-                <el-icon><Position /></el-icon>{{ t.sourceLabel }}
-              </div>
-              <div v-if="t.suggestsResearch" class="qa-research">
-                <el-icon><Promotion /></el-icon>已登记为新研究方向
-              </div>
-              <!-- 好回答可收藏为笔记（qna → dl_note；再次点击取消收藏） -->
-              <div
-                v-if="t.role === 'assistant' && t.questionId && !tutorStreaming && t.text"
-                class="qa-fav"
-              >
-                <el-button
-                  link
-                  size="small"
-                  :type="favOfTurn(t.questionId) ? '' : 'success'"
-                  :icon="favOfTurn(t.questionId) ? StarFilled : Star"
-                  @click="toggleFavTurn(t)"
-                >{{ favOfTurn(t.questionId) ? '已收藏' : '收藏为笔记' }}</el-button>
+
+        <!-- 答疑面板：历史 + 实时流式问答 -->
+        <template v-if="rightPane === 'qa'">
+          <div ref="qaListRef" class="qa-list">
+            <div v-for="(t, i) in displayTurns" :key="i" class="qa-turn" :class="t.role">
+              <div class="qa-bubble">
+                <div class="qa-text">{{ t.text || '…' }}</div>
+                <div v-if="i === displayTurns.length - 1 && t.role === 'assistant' && tutorStreaming" class="qa-streaming">
+                  <el-icon class="is-loading"><Loading /></el-icon>正在组织回答…
+                </div>
+                <div v-if="t.sourceLabel && !tutorStreaming" class="qa-source">
+                  <el-icon><Position /></el-icon>{{ t.sourceLabel }}
+                </div>
+                <div v-if="t.suggestsResearch" class="qa-research">
+                  <el-icon><Promotion /></el-icon>已登记为新研究方向
+                </div>
+                <!-- 好回答可收藏为笔记（qna → dl_note；再次点击取消收藏） -->
+                <div
+                  v-if="t.role === 'assistant' && t.questionId && !tutorStreaming && t.text"
+                  class="qa-fav"
+                >
+                  <el-button
+                    link
+                    size="small"
+                    :type="favOfTurn(t.questionId) ? '' : 'success'"
+                    :icon="favOfTurn(t.questionId) ? StarFilled : Star"
+                    @click="toggleFavTurn(t)"
+                  >{{ favOfTurn(t.questionId) ? '已收藏' : '收藏为笔记' }}</el-button>
+                </div>
               </div>
             </div>
+            <div v-if="displayTurns.length === 0" class="qa-empty">
+              还没有追问记录——读完讲义后在这里提问。
+            </div>
           </div>
-          <div v-if="displayTurns.length === 0" class="qa-empty">
-            还没有追问记录——读完讲义后在这里提问。
+          <div class="qa-input">
+            <el-input
+              v-model="draft"
+              type="textarea"
+              :rows="4"
+              resize="none"
+              placeholder="追问：还有哪里不懂？例如“为什么……”（Enter 发送）"
+              :disabled="tutorStreaming"
+              @keydown.enter.exact.prevent="ask"
+            />
+            <div class="qa-send-row">
+              <span class="qa-hint">{{ tutorStreaming ? 'AI 正在回答…' : '支持追问 · 换种讲法 · 拆细一点' }}</span>
+              <el-button type="primary" :icon="Promotion" class="qa-send" :loading="tutorStreaming" @click="ask">
+                {{ tutorStreaming ? '回答中' : '追问' }}
+              </el-button>
+            </div>
           </div>
-        </div>
-        <div class="qa-input">
-          <el-input
-            v-model="draft"
-            type="textarea"
-            :rows="4"
-            resize="none"
-            placeholder="追问：还有哪里不懂？例如“为什么……”（Enter 发送）"
-            :disabled="tutorStreaming"
-            @keydown.enter.exact.prevent="ask"
-          />
-          <div class="qa-send-row">
-            <span class="qa-hint">{{ tutorStreaming ? 'AI 正在回答…' : '支持追问 · 换种讲法 · 拆细一点' }}</span>
-            <el-button type="primary" :icon="Promotion" class="qa-send" :loading="tutorStreaming" @click="ask">
-              {{ tutorStreaming ? '回答中' : '追问' }}
-            </el-button>
-          </div>
+        </template>
+
+        <!-- 笔记面板：当前概念的选区笔记 + 问答收藏（引文 + 正文） -->
+        <div v-else class="note-list">
+          <template v-if="currentConcept">
+            <template v-if="sortedNotes.length > 0">
+              <div v-for="n in sortedNotes" :key="n.id" class="note-item">
+                <div class="note-item-head">
+                  <el-tag size="small" effect="plain" :type="n.source === 'selection' ? 'primary' : 'success'">
+                    {{ n.source === 'selection' ? '选区笔记' : '问答收藏' }}
+                  </el-tag>
+                  <span class="note-time">{{ fmtNoteTime(n.createdAt) }}</span>
+                  <el-button
+                    class="note-del"
+                    link
+                    type="danger"
+                    size="small"
+                    :loading="deletingNoteId === n.id"
+                    @click="removeNoteItem(n)"
+                  >删除</el-button>
+                </div>
+                <div v-if="n.anchorText" class="note-anchor-text">「{{ n.anchorText }}」</div>
+                <div v-if="n.contentMd" class="note-text">{{ n.contentMd }}</div>
+              </div>
+            </template>
+            <div v-else class="qa-empty">
+              当前知识点还没有笔记——在讲义上选中一段文字「做笔记」，或收藏答疑中的好回答。
+            </div>
+          </template>
+          <div v-else class="qa-empty">先从左侧选择一个知识点，在这里查看它的笔记。</div>
         </div>
       </aside>
 
@@ -331,6 +377,7 @@ import type {
   DlChatTurn,
   DlConceptView,
   DlMastery,
+  DlNote,
   DlRelationView,
   DlSpaceView,
   DlTreeNode,
@@ -984,16 +1031,60 @@ async function toggleFavTurn(t: DlChatTurn): Promise<void> {
   if (existing) {
     await store.removeNoteOf(spaceId.value, existing.id)
   } else {
+    // 结构化快照：anchorText=问题、contentMd=回答原文（与选区笔记同构，笔记面板统一渲染）
     await store.saveNote({
       id: spaceId.value,
       conceptId: c?.id ?? null,
       source: 'qna',
       questionId: t.questionId,
-      contentMd: `> 问答收藏（答疑于「${c?.name ?? '空间'}」）\n\n**问题**：${questionTextOf(t.questionId)}\n\n**回答**：\n${t.text}`,
+      anchorText: questionTextOf(t.questionId) || '答疑收藏',
+      contentMd: t.text,
     })
   }
   await store.fetchNotesOf(spaceId.value, c?.id ?? null)
 }
+
+// ==================== M4-UX1 补全：右栏「笔记」面板（当前概念浏览/删除） ====================
+/** 右栏当前面板：qa=追问答疑、notes=当前概念笔记 */
+const rightPane = ref<'qa' | 'notes'>('qa')
+/** 正在删除的笔记 id（防连点） */
+const deletingNoteId = ref<string | null>(null)
+/** 当前概念笔记条数（未选概念按 0 展示） */
+const noteCountOfCurrent = computed(() => (currentConceptId.value ? store.notes.length : 0))
+/** 笔记按创建时间降序（新笔记在上） */
+const sortedNotes = computed<DlNote[]>(() =>
+  [...store.notes].sort((a, b) => noteTimeOf(b) - noteTimeOf(a)),
+)
+
+function noteTimeOf(n: DlNote): number {
+  return n.createdAt ? new Date(n.createdAt).getTime() || 0 : 0
+}
+
+/** 时间展示：YYYY-MM-DD HH:mm（本地时区） */
+function fmtNoteTime(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const p = (x: number): string => String(x).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+async function removeNoteItem(n: DlNote): Promise<void> {
+  if (deletingNoteId.value) return
+  deletingNoteId.value = n.id
+  try {
+    await store.removeNoteOf(spaceId.value, n.id)
+    // 重拉保持与服务端一致（删空后面板自然进入空态）
+    await store.fetchNotesOf(spaceId.value, currentConcept.value?.id ?? null)
+  } finally {
+    deletingNoteId.value = null
+  }
+}
+
+// 答疑面板在切换间卸载/重建（v-if），切回时滚动到底部
+watch(rightPane, (pane) => {
+  if (pane === 'qa') void nextTick(scrollQaToBottom)
+})
 </script>
 
 <style scoped lang="scss">
@@ -1094,24 +1185,50 @@ async function toggleFavTurn(t: DlChatTurn): Promise<void> {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 14px 16px 10px;
+  padding: 12px 16px 8px;
   border-bottom: 1px solid var(--el-border-color-lighter);
 
-  .qa-title {
+  .head-tabs {
     display: flex;
-    align-items: baseline;
-    gap: 8px;
-    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+  }
+  .head-tab {
+    appearance: none;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.4;
+    padding: 3px 0;
+    color: var(--el-text-color-secondary);
+    border-bottom: 2px solid transparent;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transition: color 0.15s;
 
-    h3 {
-      margin: 0;
-      font-size: 16px;
+    &:hover {
       color: var(--el-text-color-primary);
     }
-    .qa-sub {
-      font-size: 12px;
-      color: var(--el-text-color-placeholder);
+    &.active {
+      color: var(--el-color-primary);
+      border-bottom-color: var(--el-color-primary);
     }
+  }
+  .head-tab-count {
+    min-width: 16px;
+    height: 16px;
+    padding: 0 5px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 16px;
+    text-align: center;
+    color: var(--el-color-primary);
+    background: var(--el-color-primary-light-9);
   }
   .qa-head-right {
     flex-shrink: 0;
@@ -1521,5 +1638,70 @@ async function toggleFavTurn(t: DlChatTurn): Promise<void> {
 .slides-holder {
   height: 74vh;
   min-height: 420px;
+}
+
+/* M4-UX1 补全：右栏「笔记」面板（当前概念：选区笔记 + 问答收藏） */
+.note-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.note-item {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: var(--el-fill-color-blank);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  .note-item-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .note-time {
+      flex: 1;
+      min-width: 0;
+      font-size: 11px;
+      color: var(--el-text-color-placeholder);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .note-del {
+      flex-shrink: 0;
+    }
+  }
+
+  // 引文（选区原文 / 收藏问题）：限高滚动，避免撑爆面板
+  .note-anchor-text {
+    max-height: 96px;
+    overflow-y: auto;
+    padding: 6px 8px;
+    border-left: 3px solid var(--el-color-primary-light-5);
+    background: var(--el-fill-color-light);
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+    line-height: 1.6;
+    border-radius: 0 6px 6px 0;
+  }
+
+  // 正文（想法 / 回答原文）：防溢出 + 限高滚动
+  .note-text {
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--el-text-color-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    max-height: 240px;
+    overflow-y: auto;
+  }
 }
 </style>
