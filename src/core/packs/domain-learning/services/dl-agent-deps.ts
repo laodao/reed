@@ -26,11 +26,12 @@ export function hasConceptLeaves(concepts: Array<{ nodeType: string }>): boolean
   return concepts.some((c) => c.nodeType !== 'group')
 }
 
-/** 空空间起步研究指令（research 会话在快照为空时追加；先骨架后讲义，证据纪律不变） */
+/** 空空间起步研究指令（research 会话在快照为空时追加；指向 learning-space-bootstrap 技能并保留兜底） */
 export function dlEmptySpaceMission(opts: { spaceName: string }): string {
-  return `【空领域起步研究】学习空间「${opts.spaceName}」当前还没有任何知识点。
-你这次的任务是给整个领域做一次"起步研究"，而不是只讲单个概念：
-1. 先规划并落库 3-6 个最核心的知识点（dl_save_concept，nodeType 用 concept；parentId 优先填快照"目录分组"里的领域根 group id，没有则留 null），它们应构成这个领域自底向上的主干；
+  return `【空领域起步研究】学习空间「${opts.spaceName}」当前还没有任何知识点，本次任务=给整个领域做一次"起步研究"。
+执行方式：先 discover_capabilities 查看可用技能，再 invoke_skill 调用技能 learning-space-bootstrap（领域起步研究），按该技能的 S1~S5 阶段执行并在每阶段向用户回报进度；
+若技能不可用，按此摘要执行（同技能口径）：
+1. 先规划并落库 3-6 个最核心的知识点（dl_save_concept，parentId 优先填快照"目录分组"里的领域根 group id，没有则留 null）；
 2. 再为它们建立学习顺序关系（dl_save_relation，前置关系 prerequisite）；
 3. 挑其中"最基础、第一个要学"的概念 dl_save_card 产出一份可展示的讲义草稿（区级内容 + evidenceSources）；讲义每条论断的证据必须来自你实际读到的资料（知识库文档/网页/arXiv/API），查不到就少写，不得编造；
 4. 其余概念保持"待研究"即可，不必一次全部出讲义；

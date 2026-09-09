@@ -66,4 +66,19 @@ describe('空主题启动引导', () => {
       expect(mission).toContain('编造')
     })
   })
+
+  describe('dlEmptySpaceMission 指向平台技能（M7：起步研究固化为 learning-space-bootstrap）', () => {
+    const mission = dlEmptySpaceMission({ spaceName: '量子计算入门' })
+
+    it('引导先 discover 可用技能再 invoke_skill 调用 learning-space-bootstrap', () => {
+      expect(mission).toContain('discover_capabilities')
+      expect(mission).toContain('invoke_skill')
+      expect(mission).toContain('learning-space-bootstrap')
+    })
+
+    it('要求按技能 S1~S5 阶段执行并在每阶段向用户回报进度', () => {
+      expect(mission).toContain('S1~S5')
+      expect(mission).toContain('回报进度')
+    })
+  })
 })

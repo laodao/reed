@@ -871,4 +871,56 @@ output_desc: 输出 JSON 对象，含 relations 数组（source/target/relation_
 {"relations":[{"source":"条件概率","target":"贝叶斯定理","relation_type":"prerequisite","evidence":"材料第一节：理解贝叶斯定理前需先掌握条件概率与全概率公式"}],"suggestions":["频率学派与贝叶斯学派对同一问题的结论差异，需对质原始文献（待查证）"]}
 `,
   },
+  {
+    id: 'learning-space-bootstrap',
+    markdown: `---
+name: learning-space-bootstrap
+title: 领域起步研究（首批知识生成）
+description: 为空主题/新领域做一次「起步研究」：先收集资料（绑定知识库优先 + 联网），再整理出首批核心概念骨架与学习顺序，为基础概念产出第一份讲义，其余保持待研究。供「领域共学空间」空主题点「生成首批知识」后由研究会话调用；是整个领域的第一个研究任务，产出会成为知识地图的起点。
+when_to_use: 一个学习空间还没有任何知识点（只有领域根目录）、需要从零生成首批概念/关系/讲义时；或新领域整体规划时
+category: 领域学习
+inputs:
+  - key: spaceName
+    label: 空间/领域名
+    type: string
+    required: true
+  - key: goal
+    label: 学习目标
+    type: string
+    default: 入门
+  - key: kbHint
+    label: 知识库提示
+    type: textarea
+    help: 快照注入的本空间绑定知识库说明（有则优先检索）
+output_desc: 一次会话产出：dl_save_concept 首批 3-6 个核心概念骨架、dl_save_relation 前置关系与学习顺序、dl_save_card 首个基础概念的讲义草稿（含证据来源）；其余概念保持待研究。会话总结说明建立了哪些概念/关系、首卡给谁、下一步建议。
+---
+你是「领域共学空间」的领域起步研究员。目标学习空间「{{param.spaceName}}」（目标：{{param.goal}}）当前还没有任何知识点——本次任务是给**整个领域**做一次起步研究，产出将成为知识地图的起点，而不是只讲单个概念。
+
+必须按下面五个阶段执行，并且**每进入一个阶段先用一句话向用户回报进度**（例如「正在读取资料…」「正在整理知识骨架…」「正在规划学习顺序…」「正在产出讲义…」「正在自检…」）；阶段间不要静默。
+
+S1 资料探查（回报：正在读取资料…）
+- 绑定知识库优先：快照含「本空间绑定知识库 id」时，先用 wf_kb_retrieve（knowledgeBaseId 填该 id）检索与领域相关的私有资料，命中即据其提炼并记录 kbDocId；
+- 再按需联网：网页正文用 wf_web_extract，API/原文用 http_get（arXiv 论文用 http_get 请求 export.arxiv.org/api/query），web_search 仅在会话提供该工具时使用；没有就明确「未联网核验」；
+- 逐条记录要点与出处（标题/URL/文档 id + 引文），供后续骨架与讲义引用。
+
+S2 知识骨架整理（回报：正在整理知识骨架…）
+- 规划并落库 3-6 个最核心的知识点：dl_save_concept，nodeType 用 concept，parentId 优先填快照「目录分组」里的领域根 group id（没有则 null）；
+- 每个概念给一句话定义（definitionShort）；骨架应构成该领域自底向上的主干；来源不明确的点标注「先验待查证」。
+
+S3 学习阶段规划（回报：正在规划学习顺序…）
+- 为这些概念建立学习顺序关系：dl_save_relation，relation_type 用 prerequisite（source→target：学 target 前需先掌握 source）；
+- 在总结中给出建议的学习阶段划分（如「先主干后分支」），不必落库为目录之外的实体。
+
+S4 讲义产出（回报：正在产出讲义…）
+- 挑「最基础、第一个要学」的概念 dl_save_card 产出一份可展示的讲义草稿：区级内容 + evidenceSources；
+- evidence 必须来自你在 S1 实际读到的资料（kbDocId/URL/标题 + 引文）；没有读到任何可用资料时**宁可不落卡**，并在总结里说明缺什么资料、下一步去哪个知识库/来源找；
+- 其余概念保持「待研究」即可，不要一次把 5 个全出成卡。
+
+S5 自检与交接（回报：正在自检…）
+- 核对：讲义每处关键论断都有 S1 的出处对应、没有编造；骨架概念名不是臆造的无源内容（先验部分已标注）；
+- 用一段话总结：建立了哪些概念与关系、首个讲义给了谁、建议的下一步（等待用户人审/继续逐概念研究）。
+
+纪律：不编造引用与资料；无证据不落卡；不重复执行刚成功的同一动作，动作失败可换参数重试一次；动作只能使用 dl_* 系列（dl_save_concept / dl_save_relation / dl_save_card）。
+`,
+  },
 ]
