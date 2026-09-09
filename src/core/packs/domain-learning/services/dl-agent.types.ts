@@ -90,6 +90,8 @@ export interface DlAgentActionSummary {
 export interface DlAgentExecutionContext {
   spaceId: string
   conceptId?: string | null
+  /** 2026-09-09 复盘：本会话模式（工具 emit 事件时带上，前端按 mode 过滤防跨模式混流） */
+  mode?: DlAgentMode
   /** 未解问题研究：本轮聚焦的 dl_question id（dl_answer_question 缺省回填） */
   questionId?: string | null
   providerConfigId?: string
@@ -98,9 +100,12 @@ export interface DlAgentExecutionContext {
   emit: (event: DlAgentEvent) => void
 }
 
-/** dl 宿主事件（前端通道契约） */
+/** dl 宿主事件（前端通道契约；2026-09-09 复盘：事件带 mode，前端按发起模式过滤，
+ *  防止同 space+concept 跨模式并发时(如 research∥tutor)事件互相污染） */
 export interface DlAgentEvent {
   type: 'stage' | 'reply:start' | 'reply:done' | 'error' | 'action:done' | 'question:open'
+  /** 产生本事件的会话模式（前端据此过滤；verify 内部会话已不上通道） */
+  mode?: DlAgentMode
   stage?: 'deciding' | 'acting'
   summaryEventId?: string
   error?: string

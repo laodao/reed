@@ -140,6 +140,18 @@
                 <el-tooltip v-if="currentConcept.card" content="讲义生成演示（在线浏览）" placement="bottom" :show-after="300">
                   <el-button circle size="small" plain :icon="Promotion" @click="slidesVisible = true" />
                 </el-tooltip>
+                <!-- 发布闭环（2026-09-09 复盘）：draft=AI 草稿待人工确认；确认后正式采用并计入统计 -->
+                <template v-if="currentConcept.card">
+                  <el-button
+                    v-if="currentConcept.card.status === 'draft'"
+                    size="small"
+                    type="primary"
+                    plain
+                    :loading="publishing"
+                    @click="publishCurrentLesson"
+                  >确认发布 v{{ currentConcept.card.version }}</el-button>
+                  <el-tag v-else size="small" type="success" effect="plain">已发布 v{{ currentConcept.card.version }}</el-tag>
+                </template>
                 <span v-if="lastFeedback" class="feedback-toast" :class="{ warn: lastFeedbackIsWarn }">{{ lastFeedback }}</span>
               </div>
             </div>
@@ -287,6 +299,7 @@
             />
             <div class="qa-send-row">
               <span class="qa-hint">{{ tutorStreaming ? 'AI 正在回答…' : '支持追问 · 换种讲法 · 拆细一点' }}</span>
+              <el-button v-if="tutorStreaming" class="qa-stop" plain @click="stopAsk">停止</el-button>
               <el-button type="primary" :icon="Promotion" class="qa-send" :loading="tutorStreaming" @click="ask">
                 {{ tutorStreaming ? '回答中' : '追问' }}
               </el-button>
@@ -508,12 +521,18 @@ const mapFilter = ref<'all' | 'untouched' | 'learning' | 'mastered' | 'review'>(
 async function loadSpace(): Promise<void> {
   const id = spaceId.value
   if (!id) return
+  mountedSpaceId = id
   currentConceptId.value = null
   lastFeedback.value = ''
   lastFeedbackIsWarn.value = false
   liveTurns.value = []
   expandedBranches.clear()
   await store.fetchSpaceView(id)
+  // 预热空间级笔记（qna 收藏态判定的数据源；静默失败、每空间一次）
+  if (notesAllWarmed.value !== id) {
+    notesAllWarmed.value = id
+    void store.fetchNotesAll(id, true)
+  }
   // 默认选中：Atlas「去学它」带 query.concept → 否则第一个未掌握的概念（学习中优先）
   const qConcept = typeof route.query.concept === 'string' ? route.query.concept : null
   const target =
@@ -531,15 +550,22 @@ watch(
   () => void loadSpace()
 )
 
+/** 组件挂载期间所在空间（卸载时取消在途轮次用；路由切换后不误取消新空间） */
+let mountedSpaceId = ''
+const lastResearchScope = ref<{ conceptId: string | null }>({ conceptId: null })
+
 onMounted(() => {
   void loadSpace()
 })
 
 onUnmounted(() => {
-  // 页面卸载：清理全部事件订阅；若仍在追问轮次则通知后端取消
+  // 页面卸载：清理全部事件订阅；若仍有在途轮次则通知后端取消（tutor/task → ask；research → 概念/空间级）
   store.unsubscribeAll()
+  const sid = mountedSpaceId || spaceId.value
   if (tutorStreaming.value) {
-    void store.cancelAgent('tutor', spaceId.value, currentConceptId.value)
+    void store.cancelAgent(lastAskMode.value, sid, currentConceptId.value)
+  } else if (researching.value) {
+    void store.cancelAgent('research', sid, lastResearchScope.value?.conceptId ?? null)
   }
 })
 
@@ -848,6 +874,24 @@ async function markConfused(): Promise<void> {
   await doAckConfused(undefined)
 }
 
+/** 确认发布当前讲义（draft→published；2026-09-09 复盘补发布闭环） */
+const publishing = ref(false)
+async function publishCurrentLesson(): Promise<void> {
+  const c = currentConcept.value
+  const card = c?.card
+  if (!c || !card || publishing.value) return
+  publishing.value = true
+  try {
+    const ok = await store.publishCard(spaceId.value, card.id)
+    lastFeedbackIsWarn.value = !ok
+    lastFeedback.value = ok
+      ? `已确认发布「${c.name}」v${card.version} ✓`
+      : (store.error ?? '发布失败，请重试')
+  } finally {
+    publishing.value = false
+  }
+}
+
 /** 区级「这块没懂」：带 sectionKey 上报后端定位 */
 async function onSectionNotUnderstand(sec: DlCardSection): Promise<void> {
   await doAckConfused(sec.key)
@@ -910,11 +954,20 @@ const bootWarn = ref(false)
 
 async function bootResearch(): Promise<void> {
   if (researching.value) return
+  // 答疑/任务进行中不并起研究（防同空间双 agent 轮并发；UI 级互斥）
+  if (tutorStreaming.value) {
+    lastFeedbackIsWarn.value = true
+    lastFeedback.value = '回答进行中——稍等它完成后再发起研究'
+    return
+  }
   researching.value = true
+  lastResearchScope.value = { conceptId: null }
   bootMessage.value = ''
   bootWarn.value = false
   // 空间级事件通道 dl:agent:<spaceId>（conceptId 为空）
   const unsub = store.subscribeAgentEvent(spaceId.value, null, (ev) => {
+    // 只收本 space 级 research 轮事件（防与其他模式/概念并发混流）
+    if (ev.mode && ev.mode !== 'research') return
     if (ev.type === 'error') {
       bootWarn.value = true
       bootMessage.value = `起步研究出错：${ev.error ?? '未知错误'}`
@@ -951,9 +1004,18 @@ async function bootResearch(): Promise<void> {
 async function researchConcept(): Promise<void> {
   const c = currentConcept.value
   if (!c || researching.value) return
+  // 答疑/任务进行中不并起研究（UI 级互斥，防同概念双 agent 轮并发）
+  if (tutorStreaming.value) {
+    lastFeedbackIsWarn.value = true
+    lastFeedback.value = '回答进行中——稍等它完成后再研究'
+    return
+  }
   researching.value = true
+  lastResearchScope.value = { conceptId: c.id }
   // 订阅动作事件：error 直接提示；完成/阶段用于状态行（重拉在 finally）
   const unsub = store.subscribeAgentEvent(spaceId.value, c.id, ev => {
+    // 只收本概念 research 轮事件（防与其他模式/空间级研究并发混流）
+    if (ev.mode && ev.mode !== 'research') return
     if (ev.type === 'error') {
       lastFeedbackIsWarn.value = true
       lastFeedback.value = `研究「${c.name}」出错：${ev.error ?? '未知错误'}`
@@ -1030,11 +1092,30 @@ const displayTurns = computed<DlChatTurn[]>(() => [
   ...liveTurns.value,
 ])
 
+/** 最近一次 ask 的模式（停止按钮据此取消对应后端轮次） */
+const lastAskMode = ref<'tutor' | 'task'>('tutor')
+
+/** 停止当前答疑/任务轮次（2026-09-09 复盘：补取消入口；后端 cancel 后 ask finally 收尾） */
+async function stopAsk(): Promise<void> {
+  if (!tutorStreaming.value) return
+  await store.cancelAgent(lastAskMode.value, spaceId.value, currentConceptId.value)
+  lastFeedbackIsWarn.value = false
+  lastFeedback.value = '已停止本轮回答'
+  tutorStreaming.value = false
+}
+
 async function ask(): Promise<void> {
   const q = draft.value.trim()
   if (!q || tutorStreaming.value) return
+  // 研究进行中先不追问（避免同空间同概念双 agent 轮并发烧模型与写库；UI 级互斥）
+  if (researching.value) {
+    lastFeedbackIsWarn.value = true
+    lastFeedback.value = '研究进行中——稍等它完成后再追问'
+    return
+  }
   // 同框自动判断（M6-3 阶段一）：明确任务指令走 task 会话，答疑学习类走 tutor
   const targetMode: 'tutor' | 'task' = routeDlIntent(q) === 'task' ? 'task' : 'tutor'
+  lastAskMode.value = targetMode
   const scopeConceptId = currentConceptId.value
   tutorStreaming.value = true
   lastFeedback.value = ''
@@ -1051,6 +1132,8 @@ async function ask(): Promise<void> {
   let unsubAgent = () => {}
   let unsubStream = () => {}
   unsubAgent = store.subscribeAgentEvent(spaceId.value, scopeConceptId, (ev: DlAgentUiEvent) => {
+    // 只收本 ask 发起的模式事件（research 等其它模式并发时不混流）
+    if (ev.mode && ev.mode !== targetMode) return
     // task 会话：动作事件收集为执行流水（展示真实进度）
     if (targetMode === 'task' && ev.type === 'action:done' && ev.summary) {
       taskLog.value.push({ tool: ev.summary.tool, status: ev.summary.status, message: ev.summary.message })
@@ -1087,7 +1170,9 @@ async function ask(): Promise<void> {
       }
     }
   } catch (e: any) {
-    assistantTurn.text = `（处理失败：${e?.message ?? '未知错误'}）`
+    // 用户主动停止不算失败（后端取消文案含"取消"）——不再给占位气泡惊吓
+    const errMsg = e?.message ?? ''
+    assistantTurn.text = /取消/.test(String(errMsg)) ? '' : `（处理失败：${errMsg || '未知错误'}）`
   } finally {
     unsubAgent()
     unsubStream()
@@ -1222,11 +1307,19 @@ async function saveSelectionNote(): Promise<void> {
   }
 }
 
-/** #6 收藏态：当前概念下是否已收藏该问答 */
+/** 全部 qna 收藏（当前概念 notes + 空间级 notesAll 按 id 去重；
+ *  答疑历史为空间级，收藏态须跨概念判定，避免"别概念问题在当前概念下星标不亮"） */
+const allQnaNotes = computed<DlNote[]>(() => {
+  const byId = new Map<string, DlNote>()
+  for (const n of store.notesAll) if (n.source === 'qna') byId.set(n.id, n)
+  for (const n of store.notes) if (n.source === 'qna' && !byId.has(n.id)) byId.set(n.id, n)
+  return [...byId.values()]
+})
+
+/** #6 收藏态：该问答是否已收藏（按 questionId 全局判定） */
 function favOfTurn(qid: string | null | undefined): boolean {
   if (!qid) return false
-  const cid = currentConcept.value?.id
-  return store.notes.some((n) => n.source === 'qna' && n.questionId === qid && n.conceptId === (cid ?? null))
+  return allQnaNotes.value.some((n) => n.questionId === qid)
 }
 
 function questionTextOf(qid: string): string {
@@ -1234,26 +1327,40 @@ function questionTextOf(qid: string): string {
   return t?.text ?? ''
 }
 
-/** #6 收藏 / 取消收藏回答（qna 笔记；再次点击取消） */
+/** #6 收藏 / 取消收藏回答（qna 笔记；归属=问题真实概念，防落到"当前概念"错位） */
 async function toggleFavTurn(t: DlChatTurn): Promise<void> {
   const c = currentConcept.value
   if (!t.questionId) return
-  const existing = store.notes.find((n) => n.source === 'qna' && n.questionId === t.questionId && n.conceptId === (c?.id ?? null))
+  const existing = allQnaNotes.value.find((n) => n.source === 'qna' && n.questionId === t.questionId)
   if (existing) {
-    await store.removeNoteOf(spaceId.value, existing.id)
+    const ok = await store.removeNoteOf(spaceId.value, existing.id)
+    if (!ok) {
+      lastFeedbackIsWarn.value = true
+      lastFeedback.value = '取消收藏失败，请重试'
+      return
+    }
   } else {
     // 结构化快照：anchorText=问题、contentMd=回答原文（与选区笔记同构，笔记面板统一渲染）
-    await store.saveNote({
+    const saved = await store.saveNote({
       id: spaceId.value,
-      conceptId: c?.id ?? null,
+      conceptId: t.conceptId ?? c?.id ?? null,
       source: 'qna',
       questionId: t.questionId,
       anchorText: questionTextOf(t.questionId) || '答疑收藏',
       contentMd: t.text,
     })
+    if (!saved) {
+      lastFeedbackIsWarn.value = true
+      lastFeedback.value = '收藏失败，请重试'
+      return
+    }
   }
   await store.fetchNotesOf(spaceId.value, c?.id ?? null)
+  await store.fetchNotesAll(spaceId.value, true)
 }
+
+/** 空间级笔记是否已预热（每空间一次；qna 收藏态判定数据源） */
+const notesAllWarmed = ref('')
 
 // ==================== M4-UX1 补全：右栏「笔记」面板（当前概念浏览/删除；M7-B 加空间级总览） ====================
 /** 右栏当前面板：qa=追问答疑、notes=笔记 */

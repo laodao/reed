@@ -16,6 +16,7 @@ import { DlConceptRepository } from '@core/database/repositories/dl-concept.repo
 import { DlRelationRepository } from '@core/database/repositories/dl-relation.repository'
 import { DlMasteryLogRepository } from '@core/database/repositories/dl-mastery-log.repository'
 import { toDlNote } from '@core/database/repositories/dl-note.repository'
+import { toDlQuestionView } from '@core/database/repositories/dl-question.repository'
 import { LearningProjectService } from '../services/learning-project.service'
 import { LearningGraphService } from '../services/learning-graph.service'
 import { LearningViewService } from '../services/learning-view.service'
@@ -156,7 +157,9 @@ export function registerDomainLearningHandlers(): void {
   ipcBridge.handle('dl:list-questions', (_e, p: { id: string }) =>
     wrap(async () => {
       await services().projects.ensureOwned(p.id)
-      return getCoreDatabaseManager().dlQuestions!.listByProject(p.id)
+      // DTO 化（2026-09-09 复盘：不再直吐内部仓储行——剔 userId/Date，对齐 shared DlQuestionView）
+      const rows = await getCoreDatabaseManager().dlQuestions!.listByProject(p.id)
+      return rows.map((r) => toDlQuestionView(r))
     }))
 
   // ---- 研究/追问（agent 宿主；research 与 tutor 两模式；写路径先校验空间属主） ----
@@ -231,6 +234,20 @@ export function registerDomainLearningHandlers(): void {
       return { ok: true }
     }))
 
+  // ---- 讲义发布（2026-09-09 复盘：draft→published 原无写入者，发布闭环断路、统计恒 0） ----
+  ipcBridge.handle('dl:publish-card', (_e, p: { id: string; cardId: string }) =>
+    wrap(async () => {
+      const db = getCoreDatabaseManager()
+      await services().projects.ensureOwned(p.id)
+      const card = await db.dlCards!.getById(p.cardId)
+      if (!card || card.projectId !== p.id) throw new Error('卡片不存在或不属于本空间')
+      if (card.status === 'published') return { ok: true, already: true }
+      const current = await db.dlCards!.getCurrentByConcept(p.id, card.conceptId)
+      if (!current || current.id !== card.id) throw new Error('只能发布该概念的最新一版讲义')
+      await db.dlCards!.patch(card.id, { status: 'published' })
+      return { ok: true, already: false }
+    }))
+
   // ---- 概念笔记（M4-UX1 #3 选区笔记 / #6 收藏回答；经项目属主校验） ----
   ipcBridge.handle('dl:list-notes', (_e, p: { id: string; conceptId?: string | null }) =>
     wrap(async () => {
@@ -246,6 +263,10 @@ export function registerDomainLearningHandlers(): void {
       if (p.source === 'qna' && p.questionId) {
         const existing = await db.dlNotes!.findByQuestion(p.id, p.questionId)
         if (existing) return { note: toDlNote(existing), created: false } // 收藏幂等
+        // 归属回填（2026-09-09 复盘）：收藏归属=问题真实概念（答疑历史为空间级，
+        // 前端"当前概念"可能 ≠ 问题所属概念；查 question 回填防错位/防跨概念幂等键不一致）
+        const q = await db.dlQuestions!.getById(p.questionId)
+        if (q && q.projectId === p.id) p = { ...p, conceptId: q.conceptId ?? p.conceptId ?? null }
       }
       const row = await db.dlNotes!.create({
         id: `n_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,

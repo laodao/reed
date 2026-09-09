@@ -25,6 +25,7 @@ import {
   DL_TOOL_MAX_CALLS,
   type DlAgentActionSummary,
   type DlAgentExecutionContext,
+  type DlAgentMode,
 } from './dl-agent.types'
 
 /** 从工具执行上下文还原 dl 执行上下文（shared registry：空间信息只能来自 runtimeContext） */
@@ -38,6 +39,7 @@ function dlCtxFrom(ctx: AgentToolContext): DlAgentExecutionContext {
   return {
     spaceId,
     conceptId,
+    mode: typeof log.mode === 'string' ? (log.mode as DlAgentMode) : undefined,
     questionId: typeof log.questionId === 'string' ? log.questionId : null,
     providerConfigId: typeof log.providerConfigId === 'string' ? log.providerConfigId : undefined,
     modelId: typeof log.modelId === 'string' ? log.modelId : undefined,
@@ -66,8 +68,8 @@ function dlActionTool(actionType: DlAgentActionType, description: string, schema
         params: (input ?? {}) as Record<string, unknown>,
       })
       if (summary.status === 'error') throw new Error(summary.message)
-      // 富 action:done 事件：宿主 tapEvents 回流为本轮动作摘要（EP 同构）
-      emitDlAgentEvent(dlCtx.spaceId, dlCtx.conceptId, { type: 'action:done', tool: actionType, summary })
+      // 富 action:done 事件：宿主 tapEvents 回流为本轮动作摘要（EP 同构；事件带 mode 供前端过滤）
+      emitDlAgentEvent(dlCtx.spaceId, dlCtx.conceptId, { type: 'action:done', mode: dlCtx.mode, tool: actionType, summary })
       return summaryToResult(summary)
     },
   }
@@ -194,7 +196,7 @@ export function buildDlTaskProgressToolDef(): AgentToolDef {
         message: msg,
         data,
       }
-      emitDlAgentEvent(dlCtx.spaceId, dlCtx.conceptId, { type: 'action:done', tool: DL_TASK_PROGRESS_TOOL, summary })
+      emitDlAgentEvent(dlCtx.spaceId, dlCtx.conceptId, { type: 'action:done', mode: dlCtx.mode, tool: DL_TASK_PROGRESS_TOOL, summary })
       return { ok: true, data: { status: 'ok', message: msg, data } }
     },
   }

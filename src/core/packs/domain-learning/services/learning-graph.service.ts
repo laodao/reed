@@ -56,7 +56,12 @@ export class LearningGraphService {
       throw new Error('前置依赖未全部掌握：先学带锁的前置概念')
     }
     const from = c.mastery
-    await this.concepts.patch(conceptId, { mastery: 'mastered', attrs: { ...(c.attrs ?? {}), confusedCount: 0 } })
+    // 懂了 = 全部困惑清零（含区级 confusedSections；2026-09-09 复盘：仅清 count 会让
+    // 再次"没懂"时区级计数从旧值续增，自洽性破绽）
+    const newAttrs: Record<string, unknown> = { ...(c.attrs ?? {}) }
+    delete newAttrs.confusedSections
+    newAttrs.confusedCount = 0
+    await this.concepts.patch(conceptId, { mastery: 'mastered', attrs: newAttrs })
     if (from !== 'mastered') {
       await this.masteryLogs.append({
         id: randomUUID(),

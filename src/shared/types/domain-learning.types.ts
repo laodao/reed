@@ -229,6 +229,8 @@ export interface DlChatTurn {
   /** 是否建议开启新研究（答不上） */
   suggestsResearch?: boolean
   questionId?: string
+  /** 所属概念（2026-09-09 复盘：答疑历史为空间级，收藏/归属须按问题真实概念判定；空间级泛问为 null） */
+  conceptId?: string | null
 }
 
 // ==================== 追问/队列 ====================

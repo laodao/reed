@@ -65,27 +65,34 @@
 
 验证:dl 域 + 技能相关 15 文件 111 passed、相关组 41 passed、intent 9/9、actions 7/7、pedagogy 11/11;eslint 0 errors;vue-tsc 类型检查结果见后(相关零新增口径)。
 
-## 6. 遗留与建议(未本批修复;按影响排序)
+## 5.1 第二批修复(2026-09-09 续;用户明确「不遗留」→ 继续清 P1,仍在推进)
 
-**数据/一致性与执行层**
-- [P1] card draft→published 无写入者(统计恒 0、人审发布闭环缺失):补 dl:publish-card 通道 + graph.publishCard + 前端发布入口与"已发布 N"口径。
-- [P1] 无事务 + check-then-insert 竞态族(saveCard 版本、note 幂等、ack attrs 读改写):写路径包 transaction;note 加 (project_id,question_id) 唯一索引(存量去重后);dl_card 加 (project,concept,version) 唯一索引(先清洗孤儿/重复)。
-- [P1] 事件通道无 mode/runId 维度:同 space+concept 跨 mode 并发 actionSummaries 交叉收集、前端混流。建议事件加 runId/mode 过滤或通道级隔离(已缓解 verify,未覆盖 research∥tutor 并发)。
-- [P1] 前端:agentBusy 零消费 + 无取消按钮 + research 无产出静默 + 视图加载失败永久"加载中";qna 收藏概念归属错位(view.turns 需携带 conceptId,前端按 questionId 判定)。
-- [P2] verify 并发同 concept 双卡 key 冲突(busy 键无 cardId);verify busy 无超时看门狗;自动核验切片 30 区上限。
-- [P2] 意图路由仍为启发式(误判已收敛,边界留 LLM 复核);技能正文引用与注册一致性建议加自动清单测试。
-- [P2] N+1×3(view/atlas/scheduler);dl:list-questions DTO 泄漏(userId/Date);handler 错误文案直透;迁移注释"7 张"与实际 8 张;mastery trigger 三方文档不一致;dl_doc 休眠面治理。
-- [P2] run_workflow dl 域闭环(模板默认模型/discover 附选项/run 输出→dl_save_* 桥/人工闸门语义);invoke 内层 turnModel 注入(跨包,需平台侧配合)。
-- [P2] 概念冗余(根层同名不唯一;saveConcept 幂等放宽至空间同名提示)与"贝叶斯定理（当前概念）"式污染名治理;孤儿数据留档说明(历史调试产物,现无删概念路径)。
+1. **agent 事件 mode 隔离**:DlAgentEvent/DlAgentExecutionContext/runtimeContext 增 mode;harness/tools 全部 emit 带 mode;tap 只收本轮 mode 动作摘要(修复跨模式并发 actionSummaries 交叉收集);前端 DlAgentUiEvent 增 mode,三处订阅(ask/boot/researchConcept)按发起模式过滤——同 space+concept 并发不再互污气泡/流式/任务日志。
+2. **qna 收藏归属闭环**:DlChatTurn 增 conceptId(view 组装带入问题真实归属);dl:create-note 对 qna 由 questionId 回填 question.conceptId(幂等键与真实归属一致);前端收藏态改为按 questionId 跨概念判定(notes+notesAll 合并)、落库用 turn.conceptId,loadSpace 预热 fetchNotesAll(静默失败),收藏失败给提示。
+3. **published 发布闭环**:后端 dl:publish-card(属主+归属+仅最新版校验);preload/web channel-map/store/UI 三端同步(通道护栏 spec 绿);讲义头「确认发布 vN / 已发布 vN」;发布后刷新视图(统计"已发布 N"不再恒 0)。
+4. **ackMastered 全清困惑**:清零 confusedCount 并删除 confusedSections(再次没懂从零累计)+ spec 用例。
+5. **dl:list-questions DTO 化**:toDlQuestionView(剔 userId/Date→ISO),对齐 shared 契约。
+6. **前端可用性**:UI 级互斥 guard(研究∥追问不同时起,防同空间双 agent 轮);ask「停止」按钮(补取消入口,cancel 后温和文案);卸载时按在途模式取消 research/tutor/task;发布失败/收藏失败提示。
 
-**内容/教学法(下一轮生成质量增强)**
-- [P1] 产出难度门禁:目标=入门 时,需未教记号(∫/分布族/iid)的概念不得直接生成讲义,须先补前置卡或拒绝;同概念同名卡/同问答自动去重。
-- [P1] 讲义区块模板落地:meta 元信息块/记号热身区/标准算例全局唯一/自测带答案+覆盖映射(可做成 learning-lesson-writer 与模板区 key 白名单校验;前端渲染隐藏 draft/id/核验黑话)。
-- [P2] 增加"更新已有讲义(增量 diff)"与"练习生成"技能(learning-lesson-updater / learning-practice-builder);来源清单实体化。
-- [P2] verify 结果消费(needs_review → 提示修订或阻断发布)与 published 门禁联动。
+验证:dl 域 17 文件 112 passed(含通道护栏 3 端一致、graph 新用例)、eslint 0 errors;vue-tsc 复核中。
+
+## 6. 遗留与建议(下一批立即继续,不再搁置)
+
+**执行层**
+- [P2] N+1×3(buildSpaceView/buildAtlasViews/scheduler 逐概念查卡)→ 一次 listByProject + latestCardsByConcept。
+- [P2] verify 同概念多卡并发 busy 键冲突(scopeKey 无 cardId)→ 卡级去重/串行。
+- [P2] run_workflow dl 域半闭环:平台 workflow-run start.model 必填无默认、产出在资产库无桥、人工闸门——需平台层配合(改 workflow-run.service/system-agent-tools 影响 EP/LW/dl 三包,宜独立平台批次);dl 侧最小动作:run_workflow 绑定白名单/频控 + 提示词降低期望。
+- [P2] 概念冗余(根层同名不唯一 + 污染名)+ 孤儿数据清洗脚本(迁移补唯一索引前先洗)。
+- [P2] handler 错误文案错误码化;迁移注释 7/8 表对齐;mastery trigger 文档三方对齐。
+- [P2] 前端:视图加载失败态/首载闪空态/Home 列表失败提示/流式中断追加标记;切空空间 taskLog 残留;渠道名常量收敛。
+
+**内容/教学法(结合初学者评估;部分已进技能正文,仍待链路落地)**
+- [P1] 产出难度门禁(入门空间禁止直接出研究生级概念卡:前置记号未教即拒绝或先补前置卡);同概念同名卡去重。
+- [P1] 讲义区块模板落地(meta/记号热身/标准算例/自测答案由生成技能产出,渲染端隐藏黑话/草稿态);数字回算 lint。
+- [P2] learning-lesson-updater(增量修订)与练习生成技能;verify 结果消费(needs_review→修订/阻断)。
 
 **推送状态**
-- 待推提交(用户授权后 push 曾数次尝试,服务端 git-upload-pack advertisement 极慢/超时;本批新提交暂未计入):原 11 提交 + 本批修复提交(待用户指令再 push)。
+- 服务端 gitea advertisement 持续无响应(ssh 认证/端口均通,HTTP 3000 亦超时)——原 10 提交 + 本批 6fa5c273 与第二批修复提交均待服务恢复后推送。
 
 ## 7. 附:审计产物与素材
 

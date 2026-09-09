@@ -100,6 +100,28 @@ describe('LearningGraphService', () => {
     })
   })
 
+  it('ackMastered：懂了 → 清空"没懂"计数与区级 confusedSections（2026-09-09 复盘修复）', async () => {
+    ds = await buildDs()
+    const pid = await seedSpace('u1', ds)
+    const svc = makeServices(ds)
+    const graph = makeGraph(svc)
+    await runWithUserAsync('u1', async () => {
+      // 先"没懂"两次（其中一次定位到 mechanism 区）
+      await graph.ackConfused(pid, 'c-attn', { reason: '不懂', sectionKey: 'mechanism' })
+      await graph.ackConfused(pid, 'c-attn', { reason: '还卡' })
+      await graph.ackMastered(pid, 'c-attn', 'lesson_ack')
+      const c = await svc.concepts.getById('c-attn')
+      expect(c?.mastery).toBe('mastered')
+      expect(c?.attrs?.confusedCount).toBe(0)
+      expect(c?.attrs?.confusedSections).toBeUndefined()
+      // 再次"没懂"：计数与区级计数都从零重新累计（自洽）
+      await graph.ackConfused(pid, 'c-attn', { reason: '反复卡住', sectionKey: 'mechanism' })
+      const c2 = await svc.concepts.getById('c-attn')
+      expect(c2?.attrs?.confusedCount).toBe(1)
+      expect((c2?.attrs?.confusedSections as Record<string, number> | undefined)?.mechanism).toBe(1)
+    })
+  })
+
   it('ackConfused：没懂计数 +1 且达到阈值给出拆解建议；mastery 置 learning', async () => {
     ds = await buildDs()
     const pid = await seedSpace('u1', ds)

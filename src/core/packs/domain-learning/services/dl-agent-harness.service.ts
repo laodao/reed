@@ -126,8 +126,11 @@ export class DlAgentHarnessService {
     const tapActionDone = (): void => {
       tap.untap = getEventEmitter().tapEvents?.((c, data) => {
         if (c !== channelEvent) return
-        const ev = data as { type?: string; summary?: DlAgentActionSummary }
-        if (ev?.type === 'action:done' && ev.summary) actionSummaries.push(ev.summary)
+        const ev = data as { type?: string; mode?: DlAgentMode; summary?: DlAgentActionSummary }
+        // 只收本轮 mode 的动作摘要（跨 mode 并发时同通道事件互不串收；老事件无 mode 字段则照收）
+        if (ev?.type === 'action:done' && ev.summary && (!ev.mode || ev.mode === mode)) {
+          actionSummaries.push(ev.summary)
+        }
       }) ?? null
     }
 
@@ -165,7 +168,7 @@ export class DlAgentHarnessService {
         question: message,
       })
       questionId = q.id
-      emitDlAgentEvent(spaceId, conceptForEvent, { type: 'question:open', questionId })
+      emitDlAgentEvent(spaceId, conceptForEvent, { type: 'question:open', mode, questionId })
     }
 
     // 快照 + 白名单（research/verify 带读工具：KB/网页/API + 有默认搜索源才 web_search；
@@ -232,11 +235,11 @@ export class DlAgentHarnessService {
     let allText = ''
     const newSummaryEvent = () => {
       summaryEventId = `dl-agent-summary-${spaceId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-      if (!suppressUserEvents) emitDlAgentEvent(spaceId, conceptForEvent, { type: 'reply:start', summaryEventId })
+      if (!suppressUserEvents) emitDlAgentEvent(spaceId, conceptForEvent, { type: 'reply:start', mode, summaryEventId })
     }
     const emitStage = (stage: 'deciding' | 'acting') => {
       if (suppressUserEvents) return
-      emitDlAgentEvent(spaceId, conceptForEvent, { type: 'stage', stage })
+      emitDlAgentEvent(spaceId, conceptForEvent, { type: 'stage', mode, stage })
     }
 
     emitStage('deciding')
@@ -279,6 +282,7 @@ export class DlAgentHarnessService {
         },
         runtimeContext: () => ({
           spaceId,
+          mode,
           ...(conceptId ? { conceptId } : {}),
           ...(opts.focusQuestionId ? { questionId: opts.focusQuestionId } : {}),
           providerConfigId: opts.providerConfigId,
@@ -307,11 +311,12 @@ export class DlAgentHarnessService {
         if (!suppressUserEvents) {
           emitDlAgentEvent(spaceId, conceptForEvent, {
             type: 'error',
+            mode,
             error: result.error ?? (result.stopReason === 'aborted' ? '本轮已中断' : '执行失败'),
           })
         }
       }
-      if (!suppressUserEvents) emitDlAgentEvent(spaceId, conceptForEvent, { type: 'reply:done', suggestions })
+      if (!suppressUserEvents) emitDlAgentEvent(spaceId, conceptForEvent, { type: 'reply:done', mode, suggestions })
 
       logger.info(`[dl-agent] 轮次完成 mode=${mode} space=${spaceId} concept=${conceptId ?? '-'} stop=${result.stopReason} steps=${result.iterations}`)
 
@@ -352,7 +357,7 @@ export class DlAgentHarnessService {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       logger.error(`[dl-agent] 轮次异常 mode=${mode} space=${spaceId}: ${msg}`)
-      if (!suppressUserEvents) emitDlAgentEvent(spaceId, conceptForEvent, { type: 'error', error: msg })
+      if (!suppressUserEvents) emitDlAgentEvent(spaceId, conceptForEvent, { type: 'error', mode, error: msg })
       if (mode === 'research') {
         void dlPublishNotice('dl:research-failed', { spaceId, conceptName: conceptId ?? undefined })
       }

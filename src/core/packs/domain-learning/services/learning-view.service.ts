@@ -101,9 +101,10 @@ export class LearningViewService {
     // 仓储 listByProject 为 createdAt DESC（新在前），这里反转成 旧→新 正序，
     // 使前端按序渲染时「最近的消息在最底部」（用户修复诉求）。
     const turns: DlChatTurn[] = [...questions].reverse().flatMap((q) => {
-      const userTurn: DlChatTurn = { role: 'user', text: q.question, questionId: q.id }
+      const qConceptId = q.conceptId ?? null
+      const userTurn: DlChatTurn = { role: 'user', text: q.question, questionId: q.id, conceptId: qConceptId }
       if (q.answerMd) {
-        return [userTurn, { role: 'assistant', text: q.answerMd, sourceLabel: this.sourceLabel(q.answerSource), questionId: q.id }]
+        return [userTurn, { role: 'assistant', text: q.answerMd, sourceLabel: this.sourceLabel(q.answerSource), questionId: q.id, conceptId: qConceptId }]
       }
       return [userTurn]
     })

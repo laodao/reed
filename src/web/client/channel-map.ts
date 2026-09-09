@@ -299,6 +299,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'domainLearning.listNotes': { channel: 'dl:list-notes' },
   'domainLearning.createNote': { channel: 'dl:create-note' },
   'domainLearning.deleteNote': { channel: 'dl:delete-note' },
+  'domainLearning.publishCard': { channel: 'dl:publish-card' },
   'domainLearning.schedulerState': { channel: 'dl:scheduler-state' },
   // domainLearning.onAgentEvent(spaceId, conceptId?, cb) — 后端 emit(`dl:agent:<spaceId>[:<conceptId>]`, event)
   'domainLearning.onAgentEvent': {

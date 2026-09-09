@@ -49,6 +49,8 @@ export interface DlCreateSpaceInput {
 /** dl agent 动作事件（通道 dl:agent:<spaceId>[:<conceptId>]；契约对齐后端 dl-agent.types） */
 export interface DlAgentUiEvent {
   type: 'stage' | 'reply:start' | 'reply:done' | 'action:done' | 'error' | 'question:open'
+  /** 产生事件的会话模式（2026-09-09 复盘：订阅方按自己发起的 mode 过滤，防跨模式并发混流） */
+  mode?: 'research' | 'tutor' | 'task' | 'verify'
   stage?: 'deciding' | 'acting'
   summaryEventId?: string
   error?: string
@@ -102,6 +104,7 @@ interface DomainLearningApi {
   }): Promise<IpcLike<DlAgentSendResultUi>>
   agentCancel(p: { mode: 'research' | 'tutor' | 'task'; spaceId: string; conceptId?: string | null }): Promise<IpcLike<{ ok: boolean }>>
   agentBusy(p: { mode: 'research' | 'tutor' | 'task'; spaceId: string; conceptId?: string | null }): Promise<IpcLike<boolean>>
+  publishCard(p: { id: string; cardId: string }): Promise<IpcLike<{ ok: boolean; already?: boolean }>>
   getSpacePace(id: string): Promise<IpcLike<DlPaceSettings>>
   setSpacePace(p: { id: string; pace: DlPaceSettings }): Promise<IpcLike<DlPaceSettings>>
   getAtlasViews(id: string): Promise<IpcLike<DlAtlasViews | null>>
@@ -440,8 +443,9 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     }
   }
 
-  /** 拉取空间级全部笔记并写回 notesAll（dl:list-notes conceptId=null） */
-  async function fetchNotesAll(id: string): Promise<DlNote[]> {
+  /** 拉取空间级全部笔记并写回 notesAll（dl:list-notes conceptId=null）；
+   *  quiet=true 用于后台预热（失败不污染 error 提示） */
+  async function fetchNotesAll(id: string, quiet?: boolean): Promise<DlNote[]> {
     const a = api()
     if (!a) return []
     try {
@@ -449,7 +453,7 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
       notesAll.value = r?.success && r.data ? r.data.notes : []
       return notesAll.value
     } catch (e: any) {
-      error.value = e?.message ?? '获取全部笔记失败'
+      if (!quiet) error.value = e?.message ?? '获取全部笔记失败'
       return []
     }
   }
@@ -575,6 +579,24 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
       return false
     } catch (e: any) {
       error.value = e?.message ?? '完成复习失败'
+      return false
+    }
+  }
+
+  /** 确认发布讲义（draft→published；2026-09-09 复盘补发布闭环，成功后刷新视图/统计） */
+  async function publishCard(id: string, cardId: string): Promise<boolean> {
+    const a = api()
+    if (!a) return false
+    try {
+      const r = await a.publishCard({ id, cardId })
+      if (r?.success) {
+        await fetchSpaceView(id)
+        return true
+      }
+      error.value = r?.error ?? '发布讲义失败'
+      return false
+    } catch (e: any) {
+      error.value = e?.message ?? '发布讲义失败'
       return false
     }
   }
@@ -738,6 +760,7 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     fetchReviewDue,
     needReviewOf,
     reviewDoneOf,
+    publishCard,
     // 统计与导出
     spaceStats,
     fetchSpaceStats,

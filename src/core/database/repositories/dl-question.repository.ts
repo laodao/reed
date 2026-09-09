@@ -8,6 +8,7 @@
 
 import { type DataSource, type FindOptionsWhere } from 'typeorm'
 import { DlQuestionEntity } from '../entities/domain-learning/dl-question.entity'
+import type { DlQuestionView } from '@shared/types/domain-learning.types'
 import { BaseRepository } from '../base-repository'
 
 /** dl_question 行 DTO */
@@ -109,5 +110,18 @@ export class DlQuestionRepository extends BaseRepository<DlQuestionEntity, DlQue
       createdAt: e.createdAt,
       answeredAt: e.answeredAt,
     }
+  }
+}
+
+/** IPC 视图化（2026-09-09 复盘：剔 userId/Date，对齐 shared DlQuestionView） */
+export function toDlQuestionView(r: DlQuestionRow): DlQuestionView {
+  return {
+    id: r.id,
+    conceptId: r.conceptId ?? null,
+    question: r.question,
+    answerMd: r.answerMd ?? null,
+    answerSource: (r.answerSource ?? null) as DlQuestionView['answerSource'],
+    status: r.status as DlQuestionView['status'],
+    createdAt: r.createdAt?.toISOString() ?? null,
   }
 }

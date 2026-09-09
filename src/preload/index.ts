@@ -1331,6 +1331,8 @@ const electronAPI = {
     // Agent 忙碌查询（该 scope 是否有在途轮次）
     agentBusy: (p: { mode: 'research' | 'tutor' | 'task'; spaceId: string; conceptId?: string | null }) =>
       ipcRenderer.invoke('dl:agent-busy', p),
+    // 讲义发布（draft→published 人审确认；2026-09-09 复盘补闭环）
+    publishCard: (p: { id: string; cardId: string }) => ipcRenderer.invoke('dl:publish-card', p),
     // 周期推进配置（M2-C：dl:get-space-pace / dl:set-space-pace / dl:scheduler-state）
     getSpacePace: (id: string) => ipcRenderer.invoke('dl:get-space-pace', { id }),
     setSpacePace: (p: {
