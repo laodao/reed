@@ -84,7 +84,7 @@ describe('内置「主题深度研究」模板（topic-research.json v2）', () 
     expect(plan1.jsonMode).toBe(true)
     expect(str('plan1', 'providerConfigId')).toContain('{{start.researcherModel.providerConfigId}}')
     const sp = str('plan1', 'systemPrompt')
-    for (const kw of ['已知地图', '主题类型', '验收标准', '先验', '信息源']) expect(sp).toContain(kw)
+    for (const kw of ['已知地图', '主题类型', '验收标准', '先验', '信息源', '颗粒度', '决策树', '禁止编造']) expect(sp).toContain(kw)
     const prompt = str('plan1', 'prompt')
     expect(prompt).toContain('{{start.topic}}')
     expect(prompt).toContain('{{clarify.values.goal}}')
@@ -104,7 +104,7 @@ describe('内置「主题深度研究」模板（topic-research.json v2）', () 
       expect(str(id, 'providerConfigId')).toContain('{{start.researcherModel.providerConfigId}}')
       // 研究纪律关键句
       const sp = str(id, 'systemPrompt')
-      for (const kw of ['wf_kb_list', '禁止编造', '证据锚', '未查到', '以官方最新为准']) {
+      for (const kw of ['wf_kb_list', '禁止编造', '证据锚', '未查到', '以官方最新为准', '证据层级', '量级']) {
         expect(sp, `${id}/${kw}`).toContain(kw)
       }
     }
@@ -122,7 +122,7 @@ describe('内置「主题深度研究」模板（topic-research.json v2）', () 
       expect(str(id, 'providerConfigId'), id).toContain('{{start.evaluatorModel.providerConfigId}}')
       expect(str(id, 'modelId'), id).toContain('{{start.evaluatorModel.modelId}}')
       const sp = str(id, 'systemPrompt')
-      for (const kw of ['验收标准', 'pass', 'revise', '幻觉']) expect(sp, `${id}/${kw}`).toContain(kw)
+      for (const kw of ['验收标准', 'pass', 'revise', '幻觉', '量级', '证据层级']) expect(sp, `${id}/${kw}`).toContain(kw)
     }
     expect(str('e1', 'prompt')).toContain('{{r1.answer}}')
     expect(str('e2', 'prompt')).toContain('{{r2.answer}}')
@@ -143,9 +143,13 @@ describe('内置「主题深度研究」模板（topic-research.json v2）', () 
   it('writer 成稿 → report1 拼装 → final1 人工确认（可改全文）→ approve 保存 / reject 结束', () => {
     expect(nodeById.get('writer')?.type).toBe('llm-chat')
     expect(config('writer').jsonMode).toBe(true)
-    for (const kw of ['execSummary', 'sourcesMd', 'limits', '以官方最新为准']) {
+    for (const kw of ['execSummary', 'sourcesMd', 'limits', '以官方最新为准', 'actionPlan', '官方一手', '清单', '决策树']) {
       expect(str('writer', 'systemPrompt'), kw).toContain(kw)
     }
+    // 深度契约已内联到报告模板：下一步行动 + 证据分层来源
+    const tpl = str('report1', 'template')
+    expect(tpl).toContain('{{writer.parsed.actionPlan}}')
+    expect(tpl).toContain('下一步行动')
     expect(edgeTarget('writer', 'normal')).toBe('report1')
     expect(edgeTarget('report1', 'normal')).toBe('final1')
     expect(nodeById.get('final1')?.type).toBe('human-review')
