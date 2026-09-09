@@ -121,4 +121,29 @@ describe('LearningViewService 统计与导出（M3-C）', () => {
       expect(dig!.filename).toContain('.md')
     })
   })
+
+  it('buildSpaceView：追问历史 turns 按 旧→新 正序（最近消息在底部，M6 修复）', async () => {
+    ds = await buildDs()
+    const db = await buildDb(ds)
+    const svc = new LearningViewService(db)
+    const pid = 'dg-turns'
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+    await runWithUserAsync('u1', async () => {
+      await db.dlProjects!.create({ id: pid, name: '对话域', goal: '入门' })
+      await db.dlConcepts!.create({ id: 'c1', projectId: pid, nodeType: 'concept', name: '概念A', parentId: null })
+      // 先后落三条问答（略隔时间戳保证 createdAt 可辨）
+      await db.dlQuestions!.create({ id: 'q1', projectId: pid, conceptId: 'c1', question: '第一问' })
+      await sleep(8)
+      await db.dlQuestions!.create({ id: 'q2', projectId: pid, conceptId: 'c1', question: '第二问' })
+      await sleep(8)
+      await db.dlQuestions!.create({ id: 'q3', projectId: pid, conceptId: 'c1', question: '第三问' })
+
+      const view = await svc.buildSpaceView(pid)
+      const textSeq = (view?.turns ?? []).filter((t) => t.role === 'user').map((t) => t.text)
+      // 渲染时按序展示 → 最早的提问在最上、最近的在最下
+      expect(textSeq).toEqual(['第一问', '第二问', '第三问'])
+      expect(view?.turns[0]?.text).toBe('第一问')
+      expect(view?.turns[view!.turns.length - 1]?.text).toBe('第三问')
+    })
+  })
 })

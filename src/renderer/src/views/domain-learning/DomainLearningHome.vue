@@ -297,6 +297,9 @@ onMounted(() => {
   padding: 18px;
   cursor: pointer;
   transition: box-shadow 0.2s, transform 0.1s;
+  // 等高卡片：纵向布局，进度与“继续学习”固定在卡片底部，不随说明文字数量漂移
+  display: flex;
+  flex-direction: column;
 
   &:hover {
     box-shadow: var(--el-box-shadow-light);
@@ -342,11 +345,18 @@ onMounted(() => {
   margin: 0 0 14px;
   font-size: 13px;
   color: var(--el-text-color-regular);
-  min-height: 18px;
+  min-height: 40px;
+  // 说明文字限高两行：进度与按钮位置固定，不等文字量撑动
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.5;
 }
 
 .card-progress {
   margin-bottom: 14px;
+  margin-top: auto;
 }
 
 .progress-labels {

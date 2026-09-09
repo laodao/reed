@@ -97,8 +97,10 @@ export class LearningViewService {
     const tree = this.buildTree(conceptViews)
     const stats = this.stats(conceptViews)
     const openCount = questions.filter((q) => q.status === 'open').length
-    // 追问对话（右栏历史）：user=question / assistant=answer（answered 才有）
-    const turns: DlChatTurn[] = questions.flatMap((q) => {
+    // 追问对话（右栏历史）：user=question / assistant=answer（answered 才有）。
+    // 仓储 listByProject 为 createdAt DESC（新在前），这里反转成 旧→新 正序，
+    // 使前端按序渲染时「最近的消息在最底部」（用户修复诉求）。
+    const turns: DlChatTurn[] = [...questions].reverse().flatMap((q) => {
       const userTurn: DlChatTurn = { role: 'user', text: q.question, questionId: q.id }
       if (q.answerMd) {
         return [userTurn, { role: 'assistant', text: q.answerMd, sourceLabel: this.sourceLabel(q.answerSource), questionId: q.id }]

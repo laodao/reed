@@ -10,6 +10,7 @@
         <span class="progress-text">{{ progressText }}</span>
         <el-progress :percentage="masteryPercent" :stroke-width="8" :show-text="false" style="width: 160px" />
       </div>
+      <el-button plain :icon="Setting" @click="settingsVisible = true">空间设置</el-button>
       <el-button type="primary" plain :icon="Share" @click="openAtlas">知识全景</el-button>
       <el-button type="primary" :icon="Promotion" :loading="pickingNext" @click="continueLearning">
         继续学习 →
@@ -339,6 +340,11 @@
           />
         </div>
       </el-dialog>
+
+      <!-- 空间设置（M6：设置入口移到主题主界面；共享面板组件，打开时按空间加载） -->
+      <el-dialog v-model="settingsVisible" title="空间设置" width="520px" append-to-body :close-on-click-modal="false">
+        <SpaceSettingsPanel v-if="settingsVisible" :space-id="spaceId" @applied="settingsVisible = false" />
+      </el-dialog>
     </div>
   </div>
 </template>
@@ -370,6 +376,7 @@ import {
   Promotion,
   Document,
   Notebook,
+  Setting,
   Star,
   StarFilled,
 } from '@element-plus/icons-vue'
@@ -387,6 +394,7 @@ import {
 } from './domain-learning-ui'
 import SectionLesson from './SectionLesson.vue'
 import LessonSlides from './LessonSlides.vue'
+import SpaceSettingsPanel from './SpaceSettingsPanel.vue'
 import type {
   DlCardSection,
   DlChatTurn,
@@ -942,8 +950,17 @@ async function ask(): Promise<void> {
       conceptId: scopeConceptId,
       message: q,
     })
-    if (!result && !assistantTurn.text) {
-      assistantTurn.text = store.error ? `（未收到回答：${store.error}）` : '（未收到回答，请稍后重试）'
+    // 无答复不静默：流式正文为空时，用会话总结（后端答不上会说明并登记待研究）
+    // 或明确错误兜底，避免“发了没反应也没报错”。
+    if (!assistantTurn.text) {
+      const summary = (result?.content ?? '').trim()
+      if (summary) {
+        assistantTurn.text = summary
+      } else {
+        assistantTurn.text = store.error
+          ? `（未收到回答：${store.error}）`
+          : '（未收到回答：问题已记录，可稍后在“未解问题”中发起研究）'
+      }
     }
   } catch (e: any) {
     assistantTurn.text = `（追问失败：${e?.message ?? '未知错误'}）`
@@ -999,6 +1016,8 @@ const noteDlg = reactive({ visible: false, anchor: '' })
 const noteText = ref('')
 const noteSaving = ref(false)
 const slidesVisible = ref(false)
+/** 空间设置弹层（M6：设置入口在主界面） */
+const settingsVisible = ref(false)
 
 function hideSel(): void {
   sel.show = false
