@@ -41,6 +41,8 @@ import scriptToVideo from './builtin-apps/script-to-video.json'
 // V2 素材前置（2026-09-06 用户确认开工：保留 V1 为独立定义，V2 另立新 id）
 import scriptToVideoV2 from './builtin-apps/script-to-video-v2.json'
 import scriptToVideoV3 from './builtin-apps/script-to-video-v3.json'
+// 主题实操研究（2026-09-09 用户确认：面向"某件事具体怎么做"的主题研究，示例 TikTok 开店）
+import topicResearch from './builtin-apps/topic-research.json'
 
 /** 内置工作流 id 前缀（固定，幂等查重依据） */
 const BUILTIN_DEF_PREFIX = 'builtin_def_'
@@ -85,6 +87,8 @@ const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; icon: str
   { file: 'long-form-writing.json', raw: longFormWriting, appId: `${BUILTIN_APP_PREFIX}long_form_writing`, icon: '✍️', name: '长文写作', description: '故事线 → 章节大纲 → 逐章写作（多轮对话承接前文）→ 合并完整长文入库', category: '内容创作', tags: ['长文', '写作', '小说'] },
   // 电商详情长图（2026-08-29 用户确认开工：先按卖点/规格规划张数，再逐张生成并配图文，排版成竖版详情长图）
   { file: 'ecommerce-detail-long-image.json', raw: ecommerceDetailLongImage, appId: `${BUILTIN_APP_PREFIX}ecommerce_detail_long_image`, icon: '🛍️', name: '电商详情长图', description: '商品图+卖点+规格 → 按卖点/规格规划 N 张介绍图 → 逐张生成（锁商品、图文对应）→ 排版成竖版详情长图', category: '电商', tags: ['电商', '详情', '长图'] },
+  // 主题实操研究（2026-09-09 用户确认开工：研究"某事具体怎么做"，产出步骤/注意/运营方法类实操指南）
+  { file: 'topic-research.json', raw: topicResearch, appId: `${BUILTIN_APP_PREFIX}topic_research`, icon: '🧭', name: '主题实操研究', description: '主题 → 规划研究子问题 → 联网搜索逐问摘要 → 综合成实操指南（详细步骤/注意事项/运营方法等章节 + 参考来源 + 时效提示）→ 人工确认 → 存资产', category: '调研', tags: ['主题研究', '实操', '指南'] },
 ]
 
 /** 默认模板资产（user_id=NULL，可复制修改） */

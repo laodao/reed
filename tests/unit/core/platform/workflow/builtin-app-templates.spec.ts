@@ -1,5 +1,5 @@
 /**
- * 内置应用工作流模板合法性测试（19 个深度场景：8 基础 + 6 第一批 + 3 第二批 + 1 吃瓜报告 + 1 长文写作）
+ * 内置应用工作流模板合法性测试（数量 = builtin-apps 目录随包 JSON 数，随模板新增同步递增）
  * @module tests/unit/core/platform/workflow/builtin-app-templates
  * @description 与 renderer workflow-templates.spec 同纪律：模板 JSON 经
  *              importDefinition 同等校验（validateGraph + 节点类型存在性）。
@@ -20,9 +20,9 @@ const templates = files.map(f => {
   return { name: f, raw }
 })
 
-describe('内置应用模板库（19 个深度场景）', () => {
+describe('内置应用模板库（随包 JSON 自动发现）', () => {
   it(`找到 ${files.length} 份内置模板`, () => {
-    expect(files.length).toBe(19)
+    expect(files.length).toBe(24)
   })
 
   it('全部为合法导出格式', () => {
@@ -73,12 +73,17 @@ describe('内置应用模板库（19 个深度场景）', () => {
   })
 
   it('使用 select-dynamic 的 start 输入 source 合法', () => {
+    // 运行时（RunInputForm.loadDynamicOptions）支持 assets:<大类> 前缀（资产中心按大类列表）+
+    // 若干具名数据源；这里以白名单 + 前缀规则断言，避免与运行时能力脱节
+    const NON_ASSET_SOURCES = ['newsTopics', 'newsSources', 'knowledgeBases', 'assetCategories', 'searchEngineConfigs', 'providerConfigs']
+    const isAllowed = (source?: string): boolean =>
+      !!source && (source.startsWith('assets:') || NON_ASSET_SOURCES.includes(source))
     for (const t of templates) {
       const start = (t.raw.graph as WorkflowGraph).nodes.find(n => n.type === 'start')
       const inputs = start?.config?.inputs ?? []
       for (const input of inputs as Array<{ key?: string; type?: string; source?: string }>) {
         if (input.type === 'select-dynamic') {
-          expect(['assets:template', 'newsTopics', 'knowledgeBases', 'newsSources', 'searchEngineConfigs'], `${t.name}/${input.key}`).toContain(input.source)
+          expect(isAllowed(input.source), `${t.name}/${input.key} source=${input.source}`).toBe(true)
         }
       }
     }
