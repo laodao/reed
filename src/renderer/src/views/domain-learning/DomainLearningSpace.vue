@@ -277,34 +277,84 @@
           </div>
         </template>
 
-        <!-- 笔记面板：当前概念的选区笔记 + 问答收藏（引文 + 正文） -->
-        <div v-else class="note-list">
-          <template v-if="currentConcept">
-            <template v-if="sortedNotes.length > 0">
-              <div v-for="n in sortedNotes" :key="n.id" class="note-item">
-                <div class="note-item-head">
-                  <el-tag size="small" effect="plain" :type="n.source === 'selection' ? 'primary' : 'success'">
-                    {{ n.source === 'selection' ? '选区笔记' : '问答收藏' }}
-                  </el-tag>
-                  <span class="note-time">{{ fmtNoteTime(n.createdAt) }}</span>
-                  <el-button
-                    class="note-del"
-                    link
-                    type="danger"
-                    size="small"
-                    :loading="deletingNoteId === n.id"
-                    @click="removeNoteItem(n)"
-                  >删除</el-button>
+        <!-- 笔记面板：当前概念 / 空间全部（引文 + 正文；M7-B 空间级总览） -->
+        <div v-else class="note-pane">
+          <div class="note-scope-bar">
+            <button class="scope-tab" :class="{ active: noteScope === 'concept' }" @click="noteScope = 'concept'">
+              当前概念<span v-if="noteCountOfCurrent > 0" class="head-tab-count">{{ noteCountOfCurrent }}</span>
+            </button>
+            <button class="scope-tab" :class="{ active: noteScope === 'all' }" @click="noteScope = 'all'">
+              全部笔记<span v-if="notesAllTotal > 0" class="head-tab-count">{{ notesAllTotal }}</span>
+            </button>
+          </div>
+
+          <!-- 当前概念笔记 -->
+          <template v-if="noteScope === 'concept'">
+            <div class="note-list">
+              <template v-if="currentConcept">
+                <template v-if="sortedNotes.length > 0">
+                  <div v-for="n in sortedNotes" :key="n.id" class="note-item">
+                    <div class="note-item-head">
+                      <el-tag size="small" effect="plain" :type="n.source === 'selection' ? 'primary' : 'success'">
+                        {{ n.source === 'selection' ? '选区笔记' : '问答收藏' }}
+                      </el-tag>
+                      <span class="note-time">{{ fmtNoteTime(n.createdAt) }}</span>
+                      <el-button
+                        class="note-del"
+                        link
+                        type="danger"
+                        size="small"
+                        :loading="deletingNoteId === n.id"
+                        @click="removeNoteItem(n)"
+                      >删除</el-button>
+                    </div>
+                    <div v-if="n.anchorText" class="note-anchor-text">「{{ n.anchorText }}」</div>
+                    <div v-if="n.contentMd" class="note-text">{{ n.contentMd }}</div>
+                  </div>
+                </template>
+                <div v-else class="qa-empty">
+                  当前知识点还没有笔记——在讲义上选中一段文字「做笔记」，或收藏答疑中的好回答。
                 </div>
-                <div v-if="n.anchorText" class="note-anchor-text">「{{ n.anchorText }}」</div>
-                <div v-if="n.contentMd" class="note-text">{{ n.contentMd }}</div>
-              </div>
-            </template>
-            <div v-else class="qa-empty">
-              当前知识点还没有笔记——在讲义上选中一段文字「做笔记」，或收藏答疑中的好回答。
+              </template>
+              <div v-else class="qa-empty">先从左侧选择一个知识点，或切到「全部笔记」查看本空间笔记。</div>
             </div>
           </template>
-          <div v-else class="qa-empty">先从左侧选择一个知识点，在这里查看它的笔记。</div>
+
+          <!-- 空间全部笔记（跨概念总览：点击条目跳到所属概念） -->
+          <template v-else>
+            <div class="note-list">
+              <template v-if="sortedNotesAll.length > 0">
+                <div
+                  v-for="n in sortedNotesAll"
+                  :key="n.id"
+                  class="note-item"
+                  :class="{ clickable: !!noteConceptIdOf(n) }"
+                  @click="gotoNoteConcept(n)"
+                >
+                  <div class="note-item-head">
+                    <el-tag size="small" effect="plain" :type="n.source === 'selection' ? 'primary' : 'success'">
+                      {{ n.source === 'selection' ? '选区笔记' : '问答收藏' }}
+                    </el-tag>
+                    <span class="note-concept">{{ noteConceptNameOf(n) }}</span>
+                    <span class="note-time">{{ fmtNoteTime(n.createdAt) }}</span>
+                    <el-button
+                      class="note-del"
+                      link
+                      type="danger"
+                      size="small"
+                      :loading="deletingNoteId === n.id"
+                      @click.stop="removeNoteItemAll(n)"
+                    >删除</el-button>
+                  </div>
+                  <div v-if="n.anchorText" class="note-anchor-text">「{{ n.anchorText }}」</div>
+                  <div v-if="n.contentMd" class="note-text">{{ n.contentMd }}</div>
+                </div>
+              </template>
+              <div v-else class="qa-empty">
+                还没有笔记——在讲义上选中文字「做笔记」、收藏答疑回答，都会汇总到这里跨概念回顾。
+              </div>
+            </div>
+          </template>
         </div>
       </aside>
 
@@ -1127,9 +1177,51 @@ async function toggleFavTurn(t: DlChatTurn): Promise<void> {
   await store.fetchNotesOf(spaceId.value, c?.id ?? null)
 }
 
-// ==================== M4-UX1 补全：右栏「笔记」面板（当前概念浏览/删除） ====================
-/** 右栏当前面板：qa=追问答疑、notes=当前概念笔记 */
+// ==================== M4-UX1 补全：右栏「笔记」面板（当前概念浏览/删除；M7-B 加空间级总览） ====================
+/** 右栏当前面板：qa=追问答疑、notes=笔记 */
 const rightPane = ref<'qa' | 'notes'>('qa')
+/** 笔记面板范围：concept=当前概念（默认）/ all=本空间全部（M7-B 总览） */
+const noteScope = ref<'concept' | 'all'>('concept')
+/** 空间全部笔记条数 */
+const notesAllTotal = computed(() => store.notesAll.length)
+/** 全部笔记按创建时间降序 */
+const sortedNotesAll = computed<DlNote[]>(() =>
+  [...store.notesAll].sort((a, b) => noteTimeOf(b) - noteTimeOf(a)),
+)
+/** 笔记所属概念名（概念已不存在/空间级笔记给兜底文案） */
+function noteConceptNameOf(n: DlNote): string {
+  if (!n.conceptId) return '空间级'
+  return concepts.value.find((c) => c.id === n.conceptId)?.name ?? '（已移除的概念）'
+}
+/** 笔记所属概念是否仍可跳转（返回概念 id 或 null） */
+function noteConceptIdOf(n: DlNote): string | null {
+  return n.conceptId && concepts.value.some((c) => c.id === n.conceptId) ? n.conceptId : null
+}
+/** 全部笔记条目点击：跳到所属概念讲义并切回概念笔记视图 */
+function gotoNoteConcept(n: DlNote): void {
+  const cid = noteConceptIdOf(n)
+  if (!cid) return
+  const c = concepts.value.find((x) => x.id === cid)
+  if (!c) return
+  expandPathTo(cid)
+  selectConcept(c)
+  noteScope.value = 'concept'
+}
+/** 全部视图删除：scoped 删除后同步空间级列表 */
+async function removeNoteItemAll(n: DlNote): Promise<void> {
+  if (deletingNoteId.value) return
+  deletingNoteId.value = n.id
+  try {
+    await store.removeNoteOf(spaceId.value, n.id)
+    await store.fetchNotesAll(spaceId.value)
+  } finally {
+    deletingNoteId.value = null
+  }
+}
+// 切到「全部」时拉取空间级最新笔记（收藏/新增发生在概念视图，切回再拉保证同步）
+watch(noteScope, (scope) => {
+  if (scope === 'all') void store.fetchNotesAll(spaceId.value)
+})
 /** 正在删除的笔记 id（防连点） */
 const deletingNoteId = ref<string | null>(null)
 /** 当前概念笔记条数（未选概念按 0 展示） */
@@ -1723,7 +1815,44 @@ watch(rightPane, (pane) => {
   min-height: 420px;
 }
 
-/* M4-UX1 补全：右栏「笔记」面板（当前概念：选区笔记 + 问答收藏） */
+/* M4-UX1/M7-B：右栏「笔记」面板（当前概念 + 空间全部总览） */
+.note-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.note-scope-bar {
+  display: flex;
+  gap: 14px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+
+  .scope-tab {
+    appearance: none;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.4;
+    padding: 3px 0;
+    color: var(--el-text-color-secondary);
+    border-bottom: 2px solid transparent;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    &:hover {
+      color: var(--el-text-color-primary);
+    }
+    &.active {
+      color: var(--el-color-primary);
+      border-bottom-color: var(--el-color-primary);
+    }
+  }
+}
+
 .note-list {
   flex: 1;
   overflow-y: auto;
@@ -1743,11 +1872,28 @@ watch(rightPane, (pane) => {
   flex-direction: column;
   gap: 6px;
 
+  // 全部笔记总览：可跳转条目给 hover 提示
+  &.clickable {
+    cursor: pointer;
+    &:hover {
+      border-color: var(--el-color-primary-light-5);
+    }
+  }
+
   .note-item-head {
     display: flex;
     align-items: center;
     gap: 8px;
 
+    .note-concept {
+      flex-shrink: 0;
+      font-size: 11.5px;
+      color: var(--el-color-primary);
+      background: var(--el-color-primary-light-9);
+      padding: 0 8px;
+      border-radius: 8px;
+      line-height: 1.8;
+    }
     .note-time {
       flex: 1;
       min-width: 0;

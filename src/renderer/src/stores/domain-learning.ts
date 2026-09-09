@@ -423,6 +423,8 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
 
   /** 当前空间笔记（按概念过滤时只含该概念） */
   const notes = ref<DlNote[]>([])
+  /** 空间级全部笔记（跨概念总览，M7-B） */
+  const notesAll = ref<DlNote[]>([])
 
   /** 拉取笔记并写回 notes（conceptId 传概念则只取该概念） */
   async function fetchNotesOf(id: string, conceptId?: string | null): Promise<DlNote[]> {
@@ -434,6 +436,20 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
       return notes.value
     } catch (e: any) {
       error.value = e?.message ?? '获取笔记失败'
+      return []
+    }
+  }
+
+  /** 拉取空间级全部笔记并写回 notesAll（dl:list-notes conceptId=null） */
+  async function fetchNotesAll(id: string): Promise<DlNote[]> {
+    const a = api()
+    if (!a) return []
+    try {
+      const r = await a.listNotes({ id, conceptId: null })
+      notesAll.value = r?.success && r.data ? r.data.notes : []
+      return notesAll.value
+    } catch (e: any) {
+      error.value = e?.message ?? '获取全部笔记失败'
       return []
     }
   }
@@ -469,6 +485,7 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
       const r = await a.deleteNote({ id, noteId })
       if (r?.success && r.data?.ok) {
         notes.value = notes.value.filter((n) => n.id !== noteId)
+        notesAll.value = notesAll.value.filter((n) => n.id !== noteId)
         return true
       }
       return false
@@ -728,6 +745,8 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     // 概念笔记
     notes,
     fetchNotesOf,
+    notesAll,
+    fetchNotesAll,
     saveNote,
     removeNoteOf,
     // 掌握度反馈
