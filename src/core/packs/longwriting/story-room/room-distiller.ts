@@ -9,10 +9,6 @@
  */
 
 import { createLogger } from '@core/utils/logger'
-import { createHostKit } from '@core/platform/agent-runtime'
-import { getAgentLoopHarness } from '@core/platform/workflow/nodes/agent-loop-node'
-import { getMemoryFlywheel } from '@core/platform/workflow/workflow-boot'
-import { DbAgentSessionStore } from '@core/platform/agent-runtime/memory/session-store'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { computeProductionState } from '@core/platform/services/longwriting/agent/agent-deps'
 import { stateToSummary } from '@core/platform/services/longwriting/agent/agent-context'
@@ -21,6 +17,7 @@ import type { ArtifactCard, ArtifactCardKind, BibleDistillScope, DistillScope, R
 import { emitRoomEvent } from './room-events'
 import { getRoomState, patchRoomState } from './room-state'
 import { ledgerSnapshotText } from './room-ledger'
+import { generateRoomText } from './room-llm'
 
 const logger = createLogger('StoryRoomDistiller')
 
@@ -139,7 +136,6 @@ export class StoryRoomDistillerService {
     controller: AbortController,
   ): Promise<DistillResult> {
     const m = this.manager()
-    const harness = getAgentLoopHarness()
     const state = await getRoomState(m, projectId)
 
     // 上下文：圣经 + 账本 + 摘要 + 范围素材
@@ -153,35 +149,20 @@ export class StoryRoomDistillerService {
     }
     const extra = await this.scopeContext(m, projectId, scope, state)
     const system = DISTILLER_PERSONA
+    // 研讨实录：整理器的原始素材——没有它，宁缺毋滥纪律会产出全空卡（真机评估教训）
+    const transcript = await this.recentTranscript(m, projectId, 12)
     const user = [
+      transcript && `【研讨实录】（最近对话原文，是你的整理素材）\n${transcript}`,
       `【故事圣经】\n${bibleText || '（暂无入库设定）'}`,
       ledgerSnapshotText(state.ledger) || '【共识账本】（空）',
       state.summary ? `【前情提要】\n${state.summary}` : '',
       taskInstruction(scope, state, opts.feedback ? `\n【用户反馈（按反馈重新提炼）】${opts.feedback}` : extra, dynamic ? { label: dynamic.label, hint: dynamic.hint } : undefined),
     ].filter(Boolean).join('\n\n')
 
-    const kit = createHostKit<{ input: string }>(
-      {
-        definitionId: ROOM_DISTILLER_DEFINITION_ID,
-        scopeKey: () => `story-room-distiller:${projectId}`,
-        tools: () => ({}),
-        resolveModel: (o) => harness.resolveModel({ providerConfigId: o?.providerConfigId, modelId: o?.modelId }),
-        systemPrompt: () => system,
-        snapshot: () => '',
-        seededHistory: () => [],
-        maxSteps: 1,
-        memory: null,
-        modelPreference: () => ({ providerConfigId: opts.providerConfigId, modelId: opts.modelId }),
-      },
-      { trajectoryPort: harness.trajectoryRepo ?? null, sessionStore: this.getSessionStore(), flywheel: this.safeFlywheel() },
-    )
-
-    // 整理上下文经 input 播种（seededHistory 留空——评审 P2-13，避免 scope 孤儿消息）
-    const result = await kit.runTurn({ input: user }, { signal: controller.signal })
-    const raw = result.output || ''
-    if (result.stopReason === 'error' || result.stopReason === 'aborted') {
-      throw new Error(result.error || `整理失败（${result.stopReason}）`)
-    }
+    // 真机实测：JSON-only 指令经 loop/streamText 偶发空输出（NoOutputGenerated），
+    // 同模型直调（generateText）稳定——整理器是单轮生成，统一走直调（保留 busy/事件/落库；
+    // 代价：直调不经 RunRegistry/轨迹，观测面由本服务日志与卡片产物承担）。
+    const raw = await generateRoomText('distill', { system, user }, opts, controller.signal)
 
     const parsed = extractJsonObject(raw)
     if (!parsed) {
@@ -206,8 +187,21 @@ export class StoryRoomDistillerService {
     await patchRoomState(m, projectId, { pendingCards: next.pendingCards, cardSeq: next.cardSeq })
     emitRoomEvent(projectId, { type: 'card:ready', cards })
 
-    logger.info(`[story-room] 整理完成 project=${projectId} scope=${scope} cards=${cards.length} stop=${result.stopReason}`)
-    return { cards, stopReason: result.stopReason }
+    logger.info(`[story-room] 整理完成 project=${projectId} scope=${scope} cards=${cards.length}`)
+    return { cards, stopReason: 'final' }
+  }
+
+  /** 最近研讨实录（lw_design_messages room 会话，压缩后作为整理素材） */
+  private async recentTranscript(m: any, projectId: string, limit: number): Promise<string> {
+    try {
+      const rows = (await m.lwDesignMessages.getByConversationId(`room:${projectId}`)) || []
+      return rows
+        .slice(-limit)
+        .map((r: any) => `${r.role === 'user' ? '作者' : '主编'}：${String(r.content ?? '').slice(0, 800)}`)
+        .join('\n\n')
+    } catch {
+      return ''
+    }
   }
 
   /** 范围素材：大纲需知道当前卷/集序号与已有结构 */
@@ -431,23 +425,6 @@ export class StoryRoomDistillerService {
     return updated
   }
 
-  private getSessionStore(): DbAgentSessionStore | null {
-    try {
-      const db = getCoreDatabaseManager()
-      if (!db.dataSource) return null
-      return new DbAgentSessionStore({ dataSource: db.dataSource })
-    } catch {
-      return null
-    }
-  }
-
-  private safeFlywheel() {
-    try {
-      return getMemoryFlywheel()
-    } catch {
-      return null
-    }
-  }
 }
 
 /** 轻编辑 patch 深合并（对象递归、其余覆盖） */

@@ -98,7 +98,11 @@ export async function silentExtractLedger(
       `【本轮对话】第 ${input.turnNo} 轮\n用户：${input.userText.slice(0, 2000)}\n主编：${input.assistantText.slice(0, 2000)}`,
     ].join('\n\n')
 
-    const raw = await generateRoomText('ledger-extract', { system: EXTRACT_SYSTEM, user, maxTokens: 1200 }, input.llmOpts, signal)
+    let raw = await generateRoomText('ledger-extract', { system: EXTRACT_SYSTEM, user, maxTokens: 1200 }, input.llmOpts, signal)
+    if (!raw.trim()) {
+      // 偶发空输出重试一次（provider 抖动，实测 chars=0 案例）
+      raw = await generateRoomText('ledger-extract-retry', { system: EXTRACT_SYSTEM, user, maxTokens: 1200 }, input.llmOpts, signal)
+    }
     // 兼容两种形态：{"entries":[...],"gate":{...}}（现约定）与裸数组（容错）
     const parsed = extractJsonObject(raw)
     const ops: any[] = Array.isArray(parsed)
@@ -161,7 +165,8 @@ export async function silentExtractLedger(
     logger.info(`[story-room] 账本静默提取 project=${projectId} turn=${input.turnNo}`)
     return ledger
   } catch (e) {
-    logger.warn(`[story-room] 账本静默提取失败（fail-soft 跳过）project=${projectId}`, e)
+    const msg = e instanceof Error ? `${e.name}: ${e.message}` : JSON.stringify(e) || String(e)
+    logger.warn(`[story-room] 账本静默提取失败（fail-soft 跳过）project=${projectId} err=${msg}`)
     return null
   }
 }

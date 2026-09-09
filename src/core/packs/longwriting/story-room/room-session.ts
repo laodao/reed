@@ -321,12 +321,13 @@ export class StoryRoomSessionService {
 
       // 9. 轮后静默任务（fail-soft：失败只留日志，不影响本轮结果）
       const nextTurnNo = turnNo
+      // 不传发送控制器的 signal——轮已结束，静默任务不该被轮内 abort 波及（评审实测）
       const ledger = await silentExtractLedger(m, projectId, {
         userText: message,
         assistantText: content,
         turnNo: nextTurnNo,
         llmOpts: opts,
-      }, controller.signal)
+      })
       let ledgerUpdated = false
       if (ledger) {
         emitRoomEvent(projectId, { type: 'ledger:update', ledger })

@@ -31,13 +31,19 @@ export async function generateRoomText(
     providerConfigId: opts?.providerConfigId,
     modelId: opts?.modelId,
   })
-  const r = await generateText({
-    model: model as never,
-    system: req.system,
-    messages: [{ role: 'user', content: req.user }],
-    maxOutputTokens: req.maxTokens,
-    abortSignal: signal,
-  })
-  logger.info(`[story-room] 直调完成 purpose=${purpose} chars=${r.text?.length ?? 0}`)
-  return r.text ?? ''
+  try {
+    const r = await generateText({
+      model: model as never,
+      system: req.system,
+      messages: [{ role: 'user', content: req.user }],
+      maxOutputTokens: req.maxTokens,
+      abortSignal: signal,
+    })
+    logger.info(`[story-room] 直调完成 purpose=${purpose} chars=${r.text?.length ?? 0}`)
+    return r.text ?? ''
+  } catch (e: any) {
+    // 供应商 4xx/5xx 细节（responseBody）对定位 Bad Request 至关重要
+    logger.error(`[story-room] 直调失败 purpose=${purpose} url=${e?.url ?? ''} status=${e?.statusCode ?? ''} body=${String(e?.responseBody ?? e?.message ?? '').slice(0, 300)}`)
+    throw e
+  }
 }
