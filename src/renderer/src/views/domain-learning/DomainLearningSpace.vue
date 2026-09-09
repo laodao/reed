@@ -209,6 +209,10 @@
             </div>
           </div>
           <el-empty v-else-if="view" description="从左侧知识地图选择一个知识点开始学习" />
+          <!-- 加载失败与加载中区分（2026-09-09 复盘：不再永久"加载中"） -->
+          <el-empty v-else-if="viewError" :description="viewError">
+            <el-button type="primary" @click="loadSpace">重试</el-button>
+          </el-empty>
           <el-empty v-else description="正在加载学习空间…" />
         </template>
       </section>
@@ -267,7 +271,7 @@
               </div>
             </div>
             <div v-if="displayTurns.length === 0" class="qa-empty">
-              还没有追问记录——读完讲义后在这里提问。
+              {{ view ? '还没有追问记录——读完讲义后在这里提问。' : '答疑历史加载中…' }}
             </div>
           </div>
           <!-- task 会话执行进度（动作流水；默认折叠为一行，展开滚动查看，M6-3 阶段二/四） -->
@@ -499,6 +503,8 @@ const view = computed<DlSpaceView | null>(() => store.currentSpaceView)
 const concepts = computed<DlConceptView[]>(() => view.value?.concepts ?? [])
 const relations = computed<DlRelationView[]>(() => view.value?.relations ?? [])
 const treeRoots = computed<DlTreeNode[]>(() => view.value?.tree ?? [])
+/** 空间视图加载失败信息（区分"加载中"与"加载失败"，2026-09-09 复盘） */
+const viewError = ref('')
 
 const spaceName = computed(() => view.value?.name ?? '学习空间')
 
@@ -526,8 +532,12 @@ async function loadSpace(): Promise<void> {
   lastFeedback.value = ''
   lastFeedbackIsWarn.value = false
   liveTurns.value = []
+  viewError.value = ''
+  taskLog.value = []
+  taskLogOpen.value = false
   expandedBranches.clear()
   await store.fetchSpaceView(id)
+  if (!view.value) viewError.value = store.error || '学习空间加载失败，请重试'
   // 预热空间级笔记（qna 收藏态判定的数据源；静默失败、每空间一次）
   if (notesAllWarmed.value !== id) {
     notesAllWarmed.value = id
@@ -1208,8 +1218,12 @@ function handleAgentEvent(
       // 回答结束：内容已由流式拼完（可能为空 = 答不上，保持 open 队列）
       break
     case 'error':
-      if (!assistantTurn.text) assistantTurn.text = `（回答中断：${ev.error ?? '未知错误'}）`
-      break
+      // 2026-09-09 复盘：部分内容已流式到达时也在末尾补中断标记，不再静默半截
+      {
+        const note = `（回答中断：${ev.error ?? '未知错误'}）`
+        assistantTurn.text = assistantTurn.text ? `${assistantTurn.text}\n${note}` : note
+        break
+      }
     default:
       break
   }
@@ -1293,15 +1307,21 @@ async function saveSelectionNote(): Promise<void> {
   if (noteSaving.value || !noteDlg.anchor) return
   noteSaving.value = true
   try {
-    await store.saveNote({
+    const saved = await store.saveNote({
       id: spaceId.value,
       conceptId: c?.id ?? null,
       source: 'selection',
       anchorText: noteDlg.anchor,
       contentMd: noteText.value.trim() || '',
     })
-    noteDlg.visible = false
-    await store.fetchNotesOf(spaceId.value, c?.id ?? null)
+    if (saved) {
+      noteDlg.visible = false
+      await store.fetchNotesOf(spaceId.value, c?.id ?? null)
+    } else {
+      // 2026-09-09 复盘：失败不静默、不关窗
+      lastFeedbackIsWarn.value = true
+      lastFeedback.value = store.error ?? '保存笔记失败，请重试'
+    }
   } finally {
     noteSaving.value = false
   }

@@ -49,8 +49,15 @@
         </div>
       </div>
 
+      <!-- 失败态：列表加载失败（2026-09-09 复盘：不再被空态"还没有主题"吞掉） -->
+      <div v-if="!store.loadingSpaces && store.error" class="topic-empty">
+        <el-empty :description="`主题列表加载失败：${store.error}`">
+          <el-button type="primary" :icon="Refresh" @click="store.fetchSpaces">重试</el-button>
+        </el-empty>
+      </div>
+
       <!-- 空态：还没有任何学习主题 -->
-      <div v-if="!store.loadingSpaces && store.spaces.length === 0" class="topic-empty">
+      <div v-else-if="!store.loadingSpaces && store.spaces.length === 0" class="topic-empty">
         <el-empty description="还没有学习主题，先建一个吧">
           <el-button type="primary" :icon="Plus" @click="openCreate">新建学习主题</el-button>
         </el-empty>
@@ -131,7 +138,7 @@
  */
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Reading, Plus, ArrowRight } from '@element-plus/icons-vue'
+import { Reading, Plus, ArrowRight, Refresh } from '@element-plus/icons-vue'
 import { useDomainLearningStore } from '@/stores/domain-learning'
 import type { DlProjectStatus } from '@shared/types/domain-learning.types'
 import { DL_PROFILE_PRESETS, DL_VIEW_KIND_LABELS, DL_VIEW_KIND_ORDER } from '@shared/types/domain-learning.types'
