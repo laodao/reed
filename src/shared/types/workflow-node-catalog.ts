@@ -139,7 +139,7 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
   {
     type: 'loop',
     label: '循环',
-    description: '遍历列表，每项执行一遍循环体（V1 不支持嵌套）',
+    description: '遍历列表，每项执行一遍循环体（V1 不支持嵌套）；mode=until 时改为重复执行循环体直到停止条件满足（最大轮数封顶）',
     category: 'flow',
     icon: 'Refresh',
     controlKind: 'control',
@@ -151,10 +151,12 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
     requiredConfigKeys: ['listExpression'],
     defaultConfig: { listExpression: '{{start.items}}', emptyPolicy: 'skip', errorPolicy: 'fail' },
     outputSchema: [
-      { key: 'item', type: 'json', desc: '当前迭代元素（循环体内引用）' },
+      { key: 'item', type: 'json', desc: '当前迭代元素（foreach 循环体内引用）' },
       { key: 'index', type: 'number', desc: '当前迭代下标（循环体内引用）' },
       { key: 'results', type: 'json', desc: '各迭代汇聚输出的数组' },
       { key: 'count', type: 'number', desc: '迭代总数' },
+      { key: 'iterations', type: 'number', desc: '实际迭代轮数（until 模式；foreach 同 count）' },
+      { key: 'last', type: 'json', desc: '最后一轮迭代输出（until 模式；foreach 无）' },
     ],
   },
   {

@@ -264,15 +264,35 @@ const loopNode: WorkflowNodeHandler<any, 'loop'> = {
   controlKind: 'control',
   cancellable: true,
   outputSchema: [
-    { key: 'item', type: 'json', desc: '当前迭代元素（循环体内引用）' },
+    { key: 'item', type: 'json', desc: '当前迭代元素（foreach 循环体内引用）' },
     { key: 'index', type: 'number', desc: '当前迭代下标（循环体内引用）' },
     { key: 'results', type: 'json', desc: '各迭代汇聚输出的数组' },
     { key: 'count', type: 'number', desc: '迭代总数' },
+    { key: 'iterations', type: 'number', desc: '实际迭代轮数（until 模式；foreach 同 count）' },
+    { key: 'last', type: 'json', desc: '最后一轮迭代输出（until 模式；foreach 无）' },
   ],
   validateConfig(config) {
-    const cfg = config as { listExpression?: unknown }
-    if (typeof cfg.listExpression !== 'string' || cfg.listExpression.trim() === '') {
-      return ['listExpression 必须是非空模板表达式']
+    const cfg = config as { mode?: string; listExpression?: unknown; stopExpression?: unknown; stopValue?: unknown; maxIterations?: unknown }
+    const mode = cfg.mode ?? 'foreach'
+    if (mode !== 'foreach' && mode !== 'until') {
+      return ['mode 只能是 foreach 或 until']
+    }
+    if (mode === 'until') {
+      if (typeof cfg.stopExpression !== 'string' || cfg.stopExpression.trim() === '') {
+        return ['until 模式必须给非空 stopExpression']
+      }
+      const mi = cfg.maxIterations
+      const num = typeof mi === 'number' ? mi : Number(String(mi ?? '').trim())
+      if (!Number.isFinite(num) || num < 1) {
+        return ['until 模式 maxIterations 必须是 ≥1 的数字（可为 {{模板}}，运行期再校验）']
+      }
+      if (cfg.listExpression !== undefined && cfg.listExpression !== '') {
+        return ['until 模式不允许 listExpression']
+      }
+    } else {
+      if (typeof cfg.listExpression !== 'string' || cfg.listExpression.trim() === '') {
+        return ['listExpression 必须是非空模板表达式']
+      }
     }
     const policy = (config as { emptyPolicy?: string }).emptyPolicy
     if (policy !== undefined && !['skip', 'fail'].includes(policy)) {

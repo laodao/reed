@@ -43,6 +43,8 @@ class ReplayContext {
   readonly loopListSize = new Map<string, number>()
   /** loopNodeId → 已收敛迭代结果（按事件序） */
   readonly loopResults = new Map<string, Array<{ result: unknown; skipped: boolean }>>()
+  /** loopNodeId → until 循环元数据（来自 loopStarted 事件；崩溃重建 driver 用） */
+  readonly loopUntilMeta = new Map<string, { maxIterations: number }>()
 
   constructor(input: ExecuteRunInput) {
     // RunExecution 构造函数只做图装配与设置解析（无副作用）——重放直接复用
@@ -143,6 +145,31 @@ export function replayJournal(
     // 此前对终态循环仍走 fail-fast（日志完好却整 run 标 interrupted）或用残缺
     // 进度覆写 succeeded 为 running（重跑已收敛迭代、副作用翻倍）
     if (terminal.has(state.status as string)) continue
+    // until 循环重建：元数据来自 loopStarted 事件，停止条件原文从节点 config 取（运行期逐轮求值，无需深解析）
+    if (node.type === 'loop' && (node.config as { mode?: string }).mode === 'until') {
+      const meta = ctx.loopUntilMeta.get(loopNodeId)
+      const rawCfg = node.config as { stopExpression?: unknown; stopValue?: unknown }
+      const stopExpr = String(rawCfg.stopExpression ?? '').trim()
+      if (!meta || meta.maxIterations < 1 || !stopExpr) {
+        throw new Error(
+          `until 循环 ${loopNodeId} 缺失 loopStarted 元数据或 stopExpression，无法安全恢复——` +
+            `挂起场景有强制快照不受影响；请用 resumeRun 从 checkpoint 重建。`,
+        )
+      }
+      const driver: LoopDriver = {
+        kind: 'until',
+        node,
+        state,
+        results: results.map((r) => r.result),
+        parentScope,
+        maxIterations: meta.maxIterations,
+        stopExpression: stopExpr,
+        stopValue: rawCfg.stopValue === undefined ? 'true' : (rawCfg.stopValue as string | number | boolean),
+      }
+      exec.loopDrivers.set(loopNodeId, driver)
+      state.status = 'running' as const // 循环节点在途（迭代间崩溃形态）
+      continue
+    }
     const listSize = ctx.loopListSize.get(loopNodeId) ?? results.length
     const recovered = pseudoVarList(ctx, loopNodeId)
     if (!recovered && !hasSnapshotDriver(ctx, loopNodeId)) {
@@ -155,6 +182,7 @@ export function replayJournal(
     }
     const list = recovered ?? Array.from({ length: listSize })
     const driver: LoopDriver = {
+      kind: 'foreach',
       node,
       state,
       list,
@@ -298,8 +326,14 @@ function applyEvent(ctx: ReplayContext, ev: JournalEventRecord): void {
       return
     }
     case WORKFLOW_JOURNAL_EVENT_TYPES.loopStarted: {
-      const p = ev.payload as { parentScopeKey: string; listSize: number }
-      ctx.loopListSize.set(ev.nodeId!, p.listSize)
+      const p = ev.payload as { parentScopeKey: string; listSize: number; mode?: string; maxIterations?: number }
+      if (p.mode === 'until') {
+        if (typeof p.maxIterations === 'number' && p.maxIterations >= 1) {
+          ctx.loopUntilMeta.set(ev.nodeId!, { maxIterations: p.maxIterations })
+        }
+      } else {
+        ctx.loopListSize.set(ev.nodeId!, p.listSize)
+      }
       return
     }
     case WORKFLOW_JOURNAL_EVENT_TYPES.loopIterationSettled: {
@@ -399,12 +433,34 @@ function applySnapshot(ctx: ReplayContext, payload: Record<string, unknown>): vo
       if (!node) continue
       const parentScope = ctx.scopeOf(String(raw.parentScopeKey))
       const state = ctx.stateOf(parentScope, node.id)
+      const results = (raw.results as unknown[]) ?? []
+      const rawCfg = node.config as { mode?: string; stopExpression?: unknown; stopValue?: unknown }
+      if (raw.kind === 'until' || rawCfg.mode === 'until') {
+        const stopExpr = String(raw.stopExpression ?? rawCfg.stopExpression ?? '').trim()
+        const maxIt = Number(raw.maxIterations ?? Number.NaN)
+        if (stopExpr && Number.isFinite(maxIt) && maxIt >= 1) {
+          exec.loopDrivers.set(node.id, {
+            kind: 'until',
+            node,
+            state,
+            results,
+            parentScope,
+            maxIterations: Math.floor(maxIt),
+            stopExpression: stopExpr,
+            stopValue:
+              (raw.stopValue as string | number | boolean | undefined) ??
+              ((rawCfg.stopValue as string | number | boolean | undefined) ?? 'true'),
+          })
+        }
+        continue
+      }
       const list = (raw.list as unknown[] | undefined) ?? Array.from({ length: Number(raw.listSize ?? 0) })
       exec.loopDrivers.set(node.id, {
+        kind: 'foreach',
         node,
         state,
         list,
-        results: (raw.results as unknown[]) ?? [],
+        results,
         parentScope,
       })
     }
@@ -416,7 +472,8 @@ function applySnapshot(ctx: ReplayContext, payload: Record<string, unknown>): vo
 /** 快照路径下该 loop 是否已有携带真实列表的 driver */
 function hasSnapshotDriver(ctx: ReplayContext, loopNodeId: string): boolean {
   const d = ctx.exec.loopDrivers.get(loopNodeId)
-  return !!d && d.list.length > 0 && d.list.some((x) => x !== undefined)
+  if (!d || d.kind !== 'foreach') return false
+  return d.list.length > 0 && d.list.some((x) => x !== undefined)
 }
 
 // ==================== 内部工具 ====================

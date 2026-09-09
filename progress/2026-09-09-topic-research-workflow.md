@@ -77,3 +77,14 @@ dl run_workflow 触发复验。
 3. **可执行颗粒度**：做法类给时间线/SOP/检查清单/模板/公式（研究轮主动收集条目化信息）；
 4. **风险与合规红线**成节；5. **不确定性清单**（哪些须用户后台/官方确认）单列；6. **门槛式行动**：writer 新增 `actionPlan` 字段（何时可做/该停/能扩）+ 报告模板新增「下一步行动」节；评估器按新增「深度档质量」核对（量级/证据层级/诚实标注/可执行颗粒度/分场景路径）决定 pass/revise。
 改动：topic-research.json 提示词与模板 + topic-research-graph.spec 关键词断言；spec 3 files 28 passed；eslint 0。
+
+---
+
+## v3：引擎 until 研究轮循环落地（2026-09-09，engine-while-loop-design.md）
+
+用户立项批准。设计评审+自查后实现：
+- 引擎 loop 新增 mode='until'：repeat body until stopValue；maxIterations 上限必收尾；每轮独立作用域 + 伪变量 {index, prev}（prev=上一轮结果供增量研究）；输出 {results,count,iterations,last}；foreach 零回归。
+- 改动：workflow.types/catalog/forms、graph-validator（until stopExpression 允许引用 body 节点输出）、control-nodes validateConfig、engine(executeLoopNode 分流 + driveUntil/completeLoopUntil + 序列化)、journal-replay(until 元数据/driver 重建)。
+- 模板 v3：topic-research.json 重构为 until 循环（12 节点 14 边）：start(+maxRounds) → 澄清 → 规划 → round1(until: r→e→pack→loop-back, errorPolicy=skip) → writer(用 round1.last.result.*) → report → 人工确认 → 保存。
+- 测试：loop-until.spec 4 例 + 回归（9 files 94 passed）、eslint 0、本批 vue-tsc 零新增；本地提交待 push。
+- 待用户：真机（动态轮次/评估提前收尾/达上限收尾）、until+挂起恢复专项 spec（后续）。

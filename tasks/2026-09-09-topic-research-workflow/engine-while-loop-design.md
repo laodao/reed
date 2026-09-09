@@ -43,7 +43,7 @@
 0. **语义命名**：`mode:'until'` = "重复执行循环体，直到 stop 条件满足"（与 while(未达标){…} 对偶）。引擎不做任意表达式求值，**停止判定只是"本轮作用域内解析出的标量 === stopValue"的等值比较**；需要更复杂判定时由 body 内节点（如 pack/code）把结果归一成可比较标量（如 verdict='pass'）。
 1. 启动（`executeLoopNode` 按 `cfg.mode==='until'` 分流）：无需列表；读 maxIterations——若为数字字面量已在图校验阶段查范围，若为模板串（来自 start 等）在引擎启动时解析并回检 ≤ `settings.maxLoopIterations`，非法 → 节点失败（**retryable=false**，重试必再撞）。
 2. 每轮 `i`（从 `results.length` 续起，与 foreach 相同的断点续跑语义）：
-   - 建 scope（key=loop:id:i），伪变量只给 `{index:i}`（无 item）；
+   - 建 scope（key=loop:id:i），伪变量**只给 `{ index:i, prev }`**（无 item；`prev = i>0 ? results[i-1] : undefined`，供循环体模板引用上一轮结果，如研究轮 r 的 task 注入上一轮 notes/gaps；引擎必须保证 prev 为 undefined/null 时模板路径解析**不抛错、渲染为空串**——实现前先核对 variable-resolver 容错，必要时补）；
    - 激活 loop-body → pump → `waitScopeSettled`（挂起语义与 foreach 完全一致）；
    - 失败策略：errorPolicy=fail（默认）→ 任一 body 节点失败即循环失败；**errorPolicy=skip → 该轮记 `{ error, skipped:true }` 进 results 并继续下一轮**（研究模板建议用 skip + writer 容错：LLM/jsonMode 偶发失败不应让整个研究中断）；
    - `collectIterationResult`（loop-back 边源节点输出）push 进 results；
@@ -108,4 +108,6 @@
 - 挂起（human-review/form-collect）在 body 内已有机制，until 复用；无人审批 timeoutMs=null 会挂起等待（沿用现状语义，非本次范围）。
 
 ## 7. 状态
-- **设计待用户评审**。通过后按 TDD 落地：先红（loop-until spec + v3 图 spec + 目录/forms 一致性），再引擎/校验/表单实现 → 全绿 → 模板改 v3 → 回归 → eslint → 本地提交 → 用户真机对比。
+- **已评审定稿（含自查修订：等值判定语义/单轮失败策略/双层校验/挂起按 kind 分流/独立 completeLoopUntil/输出截断/pack=code(桌面限定)/prev 伪变量）并实现（2026-09-09）**。
+- 落地：types/catalog/forms/图校验/引擎驱动器(executeLoopNode 分流 + driveUntil/completeLoopUntil + prev 伪变量 + 快照序列化)/journal-replay(until 元数据与 driver 重建)；模板 v3 由 3 轮级联重构为 until 循环；loop-until.spec 4 例 + 回归 9 files 94 passed、eslint 0、本批 vue-tsc 零新增。
+- 后续待补：until+waiting_review 挂起恢复的专项 spec 属后续补强（机制复用 foreach 路径，本轮引擎循环已含 waitScopeSettled/continueLoop 分流）；停滞检测未纳入（预算+maxRounds 兜底）。
