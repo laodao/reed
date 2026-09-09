@@ -66,6 +66,8 @@ import { LwPrewriteRepository } from '@core/database/repositories/lw-prewrite.re
 import { LwMemoryRepository } from '@core/database/repositories/lw-memory.repository'
 import { LwEntityStateRepository } from '@core/database/repositories/lw-entity-state.repository'
 import { LwEventRepository } from '@core/database/repositories/lw-event.repository'
+import { LwBibleKindRepository } from '@core/database/repositories/lw-bible-kind.repository'
+import { LwCustomEntityRepository } from '@core/database/repositories/lw-custom-entity.repository'
 import { LwGraphEdgeRepository } from '@core/database/repositories/lw-graph-edge.repository'
 import { LwPlotCharacterRepository } from '@core/database/repositories/lw-plot-character.repository'
 import { LwPlotLocationRepository } from '@core/database/repositories/lw-plot-location.repository'
@@ -196,6 +198,8 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public lwChapterStateSummaries: LwChapterStateSummaryRepository | null = null
   public lwVectorIndices: LwVectorIndexRepository | null = null
   public lwEvents: LwEventRepository | null = null
+  public lwBibleKinds: LwBibleKindRepository | null = null
+  public lwCustomEntities: LwCustomEntityRepository | null = null
   public lwGraphEdges: LwGraphEdgeRepository | null = null
 
   // 工作流引擎（三表）
@@ -696,6 +700,10 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-agent-tables'
     )
     await createAgentTables(this.dataSource)
+
+    // 设定集动态分组两表 + 人物别名列（P0-2026-09-09）
+    const { createBibleTables } = await import('@core/database/migrations/create-bible-tables')
+    await createBibleTables(this.dataSource)
 
     // Run Journal（11 号 §4.1 E1）：运行事件日志（先日志后内存的恢复事实源）
     const { createWorkflowRunEvents } = await import(
@@ -4428,6 +4436,8 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.lwChapterStateSummaries = new LwChapterStateSummaryRepository(this.dataSource)
     this.lwVectorIndices = new LwVectorIndexRepository(this.dataSource)
     this.lwEvents = new LwEventRepository(this.dataSource)
+    this.lwBibleKinds = new LwBibleKindRepository(this.dataSource)
+    this.lwCustomEntities = new LwCustomEntityRepository(this.dataSource)
     this.lwGraphEdges = new LwGraphEdgeRepository(this.dataSource)
     this.workflowDefinitions = new WorkflowDefinitionRepository(this.dataSource)
     this.workflowRuns = new WorkflowRunRepository(this.dataSource)

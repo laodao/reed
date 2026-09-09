@@ -196,6 +196,7 @@ export async function persistCharacters(db: any, projectId: string, list: any[])
       personality: c.personality,
       abilities: c.abilities,
       majorEvents: c.majorEvents,
+      aliases: Array.isArray(c.aliases) ? c.aliases : null,
     })
     if (saved) created.push(saved)
   }

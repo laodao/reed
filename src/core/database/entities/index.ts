@@ -137,3 +137,5 @@ export { AgentTaskEntity } from './agent-task.entity'
 export { AgentMemoryEntryEntity } from './agent-memory-entry.entity'
 // 通知中心：用户已读状态独立落表（用户要求后端持久化，不用 localStorage）
 export { UserNotificationReadEntity } from './user-notification-read.entity'
+export { LwBibleKindEntity } from './lw-bible-kind.entity'
+export { LwCustomEntityEntity } from './lw-custom-entity.entity'

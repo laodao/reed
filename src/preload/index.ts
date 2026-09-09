@@ -2068,6 +2068,18 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:room:ignoreCard', projectId, cardId),
     roomSetTarget: (projectId: string, target: string) =>
       ipcRenderer.invoke('longwriting:room:setTarget', projectId, target),
+
+    // ==================== 故事圣经统一读模型（P0） ====================
+    bibleList: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:bible:list', projectId),
+    bibleDetail: (projectId: string, kindKey: string, id: string) =>
+      ipcRenderer.invoke('longwriting:bible:detail', projectId, kindKey, id),
+    bibleCustomCreate: (projectId: string, kindKey: string, name: string, fields: Record<string, unknown> | null, origin?: Record<string, unknown>) =>
+      ipcRenderer.invoke('longwriting:bible:custom:create', projectId, kindKey, name, fields, origin),
+    bibleCustomUpdate: (projectId: string, id: string, patch: { name?: string; fields?: Record<string, unknown> | null }) =>
+      ipcRenderer.invoke('longwriting:bible:custom:update', projectId, id, patch),
+    bibleCustomDelete: (projectId: string, id: string) =>
+      ipcRenderer.invoke('longwriting:bible:custom:delete', projectId, id),
     onRoomEvent: (projectId: string, callback: (event: unknown) => void) => {
       const channel = `longwriting:room:${projectId}`
       const listener = (_event: any, data: unknown) => callback(data)

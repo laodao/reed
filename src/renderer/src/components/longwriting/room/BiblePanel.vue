@@ -40,11 +40,12 @@
       <div class="row1">
         <h4>🌏 世界设定集</h4>
         <span class="cnt">{{ total }} 条</span>
-        <el-dropdown trigger="click" @command="(k: string) => $emit('ask', `设计一个${kindLabel(k)}：`)">
+        <el-dropdown trigger="click" @command="onAddCommand">
           <button class="add">＋ 新增</button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item v-for="g in GROUP_DEFS" :key="g.key" :command="g.key">{{ g.label }}</el-dropdown-item>
+              <el-dropdown-item v-for="g in groups" :key="g.kindKey" :command="g.storage === 'custom' ? `kind:${g.kindKey}` : g.kindKey">设计{{ g.label }}</el-dropdown-item>
+              <el-dropdown-item command="__custom_form" divided>手动新增（表单）…</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -53,17 +54,17 @@
     </div>
     <div class="scroll">
       <div v-if="total === 0 && !keyword" class="empty">设定集为空——从左侧对话开始</div>
-      <div v-for="g in groups" :key="g.key" class="group">
+      <div v-for="g in groups" :key="g.kindKey" class="group">
         <div class="group-head">
-          <span class="gico">{{ g.ico }}</span>{{ g.label }}
+          <span class="gico">{{ g.icon || '📁' }}</span>{{ g.label }}
           <span class="gcnt">{{ g.entries.length }}</span>
           <span v-if="g.entries.length === 0" class="todo" @click="$emit('ask', `设计一个${g.label}：`)">待讨论 · 说「设计一个{{ g.label }}」</span>
         </div>
         <div v-for="e in visibleEntries(g)" :key="e.id" class="entry" @click="openDetail(g, e.id)">
-          <span class="eico">{{ g.ico }}</span>
+          <span class="eico">{{ g.icon || '📁' }}</span>
           <span class="ename">{{ e.name }}</span>
-          <span class="esub">{{ e.sub }}</span>
-          <span class="src">{{ e.src }}</span>
+          <span class="esub">{{ e.aliases?.length ? `${e.sub}（${e.aliases.join('/')}）` : e.sub }}</span>
+          <span class="src">{{ e.origin?.type === 'discussion' ? '讨论' : '初始' }}</span>
         </div>
       </div>
       <div v-if="total > 0 && shownTotal === 0" class="no-result">没有匹配的设定</div>
@@ -85,12 +86,40 @@
         </div>
       </template>
     </el-drawer>
+
+    <!-- 手动新增（custom 分类） -->
+    <el-dialog v-model="createOpen" title="手动新增设定" width="460px" append-to-body>
+      <el-form label-width="80px">
+        <el-form-item label="分类">
+          <el-select v-model="createKindKey" style="width: 100%">
+            <el-option v-for="g in groups" :key="g.kindKey" :value="g.kindKey" :label="g.label" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="名称" required>
+          <el-input v-model="createName" placeholder="名称" />
+        </el-form-item>
+        <el-form-item v-for="f in (createKind?.fieldsSchema || []).filter((x) => x.key !== 'name')" :key="f.key" :label="f.label">
+          <el-select v-if="f.type === 'select'" v-model="createFields[f.key]" style="width: 100%">
+            <el-option v-for="o in f.options || []" :key="o" :value="o" :label="o" />
+          </el-select>
+          <el-input-number v-else-if="f.type === 'number'" v-model="createFields[f.key] as never" style="width: 100%" />
+          <el-input v-else-if="f.type === 'textarea'" v-model="createFields[f.key]" type="textarea" :rows="3" />
+          <el-input v-else v-model="createFields[f.key]" />
+        </el-form-item>
+        <div class="form-tip">entity 类（概要/人物等）请走对话或写作台，此处仅覆盖自定义分类</div>
+      </el-form>
+      <template #footer>
+        <el-button @click="createOpen = false">取消</el-button>
+        <el-button type="primary" :disabled="!createName.trim()" @click="submitCreate">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import type { ConsensusEntry, ConsensusStatus, LedgerOpInput } from '@shared/types/story-room.types'
+import { ElMessage } from 'element-plus'
+import type { BibleGroupWire, ConsensusEntry, ConsensusStatus, LedgerOpInput } from '@shared/types/story-room.types'
 
 defineOptions({ name: 'RoomSettingsPanel' })
 
@@ -107,41 +136,24 @@ const emit = defineEmits<{
   (e: 'distill'): void
   (e: 'open-editor'): void
   (e: 'locate-turn', turn: number): void
+  (e: 'add-kind', kindKey: string): void
 }>()
 
-interface BibleEntry {
-  id: string
-  name: string
-  sub: string
-  src: string
-}
-interface BibleGroup {
-  key: string
-  label: string
-  ico: string
-  entries: BibleEntry[]
-}
-
 const keyword = ref('')
-const groups = ref<BibleGroup[]>([])
+const groups = ref<BibleGroupWire[]>([])
 const ledgerOpen = ref(false)
 
-// ===== 详情抽屉 =====
+// ===== 详情抽屉（bible:detail：fieldsSchema 驱动 + 关系小节） =====
 const detailOpen = ref(false)
-const detail = ref<{ title: string; groupLabel: string; fields: Array<{ k: string; v: string }>; prov: { turns: number[]; cardTitle: string } | null; askText: string } | null>(null)
-/** 原始行（列表接口即全量字段，无需二次请求） */
-const rawRows = new Map<string, Record<string, any>>()
-
-const DETAIL_FIELDS: Record<string, Array<[string, string]>> = {
-  overview: [['storyType', '题材'], ['summary', '概要'], ['coreConflict', '核心冲突'], ['coreIdea', '核心创意'], ['estimatedChapters', '预估章节']],
-  character: [['gender', '性别'], ['age', '年龄'], ['occupation', '身份'], ['rolePosition', '定位'], ['appearance', '外貌'], ['background', '背景'], ['personality', '性格'], ['abilities', '能力'], ['majorEvents', '重大事件']],
-  plot: [['summary', '走向'], ['involvedCharacters', '涉及人物']],
-  outline: [['nodeType', '层级'], ['summary', '概要'], ['estimatedWords', '预估字数'], ['status', '状态']],
-  faction: [['factionType', '性质'], ['description', '描述']],
-  skill: [['type', '类型'], ['level', '品阶'], ['description', '描述'], ['system', '体系']],
-  item: [['type', '类型'], ['level', '品级'], ['description', '描述']],
-  location: [['type', '类型'], ['importance', '重要性'], ['description', '描述']],
-}
+const detail = ref<{
+  title: string
+  groupLabel: string
+  kindKey: string
+  fields: Array<{ k: string; v: string }>
+  relations: Array<string>
+  prov: { turns: number[]; cardTitle: string } | null
+  askText: string
+} | null>(null)
 
 /** 溯源：按名称回链已采纳/待定卡片（卡片带 sourceTurns） */
 function findProvenance(kind: string, name: string): { turns: number[]; cardTitle: string } | null {
@@ -162,29 +174,89 @@ function findProvenance(kind: string, name: string): { turns: number[]; cardTitl
   return null
 }
 
-function openDetail(group: { key: string; label: string }, id: string): void {
-  const raw = rawRows.get(id)
-  const entry = groups.value.find((g) => g.key === group.key)?.entries.find((e) => e.id === id)
+async function openDetail(g: BibleGroupWire, id: string): Promise<void> {
+  const entry = g.entries.find((e) => e.id === id)
   if (!entry) return
-  const fields: Array<{ k: string; v: string }> = []
-  if (raw) {
-    for (const [key, label] of DETAIL_FIELDS[group.key] || []) {
-      const v = raw[key]
-      if (v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0)) continue
-      fields.push({ k: label, v: Array.isArray(v) ? v.join('、') : String(v).slice(0, 300) })
-    }
-  }
+  detailOpen.value = true
   detail.value = {
     title: entry.name,
-    groupLabel: group.label,
-    fields: fields.length > 0 ? fields : [{ k: '简介', v: entry.sub }],
-    prov: findProvenance(group.key, entry.name),
-    askText: `关于「${entry.name}」（${group.label}）：`,
+    groupLabel: g.label,
+    kindKey: g.kindKey,
+    fields: [],
+    relations: [],
+    prov: findProvenance(g.kindKey, entry.name),
+    askText: `关于「${entry.name}」（${g.label}）：`,
   }
-  detailOpen.value = true
+  try {
+    const res = await window.electronAPI.longwriting.bibleDetail(props.projectId, g.kindKey, id)
+    if (!res.success || !res.data) throw new Error(res.error || '详情读取失败')
+    const schema = g.fieldsSchema || []
+    const raw = (res.data.fields || {}) as Record<string, unknown>
+    const fields: Array<{ k: string; v: string }> = []
+    for (const f of schema) {
+      if (f.key === 'name') continue
+      const v = raw[f.key]
+      if (v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0)) continue
+      fields.push({ k: f.label, v: Array.isArray(v) ? v.join('、') : String(v).slice(0, 400) })
+    }
+    const relations = (res.data.relations || []).map((r: Record<string, any>) => {
+      const who = r.targetName || r.target || ''
+      const rel = r.relationType || r.label || '关联'
+      const from = r.validFromChapter ? `（第${r.validFromChapter}章起）` : ''
+      return `${who}：${rel}${from}`
+    })
+    detail.value = { ...detail.value, fields: fields.length > 0 ? fields : [{ k: '简介', v: entry.sub }], relations }
+  } catch {
+    detail.value = { ...detail.value!, fields: [{ k: '简介', v: entry.sub }] }
+  }
 }
 
 const detailTitle = computed(() => (detail.value ? `${detail.value.groupLabel} · ${detail.value.title}` : '设定详情'))
+
+// ===== 手动新增（custom 分类，fieldsSchema 驱动动态表单） =====
+const createOpen = ref(false)
+const createKindKey = ref('')
+const createKind = computed(() => groups.value.find((g) => g.kindKey === createKindKey.value))
+const createName = ref('')
+const createFields = ref<Record<string, string>>({})
+
+function onAddCommand(cmd: string): void {
+  if (cmd.startsWith('kind:')) {
+    // 动态分类「设计」：插入对话引导 + 记住提炼范围（⚡提炼按此分类执行一次）
+    emit('add-kind', cmd)
+    emit('ask', `设计一个${kindLabel(cmd.slice(5))}：`)
+    return
+  }
+  if (cmd === '__custom_form') {
+    const customKind = groups.value.find((g) => g.storage === 'custom')
+    createKindKey.value = customKind?.kindKey || groups.value[0]?.kindKey || ''
+    createName.value = ''
+    createFields.value = {}
+    createOpen.value = true
+    return
+  }
+  emit('ask', `设计一个${kindLabel(cmd)}：`)
+}
+
+async function submitCreate(): Promise<void> {
+  if (!createKindKey.value || !createName.value.trim()) return
+  const fields: Record<string, unknown> = {}
+  for (const f of createKind.value?.fieldsSchema || []) {
+    if (f.key === 'name') continue
+    const v = createFields.value[f.key]
+    if (v !== undefined && v !== '') fields[f.key] = f.type === 'number' ? Number(v) || 0 : v
+  }
+  const res = await window.electronAPI.longwriting.bibleCustomCreate(
+    props.projectId, createKindKey.value, createName.value.trim(), fields, { type: 'manual' },
+  )
+  if (res.success) {
+    createOpen.value = false
+    void load()
+    ElMessage.success('已新增设定')
+  } else {
+    ElMessage.error(res.error || '新增失败')
+  }
+}
 
 function askDetail(): void {
   if (!detail.value) return
@@ -192,19 +264,8 @@ function askDetail(): void {
   emit('ask', detail.value.askText)
 }
 
-const GROUP_DEFS: Array<{ key: string; label: string; ico: string }> = [
-  { key: 'overview', label: '概要', ico: '📘' },
-  { key: 'character', label: '人物', ico: '🧑' },
-  { key: 'plot', label: '故事线', ico: '🧵' },
-  { key: 'outline', label: '大纲', ico: '🌳' },
-  { key: 'faction', label: '门派', ico: '⛩️' },
-  { key: 'skill', label: '武功', ico: '⚔️' },
-  { key: 'item', label: '物品', ico: '💎' },
-  { key: 'location', label: '地点', ico: '🏔️' },
-]
-
 function kindLabel(key: string): string {
-  return GROUP_DEFS.find((g) => g.key === key)?.label || key
+  return groups.value.find((g) => g.kindKey === key)?.label || key
 }
 
 const total = computed(() => groups.value.reduce((n, g) => n + g.entries.length, 0))
@@ -215,13 +276,13 @@ const confirmedCount = computed(() => props.ledger.filter((e) => e.status === 'c
 const tentativeCount = computed(() => props.ledger.filter((e) => e.status === 'tentative').length)
 const rejectedCount = computed(() => props.ledger.filter((e) => e.status === 'rejected').length)
 
-function matchKeyword(e: BibleEntry): boolean {
+function matchKeyword(e: { name: string; sub: string; aliases?: string[] }): boolean {
   const k = keyword.value.trim()
   if (!k) return true
-  return e.name.includes(k) || e.sub.includes(k)
+  return e.name.includes(k) || e.sub.includes(k) || (e.aliases || []).some((a) => a.includes(k))
 }
 
-function visibleEntries(g: BibleGroup): BibleEntry[] {
+function visibleEntries(g: BibleGroupWire) {
   return g.entries.filter((e) => matchKeyword(e))
 }
 
@@ -229,74 +290,13 @@ function statusLabel(s: ConsensusStatus): string {
   return s === 'confirmed' ? '已定' : s === 'tentative' ? '讨论中' : '已否决'
 }
 
-const api = () => window.electronAPI.longwriting
-
-async function ok(p: Promise<{ success: boolean; data?: unknown }>): Promise<any> {
-  try {
-    const r = await p
-    return r?.success ? r.data : null
-  } catch {
-    return null
-  }
-}
-
 async function load(): Promise<void> {
-  const [overview, characters, plots, factions, skills, items, locations, outlineTree] = await Promise.all([
-    ok(api().getStoryOverview(props.projectId)),
-    ok(api().getCharacters(props.projectId)),
-    ok(api().getPlots(props.projectId)),
-    ok(api().getFactions(props.projectId)),
-    ok(api().getSkills(props.projectId)),
-    ok(api().getItems(props.projectId)),
-    ok(api().getLocations(props.projectId)),
-    ok(api().getOutlineTree(props.projectId)),
-  ])
-  const list = (v: unknown): Array<Record<string, any>> => (Array.isArray(v) ? (v as Array<Record<string, any>>) : [])
-  const outlineNodes = list(outlineTree)
-  const nodeSub = (t: string) => (t === 'volume' ? '卷' : t === 'chapter' ? '章' : '节')
-  rawRows.clear()
-  const keep = (row: Record<string, any>) => { if (row?.id !== undefined) rawRows.set(String(row.id), row) }
-  list(characters).forEach(keep); list(plots).forEach(keep); list(factions).forEach(keep)
-  list(skills).forEach(keep); list(items).forEach(keep); list(locations).forEach(keep)
-  outlineNodes.forEach(keep)
-  if (overview) keep({ id: 'overview', ...overview })
-
-  groups.value = [
-    {
-      key: 'overview', label: '概要', ico: '📘',
-      entries: overview && String(overview.title || '').trim()
-        ? [{ id: 'overview', name: String(overview.title), sub: String(overview.summary || '').slice(0, 20), src: '初始' }]
-        : [],
-    },
-    {
-      key: 'character', label: '人物', ico: '🧑',
-      entries: list(characters).map((c) => ({ id: c.id, name: String(c.name || ''), sub: String(c.rolePosition || c.occupation || '').slice(0, 20), src: '初始' })),
-    },
-    {
-      key: 'plot', label: '故事线', ico: '🧵',
-      entries: list(plots).map((p) => ({ id: p.id, name: String(p.title || ''), sub: String(p.summary || '').slice(0, 20), src: '初始' })),
-    },
-    {
-      key: 'outline', label: '大纲', ico: '🌳',
-      entries: outlineNodes.map((n) => ({ id: n.id, name: String(n.name || ''), sub: nodeSub(String(n.nodeType || '')), src: '初始' })),
-    },
-    {
-      key: 'faction', label: '门派', ico: '⛩️',
-      entries: list(factions).map((f) => ({ id: f.id, name: String(f.name || ''), sub: String(f.description || '').slice(0, 20), src: '初始' })),
-    },
-    {
-      key: 'skill', label: '武功', ico: '⚔️',
-      entries: list(skills).map((sk) => ({ id: sk.id, name: String(sk.name || ''), sub: String(sk.type || '') === 'ability' ? '能力' : String(sk.type || ''), src: '初始' })),
-    },
-    {
-      key: 'item', label: '物品', ico: '💎',
-      entries: list(items).map((it) => ({ id: it.id, name: String(it.name || ''), sub: String(it.type || '') === 'artifact' ? '至宝' : String(it.type || ''), src: '初始' })),
-    },
-    {
-      key: 'location', label: '地点', ico: '🏔️',
-      entries: list(locations).map((l) => ({ id: l.id, name: String(l.name || ''), sub: String(l.description || '').slice(0, 20), src: '初始' })),
-    },
-  ]
+  try {
+    const res = await window.electronAPI.longwriting.bibleList(props.projectId)
+    if (res.success && Array.isArray(res.data)) groups.value = res.data
+  } catch {
+    groups.value = []
+  }
 }
 
 watch(() => props.refreshKey, () => { void load() })
@@ -333,6 +333,8 @@ onMounted(() => { void load() })
 .pop-points { margin: 6px 0 6px 18px; font-size: 12.5px; color: var(--el-text-color-regular); line-height: 1.7; }
 .pop-meta { font-size: 11px; color: var(--el-text-color-secondary); margin-bottom: 8px; }
 .pop-ops { display: flex; flex-wrap: wrap; gap: 4px; }
+
+.form-tip { font-size: 11px; color: var(--el-text-color-secondary); line-height: 1.6; }
 
 /* 详情抽屉 */
 .prov-line {

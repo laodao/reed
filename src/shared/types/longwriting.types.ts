@@ -616,7 +616,9 @@ export interface NewCharacterInfo {
   appearance?: string                // 外貌描述
   background?: string                // 背景故事
   personality?: string               // 性格特点
-  abilities?: string                 // 能力特长
+  abilities?: string
+  /** 人物别名/称呼（JSON 数组） */
+  aliases?: string[]                 // 能力特长
   occupation?: string                // 职业
   rolePosition?: CharacterRolePosition  // 角色定位
 }
@@ -957,6 +959,8 @@ export interface CreateCharacterRequest {
   name: string
   gender: 'male' | 'female' | 'other'
   age: number
+  /** 人物别名/称呼 */
+  aliases?: string[]
   height?: number
   weight?: number
   race?: StoryCharacterRace
@@ -983,6 +987,8 @@ export interface UpdateCharacterRequest {
   name?: string
   gender?: 'male' | 'female' | 'other'
   age?: number
+  /** 人物别名/称呼 */
+  aliases?: string[]
   height?: number
   weight?: number
   race?: StoryCharacterRace

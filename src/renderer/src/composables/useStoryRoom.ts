@@ -10,6 +10,7 @@ import { ref, computed, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import type {
   ArtifactCard,
+  BibleDistillScope,
   ConsensusEntry,
   DistillScope,
   LedgerOpInput,
@@ -199,7 +200,7 @@ export function useStoryRoom(projectId: string) {
     return 'overview'
   }
 
-  async function distill(scope?: DistillScope): Promise<ArtifactCard[]> {
+  async function distill(scope?: BibleDistillScope): Promise<ArtifactCard[]> {
     const target = scope || suggestScope()
     const res = await api().roomDistill(projectId, target, { ...modelOpts.value })
     if (!res.success) {

@@ -98,6 +98,7 @@
           @distill="onDistill"
           @open-editor="goEditor"
           @locate-turn="locateTurn"
+          @add-kind="onAddKind"
         />
       </div>
     </div>
@@ -377,11 +378,20 @@ async function exportToEp(): Promise<void> {
 const pendingCards = computed(() => store.state.value?.pendingCards || [])
 const distilling = ref(false)
 
+/** ＋新增选择动态分类时记住提炼范围（⚡提炼按该分类执行一次） */
+const customKindHint = ref<string | null>(null)
+function onAddKind(kindKey: string): void {
+  if (kindKey.startsWith('kind:')) customKindHint.value = kindKey
+}
+
 async function onDistill(): Promise<void> {
   if (distilling.value) return
   distilling.value = true
   try {
-    await store.distill()
+    const hint = customKindHint.value
+    customKindHint.value = null
+    if (hint) await store.distill(hint as never)
+    else await store.distill()
   } finally {
     distilling.value = false
   }

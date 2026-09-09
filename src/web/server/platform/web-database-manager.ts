@@ -61,6 +61,8 @@ import { LwPrewriteRepository } from '@core/database/repositories/lw-prewrite.re
 import { LwMemoryRepository } from '@core/database/repositories/lw-memory.repository'
 import { LwEntityStateRepository } from '@core/database/repositories/lw-entity-state.repository'
 import { LwEventRepository } from '@core/database/repositories/lw-event.repository'
+import { LwBibleKindRepository } from '@core/database/repositories/lw-bible-kind.repository'
+import { LwCustomEntityRepository } from '@core/database/repositories/lw-custom-entity.repository'
 import { LwGraphEdgeRepository } from '@core/database/repositories/lw-graph-edge.repository'
 import { LwChapterStateSummaryRepository } from '@core/database/repositories/lw-chapter-state-summary.repository'
 import { LwVectorIndexRepository } from '@core/database/repositories/lw-vector-index.repository'
@@ -183,6 +185,8 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   lwProjectModelConfigs: LwProjectModelConfigRepository | null
   lwVectorIndices: LwVectorIndexRepository | null
   lwEvents: LwEventRepository | null
+  lwBibleKinds: LwBibleKindRepository | null
+  lwCustomEntities: LwCustomEntityRepository | null
   lwGraphEdges: LwGraphEdgeRepository | null
   // 工作流引擎（三表）
   workflowDefinitions: WorkflowDefinitionRepository | null
@@ -301,6 +305,8 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.lwProjectModelConfigs = new LwProjectModelConfigRepository(ds)
     this.lwVectorIndices = new LwVectorIndexRepository(ds)
     this.lwEvents = new LwEventRepository(ds)
+    this.lwBibleKinds = new LwBibleKindRepository(ds)
+    this.lwCustomEntities = new LwCustomEntityRepository(ds)
     this.lwGraphEdges = new LwGraphEdgeRepository(ds)
     this.workflowDefinitions = new WorkflowDefinitionRepository(ds)
     this.workflowRuns = new WorkflowRunRepository(ds)

@@ -17,7 +17,7 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import { computeProductionState } from '@core/platform/services/longwriting/agent/agent-deps'
 import { stateToSummary } from '@core/platform/services/longwriting/agent/agent-context'
 import { extractJsonObject, persistCharacters, persistOverview, persistOutlineTree, persistPlots, persistWorld, type StoryPersistResult } from '@core/platform/services/longwriting/story-persist'
-import type { ArtifactCard, ArtifactCardKind, DistillScope, RoomWorkspaceState } from '@shared/types/story-room.types'
+import type { ArtifactCard, ArtifactCardKind, BibleDistillScope, DistillScope, RoomWorkspaceState } from '@shared/types/story-room.types'
 import { emitRoomEvent } from './room-events'
 import { getRoomState, patchRoomState } from './room-state'
 import { ledgerSnapshotText } from './room-ledger'
@@ -48,11 +48,11 @@ function outlineStrategyScript(nextEpisode: number): string {
 {"index":${nextEpisode},"title":"集名","hook":"开头10秒钩子","reversal":"集尾反转/卡点","characters":["出场人物"],"scenes":[{"name":"场名","summary":"一场概要","timeOfDay":"日/夜"}]}`
 }
 
-const SCOPE_PROMPTS: Record<DistillScope, string> = {
+const SCOPE_PROMPTS: Partial<Record<DistillScope, string>> = {
   overview: `整理「故事概要卡」。输出：
 {"title":"作品名","storyType":"题材","summary":"两百字内概要","coreConflict":"核心冲突","hook":"钩子","keyCharacters":["主角名",...],"keyLocations":["关键地点",...],"estimatedChapters":预估章节数}`,
   characters: `整理「人物卡」——一次整理一个最重要的人物（依据讨论优先级）。输出：
-{"name":"人物名","gender":"male/female/other","age":年龄或0,"rolePosition":"protagonist/supporting/minor","occupation":"身份","appearance":"外貌","background":"背景","personality":"性格","arc":"人物弧光","relations":[{"targetName":"对方名","relationType":"关系","description":"备注"}]}`,
+{"name":"人物名","aliases":["别名/称呼，如 晓哥/林师妹"],"gender":"male/female/other","age":年龄或0,"rolePosition":"protagonist/supporting/minor","occupation":"身份","appearance":"外貌","background":"背景","personality":"性格","arc":"人物弧光","relations":[{"targetName":"对方名","relationType":"关系","description":"备注"}]}`,
   plots: `整理「故事线卡」——一次整理一条故事线。输出：
 {"title":"故事线名","summary":"起点→冲突升级→终点","involvedCharacters":["人物名"],"entityRelations":[{"sourceName":"实体","targetName":"实体","relationType":"关系","description":"备注"}]}`,
   world: `整理「世界设定卡」（地点/势力/技能/物品四类，只收讨论中明确提到的）。输出：
@@ -62,10 +62,25 @@ const SCOPE_PROMPTS: Record<DistillScope, string> = {
 {"outlineId":"对应大纲节点id（若上下文给了）","outlineName":"章节名","hook":"开场钩子","points":["本章要点1","本章要点2"],"preview":"开头两三句的预览（可写正文时直接续写）"}`,
 }
 
-function taskInstruction(scope: DistillScope, state: RoomWorkspaceState, extra: string): string {
+function taskInstruction(scope: BibleDistillScope, state: RoomWorkspaceState, extra: string, dynamic?: { label: string; hint: string }): string {
   const target = state.contentTarget === 'script' ? '短剧剧本' : '长篇小说'
-  return `【任务】把当前研讨成果整理为「${scope}」卡片（内容目标：${target}）。${extra}
-【输出要求】${SCOPE_PROMPTS[scope]}`
+  const prompt = dynamic
+    ? dynamic.hint
+    : (SCOPE_PROMPTS as Record<string, string>)[scope] || ''
+  return `【任务】把当前研讨成果整理为「${dynamic ? dynamic.label : scope}」卡片（内容目标：${target}）。${extra}
+【输出要求】${prompt}`
+}
+
+/** `kind:<key>` 动态分类的 prompt 组装素材（P0：lw_bible_kinds 驱动） */
+async function dynamicKindDef(m: any, scope: BibleDistillScope): Promise<{ key: string; label: string; hint: string } | null> {
+  if (!scope.startsWith('kind:')) return null
+  const key = scope.slice(5)
+  const kind = await m?.lwBibleKinds?.getByKey(key)
+  if (!kind) return null
+  const fields = Array.isArray(kind.fieldsSchema) ? kind.fieldsSchema : []
+  const fieldList = fields.map((f: any) => `"${f.key}":${f.type === 'number' ? '0' : '""'}`).join(',')
+  const hint = kind.promptHint || `{${fieldList}}`
+  return { key, label: kind.label, hint }
 }
 
 // ==================== 服务 ====================
@@ -97,10 +112,10 @@ export class StoryRoomDistillerService {
     this.busy.get(projectId)?.abort(new Error('用户取消'))
   }
 
-  /** 按需提炼：scope 卡片（pending 状态入账 + card:ready 事件） */
+  /** 按需提炼：scope 卡片（pending 状态入账 + card:ready 事件）；scope 支持 `kind:<key>` 动态分类 */
   async distill(
     projectId: string,
-    scope: DistillScope,
+    scope: BibleDistillScope,
     opts: { providerConfigId?: string; modelId?: string; feedback?: string; presetCard?: Partial<ArtifactCard> } = {},
   ): Promise<DistillResult> {
     if (this.busy.has(projectId)) {
@@ -117,7 +132,7 @@ export class StoryRoomDistillerService {
 
   private async doDistill(
     projectId: string,
-    scope: DistillScope,
+    scope: BibleDistillScope,
     opts: { providerConfigId?: string; modelId?: string; feedback?: string; presetCard?: Partial<ArtifactCard> },
     controller: AbortController,
   ): Promise<DistillResult> {
@@ -130,13 +145,17 @@ export class StoryRoomDistillerService {
     try {
       bibleText = stateToSummary(await computeProductionState(m, projectId))
     } catch { /* fail-soft */ }
+    const dynamic = await dynamicKindDef(m, scope)
+    if (scope.startsWith('kind:') && !dynamic) {
+      throw new Error(`未知的设定分类：${scope}`)
+    }
     const extra = await this.scopeContext(m, projectId, scope, state)
     const system = DISTILLER_PERSONA
     const user = [
       `【故事圣经】\n${bibleText || '（暂无入库设定）'}`,
       ledgerSnapshotText(state.ledger) || '【共识账本】（空）',
       state.summary ? `【前情提要】\n${state.summary}` : '',
-      taskInstruction(scope, state, opts.feedback ? `\n【用户反馈（按反馈重新提炼）】${opts.feedback}` : extra),
+      taskInstruction(scope, state, opts.feedback ? `\n【用户反馈（按反馈重新提炼）】${opts.feedback}` : extra, dynamic ? { label: dynamic.label, hint: dynamic.hint } : undefined),
     ].filter(Boolean).join('\n\n')
 
     const kit = createHostKit<{ input: string }>(
@@ -190,7 +209,7 @@ export class StoryRoomDistillerService {
   }
 
   /** 范围素材：大纲需知道当前卷/集序号与已有结构 */
-  private async scopeContext(m: any, projectId: string, scope: DistillScope, state: RoomWorkspaceState): Promise<string> {
+  private async scopeContext(m: any, projectId: string, scope: BibleDistillScope, state: RoomWorkspaceState): Promise<string> {
     if (scope === 'chapter') {
       const tree = (await m?.lwOutlines?.getTreeByProjectId(projectId)) || []
       const leaves = tree
@@ -210,7 +229,7 @@ export class StoryRoomDistillerService {
   }
 
   /** 解析结果 → 卡片（kind 决定拆分方式；标题/来源轮次/序号） */
-  private buildCards(scope: DistillScope, parsed: Record<string, any>, state: RoomWorkspaceState): ArtifactCard[] {
+  private buildCards(scope: BibleDistillScope, parsed: Record<string, any>, state: RoomWorkspaceState): ArtifactCard[] {
     const now = Date.now()
     const sourceTurns = [state.turnNo]
     const mk = (kind: ArtifactCardKind, title: string, data: Record<string, any>, volumeIndex?: number): ArtifactCard => ({
@@ -245,6 +264,10 @@ export class StoryRoomDistillerService {
       }
     } else if (scope === 'chapter') {
       out.push(mk('chapter', `章节卡 · ${String(parsed.outlineName || parsed.name || '').trim() || '未命名章节'}`, parsed))
+    } else if (scope.startsWith('kind:')) {
+      const key = scope.slice(5)
+      const name = String(parsed.name || '').trim() || '未命名'
+      out.push(mk('custom', `${key}卡 · ${name}`, { ...parsed, _kindKey: key }))
     }
     return out.slice(0, MAX_CARDS_PER_DISTILL)
   }
@@ -310,6 +333,17 @@ export class StoryRoomDistillerService {
       }
       case 'chapter':
         return { ok: true, message: '章节卡已定稿——在编辑器中打开即可按要点写作', changed: ['chapters'] }
+      case 'custom': {
+        const kindKey = String(data._kindKey || card.title.split('卡 · ')[0] || '')
+        if (!kindKey) return { ok: false, message: '自定义分类缺失（_kindKey）', changed: [] }
+        const rest: Record<string, unknown> = { ...data }
+        delete rest._kindKey
+        const row = await m?.lwCustomEntities?.createRow(
+          projectId, kindKey, String(rest.name || ''), rest,
+          { type: 'discussion', turns: card.sourceTurns },
+        )
+        return { ok: !!row, message: row ? `已保存「${row.name}」（${kindKey}）` : '自定义实体落库失败', changed: ['world'], data: { id: row?.id } }
+      }
       default:
         return { ok: false, message: `卡片类型不支持采纳：${card.kind}`, changed: [] }
     }
@@ -326,7 +360,11 @@ export class StoryRoomDistillerService {
     const state = await getRoomState(m, projectId)
     const card = state.pendingCards.find((c) => c.id === cardId)
     if (!card) throw new Error(`卡片不存在：${cardId}`)
-    const scope: DistillScope = card.kind === 'character' ? 'characters' : (card.kind as DistillScope)
+    const scope: BibleDistillScope = card.kind === 'character'
+      ? 'characters'
+      : card.kind === 'custom'
+        ? (`kind:${(card.data as any)?._kindKey || ''}` as BibleDistillScope)
+        : (card.kind as BibleDistillScope)
     const r = await this.distill(projectId, scope, { ...opts, feedback, presetCard: { volumeIndex: card.volumeIndex } })
     const m2 = await getRoomState(m, projectId)
     const pendingCards = m2.pendingCards.map((c) =>

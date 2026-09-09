@@ -376,6 +376,10 @@ async function initDatabase(): Promise<void> {
   )
   await createAgentTables(ds)
 
+  // 设定集动态分组两表 + 人物别名列（P0-2026-09-09）
+  const { createBibleTables } = await import('@core/database/migrations/create-bible-tables')
+  await createBibleTables(ds)
+
   // Run Journal（11 号 §4.1 E1）：运行事件日志（与 Electron 端同构）
   const { createWorkflowRunEvents } = await import(
     '@core/database/migrations/create-workflow-run-events'

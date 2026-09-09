@@ -40,8 +40,8 @@ export interface ConsensusEntry {
 
 // ==================== 提炼卡片 ====================
 
-/** 卡片种类：概要/人物/故事线/世界/大纲/章节/矛盾（设计文档 §4.1 七类） */
-export type ArtifactCardKind = 'overview' | 'character' | 'plot' | 'world' | 'outline' | 'chapter' | 'conflict'
+/** 卡片种类：概要/人物/故事线/世界/大纲/章节/矛盾 + custom（动态分类，P0） */
+export type ArtifactCardKind = 'overview' | 'character' | 'plot' | 'world' | 'outline' | 'chapter' | 'conflict' | 'custom'
 
 export type ArtifactCardStatus = 'pending' | 'adopted' | 'ignored' | 'failed'
 
@@ -140,8 +140,29 @@ export interface RoomStateView {
   pendingCards: ArtifactCard[]
 }
 
-/** 按需提炼范围（设计文档 §9 + v2.1 章节卡） */
+/** 按需提炼范围（设计文档 §9 + v2.1 章节卡 + P0 动态分类 kind:<key>） */
 export type DistillScope = 'overview' | 'characters' | 'plots' | 'world' | 'outline' | 'chapter'
+/** 动态分类提炼范围：`kind:<key>`（key → lw_bible_kinds.key） */
+export type BibleDistillScope = DistillScope | `kind:${string}`
+
+/** 圣经统一视图（bible:list wire，P0） */
+export interface BibleEntryWire {
+  id: string
+  name: string
+  sub: string
+  aliases?: string[]
+  fields: Record<string, unknown>
+  origin?: { type: string; turns?: number[]; cardId?: string } | null
+}
+export interface BibleGroupWire {
+  kindKey: string
+  label: string
+  icon: string | null
+  storage: 'entity' | 'custom'
+  fieldsSchema: Array<{ key: string; label: string; type: string; options?: string[]; required?: boolean }> | null
+  entries: BibleEntryWire[]
+}
+export interface BibleFieldDef { key: string; label: string; type: string; options?: string[]; required?: boolean }
 
 /** 账本用户操作（确认/否决/丢弃/修改一句话） */
 export type LedgerOpInput =

@@ -72,6 +72,53 @@ export function registerStoryRoomHandlers(): void {
     }
   })
 
+  // ==================== 故事圣经统一读模型（P0） ====================
+
+  ipcBridge.handle('longwriting:bible:list', async (_event, projectId: string) => {
+    try {
+      const { BibleQueryService } = await import('@core/platform/services/longwriting/bible.service')
+      return { success: true, data: await BibleQueryService.getInstance().list(projectId) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcBridge.handle('longwriting:bible:detail', async (_event, projectId: string, kindKey: string, id: string) => {
+    try {
+      const { BibleQueryService } = await import('@core/platform/services/longwriting/bible.service')
+      return { success: true, data: await BibleQueryService.getInstance().detail(projectId, kindKey, id) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcBridge.handle('longwriting:bible:custom:create', async (_event, projectId: string, kindKey: string, name: string, fields: Record<string, unknown> | null, origin?: Record<string, unknown>) => {
+    try {
+      const { BibleQueryService } = await import('@core/platform/services/longwriting/bible.service')
+      return { success: true, data: await BibleQueryService.getInstance().customCreate(projectId, kindKey, name, fields, origin as never) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcBridge.handle('longwriting:bible:custom:update', async (_event, _projectId: string, id: string, patch: { name?: string; fields?: Record<string, unknown> | null }) => {
+    try {
+      const { BibleQueryService } = await import('@core/platform/services/longwriting/bible.service')
+      return { success: true, data: await BibleQueryService.getInstance().customUpdate(projectId, id, patch) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcBridge.handle('longwriting:bible:custom:delete', async (_event, projectId: string, id: string) => {
+    try {
+      const { BibleQueryService } = await import('@core/platform/services/longwriting/bible.service')
+      return { success: true, data: await BibleQueryService.getInstance().customDelete(id) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
   ipcBridge.handle(ROOM_CHANNELS.ROOM_SET_TARGET, async (_event, projectId: string, target: 'novel' | 'script') => {
     try {
       if (target !== 'novel' && target !== 'script') {
@@ -99,7 +146,11 @@ export function registerStoryRoomHandlers(): void {
 
   ipcBridge.handle(ROOM_CHANNELS.ROOM_DISTILL, async (_event, projectId: string, scope: string, opts?: { providerConfigId?: string; modelId?: string }) => {
     try {
-      if (!DISTILL_SCOPES.includes(scope)) {
+      if (scope.startsWith('kind:')) {
+        // 动态分类：key 必须存在于 lw_bible_kinds
+        const kind = await getDb().lwBibleKinds?.getByKey(scope.slice(5))
+        if (!kind) return { success: false, error: `未知的设定分类：${scope}` }
+      } else if (!DISTILL_SCOPES.includes(scope)) {
         return { success: false, error: `未知的提炼范围：${scope}` }
       }
       const result = await StoryRoomDistillerService.getInstance().distill(projectId, scope as never, opts || {})
