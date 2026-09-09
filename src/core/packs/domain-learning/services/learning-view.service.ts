@@ -32,29 +32,49 @@ import {
 } from '../rules/learning-atlas-views'
 import { normalizeDlReviewSettings, pickReviewCandidates } from '../rules/learning-review.rules'
 import { buildConceptTree, conceptStats, latestCardsByConcept } from '../rules/learning-aggregation.rules'
+import type { DlCardRow } from '@core/database/repositories/dl-card.repository'
 
 const logger = createLogger('DlView')
 
 export class LearningViewService {
   constructor(private readonly db: ICoreDatabaseManager) {}
 
+  /**
+   * 一次取全量卡后在内存解析"每概念当前卡"（cardId 优先，否则按 version 取最大）。
+   * 2026-09-09 复盘：替代逐概念 await getById/getCurrentByConcept 的 N+1。
+   */
+  private resolveCurrentCards(
+    concepts: Array<{ id: string; nodeType: string; cardId: string | null }>,
+    cards: DlCardRow[],
+  ): Map<string, DlCardRow> {
+    const byId = new Map(cards.map((r) => [r.id, r] as const))
+    const latest = latestCardsByConcept(cards)
+    const out = new Map<string, DlCardRow>()
+    for (const c of concepts) {
+      if (c.nodeType === 'group') continue
+      const row = (c.cardId ? byId.get(c.cardId) ?? null : null) ?? latest.get(c.id) ?? null
+      if (row) out.set(c.id, row)
+    }
+    return out
+  }
+
   /** 空间三栏聚合视图（Home 卡片与 Space 页共用数据源） */
   async buildSpaceView(spaceId: string): Promise<DlSpaceView | null> {
     const project = await this.db.dlProjects?.getById(spaceId)
     if (!project) return null
-    const [concepts, relations, questions] = await Promise.all([
+    const [concepts, relations, questions, cards] = await Promise.all([
       this.db.dlConcepts!.listByProject(spaceId),
       this.db.dlRelations!.listByProject(spaceId),
       this.db.dlQuestions!.listByProject(spaceId),
+      this.db.dlCards!.listByProject(spaceId),
     ])
 
-    // 每概念当前版卡片
+    // 每概念当前版卡片（一次取全量卡内存解析：cardId 优先，否则最高 version——消除逐概念 N+1）
+    const resolvedCards = this.resolveCurrentCards(concepts, cards)
     const cardOf = new Map<string, DlCardView>()
-    for (const c of concepts) {
-      const row = c.cardId
-        ? await this.db.dlCards?.getById(c.cardId)
-        : await this.db.dlCards?.getCurrentByConcept(spaceId, c.id)
-      if (!row || c.nodeType === 'group') continue
+    for (const [conceptId, row] of resolvedCards) {
+      const c = concepts.find((x) => x.id === conceptId)
+      if (!c) continue
       cardOf.set(c.id, {
         id: row.id,
         conceptId: c.id,
@@ -174,21 +194,20 @@ export class LearningViewService {
   async buildAtlasViews(spaceId: string): Promise<DlAtlasViews | null> {
     const project = await this.db.dlProjects?.getById(spaceId)
     if (!project) return null
-    const [concepts, relations] = await Promise.all([
+    const [concepts, relations, cards] = await Promise.all([
       this.db.dlConcepts!.listByProject(spaceId),
       this.db.dlRelations!.listByProject(spaceId),
+      this.db.dlCards!.listByProject(spaceId),
     ])
 
+    // 每概念当前卡（一次全量解析，消除逐概念 N+1）
+    const resolvedCards = this.resolveCurrentCards(concepts, cards)
     const inputConcepts: AtlasViewInputConcept[] = []
     for (const c of concepts) {
       let card: AtlasViewInputConcept['card'] = null
-      if (c.nodeType !== 'group') {
-        const row = c.cardId
-          ? await this.db.dlCards?.getById(c.cardId)
-          : await this.db.dlCards?.getCurrentByConcept(spaceId, c.id)
-        if (row) {
-          card = { version: row.version, status: row.status, worksCount: row.works?.length ?? 0 }
-        }
+      const row = resolvedCards.get(c.id)
+      if (row) {
+        card = { version: row.version, status: row.status, worksCount: row.works?.length ?? 0 }
       }
       inputConcepts.push({
         id: c.id,

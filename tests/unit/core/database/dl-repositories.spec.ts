@@ -57,8 +57,8 @@ describe('dl 迁移幂等', () => {
     ds = await buildDs()
     await createDomainLearningTables(ds)
     await createDomainLearningTables(ds)
-    // 7 张表都在 sqlite_master
-    for (const t of ['dl_project', 'dl_concept', 'dl_relation', 'dl_mastery_log', 'dl_card', 'dl_doc', 'dl_question']) {
+    // 8 张表都在 sqlite_master
+    for (const t of ['dl_project', 'dl_concept', 'dl_relation', 'dl_mastery_log', 'dl_card', 'dl_doc', 'dl_question', 'dl_note']) {
       const rows = await ds.query(`SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?`, [t])
       expect(rows.length, `表 ${t} 应存在`).toBe(1)
     }

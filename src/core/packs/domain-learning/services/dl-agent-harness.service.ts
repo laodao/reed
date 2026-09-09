@@ -68,6 +68,8 @@ export class DlAgentHarnessService {
 
   /** 进行中的轮次（scopeKey → AbortController） */
   private readonly busy = new Map<string, AbortController>()
+  /** verify 串行链（同 space+concept 排队核验；见 verifyCard 注释） */
+  private readonly verifyChain = new Map<string, Promise<unknown>>()
 
   static getInstance(): DlAgentHarnessService {
     if (!DlAgentHarnessService.instance) {
@@ -370,12 +372,32 @@ export class DlAgentHarnessService {
   /**
    * 内部自动核验（M4-UX2）：只读核验会话对讲义卡交叉检查（KB/联网），
    * 结果写 dl_card.verification；用户不可见、不阻塞主流程。
+   *
+   * 2026-09-09 复盘：同概念多卡并发核验会撞 busy 键（scopeKey 无 cardId，
+   * 第二个必抛"上一轮仍在处理"并被吞）——按 space+concept 串行排队执行。
    */
   async verifyCard(
     spaceId: string,
     conceptId: string,
     cardId: string,
     opts: { providerConfigId?: string; modelId?: string } = {},
+  ): Promise<DlCardVerification | null> {
+    const key = `verify:${spaceId}:${conceptId}`
+    const prev = this.verifyChain.get(key) ?? Promise.resolve()
+    const run = prev.catch(() => undefined).then(() => this.verifyOne(spaceId, conceptId, cardId, opts))
+    this.verifyChain.set(key, run)
+    try {
+      return await run
+    } finally {
+      if (this.verifyChain.get(key) === run) this.verifyChain.delete(key)
+    }
+  }
+
+  private async verifyOne(
+    spaceId: string,
+    conceptId: string,
+    cardId: string,
+    opts: { providerConfigId?: string; modelId?: string },
   ): Promise<DlCardVerification | null> {
     const m = getCoreDatabaseManager()
     const row = await m.dlCards?.getById(cardId)

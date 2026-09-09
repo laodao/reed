@@ -152,13 +152,17 @@ export class DlPaceSchedulerService {
   /** 尚无任何卡片的非目录知识概念（按创建序；图数据权威，不入 AI 判定） */
   async listConceptsNeedingResearch(spaceId: string): Promise<DlConceptRow[]> {
     const db = this.deps!.db
-    const concepts = (await db.dlConcepts?.listByProject(spaceId)) ?? []
+    const [concepts, cards] = await Promise.all([
+      (await db.dlConcepts?.listByProject(spaceId)) ?? [],
+      (await db.dlCards?.listByProject(spaceId)) ?? [],
+    ])
+    // 一次全量解析"有卡概念"（消除逐概念 N+1）
+    const hasCard = new Set(cards.map((r) => r.conceptId))
     const out: DlConceptRow[] = []
     for (const c of concepts) {
       if (c.nodeType === 'group') continue
-      if (c.cardId) continue
-      const card = await db.dlCards?.getCurrentByConcept(spaceId, c.id)
-      if (!card) out.push(c)
+      if (c.cardId || hasCard.has(c.id)) continue
+      out.push(c)
     }
     return out
   }

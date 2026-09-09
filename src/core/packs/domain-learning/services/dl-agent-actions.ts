@@ -124,6 +124,20 @@ async function saveConcept(
     })
     return { summary: { tool: 'dl_save_concept', status: 'ok', message: `概念「${existing.name}」已存在，已更新描述`, data: { conceptId: existing.id, created: false } } }
   }
+  // 2026-09-09 复盘：空间内已存在同名概念（其他父/根层，如"先验概率"根层+目录双份的冗余来源）
+  // → skipped 不重复建、不动他人归属；模型应改用其 id 更新或换名
+  const sameNameElsewhere = rows.find((r) => r.name === c.name.trim())
+  if (sameNameElsewhere) {
+    const at = sameNameElsewhere.parentId ? '目录下' : '根层'
+    return {
+      summary: {
+        tool: 'dl_save_concept',
+        status: 'skipped',
+        message: `空间内已存在同名概念「${sameNameElsewhere.name}」（id=${sameNameElsewhere.id}，位于${at}）——未重复创建也未改动其归属；若你指的是同一概念请继续基于该概念研究，若确为不同含义请用不同名称`,
+        data: { conceptId: sameNameElsewhere.id, created: false, skipped: true },
+      },
+    }
+  }
 
   const id = randomUUID()
   await db.dlConcepts!.create({

@@ -1,5 +1,5 @@
 /**
- * 领域学习空间表（dl_project/dl_concept/dl_relation/dl_mastery_log/dl_card/dl_doc/dl_question）
+ * 领域学习空间表（dl_project/dl_concept/dl_relation/dl_mastery_log/dl_card/dl_doc/dl_question/dl_note，共 8 张）
  *
  * 数据模型见 tasks/2026-09-07-domain-learning-space/design-v3.md §9 +
  * content-template-design.md（v4 内容模型）。树与图共享 dl_concept（node_type='group'
@@ -410,4 +410,7 @@ function ddlNote(pg: boolean): string {
 async function noteIndexes(ds: DataSource, isPg: boolean): Promise<void> {
   await ensureIndex(ds, isPg, 'idx_dl_note_user', 'dl_note', '(user_id)')
   await ensureIndex(ds, isPg, 'idx_dl_note_project_concept', 'dl_note', '(project_id, concept_id)')
+  // 2026-09-09 复盘：同空间同一问题只允许一条收藏笔记（qna 收藏幂等的库级兜底；
+  // 消除"同问题多行 + findByQuestion 同毫秒排序不稳"；question_id 为 NULL 的选区笔记不受限）
+  await ensureIndex(ds, isPg, 'uniq_dl_note_question', 'dl_note', '(project_id, question_id)', true)
 }

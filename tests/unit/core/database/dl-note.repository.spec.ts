@@ -44,7 +44,7 @@ afterEach(async () => {
 })
 
 describe('DlNoteRepository（M4-UX1）', () => {
-  it('selection/qna 笔记落库；按项目/概念查询；qna 同问题去重', async () => {
+  it('selection/qna 笔记落库；按项目/概念查询；qna 同问题幂等唯一（2026-09-09 复盘）', async () => {
     ds = await buildDs()
     const db = { dlProjects: new DlProjectRepository(ds), dlNotes: new DlNoteRepository(ds) }
     await runWithUserAsync('u1', async () => {
@@ -54,16 +54,15 @@ describe('DlNoteRepository（M4-UX1）', () => {
         anchorText: 'P(B) 是归一化常数', anchorStart: 12, anchorEnd: 28, contentMd: '重点：分母保证后验和=1',
       })
       await db.dlNotes!.create({ id: 'n2', projectId: 'sp1', conceptId: 'c1', source: 'qna', questionId: 'q_x', contentMd: '问答要点的收藏评注' })
-      // qna 同问题二次收藏 → 去重命中
-      await db.dlNotes!.create({ id: 'n3', projectId: 'sp1', conceptId: 'c1', source: 'qna', questionId: 'q_x', contentMd: 'dup' })
-      const byQ = await db.dlNotes!.findByQuestion('sp1', 'q_x')
-      expect(byQ?.id).toBe('n3')
+      // qna 同问题二次收藏 → create 幂等返回既有行（不双行；库级唯一 uniq_dl_note_question 兜底）
+      const dup = await db.dlNotes!.create({ id: 'n3', projectId: 'sp1', conceptId: 'c1', source: 'qna', questionId: 'q_x', contentMd: 'dup' })
+      expect(dup.id).toBe('n2')
+      expect((await db.dlNotes!.findByQuestion('sp1', 'q_x'))?.id).toBe('n2')
 
       const all = await db.dlNotes!.listByProject('sp1')
-      expect(all.length).toBe(3)
+      expect(all).toHaveLength(2)
       const concept = await db.dlNotes!.listByConcept('sp1', 'c1')
-      expect(concept).toHaveLength(3)
-      expect(concept.map((n) => n.id).sort()).toEqual(['n1', 'n2', 'n3'])
+      expect(concept.map((n) => n.id).sort()).toEqual(['n1', 'n2'])
     })
   })
 

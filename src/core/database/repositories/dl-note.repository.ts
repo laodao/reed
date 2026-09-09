@@ -49,6 +49,12 @@ export class DlNoteRepository extends BaseRepository<DlNoteEntity, DlNoteRow> {
     questionId?: string | null
     contentMd: string
   }): Promise<DlNoteRow> {
+    // 幂等兜底（2026-09-09 复盘 + 库级唯一索引 uniq_dl_note_question）：
+    // qna 收藏同问题已存在 → 返回既有行，不重复建（防双击竞态与并发双行）
+    if (input.source === 'qna' && input.questionId) {
+      const existing = await this.findByQuestion(input.projectId, input.questionId)
+      if (existing) return existing
+    }
     const e = new DlNoteEntity()
     e.id = input.id
     e.userId = null // scoped.insert 注入

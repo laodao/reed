@@ -333,4 +333,31 @@ describe('dl-agent-actions', () => {
       expect(okC.summary.status).toBe('ok')
     })
   })
+
+  it('save_concept：空间内存在同名（其他父/根层）→ skipped 防重复与防误归属（2026-09-09 复盘）', async () => {
+    ds = await buildDs()
+    await seedProject(ds, 'sp1')
+    const db = buildDb(ds)
+    await runWithUserAsync('u1', async () => {
+      // 目录 g1 与 g2；A 已落在 g1
+      await db.dlConcepts!.create({ id: 'g1', projectId: 'sp1', nodeType: 'group', name: '目录一' })
+      await db.dlConcepts!.create({ id: 'g2', projectId: 'sp1', nodeType: 'group', name: '目录二' })
+      await db.dlConcepts!.create({ id: 'c-a1', projectId: 'sp1', nodeType: 'concept', name: '先验概率', parentId: 'g1' })
+    })
+    const ctx1 = { spaceId: 'sp1', db, emit: () => {} } as unknown as DlAgentExecutionContext
+    await runWithUserAsync('u1', async () => {
+      // 在另一目录 g2 再建同名 → skipped，不创建、不改动既有行归属
+      const dup = await executeDlAction(ctx1, { type: 'dl_save_concept', params: { concept: { name: '先验概率', parentId: 'g2' } } })
+      expect(dup.summary.status).toBe('skipped')
+      const all = await db.dlConcepts!.listByProject('sp1')
+      const named = all.filter((x) => x.name === '先验概率')
+      expect(named).toHaveLength(1) // 未产生第二份（根层+目录双份冗余的成因被挡）
+      expect(named[0].parentId).toBe('g1')
+      // 同父同名仍走幂等更新（不影响原语义）
+      const upd = await executeDlAction(ctx1, { type: 'dl_save_concept', params: { concept: { name: '先验概率', parentId: 'g1', definitionShort: '新定义' } } })
+      expect(upd.summary.status).toBe('ok')
+      const after = await db.dlConcepts!.getById('c-a1')
+      expect(after?.definitionShort).toBe('新定义')
+    })
+  })
 })
