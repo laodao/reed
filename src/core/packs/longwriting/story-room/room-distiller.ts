@@ -264,6 +264,9 @@ export class StoryRoomDistillerService {
       }
     } else if (scope === 'chapter') {
       out.push(mk('chapter', `章节卡 · ${String(parsed.outlineName || parsed.name || '').trim() || '未命名章节'}`, parsed))
+    } else if (scope === 'foreshadow') {
+      const content = String(parsed.content || '').trim()
+      if (content) out.push(mk('foreshadow', `伏笔卡 · ${content.slice(0, 12)}`, parsed))
     } else if (scope.startsWith('kind:')) {
       const key = scope.slice(5)
       const name = String(parsed.name || '').trim() || '未命名'
@@ -333,6 +336,13 @@ export class StoryRoomDistillerService {
       }
       case 'chapter':
         return { ok: true, message: '章节卡已定稿——在编辑器中打开即可按要点写作', changed: ['chapters'] }
+      case 'foreshadow': {
+        const row = await m?.lwForeshadows?.createRow(
+          projectId, String(data.content || ''), (Number(data.plantedChapter) || null) as never,
+          { type: 'discussion', turns: card.sourceTurns },
+        )
+        return { ok: !!row, message: row ? `伏笔已登记（${row.status === 'open' ? '未收' : row.status}）` : '伏笔落库失败', changed: ['world'] }
+      }
       case 'custom': {
         const kindKey = String(data._kindKey || card.title.split('卡 · ')[0] || '')
         if (!kindKey) return { ok: false, message: '自定义分类缺失（_kindKey）', changed: [] }

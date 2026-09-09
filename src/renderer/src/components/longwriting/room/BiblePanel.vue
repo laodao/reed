@@ -84,6 +84,10 @@
           <el-button size="small" type="primary" @click="askDetail">在对话中追问</el-button>
           <el-button size="small" @click="$emit('open-editor')">在写作台打开</el-button>
         </div>
+        <div v-if="detail.kindKey === 'foreshadow'" class="detail-ops">
+          <el-button size="small" type="success" @click="markForeshadow('paid')">✓ 标记已收</el-button>
+          <el-button size="small" type="danger" text @click="markForeshadow('dropped')">弃置</el-button>
+        </div>
       </template>
     </el-drawer>
 
@@ -137,6 +141,7 @@ const emit = defineEmits<{
   (e: 'open-editor'): void
   (e: 'locate-turn', turn: number): void
   (e: 'add-kind', kindKey: string): void
+  (e: 'foreshadow-status', id: string, status: 'paid' | 'dropped'): void
 }>()
 
 const keyword = ref('')
@@ -146,6 +151,7 @@ const ledgerOpen = ref(false)
 // ===== 详情抽屉（bible:detail：fieldsSchema 驱动 + 关系小节） =====
 const detailOpen = ref(false)
 const detail = ref<{
+  id: string
   title: string
   groupLabel: string
   kindKey: string
@@ -178,7 +184,28 @@ async function openDetail(g: BibleGroupWire, id: string): Promise<void> {
   const entry = g.entries.find((e) => e.id === id)
   if (!entry) return
   detailOpen.value = true
+  // 伏笔：条目 fields 即行数据（含状态），不走 bible:detail
+  if (g.kindKey === 'foreshadow') {
+    const f = entry.fields as Record<string, any>
+    detail.value = {
+      id,
+      title: entry.name,
+      groupLabel: g.label,
+      kindKey: g.kindKey,
+      fields: [
+        { k: '内容', v: String(f.content || entry.name) },
+        { k: '埋设', v: f.plantedChapter ? `第 ${f.plantedChapter} 章` : '章节未定' },
+        { k: '回收', v: f.payoffChapter ? `第 ${f.payoffChapter} 章` : '尚未回收' },
+        { k: '状态', v: f.status === 'paid' ? '已回收' : f.status === 'dropped' ? '已弃置' : '未收' },
+      ],
+      relations: [],
+      prov: findProvenance(g.kindKey, entry.name),
+      askText: `关于伏笔「${entry.name}」：`,
+    }
+    return
+  }
   detail.value = {
+    id,
     title: entry.name,
     groupLabel: g.label,
     kindKey: g.kindKey,
@@ -256,6 +283,12 @@ async function submitCreate(): Promise<void> {
   } else {
     ElMessage.error(res.error || '新增失败')
   }
+}
+
+function markForeshadow(status: 'paid' | 'dropped'): void {
+  if (!detail.value) return
+  emit('foreshadow-status', detail.value.id, status)
+  detailOpen.value = false
 }
 
 function askDetail(): void {

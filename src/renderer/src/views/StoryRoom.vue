@@ -99,6 +99,7 @@
           @open-editor="goEditor"
           @locate-turn="locateTurn"
           @add-kind="onAddKind"
+          @foreshadow-status="onForeshadowStatus"
         />
       </div>
     </div>
@@ -398,6 +399,16 @@ async function onDistill(): Promise<void> {
 }
 
 const bibleRefresh = ref(0)
+
+async function onForeshadowStatus(id: string, status: 'paid' | 'dropped'): Promise<void> {
+  const res = await window.electronAPI.longwriting.bibleForeshadowStatus(projectId.value, id, status, null)
+  if (res.success) {
+    ElMessage.success(status === 'paid' ? '伏笔已回收' : '伏笔已弃置')
+    bibleRefresh.value++
+  } else {
+    ElMessage.error(res.error || '操作失败')
+  }
+}
 /** 溯源跳转：{turn, n} 变化触发 ChatCanvas 滚动定位 */
 const locateReq = ref<{ turn: number; n: number } | null>(null)
 let locateSeq = 0

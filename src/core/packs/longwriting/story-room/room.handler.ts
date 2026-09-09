@@ -93,6 +93,25 @@ export function registerStoryRoomHandlers(): void {
     }
   })
 
+  ipcBridge.handle('longwriting:bible:progression', async (_event, projectId: string, kindKey: string, id: string) => {
+    try {
+      const { BibleQueryService } = await import('@core/platform/services/longwriting/bible.service')
+      return { success: true, data: await BibleQueryService.getInstance().progression(projectId, kindKey, id) }
+    } catch (error: any) {
+      console.error('[StoryRoomHandler] bible:progression 失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcBridge.handle('longwriting:bible:foreshadow:status', async (_event, _projectId: string, id: string, status: 'open' | 'paid' | 'dropped', payoffChapter?: number | null) => {
+    try {
+      const { BibleQueryService } = await import('@core/platform/services/longwriting/bible.service')
+      return { success: true, data: await BibleQueryService.getInstance().setForeshadowStatus(id, status, payoffChapter) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
   ipcBridge.handle('longwriting:bible:custom:create', async (_event, projectId: string, kindKey: string, name: string, fields: Record<string, unknown> | null, origin?: Record<string, unknown>) => {
     try {
       const { BibleQueryService } = await import('@core/platform/services/longwriting/bible.service')
@@ -102,7 +121,7 @@ export function registerStoryRoomHandlers(): void {
     }
   })
 
-  ipcBridge.handle('longwriting:bible:custom:update', async (_event, _projectId: string, id: string, patch: { name?: string; fields?: Record<string, unknown> | null }) => {
+  ipcBridge.handle('longwriting:bible:custom:update', async (_event, projectId: string, id: string, patch: { name?: string; fields?: Record<string, unknown> | null }) => {
     try {
       const { BibleQueryService } = await import('@core/platform/services/longwriting/bible.service')
       return { success: true, data: await BibleQueryService.getInstance().customUpdate(projectId, id, patch) }
@@ -111,7 +130,7 @@ export function registerStoryRoomHandlers(): void {
     }
   })
 
-  ipcBridge.handle('longwriting:bible:custom:delete', async (_event, projectId: string, id: string) => {
+  ipcBridge.handle('longwriting:bible:custom:delete', async (_event, _projectId: string, id: string) => {
     try {
       const { BibleQueryService } = await import('@core/platform/services/longwriting/bible.service')
       return { success: true, data: await BibleQueryService.getInstance().customDelete(id) }
@@ -143,7 +162,7 @@ export function registerStoryRoomHandlers(): void {
 
   // ==================== 提炼与卡片闭环（M4） ====================
 
-  const DISTILL_SCOPES = ['overview', 'characters', 'plots', 'world', 'outline', 'chapter']
+  const DISTILL_SCOPES = ['overview', 'characters', 'plots', 'world', 'outline', 'chapter', 'foreshadow']
 
   ipcBridge.handle(ROOM_CHANNELS.ROOM_DISTILL, async (_event, projectId: string, scope: string, opts?: { providerConfigId?: string; modelId?: string }) => {
     try {

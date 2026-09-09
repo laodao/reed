@@ -131,6 +131,24 @@ export async function createBibleTables(ds: DataSource): Promise<void> {
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_lw_custom_entities_project ON lw_custom_entities (project_id)`)
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_lw_custom_entities_project_kind ON lw_custom_entities (project_id, kind_key)`)
 
+  // 2.5 lw_foreshadows（P1 伏笔追踪）
+  await ds.query(`
+    CREATE TABLE IF NOT EXISTS lw_foreshadows (
+      id varchar PRIMARY KEY,
+      user_id varchar NULL,
+      project_id varchar NOT NULL,
+      content text NOT NULL,
+      planted_chapter integer NULL,
+      payoff_chapter integer NULL,
+      status varchar DEFAULT 'open',
+      origin text NULL,
+      created_at bigint NULL,
+      updated_at bigint NULL
+    )
+  `)
+  await ds.query(`CREATE INDEX IF NOT EXISTS idx_lw_foreshadows_project ON lw_foreshadows (project_id)`)
+  await ds.query(`CREATE INDEX IF NOT EXISTS idx_lw_foreshadows_status ON lw_foreshadows (project_id, status)`)
+
   // 3. lw_story_characters.aliases（JSON 数组；幂等加列——PRAGMA/information_schema 经
   // TypeORM 的返回形态不稳定，直接 ALTER 并容忍 duplicate（实测教训））
   if (await checkTableExists(ds, 'lw_story_characters', isPg)) {

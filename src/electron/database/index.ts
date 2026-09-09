@@ -68,6 +68,7 @@ import { LwEntityStateRepository } from '@core/database/repositories/lw-entity-s
 import { LwEventRepository } from '@core/database/repositories/lw-event.repository'
 import { LwBibleKindRepository } from '@core/database/repositories/lw-bible-kind.repository'
 import { LwCustomEntityRepository } from '@core/database/repositories/lw-custom-entity.repository'
+import { LwForeshadowRepository } from '@core/database/repositories/lw-foreshadow.repository'
 import { LwGraphEdgeRepository } from '@core/database/repositories/lw-graph-edge.repository'
 import { LwPlotCharacterRepository } from '@core/database/repositories/lw-plot-character.repository'
 import { LwPlotLocationRepository } from '@core/database/repositories/lw-plot-location.repository'
@@ -200,6 +201,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public lwEvents: LwEventRepository | null = null
   public lwBibleKinds: LwBibleKindRepository | null = null
   public lwCustomEntities: LwCustomEntityRepository | null = null
+  public lwForeshadows: LwForeshadowRepository | null = null
   public lwGraphEdges: LwGraphEdgeRepository | null = null
 
   // 工作流引擎（三表）
@@ -4438,6 +4440,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.lwEvents = new LwEventRepository(this.dataSource)
     this.lwBibleKinds = new LwBibleKindRepository(this.dataSource)
     this.lwCustomEntities = new LwCustomEntityRepository(this.dataSource)
+    this.lwForeshadows = new LwForeshadowRepository(this.dataSource)
     this.lwGraphEdges = new LwGraphEdgeRepository(this.dataSource)
     this.workflowDefinitions = new WorkflowDefinitionRepository(this.dataSource)
     this.workflowRuns = new WorkflowRunRepository(this.dataSource)

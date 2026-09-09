@@ -566,6 +566,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'longwriting.bibleCustomCreate': { channel: 'longwriting:bible:custom:create' },
   'longwriting.bibleCustomUpdate': { channel: 'longwriting:bible:custom:update' },
   'longwriting.bibleCustomDelete': { channel: 'longwriting:bible:custom:delete' },
+  'longwriting.bibleProgression': { channel: 'longwriting:bible:progression' },
+  'longwriting.bibleForeshadowStatus': { channel: 'longwriting:bible:foreshadow:status' },
   // longwriting.onRoomEvent(projectId, cb) — 后端 emit(`longwriting:room:${projectId}`, ...)
   'longwriting.onRoomEvent': {
     eventChannel: (projectId) => `longwriting:room:${projectId}`,

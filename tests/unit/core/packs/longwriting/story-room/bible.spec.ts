@@ -59,6 +59,35 @@ function makeFakeDb() {
     lwLocations: { getByProjectId: async () => [] },
     lwBackgrounds: { getByProjectId: async () => null },
     lwGraphEdges: { getByEntity: async () => [{ targetName: '大师兄', relationType: '仇敌', validFromChapter: 1 }] },
+    lwEntityStates: {
+      getByProjectId: async () => [
+        { entityType: 'character', entityId: 'c1', chapterNumber: 2, stateSummary: '左臂有伤', keyChanges: '负伤', entityName: '林晓' },
+        { entityType: 'character', entityId: 'c2', chapterNumber: 3, stateSummary: '闭关', keyChanges: null, entityName: '顾长风' },
+        { entityType: 'character', entityId: 'c1', chapterNumber: 5, stateSummary: '伤愈', keyChanges: '痊愈', entityName: '林晓' },
+      ],
+    },
+    lwEvents: {
+      getByProjectId: async () => [
+        { id: 'e1', chapterNumber: 2, name: '夜斗', description: '被大师兄所伤', storyTime: '三月初七', involvedEntities: JSON.stringify([{ type: 'character', id: 'c1' }]) },
+        { id: 'e2', chapterNumber: 6, name: '疗养', description: '与林晓无关的事件', storyTime: null, involvedEntities: JSON.stringify([{ type: 'character', id: 'c2' }]) },
+      ],
+    },
+    lwForeshadows: {
+      rows: [] as any[],
+      getByProjectId: async function (this: any, pid: string) { return this.rows.filter((r) => r.projectId === pid).map((r) => ({ ...r, origin: r.origin ? JSON.parse(r.origin) : null })) },
+      createRow: async function (this: any, pid: string, content: string, planted: number | null, origin: any) {
+        const row = { id: `fb_${this.rows.length + 1}`, projectId: pid, content, plantedChapter: planted, payoffChapter: null, status: 'open', origin: JSON.stringify(origin), createdAt: 1, updatedAt: 1 }
+        this.rows.push(row)
+        return { ...row, origin }
+      },
+      setStatus: async function (this: any, id: string, status: string, payoff: number | null) {
+        const r = this.rows.find((x) => x.id === id)
+        if (!r) return null
+        r.status = status
+        if (payoff !== undefined && payoff !== null) r.payoffChapter = payoff
+        return { ...r, origin: JSON.parse(r.origin) }
+      },
+    },
     _projects: projects,
     _customRows: customRows,
   }
@@ -168,5 +197,68 @@ describe('整理器 kind:<key>（动态分类）', () => {
   it('kind:不存在 → 抛错（handler 白名单同理）', async () => {
     const svc = harness(textStream('{}'), makeFakeDb())
     await expect(svc.distill('p1', 'kind:nope' as never)).rejects.toThrow()
+  })
+})
+
+
+// ==================== P1：演进时间线 + 伏笔 ====================
+
+describe('progression 演进时间线（P1）', () => {
+  it('按实体聚合状态/事件/关系，按章节排序', async () => {
+    const svc = new BibleQueryService(makeFakeDb())
+    const p = await svc.progression('p1', 'character', 'c1')
+    expect(p.states.map((x) => x.chapter)).toEqual([2, 5])
+    expect(p.states[0].summary).toBe('左臂有伤')
+    expect(p.events).toHaveLength(1)
+    expect(p.events[0].name).toBe('夜斗')
+    expect(p.relations[0]).toMatchObject({ other: '大师兄', type: '仇敌' })
+  })
+
+  it('无演进语义的分类（overview/custom）返回空结构', async () => {
+    const svc = new BibleQueryService(makeFakeDb())
+    const p = await svc.progression('p1', 'overview', 'ov1')
+    expect(p).toEqual({ states: [], events: [], relations: [] })
+  })
+})
+
+describe('伏笔追踪（P1）', () => {
+  it('createForeshadow → list 出现伏笔合成组（含埋/收状态副标题）', async () => {
+    const db = makeFakeDb()
+    const svc = new BibleQueryService(db)
+    await svc.createForeshadow('p1', '断剑其实是父亲遗物', 3, { type: 'discussion', turns: [4] })
+    const groups = await svc.list('p1')
+    const fb = groups.find((g) => g.kindKey === 'foreshadow')!
+    expect(fb.entries).toHaveLength(1)
+    expect(fb.entries[0].sub).toContain('第3章埋')
+    expect(fb.entries[0].sub).toContain('未收')
+  })
+
+  it('setStatus：open → paid（回收章号）', async () => {
+    const db = makeFakeDb()
+    const svc = new BibleQueryService(db)
+    await svc.createForeshadow('p1', '断剑', 3, { type: 'discussion', turns: [4] })
+    const id = (await svc.list('p1')).find((g) => g.kindKey === 'foreshadow')!.entries[0].id
+    const updated = await svc.setForeshadowStatus(id, 'paid', 12)
+    expect(updated?.status).toBe('paid')
+    expect(updated?.payoffChapter).toBe(12)
+  })
+})
+
+
+// ==================== 整理器 foreshadow 卡（P1） ====================
+
+describe('整理器 foreshadow scope', () => {
+  it('伏笔卡提炼 + 采纳落 lw_foreshadows（origin=discussion）', async () => {
+    const db = makeFakeDb()
+    const svc = harness(textStream('{"content":"断剑是父亲遗物","plantedChapter":3,"planPayoffChapter":12}'), db)
+    const r = await svc.distill('p1', 'foreshadow')
+    expect(r.cards).toHaveLength(1)
+    expect(r.cards[0].kind).toBe('foreshadow')
+    const card = await svc.adoptCard('p1', r.cards[0].id)
+    expect(card.status).toBe('adopted')
+    const row = db.lwForeshadows.rows[0]
+    expect(row.content).toBe('断剑是父亲遗物')
+    expect(row.plantedChapter).toBe(3)
+    expect(JSON.parse(row.origin)).toMatchObject({ type: 'discussion' })
   })
 })

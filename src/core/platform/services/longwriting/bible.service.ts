@@ -128,7 +128,93 @@ export class BibleQueryService {
       }
       groups.push({ kindKey: kind.key, label: kind.label, icon: kind.icon, storage: 'entity', fieldsSchema: kind.fieldsSchema, entries })
     }
+
+    // 伏笔合成组（P1：lw_foreshadows；非自定义实体，走独立端点操作）
+    try {
+      const fbs = (await m.lwForeshadows?.getByProjectId(projectId)) || []
+      groups.push({
+        kindKey: 'foreshadow',
+        label: '伏笔',
+        icon: '🪝',
+        storage: 'entity',
+        fieldsSchema: null,
+        entries: fbs.map((f: any) => ({
+          id: f.id,
+          name: String(f.content || '').slice(0, 24),
+          sub: this.foreshadowSub(f),
+          fields: f,
+          origin: f.origin ?? undefined,
+        })),
+      })
+    } catch (e) {
+      logger.warn('[bible] 伏笔读取失败（降级为空组）', e)
+    }
     return groups
+  }
+
+  private foreshadowSub(f: { status: string; plantedChapter: number | null; payoffChapter: number | null }): string {
+    const st = f.status === 'paid' ? `第${f.payoffChapter ?? '?'}章已收` : f.status === 'dropped' ? '已弃' : '未收'
+    return `第${f.plantedChapter ?? '?'}章埋 · ${st}`
+  }
+
+  /** 伏笔操作（P1） */
+  async createForeshadow(projectId: string, content: string, plantedChapter: number | null, origin?: { type: string; turns?: number[]; cardId?: string }) {
+    return this.manager().lwForeshadows.createRow(projectId, content, plantedChapter, origin)
+  }
+
+  async setForeshadowStatus(id: string, status: 'open' | 'paid' | 'dropped', payoffChapter?: number | null) {
+    return this.manager().lwForeshadows.setStatus(id, status, payoffChapter)
+  }
+
+  /**
+   * 演进时间线（P1：progression）——实体按章节排序的状态/事件/关系变化。
+   * 数据源：lw_entity_state_snapshots + lw_events（involved_entities 命中）+ lw_graph_edges（起讫章）。
+   */
+  async progression(projectId: string, kindKey: string, id: string): Promise<{
+    states: Array<{ chapter: number; summary: string; keyChanges: string | null }>
+    events: Array<{ chapter: number; name: string; description: string | null; storyTime: string | null }>
+    relations: Array<{ other: string; type: string; from: number | null; until: number | null }>
+  }> {
+    const m = this.manager()
+    // bible kindKey → 图谱 entityType（plot/outline/overview/custom 无演进语义）
+    const GRAPH_TYPE: Record<string, string> = { character: 'character', location: 'location', item: 'item', faction: 'faction', skill: 'skill' }
+    const entityType = GRAPH_TYPE[kindKey]
+    const out = { states: [] as { chapter: number; summary: string; keyChanges: string | null }[], events: [] as { chapter: number; name: string; description: string | null; storyTime: string | null }[], relations: [] as { other: string; type: string; from: number | null; until: number | null }[] }
+    if (!entityType) return out
+
+    try {
+      const snapshots = (await m.lwEntityStates?.getByProjectId(projectId)) || []
+      out.states = snapshots
+        .filter((s: any) => s.entityType === entityType && String(s.entityId) === String(id))
+        .map((s: any) => ({ chapter: s.chapterNumber, summary: String(s.stateSummary || ''), keyChanges: s.keyChanges ?? null }))
+        .sort((a: any, b: any) => a.chapter - b.chapter)
+    } catch (e) {
+      logger.warn('[bible] 演进状态读取失败', e)
+    }
+    try {
+      const events = (await m.lwEvents?.getByProjectId(projectId)) || []
+      out.events = events
+        .filter((ev: any) => {
+          const involved = typeof ev.involvedEntities === 'string' ? JSON.parse(ev.involvedEntities || '[]') : ev.involvedEntities || []
+          return Array.isArray(involved) && involved.some((x: any) => String(x?.id) === id)
+        })
+        .map((ev: any) => ({ chapter: ev.chapterNumber, name: String(ev.name || ''), description: ev.description ?? null, storyTime: ev.storyTime ?? null }))
+        .sort((a: any, b: any) => a.chapter - b.chapter)
+    } catch (e) {
+      logger.warn('[bible] 演进事件读取失败', e)
+    }
+    try {
+      const edges = (await m.lwGraphEdges?.getByEntity(projectId, entityType as never, id)) || []
+      out.relations = edges.map((e: any) => ({
+        other: String(e.targetName || e.target || ''),
+        type: String(e.relationType || e.label || '关联'),
+        from: e.validFromChapter ?? null,
+        until: e.validUntilChapter ?? null,
+      }))
+    } catch (e) {
+      logger.warn('[bible] 演进关系读取失败', e)
+    }
+    return out
   }
 
   private firstStr(fields: Record<string, unknown> | null, kind: BibleKindDto): string {

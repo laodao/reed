@@ -2080,6 +2080,10 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:bible:custom:update', projectId, id, patch),
     bibleCustomDelete: (projectId: string, id: string) =>
       ipcRenderer.invoke('longwriting:bible:custom:delete', projectId, id),
+    bibleProgression: (projectId: string, kindKey: string, id: string) =>
+      ipcRenderer.invoke('longwriting:bible:progression', projectId, kindKey, id),
+    bibleForeshadowStatus: (projectId: string, id: string, status: string, payoffChapter?: number | null) =>
+      ipcRenderer.invoke('longwriting:bible:foreshadow:status', projectId, id, status, payoffChapter),
     onRoomEvent: (projectId: string, callback: (event: unknown) => void) => {
       const channel = `longwriting:room:${projectId}`
       const listener = (_event: any, data: unknown) => callback(data)

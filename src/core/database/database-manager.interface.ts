@@ -10,6 +10,7 @@ import type { DataSource } from 'typeorm'
 
 import type { LwBibleKindRepository } from './repositories/lw-bible-kind.repository'
 import type { LwCustomEntityRepository } from './repositories/lw-custom-entity.repository'
+import type { LwForeshadowRepository } from './repositories/lw-foreshadow.repository'
 import type { ApiKeyRepository } from './repositories/api-key.repository'
 import type { AssetGroupRepository } from './repositories/asset-group.repository'
 import type { AssetImageRepository } from './repositories/asset-image.repository'
@@ -208,6 +209,7 @@ export interface ICoreDatabaseManager {
   lwEvents: LwEventRepository | null
   lwBibleKinds: LwBibleKindRepository | null
   lwCustomEntities: LwCustomEntityRepository | null
+  lwForeshadows: LwForeshadowRepository | null
   /** 长文图谱：关系边（带 valid_from/valid_until_chapter 时间线） */
   lwGraphEdges: LwGraphEdgeRepository | null
 

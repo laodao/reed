@@ -41,7 +41,7 @@ export interface ConsensusEntry {
 // ==================== 提炼卡片 ====================
 
 /** 卡片种类：概要/人物/故事线/世界/大纲/章节/矛盾 + custom（动态分类，P0） */
-export type ArtifactCardKind = 'overview' | 'character' | 'plot' | 'world' | 'outline' | 'chapter' | 'conflict' | 'custom'
+export type ArtifactCardKind = 'overview' | 'character' | 'plot' | 'world' | 'outline' | 'chapter' | 'conflict' | 'custom' | 'foreshadow'
 
 export type ArtifactCardStatus = 'pending' | 'adopted' | 'ignored' | 'failed'
 
@@ -141,7 +141,7 @@ export interface RoomStateView {
 }
 
 /** 按需提炼范围（设计文档 §9 + v2.1 章节卡 + P0 动态分类 kind:<key>） */
-export type DistillScope = 'overview' | 'characters' | 'plots' | 'world' | 'outline' | 'chapter'
+export type DistillScope = 'overview' | 'characters' | 'plots' | 'world' | 'outline' | 'chapter' | 'foreshadow'
 /** 动态分类提炼范围：`kind:<key>`（key → lw_bible_kinds.key） */
 export type BibleDistillScope = DistillScope | `kind:${string}`
 
