@@ -363,7 +363,11 @@ async function handleSelectFiles(
   const result = await dialog.showOpenDialog(window, {
     title: '选择文档',
     // doc（Word 97-2003）解析未实现，不提供选择；请另存为 docx 后上传
-    filters: [{ name: '文档', extensions: ['docx', 'txt', 'md', 'xlsx', 'xls'] }],
+    filters: [
+      { name: '所有支持的文档', extensions: ['docx', 'txt', 'md', 'xlsx', 'xls', 'pdf', 'epub', 'mobi', 'azw3'] },
+      { name: '文档', extensions: ['docx', 'txt', 'md', 'xlsx', 'xls'] },
+      { name: '电子书', extensions: ['pdf', 'epub', 'mobi', 'azw3'] },
+    ],
     properties: ['multiSelections', 'openFile'],
   })
 
