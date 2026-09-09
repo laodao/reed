@@ -36,23 +36,24 @@
 ```
 
 - 两种模式互斥校验：foreach 必须给 listExpression；until 不得给 listExpression（给了报错），必须给 stopExpression + maxIterations。
-- 模板示例（主题研究）：`stopExpression: "{{pack1.verdict}}"`、`stopValue: "pass"`、`maxIterations: "{{start.maxRounds}}"`（深解析支持来自 start；校验时以运行期数值回检 ≤ settings.maxLoopIterations）。
+- 模板示例（主题研究）：`stopExpression: "{{pack1.result.verdict}}"`、`stopValue: "pass"`、`maxIterations: "{{start.maxRounds}}"`（深解析支持来自 start；校验时以运行期数值回检 ≤ settings.maxLoopIterations）。
 
 ### 3.2 执行语义
 
-1. 启动（`executeLoopNode` 按 `cfg.mode==='until'` 分流）：无需列表；读 maxIterations（非法/超限按运行设置报错 fail）。
+0. **语义命名**：`mode:'until'` = "重复执行循环体，直到 stop 条件满足"（与 while(未达标){…} 对偶）。引擎不做任意表达式求值，**停止判定只是"本轮作用域内解析出的标量 === stopValue"的等值比较**；需要更复杂判定时由 body 内节点（如 pack/code）把结果归一成可比较标量（如 verdict='pass'）。
+1. 启动（`executeLoopNode` 按 `cfg.mode==='until'` 分流）：无需列表；读 maxIterations——若为数字字面量已在图校验阶段查范围，若为模板串（来自 start 等）在引擎启动时解析并回检 ≤ `settings.maxLoopIterations`，非法 → 节点失败（**retryable=false**，重试必再撞）。
 2. 每轮 `i`（从 `results.length` 续起，与 foreach 相同的断点续跑语义）：
    - 建 scope（key=loop:id:i），伪变量只给 `{index:i}`（无 item）；
-   - 激活 loop-body → pump → `waitScopeSettled`（挂起/失败/错误策略 与 foreach 完全一致）；
+   - 激活 loop-body → pump → `waitScopeSettled`（挂起语义与 foreach 完全一致）；
+   - 失败策略：errorPolicy=fail（默认）→ 任一 body 节点失败即循环失败；**errorPolicy=skip → 该轮记 `{ error, skipped:true }` 进 results 并继续下一轮**（研究模板建议用 skip + writer 容错：LLM/jsonMode 偶发失败不应让整个研究中断）；
    - `collectIterationResult`（loop-back 边源节点输出）push 进 results；
-   - **停止判定**：把 `stopExpression` 当作模板在本轮 scope 内解析（与 body 节点模板同源同 resolver），`stringifyValue(结果) === stringifyValue(stopValue)`（缺省 stopValue='true'）→ 满足则结束循环；否则 `results.length >= maxIterations` 时结束。
-3. 收尾 `completeLoopUntil`：输出 **`{ results, count: results.length, iterations: results.length, last: results[results.length-1] }`**，route loop-done；journal 事件沿用 loopStarted/loopIterationSettled/loopCompleted（payload 带 mode 与轮数），回放/续驱兼容。
-4. body 全失败且 errorPolicy=fail → 循环失败（与 foreach 同）；skip → 记 `{error,skipped}` 进 results 并继续。
-5. 无 body（防御）→ 直接收尾空 results。
+   - **停止判定**：把 `stopExpression` 当作模板在本轮 scope 内解析（与 body 节点模板同 resolver），`stringifyValue(结果) === stringifyValue(stopValue)`（stopValue 缺省 'true'）→ 满足则结束循环；解析不出（如该轮被 skip）按"不满足"继续；`results.length >= maxIterations` 时无条件收尾。
+3. 收尾走**独立函数 `completeLoopUntil`**（不改 foreach 的 `completeLoop(results, list)` 签名，避免 count 语义混乱）：输出 **`{ results, count: results.length, iterations: results.length, last: results[results.length-1] }`**，route loop-done；journal 事件沿用 loopStarted/loopIterationSettled/loopCompleted（payload 带 mode 与轮数），回放/续驱兼容。
+4. 无 body（防御）→ 直接收尾空 results（count=0、last=undefined）。
 
 ### 3.3 每轮变量作用域与停止条件求值
 
-- body 内节点模板本来就按轮 scope 解析（现 foreach 的 `{{search1.results}}` 同轮可见即先例），until 停止表达式复用同一 scope → 可引用本轮任何 body 节点输出（如 `{{e.parsed.verdict}}` / `{{pack1.verdict}}`）。
+- body 内节点模板本来就按轮 scope 解析（现 foreach 的 `{{search1.results}}` 同轮可见即先例），until 停止表达式复用同一 scope → 可引用本轮任何 body 节点输出（如 `{{pack1.result.verdict}}`）。
 - **下游怎么拿"最后一轮"产物**：until 输出带 `last`（= 最后一轮迭代结果对象）。要求模板把需要外传的东西放进 **loop-back 边源节点输出**（如 pack 节点输出 `{notes, verdict, gaps, evalDigest}`），下游用 `{{round1.last.notes}}`、`{{round1.last.verdict}}`、`{{round1.iterations}}` 引用；同时 `results` 保留全部轮次（审计/复盘）。
 
 ### 3.4 护栏
@@ -72,12 +73,12 @@
 4. `src/core/platform/workflow/nodes/control-nodes.ts` loop handler `validateConfig` 同步按 mode 分支。
 
 ### 引擎
-5. `workflow-engine.service.ts`：executeLoopNode 分流；新增 until 驱动器（`driveUntil`/`continueUntil`/`collectIterationResult` 复用/`completeLoopUntil`）；伪变量、stop 求值、护栏、journal payload、resume 续驱。foreach 路径零改动（回归红线）。
+5. `workflow-engine.service.ts`：executeLoopNode 按 mode 分流；新增 until 驱动器（`driveUntil`/`continueUntil`/`completeLoopUntil`；collectIterationResult/waitScopeSettled 复用）；**resume/挂起续驱按 `exec.loopDrivers` 里 driver.kind 分流**（实现时先定位 resumeSuspended → continueLoop 的调用点，foreach 走原路、until 走 continueUntil）；stop 求值复用本轮 scope resolver；护栏、journal payload、伪变量。foreach 路径零改动（回归红线）。
 
 ### 模板（topic-research v3：从 3 轮级联改 until 循环）
-6. 图收敛为约 10 节点：`start(+maxRounds 输入) → clarify(form-collect) → plan1(llm-chat jsonMode) → round1(loop mode=until body: r(agent-loop 带预算) → e(llm-chat jsonMode, evaluatorModel) → pack(打包本轮 notes/verdict/gaps 为迭代结果; 实现选型见 §5) → loop-back) → writer(llm-chat jsonMode, 输入含 {{round1.last.*}} 与全部 {results}) → report1 → final1(human-review) → save1/end`。
-7. r 的 task 改为"本轮带此前结论增量更新，输出完整浓缩进展（notes 含最新证据与遗留缺口）"；stopExpression=`{{pack1.verdict}}`, stopValue=`pass`；start 增 `maxRounds`（默认 5，范围 1-8，作 {{round1.maxIterations}} 来源）。
-8. 测试：topic-research-graph.spec 改为 v3 断言（round1 为 until 循环、body 含 r/e/pack、stop 配置、writer 引用 round1.last、start 含 maxRounds）。
+6. 图收敛为约 10 节点：`start(+maxRounds 输入) → clarify(form-collect) → plan1(llm-chat jsonMode) → round1(loop mode=until, errorPolicy=skip, body: r(agent-loop 带预算) → e(llm-chat jsonMode, evaluatorModel) → pack(code: 打包 notes/verdict/gaps) → loop-back) → writer(llm-chat jsonMode, 输入 {{round1.last.result.*}} 与 {{round1.iterations}}) → report1 → final1(human-review) → save1/end`。
+7. r 的 task 改为"本轮带此前结论增量更新，输出完整浓缩进展（notes 含最新证据与遗留缺口，≤~1500 字/轮）"；stopExpression=`{{pack.result.verdict}}`、stopValue=`pass`；start 增 `maxRounds`（默认 5，范围 1-8，供 {{round1.maxIterations}}）。writer 容错：任一轮被 skip 或到上限仍未 pass 时，按已有轮次照常成稿并把"未收敛/失败轮"如实写入方法与局限。
+8. 测试：topic-research-graph.spec 改为 v3 断言（round1 为 until 循环（mode/stopExpression/stopValue/maxIterations/errorPolicy=skip）、body 含 r/e/pack 且 pack→loop-back、writer 引用 round1.last、start 含 maxRounds）。
 
 ### 平台测试（TDD，先写红）
 9. 引擎 until spec（新增 `tests/unit/core/platform/workflow/loop-until.spec.ts`）：
@@ -91,14 +92,19 @@
 10. 回归：foreach 相关既有 spec（engine loop、daily-news-brief-flow、industry-research 类 graph/flow）全绿；validator/forms/catalog 一致性测试同步。
 11. 全量：node-registry-consistency、workflow-node-catalog spec 同步（loop config 联合变化）。
 
-## 5. pack 节点实现选型（实现时定，设计不锁死）
-- 优先用既有 `assign`/`variable` 之外的最小做法：一个 **code 节点**（纯 JS 沙箱，输入引用本轮 `r`/`e` 输出，返回 `{notes, verdict, gaps}`）作为 loop-back 源——已有先例（v3 模板 writerMd 剥围栏）。若 code 节点对"引用整块模板产物"不便，则评估给 loop 迭代结果输出加 `lastScope`（不推荐，污染通用语义）。
-- 迭代结果体积护栏：r.notes 要求"浓缩但保留证据锚"，writer 只用 last；results 全量仅用于审计/可选的差距历史提示。
+## 5. pack 节点实现（已钉死）
+- **pack = code 节点**（机制已核实 code-nodes.ts：config `{ code, inputs:[{key,value}] }`，inputs[].value 支持 {{}} 深解析注入沙箱；用户代码 `(function(inputs){...})` return 对象 → 节点输出 `{ result }`）。pack 的 inputs 引用本轮 `{{r.answer}}` 与 `{{e.parsed.…}}`，code 直接 `return { notes: inputs.notes, verdict: inputs.verdict, gaps: inputs.gaps }`；**loop-back 边源 = pack** → until 的迭代结果与 `last` 即 pack 输出，下游用 `{{round1.last.result.notes}}` / `{{round1.last.result.verdict}}`。
+- ⚠️ **code 节点仅桌面端可用**（Web 多租户禁任意 JS 执行，code-nodes.ts:88-94）——模板含 code 即桌面语义（与 script-to-video-v3 用 code 的先例一致）；until 引擎能力本身不限平台，若未来要 Web 复用 pack，可另加"只读合并"原语（本期不做）。
+- 迭代结果体积护栏：r.notes 纪律化浓缩（≤ ~1200-1500 字/轮、带证据锚），writer 只吃 last；results 全量仅用于审计/可选的差距历史。注意节点输出会被运行级 `maxOutputChars` 截断，deep 档确需更大时在运行设置上调（见 §6）。
 
 ## 6. 风险与边界
-- until 循环无"无进展停滞"检测（引擎无停滞概念）：由每轮 agent 预算 + maxRounds 上限兜底；若需要"连续 N 轮 verdict 无变化即停"，可后续加（本轮不做，避免范围膨胀）。
-- 上下文字面累积：notes 每轮全量重述会涨——靠 r 的浓缩纪律 + writer 只吃 last 控制；深档若 notes 超长导致单轮超时，由 agent 内 maxToolCalls/maxDurationMs 已兜底并如实汇报。
-- foreach 全量回归是硬红线（模式分支零影响目标）；编辑器旧图（foreach）不受影响。
+- 兼容红线：**foreach 行为与输出（{results,count}）完全不变**；until 只新增 mode 分支与独立收尾函数；旧图零影响。回归 = 引擎 loop 相关既有 spec 全绿。
+- until 循环无"无进展停滞"检测（引擎无停滞概念）：由每轮 agent 预算 + maxRounds 上限兜底；需要"连续 N 轮 verdict 无变化即停"可后续加（本轮不做，避免范围膨胀）。
+- 单轮失败：errorPolicy=skip 下失败轮记 {error,skipped} 继续，stop 对 skip 轮按不满足处理；模板 writer 必须容错（§4-7）。
+- 输出体积与截断：节点输出受运行级 maxOutputChars 截断，`last`/`results` 大时会截断——控制 notes 每轮 ≤~1500 字；deep 档确需更大篇幅时上调该运行设置（不属本次引擎改动）。
+- 上下文字面累积：notes 每轮全量重述会涨——靠 r 的浓缩纪律 + writer 只吃 last 控制；超长导致单轮触顶由 agent 预算护栏兜底并如实汇报。
+- code 节点桌面限定（pack 依赖）已在 §5 说明；until 引擎能力本身不限平台。
+- 编辑器旧 foreach 图不受影响；loop 表单按 mode 切换字段，向后兼容。
 - 挂起（human-review/form-collect）在 body 内已有机制，until 复用；无人审批 timeoutMs=null 会挂起等待（沿用现状语义，非本次范围）。
 
 ## 7. 状态
