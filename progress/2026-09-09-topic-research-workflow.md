@@ -40,3 +40,28 @@
 
 ## 提交
 本地提交待 push 指令。
+
+---
+
+## v2 升级（2026-09-09，design-v2.md）
+
+用户评审否定 v1"搜索→综述→成文"（太简单）：要求**迭代式主题研究**——以模型认知为起点规划(不同领域不同步骤+验收标准)、执行中自驱调度(模型知识/联网/知识库发现与检索)、每轮由**另一 AI 模型按验收标准评估**、不达标带差距回头再研究、全程可与用户交互澄清。设计见 `tasks/2026-09-09-topic-research-workflow/design-v2.md`，用户评审通过并批准 P1。
+
+### 落地
+1. `topic-research.json` 重写为 v2（16 节点 19 边，升级替换同 id）：
+   澄清契约(form-collect goal/context) → 规划(plan1 jsonMode：已知地图/主题类型/步骤/验收标准) →
+   r1(agent-loop：web_search/wf_web_extract/wf_kb_retrieve/wf_kb_list，每轮预算护栏) → e1(llm-chat jsonMode，
+   **evaluatorModel=另一模型**，pass/revise+gaps) → c1(condition) pass→writer / revise→r2 →(e2/c2)→ r3 → e3 →
+   writer(溯源报告：execSummary 可信度/正文证据锚/method/limits/sourcesMd 分网络与私有库) → report1 拼装 →
+   final1(human-review，content 可编辑) → approve:save1(content={{final1.content}}) / reject:end。
+2. P1 实施：`wf_kb_list` 只读工具（node-tool-adapter.ts，无参，返回 kbs[{id,name,description,documentCount}]）——
+   研究执行体先发现知识库再自行检索。
+3. create-builtin-apps.ts：注册名升级「主题深度研究」；迁移 UPDATE 分支补同步 name/description/category
+   （未接管定义改名生效；接管保护不变）。
+4. 测试 4 files 39 passed（topic-research-graph v2 图断言 / builtin-app-templates / create-builtin-apps 改名同步 /
+   agent-tool-adapters wf_kb_list）；eslint 0。
+
+### 真机验收（待用户，design-v2 §5）
+重启应用后「工作流」应见改名后的「主题深度研究」；运行 TikTok 开店剧本：契约表单 → 规划(做法类+验收) →
+研究轮(联网+私有库发现检索) → 另一模型评估 → 必要时第二轮定向补查 → 成稿含来源/局限 → 人工确认(可改全文) → 存档；
+dl run_workflow 触发复验。

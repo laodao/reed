@@ -41,7 +41,7 @@ import scriptToVideo from './builtin-apps/script-to-video.json'
 // V2 素材前置（2026-09-06 用户确认开工：保留 V1 为独立定义，V2 另立新 id）
 import scriptToVideoV2 from './builtin-apps/script-to-video-v2.json'
 import scriptToVideoV3 from './builtin-apps/script-to-video-v3.json'
-// 主题实操研究（2026-09-09 用户确认：面向"某件事具体怎么做"的主题研究，示例 TikTok 开店）
+// 主题深度研究（2026-09-09 v2 升级替换：澄清契约→规划(已知地图/验收)→≤3轮[研究执行体+另一模型独立评估]→差距迭代→溯源成稿→人工确认）
 import topicResearch from './builtin-apps/topic-research.json'
 
 /** 内置工作流 id 前缀（固定，幂等查重依据） */
@@ -87,8 +87,8 @@ const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; icon: str
   { file: 'long-form-writing.json', raw: longFormWriting, appId: `${BUILTIN_APP_PREFIX}long_form_writing`, icon: '✍️', name: '长文写作', description: '故事线 → 章节大纲 → 逐章写作（多轮对话承接前文）→ 合并完整长文入库', category: '内容创作', tags: ['长文', '写作', '小说'] },
   // 电商详情长图（2026-08-29 用户确认开工：先按卖点/规格规划张数，再逐张生成并配图文，排版成竖版详情长图）
   { file: 'ecommerce-detail-long-image.json', raw: ecommerceDetailLongImage, appId: `${BUILTIN_APP_PREFIX}ecommerce_detail_long_image`, icon: '🛍️', name: '电商详情长图', description: '商品图+卖点+规格 → 按卖点/规格规划 N 张介绍图 → 逐张生成（锁商品、图文对应）→ 排版成竖版详情长图', category: '电商', tags: ['电商', '详情', '长图'] },
-  // 主题实操研究（2026-09-09 用户确认开工：研究"某事具体怎么做"，产出步骤/注意/运营方法类实操指南）
-  { file: 'topic-research.json', raw: topicResearch, appId: `${BUILTIN_APP_PREFIX}topic_research`, icon: '🧭', name: '主题实操研究', description: '主题 → 规划研究子问题 → 联网搜索逐问摘要 → 综合成实操指南（详细步骤/注意事项/运营方法等章节 + 参考来源 + 时效提示）→ 人工确认 → 存资产', category: '调研', tags: ['主题研究', '实操', '指南'] },
+  // 主题深度研究（2026-09-09 v2 升级替换实操版：澄清→规划(已知地图/验收)→≤3轮研究执行体+另一模型独立评估→差距迭代→溯源成稿→人工确认）
+  { file: 'topic-research.json', raw: topicResearch, appId: `${BUILTIN_APP_PREFIX}topic_research`, icon: '🧭', name: '主题深度研究', description: '澄清研究契约 → 规划(已知地图/主题类型/步骤/验收标准) → 至多3轮「研究(联网+正文深读+私有知识库) + 另一模型独立评估」 → 不达标带差距再研究 → 溯源研究报告 → 人工确认存档', category: '调研', tags: ['主题研究', '深度研究'] },
 ]
 
 /** 默认模板资产（user_id=NULL，可复制修改） */
@@ -160,11 +160,12 @@ export async function createBuiltinApps(ds: DataSource): Promise<void> {
       insertedDefs++
     } else {
       // 只同步未被用户接管的定义（template_version != 0；接管后用户修改不被模板重置）
+      // name/description/category 一并同步：模板升级改名（如 实操研究→深度研究）对未接管定义生效
       await ds.query(
         `UPDATE workflow_definitions
-           SET draft_graph = ${ph(1)}, published_graph = ${ph(2)}, triggers = ${ph(3)}, settings = ${ph(4)}, template_version = ${ph(5)}, updated_at = ${ph(6)}
-         WHERE id = ${ph(7)} AND (template_version IS NULL OR template_version != 0)`,
-        [JSON.stringify(graph), JSON.stringify(graph), JSON.stringify(triggers), settings ? JSON.stringify(settings) : null, BUILTIN_TEMPLATE_VERSION, now, defId]
+           SET name = ${ph(1)}, description = ${ph(2)}, category = ${ph(3)}, draft_graph = ${ph(4)}, published_graph = ${ph(5)}, triggers = ${ph(6)}, settings = ${ph(7)}, template_version = ${ph(8)}, updated_at = ${ph(9)}
+         WHERE id = ${ph(10)} AND (template_version IS NULL OR template_version != 0)`,
+        [raw.name ?? app.name, raw.description ?? app.description, raw.category ?? 'builtin', JSON.stringify(graph), JSON.stringify(graph), JSON.stringify(triggers), settings ? JSON.stringify(settings) : null, BUILTIN_TEMPLATE_VERSION, now, defId]
       )
     }
 

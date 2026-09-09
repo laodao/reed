@@ -185,6 +185,29 @@ const ttsTool: AgentToolDef<z.infer<typeof TtsInput>> = {
   },
 }
 
+// ==================== wf_kb_list（读；知识库目录，研究执行体"先发现后检索"用） ====================
+
+const KbListInput = z.object({})
+
+const kbListTool: AgentToolDef<z.infer<typeof KbListInput>> = {
+  name: 'wf_kb_list',
+  description: '列出系统全部知识库（返回 id/名称/描述/文档数），用于先判断哪些私有知识库与当前研究主题相关，再用 wf_kb_retrieve 检索。',
+  inputSchema: KbListInput,
+  dangerLevel: 'read',
+  autoApprovableInWorkflow: true,
+  execute: async () => {
+    const resp = await new KnowledgeBaseService().getKnowledgeBases()
+    if (!resp.success || !resp.data) return { kbs: [], count: 0, error: resp.error ?? undefined }
+    const kbs = resp.data.map((kb) => ({
+      id: kb.id,
+      name: kb.name,
+      description: kb.description ?? '',
+      documentCount: kb.documentCount ?? 0,
+    }))
+    return { kbs, count: kbs.length }
+  },
+}
+
 // ==================== 注册 ====================
 
 /** 首批节点工具（workflow-boot 装配注册，source='node'） */
@@ -192,6 +215,7 @@ export const NODE_TOOL_EXPORTS = [
   webExtractTool,
   translateTool,
   kbRetrieveTool,
+  kbListTool,
   imageGenTool,
   ttsTool,
 ] as const

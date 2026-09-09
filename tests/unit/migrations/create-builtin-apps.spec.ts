@@ -1,10 +1,12 @@
-﻿/**
+/**
  * create-builtin-apps 迁移执行测试（内置高频应用：不做运行时种子、迁移直接 INSERT）
  * @module tests/migrations/create-builtin-apps
  * @description 真实 sqlite DataSource 执行：建三表 → 跑迁移 → 断言 24 工作流 + 24 应用
  *              + 3 默认模板资产落库、user_id=NULL + is_builtin=1、幂等重跑不重复。
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { DataSource } from 'typeorm'
 import { createWorkflowTables } from '@core/database/migrations/create-workflow-tables'
 import { createAppsTables } from '@core/database/migrations/create-apps-tables'
@@ -140,6 +142,21 @@ describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
       `SELECT template_version FROM workflow_definitions WHERE id = 'builtin_def_industry-weekly'`
     )
     expect(untouched[0].template_version).toBe(1)
+  })
+
+  it('未接管的内置定义改名在迁移重跑时同步（如 实操研究→深度研究 升级）', async () => {
+    const defId = 'builtin_def_topic-research'
+    const raw = JSON.parse(readFileSync(resolve(__dirname, '../../../src/core/database/migrations/builtin-apps/topic-research.json'), 'utf-8')) as { name?: string }
+    // 先把行名改成旧值模拟"模板升级前已入库"的状态
+    await ds.query(`UPDATE workflow_definitions SET name = '[内置] 旧名', template_version = 1 WHERE id = '${defId}'`)
+    await createBuiltinApps(ds)
+    const row = await ds.query(`SELECT name FROM workflow_definitions WHERE id = '${defId}'`)
+    expect(row[0].name).toBe(raw.name ?? '[内置] 主题深度研究')
+    // 未接管（template_version=0）的定义即使模板改名也不被覆盖
+    await ds.query(`UPDATE workflow_definitions SET name = '[内置] 用户改过的名字', template_version = 0 WHERE id = '${defId}'`)
+    await createBuiltinApps(ds)
+    const row2 = await ds.query(`SELECT name FROM workflow_definitions WHERE id = '${defId}'`)
+    expect(row2[0].name).toBe('[内置] 用户改过的名字')
   })
 
   it('吃瓜工作流支持多平台文章 + 多平台视频脚本（头条/视频平台循环）', async () => {

@@ -1,8 +1,8 @@
 {
   "kind": "the-bot-workflow",
   "formatVersion": 1,
-  "name": "[内置] 主题实操研究",
-  "description": "主题 → AI 规划研究子问题 → 联网搜索逐问摘要 → 综合成实操指南（详细步骤/注意事项/运营方法等章节 + 参考来源 + 时效提示）→ 人工确认 → 保存资产",
+  "name": "[内置] 主题深度研究",
+  "description": "澄清契约 → 凭模型认知规划(已知地图/主题类型/步骤/验收标准) → 至多3轮「研究执行体(联网+正文深读+私有知识库) → 另一模型按验收标准独立评估」 → 不达标带差距再研究 → 收敛成带溯源与可信度的研究报告 → 人工确认(可改全文) → 保存资产",
   "category": "调研",
   "graph": {
     "version": 1,
@@ -15,7 +15,7 @@
         "config": {
           "inputs": [
             { "key": "topic", "label": "研究主题", "type": "textarea", "required": true },
-            { "key": "focus", "label": "关注维度（不选=按主题需要覆盖全部）", "type": "select", "multi": true, "options": [
+            { "key": "focus", "label": "重点关注维度（不选=按主题类型自适应）", "type": "select", "multi": true, "options": [
               { "label": "总体认识", "value": "background" },
               { "label": "详细步骤", "value": "steps" },
               { "label": "注意事项", "value": "cautions" },
@@ -23,123 +23,234 @@
               { "label": "工具与资源", "value": "tools" },
               { "label": "常见问题", "value": "faq" }
             ] },
-            { "key": "depth", "label": "深度", "type": "select", "defaultValue": "standard", "options": [
+            { "key": "depth", "label": "研究深度", "type": "select", "defaultValue": "standard", "options": [
               { "label": "速览", "value": "quick" },
               { "label": "标准", "value": "standard" },
               { "label": "深度", "value": "deep" }
             ] },
-            { "key": "model", "label": "模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
+            { "key": "kbs", "label": "允许检索的私有知识库（可多选；不选=只查网络与模型知识）", "type": "select-dynamic", "multi": true, "source": "knowledgeBases" },
+            { "key": "researcherModel", "label": "研究模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true },
+            { "key": "evaluatorModel", "label": "评估模型（可用另一个模型，独立评审每轮成果）", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
+          ]
+        }
+      },
+      {
+        "id": "clarify",
+        "type": "form-collect",
+        "name": "研究契约澄清",
+        "position": { "x": 300, "y": 200 },
+        "config": {
+          "formTitle": "研究契约（可跳过，留空提交即可按默认研究）",
+          "fields": [
+            { "key": "goal", "label": "你想通过这次研究达成什么？（例：决定要不要在 TikTok 开店 / 为开店做材料准备）", "type": "string" },
+            { "key": "context", "label": "背景补充：地区/主体/预算/已有基础/时间（例：东南亚市场、个人、预算 2 万、无店铺经验）——写得越具体研究越准", "type": "string" }
           ]
         }
       },
       {
         "id": "plan1",
         "type": "llm-chat",
-        "name": "研究规划",
-        "position": { "x": 320, "y": 200 },
-        "config": {
-          "systemPrompt": "你是「主题实操研究」规划助手。用户想弄清楚『一件事具体怎么做』（如开店、做跨境电商、学一项技能、做自媒体），请把主题拆成一组可直接联网搜索的子问题。\n\n硬性要求：\n1. 只输出 JSON：{\"subQuestions\": [字符串数组]}，不要输出任何其他文字。\n2. 每个子问题自含主题上下文、表述具体、能直接当搜索词用、彼此不重叠。\n3. 每个子问题开头加【维度前缀】标注它服务的内容维度，合法前缀固定为：【总体认识】【详细步骤】【注意事项】【运营方法】【工具与资源】【常见问题】。\n4. 维度取舍：若用户勾选了关注维度，只覆盖勾选维度；未勾选则按该主题真正需要覆盖（含【总体认识】【详细步骤】【注意事项】【运营方法】等）。\n5. 对『做法/实操』类主题（开店、做电商、做自媒体、学技能等），至少覆盖【详细步骤】【注意事项】【运营方法】三类，不得遗漏；平台规则/资质/费率等易变信息归入【注意事项】，问题要问『当前官方规则、资质门槛、费用』。\n6. 深度控制：速览=每个维度最多 1 问且总数不超过 4；标准=每维度 1-2 问且总数不超过 9；深度=每维度 2-4 问且总数不超过 16。\n7. 子问题只是检索入口，不要下结论或编造事实。",
-          "prompt": "研究主题：{{start.topic}}\n勾选维度：{{start.focus}}（未勾选=覆盖全部维度）\n深度：{{start.depth}}\n\n请输出 JSON 对象。",
-          "jsonMode": true,
-          "providerConfigId": "{{start.model.providerConfigId}}",
-          "modelId": "{{start.model.modelId}}"
-        }
-      },
-      {
-        "id": "loop1",
-        "type": "loop",
-        "name": "逐问研究",
+        "name": "先验地图与规划",
         "position": { "x": 560, "y": 200 },
-        "config": { "listExpression": "{{plan1.parsed.subQuestions}}", "emptyPolicy": "skip" }
-      },
-      {
-        "id": "search1",
-        "type": "web-search",
-        "name": "联网搜索",
-        "position": { "x": 800, "y": 300 },
-        "config": { "query": "{{loop1.item}}", "maxResults": 5 }
-      },
-      {
-        "id": "summ1",
-        "type": "llm-chat",
-        "name": "逐问摘要",
-        "position": { "x": 1040, "y": 300 },
         "config": {
-          "systemPrompt": "你是资料摘要助手。针对给定的『子问题』，阅读下方『搜索结果』，输出 JSON（不要输出任何其他内容）：\n{\n  \"summary\": \"针对子问题的结论摘要，150-300 字，先给结论再给关键依据；结果互相矛盾或信息不足时如实说明，不脑补\",\n  \"keyPoints\": \"要点清单，Markdown 列表项，每行一个，可含具体数字/条件/门槛\",\n  \"sources\": \"参考来源，Markdown 列表项，每行格式：- [标题](URL)\"\n}\n纪律：\n1. 只依据当轮『搜索结果』作答；\n2. sources 只能从当轮搜索结果中选取，禁止编造标题或 URL；\n3. 涉及费率/政策/资质/流程的内容标注『可能随时调整，需以官方最新为准』。",
-          "prompt": "研究主题：{{start.topic}}\n子问题：{{loop1.item}}\n\n搜索结果：\n{{search1.results}}\n\n请输出 JSON 对象。",
+          "systemPrompt": "你是主题研究规划器。第一步：先凭你自身的模型认知，针对主题输出「已知地图」——列出你对该主题已经知道的关键概念/主体/环节/常见说法，并明确标注哪些可能已过时或不确定（这些只是待验证的先验假设，不是结论）。第二步：判断主题类型并在以下骨架中选用/裁剪，输出研究步骤。\n类型骨架：\n- 做法/流程类（开店/做电商/学技能/做自媒体…）：结果拆解 → 全环节步骤(每步做什么/需要什么/卡点) → 资质与合规 → 运营与获客方法 → 工具与资源 → 常见坑 → 执行优先级\n- 概念/领域知识类：定义与边界 → 原理机制 → 主要流派与分歧 → 关键成果与证据 → 反例与局限 → 最新进展 → 开放问题\n- 决策/选型类：选项清单 → 各选项成本收益风险与适用条件 → 对比维度与权重 → 评分 → 推荐+备选+适用边界\n- 行业/趋势类：市场与数据 → 竞争格局 → 主要玩家 → 政策监管 → 成本结构 → 趋势信号 → 风险\n- 技能/方法类：原理路径 → 分阶段练法 → 常见错误 → 评估方法 → 资源\n第三步：把关注维度（若用户勾选）并入步骤；输出「验收标准」：必须回答的问题清单（每问写明要研究到多深）+ 深度档（速览/标准/深度）+ 证据要求（哪些关键论断需 ≥2 个独立来源或官方一手资料）。第四步：给出「信息源策略」：哪些步骤先靠模型先验、哪些必须检索私有知识库、哪些要联网查官方/一手、哪些需要问用户。\n深度与预算：速览 1 轮、标准 2 轮、深度 3 轮（由执行阶段控制）；每轮检索要有目的。\n只输出 JSON：{\"type\":\"主题类型\",\"knownMap\":[\"先验认知条目(标注是否可能过时)\"],\"steps\":[{\"step\":\"步骤名\",\"goal\":\"这步要得出什么\",\"sources\":\"首选信息源\"}],\"acceptance\":{\"questions\":[{\"q\":\"必须回答的问题\",\"depth\":\"到多深\"}],\"evidenceRule\":\"证据要求\"},\"sourcePlan\":\"信息源总体策略\"}。不要输出其他内容。",
+          "prompt": "研究主题：{{start.topic}}\n关注维度：{{start.focus}}（未勾选=自适应）\n深度档：{{start.depth}}\n\n用户目标（研究契约）：{{clarify.values.goal}}\n用户补充背景：{{clarify.values.context}}\n\n请输出 JSON 对象。",
           "jsonMode": true,
-          "providerConfigId": "{{start.model.providerConfigId}}",
-          "modelId": "{{start.model.modelId}}"
+          "providerConfigId": "{{start.researcherModel.providerConfigId}}",
+          "modelId": "{{start.researcherModel.modelId}}"
         }
       },
       {
-        "id": "compose1",
-        "type": "llm-chat",
-        "name": "综合实操指南",
-        "position": { "x": 800, "y": 60 },
+        "id": "r1",
+        "type": "agent-loop",
+        "name": "第1轮研究执行体",
+        "position": { "x": 820, "y": 320 },
         "config": {
-          "systemPrompt": "你是实操指南作者。基于下方『多轮调研摘要』（每条含子问题及其摘要/要点/来源），把主题写成一份可照着执行的实操指南。输出 JSON（不要输出任何其他内容）：\n{\n  \"title\": \"指南标题\",\n  \"overview\": \"开篇概述，120-250 字：适用对象、前置条件、总体思路\",\n  \"body\": \"正文，Markdown\",\n  \"sourcesMd\": \"参考来源，Markdown 列表，合并去重各轮 sources\",\n  \"disclaimer\": \"时效与核验提示，一句话\"\n}\n正文要求：\n1. 按子问题的【维度前缀】把内容归组成章节，建议顺序：总体认识 → 详细步骤 → 注意事项 → 运营方法 → 工具与资源 → 常见问题；确有内容才成章，不硬凑空章节。\n2. 【详细步骤】用编号步骤，每步写清：做什么/需要什么/注意什么；【注意事项】用清单，突出资质门槛、费用与费率、合规红线、易踩坑点；【运营方法】给条件化建议（何时做、预期效果、备选方案）。\n3. 内容必须来自调研摘要，禁止新编事实或数字；不确定/来源冲突处标注『需核实』并并列呈现；费率、政策、资质类信息在正文注明『以官方最新为准』。\n4. 正文是可直接展示的 Markdown（章节用 ## 与 ###，列表用 - 与数字序号），不要出现 JSON 转义或代码块包裹。",
-          "prompt": "研究主题：{{start.topic}}\n勾选维度：{{start.focus}}\n深度：{{start.depth}}\n\n多轮调研摘要：\n{{loop1.results}}\n\n请输出 JSON 对象。",
+          "task": "第 1 轮研究。执行规划（plan1）给出的研究步骤，输出浓缩「研究进展」。\n研究主题：{{start.topic}}\n深度档：{{start.depth}}\n规划：{{plan1.parsed}}",
+          "systemPrompt": "你是主题研究的执行体（研究员）。工作纪律：\n1. 先按需更新与验证「先验地图」：基于自身知识回答的部分必须标注【先验-待验证】；能查证的一律查证后升级为【已验证】并给出证据锚。\n2. 需要事实/最新信息时：优先查用户私有知识库（先用 wf_kb_list 看系统有哪些库、判断与主题是否相关，再对相关库用 wf_kb_retrieve 检索，引用时注明文档名）；私有库没有或不足时用 web_search 搜索，重要的用 wf_web_extract 抓正文深读。避免只凭标题列表下结论。\n3. 来源纪律：结论必须可溯源——web 结论锚到实际抓取到的页面；禁止编造标题/URL/数字/引文；搜索结果互相矛盾时并列说明；查不到就写「未查到」，不要脑补；费率/政策/资质等易变信息标注「以官方最新为准」并给采集时间。\n4. 过程产物是研究笔记不是正文：对每个子问题给「结论 + 证据锚 + 置信度 + 缺口」；新缺口登记进待研队列，不悄悄跳过。\n5. 预算感：每次搜索/抓取前想清楚要验证什么；重复无效检索等于停滞。\n6. 涉及用户私有背景（地区/预算/资质/已有资源）才能定的问题，先在进展中列为「需问用户」，不要瞎猜。\n7. 本轮结束后输出「研究进展」：按规划步骤给出逐条结论与证据锚、置信度、遗留缺口；后续轮次会在此基础上继续，所以浓缩但不丢关键证据与来源。",
+          "toolWhitelist": ["web_search", "wf_web_extract", "wf_kb_retrieve", "wf_kb_list"],
+          "maxIterations": 12,
+          "maxToolCalls": 16,
+          "maxDurationMs": 1500000,
+          "providerConfigId": "{{start.researcherModel.providerConfigId}}",
+          "modelId": "{{start.researcherModel.modelId}}"
+        }
+      },
+      {
+        "id": "e1",
+        "type": "llm-chat",
+        "name": "第1轮独立评估",
+        "position": { "x": 1080, "y": 320 },
+        "config": {
+          "systemPrompt": "你是独立的主题研究评审（用与研究员不同的视角和模型）。对照「验收标准」审查本轮研究进展，输出 JSON：\n{\"verdict\":\"pass 或 revise（二选一）\",\"perAcceptance\":[{\"q\":\"验收问题\",\"coverage\":\"有/部分/无\",\"depth\":\"够/不够\",\"evidence\":\"强/中/弱/无据\",\"note\":\"说明\"}],\"gaps\":[{\"issue\":\"差距\",\"action\":\"下一轮应查什么/问谁\",\"priority\":\"高/中/低\"}],\"hallucinationRisk\":[\"在证据里找不到支撑的可疑论断\"],\"overall\":\"总体评语\"}\n评审要点：覆盖是否齐全、深度是否达标、证据是否可溯源、有没有无据断言（幻觉）、时效与地区是否被误用/漏标、维度有无遗漏。verdict 只在全部关键验收问题达标且无高优先级差距时为 pass，否则 revise。不要替研究员完成研究，只做评估与差距清单。只输出 JSON，不要其他内容。",
+          "prompt": "研究主题：{{start.topic}}\n验收标准：{{plan1.parsed.acceptance}}\n本轮研究进展：\n{{r1.answer}}\n\n请按上述要求输出 JSON 评估对象。",
           "jsonMode": true,
-          "providerConfigId": "{{start.model.providerConfigId}}",
-          "modelId": "{{start.model.modelId}}"
+          "providerConfigId": "{{start.evaluatorModel.providerConfigId}}",
+          "modelId": "{{start.evaluatorModel.modelId}}"
+        }
+      },
+      {
+        "id": "c1",
+        "type": "condition",
+        "name": "第1轮评估闸",
+        "position": { "x": 1340, "y": 320 },
+        "config": {
+          "branches": [
+            { "branchId": "pass", "label": "达标→成稿", "conditions": [{ "left": "{{e1.parsed.verdict}}", "operator": "eq", "right": "pass" }] },
+            { "branchId": "revise", "label": "不达标→带差距再研究", "conditions": [{ "left": "{{e1.parsed.verdict}}", "operator": "eq", "right": "revise" }] }
+          ],
+          "noMatchPolicy": "fallback",
+          "fallbackBranchId": "revise"
+        }
+      },
+      {
+        "id": "r2",
+        "type": "agent-loop",
+        "name": "第2轮研究执行体",
+        "position": { "x": 820, "y": 480 },
+        "config": {
+          "task": "第 2 轮研究：针对第 1 轮评估指出的差距定向补查（只查差距清单与遗留缺口，不要泛泛重查）。在前一轮进展基础上增量更新，最后输出「研究进展（含上一轮 + 本轮新增）」。\n研究主题：{{start.topic}}\n上一轮研究进展：{{r1.answer}}\n第 1 轮评估与差距：{{e1.parsed}}\n请继续。",
+          "systemPrompt": "你是主题研究的执行体（研究员）。工作纪律：\n1. 先按需更新与验证「先验地图」：基于自身知识回答的部分必须标注【先验-待验证】；能查证的一律查证后升级为【已验证】并给出证据锚。\n2. 需要事实/最新信息时：优先查用户私有知识库（先用 wf_kb_list 看系统有哪些库、判断与主题是否相关，再对相关库用 wf_kb_retrieve 检索，引用时注明文档名）；私有库没有或不足时用 web_search 搜索，重要的用 wf_web_extract 抓正文深读。避免只凭标题列表下结论。\n3. 来源纪律：结论必须可溯源——web 结论锚到实际抓取到的页面；禁止编造标题/URL/数字/引文；搜索结果互相矛盾时并列说明；查不到就写「未查到」，不要脑补；费率/政策/资质等易变信息标注「以官方最新为准」并给采集时间。\n4. 过程产物是研究笔记不是正文：对每个子问题给「结论 + 证据锚 + 置信度 + 缺口」；新缺口登记进待研队列，不悄悄跳过。\n5. 预算感：每次搜索/抓取前想清楚要验证什么；重复无效检索等于停滞。\n6. 涉及用户私有背景（地区/预算/资质/已有资源）才能定的问题，先在进展中列为「需问用户」，不要瞎猜。\n7. 本轮是差距定向补查：优先处理评估清单中高优先级的差距，把「未查到」变成「查到了/确认查不到（说明范围）」。",
+          "toolWhitelist": ["web_search", "wf_web_extract", "wf_kb_retrieve", "wf_kb_list"],
+          "maxIterations": 12,
+          "maxToolCalls": 16,
+          "maxDurationMs": 1500000,
+          "providerConfigId": "{{start.researcherModel.providerConfigId}}",
+          "modelId": "{{start.researcherModel.modelId}}"
+        }
+      },
+      {
+        "id": "e2",
+        "type": "llm-chat",
+        "name": "第2轮独立评估",
+        "position": { "x": 1080, "y": 480 },
+        "config": {
+          "systemPrompt": "你是独立的主题研究评审（用与研究员不同的视角和模型）。对照「验收标准」审查本轮研究进展，输出 JSON：\n{\"verdict\":\"pass 或 revise（二选一）\",\"perAcceptance\":[{\"q\":\"验收问题\",\"coverage\":\"有/部分/无\",\"depth\":\"够/不够\",\"evidence\":\"强/中/弱/无据\",\"note\":\"说明\"}],\"gaps\":[{\"issue\":\"差距\",\"action\":\"下一轮应查什么/问谁\",\"priority\":\"高/中/低\"}],\"hallucinationRisk\":[\"在证据里找不到支撑的可疑论断\"],\"overall\":\"总体评语\"}\n评审要点：覆盖是否齐全、深度是否达标、证据是否可溯源、有没有无据断言（幻觉）、时效与地区是否被误用/漏标、维度有无遗漏。verdict 只在全部关键验收问题达标且无高优先级差距时为 pass，否则 revise。不要替研究员完成研究，只做评估与差距清单。只输出 JSON，不要其他内容。",
+          "prompt": "研究主题：{{start.topic}}\n验收标准：{{plan1.parsed.acceptance}}\n本轮研究进展：\n{{r2.answer}}\n\n请按上述要求输出 JSON 评估对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.evaluatorModel.providerConfigId}}",
+          "modelId": "{{start.evaluatorModel.modelId}}"
+        }
+      },
+      {
+        "id": "c2",
+        "type": "condition",
+        "name": "第2轮评估闸",
+        "position": { "x": 1340, "y": 480 },
+        "config": {
+          "branches": [
+            { "branchId": "pass", "label": "达标→成稿", "conditions": [{ "left": "{{e2.parsed.verdict}}", "operator": "eq", "right": "pass" }] },
+            { "branchId": "revise", "label": "不达标→带差距再研究", "conditions": [{ "left": "{{e2.parsed.verdict}}", "operator": "eq", "right": "revise" }] }
+          ],
+          "noMatchPolicy": "fallback",
+          "fallbackBranchId": "revise"
+        }
+      },
+      {
+        "id": "r3",
+        "type": "agent-loop",
+        "name": "第3轮研究执行体",
+        "position": { "x": 820, "y": 640 },
+        "config": {
+          "task": "第 3 轮研究（最后一轮）：只补第 2 轮评估中剩余的高优先级差距。这是最后一轮，若仍有查不到/不明确的点，如实保留为「未决项」并说明已尝试的范围。输出最终「研究进展汇总」。\n研究主题：{{start.topic}}\n研究进展（前两轮）：{{r2.answer}}\n第 2 轮评估与差距：{{e2.parsed}}\n请继续。",
+          "systemPrompt": "你是主题研究的执行体（研究员）。工作纪律：\n1. 先按需更新与验证「先验地图」：基于自身知识回答的部分必须标注【先验-待验证】；能查证的一律查证后升级为【已验证】并给出证据锚。\n2. 需要事实/最新信息时：优先查用户私有知识库（先用 wf_kb_list 看系统有哪些库、判断与主题是否相关，再对相关库用 wf_kb_retrieve 检索，引用时注明文档名）；私有库没有或不足时用 web_search 搜索，重要的用 wf_web_extract 抓正文深读。避免只凭标题列表下结论。\n3. 来源纪律：结论必须可溯源——web 结论锚到实际抓取到的页面；禁止编造标题/URL/数字/引文；搜索结果互相矛盾时并列说明；查不到就写「未查到」，不要脑补；费率/政策/资质等易变信息标注「以官方最新为准」并给采集时间。\n4. 过程产物是研究笔记不是正文：对每个子问题给「结论 + 证据锚 + 置信度 + 缺口」；新缺口登记进待研队列，不悄悄跳过。\n5. 预算感：每次搜索/抓取前想清楚要验证什么；重复无效检索等于停滞。\n6. 涉及用户私有背景（地区/预算/资质/已有资源）才能定的问题，先在进展中列为「需问用户」，不要瞎猜。\n7. 最后一轮：收敛优先，明确区分「已证实」「部分证实」「未决」。",
+          "toolWhitelist": ["web_search", "wf_web_extract", "wf_kb_retrieve", "wf_kb_list"],
+          "maxIterations": 12,
+          "maxToolCalls": 16,
+          "maxDurationMs": 1500000,
+          "providerConfigId": "{{start.researcherModel.providerConfigId}}",
+          "modelId": "{{start.researcherModel.modelId}}"
+        }
+      },
+      {
+        "id": "e3",
+        "type": "llm-chat",
+        "name": "第3轮独立评估",
+        "position": { "x": 1080, "y": 640 },
+        "config": {
+          "systemPrompt": "你是独立的主题研究评审（用与研究员不同的视角和模型）。对照「验收标准」做最后一轮评估，输出 JSON：\n{\"verdict\":\"pass 或 revise（二选一）\",\"perAcceptance\":[{\"q\":\"验收问题\",\"coverage\":\"有/部分/无\",\"depth\":\"够/不够\",\"evidence\":\"强/中/弱/无据\",\"note\":\"说明\"}],\"gaps\":[{\"issue\":\"仍存在的差距\",\"action\":\"可选的后续研究方向\",\"priority\":\"高/中/低\"}],\"hallucinationRisk\":[\"在证据里找不到支撑的可疑论断\"],\"overall\":\"总体评语（含对未决项的宽容说明）\"}\n这是最后一轮：本轮评估结果即使为 revise，也会直接进入成稿阶段，成稿将如实写入未收敛的差距——你的职责是把差距与幻觉风险列清楚，供成稿与读者知悉。只输出 JSON，不要其他内容。",
+          "prompt": "研究主题：{{start.topic}}\n验收标准：{{plan1.parsed.acceptance}}\n研究进展汇总：\n{{r3.answer}}\n\n请按上述要求输出 JSON 评估对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.evaluatorModel.providerConfigId}}",
+          "modelId": "{{start.evaluatorModel.modelId}}"
+        }
+      },
+      {
+        "id": "writer",
+        "type": "llm-chat",
+        "name": "收敛成稿",
+        "position": { "x": 1500, "y": 60 },
+        "config": {
+          "systemPrompt": "你是研究报告作者。基于「研究进展」与「独立评估」，把主题写成一份可溯源的研究报告。输出 JSON：\n{\"title\":\"报告标题\",\"execSummary\":\"执行摘要：结论与总体可信度评估，120-250 字\",\"body\":\"正文（Markdown，按研究步骤组织成章节，关键论断带证据锚/来源；逐条写清哪些已证实、哪些是模型先验仍需核实、哪些存在分歧）\",\"method\":\"方法说明：查了什么（网络/私有知识库/官方一手）、哪些没查到\",\"limits\":\"局限与未决：无法确认的点、评估指出的差距与幻觉风险\",\"sourcesMd\":\"参考来源（Markdown 列表，网络来源与私有知识库文档分两节列出）\",\"disclaimer\":\"时效与核验提示一句话\"}\n纪律：不编造来源与数字；无据内容归入 limits 或标注需核实；费率/政策类提示以官方最新为准。正文是可直接展示的 Markdown，不要出现 JSON 转义或代码块包裹。只输出 JSON，不要其他内容。",
+          "prompt": "研究主题：{{start.topic}}\n验收标准：{{plan1.parsed.acceptance}}\n研究进展：\n{{r3.answer}}\n\n（若中途已达标提前进入成稿，则研究进展可能来自较早轮次，按实际内容写。）\n独立评估汇总：\n{{e3.parsed}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.researcherModel.providerConfigId}}",
+          "modelId": "{{start.researcherModel.modelId}}"
         }
       },
       {
         "id": "report1",
         "type": "report",
-        "name": "指南输出",
-        "position": { "x": 1040, "y": 60 },
+        "name": "报告拼装",
+        "position": { "x": 1760, "y": 60 },
         "config": {
-          "title": "{{start.topic}} 实操研究",
-          "template": "# {{compose1.parsed.title}}\n\n{{compose1.parsed.overview}}\n\n---\n\n{{compose1.parsed.body}}\n\n---\n\n## 参考来源\n\n{{compose1.parsed.sourcesMd}}\n\n> {{compose1.parsed.disclaimer}}\n\n---\n\n*由 The Bot「主题实操研究」工作流生成*",
+          "title": "{{start.topic}} 深度研究",
+          "template": "# {{writer.parsed.title}}\n\n{{writer.parsed.execSummary}}\n\n---\n\n{{writer.parsed.body}}\n\n---\n\n## 方法与局限\n\n{{writer.parsed.method}}\n\n{{writer.parsed.limits}}\n\n## 参考来源\n\n{{writer.parsed.sourcesMd}}\n\n> {{writer.parsed.disclaimer}}\n\n---\n\n*由 The Bot「主题深度研究」工作流生成*",
           "format": "markdown"
         }
       },
       {
-        "id": "review1",
+        "id": "final1",
         "type": "human-review",
-        "name": "人工确认",
-        "position": { "x": 1280, "y": 60 },
+        "name": "终稿人工确认",
+        "position": { "x": 2020, "y": 60 },
         "config": {
           "payload": "{{report1.markdown}}",
-          "editableFields": [{ "key": "output_result", "label": "指南全文", "type": "string" }]
+          "editableFields": [{ "key": "content", "label": "终稿全文（可直接修改，修改后保存修改版）", "type": "string" }]
         }
       },
       {
         "id": "save1",
         "type": "save-asset",
         "name": "保存到资产库",
-        "position": { "x": 1520, "y": 60 },
+        "position": { "x": 2280, "y": 60 },
         "config": {
-          "content": "{{report1.markdown}}",
+          "content": "{{final1.content}}",
           "kind": "text",
           "category": "text",
-          "subCategory": "实操指南",
-          "name": "{{start.topic}}实操研究",
-          "tags": "实操研究,{{start.topic}}"
+          "subCategory": "研究简报",
+          "name": "{{start.topic}}深度研究",
+          "tags": "主题研究,{{start.topic}}"
         }
       },
       {
         "id": "end",
         "type": "end",
         "name": "结束",
-        "position": { "x": 1760, "y": 60 },
+        "position": { "x": 2540, "y": 60 },
         "config": {}
       }
     ],
     "edges": [
-      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "plan1", "kind": "normal" },
-      { "id": "e2", "sourceNodeId": "plan1", "targetNodeId": "loop1", "kind": "normal" },
-      { "id": "e3", "sourceNodeId": "loop1", "targetNodeId": "search1", "kind": "loop-body" },
-      { "id": "e4", "sourceNodeId": "search1", "targetNodeId": "summ1", "kind": "normal" },
-      { "id": "e5", "sourceNodeId": "summ1", "targetNodeId": "loop1", "kind": "loop-back" },
-      { "id": "e6", "sourceNodeId": "loop1", "targetNodeId": "compose1", "kind": "loop-done" },
-      { "id": "e7", "sourceNodeId": "compose1", "targetNodeId": "report1", "kind": "normal" },
-      { "id": "e8", "sourceNodeId": "report1", "targetNodeId": "review1", "kind": "normal" },
-      { "id": "e9", "sourceNodeId": "review1", "targetNodeId": "save1", "kind": "approve" },
-      { "id": "e10", "sourceNodeId": "review1", "targetNodeId": "end", "kind": "reject" },
-      { "id": "e11", "sourceNodeId": "save1", "targetNodeId": "end", "kind": "normal" }
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "clarify", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "clarify", "targetNodeId": "plan1", "kind": "approve" },
+      { "id": "e3", "sourceNodeId": "clarify", "targetNodeId": "end", "kind": "reject" },
+      { "id": "e4", "sourceNodeId": "plan1", "targetNodeId": "r1", "kind": "normal" },
+      { "id": "e5", "sourceNodeId": "r1", "targetNodeId": "e1", "kind": "normal" },
+      { "id": "e6", "sourceNodeId": "e1", "targetNodeId": "c1", "kind": "normal" },
+      { "id": "e7", "sourceNodeId": "c1", "targetNodeId": "writer", "kind": "branch", "branchId": "pass" },
+      { "id": "e8", "sourceNodeId": "c1", "targetNodeId": "r2", "kind": "branch", "branchId": "revise" },
+      { "id": "e9", "sourceNodeId": "r2", "targetNodeId": "e2", "kind": "normal" },
+      { "id": "e10", "sourceNodeId": "e2", "targetNodeId": "c2", "kind": "normal" },
+      { "id": "e11", "sourceNodeId": "c2", "targetNodeId": "writer", "kind": "branch", "branchId": "pass" },
+      { "id": "e12", "sourceNodeId": "c2", "targetNodeId": "r3", "kind": "branch", "branchId": "revise" },
+      { "id": "e13", "sourceNodeId": "r3", "targetNodeId": "e3", "kind": "normal" },
+      { "id": "e14", "sourceNodeId": "e3", "targetNodeId": "writer", "kind": "normal" },
+      { "id": "e15", "sourceNodeId": "writer", "targetNodeId": "report1", "kind": "normal" },
+      { "id": "e16", "sourceNodeId": "report1", "targetNodeId": "final1", "kind": "normal" },
+      { "id": "e17", "sourceNodeId": "final1", "targetNodeId": "save1", "kind": "approve" },
+      { "id": "e18", "sourceNodeId": "final1", "targetNodeId": "end", "kind": "reject" },
+      { "id": "e19", "sourceNodeId": "save1", "targetNodeId": "end", "kind": "normal" }
     ]
   },
   "triggers": [],

@@ -1,5 +1,7 @@
 # 「主题实操研究」内置工作流模板设计（Topic Research Workflow）
 
+> ⚠️ **已被 design-v2.md 取代**（同日用户评审通过后升级替换为「主题深度研究」，见同目录 design-v2.md 与 `src/core/database/migrations/builtin-apps/topic-research.json`）。本文件保留为 v1 历史记录。
+
 日期：2026-09-09
 分支：feat/domain-learning（当前工作分支）
 文档目录：tasks/2026-09-09-topic-research-workflow/
