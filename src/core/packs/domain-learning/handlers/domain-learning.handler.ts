@@ -36,7 +36,8 @@ async function wrap<T>(fn: () => Promise<T>): Promise<IpcResponse<T>> {
     return { success: true, data: await fn() }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    logger.warn(`[dl] handler 失败：${msg}`)
+    const stack = e instanceof Error && e.stack ? `\n${e.stack}` : ''
+    logger.warn(`[dl] handler 失败：${msg}${stack}`)
     return { success: false, error: msg }
   }
 }

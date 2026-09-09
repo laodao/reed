@@ -98,6 +98,19 @@
             >{{ em }}</span>
           </div>
         </el-form-item>
+        <el-form-item label="关联知识库">
+          <el-select
+            v-model="createForm.kbId"
+            clearable
+            filterable
+            :loading="kbLoading"
+            placeholder="选择资料库（可空=暂不绑定）"
+            style="width: 100%"
+          >
+            <el-option v-for="kb in createKbs" :key="kb.id" :label="kb.name" :value="kb.id" />
+          </el-select>
+          <div class="kb-hint">绑定后：研究/核验会优先检索该知识库作为资料源</div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="createVisible = false">取消</el-button>
@@ -122,6 +135,7 @@ import { Reading, Plus, ArrowRight } from '@element-plus/icons-vue'
 import { useDomainLearningStore } from '@/stores/domain-learning'
 import type { DlProjectStatus } from '@shared/types/domain-learning.types'
 import { DL_PROFILE_PRESETS, DL_VIEW_KIND_LABELS, DL_VIEW_KIND_ORDER } from '@shared/types/domain-learning.types'
+import { listKnowledgeBases, type DlKbOption } from './domain-learning-ui'
 
 const router = useRouter()
 const store = useDomainLearningStore()
@@ -145,11 +159,16 @@ function statusLabel(s: DlProjectStatus): string {
 // ---------- 新建空间 ----------
 const createVisible = ref(false)
 const creating = ref(false)
-const createForm = reactive<{ name: string; goal: string; tagline: string }>({
+const createForm = reactive<{ name: string; goal: string; tagline: string; kbId: string }>({
   name: '',
   goal: '入门',
   tagline: '',
+  kbId: '',
 })
+
+/** 系统知识库下拉（M4-B 收尾：建主题即可绑定研究资料源） */
+const createKbs = ref<DlKbOption[]>([])
+const kbLoading = ref(false)
 
 /** 建空间画像草稿（M2-E：预设 + 自定义字段 + 侧重视图 chips） */
 const createProfile = reactive<{ presetId: string; kindLabel: string; nature: string; emphasis: string[] }>({
@@ -177,8 +196,18 @@ function openCreate(): void {
   createForm.name = ''
   createForm.goal = '入门'
   createForm.tagline = ''
+  createForm.kbId = ''
   applyPreset('custom')
   createVisible.value = true
+  // 异步读系统知识库列表（失败静默 → 下拉留空，可后续在空间设置里补绑）
+  kbLoading.value = true
+  void listKnowledgeBases()
+    .then((items) => {
+      createKbs.value = items
+    })
+    .finally(() => {
+      kbLoading.value = false
+    })
 }
 
 async function submitCreate(): Promise<void> {
@@ -192,6 +221,7 @@ async function submitCreate(): Promise<void> {
       goal: createForm.goal,
       tagline: createForm.tagline.trim(),
       description: createForm.tagline.trim(),
+      kbId: createForm.kbId || null,
       profileId: createProfile.presetId === 'custom' ? undefined : createProfile.presetId,
       profile: {
         kindLabel: createProfile.kindLabel,
@@ -357,6 +387,14 @@ onMounted(() => {
 
 .goal-select {
   width: 100%;
+}
+
+.kb-hint {
+  width: 100%;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--el-text-color-placeholder);
+  padding-top: 4px;
 }
 
 .emphasis-picker {

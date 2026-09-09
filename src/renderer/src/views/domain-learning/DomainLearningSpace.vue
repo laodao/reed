@@ -180,7 +180,22 @@
           </div>
         </template>
         <template v-else>
-          <el-empty v-if="view" description="从左侧知识地图选择一个知识点开始学习" />
+          <!-- 空主题起步态：无任何知识点 → 空间级起步研究（生成首批概念/关系 + 首个讲义） -->
+          <div v-if="view && isEmptySpace" class="lesson-body boot-body">
+            <div class="boot-card">
+              <div class="boot-icon"><el-icon><Promotion /></el-icon></div>
+              <h3>开始学习「{{ spaceName }}」</h3>
+              <p>这个主题还是空的。研究助手会先为整个领域建立首批核心知识点与学习顺序，并为最基础的概念生成第一份讲义。</p>
+              <p class="boot-tip">
+                资料源说明：研究优先检索已绑定的知识库，再考虑联网资料与模型先验；建议先在「知识全景 → 空间设置 → 关联知识库」绑定你的资料库。
+              </p>
+              <el-button type="primary" size="large" :icon="Promotion" :loading="researching" @click="bootResearch">
+                {{ researching ? '正在研究领域…' : '生成首批知识' }}
+              </el-button>
+              <div v-if="bootMessage" class="boot-message" :class="{ warn: bootWarn }">{{ bootMessage }}</div>
+            </div>
+          </div>
+          <el-empty v-else-if="view" description="从左侧知识地图选择一个知识点开始学习" />
           <el-empty v-else description="正在加载学习空间…" />
         </template>
       </section>
@@ -800,6 +815,55 @@ async function continueLearning(): Promise<void> {
     }
   } finally {
     pickingNext.value = false
+  }
+}
+
+// ---------- 交互：空主题起步研究（无任何知识点 → 空间级 research 生成首批知识） ----------
+/** 空空间判定：视图已加载且尚无知识概念叶（concepts 含 group 目录行，须按叶判定） */
+const isEmptySpace = computed(() => {
+  const v = view.value
+  return !!v && !(v.concepts ?? []).some((c) => c.nodeType !== 'group')
+})
+/** 起步研究的过程反馈（空态卡内展示；warn=异常/未产出） */
+const bootMessage = ref('')
+const bootWarn = ref(false)
+
+async function bootResearch(): Promise<void> {
+  if (researching.value) return
+  researching.value = true
+  bootMessage.value = ''
+  bootWarn.value = false
+  // 空间级事件通道 dl:agent:<spaceId>（conceptId 为空）
+  const unsub = store.subscribeAgentEvent(spaceId.value, null, (ev) => {
+    if (ev.type === 'error') {
+      bootWarn.value = true
+      bootMessage.value = `起步研究出错：${ev.error ?? '未知错误'}`
+    }
+  })
+  try {
+    const result = await store.sendAgent({
+      mode: 'research',
+      spaceId: spaceId.value,
+      conceptId: null,
+      message: `这是新主题「${spaceName.value}」的首次研究——请为整个领域建立首批核心知识点并生成第一份讲义。`,
+    })
+    await refreshView()
+    const first = concepts.value.find((c) => c.nodeType !== 'group')
+    if (first) {
+      // 自动定位首批第一个概念，让用户直接看到讲义或研究入口
+      expandPathTo(first.id)
+      selectConcept(first)
+    } else if (!bootMessage.value) {
+      // 未产出：展示会话总结中的原因（资料不足时助手不编造），避免“干等无反馈”
+      const reason = (result?.content ?? '').trim()
+      bootWarn.value = true
+      bootMessage.value = reason
+        ? `本轮未生成知识点：${reason.slice(0, 260)}`
+        : '本轮未生成知识点。可先绑定含资料的知识库（知识全景 → 空间设置 → 关联知识库），或在可联网环境重试。'
+    }
+  } finally {
+    unsub()
+    researching.value = false
   }
 }
 
@@ -1702,6 +1766,59 @@ watch(rightPane, (pane) => {
     overflow-wrap: anywhere;
     max-height: 240px;
     overflow-y: auto;
+  }
+}
+
+/* M5：空主题起步态（无任何知识点 → 生成首批知识） */
+.boot-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.boot-card {
+  max-width: 460px;
+  padding: 28px 30px;
+  text-align: center;
+  border: 1px dashed var(--el-border-color);
+  border-radius: 14px;
+  background: var(--el-fill-color-blank);
+
+  .boot-icon {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 10px;
+    color: var(--el-color-primary);
+
+    .el-icon {
+      font-size: 34px;
+    }
+  }
+  h3 {
+    margin: 0 0 10px;
+    font-size: 18px;
+    color: var(--el-text-color-primary);
+  }
+  p {
+    margin: 0 0 10px;
+    font-size: 13px;
+    line-height: 1.8;
+    color: var(--el-text-color-regular);
+  }
+  .boot-tip {
+    font-size: 12px;
+    color: var(--el-text-color-placeholder);
+  }
+  .boot-message {
+    margin-top: 12px;
+    font-size: 13px;
+    color: var(--el-color-primary);
+    line-height: 1.7;
+    &.warn {
+      color: var(--el-color-warning);
+    }
   }
 }
 </style>

@@ -97,3 +97,26 @@ export function masteryTagType(m: DlMastery): 'success' | 'warning' | 'info' {
 export function masteryDotClass(m: DlMastery): string {
   return m === 'mastered' ? 'dot-mastered' : m === 'learning' ? 'dot-learning' : 'dot-todo'
 }
+
+// ==================== 系统知识库选项（建空间 / 空间设置下拉共用） ====================
+
+/** 系统知识库列表项（knowledge-base:list 返回；只取下拉所需字段） */
+export interface DlKbOption {
+  id: string
+  name: string
+}
+
+/** 读系统知识库列表（失败静默返回空，由调用方给兜底提示） */
+export async function listKnowledgeBases(): Promise<DlKbOption[]> {
+  try {
+    const kb = (window as {
+      electronAPI?: { knowledgeBase?: { list: () => Promise<{ success?: boolean; data?: DlKbOption[] }> } }
+    }).electronAPI?.knowledgeBase
+    if (!kb) return []
+    const r = await kb.list()
+    return r?.success ? (r.data ?? []) : []
+  } catch (e) {
+    console.warn('[domain-learning] 读取知识库列表失败:', e)
+    return []
+  }
+}

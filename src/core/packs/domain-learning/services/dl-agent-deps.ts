@@ -15,6 +15,26 @@ export interface DlSpaceSnapshot {
   text: string
   /** 下一步建议（"继续学习"目标概念） */
   nextConceptId: string | null
+  /** 空间是否尚无知识概念叶（仅目录 group/空）——research 需走"起步研究"分支 */
+  isEmptySpace: boolean
+  /** 空间名（起步引导文案用；未知则回退 id） */
+  spaceName: string | null
+}
+
+/** 纯判定：是否存在知识概念叶（group 目录不算） */
+export function hasConceptLeaves(concepts: Array<{ nodeType: string }>): boolean {
+  return concepts.some((c) => c.nodeType !== 'group')
+}
+
+/** 空空间起步研究指令（research 会话在快照为空时追加；先骨架后讲义，证据纪律不变） */
+export function dlEmptySpaceMission(opts: { spaceName: string }): string {
+  return `【空领域起步研究】学习空间「${opts.spaceName}」当前还没有任何知识点。
+你这次的任务是给整个领域做一次"起步研究"，而不是只讲单个概念：
+1. 先规划并落库 3-6 个最核心的知识点（dl_save_concept，nodeType 用 concept；parentId 优先填快照"目录分组"里的领域根 group id，没有则留 null），它们应构成这个领域自底向上的主干；
+2. 再为它们建立学习顺序关系（dl_save_relation，前置关系 prerequisite）；
+3. 挑其中"最基础、第一个要学"的概念 dl_save_card 产出一份可展示的讲义草稿（区级内容 + evidenceSources）；讲义每条论断的证据必须来自你实际读到的资料（知识库文档/网页/arXiv/API），查不到就少写，不得编造；
+4. 其余概念保持"待研究"即可，不必一次全部出讲义；
+5. 全部做完用一段话总结：建立了哪些概念与关系、首个讲义给谁、下一步建议。`
 }
 
 export async function computeDlSpaceSnapshot(
@@ -80,6 +100,8 @@ export async function computeDlSpaceSnapshot(
   return {
     text: [...head, ...kbLines, ...groupLines, ...conceptText].join('\n'),
     nextConceptId: ready,
+    isEmptySpace: !hasConceptLeaves(concepts.map((c) => ({ nodeType: c.nodeType }))),
+    spaceName: project?.name ?? null,
   }
 }
 

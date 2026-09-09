@@ -30,6 +30,7 @@ import {
   buildDlSuggestions,
   buildFocusQuestionLines,
   computeDlSpaceSnapshot,
+  dlEmptySpaceMission,
   dlResearchSystemPrompt,
   dlTutorSystemPrompt,
   dlVerifySystemPrompt,
@@ -178,6 +179,10 @@ export class DlAgentHarnessService {
       }
       bindings = buildDlBindings({ mode, availableToolNames: registered, webSearchAvailable })
       snapshotText += `\n${researchSourceHint(webSearchAvailable)}`
+      // 空空间起步研究：尚无任何知识点时注入「先骨架后讲义」任务引导（空主题补全）
+      if (mode === 'research' && snapshot.isEmptySpace) {
+        snapshotText += `\n${dlEmptySpaceMission({ spaceName: snapshot.spaceName ?? spaceId })}`
+      }
       if (mode === 'research' && opts.focusQuestionId) {
         const focus = (await m.dlQuestions?.getById(opts.focusQuestionId)) ?? null
         if (focus && focus.projectId === spaceId) {

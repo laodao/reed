@@ -200,13 +200,24 @@
           <span class="crumb-tip">· 子图谱（{{ focusNode.name }} 与其直接关联）</span>
         </div>
         <AtlasGraph
-          v-if="viewMode === 'graph'"
+          v-if="viewMode === 'graph' && (loading || (graph?.nodes.length ?? 0) > 0)"
           :nodes="graph?.nodes ?? []"
           :edges="graph?.edges ?? []"
           :focus-id="focusId"
           @select="onSelect"
           @dblclick="onDrill"
         />
+        <!-- 空主题起步态：图谱尚无任何节点 → 空间级起步研究（生成首批知识） -->
+        <div v-else-if="viewMode === 'graph'" class="atlas-boot">
+          <div class="ab-icon"><el-icon><Promotion /></el-icon></div>
+          <h3>「{{ spaceView?.name ?? '本空间' }}」还没有知识图谱</h3>
+          <p>让研究助手为整个领域做一次起步研究：建立首批核心知识点与学习顺序，并生成第一份讲义。</p>
+          <p class="ab-tip">研究优先检索已绑定的知识库；可先在右上「空间设置 → 关联知识库」绑定资料库。</p>
+          <el-button type="primary" :icon="Promotion" :loading="atlasBooting" @click="bootAtlas">
+            {{ atlasBooting ? '正在起步研究…' : '生成首批知识' }}
+          </el-button>
+          <div v-if="atlasBootMsg" class="ab-msg" :class="{ warn: atlasBootWarn }">{{ atlasBootMsg }}</div>
+        </div>
         <AtlasEnhancedViews
           v-else-if="atlasViews"
           :views="atlasViews"
@@ -306,13 +317,14 @@ import {
   InfoFilled,
   Loading,
   Mouse,
+  Promotion,
   Reading,
   Setting,
   Share,
 } from '@element-plus/icons-vue'
 import { useTabsStore } from '@/stores/tabs'
 import { useDomainLearningStore } from '@/stores/domain-learning'
-import { nodeTypeMeta, relLabel } from './domain-learning-ui'
+import { listKnowledgeBases, nodeTypeMeta, relLabel, type DlKbOption } from './domain-learning-ui'
 import AtlasGraph from './AtlasGraph.vue'
 import AtlasEnhancedViews from './AtlasEnhancedViews.vue'
 import SpaceStatsPopover from './SpaceStatsPopover.vue'
@@ -421,25 +433,13 @@ const reviewDueItems = computed(() => store.reviewDue?.items ?? [])
 
 // ==================== 关联知识库（M4-B） ====================
 
-interface KbOption {
-  id: string
-  name: string
-}
-const kbs = ref<KbOption[]>([])
+const kbs = ref<DlKbOption[]>([])
 const kbIdDraft = ref('')
 const kbNote = ref('')
 
 /** 读系统知识库列表 + 当前空间绑定值 */
 async function loadKbsAndBinding(): Promise<void> {
-  const kbApi = (window as unknown as {
-    electronAPI?: { knowledgeBase?: { list: () => Promise<{ success?: boolean; data?: KbOption[] }> } }
-  }).electronAPI?.knowledgeBase
-  try {
-    const r = kbApi ? await kbApi.list() : null
-    kbs.value = r?.data ?? []
-  } catch {
-    kbs.value = []
-  }
+  kbs.value = await listKnowledgeBases()
   kbIdDraft.value = (await store.spaceMetaKbOf(spaceId.value)) ?? ''
 }
 
@@ -693,6 +693,46 @@ function goLearn(node: DlAtlasNode): void {
 }
 
 // ==================== 加载 ====================
+
+/** 空主题起步研究（图谱空 → 空间级 research；完成后刷新图谱/视图） */
+const atlasBooting = ref(false)
+const atlasBootMsg = ref('')
+const atlasBootWarn = ref(false)
+
+async function bootAtlas(): Promise<void> {
+  if (atlasBooting.value) return
+  const id = spaceId.value
+  atlasBooting.value = true
+  atlasBootMsg.value = ''
+  atlasBootWarn.value = false
+  // 空间级事件通道 dl:agent:<spaceId>（conceptId 为空）
+  const unsub = store.subscribeAgentEvent(id, null, (ev) => {
+    if (ev.type === 'error') {
+      atlasBootWarn.value = true
+      atlasBootMsg.value = `起步研究出错：${ev.error ?? '未知错误'}`
+    }
+  })
+  try {
+    const result = await store.sendAgent({
+      mode: 'research',
+      spaceId: id,
+      conceptId: null,
+      message: `这是新主题「${spaceView.value?.name ?? '本空间'}」的首次研究——请为整个领域建立首批核心知识点并生成第一份讲义。`,
+    })
+    await loadAtlas()
+    if ((graph.value?.nodes.length ?? 0) === 0 && !atlasBootMsg.value) {
+      // 未产出：展示会话总结中的原因，避免“干等无反馈”
+      const reason = (result?.content ?? '').trim()
+      atlasBootWarn.value = true
+      atlasBootMsg.value = reason
+        ? `本轮未生成知识点：${reason.slice(0, 260)}`
+        : '本轮未生成知识点。可先绑定含资料的知识库（空间设置 → 关联知识库），或在可联网环境重试。'
+    }
+  } finally {
+    unsub()
+    atlasBooting.value = false
+  }
+}
 
 async function loadAtlas(): Promise<void> {
   const id = spaceId.value
@@ -1234,6 +1274,49 @@ onMounted(() => {
   p {
     margin: 0;
     font-size: 14px;
+  }
+}
+
+/* M5：空主题起步态（图谱空 → 生成首批知识） */
+.atlas-boot {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 20px;
+
+  .ab-icon {
+    color: var(--el-color-primary);
+    .el-icon {
+      font-size: 38px;
+    }
+  }
+  h3 {
+    margin: 10px 0 8px;
+    font-size: 17px;
+    color: var(--el-text-color-primary);
+  }
+  p {
+    max-width: 520px;
+    margin: 0 0 8px;
+    font-size: 13px;
+    line-height: 1.8;
+    color: var(--el-text-color-regular);
+  }
+  .ab-tip {
+    font-size: 12px;
+    color: var(--el-text-color-placeholder);
+  }
+  .ab-msg {
+    margin-top: 12px;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--el-color-primary);
+    &.warn {
+      color: var(--el-color-warning);
+    }
   }
 }
 
