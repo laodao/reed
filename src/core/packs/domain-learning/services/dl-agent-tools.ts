@@ -148,6 +148,58 @@ export function buildDlAgentToolDefs(): AgentToolDef[] {
   ]
 }
 
+// ==================== task 进度上报工具（M6-3 阶段三：子任务结构化进度；只上报不落库） ====================
+
+/** task 进度工具名（仅 task 会话 bind；不在 dl_* 动作清单内） */
+export const DL_TASK_PROGRESS_TOOL = 'dl_task_progress'
+
+const taskProgressSchema = z.object({
+  action: z
+    .enum(['plan', 'start', 'done'])
+    .describe('plan=声明任务计划（应列出步骤数与各步名称）；start=开始某一步；done=完成某一步'),
+  step: z.number().int().min(1).optional().describe('步骤序号（从 1 起）'),
+  total: z.number().int().min(1).optional().describe('计划步骤总数（action=plan 时填）'),
+  label: z.string().optional().describe('该步名称/动作说明'),
+})
+
+/** 任务进度上报（danger=read：只发事件给前端展示，不改任何库） */
+export function buildDlTaskProgressToolDef(): AgentToolDef {
+  return {
+    name: DL_TASK_PROGRESS_TOOL,
+    description:
+      '上报当前任务拆解与执行进度（只展示，不改任何数据）：任务开始前用 action=plan 声明共有几步（total+各步 label），开始某一步用 start(step,label)，完成该步用 done(step,label)。用户界面会显示你的子任务清单与完成状态。',
+    inputSchema: taskProgressSchema,
+    dangerLevel: 'read',
+    executeTimeoutMs: 15_000,
+    autoApprovableInWorkflow: true,
+    execute: async (input, ctx) => {
+      const dlCtx = dlCtxFrom(ctx)
+      const raw = (input ?? {}) as { action: string; step?: number; total?: number; label?: string }
+      const data = {
+        action: raw.action,
+        step: raw.step ?? null,
+        total: raw.total ?? null,
+        label: raw.label ?? null,
+      }
+      const label = raw.label?.trim() ? ` ${raw.label.trim()}` : ''
+      const msg =
+        raw.action === 'plan'
+          ? `任务计划：共 ${raw.total ?? '?'} 步${label}`
+          : raw.action === 'start'
+            ? `▶ 开始第 ${raw.step ?? '?'} 步${label}`
+            : `✓ 完成第 ${raw.step ?? '?'} 步${label}`
+      const summary: DlAgentActionSummary = {
+        tool: DL_TASK_PROGRESS_TOOL,
+        status: 'ok',
+        message: msg,
+        data,
+      }
+      emitDlAgentEvent(dlCtx.spaceId, dlCtx.conceptId, { type: 'action:done', tool: DL_TASK_PROGRESS_TOOL, summary })
+      return { ok: true, data: { status: 'ok', message: msg, data } }
+    },
+  }
+}
+
 /** 懒注册（幂等）：宿主首次 sendMessage 时调用（activate 早于 workflow boot）；
  * M4-A P1-2：平台 registry 已支持包工具 LLM 侧别名（bare 名），回归标准
  * { packId } 注册语义（内部 namespaced、可整包注销/审计归属） */
@@ -157,6 +209,11 @@ export function registerDlAgentTools(registry: AgentToolRegistry): void {
     const namespaced = `pack:${DL_AGENT_PACK_ID}:${def.name}`
     if (existing.has(namespaced)) continue
     registry.register(def, { packId: DL_AGENT_PACK_ID })
+  }
+  // task 进度上报（只读级；注册无副作用，仅 task 会话 bind 时暴露给模型）
+  const nsProgress = `pack:${DL_AGENT_PACK_ID}:${DL_TASK_PROGRESS_TOOL}`
+  if (!existing.has(nsProgress)) {
+    registry.register(buildDlTaskProgressToolDef(), { packId: DL_AGENT_PACK_ID })
   }
 }
 

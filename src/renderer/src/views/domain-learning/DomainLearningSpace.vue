@@ -265,9 +265,9 @@
               v-for="(a, i) in taskLog"
               :key="i"
               class="task-action"
-              :class="a.status"
-              :title="a.message"
-            >{{ a.status === 'ok' ? '✓' : a.status === 'error' ? '✕' : '·' }} {{ taskActionText(a.tool) }}</span>
+              :class="a.tool === 'dl_task_progress' ? 'progress-chip' : a.status"
+              :title="a.tool === 'dl_task_progress' ? '任务子步骤进度' : a.message"
+            >{{ taskChipText(a) }}</span>
           </div>
           <div class="qa-input">
             <el-input
@@ -994,6 +994,13 @@ function taskActionText(tool: string): string {
     default:
       return tool
   }
+}
+
+/** 进度条 chip 文案：子步骤上报原样展示（含 plan/▶/✓），dl 动作加状态符号 */
+function taskChipText(a: DlTaskActionLog): string {
+  if (a.tool === 'dl_task_progress') return a.message
+  const mark = a.status === 'ok' ? '✓' : a.status === 'error' ? '✕' : '·'
+  return `${mark} ${taskActionText(a.tool)}`
 }
 
 /** 本轮追问临时消息（后端持久化前先展示；tutor view 刷新后清空；task 保留到切概念） */
@@ -1827,6 +1834,12 @@ watch(rightPane, (pane) => {
     }
     &.error {
       color: var(--el-color-danger);
+    }
+    // 子步骤上报（dl_task_progress）：统一主色，plan/▶/✓ 由文案表达
+    &.progress-chip {
+      color: var(--el-color-primary);
+      background: var(--el-color-primary-light-9);
+      border-color: transparent;
     }
   }
 }

@@ -167,8 +167,10 @@ export function dlTaskSystemPrompt(): string {
 4. 技能与工作流：任务契合平台技能时，先 discover_capabilities 查看，再 invoke_skill 执行
    （如 learning-space-bootstrap 领域起步研究、learning-concept-explainer 概念讲义、learning-lesson-planner
    讲义规划、learning-domain-map 领域骨架等）；
-5. 长任务：任务较大时先给出简短的执行计划（拆成 2~5 个子步骤），再逐步执行；每完成一个子步骤用一行回报
-   （「✓ 已完成…」），不要长时间静默；资料不足时如实说明，并给出可补的资料来源方向。
+5. 长任务：任务较大时先给出简短的执行计划（拆成 2~5 个子步骤），并**用 dl_task_progress 工具结构化上报**：
+   执行计划时调用 dl_task_progress action=plan（total=步数、各步分别 start 时带 label），开始某一步用
+   action=start(step,label)，完成该步用 action=done(step,label)——用户界面会据此显示子任务清单与完成状态；
+   每完成一个子步骤再顺手用一行文字回报，不要长时间静默；资料不足时如实说明，并给出可补的资料来源方向。
 约束：本会话不维护答疑历史（dl_question 由答疑会话负责）；落库只允许 dl_* 系列动作且经服务校验；
 不编造资料与引用；拿不准就明说。全部做完用一小段总结：做了什么、产出了什么（动作摘要）、哪些建议交由用户确认。`
 }

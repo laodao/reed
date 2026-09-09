@@ -16,7 +16,7 @@
 
 import type { AgentToolBinding } from '@shared/types/agent.types'
 import { DL_SYSTEM_PASSTHROUGH, type DlAgentMode } from './dl-agent.types'
-import { dlAgentToolNames, dlToolMaxCalls } from './dl-agent-tools'
+import { DL_TASK_PROGRESS_TOOL, dlAgentToolNames, dlToolMaxCalls } from './dl-agent-tools'
 
 /** 研究模式常备读工具（采集闭环；名称与 node-tool-adapter / agent-builtin-tools 注册名一致） */
 export const DL_READ_TOOL_NAMES = ['wf_kb_retrieve', 'wf_web_extract', 'http_get'] as const
@@ -42,7 +42,12 @@ export interface DlBindingOptions {
 
 /** 按模式 + 可用工具组装 bindings（顺序：动作 → 读工具 → 系统透出） */
 export function buildDlBindings(o: DlBindingOptions): AgentToolBinding[] {
-  const actionBindings = dlAgentToolNames().map((tool) => ({ tool, maxCalls: dlToolMaxCalls(tool) }))
+  const actionBase = dlAgentToolNames().map((tool) => ({ tool, maxCalls: dlToolMaxCalls(tool) }))
+  // task 模式额外附「进度上报」（子任务结构化展示；只上报不落库）
+  const actionBindings: AgentToolBinding[] =
+    o.mode === 'task'
+      ? [...actionBase, { tool: DL_TASK_PROGRESS_TOOL, maxCalls: 12 }]
+      : actionBase
   const systemBindings = DL_SYSTEM_PASSTHROUGH.map((tool) => ({ tool }))
 
   const available = o.availableToolNames ? new Set(o.availableToolNames) : null
