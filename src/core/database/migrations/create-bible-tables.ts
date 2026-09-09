@@ -88,18 +88,6 @@ const KIND_SEEDS: Array<{
   },
 ]
 
-/** 列存在性检查（本地实现——migration-utils 未提供；同 add-character-binding-race 先例） */
-async function checkColumnExists(ds: DataSource, table: string, column: string, isPg: boolean): Promise<boolean> {
-  if (isPg) {
-    const r = await ds.query(
-      `SELECT column_name FROM information_schema.columns WHERE table_name = '${table}' AND column_name = '${column}'`,
-    )
-    return Array.isArray(r) && r.length > 0
-  }
-  const r = await ds.query(`PRAGMA table_info(${table})`)
-  return Array.isArray(r) && r.some((c: any) => c?.name === column)
-}
-
 /**
  * 建设定集两表 + lw_characters.aliases 列 + 内置分类种子（幂等）。
  */
@@ -143,10 +131,14 @@ export async function createBibleTables(ds: DataSource): Promise<void> {
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_lw_custom_entities_project ON lw_custom_entities (project_id)`)
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_lw_custom_entities_project_kind ON lw_custom_entities (project_id, kind_key)`)
 
-  // 3. lw_characters.aliases（JSON 数组；幂等加列）
-  if (await checkTableExists(ds, 'lw_characters', isPg)) {
-    if (!(await checkColumnExists(ds, 'lw_characters', 'aliases', isPg))) {
-      await ds.query(`ALTER TABLE lw_characters ADD COLUMN aliases text NULL`)
+  // 3. lw_story_characters.aliases（JSON 数组；幂等加列——PRAGMA/information_schema 经
+  // TypeORM 的返回形态不稳定，直接 ALTER 并容忍 duplicate（实测教训））
+  if (await checkTableExists(ds, 'lw_story_characters', isPg)) {
+    try {
+      await ds.query(`ALTER TABLE lw_story_characters ADD COLUMN aliases text NULL`)
+    } catch (e: any) {
+      const msg = String(e?.message || '')
+      if (!/duplicate|already exists/i.test(msg)) throw e
     }
   }
 

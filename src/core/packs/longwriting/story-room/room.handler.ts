@@ -79,6 +79,7 @@ export function registerStoryRoomHandlers(): void {
       const { BibleQueryService } = await import('@core/platform/services/longwriting/bible.service')
       return { success: true, data: await BibleQueryService.getInstance().list(projectId) }
     } catch (error: any) {
+      console.error('[StoryRoomHandler] bible:list 失败:', error)
       return { success: false, error: error.message }
     }
   })

@@ -101,9 +101,11 @@ export class BibleQueryService {
       const adapter = ENTITY_ADAPTERS[kind.key] || { nameField: 'name', subFields: [] }
       let rows: Array<Record<string, any>> = []
       try {
-        rows = kind.key === 'outline'
-          ? (await repo.getTreeByProjectId(projectId)) || []
-          : (await repo.getByProjectId(projectId)) || []
+        const raw = kind.key === 'outline'
+          ? await repo.getTreeByProjectId(projectId)
+          : await repo.getByProjectId(projectId)
+        // 归一化：概要仓储等返回单行对象而非数组（真机踩坑：rows is not iterable）
+        rows = Array.isArray(raw) ? raw : raw ? [raw] : []
       } catch (e) {
         logger.warn(`[bible] ${kind.key} 读取失败（降级为空组）`, e)
       }
