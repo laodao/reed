@@ -111,6 +111,11 @@ function makeFakeDb(room: Partial<RoomWorkspaceState> = {}) {
         return row
       },
     },
+    lwChapters: {
+      getByOutlineId: async () => null,
+      create: async (outlineId: string, content: string) => ({ id: `ch_${outlineId}`, outlineId, content }),
+      createVersion: async () => undefined,
+    },
     lwGraphEdges: { deleteByEntity: async () => 0 },
     _characters: characters,
     _outlines: outlines,
@@ -259,7 +264,7 @@ describe('adoptCard 采纳落库', () => {
 // ==================== 章节卡（M5 写作交接） ====================
 
 describe('chapter scope（章节卡）', () => {
-  it('章节卡提炼：带上大纲叶子节点上下文，采纳为交接凭据（不落正文）', async () => {
+  it('章节卡提炼：带上大纲叶子节点上下文，采纳写预览草稿（A2：内容已写入草稿）', async () => {
     installEventCapture()
     const db = makeFakeDb()
     // 预置大纲树：一章
@@ -276,9 +281,9 @@ describe('chapter scope（章节卡）', () => {
 
     const card = await svc.adoptCard('p1', r.cards[0].id)
     expect(card.status).toBe('adopted')
-    expect(card.resultNote).toContain('编辑器')
-    // 不写章节正文
-    expect(db._outlines).toHaveLength(1)
+    expect(card.resultNote).toContain('草稿')
+    // 预览作为章节草稿落库（saveChapter 语义）
+    expect(card.resultNote).toContain('夜审')
   })
 })
 

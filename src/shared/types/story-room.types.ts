@@ -108,7 +108,6 @@ export type RoomEventType =
   | 'card:update'
   | 'phase:changed'
   | 'gate:suggest'
-  | 'distill:start'
   | 'error'
 
 export type RoomEvent =
@@ -119,7 +118,6 @@ export type RoomEvent =
   | { type: 'card:update'; card: ArtifactCard }
   | { type: 'phase:changed'; phase: RoomPhaseId }
   | { type: 'gate:suggest'; toPhase: RoomPhaseId; reason: string }
-  | { type: 'distill:start'; scope: DistillScope }
   | { type: 'error'; error: string }
 
 // ==================== 视图 / 请求类型 ====================

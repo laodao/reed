@@ -40,7 +40,7 @@
       <!-- 提炼卡片（对话流末尾） -->
       <template v-if="cards.length > 0">
         <div class="cards-head">── 提炼结果（确认后入库）──</div>
-        <ArtifactCard v-for="c in cards" :key="c.id" :card="c">
+        <ArtifactCard v-for="c in cards.filter((x) => x.status !== 'ignored')" :key="c.id" :card="c">
           <template #actions>
             <el-button size="small" type="success" @click="$emit('adopt', c)">✓ 采纳入库</el-button>
             <el-button size="small" @click="$emit('edit', c)">✎ 编辑</el-button>

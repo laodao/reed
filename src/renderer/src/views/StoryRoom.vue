@@ -98,7 +98,6 @@
           @distill="onDistill"
           @open-editor="goEditor"
           @locate-turn="locateTurn"
-          @add-kind="onAddKind"
           @foreshadow-status="onForeshadowStatus"
         />
       </div>
@@ -259,6 +258,7 @@ onMounted(async () => {
 })
 
 function doSend(): void {
+  if (store.busy.value) return
   if (!modelSel.value) {
     ElMessage.warning('请先在顶栏选择主编模型（设置里可配置 AI 提供商）')
     return
@@ -343,6 +343,18 @@ async function exportToEp(): Promise<void> {
     const overview = overviewRes.success ? overviewRes.data : null
 
     // 1) 建剧集项目（回链长文项目）
+    // 查重：该项目已转过短剧则不再重复建（评审 A4）
+    const existingList = await epApi.listProjectsSummary?.()
+    const dup = existingList?.success && Array.isArray(existingList.data)
+      ? (existingList.data as Array<Record<string, any>>).find((x) => x.longWritingProjectId === projectId.value)
+      : null
+    if (dup) {
+      ElMessageBox.confirm(`该项目已转过短剧《${dup.name}》，是否前往？`, '已存在', { confirmButtonText: '前往', cancelButtonText: '取消', type: 'info' })
+        .then(() => router.push(`/episode-production/${dup.id}`))
+        .catch(() => undefined)
+      return
+    }
+
     const created = await epApi.createProject(projectName.value, projectId.value, {
       styleAnchors: storyType.value ? [storyType.value] : [],
     })
@@ -362,7 +374,11 @@ async function exportToEp(): Promise<void> {
       return { title: `第${d.index}集 ${d.title || ''}`.trim(), content: parts.filter(Boolean).join('\n').slice(0, 15000) }
     })
     const batch = await epApi.batchCreateEpisodes({ projectId: epProjectId, episodes })
-    if (!batch.success) throw new Error(batch.error || '创建分集失败')
+    if (!batch.success) {
+      // 失败回删刚建的空 EP 项目（评审 A4：不留孤儿）
+      await epApi.deleteProject?.(epProjectId)?.catch?.(() => undefined)
+      throw new Error(batch.error || '创建分集失败')
+    }
 
     ElMessageBox.confirm(`已创建剧集项目《${projectName.value}》与 ${episodes.length} 个分集（种子文本就绪）。现在去 EpisodeStudio 逐集生成剧本？`, '转短剧成功', {
       confirmButtonText: '前往 EpisodeStudio', cancelButtonText: '留在研讨室', type: 'success',
@@ -379,20 +395,11 @@ async function exportToEp(): Promise<void> {
 const pendingCards = computed(() => store.state.value?.pendingCards || [])
 const distilling = ref(false)
 
-/** ＋新增选择动态分类时记住提炼范围（⚡提炼按该分类执行一次） */
-const customKindHint = ref<string | null>(null)
-function onAddKind(kindKey: string): void {
-  if (kindKey.startsWith('kind:')) customKindHint.value = kindKey
-}
-
-async function onDistill(): Promise<void> {
+async function onDistill(scope?: string): Promise<void> {
   if (distilling.value) return
   distilling.value = true
   try {
-    const hint = customKindHint.value
-    customKindHint.value = null
-    if (hint) await store.distill(hint as never)
-    else await store.distill()
+    await store.distill((scope || undefined) as never)
   } finally {
     distilling.value = false
   }
@@ -400,8 +407,8 @@ async function onDistill(): Promise<void> {
 
 const bibleRefresh = ref(0)
 
-async function onForeshadowStatus(id: string, status: 'paid' | 'dropped'): Promise<void> {
-  const res = await window.electronAPI.longwriting.bibleForeshadowStatus(projectId.value, id, status, null)
+async function onForeshadowStatus(id: string, status: 'paid' | 'dropped', payoff?: number | null): Promise<void> {
+  const res = await window.electronAPI.longwriting.bibleForeshadowStatus(projectId.value, id, status, payoff ?? null)
   if (res.success) {
     ElMessage.success(status === 'paid' ? '伏笔已回收' : '伏笔已弃置')
     bibleRefresh.value++
@@ -454,7 +461,10 @@ async function saveEditAndAdopt(): Promise<void> {
     }
   }
   const ok = await store.adoptCard(editCard.value, patch)
-  if (ok) editVisible.value = false
+  if (ok) {
+    editVisible.value = false
+    bibleRefresh.value++
+  }
 }
 
 async function openFeedback(card: ArtifactCard): Promise<void> {

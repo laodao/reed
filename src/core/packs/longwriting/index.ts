@@ -3,8 +3,8 @@
  * @module core/packs/longwriting
  * @description 物理收拢式：handler 已搬入包目录（./handlers/longwriting.handler），
  *              其专属的 LongWritingService / MaterialProcessorService / LwMigrationService
- *              一并搬入（./services/）；LongWritingAIService 与 AgentWorkflowService 被
- *              剧集制作包的 Agent 工作流复用，收在 @core/platform/services。
+ *              一并搬入（./services/）；LongWritingAIService 收在 @core/platform/services。
+ *              （42 号 M6：旧 AgentWorkflowService 已退役，对话链路由 story-room/ 承接。）
  *              本包在 activate 时调用 registerLongWritingHandlers()。
  *              manifest 的 id/name/version 与前端骨架（renderer/packs/longwriting）保持一致。
  *

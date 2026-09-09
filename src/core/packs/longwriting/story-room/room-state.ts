@@ -47,7 +47,6 @@ function enqueueWrite<T>(projectId: string, task: () => Promise<T>): Promise<T> 
   const prev = writeChains.get(projectId) ?? Promise.resolve()
   const next = prev.then(task, task)
   writeChains.set(projectId, next.catch(() => undefined))
-  void prev
   return next
 }
 
@@ -58,6 +57,27 @@ export async function saveRoomState(db: any, projectId: string, next: RoomWorksp
     const merged: WizardStateFull = { ...(project.wizardState || {}), room: next }
     const updated = await db.lwProjects.update(projectId, { wizardState: merged })
     if (!updated) throw new Error(`房间状态保存失败（项目不存在）：${projectId}`)
+  })
+}
+
+/**
+ * 队列内读-改-写（评审 P1-4）：mutator 拿到队列内最新状态做增量变换，
+ * 消除「读在队列外、间隔 LLM 调用」的丢更新窗口（账本/卡片 RMW 专用）。
+ */
+export async function mutateRoomState(
+  db: any,
+  projectId: string,
+  mutator: (current: RoomWorkspaceState) => RoomWorkspaceState,
+): Promise<RoomWorkspaceState> {
+  return enqueueWrite(projectId, async () => {
+    const project = await db?.lwProjects?.getById(projectId)
+    if (!project) throw new Error(`长文项目不存在：${projectId}`)
+    const current = extractRoomState(project.wizardState)
+    const next = mutator(current)
+    const merged: WizardStateFull = { ...(project.wizardState || {}), room: next }
+    const updated = await db.lwProjects.update(projectId, { wizardState: merged })
+    if (!updated) throw new Error(`房间状态保存失败（项目不存在）：${projectId}`)
+    return next
   })
 }
 

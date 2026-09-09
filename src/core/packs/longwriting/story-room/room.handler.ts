@@ -77,7 +77,12 @@ export function registerStoryRoomHandlers(): void {
   ipcBridge.handle('longwriting:bible:list', async (_event, projectId: string) => {
     try {
       const { BibleQueryService } = await import('@core/platform/services/longwriting/bible.service')
-      return { success: true, data: await BibleQueryService.getInstance().list(projectId) }
+      const { getRoomState } = await import('./room-state')
+      let roomCards: Array<Record<string, any>> = []
+      try {
+        roomCards = (await getRoomState(getDb(), projectId)).pendingCards as never
+      } catch { /* 无房间状态视为空 */ }
+      return { success: true, data: await BibleQueryService.getInstance().list(projectId, { roomCards }) }
     } catch (error: any) {
       console.error('[StoryRoomHandler] bible:list 失败:', error)
       return { success: false, error: error.message }

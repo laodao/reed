@@ -1,14 +1,27 @@
 <template>
   <div class="panel">
     <!-- 讨论成果（共识账本）：非空才出现，默认折叠——原型设定集为单一面板，账本作为其上的轻量区 -->
-    <div v-if="ledger.length > 0" class="ledger">
-      <div class="ledger-bar" @click="ledgerOpen = !ledgerOpen">
+    <div class="ledger">
+      <div class="ledger-bar" @click="ledger.length > 0 && (ledgerOpen = !ledgerOpen)">
         <span class="ledger-title">✦ 讨论成果</span>
         <span class="ledger-cnt">{{ confirmedCount }} 已定 · {{ tentativeCount }} 讨论中<template v-if="rejectedCount"> · {{ rejectedCount }} 已否决</template></span>
         <span class="ledger-arrow">{{ ledgerOpen ? '▾' : '▸' }}</span>
       </div>
-      <button class="ledger-distill" title="把讨论成果提炼成卡片" @click.stop="$emit('distill')">⚡ 提炼</button>
-      <div v-if="ledgerOpen" class="ledger-body">
+      <el-dropdown trigger="click" @command="(sc: string) => $emit('distill', sc)">
+        <button class="ledger-distill" title="把讨论成果提炼成卡片">⚡ 提炼 ▾</button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="overview">概要卡</el-dropdown-item>
+            <el-dropdown-item command="characters">人物卡</el-dropdown-item>
+            <el-dropdown-item command="plots">故事线卡</el-dropdown-item>
+            <el-dropdown-item command="world">世界设定卡</el-dropdown-item>
+            <el-dropdown-item command="outline">大纲卡（逐卷/逐集）</el-dropdown-item>
+            <el-dropdown-item command="chapter">章节卡（写作交接）</el-dropdown-item>
+            <el-dropdown-item command="foreshadow">伏笔卡</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
+      <div v-if="ledger.length > 0 && ledgerOpen" class="ledger-body">
         <div v-for="e in ledger" :key="e.id" class="ledger-row">
           <el-popover placement="left" :width="300" trigger="click">
             <template #reference>
@@ -96,7 +109,7 @@
       <el-form label-width="80px">
         <el-form-item label="分类">
           <el-select v-model="createKindKey" style="width: 100%">
-            <el-option v-for="g in groups" :key="g.kindKey" :value="g.kindKey" :label="g.label" />
+            <el-option v-for="g in groups.filter((x) => x.storage === 'custom')" :key="g.kindKey" :value="g.kindKey" :label="g.label" />
           </el-select>
         </el-form-item>
         <el-form-item label="名称" required>
@@ -128,7 +141,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import type { BibleGroupWire, ConsensusEntry, ConsensusStatus, LedgerOpInput } from '@shared/types/story-room.types'
 
 defineOptions({ name: 'RoomSettingsPanel' })
@@ -143,11 +156,10 @@ const emit = defineEmits<{
   (e: 'op', op: LedgerOpInput): void
   (e: 'revise', entry: ConsensusEntry): void
   (e: 'ask', text: string): void
-  (e: 'distill'): void
+  (e: 'distill', scope: string): void
   (e: 'open-editor'): void
   (e: 'locate-turn', turn: number): void
-  (e: 'add-kind', kindKey: string): void
-  (e: 'foreshadow-status', id: string, status: 'paid' | 'dropped'): void
+  (e: 'foreshadow-status', id: string, status: 'paid' | 'dropped', payoff?: number | null): void
 }>()
 
 const keyword = ref('')
@@ -255,10 +267,8 @@ const createFields = ref<Record<string, string>>({})
 const createParentId = ref('')
 
 function onAddCommand(cmd: string): void {
-  if (cmd.startsWith('kind:')) {
-    // 动态分类「设计」：插入对话引导 + 记住提炼范围（⚡提炼按此分类执行一次）
-    emit('add-kind', cmd)
-    emit('ask', `设计一个${kindLabel(cmd.slice(5))}：`)
+  if (cmd === '__ask_entity') {
+    emit('ask', '设计一个人物：')
     return
   }
   if (cmd === '__custom_form') {
@@ -294,9 +304,22 @@ async function submitCreate(): Promise<void> {
   }
 }
 
-function markForeshadow(status: 'paid' | 'dropped'): void {
+async function markForeshadow(status: 'paid' | 'dropped'): Promise<void> {
   if (!detail.value) return
-  emit('foreshadow-status', detail.value.id, status)
+  let payoff: number | null = null
+  if (status === 'paid') {
+    try {
+      const res = await ElMessageBox.prompt('在第几章回收？', '标记已收', {
+        confirmButtonText: '确定', cancelButtonText: '取消',
+        inputPlaceholder: '章节号（可留空）',
+      })
+      const v = Number((res as unknown as { value?: string }).value)
+      payoff = Number.isFinite(v) && v > 0 ? v : null
+    } catch {
+      return
+    }
+  }
+  emit('foreshadow-status', detail.value.id, status, payoff)
   detailOpen.value = false
 }
 

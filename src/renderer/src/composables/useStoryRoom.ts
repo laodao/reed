@@ -124,8 +124,7 @@ export function useStoryRoom(projectId: string) {
     } catch (e: any) {
       status.value = 'error'
       streamMessage.value = null
-      const idx = messages.value.indexOf(optimistic)
-      if (idx !== -1 && !optimistic.id) messages.value.splice(idx, 1)
+      // 评审 A8：用户原话已落库/仍在——不删乐观气泡（删了会出现「无提问的道歉气泡」）
       ElMessage.error(e.message || '本轮研讨出错')
     } finally {
       if (status.value === 'streaming') status.value = 'idle'
@@ -196,7 +195,8 @@ export function useStoryRoom(projectId: string) {
     const phase = state.value?.phase ?? 'story-core'
     if (phase === 'characters') return 'characters'
     if (phase === 'plots') return 'plots'
-    if (phase === 'outline' || phase === 'writing') return 'outline'
+    if (phase === 'outline') return 'outline'
+    if (phase === 'writing') return 'chapter'  // 评审 A1：写作阶段可出章节卡
     return 'overview'
   }
 

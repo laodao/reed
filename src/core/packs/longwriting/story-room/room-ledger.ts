@@ -14,7 +14,7 @@ import { createLogger } from '@core/utils/logger'
 import type { ConsensusEntry, ConsensusKind, ConsensusStatus, LedgerOpInput, RoomPhaseId } from '@shared/types/story-room.types'
 import { extractJsonObject, extractJsonArray } from '@core/platform/services/longwriting/story-persist'
 import { generateRoomText } from './room-llm'
-import { getRoomState, patchRoomState } from './room-state'
+import { getRoomState, mutateRoomState, patchRoomState } from './room-state'
 import { nextPhase, getPhaseDef } from './room-phases'
 import { emitRoomEvent } from './room-events'
 
@@ -124,15 +124,14 @@ export async function silentExtractLedger(
 
     const seen = new Set(state.ledger.map((e) => normalizeTitle(e.title)))
     const added: ConsensusEntry[] = []
+    const conflictKeys: string[] = []
     for (const op of ops) {
       const title = String(op?.title || '').trim()
       if (!title) continue
       const key = normalizeTitle(title)
-      // op=conflict：与既有共识矛盾 → 原条目转 tentative（重开讨论），并记新条目
+      // op=conflict：与既有共识矛盾 → 队列内 mutator 阶段统一处理（conflictKeys 收集）
       if (op?.op === 'conflict') {
-        const conflictKey = normalizeTitle(String(op?.conflictWith || ''))
-        const target = state.ledger.find((e) => normalizeTitle(e.title) === conflictKey)
-        if (target && target.status === 'confirmed') target.status = 'tentative'
+        conflictKeys.push(normalizeTitle(String(op?.conflictWith || '')))
       }
       if (seen.has(key)) continue
       seen.add(key)
@@ -148,11 +147,18 @@ export async function silentExtractLedger(
     }
     if (added.length === 0 && !ops.some((op: any) => op?.op === 'conflict')) return null
 
-    // 容量控制：超限先丢最老 tentative，tentative 丢尽才丢最老 rejected（评审 P2-4）
-    const ledger = compactLedger([...state.ledger, ...added])
-
-    await patchRoomState(db, projectId, { ledger })
-    logger.info(`[story-room] 账本静默提取 +${added.length} project=${projectId} turn=${input.turnNo}`)
+    // 队列内 RMW（评审 P1-4）：以队列内最新账本为基线合并，消除「读在队列外」丢更新窗口
+    const ledger = await mutateRoomState(db, projectId, (current) => {
+      for (const ck of conflictKeys) {
+        const target = current.ledger.find((e) => normalizeTitle(e.title) === ck)
+        if (target && target.status === 'confirmed') target.status = 'tentative'
+      }
+      const seenNow = new Set(current.ledger.map((e) => normalizeTitle(e.title)))
+      const freshAdded = added.filter((a) => !seenNow.has(normalizeTitle(a.title)))
+      const all = [...current.ledger, ...freshAdded]
+      return { ...current, ledger: compactLedger(all) }
+    })
+    logger.info(`[story-room] 账本静默提取 project=${projectId} turn=${input.turnNo}`)
     return ledger
   } catch (e) {
     logger.warn(`[story-room] 账本静默提取失败（fail-soft 跳过）project=${projectId}`, e)

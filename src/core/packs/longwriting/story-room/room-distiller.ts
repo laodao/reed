@@ -16,7 +16,7 @@ import { DbAgentSessionStore } from '@core/platform/agent-runtime/memory/session
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { computeProductionState } from '@core/platform/services/longwriting/agent/agent-deps'
 import { stateToSummary } from '@core/platform/services/longwriting/agent/agent-context'
-import { extractJsonObject, persistCharacters, persistOverview, persistOutlineTree, persistPlots, persistWorld, type StoryPersistResult } from '@core/platform/services/longwriting/story-persist'
+import { extractJsonObject, persistChapter, persistCharacters, persistOverview, persistOutlineTree, persistPlots, persistWorld, type StoryPersistResult } from '@core/platform/services/longwriting/story-persist'
 import type { ArtifactCard, ArtifactCardKind, BibleDistillScope, DistillScope, RoomWorkspaceState } from '@shared/types/story-room.types'
 import { emitRoomEvent } from './room-events'
 import { getRoomState, patchRoomState } from './room-state'
@@ -58,6 +58,8 @@ const SCOPE_PROMPTS: Partial<Record<DistillScope, string>> = {
   world: `整理「世界设定卡」（地点/势力/技能/物品四类，只收讨论中明确提到的）。输出：
 {"locations":[{"name":"名称","type":"类型","importance":"core/main/auxiliary","description":"描述"}],"factions":[{"name":"名称","factionType":"类型","description":"描述"}],"skills":[{"name":"名称","type":"类型","level":"等级","description":"描述"}],"items":[{"name":"名称","type":"类型","level":"品级","description":"描述"}]}`,
   outline: '大纲（分卷/分集策略见任务说明）',
+  foreshadow: `整理「伏笔卡」——一次整理一条伏笔（第 N 章埋、计划第 M 章收；章号未定则填 null）。输出：
+{"content":"伏笔内容一句话","plantedChapter":埋设章节号或null,"planPayoffChapter":计划回收章节号或null}`,
   chapter: `整理「章节卡」——研讨室不产出正文，本卡是写作交接凭据（开头预览+本章要点）。输出：
 {"outlineId":"对应大纲节点id（若上下文给了）","outlineName":"章节名","hook":"开场钩子","points":["本章要点1","本章要点2"],"preview":"开头两三句的预览（可写正文时直接续写）"}`,
 }
@@ -220,7 +222,7 @@ export class StoryRoomDistillerService {
     }
     if (scope !== 'outline') return ''
     if (state.contentTarget === 'script') {
-      const adoptedCount = state.pendingCards.filter((c) => c.kind === 'outline' && c.status !== 'ignored').length
+      const adoptedCount = state.pendingCards.filter((c) => c.kind === 'outline' && c.status === 'adopted').length
       return outlineStrategyScript(adoptedCount + 1)
     }
     const tree = (await m?.lwOutlines?.getTreeByProjectId(projectId)) || []
@@ -277,13 +279,30 @@ export class StoryRoomDistillerService {
 
   // ==================== 卡片操作 ====================
 
-  /** 采纳（可带轻编辑 patch）→ story-persist 落库 → 卡片终态 */
+  private readonly adopting = new Set<string>()
+
+  /** 采纳（可带轻编辑 patch）→ story-persist 落库 → 卡片终态（单飞防双击重复落库，评审 P2-11） */
   async adoptCard(
     projectId: string,
     cardId: string,
     patch?: Record<string, any>,
   ): Promise<ArtifactCard> {
     const m = this.manager()
+    if (this.adopting.has(cardId)) throw new Error('该卡片正在采纳中')
+    this.adopting.add(cardId)
+    try {
+      return await this.doAdopt(m, projectId, cardId, patch)
+    } finally {
+      this.adopting.delete(cardId)
+    }
+  }
+
+  private async doAdopt(
+    m: any,
+    projectId: string,
+    cardId: string,
+    patch?: Record<string, any>,
+  ): Promise<ArtifactCard> {
     const state = await getRoomState(m, projectId)
     const card = state.pendingCards.find((c) => c.id === cardId)
     if (!card) throw new Error(`卡片不存在：${cardId}`)
@@ -334,8 +353,18 @@ export class StoryRoomDistillerService {
         const created = await persistOutlineTree(m, projectId, [data], 3)
         return { ok: true, message: `已建大纲卷「${data.name || ''}」（${created} 个节点）`, changed: ['outline'], data: { nodes: created } }
       }
-      case 'chapter':
-        return { ok: true, message: '章节卡已定稿——在编辑器中打开即可按要点写作', changed: ['chapters'] }
+      case 'chapter': {
+        // 设计 §6.1「内容已写入草稿」：预览作为章节草稿落库（评审 A2），要点仍在卡上
+        const outlineId = String(data.outlineId || '')
+        if (!outlineId) {
+          return { ok: true, message: '章节卡已定稿（未关联大纲节点，正文草稿未写入）', changed: ['chapters'] }
+        }
+        const draft = [String(data.preview || ''), String(data.hook || '')].filter(Boolean).join('\n')
+        const r2 = await persistChapter(m, projectId, { outlineId, content: draft || '（待写）' })
+        if (!r2.ok) return r2
+        const points = Array.isArray(data.points) ? data.points : []
+        return { ok: true, message: `章节草稿已写入「${r2.data?.name ?? ''}」并建版本${points.length ? `（${points.length} 条要点见卡）` : ''}`, changed: ['chapters'] }
+      }
       case 'foreshadow': {
         const row = await m?.lwForeshadows?.createRow(
           projectId, String(data.content || ''), (Number(data.plantedChapter) || null) as never,
@@ -377,10 +406,14 @@ export class StoryRoomDistillerService {
         : (card.kind as BibleDistillScope)
     const r = await this.distill(projectId, scope, { ...opts, feedback, presetCard: { volumeIndex: card.volumeIndex } })
     const m2 = await getRoomState(m, projectId)
-    const pendingCards = m2.pendingCards.map((c) =>
-      c.id === cardId ? { ...c, status: 'ignored' as const, feedback } : c,
-    )
+    let oldCard: ArtifactCard | null = null
+    const pendingCards = m2.pendingCards.map((c) => {
+      if (c.id !== cardId) return c
+      oldCard = { ...c, status: 'ignored' as const, feedback }
+      return oldCard
+    })
     await patchRoomState(m, projectId, { pendingCards })
+    if (oldCard) emitRoomEvent(projectId, { type: 'card:update', card: oldCard })  // 评审 A7：旧卡终态广播
     return r
   }
 

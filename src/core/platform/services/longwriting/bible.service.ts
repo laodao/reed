@@ -66,8 +66,8 @@ export class BibleQueryService {
     return (await this.manager().lwBibleKinds?.getEnabled()) || []
   }
 
-  /** 分类化条目列表（设定集/资产面板主数据源） */
-  async list(projectId: string): Promise<BibleGroupView[]> {
+  /** 分类化条目列表（设定集/资产面板主数据源）；roomCards 供分集卡合成（评审 A9） */
+  async list(projectId: string, opts?: { roomCards?: Array<Record<string, any>> }): Promise<BibleGroupView[]> {
     const m = this.manager()
     const kinds = await this.listKinds()
     const groups: BibleGroupView[] = []
@@ -123,7 +123,7 @@ export class BibleQueryService {
       for (const row of rows) {
         const name = String(row[adapter.nameField] || '').trim()
         if (!name) continue
-        if (kind.key === 'overview' && rows.length > 1) continue // 概要单行
+        if (kind.key === 'overview' && entries.length > 0) continue // 概要单行：只取第一行
         const subParts = adapter.subFields
           .map((f) => (kind.key === 'outline' ? outlineSub(row[f]) : String(row[f] || '').trim()))
           .filter(Boolean)
@@ -137,6 +137,26 @@ export class BibleQueryService {
         })
       }
       groups.push({ kindKey: kind.key, label: kind.label, icon: kind.icon, storage: 'entity', fieldsSchema: kind.fieldsSchema, entries })
+    }
+
+    // script 目标：已定稿分集卡合成进「大纲」组（评审 A9——采纳了就要可见）
+    const adoptedEpisodes = (opts?.roomCards || []).filter(
+      (c: any) => c.kind === 'outline' && c.status === 'adopted' && c.data?.index,
+    )
+    if (adoptedEpisodes.length > 0) {
+      const outlineGroup = groups.find((g) => g.kindKey === 'outline')
+      if (outlineGroup) {
+        for (const c of adoptedEpisodes) {
+          const d = c.data as Record<string, any>
+          outlineGroup.entries.push({
+            id: c.id,
+            name: `第${d.index}集 ${d.title || ''}`.trim(),
+            sub: `钩子：${String(d.hook || '').slice(0, 16)}`,
+            fields: d,
+            origin: { type: 'discussion', turns: c.sourceTurns },
+          })
+        }
+      }
     }
 
     // 伏笔合成组（P1：lw_foreshadows；非自定义实体，走独立端点操作）

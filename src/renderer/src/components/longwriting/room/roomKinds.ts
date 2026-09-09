@@ -36,6 +36,7 @@ export const KIND_META: Record<string, { label: string; ico: string; colorVar: s
   camp: { label: '阵营', ico: '🚩', colorVar: 'var(--ka-camp)' },
   chapter: { label: '章节', ico: '📄', colorVar: 'var(--ka-outline)' },
   foreshadow: { label: '伏笔', ico: '🪝', colorVar: 'var(--ka-nation)' },
+  custom: { label: '设定', ico: '🧩', colorVar: 'var(--ka-overview)' },
   conflict: { label: '矛盾', ico: '⚠️', colorVar: 'var(--el-color-danger)' },
 }
 

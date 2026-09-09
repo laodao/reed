@@ -108,8 +108,8 @@ export async function createBibleTables(ds: DataSource): Promise<void> {
       fields_schema text NULL,
       prompt_hint text NULL,
       enabled integer DEFAULT 1,
-      created_at ${isPg ? 'bigint' : 'bigint'} NULL,
-      updated_at ${isPg ? 'bigint' : 'bigint'} NULL
+      created_at bigint NULL,
+      updated_at bigint NULL
     )
   `)
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_lw_bible_kinds_key ON lw_bible_kinds (key)`)
