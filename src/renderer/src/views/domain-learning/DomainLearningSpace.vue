@@ -258,16 +258,22 @@
               还没有追问记录——读完讲义后在这里提问。
             </div>
           </div>
-          <!-- task 会话执行进度（动作流水；M6-3 阶段二） -->
-          <div v-if="taskLog.length" class="task-log">
-            <span class="task-log-title">任务执行</span>
-            <span
-              v-for="(a, i) in taskLog"
-              :key="i"
-              class="task-action"
-              :class="a.tool === 'dl_task_progress' ? 'progress-chip' : a.status"
-              :title="a.tool === 'dl_task_progress' ? '任务子步骤进度' : a.message"
-            >{{ taskChipText(a) }}</span>
+          <!-- task 会话执行进度（动作流水；默认折叠为一行，展开滚动查看，M6-3 阶段二/四） -->
+          <div v-if="taskLog.length" class="task-log" :class="{ open: taskLogOpen }">
+            <button class="task-log-head" @click="taskLogOpen = !taskLogOpen">
+              <span class="task-log-title">任务执行</span>
+              <span class="task-log-summary">{{ taskLogSummary }}</span>
+              <span class="task-log-toggle">{{ taskLogOpen ? '▾ 收起' : '▸ 展开' }}</span>
+            </button>
+            <div v-if="taskLogOpen" class="task-log-list">
+              <span
+                v-for="(a, i) in taskLog"
+                :key="i"
+                class="task-action"
+                :class="a.tool === 'dl_task_progress' ? 'progress-chip' : a.status"
+                :title="a.tool === 'dl_task_progress' ? '任务子步骤进度' : a.message"
+              >{{ taskChipText(a) }}</span>
+            </div>
           </div>
           <div class="qa-input">
             <el-input
@@ -807,6 +813,7 @@ function selectConcept(c: DlConceptView): void {
   // 概念切换：清掉未落库的 task 临时气泡与动作流水（答疑历史由 view.turns 按概念刷新）
   liveTurns.value = []
   taskLog.value = []
+  taskLogOpen.value = false
   void store.fetchNotesOf(spaceId.value, c.id)
 }
 
@@ -979,6 +986,18 @@ interface DlTaskActionLog {
   message: string
 }
 const taskLog = ref<DlTaskActionLog[]>([])
+/** 任务进度区是否展开（默认折叠成一行；展开后滚动查看全部步骤） */
+const taskLogOpen = ref(false)
+
+/** 折叠态摘要：共几项 + 最近一条进度 */
+const taskLogSummary = computed(() => {
+  const items = taskLog.value
+  if (!items.length) return ''
+  const last = items[items.length - 1]
+  const msg = last.message?.trim() ?? ''
+  const tail = msg ? ` · ${msg.length > 26 ? `${msg.slice(0, 26)}…` : msg}` : ''
+  return `共 ${items.length} 项${tail}`
+})
 
 /** dl 动作 → 简短中文进度（未知原样回显） */
 function taskActionText(tool: string): string {
@@ -1020,6 +1039,7 @@ async function ask(): Promise<void> {
   tutorStreaming.value = true
   lastFeedback.value = ''
   taskLog.value = []
+  taskLogOpen.value = false
 
   // 本地先落 user + assistant 占位（assistant 文本随流式增量拼接）
   const userTurn: DlChatTurn = { role: 'user', text: q }
@@ -1802,23 +1822,58 @@ watch(rightPane, (pane) => {
   text-align: center;
 }
 
-// M6-3 阶段二：task 会话执行进度条（动作流水）
+// M6-3 阶段二/四：task 会话执行进度（默认折叠一行；展开滚动查看全部）
 .task-log {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
   border-top: 1px solid var(--el-border-color-lighter);
   background: var(--el-fill-color-lighter);
 
-  .task-log-title {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--el-text-color-secondary);
-    margin-right: 2px;
+  .task-log-head {
+    appearance: none;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    text-align: left;
+
+    .task-log-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--el-text-color-secondary);
+      flex-shrink: 0;
+    }
+    .task-log-summary {
+      flex: 1;
+      min-width: 0;
+      font-size: 11.5px;
+      line-height: 1.5;
+      color: var(--el-text-color-regular);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .task-log-toggle {
+      flex-shrink: 0;
+      font-size: 11px;
+      color: var(--el-color-primary);
+    }
   }
+
+  // 展开态：限高滚动查看全部动作/步骤
+  .task-log-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 0 14px 8px;
+    max-height: 150px;
+    overflow-y: auto;
+  }
+
   .task-action {
+    align-self: flex-start;
     font-size: 11.5px;
     line-height: 1.6;
     color: var(--el-text-color-secondary);
