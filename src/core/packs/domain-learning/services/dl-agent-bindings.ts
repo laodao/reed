@@ -8,7 +8,8 @@
  *   wf_kb_retrieve（知识库检索）/ wf_web_extract（网页正文）/ http_get（API/原文，
  *   如 arXiv export.arxiv.org）常备；web_search 仅在配置了默认联网搜索源时 bind
  *   （无默认源绑了也会被模型当成可搜索，宁可显式不给）。
- * - tutor 模式不带读工具（答疑引证 = 快照注入的讲义/图，防工具滥用，M1 口径不变）。
+ * - tutor 模式不带读工具（答疑引证 = 快照注入的讲义/图，防工具滥用，M1 口径不变）；
+ * - task 模式与 research 同级（任务执行：读工具采集 + dl 动作落库 + 系统透出）。
  * 读工具均在 workflow-boot 注册为裸名（source=builtin/node），宿主 registry 缺失的
  * 名字会在此被过滤（buildToolDefs 对未注册引用仅 warn 跳过——这里显式交集更可控）。
  */
@@ -58,7 +59,8 @@ export function buildDlBindings(o: DlBindingOptions): AgentToolBinding[] {
     // 内部核验：只读(读工具+系统透出),不带任何 dl 写动作
     return [...readBindings, ...systemBindings]
   }
-  if (o.mode !== 'research') {
+  // task 模式与 research 同级：动作 + 读工具 + 系统透出（按指令执行可读资料/落库）
+  if (o.mode !== 'research' && o.mode !== 'task') {
     return [...actionBindings, ...systemBindings]
   }
 

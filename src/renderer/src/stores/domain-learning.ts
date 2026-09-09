@@ -92,7 +92,7 @@ interface DomainLearningApi {
   ackMastered(id: string, conceptId: string): Promise<IpcLike<{ ok: boolean }>>
   ackConfused(id: string, conceptId: string, sectionKey?: string): Promise<IpcLike<DlAckConfusedResultUi>>
   agentSend(p: {
-    mode: 'research' | 'tutor'
+    mode: 'research' | 'tutor' | 'task'
     spaceId: string
     conceptId?: string | null
     message: string
@@ -100,8 +100,8 @@ interface DomainLearningApi {
     modelId?: string
     focusQuestionId?: string
   }): Promise<IpcLike<DlAgentSendResultUi>>
-  agentCancel(p: { mode: 'research' | 'tutor'; spaceId: string; conceptId?: string | null }): Promise<IpcLike<{ ok: boolean }>>
-  agentBusy(p: { mode: 'research' | 'tutor'; spaceId: string; conceptId?: string | null }): Promise<IpcLike<boolean>>
+  agentCancel(p: { mode: 'research' | 'tutor' | 'task'; spaceId: string; conceptId?: string | null }): Promise<IpcLike<{ ok: boolean }>>
+  agentBusy(p: { mode: 'research' | 'tutor' | 'task'; spaceId: string; conceptId?: string | null }): Promise<IpcLike<boolean>>
   getSpacePace(id: string): Promise<IpcLike<DlPaceSettings>>
   setSpacePace(p: { id: string; pace: DlPaceSettings }): Promise<IpcLike<DlPaceSettings>>
   getAtlasViews(id: string): Promise<IpcLike<DlAtlasViews | null>>
@@ -624,7 +624,7 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
    * - mode='tutor'：追问答疑 → 问题入 dl_question 队列，答上留 answered。
    */
   async function sendAgent(p: {
-    mode: 'research' | 'tutor'
+    mode: 'research' | 'tutor' | 'task'
     spaceId: string
     conceptId?: string | null
     message: string
@@ -646,7 +646,7 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
   }
 
   /** 取消某 scope 的在途 Agent 轮次 */
-  async function cancelAgent(mode: 'research' | 'tutor', spaceId: string, conceptId?: string | null): Promise<void> {
+  async function cancelAgent(mode: 'research' | 'tutor' | 'task', spaceId: string, conceptId?: string | null): Promise<void> {
     const a = api()
     if (!a) return
     try {

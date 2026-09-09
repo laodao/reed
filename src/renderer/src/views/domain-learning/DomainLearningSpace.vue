@@ -431,6 +431,7 @@ import {
   StarFilled,
 } from '@element-plus/icons-vue'
 import { useTabsStore } from '@/stores/tabs'
+import { routeDlIntent } from '@shared/utils/domain-learning-intent'
 import {
   useDomainLearningStore,
   type DlAgentUiEvent,
@@ -792,6 +793,8 @@ function selectConcept(c: DlConceptView): void {
   currentConceptId.value = c.id
   lastFeedback.value = ''
   lastFeedbackIsWarn.value = false
+  // 概念切换：清掉未落库的 task 临时气泡（答疑历史由 view.turns 按概念刷新）
+  liveTurns.value = []
   void store.fetchNotesOf(spaceId.value, c.id)
 }
 
@@ -993,15 +996,16 @@ async function ask(): Promise<void> {
     })
   })
 
+  // 同框自动判断（M6-3 阶段一）：明确任务指令走 task 会话，答疑学习类走 tutor
+  const targetMode: 'tutor' | 'task' = routeDlIntent(q) === 'task' ? 'task' : 'tutor'
   try {
     const result = await store.sendAgent({
-      mode: 'tutor',
+      mode: targetMode,
       spaceId: spaceId.value,
       conceptId: scopeConceptId,
       message: q,
     })
-    // 无答复不静默：流式正文为空时，用会话总结（后端答不上会说明并登记待研究）
-    // 或明确错误兜底，避免“发了没反应也没报错”。
+    // 无答复不静默：流式正文为空时，用会话总结或明确错误兜底，避免“发了没反应也没报错”
     if (!assistantTurn.text) {
       const summary = (result?.content ?? '').trim()
       if (summary) {
@@ -1009,18 +1013,24 @@ async function ask(): Promise<void> {
       } else {
         assistantTurn.text = store.error
           ? `（未收到回答：${store.error}）`
-          : '（未收到回答：问题已记录，可稍后在“未解问题”中发起研究）'
+          : targetMode === 'task'
+            ? '（任务未产出结果：请换更具体的指令重试）'
+            : '（未收到回答：问题已记录，可稍后在“未解问题”中发起研究）'
       }
     }
   } catch (e: any) {
-    assistantTurn.text = `（追问失败：${e?.message ?? '未知错误'}）`
+    assistantTurn.text = `（处理失败：${e?.message ?? '未知错误'}）`
   } finally {
     unsubAgent()
     unsubStream()
     tutorStreaming.value = false
-    // 追问落库后重拉视图（turns/questionId/openQuestionCount 刷新），随后清空临时消息
+    // 视图刷新（动作可能更新树/卡；tutor 已把问答落 dl_question）
     await refreshView()
-    liveTurns.value = []
+    if (targetMode === 'tutor') {
+      // 答疑已落库：清空临时消息（历史由 view.turns 承载）
+      liveTurns.value = []
+    }
+    // task 不落答疑库：保留本轮气泡供查看（切换概念时统一清空）
     draft.value = ''
     scrollQaToBottom()
   }

@@ -32,6 +32,7 @@ import {
   computeDlSpaceSnapshot,
   dlEmptySpaceMission,
   dlResearchSystemPrompt,
+  dlTaskSystemPrompt,
   dlTutorSystemPrompt,
   dlVerifySystemPrompt,
   researchSourceHint,
@@ -57,6 +58,7 @@ const logger = createLogger('DlAgentHarness')
 function systemPromptOf(mode: DlAgentMode): string {
   if (mode === 'research') return dlResearchSystemPrompt()
   if (mode === 'verify') return dlVerifySystemPrompt()
+  if (mode === 'task') return dlTaskSystemPrompt()
   return dlTutorSystemPrompt()
 }
 
@@ -168,7 +170,7 @@ export class DlAgentHarnessService {
     const snapshot = await computeDlSpaceSnapshot(m, spaceId, conceptId)
     let snapshotText = snapshot.text
     let bindings: AgentToolBinding[] = []
-    if (mode === 'research' || mode === 'verify') {
+    if (mode === 'research' || mode === 'verify' || mode === 'task') {
       const registered = new Set(harness.registry.listSpecs().map((s) => s.name))
       let webSearchAvailable = false
       try {

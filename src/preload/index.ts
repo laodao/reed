@@ -1323,13 +1323,13 @@ const electronAPI = {
     // 未解问题队列（→ DlQuestionRow[]）
     listQuestions: (id: string) => ipcRenderer.invoke('dl:list-questions', { id }),
     // Agent 发送（research=研究概念/未解问题产出讲义草稿；tutor=追问答疑 → DlAgentSendResult）
-    agentSend: (p: { mode: 'research' | 'tutor'; spaceId: string; conceptId?: string | null; message: string; providerConfigId?: string; modelId?: string; focusQuestionId?: string }) =>
+    agentSend: (p: { mode: 'research' | 'tutor' | 'task'; spaceId: string; conceptId?: string | null; message: string; providerConfigId?: string; modelId?: string; focusQuestionId?: string }) =>
       ipcRenderer.invoke('dl:agent-send', p),
     // Agent 取消（该 scope 在途轮次）
-    agentCancel: (p: { mode: 'research' | 'tutor'; spaceId: string; conceptId?: string | null }) =>
+    agentCancel: (p: { mode: 'research' | 'tutor' | 'task'; spaceId: string; conceptId?: string | null }) =>
       ipcRenderer.invoke('dl:agent-cancel', p),
     // Agent 忙碌查询（该 scope 是否有在途轮次）
-    agentBusy: (p: { mode: 'research' | 'tutor'; spaceId: string; conceptId?: string | null }) =>
+    agentBusy: (p: { mode: 'research' | 'tutor' | 'task'; spaceId: string; conceptId?: string | null }) =>
       ipcRenderer.invoke('dl:agent-busy', p),
     // 周期推进配置（M2-C：dl:get-space-pace / dl:set-space-pace / dl:scheduler-state）
     getSpacePace: (id: string) => ipcRenderer.invoke('dl:get-space-pace', { id }),
