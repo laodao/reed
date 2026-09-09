@@ -180,12 +180,15 @@ export function useStoryRoom(projectId: string) {
     }
   }
 
-  /** 提问建议 chips：让主编提问 / 按阶段提示 */
-  const chips = computed<string[]>(() => {
-    const base = ['让主编提问', '把我们定下的整理一下']
-    if (state.value?.phase === 'story-core') base.unshift('先定主角的动机与代价')
-    return base
-  })
+  /** 动作建议 chips（原型：面向动作的短语，点击即发送） */
+  const chips = computed<string[]>(() => [
+    '加一个反派',
+    '设计一个新门派',
+    '查一下现有设定',
+    '把主角的动机改成复仇',
+    '生成大纲',
+    '我想写架空历史',
+  ])
 
   /** 按需提炼：按当前阶段推荐范围（或显式 scope） */
   function suggestScope(): DistillScope {

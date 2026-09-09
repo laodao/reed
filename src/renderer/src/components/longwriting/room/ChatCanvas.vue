@@ -1,10 +1,12 @@
 <template>
   <div ref="scrollEl" class="chat">
     <div class="chat-inner">
-      <div v-if="messages.length === 0 && !streamMessage && status !== 'loading'" class="welcome">
-        <h3>故事研讨室</h3>
-        <p>和主编多轮研讨：故事核 → 人物 → 故事线 → 大纲。讨论中的共识会沉淀在右侧账本，提炼成卡片后采纳入库。</p>
-      </div>
+      <!-- 主编开场白（原型形态：人设气泡而非标题屏） -->
+      <MessageBubble
+        v-if="messages.length === 0 && !streamMessage && status !== 'loading'"
+        role="assistant"
+        :content="welcomeText"
+      />
 
       <template v-for="(item, i) in timeline" :key="item.key">
         <!-- 阶段分隔卡 -->
@@ -66,7 +68,16 @@ const props = defineProps<{
   status: string
   busy: boolean
   cards: ArtifactCardData[]
+  projectName?: string
+  /** 溯源定位请求：{turn, n}——n 为递增序号驱动 watch */
+  locateTurn?: { turn: number; n: number } | null
 }>()
+
+const welcomeText = [
+  '我是你的**故事主编**。《' + (props.projectName || '未命名作品') + '》已就绪。',
+  '',
+  '没有步骤、没有表单——**一个对话聊到底**：加人物/门派/武功直接说；改设定说"把××的××改成××"；右侧**世界设定集**随时查看，点条目可在对话中追问。讨论中的共识会沉淀成**讨论成果**，随时「提炼入库」。',
+].join('\n')
 
 defineEmits<{
   (e: 'adopt', card: ArtifactCardData): void
@@ -127,6 +138,17 @@ function scrollToBottom(force = false): void {
 }
 
 watch(() => props.messages.length, () => scrollToBottom(true), { flush: 'post' })
+// 溯源定位：滚到该轮首条消息并闪烁高亮
+watch(() => props.locateTurn, (req) => {
+  if (!req) return
+  nextTick(() => {
+    const el = scrollEl.value?.querySelector(`[data-turn="${req.turn}"]`) as HTMLElement | null
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.classList.add('locate-flash')
+    setTimeout(() => el.classList.remove('locate-flash'), 2000)
+  })
+})
 watch(() => props.streamMessage?.content.length, () => scrollToBottom(false), { flush: 'post' })
 </script>
 
@@ -152,6 +174,8 @@ watch(() => props.streamMessage?.content.length, () => scrollToBottom(false), { 
 }
 .typing i:nth-child(2) { animation-delay: 0.15s; }
 .typing i:nth-child(3) { animation-delay: 0.3s; }
+.locate-flash { animation: locateFlash 1s ease 2; }
+@keyframes locateFlash { 0%, 100% { outline: 2px solid transparent; } 50% { outline: 2px solid var(--el-color-primary); border-radius: 8px; } }
 @keyframes bounce {
   0%, 80%, 100% { transform: translateY(0); opacity: 0.35; }
   40% { transform: translateY(-4px); opacity: 1; }

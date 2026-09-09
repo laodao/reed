@@ -21,7 +21,7 @@
           v-for="project in projects"
           :key="project.id"
           class="project-card"
-          @click="openProject(project)"
+          @click="project.type === 'story' ? openRoom(project) : openProject(project)"
         >
           <div class="project-icon">
             <el-icon size="32">
@@ -41,14 +41,11 @@
             </div>
           </div>
           <div class="project-actions">
-            <el-button
-              v-if="project.type === 'story'"
-              type="primary"
-              size="small"
-              @click.stop="openRoom(project)"
-            >
-              进入研讨室
-            </el-button>
+            <el-tooltip v-if="project.type === 'story'" content="章节写作工作台（原 7 阶段编辑器）" placement="top">
+              <el-button size="small" @click.stop="openProject(project)">
+                ✍ 写作台
+              </el-button>
+            </el-tooltip>
             <el-button text @click.stop="editProject(project)">
               <el-icon><Edit /></el-icon>
             </el-button>

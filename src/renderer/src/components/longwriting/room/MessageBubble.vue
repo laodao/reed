@@ -1,6 +1,6 @@
 <template>
   <div class="msg" :class="role">
-    <div v-if="role === 'assistant'" class="avatar">编</div>
+    <div v-if="role === 'assistant'" class="avatar">主</div>
     <div class="bubble">
       <div class="md" v-html="html"></div>
       <div v-if="streaming" class="caret"></div>

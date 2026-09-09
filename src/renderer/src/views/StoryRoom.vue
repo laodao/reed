@@ -26,11 +26,21 @@
         </template>
       </el-dropdown>
       <el-button v-if="canExportScript" size="small" type="warning" plain @click="exportToEp">转为短剧项目 ↗</el-button>
-      <PhaseBar
-        v-if="store.state.value"
-        :model-value="store.state.value.phase"
-        @select="(p) => store.setPhase(p)"
-      />
+      <el-dropdown v-if="store.state.value" trigger="click" @command="(p: string) => store.setPhase(p as never)">
+        <span class="tb-btn phase-btn">{{ phaseLabel(store.state.value.phase) }} ▾</span>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item
+              v-for="p in ROOM_PHASE_META"
+              :key="p.id"
+              :command="p.id"
+              :class="{ 'phase-on': p.id === store.state.value?.phase }"
+            >
+              {{ p.order }} · {{ p.label }}
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
       <span class="tb-btn accent" @click="goEditor">✍ 写作台 ↗</span>
     </div>
 
@@ -50,6 +60,8 @@
           :status="store.status.value"
           :busy="store.busy.value"
           :cards="pendingCards"
+          :project-name="projectName"
+          :locate-turn="locateReq"
           @adopt="onAdopt"
           @edit="openEdit"
           @regen="openFeedback"
@@ -64,7 +76,7 @@
               <textarea
                 v-model="input"
                 class="input-box"
-                placeholder="和主编聊：讨论故事方向、加人物、定冲突、生成大纲…（Enter 发送，Shift+Enter 换行）"
+                placeholder="随便聊：讨论故事、加人物/门派/武功、查询设定、修改已有内容、生成大纲…"
                 @keydown.enter.exact.prevent="doSend"
               ></textarea>
               <button v-if="store.busy.value" class="send-btn stop" @click="store.cancel()">⏹ 停止</button>
@@ -75,15 +87,18 @@
       </div>
 
       <div class="side">
-        <LedgerPanel
+        <BiblePanel
+          :project-id="projectId"
           :ledger="store.state.value?.ledger || []"
+          :refresh-key="bibleRefresh"
+          :cards="store.state.value?.pendingCards || []"
           @op="store.ledgerOp"
           @revise="openRevise"
           @ask="askAbout"
           @distill="onDistill"
+          @open-editor="goEditor"
+          @locate-turn="locateTurn"
         />
-        <div class="side-split"></div>
-        <BiblePanel :project-id="projectId" :refresh-key="bibleRefresh" @ask="askAbout" @open-editor="goEditor" />
       </div>
     </div>
 
@@ -126,8 +141,6 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import ChatCanvas from '@/components/longwriting/room/ChatCanvas.vue'
-import PhaseBar from '@/components/longwriting/room/PhaseBar.vue'
-import LedgerPanel from '@/components/longwriting/room/LedgerPanel.vue'
 import BiblePanel from '@/components/longwriting/room/BiblePanel.vue'
 import { useStoryRoom } from '@/composables/useStoryRoom'
 import type { ArtifactCard, ConsensusEntry } from '@shared/types/story-room.types'
@@ -148,12 +161,19 @@ const chips = computed(() => store.chips.value)
 
 const providerConfigs = ref<Array<Record<string, any>>>([])
 const modelSel = ref('')
-/** 非对话模型（嵌入/重排）不能当主编——按 id/name/features 过滤 */
+/** 非对话模型（嵌入/重排/多模态生成）不能当主编——按 id/name 过滤 */
 function isChatModel(m: { id?: string; name?: string; features?: string[] }): boolean {
   const blob = `${m.id || ''} ${m.name || ''}`.toLowerCase()
-  if (/embed|embedding|rerank|whisper|tts|asr|video|image|audio|flux|ocr|dall/.test(blob)) return false
+  if (/embed|rerank|whisper|tts|asr|video|image|audio|flux|ocr|dall|seedream|seedance|kling|wan\d|-wan/.test(blob)) return false
   if (Array.isArray(m.features) && m.features.length > 0 && !m.features.some((f) => /chat|text|completion|reason/i.test(f))) return false
   return true
+}
+
+/** 正向偏好：知名对话模型家族优先（provider 列表鱼龙混杂，负向过滤堵不完——seedream 教训） */
+const KNOWN_CHAT_RE = /deepseek|qwen\d|qwen-text|glm|gpt|claude|kimi|minimax|moonshot|doubao-pro|ernie|hunyuan|step-|llama/i
+
+function chatScore(m: { id?: string; name?: string }): number {
+  return KNOWN_CHAT_RE.test(`${m.id || ''} ${m.name || ''}`) ? 1 : 0
 }
 
 const modelOptions = computed(() => {
@@ -161,10 +181,13 @@ const modelOptions = computed(() => {
   for (const c of providerConfigs.value) {
     for (const m of Array.isArray(c.models) ? c.models : []) {
       if (!isChatModel(m)) continue
-      out.push({ value: `${c.id}|${m.id}`, label: `${c.name} / ${m.name || m.id}` })
+      out.push({ value: `${c.id}|${m.id}`, label: `${c.name} / ${m.name || m.id}`, _s: chatScore(m) } as never)
     }
   }
-  return out
+  // 对话模型家族排前，兜底永不落到文生图/文生视频
+  return (out as Array<{ value: string; label: string; _s?: number }>)
+    .sort((a, b) => (b._s ?? 0) - (a._s ?? 0))
+    .map(({ value, label }) => ({ value, label }))
 })
 const modelLabel = computed(() => {
   const hit = modelOptions.value.find((o) => o.value === modelSel.value)
@@ -244,14 +267,7 @@ function doSend(): void {
 }
 
 function applyChip(c: string): void {
-  if (c === '让主编提问') {
-    store.send('（让主编提问：请根据当前进度，抛出下一个该定的尖锐问题）')
-    return
-  }
-  if (c === '把我们定下的整理一下') {
-    onDistill()
-    return
-  }
+  // 原型交互：chips 是面向动作的讨论短语，点击即作为消息发送
   input.value = c
   doSend()
 }
@@ -372,6 +388,12 @@ async function onDistill(): Promise<void> {
 }
 
 const bibleRefresh = ref(0)
+/** 溯源跳转：{turn, n} 变化触发 ChatCanvas 滚动定位 */
+const locateReq = ref<{ turn: number; n: number } | null>(null)
+let locateSeq = 0
+function locateTurn(turn: number): void {
+  locateReq.value = { turn, n: ++locateSeq }
+}
 
 async function onAdopt(card: ArtifactCard): Promise<void> {
   const ok = await store.adoptCard(card)
@@ -468,6 +490,9 @@ html.dark .story-room { --sr-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rg
   font-size: 12.5px; color: var(--el-text-color-regular); border: 1px solid var(--el-border-color);
   padding: 5px 12px; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
 }
+.phase-btn { cursor: pointer; user-select: none; }
+.phase-btn:hover { border-color: var(--el-color-primary); color: var(--el-color-primary); }
+.phase-on { color: var(--el-color-primary); font-weight: 600; }
 .model-btn { cursor: pointer; user-select: none; }
 .model-btn:hover { border-color: var(--el-color-primary); color: var(--el-color-primary); }
 .model-on { color: var(--el-color-primary); font-weight: 600; }

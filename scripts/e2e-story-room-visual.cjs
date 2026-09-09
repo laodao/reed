@@ -83,13 +83,15 @@ const SHOT_DIR = path.resolve(__dirname, '../docs/screenshot')
     const beforeCount = before.data.messages.length
     await page.fill('.input-box', '我先定个基调：主角是被冤逐出的弟子，洗冤复仇为主线。你觉得这个故事最大的风险是什么？')
     await page.click('.send-btn')
-    // 等主编回复落库（done 事件 → 气泡渲染）
-    await page.waitForFunction(
-      (n) => document.querySelectorAll('.msg').length >= n + 2,
-      beforeCount, { timeout: 120_000 },
-    )
+    // 等主编回复真正落库（DOM 气泡可能是流中态；以 history 落库为准）
+    let after = null
+    for (let i = 0; i < 60; i++) {
+      await page.waitForTimeout(2000)
+      after = await call('roomHistory', pid)
+      const msgs = after.data.messages
+      if (msgs.length >= beforeCount + 2 && msgs[msgs.length - 1].role === 'assistant') break
+    }
     await page.waitForTimeout(1500)
-    const after = await call('roomHistory', pid)
     const lastMsg = after.data.messages[after.data.messages.length - 1]
     console.log('[visual] messages =', after.data.messages.length, '| 尾条角色 =', lastMsg.role,
       '| 尾条前 40 字 =', String(lastMsg.content).slice(0, 40).replace(/\n/g, ' '))
