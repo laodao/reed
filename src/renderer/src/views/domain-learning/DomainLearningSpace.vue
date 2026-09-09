@@ -258,6 +258,17 @@
               还没有追问记录——读完讲义后在这里提问。
             </div>
           </div>
+          <!-- task 会话执行进度（动作流水；M6-3 阶段二） -->
+          <div v-if="taskLog.length" class="task-log">
+            <span class="task-log-title">任务执行</span>
+            <span
+              v-for="(a, i) in taskLog"
+              :key="i"
+              class="task-action"
+              :class="a.status"
+              :title="a.message"
+            >{{ a.status === 'ok' ? '✓' : a.status === 'error' ? '✕' : '·' }} {{ taskActionText(a.tool) }}</span>
+          </div>
           <div class="qa-input">
             <el-input
               v-model="draft"
@@ -793,8 +804,9 @@ function selectConcept(c: DlConceptView): void {
   currentConceptId.value = c.id
   lastFeedback.value = ''
   lastFeedbackIsWarn.value = false
-  // 概念切换：清掉未落库的 task 临时气泡（答疑历史由 view.turns 按概念刷新）
+  // 概念切换：清掉未落库的 task 临时气泡与动作流水（答疑历史由 view.turns 按概念刷新）
   liveTurns.value = []
+  taskLog.value = []
   void store.fetchNotesOf(spaceId.value, c.id)
 }
 
@@ -955,12 +967,36 @@ async function researchConcept(): Promise<void> {
   }
 }
 
-// ---------- 交互：追问（tutor Agent 实时流式） ----------
+// ---------- 交互：追问（tutor Agent 实时流式 / task 任务会话，M6-3 同框自动判断） ----------
 const draft = ref('')
 const qaListRef = ref<HTMLElement | null>(null)
 const tutorStreaming = ref(false)
 
-/** 本轮追问临时消息（后端持久化前先展示；view 刷新后清空） */
+/** 本轮 task 会话已执行动作流水（action:done → 展示任务真实进度，M6-3 阶段二） */
+interface DlTaskActionLog {
+  tool: string
+  status: string
+  message: string
+}
+const taskLog = ref<DlTaskActionLog[]>([])
+
+/** dl 动作 → 简短中文进度（未知原样回显） */
+function taskActionText(tool: string): string {
+  switch (tool) {
+    case 'dl_save_concept':
+      return '已建概念'
+    case 'dl_save_relation':
+      return '已建关系'
+    case 'dl_save_card':
+      return '已存讲义'
+    case 'dl_answer_question':
+      return '已回答存档'
+    default:
+      return tool
+  }
+}
+
+/** 本轮追问临时消息（后端持久化前先展示；tutor view 刷新后清空；task 保留到切概念） */
 const liveTurns = ref<DlChatTurn[]>([])
 /** 展示顺序：历史(view.turns)在前，本轮进行中的追问在后 */
 const displayTurns = computed<DlChatTurn[]>(() => [
@@ -971,9 +1007,12 @@ const displayTurns = computed<DlChatTurn[]>(() => [
 async function ask(): Promise<void> {
   const q = draft.value.trim()
   if (!q || tutorStreaming.value) return
+  // 同框自动判断（M6-3 阶段一）：明确任务指令走 task 会话，答疑学习类走 tutor
+  const targetMode: 'tutor' | 'task' = routeDlIntent(q) === 'task' ? 'task' : 'tutor'
   const scopeConceptId = currentConceptId.value
   tutorStreaming.value = true
   lastFeedback.value = ''
+  taskLog.value = []
 
   // 本地先落 user + assistant 占位（assistant 文本随流式增量拼接）
   const userTurn: DlChatTurn = { role: 'user', text: q }
@@ -985,6 +1024,10 @@ async function ask(): Promise<void> {
   let unsubAgent = () => {}
   let unsubStream = () => {}
   unsubAgent = store.subscribeAgentEvent(spaceId.value, scopeConceptId, (ev: DlAgentUiEvent) => {
+    // task 会话：动作事件收集为执行流水（展示真实进度）
+    if (targetMode === 'task' && ev.type === 'action:done' && ev.summary) {
+      taskLog.value.push({ tool: ev.summary.tool, status: ev.summary.status, message: ev.summary.message })
+    }
     handleAgentEvent(ev, userTurn, assistantTurn, (eventId) => {
       unsubStream()
       unsubStream = store.subscribeStream(eventId, (se: DlGenerateUiEvent) => {
@@ -996,8 +1039,6 @@ async function ask(): Promise<void> {
     })
   })
 
-  // 同框自动判断（M6-3 阶段一）：明确任务指令走 task 会话，答疑学习类走 tutor
-  const targetMode: 'tutor' | 'task' = routeDlIntent(q) === 'task' ? 'task' : 'tutor'
   try {
     const result = await store.sendAgent({
       mode: targetMode,
@@ -1752,6 +1793,42 @@ watch(rightPane, (pane) => {
   line-height: 1.8;
   padding: 18px 6px;
   text-align: center;
+}
+
+// M6-3 阶段二：task 会话执行进度条（动作流水）
+.task-log {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-lighter);
+
+  .task-log-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--el-text-color-secondary);
+    margin-right: 2px;
+  }
+  .task-action {
+    font-size: 11.5px;
+    line-height: 1.6;
+    color: var(--el-text-color-secondary);
+    background: var(--el-bg-color);
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+    padding: 0 8px;
+    &.ok {
+      color: var(--el-color-success);
+    }
+    &.skipped {
+      color: var(--el-text-color-placeholder);
+    }
+    &.error {
+      color: var(--el-color-danger);
+    }
+  }
 }
 
 .qa-input {
