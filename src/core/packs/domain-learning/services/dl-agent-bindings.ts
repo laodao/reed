@@ -15,7 +15,7 @@
  */
 
 import type { AgentToolBinding } from '@shared/types/agent.types'
-import { DL_SYSTEM_PASSTHROUGH, type DlAgentMode } from './dl-agent.types'
+import { DL_SYSTEM_PASSTHROUGH, DL_TASK_WORKFLOW_TOOLS, type DlAgentMode } from './dl-agent.types'
 import { DL_TASK_PROGRESS_TOOL, dlAgentToolNames, dlToolMaxCalls } from './dl-agent-tools'
 
 /** 研究模式常备读工具（采集闭环；名称与 node-tool-adapter / agent-builtin-tools 注册名一致） */
@@ -48,7 +48,12 @@ export function buildDlBindings(o: DlBindingOptions): AgentToolBinding[] {
     o.mode === 'task'
       ? [...actionBase, { tool: DL_TASK_PROGRESS_TOOL, maxCalls: 12 }]
       : actionBase
-  const systemBindings = DL_SYSTEM_PASSTHROUGH.map((tool) => ({ tool }))
+  // task 会话额外透出平台工作流工具（run_workflow/get_workflow_run；registry 有才生效，其余模式不暴露）
+  const sysTools =
+    o.mode === 'task'
+      ? [...DL_SYSTEM_PASSTHROUGH, ...DL_TASK_WORKFLOW_TOOLS]
+      : [...DL_SYSTEM_PASSTHROUGH]
+  const systemBindings = sysTools.map((tool) => ({ tool }))
 
   const available = o.availableToolNames ? new Set(o.availableToolNames) : null
   const keep = (name: string): boolean => !available || available.has(name)

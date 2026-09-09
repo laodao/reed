@@ -14,7 +14,7 @@ import {
   buildDlBindings,
 } from '@core/packs/domain-learning/services/dl-agent-bindings'
 import { dlAgentToolNames, DL_TASK_PROGRESS_TOOL } from '@core/packs/domain-learning/services/dl-agent-tools'
-import { DL_SYSTEM_PASSTHROUGH } from '@core/packs/domain-learning/services/dl-agent.types'
+import { DL_SYSTEM_PASSTHROUGH, DL_TASK_WORKFLOW_TOOLS } from '@core/packs/domain-learning/services/dl-agent.types'
 import type { AgentToolBinding } from '@shared/types/agent.types'
 
 const ALL_TOOLS = [...dlAgentToolNames(), DL_TASK_PROGRESS_TOOL, ...DL_READ_TOOL_NAMES, DL_WEB_SEARCH_TOOL, ...DL_SYSTEM_PASSTHROUGH]
@@ -102,15 +102,18 @@ describe('dl-agent-bindings', () => {
     expect(names).toContain(DL_TASK_PROGRESS_TOOL)
     for (const t of DL_READ_TOOL_NAMES) expect(names).toContain(t)
     for (const t of DL_SYSTEM_PASSTHROUGH) expect(names).toContain(t)
+    // 工作流透出（run_workflow/get_workflow_run，仅 task）
+    for (const t of DL_TASK_WORKFLOW_TOOLS) expect(names).toContain(t)
     // 进度工具只读级：不带 maxCalls 缺省之外的写语义（有频控即可）
     const prog = bindings.find((b) => b.tool === DL_TASK_PROGRESS_TOOL)
     expect(prog?.maxCalls).toBeGreaterThan(0)
   })
 
-  it('research/tutor 不暴露 dl_task_progress（该工具仅 task 会话）', () => {
+  it('research/tutor 不暴露 dl_task_progress 与工作流透出（task 会话专属）', () => {
     for (const mode of ['research', 'tutor'] as const) {
       const names = namesOf(buildDlBindings({ mode, availableToolNames: ALL_TOOLS, webSearchAvailable: false }))
       expect(names).not.toContain(DL_TASK_PROGRESS_TOOL)
+      for (const t of DL_TASK_WORKFLOW_TOOLS) expect(names).not.toContain(t)
     }
   })
 })

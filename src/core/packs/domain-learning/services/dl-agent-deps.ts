@@ -166,7 +166,8 @@ export function dlTaskSystemPrompt(): string {
    dl_save_concept / dl_save_relation / dl_save_card（讲义每条论断须有真实证据来源，无证据不落卡）；
 4. 技能与工作流：任务契合平台技能时，先 discover_capabilities 查看，再 invoke_skill 执行
    （如 learning-space-bootstrap 领域起步研究、learning-concept-explainer 概念讲义、learning-lesson-planner
-   讲义规划、learning-domain-map 领域骨架等）；
+   讲义规划、learning-domain-map 领域骨架等）；若平台已有适用的工作流模板/定义，也可用 run_workflow
+   触发（get_workflow_run 查运行状态）；
 5. 长任务：任务较大时先给出简短的执行计划（拆成 2~5 个子步骤），并**用 dl_task_progress 工具结构化上报**：
    执行计划时调用 dl_task_progress action=plan（total=步数、各步分别 start 时带 label），开始某一步用
    action=start(step,label)，完成该步用 action=done(step,label)——用户界面会据此显示子任务清单与完成状态；

@@ -39,6 +39,8 @@ export const DL_TOOL_INVOKE_SKILL = 'invoke_skill'
 
 /** 系统透出工具（规划/技能；裸名，宿主白名单直接引用） */
 export const DL_SYSTEM_PASSTHROUGH = [DL_TOOL_DISCOVER, DL_TOOL_INVOKE_SKILL] as const
+/** task 会话额外透出的平台工作流工具（仅 task bind；registry 由 system-agent 注册，存在才 bind） */
+export const DL_TASK_WORKFLOW_TOOLS = ['run_workflow', 'get_workflow_run'] as const
 export const DL_TOOL_SAVE_CONCEPT = 'dl_save_concept'
 export const DL_TOOL_SAVE_RELATION = 'dl_save_relation'
 export const DL_TOOL_SAVE_CARD = 'dl_save_card'
