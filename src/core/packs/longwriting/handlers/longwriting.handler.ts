@@ -9,8 +9,6 @@ import * as fs from 'fs'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { LongWritingService } from '../services/longwriting.service'
 import { LongWritingAIService } from '@core/platform/services/longwriting-ai.service'
-import { AgentWorkflowService } from '@core/platform/services/longwriting/agent/agent-workflow.service'
-import { LwAgentHarnessService, isLwHarnessEnabled } from '../agent-harness/lw-agent-harness.service'
 import { MaterialProcessorService } from '../services/material-processor.service'
 import { markdownToDocx } from '@core/utils/markdown-to-docx'
 import {
@@ -322,10 +320,6 @@ const CHANNELS = {
   EXTRACT_CHAPTER_EVENTS: 'longwriting:extractChapterEvents',
 
   // 对话式工作流 Agent
-  AGENT_SEND: 'longwriting:agent:send',
-  AGENT_HISTORY: 'longwriting:agent:history',
-  AGENT_CANCEL: 'longwriting:agent:cancel',
-  AGENT_STATE: 'longwriting:agent:state'
 }
 
 /**
@@ -3312,50 +3306,6 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
         modelId
       )
       return result
-    } catch (error: any) {
-      return { success: false, error: error.message }
-    }
-  })
-
-  // ==================== 对话式工作流 Agent ====================
-
-  ipcBridge.handle(CHANNELS.AGENT_SEND, async (_event, projectId: string, message: string, providerConfigId?: string, modelId?: string) => {
-    try {
-      // 30 号 M6：harness 直驱（LoopRunner + 动作工具化），LW_AGENT_HARNESS='0' 回退旧协议
-      const result = isLwHarnessEnabled()
-        ? await LwAgentHarnessService.getInstance().sendMessage(projectId, message, { providerConfigId, modelId })
-        : await AgentWorkflowService.getInstance().sendMessage(projectId, message, { providerConfigId, modelId })
-      return { success: true, data: result }
-    } catch (error: any) {
-      console.error('[LongWritingHandler] agent:send 失败:', error)
-      return { success: false, error: error.message }
-    }
-  })
-
-  ipcBridge.handle(CHANNELS.AGENT_HISTORY, async (_event, projectId: string) => {
-    try {
-      return { success: true, data: await AgentWorkflowService.getInstance().getHistory(projectId) }
-    } catch (error: any) {
-      return { success: false, error: error.message }
-    }
-  })
-
-  ipcBridge.handle(CHANNELS.AGENT_CANCEL, async (_event, projectId: string) => {
-    try {
-      if (isLwHarnessEnabled()) {
-        LwAgentHarnessService.getInstance().cancel(projectId)
-      } else {
-        AgentWorkflowService.getInstance().cancel(projectId)
-      }
-      return { success: true }
-    } catch (error: any) {
-      return { success: false, error: error.message }
-    }
-  })
-
-  ipcBridge.handle(CHANNELS.AGENT_STATE, async (_event, projectId: string) => {
-    try {
-      return { success: true, data: await AgentWorkflowService.getInstance().getState(projectId) }
     } catch (error: any) {
       return { success: false, error: error.message }
     }

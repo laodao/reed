@@ -541,14 +541,6 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'longwriting.generateCancel': { channel: 'longwriting:generate:cancel' },
   'longwriting.extractChapterEvents': { channel: 'longwriting:extractChapterEvents' },
   // 对话式工作流 Agent
-  'longwriting.agentSend': { channel: 'longwriting:agent:send' },
-  'longwriting.agentHistory': { channel: 'longwriting:agent:history' },
-  'longwriting.agentCancel': { channel: 'longwriting:agent:cancel' },
-  'longwriting.agentState': { channel: 'longwriting:agent:state' },
-  // longwriting.onAgentEvent(projectId, cb) — 后端 emit(`longwriting:agent:${projectId}`, ...)
-  'longwriting.onAgentEvent': {
-    eventChannel: (projectId) => `longwriting:agent:${projectId}`,
-  },
   // ==================== 故事研讨室（v2.1） ====================
   'longwriting.roomSend': { channel: 'longwriting:room:send' },
   'longwriting.roomHistory': { channel: 'longwriting:room:history' },

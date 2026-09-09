@@ -30,6 +30,10 @@ export class LwCustomEntityEntity {
   @Column({ name: 'fields', type: 'text', nullable: true })
   fields!: string | null
 
+  /** 父实体 id（层级归属：世界→大陆→国家→城市，P2） */
+  @Column({ name: 'parent_id', type: 'varchar', nullable: true })
+  parentId!: string | null
+
   /** JSON: {type:'discussion'|'manual'|'extract', cardId?, turns?} */
   @Column({ name: 'origin', type: 'text', nullable: true })
   origin!: string | null

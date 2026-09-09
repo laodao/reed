@@ -123,6 +123,7 @@ export async function createBibleTables(ds: DataSource): Promise<void> {
       kind_key varchar NOT NULL,
       name varchar NOT NULL,
       fields text NULL,
+      parent_id varchar NULL,
       origin text NULL,
       created_at bigint NULL,
       updated_at bigint NULL
@@ -148,6 +149,13 @@ export async function createBibleTables(ds: DataSource): Promise<void> {
   `)
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_lw_foreshadows_project ON lw_foreshadows (project_id)`)
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_lw_foreshadows_status ON lw_foreshadows (project_id, status)`)
+
+  // 2.6 lw_custom_entities.parent_id（P2 层级；幂等加列）
+  try {
+    await ds.query(`ALTER TABLE lw_custom_entities ADD COLUMN parent_id varchar NULL`)
+  } catch (e: any) {
+    if (!/duplicate|already exists/i.test(String(e?.message || ''))) throw e
+  }
 
   // 3. lw_story_characters.aliases（JSON 数组；幂等加列——PRAGMA/information_schema 经
   // TypeORM 的返回形态不稳定，直接 ALTER 并容忍 duplicate（实测教训））

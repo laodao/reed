@@ -102,12 +102,18 @@
         <el-form-item label="名称" required>
           <el-input v-model="createName" placeholder="名称" />
         </el-form-item>
+        <el-form-item v-if="(createKind?.entries.length || 0) > 0" label="上级">
+          <el-select v-model="createParentId" style="width: 100%" clearable placeholder="无（顶层）">
+            <el-option v-for="e in createKind?.entries || []" :key="e.id" :value="e.id" :label="e.name" />
+          </el-select>
+        </el-form-item>
         <el-form-item v-for="f in (createKind?.fieldsSchema || []).filter((x) => x.key !== 'name')" :key="f.key" :label="f.label">
           <el-select v-if="f.type === 'select'" v-model="createFields[f.key]" style="width: 100%">
             <el-option v-for="o in f.options || []" :key="o" :value="o" :label="o" />
           </el-select>
           <el-input-number v-else-if="f.type === 'number'" v-model="createFields[f.key] as never" style="width: 100%" />
           <el-input v-else-if="f.type === 'textarea'" v-model="createFields[f.key]" type="textarea" :rows="3" />
+          <el-input v-else-if="f.type === 'tags'" v-model="createFields[f.key]" placeholder="多个用、分隔" />
           <el-input v-else v-model="createFields[f.key]" />
         </el-form-item>
         <div class="form-tip">entity 类（概要/人物等）请走对话或写作台，此处仅覆盖自定义分类</div>
@@ -246,6 +252,7 @@ const createKindKey = ref('')
 const createKind = computed(() => groups.value.find((g) => g.kindKey === createKindKey.value))
 const createName = ref('')
 const createFields = ref<Record<string, string>>({})
+const createParentId = ref('')
 
 function onAddCommand(cmd: string): void {
   if (cmd.startsWith('kind:')) {
@@ -271,10 +278,12 @@ async function submitCreate(): Promise<void> {
   for (const f of createKind.value?.fieldsSchema || []) {
     if (f.key === 'name') continue
     const v = createFields.value[f.key]
-    if (v !== undefined && v !== '') fields[f.key] = f.type === 'number' ? Number(v) || 0 : v
+    if (v === undefined || v === '') continue
+    fields[f.key] = f.type === 'number' ? Number(v) || 0 : f.type === 'tags' ? v.split(/[,，、]/).map((x) => x.trim()).filter(Boolean) : v
   }
   const res = await window.electronAPI.longwriting.bibleCustomCreate(
     props.projectId, createKindKey.value, createName.value.trim(), fields, { type: 'manual' },
+    createParentId.value || null,
   )
   if (res.success) {
     createOpen.value = false

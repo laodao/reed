@@ -112,16 +112,16 @@ export function registerStoryRoomHandlers(): void {
     }
   })
 
-  ipcBridge.handle('longwriting:bible:custom:create', async (_event, projectId: string, kindKey: string, name: string, fields: Record<string, unknown> | null, origin?: Record<string, unknown>) => {
+  ipcBridge.handle('longwriting:bible:custom:create', async (_event, projectId: string, kindKey: string, name: string, fields: Record<string, unknown> | null, origin?: Record<string, unknown>, parentId?: string | null) => {
     try {
       const { BibleQueryService } = await import('@core/platform/services/longwriting/bible.service')
-      return { success: true, data: await BibleQueryService.getInstance().customCreate(projectId, kindKey, name, fields, origin as never) }
+      return { success: true, data: await BibleQueryService.getInstance().customCreate(projectId, kindKey, name, fields, origin as never, parentId) }
     } catch (error: any) {
       return { success: false, error: error.message }
     }
   })
 
-  ipcBridge.handle('longwriting:bible:custom:update', async (_event, projectId: string, id: string, patch: { name?: string; fields?: Record<string, unknown> | null }) => {
+  ipcBridge.handle('longwriting:bible:custom:update', async (_event, projectId: string, id: string, patch: { name?: string; fields?: Record<string, unknown> | null; parentId?: string | null }) => {
     try {
       const { BibleQueryService } = await import('@core/platform/services/longwriting/bible.service')
       return { success: true, data: await BibleQueryService.getInstance().customUpdate(projectId, id, patch) }

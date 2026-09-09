@@ -13,6 +13,7 @@ export interface CustomEntityDto {
   projectId: string
   kindKey: string
   name: string
+  parentId: string | null
   fields: Record<string, unknown> | null
   origin: { type: 'discussion' | 'manual' | 'extract'; cardId?: string; turns?: number[] } | null
   createdAt: number
@@ -39,6 +40,7 @@ export class LwCustomEntityRepository extends BaseRepository<LwCustomEntityEntit
       projectId: e.projectId,
       kindKey: e.kindKey,
       name: e.name,
+      parentId: e.parentId,
       fields: this.parse<Record<string, unknown>>(e.fields),
       origin: this.parse<CustomEntityDto['origin']>(e.origin),
       createdAt: e.createdAt,
@@ -62,13 +64,14 @@ export class LwCustomEntityRepository extends BaseRepository<LwCustomEntityEntit
     return this.toDtoList(rows)
   }
 
-  async createRow(projectId: string, kindKey: string, name: string, fields: Record<string, unknown> | null, origin?: CustomEntityDto['origin']): Promise<CustomEntityDto> {
+  async createRow(projectId: string, kindKey: string, name: string, fields: Record<string, unknown> | null, origin?: CustomEntityDto['origin'], parentId?: string | null): Promise<CustomEntityDto> {
     const id = `bce_${Date.now()}_${randomUUID().slice(0, 6)}`
     await this.scoped.save(this.repo.create({
       id,
       projectId,
       kindKey,
       name,
+      parentId: parentId ?? null,
       fields: fields ? JSON.stringify(fields) : null,
       origin: origin ? JSON.stringify(origin) : null,
     } as never) as never)
@@ -76,10 +79,11 @@ export class LwCustomEntityRepository extends BaseRepository<LwCustomEntityEntit
     return this.toDto(row!)
   }
 
-  async updateRow(id: string, patch: { name?: string; fields?: Record<string, unknown> | null }): Promise<CustomEntityDto | null> {
+  async updateRow(id: string, patch: { name?: string; fields?: Record<string, unknown> | null; parentId?: string | null }): Promise<CustomEntityDto | null> {
     const row = await this.scoped.findOne({ where: { id } } as any)
     if (!row) return null
     if (patch.name !== undefined) row.name = patch.name
+    if (patch.parentId !== undefined) row.parentId = patch.parentId
     if (patch.fields !== undefined) row.fields = patch.fields ? JSON.stringify(patch.fields) : null
     row.updatedAt = Date.now()
     await this.scoped.save(row)

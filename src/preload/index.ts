@@ -2029,22 +2029,6 @@ const electronAPI = {
     ) =>
       ipcRenderer.invoke('longwriting:extractChapterEvents', projectId, outlineId, chapterContent, chapterNumber, providerConfigId, modelId),
 
-    // 对话式工作流 Agent
-    agentSend: (projectId: string, message: string, providerConfigId?: string, modelId?: string) =>
-      ipcRenderer.invoke('longwriting:agent:send', projectId, message, providerConfigId, modelId),
-    agentHistory: (projectId: string) =>
-      ipcRenderer.invoke('longwriting:agent:history', projectId),
-    agentCancel: (projectId: string) =>
-      ipcRenderer.invoke('longwriting:agent:cancel', projectId),
-    agentState: (projectId: string) =>
-      ipcRenderer.invoke('longwriting:agent:state', projectId),
-    onAgentEvent: (projectId: string, callback: (event: any, data: any) => void) => {
-      const channel = `longwriting:agent:${projectId}`
-      const listener = (_event: any, data: any) => callback(data)
-      ipcRenderer.on(channel, listener)
-      return () => ipcRenderer.removeListener(channel, listener)
-    },
-
     // ==================== 故事研讨室（v2.1） ====================
     roomSend: (projectId: string, message: string, opts?: { providerConfigId?: string; modelId?: string }) =>
       ipcRenderer.invoke('longwriting:room:send', projectId, message, opts),
@@ -2074,9 +2058,9 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:bible:list', projectId),
     bibleDetail: (projectId: string, kindKey: string, id: string) =>
       ipcRenderer.invoke('longwriting:bible:detail', projectId, kindKey, id),
-    bibleCustomCreate: (projectId: string, kindKey: string, name: string, fields: Record<string, unknown> | null, origin?: Record<string, unknown>) =>
-      ipcRenderer.invoke('longwriting:bible:custom:create', projectId, kindKey, name, fields, origin),
-    bibleCustomUpdate: (projectId: string, id: string, patch: { name?: string; fields?: Record<string, unknown> | null }) =>
+    bibleCustomCreate: (projectId: string, kindKey: string, name: string, fields: Record<string, unknown> | null, origin?: Record<string, unknown>, parentId?: string | null) =>
+      ipcRenderer.invoke('longwriting:bible:custom:create', projectId, kindKey, name, fields, origin, parentId),
+    bibleCustomUpdate: (projectId: string, id: string, patch: { name?: string; fields?: Record<string, unknown> | null; parentId?: string | null }) =>
       ipcRenderer.invoke('longwriting:bible:custom:update', projectId, id, patch),
     bibleCustomDelete: (projectId: string, id: string) =>
       ipcRenderer.invoke('longwriting:bible:custom:delete', projectId, id),

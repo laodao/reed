@@ -75,16 +75,26 @@ export class BibleQueryService {
     for (const kind of kinds) {
       if (kind.storage === 'custom') {
         const rows = (await m.lwCustomEntities?.getByProjectAndKind(projectId, kind.key)) || []
+        // 层级：父前子后 + 缩进副标题（P2）
+        const byId = new Map(rows.map((r: CustomEntityDto) => [r.id, r]))
+        const ordered: Array<CustomEntityDto & { _depth?: number }> = []
+        const pushTree = (list: CustomEntityDto[], depth: number) => {
+          for (const r of list) {
+            ordered.push({ ...r, _depth: depth })
+            pushTree(rows.filter((x: CustomEntityDto) => x.parentId === r.id), depth + 1)
+          }
+        }
+        pushTree(rows.filter((r: CustomEntityDto) => !r.parentId || !byId.has(r.parentId)), 0)
         groups.push({
           kindKey: kind.key,
           label: kind.label,
           icon: kind.icon,
           storage: 'custom',
           fieldsSchema: kind.fieldsSchema,
-          entries: rows.map((r: CustomEntityDto) => ({
+          entries: ordered.map((r) => ({
             id: r.id,
             name: r.name,
-            sub: this.firstStr(r.fields, kind),
+            sub: (r._depth && r._depth > 0 ? `${'　'.repeat(r._depth)}└ ` : '') + this.firstStr(r.fields, kind),
             fields: r.fields || {},
             origin: r.origin ?? undefined,
           })),
