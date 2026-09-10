@@ -25,8 +25,9 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     resolve: {
       alias: {
-        // 事件通道收敛（shared/domain-learning-event 唯一实现）后，preload 首次出现
-        // @shared 的**运行时值导入**（此前仅 import type 会被编译期擦除，无需别名）
+        // preload 也会 import @shared 的纯常量/纯函数（如事件通道名）——缺别名时 Rollup 解析失败、App 起不来。
+        // 事件通道收敛（shared/domain-learning-event 唯一实现）后，preload 首次出现 @shared 的
+        // **运行时值导入**（此前仅 import type 会被编译期擦除，无需别名）
         '@shared': resolve(__dirname, 'src/shared')
       }
     },
@@ -35,12 +36,6 @@ export default defineConfig({
         input: {
           index: resolve(__dirname, 'src/preload/index.ts')
         }
-      }
-    },
-    // preload 也会 import @shared 的纯常量/纯函数（如事件通道名）——缺别名时 Rollup 解析失败、App 起不来
-    resolve: {
-      alias: {
-        '@shared': resolve(__dirname, 'src/shared')
       }
     }
   },
