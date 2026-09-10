@@ -19,25 +19,25 @@
 
 ### 2.1 配置面
 - 新增运行级设置字段：**`maxTotalToolCalls?: number`**（可选；**0/缺省 = 不启用总预算**，完全向后兼容）。
-  - 解析：`clamp(s.maxTotalToolCalls, 0, WORKFLOW_LIMITS.maxTotalToolCalls)`，新增 `WORKFLOW_LIMITS.maxTotalToolCalls = 10000`（硬上限兜底）。
-  - 注入面：创建/编辑一次**内置模板 JSON 的 `settings` 字段**（如 `"settings": {"maxTotalToolCalls": 120}`）；教程与编辑器运行设置面板若存在则同步有该输入（实现时确认 Editor 的运行设置 UI，无则先支持模板 settings 与 run API setting）。
-- 语义：**只统计 agent-loop 的工具调用**（研究工作负载核心）；llm-chat 等节点不消耗。每次工具调用尝试（含失败/重试/审批后放行）记 1。
+  - 解析：**独立 normalize（non-clamp）**——`normalizeTotalBudget(v)`：v 为有限正数 → `Math.min(floor(v), WORKFLOW_LIMITS.maxTotalToolCalls)`；否则（undefined/null/NaN/负数/0）→ **0（不启用）**。新增 `WORKFLOW_LIMITS.maxTotalToolCalls = 10000`（硬上限兜底）。
+  - 注入面：创建/编辑一次**内置模板 JSON 的 `settings` 字段**（如 `"settings": {"maxTotalToolCalls": 120}`）；编辑器运行设置面板若已存在则同步有该输入（实现时确认 Editor 的运行设置 UI，无则先支持模板 settings 与 run API setting）。
+- 语义：**只统计 agent-loop 的工具调用**（研究工作负载核心）；llm-chat 等节点不消耗。**计数口径 = 模型发起的一次工具调用请求**（无论该次调用成功、失败还是返回结果），与调用结果无关；引擎级失败重试是整段节点重跑（重新计时），不会重复计同一次请求；**人工审批被拒的调用不计**（未真正执行）。
 
 ### 2.2 运行级共享计数器（引擎）
-- `RunExecution` 新增只读字段：`readonly toolBudget: { max: number; used: number }`，启动时由 `exec.settings.maxTotalToolCalls` 初始化（`used=0`）。
-- `WorkflowNodeContext` 增加可选句柄 `toolBudget?: { max: number; used: number; remaining: number; tryConsume(): boolean }`，由 `buildContext` 注入（无总预算时为 undefined，节点零感知）。
+- `RunExecution` 新增只读字段：`readonly toolBudget: { max: number; used: number }`，**恒建对象**（max=0 即不启用），启动时由 `exec.settings.maxTotalToolCalls` 初始化（`used=0`）。
+- `WorkflowNodeContext` 增加可选句柄 `toolBudget?: { max: number; used: number; readonly remaining: number; tryConsume(): boolean }`，由 `buildContext` 注入（max=0 时**不注入**（undefined），节点零感知）。**`remaining` 为只读（max-used），供提示词读取；不得直接改 used**。
 - 计数规则：
   1. agent-loop 每轮节点执行时，若 `ctx.toolBudget` 存在且 `tryConsume()` 为 false → 工具调用包装层返回 `LIMIT_EXCEEDED`（复用节点级同款文案，注明"**运行级**总工具调用预算已用尽，请直接给出最终答案"）。
-  2. 节点级 `maxToolCalls` 语义保留为**单轮/单节点护栏**（两者取先到者：先扣运行级剩余，若节点级也设了则再按节点级扣——简化为"调用前先过了运行级 tryConsume，再走节点级包装"）。
-  3. 累计跨轮：预算对象活在 `exec` 上，until 循环每轮 r1 重执行仍共享同一 `used`——第 N 轮可用量 = min(节点级, 运行级剩余)。
-  4. 挂起/恢复（同进程）：`exec.toolBudget` 不变，续驱继续从同一计数器扣（对齐现有 `initialUsed` 语义，二者叠加正确）。
+  2. 节点级 `maxToolCalls` 语义保留为**单轮/单节点护栏**：**先查节点级（设了且用尽→报节点级），再查运行级（设了且用尽→报运行级）**；两者都没透支才 `used++`（各自 +1）并执行——两边互不重复计数。
+  3. 累计跨轮：预算对象活在 `exec` 上，until 循环每轮 r1 重执行仍共享同一 `used`——第 N 轮可用量 = min(节点级剩余, 运行级剩余)。
+  4. 挂起/恢复（同进程）：`exec.toolBudget` 不变，续驱继续从同一计数器扣（对齐现有 `initialUsed` 语义，二者叠加正确）；挂起等待期间无调用、不计。
 
 ### 2.3 剩余预算对模型可见（可选，建议默认开）
 - agent-loop 驱动循环在拼 task/systemPrompt 时追加一行：「⚠️ 运行级总工具调用预算剩余 N 次（本轮还受节点级上限约束），请按剩余量分配检索/抓取策略。」——让模型"前紧后松"地按需分配，而不是每轮无差别用满。
 
 ### 2.4 崩溃回放/快照
-- 序列化：engine 快照对象增加 `toolBudget: { max, used }`（若 max>0）；`journal-replay.ts` 快照恢复路径重建 exec.toolBudget。
-- 说明：崩溃-重启以最近快照为准（used 可能与真实消费有几秒误差，可接受，预算为粗粒度护栏）。
+- 序列化：engine 快照对象增加 `toolBudget: { max, used }`（**始终序列化，即使 max=0**）；`journal-replay.ts` 快照恢复路径重建 exec.toolBudget。
+- 说明：快照为准，used 可能与真实消费有几秒误差，可接受（预算为粗粒度护栏）；**journal 事件路径（无快照）崩溃恢复后，预算只对恢复后的剩余轮生效**（前面轮次已消费的计数以最近快照为准，误差有限、不阻断）。
 
 ### 2.5 校验
 - `resolveExecutionSettings` 层负责 clamp；负数/NaN/超上限 → 回落 0（不启用）或上限。不校验图（运行级字段与图节点无关）。
