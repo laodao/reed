@@ -12,6 +12,8 @@
  * 压缩守恒（12 号 R6，借 codex）：
  * - 全部真实用户消息按独立预算（缺省 20K tokens）从新到旧原样保留、永不折叠；
  *   折叠/摘要只作用于工具结果与 assistant 消息；摘要置尾
+ * - 轮次上下文块（turn.context，39 号 P0-1）不算用户消息（不占预算）；折叠时
+ *   最新一块保底保留（当轮记忆/快照不可丢）
  * - 两级水位：软限 = contextWindow×90%（自动压缩触发线）+ 硬顶 = 95%（压缩后
  *   有效窗口上界，为 system/工具 schema/输出预留）；外部配置触发值被夹到 ≤90%
  * - 压缩后本地估算（JSON UTF-8 字节/4）回填已见 token 计数，防"压完立即再触发"抖动
@@ -31,6 +33,8 @@ import {
   defaultEstimateTokens,
   pruneToolResults,
 } from '../runtime/vendor/compaction'
+import { isTurnContextMessage } from './turn-context'
+import { stableStringify } from '../runtime/approval'
 
 const logger = createLogger('AgentContext')
 
@@ -58,7 +62,7 @@ export const INTERRUPTED_SENTINEL = '[interrupted — 结果未记录，先核�
  * 稳定分类：注入内容靠稳定前缀标记识别（跨持久化存活；ModelMessage 无元数据字段，
  * 非标字段有 provider 序列化风险——按标记识别是持久化安全的 kind 机制）。
  */
-export type MessageKind = 'user' | 'assistant' | 'tool' | 'system' | 'compaction.summary'
+export type MessageKind = 'user' | 'assistant' | 'tool' | 'system' | 'compaction.summary' | 'turn.context'
 
 export function classifyMessage(m: ModelMessage): MessageKind {
   // 双端同检（批 6 review P2-2：单前缀可被用户粘贴伪造——双端同时命中才认定摘要标记）
@@ -70,7 +74,9 @@ export function classifyMessage(m: ModelMessage): MessageKind {
   ) {
     return 'compaction.summary'
   }
-  return m.role
+  // 轮次上下文块（39 号 P0-1）：不算用户消息（不占守恒预算），可折叠
+  if (isTurnContextMessage(m)) return 'turn.context'
+  return m.role as MessageKind
 }
 
 /** 会话滚动摘要的稳定前缀形态（压缩产物；摘要置尾的守恒结构） */
@@ -208,6 +214,9 @@ export class ContextManager implements LoopContextPort {
     const pruned = pruneToolResults(input.messages, PROTECTED_TAIL_TOKENS, MIN_PRUNE_SAVINGS_TOKENS, this.estimate)
     let working = pruned.tokensSaved > 0 ? pruned.messages : input.messages
     let summary: string | undefined
+    // 硬顶降级要用的保底位引用（作用域跨 Phase 2 与硬顶段——review 结构注释同源）
+    let keptLastUser: ModelMessage | null = null
+    let keptLastBlock: ModelMessage | null = null
 
     // Phase 2：守恒摘要——目标是把总量压回软限下（剪枝不足即摘要，目标导向而非
     // "剪够门槛就停"——批 6 review P2-6 表述对齐）。门槛依据与触发同源：
@@ -234,7 +243,17 @@ export class ContextManager implements LoopContextPort {
             ? Math.max(this.userBudget - this.estimate([working[lastUserIdx]]), 0)
             : this.userBudget
         const preserved = preserveUserMessages(working, budget, this.estimate, lastUserIdx)
-        working = [...preserved, summaryMessage(summary)]
+        // 最新轮次上下文块保底（39 号 P0-1）：当轮记忆/快照随折叠丢失会让模型
+        // 失去当前状态——与"当轮用户消息无条件保留"同一保底语义
+        for (let i = working.length - 1; i >= 0; i--) {
+          if (classifyMessage(working[i]) === 'turn.context') {
+            keptLastBlock = working[i]
+            break
+          }
+        }
+        // preserveUserMessages 把保底位用户消息追加在 preserved 尾部
+        keptLastUser = lastUserIdx >= 0 && preserved.length > 0 ? preserved[preserved.length - 1] : null
+        working = [...preserved, ...(keptLastBlock ? [keptLastBlock] : []), summaryMessage(summary)]
         emit?.({ type: 'compaction', phase: 'summary' })
       }
     }
@@ -244,8 +263,11 @@ export class ContextManager implements LoopContextPort {
     // 硬顶降级（review P1-4：硬顶此前只在日志出现无行为）：摘要后仍超硬顶 →
     // 收缩用户保留集到仅当轮输入 + 摘要（保留语义让位于窗口可行性），一次性降级
     if (summary !== undefined && tokensAfter > this.hardTokens && working.length > 2) {
-      const lastUser = working[working.length - 2] // 结构 [...preserved, lastUser, summary]
-      working = [lastUser, summaryMessage(summary)]
+      working = [
+        ...(keptLastUser ? [keptLastUser] : []),
+        ...(keptLastBlock ? [keptLastBlock] : []),
+        summaryMessage(summary),
+      ]
       tokensAfter = this.estimate(working)
       logger.warn(`[context] 压缩后仍超硬顶（${tokensAfter} > ${this.hardTokens}），用户保留集收缩到仅当轮输入`)
     }
@@ -282,6 +304,90 @@ export class ContextManager implements LoopContextPort {
   get thresholds(): { soft: number; hard: number; window: number } {
     return { soft: this.softTokens, hard: this.hardTokens, window: this.windowTokens }
   }
+}
+
+// ==================== 同签名大结果折叠（39 号 P1-1） ====================
+
+/** 折叠门槛：被取代的旧结果估算 tokens 低于此值不动（小结果留在上下文无害） */
+export const SUPERSEDE_COLLAPSE_MIN_TOKENS = 1_500
+/** 折叠占位文本（模型可据此知道最新版本在后方） */
+export const SUPERSEDED_PLACEHOLDER =
+  '[superseded — 相同入参的调用已重新执行，最新结果见后方；如需本版全文可用 get_tool_result 按 toolCallId 回查]'
+
+/**
+ * 失败结果判定：loop 回填形 {ok:false,...} 经 ai@6 json output 挂在 output.value.ok；
+ * 直接挂 output.ok 的形态（测试/自定义）同样识别。无 ok 标记 = 视为成功。
+ */
+function isFailedToolResult(part: { output?: { ok?: boolean; value?: unknown } }): boolean {
+  const out = part.output
+  if (!out) return false
+  if (typeof out.ok === 'boolean') return !out.ok
+  const value = out.value as { ok?: boolean } | undefined
+  if (value && typeof value === 'object' && typeof value.ok === 'boolean') return !value.ok
+  return false
+}
+
+/**
+ * 工具返工折叠（用户场景④）：同一工具+同入参（signature 稳定序列化）重复执行时，
+ * 只保留最新一次成功结果的全文，先前的「大」结果占位化——失败尝试本身很小且是
+ * 重试依据，不受影响。纯函数：返回原数组引用 = 无折叠；改动只发生在旧 tool
+ * 消息的 output 值（toolCallId 不动，配对/流水完整性不破坏）。
+ */
+export function collapseSupersededToolResults(
+  messages: ModelMessage[],
+  opts?: { estimateTokens?: (messages: ModelMessage[]) => number; minTokens?: number },
+): ModelMessage[] {
+  const estimate = opts?.estimateTokens ?? defaultEstimateTokens
+  const minTokens = opts?.minTokens ?? SUPERSEDE_COLLAPSE_MIN_TOKENS
+
+  // toolCallId → (toolName, args 签名)（入参在 assistant 的 tool-call part 上）
+  const signatures = new Map<string, string>()
+  for (const m of messages) {
+    if (m.role !== 'assistant' || !Array.isArray(m.content)) continue
+    for (const part of m.content as Array<{ type?: string; toolCallId?: string; toolName?: string; input?: unknown }>) {
+      if (part.type === 'tool-call' && part.toolCallId) {
+        signatures.set(part.toolCallId, `${part.toolName ?? ''}:${stableStringify(part.input)}`)
+      }
+    }
+  }
+
+  // 时间序扫描工具结果：每签名只记最新成功位；遇到更新成功位时把旧位列入折叠
+  const latestOk = new Map<string, { index: number; partIdx: number }>()
+  const collapses: Array<{ index: number; partIdx: number }> = []
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i]
+    if (m.role !== 'tool' || !Array.isArray(m.content)) continue
+    for (let p = 0; p < m.content.length; p++) {
+      const part = m.content[p] as { type?: string; toolCallId?: string; output?: { ok?: boolean; value?: unknown } }
+      if (part.type !== 'tool-result' || !part.toolCallId) continue
+      const signature = signatures.get(part.toolCallId)
+      if (!signature) continue
+      if (isFailedToolResult(part)) continue // 失败结果不折叠（重试需要错误上下文），也不取代旧成功位
+      const prev = latestOk.get(signature)
+      if (prev) collapses.push(prev)
+      latestOk.set(signature, { index: i, partIdx: p })
+    }
+  }
+  if (collapses.length === 0) return messages
+
+  const result = [...messages]
+  let changed = false
+  for (const c of collapses) {
+    const source = result[c.index]
+    const content = source.content as Array<Record<string, unknown>>
+    const part = content[c.partIdx]
+    if (!part || estimate([{ role: 'tool', content: [part] } as ModelMessage]) < minTokens) continue
+    // 深一层拷贝（42号 review P1）：stepMessages 与 pendingAppended 共享同一消息对象，
+    // 原地改写会让「尚未入流水的原文」被占位符覆盖——原始流水必须记到截断/折叠前的原文
+    const newContent = content.map((p, i) =>
+      i === c.partIdx
+        ? { ...p, output: { type: 'text', value: SUPERSEDED_PLACEHOLDER } }
+        : p,
+    )
+    result[c.index] = { ...source, content: newContent } as ModelMessage
+    changed = true
+  }
+  return changed ? result : messages
 }
 
 // ==================== 内部工具 ====================

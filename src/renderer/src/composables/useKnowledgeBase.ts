@@ -3,7 +3,7 @@
  * @module composables/useKnowledgeBase
  */
 
-import { ref, computed, onMounted, onUnmounted, toRaw } from 'vue'
+import { ref, computed, onMounted, toRaw } from 'vue'
 import { useKnowledgeBaseStore } from '../stores/knowledge-base'
 import { storeToRefs } from 'pinia'
 import type {
@@ -53,6 +53,8 @@ function getFileTypeIcon(fileType: string): string {
     txt: 'document-text',
     md: 'document-text',
     epub: 'book',
+    mobi: 'book',
+    azw3: 'book',
     xlsx: 'grid',
     xls: 'grid'
   }

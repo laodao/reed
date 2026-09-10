@@ -223,9 +223,9 @@ async function needReview(conceptId: string): Promise<void> {
 
 async function saveKb(): Promise<void> {
   const saved = await store.saveKbOf(props.spaceId, kbIdDraft.value || null)
-  if (saved !== null) {
+  if (saved.ok) {
     kbNote.value = kbIdDraft.value ? '已绑定该知识库' : '已解除绑定'
-    kbIdDraft.value = saved
+    kbIdDraft.value = saved.kbId ?? ''
   } else {
     kbNote.value = '保存失败（知识库可能无效）'
   }

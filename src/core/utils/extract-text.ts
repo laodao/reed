@@ -4,11 +4,12 @@
  * @description 从 knowledge-base.service 抽出的纯函数版本，供"剧本批量导入"等
  *              非知识库场景复用。逻辑与原实现一致；**补全了原 getFileType 漏掉的 pdf/epub**。
  *
- * 支持：txt / md / pdf / epub / docx / xlsx / xls / webpage（webpage 按 txt 处理）。
+ * 支持：txt / md / pdf / epub / mobi / azw3 / docx / xlsx / xls / webpage（webpage 按 txt 处理）。
  * 中文文本自动识别 UTF-8(BOM) / GBK / GB2312 / Big5 等编码。
  */
 
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
 import type { FileType } from '@shared/types/knowledge-base.types'
 
@@ -23,12 +24,26 @@ export function inferFileType(fileName: string): FileType | null {
     md: 'md',
     pdf: 'pdf',
     epub: 'epub',
+    mobi: 'mobi',
+    azw3: 'azw3',
     docx: 'docx',
     doc: 'doc',
     xlsx: 'xlsx',
     xls: 'xls',
   }
   return map[ext] || null
+}
+
+/**
+ * HTML → 纯文本（去 style/script/标签，合并空白）。epub/mobi 章节共用。
+ */
+function stripHtmlToText(html: string): string {
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 /**
@@ -61,18 +76,15 @@ export async function extractTextFromFile(
       let text = ''
       for (const section of epub.sections) {
         if (section.html) {
-          // 简单提取文本，去除 HTML 标签
-          const plainText = section.html
-            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-            .replace(/<[^>]+>/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim()
-          text += plainText + '\n\n'
+          text += stripHtmlToText(section.html) + '\n\n'
         }
       }
       return text
     }
+
+    case 'mobi':
+    case 'azw3':
+      return extractMobiLikeText(filePath)
 
     case 'docx': {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -94,6 +106,53 @@ export async function extractTextFromFile(
 
     default:
       throw new Error(`不支持的文件类型: ${fileType}`)
+  }
+}
+
+/**
+ * 提取 MOBI / AZW3 电子书纯文本。
+ *
+ * 扩展名不可信（.mobi 可能是 KF8 混合格式，.azw3 也可能被改名），
+ * 且两个入口交叉解析会吐出乱码而非报错，所以按格式而非扩展名分派：
+ * 先按 KF8（AZW3 / hybrid）解析，老 MOBI（PalmDOC，无 KF8 boundary）会在此抛错，
+ * 再回退到老 MOBI 入口。
+ *
+ * @lingo-reader/mobi-parser 是 ESM-only 包（其 require 导出产物已损坏），
+ * 只能动态 import；Node 端它会把章节内图片/CSS 写到 resourceSaveDir，
+ * 这里传临时目录并在结束时清理。loadChapter 返回的 HTML 经 stripHtmlToText
+ * 提取正文后图片路径等残留不会进入文本。
+ */
+async function extractMobiLikeText(filePath: string): Promise<string> {
+  const { initKf8File, initMobiFile } = await import('@lingo-reader/mobi-parser')
+  const saveDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'kb-ebook-'))
+  try {
+    type EbookChapter = { id: string; html?: string }
+    type Ebook = {
+      getSpine(): Array<{ id: string }>
+      loadChapter(id: string): EbookChapter | undefined
+      destroy(): void
+    }
+    let book: Ebook
+    try {
+      book = (await initKf8File(filePath, saveDir)) as Ebook
+    } catch {
+      book = (await initMobiFile(filePath, saveDir)) as Ebook
+    }
+
+    try {
+      let text = ''
+      for (const chapter of book.getSpine()) {
+        const loaded = book.loadChapter(chapter.id)
+        if (loaded?.html) {
+          text += stripHtmlToText(loaded.html) + '\n\n'
+        }
+      }
+      return text.trim()
+    } finally {
+      book.destroy()
+    }
+  } finally {
+    await fs.promises.rm(saveDir, { recursive: true, force: true })
   }
 }
 
@@ -183,8 +242,10 @@ export function decodeTextFile(buffer: Buffer): string {
  */
 export function hasGarbledChars(text: string): boolean {
   const garbledPatterns = [
-    /�/, // Unicode 替换字符
-    /[\x00-\x08\x0b\x0c\x0e-\x1f]/, // 控制字符（换行、制表符除外）
+    /\uFFFD/, // Unicode 替换字符
+    // 控制字符（换行、制表符除外）——检测电子书解析产物的乱码，控制字符类是判据本身
+    // eslint-disable-next-line no-control-regex
+    /[\x00-\x08\x0b\x0c\x0e-\x1f]/,
   ]
 
   let nonAsciiCount = 0

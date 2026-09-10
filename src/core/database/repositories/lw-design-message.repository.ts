@@ -22,6 +22,7 @@ export class LwDesignMessageRepository extends BaseRepository<
 
   protected toDto(e: LwDesignMessageEntity): DesignMessage {
     return {
+      id: e.id,
       role: e.role as 'user' | 'assistant',
       content: e.content,
       timestamp: e.timestamp,
@@ -86,6 +87,7 @@ export class LwDesignMessageRepository extends BaseRepository<
       throw e
     }
     return {
+      id,
       role: message.role as 'user' | 'assistant',
       content: message.content,
       timestamp,

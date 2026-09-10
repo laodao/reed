@@ -133,6 +133,7 @@ const props = defineProps<{
   initialSkipped?: string[]
 }>()
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const emit = defineEmits<{
   (e: 'enterAdvanced'): void
 }>()
@@ -195,10 +196,14 @@ async function checkStep(key: string): Promise<boolean> {
 /** 状态持久化：stage + progress + wizard_state（写入 lw_projects） */
 async function persistState(state: { stage: string; skipped: string[]; progress: number }): Promise<void> {
   try {
+    // 读-合并-写：wizardState 全量替换语义下必须保留其他子键（如研讨室 room），
+    // 否则向导一写就把账本/卡片/轮号整体清掉（评审 P1-3）
+    const proj = await window.electronAPI.longwriting.getProject(props.projectId)
+    const base = proj.success && proj.data ? (proj.data.wizardState || {}) : {}
     await window.electronAPI.longwriting.updateProject(props.projectId, {
       stage: state.stage as any,
       progress: state.progress,
-      wizardState: { skipped: state.skipped },
+      wizardState: { ...base, skipped: state.skipped },
     })
   } catch (e) {
     console.error('[WizardContainer] 持久化向导状态失败:', e)

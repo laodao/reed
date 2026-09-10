@@ -753,6 +753,7 @@ const electronAPI = {
     cancelTask: (rootId: string) => ipcRenderer.invoke('at:cancel', { rootId }),
     listMemoryPending: () => ipcRenderer.invoke('am:list-pending'),
     listMemoryActive: () => ipcRenderer.invoke('am:list-active'),
+    listMemoryArchived: () => ipcRenderer.invoke('am:list-archived'),
     approveMemory: (id: string) => ipcRenderer.invoke('am:approve', { id }),
     archiveMemory: (id: string) => ipcRenderer.invoke('am:archive', { id }),
     addManualMemory: (p: { kind: string; title: string; content: string; bizModule?: string; projectId?: string }) => ipcRenderer.invoke('am:add-manual', p),
@@ -1325,7 +1326,7 @@ const electronAPI = {
     // 人工确认关系（→ { ok }）
     confirmRelation: (p: { id: string; sourceId: string; targetId: string; relationType: string; evidence?: string }) =>
       ipcRenderer.invoke('dl:confirm-relation', p),
-    // 未解问题队列（→ DlQuestionRow[]）
+    // 未解问题队列（→ DlQuestionView[]，DTO 化剔 userId/Date）
     listQuestions: (id: string) => ipcRenderer.invoke('dl:list-questions', { id }),
     // Agent 发送（research=研究概念/未解问题产出讲义草稿；tutor=追问答疑 → DlAgentSendResult）
     agentSend: (p: { mode: 'research' | 'tutor' | 'task'; spaceId: string; conceptId?: string | null; message: string; providerConfigId?: string; modelId?: string; focusQuestionId?: string }) =>
@@ -1832,6 +1833,11 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:generateOutlineComment', eventId, projectId, providerConfigId, modelId),
     generateChapter: (eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string, style?: string, extraPrompt?: string) =>
       ipcRenderer.invoke('longwriting:generateChapter', eventId, projectId, outlineId, targetWords, providerConfigId, modelId, style, extraPrompt),
+    // 章节工作台（38 号）：上下文预览 + 按勾选上下文生成
+    chapterContextPreview: (projectId: string, outlineId: string, opts?: { targetWords?: number; style?: string; extraPrompt?: string }) =>
+      ipcRenderer.invoke('longwriting:chapterContextPreview', projectId, outlineId, opts),
+    generateChapterWithContext: (eventId: string, projectId: string, outlineId: string, params: { targetWords?: number; style?: string; extraPrompt?: string; enabledItemIds?: string[]; providerConfigId?: string; modelId?: string }) =>
+      ipcRenderer.invoke('longwriting:generateChapterWithContext', eventId, projectId, outlineId, params),
     generateSection: (eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generateSection', eventId, projectId, outlineId, targetWords, providerConfigId, modelId),
     generateChapterPrewrite: (eventId: string, projectId: string, outlineId: string, providerConfigId?: string, modelId?: string) =>
@@ -2127,18 +2133,48 @@ const electronAPI = {
     ) =>
       ipcRenderer.invoke('longwriting:extractChapterEvents', projectId, outlineId, chapterContent, chapterNumber, providerConfigId, modelId),
 
-    // 对话式工作流 Agent
-    agentSend: (projectId: string, message: string, providerConfigId?: string, modelId?: string) =>
-      ipcRenderer.invoke('longwriting:agent:send', projectId, message, providerConfigId, modelId),
-    agentHistory: (projectId: string) =>
-      ipcRenderer.invoke('longwriting:agent:history', projectId),
-    agentCancel: (projectId: string) =>
-      ipcRenderer.invoke('longwriting:agent:cancel', projectId),
-    agentState: (projectId: string) =>
-      ipcRenderer.invoke('longwriting:agent:state', projectId),
-    onAgentEvent: (projectId: string, callback: (event: any, data: any) => void) => {
-      const channel = `longwriting:agent:${projectId}`
-      const listener = (_event: any, data: any) => callback(data)
+    // ==================== 故事研讨室（v2.1） ====================
+    roomSend: (projectId: string, message: string, opts?: { providerConfigId?: string; modelId?: string }) =>
+      ipcRenderer.invoke('longwriting:room:send', projectId, message, opts),
+    roomHistory: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:room:history', projectId),
+    roomState: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:room:state', projectId),
+    roomCancel: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:room:cancel', projectId),
+    roomLedgerUpdate: (projectId: string, op: unknown) =>
+      ipcRenderer.invoke('longwriting:room:ledger:update', projectId, op),
+    roomSetPhase: (projectId: string, phase: string) =>
+      ipcRenderer.invoke('longwriting:room:setPhase', projectId, phase),
+    roomDistill: (projectId: string, scope: string, opts?: { providerConfigId?: string; modelId?: string }) =>
+      ipcRenderer.invoke('longwriting:room:distill', projectId, scope, opts),
+    roomAdoptCard: (projectId: string, cardId: string, patch?: Record<string, unknown>) =>
+      ipcRenderer.invoke('longwriting:room:adoptCard', projectId, cardId, patch),
+    roomRegenerateCard: (projectId: string, cardId: string, feedback: string, opts?: { providerConfigId?: string; modelId?: string }) =>
+      ipcRenderer.invoke('longwriting:room:regenerateCard', projectId, cardId, feedback, opts),
+    roomIgnoreCard: (projectId: string, cardId: string) =>
+      ipcRenderer.invoke('longwriting:room:ignoreCard', projectId, cardId),
+    roomSetTarget: (projectId: string, target: string) =>
+      ipcRenderer.invoke('longwriting:room:setTarget', projectId, target),
+
+    // ==================== 故事圣经统一读模型（P0） ====================
+    bibleList: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:bible:list', projectId),
+    bibleDetail: (projectId: string, kindKey: string, id: string) =>
+      ipcRenderer.invoke('longwriting:bible:detail', projectId, kindKey, id),
+    bibleCustomCreate: (projectId: string, kindKey: string, name: string, fields: Record<string, unknown> | null, origin?: Record<string, unknown>, parentId?: string | null) =>
+      ipcRenderer.invoke('longwriting:bible:custom:create', projectId, kindKey, name, fields, origin, parentId),
+    bibleCustomUpdate: (projectId: string, id: string, patch: { name?: string; fields?: Record<string, unknown> | null; parentId?: string | null }) =>
+      ipcRenderer.invoke('longwriting:bible:custom:update', projectId, id, patch),
+    bibleCustomDelete: (projectId: string, id: string) =>
+      ipcRenderer.invoke('longwriting:bible:custom:delete', projectId, id),
+    bibleProgression: (projectId: string, kindKey: string, id: string) =>
+      ipcRenderer.invoke('longwriting:bible:progression', projectId, kindKey, id),
+    bibleForeshadowStatus: (projectId: string, id: string, status: string, payoffChapter?: number | null) =>
+      ipcRenderer.invoke('longwriting:bible:foreshadow:status', projectId, id, status, payoffChapter),
+    onRoomEvent: (projectId: string, callback: (event: unknown) => void) => {
+      const channel = `longwriting:room:${projectId}`
+      const listener = (_event: any, data: unknown) => callback(data)
       ipcRenderer.on(channel, listener)
       return () => ipcRenderer.removeListener(channel, listener)
     }

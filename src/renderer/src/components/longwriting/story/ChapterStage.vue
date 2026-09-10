@@ -32,7 +32,7 @@
             class="outline-tree"
             @node-click="handleNodeClick"
           >
-            <template #default="{ node, data }">
+            <template #default="{ data }">
               <div class="tree-node" :class="{ active: data.id === activeOutlineId }">
                 <span class="node-name">{{ data.name }}</span>
                 <span class="node-status" :class="data.status">{{ getStatusName(data.status) }}</span>
@@ -186,6 +186,18 @@
                 <el-empty v-else description="暂无内容，请在左侧选择具体的节进行编辑" />
               </div>
             </div>
+
+            <!-- 章节工作台：上下文预览面板（38 号，原型 v2） -->
+            <ChapterContextPanel
+              v-if="isEditableNode && activeOutlineId"
+              :project-id="projectId"
+              :outline-id="activeOutlineId"
+              :generating="!!generatingMap[activeOutlineId]"
+              :target-words="generateForm.targetWords"
+              :style="generateForm.style || undefined"
+              :extra-prompt="generateForm.extraPrompt || undefined"
+              @generate="handleGenerateWithContext"
+            />
           </div>
         </div>
       </div>
@@ -454,15 +466,13 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, inject, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { MagicStick, Clock, DocumentChecked, View, RefreshLeft, Close, Fold, Download, Loading, InfoFilled, Collection } from '@element-plus/icons-vue'
-import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
-import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import MarkdownEditor from '@/components/common/MarkdownEditor.vue'
+import ChapterContextPanel from './ChapterContextPanel.vue'
 import { ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import { marked } from 'marked'
-import type { StoryOutline, StoryChapter, ChapterVersion, OutlineStatus, OutlineNodeType, StoryCharacter, ChapterPrewrite } from '../../../../shared/types/longwriting.types'
+import type { StoryOutline, ChapterVersion, OutlineStatus, OutlineNodeType, StoryCharacter, ChapterPrewrite } from '../../../../shared/types/longwriting.types'
 import type { ElTree } from 'element-plus'
 
 const props = defineProps<{
@@ -473,7 +483,6 @@ const emit = defineEmits<{
   'update:progress': [progress: number]
 }>()
 
-const router = useRouter()
 
 // 从父组件获取选中的模型（是一个 ComputedRef）
 const selectedModel = inject<ReturnType<typeof computed<{ providerId: string; modelId: string } | null>>>('selectedModel', computed(() => null))
@@ -495,7 +504,6 @@ const chapterContentMap = ref<Record<string, string>>({})
 const chapterIdMap = ref<Record<string, string>>({})
 
 // 章节卡片DOM引用
-const chapterRefs = ref<Record<string, HTMLElement | null>>({})
 const chaptersPanelRef = ref<HTMLElement | null>(null)
 
 // 版本列表
@@ -720,12 +728,6 @@ function buildOutlineTree(nodes: StoryOutline[]): any[] {
   return rootNodes
 }
 
-// 设置章节卡片DOM引用
-function setChapterRef(id: string, el: any) {
-  if (el) {
-    chapterRefs.value[id] = el as HTMLElement
-  }
-}
 
 // 折叠所有节点
 function collapseAll() {
@@ -790,10 +792,6 @@ function getChapterWordCount(outlineId: string): number {
   return chapterContentMap.value[outlineId]?.length || 0
 }
 
-// 更新字数统计
-function updateWordCount(outlineId: string) {
-  // 字数是实时计算的，不需要额外处理
-}
 
 // 获取编辑器占位符
 function getEditorPlaceholder(outline: StoryOutline): string {
@@ -825,17 +823,6 @@ async function loadAllChapters() {
   }
 }
 
-// 加载单个章节内容
-async function loadChapter(outlineId: string) {
-  const result = await window.electronAPI.longwriting.getChapter(outlineId)
-  if (result.success && result.data) {
-    chapterIdMap.value[outlineId] = result.data.id
-    chapterContentMap.value[outlineId] = result.data.content || ''
-  } else {
-    chapterIdMap.value[outlineId] = ''
-    chapterContentMap.value[outlineId] = ''
-  }
-}
 
 // 加载版本历史
 async function loadVersions(chapterId: string) {
@@ -1370,6 +1357,68 @@ async function executeGeneration() {
   }
 
   currentOutlineForAction.value = null
+}
+
+// 章节工作台（38 号）：按勾选上下文生成——流式/自动保存与 confirmGenerate 同链路
+async function handleGenerateWithContext(payload: { enabledItemIds: string[]; itemTextOverrides: Record<string, string> }) {
+  const outlineId = activeOutlineId.value
+  if (!outlineId || !selectedModel.value) {
+    ElMessage.warning('请先选择章节与写作模型')
+    return
+  }
+  if (generatingMap.value[outlineId]) {
+    ElMessage.warning('该章节正在生成中')
+    return
+  }
+
+  generatingMap.value[outlineId] = true
+  chapterContentMap.value[outlineId] = ''
+
+  const eventId = `chapter-${outlineId}-${Date.now()}`
+  generatingEventIdMap.value[outlineId] = eventId
+
+  const unsubscribe = window.electronAPI.longwriting.onGenerateEvent(
+    eventId,
+    (event: { type: string; content?: string; error?: string }) => {
+      if (event.type === 'content' && event.content) {
+        chapterContentMap.value[outlineId] += event.content
+      } else if (event.type === 'done') {
+        generatingMap.value[outlineId] = false
+        generatingEventIdMap.value[outlineId] = null
+        if (autoSave.value && chapterContentMap.value[outlineId]) {
+          handleChapterGenerated(outlineId)
+        }
+        ElMessage.success('章节内容已生成（按勾选上下文）')
+        unsubscribe()
+      } else if (event.type === 'error') {
+        generatingMap.value[outlineId] = false
+        generatingEventIdMap.value[outlineId] = null
+        ElMessage.error(event.error || '生成失败')
+        unsubscribe()
+      }
+    }
+  )
+
+  const result = await window.electronAPI.longwriting.generateChapterWithContext(
+    eventId,
+    props.projectId,
+    outlineId,
+    {
+      targetWords: generateForm.value.targetWords,
+      style: generateForm.value.style || undefined,
+      extraPrompt: generateForm.value.extraPrompt || undefined,
+      enabledItemIds: payload.enabledItemIds,
+      providerConfigId: selectedModel.value.providerId,
+      modelId: selectedModel.value.modelId,
+    }
+  )
+
+  if (!result.success) {
+    generatingMap.value[outlineId] = false
+    generatingEventIdMap.value[outlineId] = null
+    unsubscribe()
+    ElMessage.error(result.error || '生成失败')
+  }
 }
 
 // 取消生成

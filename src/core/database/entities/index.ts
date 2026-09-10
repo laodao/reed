@@ -125,6 +125,9 @@ export {
 } from './platform-event.entities'
 // Agent 公共运行时（23 号 §6）：会话消息（SessionStore 落点）
 export { AgentSessionEntity } from './agent-session.entity'
+// Agent 原始流水（39 号 P0-2）：append-only 会话记录 + 工具产物归档
+export { AgentSessionEventEntity } from './agent-session-event.entity'
+export { AgentToolArtifactEntity } from './agent-tool-artifact.entity'
 // Agent 观测面（25 号 M2 批1）：轨迹落库 / 工具调用审计
 export { AgentTrajectoryEntity } from './agent-trajectory.entity'
 export { AgentToolCallEntity } from './agent-tool-call.entity'
@@ -134,6 +137,9 @@ export { AgentTaskEntity } from './agent-task.entity'
 export { AgentMemoryEntryEntity } from './agent-memory-entry.entity'
 // 通知中心：用户已读状态独立落表（用户要求后端持久化，不用 localStorage）
 export { UserNotificationReadEntity } from './user-notification-read.entity'
+export { LwBibleKindEntity } from './lw-bible-kind.entity'
+export { LwCustomEntityEntity } from './lw-custom-entity.entity'
+export { LwForeshadowEntity } from './lw-foreshadow.entity'
 // 领域共学空间（tasks/2026-09-07-domain-learning-space/design-v3.md §9）
 export { DlProjectEntity } from './domain-learning/dl-project.entity'
 export { DlConceptEntity } from './domain-learning/dl-concept.entity'

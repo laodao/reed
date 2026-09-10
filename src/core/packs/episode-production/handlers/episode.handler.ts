@@ -192,7 +192,7 @@ async function handleAIGenerateText(
 
 /**
  * 选择剧本文件 → 提取文本 → 按章节拆分 → 返回剧集预览。
- * 桌面端用原生 dialog 选文件；支持 txt/md/docx/pdf/epub。
+ * 桌面端用原生 dialog 选文件；支持 txt/md/docx/pdf/epub/mobi/azw3。
  * 无章节结构时返回明确提示，要求用户用「第X章」等标记分隔每集。
  */
 async function handleAnalyzeScriptFile(event: any): Promise<IpcResponse> {
@@ -206,7 +206,7 @@ async function handleAnalyzeScriptFile(event: any): Promise<IpcResponse> {
 
     const result = await dialog.showOpenDialog(window, {
       title: '选择剧本文件',
-      filters: [{ name: '剧本文件', extensions: ['txt', 'md', 'docx', 'pdf', 'epub'] }],
+      filters: [{ name: '剧本文件', extensions: ['txt', 'md', 'docx', 'pdf', 'epub', 'mobi', 'azw3'] }],
       properties: ['openFile'],
     })
     if (result.canceled || result.filePaths.length === 0) {

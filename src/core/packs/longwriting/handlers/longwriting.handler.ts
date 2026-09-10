@@ -9,8 +9,6 @@ import * as fs from 'fs'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { LongWritingService } from '../services/longwriting.service'
 import { LongWritingAIService } from '@core/platform/services/longwriting-ai.service'
-import { AgentWorkflowService } from '@core/platform/services/longwriting/agent/agent-workflow.service'
-import { LwAgentHarnessService, isLwHarnessEnabled } from '../agent-harness/lw-agent-harness.service'
 import { MaterialProcessorService } from '../services/material-processor.service'
 import { markdownToDocx } from '@core/utils/markdown-to-docx'
 import {
@@ -168,6 +166,8 @@ const CHANNELS = {
   GENERATE_OUTLINE_STORY: 'longwriting:generateOutlineStory',
   GENERATE_OUTLINE_COMMENT: 'longwriting:generateOutlineComment',
   GENERATE_CHAPTER: 'longwriting:generateChapter',
+  GENERATE_CHAPTER_WITH_CONTEXT: 'longwriting:generateChapterWithContext',
+  CHAPTER_CONTEXT_PREVIEW: 'longwriting:chapterContextPreview',
   GENERATE_CHAPTER_PREWRITE: 'longwriting:generateChapterPrewrite',
   GENERATE_SECTION: 'longwriting:generateSection',
 
@@ -320,10 +320,6 @@ const CHANNELS = {
   EXTRACT_CHAPTER_EVENTS: 'longwriting:extractChapterEvents',
 
   // 对话式工作流 Agent
-  AGENT_SEND: 'longwriting:agent:send',
-  AGENT_HISTORY: 'longwriting:agent:history',
-  AGENT_CANCEL: 'longwriting:agent:cancel',
-  AGENT_STATE: 'longwriting:agent:state'
 }
 
 /**
@@ -1415,6 +1411,45 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     async (event, eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string, style?: string, extraPrompt?: string) => {
       try {
         const result = await aiService.generateChapter(eventId, projectId, outlineId, targetWords, providerConfigId, modelId, style, extraPrompt)
+        return { ...result, eventId }
+      } catch (error: any) {
+        return { success: false, error: error.message }
+      }
+    }
+  )
+
+  // 章节工作台（38 号）：上下文预览（结构化条目 + token 预算）
+  ipcBridge.handle(
+    CHANNELS.CHAPTER_CONTEXT_PREVIEW,
+    async (_event, projectId: string, outlineId: string, opts?: { targetWords?: number; style?: string; extraPrompt?: string }) => {
+      try {
+        const result = await aiService.getChapterContextItems(projectId, outlineId, opts ?? {})
+        return { ...result, error: 'error' in result && result.error ? result.error : undefined }
+      } catch (error: any) {
+        return { success: false, error: error.message }
+      }
+    }
+  )
+
+  // 章节工作台（38 号）：按勾选上下文生成（流式与 GENERATE_CHAPTER 同链路）
+  ipcBridge.handle(
+    CHANNELS.GENERATE_CHAPTER_WITH_CONTEXT,
+    async (
+      _event,
+      eventId: string,
+      projectId: string,
+      outlineId: string,
+      params: {
+        targetWords?: number
+        style?: string
+        extraPrompt?: string
+        enabledItemIds?: string[]
+        providerConfigId?: string
+        modelId?: string
+      }
+    ) => {
+      try {
+        const result = await aiService.generateChapterWithContext(eventId, projectId, outlineId, params)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -3271,50 +3306,6 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
         modelId
       )
       return result
-    } catch (error: any) {
-      return { success: false, error: error.message }
-    }
-  })
-
-  // ==================== 对话式工作流 Agent ====================
-
-  ipcBridge.handle(CHANNELS.AGENT_SEND, async (_event, projectId: string, message: string, providerConfigId?: string, modelId?: string) => {
-    try {
-      // 30 号 M6：harness 直驱（LoopRunner + 动作工具化），LW_AGENT_HARNESS='0' 回退旧协议
-      const result = isLwHarnessEnabled()
-        ? await LwAgentHarnessService.getInstance().sendMessage(projectId, message, { providerConfigId, modelId })
-        : await AgentWorkflowService.getInstance().sendMessage(projectId, message, { providerConfigId, modelId })
-      return { success: true, data: result }
-    } catch (error: any) {
-      console.error('[LongWritingHandler] agent:send 失败:', error)
-      return { success: false, error: error.message }
-    }
-  })
-
-  ipcBridge.handle(CHANNELS.AGENT_HISTORY, async (_event, projectId: string) => {
-    try {
-      return { success: true, data: await AgentWorkflowService.getInstance().getHistory(projectId) }
-    } catch (error: any) {
-      return { success: false, error: error.message }
-    }
-  })
-
-  ipcBridge.handle(CHANNELS.AGENT_CANCEL, async (_event, projectId: string) => {
-    try {
-      if (isLwHarnessEnabled()) {
-        LwAgentHarnessService.getInstance().cancel(projectId)
-      } else {
-        AgentWorkflowService.getInstance().cancel(projectId)
-      }
-      return { success: true }
-    } catch (error: any) {
-      return { success: false, error: error.message }
-    }
-  })
-
-  ipcBridge.handle(CHANNELS.AGENT_STATE, async (_event, projectId: string) => {
-    try {
-      return { success: true, data: await AgentWorkflowService.getInstance().getState(projectId) }
     } catch (error: any) {
       return { success: false, error: error.message }
     }

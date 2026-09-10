@@ -1,0 +1,137 @@
+# 38 · 长文写作「章节工作台」详细设计与实施计划
+
+> 依据：`prototype/longwriting-context-panel.html`（章节工作台原型 v2 · 可交互）
+> 分支：feat/agent-harness ｜ 前置：HostKit/知识飞轮/图谱 provider（36/37 号）
+
+## 1. 原型解读（设计意图）
+
+原型的核心不是改版式，而是给章节生成加**上下文的可视化与可控化**：
+
+- 三栏布局：大纲树 ｜ 章节编辑器 ｜ **上下文预览面板（新增核心）**；
+- 生成前，右栏展示「本次生成将注入的全部上下文」：故事概要 / 世界观 / 涉及角色 /
+  涉及地点 / 大纲节点 / 预写提纲 / 图谱事实 / 前文章节——逐条带勾选框；
+- **token 预算条**：估算总量 vs 模型窗口（如 DeepSeek-Chat · 32K），超限前预警；
+- 「⚡ 预览」看组装后的最终提示词；「↺ 重置选择」恢复默认；「✦ 生成章节（含上下文）」
+  按勾选项生成；支持「编辑上下文项」对单项文本微调。
+
+价值：章节质量差的第一原因往往是上下文缺失/污染——把组装从"黑盒"变成"可审可改"。
+
+## 2. 现状与差距
+
+| 能力 | 现状 | 原型要求 |
+|---|---|---|
+| 上下文组装 | `longwriting-ai.service.ts` generateChapter 内联拼 prompt（概要/世界观/角色含实体状态/地点/大纲/预写/图谱/前文），**不可见不可控** | 结构化清单 + 可勾选 + 可预览 |
+| token 预算 | 无展示 | 预算条 + 超限预警 |
+| 章节生成 | `lw:generateChapter` 流式（eventId → longwriting:generate 通道） | 保留；新增按勾选上下文生成的平行入口 |
+| 三栏布局 | ChapterStage 已有大纲树 + 章节卡（两栏） | 增右栏面板 |
+
+## 3. 详细设计
+
+### 3.1 后端：ChapterContextAssembler（单一事实源）
+
+新模块 `src/core/platform/services/longwriting/chapter-context.ts`：
+
+```ts
+interface ChapterContextItem {
+  id: string            // `${sectionKey}:${entityId|key}`（稳定，供勾选）
+  sectionKey: 'overview' | 'background' | 'character' | 'location'
+            | 'outline' | 'prewrite' | 'graph' | 'prevChapters'
+  title: string         // 「林锋（主角）」「3.1 码头夜话 提纲」
+  text: string          // 注入 prompt 的原文（复用 aiService 既有 build* 方法）
+  tokens: number        // 本地估算（UTF-8 字节/4，与 ContextManager 同款）
+  defaultChecked: boolean
+}
+interface ChapterContextResult {
+  items: ChapterContextItem[]
+  promptText: string    // 按默认勾选组装的正文段（预览=实际，防两套逻辑漂移）
+  estimateTokens: number
+  windowTokens: number  // 模型窗口（providerConfig.modelId → capabilities；缺省 32768）
+}
+```
+
+- `assembleChapterContext(db, projectId, outlineId, chapterNumber)`：**复用** generateChapter
+  既有的取数与 build* 方法（角色/地点实体状态切片、图谱段、回忆段、预写、前文摘要），
+  产出 items + promptText——预览与真实生成共享同一组装输出，绝不两套逻辑；
+- 生成路径改造：`generateChapter` 增加可选 `contextControl?: { enabledItemIds: string[];
+  itemTextOverrides?: Record<string,string> }`——组装后按勾选/覆写过滤重建正文段，
+  其余（系统提示词、任务骨架、字数/文风约束）不受控；
+- 勾选项被禁用时的段落降级：整段全禁才移除该分节标题；部分禁用只移除条目文本。
+
+### 3.2 IPC（lw:* 双端）
+
+- `lw:chapter-context-preview` `{projectId, outlineId, chapterNumber}` →
+  `ChapterContextResult`（不含系统提示词——那是固定纪律不开放编辑）；
+- `lw:generateChapterWithContext` `{projectId, outlineId, chapterNumber, targetWords,
+  style, extraPrompt, enabledItemIds, itemTextOverrides}` → 与 generateChapter 同款
+  流式（eventId → longwriting:generate 通道），落版本/字数回写复用既有链路。
+
+### 3.3 前端（ChapterStage 三栏）
+
+- 新组件 `components/longwriting/story/ChapterContextPanel.vue`：
+  - token 预算条（进度条 + 数字；>90% 转红并建议取消低优先条目）；
+  - 分区折叠列表：分区标题勾选（全选/全不选联动）+ 条目勾选 + 条目 token 数；
+  - 「编辑上下文项」：条目文本 textarea 微调（itemTextOverrides，仅本轮生效）；
+  - 「⚡ 预览」：弹窗只读展示 promptText（按当前勾选实时重组）；
+  - 「↺ 重置选择」「✦ 生成章节（含上下文）」。
+- ChapterStage 布局：章节写作阶段 `stage-content` 变三栏（大纲树 | 编辑器 | 面板，
+  面板 300px 可折叠）；生成按钮按面板开关分流到 with-context 入口；流式/版本/
+  导出等既有行为零改动。
+
+## 4. 实施计划（子任务）
+
+| # | 任务 | 产出 | 依赖 |
+|---|---|---|---|
+| LW-9a | ChapterContextAssembler（items + promptText + 预算） | chapter-context.ts + 单测 | 无 |
+| LW-9b | generateChapter contextControl 参数 + 2 个 IPC + preload/channel-map | 可调用的服务 | LW-9a |
+| LW-9c | ChapterContextPanel.vue 组件 | 面板 UI | LW-9b |
+| LW-9d | ChapterStage 三栏接线 + 生成按钮分流 | 端到端可用 | LW-9c |
+| LW-9e | 真机实测（预览一致性/勾选生成/token 条） | 截图+记录 | LW-9d |
+
+## 5. 明确不做（本批）
+
+- 大纲/角色等其他阶段的上下文预览（原型只定义了章节写作阶段；模式验证后复制）；
+- 上下文项的持久化保存（勾选/覆写仅本轮生效——原型语义如此）；
+- 替换 Agent 宿主写章路径（write_chapter 工具继续走既有组装；面板控制的是主界面
+  手动生成路径——两条路径的最终统一登记为后续演进）。
+
+## 6. LW-9e 真机实测结论（2026-09-09，PASS）
+
+驱动：`scripts/e2e-lw9e-chapter-workbench.cjs`（Playwright CDP 9333 → 真机 Electron →
+真实 IPC → deepseek-v4-flash-0731）。测试项目「星际快递员与机器狗」（lw_1788875862832_ln6w1sn2a）。
+
+流程：概要（真模型生成落库）→ 背景（renderer 无生成入口，agent 动作路径 p7 已冒烟，
+E2E 用夹具文本）→ 角色 4 / 地点 3 / 情节 3（真模型生成落库）→ 大纲 3 章（真模型，一级章）→
+目标章挂涉及关系（2 角色 + 1 地点）→ 面板预览 → 勾选重组 → 按勾选生成 → 落库读回。
+
+结果（LW9E_RESULT=PASS）：
+- 面板契约：6 分区 [overview, background, character, location, prevChapters, graph]，
+  7 项，估算 731 tok，默认勾选 6；
+- 条目 id 形态实测：单件分区=裸节名（overview/background/prevEnding/memory），
+  实体项=`section:entityId`（character:char_xxx）——面板勾选/勾选重组按此工作；
+- 涉及关系驱动实体分区：updateOutline 挂 involvedCharacters/involvedLocations 后，
+  character/location 分区出现在清单中（此前 4 分区，挂后 6 分区）；
+- 勾选重组生效：停用 overview+background（启用 4 项）→ generateChapterWithContext
+  真模型生成 487 字正文 → saveChapter 落库 → getChapter 读回一致；
+- **负控断言（42号 review 后补）**：停用 background/overview 各自触发 prompt 占位文案
+  （「世界观设定已由用户禁用」/「故事宏观背景已由用户禁用」）——勾选真实生效由实测
+  支撑而非读码推断。负控揪出并修复了真实缺陷：background 勾选曾是死开关（世界观文本
+  内嵌概要文本，只受 overview 门控）——修法=背景独立成段（compose §一### 世界观设定 +
+  parts.backgroundText），回归锚在 chapter-context.spec。
+
+对 38 号 §3 设计的差异与未测项（如实登记）：
+- **分区 8→6**：'outline' 为死键（章节任务并入固定骨架不受控）；'recall' 并入 'graph'
+  分区展示；prewrite 为数据驱动条件分区（本项目无预写数据故未出现）；
+- promptText 默认分支（不传 enabledItemIds）= 全部条目而非 defaultChecked 子集——面板
+  实际总是显式传勾选集，影响可忽略，登记为设计漂移；
+- 预览一致性（promptText == 实际下发 prompt）与 token 预算条 UI 未在本轮实测范围；
+- 背景使用夹具文本（renderer 无背景生成入口），且勾选重组轮次停用了 background——
+  背景→生成链路未被真模型有效覆盖。
+
+实测顺带修正的认知：
+- generateChapter/WithContext 的 invoke 只返回内容，**落库由调用方 saveChapter 负责**
+  （ChapterStage 的 autoSave 即此语义）；
+- 面板前置=选中章节点（isEditableNode && activeOutlineId），无大纲项目走不到面板——
+  与 38 号 §3 设计一致。
+
+剩余（与原型差距清单，等设计确认后做）：提取状态徽章（✓记忆/✗重试）、必填标记、
+条目正文预览行、分区 token 汇总行、toast「已加载 N 分区 M 项」、空态引导文案。

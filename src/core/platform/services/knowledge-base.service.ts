@@ -1310,7 +1310,7 @@ export class KnowledgeBaseService {
       maxFilesPerUpload: 20,
       // 注意：doc（Word 97-2003 二进制格式）解析未实现（mammoth 仅支持 docx），
       // 不要列在这里 —— 上传收下却处理不了会永远卡 pending。
-      supportedTypes: ['docx', 'txt', 'md', 'xlsx', 'xls']
+      supportedTypes: ['docx', 'txt', 'md', 'xlsx', 'xls', 'pdf', 'epub', 'mobi', 'azw3']
     }
   }
 

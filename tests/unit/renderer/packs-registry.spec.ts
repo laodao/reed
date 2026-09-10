@@ -184,6 +184,8 @@ describe('installBuiltinPackages（内置包装配）', () => {
       '/workflow', '/workflow/editor/w1', '/workflow-run/tok', '/workflow/runs/d1', '/workflow/run/r1',
       '/apps', '/apps/a1', '/apps/a1/session/s1', '/app-share/tok',
       '/assets',
+      // 领域共学空间原型（2026-09-08）
+      '/domain-learning', '/domain-learning/rag', '/domain-learning/rag/atlas',
     ]) {
       expect(router.resolve(path).matched.length, `路由 ${path} 应已注册`).toBeGreaterThan(0)
     }

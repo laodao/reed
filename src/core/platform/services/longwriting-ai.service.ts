@@ -5,6 +5,12 @@
  */
 
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import type {
+  ChapterContextItem,
+  ChapterContextResult,
+  ChapterPromptParts,
+} from './longwriting/chapter-context'
+import { composeChapterPrompt, estimateContextTokens } from './longwriting/chapter-context'
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import { createProvider } from '@core/platform/providers/llm'
 import { PROVIDER_TEMPLATES } from '@core/platform/services/provider-template.service'
@@ -1318,12 +1324,118 @@ ${plotInfo || '暂无相关情节'}
     style?: string,
     extraPrompt?: string
   ): Promise<GenerateResponse> {
+    const asm = await this.assembleChapterGeneration(projectId, outlineId, { targetWords, style, extraPrompt })
+    if ('error' in asm) return { success: false, error: asm.error }
+    try {
+      const result = await this.callAIStream(
+        eventId,
+        asm.prompt,
+        asm.systemPrompt,
+        asm.maxTokens,
+        providerConfigId,
+        modelId
+      )
+
+      return { success: true, data: { content: result } }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  /**
+   * 章节工作台（38 号）：结构化暴露本次生成的全部上下文项（含 token 估算与窗口预算）。
+   * 与 generateChapter 共用 assembleChapterGeneration——预览=实际，杜绝两套组装漂移。
+   */
+  async getChapterContextItems(
+    projectId: string,
+    outlineId: string,
+    opts: { targetWords?: number; style?: string; extraPrompt?: string; enabledItemIds?: string[] } = {}
+  ): Promise<{ success: boolean; error?: string; data?: ChapterContextResult }> {
+    const asm = await this.assembleChapterGeneration(projectId, outlineId, opts)
+    if ('error' in asm) return { success: false, error: asm.error }
+    // 传入 enabledItemIds 时按当前勾选重组 prompt（面板「⚡ 预览」实时预览）
+    const enabled = new Set(opts.enabledItemIds ?? asm.items.map((i) => i.id))
+    const promptText = opts.enabledItemIds
+      ? composeChapterPrompt(asm.parts, (id) => enabled.has(id), asm.composeOpts)
+      : asm.prompt
+    return {
+      success: true,
+      data: {
+        items: asm.items,
+        promptText,
+        estimateTokens: opts.enabledItemIds ? estimateContextTokens(promptText) : asm.estimateTokens,
+        windowTokens: asm.windowTokens,
+      },
+    }
+  }
+
+  /**
+   * 按勾选上下文生成（38 号）：enabledItemIds 过滤重组装；流式/落库与 generateChapter 同链路。
+   * 未传 enabledItemIds = 全部默认项（与 generateChapter 等价）。
+   */
+  async generateChapterWithContext(
+        eventId: string,
+    projectId: string,
+    outlineId: string,
+    params: {
+      targetWords?: number
+      style?: string
+      extraPrompt?: string
+      enabledItemIds?: string[]
+      providerConfigId?: string
+      modelId?: string
+    }
+  ): Promise<GenerateResponse> {
+    const asm = await this.assembleChapterGeneration(projectId, outlineId, {
+      targetWords: params.targetWords, style: params.style, extraPrompt: params.extraPrompt,
+    })
+    if ('error' in asm) return { success: false, error: asm.error }
+    const enabled = new Set(params.enabledItemIds ?? asm.items.map((i) => i.id))
+    const prompt = composeChapterPrompt(asm.parts, (id) => enabled.has(id), asm.composeOpts)
+    try {
+      const result = await this.callAIStream(
+        eventId,
+        prompt,
+        asm.systemPrompt,
+        asm.maxTokens,
+        params.providerConfigId,
+        params.modelId
+      )
+
+      return { success: true, data: { content: result } }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  /**
+   * 章节生成组装（38 号重构）：generateChapter / getChapterContextItems / generateChapterWithContext
+   * 的单一事实源。产出可控制上下文项（items）+ 组装原料（parts）+ 默认组装结果（prompt）。
+   */
+  private async assembleChapterGeneration(
+    projectId: string,
+    outlineId: string,
+    opts: { targetWords?: number; style?: string; extraPrompt?: string } = {}
+  ): Promise<
+    | { error: string }
+    | {
+        ok: true
+        prompt: string
+        systemPrompt: string
+        maxTokens: number
+        estimateTokens: number
+        windowTokens: number
+        items: ChapterContextItem[]
+        parts: ChapterPromptParts
+        composeOpts: { targetWords: number; style?: string; extraPrompt?: string }
+      }
+  > {
     const dbManager = getCoreDatabaseManager()
 
     // 获取大纲节点
     const outline = await dbManager.lwOutlines?.getById(outlineId)
     if (!outline) {
-      return { success: false, error: '大纲节点不存在' }
+      return { error: '大纲节点不存在' }
     }
 
     // 获取故事上下文
@@ -1389,7 +1501,7 @@ ${plotInfo || '暂无相关情节'}
     const storyTypeName = this.getStoryTypeName(overview?.storyType || '')
 
     // 新增：构建角色完整信息
-    const characterFullInfoSections: string[] = []
+    const characterItems: ChapterContextItem[] = []
     for (const charId of outline.involvedCharacters || []) {
       const char = characters.find(c => c.id === charId)
       if (char) {
@@ -1400,15 +1512,19 @@ ${plotInfo || '暂无相关情节'}
           charId,
           chapterNumber - 1
         )
-        characterFullInfoSections.push(this.buildCharacterFullInfo(char, charState))
+        const text = this.buildCharacterFullInfo(char, charState)
+        characterItems.push({
+          id: `character:${charId}`,
+          sectionKey: 'character',
+          title: `角色：${char.name || charId.slice(0, 8)}`,
+          text,
+          tokens: estimateContextTokens(text),
+          defaultChecked: true,
+        })
       }
     }
-    const characterFullInfoSection = characterFullInfoSections.length > 0
-      ? characterFullInfoSections.join('\n')
-      : '无特定涉及角色'
-
     // 新增：构建地点完整信息
-    const locationFullInfoSections: string[] = []
+    const locationItems: ChapterContextItem[] = []
     for (const locId of outline.involvedLocations || []) {
       const loc = locations.find(l => l.id === locId)
       if (loc) {
@@ -1419,13 +1535,17 @@ ${plotInfo || '暂无相关情节'}
           locId,
           chapterNumber - 1
         )
-        locationFullInfoSections.push(this.buildLocationFullInfo(loc, locState))
+        const text = this.buildLocationFullInfo(loc, locState)
+        locationItems.push({
+          id: `location:${locId}`,
+          sectionKey: 'location',
+          title: `地点：${loc.name || locId.slice(0, 8)}`,
+          text,
+          tokens: estimateContextTokens(text),
+          defaultChecked: true,
+        })
       }
     }
-    const locationFullInfoSection = locationFullInfoSections.length > 0
-      ? locationFullInfoSections.join('\n')
-      : '无特定涉及地点'
-
     // 新系统提示词
     const systemPrompt = `你是一位资深的网络小说作家，擅长创作情节紧凑、人物生动、场景细腻的章节内容。
 
@@ -1475,88 +1595,59 @@ ${plotInfo || '暂无相关情节'}
     // 阶段2：回忆/闪回场景提示（回忆时间点的实体状态以历史切片为准）
     const recallSection = this.buildRecallSection(outline, projectId, characters, locations, chapterNumber)
 
-    // 新用户提示词结构
-    const prompt = `# 章节写作任务
+    // —— 38 号：可控制上下文项清单（与下方 prompt 组装共用同源文本） ——
+    // 背景独立成段（42号 review：曾内嵌于此——'background' 勾选是死开关）
+    const overviewText = `**故事标题**：${overview?.title || '未命名'}\n**故事类型**：${storyTypeName}\n**核心冲突**：${overview?.coreConflict || '未指定'}\n\n**预估总章节数**：${totalChapters}章\n**当前进度**：第${chapterNumber}章（${progressStage}）`
+    const taskText = `**章节名称**：${outline.name}\n**章节概要**：${outline.summary}`
+    const prevEndingText = previousChapterEnding || '这是开篇章节'
+    const constraintsText = `${memoryContext}${entityStateContext}${chapterStateSummaryContext}`
+    const styleText = opts.style ? `本章要求以「${opts.style}」的风格写作。请贯彻到遣词造句、节奏与氛围中。` : ''
+    const extraText = opts.extraPrompt && opts.extraPrompt.trim() ? opts.extraPrompt.trim() : ''
 
-## 一、故事宏观背景
+    const items: ChapterContextItem[] = [
+      { id: 'overview', sectionKey: 'overview', title: '故事宏观背景', text: overviewText, tokens: estimateContextTokens(overviewText), defaultChecked: true },
+      { id: 'background', sectionKey: 'background', title: '世界观设定', text: backgroundContext || '', tokens: estimateContextTokens(backgroundContext || ''), defaultChecked: !!backgroundContext },
+      ...characterItems,
+      ...locationItems,
+      { id: 'prevEnding', sectionKey: 'prevChapters', title: '上一章结尾', text: prevEndingText, tokens: estimateContextTokens(prevEndingText), defaultChecked: true },
+      { id: 'memory', sectionKey: 'graph', title: '相关记忆与关键约束', text: constraintsText, tokens: estimateContextTokens(constraintsText), defaultChecked: !!constraintsText },
+      ...(prewriteSection ? [{ id: 'prewrite', sectionKey: 'prewrite' as const, title: '预写提纲', text: prewrite?.content || '', tokens: estimateContextTokens(prewrite?.content || ''), defaultChecked: true }] : []),
+      ...(graphSection ? [{ id: 'graph', sectionKey: 'graph' as const, title: '图谱关系与事件', text: graphSection, tokens: estimateContextTokens(graphSection), defaultChecked: true }] : []),
+      ...(recallSection ? [{ id: 'recall', sectionKey: 'graph' as const, title: '回忆/闪回场景提示', text: recallSection, tokens: estimateContextTokens(recallSection), defaultChecked: true }] : []),
+    ]
 
-**故事标题**：${overview?.title || '未命名'}
-**故事类型**：${storyTypeName}
-**核心冲突**：${overview?.coreConflict || '未指定'}
+    const parts: ChapterPromptParts = {
+      overviewText,
+      backgroundText: backgroundContext || '',
+      taskText,
+      characterItems,
+      locationItems,
+      prevEndingText,
+      constraintsText,
+      prewriteContent: prewrite?.content || '',
+      graphSection,
+      recallSection,
+      styleText,
+      extraText,
+    }
 
-${backgroundContext || '暂无世界观设定'}
+    const targetWordsFinal = opts.targetWords || outline.estimatedWords || 3000
+    const prompt = composeChapterPrompt(parts, () => true, { targetWords: targetWordsFinal, style: opts.style, extraPrompt: opts.extraPrompt })
+    const estimateTokens = estimateContextTokens(prompt)
+    const windowTokens = 32_768
 
-**预估总章节数**：${totalChapters}章
-**当前进度**：第${chapterNumber}章（${progressStage}）
-
----
-
-## 二、当前章节任务
-
-**章节名称**：${outline.name}
-**章节概要**：${outline.summary}
-**目标字数**：${targetWords || outline.estimatedWords || 3000}字
-
----
-
-## 三、涉及角色完整信息
-
-${characterFullInfoSection}
-
----
-
-## 四、涉及场景环境
-
-${locationFullInfoSection}
-
----
-
-## 五、前文衔接信息
-
-### 上一章结尾原文（请仔细阅读，确保自然衔接）
-${previousChapterEnding || '这是开篇章节'}
-
-### 衔接建议
-- 时间线应从上一章结束时间之后开始
-- 如果上一章有悬念或冲突，本章应有所呼应
-- 注意角色位置和状态与上一章结束时的衔接
-
----
-
-## 六、关键约束
-${memoryContext}${entityStateContext}${chapterStateSummaryContext}
-${prewriteSection}
----
-
-## 七、图谱关系与事件（时间线一致性）
-${graphSection || '暂无图谱数据'}
-${recallSection}
----
-${style ? `## 八、写作风格要求
-
-本章要求以「${style}」的风格写作。请贯彻到遣词造句、节奏与氛围中。` : ''}
-${extraPrompt && extraPrompt.trim() ? `## 九、附加要求
-
-${extraPrompt.trim()}` : ''}
-
-请根据以上所有信息，撰写章节正文内容。直接开始写作，不需要标题。`
-
-    try {
-      const result = await this.callAIStream(
-        eventId,
-        prompt,
-        systemPrompt,
-        Math.min((targetWords || outline.estimatedWords || 3000) * 2, 8192),
-        providerConfigId,
-        modelId
-      )
-
-      return { success: true, data: { content: result } }
-    } catch (error: any) {
-      return { success: false, error: error.message }
+    return {
+      ok: true,
+      prompt,
+      systemPrompt,
+      maxTokens: Math.min(targetWordsFinal * 2, 8192),
+      estimateTokens,
+      windowTokens,
+      items,
+      parts,
+      composeOpts: { targetWords: targetWordsFinal, style: opts.style, extraPrompt: opts.extraPrompt },
     }
   }
-
   /**
    * 构建"图谱关系与事件"上下文段（阶段2）：
    * - 本章涉及实体的"生效关系边"（edgesAt，带有效期）
@@ -3099,6 +3190,49 @@ ${previousInfo}
    * 事件 = 已发生的事实（谁/在哪/发生什么/结果），随章节确认累积；
    * 与创作层情节（plot，计划中的故事线）区分。
    */
+  /**
+   * 提取章节伏笔（42 号 P1：写作教练位——每章完成自动登记"埋了什么"）
+   * 与 extractChapterEvents 同构：callAIStream + JSON 容错解析。
+   */
+  async extractChapterForeshadows(
+    eventId: string,
+    projectId: string,
+    chapterContent: string,
+    chapterNumber: number,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<GenerateResponse> {
+    void projectId
+    const systemPrompt = `你是小说连载顾问。分析章节正文，识别本章"新埋下的伏笔"——被刻意强调但未在本章解释的人/物/话/异常，且对后续剧情有明确回收价值。
+只识别新埋设（本章首次出现的悬念装置），不把普通情节当伏笔。
+
+## 输出格式
+返回 JSON 数组，每条：
+{"content":"伏笔内容一句话（含关键物证/台词）","plantedChapter":${chapterNumber}}
+
+要求：
+1. 0-3 条；没有就返回 []
+2. 宁缺毋滥：只登记有明确回收意图的
+3. 直接输出 JSON 数组，不要任何额外文字`
+
+    const prompt = `【本章正文（第 ${chapterNumber} 章）】
+${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容已截断)' : ''}
+
+请识别本章新埋下的伏笔，直接返回 JSON 数组。`
+
+    try {
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, 1024, providerConfigId, modelId)
+      const jsonMatch = result.match(/\[[\s\S]*\]/)
+      if (!jsonMatch) {
+        return { success: false, error: '未返回有效 JSON' }
+      }
+      const parsed = JSON.parse(jsonMatch[0])
+      return { success: true, data: Array.isArray(parsed) ? parsed : [] }
+    } catch (e: any) {
+      return { success: false, error: e?.message || '伏笔提取失败' }
+    }
+  }
+
   async extractChapterEvents(
     eventId: string,
     projectId: string,

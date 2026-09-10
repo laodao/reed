@@ -35,6 +35,7 @@ import type {
   LLMToolDescriptor,
   ToolDangerLevel,
 } from '../types'
+import type { ToolArtifactPort } from './artifacts'
 
 const logger = createLogger('AgentToolRegistry')
 
@@ -95,8 +96,8 @@ export interface AgentToolRegistryDeps {
   /** 审计 sink（fire-and-forget；DB 落表 M2 接入，当前缺省仅结构化日志） */
   audit?: (record: AgentToolCallAudit) => void
   /** 审批回调（与 LoopRunner 的 requestApproval 同形）。缺省=拒绝——与 loop 层同一
-   * 安全默认（深 review P2 对齐）：需批准工具直调而无回调时拒绝执行；宿主代码
-   * 显式直调可注入放行回调（审批责任显式化，且经审计面留痕） */
+   *  安全默认（深 review P2 对齐）：需批准工具直调而无回调时拒绝执行；宿主代码
+   *  显式直调可注入放行回调（审批责任显式化，且经审计面留痕） */
   requestApproval?: (
     tool: AgentToolDef,
     input: unknown,
@@ -104,6 +105,11 @@ export interface AgentToolRegistryDeps {
   ) => Promise<{ action: string; reason?: string; input?: Record<string, unknown> }>
   /** 直调执行超时 ms */
   executeTimeoutMs?: number
+  /**
+   * 工具产物归档（39 号 P1-1）：registry 管线的截断发生在 ⑤，此处 ④ 执行后
+   * 立即归档完整结果（只归成功）——loop 包装工具与直调共用此路径。fire-and-forget。
+   */
+  artifacts?: ToolArtifactPort | null
   clock?: () => number
 }
 
@@ -238,6 +244,7 @@ export class AgentToolRegistry {
   private readonly deps: Required<Pick<AgentToolRegistryDeps, 'executeTimeoutMs'>> & {
     audit: ((record: AgentToolCallAudit) => void) | null
     requestApproval: AgentToolRegistryDeps['requestApproval'] | null
+    artifacts: ToolArtifactPort | null
     clock: () => number
   }
 
@@ -246,6 +253,7 @@ export class AgentToolRegistry {
       audit: deps.audit ?? null,
       requestApproval: deps.requestApproval ?? null,
       executeTimeoutMs: deps.executeTimeoutMs ?? TOOL_EXECUTE_TIMEOUT_MS,
+      artifacts: deps.artifacts ?? null,
       clock: deps.clock ?? (() => Date.now()),
     }
   }
@@ -348,6 +356,22 @@ export class AgentToolRegistry {
 
   // —— 执行（校验→审批短路→执行→截断→审计；错误永不 throw） ——
 
+  /** NOT_WHITELISTED 提示（M8 越权加固）：不再枚举注册表全量工具名——宿主的真实
+   *  工具集已随本轮 tools 参数注入，全量枚举只对越权调用方泄露其他模块的工具名。
+   *  声明了 catalogPacks 的域内仍可列（同域名称不越权）。 */
+  private notWhitelistedHint(context?: Record<string, unknown>): string {
+    const packs = Array.isArray(context?.catalogPacks) ? (context!.catalogPacks as string[]) : null
+    if (packs && packs.length > 0) {
+      const scoped = this.listSpecs().filter((s) => s.packId && packs.includes(s.packId))
+      const names = scoped.map((s) => s.name)
+      if (names.length > 0) {
+        return `可用工具：${names.slice(0, HINT_TOOL_LIST_MAX).join(', ')}${names.length > HINT_TOOL_LIST_MAX ? ' …' : ''}`
+      }
+      return '本轮域内无可列举工具；请使用本轮注入的工具集。'
+    }
+    return `该工具不在本轮授权清单中；请使用本轮注入的工具集（运行时共注册 ${this.tools.size} 个）。`
+  }
+
   async execute(call: {
     toolName: string
     args: Record<string, unknown>
@@ -392,7 +416,7 @@ export class AgentToolRegistry {
           error: {
             code: 'NOT_WHITELISTED',
             message: `工具未注册：${call.toolName}`,
-            hint: `可用工具：${[...this.tools.keys()].slice(0, HINT_TOOL_LIST_MAX).join(', ')}${this.tools.size > HINT_TOOL_LIST_MAX ? ' …' : ''}`,
+            hint: this.notWhitelistedHint(call.context),
             retryable: false,
           },
           durationMs: 0,
@@ -536,7 +560,30 @@ export class AgentToolRegistry {
       }, approvalAudit)
     }
 
-    // ⑤ 截断序列化
+    // ⑤ 完整结果归档（39 号 P1-1）：截断序列化之前落档（只归成功）——上下文内的
+    //    8K/16KB 截断与后续剪枝/折叠占位可经 get_tool_result 回查全文。
+    //    业务失败形态（{ok:false,...} 不 throw 的工具返回，如 tool.service）不入档——
+    //    与 collapse 的 isFailedToolResult 同一口径（42号 review P2）。args 记 effective
+    //    （实际执行口径；审计面 finish 另记 LLM 原始入参——两口径用途不同）。
+    //    fire-and-forget：归档失败只 warn，不影响工具调用。
+    const businessFailed =
+      raw !== null && typeof raw === 'object' && (raw as { ok?: unknown }).ok === false
+    const archiveToolCallId = String(call.context?.toolCallId ?? '')
+    if (this.deps.artifacts && archiveToolCallId && !businessFailed) {
+      const scopeKey = String(call.context?.sessionKey ?? call.context?.scopeId ?? '')
+      void this.deps.artifacts
+        .save({
+          scopeKey,
+          toolCallId: archiveToolCallId,
+          toolName: tool.spec.name,
+          args: effective,
+          result: raw,
+          ok: true,
+        })
+        .catch((e: unknown) => logger.warn(`[tool-registry] 产物归档失败（不影响调用）tool=${tool.spec.name}`, e))
+    }
+
+    // ⑥ 截断序列化
     const { data, truncated } = serializeToolResult(raw)
     return this.finish(
       { ...call, args: effective },

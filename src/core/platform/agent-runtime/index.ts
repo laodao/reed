@@ -39,7 +39,7 @@
  */
 
 // —— 已实现（M1-P1）——
-export { LoopRunner, initState, normalizeDecision, buildSystem, truncateJson } from './runtime/loop'
+export { LoopRunner, initState, normalizeDecision, buildSystem, buildTurnContext, truncateJson } from './runtime/loop'
 export { ApprovalCoordinator, InMemoryApprovalStore, amendmentKey, stableStringify, AVAILABLE_DECISIONS } from './runtime/approval'
 export type { ApprovalCoordinatorDeps, ApprovalStore } from './runtime/approval'
 export { EventBridge } from './runtime/event-bridge'
@@ -57,6 +57,8 @@ export {
 } from './memory/session-store'
 export type { AgentSessionStore, DbAgentSessionStoreDeps } from './memory/session-store'
 // —— 批 4：门面（23 号 §1）——
+// 【M8 决策（39 号 §2）】门面为「已测试的预留面」：生产装配已由 HostKit（36 号）承接，
+// 门面保留互斥/steer/多会话等语义供未来接线，当前勿在生产代码新增对它的依赖。
 export {
   AgentRuntimeImpl,
   initAgentRuntime,
@@ -117,6 +119,34 @@ export {
   pruneToolResults,
 } from './runtime/vendor/compaction'
 export type { CompactionStrategy, CompactionContext, CompactionResult } from './runtime/vendor/compaction'
+// —— 39 号：上下文成本与产出治理（轮次上下文块/缓存断点/原始流水/产物归档/子代理）——
+export {
+  TURN_CONTEXT_PREFIX,
+  TURN_CONTEXT_SUFFIX,
+  turnContextMessage,
+  isTurnContextMessage,
+  hasCurrentTurnContextBlock,
+  withPromptCacheBreakpoint,
+  isPromptCacheEnabled,
+} from './context/turn-context'
+export {
+  SUPERSEDE_COLLAPSE_MIN_TOKENS,
+  SUPERSEDED_PLACEHOLDER,
+  collapseSupersededToolResults,
+} from './context/context-manager'
+export { createToolArtifactStore, ARTIFACT_MAX_BYTES } from './tools/artifacts'
+export type { ToolArtifactPort, ToolArtifactRecord } from './tools/artifacts'
+export { createGetToolResultTool } from './tools/artifact-lookup'
+export { WIRE_NAME_RE, WIRE_NAME_MAX, toWireName, buildWireNameMap } from './tools/wire-name'
+export type { WireNameMap } from './tools/wire-name'
+export {
+  createSpawnSubagentTool,
+  SUBAGENT_DEFAULT_MAX_STEPS,
+  SUBAGENT_MAX_STEPS_CAP,
+} from './tools/subagent'
+export type { SpawnSubagentDeps, SubagentModelTiers } from './tools/subagent'
+export { truncateTranscriptContent, TRANSCRIPT_MAX_MESSAGE_BYTES } from './memory/transcript-store'
+export type { RawTranscriptPort, TranscriptAppendRow } from './memory/transcript-store'
 
 // —— 契约类型（23 号接口契约层）——
 export type {

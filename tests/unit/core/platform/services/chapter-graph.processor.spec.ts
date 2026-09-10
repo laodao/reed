@@ -9,8 +9,9 @@ function makeFakeDb() {
   const eventsStore: any[] = []
   const statesStore: any[] = []
   const edgesStore: any[] = []
+  const foreshadowRows: any[] = []
   return {
-    eventsStore, statesStore, edgesStore,
+    eventsStore, statesStore, edgesStore, foreshadowRows,
     lwCharacters: { getByProjectId: vi.fn(async () => [{ id: 'c1', name: '林晓' }, { id: 'c2', name: '顾言' }]) },
     lwLocations: { getByProjectId: vi.fn(async () => [{ id: 'l1', name: '青云宗' }]) },
     lwItems: { getByProjectId: vi.fn(async () => []) },
@@ -19,6 +20,14 @@ function makeFakeDb() {
     },
     lwEvents: {
       batchCreate: vi.fn(async (list: any[]) => { const saved = list.map((e, i) => ({ id: `evt-${i}`, ...e })); eventsStore.push(...saved); return saved }),
+    },
+    lwForeshadows: {
+      deleteExtractByChapter: vi.fn(async () => 0),
+      createRow: vi.fn(async (pid: string, content: string, planted: number | null, origin: any) => {
+        const row = { id: `fb_${foreshadowRows.length + 1}`, projectId: pid, content, plantedChapter: planted, payoffChapter: null, status: 'open', origin: JSON.stringify(origin), createdAt: 1, updatedAt: 1 }
+        foreshadowRows.push(row)
+        return row
+      }),
     },
     lwEntityStates: {
       batchCreate: vi.fn(async (list: any[]) => { const saved = list.map((e, i) => ({ id: `st-${i}`, ...e })); statesStore.push(...saved); return saved }),
@@ -35,6 +44,7 @@ function makeFakeDb() {
 
 function makeFakeAi(over: Record<string, unknown> = {}) {
   return {
+    extractChapterForeshadows: vi.fn(async () => ({ success: true, data: [] })),
     extractChapterEvents: vi.fn(async () => ({
       success: true,
       data: [
@@ -106,7 +116,8 @@ describe('ChapterGraphProcessor', () => {
   it('事件涉及未知实体：名称解析失败跳过（不建幽灵边）', async () => {
     const db = makeFakeDb()
     const ai = makeFakeAi({
-      extractChapterEvents: vi.fn(async () => ({
+      extractChapterForeshadows: vi.fn(async () => ({ success: true, data: [] })),
+    extractChapterEvents: vi.fn(async () => ({
         success: true,
         data: [{ name: '神秘事件', involvedEntities: [{ type: 'character', name: '不存在的人' }] }],
       })),
@@ -139,7 +150,8 @@ describe('ChapterGraphProcessor', () => {
   it('空事件 + 空状态：流水线不报错', async () => {
     const db = makeFakeDb()
     const ai = makeFakeAi({
-      extractChapterEvents: vi.fn(async () => ({ success: true, data: [] })),
+      extractChapterForeshadows: vi.fn(async () => ({ success: true, data: [] })),
+    extractChapterEvents: vi.fn(async () => ({ success: true, data: [] })),
       extractEntityStates: vi.fn(async () => ({ success: true, data: [] })),
     })
     const proc = new ChapterGraphProcessor(db as any, ai as any)
@@ -147,5 +159,39 @@ describe('ChapterGraphProcessor', () => {
     expect(result.events).toHaveLength(0)
     expect(result.states).toHaveLength(0)
     expect(result.edges).toHaveLength(0)
+  })
+})
+
+
+// ==================== 42 号 P1：伏笔提取段 ====================
+
+describe('ChapterGraphProcessor 伏笔提取段（42 号 P1）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    ChapterGraphProcessor.clearContentHashCache()
+  })
+
+  it('AI 返回伏笔 → 落 lw_foreshadows（origin=extract 带章号）', async () => {
+    const db = makeFakeDb()
+    const ai = makeFakeAi({
+      extractChapterForeshadows: vi.fn(async () => ({
+        success: true,
+        data: [{ content: '断剑实为父亲遗物', plantedChapter: 3 }],
+      })),
+    })
+    const proc = new ChapterGraphProcessor(db as never, ai as never)
+    const r = await proc.process({ projectId: 'p1', outlineId: 'o1', chapterContent: '正文', chapterNumber: 3 })
+    expect(r.foreshadowCount).toBe(1)
+    expect(db.foreshadowRows).toHaveLength(1)
+    expect(JSON.parse(db.foreshadowRows[0].origin)).toMatchObject({ type: 'extract', chapter: 3 })
+  })
+
+  it('伏笔提取失败 → fail-soft：主链路照常（events/states 落库），foreshadowCount=0', async () => {
+    const db = makeFakeDb()
+    const ai = makeFakeAi({ extractChapterForeshadows: vi.fn(async () => ({ success: false, error: 'x' })) })
+    const proc = new ChapterGraphProcessor(db as never, ai as never)
+    const r = await proc.process({ projectId: 'p1', outlineId: 'o1', chapterContent: '正文', chapterNumber: 3 })
+    expect(r.foreshadowCount ?? 0).toBe(0)
+    expect(db.eventsStore.length).toBeGreaterThan(0)
   })
 })

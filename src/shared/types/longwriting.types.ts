@@ -3,6 +3,8 @@
  * @module shared/types/longwriting.types
  */
 
+import type { RoomWorkspaceState } from './story-room.types'
+
 // ==================== 项目相关类型 ====================
 
 /**
@@ -54,7 +56,7 @@ export interface LongWritingProject {
   stage: StoryStage | CommentStage
   progress: number         // 进度百分比 0-100
   /** 向导状态（跳过的步骤 key 列表；旧项目无数据时按数据存在性回推） */
-  wizardState?: { skipped: string[] }
+  wizardState?: WizardStateFull
   createdAt: number
   updatedAt: number
 }
@@ -614,7 +616,9 @@ export interface NewCharacterInfo {
   appearance?: string                // 外貌描述
   background?: string                // 背景故事
   personality?: string               // 性格特点
-  abilities?: string                 // 能力特长
+  abilities?: string
+  /** 人物别名/称呼（JSON 数组） */
+  aliases?: string[]                 // 能力特长
   occupation?: string                // 职业
   rolePosition?: CharacterRolePosition  // 角色定位
 }
@@ -897,6 +901,8 @@ export interface StoryMaterial {
  * 对话消息
  */
 export interface DesignMessage {
+  /** 消息 id（dm_*；研讨室 provenance/前端 key 用） */
+  id?: string
   role: 'user' | 'assistant'
   content: string
   timestamp: number
@@ -932,11 +938,17 @@ export interface CreateProjectRequest {
 /**
  * 更新项目请求
  */
+/** 项目向导/房间扩展状态（旧向导 {skipped} + 研讨室 room 子键） */
+export interface WizardStateFull {
+  skipped?: string[]
+  room?: RoomWorkspaceState
+}
+
 export interface UpdateProjectRequest {
   name?: string
   stage?: StoryStage | CommentStage
   progress?: number
-  wizardState?: { skipped: string[] }
+  wizardState?: WizardStateFull
 }
 
 /**
@@ -947,6 +959,8 @@ export interface CreateCharacterRequest {
   name: string
   gender: 'male' | 'female' | 'other'
   age: number
+  /** 人物别名/称呼 */
+  aliases?: string[]
   height?: number
   weight?: number
   race?: StoryCharacterRace
@@ -973,6 +987,8 @@ export interface UpdateCharacterRequest {
   name?: string
   gender?: 'male' | 'female' | 'other'
   age?: number
+  /** 人物别名/称呼 */
+  aliases?: string[]
   height?: number
   weight?: number
   race?: StoryCharacterRace

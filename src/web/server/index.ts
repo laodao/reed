@@ -376,6 +376,10 @@ async function initDatabase(): Promise<void> {
   )
   await createAgentTables(ds)
 
+  // 设定集动态分组两表 + 人物别名列（P0-2026-09-09）
+  const { createBibleTables } = await import('@core/database/migrations/create-bible-tables')
+  await createBibleTables(ds)
+
   // Run Journal（11 号 §4.1 E1）：运行事件日志（与 Electron 端同构）
   const { createWorkflowRunEvents } = await import(
     '@core/database/migrations/create-workflow-run-events'
@@ -409,6 +413,12 @@ async function initDatabase(): Promise<void> {
   // KE-1 分层知识（34 号 v2）：scope 两列 + 嵌入增量/漂移列（与 Electron 端同构）
   const { addAgentMemoryScopeColumns } = await import('@core/database/migrations/add-agent-memory-scope-columns')
   await addAgentMemoryScopeColumns(ds)
+
+  // 39 号：会话原始流水（append-only 审计）+ 工具产物归档（与 Electron 端同构）
+  const { createAgentSessionEvents } = await import('@core/database/migrations/create-agent-session-events')
+  await createAgentSessionEvents(ds)
+  const { createAgentToolArtifacts } = await import('@core/database/migrations/create-agent-tool-artifacts')
+  await createAgentToolArtifacts(ds)
 
   // M5 系统 agent（28 号批2）：对话级 Agent 模式开关（与 Electron 端同构）
   const { addDialogAgentEnabled } = await import('@core/database/migrations/add-dialog-agent-enabled')

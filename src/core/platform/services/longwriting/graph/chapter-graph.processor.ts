@@ -32,6 +32,8 @@ export interface ChapterGraphProcessResult {
   edges: GraphEdge[]
   /** 本次新增/更新的实体状态数（供前端提示） */
   stateCount: number
+  /** 本次登记的伏笔数（42 号 P1 写作教练位） */
+  foreshadowCount?: number
 }
 
 export class ChapterGraphProcessor {
@@ -141,7 +143,37 @@ export class ChapterGraphProcessor {
       console.error('[ChapterGraphProcessor] 事件提取失败（不影响后续步骤）:', e)
     }
 
-    // ============ 2. 提取实体状态 → upsert 状态切片 ============
+        // ============ 1.5 伏笔提取（42 号 P1 写作教练位；fail-soft，不影响主链路） ============
+    let foreshadowCount = 0
+    try {
+      if (m.lwForeshadows) {
+        await m.lwForeshadows.deleteExtractByChapter(projectId, chapterNumber)  // 重跑幂等
+        const fr = await this.aiService().extractChapterForeshadows(
+          `extract-foreshadows-${Date.now()}`,
+          projectId,
+          chapterContent,
+          chapterNumber,
+          providerConfigId,
+          modelId,
+        )
+        const items: Array<{ content?: string; plantedChapter?: number | null }> = Array.isArray(fr.data) ? fr.data : []
+        for (const item of items) {
+          const content = String(item?.content || '').trim()
+          if (!content) continue
+          await m.lwForeshadows.createRow(
+            projectId,
+            content,
+            Number.isFinite(item.plantedChapter) ? Number(item.plantedChapter) : chapterNumber,
+            { type: 'extract', chapter: chapterNumber },
+          )
+          foreshadowCount++
+        }
+      }
+    } catch (e) {
+      console.warn('[ChapterGraphProcessor] 伏笔提取失败（不阻断主链路）:', e)
+    }
+
+// ============ 2. 提取实体状态 → upsert 状态切片 ============
     const states: EntityStateSnapshot[] = []
     try {
       const involved = await this.collectInvolvedEntities(projectId, outlineId, events)
@@ -225,6 +257,7 @@ export class ChapterGraphProcessor {
       states,
       edges,
       stateCount: states.length,
+      foreshadowCount,
     }
   }
 

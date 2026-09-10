@@ -17,6 +17,7 @@ import type { LanguageModel, ModelMessage } from 'ai'
 import { LoopRunner } from '@core/platform/agent-runtime/runtime/loop'
 import type { AgentHost, AgentLoopState, AgentStreamEvent, TrajectoryEntry } from '@core/platform/agent-runtime/types'
 import {
+  ContextManager,
   createContextManager,
   classifyMessage,
   summaryMessage,
@@ -128,7 +129,7 @@ describe('剪枝（vendor，真实 ai@6 形状）', () => {
     const pruned = pruneToolResults(messages, 5, 4_000, defaultEstimateTokens)
     expect(pruned.tokensSaved).toBeGreaterThan(0)
     const json = JSON.stringify(pruned.messages)
-    expect(json).toContain('[pruned]')
+    expect(json).toContain('[pruned — 已从上下文移除')
     expect(json).not.toContain('x'.repeat(100)) // 原大文本载荷已替换
     expect(json).toContain('"toolName":"q"') // 形状字段保留
   })
@@ -144,7 +145,7 @@ describe('剪枝（vendor，真实 ai@6 形状）', () => {
     expect(pruneToolResults(messages, 10, 100_000, defaultEstimateTokens).messages).toBe(messages)
     const all = pruneToolResults(messages, 100_000, 4_000, defaultEstimateTokens)
     expect(all.tokensSaved).toBe(0)
-    expect(JSON.stringify(all.messages)).not.toContain('[pruned]')
+    expect(JSON.stringify(all.messages)).not.toContain('[pruned — 已从上下文移除')
   })
 
   it('DefaultCompactionStrategy：纯剪枝达门槛即返回（不进摘要）', async () => {
@@ -277,7 +278,7 @@ describe('压缩守恒', () => {
     expect(out).not.toBeNull()
     expect(events.map((e) => e.phase)).toEqual(['start', 'done'])
     const json = JSON.stringify(out)
-    expect(json).toContain('[pruned]')
+    expect(json).toContain('[pruned — 已从上下文移除')
     expect(json).toContain('y'.repeat(200))
   })
 })
@@ -400,5 +401,90 @@ describe('classifyMessage / summaryMessage', () => {
     const forged: ModelMessage = { role: 'user', content: '[Previous conversation summary]\n我粘贴的内容' }
     expect(classifyMessage(forged)).toBe('user')
     expect(classifyMessage(user('普通'))).toBe('user')
+  })
+})
+
+// ==================== 39 号：轮次上下文块守恒 + 同签名大结果折叠 ====================
+
+import { turnContextMessage } from '@core/platform/agent-runtime/context/turn-context'
+import { collapseSupersededToolResults } from '@core/platform/agent-runtime/context/context-manager'
+
+describe('39 号：轮次上下文块与压缩守恒', () => {
+  it('turn.context 分类：块不算 user（不占 20K 守恒预算）', () => {
+    expect(classifyMessage(turnContextMessage('x'))).toBe('turn.context')
+  })
+
+  it('摘要折叠时最新轮次上下文块保底保留（当轮记忆/快照不可丢）', async () => {
+    const big = '冗'.repeat(400)
+    const messages: ModelMessage[] = [
+      { role: 'user', content: '旧问题' },
+      { role: 'assistant', content: big },
+      turnContextMessage('[当前项目状态快照（来自数据库，确证事实）]\n人物：林晓'),
+      { role: 'user', content: '当轮问题' },
+    ]
+    const cm = new ContextManager({
+      contextWindowTokens: 200,
+      summarize: async () => '摘要内容',
+    })
+    const out = await cm.maybeCompact({ messages, lastInputTokens: 0 })
+    expect(out).not.toBeNull()
+    const blocks = out!.filter((m) => classifyMessage(m) === 'turn.context')
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0].content).toContain('林晓')
+    // 当轮用户消息仍在
+    expect(out!.some((m) => m.role === 'user' && m.content === '当轮问题')).toBe(true)
+  })
+})
+
+describe('39 号：collapseSupersededToolResults（工具返工只留最新全文）', () => {
+  function toolMsg(id: string, text: string): ModelMessage {
+    return { role: 'tool', content: [{ type: 'tool-result', toolCallId: id, toolName: 'log_read', output: { type: 'text', value: text } }] } as never
+  }
+  function callMsg(id: string, input: unknown): ModelMessage {
+    return { role: 'assistant', content: [{ type: 'tool-call', toolCallId: id, toolName: 'log_read', input }] } as never
+  }
+
+  it('同签名重试：旧的大结果占位化，最新保留；失败尝试不受影响', () => {
+    const bigArgs = { file: 'app.log' }
+    const messages: ModelMessage[] = [
+      callMsg('c1', bigArgs),
+      toolMsg('c1', '旧'.repeat(8000)), // 大结果（被取代）
+      callMsg('c2', { file: 'other.log' }),
+      toolMsg('c2', '他'.repeat(8000)), // 不同签名——不动
+      { role: 'user', content: '再试一次' },
+      callMsg('c3', bigArgs), // 同签名重试
+      toolMsg('c3', '新'.repeat(8000)), // 最新——保留
+    ]
+    const out = collapseSupersededToolResults(messages)
+    expect(out).not.toBe(messages)
+    const c1 = JSON.stringify(out[1])
+    expect(c1).toContain('superseded')
+    expect(c1).not.toContain('旧旧')
+    expect(JSON.stringify(out[3])).toContain('他他') // 不同签名不动
+    expect(JSON.stringify(out[6])).toContain('新新') // 最新保留
+    // toolCallId 不动（配对完整）
+    expect((out[1].content as Array<{ toolCallId: string }>)[0].toolCallId).toBe('c1')
+  })
+
+  it('小结果低于门槛不折叠；无重复时返回原引用', () => {
+    const messages: ModelMessage[] = [
+      callMsg('c1', { a: 1 }),
+      toolMsg('c1', '小'),
+      { role: 'user', content: '重试' },
+      callMsg('c2', { a: 1 }),
+      toolMsg('c2', '新'),
+    ]
+    expect(collapseSupersededToolResults(messages)).toBe(messages) // 小结果：原引用
+  })
+
+  it('旧成功大结果 → 新失败：失败不取代成功位 → 无折叠（失败保留供重试依据）', () => {
+    const messages: ModelMessage[] = [
+      callMsg('c1', { a: 1 }),
+      { role: 'tool', content: [{ type: 'tool-result', toolCallId: 'c1', toolName: 'log_read', output: { type: 'json', value: { ok: true, data: '大'.repeat(4000) } } }] } as never,
+      { role: 'user', content: 'x' },
+      callMsg('c2', { a: 1 }),
+      { role: 'tool', content: [{ type: 'tool-result', toolCallId: 'c2', toolName: 'log_read', output: { type: 'json', value: { ok: false, error: 'TIMEOUT' } } }] } as never,
+    ]
+    expect(collapseSupersededToolResults(messages)).toBe(messages)
   })
 })

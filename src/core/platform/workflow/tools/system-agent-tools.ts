@@ -393,9 +393,15 @@ export function buildSystemAgentToolDefs(deps: SystemAgentToolsDeps): AgentToolD
     dangerLevel: 'write',
     execute: async (input, ctx) => {
       if (!deps.tasks) throw new Error('任务树子系统未装配（数据库不可用或装配失败）。')
-      const root = await deps.tasks.createPlan(input.goal, { title: input.title })
+      // KE 分层打标（37 号）：宿主在 runtimeContext.memoryScope 声明业务归属——
+      // 蒸馏出的经验按 scope 落 L2/L3，否则全部退化为用户级 L1
+      const memoryScope = (ctx.logContext as { memoryScope?: { bizModule?: string; projectId?: string } } | undefined)?.memoryScope
+      const root = await deps.tasks.createPlan(input.goal, {
+        title: input.title,
+        ...(memoryScope ? { scope: memoryScope } : {}),
+      })
       collectSystemAgentRef(ctx, { kind: 'task_tree', id: root.id, label: root.title })
-      logger.info(`[system-agent] create_task_plan root=${root.id} goal=${input.goal.slice(0, 80)}`)
+      logger.info(`[system-agent] create_task_plan root=${root.id} goal=${input.goal.slice(0, 80)} scope=${memoryScope ? `${memoryScope.bizModule ?? ''}:${memoryScope.projectId ?? ''}` : 'user'}`)
       return {
         rootId: root.id,
         title: root.title,

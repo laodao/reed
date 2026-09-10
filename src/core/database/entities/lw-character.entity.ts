@@ -59,6 +59,10 @@ export class LwCharacterEntity {
   @Column({ name: 'abilities', type: 'text', nullable: true })
   abilities!: string | null
 
+  /** 人物别名/称呼 JSON 数组（网文称呼刚需 + 提及检测地基，P0-2026-09-09） */
+  @Column({ name: 'aliases', type: 'text', nullable: true })
+  aliases!: string | null
+
   @Column({ name: 'role_position', type: 'text', nullable: true })
   rolePosition!: string | null
 

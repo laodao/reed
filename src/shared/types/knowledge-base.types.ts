@@ -169,7 +169,7 @@ export interface KbDocument {
 /**
  * 文件类型
  */
-export type FileType = 'pdf' | 'docx' | 'doc' | 'txt' | 'md' | 'epub' | 'xlsx' | 'xls' | 'webpage'
+export type FileType = 'pdf' | 'docx' | 'doc' | 'txt' | 'md' | 'epub' | 'mobi' | 'azw3' | 'xlsx' | 'xls' | 'webpage'
 
 /**
  * 文档元数据

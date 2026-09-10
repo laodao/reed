@@ -21,7 +21,7 @@
           v-for="project in projects"
           :key="project.id"
           class="project-card"
-          @click="openProject(project)"
+          @click="project.type === 'story' ? openRoom(project) : openProject(project)"
         >
           <div class="project-icon">
             <el-icon size="32">
@@ -41,6 +41,11 @@
             </div>
           </div>
           <div class="project-actions">
+            <el-tooltip v-if="project.type === 'story'" content="章节写作工作台（原 7 阶段编辑器）" placement="top">
+              <el-button size="small" @click.stop="openProject(project)">
+                ✍ 写作台
+              </el-button>
+            </el-tooltip>
             <el-button text @click.stop="editProject(project)">
               <el-icon><Edit /></el-icon>
             </el-button>
@@ -80,6 +85,13 @@
               评论类
             </el-radio>
           </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="createForm.type === 'story'" label="内容目标">
+          <el-radio-group v-model="createForm.contentTarget">
+            <el-radio value="novel">长篇小说</el-radio>
+            <el-radio value="script">短剧剧本</el-radio>
+          </el-radio-group>
+          <div class="form-tip">短剧目标：研讨室大纲阶段改出「分集大纲」，定稿后一键转短剧项目</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -183,7 +195,8 @@ const projects = ref<LongWritingProject[]>([])
 const showCreateDialog = ref(false)
 const createForm = ref({
   name: '',
-  type: 'story' as 'story' | 'comment'
+  type: 'story' as 'story' | 'comment',
+  contentTarget: 'novel' as 'novel' | 'script'
 })
 
 // 设置对话框
@@ -248,13 +261,27 @@ async function createProject() {
       name: createForm.value.name,
       type: createForm.value.type
     }
+    const contentTarget = createForm.value.contentTarget || 'novel'
     const result = await window.electronAPI.longwriting.createProject(requestData)
     console.log('createProject result:', result)
 
     if (result.success && result.data) {
       projects.value.unshift(result.data)
+      // 短剧目标：写入房间状态（wizard_state.room.contentTarget，新项目 wizardState 为空，安全覆盖）
+      if (contentTarget === 'script') {
+        try {
+          await window.electronAPI.longwriting.updateProject(result.data.id, {
+            wizardState: {
+              room: {
+                ledger: [], summary: '', summarizedTurn: 0, turnNo: 0,
+                phase: 'story-core', contentTarget: 'script', pendingCards: [], cardSeq: 0,
+              },
+            },
+          } as never)
+        } catch { /* 目标设置失败不阻断创建 */ }
+      }
       showCreateDialog.value = false
-      createForm.value = { name: '', type: 'story' }
+      createForm.value = { name: '', type: 'story', contentTarget: 'novel' }
       ElMessage.success('项目创建成功')
     } else {
       ElMessage.error('创建失败：' + (result.error || '未知错误'))
@@ -266,6 +293,13 @@ async function createProject() {
 }
 
 // 打开项目
+/** 进入故事研讨室（v2.1：story 类项目主入口） */
+function openRoom(project: LongWritingProject) {
+  const path = `/longwriting/room/${project.id}`
+  tabsStore.preloadTab(path, `研讨室 · ${project.name}`)
+  router.push(path)
+}
+
 function openProject(project: LongWritingProject) {
   // 预先设置 tab 标题为项目名称
   const path = project.type === 'story' ? `/story-editor/${project.id}` : `/comment-editor/${project.id}`
@@ -545,7 +579,9 @@ onMounted(() => {
 
 .project-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  // 430px 下限：M8 起卡片带「✍写作台」动作区（约 200px），320px 时信息区会被压到
+  // 只剩 ~60px、名称顶进按钮区——下限须容得下 图标56+动作198+信息区≥130
+  grid-template-columns: repeat(auto-fill, minmax(430px, 1fr));
   gap: 16px;
 }
 
@@ -622,6 +658,8 @@ onMounted(() => {
 .project-actions {
   display: flex;
   gap: 4px;
+  flex-shrink: 0;
+  margin-left: 8px;
 }
 
 .empty-state {

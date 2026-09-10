@@ -187,6 +187,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'workflow.cancelTask': { channel: 'at:cancel', wrap: (...args: unknown[]) => [{ rootId: args[0] }] },
   'workflow.listMemoryPending': { channel: 'am:list-pending' },
   'workflow.listMemoryActive': { channel: 'am:list-active' },
+  'workflow.listMemoryArchived': { channel: 'am:list-archived' },
   'workflow.approveMemory': { channel: 'am:approve', wrap: (...args: unknown[]) => [{ id: args[0] }] },
   'workflow.archiveMemory': { channel: 'am:archive', wrap: (...args: unknown[]) => [{ id: args[0] }] },
   'workflow.addManualMemory': { channel: 'am:add-manual', wrap: (...args: unknown[]) => [args[0]] },
@@ -470,6 +471,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'longwriting.generateOutlineStory': { channel: 'longwriting:generateOutlineStory' },
   'longwriting.generateOutlineComment': { channel: 'longwriting:generateOutlineComment' },
   'longwriting.generateChapter': { channel: 'longwriting:generateChapter' },
+  'longwriting.chapterContextPreview': { channel: 'longwriting:chapterContextPreview', wrap: (p: unknown) => (Array.isArray(p) ? p : [p]) },
+  'longwriting.generateChapterWithContext': { channel: 'longwriting:generateChapterWithContext' },
   'longwriting.generateSection': { channel: 'longwriting:generateSection' },
   'longwriting.generateChapterPrewrite': { channel: 'longwriting:generateChapterPrewrite' },
   // longwriting.onGenerateEvent(eventId, cb) — 后端 emit(`longwriting:generate:${eventId}`, ...)
@@ -584,13 +587,28 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'longwriting.generateCancel': { channel: 'longwriting:generate:cancel' },
   'longwriting.extractChapterEvents': { channel: 'longwriting:extractChapterEvents' },
   // 对话式工作流 Agent
-  'longwriting.agentSend': { channel: 'longwriting:agent:send' },
-  'longwriting.agentHistory': { channel: 'longwriting:agent:history' },
-  'longwriting.agentCancel': { channel: 'longwriting:agent:cancel' },
-  'longwriting.agentState': { channel: 'longwriting:agent:state' },
-  // longwriting.onAgentEvent(projectId, cb) — 后端 emit(`longwriting:agent:${projectId}`, ...)
-  'longwriting.onAgentEvent': {
-    eventChannel: (projectId) => `longwriting:agent:${projectId}`,
+  // ==================== 故事研讨室（v2.1） ====================
+  'longwriting.roomSend': { channel: 'longwriting:room:send' },
+  'longwriting.roomHistory': { channel: 'longwriting:room:history' },
+  'longwriting.roomState': { channel: 'longwriting:room:state' },
+  'longwriting.roomCancel': { channel: 'longwriting:room:cancel' },
+  'longwriting.roomLedgerUpdate': { channel: 'longwriting:room:ledger:update' },
+  'longwriting.roomSetPhase': { channel: 'longwriting:room:setPhase' },
+  'longwriting.roomDistill': { channel: 'longwriting:room:distill' },
+  'longwriting.roomAdoptCard': { channel: 'longwriting:room:adoptCard' },
+  'longwriting.roomRegenerateCard': { channel: 'longwriting:room:regenerateCard' },
+  'longwriting.roomIgnoreCard': { channel: 'longwriting:room:ignoreCard' },
+  'longwriting.roomSetTarget': { channel: 'longwriting:room:setTarget' },
+  'longwriting.bibleList': { channel: 'longwriting:bible:list' },
+  'longwriting.bibleDetail': { channel: 'longwriting:bible:detail' },
+  'longwriting.bibleCustomCreate': { channel: 'longwriting:bible:custom:create' },
+  'longwriting.bibleCustomUpdate': { channel: 'longwriting:bible:custom:update' },
+  'longwriting.bibleCustomDelete': { channel: 'longwriting:bible:custom:delete' },
+  'longwriting.bibleProgression': { channel: 'longwriting:bible:progression' },
+  'longwriting.bibleForeshadowStatus': { channel: 'longwriting:bible:foreshadow:status' },
+  // longwriting.onRoomEvent(projectId, cb) — 后端 emit(`longwriting:room:${projectId}`, ...)
+  'longwriting.onRoomEvent': {
+    eventChannel: (projectId) => `longwriting:room:${projectId}`,
   },
   'diary.listFolders': { channel: 'diary:list-folders' },
   'diary.getAllFolders': { channel: 'diary:get-all-folders' },

@@ -2,10 +2,9 @@
  * 领域学习 Agent 工具定义
  * @module packs/domain-learning/services/dl-agent-tools
  *
- * 与 EP/LW 宿主同构，但**以裸名注册（source='tool'，dl_ 前缀天然防跨包冲突）**——
- * 平台 registry 对 pack 工具会强制命名空间 `pack:<packId>:<name>` 且 loop 直接把它
- * 当 LLM function.name 透传，OpenAI 兼容 API 拒绝冒号（agent-harness 待修缺口，
- * EP/LW 同受影响；本包先裸名规避，工具域归属用 dl_ 前缀与 source 域表达）。
+ * 与 EP/LW 宿主同构，标准 packId 注册（`pack:dl-agent:<name>`）——工具线上名由平台
+ * 双层保障：registry 建 byBare 裸名别名（bind 用裸名 → LLM function.name 合法），
+ * loop 的 41 号 wire-name 映射再兜底折叠仍带冒号的键（见 agent-runtime/tools/wire-name.ts）。
  * - def 不捕获空间——spaceId/conceptId 从 ctx.logContext（宿主 runtimeContext 注入）运行时还原；
  * - 懒注册幂等（boot 时序：pack activate 早于 workflow-boot，注册只能发生在宿主首次 sendMessage 之后）；
  * - 动作一律经 executeDlAction 落库（校验/人审草稿语义集中，见 dl-agent-actions）。

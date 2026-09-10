@@ -1,5 +1,8 @@
 # Agent Harness 详细设计（platform 级基础能力）
 
+> ⚠️ 42 号 M6（2026-09-09）：本文的 `longwriting:agent:*` 通道与旧工作流已退役，对话链路由故事研讨室（story-room）承接；本文仅作历史设计参考。
+
+
 - 日期：2026-09-05 · 分支：`feat/agent-harness`（基于 feat/plugin-arch @ f361915e）
 - 前置调研：[2026-09-05-agent-harness-research.md](./2026-09-05-agent-harness-research.md)（v5，含运行级 spike）
 - 状态：设计评审稿 v2（v2 修订：事件双路径接入平台事件总线，§6.9.1；待与 tasks/2026-08-28-agent-loop-harness 12-17 号规格做对齐评审后进入 M0）

@@ -19,7 +19,7 @@
       <!-- 步骤 1：选择文件 -->
       <section v-if="phase === 'input'" class="step-input">
         <div class="hint-row">
-          上传一个按章节组织的剧本文件（txt / md / docx / pdf / epub），系统按
+          上传一个按章节组织的剧本文件（txt / md / docx / pdf / epub / mobi / azw3），系统按
           「第X章 / Chapter N / # 标题」自动拆分成多集，确认后一次性创建。
         </div>
         <el-button type="primary" size="large" :loading="analyzing" @click="onSelectFile">

@@ -303,7 +303,7 @@
               resize="none"
               placeholder="追问：还有哪里不懂？例如“为什么……”（Enter 发送）"
               :disabled="tutorStreaming"
-              @keydown.enter.exact.prevent="ask"
+              @keydown.enter.exact.prevent="ask($event)"
             />
             <div class="qa-send-row">
               <span class="qa-hint">{{ tutorStreaming ? 'AI 正在回答…' : '支持追问 · 换种讲法 · 拆细一点' }}</span>
@@ -500,7 +500,14 @@ const router = useRouter()
 const tabsStore = useTabsStore()
 const store = useDomainLearningStore()
 
+// keep-alive 缓存按组件名匹配（与路由名一致）
+defineOptions({ name: 'DomainLearningSpace' })
+
 const spaceId = computed(() => String(route.params.id ?? ''))
+
+// keep-alive 缓存按实例隔离（MainLayout :key=route.path）：记录本实例路径，
+// 全局路由变化时不串改缓存实例的状态（deactivated 实例的 watch 仍会触发）
+const ownPath = route.path
 
 /** 当前空间聚合视图（store 缓存；路由变化时重拉） */
 const view = computed<DlSpaceView | null>(() => store.currentSpaceView)
@@ -557,11 +564,29 @@ async function loadSpace(): Promise<void> {
     expandPathTo(target.id)
     selectConcept(target)
   }
+  // 深链参数用完即清：防后续重挂载/标签恢复时被旧 query 拽回旧概念
+  if (qConcept) void router.replace({ query: {} })
 }
 
 watch(
   () => route.params.id,
-  () => void loadSpace()
+  () => {
+    // 仅当路由落在本实例自己的路径上才重载（keep-alive 下 deactivated 实例不串写共享 store）
+    if (route.path === ownPath) void loadSpace()
+  }
+)
+// keep-alive 下从 Atlas「去学它」回到本实例（path 未变、仅 query 变化）时在此消费
+watch(
+  () => route.query.concept,
+  (cid) => {
+    if (route.path !== ownPath || typeof cid !== 'string' || !cid) return
+    const c = concepts.value.find(x => x.id === cid && x.nodeType !== 'group')
+    if (c) {
+      expandPathTo(c.id)
+      selectConcept(c)
+    }
+    void router.replace({ query: {} })
+  }
 )
 
 /** 组件挂载期间所在空间（卸载时取消在途轮次用；路由切换后不误取消新空间） */
@@ -1064,12 +1089,17 @@ async function researchConcept(): Promise<void> {
     }
   })
   try {
-    await store.sendAgent({
+    const result = await store.sendAgent({
       mode: 'research',
       spaceId: spaceId.value,
       conceptId: c.id,
       message: `请系统研究「${c.name}」这一知识点，并产出可展示的讲义草稿（含区级内容）。`,
     })
+    // 无反馈不静默：启动失败（如与自动推进调度器撞 busy）要有可见提示
+    if (!result) {
+      lastFeedbackIsWarn.value = true
+      lastFeedback.value = store.error || '研究未能启动（上一轮可能仍在进行，稍后再试）'
+    }
     // 研究完成后重拉视图：卡片草稿/新关系/掌握度一并刷新
     await refreshView()
   } finally {
@@ -1136,17 +1166,21 @@ const displayTurns = computed<DlChatTurn[]>(() => [
 
 /** 最近一次 ask 的模式（停止按钮据此取消对应后端轮次） */
 const lastAskMode = ref<'tutor' | 'task'>('tutor')
+/** 发起本轮 ask 时的概念快照（"停止"按发起时 scope 取消，切概念不落空） */
+const lastAskScopeConceptId = ref<string | null>(null)
 
 /** 停止当前答疑/任务轮次（2026-09-09 复盘：补取消入口；后端 cancel 后 ask finally 收尾） */
 async function stopAsk(): Promise<void> {
   if (!tutorStreaming.value) return
-  await store.cancelAgent(lastAskMode.value, spaceId.value, currentConceptId.value)
+  await store.cancelAgent(lastAskMode.value, spaceId.value, lastAskScopeConceptId.value)
   lastFeedbackIsWarn.value = false
   lastFeedback.value = '已停止本轮回答'
   tutorStreaming.value = false
 }
 
-async function ask(): Promise<void> {
+async function ask(e?: Event): Promise<void> {
+  // 中文 IME 组合期间的 Enter 是"确认候选词"，不是发送
+  if (e instanceof KeyboardEvent && e.isComposing) return
   const q = draft.value.trim()
   if (!q || tutorStreaming.value) return
   // 研究进行中先不追问（避免同空间同概念双 agent 轮并发烧模型与写库；UI 级互斥）
@@ -1159,6 +1193,7 @@ async function ask(): Promise<void> {
   const targetMode: 'tutor' | 'task' = routeDlIntent(q) === 'task' ? 'task' : 'tutor'
   lastAskMode.value = targetMode
   const scopeConceptId = currentConceptId.value
+  lastAskScopeConceptId.value = scopeConceptId
   tutorStreaming.value = true
   lastFeedback.value = ''
   taskLog.value = []
@@ -1320,6 +1355,8 @@ function focusQaInput(): void {
 /** #1 提问：把选中文字填入右侧答疑输入框（不自动发送，由用户编辑后发送） */
 function askSelection(): void {
   if (!sel.text) return
+  // 笔记 tab 下输入区不在 DOM：先切回追问栏再填充，避免"点了没反应"
+  rightPane.value = 'qa'
   draft.value = sel.text
   hideSel()
   focusQaInput()

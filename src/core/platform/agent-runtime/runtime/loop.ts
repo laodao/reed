@@ -32,6 +32,15 @@ import type {
 } from '../types'
 import type { ApprovalDecision } from '@shared/types/agent.types'
 import type { LoopContextPort } from '../context/context-manager'
+import {
+  turnContextMessage,
+  hasCurrentTurnContextBlock,
+  withPromptCacheBreakpoint,
+  isPromptCacheEnabled,
+} from '../context/turn-context'
+import { classifyMessage, collapseSupersededToolResults } from '../context/context-manager'
+import { buildWireNameMap, toWireName } from '../tools/wire-name'
+import type { ToolArtifactPort } from '../tools/artifacts'
 
 const logger = createLogger('AgentLoop')
 
@@ -49,6 +58,13 @@ export interface LoopRunnerDeps {
    * loop 只在步边界调用并持久化压缩结果。compaction 事件经 emit 回调直发门面。
    */
   context?: LoopContextPort
+  /**
+   * 工具产物归档端口（39 号 P1-1）：非 registry 包装工具的完整结果在截断前落档，
+   * 上下文内占位可经 get_tool_result 回查。registry 包装工具的归档在 registry 管线。
+   */
+  artifacts?: ToolArtifactPort | null
+  /** 提示词缓存断点（39 号 P0-1；缺省读 AGENT_PROMPT_CACHE env，非 '0' 即开） */
+  promptCache?: boolean
   clock?: () => number
 }
 
@@ -58,6 +74,9 @@ interface AiModule {
 }
 
 const STAGNANT_NUDGE = '检测到你连续多轮执行完全相同的工具调用。请更换策略，或直接给出最终答案。'
+
+/** 轮询豁免工具（M8）：等待长任务终态的合法只读轮询，不计无进展（maxSteps 仍兜底） */
+const POLLING_EXEMPT_TOOLS: ReadonlySet<string> = new Set(['get_workflow_run'])
 
 // —— 展示/轨迹截断上限（命名常量：观测面字段裁剪，非行为参数） ——
 const TRAJECTORY_THOUGHT_MAX_CHARS = 4000
@@ -95,7 +114,8 @@ export class LoopRunner {
     } else {
       // 首步前持久化初始状态：首步工具审批挂起（工作流宿主）与步 0 崩溃恢复
       // 都要求宿主手上有 state 可写 suspended/续跑，否则恢复路径必然缺状态
-      await host.saveState(state)
+      // appended=初始消息（原始流水首行=本轮用户输入，39 号 P0-2）
+      await host.saveState(state, { appended: [...state.messages] })
     }
     return this.loop(state, task, host)
   }
@@ -128,9 +148,10 @@ export class LoopRunner {
     }
     // 批准：注入注记后进入下一轮（模型重发挂起调用，宿主的一次性授权放行）
     const note = `人工已确认该操作。`
-    state.messages = [...state.messages, { role: 'assistant', content: `[系统] ${note}` } as ModelMessage]
+    const noteMsg = { role: 'assistant', content: `[系统] ${note}` } as ModelMessage
+    state.messages = [...state.messages, noteMsg]
     state.suspended = undefined
-    await host.saveState(state)
+    await host.saveState(state, { appended: [noteMsg] })
     return this.loop(state, task, host)
   }
 
@@ -140,30 +161,51 @@ export class LoopRunner {
     const ai = await this.loadAi()
     const model = await this.deps.resolveModel(task.modelPreference)
     const stagnantLimit = this.deps.stagnantLimit ?? 3
-    const system = buildSystem(task, state)
+    const system = buildSystem(task)
+    const cacheEnabled = this.deps.promptCache ?? isPromptCacheEnabled()
+    // 线上名映射（41 号）：provider 函数名规范 ^[a-zA-Z0-9_-]{1,64}$——pack:<id>:<name>
+    // 冒号名整单 400。装配用线上名、回呼还原规范名（每轮重建：工具集本轮固定）
+    const { canonicalToWire, wireToCanonical } = buildWireNameMap(Object.keys(task.tools))
     let lastSignature = ''
     let nudged = false // 无进展提示只注入一次；再达限以 stagnant 终止
     // 最近一步模型实测 inputTokens（压缩水位依据——state.usage.promptTokens 是
     // 跨步累计和，用作水位会假触发+压缩空转，批 6 review P1-3）
     let lastStepInputTokens = 0
+    // 原始流水增量（39 号 P0-2）：loop 产生的每条新消息在此累积，随最近的
+    // saveState 上报后清空。宿主自产消息（本轮 user 输入/种子迁移）由宿主侧
+    // 自行补报——两层各自诚实上报，合并即完整 append-only 流水。
+    let pendingAppended: ModelMessage[] = []
 
     // 崩溃恢复装配：悬空工具调用哨兵修复（一次性持久化——幂等，返回原引用则跳过）
     if (this.deps.context) {
       const repaired = this.deps.context.assemble(state.messages)
       if (repaired !== state.messages) {
+        const known = new Set(state.messages)
         state.messages = repaired
-        await host.saveState(state)
+        pendingAppended = repaired.filter((m) => !known.has(m))
+        await host.saveState(state, { appended: [...pendingAppended] })
+        pendingAppended = []
       }
+    }
+
+    // 轮次上下文块注入（39 号 P0-1）：snapshot/dynamicContext/suspended 注记出
+    // system、入消息尾——system 跨轮稳定是前缀缓存的前提；块每轮刷新、随历史
+    // 持久化（历史即"当时的上下文"）。幂等：本轮已有块（挂起恢复重入）跳过。
+    const turnContext = buildTurnContext(task, state)
+    if (turnContext && !hasCurrentTurnContextBlock(state.messages)) {
+      const block = turnContextMessage(turnContext)
+      state.messages = [...state.messages, block]
+      pendingAppended.push(block)
     }
 
     try {
       while (!state.converged) {
         // —— 护栏（12 号 §9：每步 LLM 调用前）——
         if (state.iteration >= state.task.maxSteps) {
-          return this.stop(state, host, 'max_steps')
+          return this.stop(state, host, 'max_steps', undefined, [...pendingAppended])
         }
         if (host.signal.aborted) {
-          return this.stop(state, host, 'aborted')
+          return this.stop(state, host, 'aborted', undefined, [...pendingAppended])
         }
 
         // —— 压缩守恒（12 号 R6：步边界水位检查；结果持久化）——
@@ -174,18 +216,26 @@ export class LoopRunner {
             signal: host.signal,
           })
           if (compacted) {
+            // 工作集被重写；流水只补记新生的摘要消息——被保留的消息（身份不变）
+            // 与被剪枝/折叠的原文都已在流水（39 号 P0-2 正是为此保底），剪枝克隆
+            // 不重复入流水
+            const summaries = compacted.filter((m) => classifyMessage(m) === 'compaction.summary')
             state.messages = compacted
-            await host.saveState(state)
+            pendingAppended.push(...summaries)
+            await host.saveState(state, { appended: [...pendingAppended] })
+            pendingAppended = []
           }
         }
 
         // —— 单步决策（ai@6：不传 stopWhen = 恰好一步）——
         const stepStart = this.clock()
-        const tools = this.buildToolSet(task, host, state)
+        const tools = this.buildToolSet(task, host, state, canonicalToWire)
+        const outbound = this.deps.context ? this.deps.context.assemble(state.messages) : state.messages
         const stream = ai.streamText({
           model,
           system,
-          messages: this.deps.context ? this.deps.context.assemble(state.messages) : state.messages,
+          // 缓存断点只作用于本次调用的出站拷贝（39 号 P0-1）——持久化历史保持原生形态
+          messages: cacheEnabled ? withPromptCacheBreakpoint(outbound) : outbound,
           tools: Object.keys(tools).length > 0 ? tools : undefined,
           abortSignal: host.signal,
         })
@@ -218,7 +268,7 @@ export class LoopRunner {
           const message = streamError ?? `模型流以 error 终止（finishReason=error）`
           logger.error(`[agent-loop] 模型流失败 def=${task.definitionId} scope=${task.scopeId}: ${message}`)
           state.messages = [...state.messages, ...stepMessages]
-          return this.stop(state, host, 'error', message)
+          return this.stop(state, host, 'error', message, [...pendingAppended, ...stepMessages])
         }
         if (finishReason === 'length') {
           // 截断完成：仍按 final 收敛，但打标可观测（答案可能不完整）
@@ -226,6 +276,17 @@ export class LoopRunner {
         }
 
         const decision = normalizeDecision(finishReason, stepMessages)
+        // 线上名还原（41 号）：模型回呼的是 provider 函数名（线上名），下游
+        // （轨迹/轮询豁免/无进展签名）全程只见规范名
+        if (decision.type === 'tool_calls') {
+          for (const c of decision.calls) {
+            // 二次查表（42号 review P2）：模型照抄目录/提示里的规范冒号名时，按同规则
+            // 折叠后可命中映射（pack:demo:read → pack_demo_read）
+            c.toolName = wireToCanonical.get(c.toolName)
+              ?? wireToCanonical.get(toWireName(c.toolName))
+              ?? c.toolName
+          }
+        }
         const decisionToolNames = decision.type === 'tool_calls' ? decision.calls.map((c) => c.toolName) : []
         // thought 先按字符截 4000，再按 payload 字节预算二次收紧（总收口 A-P2-7：
         // 4 字节字符 4000 chars ≈ 16KB 可击穿 payload 字节预算退化为 _truncated 整行）
@@ -252,7 +313,9 @@ export class LoopRunner {
           state.converged = true
           state.finalAnswer = decision.answer
           state.messages = [...state.messages, ...stepMessages]
-          await host.saveState(state)
+          pendingAppended.push(...stepMessages)
+          await host.saveState(state, { appended: [...pendingAppended] })
+          pendingAppended = []
           host.emitTrajectory({ iteration: state.iteration, kind: 'final', payload: { answer: decision.answer.slice(0, TRAJECTORY_ANSWER_MAX_CHARS) } })
           return resultOf(state, 'final')
         }
@@ -263,8 +326,11 @@ export class LoopRunner {
 
         // 无进展检测（12 号 §6.4-3：signature = 工具名+入参规范化；
         // stableStringify 与审批缓存键同一实现——键序稳定防同语义漏检）
+        // 轮询豁免（M8）：等待长工作流终态的合法轮询（入参不变是轮询语义本身，
+        // 进展体现在返回值里）不计无进展；护栏仍有 maxSteps 兜底
+        const isPollingStep = calls.every((c) => POLLING_EXEMPT_TOOLS.has(c.toolName))
         const signature = calls.map((c) => `${c.toolName}:${stableStringify(c.input)}`).sort().join('|')
-        if (signature && signature === lastSignature) {
+        if (signature && signature === lastSignature && !isPollingStep) {
           state.stagnantRounds++
           if (state.stagnantRounds >= stagnantLimit) {
             if (nudged) {
@@ -272,16 +338,19 @@ export class LoopRunner {
               // 深度 review P3-4——原实现恒以 max_steps 兜底，stagnant 不可达）
               logger.warn(`[agent-loop] 无进展终止 def=${task.definitionId} scope=${task.scopeId}`)
               state.messages = [...state.messages, ...stepMessages]
-              return this.stop(state, host, 'stagnant')
+              return this.stop(state, host, 'stagnant', undefined, [...pendingAppended, ...stepMessages])
             }
-            state.messages = [...state.messages, ...stepMessages, { role: 'assistant', content: STAGNANT_NUDGE } as ModelMessage]
+            const nudgeMsg = { role: 'assistant', content: STAGNANT_NUDGE } as ModelMessage
+            state.messages = [...state.messages, ...stepMessages, nudgeMsg]
             state.stagnantRounds = 0
             nudged = true
-            await host.saveState(state)
+            pendingAppended.push(...stepMessages, nudgeMsg)
+            await host.saveState(state, { appended: [...pendingAppended] })
+            pendingAppended = []
             state.iteration++
             continue
           }
-        } else {
+        } else if (!isPollingStep) {
           state.stagnantRounds = 0
         }
         lastSignature = signature
@@ -289,6 +358,11 @@ export class LoopRunner {
         // ai@6 已在本步内执行工具（execute 内含审批/超时/容错包装），
         // stepMessages 已含 assistant(tool-call) + tool(result) —— 12 号 §6.3：工具全部 settle 后
         state.messages = [...state.messages, ...stepMessages]
+        // 同签名大结果折叠（39 号 P1-1）：重试/返工场景旧的大结果占位化，只留
+        // 最新全文——失败原因本身很小不受影响；折叠改写不进流水（原文已在）
+        const collapsed = collapseSupersededToolResults(state.messages)
+        if (collapsed !== state.messages) state.messages = collapsed
+        pendingAppended.push(...stepMessages)
         for (const c of calls) {
           // toolCallId 进轨迹：宿主按 id 配对 call/result（并行工具完成序 ≠ 决策序，
           // 按下标配对会张冠李戴——深度 review P2-6 实证）
@@ -299,7 +373,8 @@ export class LoopRunner {
             payload: { toolCallId: c.toolCallId, args: c.input },
           })
         }
-        await host.saveState(state) // —— 唯一持久化点（崩溃恢复边界）——
+        await host.saveState(state, { appended: [...pendingAppended] }) // —— 唯一持久化点（崩溃恢复边界）——
+        pendingAppended = []
         state.iteration++
       }
       return resultOf(state, 'final')
@@ -307,20 +382,26 @@ export class LoopRunner {
       const err = e as { name?: string; message?: string }
       const aborted = host.signal.aborted || err?.name === 'AbortError'
       if (aborted) {
-        return this.stop(state, host, 'aborted')
+        return this.stop(state, host, 'aborted', undefined, [...pendingAppended])
       }
       logger.error('[agent-loop] 循环异常终止', e)
       state.stopReason = 'error'
-      await host.saveState(state).catch((saveErr) =>
+      await host.saveState(state, { appended: [...pendingAppended] }).catch((saveErr) =>
         logger.warn('[agent-loop] 异常路径补偿落盘失败（历史可能停留上一 save 点）', saveErr),
       )
+      pendingAppended = []
       return resultOf(state, 'error', err?.message ?? String(e))
     }
   }
 
   // ==================== 工具装配（审批/超时/容错包装层，22 号 §3-C2） ====================
 
-  private buildToolSet(task: AgentTask, host: AgentHost, state: AgentLoopState): ToolSet {
+  private buildToolSet(
+    task: AgentTask,
+    host: AgentHost,
+    state: AgentLoopState,
+    canonicalToWire: Map<string, string>,
+  ): ToolSet {
     const ai = this.aiModule
     if (!ai) return {}
     const timeoutMs = this.deps.toolTimeoutMs ?? 120_000
@@ -328,11 +409,14 @@ export class LoopRunner {
 
     const requestApproval = this.deps.requestApproval
     for (const [name, def] of Object.entries(task.tools)) {
+      // key 用线上名（41 号）：provider 函数名不允许冒号（pack:<id>:<name> 形态）；
+      // 闭包内 name 仍是规范名——流事件/轨迹/审计全程规范名
+      const wireName = canonicalToWire.get(name) ?? name
       // registry 桥接产物：校验/超时/截断的所有权在 registry 管线（深 review P1 定案——
       // 两层各做一遍会出现失败被报 ok:true、双计时器隐式取 min、双重截断打架）。
       // loop 只保留：审批短路 + 流事件/轨迹 + 错误形态归一
       const registryWrapped = (def as { registryWrapped?: boolean }).registryWrapped === true
-      out[name] = ai.tool({
+      out[wireName] = ai.tool({
         description: def.description,
         inputSchema: def.inputSchema,
         execute: async (input: unknown, options: { toolCallId: string }) => {
@@ -409,6 +493,24 @@ export class LoopRunner {
             }
             const ok = registryWrapped ? (result as { ok?: boolean })?.ok !== false : true
             host.emitStream({ kind: 'tool-end', toolName: name, toolCallId: options.toolCallId, ok })
+            // 完整结果归档（39 号 P1-1）：非 registry 工具在截断前落档（registry
+            // 包装工具的归档在其管线内）——上下文内 8K 截断后仍可经 get_tool_result
+            // 回查全文。只归档成功结果（失败回填本就只含错误摘要，无回查价值）。
+            // fire-and-forget：归档失败只 warn，不影响工具调用。
+            if (!registryWrapped && ok && this.deps.artifacts && options.toolCallId) {
+              void this.deps.artifacts
+                .save({
+                  scopeKey: task.scopeId,
+                  toolCallId: options.toolCallId,
+                  toolName: name,
+                  args: input,
+                  result,
+                  ok,
+                })
+                .catch((e: unknown) =>
+                  logger.warn(`[agent-loop] 工具产物归档失败（不影响调用）tool=${name}`, e),
+                )
+            }
             // 失败必须把原因带进轨迹（33 号长程实测：ok:false 曾不带 error——
             // 草稿生成连败两轮，排障只能靠模型自己的转述）
             const fail = !ok && result && typeof result === 'object' ? (result as { error?: unknown; detail?: unknown; hint?: unknown }) : null
@@ -448,10 +550,11 @@ export class LoopRunner {
     host: AgentHost,
     reason: AgentResult['stopReason'],
     error?: string,
+    appended: ModelMessage[] = [],
   ): Promise<AgentResult> {
     state.stopReason = reason
     state.converged = reason === 'final'
-    await host.saveState(state).catch((e) =>
+    await host.saveState(state, { appended }).catch((e) =>
       logger.warn(`[agent-loop] 终止补偿落盘失败（reason=${reason}，历史停留上一 save 点）`, e),
     )
     host.emitTrajectory({ iteration: state.iteration, kind: 'guardrail_stop', payload: { reason } })
@@ -504,11 +607,21 @@ export function normalizeDecision(
   return { type: 'final', answer }
 }
 
-export function buildSystem(task: AgentTask, state: AgentLoopState): string {
-  const parts = [task.systemPrompt]
-  if (task.snapshot) parts.push(`\n[当前项目状态快照（来自数据库，确证事实）]\n${task.snapshot}`)
+/**
+ * 稳定系统提示词（39 号 P0-1）：只承载跨轮不变段（人设/规则）。快照/记忆等
+ * 当轮内容经 buildTurnContext 注入消息尾——system 每轮变化会击穿前缀缓存。
+ */
+export function buildSystem(task: AgentTask): string {
+  return task.systemPrompt
+}
+
+/** 当轮动态上下文段（快照/挂起注记/dynamicContext）；空串 = 无需注入 */
+export function buildTurnContext(task: AgentTask, state: AgentLoopState): string {
+  const parts: string[] = []
+  if (task.snapshot) parts.push(`[当前项目状态快照（来自数据库，确证事实）]\n${task.snapshot}`)
   if (state.suspended) parts.push('\n[系统注记] 上一次操作曾挂起等待人工，现已恢复。等待期间外部状态可能已变化，涉及副作用请先核实。')
-  return parts.join('\n')
+  if (task.dynamicContext) parts.push(task.dynamicContext)
+  return parts.join('\n').trim()
 }
 
 export function resultOf(state: AgentLoopState, stopReason: AgentResult['stopReason'], error?: string): AgentResult {

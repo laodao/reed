@@ -9,6 +9,7 @@ import {
   LongWritingProject,
   CreateProjectRequest,
   UpdateProjectRequest,
+  WizardStateFull,
 } from '@shared/types/longwriting.types'
 import { LwProjectEntity } from '../entities/lw-project.entity'
 import { BaseRepository } from '../base-repository'
@@ -41,11 +42,12 @@ export class LwProjectRepository extends BaseRepository<
     }
   }
 
-  private parseWizardState(jsonStr: string | null): { skipped: string[] } | undefined {
+  /** 放行完整 JSON（旧向导 {skipped} + 研讨室 room 子键——v2.1） */
+  private parseWizardState(jsonStr: string | null): WizardStateFull | undefined {
     if (!jsonStr) return undefined
     try {
       const data = JSON.parse(jsonStr)
-      if (data && Array.isArray(data.skipped)) return { skipped: data.skipped }
+      if (data && typeof data === 'object' && !Array.isArray(data)) return data
       return undefined
     } catch {
       return undefined

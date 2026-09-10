@@ -50,6 +50,7 @@ export class LwCharacterRepository extends BaseRepository<
       background: e.background ?? '',
       personality: e.personality ?? '',
       abilities: e.abilities ?? '',
+      aliases: (() => { try { const v = e.aliases ? JSON.parse(e.aliases) : null; return Array.isArray(v) ? v : undefined } catch { return undefined } })(),
       rolePosition: e.rolePosition as any,
       importance: (e.importance as EntityImportance) || 'secondary',
       templateType: (e.templateType as TemporaryCharacterTemplateType | null) ?? undefined,
@@ -117,6 +118,7 @@ export class LwCharacterRepository extends BaseRepository<
       background: this.normalizeValue(data.background),
       personality: this.normalizeValue(data.personality),
       abilities: this.normalizeValue(data.abilities),
+      aliases: data.aliases ? JSON.stringify(data.aliases) : null,
       rolePosition: data.rolePosition || 'supporting',
       majorEvents: this.normalizeValue(data.majorEvents),
       importance: data.importance || 'secondary',
@@ -161,6 +163,10 @@ export class LwCharacterRepository extends BaseRepository<
     apply('background', data.background as any)
     apply('personality', data.personality as any)
     apply('abilities', data.abilities as any)
+    if (data.aliases !== undefined) {
+      existing.aliases = data.aliases ? JSON.stringify(data.aliases) : null
+      changed = true
+    }
     apply('rolePosition', data.rolePosition as any)
     apply('importance', data.importance as any)
     apply('templateType', data.templateType as any)
