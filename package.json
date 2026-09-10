@@ -81,6 +81,7 @@
     "cookie-parser": "^1.4.7",
     "cron-parser": "^5.10.0",
     "docx": "^9.6.1",
+    "dompurify": "^3.4.15",
     "electron-log": "^5.4.3",
     "electron-store": "^8.1.0",
     "element-plus": "^2.5.6",

@@ -1321,7 +1321,7 @@ const electronAPI = {
     // 人工确认关系（→ { ok }）
     confirmRelation: (p: { id: string; sourceId: string; targetId: string; relationType: string; evidence?: string }) =>
       ipcRenderer.invoke('dl:confirm-relation', p),
-    // 未解问题队列（→ DlQuestionRow[]）
+    // 未解问题队列（→ DlQuestionView[]，DTO 化剔 userId/Date）
     listQuestions: (id: string) => ipcRenderer.invoke('dl:list-questions', { id }),
     // Agent 发送（research=研究概念/未解问题产出讲义草稿；tutor=追问答疑 → DlAgentSendResult）
     agentSend: (p: { mode: 'research' | 'tutor' | 'task'; spaceId: string; conceptId?: string | null; message: string; providerConfigId?: string; modelId?: string; focusQuestionId?: string }) =>

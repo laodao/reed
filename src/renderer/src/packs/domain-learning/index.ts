@@ -16,7 +16,7 @@ export const domainLearningPack: RendererPackDefinition = {
     version: '0.1.0',
     description: '领域共学空间——围绕一个领域系统研究并教到你懂',
     contributions: {
-      routePaths: ['/domain-learning'],
+      routePaths: ['/domain-learning', '/domain-learning/:id', '/domain-learning/:id/atlas'],
     },
   },
   routes: [
@@ -30,13 +30,14 @@ export const domainLearningPack: RendererPackDefinition = {
       path: '/domain-learning/:id',
       name: 'DomainLearningSpace',
       component: () => import('@/views/domain-learning/DomainLearningSpace.vue'),
-      meta: { title: '领域学习空间' },
+      // keepAlive：本地展示态（当前概念/树展开/任务流水）在组件实例内，空间 ↔ 全景往返不丢
+      meta: { title: '领域学习空间', keepAlive: true },
     },
     {
       path: '/domain-learning/:id/atlas',
       name: 'DomainLearningAtlas',
       component: () => import('@/views/domain-learning/DomainAtlas.vue'),
-      meta: { title: '知识全景' },
+      meta: { title: '知识全景', keepAlive: true },
     },
   ],
   menuItems: [

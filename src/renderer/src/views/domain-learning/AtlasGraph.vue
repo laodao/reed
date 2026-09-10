@@ -33,7 +33,7 @@
       :show-edge-labels="true"
       :selected-id="selectedId"
       :layout-key="props.focusId ?? 'all'"
-      @update:selected-id="selectedId = $event"
+      @update:selected-id="$emit('update:selectedId', $event)"
       @select="onGraphSelect"
       @dblclick="onGraphDblclick"
       @zoom="zoomPercent = $event"
@@ -50,7 +50,7 @@
  *              数据映射 = dl 节点 → 公共模型（类型色/掌握度外圈/关系标签）。focus 过滤
  *              （子图谱 = 节点 + 一阶邻居）仍由本层做。
  */
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { ZoomIn, ZoomOut, FullScreen, Share } from '@element-plus/icons-vue'
 import ForceGraph from '@/components/common/ForceGraph.vue'
 import type { ForceGraphEdge, ForceGraphNode } from '@/components/common/force-graph.model'
@@ -62,11 +62,14 @@ const props = defineProps<{
   edges: DlAtlasEdge[]
   /** 父级下钻控制：置为非空 = 只显示该节点及其一阶邻居（子图谱模式） */
   focusId?: string | null
+  /** 选中态由父级持有（受控）：树/关系列表/图内点击三方同步高亮 */
+  selectedId?: string | null
 }>()
 
 const emit = defineEmits<{
   select: [node: DlAtlasNode | null]
   dblclick: [node: DlAtlasNode]
+  'update:selectedId': [id: string | null]
 }>()
 
 const graphRef = ref<InstanceType<typeof ForceGraph> | null>(null)
@@ -108,21 +111,19 @@ const fgEdges = computed<ForceGraphEdge[]>(() =>
   visibleEdges.value.map((e) => ({ source: e.source, target: e.target, label: relLabel(e.type) })),
 )
 
-// ==================== 选中态 ====================
+// ==================== 选中态（受控：父级持有，本层只透传 ForceGraph） ====================
 
-const selectedId = ref<string | null>(props.focusId ?? null)
-watch(
-  () => props.focusId,
-  (v) => (selectedId.value = v ?? null),
-)
+const selectedId = computed(() => props.selectedId ?? null)
 
 function onGraphSelect(node: ForceGraphNode | null): void {
   if (!node) {
+    emit('update:selectedId', null)
     emit('select', null)
     return
   }
   // 还原原始 dl 节点（图内只传模型子集；Focus 模式以外按全量找）
   const orig = props.nodes.find((n) => n.id === node.id)
+  emit('update:selectedId', node.id)
   emit('select', orig ?? null)
 }
 

@@ -99,6 +99,8 @@
           :nodes="graph?.nodes ?? []"
           :edges="graph?.edges ?? []"
           :focus-id="focusId"
+          :selected-id="selectedId"
+          @update:selected-id="selectedId = $event"
           @select="onSelect"
           @dblclick="onDrill"
         />
@@ -199,7 +201,7 @@
  *              单击选中聚焦一阶邻居；双击/"聚焦局部图谱"进入局部图（面包屑可回退）；
  *              「去学它」回到讲义空间并定位该概念。
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowLeft,
@@ -241,6 +243,9 @@ const route = useRoute()
 const router = useRouter()
 const tabsStore = useTabsStore()
 const store = useDomainLearningStore()
+
+// keep-alive 缓存按组件名匹配（与路由名一致）
+defineOptions({ name: 'DomainLearningAtlas' })
 
 const spaceId = computed(() => String(route.params.id ?? ''))
 
@@ -461,6 +466,8 @@ async function bootAtlas(): Promise<void> {
   atlasBootWarn.value = false
   // 空间级事件通道 dl:agent:<spaceId>（conceptId 为空）
   const unsub = store.subscribeAgentEvent(id, null, (ev) => {
+    // 只收本空间级 research 轮事件（并发 tutor/task 的错误不误报到起步面板）
+    if (ev.mode && ev.mode !== 'research') return
     if (ev.type === 'error') {
       atlasBootWarn.value = true
       atlasBootMsg.value = `起步研究出错：${ev.error ?? '未知错误'}`
@@ -517,6 +524,11 @@ watch(
 
 onMounted(() => {
   void loadAtlas()
+})
+
+onUnmounted(() => {
+  // 页面卸载：清理起步研究等 agent 事件订阅（keep-alive 下仅在标签真正关闭时触发）
+  store.unsubscribeAll()
 })
 </script>
 

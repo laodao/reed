@@ -361,16 +361,19 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
   /** 当前空间到期复习载荷（dl:review-due；settings + items） */
   const reviewDue = ref<{ settings: DlReviewSettings; items: DlReviewDueItem[] } | null>(null)
 
-  /** 绑定/改绑项目知识库（M4-B；null=解除；返回新 kbId） */
-  async function saveKbOf(id: string, kbId?: string | null): Promise<string | null> {
+  /** 绑定/改绑项目知识库（M4-B；kbId=null=解除）。返回 { ok, kbId }——
+   *  解除绑定成功时 kbId 为 null 但 ok=true，与失败（ok=false）可区分 */
+  async function saveKbOf(id: string, kbId?: string | null): Promise<{ ok: boolean; kbId: string | null }> {
     const a = api()
-    if (!a) return null
+    if (!a) return { ok: false, kbId: null }
     try {
       const r = await a.setSpaceKb({ id, kbId: kbId ?? null })
-      return r?.success && r.data ? r.data.kbId : null
+      if (r?.success && r.data) return { ok: true, kbId: r.data.kbId ?? null }
+      error.value = r?.error ?? '保存知识库绑定失败'
+      return { ok: false, kbId: null }
     } catch (e: any) {
       error.value = e?.message ?? '保存知识库绑定失败'
-      return null
+      return { ok: false, kbId: null }
     }
   }
 

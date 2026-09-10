@@ -11,7 +11,7 @@
 import type { DataSource } from 'typeorm'
 import { ensureTable, ensureIndex, ensureColumn } from './migration-utils'
 
-/** 创建全部 7 张 dl_* 表（若不存在）。 */
+/** 创建全部 8 张 dl_* 表（project/concept/relation/mastery_log/card/doc/question/note，若不存在）。 */
 export async function createDomainLearningTables(ds: DataSource): Promise<void> {
   const isPg = ds.options.type === 'postgres'
   await ensureTable(ds, isPg, 'dl_project', ddlProject(isPg), () => projectIndexes(ds, isPg))

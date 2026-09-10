@@ -3,10 +3,12 @@
  * @module packs/domain-learning/services/dl-agent-harness.service
  *
  * 与 EP/LW 宿主同构；dl 特有：
- * - 两种模式（research / tutor）共用同一宿主，差异面 = scopeKey/systemPrompt/工具白名单/快照：
+ * - 四种模式（research / tutor / task / verify）共用同一宿主，差异面 = scopeKey/systemPrompt/工具白名单/快照：
  *   - research：对概念/未解问题跑研究（invoke_skill 产出 → dl_save_concept/relation/card 落草稿）；
  *   - tutor：追问答疑——问题先落 dl_question(open)，答上经 dl_answer_question 存档，
- *     答不上保持 open = 未解队列（设计与 UI 追问历史一体化）。
+ *     答不上保持 open = 未解队列（设计与 UI 追问历史一体化）；
+ *   - task：任务会话（routeDlIntent 路由）——规划并执行多步任务，dl_task_progress 上报进度；
+ *   - verify：卡片自动核验（内部会话，事件不上用户通道）。
  * - 产出落库均为草稿态，人审在界面（IPC confirm）完成——agent 不自封"地图定稿/讲义发布"。
  * - 工具懒注册（pack activate 早于 workflow boot）；事件：reply 流式走 dl:generate:<eventId>，
  *   action:done 富事件经 tapEvents 回流为 actionSummaries。
