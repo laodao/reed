@@ -69,18 +69,8 @@ export async function extractTextFromFile(
       return data.text
     }
 
-    case 'epub': {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const EPub = require('epub-parser')
-      const epub = await EPub.parse(filePath)
-      let text = ''
-      for (const section of epub.sections) {
-        if (section.html) {
-          text += stripHtmlToText(section.html) + '\n\n'
-        }
-      }
-      return text
-    }
+    case 'epub':
+      return extractEpubText(filePath)
 
     case 'mobi':
     case 'azw3':
@@ -106,6 +96,48 @@ export async function extractTextFromFile(
 
     default:
       throw new Error(`不支持的文件类型: ${fileType}`)
+  }
+}
+
+/**
+ * 提取 EPUB 电子书纯文本。
+ *
+ * 历史修复：旧实现误用 epub-parser@0.2.5 的 API（该库只导出 open/getZip/
+ * extractText 等回调式方法，且返回结构没有 sections），导致任何 epub 上传都报
+ * "EPub.parse is not a function"。现改用 @lingo-reader/epub-parser —— 与
+ * @lingo-reader/mobi-parser 同族、API 同构（initEpubFile / getSpine / loadChapter），
+ * 且支持 EPUB2/EPUB3 与加密章节，解析能力完整。
+ *
+ * @lingo-reader/* 包统一走动态 import（与 extractMobiLikeText 一致，避免 ESM
+ * 产物在 CJS 下 require 损坏）；Node 端章节内图片/CSS 会写到 resourceSaveDir，
+ * 这里传临时目录并在结束时清理。loadChapter 返回的 HTML 经 stripHtmlToText
+ * 提取正文后，图片路径等残留不会进入文本。
+ */
+async function extractEpubText(filePath: string): Promise<string> {
+  const { initEpubFile } = await import('@lingo-reader/epub-parser')
+  const saveDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'kb-epub-'))
+  try {
+    type EpubBook = {
+      getSpine(): Array<{ id: string }>
+      loadChapter(id: string): Promise<{ id?: string; html?: string } | undefined>
+      destroy(): void
+    }
+    const book = (await initEpubFile(filePath, saveDir)) as EpubBook
+
+    try {
+      let text = ''
+      for (const chapter of book.getSpine()) {
+        const loaded = await book.loadChapter(chapter.id)
+        if (loaded?.html) {
+          text += stripHtmlToText(loaded.html) + '\n\n'
+        }
+      }
+      return text.trim()
+    } finally {
+      book.destroy()
+    }
+  } finally {
+    await fs.promises.rm(saveDir, { recursive: true, force: true })
   }
 }
 
