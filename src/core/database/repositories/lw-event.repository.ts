@@ -30,6 +30,7 @@ export class LwEventRepository extends BaseRepository<LwEventEntity, StoryEvent>
       involvedEntities: this.parseJson<StoryEvent['involvedEntities']>(e.involvedEntities),
       stateBefore: e.stateBefore ?? undefined,
       stateAfter: e.stateAfter ?? undefined,
+      state: (e.state as StoryEvent['state']) ?? 'happened',
       createdAt: e.createdAt,
       updatedAt: e.updatedAt,
     }
@@ -69,6 +70,7 @@ export class LwEventRepository extends BaseRepository<LwEventEntity, StoryEvent>
       involvedEntities: data.involvedEntities ? JSON.stringify(data.involvedEntities) : null,
       stateBefore: data.stateBefore ?? null,
       stateAfter: data.stateAfter ?? null,
+      state: data.state ?? 'happened',
       createdAt: now,
       updatedAt: now,
     } as Partial<LwEventEntity>)
@@ -96,6 +98,7 @@ export class LwEventRepository extends BaseRepository<LwEventEntity, StoryEvent>
     }
     if (data.stateBefore !== undefined) existing.stateBefore = data.stateBefore ?? null
     if (data.stateAfter !== undefined) existing.stateAfter = data.stateAfter ?? null
+    if (data.state !== undefined) existing.state = data.state ?? 'happened'
 
     existing.updatedAt = Date.now()
     await this.scoped.save(existing)

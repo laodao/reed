@@ -35,8 +35,18 @@ export class LwGraphEdgeRepository extends BaseRepository<LwGraphEdgeEntity, Gra
       validFromChapter: e.validFromChapter ?? undefined,
       validUntilChapter: e.validUntilChapter ?? undefined,
       description: e.description ?? undefined,
+      origin: this.parseOrigin(e.origin),
       createdAt: e.createdAt,
       updatedAt: e.updatedAt,
+    }
+  }
+
+  private parseOrigin(raw: string | null): GraphEdge['origin'] {
+    if (!raw) return undefined
+    try {
+      return JSON.parse(raw) as GraphEdge['origin']
+    } catch {
+      return undefined
     }
   }
 
@@ -97,6 +107,7 @@ export class LwGraphEdgeRepository extends BaseRepository<LwGraphEdgeEntity, Gra
       validFromChapter: data.validFromChapter ?? null,
       validUntilChapter: data.validUntilChapter ?? null,
       description: data.description ?? null,
+      origin: data.origin ? JSON.stringify(data.origin) : null,
       createdAt: now,
       updatedAt: now,
     } as Partial<LwGraphEdgeEntity>)
@@ -166,6 +177,18 @@ export class LwGraphEdgeRepository extends BaseRepository<LwGraphEdgeEntity, Gra
       projectId,
       sourceId: In(eventIds),
     } as any)
+  }
+
+  /** 按来源章节删除提取边（章节关系演变提取"重跑=重建"幂等，模式同伏笔 deleteExtractByChapter） */
+  async deleteByOriginChapter(projectId: string, chapterNumber: number): Promise<number> {
+    const rows = await this.getByProjectId(projectId)
+    let n = 0
+    for (const r of rows) {
+      if (r.origin?.type === 'extract' && r.origin.chapter === chapterNumber) {
+        if (await this.delete(r.id)) n++
+      }
+    }
+    return n
   }
 
   async deleteByProjectId(projectId: string): Promise<number> {

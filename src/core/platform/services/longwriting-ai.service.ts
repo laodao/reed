@@ -1667,6 +1667,8 @@ ${plotInfo || '暂无相关情节'}
         ...(outline.involvedCharacters || []).map((id: string) => ({ type: 'character' as const, id })),
         ...(outline.involvedLocations || []).map((id: string) => ({ type: 'location' as const, id })),
         ...(outline.involvedItems || []).map((id: string) => ({ type: 'item' as const, id })),
+        ...(outline.involvedFactions || []).map((id: string) => ({ type: 'faction' as const, id })),
+        ...(outline.involvedSkills || []).map((id: string) => ({ type: 'skill' as const, id })),
       ]
 
       // 1. 生效关系边（本章时间点）
@@ -1698,24 +1700,53 @@ ${plotInfo || '暂无相关情节'}
         }
       }
 
-      // 2. 相关事件摘要（本章之前发生的，涉及本章实体）
+      // 2. 相关事件摘要（本章之前发生的，涉及本章实体；planned/retconned 不进写作上下文）
       const events = (await dbManager.lwEvents?.getByProjectId(projectId)) || []
       const involvedIdSet = new Set(involvedIds.map(x => x.id))
       const relatedEvents = events
-        .filter(e => e.chapterNumber < chapterNumber && (e.involvedEntities || []).some(ent => involvedIdSet.has(ent.id)))
+        .filter(e => (e.state ?? 'happened') === 'happened')
+        .filter(e => e.chapterNumber > 0 && e.chapterNumber < chapterNumber && (e.involvedEntities || []).some(ent => involvedIdSet.has(ent.id)))
         .sort((a, b) => b.chapterNumber - a.chapterNumber)
         .slice(0, 5)
         .map(e => `- 第${e.chapterNumber}章：${e.name}${e.description ? `（${e.description.slice(0, 60)}）` : ''}`)
+
+      // 2.5 涉及实体的状态切片（第 N 章时间点，44 号：写前对齐"人物此刻什么状态"）
+      const stateLines: string[] = []
+      for (const ent of involvedIds) {
+        try {
+          const snap = await graph.stateAt(projectId, ent.type as any, ent.id, chapterNumber)
+          if (snap?.stateSummary) {
+            const nm = await nameOf(ent.type, ent.id)
+            if (nm) stateLines.push(`- ${nm}：${snap.stateSummary}`)
+          }
+        } catch { /* 单实体状态读取失败不阻断 */ }
+        if (stateLines.length >= 8) break
+      }
+
+      // 2.6 待回收伏笔（open 状态，防忘记回收/重复埋设）
+      const foreshadowLines: string[] = []
+      try {
+        const foreshadows = (await dbManager.lwForeshadows?.getByProjectId(projectId)) || []
+        for (const f of foreshadows.filter(x => x.status === 'open').slice(0, 6)) {
+          foreshadowLines.push(`- 第${f.plantedChapter}章埋设：${f.content}`)
+        }
+      } catch { /* 伏笔读取失败不阻断 */ }
 
       const parts: string[] = []
       if (edgeLines.length > 0) {
         parts.push(`【生效关系（第 ${chapterNumber} 章时间点）】\n${edgeLines.join('\n')}`)
       }
+      if (stateLines.length > 0) {
+        parts.push(`【实体当前状态（截至第 ${chapterNumber - 1} 章）】\n${stateLines.join('\n')}`)
+      }
       if (relatedEvents.length > 0) {
         parts.push(`【已发生事件（涉及本章实体）】\n${relatedEvents.join('\n')}`)
       }
+      if (foreshadowLines.length > 0) {
+        parts.push(`【待回收伏笔】\n${foreshadowLines.join('\n')}`)
+      }
       if (parts.length > 0) {
-        parts.push('注意：写作须符合上述关系与事件的时间线状态（已失效关系不得沿用，已发生事件不得重复）。')
+        parts.push('注意：写作须符合上述关系与事件的时间线状态（已失效关系不得沿用，已发生事件不得重复）；本章若回收了某条伏笔，请在章末自然呼应。')
         return parts.join('\n\n')
       }
       return ''
@@ -3247,7 +3278,7 @@ ${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容
     // 读项目实体作参考（名称→ID 匹配用）
     const characters = (await dbManager.lwCharacters?.getByProjectId(projectId)) || []
     const locations = (await dbManager.lwLocations?.getByProjectId(projectId)) || []
-    await dbManager.lwItems?.getByProjectId(projectId)
+    const items = (await dbManager.lwItems?.getByProjectId(projectId)) || []
     const factions = (await dbManager.lwFactions?.getByProjectId(projectId)) || []
 
     const entityRef = (list: Array<{ id: string; name: string }>, _type: string): string =>
@@ -3309,6 +3340,94 @@ ${entityRef(factions, 'faction') || '暂无'}
           }
         } catch (parseError: any) {
           console.error('[LongWritingAI] extractChapterEvents JSON 解析失败:', parseError.message)
+          return { success: true, data: result }
+        }
+      }
+      return { success: false, error: 'AI 返回格式错误' }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  /**
+   * AI 提取章节人物关系演变（图谱管线第 6 步）：结婚/决裂/反目/结盟/师徒反目…
+   * 输入本章正文 + 当前仍生效的人物关系（作为"演变前事实"防止凭空提关系），
+   * 输出变化提案数组，由 GraphService.applyRelationChanges 做"关旧开新"落库。
+   */
+  async extractChapterRelationChanges(
+    eventId: string,
+    projectId: string,
+    chapterContent: string,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<GenerateResponse> {
+    const dbManager = getCoreDatabaseManager()
+    const characters = (await dbManager.lwCharacters?.getByProjectId(projectId)) || []
+
+    // 当前仍生效的人物间关系（演变前事实）
+    let activeRelationsText = '暂无'
+    try {
+      const edges = (await dbManager.lwGraphEdges?.getByProjectId(projectId)) || []
+      const nameOf = (id: string): string => characters.find(c => c.id === id)?.name ?? id
+      activeRelationsText =
+        edges
+          .filter(
+            e =>
+              e.validUntilChapter === undefined &&
+              e.sourceType === 'character' &&
+              e.targetType === 'character',
+          )
+          .map(e => `- ${nameOf(e.sourceId)} ↔ ${nameOf(e.targetId)}：${e.relationType}`)
+          .join('\n') || '暂无'
+    } catch {
+      activeRelationsText = '暂无'
+    }
+
+    const systemPrompt = `你是一位小说连续性分析师。请分析章节正文，提取本章内**实际发生**的人物关系变化（不是设定层静态关系，是剧情推动的演变）。
+变化类型：
+- new：本章结成新关系（结拜、结盟、收徒、相爱…）
+- ended：本章终结原有关系（决裂、离婚、恩断义绝…）
+- changed：关系性质转变（仇人→挚友、师徒→敌对…，需给 newRelationType）
+
+## 输出格式
+返回 JSON 数组，每条变化：
+{
+  "changeType": "new|ended|changed",
+  "sourceName": "人物名（必须用项目角色原名）",
+  "targetName": "对方人物名",
+  "relationType": "ended=被终结的原关系名；new=新关系名",
+  "newRelationType": "仅 changed 需要：转变后的关系名",
+  "description": "一句话依据（本章哪个情节导致）"
+}
+
+要求：
+1. 只提本章情节实际推动的变化（0-3 条），没有变化返回 []
+2. 不要把"当前关系清单"里已有的关系再报一遍
+3. relationType 用短词（夫妻/师徒/结义/盟友/敌对/主仆…）
+4. 请直接输出 JSON 数组，不要有任何额外文字`
+
+    const prompt = `【本章正文】
+${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容已截断)' : ''}
+
+【项目角色】
+${characters.map(c => `- ${c.name}`).join('\n') || '暂无'}
+
+【当前仍有效的人物关系（演变前事实）】
+${activeRelationsText}
+
+请提取本章的人物关系变化，直接返回 JSON 数组。`
+
+    try {
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, 1024, providerConfigId, modelId)
+      const jsonMatch = result.match(/\[[\s\S]*\]/)
+      if (jsonMatch) {
+        try {
+          const data = JSON.parse(jsonMatch[0])
+          if (Array.isArray(data)) {
+            return { success: true, data }
+          }
+        } catch (parseError: any) {
+          console.error('[LongWritingAI] extractChapterRelationChanges JSON 解析失败:', parseError.message)
           return { success: true, data: result }
         }
       }

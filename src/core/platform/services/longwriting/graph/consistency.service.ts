@@ -321,7 +321,7 @@ export class ConsistencyService {
       byEntity.get(key)!.push(s)
     }
 
-    for (const [key, list] of byEntity) {
+    for (const [, list] of byEntity) {
       const sorted = [...list].sort((a, b) => a.chapterNumber - b.chapterNumber)
       let terminal = false
       for (const s of sorted) {

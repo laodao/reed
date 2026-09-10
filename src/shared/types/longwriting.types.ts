@@ -1704,20 +1704,25 @@ export interface LwVectorIndexStats {
  */
 export type GraphEntityType = 'character' | 'location' | 'item' | 'faction' | 'skill' | 'event'
 
+/** 事件生命周期：happened=已发生（默认） planned=规划中（研讨产出未锚定章节，chapterNumber=0） retconned=被推翻 */
+export type StoryEventState = 'happened' | 'planned' | 'retconned'
+
 /**
  * 故事事件（图谱事件节点）
  * 与创作层情节（plot，计划中的故事线）区分：事件是"故事内已发生的事实"，随章节确认累积。
+ * 研讨期规划的事件：state='planned'、chapterNumber=0（未锚定），章节写完后由提取管线转 happened。
  */
 export interface StoryEvent {
   id: string
   projectId: string
   name: string               // 事件名（如"林家在比武大会夺魁"）
   description?: string       // 经过描述
-  chapterNumber: number      // 发生章节（时间线锚点）
+  chapterNumber: number      // 发生章节（时间线锚点；0=规划中未锚定）
   storyTime?: string         // 故事内时间文本（如"第三年春"）
   involvedEntities?: MemoryEntity[]  // 涉及实体 [{type,id,name}]
   stateBefore?: string       // 事件前关键状态摘要
   stateAfter?: string        // 事件后关键状态摘要
+  state?: StoryEventState    // 生命周期（缺省=happened）
   createdAt: number
   updatedAt: number
 }
@@ -1734,6 +1739,7 @@ export interface CreateStoryEventRequest {
   involvedEntities?: MemoryEntity[]
   stateBefore?: string
   stateAfter?: string
+  state?: StoryEventState
 }
 
 /**
@@ -1746,6 +1752,13 @@ export interface UpdateStoryEventRequest {
   involvedEntities?: MemoryEntity[]
   stateBefore?: string
   stateAfter?: string
+  state?: StoryEventState
+}
+
+/** 边来源（溯源/幂等重建用：章节提取管线按 origin 删旧建新） */
+export interface GraphEdgeOrigin {
+  type: 'extract' | 'discussion' | 'manual'
+  chapter?: number
 }
 
 /**
@@ -1764,6 +1777,7 @@ export interface GraphEdge {
   validFromChapter?: number  // 关系建立章节（NULL=自第 1 章起）
   validUntilChapter?: number // 关系失效章节（NULL=至今有效）
   description?: string
+  origin?: GraphEdgeOrigin   // 来源溯源（缺省=手工/早期数据）
   createdAt: number
   updatedAt: number
 }
@@ -1782,6 +1796,7 @@ export interface CreateGraphEdgeRequest {
   validFromChapter?: number
   validUntilChapter?: number
   description?: string
+  origin?: GraphEdgeOrigin
 }
 
 /**

@@ -35,6 +35,10 @@ export async function createLwGraphTables(ds: DataSource): Promise<void> {
   // lw_design_messages 补 metadata 列（对话式工作流：动作摘要/关联实体/建议 chips 元数据）
   await ensureColumn(ds, 'lw_design_messages', 'metadata', isPg ? 'text' : 'TEXT', isPg)
 
+  // 事件生命周期 + 边来源溯源（存量库补列；新装库 DDL 已含）
+  await ensureColumn(ds, 'lw_events', 'state', isPg ? "varchar DEFAULT 'happened'" : "TEXT DEFAULT 'happened'", isPg)
+  await ensureColumn(ds, 'lw_graph_edges', 'origin', isPg ? 'text' : 'TEXT', isPg)
+
   // character_relation 收编（幂等：不重复插入）
   await migrateCharacterRelations(ds, isPg)
 
@@ -57,6 +61,7 @@ function createEventsDDL(isPg: boolean): string {
         involved_entities text,
         state_before      text,
         state_after       text,
+        state             varchar DEFAULT 'happened',
         created_at        bigint,
         updated_at        bigint
       )
@@ -74,6 +79,7 @@ function createEventsDDL(isPg: boolean): string {
       involved_entities TEXT,
       state_before      TEXT,
       state_after       TEXT,
+      state             TEXT DEFAULT 'happened',
       created_at        INTEGER,
       updated_at        INTEGER
     )
@@ -96,6 +102,7 @@ function createEdgesDDL(isPg: boolean): string {
         valid_from_chapter   integer,
         valid_until_chapter  integer,
         description          text,
+        origin               text,
         created_at           bigint,
         updated_at           bigint
       )
@@ -115,6 +122,7 @@ function createEdgesDDL(isPg: boolean): string {
       valid_from_chapter  INTEGER,
       valid_until_chapter INTEGER,
       description         TEXT,
+      origin              TEXT,
       created_at          INTEGER,
       updated_at          INTEGER
     )

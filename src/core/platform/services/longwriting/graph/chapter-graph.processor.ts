@@ -34,6 +34,8 @@ export interface ChapterGraphProcessResult {
   stateCount: number
   /** 本次登记的伏笔数（42 号 P1 写作教练位） */
   foreshadowCount?: number
+  /** 本次关系演变条数（关旧+开新，44 号图谱完善） */
+  relationChangeCount?: number
 }
 
 export class ChapterGraphProcessor {
@@ -219,6 +221,46 @@ export class ChapterGraphProcessor {
       console.error('[ChapterGraphProcessor] 建边失败（不影响后续步骤）:', e)
     }
 
+    // ============ 3.5 人物关系演变提取（44 号：结婚/决裂/反目等"关旧开新"；重跑幂等按 origin 清本章提取边） ============
+    let relationChangeCount = 0
+    try {
+      if (m.lwGraphEdges) {
+        await m.lwGraphEdges.deleteByOriginChapter(projectId, chapterNumber)
+        const rc = await this.aiService().extractChapterRelationChanges(
+          `extract-relchanges-${Date.now()}`,
+          projectId,
+          chapterContent,
+          providerConfigId,
+          modelId,
+        )
+        const items: Array<{
+          changeType?: string
+          sourceName?: string
+          targetName?: string
+          relationType?: string
+          newRelationType?: string
+          description?: string
+        }> = Array.isArray(rc.data) ? rc.data : []
+        const valid = items
+          .filter(c => c?.sourceName?.trim() && c?.targetName?.trim())
+          .filter(c => c.changeType === 'ended' || c.relationType?.trim() || c.newRelationType?.trim())
+          .map(c => ({
+            changeType: (c.changeType === 'ended' || c.changeType === 'changed' ? c.changeType : 'new') as 'new' | 'ended' | 'changed',
+            sourceName: c.sourceName!.trim(),
+            targetName: c.targetName!.trim(),
+            relationType: (c.relationType || c.newRelationType || 'related').trim(),
+            newRelationType: c.newRelationType?.trim(),
+            description: c.description,
+          }))
+        if (valid.length > 0) {
+          const r = await new GraphService(m).applyRelationChanges(projectId, valid, chapterNumber)
+          relationChangeCount = r.created + r.ended
+        }
+      }
+    } catch (e) {
+      console.warn('[ChapterGraphProcessor] 关系演变提取失败（不阻断主链路）:', e)
+    }
+
     // ============ 4. 章节状态摘要（沿用现有链路） ============
     try {
       const prev = m.lwChapterStateSummaries
@@ -258,6 +300,7 @@ export class ChapterGraphProcessor {
       edges,
       stateCount: states.length,
       foreshadowCount,
+      relationChangeCount,
     }
   }
 

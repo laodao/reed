@@ -54,6 +54,15 @@
             <el-button size="small" @click="dismissGate">继续讨论</el-button>
           </div>
         </div>
+        <!-- 矛盾教练：写作期连续性检查疑点（44 号补 UI 渲染，数据位此前已存在） -->
+        <el-alert v-if="store.conflicts.value.length" type="warning" :closable="true" class="conflict-banner">
+          <template #title>
+            ⚔ 连续性检查发现 {{ store.conflicts.value.length }} 处疑点（写作前请先核对）
+          </template>
+          <ul class="conflict-list">
+            <li v-for="(c, i) in store.conflicts.value" :key="i">{{ c.description || c.message }}</li>
+          </ul>
+        </el-alert>
         <ChatCanvas
           :messages="store.messages.value"
           :stream-message="store.streamMessage.value"
@@ -581,6 +590,8 @@ html.dark .story-room { --sr-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rg
   display: flex; align-items: center; gap: 12px; padding: 9px 16px; flex-shrink: 0;
   background: var(--el-color-warning-light-9, #faf4ec); border-bottom: 1px solid var(--el-border-color-lighter);
 }
+.conflict-banner { flex-shrink: 0; border-radius: 0; }
+.conflict-list { margin: 4px 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.7; }
 .gate-text { font-size: 13px; color: var(--el-text-color-primary); flex: 1; min-width: 0; }
 .gate-ops { display: flex; gap: 6px; flex-shrink: 0; }
 .tag.target { cursor: pointer; }
