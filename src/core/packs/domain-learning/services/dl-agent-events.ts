@@ -8,7 +8,7 @@
  */
 
 import { getEventEmitter } from '@core/interfaces/event.interface'
-import { dlAgentEventChannel, type DlAgentEvent } from './dl-agent.types'
+import { dlAgentEventChannel, dlStreamChannel, type DlAgentEvent } from './dl-agent.types'
 
 /** 发动作级事件（stage/reply:start/action:done/error…） */
 export function emitDlAgentEvent(
@@ -21,5 +21,5 @@ export function emitDlAgentEvent(
 
 /** 流式正文（reply 增量；前端按 summaryEventId 拼装） */
 export function emitDlStream(summaryEventId: string, text: string): void {
-  getEventEmitter().emit(`dl:generate:${summaryEventId}`, { type: 'content', content: text })
+  getEventEmitter().emit(dlStreamChannel(summaryEventId), { type: 'content', content: text })
 }

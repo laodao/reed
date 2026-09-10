@@ -31,6 +31,18 @@ const logger = createLogger('DlHandlers')
 /** 复习到期通知节流：每空间最近一次发布时间（避免每次拉取都通知） */
 const lastReviewNoticeAt = new Map<string, number>()
 
+/**
+ * 把内部错误翻译成用户能懂的话（2026-09-09 复盘：不再把数据库原话直吐界面）；
+ * 业务错误（本就是中文提示）原样保留，细节仍写日志。
+ */
+function friendlyError(msg: string): string {
+  if (/UNIQUE constraint failed|duplicate key value/i.test(msg)) return '这条数据已存在，已跳过重复写入'
+  if (/FOREIGN KEY constraint failed/i.test(msg)) return '关联的数据不存在，操作未完成'
+  if (/SQLITE_|better-sqlite3|TypeORM|QueryFailedError/i.test(msg)) return '内部数据处理出错，请重试（详情见日志）'
+  if (/ECONNREFUSED|ETIMEDOUT|fetch failed|socket hang up/i.test(msg)) return '外部服务连接失败，请检查网络或资料源后重试'
+  return msg
+}
+
 /** 统一 { success, data, error } 包装 */
 async function wrap<T>(fn: () => Promise<T>): Promise<IpcResponse<T>> {
   try {
@@ -39,7 +51,7 @@ async function wrap<T>(fn: () => Promise<T>): Promise<IpcResponse<T>> {
     const msg = e instanceof Error ? e.message : String(e)
     const stack = e instanceof Error && e.stack ? `\n${e.stack}` : ''
     logger.warn(`[dl] handler 失败：${msg}${stack}`)
-    return { success: false, error: msg }
+    return { success: false, error: friendlyError(msg) }
   }
 }
 

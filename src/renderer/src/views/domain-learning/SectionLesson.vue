@@ -18,7 +18,16 @@
       <span class="sec-confuse" @click="notUnderstand(sec)">这块没懂</span>
       <!-- 折叠区：默认收起，点"展开全文"再显示 -->
       <div v-if="!sec.folded || expanded.has(i)" class="sec-body">
-        <MarkdownViewer :md="sec.md" />
+        <MarkdownViewer :md="cleanOf(sec).body" />
+        <!-- 编写注记（⚠️ 待核验 / 采集缺口 / 内部状态等）：从学习者正文剥离后折叠展示 -->
+        <div v-if="cleanOf(sec).notes.length" class="authoring-notes">
+          <span class="notes-toggle" @click="toggleNotes(i)">
+            编写注记（{{ cleanOf(sec).notes.length }}）{{ notesOpen.has(i) ? '收起' : '展开' }}
+          </span>
+          <ul v-if="notesOpen.has(i)" class="notes-list">
+            <li v-for="(n, ni) in cleanOf(sec).notes" :key="ni">{{ n }}</li>
+          </ul>
+        </div>
       </div>
     </div>
 
@@ -91,6 +100,7 @@
  */
 import { reactive } from 'vue'
 import MarkdownViewer from './MarkdownViewer.vue'
+import { stripAuthoringNotes } from '@shared/utils/lesson-authoring-notes'
 import type { DlCardSection, DlCardView, DlRelatedRef } from '@shared/types/domain-learning.types'
 
 const props = withDefaults(defineProps<{
@@ -111,6 +121,28 @@ const expanded = reactive(new Set<number>())
 function toggleFold(i: number): void {
   if (expanded.has(i)) expanded.delete(i)
   else expanded.add(i)
+}
+
+/** 编写注记展开态（按下标；默认收起） */
+const notesOpen = reactive(new Set<number>())
+function toggleNotes(i: number): void {
+  if (notesOpen.has(i)) notesOpen.delete(i)
+  else notesOpen.add(i)
+}
+
+/** 区内容脱敏缓存（key → {body, notes}；同一区只在 md 变化时重算） */
+const cleanedCache = new Map<string, { source: string; body: string; notes: string[] }>()
+/**
+ * 取区的「学习者正文 + 编写注记」。
+ * 2026-09-09 复盘（初学者评估）：⚠️ 待核验、采集缺口、概念 id/状态 等内部注记
+ * 不应混在学习者正文里——这里剥离后折叠展示，正文只留教学内容。
+ */
+function cleanOf(sec: DlCardSection): { body: string; notes: string[] } {
+  const cached = cleanedCache.get(sec.key)
+  if (cached && cached.source === sec.md) return cached
+  const stripped = stripAuthoringNotes(sec.md)
+  cleanedCache.set(sec.key, { source: sec.md, ...stripped })
+  return stripped
 }
 
 /** key → 默认标题（模板语义区，缺省展示用） */
@@ -280,6 +312,35 @@ function gotoRelated(r: DlRelatedRef): void {
       font-size: 12px;
       border-left: 2px solid var(--el-color-info-light-5);
       padding-left: 8px;
+    }
+  }
+}
+
+// 2026-09-09 复盘：编写注记（从学习者正文剥离，折叠展示）
+.authoring-notes {
+  margin-top: 10px;
+  font-size: 12px;
+
+  .notes-toggle {
+    color: var(--el-text-color-placeholder);
+    cursor: pointer;
+    user-select: none;
+
+    &:hover {
+      color: var(--el-color-primary);
+    }
+  }
+
+  .notes-list {
+    margin: 6px 0 0;
+    padding: 8px 12px 8px 26px;
+    background: var(--el-fill-color-light);
+    border-radius: 4px;
+    color: var(--el-text-color-secondary);
+    line-height: 1.7;
+
+    li + li {
+      margin-top: 4px;
     }
   }
 }

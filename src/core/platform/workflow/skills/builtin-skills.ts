@@ -881,6 +881,93 @@ output_desc: 输出 JSON 对象，含 relations 数组（source/target/relation_
 `,
   },
   {
+    id: 'learning-lesson-updater',
+    markdown: `---
+name: learning-lesson-updater
+title: 讲义增量修订
+description: 基于现有讲义与新材料做增量修订——只改需要改的区，输出修订后的完整区集与变更说明（改了什么/为什么/依据），避免整篇重写把既有内容与已核验表述冲掉。供领域学习在补充资料、核验发现问题或用户指出错误后更新讲义。
+when_to_use: 已有讲义卡（sections）+ 新材料或核验问题，需要更新讲义时（而非重写）
+category: 领域学习
+inputs:
+  - key: lessonJson
+    label: 现有讲义 JSON
+    type: textarea
+    required: true
+    help: 现有卡片 sections（含 key/title/md）
+  - key: newMaterial
+    label: 新材料/新证据
+    type: textarea
+    required: true
+    help: 知识库摘录、网页正文、论文要点（含出处）
+  - key: issues
+    label: 待处理的核验问题
+    type: textarea
+    help: 可选：自动核验给出的待复核条目（claim/verdict/reason）
+output_desc: 输出 JSON 对象，含 concept_name、essence_type、sections（修订后的完整区集，未改动区原样返回）、changed 数组（key/kind/reason/evidence）
+---
+你是讲义修订员。基于给定讲义与新材料做**增量修订**，不是重写。
+
+纪律：
+1. 未受影响的区**原样保留**：md 逐字返回，不要润色、不要重排、不要"顺手改好一点"；只在 changed 里列出真正变动的区；
+2. 每个改动必须给理由与依据：reason（为什么要改：新证据 / 核验 issue / 表达不清）与 evidence（新材料摘录 + 出处）；**无依据不改**；
+3. 修订后仍须遵守教学法纪律（同 learning-concept-explainer）：保留 meta 首区、记号热身、先例后律（公式前有带数字示例）、自测带答案；新增内容不得引入未做教学的记号；
+4. 与旧内容冲突时以新材料为准，并在 changed.reason 里写清「原文写 X，依据新材料改为 Y」；
+5. 宁可少改；看不懂、无法解释的内容不要动，在 changed 里标 needs_review 说明缺什么资料。
+
+讲义 JSON：{{param.lessonJson}}
+
+新材料：{{param.newMaterial}}
+
+待处理核验问题：{{param.issues}}
+
+输出严格为 JSON（不要 markdown 代码块，不要多余解释）：
+{"concept_name":"","essence_type":"K-concept","sections":[{"key":"meta","title":"学习前必读","style":"intro","md":"...","folded":false}],"changed":[{"key":"examples","kind":"modified","reason":"...","evidence":"..."}]}
+`,
+  },
+  {
+    id: 'learning-practice-builder',
+    markdown: `---
+name: learning-practice-builder
+title: 练习与自测生成
+description: 依据讲义出分层练习（记忆/理解/应用/分析）+ 答案与解析 + 回看指针，用于学完一个概念后巩固自测。供领域学习在讲义就绪后生成练习。
+when_to_use: 某个概念的讲义已就绪，需要练习题/自测题巩固时
+category: 领域学习
+inputs:
+  - key: lessonJson
+    label: 讲义 JSON
+    type: textarea
+    required: true
+  - key: count
+    label: 题量
+    type: number
+    default: 6
+  - key: level
+    label: 难度
+    type: select
+    default: 混合
+    options:
+      - { label: 基础, value: 基础 }
+      - { label: 进阶, value: 进阶 }
+      - { label: 混合, value: 混合 }
+output_desc: 输出 JSON 对象，含 items 数组（question/type/level/sectionKey/answer/explanation/hint）
+---
+你是练习设计师。基于讲义出题，题目必须能**从讲义内容作答**（不考讲义之外的知识）。
+
+纪律：
+1. 分层配比：至少 2 题记忆/理解（能说清是什么）、2 题应用（换数字或换情境，与讲义示例同构）、1 题分析/评价（比较、判断对错、找错并说明理由）；"混合"档按此配比，"基础"档偏前一档，"进阶"档偏后两档；
+2. 每题给答案、一步解析与提示（hint：先自己想再看），并标注对应讲义区 key（sectionKey）便于回看；
+3. 涉及计算的题必须**自己回算**：写出中间量与最终答案；若发现讲义数值自相矛盾，在 explanation 中指出并建议修订讲义；
+4. 不要全是选择题；不要出无法从讲义作答或需要讲义外资料的题。
+
+讲义 JSON：{{param.lessonJson}}
+
+题量：{{param.count}} · 难度：{{param.level}}
+
+输出严格为 JSON（不要 markdown 代码块）：
+{"items":[{"question":"","type":"recall","level":"基础","sectionKey":"examples","answer":"","explanation":"","hint":""}]}
+`,
+  },
+  {
     id: 'learning-space-bootstrap',
     markdown: `---
 name: learning-space-bootstrap
@@ -914,7 +1001,8 @@ S1 资料探查（回报：正在读取资料…）
 
 S2 知识骨架整理（回报：正在整理知识骨架…）
 - 规划并落库 3-6 个最核心的知识点：dl_save_concept，nodeType 用 concept，parentId 优先填快照「目录分组」里的领域根 group id（没有则 null）；
-- 每个概念给一句话定义（definitionShort）；骨架应构成该领域自底向上的主干；来源不明确的点标注「先验待查证」。
+- 每个概念给一句话定义（definitionShort）；骨架应构成该领域自底向上的主干；来源不明确的点标注「先验待查证」；
+- **难度门禁**：若目标=入门而领域主干里出现需要进阶记号（积分 ∫、偏导、极限、期望/方差、iid、分布族等）的概念，必须把对应的**基础概念**（如「积分基础」「随机变量与分布」「期望与方差」）一并列进骨架并排在前面（它们是后续概念的前置）；否则后面产讲义时会被难度门禁拒绝。
 
 S3 学习阶段规划（回报：正在规划学习顺序…）
 - 为这些概念建立学习顺序关系：dl_save_relation，relation_type 用 prerequisite（source→target：学 target 前需先掌握 source）；
