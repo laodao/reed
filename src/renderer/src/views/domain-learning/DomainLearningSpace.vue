@@ -142,6 +142,10 @@
                 </el-tooltip>
                 <!-- 发布闭环（2026-09-09 复盘）：draft=AI 草稿待人工确认；确认后正式采用并计入统计 -->
                 <template v-if="currentConcept.card">
+                  <!-- 自动核验结果消费（M4-UX2 的 verification 从"只写不读"到可见） -->
+                  <el-tooltip :content="verifyTip" placement="bottom" :show-after="300">
+                    <el-tag size="small" effect="plain" :type="verifyTagType">{{ verifyLabel }}</el-tag>
+                  </el-tooltip>
                   <el-button
                     v-if="currentConcept.card.status === 'draft'"
                     size="small"
@@ -886,6 +890,31 @@ async function markConfused(): Promise<void> {
 
 /** 确认发布当前讲义（draft→published；2026-09-09 复盘补发布闭环） */
 const publishing = ref(false)
+
+/** 自动核验摘要（当前卡；null=未核验） */
+const verifySummary = computed(() => currentConcept.value?.card?.verification ?? null)
+const verifyLabel = computed(() => {
+  const v = verifySummary.value
+  if (!v) return '未核验'
+  if (v.status === 'verified') return '核验通过'
+  if (v.status === 'needs_review') return `待复核 ${v.issues}`
+  if (v.status === 'verifying') return '核验中'
+  return '未核验'
+})
+const verifyTagType = computed<'success' | 'warning' | 'info'>(() => {
+  const v = verifySummary.value
+  if (v?.status === 'verified') return 'success'
+  if (v?.status === 'needs_review') return 'warning'
+  return 'info'
+})
+const verifyTip = computed(() => {
+  const v = verifySummary.value
+  if (!v) return '尚未自动核验——研究产出讲义后会自动交叉核验（知识库/权威来源）'
+  const when = v.checkedAt ? new Date(v.checkedAt).toLocaleString() : '时间未知'
+  const base = `自动核验：${verifyLabel.value}（${when}）`
+  return v.note ? `${base}｜${v.note}` : base
+})
+
 async function publishCurrentLesson(): Promise<void> {
   const c = currentConcept.value
   const card = c?.card
@@ -893,9 +922,12 @@ async function publishCurrentLesson(): Promise<void> {
   publishing.value = true
   try {
     const ok = await store.publishCard(spaceId.value, card.id)
-    lastFeedbackIsWarn.value = !ok
+    // 核验待复核时提示但不阻断（人审优先），由用户决定是否先修订
+    const v = card.verification
+    const warn = v?.status === 'needs_review' && v.issues > 0 ? `（自动核验有 ${v.issues} 条待复核，建议复核后再修订）` : ''
+    lastFeedbackIsWarn.value = ok ? !!warn : true
     lastFeedback.value = ok
-      ? `已确认发布「${c.name}」v${card.version} ✓`
+      ? `已确认发布「${c.name}」v${card.version} ✓${warn}`
       : (store.error ?? '发布失败，请重试')
   } finally {
     publishing.value = false

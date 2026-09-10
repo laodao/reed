@@ -146,4 +146,47 @@ describe('LearningViewService 统计与导出（M3-C）', () => {
       expect(view?.turns[view!.turns.length - 1]?.text).toBe('第三问')
     })
   })
+
+  it('buildSpaceView：讲义卡透出自动核验摘要（2026-09-09 复盘：verify 结果从"只写不读"到消费）', async () => {
+    ds = await buildDs()
+    const db = await buildDb(ds)
+    const svc = new LearningViewService(db)
+    const pid = 'vc-sp'
+    await runWithUserAsync('u1', async () => {
+      await db.dlProjects!.create({ id: pid, name: '核验域', goal: '入门' })
+      await db.dlConcepts!.create({ id: 'c1', projectId: pid, nodeType: 'concept', name: '概念A' })
+      await db.dlCards!.create({
+        id: 'card1',
+        projectId: pid,
+        conceptId: 'c1',
+        essenceType: 'K-stmt',
+        sections: [{ key: 'essence', md: 'x' }],
+        evidenceSources: [{ kind: '论文', title: 'S' }],
+        verification: {
+          status: 'needs_review',
+          issues: [{ claim: 'a', verdict: 'needs_review', reason: '证据不足' }],
+          checkedAt: '2026-09-09T00:00:00.000Z',
+          note: '离线仅 KB 交叉',
+        },
+      })
+      await db.dlConcepts!.patch('c1', { cardId: 'card1', researchState: 'extracted' })
+      await db.dlConcepts!.create({ id: 'c2', projectId: pid, nodeType: 'concept', name: '概念B' })
+      await db.dlCards!.create({
+        id: 'card2',
+        projectId: pid,
+        conceptId: 'c2',
+        essenceType: 'K-concept',
+        sections: [{ key: 'intro', md: 'y' }],
+        evidenceSources: [{ kind: '书', title: 'U' }],
+      })
+      await db.dlConcepts!.patch('c2', { cardId: 'card2', researchState: 'extracted' })
+
+      const view = await svc.buildSpaceView(pid)
+      const c1 = view?.concepts.find((c) => c.id === 'c1')?.card
+      expect(c1?.verification).toMatchObject({ status: 'needs_review', issues: 1 })
+      expect(c1?.verification?.note).toBe('离线仅 KB 交叉')
+      const c2 = view?.concepts.find((c) => c.id === 'c2')?.card
+      expect(c2?.verification).toBeNull() // 未核验可辨别（UI 显示"未核验"）
+    })
+  })
 })
