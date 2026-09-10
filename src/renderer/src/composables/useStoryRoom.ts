@@ -12,6 +12,7 @@ import type {
   ArtifactCard,
   BibleDistillScope,
   ConsensusEntry,
+  DesignPackage,
   DistillScope,
   LedgerOpInput,
   RoomEvent,
@@ -44,6 +45,10 @@ export function useStoryRoom(projectId: string) {
   const gateSuggestion = ref<{ toPhase: RoomPhaseId; reason: string } | null>(null)
   /** 矛盾提醒（写作教练位：scanContradictions 结果） */
   const conflicts = ref<Array<{ id?: string; description?: string; message?: string }>>([])
+  /** 设计任务流水（lw_task_progress / lw_save_* 的过程 chip） */
+  const taskLog = ref<Array<{ message: string; tool?: string; status?: string }>>([])
+  /** 待确认设计包（design:ready 事件置位；确认/驳回后清空） */
+  const designReady = ref<DesignPackage | null>(null)
 
   const busy = computed(() => status.value === 'streaming')
 
@@ -82,6 +87,23 @@ export function useStoryRoom(projectId: string) {
       case 'gate:suggest':
         gateSuggestion.value = { toPhase: event.toPhase, reason: event.reason }
         break
+      case 'task:progress':
+        taskLog.value.push({ message: event.message, tool: event.tool, status: event.status })
+        if (taskLog.value.length > 60) taskLog.value.splice(0, taskLog.value.length - 60)
+        break
+      case 'design:ready':
+        // 拉最新状态拿完整包 → 前端弹确认面板
+        void (async () => {
+          try {
+            const res = await api().roomState(projectId)
+            if (res.success) {
+              state.value = res.data.state ?? res.data
+              const pkg = state.value?.designPackages.find((p) => p.id === event.packageId)
+              if (pkg) designReady.value = pkg
+            }
+          } catch { /* 状态刷新失败不阻断 */ }
+        })()
+        break
       case 'error':
         status.value = 'error'
         streamMessage.value = null
@@ -113,6 +135,8 @@ export function useStoryRoom(projectId: string) {
   async function send(text: string): Promise<void> {
     const content = text.trim()
     if (!content || busy.value) return
+    // 新轮开始：清上一轮任务流水（设计包草稿在确认面板处理，不受影响）
+    taskLog.value = []
     // 本地先上屏（乐观），失败时回滚（评审 P2-15）；message:done 只推 assistant
     const optimistic: RoomMessageView = { role: 'user', content, timestamp: Date.now() }
     messages.value.push(optimistic)
@@ -121,6 +145,8 @@ export function useStoryRoom(projectId: string) {
     try {
       const res = await api().roomSend(projectId, content, { ...modelOpts.value })
       if (!res.success) throw new Error(res.error || '发送失败')
+      // 设计轮收尾：同步一次状态（draft 包已生成，design:ready 事件也会触发刷新）
+      if (res.data?.mode === 'design') await refreshState()
     } catch (e: any) {
       status.value = 'error'
       streamMessage.value = null
@@ -129,6 +155,37 @@ export function useStoryRoom(projectId: string) {
     } finally {
       if (status.value === 'streaming') status.value = 'idle'
     }
+  }
+
+  /** 拉最新房间状态（state 通道返回含 designPackages） */
+  async function refreshState(): Promise<void> {
+    const res = await api().roomState(projectId)
+    if (res.success) state.value = res.data.state ?? res.data
+  }
+
+  /** 设计包确认（整包或逐项） */
+  async function confirmDesign(packageId: string, itemIds?: string[]): Promise<boolean> {
+    const res = await api().roomDesignConfirm(projectId, packageId, itemIds)
+    if (!res.success) {
+      ElMessage.error(res.error || '设计包确认失败')
+      return false
+    }
+    const results: Array<{ ok: boolean; message: string }> = res.data?.results ?? []
+    const failed = results.filter((r) => !r.ok)
+    if (failed.length) ElMessage.warning(`部分条目落库失败：${failed[0].message}`)
+    else ElMessage.success(`设计包已确认入库（${results.length} 项）`)
+    designReady.value = null
+    await refreshState()
+    return !failed.length
+  }
+
+  /** 驳回设计包 */
+  async function discardDesign(packageId: string): Promise<void> {
+    const res = await api().roomDesignDiscard(projectId, packageId)
+    if (!res.success) ElMessage.error(res.error || '驳回失败')
+    else ElMessage.info('设计包已驳回（未落库）')
+    designReady.value = null
+    await refreshState()
   }
 
   function cancel(): void {
@@ -249,6 +306,8 @@ export function useStoryRoom(projectId: string) {
     setModelOpts,
     gateSuggestion,
     conflicts,
+    taskLog,
+    designReady,
     load,
     send,
     cancel,
@@ -262,6 +321,8 @@ export function useStoryRoom(projectId: string) {
     adoptCard,
     regenerateCard,
     ignoreCard,
+    confirmDesign,
+    discardDesign,
   }
 }
 

@@ -25,6 +25,8 @@ export const ROOM_CHANNELS = {
   ROOM_REGENERATE_CARD: 'longwriting:room:regenerateCard',
   ROOM_IGNORE_CARD: 'longwriting:room:ignoreCard',
   ROOM_SET_TARGET: 'longwriting:room:setTarget',
+  ROOM_DESIGN_CONFIRM: 'longwriting:room:designConfirm',
+  ROOM_DESIGN_DISCARD: 'longwriting:room:designDiscard',
 } as const
 
 export function registerStoryRoomHandlers(): void {
@@ -68,6 +70,31 @@ export function registerStoryRoomHandlers(): void {
     try {
       const ledger = await applyLedgerOp(getDb(), projectId, op)
       return { success: true, data: { ledger } }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 设计包（46 号：长程任务产物整体确认制） ====================
+
+  ipcBridge.handle(ROOM_CHANNELS.ROOM_DESIGN_CONFIRM, async (_event, projectId: string, packageId: string, itemIds?: string[]) => {
+    try {
+      const { confirmDesignPackage } = await import('./room-design')
+      const r = await confirmDesignPackage(getDb(), projectId, packageId, itemIds)
+      const state = await StoryRoomSessionService.getInstance().getState(projectId)
+      return { success: true, data: { ...r, state } }
+    } catch (error: any) {
+      console.error('[StoryRoomHandler] design:confirm 失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcBridge.handle(ROOM_CHANNELS.ROOM_DESIGN_DISCARD, async (_event, projectId: string, packageId: string) => {
+    try {
+      const { discardDesignPackage } = await import('./room-design')
+      await discardDesignPackage(getDb(), projectId, packageId)
+      const state = await StoryRoomSessionService.getInstance().getState(projectId)
+      return { success: true, data: { state } }
     } catch (error: any) {
       return { success: false, error: error.message }
     }

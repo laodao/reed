@@ -67,6 +67,61 @@ export interface ArtifactCard {
   createdAt: number
 }
 
+// ==================== 设计包（长程任务产物，整体确认制） ====================
+
+/**
+ * 设计包条目：长程任务（design 模式）中 Agent 通过 lw_save_* 工具落下的
+ * 草稿项。确认前不碰正式表——「全部设计完整体让用户确认」的载体。
+ */
+export type DesignItemKind = 'card' | 'event' | 'relation'
+
+/** 关系草稿：新增走名称解析建边；endOf 存在时为"终结某段关系" */
+export interface DesignRelationPayload {
+  sourceType?: 'character' | 'location' | 'item' | 'faction' | 'skill'
+  sourceName: string
+  targetType?: 'character' | 'location' | 'item' | 'faction' | 'skill'
+  targetName: string
+  /** new=新关系（默认）；ended=终结 source↔target 间 relationType 的仍生效边 */
+  changeType?: 'new' | 'ended'
+  relationType: string
+  description?: string
+  /** 自第几章起生效（研讨期默认 1；写作期=当前章） */
+  validFromChapter?: number
+}
+
+/** 事件草稿：chapterNumber=0 表示规划中未锚定（state=planned） */
+export interface DesignEventPayload {
+  name: string
+  description?: string
+  involvedEntities?: Array<{ type: string; id?: string; name: string }>
+  stateBefore?: string
+  stateAfter?: string
+  chapterNumber?: number
+}
+
+export interface DesignItem {
+  id: string
+  kind: DesignItemKind
+  /** 卡片/关系/事件的人类标题（确认面板展示） */
+  label: string
+  /** kind=card 时为完整 ArtifactCard（data 与 story-persist 输入同构） */
+  payload: Record<string, any>
+  note?: string
+  createdAt: number
+}
+
+export interface DesignPackage {
+  id: string
+  /** 「反派角色与势力网设计」式任务标题（lw_task_progress plan 的任务名） */
+  title: string
+  status: 'draft' | 'confirmed' | 'discarded'
+  items: DesignItem[]
+  /** 产出该包的轮次 */
+  sourceTurn: number
+  createdAt: number
+  confirmedAt?: number
+}
+
 // ==================== 房间状态（wizard_state.room） ====================
 
 /** 研讨室持久状态——`lw_projects.wizard_state.room` 子键 */
@@ -83,6 +138,9 @@ export interface RoomWorkspaceState {
   /** 待处理卡片（提炼后 pending，采纳/忽略后终态） */
   pendingCards: ArtifactCard[]
   cardSeq: number
+  /** 设计包（长程任务草稿 → 整体确认；确认/驳回后保留终态供回看） */
+  designPackages: DesignPackage[]
+  designSeq: number
 }
 
 export function defaultRoomState(): RoomWorkspaceState {
@@ -95,6 +153,8 @@ export function defaultRoomState(): RoomWorkspaceState {
     contentTarget: 'novel',
     pendingCards: [],
     cardSeq: 0,
+    designPackages: [],
+    designSeq: 0,
   }
 }
 
@@ -108,6 +168,8 @@ export type RoomEventType =
   | 'card:update'
   | 'phase:changed'
   | 'gate:suggest'
+  | 'task:progress'
+  | 'design:ready'
   | 'error'
 
 export type RoomEvent =
@@ -118,6 +180,8 @@ export type RoomEvent =
   | { type: 'card:update'; card: ArtifactCard }
   | { type: 'phase:changed'; phase: RoomPhaseId }
   | { type: 'gate:suggest'; toPhase: RoomPhaseId; reason: string }
+  | { type: 'task:progress'; message: string; tool?: string; status?: 'ok' | 'skipped' | 'error' }
+  | { type: 'design:ready'; packageId: string; title: string; itemCount: number }
   | { type: 'error'; error: string }
 
 // ==================== 视图 / 请求类型 ====================
@@ -136,6 +200,8 @@ export interface RoomStateView {
   summary: string
   turnNo: number
   pendingCards: ArtifactCard[]
+  /** 设计包（长程任务草稿/终态，整体确认制） */
+  designPackages: DesignPackage[]
 }
 
 /** 按需提炼范围（设计文档 §9 + v2.1 章节卡 + P0 动态分类 kind:<key>） */

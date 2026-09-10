@@ -324,7 +324,8 @@ export class StoryRoomDistillerService {
     return updated
   }
 
-  private async persistByKind(
+  /** 卡片按类型落库（public：设计包确认与 ⚡ 采纳共用同一路径） */
+  async persistByKind(
     m: any,
     projectId: string,
     card: ArtifactCard,

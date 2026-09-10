@@ -28,7 +28,8 @@ import { installGraphKnowledgeProvider } from '@core/platform/services/longwriti
 import type { RoomEvent, RoomMessageView, RoomPhaseId, RoomStateView } from '@shared/types/story-room.types'
 import { generateRoomText } from './room-llm'
 import { emitRoomEvent } from './room-events'
-import { getRoomState, patchRoomState } from './room-state'
+import { getRoomState, patchRoomState, tryGetRoomState } from './room-state'
+import { registerLwRoomTools, lwRoomToolNames, LW_ROOM_MAX_STEPS } from './room-agent-tools'
 import { ledgerSnapshotText, silentExtractLedger } from './room-ledger'
 import { buildStrategySection, getPhaseDef, loadQuestionBank } from './room-phases'
 
@@ -47,17 +48,21 @@ export const SUMMARY_BATCH_TURNS = 10
 /** 前情提要总长上限（超出从头丢弃最老分段） */
 const SUMMARY_MAX_CHARS = 6000
 
-/** 主编系统提示词：人格 + 纪律 + 阶段策略 + 题材问题库（跨轮稳定段） */
+/** 主编系统提示词：人格 + 双模式纪律（46 号：问答/长程任务自判）+ 阶段策略 + 题材问题库 */
 export function editorSystemPrompt(phase: RoomPhaseId, contentTarget: 'novel' | 'script', questionBank: string[]): string {
   return `你是「主编」——故事研讨期内用户唯一的对话者，一位有立场、有判断力的资深故事主编。你正在与作者多轮研讨，逐步收敛故事。
 
+双模式（由你判断，用户不必指定）：
+- 讨论/问答：聊某个角色、某段剧情、要建议、问取舍——直接自然语言回答，不调用任何工具。
+- 设计任务：成套的人物/世界观/大纲设计、多设定联动调整、批量整理——这是长程任务：先调 lw_task_progress(plan) 声明任务名与步骤，然后逐查（lw_query_bible/lw_query_ledger）逐落（lw_save_*）执行，完成后用一段话总结你设计了什么、请用户到确认面板整体审核。
+
 行为准则：
-1. 对话是你的全部输出：只说自然语言（markdown），研讨期绝不产出表单、JSON 或结构化字段。
-2. 先问后提：信息不足时每轮最多问 1-2 个尖锐的具体问题，禁止问卷式提问。
-3. 给选项不给清单：方向不明时给 2-3 个带取舍说明的选项。
-4. 有记忆、会翻旧账：引用上下文中的共识账本——被否决的方向不要再推荐；讨论中的共识被违背时指出来。
-5. 敢反驳：用户提出俗套或自相矛盾的设定时直接指出，并给替代方案。
-6. 每轮发言收在"推进研讨"上：要么抛出下一步该定的问题，要么建议整理成卡片/推进阶段。
+1. 讨论时只说自然语言（markdown），不堆结构化字段；任务时结构化产物一律走 lw_save_* 工具（只入设计包草稿，用户确认后才生效——不要在回复里罗列 JSON）。
+2. 设计前必查：先 lw_query_bible / lw_query_ledger 了解既有设定与共识，保证新设计与已确认设定一致；被否决的方向不要再推荐。
+3. 讨论时先问后提：信息不足每轮最多问 1-2 个尖锐的具体问题，禁止问卷式提问；方向不明给 2-3 个带取舍说明的选项。
+4. 敢反驳：用户提出俗套或自相矛盾的设定时直接指出，并给替代方案。
+5. 任务步骤粒度适中（2-6 步），每步产出用 lw_save_* 落包，不做用户没有要求的大规模扩展。
+6. 讨论轮收在"推进研讨"上：抛出下一步该定的问题，或建议整理成卡片/推进阶段。
 
 ${buildStrategySection(phase, contentTarget)}
 
@@ -127,6 +132,8 @@ export interface RoomSendResult {
   assistantMessage: RoomMessageView
   ledgerUpdated: boolean
   stopReason: string
+  /** 本轮实际模式：chat=问答讨论 design=长程设计任务（按是否产生设计包回填） */
+  mode: 'chat' | 'design'
 }
 
 export class StoryRoomSessionService {
@@ -193,6 +200,7 @@ export class StoryRoomSessionService {
       summary: state.summary,
       turnNo: state.turnNo,
       pendingCards: state.pendingCards,
+      designPackages: state.designPackages ?? [],
     }
   }
 
@@ -260,6 +268,15 @@ export class StoryRoomSessionService {
       installGraphKnowledgeProvider({})
     } catch { /* 注册失败仅降级 */ }
 
+    // 5.5 工具集（46 号双模式：问答时模型不调用即纯对话；设计任务走 loop）
+    registerLwRoomTools(harness.registry)
+    const systemToolNames = ['discover_capabilities', 'invoke_skill', 'run_workflow', 'get_workflow_run']
+    const bindings = [...lwRoomToolNames(), ...systemToolNames].map((tool) => ({ tool }))
+    const toolMap = harness.registry.buildToolDefs(bindings)
+
+    // 设计轮判定锚点：本轮期间新建的 draft 设计包（轮开始时间戳比对）
+    const turnStartTs = Date.now()
+
     // 7. 跑轮（delta 累积 + 转发事件通道）
     let allText = ''
     // assistant 是否已落库——落库后发生的异常只发 error 事件，不再补道歉气泡（评审 P2-5）
@@ -268,12 +285,12 @@ export class StoryRoomSessionService {
       {
         definitionId: ROOM_EDITOR_DEFINITION_ID,
         scopeKey: () => scopeId,
-        tools: () => ({}),
+        tools: () => toolMap,
         resolveModel: (o) => harness.resolveModel({ providerConfigId: o?.providerConfigId, modelId: o?.modelId }),
         systemPrompt: () => systemPrompt,
         snapshot: () => snapshot,
         seededHistory: () => seeded,
-        maxSteps: 2,
+        maxSteps: LW_ROOM_MAX_STEPS,
         memory: {
           scope: () => ({ bizModule: 'longwriting', projectId }),
           recallText: () => `${message}\n${snapshot}`,
@@ -285,6 +302,7 @@ export class StoryRoomSessionService {
             emitRoomEvent(projectId, { type: 'message:delta', text: event.text })
           }
         },
+        runtimeContext: () => ({ projectId }),
         modelPreference: () => ({ providerConfigId: opts.providerConfigId, modelId: opts.modelId }),
       },
       {
@@ -308,41 +326,61 @@ export class StoryRoomSessionService {
         content = content || formatStopNote('error', result.error)
       }
 
-      // 8. assistant 落库 + message:done（主编发言对齐轮次/阶段 metadata）
+      // 8. 模式回填：本轮产生了新 draft 设计包 → design（长程任务），否则 chat（问答）
+      const stateAfterTurn = await tryGetRoomState(m, projectId)
+      const draftPkg = stateAfterTurn?.designPackages.find(
+        (p) => p.status === 'draft' && p.createdAt >= turnStartTs,
+      )
+      const mode: 'chat' | 'design' = draftPkg ? 'design' : 'chat'
+      const assistantMeta = JSON.stringify({ turnNo, phase: roomState.phase, mode })
+
+      // 9. assistant 落库 + message:done（主编发言对齐轮次/阶段/模式 metadata）
       const saved = await m.lwDesignMessages.add(conversationId, {
-        role: 'assistant', content, timestamp: Date.now(), metadata: meta,
+        role: 'assistant', content, timestamp: Date.now(), metadata: assistantMeta,
       }, { projectId })
       assistantSaved = true
 
       const assistantView: RoomMessageView = {
-        id: saved.id, role: 'assistant', content: saved.content, timestamp: saved.timestamp, metadata: meta,
+        id: saved.id, role: 'assistant', content: saved.content, timestamp: saved.timestamp, metadata: assistantMeta,
       }
       emitRoomEvent(projectId, { type: 'message:done', message: assistantView })
 
-      // 9. 轮后静默任务（fail-soft：失败只留日志，不影响本轮结果）
+      // 10. 轮后静默任务（fail-soft：失败只留日志，不影响本轮结果）
       const nextTurnNo = turnNo
-      // 不传发送控制器的 signal——轮已结束，静默任务不该被轮内 abort 波及（评审实测）
-      const ledger = await silentExtractLedger(m, projectId, {
-        userText: message,
-        assistantText: content,
-        turnNo: nextTurnNo,
-        llmOpts: opts,
-      })
       let ledgerUpdated = false
-      if (ledger) {
-        emitRoomEvent(projectId, { type: 'ledger:update', ledger })
-        ledgerUpdated = true
+
+      if (draftPkg) {
+        // 设计任务：发 design:ready（前端弹确认面板）；产物已在包内，跳过账本静默提取防双轨
+        emitRoomEvent(projectId, {
+          type: 'design:ready',
+          packageId: draftPkg.id,
+          title: draftPkg.title,
+          itemCount: draftPkg.items.length,
+        })
+      } else {
+        // 讨论/问答轮：账本静默提取照旧（不传发送控制器的 signal——轮已结束，静默任务不该被轮内 abort 波及）
+        const ledger = await silentExtractLedger(m, projectId, {
+          userText: message,
+          assistantText: content,
+          turnNo: nextTurnNo,
+          llmOpts: opts,
+        })
+        if (ledger) {
+          emitRoomEvent(projectId, { type: 'ledger:update', ledger })
+          ledgerUpdated = true
+        }
       }
       await this.maybeRollingSummary(m, projectId, { ...roomState, turnNo: nextTurnNo }, history, opts, controller.signal)
 
       await patchRoomState(m, projectId, { turnNo: nextTurnNo })
 
-      logger.info(`[story-room] 轮次完成 project=${projectId} turn=${nextTurnNo} stop=${result.stopReason} chars=${content.length}`)
+      logger.info(`[story-room] 轮次完成 project=${projectId} turn=${nextTurnNo} stop=${result.stopReason} mode=${mode} chars=${content.length}`)
       return {
         conversationId,
         assistantMessage: assistantView,
         ledgerUpdated,
         stopReason: result.stopReason,
+        mode,
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -355,6 +393,7 @@ export class StoryRoomSessionService {
           assistantMessage: { role: 'assistant', content: allText, timestamp: Date.now(), metadata: meta },
           ledgerUpdated: false,
           stopReason: 'error',
+          mode: 'chat',
         }
       }
       // 兜底 assistant（前端气泡必有终态，用户消息不悬空）

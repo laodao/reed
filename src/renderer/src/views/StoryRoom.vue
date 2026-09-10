@@ -63,6 +63,19 @@
             <li v-for="(c, i) in store.conflicts.value" :key="i">{{ c.description || c.message }}</li>
           </ul>
         </el-alert>
+        <!-- 设计任务流水（46 号：design 轮的工具动作 chip，folded 摘要一条） -->
+        <div v-if="store.taskLog.value.length" class="task-log" :class="{ open: taskLogOpen }">
+          <div class="task-log-summary" @click="taskLogOpen = !taskLogOpen">
+            <span>任务执行 共 {{ store.taskLog.value.length }} 项 · {{ store.taskLog.value[store.taskLog.value.length - 1]?.message }}</span>
+            <span class="task-log-caret">{{ taskLogOpen ? '▾' : '▸' }}</span>
+          </div>
+          <div v-if="taskLogOpen" class="task-log-items">
+            <div v-for="(t, i) in store.taskLog.value" :key="i" class="task-log-item">
+              <span class="tl-tool">{{ t.tool || 'tool' }}</span>
+              <span class="tl-msg">{{ t.message }}</span>
+            </div>
+          </div>
+        </div>
         <ChatCanvas
           :messages="store.messages.value"
           :stream-message="store.streamMessage.value"
@@ -112,6 +125,23 @@
       </div>
     </div>
 
+    <!-- 设计包确认（46 号：长程任务产物整体确认制） -->
+    <el-dialog v-model="designVisible" :title="`设计成果确认 · ${store.designReady.value?.title ?? ''}`" width="640px">
+      <div class="design-hint">以下 {{ designItems.length }} 项为本轮任务的设计草稿，勾选确认后才会落库生效。</div>
+      <div class="design-items">
+        <label v-for="item in designItems" :key="item.id" class="design-item" :class="{ on: checkedIds.has(item.id) }">
+          <input type="checkbox" :checked="checkedIds.has(item.id)" @change="toggleItem(item.id)" />
+          <span class="di-kind">{{ kindLabel(item.kind) }}</span>
+          <span class="di-label">{{ item.label }}</span>
+          <span v-if="item.note" class="di-note">{{ item.note }}</span>
+        </label>
+      </div>
+      <template #footer>
+        <el-button @click="onDiscardDesign">整包驳回</el-button>
+        <el-button type="primary" :disabled="checkedIds.size === 0" @click="onConfirmDesign">确认所选（{{ checkedIds.size }}）</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 账本条目轻编辑 -->
     <el-dialog v-model="reviseVisible" title="修改共识" width="460px">
       <el-input v-model="reviseTitle" placeholder="共识一句话" />
@@ -147,7 +177,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import ChatCanvas from '@/components/longwriting/room/ChatCanvas.vue'
@@ -252,6 +282,53 @@ const reviseVisible = ref(false)
 const reviseEntry = ref<ConsensusEntry | null>(null)
 const reviseTitle = ref('')
 const revisePoints = ref<string[]>([])
+
+// ==================== 设计包确认（46 号：长程任务整体确认制） ====================
+const taskLogOpen = ref(false)
+const designVisible = ref(false)
+const checkedIds = ref(new Set<string>())
+
+const designItems = computed(() => store.designReady.value?.items ?? [])
+
+// design:ready → 弹确认面板（默认全选；用户可逐项取消）
+watch(
+  () => store.designReady.value,
+  (pkg) => {
+    if (!pkg) return
+    checkedIds.value = new Set(pkg.items.map((i) => i.id))
+    designVisible.value = true
+  },
+)
+
+function toggleItem(id: string): void {
+  const next = new Set(checkedIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  checkedIds.value = next
+}
+
+function kindLabel(kind: string): string {
+  switch (kind) {
+    case 'card': return '卡片'
+    case 'event': return '事件'
+    case 'relation': return '关系'
+    default: return kind
+  }
+}
+
+async function onConfirmDesign(): Promise<void> {
+  const pkg = store.designReady.value
+  if (!pkg || checkedIds.value.size === 0) return
+  await store.confirmDesign(pkg.id, [...checkedIds.value])
+}
+
+async function onDiscardDesign(): Promise<void> {
+  const pkg = store.designReady.value
+  if (!pkg) return
+  const yes = await ElMessageBox.confirm('整包驳回后草稿不落库（保留回看记录），确定？', '驳回设计包', { type: 'warning' }).catch(() => false)
+  if (!yes) return
+  await store.discardDesign(pkg.id)
+}
 
 onMounted(async () => {
   await store.load()
@@ -592,6 +669,34 @@ html.dark .story-room { --sr-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rg
 }
 .conflict-banner { flex-shrink: 0; border-radius: 0; }
 .conflict-list { margin: 4px 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.7; }
+
+/* 设计任务流水（46 号） */
+.task-log {
+  flex-shrink: 0; border-bottom: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-lighter); font-size: 12px;
+}
+.task-log-summary {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 16px; cursor: pointer; color: var(--el-text-color-secondary);
+}
+.task-log-summary:hover { color: var(--el-text-color-primary); }
+.task-log-caret { flex-shrink: 0; }
+.task-log-items { max-height: 150px; overflow-y: auto; padding: 0 16px 8px; }
+.task-log-item { display: flex; gap: 8px; padding: 2px 0; line-height: 1.6; }
+.tl-tool { flex-shrink: 0; color: var(--el-color-primary); font-size: 11px; }
+.tl-msg { color: var(--el-text-color-regular); min-width: 0; }
+
+/* 设计包确认面板（46 号） */
+.design-hint { font-size: 12.5px; color: var(--el-text-color-secondary); margin-bottom: 10px; }
+.design-items { max-height: 46vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.design-item {
+  display: flex; align-items: baseline; gap: 8px; padding: 7px 10px;
+  border: 1px solid var(--el-border-color-lighter); border-radius: 8px; cursor: pointer;
+}
+.design-item.on { border-color: var(--el-color-primary-light-5); background: var(--el-color-primary-light-9); }
+.di-kind { flex-shrink: 0; font-size: 11px; color: var(--el-color-primary); }
+.di-label { font-size: 13px; color: var(--el-text-color-primary); min-width: 0; }
+.di-note { font-size: 11.5px; color: var(--el-text-color-secondary); margin-left: auto; text-align: right; }
 .gate-text { font-size: 13px; color: var(--el-text-color-primary); flex: 1; min-width: 0; }
 .gate-ops { display: flex; gap: 6px; flex-shrink: 0; }
 .tag.target { cursor: pointer; }

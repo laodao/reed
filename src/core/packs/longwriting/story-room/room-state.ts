@@ -30,6 +30,8 @@ export function extractRoomState(wizard: WizardStateFull | undefined): RoomWorks
     contentTarget: room.contentTarget ?? def.contentTarget,
     pendingCards: Array.isArray(room.pendingCards) ? room.pendingCards : def.pendingCards,
     cardSeq: Number.isFinite(room.cardSeq) ? Number(room.cardSeq) : def.cardSeq,
+    designPackages: Array.isArray(room.designPackages) ? room.designPackages : def.designPackages,
+    designSeq: Number.isFinite(room.designSeq) ? Number(room.designSeq) : def.designSeq,
   }
 }
 
@@ -67,13 +69,13 @@ export async function saveRoomState(db: any, projectId: string, next: RoomWorksp
 export async function mutateRoomState(
   db: any,
   projectId: string,
-  mutator: (current: RoomWorkspaceState) => RoomWorkspaceState,
+  mutator: (current: RoomWorkspaceState) => RoomWorkspaceState | Promise<RoomWorkspaceState>,
 ): Promise<RoomWorkspaceState> {
   return enqueueWrite(projectId, async () => {
     const project = await db?.lwProjects?.getById(projectId)
     if (!project) throw new Error(`长文项目不存在：${projectId}`)
     const current = extractRoomState(project.wizardState)
-    const next = mutator(current)
+    const next = await mutator(current)
     const merged: WizardStateFull = { ...(project.wizardState || {}), room: next }
     const updated = await db.lwProjects.update(projectId, { wizardState: merged })
     if (!updated) throw new Error(`房间状态保存失败（项目不存在）：${projectId}`)
