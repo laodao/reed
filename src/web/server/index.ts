@@ -538,6 +538,13 @@ async function initDatabase(): Promise<void> {
   )
   await createEpVideoSegments(ds)
 
+  // 领域共学空间（tasks/2026-09-07-domain-learning-space/design-v3.md §9）：7 张 dl_* 表
+  // （幂等，双语种；与 Electron 端 runMultiTenantMigrations 同构登记）
+  const { createDomainLearningTables } = await import(
+    '@core/database/migrations/create-domain-learning-tables'
+  )
+  await createDomainLearningTables(ds)
+
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)
   console.log('[web-server] PostgreSQL 数据库初始化完成')

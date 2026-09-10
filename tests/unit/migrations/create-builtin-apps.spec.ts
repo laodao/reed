@@ -1,10 +1,12 @@
 /**
  * create-builtin-apps 迁移执行测试（内置高频应用：不做运行时种子、迁移直接 INSERT）
  * @module tests/migrations/create-builtin-apps
- * @description 真实 sqlite DataSource 执行：建三表 → 跑迁移 → 断言 18 工作流 + 18 应用
+ * @description 真实 sqlite DataSource 执行：建三表 → 跑迁移 → 断言 24 工作流 + 24 应用
  *              + 3 默认模板资产落库、user_id=NULL + is_builtin=1、幂等重跑不重复。
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { DataSource } from 'typeorm'
 import { createWorkflowTables } from '@core/database/migrations/create-workflow-tables'
 import { createAppsTables } from '@core/database/migrations/create-apps-tables'
@@ -37,9 +39,9 @@ afterAll(async () => {
 })
 
 describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
-  it('插入 19 个内置工作流（user_id NULL + is_builtin=1 + published v1）', async () => {
+  it('插入 24 个内置工作流（user_id NULL + is_builtin=1 + published v1）', async () => {
     const rows = await ds.query(`SELECT id, name, user_id, is_builtin, published_version, draft_graph, published_graph FROM workflow_definitions WHERE is_builtin = 1`)
-    expect(rows.length).toBe(21)
+    expect(rows.length).toBe(24)
     for (const r of rows) {
       expect(r.user_id).toBeNull()
       expect(r.is_builtin).toBe(1)
@@ -49,9 +51,9 @@ describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
     }
   })
 
-  it('插入 19 个内置应用（user_id NULL + is_builtin=1 + 会话渠道开 + 启用）', async () => {
+  it('插入 24 个内置应用（user_id NULL + is_builtin=1 + 会话渠道开 + 启用）', async () => {
     const rows = await ds.query(`SELECT id, name, user_id, is_builtin, enabled, channel_session, channel_api, source_id FROM apps WHERE is_builtin = 1`)
-    expect(rows.length).toBe(21)
+    expect(rows.length).toBe(24)
     for (const r of rows) {
       expect(r.user_id).toBeNull()
       expect(r.is_builtin).toBe(1)
@@ -83,8 +85,8 @@ describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
     const defs = await ds.query(`SELECT count(*) c FROM workflow_definitions WHERE is_builtin = 1`)
     const apps = await ds.query(`SELECT count(*) c FROM apps WHERE is_builtin = 1`)
     const tpls = await ds.query(`SELECT count(*) c FROM assets WHERE is_builtin = 1`)
-    expect(defs[0].c).toBe(21)
-    expect(apps[0].c).toBe(21)
+    expect(defs[0].c).toBe(24)
+    expect(apps[0].c).toBe(24)
     expect(tpls[0].c).toBe(3)
   })
 
@@ -97,7 +99,7 @@ describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
 
   it('内置应用带分类与标签种子（视频文案提取 → 视频处理/视频,文案）', async () => {
     const rows = await ds.query(`SELECT id, category, tags FROM apps WHERE is_builtin = 1`)
-    expect(rows.length).toBe(21)
+    expect(rows.length).toBe(24)
     for (const r of rows) {
       expect(r.category).toBeTruthy()
       const tags = JSON.parse(r.tags)
@@ -118,7 +120,7 @@ describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
 
   it('内置定义写入 template_version=1（跟随模板）', async () => {
     const rows = await ds.query(`SELECT template_version FROM workflow_definitions WHERE is_builtin = 1`)
-    expect(rows.length).toBe(21)
+    expect(rows.length).toBe(24)
     for (const r of rows) expect(r.template_version).toBe(1)
   })
 
@@ -140,6 +142,21 @@ describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
       `SELECT template_version FROM workflow_definitions WHERE id = 'builtin_def_industry-weekly'`
     )
     expect(untouched[0].template_version).toBe(1)
+  })
+
+  it('未接管的内置定义改名在迁移重跑时同步（如 实操研究→深度研究 升级）', async () => {
+    const defId = 'builtin_def_topic-research'
+    const raw = JSON.parse(readFileSync(resolve(__dirname, '../../../src/core/database/migrations/builtin-apps/topic-research.json'), 'utf-8')) as { name?: string }
+    // 先把行名改成旧值模拟"模板升级前已入库"的状态
+    await ds.query(`UPDATE workflow_definitions SET name = '[内置] 旧名', template_version = 1 WHERE id = '${defId}'`)
+    await createBuiltinApps(ds)
+    const row = await ds.query(`SELECT name FROM workflow_definitions WHERE id = '${defId}'`)
+    expect(row[0].name).toBe(raw.name ?? '[内置] 主题深度研究')
+    // 未接管（template_version=0）的定义即使模板改名也不被覆盖
+    await ds.query(`UPDATE workflow_definitions SET name = '[内置] 用户改过的名字', template_version = 0 WHERE id = '${defId}'`)
+    await createBuiltinApps(ds)
+    const row2 = await ds.query(`SELECT name FROM workflow_definitions WHERE id = '${defId}'`)
+    expect(row2[0].name).toBe('[内置] 用户改过的名字')
   })
 
   it('吃瓜工作流支持多平台文章 + 多平台视频脚本（头条/视频平台循环）', async () => {

@@ -137,6 +137,27 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     }),
   ],
   loop: [
+    T('mode', '迭代模式', {
+      type: 'select',
+      options: [
+        { label: '遍历列表（foreach）', value: 'foreach' },
+        { label: '直到条件满足（until）', value: 'until' },
+      ],
+      help: 'until 无列表：每轮循环体收敛后在当轮作用域解析 stopExpression，等于 stopValue 即提前收尾；达 maxIterations 上限必收尾（不算失败）。',
+    }),
+    T('stopExpression', '停止条件表达式（until）', {
+      type: 'textarea',
+      templateHint: true,
+      placeholder: '{{pack.result.verdict}}',
+      help: 'until：每轮 body 结束后解析（可引用 body 内节点输出，如评估节点归一出的 verdict）。',
+    }),
+    T('stopValue', '停止值（until）', {
+      help: '解析结果 === stopValue 即收尾（缺省 true；示例 pass）。',
+    }),
+    T('maxIterations', '最大轮数（until）', {
+      type: 'number',
+      help: '1..运行级 maxLoopIterations；达上限必收尾（不算失败）。编辑器默认 5。',
+    }),
     T('listExpression', '遍历列表', {
       type: 'textarea',
       templateHint: true,

@@ -189,8 +189,8 @@ describe('installBuiltinPackages（内置包装配）', () => {
     ]) {
       expect(router.resolve(path).matched.length, `路由 ${path} 应已注册`).toBeGreaterThan(0)
     }
-    // 菜单顺序（domain-learning 以 knowledge-base 为锚点插入其前；
-    // agent-tasks 菜单位已于 M5.5 由 agent-console 取代）
+    // 菜单顺序与原静态菜单一致（二期 4 个原壳位包先注册，锚点语义不变；
+    // 领域学习包插在知识库前（agent-harness 合并后：Agent 对话 = /agent-console）
     const paths = flattenMenuItems(mainMenuItems).map(i => i.path)
     expect(paths).toEqual([
       '/', '/chat', '/portrait', '/longwriting', '/episode-production',

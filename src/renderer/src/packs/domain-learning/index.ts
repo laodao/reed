@@ -1,8 +1,9 @@
 /**
- * 领域共学空间（前端原型）
+ * 领域共学空间（正式包）
  * @module renderer/packs/domain-learning
- * @description 界面原型：主题列表页 + 三栏学习空间页（左概念图/中讲义/右追问 + 知识全景）。
- *              样例数据本地填充（原型界面，后端业务未接入）。
+ * @description 围绕一个领域系统研究并教到你懂：空间列表页 + 三栏学习空间页
+ *              （左概念图/中讲义/右追问）+ 知识全景。数据全链路走 dl: IPC
+ *              （列表/聚合视图/图谱/掌握度推进/研究·追问 Agent）。
  */
 import { markRaw } from 'vue'
 import { Reading } from '@element-plus/icons-vue'
@@ -12,10 +13,10 @@ export const domainLearningPack: RendererPackDefinition = {
   manifest: {
     id: 'domain-learning',
     name: '领域学习',
-    version: '0.0.3',
-    description: '领域共学空间（界面原型）——多主题列表 + 三栏学习空间 + 知识全景',
+    version: '0.1.0',
+    description: '领域共学空间——围绕一个领域系统研究并教到你懂',
     contributions: {
-      routePaths: ['/domain-learning', '/domain-learning/:id', '/domain-learning/:id/atlas'],
+      routePaths: ['/domain-learning'],
     },
   },
   routes: [
@@ -29,21 +30,20 @@ export const domainLearningPack: RendererPackDefinition = {
       path: '/domain-learning/:id',
       name: 'DomainLearningSpace',
       component: () => import('@/views/domain-learning/DomainLearningSpace.vue'),
-      // keepAlive：学习进度/追问在组件实例内，空间 ↔ 全景往返不丢（组件同名匹配缓存）
-      meta: { title: '领域学习空间', keepAlive: true },
+      meta: { title: '领域学习空间' },
     },
     {
       path: '/domain-learning/:id/atlas',
       name: 'DomainLearningAtlas',
       component: () => import('@/views/domain-learning/DomainAtlas.vue'),
-      meta: { title: '知识全景', keepAlive: true },
+      meta: { title: '知识全景' },
     },
   ],
   menuItems: [
     {
       path: '/domain-learning',
       label: '领域学习',
-      description: '领域共学空间（原型）——围绕一个领域系统研究并教到你懂',
+      description: '领域共学空间——围绕一个领域系统研究并教到你懂',
       icon: markRaw(Reading),
     },
   ],

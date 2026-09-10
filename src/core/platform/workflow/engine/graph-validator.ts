@@ -168,7 +168,7 @@ export function validateGraph(
     const chooseMode = isChooseReview(node)
     if (chooseMode) allowedKinds.add('branch')
     // kind 合法性
-    for (const [kind, list] of byKind) {
+    for (const [kind] of byKind) {
       if (!allowedKinds.has(kind)) {
         addError(`节点 ${node.id}（${catalog.label}）不允许 ${kind} 类型出边`)
       }
@@ -426,12 +426,15 @@ function validateVariableReferences(
   }
   // 节点 → 所属循环的 loop 节点集合（body 内可引用该 loop 的 item/index 伪变量）
   const bodyOf = new Map<string, Set<string>>()
+  // loop 节点 → 自身 body 节点集合（until 模式 stopExpression 特例豁免用）
+  const loopBodySets = new Map<string, Set<string>>()
   for (const loopNode of graph.nodes.filter(n => n.type === 'loop')) {
     const bodyEntryEdge = edges.find(
       e => e.sourceNodeId === loopNode.id && e.kind === 'loop-body'
     )
     if (!bodyEntryEdge || !nodeById.has(bodyEntryEdge.targetNodeId)) continue
     const { bodySet } = computeLoopBody(graph, nodeById, loopNode.id, bodyEntryEdge)
+    loopBodySets.set(loopNode.id, bodySet)
     for (const id of bodySet) {
       const list = bodyOf.get(id) ?? new Set<string>()
       list.add(loopNode.id)
@@ -464,6 +467,15 @@ function validateVariableReferences(
       if (upstream.has(root)) continue // 上游节点输出：合法
       // 循环体内部：所属 loop 的伪变量（item/index）局部可用
       if (bodyOf.get(node.id)?.has(root)) continue
+      // until 循环特例：loop 节点的 stopExpression 引用自己 body 内的节点输出是合法的
+      // （引擎在每轮 body 收敛后于当轮作用域内解析 stopExpression，不是执行前求值）
+      if (
+        node.type === 'loop' &&
+        (node.config as { mode?: string }).mode === 'until' &&
+        loopBodySets.get(node.id)?.has(root)
+      ) {
+        continue
+      }
       addError(
         `节点 ${node.id} 引用了不在其上游的节点输出：{{${path}}}（${root} 是后置或未执行环节）`
       )

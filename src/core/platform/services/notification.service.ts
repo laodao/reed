@@ -44,6 +44,10 @@ export const NOTICE_EVENT_TYPES: readonly string[] = [
   'translation:failed',
   'voice:tts-completed',
   'voice:stt-completed',
+  // 领域共学空间（M4-A P1-5：研究产出/失败、复习到期——用户回到铃铛即可见）
+  'dl:card-ready',
+  'dl:research-failed',
+  'dl:review-due',
 ]
 
 /** run-status 中真正作为通知的终态（running/pending/waiting_review/interrupted/skipped 不产生通知） */
@@ -52,6 +56,13 @@ const RUN_TERMINAL_STATUS: Record<string, { title: string; message: string }> = 
   failed: { title: '运行失败', message: '运行 {runId} 执行失败' },
   timed_out: { title: '运行超时', message: '运行 {runId} 超过最长运行时长' },
   cancelled: { title: '运行已取消', message: '运行 {runId} 已取消' },
+}
+
+/** dl 通知标题（研究产出/失败、复习到期） */
+const DL_NOTICE_TITLES: Record<string, string> = {
+  'dl:card-ready': '研究产出讲义（待你查看/人审）',
+  'dl:research-failed': '研究任务失败',
+  'dl:review-due': '有概念到复习期',
 }
 
 export class NotificationService {
@@ -235,6 +246,24 @@ export class NotificationService {
         return this.domainNotice(e, payload, seq, occurredAt, '语音合成完成', '/voice/tts')
       case 'voice:stt-completed':
         return this.domainNotice(e, payload, seq, occurredAt, '语音识别完成', '/voice/stt')
+
+      case 'dl:card-ready':
+      case 'dl:research-failed':
+      case 'dl:review-due': {
+        const title = DL_NOTICE_TITLES[type] ?? '领域学习'
+        const spaceId = str(payload.spaceId ?? e.aggregateId)
+        const name = str(payload.conceptName) || str(payload.spaceName) || ''
+        return {
+          seq,
+          type,
+          category: 'domain',
+          title,
+          message: `${title}${name ? `（${name}）` : ''}`,
+          route: `/domain-learning/${spaceId}`,
+          occurredAt,
+          read: false,
+        }
+      }
 
       default:
         return null

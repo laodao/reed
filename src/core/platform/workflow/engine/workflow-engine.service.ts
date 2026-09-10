@@ -204,13 +204,30 @@ export class ScopeState {
 }
 
 /** 循环驱动进度（挂起后续驱用） */
-export interface LoopDriver {
+export interface ForeachLoopDriver {
+  kind: 'foreach'
   node: WorkflowNode
   state: NodeExecutionState
   list: unknown[]
   results: unknown[]
   parentScope: ScopeState
 }
+
+/** until 循环驱动进度（repeat body until stopValue；挂起后续驱用） */
+export interface UntilLoopDriver {
+  kind: 'until'
+  node: WorkflowNode
+  state: NodeExecutionState
+  results: unknown[]
+  parentScope: ScopeState
+  /** 最大轮数（启动期深解析后数值，已回检 ≤ settings.maxLoopIterations） */
+  maxIterations: number
+  /** 停止表达式原文（引擎每轮在当轮 scope 内解析，不做启动期求值） */
+  stopExpression: string
+  stopValue: string | number | boolean
+}
+
+export type LoopDriver = ForeachLoopDriver | UntilLoopDriver
 
 /** 一次运行的完整内存态 */
 export class RunExecution {
@@ -502,9 +519,11 @@ export class WorkflowEngineService {
       scopes: [serializeScope(exec.rootScope), ...[...exec.loopScopes.values()].map(serializeScope)],
       loopDrivers: [...exec.loopDrivers.values()].map(d => ({
         loopNodeId: d.node.id,
+        kind: d.kind,
         results: d.results,
-        listSize: d.list.length,
-        list: d.list,
+        ...(d.kind === 'until'
+          ? { maxIterations: d.maxIterations, stopExpression: d.stopExpression, stopValue: d.stopValue }
+          : { listSize: (d as ForeachLoopDriver).list.length, list: (d as ForeachLoopDriver).list }),
         parentScopeKey: d.parentScope.key,
       })),
       reexecNodeIds: [...exec.reexecNodeIds],
@@ -1786,7 +1805,54 @@ export class WorkflowEngineService {
     state: NodeExecutionState,
     resolvedConfig: unknown
   ): Promise<void> {
-    const cfg = resolvedConfig as { listExpression: unknown; emptyPolicy?: 'skip' | 'fail' }
+    const cfg = resolvedConfig as { mode?: string; listExpression?: unknown; emptyPolicy?: 'skip' | 'fail'; maxIterations?: unknown }
+    const mode = cfg.mode ?? 'foreach'
+    if (mode !== 'foreach') {
+      // —— until 模式：repeat body until stopValue，最大 maxIterations 轮 ——
+      const rawStop = String((node.config as { stopExpression?: unknown }).stopExpression ?? '').trim()
+      if (!rawStop) {
+        await this.handleNodeFailure(exec, scope, node, state, 'until 模式缺少 stopExpression', false)
+        return
+      }
+      const miNum = cfg.maxIterations === undefined || cfg.maxIterations === null
+        ? Number.NaN
+        : Number(typeof cfg.maxIterations === 'string' ? cfg.maxIterations.trim() : cfg.maxIterations)
+      if (!Number.isFinite(miNum) || miNum < 1) {
+        await this.handleNodeFailure(exec, scope, node, state, `until 模式 maxIterations 非法：${String(cfg.maxIterations)}`, false)
+        return
+      }
+      if (miNum > exec.settings.maxLoopIterations) {
+        await this.handleNodeFailure(
+          exec,
+          scope,
+          node,
+          state,
+          `until 最大轮数 ${miNum} 超过运行上限 ${exec.settings.maxLoopIterations}`,
+          false
+        )
+        return
+      }
+      const rawCfg = node.config as { stopValue?: string | number | boolean }
+      const driver: UntilLoopDriver = {
+        kind: 'until',
+        node,
+        state,
+        results: [],
+        parentScope: scope,
+        maxIterations: Math.floor(miNum),
+        stopExpression: rawStop,
+        stopValue: rawCfg.stopValue === undefined ? 'true' : rawCfg.stopValue,
+      }
+      exec.loopDrivers.set(node.id, driver)
+      if (this.deps.journal) await this.appendEvent(exec, 'loopStarted', {
+        nodeId: node.id,
+        scope,
+        payload: { parentScopeKey: scope.key, mode: 'until', maxIterations: driver.maxIterations },
+      })
+      await this.driveUntil(exec, driver)
+      return
+    }
+
     const list = cfg.listExpression
     if (!Array.isArray(list)) {
       await this.handleNodeFailure(exec, scope, node, state, 'listExpression 必须解析为数组', false)
@@ -1813,18 +1879,18 @@ export class WorkflowEngineService {
       return
     }
 
-    const driver: LoopDriver = { node, state, list, results: [], parentScope: scope }
+    const driver: ForeachLoopDriver = { kind: 'foreach', node, state, list, results: [], parentScope: scope }
     exec.loopDrivers.set(node.id, driver)
     if (this.deps.journal) await this.appendEvent(exec, 'loopStarted', {
       nodeId: node.id,
       scope,
-      payload: { parentScopeKey: scope.key, listSize: list.length },
+      payload: { parentScopeKey: scope.key, listSize: list.length, mode: 'foreach' },
     })
     await this.driveLoop(exec, driver)
   }
 
-  /** 从 results.length 迭代开始驱动（首次与续驱共用） */
-  private async driveLoop(exec: RunExecution, driver: LoopDriver): Promise<void> {
+  /** 从 results.length 迭代开始驱动（首次与续驱共用；foreach 专属） */
+  private async driveLoop(exec: RunExecution, driver: ForeachLoopDriver): Promise<void> {
     const { node, state, list, parentScope } = driver
     for (let i = driver.results.length; i < list.length; i++) {
       if (exec.finished || exec.abortController.signal.aborted || exec.suspended) return
@@ -1930,12 +1996,167 @@ export class WorkflowEngineService {
     return '迭代内节点失败'
   }
 
-  /** 续驱已推进部分迭代的循环（resumeSuspended 调用） */
+  /** until 驱动器：重复执行循环体直到 stop 条件满足，或达 maxIterations 上限无条件收尾 */
+  private async driveUntil(exec: RunExecution, driver: UntilLoopDriver): Promise<void> {
+    const { node, state, parentScope } = driver
+    while (driver.results.length < driver.maxIterations) {
+      if (exec.finished || exec.abortController.signal.aborted || exec.suspended) return
+      if (parentScope.failed) break
+
+      const i = driver.results.length
+      const scopeKey = makeScopeKey(node.id, i)
+      const bodyInfo = exec.loopBodies.get(node.id)
+      if (!bodyInfo?.bodySet.size) {
+        driver.results.push(undefined)
+        continue
+      }
+      const loopScope = new ScopeState(scopeKey, i, bodyInfo.bodySet)
+      loopScope.loopOwnerId = node.id
+      loopScope.loopPseudoVars.set(node.id, {
+        index: i,
+        ...(i > 0 ? { prev: driver.results[i - 1] } : {}),
+      })
+      exec.loopScopes.set(scopeKey, loopScope)
+
+      const bodyEdges = exec.outgoingOf(node.id, WORKFLOW_EDGE_KINDS['loop-body'])
+      if (bodyEdges.length > 0) {
+        if (this.deps.journal) await this.appendEventBatch(
+          exec,
+          'edgeActivated',
+          bodyEdges.map((edge, k) => ({
+            scope: loopScope,
+            payload: { edgeId: edge.id, seq: loopScope.activationCounter + 1 + k, sourceNodeId: edge.sourceNodeId, targetNodeId: edge.targetNodeId },
+          }))
+        )
+        for (const edge of bodyEdges) {
+          void loopScope.activationSeqs.set(edge.id, ++loopScope.activationCounter)
+        }
+      }
+
+      await this.pump(exec, loopScope)
+      await this.waitScopeSettled(exec, loopScope)
+      if (exec.suspended) return // 挂起：resumeSuspended 从本迭代续驱
+      if (loopScope.failed) {
+        if (this.loopErrorPolicy(exec, node.id) === 'skip') {
+          const skippedResult = { error: this.firstIterationError(loopScope), skipped: true }
+          if (this.deps.journal) await this.appendEvent(exec, 'loopIterationSettled', {
+            nodeId: node.id,
+            scope: parentScope,
+            payload: { iterationIndex: i, result: skippedResult, skipped: true },
+          })
+          driver.results.push(skippedResult)
+          continue
+        }
+        break
+      }
+      if (exec.finished) return
+
+      const iterationResult = this.collectIterationResult(exec, loopScope, node)
+      if (this.deps.journal) await this.appendEvent(exec, 'loopIterationSettled', {
+        nodeId: node.id,
+        scope: parentScope,
+        payload: { iterationIndex: i, result: iterationResult, skipped: false },
+      })
+      driver.results.push(iterationResult)
+      // 停止判定：在当轮作用域内解析 stopExpression，等值比较 stopValue
+      const stopExpression = driver.stopExpression.trim()
+      if (stopExpression) {
+        let resolved: unknown
+        try {
+          resolved = exec.resolver.resolve(stopExpression, this.localContextFor(exec, loopScope))
+        } catch {
+          resolved = undefined
+        }
+        if (stringifyValue(resolved) === stringifyValue(driver.stopValue)) break
+      }
+    }
+
+    if (parentScope.failed || exec.finished) return
+    if (this.anyScopeFailure(exec)) {
+      const detail = this.firstLoopFailureDetail(exec)
+      await this.handleNodeFailure(
+        exec,
+        parentScope,
+        node,
+        state,
+        detail ? `循环体内节点失败且未恢复（${detail}）` : '循环体内节点失败且未恢复',
+        false
+      )
+      return
+    }
+    await this.completeLoopUntil(exec, parentScope, node, state, driver.results)
+  }
+
+  /** until 循环收尾：输出 { results, count, iterations, last }（foreach 的 completeLoop 不变） */
+  private async completeLoopUntil(
+    exec: RunExecution,
+    scope: ScopeState,
+    node: WorkflowNode,
+    state: NodeExecutionState,
+    results: unknown[]
+  ): Promise<void> {
+    const output = truncateOutput(
+      {
+        results,
+        count: results.length,
+        iterations: results.length,
+        last: results.length > 0 ? results[results.length - 1] : undefined,
+      },
+      exec.settings.maxOutputChars
+    )
+    exec.loopDrivers.delete(node.id)
+    if (this.deps.journal) await this.appendEvent(exec, 'loopCompleted', {
+      nodeId: node.id,
+      scope,
+      payload: { output, routeTaken: WORKFLOW_EDGE_KINDS['loop-done'] },
+    })
+    state.status = 'succeeded'
+    state.output = output
+    state.routeTaken = WORKFLOW_EDGE_KINDS['loop-done']
+    exec.variables.set(node.id, output)
+    await this.deps.nodeRuns.patchNode(exec.input.runId, node.id, state.iterationIndex, {
+      status: WORKFLOW_NODE_RUN_STATUSES.succeeded,
+      output,
+      routeTaken: WORKFLOW_EDGE_KINDS['loop-done'],
+      finishedAt: new Date(),
+      durationMs: Date.now() - state.startedAtMs,
+    })
+    this.emitNodeStatus(exec, state)
+    const doneEdges = exec.outgoingOf(node.id, WORKFLOW_EDGE_KINDS['loop-done'])
+    if (doneEdges.length > 0) {
+      if (this.deps.journal) await this.appendEventBatch(
+        exec,
+        'edgeActivated',
+        doneEdges.map((edge, k) => ({
+          scope,
+          payload: { edgeId: edge.id, seq: scope.activationCounter + 1 + k, sourceNodeId: edge.sourceNodeId, targetNodeId: edge.targetNodeId },
+        }))
+      )
+    }
+    for (const edge of doneEdges) this.activateEdge(exec, scope, edge)
+  }
+
+  /** 续驱已推进部分迭代的循环（resumeSuspended 调用）——按 driver.kind 分流 */
   private async continueLoop(exec: RunExecution, driver: LoopDriver, completedScope: ScopeState): Promise<void> {
-    // 收集刚收敛迭代的产出
+    const idx = completedScope.iterationIndex
+    const settled = driver.results.length === idx
+    if (driver.kind === 'until') {
+      // 收集刚收敛迭代的产出
+      if (settled && driver.results.length < driver.maxIterations) {
+        const iterationResult = this.collectIterationResult(exec, completedScope, driver.node)
+        if (this.deps.journal) await this.appendEvent(exec, 'loopIterationSettled', {
+          nodeId: driver.node.id,
+          scope: driver.parentScope,
+          payload: { iterationIndex: idx, result: iterationResult, skipped: false },
+        })
+        driver.results.push(iterationResult)
+      }
+      await this.driveUntil(exec, driver)
+      return
+    }
+    // foreach：收集刚收敛迭代的产出
     if (driver.results.length < driver.list.length) {
-      const idx = completedScope.iterationIndex
-      if (driver.results.length === idx) {
+      if (settled) {
         const iterationResult = this.collectIterationResult(exec, completedScope, driver.node)
         if (this.deps.journal) await this.appendEvent(exec, 'loopIterationSettled', {
           nodeId: driver.node.id,

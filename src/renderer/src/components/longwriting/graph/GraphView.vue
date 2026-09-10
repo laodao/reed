@@ -16,12 +16,12 @@
         <span class="filter-value">{{ chapterFilter === 0 ? '全部' : `第 ${chapterFilter} 章` }}</span>
       </div>
       <div class="toolbar-actions">
-        <!-- 视图缩放控制 -->
+        <!-- 视图缩放控制（图引擎 = 公共 ForceGraph） -->
         <div class="zoom-controls">
-          <el-button size="small" :icon="ZoomOut" circle :disabled="zoomPercent <= 20" title="缩小" @click="zoomAt(1 / 1.2)" />
+          <el-button size="small" :icon="ZoomOut" circle :disabled="zoomPercent <= 20" title="缩小" @click="graphRef?.zoomAt(1 / 1.2)" />
           <span class="zoom-percent">{{ zoomPercent }}%</span>
-          <el-button size="small" :icon="ZoomIn" circle :disabled="zoomPercent >= 500" title="放大" @click="zoomAt(1.2)" />
-          <el-button size="small" :icon="FullScreen" circle title="适应视图" @click="fitView" />
+          <el-button size="small" :icon="ZoomIn" circle :disabled="zoomPercent >= 500" title="放大" @click="graphRef?.zoomAt(1.2)" />
+          <el-button size="small" :icon="FullScreen" circle title="适应视图" @click="graphRef?.fitView()" />
         </div>
         <el-button
           size="small"
@@ -48,49 +48,23 @@
           <span>完成设定（人物/地点/物品等）后，点击「AI 分析实体关系」构建关系网络；<br />写完章节后事件会自动挂到图谱上</span>
         </div>
 
-        <svg
-          ref="svgRef"
+        <ForceGraph
+          ref="graphRef"
           v-else
-          class="graph-svg"
-          :class="{ panning: isPanning }"
-          :viewBox="viewBox"
-          @wheel.prevent="onWheel"
-          @mousedown="onSvgMouseDown"
-          @mousemove="onSvgMouseMove"
-          @mouseup="onSvgMouseUp"
-          @mouseleave="onSvgMouseUp"
-        >
-          <!-- 边 -->
-          <g v-for="(edge, i) in visibleEdges" :key="`e${edge.id || i}`">
-            <line
-              :x1="pos(edge.sourceId).x"
-              :y1="pos(edge.sourceId).y"
-              :x2="pos(edge.targetId).x"
-              :y2="pos(edge.targetId).y"
-              class="graph-edge"
-              :class="{
-                dim: selectedNode && edge.sourceId !== selectedNode && edge.targetId !== selectedNode,
-                active: selectedNode && (edge.sourceId === selectedNode || edge.targetId === selectedNode),
-              }"
-            >
-              <title>{{ edge.relationType }}</title>
-            </line>
-          </g>
-          <!-- 节点 -->
-          <g
-            v-for="node in visibleNodes"
-            :key="node.id"
-            class="graph-node"
-            :class="{ selected: selectedNode === node.id, highlighted: highlightSet.has(node.id) }"
-            :transform="`translate(${pos(node.id).x}, ${pos(node.id).y})`"
-            @mousedown.stop="onNodeMouseDown(node, $event)"
-          >
-            <circle :r="nodeRadius(node)" :fill="nodeColor(node.type)" class="node-circle">
-              <title>{{ typeLabel(node.type) }}：{{ node.name }}</title>
-            </circle>
-            <text :y="nodeRadius(node) + 14" text-anchor="middle" class="node-label">{{ node.name }}</text>
-          </g>
-        </svg>
+          :nodes="fgNodes"
+          :edges="fgEdges"
+          :width="920"
+          :height="600"
+          :min-zoom-scale="0.2"
+          :max-zoom-scale="5"
+          :selected-id="selectedNode"
+          :layout-key="graphVersion"
+          @update:selected-id="selectedNode = $event"
+          @select="onGraphSelect"
+          @click="onGraphClick"
+          @background="deselectNode"
+          @zoom="zoomPercent = $event"
+        />
       </div>
 
       <!-- 右侧：实体详情栏 -->
@@ -186,155 +160,19 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Close, MagicStick, Share, Mouse, ZoomIn, ZoomOut, FullScreen } from '@element-plus/icons-vue'
+import ForceGraph from '@/components/common/ForceGraph.vue'
+import type { ForceGraphEdge, ForceGraphNode } from '@/components/common/force-graph.model'
 
 const props = defineProps<{
   projectId: string
 }>()
 
-const W = 920
-const H = 600
-
-// ==================== 视图缩放/平移（动态 viewBox） ====================
-
-const svgRef = ref<SVGSVGElement | null>(null)
-const view = ref({ x: 0, y: 0, w: W, h: H })
-const isPanning = ref(false)
-let panStart: { x: number; y: number; viewX: number; viewY: number } | null = null
-
-const viewBox = computed(() => `${view.value.x} ${view.value.y} ${view.value.w} ${view.value.h}`)
-const zoomPercent = computed(() => Math.round((W / view.value.w) * 100))
-
-function svgSize(): { w: number; h: number } {
-  const el = svgRef.value
-  return el ? { w: el.clientWidth || W, h: el.clientHeight || H } : { w: W, h: H }
-}
-
-/** 以视图中心为锚点缩放（保持 W:H 比例，限制 20%~500%） */
-function zoomAt(factor: number): void {
-  const nw = clampNum(view.value.w * factor, W * 0.2, W * 5)
-  const nh = nw * (H / W)
-  view.value = {
-    x: view.value.x + (view.value.w - nw) / 2,
-    y: view.value.y + (view.value.h - nh) / 2,
-    w: nw,
-    h: nh,
-  }
-}
-
-/** 滚轮缩放（锚定鼠标位置） */
-function onWheel(e: WheelEvent): void {
-  const { w: cw, h: ch } = svgSize()
-  const rect = svgRef.value?.getBoundingClientRect()
-  if (!rect) return
-  const mx = e.clientX - rect.left
-  const my = e.clientY - rect.top
-  const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12
-  const nw = clampNum(view.value.w * factor, W * 0.2, W * 5)
-  const nh = nw * (H / W)
-  // 鼠标所在图坐标（保持不动）
-  const gx = view.value.x + (mx / cw) * view.value.w
-  const gy = view.value.y + (my / ch) * view.value.h
-  view.value = {
-    x: gx - (mx / cw) * nw,
-    y: gy - (my / ch) * nh,
-    w: nw,
-    h: nh,
-  }
-}
-
-/** 空白处按下 → 准备平移 */
-function onSvgMouseDown(e: MouseEvent): void {
-  panStart = { x: e.clientX, y: e.clientY, viewX: view.value.x, viewY: view.value.y }
-  isPanning.value = true
-}
-
-/** 节点按下：先高亮；区分"点击选中"与"拖动节点" */
-const dragNode = ref<{
-  id: string
-  startClientX: number
-  startClientY: number
-  startPosX: number
-  startPosY: number
-  moved: boolean
-} | null>(null)
-
-function onNodeMouseDown(node: GraphNode, e: MouseEvent): void {
-  e.stopPropagation()
-  selectedNode.value = node.id
-  const p = positions.value[node.id] || { x: W / 2, y: H / 2 }
-  dragNode.value = {
-    id: node.id,
-    startClientX: e.clientX,
-    startClientY: e.clientY,
-    startPosX: p.x,
-    startPosY: p.y,
-    moved: false,
-  }
-}
-
-/** 鼠标在图坐标系中的位置（考虑 viewBox 缩放/平移） */
-function mouseToGraph(e: MouseEvent): { x: number; y: number } {
-  const rect = svgRef.value!.getBoundingClientRect()
-  const { w: cw, h: ch } = svgSize()
-  return {
-    x: view.value.x + ((e.clientX - rect.left) / cw) * view.value.w,
-    y: view.value.y + ((e.clientY - rect.top) / ch) * view.value.h,
-  }
-}
-
-function onSvgMouseMove(e: MouseEvent): void {
-  // 节点拖动优先
-  if (dragNode.value) {
-    const cur = mouseToGraph(e)
-    const start = mouseToGraph({ clientX: dragNode.value.startClientX, clientY: dragNode.value.startClientY } as MouseEvent)
-    const dx = cur.x - start.x
-    const dy = cur.y - start.y
-    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) dragNode.value.moved = true
-    positions.value[dragNode.value.id] = {
-      x: dragNode.value.startPosX + dx,
-      y: dragNode.value.startPosY + dy,
-    }
-    return
-  }
-  if (!panStart) return
-  const { w: cw, h: ch } = svgSize()
-  const dx = e.clientX - panStart.x
-  const dy = e.clientY - panStart.y
-  view.value = {
-    x: panStart.viewX - (dx / cw) * view.value.w,
-    y: panStart.viewY - (dy / ch) * view.value.h,
-    w: view.value.w,
-    h: view.value.h,
-  }
-}
-
-function onSvgMouseUp(e: MouseEvent): void {
-  if (dragNode.value) {
-    if (!dragNode.value.moved) {
-      // 未拖动 = 点击节点 → 选中并显示详情
-      const node = nodes.value.find(n => n.id === dragNode.value!.id)
-      if (node) void selectNode(node)
-    }
-    dragNode.value = null
-    return
-  }
-  const moved = panStart && (Math.abs(e.clientX - panStart.x) > 4 || Math.abs(e.clientY - panStart.y) > 4)
-  if (panStart && !moved) {
-    // 未拖拽 = 点击空白 → 取消选中
-    deselectNode()
-  }
-  panStart = null
-  isPanning.value = false
-}
-
-/** 适应视图（重置） */
-function fitView(): void {
-  view.value = { x: 0, y: 0, w: W, h: H }
-}
-
-function clampNum(v: number, min: number, max: number): number {
-  return Math.min(Math.max(v, min), max)
-}
+// 图引擎（力导向/缩放/平移/拖动/选中淡化）由公共 ForceGraph 提供；本组件只留
+// 数据获取/过滤/详情/工具栏。graphRef 暴露 zoomAt/fitView，缩放读数走 zoom 事件。
+const graphRef = ref<InstanceType<typeof ForceGraph> | null>(null)
+const zoomPercent = ref(100)
+/** 结构重排键：数据装载成功后自增，通知公共组件重布局（章节过滤等只动可见集不重排） */
+const graphVersion = ref(0)
 
 interface GraphNode { id: string; type: string; name: string; description?: string; chapterNumber?: number }
 interface GraphEdge { id: string; sourceId: string; targetId: string; relationType: string; label?: string; validFromChapter?: number; validUntilChapter?: number }
@@ -353,8 +191,6 @@ const loading = ref(false)
 const generating = ref(false)
 const nodes = ref<GraphNode[]>([])
 const edges = ref<GraphEdge[]>([])
-/** 节点位置（响应式：布局 + 手动拖动共用；键 = 节点 id） */
-const positions = ref<Record<string, { x: number; y: number }>>({})
 const chapterFilter = ref(0)
 const maxChapter = ref(1)
 const selectedNode = ref<string | null>(null)
@@ -372,15 +208,32 @@ const visibleNodes = computed(() => {
   return nodes.value.filter(n => n.type !== 'event' || (n.chapterNumber !== undefined && n.chapterNumber <= cn))
 })
 
-const highlightSet = computed(() => {
-  const set = new Set<string>()
-  if (!selectedNode.value) return set
-  for (const e of edges.value) {
-    if (e.sourceId === selectedNode.value) set.add(e.targetId)
-    if (e.targetId === selectedNode.value) set.add(e.sourceId)
-  }
-  return set
+/** 公共模型：节点 = 类型色/半径；边 = 双向端点 + 关系标题 */
+const fgNodes = computed<ForceGraphNode[]>(() =>
+  visibleNodes.value.map(n => ({
+    id: n.id,
+    name: n.name,
+    color: nodeColor(n.type),
+    radius: nodeRadius(n),
+  })),
+)
+
+const fgEdges = computed<ForceGraphEdge[]>(() => {
+  const visibleIds = new Set(visibleNodes.value.map(n => n.id))
+  return visibleEdges.value
+    .filter(e => visibleIds.has(e.sourceId) && visibleIds.has(e.targetId))
+    .map(e => ({ id: e.id, source: e.sourceId, target: e.targetId, title: e.relationType }))
 })
+
+function onGraphSelect(node: ForceGraphNode | null): void {
+  // 按下即选中：高亮/淡化由公共组件接管；此处仅保证 host 选中态一致
+  selectedNode.value = node ? node.id : null
+}
+
+function onGraphClick(node: ForceGraphNode): void {
+  const orig = nodes.value.find(n => n.id === node.id)
+  if (orig) void selectNode(orig)
+}
 
 const nodeColor = (type: string): string => {
   const colors: Record<string, string> = {
@@ -402,10 +255,6 @@ function nodeRadius(node: GraphNode): number {
   return node.type === 'event' ? 7 : node.type === 'character' ? 9 : 7
 }
 
-function pos(id: string): { x: number; y: number } {
-  return positions.value[id] || { x: W / 2, y: H / 2 }
-}
-
 const visibleEdges = computed(() => {
   if (chapterFilter.value === 0) return edges.value
   const cn = chapterFilter.value
@@ -424,7 +273,7 @@ async function loadGraph(): Promise<void> {
       edges.value = r.data.edges || []
       const maxEdge = Math.max(0, ...edges.value.map(e => e.validUntilChapter || e.validFromChapter || 0))
       maxChapter.value = Math.max(1, maxEdge)
-      layout()
+      graphVersion.value++
       // 若当前选中实体还在，刷新其详情
       if (selectedNode.value) {
         const node = nodes.value.find(n => n.id === selectedNode.value)
@@ -435,123 +284,6 @@ async function loadGraph(): Promise<void> {
   } finally {
     loading.value = false
   }
-}
-
-/**
- * 力导向布局（排斥 + 边吸引 + 中心引力 + 碰撞检测防重叠）。
- * 每轮迭代后执行子迭代碰撞分离：节点间距 < 最小距离（圆半径和 + 标签空间）则互相推开，
- * 确保最终布局无重叠。布局结果写入响应式 positions（手动拖动基于同一数据源）。
- */
-function layout(): void {
-  const n = nodes.value.length
-  if (n === 0) return
-  const next: Record<string, { x: number; y: number }> = {}
-  for (const node of nodes.value) {
-    next[node.id] = {
-      x: W / 2 + (Math.random() - 0.5) * W * 0.6,
-      y: H / 2 + (Math.random() - 0.5) * H * 0.6,
-    }
-  }
-  const repulsion = 1400
-  const attraction = 0.02
-  const center = 0.004
-
-  for (let iter = 0; iter < 200; iter++) {
-    const forces = new Map<string, { x: number; y: number }>()
-    for (const node of nodes.value) forces.set(node.id, { x: 0, y: 0 })
-    for (let i = 0; i < n; i++) {
-      for (let j = i + 1; j < n; j++) {
-        const a = nodes.value[i]
-        const b = nodes.value[j]
-        const pa = next[a.id]
-        const pb = next[b.id]
-        const dx = pa.x - pb.x
-        const dy = pa.y - pb.y
-        const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 24)
-        const f = repulsion / (dist * dist)
-        const fx = (dx / dist) * f
-        const fy = (dy / dist) * f
-        forces.get(a.id)!.x += fx
-        forces.get(a.id)!.y += fy
-        forces.get(b.id)!.x -= fx
-        forces.get(b.id)!.y -= fy
-      }
-    }
-    for (const edge of visibleEdges.value) {
-      const pa = next[edge.sourceId]
-      const pb = next[edge.targetId]
-      if (!pa || !pb) continue
-      const dx = pb.x - pa.x
-      const dy = pb.y - pa.y
-      const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 24)
-      const f = attraction * dist
-      forces.get(edge.sourceId)!.x += (dx / dist) * f
-      forces.get(edge.sourceId)!.y += (dy / dist) * f
-      forces.get(edge.targetId)!.x -= (dx / dist) * f
-      forces.get(edge.targetId)!.y -= (dy / dist) * f
-    }
-    // 应用力 + 中心引力
-    for (const node of nodes.value) {
-      const p = next[node.id]
-      const f = forces.get(node.id)!
-      p.x += f.x + (W / 2 - p.x) * center
-      p.y += f.y + (H / 2 - p.y) * center
-    }
-    // 碰撞检测（子迭代直到无重叠）：节点圆 + 标签空间防重叠
-    for (let sub = 0; sub < 6; sub++) {
-      if (!collidePass(next)) break
-    }
-    // 边界约束
-    for (const node of nodes.value) {
-      const p = next[node.id]
-      p.x = Math.min(Math.max(p.x, 34), W - 34)
-      p.y = Math.min(Math.max(p.y, 34), H - 34)
-    }
-  }
-  // 收尾：纯碰撞分离（无力导向干扰），确保最终布局严格无重叠
-  for (let sub = 0; sub < 12; sub++) {
-    if (!collidePass(next)) break
-  }
-  positions.value = next
-}
-
-/**
- * 一轮碰撞分离：节点间距 < 最小距离则互相推开。
- * @returns 是否有节点发生移动
- */
-function collidePass(next: Record<string, { x: number; y: number }>): boolean {
-  const n = nodes.value.length
-  let moved = false
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 1; j < n; j++) {
-      const a = nodes.value[i]
-      const b = nodes.value[j]
-      const pa = next[a.id]
-      const pb = next[b.id]
-      const dx = pb.x - pa.x
-      const dy = pb.y - pa.y
-      const dist = Math.sqrt(dx * dx + dy * dy)
-      const minDist = (nodeRadius(a) + nodeRadius(b)) * 2 + 16
-      if (dist < minDist && dist > 0.01) {
-        const overlap = ((minDist - dist) / 2) * 0.6
-        const nx = dx / dist
-        const ny = dy / dist
-        pa.x -= nx * overlap
-        pa.y -= ny * overlap
-        pb.x += nx * overlap
-        pb.y += ny * overlap
-        moved = true
-      } else if (dist <= 0.01) {
-        const ang = Math.random() * Math.PI * 2
-        pa.x -= Math.cos(ang) * 24
-        pa.y -= Math.sin(ang) * 24
-        pb.x += Math.cos(ang) * 24
-        pb.y += Math.sin(ang) * 24
-        moved = true
-      }
-    }
-  }
-  return moved
 }
 
 /** 选中实体：拉详情 + 相关实体 + 时间线 + 章节状态 */
@@ -752,68 +484,14 @@ onMounted(() => {
 }
 
 // ==================== 图区 ====================
+// 图引擎（svg/边/节点/淡化/高亮）样式已随抽取收口到 components/common/ForceGraph.vue，
+// 此处仅保留画布容器（背景渐变尽量还原原 graph-svg 观感）
 
 .graph-canvas {
   flex: 1;
   min-width: 0;
   position: relative;
-}
-
-.graph-svg {
-  width: 100%;
-  height: 100%;
-  cursor: grab;
   background: linear-gradient(180deg, var(--bg-color) 0%, var(--fill-color-lighter) 100%);
-
-  &.panning {
-    cursor: grabbing;
-  }
-}
-
-.graph-edge {
-  stroke: var(--border-color);
-  stroke-width: 1;
-  transition: opacity 0.2s, stroke 0.2s;
-
-  &.dim {
-    opacity: 0.12;
-  }
-
-  &.active {
-    stroke: var(--color-primary);
-    stroke-width: 1.6;
-    opacity: 0.85;
-  }
-}
-
-.graph-node {
-  cursor: pointer;
-  transition: opacity 0.2s;
-
-  .node-circle {
-    stroke: #fff;
-    stroke-width: 1.5;
-  }
-
-  .node-label {
-    font-size: 11px;
-    fill: var(--text-color-regular);
-    pointer-events: none;
-  }
-
-  &.selected .node-circle {
-    stroke: var(--color-primary);
-    stroke-width: 3;
-  }
-
-  &:not(.selected):not(.highlighted) {
-    opacity: 0.75;
-  }
-
-  &.highlighted:not(.selected) .node-circle {
-    stroke-width: 2.5;
-    stroke-dasharray: 3 2;
-  }
 }
 
 .graph-loading,

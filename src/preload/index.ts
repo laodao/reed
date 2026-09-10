@@ -1291,6 +1291,105 @@ const electronAPI = {
     }
   },
 
+  // 领域共学空间（dl:* 全部由 domain-learning 包 handler 提供，返回 { success, data?, error? }）
+  domainLearning: {
+    // 空间列表（Home 卡片；无参 → DlSpaceSummary[]）
+    listSpaces: () => ipcRenderer.invoke('dl:list-spaces'),
+    // 新建空间（name/goal 必填 → { id }；profileId/profile 画像；kbId 可绑定项目知识库）
+    createSpace: (p: { name: string; goal: string; tagline?: string; description?: string; profileId?: string; profile?: Record<string, unknown> | null; kbId?: string | null }) =>
+      ipcRenderer.invoke('dl:create-space', p),
+    // 绑定/改绑项目知识库（M4-B → { kbId }）
+    setSpaceKb: (p: { id: string; kbId?: string | null }) => ipcRenderer.invoke('dl:set-space-kb', p),
+    // 空间行详情（DlProjectRow；本版界面少用）
+    getSpace: (id: string) => ipcRenderer.invoke('dl:get-space', { id }),
+    // 切换空间状态（active / paused / archived → { ok }）
+    setSpaceStatus: (id: string, status: 'active' | 'paused' | 'archived') =>
+      ipcRenderer.invoke('dl:set-space-status', { id, status }),
+    // 三栏空间聚合视图（Space 页主数据源 → DlSpaceView | null）
+    getSpaceView: (id: string) => ipcRenderer.invoke('dl:get-space-view', { id }),
+    // Atlas 知识全景图（→ DlAtlasGraph | null）
+    getAtlasGraph: (id: string) => ipcRenderer.invoke('dl:get-atlas-graph', { id }),
+    // Atlas 节点档案（右栏 → DlNodeProfile | null）
+    getNodeProfile: (id: string, nodeId: string) => ipcRenderer.invoke('dl:get-node-profile', { id, nodeId }),
+    // 推荐下一个待学概念（→ conceptId | null）
+    pickNext: (id: string) => ipcRenderer.invoke('dl:pick-next', { id }),
+    // 标记「懂了」（前置全就绪才放行 → { ok }）
+    ackMastered: (id: string, conceptId: string) => ipcRenderer.invoke('dl:ack-mastered', { id, conceptId }),
+    // 标记「没懂」（sectionKey 定位到讲义区 → { confusedCount, splitSuggested }）
+    ackConfused: (id: string, conceptId: string, sectionKey?: string) =>
+      ipcRenderer.invoke('dl:ack-confused', { id, conceptId, sectionKey }),
+    // 人工确认关系（→ { ok }）
+    confirmRelation: (p: { id: string; sourceId: string; targetId: string; relationType: string; evidence?: string }) =>
+      ipcRenderer.invoke('dl:confirm-relation', p),
+    // 未解问题队列（→ DlQuestionRow[]）
+    listQuestions: (id: string) => ipcRenderer.invoke('dl:list-questions', { id }),
+    // Agent 发送（research=研究概念/未解问题产出讲义草稿；tutor=追问答疑 → DlAgentSendResult）
+    agentSend: (p: { mode: 'research' | 'tutor' | 'task'; spaceId: string; conceptId?: string | null; message: string; providerConfigId?: string; modelId?: string; focusQuestionId?: string }) =>
+      ipcRenderer.invoke('dl:agent-send', p),
+    // Agent 取消（该 scope 在途轮次）
+    agentCancel: (p: { mode: 'research' | 'tutor' | 'task'; spaceId: string; conceptId?: string | null }) =>
+      ipcRenderer.invoke('dl:agent-cancel', p),
+    // Agent 忙碌查询（该 scope 是否有在途轮次）
+    agentBusy: (p: { mode: 'research' | 'tutor' | 'task'; spaceId: string; conceptId?: string | null }) =>
+      ipcRenderer.invoke('dl:agent-busy', p),
+    // 讲义发布（draft→published 人审确认；2026-09-09 复盘补闭环）
+    publishCard: (p: { id: string; cardId: string }) => ipcRenderer.invoke('dl:publish-card', p),
+    // 周期推进配置（M2-C：dl:get-space-pace / dl:set-space-pace / dl:scheduler-state）
+    getSpacePace: (id: string) => ipcRenderer.invoke('dl:get-space-pace', { id }),
+    setSpacePace: (p: {
+      id: string
+      pace: { enabled: boolean; intervalMin: number; autoResearchConcepts: boolean; autoResolveOpenQuestions: boolean }
+    }) => ipcRenderer.invoke('dl:set-space-pace', p),
+    schedulerState: () => ipcRenderer.invoke('dl:scheduler-state'),
+    // Atlas 增强视图与画像（M2-E）
+    getAtlasViews: (id: string) => ipcRenderer.invoke('dl:get-atlas-views', { id }),
+    setSpaceProfile: (p: { id: string; profileId?: string | null; profile?: Record<string, unknown> | null }) =>
+      ipcRenderer.invoke('dl:set-space-profile', p),
+    // 统计与导出（M3-C）
+    getSpaceStats: (id: string) => ipcRenderer.invoke('dl:get-space-stats', { id }),
+    exportLessonDigest: (id: string) => ipcRenderer.invoke('dl:export-lesson-digest', { id }),
+    // 间隔复习（M3-B）
+    getSpaceReview: (id: string) => ipcRenderer.invoke('dl:get-space-review', { id }),
+    setSpaceReview: (p: {
+      id: string
+      review: { enabled: boolean; intervalMin: number; limit: number }
+    }) => ipcRenderer.invoke('dl:set-space-review', p),
+    reviewDue: (id: string) => ipcRenderer.invoke('dl:review-due', { id }),
+    ackNeedReview: (p: { id: string; conceptId: string }) => ipcRenderer.invoke('dl:ack-need-review', p),
+    reviewDone: (p: { id: string; conceptId: string }) => ipcRenderer.invoke('dl:review-done', p),
+    // 概念笔记（M4-UX1）
+    listNotes: (p: { id: string; conceptId?: string | null }) => ipcRenderer.invoke('dl:list-notes', p),
+    createNote: (p: {
+      id: string
+      conceptId?: string | null
+      source: 'selection' | 'qna'
+      anchorText?: string | null
+      anchorStart?: number | null
+      anchorEnd?: number | null
+      questionId?: string | null
+      contentMd: string
+    }) => ipcRenderer.invoke('dl:create-note', p),
+    deleteNote: (p: { id: string; noteId: string }) => ipcRenderer.invoke('dl:delete-note', p),
+    // 订阅 agent 动作事件（通道 dl:agent:<spaceId>[:<conceptId>]；返回取消订阅函数）
+    onAgentEvent: (
+      spaceId: string,
+      conceptId: string | null | undefined,
+      callback: (event: any) => void,
+    ) => {
+      const channel = `dl:agent:${spaceId}${conceptId ? `:${conceptId}` : ''}`
+      const handler = (_event: any, data: any) => callback(data)
+      ipcRenderer.on(channel, handler)
+      return () => ipcRenderer.removeListener(channel, handler)
+    },
+    // 订阅流式正文（通道 dl:generate:<eventId>；增量 { type:'content', content }；返回取消订阅函数）
+    onStream: (eventId: string, callback: (event: { type: string; content?: string; error?: string }) => void) => {
+      const channel = `dl:generate:${eventId}`
+      const handler = (_event: any, data: any) => callback(data)
+      ipcRenderer.on(channel, handler)
+      return () => ipcRenderer.removeListener(channel, handler)
+    }
+  },
+
   // 人像设计相关
   portrait: {
     // 项目管理

@@ -61,6 +61,12 @@ npm test -- path/to/test.spec.ts
 npm run test:coverage
 ```
 
+> 说明：单测默认跑在 Electron 内置 Node 上（`scripts/vitest-electron.cjs`，内部设
+> `ELECTRON_RUN_AS_NODE=1`），better-sqlite3/canvas/nodejieba 等原生模块只需 Electron
+> ABI 一套，dev 与测试共用，**不再需要为跑测试切换 ABI**（详见
+> `progress/2026-09-08-abi-unify-electron-node.md`）。若确需 host Node 原生模块而手动
+> 执行过 `npm run rebuild:node`，跑测试/dev 前须先 `npm run rebuild:electron` 切回。
+
 ## 项目结构
 
 ```

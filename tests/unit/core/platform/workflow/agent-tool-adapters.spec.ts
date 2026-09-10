@@ -143,6 +143,20 @@ describe('节点工具适配（node-tool-adapter）', () => {
     expect(specs.find((s) => s.name === 'wf_tts')?.requiresApproval).toBe(true)
     expect(specs.find((s) => s.name === 'wf_web_extract')?.requiresApproval).toBe(false)
   })
+
+  it('wf_kb_list：只读知识库目录工具（无入参、read、workflow 内免审批），供研究执行体“先发现后检索”', async () => {
+    const { registerNodeAgentTools, NODE_TOOL_EXPORTS } = await import('@core/platform/workflow/tools/node-tool-adapter')
+    expect(NODE_TOOL_EXPORTS.map((t) => t.name)).toContain('wf_kb_list')
+    const registry = new AgentToolRegistry()
+    registerNodeAgentTools(registry)
+    const spec = registry.listSpecs({ source: 'node' }).find((s) => s.name === 'wf_kb_list')
+    expect(spec).toBeDefined()
+    expect(spec!.dangerLevel).toBe('read')
+    expect(spec!.requiresApproval).toBe(false)
+    // 无入参：jsonSchema 对象无必填
+    expect(spec!.jsonSchema.required).toBeUndefined()
+    expect(Object.keys((spec!.jsonSchema.properties ?? {}) as object)).toHaveLength(0)
+  })
 })
 
 describe('自定义工具桥（custom-tool-adapter）', () => {

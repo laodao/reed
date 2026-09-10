@@ -50,6 +50,43 @@ export async function checkTableExists(
   return rows.length > 0
 }
 
+export async function checkColumnExists(
+  ds: DataSource,
+  table: string,
+  column: string,
+  isPg: boolean
+): Promise<boolean> {
+  if (isPg) {
+    const rows = await ds.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name = $2 AND table_schema = current_schema() LIMIT 1`,
+      [table, column]
+    )
+    return rows.length > 0
+  }
+  const rows = await ds.query(`PRAGMA table_info(${table})`, [])
+  return rows.some((r: { name?: string }) => r?.name === column)
+}
+
+/** 加列（不存在才加；老库升级路径：ensureTable 只补索引，新增列须显式 ALTER） */
+export async function ensureColumn(
+  ds: DataSource,
+  isPg: boolean,
+  table: string,
+  column: string,
+  ddl: string,
+  logTag = 'migration-utils'
+): Promise<void> {
+  if (await checkColumnExists(ds, table, column, isPg)) return
+  try {
+    await ds.query(`ALTER TABLE ${table} ADD COLUMN ${ddl}`)
+    console.log(`[${logTag}] 表 ${table} 补列 ${column} 完成`)
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e)
+    // 并发/重复执行兜底：列已被加则忽略
+    if (!/already exists|duplicate|duplicate column/i.test(message)) throw e
+  }
+}
+
 export async function checkIndexExists(
   ds: DataSource,
   indexName: string,

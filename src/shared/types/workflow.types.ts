@@ -240,8 +240,13 @@ export interface WorkflowNodeConfigMap {
   }
 
   loop: {
-    /** 遍历列表：模板表达式，解析结果必须是数组，如 "{{http1.items}}" */
-    listExpression: string
+    /**
+     * 迭代模式：foreach=遍历列表（缺省，现有语义）| until=重复执行循环体直到 stop 条件满足
+     * （until 无列表；每轮 body 收敛后在当轮作用域解析 stopExpression 等值比较 stopValue）
+     */
+    mode?: 'foreach' | 'until'
+    /** 遍历列表：模板表达式，解析结果必须是数组，如 "{{http1.items}}"（foreach 必填，until 禁用） */
+    listExpression?: string
     /** 空列表策略：skip=直接走 done 边（输出空 results，默认） | fail=节点失败 */
     emptyPolicy?: 'skip' | 'fail'
     /**
@@ -250,6 +255,12 @@ export interface WorkflowNodeConfigMap {
      * 循环继续跑完其余迭代，最后成功。适用于批量采集等"单条失败不应中断整体"的场景。
      */
     errorPolicy?: 'fail' | 'skip'
+    /** until 模式：停止表达式（每轮循环体收敛后、在当轮作用域内解析的模板），解析值 === stopValue 即收尾 */
+    stopExpression?: string
+    /** until 模式：停止值（缺省 'true'），与解析结果做字符串化等值比较 */
+    stopValue?: string | number | boolean
+    /** until 模式：最大轮数（1..运行级 maxLoopIterations）；到达上限无条件收尾（不算失败） */
+    maxIterations?: number
   }
 
   delay: {

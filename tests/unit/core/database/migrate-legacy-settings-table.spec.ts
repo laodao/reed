@@ -2,37 +2,44 @@
  * settings 旧版 schema 迁移测试
  * @module tests/core/database/migrate-legacy-settings-table
  * @description 旧表（id 主键）→ 新表（key 主键）：数据保留、幂等、新表跳过。
- *              用 node:sqlite 内存库（DatabaseSync 满足 SqliteLikeDb 接口），
- *              避免 better-sqlite3 的 Electron/Node ABI 切换。
+ *              用 better-sqlite3 内存库（满足 SqliteLikeDb 接口）。
+ *              注：单测统一跑 Electron-as-Node（ELECTRON_RUN_AS_NODE=1，见
+ *              progress/2026-09-08-abi-unify-electron-node.md），better-sqlite3 只需
+ *              Electron ABI 一套即可；此前用 node:sqlite（Node 22 内置）绕开
+ *              ABI 切换的动机已不存在，且 Electron 内置 Node 18 也没有 node:sqlite。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { migrateLegacySettingsTable, type SqliteLikeDb } from '@core/database/migrations/migrate-legacy-settings-table'
+import Database from 'better-sqlite3'
+import {
+  migrateLegacySettingsTable,
+  type SqliteLikeDb
+} from '@core/database/migrations/migrate-legacy-settings-table'
 
-// node:sqlite 是 Node 22 新增内置模块，vite-node 内置模块表不含它（会把 node: 前缀
-// 剥掉当文件解析）。用 process.getBuiltinModule 获取，绕过 vite 模块转换。
-type DatabaseSyncCtor = new (path: string, opts?: { readOnly?: boolean }) => {
+/** better-sqlite3 最小句柄（prepare().all() 签名与 SqliteLikeDb 一致，另需 close） */
+type MiniDb = {
   exec(sql: string): void
   prepare(sql: string): {
     all(...params: unknown[]): Array<Record<string, unknown>>
   }
   close(): void
 }
-const nodeSqlite = process.getBuiltinModule('node:sqlite') as {
-  DatabaseSync: DatabaseSyncCtor
-}
 
-function buildDb(): InstanceType<DatabaseSyncCtor> {
-  return new nodeSqlite.DatabaseSync(':memory:')
-}
-
-function asDb(db: InstanceType<DatabaseSyncCtor>): SqliteLikeDb {
-  // node:sqlite 的 prepare().all() 与 better-sqlite3 签名一致，可直接适配
+function buildDb(): MiniDb {
+  const db = new Database(':memory:')
   return {
-    exec: (sql: string) => db.exec(sql),
+    exec: (sql: string) => {
+      db.exec(sql)
+    },
     prepare: (sql: string) => ({
-      all: (...params: unknown[]) => db.prepare(sql).all(...params) as Array<Record<string, unknown>>,
+      all: (...params: unknown[]) =>
+        db.prepare(sql).all(...params) as Array<Record<string, unknown>>
     }),
+    close: () => db.close()
   }
+}
+
+function asDb(db: MiniDb): SqliteLikeDb {
+  return db
 }
 
 function createLegacySettings(db: InstanceType<DatabaseSyncCtor>): void {
@@ -56,7 +63,9 @@ function createLegacySettings(db: InstanceType<DatabaseSyncCtor>): void {
 }
 
 function columnsOf(db: InstanceType<DatabaseSyncCtor>, table: string): string[] {
-  return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map(c => c.name)
+  return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map(
+    c => c.name
+  )
 }
 
 describe('migrateLegacySettingsTable', () => {
@@ -78,14 +87,19 @@ describe('migrateLegacySettingsTable', () => {
     expect(cols).not.toContain('id')
     expect(cols).not.toContain('user_id')
     // key 是主键
-    const pk = db.prepare(`PRAGMA table_info(settings)`).all() as Array<{ name: string; pk: number }>
+    const pk = db.prepare(`PRAGMA table_info(settings)`).all() as Array<{
+      name: string
+      pk: number
+    }>
     expect(pk.find(c => c.name === 'key')?.pk).toBe(1)
   })
 
   it('迁移保留数据（key/value/updated_at）', () => {
     createLegacySettings(db)
     migrateLegacySettingsTable(asDb(db))
-    const rows = db.prepare('SELECT key, value, updated_at FROM settings ORDER BY key').all() as Array<Record<string, unknown>>
+    const rows = db
+      .prepare('SELECT key, value, updated_at FROM settings ORDER BY key')
+      .all() as Array<Record<string, unknown>>
     expect(rows).toHaveLength(3)
     expect(rows[0]).toMatchObject({ key: 'language', value: '"zh-CN"' })
     expect(rows[1]).toMatchObject({ key: 'skin', value: '"modern"' })
@@ -104,10 +118,14 @@ describe('migrateLegacySettingsTable', () => {
   })
 
   it('新 schema（key 主键）直接跳过，返回 false', () => {
-    db.exec(`CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`)
+    db.exec(
+      `CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`
+    )
     db.exec(`INSERT INTO settings (key, value) VALUES ('theme', '"tech-blue"')`)
     expect(migrateLegacySettingsTable(asDb(db))).toBe(false)
-    const rows = db.prepare('SELECT key, value FROM settings').all() as Array<Record<string, unknown>>
+    const rows = db.prepare('SELECT key, value FROM settings').all() as Array<
+      Record<string, unknown>
+    >
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ key: 'theme', value: '"tech-blue"' })
   })
