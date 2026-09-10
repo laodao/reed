@@ -579,7 +579,9 @@ onMounted(() => {
 
 .project-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  // 430px 下限：M8 起卡片带「✍写作台」动作区（约 200px），320px 时信息区会被压到
+  // 只剩 ~60px、名称顶进按钮区——下限须容得下 图标56+动作198+信息区≥130
+  grid-template-columns: repeat(auto-fill, minmax(430px, 1fr));
   gap: 16px;
 }
 
@@ -656,6 +658,8 @@ onMounted(() => {
 .project-actions {
   display: flex;
   gap: 4px;
+  flex-shrink: 0;
+  margin-left: 8px;
 }
 
 .empty-state {
