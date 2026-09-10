@@ -23,6 +23,13 @@ export default defineConfig({
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
+    resolve: {
+      alias: {
+        // 事件通道收敛（shared/domain-learning-event 唯一实现）后，preload 首次出现
+        // @shared 的**运行时值导入**（此前仅 import type 会被编译期擦除，无需别名）
+        '@shared': resolve(__dirname, 'src/shared')
+      }
+    },
     build: {
       rollupOptions: {
         input: {
