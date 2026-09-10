@@ -168,6 +168,10 @@ const IPC_CHANNELS = {
   // spec 2026-05-08：场景级 AI 润色
   EP_POLISH_SCENE: 'ep:polish-scene',
 
+  // 追加剧本（已有剧本继续增加内容 · 增量不覆盖已有场次）
+  EP_PREPARE_SCRIPT_APPEND: 'ep:prepare-script-append',
+  EP_APPEND_SCRIPT: 'ep:append-script',
+
   // P4-T6 引用解析 + 完整性校验
   EP_RESOLVE_REFERENCE: 'ep:resolve-reference',
   EP_RESOLVE_REFERENCES_BATCH: 'ep:resolve-references-batch',
@@ -2379,6 +2383,28 @@ const electronAPI = {
     // spec 2026-05-08：场景级 AI 润色 — 不直接落库，返回字段子集让前端 SceneEditDialog 对比
     polishScene: (sceneId: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_POLISH_SCENE, sceneId, providerConfigId, modelId),
+
+    /**
+     * 追加剧本 · 生成草稿（不落库）。
+     * mode='ai-continue' 用 instruction 续写；mode='manual-text' 用 text 拆场景。
+     * 返回 { existingSceneCount, existingContentLength, startSceneNumber, draft }。
+     */
+    prepareScriptAppend: (
+      scriptId: string,
+      input: {
+        mode: 'ai-continue' | 'manual-text'
+        instruction?: string
+        text?: string
+        providerConfigId?: string
+        modelId?: string
+      },
+    ) => ipcRenderer.invoke(IPC_CHANNELS.EP_PREPARE_SCRIPT_APPEND, scriptId, input),
+    /** 追加剧本 · 落库（用户确认草稿后调用；只 append，不删已有场次） */
+    appendScript: (
+      scriptId: string,
+      draft: { scriptContent: string; synopsis: string; scenes: any[] },
+      options?: { keepApproved?: boolean },
+    ) => ipcRenderer.invoke(IPC_CHANNELS.EP_APPEND_SCRIPT, scriptId, draft, options),
 
     // P4-T6 引用解析 + 完整性校验
     resolveReference: (kind: 'character' | 'location' | 'item', bindingId: string) =>

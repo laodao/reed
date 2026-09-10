@@ -10,11 +10,20 @@ import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type { SceneScript } from '@shared/types/story-to-video.types'
+import type {
+  PrepareScriptAppendInput,
+  ScriptAppendDraft,
+} from '@shared/types/episode-production'
+import type { UpdateEpisodeScriptRequest } from '@core/database/repositories/episode-script.repository'
 import { StoryToVideoAIService } from '@core/packs/episode-production/services/story-to-video-ai.service'
 import { buildAssetRosterForProject } from '@core/platform/episode-production/narrative/asset-roster-builder'
 import { EpisodeScenePolisher } from '@core/platform/episode-production/narrative/ai/scene-polisher'
 import { EpisodeScriptGenerator } from '@core/platform/episode-production/narrative/ai/script-generator'
 import { SceneBindingWriter } from '@core/platform/episode-production/narrative/scene-binding-writer'
+import {
+  ScriptAppendService,
+  type AppendScriptOptions,
+} from '@core/platform/episode-production/narrative/services/script-append.service'
 import { analyzeScriptToEpisodes } from '@core/platform/episode-production/narrative/services/script-splitter.service'
 
 export function registerScriptHandlers(): void {
@@ -32,6 +41,10 @@ export function registerScriptHandlers(): void {
   // ==================== AI 生成（剧本与场景） ====================
   ipcBridge.handle('ep:generate-script', handleGenerateScript)
   ipcBridge.handle('ep:generate-scenes', handleGenerateScenes)
+
+  // ==================== 追加剧本（已有剧本继续增加内容 · 增量不覆盖） ====================
+  ipcBridge.handle('ep:prepare-script-append', handlePrepareScriptAppend)
+  ipcBridge.handle('ep:append-script', handleAppendScript)
 
   // ==================== AI 润色（场景级 · spec 2026-05-08） ====================
   ipcBridge.handle('ep:polish-scene', handlePolishScene)
@@ -66,15 +79,7 @@ async function handleGetScript(
 async function handleUpdateScript(
   _event: any,
   scriptId: string,
-  data: {
-    synopsis?: string
-    scriptContent?: string // 完整剧本正文
-    scriptFormat?: string // 剧本格式类型
-    scenes?: SceneScript[]
-    totalDuration?: number
-    characterAppearances?: string[]
-    status?: string
-  }
+  data: UpdateEpisodeScriptRequest,
 ): Promise<IpcResponse> {
   try {
     const db = getCoreDatabaseManager()
@@ -262,6 +267,60 @@ async function handlePolishScene(
   } catch (error: any) {
     console.error('[handlePolishScene] 异常:', error)
     return { success: false, error: error?.message ?? '场景润色失败' }
+  }
+}
+
+/**
+ * 追加剧本 · 生成草稿（**不落库**）。
+ *
+ * 场景：剧本没写完就先开机制作了，后续要陆续往里加内容。
+ * 与 ep:generate-script / ep:generate-scenes 的根本区别 —— 那两个是覆盖式
+ * （会 deleteByEpisodeScriptId 删掉已有场次），这个只增量。
+ *
+ * 生成后先回前端让用户预览（新增几场、正文多少字），确认后再调 ep:append-script。
+ */
+async function handlePrepareScriptAppend(
+  _event: any,
+  scriptId: string,
+  input: Omit<PrepareScriptAppendInput, 'scriptId'>,
+): Promise<IpcResponse> {
+  try {
+    if (!scriptId) return { success: false, error: 'scriptId 不能为空' }
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+
+    const service = new ScriptAppendService(db)
+    const preview = await service.prepare({ ...input, scriptId })
+    return { success: true, data: preview }
+  } catch (error: any) {
+    console.error('[handlePrepareScriptAppend] 异常:', error)
+    return { success: false, error: error?.message ?? '生成追加内容失败' }
+  }
+}
+
+/**
+ * 追加剧本 · 落库（用户确认草稿后调用）。
+ *
+ * 只 append：已有场次及其分镜 / 关键帧 / 视频一概不动，新场次接在已有场次之后。
+ */
+async function handleAppendScript(
+  _event: any,
+  scriptId: string,
+  draft: ScriptAppendDraft,
+  options?: AppendScriptOptions,
+): Promise<IpcResponse> {
+  try {
+    if (!scriptId) return { success: false, error: 'scriptId 不能为空' }
+    if (!draft) return { success: false, error: '追加内容为空' }
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+
+    const service = new ScriptAppendService(db)
+    const result = await service.append(scriptId, draft, options ?? {})
+    return { success: true, data: result }
+  } catch (error: any) {
+    console.error('[handleAppendScript] 异常:', error)
+    return { success: false, error: error?.message ?? '追加剧本失败' }
   }
 }
 

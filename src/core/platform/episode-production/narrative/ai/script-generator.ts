@@ -23,57 +23,16 @@ import type {
 import type { ScriptGenerationResult } from './types'
 import { callAI, extractJsonFromResponse, parseJsonString } from './_helpers'
 
-// ==================== 提示词模板 ====================
+// ==================== 提示词共享片段 ====================
+//
+// 剧本生成 / AI 续写 / 粘贴正文拆分 三类任务共用同一套输出契约（marker 标记、
+// 场景 JSON 结构、binding 强约束、字段质量要求）。这些片段抽成常量再由各提示词
+// 拼装，避免同一份 120 行规范在多个提示词里复制粘贴后各自漂移。
 
 /**
- * 剧本生成提示词（完整专业剧本格式 · spec §4.1 强引用）
- * 优化适配 DeepSeek 等国产大模型 - 强化 JSON 输出优先级
+ * 共享片段 ①：binding 引用强约束（spec §4.1）
  */
-const SCRIPT_GENERATION_PROMPT = `你是一位拥有10年以上一线影视工业经验的职业编剧。
-
-## ⚠️⚠️⚠️ 最重要：你必须输出结构化 JSON 场景数据！
-
-**这是你最重要的任务！如果不输出 JSON 场景数据，整个任务就是失败的！**
-
-输出顺序（必须严格遵守）：
-1. **先输出 JSON 场景数据**（最重要的部分）
-2. 再输出章节梗概
-3. 最后输出剧本正文
-
----
-
-## 第一部分：结构化场景数据（JSON格式） - ⭐必须输出
-
-格式要求：
-- 开头写：【场景数据开始】
-- 结尾写：【场景数据结束】
-- 中间是完整的 JSON 数据（必须包含 scenes 数组）
-- JSON 必须合法，可直接解析
-- **这部分绝对不能跳过！如果跳过，整个生成将失败！**
-
----
-
-## 第二部分：章节梗概
-
-格式要求：
-- 开头写：【梗概开始】
-- 结尾写：【梗概结束】
-- 中间是 50-100 字的章节概要
-
----
-
-## 第三部分：完整剧本正文
-
-格式要求：
-- 开头写：【剧本正文开始】
-- 结尾写：【剧本正文结束】
-- 中间是标准剧本格式（中文场景标题；动作描写现在时；角色对白居中缩进）
-- 严禁使用 Markdown 格式
-- 仅使用纯文本标准剧本缩进与换行
-
----
-
-## ⭐ 强约束：所有引用必须使用 binding ID
+const BINDING_CONSTRAINT_SPEC = `## ⭐ 强约束：所有引用必须使用 binding ID
 
 下面给出本项目可用的 **角色 / 地点 / 物品** 资产清单。每条都有一个 binding ID。
 你输出 JSON 时必须用 ID 引用：
@@ -82,21 +41,23 @@ const SCRIPT_GENERATION_PROMPT = `你是一位拥有10年以上一线影视工�
 - itemBindingId（道具）：从【可用物品列表】里选
 
 如果场景中出现的对象在清单里**找不到对应项**，把对应 bindingId 字段填 null（不要瞎编 ID），
-并在 location/characterName/name 字段保留实际名字以便人工补全。
+并在 location/characterName/name 字段保留实际名字以便人工补全。`
 
----
-
-## 场景拆分原则
+/**
+ * 共享片段 ②：场景拆分原则
+ */
+const SCENE_SPLIT_PRINCIPLES_SPEC = `## 场景拆分原则
 
 1. 地点变化应拆分为新场景
 2. 时间跳跃应拆分为新场景
 3. 主要角色组合变化可考虑拆分
 4. 情感氛围显著变化可拆分
-5. 每个场景应有明确的视觉焦点
+5. 每个场景应有明确的视觉焦点`
 
----
-
-## JSON 场景数据格式示例
+/**
+ * 共享片段 ③：JSON 场景数据格式示例
+ */
+const SCENE_JSON_EXAMPLE_SPEC = `## JSON 场景数据格式示例
 
 {
   "scenes": [
@@ -149,11 +110,12 @@ const SCRIPT_GENERATION_PROMPT = `你是一位拥有10年以上一线影视工�
       ]
     }
   ]
-}
+}`
 
----
-
-## ⭐ 字段输出质量要求（必须严格遵守）
+/**
+ * 共享片段 ④：字段输出质量要求
+ */
+const FIELD_QUALITY_SPEC = `## ⭐ 字段输出质量要求（必须严格遵守）
 
 ### sceneDescription（场景视觉描述）
 必须包含以下信息（按顺序拼接，用句号分隔）：
@@ -184,9 +146,14 @@ const SCRIPT_GENERATION_PROMPT = `你是一位拥有10年以上一线影视工�
 - 颜色：主色调（如"淡青色"、"深红色"）
 - 风格：服装风格（如"古典仕女风格"、"粗布短衣风格"）
 
-示例："素色衣裙（淡青色，古典仕女风格）"、"粗布短衣（灰褐色，市井平民风格）"
+示例："素色衣裙（淡青色，古典仕女风格）"、"粗布短衣（灰褐色，市井平民风格）"`
 
-## 可用角色列表
+/**
+ * 共享片段 ⑤：三类资产花名册清单（保留 {characters}/{locations}/{items} 占位符）。
+ *
+ * 生成提示词保留占位符由调用方 replace；续写 / 拆分提示词用 renderRosterSpec 直接渲染。
+ */
+const ROSTER_LIST_SPEC = `## 可用角色列表
 
 {characters}
 
@@ -196,11 +163,228 @@ const SCRIPT_GENERATION_PROMPT = `你是一位拥有10年以上一线影视工�
 
 ## 可用物品列表
 
-{items}
+{items}`
+
+/**
+ * 占位符填充：把 `{key}` 全部替换为 value。
+ *
+ * 用 split/join 而不是 String.replace —— 后者会把替换值里的 `$&` / `$'` / `$1`
+ * 当成特殊模式，剧本正文里出现 `$` 时会被悄悄改写。
+ */
+function fillPromptTemplate(
+  template: string,
+  vars: Record<string, string>,
+): string {
+  return Object.entries(vars).reduce(
+    (acc, [key, value]) => acc.split(`{${key}}`).join(value),
+    template,
+  )
+}
+
+// ==================== 提示词模板 ====================
+
+/**
+ * 剧本生成提示词（完整专业剧本格式 · spec §4.1 强引用）
+ * 优化适配 DeepSeek 等国产大模型 - 强化 JSON 输出优先级
+ *
+ * 由上方共享片段拼装（续写 / 拆分提示词复用同一批片段）；
+ * 拼接后文本与原内联版本逐字节一致（重构时以 buildPrompt 输出哈希校验）。
+ */
+const SCRIPT_GENERATION_PROMPT = `你是一位拥有10年以上一线影视工业经验的职业编剧。
+
+## ⚠️⚠️⚠️ 最重要：你必须输出结构化 JSON 场景数据！
+
+**这是你最重要的任务！如果不输出 JSON 场景数据，整个任务就是失败的！**
+
+输出顺序（必须严格遵守）：
+1. **先输出 JSON 场景数据**（最重要的部分）
+2. 再输出章节梗概
+3. 最后输出剧本正文
+
+---
+
+## 第一部分：结构化场景数据（JSON格式） - ⭐必须输出
+
+格式要求：
+- 开头写：【场景数据开始】
+- 结尾写：【场景数据结束】
+- 中间是完整的 JSON 数据（必须包含 scenes 数组）
+- JSON 必须合法，可直接解析
+- **这部分绝对不能跳过！如果跳过，整个生成将失败！**
+
+---
+
+## 第二部分：章节梗概
+
+格式要求：
+- 开头写：【梗概开始】
+- 结尾写：【梗概结束】
+- 中间是 50-100 字的章节概要
+
+---
+
+## 第三部分：完整剧本正文
+
+格式要求：
+- 开头写：【剧本正文开始】
+- 结尾写：【剧本正文结束】
+- 中间是标准剧本格式（中文场景标题；动作描写现在时；角色对白居中缩进）
+- 严禁使用 Markdown 格式
+- 仅使用纯文本标准剧本缩进与换行
+
+---
+
+${BINDING_CONSTRAINT_SPEC}
+
+---
+
+${SCENE_SPLIT_PRINCIPLES_SPEC}
+
+---
+
+${SCENE_JSON_EXAMPLE_SPEC}
+
+---
+
+${FIELD_QUALITY_SPEC}
+
+${ROSTER_LIST_SPEC}
 
 ## 章节内容
 
 {chapterContent}`
+
+/**
+ * AI 续写提示词（已有剧本 → 往下继续增加内容）。
+ *
+ * 场景：剧本没写完就先开机制作了，后续要陆续往里加内容。
+ * 与"重新生成"的根本区别——**只增量、不覆盖**：
+ * - 只输出本次新增的正文与场景，禁止重复 / 改写已有内容
+ * - 新增场景场次号从 {startSceneNumber} 起接续，禁止从 1 重新编号
+ *
+ * 输出 marker 与生成提示词保持一致，解析复用 extractFullScriptFromResponse。
+ */
+const SCRIPT_CONTINUATION_PROMPT = `你是一位拥有10年以上一线影视工业经验的职业编剧。
+你正在为一部**已经开拍**的剧集续写剧本：此前只写完了前面一部分，现在需要往下继续增加内容。
+续写必须与已有剧情、人物性格、世界观、伏笔完全连贯。
+
+## ⚠️⚠️⚠️ 最重要：你必须输出结构化 JSON 场景数据！
+
+**这是你最重要的任务！如果不输出 JSON 场景数据，整个任务就是失败的！**
+
+输出顺序（必须严格遵守）：
+1. **先输出 JSON 场景数据**（本次新增的场景）
+2. 再输出本段梗概
+3. 最后输出本段剧本正文
+
+---
+
+## 第一部分：结构化场景数据（JSON格式） - ⭐必须输出
+
+格式要求：
+- 开头写：【场景数据开始】
+- 结尾写：【场景数据结束】
+- 中间是完整的 JSON 数据（必须包含 scenes 数组）
+- JSON 必须合法，可直接解析
+- **场次号从第 {startSceneNumber} 场开始按顺序递增**（接续已有场次，严禁从 1 重新编号）
+- **只输出本次新增的场景，严禁重复已经存在的场次**
+- **这部分绝对不能跳过！如果跳过，整个生成将失败！**
+
+---
+
+## 第二部分：本段梗概
+
+格式要求：
+- 开头写：【梗概开始】
+- 结尾写：【梗概结束】
+- 中间是 50-100 字，只概括本次新增部分的剧情
+
+---
+
+## 第三部分：本段剧本正文
+
+格式要求：
+- 开头写：【剧本正文开始】
+- 结尾写：【剧本正文结束】
+- 中间是标准剧本格式（中文场景标题；动作描写现在时；角色对白居中缩进）
+- **只写本次新增部分，严禁重复或改写已有正文**
+- 严禁使用 Markdown 格式
+- 仅使用纯文本标准剧本缩进与换行
+
+---
+
+${BINDING_CONSTRAINT_SPEC}
+
+---
+
+${SCENE_SPLIT_PRINCIPLES_SPEC}
+
+---
+
+${SCENE_JSON_EXAMPLE_SPEC}
+
+---
+
+${FIELD_QUALITY_SPEC}
+
+## 已有剧情正文（只读上下文 · 不要重复输出）
+
+{existingScriptContent}
+
+## 已有场次一览（只读上下文 · 新增场次必须接着往下排）
+
+{existingScenesSummary}
+
+## 本次续写要求
+
+{instruction}
+
+${ROSTER_LIST_SPEC}`
+
+/**
+ * 「粘贴正文 → 拆场景」提示词（手动追加剧本用）。
+ *
+ * 正文由用户自己提供，所以不要求 AI 输出正文/梗概，只要结构化场景。
+ * 解析仍走 extractFullScriptFromResponse（它容忍缺少梗概与正文），调用方只取 scenes。
+ */
+const SCENE_SPLIT_FROM_TEXT_PROMPT = `你是一位拥有10年以上一线影视工业经验的职业编剧。
+下面是一段**已经写好的剧本正文**（纯文本，可能是标准剧本格式，也可能是小说体叙述），
+请把它拆分成结构化的场景数据，供影视工业化制作使用。
+
+## ⚠️⚠️⚠️ 最重要：你必须输出结构化 JSON 场景数据！
+
+输出要求：
+- 用【场景数据开始】开头，用【场景数据结束】结尾，中间是合法、可直接解析的 JSON
+- JSON 必须包含 scenes 数组
+- **场次号从第 {startSceneNumber} 场开始按顺序递增**（接续已有场次，严禁从 1 重新编号）
+- **只拆分这段正文里已有的情节，严禁补写正文里没有的内容**
+- 正文没写明的视觉细节（空间布局 / 材质 / 光线 / 服装）按下方字段质量要求合理补全，不要留空字符串
+
+---
+
+${SCENE_SPLIT_PRINCIPLES_SPEC}
+
+---
+
+${BINDING_CONSTRAINT_SPEC}
+
+---
+
+${SCENE_JSON_EXAMPLE_SPEC}
+
+---
+
+${FIELD_QUALITY_SPEC}
+
+## 已有场次一览（只读上下文 · 新增场次必须接着往下排）
+
+{existingScenesSummary}
+
+## 待拆分的剧本正文
+
+{scriptText}
+
+${ROSTER_LIST_SPEC}`
 
 // ==================== 辅助函数 ====================
 
@@ -251,6 +435,61 @@ function resolveBindingId(
 
 // ==================== 主类 ====================
 
+/** AI 续写入参（已有剧本 → 继续往下增加内容） */
+export interface ContinueScriptInput {
+  /** 已有剧本正文（空字符串表示这段剧本还没有正文，仅按场景接续） */
+  existingScriptContent: string
+  /** 已有场次一览（ScriptAppendService.buildExistingScenesSummary 产出） */
+  existingScenesSummary: string
+  /** 用户续写要求（自由文本，直接进提示词） */
+  instruction: string
+  /** 新增场景的起始场次号（= 已有最大场次号 + 1） */
+  startSceneNumber: number
+  roster: AssetRosterForScript
+  providerConfigId?: string
+  modelId?: string
+}
+
+/** 「粘贴正文 → 拆场景」入参（手动追加剧本） */
+export interface SplitScriptTextInput {
+  /** 待拆分的剧本正文（用户粘贴 / 手输） */
+  scriptText: string
+  /** 已有场次一览 */
+  existingScenesSummary: string
+  /** 新增场景的起始场次号 */
+  startSceneNumber: number
+  roster: AssetRosterForScript
+  providerConfigId?: string
+  modelId?: string
+}
+
+/** 按入参渲染续写提示词（导出给单测断言，AI 调用走 continueScript） */
+export function buildContinuationPrompt(input: ContinueScriptInput): string {
+  return fillPromptTemplate(SCRIPT_CONTINUATION_PROMPT, {
+    startSceneNumber: String(input.startSceneNumber),
+    existingScriptContent: input.existingScriptContent.trim() || '(暂无正文)',
+    existingScenesSummary: input.existingScenesSummary.trim() || '(暂无场次)',
+    instruction: input.instruction.trim(),
+    characters: formatRosterList(input.roster.characters),
+    locations: formatRosterList(input.roster.locations),
+    items: formatRosterList(input.roster.items),
+  })
+}
+
+/** 按入参渲染「正文拆场景」提示词（导出给单测断言） */
+export function buildSceneSplitFromTextPrompt(
+  input: SplitScriptTextInput,
+): string {
+  return fillPromptTemplate(SCENE_SPLIT_FROM_TEXT_PROMPT, {
+    startSceneNumber: String(input.startSceneNumber),
+    existingScenesSummary: input.existingScenesSummary.trim() || '(暂无场次)',
+    scriptText: input.scriptText.trim(),
+    characters: formatRosterList(input.roster.characters),
+    locations: formatRosterList(input.roster.locations),
+    items: formatRosterList(input.roster.items),
+  })
+}
+
 /**
  * 剧本生成器
  */
@@ -291,7 +530,7 @@ export class EpisodeScriptGenerator {
     // BUG-2 前置：解析路径追踪
     const pathTrace = {
       synopsisPath: 'none' as 'new' | 'old' | 'json-fallback' | 'none',
-      scriptPath: 'new' | 'old' | 'none',
+      scriptPath: 'new' as 'new' | 'old' | 'none',
       scenesPath: 'none' as 'new' | 'old' | 'json-block' | 'fallback' | 'failed',
       scenesCount: 0,
     }
@@ -680,6 +919,83 @@ export class EpisodeScriptGenerator {
     // 注：这里走的是简化模式（无正文），调用方一般用 generateFullScript
     result.scenes = this.convertSceneDataToGeneratedScenes(result.scenes, roster)
     return result as ScriptGenerationResult
+  }
+
+  /**
+   * AI 续写剧本（增量 · 不覆盖已有内容）。
+   *
+   * 场景：剧本没写完就先开机制作，后续陆续往剧本里加内容（spec 剧本 stage「继续增加剧本」）。
+   * 返回的 scenes 由 AI 按 startSceneNumber 连续编号；调用方 ScriptAppendService
+   * 仍会兜底重编号一次，防止 AI 不听话把场次号写乱。
+   *
+   * @throws 当 AI 既没给出正文、也没给出场景时（此时追加毫无意义）
+   */
+  async continueScript(input: ContinueScriptInput): Promise<FullScriptGenerationResult> {
+    if (!input.instruction.trim()) {
+      throw new Error('续写要求不能为空')
+    }
+
+    const prompt = buildContinuationPrompt(input)
+    const systemPrompt =
+      '你是一位拥有10年以上一线影视工业经验的职业编剧，正在为一部已开拍的剧集续写剧本。' +
+      '请严格按照要求格式输出，不要添加任何开场白或结束语。' +
+      '所有引用必须使用提供的 binding ID，不要瞎编 ID。' +
+      '必须输出【场景数据开始】【场景数据结束】标记的 JSON 场景数据，且只输出本次新增的场景。'
+
+    const response = await callAI(
+      prompt,
+      systemPrompt,
+      16000,
+      input.providerConfigId,
+      input.modelId,
+    )
+    const result = this.extractFullScriptFromResponse(response, input.roster)
+
+    if (!result.scriptContent && result.scenes.length === 0) {
+      throw new Error(
+        'AI 没有返回可用的续写内容（既无剧本正文也无场景数据），请重试或把续写要求写得更具体',
+      )
+    }
+    if (!result.scriptContent) {
+      console.warn('[EpisodeScriptGenerator] 续写结果缺少剧本正文，仅追加场景数据')
+    }
+    if (result.scenes.length === 0) {
+      console.warn('[EpisodeScriptGenerator] 续写结果缺少场景数据，仅追加剧本正文')
+    }
+    return result
+  }
+
+  /**
+   * 把用户粘贴的剧本正文拆成结构化场景（手动追加剧本）。
+   *
+   * 正文由用户提供，因此不产出正文/梗概，只取场景数组。
+   * 解析不出场景时返回空数组（不抛错）——调用方会让用户看到"只追加正文"的提示，
+   * 而不是把用户已经写好的正文卡在门外。
+   */
+  async splitScriptTextToScenes(
+    input: SplitScriptTextInput,
+  ): Promise<GeneratedScene[]> {
+    if (!input.scriptText.trim()) {
+      throw new Error('待拆分的剧本正文为空')
+    }
+
+    const prompt = buildSceneSplitFromTextPrompt(input)
+    const systemPrompt =
+      '你是一位专业的影视编剧。请把给定的剧本正文拆成结构化场景数据，' +
+      '严格按照要求格式输出，不要添加任何开场白或结束语，所有引用使用提供的 binding ID。'
+
+    const response = await callAI(
+      prompt,
+      systemPrompt,
+      16000,
+      input.providerConfigId,
+      input.modelId,
+    )
+    const result = this.extractFullScriptFromResponse(response, input.roster)
+    if (result.scenes.length === 0) {
+      console.warn('[EpisodeScriptGenerator] 未能从正文中识别出场景')
+    }
+    return result.scenes
   }
 
   /**

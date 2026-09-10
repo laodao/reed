@@ -12,7 +12,11 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { __test } from '@core/platform/episode-production/narrative/ai/script-generator'
+import {
+  __test,
+  buildContinuationPrompt,
+  buildSceneSplitFromTextPrompt,
+} from '@core/platform/episode-production/narrative/ai/script-generator'
 import type { AssetRosterForScript } from '@shared/types/episode-production'
 
 const ROSTER: AssetRosterForScript = {
@@ -211,5 +215,107 @@ describe('script-generator __test helpers', () => {
       ROSTER,
     )
     expect(scenes[0].actions[0].characterBindingId).toBeNull()
+  })
+
+  it('buildPrompt: 重构共享片段后各要求段落一段不少（防提示词丢段）', () => {
+    const prompt = __test.buildPrompt(ROSTER, '一段章节内容')
+    for (const anchor of [
+      '## ⚠️⚠️⚠️ 最重要：你必须输出结构化 JSON 场景数据！',
+      '## 第一部分：结构化场景数据（JSON格式） - ⭐必须输出',
+      '## 第二部分：章节梗概',
+      '## 第三部分：完整剧本正文',
+      '## ⭐ 强约束：所有引用必须使用 binding ID',
+      '## 场景拆分原则',
+      '## JSON 场景数据格式示例',
+      '## ⭐ 字段输出质量要求（必须严格遵守）',
+      '### sceneDescription（场景视觉描述）',
+      '### locationKeyObjects（地点关键物件列表）',
+      '### lighting（光线描述）',
+      '### outfit（角色服装）',
+      '## 可用角色列表',
+      '## 可用地点列表',
+      '## 可用物品列表',
+      '## 章节内容',
+    ]) {
+      expect(prompt).toContain(anchor)
+    }
+  })
+})
+
+describe('script-generator 续写 / 正文拆分提示词', () => {
+  const continuationInput = {
+    existingScriptContent: '【第3场 茶馆 夜】\n张三推门而入。',
+    existingScenesSummary: '- 第 3 场 | 茶馆 | 内景 | 夜晚 | 张三推门而入',
+    instruction: '往下写李四登场，两人发生冲突',
+    startSceneNumber: 4,
+    roster: ROSTER,
+  }
+
+  it('buildContinuationPrompt: 起始场次号 + 已有正文 + 已有场次 + 续写要求都进提示词', () => {
+    const prompt = buildContinuationPrompt(continuationInput)
+    expect(prompt).toContain('第 4 场')
+    expect(prompt).toContain('张三推门而入。')
+    expect(prompt).toContain('- 第 3 场 | 茶馆')
+    expect(prompt).toContain('往下写李四登场，两人发生冲突')
+  })
+
+  it('buildContinuationPrompt: 复用同一套输出契约（marker + binding 强约束 + 字段质量要求）', () => {
+    const prompt = buildContinuationPrompt(continuationInput)
+    expect(prompt).toContain('【场景数据开始】')
+    expect(prompt).toContain('【剧本正文开始】')
+    expect(prompt).toContain('## ⭐ 强约束：所有引用必须使用 binding ID')
+    expect(prompt).toContain('## ⭐ 字段输出质量要求（必须严格遵守）')
+    expect(prompt).toContain('## JSON 场景数据格式示例')
+  })
+
+  it('buildContinuationPrompt: 明确要求只输出新增内容、禁止重复已有场次', () => {
+    const prompt = buildContinuationPrompt(continuationInput)
+    expect(prompt).toContain('只输出本次新增的场景，严禁重复已经存在的场次')
+    expect(prompt).toContain('严禁从 1 重新编号')
+    expect(prompt).toContain('只写本次新增部分，严禁重复或改写已有正文')
+  })
+
+  it('buildContinuationPrompt: 三类资产花名册进提示词（binding 强引用）', () => {
+    const prompt = buildContinuationPrompt(continuationInput)
+    expect(prompt).toContain('cb_zhangsan')
+    expect(prompt).toContain('lb_teahouse')
+    expect(prompt).toContain('ib_teapot')
+  })
+
+  it('buildContinuationPrompt: 无正文 / 无场次时用占位文本，不留裸占位符', () => {
+    const prompt = buildContinuationPrompt({
+      ...continuationInput,
+      existingScriptContent: '   ',
+      existingScenesSummary: '',
+    })
+    expect(prompt).toContain('(暂无正文)')
+    expect(prompt).toContain('(暂无场次)')
+    expect(prompt).not.toContain('{existingScriptContent}')
+    expect(prompt).not.toContain('{existingScenesSummary}')
+    expect(prompt).not.toContain('{instruction}')
+    expect(prompt).not.toContain('{startSceneNumber}')
+  })
+
+  it('buildContinuationPrompt: 正文里的 $& / $1 原样保留（不能被 replace 吃掉）', () => {
+    const prompt = buildContinuationPrompt({
+      ...continuationInput,
+      existingScriptContent: '第1场 $& $1 $\' 特殊符号',
+    })
+    expect(prompt).toContain('第1场 $& $1 $\' 特殊符号')
+  })
+
+  it('buildSceneSplitFromTextPrompt: 待拆正文 + 起始场次号 + 契约段落都进提示词', () => {
+    const prompt = buildSceneSplitFromTextPrompt({
+      scriptText: '第四场 内景 客栈 日\n李四拍案而起。',
+      existingScenesSummary: '- 第 3 场 | 茶馆 | 内景 | 夜晚 | 张三推门而入',
+      startSceneNumber: 4,
+      roster: ROSTER,
+    })
+    expect(prompt).toContain('李四拍案而起。')
+    expect(prompt).toContain('第 4 场')
+    expect(prompt).toContain('【场景数据开始】')
+    expect(prompt).toContain('## ⭐ 强约束：所有引用必须使用 binding ID')
+    expect(prompt).toContain('- 第 3 场 | 茶馆')
+    expect(prompt).toContain('ib_teapot')
   })
 })

@@ -676,6 +676,9 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.generateStoryboards': { channel: 'ep:generate-storyboards' },
   // spec 2026-05-08：场景级 AI 润色
   'episodeProduction.polishScene': { channel: 'ep:polish-scene' },
+  // 追加剧本（已有剧本继续增加内容 · 增量不覆盖已有场次）
+  'episodeProduction.prepareScriptAppend': { channel: 'ep:prepare-script-append' },
+  'episodeProduction.appendScript': { channel: 'ep:append-script' },
   // P4-T6 引用解析 + 完整性校验
   'episodeProduction.resolveReference': { channel: 'ep:resolve-reference' },
   'episodeProduction.resolveReferencesBatch': { channel: 'ep:resolve-references-batch' },
