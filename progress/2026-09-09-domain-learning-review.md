@@ -76,23 +76,33 @@
 
 验证:dl 域 17 文件 112 passed(含通道护栏 3 端一致、graph 新用例)、eslint 0 errors;vue-tsc 复核中。
 
-## 6. 遗留与建议(下一批立即继续,不再搁置)
+## 5.2 第三/四/五批修复(2026-09-09 续;用户「不遗留」→ 全部清完)
 
-**执行层**
-- [P2] N+1×3(buildSpaceView/buildAtlasViews/scheduler 逐概念查卡)→ 一次 listByProject + latestCardsByConcept。
-- [P2] verify 同概念多卡并发 busy 键冲突(scopeKey 无 cardId)→ 卡级去重/串行。
-- [P2] run_workflow dl 域半闭环:平台 workflow-run start.model 必填无默认、产出在资产库无桥、人工闸门——需平台层配合(改 workflow-run.service/system-agent-tools 影响 EP/LW/dl 三包,宜独立平台批次);dl 侧最小动作:run_workflow 绑定白名单/频控 + 提示词降低期望。
-- [P2] 概念冗余(根层同名不唯一 + 污染名)+ 孤儿数据清洗脚本(迁移补唯一索引前先洗)。
-- [P2] handler 错误文案错误码化;迁移注释 7/8 表对齐;mastery trigger 文档三方对齐。
-- [P2] 前端:视图加载失败态/首载闪空态/Home 列表失败提示/流式中断追加标记;切空空间 taskLog 残留;渠道名常量收敛。
+- **第三批 80cc2a5e(性能与一致性)**:①N+1×3 消除(buildSpaceView/buildAtlasViews/scheduler → 一次 listByProject + resolveCurrentCards 内存解析);②verify 同概念多卡串行队列(verifyChain,修 busy 键无 cardId 的静默失败);③saveConcept 空间内同名(其他父/根层)→ skipped 防双份冗余;④dl_note 加 uniq(project_id,question_id) + repo 同题幂等(消除同题双行与 findByQuestion 同毫秒排序 flaky);⑤迁移注释/幂等 spec 表清单对齐 8 张。
+- **第四批 48136bd5(前端体验小态)**:视图加载失败失败态+重试(不再永久"加载中")、切空间清 taskLog、答疑首载不闪空态、流式中断补标记、Home 列表失败独立失败态、选区笔记保存失败不静默不关窗。
+- **第五批 eec9d925(核验结果消费)**:DlCardView 增 verification 摘要(未核验=null 可辨别),讲义头核验 tag(核验通过/待复核 N/未核验 + 悬停时间与范围注记),发布时待复核不阻断提示。
 
-**内容/教学法(结合初学者评估;部分已进技能正文,仍待链路落地)**
-- [P1] 产出难度门禁(入门空间禁止直接出研究生级概念卡:前置记号未教即拒绝或先补前置卡);同概念同名卡去重。
-- [P1] 讲义区块模板落地(meta/记号热身/标准算例/自测答案由生成技能产出,渲染端隐藏黑话/草稿态);数字回算 lint。
-- [P2] learning-lesson-updater(增量修订)与练习生成技能;verify 结果消费(needs_review→修订/阻断)。
+## 5.3 第六批修复(内容质量与小活;用户拍板三项后实施)
 
-**推送状态**
-- 服务端 gitea advertisement 持续无响应(ssh 认证/端口均通,HTTP 3000 亦超时)——原 10 提交 + 本批 6fa5c273 与第二批修复提交均待服务恢复后推送。
+用户拍板:① 平台批**单独排期、暂不动**;② 难度门禁口径 = **遇超纲先补前置基础卡**;③ 小活**全做**。
+
+- **难度门禁(落地拍板口径)**:新增 `rules/learning-difficulty.rules`(目标=入门 + 讲义使用**未做教学**的进阶记号 ∫/∂/极限/期望方差/iid/分布族/测度/矩阵 → 拒绝直接落卡,错误信息给出"先建基础概念 + prerequisite 关系 + 为最基础者先出讲义"或"在 meta 首区加记号热身"两条路径);`dl_save_card` 接入;研究提示词补第 11 条(门禁)与第 12 条(数值回算);bootstrap 技能 S2 要求把基础概念一并入骨架并排前。
+- **讲义脱敏**:新增 `shared/utils/lesson-authoring-notes`——剥离「⚠️ 待核验 / 采集缺口 / 概念 id / 状态 draft / version / 快照确证」等编写注记;`SectionLesson` 改为「学习者正文 + 折叠的『编写注记(N)』」。
+- **数值自检**:新增 `shared/utils/lesson-numeric-check`——回算正文算式(`=` 精确、`≈` 容差),`dl_save_card` 落库时把疑似不一致写入动作摘要与 `numericIssues`(不阻断,交 verify 复核)。
+- **两个新技能**:`learning-lesson-updater`(增量修订:未改动区原样保留 + 每处改动给 reason/evidence)、`learning-practice-builder`(分层练习 + 答案解析 + sectionKey 回看指针);技能契约 spec 纳入(learningSkillIds 12 个)。
+- **报错说人话**:handler `wrap` 翻译 UNIQUE/外键/SQLITE/网络类错误,细节仍写日志。
+- **事件通道名收敛**:新增 `shared/utils/domain-learning-event`(`dlAgentEventChannel`/`dlStreamChannel`)唯一实现,后端 `dl-agent.types` re-export、`preload` 与 `web/client/channel-map` 共用。
+- **web CSP**:经查为**带注释的有意取舍**(bytemd/katex/mermaid 需 `eval`、mermaid 会注入 `<script>`、Element Plus 需 inline event handler);盲目收紧会破坏 web 端渲染,**故不改**,理由记录在此备用。
+
+验证:本批相关 22 文件 **144 passed**、eslint **0 errors**、vue-tsc 本批零新增(存量 927)。
+
+## 6. 剩余(仅平台批,已拍板单独排期)
+
+- **[平台批]** run_workflow dl 域半闭环与 invoke_skill「无工具内层」语义:改在 `agent-runtime`/`workflow-run` 平台层,影响 EP/LW/dl 三包;用户拍板**单独排期**。届时需错开并行会话正在改的 workflow 引擎(journal-replay/workflow-engine/control-nodes)。
+- **[可选增强]** verify 结果驱动自动修订(把 needs_review 条目喂给 learning-lesson-updater 形成闭环);web CSP 若要收紧需先引入 nonce/hash 机制并做 web 端回归。
+
+**推送状态(已完成)**
+- 服务端 gitea 曾长时间无响应(advertisement 超时 / 连接抖动 / 内部 API 503),经自动重试于恢复窗口推送成功:`8ada1b93..718ca158`(原 10 提交 + 复盘前四批)、`718ca158..eec9d925`(第五批)、`eec9d925..40f6479c`(报告收口)、`40f6479c..c24b4208`(第六批)。**本地 0 未推**。
 
 ## 7. 附:审计产物与素材
 

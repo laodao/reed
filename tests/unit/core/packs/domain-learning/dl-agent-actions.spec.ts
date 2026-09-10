@@ -360,4 +360,75 @@ describe('dl-agent-actions', () => {
       expect(after?.definitionShort).toBe('新定义')
     })
   })
+
+  // ===== 复盘修复（2026-09-09）：难度门禁（用户拍板"遇超纲先补前置基础卡"）+ 数值自检 =====
+
+  it('save_card：入门目标 + 未做教学的进阶记号 → 拒绝并要求先补前置基础卡', async () => {
+    ds = await buildDs()
+    await seedProject(ds, 'sp1') // goal=入门
+    const db = buildDb(ds)
+    await runWithUserAsync('u1', () =>
+      db.dlConcepts!.create({ id: 'c-eb', projectId: 'sp1', nodeType: 'method', name: '经验贝叶斯' }))
+    const ctx = execCtx(db, 'sp1')
+    await runWithUserAsync('u1', async () => {
+      // 研究生级内容、零记号教学 → 门禁拦下，并给出"先建前置概念+关系、为最基础者先出讲义"的路径
+      await expect(
+        executeDlAction(ctx, {
+          type: 'dl_save_card',
+          params: {
+            card: {
+              conceptId: 'c-eb',
+              essenceType: 'K-stmt',
+              sections: [{ key: 'statement', md: '用 ∫ f(x|θ)dG(θ) 估计先验 G，假定 iid，做边际极大似然。' }],
+              evidenceSources: [{ kind: '论文', title: 'S', url: 'https://e.org/1' }],
+            },
+          },
+        }),
+      ).rejects.toThrow(/先补前置|记号热身/)
+
+      // 做了记号热身（meta 区给读法）→ 门禁放行（只挡"未解释就使用"）
+      const ok = await executeDlAction(ctx, {
+        type: 'dl_save_card',
+        params: {
+          card: {
+            conceptId: 'c-eb',
+            essenceType: 'K-stmt',
+            sections: [
+              { key: 'meta', title: '学习前必读', md: '记号热身：∫ 读作"把……加起来"；例：∫x dx 表示把细条面积相加。' },
+              { key: 'statement', title: '正式陈述', md: '于是 ∫ f(x|θ)dG(θ) 表示按先验加权求和，iid 假定下可做边际极大似然。' },
+            ],
+            evidenceSources: [{ kind: '论文', title: 'S', url: 'https://e.org/1' }],
+          },
+        },
+      })
+      expect(ok.summary.status).toBe('ok')
+    })
+  })
+
+  it('save_card：数值自检发现算式不一致 → 落库但提示核对（不阻断）', async () => {
+    ds = await buildDs()
+    await seedProject(ds, 'sp1')
+    const db = buildDb(ds)
+    await runWithUserAsync('u1', () =>
+      db.dlConcepts!.create({ id: 'c-num', projectId: 'sp1', nodeType: 'concept', name: '筛检概率' }))
+    const ctx = execCtx(db, 'sp1')
+    await runWithUserAsync('u1', async () => {
+      const r = await executeDlAction(ctx, {
+        type: 'dl_save_card',
+        params: {
+          card: {
+            conceptId: 'c-num',
+            essenceType: 'K-concept',
+            sections: [{ key: 'examples', md: '分子 0.99×0.01=0.00099，分母 0.0594。' }],
+            evidenceSources: [{ kind: '教材', title: 'T', url: 'https://e.org/2' }],
+          },
+        },
+      })
+      expect(r.summary.status).toBe('ok')
+      expect(r.summary.message).toContain('数值自检')
+      const issues = (r.summary.data as { numericIssues?: string[] } | undefined)?.numericIssues ?? []
+      expect(issues).toHaveLength(1)
+      expect(issues[0]).toContain('不一致')
+    })
+  })
 })

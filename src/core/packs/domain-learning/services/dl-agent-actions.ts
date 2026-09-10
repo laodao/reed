@@ -13,6 +13,8 @@
 import { randomUUID } from 'crypto'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { PREREQUISITE_TYPE } from '@core/database/repositories/dl-relation.repository'
+import { checkLessonDifficulty } from '../rules/learning-difficulty.rules'
+import { checkNumericStatements } from '@shared/utils/lesson-numeric-check'
 import type { DlCardEvidenceDto, DlCardSectionDto, DlCardWorkDto } from '@core/database/repositories/dl-card.repository'
 import type { DlAgentActionSummary, DlAgentExecutionContext } from './dl-agent.types'
 
@@ -215,6 +217,20 @@ async function saveCard(
     throw new Error(`dl_save_card：目标概念（${card.conceptId}）与当前研究概念（${expectedConceptId}）不一致——请先切到该概念再研究它`)
   }
 
+  // 难度门禁（2026-09-09 复盘 + 用户拍板「遇超纲先补前置基础卡」）：
+  // 目标=入门 且 讲义使用未做教学的进阶记号（∫/∂/iid/分布族…）→ 拒绝直接落卡并给出补前置路径
+  const project = await db.dlProjects!.getById(spaceId)
+  const spaceConcepts = await db.dlConcepts!.listByProject(spaceId)
+  const gate = checkLessonDifficulty({
+    goal: project?.goal ?? null,
+    sections: card.sections.map((s) => ({ key: s.key, title: s.title ?? null, md: s.md })),
+    knownConceptNames: spaceConcepts.map((c) => c.name),
+  })
+  if (gate.gated) throw new Error(`dl_save_card：${gate.reason}`)
+
+  // 数值自检（2026-09-09 复盘）：回算正文里写出的算式，发现自相矛盾就提示（不阻断，交 verify 复核）
+  const numericIssues = checkNumericStatements(card.sections.map((s) => s.md).join('\n\n'))
+
   // 升版留档（2026-09-09 复盘）：一律新建 version=旧+1 行，旧稿/旧核验保留；
   // 新稿 verification 置空（核验需针对新内容重跑，不继承旧判定）
   const existingCard = await db.dlCards!.getCurrentByConcept(spaceId, card.conceptId)
@@ -244,8 +260,16 @@ async function saveCard(
     summary: {
       tool: 'dl_save_card',
       status: 'ok',
-      message: `讲义已落库（v${version} 草稿，${card.sections.length} 区，证据 ${card.evidenceSources.length} 条）${existingCard ? '，旧稿 v' + existingCard.version + ' 留档' : ''}`,
-      data: { cardId, version, conceptId: card.conceptId },
+      message:
+        `讲义已落库（v${version} 草稿，${card.sections.length} 区，证据 ${card.evidenceSources.length} 条）` +
+        `${existingCard ? '，旧稿 v' + existingCard.version + ' 留档' : ''}` +
+        `${numericIssues.length ? `；⚠️ 数值自检发现 ${numericIssues.length} 处疑似不一致，请核对中间量后重发修订版` : ''}`,
+      data: {
+        cardId,
+        version,
+        conceptId: card.conceptId,
+        ...(numericIssues.length ? { numericIssues: numericIssues.map((i) => i.message) } : {}),
+      },
     },
   }
 }

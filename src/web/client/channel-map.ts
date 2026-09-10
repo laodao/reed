@@ -8,6 +8,8 @@
  *              修改 preload 后请同步更新本表（见 scripts/gen-channel-map 文档）。
  */
 
+import { dlAgentEventChannel, dlStreamChannel } from '@shared/utils/domain-learning-event'
+
 export interface ChannelEntry {
   channel?: string
   wrap?: (...args: unknown[]) => unknown[]
@@ -304,11 +306,11 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'domainLearning.schedulerState': { channel: 'dl:scheduler-state' },
   // domainLearning.onAgentEvent(spaceId, conceptId?, cb) — 后端 emit(`dl:agent:<spaceId>[:<conceptId>]`, event)
   'domainLearning.onAgentEvent': {
-    eventChannel: (spaceId, conceptId) => `dl:agent:${spaceId}${conceptId ? `:${conceptId}` : ''}`,
+    eventChannel: (spaceId, conceptId) => dlAgentEventChannel(spaceId as string, (conceptId as string | null | undefined) ?? null),
   },
   // domainLearning.onStream(eventId, cb) — 后端 emit(`dl:generate:${eventId}`, { type:'content', content })
   'domainLearning.onStream': {
-    eventChannel: (eventId) => `dl:generate:${eventId}`,
+    eventChannel: (eventId) => dlStreamChannel(eventId as string),
   },
   'portrait.createProject': { channel: 'portrait:create-project' },
   'portrait.listProjects': { channel: 'portrait:list-projects' },

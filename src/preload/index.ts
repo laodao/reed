@@ -8,6 +8,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { DocumentSource } from '@shared/types/knowledge-base.types'
 import type { NoticeListQuery } from '@shared/types'
 import type { EpAiGenerateTextRequest, EpBatchCreateEpisodesRequest, EpBatchIdentifyEntitiesRequest } from '@shared/types/episode-production'
+import { dlAgentEventChannel, dlStreamChannel } from '@shared/utils/domain-learning-event'
 
 // IPC 通道名称常量
 const IPC_CHANNELS = {
@@ -1376,14 +1377,14 @@ const electronAPI = {
       conceptId: string | null | undefined,
       callback: (event: any) => void,
     ) => {
-      const channel = `dl:agent:${spaceId}${conceptId ? `:${conceptId}` : ''}`
+      const channel = dlAgentEventChannel(spaceId, conceptId)
       const handler = (_event: any, data: any) => callback(data)
       ipcRenderer.on(channel, handler)
       return () => ipcRenderer.removeListener(channel, handler)
     },
     // 订阅流式正文（通道 dl:generate:<eventId>；增量 { type:'content', content }；返回取消订阅函数）
     onStream: (eventId: string, callback: (event: { type: string; content?: string; error?: string }) => void) => {
-      const channel = `dl:generate:${eventId}`
+      const channel = dlStreamChannel(eventId)
       const handler = (_event: any, data: any) => callback(data)
       ipcRenderer.on(channel, handler)
       return () => ipcRenderer.removeListener(channel, handler)

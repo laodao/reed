@@ -156,6 +156,18 @@ export interface DlCardView {
   evidenceSources?: DlEvidenceRef[] | null
   version: number
   status: 'draft' | 'published'
+  /** 自动核验摘要（2026-09-09 复盘：M4-UX2 的 verification 由"只写不读"改为消费；
+   *  null=尚未核验） */
+  verification?: DlCardVerificationSummary | null
+}
+
+/** 讲义自动核验摘要（视图侧；明细见 DlCardVerification） */
+export interface DlCardVerificationSummary {
+  status: DlVerificationStatus
+  /** 待复核/冲突条数 */
+  issues: number
+  checkedAt: string | null
+  note?: string | null
 }
 
 /** 相关知识点（related 区：由关系边派生，可点击跳转） */

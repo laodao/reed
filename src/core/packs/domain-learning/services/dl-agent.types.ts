@@ -63,10 +63,9 @@ export function dlScopeKey(mode: DlAgentMode, scope: DlScopeRef): string {
   return `dl-agent:${mode}:${scope.spaceId}:${c}`
 }
 
-/** 事件通道（动作级事件；reply 流式另走 dl:generate:<eventId>） */
-export function dlAgentEventChannel(spaceId: string, conceptId?: string | null): string {
-  return conceptId ? `dl:agent:${spaceId}:${conceptId}` : `dl:agent:${spaceId}`
-}
+/** 事件通道（动作级事件；reply 流式另走 dl:generate:<eventId>）
+ *  2026-09-09 复盘：实现收敛到 shared/utils/domain-learning-event（三端唯一） */
+export { dlAgentEventChannel, dlStreamChannel } from '@shared/utils/domain-learning-event'
 
 /** sendMessage 结果（与前端对话外观最小契约） */
 export interface DlAgentSendResult {

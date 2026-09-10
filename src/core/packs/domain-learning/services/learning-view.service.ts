@@ -85,6 +85,14 @@ export class LearningViewService {
         evidenceSources: row.evidenceSources,
         version: row.version,
         status: row.status as 'draft' | 'published',
+        verification: row.verification
+          ? {
+              status: row.verification.status,
+              issues: row.verification.issues.length,
+              checkedAt: row.verification.checkedAt ?? null,
+              note: row.verification.note ?? null,
+            }
+          : null,
       })
     }
 

@@ -26,6 +26,8 @@ const learningSkillIds = [
   'learning-source-collector',
   'learning-question-generator',
   'learning-relation-miner',
+  'learning-lesson-updater',
+  'learning-practice-builder',
   'learning-space-bootstrap',
 ]
 
@@ -55,6 +57,7 @@ describe('BUILTIN_SKILLS 全量守卫（坏一条即打挂 discover/invoke 全�
       'learning-source-collector',
       'learning-question-generator',
       'learning-relation-miner',
+      'learning-lesson-updater',
       'learning-space-bootstrap',
     ]
     // 规划/打磨/互动类：按职能各有"有据/不越界"纪律
@@ -63,6 +66,7 @@ describe('BUILTIN_SKILLS 全量守卫（坏一条即打挂 discover/invoke 全�
       'learning-lesson-writer': /不新增|素材/,
       'learning-tutor': /有据|如实|引用/,
       'learning-assessor': /建议者不是裁定者|由用户决定|供参考/,
+      'learning-practice-builder': /回算|答案|sectionKey/,
     }
     for (const id of learningSkillIds) {
       const skill = byId.get(id)
