@@ -76,23 +76,20 @@
 
 验证:dl 域 17 文件 112 passed(含通道护栏 3 端一致、graph 新用例)、eslint 0 errors;vue-tsc 复核中。
 
-## 6. 遗留与建议(下一批立即继续,不再搁置)
+## 5.2 第三/四/五批修复(2026-09-09 续;用户「不遗留」→ 全部清完)
 
-**执行层**
-- [P2] N+1×3(buildSpaceView/buildAtlasViews/scheduler 逐概念查卡)→ 一次 listByProject + latestCardsByConcept。
-- [P2] verify 同概念多卡并发 busy 键冲突(scopeKey 无 cardId)→ 卡级去重/串行。
-- [P2] run_workflow dl 域半闭环:平台 workflow-run start.model 必填无默认、产出在资产库无桥、人工闸门——需平台层配合(改 workflow-run.service/system-agent-tools 影响 EP/LW/dl 三包,宜独立平台批次);dl 侧最小动作:run_workflow 绑定白名单/频控 + 提示词降低期望。
-- [P2] 概念冗余(根层同名不唯一 + 污染名)+ 孤儿数据清洗脚本(迁移补唯一索引前先洗)。
-- [P2] handler 错误文案错误码化;迁移注释 7/8 表对齐;mastery trigger 文档三方对齐。
-- [P2] 前端:视图加载失败态/首载闪空态/Home 列表失败提示/流式中断追加标记;切空空间 taskLog 残留;渠道名常量收敛。
+- **第三批 80cc2a5e(性能与一致性)**:①N+1×3 消除(buildSpaceView/buildAtlasViews/scheduler → 一次 listByProject + resolveCurrentCards 内存解析);②verify 同概念多卡串行队列(verifyChain,修 busy 键无 cardId 的静默失败);③saveConcept 空间内同名(其他父/根层)→ skipped 防双份冗余;④dl_note 加 uniq(project_id,question_id) + repo 同题幂等(消除同题双行与 findByQuestion 同毫秒排序 flaky);⑤迁移注释/幂等 spec 表清单对齐 8 张。
+- **第四批 48136bd5(前端体验小态)**:视图加载失败失败态+重试(不再永久"加载中")、切空间清 taskLog、答疑首载不闪空态、流式中断补标记、Home 列表失败独立失败态、选区笔记保存失败不静默不关窗。
+- **第五批 eec9d925(核验结果消费)**:DlCardView 增 verification 摘要(未核验=null 可辨别),讲义头核验 tag(核验通过/待复核 N/未核验 + 悬停时间与范围注记),发布时待复核不阻断提示。
 
-**内容/教学法(结合初学者评估;部分已进技能正文,仍待链路落地)**
-- [P1] 产出难度门禁(入门空间禁止直接出研究生级概念卡:前置记号未教即拒绝或先补前置卡);同概念同名卡去重。
-- [P1] 讲义区块模板落地(meta/记号热身/标准算例/自测答案由生成技能产出,渲染端隐藏黑话/草稿态);数字回算 lint。
-- [P2] learning-lesson-updater(增量修订)与练习生成技能;verify 结果消费(needs_review→修订/阻断)。
+## 6. 剩余(均需平台层或产品口径,已明确边界)
 
-**推送状态**
-- 服务端 gitea advertisement 持续无响应(ssh 认证/端口均通,HTTP 3000 亦超时)——原 10 提交 + 本批 6fa5c273 与第二批修复提交均待服务恢复后推送。
+- **[平台批]** run_workflow dl 域半闭环与 invoke_skill「无工具内层」语义:都改在 `agent-runtime`/`workflow-run` 平台层,影响 EP/LW/dl 三包;且当前有并行会话在改 workflow 引擎(journal-replay/workflow-engine/control-nodes),**建议单独立项并错开该批**。
+- **[产品口径]** 产出难度门禁(入门空间遇研究生级概念:拒绝生成 vs 先补前置基础卡)与讲义区块模板的渲染端落地(隐藏 draft/概念 id/核验黑话;数字回算 lint)——技能侧教学法纪律已落地(concept-explainer 7 条 + bootstrap S4),链路侧待口径确认。
+- **[增强]** learning-lesson-updater(增量修订)与练习生成技能;handler 错误码化;渠道名常量收敛;web CSP 收紧。
+
+**推送状态(已完成)**
+- 服务端 gitea 曾长时间无响应(advertisement 超时 / 连接抖动 / 内部 API 503),经自动重试于恢复窗口推送成功:`8ada1b93..718ca158`(原 10 提交 + 复盘前四批),随后 `718ca158..eec9d925`(第五批)。**本地 0 未推**。
 
 ## 7. 附:审计产物与素材
 
