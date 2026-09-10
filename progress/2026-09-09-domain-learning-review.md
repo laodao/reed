@@ -82,14 +82,27 @@
 - **第四批 48136bd5(前端体验小态)**:视图加载失败失败态+重试(不再永久"加载中")、切空间清 taskLog、答疑首载不闪空态、流式中断补标记、Home 列表失败独立失败态、选区笔记保存失败不静默不关窗。
 - **第五批 eec9d925(核验结果消费)**:DlCardView 增 verification 摘要(未核验=null 可辨别),讲义头核验 tag(核验通过/待复核 N/未核验 + 悬停时间与范围注记),发布时待复核不阻断提示。
 
-## 6. 剩余(均需平台层或产品口径,已明确边界)
+## 5.3 第六批修复(内容质量与小活;用户拍板三项后实施)
 
-- **[平台批]** run_workflow dl 域半闭环与 invoke_skill「无工具内层」语义:都改在 `agent-runtime`/`workflow-run` 平台层,影响 EP/LW/dl 三包;且当前有并行会话在改 workflow 引擎(journal-replay/workflow-engine/control-nodes),**建议单独立项并错开该批**。
-- **[产品口径]** 产出难度门禁(入门空间遇研究生级概念:拒绝生成 vs 先补前置基础卡)与讲义区块模板的渲染端落地(隐藏 draft/概念 id/核验黑话;数字回算 lint)——技能侧教学法纪律已落地(concept-explainer 7 条 + bootstrap S4),链路侧待口径确认。
-- **[增强]** learning-lesson-updater(增量修订)与练习生成技能;handler 错误码化;渠道名常量收敛;web CSP 收紧。
+用户拍板:① 平台批**单独排期、暂不动**;② 难度门禁口径 = **遇超纲先补前置基础卡**;③ 小活**全做**。
+
+- **难度门禁(落地拍板口径)**:新增 `rules/learning-difficulty.rules`(目标=入门 + 讲义使用**未做教学**的进阶记号 ∫/∂/极限/期望方差/iid/分布族/测度/矩阵 → 拒绝直接落卡,错误信息给出"先建基础概念 + prerequisite 关系 + 为最基础者先出讲义"或"在 meta 首区加记号热身"两条路径);`dl_save_card` 接入;研究提示词补第 11 条(门禁)与第 12 条(数值回算);bootstrap 技能 S2 要求把基础概念一并入骨架并排前。
+- **讲义脱敏**:新增 `shared/utils/lesson-authoring-notes`——剥离「⚠️ 待核验 / 采集缺口 / 概念 id / 状态 draft / version / 快照确证」等编写注记;`SectionLesson` 改为「学习者正文 + 折叠的『编写注记(N)』」。
+- **数值自检**:新增 `shared/utils/lesson-numeric-check`——回算正文算式(`=` 精确、`≈` 容差),`dl_save_card` 落库时把疑似不一致写入动作摘要与 `numericIssues`(不阻断,交 verify 复核)。
+- **两个新技能**:`learning-lesson-updater`(增量修订:未改动区原样保留 + 每处改动给 reason/evidence)、`learning-practice-builder`(分层练习 + 答案解析 + sectionKey 回看指针);技能契约 spec 纳入(learningSkillIds 12 个)。
+- **报错说人话**:handler `wrap` 翻译 UNIQUE/外键/SQLITE/网络类错误,细节仍写日志。
+- **事件通道名收敛**:新增 `shared/utils/domain-learning-event`(`dlAgentEventChannel`/`dlStreamChannel`)唯一实现,后端 `dl-agent.types` re-export、`preload` 与 `web/client/channel-map` 共用。
+- **web CSP**:经查为**带注释的有意取舍**(bytemd/katex/mermaid 需 `eval`、mermaid 会注入 `<script>`、Element Plus 需 inline event handler);盲目收紧会破坏 web 端渲染,**故不改**,理由记录在此备用。
+
+验证:本批相关 22 文件 **144 passed**、eslint **0 errors**、vue-tsc 本批零新增(存量 927)。
+
+## 6. 剩余(仅平台批,已拍板单独排期)
+
+- **[平台批]** run_workflow dl 域半闭环与 invoke_skill「无工具内层」语义:改在 `agent-runtime`/`workflow-run` 平台层,影响 EP/LW/dl 三包;用户拍板**单独排期**。届时需错开并行会话正在改的 workflow 引擎(journal-replay/workflow-engine/control-nodes)。
+- **[可选增强]** verify 结果驱动自动修订(把 needs_review 条目喂给 learning-lesson-updater 形成闭环);web CSP 若要收紧需先引入 nonce/hash 机制并做 web 端回归。
 
 **推送状态(已完成)**
-- 服务端 gitea 曾长时间无响应(advertisement 超时 / 连接抖动 / 内部 API 503),经自动重试于恢复窗口推送成功:`8ada1b93..718ca158`(原 10 提交 + 复盘前四批),随后 `718ca158..eec9d925`(第五批)。**本地 0 未推**。
+- 服务端 gitea 曾长时间无响应(advertisement 超时 / 连接抖动 / 内部 API 503),经自动重试于恢复窗口推送成功:`8ada1b93..718ca158`(原 10 提交 + 复盘前四批)、`718ca158..eec9d925`(第五批)、`eec9d925..40f6479c`(报告收口)、`40f6479c..c24b4208`(第六批)。**本地 0 未推**。
 
 ## 7. 附:审计产物与素材
 
