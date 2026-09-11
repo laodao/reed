@@ -41,6 +41,23 @@ export class StructureSplitter {
     const chunks: SplitChunk[] = []
     let globalIndex = 0
 
+    // 首个 section 之前的前言内容（书名页/版权/目录/未命中章节格式的开头部分）
+    // 不落在任何 section 内——作为「无标题前言」chunk 保留，绝不丢内容。
+    // （审计实证：《深度学习》epub 小说章节检测从「第5章」开始，前缀 15.6 万字符曾被整体丢弃）
+    const prefix = content.slice(0, structure.sections[0].startIndex).trim()
+    if (prefix.length > 0) {
+      chunks.push({
+        content: prefix,
+        index: globalIndex++,
+        title: undefined,
+        level: 1,
+        splitMethod: 'structure',
+        sectionPath: [],
+        startOffset: 0,
+        endOffset: structure.sections[0].startIndex,
+      })
+    }
+
     for (let sectionIndex = 0; sectionIndex < structure.sections.length; sectionIndex++) {
       const section = structure.sections[sectionIndex]
       const sectionPath = this.buildSectionPath(section)

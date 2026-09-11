@@ -71,6 +71,8 @@ describe('extractTextFromFile: epub markdown 结构模式（asMarkdown）', () =
     expect(md).toMatch(/\n\n/)
     // 无 HTML 残留
     expect(md).not.toMatch(/<[a-zA-Z/][^>]*>/)
+    // 无 EPUB 内部链接锚点噪音（anydoc 生成的 #oebps-* target）
+    expect(md).not.toMatch(/\(#?oebps-[^)]*\)/)
   })
 })
 

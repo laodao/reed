@@ -80,6 +80,9 @@ function postProcessExtractedMarkdown(md: string, { strictGarbled = true } = {})
     .join('\n')
   // 1.5 剥离 anydoc 输出的 EPUB 内部导航锚点（<a id="..."></a>，对切片无价值）
   out = out.replace(/<a\s+[^>]*><\/a>/g, '')
+  // 1.6 剥离 EPUB 内部链接目标残留（[文本](#oebps-*) 的 target 部分；
+  //     保留链接文本，仅去掉锚点目标——否则切片内容会混入 filepos 噪音）
+  out = out.replace(/\(#?oebps-[^)]*\)/g, '')
   // 2. H4-H6 标题 → 加粗正文（保留文本内容但不再作为章节标题）
   out = out.replace(/^#{4,6}\s+(.+)$/gm, '**$1**')
   // 3. 乱码检测
