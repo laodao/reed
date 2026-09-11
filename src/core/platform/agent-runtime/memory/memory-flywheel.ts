@@ -38,6 +38,12 @@ export interface MemoryVectorPort {
 export const DEDUP_OVERLAP_THRESHOLD = 0.6
 /** 读取装配条数上限 */
 export const ASSEMBLE_TOP_K = 3
+/** L1（用户级/系统级）入选的最低关键词命中数。L1 跨所有业务模块共享，必须比
+ *  L2/L3 更高的相关度才可入选——2-gram 分词下单词碰撞就会把无关全局记忆带进
+ *  业务宿主（六扇门复盘：账本「审计师」的 2-gram「审计」撞上「多智能体框架
+ *  调研」SOP 里的「审计和事件驱动」，一行框架选型建议进了故事研讨室）。
+ *  向量召回命中不受此限（语义相关度已由向量分把关） */
+export const L1_MIN_KEYWORD_HITS = 2
 /** 蒸馏条数上限 */
 export const DISTILL_MAX_ITEMS = 3
 /** 代谢：零命中归档天数 */
@@ -201,7 +207,12 @@ export class MemoryFlywheelService {
         for (const w of tokens) if (entryTokens.has(w)) hits++
         return { entry: e, hits, weight: layerWeight(e) }
       })
-      .filter((s) => s.hits > 0 || vectorScores.has(s.entry.id))
+      .filter((s) => {
+        if (s.hits <= 0 && !vectorScores.has(s.entry.id)) return false
+        // L1 相关度门槛（六扇门复盘）：纯关键词命中须达门槛；向量命中豁免
+        if (!s.entry.bizModule && s.hits < L1_MIN_KEYWORD_HITS && !vectorScores.has(s.entry.id)) return false
+        return true
+      })
       .sort((a, b) => (b.hits + 0.6 * (vectorScores.get(b.entry.id) ?? 0)) * b.weight - (a.hits + 0.6 * (vectorScores.get(a.entry.id) ?? 0)) * a.weight)
     if (!scope) return scored.slice(0, topK).map((s) => s.entry)
     // 分层配额：L1/L2/L3 各 topK，总量 3×topK

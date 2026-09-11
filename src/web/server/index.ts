@@ -517,6 +517,12 @@ async function initDatabase(): Promise<void> {
   )
   await createLwGraphTables(ds)
 
+  // 飞轮记忆存量回填（按源任务 scopeTag 补 biz_module/project_id，幂等，双语种）
+  const { backfillAgentMemoryScope } = await import(
+    '@core/database/migrations/backfill-agent-memory-scope'
+  )
+  await backfillAgentMemoryScope(ds)
+
   // provider_configs 补 default_model 列（与 Electron 端 runMultiTenantMigrations 同构登记）
   const { addProviderConfigDefaultModel } = await import(
     '@core/database/migrations/add-provider-config-default-model'

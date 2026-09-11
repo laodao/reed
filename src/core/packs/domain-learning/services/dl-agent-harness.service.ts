@@ -287,6 +287,9 @@ export class DlAgentHarnessService {
         runtimeContext: () => ({
           spaceId,
           mode,
+          // KE 分层打标（37 号）：create_task_plan 据此盖 scopeTag——缺此声明蒸馏
+          // 全部退化 L1 用户级，跨模块记忆互串（六扇门复盘实证）
+          memoryScope: { bizModule: 'domain-learning', projectId: spaceId },
           ...(conceptId ? { conceptId } : {}),
           ...(opts.focusQuestionId ? { questionId: opts.focusQuestionId } : {}),
           providerConfigId: opts.providerConfigId,

@@ -701,6 +701,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
     )
     await createLwGraphTables(this.dataSource)
 
+    // 飞轮记忆存量回填（按源任务 scopeTag 补 biz_module/project_id，幂等）
+    const { backfillAgentMemoryScope } = await import(
+      '@core/database/migrations/backfill-agent-memory-scope'
+    )
+    await backfillAgentMemoryScope(this.dataSource)
+
     // 工作流引擎：definitions / runs / node_runs 三表（幂等，双语种）
     const { createWorkflowTables } = await import(
       '@core/database/migrations/create-workflow-tables'
