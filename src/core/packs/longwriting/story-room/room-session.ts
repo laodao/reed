@@ -134,13 +134,21 @@ function safeFlywheel() {
   }
 }
 
-/** 圣经上下文（fail-soft）：摘要 + 题材（问题库选择用，评审 P1-2）+ 是否空库 */
+/** 圣经上下文（fail-soft）：摘要 + 题材（问题库选择用，评审 P1-2）+ 是否空库。
+ *  空库判定必须覆盖全部结构化维度（对抗 review P2-3：只看人物/故事线会把
+ *  「只有世界设定/只有大纲」的项目误报成空库，把真实摘要整体替换掉） */
 async function safeBibleContext(db: any, projectId: string): Promise<{ summary: string; storyType?: string; bibleEmpty: boolean }> {
   try {
     const ps = await computeProductionState(db, projectId)
     const bibleEmpty = !ps.overview?.exists
       && (ps.characters?.count ?? 0) === 0
       && (ps.plots?.count ?? 0) === 0
+      && !ps.world?.background
+      && (ps.world?.locations ?? 0) === 0
+      && (ps.world?.factions ?? 0) === 0
+      && (ps.world?.skills ?? 0) === 0
+      && (ps.world?.items ?? 0) === 0
+      && (ps.outline?.total ?? 0) === 0
     return { summary: stateToSummary(ps), storyType: ps.overview?.storyType ?? undefined, bibleEmpty }
   } catch (e) {
     logger.warn(`[story-room] 圣经摘要读取失败（降级为空）project=${projectId}`, e)
@@ -322,6 +330,10 @@ export class StoryRoomSessionService {
         snapshot: () => snapshot,
         seededHistory: () => seeded,
         maxSteps: LW_ROOM_MAX_STEPS,
+        // 显式声明窗口（对抗 review P2-4）：默认 32K 下设计重历史每轮触发压缩，
+        // 4 千字设计消息正是被守恒摘要折叠的对象——「看不到自己设计后半段」
+        // 会以有损摘要形式回归。64K 给设计任务留头部空间
+        contextWindowTokens: 65536,
         memory: {
           scope: () => ({ bizModule: 'longwriting', projectId }),
           // 召回语料只用本轮输入（六扇门复盘：整段快照作召回语料会让账本里

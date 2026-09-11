@@ -33,7 +33,8 @@ export const LW_ROOM_PACK_ID = 'lw-room'
 export const LW_ROOM_MAX_STEPS = (() => {
   const raw = Number(process.env.LW_ROOM_MAX_STEPS)
   if (!Number.isFinite(raw) || raw <= 0) return 24
-  return Math.min(60, Math.round(raw))
+  // 对抗 review P2-1：(0,0.5) 区间 round 后为 0 → loop 首轮即 max_steps，整轮瘫痪
+  return Math.max(1, Math.min(60, Math.round(raw)))
 })()
 
 /** 从工具执行上下文还原研讨室上下文 */

@@ -113,15 +113,13 @@ export async function silentExtractLedger(
         : (extractJsonArray(raw) || [])
     const gate = (!Array.isArray(parsed) && parsed?.gate || null) as GateSuggestion | null
     // 内容目标变更（六扇门复盘：用户第 3 轮明说短剧，contentTarget 停在 novel 十二轮，
-    // 阶段策略一直按长篇给——用户明确表达的全局目标必须落结构化状态）
-    const target = (!Array.isArray(parsed) && (parsed?.target === 'novel' || parsed?.target === 'script'))
+    // 阶段策略一直按长篇给——用户明确表达的全局目标必须落结构化状态）。
+    // 只解析不落库：真正写入在下方队列内 mutator 与账本合并一步完成（对抗 review
+    // P2-5：LLM 调用期间用户可能经 roomSetTarget 手动改目标，用陈旧快照比较会
+    // 重复 patch 甚至回滚用户操作）——mutator 拿队列内最新状态判断
+    const parsedTarget = (!Array.isArray(parsed) && (parsed?.target === 'novel' || parsed?.target === 'script'))
       ? (parsed.target as 'novel' | 'script')
       : null
-    if (target && target !== state.contentTarget) {
-      await patchRoomState(db, projectId, { contentTarget: target })
-      emitRoomEvent(projectId, { type: 'target:changed', target } as RoomEvent)
-      logger.info(`[story-room] 内容目标切换 project=${projectId} → ${target}（turn=${input.turnNo}）`)
-    }
 
     // 门建议：只朝下一阶段建议（不允许跳跃/回退），当前已是最后阶段则忽略
     if (gate?.toPhase) {
@@ -135,7 +133,8 @@ export async function silentExtractLedger(
       }
     }
 
-    if (!Array.isArray(ops) || ops.length === 0) return null
+    // 早退守卫须放行「仅目标变更」轮（{"entries":[],"target":"script"} 不是空提取）
+    if ((!Array.isArray(ops) || ops.length === 0) && !parsedTarget) return null
 
     const seen = new Set(state.ledger.map((e) => normalizeTitle(e.title)))
     const added: ConsensusEntry[] = []
@@ -162,7 +161,7 @@ export async function silentExtractLedger(
         updatedAt: Date.now(),
       })
     }
-    if (added.length === 0 && !ops.some((op: any) => op?.op === 'conflict')) return null
+    if (added.length === 0 && !ops.some((op: any) => op?.op === 'conflict') && !parsedTarget) return null
 
     // 队列内 RMW（评审 P1-4）：以队列内最新账本为基线合并，消除「读在队列外」丢更新窗口
     const nextState = await mutateRoomState(db, projectId, (current) => {
@@ -173,8 +172,14 @@ export async function silentExtractLedger(
       const seenNow = new Set(current.ledger.map((e) => normalizeTitle(e.title)))
       const freshAdded = added.filter((a) => !seenNow.has(normalizeTitle(a.title)))
       const all = [...current.ledger, ...freshAdded]
-      return { ...current, ledger: compactLedger(all) }
+      // 目标变更与账本同事务落（比较对象是队列内最新 contentTarget）
+      const contentTarget = parsedTarget && parsedTarget !== current.contentTarget ? parsedTarget : current.contentTarget
+      return { ...current, ledger: compactLedger(all), contentTarget }
     })
+    if (nextState.contentTarget !== state.contentTarget) {
+      emitRoomEvent(projectId, { type: 'target:changed', target: nextState.contentTarget } as RoomEvent)
+      logger.info(`[story-room] 内容目标切换 project=${projectId} → ${nextState.contentTarget}（turn=${input.turnNo}）`)
+    }
     logger.info(`[story-room] 账本静默提取 project=${projectId} turn=${input.turnNo}`)
     return nextState.ledger
   } catch (e) {
@@ -227,8 +232,8 @@ export async function applyLedgerOp(
       await patchRoomState(db, projectId, { ledger })
       return ledger
     case 'revise':
-      if (op.title?.trim()) entry.title = op.title.trim()
-      if (Array.isArray(op.points)) entry.points = op.points.slice(0, 3).map((p) => String(p).slice(0, 60))
+      if (op.title?.trim()) entry.title = op.title.trim().slice(0, 40)
+      if (Array.isArray(op.points)) entry.points = op.points.slice(0, 3).map((p) => String(p).slice(0, 40))
       break
   }
   ledger[idx] = entry

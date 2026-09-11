@@ -701,12 +701,6 @@ export class DatabaseManager implements ICoreDatabaseManager {
     )
     await createLwGraphTables(this.dataSource)
 
-    // 飞轮记忆存量回填（按源任务 scopeTag 补 biz_module/project_id，幂等）
-    const { backfillAgentMemoryScope } = await import(
-      '@core/database/migrations/backfill-agent-memory-scope'
-    )
-    await backfillAgentMemoryScope(this.dataSource)
-
     // 工作流引擎：definitions / runs / node_runs 三表（幂等，双语种）
     const { createWorkflowTables } = await import(
       '@core/database/migrations/create-workflow-tables'
@@ -756,6 +750,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
     // KE-1 分层知识（34 号 v2）：scope 两列 + 嵌入增量/漂移列
     const { addAgentMemoryScopeColumns } = await import('@core/database/migrations/add-agent-memory-scope-columns')
     await addAgentMemoryScopeColumns(this.dataSource)
+
+    // 飞轮记忆存量回填（按源任务 scopeTag 补 biz_module/project_id，幂等）。
+    // 必须在 agent_tasks/agent_memory_entries 建表与加列之后（对抗 review P0-1：
+    // 曾误放在 lw 图谱迁移段——全新库首次启动时表尚不存在，boot 直接崩）
+    const { backfillAgentMemoryScope } = await import('@core/database/migrations/backfill-agent-memory-scope')
+    await backfillAgentMemoryScope(this.dataSource)
 
     // 39 号：会话原始流水（append-only 审计）+ 工具产物归档（resultRef 回查）
     const { createAgentSessionEvents } = await import('@core/database/migrations/create-agent-session-events')

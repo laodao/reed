@@ -87,6 +87,28 @@ export function overlapRatio(a: Set<string>, b: Set<string>): number {
   return inter / (a.size + b.size - inter)
 }
 
+/**
+ * 按原顺序统计「命中词数」：查询里相邻连续命中的 CJK 2-gram 合并为一个词
+ * （「审计师」= 审计+计师 两个相邻 bigram，只能算 1 个命中词——对抗 review
+ * P2-2：不合并的话共用一个 ≥3 字词就过 L1 门槛，等于门槛形同虚设）。
+ * 拉丁词逐词计数，与 tokenize 口径一致。
+ */
+export function countMatchedWords(queryText: string, entryTokens: Set<string>): number {
+  const cleaned = queryText.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ')
+  let runs = 0
+  for (const w of cleaned.split(' ')) if (w.length > 1 && entryTokens.has(w)) runs++
+  const cjkRuns = queryText.match(/[\u4e00-\u9fff]{2,}/g) ?? []
+  for (const run of cjkRuns) {
+    let inMatch = false
+    for (let i = 0; i < run.length - 1; i++) {
+      const isHit = entryTokens.has(run.slice(i, i + 2))
+      if (isHit && !inMatch) runs++
+      inMatch = isHit
+    }
+  }
+  return runs
+}
+
 export class MemoryFlywheelService {
   private readonly deps: Required<Pick<MemoryFlywheelDeps, 'repo' | 'clock'>> & Pick<MemoryFlywheelDeps, 'distill' | 'vector'>
 
@@ -205,12 +227,14 @@ export class MemoryFlywheelService {
         const entryTokens = tokenize(content)
         let hits = 0
         for (const w of tokens) if (entryTokens.has(w)) hits++
-        return { entry: e, hits, weight: layerWeight(e) }
+        // 词命中数（相邻 bigram 合并）——L1 门槛口径；hits 仍作排序分
+        const wordHits = countMatchedWords(taskText, entryTokens)
+        return { entry: e, hits, weight: layerWeight(e), wordHits }
       })
       .filter((s) => {
         if (s.hits <= 0 && !vectorScores.has(s.entry.id)) return false
-        // L1 相关度门槛（六扇门复盘）：纯关键词命中须达门槛；向量命中豁免
-        if (!s.entry.bizModule && s.hits < L1_MIN_KEYWORD_HITS && !vectorScores.has(s.entry.id)) return false
+        // L1 相关度门槛（六扇门复盘）：纯关键词命中须达门槛（按词计）；向量命中豁免
+        if (!s.entry.bizModule && s.wordHits < L1_MIN_KEYWORD_HITS && !vectorScores.has(s.entry.id)) return false
         return true
       })
       .sort((a, b) => (b.hits + 0.6 * (vectorScores.get(b.entry.id) ?? 0)) * b.weight - (a.hits + 0.6 * (vectorScores.get(a.entry.id) ?? 0)) * a.weight)
@@ -226,7 +250,6 @@ export class MemoryFlywheelService {
       if (picked.length >= topK * 3) break
     }
     return picked
-    return scored.map((s) => s.entry)
   }
 
   /** 人工批准（闸门③的唯一放行路径） */
