@@ -162,3 +162,77 @@ describe('spawn_subagent（39 号 P1-2）', () => {
     expect((r as { data: { stopReason: string } }).data.stopReason).toBe('final')
   })
 })
+
+// ==================== 43 号 O6：并发上限 ====================
+
+describe('43 号 O6：spawn_subagent 并发上限', () => {
+  it('并发超限 fail-fast（SUBAGENT_LIMIT）；在途委派返回后可再次委派', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const slowTool: AgentToolDef = {
+      name: 'slow_read',
+      description: '慢读（gate 控制在途）',
+      inputSchema: z.object({}),
+      dangerLevel: 'read',
+      execute: async () => {
+        await gate
+        return { done: true }
+      },
+    }
+    // 子代理模型首步挂起在 gate（increment 已发生）→ 子代理确定在途
+    const gatedModel = new MockLanguageModelV3({
+      provider: 'test',
+      modelId: 'mock',
+      doStream: async () => {
+        await gate
+        return { stream: simulateReadableStream({ chunks: txt('子代理报告')() }) }
+      },
+    }) as unknown as LanguageModel
+    const tool = createSpawnSubagentTool({
+      resolveModel: async () => gatedModel,
+      tools: { slow_read: slowTool },
+      trajectoryPort: null,
+      scopeKey: 'session:test:p1',
+      maxConcurrent: 1,
+    })
+    const first = tool.execute({ goal: 'g1' }, CTX as never)
+    await new Promise((r) => setTimeout(r, 0)) // 宏任务：first 走到 doStream 挂起点
+    // 主代理在 first 在途期间再次委派：立即被上限拦截
+    const second = await tool.execute({ goal: 'g2' }, CTX as never)
+    expect(second.ok).toBe(false)
+    expect((second as { error?: string }).error).toBe('SUBAGENT_LIMIT')
+    expect((second as { detail?: string }).detail).toContain('并发子代理已达上限')
+    release()
+    expect((await first).ok).toBe(true)
+    // 在途清零后可再次委派
+    const third = await tool.execute({ goal: 'g3' }, CTX as never)
+    expect(third.ok).toBe(true)
+  })
+
+  it('同 tick 竞发同样被拦（对抗 review P0 回归：检查+自增同同步段）', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const gatedModel = new MockLanguageModelV3({
+      provider: 'test',
+      modelId: 'mock',
+      doStream: async () => {
+        await gate
+        return { stream: simulateReadableStream({ chunks: txt('报告')() }) }
+      },
+    }) as unknown as LanguageModel
+    const tool = createSpawnSubagentTool({
+      resolveModel: async () => gatedModel,
+      tools: { t: { name: 't', description: 't', inputSchema: z.object({}), dangerLevel: 'read', execute: async () => ({}) } },
+      trajectoryPort: null,
+      scopeKey: 'session:test:p1',
+      maxConcurrent: 1,
+    })
+    // 不经任何等待连发：两个 execute 的同步前缀（检查+自增）在同一 tick 顺序执行
+    const a = tool.execute({ goal: 'a' }, CTX as never)
+    const b = await tool.execute({ goal: 'b' }, CTX as never)
+    expect(b.ok).toBe(false)
+    expect((b as { error?: string }).error).toBe('SUBAGENT_LIMIT')
+    release()
+    expect((await a).ok).toBe(true)
+  })
+})

@@ -182,6 +182,9 @@ const RESET_YIELD_LIMIT = 10_000
 
 export const MAX_STEER_QUEUE = 8
 
+/** 步间 steer 注入上限（43号 O8；失控客户端防线，与 queue 上限同量级） */
+export const MAX_PENDING_INPUT = 8
+
 /** 关停时等待在途轮 settle 的时限（ms）——防僵尸轮补偿写覆盖新实例历史 */
 const DISPOSE_SETTLE_TIMEOUT_MS = 3_000
 
@@ -199,6 +202,8 @@ interface SessionEntry {
   controller: AbortController | null
   currentTurn: Promise<AgentSendResult> | null
   steerQueue: SteerQueueItem[]
+  /** 步间 steer 注入队列（43号 O8）：运行中轮的循环在每步采样前 drain */
+  pendingInput: ModelMessage[]
   subs: Set<(e: AgentEvent) => void>
   coordinator: ApprovalCoordinator
   lastUsedAt: number
@@ -261,6 +266,9 @@ export class AgentRuntimeImpl implements AgentRuntime {
       if (entry.currentTurn) inFlight.push(entry.currentTurn.catch(() => undefined))
       for (const item of entry.steerQueue) item.reject(new AgentRuntimeDisposedError(entry.scopeKey))
       entry.steerQueue = []
+      // steer 注入随关停丢弃：其发送者不再走「未消费→降级排队」路径（ disposed 后
+      // 递归 sendMessage 只会抛 DefinitionNotFound——错误类型失真，review P2-6）
+      entry.pendingInput = []
       entry.subs.clear()
     }
     let allSettledDone = false
@@ -357,6 +365,32 @@ export class AgentRuntimeImpl implements AgentRuntime {
         await new Promise<void>((res) => setImmediate(res))
         continue
       }
+      // steer（43号 O8，借 codex 步间 pending input）：忙碌时把消息注入运行中的
+      // 轮（循环每步采样前 drain 进历史，不打断当前步），随当前轮返回结果。
+      // 未赶上注入窗口（轮已收尾）自动降级为排队轮——消息不丢。
+      if (mode === 'steer' && entry.currentTurn) {
+        if (entry.pendingInput.length >= MAX_PENDING_INPUT) {
+          throw new AgentBusyError(entry.scopeKey) // 注入队列已满：fail-fast
+        }
+        const steerMsg = { role: 'user', content: message } as ModelMessage
+        entry.pendingInput.push(steerMsg)
+        try {
+          const result = await entry.currentTurn
+          if (entry.pendingInput.includes(steerMsg)) {
+            entry.pendingInput = entry.pendingInput.filter((m) => m !== steerMsg)
+            logger.info(`[agent-runtime] steer 未赶上当前轮注入窗口，降级为排队轮 scope=${entry.scopeKey}`)
+            return await this.sendMessage(definitionId, scopeId, message, { ...opts, mode: 'queue' })
+          }
+          return result
+        } catch (e) {
+          // 当前轮异常结束：尚未消费的注入消息同样降级排队（轮失败不该吞掉用户消息）
+          if (entry.pendingInput.includes(steerMsg)) {
+            entry.pendingInput = entry.pendingInput.filter((m) => m !== steerMsg)
+            return await this.sendMessage(definitionId, scopeId, message, { ...opts, mode: 'queue' })
+          }
+          throw e
+        }
+      }
       if (mode === 'interrupt' && !interruptedOnce) {
         interruptedOnce = true // 只取消一次；后续与 queue 同序公平等待
         this.cancel(definitionId, scopeId)
@@ -422,6 +456,9 @@ export class AgentRuntimeImpl implements AgentRuntime {
       // 先删库再删条目（深度 review P2-4：原顺序在 delete 在途窗口内新轮可读到
       // 复活旧历史，随后又被 delete 抹掉新史——双重失效）
       await this.deps.sessionStore.delete(key)
+      // steer 注入随会话复位丢弃（其发送者按「未消费」路径拿到当前轮结果，
+      // 不得降级排队到全新会话——复位语义优先）
+      entry.pendingInput = []
       this.deleteTrajectories(`session:${key}`)
     } catch (e) {
       // 删库失败：回滚拦截标记（总收口 review P1——曾无回滚，resetting 永真，
@@ -554,11 +591,19 @@ export class AgentRuntimeImpl implements AgentRuntime {
       })
 
       // 循环（审批回调：requiresApproval 工具 → 本会话协调器）
+      // pendingInput drain（43号 O8）：每步采样前取走 steer 注入消息进历史
       const runner = new LoopRunner({
         resolveModel: this.deps.resolveModel,
         requestApproval: (tool, input, call) =>
           entry.coordinator.request(entry.scopeKey, tool, input, call.signal),
         context,
+        pendingInput: {
+          drain: () => {
+            const msgs = entry.pendingInput
+            entry.pendingInput = []
+            return msgs
+          },
+        },
         ...(this.deps.artifacts ? { artifacts: this.deps.artifacts } : {}),
       })
       const result = await runner.run(task, host).finally(() => host.flushTrajectories())
@@ -697,6 +742,7 @@ export class AgentRuntimeImpl implements AgentRuntime {
         controller: null,
         currentTurn: null,
         steerQueue: [],
+        pendingInput: [],
         subs: new Set(),
         coordinator: new ApprovalCoordinator({
           emit: (e) => this.dispatch(this.entries.get(key)!, e),

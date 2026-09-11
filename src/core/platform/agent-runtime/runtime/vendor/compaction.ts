@@ -60,13 +60,21 @@ export function defaultEstimateTokens(messages: unknown[]): number {
   }
 }
 
-export const DEFAULT_SUMMARY_PROMPT = `Summarize this conversation for the next agent turn:
-1. Goal: What the user is trying to accomplish
-2. Instructions: Key directives and constraints mentioned
-3. Discoveries: Important findings during the conversation
-4. Accomplished: What's been completed, files changed, actions taken
-5. Current State: Where things stand, pending work
-6. Relevant Context: File paths, code snippets, specific details needed to continue`
+/**
+ * 摘要提示词（43号 O5 升级，借 codex prompts/templates/compact/prompt.md 的
+ * 「上下文检查点交接」框架 + 本项目增补）：接力的下一个 LLM 实例只看得到这份
+ * 摘要——保留维度与关键引用 verbatim 纪律比笼统"总结"更防漂移。
+ * 标记纪律不变：摘要置入 [Previous conversation summary] 前缀形态由调用方包裹，
+ * 本常量只是 summarize 调用的 system。
+ */
+export const DEFAULT_SUMMARY_PROMPT = `You are performing a CONTEXT CHECKPOINT COMPACTION. Write a handoff summary for another LLM instance that will resume this conversation from your summary alone.
+Include:
+1. Goal: what the user is trying to accomplish
+2. Progress and key decisions: what has been done, what was decided and why
+3. Important context: constraints, user preferences, and key facts discovered
+4. Next steps: what remains to be done, concrete and actionable
+5. Critical references: ids, file paths, entity names, numbers needed to continue — copy them verbatim from the conversation
+Be concise and structured; never invent facts that are not in the conversation.`
 
 // ==================== 两阶段策略（upstream 忠实移植） ====================
 

@@ -227,7 +227,19 @@ export function serializeToolResult(raw: unknown): { data: unknown; truncated: b
       while (Buffer.byteLength(preview, 'utf8') > halfBytes && preview.length > 0) {
         preview = preview.slice(0, Math.floor(preview.length * 0.8))
       }
-      return { data: { _oversize: true, preview }, truncated }
+      // totalBytes（43号 O7，借 codex 截断提示的 original token count）：按 walk 前
+      // 的 raw 序列化计量（walk 已做字段截断，post-walk 值会偏小误导回查判断——
+      // review P2-2）；模型据此知道原文体量，配合 get_tool_result 回查全文
+      let rawBytes: number | undefined
+      try {
+        rawBytes = Buffer.byteLength(JSON.stringify(raw), 'utf8')
+      } catch {
+        rawBytes = undefined // 循环引用等不可序列化形态：不标注总量
+      }
+      return {
+        data: { _oversize: true, ...(rawBytes !== undefined ? { totalBytes: rawBytes } : {}), preview },
+        truncated,
+      }
     }
   } catch {
     return { data: { _unserializable: true }, truncated: true }

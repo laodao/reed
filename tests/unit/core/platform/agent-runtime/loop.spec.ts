@@ -8,10 +8,10 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { MockLanguageModelV3 } from 'ai/test'
-import type { LanguageModel } from 'ai'
+import { MockLanguageModelV3, simulateReadableStream } from 'ai/test'
+import type { LanguageModel, ModelMessage } from 'ai'
 import { z } from 'zod'
-import { LoopRunner, initState, normalizeDecision, truncateJson, buildSystem, buildTurnContext } from '@core/platform/agent-runtime/runtime/loop'
+import { LoopRunner, initState, normalizeDecision, truncateJson, buildSystem, buildTurnContext, classifyStepFailure, streamRetryBackoffMs, parseStreamMaxRetries, parseIdleTimeoutMs } from '@core/platform/agent-runtime/runtime/loop'
 import type { AgentHost, AgentLoopState, AgentTask, AgentToolDef, TrajectoryEntry, AgentStreamEvent } from '@core/platform/agent-runtime/types'
 import { isTurnContextMessage } from '@core/platform/agent-runtime/context/turn-context'
 
@@ -550,5 +550,237 @@ describe('41 号：线上名兼容（provider 边界别名化）', () => {
     expect(toolCalls[0].name).toBe('pack:lw-agent:generate_overview')
     const starts = host.streams.filter((e) => e.kind === 'tool-start')
     expect((starts[0] as { toolName: string }).toolName).toBe('pack:lw-agent:generate_overview')
+  })
+})
+
+// ==================== 43 号：流重试 / 空闲超时 / 超窗紧急压缩 / cached token / steer 端口 ====================
+
+/** 挂起流工厂：发出 stream-start 后永不 enqueue/close（provider 假死形态） */
+function stallThenModel(second: () => Array<Record<string, unknown>>): LanguageModel {
+  let i = 0
+  return new MockLanguageModelV3({
+    provider: 'test',
+    modelId: 'mock',
+    doStream: async () => {
+      if (i++ === 0) {
+        return {
+          stream: new ReadableStream({ start(c) { c.enqueue({ type: 'stream-start', warnings: [] }) } }),
+        }
+      }
+      return { stream: simulateReadableStream({ chunks: second() }) }
+    },
+  }) as unknown as LanguageModel
+}
+
+describe('43 号 O1：可重试流失败自动重试', () => {
+  it('网络类错误（无结构信息）重试后成功；失败尝试整体弃置', async () => {
+    const host = new FakeHost()
+    const prompts: unknown[] = []
+    const runner = mkRunner(
+      mkModel([() => streamErrorChunks('半截', 'fetch failed: connection terminated'), () => txt('恢复后的答案')], (p) => prompts.push(p)),
+      { modelMaxRetries: 2 },
+    )
+    const r = await runner.run(mkTask({}), host)
+    expect(r.stopReason).toBe('final')
+    expect(r.output).toBe('恢复后的答案')
+    expect(prompts.length).toBe(2)
+    // 半截文本不得留在历史（失败尝试整体弃置，重放干净历史）
+    expect(JSON.stringify(host.savedStates.at(-1)?.messages)).not.toContain('半截')
+  })
+
+  it('结构化可重试状态码（429）同样重试', async () => {
+    const host = new FakeHost()
+    const tooManyRequests = () => [
+      { type: 'stream-start', warnings: [] },
+      { type: 'error', error: Object.assign(new Error('rate limited'), { name: 'AI_APICallError', statusCode: 429 }) },
+    ]
+    const runner = mkRunner(mkModel([tooManyRequests, () => txt('好的')]), { modelMaxRetries: 1 })
+    const r = await runner.run(mkTask({}), host)
+    expect(r.stopReason).toBe('final')
+    expect(r.output).toBe('好的')
+  })
+
+  it('不可重试 4xx（400）不重试：一次尝试即 error 终止', async () => {
+    const host = new FakeHost()
+    const prompts: unknown[] = []
+    const badRequest = () => [
+      { type: 'stream-start', warnings: [] },
+      { type: 'error', error: Object.assign(new Error('invalid request'), { name: 'AI_APICallError', statusCode: 400 }) },
+    ]
+    const runner = mkRunner(mkModel([badRequest, () => txt('不应到达')], (p) => prompts.push(p)), { modelMaxRetries: 2 })
+    const r = await runner.run(mkTask({}), host)
+    expect(r.stopReason).toBe('error')
+    expect(r.error).toContain('invalid request')
+    expect(prompts.length).toBe(1)
+  })
+
+  it('重试次数耗尽：以 error 终止', async () => {
+    const host = new FakeHost()
+    const prompts: unknown[] = []
+    const runner = mkRunner(
+      mkModel([() => streamErrorChunks('半截', '总是失败')], (p) => prompts.push(p)),
+      { modelMaxRetries: 2 },
+    )
+    const r = await runner.run(mkTask({}), host)
+    expect(r.stopReason).toBe('error')
+    expect(prompts.length).toBe(3) // 首次 + 2 次重试
+  })
+})
+
+describe('43 号 O2：步级流空闲超时', () => {
+  it('流挂起超时中止本尝试（可重试），下次尝试成功收敛', async () => {
+    const host = new FakeHost()
+    const runner = mkRunner(stallThenModel(() => txt('看门狗后的答案')), {
+      streamIdleTimeoutMs: 80,
+      modelMaxRetries: 2,
+    })
+    const r = await runner.run(mkTask({}), host)
+    expect(r.stopReason).toBe('final')
+    expect(r.output).toBe('看门狗后的答案')
+  })
+
+  it('空闲超时且重试耗尽：error 终止', async () => {
+    const host = new FakeHost()
+    const runner = mkRunner(stallThenModel(() => txt('x')), {
+      streamIdleTimeoutMs: 50,
+      modelMaxRetries: 0, // 无重试预算：首次挂起即终止
+    })
+    const r = await runner.run(mkTask({}), host)
+    expect(r.stopReason).toBe('error')
+  })
+})
+
+describe('43 号 O3：疑似超窗 → 紧急压缩 → 重试一步', () => {
+  function overflowContext(forced: Array<ModelMessage[]>) {
+    return {
+      assemble: (m: ModelMessage[]) => m,
+      maybeCompact: async () => null,
+      forceCompact: async (input: { messages: ModelMessage[] }) => {
+        forced.push(input.messages)
+        return [
+          { role: 'user', content: '[Previous conversation summary]\n\n交接摘要\n\n[The conversation continues from here]' },
+        ] as ModelMessage[]
+      },
+    }
+  }
+
+  it('超窗错误触发 forceCompact 并重试成功（不占流重试预算）', async () => {
+    const host = new FakeHost()
+    const forced: Array<ModelMessage[]> = []
+    const overflowChunks = () => [
+      { type: 'stream-start', warnings: [] },
+      { type: 'error', error: new Error("This model's maximum context length is 32768 tokens. However, your messages resulted in 40000 tokens.") },
+    ]
+    const runner = new LoopRunner({
+      resolveModel: async () => mkModel([overflowChunks, () => txt('压缩后成功')]) as LanguageModel,
+      context: overflowContext(forced) as never,
+      modelMaxRetries: 0, // 证明走的是紧急压缩路径而非流重试
+    })
+    const r = await runner.run(mkTask({}), host)
+    expect(r.stopReason).toBe('final')
+    expect(r.output).toBe('压缩后成功')
+    expect(forced.length).toBe(1)
+  })
+
+  it('紧急压缩返回 null（压无可压）：error 终止', async () => {
+    const host = new FakeHost()
+    const context = {
+      assemble: (m: ModelMessage[]) => m,
+      maybeCompact: async () => null,
+      forceCompact: async () => null,
+    }
+    const overflowChunks = () => [
+      { type: 'stream-start', warnings: [] },
+      { type: 'error', error: new Error('prompt is too long: 40000 tokens > 32768 maximum') },
+    ]
+    const runner = new LoopRunner({
+      resolveModel: async () => mkModel([overflowChunks]) as LanguageModel,
+      context: context as never,
+      modelMaxRetries: 2,
+    })
+    const r = await runner.run(mkTask({}), host)
+    expect(r.stopReason).toBe('error')
+  })
+})
+
+describe('43 号 O4：cachedInputTokens 记账', () => {
+  it('provider 上报 cacheRead 时累计进 usage', async () => {
+    const host = new FakeHost()
+    const cachedUsage = {
+      inputTokens: { total: 10, noCache: 3, cacheRead: 7, cacheWrite: 0 },
+      outputTokens: { total: 5, noCache: 5 },
+      totalTokens: { total: 15, noCache: 15 },
+    }
+    const cachedChunks = () => [
+      { type: 'stream-start', warnings: [] },
+      { type: 'text-start', id: 't' },
+      { type: 'text-delta', id: 't', delta: '答案' },
+      { type: 'text-end', id: 't' },
+      { type: 'finish', finishReason: { unified: 'stop', raw: undefined }, usage: cachedUsage },
+    ]
+    const runner = mkRunner(mkModel([cachedChunks, cachedChunks]))
+    const r = await runner.run(mkTask({}), host)
+    expect(r.stopReason).toBe('final')
+    expect(r.usage.cachedInputTokens).toBe(7) // final 直答一步收敛，单步 7
+    expect(r.usage.promptTokens).toBe(10)
+  })
+})
+
+describe('43 号 O8：步间 pendingInput 注入端口', () => {
+  it('每步采样前 drain：注入消息进历史+流水（user 形态）', async () => {
+    const host = new FakeHost()
+    const prompts: unknown[] = []
+    const q: ModelMessage[] = [{ role: 'user', content: '补充：主角偏好冷色调' }]
+    const runner = mkRunner(mkModel([() => txt('好'), () => txt('完成')], (p) => prompts.push(p)), {
+      pendingInput: { drain: () => q.splice(0) },
+    })
+    const r = await runner.run(mkTask({}), host)
+    expect(r.stopReason).toBe('final')
+    expect(q.length).toBe(0)
+    // 首步请求即包含注入消息
+    expect(JSON.stringify(prompts[0])).toContain('主角偏好冷色调')
+    // 流水留痕（saveState meta.appended 含注入消息）
+    expect(JSON.stringify(host.savedAppended)).toContain('主角偏好冷色调')
+  })
+})
+
+describe('43 号 O1：退避 sleep 中宿主取消', () => {
+  it('abort 到达即干净终止（aborted，不再重试）', async () => {
+    const host = new FakeHost()
+    const controller = new AbortController()
+    host.signal = controller.signal
+    const runner = mkRunner(
+      mkModel([() => streamErrorChunks('半截', '总是失败')]),
+      { modelMaxRetries: 5 }, // 高预算：确保 abort 发生在退避 sleep 窗口内
+    )
+    const done = runner.run(mkTask({}), host)
+    setTimeout(() => controller.abort(), 60) // 首败后 ~200ms 退避中取消
+    const r = await done
+    expect(r.stopReason).toBe('aborted')
+  })
+})
+
+describe('43 号：流失败分类与退避（纯函数）', () => {
+  it('classifyStepFailure：宿主取消 > 空闲超时 > 超窗 > 状态码 > 默认可重试', () => {
+    expect(classifyStepFailure(new Error('x'), { hostAborted: true, stepIdleTimeout: false })).toEqual({ retryable: false, overflow: false })
+    expect(classifyStepFailure(new Error('x'), { hostAborted: false, stepIdleTimeout: true }).retryable).toBe(true)
+    expect(classifyStepFailure(new Error('maximum context length exceeded'), { hostAborted: false, stepIdleTimeout: false })).toEqual({ retryable: false, overflow: true })
+    expect(classifyStepFailure(new Error('input is too long for this model'), { hostAborted: false, stepIdleTimeout: false }).overflow).toBe(true)
+    expect(classifyStepFailure(Object.assign(new Error('rate limited'), { statusCode: 429 }), { hostAborted: false, stepIdleTimeout: false }).retryable).toBe(true)
+    expect(classifyStepFailure(Object.assign(new Error('server error'), { statusCode: 503 }), { hostAborted: false, stepIdleTimeout: false }).retryable).toBe(true)
+    expect(classifyStepFailure(Object.assign(new Error('unauthorized'), { statusCode: 401 }), { hostAborted: false, stepIdleTimeout: false }).retryable).toBe(false)
+    expect(classifyStepFailure(new Error('socket hang up'), { hostAborted: false, stepIdleTimeout: false }).retryable).toBe(true)
+  })
+
+  it('streamRetryBackoffMs：200ms 起步指数翻倍 ×jitter，封顶 8s；env 解析夹取', () => {
+    expect(streamRetryBackoffMs(1, () => 0.5)).toBe(200)
+    expect(streamRetryBackoffMs(2, () => 0.5)).toBe(400)
+    expect(streamRetryBackoffMs(10, () => 0.5)).toBe(8_000)
+    expect(parseStreamMaxRetries(undefined)).toBe(2)
+    expect(parseStreamMaxRetries('99')).toBe(10)
+    expect(parseStreamMaxRetries('-3')).toBe(0)
+    expect(parseIdleTimeoutMs(undefined)).toBe(300_000)
+    expect(parseIdleTimeoutMs('0')).toBe(0)
+    expect(parseIdleTimeoutMs('-5')).toBe(300_000)
   })
 })

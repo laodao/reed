@@ -25,6 +25,7 @@ import {
   AgentSessionResetError,
   AgentScopeOwnerMismatchError,
   MAX_STEER_QUEUE,
+  MAX_PENDING_INPUT,
   initAgentRuntime,
   getAgentRuntime,
   disposeAgentRuntime,
@@ -42,6 +43,7 @@ import type { AgentEvent, PendingApproval } from '@shared/types/agent.types'
 
 // ==================== 测试基建（公共件见 ./helpers——与 loop.spec 共用） ====================
 
+import { MockLanguageModelV3, simulateReadableStream } from 'ai/test'
 import { txtChunks as txt, toolCallChunks as toolParts, mkModel, mockUsage as usage } from './helpers' 
 
 function mkTool(over: Partial<AgentToolDef> = {}): AgentToolDef {
@@ -750,5 +752,122 @@ describe('resetSession 失败回滚（P1：曾永久毒化会话 + setImmediate 
     failDelete = false
     const r = await h.rt.sendMessage(mkDef().id, 's1', '重试成功', { mode: 'queue' })
     expect(r.reply).toBe('ok')
+  })
+})
+
+// ==================== 43 号 O8：步间 steer ====================
+
+describe('mode=steer（43号 O8，借 codex 步间 pending input）', () => {
+  it('忙碌时注入运行中轮：不打断当前步、下一步进历史、随当前轮返回同一结果', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((res) => (release = res))
+    const prompts: unknown[] = []
+    const tool = mkTool({
+      execute: async () => {
+        await gate
+        return { done: true }
+      },
+    })
+    const model = mkModel([() => toolParts('c1', 'lookup', { q: 'x' }), () => txt('完工')], (p) => prompts.push(p))
+    const h = mkHarness(model)
+    h.rt.unregisterDefinition('story-room')
+    h.rt.registerDefinition(mkDef({ tools: { lookup: tool } }))
+
+    const p1 = h.rt.sendMessage('story-room', 's1', '第一')
+    await vi.waitFor(() => expect(h.rt.health().busyScopes).toEqual(['story-room:s1']))
+    // 工具执行挂起期间 steer：注入运行中的轮
+    const p2 = h.rt.sendMessage('story-room', 's1', '插播：改成冷色调', { mode: 'steer' })
+    release()
+    const r1 = await p1
+    const r2 = await p2
+    // steer 随当前轮返回（同一轮的终态，非独立轮）
+    expect(r2.reply).toBe('完工')
+    expect(r2).toBe(r1 as unknown as typeof r2)
+    // 注入消息进入历史（会话存储）
+    const history = await h.rt.getHistory('story-room', 's1')
+    expect(history.map((m) => m.content)).toContain('插播：改成冷色调')
+    // 下一步模型请求包含注入消息
+    expect(JSON.stringify(prompts.at(-1))).toContain('插播：改成冷色调')
+  })
+
+  it('空闲时 steer 等同普通发送', async () => {
+    const h = mkHarness(mkModel([() => txt('直接回答')]))
+    const r = await h.rt.sendMessage('story-room', 's1', '第一', { mode: 'steer' })
+    expect(r.reply).toBe('直接回答')
+    expect(r.stopReason).toBe('final')
+  })
+
+  it('未赶上注入窗口（轮已收尾）→ 自动降级为排队轮，消息不丢', async () => {
+    // 两步轮：step1 = 快速工具；step2 = 最终答案（模型在 gateModel 驻停）。
+    // 驻停信号 = step2 的 drain 已过 → 此时 steer 必然错过全部注入窗口
+    let releaseTool!: () => void
+    const gateTool = new Promise<void>((res) => (releaseTool = res))
+    let releaseModel!: () => void
+    const gateModel = new Promise<void>((res) => (releaseModel = res))
+    let parked!: () => void
+    const parkedP = new Promise<void>((res) => (parked = res))
+    let calls = 0
+    const model = new MockLanguageModelV3({
+      provider: 'test',
+      modelId: 'mock',
+      doStream: async () => {
+        calls++
+        if (calls === 1) {
+          return { stream: simulateReadableStream({ chunks: toolParts('c1', 'lookup', { q: 'x' }) }) }
+        }
+        parked()
+        await gateModel
+        return { stream: simulateReadableStream({ chunks: txt(calls === 2 ? '第一轮答案' : '第二轮答案') }) }
+      },
+    }) as unknown as LanguageModel
+    const tool = mkTool({
+      execute: async () => {
+        await gateTool
+        return { done: true }
+      },
+    })
+    const h = mkHarness(model)
+    h.rt.unregisterDefinition('story-room')
+    h.rt.registerDefinition(mkDef({ tools: { lookup: tool } }))
+
+    const p1 = h.rt.sendMessage('story-room', 's1', '第一')
+    await vi.waitFor(() => expect(h.rt.health().busyScopes).toEqual(['story-room:s1']))
+    releaseTool() // step1 完成 → iteration2 drain（空）→ step2 采样驻停
+    await parkedP // step2 drain 已过：此后 steer 必然错过全部注入窗口
+    const p2 = h.rt.sendMessage('story-room', 's1', '可能迟到的插播', { mode: 'steer' })
+    releaseModel()
+    const r1 = await p1
+    const r2 = await p2
+    expect(r1.reply).toBe('第一轮答案')
+    // 迟到的 steer 降级为独立轮执行（消息不丢），降级轮的模型调用给出第二轮答案
+    expect(r2.reply).toBe('第二轮答案')
+    const history = await h.rt.getHistory('story-room', 's1')
+    expect(history.map((m) => m.content)).toContain('可能迟到的插播')
+  })
+
+  it('注入队列上限 fail-fast', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((res) => (release = res))
+    const tool = mkTool({ execute: async () => { await gate; return { done: true } } })
+    const model = mkModel([() => toolParts('c1', 'lookup', { q: 'x' }), () => txt('完工')])
+    const h = mkHarness(model)
+    h.rt.unregisterDefinition('story-room')
+    h.rt.registerDefinition(mkDef({ tools: { lookup: tool } }))
+    const p1 = h.rt.sendMessage('story-room', 's1', '第一')
+    await vi.waitFor(() => expect(h.rt.health().busyScopes).toEqual(['story-room:s1']))
+    // steer 调用随当前轮返回——不逐条 await（会死等），只等注入队列填满
+    const steers = Array.from({ length: MAX_PENDING_INPUT }, (_, i) =>
+      h.rt.sendMessage('story-room', 's1', `注入${i}`, { mode: 'steer' })
+    )
+    await vi.waitFor(() => {
+      // 8 条注入全部在队（gate 未放行，无 drain 机会）——第 9 条 fail-fast
+      return h.rt.sendMessage('story-room', 's1', '超出', { mode: 'steer' }).then(
+        () => Promise.reject(new Error('expect reject')),
+        (e: unknown) => (e instanceof AgentBusyError ? Promise.resolve() : Promise.reject(e)),
+      )
+    })
+    release()
+    await p1
+    await Promise.all(steers)
   })
 })

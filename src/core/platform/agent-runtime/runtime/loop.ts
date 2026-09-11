@@ -15,7 +15,7 @@
 
 import { createLogger } from '@core/utils/logger'
 import { stableStringify } from './approval'
-import { withTimeout } from './async'
+import { sleepWithAbort, withTimeout } from './async'
 import type {
   streamText as aiStreamText,
   LanguageModel,
@@ -65,6 +65,24 @@ export interface LoopRunnerDeps {
   artifacts?: ToolArtifactPort | null
   /** 提示词缓存断点（39 号 P0-1；缺省读 AGENT_PROMPT_CACHE env，非 '0' 即开） */
   promptCache?: boolean
+  /**
+   * 模型流失败重试次数（43号 O1，借 codex responses_retry）：可重试流错误
+   * （429/5xx/网络中断/空闲超时）按指数退避整步重放。缺省读
+   * AGENT_STREAM_MAX_RETRIES（夹到 [0,10]），env 缺省 2。
+   */
+  modelMaxRetries?: number
+  /**
+   * 步级流空闲超时 ms（43号 O2，借 codex SSE idle timeout 缺省 300s）：一步内
+   * 超过此时长无任何流事件即中止本次尝试（按可重试失败处理）。缺省读
+   * AGENT_STREAM_IDLE_TIMEOUT_MS；0 = 关闭。
+   */
+  streamIdleTimeoutMs?: number
+  /**
+   * 步间用户输入注入端口（43号 O8 steer，借 codex pending input drain）：每个
+   * 步采样前 drain 一次，返回的消息追加进历史（user 形态由调用方保证）。缺省
+   * 无 = 无步间注入（整轮级排队语义不变）。
+   */
+  pendingInput?: { drain(): ModelMessage[] }
   clock?: () => number
 }
 
@@ -144,6 +162,9 @@ export class LoopRunner {
     // 驳回 = 干净终止（12 号 §7-8：不进入下一轮，直接 stopped(human_rejected)，
     // 宿主节点 failed retryable=false——防固执模型与审核人 ping-pong）
     if (_decision.action === 'reject') {
+      // 冻结语义只属于挂起时刻（宿主 abort 止住 IO）；恢复后是正常收尾——
+      // 先清 suspended 让 stop() 走常规路径（human_rejected 落 stopReason）
+      state.suspended = undefined
       return this.stop(state, host, 'human_rejected')
     }
     // 批准：注入注记后进入下一轮（模型重发挂起调用，宿主的一次性授权放行）
@@ -208,6 +229,16 @@ export class LoopRunner {
           return this.stop(state, host, 'aborted', undefined, [...pendingAppended])
         }
 
+        // —— 步间用户输入注入（43号 O8 steer，借 codex pending input drain）：
+        // 每步采样前 drain 一次，user 消息进历史+流水（不打断当前步，下一步可见）
+        const pendingInput = this.deps.pendingInput?.drain() ?? []
+        if (pendingInput.length > 0) {
+          state.messages = [...state.messages, ...pendingInput]
+          pendingAppended.push(...pendingInput)
+          await host.saveState(state, { appended: [...pendingAppended] })
+          pendingAppended = []
+        }
+
         // —— 压缩守恒（12 号 R6：步边界水位检查；结果持久化）——
         if (this.deps.context) {
           const compacted = await this.deps.context.maybeCompact({
@@ -228,48 +259,86 @@ export class LoopRunner {
         }
 
         // —— 单步决策（ai@6：不传 stopWhen = 恰好一步）——
+        // 步级尝试循环（43号 O1/O2/O3，借 codex responses_retry + SSE idle timeout）：
+        // 可重试流失败按指数退避整步重放；空闲超时中止本尝试（可重试）；
+        // 疑似上下文超窗先紧急压缩再重试一次（不占流重试预算）。
         const stepStart = this.clock()
         const tools = this.buildToolSet(task, host, state, canonicalToWire)
-        const outbound = this.deps.context ? this.deps.context.assemble(state.messages) : state.messages
-        const stream = ai.streamText({
+        const attemptArgs = {
+          ai,
           model,
           system,
-          // 缓存断点只作用于本次调用的出站拷贝（39 号 P0-1）——持久化历史保持原生形态
-          messages: cacheEnabled ? withPromptCacheBreakpoint(outbound) : outbound,
-          tools: Object.keys(tools).length > 0 ? tools : undefined,
-          abortSignal: host.signal,
-        })
-
-        let stepText = ''
-        let streamError: string | undefined
-        for await (const part of stream.fullStream) {
-          if (part.type === 'text-delta') {
-            stepText += part.text
-            host.emitStream({ kind: 'delta', text: part.text })
-          } else if (part.type === 'error') {
-            // provider 中途失败（SSE error chunk）以 error part 收尾而非 throw——
-            // 不捕获则错误轮被当 final 收敛（批 1-4 深度 review P1 实证）
-            const err = (part as { error?: unknown }).error
-            streamError = err instanceof Error ? err.message : String(err)
-          }
+          tools,
+          cacheEnabled,
+          host,
+          idleTimeoutMs: this.idleTimeoutMs(),
+          outbound: () => (this.deps.context ? this.deps.context.assemble(state.messages) : state.messages),
         }
-        const finishReason = await stream.finishReason
-        const stepMessages = (await stream.response).messages
-        const usage = (await stream.totalUsage) ?? {}
+        const maxRetries = this.maxStreamRetries()
+        let attempt = 0
+        let overflowRetried = false
+        let outcome = await this.runStepAttempt(attemptArgs)
+        while (outcome.kind === 'failed') {
+          if (
+            outcome.overflow &&
+            !overflowRetried &&
+            !host.signal.aborted &&
+            typeof this.deps.context?.forceCompact === 'function'
+          ) {
+            overflowRetried = true
+            const compacted = await this.deps.context
+              .forceCompact({ messages: state.messages, signal: host.signal })
+              .catch(() => null)
+            if (compacted) {
+              const summaries = compacted.filter((m) => classifyMessage(m) === 'compaction.summary')
+              state.messages = compacted
+              pendingAppended.push(...summaries)
+              await host.saveState(state, { appended: [...pendingAppended] })
+              pendingAppended = []
+              logger.warn(`[agent-loop] 疑似上下文超窗：紧急压缩后重试当前步 def=${task.definitionId}`)
+              outcome = await this.runStepAttempt(attemptArgs)
+              continue
+            }
+          }
+          if (host.signal.aborted) {
+            outcome = { kind: 'aborted' }
+            break
+          }
+          if (!outcome.retryable || attempt >= maxRetries) break
+          attempt++
+          // 已知限制（43号 review P1-3，登记不修）：失败尝试已发出的 delta/流事件
+          // 无法撤回——重试成功后 UI 可见「半截文本+重放全文」拼接；修复需流协议
+          // 增加 reply:reset 类事件，涉及全部宿主消费方，留待独立批次
+          // 服务端 Retry-After 优先（P2-8），否则指数退避 200ms × 2^(n-1) × jitter
+          const delay = outcome.retryAfterMs ?? streamRetryBackoffMs(attempt)
+          logger.warn(
+            `[agent-loop] 模型流失败（可重试，${attempt}/${maxRetries}，${Math.round(delay)}ms 后重放）def=${task.definitionId}: ${outcome.message}`,
+          )
+          await sleepWithAbort(delay, host.signal)
+          outcome = await this.runStepAttempt(attemptArgs)
+        }
+
+        if (outcome.kind === 'aborted') {
+          return this.stop(state, host, 'aborted', undefined, [...pendingAppended])
+        }
+        if (outcome.kind === 'failed') {
+          // 流级失败短路（12 号 §6.5 错误分类）：部分内容留痕后以 error 终止，
+          // 绝不把截断文本当最终答案
+          logger.error(`[agent-loop] 模型流失败 def=${task.definitionId} scope=${task.scopeId}: ${outcome.message}`)
+          state.messages = [...state.messages, ...outcome.stepMessages]
+          return this.stop(state, host, 'error', outcome.message, [...pendingAppended, ...outcome.stepMessages])
+        }
+
+        const finishReason = outcome.finishReason
+        const stepMessages = outcome.stepMessages
+        const stepText = outcome.stepText
 
         // usage 累计（缺失记 0；12 号 §5.6 口径在 13 号，chars/4 兜底由护栏层做）
-        state.usage.promptTokens += usage.inputTokens ?? 0
-        state.usage.completionTokens += usage.outputTokens ?? 0
-        lastStepInputTokens = usage.inputTokens ?? 0
+        state.usage.promptTokens += outcome.usage.inputTokens ?? 0
+        state.usage.completionTokens += outcome.usage.outputTokens ?? 0
+        state.usage.cachedInputTokens = (state.usage.cachedInputTokens ?? 0) + (outcome.usage.cacheReadTokens ?? 0)
+        lastStepInputTokens = outcome.usage.inputTokens ?? 0
 
-        // 流级失败短路（12 号 §6.5 错误分类）：部分内容留痕后以 error 终止，
-        // 绝不把截断文本当最终答案
-        if (streamError !== undefined || finishReason === 'error') {
-          const message = streamError ?? `模型流以 error 终止（finishReason=error）`
-          logger.error(`[agent-loop] 模型流失败 def=${task.definitionId} scope=${task.scopeId}: ${message}`)
-          state.messages = [...state.messages, ...stepMessages]
-          return this.stop(state, host, 'error', message, [...pendingAppended, ...stepMessages])
-        }
         if (finishReason === 'length') {
           // 截断完成：仍按 final 收敛，但打标可观测（答案可能不完整）
           logger.warn(`[agent-loop] 模型因长度上限截断（finishReason=length）def=${task.definitionId}`)
@@ -304,8 +373,8 @@ export class LoopRunner {
             truncated: finishReason === 'length' || undefined,
             toolCalls: decisionToolNames,
           },
-          promptTokens: usage.inputTokens,
-          completionTokens: usage.outputTokens,
+          promptTokens: outcome.usage.inputTokens,
+          completionTokens: outcome.usage.outputTokens,
           durationMs: this.clock() - stepStart,
         })
 
@@ -395,6 +464,159 @@ export class LoopRunner {
   }
 
   // ==================== 工具装配（审批/超时/容错包装层，22 号 §3-C2） ====================
+
+  // ==================== 单步尝试（43号 O1/O2：重试的基本单元） ====================
+
+  private maxStreamRetries(): number {
+    return this.deps.modelMaxRetries ?? parseStreamMaxRetries(process.env.AGENT_STREAM_MAX_RETRIES)
+  }
+
+  private idleTimeoutMs(): number {
+    return this.deps.streamIdleTimeoutMs ?? parseIdleTimeoutMs(process.env.AGENT_STREAM_IDLE_TIMEOUT_MS)
+  }
+
+  /**
+   * 单次步尝试：空闲超时看门狗（43号 O2）+ 流消费 + 失败分类（43号 O1/O3 的
+   * 判定依据）。中止语义双轨：host signal = 用户取消（aborted，不重试）；步级
+   * 看门狗中止 = 可重试流失败。重试重放整个请求（借 codex：re-clone history），
+   * 已执行的侧效工具可能重复——由工具幂等纪律（12 号 §9）覆盖。
+   */
+  private async runStepAttempt(args: {
+    ai: AiModule
+    model: LanguageModel
+    system: string
+    tools: ToolSet
+    cacheEnabled: boolean
+    host: AgentHost
+    idleTimeoutMs: number
+    outbound: () => ModelMessage[]
+  }): Promise<StepAttempt> {
+    const hostSignal = args.host.signal
+    const stepController = new AbortController()
+    const onHostAbort = (): void => stepController.abort()
+    if (hostSignal.aborted) onHostAbort()
+    else hostSignal.addEventListener('abort', onHostAbort, { once: true })
+
+    let idleTimer: ReturnType<typeof setTimeout> | null = null
+    let idleFired = false
+    const disarmIdle = (): void => {
+      if (idleTimer) {
+        clearTimeout(idleTimer)
+        idleTimer = null
+      }
+    }
+    const armIdle = (): void => {
+      if (args.idleTimeoutMs <= 0 || idleFired || stepController.signal.aborted) return
+      disarmIdle()
+      idleTimer = setTimeout(() => {
+        idleFired = true
+        stepController.abort(new Error(STREAM_IDLE_ABORT_REASON))
+      }, args.idleTimeoutMs)
+      idleTimer.unref?.()
+    }
+
+    try {
+      armIdle()
+      const outbound = args.outbound()
+      const stream = args.ai.streamText({
+        model: args.model,
+        system: args.system,
+        // 缓存断点只作用于本次调用的出站拷贝（39 号 P0-1）——持久化历史保持原生形态
+        messages: args.cacheEnabled ? withPromptCacheBreakpoint(outbound) : outbound,
+        tools: Object.keys(args.tools).length > 0 ? args.tools : undefined,
+        abortSignal: stepController.signal,
+      })
+
+      let stepText = ''
+      let streamError: string | undefined
+      let streamErrorObj: unknown
+      // 空闲超时/宿主中止的看门狗竞速：provider 流不感知 abort signal 时（假死
+      // 流）迭代器永不返回——race 保证本尝试有界结束（43号 O2 的兜底半边）
+      let onStepAbort: (() => void) | null = null
+      const aborted = new Promise<never>((_, reject) => {
+        onStepAbort = () =>
+          reject(stepController.signal.reason instanceof Error ? stepController.signal.reason : new Error('aborted'))
+        if (stepController.signal.aborted) onStepAbort()
+        else stepController.signal.addEventListener('abort', onStepAbort, { once: true })
+      })
+      // 提取类 promise（finishReason/response/totalUsage）同样竞速：底层流被取消
+      // 后它们可能永不结算——本尝试必须有界结束
+      const raceAbort = <T>(p: PromiseLike<T>): Promise<T> => Promise.race([p, aborted]) as Promise<T>
+      try {
+        const iterator = (stream.fullStream as AsyncIterable<unknown>)[Symbol.asyncIterator]()
+        try {
+          for (;;) {
+            const next = (await raceAbort(iterator.next())) as { done?: boolean; value?: unknown }
+            if (next.done) break
+            const part = next.value as { type?: string; text?: string; error?: unknown }
+            armIdle() // 任意流事件（含 reasoning/工具 part）都证明链路存活
+            if (part.type === 'text-delta') {
+              stepText += part.text ?? ''
+              args.host.emitStream({ kind: 'delta', text: part.text ?? '' })
+            } else if (part.type === 'error') {
+              // provider 中途失败（SSE error chunk）以 error part 收尾而非 throw——
+              // 不捕获则错误轮被当 final 收敛（批 1-4 深度 review P1 实证）
+              const err = part.error
+              streamErrorObj = err
+              streamError = err instanceof Error ? err.message : String(err)
+            }
+          }
+        } finally {
+          // 中止路径：尽力关闭底层迭代器（挂起流不阻止本次尝试收尾）
+          void (iterator as { return?: () => unknown }).return?.()
+        }
+      } catch (e) {
+        // 消费途中 throw（abort/网络断开）：与 error part 同类处理
+        if (streamErrorObj === undefined) {
+          streamErrorObj = e
+          streamError = e instanceof Error ? e.message : String(e)
+        }
+      }
+
+      // 部分内容提取（无条件尝试）：失败留痕历史依赖它（宁可重放不丢史——⑪ 锚点）；
+      // 提取失败（abort 形态）不掩盖已捕获的流错误
+      let finishReason = 'error'
+      let stepMessages: ModelMessage[] = []
+      let usage: StepUsage = {}
+      try {
+        finishReason = await raceAbort(stream.finishReason)
+        const response = await raceAbort(stream.response)
+        stepMessages = response.messages as ModelMessage[]
+        const u = (await raceAbort(stream.totalUsage)) ?? {}
+        usage = {
+          inputTokens: u.inputTokens,
+          outputTokens: u.outputTokens,
+          cacheReadTokens:
+            u.inputTokenDetails?.cacheReadTokens ?? (u as { cachedInputTokens?: number }).cachedInputTokens,
+        }
+      } catch (e) {
+        if (streamErrorObj === undefined) {
+          streamErrorObj = e
+          streamError = e instanceof Error ? e.message : String(e)
+        }
+      }
+
+      if (streamErrorObj !== undefined || finishReason === 'error') {
+        if (hostSignal.aborted) return { kind: 'aborted' }
+        const cls = classifyStepFailure(streamErrorObj, {
+          hostAborted: hostSignal.aborted,
+          stepIdleTimeout: idleFired,
+        })
+        return {
+          kind: 'failed',
+          message: streamError ?? '模型流以 error 终止（finishReason=error）',
+          stepMessages,
+          retryable: cls.retryable,
+          overflow: cls.overflow,
+          retryAfterMs: cls.retryAfterMs,
+        }
+      }
+      return { kind: 'ok', finishReason, stepMessages, usage, stepText }
+    } finally {
+      disarmIdle()
+      hostSignal.removeEventListener('abort', onHostAbort)
+    }
+  }
 
   private buildToolSet(
     task: AgentTask,
@@ -552,6 +774,14 @@ export class LoopRunner {
     error?: string,
     appended: ModelMessage[] = [],
   ): Promise<AgentResult> {
+    // 挂起冻结（agent-loop 节点 E3 契约；44号 review 回归修复）：宿主 suspend 已把
+    // suspended 落入本 state 并自行落盘，随后的本地 abort 只是止住在途 IO——不得
+    // 覆盖 stopReason、不得再次 saveState（否则 last.stopReason='aborted' 破坏恢复
+    // 语义「冻结而非 aborted 收场」）。43 号重试设施使 abort 路径响应式收尾后，
+    // 此分支是冻结语义的显式承载体。
+    if (state.suspended) {
+      return resultOf(state, 'aborted')
+    }
     state.stopReason = reason
     state.converged = reason === 'final'
     await host.saveState(state, { appended }).catch((e) =>
@@ -563,6 +793,95 @@ export class LoopRunner {
 }
 
 // ==================== 纯函数（可独立单测） ====================
+
+// —— 步尝试与重试（43号 O1/O2/O3；借 codex responses_retry / SSE idle timeout） ——
+
+/** 步尝试的 usage（ai@6 totalUsage 的必要子集 + 缓存命中输入） */
+export interface StepUsage {
+  inputTokens?: number
+  outputTokens?: number
+  /** 缓存命中输入 token（provider 上报才有；O4 记账来源） */
+  cacheReadTokens?: number
+}
+
+/** 单次步尝试结果：ok=正常收尾；aborted=宿主取消；failed=流失败（带重试判定） */
+export type StepAttempt =
+  | { kind: 'ok'; finishReason: string; stepMessages: ModelMessage[]; usage: StepUsage; stepText: string }
+  | { kind: 'aborted' }
+  | {
+      kind: 'failed'
+      message: string
+      stepMessages: ModelMessage[]
+      retryable: boolean
+      overflow: boolean
+      /** 服务端 Retry-After 建议（有则优先于退避公式——43号 review P2-8） */
+      retryAfterMs?: number
+    }
+
+/** 空闲超时中止标记（分类依据是 idleFired 位；此串仅 abort reason/日志用） */
+const STREAM_IDLE_ABORT_REASON = 'stream idle timeout'
+
+/** 上下文超窗错误识别（各家文案不一，按关键短语宽匹配；43号 O3 触发条件） */
+const CONTEXT_OVERFLOW_RE =
+  /context (length|window|limit)|maximum context|too many (input )?tokens|input is too long|prompt is too long|exceed.{0,24}(context|token)/i
+
+/**
+ * 流失败分类（纯函数，单测锚点）：可重试性 + 是否疑似超窗 + 服务端重试建议。
+ * 优先级：宿主取消 > 空闲超时（可重试）> 结构化状态码（408/409/429/5xx 可重试；
+ * 其余 4xx 的正文若含超窗短语仍走紧急压缩——400 型超窗在此命中）> 超窗短语 >
+ * 无结构信息的中断（宽似 codex Stream 类错误，可重试——次数有限，误判代价 =
+ * 多两次尝试）。状态码先于超窗短语（对抗 review P1：限流文案含 "too many
+ * tokens" 不得误判为超窗）。
+ */
+export function classifyStepFailure(
+  error: unknown,
+  opts: { hostAborted: boolean; stepIdleTimeout: boolean },
+): { retryable: boolean; overflow: boolean; retryAfterMs?: number } {
+  if (opts.hostAborted) return { retryable: false, overflow: false }
+  if (opts.stepIdleTimeout) return { retryable: true, overflow: false }
+  const errObj = error as { statusCode?: unknown; responseHeaders?: Record<string, string> } | null | undefined
+  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error ?? '')
+  const status = errObj?.statusCode
+  if (typeof status === 'number') {
+    if (status === 408 || status === 409 || status === 429 || status >= 500) {
+      return { retryable: true, overflow: false, retryAfterMs: parseRetryAfterMs(errObj?.responseHeaders) }
+    }
+    // 其余 4xx（请求级错误重试无意义）：正文含超窗短语仍走紧急压缩路径
+    return { retryable: false, overflow: CONTEXT_OVERFLOW_RE.test(message) }
+  }
+  if (CONTEXT_OVERFLOW_RE.test(message)) return { retryable: false, overflow: true }
+  return { retryable: true, overflow: false }
+}
+
+/** Retry-After 头解析（秒；非法/缺失返回 undefined——codex 同款最小支持） */
+function parseRetryAfterMs(headers?: Record<string, string>): number | undefined {
+  const raw = headers?.['retry-after'] ?? headers?.['Retry-After']
+  if (!raw) return undefined
+  const sec = Number.parseFloat(raw)
+  if (Number.isFinite(sec) && sec >= 0) return Math.min(sec * 1000, 60_000)
+  return undefined
+}
+
+/** 重试退避（借 codex util.rs backoff）：200ms × 2^(n-1) × jitter(0.9–1.1)，封顶 8s */
+export function streamRetryBackoffMs(attempt: number, rand: () => number = Math.random): number {
+  const base = 200 * 2 ** Math.max(0, attempt - 1)
+  const jitter = 0.9 + rand() * 0.2
+  return Math.min(base * jitter, 8_000)
+}
+
+/** 重试次数 env 解析：非数字回缺省 2；夹到 [0,10] */
+export function parseStreamMaxRetries(raw: string | undefined): number {
+  const n = Number.parseInt(raw ?? '', 10)
+  if (!Number.isFinite(n)) return 2
+  return Math.min(Math.max(n, 0), 10)
+}
+
+/** 空闲超时 env 解析（ms）：非法/负数回缺省 300_000（codex 同款）；0 = 关闭 */
+export function parseIdleTimeoutMs(raw: string | undefined): number {
+  const n = Number.parseInt(raw ?? '', 10)
+  if (!Number.isFinite(n) || n < 0) return 300_000
+  return n
+}
 
 export function initState(task: AgentTask, now: number): AgentLoopState {
   return {
@@ -576,7 +895,7 @@ export function initState(task: AgentTask, now: number): AgentLoopState {
     },
     messages: [{ role: 'user', content: task.input }],
     iteration: 0,
-    usage: { promptTokens: 0, completionTokens: 0, toolCalls: 0 },
+    usage: { promptTokens: 0, completionTokens: 0, toolCalls: 0, cachedInputTokens: 0 },
     startedAtMs: now,
     converged: false,
     stagnantRounds: 0,

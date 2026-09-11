@@ -40,8 +40,11 @@ export interface SendMessageOptions {
    * - 'queue'：排队至当前轮边界，逐条依次整轮执行（FIFO，各自独立终态/结果；
    *   排队上限 8，超限 fail-fast）
    * - 'interrupt'：取消当前轮，随后按 queue 同序等待执行（不插队）
+   * - 'steer'（43号 O8，借 codex 步间 pending input）：当前轮忙碌时把消息注入
+   *   正在进行的轮（下一次步采样前进历史，不打断当前步），随当前轮返回结果；
+   *   空闲时等同普通发送。上限 8，超限 fail-fast
    */
-  mode?: 'reject' | 'queue' | 'interrupt'
+  mode?: 'reject' | 'queue' | 'interrupt' | 'steer'
 }
 
 // ==================== 事件协议（前端订阅） ====================
