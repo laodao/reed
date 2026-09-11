@@ -453,6 +453,13 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
           return (await import('@core/platform/agent-runtime/verify/verifier')).parseJudgeResponse(r.text)
         },
       })
+      // ── 知识飞轮（缺省停用，2026-09-12 用户拍板暂停）────────────────────
+      // 停用理由与重开条件登记在 36 号契约：产出渠道单一（仅任务树成功蒸馏）、
+      // 召回质量控制待深度调研业内主流做法（memory 系统/RAG 记忆层）后重做。
+      // 停用语义：蒸馏/复核/代谢/召回全不启动；宿主侧 HostKit flywheel=null
+      // 自动降级（本就支持的缺省形态），结构化知识提供方（图谱等）不受影响。
+      // 重开：AGENT_MEMORY_FLYWHEEL=on
+      if (isMemoryFlywheelEnabled()) {
       // KE-3 向量端口（34 号 v2）：AGENT_MEMORY_EMBEDDING 配置了嵌入模型才启用；
       // 未配置/向量存储未注册 → null → 纯关键词检索（降级语义）
       let memoryVectorPort: import('@core/platform/agent-runtime/memory/memory-flywheel').MemoryVectorPort | null = null
@@ -560,6 +567,9 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
           }
         },
       })
+      } else {
+        logger.info('[workflow-boot] 知识飞轮已停用（缺省暂停；AGENT_MEMORY_FLYWHEEL=on 可重开，登记见 36 号契约）')
+      }
 
       // 会话存储（review W6：宿主 saveState/loadState 曾只 flush 轨迹不落库——
       // 任务循环崩溃后 retry 从零开始；DbAgentSessionStore 即 M1 的 agent_sessions 表）
@@ -854,4 +864,11 @@ export function resetWorkflowSubsystem(): void {
 /** 飞轮 getter（KE-2：chat/LW/EP 宿主记忆装配用；未装配为 null） */
 export function getMemoryFlywheel(): import('@core/platform/agent-runtime/memory/memory-flywheel').MemoryFlywheelService | null {
   return getWorkflowSubsystem().memoryFlywheel ?? null
+}
+
+/** 知识飞轮停用开关（2026-09-12 用户拍板暂停，缺省停用）。
+ *  停用=蒸馏/复核/代谢/召回全不启动，宿主装配降级（null 形态），历史数据保留在表。
+ *  重开：AGENT_MEMORY_FLYWHEEL=on；登记见 tasks/…/36-host-kit-contract.md */
+export function isMemoryFlywheelEnabled(): boolean {
+  return process.env.AGENT_MEMORY_FLYWHEEL === 'on'
 }
