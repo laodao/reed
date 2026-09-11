@@ -23,6 +23,11 @@
 
 ## 文档索引
 
+> **业务模块开发者入口（2026-09-11 增）**：接入 Agent 请先读
+> [docs/development/agent-integration-guide.md](../../docs/development/agent-integration-guide.md)
+> （怎么用）；本目录是设计/契约/实施过程档案（怎么改）。近期增量见各号文档
+> （40-42 上下文成本与评审修复、43 codex 对标、44 本地能力包、47 恢复能力面）。
+
 - [01-design-spec.md](./01-design-spec.md) —— 设计方案：可行性评估、总体架构、四大支柱（事件溯源 / 知识飞轮 / 任务树 / 质量门）、AgentRuntime 详设、AI 协议层、工具注册表、数据模型、非目标
 - [02-implementation-plan.md](./02-implementation-plan.md) —— 实施方案：分期路线 M1–M4、每期验收标准、风险与开放问题
 

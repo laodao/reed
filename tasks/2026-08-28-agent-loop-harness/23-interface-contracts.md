@@ -31,6 +31,10 @@
 
 ## 1. Harness 门面（业务/宿主消费的顶层 API）
 
+> ⚠️ **业务接入者勿从本节读起（2026-09-11 增注）**：本节门面 `AgentRuntime` 已实现+
+> 契约测试，但生产零业务消费者（32 号登记 M8 待裁决去留）。业务模块接入的正确入口是
+> **createHostKit**（36 号契约），开发指南见 `docs/development/agent-integration-guide.md`。
+
 ```ts
 /** platform/agent-runtime/index.ts —— 异步工厂（ESM 隔离），幂等 */
 export interface AgentRuntime {
