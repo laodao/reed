@@ -496,6 +496,44 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
       memoryFlywheel = new MemoryFlywheelService({
         repo: db.agentMemoryEntries,
         vector: memoryVectorPort ?? undefined,
+        // 落库前模型复核（48 号复盘要求）：蒸馏器自产自审不可靠——第二意见核
+        // 分类正确性（可纠偏 kind）+ 复用价值（拒一次性任务细节/正确但无复用
+        // 场景的常识）。失败降级跳过，人工批准闸门仍是最终放行
+        review: async ({ goal, candidates, signal }) => {
+          const listing = candidates
+            .map((c, i) => `${i}. [${c.kind}] ${c.title}\n   ${c.content}`)
+            .join('\n')
+          const prompt = [
+            `任务目标：${goal}`,
+            '以下是经验蒸馏器从该任务产出中提取的候选知识条目，逐条审核：',
+            listing,
+            '审核标准：① kind 分类是否正确（fact=事实知识 / sop=做法流程 / preference=偏好约定 / skill=技能要点；不确定时给出你认为正确的分类）；',
+            '② 是否真有复用价值——只对本任务有意义的一次性细节、无需提取的常识、脱离该任务后无法执行的描述，都应拒收；',
+            '③ title/content 是否具体可执行（空泛套话应拒收）。',
+            '输出严格 JSON：{"verdicts":[{"index":0,"accept":true},{"index":1,"accept":false,"reason":"一句话理由"},{"index":2,"accept":true,"kind":"sop"}]}',
+            '每条候选都必须给出裁决。',
+          ].join('\n')
+          const model = await resolveBootModel()
+          const r = await generateText({ model, system: '你是知识库审核员，宁可错杀不可放过的标准只用于明显无复用价值的条目，拿不准时放行（后续有人工批准闸门）。', prompt, maxOutputTokens: 1024, abortSignal: signal ?? undefined })
+          const text = r.text
+          const start = text.indexOf('{')
+          const end = text.lastIndexOf('}')
+          if (start < 0 || end <= start) return []
+          try {
+            const parsed = JSON.parse(text.slice(start, end + 1)) as { verdicts?: Array<{ index?: number; accept?: boolean; kind?: string; reason?: string }> }
+            const validKinds = ['fact', 'sop', 'preference', 'skill', 'episode-ref']
+            return (parsed.verdicts ?? [])
+              .filter((v) => Number.isInteger(v.index))
+              .map((v) => ({
+                index: Number(v.index),
+                accept: v.accept !== false,
+                kind: (typeof v.kind === 'string' && validKinds.includes(v.kind) ? v.kind : undefined) as 'fact' | 'sop' | 'preference' | 'skill' | 'episode-ref' | undefined,
+                reason: typeof v.reason === 'string' ? v.reason : undefined,
+              }))
+          } catch {
+            return [] // 解析失败 = 未表态 = 全部按通过（人工闸门兜底）
+          }
+        },
         distill: async ({ goal, output, signal }) => {
           const prompt = [
             `任务目标：${goal}`,

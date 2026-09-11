@@ -56,13 +56,25 @@ export interface MemoryCandidate {
   confidence: number
 }
 
-/** 依赖端口：蒸馏 LLM / 仓储 / 时钟（宿主注入） */
+/** 复核裁决（闸门④）：index 对应传入 candidates 的下标；accept=false 拒收；
+ *  kind 给出时视为分类纠偏（如 distiller 把 SOP 标成 fact） */
+export interface MemoryReviewVerdict {
+  index: number
+  accept: boolean
+  kind?: MemoryCandidate['kind']
+  reason?: string
+}
+
+/** 依赖端口：蒸馏 LLM / 复核 LLM / 仓储 / 时钟（宿主注入） */
 export interface MemoryFlywheelDeps {
   /** KE-3 向量端口（可选；缺省纯关键词） */
   vector?: MemoryVectorPort
   repo: AgentMemoryEntryRepository
   /** 蒸馏：轨迹/结果文本 → 候选条目（宿主封装 resolveModel + generateText） */
   distill?: (input: { goal: string; output: string; signal?: AbortSignal }) => Promise<MemoryCandidate[]>
+  /** 落库前模型复核（第二意见）：核分类正确性 + 复用价值。缺省/抛错=跳过复核
+   *  （降级不阻塞——蒸馏本身置信度+查重+人工批准三道闸仍在） */
+  review?: (input: { goal: string; candidates: MemoryCandidate[]; signal?: AbortSignal }) => Promise<MemoryReviewVerdict[]>
   clock?: () => number
 }
 
@@ -110,14 +122,16 @@ export function countMatchedWords(queryText: string, entryTokens: Set<string>): 
 }
 
 export class MemoryFlywheelService {
-  private readonly deps: Required<Pick<MemoryFlywheelDeps, 'repo' | 'clock'>> & Pick<MemoryFlywheelDeps, 'distill' | 'vector'>
+  private readonly deps: Required<Pick<MemoryFlywheelDeps, 'repo' | 'clock'>> & Pick<MemoryFlywheelDeps, 'distill' | 'review' | 'vector'>
 
   constructor(deps: MemoryFlywheelDeps) {
-    this.deps = { repo: deps.repo, distill: deps.distill, vector: deps.vector, clock: deps.clock ?? (() => Date.now()) }
+    this.deps = { repo: deps.repo, distill: deps.distill, review: deps.review, vector: deps.vector, clock: deps.clock ?? (() => Date.now()) }
   }
 
   /**
    * 任务成功后蒸馏候选（fire-and-forget 语义由调用方决定；本方法不 throw）。
+   * 闸门顺序：①置信度 → ②查重 → ④模型复核（分类纠偏+价值把关，落库前第二意见；
+   * 缺省/失败降级跳过）→ ③落库 pending_review（人工批准为最终放行）。
    * 返回入库（pending_review）条数；置信度不足/蒸馏失败丢弃并留痕。
    */
   async distillFromTask(input: {
@@ -137,19 +151,52 @@ export class MemoryFlywheelService {
       logger.warn(`[memory] 蒸馏失败（跳过）：${e instanceof Error ? e.message : String(e)}`)
       return 0
     }
-    let saved = 0
+    // 闸门①②：置信度 + 查重（与既有 active 及待审条目重叠）
+    const survivors: MemoryCandidate[] = []
     for (const c of candidates.slice(0, DISTILL_MAX_ITEMS)) {
       if (!c.title?.trim() || !c.content?.trim()) continue
-      // 闸门②：置信度（NaN 同拒——review T18）
       if (!(Number(c.confidence) >= CONFIDENCE_GATE)) {
         logger.info(`[memory] 候选置信度不足（${c.confidence}），丢弃：${c.title}`)
         continue
       }
-      // 闸门①：查重（与既有 active 条目关键词重叠）
       if (await this.isDuplicate(c.content)) {
         logger.info(`[memory] 候选与既有条目重复，丢弃：${c.title}`)
         continue
       }
+      survivors.push(c)
+    }
+    // 闸门④：落库前模型复核——核分类正确性（可纠偏 kind）+ 复用价值（拒收一次性
+    // 任务细节）。复核器缺失或抛错按跳过处理：置信度/查重/人工批准三道闸仍在
+    if (this.deps.review && survivors.length > 0) {
+      try {
+        const verdicts = await this.deps.review({ goal: input.goal, candidates: survivors, signal: input.signal })
+        const byIndex = new Map<number, MemoryReviewVerdict>()
+        for (const v of Array.isArray(verdicts) ? verdicts : []) {
+          if (v && Number.isInteger(v.index)) byIndex.set(v.index, v)
+        }
+        const kept: MemoryCandidate[] = []
+        survivors.forEach((c, i) => {
+          const v = byIndex.get(i)
+          // 复核器未表态的下标视为通过（人工批准闸门兜底；防坏输出清杀好候选）
+          if (v && !v.accept) {
+            logger.info(`[memory] 复核拒收：${c.title}${v.reason ? `（${String(v.reason).slice(0, 80)}）` : ''}`)
+            return
+          }
+          if (v?.kind && v.kind !== c.kind && ['fact', 'sop', 'preference', 'skill', 'episode-ref'].includes(v.kind)) {
+            logger.info(`[memory] 复核分类纠偏：${c.title} ${c.kind} → ${v.kind}`)
+            kept.push({ ...c, kind: v.kind })
+            return
+          }
+          kept.push(c)
+        })
+        survivors.length = 0
+        survivors.push(...kept)
+      } catch (e) {
+        logger.warn(`[memory] 复核失败（降级跳过，人工闸门兜底）：${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+    let saved = 0
+    for (const c of survivors) {
       await this.deps.repo.create({
         id: `mem_${randomUUID()}`,
         kind: c.kind,
