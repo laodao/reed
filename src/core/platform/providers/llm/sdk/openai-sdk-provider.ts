@@ -52,7 +52,9 @@ export class OpenAISdkProvider extends BaseProvider {
       // SDK 默认 timeout=10min、maxRetries=2，遇到网络挂起会长时间静默不报错，
       // 表现为前端"发了消息一直不返回"。这里收敛超时并禁用重试，
       // 让失败能尽快以明确的超时/错误暴露出来（错误细节由 chatStream 的 catch 打印）。
-      timeout: 60_000,
+      // 49 号：非流式长文生成（如 EP 整本剧本 16K tokens）60s 不够——
+      // 可用 AI_PROVIDER_TIMEOUT_MS 覆盖，默认保持 60s 不变。
+      timeout: (Number(process.env.AI_PROVIDER_TIMEOUT_MS) || 60_000),
       maxRetries: 0
     })
   }

@@ -11,6 +11,14 @@ import type {
   ChapterPromptParts,
 } from './longwriting/chapter-context'
 import { composeChapterPrompt, estimateContextTokens } from './longwriting/chapter-context'
+import { applyChapterQualityGate } from './longwriting/chapter-quality-gate'
+import {
+  buildNovelChapterDiscipline,
+  buildScriptChapterDiscipline,
+  buildScriptOutlineSystemPrompt,
+  enrichScriptEpisodeSummary,
+  resolveContentTarget,
+} from './writing-methodology'
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import { createProvider } from '@core/platform/providers/llm'
 import { PROVIDER_TEMPLATES } from '@core/platform/services/provider-template.service'
@@ -853,7 +861,8 @@ ${itemTypesInfo || '暂无配置'}
     projectId: string,
     providerConfigId?: string,
     modelId?: string,
-    structureLevel?: number
+    structureLevel?: number,
+    opts?: { contentTarget?: 'novel' | 'script'; episodeCount?: number }
   ): Promise<GenerateResponse> {
     const dbManager = getCoreDatabaseManager()
     // 默认使用三级结构
@@ -863,6 +872,26 @@ ${itemTypesInfo || '暂无配置'}
     const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
     const characters = await dbManager.lwCharacters?.getByProjectId(projectId) || []
     const background = await dbManager.lwBackgrounds?.getByProjectId(projectId)
+
+    // 49 号：script（短剧分集）模式——分集大纲走专属节拍纪律，集数=大纲章数。
+    // 评审 P2-3：与 novel 路径同语义，try/catch 收拢成 {success:false,error}
+    try {
+      const roomTarget = this.readRoomContentTarget(
+        await dbManager.lwProjects?.getById(projectId)
+      )
+      if (resolveContentTarget(opts?.contentTarget, roomTarget, undefined) === 'script') {
+        const episodeCount = opts?.episodeCount || overview?.estimatedChapters || 10
+        const plots = await dbManager.lwPlots?.getByProjectId(projectId) || []
+        const plotsSummary = plots.length > 0
+          ? plots.map(p => `${p.title}：${p.summary}`).join('\n')
+          : ''
+        return await this.generateScriptEpisodesOutline(
+          eventId, overview, background, plotsSummary, episodeCount, providerConfigId, modelId
+        )
+      }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
 
     const characterInfo = characters.slice(0, 5).map(c =>
       `${c.name}（${c.rolePosition === 'protagonist' ? '主角' : c.rolePosition === 'antagonist' ? '反派' : '配角'}）`
@@ -897,6 +926,70 @@ ${itemTypesInfo || '暂无配置'}
       }
     } catch (error: any) {
       return { success: false, error: error.message }
+    }
+  }
+
+  /**
+   * 生成短剧分集大纲（49 号 script 模式）：节拍纪律见 writing-methodology，
+   * 扩展字段（hook/highlight/cliffhanger/hookType）以结构化后缀并入 summary——
+   * 零迁移落库，章节生成经 taskText 天然携带。
+   */
+  private async generateScriptEpisodesOutline(
+    eventId: string,
+    overview: any,
+    background: any,
+    plotsSummary: string,
+    episodeCount: number,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<GenerateResponse> {
+    const systemPrompt = buildScriptOutlineSystemPrompt(episodeCount)
+    // keyCharacters 历史上有对象/字符串两种形态，统一渲染成「名（角色）」
+    const charNames = (Array.isArray(overview?.keyCharacters) ? overview.keyCharacters : [])
+      .map((c: any) => (typeof c === 'string' ? c : `${c?.name ?? ''}${c?.role ? `（${c.role}）` : ''}`.trim()))
+      .filter(Boolean)
+      .join('、')
+    const prompt = `故事标题：${overview?.title || '未命名'}
+故事摘要：${overview?.summary || '未指定'}
+核心冲突：${overview?.coreConflict || '未指定'}
+故事线：${plotsSummary || '暂无'}
+主要人物：${charNames || '暂无'}
+时代背景：${background?.eraDescription || '未指定'}
+
+请生成本剧的分集大纲（共 ${episodeCount} 集，只返回JSON数组）：`
+
+    getEventEmitter().emit(`longwriting:generate:${eventId}`, {
+      type: 'progress',
+      content: `正在生成 ${episodeCount} 集分集大纲（短剧节拍纪律）...`
+    })
+
+    const result = await this.callAIStream(eventId, prompt, systemPrompt, 8192, providerConfigId, modelId)
+    const episodes = this.parseJsonArray(result)
+    if (!episodes || episodes.length === 0) {
+      return { success: false, error: '生成分集大纲失败' }
+    }
+    return {
+      success: true,
+      data: episodes.slice(0, episodeCount).map((ep: any) => ({
+        name: String(ep.name || ''),
+        summary: enrichScriptEpisodeSummary(String(ep.summary || ''), {
+          hook: ep.hook, highlight: ep.highlight, cliffhanger: ep.cliffhanger, hookType: ep.hookType,
+        }),
+        estimatedWords: Number(ep.estimatedWords) || 1800,
+        hook: ep.hook, highlight: ep.highlight, cliffhanger: ep.cliffhanger, hookType: ep.hookType,
+      })),
+    }
+  }
+
+  /** 读取项目 wizard_state.room.contentTarget（49 号评审 P0-1：仓储 DTO 已把 wizardState 解析成对象，兼容字符串形状） */
+  private readRoomContentTarget(project: unknown): string | null {
+    const ws = (project as { wizardState?: { room?: { contentTarget?: string } } | string | null } | null | undefined)?.wizardState
+    if (!ws) return null
+    if (typeof ws === 'object') return ws.room?.contentTarget ?? null
+    try {
+      return (JSON.parse(ws) as { room?: { contentTarget?: string } }).room?.contentTarget ?? null
+    } catch {
+      return null
     }
   }
 
@@ -1336,7 +1429,14 @@ ${plotInfo || '暂无相关情节'}
         modelId
       )
 
-      return { success: true, data: { content: result } }
+      // 49 号：字数质量门——欠字数扩写一次而非整章重生成（保留情节与文风）。
+      // 评审 P2-1：扩写用独立 eventId 流（不进 UI 累加流），原通道只发进度提示
+      const gated = await applyChapterQualityGate(result, asm.composeOpts.targetWords, (expandPrompt) => {
+        getEventEmitter().emit(`longwriting:generate:${eventId}`, { type: 'progress', content: '初稿字数未达标，正在扩写…' })
+        return this.callAIStream(eventId + '-expand', expandPrompt, asm.systemPrompt, asm.maxTokens, providerConfigId, modelId)
+      })
+
+      return { success: true, data: { content: gated.content, qualityGate: gated.gate } }
     } catch (error: any) {
       return { success: false, error: error.message }
     }
@@ -1402,7 +1502,13 @@ ${plotInfo || '暂无相关情节'}
         params.modelId
       )
 
-      return { success: true, data: { content: result } }
+      // 49 号：字数质量门（同 generateChapter；扩写走独立 eventId 流）
+      const gated = await applyChapterQualityGate(result, asm.composeOpts.targetWords, (expandPrompt) => {
+        getEventEmitter().emit(`longwriting:generate:${eventId}`, { type: 'progress', content: '初稿字数未达标，正在扩写…' })
+        return this.callAIStream(eventId + '-expand', expandPrompt, asm.systemPrompt, asm.maxTokens, params.providerConfigId, params.modelId)
+      })
+
+      return { success: true, data: { content: gated.content, qualityGate: gated.gate } }
     } catch (error: any) {
       return { success: false, error: error.message }
     }
@@ -1547,7 +1653,7 @@ ${plotInfo || '暂无相关情节'}
       }
     }
     // 新系统提示词
-    const systemPrompt = `你是一位资深的网络小说作家，擅长创作情节紧凑、人物生动、场景细腻的章节内容。
+    const baseWriterPrompt = `你是一位资深的网络小说作家，擅长创作情节紧凑、人物生动、场景细腻的章节内容。
 
 ## 写作核心原则
 
@@ -1583,6 +1689,33 @@ ${plotInfo || '暂无相关情节'}
 
 ### 6. 输出要求
 直接输出章节正文内容，不需要标题，不需要额外说明。`
+
+    // 49 号：写作纪律按内容目标分叉（script=短剧四拍引擎 / novel=章节钩子+黄金三章），
+    // 并注入"下一章去向卡"（R3 AI_NovelGenerator 配方：让本章知道故事要落到哪里）。
+    // 评审 P1-1/P1-2：getTreeByProjectId 返回根树（子节点挂 children）——拍平后定位当前章，
+    // 否则三级结构下去向卡永远找不到、章节号恒 1 导致"黄金三章"误注入所有章。
+    const flatNodes: any[] = []
+    const walkTree = (nodes: any[]) => {
+      for (const n of nodes || []) {
+        flatNodes.push(n)
+        walkTree(n.children || [])
+      }
+    }
+    walkTree(siblings)
+    const flatIndex = flatNodes.findIndex((s) => s.id === outlineId)
+    const nextChapter = flatIndex >= 0
+      ? flatNodes.slice(flatIndex + 1).find((s) => s.nodeType === 'chapter')
+      : undefined
+    const chapterNo = flatIndex >= 0
+      ? flatNodes.slice(0, flatIndex).filter((s) => s.nodeType === 'chapter').length + 1
+      : chapterNumber
+    const roomProject = await dbManager.lwProjects?.getById(projectId)
+    const roomTarget = this.readRoomContentTarget(roomProject)
+    const contentTarget = resolveContentTarget(undefined, roomTarget, outline.summary)
+    const discipline = contentTarget === 'script'
+      ? buildScriptChapterDiscipline(nextChapter ? { name: nextChapter.name, summary: nextChapter.summary ?? undefined } : null)
+      : buildNovelChapterDiscipline(chapterNo)
+    const systemPrompt = `${baseWriterPrompt}\n\n${discipline}`
 
     // 构建预写部分
     const prewriteSection = prewrite?.content
@@ -1633,7 +1766,8 @@ ${plotInfo || '暂无相关情节'}
 
     const targetWordsFinal = opts.targetWords || outline.estimatedWords || 3000
     const prompt = composeChapterPrompt(parts, () => true, { targetWords: targetWordsFinal, style: opts.style, extraPrompt: opts.extraPrompt })
-    const estimateTokens = estimateContextTokens(prompt)
+    // 评审 P3-1：纪律注入后 systemPrompt 也有千字级体量，预算估算应包含它
+    const estimateTokens = estimateContextTokens(prompt) + estimateContextTokens(systemPrompt)
     const windowTokens = 32_768
 
     return {

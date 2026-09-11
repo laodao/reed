@@ -1384,9 +1384,9 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
   ipcBridge.handle(
     CHANNELS.GENERATE_OUTLINE_STORY,
-    async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string, structureLevel?: number) => {
+    async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string, structureLevel?: number, opts?: { contentTarget?: 'novel' | 'script'; episodeCount?: number }) => {
       try {
-        const result = await aiService.generateOutlineStory(eventId, projectId, providerConfigId, modelId, structureLevel)
+        const result = await aiService.generateOutlineStory(eventId, projectId, providerConfigId, modelId, structureLevel, opts)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }

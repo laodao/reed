@@ -22,6 +22,7 @@ import type {
 } from '@shared/types/episode-production'
 import type { ScriptGenerationResult } from './types'
 import { callAI, extractJsonFromResponse, parseJsonString } from './_helpers'
+import { buildScriptGenerationDiscipline } from '@core/platform/services/writing-methodology'
 
 // ==================== 提示词模板 ====================
 
@@ -93,6 +94,12 @@ const SCRIPT_GENERATION_PROMPT = `你是一位拥有10年以上一线影视工�
 3. 主要角色组合变化可考虑拆分
 4. 情感氛围显著变化可拆分
 5. 每个场景应有明确的视觉焦点
+
+---
+
+## 短剧剧本改编纪律（原著正文 → 竖屏短剧剧本）
+
+${buildScriptGenerationDiscipline()}
 
 ---
 
@@ -197,6 +204,35 @@ const SCRIPT_GENERATION_PROMPT = `你是一位拥有10年以上一线影视工�
 ## 可用物品列表
 
 {items}
+
+## 章节内容
+
+{chapterContent}`
+
+/**
+ * 49 号：正文救援提示词——场景 JSON 吃掉全部输出预算时（finish=length 截断在 JSON 内），
+ * 用小输出预算单独补写剧本正文，不再让整次生成失败。
+ */
+const SCRIPT_BODY_ONLY_PROMPT = `基于以下章节内容，直接撰写完整剧本正文。
+只输出剧本正文，不要输出 JSON 场景数据，不要输出梗概。
+
+格式要求：
+- 开头写：【剧本正文开始】
+- 结尾写：【剧本正文结束】
+- 中间是标准剧本格式（中文场景标题；动作描写现在时；角色对白）
+- 严禁使用 Markdown
+
+## 短剧剧本改编纪律
+
+${buildScriptGenerationDiscipline()}
+
+## 可用角色列表
+
+{characters}
+
+## 可用地点列表
+
+{locations}
 
 ## 章节内容
 
@@ -614,18 +650,33 @@ export class EpisodeScriptGenerator {
 
     const response = await callAI(prompt, systemPrompt, 16000, providerConfigId, modelId)
 
+    // 49 号：正文被截断时续写一次（fail-soft——续写失败保留原样，走既有解析兜底）
+    let fullResponse = response
+    if (response.includes('【剧本正文开始】') && !response.includes('【剧本正文结束】')) {
+      try {
+        const tail = response.slice(-1200)
+        const cont = await callAI(
+          `你上一轮的剧本输出在正文处被截断了。以下是你已输出内容的结尾片段：\n${tail}\n请从截断处直接继续输出剩余剧本正文：不要重复已输出的内容，不要添加任何说明，输出完毕后以【剧本正文结束】收尾。`,
+          systemPrompt,
+          8000,
+          providerConfigId,
+          modelId,
+        )
+        fullResponse = response.trimEnd() + '\n' + cont.replace(/【剧本正文开始】/g, '').trim()
+        console.log('[EpisodeScriptGenerator] 正文截断续写完成，拼接后长度:', fullResponse.length)
+      } catch (e) {
+        console.warn('[EpisodeScriptGenerator] 正文续写失败（保留原输出）:', e instanceof Error ? e.message : String(e))
+      }
+    }
+
     // 输出完整的 AI 响应（用于诊断 DeepSeek 格式问题）
-    console.log('[EpisodeScriptGenerator] AI 响应完整内容:')
-    console.log('='.repeat(50))
-    console.log(response)
-    console.log('='.repeat(50))
-    console.log('[EpisodeScriptGenerator] AI 响应长度:', response.length)
+    console.log('[EpisodeScriptGenerator] AI 响应长度:', fullResponse.length)
 
     // 检查响应中是否有场景标记
-    const hasNewFormat = response.includes('【场景数据开始】')
-    const hasOldFormat = response.includes('===SCENES_JSON===')
-    const hasJsonBlock = response.includes('```json')
-    const hasScenesArray = response.includes('"scenes"')
+    const hasNewFormat = fullResponse.includes('【场景数据开始】')
+    const hasOldFormat = fullResponse.includes('===SCENES_JSON===')
+    const hasJsonBlock = fullResponse.includes('```json')
+    const hasScenesArray = fullResponse.includes('"scenes"')
 
     console.log('[EpisodeScriptGenerator] 格式检测:', {
       '新格式【场景数据】': hasNewFormat,
@@ -634,9 +685,31 @@ export class EpisodeScriptGenerator {
       'scenes数组': hasScenesArray
     })
 
-    const result = this.extractFullScriptFromResponse(response, roster)
+    const result = this.extractFullScriptFromResponse(fullResponse, roster)
 
     if (!result.synopsis) console.warn('[EpisodeScriptGenerator] 生成的剧本缺少梗概')
+    if (!result.scriptContent) {
+      // 49 号：场景 JSON 吃光输出预算（截断在 JSON 内）导致正文缺失——单独补写正文
+      console.warn('[EpisodeScriptGenerator] 正文缺失，走正文单独补写救援路径')
+      const rescuePrompt = SCRIPT_BODY_ONLY_PROMPT
+        .replace('{characters}', formatRosterList(roster.characters))
+        .replace('{locations}', formatRosterList(roster.locations))
+        .replace('{chapterContent}', chapterContent)
+      try {
+        const bodyResp = await callAI(rescuePrompt, systemPrompt, 8000, providerConfigId, modelId)
+        const bodyMatch = bodyResp.match(/【剧本正文开始】\s*([\s\S]*?)\s*【剧本正文结束】/)
+        const body = (bodyMatch ? bodyMatch[1] : bodyResp).trim()
+        if (body) {
+          result.scriptContent = body
+          if (!result.synopsis) {
+            result.synopsis = chapterContent.slice(0, 100)
+          }
+          console.log('[EpisodeScriptGenerator] 正文救援成功，长度:', body.length)
+        }
+      } catch (e) {
+        console.warn('[EpisodeScriptGenerator] 正文救援失败:', e instanceof Error ? e.message : String(e))
+      }
+    }
     if (!result.scriptContent) {
       throw new Error('生成的剧本缺少剧本正文，请检查 AI 模型是否支持长文本输出')
     }
