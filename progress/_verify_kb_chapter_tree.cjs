@@ -45,6 +45,12 @@ async function main() {
   console.log('[1] 打开知识库页')
   await ev(`location.hash = '#/knowledge-base'`)
   await sleep(1500)
+  // 复位：关掉可能残留的对话框（脚本可重复运行）
+  await ev(`(() => {
+    document.querySelectorAll('.el-dialog__headerbtn').forEach(b => b.click())
+    return true
+  })()`)
+  await sleep(800)
 
   console.log('[2] 逐个点开知识库，找含 numpy-user.pdf 的文档列表')
   const found = await ev(`(async () => {

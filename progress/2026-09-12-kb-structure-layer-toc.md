@@ -94,14 +94,14 @@ numpy 修复后章节树片段（正确）：
 
 ### 4.3 UI（CDP 实测，`progress/_verify_kb_chapter_tree.cjs`）
 
-打开 numpy 文档「文档分片」对话框：
+打开 numpy 文档「文档分片」对话框（脚本可重复运行：先关闭残留对话框再操作）：
 
 | 断言 | 实测 |
 |---|---|
-| 摘要进度 | 「摘要 59/2137」 |
+| 摘要进度 | 「摘要 60/2137」 |
 | 树渲染节点数 | **234**（只展开一级 + 其子节点；`default-expand-all` 会一次渲染 2137 个节点导致卡顿） |
 | 标题筛选框 | 存在；输入 `F2PY` → 可见节点 94 |
-| 点章节联动切片 | 「仅看章节：NumPy fundamentals」+「共 9 个切片」 |
+| 点章节联动切片 | 「仅看章节：NumPy fundamentals」+「共 8 个切片」（全量 1744 个） |
 
 配套改动（`src/renderer/src/views/KnowledgeBase.vue`）：大树只默认展开一级（≤200 节点仍全展开）、新增标题筛选框、摘要结果提示剩余条数。
 Web 端复用同一视图与核心服务（无新增 IPC 通道；`channel-map.ts` 的 chapter 通道早已就位），本次未另起 web 服务实测。
