@@ -468,6 +468,11 @@ async function initDatabase(): Promise<void> {
     '@core/database/migrations/create-kb-folders'
   )
   await createKbFolders(ds)
+  // 知识库章节树：kb_chapters 表（与 Electron 端同构，幂等双语种）
+  const { createKbChapters } = await import(
+    '@core/database/migrations/create-kb-chapters'
+  )
+  await createKbChapters(ds)
   // 应用模块：apps / app_sessions 表（幂等，双语种；消息复用 messages 无需建表）
   const { createAppsTables } = await import(
     '@core/database/migrations/create-apps-tables'

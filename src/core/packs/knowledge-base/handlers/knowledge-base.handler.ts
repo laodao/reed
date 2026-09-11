@@ -8,6 +8,9 @@ import { ipcBridge } from '@core/ipc/bridge-adapter'
 import * as fs from 'fs'
 import * as path from 'path'
 import { KnowledgeBaseService } from '@core/platform/services/knowledge-base.service'
+import { KbChapterSummaryService } from '@core/platform/services/kb-chapter-summary.service'
+import type { KbChapterTreeNode } from '@core/database/repositories/kb-chapter.repository'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 
 const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
 
@@ -103,6 +106,12 @@ export function registerKnowledgeBaseHandlers(): void {
 
   // 获取单个切片详情
   ipcBridge.handle('knowledge-base:get-chunk', handleGetChunk)
+
+  // 章节树（章节实体 + 摘要状态；M2）
+  ipcBridge.handle('knowledge-base:get-chapter-tree', handleGetChapterTree)
+
+  // 章节摘要生成/重试（M2；自动调度在文档处理完成后异步进行）
+  ipcBridge.handle('knowledge-base:summarize-document', handleSummarizeDocument)
 
   // ==================== 检索服务 ====================
 
@@ -319,6 +328,45 @@ async function handleGetChunk(
 }
 
 // ==================== 检索服务处理器 ====================
+
+/**
+ * 章节树 + 摘要进度（M2）
+ */
+async function handleGetChapterTree(
+  _event: any,
+  data: { documentId: string },
+): Promise<IpcResponse<{ tree: KbChapterTreeNode[]; stats: { total: number; done: number; failed: number } }>> {
+  const db = getCoreDatabaseManager()
+  if (!db.kbChapters) return { success: false, error: '数据库未初始化' }
+  try {
+    const [tree, stats] = await Promise.all([
+      db.kbChapters.treeOf(data.documentId),
+      db.kbChapters.summaryStats(data.documentId),
+    ])
+    return { success: true, data: { tree, stats } }
+  } catch (e: any) {
+    return { success: false, error: e?.message ?? String(e) }
+  }
+}
+
+/**
+ * 章节摘要生成/重试（M2）
+ * 自动调度在文档处理完成后异步进行；此入口用于手动补生成或失败重试。
+ */
+async function handleSummarizeDocument(
+  _event: any,
+  data: { documentId: string; retryFailed?: boolean },
+): Promise<IpcResponse<{ total: number; done: number; failed: number; skipped: number }>> {
+  const db = getCoreDatabaseManager()
+  if (!db.kbChapters) return { success: false, error: '数据库未初始化' }
+  try {
+    const service = new KbChapterSummaryService({ repo: db.kbChapters })
+    const result = await service.summarizeDocument(data.documentId, { retryFailed: data.retryFailed ?? true })
+    return { success: true, data: result }
+  } catch (e: any) {
+    return { success: false, error: e?.message ?? String(e) }
+  }
+}
 
 /**
  * 处理检索知识库

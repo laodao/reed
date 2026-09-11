@@ -25,6 +25,7 @@ import { KnowledgeBaseRepository } from '@core/database/repositories/knowledge-b
 import { KbFolderRepository } from '@core/database/repositories/kb-folder.repository'
 import { KbDocumentRepository } from '@core/database/repositories/kb-document.repository'
 import { KbChunkRepository } from '@core/database/repositories/kb-chunk.repository'
+import { KbChapterRepository } from '@core/database/repositories/kb-chapter.repository'
 import { KbVectorRepository } from '@core/database/repositories/kb-vector.repository'
 import { KbQaPairRepository } from '@core/database/repositories/kb-qa-pair.repository'
 import { AppRepository } from '@core/database/repositories/app.repository'
@@ -152,6 +153,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public kbFolders: KbFolderRepository | null = null
   public kbDocuments: KbDocumentRepository | null = null
   public kbChunks: KbChunkRepository | null = null
+  public kbChapters: KbChapterRepository | null = null
   public kbVectors: KbVectorRepository | null = null
   public kbQaPairs: KbQaPairRepository | null = null
   public appDefinitions: AppRepository | null = null
@@ -806,6 +808,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-kb-folders'
     )
     await createKbFolders(this.dataSource)
+    // 知识库章节树：kb_chapters 表（章节实体 + 摘要状态；与切片同源结构检测，幂等双语种）
+    const { createKbChapters } = await import(
+      '@core/database/migrations/create-kb-chapters'
+    )
+    await createKbChapters(this.dataSource)
     // 应用模块：apps / app_sessions 表（幂等，双语种；消息复用 messages 无需建表）
     const { createAppsTables } = await import(
       '@core/database/migrations/create-apps-tables'
@@ -4409,6 +4416,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.kbFolders = new KbFolderRepository(this.dataSource)
     this.kbDocuments = new KbDocumentRepository(this.dataSource)
     this.kbChunks = new KbChunkRepository(this.dataSource)
+    this.kbChapters = new KbChapterRepository(this.dataSource)
     // KbVectorRepository 使用 LanceDB，不再需要 SQLite 连接
     this.kbVectors = new KbVectorRepository()
     this.kbQaPairs = new KbQaPairRepository(this.dataSource)

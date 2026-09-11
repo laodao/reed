@@ -220,11 +220,14 @@ export class StructureDetector {
     // 检测中文章节
     this.novelChapterChineseRegex.lastIndex = 0
     while ((match = this.novelChapterChineseRegex.exec(content)) !== null) {
-      const numberStr = match[0].match(/第([一二三四五六七八九十百千万\d]+)[章节回]/)?.[1] || '0'
+      const numberStr = match[0].match(/第([一二三四五六七八九十百千万\d]+)[章节回集]/)?.[1] || '0'
       const number = this.parseChineseNumber(numberStr)
+      // 层级：章/回/集 = 1，节 = 2（章节树父子关系依赖此层级）
+      const unit = match[0].match(/第[一二三四五六七八九十百千万\d]+([章节回集])/)?.[1] ?? '章'
       chapters.push({
         title: match[0].trim(),
         number,
+        level: unit === '节' ? 2 : 1,
         startIndex: match.index
       })
     }
@@ -236,6 +239,7 @@ export class StructureDetector {
         chapters.push({
           title: match[0].trim(),
           number: parseInt(match[1], 10),
+          level: 1,
           startIndex: match.index
         })
       }
@@ -276,12 +280,23 @@ export class StructureDetector {
       // 提取章节内容（包含标题行）
       const sectionContent = content.slice(startIndex, endIndex).trim()
 
+      // 父章节标题：向前找 level 更小的最近章节（章 → 节 的层级由检测给出）
+      const level = chapter.level ?? 1
+      let parentTitle: string | undefined
+      for (let j = i - 1; j >= 0; j--) {
+        if ((chapters[j].level ?? 1) < level) {
+          parentTitle = chapters[j].title
+          break
+        }
+      }
+
       sections.push({
         title: chapter.title,
-        level: 1, // 小说章节只有一级
+        level, // 章=1，节=2（小说/法规层级）
         content: sectionContent,
         startIndex: startIndex,
-        endIndex: endIndex
+        endIndex: endIndex,
+        parentTitle
       })
     }
 

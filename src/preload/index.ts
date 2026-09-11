@@ -1261,6 +1261,12 @@ const electronAPI = {
       ipcRenderer.invoke('knowledge-base:get-document-chunks-paginated', { documentId, page, pageSize }),
     // 获取单个切片详情
     getChunk: (chunkId: string) => ipcRenderer.invoke('knowledge-base:get-chunk', chunkId),
+    // 章节树 + 摘要进度（M2）
+    getChapterTree: (documentId: string) =>
+      ipcRenderer.invoke('knowledge-base:get-chapter-tree', { documentId }),
+    // 章节摘要生成/重试（M2；自动调度在处理完成后异步进行）
+    summarizeDocument: (documentId: string, retryFailed?: boolean) =>
+      ipcRenderer.invoke('knowledge-base:summarize-document', { documentId, retryFailed }),
     // 检索知识库
     search: (request: {
       knowledgeBaseId: string

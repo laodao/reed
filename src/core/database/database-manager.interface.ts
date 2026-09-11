@@ -28,6 +28,7 @@ import type { ImageAssetRepository } from './repositories/image-asset.repository
 import type { ImageRepository } from './repositories/image.repository'
 import type { ItemBindingRepository } from './repositories/item-binding.repository'
 import type { KbChunkRepository } from './repositories/kb-chunk.repository'
+import type { KbChapterRepository } from './repositories/kb-chapter.repository'
 import type { KbDocumentRepository } from './repositories/kb-document.repository'
 import type { KbInvertedIndexRepository } from './repositories/kb-inverted-index.repository'
 import type { KbVectorRepository } from './repositories/kb-vector.repository'
@@ -148,6 +149,8 @@ export interface ICoreDatabaseManager {
   knowledgeBases: KnowledgeBaseRepository | null
   kbDocuments: KbDocumentRepository | null
   kbChunks: KbChunkRepository | null
+  /** 知识库章节树（章节实体 + 摘要状态；与切片同源结构检测） */
+  kbChapters: KbChapterRepository | null
   kbInvertedIndex: KbInvertedIndexRepository | null
   kbVectors: KbVectorRepository | null
   kbQaPairs: KbQaPairRepository | null

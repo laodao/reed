@@ -6,7 +6,7 @@
 
 import fs from 'fs'
 import path from 'path'
-import { randomUUID } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import nodejieba from 'nodejieba'
 import { parse } from 'node-html-parser'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
@@ -14,7 +14,9 @@ import type { KbQaPairRecord } from '@core/database/repositories/kb-qa-pair.repo
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
-import { HybridSplitter, EmbeddingService, SplitConfig, DEFAULT_SPLIT_CONFIG, SplitChunk } from '@core/platform/services/chunk-splitter'
+import { HybridSplitter, EmbeddingService, SplitConfig, DEFAULT_SPLIT_CONFIG, SplitChunk, StructureDetector } from '@core/platform/services/chunk-splitter'
+import type { KbChapterInput } from '@core/database/repositories/kb-chapter.repository'
+import { KbChapterSummaryService } from '@core/platform/services/kb-chapter-summary.service'
 import { extractTextFromFile, inferFileType } from '@core/utils/extract-text'
 import { publishDomainEvent } from '@core/platform/workflow/trigger/domain-event-bus'
 import { WORKFLOW_EVENT_NAMES } from '@shared/types/workflow.types'
@@ -600,6 +602,10 @@ export class KnowledgeBaseService {
       }
       console.log(`[KB] 解析完成, 长度: ${content.length}`)
 
+      // 1.5 章节树落库（与切片同源的结构检测；供检索上下文注入/章节摘要消费）
+      // 失败不影响切片与向量主流程（章节是增强能力，见 syncChapters 内部 fail-soft）
+      await this.syncChapters(doc.id, kb.id, doc.name, content)
+
       // 2. 切分配置
       const embeddingConfig: EmbeddingConfig = kb.embeddingConfig ? JSON.parse(kb.embeddingConfig) : {}
       const splitConfig: SplitConfig = kb.splitConfig
@@ -707,10 +713,101 @@ export class KnowledgeBaseService {
       this.emitKnowledgeBaseStats(kb.id)
       console.log(`[KB] 处理完成: ${doc.name}, 耗时: ${Math.round((Date.now() - startTime) / 1000)}秒`)
 
+      // 7. 章节摘要（异步后台生成，不阻塞处理完成；单章失败标记 failed 可重试）
+      this.scheduleChapterSummaries(doc.id)
+
     } catch (e: any) {
       console.error(`[KB] 处理失败: ${doc.name}`, e)
       await db.kbDocuments.markFailed(doc.id, e.message)
       this.emitStatus(doc.id, 'failed', undefined, e.message)
+    }
+  }
+
+  /**
+   * 章节摘要调度（M2）：文档处理完成后异步生成章节摘要。
+   * fire-and-forget——不阻塞 reprocess 返回；未装配/异常只记日志。
+   */
+  private scheduleChapterSummaries(documentId: string): void {
+    const db = getCoreDatabaseManager()
+    if (!db.kbChapters) return
+    try {
+      const service = new KbChapterSummaryService({ repo: db.kbChapters })
+      service.scheduleDocumentSummaries(documentId)
+    } catch (e: unknown) {
+      console.warn(`[KB] 章节摘要调度失败（不影响主流程）: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  /**
+   * 章节树落库（M2）：用与切片同源的结构检测（StructureDetector）把文档章节
+   * 落成树形实体（kb_chapters），供检索上下文注入（M3）与章节摘要使用。
+   *
+   * - 有结构：按 sections 建树，父章节由「层级栈」解析（level 更小的最近前驱）
+   * - 无结构：落单条「整篇章节」（标题=文档名，摘要退化为整篇摘要）
+   * - 幂等：每次处理全量重建；摘要状态重置 pending，由摘要服务异步补齐
+   * - fail-soft：任何异常只记日志，绝不影响切片/向量主流程
+   */
+  private async syncChapters(
+    documentId: string,
+    knowledgeBaseId: string,
+    docName: string,
+    content: string,
+  ): Promise<void> {
+    const db = getCoreDatabaseManager()
+    if (!db.kbChapters) return // 未装配（旧库/部分测试环境）：跳过
+
+    try {
+      const structure = new StructureDetector().detect(content)
+      const inputs: KbChapterInput[] = []
+      const hash = (text: string): string => createHash('sha256').update(text).digest('hex')
+
+      if (structure.hasStructure && structure.sections.length > 0) {
+        // 层级栈：父 = 栈中最近的 level 更小者；同/更深层出栈
+        const stack: Array<{ id: string; level: number }> = []
+        structure.sections.forEach((section, index) => {
+          const id = randomUUID()
+          while (stack.length > 0 && stack[stack.length - 1].level >= section.level) {
+            stack.pop()
+          }
+          const parentId = stack.length > 0 ? stack[stack.length - 1].id : null
+          stack.push({ id, level: section.level })
+          inputs.push({
+            id,
+            documentId,
+            knowledgeBaseId,
+            title: section.title,
+            level: section.level,
+            parentTitle: section.parentTitle ?? null,
+            parentId,
+            ordering: index,
+            startOffset: section.startIndex,
+            endOffset: section.endIndex,
+            content: section.content,
+            contentHash: hash(section.content),
+          })
+        })
+      } else {
+        inputs.push({
+          id: randomUUID(),
+          documentId,
+          knowledgeBaseId,
+          title: docName,
+          level: 1,
+          parentTitle: null,
+          parentId: null,
+          ordering: 0,
+          startOffset: 0,
+          endOffset: content.length,
+          content,
+          contentHash: hash(content),
+        })
+      }
+
+      const count = await db.kbChapters.replaceByDocument(documentId, inputs)
+      console.log(`[KB] 章节树落库完成: ${count} 个章节`)
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      console.error(`[KB] 章节树落库失败（不影响切片入库）: ${msg}`)
     }
   }
 

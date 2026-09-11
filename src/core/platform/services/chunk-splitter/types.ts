@@ -146,6 +146,8 @@ export interface NovelChapter {
   title: string
   /** 章节序号 */
   number: number
+  /** 层级（章=1，节=2；默认 1） */
+  level?: number
   /** 标题起始位置 */
   startIndex: number
 }

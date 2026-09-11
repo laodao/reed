@@ -263,6 +263,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'knowledgeBase.getDocumentChunks': { channel: 'knowledge-base:get-document-chunks' },
   'knowledgeBase.getDocumentChunksPaginated': { channel: 'knowledge-base:get-document-chunks-paginated', wrap: (documentId, page, pageSize) => [{ documentId, page, pageSize }] },
   'knowledgeBase.getChunk': { channel: 'knowledge-base:get-chunk' },
+  'knowledgeBase.getChapterTree': { channel: 'knowledge-base:get-chapter-tree', wrap: (documentId) => [{ documentId }] },
+  'knowledgeBase.summarizeDocument': { channel: 'knowledge-base:summarize-document', wrap: (documentId, retryFailed) => [{ documentId, retryFailed }] },
   'knowledgeBase.search': { channel: 'knowledge-base:search' },
   'knowledgeBase.getEmbeddingModels': { channel: 'knowledge-base:get-embedding-models' },
   'knowledgeBase.getRerankModels': { channel: 'knowledge-base:get-rerank-models' },
