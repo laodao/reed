@@ -1,0 +1,46 @@
+{
+  "generatedAt": "2026-09-11T14:31:45.135Z",
+  "dataset": "keyword",
+  "total": 10,
+  "vectorOnly": {
+    "recall1": 0.7,
+    "recall3": 0.7,
+    "recall5": 0.8,
+    "recall10": 0.8,
+    "ndcg10": 0.7430676558073392,
+    "mrr": 0.725
+  },
+  "hybridW08": {
+    "recall1": 0.7,
+    "recall3": 0.8,
+    "recall5": 0.8,
+    "recall10": 0.9,
+    "ndcg10": 0.796426308690479,
+    "mrr": 0.7642857142857143
+  },
+  "hybridW07": {
+    "recall1": 0.8,
+    "recall3": 0.8,
+    "recall5": 0.9,
+    "recall10": 0.9,
+    "ndcg10": 0.8430676558073393,
+    "mrr": 0.825
+  },
+  "hybridW05": {
+    "recall1": 0.8,
+    "recall3": 0.9,
+    "recall5": 0.9,
+    "recall10": 0.9,
+    "ndcg10": 0.8630929753571458,
+    "mrr": 0.85
+  },
+  "hybridRrf": {
+    "recall1": 0.8,
+    "recall3": 0.9,
+    "recall5": 0.9,
+    "recall10": 0.9,
+    "ndcg10": 0.8630929753571458,
+    "mrr": 0.85
+  },
+  "diff": []
+}

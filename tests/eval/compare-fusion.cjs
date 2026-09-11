@@ -44,8 +44,13 @@ function metrics(ranks) {
 }
 
 async function main() {
-  const golden = JSON.parse(fs.readFileSync(path.join(__dirname, 'kb-eval-golden.json'), 'utf8'))
+  // 数据集可选：golden（语义型问句，默认） / keyword（关键词型查询子集）
+  const datasetArg = process.argv.find((a) => a.startsWith('--dataset='))
+  const dataset = datasetArg ? datasetArg.split('=')[1] : 'golden'
+  const goldenFile = dataset === 'keyword' ? 'kb-eval-keyword.json' : 'kb-eval-golden.json'
+  const golden = JSON.parse(fs.readFileSync(path.join(__dirname, goldenFile), 'utf8'))
   const items = golden.items
+  console.log(`[eval] 数据集: ${dataset}（${goldenFile}），共 ${items.length} 条`)
 
   const targets = await getJson('http://127.0.0.1:9222/json/list')
   const page = targets.find((t) => t.type === 'page')
@@ -60,12 +65,13 @@ async function main() {
     return r.result ? r.result.value : null
   }
 
-  // 三组对照：纯向量（默认） / 混合-加权 / 混合-RRF
-  // 注意：vectorWeight 缺省为 1（纯向量），此时 BM25 不参与、融合策略无差异；
-  // 混合策略的价值必须在 vectorWeight < 1 时才体现。
+  // 权重扫参：纯向量 / 折中权重（0.8、0.7）/ 混合（0.5）/ RRF
+  // 目的：语义型问句与关键词型查询的最优策略相反，需找双赢或低损的默认权重
   const strategies = [
-    { label: 'vector-only (w=1.0, weighted)', fusion: 'weighted', vectorWeight: 1 },
-    { label: 'hybrid-weighted (w=0.5)', fusion: 'weighted', vectorWeight: 0.5 },
+    { label: 'vector-only (w=1.0)', fusion: 'weighted', vectorWeight: 1 },
+    { label: 'hybrid (w=0.8)', fusion: 'weighted', vectorWeight: 0.8 },
+    { label: 'hybrid (w=0.7)', fusion: 'weighted', vectorWeight: 0.7 },
+    { label: 'hybrid (w=0.5)', fusion: 'weighted', vectorWeight: 0.5 },
     { label: 'hybrid-rrf (w=0.5)', fusion: 'rrf', vectorWeight: 0.5 },
   ]
   const result = {}
@@ -105,25 +111,28 @@ async function main() {
     )
   }
 
-  // 逐条差异（混合加权 vs 混合 RRF）
+  // 逐条差异（混合加权 w=0.5 vs RRF w=0.5）
   const diff = []
   for (let i = 0; i < items.length; i++) {
-    const a = result['hybrid-weighted (w=0.5)'].ranks[i]
+    const a = result['hybrid (w=0.5)'].ranks[i]
     const b = result['hybrid-rrf (w=0.5)'].ranks[i]
-    if (a !== b) diff.push(`${items[i].id}: hybrid-weighted=${a} → hybrid-rrf=${b}`)
+    if (a !== b) diff.push(`${items[i].id}: hybrid-w0.5=${a} → rrf=${b}`)
   }
-  console.log(`\n混合两策略排序差异条目数: ${diff.length}/${items.length}`)
+  console.log(`\n混合(w=0.5) vs RRF 排序差异条目数: ${diff.length}/${items.length}`)
   diff.slice(0, 12).forEach((d) => console.log('  ' + d))
 
-  const outPath = path.join(__dirname, 'fusion-ab-result.json')
+  const outPath = path.join(__dirname, `fusion-ab-result-${dataset}.json`)
   fs.writeFileSync(
     outPath,
     JSON.stringify(
       {
         generatedAt: new Date().toISOString(),
+        dataset,
         total: items.length,
-        vectorOnly: result['vector-only (w=1.0, weighted)'].metrics,
-        hybridWeighted: result['hybrid-weighted (w=0.5)'].metrics,
+        vectorOnly: result['vector-only (w=1.0)'].metrics,
+        hybridW08: result['hybrid (w=0.8)'].metrics,
+        hybridW07: result['hybrid (w=0.7)'].metrics,
+        hybridW05: result['hybrid (w=0.5)'].metrics,
         hybridRrf: result['hybrid-rrf (w=0.5)'].metrics,
         diff,
       },
