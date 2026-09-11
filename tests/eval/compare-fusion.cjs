@@ -73,21 +73,28 @@ async function main() {
     { label: 'hybrid (w=0.7)', fusion: 'weighted', vectorWeight: 0.7 },
     { label: 'hybrid (w=0.5)', fusion: 'weighted', vectorWeight: 0.5 },
     { label: 'hybrid-rrf (w=0.5)', fusion: 'rrf', vectorWeight: 0.5 },
+    { label: 'auto-route (M5+)', auto: true },
   ]
+  // --only=auto-route 之类：只跑指定策略（调试/回归省检索次数）
+  const onlyArg = process.argv.find((a) => a.startsWith('--only='))
+  const only = onlyArg ? onlyArg.split('=')[1] : null
+  const activeStrategies = only
+    ? strategies.filter((s) => s.label.startsWith(only) || (only === 'auto' && s.auto))
+    : strategies
   const result = {}
 
-  for (const s of strategies) {
+  for (const s of activeStrategies) {
     const ranks = []
     for (const item of items) {
+      const payload = {
+        knowledgeBaseId: item.kbId,
+        query: item.query,
+        topK: 10,
+        threshold: 0,
+        ...(s.auto ? { autoRoute: true } : { fusion: s.fusion, vectorWeight: s.vectorWeight }),
+      }
       const resp = await evaluate(
-        `window.electronAPI.knowledgeBase.search(${JSON.stringify({
-          knowledgeBaseId: item.kbId,
-          query: item.query,
-          topK: 10,
-          threshold: 0,
-          fusion: s.fusion,
-          vectorWeight: s.vectorWeight,
-        })})`,
+        `window.electronAPI.knowledgeBase.search(${JSON.stringify(payload)})`,
       )
       let hitRank = -1
       if (resp?.success) {
@@ -111,15 +118,19 @@ async function main() {
     )
   }
 
-  // 逐条差异（混合加权 w=0.5 vs RRF w=0.5）
+  // 逐条差异（混合加权 w=0.5 vs RRF w=0.5；仅在两者都跑时计算）
   const diff = []
-  for (let i = 0; i < items.length; i++) {
-    const a = result['hybrid (w=0.5)'].ranks[i]
-    const b = result['hybrid-rrf (w=0.5)'].ranks[i]
-    if (a !== b) diff.push(`${items[i].id}: hybrid-w0.5=${a} → rrf=${b}`)
+  const w05 = result['hybrid (w=0.5)']
+  const rrf05 = result['hybrid-rrf (w=0.5)']
+  if (w05 && rrf05) {
+    for (let i = 0; i < items.length; i++) {
+      const a = w05.ranks[i]
+      const b = rrf05.ranks[i]
+      if (a !== b) diff.push(`${items[i].id}: hybrid-w0.5=${a} → rrf=${b}`)
+    }
+    console.log(`\n混合(w=0.5) vs RRF 排序差异条目数: ${diff.length}/${items.length}`)
+    diff.slice(0, 12).forEach((d) => console.log('  ' + d))
   }
-  console.log(`\n混合(w=0.5) vs RRF 排序差异条目数: ${diff.length}/${items.length}`)
-  diff.slice(0, 12).forEach((d) => console.log('  ' + d))
 
   const outPath = path.join(__dirname, `fusion-ab-result-${dataset}.json`)
   fs.writeFileSync(
@@ -129,11 +140,12 @@ async function main() {
         generatedAt: new Date().toISOString(),
         dataset,
         total: items.length,
-        vectorOnly: result['vector-only (w=1.0)'].metrics,
-        hybridW08: result['hybrid (w=0.8)'].metrics,
-        hybridW07: result['hybrid (w=0.7)'].metrics,
-        hybridW05: result['hybrid (w=0.5)'].metrics,
-        hybridRrf: result['hybrid-rrf (w=0.5)'].metrics,
+        vectorOnly: result['vector-only (w=1.0)']?.metrics ?? null,
+        hybridW08: result['hybrid (w=0.8)']?.metrics ?? null,
+        hybridW07: result['hybrid (w=0.7)']?.metrics ?? null,
+        hybridW05: result['hybrid (w=0.5)']?.metrics ?? null,
+        hybridRrf: result['hybrid-rrf (w=0.5)']?.metrics ?? null,
+        autoRoute: result['auto-route (M5+)']?.metrics ?? null,
         diff,
       },
       null,

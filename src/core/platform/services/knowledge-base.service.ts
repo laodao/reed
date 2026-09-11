@@ -23,6 +23,7 @@ import {
   type ChapterLookup,
 } from '@core/platform/services/kb-chapter-lookup'
 import { KbChapterSummaryService } from '@core/platform/services/kb-chapter-summary.service'
+import { detectKeywordIntent } from '@core/platform/services/query-routing'
 import { extractTextFromFile, inferFileType } from '@core/utils/extract-text'
 import { publishDomainEvent } from '@core/platform/workflow/trigger/domain-event-bus'
 import { WORKFLOW_EVENT_NAMES } from '@shared/types/workflow.types'
@@ -1076,7 +1077,22 @@ export class KnowledgeBaseService {
 
       const config: EmbeddingConfig = kb.embeddingConfig ? JSON.parse(kb.embeddingConfig) : {}
       // D3 混合检索权重：1（缺省）= 纯向量（旧行为）；0 = 纯关键词；中间值 = 加权融合
-      const vectorWeight = req.vectorWeight != null ? Math.min(1, Math.max(0, req.vectorWeight)) : 1
+      // M5+：查询自适应路由——未显式指定 vectorWeight/fusion 时，按查询意图选策略：
+      // 关键词型（法条编号/版本号/API 符号/专有名词）→ RRF 混合（评估：recall@1 70%→80%），
+      // 语义型问句保持纯向量（评估：RRF 在语义型 @1 不损失，误判代价≈0）
+      let effectiveFusion = req.fusion
+      let effectiveVectorWeight = req.vectorWeight
+      if (effectiveFusion == null && effectiveVectorWeight == null && req.autoRoute !== false) {
+        const routing = detectKeywordIntent(req.query)
+        if (routing.keywordish) {
+          effectiveFusion = routing.suggested.fusion
+          effectiveVectorWeight = routing.suggested.vectorWeight
+          console.log(
+            `[KB] 查询路由: 关键词型(${routing.reasons.join(',')}) → ${effectiveFusion}/w=${effectiveVectorWeight}`,
+          )
+        }
+      }
+      const vectorWeight = effectiveVectorWeight != null ? Math.min(1, Math.max(0, effectiveVectorWeight)) : 1
       const topK = req.topK || 5
       const threshold = req.threshold != null && req.threshold > 0 ? req.threshold : null
 
@@ -1108,7 +1124,7 @@ export class KnowledgeBaseService {
       // 纯向量路径的 score 保持原始余弦，下游展示/过滤不失真。
       const fused: Array<{ chunkId: string; score: number; raw: number }> = []
 
-      if (req.fusion === 'rrf') {
+      if (effectiveFusion === 'rrf') {
         // M4 RRF：名次倒数融合（k=60）——只用排名、不做分数校准，跨库/跨路更稳健
         const RRF_K = 60
         const rrf = new Map<string, number>()

@@ -335,6 +335,12 @@ export interface SearchRequest {
    * - rrf：Reciprocal Rank Fusion（名次倒数融合，对分数校准不敏感）
    */
   fusion?: 'weighted' | 'rrf'
+  /**
+   * 查询自适应路由（M5+）：未显式指定 vectorWeight/fusion 时，按查询意图自动选策略
+   * ——关键词型查询（法条编号/版本号/API 符号/专有名词）走 RRF 混合，语义型保持纯向量。
+   * 默认 true；显式传 vectorWeight 或 fusion 时该开关不生效。
+   */
+  autoRoute?: boolean
   /** 限定检索的文档 ID 列表（缺省=整库；用于「在这篇文档里找」） */
   documentIds?: string[]
   /** 相似度阈值 */
