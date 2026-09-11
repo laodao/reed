@@ -104,6 +104,10 @@ export function useStoryRoom(projectId: string) {
           } catch { /* 状态刷新失败不阻断 */ }
         })()
         break
+      case 'target:changed':
+        if (state.value) state.value = { ...state.value, contentTarget: event.target }
+        ElMessage.success(event.target === 'script' ? '内容目标已切换为：短剧剧本' : '内容目标已切换为：长篇小说')
+        break
       case 'error':
         status.value = 'error'
         streamMessage.value = null

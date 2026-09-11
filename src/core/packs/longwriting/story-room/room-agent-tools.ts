@@ -26,7 +26,15 @@ import { emitRoomEvent } from './room-events'
 import { GraphService } from '@core/platform/services/longwriting/graph/graph.service'
 
 export const LW_ROOM_PACK_ID = 'lw-room'
-export const LW_ROOM_MAX_STEPS = 12
+
+/** 步数上限（六扇门复盘：12 是贴着「设计反派+关系网」的最低配，复杂级联会被截断；
+ *  上限本职是失控兜底而非预算——正常讨论轮 1~3 步自终，抬高对聊天零成本。
+ *  LW_ROOM_MAX_STEPS 环境变量可覆盖，夹到 [1,60]） */
+export const LW_ROOM_MAX_STEPS = (() => {
+  const raw = Number(process.env.LW_ROOM_MAX_STEPS)
+  if (!Number.isFinite(raw) || raw <= 0) return 24
+  return Math.min(60, Math.round(raw))
+})()
 
 /** 从工具执行上下文还原研讨室上下文 */
 function lwCtxFrom(ctx: AgentToolContext): { projectId: string } {

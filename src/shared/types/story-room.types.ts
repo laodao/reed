@@ -170,6 +170,7 @@ export type RoomEventType =
   | 'gate:suggest'
   | 'task:progress'
   | 'design:ready'
+  | 'target:changed'
   | 'error'
 
 export type RoomEvent =
@@ -182,6 +183,7 @@ export type RoomEvent =
   | { type: 'gate:suggest'; toPhase: RoomPhaseId; reason: string }
   | { type: 'task:progress'; message: string; tool?: string; status?: 'ok' | 'skipped' | 'error' }
   | { type: 'design:ready'; packageId: string; title: string; itemCount: number }
+  | { type: 'target:changed'; target: 'novel' | 'script' }
   | { type: 'error'; error: string }
 
 // ==================== 视图 / 请求类型 ====================
