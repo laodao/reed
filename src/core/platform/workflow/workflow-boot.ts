@@ -321,6 +321,9 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
     })
 
     registerBuiltinAgentTools(agentToolRegistry)
+    // 本地能力工具（44 号：fs/shell 五件，桌面端限定，围栏未配置时结构化报错）
+    const { registerLocalCapabilityTools } = await import('./tools/local-capability-tools')
+    registerLocalCapabilityTools(agentToolRegistry)
     providerAdapter = new ProviderAdapter()
     // 核心 harness 先注册（review C8：可选扩展桥的失败不得降级核心功能——
     // 此前 registerCustomAgentTools 抛错会跳过 registerAgentLoopHarness，

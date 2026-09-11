@@ -72,6 +72,9 @@ export const SYSTEM_AGENT_PASSTHROUGH_TOOLS = [
   'wf_web_extract',
   'http_get',
   'data_table_query',
+  // 本地读类两件（44 号）：免审批（围栏限定+只读）；写/执行类等聊天审批卡立项
+  'fs_read_file',
+  'fs_list_dir',
 ] as const
 
 export const SYSTEM_AGENT_WHITELIST: string[] = [...SYSTEM_AGENT_TOOL_NAMES, ...SYSTEM_AGENT_PASSTHROUGH_TOOLS]
