@@ -1106,25 +1106,47 @@ export class KnowledgeBaseService {
       // H3 语义：阈值已在各路原始分上过滤（上方的余弦阈值 + BM25 的 idf 加权分无
       // 绝对含义，不做阈值过滤）；融合分只用于排序，不回写为结果 score——
       // 纯向量路径的 score 保持原始余弦，下游展示/过滤不失真。
-      const maxVec = Math.max(0, ...vecScores.values())
-      const maxBm = Math.max(0, ...bm25.values())
-      const candidates = new Set([...vecScores.keys(), ...bm25.keys()])
       const fused: Array<{ chunkId: string; score: number; raw: number }> = []
-      for (const chunkId of candidates) {
-        const v = maxVec > 0 ? (vecScores.get(chunkId) ?? 0) / maxVec : 0
-        const b = maxBm > 0 ? (bm25.get(chunkId) ?? 0) / maxBm : 0
-        // 融合分用于排序；回显 score 用原始最高分（向量优先，纯关键词路径用 BM25 分）
-        const raw = vecScores.get(chunkId) ?? bm25.get(chunkId) ?? 0
-        fused.push({ chunkId, score: vectorWeight * v + (1 - vectorWeight) * b, raw })
+
+      if (req.fusion === 'rrf') {
+        // M4 RRF：名次倒数融合（k=60）——只用排名、不做分数校准，跨库/跨路更稳健
+        const RRF_K = 60
+        const rrf = new Map<string, number>()
+        const byRankDesc = (m: Map<string, number>): Array<[string, number]> =>
+          [...m.entries()].sort((a, b) => b[1] - a[1])
+        byRankDesc(vecScores).forEach(([id], i) =>
+          rrf.set(id, (rrf.get(id) ?? 0) + 1 / (RRF_K + i + 1)),
+        )
+        byRankDesc(bm25).forEach(([id], i) =>
+          rrf.set(id, (rrf.get(id) ?? 0) + 1 / (RRF_K + i + 1)),
+        )
+        for (const [chunkId, score] of rrf) {
+          fused.push({ chunkId, score, raw: vecScores.get(chunkId) ?? bm25.get(chunkId) ?? 0 })
+        }
+      } else {
+        const maxVec = Math.max(0, ...vecScores.values())
+        const maxBm = Math.max(0, ...bm25.values())
+        const candidates = new Set([...vecScores.keys(), ...bm25.keys()])
+        for (const chunkId of candidates) {
+          const v = maxVec > 0 ? (vecScores.get(chunkId) ?? 0) / maxVec : 0
+          const b = maxBm > 0 ? (bm25.get(chunkId) ?? 0) / maxBm : 0
+          // 融合分用于排序；回显 score 用原始最高分（向量优先，纯关键词路径用 BM25 分）
+          const raw = vecScores.get(chunkId) ?? bm25.get(chunkId) ?? 0
+          fused.push({ chunkId, score: vectorWeight * v + (1 - vectorWeight) * b, raw })
+        }
       }
       fused.sort((a, b) => b.score - a.score)
 
       const searchResults: SearchResult[] = []
       // M3：章节上下文缓存（按 documentId 懒加载，同文档多命中只查一次章节表）
       const chapterCache = new Map<string, ChapterLookup>()
-      for (const r of fused.slice(0, topK)) {
+      // M4：限定文档检索（缺省整库）；按序迭代以便过滤后仍能补足 topK
+      const docFilter = req.documentIds && req.documentIds.length > 0 ? new Set(req.documentIds) : null
+      for (const r of fused) {
+        if (searchResults.length >= topK) break
         const chunk = await db.kbChunks.findById(r.chunkId)
         if (!chunk) continue
+        if (docFilter && !docFilter.has(chunk.documentId)) continue
         const doc = await db.kbDocuments.findById(chunk.documentId)
         if (!doc) continue
 
@@ -1137,7 +1159,7 @@ export class KnowledgeBaseService {
           score: Number(r.raw.toFixed(4)),
           ...(chapter
             ? {
-                chapterPath: this.chapterPathOf(chapter, chapterCache.get(chapter.documentId)!.byId),
+                chapterPath: chapterPathOf(chapter, chapterCache.get(chapter.documentId)!.byId),
                 ...(chapter.summary ? { chapterSummary: chapter.summary } : {}),
               }
             : {}),

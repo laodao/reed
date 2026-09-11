@@ -6,7 +6,6 @@
 
 import {
   StructureInfo,
-  StructureType,
   SectionInfo,
   MarkdownHeading,
   NovelChapter
@@ -39,9 +38,6 @@ export class StructureDetector {
 
   // 最小章节数（少于此数量认为无结构）
   private readonly minSectionsCount = 2
-
-  // 最小章节内容长度（少于此值的章节将被过滤）
-  private readonly minSectionContentLength = 20
 
   /**
    * 检测文档结构

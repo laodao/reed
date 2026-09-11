@@ -329,6 +329,14 @@ export interface SearchRequest {
   topK?: number
   /** 向量检索权重 */
   vectorWeight?: number
+  /**
+   * 混合检索融合策略（M4）：
+   * - weighted（默认）：向量/BM25 各自归一化后加权（沿用既有行为）
+   * - rrf：Reciprocal Rank Fusion（名次倒数融合，对分数校准不敏感）
+   */
+  fusion?: 'weighted' | 'rrf'
+  /** 限定检索的文档 ID 列表（缺省=整库；用于「在这篇文档里找」） */
+  documentIds?: string[]
   /** 相似度阈值 */
   threshold?: number
   /** D2 是否启用 rerank 重排（缺省跟随 KB 配置；false = 强制关闭） */
