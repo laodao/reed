@@ -1,5 +1,5 @@
 <template>
-  <div ref="scrollEl" class="chat">
+  <div ref="scrollEl" class="chat" @scroll="onScroll">
     <div class="chat-inner">
       <!-- 主编开场白（原型形态：人设气泡而非标题屏） -->
       <MessageBubble
@@ -92,6 +92,39 @@ type TimelineItem =
 
 const scrollEl = ref<HTMLElement | null>(null)
 
+/** 吸底跟随：用户上翻脱离底部即停，拉回底部恢复；用户发送指令时无条件重吸 */
+const followBottom = ref(true)
+/** 距底部多少像素内视为「在底部」 */
+const NEAR_BOTTOM_PX = 120
+/** 程序化置底产生的 scroll 事件不算「用户拖动」，需抑制一帧 */
+let programmaticScroll = false
+
+function onScroll(): void {
+  if (programmaticScroll) return
+  const el = scrollEl.value
+  if (!el) return
+  followBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX
+}
+
+function scrollToBottom(force = false): void {
+  nextTick(() => {
+    const el = scrollEl.value
+    if (!el) return
+    // 用户发送指令：无论停在哪都拉底并重吸跟随
+    if (force) followBottom.value = true
+    // 用户上翻阅读中：agent 新消息不拽回（评审 P2-18 延续）
+    if (!followBottom.value) return
+    programmaticScroll = true
+    // 瞬时置底：流式增量若走 smooth 逐帧动画会拖影，且干扰 scroll 判定
+    el.style.scrollBehavior = 'auto'
+    el.scrollTop = el.scrollHeight
+    el.style.scrollBehavior = ''
+    requestAnimationFrame(() => {
+      programmaticScroll = false
+    })
+  })
+}
+
 function turnOf(metadata: string): number {
   try {
     return JSON.parse(metadata)?.turnNo ?? 0
@@ -127,18 +160,12 @@ function safeParse(metadata: string): Record<string, unknown> {
   }
 }
 
-function scrollToBottom(force = false): void {
-  nextTick(() => {
-    const el = scrollEl.value
-    if (!el) return
-    // 流式中用户上翻即不再拽回（评审 P2-18：仅在近底部或强制时跟随）
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120
-    if (force || nearBottom) el.scrollTop = el.scrollHeight
-  })
-}
-
-watch(() => props.messages.length, () => scrollToBottom(true), { flush: 'post' })
-// 溯源定位：滚到该轮首条消息并闪烁高亮
+// 用户发送（乐观上屏 role=user）无条件拉底；assistant 消息仅在吸底跟随时拉底
+watch(() => props.messages.length, () => {
+  const last = props.messages[props.messages.length - 1]
+  scrollToBottom(last?.role === 'user')
+}, { flush: 'post' })
+// 溯源定位：滚到该轮首条消息并闪烁高亮（跳入历史即视为离开底部，跟随自然解除）
 watch(() => props.locateTurn, (req) => {
   if (!req) return
   nextTick(() => {
@@ -150,11 +177,15 @@ watch(() => props.locateTurn, (req) => {
   })
 })
 watch(() => props.streamMessage?.content.length, () => scrollToBottom(false), { flush: 'post' })
+// 提炼卡片与打字指示渲染在对话流末尾，吸底时补拉
+watch(() => props.cards.length, () => scrollToBottom(false), { flush: 'post' })
+watch(() => props.busy, () => scrollToBottom(false), { flush: 'post' })
 </script>
 
 <style scoped>
 .chat {
-  flex: 1; overflow-y: auto; padding: 22px 28px 12px; scroll-behavior: smooth; min-height: 0;
+  /* 程序化置底走瞬时赋值（见 scrollToBottom）；scroll-behavior 不影响用户滚轮/拖拽 */
+  flex: 1; overflow-y: auto; padding: 22px 28px 12px; min-height: 0;
 }
 .chat-inner { max-width: 820px; margin: 0 auto; }
 .welcome { text-align: center; padding: 60px 20px 30px; }
