@@ -12,11 +12,11 @@
  * 夹具：fixtures/minibook.epub（EPUB3）、minibook2.epub（EPUB2）、
  *       sample-ai-chat.pdf（真实 258KB 中文 PDF，含 #/## 标题与多段落）。
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
-import { extractTextFromFile } from '@core/utils/extract-text'
+import { extractTextFromFile, rewriteImageRefs, persistLocalImages } from '@core/utils/extract-text'
 import { buildMiniPdfWithOutline } from './fixtures/minipdf-outline.builder'
 
 const miniBookPath = path.join(__dirname, 'fixtures', 'minibook.epub')
@@ -93,6 +93,175 @@ describe('extractTextFromFile: epub markdown 结构模式（asMarkdown）', () =
     expect(md).not.toMatch(/<[a-zA-Z/][^>]*>/)
     // 无 EPUB 内部链接锚点噪音（anydoc 生成的 #oebps-* target）
     expect(md).not.toMatch(/\(#?oebps-[^)]*\)/)
+  })
+})
+
+describe('extractTextFromFile: epub 内嵌图片 → 资源目录（相对路径）', () => {
+  it('提供 resourceDir：图片复制到该目录，正文只写相对路径，且解析结束/解析器清理后文件仍在', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kb-res-'))
+    const resourceDir = path.join(root, 'assets', 'doc1')
+    try {
+      const md = await extractTextFromFile(miniBookPath, 'epub', {
+        asMarkdown: true,
+        resourceDir,
+        resourceRefPrefix: 'knowledge-base/kb1/documents/assets/doc1',
+      })
+
+      // 图片真实落到目标目录
+      const files = fs.readdirSync(resourceDir)
+      expect(files.length).toBeGreaterThan(0)
+
+      // 正文只写 dataPath 相对路径
+      expect(md).toContain('![logo](knowledge-base/kb1/documents/assets/doc1/')
+      expect(md).not.toContain(os.tmpdir())
+      expect(md).not.toContain('kb-epub-')
+      expect(md).not.toMatch(/[A-Za-z]:[\\/]/)
+
+      // 关键回归：解析器 destroy() 会异步删除它自己的工作区资源；
+      // 复制出来的文件必须留在应用数据目录（早期实现把工作区直接指向数据目录，图片随后被删空）
+      const copied = files.map(f => path.join(resourceDir, f))
+      await new Promise(r => setTimeout(r, 600))
+      for (const file of copied) {
+        expect(fs.existsSync(file), `${path.basename(file)} 在解析结束后被删除`).toBe(true)
+      }
+      expect(fs.readdirSync(resourceDir).length).toBe(files.length)
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('未提供 resourceDir：不残留临时绝对路径（本地图片引用被清理）', async () => {
+    const md = await extractTextFromFile(miniBookPath, 'epub', { asMarkdown: true })
+
+    expect(md).not.toContain(os.tmpdir())
+    expect(md).not.toContain('kb-epub-')
+    expect(md).not.toMatch(/[A-Za-z]:[\\/]/)
+  })
+})
+
+describe('persistLocalImages：图片复制 + 引用改写', () => {
+  let workDir = ''
+  let targetDir = ''
+
+  beforeEach(() => {
+    workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kb-work-'))
+    targetDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kb-target-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(workDir, { recursive: true, force: true })
+    fs.rmSync(targetDir, { recursive: true, force: true })
+  })
+
+  it('工作区内图片复制到目标目录，引用改写为相对前缀（去重复制一次）', async () => {
+    fs.writeFileSync(path.join(workDir, 'a.png'), 'A')
+    fs.writeFileSync(path.join(workDir, 'b.png'), 'B')
+    const md = `![1](${path.join(workDir, 'a.png')}) ![2](${workDir.replace(/\\/g, '/')}/b.png) ![1-again](${path.join(workDir, 'a.png')})`
+
+    const result = await persistLocalImages(md, {
+      workspaceDir: workDir,
+      targetDir,
+      refPrefix: 'knowledge-base/kb1/documents/assets/doc1',
+    })
+
+    expect(result.saved).toBe(2)
+    expect(result.failed).toBe(0)
+    expect(fs.readFileSync(path.join(targetDir, 'a.png'), 'utf8')).toBe('A')
+    expect(fs.readFileSync(path.join(targetDir, 'b.png'), 'utf8')).toBe('B')
+    expect(result.markdown).toBe(
+      '![1](knowledge-base/kb1/documents/assets/doc1/a.png) ' +
+        '![2](knowledge-base/kb1/documents/assets/doc1/b.png) ' +
+        '![1-again](knowledge-base/kb1/documents/assets/doc1/a.png)',
+    )
+  })
+
+  it('文件已不存在（解析器已清理）→ 引用被剔除，不写入死链', async () => {
+    const missing = path.join(workDir, 'gone.png')
+    const result = await persistLocalImages(`前文 ![x](${missing}) 后文`, {
+      workspaceDir: workDir,
+      targetDir,
+      refPrefix: 'p',
+    })
+
+    expect(result.saved).toBe(0)
+    expect(result.failed).toBe(1)
+    expect(result.markdown).not.toContain('gone.png')
+    expect(result.markdown).toContain('前文')
+    expect(result.markdown).toContain('后文')
+  })
+
+  it('远程图片与相对路径引用保持不变', async () => {
+    const md = '![r](https://x.com/a.png) ![rel](images/a.png)'
+    const result = await persistLocalImages(md, {
+      workspaceDir: workDir,
+      targetDir,
+      refPrefix: 'p',
+    })
+    expect(result.markdown).toBe(md)
+    expect(result.saved).toBe(0)
+  })
+
+  it('目标目录不存在时自动创建', async () => {
+    fs.writeFileSync(path.join(workDir, 'c.png'), 'C')
+    const nested = path.join(targetDir, 'deep', 'assets')
+    const result = await persistLocalImages(`![c](${path.join(workDir, 'c.png')})`, {
+      workspaceDir: workDir,
+      targetDir: nested,
+      refPrefix: 'p',
+    })
+    expect(result.saved).toBe(1)
+    expect(fs.existsSync(path.join(nested, 'c.png'))).toBe(true)
+  })
+})
+
+describe('rewriteImageRefs：图片引用改写/清理', () => {
+  const resDir = path.join('C:', 'data', 'knowledge-base', 'kb1', 'documents', 'assets', 'doc1')
+
+  it('资源目录内的绝对路径 → 相对前缀（两种分隔符都认）', () => {
+    const md = `![a](${path.join(resDir, 'x.png')})\n![b](${resDir.replace(/\\/g, '/')}/y.png)`
+    const out = rewriteImageRefs(md, {
+      resourceDir: resDir,
+      refPrefix: 'knowledge-base/kb1/documents/assets/doc1',
+    })
+    expect(out).toBe(
+      '![a](knowledge-base/kb1/documents/assets/doc1/x.png)\n![b](knowledge-base/kb1/documents/assets/doc1/y.png)',
+    )
+  })
+
+  it('远程图片（http/https/data）保留原样', () => {
+    const md = '![a](https://x.com/a.png) ![b](data:image/png;base64,AAA)'
+    const out = rewriteImageRefs(md, { resourceDir: resDir, refPrefix: 'p' })
+    expect(out).toBe(md)
+  })
+
+  it('资源目录之外的本地绝对路径（临时目录等）整段删除，不写入 DB', () => {
+    const md = `前文\n\n![dead](${path.join('C:', 'Users', 'x', 'AppData', 'Local', 'Temp', 'kb-epub-1', 'a.png')})\n\n后文`
+    const out = rewriteImageRefs(md, { resourceDir: resDir, refPrefix: 'p' })
+    expect(out).not.toContain('kb-epub-1')
+    expect(out).not.toContain('![')
+    expect(out).toContain('前文')
+    expect(out).toContain('后文')
+  })
+
+  it('已是相对路径：保留（源文档自带的相对引用）', () => {
+    const md = '![a](images/a.png)'
+    expect(rewriteImageRefs(md, { resourceDir: resDir, refPrefix: 'p' })).toBe(md)
+  })
+
+  it('HTML <img src> 形式同样处理', () => {
+    const md = `<img src="${path.join(resDir, 'z.jpg')}" alt="z"/>`
+    const out = rewriteImageRefs(md, {
+      resourceDir: resDir,
+      refPrefix: 'knowledge-base/kb1/documents/assets/doc1',
+    })
+    expect(out).toBe('<img src="knowledge-base/kb1/documents/assets/doc1/z.jpg" alt="z"/>')
+  })
+
+  it('未给相对前缀：本地引用一律清理（宁缺勿留死链）', () => {
+    const md = `![a](${path.join(resDir, 'x.png')}) ![keep](https://x.com/a.png)`
+    const out = rewriteImageRefs(md, { resourceDir: resDir })
+    expect(out).not.toContain('x.png')
+    expect(out).toContain('https://x.com/a.png')
   })
 })
 

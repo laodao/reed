@@ -25,6 +25,7 @@ import {
 import { KbChapterSummaryService } from '@core/platform/services/kb-chapter-summary.service'
 import { detectKeywordIntent } from '@core/platform/services/query-routing'
 import { extractTextFromFile, inferFileType } from '@core/utils/extract-text'
+import { resolveAssetPath, toRelativeAssetPath } from '@core/utils/asset-path'
 import { publishDomainEvent } from '@core/platform/workflow/trigger/domain-event-bus'
 import { WORKFLOW_EVENT_NAMES } from '@shared/types/workflow.types'
 import type {
@@ -338,7 +339,8 @@ export class KnowledgeBaseService {
         requests.push({
           knowledgeBaseId: kbId,
           name: file.name,
-          filePath: destPath,
+          // 入库统一相对 dataPath（正斜杠）：换数据目录/跨平台后仍可解析，UI 也不会露出本机绝对路径
+          filePath: toRelativeAssetPath(destPath),
           fileType,
           fileSize: file.size
         })
@@ -387,8 +389,9 @@ export class KnowledgeBaseService {
         const existing = await db.kbDocuments.findBySource(kbId, data.source)
         if (existing) {
           const newBuf = Buffer.from(data.content, 'utf-8')
-          // 覆盖文件内容（复用 existing.filePath，避免文件孤立）
-          await fs.promises.writeFile(existing.filePath, newBuf)
+          // 覆盖文件内容（复用 existing.filePath，避免文件孤立）；
+          // file_path 是 dataPath 相对路径 → 必须解析回绝对路径，否则会按进程 CWD 写到别处
+          await fs.promises.writeFile(resolveAssetPath(existing.filePath), newBuf)
 
           const sizeDelta = newBuf.length - existing.fileSize
           const oldChunkCount = existing.chunkCount
@@ -446,7 +449,8 @@ export class KnowledgeBaseService {
       const request: CreateDocumentRequest = {
         knowledgeBaseId: kbId,
         name: data.name,
-        filePath: destPath,
+        // 同上传：入库相对 dataPath（正斜杠）
+        filePath: toRelativeAssetPath(destPath),
         fileType: 'txt',
         fileSize: contentBuffer.length,
         source: data.source,
@@ -494,6 +498,8 @@ export class KnowledgeBaseService {
       const kbId = doc.knowledgeBaseId
 
       this.deleteDocumentFile(doc.filePath)
+      // 内嵌资源目录（epub 图片等）随文档一起清理
+      this.removeDocumentAssets(kbId, docId)
 
       await db.kbVectors.deleteByDocumentId(docId)
       await db.kbInvertedIndex.deleteByDocumentId(docId)
@@ -599,7 +605,20 @@ export class KnowledgeBaseService {
       // 1. 解析
       await db.kbDocuments.updateProgress(doc.id, 10)
       this.emitProgress(doc.id, 10, undefined)
-      const content = await this.parseFile(doc.filePath, doc.fileType)
+      // 内嵌图片（epub 等）落到应用数据目录，正文只写 dataPath 相对路径；
+      // 重新处理前先清空旧的资源目录，避免上次残留的图片混入本次结果
+      const assets = this.documentAssetDir(kb.id, doc.id)
+      this.removeDocumentAssets(kb.id, doc.id)
+      const content = await this.parseFile(doc.filePath, doc.fileType, {
+        dir: assets.abs,
+        refPrefix: assets.rel,
+      })
+      const assetCount = this.countAssetFiles(assets.abs)
+      if (assetCount > 0) {
+        console.log(`[KB] 内嵌资源落盘: ${assetCount} 个 → ${assets.rel}`)
+      } else {
+        this.dropEmptyAssetDir(assets.abs)
+      }
       if (!content?.trim()) {
         await db.kbDocuments.markFailed(doc.id, '文档内容为空')
         this.emitStatus(doc.id, 'failed', undefined, '文档内容为空')
@@ -716,6 +735,9 @@ export class KnowledgeBaseService {
       this.emitProgress(doc.id, 100, 0)
       this.emitStatus(doc.id, 'completed', splitChunks.length)
       this.emitKnowledgeBaseStats(kb.id)
+      if (assetCount > 0) {
+        console.log(`[KB] 内嵌资源校验: ${this.countAssetFiles(assets.abs)}/${assetCount} 仍在磁盘`)
+      }
       console.log(`[KB] 处理完成: ${doc.name}, 耗时: ${Math.round((Date.now() - startTime) / 1000)}秒`)
 
       // 7. 章节摘要（异步后台生成，不阻塞处理完成；单章失败标记 failed 可重试）
@@ -821,14 +843,67 @@ export class KnowledgeBaseService {
    * txt/md 原样返回）。
    * 支持 txt/md/pdf/epub/docx/xlsx；中文编码自动检测。
    * 注：原 decodeTextFile/hasGarbledChars 已迁入 extract-text，此处仅保留 parseFile 入口。
+   *
+   * @param assets 文档内嵌资源落盘信息（epub 图片等）；不传则解析器用临时目录、正文里的本地图片引用被清理
    */
-  private async parseFile(filePath: string, fileType: FileType): Promise<string> {
+  private async parseFile(
+    filePath: string,
+    fileType: FileType,
+    assets?: { dir: string; refPrefix: string },
+  ): Promise<string> {
     // file_path 入库约定为 dataPath 相对路径（asset-paths-to-relative 迁移会把绝对路径改写为相对），
     // 从 DB 重读（重新处理/重启后续跑）必须解析回绝对路径，否则按进程 CWD 解析必 ENOENT
-    const resolved = path.isAbsolute(filePath)
-      ? filePath
-      : path.join(getPathProvider().getDataPath(), filePath)
-    return extractTextFromFile(resolved, fileType, { asMarkdown: true })
+    const resolved = resolveAssetPath(filePath)
+    return extractTextFromFile(resolved, fileType, {
+      asMarkdown: true,
+      resourceDir: assets?.dir,
+      resourceRefPrefix: assets?.refPrefix,
+    })
+  }
+
+  /** 文档内嵌资源目录（dataPath 相对路径 + 绝对路径），与文档本体同属 knowledge-base/<kbId>/documents 下 */
+  private documentAssetDir(kbId: string, docId: string): { abs: string; rel: string } {
+    const abs = path.join(getPathProvider().getDataPath(), 'knowledge-base', kbId, 'documents', 'assets', docId)
+    return { abs, rel: toRelativeAssetPath(abs) }
+  }
+
+  /**
+   * 清理文档内嵌资源目录。
+   * @param keepEmpty 保留空目录？重新处理前清空用 true（解析器随后写入）；删除文档用 false
+   */
+  private removeDocumentAssets(kbId: string, docId: string): void {
+    try {
+      const { abs } = this.documentAssetDir(kbId, docId)
+      if (fs.existsSync(abs)) fs.rmSync(abs, { recursive: true, force: true })
+    } catch (e: unknown) {
+      console.warn(`[KB] 清理内嵌资源目录失败: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  /** 递归统计资源目录里的文件数（0/不存在都返回 0） */
+  private countAssetFiles(dir: string): number {
+    try {
+      if (!fs.existsSync(dir)) return 0
+      let count = 0
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isDirectory()) count += this.countAssetFiles(path.join(dir, entry.name))
+        else count++
+      }
+      return count
+    } catch {
+      return 0
+    }
+  }
+
+  /** 解析后若资源目录为空（文档内无图片），顺手删掉，避免留下一堆空目录 */
+  private dropEmptyAssetDir(dir: string): void {
+    try {
+      if (fs.existsSync(dir) && fs.readdirSync(dir).length === 0) {
+        fs.rmSync(dir, { recursive: true, force: true })
+      }
+    } catch {
+      /* 清理失败不影响主流程 */
+    }
   }
 
   async getEmbeddingVectors(texts: string[], config: EmbeddingConfig, signal?: AbortSignal): Promise<number[][] | null> {
@@ -1402,7 +1477,8 @@ export class KnowledgeBaseService {
       const request: CreateDocumentRequest = {
         knowledgeBaseId: kbId,
         name: docName,
-        filePath: destPath,
+        // 同上传：入库相对 dataPath（正斜杠）
+        filePath: toRelativeAssetPath(destPath),
         fileType: 'webpage',
         fileSize: contentBuffer.length
       }

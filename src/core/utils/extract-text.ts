@@ -38,6 +38,15 @@ const MIN_PDF_OUTLINE_ENTRIES = 3
 export interface ExtractTextOptions {
   /** 返回 Markdown 结构（pdf/epub 走解析器原生 Markdown；txt/md 原样返回）。默认 false：去标记纯文本 */
   asMarkdown?: boolean
+  /**
+   * 内嵌资源（epub 图片等）**目标目录**（绝对路径，通常为应用数据目录下的文档资源目录）。
+   * 提供时：解析完把正文引用到的图片复制到该目录，正文只写 dataPath **相对路径**
+   * （不落系统临时目录、不写绝对路径）；不提供时：正文里的本地图片引用会被清理（不留死链）。
+   * 需与 resourceRefPrefix 一起提供。
+   */
+  resourceDir?: string
+  /** 正文中图片引用前缀（相对 dataPath，正斜杠，不含末尾斜杠）；与 resourceDir 配套 */
+  resourceRefPrefix?: string
 }
 
 /**
@@ -165,6 +174,153 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+/** Markdown 图片：![alt](url "title")，url 允许 <...> 包裹 */
+const MD_IMAGE_RE = /!\[([^\]]*)\]\(\s*(?:<([^>]*)>|([^)\s]+))(?:\s+"[^"]*")?\s*\)/g
+/** HTML 图片标签的 src 属性 */
+const HTML_IMG_TAG_RE = /<img\b[^>]*>/gi
+const HTML_IMG_SRC_RE = /\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)')/i
+
+/** 远程/内联图片：保留原样（不落盘、也不该被清理） */
+function isRemoteImageUrl(url: string): boolean {
+  return /^(https?:|data:|blob:)/i.test(url)
+}
+
+/** 归一化为可比较的路径：正斜杠 + Windows 下大小写不敏感 */
+function normalizeForCompare(p: string): string {
+  const normalized = p.replace(/\\/g, '/').replace(/^file:\/\/\/?/i, '')
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized
+}
+
+/**
+ * 按 resolver 重写 Markdown 里的图片引用（唯一实现，供同步重写与异步落盘共用）。
+ * resolver 返回 null = 删除该图片引用。
+ */
+function mapImageRefs(markdown: string, resolve: (url: string) => string | null): string {
+  let out = markdown.replace(MD_IMAGE_RE, (_match, alt: string, wrapped?: string, plain?: string) => {
+    const next = resolve(wrapped ?? plain ?? '')
+    if (next === null) return ''
+    return `![${alt}](${next})`
+  })
+
+  out = out.replace(HTML_IMG_TAG_RE, tag => {
+    const m = HTML_IMG_SRC_RE.exec(tag)
+    if (!m) return tag
+    const next = resolve(m[1] ?? m[2] ?? '')
+    if (next === null) return ''
+    return tag.replace(HTML_IMG_SRC_RE, `src="${next}"`)
+  })
+
+  return out
+}
+
+/** 本地绝对路径判定（含 file:// 与 Windows 盘符） */
+function isLocalAbsoluteImageUrl(url: string): boolean {
+  const norm = normalizeForCompare(url)
+  return /^[a-zA-Z]:\//.test(norm) || norm.startsWith('/')
+}
+
+/** url 是否落在指定目录内 */
+function isInsideDir(url: string, dirNorm: string): boolean {
+  return Boolean(dirNorm) && normalizeForCompare(url).startsWith(dirNorm + '/')
+}
+
+/**
+ * 改写 / 清理 Markdown 中的本地图片引用（纯函数，不落盘）。
+ *
+ * 背景：@lingo-reader 系列解析器把章节内图片解压到「资源目录」并把 src 改写成该目录下的
+ * **绝对路径**；而它的 destroy() 会删除这些资源文件（见 persistLocalImages 注释）。
+ * 因此引用必须收口：
+ *   1. 远程/内联图片（http/https/data/blob）→ 原样保留；
+ *   2. 落在 resourceDir 内的绝对路径 → 改写为 `<refPrefix>/<文件名>`（dataPath 相对路径）；
+ *   3. 其它本地绝对路径 / file:// → 整段删除（文件不在应用数据目录，留引用只会是死链）；
+ *   4. 本来就是相对路径 → 保留（源文档自带引用，交由调用方决定如何解析）。
+ *
+ * 未提供 refPrefix 时，第 2 类也按第 3 类处理（无法安全表达相对路径，宁缺勿留死链）。
+ */
+export function rewriteImageRefs(
+  markdown: string,
+  options: { resourceDir?: string; refPrefix?: string } = {},
+): string {
+  const resDirNorm = options.resourceDir
+    ? normalizeForCompare(options.resourceDir).replace(/\/+$/, '')
+    : ''
+  const prefix = (options.refPrefix ?? '').replace(/\\/g, '/').replace(/\/+$/, '')
+
+  return mapImageRefs(markdown, rawUrl => {
+    const url = rawUrl.trim()
+    if (!url) return null
+    if (isRemoteImageUrl(url)) return url
+    if (!isLocalAbsoluteImageUrl(url)) return url // 已是相对路径：保留
+    if (isInsideDir(url, resDirNorm) && prefix) {
+      return `${prefix}/${url.replace(/\\/g, '/').split('/').pop() ?? ''}`
+    }
+    return null // 其它本地绝对路径：删除引用
+  })
+}
+
+/**
+ * 把 Markdown 里引用的本地图片**复制**到应用数据目录，并改写为相对路径引用。
+ *
+ * 为什么要复制：`@lingo-reader/epub-parser` / `mobi-parser` 把 resourceSaveDir 当**临时工作区**——
+ * 解压出来的图片记录在 savedResourcePath 里，`destroy()` 时逐条 unlink（异步、忽略错误）。
+ * 直接把 resourceSaveDir 指到应用数据目录，图片会在解析返回后被解析器自己删掉
+ * （实测：解析后 1226 个文件在随后几秒内被清空，正文留下的是死链）。
+ * 故工作区仍用临时目录，只把**正文真正引用到**的图片复制进目标目录，再改写引用。
+ *
+ * @returns { markdown, saved, failed } — failed 是复制失败（随后引用被删除）的数量
+ */
+export async function persistLocalImages(
+  markdown: string,
+  options: { workspaceDir: string; targetDir: string; refPrefix: string },
+): Promise<{ markdown: string; saved: number; failed: number }> {
+  const { workspaceDir, targetDir } = options
+  const prefix = options.refPrefix.replace(/\\/g, '/').replace(/\/+$/, '')
+  const workNorm = normalizeForCompare(workspaceDir).replace(/\/+$/, '')
+
+  // 1. 收集工作区内被引用的图片绝对路径（去重，保持出现顺序）
+  const sources: string[] = []
+  const seen = new Set<string>()
+  mapImageRefs(markdown, rawUrl => {
+    const url = rawUrl.trim()
+    if (url && !isRemoteImageUrl(url) && isInsideDir(url, workNorm)) {
+      const key = normalizeForCompare(url)
+      if (!seen.has(key)) {
+        seen.add(key)
+        sources.push(url.replace(/\\/g, '/').replace(/^file:\/\/\/?/i, ''))
+      }
+    }
+    return rawUrl
+  })
+
+  // 2. 逐张复制到目标目录（同名覆盖；失败则该引用稍后被删除）
+  const copied = new Map<string, string>()
+  let failed = 0
+  if (sources.length > 0 && prefix) {
+    await fs.promises.mkdir(targetDir, { recursive: true })
+    for (const source of sources) {
+      const name = source.split('/').pop() ?? ''
+      if (!name) continue
+      try {
+        await fs.promises.copyFile(source, path.join(targetDir, name))
+        copied.set(normalizeForCompare(source), `${prefix}/${name}`)
+      } catch {
+        failed++
+      }
+    }
+  }
+
+  // 3. 改写：工作区内已复制的 → 相对路径；其余本地绝对路径 → 删除；远程/相对 → 保留
+  const out = mapImageRefs(markdown, rawUrl => {
+    const url = rawUrl.trim()
+    if (!url) return null
+    if (isRemoteImageUrl(url)) return url
+    if (!isLocalAbsoluteImageUrl(url)) return url
+    return copied.get(normalizeForCompare(url)) ?? null
+  })
+
+  return { markdown: out, saved: copied.size, failed }
+}
+
 let turndownService: { turndown(html: string): string } | null = null
 
 /** 章节 HTML → Markdown（懒加载 turndown；AtX 标题 + 围栏代码块） */
@@ -188,13 +344,20 @@ function htmlToMarkdown(html: string): string {
  *   目录（NCX 或 EPUB3 nav）→ 按 href 锚点在 xhtml 内切分章节正文 → 拼权威 Markdown
  * 章节标题与层级全部来自目录，正文来自容器内容。
  *
- * @lingo-reader/epub-parser 与 mobi-parser 同族（动态 import）；Node 端会把章节内
- * 图片/CSS 写到 resourceSaveDir，这里用临时目录并在结束时清理。
+ * @lingo-reader/epub-parser 与 mobi-parser 同族（动态 import）；Node 端把章节内
+ * 图片/CSS 解压到 resourceSaveDir，而 destroy() 会把这些文件删掉（该目录是它的临时工作区）：
+ *   - 传了 options.resourceDir + options.resourceRefPrefix（知识库上传场景）→ 解析完把正文引用到的
+ *     图片**复制**到应用数据目录并改写为相对路径引用（见 persistLocalImages）；
+ *   - 没传（剧本导入等）→ 正文里的本地图片引用一并清理，不留下死链。
  * 目录为空 / 章节正文全空 → 抛错，由调用方回退 anydoc。
  */
-async function extractEpubMarkdown(filePath: string): Promise<string> {
+async function extractEpubMarkdown(
+  filePath: string,
+  options: ExtractTextOptions = {},
+): Promise<string> {
   const { initEpubFile } = await import('@lingo-reader/epub-parser')
-  const saveDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'kb-epub-'))
+  // 解析器的工作区始终用临时目录（它会在 destroy 时清空这里），永久目录只放复制出来的图片
+  const workspace = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'kb-epub-'))
   try {
     type SpineItem = { id: string; href?: string; properties?: string }
     type TocNode = { id?: string; label?: string; href?: string; children?: TocNode[] }
@@ -205,7 +368,7 @@ async function extractEpubMarkdown(filePath: string): Promise<string> {
       loadChapter(id: string): Promise<{ html?: string } | undefined>
       destroy(): void
     }
-    const book = (await initEpubFile(filePath, saveDir)) as unknown as EpubBook
+    const book = (await initEpubFile(filePath, workspace)) as unknown as EpubBook
     try {
       const title = (book.getMetadata?.()?.title ?? '').trim()
       // 1) 目录：优先 NCX（getToc，含 EPUB2 与带 ncx 的 EPUB3）；空则解析 EPUB3 nav 文档
@@ -276,12 +439,27 @@ async function extractEpubMarkdown(filePath: string): Promise<string> {
         }
       }
       if (chapterCount === 0) throw new Error('EPUB 章节正文解析为空')
-      return parts.join('\n\n')
+      const md = parts.join('\n\n')
+      // 图片收口：有永久目录就复制过去并改写为相对路径；否则清理本地引用（避免写入临时/绝对路径死链）
+      if (options.resourceDir && options.resourceRefPrefix) {
+        const persisted = await persistLocalImages(md, {
+          workspaceDir: workspace,
+          targetDir: options.resourceDir,
+          refPrefix: options.resourceRefPrefix,
+        })
+        console.log(
+          `[extract-text] EPUB 内嵌图片：落盘 ${persisted.saved} 张` +
+            (persisted.failed > 0 ? `，复制失败 ${persisted.failed} 张（引用已剔除）` : ''),
+        )
+        return persisted.markdown
+      }
+      return rewriteImageRefs(md)
     } finally {
+      // 解析器的 destroy() 会异步删除工作区里的资源文件；这里再兜底清一次目录
       book.destroy()
     }
   } finally {
-    await fs.promises.rm(saveDir, { recursive: true, force: true })
+    await fs.promises.rm(workspace, { recursive: true, force: true })
   }
 }
 
@@ -460,7 +638,7 @@ export async function extractTextFromFile(
       //    只剩书名一个标题，靠正文正则只能误捡「第5章介绍了…」这类引用句。
       let md: string | null = null
       try {
-        md = await extractEpubMarkdown(filePath)
+        md = await extractEpubMarkdown(filePath, options)
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e)
         console.warn(`[extract-text] EPUB 目录提取不可用，回退 anydoc：${msg}`)
