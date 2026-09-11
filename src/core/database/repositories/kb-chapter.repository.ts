@@ -10,9 +10,6 @@ import { type DataSource, type FindOptionsWhere, In, IsNull } from 'typeorm'
 import { KbChapterEntity, type ChapterSummaryStatus } from '../entities/kb-chapter.entity'
 import { BaseRepository } from '../base-repository'
 import { getCurrentUserId } from '@core/context/user-context'
-import { createLogger } from '@core/utils/logger'
-
-const logger = createLogger('KbChapterRepository')
 
 /** 章节 DTO */
 export interface KbChapterRecord {

@@ -12,13 +12,28 @@
  * 夹具：fixtures/minibook.epub（EPUB3）、minibook2.epub（EPUB2）、
  *       sample-ai-chat.pdf（真实 258KB 中文 PDF，含 #/## 标题与多段落）。
  */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import path from 'path'
+import fs from 'fs'
+import os from 'os'
 import { extractTextFromFile } from '@core/utils/extract-text'
+import { buildMiniPdfWithOutline } from './fixtures/minipdf-outline.builder'
 
 const miniBookPath = path.join(__dirname, 'fixtures', 'minibook.epub')
 const miniBook2Path = path.join(__dirname, 'fixtures', 'minibook2.epub')
 const samplePdfPath = path.join(__dirname, 'fixtures', 'sample-ai-chat.pdf')
+
+// 带书签大纲的 PDF 运行时生成（.pdf 入库会被 core.autocrlf 破坏，见 builder 注释）
+let outlineDir = ''
+let pdfOutlinePath = ''
+beforeAll(() => {
+  outlineDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kb-extract-pdf-'))
+  pdfOutlinePath = path.join(outlineDir, 'minipdf-outline.pdf')
+  fs.writeFileSync(pdfOutlinePath, buildMiniPdfWithOutline())
+})
+afterAll(() => {
+  if (outlineDir) fs.rmSync(outlineDir, { recursive: true, force: true })
+})
 
 /** 去除全部空白后比对 */
 function compact(s: string): string {
@@ -63,10 +78,15 @@ describe('extractTextFromFile: epub markdown 结构模式（asMarkdown）', () =
   it('保留 Markdown 标题层级与段落空行（知识库切片需要的结构）', async () => {
     const md = await extractTextFromFile(miniBookPath, 'epub', { asMarkdown: true })
 
-    // 书名/章节标题转为 Markdown 标题
+    // 书名（metadata.title）为 H1；目录中的章节为 H2 —— 章节层级来自 EPUB 目录（nav/ncx），
+    // 不依赖正文里是否有 <h1> 标签（《深度学习》这类书正文标题不是 heading 标签）
     expect(md).toContain('# 测试之书')
-    expect(md).toContain('# 第一章 引子')
-    expect(md).toContain('# 第二章 图片')
+    expect(md).toContain('## 第一章 引子')
+    expect(md).toContain('## 第二章 图片')
+    // 章节正文完整（HTML → Markdown 后文本仍在；turndown 保留 **加粗** 语义）
+    const plain = compact(md).replace(/\*\*/g, '')
+    expect(plain).toContain('这是测试之书的第一章正文，包含中文与样式标签。')
+    expect(plain).toContain('本章包含一个自闭合图片引用与空段落。')
     // 段落以空行分隔（章节内 <p> 不再被压成空格）
     expect(md).toMatch(/\n\n/)
     // 无 HTML 残留
@@ -114,6 +134,17 @@ describe('extractTextFromFile: pdf（pdf-inspector）', () => {
 
     expect(md).toContain('内存')
     expect(md).not.toContain('内 存')
+  })
+
+  it('带书签大纲的 PDF：标题层级来自书签（而非版面推断），正文不丢', async () => {
+    const md = await extractTextFromFile(pdfOutlinePath, 'pdf', { asMarkdown: true })
+
+    expect(md).toContain('# Chapter One')
+    expect(md).toContain('## Section 1.1')
+    expect(md).toContain('# Chapter Two')
+    expect(md).toContain('# Chapter Three')
+    expect(md).toContain('Body of chapter one.')
+    expect(md).toContain('Body of chapter three.')
   })
 })
 

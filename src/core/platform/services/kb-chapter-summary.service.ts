@@ -31,6 +31,8 @@ export interface SummarizeOptions {
   concurrency?: number
   /** 单章送入模型的正文上限（默认 6000 字符，超长截断） */
   maxChars?: number
+  /** 单次调用最多生成的章节数（默认 60；权威目录可能上千章，防止 LLM 成本失控） */
+  maxSummaries?: number
 }
 
 export interface SummarizeResult {
@@ -38,6 +40,8 @@ export interface SummarizeResult {
   done: number
   failed: number
   skipped: number
+  /** 因 maxSummaries 上限本次未处理、仍待生成的章节数（可再次触发续跑） */
+  remaining?: number
 }
 
 const SYSTEM_PROMPT =
@@ -63,14 +67,25 @@ export class KbChapterSummaryService {
 
   /**
    * 生成/重试文档章节摘要（等待完成）。
-   * @returns 统计（total=待处理数，done/failed/skipped）
+   *
+   * 成本保护（maxSummaries）：权威目录可能带来大量章节（《深度学习》363 章、
+   * numpy 手册上千节），逐章调用 LLM 成本失控——单次只处理「层级最浅 + 内容较长」
+   * 的前 N 章，其余保持 pending（可再次触发续跑）。
+   *
+   * @returns 统计（total=本次处理数，done/failed/skipped/remaining）
    */
   async summarizeDocument(documentId: string, opts?: SummarizeOptions): Promise<SummarizeResult> {
-    const { retryFailed = true, concurrency = 3, maxChars = 6000 } = opts ?? {}
+    const { retryFailed = true, concurrency = 3, maxChars = 6000, maxSummaries = 60 } = opts ?? {}
     const statuses: Array<'pending' | 'failed'> = retryFailed ? ['pending', 'failed'] : ['pending']
-    const chapters = await this.deps.repo.findByStatuses(documentId, statuses)
-    const all = await this.deps.repo.findByDocument(documentId)
-    const skipped = all.filter(c => c.summaryStatus === 'done').length
+    const all = await this.deps.repo.findByStatuses(documentId, statuses)
+    // 优先：层级最浅（顶层章更有概括价值）→ 内容较长（信息量大）
+    const ordered = [...all].sort(
+      (a, b) => a.level - b.level || (b.content?.length ?? 0) - (a.content?.length ?? 0),
+    )
+    const chapters = ordered.slice(0, maxSummaries)
+    const remaining = Math.max(0, ordered.length - chapters.length)
+    const docsAll = await this.deps.repo.findByDocument(documentId)
+    const skipped = docsAll.filter(c => c.summaryStatus === 'done').length
 
     let done = 0
     let failed = 0
@@ -86,8 +101,10 @@ export class KbChapterSummaryService {
     })
     await Promise.all(workers)
 
-    logger.info(`[kb-summary] doc=${documentId} 完成: done=${done} failed=${failed} skipped=${skipped}`)
-    return { total: chapters.length, done, failed, skipped }
+    logger.info(
+      `[kb-summary] doc=${documentId} 完成: done=${done} failed=${failed} skipped=${skipped} remaining=${remaining}`,
+    )
+    return { total: chapters.length, done, failed, skipped, remaining }
   }
 
   /** 单章摘要：成功写 done，失败写 failed + 原因（可重试） */

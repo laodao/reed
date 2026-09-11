@@ -105,6 +105,43 @@ describe.each(getTestDialects())('KbChapterSummaryService [%s]', dialect => {
     expect(row.summaryError).toBeNull()
   })
 
+  it('成本护栏：maxSummaries 只处理「层级最浅 + 内容较长」的前 N 章，其余保持 pending', async () => {
+    await runWithUser(LOCAL_DEFAULT_USER_ID, () =>
+      repo.replaceByDocument(DOC_ID, [
+        chapter({ id: 'l2-long', title: '二级长章', ordering: 0, level: 2, content: 'x'.repeat(500) }),
+        chapter({ id: 'l1-a', title: '一级章 A', ordering: 1, level: 1, content: 'y'.repeat(100) }),
+        chapter({ id: 'l1-b', title: '一级章 B', ordering: 2, level: 1, content: 'z'.repeat(300) }),
+        chapter({ id: 'l3', title: '三级章', ordering: 3, level: 3, content: 'w'.repeat(900) }),
+      ]),
+    )
+
+    const summarized: string[] = []
+    const service = new KbChapterSummaryService({
+      repo,
+      llm: async (req) => {
+        summarized.push(req.user)
+        return '摘要'
+      },
+    })
+
+    const result = await runWithUser(LOCAL_DEFAULT_USER_ID, () =>
+      service.summarizeDocument(DOC_ID, { maxSummaries: 2, concurrency: 1 }),
+    )
+
+    // 前 2 条 = 层级最浅（level 1）中内容较长者：l1-b(300) > l1-a(100)
+    expect(result.total).toBe(2)
+    expect(result.done).toBe(2)
+    expect(result.remaining).toBe(2)
+    expect(summarized).toHaveLength(2)
+
+    const rows = await runWithUser(LOCAL_DEFAULT_USER_ID, () => repo.findByDocument(DOC_ID))
+    const byId = new Map(rows.map(r => [r.id, r]))
+    expect(byId.get('l1-b')!.summaryStatus).toBe('done')
+    expect(byId.get('l1-a')!.summaryStatus).toBe('done')
+    expect(byId.get('l2-long')!.summaryStatus).toBe('pending')
+    expect(byId.get('l3')!.summaryStatus).toBe('pending')
+  })
+
   it('已 done 的章节跳过（retryFailed=false 时只补 pending）', async () => {
     const service = new KbChapterSummaryService({ repo, llm: async () => '摘要内容' })
     await runWithUser(LOCAL_DEFAULT_USER_ID, () => service.summarizeDocument(DOC_ID))

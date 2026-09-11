@@ -48,8 +48,6 @@ import type {
 } from '@shared/types/knowledge-base.types'
 
 // 常量配置
-const CHUNK_SIZE = 800
-const OVERLAP = 80
 const BATCH_SIZE = 10
 
 /** D3：索引分词停用词（buildIndex 与 BM25 检索共用——同一套词表才能对得上） */
@@ -833,164 +831,6 @@ export class KnowledgeBaseService {
     return extractTextFromFile(resolved, fileType, { asMarkdown: true })
   }
 
-  /**
-   * 尝试多种编码解析文本文件
-   * 优先级：自动检测 > UTF-8 > GBK > GB2312
-   */
-  private decodeTextFile(buffer: Buffer): string {
-    // 尝试 UTF-8（带BOM检测）
-    if (buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) {
-      // UTF-8 with BOM
-      return buffer.slice(3).toString('utf-8')
-    }
-
-    // 使用 jschardet 自动检测编码
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const jschardet = require('jschardet')
-      const detected = jschardet.detect(buffer)
-
-      if (detected && detected.encoding && detected.confidence > 0.7) {
-        const encoding = detected.encoding.toLowerCase()
-        console.log(`[KB] 检测到编码: ${encoding} (置信度: ${detected.confidence})`)
-
-        // 处理常见的编码名称别名
-        const encodingMap: Record<string, string> = {
-          'utf-8': 'utf-8',
-          'utf8': 'utf-8',
-          'gbk': 'gbk',
-          'gb2312': 'gbk',  // GB2312 是 GBK 的子集，用 GBK 解码更安全
-          'gb18030': 'gbk',
-          'big5': 'big5',
-          'shift_jis': 'shiftjis',
-          'euc-jp': 'eucjp',
-          'iso-8859-1': 'latin1',
-          'ascii': 'utf-8',  // ASCII 兼容 UTF-8
-        }
-
-        const targetEncoding = encodingMap[encoding] || encoding
-
-        if (targetEncoding === 'utf-8') {
-          const text = buffer.toString('utf-8')
-          if (!this.hasGarbledChars(text)) {
-            return text
-          }
-        } else {
-          try {
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
-            const iconv = require('iconv-lite')
-            if (iconv.encodingExists(targetEncoding)) {
-              const text = iconv.decode(buffer, targetEncoding)
-              if (!this.hasGarbledChars(text)) {
-                return text
-              }
-            }
-          } catch {
-            // iconv 解码失败，继续尝试其他方法
-          }
-        }
-      }
-    } catch (e) {
-      console.log('[KB] 编码检测失败:', e)
-    }
-
-    // 尝试 UTF-8
-    try {
-      const utf8Text = buffer.toString('utf-8')
-      // 检查是否有乱码字符（UTF-8 解码错误通常会产生的替换字符）
-      if (!this.hasGarbledChars(utf8Text)) {
-        return utf8Text
-      }
-    } catch {
-      // UTF-8 解码失败，继续尝试其他编码
-    }
-
-    // 尝试 GBK（最常见的中文字符编码）
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const iconv = require('iconv-lite')
-      const gbkText = iconv.decode(buffer, 'gbk')
-      if (!this.hasGarbledChars(gbkText)) {
-        return gbkText
-      }
-    } catch {
-      // iconv-lite 未安装或解码失败
-    }
-
-    // 最后使用 UTF-8 强制解码（即使有乱码也比 latin1 好，因为 latin1 对中文完全不可读）
-    console.log('[KB] 警告: 无法确定文件编码，使用 UTF-8 强制解码')
-    return buffer.toString('utf-8')
-  }
-
-  /**
-   * 检查文本是否包含乱码字符
-   */
-  private hasGarbledChars(text: string): boolean {
-    // 检查常见的乱码模式
-    const garbledPatterns = [
-      /\ufffd/,           // Unicode 替换字符
-      // eslint-disable-next-line no-control-regex
-      /[\x00-\x08\x0b\x0c\x0e-\x1f]/, // 控制字符（换行、制表符除外）
-    ]
-
-    // 统计非ASCII字符的比例，如果乱码太多可能是编码错误
-    let nonAsciiCount = 0
-    let garbledCount = 0
-
-    for (const char of text) {
-      const code = char.charCodeAt(0)
-      if (code > 127) {
-        nonAsciiCount++
-        // 检测是否为乱码字符
-        if (code === 0xfffd || (code >= 0x80 && code <= 0x9f)) {
-          garbledCount++
-        }
-      }
-    }
-
-    // 如果非ASCII字符中乱码比例超过20%，认为有乱码
-    if (nonAsciiCount > 0 && garbledCount / nonAsciiCount > 0.2) {
-      return true
-    }
-
-    // 检查是否有连续的乱码模式
-    for (const pattern of garbledPatterns) {
-      if (pattern.test(text)) {
-        return true
-      }
-    }
-
-    return false
-  }
-
-  private splitText(text: string): Array<{ content: string; index: number; start: number; end: number }> {
-    const result: Array<{ content: string; index: number; start: number; end: number }> = []
-    let start = 0
-    let index = 0
-
-    while (start < text.length) {
-      let end = Math.min(start + CHUNK_SIZE, text.length)
-
-      // 只在不是文本末尾时寻找边界
-      if (end < text.length) {
-        const boundary = Math.max(
-          text.lastIndexOf('。', end),
-          text.lastIndexOf('\n', end)
-        )
-        if (boundary > start + CHUNK_SIZE / 2) end = boundary + 1
-      }
-
-      const content = text.slice(start, end).trim()
-      if (content) result.push({ content, index: index++, start, end })
-
-      // 修复：确保 start 总是前进，避免无限循环
-      const nextStart = end - OVERLAP
-      start = (nextStart <= start) ? end : nextStart
-    }
-
-    return result
-  }
-
   async getEmbeddingVectors(texts: string[], config: EmbeddingConfig, signal?: AbortSignal): Promise<number[][] | null> {
     try {
       if (!config.providerConfigId) throw new Error('未配置 Embedding 提供商')
@@ -1746,6 +1586,8 @@ export class KnowledgeBaseService {
       if (!db.knowledgeBases || !db.kbQaPairs || !db.kbVectors) {
         return { success: false, error: '数据库未初始化' }
       }
+      // 收窄成局部引用：闭包内 TS 不会保留上面的非空收窄
+      const kbVectors = db.kbVectors
       const old = await db.kbQaPairs.findById(id)
       if (!old) return { success: false, error: 'QA 对不存在' }
       const kb = await db.knowledgeBases.findById(old.knowledgeBaseId)
@@ -1773,7 +1615,7 @@ export class KnowledgeBaseService {
       )
       const oldVectors: Array<{ chunkId: string; knowledgeBaseId: string; vector: number[] }> = []
       for (const chunkId of oldChunkIds) {
-        const rec = await db.kbVectors.getByChunkId(chunkId).catch(() => null)
+        const rec = await db.kbVectors.findByChunkId(chunkId).catch(() => null)
         if (rec && rec.knowledgeBaseId === kb.id) oldVectors.push({ chunkId: rec.chunkId, knowledgeBaseId: rec.knowledgeBaseId, vector: rec.vector })
       }
 
@@ -1798,9 +1640,12 @@ export class KnowledgeBaseService {
       } catch (e) {
         // 补偿：清掉可能写了一半的新向量 → 恢复旧向量 → 回滚文本行
         console.error('[KB] 更新 QA 对失败，执行补偿回滚:', e)
-        await db.kbVectors.deleteByChunkIds(
-          vectors.map((_, i) => KnowledgeBaseService.qaVectorChunkId(id, i))
-        ).catch(() => {})
+        // 仓库只有单条删除接口（向量表按 chunkId 唯一），逐个删除等价且不引入新 API
+        await Promise.all(
+          vectors.map((_, i) =>
+            kbVectors.deleteByChunkId(KnowledgeBaseService.qaVectorChunkId(id, i)).catch(() => {}),
+          ),
+        )
         if (oldVectors.length) await db.kbVectors.createBatch(oldVectors).catch(() => {})
         await db.kbQaPairs.update(id, { ...rollbackTo }).catch(() => {})
         throw e

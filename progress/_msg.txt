@@ -1,0 +1,39 @@
+feat(kb): 章节结构改走文档结构层权威目录（PDF 书签 / EPUB 容器目录）
+
+问题（用户反馈）：章节与摘要提取效果差——深度学习 epub 有完整大纲却提取不到，
+numpy-user.pdf 网页手册也有大纲，提取出来层级错乱。根因是章节树只建立在
+「转出来的 Markdown 标题」上：epub 转 Markdown 后 363 条容器目录只剩 1 个标题；
+PDF 靠字号/版面推断标题，页眉横幅被判成 H1、标题顺序也会错乱。
+
+修复：结构来自元数据层，正文来自正文层（与 epub 既有方案对齐）
+- epub：extractEpubMarkdown 读容器目录（NCX / EPUB3 nav）→ 层级 + 锚点切分正文
+- pdf：新增 src/core/utils/pdf-outline.ts
+  - readPdfOutline：pdfjs-dist 读 /Outlines 书签树（标题 + 嵌套深度 + 目标页）
+  - resolveOutlineLevels：有真实嵌套以深度为准，扁平书签才用编号推导
+  - mergeOutlineIntoMarkdown：以大纲为骨架重排逐页 Markdown（正文原有标题降级、
+    标题按目标页限定查找并消费、未命中按页插入，封面/前置内容原样保留）
+  - extract-text pdf 分支：书签 ≥ 3 条走大纲路径，否则回退版面推断（原行为）
+  - 依赖 pdfjs-dist@3.11.174（纯 JS，Electron 与 Web 同一份代码可用）
+
+实测（真实文档重处理，CDP 触发）
+- 深度学习 epub：章节 0 → 364（层级正确）、切片 491 → 810
+- numpy-user.pdf：章节 1012（错乱）→ 2137（= 书签条目数，顺序/层级与大纲一致）、
+  切片 1268 → 1796，内容量无丢失
+- UI：大树（2137 节点）只默认展开一级 + 标题筛选框；实测渲染 234 节点、
+  筛选 F2PY → 94 节点、点章节联动「仅看该章 9 个切片」
+
+成本护栏：章节摘要单次最多 60 条（层级最浅 + 内容较长优先），其余保持 pending 可续跑，
+UI 提示剩余条数（2137 章逐条调 LLM 不可接受）。
+
+顺带修复真实缺陷：knowledge-base.service 的 QA 更新补偿路径调用了向量仓库不存在的
+getByChunkId / deleteByChunkIds（真实为 findByChunkId / deleteByChunkId），线上必崩；
+单测全绿是因为假仓库自己实现了这两个臆造方法（mock 漂移）。现改用真实方法，
+假仓库删除臆造方法，并新增「假仓库不漂移」双向校验用例；删除已迁入 extract-text 的
+僵尸私有方法（decodeTextFile/hasGarbledChars/splitText）。vue-tsc 全项目错误 901 → 894。
+
+测试：pdf-outline.spec 12 条（书签 PDF 夹具由 minipdf-outline.builder.ts 运行时生成——
+本项目 core.autocrlf=true 且该 PDF 无 NUL 字节，入库会被 git 当文本改写换行、xref 偏移错位）、
+extract-text.spec +1、kb-chapter-summary.service.spec +1、kb-qa-pairs.spec +1（漂移守卫）；
+相关 8 个 spec 54 条 + DB 相关 spec 全部通过（postgres 方言用例因本机无 PG 实例跳过）。
+
+进度记录：progress/2026-09-12-kb-structure-layer-toc.md

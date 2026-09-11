@@ -36,7 +36,7 @@
               <div class="kb-group-header">
                 <span class="kb-group-name">{{ group.folderName }}</span>
                 <span class="kb-group-count">{{ group.items.length }}</span>
-                <el-dropdown v-if="group.folderId" trigger="click" @command="(cmd: string) => cmd === 'rename' ? openRenameFolderDialog({ id: group.folderId, name: group.folderName }) : handleDeleteFolder({ id: group.folderId, name: group.folderName })">
+                <el-dropdown v-if="group.folderId" trigger="click" @command="(cmd: string) => cmd === 'rename' ? openRenameFolderDialog({ id: group.folderId!, name: group.folderName ?? '' }) : handleDeleteFolder({ id: group.folderId!, name: group.folderName ?? '' })">
                   <el-button text size="small" @click.stop>
                     <el-icon><MoreFilled /></el-icon>
                   </el-button>
@@ -444,7 +444,7 @@
         </el-form-item>
         <el-form-item label="重排序模型">
           <el-select v-model="editRerankValue" clearable placeholder="不重排（默认）" style="width: 100%"
-            @change="v => { editForm.rerankConfig = v ? JSON.stringify({ providerConfigId: v.split('::')[0], modelId: v.split('::')[1] }) : null }">
+            @change="(v: string | null) => { editForm.rerankConfig = v ? JSON.stringify({ providerConfigId: v.split('::')[0], modelId: v.split('::')[1] }) : null }">
             <el-option v-for="m in rerankModels" :key="m.providerConfigId + '::' + m.id"
               :label="m.name" :value="m.providerConfigId + '::' + m.id" />
           </el-select>
@@ -543,23 +543,33 @@
           <div v-if="chapterTree.length === 0 && !chapterTreeLoading" class="chapter-empty">
             暂无章节数据（文档重新处理后可生成）
           </div>
-          <el-tree
-            v-else
-            :data="chapterTree"
-            node-key="id"
-            :props="{ label: 'title', children: 'children' }"
-            default-expand-all
-            highlight-current
-            @node-click="handleChapterClick"
-          >
-            <template #default="{ data }">
-              <span class="chapter-node">
-                <el-tag v-if="data.summaryStatus === 'done'" size="small" type="success" disable-transitions>摘要</el-tag>
-                <el-tag v-else-if="data.summaryStatus === 'failed'" size="small" type="danger" disable-transitions>失败</el-tag>
-                <span class="chapter-title">{{ data.title }}</span>
-              </span>
-            </template>
-          </el-tree>
+          <template v-else>
+            <el-input
+              v-model="chapterTitleFilter"
+              class="chapter-filter-input"
+              size="small"
+              clearable
+              placeholder="按标题筛选章节"
+            />
+            <el-tree
+              ref="chapterTreeRef"
+              :data="chapterTree"
+              node-key="id"
+              :props="{ label: 'title', children: 'children' }"
+              :default-expanded-keys="defaultExpandedChapterKeys"
+              :filter-node-method="filterChapterNode"
+              highlight-current
+              @node-click="handleChapterClick"
+            >
+              <template #default="{ data }">
+                <span class="chapter-node">
+                  <el-tag v-if="data.summaryStatus === 'done'" size="small" type="success" disable-transitions>摘要</el-tag>
+                  <el-tag v-else-if="data.summaryStatus === 'failed'" size="small" type="danger" disable-transitions>失败</el-tag>
+                  <span class="chapter-title">{{ data.title }}</span>
+                </span>
+              </template>
+            </el-tree>
+          </template>
           <div class="chapter-summary" v-if="selectedChapter">
             <div class="chapter-summary-header">本章摘要</div>
             <div class="chapter-summary-body">
@@ -962,8 +972,11 @@ interface ChapterNode {
 }
 const chapterTree = ref<ChapterNode[]>([])
 const chapterTreeLoading = ref(false)
+const chapterTreeRef = ref<{ filter: (value: string) => void } | null>(null)
 const chapterStats = ref<{ total: number; done: number; failed: number }>({ total: 0, done: 0, failed: 0 })
 const selectedChapter = ref<ChapterNode | null>(null)
+/** 章节树标题过滤关键字 */
+const chapterTitleFilter = ref('')
 /** 当前章节过滤（空=全部切片） */
 const filterChapterTitle = ref('')
 const chapterSummarizing = ref(false)
@@ -1305,6 +1318,33 @@ async function handleChapterClick(node: ChapterNode): Promise<void> {
   await loadChunksPage()
 }
 
+/** 章节树默认展开节点：小树全展开；大树（如 PDF 书签 2000+ 条）只展开一级，避免一次性渲染全部节点 */
+const defaultExpandedChapterKeys = computed<string[]>(() => {
+  if (chapterTree.value.length === 0) return []
+  if (chapterStats.value.total <= 200) {
+    const keys: string[] = []
+    const walk = (nodes: ChapterNode[]): void => {
+      for (const n of nodes) {
+        keys.push(n.id)
+        if (n.children?.length) walk(n.children)
+      }
+    }
+    walk(chapterTree.value)
+    return keys
+  }
+  return chapterTree.value.map(n => n.id)
+})
+
+/** 树内按标题过滤（大树必备：numpy-user.pdf 有 2137 个章节节点） */
+watch(chapterTitleFilter, (kw) => {
+  chapterTreeRef.value?.filter(kw)
+})
+
+function filterChapterNode(value: string, data: ChapterNode): boolean {
+  if (!value) return true
+  return (data.title || '').toLowerCase().includes(value.toLowerCase())
+}
+
 /** 清除章节过滤（回到全部切片） */
 async function clearChapterFilter(): Promise<void> {
   selectedChapter.value = null
@@ -1320,7 +1360,10 @@ async function handleSummarizeChapters(): Promise<void> {
   try {
     const resp = await window.electronAPI.knowledgeBase.summarizeDocument(currentChunkDocument.value.id, true)
     if (resp.success) {
-      ElMessage.success(`摘要完成：成功 ${resp.data?.done ?? 0}，失败 ${resp.data?.failed ?? 0}`)
+      // 单次最多生成 60 条（成本护栏），剩余的可再次点击继续
+      const remaining = resp.data?.remaining ?? 0
+      const base = `摘要完成：成功 ${resp.data?.done ?? 0}，失败 ${resp.data?.failed ?? 0}`
+      ElMessage.success(remaining > 0 ? `${base}，剩余 ${remaining} 条可再次点击继续` : base)
       await loadChapterTree(currentChunkDocument.value.id)
     } else {
       ElMessage.error(resp.error || '生成章节摘要失败')
@@ -1911,6 +1954,7 @@ onMounted(() => {
   margin-bottom: 8px;
 }
 .chapter-stats { color: var(--el-text-color-secondary); font-size: 12px; font-weight: 400; }
+.chapter-filter-input { margin-bottom: 6px; }
 .chapter-empty { color: var(--el-text-color-secondary); font-size: 12px; padding: 12px 0; line-height: 1.6; }
 .chapter-node { display: inline-flex; align-items: center; gap: 6px; }
 .chapter-title { font-size: 12px; }
