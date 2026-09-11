@@ -1363,7 +1363,8 @@ export class KnowledgeBaseService {
   async getDocumentChunksPaginated(
     documentId: string,
     page: number = 1,
-    pageSize: number = 20
+    pageSize: number = 20,
+    chapterTitle?: string,
   ): Promise<{ success: boolean; data?: { chunks: KbChunk[]; total: number }; error?: string }> {
     try {
       const db = getCoreDatabaseManager()
@@ -1375,8 +1376,9 @@ export class KnowledgeBaseService {
       if (!doc) return { success: false, error: '文档不存在' }
 
       const offset = (page - 1) * pageSize
-      const chunks = await db.kbChunks.findByDocumentIdPaginated(documentId, offset, pageSize)
-      const total = await db.kbChunks.countByDocumentIdPaginated(documentId)
+      // M5：可选按章节过滤（章节树点选 → 只看该章节切片）
+      const chunks = await db.kbChunks.findByDocumentIdPaginated(documentId, offset, pageSize, chapterTitle)
+      const total = await db.kbChunks.countByDocumentIdPaginated(documentId, chapterTitle)
 
       // 移除 content 字段，减少内存占用
       const lightChunks = chunks.map(chunk => ({

@@ -310,10 +310,15 @@ async function handleGetDocumentChunks(
  */
 async function handleGetDocumentChunksPaginated(
   _event: any,
-  data: { documentId: string; page: number; pageSize: number }
+  data: { documentId: string; page: number; pageSize: number; chapterTitle?: string }
 ): Promise<IpcResponse<{ chunks: KbChunk[]; total: number }>> {
   const service = getKnowledgeBaseService()
-  return await service.getDocumentChunksPaginated(data.documentId, data.page, data.pageSize)
+  return await service.getDocumentChunksPaginated(
+    data.documentId,
+    data.page,
+    data.pageSize,
+    data.chapterTitle,
+  )
 }
 
 /**

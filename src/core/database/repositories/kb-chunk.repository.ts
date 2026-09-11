@@ -48,11 +48,34 @@ export class KbChunkRepository extends BaseRepository<KbChunkEntity, KbChunk> {
     return this.findManyByWhere({ documentId } as any, { chunkIndex: 'ASC' })
   }
 
+  /**
+   * 文档切片分页查询（可选按章节过滤，M5 章节树定位切片）。
+   * 章节归属判定：结构块 title = 章节标题；段落子块靠 section_path（JSON 数组）
+   * 含该章节标题（`"标题"` 或路径末尾 `"标题"]`）。
+   */
   async findByDocumentIdPaginated(
     documentId: string,
     offset: number,
     limit: number,
+    chapterTitle?: string,
   ): Promise<KbChunk[]> {
+    if (chapterTitle && chapterTitle.trim()) {
+      const qb = this.scoped
+        .qb('c')
+        .where('c.document_id = :documentId', { documentId })
+        .andWhere(
+          '(c.title = :chapterTitle OR c.section_path LIKE :likeTitle OR c.section_path LIKE :likePath)',
+        )
+        .setParameters({
+          chapterTitle,
+          likeTitle: `%"${chapterTitle}"%`,
+          likePath: `%"${chapterTitle}"]%`,
+        })
+        .orderBy('c.chunk_index', 'ASC')
+        .skip(offset)
+        .take(limit)
+      return this.toDtoList(await qb.getMany())
+    }
     const entities = await this.scoped.find({
       where: { documentId } as any,
       order: { chunkIndex: 'ASC' } as any,
@@ -62,7 +85,21 @@ export class KbChunkRepository extends BaseRepository<KbChunkEntity, KbChunk> {
     return this.toDtoList(entities)
   }
 
-  async countByDocumentIdPaginated(documentId: string): Promise<number> {
+  async countByDocumentIdPaginated(documentId: string, chapterTitle?: string): Promise<number> {
+    if (chapterTitle && chapterTitle.trim()) {
+      const qb = this.scoped
+        .qb('c')
+        .where('c.document_id = :documentId', { documentId })
+        .andWhere(
+          '(c.title = :chapterTitle OR c.section_path LIKE :likeTitle OR c.section_path LIKE :likePath)',
+        )
+        .setParameters({
+          chapterTitle,
+          likeTitle: `%"${chapterTitle}"%`,
+          likePath: `%"${chapterTitle}"]%`,
+        })
+      return qb.getCount()
+    }
     return this.scoped.count({ documentId } as any)
   }
 
