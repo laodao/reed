@@ -1,11 +1,20 @@
 /**
- * 文件 → 纯文本 提取工具
+ * 文件 → 文本 / Markdown 提取工具
  * @module core/utils/extract-text
  * @description 从 knowledge-base.service 抽出的纯函数版本，供"剧本批量导入"等
- *              非知识库场景复用。逻辑与原实现一致；**补全了原 getFileType 漏掉的 pdf/epub**。
+ *              非知识库场景复用。
  *
  * 支持：txt / md / pdf / epub / mobi / azw3 / docx / xlsx / xls / webpage（webpage 按 txt 处理）。
  * 中文文本自动识别 UTF-8(BOM) / GBK / GB2312 / Big5 等编码。
+ *
+ * pdf / epub 解析（2026-09 接入）：
+ *  - pdf  → @firecrawl/pdf-inspector（Rust/NAPI）：TextBased 输出结构化 Markdown
+ *           （标题 H1-H4、段落空行、表格、代码块）；扫描/图片版抛明确错误。
+ *  - epub → @firecrawl/anydoc（Rust/NAPI）：EPUB2/EPUB3 转带章节标题的 GFM Markdown。
+ * 两者输出经 postProcessExtractedMarkdown 规范化：中文行内断字合并、H4+ 噪音标题
+ * 降级为加粗正文、pdf 严重乱码（字体 CID 解码失败）抛错提示。
+ * asMarkdown=true 返回 Markdown 结构（知识库切片需要标题/段落边界）；
+ * 默认 false 返回去除标记的纯文本（剧本批量导入等消费端不感知 Markdown 语法）。
  */
 
 import fs from 'fs'
@@ -13,9 +22,14 @@ import os from 'os'
 import path from 'path'
 import type { FileType } from '@shared/types/knowledge-base.types'
 
+/** 提取选项 */
+export interface ExtractTextOptions {
+  /** 返回 Markdown 结构（pdf/epub 走解析器原生 Markdown；txt/md 原样返回）。默认 false：去标记纯文本 */
+  asMarkdown?: boolean
+}
+
 /**
  * 从文件名推断文档类型。
- * 补全了 `knowledge-base.service:getFileType` 漏掉的 `pdf` / `epub`。
  */
 export function inferFileType(fileName: string): FileType | null {
   const ext = path.extname(fileName).toLowerCase().slice(1)
@@ -35,7 +49,7 @@ export function inferFileType(fileName: string): FileType | null {
 }
 
 /**
- * HTML → 纯文本（去 style/script/标签，合并空白）。epub/mobi 章节共用。
+ * HTML → 纯文本（去 style/script/标签，合并空白）。mobi 章节共用。
  */
 function stripHtmlToText(html: string): string {
   return html
@@ -47,12 +61,85 @@ function stripHtmlToText(html: string): string {
 }
 
 /**
- * 提取文件纯文本（按类型分派）。
- * 逻辑与 `knowledge-base.service.parseFile` 一致。
+ * 规范化解析器输出的 Markdown：
+ *  1. 中文行内断字合并（PDF 每行为一个文本段，行尾中文前有空格的“内 存”→“内存”）
+ *  2. H4+ 标题降级为加粗正文（pdf-inspector 的 #### 多为日期/作者/页码头噪音，
+ *     避免被结构检测当成章节标题产生碎章）
+ *  3. pdf 严重乱码检测：字体 CID 解码失败会产生大量 U+FFFD，比例超阈值抛错提示
+ */
+function postProcessExtractedMarkdown(md: string, { strictGarbled = true } = {}): string {
+  // 1. 中文行内断字合并（PDF 每行为一个文本段，行尾“内 存”→“内存”）：
+  //    逐行处理且跳过 Markdown 标题行（章节标题里的分词空格必须保留）
+  let out = md
+    .split('\n')
+    .map(line =>
+      /^#{1,6}\s+/.test(line)
+        ? line
+        : line.replace(/(?<=[\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])/g, ''),
+    )
+    .join('\n')
+  // 1.5 剥离 anydoc 输出的 EPUB 内部导航锚点（<a id="..."></a>，对切片无价值）
+  out = out.replace(/<a\s+[^>]*><\/a>/g, '')
+  // 2. H4-H6 标题 → 加粗正文（保留文本内容但不再作为章节标题）
+  out = out.replace(/^#{4,6}\s+(.+)$/gm, '**$1**')
+  // 3. 乱码检测
+  if (strictGarbled) {
+    const garbledCount = (out.match(/\uFFFD/g) || []).length
+    const ratio = garbledCount / Math.max(out.length, 1)
+    if (garbledCount > 10 && ratio > 0.01) {
+      throw new Error(
+        `文档约 ${garbledCount} 处字符无法解码（${(ratio * 100).toFixed(1)}%），` +
+          '疑似特殊嵌入字体导致 CID 映射缺失，无法可靠提取，请更换文档来源',
+      )
+    }
+  }
+  return out
+}
+
+/**
+ * Markdown → 纯文本（去除标题标记/加粗/链接/表格围栏等，保留段落空行）。
+ * 供默认（asMarkdown=false）调用方使用：剧本批量导入等消费端不感知 Markdown 语法。
+ */
+export function markdownToPlainText(md: string): string {
+  return md
+    .replace(/\r\n/g, '\n')
+    // 标题标记
+    .replace(/^#{1,6}\s+/gm, '')
+    // 表格分隔行（|---|、|:--:| 等）
+    .replace(/^\|[\s:|-]+\|$/gm, '')
+    // 水平线 / 分隔线
+    .replace(/^-{3,}$/gm, '')
+    .replace(/^\*{3,}$/gm, '')
+    // 引用
+    .replace(/^>\s?/gm, '')
+    // 图片 ![alt](url) → alt
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    // 链接 [text](url) → text
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    // 行内代码 `code` → code
+    .replace(/`([^`]+)`/g, '$1')
+    // 加粗/斜体（**x** / __x__ / *x* / _x_）
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, '$1$2')
+    .replace(/(^|[^_])_([^_]+)_(?!_)/g, '$1$2')
+    // 无序列表符号（保留文本）
+    .replace(/^[ \t]*[-*+]\s+/gm, '')
+    // 有序列表符号（保留编号文本）
+    .replace(/^[ \t]*(\d+)[.)]\s+/gm, '$1. ')
+    // 残留空行压平（最多两个换行）
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+/**
+ * 提取文件内容（文本或 Markdown，按 options.asMarkdown）。
+ * pdf / epub 走 Rust 解析器；txt/md 原样；其余按既有实现。
  */
 export async function extractTextFromFile(
   filePath: string,
   fileType: FileType,
+  options: ExtractTextOptions = {},
 ): Promise<string> {
   const buffer = await fs.promises.readFile(filePath)
 
@@ -63,14 +150,29 @@ export async function extractTextFromFile(
       return decodeTextFile(buffer)
 
     case 'pdf': {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const pdfParse = require('pdf-parse')
-      const data = await pdfParse(buffer)
-      return data.text
+      const { processPdf } = await import('@firecrawl/pdf-inspector')
+      const result = processPdf(buffer)
+      if (result.pdfType === 'Scanned' || result.pdfType === 'ImageBased') {
+        throw new Error(
+          `PDF 为${result.pdfType === 'Scanned' ? '扫描版' : '图片版'}（无文本层），本地无法提取，需要 OCR 能力，请上传文字版 PDF`,
+        )
+      }
+      if (!result.markdown || result.markdown.trim().length === 0) {
+        throw new Error('PDF 未提取到文本（可能为图片型页面）')
+      }
+      const md = postProcessExtractedMarkdown(result.markdown)
+      return options.asMarkdown ? md : markdownToPlainText(md)
     }
 
-    case 'epub':
-      return extractEpubText(filePath)
+    case 'epub': {
+      const { toMarkdownBytes } = await import('@firecrawl/anydoc')
+      const md = await toMarkdownBytes(buffer)
+      if (!md || md.trim().length === 0) {
+        throw new Error('EPUB 未解析出内容')
+      }
+      const normalized = postProcessExtractedMarkdown(md, { strictGarbled: false })
+      return options.asMarkdown ? normalized : markdownToPlainText(normalized)
+    }
 
     case 'mobi':
     case 'azw3':
@@ -96,48 +198,6 @@ export async function extractTextFromFile(
 
     default:
       throw new Error(`不支持的文件类型: ${fileType}`)
-  }
-}
-
-/**
- * 提取 EPUB 电子书纯文本。
- *
- * 历史修复：旧实现误用 epub-parser@0.2.5 的 API（该库只导出 open/getZip/
- * extractText 等回调式方法，且返回结构没有 sections），导致任何 epub 上传都报
- * "EPub.parse is not a function"。现改用 @lingo-reader/epub-parser —— 与
- * @lingo-reader/mobi-parser 同族、API 同构（initEpubFile / getSpine / loadChapter），
- * 且支持 EPUB2/EPUB3 与加密章节，解析能力完整。
- *
- * @lingo-reader/* 包统一走动态 import（与 extractMobiLikeText 一致，避免 ESM
- * 产物在 CJS 下 require 损坏）；Node 端章节内图片/CSS 会写到 resourceSaveDir，
- * 这里传临时目录并在结束时清理。loadChapter 返回的 HTML 经 stripHtmlToText
- * 提取正文后，图片路径等残留不会进入文本。
- */
-async function extractEpubText(filePath: string): Promise<string> {
-  const { initEpubFile } = await import('@lingo-reader/epub-parser')
-  const saveDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'kb-epub-'))
-  try {
-    type EpubBook = {
-      getSpine(): Array<{ id: string }>
-      loadChapter(id: string): Promise<{ id?: string; html?: string } | undefined>
-      destroy(): void
-    }
-    const book = (await initEpubFile(filePath, saveDir)) as EpubBook
-
-    try {
-      let text = ''
-      for (const chapter of book.getSpine()) {
-        const loaded = await book.loadChapter(chapter.id)
-        if (loaded?.html) {
-          text += stripHtmlToText(loaded.html) + '\n\n'
-        }
-      }
-      return text.trim()
-    } finally {
-      book.destroy()
-    }
-  } finally {
-    await fs.promises.rm(saveDir, { recursive: true, force: true })
   }
 }
 
@@ -191,7 +251,6 @@ async function extractMobiLikeText(filePath: string): Promise<string> {
 /**
  * 尝试多种编码解析文本文件。
  * 优先级：UTF-8 BOM > jschardet 自动检测 > UTF-8 > GBK > UTF-8 强制。
- * 逻辑与 `knowledge-base.service.decodeTextFile` 一致。
  */
 export function decodeTextFile(buffer: Buffer): string {
   // UTF-8 with BOM

@@ -715,7 +715,8 @@ export class KnowledgeBaseService {
   }
 
   /**
-   * 提取文件纯文本（委托 @core/utils/extract-text，逻辑同源）。
+   * 提取文件内容（pdf/epub 走 Rust 解析器输出 Markdown，供切片器按章节/段落结构切分；
+   * txt/md 原样返回）。
    * 支持 txt/md/pdf/epub/docx/xlsx；中文编码自动检测。
    * 注：原 decodeTextFile/hasGarbledChars 已迁入 extract-text，此处仅保留 parseFile 入口。
    */
@@ -725,7 +726,7 @@ export class KnowledgeBaseService {
     const resolved = path.isAbsolute(filePath)
       ? filePath
       : path.join(getPathProvider().getDataPath(), filePath)
-    return extractTextFromFile(resolved, fileType)
+    return extractTextFromFile(resolved, fileType, { asMarkdown: true })
   }
 
   /**
