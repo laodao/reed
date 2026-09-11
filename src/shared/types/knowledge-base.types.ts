@@ -351,6 +351,13 @@ export interface SearchResult {
   score: number
   /** 元数据 */
   metadata?: ChunkMetadata
+  /**
+   * M3 章节上下文：命中块所属章节的标题路径（如 ["第二章 公司登记", "第一节 设立"]）。
+   * 供 LLM 组装答案时补全层级语义。
+   */
+  chapterPath?: string[]
+  /** M3 章节上下文：所属章节摘要（LLM 生成，说明该章节核心内容） */
+  chapterSummary?: string
 }
 
 // ==================== Embedding 模型 ====================
