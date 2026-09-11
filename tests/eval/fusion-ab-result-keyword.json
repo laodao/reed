@@ -1,12 +1,47 @@
 {
-  "generatedAt": "2026-09-11T15:19:23.321Z",
+  "generatedAt": "2026-09-11T16:10:53.087Z",
   "dataset": "keyword",
   "total": 10,
-  "vectorOnly": null,
-  "hybridW08": null,
-  "hybridW07": null,
-  "hybridW05": null,
-  "hybridRrf": null,
+  "vectorOnly": {
+    "recall1": 0.7,
+    "recall3": 0.7,
+    "recall5": 0.8,
+    "recall10": 0.8,
+    "ndcg10": 0.7430676558073392,
+    "mrr": 0.725
+  },
+  "hybridW08": {
+    "recall1": 0.7,
+    "recall3": 0.8,
+    "recall5": 0.8,
+    "recall10": 0.9,
+    "ndcg10": 0.796426308690479,
+    "mrr": 0.7642857142857143
+  },
+  "hybridW07": {
+    "recall1": 0.7,
+    "recall3": 0.8,
+    "recall5": 0.9,
+    "recall10": 0.9,
+    "ndcg10": 0.8061606311644851,
+    "mrr": 0.775
+  },
+  "hybridW05": {
+    "recall1": 0.7,
+    "recall3": 0.9,
+    "recall5": 0.9,
+    "recall10": 0.9,
+    "ndcg10": 0.8261859507142916,
+    "mrr": 0.8
+  },
+  "hybridRrf": {
+    "recall1": 0.8,
+    "recall3": 0.9,
+    "recall5": 0.9,
+    "recall10": 0.9,
+    "ndcg10": 0.8630929753571458,
+    "mrr": 0.85
+  },
   "autoRoute": {
     "recall1": 0.8,
     "recall3": 0.9,
@@ -15,5 +50,7 @@
     "ndcg10": 0.8630929753571458,
     "mrr": 0.85
   },
-  "diff": []
+  "diff": [
+    "kw-np-02: hybrid-w0.5=2 → rrf=1"
+  ]
 }

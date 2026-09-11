@@ -143,6 +143,40 @@ describe('mergeOutlineIntoMarkdown', () => {
     )
   })
 
+  it('页码有空洞（调用方剔除了空白页）时仍按原页码定位：标题不会被插到错误位置', () => {
+    // 场景来自 numpy-user.pdf：document 第 2 页无文本被剔除，此后所有页的「序号」都比「页码」小 1。
+    // 若把页码当数组下标用，书签目标页会整体前移，正文被切碎。
+    const md = mergeOutlineIntoMarkdown(
+      [
+        { pageIndex: 0, markdown: '目录页：What is NumPy? .... 3' },
+        // pageIndex 1 缺失（空白页）
+        { pageIndex: 2, markdown: 'What is NumPy?\n\nNumPy is the fundamental package.' },
+        { pageIndex: 3, markdown: 'Why is NumPy fast?\n\nBecause it is written in C.' },
+      ],
+      [
+        { title: 'What is NumPy?', level: 1, pageIndex: 2 },
+        { title: 'Why is NumPy fast?', level: 2, pageIndex: 3 },
+      ],
+    )
+    expect(md).toBe(
+      [
+        '目录页：What is NumPy? .... 3',
+        '# What is NumPy?',
+        'NumPy is the fundamental package.',
+        '## Why is NumPy fast?',
+        'Because it is written in C.',
+      ].join('\n\n'),
+    )
+  })
+
+  it('书签目标页超出实际页码范围时退化为「按当前位置插入」，不丢正文', () => {
+    const md = mergeOutlineIntoMarkdown(
+      [{ pageIndex: 0, markdown: 'Body of page one.' }],
+      [{ title: 'Ghost Chapter', level: 1, pageIndex: 99 }],
+    )
+    expect(md).toBe('Body of page one.\n\n# Ghost Chapter')
+  })
+
   it('大纲为空时原样返回拼接正文', () => {
     const md = mergeOutlineIntoMarkdown(
       [

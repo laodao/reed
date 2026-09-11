@@ -144,25 +144,48 @@ export function mergeOutlineIntoMarkdown(
   const sorted = [...pages].sort((a, b) => a.pageIndex - b.pageIndex)
   const bodies = sorted.map(p => demoteHeadings(p.markdown).trim())
 
+  // 逐页起始偏移 + 页码 → 序号映射。
+  // 必须用映射而不是「页码当下标」：调用方会剔除空页（numpy-user.pdf 第 2 页无文本），
+  // 一旦页码与序号错位，书签目标页就会整体前移，标题被插到错误的正文位置。
   const pageStarts: number[] = []
+  const posOfPage = new Map<number, number>()
   let offset = 0
-  for (const body of bodies) {
+  sorted.forEach((p, i) => {
     pageStarts.push(offset)
-    offset += body.length + PAGE_SEPARATOR.length
-  }
+    posOfPage.set(p.pageIndex, i)
+    offset += bodies[i].length + PAGE_SEPARATOR.length
+  })
   const full = bodies.join(PAGE_SEPARATOR)
   if (outline.length === 0) return full
+
+  /** 目标页之后（含本页）第一个实际存在页面的起始偏移；无则文档末尾 */
+  const startOfPageAtOrAfter = (pageIndex: number): number => {
+    const exact = posOfPage.get(pageIndex)
+    if (exact !== undefined) return pageStarts[exact]
+    for (let i = 0; i < sorted.length; i++) {
+      if (sorted[i].pageIndex >= pageIndex) return pageStarts[i]
+    }
+    return full.length
+  }
+  /** 目标页之后第一个实际存在页面的起始偏移（窗口右边界）；无则文档末尾 */
+  const startOfPageAfter = (pageIndex: number): number => {
+    const exact = posOfPage.get(pageIndex)
+    if (exact !== undefined) return pageStarts[exact + 1] ?? full.length
+    for (let i = 0; i < sorted.length; i++) {
+      if (sorted[i].pageIndex > pageIndex) return pageStarts[i]
+    }
+    return full.length
+  }
 
   const { norm, origOfNorm, normOfOrig } = buildNormalizedIndex(full)
 
   const marks: Array<{ entry: PdfOutlineEntry; start: number; titleEnd: number }> = []
   let searchFrom = 0
   for (const entry of outline) {
-    const pageStart = entry.pageIndex >= 0 ? (pageStarts[entry.pageIndex] ?? full.length) : 0
+    const pageStart = entry.pageIndex >= 0 ? startOfPageAtOrAfter(entry.pageIndex) : 0
     const from = Math.max(searchFrom, pageStart)
     // 窗口：目标页起，到目标页结束（防止匹配到更靠后的同名文本或目录页残留）
-    const windowEnd =
-      entry.pageIndex >= 0 ? (pageStarts[entry.pageIndex + 1] ?? full.length) : full.length
+    const windowEnd = entry.pageIndex >= 0 ? startOfPageAfter(entry.pageIndex) : full.length
     const hit = matchTitle(full, norm, origOfNorm, normOfOrig, entry.title, from)
     const usable = hit && hit.start < windowEnd ? hit : null
     const start = usable ? usable.start : from

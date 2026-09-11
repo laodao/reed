@@ -59,11 +59,11 @@ classifyPdf（扫描版/图片版直接报错）
 
 ## 四、验证证据
 
-### 4.1 单测（新增 18 条）
+### 4.1 单测（新增 20 条）
 
 | 用例文件 | 条数 | 覆盖 |
 |---|---|---|
-| `tests/unit/core/utils/pdf-outline.spec.ts` | 12 | 层级推导三态、正文切分、大小写/换行匹配、目标页限定（目录页同名标题不误取）、未命中兜底、非大纲标题降级、同名重复标题顺序匹配、空大纲、**真实 PDF 读大纲**（运行时生成的书签夹具） |
+| `tests/unit/core/utils/pdf-outline.spec.ts` | 14 | 层级推导三态、正文切分、大小写/换行匹配、目标页限定（目录页同名标题不误取）、未命中兜底、非大纲标题降级、同名重复标题顺序匹配、空大纲、**页码有空洞**、**目标页越界**、**真实 PDF 读大纲**（运行时生成的书签夹具） |
 | `tests/unit/core/utils/extract-text.spec.ts` | +1 | pdf 分支整体走通（标题来自书签、正文不丢） |
 | `tests/unit/core/platform/services/kb-chapter-summary.service.spec.ts` | +1 | 成本护栏 `maxSummaries` 的取舍顺序与 `remaining` |
 
@@ -77,9 +77,9 @@ classifyPdf（扫描版/图片版直接报错）
 | 指标 | 深度学习 epub | numpy-user.pdf |
 |---|---|---|
 | 章节数 | 0 → **364**（L1 书名 + L2 章/部分 + L3 节 + L4 小节，层级正确） | 1012（错乱）→ **2137**（= 书签条目数，层级/顺序与大纲一致） |
-| 切片数 | 491 → **810**（全部带 `section_path`） | 1268 → **1796**（全部带 `section_path`） |
-| 摘要 | 60/364 done（单次上限 60，其余 304 条 pending 可续跑） | 59/2137 done、1 条 failed（可重试）、2077 条 pending（单次上限 60，按层级优先，先覆盖 L1/L2） |
-| 内容量 | 解析 909,819 字符 | 逐页 Markdown 1,429,758 → 切分后 1,500,327 字符（多出的是 2137 行标题，无正文丢失） |
+| 切片数 | 491 → **810**（全部带 `section_path`） | 1268 → **1744**（页码映射修复后；全部带 `section_path`，仅封面/目录前言 1 块为空） |
+| 摘要 | 60/364 done（单次上限 60，其余 304 条 pending 可续跑） | 60/2137 done、2077 条 pending（单次上限 60，按层级优先，先覆盖 L1/L2；失败的可用「生成/重试摘要」续跑） |
+| 内容量 | 解析 909,819 字符 | 逐页 Markdown 1,429,758 → 切分后 1,430,911 字符（含 2137 行标题，无正文丢失） |
 
 numpy 修复后章节树片段（正确）：
 
@@ -106,7 +106,28 @@ numpy 修复后章节树片段（正确）：
 配套改动（`src/renderer/src/views/KnowledgeBase.vue`）：大树只默认展开一级（≤200 节点仍全展开）、新增标题筛选框、摘要结果提示剩余条数。
 Web 端复用同一视图与核心服务（无新增 IPC 通道；`channel-map.ts` 的 chapter 通道早已就位），本次未另起 web 服务实测。
 
-### 4.4 顺带修掉的一个真实缺陷
+### 4.4 首次落库后发现的第二个缺陷（已修，含回归用例）
+
+第一次 reprocess 后核对切片时发现：numpy 的 6 个切片 `section_path=[]`，且正文与章节路径**整体错位一节**
+（"What is NumPy?" 段只剩 16 字符、其正文被标成前一段路径）。
+
+根因在 `mergeOutlineIntoMarkdown` 的页码映射：调用方会剔除空页（numpy 第 2 页无文本），
+而函数内把「书签页码」直接当成「页数组下标」使用 → 页码与实际序号错位 1 位，此后每个书签的检索窗口
+都整体前移，标题被插到了错误的正文位置。**测试没抓到的原因**：单测夹具的页面连续、没有空洞。
+
+修复：页码 → 序号的显式映射（`Map` + 「目标页起第一个实际存在的页」两个辅助函数），
+并补两条回归用例（页码有空洞 / 书签目标页超出范围）。
+
+修复前后（numpy，本地复现脚本 `progress/_diag_split_repro.ts`）：
+
+| 指标 | 修复前 | 修复后 |
+|---|---|---|
+| 章节「What is NumPy?」内容长度 | 16 字（只剩标题行） | 3664 字（含正文） |
+| 空 sectionPath 切片 | 6 | 1（仅封面/目录前言，符合预期） |
+| <100 字切片 | 228 | 35 |
+| 切片总数 | 1796 | 1744 |
+
+### 4.5 顺带修掉的一个真实缺陷
 
 `knowledge-base.service.ts` 的 QA 更新补偿路径调用了向量仓库**不存在**的方法
 （`getByChunkId` / `deleteByChunkIds`，真实仓库为 `findByChunkId` / `deleteByChunkId`），
@@ -119,6 +140,32 @@ Web 端复用同一视图与核心服务（无新增 IPC 通道；`channel-map.t
 4. 顺手删除已迁入 `extract-text` 的僵尸私有方法（`decodeTextFile`/`hasGarbledChars`/`splitText` 及其专属常量）。
    `vue-tsc` 全项目错误数 901 → 894，本次触碰文件 0 错误。
 
+### 4.6 检索评估影响（诚实记录，未美化）
+
+golden 集 32 条（走真实检索管线，`tests/eval/run-baseline.cjs`）：
+
+| 时点 | recall@1 | recall@3 | recall@10 | NDCG@10 |
+|---|---|---|---|---|
+| 结构改造前（旧切片：epub 491 / numpy 1268） | 96.9% | 100% | 100% | 98.8% |
+| 大纲路径 + 页码映射**有缺陷**（numpy 1796 / epub 810） | 90.6% | 100% | 100% | 96.5% |
+| 大纲路径 + 页码映射**已修复**（numpy 1744 / epub 810） | **87.5%** | **100%** | **100%** | **95.4%** |
+| 同上，但判定放宽为「正文或所属章节路径含关键词」 | 90.6% | 100% | 100% | 96.5% |
+
+关键词型 10 条子集**完全不变**（纯向量 70/70/80、NDCG 74.3%；auto-route RRF 80/90/90、NDCG 86.3%）。
+
+recall@1 下降的 4 条逐条核查（`progress/_diag_eval_rank.cjs`）：
+
+| 条目 | rank1 实际内容 | 判定 |
+|---|---|---|
+| np-03 广播规则 | 正是「General broadcasting rules」小节（正文未出现 broadcasting 字样，章节名有） | **判定口径问题**，放宽后 @1 |
+| np-07 矩阵乘法 | 《深度学习》第2章「矩阵和向量相乘」（跨文档近似度 0.295 vs 0.288） | 跨文档近似平局，两篇都相关 |
+| np-01 数组 vs 列表 | 同章导语段（精确答案「fixed size … unlike Python lists」在 rank5，同文档） | 切片变细后同章内排序变化 |
+| dl-06 梯度下降 | 同章「8.7.1 批标准化」（与正确段 0.408 平分） | 改造前即为 @2 |
+
+结论：**召回没变（recall@3/@10 均 100%，无内容丢失）**，变化集中在 rank-1 排序：
+一部分是评估判定只看字面关键词、一部分是跨文档/同章近似平局。是否要为此改检索策略，属独立课题，
+不在本次结构改造范围内（可选方向见第六节）。
+
 ## 五、复现 / 回归命令
 
 ```powershell
@@ -129,13 +176,17 @@ node scripts/vitest-electron.cjs --sqlite-only run tests/unit/core/platform/serv
 # 真实文档重处理 + 章节树（需 dev 实例 + CDP 9222）
 node progress/_reprocess_and_show.cjs 4bf87762-a1e3-424f-8f3f-441dfcd9f341   # numpy-user.pdf
 node progress/_verify_kb_chapter_tree.cjs                                     # UI 断言
+node tests/eval/run-baseline.cjs                                              # 检索评估（golden 32 条）
+node progress/_eval_section_aware.cjs --dataset=golden                        # 严格 vs 章节感知判定对照
 
-# 只看解析层（不落库、不花 LLM 费用）
-npx tsx progress/_dbg_pdf_outline.ts
+# 只看解析/切分层（不落库、不花 LLM 费用）
+npx tsx progress/_dbg_pdf_outline.ts     # 大纲路径 vs 版面推断对比
+npx tsx progress/_diag_split_repro.ts    # 结构检测 + 切分结果（定位切片错位用）
 ```
 
 诊断脚本：`progress/_pdf_outline_probe2.cjs`（pdfjs-dist 读大纲）、`progress/_pdf_parse_probe.cjs`（pdf-inspector 接口耗时对比）、
-`progress/_kb_chapter_stats.cjs`（直连 SQLite 看章节/摘要/切片）、`progress/_cleanup_kb_service.cjs`（本次一次性清理）。
+`progress/_kb_chapter_stats.cjs`（直连 SQLite 看章节/摘要/切片）、`progress/_diag_chunk_quality.cjs`（切片质量体检）、
+`progress/_diag_eval_rank.cjs`（评估未命中条目逐条核查）、`progress/_cleanup_kb_service.cjs`（本次一次性清理）。
 
 ## 六、遗留与后续
 
@@ -146,4 +197,11 @@ npx tsx progress/_dbg_pdf_outline.ts
    （实测 `AtthecoreoftheNumPypackage`、`Thisencapsulates*n*-dimensional`、跨行连字符 `multidi- mensional`），
    影响英文关键词召回。属正文抽取层问题（可用 `extractTextWithPositions` 的 x 间距重建），本次未动。
 4. **目录页噪声**：PDF 目录页/页码横幅会作为普通段落留在正文（标题已不再误判），后续可在后处理里识别「点导引 + 页码」行并归并。
-5. **M6 Agentic 升级通道**（workflow 编排模板）仍未启用，保持骨架。
+5. **极短切片**：numpy 仍有 35 个 <100 字切片（其中 22 个近似纯标题，如「### ctypes」10 字）。
+   成因是 `HybridSplitter.mergeSmallSections` 的合并上限（合并后 ≤1500 字才合并），
+   而这些小节后面紧跟一个接近上限的章节。可考虑「极短(<50字)无条件并入邻段」，
+   但该合并器为全文档共用，改动需单独评估（本次未动）。
+6. **rank-1 排序**：召回已满（recall@3=100%），若要把 recall@1 拉回，方向是
+   父小节检索/返回父块（parent-child retrieval，方案文档 P1-1）或对同章兄弟块做聚合，
+   属于检索策略课题，与结构提取解耦。
+7. **M6 Agentic 升级通道**（workflow 编排模板）仍未启用，保持骨架。
