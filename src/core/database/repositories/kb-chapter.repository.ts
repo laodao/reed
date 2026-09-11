@@ -6,9 +6,10 @@
  * 供检索上下文注入（M3）与章节树/摘要（M2/M5）消费。
  * 多租户：继承 BaseRepository，user_id 自动注入。
  */
-import { type DataSource, type FindOptionsWhere, In } from 'typeorm'
+import { type DataSource, type FindOptionsWhere, In, IsNull } from 'typeorm'
 import { KbChapterEntity, type ChapterSummaryStatus } from '../entities/kb-chapter.entity'
 import { BaseRepository } from '../base-repository'
+import { getCurrentUserId } from '@core/context/user-context'
 import { createLogger } from '@core/utils/logger'
 
 const logger = createLogger('KbChapterRepository')
@@ -91,13 +92,29 @@ export class KbChapterRepository extends BaseRepository<KbChapterEntity, KbChapt
     }
   }
 
-  /** 批量落章节（同一文档处理时全量重建：先删后插） */
+  /**
+   * 批量落章节（同一文档处理时全量重建：事务内先删后插）。
+   *
+   * 摘要复用（review 修复）：内容指纹 contentHash 未变的章节沿用旧摘要（status='done'），
+   * 避免每次重处理都重新调 LLM 生成全部摘要；hash 变化/新增章节重置 pending。
+   */
   async replaceByDocument(documentId: string, inputs: KbChapterInput[]): Promise<number> {
-    await this.deleteByDocument(documentId)
-    if (inputs.length === 0) return 0
+    // 复用基线：旧章节中已完成摘要的 contentHash → summary
+    const previous = await this.scoped.find({
+      where: { documentId } as FindOptionsWhere<KbChapterEntity>,
+    })
+    const reusable = new Map<string, string>()
+    for (const row of previous) {
+      if (row.summaryStatus === 'done' && row.contentHash && row.summary) {
+        reusable.set(row.contentHash, row.summary)
+      }
+    }
+
+    const userId = getCurrentUserId()
     const now = new Date()
     const entities = inputs.map((inp) => {
       const e = new KbChapterEntity()
+      e.userId = userId
       e.id = inp.id
       e.documentId = inp.documentId
       e.knowledgeBaseId = inp.knowledgeBaseId
@@ -110,14 +127,23 @@ export class KbChapterRepository extends BaseRepository<KbChapterEntity, KbChapt
       e.endOffset = inp.endOffset ?? null
       e.content = inp.content ?? null
       e.contentHash = inp.contentHash ?? null
-      e.summary = null
-      e.summaryStatus = 'pending'
+      const reused = inp.contentHash ? reusable.get(inp.contentHash) : undefined
+      e.summary = reused ?? null
+      e.summaryStatus = reused ? 'done' : 'pending'
       e.summaryError = null
       e.createdAt = now
       e.updatedAt = now
       return e
     })
-    await this.scoped.saveMany(entities)
+
+    // 事务：删除 + 插入原子化，中途失败不会留下"章节全丢"的中间态
+    await this.dataSource.transaction(async (manager) => {
+      const where = userId
+        ? { documentId, userId }
+        : { documentId, userId: IsNull() }
+      await manager.delete(KbChapterEntity, where as never)
+      if (entities.length > 0) await manager.save(entities)
+    })
     return entities.length
   }
 

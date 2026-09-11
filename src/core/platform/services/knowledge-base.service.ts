@@ -16,6 +16,12 @@ import { getPathProvider } from '@core/interfaces/path.interface'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { HybridSplitter, EmbeddingService, SplitConfig, DEFAULT_SPLIT_CONFIG, SplitChunk, StructureDetector } from '@core/platform/services/chunk-splitter'
 import type { KbChapterInput, KbChapterRecord } from '@core/database/repositories/kb-chapter.repository'
+import {
+  buildChapterLookup,
+  chapterPathOf,
+  matchChapter,
+  type ChapterLookup,
+} from '@core/platform/services/kb-chapter-lookup'
 import { KbChapterSummaryService } from '@core/platform/services/kb-chapter-summary.service'
 import { extractTextFromFile, inferFileType } from '@core/utils/extract-text'
 import { publishDomainEvent } from '@core/platform/workflow/trigger/domain-event-bus'
@@ -1115,7 +1121,7 @@ export class KnowledgeBaseService {
 
       const searchResults: SearchResult[] = []
       // M3：章节上下文缓存（按 documentId 懒加载，同文档多命中只查一次章节表）
-      const chapterCache = new Map<string, { byTitle: Map<string, KbChapterRecord>; byId: Map<string, KbChapterRecord> }>()
+      const chapterCache = new Map<string, ChapterLookup>()
       for (const r of fused.slice(0, topK)) {
         const chunk = await db.kbChunks.findById(r.chunkId)
         if (!chunk) continue
@@ -1153,82 +1159,27 @@ export class KnowledgeBaseService {
 
   /**
    * M3：解析命中块所属章节（检索结果携带章节路径 + 摘要）。
-   * 候选名取 chunk.title → sectionPath 末项 → 首项，按「归一化标题」匹配
-   * （精确 → 包含兜底）；未装配章节表或无匹配返回 null。
+   *
+   * 匹配优先级（review 修复同名章节歧义）：
+   *  1) 章节全路径 key（chunk.sectionPath 全路径归一化拼接）——「第一节 设立」这类
+   *     标题在多章下重复出现时靠父路径区分，避免摘要张冠李戴
+   *  2) 标题精确（chunk.title / sectionPath 末项 / 首项，归一化）
+   *  3) 标题包含兜底（标题带前缀/被截断时）
+   * 未装配章节表或无匹配返回 null。
    */
   private async resolveChapterForChunk(
     chunk: KbChunk,
-    cache: Map<string, { byTitle: Map<string, KbChapterRecord>; byId: Map<string, KbChapterRecord> }>,
+    cache: Map<string, ChapterLookup>,
   ): Promise<KbChapterRecord | null> {
     const db = getCoreDatabaseManager()
     if (!db.kbChapters) return null
 
-    let entry = cache.get(chunk.documentId)
-    if (!entry) {
-      const records = await db.kbChapters.findByDocument(chunk.documentId)
-      const byTitle = new Map<string, KbChapterRecord>()
-      const byId = new Map<string, KbChapterRecord>()
-      for (const rec of records) {
-        byId.set(rec.id, rec)
-        byTitle.set(KnowledgeBaseService.normalizeChapterTitle(rec.title), rec)
-      }
-      entry = { byTitle, byId }
-      cache.set(chunk.documentId, entry)
+    let lookup = cache.get(chunk.documentId)
+    if (!lookup) {
+      lookup = buildChapterLookup(await db.kbChapters.findByDocument(chunk.documentId))
+      cache.set(chunk.documentId, lookup)
     }
-    if (entry.byTitle.size === 0) return null
-
-    const candidates: string[] = []
-    if (chunk.title) candidates.push(chunk.title)
-    const sectionPath = this.parseSectionPath(chunk.sectionPath)
-    if (sectionPath.length > 0) {
-      candidates.push(sectionPath[sectionPath.length - 1], sectionPath[0])
-    }
-
-    for (const raw of candidates) {
-      const hit = entry.byTitle.get(KnowledgeBaseService.normalizeChapterTitle(raw))
-      if (hit) return hit
-    }
-    // 包含匹配兜底（标题带前缀/被截断时）
-    for (const raw of candidates) {
-      const key = KnowledgeBaseService.normalizeChapterTitle(raw)
-      if (key.length < 4) continue
-      for (const [titleKey, rec] of entry.byTitle) {
-        if (titleKey.includes(key) || key.includes(titleKey)) return rec
-      }
-    }
-    return null
-  }
-
-  /** 章节标题归一化（去空白/全角空格并小写，便于与 chunk.title 比对） */
-  private static normalizeChapterTitle(title: string): string {
-    return (title ?? '').replace(/[\s\u3000]+/g, '').toLowerCase()
-  }
-
-  /** sectionPath 解析（存库为 JSON 字符串或数组） */
-  private parseSectionPath(raw: unknown): string[] {
-    if (Array.isArray(raw)) return raw.filter((x): x is string => typeof x === 'string')
-    if (typeof raw === 'string' && raw.trim()) {
-      try {
-        const parsed = JSON.parse(raw)
-        return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : []
-      } catch {
-        return []
-      }
-    }
-    return []
-  }
-
-  /** 章节路径（沿 parentId 上溯；带防环保护） */
-  private chapterPathOf(chapter: KbChapterRecord, byId: Map<string, KbChapterRecord>): string[] {
-    const path: string[] = []
-    const guard = new Set<string>()
-    let cur: KbChapterRecord | undefined = chapter
-    while (cur && !guard.has(cur.id)) {
-      guard.add(cur.id)
-      path.unshift(cur.title)
-      cur = cur.parentId ? byId.get(cur.parentId) : undefined
-    }
-    return path
+    return matchChapter(lookup, chunk.title, chunk.sectionPath)
   }
 
   /**

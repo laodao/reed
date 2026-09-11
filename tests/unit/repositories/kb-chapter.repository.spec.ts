@@ -114,4 +114,32 @@ describe.each(getTestDialects())('KbChapterRepository [%s]', dialect => {
     expect(done).toHaveLength(1)
     expect(done[0].summary).toBe('A 的摘要')
   })
+
+  it('重处理摘要复用：contentHash 未变沿用旧摘要（不再重复调 LLM），变化则重置 pending', async () => {
+    await runWithUser(LOCAL_DEFAULT_USER_ID, () =>
+      repo.replaceByDocument(DOC_ID, [
+        chapter({ id: 'c1', title: '第一章', ordering: 0, contentHash: 'h1' }),
+        chapter({ id: 'c2', title: '第二章', ordering: 1, contentHash: 'h2' }),
+      ]),
+    )
+    await runWithUser(LOCAL_DEFAULT_USER_ID, () => repo.updateSummary('c1', { summary: '第一章摘要', status: 'done' }))
+    await runWithUser(LOCAL_DEFAULT_USER_ID, () => repo.updateSummary('c2', { summary: '第二章摘要', status: 'done' }))
+
+    // 重建：第一章 hash 不变（复用）、第二章 hash 变化（重置）、第三章新增（pending）
+    await runWithUser(LOCAL_DEFAULT_USER_ID, () =>
+      repo.replaceByDocument(DOC_ID, [
+        chapter({ id: 'n1', title: '第一章', ordering: 0, contentHash: 'h1' }),
+        chapter({ id: 'n2', title: '第二章', ordering: 1, contentHash: 'h2-changed' }),
+        chapter({ id: 'n3', title: '第三章', ordering: 2, contentHash: 'h3' }),
+      ]),
+    )
+
+    const rows = await runWithUser(LOCAL_DEFAULT_USER_ID, () => repo.findByDocument(DOC_ID))
+    const byTitle = new Map(rows.map(r => [r.title, r]))
+    expect(byTitle.get('第一章')!.summaryStatus).toBe('done')
+    expect(byTitle.get('第一章')!.summary).toBe('第一章摘要')
+    expect(byTitle.get('第二章')!.summaryStatus).toBe('pending')
+    expect(byTitle.get('第二章')!.summary).toBeNull()
+    expect(byTitle.get('第三章')!.summaryStatus).toBe('pending')
+  })
 })
