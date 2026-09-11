@@ -784,3 +784,27 @@ describe('43 号：流失败分类与退避（纯函数）', () => {
     expect(parseIdleTimeoutMs('-5')).toBe(300_000)
   })
 })
+
+describe('47 号：异常终止归一 stop(\'error\')（终态轨迹可枚举）', () => {
+  it('上下文端口抛错 → stopReason=error + guardrail_stop 终态轨迹 + 补偿落盘', async () => {
+    const runner = mkRunner(mkModel([txt('正常收尾')]), {
+      context: {
+        assemble: (m: ModelMessage[]) => m,
+        maybeCompact: async () => {
+          throw new Error('ctx-boom')
+        },
+      } as never,
+    })
+    const host = new FakeHost()
+    const r = await runner.run(mkTask({}), host)
+    expect(r.stopReason).toBe('error')
+    expect(r.error).toContain('ctx-boom')
+    // 终态轨迹：崩溃轮在 agent_trajectories 里可枚举（listRecoverable 依据）
+    const stop = host.trajectories.find((t) => t.kind === 'guardrail_stop')
+    expect(stop).toBeDefined()
+    expect(stop?.payload).toMatchObject({ reason: 'error' })
+    expect(host.savedStates.length).toBeGreaterThanOrEqual(1)
+    // 冻结语义不破坏：suspended 态下异常收束不得覆盖 stopReason（47号前已由 stop 承载）
+    expect(host.savedStates.at(-1)?.stopReason).toBe('error')
+  })
+})

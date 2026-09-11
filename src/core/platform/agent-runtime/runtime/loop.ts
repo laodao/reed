@@ -454,12 +454,9 @@ export class LoopRunner {
         return this.stop(state, host, 'aborted', undefined, [...pendingAppended])
       }
       logger.error('[agent-loop] 循环异常终止', e)
-      state.stopReason = 'error'
-      await host.saveState(state, { appended: [...pendingAppended] }).catch((saveErr) =>
-        logger.warn('[agent-loop] 异常路径补偿落盘失败（历史可能停留上一 save 点）', saveErr),
-      )
-      pendingAppended = []
-      return resultOf(state, 'error', err?.message ?? String(e))
+      // 47号恢复能力面：异常终止与流级失败（stop('error')）同路收束——终态轨迹
+      // （guardrail_stop）、补偿落盘、挂起冻结语义单一出处，崩溃轮在轨迹里可枚举
+      return this.stop(state, host, 'error', err?.message ?? String(e), [...pendingAppended])
     }
   }
 

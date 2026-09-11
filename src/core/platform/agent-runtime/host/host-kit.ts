@@ -215,6 +215,14 @@ export function formatStopNote(stopReason: string, error?: string): string {
   return ''
 }
 
+/**
+ * 崩溃恢复缺省续跑指令（47号恢复能力面）：作为用户消息进入历史。
+ * 业务可用 resumeTurn 的 instruction 覆盖为任务恢复块（计划/进度/草稿现状——
+ * 任务语义平台不背，见 47 号 §边界）。
+ */
+export const DEFAULT_RESUME_INSTRUCTION =
+  '[系统恢复] 上一轮执行因故障中断。请先基于已有信息核实实际完成到哪一步，再从断点继续完成剩余任务；不要重复已完成的工作，也不要臆造中断期间发生的事。'
+
 /** 记忆装配（kit 内置的四大能力②）：行集合 = L0 + 通道A[设定事实] + 通道B 飞轮召回。
  *  纪律（对抗 review P2-2）：装配任何环节失败只降级不炸轮——「不影响主链路」 */
 async function assembleMemoryLines<TTurn extends HostKitTurnBase>(
@@ -490,6 +498,23 @@ export function createHostKit<TTurn extends HostKitTurnBase>(
           ...(result?.error ? { error: result.error } : failure ? { error: failure } : {}),
         })
       }
+    },
+
+    /**
+     * 崩溃恢复续跑（47号恢复能力面）：与审批形 resumeFromSuspend 并列的恢复变体。
+     * 中断轮的续跑机制本就存在——runTurn 管线自动完成 loadState（会话存储形态含
+     * sanitize）→ assemble 悬空哨兵修复 → 重进 loop；本入口只把「续跑指令」
+     * 正规化：缺省注入 DEFAULT_RESUME_INSTRUCTION，业务可传 instruction 覆盖为
+     * 任务恢复块（计划/进度/业务快照——任务语义平台不背）。baseTurn 其余字段
+     * （projectId 等）原样参与 scopeKey/记忆/快照装配。互斥与 runTurn 同职责
+     * （业务 busy 守卫）。
+     */
+    async resumeTurn(
+      baseTurn: TTurn,
+      opts: HostKitTurnOptions & { instruction?: string } = {},
+    ): Promise<HostKitTurnResult> {
+      const input = opts.instruction?.trim() ? opts.instruction.trim() : DEFAULT_RESUME_INSTRUCTION
+      return this.runTurn({ ...baseTurn, input }, { signal: opts.signal })
     },
   }
 }

@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest'
 import { MockLanguageModelV3, simulateReadableStream } from 'ai/test'
 import type { LanguageModel, ModelMessage } from 'ai'
-import { createHostKit, extractRecallTopics, formatStopNote } from '@core/platform/agent-runtime/host/host-kit'
+import { createHostKit, extractRecallTopics, formatStopNote, DEFAULT_RESUME_INSTRUCTION } from '@core/platform/agent-runtime/host/host-kit'
 import { getAgentRunRegistry } from '@core/platform/agent-runtime/runtime/run-registry'
 import { registerStructuredProvider } from '@core/platform/agent-runtime/memory/structured-provider'
 import type { AgentToolDef, TrajectoryEntry } from '@core/platform/agent-runtime/types'
@@ -469,5 +469,50 @@ describe('39 号 P0-1/P1/P2：HostKit 装配', () => {
     const summaryMsg = messages!.find((m) => typeof m.content === 'string' && (m.content as string).includes('[Previous conversation summary]'))
     expect(summaryMsg).toBeDefined()
     expect(messages!.some((m) => m.role === 'user' && m.content === '继续')).toBe(true)
+  })
+})
+
+// ==================== 47 号：resumeTurn 崩溃恢复续跑 ====================
+
+describe('HostKit resumeTurn（47 号恢复能力面）', () => {
+  it('缺省指令：中断会话续跑——指令作为 user 消息入历史、baseTurn 字段参与 scopeKey 装配', async () => {
+    const history: ModelMessage[] = [
+      { role: 'user', content: '帮我做长任务' },
+      { role: 'assistant', content: [
+        { type: 'tool-call', toolCallId: 'c1', toolName: 'discover_capabilities', input: {} },
+      ] } as unknown as ModelMessage,
+    ]
+    const turnDeps = mkDeps({ history })
+    const scopeSeen: Array<string | undefined> = []
+    const { kit } = mkKit(turnDeps, {
+      scopeKey: (t: Turn) => {
+        scopeSeen.push(t.projectId)
+        return `test:${t.projectId ?? 'p1'}`
+      },
+    })
+    const r = await kit.resumeTurn({ input: '帮我做长任务', projectId: 'p2' })
+    expect(r.stopReason).toBe('final')
+    // 缺省恢复指令作为最后一条 user 消息落历史（会话存储续跑形态）
+    const messages = turnDeps.saved.at(-1)
+    expect(messages).toBeDefined()
+    const lastUser = [...messages!].reverse().find((m) => m.role === 'user')
+    expect(lastUser?.content).toBe(DEFAULT_RESUME_INSTRUCTION)
+    // 悬空 tool-call 在 loadState 的 sanitize 段已被清洗（session-sanitize 职责，
+    // 哨兵修复只兜 assemble 入口——此处断言历史里不再有悬空形态即可）
+    expect(messages!.some((m) => m.role === 'tool')).toBe(false)
+    // baseTurn 展开字段到达 scope 回调（记忆/快照/运行标签同源装配）
+    expect(scopeSeen).toContain('p2')
+  })
+
+  it('instruction 覆盖：业务任务恢复块替换缺省指令', async () => {
+    const turnDeps = mkDeps({
+      history: [{ role: 'user', content: '做任务' }],
+    })
+    const { kit } = mkKit(turnDeps)
+    const r = await kit.resumeTurn({ input: '做任务' }, { instruction: '任务恢复块：已完成 3/5 步，继续第 4 步' })
+    expect(r.stopReason).toBe('final')
+    const messages = turnDeps.saved.at(-1)
+    const lastUser = [...messages!].reverse().find((m) => m.role === 'user')
+    expect(lastUser?.content).toBe('任务恢复块：已完成 3/5 步，继续第 4 步')
   })
 })
