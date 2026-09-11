@@ -88,3 +88,16 @@ dl run_workflow 触发复验。
 - 模板 v3：topic-research.json 重构为 until 循环（12 节点 14 边）：start(+maxRounds) → 澄清 → 规划 → round1(until: r→e→pack→loop-back, errorPolicy=skip) → writer(用 round1.last.result.*) → report → 人工确认 → 保存。
 - 测试：loop-until.spec 4 例 + 回归（9 files 94 passed）、eslint 0、本批 vue-tsc 零新增；本地提交待 push。
 - 待用户：真机（动态轮次/评估提前收尾/达上限收尾）、until+挂起恢复专项 spec（后续）。
+
+---
+
+## v4：运行级总预算落地（2026-09-09，run-budget-design.md）
+
+用户立项（"应该设置工作流的总预算，而不是工具的预算；每轮数据量不同，等额不合理"）。设计自查修订后 TDD 实现：
+
+- 新增运行级设置 `maxTotalToolCalls`（0/缺省=不启用；normalize：有限正数取整并封顶 `WORKFLOW_LIMITS.maxTotalToolCalls=10000`，NaN/负数→0）；`ResolvedExecutionSettings` 增字段。
+- 引擎：`RunExecution.toolBudget {max,used}` 恒建对象、跨节点/跨轮共享；`buildContext` 注入 `ctx.toolBudget`（max>0 才有；含只读 remaining + tryConsume）；快照序列化 toolBudget，journal-replay 快照恢复重建（旧快照无该字段则保持初值）。
+- agent-loop：`assembleTools` 支持运行级预算句柄——先查节点级（设了且耗尽→报节点级、不白扣运行级）再查运行级（耗尽→报运行级提示），双预算各自计数；模型 task 追加「运行级总预算：共 N 次，当前剩余 M 次」提示，引导按需分配。
+- 模板：`topic-research.json` `settings.maxTotalToolCalls = 120`（8 轮共享总额，不再每轮等额 16）。
+- 测试：agent-loop-node.spec 新增 7 例（normalize/直通/节点级优先/运行级耗尽/双预算并存/引擎级跨节点累计/剩余预算注入 prompt）；topic-research-graph 增 1 例（settings=120）；回归 batch1 8 文件 52 passed、batch2 5 文件 62 passed；eslint 0。
+- 待用户：真机复跑（重启 App → 主题深度研究 8 轮，观察总调用 ≤120、每轮不再整齐触 16 天花板、prompt 含剩余预算）。

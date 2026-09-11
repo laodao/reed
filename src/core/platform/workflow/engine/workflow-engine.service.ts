@@ -245,6 +245,8 @@ export class RunExecution {
   readonly loopBodies = new Map<string, LoopBodyInfo>()
   readonly abortController = new AbortController()
   readonly settings: ResolvedExecutionSettings
+  /** 运行级总工具调用预算（跨节点/跨轮共享计数；max=0 不启用）。恒建对象，快照随运行持久化。 */
+  readonly toolBudget: { max: number; used: number }
   /** 多轮对话累积器：按执行完成顺序记录 LLM 轮次（workflow settings.multiTurn 开启时生效） */
   readonly llmHistory: Array<{ role: 'user' | 'assistant'; content: string }> = []
 
@@ -287,6 +289,7 @@ export class RunExecution {
       this.incomingByNode.set(edge.targetNodeId, inc)
     }
     this.settings = resolveExecutionSettings(input.settings)
+    this.toolBudget = { max: this.settings.maxTotalToolCalls, used: 0 }
     this.resolver = new VariableResolver({
       variables: this.variables,
       startInputs: input.startInputs,
@@ -516,6 +519,8 @@ export class WorkflowEngineService {
       variables: Object.fromEntries(exec.variables),
       llmHistory: exec.llmHistory,
       runCounts: Object.fromEntries(exec.runCounts),
+      // 运行级总工具调用预算（恒序列化；恢复侧按此重建，防崩溃后计数清零白烧额度）
+      toolBudget: { max: exec.toolBudget.max, used: exec.toolBudget.used },
       scopes: [serializeScope(exec.rootScope), ...[...exec.loopScopes.values()].map(serializeScope)],
       loopDrivers: [...exec.loopDrivers.values()].map(d => ({
         loopNodeId: d.node.id,
@@ -2530,6 +2535,22 @@ export class WorkflowEngineService {
         exec.resolver.resolve(template, this.localContextFor(exec, scope)) as T,
       getVariable: (path: string) =>
         exec.resolver.resolve(`{{${path}}}`, this.localContextFor(exec, scope)),
+      // 运行级总工具调用预算：max>0 才注入句柄；tryConsume 每次成功占用 1 次调用额度
+      toolBudget:
+        exec.toolBudget.max > 0
+          ? {
+              max: exec.toolBudget.max,
+              used: exec.toolBudget.used,
+              get remaining() {
+                return Math.max(0, exec.toolBudget.max - exec.toolBudget.used)
+              },
+              tryConsume: () => {
+                if (exec.toolBudget.used >= exec.toolBudget.max) return false
+                exec.toolBudget.used += 1
+                return true
+              },
+            }
+          : undefined,
       // 多轮对话：multiTurn 开启时，LLM 节点读历史/登记本轮；关闭时返回空（行为与无状态单轮一致）
       getLLMHistory: () => (exec.settings.multiTurn ? exec.llmHistory : []),
       recordLLMTurn: (role, content) => {

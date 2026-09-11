@@ -841,3 +841,175 @@ function captureModel(prompts: unknown[][], stepFactories: Array<() => Array<Rec
     },
   }) as unknown as LanguageModel
 }
+
+// ==================== 运行级总工具调用预算（settings.maxTotalToolCalls） ====================
+
+import { assembleTools } from '@core/platform/workflow/nodes/agent-loop-node'
+import { normalizeTotalToolBudget } from '@core/platform/workflow/engine/execution-settings'
+
+/** 运行级预算句柄桩（与引擎 ctx.toolBudget 同形） */
+function mkRunBudget(max: number, used = 0) {
+  const state = { max, used }
+  return {
+    get max() { return state.max },
+    get used() { return state.used },
+    get remaining() { return Math.max(0, state.max - state.used) },
+    tryConsume() {
+      if (state.used >= state.max) return false
+      state.used += 1
+      return true
+    },
+  }
+}
+
+describe('运行级总预算（settings.maxTotalToolCalls）', () => {
+  it('normalizeTotalToolBudget：0/缺省/NaN/负数 → 0（不启用）；正数取整并封顶硬上限', () => {
+    expect(normalizeTotalToolBudget(undefined)).toBe(0)
+    expect(normalizeTotalToolBudget(null)).toBe(0)
+    expect(normalizeTotalToolBudget(0)).toBe(0)
+    expect(normalizeTotalToolBudget(-3)).toBe(0)
+    expect(normalizeTotalToolBudget(Number.NaN)).toBe(0)
+    expect(normalizeTotalToolBudget(12.9)).toBe(12)
+    expect(normalizeTotalToolBudget(999_999)).toBe(10_000)
+  })
+
+  it('assembleTools：未配置任何预算 → 直通执行（无包装、无 LIMIT_EXCEEDED，行为不变）', async () => {
+    const reg = new AgentToolRegistry()
+    const sink: unknown[] = []
+    reg.register(mkTool({ name: 'echo_tool', sink }))
+    const defs = assembleTools(reg, ['echo_tool'], undefined, 0, undefined)
+    const r = (await defs.echo_tool.execute({ q: 'x' }, {} as never)) as { echo?: unknown; error?: string }
+    expect(r.error).toBeUndefined()
+    expect(sink).toEqual([{ q: 'x' }])
+  })
+
+  it('节点级优先：节点级额度耗尽 → 报节点级提示，且不消耗运行级额度', async () => {
+    const reg = new AgentToolRegistry()
+    let executed = 0
+    reg.register({
+      ...mkTool({ name: 'test_tool', sink: [] }),
+      execute: async () => { executed++; return { ok: true } },
+    } as never)
+    const run = mkRunBudget(5)
+    const defs = assembleTools(reg, ['test_tool'], 1, 1, run) // 节点级上限 1、已用 1 → 已耗尽
+    const r = (await defs.test_tool.execute({ q: 'x' }, {} as never)) as { error?: string; hint?: string }
+    expect(r.error).toBe('LIMIT_EXCEEDED')
+    expect(r.hint).toContain('节点级')
+    expect(run.used).toBe(0) // 运行级额度未被白白扣掉
+    expect(executed).toBe(0)
+  })
+
+  it('运行级耗尽：报运行级提示并拒绝执行（跨轮共享的额度用尽）', async () => {
+    const reg = new AgentToolRegistry()
+    let executed = 0
+    reg.register({
+      ...mkTool({ name: 'test_tool', sink: [] }),
+      execute: async () => { executed++; return { ok: true } },
+    } as never)
+    const run = mkRunBudget(1, 1) // 已耗尽
+    const defs = assembleTools(reg, ['test_tool'], undefined, 0, run)
+    const r = (await defs.test_tool.execute({ q: 'x' }, {} as never)) as { error?: string; hint?: string }
+    expect(r.error).toBe('LIMIT_EXCEEDED')
+    expect(r.hint).toContain('运行级')
+    expect(executed).toBe(0)
+  })
+
+  it('双预算并存：一次调用各计一次（节点级 + 运行级同步推进）', async () => {
+    const reg = new AgentToolRegistry()
+    let executed = 0
+    reg.register({
+      ...mkTool({ name: 'test_tool', sink: [] }),
+      execute: async () => { executed++; return { ok: true } },
+    } as never)
+    const run = mkRunBudget(5)
+    const defs = assembleTools(reg, ['test_tool'], 2, 0, run)
+    await defs.test_tool.execute({ q: 'x' }, {} as never)
+    expect(executed).toBe(1)
+    expect(run.used).toBe(1)
+    // 节点级上限 2：第二次通过、第三次报节点级
+    await defs.test_tool.execute({ q: 'x' }, {} as never)
+    const third = (await defs.test_tool.execute({ q: 'x' }, {} as never)) as { hint?: string }
+    expect(executed).toBe(2)
+    expect(run.used).toBe(2)
+    expect(third.hint).toContain('节点级')
+  })
+
+  it('引擎级跨节点累计：总预算=1 → 第二个 agent-loop 的工具调用被运行级拒绝，运行仍成功', async () => {
+    const runs = new FakeRuns()
+    const nodeRuns = new FakeNodeRuns()
+    const engine = new WorkflowEngineService(
+      { runs, nodeRuns, events: new FakeEvents(), journal: null } as unknown as WorkflowEngineDeps,
+      createNodeRegistry([...CONTROL_NODE_HANDLERS, AGENT_LOOP_NODE_HANDLER] as never),
+    )
+    const graph = {
+      nodes: [
+        { id: 's1', type: 'start', config: {}, position: { x: 0, y: 0 } },
+        { id: 'ag1', type: 'agent-loop', config: { task: '第一步', toolWhitelist: ['echo_tool'] }, position: { x: 0, y: 0 } },
+        { id: 'ag2', type: 'agent-loop', config: { task: '第二步', toolWhitelist: ['echo_tool'] }, position: { x: 0, y: 0 } },
+        { id: 'e1', type: 'end', config: {}, position: { x: 0, y: 0 } },
+      ],
+      edges: [
+        { id: 'b0', sourceNodeId: 's1', targetNodeId: 'ag1', kind: 'normal' },
+        { id: 'b1', sourceNodeId: 'ag1', targetNodeId: 'ag2', kind: 'normal' },
+        { id: 'b2', sourceNodeId: 'ag2', targetNodeId: 'e1', kind: 'normal' },
+      ],
+    } as unknown as WorkflowGraph
+    const input: ExecuteRunInput = {
+      runId: 'run_budget', userId: 'u1', definitionId: 'd1', graph, startInputs: {},
+      settings: { maxTotalToolCalls: 1 },
+    }
+    slot.set(stepsModel([
+      () => toolParts('b1', 'echo_tool', { q: '一' }),
+      () => txt('第一个完成'),
+      () => toolParts('b2', 'echo_tool', { q: '二' }),
+      () => txt('第二个完成'),
+    ]))
+    await runWithUserAsync('u1', async () => {
+      await engine.execute(input)
+      await sleep(80)
+    })
+    expect(runs.final.status).toBe('succeeded')
+    expect(echoExecuted).toEqual([{ q: '一' }]) // 第二次调用被运行级预算拒绝，未真正执行
+    const ag1 = nodeRuns.rows.get('ag1:0')?.output as { answer?: string } | undefined
+    const ag2 = nodeRuns.rows.get('ag2:0')?.output as { answer?: string } | undefined
+    expect(ag1?.answer).toBe('第一个完成')
+    expect(ag2?.answer).toBe('第二个完成') // 被拒绝后模型直接作答，节点照常收敛
+  })
+
+  it('剩余预算注入 task：模型 prompt 含运行级总预算与剩余次数', async () => {
+    const runs = new FakeRuns()
+    const nodeRuns = new FakeNodeRuns()
+    const engine = new WorkflowEngineService(
+      { runs, nodeRuns, events: new FakeEvents(), journal: null } as unknown as WorkflowEngineDeps,
+      createNodeRegistry([...CONTROL_NODE_HANDLERS, AGENT_LOOP_NODE_HANDLER] as never),
+    )
+    const graph = {
+      nodes: [
+        { id: 's1', type: 'start', config: {}, position: { x: 0, y: 0 } },
+        { id: 'ag1', type: 'agent-loop', config: { task: '整理资料', toolWhitelist: ['echo_tool'] }, position: { x: 0, y: 0 } },
+        { id: 'e1', type: 'end', config: {}, position: { x: 0, y: 0 } },
+      ],
+      edges: [
+        { id: 'h0', sourceNodeId: 's1', targetNodeId: 'ag1', kind: 'normal' },
+        { id: 'h1', sourceNodeId: 'ag1', targetNodeId: 'e1', kind: 'normal' },
+      ],
+    } as unknown as WorkflowGraph
+    const input: ExecuteRunInput = {
+      runId: 'run_hint', userId: 'u1', definitionId: 'd1', graph, startInputs: {},
+      settings: { maxTotalToolCalls: 5 },
+    }
+    const prompts: unknown[][] = []
+    slot.set(captureModel(prompts, [
+      () => toolParts('h1', 'echo_tool', { q: 'x' }),
+      () => txt('完成'),
+    ]))
+    await runWithUserAsync('u1', async () => {
+      await engine.execute(input)
+      await sleep(80)
+    })
+    expect(runs.final.status).toBe('succeeded')
+    const first = JSON.stringify(prompts[0] ?? [])
+    expect(first).toContain('运行级总预算')
+    expect(first).toContain('剩余 5 次')
+  })
+})
