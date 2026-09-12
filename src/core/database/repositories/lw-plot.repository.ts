@@ -7,6 +7,7 @@
 import type { DataSource } from 'typeorm'
 import { StoryPlot, CreatePlotRequest, UpdatePlotRequest } from '@shared/types/longwriting.types'
 import { LwPlotEntity } from '../entities/lw-plot.entity'
+import { LwPlotCharacterEntity } from '../entities/lw-plot-character.entity'
 import { LwPlotCharacterRepository } from './lw-plot-character.repository'
 import { LwPlotLocationRepository } from './lw-plot-location.repository'
 import { BaseRepository } from '../base-repository'
@@ -123,8 +124,14 @@ export class LwPlotRepository extends BaseRepository<LwPlotEntity, StoryPlot> {
             updatedAt: now,
           }),
         )
+        // 事务内直接用回调 manager 写桥表（评审修复：原经 plotCharacterRepo.batchAdd
+        // 会再开事务，撞 SQLite 串行门"事务回调内禁止再次开启事务"）
         if (plot.involvedCharacters?.length && this.isIdFormat(plot.involvedCharacters)) {
-          await this.plotCharacterRepo.batchAdd(id, plot.involvedCharacters)
+          const bridgeRepo = manager.getRepository(LwPlotCharacterEntity)
+          const bridgeNow = Date.now()
+          for (const cid of plot.involvedCharacters) {
+            await bridgeRepo.save(bridgeRepo.create({ id: this.generateId(), plotId: id, characterId: cid, createdAt: bridgeNow }))
+          }
         }
         result.push(this.toDto(saved))
       }

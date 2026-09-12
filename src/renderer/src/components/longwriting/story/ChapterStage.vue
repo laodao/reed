@@ -169,6 +169,7 @@
                 </div>
               </div>
 
+            <div class="chapter-body">
               <!-- 可编辑模式：Markdown 编辑器 -->
               <div v-if="isEditableNode && currentChapter" class="chapter-editor-wrapper">
                 <MarkdownEditor
@@ -185,23 +186,24 @@
                 <div v-if="nodePreviewContent" class="preview-content-area" v-html="renderMarkdown(nodePreviewContent)"></div>
                 <el-empty v-else description="暂无内容，请在左侧选择具体的节进行编辑" />
               </div>
-            </div>
 
-            <!-- 章节工作台：上下文预览面板（38 号，原型 v2） -->
-            <ChapterContextPanel
-              v-if="isEditableNode && activeOutlineId"
-              :project-id="projectId"
-              :outline-id="activeOutlineId"
-              :generating="!!generatingMap[activeOutlineId]"
-              :target-words="generateForm.targetWords"
-              :style="generateForm.style || undefined"
-              :extra-prompt="generateForm.extraPrompt || undefined"
-              @generate="handleGenerateWithContext"
-            />
+              <!-- 章节工作台：上下文预览面板（38 号；布局修复：右侧栏，不再被纵向堆叠到底部） -->
+              <ChapterContextPanel
+                v-if="isEditableNode && activeOutlineId"
+                :project-id="projectId"
+                :outline-id="activeOutlineId"
+                :generating="!!generatingMap[activeOutlineId]"
+                :target-words="generateForm.targetWords"
+                :style="generateForm.style || undefined"
+                :extra-prompt="generateForm.extraPrompt || undefined"
+                @generate="handleGenerateWithContext"
+              />
+            </div>
           </div>
         </div>
       </div>
     </div>
+  </div>
 
     <!-- AI 生成参数设置对话框 -->
     <el-dialog
@@ -1979,9 +1981,19 @@ onMounted(() => {
   }
 }
 
+// 卡片主体：编辑器/预览 + 右侧上下文面板横向排列（布局修复：原纵向堆叠把面板挤到底部）
+.chapter-body {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  min-height: 0;
+  overflow: hidden;
+}
+
 // 编辑器容器
 .chapter-editor-wrapper {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
   display: flex;
@@ -2001,6 +2013,7 @@ onMounted(() => {
 // 预览容器
 .chapter-preview-wrapper {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow-y: auto;
   padding: 24px;
