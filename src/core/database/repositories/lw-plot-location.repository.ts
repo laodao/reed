@@ -4,11 +4,13 @@
  * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import { In, type DataSource } from 'typeorm'
+import { In, IsNull } from 'typeorm'
+import type { DataSource } from 'typeorm'
 import { LwPlotLocationEntity } from '../entities/lw-plot-location.entity'
 import { LwPlotEntity } from '../entities/lw-plot.entity'
 import { LwLocationEntity } from '../entities/lw-location.entity'
 import { BaseRepository } from '../base-repository'
+import { getCurrentUserId } from '@core/context/user-context'
 
 export interface PlotLocationRelation {
   id: string
@@ -71,12 +73,15 @@ export class LwPlotLocationRepository extends BaseRepository<
   }
 
   async replaceAll(plotId: string, locationIds: string[]): Promise<void> {
+    // 事务回调内的裸 manager 仓储不走 scoped 注入——事务外同步捕获 userId，
+    // 写入显式落列、删除显式过滤（口径与 base-repository 的 scopeWhere/scopeEntity 一致）
+    const userId = getCurrentUserId()
     await this.dataSource.transaction(async manager => {
       const repo = manager.getRepository(LwPlotLocationEntity)
-      await repo.delete({ plotId } as any)
+      await repo.delete({ plotId, userId: userId === null ? IsNull() : userId } as any)
       const now = Date.now()
       for (const lid of locationIds) {
-        await repo.save(repo.create({ id: this.generateId(), plotId, locationId: lid, createdAt: now }))
+        await repo.save(repo.create({ id: this.generateId(), plotId, userId, locationId: lid, createdAt: now }))
       }
     })
   }
@@ -103,6 +108,7 @@ export class LwPlotLocationRepository extends BaseRepository<
     for (const l of locs) nameToId.set(l.name, l.id)
 
     let migrated = 0
+    const userId = getCurrentUserId()
     await this.dataSource.transaction(async manager => {
       const repo = manager.getRepository(LwPlotLocationEntity)
       const now = Date.now()
@@ -113,7 +119,7 @@ export class LwPlotLocationRepository extends BaseRepository<
           if (!lid) continue
           const existing = await repo.findOne({ where: { plotId: plot.id, locationId: lid } as any })
           if (!existing) {
-            await repo.save(repo.create({ id: this.generateId(), plotId: plot.id, locationId: lid, createdAt: now }))
+            await repo.save(repo.create({ id: this.generateId(), plotId: plot.id, userId, locationId: lid, createdAt: now }))
             migrated++
           }
         }
