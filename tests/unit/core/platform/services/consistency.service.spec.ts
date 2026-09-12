@@ -135,4 +135,107 @@ describe('ConsistencyService', () => {
     const svc = new ConsistencyService(cleanDb as any)
     expect(await svc.scanContradictions('p1')).toHaveLength(0)
   })
+
+  // ==================== R7 钩子节拍（49 号） ====================
+
+  function makeScriptDb(summaries: string[], extra: Record<string, unknown> = {}) {
+    return makeFakeDb({
+      lwOutlines: {
+        getById: vi.fn(async () => null),
+        getByProjectId: vi.fn(async () =>
+          summaries.map((s, i) => ({ id: `o${i}`, name: `第${i + 1}集`, nodeType: 'chapter', orderIndex: i, summary: s })),
+        ),
+      },
+      ...extra,
+    })
+  }
+
+  it('R7：相邻集钩子类型连续同型 → warning；全异型 → 无冲突', async () => {
+    const same = makeScriptDb([
+      '剧情梗概一【集尾卡点】悬念甲（悬念钩）',
+      '剧情梗概二【集尾卡点】悬念乙（悬念钩）',
+    ])
+    const r1 = await new ConsistencyService(same as any).scanContradictions('p1')
+    expect(r1.filter((c) => c.rule === 'R7')).toHaveLength(1)
+
+    const diff = makeScriptDb([
+      '剧情梗概一【集尾卡点】悬念甲（悬念钩）',
+      '剧情梗概二【集尾卡点】危机乙（危机钩）',
+    ])
+    const r2 = await new ConsistencyService(diff as any).scanContradictions('p1')
+    expect(r2.filter((c) => c.rule === 'R7')).toHaveLength(0)
+  })
+
+  it('R7：script 项目缺卡点标注 / 卡点缺钩型 → warning；非 script 项目（无标记）→ 不检查', async () => {
+    const missing = makeScriptDb([
+      '剧情梗概一【集尾卡点】悬念甲（悬念钩）',
+      '剧情梗概二【集尾卡点】危机乙（危机钩）',
+      '剧情梗概三（没有任何卡点标注）',
+    ])
+    const r1 = await new ConsistencyService(missing as any).scanContradictions('p1')
+    const r7a = r1.filter((c) => c.rule === 'R7')
+    expect(r7a.some((c) => c.message.includes('缺【集尾卡点】'))).toBe(true)
+
+    const noType = makeScriptDb([
+      '剧情梗概一【集尾卡点】悬念甲（悬念钩）',
+      '剧情梗概二【集尾卡点】留白式收尾',
+    ])
+    const r2 = await new ConsistencyService(noType as any).scanContradictions('p1')
+    expect(r2.filter((c) => c.rule === 'R7').some((c) => c.message.includes('未标注钩子类型'))).toBe(true)
+
+    const novel = makeScriptDb(['普通章节概要一', '普通章节概要二', '普通章节概要三'])
+    const r3 = await new ConsistencyService(novel as any).scanContradictions('p1')
+    expect(r3.filter((c) => c.rule === 'R7')).toHaveLength(0)
+  })
+
+  // ==================== R8 伏笔台账（49 号） ====================
+
+  function makeForeshadowDb(list: unknown[], chaptersWithContent: number[]) {
+    const outlineCount = Math.max(...chaptersWithContent, 0) + 1
+    return makeFakeDb({
+      lwOutlines: {
+        getById: vi.fn(async () => null),
+        getByProjectId: vi.fn(async () =>
+          Array.from({ length: outlineCount }, (_, i) => ({ id: `o${i}`, name: `第${i + 1}章`, nodeType: 'chapter', orderIndex: i, summary: '' })),
+        ),
+      },
+      lwForeshadows: { getByProjectId: vi.fn(async () => list) },
+      lwChapters: {
+        getByOutlineId: vi.fn(async (oid: string) => {
+          const i = Number(oid.replace('o', ''))
+          return chaptersWithContent.includes(i) ? { content: '有正文的章节'.repeat(10) } : { content: '' }
+        }),
+      },
+    })
+  }
+
+  it('R8：回收早于埋设 → error', async () => {
+    const db = makeForeshadowDb([{ content: '玄天鉴的裂纹', plantedChapter: 6, payoffChapter: 3, status: 'paid' }], [1, 2, 3])
+    const r = await new ConsistencyService(db as any).scanContradictions('p1')
+    const r8 = r.filter((c) => c.rule === 'R8')
+    expect(r8).toHaveLength(1)
+    expect(r8[0].severity).toBe('error')
+    expect(r8[0].message).toContain('倒置')
+  })
+
+  it('R8：超期未收（已写超过埋设+5 章）→ warning；未超期 / 已回收 → 无', async () => {
+    // 已写第 1、7 章有正文 → writtenMax=7，第 1 章埋的伏笔超期（7 >= 1+5）
+    const overdue = makeForeshadowDb([{ content: '神秘来信', plantedChapter: 1, payoffChapter: null, status: 'open' }], [0, 6])
+    const r1 = await new ConsistencyService(overdue as any).scanContradictions('p1')
+    const r8a = r1.filter((c) => c.rule === 'R8')
+    expect(r8a).toHaveLength(1)
+    expect(r8a[0].severity).toBe('warning')
+    expect(r8a[0].message).toContain('未回收')
+
+    // 已写到第 3 章：未超期；paid 且回收晚于埋设：无冲突
+    const ok = makeForeshadowDb(
+      [
+        { content: '神秘来信', plantedChapter: 1, payoffChapter: null, status: 'open' },
+        { content: '旧伤', plantedChapter: 1, payoffChapter: 3, status: 'paid' },
+      ],
+      [0, 1, 2],
+    )
+    const r2 = await new ConsistencyService(ok as any).scanContradictions('p1')
+    expect(r2.filter((c) => c.rule === 'R8')).toHaveLength(0)
+  })
 })

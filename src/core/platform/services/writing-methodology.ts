@@ -20,6 +20,9 @@ export interface ScriptEpisodeFields {
 /** 大纲 summary 的结构化前缀标记（探测与组装的唯一事实源） */
 export const SCRIPT_SUMMARY_MARKERS = ['【开场钩子】', '【本集爽点】', '【集尾卡点】'] as const
 
+/** 集尾卡点标记（R7 节拍检查与 summary 组装共用） */
+export const CLIFFHANGER_MARKER = SCRIPT_SUMMARY_MARKERS[2]
+
 /**
  * 分集大纲（script 模式）system prompt。
  * 节拍纪律来自行业调研（R1）：爽点硬配额/卡点公式/钩子类型配比轮换/反派四层递进。
@@ -65,7 +68,7 @@ export function enrichScriptEpisodeSummary(summary: string, fields: ScriptEpisod
     toSafeText(fields.hook) ? `【开场钩子】${toSafeText(fields.hook)}` : '',
     toSafeText(fields.highlight) ? `【本集爽点】${toSafeText(fields.highlight)}` : '',
     toSafeText(fields.cliffhanger)
-      ? `【集尾卡点】${toSafeText(fields.cliffhanger)}${toSafeText(fields.hookType) ? `（${toSafeText(fields.hookType)}钩）` : ''}`
+      ? `${CLIFFHANGER_MARKER}${toSafeText(fields.cliffhanger)}${toSafeText(fields.hookType) ? `（${toSafeText(fields.hookType)}钩）` : ''}`
       : '',
   ].filter(Boolean)
   return lines.join('\n')

@@ -13,10 +13,13 @@
  * - R4 技能时间线（半确定性）：人物→技能 masters 边 valid_from > 引用章节
  * - R5 回忆冲突（标记检测）：大纲节点标记"回忆/闪回"，其涉及实体的历史与当前状态差异显著
  * - R6 状态回退（确定性）：实体切片序列出现"死亡/覆灭"后状态又恢复非终态
+ * - R7 钩子节拍（49 号，script 分集项目）：缺集尾卡点标注 / 卡点未标钩型 / 相邻集钩子同型
+ * - R8 伏笔台账（49 号，promise/payoff 台账）：回收早于埋设（倒置）/ 超期未收
  */
 
 import { getCoreDatabaseManager, type ICoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { GraphEntityType } from '@shared/types/longwriting.types'
+import { CLIFFHANGER_MARKER } from '../../writing-methodology'
 
 export type ConflictSeverity = 'error' | 'warning'
 
@@ -36,6 +39,8 @@ const DEATH_KEYWORDS = ['死亡', '牺牲', '阵亡', '遇害', '战死', '陨�
 const TRANSFER_KEYWORDS = ['易主', '转手', '交出', '夺得', '夺走', '落入', '赠予', '获得', '易手', '失窃']
 /** 回忆/闪回标记 */
 const RECALL_KEYWORDS = ['回忆', '闪回', '回想', '往事', '记忆深处']
+/** R8：伏笔埋设后超过该章数仍未回收 → 超期提醒（叙事节奏惯例 3-5 章一个悬念单元） */
+const FORESHADOW_OVERDUE_CHAPTERS = 5
 
 export class ConsistencyService {
   private static instance: ConsistencyService | null = null
@@ -135,6 +140,8 @@ export class ConsistencyService {
     conflicts.push(...await this.scanR4SkillTimeline(projectId))
     conflicts.push(...await this.scanR5Recall(projectId))
     conflicts.push(...await this.scanR6StateRegression(projectId))
+    conflicts.push(...await this.scanR7HookRhythm(projectId))
+    conflicts.push(...await this.scanR8ForeshadowLedger(projectId))
     return conflicts
   }
 
@@ -342,6 +349,115 @@ export class ConsistencyService {
         } else {
           terminal = isTerminal
         }
+      }
+    }
+    return conflicts
+  }
+
+  // ==================== R7：钩子节拍（script 分集项目） ====================
+
+  /**
+   * R7 钩子节拍（49 号，仅对 script 分集项目生效——大纲 summary 带【集尾卡点】标记的过半判定）：
+   * - 某集缺【集尾卡点】标注
+   * - 卡点未标钩子类型（无法做轮换检查）
+   * - 相邻两集钩子类型连续同型（行业惯例要求轮换防审美疲劳）
+   */
+  private async scanR7HookRhythm(projectId: string): Promise<ConflictItem[]> {
+    const m = this.manager()
+    if (!m) return []
+    const outlines = (await m.lwOutlines?.getByProjectId(projectId)) || []
+    const chapters = outlines
+      .filter((o) => o.nodeType === 'chapter')
+      .sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0))
+    if (chapters.length === 0) return []
+
+    const marked = chapters.filter((c) => (c.summary || '').includes(CLIFFHANGER_MARKER))
+    const isScriptProject = marked.length >= 2 && marked.length * 2 >= chapters.length
+    if (!isScriptProject) return []
+
+    const conflicts: ConflictItem[] = []
+    let prevType: string | null = null
+    let prevNo = 0
+    for (const c of chapters) {
+      const no = (c.orderIndex || 0) + 1
+      const summary = c.summary || ''
+      if (!summary.includes(CLIFFHANGER_MARKER)) {
+        conflicts.push({
+          rule: 'R7',
+          severity: 'warning',
+          message: `第 ${no} 集缺【集尾卡点】标注（script 分集项目要求每集结尾必有卡点）`,
+          chapterNumber: no,
+        })
+        prevType = null
+        continue
+      }
+      const type = summary.match(/【集尾卡点】[^【]*（(.+?)钩）/)?.[1] || null
+      if (!type) {
+        conflicts.push({
+          rule: 'R7',
+          severity: 'warning',
+          message: `第 ${no} 集卡点未标注钩子类型（悬念/危机/情绪/信息/反转），无法做轮换检查`,
+          chapterNumber: no,
+        })
+        prevType = type
+      } else if (prevType && prevType === type) {
+        conflicts.push({
+          rule: 'R7',
+          severity: 'warning',
+          message: `第 ${prevNo}-${no} 集钩子类型连续同型（${type}），建议轮换（悬念/危机/情绪/信息/反转）防审美疲劳`,
+          chapterNumber: no,
+        })
+        prevType = type
+      } else {
+        prevType = type
+      }
+      prevNo = no
+    }
+    return conflicts
+  }
+
+  // ==================== R8：伏笔 promise/payoff 台账 ====================
+
+  /**
+   * R8 伏笔台账（49 号）：
+   * - 台账倒置（error）：回收章早于埋设章——数据或提取错误
+   * - 超期未收（warning）：status=open 且已写章节数超过埋设章 + 5（叙事节奏 3-5 章一个悬念单元）
+   */
+  private async scanR8ForeshadowLedger(projectId: string): Promise<ConflictItem[]> {
+    const m = this.manager()
+    if (!m) return []
+    const foreshadows = (await m.lwForeshadows?.getByProjectId(projectId)) || []
+    if (foreshadows.length === 0) return []
+
+    // 已写章节数 = 有正文章节的最大序号（按大纲 orderIndex 顺序推算）
+    const outlines = (await m.lwOutlines?.getByProjectId(projectId)) || []
+    const chapterOutlines = outlines
+      .filter((o) => o.nodeType === 'chapter')
+      .sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0))
+    let writtenMax = 0
+    for (let i = 0; i < chapterOutlines.length; i++) {
+      const ch = await m.lwChapters?.getByOutlineId(chapterOutlines[i].id)
+      if (ch?.content && ch.content.trim().length > 0) writtenMax = Math.max(writtenMax, i + 1)
+    }
+
+    const conflicts: ConflictItem[] = []
+    for (const f of foreshadows) {
+      const label = (f.content || '').slice(0, 20)
+      if (f.status === 'paid' && f.plantedChapter != null && f.payoffChapter != null && f.payoffChapter < f.plantedChapter) {
+        conflicts.push({
+          rule: 'R8',
+          severity: 'error',
+          message: `伏笔「${label}…」台账倒置：回收章（第 ${f.payoffChapter} 章）早于埋设章（第 ${f.plantedChapter} 章）`,
+          chapterNumber: f.payoffChapter,
+        })
+      }
+      if (f.status === 'open' && f.plantedChapter != null && writtenMax >= f.plantedChapter + FORESHADOW_OVERDUE_CHAPTERS) {
+        conflicts.push({
+          rule: 'R8',
+          severity: 'warning',
+          message: `伏笔「${label}…」第 ${f.plantedChapter} 章埋下，已写至第 ${writtenMax} 章仍未回收——考虑安排回收或标记弃置`,
+          chapterNumber: f.plantedChapter,
+        })
       }
     }
     return conflicts
