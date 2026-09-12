@@ -2,7 +2,7 @@
   "kind": "the-bot-workflow",
   "formatVersion": 1,
   "name": "[内置] 主题深度研究",
-  "description": "澄清契约 → 凭模型认知规划(已知地图/主题类型/步骤/验收标准) → until 循环「研究执行体(联网+正文深读+私有知识库,带上一轮进展) → 另一模型按验收标准独立评估 → 打包」直到评估通过或达最大轮数 → 溯源成稿(含证据分级/矩阵/清单/行动) → 人工确认 → 保存资产",
+  "description": "澄清契约 → 凭模型认知规划(已知地图/主题类型/步骤/验收标准；可带用户产出规格/要求/参照样本并入验收) → until 循环「研究执行体(联网+正文深读+私有知识库,带上一轮进展) → 另一模型按验收标准独立评估 → 打包」直到评估通过或达最大轮数 → 溯源成稿(含证据分级/矩阵/清单/行动) → 人工确认 → 保存资产",
   "category": "调研",
   "graph": {
     "version": 1,
@@ -29,6 +29,17 @@
               { "label": "深度", "value": "deep" }
             ] },
             { "key": "maxRounds", "label": "最大研究轮数（评估判断深度已足够会提前结束）", "type": "number", "defaultValue": 8, "validation": { "min": 1, "max": 12 } },
+            { "key": "outputSpecs", "label": "产出规格（可多选；不选=按主题类型自适应，勾选项会并入验收标准逐轮检查）", "type": "select", "multi": true, "options": [
+              { "label": "量化公式与单位经济（贡献利润/采购倒推）", "value": "quant-formula" },
+              { "label": "分市场/分主体对比矩阵", "value": "market-matrix" },
+              { "label": "逐日/分阶段时间线（D1–D90）", "value": "timeline" },
+              { "label": "风险与合规红线", "value": "risk" },
+              { "label": "清单与可复用模板", "value": "checklist" },
+              { "label": "反方观点与回应", "value": "counterpoint" },
+              { "label": "可点击来源链接", "value": "cited-links" }
+            ] },
+            { "key": "outputRequirements", "label": "产出要求（自由补充，例：必须给贡献利润与采购倒推公式 / 必须给 D1–D90 逐日时间线；会并入验收标准）", "type": "textarea" },
+            { "key": "referenceSample", "label": "参照样本（可选：粘贴样本文本或链接，只对标结构与密度，不作为事实来源、不照抄结论）", "type": "textarea" },
             { "key": "kbs", "label": "允许检索的私有知识库（可多选；不选=只查网络与模型知识）", "type": "select-dynamic", "multi": true, "source": "knowledgeBases" },
             { "key": "researcherModel", "label": "研究模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true },
             { "key": "evaluatorModel", "label": "评估模型（可用另一个模型，独立评审每轮成果）", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
@@ -95,8 +106,8 @@
         "name": "先验地图与规划",
         "position": { "x": 560, "y": 200 },
         "config": {
-          "systemPrompt": "你是主题研究规划器。第一步：先凭你自身的模型认知，针对主题输出「已知地图」——列出你对该主题已经知道的关键概念/主体/环节/常见说法，并明确标注哪些可能已过时或不确定（这些只是待验证的先验假设，不是结论）。第二步：判断主题类型并在以下骨架中选用/裁剪，输出研究步骤。\n类型骨架：\n- 做法/流程类（开店/做电商/学技能/做自媒体…）：结果拆解 → 全环节步骤(每步做什么/需要什么/卡点) → 资质与合规 → 运营与获客方法 → 工具与资源 → 常见坑 → 执行优先级\n- 概念/领域知识类：定义与边界 → 原理机制 → 主要流派与分歧 → 关键成果与证据 → 反例与局限 → 最新进展 → 开放问题\n- 决策/选型类：选项清单 → 各选项成本收益风险与适用条件 → 对比维度与权重 → 评分 → 推荐+备选+适用边界\n- 行业/趋势类：市场与数据 → 竞争格局 → 主要玩家 → 政策监管 → 成本结构 → 趋势信号 → 风险\n- 技能/方法类：原理路径 → 分阶段练法 → 常见错误 → 评估方法 → 资源\n第三步：把关注维度（若用户勾选）并入步骤；输出「验收标准」：必须回答的问题清单（每问写明要研究到多深）+ 深度档（速览/标准/深度）+ 证据要求（哪些关键论断需 ≥2 个独立来源或官方一手资料）。第四步：给出「信息源策略」：哪些步骤先靠模型先验、哪些必须检索私有知识库、哪些要联网查官方/一手、哪些需要问用户。\n验收标准的深度化（写入 acceptance，深度档越高要求越严；按主题适用挑选，不硬凑）：① 每个 must-answer 写明要回答到的颗粒度（定义/机制/步骤/数字与区间/边界与反例）；② standard/deep：验收须包含 分场景/分主体/分地区的路径与决策树或对比矩阵、关键数字与费率给出量级与区间并标注证据层级（官方一手 / 平台后台需复核 / 二手估算；查不到写「未查到，需官方或后台确认」，禁止编造）、做法类主题给时间线/分步 SOP/检查清单/模板与公式、列风险与合规红线、列未决与不确定性清单；③ deep 额外：关键论断至少两个独立来源交叉、给反方观点与回应、给门槛式决策条件（何时做/何时停/何时扩展）。\n若研究契约给了主体/执照/目标市场/品类/内容能力/可承受亏损，规划与验收必须围绕这些约束定制（分主体、分市场给路径与门槛），不得泛泛而谈。\n深度与预算：速览 1 轮、标准 2-3 轮、深度可达最大轮数（由 until 循环按评估结果提前收尾）；每轮检索要有目的。\n只输出 JSON：{\"type\":\"主题类型\",\"knownMap\":[\"先验认知条目(标注是否可能过时)\"],\"steps\":[{\"step\":\"步骤名\",\"goal\":\"这步要得出什么\",\"sources\":\"首选信息源\"}],\"acceptance\":{\"questions\":[{\"q\":\"必须回答的问题\",\"depth\":\"到多深\"}],\"evidenceRule\":\"证据要求\"},\"sourcePlan\":\"信息源总体策略\"}。不要输出其他内容。",
-          "prompt": "研究主题：{{start.topic}}\n关注维度：{{start.focus}}（未勾选=自适应）\n深度档：{{start.depth}}\n最大轮数：{{start.maxRounds}}\n\n【研究契约】\n目标：{{clarify.values.goal}}\n主体类型：{{clarify.values.entityType}}\n执照状态：{{clarify.values.licenseStatus}}\n目标市场：{{clarify.values.targetMarkets}}\n计划品类：{{clarify.values.category}}\n内容能力：{{clarify.values.contentAbility}}\n可承受亏损：{{clarify.values.lossTolerance}}\n其他背景：{{clarify.values.context}}\n\n请输出 JSON 对象。",
+          "systemPrompt": "你是主题研究规划器。第一步：先凭你自身的模型认知，针对主题输出「已知地图」——列出你对该主题已经知道的关键概念/主体/环节/常见说法，并明确标注哪些可能已过时或不确定（这些只是待验证的先验假设，不是结论）。第二步：判断主题类型并在以下骨架中选用/裁剪，输出研究步骤。\n类型骨架：\n- 做法/流程类（开店/做电商/学技能/做自媒体…）：结果拆解 → 全环节步骤(每步做什么/需要什么/卡点) → 资质与合规 → 运营与获客方法 → 工具与资源 → 常见坑 → 执行优先级\n- 概念/领域知识类：定义与边界 → 原理机制 → 主要流派与分歧 → 关键成果与证据 → 反例与局限 → 最新进展 → 开放问题\n- 决策/选型类：选项清单 → 各选项成本收益风险与适用条件 → 对比维度与权重 → 评分 → 推荐+备选+适用边界\n- 行业/趋势类：市场与数据 → 竞争格局 → 主要玩家 → 政策监管 → 成本结构 → 趋势信号 → 风险\n- 技能/方法类：原理路径 → 分阶段练法 → 常见错误 → 评估方法 → 资源\n第三步：把关注维度（若用户勾选）并入步骤；输出「验收标准」：必须回答的问题清单（每问写明要研究到多深）+ 深度档（速览/标准/深度）+ 证据要求（哪些关键论断需 ≥2 个独立来源或官方一手资料）。第四步：给出「信息源策略」：哪些步骤先靠模型先验、哪些必须检索私有知识库、哪些要联网查官方/一手、哪些需要问用户。\n验收标准的深度化（写入 acceptance，深度档越高要求越严；按主题适用挑选，不硬凑）：① 每个 must-answer 写明要回答到的颗粒度（定义/机制/步骤/数字与区间/边界与反例）；② standard/deep：验收须包含 分场景/分主体/分地区的路径与决策树或对比矩阵、关键数字与费率给出量级与区间并标注证据层级（官方一手 / 平台后台需复核 / 二手估算；查不到写「未查到，需官方或后台确认」，禁止编造）、做法/商业类主题给 费用与单位经济（含贡献利润与采购倒推公式）、逐日/分阶段时间线、分步 SOP、检查清单与模板、列风险与合规红线、列未决与不确定性清单；③ deep 额外：关键论断至少两个独立来源交叉、给反方观点与回应、给门槛式决策条件（何时做/何时停/何时扩展）。\n若研究契约给了主体/执照/目标市场/品类/内容能力/可承受亏损，规划与验收必须围绕这些约束定制（分主体、分市场给路径与门槛），不得泛泛而谈。\n用户产出规格（outputSpecs 勾选项）与产出要求（outputRequirements 自由文本）是硬性契约：必须逐条转成可验收的 acceptance 条目（可逐项判定有/无、够/不够）；参照样本（referenceSample）只用于对标结构与密度，不得作为事实来源、不得照抄其结论。\n深度与预算：速览 1 轮、标准 2-3 轮、深度可达最大轮数（由 until 循环按评估结果提前收尾）；每轮检索要有目的。\n只输出 JSON：{\"type\":\"主题类型\",\"knownMap\":[\"先验认知条目(标注是否可能过时)\"],\"steps\":[{\"step\":\"步骤名\",\"goal\":\"这步要得出什么\",\"sources\":\"首选信息源\"}],\"acceptance\":{\"questions\":[{\"q\":\"必须回答的问题\",\"depth\":\"到多深\"}],\"evidenceRule\":\"证据要求\"},\"sourcePlan\":\"信息源总体策略\"}。不要输出其他内容。",
+          "prompt": "研究主题：{{start.topic}}\n关注维度：{{start.focus}}（未勾选=自适应）\n深度档：{{start.depth}}\n最大轮数：{{start.maxRounds}}\n\n【研究契约】\n目标：{{clarify.values.goal}}\n主体类型：{{clarify.values.entityType}}\n执照状态：{{clarify.values.licenseStatus}}\n目标市场：{{clarify.values.targetMarkets}}\n计划品类：{{clarify.values.category}}\n内容能力：{{clarify.values.contentAbility}}\n可承受亏损：{{clarify.values.lossTolerance}}\n其他背景：{{clarify.values.context}}\n\n【产出规格（用户勾选，必须并入 acceptance 逐条可验收）】{{start.outputSpecs}}\n【用户产出要求（必须并入 acceptance）】{{start.outputRequirements}}\n【参照样本（仅对标结构与密度，不作事实来源、不照抄结论）】{{start.referenceSample}}\n\n请输出 JSON 对象。",
           "jsonMode": true,
           "providerConfigId": "{{start.researcherModel.providerConfigId}}",
           "modelId": "{{start.researcherModel.modelId}}"
@@ -137,8 +148,8 @@
         "name": "本轮独立评估",
         "position": { "x": 1340, "y": 400 },
         "config": {
-          "systemPrompt": "你是独立的主题研究评审（用与研究员不同的视角和模型）。对照「验收标准」审查本轮研究进展，输出 JSON：\n{\"verdict\":\"pass 或 revise（二选一）\",\"perAcceptance\":[{\"q\":\"验收问题\",\"coverage\":\"有/部分/无\",\"depth\":\"够/不够\",\"evidence\":\"强/中/弱/无据\",\"note\":\"说明\"}],\"gaps\":[{\"issue\":\"差距\",\"action\":\"下一轮应查什么/问谁\",\"priority\":\"高/中/低\"}],\"hallucinationRisk\":[\"在证据里找不到支撑的可疑论断\"],\"overall\":\"总体评语\"}\n评审要点：覆盖是否齐全、深度是否达标、证据是否可溯源、有没有无据断言（幻觉）、时效与地区是否被误用/漏标、维度有无遗漏、深度档质量（关键数字与费率是否带量级区间与证据层级标注、是否诚实标注「未查到/需后台复核」而不编造、做法类是否有可执行颗粒度——步骤/SOP/清单/模板/公式/时间线或矩阵、是否把估算当事实、是否给出分场景/分地区/分主体路径而非单一结论）。verdict 判定口径（务必按此判定，避免该停不停）：只有「关键验收问题未覆盖/深度不够」或「存在可检索却未查的关键缺口」或「有无据论断」才判 revise；若关键验收问题已覆盖、无无据论断，剩余差距都属于「需用户后台/官方核验」或「需用户补充信息」这类**非阻塞项**，则判 pass（并在 overall 里写明剩余非阻塞项），让流程及时收敛。不要替研究员完成研究，只做评估与差距清单。只输出 JSON，不要其他内容。",
-          "prompt": "研究主题：{{start.topic}}\n验收标准：{{plan1.parsed.acceptance}}\n本轮研究进展：\n{{r1.answer}}\n\n请按上述要求输出 JSON 评估对象。",
+          "systemPrompt": "你是独立的主题研究评审（用与研究员不同的视角和模型）。对照「验收标准」审查本轮研究进展，输出 JSON：\n{\"verdict\":\"pass 或 revise（二选一）\",\"perAcceptance\":[{\"q\":\"验收问题\",\"coverage\":\"有/部分/无\",\"depth\":\"够/不够\",\"evidence\":\"强/中/弱/无据\",\"note\":\"说明\"}],\"gaps\":[{\"issue\":\"差距\",\"action\":\"下一轮应查什么/问谁\",\"priority\":\"高/中/低\"}],\"hallucinationRisk\":[\"在证据里找不到支撑的可疑论断\"],\"overall\":\"总体评语\"}\n评审要点（须逐条核对 acceptance，其中包含用户在 outputSpecs/outputRequirements 里提出的必达项；用户规格未满足且属可检索/可执行范畴的判 revise，属检索通道不可达的记为「需后台/官方核验」非阻塞项）：覆盖是否齐全、深度是否达标、证据是否可溯源、有没有无据断言（幻觉）、时效与地区是否被误用/漏标、维度有无遗漏、深度档质量（关键数字与费率是否带量级区间与证据层级标注、是否诚实标注「未查到/需后台复核」而不编造、做法类是否有可执行颗粒度——步骤/SOP/清单/模板/公式/时间线或矩阵、是否把估算当事实、是否给出分场景/分地区/分主体路径而非单一结论）。verdict 判定口径（务必按此判定，避免该停不停）：只有「关键验收问题未覆盖/深度不够」或「存在可检索却未查的关键缺口」或「有无据论断」才判 revise；若关键验收问题已覆盖、无无据论断，剩余差距都属于「需用户后台/官方核验」或「需用户补充信息」这类**非阻塞项**，则判 pass（并在 overall 里写明剩余非阻塞项），让流程及时收敛。不要替研究员完成研究，只做评估与差距清单。只输出 JSON，不要其他内容。",
+          "prompt": "研究主题：{{start.topic}}\n验收标准：{{plan1.parsed.acceptance}}\n用户产出规格：{{start.outputSpecs}}\n用户产出要求：{{start.outputRequirements}}\n本轮研究进展：\n{{r1.answer}}\n\n请按上述要求输出 JSON 评估对象。",
           "jsonMode": true,
           "providerConfigId": "{{start.evaluatorModel.providerConfigId}}",
           "modelId": "{{start.evaluatorModel.modelId}}"
@@ -165,8 +176,8 @@
         "name": "收敛成稿",
         "position": { "x": 1080, "y": 80 },
         "config": {
-          "systemPrompt": "你是研究报告作者。基于最后一轮「研究进展」与「独立评估」，把主题写成一份可溯源的研究报告。输出 JSON：\n{\"title\":\"报告标题\",\"execSummary\":\"执行摘要：结论与总体可信度评估，120-250 字\",\"body\":\"正文（Markdown，按研究步骤组织成章节，关键论断带证据锚/来源；逐条写清哪些已证实、哪些是模型先验仍需核实、哪些存在分歧）\",\"method\":\"方法说明：查了什么（网络/私有知识库/官方一手）、共进行几轮研究、每轮是否被跳过、哪些没查到\",\"limits\":\"局限与未决：无法确认的点、评估指出的差距与幻觉风险\",\"sourcesMd\":\"参考来源（Markdown 列表，按 官方一手 / 平台后台需复核 / 二手估算 分层，网络来源与私有知识库文档分节列出）\",\"actionPlan\":\"下一步行动（分优先级，含门槛条件：何时可做/该停/能扩）\",\"disclaimer\":\"时效与核验提示一句话\"}\n深度报告结构契约（正文按需包含，尽量满足）：① 执行摘要给结论与立场并给总体可信度；② 做法/决策类主题给分场景/分主体/分地区的路径建议（含决策树或对比矩阵）；③ 各章节做到：关键数字与费率带量级区间和证据层级标注（官方一手/平台后台需复核/二手估算），查不到写「需官方或后台确认」；做法类给分步时间线/SOP/检查清单/模板/公式；④ 风险、红线与合规要点独立成节；⑤ 除局限与未决外，给出「需要读者自行后台/官方确认的问题清单」。\n纪律：不编造来源与数字；无据内容归入 limits 或标注需核实；费率/政策类提示以官方最新为准并给采集时间；若轮次触顶仍未通过或有轮次被跳过，在 limits/method 中如实写明。正文是可直接展示的 Markdown（多用表格与清单），不要出现 JSON 转义或代码块包裹。只输出 JSON，不要其他内容。",
-          "prompt": "研究主题：{{start.topic}}\n【用户约束】主体={{clarify.values.entityType}} 执照={{clarify.values.licenseStatus}} 市场={{clarify.values.targetMarkets}} 品类={{clarify.values.category}} 内容能力={{clarify.values.contentAbility}} 可承受亏损={{clarify.values.lossTolerance}}\n验收标准：{{plan1.parsed.acceptance}}\n研究共进行了 {{round1.iterations}} 轮。\n最后一轮研究进展：\n{{round1.last.result.notes}}\n\n最后一轮评估：\n{{round1.last.result.verdict}} / {{round1.last.result.gaps}}\n\n全部轮次结果（供核对与审计）：\n{{round1.results}}\n\n请输出 JSON 对象。",
+          "systemPrompt": "你是研究报告作者。基于最后一轮「研究进展」与「独立评估」，把主题写成一份可溯源的研究报告。输出 JSON：\n{\"title\":\"报告标题\",\"execSummary\":\"执行摘要：结论与总体可信度评估，120-250 字\",\"body\":\"正文（Markdown，按研究步骤组织成章节，关键论断带证据锚/来源；逐条写清哪些已证实、哪些是模型先验仍需核实、哪些存在分歧）\",\"method\":\"方法说明：查了什么（网络/私有知识库/官方一手）、共进行几轮研究、每轮是否被跳过、哪些没查到\",\"limits\":\"局限与未决：无法确认的点、评估指出的差距与幻觉风险\",\"sourcesMd\":\"参考来源（Markdown 列表，按 官方一手 / 平台后台需复核 / 二手估算 分层，网络来源与私有知识库文档分节列出）\",\"actionPlan\":\"下一步行动（分优先级，含门槛条件：何时可做/该停/能扩）\",\"disclaimer\":\"时效与核验提示一句话\"}\n深度报告结构契约（正文按需包含，尽量满足）：① 执行摘要给结论与立场并给总体可信度；② 做法/决策类主题给分场景/分主体/分地区的路径建议（含决策树或对比矩阵）；③ 各章节做到：关键数字与费率带量级区间和证据层级标注（官方一手/平台后台需复核/二手估算），查不到写「需官方或后台确认」；做法/商业类给分步时间线/SOP/检查清单/模板/公式；用户产出规格与要求是硬性契约——勾选「量化公式与单位经济」须给贡献利润、采购倒推等公式与单位经济模型；「逐日/分阶段时间线」须给 D1–D90 逐日或分周时间线；「可点击来源链接」须在 sourcesMd 用 Markdown 链接 [标题](URL)；「反方观点与回应」须给出对立观点并逐条回应；参照样本只对标结构与密度，禁止照抄其结论；④ 风险、红线与合规要点独立成节；⑤ 除局限与未决外，给出「需要读者自行后台/官方确认的问题清单」。\n纪律：不编造来源与数字；无据内容归入 limits 或标注需核实；费率/政策类提示以官方最新为准并给采集时间；若轮次触顶仍未通过或有轮次被跳过，在 limits/method 中如实写明。正文是可直接展示的 Markdown（多用表格与清单），不要出现 JSON 转义或代码块包裹。只输出 JSON，不要其他内容。",
+          "prompt": "研究主题：{{start.topic}}\n【用户约束】主体={{clarify.values.entityType}} 执照={{clarify.values.licenseStatus}} 市场={{clarify.values.targetMarkets}} 品类={{clarify.values.category}} 内容能力={{clarify.values.contentAbility}} 可承受亏损={{clarify.values.lossTolerance}}\n验收标准：{{plan1.parsed.acceptance}}\n产出规格：{{start.outputSpecs}}\n产出要求：{{start.outputRequirements}}\n参照样本（仅对标结构与密度）：{{start.referenceSample}}\n研究共进行了 {{round1.iterations}} 轮。\n最后一轮研究进展：\n{{round1.last.result.notes}}\n\n最后一轮评估：\n{{round1.last.result.verdict}} / {{round1.last.result.gaps}}\n\n全部轮次结果（供核对与审计）：\n{{round1.results}}\n\n请输出 JSON 对象。",
           "jsonMode": true,
           "providerConfigId": "{{start.researcherModel.providerConfigId}}",
           "modelId": "{{start.researcherModel.modelId}}"

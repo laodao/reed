@@ -123,3 +123,14 @@ dl run_workflow 触发复验。
 1. 模板把 r1 的节点级 `maxToolCalls` 留空（只由运行级总预算约束）→ 彻底实现"总额按需分配"，末轮不再只剩 8 次。
 2. 提示词契约补：来源必须输出 Markdown 链接 `[标题](URL)`；deep 档强制"贡献利润/采购倒推公式"与"D1–D90 逐日时间线"。
 3. 搜索质量是深度外部上限：建议有额度时换博查/Tavily/Perplexity；并在 clarify 提示用户提前准备 Seller Center 后台截图。
+
+---
+
+## v5：研究规格分层（产出要求交由用户，不写死进内核）
+
+用户质疑：「贡献利润/采购倒推公式 + D1–D90 逐日时间线」这类要求写进提示词，会不会让其它领域研究偏差？是否该由用户提供？
+结论：认同。实现 L1–L4 分层（详见 tasks/2026-09-09-topic-research-workflow/research-brief-design.md）：
+
+- **L1 通用纪律**留在内核（领域无关）；**L2 类型化深度模板**下沉到 plan1「做法/商业类」骨架（单位经济公式、逐日时间线、SOP、清单），只对命中类型生效；**L3 用户产出规格/要求**新增 start 输入 `outputSpecs`（7 项多选）+ `outputRequirements`（自由文本）；**L4 参照样本**新增 `referenceSample`（只对标结构与密度，禁止照抄结论）。
+- **闭环**：用户规格/要求 → plan1 逐条转成 acceptance → e1（另一模型）逐条核对（可检索/可执行未满足判 revise；通道不可达记非阻塞）→ writer 按 acceptance 成稿并落实公式/时间线/可点击链接/反方回应。
+- 验证：topic-research-graph spec 断言新输入与三处引用（12 例）、builtin-app-templates 过全量校验（7 例）→ 19 passed；未改动引擎/其它模板，未设置这些输入时行为不变。
