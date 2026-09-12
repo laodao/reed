@@ -86,6 +86,19 @@
               </div>
             </div>
 
+            <!-- 模板使用须知（模板数据驱动，界面不写死厂商文案） -->
+            <el-alert
+              v-if="usageNotes.length > 0"
+              type="warning"
+              :closable="false"
+              class="template-usage-notes"
+            >
+              <template #title>使用须知</template>
+              <ul class="usage-notes-list">
+                <li v-for="(note, index) in usageNotes" :key="index">{{ note }}</li>
+              </ul>
+            </el-alert>
+
             <!-- 配置名称 -->
             <el-form-item label="配置名称" prop="name">
               <el-input v-model="form.name" placeholder="如：我的 OpenAI" />
@@ -111,7 +124,8 @@
                 v-model="form.apiKey"
                 type="password"
                 show-password
-                :placeholder="isEdit ? '留空保持不变' : '请输入 API 密钥'"
+                :placeholder="apiKeyPlaceholder"
+                @blur="handleApiKeyBlur"
               />
             </el-form-item>
 
@@ -618,6 +632,29 @@ const enabledModelList = enabledModelsWithInfo
 // 认证类型
 const templateAuthType = computed(() => selectedTemplate.value?.apiConfig.authType || 'bearer')
 
+// 使用须知（模板声明，如阿里百炼 Token Plan 的地域/限额/密钥隔离/使用范围限制）
+const usageNotes = computed(() => selectedTemplate.value?.usageNotes ?? [])
+
+// API Key 输入占位（模板声明的前缀提示，如 sk-sp-）
+const apiKeyPlaceholder = computed(() => {
+  if (isEdit.value) return '留空保持不变'
+  const prefix = selectedTemplate.value?.apiKeyPrefix
+  return prefix ? `请输入 ${prefix} 开头的专属密钥` : '请输入 API 密钥'
+})
+
+// 前缀不符时提醒一次（非阻断：中转/代理场景前缀可能不同，硬拦会误伤）
+const apiKeyPrefixWarned = ref(false)
+const handleApiKeyBlur = () => {
+  const prefix = selectedTemplate.value?.apiKeyPrefix
+  const key = form.apiKey.trim()
+  if (!prefix || !key || apiKeyPrefixWarned.value) return
+  if (key.startsWith(prefix)) return
+  apiKeyPrefixWarned.value = true
+  ElMessage.warning(
+    `${selectedTemplate.value?.name || '当前模板'} 的密钥应以 ${prefix} 开头，请确认没有与按量计费密钥混用`
+  )
+}
+
 // 默认基础 URL
 const defaultBaseUrl = computed(() => selectedTemplate.value?.apiConfig.baseUrl)
 const defaultImageBaseUrl = computed(() => selectedTemplate.value?.apiConfig.imageBaseUrl)
@@ -665,6 +702,7 @@ const selectTemplate = (template: ProviderTemplate) => {
   form.models = []  // 新建时默认不选中任何模型，用户需要手动勾选或从API刷新后勾选
   customHeadersList.value = []
   apiModels.value = []
+  apiKeyPrefixWarned.value = false
 }
 
 // 从 API 获取模型列表
@@ -868,6 +906,7 @@ const handleClose = () => {
   apiModels.value = []
   apiModelSearch.value = ''
   activeCollapse.value = []
+  apiKeyPrefixWarned.value = false
   // 重置加载状态，防止关闭对话框后状态残留
   loadingModels.value = false
   saving.value = false
@@ -1178,6 +1217,20 @@ watch(visible, (val) => {
   background: var(--bg-color-page);
   border-radius: var(--radius-md);
   margin-bottom: 20px;
+}
+
+.template-usage-notes {
+  margin-bottom: 20px;
+
+  .usage-notes-list {
+    margin: 4px 0 0;
+    padding-left: 18px;
+
+    li {
+      font-size: 12px;
+      line-height: 1.7;
+    }
+  }
 }
 
 .config-form {

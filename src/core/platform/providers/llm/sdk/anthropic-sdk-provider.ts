@@ -31,9 +31,13 @@ export class AnthropicSdkProvider extends BaseProvider {
 
     // 初始化 Anthropic SDK 客户端
     // 收敛超时并禁用重试，避免网络挂起长时间静默
+    // baseURL 回退顺序：用户配置 > 模板默认端点 > 官方根地址。
+    // 模板默认端点不可省——第三方 Anthropic 兼容端点（如阿里百炼 Token Plan 的
+    // https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic）用户通常留空，
+    // 缺了回退会静默打到 api.anthropic.com。Anthropic SDK 自行在 baseURL 后拼 /v1/messages。
     this.client = new Anthropic({
       apiKey: config.apiKey,
-      baseURL: config.baseUrl,
+      baseURL: config.baseUrl || template?.apiConfig?.baseUrl || this.getDefaultBaseUrl(),
       timeout: 60_000,
       maxRetries: 0
     })
