@@ -6,7 +6,9 @@
  * - **不引入 `eval` 依赖**：把片段代码**内联进 Worker 源码**（Blob URL），Worker 顶层执行即可，
  *   因此不需要给 CSP 开 `'unsafe-eval'`（只需 `worker-src blob:`）；
  * - 沙箱：Worker 里没有 DOM（document/window 不存在），并把网络 API（fetch/XMLHttpRequest/
- *   WebSocket/EventSource/importScripts）用函数参数**遮蔽为 undefined**——模型给的片段拿不到网络；
+ *   WebSocket/EventSource/importScripts）连同全局对象别名（self/globalThis/navigator——
+ *   否则 `self.fetch` 可绕过遮蔽，navigator.sendBeacon 仍是网络出口）用函数参数
+ *   **遮蔽为 undefined**——模型给的片段拿不到网络；
  * - 护栏：3 秒超时（主线程 terminate，死循环也只卡 Worker 不卡界面）、输出限 200 行 / 每行 400 字；
  * - 环境不支持（无 Worker/Blob，如 happy-dom 单测环境）→ 返回可读错误而不是抛错。
  *
@@ -18,6 +20,9 @@ export const RUN_LIMITS = {
   timeoutMs: 3000,
   maxLines: 200,
   maxLineChars: 400,
+  /** Worker 消息收集硬上限：3 秒窗口内 `while(true) console.log(...)` 之类片段
+   *  若不设上限，主线程会被 postMessage 洪冲刷、瞬时内存尖峰（超限后直接丢弃） */
+  maxCollectedMessages: 5000,
 } as const
 
 export interface RunResult {
@@ -81,7 +86,7 @@ var __console = {
   warn: function () { __post('warn', Array.prototype.map.call(arguments, __fmt).join(' ')) },
   error: function () { __post('error', Array.prototype.map.call(arguments, __fmt).join(' ')) }
 }
-;(function (console, fetch, XMLHttpRequest, WebSocket, EventSource, importScripts, Worker, document, window, parent, top) {
+;(function (console, fetch, XMLHttpRequest, WebSocket, EventSource, importScripts, Worker, document, window, parent, top, self, globalThis, navigator, postMessage) {
   try {
 ${body}
   } catch (err) {
@@ -89,7 +94,7 @@ ${body}
   } finally {
     __post('done', null)
   }
-})(__console, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined)
+})(__console, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined)
 `
 }
 
@@ -136,6 +141,8 @@ export async function runJsSnippet(
     return { ok: false, output: [], error: '当前环境不支持运行代码（需要在应用界面里运行）', durationMs: 0 }
   }
   const lines: string[] = []
+  const maxMessages = opts.maxLines ? Math.max(opts.maxLines * 5, RUN_LIMITS.maxCollectedMessages) : RUN_LIMITS.maxCollectedMessages
+  let droppedMessages = 0
   let worker: Worker | null = null
   let url = ''
   try {
@@ -160,6 +167,7 @@ export async function runJsSnippet(
       w.terminate()
       URL.revokeObjectURL(url)
       const trimmed = trimOutput(lines, { maxLines, maxLineChars })
+      if (droppedMessages > 0) trimmed.lines.push(`…（输出量过大，另有 ${droppedMessages} 条消息被丢弃）`)
       resolve({
         ok: !throwError,
         output: trimmed.lines,
@@ -177,9 +185,17 @@ export async function runJsSnippet(
     w.onmessage = (ev: MessageEvent) => {
       const data = ev.data as { __dl?: string; payload?: unknown }
       if (!data || typeof data.__dl !== 'string') return
-      if (data.__dl === 'log') lines.push(String(data.payload ?? ''))
-      else if (data.__dl === 'warn') lines.push(`⚠️ ${String(data.payload ?? '')}`)
-      else if (data.__dl === 'error') lines.push(`⛔ ${String(data.payload ?? '')}`)
+      const isOutput = data.__dl === 'log' || data.__dl === 'warn' || data.__dl === 'error' || data.__dl === 'throw'
+      if (isOutput && lines.length >= maxMessages) {
+        droppedMessages++
+        if (data.__dl === 'throw') throwError = String(data.payload ?? '运行出错')
+        return
+      }
+      // 收包侧先截断：条数上限挡不住单条大对象（__fmt 的 JSON 可达数 MB），内存尖峰要两条一起防
+      const text = String(data.payload ?? '').slice(0, 4000)
+      if (data.__dl === 'log') lines.push(text)
+      else if (data.__dl === 'warn') lines.push(`⚠️ ${text}`)
+      else if (data.__dl === 'error') lines.push(`⛔ ${text}`)
       else if (data.__dl === 'throw') {
         throwError = String(data.payload ?? '运行出错')
         lines.push(`✗ ${throwError}`)

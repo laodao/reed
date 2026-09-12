@@ -289,6 +289,8 @@ export class KnowledgeBaseService {
         await db.kbInvertedIndex.deleteByDocumentId(doc.id)
       }
       await db.kbChunks.deleteByKnowledgeBaseId(id)
+      // 章节表冗余存全文，随库一起清理（与 deleteDocument 同口径）
+      if (db.kbChapters) await db.kbChapters.deleteByKnowledgeBaseId(id)
       await db.kbDocuments.deleteByKnowledgeBaseId(id)
       // D1：QA 对级联——QA 向量按 chunkId 命名空间逐条删（与文档向量无 documentId 关联）
       if (db.kbQaPairs) {
@@ -504,6 +506,8 @@ export class KnowledgeBaseService {
       await db.kbVectors.deleteByDocumentId(docId)
       await db.kbInvertedIndex.deleteByDocumentId(docId)
       await db.kbChunks.deleteByDocumentId(docId)
+      // 章节表冗余存全文，必须随文档一起清理（否则删除后正文仍留在库里）
+      if (db.kbChapters) await db.kbChapters.deleteByDocument(docId)
       await db.kbDocuments.delete(docId)
 
       // 使用文档的 chunkCount 字段计算向量数（只有处理完成时才设置）
@@ -577,9 +581,10 @@ export class KnowledgeBaseService {
   }
 
   /**
-   * 清空一篇文档相关的所有派生数据：vectors / inverted-index / chunks。
+   * 清空一篇文档相关的所有派生数据：vectors / inverted-index / chunks / chapters。
    * 由 reprocessDocument 与 addDocument 的 upsert 分支共用。
    * 顺序与 deleteDocument 保持一致，避免外键约束被违反。
+   * 章节一并清掉：重解析中途失败时不能留下与已清空切片不一致的旧章节树。
    */
   private async clearDocumentArtifacts(docId: string): Promise<void> {
     const db = getCoreDatabaseManager()
@@ -587,6 +592,7 @@ export class KnowledgeBaseService {
     await db.kbVectors.deleteByDocumentId(docId)
     await db.kbInvertedIndex.deleteByDocumentId(docId)
     await db.kbChunks.deleteByDocumentId(docId)
+    if (db.kbChapters) await db.kbChapters.deleteByDocument(docId)
   }
 
   // ==================== 文档处理 ====================

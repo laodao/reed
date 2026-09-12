@@ -11,6 +11,7 @@ import { KnowledgeBaseService } from '@core/platform/services/knowledge-base.ser
 import { KnowledgeBaseRepository } from '@core/database/repositories/knowledge-base.repository'
 import { KbDocumentRepository } from '@core/database/repositories/kb-document.repository'
 import { KbChunkRepository } from '@core/database/repositories/kb-chunk.repository'
+import { KbChapterRepository } from '@core/database/repositories/kb-chapter.repository'
 import { KbInvertedIndexRepository } from '@core/database/repositories/kb-inverted-index.repository'
 
 import * as dbModule from '@core/database/database-manager.interface'
@@ -157,5 +158,99 @@ describe.each(getTestDialects())('KnowledgeBaseService.addDocument [%s]', dialec
       source: { type: 'diary', id: 'd1' },
     })
     expect(kbVectorsMock.deleteByDocumentId).toHaveBeenCalled()
+  })
+})
+
+// ===== review 回归（2026-09-12）：删除路径必须连同 kb_chapters 一起清理 =====
+// 章节表冗余存全文，漏删 = 删除文档/整库后正文仍留在数据库
+describe.each(getTestDialects())('KnowledgeBaseService 删除清理章节 [%s]', dialect => {
+  let tds: TestDataSource
+  let tmpDir: string
+  let svc: KnowledgeBaseService
+  let kbs: KnowledgeBaseRepository
+  let docs: KbDocumentRepository
+  let chapters: KbChapterRepository
+
+  beforeAll(async () => {
+    tds = await createTestDataSource(dialect)
+    kbs = new KnowledgeBaseRepository(tds.ds)
+    docs = new KbDocumentRepository(tds.ds)
+    chapters = new KbChapterRepository(tds.ds)
+
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kb-svc-del-test-'))
+
+    vi.spyOn(dbModule, 'getCoreDatabaseManager').mockReturnValue({
+      knowledgeBases: kbs,
+      kbDocuments: docs,
+      kbChunks: new KbChunkRepository(tds.ds),
+      kbInvertedIndex: new KbInvertedIndexRepository(tds.ds),
+      kbVectors: { deleteByDocumentId: vi.fn().mockResolvedValue(undefined), deleteByChunkId: vi.fn().mockResolvedValue(undefined) } as any,
+      kbChapters: chapters,
+    } as any)
+
+    vi.spyOn(pathModule, 'getPathProvider').mockReturnValue({
+      getDataPath: () => tmpDir,
+    } as any)
+
+    vi.spyOn(eventModule, 'getEventEmitter').mockReturnValue({
+      emit: vi.fn(),
+      on: vi.fn(),
+      off: vi.fn(),
+    } as any)
+
+    svc = new KnowledgeBaseService()
+    vi.spyOn(svc as any, 'processDocument').mockResolvedValue(undefined)
+  })
+
+  afterAll(async () => {
+    await tds.close()
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+    vi.restoreAllMocks()
+  })
+
+  beforeEach(async () => {
+    await tds.truncateAll()
+  })
+
+  async function makeKb(): Promise<string> {
+    const kb = await kbs.create({
+      name: 'KB-DEL',
+      embeddingModel: 'm',
+      embeddingDimension: 1,
+      embeddingConfig: {} as any,
+    } as any)
+    return kb.id
+  }
+
+  async function makeDocWithChapter(kbId: string, name: string): Promise<string> {
+    const r = await svc.addDocument(kbId, { name, type: 'text', content: '正文' })
+    const docId = r.data!.doc.id
+    await chapters.replaceByDocument(docId, [
+      { id: `ch_${name}`, documentId: docId, knowledgeBaseId: kbId, title: '第一章', level: 1, ordering: 0, content: '整章全文……' },
+    ])
+    return docId
+  }
+
+  it('deleteDocument 连同 kb_chapters 一起删（正文不残留）', async () => {
+    const kbId = await makeKb()
+    const docId = await makeDocWithChapter(kbId, '单文档')
+    expect(await chapters.findByDocument(docId)).toHaveLength(1)
+
+    const del = await svc.deleteDocument(docId)
+    expect(del.success).toBe(true)
+    expect(await chapters.findByDocument(docId)).toHaveLength(0)
+  })
+
+  it('deleteKnowledgeBase 也清理 kb_chapters', async () => {
+    const kbId = await makeKb()
+    const docA = await makeDocWithChapter(kbId, '文档A')
+    const docB = await makeDocWithChapter(kbId, '文档B')
+    expect(await chapters.findByDocument(docA)).toHaveLength(1)
+    expect(await chapters.findByDocument(docB)).toHaveLength(1)
+
+    const del = await svc.deleteKnowledgeBase(kbId)
+    expect(del.success).toBe(true)
+    expect(await chapters.findByDocument(docA)).toHaveLength(0)
+    expect(await chapters.findByDocument(docB)).toHaveLength(0)
   })
 })

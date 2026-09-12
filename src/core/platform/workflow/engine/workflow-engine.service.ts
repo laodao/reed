@@ -2536,11 +2536,14 @@ export class WorkflowEngineService {
       getVariable: (path: string) =>
         exec.resolver.resolve(`{{${path}}}`, this.localContextFor(exec, scope)),
       // 运行级总工具调用预算：max>0 才注入句柄；tryConsume 每次成功占用 1 次调用额度
+      // used 用 getter 取活值（快照拷贝会在节点执行期间过期——预算是持续推进的）
       toolBudget:
         exec.toolBudget.max > 0
           ? {
               max: exec.toolBudget.max,
-              used: exec.toolBudget.used,
+              get used() {
+                return exec.toolBudget.used
+              },
               get remaining() {
                 return Math.max(0, exec.toolBudget.max - exec.toolBudget.used)
               },

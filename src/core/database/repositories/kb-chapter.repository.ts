@@ -148,6 +148,10 @@ export class KbChapterRepository extends BaseRepository<KbChapterEntity, KbChapt
     await this.scoped.delete({ documentId } as FindOptionsWhere<KbChapterEntity>)
   }
 
+  async deleteByKnowledgeBaseId(knowledgeBaseId: string): Promise<void> {
+    await this.scoped.delete({ knowledgeBaseId } as FindOptionsWhere<KbChapterEntity>)
+  }
+
   async findByDocument(documentId: string): Promise<KbChapterRecord[]> {
     const rows = await this.scoped.find({
       where: { documentId } as FindOptionsWhere<KbChapterEntity>,

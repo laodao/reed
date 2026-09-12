@@ -292,8 +292,11 @@ export async function persistLocalImages(
     return rawUrl
   })
 
-  // 2. 逐张复制到目标目录（同名覆盖；失败则该引用稍后被删除）
+  // 2. 逐张复制到目标目录（同名不同源加序号去重，避免后复制覆盖先复制——
+  //    EPUB 按章节目录存放图片时 image001.png 这类命名跨章重复极常见；
+  //    失败则该引用稍后被删除）
   const copied = new Map<string, string>()
+  const usedNames = new Set<string>()
   let failed = 0
   if (sources.length > 0 && prefix) {
     await fs.promises.mkdir(targetDir, { recursive: true })
@@ -301,8 +304,18 @@ export async function persistLocalImages(
       const name = source.split('/').pop() ?? ''
       if (!name) continue
       try {
-        await fs.promises.copyFile(source, path.join(targetDir, name))
-        copied.set(normalizeForCompare(source), `${prefix}/${name}`)
+        let target = name
+        if (usedNames.has(target)) {
+          const dot = name.lastIndexOf('.')
+          const stem = dot > 0 ? name.slice(0, dot) : name
+          const ext = dot > 0 ? name.slice(dot) : ''
+          let seq = 2
+          while (usedNames.has(`${stem}_${seq}${ext}`)) seq++
+          target = `${stem}_${seq}${ext}`
+        }
+        await fs.promises.copyFile(source, path.join(targetDir, target))
+        usedNames.add(target)
+        copied.set(normalizeForCompare(source), `${prefix}/${target}`)
       } catch {
         failed++
       }
@@ -575,7 +588,8 @@ export async function extractTextFromFile(
   fileType: FileType,
   options: ExtractTextOptions = {},
 ): Promise<string> {
-  const buffer = await fs.promises.readFile(filePath)
+  // mobi/azw3 的解析器按 filePath 自己读盘，预读的 buffer 只会白占一份等大的堆内存
+  const buffer = fileType === 'mobi' || fileType === 'azw3' ? Buffer.alloc(0) : await fs.promises.readFile(filePath)
 
   switch (fileType) {
     case 'txt':

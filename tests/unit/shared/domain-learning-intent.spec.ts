@@ -111,6 +111,8 @@ describe('routeDlIntent 意图路由', () => {
       '建立前置关系图',
       '把前置关系补上',
       '这些前置连上',
+      // review 边界口径（2026-09-12）：结构词链（"概念节点"）的最左名词后不跟内容词 → 仍 task
+      '完善这个概念节点的说明文字',
     ]
     for (const q of cases) expect(routeDlIntent(q), q).toBe('task')
   })
@@ -121,6 +123,10 @@ describe('routeDlIntent 意图路由', () => {
       '这个前置关系我还是没懂，再讲讲',
       '为什么这个前置知识点必须先学？',
       '把这段的推理关系再梳理一遍',
+      // review 修复（2026-09-12）：结构名词后跟内容词是求讲解，不是建图
+      '完善一下这个概念的讲义',
+      '补充说明这个概念的定义',
+      '帮我完善这个概念的解释部分',
     ]
     for (const q of cases) expect(routeDlIntent(q), q).toBe('tutor')
   })

@@ -34,12 +34,14 @@ describe('buildRunnerWorkerSource（沙箱源码拼装）', () => {
     expect(src).toContain("__post('error'")
   })
 
-  it('网络与宿主 API 被遮蔽（fetch/XHR/WebSocket/EventSource/importScripts/Worker/document/window）', () => {
+  it('网络与宿主 API 被遮蔽（fetch/XHR/WebSocket/EventSource/importScripts/Worker/document/window/self/globalThis/navigator/postMessage）', () => {
     for (const api of ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'importScripts', 'Worker', 'document', 'window']) {
       expect(src).toContain(api)
     }
-    // 以函数参数形式遮蔽为 undefined（片段里拿不到）
-    expect(src).toMatch(/\(__console, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined\)/)
+    // 以函数参数形式遮蔽为 undefined（片段里拿不到）；self/globalThis/navigator 必须在列——
+    // worker 全局上 self.fetch 是活的、navigator.sendBeacon 是网络出口，漏掉即可绕过遮蔽；
+    // postMessage 不遮蔽则片段可伪造 __dl 消息骗主线程提前收尾
+    expect(src).toMatch(/\(__console, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined\)/)
   })
 
   it('异常被捕获并回报 throw，随后必报 done（保证主线程能收尾）', () => {
