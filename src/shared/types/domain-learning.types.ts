@@ -130,6 +130,12 @@ export interface DlConceptView {
   source: DlConceptSource
   /** 类型专属扩展字段（法规效力/论文年份等） */
   attrs?: Record<string, unknown> | null
+  /**
+   * 本知识点声明的前置要求（attrs.prerequisites；2026-09-12 用户需求）。
+   * 生成知识点时即声明"学它之前必须先掌握什么"；与图上的 prerequisite 关系边互补——
+   * 这里可能包含"已声明但尚未建关系"的前置（UI 用虚线 chip 标出）。
+   */
+  declaredPrereqs?: string[]
   /** 有无已发布讲义（无讲义时中栏显示"生成中"） */
   hasCard?: boolean
   card?: DlCardView | null
@@ -205,6 +211,24 @@ export interface DlProfileView {
   custom?: boolean
 }
 
+/**
+ * 主题学习前置要求（整个空间的门槛；2026-09-12 用户需求）
+ *
+ * 学这个领域之前需要具备什么——可以是领域外能力（如「Python 基础」「线性代数基础」），
+ * 也可以是空间内已建的知识点。学习者一进空间就该看到门槛，研究模型生成知识点时
+ * 必须按它排顺序（dl_project.prerequisites）。
+ */
+export interface DlSpacePrereq {
+  /** 前置能力名（如「Python 基础」「线性代数基础」） */
+  name: string
+  /** 为什么学这个领域需要它（一句话） */
+  why?: string
+  /** 掌握到什么程度即可（如「能用 NumPy 索引与广播即可」） */
+  level?: string
+  /** true = 空间内已建成知识点并会教；false/缺省 = 需自备或另找资料 */
+  inSpace?: boolean
+}
+
 /** 空间三栏聚合视图（Space 页一次拉取） */
 export interface DlSpaceView {
   id: string
@@ -212,6 +236,8 @@ export interface DlSpaceView {
   goal: DlGoal
   tagline: string
   profile: DlProfileView | null
+  /** 主题学习前置要求（整个领域的学习门槛；可空=尚未声明） */
+  prerequisites: DlSpacePrereq[]
   status: DlProjectStatus
   /** 掌握度统计 */
   stats: { mastered: number; learning: number; total: number }

@@ -1311,6 +1311,10 @@ const electronAPI = {
       ipcRenderer.invoke('dl:create-space', p),
     // 绑定/改绑项目知识库（M4-B → { kbId }）
     setSpaceKb: (p: { id: string; kbId?: string | null }) => ipcRenderer.invoke('dl:set-space-kb', p),
+    // 主题学习前置要求（2026-09-12：整个领域的学习门槛；读 → DlSpacePrereq[]，写 → { prerequisites }）
+    getSpacePrereqs: (id: string) => ipcRenderer.invoke('dl:get-space-prereqs', { id }),
+    setSpacePrereqs: (p: { id: string; prerequisites: Array<{ name: string; why?: string; level?: string; inSpace?: boolean }> }) =>
+      ipcRenderer.invoke('dl:set-space-prereqs', p),
     // 空间行详情（DlProjectRow；本版界面少用）
     getSpace: (id: string) => ipcRenderer.invoke('dl:get-space', { id }),
     // 切换空间状态（active / paused / archived → { ok }）

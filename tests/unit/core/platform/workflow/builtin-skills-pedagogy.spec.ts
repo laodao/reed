@@ -121,10 +121,57 @@ describe('learning-concept-explainer 教学法契约（复盘：面向新人，�
     expect(body).toContain('先想再看')
   })
 
+  it('自测答案必须单独成段（渲染层默认折叠，读者先做再对）', () => {
+    expect(body).toContain('答案必须单独成段')
+    expect(body).toContain('独占一行')
+    expect(body).toContain('答案默认折叠')
+    expect(body).toContain('key=answers')
+  })
+
   it('双层隔离：编写注记不进学习者正文，禁系统黑话', () => {
     expect(body).toContain('双层隔离')
     expect(body).toContain('needs_verification')
     expect(body).toContain('系统黑话')
+  })
+
+  it('循序渐进（2026-09-12）：meta 前置声明 + 不跳步 + 每区承上启下 + 区结构规范', () => {
+    expect(body).toContain('循序渐进')
+    expect(body).toContain('首区必须是 meta')
+    expect(body).toContain('前置')
+    expect(body).toContain('不跳步')
+    expect(body).toContain('每区承上启下')
+    expect(body).toContain('每个区都要给 title')
+    expect(body).toContain('key=notes')
+  })
+})
+
+describe('learning-domain-map 分层与前置契约（2026-09-12 循序渐进复盘）', () => {
+  const skill = BUILTIN_SKILLS.find((s) => s.id === 'learning-domain-map')!
+  const body = splitSkillFrontmatter(skill.markdown).body
+
+  it('输出契约含 spacePrerequisites/layer/prerequisites，并要求不跳级', () => {
+    expect(body).toContain('spacePrerequisites')
+    expect(body).toContain('prerequisites')
+    expect(body).toContain('layer')
+    expect(body).toContain('不跳级')
+  })
+
+  it('第一原则就是"顺序必须循序渐进"，并要求先给门槛再给路径', () => {
+    expect(body).toContain('第一原则：顺序必须循序渐进')
+    expect(body).toContain('先定主题前置要求')
+    expect(body).toContain('顺序即路径')
+    expect(body).toContain('跨度不要超过一步')
+  })
+
+  it('要求补基础层（进阶记号 → 基础概念进骨架并排前面）', () => {
+    expect(body).toContain('补基础层')
+    expect(body).toContain('线性代数基础')
+    expect(body).toContain('导数与链式法则')
+  })
+
+  it('要求概念粒度细到"能做成一件具体小事"', () => {
+    expect(body).toContain('粒度要求')
+    expect(body).toContain('具体小事')
   })
 })
 
@@ -145,5 +192,29 @@ describe('learning-space-bootstrap S4 教学法要求（复盘）', () => {
       expect(body).toContain(marker)
     }
     expect(body).toContain('回报进度')
+  })
+
+  it('S2/S3 要求把前置关系逐条落库（含不跳级与顺序自检）', () => {
+    expect(body).toContain('逐条')
+    expect(body).toContain('prerequisite')
+    expect(body).toContain('不跳级')
+    expect(body).toContain('自检顺序')
+    expect(body).toContain('相邻层级跨度不得超过一步')
+  })
+
+  it('S2 要求先落"整个领域的前置要求"（dl_save_space_prereqs）并给每个概念填 prerequisites', () => {
+    expect(body).toContain('先定整个领域的前置要求')
+    expect(body).toContain('dl_save_space_prereqs')
+    expect(body).toContain('每个概念都要填 prerequisites')
+  })
+
+  it('S4 要求 meta 写前置声明，并说明被门禁拒绝时的补法', () => {
+    expect(body).toContain('前置声明')
+    expect(body).toContain('循序渐进门禁')
+  })
+
+  it('S4 要求自测答案单独成段（答案默认折叠）', () => {
+    expect(body).toContain('答案单独成段')
+    expect(body).toContain('答案默认折叠')
   })
 })

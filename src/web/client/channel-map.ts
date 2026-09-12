@@ -277,6 +277,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'domainLearning.listSpaces': { channel: 'dl:list-spaces' },
   'domainLearning.createSpace': { channel: 'dl:create-space' },
   'domainLearning.setSpaceKb': { channel: 'dl:set-space-kb' },
+  'domainLearning.getSpacePrereqs': { channel: 'dl:get-space-prereqs', wrap: (id) => [{ id }] },
+  'domainLearning.setSpacePrereqs': { channel: 'dl:set-space-prereqs' },
   'domainLearning.getSpace': { channel: 'dl:get-space', wrap: (id) => [{ id }] },
   'domainLearning.setSpaceStatus': { channel: 'dl:set-space-status', wrap: (id, status) => [{ id, status }] },
   'domainLearning.getSpaceView': { channel: 'dl:get-space-view', wrap: (id) => [{ id }] },

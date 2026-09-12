@@ -17,6 +17,24 @@
       </el-button>
     </div>
 
+    <!-- 主题学习前置要求（2026-09-12：整个领域的学习门槛；有则显示） -->
+    <div v-if="spacePrereqs.length" class="space-prereq">
+      <span class="space-prereq-label">学习前置</span>
+      <el-tooltip
+        v-for="p in spacePrereqs"
+        :key="p.name"
+        :content="prereqTip(p)"
+        placement="bottom"
+        :show-after="200"
+      >
+        <span class="space-prereq-chip" :class="{ external: !p.inSpace }">
+          {{ p.name }}
+          <span class="chip-flag">{{ p.inSpace ? '空间内会教' : '需自备' }}</span>
+        </span>
+      </el-tooltip>
+      <span class="space-prereq-note">学这个主题之前需要具备；缺的先补再开始</span>
+    </div>
+
     <div class="space-body">
       <!-- 左栏：知识地图（大纲树，可折叠/搜索/掌握度过滤/父级聚合） -->
       <aside class="pane pane-map">
@@ -160,7 +178,7 @@
               </div>
             </div>
             <!-- 前置依赖就绪条（依赖拓扑门控：先学完前置再学本概念） -->
-            <div v-if="prereqs.length" class="lesson-prereq">
+            <div v-if="prereqs.length || declaredOnlyPrereqs.length" class="lesson-prereq">
               <span class="prereq-label">前置：</span>
               <template v-for="p in prereqs" :key="p.id">
                 <span class="prereq-chip" :class="p.ready ? 'ready' : 'pending'">
@@ -169,6 +187,23 @@
                   <el-icon v-else><Lock /></el-icon>
                 </span>
               </template>
+              <!-- 声明了但尚未建关系边的前置（2026-09-12：生成知识点时声明的顺序） -->
+              <el-tooltip
+                v-for="d in declaredOnlyPrereqs"
+                :key="`declared-${d.name}`"
+                :content="d.conceptId ? '已声明的前置（尚未建立关系边，暂未门控）；点击跳转' : '已声明的前置：空间里还没有对应知识点，先补它再学本概念'"
+                placement="top"
+                :show-after="200"
+              >
+                <span
+                  class="prereq-chip declared"
+                  :class="{ clickable: !!d.conceptId }"
+                  @click="d.conceptId && gotoRelatedConcept(d.conceptId)"
+                >
+                  {{ d.name }}
+                  <el-icon><InfoFilled /></el-icon>
+                </span>
+              </el-tooltip>
               <span v-if="!prereqReady" class="prereq-tip">先掌握带锁的前置概念再来学它</span>
             </div>
           </div>
@@ -491,6 +526,7 @@ import type {
   DlMastery,
   DlNote,
   DlRelationView,
+  DlSpacePrereq,
   DlSpaceView,
   DlTreeNode,
 } from '@shared/types/domain-learning.types'
@@ -798,6 +834,29 @@ const prereqs = computed<Array<{ id: string; name: string; ready: boolean }>>(()
 
 /** 前置是否全部就绪（未就绪禁止"懂了/没懂"） */
 const prereqReady = computed(() => prereqs.value.every(p => p.ready))
+
+// ---------- 主题学习前置要求（2026-09-12：整个领域的学习门槛） ----------
+const spacePrereqs = computed<DlSpacePrereq[]>(() => view.value?.prerequisites ?? [])
+
+/** 前置 chip 的悬停说明（为什么需要 + 掌握到什么程度） */
+function prereqTip(p: DlSpacePrereq): string {
+  const bits = [p.why, p.level].filter((x): x is string => !!x)
+  return bits.length ? bits.join(' · ') : p.name
+}
+
+/** 当前概念"已声明但未建关系边"的前置（顺序声明可见，关系待补） */
+const declaredOnlyPrereqs = computed<Array<{ name: string; conceptId: string | null }>>(() => {
+  const cur = concepts.value.find(c => c.id === currentConceptId.value)
+  const declared = cur?.declaredPrereqs ?? []
+  if (!declared.length) return []
+  const linkedNames = new Set(prereqs.value.map(p => p.name))
+  return declared
+    .filter(name => !linkedNames.has(name))
+    .map(name => {
+      const hit = concepts.value.find(c => c.name === name)
+      return { name, conceptId: hit?.id ?? null }
+    })
+})
 
 // ---------- 空间整体进度（后端 stats 为准） ----------
 const masteryPercent = computed(() => {
@@ -1576,6 +1635,50 @@ watch(rightPane, (pane) => {
   min-height: 0;
 }
 
+// 主题学习前置要求条（2026-09-12：整个领域的学习门槛，进空间即见）
+.space-prereq {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-lighter);
+  font-size: 12px;
+
+  .space-prereq-label {
+    color: var(--el-text-color-secondary);
+    font-weight: 600;
+  }
+
+  .space-prereq-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 9px;
+    border-radius: 10px;
+    color: var(--el-color-primary);
+    background: var(--el-color-primary-light-9);
+    cursor: default;
+
+    // 需自备（空间内不教）→ 弱化 + 明确标记，避免读者误以为这里会讲
+    &.external {
+      color: var(--el-text-color-regular);
+      background: var(--el-fill-color);
+    }
+
+    .chip-flag {
+      font-size: 10px;
+      color: var(--el-text-color-placeholder);
+    }
+  }
+
+  .space-prereq-note {
+    color: var(--el-text-color-placeholder);
+    font-size: 11px;
+  }
+}
+
 .pane {
   display: flex;
   flex-direction: column;
@@ -1911,6 +2014,22 @@ watch(rightPane, (pane) => {
       &.pending {
         color: var(--el-color-warning);
         background: var(--el-color-warning-light-9);
+      }
+      // 已声明但尚未建关系边的前置：虚线弱化（顺序声明可见，图上门控待补）
+      &.declared {
+        color: var(--el-text-color-secondary);
+        background: transparent;
+        border: 1px dashed var(--el-border-color);
+        padding: 0 8px;
+
+        &.clickable {
+          cursor: pointer;
+
+          &:hover {
+            color: var(--el-color-primary);
+            border-color: var(--el-color-primary-light-5);
+          }
+        }
       }
       .el-icon {
         font-size: 11px;

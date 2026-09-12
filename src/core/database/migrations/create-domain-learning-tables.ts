@@ -46,6 +46,14 @@ export async function createDomainLearningTables(ds: DataSource): Promise<void> 
     'verification',
     isPg ? 'verification text' : 'verification TEXT',
   )
+  // 2026-09-12：dl_project.prerequisites 列（主题学习前置要求 JSON 数组，用户需求）
+  await ensureColumn(
+    ds,
+    isPg,
+    'dl_project',
+    'prerequisites',
+    isPg ? 'prerequisites text' : 'prerequisites TEXT',
+  )
 }
 
 // ==================== dl_project ====================
@@ -66,6 +74,7 @@ function ddlProject(pg: boolean): string {
         default_model text,
         pace_settings text,
         review_settings text,
+        prerequisites text,
         created_at    timestamp,
         updated_at    timestamp
       )
@@ -85,6 +94,7 @@ function ddlProject(pg: boolean): string {
       default_model TEXT,
       pace_settings TEXT,
       review_settings TEXT,
+      prerequisites TEXT,
       created_at    DATETIME,
       updated_at    DATETIME
     )

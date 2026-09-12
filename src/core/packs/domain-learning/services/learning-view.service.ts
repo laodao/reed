@@ -31,6 +31,7 @@ import {
   type AtlasViewInputRelation,
 } from '../rules/learning-atlas-views'
 import { normalizeDlReviewSettings, pickReviewCandidates } from '../rules/learning-review.rules'
+import { declaredPrereqsOf } from '../rules/learning-prerequisites.rules'
 import { buildConceptTree, conceptStats, latestCardsByConcept } from '../rules/learning-aggregation.rules'
 import type { DlCardRow } from '@core/database/repositories/dl-card.repository'
 
@@ -109,6 +110,8 @@ export class LearningViewService {
         mastery: c.mastery as DlConceptView['mastery'],
         source: c.source as DlConceptView['source'],
         attrs: c.attrs,
+        // 声明的前置（2026-09-12）：可能与关系边不完全一致（声明了但还没建边），UI 分开标注
+        declaredPrereqs: declaredPrereqsOf({ id: c.id, name: c.name, nodeType: c.nodeType, attrs: c.attrs }),
         hasCard: !!card,
         ...(card ? { card } : {}),
       }
@@ -153,6 +156,9 @@ export class LearningViewService {
       goal: project.goal as DlSpaceView['goal'],
       tagline: project.description ?? '',
       profile,
+      // 主题学习前置要求（2026-09-12 用户需求：整个领域的学习门槛，进空间即见）
+      // 读侧信任仓储已解析结果（写入时已规范化并物化 inSpace）
+      prerequisites: project.prerequisites ?? [],
       status: project.status as DlSpaceView['status'],
       stats: { ...stats, learning: conceptViews.filter((c) => c.mastery === 'learning').length },
       concepts: conceptViews,

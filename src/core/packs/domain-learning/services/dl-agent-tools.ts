@@ -86,7 +86,28 @@ const saveConceptSchema = z.object({
     parentId: z.string().nullable().optional().describe('树父 group id（null=领域根层）'),
     definitionShort: z.string().optional().describe('一句话定义（地图悬停用）'),
     researchState: z.string().optional().describe('research_state（默认 extracted）'),
+    prerequisites: z
+      .array(z.string())
+      .optional()
+      .describe('学本知识点前必须先掌握的概念名数组（可空数组）。生成知识点时必须填：顺序要循序渐进；填了之后请用 dl_save_relation 落成前置关系边'),
     attrs: z.record(z.string(), z.unknown()).optional().describe('扩展字段'),
+  }),
+})
+
+/** 主题学习前置要求 schema（整个领域的学习门槛） */
+const saveSpacePrereqsSchema = z.object({
+  spacePrereqs: z.object({
+    items: z
+      .array(
+        z.object({
+          name: z.string().min(1).describe('前置能力名（如「Python 基础」「线性代数基础」）'),
+          why: z.string().optional().describe('为什么学这个领域需要它（一句话）'),
+          level: z.string().optional().describe('掌握到什么程度即可（如「能用 NumPy 索引即可」）'),
+          inSpace: z.boolean().optional().describe('是否会在本空间内建成知识点并教；inSpace 由系统按空间实际概念反推，无需自行判断'),
+        }),
+      )
+      .describe('完整的前置清单（全量替换；确无需前置传空数组）'),
+    note: z.string().optional().describe('补充说明（如「其中线性代数基础会在本空间教」）'),
   }),
 })
 
@@ -142,9 +163,22 @@ const answerQuestionSchema = z.object({
 /** 动作工具清单 */
 export function buildDlAgentToolDefs(): AgentToolDef[] {
   return [
-    dlActionTool('dl_save_concept', '落库一个概念/知识节点（草稿态，待地图人审）。概念名必须来自当前空间快照或研究材料，不要编造。', saveConceptSchema),
-    dlActionTool('dl_save_relation', '落库一条关系边建议（默认前置依赖，source→target=学 target 前需掌握 source；待人审确认）。', saveRelationSchema),
-    dlActionTool('dl_save_card', '落库概念讲义卡片（区集 sections+著作 works+证据 evidenceSources；无证据会被拒绝）。', saveCardSchema),
+    dlActionTool(
+      'dl_save_concept',
+      '落库一个概念/知识节点（草稿态，待地图人审）。必须同时给 prerequisites（学它之前要先掌握什么）——学习顺序要循序渐进，前置不齐不要硬排。概念名必须来自当前空间快照或研究材料，不要编造。',
+      saveConceptSchema,
+    ),
+    dlActionTool(
+      'dl_save_relation',
+      '落库一条关系边建议（默认前置依赖，source→target=学 target 前需掌握 source；待人审确认）。概念的前置声明要用本工具落成边，顺序才真正生效。',
+      saveRelationSchema,
+    ),
+    dlActionTool(
+      'dl_save_space_prereqs',
+      '落库「主题学习前置要求」：学整个领域之前需要具备什么（含领域外需自备能力，如 Python 基础 / 线性代数基础），每条给"为什么需要"与"掌握到什么程度即可"。全量替换；确无需前置传空数组。',
+      saveSpacePrereqsSchema,
+    ),
+    dlActionTool('dl_save_card', '落库概念讲义卡片（区集 sections+著作 works+证据 evidenceSources；无证据会被拒绝；首区必须是 meta 且写前置声明）。', saveCardSchema),
     dlActionTool('dl_answer_question', '把答疑结果存档：答上写 answer+来源（answered）；答不上 unresolved=true 登记未解队列（保持 open）。', answerQuestionSchema),
   ]
 }

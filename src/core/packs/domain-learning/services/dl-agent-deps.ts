@@ -8,7 +8,9 @@
  */
 
 import { pickNextToLearn } from '../rules/learning-sequence.rules'
+import { buildPrerequisiteBriefing } from '../rules/learning-prerequisites.rules'
 import type { ICoreDatabaseManager } from '@core/database/database-manager.interface'
+import type { DlSpacePrereq } from '@shared/types/domain-learning.types'
 import { BUILTIN_SKILLS } from '@core/platform/workflow/skills/builtin-skills'
 import { splitSkillFrontmatter } from '@core/platform/workflow/skills/skill-parser'
 
@@ -36,6 +38,8 @@ export interface DlSpaceSnapshot {
   isEmptySpace: boolean
   /** 空间名（起步引导文案用；未知则回退 id） */
   spaceName: string | null
+  /** 主题学习前置要求（2026-09-12：整个领域的学习门槛；空数组=尚未声明） */
+  spacePrereqs: DlSpacePrereq[]
 }
 
 /** 纯判定：是否存在知识概念叶（group 目录不算） */
@@ -48,11 +52,12 @@ export function dlEmptySpaceMission(opts: { spaceName: string }): string {
   return `【空领域起步研究】学习空间「${opts.spaceName}」当前还没有任何知识点，本次任务=给整个领域做一次"起步研究"。
 执行方式：宿主已把 learning-space-bootstrap 技能正文注入本会话快照（见下方【learning-space-bootstrap 技能正文】），请直接按该技能 S1~S5 阶段执行、每阶段向用户回报进度，不要再 discover/invoke 重复调用该技能；
 若技能不可用，按此摘要执行（同技能口径）：
-1. 先规划并落库 3-6 个最核心的知识点（dl_save_concept，parentId 优先填快照"目录分组"里的领域根 group id，没有则留 null）；
-2. 再为它们建立学习顺序关系（dl_save_relation，前置关系 prerequisite）；
-3. 挑其中"最基础、第一个要学"的概念 dl_save_card 产出一份可展示的讲义草稿（区级内容 + evidenceSources）；讲义每条论断的证据必须来自你实际读到的资料（知识库文档/网页/arXiv/API），查不到就少写，不得编造；
-4. 其余概念保持"待研究"即可，不必一次全部出讲义；
-5. 全部做完用一段话总结：建立了哪些概念与关系、首个讲义给谁、下一步建议。`
+1. **先定主题前置要求**：dl_save_space_prereqs 落库"学「${opts.spaceName}」之前需要具备什么"（name + why + level，含领域外需自备的能力如 Python 基础/概率统计基础；确无需前置传空数组）——这份门槛会展示给学习者，也是排顺序的依据；
+2. 再规划并落库 3-8 个知识点（dl_save_concept，parentId 优先填快照"目录分组"里的领域根 group id，没有则留 null）；**每个概念都要填 prerequisites**；粒度细到"学完能做一件具体小事"，并按学习层次排出先后（layer 0 = 零基础可直接学）；
+3. 把每个概念的前置**逐条**落库为学习顺序关系（dl_save_relation，前置关系 prerequisite，source→target = 学 target 前先掌握 source）；主干里用到进阶记号（积分/偏导/极限/期望方差/iid/分布族/矩阵运算/导数与链式法则等）时，必须先把对应基础概念（线性代数基础/导数与链式法则/概率与随机变量/期望与方差…）建成概念并排在前置里——**不跳级**，相邻层级跨度不超过一步，领域外前置也要有落点；
+4. 挑其中"最基础、第一个要学"的概念 dl_save_card 产出一份可展示的讲义草稿（区级内容 + evidenceSources）；讲义首区必须是 meta（读者画像 + 前置声明 + 记号热身 + 可测目标），每条论断的证据必须来自你实际读到的资料（知识库文档/网页/arXiv/API），查不到就少写，不得编造；
+5. 其余概念保持"待研究"即可，不必一次全部出讲义；
+6. 全部做完用一段话总结：主题前置是什么、建立了哪些概念与关系、首个讲义给谁、下一步建议。`
 }
 
 export async function computeDlSpaceSnapshot(
@@ -109,6 +114,15 @@ export async function computeDlSpaceSnapshot(
     ? [`本空间绑定知识库 id：${project.kbId}（需要读私有资料时把 wf_kb_retrieve 的 knowledgeBaseId 填此 id；讲义证据可用 kbDocId 回链）`]
     : []
 
+  // 前置要求简报（2026-09-12 用户需求：主题级 + 知识点级；让模型每轮都按门槛与顺序生成）
+  // 读侧信任仓储已解析结果（写入时已规范化并物化 inSpace）
+  const spacePrereqs = project?.prerequisites ?? []
+  const prereqLines = buildPrerequisiteBriefing({
+    spacePrereqs,
+    concepts: concepts.map((c) => ({ id: c.id, name: c.name, nodeType: c.nodeType, attrs: c.attrs })),
+    relations: relations.map((r) => ({ source: r.sourceId, target: r.targetId, type: r.relationType })),
+  })
+
   const head = [
     `学习空间：${project?.name ?? spaceId}（目标：${project?.goal ?? '—'}）`,
     `掌握度：${masteredCount}/${leafCount} 个知识概念已理解`,
@@ -116,10 +130,11 @@ export async function computeDlSpaceSnapshot(
   ]
 
   return {
-    text: [...head, ...kbLines, ...groupLines, ...conceptText].join('\n'),
+    text: [...head, ...kbLines, ...groupLines, ...prereqLines, ...conceptText].join('\n'),
     nextConceptId: ready,
     isEmptySpace: !hasConceptLeaves(concepts.map((c) => ({ nodeType: c.nodeType }))),
     spaceName: project?.name ?? null,
+    spacePrereqs,
   }
 }
 
@@ -145,8 +160,16 @@ export function dlResearchSystemPrompt(): string {
 8. 全部完成后用一段话总结：研究了什么、读了哪些资料、产出哪些草稿、下一步建议（等用户人审/继续学习）；
 9. 归属（M3-A）：快照「目录分组」里若存在契合的目录，dl_save_concept 的 parentId 填其目录 id；不确定就保持 null（根层），地图人审会再归类；
 10. 知识库优先（M4-B）：快照含「本空间绑定知识库 id」时，需用私有资料先以该 id 调 wf_kb_retrieve 检索（命中即据此提炼，讲义 evidence 可回链 kbDocId），再考虑联网与模型先验；无绑定则跳过 KB 检索；
-11. 难度门禁（入门目标必读）：空间目标为「入门/零基础」时，若目标概念需要进阶记号（∫ 积分、∂ 偏导、极限、期望/方差记号、iid、分布族 N(·)/Θ、测度等）而空间里还没有对应的基础概念与讲义，**先补前置**——用 dl_save_concept 建这些基础概念（如「积分基础」「随机变量与分布」「期望与方差」）、用 dl_save_relation 建 prerequisite（基础 → 本概念），并为其中最基础的那个先 dl_save_card 出讲义，再回来做本概念；若确实要直接产出本概念，必须在讲义首区（key=meta）加「记号热身」逐条给出这些记号的读法与最小例子，否则 dl_save_card 会被难度门禁拒绝（拒绝信息里会说明该补什么）；
-12. 数值自检：讲义里写出的算式要自己回算并写清中间量（如 0.99×0.01=0.0099、0.05×0.99=0.0495、0.0099/0.0594≈0.167）；落库时会自动回算，发现自相矛盾会提示你重发修订版。`
+11. 循序渐进与前置门禁（2026-09-12 起对**所有目标**生效，不再只拦「入门」）：
+   - 领域图必须自底向上成链——每个概念的前置都要用 dl_save_relation 落成 prerequisite 边，不能只在文字里说顺序；主干里出现需要进阶记号的概念（积分 ∫、偏导 ∂、极限、期望/方差、iid、分布族、矩阵/向量运算、导数/链式法则等）时，先把对应基础概念（如「线性代数基础」「导数与链式法则」「概率与随机变量」「期望与方差」）建成概念、建成前置边，并为其中最基础的那个先出讲义；
+   - 讲义首区必须是 meta 且必须写「前置」小节（已掌握哪些概念；确无前置就写"无需前置"）；
+   - 讲义正文用到的前置能力，必须二选一：图上已有对应前置概念并排在前面，或在 meta 的「记号热身」里给读法与最小例子；都没有 → dl_save_card 会被循序渐进门禁拒绝（拒绝信息里会写明该补哪些概念/关系/讲义）；
+   - 被门禁拒绝时不要原样重发，按拒绝信息先补前置概念与关系，再回来发本卡。
+12. 数值自检：讲义里写出的算式要自己回算并写清中间量（如 0.99×0.01=0.0099、0.05×0.99=0.0495、0.0099/0.0594≈0.167）；落库时会自动回算，发现自相矛盾会提示你重发修订版。
+13. 前置要求（2026-09-12 起，生成知识点阶段就要做，别等到出讲义）：
+   - **整个主题的前置**：进入一个空间后先看快照的【主题前置要求】。若尚未声明，用 dl_save_space_prereqs 落库"学这个领域之前需要具备什么"（name + why + level，含领域外需自备的能力，如 Python 基础 / 概率统计基础；inSpace 由系统反推，不用自己判断）；确无需前置就传空数组显式说明；
+   - **每个知识点的前置**：dl_save_concept 时必须填 prerequisites（学它之前必须先掌握的概念名数组）——这是"顺序"的声明；随后用 dl_save_relation 把每条前置落成边（source=前置 → target=本概念），顺序才真正生效；快照里带 ⚠️ 的条目就是"只有声明没建边/没落点"的欠账，优先补齐；
+   - **顺序即路径**：按 layer 从小到大检查"每一步只需要前面已出现的知识"；相邻层级跨度不得超过一步——例如「张量」到「自动微分与反向传播」之间必须先有「导数与链式法则」这类前置概念；前置在图上没有落点就先 dl_save_concept 建它，确实属领域外能力才放进主题前置要求。`
 }
 
 /** 研究模式采集可用性提示（追加进快照；web_search 是否有默认搜索源决定 bind） */

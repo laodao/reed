@@ -32,6 +32,42 @@
       </div>
     </div>
     <div class="set-block">
+      <div class="set-title">主题学习前置要求（整个领域的学习门槛）</div>
+      <div class="set-row">
+        <span class="set-label">前置能力</span>
+        <el-select
+          v-model="prereqNames"
+          multiple
+          filterable
+          allow-create
+          default-first-option
+          :reserve-keyword="false"
+          size="small"
+          placeholder="输入后回车添加（如 线性代数基础 / Python 基础）"
+          style="width: 300px"
+        >
+          <el-option v-for="n in prereqNames" :key="n" :label="n" :value="n" />
+        </el-select>
+      </div>
+      <div class="set-hint">
+        学这个主题之前需要具备的能力；空间内会教的按实际知识点自动标注，其余视为「需自备」。
+        研究会话也会自动补全这份清单（含每条为什么需要）。
+      </div>
+      <div v-if="prereqItems.length" class="prereq-list">
+        <div v-for="p in prereqItems" :key="p.name" class="prereq-item">
+          <span class="prereq-name">{{ p.name }}</span>
+          <el-tag size="small" :type="p.inSpace ? 'success' : 'info'" effect="plain">
+            {{ p.inSpace ? '空间内会教' : '需自备' }}
+          </el-tag>
+          <span v-if="p.why" class="prereq-why">{{ p.why }}</span>
+        </div>
+      </div>
+      <div class="set-actions">
+        <el-button size="small" type="primary" @click="applyPrereqs">保存前置要求</el-button>
+        <span v-if="prereqNote" class="pace-state">{{ prereqNote }}</span>
+      </div>
+    </div>
+    <div class="set-block">
       <div class="set-title">自动推进（周期研究 · M2-C）</div>
       <div class="set-row">
         <span class="set-label">启用</span>
@@ -116,6 +152,7 @@ import { listKnowledgeBases, type DlKbOption } from './domain-learning-ui'
 import type {
   DlPaceSettings,
   DlProfileView,
+  DlSpacePrereq,
 } from '@shared/types/domain-learning.types'
 import {
   DEFAULT_DL_PACE_SETTINGS,
@@ -149,6 +186,34 @@ const reviewDueItems = computed(() => store.reviewDue?.items ?? [])
 const kbs = ref<DlKbOption[]>([])
 const kbIdDraft = ref('')
 const kbNote = ref('')
+
+// ---- 主题学习前置要求（2026-09-12：整个领域的学习门槛） ----
+/** 草稿：只编辑名字清单（why/level 由研究会话产出，保存时按名字保留） */
+const prereqNames = ref<string[]>([])
+const prereqNote = ref('')
+/** 当前空间已有的前置明细（展示 why/level 与"空间内会教/需自备"） */
+const prereqItems = computed<DlSpacePrereq[]>(() => store.currentSpaceView?.prerequisites ?? [])
+
+/** 保存：把名字清单与已有明细合并（同名保留 why/level/inSpace），按规范化口径去空去重 */
+async function applyPrereqs(): Promise<void> {
+  const existing = new Map(prereqItems.value.map((p) => [p.name, p] as const))
+  const seen = new Set<string>()
+  const next: DlSpacePrereq[] = []
+  for (const raw of prereqNames.value) {
+    const name = String(raw ?? '').trim()
+    if (!name || seen.has(name)) continue
+    seen.add(name)
+    const prev = existing.get(name)
+    next.push(prev ? { ...prev, name } : { name })
+  }
+  const saved = await store.saveSpacePrereqsOf(props.spaceId, next)
+  if (saved) {
+    prereqNames.value = saved.map((p) => p.name)
+    prereqNote.value = '前置要求已保存'
+  } else {
+    prereqNote.value = '保存失败（请重试）'
+  }
+}
 
 /** 当前空间画像（展示草稿基准） */
 const spaceProfile = computed<DlProfileView | null>(() => store.currentSpaceView?.profile ?? null)
@@ -247,6 +312,9 @@ onMounted(async () => {
     if (cur.emphasis.length) draft.emphasis = [...cur.emphasis]
   }
   paceDraft.value = { ...DEFAULT_DL_PACE_SETTINGS, ...((await store.paceOf(props.spaceId)) ?? {}) }
+  // 主题前置要求草稿：以已存清单为准（读接口失败时退回空间视图里的值）
+  const prereqs = await store.fetchSpacePrereqs(props.spaceId)
+  prereqNames.value = (prereqs ?? prereqItems.value).map((p) => p.name)
   const rev = await store.reviewSettingsOf(props.spaceId)
   if (rev) reviewDraft.value = { ...reviewDraft.value, ...rev }
   await store.fetchReviewDue(props.spaceId)
@@ -288,6 +356,37 @@ onMounted(async () => {
     .pace-state {
       font-size: 11px;
       color: var(--el-text-color-placeholder);
+    }
+  }
+  // 主题前置要求（2026-09-12）
+  .set-hint {
+    font-size: 11.5px;
+    color: var(--el-text-color-placeholder);
+    line-height: 1.6;
+    margin: 0 0 6px 128px;
+  }
+  .prereq-list {
+    margin: 4px 0 0 128px;
+    border-top: 1px dashed var(--el-border-color-lighter);
+    padding-top: 6px;
+
+    .prereq-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12.5px;
+      padding: 2px 0;
+
+      .prereq-name {
+        color: var(--el-text-color-primary);
+      }
+      .prereq-why {
+        color: var(--el-text-color-placeholder);
+        font-size: 11.5px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
     }
   }
   .em-chip {

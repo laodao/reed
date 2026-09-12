@@ -27,8 +27,9 @@ export const DL_HISTORY_LIMIT = 20
 export const DL_TOOL_MAX_CALLS: Record<string, number> = {
   discover_capabilities: 2, // M3-A：允许目录纠错重查（id 直接调用命中）
   invoke_skill: 6,
-  dl_save_concept: 8,
-  dl_save_relation: 10,
+  dl_save_concept: 12,
+  dl_save_relation: 14,
+  dl_save_space_prereqs: 2,
   dl_save_card: 4,
   dl_answer_question: 1,
 }
@@ -43,6 +44,7 @@ export const DL_SYSTEM_PASSTHROUGH = [DL_TOOL_DISCOVER, DL_TOOL_INVOKE_SKILL] as
 export const DL_TASK_WORKFLOW_TOOLS = ['run_workflow', 'get_workflow_run'] as const
 export const DL_TOOL_SAVE_CONCEPT = 'dl_save_concept'
 export const DL_TOOL_SAVE_RELATION = 'dl_save_relation'
+export const DL_TOOL_SAVE_SPACE_PREREQS = 'dl_save_space_prereqs'
 export const DL_TOOL_SAVE_CARD = 'dl_save_card'
 export const DL_TOOL_ANSWER_QUESTION = 'dl_answer_question'
 

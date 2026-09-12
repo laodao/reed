@@ -21,6 +21,7 @@ import type {
   DlPaceSettings,
   DlReviewDueItem,
   DlReviewSettings,
+  DlSpacePrereq,
   DlSpaceStats,
   DlSpaceSummary,
   DlSpaceView,
@@ -87,6 +88,8 @@ interface DomainLearningApi {
   getSpace(id: string): Promise<IpcLike<Record<string, unknown> | null>>
   createSpace(p: DlCreateSpaceInput): Promise<IpcLike<{ id: string }>>
   setSpaceKb(p: { id: string; kbId?: string | null }): Promise<IpcLike<{ kbId: string | null }>>
+  getSpacePrereqs(id: string): Promise<IpcLike<DlSpacePrereq[]>>
+  setSpacePrereqs(p: { id: string; prerequisites: DlSpacePrereq[] }): Promise<IpcLike<{ prerequisites: DlSpacePrereq[] }>>
   getSpaceView(id: string): Promise<IpcLike<DlSpaceView | null>>
   getAtlasGraph(id: string): Promise<IpcLike<DlAtlasGraph | null>>
   getNodeProfile(id: string, nodeId: string): Promise<IpcLike<DlNodeProfile | null>>
@@ -386,6 +389,50 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
       const row = r?.success && r.data ? r.data : null
       return (row?.kbId as string | null | undefined) ?? null
     } catch {
+      return null
+    }
+  }
+
+  // ==================== 主题学习前置要求（2026-09-12 用户需求） ====================
+
+  /** 读主题前置要求（dl:get-space-prereqs；失败 → null 以便与"空数组=未声明"区分） */
+  async function fetchSpacePrereqs(id: string): Promise<DlSpacePrereq[] | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.getSpacePrereqs(id)
+      const list = r?.success && Array.isArray(r.data) ? r.data : null
+      if (!list) {
+        error.value = r?.error ?? '读取主题前置要求失败'
+        return null
+      }
+      return list
+    } catch (e: any) {
+      error.value = e?.message ?? '读取主题前置要求失败'
+      console.error('[domain-learning] 读取主题前置要求失败:', e)
+      return null
+    }
+  }
+
+  /** 保存主题前置要求（dl:set-space-prereqs；成功后刷新空间视图）→ 落库结果，失败 → null */
+  async function saveSpacePrereqsOf(
+    id: string,
+    prerequisites: DlSpacePrereq[],
+  ): Promise<DlSpacePrereq[] | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.setSpacePrereqs({ id, prerequisites })
+      const saved = r?.success && r.data ? (r.data.prerequisites as DlSpacePrereq[]) : null
+      if (!saved) {
+        error.value = r?.error ?? '保存主题前置要求失败'
+        return null
+      }
+      await fetchSpaceView(id)
+      return saved
+    } catch (e: any) {
+      error.value = e?.message ?? '保存主题前置要求失败'
+      console.error('[domain-learning] 保存主题前置要求失败:', e)
       return null
     }
   }
@@ -756,6 +803,8 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     savePaceOf,
     saveKbOf,
     spaceMetaKbOf,
+    fetchSpacePrereqs,
+    saveSpacePrereqsOf,
     // 间隔复习
     reviewDue,
     reviewSettingsOf,

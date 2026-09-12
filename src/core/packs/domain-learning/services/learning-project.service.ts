@@ -9,8 +9,9 @@
 
 import type { DlProjectRepository, DlProjectRow } from '@core/database/repositories/dl-project.repository'
 import type { DlConceptRepository } from '@core/database/repositories/dl-concept.repository'
-import type { DlPaceSettings, DlReviewSettings } from '@shared/types/domain-learning.types'
+import type { DlPaceSettings, DlReviewSettings, DlSpacePrereq } from '@shared/types/domain-learning.types'
 import { normalizeDlReviewSettings } from '../rules/learning-review.rules'
+import { normalizeSpacePrereqs } from '../rules/learning-prerequisites.rules'
 import { normalizePaceSettings } from './dl-pace-scheduler.service'
 import { randomUUID } from 'crypto'
 
@@ -23,6 +24,8 @@ export interface CreateSpaceInput {
   profile?: Record<string, unknown> | null
   /** 绑定的项目知识库 id（M4-B：研究/核验按此 kbId 检索） */
   kbId?: string | null
+  /** 主题学习前置要求（2026-09-12；可空，建空间后也可由研究/设置补） */
+  prerequisites?: DlSpacePrereq[]
 }
 
 export interface SpaceSummaryRow {
@@ -54,6 +57,7 @@ export class LearningProjectService {
       profile: input.profile,
       kbId: input.kbId ?? null,
       description: input.description,
+      prerequisites: normalizeSpacePrereqs(input.prerequisites),
     })
     await this.concepts.create({
       id: randomUUID(),
@@ -113,6 +117,22 @@ export class LearningProjectService {
     const saved = normalizeDlReviewSettings(review)
     await this.ensureOwned(id)
     await this.projects.patch(id, { review: saved })
+    return saved
+  }
+
+  /**
+   * 主题学习前置要求（2026-09-12 用户需求：整个主题学习的前置要求）。
+   * 读：规范化兜底；写：规范化后落库（去空/去重/限条数），返回落库结果。
+   */
+  async getPrerequisites(id: string): Promise<DlSpacePrereq[]> {
+    const row = await this.ensureOwned(id)
+    return normalizeSpacePrereqs(row.prerequisites)
+  }
+
+  async setPrerequisites(id: string, prerequisites: unknown): Promise<DlSpacePrereq[]> {
+    const saved = normalizeSpacePrereqs(prerequisites)
+    await this.ensureOwned(id)
+    await this.projects.patch(id, { prerequisites: saved })
     return saved
   }
 

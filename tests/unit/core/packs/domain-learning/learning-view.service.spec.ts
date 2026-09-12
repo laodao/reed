@@ -189,4 +189,38 @@ describe('LearningViewService 统计与导出（M3-C）', () => {
       expect(c2?.verification).toBeNull() // 未核验可辨别（UI 显示"未核验"）
     })
   })
+
+  // 2026-09-12 用户需求：主题前置要求 + 知识点声明前置 进空间视图（UI 一进空间即可见）
+  it('buildSpaceView：透出主题前置要求与各概念"声明的前置"', async () => {
+    ds = await buildDs()
+    const db = await buildDb(ds)
+    const svc = new LearningViewService(db)
+    const pid = 'pq-sp'
+    await runWithUserAsync('u1', async () => {
+      await db.dlProjects!.create({
+        id: pid,
+        name: '深度学习',
+        goal: '工作应用',
+        prerequisites: [
+          { name: 'Python 基础', why: '写训练脚本', level: '能用 NumPy 索引即可', inSpace: false },
+          { name: '线性代数基础', why: '矩阵乘法与转置', inSpace: true },
+        ],
+      })
+      await db.dlConcepts!.create({ id: 'c1', projectId: pid, nodeType: 'concept', name: '张量' })
+      await db.dlConcepts!.create({
+        id: 'c2',
+        projectId: pid,
+        nodeType: 'concept',
+        name: '自动微分与反向传播',
+        attrs: { prerequisites: ['张量', '导数与链式法则'] },
+      })
+
+      const view = await svc.buildSpaceView(pid)
+      expect(view?.prerequisites.map((p) => p.name)).toEqual(['Python 基础', '线性代数基础'])
+      expect(view?.prerequisites[0]).toMatchObject({ why: '写训练脚本', level: '能用 NumPy 索引即可', inSpace: false })
+      expect(view?.prerequisites[1].inSpace).toBe(true)
+      expect(view?.concepts.find((c) => c.id === 'c1')?.declaredPrereqs).toEqual([])
+      expect(view?.concepts.find((c) => c.id === 'c2')?.declaredPrereqs).toEqual(['张量', '导数与链式法则'])
+    })
+  })
 })

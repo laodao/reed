@@ -23,7 +23,7 @@ import { LearningViewService } from '../services/learning-view.service'
 import { DlAgentHarnessService } from '../services/dl-agent-harness.service'
 import { DlPaceSchedulerService } from '../services/dl-pace-scheduler.service'
 import { dlPublishNotice } from '../services/dl-notice'
-import type { DlPaceSettings, DlReviewSettings } from '@shared/types/domain-learning.types'
+import type { DlPaceSettings, DlReviewSettings, DlSpacePrereq } from '@shared/types/domain-learning.types'
 import type { DlAgentMode } from '../services/dl-agent.types'
 
 const logger = createLogger('DlHandlers')
@@ -139,6 +139,15 @@ export function registerDomainLearningHandlers(): void {
     wrap(async () => {
       const kbId = await services().projects.setKb(p.id, p.kbId)
       return { kbId }
+    }))
+
+  // ---- 主题学习前置要求（2026-09-12 用户需求：整个领域的学习门槛，含领域外需自备能力） ----
+  ipcBridge.handle('dl:get-space-prereqs', (_e, p: { id: string }) =>
+    wrap(() => services().projects.getPrerequisites(p.id)))
+  ipcBridge.handle('dl:set-space-prereqs', (_e, p: { id: string; prerequisites: DlSpacePrereq[] }) =>
+    wrap(async () => {
+      const saved = await services().projects.setPrerequisites(p.id, p.prerequisites)
+      return { prerequisites: saved }
     }))
 
   // ---- 空间聚合视图（Home 卡片/Space 三栏/Atlas 图与档案） ----

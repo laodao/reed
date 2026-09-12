@@ -1,0 +1,219 @@
+/**
+ * 讲义正文排版（MarkdownViewer 的 markdown 内容样式）
+ * @module views/domain-learning/lesson-markdown
+ *
+ * 背景（2026-09-12 用户反馈「排版混乱」）：
+ * 1. bytemd 只带编辑器外壳样式，**不提供 `.markdown-body` 内容样式**；
+ * 2. 全局 `* { margin: 0; padding: 0 }`（styles/index.scss）又把浏览器默认的
+ *    段落间距、标题字号、列表左内边距（`ol/ul` 的 padding-inline-start）全部清零，
+ *    于是出现「表格无边框、段落无首行空格、编号紧贴左侧边框」。
+ *
+ * 因此讲义正文的排版必须在这里补齐：章节层级 / 段落首行缩进 / 列表缩进 /
+ * 表格边框 / 引用 / 代码 / 公式。规则用 `:deep()` 落到 bytemd 生成的 DOM 上
+ * （bytemd 内部节点没有 scoped 属性，普通 scoped 选择器匹配不到）。
+ */
+
+.markdown-viewer :deep(.markdown-body) {
+  font-size: 14px;
+  line-height: 1.85;
+  color: var(--el-text-color-regular);
+  overflow-wrap: break-word;
+
+  // ==================== 章节层级 ====================
+  // 层级契约：区标题（SectionLesson，15px 主色带序号）> 正文 h3（14.5px 带左色条）> h4 > 正文。
+  // 正文里的一级/二级标题较少见，统一按"节"处理，避免与区标题抢视觉。
+  h1,
+  h2 {
+    margin: 18px 0 8px;
+    padding-left: 10px;
+    border-left: 3px solid var(--el-color-primary);
+    font-size: 15.5px;
+    font-weight: 700;
+    line-height: 1.5;
+    color: var(--el-text-color-primary);
+  }
+
+  h3 {
+    margin: 16px 0 8px;
+    padding-left: 9px;
+    border-left: 3px solid var(--el-color-primary-light-5);
+    font-size: 14.5px;
+    font-weight: 700;
+    line-height: 1.5;
+    color: var(--el-text-color-primary);
+  }
+
+  h4,
+  h5,
+  h6 {
+    margin: 13px 0 6px;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.5;
+    color: var(--el-text-color-primary);
+  }
+
+  > :first-child {
+    margin-top: 0;
+  }
+
+  // ==================== 段落（中文排版：首行缩进两字） ====================
+  p {
+    margin: 0 0 10px;
+    text-indent: 2em;
+  }
+
+  > p:last-child {
+    margin-bottom: 0;
+  }
+
+  // 列表项 / 单元格 / 引用内的段落不再缩进（否则出现"缩进套缩进"）
+  li > p,
+  td > p,
+  th > p,
+  blockquote > p {
+    margin: 0;
+    text-indent: 0;
+  }
+
+  // ==================== 列表（编号必须留在正文左边界之内） ====================
+  ul,
+  ol {
+    margin: 0 0 10px;
+    padding-left: 2.2em;
+  }
+
+  ol {
+    list-style: decimal;
+  }
+
+  ul {
+    list-style: disc;
+  }
+
+  li {
+    margin: 3px 0;
+    text-indent: 0;
+  }
+
+  li > ul,
+  li > ol {
+    margin: 3px 0 0;
+  }
+
+  // ==================== 表格（必须有边框，可横向滚动） ====================
+  table {
+    display: block;
+    width: max-content;
+    max-width: 100%;
+    margin: 10px 0;
+    border-collapse: collapse;
+    border-spacing: 0;
+    overflow-x: auto;
+    font-size: 13.5px;
+  }
+
+  th,
+  td {
+    padding: 6px 10px;
+    border: 1px solid var(--el-border-color);
+    text-align: left;
+    text-indent: 0;
+    vertical-align: top;
+    line-height: 1.7;
+  }
+
+  th {
+    background: var(--el-fill-color-light);
+    font-weight: 700;
+    color: var(--el-text-color-primary);
+    white-space: nowrap;
+  }
+
+  tbody tr:nth-child(even) td {
+    background: var(--el-fill-color-lighter);
+  }
+
+  // ==================== 引用 ====================
+  blockquote {
+    margin: 10px 0;
+    padding: 7px 12px;
+    border-left: 3px solid var(--el-color-primary-light-5);
+    border-radius: 0 6px 6px 0;
+    background: var(--el-fill-color-lighter);
+    color: var(--el-text-color-secondary);
+  }
+
+  // ==================== 代码 ====================
+  code {
+    padding: 1px 5px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 4px;
+    background: var(--el-fill-color-light);
+    font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
+    font-size: 12.5px;
+  }
+
+  pre {
+    margin: 10px 0;
+    padding: 10px 12px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+    background: var(--el-fill-color-lighter);
+    overflow-x: auto;
+
+    code {
+      padding: 0;
+      border: none;
+      background: transparent;
+      font-size: 12.5px;
+      line-height: 1.6;
+    }
+  }
+
+  // ==================== 公式（KaTeX） ====================
+  .katex {
+    font-size: 1.05em;
+  }
+
+  .katex-display {
+    margin: 12px 0;
+    padding: 2px 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    text-indent: 0;
+  }
+
+  // ==================== 图（mermaid 由插件在客户端渲染进 .bytemd-mermaid） ====================
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .bytemd-mermaid {
+    display: flex;
+    justify-content: center;
+    margin: 12px 0;
+    padding: 10px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+    background: var(--el-fill-color-lighter);
+  }
+
+  // ==================== 分隔线 ====================
+  hr {
+    margin: 14px 0;
+    border: none;
+    border-top: 1px solid var(--el-border-color-lighter);
+  }
+
+  // 表格与公式里的链接不加下划线，避免密集正文里视觉噪声
+  a {
+    color: var(--el-color-primary);
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+}

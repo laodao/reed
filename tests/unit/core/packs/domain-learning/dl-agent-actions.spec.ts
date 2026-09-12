@@ -65,6 +65,16 @@ function execCtx(db: ICoreDatabaseManager, spaceId: string): DlAgentExecutionCon
   return { spaceId, db, emit: () => {} } as DlAgentExecutionContext
 }
 
+/**
+ * 最小合法 meta 区（2026-09-12 循序渐进门禁要求）：
+ * 讲义首区必须是 meta 且交代前置声明，否则 dl_save_card 会被拒绝。
+ */
+const META = {
+  key: 'meta',
+  title: '学习前必读',
+  md: '### 读者画像\n会四则运算。\n\n### 前置\n无需前置（本讲不涉及进阶记号）。',
+}
+
 async function seedProject(d: DataSource, id: string): Promise<void> {
   await runWithUserAsync('u1', () => new DlProjectRepository(d).create({ id, name: '测试域', goal: '入门' }))
 }
@@ -116,7 +126,11 @@ describe('dl-agent-actions', () => {
     ds = await buildDs()
     await seedProject(ds, 'sp1')
     const db = buildDb(ds)
-    await runWithUserAsync('u1', () => db.dlConcepts!.create({ id: 'c-bayes', projectId: 'sp1', nodeType: 'concept', name: '贝叶斯定理' }))
+    await runWithUserAsync('u1', async () => {
+      await db.dlConcepts!.create({ id: 'c-prob', projectId: 'sp1', nodeType: 'concept', name: '概率基础' })
+      await db.dlConcepts!.create({ id: 'c-bayes', projectId: 'sp1', nodeType: 'concept', name: '贝叶斯定理' })
+      await db.dlRelations!.create({ id: 'r-prob', projectId: 'sp1', sourceId: 'c-prob', targetId: 'c-bayes', relationType: PREREQUISITE_TYPE })
+    })
     const ctx = execCtx(db, 'sp1')
 
     await runWithUserAsync('u1', async () => {
@@ -142,7 +156,7 @@ describe('dl-agent-actions', () => {
           card: {
             conceptId: 'c-bayes',
             essenceType: 'K-stmt',
-            sections: [{ key: 'statement', title: '表述', md: '$$P(A|B)=\\frac{P(B|A)P(A)}{P(B)}$$' }],
+            sections: [META, { key: 'statement', title: '表述', md: '$$P(A|B)=\\frac{P(B|A)P(A)}{P(B)}$$' }],
             works: [{ kind: '论文', title: 'An Essay towards solving a Problem in the Doctrine of Chances', year: '1763' }],
             evidenceSources: [{ kind: '论文', title: 'Bayes 1763', url: 'https://example.org/bayes1763' }],
           },
@@ -154,7 +168,7 @@ describe('dl-agent-actions', () => {
       const saved = await db.dlCards!.getCurrentByConcept('sp1', 'c-bayes')
       expect(saved).not.toBeNull()
       expect(saved?.status).toBe('draft')
-      expect(saved?.sections).toHaveLength(1)
+      expect(saved?.sections).toHaveLength(2)
       expect(saved?.works).toHaveLength(1)
       expect(saved?.evidenceSources).toHaveLength(1)
 
@@ -228,7 +242,9 @@ describe('dl-agent-actions', () => {
     await seedProject(ds, 'sp1')
     const db = buildDb(ds)
     await runWithUserAsync('u1', async () => {
+      await db.dlConcepts!.create({ id: 'c-prob', projectId: 'sp1', nodeType: 'concept', name: '概率基础' })
       await db.dlConcepts!.create({ id: 'c-bayes', projectId: 'sp1', nodeType: 'concept', name: '贝叶斯定理' })
+      await db.dlRelations!.create({ id: 'r-prob', projectId: 'sp1', sourceId: 'c-prob', targetId: 'c-bayes', relationType: PREREQUISITE_TYPE })
       // 首次落 v1
       const ctx = execCtx(db, 'sp1')
       const r1 = await executeDlAction(ctx, {
@@ -237,7 +253,7 @@ describe('dl-agent-actions', () => {
           card: {
             conceptId: 'c-bayes',
             essenceType: 'K-stmt',
-            sections: [{ key: 'statement', md: 'v1 内容' }],
+            sections: [META, { key: 'statement', md: 'v1 内容' }],
             evidenceSources: [{ kind: '论文', title: 'S1', url: 'https://e.org/1' }],
           },
         },
@@ -256,7 +272,7 @@ describe('dl-agent-actions', () => {
           card: {
             conceptId: 'c-bayes',
             essenceType: 'K-stmt',
-            sections: [{ key: 'statement', md: 'v2 修订内容' }],
+            sections: [META, { key: 'statement', md: 'v2 修订内容' }],
             evidenceSources: [{ kind: '论文', title: 'S2', url: 'https://e.org/2' }],
           },
         },
@@ -265,9 +281,9 @@ describe('dl-agent-actions', () => {
       const versions = await db.dlCards!.listVersionsByConcept('sp1', 'c-bayes')
       expect(versions).toHaveLength(2)
       const [oldV, newV] = versions
-      expect(oldV.sections[0].md).toBe('v1 内容') // 旧稿留档
+      expect(oldV.sections[1].md).toBe('v1 内容') // 旧稿留档
       expect(oldV.verification?.status).toBe('verified') // 旧核验仍挂在旧稿
-      expect(newV.sections[0].md).toBe('v2 修订内容')
+      expect(newV.sections[1].md).toBe('v2 修订内容')
       expect(newV.verification).toBeNull() // 新稿核验待重跑，不得继承旧判定
       const current = await db.dlCards!.getCurrentByConcept('sp1', 'c-bayes')
       expect(current?.id).toBe(newV.id)
@@ -394,7 +410,14 @@ describe('dl-agent-actions', () => {
             conceptId: 'c-eb',
             essenceType: 'K-stmt',
             sections: [
-              { key: 'meta', title: '学习前必读', md: '记号热身：∫ 读作"把……加起来"；例：∫x dx 表示把细条面积相加。' },
+              {
+                key: 'meta',
+                title: '学习前必读',
+                md:
+                  '### 前置\n无需前置，会四则运算即可。\n\n### 记号热身\n' +
+                  '∫ 读作"把……加起来"，例：∫x dx 表示把细条面积相加；' +
+                  'iid 读作"独立同分布"，例：两次抛硬币的两次结果互不影响、且正面概率都是 0.5。',
+              },
               { key: 'statement', title: '正式陈述', md: '于是 ∫ f(x|θ)dG(θ) 表示按先验加权求和，iid 假定下可做边际极大似然。' },
             ],
             evidenceSources: [{ kind: '论文', title: 'S', url: 'https://e.org/1' }],
@@ -419,7 +442,7 @@ describe('dl-agent-actions', () => {
           card: {
             conceptId: 'c-num',
             essenceType: 'K-concept',
-            sections: [{ key: 'examples', md: '分子 0.99×0.01=0.00099，分母 0.0594。' }],
+            sections: [META, { key: 'examples', md: '分子 0.99×0.01=0.00099，分母 0.0594。' }],
             evidenceSources: [{ kind: '教材', title: 'T', url: 'https://e.org/2' }],
           },
         },
@@ -429,6 +452,230 @@ describe('dl-agent-actions', () => {
       const issues = (r.summary.data as { numericIssues?: string[] } | undefined)?.numericIssues ?? []
       expect(issues).toHaveLength(1)
       expect(issues[0]).toContain('不一致')
+    })
+  })
+
+  // ===== 2026-09-12 用户反馈：知识点要循序渐进（门禁对所有目标生效） =====
+
+  it('save_card：工作应用目标下 张量→自动微分 跳步 → 拒绝并给出补前置路径', async () => {
+    ds = await buildDs()
+    await runWithUserAsync('u1', () =>
+      new DlProjectRepository(ds!).create({ id: 'sp-dl', name: '深度学习', goal: '工作应用' }))
+    const db = buildDb(ds)
+    await runWithUserAsync('u1', async () => {
+      await db.dlConcepts!.create({ id: 'k-tensor', projectId: 'sp-dl', nodeType: 'concept', name: '张量' })
+      await db.dlConcepts!.create({ id: 'k-ad', projectId: 'sp-dl', nodeType: 'concept', name: '自动微分与反向传播' })
+      await db.dlRelations!.create({ id: 'r1', projectId: 'sp-dl', sourceId: 'k-tensor', targetId: 'k-ad', relationType: PREREQUISITE_TYPE })
+    })
+    const ctx = execCtx(db, 'sp-dl')
+    await runWithUserAsync('u1', async () => {
+      await expect(
+        executeDlAction(ctx, {
+          type: 'dl_save_card',
+          params: {
+            card: {
+              conceptId: 'k-ad',
+              essenceType: 'K-concept',
+              sections: [
+                { key: 'meta', title: '学习前必读', md: '### 前置\n已掌握：张量。' },
+                { key: 'mechanism', title: '机制', md: '以计算图为骨架，用链式法则从输出向输入逐层求参数梯度。' },
+              ],
+              evidenceSources: [{ kind: '教材', title: 'T', url: 'https://e.org/ad' }],
+            },
+          },
+        }),
+      ).rejects.toThrow(/先补前置|dl_save_concept/)
+    })
+  })
+
+  it('save_card：首区不是 meta（无前置声明）→ 拒绝（章节结构与门槛说明是硬要求）', async () => {
+    ds = await buildDs()
+    await seedProject(ds, 'sp1')
+    const db = buildDb(ds)
+    await runWithUserAsync('u1', () =>
+      db.dlConcepts!.create({ id: 'c-x', projectId: 'sp1', nodeType: 'concept', name: '甲概念' }))
+    const ctx = execCtx(db, 'sp1')
+    await runWithUserAsync('u1', async () => {
+      await expect(
+        executeDlAction(ctx, {
+          type: 'dl_save_card',
+          params: {
+            card: {
+              conceptId: 'c-x',
+              essenceType: 'K-concept',
+              sections: [{ key: 'definition', title: '定义', md: '甲是……' }],
+              evidenceSources: [{ kind: '教材', title: 'T', url: 'https://e.org/1' }],
+            },
+          },
+        }),
+      ).rejects.toThrow(/key=meta/)
+    })
+  })
+
+  it('save_card：前置概念尚无讲义 → 落库但提示先补前置讲义（不阻断）', async () => {
+    ds = await buildDs()
+    await seedProject(ds, 'sp1')
+    const db = buildDb(ds)
+    await runWithUserAsync('u1', async () => {
+      await db.dlConcepts!.create({ id: 'c-deriv', projectId: 'sp1', nodeType: 'concept', name: '导数与链式法则' })
+      await db.dlConcepts!.create({ id: 'c-ad', projectId: 'sp1', nodeType: 'concept', name: '反向传播' })
+      await db.dlRelations!.create({ id: 'r1', projectId: 'sp1', sourceId: 'c-deriv', targetId: 'c-ad', relationType: PREREQUISITE_TYPE })
+    })
+    const ctx = execCtx(db, 'sp1')
+    await runWithUserAsync('u1', async () => {
+      const r = await executeDlAction(ctx, {
+        type: 'dl_save_card',
+        params: {
+          card: {
+            conceptId: 'c-ad',
+            essenceType: 'K-concept',
+            sections: [
+              { key: 'meta', title: '学习前必读', md: '### 前置\n已掌握：导数与链式法则。' },
+              { key: 'mechanism', title: '机制', md: '用链式法则逐层求梯度。' },
+            ],
+            evidenceSources: [{ kind: '教材', title: 'T', url: 'https://e.org/2' }],
+          },
+        },
+      })
+      expect(r.summary.status).toBe('ok')
+      expect(r.summary.message).toContain('尚无讲义')
+      expect((r.summary.data as { progressionWarnings?: string[] }).progressionWarnings?.length).toBeGreaterThan(0)
+    })
+  })
+
+  // ===== 2026-09-12 用户需求：主题级 + 知识点级前置要求 =====
+
+  it('save_concept：声明前置写入 attrs.prerequisites；已在图上的前置提示建关系边', async () => {
+    ds = await buildDs()
+    await seedProject(ds, 'sp1')
+    const db = buildDb(ds)
+    await runWithUserAsync('u1', () =>
+      db.dlConcepts!.create({ id: 'c-tensor', projectId: 'sp1', nodeType: 'concept', name: '张量' }))
+    const ctx = execCtx(db, 'sp1')
+    await runWithUserAsync('u1', async () => {
+      const r = await executeDlAction(ctx, {
+        type: 'dl_save_concept',
+        params: {
+          concept: {
+            name: '自动微分与反向传播',
+            definitionShort: '链式法则逐层求梯度',
+            prerequisites: ['张量', '导数与链式法则'],
+          },
+        },
+      })
+      expect(r.summary.status).toBe('ok')
+      const saved = await db.dlConcepts!.listByProject('sp1')
+      const ad = saved.find((c) => c.name === '自动微分与反向传播')!
+      expect((ad.attrs as { prerequisites?: string[] }).prerequisites).toEqual(['张量', '导数与链式法则'])
+      // 已在图上的前置 → 提示建关系边；没有落点的前置 → 明确要求补
+      expect(r.summary.message).toContain('dl_save_relation')
+      expect(r.summary.message).toContain('导数与链式法则')
+      expect(r.summary.message).toContain('dl_save_space_prereqs')
+      const data = r.summary.data as { linkablePrereqs?: unknown[]; missingPrerequisites?: string[] }
+      expect(data.linkablePrereqs).toEqual([{ name: '张量', conceptId: 'c-tensor' }])
+      expect(data.missingPrerequisites).toEqual(['导数与链式法则'])
+      // 幂等更新路径同样保留前置声明
+      await executeDlAction(ctx, {
+        type: 'dl_save_concept',
+        params: { concept: { name: '自动微分与反向传播', definitionShort: '更新版' } },
+      })
+      const again = (await db.dlConcepts!.listByProject('sp1')).find((c) => c.name === '自动微分与反向传播')!
+      expect((again.attrs as { prerequisites?: string[] }).prerequisites).toEqual(['张量', '导数与链式法则'])
+      expect(again.definitionShort).toBe('更新版')
+    })
+  })
+
+  it('save_concept：前置名与"概念名"同名/为空/重复 → 规范化（去自己、去空、去重）', async () => {
+    ds = await buildDs()
+    await seedProject(ds, 'sp1')
+    const db = buildDb(ds)
+    const ctx = execCtx(db, 'sp1')
+    await runWithUserAsync('u1', async () => {
+      await executeDlAction(ctx, {
+        type: 'dl_save_concept',
+        params: {
+          concept: { name: '张量', prerequisites: ['张量', '  ', '线性代数基础', '线性代数基础'] },
+        },
+      })
+      const saved = (await db.dlConcepts!.listByProject('sp1')).find((c) => c.name === '张量')!
+      expect((saved.attrs as { prerequisites?: string[] }).prerequisites).toEqual(['线性代数基础'])
+    })
+  })
+
+  it('save_space_prereqs：落库主题学习前置要求（inSpace 按空间实际概念反推），全量替换', async () => {
+    ds = await buildDs()
+    await seedProject(ds, 'sp1')
+    const db = buildDb(ds)
+    await runWithUserAsync('u1', () =>
+      db.dlConcepts!.create({ id: 'c-linalg', projectId: 'sp1', nodeType: 'concept', name: '线性代数基础' }))
+    const ctx = execCtx(db, 'sp1')
+    await runWithUserAsync('u1', async () => {
+      // items 必须显式给（哪怕空数组）
+      await expect(
+        executeDlAction(ctx, { type: 'dl_save_space_prereqs', params: { spacePrereqs: {} } }),
+      ).rejects.toThrow(/items/)
+
+      const r = await executeDlAction(ctx, {
+        type: 'dl_save_space_prereqs',
+        params: {
+          spacePrereqs: {
+            items: [
+              { name: '线性代数基础', why: '矩阵乘法与转置' },
+              { name: 'Python 基础', why: '写训练脚本', level: '能用 NumPy 索引即可', inSpace: true },
+              { name: '', why: '空名应被丢弃' },
+              { name: '线性代数基础', why: '重复应被丢弃' },
+            ],
+            note: '线性代数基础会在本空间内教',
+          },
+        },
+      })
+      expect(r.summary.status).toBe('ok')
+      const project = await db.dlProjects!.getById('sp1')
+      expect(project?.prerequisites.map((p) => p.name)).toEqual(['线性代数基础', 'Python 基础'])
+      // 空间里有同名概念 → inSpace 反推为 true（不信模型自报）
+      expect(project?.prerequisites[0].inSpace).toBe(true)
+      expect(project?.prerequisites[0].why).toBe('矩阵乘法与转置')
+      // 空间里没有 Python 基础 → inSpace=false，即便模型写了 true
+      expect(project?.prerequisites[1].inSpace).toBe(false)
+      expect(r.summary.message).toContain('主题学习前置要求已更新')
+      expect(r.summary.message).toContain('Python 基础')
+
+      // 全量替换：清空 = 明确无前置
+      const cleared = await executeDlAction(ctx, {
+        type: 'dl_save_space_prereqs',
+        params: { spacePrereqs: { items: [] } },
+      })
+      expect(cleared.summary.message).toContain('已清空')
+      expect((await db.dlProjects!.getById('sp1'))?.prerequisites).toEqual([])
+    })
+  })
+
+  it('save_card：前置能力已被主题前置要求覆盖 → 不强制图上有对应知识点（门禁放行）', async () => {
+    ds = await buildDs()
+    await seedProject(ds, 'sp1')
+    const db = buildDb(ds)
+    await runWithUserAsync('u1', async () => {
+      await db.dlConcepts!.create({ id: 'c-ad2', projectId: 'sp1', nodeType: 'concept', name: '反向传播' })
+      // 先落主题前置：导数与链式法则属"需自备"
+      await executeDlAction(execCtx(db, 'sp1'), {
+        type: 'dl_save_space_prereqs',
+        params: { spacePrereqs: { items: [{ name: '导数与链式法则', why: '求梯度要用' }] } },
+      })
+      const r = await executeDlAction(execCtx(db, 'sp1'), {
+        type: 'dl_save_card',
+        params: {
+          card: {
+            conceptId: 'c-ad2',
+            essenceType: 'K-concept',
+            sections: [
+              { key: 'meta', title: '学习前必读', md: '### 前置\n已掌握：导数与链式法则（主题前置已声明，需自备）。' },
+              { key: 'mechanism', title: '机制', md: '用链式法则逐层求梯度。' },
+            ],
+            evidenceSources: [{ kind: '教材', title: 'T', url: 'https://e.org/3' }],
+          },
+        },
+      })
+      expect(r.summary.status).toBe('ok')
     })
   })
 })
