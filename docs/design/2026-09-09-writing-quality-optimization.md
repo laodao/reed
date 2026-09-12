@@ -60,16 +60,18 @@
 
 ## 4. R2 harness 借鉴的后续登记（本轮不做，按收益/成本排序）
 
-1. **Rubric 完成门**（deepagents rubric.py / Anthropic 三层验证）：F5 目前是规则级（字数）；升级为 grader 按 5 维评分（大纲吻合/人物一致性/时间线/字数/钩子）→ 不过阈值带逐条原因打回重写。可复用 spawn_subagent 建 grader。
-2. **结构化压缩快照模板**（gemini `<state_snapshot>` / goose JSON schema / codex handoff 四段式）：改 ContextManager 压缩提示词即可落地——保证大纲/伏笔/人物状态在压缩后存活（压缩保留计划状态，gemini "APPROVED PLAN PRESERVATION"）。
-3. **前文外置+按需读取**（deepagents/letta MemFS）：数万字前文不进上下文，只注入路径+摘要块；与既有分层记忆（40 号）直接融合。
-4. **memory blocks+git 化记忆库**（letta memory-git.ts）：人物卡/时间线做成有字符预算的可编辑块，写回带 reason、可回滚。
-5. **saveState JSONL 化+消息级 resume/fork**（codex rollout + SDK `resume_session_at`/`drops_turn`）：47 号能力面升级——支持"从第 N 步重写"这一写作刚需。
-6. **steering 统一队列**（codex tasks/regular.rs:92）：运行中插话在回合边界注入；审批请求本身入队。
-7. **子代理结构化回传 schema**：章节写手回传 `{章节,字数,POV,伏笔,TODO}`（≤2k token），全文走文件（deepagents TASK_TOOL_DESCRIPTION）。
-8. **钩子类型配额检查**：分集 summary 已带 hookType（本轮 F2），可在 scanContradictions 侧加"相邻集同型/缺席"确定性检查。
-9. **伏笔 promise/payoff 台账**：lw_foreshadows 已有（42 号），补"先收后埋"确定性检查即可升级为 story-skills 式台账。
-10. **审批 Granular 化+无人值守降级**（codex GranularApprovalConfig / goose headless）：长跑预授权+自动降级+可回滚，绝不卡死。
+> 归属标注（49 号补充）：**[RT]** = agent-runtime 通用机制层；**[LW]** = 长文业务域（platform/services/longwriting，消费方注册策略，runtime 保持通用）。
+
+1. **[RT] Rubric 完成门**（deepagents rubric.py / Anthropic 三层验证）：agent-runtime 只提供**通用机制**——"注册 validator → 产物校验 → 不过带反馈回注重跑、迭代上限"（与 ApprovalCoordinator 同构：机制通用，内容注册）。字数门（F5 已做）与钩子/一致性 validator 由长文域注册。
+2. **[RT] 结构化压缩快照模板**（gemini `<state_snapshot>` / goose JSON schema / codex handoff 四段式）：改 ContextManager 压缩提示词即可落地——保证计划/伏笔/人物状态在压缩后存活（"压缩保留计划状态"同源）。
+3. **[RT] 前文外置+按需读取**（deepagents/letta MemFS）：数万字前文不进上下文，只注入路径+摘要块；与既有分层记忆（40 号）直接融合。
+4. **[RT] memory blocks+git 化记忆库**（letta memory-git.ts）：可编辑记忆块带字符预算，写回带 reason、可回滚。
+5. **[RT] saveState JSONL 化+消息级 resume/fork**（codex rollout + SDK `resume_session_at`/`drops_turn`）：47 号能力面升级——支持"从第 N 步重写"这一写作刚需。
+6. **[RT] steering 统一队列**（codex tasks/regular.rs:92）：运行中插话在回合边界注入；审批请求本身入队。
+7. **[RT] 子代理结构化回传 schema**：章节写手回传 `{章节,字数,POV,伏笔,TODO}`（≤2k token），全文走文件（deepagents TASK_TOOL_DESCRIPTION）。
+8. **[LW] 钩子类型配额检查**：分集 summary 已带 hookType（本轮 F2），在长文域 ConsistencyService 加"相邻集同型/缺席"确定性规则（规则 R7 形态）。
+9. **[LW] 伏笔 promise/payoff 台账**：lw_foreshadows 已有（42 号），在 ConsistencyService 补"先收后埋/超期未收"确定性检查（story-skills 式台账）。**不进 agent-runtime**——离开叙事域它没有意义。
+10. **[RT] 审批 Granular 化+无人值守降级**（codex GranularApprovalConfig / goose headless）：长跑预授权+自动降级+可回滚，绝不卡死。
 
 ## 5. 端到端验收：10 集剧本《金瞳》
 
