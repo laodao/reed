@@ -200,6 +200,147 @@
     background: var(--el-fill-color-lighter);
   }
 
+  // ==================== 声明式图形（```figure → SVG；2026-09-12） ====================
+  .dl-figure {
+    margin: 12px 0;
+    padding: 10px 12px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+    background: var(--el-fill-color-lighter);
+    overflow-x: auto;
+
+    // 图形配色变量（SVG 里用 var(--dl-series-N) 引用，主题切换自动跟随）
+    --dl-series-1: #409eff;
+    --dl-series-2: #67c23a;
+    --dl-series-3: #e6a23c;
+    --dl-series-4: #f56c6c;
+    --dl-series-5: #8a5cf6;
+
+    .dl-figure-svg {
+      display: block;
+      margin: 0 auto;
+      max-width: 100%;
+      height: auto;
+    }
+
+    .dl-figure-title {
+      font-size: 12px;
+      font-weight: 600;
+      fill: var(--el-text-color-primary);
+    }
+
+    .dl-figure-axis {
+      font-size: 9.5px;
+      fill: var(--el-text-color-secondary);
+    }
+
+    .dl-figure-cell {
+      font-size: 10px;
+      fill: var(--el-text-color-primary);
+      font-family: 'JetBrains Mono', Consolas, monospace;
+    }
+
+    .dl-figure-line {
+      stroke-width: 2;
+    }
+
+    .dl-figure-axis-line {
+      stroke: var(--el-border-color);
+      stroke-width: 1;
+    }
+
+    .dl-figure-grid {
+      stroke: var(--el-border-color-extra-light);
+      stroke-width: 1;
+      stroke-dasharray: 2 3;
+    }
+
+    .dl-figure-box {
+      fill: var(--el-color-primary-light-9);
+      stroke: var(--el-color-primary-light-5);
+      stroke-width: 1;
+    }
+
+    .dl-figure-unit {
+      fill: var(--el-color-primary);
+    }
+
+    .dl-figure-edge {
+      stroke: var(--el-border-color);
+      stroke-width: 0.5;
+      opacity: 0.6;
+    }
+
+    .dl-figure-note {
+      margin-top: 4px;
+      font-size: 11px;
+      color: var(--el-text-color-placeholder);
+      text-align: center;
+    }
+
+    .dl-figure-error {
+      color: var(--el-color-danger);
+      text-align: left;
+      text-indent: 0;
+    }
+  }
+
+  // ==================== 可运行代码块（```js → Worker 沙箱；2026-09-12） ====================
+  .dl-run {
+    margin: -4px 0 12px;
+
+    .dl-run-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 2px;
+
+      .dl-run-btn {
+        padding: 1px 10px;
+        border: 1px solid var(--el-color-primary-light-5);
+        border-radius: 12px;
+        background: var(--el-color-primary-light-9);
+        color: var(--el-color-primary);
+        font-size: 12px;
+        cursor: pointer;
+
+        &:hover:not(:disabled) {
+          border-style: solid;
+          background: var(--el-color-primary-light-7);
+        }
+
+        &:disabled {
+          cursor: default;
+          opacity: 0.7;
+        }
+      }
+
+      .dl-run-hint {
+        font-size: 11px;
+        color: var(--el-text-color-placeholder);
+      }
+    }
+
+    .dl-run-out {
+      margin: 4px 0 0;
+      padding: 8px 10px;
+      border-left: 3px solid var(--el-color-success);
+      border-radius: 0 6px 6px 0;
+      background: var(--el-fill-color-light);
+      color: var(--el-text-color-regular);
+      font-family: 'JetBrains Mono', Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+      text-indent: 0;
+
+      &.is-error {
+        border-left-color: var(--el-color-danger);
+      }
+    }
+  }
+
   // ==================== 分隔线 ====================
   hr {
     margin: 14px 0;

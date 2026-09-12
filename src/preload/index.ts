@@ -1328,6 +1328,16 @@ const electronAPI = {
     getNodeProfile: (id: string, nodeId: string) => ipcRenderer.invoke('dl:get-node-profile', { id, nodeId }),
     // 推荐下一个待学概念（→ conceptId | null）
     pickNext: (id: string) => ipcRenderer.invoke('dl:pick-next', { id }),
+    // 手工追加知识点（2026-09-12：用户建点；勾选的前置直连为已确认边 → DlCreateConceptResult）
+    saveConcept: (p: {
+      id: string
+      name: string
+      nodeType?: string
+      parentId?: string | null
+      definitionShort?: string | null
+      en?: string | null
+      prerequisites?: string[]
+    }) => ipcRenderer.invoke('dl:save-concept', p),
     // 标记「懂了」（前置全就绪才放行 → { ok }）
     ackMastered: (id: string, conceptId: string) => ipcRenderer.invoke('dl:ack-mastered', { id, conceptId }),
     // 标记「没懂」（sectionKey 定位到讲义区 → { confusedCount, splitSuggested }）

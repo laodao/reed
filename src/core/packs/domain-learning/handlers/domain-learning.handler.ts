@@ -23,7 +23,7 @@ import { LearningViewService } from '../services/learning-view.service'
 import { DlAgentHarnessService } from '../services/dl-agent-harness.service'
 import { DlPaceSchedulerService } from '../services/dl-pace-scheduler.service'
 import { dlPublishNotice } from '../services/dl-notice'
-import type { DlPaceSettings, DlReviewSettings, DlSpacePrereq } from '@shared/types/domain-learning.types'
+import type { DlPaceSettings, DlReviewSettings, DlSpacePrereq, DlCreateConceptInput } from '@shared/types/domain-learning.types'
 import type { DlAgentMode } from '../services/dl-agent.types'
 
 const logger = createLogger('DlHandlers')
@@ -161,6 +161,12 @@ export function registerDomainLearningHandlers(): void {
 
   // ---- 图谱/掌握度 ----
   ipcBridge.handle('dl:pick-next', (_e, p: { id: string }) => wrap(() => services().graph.pickNextToLearn(p.id)))
+  // 手工新建知识点（2026-09-12：用户补全知识体系；前置直连为已确认边）
+  ipcBridge.handle('dl:save-concept', (_e, p: DlCreateConceptInput) =>
+    wrap(async () => {
+      const { id, ...input } = p
+      return services().graph.createConcept(id, input)
+    }))
   ipcBridge.handle('dl:ack-mastered', (_e, p: { id: string; conceptId: string }) =>
     wrap(async () => {
       await services().graph.ackMastered(p.id, p.conceptId)

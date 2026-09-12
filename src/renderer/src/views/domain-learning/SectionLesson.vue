@@ -51,7 +51,7 @@
       </div>
     </div>
 
-    <!-- works 区：相关著作（有则显示） -->
+    <!-- works 区：相关著作（有则显示；有 url 则可点击） -->
     <div v-if="props.card.works?.length" class="sec sec-works">
       <div class="sec-head">
         <span class="sec-title">相关著作</span>
@@ -64,11 +64,14 @@
           <span v-if="w.authors" class="work-meta">{{ w.authors }}</span>
           <span v-if="w.year" class="work-meta">· {{ w.year }}</span>
           <span v-if="w.note" class="work-meta">· {{ w.note }}</span>
+          <a v-if="isSafeExternalUrl(w.url)" class="work-link" :href="w.url" @click.prevent="openExternalUrl(w.url)">
+            {{ externalHostLabel(w.url) || '原文' }}
+          </a>
         </div>
       </div>
     </div>
 
-    <!-- evidence 区：证据来源（含 KB 文档回链标识，M4-B） -->
+    <!-- evidence 区：证据来源（可点击的原文链接 + KB 文档回链标识，M4-B） -->
     <div v-if="props.card.evidenceSources?.length" class="sec sec-evidence">
       <div class="sec-head">
         <span class="sec-title">证据来源（{{ props.card.evidenceSources.length }}）</span>
@@ -79,6 +82,15 @@
           <span class="work-kind">{{ e.kind }}</span>
           <span class="work-title">{{ e.title }}</span>
           <el-tag v-if="e.kbDocId" size="small" type="info" effect="plain">知识库文档</el-tag>
+          <a
+            v-if="isSafeExternalUrl(e.url)"
+            class="work-link"
+            :href="e.url"
+            :title="e.url"
+            @click.prevent="openExternalUrl(e.url)"
+          >
+            <el-icon><Link /></el-icon>{{ externalHostLabel(e.url) || '原文链接' }}
+          </a>
           <span v-if="e.quote" class="evidence-quote">「{{ e.quote }}」</span>
         </div>
       </div>
@@ -115,8 +127,10 @@
  * - 区级动作（这块没懂 / 展开全文）统一收进标题行 `.sec-actions` 同排，不再绝对定位。
  */
 import { computed, reactive, ref } from 'vue'
+import { Link } from '@element-plus/icons-vue'
 import MarkdownViewer from './MarkdownViewer.vue'
 import { planLessonSections } from '@shared/utils/lesson-sections'
+import { externalHostLabel, isSafeExternalUrl, openExternalUrl } from '@shared/utils/external-link'
 import type { DlCardSection, DlCardView, DlRelatedRef } from '@shared/types/domain-learning.types'
 
 const props = withDefaults(defineProps<{
@@ -352,7 +366,7 @@ function gotoRelated(r: DlRelatedRef): void {
   }
 }
 
-// M4-B：证据来源条目（复用著作配色语义）
+// M4-B：证据来源条目（复用著作配色语义；2026-09-12：url 可点击）
 .sec-evidence {
   .evidence-item {
     display: flex;
@@ -369,6 +383,25 @@ function gotoRelated(r: DlRelatedRef): void {
       border-left: 2px solid var(--el-color-info-light-5);
       padding-left: 8px;
     }
+  }
+}
+
+// 外链（证据来源/著作）：站点名 + 图标，点击走系统浏览器（2026-09-12）
+.work-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--el-color-primary);
+  font-size: 12px;
+  text-decoration: none;
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+
+  .el-icon {
+    font-size: 12px;
   }
 }
 

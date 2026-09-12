@@ -17,6 +17,14 @@ export const DL_AGENT_DEFINITION_ID = 'dl-agent-host'
 /** 每轮最大步骤（react 循环护栏） */
 export const DL_AGENT_MAX_STEPS = 12
 
+/**
+ * task 模式每轮最大步骤（更大预算）。
+ * 口径（2026-09-12 用户要求"先查资料再规划整体体系"）：补全知识地图这类任务要
+ * 「先采集（KB/联网）→ 再规划 → 再落库（批量建点建边）→ 自检」四阶段，
+ * 12 步容易在采集后没步数落库，故 task 单独放宽到 16 步（仅影响 task 会话，成本有界）。
+ */
+export const DL_TASK_MAX_STEPS = 16
+
 /** 历史注入截断（单条字符上限） */
 export const DL_HISTORY_CONTENT_MAX = 800
 

@@ -18,6 +18,7 @@ import { splitSkillFrontmatter } from '@core/platform/workflow/skills/skill-pars
 
 const learningSkillIds = [
   'learning-domain-map',
+  'learning-map-completion',
   'learning-concept-explainer',
   'learning-lesson-writer',
   'learning-lesson-planner',
@@ -53,6 +54,7 @@ describe('BUILTIN_SKILLS 全量守卫（坏一条即打挂 discover/invoke 全�
     // 内容生成/采集类：必须防幻觉（不编造引用/无证据不落）
     const antiFabrication = [
       'learning-domain-map',
+      'learning-map-completion',
       'learning-concept-explainer',
       'learning-source-collector',
       'learning-question-generator',
@@ -143,6 +145,69 @@ describe('learning-concept-explainer 教学法契约（复盘：面向新人，�
     expect(body).toContain('每个区都要给 title')
     expect(body).toContain('key=notes')
   })
+
+  it('图文并茂（2026-09-12）：约定 figure 声明式图形与可运行 js 代码块', () => {
+    expect(body).toContain('图文并茂')
+    expect(body).toContain('用代码画图')
+    // 五类图形规格都要在技能里交代清楚
+    for (const t of ['"type":"matrix"', '"type":"plot"', '"type":"bar"', '"type":"shape"', '"type":"network"']) {
+      expect(body, `缺图形规格 ${t}`).toContain(t)
+    }
+    expect(body).toContain('合法 JSON')
+    expect(body).toContain('24×24')
+    // 可运行代码块的口径：js 可运行、python 不运行、沙箱无 DOM/网络
+    expect(body).toContain('▶ 运行')
+    expect(body).toContain('沙箱里没有 DOM、没有网络')
+    expect(body).toContain('不会运行')
+    expect(body).toContain('200 行')
+  })
+})
+
+describe('learning-map-completion 取材与四阶段契约（2026-09-12 用户口径）', () => {
+  const skill = BUILTIN_SKILLS.find((s) => s.id === 'learning-map-completion')!
+  const body = splitSkillFrontmatter(skill.markdown).body
+
+  it('固定四阶段顺序，并声明"不许跳过 S1"与"无工具时只出草案不落库"', () => {
+    expect(body).toContain('先采集资料')
+    expect(body).toContain('不许跳过 S1')
+    expect(body).toContain('S1 采集')
+    expect(body).toContain('S2 规划整体体系')
+    expect(body).toContain('S3 落库')
+    expect(body).toContain('S4 自检与交接')
+    expect(body).toContain('无工具的单次生成')
+    expect(body).toContain('未落库')
+  })
+
+  it('采集：知识库优先 → 联网，带检索词示例、3-6 次预算与出处要求', () => {
+    expect(body).toContain('知识库优先')
+    expect(body).toContain('wf_kb_retrieve')
+    expect(body).toContain('目录 / 知识体系 / 大纲 / 综述 / 学习路径')
+    expect(body).toContain('web_search')
+    expect(body).toContain('wf_web_extract')
+    expect(body).toContain('http_get')
+    expect(body).toContain('3-6 次')
+    expect(body).toContain('要点 + 出处')
+    expect(body).toContain('本轮无外部资料')
+  })
+
+  it('规划：资料与先验分开标注 + 不跳级 + 跨度 ≤1 + 不编造', () => {
+    expect(body).toContain('evidenceLevel')
+    expect(body).toContain('prior')
+    expect(body).toContain('prior_needs_verification')
+    expect(body).toContain('不跳级')
+    expect(body).toContain('相邻层级跨度不超过一步')
+    expect(body).toContain('不编造文献标题与链接')
+    expect(body).toContain('具体小事')
+  })
+
+  it('落库与自检：dl_save_concept/relation/space_prereqs + 可达性/顺序/证据复核', () => {
+    expect(body).toContain('dl_save_concept')
+    expect(body).toContain('dl_save_relation')
+    expect(body).toContain('dl_save_space_prereqs')
+    expect(body).toContain('已有概念只补边不重建')
+    expect(body).toContain('可达性')
+    expect(body).toContain('纯先验各多少')
+  })
 })
 
 describe('learning-domain-map 分层与前置契约（2026-09-12 循序渐进复盘）', () => {
@@ -172,6 +237,18 @@ describe('learning-domain-map 分层与前置契约（2026-09-12 循序渐进复
   it('要求概念粒度细到"能做成一件具体小事"', () => {
     expect(body).toContain('粒度要求')
     expect(body).toContain('具体小事')
+  })
+
+  it('取材顺序（2026-09-12 用户口径）：先采集再规划，知识库优先 → 联网 → 先验须标注', () => {
+    expect(body).toContain('取材顺序')
+    expect(body).toContain('先采集，再规划，资料与模型知识必须区分')
+    expect(body).toContain('知识库优先')
+    expect(body).toContain('wf_kb_retrieve')
+    expect(body).toContain('web_search')
+    expect(body).toContain('3-6 次')
+    expect(body).toContain('先验待查证')
+    expect(body).toContain('不编造文献标题与链接')
+    expect(body).toContain('本轮无外部资料')
   })
 })
 

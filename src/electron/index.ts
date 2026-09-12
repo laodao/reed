@@ -331,7 +331,9 @@ function createWindow(): void {
     }
   })
 
-  // 修改 CSP 以允许 local-image 协议
+  // 修改 CSP 以允许 local-image 协议 + 讲义代码运行沙箱（worker-src blob:）
+  // 注：worker-src 放开 blob: 供「运行 JS」用 Worker 沙箱（片段内联为 Worker 顶层代码，
+  //     因此不需要 'unsafe-eval'；沙箱内无 DOM、网络 API 被遮蔽、3 秒超时）
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
@@ -339,6 +341,7 @@ function createWindow(): void {
         'Content-Security-Policy': [
           "default-src 'self'; " +
           "script-src 'self' 'wasm-unsafe-eval'; " +
+          "worker-src 'self' blob:; " +
           "style-src 'self' 'unsafe-inline'; " +
           "img-src 'self' data: blob: local-image: file:; " +
           "media-src 'self' file: local-image: local-file: local-video:; " +

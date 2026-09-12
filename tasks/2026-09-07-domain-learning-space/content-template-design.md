@@ -194,3 +194,38 @@ processor = processor.use(rehypeSanitize, schema)
 
 > 明确的非目标：`inSpace=false` 的主题前置只是一道门槛声明，系统不会为它自动生成讲义；要让它变成可学内容，须由研究者把它建成知识点。
 
+### 7.7 图文并茂与可运行演示（2026-09-12 第五轮）
+
+AI/编程/数学类内容必须能"看见"与"试一下"，但**不走 AI 生图**——由代码按数据画图：
+
+| 载体 | 讲义写法 | 渲染方式 | 边界 |
+|---|---|---|---|
+| 数值图形 | `figure` 代码块 + JSON 规格（必须合法 JSON） | 自写 SVG 渲染器（`figure-spec.ts`，零依赖/离线/确定性） | 五类：matrix / plot / bar / shape / network；限幅 24×24 格、400 点、6 序列、16 条、8 轴、6 层×16 单元；超限截断告警；文本全部转义 |
+| 可运行演示 | `js` 代码块 | Web Worker 沙箱 + 「▶ 运行」按钮，输出内联 | 无 DOM/无网络（fetch/XHR/WS/importScripts 被遮蔽）、3 秒超时、输出 ≤200 行×400 字；**不需要 `'unsafe-eval'`**（片段内联为 Worker 顶层代码），CSP 只放宽 `worker-src 'self' blob:` |
+| Python 片段 | `python` 代码块 | 仅语法高亮 | **不运行**；要"能跑"的演示须改写成等价 JS |
+| 关系/流程、公式 | `mermaid`、KaTeX | 既有 | 四类载体各司其职 |
+
+生成侧契约写在 `learning-concept-explainer` 第 10 条（含五类规格的完整 JSON 样例与"图形要服务理解、不要为配图而配图"），
+bootstrap S4 同步要求；契约由 `builtin-skills-pedagogy.spec` 守护。渲染增强在 `MarkdownViewer` 渲染后用
+`MutationObserver` 跑（与 mermaid 同一时机，幂等标记防重复）。
+
+> 非目标：不做交互式图（缩放/悬停数值）、不做 3D、不做 Python 运行时（Pyodide 需 10-20MB 打包，另行排期）。
+
+### 7.6 知识地图的可编辑性：用户建点 + AI 补全 + 关系人审（2026-09-12 第三轮）
+
+学习者多半不清楚一个领域完整的知识体系，所以地图不能只由 AI 单向产出，也不能只读：
+
+| 能力 | 入口 | 落库语义 |
+|---|---|---|
+| **用户手工建点** | 左栏「+ 知识点」（`dl:save-concept` → `LearningGraphService.createConcept`） | `source='manual'`、`researchState='unresearched'`；勾选的前置**直接落成已确认的前置边**（`verified=true`，用户即确认者，门控立刻生效）；前置无落点 → 写入 `attrs.prerequisites` 并回 `missingPrereqs`（留给 AI 补） |
+| **AI 补全地图** | 左栏「AI 补全」→ `dlMapCompletionMission`（`shared/utils/domain-learning-mission`）注入并**强制 task 会话**；作业规范 = 技能 **`learning-map-completion`**（宿主按消息标记/意图注入正文，与 bootstrap 同构） | **四阶段固定顺序：S1 采集（知识库优先 `wf_kb_retrieve` → 联网 `web_search`/`wf_web_extract`/`http_get`/arXiv，读工具 3-6 次预算，记要点与出处）→ S2 规划（资料事实 + 模型先验，二者必须分开标注：`attrs.evidenceLevel="有原文：…"` / `attrs.prior=true`+`prior_needs_verification`；不跳级、相邻层级跨度 ≤1）→ S3 落库（`dl_save_concept`(+prerequisites) → `dl_save_relation` 逐条前置边；领域外能力走 `dl_save_space_prereqs`；已有概念只补边）→ S4 自检（可达性/顺序/证据构成）**；**只补结构**，不产讲义、不重复建同名、不编造出处；优先把 `source=manual` 的点接进主干 |
+| **关系人审确认** | 知识全景右栏「直接关系」的「确认」按钮（`dl:confirm-relation`） | 未确认边 → `verified=true`（此前后端齐备但前端零调用，所有边永远停在建议态） |
+
+契约要点：
+- **取材顺序（2026-09-12 用户口径）**：先采集、再规划、再落库、最后自检——知识库优先、再联网，资料事实与模型先验**必须分开标注**（有原文给 `evidenceLevel`，纯先验标 `prior`），无资料时也要产出但须说明"骨架来自模型先验"；`learning-domain-map` 技能、task 系统提示词、按钮指令三处同口径；task 会话步数预算放宽到 `DL_TASK_MAX_STEPS=16`（四阶段要留落库步数）；
+- `DlNodeProfile.relations` 带 `verified/sourceId/targetId/evidence`（否则界面无法定位要确认哪条边）；
+- `DlCreateConceptInput/DlCreateConceptResult` 放 shared（前端与主进程同源）；
+- 意图路由必须能认出"追加/添加/新增/补充/补全 + 知识点/概念/节点/地图/体系/骨架"以及
+  "前置/关系 + 边/补上/连上"→ task 会话（否则用户说"追加几个知识点"会被当成答疑，只得到建议文字）；
+- **非目标**：本轮不做编辑/删除知识点与目录维护——删除要级联清理讲义卡/关系边/笔记/掌握度日志（DDL 零外键），风险更高，另行排期。
+

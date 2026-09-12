@@ -119,4 +119,47 @@ describe('MarkdownViewer 讲义渲染', () => {
     expect(html.toLowerCase()).not.toContain('javascript:')
     expect(html).toContain('正常正文')
   })
+
+  // ===== 2026-09-12 用户需求：声明式图形（代码画图，非 AI 生图）+ JS 代码可运行 =====
+
+  it('```figure 代码块被渲染成内联 SVG 图形（原代码块被替换）', async () => {
+    const w = await mountMd(
+      ['矩阵示意：', '', '```figure', '{"type":"matrix","data":[[1,0],[0,1]],"title":"单位矩阵"}', '```'].join('\n'),
+    )
+    const ok = await waitFor(() => w.find('.dl-figure svg').exists())
+    expect(ok, `未渲染图形：${w.html().slice(0, 600)}`).toBe(true)
+    expect(w.find('.dl-figure').text()).toContain('单位矩阵')
+    expect(w.findAll('code.language-figure').length).toBe(0)
+  })
+
+  it('图形规格非法：保留原代码块并给出可读错误（读者仍能看到规格）', async () => {
+    const w = await mountMd(['```figure', '{"type":"matrix"}', '```'].join('\n'))
+    const ok = await waitFor(() => w.find('.dl-figure-error').exists())
+    expect(ok).toBe(true)
+    expect(w.find('.dl-figure-error').text()).toContain('图形规格无法渲染')
+    expect(w.find('code.language-figure').exists()).toBe(true)
+  })
+
+  it('```js 代码块带「运行」按钮；点击后在沙箱里跑并内联显示结果/可读错误', async () => {
+    const w = await mountMd(['```js', 'console.log(2 ** 10)', '```'].join('\n'))
+    const btnOk = await waitFor(() => w.find('.dl-run-btn').exists())
+    expect(btnOk, `未加运行按钮：${w.html().slice(0, 600)}`).toBe(true)
+    expect(w.find('.dl-run-btn').text()).toContain('运行')
+    expect(w.find('.dl-run-out').exists()).toBe(true)
+    await w.find('.dl-run-btn').trigger('click')
+    const done = await waitFor(() => (w.find('.dl-run-out').text() ?? '').length > 0)
+    expect(done).toBe(true)
+    // 本测试环境（happy-dom）没有 Worker → 走可读错误分支；真实应用里会给出 console 输出
+    const out = w.find('.dl-run-out').text()
+    expect(out.length).toBeGreaterThan(0)
+    expect(out).toMatch(/用时|不支持|无法创建/)
+  })
+
+  it('```python 代码块不加运行按钮（本轮只支持 JS 运行）', async () => {
+    const w = await mountMd(['```python', 'print(1)', '```'].join('\n'))
+    await waitFor(() => w.find('.bytemd').exists())
+    await new Promise((r) => setTimeout(r, 80))
+    expect(w.find('.dl-run-btn').exists()).toBe(false)
+    expect(w.find('code.language-python').exists()).toBe(true)
+  })
 })

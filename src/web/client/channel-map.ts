@@ -285,6 +285,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'domainLearning.getAtlasGraph': { channel: 'dl:get-atlas-graph', wrap: (id) => [{ id }] },
   'domainLearning.getNodeProfile': { channel: 'dl:get-node-profile', wrap: (id, nodeId) => [{ id, nodeId }] },
   'domainLearning.pickNext': { channel: 'dl:pick-next', wrap: (id) => [{ id }] },
+  'domainLearning.saveConcept': { channel: 'dl:save-concept' },
   'domainLearning.ackMastered': { channel: 'dl:ack-mastered', wrap: (id, conceptId) => [{ id, conceptId }] },
   'domainLearning.ackConfused': { channel: 'dl:ack-confused', wrap: (id, conceptId, sectionKey) => [{ id, conceptId, sectionKey }] },
   'domainLearning.confirmRelation': { channel: 'dl:confirm-relation' },

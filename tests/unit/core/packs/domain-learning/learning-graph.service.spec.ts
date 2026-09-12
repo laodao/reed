@@ -306,4 +306,114 @@ describe('LearningGraphService 间隔复习（M3-B）', () => {
       expect(logs2[logs2.length - 1]).toMatchObject({ fromMastery: 'review', toMastery: 'mastered', trigger: 'review' })
     })
   })
+
+  // ===== 2026-09-12 用户需求：左栏手工追加知识点（用户建点 + AI 完善） =====
+
+  describe('createConcept（用户手工建点）', () => {
+    it('新建知识点：source=manual / 待研究，落在指定分支下', async () => {
+      ds = await buildDs()
+      const pid = await seedSpace('u1', ds)
+      const svc = makeServices(ds)
+      const graph = makeGraph(svc)
+      await runWithUserAsync('u1', async () => {
+        const r = await graph.createConcept(pid, {
+          name: '导数与链式法则',
+          nodeType: 'concept',
+          parentId: 'g-branch',
+          definitionShort: '复合函数的求导规则',
+        })
+        expect(r.created).toBe(true)
+        const c = await svc.concepts.getById(r.conceptId)
+        expect(c).toMatchObject({
+          name: '导数与链式法则',
+          parentId: 'g-branch',
+          definitionShort: '复合函数的求导规则',
+          source: 'manual',
+          researchState: 'unresearched',
+          mastery: 'untouched',
+        })
+      })
+    })
+
+    it('勾选的前置直接落成**已确认**的前置边（用户自己确认，不必再人审）', async () => {
+      ds = await buildDs()
+      const pid = await seedSpace('u1', ds)
+      const svc = makeServices(ds)
+      const graph = makeGraph(svc)
+      await runWithUserAsync('u1', async () => {
+        const r = await graph.createConcept(pid, {
+          name: '多头注意力',
+          parentId: 'g-branch',
+          prerequisites: ['注意力'],
+        })
+        expect(r.linkedPrereqs).toEqual([{ name: '注意力', conceptId: 'c-attn' }])
+        expect(r.missingPrereqs).toEqual([])
+        const edges = await svc.relations.listPrerequisites(pid, r.conceptId)
+        expect(edges).toHaveLength(1)
+        expect(edges[0]).toMatchObject({ sourceId: 'c-attn', relationType: PREREQUISITE_TYPE, verified: true })
+        // 前置就绪门控可直接生效（注意力未掌握 → 不 ready）
+        expect(await graph.pickNextToLearn(pid)).toBe('c-attn')
+      })
+    })
+
+    it('前置在空间里没有落点：不报错，记进 attrs.prerequisites 并回给调用方（供"让 AI 补全"）', async () => {
+      ds = await buildDs()
+      const pid = await seedSpace('u1', ds)
+      const svc = makeServices(ds)
+      const graph = makeGraph(svc)
+      await runWithUserAsync('u1', async () => {
+        const r = await graph.createConcept(pid, {
+          name: '反向传播',
+          parentId: 'g-branch',
+          prerequisites: ['注意力', '计算图'],
+        })
+        expect(r.linkedPrereqs.map((l) => l.name)).toEqual(['注意力'])
+        expect(r.missingPrereqs).toEqual(['计算图'])
+        const c = await svc.concepts.getById(r.conceptId)
+        expect((c?.attrs as { prerequisites?: string[] }).prerequisites).toEqual(['注意力', '计算图'])
+        expect(await svc.relations.listPrerequisites(pid, r.conceptId)).toHaveLength(1)
+      })
+    })
+
+    it('同父同名 → 幂等更新（补定义/补前置），不重复建点', async () => {
+      ds = await buildDs()
+      const pid = await seedSpace('u1', ds)
+      const svc = makeServices(ds)
+      const graph = makeGraph(svc)
+      await runWithUserAsync('u1', async () => {
+        const r2 = await graph.createConcept(pid, {
+          name: '注意力',
+          parentId: 'g-branch',
+          definitionShort: '关注重要部分的机制',
+          prerequisites: ['Transformer'],
+        })
+        expect(r2.created).toBe(false)
+        expect(r2.conceptId).toBe('c-attn')
+        expect((await svc.concepts.getById('c-attn'))?.definitionShort).toBe('关注重要部分的机制')
+        // 前置边照样补上（已有概念也能补前置）
+        const edges = await svc.relations.listPrerequisites(pid, 'c-attn')
+        expect(edges.map((e) => e.sourceId)).toEqual(['c-tf'])
+      })
+    })
+
+    it('校验：名称必填 / 不能建目录 / 所属分支必须存在且属本空间且是 group', async () => {
+      ds = await buildDs()
+      const pid = await seedSpace('u1', ds)
+      const svc = makeServices(ds)
+      const graph = makeGraph(svc)
+      await runWithUserAsync('u1', async () => {
+        await expect(graph.createConcept(pid, { name: '  ' })).rejects.toThrow(/名称必填/)
+        await expect(graph.createConcept(pid, { name: 'X', nodeType: 'group' })).rejects.toThrow(/知识节点/)
+        await expect(graph.createConcept(pid, { name: 'X', parentId: 'ghost' })).rejects.toThrow(/不存在/)
+        await expect(graph.createConcept(pid, { name: 'X', parentId: 'c-attn' })).rejects.toThrow(/目录/)
+      })
+      // 他空间的分支不可用
+      await runWithUserAsync('u2', async () => {
+        const s2 = makeServices(ds!)
+        await s2.projects.create({ id: 'sp2', name: '另一个空间', goal: '入门' })
+        const g2 = makeGraph(s2)
+        await expect(g2.createConcept('sp2', { name: 'Y', parentId: 'g-branch' })).rejects.toThrow(/不存在/)
+      })
+    })
+  })
 })

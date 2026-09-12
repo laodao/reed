@@ -14,15 +14,20 @@
  * - 编写注记是**唯一的置底折叠面板**，不再是正文章节。
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import SectionLesson from '../../../../src/renderer/src/views/domain-learning/SectionLesson.vue'
 import type { DlCardView, DlCardSection } from '@shared/types/domain-learning.types'
 
 const MdStub = { props: ['md'], template: '<div class="md-stub">{{ md }}</div>' }
 
-/** 组件里用到的 Element Plus 组件在无插件环境下会刷警告，这里用 stub 静音 */
-const STUBS = { MarkdownViewer: MdStub, 'el-tag': true, 'el-empty': true }
+/** 组件里用到的 Element Plus 组件在无插件环境下会刷警告，这里用 stub 静音（保留插槽内容以便断言） */
+const STUBS = {
+  MarkdownViewer: MdStub,
+  'el-tag': { template: '<span class="el-tag-stub"><slot /></span>' },
+  'el-empty': { template: '<div class="el-empty-stub"><slot /></div>' },
+  'el-icon': { template: '<i class="el-icon-stub"><slot /></i>' },
+}
 
 function card(sections: DlCardSection[]): DlCardView {
   return {
@@ -203,6 +208,68 @@ describe('SectionLesson 章节结构', () => {
       await toggles[0].trigger('click')
       expect(w.findAll('.selfcheck-answers')[0].find('.answers-body').exists()).toBe(true)
       expect(w.findAll('.selfcheck-answers')[1].find('.answers-body').exists()).toBe(false)
+    })
+  })
+
+  // 2026-09-12 用户需求：证据来源要给出可点击的 URL
+  describe('证据来源 / 相关著作的可点击链接', () => {
+    const cardWithEvidence = (): DlCardView =>
+      ({
+        id: 'c1',
+        conceptId: 'k1',
+        essenceType: 'K-concept',
+        sections: [{ key: 'definition', title: '定义', md: 'x' }],
+        works: [{ kind: '论文', title: 'Bayes 1763', url: 'https://arxiv.org/abs/2106.02475' }],
+        evidenceSources: [
+          { kind: 'book', title: 'Deep Learning 第2章', url: 'https://www.deeplearningbook.org/contents/linear_algebra.html' },
+          { kind: 'kb', title: '我的资料', kbDocId: 'doc-1' },
+        ],
+        version: 1,
+        status: 'draft',
+        verification: null,
+      }) as unknown as DlCardView
+
+    it('证据来源带 url 时渲染可点击链接（站点名 + target 语义 = window.open 走系统浏览器）', () => {
+      const w = mount(SectionLesson, { props: { card: cardWithEvidence() }, global: { stubs: STUBS } })
+      const links = w.findAll('.sec-evidence .work-link')
+      expect(links.length).toBe(1) // 无 url 的那条不产生链接
+      expect(links[0].text()).toContain('deeplearningbook.org')
+      expect(links[0].attributes('href')).toBe('https://www.deeplearningbook.org/contents/linear_algebra.html')
+      expect(w.find('.sec-evidence').text()).toContain('知识库文档')
+    })
+
+    it('相关著作的 url 也可点击', () => {
+      const w = mount(SectionLesson, { props: { card: cardWithEvidence() }, global: { stubs: STUBS } })
+      const link = w.find('.sec-works .work-link')
+      expect(link.exists()).toBe(true)
+      expect(link.text()).toContain('arxiv.org')
+      expect(link.attributes('href')).toBe('https://arxiv.org/abs/2106.02475')
+    })
+
+    it('非法 url（javascript:）不渲染成链接（防外链注入）', () => {
+      const c = cardWithEvidence()
+      c.evidenceSources = [{ kind: 'x', title: 't', url: 'javascript:alert(1)' }]
+      const w = mount(SectionLesson, { props: { card: c }, global: { stubs: STUBS } })
+      expect(w.find('.sec-evidence .work-link').exists()).toBe(false)
+      expect(w.find('.sec-evidence').html()).not.toContain('javascript:')
+    })
+
+    it('点击链接：走 window.open（Electron 主进程转 shell.openExternal），不做页面跳转', async () => {
+      // 直接替换真实 window.open（不 stubGlobal window —— 那会破坏 happy-dom 的事件系统）
+      const original = window.open
+      const open = vi.fn()
+      window.open = open as unknown as typeof window.open
+      try {
+        const w = mount(SectionLesson, { props: { card: cardWithEvidence() }, global: { stubs: STUBS } })
+        await w.find('.sec-evidence .work-link').trigger('click')
+        expect(open).toHaveBeenCalledWith(
+          'https://www.deeplearningbook.org/contents/linear_algebra.html',
+          '_blank',
+          'noopener,noreferrer',
+        )
+      } finally {
+        window.open = original
+      }
     })
   })
 })

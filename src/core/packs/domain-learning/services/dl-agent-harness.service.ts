@@ -35,6 +35,9 @@ import {
   dlBootstrapSkillBody,
   dlEmptySpaceMission,
   dlResearchSystemPrompt,
+  dlSkillBody,
+  DL_MAP_COMPLETION_SKILL_ID,
+  shouldInjectMapCompletionSkill,
   dlTaskSystemPrompt,
   dlTutorSystemPrompt,
   dlVerifySystemPrompt,
@@ -47,6 +50,7 @@ import type { DlCardVerification } from '@shared/types/domain-learning.types'
 import {
   DL_AGENT_DEFINITION_ID,
   DL_AGENT_MAX_STEPS,
+  DL_TASK_MAX_STEPS,
   DL_HISTORY_LIMIT,
   DL_HISTORY_CONTENT_MAX,
   dlScopeKey,
@@ -214,6 +218,14 @@ export class DlAgentHarnessService {
           })}`
         }
       }
+      // 知识体系补全（2026-09-12）：任务消息带「补全知识地图」标记时，注入 learning-map-completion 技能正文
+      // （与 bootstrap 同构：过程型技能由宿主注入 + 外层带工具模型真执行，不走 invoke_skill 的无工具内层）
+      if (mode === 'task' && shouldInjectMapCompletionSkill(message)) {
+        const body = dlSkillBody(DL_MAP_COMPLETION_SKILL_ID)
+        if (body) {
+          snapshotText += `\n\n【learning-map-completion 技能正文（宿主注入，直接按其四阶段执行）】\n${body}`
+        }
+      }
     } else {
       bindings = buildDlBindings({ mode, webSearchAvailable: false })
     }
@@ -271,7 +283,7 @@ export class DlAgentHarnessService {
         systemPrompt: () => systemPromptOf(mode),
         snapshot: () => snapshotText,
         seededHistory: () => seeded,
-        maxSteps: DL_AGENT_MAX_STEPS,
+        maxSteps: mode === 'task' ? DL_TASK_MAX_STEPS : DL_AGENT_MAX_STEPS,
         contextWindowTokens: Number(process.env.AGENT_CONTEXT_WINDOW ?? 24_000) || 24_000,
         memory: {
           scope: () => ({ bizModule: 'domain-learning', projectId: spaceId }),
