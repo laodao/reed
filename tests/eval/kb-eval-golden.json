@@ -1,0 +1,229 @@
+{
+  "_说明": "知识库检索评估集（golden QA）。命中判据：检索结果中存在 documentId 匹配 golden 文档、且 content 含任一 keywords 的 chunk。三篇覆盖：中文技术书(章节)、英文技术手册(章节)、中文法规(条款)。",
+  "items": [
+    {
+      "id": "dl-01",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "5bf8f597-2042-4966-989e-ce6505851353",
+      "query": "什么是欠拟合和过拟合？如何理解机器学习的泛化能力？",
+      "keywords": ["欠拟合", "过拟合", "泛化"]
+    },
+    {
+      "id": "dl-02",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "5bf8f597-2042-4966-989e-ce6505851353",
+      "query": "Dropout 正则化方法的原理是什么，它如何防止过拟合？",
+      "keywords": ["Dropout"]
+    },
+    {
+      "id": "dl-03",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "5bf8f597-2042-4966-989e-ce6505851353",
+      "query": "卷积神经网络中的卷积层是如何逐层提取图像特征的？",
+      "keywords": ["卷积"]
+    },
+    {
+      "id": "dl-04",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "5bf8f597-2042-4966-989e-ce6505851353",
+      "query": "自编码器（autoencoder）如何把输入拷贝到输出，和 PCA 有什么关系？",
+      "keywords": ["自编码器", "PCA"]
+    },
+    {
+      "id": "dl-05",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "5bf8f597-2042-4966-989e-ce6505851353",
+      "query": "对抗训练如何通过对抗样本增强模型的鲁棒性？",
+      "keywords": ["对抗训练", "对抗样本"]
+    },
+    {
+      "id": "dl-06",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "5bf8f597-2042-4966-989e-ce6505851353",
+      "query": "梯度下降算法在深度学习中如何用于优化损失函数？",
+      "keywords": ["梯度下降"]
+    },
+    {
+      "id": "dl-07",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "5bf8f597-2042-4966-989e-ce6505851353",
+      "query": "循环神经网络如何处理序列数据中的时序依赖？",
+      "keywords": ["循环神经网络", "RNN"]
+    },
+    {
+      "id": "dl-08",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "5bf8f597-2042-4966-989e-ce6505851353",
+      "query": "批标准化（Batch Normalization）的原理和用处是什么？",
+      "keywords": ["批标准化", "Batch Normalization"]
+    },
+    {
+      "id": "dl-09",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "5bf8f597-2042-4966-989e-ce6505851353",
+      "query": "主成分分析（PCA）如何用于数据降维？",
+      "keywords": ["主成分分析", "PCA"]
+    },
+    {
+      "id": "dl-10",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "5bf8f597-2042-4966-989e-ce6505851353",
+      "query": "注意力机制在序列到序列模型中的作用是什么？",
+      "keywords": ["注意力"]
+    },
+    {
+      "id": "dl-11",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "5bf8f597-2042-4966-989e-ce6505851353",
+      "query": "变分自编码器（VAE）的核心思想是什么？",
+      "keywords": ["变分自编码器", "变分"]
+    },
+    {
+      "id": "dl-12",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "5bf8f597-2042-4966-989e-ce6505851353",
+      "query": "机器学习的偏差与方差权衡（bias-variance tradeoff）怎么理解？",
+      "keywords": ["偏差", "方差"]
+    },
+    {
+      "id": "np-01",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "4bf87762-a1e3-424f-8f3f-441dfcd9f341",
+      "query": "NumPy 数组和 Python 内置列表有什么区别？",
+      "keywords": ["fixed size", "lists", "Python lists"]
+    },
+    {
+      "id": "np-02",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "4bf87762-a1e3-424f-8f3f-441dfcd9f341",
+      "query": "如何用整数数组做花式索引（fancy indexing）访问 numpy 数组？",
+      "keywords": ["fancy indexing", "Advanced indexing"]
+    },
+    {
+      "id": "np-03",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "4bf87762-a1e3-424f-8f3f-441dfcd9f341",
+      "query": "numpy 广播（broadcasting）的规则是什么？",
+      "keywords": ["broadcasting"]
+    },
+    {
+      "id": "np-04",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "4bf87762-a1e3-424f-8f3f-441dfcd9f341",
+      "query": "如何用 reshape 改变数组形状？",
+      "keywords": ["reshape", "Shape manipulation"]
+    },
+    {
+      "id": "np-05",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "4bf87762-a1e3-424f-8f3f-441dfcd9f341",
+      "query": "numpy 数组的视图（view）与拷贝（copy）有什么区别？",
+      "keywords": ["view", "copy", "Copies and views"]
+    },
+    {
+      "id": "np-06",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "4bf87762-a1e3-424f-8f3f-441dfcd9f341",
+      "query": "如何对 numpy 数组做求和或均值等聚合运算？",
+      "keywords": ["sum", "mean", "aggregate"]
+    },
+    {
+      "id": "np-07",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "4bf87762-a1e3-424f-8f3f-441dfcd9f341",
+      "query": "numpy 中矩阵乘法用 dot 或 @ 怎么计算？",
+      "keywords": ["dot", "matmul", "matrix product"]
+    },
+    {
+      "id": "np-08",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "4bf87762-a1e3-424f-8f3f-441dfcd9f341",
+      "query": "如何用布尔掩码（boolean mask）选择数组中的元素？",
+      "keywords": ["boolean", "mask", "Boolean array indexing"]
+    },
+    {
+      "id": "np-09",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "4bf87762-a1e3-424f-8f3f-441dfcd9f341",
+      "query": "numpy 多维数组的轴（axis）概念与维度对齐规则？",
+      "keywords": ["axis", "dimension"]
+    },
+    {
+      "id": "np-10",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "4bf87762-a1e3-424f-8f3f-441dfcd9f341",
+      "query": "Why is NumPy fast? 为什么 NumPy 这么快？",
+      "keywords": ["Why is NumPy fast", "vectorized", "C"]
+    },
+    {
+      "id": "gs-01",
+      "kbId": "29790eb4-3e3d-4684-857b-822a20f74c11",
+      "docId": "48c7b99f-e63f-42b9-82fb-891f5cf828f7",
+      "query": "设立有限责任公司应当向公司登记机关办理什么手续？",
+      "keywords": ["设立登记", "第二十九条", "公司登记"]
+    },
+    {
+      "id": "gs-02",
+      "kbId": "29790eb4-3e3d-4684-857b-822a20f74c11",
+      "docId": "48c7b99f-e63f-42b9-82fb-891f5cf828f7",
+      "query": "有限责任公司由多少个股东出资设立？",
+      "keywords": ["五十个以下股东", "第四十二条"]
+    },
+    {
+      "id": "gs-03",
+      "kbId": "29790eb4-3e3d-4684-857b-822a20f74c11",
+      "docId": "48c7b99f-e63f-42b9-82fb-891f5cf828f7",
+      "query": "股东会会议作出普通决议需要什么表决规则？",
+      "keywords": ["表决", "过半数", "股东会"]
+    },
+    {
+      "id": "gs-04",
+      "kbId": "29790eb4-3e3d-4684-857b-822a20f74c11",
+      "docId": "48c7b99f-e63f-42b9-82fb-891f5cf828f7",
+      "query": "规模较小的有限责任公司可以不设监事会吗？",
+      "keywords": ["监事会", "不设监事会"]
+    },
+    {
+      "id": "gs-05",
+      "kbId": "29790eb4-3e3d-4684-857b-822a20f74c11",
+      "docId": "48c7b99f-e63f-42b9-82fb-891f5cf828f7",
+      "query": "有限责任公司股东向股东以外的人转让股权的规定是什么？",
+      "keywords": ["股权转让", "优先购买权"]
+    },
+    {
+      "id": "gs-06",
+      "kbId": "29790eb4-3e3d-4684-857b-822a20f74c11",
+      "docId": "48c7b99f-e63f-42b9-82fb-891f5cf828f7",
+      "query": "股份有限公司董事长、高级管理人员的任职资格有哪些限制？",
+      "keywords": ["资格", "高级管理人员", "董事"]
+    },
+    {
+      "id": "gs-07",
+      "kbId": "29790eb4-3e3d-4684-857b-822a20f74c11",
+      "docId": "48c7b99f-e63f-42b9-82fb-891f5cf828f7",
+      "query": "上市公司组织机构有哪些特别规定？",
+      "keywords": ["上市公司"]
+    },
+    {
+      "id": "gs-08",
+      "kbId": "29790eb4-3e3d-4684-857b-822a20f74c11",
+      "docId": "48c7b99f-e63f-42b9-82fb-891f5cf828f7",
+      "query": "国家出资公司组织机构的特别规定有哪些？",
+      "keywords": ["国家出资"]
+    },
+    {
+      "id": "gs-09",
+      "kbId": "29790eb4-3e3d-4684-857b-822a20f74c11",
+      "docId": "48c7b99f-e63f-42b9-82fb-891f5cf828f7",
+      "query": "公司解散后如何进行清算？",
+      "keywords": ["清算", "解散"]
+    },
+    {
+      "id": "gs-10",
+      "kbId": "29790eb4-3e3d-4684-857b-822a20f74c11",
+      "docId": "48c7b99f-e63f-42b9-82fb-891f5cf828f7",
+      "query": "股份有限公司的股份发行规则是什么？",
+      "keywords": ["股份发行", "发行"]
+    }
+  ]
+}

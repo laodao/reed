@@ -1,0 +1,32 @@
+fix(kb): 文档内嵌图片落到应用数据目录，正文只写相对路径
+
+问题（用户反馈）：上传的带图片文档（深度学习 epub）把内嵌图片解压到系统临时目录，
+正文里留下的是 `C:\Users\...\AppData\Local\Temp\kb-epub-XXXX\...` 这类绝对路径，
+而临时目录解析完就被删除——引用全是死链，也把本机绝对路径写进了知识库内容。
+实测：487 个切片 / 257 个章节含临时目录引用。
+
+根因（两层）：
+1. extractEpubMarkdown / extractMobiLikeText 用 os.tmpdir() 作解析器的资源目录并在 finally 删除；
+2. 真正的坑：@lingo-reader/epub-parser 把该目录当临时工作区——destroy() 会把解压出来的资源
+   逐个 unlink（异步、吞错）。所以「把 resourceSaveDir 直接指向应用数据目录」不成立：
+   实测解析返回时 1226 个文件、随后几秒清空（watcher 观测 1889 → 0），DB 里只剩死链。
+
+修复：
+- 解析层（extract-text）：工作区始终用临时目录；新增 persistLocalImages()，解析完把正文**真正
+  引用到**的图片复制到目标目录并改写为 dataPath 相对路径（复制失败的引用直接剔除）；
+  新增纯函数 rewriteImageRefs() 统一处理「远程保留 / 资源目录内→相对 / 其它绝对路径删除 /
+  相对路径保留」；未提供目标目录时只做清理（剧本导入等场景不留死链）。
+- 业务层（knowledge-base.service）：每文档资源目录
+  <dataPath>/knowledge-base/<kbId>/documents/assets/<docId>/；处理前清空、处理完空目录删除、
+  删除文档时一并清理；日志 `[KB] 内嵌资源落盘: N 个 → <相对路径>`。
+- 顺带修正 file_path 入库：上传/新增网页文档现在直接写 dataPath 相对路径（此前靠启动迁移事后改写），
+  并修复 upsert 分支用相对路径 writeFile（按进程 CWD 写到别处）的缺陷。
+
+验证（真实文档重处理 + CDP UI）：
+- 深度学习 epub：1995 张图片（35.7 MB）落盘到应用数据目录；DB 1995 条图片引用 100% 相对路径、
+  0 条绝对、0 条远程、缺失 0；临时目录引用 0；%TEMP% 无残留；分片内容对话框显示相对路径
+- 单测：extract-text 新增 5 条（含「解析结束 600ms 后复制出的文件仍在」的回归点，
+  这条正是第一版修复会失败的场景）+ persistLocalImages 4 条；补齐 asset-path 既有工具用例；
+  相关 5 个 spec / 66 条全绿，vue-tsc 触碰文件 0 错误
+
+进度记录：progress/2026-09-12-kb-doc-embedded-images.md

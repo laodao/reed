@@ -1,0 +1,75 @@
+{
+  "_说明": "关键词型查询评估子集（M4 遗留补齐）：查询含专有名词/API 符号/法条编号——这类查询向量语义弱、BM25 词面对齐强，用于检验混合检索与 RRF 的真实价值。判定同 golden：文档匹配 + 关键词命中。",
+  "items": [
+    {
+      "id": "kw-np-01",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "4bf87762-a1e3-424f-8f3f-441dfcd9f341",
+      "query": "np.newaxis 如何用来给数组增加维度？",
+      "keywords": ["newaxis"]
+    },
+    {
+      "id": "kw-np-02",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "4bf87762-a1e3-424f-8f3f-441dfcd9f341",
+      "query": "numpy.linalg.inv 求矩阵逆的用法",
+      "keywords": ["linalg.inv"]
+    },
+    {
+      "id": "kw-np-03",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "4bf87762-a1e3-424f-8f3f-441dfcd9f341",
+      "query": "np.arange 与 np.linspace 的差异",
+      "keywords": ["arange", "linspace"]
+    },
+    {
+      "id": "kw-np-04",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "4bf87762-a1e3-424f-8f3f-441dfcd9f341",
+      "query": "numpy.fft 模块做快速傅里叶变换",
+      "keywords": ["fft"]
+    },
+    {
+      "id": "kw-dl-01",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "5bf8f597-2042-4966-989e-ce6505851353",
+      "query": "sigmoid 函数的定义与性质",
+      "keywords": ["sigmoid"]
+    },
+    {
+      "id": "kw-dl-02",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "5bf8f597-2042-4966-989e-ce6505851353",
+      "query": "第6.24 式是哪个公式",
+      "keywords": ["6.24"]
+    },
+    {
+      "id": "kw-dl-03",
+      "kbId": "3dca5cae-8c6f-4bb6-bfa5-bc829df90f5d",
+      "docId": "5bf8f597-2042-4966-989e-ce6505851353",
+      "query": "书里如何描述 CUDA 与 GPU 计算",
+      "keywords": ["CUDA"]
+    },
+    {
+      "id": "kw-gs-01",
+      "kbId": "29790eb4-3e3d-4684-857b-822a20f74c11",
+      "docId": "48c7b99f-e63f-42b9-82fb-891f5cf828f7",
+      "query": "公司法第四十二条的内容",
+      "keywords": ["第四十二条"]
+    },
+    {
+      "id": "kw-gs-02",
+      "kbId": "29790eb4-3e3d-4684-857b-822a20f74c11",
+      "docId": "48c7b99f-e63f-42b9-82fb-891f5cf828f7",
+      "query": "第八十四条股权转让规定",
+      "keywords": ["第八十四条"]
+    },
+    {
+      "id": "kw-gs-03",
+      "kbId": "29790eb4-3e3d-4684-857b-822a20f74c11",
+      "docId": "48c7b99f-e63f-42b9-82fb-891f5cf828f7",
+      "query": "第二十九条 设立公司登记申请",
+      "keywords": ["第二十九条"]
+    }
+  ]
+}

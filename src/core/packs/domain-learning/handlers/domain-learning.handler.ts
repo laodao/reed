@@ -23,7 +23,7 @@ import { LearningViewService } from '../services/learning-view.service'
 import { DlAgentHarnessService } from '../services/dl-agent-harness.service'
 import { DlPaceSchedulerService } from '../services/dl-pace-scheduler.service'
 import { dlPublishNotice } from '../services/dl-notice'
-import type { DlPaceSettings, DlReviewSettings } from '@shared/types/domain-learning.types'
+import type { DlPaceSettings, DlReviewSettings, DlSpacePrereq, DlCreateConceptInput } from '@shared/types/domain-learning.types'
 import type { DlAgentMode } from '../services/dl-agent.types'
 
 const logger = createLogger('DlHandlers')
@@ -141,6 +141,15 @@ export function registerDomainLearningHandlers(): void {
       return { kbId }
     }))
 
+  // ---- 主题学习前置要求（2026-09-12 用户需求：整个领域的学习门槛，含领域外需自备能力） ----
+  ipcBridge.handle('dl:get-space-prereqs', (_e, p: { id: string }) =>
+    wrap(() => services().projects.getPrerequisites(p.id)))
+  ipcBridge.handle('dl:set-space-prereqs', (_e, p: { id: string; prerequisites: DlSpacePrereq[] }) =>
+    wrap(async () => {
+      const saved = await services().projects.setPrerequisites(p.id, p.prerequisites)
+      return { prerequisites: saved }
+    }))
+
   // ---- 空间聚合视图（Home 卡片/Space 三栏/Atlas 图与档案） ----
   ipcBridge.handle('dl:get-space-view', (_e, p: { id: string }) => wrap(() => services().view.buildSpaceView(p.id)))
   ipcBridge.handle('dl:get-atlas-graph', (_e, p: { id: string }) => wrap(() => services().view.buildAtlasGraph(p.id)))
@@ -152,6 +161,12 @@ export function registerDomainLearningHandlers(): void {
 
   // ---- 图谱/掌握度 ----
   ipcBridge.handle('dl:pick-next', (_e, p: { id: string }) => wrap(() => services().graph.pickNextToLearn(p.id)))
+  // 手工新建知识点（2026-09-12：用户补全知识体系；前置直连为已确认边）
+  ipcBridge.handle('dl:save-concept', (_e, p: DlCreateConceptInput) =>
+    wrap(async () => {
+      const { id, ...input } = p
+      return services().graph.createConcept(id, input)
+    }))
   ipcBridge.handle('dl:ack-mastered', (_e, p: { id: string; conceptId: string }) =>
     wrap(async () => {
       await services().graph.ackMastered(p.id, p.conceptId)

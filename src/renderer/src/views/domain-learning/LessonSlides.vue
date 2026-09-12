@@ -45,6 +45,7 @@
 import { computed, ref } from 'vue'
 import { FullScreen } from '@element-plus/icons-vue'
 import MarkdownViewer from './MarkdownViewer.vue'
+import { splitSelfCheckAnswers } from '@shared/utils/lesson-selfcheck'
 import type { DlCardSection, DlWorkRef } from '@shared/types/domain-learning.types'
 
 const props = withDefaults(
@@ -67,7 +68,11 @@ interface SlidePage {
 const pages = computed<SlidePage[]>(() => {
   const out: SlidePage[] = [{ title: props.title, meta: props.subTitle || '概念讲义' }]
   for (const s of props.sections) {
-    out.push({ title: s.title ?? s.key, md: s.md })
+    // 自测答案默认不跟题目同页（2026-09-12 用户需求：答案默认折叠）：
+    // 题目一页，答案单独成页——讲者先出题，讲到再翻页对答案。
+    const { questions, answers } = splitSelfCheckAnswers(s.md)
+    out.push({ title: s.title ?? s.key, md: questions })
+    if (answers) out.push({ title: `${s.title ?? '自测'} · 参考答案`, md: answers })
   }
   if (props.works?.length) out.push({ title: '相关著作', works: props.works })
   return out

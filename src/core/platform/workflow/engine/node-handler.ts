@@ -57,6 +57,11 @@ export interface WorkflowNodeContext<TConfig = Record<string, unknown>> {
   /** 变量上下文只读视图（按路径取值；优先 resolveTemplate） */
   getVariable(path: string): unknown
   /**
+   * 运行级总工具调用预算句柄（settings.maxTotalToolCalls>0 时注入；否则 undefined）：
+   * remaining 只读给提示词用；tryConsume() 成功=占用 1 次调用额度。
+   */
+  toolBudget?: { max: number; used: number; readonly remaining: number; tryConsume(): boolean }
+  /**
    * 多轮对话：获取已执行 LLM 轮次历史（工作流 settings.multiTurn 开启时非空；否则返回空数组）。
    * llm-chat / skill-call 节点用它把前序对话作为历史 messages 传给模型。
    */

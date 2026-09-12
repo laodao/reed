@@ -426,6 +426,14 @@ function applySnapshot(ctx: ReplayContext, payload: Record<string, unknown>): vo
     }
   }
 
+  // 运行级总工具调用预算：快照带则按其重建（防崩溃恢复后计数清零白烧额度）；旧快照无此字段则保持构造初值
+  const tb = payload.toolBudget as { max?: unknown; used?: unknown } | undefined
+  if (tb && typeof tb.max === 'number' && Number.isFinite(tb.max) && tb.max > 0) {
+    exec.toolBudget.max = Math.floor(tb.max)
+    exec.toolBudget.used =
+      typeof tb.used === 'number' && Number.isFinite(tb.used) && tb.used > 0 ? Math.floor(tb.used) : 0
+  }
+
   const drivers = payload.loopDrivers as Array<Record<string, unknown>> | undefined
   if (drivers) {
     for (const raw of drivers) {

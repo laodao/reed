@@ -14,12 +14,23 @@ import { randomUUID } from 'crypto'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { PREREQUISITE_TYPE } from '@core/database/repositories/dl-relation.repository'
 import { checkLessonDifficulty } from '../rules/learning-difficulty.rules'
+import { checkLessonProgression } from '../rules/learning-progression.rules'
+import {
+  matchPrereqName,
+  normalizeConceptPrereqs,
+  normalizeSpacePrereqs,
+} from '../rules/learning-prerequisites.rules'
 import { checkNumericStatements } from '@shared/utils/lesson-numeric-check'
 import type { DlCardEvidenceDto, DlCardSectionDto, DlCardWorkDto } from '@core/database/repositories/dl-card.repository'
 import type { DlAgentActionSummary, DlAgentExecutionContext } from './dl-agent.types'
 
 /** 动作类型（与工具名一致，便于频控与审计） */
-export type DlAgentActionType = 'dl_save_concept' | 'dl_save_relation' | 'dl_save_card' | 'dl_answer_question'
+export type DlAgentActionType =
+  | 'dl_save_concept'
+  | 'dl_save_relation'
+  | 'dl_save_card'
+  | 'dl_save_space_prereqs'
+  | 'dl_answer_question'
 
 /** 动作参数（工具 schema 约束后透传） */
 export interface DlAgentActionParams {
@@ -32,6 +43,14 @@ export interface DlAgentActionParams {
     definitionShort?: string
     researchState?: string
     attrs?: Record<string, unknown>
+    /** 学习本知识点前必须先掌握的概念名（2026-09-12：生成知识点时即声明前置） */
+    prerequisites?: string[]
+  }
+  /** save_space_prereqs：主题学习前置要求（整个领域的学习门槛） */
+  spacePrereqs?: {
+    items?: unknown[]
+    /** 可选说明（如"以下为学本领域前的门槛，空间内会教其中两项"） */
+    note?: string
   }
   /** save_relation：关系边建议（前置依赖须 source→target） */
   relation?: {
@@ -91,6 +110,8 @@ export async function executeDlAction(
       return saveRelation(db, spaceId, params)
     case 'dl_save_card':
       return saveCard(db, spaceId, params, ctx.conceptId ?? null)
+    case 'dl_save_space_prereqs':
+      return saveSpacePrereqs(db, spaceId, params)
     case 'dl_answer_question':
       return answerQuestion(db, spaceId, params)
     default:
@@ -108,6 +129,11 @@ async function saveConcept(
   const c = (raw.concept ?? {}) as NonNullable<DlAgentActionParams['concept']>
   if (!c.name?.trim()) throw new Error('dl_save_concept：概念 name 必填')
 
+  // 学习前置声明（2026-09-12 用户需求）：显式 prerequisites 参数优先，兼容 attrs.prerequisites；
+  // 一律规范化后写回 attrs.prerequisites（去空/去重/去自己/限条数）
+  const declared = normalizeConceptPrereqs(c.prerequisites ?? c.attrs?.prerequisites, c.name)
+  const extraAttrs = declared.length ? { ...(c.attrs ?? {}), prerequisites: declared } : c.attrs
+
   // 归属校验（2026-09-09 复盘）：parentId 必须存在且属于本空间（不落跨空间/孤儿父）
   if (c.parentId) {
     const parent = await db.dlConcepts!.getById(c.parentId)
@@ -119,12 +145,20 @@ async function saveConcept(
   const rows = await db.dlConcepts!.listByProject(spaceId)
   const existing = rows.find((r) => r.name === c.name.trim() && r.parentId === (c.parentId ?? null))
   if (existing) {
-    // 幂等：已存在（同父同名）→ 补 definitionShort/研究态
+    // 幂等：已存在（同父同名）→ 补 definitionShort/研究态/前置声明
     await db.dlConcepts!.patch(existing.id, {
       definitionShort: c.definitionShort ?? existing.definitionShort,
       researchState: (c.researchState as string) ?? existing.researchState,
+      attrs: extraAttrs ?? existing.attrs,
     })
-    return { summary: { tool: 'dl_save_concept', status: 'ok', message: `概念「${existing.name}」已存在，已更新描述`, data: { conceptId: existing.id, created: false } } }
+    return {
+      summary: {
+        tool: 'dl_save_concept',
+        status: 'ok',
+        message: `概念「${existing.name}」已存在，已更新描述`,
+        data: { conceptId: existing.id, created: false, ...(declared.length ? { prerequisites: declared } : {}) },
+      },
+    }
   }
   // 2026-09-09 复盘：空间内已存在同名概念（其他父/根层，如"先验概率"根层+目录双份的冗余来源）
   // → skipped 不重复建、不动他人归属；模型应改用其 id 更新或换名
@@ -152,9 +186,114 @@ async function saveConcept(
     definitionShort: c.definitionShort ?? null,
     researchState: c.researchState ?? 'extracted',
     source: 'ai_verified',
-    attrs: c.attrs ?? null,
+    attrs: extraAttrs ?? null,
   })
-  return { summary: { tool: 'dl_save_concept', status: 'ok', message: `概念「${c.name}」已落库（草稿）`, data: { conceptId: id, created: true } } }
+
+  // 前置声明落库后的跟进建议：哪个前置已在图上可建关系、哪个还没落点需要补
+  const prereqHint = declared.length ? await describePrereqFollowUp(db, spaceId, c.name.trim(), declared) : null
+  return {
+    summary: {
+      tool: 'dl_save_concept',
+      status: 'ok',
+      message: `概念「${c.name}」已落库（草稿）${prereqHint?.message ?? ''}`,
+      data: {
+        conceptId: id,
+        created: true,
+        ...(declared.length ? { prerequisites: declared } : {}),
+        ...(prereqHint?.data ?? {}),
+      },
+    },
+  }
+}
+
+/**
+ * 前置声明的跟进提示（纯读）：
+ * - 已在图上（同名知识点）→ 建议 dl_save_relation 建前置边；
+ * - 在主题前置清单里 → 属"需自备/空间内会教"的门槛，不要求建边；
+ * - 都没有落点 → 要求补概念/补关系或列入主题前置要求。
+ */
+async function describePrereqFollowUp(
+  db: ReturnType<typeof getCoreDatabaseManager>,
+  spaceId: string,
+  selfName: string,
+  declared: string[],
+): Promise<{ message: string; data: Record<string, unknown> }> {
+  const [concepts, project] = await Promise.all([
+    db.dlConcepts!.listByProject(spaceId),
+    db.dlProjects!.getById(spaceId),
+  ])
+  const spacePrereqs = normalizeSpacePrereqs(project?.prerequisites)
+  const linkable: Array<{ name: string; conceptId: string }> = []
+  const missing: string[] = []
+  for (const name of declared) {
+    const hit = concepts.find((x) => x.nodeType !== 'group' && x.name === name)
+    const kind = matchPrereqName(name, concepts, spacePrereqs)
+    if (hit) linkable.push({ name, conceptId: hit.id })
+    else if (kind === 'missing') missing.push(name)
+  }
+  const parts: string[] = []
+  if (linkable.length) {
+    parts.push(
+      `；前置「${linkable.map((l) => l.name).join('、')}」已在图上，请 dl_save_relation 建前置关系（source=该前置 id → target=本概念 id）`,
+    )
+  }
+  if (missing.length) {
+    parts.push(
+      `；⚠️ 前置「${missing.join('、')}」在空间里没有落点——请 dl_save_concept 建成知识点并排在本概念（${selfName}）之前，` +
+        `若属领域外必备能力则用 dl_save_space_prereqs 列入主题前置要求`,
+    )
+  }
+  return {
+    message: parts.join(''),
+    data: {
+      ...(linkable.length ? { linkablePrereqs: linkable } : {}),
+      ...(missing.length ? { missingPrerequisites: missing } : {}),
+    },
+  }
+}
+
+// ==================== save_space_prereqs（主题学习前置要求；2026-09-12） ====================
+
+/**
+ * 落库「主题学习前置要求」——整个领域的学习门槛（含领域外需自备能力）。
+ * 全量替换语义：模型每次给出完整的门槛清单；空数组 = 明确"无需前置"。
+ */
+async function saveSpacePrereqs(
+  db: ReturnType<typeof getCoreDatabaseManager>,
+  spaceId: string,
+  raw: Record<string, unknown>,
+): Promise<{ summary: DlAgentActionSummary }> {
+  const p = (raw.spacePrereqs ?? {}) as NonNullable<DlAgentActionParams['spacePrereqs']>
+  if (!Array.isArray(p.items)) {
+    throw new Error('dl_save_space_prereqs：items 必填且必须是数组（每条 {name, why?, level?, inSpace?}；确无需前置就传空数组）')
+  }
+  const project = await db.dlProjects!.getById(spaceId)
+  if (!project) throw new Error(`dl_save_space_prereqs：学习空间不存在（${spaceId}）`)
+
+  const concepts = await db.dlConcepts!.listByProject(spaceId)
+  const declared = normalizeSpacePrereqs(p.items)
+  // inSpace 由数据反推（不信模型自报）：空间里存在同名/包含关系知识点才算"空间内会教"
+  const items = declared.map((item) => {
+    const hit = concepts.find((c) => c.nodeType !== 'group' && (c.name.includes(item.name) || item.name.includes(c.name)))
+    return hit ? { ...item, inSpace: true } : { ...item, inSpace: false }
+  })
+  await db.dlProjects!.patch(spaceId, { prerequisites: items })
+
+  const inSpaceNames = items.filter((i) => i.inSpace).map((i) => i.name)
+  const externalNames = items.filter((i) => !i.inSpace).map((i) => i.name)
+  const detail = items.length
+    ? `（${items.length} 条：空间内会教 ${inSpaceNames.length} 条${inSpaceNames.length ? ` [${inSpaceNames.join('、')}]` : ''}，需自备 ${externalNames.length} 条${externalNames.length ? ` [${externalNames.join('、')}]` : ''}）`
+    : '（已清空：明确本领域无需前置）'
+  return {
+    summary: {
+      tool: 'dl_save_space_prereqs',
+      status: 'ok',
+      message:
+        `主题学习前置要求已更新${detail}` +
+        `${externalNames.length ? '；需自备的能力会展示给学习者，建议在讲第一张讲义时提醒从哪补' : ''}`,
+      data: { items, inSpace: inSpaceNames, external: externalNames, note: p.note ?? null },
+    },
+  }
 }
 
 // ==================== save_relation ====================
@@ -228,6 +367,23 @@ async function saveCard(
   })
   if (gate.gated) throw new Error(`dl_save_card：${gate.reason}`)
 
+  // 循序渐进门禁（2026-09-12 用户反馈「知识点要循序渐进」）：
+  // 结构（meta 首区 + 前置声明）+ 前置能力（图里有对应前置概念，或本卡 meta 已教学）。
+  // 与难度门禁的区别：**所有目标都生效**（此前只有「入门」被拦，工作应用下"张量→自动微分"
+  // 这类跳步无人管）。
+  const spaceRelations = await db.dlRelations!.listByProject(spaceId)
+  const progression = checkLessonProgression({
+    goal: project?.goal ?? null,
+    conceptName: targetConcept.name,
+    conceptId: card.conceptId,
+    sections: card.sections.map((s) => ({ key: s.key, title: s.title ?? null, md: s.md })),
+    concepts: spaceConcepts.map((c) => ({ id: c.id, name: c.name, nodeType: c.nodeType, hasLesson: !!c.cardId })),
+    relations: spaceRelations.map((r) => ({ source: r.sourceId, target: r.targetId, type: r.relationType })),
+    // 主题前置要求（2026-09-12）：门槛已在空间级明示 → 不强制图上有对应知识点
+    spacePrerequisites: normalizeSpacePrereqs(project?.prerequisites),
+  })
+  if (progression.gated) throw new Error(`dl_save_card：${progression.reason}`)
+
   // 数值自检（2026-09-09 复盘）：回算正文里写出的算式，发现自相矛盾就提示（不阻断，交 verify 复核）
   const numericIssues = checkNumericStatements(card.sections.map((s) => s.md).join('\n\n'))
 
@@ -263,12 +419,14 @@ async function saveCard(
       message:
         `讲义已落库（v${version} 草稿，${card.sections.length} 区，证据 ${card.evidenceSources.length} 条）` +
         `${existingCard ? '，旧稿 v' + existingCard.version + ' 留档' : ''}` +
-        `${numericIssues.length ? `；⚠️ 数值自检发现 ${numericIssues.length} 处疑似不一致，请核对中间量后重发修订版` : ''}`,
+        `${numericIssues.length ? `；⚠️ 数值自检发现 ${numericIssues.length} 处疑似不一致，请核对中间量后重发修订版` : ''}` +
+        `${progression.warnings.length ? `；提示：${progression.warnings.join(' ')}` : ''}`,
       data: {
         cardId,
         version,
         conceptId: card.conceptId,
         ...(numericIssues.length ? { numericIssues: numericIssues.map((i) => i.message) } : {}),
+        ...(progression.warnings.length ? { progressionWarnings: progression.warnings } : {}),
       },
     },
   }

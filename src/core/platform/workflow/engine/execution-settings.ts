@@ -27,6 +27,8 @@ export interface ResolvedExecutionSettings {
   maxRetryCount: number
   maxParallelNodes: number
   maxNodeRuns: number
+  /** 运行级总工具调用预算（0 = 不启用；agent-loop 工具调用跨轮/跨节点共享扣减） */
+  maxTotalToolCalls: number
   /** 多轮对话（布尔透传：true=LLM 节点共享对话上下文；默认 false） */
   multiTurn: boolean
 }
@@ -36,6 +38,17 @@ const clamp = (value: number | undefined, fallback: number, limit: number): numb
     return fallback
   }
   return Math.min(value, limit)
+}
+
+/**
+ * 运行级总工具调用预算归一化（独立于 clamp）：
+ * 0/缺省/NaN/负数 → 0（不启用）；有限正数 → min(floor(v), 硬上限)。
+ */
+export function normalizeTotalToolBudget(value: number | undefined | null): number {
+  if (value === undefined || value === null || !Number.isFinite(value) || value <= 0) {
+    return 0
+  }
+  return Math.min(Math.floor(value), WORKFLOW_LIMITS.maxTotalToolCalls)
 }
 
 /**
@@ -56,6 +69,7 @@ export function resolveExecutionSettings(
     maxRetryCount: clamp(s.maxRetryCount, maxRetryCount, WORKFLOW_LIMITS.maxRetryCount),
     maxParallelNodes: clamp(s.maxParallelNodes, maxParallelNodes, WORKFLOW_LIMITS.maxParallelNodes),
     maxNodeRuns: clamp(s.maxNodeRuns, maxNodeRuns, WORKFLOW_LIMITS.maxNodeRuns),
+    maxTotalToolCalls: normalizeTotalToolBudget(s.maxTotalToolCalls),
     multiTurn: s.multiTurn === true,
   }
 }

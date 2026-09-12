@@ -14,6 +14,7 @@ const raw = JSON.parse(readFileSync(resolve(__dirname, '../../../../../src/core/
   kind?: string
   formatVersion?: number
   name?: string
+  settings?: { maxTotalToolCalls?: number } | null
   graph?: {
     version?: number
     nodes: Array<{ id: string; type: string; name?: string; config?: Record<string, unknown> }>
@@ -45,6 +46,10 @@ describe('内置「主题深度研究」模板（topic-research.json v3：until 
     expect(raw.name).toContain('深度研究')
   })
 
+  it('运行级总预算已配置（settings.maxTotalToolCalls=120，跨轮共享不再每轮等额）', () => {
+    expect(raw.settings?.maxTotalToolCalls).toBe(120)
+  })
+
   it('节点集合与数量（12 节点 14 边：…→ round1(until) → writer → report1 → final1 → save1/end）', () => {
     const ids = graph.nodes.map(n => n.id)
     expect(ids).toEqual([
@@ -54,17 +59,28 @@ describe('内置「主题深度研究」模板（topic-research.json v3：until 
     expect(graph.edges.length).toBe(14)
   })
 
-  it('start 输入完整：topic 必填 / maxRounds(默认5,1-8) / kbs / 双模型', () => {
+  it('start 输入完整：主题/深度/轮数/知识库/双模型 + 用户产出规格与参照样本', () => {
     const keys = startInputs.map(i => i.key)
-    expect(keys).toEqual(expect.arrayContaining(['topic', 'focus', 'depth', 'maxRounds', 'kbs', 'researcherModel', 'evaluatorModel']))
+    expect(keys).toEqual(expect.arrayContaining([
+      'topic', 'focus', 'depth', 'maxRounds', 'kbs', 'researcherModel', 'evaluatorModel',
+      'outputSpecs', 'outputRequirements', 'referenceSample',
+    ]))
+    const specs = startInputs.find(i => i.key === 'outputSpecs')!
+    expect(specs.type).toBe('select')
+    expect(specs.multi).toBe(true)
+    expect((specs.options ?? []).map(o => o.value)).toEqual([
+      'quant-formula', 'market-matrix', 'timeline', 'risk', 'checklist', 'counterpoint', 'cited-links',
+    ])
+    expect(startInputs.find(i => i.key === 'outputRequirements')!.type).toBe('textarea')
+    expect(startInputs.find(i => i.key === 'referenceSample')!.type).toBe('textarea')
     const topic = startInputs.find(i => i.key === 'topic')!
     expect(topic.type).toBe('textarea')
     expect(topic.required).toBe(true)
     const rounds = startInputs.find(i => i.key === 'maxRounds')!
     expect(rounds.type).toBe('number')
-    expect(rounds.defaultValue).toBe(5)
+    expect(rounds.defaultValue).toBe(8)
     expect(rounds.validation?.min).toBe(1)
-    expect(rounds.validation?.max).toBe(8)
+    expect(rounds.validation?.max).toBe(12)
     const kbs = startInputs.find(i => i.key === 'kbs')!
     expect(kbs.type).toBe('select-dynamic')
     expect(kbs.source).toBe('knowledgeBases')
@@ -76,10 +92,21 @@ describe('内置「主题深度研究」模板（topic-research.json v3：until 
     expect(em.required).toBe(true)
   })
 
-  it('clarify 为 form-collect：契约在规划前，approve→plan1 / reject→end', () => {
+  it('clarify 为 form-collect 结构化问卷：主体/执照/目标市场/品类/内容能力/可承受亏损，approve→plan1 / reject→end', () => {
     expect(nodeById.get('clarify')?.type).toBe('form-collect')
-    const fields = (config('clarify').fields ?? []) as Array<{ key: string }>
-    expect(fields.map(f => f.key).sort()).toEqual(['context', 'goal'])
+    const fields = (config('clarify').fields ?? []) as Array<{ key: string; type?: string; multi?: boolean; options?: Array<{ value: string }> }>
+    expect(fields.map(f => f.key).sort()).toEqual([
+      'category', 'contentAbility', 'context', 'entityType', 'goal', 'licenseStatus', 'lossTolerance', 'targetMarkets',
+    ])
+    const byKey = Object.fromEntries(fields.map(f => [f.key, f]))
+    expect(byKey.entityType.type).toBe('select')
+    expect(byKey.entityType.options?.map(o => o.value)).toEqual(['cn-individual', 'cn-sole', 'cn-ltd', 'hk-ltd', 'overseas', 'other'])
+    expect(byKey.licenseStatus.type).toBe('select')
+    expect(byKey.targetMarkets.type).toBe('select')
+    expect(byKey.targetMarkets.multi).toBe(true)
+    expect(byKey.targetMarkets.options?.map(o => o.value)).toEqual(['MY', 'TH', 'PH', 'VN', 'SG', 'ID', 'US', 'EU', 'UK', 'JP', 'undecided'])
+    expect(byKey.contentAbility.type).toBe('select')
+    expect(byKey.lossTolerance.type).toBe('select')
     expect(edgeTarget('start', 'normal')).toBe('clarify')
     expect(edgeTarget('clarify', 'approve')).toBe('plan1')
     expect(edgeTarget('clarify', 'reject')).toBe('end')
@@ -89,12 +116,21 @@ describe('内置「主题深度研究」模板（topic-research.json v3：until 
     expect(nodeById.get('plan1')?.type).toBe('llm-chat')
     expect(config('plan1').jsonMode).toBe(true)
     const sp = str('plan1', 'systemPrompt')
-    for (const kw of ['已知地图', '主题类型', '验收标准', '先验', '信息源', '颗粒度', '决策树', '禁止编造']) expect(sp).toContain(kw)
+    for (const kw of ['已知地图', '主题类型', '验收标准', '先验', '信息源', '颗粒度', '决策树', '禁止编造', '做法/商业类', '单位经济', 'outputSpecs']) expect(sp).toContain(kw)
     const prompt = str('plan1', 'prompt')
     expect(prompt).toContain('{{start.topic}}')
     expect(prompt).toContain('{{start.maxRounds}}')
     expect(prompt).toContain('{{clarify.values.goal}}')
-    expect(prompt).toContain('{{clarify.values.context}}')
+    expect(prompt).toContain('{{clarify.values.entityType}}')
+    expect(prompt).toContain('{{clarify.values.targetMarkets}}')
+    expect(prompt).toContain('{{clarify.values.lossTolerance}}')
+    // 用户产出规格/要求/参照样本必须并入规划与验收
+    expect(prompt).toContain('{{start.outputSpecs}}')
+    expect(prompt).toContain('{{start.outputRequirements}}')
+    expect(prompt).toContain('{{start.referenceSample}}')
+    // 研究轮与成稿都吃到问卷约束
+    expect(str('r1', 'task')).toContain('{{clarify.values.targetMarkets}}')
+    expect(str('writer', 'prompt')).toContain('{{clarify.values.lossTolerance}}')
   })
 
   it('round1 为 until 循环：stopExpression/stopValue/maxIterations/errorPolicy=skip，边结构符合循环', () => {
@@ -126,7 +162,7 @@ describe('内置「主题深度研究」模板（topic-research.json v3：until 
     expect(task).toContain('{{round1.prev.result.notes}}')
     expect(task).toContain('{{round1.prev.result.gaps}}')
     const sp = str('r1', 'systemPrompt')
-    for (const kw of ['wf_kb_list', '禁止编造', '证据锚', '未查到', '以官方最新为准', '证据层级', '量级', '增量']) expect(sp).toContain(kw)
+    for (const kw of ['wf_kb_list', '禁止编造', '证据锚', '未查到', '以官方最新为准', '证据层级', '量级', '增量', '深度已足够成稿']) expect(sp).toContain(kw)
   })
 
   it('e1 独立评估：evaluatorModel、jsonMode、深度质量核对', () => {
@@ -135,8 +171,11 @@ describe('内置「主题深度研究」模板（topic-research.json v3：until 
     expect(str('e1', 'providerConfigId')).toContain('{{start.evaluatorModel.providerConfigId}}')
     expect(str('e1', 'modelId')).toContain('{{start.evaluatorModel.modelId}}')
     const sp = str('e1', 'systemPrompt')
-    for (const kw of ['验收标准', 'pass', 'revise', '幻觉', '量级', '证据层级']) expect(sp).toContain(kw)
-    expect(str('e1', 'prompt')).toContain('{{r1.answer}}')
+    for (const kw of ['验收标准', 'pass', 'revise', '幻觉', '量级', '证据层级', '非阻塞', 'outputSpecs']) expect(sp).toContain(kw)
+    const ePrompt = str('e1', 'prompt')
+    expect(ePrompt).toContain('{{r1.answer}}')
+    expect(ePrompt).toContain('{{start.outputSpecs}}')
+    expect(ePrompt).toContain('{{start.outputRequirements}}')
   })
 
   it('pack1（code）：打包 notes/verdict/gaps 为迭代结果（loop-back 源）', () => {
@@ -158,8 +197,11 @@ describe('内置「主题深度研究」模板（topic-research.json v3：until 
     expect(prompt).toContain('{{round1.last.result.notes}}')
     expect(prompt).toContain('{{round1.last.result.verdict}}')
     expect(prompt).toContain('{{round1.iterations}}')
+    expect(prompt).toContain('{{start.outputSpecs}}')
+    expect(prompt).toContain('{{start.outputRequirements}}')
+    expect(prompt).toContain('{{start.referenceSample}}')
     const sp = str('writer', 'systemPrompt')
-    for (const kw of ['execSummary', 'sourcesMd', 'actionPlan', 'limits', '官方一手', '清单', '决策树', '以官方最新为准']) {
+    for (const kw of ['execSummary', 'sourcesMd', 'actionPlan', 'limits', '官方一手', '清单', '决策树', '以官方最新为准', '采购倒推', 'D1–D90', '[标题](URL)', '禁止照抄']) {
       expect(sp, kw).toContain(kw)
     }
     expect(edgeTarget('writer', 'normal')).toBe('report1')

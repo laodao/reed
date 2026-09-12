@@ -5,11 +5,22 @@
       <div class="tb-left">
         <span class="tb-title">剧本</span>
         <el-tag v-if="scenes.length" size="small" round effect="plain" type="info">已拆 {{ scenes.length }} 场</el-tag>
+        <el-tag v-if="hasScript" size="small" round effect="plain" :type="approved ? 'success' : 'warning'">
+          {{ approved ? '已定稿' : '草稿' }}
+        </el-tag>
       </div>
       <div class="tb-right">
-        <el-button text size="small" @click="onAIWrite" :disabled="!hasScript">
+        <el-button text size="small" @click="openAppend('ai-continue')" :disabled="!hasScript">
           <el-icon><MagicStick /></el-icon>
           AI 续写
+        </el-button>
+        <el-button text size="small" @click="openAppend('manual-text')" :disabled="!hasScript">
+          <el-icon><DocumentAdd /></el-icon>
+          追加正文
+        </el-button>
+        <el-button text size="small" @click="textVisible = true" :disabled="!hasScript">
+          <el-icon><Document /></el-icon>
+          剧本全文
         </el-button>
         <el-button text size="small" :disabled="!hasScript" :loading="regenerating" @click="onRegenerate">
           <el-icon><Refresh /></el-icon>
@@ -46,21 +57,52 @@
         </div>
       </main>
     </div>
+
+    <!-- 追加剧本（增量增加内容 · 只追加不覆盖） -->
+    <AppendScriptDialog
+      v-model="appendVisible"
+      :script-id="script?.id ?? null"
+      :project-id="props.projectId"
+      :existing-scene-count="scenes.length"
+      :script-approved="approved"
+      :default-mode="appendMode"
+      @appended="onAppended"
+    />
+
+    <!-- 剧本全文（只读，确认追加结果用） -->
+    <ScriptTextDialog
+      v-model="textVisible"
+      :script="script"
+      :scene-count="scenes.length"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 /**
  * M2 剧本页（tab 宿主内的完整左+中央工作区）。
- * 左侧：场次导航；中央：场景卡 / 空态。工具条：AI续写、重新拆分。
+ * 左侧：场次导航；中央：场景卡 / 空态。工具条：AI续写、追加正文、剧本全文、重新拆分。
  * 数据链路：getEpisode → scriptId → getScript + listScenes。agent data-changed 时刷新。
+ *
+ * 「继续增加剧本」：剧本常常没写完就先开机制作，后续要陆续往里加内容。
+ * AI 续写 / 追加正文都走 AppendScriptDialog → ep:prepare-script-append（生成草稿，不落库）
+ * → 用户预览确认 → ep:append-script（只追加：已有场次一行不动，新场次接在最后）。
+ * 与之相对的「重新拆分」是覆盖式（会删掉已有场次），所以加了二次确认。
  */
 import { ref, computed, watch, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { MagicStick, Refresh } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  Document,
+  DocumentAdd,
+  MagicStick,
+  Refresh,
+} from '@element-plus/icons-vue'
 import SceneNav from '@/components/episode-production/script/SceneNav.vue'
 import SceneCard from '@/components/episode-production/script/SceneCard.vue'
 import ScriptEmptyState from '@/components/episode-production/script/ScriptEmptyState.vue'
+import AppendScriptDialog from '@/components/episode-production/script/AppendScriptDialog.vue'
+import ScriptTextDialog from '@/components/episode-production/script/ScriptTextDialog.vue'
+import type { ScriptAppendMode } from '@shared/types/episode-production'
 
 const props = defineProps<{
   episodeId: string
@@ -78,7 +120,14 @@ const selectedScene = ref<any>(null)
 const generating = ref(false)
 const regenerating = ref(false)
 
+/** 追加剧本弹窗 */
+const appendVisible = ref(false)
+const appendMode = ref<ScriptAppendMode>('ai-continue')
+/** 剧本全文查看弹窗 */
+const textVisible = ref(false)
+
 const hasScript = computed(() => !!script.value)
+const approved = computed(() => script.value?.status === 'approved')
 const selectedSceneId = computed(() => selectedScene.value?.id ?? null)
 
 async function load(): Promise<void> {
@@ -127,6 +176,23 @@ async function onGenerateScript(): Promise<void> {
 
 async function onRegenerate(): Promise<void> {
   if (!script.value?.id || regenerating.value) return
+  // 覆盖式操作：会删掉已有场次（连带其分镜 / 关键帧 / 视频），必须先确认
+  try {
+    await ElMessageBox.confirm(
+      `重新拆分将**删除当前全部 ${scenes.value.length} 个场次**并重新生成，` +
+        '这些场次上已有的分镜 / 关键帧 / 视频也会一并丢失。\n\n' +
+        '如果你只是想接着往下增加剧本，请改用「AI 续写」或「追加正文」。',
+      '重新拆分场景（覆盖式）',
+      {
+        type: 'warning',
+        confirmButtonText: '仍要重新拆分',
+        cancelButtonText: '取消',
+        dangerouslyUseHTMLString: false,
+      },
+    )
+  } catch {
+    return
+  }
   regenerating.value = true
   try {
     const r = await window.electronAPI.episodeProduction.generateScenes(script.value.id)
@@ -144,13 +210,29 @@ async function onRegenerate(): Promise<void> {
   }
 }
 
-/** AI 续写：作为 agent 引导词，无法直达 agent 面板时提示（真实走 agent 会更好） */
-function onAIWrite(): void {
-  ElMessage.info('请在右侧「制作助手」输入你的续写需求')
+/** 打开追加剧本弹窗（AI 续写 / 追加正文 共用，mode 决定默认页签） */
+function openAppend(mode: ScriptAppendMode): void {
+  if (!hasScript.value) {
+    ElMessage.warning('该剧集还没有剧本，请先用「AI 生成剧本」')
+    return
+  }
+  appendMode.value = mode
+  appendVisible.value = true
+}
+
+/** 追加成功：刷新剧本与场次，并选中第一个新增场次 */
+async function onAppended(payload: { addedSceneCount: number }): Promise<void> {
+  const before = scenes.value.length
+  selectedScene.value = null
+  await load()
+  if (payload.addedSceneCount > 0 && scenes.value.length > before) {
+    selectedScene.value = scenes.value[before]
+  }
 }
 
 watch(() => props.episodeId, () => { selectedScene.value = null; void load() })
 onMounted(() => void load())
+
 </script>
 
 <style lang="scss" scoped>

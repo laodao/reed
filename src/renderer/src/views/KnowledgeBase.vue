@@ -36,7 +36,7 @@
               <div class="kb-group-header">
                 <span class="kb-group-name">{{ group.folderName }}</span>
                 <span class="kb-group-count">{{ group.items.length }}</span>
-                <el-dropdown v-if="group.folderId" trigger="click" @command="(cmd: string) => cmd === 'rename' ? openRenameFolderDialog({ id: group.folderId, name: group.folderName }) : handleDeleteFolder({ id: group.folderId, name: group.folderName })">
+                <el-dropdown v-if="group.folderId" trigger="click" @command="(cmd: string) => cmd === 'rename' ? openRenameFolderDialog({ id: group.folderId!, name: group.folderName ?? '' }) : handleDeleteFolder({ id: group.folderId!, name: group.folderName ?? '' })">
                   <el-button text size="small" @click.stop>
                     <el-icon><MoreFilled /></el-icon>
                   </el-button>
@@ -444,7 +444,7 @@
         </el-form-item>
         <el-form-item label="重排序模型">
           <el-select v-model="editRerankValue" clearable placeholder="不重排（默认）" style="width: 100%"
-            @change="v => { editForm.rerankConfig = v ? JSON.stringify({ providerConfigId: v.split('::')[0], modelId: v.split('::')[1] }) : null }">
+            @change="(v: string | null) => { editForm.rerankConfig = v ? JSON.stringify({ providerConfigId: v.split('::')[0], modelId: v.split('::')[1] }) : null }">
             <el-option v-for="m in rerankModels" :key="m.providerConfigId + '::' + m.id"
               :label="m.name" :value="m.providerConfigId + '::' + m.id" />
           </el-select>
@@ -528,10 +528,67 @@
     <el-dialog
       v-model="showChunksDialog"
       :title="`文档分片 - ${currentChunkDocument?.name || ''}`"
-      width="900px"
+      width="1100px"
       destroy-on-close
     >
-      <div v-loading="chunksLoading" class="chunks-container">
+      <div class="chunks-layout">
+        <!-- M5 章节树面板：点选章节看摘要 + 只看该章节切片 -->
+        <div class="chapter-panel" v-loading="chapterTreeLoading">
+          <div class="chapter-panel-header">
+            <span>章节树</span>
+            <span class="chapter-stats" v-if="chapterStats.total > 0">
+              摘要 {{ chapterStats.done }}/{{ chapterStats.total }}
+            </span>
+          </div>
+          <div v-if="chapterTree.length === 0 && !chapterTreeLoading" class="chapter-empty">
+            暂无章节数据（文档重新处理后可生成）
+          </div>
+          <template v-else>
+            <el-input
+              v-model="chapterTitleFilter"
+              class="chapter-filter-input"
+              size="small"
+              clearable
+              placeholder="按标题筛选章节"
+            />
+            <el-tree
+              ref="chapterTreeRef"
+              :data="chapterTree"
+              node-key="id"
+              :props="{ label: 'title', children: 'children' }"
+              :default-expanded-keys="defaultExpandedChapterKeys"
+              :filter-node-method="filterChapterNode"
+              highlight-current
+              @node-click="handleChapterClick"
+            >
+              <template #default="{ data }">
+                <span class="chapter-node">
+                  <el-tag v-if="data.summaryStatus === 'done'" size="small" type="success" disable-transitions>摘要</el-tag>
+                  <el-tag v-else-if="data.summaryStatus === 'failed'" size="small" type="danger" disable-transitions>失败</el-tag>
+                  <span class="chapter-title">{{ data.title }}</span>
+                </span>
+              </template>
+            </el-tree>
+          </template>
+          <div class="chapter-summary" v-if="selectedChapter">
+            <div class="chapter-summary-header">本章摘要</div>
+            <div class="chapter-summary-body">
+              {{ selectedChapter.summary || (selectedChapter.summaryStatus === 'failed' ? `生成失败：${selectedChapter.summaryError || '未知原因'}` : '摘要生成中…') }}
+            </div>
+          </div>
+          <div class="chapter-actions">
+            <el-button size="small" text type="primary" :loading="chapterSummarizing" @click="handleSummarizeChapters">
+              生成/重试摘要
+            </el-button>
+          </div>
+        </div>
+
+        <!-- 分片列表 -->
+        <div v-loading="chunksLoading" class="chunks-container">
+        <div class="chunks-filter-bar" v-if="filterChapterTitle">
+          <span>仅看章节：{{ filterChapterTitle }}</span>
+          <el-button text size="small" type="primary" @click="clearChapterFilter">清除过滤</el-button>
+        </div>
         <div v-if="paginatedChunks.length === 0 && !chunksLoading" class="empty-chunks">
           <el-icon :size="48"><Document /></el-icon>
           <span>暂无分片数据</span>
@@ -583,6 +640,7 @@
               @current-change="handleChunksPageChange"
             />
           </div>
+        </div>
         </div>
       </div>
       <template #footer>
@@ -901,6 +959,28 @@ const chunksCurrentPage = ref(1)
 const chunksPageSize = 20
 const chunksTotal = ref(0)
 
+// M5 章节树（kb_chapters；字段与 IPC getChapterTree 返回一致）
+interface ChapterNode {
+  id: string
+  title: string
+  level: number
+  parentId: string | null
+  summary: string | null
+  summaryStatus: 'pending' | 'done' | 'failed'
+  summaryError: string | null
+  children?: ChapterNode[]
+}
+const chapterTree = ref<ChapterNode[]>([])
+const chapterTreeLoading = ref(false)
+const chapterTreeRef = ref<{ filter: (value: string) => void } | null>(null)
+const chapterStats = ref<{ total: number; done: number; failed: number }>({ total: 0, done: 0, failed: 0 })
+const selectedChapter = ref<ChapterNode | null>(null)
+/** 章节树标题过滤关键字 */
+const chapterTitleFilter = ref('')
+/** 当前章节过滤（空=全部切片） */
+const filterChapterTitle = ref('')
+const chapterSummarizing = ref(false)
+
 // 单个切片内容查看
 const showChunkContentDialog = ref(false)
 const chunkContentLoading = ref(false)
@@ -1152,6 +1232,10 @@ async function handleViewChunks(doc: KbDocument): Promise<void> {
   currentChunkDocument.value = doc
   showChunksDialog.value = true
   chunksCurrentPage.value = 1
+  // M5：重置章节过滤 + 并行加载章节树（章节树/摘要来自文档处理时的结构检测与摘要服务）
+  selectedChapter.value = null
+  filterChapterTitle.value = ''
+  void loadChapterTree(doc.id)
   await loadChunksPage()
 }
 
@@ -1181,7 +1265,8 @@ async function loadChunksPage(): Promise<void> {
     const response = await window.electronAPI.knowledgeBase.getDocumentChunksPaginated(
       currentChunkDocument.value.id,
       chunksCurrentPage.value,
-      chunksPageSize
+      chunksPageSize,
+      filterChapterTitle.value || undefined
     )
     if (response.success && response.data) {
       paginatedChunks.value = response.data.chunks
@@ -1202,6 +1287,92 @@ async function loadChunksPage(): Promise<void> {
 function handleChunksPageChange(page: number): void {
   chunksCurrentPage.value = page
   loadChunksPage()
+}
+
+// ==================== M5 章节树 ====================
+
+/** 加载章节树（含摘要与进度） */
+async function loadChapterTree(documentId: string): Promise<void> {
+  chapterTreeLoading.value = true
+  try {
+    const resp = await window.electronAPI.knowledgeBase.getChapterTree(documentId)
+    if (resp.success && resp.data) {
+      chapterTree.value = (resp.data.tree || []) as ChapterNode[]
+      chapterStats.value = resp.data.stats
+    } else {
+      chapterTree.value = []
+      chapterStats.value = { total: 0, done: 0, failed: 0 }
+    }
+  } catch {
+    chapterTree.value = []
+  } finally {
+    chapterTreeLoading.value = false
+  }
+}
+
+/** 点选章节：展示摘要，并只看该章节切片（后端全量过滤） */
+async function handleChapterClick(node: ChapterNode): Promise<void> {
+  selectedChapter.value = node
+  filterChapterTitle.value = node.title
+  chunksCurrentPage.value = 1
+  await loadChunksPage()
+}
+
+/** 章节树默认展开节点：小树全展开；大树（如 PDF 书签 2000+ 条）只展开一级，避免一次性渲染全部节点 */
+const defaultExpandedChapterKeys = computed<string[]>(() => {
+  if (chapterTree.value.length === 0) return []
+  if (chapterStats.value.total <= 200) {
+    const keys: string[] = []
+    const walk = (nodes: ChapterNode[]): void => {
+      for (const n of nodes) {
+        keys.push(n.id)
+        if (n.children?.length) walk(n.children)
+      }
+    }
+    walk(chapterTree.value)
+    return keys
+  }
+  return chapterTree.value.map(n => n.id)
+})
+
+/** 树内按标题过滤（大树必备：numpy-user.pdf 有 2137 个章节节点） */
+watch(chapterTitleFilter, (kw) => {
+  chapterTreeRef.value?.filter(kw)
+})
+
+function filterChapterNode(value: string, data: ChapterNode): boolean {
+  if (!value) return true
+  return (data.title || '').toLowerCase().includes(value.toLowerCase())
+}
+
+/** 清除章节过滤（回到全部切片） */
+async function clearChapterFilter(): Promise<void> {
+  selectedChapter.value = null
+  filterChapterTitle.value = ''
+  chunksCurrentPage.value = 1
+  await loadChunksPage()
+}
+
+/** 手动生成/重试章节摘要（自动调度失败或存量文档场景） */
+async function handleSummarizeChapters(): Promise<void> {
+  if (!currentChunkDocument.value) return
+  chapterSummarizing.value = true
+  try {
+    const resp = await window.electronAPI.knowledgeBase.summarizeDocument(currentChunkDocument.value.id, true)
+    if (resp.success) {
+      // 单次最多生成 60 条（成本护栏），剩余的可再次点击继续
+      const remaining = resp.data?.remaining ?? 0
+      const base = `摘要完成：成功 ${resp.data?.done ?? 0}，失败 ${resp.data?.failed ?? 0}`
+      ElMessage.success(remaining > 0 ? `${base}，剩余 ${remaining} 条可再次点击继续` : base)
+      await loadChapterTree(currentChunkDocument.value.id)
+    } else {
+      ElMessage.error(resp.error || '生成章节摘要失败')
+    }
+  } catch (err: any) {
+    ElMessage.error(err?.message || '生成章节摘要失败')
+  } finally {
+    chapterSummarizing.value = false
+  }
 }
 
 /**
@@ -1758,7 +1929,61 @@ onMounted(() => {
   border-radius: 4px;
 }
 
+/* M5 分片对话框：章节树 + 分片列表 分栏 */
+.chunks-layout {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+}
+.chapter-panel {
+  width: 320px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--el-border-color-lighter);
+  padding-right: 12px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.chapter-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+.chapter-stats { color: var(--el-text-color-secondary); font-size: 12px; font-weight: 400; }
+.chapter-filter-input { margin-bottom: 6px; }
+.chapter-empty { color: var(--el-text-color-secondary); font-size: 12px; padding: 12px 0; line-height: 1.6; }
+.chapter-node { display: inline-flex; align-items: center; gap: 6px; }
+.chapter-title { font-size: 12px; }
+.chapter-summary {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: var(--el-fill-color-lighter);
+  border-radius: 4px;
+}
+.chapter-summary-header { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+.chapter-summary-body { font-size: 12px; color: var(--el-text-color-regular); line-height: 1.6; }
+.chapter-actions { margin-top: 8px; display: flex; justify-content: flex-end; }
+.chunks-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+  background: var(--el-color-primary-light-9);
+  padding: 4px 10px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
 /* 文档分片对话框 */
+.chunks-layout .chunks-container {
+  flex: 1;
+  min-width: 0;
+}
 .chunks-container {
   min-height: 200px;
   max-height: 60vh;

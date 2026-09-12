@@ -116,4 +116,12 @@ describe('dl-agent-bindings', () => {
       for (const t of DL_TASK_WORKFLOW_TOOLS) expect(names).not.toContain(t)
     }
   })
+
+  it('dl_save_space_prereqs（主题前置要求）在动作清单里且带频控（2026-09-12）', () => {
+    expect(dlAgentToolNames()).toContain('dl_save_space_prereqs')
+    const bindings = buildDlBindings({ mode: 'research', availableToolNames: ALL_TOOLS, webSearchAvailable: false })
+    const b = bindings.find((x) => x.tool === 'dl_save_space_prereqs')
+    expect(b).toBeTruthy()
+    expect(b!.maxCalls).toBeGreaterThan(0)
+  })
 })

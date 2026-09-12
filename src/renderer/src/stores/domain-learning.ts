@@ -14,6 +14,8 @@ import { defineStore } from 'pinia'
 import type {
   DlAtlasGraph,
   DlAtlasViews,
+  DlCreateConceptInput,
+  DlCreateConceptResult,
   DlLessonDigest,
   DlNodeProfile,
   DlNote,
@@ -21,6 +23,7 @@ import type {
   DlPaceSettings,
   DlReviewDueItem,
   DlReviewSettings,
+  DlSpacePrereq,
   DlSpaceStats,
   DlSpaceSummary,
   DlSpaceView,
@@ -87,10 +90,16 @@ interface DomainLearningApi {
   getSpace(id: string): Promise<IpcLike<Record<string, unknown> | null>>
   createSpace(p: DlCreateSpaceInput): Promise<IpcLike<{ id: string }>>
   setSpaceKb(p: { id: string; kbId?: string | null }): Promise<IpcLike<{ kbId: string | null }>>
+  getSpacePrereqs(id: string): Promise<IpcLike<DlSpacePrereq[]>>
+  setSpacePrereqs(p: { id: string; prerequisites: DlSpacePrereq[] }): Promise<IpcLike<{ prerequisites: DlSpacePrereq[] }>>
   getSpaceView(id: string): Promise<IpcLike<DlSpaceView | null>>
   getAtlasGraph(id: string): Promise<IpcLike<DlAtlasGraph | null>>
   getNodeProfile(id: string, nodeId: string): Promise<IpcLike<DlNodeProfile | null>>
   pickNext(id: string): Promise<IpcLike<string | null>>
+  /** 手工追加知识点（2026-09-12：用户建点 + 前置直连） */
+  saveConcept(p: DlCreateConceptInput): Promise<IpcLike<DlCreateConceptResult>>
+  /** 关系人审确认（未确认边 → verified） */
+  confirmRelation(p: { id: string; sourceId: string; targetId: string; relationType: string; evidence?: string }): Promise<IpcLike<{ ok: boolean }>>
   ackMastered(id: string, conceptId: string): Promise<IpcLike<{ ok: boolean }>>
   ackConfused(id: string, conceptId: string, sectionKey?: string): Promise<IpcLike<DlAckConfusedResultUi>>
   agentSend(p: {
@@ -390,8 +399,103 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     }
   }
 
-  /** 当前空间统计载荷（dl:get-space-stats） */
-  const spaceStats = ref<DlSpaceStats | null>(null)
+  // ==================== 主题学习前置要求（2026-09-12 用户需求） ====================
+
+  /** 读主题前置要求（dl:get-space-prereqs；失败 → null 以便与"空数组=未声明"区分） */
+  async function fetchSpacePrereqs(id: string): Promise<DlSpacePrereq[] | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.getSpacePrereqs(id)
+      const list = r?.success && Array.isArray(r.data) ? r.data : null
+      if (!list) {
+        error.value = r?.error ?? '读取主题前置要求失败'
+        return null
+      }
+      return list
+    } catch (e: any) {
+      error.value = e?.message ?? '读取主题前置要求失败'
+      console.error('[domain-learning] 读取主题前置要求失败:', e)
+      return null
+    }
+  }
+
+  /** 保存主题前置要求（dl:set-space-prereqs；成功后刷新空间视图）→ 落库结果，失败 → null */
+  async function saveSpacePrereqsOf(
+    id: string,
+    prerequisites: DlSpacePrereq[],
+  ): Promise<DlSpacePrereq[] | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.setSpacePrereqs({ id, prerequisites })
+      const saved = r?.success && r.data ? (r.data.prerequisites as DlSpacePrereq[]) : null
+      if (!saved) {
+        error.value = r?.error ?? '保存主题前置要求失败'
+        return null
+      }
+      await fetchSpaceView(id)
+      return saved
+    } catch (e: any) {
+      error.value = e?.message ?? '保存主题前置要求失败'
+      console.error('[domain-learning] 保存主题前置要求失败:', e)
+      return null
+    }
+  }
+
+  // ==================== 手工建点 + 关系人审（2026-09-12 用户需求） ====================
+
+  /**
+   * 手工追加知识点（dl:save-concept）。成功后刷新空间视图并返回落库结果：
+   * - `missingPrereqs` 非空表示勾选的前置在空间里还没有落点（UI 提示"可让 AI 补全"）。
+   */
+  async function createConceptOf(p: DlCreateConceptInput): Promise<DlCreateConceptResult | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.saveConcept(p)
+      if (!r?.success || !r.data) {
+        error.value = r?.error ?? '新建知识点失败'
+        return null
+      }
+      await fetchSpaceView(p.id)
+      return r.data
+    } catch (e: any) {
+      error.value = e?.message ?? '新建知识点失败'
+      console.error('[domain-learning] 新建知识点失败:', e)
+      return null
+    }
+  }
+
+  /**
+   * 关系人审确认（dl:confirm-relation）：把未确认的关系边置为 verified。
+   * 成功后刷新空间视图（概念视图的 declaredPrereqs/门控随之更新）。
+   */
+  async function confirmRelationOf(p: {
+    id: string
+    sourceId: string
+    targetId: string
+    relationType: string
+    evidence?: string
+  }): Promise<boolean> {
+    const a = api()
+    if (!a) return false
+    try {
+      const r = await a.confirmRelation(p)
+      if (!r?.success) {
+        error.value = r?.error ?? '确认关系失败'
+        return false
+      }
+      await fetchSpaceView(p.id)
+      return true
+    } catch (e: any) {
+      error.value = e?.message ?? '确认关系失败'
+      console.error('[domain-learning] 确认关系失败:', e)
+      return false
+    }
+  }
+
+  /** 当前空间统计载荷（dl:get-space-stats） */  const spaceStats = ref<DlSpaceStats | null>(null)
 
   /** 拉取学习统计（写 spaceStats；失败 → null） */
   async function fetchSpaceStats(id: string): Promise<DlSpaceStats | null> {
@@ -756,6 +860,10 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     savePaceOf,
     saveKbOf,
     spaceMetaKbOf,
+    fetchSpacePrereqs,
+    saveSpacePrereqsOf,
+    createConceptOf,
+    confirmRelationOf,
     // 间隔复习
     reviewDue,
     reviewSettingsOf,

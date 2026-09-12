@@ -14,12 +14,13 @@ import {
   shouldSuggestSplit,
 } from '../rules/learning-sequence.rules'
 import { pickReviewCandidates } from '../rules/learning-review.rules'
+import { normalizeConceptPrereqs } from '../rules/learning-prerequisites.rules'
 import { buildConceptTree, conceptStats } from '../rules/learning-aggregation.rules'
 import { createLogger } from '@core/utils/logger'
 import type { DlConceptRepository, DlConceptRow } from '@core/database/repositories/dl-concept.repository'
 import type { DlRelationRepository, DlRelationRow } from '@core/database/repositories/dl-relation.repository'
 import type { DlMasteryLogRepository } from '@core/database/repositories/dl-mastery-log.repository'
-import type { DlReviewDueItem } from '@shared/types/domain-learning.types'
+import type { DlReviewDueItem, DlCreateConceptInput, DlCreateConceptResult } from '@shared/types/domain-learning.types'
 
 const logger = createLogger('DlGraph')
 
@@ -36,6 +37,12 @@ export interface AckConfusedResult {
   /** 达到阈值 → 应提示拆分子概念入队（D9） */
   splitSuggested: boolean
 }
+
+/** 手工建点入参（用户补全知识体系） */
+export type CreateConceptInput = Omit<DlCreateConceptInput, 'id'>
+
+/** 手工建点结果 */
+export type CreateConceptResult = DlCreateConceptResult
 
 export class LearningGraphService {
   constructor(
@@ -199,6 +206,101 @@ export class LearningGraphService {
       cur = byId.get(cur.parentId)
     }
     return path
+  }
+
+  // ==================== 手工建点（用户补全知识体系；2026-09-12 用户需求） ====================
+
+  /**
+   * 用户手工新建知识点（左栏「+ 知识点」）。
+   *
+   * 与 agent 的 dl_save_concept 的区别：
+   * - `source='manual'`（用户自己建的，不是 AI 提炼）、`researchState='unresearched'`
+   *   （尚无讲义，后续可被研究/自动推进补齐——这正是"用户建点 + AI 完善"的衔接点）；
+   * - 勾选的前置**直接落成已确认的 prerequisite 边**（用户自己确认过，不必再走人审）；
+   * - 前置名在空间里找不到时不报错，而是记进 `attrs.prerequisites` 并回给调用方
+   *   （UI 提示"可让 AI 补全"，快照里的 ⚠️ 欠账清单也会带上它们）。
+   */
+  async createConcept(
+    projectId: string,
+    input: CreateConceptInput,
+  ): Promise<CreateConceptResult> {
+    const name = String(input.name ?? '').trim()
+    if (!name) throw new Error('知识点名称必填')
+    const nodeType = String(input.nodeType ?? 'concept').trim() || 'concept'
+    if (nodeType === 'group') throw new Error('手工建点只能建知识节点（目录请用建空间时的领域根/分支）')
+    const parentId = input.parentId ?? null
+
+    if (parentId) {
+      const parent = await this.concepts.getById(parentId)
+      if (!parent || parent.projectId !== projectId) throw new Error('所属分支不存在于该空间')
+      if (parent.nodeType !== 'group') throw new Error('所属分支必须是目录节点（group）')
+    }
+
+    const all = await this.concepts.listByProject(projectId)
+    const declared = normalizeConceptPrereqs(input.prerequisites, name)
+
+    // 同父同名：幂等更新（补定义、补前置），不重复建点
+    const existing = all.find((c) => c.name === name && c.parentId === parentId)
+    if (existing) {
+      const attrs: Record<string, unknown> = { ...(existing.attrs ?? {}) }
+      if (declared.length) attrs.prerequisites = declared
+      await this.concepts.patch(existing.id, {
+        definitionShort: input.definitionShort ?? existing.definitionShort,
+        attrs: declared.length ? attrs : existing.attrs,
+      })
+      const link = await this.linkPrerequisites(projectId, existing.id, declared, all)
+      logger.info(`[graph] createConcept(手动) 已存在 → 更新 space=${projectId} concept=${existing.id} 前置连边=${link.linkedPrereqs.length}`)
+      return { conceptId: existing.id, created: false, ...link }
+    }
+
+    const id = randomUUID()
+    await this.concepts.create({
+      id,
+      projectId,
+      nodeType,
+      name,
+      parentId,
+      definitionShort: input.definitionShort ?? null,
+      en: input.en ?? null,
+      researchState: 'unresearched',
+      mastery: 'untouched',
+      source: 'manual',
+      attrs: declared.length ? { prerequisites: declared } : null,
+    })
+    const link = await this.linkPrerequisites(projectId, id, declared, all)
+    logger.info(
+      `[graph] createConcept(手动) space=${projectId} concept=${id} name=${name} 前置连边=${link.linkedPrereqs.length} 缺落点=${link.missingPrereqs.length}`,
+    )
+    return { conceptId: id, created: true, ...link }
+  }
+
+  /** 把前置名落成已确认的 prerequisite 边（找不到落点的名字回给调用方） */
+  private async linkPrerequisites(
+    projectId: string,
+    targetId: string,
+    names: string[],
+    all: DlConceptRow[],
+  ): Promise<Pick<CreateConceptResult, 'linkedPrereqs' | 'missingPrereqs'>> {
+    const linkedPrereqs: Array<{ name: string; conceptId: string }> = []
+    const missingPrereqs: string[] = []
+    for (const n of names) {
+      const hit = all.find((c) => c.id !== targetId && c.nodeType !== 'group' && c.name === n)
+      if (!hit) {
+        missingPrereqs.push(n)
+        continue
+      }
+      await this.relations.create({
+        id: randomUUID(),
+        projectId,
+        sourceId: hit.id,
+        targetId,
+        relationType: 'prerequisite',
+        evidence: '用户手工建立',
+        verified: true,
+      })
+      linkedPrereqs.push({ name: hit.name, conceptId: hit.id })
+    }
+    return { linkedPrereqs, missingPrereqs }
   }
 
   // ==================== 关系 ====================

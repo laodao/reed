@@ -17,6 +17,14 @@ export const DL_AGENT_DEFINITION_ID = 'dl-agent-host'
 /** 每轮最大步骤（react 循环护栏） */
 export const DL_AGENT_MAX_STEPS = 12
 
+/**
+ * task 模式每轮最大步骤（更大预算）。
+ * 口径（2026-09-12 用户要求"先查资料再规划整体体系"）：补全知识地图这类任务要
+ * 「先采集（KB/联网）→ 再规划 → 再落库（批量建点建边）→ 自检」四阶段，
+ * 12 步容易在采集后没步数落库，故 task 单独放宽到 16 步（仅影响 task 会话，成本有界）。
+ */
+export const DL_TASK_MAX_STEPS = 16
+
 /** 历史注入截断（单条字符上限） */
 export const DL_HISTORY_CONTENT_MAX = 800
 
@@ -27,8 +35,9 @@ export const DL_HISTORY_LIMIT = 20
 export const DL_TOOL_MAX_CALLS: Record<string, number> = {
   discover_capabilities: 2, // M3-A：允许目录纠错重查（id 直接调用命中）
   invoke_skill: 6,
-  dl_save_concept: 8,
-  dl_save_relation: 10,
+  dl_save_concept: 12,
+  dl_save_relation: 14,
+  dl_save_space_prereqs: 2,
   dl_save_card: 4,
   dl_answer_question: 1,
 }
@@ -43,6 +52,7 @@ export const DL_SYSTEM_PASSTHROUGH = [DL_TOOL_DISCOVER, DL_TOOL_INVOKE_SKILL] as
 export const DL_TASK_WORKFLOW_TOOLS = ['run_workflow', 'get_workflow_run'] as const
 export const DL_TOOL_SAVE_CONCEPT = 'dl_save_concept'
 export const DL_TOOL_SAVE_RELATION = 'dl_save_relation'
+export const DL_TOOL_SAVE_SPACE_PREREQS = 'dl_save_space_prereqs'
 export const DL_TOOL_SAVE_CARD = 'dl_save_card'
 export const DL_TOOL_ANSWER_QUESTION = 'dl_answer_question'
 

@@ -733,6 +733,12 @@ export interface WorkflowExecutionSettings {
   /** 单节点最大执行次数（防环/重入失控；封顶 1000） */
   maxNodeRuns?: number
   /**
+   * 运行级总工具调用预算（可选；0/缺省 = 不启用）：agent-loop 等节点每次工具调用请求
+   * 从运行级共享计数器扣减，跨节点/跨轮累计（挂起恢复续用；快照随运行持久化）。
+   * 节点级 maxToolCalls 仍作为单节点护栏；二者取先到者。
+   */
+  maxTotalToolCalls?: number
+  /**
    * 多轮对话：开启后工作流内 LLM 节点按执行顺序共享对话上下文——
    * 前面 LLM 调用的 prompt 与输出会作为后续 LLM 节点的历史 messages 传入。
    * 默认 false（节点间仅靠 {{变量}} 显式注入，保持无状态单轮）。
@@ -1213,6 +1219,8 @@ export const WORKFLOW_LIMITS = {
   maxParallelNodes: 20,
   maxConcurrentRuns: 10,
   maxNodeRuns: 1000,
+  /** 运行级总工具调用预算硬上限（防失控兜底） */
+  maxTotalToolCalls: 10_000,
   retryDelayMs: 60_000,
   httpTimeoutMs: 300_000,
   imagePollTimeoutMs: 600_000,

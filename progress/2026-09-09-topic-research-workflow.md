@@ -88,3 +88,49 @@ dl run_workflow 触发复验。
 - 模板 v3：topic-research.json 重构为 until 循环（12 节点 14 边）：start(+maxRounds) → 澄清 → 规划 → round1(until: r→e→pack→loop-back, errorPolicy=skip) → writer(用 round1.last.result.*) → report → 人工确认 → 保存。
 - 测试：loop-until.spec 4 例 + 回归（9 files 94 passed）、eslint 0、本批 vue-tsc 零新增；本地提交待 push。
 - 待用户：真机（动态轮次/评估提前收尾/达上限收尾）、until+挂起恢复专项 spec（后续）。
+
+---
+
+## v4：运行级总预算落地（2026-09-09，run-budget-design.md）
+
+用户立项（"应该设置工作流的总预算，而不是工具的预算；每轮数据量不同，等额不合理"）。设计自查修订后 TDD 实现：
+
+- 新增运行级设置 `maxTotalToolCalls`（0/缺省=不启用；normalize：有限正数取整并封顶 `WORKFLOW_LIMITS.maxTotalToolCalls=10000`，NaN/负数→0）；`ResolvedExecutionSettings` 增字段。
+- 引擎：`RunExecution.toolBudget {max,used}` 恒建对象、跨节点/跨轮共享；`buildContext` 注入 `ctx.toolBudget`（max>0 才有；含只读 remaining + tryConsume）；快照序列化 toolBudget，journal-replay 快照恢复重建（旧快照无该字段则保持初值）。
+- agent-loop：`assembleTools` 支持运行级预算句柄——先查节点级（设了且耗尽→报节点级、不白扣运行级）再查运行级（耗尽→报运行级提示），双预算各自计数；模型 task 追加「运行级总预算：共 N 次，当前剩余 M 次」提示，引导按需分配。
+- 模板：`topic-research.json` `settings.maxTotalToolCalls = 120`（8 轮共享总额，不再每轮等额 16）。
+- 测试：agent-loop-node.spec 新增 7 例（normalize/直通/节点级优先/运行级耗尽/双预算并存/引擎级跨节点累计/剩余预算注入 prompt）；topic-research-graph 增 1 例（settings=120）；回归 batch1 8 文件 52 passed、batch2 5 文件 62 passed；eslint 0。
+- 待用户：真机复跑（重启 App → 主题深度研究 8 轮，观察总调用 ≤120、每轮不再整齐触 16 天花板、prompt 含剩余预算）。
+
+---
+
+## v4 真机验证 + 质量评估（2026-09-09，带运行级总预算）
+
+运行：`wmrun` runId `wfrun_1789128599106_e8giud8y0`（topic=TikTok 开店；问卷=cn-individual/无执照/MY,TH,PH,US/家居收纳+宠物/video-only/3-5万；maxRounds=8；研究 deepseek-v4-flash、评估 deepseek-v4-pro；默认搜索必应免Key）。
+
+### 流程验证（全部通过）
+- until 循环 8 轮全自动（澄清表单/终稿确认由脚本提交），每轮"研究→另一模型评估→打包"链路完整；8 轮评估全 revise → 达上限收尾（不失败）。
+- **运行级总预算精确生效**：执行工具调用合计 **120 = 预算**；第 8 轮仅剩 8 次可用；另有 8 次尝试被**节点级 16 次/轮**护栏拒绝（轮 0/2/6 各 1/3/4 次）→ 双层预算各自正确、不互相污染。
+- 每轮工具调用分布 17/16/19/16/16/16/20/8，末轮被总额压缩（符合预期，但也暴露单轮上限偏紧）。
+
+### 质量评估（对比元宝参照样本，指标脚本 progress/_topic_quality.js）
+- 结构：本次 12,861 字/49 标题/12 表 93 行/86 列表；元宝 22,619 字/13 表 115 行 → 篇幅约 57%，表格密度接近。
+- **强于参照**：证据分级（官方一手 19 处、未查到 42 处、先验显式标注）、门槛/停损量化（"门槛"23 处 vs 7）、清单（8 vs 7）、个性化（完全按用户问卷定制，元宝为自设场景）、诚实性（明确"预算与单位经济为模型先验，不可当事实"）。
+- **弱于参照**：URL 可点击来源 **0 vs 18**（只写域名/文章号）、公式 0 vs 3、时间线颗粒度 2 vs 42（缺 D1-D90 甘特）、止损 0 vs 2、篇幅约 57%。
+- 通道约束（非逻辑缺陷）：官方 SPA/后台不可达 + 必应免Key 搜索噪声大 → 费率/保证金/回款/物流/禁入清单等 42 处"未查到"，预算与单均模型只能建在假设上。
+
+### 待改进（ROI 排序）
+1. 模板把 r1 的节点级 `maxToolCalls` 留空（只由运行级总预算约束）→ 彻底实现"总额按需分配"，末轮不再只剩 8 次。
+2. 提示词契约补：来源必须输出 Markdown 链接 `[标题](URL)`；deep 档强制"贡献利润/采购倒推公式"与"D1–D90 逐日时间线"。
+3. 搜索质量是深度外部上限：建议有额度时换博查/Tavily/Perplexity；并在 clarify 提示用户提前准备 Seller Center 后台截图。
+
+---
+
+## v5：研究规格分层（产出要求交由用户，不写死进内核）
+
+用户质疑：「贡献利润/采购倒推公式 + D1–D90 逐日时间线」这类要求写进提示词，会不会让其它领域研究偏差？是否该由用户提供？
+结论：认同。实现 L1–L4 分层（详见 tasks/2026-09-09-topic-research-workflow/research-brief-design.md）：
+
+- **L1 通用纪律**留在内核（领域无关）；**L2 类型化深度模板**下沉到 plan1「做法/商业类」骨架（单位经济公式、逐日时间线、SOP、清单），只对命中类型生效；**L3 用户产出规格/要求**新增 start 输入 `outputSpecs`（7 项多选）+ `outputRequirements`（自由文本）；**L4 参照样本**新增 `referenceSample`（只对标结构与密度，禁止照抄结论）。
+- **闭环**：用户规格/要求 → plan1 逐条转成 acceptance → e1（另一模型）逐条核对（可检索/可执行未满足判 revise；通道不可达记非阻塞）→ writer 按 acceptance 成稿并落实公式/时间线/可点击链接/反方回应。
+- 验证：topic-research-graph spec 断言新输入与三处引用（12 例）、builtin-app-templates 过全量校验（7 例）→ 19 passed；未改动引擎/其它模板，未设置这些输入时行为不变。

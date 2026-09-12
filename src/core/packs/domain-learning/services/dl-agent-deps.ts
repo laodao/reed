@@ -8,12 +8,32 @@
  */
 
 import { pickNextToLearn } from '../rules/learning-sequence.rules'
+import { buildPrerequisiteBriefing } from '../rules/learning-prerequisites.rules'
+import { assessMapCoverage, mapCoverageBriefing, type MapCoverageResult } from '../rules/learning-map-coverage.rules'
 import type { ICoreDatabaseManager } from '@core/database/database-manager.interface'
+import type { DlSpacePrereq } from '@shared/types/domain-learning.types'
 import { BUILTIN_SKILLS } from '@core/platform/workflow/skills/builtin-skills'
 import { splitSkillFrontmatter } from '@core/platform/workflow/skills/skill-parser'
 
 /** 领域起步研究技能 id（dlEmptySpaceMission / 宿主注入共用） */
 export const DL_BOOTSTRAP_SKILL_ID = 'learning-space-bootstrap'
+
+/** 知识体系补全技能 id（2026-09-12：AI 补全地图的作业规范；宿主按消息标记注入正文） */
+export const DL_MAP_COMPLETION_SKILL_ID = 'learning-map-completion'
+
+/**
+ * 「补全知识地图」消息标记（dlMapCompletionMission 的固定开头）。
+ * 宿主据此在 task 模式下注入 learning-map-completion 技能正文——两边共用同一常量/同一句话，
+ * 由契约用例钉死（改文案不改标记会导致注入失效，测试会红）。
+ */
+export const MAP_COMPLETION_MARKER = '【补全知识地图】'
+
+/** 取内置技能正文（去 frontmatter）；找不到返回 null */
+export function dlSkillBody(skillId: string): string | null {
+  const entry = BUILTIN_SKILLS.find((s) => s.id === skillId)
+  if (!entry) return null
+  return splitSkillFrontmatter(entry.markdown).body.trim() || null
+}
 
 /**
  * 取 learning-space-bootstrap 技能正文（S1~S5 全文，去掉 frontmatter）。
@@ -22,9 +42,27 @@ export const DL_BOOTSTRAP_SKILL_ID = 'learning-space-bootstrap'
  *  过程型技能会"看似完成实则零落库"，故不再依赖 invoke_skill 执行它。）
  */
 export function dlBootstrapSkillBody(): string | null {
-  const entry = BUILTIN_SKILLS.find((s) => s.id === DL_BOOTSTRAP_SKILL_ID)
-  if (!entry) return null
-  return splitSkillFrontmatter(entry.markdown).body.trim() || null
+  return dlSkillBody(DL_BOOTSTRAP_SKILL_ID)
+}
+
+/** 用户自然语言里同类意图的识别（用户在任务框直接说"补全知识体系"时也注入技能正文） */
+const MAP_COMPLETION_INTENT =
+  /(补全|补齐|完善|追加|添加|新增|补充).{0,12}(知识体系|知识地图|知识点|知识骨架|体系|骨架|地图|概念)/
+/** 语序颠倒的说法（"把缺的知识点补上"）：名词在前、动作在后 */
+const MAP_COMPLETION_INTENT_REVERSED =
+  /(知识体系|知识地图|知识点|知识骨架|体系|骨架|地图|概念).{0,8}(补上|补齐|补全|完善|添加|新增|落库)/
+
+/**
+ * 该轮消息是否要求「补全知识地图」（task 模式据此注入技能正文）。
+ * 命中条件：① 按钮指令的固定标记；② 用户自然语言里同义的建图/补全意图（含语序颠倒的说法）。
+ */
+export function shouldInjectMapCompletionSkill(message: string): boolean {
+  const text = String(message ?? '')
+  return (
+    text.includes(MAP_COMPLETION_MARKER) ||
+    MAP_COMPLETION_INTENT.test(text) ||
+    MAP_COMPLETION_INTENT_REVERSED.test(text)
+  )
 }
 
 /** 快照信息（宿主每轮装配时调用） */
@@ -36,6 +74,10 @@ export interface DlSpaceSnapshot {
   isEmptySpace: boolean
   /** 空间名（起步引导文案用；未知则回退 id） */
   spaceName: string | null
+  /** 主题学习前置要求（2026-09-12：整个领域的学习门槛；空数组=尚未声明） */
+  spacePrereqs: DlSpacePrereq[]
+  /** 地图完整度诊断（2026-09-12：结构缺口清单，供模型按缺口补全） */
+  coverage: MapCoverageResult
 }
 
 /** 纯判定：是否存在知识概念叶（group 目录不算） */
@@ -48,11 +90,12 @@ export function dlEmptySpaceMission(opts: { spaceName: string }): string {
   return `【空领域起步研究】学习空间「${opts.spaceName}」当前还没有任何知识点，本次任务=给整个领域做一次"起步研究"。
 执行方式：宿主已把 learning-space-bootstrap 技能正文注入本会话快照（见下方【learning-space-bootstrap 技能正文】），请直接按该技能 S1~S5 阶段执行、每阶段向用户回报进度，不要再 discover/invoke 重复调用该技能；
 若技能不可用，按此摘要执行（同技能口径）：
-1. 先规划并落库 3-6 个最核心的知识点（dl_save_concept，parentId 优先填快照"目录分组"里的领域根 group id，没有则留 null）；
-2. 再为它们建立学习顺序关系（dl_save_relation，前置关系 prerequisite）；
-3. 挑其中"最基础、第一个要学"的概念 dl_save_card 产出一份可展示的讲义草稿（区级内容 + evidenceSources）；讲义每条论断的证据必须来自你实际读到的资料（知识库文档/网页/arXiv/API），查不到就少写，不得编造；
-4. 其余概念保持"待研究"即可，不必一次全部出讲义；
-5. 全部做完用一段话总结：建立了哪些概念与关系、首个讲义给谁、下一步建议。`
+1. **先定主题前置要求**：dl_save_space_prereqs 落库"学「${opts.spaceName}」之前需要具备什么"（name + why + level，含领域外需自备的能力如 Python 基础/概率统计基础；确无需前置传空数组）——这份门槛会展示给学习者，也是排顺序的依据；
+2. 再规划并落库 3-8 个知识点（dl_save_concept，parentId 优先填快照"目录分组"里的领域根 group id，没有则留 null）；**每个概念都要填 prerequisites**；粒度细到"学完能做一件具体小事"，并按学习层次排出先后（layer 0 = 零基础可直接学）；
+3. 把每个概念的前置**逐条**落库为学习顺序关系（dl_save_relation，前置关系 prerequisite，source→target = 学 target 前先掌握 source）；主干里用到进阶记号（积分/偏导/极限/期望方差/iid/分布族/矩阵运算/导数与链式法则等）时，必须先把对应基础概念（线性代数基础/导数与链式法则/概率与随机变量/期望与方差…）建成概念并排在前置里——**不跳级**，相邻层级跨度不超过一步，领域外前置也要有落点；
+4. 挑其中"最基础、第一个要学"的概念 dl_save_card 产出一份可展示的讲义草稿（区级内容 + evidenceSources）；讲义首区必须是 meta（读者画像 + 前置声明 + 记号热身 + 可测目标），每条论断的证据必须来自你实际读到的资料（知识库文档/网页/arXiv/API），查不到就少写，不得编造；
+5. 其余概念保持"待研究"即可，不必一次全部出讲义；
+6. 全部做完用一段话总结：主题前置是什么、建立了哪些概念与关系、首个讲义给谁、下一步建议。`
 }
 
 export async function computeDlSpaceSnapshot(
@@ -109,6 +152,34 @@ export async function computeDlSpaceSnapshot(
     ? [`本空间绑定知识库 id：${project.kbId}（需要读私有资料时把 wf_kb_retrieve 的 knowledgeBaseId 填此 id；讲义证据可用 kbDocId 回链）`]
     : []
 
+  // 前置要求简报（2026-09-12 用户需求：主题级 + 知识点级；让模型每轮都按门槛与顺序生成）
+  // 读侧信任仓储已解析结果（写入时已规范化并物化 inSpace）
+  const spacePrereqs = project?.prerequisites ?? []
+  const prereqLines = buildPrerequisiteBriefing({
+    spacePrereqs,
+    concepts: concepts.map((c) => ({ id: c.id, name: c.name, nodeType: c.nodeType, attrs: c.attrs })),
+    relations: relations.map((r) => ({ source: r.sourceId, target: r.targetId, type: r.relationType })),
+  })
+
+  // 地图完整度简报（2026-09-12 用户反馈"知识体系不够完善"）：
+  // 研究模式一次只保证当前概念的讲义，地图不会自己变完整——这里把结构性缺口摆到模型面前，
+  // 让每一轮研究顺手补 1-3 个缺口概念（口径见 dlResearchSystemPrompt 第 14 条）。
+  const coverage = assessMapCoverage({
+    spaceName: project?.name ?? null,
+    concepts: concepts.map((c) => ({
+      id: c.id,
+      name: c.name,
+      nodeType: c.nodeType,
+      parentId: c.parentId,
+      researchState: c.researchState,
+      cardId: c.cardId,
+      attrs: c.attrs,
+    })),
+    relations: relations.map((r) => ({ source: r.sourceId, target: r.targetId, type: r.relationType, verified: r.verified })),
+    spacePrereqs,
+  })
+  const coverageLines = mapCoverageBriefing(coverage)
+
   const head = [
     `学习空间：${project?.name ?? spaceId}（目标：${project?.goal ?? '—'}）`,
     `掌握度：${masteredCount}/${leafCount} 个知识概念已理解`,
@@ -116,10 +187,12 @@ export async function computeDlSpaceSnapshot(
   ]
 
   return {
-    text: [...head, ...kbLines, ...groupLines, ...conceptText].join('\n'),
+    text: [...head, ...kbLines, ...groupLines, ...prereqLines, ...coverageLines, ...conceptText].join('\n'),
     nextConceptId: ready,
     isEmptySpace: !hasConceptLeaves(concepts.map((c) => ({ nodeType: c.nodeType }))),
     spaceName: project?.name ?? null,
+    spacePrereqs,
+    coverage,
   }
 }
 
@@ -145,8 +218,21 @@ export function dlResearchSystemPrompt(): string {
 8. 全部完成后用一段话总结：研究了什么、读了哪些资料、产出哪些草稿、下一步建议（等用户人审/继续学习）；
 9. 归属（M3-A）：快照「目录分组」里若存在契合的目录，dl_save_concept 的 parentId 填其目录 id；不确定就保持 null（根层），地图人审会再归类；
 10. 知识库优先（M4-B）：快照含「本空间绑定知识库 id」时，需用私有资料先以该 id 调 wf_kb_retrieve 检索（命中即据此提炼，讲义 evidence 可回链 kbDocId），再考虑联网与模型先验；无绑定则跳过 KB 检索；
-11. 难度门禁（入门目标必读）：空间目标为「入门/零基础」时，若目标概念需要进阶记号（∫ 积分、∂ 偏导、极限、期望/方差记号、iid、分布族 N(·)/Θ、测度等）而空间里还没有对应的基础概念与讲义，**先补前置**——用 dl_save_concept 建这些基础概念（如「积分基础」「随机变量与分布」「期望与方差」）、用 dl_save_relation 建 prerequisite（基础 → 本概念），并为其中最基础的那个先 dl_save_card 出讲义，再回来做本概念；若确实要直接产出本概念，必须在讲义首区（key=meta）加「记号热身」逐条给出这些记号的读法与最小例子，否则 dl_save_card 会被难度门禁拒绝（拒绝信息里会说明该补什么）；
-12. 数值自检：讲义里写出的算式要自己回算并写清中间量（如 0.99×0.01=0.0099、0.05×0.99=0.0495、0.0099/0.0594≈0.167）；落库时会自动回算，发现自相矛盾会提示你重发修订版。`
+11. 循序渐进与前置门禁（2026-09-12 起对**所有目标**生效，不再只拦「入门」）：
+   - 领域图必须自底向上成链——每个概念的前置都要用 dl_save_relation 落成 prerequisite 边，不能只在文字里说顺序；主干里出现需要进阶记号的概念（积分 ∫、偏导 ∂、极限、期望/方差、iid、分布族、矩阵/向量运算、导数/链式法则等）时，先把对应基础概念（如「线性代数基础」「导数与链式法则」「概率与随机变量」「期望与方差」）建成概念、建成前置边，并为其中最基础的那个先出讲义；
+   - 讲义首区必须是 meta 且必须写「前置」小节（已掌握哪些概念；确无前置就写"无需前置"）；
+   - 讲义正文用到的前置能力，必须二选一：图上已有对应前置概念并排在前面，或在 meta 的「记号热身」里给读法与最小例子；都没有 → dl_save_card 会被循序渐进门禁拒绝（拒绝信息里会写明该补哪些概念/关系/讲义）；
+   - 被门禁拒绝时不要原样重发，按拒绝信息先补前置概念与关系，再回来发本卡。
+12. 数值自检：讲义里写出的算式要自己回算并写清中间量（如 0.99×0.01=0.0099、0.05×0.99=0.0495、0.0099/0.0594≈0.167）；落库时会自动回算，发现自相矛盾会提示你重发修订版。
+13. 前置要求（2026-09-12 起，生成知识点阶段就要做，别等到出讲义）：
+   - **整个主题的前置**：进入一个空间后先看快照的【主题前置要求】。若尚未声明，用 dl_save_space_prereqs 落库"学这个领域之前需要具备什么"（name + why + level，含领域外需自备的能力，如 Python 基础 / 概率统计基础；inSpace 由系统反推，不用自己判断）；确无需前置就传空数组显式说明；
+   - **每个知识点的前置**：dl_save_concept 时必须填 prerequisites（学它之前必须先掌握的概念名数组）——这是"顺序"的声明；随后用 dl_save_relation 把每条前置落成边（source=前置 → target=本概念），顺序才真正生效；快照里带 ⚠️ 的条目就是"只有声明没建边/没落点"的欠账，优先补齐；
+   - **顺序即路径**：按 layer 从小到大检查"每一步只需要前面已出现的知识"；相邻层级跨度不得超过一步——例如「张量」到「自动微分与反向传播」之间必须先有「导数与链式法则」这类前置概念；前置在图上没有落点就先 dl_save_concept 建它，确实属领域外能力才放进主题前置要求。
+14. 补齐知识体系（2026-09-12 起，研究模式也要做；用户反馈"知识体系不够完善"）：
+   - 快照里有【地图完整度】与缺口清单；**每轮研究除了给当前概念产出讲义，还要顺手补 1-3 个结构性缺口**（本轮上限 3 个新概念，别把一轮做成大工程）：优先 high 缺口（无入口/不可达/平铺一层）→ 再补 medium（缺中间台阶的 funnel、声明未落边、粒度太粗）；
+   - 具体做法：dl_save_concept（给 definitionShort + prerequisites）→ dl_save_relation 落前置边（source=前置 → target=本概念）；补的缺口概念要保持"学完能做一件具体小事"的粒度，并按分支目录归类（有合适 group 就挂上去）；
+   - **不要**为了拉高分数而堆无意义概念：只补你确知属于该领域主干、且读者必经的概念；拿不准就不建，在总结里说明"想建但需要资料/确认"；
+   - 一轮结束时用一句话说明：地图完整度从多少变成多少（快照给了当前值）、本轮补了哪些概念与边。`
 }
 
 /** 研究模式采集可用性提示（追加进快照；web_search 是否有默认搜索源决定 bind） */
@@ -183,6 +269,15 @@ export function dlTaskSystemPrompt(): string {
    （wf_web_extract / http_get / arXiv；web_search 仅在会话提供该工具时使用，没有就明说未联网核验）收集内容；
 3. 整理/规划/生成：整理概念与笔记、归纳总结、制定学习顺序与计划、生成讲义/提纲等——需要落库时走
    dl_save_concept / dl_save_relation / dl_save_card（讲义每条论断须有真实证据来源，无证据不落卡）；
+   其中「**补全知识地图**」类指令（"追加/补充知识点""补全知识体系""AI 补全地图"）按下面的口径做
+   （**完整作业规范见技能 learning-map-completion**：宿主在该任务的会话里会注入其正文，按它的四阶段执行）：
+   - **顺序固定：先采集 → 再规划 → 再落库 → 最后自检**（2026-09-12 用户口径：先查知识库/联网，结合获取到的内容与模型自身知识规划整体体系，二者必须区分；不许跳过采集直接凭先验建图）；
+   - 采集（预算 3-6 次读工具，够用即停；同一步可并行多个调用）：知识库优先（wf_kb_retrieve 检索"目录/知识体系/大纲/综述/学习路径"）→ 再联网（web_search / wf_web_extract / http_get / arXiv）；边读边记要点与出处（标题/URL/文档 id + 引文）；两处都取不到就明说"本轮无外部资料"；
+   - 规划：用资料事实搭主干（分支/层级 layer/前置），资料没覆盖但属公认主干的概念可用先验补，但**必须标注**——有资料支撑写 attrs 的 evidenceLevel 为「有原文：<出处标题/URL/文档 id>」，纯先验写 attrs 的 prior=true 且 evidenceLevel 为「prior_needs_verification：本轮无资料覆盖」；逐条给 prerequisites 并自检「不跳级 + 相邻层级跨度不超过一步」；粒度细到"学完能做一件具体小事"；
+   - 落库：dl_save_concept（含 definitionShort/prerequisites/parentId/attrs 证据级别）→ dl_save_relation（逐条 prerequisite 边，source=前置 → target=本概念）→ 领域外需自备能力走 dl_save_space_prereqs；已有概念只补边不重建（同名 skipped 属正常）；
+   - 判缺口四类：① 主干缺失（零基础到目标之间缺台阶）② 前置缺失（快照带 ⚠️ 的条目）③ 跨度太大（相邻层级跨度超过一步，如 张量 → 自动微分之间缺「导数与链式法则」）④ 粒度太粗（把整个领域当知识点）；快照【地图完整度】的缺口清单要逐条落实；
+   - 只补结构：不改写已有概念、不产出讲义、**不编造出处**（没读到原文只能按先验标注）；收尾说明新增了什么、依据来自哪些资料、哪些是先验、还缺什么；
+   - 用户在界面上手工建的知识点（source=manual）没有讲义、researchState=unresearched：补全时优先把它们接进主干（补前置/补后继），不要另建同义概念；
 4. 技能与工作流：任务契合平台技能时，先 discover_capabilities 查看，再 invoke_skill 执行
    （如 learning-space-bootstrap 领域起步研究、learning-concept-explainer 概念讲义、learning-lesson-planner
    讲义规划、learning-domain-map 领域骨架、learning-lesson-updater 讲义增量修订、learning-practice-builder 出练习题等）；若平台已有适用的工作流模板/定义，也可用 run_workflow

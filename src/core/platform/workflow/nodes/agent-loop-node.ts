@@ -145,37 +145,47 @@ export function normalizeToolWhitelist(list: unknown): AgentToolBinding[] {
 }
 
 /**
- * 白名单 → AgentToolDef 映射 + 节点级调用预算包装（预算只包 execute，registry 管线所有权不动）。
+ * 白名单 → AgentToolDef 映射 + 调用预算包装（预算只包 execute，registry 管线所有权不动）。
  * initialUsed：挂起-恢复续段以 state.usage.toolCalls 为初值——护栏跨会话累计
  * （12 号 §6.4-2"累计 toolCalls ≥ maxToolCalls"，对抗 review P2-1）。
  * binding 富配置（approval/maxCalls/config/descriptionOverride）由
  * registry.buildToolDefs 生效；节点预算与 binding.maxCalls 独立计数（取并集约束）。
+ * runBudget（可选）：运行级总工具调用预算句柄（跨轮/跨节点共享，来自 ctx.toolBudget）——
+ * 先查节点级、再查运行级，各自 ++（同一次调用不重复计入两边之外）。
  */
 export function assembleTools(
   registry: AgentToolRegistry,
   toolWhitelist: Array<string | AgentToolBinding> | undefined,
   maxToolCalls: number | undefined,
   initialUsed = 0,
+  runBudget?: { max: number; used: number; readonly remaining: number; tryConsume(): boolean },
 ): Record<string, AgentToolDef> {
   const defs = registry.buildToolDefs(normalizeToolWhitelist(toolWhitelist))
   const budget =
     maxToolCalls !== undefined && Number.isFinite(maxToolCalls) && maxToolCalls > 0
       ? { used: initialUsed, max: Math.floor(maxToolCalls) }
       : null
-  if (!budget) return defs
+  if (!budget && !runBudget) return defs
   const out: Record<string, AgentToolDef> = {}
   for (const [name, def] of Object.entries(defs)) {
     out[name] = {
       ...def,
       execute: async (input, toolCtx) => {
-        if (budget.used >= budget.max) {
+        if (budget && budget.used >= budget.max) {
           return {
             ok: false,
             error: 'LIMIT_EXCEEDED',
             hint: `节点级工具调用上限 ${budget.max} 次已用尽，请直接给出最终答案。`,
           }
         }
-        budget.used++
+        if (runBudget && !runBudget.tryConsume()) {
+          return {
+            ok: false,
+            error: 'LIMIT_EXCEEDED',
+            hint: `运行级总工具调用预算（${runBudget.max} 次）已用尽，请直接给出最终答案，不要再调用工具。`,
+          }
+        }
+        if (budget) budget.used++
         return def.execute(input, toolCtx)
       },
     }
@@ -449,12 +459,24 @@ async function driveLoop(
   }
 
   try {
+    // 运行级总预算提示（跨轮共享）：让模型按剩余额度分配检索/抓取，避免前面几轮无差别用满
+    const budgetHint = ctx.toolBudget
+      ? `\n\n【运行级总预算】本次运行共 ${ctx.toolBudget.max} 次工具调用额度，当前剩余 ${ctx.toolBudget.remaining} 次` +
+        (cfg.maxToolCalls ? `（本节点单次上限 ${cfg.maxToolCalls} 次，取二者先到者）` : '') +
+        '；请据此安排检索/抓取的优先级，必要时提前收敛直接作答。'
+      : ''
     const task: AgentTask = {
       definitionId: 'workflow:agent-loop',
       scopeId: ctx.executionKey,
-      input: stringifyValue(cfg.task),
+      input: stringifyValue(cfg.task) + budgetHint,
       systemPrompt: stringifyValue(cfg.systemPrompt ?? ''),
-      tools: assembleTools(registry, cfg.toolWhitelist, cfg.maxToolCalls, opts.resumeFrom?.state.usage.toolCalls ?? 0),
+      tools: assembleTools(
+        registry,
+        cfg.toolWhitelist,
+        cfg.maxToolCalls,
+        opts.resumeFrom?.state.usage.toolCalls ?? 0,
+        ctx.toolBudget,
+      ),
       maxSteps,
       modelPreference: { providerConfigId: cfg.providerConfigId || undefined, modelId: cfg.modelId || undefined },
       // 工具审计 logContext（review D3：审计行 run_id/node_id 据此落库）

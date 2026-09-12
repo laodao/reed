@@ -1,7 +1,7 @@
 <template>
-  <div class="markdown-viewer">
-    <!-- bytemd 只读渲染：懒加载（模块求值较重，避免阻塞首开）；sanitize 防 AI 产出/raw HTML 注入 -->
-    <component :is="viewerComp" v-if="viewerComp" :value="md" :plugins="plugins" :sanitize="sanitizeHtml" />
+  <div ref="rootRef" class="markdown-viewer">
+    <!-- bytemd 只读渲染：懒加载（模块求值较重，避免阻塞首开）；sanitize 传 schema 变更器 -->
+    <component :is="viewerComp" v-if="viewerComp" :value="md" :plugins="plugins" :sanitize="extendSanitizeSchema" />
     <el-skeleton v-else :rows="6" animated />
   </div>
 </template>
@@ -11,11 +11,28 @@
  * 只读 Markdown 渲染（bytemd Viewer 封装，惰性加载）
  * @module views/domain-learning/MarkdownViewer
  * @description 讲义渲染用（图文 / mermaid / 表格 / 公式）。bytemd 模块较重，
- *              故懒加载，避免阻塞页面首开。讲义内容来自研究 Agent（联网/KB/模型产出），
- *              经 DOMPurify 净化后再渲染——raw HTML 注入面（<script>/onerror 等）在此收口。
+ *              故懒加载，避免阻塞页面首开。讲义内容来自研究 Agent（联网/KB/模型产出）。
+ *
+ * 安全与渲染（2026-09-12 修复）：
+ * - bytemd 的 `sanitize` 是 **hast schema 变更器**（`(schema) => schema`），不是
+ *   「HTML 字符串消毒器」。此前误传 `(html: string) => string`（DOMPurify），
+ *   schema 被替换成字符串，hast-util-sanitize 的 `Object.assign` 丢掉 bytemd 追加的
+ *   `className` 白名单 → 所有 class 被剥离 → plugin-math/plugin-mermaid 的
+ *   viewerEffect 查不到 `.math.math-inline` / `code.language-mermaid` 锚点，
+ *   公式与图表都不渲染。现在按契约传 schema 变更器。
+ * - XSS 防线仍是 rehype-sanitize 的 GitHub 默认白名单（script / 事件属性 /
+ *   javascript: 协议一律丢弃），由 `extendSanitizeSchema` 显式保住 className 后继续生效。
+ *
+ * 渲染后增强（2026-09-12 用户需求）：
+ * - ```figure 代码块 → 用自写 SVG 渲染器画成图（声明式图形规格，非 AI 生图）；
+ * - ```js / ```javascript 代码块 → 加「运行」按钮，在 Web Worker 沙箱里跑并内联看输出。
+ *   两者都在 DOM 渲染完成后处理（与 mermaid 插件同一时机），用 MutationObserver
+ *   跟随 bytemd 的 innerHTML 变化重跑。
  */
-import { shallowRef, onMounted, type Component } from 'vue'
-import DOMPurify from 'dompurify'
+import { onBeforeUnmount, onMounted, shallowRef, type Component } from 'vue'
+import { extendSanitizeSchema } from '@/utils/markdown-sanitize-schema'
+import { figureHtml } from './figure-spec'
+import { runJsSnippet } from './code-runner'
 // CSS 静态副作用引入：随本组件 chunk 懒加载（组件本身已动态 import），且对 typecheck 友好
 import 'bytemd/dist/index.css'
 import 'highlight.js/styles/github.css'
@@ -27,11 +44,9 @@ defineProps<{
 
 const viewerComp = shallowRef<Component | null>(null)
 const plugins = shallowRef<unknown[]>([])
-
-/** bytemd sanitize 钩子：默认策略已去 script/事件属性，放行 SVG（mermaid）与 KaTeX 类名 */
-function sanitizeHtml(html: string): string {
-  return DOMPurify.sanitize(html, { USE_PROFILES: { html: true, svg: true, svgFilters: true } })
-}
+const rootRef = shallowRef<HTMLElement | null>(null)
+/** 是否已插入运行过的标记（防重复增强 / MutationObserver 自触发） */
+const ENHANCED_ATTR = 'data-dl-enhanced'
 
 function loadViewer(): void {
   Promise.all([
@@ -55,20 +70,136 @@ function loadViewer(): void {
   })
 }
 
-onMounted(loadViewer)
+// ==================== 渲染后增强 ====================
+
+/**
+ * ```figure 代码块 → SVG 图形。
+ * 规格非法时保留代码块并追加一行可读错误（读者仍能看到规格原文）。
+ */
+function enhanceFigures(root: HTMLElement): void {
+  root.querySelectorAll<HTMLElement>(`pre > code.language-figure:not([${ENHANCED_ATTR}])`).forEach((code) => {
+    const pre = code.parentElement
+    if (!pre) return
+    code.setAttribute(ENHANCED_ATTR, 'figure')
+    const result = figureHtml(code.textContent ?? '')
+    const wrap = document.createElement('div')
+    wrap.className = 'dl-figure'
+    if (result.ok) {
+      wrap.innerHTML = result.svg
+      if (result.warnings.length) {
+        const note = document.createElement('div')
+        note.className = 'dl-figure-note'
+        note.textContent = result.warnings.join('；')
+        wrap.appendChild(note)
+      }
+      pre.replaceWith(wrap)
+    } else {
+      const note = document.createElement('div')
+      note.className = 'dl-figure-note dl-figure-error'
+      note.textContent = `图形规格无法渲染：${result.error}`
+      pre.insertAdjacentElement('afterend', note)
+    }
+  })
+}
+
+/** ```js / ```javascript 代码块 → 加「运行」按钮与输出区（Web Worker 沙箱） */
+function enhanceRunnableCode(root: HTMLElement): void {
+  root
+    .querySelectorAll<HTMLElement>(
+      [
+        `pre > code.language-js:not([${ENHANCED_ATTR}])`,
+        `pre > code.language-javascript:not([${ENHANCED_ATTR}])`,
+        `pre > code.language-mjs:not([${ENHANCED_ATTR}])`,
+      ].join(', '),
+    )
+    .forEach((code) => {
+      const pre = code.parentElement
+      if (!pre) return
+      code.setAttribute(ENHANCED_ATTR, 'runnable')
+      const box = document.createElement('div')
+      box.className = 'dl-run'
+      const bar = document.createElement('div')
+      bar.className = 'dl-run-bar'
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'dl-run-btn'
+      btn.textContent = '▶ 运行'
+      const hint = document.createElement('span')
+      hint.className = 'dl-run-hint'
+      hint.textContent = '在沙箱里运行（无网络、3 秒超时）'
+      bar.append(btn, hint)
+      const out = document.createElement('div')
+      out.className = 'dl-run-out'
+      out.hidden = true
+      box.append(bar, out)
+
+      btn.addEventListener('click', () => {
+        void (async () => {
+          btn.disabled = true
+          btn.textContent = '运行中…'
+          out.hidden = false
+          out.textContent = ''
+          const res = await runJsSnippet(code.textContent ?? '')
+          const lines = res.output.length ? res.output.map((l) => `> ${l}`) : []
+          if (!lines.length && res.ok) lines.push('> （没有 console 输出——用 console.log 打印想看的值）')
+          if (res.error) lines.push(`✗ ${res.error}`)
+          out.textContent = `${lines.join('\n')}\n— 用时 ${res.durationMs}ms${res.truncated ? '（输出已截断）' : ''}`
+          out.classList.toggle('is-error', !res.ok)
+          btn.disabled = false
+          btn.textContent = '▶ 再运行'
+        })()
+      })
+
+      pre.insertAdjacentElement('afterend', box)
+    })
+}
+
+/** 跑一轮增强（figures + 可运行代码块） */
+function enhance(root: HTMLElement | null): void {
+  if (!root) return
+  enhanceFigures(root)
+  enhanceRunnableCode(root)
+}
+
+let observer: MutationObserver | null = null
+let enhanceTimer: number | null = null
+
+/** 合并同一帧内的多次 DOM 变化，避免频繁增强 */
+function scheduleEnhance(): void {
+  if (enhanceTimer !== null) window.clearTimeout(enhanceTimer)
+  enhanceTimer = window.setTimeout(() => {
+    enhanceTimer = null
+    enhance(rootRef.value)
+  }, 30)
+}
+
+onMounted(() => {
+  loadViewer()
+  // bytemd 用 innerHTML 替换内容 → 监听子树变化重跑增强（幂等：已增强的节点带标记）
+  observer = new MutationObserver(() => scheduleEnhance())
+  if (rootRef.value) observer.observe(rootRef.value, { childList: true, subtree: true })
+  scheduleEnhance()
+})
+
+onBeforeUnmount(() => {
+  observer?.disconnect()
+  observer = null
+  if (enhanceTimer !== null) window.clearTimeout(enhanceTimer)
+})
 </script>
 
-<style scoped>
+<style scoped lang="scss">
+// 讲义正文排版（章节层级/首行缩进/列表缩进/表格边框…）集中在此文件，便于契约测试守护
+@use './lesson-markdown.scss';
+
 .markdown-viewer {
-  :deep(img) {
-    max-width: 100%;
-  }
   :deep(.bytemd) {
     height: auto;
     border: none;
   }
   :deep(.bytemd-preview) {
     background: transparent;
+    padding: 0;
   }
 }
 </style>

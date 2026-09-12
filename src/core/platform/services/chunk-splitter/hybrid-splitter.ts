@@ -4,16 +4,12 @@
  * @description 整合所有切分策略，根据文档结构和配置选择最佳切分方式
  */
 
-import {
-  SplitChunk,
-  SplitConfig,
-  DEFAULT_SPLIT_CONFIG,
-  StructureInfo
-} from './types'
+import { SplitChunk, SplitConfig, DEFAULT_SPLIT_CONFIG, StructureInfo } from './types'
 import { StructureDetector } from './structure-detector'
 import { StructureSplitter } from './structure-splitter'
 import { SemanticSplitter, EmbeddingService } from './semantic-splitter'
 import { HierarchyBuilder } from './hierarchy-builder'
+import { splitSectionByParagraphs } from './markdown-splitter'
 
 /**
  * 混合切分器
@@ -179,15 +175,27 @@ export class HybridSplitter {
     const finalChunks: SplitChunk[] = []
 
     for (const chunk of structureChunks) {
-      // 如果章节过长，进行内部语义切分
+      // 章节过长：做「段落感知子切」（切点落在段落/句子边界，不依赖 Embedding API，
+      // 不再有 8000 字符硬切切断句子的情况；语义子切仅在用户显式选 'semantic' 策略时使用）
       if (chunk.content.length > this.SECTION_LENGTH_THRESHOLD) {
         try {
-          const subChunks = await this.semanticSplitter.split(chunk.content, config)
-          // 继承父 chunk 的层级信息
+          const subChunks = splitSectionByParagraphs(
+            chunk.content,
+            {
+              maxChunkSize: maxSize,
+              minChunkSize: config.minChunkSize ?? DEFAULT_SPLIT_CONFIG.minChunkSize!,
+            },
+            {
+              title: chunk.title,
+              sectionPath: chunk.sectionPath,
+              sectionIndex: chunk.sectionIndex,
+            },
+          )
+          // 继承父 chunk 的层级信息（level+1 / parentChunkId / splitMethod=sub-semantic）
           const hierarchyChunks = this.hierarchyBuilder.build(subChunks, chunk)
           finalChunks.push(...hierarchyChunks)
         } catch (error) {
-          // 语义切分失败，保留原结构 chunk
+          // 子切失败，保留原结构 chunk
           finalChunks.push(chunk)
         }
       } else {

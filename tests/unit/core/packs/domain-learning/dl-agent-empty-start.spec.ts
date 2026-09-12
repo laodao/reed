@@ -49,13 +49,27 @@ describe('空主题启动引导', () => {
 
     it('引导先建首批核心概念骨架并落库 dl_save_concept', () => {
       expect(mission).toContain('dl_save_concept')
-      expect(mission).toContain('3-6')
+      expect(mission).toContain('3-8')
     })
 
     it('引导建学习关系（dl_save_relation）与“首个基础概念出讲义（dl_save_card）”', () => {
       expect(mission).toContain('dl_save_relation')
       expect(mission).toContain('dl_save_card')
       expect(mission).toContain('讲义')
+    })
+
+    it('循序渐进（2026-09-12 复盘）：要求逐条建前置、补基础层、不跳级', () => {
+      expect(mission).toContain('prerequisite')
+      expect(mission).toContain('不跳级')
+      expect(mission).toContain('逐条')
+      expect(mission).toContain('前置声明')
+    })
+
+    it('先定主题前置要求（dl_save_space_prereqs）再排知识点顺序', () => {
+      expect(mission).toContain('dl_save_space_prereqs')
+      expect(mission).toContain('主题前置要求')
+      expect(mission).toContain('每个概念都要填 prerequisites')
+      expect(mission).toContain('相邻层级跨度不超过一步')
     })
 
     it('不必一次全部出卡：其余概念保持“待研究”即可', () => {

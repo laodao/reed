@@ -329,6 +329,20 @@ export interface SearchRequest {
   topK?: number
   /** 向量检索权重 */
   vectorWeight?: number
+  /**
+   * 混合检索融合策略（M4）：
+   * - weighted（默认）：向量/BM25 各自归一化后加权（沿用既有行为）
+   * - rrf：Reciprocal Rank Fusion（名次倒数融合，对分数校准不敏感）
+   */
+  fusion?: 'weighted' | 'rrf'
+  /**
+   * 查询自适应路由（M5+）：未显式指定 vectorWeight/fusion 时，按查询意图自动选策略
+   * ——关键词型查询（法条编号/版本号/API 符号/专有名词）走 RRF 混合，语义型保持纯向量。
+   * 默认 true；显式传 vectorWeight 或 fusion 时该开关不生效。
+   */
+  autoRoute?: boolean
+  /** 限定检索的文档 ID 列表（缺省=整库；用于「在这篇文档里找」） */
+  documentIds?: string[]
   /** 相似度阈值 */
   threshold?: number
   /** D2 是否启用 rerank 重排（缺省跟随 KB 配置；false = 强制关闭） */
@@ -351,6 +365,13 @@ export interface SearchResult {
   score: number
   /** 元数据 */
   metadata?: ChunkMetadata
+  /**
+   * M3 章节上下文：命中块所属章节的标题路径（如 ["第二章 公司登记", "第一节 设立"]）。
+   * 供 LLM 组装答案时补全层级语义。
+   */
+  chapterPath?: string[]
+  /** M3 章节上下文：所属章节摘要（LLM 生成，说明该章节核心内容） */
+  chapterSummary?: string
 }
 
 // ==================== Embedding 模型 ====================

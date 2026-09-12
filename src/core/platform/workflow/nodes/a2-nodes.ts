@@ -24,13 +24,23 @@ const QA_DIRECT_MIN_SCORE = 0.75
 /** 默认 RAG 系统提示词（用户可覆盖） */
 const DEFAULT_KB_QA_SYSTEM_PROMPT = `你是知识库问答助手。仅依据下面的参考资料回答用户问题；资料中没有的内容请如实说明未找到，不要编造。`
 
-/** 检索上下文拼接：逐条 [文档名] 内容，整体按 maxChars 截断（整条丢弃不切半） */
-function buildKbContext(results: Array<{ documentName: string; content: string }>, maxChars: number): string {
+/**
+ * 检索上下文拼接：逐条 [文档名] + 章节路径/摘要（M3）+ 内容，整体按 maxChars 截断
+ * （整条丢弃不切半）。
+ */
+function buildKbContext(
+  results: Array<{ documentName: string; content: string; chapterPath?: string[]; chapterSummary?: string }>,
+  maxChars: number,
+): string {
   if (results.length === 0) return '（未检索到相关内容）'
   const parts: string[] = []
   let total = 0
   for (const r of results) {
-    const part = `[${r.documentName}]\n${r.content}`
+    const header = [`[${r.documentName}]`]
+    // M3：章节上下文——让命中片段在「出自哪一章、该章讲什么」的语境中被理解
+    if (r.chapterPath && r.chapterPath.length > 0) header.push(`章节: ${r.chapterPath.join(' › ')}`)
+    if (r.chapterSummary) header.push(`章节摘要: ${r.chapterSummary}`)
+    const part = `${header.join('\n')}\n${r.content}`
     if (total + part.length > maxChars) break // 超限整条丢弃
     parts.push(part)
     total += part.length

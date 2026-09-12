@@ -5,6 +5,7 @@
  */
 
 import { SplitChunk, SplitConfig, DEFAULT_SPLIT_CONFIG } from './types'
+import { findTextBoundary } from './text-boundary'
 
 /**
  * Chunk 合并器
@@ -175,25 +176,13 @@ export class ChunkMerger {
   }
 
   /**
-   * 查找分割边界（句子边界）
+   * 查找分割边界（优先段落空行，其次句子边界）
+   * 复用 text-boundary 的优先级：段落空行 > 中文/英文句末 > 句内停顿；
+   * 全部缺失时按窗口长度硬切（由调用方保证不会死循环）。
    */
   private findSplitBoundary(content: string, start: number, end: number): number {
-    // 在 [start, end] 范围内查找最后一个句子边界
-    const segment = content.slice(start, end)
-    const boundaries = ['。', '！', '？', '\n', '.', '!', '?']
-
-    let lastBoundary = -1
-    for (const boundary of boundaries) {
-      const index = segment.lastIndexOf(boundary)
-      if (index > lastBoundary) {
-        lastBoundary = index
-      }
-    }
-
-    if (lastBoundary > start + 100) { // 至少保留 100 字符
-      return start + lastBoundary + 1
-    }
-
-    return end
+    const minGap = Math.min(120, Math.floor((end - start) / 2))
+    const boundary = findTextBoundary(content, start, end, minGap)
+    return boundary !== -1 ? boundary : end
   }
 }

@@ -642,3 +642,61 @@ export interface AssetRosterForScript {
   locations: AssetRosterEntry[]
   items: AssetRosterEntry[]
 }
+
+// ==================== 追加剧本（增量增加剧本内容） ====================
+
+/**
+ * 追加剧本的模式。
+ *
+ * - `ai-continue`：给一句续写要求，由 AI 接着已有剧情往下写（正文 + 场景）
+ * - `manual-text`：用户自己粘贴/手输一段剧本正文，由 AI 只负责拆成结构化场景
+ */
+export type ScriptAppendMode = 'ai-continue' | 'manual-text'
+
+/** 追加剧本 · 生成草稿的入参 */
+export interface PrepareScriptAppendInput {
+  /** 目标剧本 ID */
+  scriptId: string
+  mode: ScriptAppendMode
+  /** mode='ai-continue'：续写要求（自由文本） */
+  instruction?: string
+  /** mode='manual-text'：用户粘贴的剧本正文 */
+  text?: string
+  providerConfigId?: string
+  modelId?: string
+}
+
+/**
+ * 追加剧本草稿（**未落库**，由用户在预览里确认后才写入）。
+ *
+ * 语义关键：`scriptContent` / `scenes` 都只包含**本次新增**的部分，
+ * 已有正文与已有场次一律不动。
+ */
+export interface ScriptAppendDraft {
+  /** 本次新增的剧本正文（不含已有正文） */
+  scriptContent: string
+  /** AI 顺带给出的本段梗概；manual-text 模式为空串 */
+  synopsis: string
+  /** 本次新增的场景（sceneNumber 已接续已有场次连续编号） */
+  scenes: GeneratedScene[]
+}
+
+/** 追加剧本 · 预览（generate 阶段返回给 UI，供用户确认） */
+export interface ScriptAppendPreview {
+  /** 已有场次数量 */
+  existingSceneCount: number
+  /** 已有正文字数（用于 UI 提示"当前 N 字 → 追加后 M 字"） */
+  existingContentLength: number
+  /** 本次新增场景的起始场次号 */
+  startSceneNumber: number
+  /** 草稿 */
+  draft: ScriptAppendDraft
+}
+
+/** 追加剧本 · 落库结果 */
+export interface AppendScriptResult {
+  /** 追加后的剧本（含拼接后的完整正文） */
+  script: EpisodeScript
+  /** 本次新增的场次记录 */
+  addedScenes: SceneScript[]
+}

@@ -158,13 +158,32 @@
                 <span v-if="r.year" class="work-meta">· {{ r.year }}</span>
               </div>
             </div>
-            <!-- 直接关系 -->
+            <!-- 直接关系（2026-09-12：未确认的边可在此人审确认） -->
             <div class="p-block">
-              <div class="p-label">直接关系（{{ nodeProfile.relations.length }}）</div>
-              <div v-for="rel in nodeProfile.relations" :key="rel.conceptId + rel.rel + rel.direction" class="rel-item" @click="jumpTo(rel)">
+              <div class="p-label">
+                直接关系（{{ nodeProfile.relations.length }}）
+                <span v-if="unverifiedCount > 0" class="p-label-warn">{{ unverifiedCount }} 条待确认</span>
+              </div>
+              <div
+                v-for="rel in nodeProfile.relations"
+                :key="rel.conceptId + rel.rel + rel.direction"
+                class="rel-item"
+                @click="jumpTo(rel)"
+              >
                 <span class="rel-direction">{{ rel.direction === 'out' ? '→' : '←' }}</span>
                 <span class="rel-type">{{ relLabel(rel.rel) }}</span>
                 <span class="rel-name">{{ rel.name }}</span>
+                <template v-if="rel.verified === false">
+                  <el-tag size="small" type="warning" effect="plain">待确认</el-tag>
+                  <el-button
+                    link
+                    size="small"
+                    type="primary"
+                    :loading="confirmingKey === relKey(rel)"
+                    @click.stop="confirmRel(rel)"
+                  >确认</el-button>
+                </template>
+                <el-icon v-else-if="rel.verified" class="rel-verified" title="已确认"><CircleCheckFilled /></el-icon>
               </div>
               <div v-if="nodeProfile.relations.length === 0" class="p-empty">暂无直接关系</div>
             </div>
@@ -385,6 +404,44 @@ async function selectNode(id: string | null): Promise<void> {
 
 function onSelect(node: DlAtlasNode | null): void {
   void selectNode(node?.id ?? null)
+}
+
+// ==================== 关系人审确认（2026-09-12：后端 dl:confirm-relation 接线到界面） ====================
+
+/** 未确认关系条数（档案标题提示用） */
+const unverifiedCount = computed(
+  () => (nodeProfile.value?.relations ?? []).filter((r) => r.verified === false).length,
+)
+
+/** 正在确认的边（loading 态键） */
+const confirmingKey = ref('')
+
+function relKey(rel: { sourceId?: string; targetId?: string; rel: string }): string {
+  return `${rel.sourceId ?? ''}|${rel.targetId ?? ''}|${rel.rel}`
+}
+
+/** 确认一条未验证关系 → verified=true（地图人审），完成后刷新档案与图谱 */
+async function confirmRel(rel: {
+  rel: DlRelationType
+  sourceId?: string
+  targetId?: string
+  evidence?: string | null
+}): Promise<void> {
+  if (!rel.sourceId || !rel.targetId) return
+  confirmingKey.value = relKey(rel)
+  const ok = await store.confirmRelationOf({
+    id: spaceId.value,
+    sourceId: rel.sourceId,
+    targetId: rel.targetId,
+    relationType: rel.rel,
+    ...(rel.evidence ? { evidence: rel.evidence } : {}),
+  })
+  confirmingKey.value = ''
+  if (!ok) return
+  const keepId = nodeProfile.value?.node.id ?? null
+  // 确认后刷新档案（关系 confirmed）与图谱（边样式/图例随 verified 变化）
+  await selectNode(keepId)
+  graph.value = await store.fetchAtlasGraph(spaceId.value)
 }
 
 function clearSelection(): void {
@@ -819,6 +876,13 @@ onUnmounted(() => {
   margin-bottom: 6px;
 }
 
+// 待确认提示（关系人审，2026-09-12）
+.p-label-warn {
+  margin-left: 6px;
+  font-weight: 400;
+  color: var(--el-color-warning);
+}
+
 .p-text {
   font-size: 13px;
   color: var(--el-text-color-regular);
@@ -898,6 +962,12 @@ onUnmounted(() => {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  // 已确认标记（人审通过）
+  .rel-verified {
+    color: var(--el-color-success);
+    font-size: 13px;
   }
 }
 

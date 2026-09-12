@@ -36,6 +36,12 @@ export default defineConfig({
           index: resolve(__dirname, 'src/preload/index.ts')
         }
       }
+    },
+    // preload 也会 import @shared 的纯常量/纯函数（如事件通道名）——缺别名时 Rollup 解析失败、App 起不来
+    resolve: {
+      alias: {
+        '@shared': resolve(__dirname, 'src/shared')
+      }
     }
   },
   renderer: {

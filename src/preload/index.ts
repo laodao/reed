@@ -168,6 +168,10 @@ const IPC_CHANNELS = {
   // spec 2026-05-08：场景级 AI 润色
   EP_POLISH_SCENE: 'ep:polish-scene',
 
+  // 追加剧本（已有剧本继续增加内容 · 增量不覆盖已有场次）
+  EP_PREPARE_SCRIPT_APPEND: 'ep:prepare-script-append',
+  EP_APPEND_SCRIPT: 'ep:append-script',
+
   // P4-T6 引用解析 + 完整性校验
   EP_RESOLVE_REFERENCE: 'ep:resolve-reference',
   EP_RESOLVE_REFERENCES_BATCH: 'ep:resolve-references-batch',
@@ -1252,11 +1256,17 @@ const electronAPI = {
     reprocessDocument: (documentId: string) => ipcRenderer.invoke('knowledge-base:reprocess-document', documentId),
     // 获取文档分片
     getDocumentChunks: (documentId: string) => ipcRenderer.invoke('knowledge-base:get-document-chunks', documentId),
-    // 分页获取文档分片
-    getDocumentChunksPaginated: (documentId: string, page: number, pageSize: number) =>
-      ipcRenderer.invoke('knowledge-base:get-document-chunks-paginated', { documentId, page, pageSize }),
+    // 分页获取文档分片（可选按章节过滤，M5 章节树定位）
+    getDocumentChunksPaginated: (documentId: string, page: number, pageSize: number, chapterTitle?: string) =>
+      ipcRenderer.invoke('knowledge-base:get-document-chunks-paginated', { documentId, page, pageSize, chapterTitle }),
     // 获取单个切片详情
     getChunk: (chunkId: string) => ipcRenderer.invoke('knowledge-base:get-chunk', chunkId),
+    // 章节树 + 摘要进度（M2）
+    getChapterTree: (documentId: string) =>
+      ipcRenderer.invoke('knowledge-base:get-chapter-tree', { documentId }),
+    // 章节摘要生成/重试（M2；自动调度在处理完成后异步进行）
+    summarizeDocument: (documentId: string, retryFailed?: boolean) =>
+      ipcRenderer.invoke('knowledge-base:summarize-document', { documentId, retryFailed }),
     // 检索知识库
     search: (request: {
       knowledgeBaseId: string
@@ -1301,6 +1311,10 @@ const electronAPI = {
       ipcRenderer.invoke('dl:create-space', p),
     // 绑定/改绑项目知识库（M4-B → { kbId }）
     setSpaceKb: (p: { id: string; kbId?: string | null }) => ipcRenderer.invoke('dl:set-space-kb', p),
+    // 主题学习前置要求（2026-09-12：整个领域的学习门槛；读 → DlSpacePrereq[]，写 → { prerequisites }）
+    getSpacePrereqs: (id: string) => ipcRenderer.invoke('dl:get-space-prereqs', { id }),
+    setSpacePrereqs: (p: { id: string; prerequisites: Array<{ name: string; why?: string; level?: string; inSpace?: boolean }> }) =>
+      ipcRenderer.invoke('dl:set-space-prereqs', p),
     // 空间行详情（DlProjectRow；本版界面少用）
     getSpace: (id: string) => ipcRenderer.invoke('dl:get-space', { id }),
     // 切换空间状态（active / paused / archived → { ok }）
@@ -1314,6 +1328,16 @@ const electronAPI = {
     getNodeProfile: (id: string, nodeId: string) => ipcRenderer.invoke('dl:get-node-profile', { id, nodeId }),
     // 推荐下一个待学概念（→ conceptId | null）
     pickNext: (id: string) => ipcRenderer.invoke('dl:pick-next', { id }),
+    // 手工追加知识点（2026-09-12：用户建点；勾选的前置直连为已确认边 → DlCreateConceptResult）
+    saveConcept: (p: {
+      id: string
+      name: string
+      nodeType?: string
+      parentId?: string | null
+      definitionShort?: string | null
+      en?: string | null
+      prerequisites?: string[]
+    }) => ipcRenderer.invoke('dl:save-concept', p),
     // 标记「懂了」（前置全就绪才放行 → { ok }）
     ackMastered: (id: string, conceptId: string) => ipcRenderer.invoke('dl:ack-mastered', { id, conceptId }),
     // 标记「没懂」（sectionKey 定位到讲义区 → { confusedCount, splitSuggested }）
@@ -2419,6 +2443,28 @@ const electronAPI = {
     // spec 2026-05-08：场景级 AI 润色 — 不直接落库，返回字段子集让前端 SceneEditDialog 对比
     polishScene: (sceneId: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_POLISH_SCENE, sceneId, providerConfigId, modelId),
+
+    /**
+     * 追加剧本 · 生成草稿（不落库）。
+     * mode='ai-continue' 用 instruction 续写；mode='manual-text' 用 text 拆场景。
+     * 返回 { existingSceneCount, existingContentLength, startSceneNumber, draft }。
+     */
+    prepareScriptAppend: (
+      scriptId: string,
+      input: {
+        mode: 'ai-continue' | 'manual-text'
+        instruction?: string
+        text?: string
+        providerConfigId?: string
+        modelId?: string
+      },
+    ) => ipcRenderer.invoke(IPC_CHANNELS.EP_PREPARE_SCRIPT_APPEND, scriptId, input),
+    /** 追加剧本 · 落库（用户确认草稿后调用；只 append，不删已有场次） */
+    appendScript: (
+      scriptId: string,
+      draft: { scriptContent: string; synopsis: string; scenes: any[] },
+      options?: { keepApproved?: boolean },
+    ) => ipcRenderer.invoke(IPC_CHANNELS.EP_APPEND_SCRIPT, scriptId, draft, options),
 
     // P4-T6 引用解析 + 完整性校验
     resolveReference: (kind: 'character' | 'location' | 'item', bindingId: string) =>

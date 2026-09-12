@@ -184,11 +184,11 @@ export async function augmentWithDialogFiles(
  * 两路 score 不同量纲（余弦 vs TF），不能直接数值比较——dialog 命中按
  * 「用户刚上传的文件优先」原则排在 KB 命中之前，整体截断 topK。
  */
-export function mergeRetrievalResults<T extends { source?: string }>(
-  kbResults: T[],
-  dialogHits: T[],
+export function mergeRetrievalResults<A extends object, B extends object>(
+  kbResults: A[],
+  dialogHits: B[],
   topK: number
-): T[] {
+): Array<A | B> {
   return [...dialogHits, ...kbResults].slice(0, Math.max(1, topK))
 }
 
