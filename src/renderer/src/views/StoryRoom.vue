@@ -193,6 +193,7 @@
               >
                 <div class="po-head">
                   <span class="po-label">{{ recommendedTag(plans[i]!.plan!.recommended === oi) }}{{ opt.label }}</span>
+                  <el-button size="small" @click="keepConflict(i)">知情保留</el-button>
                   <el-button
                     v-if="opt.action !== 'edit_chapter' && opt.action !== 'none'"
                     size="small"
@@ -427,6 +428,21 @@ async function solveConflict(i: number): Promise<void> {
     else plans.value[i] = { error: res.error || '解题失败' }
   } catch (e: any) {
     plans.value[i] = { error: e.message }
+  }
+}
+
+async function keepConflict(i: number): Promise<void> {
+  const c: any = store.conflicts.value[i]
+  if (!c) return
+  const res = await window.electronAPI.longwriting.conflictExecute(projectId.value, 'acknowledge_conflict', {
+    conflict: { rule: c.rule, message: c.description || c.message, entityName: c.entityName, entityType: c.entityType, chapterNumber: c.chapterNumber },
+    note: '作者知情保留',
+  })
+  if (res.success) {
+    ElMessage.success('已知情保留')
+    await store.loadConflictsIfWriting()
+  } else {
+    ElMessage.warning(res.error || '保留失败')
   }
 }
 

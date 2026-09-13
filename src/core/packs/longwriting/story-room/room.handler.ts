@@ -10,6 +10,7 @@ import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { StoryRoomSessionService } from './room-session'
 import { planConflictResolution, executeConflictAction, type ConflictInput } from './room-conflict'
+import { acknowledgeConflict } from '@core/platform/services/longwriting/conflict-gate'
 import { StoryRoomDistillerService } from './room-distiller'
 import { applyLedgerOp } from './room-ledger'
 import type { RoomPhaseId } from '@shared/types/story-room.types'
@@ -212,7 +213,15 @@ export function registerStoryRoomHandlers(): void {
   ipcBridge.handle('longwriting:room:conflict:execute', async (_event, projectId: string, action: string, payload: Record<string, unknown>) => {
     try {
       const db = getCoreDatabaseManager()
+      const conflict = (payload?.conflict || null) as ConflictInput | null
+      // 知情保留：作者显式确认保留该疑点（如续篇钩子类伏笔），登记后不再拦截
+      if (action === 'acknowledge_conflict' && conflict) {
+        await acknowledgeConflict(db, projectId, conflict, 'kept', String(payload?.note || ''))
+        return { success: true, data: { message: '已知情保留，该疑点不再拦截生成' } }
+      }
       const r = await executeConflictAction(db, projectId, action, payload)
+      // 受控动作成功 → 源疑点自动登记为已解决（逐章门禁据此放行）
+      if (r.ok && conflict) await acknowledgeConflict(db, projectId, conflict, 'resolved', r.message)
       return { success: r.ok, data: { message: r.message }, error: r.ok ? undefined : r.message }
     } catch (error: any) {
       return { success: false, error: error.message }

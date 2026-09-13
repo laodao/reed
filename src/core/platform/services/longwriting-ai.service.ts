@@ -13,6 +13,8 @@ import type {
 import { composeChapterPrompt, estimateContextTokens } from './longwriting/chapter-context'
 import { applyChapterQualityGate } from './longwriting/chapter-quality-gate'
 import { assessBibleReadiness, buildBibleGateError, buildCastRosterConstraint } from './longwriting/bible-readiness-gate'
+import { ConsistencyService } from './longwriting/graph/consistency.service'
+import { buildConflictGateError } from './longwriting/conflict-gate'
 import {
   buildNovelChapterDiscipline,
   buildScriptChapterDiscipline,
@@ -1340,6 +1342,8 @@ ${castBlock}
     // 评审 P2-1：预写提纲同属长文内容，无名册时【人物】段必然造名，同过就绪门
     const prewriteGateError = await this.checkBibleGate(projectId, '章节预写提纲')
     if (prewriteGateError) return { success: false, error: prewriteGateError }
+    const pwConflictErr = await this.checkChapterConflictGate(projectId, outlineId)
+    if (pwConflictErr) return { success: false, error: pwConflictErr }
 
     // 获取相关数据
     const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
@@ -1428,6 +1432,23 @@ ${plotInfo || '暂无相关情节'}
   }
 
   /**
+   * 52 号流程闭环：逐章一致性门禁——已写章节存在未处理疑点时，
+   * 禁止生成下一章（正文/预写），直到 AI 解题、人工修改或知情保留。
+   */
+  private async checkChapterConflictGate(projectId: string, outlineId: string): Promise<string | null> {
+    try {
+      const cs = ConsistencyService.getInstance()
+      const chapterNo = await cs.chapterNumberOf(projectId, outlineId)
+      const blocking = await cs.scanBlockingConflicts(projectId, chapterNo)
+      return buildConflictGateError(chapterNo, blocking)
+    } catch (e: any) {
+      // 门禁自身异常不阻断生成（扫描依赖的图谱数据缺失等），记日志
+      console.warn('[longwriting] 一致性门禁异常（跳过）:', e?.message)
+      return null
+    }
+  }
+
+  /**
    * 生成章节内容
    */
   async generateChapter(
@@ -1442,6 +1463,8 @@ ${plotInfo || '暂无相关情节'}
   ): Promise<GenerateResponse> {
     const gateError = await this.checkBibleGate(projectId, '章节正文')
     if (gateError) return { success: false, error: gateError }
+    const conflictErr = await this.checkChapterConflictGate(projectId, outlineId)
+    if (conflictErr) return { success: false, error: conflictErr }
     const asm = await this.assembleChapterGeneration(projectId, outlineId, { targetWords, style, extraPrompt })
     if ('error' in asm) return { success: false, error: asm.error }
     try {
@@ -1513,6 +1536,8 @@ ${plotInfo || '暂无相关情节'}
   ): Promise<GenerateResponse> {
     const gateError = await this.checkBibleGate(projectId, '章节正文')
     if (gateError) return { success: false, error: gateError }
+    const conflictErr = await this.checkChapterConflictGate(projectId, outlineId)
+    if (conflictErr) return { success: false, error: conflictErr }
     const asm = await this.assembleChapterGeneration(projectId, outlineId, {
       targetWords: params.targetWords, style: params.style, extraPrompt: params.extraPrompt,
     })

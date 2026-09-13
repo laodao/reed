@@ -838,6 +838,12 @@ async function loadVersions(chapterId: string) {
 async function saveChapter(outlineId: string) {
   const content = chapterContentMap.value[outlineId]
   if (content === undefined) return
+  // 52 号数据安全：缓冲为空但库里已有正文 → 视为异常（加载竞态/误清空），拒绝保存
+  if (!content.trim() && (lastSavedContent[outlineId] || '').trim()) {
+    delete saveTimers[outlineId]
+    ElMessage.warning('章节内容为空，已跳过自动保存（防止覆盖已有正文）')
+    return
+  }
 
   savingMap.value[outlineId] = true
   try {
@@ -1307,7 +1313,8 @@ async function executeGeneration() {
 
   showGenerateDialog.value = false
   generatingMap.value[outlineId] = true
-  chapterContentMap.value[outlineId] = '' // 清空当前内容
+  const previousContent = chapterContentMap.value[outlineId] || ''
+  chapterContentMap.value[outlineId] = '' // 清空当前内容（失败时恢复）
 
   console.log('[ChapterStage] 生成章节, providerId:', selectedModel.value?.providerId, 'modelId:', selectedModel.value?.modelId)
 
@@ -1333,6 +1340,7 @@ async function executeGeneration() {
       } else if (event.type === 'error') {
         generatingMap.value[outlineId] = false
         generatingEventIdMap.value[outlineId] = null
+        if (!chapterContentMap.value[outlineId] && previousContent) chapterContentMap.value[outlineId] = previousContent
         ElMessage.error(event.error || '生成失败')
         unsubscribe()
       }
@@ -1374,6 +1382,9 @@ async function handleGenerateWithContext(payload: { enabledItemIds: string[]; it
   }
 
   generatingMap.value[outlineId] = true
+  // 52 号数据安全修复：记下清空前的内容——门禁拒绝/生成失败时必须恢复，
+  // 否则空缓冲会被 3 秒自动保存落库，覆盖已有正文（实跑中第 2 章曾被清空）
+  const previousContent = chapterContentMap.value[outlineId] || ''
   chapterContentMap.value[outlineId] = ''
 
   const eventId = `chapter-${outlineId}-${Date.now()}`
@@ -1395,6 +1406,7 @@ async function handleGenerateWithContext(payload: { enabledItemIds: string[]; it
       } else if (event.type === 'error') {
         generatingMap.value[outlineId] = false
         generatingEventIdMap.value[outlineId] = null
+        if (!chapterContentMap.value[outlineId] && previousContent) chapterContentMap.value[outlineId] = previousContent
         ElMessage.error(event.error || '生成失败')
         unsubscribe()
       }
@@ -1419,6 +1431,8 @@ async function handleGenerateWithContext(payload: { enabledItemIds: string[]; it
     generatingMap.value[outlineId] = false
     generatingEventIdMap.value[outlineId] = null
     unsubscribe()
+    // 数据安全：未产生任何内容即失败（如门禁拦截）→ 恢复清空前的正文
+    if (!chapterContentMap.value[outlineId] && previousContent) chapterContentMap.value[outlineId] = previousContent
     ElMessage.error(result.error || '生成失败')
   }
 }

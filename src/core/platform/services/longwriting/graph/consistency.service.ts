@@ -20,6 +20,7 @@
  */
 
 import { getCoreDatabaseManager, type ICoreDatabaseManager } from '@core/database/database-manager.interface'
+import { listAcknowledgedKeys, filterBlockingConflicts } from '../conflict-gate'
 import type { GraphEntityType } from '@shared/types/longwriting.types'
 import { CLIFFHANGER_MARKER } from '../../writing-methodology'
 
@@ -188,6 +189,21 @@ export class ConsistencyService {
   /**
    * 全项目矛盾扫描。
    */
+  /** 目标 outlineId 对应的章号（逐章门禁用） */
+  async chapterNumberOf(projectId: string, outlineId: string): Promise<number> {
+    return this.calcChapterNumber(projectId, outlineId)
+  }
+
+  /**
+   * 52 号流程闭环：扫描第 1..uptoChapter 章（已写范围）的一致性疑点，
+   * 剔除作者已登记（解决/知情保留）的与只引用未来章节的，剩余即阻断项。
+   */
+  async scanBlockingConflicts(projectId: string, uptoChapter: number): Promise<ConflictItem[]> {
+    const all = await this.scanContradictions(projectId)
+    const ack = await listAcknowledgedKeys(this.manager(), projectId)
+    return filterBlockingConflicts(all, uptoChapter, ack)
+  }
+
   async scanContradictions(projectId: string): Promise<ConflictItem[]> {
     const m = this.manager()
     if (!m) return []

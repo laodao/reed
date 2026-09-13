@@ -223,4 +223,45 @@ describe('LongWritingAIService 圣经就绪门接线', () => {
     expect(String(r.error)).toContain('核心故事')
     expect(spy).not.toHaveBeenCalled()
   })
+
+describe('LongWritingAIService 逐章冲突门禁接线（52 号流程闭环）', () => {
+  const svc = getLongWritingAIService()
+  const callSpy = () => vi.spyOn(svc as any, 'callAIStream')
+
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    db.lwStoryOverviews.getByProjectId.mockResolvedValue(READY_DB.overview)
+    db.lwCharacters.getByProjectId.mockResolvedValue(READY_DB.characters)
+    db.lwPlots.getByProjectId.mockResolvedValue(READY_DB.plots)
+    db.lwBackgrounds.getByProjectId.mockResolvedValue(null)
+    db.lwProjects.getById.mockResolvedValue(null)
+  })
+
+  it('已写章节存在未处理疑点 → 拒绝生成且不发起 AI 调用', async () => {
+    const { ConsistencyService } = await import('@core/platform/services/longwriting/graph/consistency.service')
+    const cs = ConsistencyService.getInstance()
+    vi.spyOn(cs, 'chapterNumberOf').mockResolvedValue(2)
+    vi.spyOn(cs, 'scanBlockingConflicts').mockResolvedValue([
+      { rule: 'R6', severity: 'warning', message: '实体「魏宗简」第 1 章终态，第 2 章恢复', entityName: '魏宗简', chapterNumber: 1 },
+    ] as never)
+    const spy = callSpy()
+    const r = await svc.generateChapterWithContext('ev-cg-1', 'p1', 'ol1', { targetWords: 2500 })
+    expect(r.success).toBe(false)
+    expect(String(r.error)).toContain('一致性疑点')
+    expect(String(r.error)).toContain('AI 解题')
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('无阻断疑点 → 正常生成（不触发门禁报错）', async () => {
+    const { ConsistencyService } = await import('@core/platform/services/longwriting/graph/consistency.service')
+    const cs = ConsistencyService.getInstance()
+    vi.spyOn(cs, 'chapterNumberOf').mockResolvedValue(2)
+    vi.spyOn(cs, 'scanBlockingConflicts').mockResolvedValue([])
+    callSpy().mockResolvedValue(JSON.stringify([
+      { name: '第一章', summary: 's', estimatedWords: 2500 },
+    ]))
+    const r = await svc.generateOutlineStory('ev-cg-2', 'p1', 'pc1', 'm1', 1)
+    expect(r.success).toBe(true)
+  })
+})
 })
