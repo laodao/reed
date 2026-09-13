@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<base href="file:///C:/Users/daoge/code/project/the-bot/node_modules/katex/dist/" />
+<link rel="stylesheet" href="katex.css" />
+<style>
+/* 复现应用全局样式（styles/index.scss 的 reset + Element Plus 亮色变量子集） */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --el-color-primary: #6fa8dc;
+  --el-color-primary-light-3: #8fc0ea;
+  --el-color-primary-light-5: #a8ccf0;
+  --el-color-primary-light-7: #c5ddf5;
+  --el-color-primary-light-9: #eaf3fb;
+  --el-color-warning: #e6a23c;
+  --el-color-warning-light-9: #fdf6ec;
+  --el-color-info-light-5: #c8c9cc;
+  --el-text-color-primary: #303133;
+  --el-text-color-regular: #606266;
+  --el-text-color-secondary: #909399;
+  --el-text-color-placeholder: #c0c4cc;
+  --el-border-color: #dcdfe6;
+  --el-border-color-lighter: #ebeef5;
+  --el-fill-color: #f0f2f5;
+  --el-fill-color-light: #f5f7fa;
+  --el-fill-color-lighter: #fafafa;
+}
+body { font-family: 'Microsoft YaHei', -apple-system, 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.6; color: var(--el-text-color-primary); background: #faf9f7; }
+.pane-lesson { width: 900px; margin: 16px auto; background: #fff; border: 1px solid var(--el-border-color-lighter); border-radius: 10px; }
+.lesson-body { padding: 14px 18px; }
+</style>
+<style>@charset "UTF-8";
+/**
+ * 讲义正文排版（MarkdownViewer 的 markdown 内容样式）
+ * @module views/domain-learning/lesson-markdown
+ *
+ * 背景（2026-09-12 用户反馈「排版混乱」）：
+ * 1. bytemd 只带编辑器外壳样式，**不提供 `.markdown-body` 内容样式**；
+ * 2. 全局 `* { margin: 0; padding: 0 }`（styles/index.scss）又把浏览器默认的
+ *    段落间距、标题字号、列表左内边距（`ol/ul` 的 padding-inline-start）全部清零，
+ *    于是出现「表格无边框、段落无首行空格、编号紧贴左侧边框」。
+ *
+ * 因此讲义正文的排版必须在这里补齐：章节层级 / 段落首行缩进 / 列表缩进 /
+ * 表格边框 / 引用 / 代码 / 公式。规则用 `` 落到 bytemd 生成的 DOM 上
+ * （bytemd 内部节点没有 scoped 属性，普通 scoped 选择器匹配不到）。
+ */
+.markdown-viewer .markdown-body {
+  font-size: 14px;
+  line-height: 1.85;
+  color: var(--el-text-color-regular);
+  overflow-wrap: break-word;
+}
+.markdown-viewer .markdown-body h1,
+.markdown-viewer .markdown-body h2 {
+  margin: 18px 0 8px;
+  padding-left: 10px;
+  border-left: 3px solid var(--el-color-primary);
+  font-size: 15.5px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--el-text-color-primary);
+}
+.markdown-viewer .markdown-body h3 {
+  margin: 16px 0 8px;
+  padding-left: 9px;
+  border-left: 3px solid var(--el-color-primary-light-5);
+  font-size: 14.5px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--el-text-color-primary);
+}
+.markdown-viewer .markdown-body h4,
+.markdown-viewer .markdown-body h5,
+.markdown-viewer .markdown-body h6 {
+  margin: 13px 0 6px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--el-text-color-primary);
+}
+.markdown-viewer .markdown-body > :first-child {
+  margin-top: 0;
+}
+.markdown-viewer .markdown-body p {
+  margin: 0 0 10px;
+  text-indent: 2em;
+}
+.markdown-viewer .markdown-body > p:last-child {
+  margin-bottom: 0;
+}
+.markdown-viewer .markdown-body li > p,
+.markdown-viewer .markdown-body td > p,
+.markdown-viewer .markdown-body th > p,
+.markdown-viewer .markdown-body blockquote > p {
+  margin: 0;
+  text-indent: 0;
+}
+.markdown-viewer .markdown-body ul,
+.markdown-viewer .markdown-body ol {
+  margin: 0 0 10px;
+  padding-left: 2.2em;
+}
+.markdown-viewer .markdown-body ol {
+  list-style: decimal;
+}
+.markdown-viewer .markdown-body ul {
+  list-style: disc;
+}
+.markdown-viewer .markdown-body li {
+  margin: 3px 0;
+  text-indent: 0;
+}
+.markdown-viewer .markdown-body li > ul,
+.markdown-viewer .markdown-body li > ol {
+  margin: 3px 0 0;
+}
+.markdown-viewer .markdown-body table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  margin: 10px 0;
+  border-collapse: collapse;
+  border-spacing: 0;
+  overflow-x: auto;
+  font-size: 13.5px;
+}
+.markdown-viewer .markdown-body th,
+.markdown-viewer .markdown-body td {
+  padding: 6px 10px;
+  border: 1px solid var(--el-border-color);
+  text-align: left;
+  text-indent: 0;
+  vertical-align: top;
+  line-height: 1.7;
+}
+.markdown-viewer .markdown-body th {
+  background: var(--el-fill-color-light);
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+  white-space: nowrap;
+}
+.markdown-viewer .markdown-body tbody tr:nth-child(even) td {
+  background: var(--el-fill-color-lighter);
+}
+.markdown-viewer .markdown-body blockquote {
+  margin: 10px 0;
+  padding: 7px 12px;
+  border-left: 3px solid var(--el-color-primary-light-5);
+  border-radius: 0 6px 6px 0;
+  background: var(--el-fill-color-lighter);
+  color: var(--el-text-color-secondary);
+}
+.markdown-viewer .markdown-body code {
+  padding: 1px 5px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+  background: var(--el-fill-color-light);
+  font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+  font-size: 12.5px;
+}
+.markdown-viewer .markdown-body pre {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-fill-color-lighter);
+  overflow-x: auto;
+}
+.markdown-viewer .markdown-body pre code {
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.markdown-viewer .markdown-body .katex {
+  font-size: 1.05em;
+}
+.markdown-viewer .markdown-body .katex-display {
+  margin: 12px 0;
+  padding: 2px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  text-indent: 0;
+}
+.markdown-viewer .markdown-body img {
+  max-width: 100%;
+  height: auto;
+}
+.markdown-viewer .markdown-body .bytemd-mermaid {
+  display: flex;
+  justify-content: center;
+  margin: 12px 0;
+  padding: 10px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-fill-color-lighter);
+}
+.markdown-viewer .markdown-body hr {
+  margin: 14px 0;
+  border: none;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+.markdown-viewer .markdown-body a {
+  color: var(--el-color-primary);
+  text-decoration: none;
+}
+.markdown-viewer .markdown-body a:hover {
+  text-decoration: underline;
+}</style>
+<style>.section-lesson {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 2px 2px 12px;
+}
+
+.sec {
+  position: relative;
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--el-text-color-regular);
+}
+.sec .sec-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.sec .sec-head.sec-head-bare {
+  margin-bottom: 2px;
+  padding-bottom: 0;
+  border-bottom: none;
+  justify-content: flex-end;
+}
+.sec .sec-head .sec-index {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 19px;
+  height: 19px;
+  border-radius: 5px;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1;
+}
+.sec .sec-head .sec-title {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--el-text-color-primary);
+}
+.sec .sec-head .sec-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.sec .sec-head .sec-actions .fold-hint {
+  color: var(--el-color-primary);
+  cursor: pointer;
+}
+.sec .sec-head .sec-actions .sec-confuse {
+  color: var(--el-text-color-placeholder);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.sec .sec-head .sec-actions .sec-confuse:hover {
+  color: var(--el-color-warning);
+}
+.sec:hover .sec-actions .sec-confuse {
+  opacity: 1;
+}
+
+.sec-body p:first-child {
+  margin-top: 0;
+}
+
+.sec-intro {
+  background: var(--el-fill-color-lighter);
+  border-radius: 8px;
+  padding: 12px 18px 14px 14px;
+}
+
+.sec-note {
+  background: var(--el-color-warning-light-9);
+  border-left: 3px solid var(--el-color-warning);
+  border-radius: 6px;
+  padding: 10px 14px;
+}
+
+.sec-review {
+  border-top: 1px dashed var(--el-border-color);
+  padding-top: 12px;
+}
+
+.sec-related .related-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sec-related .related-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.sec-related .related-chip:hover {
+  background: var(--el-color-primary-light-7);
+}
+.sec-related .related-chip .rel-tag {
+  font-size: 10.5px;
+  color: var(--el-text-color-placeholder);
+}
+
+.sec-works .work-item {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.sec-works .work-item .work-kind {
+  font-size: 10.5px;
+  color: #fff;
+  background: var(--el-color-primary);
+  border-radius: 4px;
+  padding: 0 5px;
+  flex-shrink: 0;
+}
+.sec-works .work-item .work-title {
+  color: var(--el-text-color-primary);
+}
+.sec-works .work-item .work-meta {
+  color: var(--el-text-color-placeholder);
+  font-size: 12px;
+}
+
+.sec-evidence .evidence-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.sec-evidence .evidence-item .evidence-quote {
+  width: 100%;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  border-left: 2px solid var(--el-color-info-light-5);
+  padding-left: 8px;
+}
+
+.authoring-notes {
+  margin-top: -4px;
+  font-size: 12px;
+}
+.authoring-notes .notes-toggle {
+  display: inline-block;
+  color: var(--el-text-color-placeholder);
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px dashed var(--el-border-color);
+  padding-bottom: 1px;
+}
+.authoring-notes .notes-toggle:hover {
+  color: var(--el-color-primary);
+}
+.authoring-notes .notes-list {
+  margin: 8px 0 0;
+  padding: 10px 14px 10px 28px;
+  background: var(--el-fill-color-lighter);
+  border-radius: 6px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.7;
+  list-style: disc;
+}
+.authoring-notes .notes-list li + li {
+  margin-top: 5px;
+}</style>
+<script src="katex.min.js"></script>
+</head>
+<body>
+<div class="pane-lesson">
+  <div class="lesson-body block-body-pad">
+    <div class="section-lesson">
+
+  <div class="sec sec-note">
+    <div class="sec-head">
+      <span class="sec-index">1</span>
+      <span class="sec-title">本讲说明：读者画像 · 数学前置 · 记号热身 · 可测目标</span>
+      <span class="sec-actions">
+        <span class="sec-confuse">这块没懂</span>
+        
+      </span>
+    </div>
+    <div class="sec-body">
+      <div class="markdown-viewer"><div class="markdown-body"><h3>读者画像</h3>
+<p>会初中代数即可。</p>
+<h3>前置</h3>
+<p>已掌握：直角三角形与面积概念。</p>
+<h3>记号热身</h3>
+<p><span class="math math-inline">\sqrt{\ }</span> 读作「根号」：<span class="math math-inline">\sqrt{9}=3</span> 表示「什么数自乘等于 9」。</p>
+</div></div>
+    </div>
+  </div>
+
+  <div class="sec sec-body">
+    <div class="sec-head">
+      <span class="sec-index">2</span>
+      <span class="sec-title">定理陈述</span>
+      <span class="sec-actions">
+        <span class="sec-confuse">这块没懂</span>
+        
+      </span>
+    </div>
+    <div class="sec-body">
+      <div class="markdown-viewer"><div class="markdown-body"><p>直角三角形的两条直角边 <span class="math math-inline">a,b</span> 与斜边 <span class="math math-inline">c</span> 满足：</p>
+<div class="math math-display">a^2+b^2=c^2</div>
+
+
+</div></div>
+    </div>
+  </div>
+
+  <div class="sec sec-body">
+    <div class="sec-head">
+      <span class="sec-index">3</span>
+      <span class="sec-title">依据与证明</span>
+      <span class="sec-actions">
+        <span class="sec-confuse">这块没懂</span>
+        <span class="fold-hint">展开全文</span>
+      </span>
+    </div>
+    <div class="sec-body">
+      <div class="markdown-viewer"><div class="markdown-body"><p>证明：把四个全等直角三角形拼成一个边长为 <span class="math math-inline">a+b</span> 的大正方形……</p>
+</div></div>
+    </div>
+  </div>
+
+  <div class="sec sec-note">
+    <div class="sec-head">
+      <span class="sec-index">4</span>
+      <span class="sec-title">示例与反例</span>
+      <span class="sec-actions">
+        <span class="sec-confuse">这块没懂</span>
+        
+      </span>
+    </div>
+    <div class="sec-body">
+      <div class="markdown-viewer"><div class="markdown-body"><ol>
+<li>勾三股四弦五：<span class="math math-inline">3^2+4^2=9+16=25=5^2</span>。</li>
+<li>反例：<span class="math math-inline">2^2+3^2=13\ne4^2</span>，所以 (2,3,4) 构不成直角三角形。</li>
+</ol>
+</div></div>
+    </div>
+  </div>
+
+  <div class="sec sec-review">
+    <div class="sec-head">
+      <span class="sec-index">5</span>
+      <span class="sec-title">自测</span>
+      <span class="sec-actions">
+        <span class="sec-confuse">这块没懂</span>
+        
+      </span>
+    </div>
+    <div class="sec-body">
+      <div class="markdown-viewer"><div class="markdown-body"><p><strong>Q1</strong> 直角边 6、8 的斜边是多少？</p>
+<p><strong>A1</strong> <span class="math math-inline">\sqrt{6^2+8^2}=\sqrt{100}=10</span>。</p>
+</div></div>
+    </div>
+  </div>
+
+  <div class="authoring-notes">
+    <span class="notes-toggle">编写注记（学习者可跳过）· 3 条展开</span>
+    <ul class="notes-list"><li>采集情况：证据来自《几何原本》第一卷命题 47 的公开译本摘要。</li><li>数值自检：$3^2+4^2=25$、$6^2+8^2=100$ 已回算核对。</li><li>⚠️ 待核验：证明配图本轮未取得原文插图，正文用文字描述。</li></ul>
+  </div>
+    </div>
+  </div>
+</div>
+<script>
+  // 与 @bytemd/plugin-math 的 viewerEffect 同口径：查询类名锚点后客户端渲染 KaTeX
+  document.querySelectorAll('.math.math-inline').forEach(function (el) {
+    katex.render(el.innerText, el, { throwOnError: false, displayMode: false });
+  });
+  document.querySelectorAll('.math.math-display').forEach(function (el) {
+    katex.render(el.innerText, el, { throwOnError: false, displayMode: true });
+  });
+</script>
+</body>
+</html>

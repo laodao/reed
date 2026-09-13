@@ -233,8 +233,26 @@ const GOOGLE_OFFICIAL_ROOTS = new Set([
   'https://generativelanguage.googleapis.com/',
 ])
 
+/** 版本段（与本应用 BaseURL 约定一致：自定义地址须以 /v1 这类版本段结尾） */
+const VERSION_SEGMENT_RE = /\/v\d+[a-z]*$/i
+
+/**
+ * Anthropic baseURL 规整。
+ *
+ * 两条 Anthropic 链路对 baseUrl 的期望不同，必须区分：
+ * - `@ai-sdk/anthropic`（本适配器）：请求 `${baseURL}/messages`，故 baseURL 必须含版本段
+ *   （其官方默认值就是 `https://api.anthropic.com/v1`）；
+ * - `@anthropic-ai/sdk`（createProvider 链路）：请求 `${baseURL}/v1/messages`，baseURL 为根地址。
+ *
+ * 而官方文档给第三方 Anthropic 兼容端点时给的是**根地址**（如阿里百炼 Token Plan 的
+ * `https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic`），模板 baseUrl 保持文档原样，
+ * 故在此处补版本段——否则会打到 `.../apps/anthropic/messages` 而 404。
+ */
 function anthropicBaseURLOpts(baseURL: string): { baseURL?: string } {
-  return ANTHROPIC_OFFICIAL_ROOTS.has(baseURL) ? {} : { baseURL: baseURL.replace(/\/$/, '') }
+  const trimmed = (baseURL || '').replace(/\/+$/, '')
+  // 官方根地址/空值 → 省略，交给 SDK 默认（等价于 .../v1）
+  if (!trimmed || ANTHROPIC_OFFICIAL_ROOTS.has(trimmed)) return {}
+  return { baseURL: VERSION_SEGMENT_RE.test(trimmed) ? trimmed : `${trimmed}/v1` }
 }
 
 function googleBaseURLOpts(baseURL: string): { baseURL?: string } {

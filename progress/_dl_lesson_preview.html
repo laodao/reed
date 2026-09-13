@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<base href="file:///C:/Users/daoge/code/project/the-bot/node_modules/katex/dist/" />
+<link rel="stylesheet" href="katex.css" />
+<style>
+/* 复现应用全局样式（styles/index.scss 的 reset + Element Plus 亮色变量子集） */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --el-color-primary: #6fa8dc;
+  --el-color-primary-light-3: #8fc0ea;
+  --el-color-primary-light-5: #a8ccf0;
+  --el-color-primary-light-7: #c5ddf5;
+  --el-color-primary-light-9: #eaf3fb;
+  --el-color-warning: #e6a23c;
+  --el-color-warning-light-9: #fdf6ec;
+  --el-color-info-light-5: #c8c9cc;
+  --el-text-color-primary: #303133;
+  --el-text-color-regular: #606266;
+  --el-text-color-secondary: #909399;
+  --el-text-color-placeholder: #c0c4cc;
+  --el-border-color: #dcdfe6;
+  --el-border-color-lighter: #ebeef5;
+  --el-fill-color: #f0f2f5;
+  --el-fill-color-light: #f5f7fa;
+  --el-fill-color-lighter: #fafafa;
+}
+body { font-family: 'Microsoft YaHei', -apple-system, 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.6; color: var(--el-text-color-primary); background: #faf9f7; }
+.pane-lesson { width: 900px; margin: 16px auto; background: #fff; border: 1px solid var(--el-border-color-lighter); border-radius: 10px; }
+.lesson-body { padding: 14px 18px; }
+</style>
+<style>@charset "UTF-8";
+/**
+ * 讲义正文排版（MarkdownViewer 的 markdown 内容样式）
+ * @module views/domain-learning/lesson-markdown
+ *
+ * 背景（2026-09-12 用户反馈「排版混乱」）：
+ * 1. bytemd 只带编辑器外壳样式，**不提供 `.markdown-body` 内容样式**；
+ * 2. 全局 `* { margin: 0; padding: 0 }`（styles/index.scss）又把浏览器默认的
+ *    段落间距、标题字号、列表左内边距（`ol/ul` 的 padding-inline-start）全部清零，
+ *    于是出现「表格无边框、段落无首行空格、编号紧贴左侧边框」。
+ *
+ * 因此讲义正文的排版必须在这里补齐：章节层级 / 段落首行缩进 / 列表缩进 /
+ * 表格边框 / 引用 / 代码 / 公式。规则用 `` 落到 bytemd 生成的 DOM 上
+ * （bytemd 内部节点没有 scoped 属性，普通 scoped 选择器匹配不到）。
+ */
+.markdown-viewer .markdown-body {
+  font-size: 14px;
+  line-height: 1.85;
+  color: var(--el-text-color-regular);
+  overflow-wrap: break-word;
+}
+.markdown-viewer .markdown-body h1,
+.markdown-viewer .markdown-body h2 {
+  margin: 18px 0 8px;
+  padding-left: 10px;
+  border-left: 3px solid var(--el-color-primary);
+  font-size: 15.5px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--el-text-color-primary);
+}
+.markdown-viewer .markdown-body h3 {
+  margin: 16px 0 8px;
+  padding-left: 9px;
+  border-left: 3px solid var(--el-color-primary-light-5);
+  font-size: 14.5px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--el-text-color-primary);
+}
+.markdown-viewer .markdown-body h4,
+.markdown-viewer .markdown-body h5,
+.markdown-viewer .markdown-body h6 {
+  margin: 13px 0 6px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--el-text-color-primary);
+}
+.markdown-viewer .markdown-body > :first-child {
+  margin-top: 0;
+}
+.markdown-viewer .markdown-body p {
+  margin: 0 0 10px;
+  text-indent: 2em;
+}
+.markdown-viewer .markdown-body > p:last-child {
+  margin-bottom: 0;
+}
+.markdown-viewer .markdown-body li > p,
+.markdown-viewer .markdown-body td > p,
+.markdown-viewer .markdown-body th > p,
+.markdown-viewer .markdown-body blockquote > p {
+  margin: 0;
+  text-indent: 0;
+}
+.markdown-viewer .markdown-body ul,
+.markdown-viewer .markdown-body ol {
+  margin: 0 0 10px;
+  padding-left: 2.2em;
+}
+.markdown-viewer .markdown-body ol {
+  list-style: decimal;
+}
+.markdown-viewer .markdown-body ul {
+  list-style: disc;
+}
+.markdown-viewer .markdown-body li {
+  margin: 3px 0;
+  text-indent: 0;
+}
+.markdown-viewer .markdown-body li > ul,
+.markdown-viewer .markdown-body li > ol {
+  margin: 3px 0 0;
+}
+.markdown-viewer .markdown-body table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  margin: 10px 0;
+  border-collapse: collapse;
+  border-spacing: 0;
+  overflow-x: auto;
+  font-size: 13.5px;
+}
+.markdown-viewer .markdown-body th,
+.markdown-viewer .markdown-body td {
+  padding: 6px 10px;
+  border: 1px solid var(--el-border-color);
+  text-align: left;
+  text-indent: 0;
+  vertical-align: top;
+  line-height: 1.7;
+}
+.markdown-viewer .markdown-body th {
+  background: var(--el-fill-color-light);
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+  white-space: nowrap;
+}
+.markdown-viewer .markdown-body tbody tr:nth-child(even) td {
+  background: var(--el-fill-color-lighter);
+}
+.markdown-viewer .markdown-body blockquote {
+  margin: 10px 0;
+  padding: 7px 12px;
+  border-left: 3px solid var(--el-color-primary-light-5);
+  border-radius: 0 6px 6px 0;
+  background: var(--el-fill-color-lighter);
+  color: var(--el-text-color-secondary);
+}
+.markdown-viewer .markdown-body code {
+  padding: 1px 5px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+  background: var(--el-fill-color-light);
+  font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+  font-size: 12.5px;
+}
+.markdown-viewer .markdown-body pre {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-fill-color-lighter);
+  overflow-x: auto;
+}
+.markdown-viewer .markdown-body pre code {
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.markdown-viewer .markdown-body .katex {
+  font-size: 1.05em;
+}
+.markdown-viewer .markdown-body .katex-display {
+  margin: 12px 0;
+  padding: 2px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  text-indent: 0;
+}
+.markdown-viewer .markdown-body img {
+  max-width: 100%;
+  height: auto;
+}
+.markdown-viewer .markdown-body .bytemd-mermaid {
+  display: flex;
+  justify-content: center;
+  margin: 12px 0;
+  padding: 10px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-fill-color-lighter);
+}
+.markdown-viewer .markdown-body hr {
+  margin: 14px 0;
+  border: none;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+.markdown-viewer .markdown-body a {
+  color: var(--el-color-primary);
+  text-decoration: none;
+}
+.markdown-viewer .markdown-body a:hover {
+  text-decoration: underline;
+}</style>
+<style>.section-lesson {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 2px 2px 12px;
+}
+
+.sec {
+  position: relative;
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--el-text-color-regular);
+}
+.sec .sec-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.sec .sec-head.sec-head-bare {
+  margin-bottom: 2px;
+  padding-bottom: 0;
+  border-bottom: none;
+  justify-content: flex-end;
+}
+.sec .sec-head .sec-index {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 19px;
+  height: 19px;
+  border-radius: 5px;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1;
+}
+.sec .sec-head .sec-title {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--el-text-color-primary);
+}
+.sec .sec-head .sec-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.sec .sec-head .sec-actions .fold-hint {
+  color: var(--el-color-primary);
+  cursor: pointer;
+}
+.sec .sec-head .sec-actions .sec-confuse {
+  color: var(--el-text-color-placeholder);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.sec .sec-head .sec-actions .sec-confuse:hover {
+  color: var(--el-color-warning);
+}
+.sec:hover .sec-actions .sec-confuse {
+  opacity: 1;
+}
+
+.sec-body p:first-child {
+  margin-top: 0;
+}
+
+.selfcheck-answers {
+  margin-top: 10px;
+}
+.selfcheck-answers .answers-toggle {
+  display: inline-block;
+  padding: 3px 12px;
+  border: 1px dashed var(--el-color-primary-light-5);
+  border-radius: 14px;
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.selfcheck-answers .answers-toggle:hover {
+  border-style: solid;
+  background: var(--el-color-primary-light-7);
+}
+.selfcheck-answers .answers-body {
+  margin-top: 8px;
+  padding: 10px 14px;
+  border-left: 3px solid var(--el-color-primary-light-5);
+  border-radius: 0 6px 6px 0;
+  background: var(--el-fill-color-lighter);
+}
+
+.sec-intro {
+  background: var(--el-fill-color-lighter);
+  border-radius: 8px;
+  padding: 12px 18px 14px 14px;
+}
+
+.sec-note {
+  background: var(--el-color-warning-light-9);
+  border-left: 3px solid var(--el-color-warning);
+  border-radius: 6px;
+  padding: 10px 14px;
+}
+
+.sec-review {
+  border-top: 1px dashed var(--el-border-color);
+  padding-top: 12px;
+}
+
+.sec-related .related-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sec-related .related-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.sec-related .related-chip:hover {
+  background: var(--el-color-primary-light-7);
+}
+.sec-related .related-chip .rel-tag {
+  font-size: 10.5px;
+  color: var(--el-text-color-placeholder);
+}
+
+.sec-works .work-item {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.sec-works .work-item .work-kind {
+  font-size: 10.5px;
+  color: #fff;
+  background: var(--el-color-primary);
+  border-radius: 4px;
+  padding: 0 5px;
+  flex-shrink: 0;
+}
+.sec-works .work-item .work-title {
+  color: var(--el-text-color-primary);
+}
+.sec-works .work-item .work-meta {
+  color: var(--el-text-color-placeholder);
+  font-size: 12px;
+}
+
+.sec-evidence .evidence-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.sec-evidence .evidence-item .evidence-quote {
+  width: 100%;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  border-left: 2px solid var(--el-color-info-light-5);
+  padding-left: 8px;
+}
+
+.authoring-notes {
+  margin-top: -4px;
+  font-size: 12px;
+}
+.authoring-notes .notes-toggle {
+  display: inline-block;
+  color: var(--el-text-color-placeholder);
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px dashed var(--el-border-color);
+  padding-bottom: 1px;
+}
+.authoring-notes .notes-toggle:hover {
+  color: var(--el-color-primary);
+}
+.authoring-notes .notes-list {
+  margin: 8px 0 0;
+  padding: 10px 14px 10px 28px;
+  background: var(--el-fill-color-lighter);
+  border-radius: 6px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.7;
+  list-style: disc;
+}
+.authoring-notes .notes-list li + li {
+  margin-top: 5px;
+}</style>
+<script src="katex.min.js"></script>
+</head>
+<body>
+<div class="pane-lesson">
+  <div class="lesson-body block-body-pad">
+    <div class="section-lesson">
+
+  <div class="sec sec-note">
+    <div class="sec-head">
+      <span class="sec-index">1</span>
+      <span class="sec-title">本讲说明：读者画像 · 数学前置 · 记号热身 · 可测目标</span>
+      <span class="sec-actions">
+        <span class="sec-confuse">这块没懂</span>
+        
+      </span>
+    </div>
+    <div class="sec-body">
+      <div class="markdown-viewer"><div class="markdown-body"><h3>读者画像</h3>
+<p>会用 Python 处理数据、见过 NumPy 数组或 <code>torch.tensor</code> 即可。<strong>不需要</strong>线性代数课程基础，也<strong>不需要</strong>微积分（本讲不涉及求导）。</p>
+<h3>数学前置</h3>
+<p>只要会四则运算、会看下标。</p>
+<h3>记号热身（每个记号先给读法，再给最小例子）</h3>
+<table>
+<thead>
+<tr>
+<th>记号</th>
+<th>怎么读</th>
+<th>最小例子</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>(3, 4)</code></td>
+<td>“形状：3 行 4 列”，也可写作 <span class="math math-inline">x \in \mathbb{R}^{3\times 4}</span></td>
+<td>一个 3 行 4 列的表格，一共 3×4 = 12 个数</td>
+</tr>
+<tr>
+<td><span class="math math-inline">x_{2,3}</span></td>
+<td>“第 2 行第 3 列那个数”（数学从 1 数；程序里从 0 数，写作 <code>x[1, 2]</code>）</td>
+<td>若 <span class="math math-inline">x=\begin{bmatrix}1&amp;2&amp;3\4&amp;5&amp;6\end{bmatrix}</span>，则 <span class="math math-inline">x_{2,3}=6</span></td>
+</tr>
+<tr>
+<td><code>ndim</code> / 轴（axis）</td>
+<td>“轴数 = 有几种方向的索引”</td>
+<td><code>(3,4)</code> 的 ndim = 2：轴 0 是行方向，轴 1 是列方向</td>
+</tr>
+<tr>
+<td><span class="math math-inline">\odot</span></td>
+<td>“逐元素相乘：同一个位置上的数相乘”</td>
+<td>只算第一个位置：1×10 = 10；第二个位置：2×20 = 40</td>
+</tr>
+<tr>
+<td><span class="math math-inline">\sum_{i=1}^{n}</span></td>
+<td>“把 i 从 1 加到 n”</td>
+<td><span class="math math-inline">x=(1,2,3)</span> 时：1+2 = 3，再加 3 得 6</td>
+</tr>
+<tr>
+<td><span class="math math-inline">X^{\mathsf{T}}</span></td>
+<td>“转置：把行列互换”</td>
+<td><span class="math math-inline">\begin{bmatrix}1&amp;2&amp;3\4&amp;5&amp;6\end{bmatrix}^{\mathsf{T}}=\begin{bmatrix}1&amp;4\2&amp;5\3&amp;6\end{bmatrix}</span>，形状由 (2,3) 变 (3,2)</td>
+</tr>
+<tr>
+<td><span class="math math-inline">B</span></td>
+<td>“一个 batch 里的样本数”</td>
+<td>一次喂 32 张图，就写作 <span class="math math-inline">(B, ...)</span> 里的 <span class="math math-inline">B</span> = 32</td>
+</tr>
+</tbody></table>
+<h3>可测目标（学完本讲你能做到）</h3>
+<ol>
+<li>看到 <span class="math math-inline">(32, 3, 224, 224)</span> 能逐个数字说出含义，并算出元素个数与 float32 显存大小；</li>
+<li>能手算 <span class="math math-inline">(4,1)+(1,3)</span> 的结果形状与任意一行的值；</li>
+<li>能判断两个形状能否广播/能否做矩阵乘，并说出被拒绝的原因。</li>
+</ol>
+</div></div>
+      
+    </div>
+  </div>
+
+  <div class="sec sec-body">
+    <div class="sec-head">
+      <span class="sec-index">2</span>
+      <span class="sec-title">为什么“工作应用”要从张量开始</span>
+      <span class="sec-actions">
+        <span class="sec-confuse">这块没懂</span>
+        
+      </span>
+    </div>
+    <div class="sec-body">
+      <div class="markdown-viewer"><div class="markdown-body"><p>《深度学习》一书在正式讲深度学习之前，先安排了一整章线性代数，理由是：</p>
+<blockquote>
+<p>&quot;A good understanding of linear algebra is essential for understanding and working with many machine learning algorithms, especially deep learning algorithms.&quot;</p>
+</blockquote>
+<p>落到日常工程里，张量这件事支撑三类具体工作（后两类来自工程先验，待查证）：</p>
+<ol>
+<li><strong>看懂报错</strong>：<code>RuntimeError: The size of tensor a (3) must match the size of tensor b (4)</code> 这类信息，本质是形状规则没对齐；</li>
+<li><strong>估算资源</strong>（先验待查证）：参数数量、激活占用、显存峰值都要从形状算出来；</li>
+<li><strong>对齐数据接口</strong>（先验待查证）：模型、数据集、部署导出工具对维度顺序（如 NCHW / NHWC）的约定不一致时，要先看形状再改代码。</li>
+</ol>
+</div></div>
+      
+    </div>
+  </div>
+
+  <div class="sec sec-note">
+    <div class="sec-head">
+      <span class="sec-index">3</span>
+      <span class="sec-title">先看例子：五个真实形状</span>
+      <span class="sec-actions">
+        <span class="sec-confuse">这块没懂</span>
+        
+      </span>
+    </div>
+    <div class="sec-body">
+      <div class="markdown-viewer"><div class="markdown-body"><p>先例后律——先把数字看熟，再谈定义。</p>
+<table>
+<thead>
+<tr>
+<th>对象</th>
+<th>形状</th>
+<th>读法</th>
+<th>元素个数</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>一次训练的整体损失值</td>
+<td><code>()</code></td>
+<td>0 维，就是一个数</td>
+<td>1（例如 0.6931）</td>
+</tr>
+<tr>
+<td>一个样本的特征向量</td>
+<td><code>(784,)</code></td>
+<td>1 维，784 个特征</td>
+<td>784</td>
+</tr>
+<tr>
+<td>一批 32 张彩色图（PyTorch 常用 NCHW）</td>
+<td><code>(32, 3, 224, 224)</code></td>
+<td>（样本, 通道, 高, 宽）</td>
+<td>见下方逐式计算</td>
+</tr>
+<tr>
+<td>一个图像分类头的权重</td>
+<td><code>(784, 128)</code></td>
+<td>784 个输入 → 128 个输出</td>
+<td>见下方逐式计算</td>
+</tr>
+<tr>
+<td>一批样本过完这个线性层</td>
+<td>输入 <code>(32, 784)</code> → 输出 <code>(32, 128)</code></td>
+<td>batch 不变，特征维被换掉</td>
+<td>见下方逐式计算</td>
+</tr>
+</tbody></table>
+<p><strong>逐式计算（每一步只做一个运算）</strong></p>
+<ol>
+<li>图像批的元素个数：224×224 = 50176；3×50176 = 150528；32×150528 = 4816896。即约 481 万个数。</li>
+<li>这批图像的 float32 显存：4816896×4 = 19267584 字节；19267584÷1048576 ≈ 18.4 MiB（尚未包含中间激活）。</li>
+<li>权重参数量：784×128 = 100352；再加 128 个偏置：100352+128 = 100480，即约 10 万个参数。</li>
+<li>一次前向的乘加次数：32×784 = 25088；25088×128 = 3211264，即约 321 万次。</li>
+</ol>
+</div></div>
+      
+    </div>
+  </div>
+
+  <div class="sec sec-body">
+    <div class="sec-head">
+      <span class="sec-index">4</span>
+      <span class="sec-title">定义：张量到底是什么</span>
+      <span class="sec-actions">
+        <span class="sec-confuse">这块没懂</span>
+        
+      </span>
+    </div>
+    <div class="sec-body">
+      <div class="markdown-viewer"><div class="markdown-body"><p><strong>张量 = 一批同类型的数值，按规整的网格排列，轴的数量可以任意。</strong></p>
+<p>标量、向量、矩阵都不是新东西，而是它的三个特例：</p>
+<ul>
+<li>《深度学习》第2章的定义：&quot;A scalar is just a single number, in contrast to most of the other objects studied in linear algebra, which are usually arrays of multiple numbers.&quot;</li>
+<li>关于向量：&quot;A vector is an array of numbers. The numbers are arranged in order. We can identify each individual number by its index in that ordering.&quot;</li>
+</ul>
+<p>于是：</p>
+<table>
+<thead>
+<tr>
+<th>阶（轴数）</th>
+<th>常见叫法</th>
+<th>形状例子</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>0</td>
+<td>标量</td>
+<td><code>()</code></td>
+</tr>
+<tr>
+<td>1</td>
+<td>向量</td>
+<td><code>(784,)</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>矩阵</td>
+<td><code>(784, 128)</code></td>
+</tr>
+<tr>
+<td>3 及以上</td>
+<td>高阶张量（统称张量）</td>
+<td><code>(32, 3, 224, 224)</code></td>
+</tr>
+</tbody></table>
+<p>工程上，一个张量必须同时记住四件事：<strong>形状 shape</strong>（每个轴多长）、<strong>数据类型 dtype</strong>、<strong>所在设备 device</strong>（CPU/GPU）、<strong>是否求梯度 requires_grad</strong>。养成先 <code>print(x.shape, x.dtype)</code> 的习惯，能省掉大量排查时间（后三项为框架通行做法，本讲未取得官方文档原文，标为先验待查证）。</p>
+</div></div>
+      
+    </div>
+  </div>
+
+  <div class="sec sec-body">
+    <div class="sec-head">
+      <span class="sec-index">5</span>
+      <span class="sec-title">三类核心运算与它们的形状规则</span>
+      <span class="sec-actions">
+        <span class="sec-confuse">这块没懂</span>
+        
+      </span>
+    </div>
+    <div class="sec-body">
+      <div class="markdown-viewer"><div class="markdown-body"><h3>规则一：逐元素运算——形状必须一致</h3>
+<p>NumPy 文档的表述：&quot;In the simplest case, the two arrays must have exactly the same shape.&quot; 示例中的 <code>a = [1., 2., 3.]</code>、<code>b = [2., 2., 2.]</code>，对应位置相乘：1×2 = 2；2×2 = 4；3×2 = 6，结果是 <code>[2., 4., 6.]</code>，形状仍是 <code>(3,)</code>。</p>
+<h3>规则二：广播（broadcasting）——形状不同也能算</h3>
+<p>NumPy 文档原文：&quot;The term broadcasting describes how NumPy treats arrays with different shapes during arithmetic operations. Subject to certain constraints, the smaller array is &#39;broadcast&#39; across the larger array so that they have compatible shapes.&quot;</p>
+<p><strong>执行办法</strong>：把两个形状从<strong>最右边</strong>对齐，逐轴比较：相等 → 通过；其中一个为 1 → 把它“拉伸”到另一个；都不是 1 且不相等 → 报错。</p>
+<p><strong>例 A</strong>：<code>(3,1) + (1,4)</code></p>
+<ul>
+<li>轴 1 上 4 对 1 → 通过；轴 0 上 3 对 1 → 通过；结果形状 <code>(3,4)</code>。</li>
+<li>取 <span class="math math-inline">a=\begin{bmatrix}10\20\30\end{bmatrix}</span>，<span class="math math-inline">b=\begin{bmatrix}1&amp;2&amp;3&amp;4\end{bmatrix}</span>，逐项相加：<ul>
+<li>第 1 行：10+1 = 11；10+2 = 12；10+3 = 13；10+4 = 14</li>
+<li>第 2 行：20+1 = 21；20+2 = 22；20+3 = 23；20+4 = 24</li>
+<li>第 3 行：30+1 = 31；30+2 = 32；30+3 = 33；30+4 = 34</li>
+</ul>
+</li>
+<li>结果：<span class="math math-inline">\begin{bmatrix}11&amp;12&amp;13&amp;14\21&amp;22&amp;23&amp;24\31&amp;32&amp;33&amp;34\end{bmatrix}</span>。输入一共只有 3+4 = 7 个数，输出有 12 个数。</li>
+</ul>
+<p><strong>例 B（工作中最常见）</strong>：加偏置 <code>(32,128) + (128,)</code> —— <code>(128,)</code> 右对齐后视作 <code>(1,128)</code>，再广播成 <code>(32,128)</code>，即“同一组偏置加到 batch 里每个样本上”。</p>
+<p><strong>例 C（最常见的一类 bug）</strong>：<code>(3,) + (4,)</code> —— 3 ≠ 4 且都不为 1，直接报错。</p>
+<h3>规则三：矩阵乘法——只看内维</h3>
+<p>要求<strong>前一个的最后一轴 = 后一个的倒数第二轴</strong>：<code>(2,3) @ (3,2)</code> 得到 <code>(2,2)</code>。</p>
+<p>取 <span class="math math-inline">A=\begin{bmatrix}1&amp;2&amp;3\4&amp;5&amp;6\end{bmatrix}</span>，<span class="math math-inline">B=\begin{bmatrix}1&amp;0\0&amp;1\1&amp;1\end{bmatrix}</span>，逐项算（每步只做二元运算）：</p>
+<ul>
+<li>第 1 行第 1 列：1×1 = 1；2×0 = 0；3×1 = 3；先 1+0 = 1，再 1+3 = <strong>4</strong></li>
+<li>第 1 行第 2 列：1×0 = 0；2×1 = 2；3×1 = 3；0+2 = 2，再 2+3 = <strong>5</strong></li>
+<li>第 2 行第 1 列：4×1 = 4；5×0 = 0；6×1 = 6；4+0 = 4，再 4+6 = <strong>10</strong></li>
+<li>第 2 行第 2 列：4×0 = 0；5×1 = 5；6×1 = 6；0+5 = 5，再 5+6 = <strong>11</strong></li>
+</ul>
+<p>结果 <span class="math math-inline">AB=\begin{bmatrix}4&amp;5\10&amp;11\end{bmatrix}</span>，形状 <code>(2,2)</code>。工作量：2×2 = 4 个输出元素，每个元素 3 次乘加，4×3 = 12 次乘加。</p>
+<p><strong>带 batch 的版本</strong>（工程通行约定，先验待查证）：<code>(B, m) @ (m, n)</code> 得到 <code>(B, n)</code>，即“每个样本各自乘同一个权重矩阵”。上面 <code>(32,784) @ (784,128)</code> 得到 <code>(32,128)</code> 就是这一条。</p>
+</div></div>
+      
+    </div>
+  </div>
+
+  <div class="sec sec-body">
+    <div class="sec-head">
+      <span class="sec-index">6</span>
+      <span class="sec-title">落到代码：NumPy 与 PyTorch 的对应写法</span>
+      <span class="sec-actions">
+        <span class="sec-confuse">这块没懂</span>
+        
+      </span>
+    </div>
+    <div class="sec-body">
+      <div class="markdown-viewer"><div class="markdown-body"><pre><code class="language-python">import numpy as np, torch
+
+a = np.array([[1., 2.], [3., 4.]])          # 形状 (2, 2), 默认 float64
+b = torch.tensor([[1., 2.], [3., 4.]])      # 形状 torch.Size([2, 2]), 默认 float32
+
+b.shape, b.dtype, b.device, b.requires_grad # 张量的四个“身份牌”
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>事情</th>
+<th>NumPy</th>
+<th>PyTorch</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>逐元素乘</td>
+<td><code>a * a</code></td>
+<td><code>b * b</code></td>
+</tr>
+<tr>
+<td>矩阵乘</td>
+<td><code>a @ a</code></td>
+<td><code>b @ b</code></td>
+</tr>
+<tr>
+<td>广播加偏置</td>
+<td><code>x + bias</code></td>
+<td><code>x + bias</code></td>
+</tr>
+<tr>
+<td>改形状</td>
+<td><code>a.reshape(4, 1)</code></td>
+<td><code>b.reshape(4, 1)</code></td>
+</tr>
+</tbody></table>
+<blockquote>
+<p>⚠️ 上表中“NumPy 默认 float64 / PyTorch 默认 float32”属框架先验，本讲<strong>未取得官方文档原文</strong>（PyTorch 文档本轮只取到页面标题），请以你本地版本实测为准。</p>
+</blockquote>
+<p><strong>一条实用习惯</strong>：任何一层运算之前，先打印参与运算的 <code>shape</code>，再决定要不要 <code>reshape</code> / <code>transpose</code>——这比读完栈报错更快。</p>
+</div></div>
+      
+    </div>
+  </div>
+
+  <div class="sec sec-body">
+    <div class="sec-head">
+      <span class="sec-index">7</span>
+      <span class="sec-title">常见坑（都从形状规则长出来）</span>
+      <span class="sec-actions">
+        <span class="sec-confuse">这块没懂</span>
+        
+      </span>
+    </div>
+    <div class="sec-body">
+      <div class="markdown-viewer"><div class="markdown-body"><ol>
+<li><strong>广播不是“更聪明的复制”，但它可能悄悄吃内存</strong>。NumPy 文档明确提醒：&quot;There are, however, cases where broadcasting is a bad idea because it leads to inefficient use of memory that slows computation.&quot;（先验补充：用 <code>(N,1)</code> 与 <code>(1,N)</code> 相减去构造方阵时尤其危险。）</li>
+<li><strong>形状对得上，语义却错了</strong>（先验待查证）：<code>(B, C)</code> 与 <code>(C, B)</code> 在方阵情形下都能算，但含义完全不同。</li>
+<li><strong>维度顺序的约定不一致</strong>（先验待查证）：PyTorch 图像常用 NCHW，部分部署/移动端工具偏好 NHWC，转换时要显式确认。</li>
+<li><strong>dtype 不一致</strong>（先验待查证）：NumPy 默认 float64、框架参数默认 float32，混用会报类型错或悄悄降精度；整型张量相除会被截断。</li>
+<li><strong>转置后的连续性</strong>（先验待查证）：转置只改“怎么读”，不搬数据，随后直接 <code>view</code> 可能失败，需要 <code>contiguous()</code> 或改用 <code>reshape</code>。</li>
+</ol>
+</div></div>
+      
+    </div>
+  </div>
+
+  <div class="sec sec-body">
+    <div class="sec-head">
+      <span class="sec-index">8</span>
+      <span class="sec-title">自测（先自己做，再对答案）</span>
+      <span class="sec-actions">
+        <span class="sec-confuse">这块没懂</span>
+        
+      </span>
+    </div>
+    <div class="sec-body">
+      <div class="markdown-viewer"><div class="markdown-body"><p><strong>Q1</strong> 形状 <code>(32, 3, 224, 224)</code> 一共有多少个数？若为 float32，占多少字节？</p>
+<p><strong>Q2</strong> <span class="math math-inline">a=\begin{bmatrix}1\2\3\4\end{bmatrix}</span>（形状 <code>(4,1)</code>）与 <span class="math math-inline">b=\begin{bmatrix}10&amp;20&amp;30\end{bmatrix}</span>（形状 <code>(1,3)</code>）相加，结果形状是什么？第 2 行是什么？</p>
+<p><strong>Q3</strong> <code>(2,3)</code> 与 <code>(3,)</code> 能相加吗？如果能，输出形状是什么？这个操作在工作中常用来做什么？</p>
+<p><strong>Q4</strong> 为什么 <code>(2,3) @ (2,3)</code> 报错？怎么改？</p>
+<p><strong>Q5</strong> 一个 <code>(784, 128)</code> 的全连接层有多少个参数（含偏置）？一批 <code>(32, 784)</code> 过它的乘加次数是多少？</p>
+</div></div>
+      
+      <div class="selfcheck-answers">
+        <details>
+          <summary class="answers-toggle">显示答案（建议先自己做）</summary>
+          <div class="answers-body"><div class="markdown-viewer"><div class="markdown-body"><ul>
+<li><strong>A1</strong> 元素个数：224×224 = 50176；3×50176 = 150528；32×150528 = 4816896 个数。float32 每数 4 字节：4816896×4 = 19267584 字节；19267584÷1048576 ≈ 18.4 MiB。</li>
+<li><strong>A2</strong> <code>(4,1)+(1,3)</code>：轴 1 上 3 对 1 → 通过，轴 0 上 4 对 1 → 通过，结果 <code>(4,3)</code>。第 2 行是 2 分别加 10、20、30：2+10 = 12；2+20 = 22；2+30 = 32，即 <code>[12, 22, 32]</code>。</li>
+<li><strong>A3</strong> 能。<code>(3,)</code> 右对齐后视作 <code>(1,3)</code>，广播成 <code>(2,3)</code>，所以输出是 <code>(2,3)</code>——这正是“给每个样本减去同一个均值向量 / 加上同一组偏置”的写法。</li>
+<li><strong>A4</strong> 矩阵乘要求内维相等，这里 3 与 2 不相等。改成 <code>(2,3) @ (3,2)</code> 得到 <code>(2,2)</code>，即把第二个张量做最后两轴的转置 <code>B.transpose(-1,-2)</code>（也可调换两操作数顺序）。</li>
+<li><strong>A5</strong> 参数：784×128 = 100352，再加 128 个偏置得 100352+128 = 100480；乘加次数：32×784 = 25088，25088×128 = 3211264。</li>
+</ul>
+</div></div></div>
+        </details>
+      </div>
+    </div>
+  </div>
+
+  <div class="authoring-notes">
+    <span class="notes-toggle">编写注记（学习者可跳过）· 5 条展开</span>
+    <ul class="notes-list"><li><strong>有原文出处</strong>：标量/向量定义、线性代数作为深度学习前置（《深度学习》第2章 2.1）；逐元素需同形状、广播的定义与内存代价提醒（NumPy 用户指南 Broadcasting）。</li><li><strong>先验待查证</strong>（本轮未取得资料原文）：PyTorch/NumPy 默认 dtype、<code>device</code> 与 <code>requires_grad</code>、NCHW 与 NHWC 约定、<code>view</code> 与连续性、带 batch 的矩阵乘约定。</li><li><strong>采集情况</strong>：arXiv API 命中并读取了 Attention Is All You Need 摘要（用于 Transformer 骨架概念）；<code>web_search</code> 连续两次 HTTP 429 限流，<strong>未完成联网检索</strong>；PyTorch 文档只取到页头，故未引用。</li><li><strong>数值自检</strong>：首版因链式写法（如“32×3×224×224 = …”）被自动回算器误读，本版已改为“一步一个二元算式”，全部中间量（50176 / 150528 / 4816896 / 19267584 / 100352 / 100480 / 25088 / 3211264）已重算核对。</li><li><strong>下一轮建议</strong>：补读 PyTorch 官方 <code>torch.Tensor</code> / broadcasting 文档与《深度学习》第6章原文，为「自动微分与反向传播」「多层感知机与激活函数」两张卡片补证据。</li></ul>
+  </div>
+    </div>
+  </div>
+</div>
+<script>
+  // 与 @bytemd/plugin-math 的 viewerEffect 同口径：查询类名锚点后客户端渲染 KaTeX
+  document.querySelectorAll('.math.math-inline').forEach(function (el) {
+    katex.render(el.innerText, el, { throwOnError: false, displayMode: false });
+  });
+  document.querySelectorAll('.math.math-display').forEach(function (el) {
+    katex.render(el.innerText, el, { throwOnError: false, displayMode: true });
+  });
+</script>
+</body>
+</html>

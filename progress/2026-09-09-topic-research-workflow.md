@@ -134,3 +134,49 @@ dl run_workflow 触发复验。
 - **L1 通用纪律**留在内核（领域无关）；**L2 类型化深度模板**下沉到 plan1「做法/商业类」骨架（单位经济公式、逐日时间线、SOP、清单），只对命中类型生效；**L3 用户产出规格/要求**新增 start 输入 `outputSpecs`（7 项多选）+ `outputRequirements`（自由文本）；**L4 参照样本**新增 `referenceSample`（只对标结构与密度，禁止照抄结论）。
 - **闭环**：用户规格/要求 → plan1 逐条转成 acceptance → e1（另一模型）逐条核对（可检索/可执行未满足判 revise；通道不可达记非阻塞）→ writer 按 acceptance 成稿并落实公式/时间线/可点击链接/反方回应。
 - 验证：topic-research-graph spec 断言新输入与三处引用（12 例）、builtin-app-templates 过全量校验（7 例）→ 19 passed；未改动引擎/其它模板，未设置这些输入时行为不变。
+
+---
+
+## v6：调研经验固化为内置技能 research-method（2026-09-09，research-skill-design.md）
+
+用户纠偏：「你应该纠结某个细节，你需要总结的是经验——一个调研报告应该包含哪些内容、应该从哪些方面做分析、
+应该从哪些地方获取数据，这些经验可以作为调研某个领域的 skill」。即：停止在模板提示词里逐条调参，
+把调研这门手艺沉淀成可复用技能。用户批准范围：技能 + 模板改造 + 测试全做；经验只放一个技能。
+
+### 1. 新增内置技能 `research-method`（category 调研，modelInvocable）
+`src/core/platform/workflow/skills/builtin-skills.ts` 追加 SKILL.md（内置只读，可复制为用户技能），
+frontmatter inputs：topic/goal/domainType/depth/constraints/requiredOutputs/knownContext；正文六节＝经验本体：
+1. **范围与决策目标**：must-answer 逐条写颗粒度、明确不回答什么与口径、约束分主体/分地区落地；
+2. **报告骨架（报告应包含哪些内容）**：执行摘要→口径→现状→主体分析→数据与证据（表格/矩阵/公式/时间线）→
+   路径与方案（决策树）→成本与单位经济→风险与合规红线→行动清单与门槛条件→局限与待核验→分层参考来源→附录，
+   按主题类型裁剪 + 速览/标准/深度取裁口径；
+3. **分析维度矩阵（从哪些方面分析）**：18 项通用维度库（定义边界/主体角色/全流程环节/准入资质合规/成本与单位经济/
+   定价收益/需求规模/竞争替代/供给供应链/渠道流量/运营节奏/工具技术/人才组织/风险红线/门槛退出/时效趋势/分歧不确定/
+   失败模式），每项给"要回答的问题 × 关键指标 × 常见误区"；
+4. **数据来源路由（从哪些地方获取数据）**：8 类来源（官方一手/平台后台需复核/行业与市场数据/公开财报公告/学术与专利/
+   从业者与社区/竞品与实测/工具与数据库）× 去哪取 × 取哪些字段 × 可靠性 × 时效 × **取不到时的降级路径**，
+   附中英双语检索、站点与时间限定、双源交叉、登录墙与反爬的现实预期；
+5. **取证与呈现纪律**：三态标注（已验证/先验-待验证/未查到）、禁止编造、矛盾并列、采集时间、证据层级、反方与边界、可点击来源；
+6. **执行计划与验收标准**：步骤依赖、轮次节奏、逐条可判定验收、停手条件（非阻塞项即收尾）、深度档差异。
+关键纪律：公式/时间线/矩阵在技能里只是**类别 + 示例**，由模型按当前领域实例化；技能不含任何单一领域结论（测试断言无 TikTok/抖音/亚马逊等词）。
+
+### 2. 模板改造：经验出模板，只留编排与用户契约（v4，13 节点 15 边）
+`topic-research.json`：`start → clarify → method1(skill-call: research-method) → plan1(llm-chat 契约编译器) →
+round1(until: r1→e1→pack1→loop-back) → writer → report1 → final1 → save1/end`。
+- 新增 `method1`：技能参数由 start/clarify 注入（topic(含 focus)/goal/domainType=自适应/depth/constraints/requiredOutputs/knownContext），
+  用研究模型执行；`skillId` 与内置技能清单交叉断言防漂移。
+- `plan1` 瘦身为契约编译器：删除内联的主题类型骨架、验收深度化细则、信息源策略（已在技能里），
+  改为引用 `{{method1.content}}`，只做 先验地图 + 方案落地 + 用户契约转 acceptance + JSON 输出。
+- `writer` 按 `{{method1.content}}` 的骨架组织正文，删除内联的公式/时间线形状清单，保留用户规格硬契约与引用纪律。
+- `r1`/`e1` 执行与评审纪律不变（本轮验证过的部分不动）。
+- 分层边界由测试钉死：模板提示词（method1/plan1/r1/e1/writer）不得出现「贡献利润/采购倒推/D1–D90/逐日」，
+  而技能正文必须含这些经验（以类别+示例形式）；用户仍可在 outputSpecs 选项里点名具体形态。
+
+### 3. 验证
+- 新增 `builtin-skills-research-method.spec.ts` 11 例（frontmatter/参数/六节/报告内容/维度/来源+降级/纪律/验收/领域无关/可解析）；
+- `topic-research-graph.spec.ts` 扩到 14 例（13 节点 15 边、method1 绑定与参数、plan1/writer 引用技能、分层边界、可达性）；
+- 定向回归 9 文件 **118 passed**（skill-call/skill.service/builtin-skills×3/topic-research-graph/builtin-app-templates/
+  node-registry-consistency/graph-validator）；eslint 0；未改引擎、技能解析器、技能节点与其它模板。
+- 注：`tests/unit/core/platform/workflow` 全目录一次跑超 600s 上限（用例多），改为定向文件串行跑。
+- 待用户：真机复跑观察技能方案是否让报告结构/来源密度提升（技能产出→契约→循环→成稿链路）。
+
