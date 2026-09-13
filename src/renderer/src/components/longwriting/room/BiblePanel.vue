@@ -63,24 +63,59 @@
           </template>
         </el-dropdown>
       </div>
-      <input v-model="keyword" class="search" placeholder="搜索设定…" />
+      <input
+        v-model="keyword"
+        class="search"
+        :placeholder="activeKindKey ? `在${activeGroup?.label || '当前分类'}内搜索…` : '搜索全部设定…'"
+      />
     </div>
     <div class="scroll">
-      <div v-if="total === 0 && !keyword" class="empty">设定集为空——从左侧对话开始</div>
-      <div v-for="g in groups" :key="g.kindKey" class="group">
-        <div class="group-head">
-          <span class="gico">{{ g.icon || '📁' }}</span>{{ g.label }}
-          <span class="gcnt">{{ g.entries.length }}</span>
-          <span v-if="g.entries.length === 0" class="todo" @click="$emit('ask', `设计一个${g.label}：`)">待讨论 · 说「设计一个{{ g.label }}」</span>
+      <!-- ① 分类视图：只列分类不铺条目（52 号 UI 重构：大项目不再无限下拉） -->
+      <template v-if="!activeKindKey && !keyword.trim()">
+        <div v-if="total === 0" class="empty">设定集为空——从左侧对话开始</div>
+        <div v-for="g in groups" :key="g.kindKey" class="cat" @click="openKind(g.kindKey)">
+          <span class="cat-ico">{{ g.icon || '📁' }}</span>
+          <span class="cat-label">{{ g.label }}</span>
+          <span v-if="g.entries.length === 0" class="cat-todo" @click.stop="$emit('ask', `设计一个${g.label}：`)">待讨论</span>
+          <span class="cat-cnt" :class="{ zero: g.entries.length === 0 }">{{ g.entries.length }}</span>
+          <span class="cat-arrow">›</span>
         </div>
-        <div v-for="e in visibleEntries(g)" :key="e.id" class="entry" @click="openDetail(g, e.id)">
-          <span class="eico">{{ g.icon || '📁' }}</span>
+      </template>
+      <!-- ② 搜索视图：跨分类平铺命中项 -->
+      <template v-else-if="keyword.trim()">
+        <div class="crumb">
+          <span class="crumb-back" @click="keyword = ''">← 返回分类</span>
+          <span class="crumb-title">搜索「{{ keyword }}」· {{ shownTotal }} 条</span>
+        </div>
+        <template v-for="g in groups" :key="g.kindKey">
+          <div
+            v-for="e in visibleEntries(g)"
+            :key="e.id"
+            class="entry"
+            @click="openDetail(g, e.id)"
+          >
+            <span class="eico">{{ g.icon || '📁' }}</span>
+            <span class="ename">{{ e.name }}</span>
+            <span class="esub">{{ e.aliases?.length ? `${e.sub}（${e.aliases.join('/')}）` : e.sub }}</span>
+            <span class="src">{{ e.origin?.type === 'discussion' ? '讨论' : '初始' }}</span>
+          </div>
+        </template>
+        <div v-if="total > 0 && shownTotal === 0" class="no-result">没有匹配的设定</div>
+      </template>
+      <!-- ③ 分类内条目视图 -->
+      <template v-else-if="activeGroup">
+        <div class="crumb">
+          <span class="crumb-back" @click="activeKindKey = null">← 返回分类</span>
+          <span class="crumb-title">{{ activeGroup.icon }} {{ activeGroup.label }} · {{ activeGroup.entries.length }} 条</span>
+        </div>
+        <div v-for="e in visibleEntries(activeGroup)" :key="e.id" class="entry" @click="openDetail(activeGroup, e.id)">
+          <span class="eico">{{ activeGroup.icon || '📁' }}</span>
           <span class="ename">{{ e.name }}</span>
           <span class="esub">{{ e.aliases?.length ? `${e.sub}（${e.aliases.join('/')}）` : e.sub }}</span>
           <span class="src">{{ e.origin?.type === 'discussion' ? '讨论' : '初始' }}</span>
         </div>
-      </div>
-      <div v-if="total > 0 && shownTotal === 0" class="no-result">没有匹配的设定</div>
+        <div v-if="visibleEntries(activeGroup).length === 0" class="no-result">没有匹配的设定</div>
+      </template>
     </div>
 
     <!-- 设定详情抽屉（只读 + 溯源 + 追问/跳写作台） -->
@@ -164,6 +199,15 @@ const emit = defineEmits<{
 
 const keyword = ref('')
 const groups = ref<BibleGroupWire[]>([])
+/** 52 号 UI 重构：两级导航（分类列表 → 分类内条目），搜索自动切平铺 */
+const activeKindKey = ref<string | null>(null)
+const activeGroup = computed(() => groups.value.find((g) => g.kindKey === activeKindKey.value) ?? null)
+function openKind(key: string): void {
+  activeKindKey.value = key
+}
+watch(groups, (gs) => {
+  if (activeKindKey.value && !gs.some((g) => g.kindKey === activeKindKey.value)) activeKindKey.value = null
+})
 const ledgerOpen = ref(false)
 
 // ===== 详情抽屉（bible:detail：fieldsSchema 驱动 + 关系小节） =====
@@ -470,4 +514,45 @@ onMounted(() => { void load() })
   font-size: 10px; color: var(--el-text-color-secondary); border: 1px solid var(--el-border-color-lighter);
   border-radius: 999px; padding: 0 6px; flex-shrink: 0; line-height: 16px;
 }
+
+.cat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.cat:hover { background: var(--el-fill-color-light); }
+.cat-ico { width: 20px; text-align: center; }
+.cat-label { flex: 1; font-weight: 600; color: var(--el-text-color-primary); }
+.cat-todo { font-size: 11px; color: var(--el-text-color-placeholder); }
+.cat-cnt {
+  font-size: 12px;
+  min-width: 22px;
+  text-align: center;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--el-fill-color);
+  color: var(--el-text-color-secondary);
+}
+.cat-cnt.zero { opacity: 0.45; }
+.cat-arrow { color: var(--el-text-color-placeholder); }
+
+.crumb {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 4px 8px;
+  font-size: 12px;
+}
+.crumb-back {
+  color: var(--el-color-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.crumb-back:hover { text-decoration: underline; }
+.crumb-title { color: var(--el-text-color-secondary); }
+
 </style>
