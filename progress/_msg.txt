@@ -1,28 +1,17 @@
-feat(provider): 支持阿里百炼 Token Plan（OpenAI 兼容 + Anthropic 兼容两张模板）
+chore(progress): 归档各会话进度产物（诊断脚本 / 验证截图 / 任务文档）
 
-需求：设置 → AI 模型配置 里直接支持阿里云百炼 Token Plan（个人版/团队版订阅套餐），
-用户用 `sk-sp-` 套餐密钥即可对话，不必改代码或手工拼端点。
+工作区遗留的未跟踪产物一次性入库，避免进度文档的证据链（引用的截图与脚本）只存在本地：
+- progress/：诊断脚本（_*.js / _*.cjs / _*.ts / _*.py）、验证截图（86 张 PNG）、
+  评审与进度文档（45 个 md）、运行产物（json/log/txt），合计约 48 MB
+- scripts/：_dl_* 探查脚本、settings 截图、gossip 备份 json、tmp_* 一次性修复脚本
+- memory/workflow-harness-direction.md
+- tasks/2026-09-07-domain-learning-space/m2-implementation-plan.md
 
-实现：
-- 新增模板 `bailian-token-plan`（openai-compatible，Bearer，/chat/completions + /models）
-  与 `bailian-token-plan-anthropic`（anthropic，x-api-key，/v1/messages，
-  默认头 anthropic-version）；两模板共用模块级常量并各自克隆，避免共享可变数组。
-- `provider-template.types.ts` 新增通用可选字段 `apiKeyPrefix` / `usageNotes`，界面按数据渲染。
-- `createProvider` 改为模板 category 优先判定协议族（原先 Anthropic 兼容端点会落回 OpenAI 实现）；
-  `getSupportedTemplateIds()` 补齐新 id。
-- `AnthropicSdkProvider` baseURL 解析改为「用户配置 > 模板默认端点 > 官方根地址」，
-  修掉用户留空时静默打到 api.anthropic.com 的问题；`ProviderAdapter` 在缺版本段时补 /v1
-  （@ai-sdk/anthropic 拼 `${baseURL}/messages`，不补会 404）。
-- `validateBaseUrl` 对「等于模板缺省端点」放行（Anthropic 协议根地址天然无版本段），
-  创建与更新两条路径都传模板；其余自定义地址仍强制版本段。
-- `testConnection` 能力解析收敛为「模板声明 > 模型名兜底」，删除服务内三份重复探测规则。
-- 配置界面：新增「使用须知」告警条；API Key 占位随 `apiKeyPrefix` 变化，
-  前缀不符仅非阻断提醒（中转/代理场景前缀可能不同）。
+截图入库的依据：仓库本身已跟踪 79 张同类截图（progress/2026-05-10-e2e-fullflow/screenshots/ 等），
+且本次 86 张中有 23 张被既有进度文档正文直接引用（如 progress/2026-09-08-domain-learning-*.md），
+沿用同一约定可保证文档可追溯。
 
-测试：新增 3 个 spec 共 19 例（提交前复跑通过）：模板定义与隔离、能力声明、
-createProvider 分发与自定义 baseUrl 优先、Anthropic 两条链路 baseURL 约定、
-validateBaseUrl 四种输入。全程 vi.mock 替换 SDK，不发网络请求。
-更广回归、eslint、vue-tsc 对比结论见 progress/2026-09-10-bailian-token-plan.md。
+入库前安全检查：对未跟踪文件做密钥扫描（sk-* / apiKey / Bearer / password 模式）0 命中；
+最大单文件 1.3 MB，无超大二进制。
 
-待办（真机验证需要 `sk-sp-` 密钥）：创建配置 → 测试连接 → 刷新模型 → 流式对话，
-OpenAI 兼容与 Anthropic 兼容各一轮；并确认 Token Plan 的 /models 对套餐密钥是否开放。
+不含：.claude/worktrees/* 的改动（其它会话的 worktree 内容，非本次范围）。

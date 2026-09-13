@@ -1,0 +1,102 @@
+tests/unit/packs/workflow-pack.spec.ts ::  workflow 包 IPC 前缀覆盖 handler 全部 channel 被 manifest 前缀覆盖（26 号：含 at:/am: 任务树/飞轮）
+tests/unit/migrations/create-asset-categories.spec.ts ::  createAssetCategories 迁移 内置种子：11 个业务分类，早报=report+morningReport，行业周报=report+industryWeekly，吃瓜报告=report+gossipTabloid，网页收藏=html
+tests/unit/migrations/create-asset-categories.spec.ts ::  createAssetCategories 迁移 已存在同名分类时更新定义而非重复插入（幂等）
+tests/unit/repositories/dialog.repository.spec.ts ::  DialogRepository [sqlite] getAll 按 updatedAt DESC
+tests/unit/repositories/lw-batch-1.repository.spec.ts ::  LW Batch 1 [sqlite] Skill: create 同时写 character_ids JSON 和 lw_skill_characters 关联
+tests/unit/repositories/lw-batch-1.repository.spec.ts ::  LW Batch 1 [sqlite] Skill: update 替换 characterIds 也更新关联表
+tests/unit/repositories/lw-batch-1.repository.spec.ts ::  LW Batch 1 [sqlite] Skill: getSkillsByCharacterId + getCharacterIdsBySkillIds
+tests/unit/repositories/lw-batch-1.repository.spec.ts ::  LW Batch 1 [sqlite] Skill: delete 级联清关联表
+tests/unit/repositories/lw-memory.repository.spec.ts ::  LW Memory [sqlite] create + getById
+tests/unit/repositories/lw-memory.repository.spec.ts ::  LW Memory [sqlite] update + 实体关联表同步
+tests/unit/repositories/lw-memory.repository.spec.ts ::  LW Memory [sqlite] delete 级联删除关联表
+tests/unit/repositories/lw-memory.repository.spec.ts ::  LW Memory [sqlite] getMemoriesByEntity 通过关联表反查
+tests/unit/repositories/lw-memory.repository.spec.ts ::  LW Memory [sqlite] deleteByProjectId 级联清理关联表
+tests/unit/repositories/lw-memory.repository.spec.ts ::  LW Memory [sqlite] MemoryEntity: replaceAll 整组替换
+tests/unit/repositories/lw-plot-outline.repository.spec.ts ::  LW Plot+Outline [sqlite] Plot: 关联表 (involvedCharacters 是 ID 时同步写入)
+tests/unit/repositories/lw-plot-outline.repository.spec.ts ::  LW Plot+Outline [sqlite] Plot: update 替换 involved + 重新同步关联表
+tests/unit/repositories/lw-plot-outline.repository.spec.ts ::  LW Plot+Outline [sqlite] Plot: delete 级联删关联表
+tests/unit/repositories/lw-plot-outline.repository.spec.ts ::  LW Plot+Outline [sqlite] Outline: delete 递归删除子节点 + 关联表
+tests/unit/repositories/lw-plot-outline.repository.spec.ts ::  LW Plot+Outline [sqlite] Outline: update + character/location/item 关联
+tests/unit/repositories/lw-plot-outline.repository.spec.ts ::  LW Plot+Outline [sqlite] Outline: batch get 关联 IDs maps
+tests/unit/repositories/lw-project.repository.spec.ts ::  LW Project + Overview + ModelConfig [sqlite] ModelConfig: upsertMany 事务 + getByProjectAndStage
+tests/unit/repositories/lw-state.repository.spec.ts ::  LW EntityState [sqlite] batchCreate 走 upsert + 事务
+tests/unit/repositories/multi-tenant.spec.ts ::  multi-tenant scoped repository (sqlite) 读操作的 user_id 过滤 A 创建的 dialog 在 B 的 find 里看不到
+tests/unit/repositories/multi-tenant.spec.ts ::  multi-tenant scoped repository (sqlite) 剧集制作模块隔离 CharacterBinding 按 user_id 隔离
+tests/unit/repositories/role.repository.spec.ts ::  RoleRepository [sqlite] getAll 按 is_builtin DESC 后 created_at ASC 排序
+tests/unit/repositories/video-subsystem.repository.spec.ts ::  视频子系统 Repos [sqlite] CharacterBinding: 创建 + 规范化字段同步写入
+tests/unit/repositories/workflow-repositories.spec.ts ::  Workflow Repositories [sqlite] WorkflowDefinitionRepository scanDueCronTriggers：跨租户可见，只返回已发布且到期且 cron 启用
+tests/unit/core/database/agent-task-memory.repository.spec.ts ::  AgentMemoryEntryRepository create/listByStatus/patch（use_count/success_count 回写）+ 租户过滤
+tests/unit/core/database/agent-task-memory.repository.spec.ts ::  AgentMemoryEntryRepository archiveStaleBefore：零命中且超期归档，新条目不受影响
+tests/unit/core/database/app.repository.spec.ts ::  AppRepository.listApp 排序（时间降序） 用户应用按创建时间降序（最新创建的在前）
+tests/unit/core/database/app.repository.spec.ts ::  AppRepository.listApp 排序（时间降序） 内置应用按发布顺序时间降序（最新发布的内置在前）
+tests/unit/core/database/app.repository.spec.ts ::  AppRepository.listApp 排序（时间降序） 内置 + 用户混合：整体时间降序（用户应用晚创建在前，内置按发布时间跟随）
+tests/unit/core/database/app.repository.spec.ts ::  AppRepository.listApp 排序（时间降序） 混合场景：最新发布的内置（视频文案提取）在首页容量内可见
+tests/unit/core/database/app.repository.spec.ts ::  AppRepository 分类/标签/固定（新列） create 写入 category/tags，toDto 还原数组
+tests/unit/core/database/app.repository.spec.ts ::  AppRepository 分类/标签/固定（新列） update 修改分类/标签/固定
+tests/unit/core/database/app.repository.spec.ts ::  AppRepository 分类/标签/固定（新列） listApp 支持 category 筛选
+tests/unit/core/database/app.repository.spec.ts ::  AppRepository 分类/标签/固定（新列） listApp 关键字搜索命中名称/分类/标签
+tests/unit/core/database/app.repository.spec.ts ::  AppRepository 分类/标签/固定（新列） listApp 支持 pinned 筛选（首页固定应用入口数据源）
+tests/unit/core/database/app.repository.spec.ts ::  AppRepository 分类/标签/固定（新列） 内置应用允许 pinned 更新（首页入口是用户个人行为），其余字段禁改
+tests/unit/core/database/asset-category.repository.spec.ts ::  AssetCategoryRepository findByName 命中/未命中
+tests/unit/electron/ipc/provider-config-base-url.spec.ts ::  validateBaseUrl 留空 → 放行（使用模板默认端点）
+tests/unit/electron/ipc/provider-config-base-url.spec.ts ::  validateBaseUrl 等于模板缺省端点 → 放行（含尾部斜杠）
+tests/unit/electron/ipc/provider-config-base-url.spec.ts ::  validateBaseUrl 带版本段的自定义地址 → 放行
+tests/unit/electron/ipc/provider-config-base-url.spec.ts ::  validateBaseUrl 不带版本段的其它自定义地址 → 拒绝（保留既有约定）
+tests/unit/episode-production/narrative/storyboard-thumbnail-generator.spec.ts ::  StoryboardThumbnailGeneratorService 落地路径格式 temp/thumbnails/{scriptId}-{ts}/frame-N.jpg
+tests/unit/episode-production/reference-video/analysis.service.spec.ts ::  ReferenceVideoAnalysisService analyze 4 秒 3 段颜色视频 → 检测到多个 shot + 落库
+tests/unit/episode-production/reference-video/analysis.service.spec.ts ::  ReferenceVideoAnalysisService 视频文件不存在 → 抛错
+tests/unit/episode-production/reference-video/analysis.service.spec.ts ::  ReferenceVideoAnalysisService listByUser 返回当前用户的分析记录
+tests/unit/episode-production/reference-video/analysis.service.spec.ts ::  ReferenceVideoAnalysisService user 隔离
+tests/unit/episode-production/reference-video/analysis.service.spec.ts ::  ReferenceVideoAnalysisService delete 删 DB 行 + temp 目录
+tests/unit/episode-production/reference-video/analysis.service.spec.ts ::  ReferenceVideoAnalysisService vlmInfer 注入 → 用 VLM 推断字段替换占位（spec D5 follow-up · #48）
+tests/unit/episode-production/reference-video/analysis.service.spec.ts ::  ReferenceVideoAnalysisService vlmInfer 抛错 → 该 shot 沿用占位字段（不致命）
+tests/unit/episode-production/reference-video/analysis.service.spec.ts ::  ReferenceVideoAnalysisService vlmInfer 返回部分字段 → 缺失字段沿用占位
+tests/unit/episode-production/reference-video/character-extraction.service.spec.ts ::  CharacterExtractionService extractFrames 默认抽 4 帧
+tests/unit/episode-production/reference-video/character-extraction.service.spec.ts ::  CharacterExtractionService 每帧文件落地 + suggestedLabel 合理
+tests/unit/episode-production/reference-video/character-extraction.service.spec.ts ::  CharacterExtractionService frameCount 自定义 + label 适配
+tests/unit/episode-production/reference-video/character-extraction.service.spec.ts ::  CharacterExtractionService frameCount 边界 clamp 到 [1, 8]
+tests/unit/episode-production/reference-video/character-extraction.service.spec.ts ::  CharacterExtractionService 视频不存在 → 抛错
+tests/unit/episode-production/reference-video/character-extraction.service.spec.ts ::  CharacterExtractionService cleanup 清 temp 目录
+tests/unit/episode-production/reference-video/character-extraction.service.spec.ts ::  CharacterExtractionService 帧时间分布在 [5%, 95%] 区间
+tests/unit/episode-production/reference-video/character-extraction.service.spec.ts ::  CharacterExtractionService importFramesToAsset 选中帧拷到 projectAssetRoot/${bindingId}/ + 写 asset_image 行
+tests/unit/episode-production/reference-video/character-extraction.service.spec.ts ::  CharacterExtractionService importFramesToAsset 帧文件不存在 → 跳过该帧（不致命）
+tests/unit/episode-production/reference-video/character-extraction.service.spec.ts ::  CharacterExtractionService importFramesToAsset frames 空数组 → 返回空 imageIds
+tests/unit/episode-production/reference-video/character-extraction.service.spec.ts ::  CharacterExtractionService importFramesToAsset label 缺省 → fallback view-N
+tests/unit/episode-production/user-asset/user-asset.service.spec.ts ::  UserAssetService addToLibrary character binding → 拷 snapshot + 拷图 + 写 user_assets
+tests/unit/renderer/components/StageHeaderBar-merged.spec.ts ::  StageHeaderBar 合并段（6→5） 渲染 5 个 segment，标签依次是 内容+剧本/资产/分镜/制作/合成
+tests/unit/renderer/components/StageHeaderBar-merged.spec.ts ::  StageHeaderBar 合并段（6→5） status=pending 染色对：stage-current,stage-pending,stage-pending,stage-pending,stage-pending
+tests/unit/renderer/components/StageHeaderBar-merged.spec.ts ::  StageHeaderBar 合并段（6→5） status=asset_prep 染色对：stage-complete,stage-current,stage-pending,stage-pending,stage-pending
+tests/unit/renderer/components/StageHeaderBar-merged.spec.ts ::  StageHeaderBar 合并段（6→5） status=scripting 染色对：stage-current,stage-complete,stage-pending,stage-pending,stage-pending
+tests/unit/renderer/components/StageHeaderBar-merged.spec.ts ::  StageHeaderBar 合并段（6→5） status=storyboarding 染色对：stage-complete,stage-complete,stage-current,stage-pending,stage-pending
+tests/unit/renderer/components/StageHeaderBar-merged.spec.ts ::  StageHeaderBar 合并段（6→5） status=producing 染色对：stage-complete,stage-complete,stage-complete,stage-current,stage-pending
+tests/unit/renderer/components/StageHeaderBar-merged.spec.ts ::  StageHeaderBar 合并段（6→5） status=composing 染色对：stage-complete,stage-complete,stage-complete,stage-complete,stage-current
+tests/unit/renderer/components/StageHeaderBar-merged.spec.ts ::  StageHeaderBar 合并段（6→5） status=completed 染色对：stage-complete,stage-complete,stage-complete,stage-complete,stage-current
+tests/unit/renderer/components/StageHeaderBar.spec.ts ::  StageHeaderBar 渲染 5 个合并段，标签依次是 内容+剧本/资产/分镜/制作/合成
+tests/unit/renderer/components/StageHeaderBar.spec.ts ::  StageHeaderBar status=scripting 时：内容+剧本=current, 资产=complete, 其余=pending
+tests/unit/renderer/views/app-list.spec.ts ::  AppList 应用列表页（卡片化） 渲染应用卡片（名称/来源版本/渠道点/会话数）
+tests/unit/renderer/views/app-list.spec.ts ::  AppList 应用列表页（卡片化） 卡片直接启动：创建会话并跳转会话页
+tests/unit/renderer/views/app-list.spec.ts ::  AppList 应用列表页（卡片化） 未开启会话渠道的应用：启动提示而非创建会话
+tests/unit/core/platform/assets/asset-service-category.spec.ts ::  AssetService 分类驱动预览 previewInfoFor：命中内置分类（早报 → report + morningReport）
+tests/unit/core/platform/assets/asset-service-category.spec.ts ::  AssetService 分类驱动预览 renderAssetPreview：report 模式无平台渲染器 → HTML 降级（业务模板）
+tests/unit/core/platform/assets/asset-service-category.spec.ts ::  AssetService 分类驱动预览 renderAssetPreview：report 模式有平台渲染器 → PNG data URL 长图
+tests/unit/core/platform/services/document-templates.spec.ts ::  DOCUMENT_TEMPLATES 注册表 包含全部预期模板（早报×3 / 周报×3 / 通用 / 对话 / 吃瓜×6）
+tests/unit/core/platform/services/provider-template-token-plan.spec.ts ::  阿里百炼 Token Plan 模板定义 注册了 OpenAI 兼容与 Anthropic 兼容两张独立模板卡
+tests/unit/core/platform/services/provider-template-token-plan.spec.ts ::  阿里百炼 Token Plan 模板定义 使用官方 Token Plan 专属 Base URL（与按量计费 bailian 模板严格区分）
+tests/unit/core/platform/services/provider-template-token-plan.spec.ts ::  阿里百炼 Token Plan 模板定义 认证方式与端点与官方文档一致
+tests/unit/core/platform/services/provider-template-token-plan.spec.ts ::  阿里百炼 Token Plan 模板定义 只声明 chat 能力（官方标注这两个端点「仅文本生成类」）
+tests/unit/core/platform/services/provider-template-token-plan.spec.ts ::  阿里百炼 Token Plan 模板定义 声明 sk-sp- 密钥前缀与使用须知（地域/限额/密钥隔离/官方使用范围）
+tests/unit/core/platform/services/provider-template-token-plan.spec.ts ::  阿里百炼 Token Plan 模板定义 模型清单 = 官方 Token Plan 文本/推理模型（两张模板一致，且各自持有副本）
+tests/unit/core/platform/services/provider-template-token-plan.spec.ts ::  阿里百炼 Token Plan 模板定义 模型规格与能力取自官方文档（上下文/输出上限、推理、工具、视觉）
+tests/unit/core/platform/services/provider-template-token-plan.spec.ts ::  createProvider 按模板分发（Token Plan） OpenAI 兼容模板 → OpenAISdkProvider，默认 baseURL 为 Token Plan compatible-mode
+tests/unit/core/platform/services/provider-template-token-plan.spec.ts ::  createProvider 按模板分发（Token Plan） Anthropic 兼容模板 → AnthropicSdkProvider，baseURL 回退模板默认端点
+tests/unit/core/platform/services/provider-template-token-plan.spec.ts ::  createProvider 按模板分发（Token Plan） 用户自定义 baseUrl 优先于模板默认值（代理/中转场景）
+tests/unit/core/platform/services/provider-template-token-plan.spec.ts ::  testConnection 透出模板声明能力（离线） Anthropic 协议模板（无 /models 接口）返回预置模型清单与能力
+tests/unit/core/platform/workflow/gossip-event-report.spec.ts ::  吃瓜热点事件分析报告 工作流 start 输入：事件必填、风格提示词（非模板下拉）、搜索引擎动态源、模型
+tests/unit/core/platform/workflow/gossip-event-report.spec.ts ::  吃瓜热点事件分析报告 工作流 并行产出：analyze1 → parallel → 长图流/文案循环/脚本流 → merge2 汇合
+tests/unit/core/platform/workflow/tool-call.spec.ts ::  tool-call：execute 成功：透传执行结果到输出（status/ok/json/text/durationMs）
+tests/unit/core/platform/workflow/tool-call.spec.ts ::  tool-call：execute 失败：HTTP 错误（status=400）→ failed 且不可重试
+tests/unit/core/platform/workflow/tool-call.spec.ts ::  tool-call：execute 网络失败（status=0）→ failed 且可重试（走 fail 边重试语义）
+tests/unit/core/platform/workflow/tool.service.spec.ts ::  ToolService：凭据（加密存取） saveCredential 加密 apiKey 后落库；列表不返回明文（仅密文）
+tests/unit/core/platform/workflow/yt-dlp-manager.spec.ts ::  yt-dlp manager ensureBinary：未安装且下载失败 → null（不抛错，上层降级）
+tests/unit/core/platform/workflow/yt-dlp-manager.spec.ts ::  yt-dlp manager ensureBinary：下载成功 → 返回路径
+tests/unit/core/platform/workflow/yt-dlp-manager.spec.ts ::  yt-dlp extractAudioFromUrl 成功分支（mock child_process.spawn） 二进制可用 + spawn 成功 + 输出 wav 生成 → 返回路径
