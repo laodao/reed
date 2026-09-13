@@ -78,3 +78,22 @@
 - 路径：长文项目（概要→分集大纲 script 模式→逐集正文+质量门）→ EP 项目（outline 关联模式建 10 集）→ 逐集 generateScript → 导出 markdown。
 - 脚本：`scripts/lw10-episode-script.cjs`（断点续跑）；前提与逐集节拍：`/tmp/lw10-premise.json`（金瞳鉴宝+身世复仇双爽点线，按 R1 节拍模板设计）。
 - 产出与质量评估见 `docs/design/2026-09-09-writing-quality-run-report.md`。
+
+## 6. 50 号：圣经就绪门——固定流程（2026-09-13）
+
+**动机**：《大宋女捕》实跑（本地 vLLM Qwen3.8-27B，scripts/lw-qwen-novel.cjs）暴露角色漂移：大纲/正文生成时角色表为空（测试编排把圣经放在正文之后），模型自由造名（正文顾清玄 14 次/王铁 20 次/赵德 28 次），而角色设定作为独立采样另造一套（圣经沈墨/展昭/包拯，正文 0 次引用）；图谱提取按名册 resolve，未登记人名无声丢弃，R1-R8 也不查未登记人名——两套命名无任何对账。
+
+**固定流程**：概要 → 角色 → 故事线 → 大纲 → 正文。用户拍板：关键内容（核心故事/角色/故事线）未设定前，不允许生成大纲与长文内容，执行前强制检查。
+
+**实施**（[LW] 业务域策略）：
+
+| # | 内容 | 落点 | 要点 |
+|---|---|---|---|
+| G1 | **就绪门纯函数** | `src/core/platform/services/longwriting/bible-readiness-gate.ts` | assessBibleReadiness（概要 summary 非空白/角色至少 1 个有姓名/故事线至少 1 条有标题或摘要——行数≠就绪，空白名不算）；buildBibleGateError（报错含缺失项+固定流程指引）；buildCastRosterConstraint（人物名册硬约束段：禁止虚构名册外人名，名册外用身份称呼；主角→反派→配角排序，cap=20 截断注明总数） |
+| G2 | **大纲入口门** | generateOutlineStory | novel 与 script 分支共用入口检查；名册约束注入一/二/三级大纲 prompt（characterInfo 拼接）与分集 prompt（castBlock 接管人物清单，评审 P2-3 消除双清单矛盾） |
+| G3 | **正文入口门** | generateChapter / generateChapterWithContext / generateChapterPrewrite（评审 P2-1 补） | checkBibleGate 前置，拒绝时不发起 AI 调用；上下文预览（getChapterContextItems）不拦——预览=缺口展示 |
+| G4 | **研讨室同门**（评审 P1-3） | room-distiller persistByKind | 大纲卡（persistOutlineTree 前）与章节草稿卡（persistChapter 前）走 bibleGateForPersist——⚡采纳与 design 确认同路径收口；概要/人物/故事线卡是圣经建设本身不设门；分集大纲卡不落 lw_outlines，不拦 |
+
+**对抗评审裁决**：P0=0；P1×3（空白名口径统一、cap 截断排序+总数注明、研讨室旁路）+ P2×7 全部处置——本次修复 P1-1/2/3 与 P2-1/2/3/5/7，P2-4（存量项目硬阻断无逃生门）确认为产品决策即 50 号本意，P2-6 登记不动（plots 加载移出 try，IPC 层兜底），P2-7 测试卫生已纳入。登记未做：setPhase 跳阶段校验（阶段为引导性，内容落库已有门）、正文高频未登记人名的对账规则（R9 候选）。
+
+**验证**：单测 18 例（gate 16 + room-distiller 新增负例）；长文全域 85/85 绿；vue-tsc 890（基线 907）；eslint 0 errors。真机（dev:debug）验证：空项目大纲/正文拒绝→仅概要精确报缺「角色、故事线」→补齐后放行并真实生成大纲。

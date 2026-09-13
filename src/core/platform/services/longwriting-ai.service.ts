@@ -12,6 +12,7 @@ import type {
 } from './longwriting/chapter-context'
 import { composeChapterPrompt, estimateContextTokens } from './longwriting/chapter-context'
 import { applyChapterQualityGate } from './longwriting/chapter-quality-gate'
+import { assessBibleReadiness, buildBibleGateError, buildCastRosterConstraint } from './longwriting/bible-readiness-gate'
 import {
   buildNovelChapterDiscipline,
   buildScriptChapterDiscipline,
@@ -868,10 +869,19 @@ ${itemTypesInfo || '暂无配置'}
     // 默认使用三级结构
     const level = structureLevel || 3
 
-    // 获取故事概要、角色、背景
+    // 获取故事概要、角色、故事线、背景（50 号：故事线上提到入口统一加载）
     const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
     const characters = await dbManager.lwCharacters?.getByProjectId(projectId) || []
+    const plots = await dbManager.lwPlots?.getByProjectId(projectId) || []
     const background = await dbManager.lwBackgrounds?.getByProjectId(projectId)
+    const plotsSummary = plots.length > 0
+      ? plots.map(p => `${p.title}：${p.summary}`).join('\n')
+      : ''
+
+    // 50 号：圣经就绪门——概要/角色/故事线未设定前禁止生成大纲（固定流程：概要→角色→故事线→大纲→正文）
+    const gateError = buildBibleGateError('大纲', assessBibleReadiness({ overview, characters, plots }).missing)
+    if (gateError) return { success: false, error: gateError }
+    const castConstraint = buildCastRosterConstraint(characters)
 
     // 49 号：script（短剧分集）模式——分集大纲走专属节拍纪律，集数=大纲章数。
     // 评审 P2-3：与 novel 路径同语义，try/catch 收拢成 {success:false,error}
@@ -881,12 +891,8 @@ ${itemTypesInfo || '暂无配置'}
       )
       if (resolveContentTarget(opts?.contentTarget, roomTarget, undefined) === 'script') {
         const episodeCount = opts?.episodeCount || overview?.estimatedChapters || 10
-        const plots = await dbManager.lwPlots?.getByProjectId(projectId) || []
-        const plotsSummary = plots.length > 0
-          ? plots.map(p => `${p.title}：${p.summary}`).join('\n')
-          : ''
         return await this.generateScriptEpisodesOutline(
-          eventId, overview, background, plotsSummary, episodeCount, providerConfigId, modelId
+          eventId, overview, background, plotsSummary, castConstraint, episodeCount, providerConfigId, modelId
         )
       }
     } catch (error: any) {
@@ -895,13 +901,9 @@ ${itemTypesInfo || '暂无配置'}
 
     const characterInfo = characters.slice(0, 5).map(c =>
       `${c.name}（${c.rolePosition === 'protagonist' ? '主角' : c.rolePosition === 'antagonist' ? '反派' : '配角'}）`
-    ).join('、')
+    ).join('、') + (castConstraint ? `\n${castConstraint}` : '')
 
-    // 故事线（情节）注入：大纲结构应承接已确认的故事情节
-    const plots = await dbManager.lwPlots?.getByProjectId(projectId) || []
-    const plotsSummary = plots.length > 0
-      ? plots.map(p => `${p.title}：${p.summary}`).join('\n')
-      : ''
+    // 大纲结构应承接已确认的故事情节（50 号：plotsSummary 已在入口统一加载）
 
     const storyInfo = {
       title: overview?.title || '未命名',
@@ -939,6 +941,7 @@ ${itemTypesInfo || '暂无配置'}
     overview: any,
     background: any,
     plotsSummary: string,
+    castLine: string,
     episodeCount: number,
     providerConfigId?: string,
     modelId?: string
@@ -949,11 +952,13 @@ ${itemTypesInfo || '暂无配置'}
       .map((c: any) => (typeof c === 'string' ? c : `${c?.name ?? ''}${c?.role ? `（${c.role}）` : ''}`.trim()))
       .filter(Boolean)
       .join('、')
+    // 评审 P2-3：名册约束就位时由名册接管人物清单，避免概要自由文本与名册互相矛盾
+    const castBlock = castLine || `主要人物：${charNames || '暂无'}`
     const prompt = `故事标题：${overview?.title || '未命名'}
 故事摘要：${overview?.summary || '未指定'}
 核心冲突：${overview?.coreConflict || '未指定'}
 故事线：${plotsSummary || '暂无'}
-主要人物：${charNames || '暂无'}
+${castBlock}
 时代背景：${background?.eraDescription || '未指定'}
 
 请生成本剧的分集大纲（共 ${episodeCount} 集，只返回JSON数组）：`
@@ -1332,6 +1337,10 @@ ${itemTypesInfo || '暂无配置'}
   ): Promise<GenerateResponse> {
     const dbManager = getCoreDatabaseManager()
 
+    // 评审 P2-1：预写提纲同属长文内容，无名册时【人物】段必然造名，同过就绪门
+    const prewriteGateError = await this.checkBibleGate(projectId, '章节预写提纲')
+    if (prewriteGateError) return { success: false, error: prewriteGateError }
+
     // 获取相关数据
     const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
     const background = await dbManager.lwBackgrounds?.getByProjectId(projectId)
@@ -1405,6 +1414,20 @@ ${plotInfo || '暂无相关情节'}
   }
 
   /**
+   * 50 号：圣经就绪门（正文）——概要/角色/故事线缺一不可。
+   * 名册为空时正文必然自由造名，是角色漂移的源头；预览（getChapterContextItems）不拦截。
+   */
+  private async checkBibleGate(projectId: string, purpose: string): Promise<string | null> {
+    const dbManager = getCoreDatabaseManager()
+    const [overview, characters, plots] = await Promise.all([
+      dbManager.lwStoryOverviews?.getByProjectId(projectId),
+      dbManager.lwCharacters?.getByProjectId(projectId),
+      dbManager.lwPlots?.getByProjectId(projectId),
+    ])
+    return buildBibleGateError(purpose, assessBibleReadiness({ overview, characters, plots }).missing)
+  }
+
+  /**
    * 生成章节内容
    */
   async generateChapter(
@@ -1417,6 +1440,8 @@ ${plotInfo || '暂无相关情节'}
     style?: string,
     extraPrompt?: string
   ): Promise<GenerateResponse> {
+    const gateError = await this.checkBibleGate(projectId, '章节正文')
+    if (gateError) return { success: false, error: gateError }
     const asm = await this.assembleChapterGeneration(projectId, outlineId, { targetWords, style, extraPrompt })
     if ('error' in asm) return { success: false, error: asm.error }
     try {
@@ -1486,6 +1511,8 @@ ${plotInfo || '暂无相关情节'}
       modelId?: string
     }
   ): Promise<GenerateResponse> {
+    const gateError = await this.checkBibleGate(projectId, '章节正文')
+    if (gateError) return { success: false, error: gateError }
     const asm = await this.assembleChapterGeneration(projectId, outlineId, {
       targetWords: params.targetWords, style: params.style, extraPrompt: params.extraPrompt,
     })

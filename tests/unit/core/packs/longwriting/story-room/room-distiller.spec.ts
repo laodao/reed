@@ -229,6 +229,10 @@ describe('adoptCard 采纳落库', () => {
 
   it('长篇大纲卡采纳：persistOutlineTree 建卷+章节点', async () => {
     const db = makeFakeDb()
+    // 50 号就绪门：大纲卡落库前需概要/角色/故事线就绪
+    db.lwStoryOverviews.getByProjectId = async () => ({ id: 'ov1', summary: '被冤弟子的复仇' })
+    db.lwCharacters.getByProjectId = async () => [{ id: 'c1', name: '沈砚', rolePosition: 'protagonist' }]
+    db.lwPlots.getByProjectId = async () => [{ id: 'pl1', title: '复仇主线' }]
     const svc = harness(scriptedModel(['{}']), db)
     roomOf(db).pendingCards = [{
       id: 'card_v1', kind: 'outline', title: '大纲卡 · 第一卷',
@@ -241,8 +245,20 @@ describe('adoptCard 采纳落库', () => {
     expect(db._outlines[0].name).toBe('第一卷 蒙冤')
   })
 
-  it('分集大纲卡采纳：定稿不落 lw_outlines（转短剧种子）', async () => {
-    const db = makeFakeDb()
+  it('无设定采纳大纲卡：就绪门拒绝（50 号评审 P1-3，与写作台同流程）', async () => {
+    const db = makeFakeDb() // 概要/故事线均为空
+    const svc = harness(scriptedModel(['{}']), db)
+    roomOf(db).pendingCards = [{
+      id: 'card_v2', kind: 'outline', title: '大纲卡 · 第一卷',
+      data: { name: '第一卷', summary: '卷概要', estimatedWords: 300000, chapters: [{ name: '第1章', summary: '章概要', estimatedWords: 3000 }] },
+      status: 'pending', sourceTurns: [5], createdAt: 1,
+    }]
+    const card = await svc.adoptCard('p1', 'card_v2')
+    expect(card.status).toBe('failed')
+    expect(String(card.resultNote)).toContain('固定流程')
+  })
+
+  it('分集大纲卡采纳：定稿不落 lw_outlines（转短剧种子）', async () => {    const db = makeFakeDb()
     const svc = harness(scriptedModel(['{}']), db)
     roomOf(db).pendingCards = [{
       id: 'card_e1', kind: 'outline', title: '分集大纲卡 · 第 1 集',
@@ -277,6 +293,10 @@ describe('chapter scope（章节卡）', () => {
     const db = makeFakeDb()
     // 预置大纲树：一章
     db._outlines.push({ id: 'ol1', name: '第3章 夜审', nodeType: 'chapter', orderIndex: 2 })
+    // 50 号就绪门：章节草稿卡落库前需概要/角色/故事线就绪
+    db.lwStoryOverviews.getByProjectId = async () => ({ id: 'ov1', summary: '被冤弟子的复仇' })
+    db.lwCharacters.getByProjectId = async () => [{ id: 'c1', name: '沈砚', rolePosition: 'protagonist' }]
+    db.lwPlots.getByProjectId = async () => [{ id: 'pl1', title: '复仇主线' }]
     const model = scriptedModel([
       '{"outlineId":"ol1","outlineName":"第3章 夜审","hook":"公堂之上他突然笑了","points":["洗冤证据亮相","大师兄反水"],"preview":"夜色压城，刑房烛火未熄。"}',
     ])

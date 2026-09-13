@@ -13,6 +13,7 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import { computeProductionState } from '@core/platform/services/longwriting/agent/agent-deps'
 import { stateToSummary } from '@core/platform/services/longwriting/agent/agent-context'
 import { extractJsonObject, persistChapter, persistCharacters, persistOverview, persistOutlineTree, persistPlots, persistWorld, type StoryPersistResult } from '@core/platform/services/longwriting/story-persist'
+import { assessBibleReadiness, buildBibleGateError } from '@core/platform/services/longwriting/bible-readiness-gate'
 import type { ArtifactCard, ArtifactCardKind, BibleDistillScope, DistillScope, RoomWorkspaceState } from '@shared/types/story-room.types'
 import { emitRoomEvent } from './room-events'
 import { getRoomState, patchRoomState } from './room-state'
@@ -22,6 +23,19 @@ import { generateRoomText } from './room-llm'
 const logger = createLogger('StoryRoomDistiller')
 
 export const ROOM_DISTILLER_DEFINITION_ID = 'story-room-distiller'
+
+/**
+ * 50 号评审 P1-3：研讨室是固定流程的旁路——大纲卡/章节草稿卡落库前与写作台同受圣经就绪门约束。
+ * 概要/人物/故事线卡是圣经建设本身，不设门（否则流程无法起步）。
+ */
+async function bibleGateForPersist(m: any, projectId: string, purpose: string): Promise<string | null> {
+  const [overview, characters, plots] = await Promise.all([
+    m?.lwStoryOverviews?.getByProjectId(projectId),
+    m?.lwCharacters?.getByProjectId(projectId),
+    m?.lwPlots?.getByProjectId(projectId),
+  ])
+  return buildBibleGateError(purpose, assessBibleReadiness({ overview, characters, plots }).missing)
+}
 
 /** 一次提炼的卡片数上限（人物/故事线可能多张） */
 const MAX_CARDS_PER_DISTILL = 6
@@ -345,6 +359,8 @@ export class StoryRoomDistillerService {
           // 分集大纲卡：研讨室定稿即采纳（转短剧桥的分集种子，不落 lw_outlines）
           return { ok: true, message: '分集大纲已定稿（转短剧时作为该集种子）', changed: ['outline'] }
         }
+        const gateErr = await bibleGateForPersist(m, projectId, '大纲')
+        if (gateErr) return { ok: false, message: gateErr, changed: [] }
         const created = await persistOutlineTree(m, projectId, [data], 3)
         return { ok: true, message: `已建大纲卷「${data.name || ''}」（${created} 个节点）`, changed: ['outline'], data: { nodes: created } }
       }
@@ -354,6 +370,8 @@ export class StoryRoomDistillerService {
         if (!outlineId) {
           return { ok: true, message: '章节卡已定稿（未关联大纲节点，正文草稿未写入）', changed: ['chapters'] }
         }
+        const gateErr = await bibleGateForPersist(m, projectId, '章节草稿')
+        if (gateErr) return { ok: false, message: gateErr, changed: [] }
         const draft = [String(data.preview || ''), String(data.hook || '')].filter(Boolean).join('\n')
         const r2 = await persistChapter(m, projectId, { outlineId, content: draft || '（待写）' })
         if (!r2.ok) return r2
