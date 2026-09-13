@@ -154,12 +154,13 @@ export class LwEntityStateRepository extends BaseRepository<
     dataList: CreateEntityStateSnapshotRequest[],
   ): Promise<EntityStateSnapshot[]> {
     if (dataList.length === 0) return []
+    // 52 号实跑修复：这里曾自开 dataSource.transaction，而回调内 upsert 走全局 scoped 仓储——
+    // 触发 SQLite 串行门死锁检测（事务回调内禁止全局仓库方法），整批抛错被上层 fail-soft
+    // 吞掉 → 状态切片恒 0 行、R1-R6 全盲。upsert 本身幂等，逐条执行即可，无需外包事务。
     const results: EntityStateSnapshot[] = []
-    await this.dataSource.transaction(async () => {
-      for (const data of dataList) {
-        results.push(await this.upsert(data))
-      }
-    })
+    for (const data of dataList) {
+      results.push(await this.upsert(data))
+    }
     return results
   }
 
