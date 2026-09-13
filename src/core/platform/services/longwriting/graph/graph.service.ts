@@ -148,7 +148,7 @@ export class GraphService {
     for (const input of inputs) {
       const hit = await this.findByName(projectId, input.type, input.name)
       results.push(hit
-        ? { type: input.type, name: input.name, id: hit.id, resolved: true, matchedBy: hit.matchedBy }
+        ? { type: input.type, name: hit.name, id: hit.id, resolved: true, matchedBy: hit.matchedBy }
         : { type: input.type, name: input.name, resolved: false })
     }
     return results

@@ -13,6 +13,11 @@ function makeFakeDb() {
   return {
     eventsStore, statesStore, edgesStore, foreshadowRows,
     lwCharacters: { getByProjectId: vi.fn(async () => [{ id: 'c1', name: '林晓' }, { id: 'c2', name: '顾言' }]) },
+    lwCustomEntities: {
+      getByProjectAndKind: vi.fn(async () => []),
+      createRow: vi.fn(async (_pid: string, kind: string, name: string) => ({ id: `bce-${name}`, kindKey: kind, name })),
+      deleteRow: vi.fn(async () => true),
+    },
     lwLocations: { getByProjectId: vi.fn(async () => [{ id: 'l1', name: '青云宗' }]) },
     lwItems: { getByProjectId: vi.fn(async () => []) },
     lwOutlines: {
@@ -113,20 +118,26 @@ describe('ChapterGraphProcessor', () => {
     expect(db.lwChapterStateSummaries.upsert).toHaveBeenCalledTimes(1)
   })
 
-  it('事件涉及未知实体：名称解析失败跳过（不建幽灵边）', async () => {
+  it('事件涉及未知实体：进未登记队列，正文共现补链挂真实实体（52 号，不建幽灵边）', async () => {
     const db = makeFakeDb()
+    // 正文里出现名册内的「林晓」与名册外的「李三」——模型只提案了未知实体
     const ai = makeFakeAi({
       extractChapterForeshadows: vi.fn(async () => ({ success: true, data: [] })),
     extractChapterEvents: vi.fn(async () => ({
         success: true,
-        data: [{ name: '神秘事件', involvedEntities: [{ type: 'character', name: '不存在的人' }] }],
+        data: [{ name: '李三遇害', involvedEntities: [{ type: 'character', name: '不存在的人' }] }],
       })),
     })
     const proc = new ChapterGraphProcessor(db as any, ai as any)
-    const result = await proc.process({ projectId: 'p1', outlineId: 'o1', chapterContent: '正文', chapterNumber: 2 })
+    const content = '林晓赶到现场时，李三已经断了气。'
+    const result = await proc.process({ projectId: 'p1', outlineId: 'o1', chapterContent: content, chapterNumber: 2 })
     expect(result.events).toHaveLength(1)
-    expect(db.eventsStore[0].involvedEntities).toEqual([]) // 未解析的实体被过滤
-    expect(result.edges).toHaveLength(0) // 无涉及实体 → 无边
+    // 「不存在的人」未解析不挂；共现补链把正文同句的名册实体「林晓」挂上（解析过的真实 ID，非幽灵边）
+    const linked = db.eventsStore[0].involvedEntities.map((e: any) => e.name)
+    expect(linked).toContain('林晓')
+    expect(linked).not.toContain('不存在的人')
+    // 名册外的「李三」进未登记队列（R9 数据源）
+    expect(db.lwCustomEntities.getByProjectAndKind).toHaveBeenCalledWith('p1', '未登记人物')
   })
 
   it('内容未变的二次保存 → 0 次 AI 调用（评审#61 幂等短路）', async () => {

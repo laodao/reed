@@ -101,7 +101,7 @@
                 </template>
               </el-dropdown>
               <el-dropdown trigger="click" @command="(sc: string) => onDistill(sc as never)">
-                <span class="ct-btn">⚡ 提炼 ▾</span>
+                <span class="ct-btn" :class="{ 'ct-busy': distilling }">{{ distilling ? '⏳ 提炼中…' : '⚡ 提炼 ▾' }}</span>
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item command="overview">概要卡</el-dropdown-item>
@@ -173,9 +173,41 @@
 
     <el-drawer v-model="conflictDrawer" title="⚔ 连续性检查疑点" size="42%" :append-to-body="true">
       <div class="conflict-drawer-list">
-        <div v-for="(c, i) in store.conflicts.value" :key="i" class="conflict-item">
-          <span class="conflict-rule">{{ ruleLabel(c.rule) }}</span>
-          <span class="conflict-msg">{{ c.description || c.message }}</span>
+        <div v-for="(c, i) in store.conflicts.value" :key="i" class="conflict-item-wrap">
+          <div class="conflict-item">
+            <span class="conflict-rule">{{ ruleLabel(c.rule) }}</span>
+            <span class="conflict-msg">{{ c.description || c.message }}</span>
+            <el-button size="small" type="primary" plain class="conflict-solve" :loading="plans[i]?.loading" @click="solveConflict(i)">
+              {{ plans[i]?.loading ? '解题中…' : 'AI 解题' }}
+            </el-button>
+          </div>
+          <div v-if="plans[i]?.plan || plans[i]?.error" class="conflict-plan">
+            <div v-if="plans[i]?.error" class="plan-error">解题失败：{{ plans[i].error }}</div>
+            <template v-else>
+              <div class="plan-diagnosis"><b>诊断：</b>{{ plans[i]!.plan!.diagnosis }}</div>
+              <div
+                v-for="(opt, oi) in plans[i]!.plan!.options"
+                :key="oi"
+                class="plan-option"
+                :class="{ recommended: plans[i]!.plan!.recommended === oi }"
+              >
+                <div class="po-head">
+                  <span class="po-label">{{ recommendedTag(plans[i]!.plan!.recommended === oi) }}{{ opt.label }}</span>
+                  <el-button
+                    v-if="opt.action !== 'edit_chapter' && opt.action !== 'none'"
+                    size="small"
+                    type="primary"
+                    @click="execOption(i, oi, opt)"
+                  >执行</el-button>
+                  <el-button v-if="opt.action === 'edit_chapter'" size="small" @click="copyEdit(opt)">复制改文</el-button>
+                  <el-button v-if="opt.action === 'edit_chapter'" size="small" @click="goEditor">去写作台</el-button>
+                </div>
+                <div class="po-detail">{{ opt.detail }}</div>
+                <div v-if="opt.editText?.text" class="po-edit">建议文本：{{ opt.editText.text }}</div>
+                <div v-if="execResults[i + '-' + oi]" class="po-result">→ {{ execResults[i + '-' + oi] }}</div>
+              </div>
+            </template>
+          </div>
         </div>
         <div v-if="!store.conflicts.value.length" class="conflict-empty">当前没有疑点。</div>
       </div>
@@ -372,6 +404,53 @@ function toggleItem(id: string): void {
   if (next.has(id)) next.delete(id)
   else next.add(id)
   checkedIds.value = next
+}
+
+interface PlanOption { action: string; label: string; detail: string; editText?: { chapterName?: string; chapterNumber?: number; text: string }; applyPayload?: Record<string, unknown> }
+interface ConflictPlanView { plan?: { diagnosis: string; options: PlanOption[]; recommended?: number }; error?: string; loading?: boolean }
+const plans = ref<Record<number, ConflictPlanView>>({})
+const execResults = ref<Record<string, string>>({})
+
+async function solveConflict(i: number): Promise<void> {
+  const c: any = store.conflicts.value[i]
+  if (!c) return
+  plans.value[i] = { loading: true }
+  try {
+    const res = await window.electronAPI.longwriting.conflictPlan(
+      projectId.value,
+      { rule: c.rule, message: c.description || c.message, entityName: c.entityName, entityType: c.entityType, chapterNumber: c.chapterNumber },
+      store.modelOpts.value,
+    )
+    if (res.success) plans.value[i] = { plan: res.data }
+    else plans.value[i] = { error: res.error || '解题失败' }
+  } catch (e: any) {
+    plans.value[i] = { error: e.message }
+  }
+}
+
+async function execOption(i: number, oi: number, opt: PlanOption): Promise<void> {
+  const c: any = store.conflicts.value[i]
+  const payload = { ...(opt.applyPayload || {}), name: c.entityName || opt.editText?.chapterName, chapterNumber: c.chapterNumber }
+  const res = await window.electronAPI.longwriting.conflictExecute(projectId.value, opt.action, payload)
+  const msg = (res.data && res.data.message) || res.error || (res.success ? '已执行' : '执行失败')
+  execResults.value[i + '-' + oi] = msg
+  ElMessage[res.success ? 'success' : 'warning'](msg)
+  if (res.success) {
+    plans.value[i] = { ...plans.value[i] }
+    await store.loadConflictsIfWriting()
+  }
+}
+
+function copyEdit(opt: PlanOption): void {
+  const t = opt.editText?.text || opt.detail
+  navigator.clipboard?.writeText(t).then(
+    () => ElMessage.success('建议文本已复制'),
+    () => ElMessage.warning('复制失败，请手动选择文本'),
+  )
+}
+
+function recommendedTag(rec: boolean): string {
+  return rec ? '★ ' : ''
 }
 
 function ruleLabel(rule?: string): string {
@@ -859,5 +938,27 @@ html.dark .story-room { --sr-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rg
   color: var(--el-color-warning-dark-2);
 }
 .conflict-empty { color: var(--el-text-color-secondary); font-size: 13px; }
+
+
+.composer-toolbar .ct-btn {
+  height: 26px;
+  line-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.conflict-item-wrap { border: 1px solid var(--el-border-color-lighter); border-radius: 6px; padding: 8px 10px; }
+.conflict-item-wrap .conflict-item { display: flex; gap: 8px; align-items: flex-start; border: none; padding: 0; }
+.conflict-solve { margin-left: auto; flex: none; }
+.conflict-plan { margin-top: 8px; padding: 8px 10px; background: var(--el-fill-color-light); border-radius: 6px; font-size: 13px; line-height: 1.6; }
+.plan-diagnosis { margin-bottom: 6px; }
+.plan-error { color: var(--el-color-danger); }
+.plan-option { padding: 6px 0; border-top: 1px dashed var(--el-border-color-lighter); }
+.plan-option.recommended .po-label { color: var(--el-color-warning-dark-2); font-weight: 600; }
+.po-head { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+.po-label { font-weight: 600; }
+.po-detail { color: var(--el-text-color-regular); }
+.po-edit { margin-top: 4px; padding: 6px 8px; background: var(--el-fill-color); border-radius: 4px; color: var(--el-text-color-secondary); }
+.po-result { margin-top: 4px; color: var(--el-color-success); }
 
 </style>

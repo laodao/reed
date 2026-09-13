@@ -2168,6 +2168,10 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:room:setPhase', projectId, phase),
     roomDistill: (projectId: string, scope: string, opts?: { providerConfigId?: string; modelId?: string }) =>
       ipcRenderer.invoke('longwriting:room:distill', projectId, scope, opts),
+    conflictPlan: (projectId: string, conflict: unknown, opts?: { providerConfigId?: string; modelId?: string }) =>
+      ipcRenderer.invoke('longwriting:room:conflict:plan', projectId, conflict, opts),
+    conflictExecute: (projectId: string, action: string, payload: Record<string, unknown>) =>
+      ipcRenderer.invoke('longwriting:room:conflict:execute', projectId, action, payload),
     roomAdoptCard: (projectId: string, cardId: string, patch?: Record<string, unknown>) =>
       ipcRenderer.invoke('longwriting:room:adoptCard', projectId, cardId, patch),
     roomRegenerateCard: (projectId: string, cardId: string, feedback: string, opts?: { providerConfigId?: string; modelId?: string }) =>

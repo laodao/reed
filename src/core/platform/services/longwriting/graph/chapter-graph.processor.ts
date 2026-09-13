@@ -137,11 +137,12 @@ export class ChapterGraphProcessor {
         for (const ev of extracted) {
           if (!ev.name?.trim()) continue
           // 52 号：解析失败的实体不再静默跳过——收集进「未登记人物」队列（R9 数据源）
-          const { resolved: involved, unresolved: evUnresolved } = await this.resolveEventEntities(projectId, ev.involvedEntities || [])
+          const { resolved: resolvedIn, unresolved: evUnresolved } = await this.resolveEventEntities(projectId, ev.involvedEntities || [])
           for (const u of evUnresolved) {
             if (u.type === 'character') await this.registerUnresolvedName(projectId, chapterNumber, u.name)
           }
           // 复测补链：模型漏挂实体的事件，按句子共现补挂（正文同句出现的人名）
+          let involved = resolvedIn
           if (involved.length === 0) {
             involved = await this.linkEventByCoOccurrence(projectId, chapterNumber, ev, chapterContent)
           }
@@ -388,9 +389,21 @@ export class ChapterGraphProcessor {
     chapterContent: string,
   ): Promise<MemoryEntity[]> {
     try {
-      const key = (ev.name || '').replace(/[「」『』【】\s]/g, '').slice(0, 4)
-      if (!key) return []
-      const sentences = chapterContent.split(/[。！？\n]/).filter(s => s.includes(key) || (ev.description && s.includes((ev.description || '').slice(0, 6))))
+      const clean = (ev.name || '').replace(/[「」『』【】\s]/g, '')
+      if (!clean) return []
+      const all = chapterContent.split(/[。！？\n]/).filter(Boolean)
+      // 模型起的事件名不一定是原文原词——关键串从 4 字逐级缩到 2 字找共现句
+      let sentences: string[] = []
+      for (const len of [Math.min(4, clean.length), 3, 2]) {
+        const key = clean.slice(0, len)
+        if (key.length < 2) break
+        sentences = all.filter(s => s.includes(key))
+        if (sentences.length > 0) break
+      }
+      if (sentences.length === 0 && ev.description) {
+        const dk = ev.description.replace(/[「」『』【】\s]/g, '').slice(0, 4)
+        if (dk.length >= 2) sentences = all.filter(s => s.includes(dk))
+      }
       const scope = sentences.length > 0 ? sentences.join('。') : ''
       if (!scope) return []
       const graph = new GraphService(this.manager()!)
@@ -403,8 +416,8 @@ export class ChapterGraphProcessor {
         if (seen.has(w) || stop.has(w)) continue
         seen.add(w)
         const [r] = await graph.resolveEntities(projectId, [{ type: 'character', name: w }] as any)
-        if (r?.resolved && r.id) entities.push({ type: 'character', id: r.id, name: w })
-        else await this.registerUnresolvedName(projectId, chapterNumber, w)
+        if (r?.resolved && r.id) entities.push({ type: 'character', id: r.id, name: r.name })
+        else await this.registerUnresolvedName(projectId, chapterNumber, w.slice(0, 2))
       }
       return entities.slice(0, 6)
     } catch (e) {

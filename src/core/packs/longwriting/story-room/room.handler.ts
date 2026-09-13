@@ -9,6 +9,7 @@
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { StoryRoomSessionService } from './room-session'
+import { planConflictResolution, executeConflictAction, type ConflictInput } from './room-conflict'
 import { StoryRoomDistillerService } from './room-distiller'
 import { applyLedgerOp } from './room-ledger'
 import type { RoomPhaseId } from '@shared/types/story-room.types'
@@ -197,6 +198,26 @@ export function registerStoryRoomHandlers(): void {
 
   const DISTILL_SCOPES = ['overview', 'characters', 'plots', 'world', 'outline', 'chapter', 'foreshadow']
 
+  ipcBridge.handle('longwriting:room:conflict:plan', async (_event, projectId: string, conflict: ConflictInput, opts?: { providerConfigId?: string; modelId?: string }) => {
+    try {
+      const modelOpts = await resolveRoomModelOpts(projectId, opts)
+      const db = getCoreDatabaseManager()
+      const r = await planConflictResolution(db, projectId, conflict, modelOpts)
+      return r.ok ? { success: true, data: r.plan } : { success: false, error: r.error || '解题失败' }
+    } catch (error: any) {
+      console.error('[StoryRoomHandler] conflict:plan 失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+  ipcBridge.handle('longwriting:room:conflict:execute', async (_event, projectId: string, action: string, payload: Record<string, unknown>) => {
+    try {
+      const db = getCoreDatabaseManager()
+      const r = await executeConflictAction(db, projectId, action, payload)
+      return { success: r.ok, data: { message: r.message }, error: r.ok ? undefined : r.message }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
   ipcBridge.handle(ROOM_CHANNELS.ROOM_DISTILL, async (_event, projectId: string, scope: string, opts?: { providerConfigId?: string; modelId?: string }) => {
     try {
       if (scope.startsWith('kind:')) {

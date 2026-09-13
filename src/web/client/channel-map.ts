@@ -600,6 +600,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'longwriting.roomLedgerUpdate': { channel: 'longwriting:room:ledger:update' },
   'longwriting.roomSetPhase': { channel: 'longwriting:room:setPhase' },
   'longwriting.roomDistill': { channel: 'longwriting:room:distill' },
+  'longwriting.conflictPlan': { channel: 'longwriting:room:conflict:plan' },
+  'longwriting.conflictExecute': { channel: 'longwriting:room:conflict:execute' },
   'longwriting.roomAdoptCard': { channel: 'longwriting:room:adoptCard' },
   'longwriting.roomRegenerateCard': { channel: 'longwriting:room:regenerateCard' },
   'longwriting.roomIgnoreCard': { channel: 'longwriting:room:ignoreCard' },
