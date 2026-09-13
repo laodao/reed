@@ -195,3 +195,96 @@ describe('ChapterGraphProcessor 伏笔提取段（42 号 P1）', () => {
     expect(db.eventsStore.length).toBeGreaterThan(0)
   })
 })
+
+
+// ==================== 44 号：人物关系演变提取段 ====================
+
+import { GraphService } from '@core/platform/services/longwriting/graph/graph.service'
+
+/** 带边存储/演变原语的 fake db（在 makeFakeDb 基础上扩 lwGraphEdges） */
+function makeDbWithEdges() {
+  const db = makeFakeDb() as ReturnType<typeof makeFakeDb> & { lwGraphEdges: any }
+  const rawEdges: Array<any> = []
+  db.rawEdges = rawEdges
+  db.lwGraphEdges = {
+    ...db.lwGraphEdges,
+    create: vi.fn(async (data: any) => {
+      const saved = { id: `edge-new-${rawEdges.length + 1}`, ...data }
+      rawEdges.push(saved)
+      return saved
+    }),
+    getByProjectId: vi.fn(async () =>
+      rawEdges.map((e) => ({
+        ...e,
+        origin: e.origin ? JSON.parse(e.origin) : undefined,
+      })),
+    ),
+    endRelation: vi.fn(async (id: string, chapter: number) => {
+      const e = rawEdges.find((x) => x.id === id)
+      if (e) e.validUntilChapter = chapter
+      return e ?? null
+    }),
+    deleteByOriginChapter: vi.fn(async (_pid: string, chapter: number) => {
+      let n = 0
+      for (let i = rawEdges.length - 1; i >= 0; i--) {
+        const o = rawEdges[i].origin ? JSON.parse(rawEdges[i].origin) : null
+        if (o?.type === 'extract' && o?.chapter === chapter) {
+          rawEdges.splice(i, 1)
+          n++
+        }
+      }
+      return n
+    }),
+  }
+  return db
+}
+
+describe('ChapterGraphProcessor 关系演变提取段（44 号）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    ChapterGraphProcessor.clearContentHashCache()
+  })
+
+  it('changed 演变 → 关旧边 + 开新边（origin=extract 带章号）', async () => {
+    const db = makeDbWithEdges()
+    // 演变前事实：林晓↔顾言 师徒
+    db.rawEdges.push({ id: 'e-old', projectId: 'p1', sourceType: 'character', sourceId: 'c1', targetType: 'character', targetId: 'c2', relationType: '师徒', validFromChapter: 1 })
+    const ai = makeFakeAi({
+      extractChapterRelationChanges: vi.fn(async () => ({
+        success: true,
+        data: [{ changeType: 'changed', sourceName: '林晓', targetName: '顾言', relationType: '师徒', newRelationType: '敌对', description: '顾言叛出师门' }],
+      })),
+    })
+    const proc = new ChapterGraphProcessor(db as never, ai as never)
+    const r = await proc.process({ projectId: 'p1', outlineId: 'o1', chapterContent: '正文', chapterNumber: 5 })
+
+    expect(r.relationChangeCount).toBe(2) // 关旧 1 + 开新 1
+    const old = db.rawEdges.find((e) => e.id === 'e-old')
+    expect(old.validUntilChapter).toBe(5)
+    const created = db.rawEdges.filter((e) => e.relationType === '敌对')
+    expect(created).toHaveLength(1)
+    expect(created[0].validFromChapter).toBe(5)
+    expect(created[0].origin).toMatchObject({ type: 'extract', chapter: 5 })
+  })
+
+  it('提取失败 → fail-soft：主链路照常，relationChangeCount=0', async () => {
+    const db = makeDbWithEdges()
+    const ai = makeFakeAi({ extractChapterRelationChanges: vi.fn(async () => ({ success: false, error: 'x' })) })
+    const proc = new ChapterGraphProcessor(db as never, ai as never)
+    const r = await proc.process({ projectId: 'p1', outlineId: 'o1', chapterContent: '正文', chapterNumber: 2 })
+    expect(r.relationChangeCount ?? 0).toBe(0)
+    expect(db.eventsStore.length).toBeGreaterThan(0)
+  })
+
+  it('applyRelationChanges：名称解析失败计入 unresolved，不落边', async () => {
+    const db = makeDbWithEdges()
+    const graph = new GraphService(db as never)
+    const r = await graph.applyRelationChanges(
+      'p1',
+      [{ changeType: 'new', sourceName: '不存在的人', targetName: '林晓', relationType: '盟友' }],
+      4,
+    )
+    expect(r.unresolved).toBe(1)
+    expect(r.created).toBe(0)
+  })
+})

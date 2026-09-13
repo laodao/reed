@@ -245,7 +245,9 @@ export class GraphService {
    * 关系网络落库（图谱关系构建）：AI 关系提案 → 名称解析 → 幂等写入 lw_graph_edges。
    * - 名称解析失败（实体不存在）跳过
    * - 自环跳过
-   * - 同 source+target+relation 已存在则跳过（幂等，重复分析不产生重复边）
+   * - 同 source+target+relation 的**仍生效**边已存在则跳过（幂等；已关停的旧边不阻塞
+   *   同名新关系——离婚后再婚/决裂后和解是合法演变）
+   * - opts.validFromChapter：关系起始章（缺省 1）；opts.origin：来源溯源（章节提取管线重跑幂等）
    */
   async syncEntityRelations(
     projectId: string,
@@ -257,6 +259,7 @@ export class GraphService {
       relationType: string
       description?: string
     }>,
+    opts?: { validFromChapter?: number; origin?: { type: 'extract' | 'discussion' | 'manual'; chapter?: number } },
   ): Promise<{ created: number; skipped: number; edges: GraphEdge[] }> {
     const m = this.manager()
     if (!m?.lwGraphEdges || relations.length === 0) {
@@ -273,10 +276,12 @@ export class GraphService {
       relations.map(r => ({ type: r.targetType, name: r.targetName })),
     )
 
-    // 已存在边（幂等去重键：sourceType:sourceId|targetType:targetId|relationType）
+    // 幂等去重键只看**仍生效**的边（validUntil 空）——已关停边不阻塞同名新关系
     const existing = await m.lwGraphEdges.getByProjectId(projectId)
     const keySet = new Set(
-      existing.map(e => `${e.sourceType}:${e.sourceId}|${e.targetType}:${e.targetId}|${e.relationType}`),
+      existing
+        .filter(e => e.validUntilChapter === undefined || e.validUntilChapter === null)
+        .map(e => `${e.sourceType}:${e.sourceId}|${e.targetType}:${e.targetId}|${e.relationType}`),
     )
 
     let skipped = 0
@@ -290,6 +295,7 @@ export class GraphService {
       label?: string
       description?: string
       validFromChapter: number
+      origin?: { type: 'extract' | 'discussion' | 'manual'; chapter?: number }
     }> = []
 
     for (let i = 0; i < relations.length; i++) {
@@ -319,7 +325,8 @@ export class GraphService {
         relationType: r.relationType,
         label: r.relationType,
         description: r.description,
-        validFromChapter: 1,
+        validFromChapter: opts?.validFromChapter ?? 1,
+        origin: opts?.origin,
       })
     }
 
@@ -328,6 +335,89 @@ export class GraphService {
     }
     const edges = await m.lwGraphEdges.batchCreate(toCreate)
     return { created: edges.length, skipped, edges }
+  }
+
+  /**
+   * 应用章节关系演变（结婚/决裂/反目/结盟等）：关旧开新。
+   * - 'ended'：同对实体同 relationType 的仍生效边写 valid_until=chapter
+   * - 'new'：直接建新边（valid_from=chapter，origin 溯源）
+   * - 'changed'：先关停旧 relationType 的生效边，再建 newRelationType 新边
+   * - 名称解析失败的对跳过（计入 unresolved）
+   * 幂等由调用方保证：重跑前先 deleteByOriginChapter 清掉本章提取边。
+   */
+  async applyRelationChanges(
+    projectId: string,
+    changes: Array<{
+      changeType: 'new' | 'ended' | 'changed'
+      sourceType?: GraphEntityType
+      sourceName: string
+      targetType?: GraphEntityType
+      targetName: string
+      relationType: string
+      newRelationType?: string
+      description?: string
+    }>,
+    chapter: number,
+  ): Promise<{ ended: number; created: number; unresolved: number }> {
+    const m = this.manager()
+    if (!m?.lwGraphEdges || changes.length === 0) {
+      return { ended: 0, created: 0, unresolved: changes.length }
+    }
+
+    const sources = await this.resolveEntities(
+      projectId,
+      changes.map(c => ({ type: c.sourceType ?? 'character', name: c.sourceName })),
+    )
+    const targets = await this.resolveEntities(
+      projectId,
+      changes.map(c => ({ type: c.targetType ?? 'character', name: c.targetName })),
+    )
+
+    let ended = 0
+    let created = 0
+    let unresolved = 0
+
+    for (let i = 0; i < changes.length; i++) {
+      const c = changes[i]
+      const s = sources[i]
+      const t = targets[i]
+      if (!s?.resolved || !s.id || !t?.resolved || !t.id || s.id === t.id) {
+        unresolved++
+        continue
+      }
+      // 找该对实体间 c.relationType 的仍生效边（双向匹配：关系提名可能任意方向）
+      const active = (await m.lwGraphEdges.getByProjectId(projectId)).filter(
+        e =>
+          e.validUntilChapter === undefined &&
+          ((e.sourceType === s.type && e.sourceId === s.id && e.targetType === t.type && e.targetId === t.id) ||
+            (e.sourceType === t.type && e.sourceId === t.id && e.targetType === s.type && e.targetId === s.id)) &&
+          (c.changeType === 'new' || e.relationType === c.relationType),
+      )
+
+      if (c.changeType === 'ended' || c.changeType === 'changed') {
+        for (const e of active) {
+          await m.lwGraphEdges.endRelation(e.id, chapter)
+          ended++
+        }
+      }
+      const newType = c.changeType === 'changed' ? c.newRelationType ?? c.relationType : c.relationType
+      if (c.changeType === 'new' || c.changeType === 'changed') {
+        const edge = await m.lwGraphEdges.create({
+          projectId,
+          sourceType: s.type,
+          sourceId: s.id,
+          targetType: t.type,
+          targetId: t.id,
+          relationType: newType,
+          label: newType,
+          description: c.description,
+          validFromChapter: chapter,
+          origin: { type: 'extract', chapter },
+        })
+        if (edge) created++
+      }
+    }
+    return { ended, created, unresolved }
   }
 
   // ==================== 内部工具 ====================

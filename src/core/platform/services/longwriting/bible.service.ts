@@ -11,6 +11,7 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import { createLogger } from '@core/utils/logger'
 import type { BibleKindDto } from '@core/database/repositories/lw-bible-kind.repository'
 import type { CustomEntityDto } from '@core/database/repositories/lw-custom-entity.repository'
+import type { GraphEntityType } from '@shared/types/longwriting.types'
 
 const logger = createLogger('BibleQuery')
 
@@ -286,10 +287,13 @@ export class BibleQueryService {
     let relations: Array<Record<string, unknown>> = []
     try {
       const graph = m.lwGraphEdges
-      if (graph?.getByEntity) {
-        relations = (await graph.getByEntity(projectId, id)) || []
-      } else if (graph?.findByEntity) {
-        relations = (await graph.findByEntity(projectId, id)) || []
+      // 详情入口的 kindKey 超集于图谱类型（还有 plot/outline/custom 等），收窄后再查
+      const GRAPH_TYPES: GraphEntityType[] = ['character', 'location', 'item', 'faction', 'skill']
+      const entityType = GRAPH_TYPES.includes(kindKey as GraphEntityType) ? (kindKey as GraphEntityType) : null
+      if (entityType && graph?.getByEntity) {
+        relations = (await graph.getByEntity(projectId, entityType, id)) || []
+      } else if (entityType && graph?.findByEntity) {
+        relations = (await graph.findByEntity(projectId, entityType, id)) || []
       }
     } catch (e) {
       logger.warn('[bible] 关系读取失败（降级为空）', e)

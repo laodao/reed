@@ -599,6 +599,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'longwriting.roomRegenerateCard': { channel: 'longwriting:room:regenerateCard' },
   'longwriting.roomIgnoreCard': { channel: 'longwriting:room:ignoreCard' },
   'longwriting.roomSetTarget': { channel: 'longwriting:room:setTarget' },
+  'longwriting.roomDesignConfirm': { channel: 'longwriting:room:designConfirm' },
+  'longwriting.roomDesignDiscard': { channel: 'longwriting:room:designDiscard' },
   'longwriting.bibleList': { channel: 'longwriting:bible:list' },
   'longwriting.bibleDetail': { channel: 'longwriting:bible:detail' },
   'longwriting.bibleCustomCreate': { channel: 'longwriting:bible:custom:create' },

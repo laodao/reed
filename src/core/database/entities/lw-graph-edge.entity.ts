@@ -51,6 +51,10 @@ export class LwGraphEdgeEntity {
   @Column({ name: 'description', type: 'text', nullable: true })
   description!: string | null
 
+  /** 来源溯源 JSON（{type:'extract'|'discussion'|'manual', chapter?}）——章节提取管线按它做重跑幂等 */
+  @Column({ name: 'origin', type: 'text', nullable: true })
+  origin!: string | null
+
   @Column({
     name: 'created_at',
     type: 'bigint',

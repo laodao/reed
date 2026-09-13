@@ -152,7 +152,7 @@ export async function silentExtractLedger(
     if (added.length === 0 && !ops.some((op: any) => op?.op === 'conflict')) return null
 
     // 队列内 RMW（评审 P1-4）：以队列内最新账本为基线合并，消除「读在队列外」丢更新窗口
-    const ledger = await mutateRoomState(db, projectId, (current) => {
+    const nextState = await mutateRoomState(db, projectId, (current) => {
       for (const ck of conflictKeys) {
         const target = current.ledger.find((e) => normalizeTitle(e.title) === ck)
         if (target && target.status === 'confirmed') target.status = 'tentative'
@@ -163,7 +163,7 @@ export async function silentExtractLedger(
       return { ...current, ledger: compactLedger(all) }
     })
     logger.info(`[story-room] 账本静默提取 project=${projectId} turn=${input.turnNo}`)
-    return ledger
+    return nextState.ledger
   } catch (e) {
     const msg = e instanceof Error ? `${e.name}: ${e.message}` : JSON.stringify(e) || String(e)
     logger.warn(`[story-room] 账本静默提取失败（fail-soft 跳过）project=${projectId} err=${msg}`)

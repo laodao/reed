@@ -44,6 +44,10 @@ export class LwEventEntity {
   @Column({ name: 'state_after', type: 'text', nullable: true })
   stateAfter!: string | null
 
+  /** 生命周期：happened（默认）/ planned（规划中，chapter_number=0）/ retconned（被推翻） */
+  @Column({ name: 'state', type: 'varchar', nullable: true })
+  state!: string | null
+
   @Column({
     name: 'created_at',
     type: 'bigint',
