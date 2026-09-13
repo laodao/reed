@@ -26,6 +26,8 @@ export interface ChapterGraphProcessInput {
   modelId?: string
 }
 
+const UNREGISTERED_CHARACTER_KIND = '未登记人物'
+
 export interface ChapterGraphProcessResult {
   events: StoryEvent[]
   states: EntityStateSnapshot[]
@@ -36,6 +38,8 @@ export interface ChapterGraphProcessResult {
   foreshadowCount?: number
   /** 本次关系演变条数（关旧+开新，44 号图谱完善） */
   relationChangeCount?: number
+  /** 52 号：解析失败/名册外的人名（已入「未登记人物」待确认队列，R9 数据源） */
+  unresolvedNames?: Array<{ name: string; chapterNumber: number }>
 }
 
 export class ChapterGraphProcessor {
@@ -120,7 +124,11 @@ export class ChapterGraphProcessor {
         const resolvedEvents: Array<{ name: string; description?: string; involvedEntities?: MemoryEntity[]; stateBefore?: string; stateAfter?: string }> = []
         for (const ev of extracted) {
           if (!ev.name?.trim()) continue
-          const involved = await this.resolveEventEntities(projectId, ev.involvedEntities || [])
+          // 52 号：解析失败的实体不再静默跳过——收集进「未登记人物」队列（R9 数据源）
+          const { resolved: involved, unresolved: evUnresolved } = await this.resolveEventEntities(projectId, ev.involvedEntities || [])
+          for (const u of evUnresolved) {
+            if (u.type === 'character') await this.registerUnresolvedName(projectId, chapterNumber, u.name)
+          }
           resolvedEvents.push({
             name: ev.name.trim(),
             description: ev.description,
@@ -192,17 +200,42 @@ export class ChapterGraphProcessor {
         )
         const extractedStates: Array<{ entityType?: string; entityId?: string; entityName?: string; stateSummary?: string; keyChanges?: string[] }> =
           Array.isArray(resp.data) ? resp.data : []
-        const validStates = extractedStates.filter(s => s.entityType && s.entityId && s.stateSummary)
+        // 52 号评审根因三修复：AI 只可靠地回传 entityName，ID 由服务端按名册解析
+        // （旧实现要求 AI 回传 entityId，解析不出即被整条过滤 → 状态切片长期为 0 行，R1-R6 全盲）
+        const graph = new GraphService(m)
+        const validStates: Array<{ entityType: string; entityId: string; entityName: string; stateSummary: string; keyChanges: string[] }> = []
+        for (const st of extractedStates) {
+          if (!st.entityType || !st.stateSummary?.trim()) continue
+          const name = (st.entityName || '').trim()
+          if (!name && !st.entityId) continue
+          let entityId = st.entityId || ''
+          if (name) {
+            const [hit] = await graph.resolveEntities(projectId, [{ type: st.entityType, name }] as any)
+            if (hit?.resolved && hit.id) entityId = hit.id
+            else if (st.entityType === 'character') await this.registerUnresolvedName(projectId, chapterNumber, name)
+          }
+          if (!entityId) continue
+          validStates.push({
+            entityType: st.entityType,
+            entityId,
+            entityName: name || st.entityId,
+            stateSummary: st.stateSummary.trim(),
+            keyChanges: Array.isArray(st.keyChanges) ? st.keyChanges : [],
+          })
+        }
+        if (validStates.length === 0 && extractedStates.length > 0) {
+          console.warn(`[ChapterGraphProcessor] 状态切片全部未能解析（${extractedStates.length} 条）chapter=${chapterNumber}`)
+        }
         if (validStates.length > 0) {
           states.push(...await m.lwEntityStates.batchCreate(
             validStates.map(s => ({
               projectId,
-              entityType: s.entityType! as any,
-              entityId: s.entityId!,
-              entityName: s.entityName || s.entityId!,
+              entityType: s.entityType as any,
+              entityId: s.entityId,
+              entityName: s.entityName,
               chapterNumber,
-              stateSummary: s.stateSummary!,
-              keyChanges: s.keyChanges || [],
+              stateSummary: s.stateSummary,
+              keyChanges: s.keyChanges,
             })),
           ))
         }
@@ -306,20 +339,50 @@ export class ChapterGraphProcessor {
 
   // ==================== 内部 ====================
 
-  /** 事件涉及实体名称 → ID 解析（匹配失败跳过） */
-  private async resolveEventEntities(projectId: string, entities: MemoryEntity[]): Promise<MemoryEntity[]> {
+  /** 事件涉及实体名称 → ID 解析（52 号：失败不再静默跳过，返回 unresolved 供登记/告警） */
+  private async resolveEventEntities(
+    projectId: string,
+    entities: MemoryEntity[],
+  ): Promise<{ resolved: MemoryEntity[]; unresolved: Array<{ type: string; name: string }> }> {
     const m = this.manager()
-    if (!m || entities.length === 0) return []
+    if (!m || entities.length === 0) return { resolved: [], unresolved: [] }
     const graph = new GraphService(m)
     const inputs = entities.map(e => ({ type: e.type, name: e.name }))
     const resolved = await graph.resolveEntities(projectId, inputs as any)
     const result: MemoryEntity[] = []
+    const unresolved: Array<{ type: string; name: string }> = []
     resolved.forEach((r, i) => {
       if (r.resolved && r.id) {
         result.push({ type: entities[i].type, id: r.id, name: entities[i].name })
+      } else {
+        unresolved.push({ type: entities[i].type, name: entities[i].name })
       }
     })
-    return result
+    return { resolved: result, unresolved }
+  }
+
+  /**
+   * 52 号：未登记人名入「待确认」队列（lw_custom_entities，kindKey=未登记人物）。
+   * 按名字去重；首见记录章节。这是 R9 一致性规则的数据源，也让新角色在设定集可见、可一键转正。
+   */
+  private async registerUnresolvedName(projectId: string, chapterNumber: number, name: string): Promise<void> {
+    try {
+      const m = this.manager()
+      const trimmed = name.trim()
+      if (!m?.lwCustomEntities || !trimmed) return
+      const existing = await m.lwCustomEntities.getByProjectAndKind(projectId, UNREGISTERED_CHARACTER_KIND)
+      const dup = existing.find(e => e.name === trimmed)
+      if (dup) return
+      await m.lwCustomEntities.createRow(
+        projectId,
+        UNREGISTERED_CHARACTER_KIND,
+        trimmed,
+        { firstChapter: chapterNumber },
+        { type: 'extract', chapter: chapterNumber },
+      )
+    } catch (e) {
+      console.warn('[ChapterGraphProcessor] 未登记人名入队失败（不阻断）:', e)
+    }
   }
 
   /** 收集流水线涉及的实体（大纲 involved + 事件 involved），供状态提取 */

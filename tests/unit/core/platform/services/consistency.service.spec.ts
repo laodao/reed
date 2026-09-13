@@ -238,4 +238,24 @@ describe('ConsistencyService', () => {
     const r2 = await new ConsistencyService(ok as any).scanContradictions('p1')
     expect(r2.filter((c) => c.rule === 'R8')).toHaveLength(0)
   })
+
+  it('R9：名册外人名队列 → warning（52 号）', async () => {
+    const db = makeFakeDb({
+      lwCustomEntities: {
+        getByProjectAndKind: vi.fn(async (_pid: string, kind: string) =>
+          kind === '未登记人物'
+            ? [
+                { id: 'bce1', name: '顾清玄', fields: { firstChapter: 3 } },
+                { id: 'bce2', name: '王铁', fields: { firstChapter: 4 } },
+              ]
+            : []),
+      },
+    })
+    const svc = new ConsistencyService(db as any)
+    const conflicts = await svc.scanContradictions('p1')
+    const r9 = conflicts.filter(c => c.rule === 'R9')
+    expect(r9.length).toBe(2)
+    expect(r9[0].message).toContain('顾清玄')
+    expect(r9[0].severity).toBe('warning')
+  })
 })

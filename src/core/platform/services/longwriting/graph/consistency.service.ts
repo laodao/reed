@@ -15,6 +15,8 @@
  * - R6 状态回退（确定性）：实体切片序列出现"死亡/覆灭"后状态又恢复非终态
  * - R7 钩子节拍（49 号，script 分集项目）：缺集尾卡点标注 / 卡点未标钩型 / 相邻集钩子同型
  * - R8 伏笔台账（49 号，promise/payoff 台账）：回收早于埋设（倒置）/ 超期未收
+ * - R9 名册外人名（52 号，来自图谱提取的「未登记人物」队列）：正文出现圣经外的人名，
+ *   直指《大宋女捕》实跑最大的漂移症状，且不依赖关系边/状态切片数据
  */
 
 import { getCoreDatabaseManager, type ICoreDatabaseManager } from '@core/database/database-manager.interface'
@@ -142,6 +144,7 @@ export class ConsistencyService {
     conflicts.push(...await this.scanR6StateRegression(projectId))
     conflicts.push(...await this.scanR7HookRhythm(projectId))
     conflicts.push(...await this.scanR8ForeshadowLedger(projectId))
+    conflicts.push(...await this.scanR9UnregisteredNames(projectId))
     return conflicts
   }
 
@@ -423,6 +426,33 @@ export class ConsistencyService {
    * - 台账倒置（error）：回收章早于埋设章——数据或提取错误
    * - 超期未收（warning）：status=open 且已写章节数超过埋设章 + 5（叙事节奏 3-5 章一个悬念单元）
    */
+  /**
+   * R9 名册外人名（52 号）：图谱提取时解析失败的人名会被登记进
+   * 「未登记人物」队列（lw_custom_entities, kindKey=未登记人物）——
+   * 每个名字出一条 warning，提示确认是新角色（入册）还是提取误报（忽略）。
+   */
+  private async scanR9UnregisteredNames(projectId: string): Promise<ConflictItem[]> {
+    const m = this.manager()
+    if (!m?.lwCustomEntities) return []
+    let rows: Array<{ id: string; name: string; fields?: Record<string, unknown> | null }> = []
+    try {
+      rows = await m.lwCustomEntities.getByProjectAndKind(projectId, '未登记人物')
+    } catch {
+      return []
+    }
+    return rows.map(r => {
+      const ch = (r.fields as any)?.firstChapter
+      return {
+        rule: 'R9',
+        severity: 'warning' as const,
+        message: `正文出现名册外人名「${r.name}」（第 ${ch ?? '?'} 章提取）——若为新角色请补入人物圣经，若为提取误报请忽略`,
+        entityType: 'character' as const,
+        entityId: r.id,
+        entityName: r.name,
+      }
+    })
+  }
+
   private async scanR8ForeshadowLedger(projectId: string): Promise<ConflictItem[]> {
     const m = this.manager()
     if (!m) return []
