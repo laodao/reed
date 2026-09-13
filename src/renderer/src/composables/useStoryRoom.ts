@@ -235,7 +235,8 @@ export function useStoryRoom(projectId: string) {
     try {
       const res = await api().graphScanContradictions(projectId)
       const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : []
-      conflicts.value = list.slice(0, 10)
+      // 52 号：不再截断到 10 条——R9 文本扫描候选排在末尾，截断会把它们全部藏掉
+      conflicts.value = list.slice(0, 50)
     } catch {
       conflicts.value = []
     }
