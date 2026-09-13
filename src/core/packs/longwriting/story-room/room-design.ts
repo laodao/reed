@@ -183,19 +183,25 @@ async function persistDesignItem(
     if (item.kind === 'card') {
       // 实跑修复：lw_save_card 的 payload 形状是 { taskTitle, card:{kind,title,data,…} }——
       // 旧实现读 payload.kind/payload.data 恒为 undefined，卡片一律误落 custom 分支且数据为空
-      const raw = item.payload as Record<string, any>
-      const shell = (raw.card ?? raw) as Record<string, any>
-      const card = {
-        id: item.id,
-        kind: (shell.kind ?? raw.kind ?? 'custom') as never,
-        title: String(shell.title ?? item.label),
-        data: ((shell.data ?? raw.data ?? shell) as Record<string, any>),
-        status: 'pending' as const,
-        sourceTurns: (shell.sourceTurns ?? raw.sourceTurns ?? []) as number[],
-        createdAt: item.createdAt,
+      try {
+        const raw = item.payload as Record<string, any>
+        const shell = (raw.card ?? raw) as Record<string, any>
+        const card = {
+          id: item.id,
+          kind: (shell.kind ?? raw.kind ?? 'custom') as never,
+          title: String(shell.title ?? item.label),
+          data: ((shell.data ?? raw.data ?? shell) as Record<string, any>),
+          status: 'pending' as const,
+          sourceTurns: (shell.sourceTurns ?? raw.sourceTurns ?? []) as number[],
+          createdAt: item.createdAt,
+        }
+        const r = await distiller.persistByKind(db, projectId, card as never, card.data)
+        if (!r.ok) logger.error(`[story-room] 设计条目落库失败 kind=${card.kind} label=${item.label}: ${r.message}`)
+        return { ok: r.ok || !!r.skipped, message: r.message }
+      } catch (e: any) {
+        logger.error(`[story-room] 设计条目落库异常 kind=card label=${item.label}:`, e)
+        return { ok: false, message: e?.message || '落库异常' }
       }
-      const r = await distiller.persistByKind(db, projectId, card as never, card.data)
-      return { ok: r.ok || !!r.skipped, message: r.message }
     }
 
     if (item.kind === 'event') {

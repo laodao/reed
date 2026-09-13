@@ -67,10 +67,54 @@ export function extractJsonArray(text: string): any[] | null {
  * 概要 upsert（原 executeGenerateOverview 落库段）。
  * data 字段缺省时回落库内现有值；overview 行缺失时先建行再更新（防假成功）。
  */
+/** 按候选键序列取第一个非空字符串值（概要卡中英文键名兼容） */
+function pickOverviewText(obj: any, keys: string[]): string {
+  for (const k of keys) {
+    const v = obj?.[k]
+    if (typeof v === 'string' && v.trim()) return v.trim()
+    if (typeof v === 'number') return String(v)
+  }
+  return ''
+}
+
+/**
+ * 概要卡归一化（复测实跑修复）：模型产出 {书名/一句话前提/核心冲突/钩子/主要人物…}
+ * 中文键名，统一映射到概要实体字段；钩子并入 summary（无独立字段）。
+ */
+export function normalizeOverviewInput(data: any): any {
+  if (!data || typeof data !== 'object') return data
+  const title = pickOverviewText(data, ['title', '书名', '作品名', '标题']) || data.title
+  const summary = pickOverviewText(data, ['summary', '一句话前提', '前提', '故事梗概', '梗概', '故事简介', '简介', '概要'])
+  const hook = pickOverviewText(data, ['hook', '钩子'])
+  const coreConflict = pickOverviewText(data, ['coreConflict', '核心冲突', '冲突', '主线冲突'])
+  const coreIdea = pickOverviewText(data, ['coreIdea', '核心构想', '核心创意'])
+  const estimatedChapters = Number(pickOverviewText(data, ['estimatedChapters', '预估章节数', '章节数'])) || data.estimatedChapters
+  const keyCharacters = Array.isArray(data.keyCharacters) ? data.keyCharacters : (Array.isArray(pickOverviewText2Arr(data, ['主要人物', '人物'])) ? pickOverviewText2Arr(data, ['主要人物', '人物']) : data.keyCharacters)
+  const keyLocations = Array.isArray(data.keyLocations) ? data.keyLocations : (Array.isArray(pickOverviewText2Arr(data, ['主要地点', '地点'])) ? pickOverviewText2Arr(data, ['主要地点', '地点']) : data.keyLocations)
+  return {
+    ...data,
+    title,
+    summary: [summary, hook].filter(Boolean).join('\n钩子：') || data.summary,
+    coreConflict: coreConflict || data.coreConflict,
+    coreIdea: coreIdea || data.coreIdea,
+    estimatedChapters: estimatedChapters ?? data.estimatedChapters,
+    keyCharacters,
+    keyLocations,
+  }
+}
+
+function pickOverviewText2Arr(obj: any, keys: string[]): any[] | null {
+  for (const k of keys) {
+    const v = obj?.[k]
+    if (Array.isArray(v)) return v
+  }
+  return null
+}
+
 export async function persistOverview(
   db: any,
   projectId: string,
-  data: {
+  rawData: {
     title?: string
     storyType?: string | null
     summary?: string
@@ -81,6 +125,7 @@ export async function persistOverview(
   },
   input?: string,
 ): Promise<StoryPersistResult> {
+  const data = normalizeOverviewInput(rawData)
   let overview = await db?.lwStoryOverviews?.getByProjectId(projectId)
   const patch = {
     title: data.title || overview?.title || '未命名',
@@ -184,9 +229,11 @@ export function normalizeCharacterInput(c: any): any {
     ? ({ 主角: 'protagonist', 反派: 'antagonist', 配角: 'supporting' } as Record<string, string>)[rawRole] ?? rawRole
     : /主角|女主|男主/.test(pick('identity', '身份') ?? '') ? 'protagonist' : undefined
   const ageRaw = pick('age', '年龄')
+  const rawName = pick('name', '姓名', '名字') ?? c.name
   return {
     ...c,
-    name: pick('name', '姓名', '名字') ?? c.name,
+    // 复测实跑修复：模型会把「乔镜知（补充，感情线载体）」这类注解写进名字——剥掉括号注解
+    name: rawName ? rawName.replace(/[（(][^）)]*[）)]\s*$/, '').trim() : c.name,
     gender: pick('gender', '性别') ?? c.gender,
     age: ageRaw ? Number(ageRaw.replace(/[^\d]/g, '')) || c.age : c.age,
     occupation: pick('occupation', '职业', '身份') ?? c.occupation,
@@ -219,15 +266,87 @@ export function normalizePlotInput(p: any): any {
  * summary,estWords,characters,darkLineHook}]，统一映射成 persistOutlineTree 的
  * 卷→章树；节拍与暗线钩并入章概要，作为逐章生成的任务文本。
  */
-export function normalizeOutlineVolume(data: any): { name: string; summary: string; estimatedWords: number; chapters: any[] } {
-  const chapters = (Array.isArray(data?.chapters) ? data.chapters : []).map((c: any, i: number) => ({
-    name: c.name || (c.title ? `${c.number ?? i + 1} ${c.title}`.trim() : `第${i + 1}章`),
-    summary: [c.summary, c.beat, c.darkLineHook].filter(Boolean).join('\n'),
-    estimatedWords: Number(c.estimatedWords || c.estWords) || 0,
-  }))
+/** 按候选键序列取第一个非空值（卡片键名中英文兼容） */
+function pickKey(obj: any, keys: string[]): any {
+  for (const k of keys) {
+    const v = obj?.[k]
+    if (v !== undefined && v !== null && v !== '') return v
+  }
+  return undefined
+}
+
+/**
+ * 人物卡容器归一化（复测实跑修复）：一张人物卡可能装 8 个角色——
+ * data 直接是数组、或 {人物:[...]}、{characters:[...]}、或单人物对象，统一摊平成列表。
+ */
+export function extractCharacterList(data: any): any[] {
+  if (!data || typeof data !== 'object') return []
+  if (Array.isArray(data)) return data
+  const nested = pickKey(data, ['人物', 'characters', '角色', 'list'])
+  if (Array.isArray(nested)) return nested
+  return [data]
+}
+
+/**
+ * 世界卡清单归一化：模型产出 {地点:[...],势力:[...],物品:[...],技能:[...]}（中文名/字符串数组），
+ * 统一映射为 persistWorld 的 locations/factions/skills/items（元素统一成 {name,...} 对象）。
+ */
+/**
+ * 故事线卡容器归一化（复测实跑修复）：可能是数组、{故事线:[...]} 嵌套，
+ * 或 {主线:{...},副线:{...}} 字典形态——统一摊平成 [{title, summary}] 列表。
+ */
+export function extractPlotList(data: any): any[] {
+  if (!data || typeof data !== 'object') return []
+  if (Array.isArray(data)) return data
+  const nested = pickKey(data, ['故事线', '故事线卡', 'plots', 'lines', 'list'])
+  if (Array.isArray(nested)) return nested
+  if (pickKey(data, ['title', 'lineName', 'name'])) return [data]
+  const META = new Set(['taskTitle', 'note', 'kind', 'title'])
+  return Object.entries(data)
+    .filter(([k]) => !META.has(k))
+    .map(([k, v]) => {
+      if (typeof v === 'string') return { title: k, summary: v }
+      const o = v as Record<string, unknown>
+      const summary = [pickKey(o, ['oneLine', '一句话', 'summary']), pickKey(o, ['起点', 'startingState', 'start']), pickKey(o, ['升级链', 'upgradeChain']), pickKey(o, ['终点', 'endingState', 'end'])]
+        .filter((x) => typeof x === 'string' && x.trim())
+        .join('；')
+      return { title: pickKey(o, ['name', 'title', '线名']) ?? k, summary: summary || JSON.stringify(v) }
+    })
+}
+
+export function extractWorldLists(data: any): { locations?: any[]; factions?: any[]; skills?: any[]; items?: any[] } {
+  if (!data || typeof data !== 'object') return {}
+  const asNamedList = (v: any): any[] => {
+    if (!Array.isArray(v)) return []
+    return v
+      .map((x: any) => (typeof x === 'string' ? { name: x } : x))
+      .map((x: any) => ({ ...x, name: String(pickKey(x, ['名称', '名字', 'name']) ?? x.name ?? '').trim() }))
+      .filter((x: any) => x.name)
+  }
   return {
-    name: data.name || data.volumeTitle || data.workTitle || '第一卷',
-    summary: String(data.summary || data.spec || ''),
+    locations: asNamedList(pickKey(data, ['locations', '地点'])),
+    factions: asNamedList(pickKey(data, ['factions', '势力', '门派', '阵营'])),
+    skills: asNamedList(pickKey(data, ['skills', '技能', '武功'])),
+    items: asNamedList(pickKey(data, ['items', '物品'])),
+  }
+}
+
+export function normalizeOutlineVolume(data: any): { name: string; summary: string; estimatedWords: number; chapters: any[] } {
+  const rawChapters = Array.isArray(data?.chapters) ? data.chapters : Array.isArray(pickKey(data, ['章节', '章'])) ? pickKey(data, ['章节', '章']) : []
+  const chapters = (rawChapters as any[]).map((c: any, i: number) => {
+    const num = c.number ?? i + 1
+    const title = c.title ?? pickKey(c, ['章名', '章节名', 'name', '标题'])
+    return {
+      name: c.name || (title ? `${num} ${title}`.trim() : `第${num ?? i + 1}章`),
+      summary: [pickKey(c, ['概要', '简介', 'summary', 'content']), c.beat, pickKey(c, ['暗线', 'hook', 'darkLineHook'])]
+        .filter(Boolean)
+        .join('\n'),
+      estimatedWords: Number(pickKey(c, ['estimatedWords', 'estWords', '字数', '预估字数'])) || 0,
+    }
+  })
+  return {
+    name: data.name || data.volumeTitle || pickKey(data, ['卷名', 'workTitle']) || '第一卷',
+    summary: String(data.summary || pickKey(data, ['spec', '体量', '说明']) || ''),
     estimatedWords: chapters.reduce((s: number, c: any) => s + (c.estimatedWords || 0), 0),
     chapters,
   }

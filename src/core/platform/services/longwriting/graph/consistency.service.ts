@@ -44,6 +44,62 @@ const RECALL_KEYWORDS = ['回忆', '闪回', '回想', '往事', '记忆深处']
 /** R8：伏笔埋设后超过该章数仍未回收 → 超期提醒（叙事节奏惯例 3-5 章一个悬念单元） */
 const FORESHADOW_OVERDUE_CHAPTERS = 5
 
+/**
+ * R9 v2（52 号复测）：文本级人名候选扫描。
+ * 常见姓氏 + 1~2 字，后接动作/言说类字词；排除名册名及其子串、排除常见非名词汇。
+ * 出现 ≥minCount 次才报告——克制误报，交由人工确认「新角色入册 / 提取误报」。
+ */
+export const NAME_SCAN_SURNAMES =
+  '王李张刘陈杨赵黄周吴徐孙马朱胡郭何高林郑谢罗宋唐许韩冯邓曹彭曾肖田董袁潘于蒋蔡余杜叶程苏魏吕丁任沈姚卢姜崔钟谭陆汪范金石廖贾夏韦付方白邹孟熊秦邱江尹薛闫段雷侯龙史陶黎贺顾毛郝龚邵万钱严覃武戴莫孔向汤'
+
+const NAME_SCAN_STOPWORDS = new Set([
+  '白色', '黑色', '红色', '黄色', '周围', '向自己', '怎么知', '我知', '你知', '她知', '他知', '一抹', '自家',
+  '大人', '老爷', '小子', '老人', '少年', '女子', '男子', '众人', '左右', '下方', '上方', '背后', '面前',
+  '早已', '已然', '忽然', '突然', '低声', '厉声', '沉声', '缓缓', '轻轻', '微微', '冷冷',
+])
+
+export function scanNameCandidates(
+  chapters: Array<{ name: string; content: string }>,
+  knownNames: string[],
+  minCount = 3,
+): Array<{ name: string; chapters: string[]; count: number }> {
+  const known = new Set<string>()
+  for (const k of knownNames) {
+    const trimmed = String(k || '').trim()
+    if (!trimmed) continue
+    known.add(trimmed)
+    // 名册名与其去括号核心互为已知，防止「乔镜知」vs「乔镜知（补充）」误报
+    const core = trimmed.replace(/[（(][^）)]*[）)]/g, '').trim()
+    if (core) known.add(core)
+  }
+  // 已知判定：完全相等 / 子串关系 / 同姓+称谓后缀（魏大人→魏宗简 尊称不报）
+  const isKnown = (w: string): boolean => {
+    if (known.has(w)) return true
+    for (const k of known) {
+      if (k.includes(w) || w.includes(k)) return true
+      if (w.length >= 2 && k.length >= 2 && w[0] === k[0] && /[大人爷头儿老奶叔嫂]/.test(w.slice(1))) return true
+    }
+    return false
+  }
+  const counts = new Map<string, { count: number; chapters: Set<string> }>()
+  for (const { name: chName, content } of chapters) {
+    const text = content || ''
+    for (const m of text.matchAll(new RegExp(`[${NAME_SCAN_SURNAMES}][\u4e00-\u9fa5]{1,2}?(?=的|说|道|看|问|站|走|伸手|抬|冷|沉|低|喊|带|让|把|在|和|与|已|曾|要|指|冲|退|押|皱|点|摇|回|瞪|盯|瞧|笑|哭|追|拦|挥|递|接|派|跟|到|来|去|提|应|答|劝|骂|训|扶|拉|推|挡|迎|送|陪|领|率|传|召|命|求|劝)`, 'g'))) {
+      const w = m[0]
+      if (NAME_SCAN_STOPWORDS.has(w)) continue
+      if (isKnown(w)) continue
+      const rec = counts.get(w) ?? { count: 0, chapters: new Set() }
+      rec.count++
+      rec.chapters.add(chName)
+      counts.set(w, rec)
+    }
+  }
+  return [...counts.entries()]
+    .filter(([w, rec]) => rec.count >= minCount && !isKnown(w))
+    .map(([name, rec]) => ({ name, chapters: [...rec.chapters], count: rec.count }))
+    .sort((a, b) => b.count - a.count)
+}
+
 export class ConsistencyService {
   private static instance: ConsistencyService | null = null
 
@@ -434,23 +490,51 @@ export class ConsistencyService {
   private async scanR9UnregisteredNames(projectId: string): Promise<ConflictItem[]> {
     const m = this.manager()
     if (!m?.lwCustomEntities) return []
+    const conflicts: ConflictItem[] = []
+    // 1) 提取队列：解析失败的人名（52 号主实现）
     let rows: Array<{ id: string; name: string; fields?: Record<string, unknown> | null }> = []
     try {
       rows = await m.lwCustomEntities.getByProjectAndKind(projectId, '未登记人物')
     } catch {
-      return []
+      rows = []
     }
-    return rows.map(r => {
+    for (const r of rows) {
       const ch = (r.fields as any)?.firstChapter
-      return {
+      conflicts.push({
         rule: 'R9',
-        severity: 'warning' as const,
+        severity: 'warning',
         message: `正文出现名册外人名「${r.name}」（第 ${ch ?? '?'} 章提取）——若为新角色请补入人物圣经，若为提取误报请忽略`,
-        entityType: 'character' as const,
+        entityType: 'character',
         entityId: r.id,
         entityName: r.name,
+      })
+    }
+    // 2) R9 v2：正文姓氏扫描（52 号复测验证——提取器不提案的小人物（赵德全/陈头等）队列抓不到）
+    try {
+      if (m.lwCharacters && m.lwOutlines && m.lwChapters) {
+        const chars = (await m.lwCharacters.getByProjectId(projectId)) || []
+        const outlines = (await m.lwOutlines.getByProjectId(projectId)) || []
+        const chapters: Array<{ name: string; content: string }> = []
+        for (const o of outlines) {
+          if (o.nodeType !== 'chapter') continue
+          const c = await m.lwChapters.getByOutlineId(o.id)
+          if (c?.content) chapters.push({ name: o.name, content: c.content })
+        }
+        const known = chars.map((c: any) => c.name)
+        for (const cand of scanNameCandidates(chapters, known, 3)) {
+          conflicts.push({
+            rule: 'R9',
+            severity: 'warning',
+            message: `正文出现名册外人名「${cand.name}」（出现 ${cand.count} 次：${cand.chapters.join('、')}）——若为新角色请补入人物圣经，若为提取误报请忽略`,
+            entityType: 'character',
+            entityName: cand.name,
+          })
+        }
       }
-    })
+    } catch {
+      // 文本扫描失败不影响队列告警
+    }
+    return conflicts
   }
 
   private async scanR8ForeshadowLedger(projectId: string): Promise<ConflictItem[]> {

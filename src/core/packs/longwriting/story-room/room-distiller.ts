@@ -14,7 +14,8 @@ import { computeProductionState } from '@core/platform/services/longwriting/agen
 import { stateToSummary } from '@core/platform/services/longwriting/agent/agent-context'
 import { extractJsonObject, persistChapter, persistCharacters, persistOverview, persistOutlineTree, persistPlots, persistWorld, type StoryPersistResult } from '@core/platform/services/longwriting/story-persist'
 import { assessBibleReadiness, buildBibleGateError } from '@core/platform/services/longwriting/bible-readiness-gate'
-import { normalizeOutlineVolume, normalizePlotInput } from '@core/platform/services/longwriting/story-persist'
+import { normalizeCharacterInput } from '@core/platform/services/longwriting/story-persist'
+import { extractCharacterList, extractPlotList, extractWorldLists, normalizeOutlineVolume, normalizePlotInput } from '@core/platform/services/longwriting/story-persist'
 import type { ArtifactCard, ArtifactCardKind, BibleDistillScope, DistillScope, RoomWorkspaceState } from '@shared/types/story-room.types'
 import { emitRoomEvent } from './room-events'
 import { getRoomState, patchRoomState } from './room-state'
@@ -350,11 +351,12 @@ export class StoryRoomDistillerService {
       case 'overview':
         return persistOverview(m, projectId, data)
       case 'character':
-        return persistCharacters(m, projectId, [data])
+        // 复测实跑修复：一张人物卡可含多角色（{人物:[...]}），摊平后逐个归一化落库
+        return persistCharacters(m, projectId, extractCharacterList(data).map(normalizeCharacterInput))
       case 'plot':
-        return persistPlots(m, projectId, [normalizePlotInput(data)])
+        return persistPlots(m, projectId, extractPlotList(data).map(normalizePlotInput))
       case 'world':
-        return persistWorld(m, projectId, data)
+        return persistWorld(m, projectId, extractWorldLists(data))
       case 'outline': {
         if (card.data?.index !== undefined || data?.index !== undefined) {
           // 分集大纲卡：研讨室定稿即采纳（转短剧桥的分集种子，不落 lw_outlines）

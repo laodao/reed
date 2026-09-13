@@ -258,4 +258,29 @@ describe('ConsistencyService', () => {
     expect(r9[0].message).toContain('顾清玄')
     expect(r9[0].severity).toBe('warning')
   })
+
+describe('scanNameCandidates（R9 v2 文本级人名扫描）', () => {
+  const chapters = [
+    { name: '第1章', content: '赵德全押着粮车进城。赵德全皱眉。他说了一句。苏九龄看着他。' },
+    { name: '第2章', content: '赵德全冷笑。白色粉末洒落。魏大人转身离去。陈头带人封了门。陈头点头。陈头冷冷道。李三来了。' },
+  ]
+
+  it('报告名册外高频人名（≥3 次）', async () => {
+    const { scanNameCandidates } = await import('@core/platform/services/longwriting/graph/consistency.service')
+    const r = scanNameCandidates(chapters, ['苏九龄', '魏宗简'], 3)
+    const names = r.map(x => x.name)
+    expect(names).toContain('赵德全')
+    expect(names).toContain('陈头')
+  })
+
+  it('不报名册名/尊称/停用词/低频', async () => {
+    const { scanNameCandidates } = await import('@core/platform/services/longwriting/graph/consistency.service')
+    const r = scanNameCandidates(chapters, ['苏九龄', '魏宗简'], 3)
+    const names = r.map(x => x.name)
+    expect(names).not.toContain('苏九龄')
+    expect(names).not.toContain('魏大人')   // 同姓+称谓=尊称
+    expect(names).not.toContain('白色')      // 停用词
+    expect(names).not.toContain('李三')      // 2 次 < minCount
+  })
+})
 })
