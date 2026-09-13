@@ -203,13 +203,23 @@ export async function executeConflictAction(
       return { ok, message: ok ? '已忽略该候选' : '队列行不存在' }
     }
     if (action === 'fix_snapshot') {
-      const snapId = String(payload.snapshotId || '')
+      if (!db?.lwEntityStates) return { ok: false, message: '状态仓库未就绪' }
+      let snapId = String(payload.snapshotId || '')
+      const entityName = String(payload.name || payload.entityName || '')
+      const chapterNumber = Number(payload.chapterNumber) || 0
       const newSummary = String(payload.newStateSummary || '')
-      if (!snapId || !db?.lwEntityStates) return { ok: false, message: '缺少切片 ID' }
+      // 模型不回传切片 id：按实体名+章节兜底定位（取该实体在该章的最新切片）
+      if (!snapId && entityName) {
+        const rows = ((await db.lwEntityStates.getByProjectId(projectId)) || [])
+          .filter((r: any) => r.entityName === entityName && (!chapterNumber || r.chapterNumber === chapterNumber))
+          .sort((a: any, b: any) => b.chapterNumber - a.chapterNumber || b.updatedAt - a.updatedAt)
+        snapId = rows[0]?.id || ''
+      }
+      if (!snapId) return { ok: false, message: '未找到对应状态切片' }
       const row = await db.lwEntityStates.getById(snapId)
       if (!row) return { ok: false, message: '状态切片不存在' }
       await db.lwEntityStates.update(snapId, { stateSummary: newSummary || `${row.stateSummary}（已人工修正为提取误报）` } as never)
-      return { ok: true, message: '状态切片已修正' }
+      return { ok: true, message: `已修正「${row.entityName}」第 ${row.chapterNumber} 章状态切片` }
     }
     return { ok: false, message: '该选项不支持自动执行（正文修改请按建议文本人工应用）' }
   } catch (e: any) {

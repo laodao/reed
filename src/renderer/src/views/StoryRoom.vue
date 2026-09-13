@@ -416,10 +416,12 @@ async function solveConflict(i: number): Promise<void> {
   if (!c) return
   plans.value[i] = { loading: true }
   try {
+    const mo: any = store.modelOpts.value || {}
     const res = await window.electronAPI.longwriting.conflictPlan(
       projectId.value,
       { rule: c.rule, message: c.description || c.message, entityName: c.entityName, entityType: c.entityType, chapterNumber: c.chapterNumber },
-      store.modelOpts.value,
+      // IPC 结构化克隆不接受 Vue 响应式 Proxy——拆成纯值
+      { providerConfigId: mo.providerConfigId, modelId: mo.modelId },
     )
     if (res.success) plans.value[i] = { plan: res.data }
     else plans.value[i] = { error: res.error || '解题失败' }
