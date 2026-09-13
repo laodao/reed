@@ -10,6 +10,7 @@ import crypto from 'node:crypto'
 import { getCoreDatabaseManager, type ICoreDatabaseManager } from '@core/database/database-manager.interface'
 import { LongWritingAIService } from '@core/platform/services/longwriting-ai.service'
 import { GraphService } from './graph.service'
+import { scanNameCandidates } from './consistency.service'
 import type {
   StoryEvent,
   EntityStateSnapshot,
@@ -120,6 +121,17 @@ export class ChapterGraphProcessor {
       const extracted: Array<{ name?: string; description?: string; involvedEntities?: MemoryEntity[]; stateBefore?: string; stateAfter?: string }> =
         Array.isArray(resp.data) ? resp.data : []
       if (extracted.length > 0 && m.lwEvents) {
+        // 52 号复测补链：先做全文级人名扫描，名册外高频名自动入「未登记人物」队列
+        try {
+          const roster = ((await m.lwCharacters?.getByProjectId(projectId)) || []).map((c: any) => c.name)
+          const graphSvc = new GraphService(m)
+          for (const cand of scanNameCandidates([{ name: `第${chapterNumber}章`, content: chapterContent }], roster, 2)) {
+            await this.registerUnresolvedName(projectId, chapterNumber, cand.name)
+            void graphSvc
+          }
+        } catch (e) {
+          console.warn('[ChapterGraphProcessor] 全文人名扫描入队失败（不阻断）:', e)
+        }
         // 名称 → ID 解析（事件涉及实体必须 ID）
         const resolvedEvents: Array<{ name: string; description?: string; involvedEntities?: MemoryEntity[]; stateBefore?: string; stateAfter?: string }> = []
         for (const ev of extracted) {
@@ -128,6 +140,10 @@ export class ChapterGraphProcessor {
           const { resolved: involved, unresolved: evUnresolved } = await this.resolveEventEntities(projectId, ev.involvedEntities || [])
           for (const u of evUnresolved) {
             if (u.type === 'character') await this.registerUnresolvedName(projectId, chapterNumber, u.name)
+          }
+          // 复测补链：模型漏挂实体的事件，按句子共现补挂（正文同句出现的人名）
+          if (involved.length === 0) {
+            involved = await this.linkEventByCoOccurrence(projectId, chapterNumber, ev, chapterContent)
           }
           resolvedEvents.push({
             name: ev.name.trim(),
@@ -359,6 +375,42 @@ export class ChapterGraphProcessor {
       }
     })
     return { resolved: result, unresolved }
+  }
+
+  /**
+   * 52 号复测补链：事件没有涉及实体时，在正文中定位事件所在句子，
+   * 把同句出现的具名人物解析后挂到事件上（模型漏标的最小代价补救）。
+   */
+  private async linkEventByCoOccurrence(
+    projectId: string,
+    chapterNumber: number,
+    ev: { name?: string; description?: string },
+    chapterContent: string,
+  ): Promise<MemoryEntity[]> {
+    try {
+      const key = (ev.name || '').replace(/[「」『』【】\s]/g, '').slice(0, 4)
+      if (!key) return []
+      const sentences = chapterContent.split(/[。！？\n]/).filter(s => s.includes(key) || (ev.description && s.includes((ev.description || '').slice(0, 6))))
+      const scope = sentences.length > 0 ? sentences.join('。') : ''
+      if (!scope) return []
+      const graph = new GraphService(this.manager()!)
+      const seen = new Set<string>()
+      const entities: MemoryEntity[] = []
+      // 只认「姓氏开头」的 2-3 字词并滤掉常用词，避免把普通词汇灌进待确认队列
+      const stop = new Set(['自己', '他们', '我们', '你们', '什么', '怎么', '这时', '当时', '如今', '所有', '没有', '这个', '那个', '不是', '就是'])
+      for (const m of scope.matchAll(new RegExp(`[${'王李张刘陈杨赵黄周吴徐孙马朱胡郭何高林郑谢罗宋唐许韩冯邓曹彭曾肖田董袁潘于蒋蔡余杜叶程苏魏吕丁任沈姚卢姜崔钟谭陆汪范金石廖贾夏韦付方白邹孟熊秦邱江尹薛闫段雷侯龙史陶黎贺顾毛郝龚邵万钱严覃武戴莫孔向汤'}][\\u4e00-\\u9fa5]{1,2}`, 'g'))) {
+        const w = m[0]
+        if (seen.has(w) || stop.has(w)) continue
+        seen.add(w)
+        const [r] = await graph.resolveEntities(projectId, [{ type: 'character', name: w }] as any)
+        if (r?.resolved && r.id) entities.push({ type: 'character', id: r.id, name: w })
+        else await this.registerUnresolvedName(projectId, chapterNumber, w)
+      }
+      return entities.slice(0, 6)
+    } catch (e) {
+      console.warn('[ChapterGraphProcessor] 事件共现补链失败（不阻断）:', e)
+      return []
+    }
   }
 
   /**

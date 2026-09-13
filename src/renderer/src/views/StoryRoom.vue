@@ -26,21 +26,6 @@
         </template>
       </el-dropdown>
       <el-button v-if="canExportScript" size="small" type="warning" plain @click="exportToEp">转为短剧项目 ↗</el-button>
-      <el-dropdown v-if="store.state.value" trigger="click" @command="(p: string) => store.setPhase(p as never)">
-        <span class="tb-btn phase-btn">{{ phaseLabel(store.state.value.phase) }} ▾</span>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item
-              v-for="p in ROOM_PHASE_META"
-              :key="p.id"
-              :command="p.id"
-              :class="{ 'phase-on': p.id === store.state.value?.phase }"
-            >
-              {{ p.order }} · {{ p.label }}
-            </el-dropdown-item>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown>
       <span class="tb-btn" @click="showGraph = true">图谱</span>
       <span class="tb-btn" @click="showBible = true">设定集</span>
       <span class="tb-btn" @click="showSettings = true">设定</span>
@@ -58,14 +43,11 @@
           </div>
         </div>
         <!-- 矛盾教练：写作期连续性检查疑点（44 号补 UI 渲染，数据位此前已存在） -->
-        <el-alert v-if="store.conflicts.value.length" type="warning" :closable="true" class="conflict-banner">
-          <template #title>
-            ⚔ 连续性检查发现 {{ store.conflicts.value.length }} 处疑点（写作前请先核对）
-          </template>
-          <ul class="conflict-list">
-            <li v-for="(c, i) in store.conflicts.value" :key="i">{{ c.description || c.message }}</li>
-          </ul>
-        </el-alert>
+        <!-- 52 号 UI 优化：疑点折叠为摘要条，全量进抽屉（原平铺横幅吞掉 2/3 画布） -->
+        <div v-if="store.conflicts.value.length" class="conflict-bar" @click="conflictDrawer = true">
+          <span class="conflict-bar-text">⚔ 连续性检查发现 {{ store.conflicts.value.length }} 处疑点（写作前请先核对）</span>
+          <span class="conflict-bar-more">查看 ▸</span>
+        </div>
         <!-- 设计任务流水（46 号：design 轮的工具动作 chip，folded 摘要一条） -->
         <div v-if="store.taskLog.value.length" class="task-log" :class="{ open: taskLogOpen }">
           <div class="task-log-summary" @click="taskLogOpen = !taskLogOpen">
@@ -79,7 +61,7 @@
             </div>
           </div>
         </div>
-        <div v-if="draftPackage" class="task-log-review-row">
+        <div v-if="draftPackage && draftPackage.items.length" class="task-log-review-row">
           <el-button size="small" type="warning" plain @click.stop="reviewDraftPackage">审核设计包（{{ draftPackage.items.length }} 项待确认）</el-button>
         </div>
         <ChatCanvas
@@ -97,8 +79,45 @@
         />
         <div class="composer">
           <div class="composer-inner">
-            <div class="chips">
-              <span v-for="c in chips" :key="c" class="chip" @click="applyChip(c)">{{ c }}</span>
+            <!-- 52 号 UI 优化：阶段机移到输入框工具栏（原顶栏纯文字难发现），快捷 chips 移除 -->
+            <div class="composer-toolbar">
+              <el-dropdown trigger="click" @command="(p: string) => store.setPhase(p as never)">
+                <span class="ct-btn phase-ct" :class="{ 'phase-live': store.state.value?.phase === 'writing' }">
+                  阶段 · {{ phaseLabel(store.state.value?.phase || 'story-core') }}
+                  <span class="ct-sub">{{ phaseIndex(store.state.value?.phase) }}/5</span>
+                  ▾
+                </span>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item
+                      v-for="p in ROOM_PHASE_META"
+                      :key="p.id"
+                      :command="p.id"
+                      :class="{ 'phase-on': p.id === store.state.value?.phase }"
+                    >
+                      {{ p.order }} · {{ p.label }}
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+              <el-dropdown trigger="click" @command="(sc: string) => onDistill(sc as never)">
+                <span class="ct-btn">⚡ 提炼 ▾</span>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="overview">概要卡</el-dropdown-item>
+                    <el-dropdown-item command="characters">人物卡</el-dropdown-item>
+                    <el-dropdown-item command="plots">故事线卡</el-dropdown-item>
+                    <el-dropdown-item command="world">世界设定卡</el-dropdown-item>
+                    <el-dropdown-item command="outline">大纲卡（逐卷/逐集）</el-dropdown-item>
+                    <el-dropdown-item command="chapter">章节卡（写作交接）</el-dropdown-item>
+                    <el-dropdown-item command="foreshadow">伏笔卡</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+              <span v-if="store.conflicts.value.length" class="ct-btn conflict-ct" @click="conflictDrawer = true">
+                ⚔ 疑点 {{ store.conflicts.value.length }}
+              </span>
+              <span class="ct-hint">阶段决定主编的讨论焦点与产出物；提提炼把共识整理成卡</span>
             </div>
             <div class="input-row">
               <textarea
@@ -151,6 +170,16 @@
         @foreshadow-status="onForeshadowStatus"
       />
     </el-dialog>
+
+    <el-drawer v-model="conflictDrawer" title="⚔ 连续性检查疑点" size="42%" :append-to-body="true">
+      <div class="conflict-drawer-list">
+        <div v-for="(c, i) in store.conflicts.value" :key="i" class="conflict-item">
+          <span class="conflict-rule">{{ ruleLabel(c.rule) }}</span>
+          <span class="conflict-msg">{{ c.description || c.message }}</span>
+        </div>
+        <div v-if="!store.conflicts.value.length" class="conflict-empty">当前没有疑点。</div>
+      </div>
+    </el-drawer>
 
     <ProjectSettingsDialog v-model:visible="showSettings" :project-id="projectId" />
 
@@ -225,7 +254,6 @@ const store = useStoryRoom(projectId.value)
 const projectName = ref('…')
 const storyType = ref('')
 const input = ref('')
-const chips = computed(() => store.chips.value)
 
 // ==================== 主编模型选择（原型顶栏「主编模型 ▾」） ====================
 
@@ -346,6 +374,17 @@ function toggleItem(id: string): void {
   checkedIds.value = next
 }
 
+function ruleLabel(rule?: string): string {
+  const map: Record<string, string> = {
+    R1: '死亡后出场', R2: '关系失效', R3: '物品易主', R4: '技能时间线', R5: '回忆冲突',
+    R6: '状态回退', R7: '钩子节拍', R8: '伏笔超期', R9: '名册外人名',
+  }
+  return rule && map[rule] ? `${rule} ${map[rule]}` : (rule || '疑点')
+}
+function phaseIndex(phase?: string): number {
+  const i = ROOM_PHASE_META.findIndex(p => p.id === phase)
+  return i < 0 ? 1 : i + 1
+}
 function kindLabel(kind: string): string {
   switch (kind) {
     case 'card': return '卡片'
@@ -393,11 +432,6 @@ function doSend(): void {
   store.send(text)
 }
 
-function applyChip(c: string): void {
-  // 原型交互：chips 是面向动作的讨论短语，点击即作为消息发送
-  input.value = c
-  doSend()
-}
 
 function askAbout(text: string): void {
   input.value = `${text} `
@@ -531,6 +565,7 @@ async function onDistill(scope?: string): Promise<void> {
 }
 
 const bibleRefresh = ref(0)
+const conflictDrawer = ref(false)
 const showGraph = ref(false)
 const showBible = ref(false)
 const showSettings = ref(false)
@@ -762,4 +797,67 @@ html.dark .story-room { --sr-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rg
 .graph-dialog :deep(.el-dialog__body) > * {
   height: 100%;
 }
+
+.conflict-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  margin-bottom: 6px;
+  background: var(--el-color-warning-light-9);
+  border: 1px solid var(--el-color-warning-light-5);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--el-color-warning-dark-2);
+}
+.conflict-bar:hover { border-color: var(--el-color-warning); }
+.conflict-bar-more { font-size: 12px; opacity: 0.8; }
+
+.composer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px 8px;
+  border-bottom: 1px dashed var(--el-border-color-lighter);
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.ct-btn {
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--el-border-color);
+  background: var(--el-fill-color-blank);
+}
+.ct-btn:hover { color: var(--el-color-primary); border-color: var(--el-color-primary-light-5); }
+.phase-ct { font-weight: 600; }
+.phase-live { color: var(--el-color-success); border-color: var(--el-color-success-light-5); }
+.ct-sub { font-size: 11px; opacity: 0.65; margin-left: 2px; }
+.conflict-ct { color: var(--el-color-warning-dark-2); border-color: var(--el-color-warning-light-5); }
+.ct-hint { font-size: 11px; color: var(--el-text-color-placeholder); }
+
+.conflict-drawer-list { display: flex; flex-direction: column; gap: 10px; }
+.conflict-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.conflict-rule {
+  flex: none;
+  font-size: 12px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--el-color-warning-light-8);
+  color: var(--el-color-warning-dark-2);
+}
+.conflict-empty { color: var(--el-text-color-secondary); font-size: 13px; }
+
 </style>
