@@ -41,6 +41,9 @@
           </el-dropdown-menu>
         </template>
       </el-dropdown>
+      <span class="tb-btn" @click="showGraph = true">图谱</span>
+      <span class="tb-btn" @click="showBible = true">设定集</span>
+      <span class="tb-btn" @click="showSettings = true">设定</span>
       <span class="tb-btn accent" @click="goEditor">✍ 写作台 ↗</span>
     </div>
 
@@ -129,7 +132,29 @@
     </div>
 
     <!-- 设计包确认（46 号：长程任务产物整体确认制） -->
-    <el-dialog v-model="designVisible" :title="`设计成果确认 · ${store.designReady.value?.title ?? ''}`" width="640px">
+        <el-dialog v-model="showGraph" title="知识图谱" width="92%" top="3vh" destroy-on-close class="graph-dialog">
+      <GraphView :project-id="projectId" />
+    </el-dialog>
+
+    <el-dialog v-model="showBible" title="故事设定集" width="72%" top="3vh" destroy-on-close>
+      <BiblePanel
+        :project-id="projectId"
+        :ledger="store.state.value?.ledger || []"
+        :refresh-key="bibleRefresh"
+        :cards="store.state.value?.pendingCards || []"
+        @op="store.ledgerOp"
+        @revise="openRevise"
+        @ask="askAbout"
+        @distill="onDistill"
+        @open-editor="goEditor"
+        @locate-turn="locateTurn"
+        @foreshadow-status="onForeshadowStatus"
+      />
+    </el-dialog>
+
+    <ProjectSettingsDialog v-model:visible="showSettings" :project-id="projectId" />
+
+<el-dialog v-model="designVisible" :title="`设计成果确认 · ${store.designReady.value?.title ?? ''}`" width="640px">
       <div class="design-hint">以下 {{ designItems.length }} 项为本轮任务的设计草稿，勾选确认后才会落库生效。</div>
       <div class="design-items">
         <label v-for="item in designItems" :key="item.id" class="design-item" :class="{ on: checkedIds.has(item.id) }">
@@ -184,6 +209,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import ChatCanvas from '@/components/longwriting/room/ChatCanvas.vue'
+import ProjectSettingsDialog from '@/components/longwriting/ProjectSettingsDialog.vue'
+import { defineAsyncComponent } from 'vue'
 import BiblePanel from '@/components/longwriting/room/BiblePanel.vue'
 import { useStoryRoom } from '@/composables/useStoryRoom'
 import type { ArtifactCard, ConsensusEntry } from '@shared/types/story-room.types'
@@ -504,6 +531,10 @@ async function onDistill(scope?: string): Promise<void> {
 }
 
 const bibleRefresh = ref(0)
+const showGraph = ref(false)
+const showBible = ref(false)
+const showSettings = ref(false)
+const GraphView = defineAsyncComponent(() => import('@/components/longwriting/graph/GraphView.vue'))
 
 async function onForeshadowStatus(id: string, status: 'paid' | 'dropped', payoff?: number | null): Promise<void> {
   const res = await window.electronAPI.longwriting.bibleForeshadowStatus(projectId.value, id, status, payoff ?? null)
@@ -722,4 +753,13 @@ html.dark .story-room { --sr-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rg
 .edit-rows { display: flex; flex-direction: column; gap: 10px; max-height: 55vh; overflow-y: auto; }
 .edit-row { display: flex; gap: 10px; align-items: flex-start; }
 .edit-label { width: 90px; flex-shrink: 0; font-size: 12.5px; color: var(--el-text-color-secondary); padding-top: 7px; text-align: right; }
+</style>
+<style scoped>
+.graph-dialog :deep(.el-dialog__body) {
+  height: 82vh;
+  overflow: hidden;
+}
+.graph-dialog :deep(.el-dialog__body) > * {
+  height: 100%;
+}
 </style>
