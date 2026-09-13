@@ -14,6 +14,7 @@ import { computeProductionState } from '@core/platform/services/longwriting/agen
 import { stateToSummary } from '@core/platform/services/longwriting/agent/agent-context'
 import { extractJsonObject, persistChapter, persistCharacters, persistOverview, persistOutlineTree, persistPlots, persistWorld, type StoryPersistResult } from '@core/platform/services/longwriting/story-persist'
 import { assessBibleReadiness, buildBibleGateError } from '@core/platform/services/longwriting/bible-readiness-gate'
+import { normalizeOutlineVolume, normalizePlotInput } from '@core/platform/services/longwriting/story-persist'
 import type { ArtifactCard, ArtifactCardKind, BibleDistillScope, DistillScope, RoomWorkspaceState } from '@shared/types/story-room.types'
 import { emitRoomEvent } from './room-events'
 import { getRoomState, patchRoomState } from './room-state'
@@ -351,7 +352,7 @@ export class StoryRoomDistillerService {
       case 'character':
         return persistCharacters(m, projectId, [data])
       case 'plot':
-        return persistPlots(m, projectId, [data])
+        return persistPlots(m, projectId, [normalizePlotInput(data)])
       case 'world':
         return persistWorld(m, projectId, data)
       case 'outline': {
@@ -361,7 +362,7 @@ export class StoryRoomDistillerService {
         }
         const gateErr = await bibleGateForPersist(m, projectId, '大纲')
         if (gateErr) return { ok: false, message: gateErr, changed: [] }
-        const created = await persistOutlineTree(m, projectId, [data], 3)
+        const created = await persistOutlineTree(m, projectId, [normalizeOutlineVolume(data)], 3)
         return { ok: true, message: `已建大纲卷「${data.name || ''}」（${created} 个节点）`, changed: ['outline'], data: { nodes: created } }
       }
       case 'chapter': {

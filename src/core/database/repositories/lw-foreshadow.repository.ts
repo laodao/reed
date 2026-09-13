@@ -72,7 +72,7 @@ export class LwForeshadowRepository extends BaseRepository<LwForeshadowEntity, F
       status: 'open',
       origin: origin ? JSON.stringify(origin) : null,
     } as never) as never)
-    const row = await this.scoped.findOne({ where: { id } } as any)
+    const row = await this.scoped.findOne({ id } as any)
     return this.toDto(row!)
   }
 
@@ -89,7 +89,7 @@ export class LwForeshadowRepository extends BaseRepository<LwForeshadowEntity, F
   }
 
   async setStatus(id: string, status: 'open' | 'paid' | 'dropped', payoffChapter?: number | null): Promise<ForeshadowDto | null> {
-    const row = await this.scoped.findOne({ where: { id } } as any)
+    const row = await this.scoped.findOne({ id } as any)
     if (!row) return null
     row.status = status
     if (payoffChapter !== undefined) row.payoffChapter = payoffChapter

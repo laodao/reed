@@ -76,6 +76,9 @@
             </div>
           </div>
         </div>
+        <div v-if="draftPackage" class="task-log-review-row">
+          <el-button size="small" type="warning" plain @click.stop="reviewDraftPackage">审核设计包（{{ draftPackage.items.length }} 项待确认）</el-button>
+        </div>
         <ChatCanvas
           :messages="store.messages.value"
           :stream-message="store.streamMessage.value"
@@ -287,6 +290,15 @@ const revisePoints = ref<string[]>([])
 const taskLogOpen = ref(false)
 const designVisible = ref(false)
 const checkedIds = ref(new Set<string>())
+
+// 实跑修复：设计确认弹窗只在 design:ready 事件瞬间弹出，错过（切标签/刷新）后无入口——
+// 有草稿包时常驻「审核设计包」按钮，点开即复用同一确认面板
+const draftPackage = computed(() => store.state.value?.designPackages?.find((p) => p.status === 'draft') ?? null)
+
+function reviewDraftPackage(): void {
+  if (!draftPackage.value) return
+  store.designReady.value = draftPackage.value
+}
 
 const designItems = computed(() => store.designReady.value?.items ?? [])
 
@@ -679,6 +691,12 @@ html.dark .story-room { --sr-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rg
   display: flex; align-items: center; justify-content: space-between;
   padding: 6px 16px; cursor: pointer; color: var(--el-text-color-secondary);
 }
+.task-log-review-row {
+  margin: 4px 0 6px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .task-log-summary:hover { color: var(--el-text-color-primary); }
 .task-log-caret { flex-shrink: 0; }
 .task-log-items { max-height: 150px; overflow-y: auto; padding: 0 16px 8px; }

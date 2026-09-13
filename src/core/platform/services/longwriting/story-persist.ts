@@ -164,8 +164,77 @@ export async function syncRelationsFromInput(
  * 人物入库（原 executeGenerateCharacters 落库段）：按名称去重只入新增，
  * AI 输出 relations → 人物间关系边。
  */
+/**
+ * 人物卡字段归一化（研讨室实跑修复）：模型产出的卡片数据键名不统一
+ * （姓名/年龄/身份/外形… 或英文名），统一映射到实体字段后再落库；
+ * rolePosition 中文定位同步映射为主角/反派/配角枚举。
+ */
+export function normalizeCharacterInput(c: any): any {
+  if (!c || typeof c !== 'object') return c
+  const pick = (...keys: string[]): string | undefined => {
+    for (const k of keys) {
+      const v = c[k]
+      if (typeof v === 'string' && v.trim()) return v.trim()
+      if (typeof v === 'number') return String(v)
+    }
+    return undefined
+  }
+  const rawRole = pick('rolePosition', '角色定位', '定位')
+  const rolePosition = rawRole
+    ? ({ 主角: 'protagonist', 反派: 'antagonist', 配角: 'supporting' } as Record<string, string>)[rawRole] ?? rawRole
+    : /主角|女主|男主/.test(pick('identity', '身份') ?? '') ? 'protagonist' : undefined
+  const ageRaw = pick('age', '年龄')
+  return {
+    ...c,
+    name: pick('name', '姓名', '名字') ?? c.name,
+    gender: pick('gender', '性别') ?? c.gender,
+    age: ageRaw ? Number(ageRaw.replace(/[^\d]/g, '')) || c.age : c.age,
+    occupation: pick('occupation', '职业', '身份') ?? c.occupation,
+    position: pick('position', '职位') ?? c.position,
+    rolePosition: rolePosition ?? c.rolePosition,
+    appearance: pick('appearance', '外形', '外貌', '形象') ?? c.appearance,
+    background: pick('background', '背景', '来历') ?? c.background,
+    personality: pick('personality', '性格') ?? c.personality,
+    abilities: pick('abilities', '能力', '技能', '特长') ?? c.abilities,
+    majorEvents: pick('majorEvents', '主要事件', '关键事件') ?? c.majorEvents,
+    aliases: Array.isArray(c.aliases) ? c.aliases : c.aliases ? [String(c.aliases)] : (pick('别名') ? [pick('别名')!] : c.aliases),
+  }
+}
+
+/**
+ * 故事线卡归一化（研讨室实跑修复）：模型用 lineName/oneLine/起止状态等键名，
+ * 统一映射到 plots 落库需要的 title/summary。
+ */
+export function normalizePlotInput(p: any): any {
+  if (!p || typeof p !== 'object') return p
+  const title = (p.title || p.lineName || p.name || '').trim()
+  const summary = p.summary || [p.oneLine, p.startingState, p.upgradeChain, p.endingState]
+    .filter((v: unknown) => typeof v === 'string' && v.trim())
+    .join('；')
+  return { ...p, title, summary: String(summary || '') }
+}
+
+/**
+ * 大纲卡归一化（研讨室实跑修复）：模型产出 volumeTitle + chapters[{number,title,beat,
+ * summary,estWords,characters,darkLineHook}]，统一映射成 persistOutlineTree 的
+ * 卷→章树；节拍与暗线钩并入章概要，作为逐章生成的任务文本。
+ */
+export function normalizeOutlineVolume(data: any): { name: string; summary: string; estimatedWords: number; chapters: any[] } {
+  const chapters = (Array.isArray(data?.chapters) ? data.chapters : []).map((c: any, i: number) => ({
+    name: c.name || (c.title ? `${c.number ?? i + 1} ${c.title}`.trim() : `第${i + 1}章`),
+    summary: [c.summary, c.beat, c.darkLineHook].filter(Boolean).join('\n'),
+    estimatedWords: Number(c.estimatedWords || c.estWords) || 0,
+  }))
+  return {
+    name: data.name || data.volumeTitle || data.workTitle || '第一卷',
+    summary: String(data.summary || data.spec || ''),
+    estimatedWords: chapters.reduce((s: number, c: any) => s + (c.estimatedWords || 0), 0),
+    chapters,
+  }
+}
+
 export async function persistCharacters(db: any, projectId: string, list: any[]): Promise<StoryPersistResult> {
-  const chars = Array.isArray(list) ? list : []
+  const chars = (Array.isArray(list) ? list : []).map(normalizeCharacterInput)
   if (chars.length === 0) {
     return { ok: false, message: 'AI 未返回有效的人物数据', changed: [] }
   }
@@ -175,7 +244,17 @@ export async function persistCharacters(db: any, projectId: string, list: any[])
   const newChars = chars.filter((c: any) => c?.name?.trim() && !existingNames.has(c.name))
 
   if (newChars.length === 0) {
-    return { ok: false, skipped: true, message: '没有新人物需要添加（结构化数据中的人物都已存在）', changed: [] }
+    // 实跑修复：全部缺姓名 = 数据不合格，按失败返回（确认流据此保留条目），
+    // 不再当 skipped 静默吞卡；仅「人都已存在」才是真 skipped
+    const allNameless = chars.every((c: any) => !c?.name?.trim())
+    return {
+      ok: false,
+      skipped: !allNameless,
+      message: allNameless
+        ? '人物卡缺少姓名字段（name/姓名），已保留待模型补正'
+        : '没有新人物需要添加（结构化数据中的人物都已存在）',
+      changed: [],
+    }
   }
 
   const created: any[] = []
