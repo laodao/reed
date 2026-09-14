@@ -101,10 +101,13 @@ export class FfmpegAssemblerService {
   }
 
   /**
-   * 执行 FFmpeg 命令
-   * （原为 VideoSynthesisService.runFFmpegCommand private，升为 public 供同层 service 复用）
+   * 执行 FFmpeg 命令（带超时保护——复核修复 P1-10：ffmpeg 挂死会让合成 IPC
+   * 永不返回；默认 30 分钟，可用 EP_FFMPEG_TIMEOUT_SEC 覆盖）
    */
   runFFmpegCommand(command: ffmpeg.FfmpegCommand): Promise<SynthesisResult> {
+    const timeoutSec = Number(process.env.EP_FFMPEG_TIMEOUT_SEC) || 30 * 60
+    // fluent-ffmpeg 运行时有 timeout(sec, signal)，但该版本 .d.ts 未声明
+    ;(command as unknown as { timeout: (sec: number, signal: string) => void }).timeout(timeoutSec, 'kill')
     return new Promise((resolve) => {
       command
         .on('start', (commandLine) => {
@@ -131,7 +134,7 @@ export class FfmpegAssemblerService {
   async exportVideo(
     sourcePath: string,
     outputPath: string,
-    format: string = 'mp4',
+    _format: string = 'mp4',
     quality: string = 'standard'
   ): Promise<SynthesisResult> {
     try {

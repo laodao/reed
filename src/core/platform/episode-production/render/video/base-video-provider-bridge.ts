@@ -43,7 +43,9 @@ import type {
 } from '@shared/types/video-provider.types'
 
 const POLL_INTERVAL_MS = 2_000
-const POLL_MAX_DURATION_MS = 10 * 60 * 1000 // 10 分钟
+// 局域网 ComfyUI 网关实测 15~25 分钟（评审 #103），原 10 分钟会在远端仍在跑时
+// 假失败写回 error（用户重试即双份计费）。提至 30 分钟，可用环境变量覆盖。
+const POLL_MAX_DURATION_MS = Number(process.env.EP_VIDEO_POLL_TIMEOUT_MS) || 30 * 60 * 1000
 
 /** 桥接选项 */
 export interface BridgeOptions {
