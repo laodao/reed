@@ -40,6 +40,8 @@ function dlCtxFrom(ctx: AgentToolContext): DlAgentExecutionContext {
     conceptId,
     mode: typeof log.mode === 'string' ? (log.mode as DlAgentMode) : undefined,
     questionId: typeof log.questionId === 'string' ? log.questionId : null,
+    // 规划落库轮（起步研究/补全地图）：落库门禁据此校验"知识体系是否已经用户确认"
+    planningRound: log.planningRound === true,
     providerConfigId: typeof log.providerConfigId === 'string' ? log.providerConfigId : undefined,
     modelId: typeof log.modelId === 'string' ? log.modelId : undefined,
     db: getCoreDatabaseManager(),
@@ -160,6 +162,51 @@ const answerQuestionSchema = z.object({
   }),
 })
 
+/**
+ * 诉求理解草案 schema（流程第 1 步；2026-09-13 用户需求）。
+ * 先让模型把用户诉求复述成"目标 / 要覆盖的对象与场景 / 不做什么 / 关键期望"，弹窗给用户确认。
+ */
+const proposeUnderstandingSchema = z.object({
+  understanding: z.object({
+    goalSummary: z.string().min(1).describe('一句话重述：我理解你要学什么（用户据此确认是否对齐）'),
+    coverage: z
+      .array(z.string())
+      .min(1)
+      .describe('要覆盖的对象与场景（逐条：用户点名的产品/市场/数据/动作，各自都要有落点）'),
+    audience: z.string().optional().describe('读者画像：从哪出发、到什么程度'),
+    notDoing: z.array(z.string()).optional().describe('明确不做什么（防跑偏）'),
+    keyExpectations: z.array(z.string()).optional().describe('关键期望：学完能做到什么（可验证的动词句）'),
+  }),
+})
+
+/** 知识体系草案 schema（流程第 2 步；需先确认诉求理解，且每个分支必须有知识点） */
+const proposeSyllabusSchema = z.object({
+  syllabus: z.object({
+    branches: z
+      .array(
+        z.object({
+          name: z.string().min(1).describe('分支/模块名（会成为 group 目录）'),
+          definitionShort: z.string().optional(),
+          concepts: z
+            .array(
+              z.object({
+                name: z.string().min(1),
+                definitionShort: z.string().optional(),
+                prerequisites: z.array(z.string()).optional().describe('前置知识点名（可空数组）'),
+                layer: z.number().optional().describe('学习层级（0=零基础可直接学）'),
+                nodeType: z.string().optional().describe('缺省 concept；一般不用填 group'),
+              }),
+            )
+            .min(1)
+            .describe('该分支下的知识点（**不能为空**——空分支正是上一版的问题）'),
+        }),
+      )
+      .min(1),
+    rootConcepts: z.array(z.any()).optional().describe('不归属分支的根层知识点（可省）'),
+    notes: z.string().optional().describe('方案说明（取材自哪些资料/哪些是按主干补的先验）'),
+  }),
+})
+
 /** 动作工具清单 */
 export function buildDlAgentToolDefs(): AgentToolDef[] {
   return [
@@ -180,6 +227,18 @@ export function buildDlAgentToolDefs(): AgentToolDef[] {
     ),
     dlActionTool('dl_save_card', '落库概念讲义卡片（区集 sections+著作 works+证据 evidenceSources；无证据会被拒绝；首区必须是 meta 且写前置声明）。', saveCardSchema),
     dlActionTool('dl_answer_question', '把答疑结果存档：答上写 answer+来源（answered）；答不上 unresolved=true 登记未解队列（保持 open）。', answerQuestionSchema),
+    dlActionTool(
+      'dl_propose_understanding',
+      '提交「诉求理解」草案（固定流程第 1 步）：把你理解的用户诉求复述成 目标/要覆盖的对象与场景/不做什么/关键期望，' +
+        '系统会弹窗让用户确认或纠正。**本轮不要落库知识点**——确认后才进入第 2 步。',
+      proposeUnderstandingSchema,
+    ),
+    dlActionTool(
+      'dl_propose_syllabus',
+      '提交「知识体系」草案（固定流程第 2 步，需先有用户已确认的诉求理解）：分支目录 + 每个分支下的知识点（含一句话定义/前置/layer），' +
+        '系统会弹窗让用户勾选增删与调序；**用户确认后才允许 dl_save_concept 落库**。每个分支都必须有知识点。',
+      proposeSyllabusSchema,
+    ),
   ]
 }
 
@@ -257,7 +316,9 @@ export function dlAgentToolNames(): string[] {
   return buildDlAgentToolDefs().map((d) => d.name)
 }
 
-/** 工具频控（bind 时写入 maxCalls；动作工具由包内频控覆盖） */
-export function dlToolMaxCalls(name: string): number {
+/** 工具频控（bind 时写入 maxCalls；动作工具由包内频控覆盖；overrides = 平台预算 agent:budget 的覆盖表） */
+export function dlToolMaxCalls(name: string, overrides?: Record<string, number>): number {
+  const override = overrides?.[name]
+  if (typeof override === 'number' && Number.isFinite(override) && override >= 1) return Math.floor(override)
   return DL_TOOL_MAX_CALLS[name] ?? 3
 }

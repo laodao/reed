@@ -1,7 +1,7 @@
 /**
- * crawl-news 新闻采集节点测试（内置应用 C1 早报 / C2 周报数据层）
+ * crawl-news 信息采集节点测试（信息来源库 → 链接清单）
  * @module tests/unit/core/platform/workflow/crawl-news
- * @description 验证 resolveSourceUrls（预置主题/来源库 sourceIds/自定义 URL/去重/非法过滤）与
+ * @description 验证 resolveSourceUrls（来源分组/来源库 sourceIds/自定义 URL/去重/非法过滤）与
  *              节点校验（来源至少其一）。
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -9,12 +9,15 @@ import { resolveSourceUrls, parseUrlList } from '@core/platform/workflow/nodes/n
 import { NEWS_TOPICS, getNewsTopicSources, NEWS_TOPIC_LABELS } from '@shared/types/news-topics'
 import { NODE_TYPE_CATALOG_MAP } from '@shared/types/workflow-node-catalog'
 
-/** mock 新闻来源库（避免依赖真实数据库） */
+/** mock 信息来源库（避免依赖真实数据库） */
 const mockRows: Array<{ id: string; topicId: string; name: string; url: string; enabled: boolean }> = []
+/** mock 分组整组来源（topicId → 行）；空 = 走内置新闻源目录兜底 */
+const mockTopicRows: Array<{ id: string; topicId: string; name: string; url: string; enabled: boolean }> = []
 vi.mock('@core/database/database-manager.interface', () => ({
   getCoreDatabaseManager: () => ({
-    newsSources: {
+    infoSources: {
       listByIds: async (ids: string[]) => mockRows.filter(r => ids.includes(r.id) && r.enabled),
+      listByTopic: async (topicId: string) => mockTopicRows.filter(r => r.topicId === topicId && r.enabled),
     },
   }),
 }))
@@ -24,8 +27,14 @@ function setMockNewsSources(rows: Array<{ id: string; topicId: string; name: str
   mockRows.push(...rows)
 }
 
+function setMockTopicSources(rows: Array<{ id: string; topicId: string; name: string; url: string; enabled: boolean }>) {
+  mockTopicRows.length = 0
+  mockTopicRows.push(...rows)
+}
+
 beforeEach(() => {
   mockRows.length = 0
+  mockTopicRows.length = 0
 })
 
 afterEach(() => {
@@ -67,10 +76,23 @@ describe('resolveSourceUrls（async）', () => {
     vi.doUnmock('@core/database/database-manager.interface')
   })
 
-  it('按主题取预置源', async () => {
+  it('按分组取来源：库内分组优先（任意类别）', async () => {
     const urls = await resolveSourceUrls('ai', undefined, undefined)
     expect(urls.length).toBe(getNewsTopicSources('ai').length)
     expect(urls[0].url).toMatch(/^https?:\/\//)
+  })
+
+  it('库内分组有来源时以库为准（覆盖内置目录兜底）', async () => {
+    setMockTopicSources([
+      { id: 'is_x', topicId: 'finance_kb', name: '金融站点', url: 'https://fin.example.com', enabled: true },
+    ])
+    const urls = await resolveSourceUrls('finance_kb', undefined, undefined)
+    expect(urls).toEqual([{ name: '金融站点', url: 'https://fin.example.com' }])
+  })
+
+  it('库内分组为空 → 回落到内置新闻源目录', async () => {
+    const urls = await resolveSourceUrls('ai', undefined, undefined)
+    expect(urls.map(u => u.url)).toEqual(getNewsTopicSources('ai').map(s => s.url))
   })
 
   it('自定义 URL：JSON 字符串数组', async () => {

@@ -27,7 +27,10 @@ import type { AgentToolBinding } from '@shared/types/agent.types'
 import { getAgentLoopHarness } from '@core/platform/workflow/nodes/agent-loop-node'
 import { getMemoryFlywheel } from '@core/platform/workflow/workflow-boot'
 import { registerDlAgentTools } from './dl-agent-tools'
-import { buildDlBindings } from './dl-agent-bindings'
+import { buildDlBindings, isPlanningSaveRound } from './dl-agent-bindings'
+import { getConfirmedSyllabus } from './dl-plan.service'
+import { planConceptNames, planSaveBudget } from '../rules/learning-plan.rules'
+import { loadAgentBudget } from '@core/platform/agent-runtime/budget/agent-budget'
 import {
   buildDlSuggestions,
   buildFocusQuestionLines,
@@ -38,6 +41,14 @@ import {
   dlSkillBody,
   DL_MAP_COMPLETION_SKILL_ID,
   shouldInjectMapCompletionSkill,
+  PLAN_SYLLABUS_CONFIRMED_MARKER,
+  PLAN_UNDERSTANDING_CONFIRMED_MARKER,
+  isPlanPhaseMessage,
+  planSavePhaseInstruction,
+  planSyllabusPhaseInstruction,
+  planUnderstandingPhaseInstruction,
+  formatSyllabusLines,
+  formatUnderstandingSummary,
   dlTaskSystemPrompt,
   dlTutorSystemPrompt,
   dlVerifySystemPrompt,
@@ -47,10 +58,9 @@ import { emitDlAgentEvent, emitDlStream } from './dl-agent-events'
 import { dlPublishNotice } from './dl-notice'
 import { parseVerifyOutcome } from '../rules/learning-verify.rules'
 import type { DlCardVerification } from '@shared/types/domain-learning.types'
+import { DlActivityTracker } from './dl-agent-activity'
 import {
   DL_AGENT_DEFINITION_ID,
-  DL_AGENT_MAX_STEPS,
-  DL_TASK_MAX_STEPS,
   DL_HISTORY_LIMIT,
   DL_HISTORY_CONTENT_MAX,
   dlScopeKey,
@@ -184,6 +194,13 @@ export class DlAgentHarnessService {
     const snapshot = await computeDlSpaceSnapshot(m, spaceId, conceptId)
     let snapshotText = snapshot.text
     let bindings: AgentToolBinding[] = []
+    // 平台预算（settings 表 agent:budget；2026-09-13 用户需求：步数/频控/落库额度/上下文窗口
+    // 这类参数不再写死）。每轮读一次——一次小键值查询，换来"设置页改完下一轮即生效"。
+    const { budget, notes: budgetNotes } = await loadAgentBudget(m.settings)
+    if (budgetNotes.length) logger.debug(`[dl-agent] 预算解析说明：${budgetNotes.join('；')}`)
+    // 规划落库轮标记：绑定额度、注入阶段指令、以及 runtimeContext（动作层门禁）三处共用，
+    // 故在分支外声明（只有带工具的模式才会被赋值 true）
+    let planningRound = false
     if (mode === 'research' || mode === 'verify' || mode === 'task') {
       const registered = new Set(harness.registry.listSpecs().map((s) => s.name))
       let webSearchAvailable = false
@@ -193,19 +210,45 @@ export class DlAgentHarnessService {
         logger.debug(`[dl-agent] 默认搜索源探测失败，按无源处理：${e instanceof Error ? e.message : String(e)}`)
         webSearchAvailable = false
       }
-      bindings = buildDlBindings({ mode, availableToolNames: registered, webSearchAvailable })
+      // 规划落库轮（起步研究 / 补全知识地图 / 固定流程的第 2、3 步）
+      planningRound = isPlanningSaveRound({
+        mode,
+        isEmptySpace: snapshot.isEmptySpace,
+        // 补图流程的第 2/3 轮文案不含"补全"动词，靠 isPlanPhaseMessage 兜住（否则会掉出规划轮）
+        wantsMapCompletion:
+          mode === 'task' && (shouldInjectMapCompletionSkill(message) || isPlanPhaseMessage(message)),
+      })
+      // 额度：有已确认方案时按方案条目数放宽（用户要求），否则用规划额度兜底
+      // （无确认方案时 dl_save_concept 会被门禁拒绝，额度只是兜底不报错）
+      const confirmedSyllabus = planningRound ? await getConfirmedSyllabus(m, spaceId) : null
+      const saveBudget = confirmedSyllabus
+        ? planSaveBudget(confirmedSyllabus, budget.domainLearning.saveBudget, budget.domainLearning.maxSaveBudget)
+        : planningRound
+          ? budget.domainLearning.saveBudget
+          : null
+      bindings = buildDlBindings({
+        mode,
+        availableToolNames: registered,
+        webSearchAvailable,
+        // 频控与落库额度全部来自平台预算（默认值=改造前写死的那些；设置页可覆盖）
+        toolMaxCalls: budget.maxCalls.byTool,
+        readMaxCalls: budget.maxCalls.read,
+        budgetMax: budget.domainLearning.maxSaveBudget,
+        // 默认 12 次概念额度装不下"分支+知识点"（2026-09-13 复盘：金融理财轮 4 分支 + 6 知识点
+        // 后用满，「保险与风险转移」「资产配置与分散化」「指数基金与定投」三个被静默拒建）
+        ...(saveBudget ? { saveBudget } : {}),
+      })
       snapshotText += `\n${researchSourceHint(webSearchAvailable)}`
-      // 空空间起步研究：注入「先骨架后讲义」任务引导 + bootstrap 技能正文
-      // （2026-09-09 复盘：bootstrap 为过程型技能，invoke_skill 内层无工具会假完成——
-      //  这里直接把技能正文注入本会话，由带工具的外层模型真执行 S1~S5；wasEmpty 供收尾产物断言）
+      // 空空间起步研究：注入「第 1 步：对齐诉求」任务引导
+      // （2026-09-13 固定流程：起步研究拆成三轮——诉求理解 → 知识体系 → 按方案落库；
+      //  bootstrap 技能正文改在**落库轮**注入，避免这一轮被推着直接建点）
       if (mode === 'research' && snapshot.isEmptySpace) {
         wasEmpty = true
-        const bootBody = dlBootstrapSkillBody()
-        let mission = dlEmptySpaceMission({ spaceName: snapshot.spaceName ?? spaceId })
-        if (bootBody) {
-          mission += `\n\n【learning-space-bootstrap 技能正文（宿主注入，直接按其执行）】\n${bootBody}`
-        }
-        snapshotText += `\n${mission}`
+        snapshotText += `\n${dlEmptySpaceMission({
+          spaceName: snapshot.spaceName ?? spaceId,
+          // 用户诉求（dl_project.description 原话）必须传给模型：只给空间名会让它凭名字猜主题
+          description: snapshot.spaceDescription ?? null,
+        })}`
       }
       if (mode === 'research' && opts.focusQuestionId) {
         const focus = (await m.dlQuestions?.getById(opts.focusQuestionId)) ?? null
@@ -224,6 +267,47 @@ export class DlAgentHarnessService {
         const body = dlSkillBody(DL_MAP_COMPLETION_SKILL_ID)
         if (body) {
           snapshotText += `\n\n【learning-map-completion 技能正文（宿主注入，直接按其四阶段执行）】\n${body}`
+        }
+      }
+
+      // ==================== 固定流程三阶段（2026-09-13 用户需求） ====================
+      // 阶段判定（优先级从高到低）：
+      //   ① 消息带「已确认知识体系」标记 → 第 3 步：按方案落库（此轮门禁放行）
+      //   ② 消息带「已确认诉求理解」标记 → 第 2 步：规划知识体系
+      //   ③ 规划轮（起步研究 / 补全地图首轮）→ 第 1 步：对齐诉求
+      // 阶段指令放在最后注入（最新鲜），门禁在动作层复核，两者互为兜底。
+      if (planningRound) {
+        if (message.includes(PLAN_SYLLABUS_CONFIRMED_MARKER)) {
+          const syllabus = confirmedSyllabus
+          snapshotText +=
+            '\n' +
+            (syllabus
+              ? planSavePhaseInstruction({
+                  spaceName: snapshot.spaceName ?? spaceId,
+                  syllabusLines: formatSyllabusLines(syllabus),
+                  conceptCount: planConceptNames(syllabus).length,
+                })
+              : '【固定流程·第 3 步】已确认知识体系，但系统读不到方案内容——请让用户在弹窗里重新确认一次，或先重发方案。')
+          // 落库轮才需要 bootstrap 技能正文（S4 讲义产出规范在这里用得上）
+          const bootBody = mode === 'research' ? dlBootstrapSkillBody() : null
+          if (bootBody) {
+            snapshotText += `\n\n【learning-space-bootstrap 技能正文（宿主注入，落库轮按 S4 出讲义）】\n${bootBody}`
+          }
+        } else if (message.includes(PLAN_UNDERSTANDING_CONFIRMED_MARKER)) {
+          const understanding = (await m.dlPlans?.getConfirmed(spaceId, 'understanding')) ?? null
+          const parsed = understanding?.payload as
+            | import('@shared/types/domain-learning.types').DlPlanUnderstanding
+            | undefined
+          snapshotText +=
+            '\n' +
+            (parsed?.goalSummary
+              ? planSyllabusPhaseInstruction({
+                  spaceName: snapshot.spaceName ?? spaceId,
+                  understandingSummary: formatUnderstandingSummary(parsed),
+                })
+              : '【固定流程·第 2 步】诉求理解已确认，但系统读不到内容——请让用户在弹窗里重新确认一次。')
+        } else {
+          snapshotText += `\n${planUnderstandingPhaseInstruction(snapshot.spaceName ?? spaceId)}`
         }
       }
     } else {
@@ -258,6 +342,22 @@ export class DlAgentHarnessService {
       emitDlAgentEvent(spaceId, conceptForEvent, { type: 'stage', mode, stage })
     }
 
+    // 活动行（2026-09-13 用户需求：长任务要滚动显示"系统正在做什么"）：
+    // 统一发**空间级通道**（不带 conceptId），空间页一条订阅即可显示任意概念轮的活动；
+    // 事件里带 conceptId 供前端区分。失败行（kind='warn'）必须发——被额度拒绝的知识点
+    // 以前是无声消失的（见 progress/2026-09-13-domain-learning-m1-fix-first-batch-root-causes.md）。
+    // 翻译逻辑在 DlActivityTracker（纯类，已单测）：step 维护步号、tool-start 出 info 行、
+    // tool-end 失败出 warn 行并复用主语。
+    const activityTracker = new DlActivityTracker()
+    const emitActivity = (line: string, kind: 'info' | 'warn' = 'info', tool?: string) => {
+      if (suppressUserEvents) return
+      emitDlAgentEvent(spaceId, null, {
+        type: 'progress',
+        mode,
+        activity: { line, kind, conceptId: conceptId ?? null, tool },
+      })
+    }
+
     emitStage('deciding')
     newSummaryEvent()
     tapActionDone()
@@ -283,8 +383,10 @@ export class DlAgentHarnessService {
         systemPrompt: () => systemPromptOf(mode),
         snapshot: () => snapshotText,
         seededHistory: () => seeded,
-        maxSteps: mode === 'task' ? DL_TASK_MAX_STEPS : DL_AGENT_MAX_STEPS,
-        contextWindowTokens: Number(process.env.AGENT_CONTEXT_WINDOW ?? 24_000) || 24_000,
+        maxSteps: mode === 'task' ? budget.maxSteps.task : budget.maxSteps.research,
+        // 上下文窗口：env 是开发期应急开关（优先级最高），否则用平台预算配置
+        contextWindowTokens:
+          Number(process.env.AGENT_CONTEXT_WINDOW) || budget.domainLearning.contextWindowTokens,
         memory: {
           scope: () => ({ bizModule: 'domain-learning', projectId: spaceId }),
           recallText: () => `${message}\n${snapshot.text}`,
@@ -295,6 +397,9 @@ export class DlAgentHarnessService {
             if (!suppressUserEvents) emitDlStream(summaryEventId, event.text)
           }
           if (event.kind === 'tool-start') emitStage('acting')
+          // 活动行翻译（2026-09-13）：把每一步工具调用翻成一行"正在做什么"推给空间页
+          const activity = activityTracker.onStream(event)
+          if (activity) emitActivity(activity.line, activity.kind, activity.tool)
         },
         runtimeContext: () => ({
           spaceId,
@@ -304,6 +409,8 @@ export class DlAgentHarnessService {
           memoryScope: { bizModule: 'domain-learning', projectId: spaceId },
           ...(conceptId ? { conceptId } : {}),
           ...(opts.focusQuestionId ? { questionId: opts.focusQuestionId } : {}),
+          // 规划落库轮标记：动作层据此校验"知识体系是否已用户确认"（2026-09-13）
+          ...(planningRound ? { planningRound: true } : {}),
           providerConfigId: opts.providerConfigId,
           modelId: opts.modelId,
         }),

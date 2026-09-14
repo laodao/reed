@@ -2,11 +2,13 @@
  * 空主题启动引导测试（dl-agent-deps 起步研究辅助，空空间补全）
  * @module tests/unit/core/packs/domain-learning/dl-agent-empty-start.spec
  *
- * 钉死口径：新主题只有「领域根」目录、零概念——「研究」入口此前要求先选中概念，
- * 造成空空间无从生成知识。本次为 research 会话补「空领域起步任务」：
+ * 钉死口径：
  * - hasConceptLeaves：判定空间是否已有知识概念叶（group 目录不算）；
- * - dlEmptySpaceMission：空空间时注入的起步研究指令（先建概念骨架 + 关系 +
- *   为基础概念产讲义，证据纪律不变、不得编造）。
+ * - dlEmptySpaceMission：空空间时注入的**固定流程第 1 步：对齐诉求**指令——提交诉求理解草案、
+ *   本轮不落库（门禁会拒绝）、等用户确认后由宿主驱动第 2/3 步。
+ *
+ * 2026-09-13 复盘变更：起步研究从"一轮建完骨架+讲义"改成三轮固定流程
+ * （诉求理解 → 知识体系 → 按方案落库），故原先钉"3-8 个知识点一次落库"的断言改为钉新口径。
  */
 
 import { describe, it, expect } from 'vitest'
@@ -38,7 +40,7 @@ describe('空主题启动引导', () => {
     })
   })
 
-  describe('dlEmptySpaceMission', () => {
+  describe('dlEmptySpaceMission（固定流程第 1 步：对齐诉求）', () => {
     const mission = dlEmptySpaceMission({ spaceName: '量子计算入门' })
 
     it('含空间名与起步任务定位', () => {
@@ -47,61 +49,49 @@ describe('空主题启动引导', () => {
       expect(mission).toContain('起步研究')
     })
 
-    it('引导先建首批核心概念骨架并落库 dl_save_concept', () => {
-      expect(mission).toContain('dl_save_concept')
-      expect(mission).toContain('3-8')
+    it('本轮只提交诉求理解草案（dl_propose_understanding），不落库知识点', () => {
+      expect(mission).toContain('dl_propose_understanding')
+      expect(mission).toContain('第 1 步')
+      expect(mission).toContain('不要调用 dl_save_concept')
+      expect(mission).toContain('门禁')
+      expect(mission).toContain('停下')
     })
 
-    it('引导建学习关系（dl_save_relation）与“首个基础概念出讲义（dl_save_card）”', () => {
-      expect(mission).toContain('dl_save_relation')
-      expect(mission).toContain('dl_save_card')
-      expect(mission).toContain('讲义')
+    it('说明后续两步由用户确认后驱动（dl_propose_syllabus → 落库）', () => {
+      expect(mission).toContain('dl_propose_syllabus')
+      expect(mission).toContain('第 2 步')
+      expect(mission).toContain('第 3 步')
+      expect(mission).toContain('用户确认')
     })
 
-    it('循序渐进（2026-09-12 复盘）：要求逐条建前置、补基础层、不跳级', () => {
-      expect(mission).toContain('prerequisite')
-      expect(mission).toContain('不跳级')
-      expect(mission).toContain('逐条')
-      expect(mission).toContain('前置声明')
-    })
-
-    it('先定主题前置要求（dl_save_space_prereqs）再排知识点顺序', () => {
-      expect(mission).toContain('dl_save_space_prereqs')
-      expect(mission).toContain('主题前置要求')
-      expect(mission).toContain('每个概念都要填 prerequisites')
-      expect(mission).toContain('相邻层级跨度不超过一步')
-    })
-
-    it('不必一次全部出卡：其余概念保持“待研究”即可', () => {
-      expect(mission).toContain('待研究')
-      expect(mission).toContain('不必一次')
-    })
-
-    it('证据纪律不变：讲义论断须来自实际读到的资料，不得编造', () => {
-      expect(mission).toMatch(/证据/)
-      expect(mission).toContain('编造')
+    it('采集纪律：先做少量资料探查、记录出处、够用即停', () => {
+      expect(mission).toContain('资料探查')
+      expect(mission).toContain('wf_kb_retrieve')
+      expect(mission).toContain('出处')
+      expect(mission).toContain('3-6 次')
     })
   })
 
-  describe('dlEmptySpaceMission 指向平台技能（M7 固化为 learning-space-bootstrap；复盘后改宿主注入语义）', () => {
+  describe('dlEmptySpaceMission 与 bootstrap 技能正文的关系（2026-09-13）', () => {
     const mission = dlEmptySpaceMission({ spaceName: '量子计算入门' })
 
-    it('说明技能正文已由宿主注入、直接按 S1~S5 执行，不再引导 discover/invoke（防假完成）', () => {
-      expect(mission).toContain('learning-space-bootstrap')
-      expect(mission).toContain('S1~S5')
-      expect(mission).toContain('回报进度')
-      expect(mission).toContain('宿主已把 learning-space-bootstrap 技能正文注入本会话快照')
+    it('起步轮不再直接注入五阶段正文（改在落库轮注入，避免这一轮被推着直接建点）', () => {
+      expect(mission).not.toContain('宿主已把 learning-space-bootstrap 技能正文注入本会话快照')
       expect(mission).not.toContain('invoke_skill')
     })
 
-    it('保留兜底摘要：技能正文缺失时按同口径直接执行', () => {
-      expect(mission).toContain('按此摘要执行')
-      expect(mission).toContain('dl_save_concept')
-      expect(mission).toContain('dl_save_card')
+    it('带用户诉求时：诉求原文 + 覆盖纪律都在（防按空间名猜主题）', () => {
+      const withNeed = dlEmptySpaceMission({
+        spaceName: '金融理财',
+        description: '想听懂股票、债券、期货、美元，能读财报与行情',
+      })
+      expect(withNeed).toContain('【用户诉求（用户原话，最高优先级）】')
+      expect(withNeed).toContain('股票、债券、期货、美元')
+      expect(withNeed).toContain('不得凭空间名猜主题')
     })
   })
 
-  describe('dlBootstrapSkillBody（复盘：宿主把 bootstrap 技能正文注入空空间研究会话）', () => {
+  describe('dlBootstrapSkillBody（落库轮注入：S1~S5 与产品契约）', () => {
     it('能取到 learning-space-bootstrap 技能正文（去 frontmatter）', () => {
       const body = dlBootstrapSkillBody()
       expect(body).not.toBeNull()

@@ -56,7 +56,10 @@ vi.mock('@core/platform/assets/asset-registry', () => ({
 
 vi.mock('@core/interfaces/event.interface', () => ({ getEventEmitter: () => ({ emit: vi.fn() }) }))
 vi.mock('@core/database/database-manager.interface', () => ({
-  getCoreDatabaseManager: () => ({ newsSources: { listByIds: async () => [] } }),
+  // 信息来源库不可用（列表为空）→ crawl-news 回落到内置新闻源目录（NEWS_TOPICS）
+  getCoreDatabaseManager: () => ({
+    infoSources: { listByIds: async () => [], listByTopic: async () => [] },
+  }),
 }))
 vi.mock('fs', async importOriginal => {
   const actual = await importOriginal<typeof import('fs')>()

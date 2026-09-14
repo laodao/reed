@@ -17,6 +17,29 @@
       </el-button>
     </div>
 
+    <!-- Agent 活动行（2026-09-13：起步研究/研究此概念这类长任务，滚动显示系统正在做什么）。
+         空主题的起步态改在起步卡片内、按钮下方显示（用户需求：反馈要贴着触发点），
+         这里让位避免同一轮出现两份活动行。
+         2026-09-14 追加：选中的概念没有讲义时（中栏是「生成中/研究此概念」空态），
+         活动行改在空态里、「研究此概念」按钮下方居中显示，这里同样让位。 -->
+    <AgentActivityStrip v-if="spaceId && !isEmptySpace && !currentConceptNoCard" :space-id="spaceId" />
+
+    <!-- 知识体系方案（固定流程入口：待确认时有高亮提示，确认后才生成知识点） -->
+    <div v-if="planHint" class="plan-bar" :class="{ pending: planHint.pending }">
+      <span class="plan-bar-text">{{ planHint.text }}</span>
+      <el-button link type="primary" size="small" @click="openPlan">查看方案</el-button>
+    </div>
+
+    <!-- 知识体系方案确认弹窗（2026-09-13 用户需求：对齐诉求 → 确认体系 → 才生成） -->
+    <PlanConfirmDialog
+      v-if="spaceId"
+      v-model="planVisible"
+      :space-id="spaceId"
+      :mode="planDriveMode"
+      :concept-id="null"
+      @done="onPlanDriven"
+    />
+
     <!-- 主题学习前置要求（2026-09-12：整个领域的学习门槛；有则显示） -->
     <div v-if="spacePrereqs.length" class="space-prereq">
       <span class="space-prereq-label">学习前置</span>
@@ -32,7 +55,6 @@
           <span class="chip-flag">{{ p.inSpace ? '空间内会教' : '需自备' }}</span>
         </span>
       </el-tooltip>
-      <span class="space-prereq-note">学这个主题之前需要具备；缺的先补再开始</span>
     </div>
 
     <!-- 手工追加知识点（2026-09-12：用户补全知识体系；前置直连为已确认边） -->
@@ -338,6 +360,9 @@
                 研究此概念
               </el-button>
             </el-empty>
+            <!-- 研究此概念 的 agent 执行过程（滚动小字）：贴着触发按钮下方居中显示，表示 agent 正在工作；
+                 不再跑到页面顶部（顶部那只在普通讲义态显示） -->
+            <AgentActivityStrip v-if="spaceId" :space-id="spaceId" class="research-activity" />
           </div>
         </template>
         <template v-else>
@@ -353,6 +378,8 @@
               <el-button type="primary" size="large" :icon="Promotion" :loading="researching" @click="bootResearch">
                 {{ researching ? '正在研究领域…' : '生成首批知识' }}
               </el-button>
+              <!-- 起步研究的 agent 执行过程（滚动小字）：贴着触发按钮显示，不再跑到页面顶部 -->
+              <AgentActivityStrip v-if="spaceId" :space-id="spaceId" class="boot-activity" />
               <div v-if="bootMessage" class="boot-message" :class="{ warn: bootWarn }">{{ bootMessage }}</div>
             </div>
           </div>
@@ -574,7 +601,7 @@
       </el-dialog>
 
       <!-- 空间设置（M6：设置入口移到主题主界面；共享面板组件，打开时按空间加载） -->
-      <el-dialog v-model="settingsVisible" title="空间设置" width="520px" append-to-body :close-on-click-modal="false">
+      <el-dialog v-model="settingsVisible" title="空间设置" width="900px" append-to-body :close-on-click-modal="false">
         <SpaceSettingsPanel v-if="settingsVisible" :space-id="spaceId" @applied="settingsVisible = false" />
       </el-dialog>
     </div>
@@ -633,6 +660,8 @@ import {
 import SectionLesson from './SectionLesson.vue'
 import LessonSlides from './LessonSlides.vue'
 import SpaceSettingsPanel from './SpaceSettingsPanel.vue'
+import AgentActivityStrip from './AgentActivityStrip.vue'
+import PlanConfirmDialog from './PlanConfirmDialog.vue'
 import type {
   DlCardSection,
   DlChatTurn,
@@ -747,6 +776,8 @@ const lastResearchScope = ref<{ conceptId: string | null }>({ conceptId: null })
 
 onMounted(() => {
   void loadSpace()
+  // 载入方案状态：从知识全景页起步研究回来时，也要能自动弹确认框（2026-09-13 固定流程）
+  void openPlanIfPending()
 })
 
 onUnmounted(() => {
@@ -931,6 +962,13 @@ const currentConcept = computed<DlConceptView | null>(
   () => concepts.value.find(x => x.id === currentConceptId.value) ?? null
 )
 
+/**
+ * 当前选中的概念没有讲义 → 中栏是「生成中/研究此概念」空态。
+ * 该空态下 agent 活动行要贴在按钮下方显示，顶部那条须让位（否则活动行跑到页面顶部，
+ * 2026-09-14 用户需求）。
+ */
+const currentConceptNoCard = computed(() => !isEmptySpace.value && !!currentConcept.value && !currentConcept.value.card)
+
 /** 前置依赖边类型（后端关系枚举：prerequisite） */
 const PREREQ_TYPE = 'prerequisite'
 
@@ -1091,11 +1129,52 @@ async function completeMapWithAi(): Promise<void> {
   })
   completingMap.value = true
   rightPane.value = 'qa'
+  planDriveMode.value = 'task'
   try {
     await runAsk(mission, 'task')
+    // 固定流程第 1 步：模型应已提交诉求理解草案 → 拉方案并弹窗确认
+    await openPlanIfPending()
   } finally {
     completingMap.value = false
   }
+}
+
+// ==================== 知识体系方案（固定流程；2026-09-13） ====================
+
+/** 方案弹窗可见性 与 驱动下一轮的会话模式（research=起步研究 / task=补全地图） */
+const planVisible = ref(false)
+const planDriveMode = ref<'research' | 'task'>('research')
+
+/** 方案提示条（有草稿待确认时高亮） */
+const planHint = computed(() => {
+  const p = store.plan
+  if (!p) return null
+  if (p.syllabusConfirmed) return null // 已确认后不再显示提示条（2026-09-14 用户要求去掉那行常驻文案）
+  if (p.syllabus) return { pending: true, text: '知识体系方案待你确认：勾选要生成的知识点后才会开始生成' }
+  if (p.understandingConfirmed) return { pending: true, text: '诉求已确认——模型正在规划知识体系，稍后确认方案即可生成' }
+  if (p.understanding) return { pending: true, text: '模型提交了「我对你诉求的理解」，请确认或纠正后再生成知识点' }
+  return null
+})
+
+function openPlan(): void {
+  planVisible.value = true
+}
+
+/** 拉方案；若有待确认内容则自动弹窗（固定流程的"弹出对话框"体验）
+ *  @returns 是否弹了窗（调用方据此决定要不要再提示别的） */
+async function openPlanIfPending(): Promise<boolean> {
+  const p = await store.fetchPlan(spaceId.value)
+  if (!p) return false
+  if ((p.understanding && !p.understandingConfirmed) || (p.syllabus && !p.syllabusConfirmed)) {
+    planVisible.value = true
+    return true
+  }
+  return false
+}
+
+/** 弹窗驱动过一轮（确认/调整）后的收尾：刷新空间视图 */
+async function onPlanDriven(): Promise<void> {
+  await refreshView()
 }
 
 // ---------- 空间整体进度（后端 stats 为准） ----------
@@ -1330,6 +1409,7 @@ async function bootResearch(): Promise<void> {
   lastResearchScope.value = { conceptId: null }
   bootMessage.value = ''
   bootWarn.value = false
+  planDriveMode.value = 'research'
   // 空间级事件通道 dl:agent:<spaceId>（conceptId 为空）
   const unsub = store.subscribeAgentEvent(spaceId.value, null, (ev) => {
     // 只收本 space 级 research 轮事件（防与其他模式/概念并发混流）
@@ -1344,21 +1424,26 @@ async function bootResearch(): Promise<void> {
       mode: 'research',
       spaceId: spaceId.value,
       conceptId: null,
-      message: `这是新主题「${spaceName.value}」的首次研究——请为整个领域建立首批核心知识点并生成第一份讲义。`,
+      // 固定流程第 1 步：先对齐诉求（宿主会注入阶段指令；这一轮不会直接建点）
+      message: `这是新主题「${spaceName.value}」的首次研究——请先复述你对我的诉求的理解，提交诉求理解草案让我确认。`,
     })
     await refreshView()
-    const first = concepts.value.find((c) => c.nodeType !== 'group')
-    if (first) {
-      // 自动定位首批第一个概念，让用户直接看到讲义或研究入口
-      expandPathTo(first.id)
-      selectConcept(first)
-    } else if (!bootMessage.value) {
-      // 未产出：展示会话总结中的原因（资料不足时助手不编造），避免“干等无反馈”
-      const reason = (result?.content ?? '').trim()
-      bootWarn.value = true
-      bootMessage.value = reason
-        ? `本轮未生成知识点：${reason.slice(0, 260)}`
-        : '本轮未生成知识点。可先绑定含资料的知识库（知识全景 → 空间设置 → 关联知识库），或在可联网环境重试。'
+    // 模型应已提交「诉求理解」草案 → 拉方案并弹窗让用户确认（固定流程的起点）
+    const pending = await openPlanIfPending()
+    if (!pending) {
+      const first = concepts.value.find((c) => c.nodeType !== 'group')
+      if (first) {
+        // 已有知识点（例如空间非空）→ 自动定位，让用户直接看到讲义或研究入口
+        expandPathTo(first.id)
+        selectConcept(first)
+      } else if (!bootMessage.value) {
+        // 未产出：展示会话总结中的原因（资料不足时助手不编造），避免“干等无反馈”
+        const reason = (result?.content ?? '').trim()
+        bootWarn.value = true
+        bootMessage.value = reason
+          ? `本轮未提交诉求理解：${reason.slice(0, 260)}`
+          : '本轮未提交诉求理解。可先绑定含资料的知识库（知识全景 → 空间设置 → 关联知识库），或在可联网环境重试。'
+      }
     }
   } finally {
     unsub()
@@ -1937,6 +2022,28 @@ watch(rightPane, (pane) => {
   }
 }
 
+// 知识体系方案提示条（2026-09-13 固定流程：待确认时高亮，点开弹窗）
+.plan-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-lighter);
+  font-size: 12.5px;
+  color: var(--el-text-color-secondary);
+
+  &.pending {
+    background: var(--el-color-warning-light-9);
+    color: var(--el-color-warning);
+    font-weight: 600;
+  }
+
+  .plan-bar-text {
+    flex: 1 1 auto;
+  }
+}
+
 // 主题学习前置要求条（2026-09-12：整个领域的学习门槛，进空间即见）
 .space-prereq {
   display: flex;
@@ -2404,8 +2511,17 @@ watch(rightPane, (pane) => {
 
   &.empty-body {
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+  }
+
+  // 「研究此概念」下面的 agent 活动行（2026-09-14：空态下贴着按钮下方居中显示，表示 agent 正在工作）
+  .research-activity {
+    width: 100%;
+    max-width: 440px;
+    margin-top: 14px;
+    text-align: left;
   }
 
   // 块化知识点：卡片流间距由 SectionLesson 自管，压缩外层 padding 以留白更匀
@@ -2799,6 +2915,11 @@ watch(rightPane, (pane) => {
   .boot-tip {
     font-size: 12px;
     color: var(--el-text-color-placeholder);
+  }
+  /* 起步研究的活动行：贴在按钮下方、左对齐（卡片本体是居中的） */
+  .boot-activity {
+    margin: 12px 0 0;
+    text-align: left;
   }
   .boot-message {
     margin-top: 12px;

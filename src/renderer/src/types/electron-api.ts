@@ -120,22 +120,29 @@ export interface AppApi {
      *  view：'preview'=预览态（看图片下图片，report 长图下载渲染 PNG）；'source'/缺省=按存储形态 */
     download(id: string, view?: 'preview' | 'source'): Promise<IpcResp<{ filePath?: string; canceled?: boolean }>>
   }
-  /** 新闻来源库（内置应用 C1 早报 / C2 周报的数据源管理） */
-  newsSource: {
-    list(p: { topicId?: string; keyword?: string }): Promise<IpcResp<Array<{ id: string; topicId: string; name: string; url: string; isBuiltin: boolean; enabled: boolean; sortOrder: number }>>>
-    get(id: string): Promise<IpcResp<{ id: string; topicId: string; name: string; url: string; isBuiltin: boolean; enabled: boolean } | null>>
-    create(p: { topicId: string; name: string; url: string }): Promise<IpcResp<{ id: string; topicId: string; name: string; url: string } | null>>
-    update(p: { id: string; topicId?: string; name?: string; url?: string; enabled?: boolean }): Promise<IpcResp<{ id: string; topicId: string; name: string; url: string } | null>>
-    delete(id: string): Promise<IpcResp<{ deleted: boolean }>>
-  }
-  /** 新闻主题（入库可增删：来源分组） */
-  newsTopic: {
-    list(): Promise<IpcResp<Array<{ id: string; name: string; isBuiltin: boolean }>>>
+  /** 信息来源类别（设置 → 信息来源：一个类别 = 一个 tab；内置「新闻来源」禁删禁改） */
+  infoSourceCategory: {
+    list(): Promise<IpcResp<Array<{ id: string; name: string; isBuiltin: boolean; sortOrder: number }>>>
     create(p: { name: string }): Promise<IpcResp<{ id: string; name: string; isBuiltin: boolean } | null>>
-    update(p: { id: string; name?: string }): Promise<IpcResp<{ id: string; name: string; isBuiltin: boolean } | null>>
+    update(p: { id: string; name?: string }): Promise<IpcResp<{ id: string; name: string } | null>>
     delete(id: string): Promise<IpcResp<{ deleted: boolean }>>
   }
-  /** 网站 favicon（新闻来源图标：按站点 URL 抓取并缓存） */
+  /** 信息来源分组（类别内一级分组；「未分组」为系统默认分组） */
+  infoSourceTopic: {
+    list(p?: { categoryId?: string }): Promise<IpcResp<Array<{ id: string; categoryId: string; name: string; isBuiltin: boolean; isDefault: boolean }>>>
+    create(p: { categoryId: string; name: string }): Promise<IpcResp<{ id: string; categoryId: string; name: string } | null>>
+    update(p: { id: string; name?: string; categoryId?: string }): Promise<IpcResp<{ id: string; name: string } | null>>
+    delete(id: string): Promise<IpcResp<{ deleted: boolean }>>
+  }
+  /** 信息来源库（名称 + URL：工作流采集节点与各业务模块引用） */
+  infoSource: {
+    list(p?: { categoryId?: string; topicId?: string; keyword?: string; onlyEnabled?: boolean }): Promise<IpcResp<Array<{ id: string; topicId: string; categoryId: string; name: string; url: string; isBuiltin: boolean; enabled: boolean; sortOrder: number }>>>
+    get(id: string): Promise<IpcResp<{ id: string; topicId: string; categoryId: string; name: string; url: string; isBuiltin: boolean; enabled: boolean } | null>>
+    create(p: { topicId?: string; categoryId?: string; name: string; url: string }): Promise<IpcResp<{ id: string; topicId: string; name: string; url: string } | null>>
+    update(p: { id: string; topicId?: string; categoryId?: string; name?: string; url?: string; enabled?: boolean }): Promise<IpcResp<{ id: string; topicId: string; name: string; url: string } | null>>
+    delete(id: string): Promise<IpcResp<{ deleted: boolean }>>
+  }
+  /** 网站 favicon（信息来源图标：按站点 URL 抓取并缓存） */
   favicon: {
     get(url: string): Promise<IpcResp<{ domain: string; dataUrl?: string }>>
   }

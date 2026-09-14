@@ -19,6 +19,11 @@ import { createLogger } from '@core/utils/logger'
 import { getCurrentUserId } from '@core/context/user-context'
 import { stableStringify } from '@core/platform/agent-runtime/runtime/approval'
 import type { AgentMemoryEntryRepository, AgentMemoryEntryRow, MemoryEntryKind } from '@core/database/repositories/agent-memory-entry.repository'
+import {
+  agentContextParams,
+  memoryConfidenceGate,
+  memoryDedupOverlapThreshold,
+} from '@shared/utils/agent-context-params'
 
 const logger = createLogger('AgentMemoryFlywheel')
 
@@ -146,16 +151,21 @@ export class MemoryFlywheelService {
     if (!this.deps.distill) return 0
     let candidates: MemoryCandidate[]
     try {
-      candidates = await this.deps.distill({ goal: input.goal, output: input.outputText.slice(0, 16_000), signal: input.signal })
+      candidates = await this.deps.distill({
+        goal: input.goal,
+        output: input.outputText.slice(0, agentContextParams().memory.maxDistillInputChars),
+        signal: input.signal,
+      })
     } catch (e) {
       logger.warn(`[memory] 蒸馏失败（跳过）：${e instanceof Error ? e.message : String(e)}`)
       return 0
     }
     // 闸门①②：置信度 + 查重（与既有 active 及待审条目重叠）
     const survivors: MemoryCandidate[] = []
-    for (const c of candidates.slice(0, DISTILL_MAX_ITEMS)) {
+    for (const c of candidates.slice(0, agentContextParams().memory.distillMaxItems)) {
       if (!c.title?.trim() || !c.content?.trim()) continue
-      if (!(Number(c.confidence) >= CONFIDENCE_GATE)) {
+      // 置信度（NaN 同拒——review T18）
+      if (!(Number(c.confidence) >= memoryConfidenceGate())) {
         logger.info(`[memory] 候选置信度不足（${c.confidence}），丢弃：${c.title}`)
         continue
       }
@@ -214,7 +224,7 @@ export class MemoryFlywheelService {
   }
 
   /** 用户层装配（chat 宿主：对话未绑定业务，只取 L1 用户级经验） */
-  async assembleUserLevel(taskText: string, topK = ASSEMBLE_TOP_K): Promise<AgentMemoryEntryRow[]> {
+  async assembleUserLevel(taskText: string, topK?: number): Promise<AgentMemoryEntryRow[]> {
     return this.assemble(taskText, topK, { bizModule: '' })
   }
 
@@ -225,7 +235,7 @@ export class MemoryFlywheelService {
     const tokens = tokenize(content)
     for (const entry of existing) {
       const text = String((entry.content as { content?: string }).content ?? '')
-      if (overlapRatio(tokens, tokenize(text)) >= DEDUP_OVERLAP_THRESHOLD) return true
+      if (overlapRatio(tokens, tokenize(text)) >= memoryDedupOverlapThreshold()) return true
     }
     return false
   }
@@ -234,9 +244,15 @@ export class MemoryFlywheelService {
    * 读取装配：按任务文本关键词匹配 active 条目 top-k（命中词数排序）。
    * 命中条目 use_count 在任务 succeeded 时回写（防装配即计数虚增）。
    */
-  async assemble(taskText: string, topK = ASSEMBLE_TOP_K, scope?: { bizModule?: string; projectId?: string } | null): Promise<AgentMemoryEntryRow[]> {
+  async assemble(
+    taskText: string,
+    topK?: number,
+    scope?: { bizModule?: string; projectId?: string } | null,
+  ): Promise<AgentMemoryEntryRow[]> {
+    // 召回条数：调用方显式传入优先，否则用「参数设置 → 上下文与记忆」的生效值
+    const k = topK ?? agentContextParams().memory.assembleTopK
     // KE-2 分层装配（34 号 v2）：候选按 scope 三层过滤，得分 = 命中数 × 层级权重，
-    // 分层配额（每层 topK 总 3×topK）——同题冲突时项目级事实优先
+    // 分层配额（每层 k 条，总量 3×k）——同题冲突时项目级事实优先
     // KE-3 混合检索：向量召回分（0.6 权重）与关键词命中并集融合；向量不可用纯关键词
     const partitions = scope
       ? [
@@ -252,7 +268,7 @@ export class MemoryFlywheelService {
         const embedded = await vp.embedTexts([taskText])
         if (embedded && embedded.vectors.length > 0 && embedded.vectors[0].length > 0) {
           for (const kbId of partitions) {
-            for (const hit of await vp.search(kbId, embedded.vectors[0], topK * 2)) {
+            for (const hit of await vp.search(kbId, embedded.vectors[0], k * 2)) {
               const entryId = hit.id.replace(/^memvec_/, '')
               vectorScores.set(entryId, Math.max(vectorScores.get(entryId) ?? 0, hit.score))
             }
@@ -285,16 +301,16 @@ export class MemoryFlywheelService {
         return true
       })
       .sort((a, b) => (b.hits + 0.6 * (vectorScores.get(b.entry.id) ?? 0)) * b.weight - (a.hits + 0.6 * (vectorScores.get(a.entry.id) ?? 0)) * a.weight)
-    if (!scope) return scored.slice(0, topK).map((s) => s.entry)
-    // 分层配额：L1/L2/L3 各 topK，总量 3×topK
-    const quota = { l1: topK, l2: topK, l3: topK }
+    if (!scope) return scored.slice(0, k).map((s) => s.entry)
+    // 分层配额：L1/L2/L3 各 k 条，总量 3×k
+    const quota = { l1: k, l2: k, l3: k }
     const picked: AgentMemoryEntryRow[] = []
     for (const s of scored) {
       const slot = s.entry.projectId ? 'l3' : s.entry.bizModule ? 'l2' : 'l1'
       if (quota[slot as keyof typeof quota] <= 0) continue
       quota[slot as keyof typeof quota]--
       picked.push(s.entry)
-      if (picked.length >= topK * 3) break
+      if (picked.length >= k * 3) break
     }
     return picked
   }
@@ -414,7 +430,7 @@ export class MemoryFlywheelService {
 
   /** 代谢：零命中且超期条目归档（cron 接线后置；TaskService 批处理入口） */
   async archiveStale(): Promise<number> {
-    const cutoff = new Date(this.deps.clock() - ARCHIVE_STALE_DAYS * 86_400_000)
+    const cutoff = new Date(this.deps.clock() - agentContextParams().memory.archiveStaleDays * 86_400_000)
     return this.deps.repo.archiveStaleBefore(cutoff)
   }
 }

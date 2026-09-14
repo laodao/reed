@@ -17,6 +17,7 @@
  */
 
 import { createLogger } from '@core/utils/logger'
+import { runtimeLimits } from '@shared/utils/runtime-limits'
 
 const logger = createLogger('AgentRawTranscript')
 
@@ -41,8 +42,9 @@ export interface RawTranscriptPort {
 }
 
 /** 超限消息的占位形态（保留事件存在性，丢弃超限体） */
-export function truncateTranscriptContent(content: string): string {
-  if (Buffer.byteLength(content, 'utf8') <= TRANSCRIPT_MAX_MESSAGE_BYTES) return content
+export function truncateTranscriptContent(content: string, maxBytes?: number): string {
+  const limit = maxBytes ?? runtimeLimits().maxTranscriptMessageBytes
+  if (Buffer.byteLength(content, 'utf8') <= limit) return content
   logger.warn(`[transcript] 消息超限存占位 bytes=${Buffer.byteLength(content, 'utf8')}`)
   return JSON.stringify({ _truncated: true, bytes: Buffer.byteLength(content, 'utf8') })
 }

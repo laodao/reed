@@ -40,6 +40,8 @@ import { ImageService } from '@core/platform/services/image.service'
 import * as dbModule from '@core/database/database-manager.interface'
 import { PortraitService } from '@core/packs/portrait/services/portrait.service'
 import type { PortraitCharacter, PortraitVariant } from '@shared/types/portrait.types'
+import { DEFAULT_PORTRAIT_WIDTH } from '@shared/types/portrait.types'
+import { resetPortraitParams, setPortraitParams } from '@shared/utils/portrait-params'
 
 // ====================================================================
 // mock 工具
@@ -110,9 +112,31 @@ function mockImageSuccess() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  resetPortraitParams()
 })
 
 // ====================================================================
+
+describe('editFace 读取「参数设置 → 画像」', () => {
+  it('不传 strength/size 时用设置里的值（默认 0.5 / 768×1024，注入后跟着变）', async () => {
+    const db = installMockDb()
+    const genSpy = mockImageSuccess()
+    db.portraitVariants.getById.mockResolvedValue(makeSource({ config: { seed: 7 } }))
+    db.portraitCharacters.getById.mockResolvedValue(makeCharacter())
+
+    await PortraitService.editFace({ characterId: 'char-1', variantId: 'v1', facePrompt: '更坚毅' })
+    expect(genSpy.mock.calls[0][0].strength).toBeCloseTo(0.5, 5)
+    expect(genSpy.mock.calls[0][0].width).toBe(DEFAULT_PORTRAIT_WIDTH)
+
+    const genSpy2 = mockImageSuccess()
+    db.portraitVariants.getById.mockResolvedValue(makeSource({ config: { seed: 8 } }))
+    setPortraitParams({ image: { width: 1024, faceStrengthPercent: 35 } })
+    await PortraitService.editFace({ characterId: 'char-1', variantId: 'v1', facePrompt: '更坚毅' })
+    expect(genSpy2.mock.calls[0][0].strength).toBeCloseTo(0.35, 5)
+    expect(genSpy2.mock.calls[0][0].width).toBe(1024)
+    resetPortraitParams()
+  })
+})
 
 describe('editFace', () => {
   it('模板+指令叠加，产出 type=face variant，原图不变', async () => {

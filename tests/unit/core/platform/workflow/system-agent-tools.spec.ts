@@ -20,6 +20,10 @@ import {
   SYSTEM_AGENT_WHITELIST,
   CATALOG_MAX_WORKFLOWS,
 } from '@core/platform/workflow/tools/system-agent-tools'
+import {
+  resetWorkflowRuntimeParams,
+  setWorkflowRuntimeParams,
+} from '@shared/utils/workflow-runtime-params'
 import { TOOL_RESULT_ARRAY_KEEP } from '@core/platform/agent-runtime/tools/registry'
 import type { SystemAgentToolsDeps } from '@core/platform/workflow/tools/system-agent-tools'
 import type { WorkflowDefinitionRecord } from '@core/database/repositories/workflow-definition.repository'
@@ -241,6 +245,25 @@ describe('discover_capabilities', () => {
     const res = await registry.execute({ toolName: 'discover_capabilities', args: {} })
     const data = res.data as { workflows: Array<{ id: string; inputs: Array<{ key: string; required: boolean }> }> }
     expect(data.workflows[0].inputs).toEqual([{ key: 'topic', label: '主题', type: 'string', required: true }])
+  })
+
+  /**
+   * 2026-09-13「参数设置 → 工作流 → 系统工具面」：能力目录条数改读运行时持有者。
+   * 注入更小的上限，证明目录长度跟着设置走。
+   */
+  it('目录条数读「参数设置 → 工作流 → 系统工具面」', async () => {
+    const many = Array.from({ length: 60 }, (_, i) => mkDefinition({ id: `wf-${i}`, name: `工作流${i}` }))
+    const { registry } = setup({
+      definitions: { list: async (p) => ({ items: many.slice(0, p.pageSize), total: 60 }) },
+    })
+    setWorkflowRuntimeParams({ systemTools: { catalogMaxItems: 3 } })
+    try {
+      const res = await registry.execute({ toolName: 'discover_capabilities', args: {} })
+      const data = res.data as { workflows: unknown[] }
+      expect(data.workflows).toHaveLength(3)
+    } finally {
+      resetWorkflowRuntimeParams()
+    }
   })
 
   it('模块域工具节：只列 catalogPacks 声明的 pack，未声明宿主为空（M6.5 共享注册）', async () => {

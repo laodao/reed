@@ -18,6 +18,12 @@
 
 import { stripAuthoringNotes } from './lesson-authoring-notes'
 import { isAnswerSection, splitSelfCheckAnswers } from './lesson-selfcheck'
+import {
+  DEFAULT_SECTION_TITLES as TEMPLATE_SECTION_TITLES,
+  canonicalSectionKey,
+  normalizeLessonHeadingLevels,
+  sectionStyleOf,
+} from './lesson-template'
 
 /** 区最小形状（不强绑 shared 类型，便于复用与测试） */
 export interface LessonSectionLike {
@@ -31,46 +37,22 @@ export interface LessonSectionLike {
 /** 区样式（渲染语义：引言 / 正文 / 注意 / 检验） */
 export type LessonSectionStyle = 'intro' | 'body' | 'note' | 'review'
 
-/** key → 默认标题（模板语义区；AI 未给 title 时的兜底） */
-export const DEFAULT_SECTION_TITLES: Record<string, string> = {
-  meta: '学习前必读',
-  essence: '本质',
-  why: '为什么学它',
-  statement: '陈述/条文',
-  justification: '依据/证明',
-  application: '应用/适用',
-  definition: '定义',
-  mechanism: '机制',
-  structure: '组成/结构',
-  procedure: '步骤',
-  formula: '公式',
-  rules: '规则',
-  code: '落到代码',
-  example: '示例',
-  examples: '示例',
-  edge: '示例与注意',
-  counterexample: '反例/边界',
-  distinguish: '辨析',
-  property: '性质',
-  evidence: '证据',
-  pitfalls: '常见坑',
-  review: '检验',
-  selfcheck: '自测',
-  controversy: '争议',
-  detail: '详解',
-}
+/**
+ * key → 兜底标题（模板语义区；AI 未给 title 时的兜底）。
+ * 2026-09-13 起改为读讲义区集契约 `lesson-template`（唯一事实来源）——同一类型同一区的
+ * 标题完全一致，历史卡的自由命名（checks/worked…）也能拿到规范标题。
+ */
+export const DEFAULT_SECTION_TITLES: Record<string, string> = TEMPLATE_SECTION_TITLES
 
-/** 区默认样式（AI 未给 style 时的兜底） */
+/** 区默认样式（AI 未给 style 时的兜底；同样读契约，别名一并认） */
 export function defaultSectionStyle(key: string): LessonSectionStyle {
-  if (key === 'essence' || key === 'meta') return 'intro'
-  if (key === 'edge' || key === 'pitfalls') return 'note'
-  if (key === 'review' || key === 'selfcheck') return 'review'
-  return 'body'
+  return sectionStyleOf(key)
 }
 
-/** 作者注记区的识别（key=notes 或标题含「编写注记/注记」） */
+/** 作者注记区的识别（key=notes/authoring-notes 或标题含「编写注记/注记」） */
 export function isAuthoringNotesSection(sec: Pick<LessonSectionLike, 'key' | 'title'>): boolean {
-  if (sec.key === 'notes' || sec.key === 'authoring-notes') return true
+  const key = canonicalSectionKey(sec.key)
+  if (key === 'notes') return true
   return /编写注记|作者注记|注记/.test(sec.title ?? '')
 }
 
@@ -133,7 +115,12 @@ export interface LessonSectionPlan {
  * - 正文区的「⚠️ 待核验 / 先验待查」等注记从正文剥离，带区名并入 `authoringNotes`；
  * - 自测区的答案按独占一行的「答案」标记切出到 `answers`（渲染层默认折叠，
  *   让读者先自己做再对答案）；key/title 是答案区的默认整区折叠；
- * - 标题/样式按 AI 给定值优先，缺省用模板语义兜底。
+ * - 标题/样式按 AI 给定值优先，缺省用**区集契约**（lesson-template）兜底；
+ * - 2026-09-13（用户反馈「同一主题不同知识点结构与标题层级不一致」）：
+ *   ① 区 key 先按同义写法归一（checks/quiz/selftest → selfcheck），历史卡也能拿到
+ *      自测样式（review）与答案折叠；② 区正文小标题层级统一到 `###`，与区标题（二级语义）
+ *      拉开层级——历史卡里用 `##` 写的正文不再与区标题抢视觉。
+ *   历史数据不改写，只在渲染期归一。
  */
 export function planLessonSections(sections: LessonSectionLike[]): LessonSectionPlan {
   const content: LessonContentSection[] = []
@@ -145,10 +132,11 @@ export function planLessonSections(sections: LessonSectionLike[]): LessonSection
       for (const item of splitNoteItems(sec.md)) authoringNotes.push(item)
       continue
     }
-    const { body, notes } = stripAuthoringNotes(sec.md)
+    const key = canonicalSectionKey(sec.key)
+    const { body, notes } = stripAuthoringNotes(normalizeLessonHeadingLevels(sec.md))
     const split = splitSelfCheckAnswers(body)
-    const title = (sec.title ?? '').trim() || DEFAULT_SECTION_TITLES[sec.key] || ''
-    const style = (sec.style as LessonSectionStyle | undefined) ?? defaultSectionStyle(sec.key)
+    const title = (sec.title ?? '').trim() || DEFAULT_SECTION_TITLES[key] || ''
+    const style = (sec.style as LessonSectionStyle | undefined) ?? defaultSectionStyle(key)
     for (const note of notes) {
       authoringNotes.push(title ? `【${title}】${note}` : note)
     }
@@ -158,11 +146,11 @@ export function planLessonSections(sections: LessonSectionLike[]): LessonSection
       key: sec.key,
       title,
       body: split.questions,
-      answers: split.answers,
+      answers: normalizeLessonHeadingLevels(split.answers),
       notes,
       style,
-      // 答案区默认折叠（整区就是答案时别把答案摊在正文里）
-      folded: !!sec.folded || isAnswerSection(sec),
+      // 答案区默认折叠（整区就是答案时别把答案摊在正文里；别名 key 一并认）
+      folded: !!sec.folded || isAnswerSection({ key, title: sec.title }),
     })
   }
 

@@ -37,7 +37,12 @@ import type {
   EditFaceRequest,
   EditFaceResponse
 } from '@shared/types/portrait.types'
-import { DEFAULT_PORTRAIT_WIDTH, DEFAULT_PORTRAIT_HEIGHT, FRAMING_PROMPT_SUFFIX } from '@shared/types/portrait.types'
+import { FRAMING_PROMPT_SUFFIX } from '@shared/types/portrait.types'
+import {
+  portraitFaceStrength,
+  portraitFullBodyStrength,
+  portraitParams,
+} from '@shared/utils/portrait-params'
 import type { PortraitFraming, PromptTemplateCategory, PortraitGenerationScene } from '@shared/types/portrait.types'
 import sharp from 'sharp'
 import archiver from 'archiver'
@@ -286,9 +291,9 @@ export class PortraitService {
         overrides: { suffix: 'solid background' },
       })
 
-      const width = request.width ?? (source.config?.width as number) ?? DEFAULT_PORTRAIT_WIDTH
-      const height = request.height ?? (source.config?.height as number) ?? DEFAULT_PORTRAIT_HEIGHT
-      const strength = request.strength ?? 0.55
+      const width = request.width ?? (source.config?.width as number) ?? portraitParams().image.width
+      const height = request.height ?? (source.config?.height as number) ?? portraitParams().image.height
+      const strength = request.strength ?? portraitFullBodyStrength()
 
       const result = await ImageService.generateImage({
         providerConfigId: request.providerId ?? character.providerId,
@@ -425,9 +430,9 @@ export class PortraitService {
       const sourceImage = this.readImageAsBase64(source.imagePath)
       if (!sourceImage) return { success: false, error: '源形象图片读取失败' }
 
-      const width = request.width ?? (source.config?.width as number) ?? DEFAULT_PORTRAIT_WIDTH
-      const height = request.height ?? (source.config?.height as number) ?? DEFAULT_PORTRAIT_HEIGHT
-      const strength = request.strength ?? 0.5
+      const width = request.width ?? (source.config?.width as number) ?? portraitParams().image.width
+      const height = request.height ?? (source.config?.height as number) ?? portraitParams().image.height
+      const strength = request.strength ?? portraitFaceStrength()
 
       const result = await ImageService.generateImage({
         providerConfigId: character.providerId,
@@ -934,8 +939,8 @@ export class PortraitService {
             ...(request.referenceImages ?? []),
           ]
 
-          const imageWidth = request.width || baseVariant.config?.width || DEFAULT_PORTRAIT_WIDTH
-          const imageHeight = request.height || baseVariant.config?.height || DEFAULT_PORTRAIT_HEIGHT
+          const imageWidth = request.width || baseVariant.config?.width || portraitParams().image.width
+          const imageHeight = request.height || baseVariant.config?.height || portraitParams().image.height
 
           const imageResult = await ImageService.generateImage({
             providerConfigId: character.providerId,
@@ -997,8 +1002,8 @@ export class PortraitService {
           ...(request.referenceImages ?? []),
         ]
 
-        const imageWidth = request.width || baseVariant.config?.width || DEFAULT_PORTRAIT_WIDTH
-        const imageHeight = request.height || baseVariant.config?.height || DEFAULT_PORTRAIT_HEIGHT
+        const imageWidth = request.width || baseVariant.config?.width || portraitParams().image.width
+        const imageHeight = request.height || baseVariant.config?.height || portraitParams().image.height
 
         const imageResult = await ImageService.generateImage({
           providerConfigId: character.providerId,
@@ -1123,8 +1128,8 @@ export class PortraitService {
           // 多参考图（D5b）：base 参考置首，追加参考随后；空则 undefined（现状行为）
           const mergedRefs = [...(refImage ? [refImage] : []), ...(request.referenceImages ?? [])]
 
-          const imageWidth = request.width || baseVariant.config?.width || DEFAULT_PORTRAIT_WIDTH
-          const imageHeight = request.height || baseVariant.config?.height || DEFAULT_PORTRAIT_HEIGHT
+          const imageWidth = request.width || baseVariant.config?.width || portraitParams().image.width
+          const imageHeight = request.height || baseVariant.config?.height || portraitParams().image.height
 
           const imageResult = await ImageService.generateImage({
             providerConfigId: character.providerId,
@@ -1184,8 +1189,8 @@ export class PortraitService {
         // 多参考图（D5b）：base 参考置首，追加参考随后；空则 undefined（现状行为）
         const mergedRefs = [...(refImage ? [refImage] : []), ...(request.referenceImages ?? [])]
 
-        const imageWidth = request.width || baseVariant.config?.width || DEFAULT_PORTRAIT_WIDTH
-        const imageHeight = request.height || baseVariant.config?.height || DEFAULT_PORTRAIT_HEIGHT
+        const imageWidth = request.width || baseVariant.config?.width || portraitParams().image.width
+        const imageHeight = request.height || baseVariant.config?.height || portraitParams().image.height
 
         const imageResult = await ImageService.generateImage({
           providerConfigId: character.providerId,
@@ -1362,8 +1367,8 @@ export class PortraitService {
 
         console.log(`[PortraitService.generateAngles] 角度 ${angle} 提示词:`, fullPrompt)
 
-        const imageWidth = request.width || referenceVariant.config?.width || DEFAULT_PORTRAIT_WIDTH
-        const imageHeight = request.height || referenceVariant.config?.height || DEFAULT_PORTRAIT_HEIGHT
+        const imageWidth = request.width || referenceVariant.config?.width || portraitParams().image.width
+        const imageHeight = request.height || referenceVariant.config?.height || portraitParams().image.height
 
         // 添加重试机制
         let imageResult: any = null
@@ -1498,8 +1503,8 @@ export class PortraitService {
       // 编辑提示词：在原有基础上添加编辑指令（纯英文避免内容审核）
       const editPrompt = `${basePrompt}, ${request.editPrompt}, same person, ${FULL_BODY_SUFFIX}, solid background`
 
-      const imageWidth = request.width || variant.config?.width || DEFAULT_PORTRAIT_WIDTH
-      const imageHeight = request.height || variant.config?.height || DEFAULT_PORTRAIT_HEIGHT
+      const imageWidth = request.width || variant.config?.width || portraitParams().image.width
+      const imageHeight = request.height || variant.config?.height || portraitParams().image.height
 
       const imageResult = await ImageService.generateImage({
         providerConfigId: character.providerId,

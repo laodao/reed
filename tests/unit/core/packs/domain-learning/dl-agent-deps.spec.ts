@@ -9,8 +9,10 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildFocusQuestionLines,
+  buildMapInventoryLines,
   computeDlSpaceSnapshot,
   dlBootstrapSkillBody,
+  dlEmptySpaceMission,
   dlResearchSystemPrompt,
   dlSkillBody,
   dlTaskSystemPrompt,
@@ -19,6 +21,13 @@ import {
   shouldInjectMapCompletionSkill,
   DL_MAP_COMPLETION_SKILL_ID,
   MAP_COMPLETION_MARKER,
+  PLAN_SYLLABUS_CONFIRMED_MARKER,
+  PLAN_UNDERSTANDING_CONFIRMED_MARKER,
+  formatSyllabusLines,
+  formatUnderstandingSummary,
+  planSavePhaseInstruction,
+  planSyllabusPhaseInstruction,
+  planUnderstandingPhaseInstruction,
 } from '@core/packs/domain-learning/services/dl-agent-deps'
 import { dlMapCompletionMission } from '@shared/utils/domain-learning-mission'
 import type { ICoreDatabaseManager } from '@core/database/database-manager.interface'
@@ -141,6 +150,8 @@ describe('dl-agent-deps（M2-B）', () => {
     prerequisites?: Array<{ name: string; inSpace?: boolean }>
     concepts?: Array<Record<string, unknown>>
     relations?: Array<Record<string, unknown>>
+    description?: string | null
+    profile?: Record<string, unknown> | null
   }): ICoreDatabaseManager {
     return {
       dlProjects: {
@@ -150,6 +161,8 @@ describe('dl-agent-deps（M2-B）', () => {
           goal: '工作应用',
           kbId: null,
           prerequisites: over.prerequisites ?? [],
+          description: over.description ?? null,
+          profile: over.profile ?? null,
         }),
       },
       dlConcepts: {
@@ -178,6 +191,15 @@ describe('dl-agent-deps（M2-B）', () => {
       },
       dlCards: { getById: async () => null, getCurrentByConcept: async () => null },
     } as unknown as ICoreDatabaseManager
+  }
+
+  /** 带用户诉求与空间档案的 stub（2026-09-13：诉求必须进快照头） */
+  function briefDb(): ICoreDatabaseManager {
+    return stubDb({
+      description: '我希望能理解金融的各类概念、产品的原理，能听懂股票、债券、期货、做空做多、MBS、美元等等各中内容',
+      profile: { kindLabel: '实践技能', nature: '方法步骤、操作流程与工具案例', emphasis: ['流程', '矩阵'] },
+      concepts: [{ id: 'k1', name: '甲概念' }],
+    })
   }
 
   it('快照注入主题前置要求与各知识点前置（含需自备标记与未建关系提醒）', async () => {
@@ -262,5 +284,175 @@ describe('dl-agent-deps（M2-B）', () => {
     expect(p).toContain('地图完整度')
     expect(p).toContain('1-3 个结构性缺口')
     expect(p).toContain('为了拉高分数而堆无意义概念')
+  })
+
+  // ===== 2026-09-13 用户反馈「金融理财主题生成的知识点与期望差别较大」复盘 =====
+
+  it('研究提示词：以用户诉求为准（不得凭空间名猜主题）+ 被拒条目必须写进总结', () => {
+    const p = dlResearchSystemPrompt()
+    expect(p).toContain('以用户诉求为准')
+    expect(p).toContain('不得凭名字猜主题')
+    expect(p).toContain('金融理财')
+    expect(p).toContain('被额度或门禁拒绝的条目必须写进总结')
+    expect(p).toContain('只报成功数')
+  })
+
+  it('快照头注入学习主题诉求（用户原话）与空间档案', async () => {
+    const db = stubDb({ concepts: [{ id: 'k1', name: '甲概念' }] })
+    // stubDb 默认无 description/profile → 不该出现空的诉求行
+    const bare = await computeDlSpaceSnapshot(db, 'sp1')
+    expect(bare.text).not.toContain('【学习主题诉求')
+    expect(bare.spaceDescription).toBeNull()
+
+    const rich = await computeDlSpaceSnapshot(briefDb(), 'sp1')
+    expect(rich.spaceDescription).toContain('股票')
+    expect(rich.text).toContain('【学习主题诉求（用户原话，规划与讲义都以它为准）】')
+    expect(rich.text).toContain('能听懂股票、债券、期货')
+    expect(rich.text).toContain('空间档案：实践技能')
+    expect(rich.text).toContain('侧重 流程/矩阵')
+    // 诉求行必须在快照头（先于目录分组/前置简报）
+    expect(rich.text.indexOf('【学习主题诉求')).toBeLessThan(rich.text.indexOf('【主题前置要求】'))
+  })
+
+  it('dlEmptySpaceMission：带上诉求原文与"覆盖诉求点名对象"的规划纪律', () => {
+    const mission = dlEmptySpaceMission({
+      spaceName: '金融理财',
+      description: '我希望能理解金融的各类概念、产品的原理，能听懂网上讲股票、债券、期货、做空做多、MBS、美元',
+    })
+    expect(mission).toContain('【用户诉求（用户原话，最高优先级）】')
+    expect(mission).toContain('股票、债券、期货、做空做多、MBS、美元')
+    expect(mission).toContain('不得凭空间名猜主题')
+    expect(mission).toContain('覆盖诉求里点名的对象与场景')
+    expect(mission).toContain('诉求未涵盖、按领域主干补的')
+    // 没写诉求时不留空块
+    const bare = dlEmptySpaceMission({ spaceName: '量子计算入门' })
+    expect(bare).not.toContain('【用户诉求')
+    expect(bare).toContain('【空领域起步研究】')
+  })
+
+  // ===== 2026-09-13 固定流程：三个阶段的宿主注入指令 =====
+
+  it('阶段标记是前端与宿主共用的契约常量', () => {
+    expect(PLAN_UNDERSTANDING_CONFIRMED_MARKER).toBe('【已确认诉求理解】')
+    expect(PLAN_SYLLABUS_CONFIRMED_MARKER).toBe('【已确认知识体系】')
+  })
+
+  it('阶段 1 指令：只提交诉求理解草案、明确不许落库、说明后续两步', () => {
+    const p = planUnderstandingPhaseInstruction('金融理财')
+    expect(p).toContain('第 1 步：对齐诉求')
+    expect(p).toContain('dl_propose_understanding')
+    expect(p).toContain('不要调用 dl_save_concept')
+    expect(p).toContain('第 2 步')
+    expect(p).toContain('金融理财')
+  })
+
+  it('阶段 2 指令：带上已确认诉求 + 空分支禁令', () => {
+    const p = planSyllabusPhaseInstruction({
+      spaceName: '金融理财',
+      understandingSummary: '目标：搞懂金融产品\n要覆盖：股票、债券',
+    })
+    expect(p).toContain('第 2 步：规划知识体系')
+    expect(p).toContain('用户已确认诉求理解')
+    expect(p).toContain('股票、债券')
+    expect(p).toContain('dl_propose_syllabus')
+    expect(p).toContain('不许出现空分支')
+    expect(p).toContain('不要调用 dl_save_concept')
+  })
+
+  it('阶段 3 指令：列出方案清单、给出落库顺序、要求方案内全部落库', () => {
+    const lines = formatSyllabusLines({
+      branches: [
+        {
+          name: '金融产品',
+          definitionShort: '各类金融工具',
+          concepts: [
+            { name: '股票', layer: 0, prerequisites: [] },
+            { name: '债券', layer: 0, prerequisites: ['股票'] },
+          ],
+        },
+      ],
+      rootConcepts: [{ name: '金融体系总览' }],
+    })
+    expect(lines).toContain('分支「金融产品」')
+    expect(lines).toContain('股票（layer=0）')
+    expect(lines).toContain('债券（layer=0 前置=股票）')
+    expect(lines).toContain('根层知识点：金融体系总览')
+
+    const p = planSavePhaseInstruction({ spaceName: '金融理财', syllabusLines: lines, conceptCount: 3 })
+    expect(p).toContain('第 3 步：按已确认的知识体系落库')
+    expect(p).toContain('落库门禁已放行')
+    expect(p).toContain('3 个知识点')
+    expect(p).toContain('nodeType=group')
+    expect(p).toContain('dl_save_relation')
+    expect(p).toContain('dl_save_card')
+    expect(p).toContain('方案里的知识点要全部落库')
+    expect(p).toContain('不要重新规划')
+  })
+
+  it('formatUnderstandingSummary：目标/覆盖/读者/不做/期望逐条呈现', () => {
+    const s = formatUnderstandingSummary({
+      goalSummary: '搞懂金融产品',
+      coverage: ['股票', '债券'],
+      audience: '零基础',
+      notDoing: ['个人记账'],
+      keyExpectations: ['能读财报'],
+    })
+    expect(s).toContain('目标：搞懂金融产品')
+    expect(s).toContain('要覆盖：股票、债券')
+    expect(s).toContain('读者：零基础')
+    expect(s).toContain('不做：个人记账')
+    expect(s).toContain('期望：能读财报')
+  })
+})
+
+describe('dl-agent-deps（2026-09-14 整体知识点体系清单）', () => {
+  const concepts = [
+    { id: 'g1', name: '金融产品', nodeType: 'group', parentId: null },
+    { id: 'g2', name: '市场与价格', nodeType: 'group', parentId: null },
+    { id: 'c1', name: '股票', nodeType: 'concept', parentId: 'g1', cardId: 'card1' },
+    { id: 'c2', name: '债券', nodeType: 'concept', parentId: 'g1', cardId: null },
+    { id: 'c3', name: '汇率与美元', nodeType: 'concept', parentId: 'g2', cardId: null },
+    { id: 'c4', name: '金融体系总览', nodeType: 'concept', parentId: null, cardId: null },
+  ] as Array<{ id: string; name: string; nodeType: string; parentId: string | null; cardId?: string | null }>
+
+  it('按分支列出概念（✓=已有讲义），根层知识概念单独列出', () => {
+    const lines = buildMapInventoryLines(concepts)
+    const joined = lines.join('\n')
+    expect(lines[0]).toContain('当前知识点体系清单')
+    expect(joined).toContain('分支「金融产品」')
+    expect(joined).toContain('分支「市场与价格」')
+    expect(joined).toContain('股票（concept ✓）') // 有讲义
+    expect(joined).toContain('债券（concept）') // 无讲义不加 ✓
+    expect(joined).toContain('汇率与美元（concept）')
+    expect(joined).toContain('根层/未归类：· 金融体系总览')
+  })
+
+  it('孤点（父级不是本空间 group 的概念）归到未归类', () => {
+    const lines = buildMapInventoryLines([{ id: 'g', name: '分支', nodeType: 'group', parentId: null }])
+    expect(lines.join('\n')).toContain('分支「分支」')
+    // 挂在不存在 group 下
+    const orphaned = buildMapInventoryLines([
+      { id: 'g', name: '分支', nodeType: 'group', parentId: null },
+      { id: 'o', name: '孤点概念', nodeType: 'concept', parentId: 'ghost' },
+    ])
+    expect(orphaned.join('\n')).toContain('未归类：· 孤点概念')
+  })
+
+  it('空地图 → 空数组', () => {
+    expect(buildMapInventoryLines([])).toEqual([])
+  })
+
+  it('limit 上限：行超限时截断并注明总数', () => {
+    const many = Array.from({ length: 60 }, (_, i) => ({
+      id: `c${i}`,
+      name: `概念${i}`,
+      nodeType: 'concept',
+      parentId: null,
+      cardId: null,
+    }))
+    const lines = buildMapInventoryLines(many, 10)
+    // 标题行 + 最多 limit 行 + 截断提示；总数有上界
+    expect(lines.length).toBeLessThanOrEqual(12)
+    expect(lines.some((l) => l.includes('地图共 60 个节点'))).toBe(true)
   })
 })

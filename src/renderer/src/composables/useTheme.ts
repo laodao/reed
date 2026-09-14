@@ -4,6 +4,7 @@
  */
 
 import { ref, watch, onMounted } from 'vue'
+import { SETTINGS_KEYS, getSettingWithLegacyFallback } from '@shared/constants/settings-keys'
 
 // 主题配置
 export interface ThemeConfig {
@@ -182,10 +183,14 @@ const mixColor = (color1: string, color2: string, weight: number): string => {
 const loadTheme = async () => {
   try {
     if (window.electronAPI?.settings?.get) {
-      const result = await window.electronAPI.settings.get('theme')
-      if (result.success && result.data && availableThemes.some(t => t.id === result.data)) {
-        currentTheme.value = result.data
-        applyTheme(result.data)
+      // 键名走注册表（旧键 theme 兜底）
+      const raw = await getSettingWithLegacyFallback(
+        { get: async (k) => (await window.electronAPI.settings.get(k))?.data ?? null },
+        SETTINGS_KEYS.uiTheme,
+      )
+      if (typeof raw === 'string' && availableThemes.some(t => t.id === raw)) {
+        currentTheme.value = raw
+        applyTheme(raw)
         return
       }
     }
@@ -199,7 +204,7 @@ const loadTheme = async () => {
 const saveTheme = async (themeId: string) => {
   try {
     if (window.electronAPI?.settings?.set) {
-      await window.electronAPI.settings.set('theme', themeId)
+      await window.electronAPI.settings.set(SETTINGS_KEYS.uiTheme, themeId)
     }
   } catch (error) {
     console.error('保存主题失败:', error)

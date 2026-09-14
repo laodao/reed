@@ -39,8 +39,9 @@ import type { AppSessionRepository } from './repositories/app-session.repository
 import type { AppSessionMessageRepository } from './repositories/app-session-message.repository'
 import type { AssetRepository } from './repositories/asset.repository'
 import type { AssetCategoryRepository } from './repositories/asset-category.repository'
-import type { NewsSourceRepository } from './repositories/news-source.repository'
-import type { NewsTopicRepository } from './repositories/news-topic.repository'
+import type { InfoSourceRepository } from './repositories/info-source.repository'
+import type { InfoSourceTopicRepository } from './repositories/info-source-topic.repository'
+import type { InfoSourceCategoryRepository } from './repositories/info-source-category.repository'
 import type { ToolCredentialRepository } from './repositories/tool-credential.repository'
 import type { CustomToolRepository } from './repositories/custom-tool.repository'
 import type { EmailAccountRepository } from './repositories/email-account.repository'
@@ -166,9 +167,12 @@ export interface ICoreDatabaseManager {
   assetGroups: AssetGroupRepository | null
   /** 资产分类定义（业务分类实体：驱动资产中心分组与预览） */
   assetCategories: AssetCategoryRepository | null
-  /** 新闻来源库（内置应用 C1 早报 / C2 周报的数据源） */
-  newsSources: NewsSourceRepository | null
-  newsTopics: NewsTopicRepository | null
+  /** 信息来源类别（设置界面「信息来源」的 tab：内置新闻来源 + 用户自建类别） */
+  infoSourceCategories: InfoSourceCategoryRepository | null
+  /** 信息来源（名称 + URL；工作流采集节点与各业务模块引用） */
+  infoSources: InfoSourceRepository | null
+  /** 信息来源分组（类别内的一级分组，含「未分组」默认分组） */
+  infoSourceTopics: InfoSourceTopicRepository | null
   toolCredentials: ToolCredentialRepository | null
   customTools: CustomToolRepository | null
   /** 邮箱账号（邮件收发：SMTP 发 / IMAP 收） */
@@ -237,6 +241,7 @@ export interface ICoreDatabaseManager {
   dlDocs: import('./repositories/dl-doc.repository').DlDocRepository | null
   dlQuestions: import('./repositories/dl-question.repository').DlQuestionRepository | null
   dlNotes: import('./repositories/dl-note.repository').DlNoteRepository | null
+  dlPlans: import('./repositories/dl-plan.repository').DlPlanRepository | null
 
   // ---- 业务包内核（第一期） ----
   /** 内置包快照（business_packs：manifest UPSERT + 全局启用态兜底） */

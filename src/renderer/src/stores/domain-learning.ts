@@ -27,7 +27,9 @@ import type {
   DlSpaceStats,
   DlSpaceSummary,
   DlSpaceView,
+  DlPlanView,
 } from '@shared/types/domain-learning.types'
+import { toPlainData } from '../utils/plain-data'
 
 // ==================== IPC 返回形态（IpcResponse 精简镜像） ====================
 
@@ -51,7 +53,7 @@ export interface DlCreateSpaceInput {
 
 /** dl agent 动作事件（通道 dl:agent:<spaceId>[:<conceptId>]；契约对齐后端 dl-agent.types） */
 export interface DlAgentUiEvent {
-  type: 'stage' | 'reply:start' | 'reply:done' | 'action:done' | 'error' | 'question:open'
+  type: 'stage' | 'reply:start' | 'reply:done' | 'action:done' | 'error' | 'question:open' | 'progress'
   /** 产生事件的会话模式（2026-09-09 复盘：订阅方按自己发起的 mode 过滤，防跨模式并发混流） */
   mode?: 'research' | 'tutor' | 'task' | 'verify'
   stage?: 'deciding' | 'acting'
@@ -61,6 +63,14 @@ export interface DlAgentUiEvent {
   summary?: { tool: string; status: 'ok' | 'skipped' | 'error'; message: string; data?: unknown }
   questionId?: string
   suggestions?: string[]
+  /** 活动行（type='progress'；2026-09-13：长任务滚动显示"系统正在做什么"，失败行 kind='warn'） */
+  activity?: {
+    line: string
+    kind?: 'info' | 'warn'
+    conceptId?: string | null
+    step?: number
+    tool?: string
+  }
 }
 
 /** dl 流式正文增量（通道 dl:generate:<eventId>） */
@@ -116,6 +126,8 @@ interface DomainLearningApi {
   publishCard(p: { id: string; cardId: string }): Promise<IpcLike<{ ok: boolean; already?: boolean }>>
   getSpacePace(id: string): Promise<IpcLike<DlPaceSettings>>
   setSpacePace(p: { id: string; pace: DlPaceSettings }): Promise<IpcLike<DlPaceSettings>>
+  getSpaceModel(id: string): Promise<IpcLike<{ providerConfigId: string | null; modelId: string | null }>>
+  setSpaceModel(p: { id: string; model: { providerConfigId?: string | null; modelId?: string | null } }): Promise<IpcLike<{ model: { providerConfigId: string | null; modelId: string | null } }>>
   getAtlasViews(id: string): Promise<IpcLike<DlAtlasViews | null>>
   getSpaceStats(id: string): Promise<IpcLike<DlSpaceStats | null>>
   exportLessonDigest(id: string): Promise<IpcLike<DlLessonDigest | null>>
@@ -138,6 +150,14 @@ interface DomainLearningApi {
   }): Promise<IpcLike<{ note: DlNote; created: boolean }>>
   deleteNote(p: { id: string; noteId: string }): Promise<IpcLike<{ ok: boolean }>>
   schedulerState(): Promise<IpcLike<{ mode: 'desktop' | 'web'; running: boolean; runningCount: number }>>
+  /** 方案确认流程（2026-09-13）：读方案总览 / 确认某一步（可带用户编辑后的载荷） */
+  getPlan(id: string): Promise<IpcLike<DlPlanView>>
+  confirmPlan(p: {
+    id: string
+    step: 'understanding' | 'syllabus'
+    payload?: unknown
+    feedback?: string | null
+  }): Promise<IpcLike<{ message: string }>>
   onAgentEvent(spaceId: string, conceptId: string | null | undefined, cb: (event: DlAgentUiEvent) => void): () => void
   onStream(eventId: string, cb: (event: DlGenerateUiEvent) => void): () => void
 }
@@ -365,6 +385,41 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     }
   }
 
+  // ==================== 空间默认模型（2026-09-14：知识生成默认模型） ====================
+
+  /** 读取空间知识生成默认模型（dl:get-space-model；双 null=跟随全局默认，失败 → null） */
+  async function spaceModelOf(id: string): Promise<{ providerConfigId: string | null; modelId: string | null } | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.getSpaceModel(id)
+      if (r?.success && r.data) return r.data
+      error.value = r?.error ?? '读取空间模型设置失败'
+      return null
+    } catch {
+      return null
+    }
+  }
+
+  /** 保存空间知识生成默认模型（dl:set-space-model；null=跟随全局默认，失败 → null） */
+  async function saveSpaceModelOf(
+    id: string,
+    model: { providerConfigId?: string | null; modelId?: string | null },
+  ): Promise<{ providerConfigId: string | null; modelId: string | null } | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.setSpaceModel({ id, model })
+      if (r?.success && r.data) return r.data.model
+      error.value = r?.error ?? '保存空间模型设置失败'
+      return null
+    } catch (e: any) {
+      error.value = e?.message ?? '保存空间模型设置失败'
+      console.error('[domain-learning] 保存空间模型设置失败:', e)
+      return null
+    }
+  }
+
   // ==================== 间隔复习（M3-B） ====================
 
   /** 当前空间到期复习载荷（dl:review-due；settings + items） */
@@ -453,7 +508,9 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     const a = api()
     if (!a) return null
     try {
-      const r = await a.saveConcept(p)
+      // prerequisites 可能来自 reactive 表单（el-select multiple），出站前纯化，
+      // 否则 Vue 代理过不了结构化克隆（"An object could not be cloned."）
+      const r = await a.saveConcept(toPlainData(p))
       if (!r?.success || !r.data) {
         error.value = r?.error ?? '新建知识点失败'
         return null
@@ -708,6 +765,66 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     }
   }
 
+  // ==================== 方案确认流程（2026-09-13 用户需求） ====================
+
+  /** 当前空间的方案总览（诉求理解 + 知识体系；确认弹窗数据源） */
+  const plan = ref<DlPlanView | null>(null)
+  /** 是否正在读写方案 */
+  const planBusy = ref(false)
+
+  /** 拉方案总览（弹窗打开/每轮研究结束后调用） */
+  async function fetchPlan(id: string): Promise<DlPlanView | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.getPlan(id)
+      if (r?.success && r.data) {
+        plan.value = r.data
+        return r.data
+      }
+      error.value = r?.error ?? '读取方案失败'
+      return null
+    } catch (e: any) {
+      error.value = e?.message ?? '读取方案失败'
+      console.error('[domain-learning] fetchPlan 失败:', e)
+      return null
+    }
+  }
+
+  /**
+   * 确认某一步（诉求理解 / 知识体系）。
+   * syllabus 可带 **用户编辑后的载荷**（勾选增删 + 调序的结果），落库门禁据此放行。
+   *
+   * 载荷可能来自弹窗里的 reactive 草稿，Vue 代理过不了 `ipcRenderer.invoke` 的结构化克隆
+   * （报「An object could not be cloned.」），故出站前统一纯化。
+   */
+  async function confirmPlan(p: {
+    id: string
+    step: 'understanding' | 'syllabus'
+    payload?: unknown
+    feedback?: string | null
+  }): Promise<{ ok: boolean; message: string }> {
+    const a = api()
+    if (!a) return { ok: false, message: '当前环境不支持方案确认' }
+    planBusy.value = true
+    error.value = null
+    try {
+      const r = await a.confirmPlan(toPlainData(p))
+      if (r?.success) {
+        await fetchPlan(p.id)
+        return { ok: true, message: r.data?.message ?? '已确认' }
+      }
+      error.value = r?.error ?? '确认失败'
+      return { ok: false, message: r?.error ?? '确认失败' }
+    } catch (e: any) {
+      error.value = e?.message ?? '确认失败'
+      console.error('[domain-learning] confirmPlan 失败:', e)
+      return { ok: false, message: e?.message ?? '确认失败' }
+    } finally {
+      planBusy.value = false
+    }
+  }
+
   // ==================== 掌握度反馈 ====================
 
   /** 标记「懂了」（mastered）；成功后由调用方自行刷新视图 */
@@ -850,6 +967,11 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     fetchSpaceView,
     createSpace,
     pickNext,
+    // 方案确认流程（2026-09-13）
+    plan,
+    planBusy,
+    fetchPlan,
+    confirmPlan,
     // Atlas
     fetchAtlasGraph,
     fetchNodeProfile,
@@ -860,6 +982,8 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     savePaceOf,
     saveKbOf,
     spaceMetaKbOf,
+    spaceModelOf,
+    saveSpaceModelOf,
     fetchSpacePrereqs,
     saveSpacePrereqsOf,
     createConceptOf,

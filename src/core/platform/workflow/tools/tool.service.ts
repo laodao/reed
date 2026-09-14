@@ -13,6 +13,7 @@ import { PRESET_TOOL_MAP, PRESET_TOOLS } from './preset-tools'
 import { TOOL_AUTH_TYPES, TOOL_KINDS, type CustomTool, type PresetTool, type ToolCredential } from '@shared/types/tool.types'
 import type { EmailSearchParams } from '@shared/types/email.types'
 import { createLogger } from '@core/utils/logger'
+import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 import { spawn } from 'node:child_process'
 
 const logger = createLogger('ToolService')
@@ -386,7 +387,7 @@ export class ToolService {
     )
     const args = splitArgs(rendered)
     const start = Date.now()
-    const timeoutMs = tool.timeoutMs ?? 30000
+    const timeoutMs = tool.timeoutMs ?? workflowRuntimeParams().tools.cliTimeoutMs
     return new Promise<ExecuteToolResult>((resolve) => {
       let child = spawn(command, args, { cwd: tool.cwd || undefined, shell: false })
       let stdout = ''

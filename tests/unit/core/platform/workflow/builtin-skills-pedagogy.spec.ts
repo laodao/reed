@@ -127,7 +127,18 @@ describe('learning-concept-explainer 教学法契约（复盘：面向新人，�
     expect(body).toContain('答案必须单独成段')
     expect(body).toContain('独占一行')
     expect(body).toContain('答案默认折叠')
-    expect(body).toContain('key=answers')
+    // 2026-09-13：答案区统一叫 answers（区集契约），并明确"行内答案会被门禁拒绝"
+    expect(body).toContain('answers（参考答案')
+    expect(body).toContain('直接拒绝')
+  })
+
+  it('区集契约（2026-09-13）：在册区名 + 固定区序 + 正文小标题 ###（与落库门禁同源）', () => {
+    expect(body).toContain('区集契约')
+    expect(body).toContain('meta（学习前必读）')
+    expect(body).toContain('selfcheck（自测）')
+    expect(body).toContain('answers（参考答案）')
+    expect(body).toContain('不能自造区名')
+    expect(body).toContain('区标题由契约派生')
   })
 
   it('双层隔离：编写注记不进学习者正文，禁系统黑话', () => {

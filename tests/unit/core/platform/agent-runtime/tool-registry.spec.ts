@@ -472,6 +472,29 @@ describe('结果序列化与上限拦截（P3 回归）', () => {
     expect(bytes).toBeLessThanOrEqual(16384) // 修复前 ~24.7KB
   })
 
+  it('结果截断护栏可由 agent:budget 覆盖（2026-09-13 参数配置化）', () => {
+    // 字段截断：默认 2000 字符；配置成 10 字符后应在这里就截断
+    const long = 'x'.repeat(50)
+    const byDefault = serializeToolResult({ s: long })
+    expect((byDefault.data as { s: string }).s.length).toBeGreaterThan(10)
+
+    const tighter = serializeToolResult({ s: long }, { maxToolResultFieldChars: 10 })
+    expect(tighter.truncated).toBe(true)
+    expect((tighter.data as { s: string }).s.startsWith('x'.repeat(10))).toBe(true)
+    expect((tighter.data as { s: string }).s).toContain('truncated')
+
+    // 字节上限：默认 16KB；配置成 1KB 后整包走 _oversize preview
+    const big: Record<string, unknown> = {}
+    for (let i = 0; i < 20; i++) big[`f${i}`] = 'y'.repeat(200)
+    const narrowed = serializeToolResult(big, { maxToolResultBytes: 1024 })
+    expect((narrowed.data as { _oversize?: boolean })._oversize).toBe(true)
+    expect(Buffer.byteLength(JSON.stringify(narrowed.data), 'utf8')).toBeLessThanOrEqual(1024)
+
+    // 遍历深度：配置成 1 后二层对象即 depth-limit
+    const deep = serializeToolResult({ a: { b: { c: 1 } } }, { maxResultWalkDepth: 1 })
+    expect(JSON.stringify(deep.data)).toContain('depth-limit')
+  })
+
   it('maxCalls 拦截留审计痕（status=blocked errorCode=LIMIT_EXCEEDED）', async () => {
     const audits: AgentToolCallAudit[] = []
     const r = mkRegistry({ audit: (a) => audits.push(a) })

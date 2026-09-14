@@ -23,11 +23,9 @@ import type {
   AgentEvent,
 } from '@shared/types/agent.types'
 import type { AgentToolDef } from '../types'
+import { agentToolParams } from '@shared/utils/agent-tool-params'
 
 const logger = createLogger('AgentApproval')
-
-/** 卡片摘要展示上限（观测面裁剪常量） */
-const CARD_SUMMARY_MAX_CHARS = 2000
 
 export interface ApprovalCoordinatorDeps {
   /** 事件出口（经 event-bridge 双路径） */
@@ -113,8 +111,9 @@ export class ApprovalCoordinator {
       emit: deps.emit,
       store: deps.store ?? new InMemoryApprovalStore(),
       clock: deps.clock ?? (() => Date.now()),
-      timeoutMs: deps.timeoutMs ?? 5 * 60_000,
-      sessionCacheCapacity: deps.sessionCacheCapacity ?? 64,
+      // 审批参数走「参数设置 → 工具与审批」（未注入时即改造前的 5 分钟 / 64 条）
+      timeoutMs: deps.timeoutMs ?? agentToolParams().approval.timeoutMs,
+      sessionCacheCapacity: deps.sessionCacheCapacity ?? agentToolParams().approval.sessionCacheCapacity,
     }
   }
 
@@ -294,7 +293,7 @@ export class ApprovalCoordinator {
 
 function safeSummary(fn: (i: unknown) => string, input: unknown): string {
   try {
-    return String(fn(input) ?? '').slice(0, CARD_SUMMARY_MAX_CHARS)
+    return String(fn(input) ?? '').slice(0, agentToolParams().approval.maxCardSummaryChars)
   } catch {
     return ''
   }

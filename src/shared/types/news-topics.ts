@@ -1,13 +1,13 @@
 /**
- * 预置新闻主题源目录（内置应用 C1 每日热点早报 / C2 行业动态周报的数据来源）
+ * 内置新闻源目录（信息来源库的新闻种子与兜底目录）
  * @module shared/types/news-topics
- * @description 每个主题预置 15 个源（国外 top10 + 国内 top5）。
- *              前端 select 用 NEWS_TOPIC_NAMES；crawl-news 节点按主题取 URL 列表抓取。
- *              用户可自定义主题与 URL（start 输入 customUrls / sourceIds）。
+ * @description 每个分组预置 15 个源（国外 top10 + 国内 top5）。该常量同时是：
+ *              - 迁移 create-info-sources 的预置种子（写入 info_source_topics / info_sources，
+ *                归属内置类别「新闻来源」news；id 与顺序必须保持一致）
+ *              - crawl-news 节点的兜底目录（信息来源库不可用或分组为空时回退）
+ *              用户可自定义类别/分组/来源（设置 → 信息来源），运行期以库内数据为准。
  *
  *              说明：国外源网络可达性由用户自行解决；单源抓取失败由节点容错跳过。
- *              注意：与迁移 create-news-sources.ts 的 BUILTIN_SOURCES 保持一致
- *              （id 顺序：国外 01-10，国内 11-15）。
  */
 
 /** 预置主题源（一项 = 一个媒体/专栏） */

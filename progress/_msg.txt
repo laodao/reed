@@ -1,15 +1,16 @@
-chore(progress): 归档各会话进度产物（诊断脚本 / 验证截图 / 任务文档）
+chore(progress): 归档各会话进度产物（诊断脚本 / 任务文档，不含验证截图）
 
-工作区遗留的未跟踪产物一次性入库，避免进度文档的证据链（引用的截图与脚本）只存在本地：
-- progress/：诊断脚本（_*.js / _*.cjs / _*.ts / _*.py）、验证截图（86 张 PNG）、
-  评审与进度文档（45 个 md）、运行产物（json/log/txt），合计约 48 MB
-- scripts/：_dl_* 探查脚本、settings 截图、gossip 备份 json、tmp_* 一次性修复脚本
+工作区遗留的未跟踪产物入库，避免进度文档的证据链（引用的脚本与文档）只存在本地：
+- progress/：诊断脚本（_*.js / _*.cjs / _*.ts / _*.py）、评审与进度文档（md）、
+  运行产物（json/log/txt）
+- scripts/：_dl_* 探查脚本、gossip 备份 json、tmp_* 一次性修复脚本
 - memory/workflow-harness-direction.md
 - tasks/2026-09-07-domain-learning-space/m2-implementation-plan.md
 
-截图入库的依据：仓库本身已跟踪 79 张同类截图（progress/2026-05-10-e2e-fullflow/screenshots/ 等），
-且本次 86 张中有 23 张被既有进度文档正文直接引用（如 progress/2026-09-08-domain-learning-*.md），
-沿用同一约定可保证文档可追溯。
+不含验证截图（86 张 PNG）：截图属**本地留证**，不应进版本库——
+- 已从本次提交剔除（progress/*.png 68 张、scripts/.settings-shots/ 18 张），文件仍留在本地磁盘；
+- .gitignore 增加规则防止再次误入库：progress/**/*.png、progress/*.png、scripts/.settings-shots/、*.screenshot.png；
+- 仓库内既有已跟踪的 79 张历史截图本次不动（清理它们需要单独 git rm --cached 并同步更新引用它们的旧文档）。
 
 入库前安全检查：对未跟踪文件做密钥扫描（sk-* / apiKey / Bearer / password 模式）0 命中；
 最大单文件 1.3 MB，无超大二进制。

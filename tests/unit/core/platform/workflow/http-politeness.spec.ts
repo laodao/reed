@@ -4,8 +4,12 @@
  * @description politeFetch：同 host 串行（默认单线程）、不同 host 可并行、
  *              请求前随机间隔、参数走配置链（默认值/上限）。
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { politeFetch, resetPolitenessThrottles } from '@core/platform/workflow/nodes/http-politeness'
+import {
+  resetWorkflowRuntimeParams,
+  setWorkflowRuntimeParams,
+} from '@shared/utils/workflow-runtime-params'
 
 beforeEach(() => {
   resetPolitenessThrottles()
@@ -99,5 +103,43 @@ describe('politeFetch 默认值', () => {
       politeFetch('https://a.com/2'),
     ])
     expect(active.max).toBe(1)
+  })
+})
+
+/**
+ * 2026-09-13 参数设置第二轮：抓取礼貌参数从"模块常量"改为"运行时持有者"
+ * （设置页「参数设置 → 工作流 → 抓取礼貌」），保存后重注入即生效。
+ * 这里证明读取点真的读了持有者：不传 opts 时按注入值走。
+ */
+describe('politeFetch 读运行参数（设置页可调）', () => {
+  beforeEach(() => resetWorkflowRuntimeParams())
+  afterEach(() => resetWorkflowRuntimeParams())
+
+  it('注入请求间隔后，不传 opts 也按注入值等待（不是内置默认的 800ms+）', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, text: async () => '' })))
+    setWorkflowRuntimeParams({ crawl: { delayMsMin: 20, delayMsMax: 20 } as never })
+    const t0 = Date.now()
+    await politeFetch('https://a.com/x')
+    const elapsed = Date.now() - t0
+    expect(elapsed).toBeGreaterThanOrEqual(15) // 确实等了注入的 20ms
+    expect(elapsed).toBeLessThan(400) // 而不是内置默认（800~2500ms）
+  })
+
+  it('注入同站并发后，新建节流器按注入值放宽', async () => {
+    const { active } = stubFetchWithTracker()
+    setWorkflowRuntimeParams({ crawl: { delayMsMin: 0, delayMsMax: 0, hostConcurrency: 2 } as never })
+    await Promise.all([
+      politeFetch('https://a.com/1'),
+      politeFetch('https://a.com/2'),
+    ])
+    expect(active.max).toBe(2)
+  })
+
+  it('节点 config 仍然优先于运行参数（配置链顺序不变）', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, text: async () => '' })))
+    setWorkflowRuntimeParams({ crawl: { delayMsMin: 500, delayMsMax: 500 } as never })
+    const t0 = Date.now()
+    await politeFetch('https://a.com/x', undefined, { delayMsMin: 0, delayMsMax: 0 })
+    expect(Date.now() - t0).toBeLessThan(300) // 节点显式 0 → 不等
   })
 })

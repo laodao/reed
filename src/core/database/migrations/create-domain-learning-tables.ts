@@ -22,6 +22,8 @@ export async function createDomainLearningTables(ds: DataSource): Promise<void> 
   await ensureTable(ds, isPg, 'dl_doc', ddlDoc(isPg), () => docIndexes(ds, isPg))
   await ensureTable(ds, isPg, 'dl_question', ddlQuestion(isPg), () => questionIndexes(ds, isPg))
   await ensureTable(ds, isPg, 'dl_note', ddlNote(isPg), () => noteIndexes(ds, isPg))
+  // 2026-09-13：dl_plan（方案确认流程：诉求理解 → 知识体系 → 才允许落库）
+  await ensureTable(ds, isPg, 'dl_plan', ddlPlan(isPg), () => planIndexes(ds, isPg))
   // M2-C：pace_settings 列（老库升级路径——ensureTable 只补索引，新增列显式 ALTER）
   await ensureColumn(
     ds,
@@ -300,6 +302,46 @@ function ddlCard(pg: boolean): string {
 async function cardIndexes(ds: DataSource, isPg: boolean): Promise<void> {
   await ensureIndex(ds, isPg, 'idx_dl_card_user', 'dl_card', '(user_id)')
   await ensureIndex(ds, isPg, 'idx_dl_card_concept', 'dl_card', '(project_id, concept_id)')
+}
+
+// ==================== dl_plan（方案确认流程；2026-09-13） ====================
+
+function ddlPlan(pg: boolean): string {
+  if (pg) {
+    return `
+      CREATE TABLE dl_plan (
+        id         varchar PRIMARY KEY,
+        user_id    varchar,
+        project_id varchar NOT NULL,
+        step       varchar NOT NULL,
+        status     varchar NOT NULL,
+        revision   integer NOT NULL,
+        payload    text NOT NULL,
+        feedback   text,
+        created_at timestamp,
+        updated_at timestamp
+      )
+    `
+  }
+  return `
+    CREATE TABLE dl_plan (
+      id         TEXT PRIMARY KEY,
+      user_id    TEXT,
+      project_id TEXT NOT NULL,
+      step       TEXT NOT NULL,
+      status     TEXT NOT NULL,
+      revision   INTEGER NOT NULL,
+      payload    TEXT NOT NULL,
+      feedback   TEXT,
+      created_at DATETIME,
+      updated_at DATETIME
+    )
+  `
+}
+
+async function planIndexes(ds: DataSource, isPg: boolean): Promise<void> {
+  await ensureIndex(ds, isPg, 'idx_dl_plan_user', 'dl_plan', '(user_id)')
+  await ensureIndex(ds, isPg, 'idx_dl_plan_step', 'dl_plan', '(project_id, step, revision)')
 }
 
 // ==================== dl_doc ====================

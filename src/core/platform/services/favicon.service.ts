@@ -22,6 +22,7 @@ import * as path from 'path'
 import * as fs from 'fs'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { isPrivateHostname, validateOutboundUrl } from '@core/utils/outbound-url'
+import { assetParams } from '@shared/utils/asset-params'
 
 export interface FaviconResult {
   /** 规范化域名（hostname） */
@@ -31,12 +32,12 @@ export interface FaviconResult {
 }
 
 const CACHE_DIR_NAME = 'favicons'
-/** NOT_FOUND 缓存过期时间（毫秒）：24 小时后自动重试 */
-const NOT_FOUND_TTL_MS = 24 * 60 * 60 * 1000
-const FETCH_TIMEOUT_MS = 6000
-const HTML_SCAN_BYTES = 131072
-/** 抓取并发上限 */
-const MAX_CONCURRENT_FETCH = 16
+/**
+ * 站点图标抓取参数（超时/扫描字节/未命中缓存/并发）走「参数设置 → 素材与图片 → 站点图标」。
+ * 并发在模块级 Semaphore 里使用（进程级单例），设置页标注为"改动需重启客户端"。
+ * 下面两个常量是并发信号的**初始值**（= 改造前写死的 16；持有者未注入时用它）。
+ */
+const DEFAULT_MAX_CONCURRENT_FETCH = 16
 /** 标准浏览器 UA：降低被站点反爬拦截的概率（自定义 UA 会触发 403） */
 const BROWSER_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
@@ -63,7 +64,9 @@ class Semaphore {
   }
 }
 
-const fetchSemaphore = new Semaphore(MAX_CONCURRENT_FETCH)
+const fetchSemaphore = new Semaphore(
+  assetParams().favicon.maxConcurrency || DEFAULT_MAX_CONCURRENT_FETCH,
+)
 
 export class FaviconService {
   private static instance: FaviconService | null = null
@@ -165,7 +168,7 @@ export class FaviconService {
   private async fetchImage(url: string): Promise<string | null> {
     try {
       const res = await fetch(url, {
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        signal: AbortSignal.timeout(assetParams().favicon.timeoutMs),
         redirect: 'follow',
         headers: { 'User-Agent': BROWSER_UA },
       })
@@ -184,7 +187,7 @@ export class FaviconService {
   /** 解析站点 HTML 头部声明的 <link rel="icon"> 图标 URL（相对路径转绝对） */
   private async resolveHtmlIconUrl(domain: string): Promise<string | null> {
     try {
-      const html = await this.fetchHtmlHead(`https://${domain}/`, HTML_SCAN_BYTES)
+      const html = await this.fetchHtmlHead(`https://${domain}/`, assetParams().favicon.htmlScanBytes)
       if (!html) return null
       const href = extractLinkIconHref(html)
       if (!href) return null
@@ -206,7 +209,7 @@ export class FaviconService {
   /** 只读页面前 maxBytes 字节后中断，避免下载整个站点首页 */
   private async fetchHtmlHead(url: string, maxBytes: number): Promise<string> {
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+    const timer = setTimeout(() => controller.abort(), assetParams().favicon.timeoutMs)
     try {
       const res = await fetch(url, {
         signal: controller.signal,
@@ -253,7 +256,7 @@ export class FaviconService {
       if (text.startsWith('NOT_FOUND')) {
         const ts = Number(text.split(':')[1] || 0)
         // 未过期：视为已确认无图标；已过期：当作未缓存，允许重试
-        if (ts && Date.now() - ts < NOT_FOUND_TTL_MS) return ''
+        if (ts && Date.now() - ts < assetParams().favicon.notFoundTtlMs) return ''
         return null
       }
       return null

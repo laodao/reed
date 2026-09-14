@@ -12,7 +12,7 @@
  */
 
 import vm from 'node:vm'
-import { WORKFLOW_LIMITS } from '@shared/types/workflow.types'
+import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 import type { WorkflowNodeContext } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
@@ -102,7 +102,7 @@ const codeNode: WorkflowNodeHandler = {
     }
     const code = stringifyValue(cfg.code)
     ctx.logger.info('代码节点执行', { inputs })
-    const result = runCodeInSandbox(code, inputs, WORKFLOW_LIMITS.codeTimeoutMs)
+    const result = runCodeInSandbox(code, inputs, workflowRuntimeParams().codeSandbox.timeoutMs)
     return { status: 'succeeded', output: { result } }
   }
 }

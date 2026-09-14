@@ -9,6 +9,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { DataSource } from 'typeorm'
 import { AgentTrajectoryRepository, TRAJECTORY_PAYLOAD_MAX_BYTES } from '@core/database/repositories/agent-trajectory.repository'
+import { resetRuntimeLimits, setRuntimeLimits } from '@shared/utils/runtime-limits'
 import { createAgentTrajectories } from '@core/database/migrations/create-agent-trajectories'
 import { runWithUserAsync } from '@core/context/user-context'
 
@@ -143,5 +144,31 @@ describe('payload 截断', () => {
       )) as Array<{ payload_json: string }>
       expect(Buffer.byteLength(raw[0].payload_json, 'utf8')).toBeLessThan(TRAJECTORY_PAYLOAD_MAX_BYTES + 8)
     })
+  })
+
+  it('上限可由 settings agent:budget 覆盖（进程级限额，2026-09-13 参数配置化）', async () => {
+    ds = await buildDs()
+    const repo = new AgentTrajectoryRepository(ds)
+    try {
+      setRuntimeLimits({ maxTrajectoryPayloadBytes: 512 })
+      await runWithUserAsync('u1', async () => {
+        await repo.appendBatch([
+          {
+            scope: 'workflow',
+            scopeKey: 'r3:n1:2',
+            seq: 1,
+            iteration: 0,
+            kind: 'tool_result',
+            payload: { text: '汉'.repeat(1000) }, // ~3KB，超过 512B 新上限
+          },
+        ])
+        const raw = (await ds.query(
+          "SELECT payload_json FROM agent_trajectories WHERE scope_key = 'r3:n1:2'",
+        )) as Array<{ payload_json: string }>
+        expect(Buffer.byteLength(raw[0].payload_json, 'utf8')).toBeLessThan(512 + 8)
+      })
+    } finally {
+      resetRuntimeLimits()
+    }
   })
 })
