@@ -26,6 +26,7 @@ import type { AgentToolDef, AgentStreamEvent, AgentTask, AgentHost, AgentLoopSta
 import type { ApprovalDecision } from '@shared/types/agent.types'
 import type { ToolArtifactPort } from './artifacts'
 import { buildWireNameMap } from './wire-name'
+import { runtimeLimits } from '@shared/utils/runtime-limits'
 
 const SpawnSubagentInput = z.object({
   goal: z
@@ -60,8 +61,10 @@ export interface SpawnSubagentDeps {
   tools: Record<string, AgentToolDef>
   /** 子代理系统提示词（缺省=通用自主执行提示） */
   systemPrompt?: string
-  /** 子代理步数缺省值（硬顶 16） */
+  /** 子代理步数缺省值（缺省读进程级限额 runtimeLimits().maxSubagentSteps） */
   maxSteps?: number
+  /** 子代理步数顶（缺省读进程级限额 runtimeLimits().maxSubagentStepsCeiling；可由 settings 覆盖） */
+  maxStepsCap?: number
   /** 模型档位映射（场景⑦） */
   models?: SubagentModelTiers
   /** 子代理轨迹落库端口（独立 scopeKey——工作台可独立查看子代理全程） */
@@ -80,6 +83,22 @@ export interface SpawnSubagentDeps {
 
 export const SUBAGENT_DEFAULT_MAX_STEPS = 8
 export const SUBAGENT_MAX_STEPS_CAP = 16
+
+/**
+ * 子代理步数决策（纯函数，便于直测）：请求值 → 宿主缺省 → 进程级限额，最后夹到步数顶。
+ * 2026-09-13 参数配置化：缺省与上限都可被 settings `agent:budget`.maxSteps.{subagent,subagentCeiling}
+ * 覆盖（经 runtime-limits 持有者注入）。
+ */
+export function resolveSubagentMaxSteps(input: {
+  requested?: number
+  defaultSteps?: number
+  cap?: number
+}): number {
+  const limits = runtimeLimits()
+  const base = input.requested ?? input.defaultSteps ?? limits.maxSubagentSteps
+  const ceiling = input.cap ?? limits.maxSubagentStepsCeiling
+  return Math.min(base, ceiling)
+}
 
 const DEFAULT_SUBAGENT_SYSTEM = `你是一个子代理，接受主代理的委派独立完成一项分支任务。
 你看不到主对话——只依据 goal 里给出的信息工作；信息不足时在报告中说明缺口，不要编造。
@@ -155,7 +174,11 @@ export function createSpawnSubagentTool(deps: SpawnSubagentDeps): AgentToolDef<{
         input: input.goal,
         systemPrompt: deps.systemPrompt ?? DEFAULT_SUBAGENT_SYSTEM,
         tools,
-        maxSteps: Math.min(input.max_steps ?? deps.maxSteps ?? SUBAGENT_DEFAULT_MAX_STEPS, SUBAGENT_MAX_STEPS_CAP),
+        maxSteps: resolveSubagentMaxSteps({
+          requested: input.max_steps,
+          defaultSteps: deps.maxSteps,
+          cap: deps.maxStepsCap,
+        }),
         runtimeContext: { parentScopeKey: deps.scopeKey, modelTier: input.model ?? 'inherit' },
       }
       const childHost: AgentHost = {

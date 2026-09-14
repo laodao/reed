@@ -18,13 +18,14 @@ import { emitRoomEvent } from './room-events'
 import { getRoomState, patchRoomState } from './room-state'
 import { ledgerSnapshotText } from './room-ledger'
 import { generateRoomText } from './room-llm'
+import { longwritingParams } from '@shared/utils/longwriting-params'
 
 const logger = createLogger('StoryRoomDistiller')
 
 export const ROOM_DISTILLER_DEFINITION_ID = 'story-room-distiller'
 
-/** 一次提炼的卡片数上限（人物/故事线可能多张） */
-const MAX_CARDS_PER_DISTILL = 6
+// 单次提炼卡片数上限 / 大纲叶子节点列出上限
+// 见「参数设置 → 长文写作 → 故事研讨室」（`longwriting:storyRoom`），使用点现读。
 
 // ==================== 提炼 prompt（输出与 story-persist 输入同构） ====================
 
@@ -206,11 +207,13 @@ export class StoryRoomDistillerService {
 
   /** 范围素材：大纲需知道当前卷/集序号与已有结构 */
   private async scopeContext(m: any, projectId: string, scope: BibleDistillScope, state: RoomWorkspaceState): Promise<string> {
+    // 「参数设置 → 长文写作 → 大纲叶子节点上限」：现读
+    const { outlineLeafLimit } = longwritingParams().storyRoom
     if (scope === 'chapter') {
       const tree = (await m?.lwOutlines?.getTreeByProjectId(projectId)) || []
       const leaves = tree
         .filter((n: any) => n.nodeType === 'chapter' || n.nodeType === 'section')
-        .slice(0, 30)
+        .slice(0, outlineLeafLimit)
       if (leaves.length === 0) return '\n【大纲】（空）——请先让用户完成大纲，或把章节对应到讨论中的章节划分'
       return `\n【大纲叶子节点】（章节卡对应其中一个）\n${leaves.map((n: any) => `- id=${n.id} ${n.name}`).join('\n')}`
     }
@@ -239,6 +242,8 @@ export class StoryRoomDistillerService {
       createdAt: now,
     })
 
+    // 「参数设置 → 长文写作 → 单次提炼卡片上限」：现读
+    const { maxCardsPerDistill } = longwritingParams().storyRoom
     const out: ArtifactCard[] = []
     if (scope === 'characters') {
       const name = String(parsed.name || '').trim() || '未命名人物'
@@ -268,7 +273,7 @@ export class StoryRoomDistillerService {
       const name = String(parsed.name || '').trim() || '未命名'
       out.push(mk('custom', `${key}卡 · ${name}`, { ...parsed, _kindKey: key }))
     }
-    return out.slice(0, MAX_CARDS_PER_DISTILL)
+    return out.slice(0, maxCardsPerDistill)
   }
 
   // ==================== 卡片操作 ====================

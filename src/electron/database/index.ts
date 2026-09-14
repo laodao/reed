@@ -34,8 +34,9 @@ import { AppSessionMessageRepository } from '@core/database/repositories/app-ses
 import { AssetRepository } from '@core/database/repositories/asset.repository'
 import { AssetGroupRepository } from '@core/database/repositories/asset-group.repository'
 import { AssetCategoryRepository } from '@core/database/repositories/asset-category.repository'
-import { NewsSourceRepository } from '@core/database/repositories/news-source.repository'
-import { NewsTopicRepository } from '@core/database/repositories/news-topic.repository'
+import { InfoSourceRepository } from '@core/database/repositories/info-source.repository'
+import { InfoSourceTopicRepository } from '@core/database/repositories/info-source-topic.repository'
+import { InfoSourceCategoryRepository } from '@core/database/repositories/info-source-category.repository'
 import { ToolCredentialRepository } from '@core/database/repositories/tool-credential.repository'
 import { CustomToolRepository } from '@core/database/repositories/custom-tool.repository'
 import { EmailAccountRepository } from '@core/database/repositories/email-account.repository'
@@ -162,8 +163,9 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public assets: AssetRepository | null = null
   public assetGroups: AssetGroupRepository | null = null
   public assetCategories: AssetCategoryRepository | null = null
-  public newsSources: NewsSourceRepository | null = null
-  public newsTopics: NewsTopicRepository | null = null
+  public infoSources: InfoSourceRepository | null = null
+  public infoSourceTopics: InfoSourceTopicRepository | null = null
+  public infoSourceCategories: InfoSourceCategoryRepository | null = null
   public toolCredentials: ToolCredentialRepository | null = null
   public customTools: CustomToolRepository | null = null
   public emailAccounts: EmailAccountRepository | null = null
@@ -222,6 +224,8 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public dlDocs: import('@core/database/repositories/dl-doc.repository').DlDocRepository | null = null
   public dlQuestions: import('@core/database/repositories/dl-question.repository').DlQuestionRepository | null = null
   public dlNotes: import('@core/database/repositories/dl-note.repository').DlNoteRepository | null = null
+  /** 方案确认流程（dl_plan；2026-09-13） */
+  public dlPlans: import('@core/database/repositories/dl-plan.repository').DlPlanRepository | null = null
 
   // 业务包内核（第一期）
   public packs: PackRepository | null = null
@@ -839,11 +843,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-builtin-apps'
     )
     await createBuiltinApps(this.dataSource)
-    // 新闻来源库：news_sources 表 + 预置 5 主题 × 10 全球 top10 源（内置应用 C1/C2 数据源）
-    const { createNewsSources } = await import(
-      '@core/database/migrations/create-news-sources'
+    // 信息来源库：info_source_categories/info_source_topics/info_sources 三表 +
+    // 预置内置类别「新闻来源」+ 5 分组 × 15 新闻源（内置应用 C1/C2 数据源）
+    const { createInfoSources } = await import(
+      '@core/database/migrations/create-info-sources'
     )
-    await createNewsSources(this.dataSource)
+    await createInfoSources(this.dataSource)
     // P0 工具：tool_credentials / custom_tools 表（幂等，双语种）
     const { createToolTables } = await import(
       '@core/database/migrations/create-tool-tables'
@@ -4426,8 +4431,9 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.assets = new AssetRepository(this.dataSource)
     this.assetGroups = new AssetGroupRepository(this.dataSource)
     this.assetCategories = new AssetCategoryRepository(this.dataSource)
-    this.newsSources = new NewsSourceRepository(this.dataSource)
-    this.newsTopics = new NewsTopicRepository(this.dataSource)
+    this.infoSources = new InfoSourceRepository(this.dataSource)
+    this.infoSourceTopics = new InfoSourceTopicRepository(this.dataSource)
+    this.infoSourceCategories = new InfoSourceCategoryRepository(this.dataSource)
     this.toolCredentials = new ToolCredentialRepository(this.dataSource)
     this.customTools = new CustomToolRepository(this.dataSource)
     this.emailAccounts = new EmailAccountRepository(this.dataSource)
@@ -4481,6 +4487,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.dlDocs = new (await import('@core/database/repositories/dl-doc.repository')).DlDocRepository(this.dataSource)
     this.dlQuestions = new (await import('@core/database/repositories/dl-question.repository')).DlQuestionRepository(this.dataSource)
     this.dlNotes = new (await import('@core/database/repositories/dl-note.repository')).DlNoteRepository(this.dataSource)
+    this.dlPlans = new (await import('@core/database/repositories/dl-plan.repository')).DlPlanRepository(this.dataSource)
     // 业务包内核（第一期）：包快照 + 启用/配置覆写
     this.packs = new PackRepository(this.dataSource)
     this.packBindings = new PackBindingRepository(this.dataSource)

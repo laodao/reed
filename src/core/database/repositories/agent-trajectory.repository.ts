@@ -14,8 +14,13 @@ import { getCurrentUserId } from '@core/context/user-context'
 import { AgentTrajectoryEntity } from '../entities/agent-trajectory.entity'
 import { BaseRepository } from '../base-repository'
 import { escapeLikePrefix } from './platform-event.repository'
+import { runtimeLimits } from '@shared/utils/runtime-limits'
 
-/** 单条 payload JSON 字节上限（与工具结果截断同量级；超长字节截断留痕） */
+/**
+ * 单条 payload JSON 字节上限（与工具结果截断同量级；超长字节截断留痕）。
+ * 2026-09-13 起实际生效值可被 settings `agent:budget`.guards.maxTrajectoryPayloadBytes 覆盖
+ * （进程级，启动时注入）；此常量保留为**缺省值**与对外引用口径。
+ */
 export const TRAJECTORY_PAYLOAD_MAX_BYTES = 16_384
 
 /** 轨迹行 id：scopeKey+seq 确定性主键（可读；重放不产生第二套 id） */
@@ -52,21 +57,24 @@ export interface AgentTrajectoryRow {
 }
 
   /** payload 截断：先按内层预算截断（预留包装+转义膨胀余量——review A2：
-   *  JSON.stringify 包装会把引号密集文本膨胀近 2 倍，以最终字节数为准兜底） */
+   *  JSON.stringify 包装会把引号密集文本膨胀近 2 倍，以最终字节数为准兜底）。
+   *  上限 2026-09-13 起可由 settings `agent:budget`.guards.maxTrajectoryPayloadBytes 覆盖
+   *  （进程级，启动时注入；见 shared/utils/runtime-limits）。 */
   function truncatePayloadBytes(payload: Record<string, unknown> | null | undefined): string | null {
     if (!payload) return null
+    const limit = runtimeLimits().maxTrajectoryPayloadBytes
     let serialized: string
     try {
       serialized = JSON.stringify(payload)
     } catch {
       return '{"_unserializable":true}'
     }
-    if (Buffer.byteLength(serialized, 'utf8') <= TRAJECTORY_PAYLOAD_MAX_BYTES) return serialized
+    if (Buffer.byteLength(serialized, 'utf8') <= limit) return serialized
     let inner = serialized
     let wrapped = ''
     for (;;) {
       wrapped = JSON.stringify({ _truncated: inner })
-      if (Buffer.byteLength(wrapped, 'utf8') <= TRAJECTORY_PAYLOAD_MAX_BYTES || inner.length === 0) break
+      if (Buffer.byteLength(wrapped, 'utf8') <= limit || inner.length === 0) break
       inner = inner.slice(0, Math.floor(inner.length * 0.8))
     }
     return wrapped

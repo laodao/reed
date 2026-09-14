@@ -31,21 +31,14 @@ import { emitRoomEvent } from './room-events'
 import { getRoomState, patchRoomState } from './room-state'
 import { ledgerSnapshotText, silentExtractLedger } from './room-ledger'
 import { buildStrategySection, getPhaseDef, loadQuestionBank } from './room-phases'
+import { longwritingParams } from '@shared/utils/longwriting-params'
 
 const logger = createLogger('StoryRoomSession')
 
 export const ROOM_EDITOR_DEFINITION_ID = 'story-room-editor'
 export const ROOM_CONVERSATION_PREFIX = 'room:'
-/** 每轮注入的历史条数（原生 messages 窗口） */
-export const ROOM_HISTORY_LIMIT = 40
-/** 历史单条注入截断（上限保护；实际生效窗口由 ContextManager 水位决定，评审 P2-12） */
-const HISTORY_CONTENT_MAX = 1200
-/** 未摘要轮数达到该值触发滚动摘要 */
-export const SUMMARY_THRESHOLD_TURNS = 20
-/** 每次滚动摘要压缩的轮数 */
-export const SUMMARY_BATCH_TURNS = 10
-/** 前情提要总长上限（超出从头丢弃最老分段） */
-const SUMMARY_MAX_CHARS = 6000
+// 历史条数 / 单条截断 / 摘要阈值与批量 / 前情提要上限 / 主编步数
+// 均见「参数设置 → 长文写作 → 故事研讨室」（`longwriting:storyRoom`），使用点现读。
 
 /** 主编系统提示词：人格 + 纪律 + 阶段策略 + 题材问题库（跨轮稳定段） */
 export function editorSystemPrompt(phase: RoomPhaseId, contentTarget: 'novel' | 'script', questionBank: string[]): string {
@@ -223,6 +216,8 @@ export class StoryRoomSessionService {
     const conversationId = `${ROOM_CONVERSATION_PREFIX}${projectId}`
     const scopeId = `story-room:${projectId}`
     const harness = getAgentLoopHarness()
+    // 「参数设置 → 长文写作 → 故事研讨室」：每轮现读（不要在模块顶层读，否则不跟随重注入）
+    const { historyLimit, maxHistoryContentChars, editorMaxSteps } = longwritingParams().storyRoom
 
     // 1. 房间状态（阶段/账本/摘要/轮号）
     const roomState = await getRoomState(m, projectId)
@@ -232,10 +227,10 @@ export class StoryRoomSessionService {
     const history = await m.lwDesignMessages.getByConversationId(conversationId)
     const seeded: ModelMessage[] = history
       .filter((h: { role: string }) => h.role === 'user' || h.role === 'assistant')
-      .slice(-ROOM_HISTORY_LIMIT)
+      .slice(-historyLimit)
       .map((h: { role: string; content: unknown }) => ({
         role: h.role as 'user' | 'assistant',
-        content: String(h.content ?? '').slice(0, HISTORY_CONTENT_MAX),
+        content: String(h.content ?? '').slice(0, maxHistoryContentChars),
       } as ModelMessage))
 
     // 3. 保存用户消息（UI 权威历史；metadata 带轮次/阶段供 provenance）
@@ -273,7 +268,7 @@ export class StoryRoomSessionService {
         systemPrompt: () => systemPrompt,
         snapshot: () => snapshot,
         seededHistory: () => seeded,
-        maxSteps: 2,
+        maxSteps: editorMaxSteps,
         memory: {
           scope: () => ({ bizModule: 'longwriting', projectId }),
           recallText: () => `${message}\n${snapshot}`,
@@ -385,9 +380,11 @@ export class StoryRoomSessionService {
     signal?: AbortSignal,
   ): Promise<void> {
     try {
-      if (state.turnNo - state.summarizedTurn < SUMMARY_THRESHOLD_TURNS) return
+      // 「参数设置 → 长文写作 → 故事研讨室」：阈值/批量/前情提要上限现读
+      const { summaryThresholdTurns, summaryBatchTurns, maxSummaryChars } = longwritingParams().storyRoom
+      if (state.turnNo - state.summarizedTurn < summaryThresholdTurns) return
       const from = state.summarizedTurn + 1
-      const to = state.summarizedTurn + SUMMARY_BATCH_TURNS
+      const to = state.summarizedTurn + summaryBatchTurns
       const block = history
         .filter((h) => {
           const t = parseMeta(h.metadata).turnNo ?? 0
@@ -414,9 +411,9 @@ export class StoryRoomSessionService {
       const section = `\n--- 第 ${from}~${to} 轮 ---\n${digest.trim()}`
       let summary = (state.summary + section).trim()
       // 总长超限：从最老分段开始丢
-      if (summary.length > SUMMARY_MAX_CHARS) {
+      if (summary.length > maxSummaryChars) {
         const sections = summary.split('\n--- ')
-        while (sections.length > 1 && sections.join('\n--- ').length > SUMMARY_MAX_CHARS) sections.shift()
+        while (sections.length > 1 && sections.join('\n--- ').length > maxSummaryChars) sections.shift()
         summary = sections.join('\n--- ').replace(/^\n--- /, '')
       }
       await patchRoomState(m, projectId, { summary, summarizedTurn: to })

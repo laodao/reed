@@ -12,7 +12,8 @@ import { describe, expect, it } from 'vitest'
 import { MockLanguageModelV3, simulateReadableStream } from 'ai/test'
 import type { LanguageModel } from 'ai'
 import { z } from 'zod'
-import { createSpawnSubagentTool } from '@core/platform/agent-runtime/tools/subagent'
+import { createSpawnSubagentTool, resolveSubagentMaxSteps } from '@core/platform/agent-runtime/tools/subagent'
+import { resetRuntimeLimits, setRuntimeLimits } from '@shared/utils/runtime-limits'
 import type { AgentToolDef } from '@core/platform/agent-runtime/types'
 
 function scriptedModel(steps: Array<() => Array<Record<string, unknown>>>, capture?: (opts: { prompt?: unknown; tools?: unknown }) => void): LanguageModel {
@@ -70,6 +71,24 @@ function spawnTool(model: LanguageModel, extra?: { models?: { cheap?: { modelId?
 const CTX = { scopeId: 'session:test:p1', rawInput: '主任务', signal: undefined, logContext: {}, toolCallId: 'call_1' }
 
 describe('spawn_subagent（39 号 P1-2）', () => {
+  it('步数决策：请求值 → 宿主缺省 → 进程级限额，最后夹到步数顶（2026-09-13 可配置）', () => {
+    try {
+      // 缺省来自进程级限额（= 内置 8 / 顶 16）
+      expect(resolveSubagentMaxSteps({})).toBe(8)
+      // 请求值受步数顶约束
+      expect(resolveSubagentMaxSteps({ requested: 99 })).toBe(16)
+      // 宿主显式给缺省/顶时优先
+      expect(resolveSubagentMaxSteps({ defaultSteps: 5 })).toBe(5)
+      expect(resolveSubagentMaxSteps({ requested: 99, cap: 3 })).toBe(3)
+      // 注入的进程级限额（settings agent:budget.maxSteps.{subagent,subagentCeiling}）生效
+      setRuntimeLimits({ maxSubagentSteps: 6, maxSubagentStepsCeiling: 9 })
+      expect(resolveSubagentMaxSteps({})).toBe(6)
+      expect(resolveSubagentMaxSteps({ requested: 99 })).toBe(9)
+    } finally {
+      resetRuntimeLimits()
+    }
+  })
+
   it('报告回填：子代理最终输出进入 data.report，轨迹键独立', async () => {
     const cap = spawnTool(scriptedModel([txt('这是子代理的调查报告。')]))
     const r = await cap.tool.execute({ goal: '读日志并提炼错误要点' }, CTX as never)

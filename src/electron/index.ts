@@ -112,7 +112,7 @@ import { registerExportHandlers } from './ipc/handlers/export.handler'
 import { registerSearchEngineHandlers } from './ipc/handlers/search-engine.handler'
 import { registerToolHandlers } from './ipc/handlers/tool.handler'
 import { registerEmailHandlers } from './ipc/handlers/email.handler'
-import { registerNewsSourceHandlers } from './ipc/handlers/news-source.handler'
+import { registerInfoSourceHandlers } from './ipc/handlers/info-source.handler'
 import { registerFaviconHandlers } from './ipc/handlers/favicon.handler'
 import { registerOSSHandlers } from './ipc/handlers/oss.handler'
 import { registerDataSourceHandlers } from './ipc/handlers/datasource.handler'
@@ -401,7 +401,7 @@ function initIpcHandlers(): void {
   registerSearchEngineHandlers()
   registerToolHandlers()
   registerEmailHandlers()
-  registerNewsSourceHandlers()
+  registerInfoSourceHandlers()
   registerFaviconHandlers()
   registerOSSHandlers()
   registerDataSourceHandlers()

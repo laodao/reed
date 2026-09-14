@@ -19,7 +19,7 @@ import { registerTranslationHandlers } from '@electron/ipc/handlers/translation.
 import { registerImageHandlers } from '@electron/ipc/handlers/image.handler'
 import { registerToolHandlers } from '@electron/ipc/handlers/tool.handler'
 import { registerEmailHandlers } from '@electron/ipc/handlers/email.handler'
-import { registerNewsSourceHandlers } from '@electron/ipc/handlers/news-source.handler'
+import { registerInfoSourceHandlers } from '@electron/ipc/handlers/info-source.handler'
 import { registerFaviconHandlers } from '@electron/ipc/handlers/favicon.handler'
 import { registerDataSourceHandlers } from '@electron/ipc/handlers/datasource.handler'
 import { registerFileHandlers } from '@electron/ipc/handlers/file.handler'
@@ -41,7 +41,7 @@ export async function registerAllWebChannels(): Promise<void> {
   registerImageHandlers()
   registerToolHandlers()
   registerEmailHandlers()
-  registerNewsSourceHandlers()
+  registerInfoSourceHandlers()
   registerFaviconHandlers()
   // skills/diary/portrait/chat/voice-design/longwriting/episode-production/
   // workflow/app/knowledge-base/asset-center 十一个业务的 handler 已迁移为内置业务包

@@ -17,11 +17,12 @@ import { generateRoomText } from './room-llm'
 import { getRoomState, mutateRoomState, patchRoomState } from './room-state'
 import { nextPhase, getPhaseDef } from './room-phases'
 import { emitRoomEvent } from './room-events'
+import { longwritingParams } from '@shared/utils/longwriting-params'
 
 const logger = createLogger('StoryRoomLedger')
 
-/** 账本容量上限（超出时丢弃最老的 tentative/rejected，confirmed 保留） */
-const LEDGER_CAP = 60
+// 账本容量上限见「参数设置 → 长文写作 → 故事研讨室 → 共识账本容量」（`longwriting:storyRoom`），
+// 由 `compactLedger` 的缺省参数在使用点现读。
 const KINDS: ConsensusKind[] = ['premise', 'character', 'plot', 'world', 'tone', 'taboo']
 const STATUSES: ConsensusStatus[] = ['tentative', 'confirmed', 'rejected']
 
@@ -176,7 +177,10 @@ export async function silentExtractLedger(
  * 最老 rejected（rejected 是"防重复推荐"的机制载体，尽量保留）；confirmed 不动，
  * budget 按 CAP - confirmed 夹紧（confirmed 自身不因超限被挤掉）。
  */
-export function compactLedger(ledger: ConsensusEntry[], cap = LEDGER_CAP): ConsensusEntry[] {
+export function compactLedger(
+  ledger: ConsensusEntry[],
+  cap: number = longwritingParams().storyRoom.ledgerCap,
+): ConsensusEntry[] {
   if (ledger.length <= cap) return ledger
   const keepConfirmed = ledger.filter((e) => e.status === 'confirmed')
   const rest = ledger.filter((e) => e.status !== 'confirmed')

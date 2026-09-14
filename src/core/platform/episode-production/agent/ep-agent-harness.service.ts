@@ -20,6 +20,7 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import { createLogger } from '@core/utils/logger'
 import { createHostKit, formatStopNote } from '@core/platform/agent-runtime'
+import { loadAgentBudget } from '@core/platform/agent-runtime/budget/agent-budget'
 import type { AgentToolDef } from '@core/platform/agent-runtime/types'
 import type { AgentToolBinding } from '@shared/types/agent.types'
 import { getAgentLoopHarness } from '@core/platform/workflow/nodes/agent-loop-node'
@@ -34,7 +35,7 @@ import type {
   EpAgentProductionState,
   EpAgentSendResult,
 } from './ep-agent.types'
-import { EP_AGENT_DEFINITION_ID, EP_AGENT_HISTORY_LIMIT, EP_AGENT_MAX_STEPS } from './ep-agent.types'
+import { EP_AGENT_DEFINITION_ID, EP_AGENT_HISTORY_LIMIT } from './ep-agent.types'
 import { computeEpProductionState, buildEpSuggestions } from './ep-agent-deps'
 import { emitEpAgentEvent, epAgentEventChannel } from './ep-agent-events'
 import { epAgentConversationId } from './ep-agent-workflow.service'
@@ -235,13 +236,22 @@ export class EpAgentHarnessService {
 
     // 3. 状态快照 + 工具白名单（模块域 pack 全名 + 规划类系统工具）
     const state = await computeEpProductionState(m, projectId, episodeId)
+    // 平台预算（agent:budget）：步数用 episode 档；工具上限只认**用户显式覆盖**，
+    // 没配就沿用 ep 自己的成本闸门默认（2026-09-13 参数配置化）
+    const { budget } = await loadAgentBudget(m.settings)
     const packNames = harness.registry
       .listSpecs({ packId: EP_AGENT_PACK_ID })
       .map((s) => s.name)
     const planningTools = ['create_task_plan', 'create_workflow_draft']
     const bindings: AgentToolBinding[] = [
-      ...packNames.map((name) => ({ tool: name, maxCalls: EP_TOOL_MAX_CALLS[name.replace(`pack:${EP_AGENT_PACK_ID}:`, '')] })),
-      ...planningTools.map((tool) => ({ tool })),
+      ...packNames.map((name) => {
+        const short = name.replace(`pack:${EP_AGENT_PACK_ID}:`, '')
+        return { tool: name, maxCalls: budget.maxCalls.overrides[short] ?? EP_TOOL_MAX_CALLS[short] }
+      }),
+      ...planningTools.map((tool) => ({
+        tool,
+        ...(budget.maxCalls.overrides[tool] !== undefined ? { maxCalls: budget.maxCalls.overrides[tool] } : {}),
+      })),
     ]
 
     // choice→审批（EP-2）：协调器按轮创建；approval:request 转译为前端 choice:request
@@ -295,7 +305,7 @@ export class EpAgentHarnessService {
         systemPrompt: () => epAgentSystemPrompt(),
         snapshot: () => epStateToSnapshot(state),
         seededHistory: () => seeded,
-        maxSteps: EP_AGENT_MAX_STEPS,
+        maxSteps: budget.maxSteps.episode,
         // EP 剧本/分镜文本大，32K 起步（保留 EP 专属旋钮，缺省回落全局——评审 P2-3）
         contextWindowTokens:
           Number(process.env.EP_AGENT_CONTEXT_WINDOW ?? process.env.AGENT_CONTEXT_WINDOW ?? 32_768) || 32_768,

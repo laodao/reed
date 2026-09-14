@@ -46,6 +46,8 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import { PlatformEventRepository } from '@core/database/repositories/platform-event.repository'
 import type { PlatformEventEntity } from '@core/database/entities/platform-event.entities'
 import { createLogger } from '@core/utils/logger'
+import { SETTINGS_KEYS, getSettingWithLegacyFallback } from '@shared/constants/settings-keys'
+import { eventParamsFromSettings } from '@shared/utils/event-params'
 import { matchesFilter } from './event-matcher'
 import { EventPayloadError, assertPayloadSafe } from './payload-guard'
 import {
@@ -734,7 +736,11 @@ export async function getEventBus(): Promise<PlatformEventBus | null> {
         logger.warn('[EventBus] 数据源未就绪，事件总线未启动')
         return null
       }
-      const bus = new PlatformEventBus(ds, { rateLimits: await loadRateLimitOverrides() })
+      const bus = new PlatformEventBus(ds, {
+        rateLimits: await loadRateLimitOverrides(),
+        // 「参数设置 → 事件系统 → 事件总线」（启动装配，改完需重启）
+        ...(await loadEventBusParams()),
+      })
       await bus.start()
       singleton = bus
       logger.info('[EventBus] 平台事件总线已启动')
@@ -769,14 +775,46 @@ function formatSqliteDatetime(d: Date): string {
 }
 
 
-/** settings 键：eventBus:rateLimits（JSON 规则数组，如 [{"pattern":"agent:*","maxPerMinute":0}]；0=不限）。读取失败/缺省回退代码默认（2026-09-06 增） */
-const RATE_LIMIT_SETTINGS_KEY = 'eventBus:rateLimits'
+/** settings 键：`event:rateLimits`（JSON 规则数组，如 [{"pattern":"agent:*","maxPerMinute":0}]；0=不限）。读取失败/缺省回退代码默认（2026-09-06 增；2026-09-13 键名统一规范，旧键 eventBus:rateLimits 由兜底读取兼容） */
+const RATE_LIMIT_SETTINGS_KEY = SETTINGS_KEYS.eventRateLimits
+
+/**
+ * 读「参数设置 → 事件系统 → 事件总线」的生效值（启动装配时调一次）。
+ * 走登记表解析（与设置页同一口径），缺省/非法一律回落内置默认。
+ */
+async function loadEventBusParams(): Promise<{
+  maxAttempts?: number
+  sweepIntervalMs?: number
+  scanBatchSize?: number
+  defaultMaxInFlight?: number
+  anonymousMaxInFlight?: number
+}> {
+  try {
+    const settings = getCoreDatabaseManager().settings
+    const raw: Record<string, unknown> = {
+      [SETTINGS_KEYS.eventBus]: settings
+        ? await getSettingWithLegacyFallback(settings, SETTINGS_KEYS.eventBus)
+        : null,
+    }
+    const { bus } = eventParamsFromSettings(raw)
+    return {
+      maxAttempts: bus.maxAttempts,
+      sweepIntervalMs: bus.sweepIntervalMs,
+      scanBatchSize: bus.scanBatchSize,
+      defaultMaxInFlight: bus.maxInFlight,
+      anonymousMaxInFlight: bus.maxAnonymousInFlight,
+    }
+  } catch (e) {
+    logger.warn('[EventBus] 读取事件总线参数失败（使用内置默认）', e)
+    return {}
+  }
+}
 
 async function loadRateLimitOverrides(): Promise<EventRateLimitRule[] | undefined> {
   try {
     const settings = getCoreDatabaseManager().settings
     if (!settings) return undefined
-    const raw = await settings.get(RATE_LIMIT_SETTINGS_KEY)
+    const raw = await getSettingWithLegacyFallback(settings, RATE_LIMIT_SETTINGS_KEY)
     if (!Array.isArray(raw)) return undefined
     const rules = raw.filter(
       (r): r is EventRateLimitRule =>

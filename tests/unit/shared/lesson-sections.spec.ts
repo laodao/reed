@@ -141,4 +141,34 @@ describe('planLessonSections', () => {
   it('空区集 → 空计划（渲染层走空态）', () => {
     expect(planLessonSections([])).toEqual({ content: [], authoringNotes: [] })
   })
+
+  // ==================== 2026-09-13 历史卡渲染期归一（真实数据形状） ====================
+
+  it('历史卡别名 key（checks/quiz/selftest）也拿到自测样式（review）', () => {
+    for (const key of ['checks', 'quiz', 'selftest', 'self-check']) {
+      const plan = planLessonSections([sec(key, '**Q1** 题目', { title: '自测与检验清单' })])
+      expect(plan.content[0].style, `${key} 未拿到 review 样式`).toBe('review')
+      // 模型给定的标题仍优先（历史卡不改写），缺省才用契约兜底
+      expect(plan.content[0].title).toBe('自测与检验清单')
+    }
+    expect(planLessonSections([sec('worked', '正文')]).content[0].title).toBe('示例')
+  })
+
+  it('历史卡正文里的 ## 小标题在渲染期降到 ###（与区标题拉开层级）', () => {
+    const plan = planLessonSections([
+      sec('mechanism', ['## 1. 把前向计算记成一张图', '', '正文'].join('\n'), { title: '机制' }),
+    ])
+    expect(plan.content[0].body).toContain('### 1. 把前向计算记成一张图')
+    // 二级标题（`## ` 开头）已不存在
+    expect(/^##[^#]/m.test(plan.content[0].body)).toBe(false)
+  })
+
+  it('历史卡 notes 别名（authoring-notes）也归入编写注记置底汇总', () => {
+    const plan = planLessonSections([
+      sec('meta', '正文'),
+      sec('authoring-notes', '- 采集情况：KB 命中'),
+    ])
+    expect(plan.content.map((c) => c.key)).toEqual(['meta'])
+    expect(plan.authoringNotes).toEqual(['采集情况：KB 命中'])
+  })
 })

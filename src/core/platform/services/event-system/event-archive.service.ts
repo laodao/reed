@@ -204,9 +204,28 @@ export function startEventArchiveJob(opts?: EventArchiveOptions): EventArchiveSe
     logger.warn('[EventArchive] 数据源未就绪，归档作业未启动')
     return null
   }
-  singleton = new EventArchiveService(ds, opts)
+  // 「参数设置 → 事件系统 → 事件归档」：调用方未显式指定时取配置（启动装配，改完需重启）
+  const effective: EventArchiveOptions = { ...loadArchiveParamsFromSync(), ...opts }
+  singleton = new EventArchiveService(ds, effective)
   singleton.start()
   return singleton
+}
+
+/**
+ * 归档参数的**同步**读取需要 settings（异步）——装配处是同步函数，
+ * 因此这里由调用方（workflow-boot）先行把参数放进缓存；未缓存则用内置默认。
+ */
+let archiveParamsCache: Pick<EventArchiveOptions, 'retentionDays' | 'intervalMs' | 'batchSize'> | null = null
+
+/** 由 boot 在启动归档作业前调用（把「参数设置」的生效值交给归档单例） */
+export function primeEventArchiveParams(
+  params: Pick<EventArchiveOptions, 'retentionDays' | 'intervalMs' | 'batchSize'>,
+): void {
+  archiveParamsCache = params
+}
+
+function loadArchiveParamsFromSync(): Pick<EventArchiveOptions, 'retentionDays' | 'intervalMs' | 'batchSize'> {
+  return archiveParamsCache ?? {}
 }
 
 /** 关停单例（应用退出/测试用） */

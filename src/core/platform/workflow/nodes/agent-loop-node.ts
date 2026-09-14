@@ -34,6 +34,8 @@ import type {
 import type { ApprovalDecision, AgentToolBinding } from '@shared/types/agent.types'
 import { TrajectorySink, type TrajectoryAppendPort } from '@core/platform/agent-runtime/trajectory/sink'
 import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from '@shared/types/workflow.types'
+import { runtimeLimits } from '@shared/utils/runtime-limits'
+import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 import type {
   WorkflowNodeContext,
   WorkflowNodeExecutionResult,
@@ -47,7 +49,7 @@ const STATE_PERSIST_FAIL_PREFIX = '[agent-loop-state-persist]'
 /** delta 流合批窗口（与 event-bridge 同款观测面节流） */
 const DELTA_BATCH_MS = 30
 
-/** 审批卡里任务上下文截断上限（观测面字段裁剪，非行为参数） */
+/** 审批卡里任务上下文截断上限的内置默认值（参数设置可调：`ui.approvalTaskChars`） */
 const APPROVAL_TASK_CONTEXT_MAX_CHARS = 200
 
 /** 'agent-loop' 节点 config——单一事实源取自 WorkflowNodeConfigMap（曾双声明漏 editableFields） */
@@ -273,7 +275,11 @@ async function driveLoop(
 ): Promise<WorkflowNodeExecutionResult> {
   const cfg = ctx.config as AgentLoopNodeConfig
   const { resolveModel, registry, trajectoryRepo } = getAgentLoopHarness()
-  const maxSteps = Math.max(1, Math.floor(cfg.maxIterations ?? WORKFLOW_DEFAULTS.agentLoopMaxIterations))
+  // 缺省迭代轮数：节点未显式配 maxIterations 时用进程级限额（可由 settings agent:budget 覆盖）
+  const maxSteps = Math.max(
+    1,
+    Math.floor(cfg.maxIterations ?? runtimeLimits().maxWorkflowAgentLoopSteps ?? WORKFLOW_DEFAULTS.agentLoopMaxIterations),
+  )
 
   // 护栏信号：引擎取消 ∨ 节点时长护栏，本地合成（不篡改引擎 ctx.signal）
   const localAbort = new AbortController()
@@ -452,7 +458,10 @@ async function driveLoop(
         tool: tool.name,
         input,
         toolCallId: call.toolCallId,
-        task: stringifyValue(cfg.task).slice(0, APPROVAL_TASK_CONTEXT_MAX_CHARS),
+        task: stringifyValue(cfg.task).slice(
+          0,
+          workflowRuntimeParams().ui.approvalTaskChars || APPROVAL_TASK_CONTEXT_MAX_CHARS,
+        ),
       },
       timeoutMs: null,
     }) as Promise<ApprovalDecision>

@@ -11,6 +11,18 @@
 
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { WORKFLOW_DEFAULTS } from '@shared/types/workflow.types'
+import { SETTINGS_KEYS, getSettingWithLegacyFallback } from '@shared/constants/settings-keys'
+import { loadAgentBudget } from '@core/platform/agent-runtime/budget/agent-budget'
+import { runtimeLimitsFromBudget, setRuntimeLimits } from '@shared/utils/runtime-limits'
+import { setWorkflowRuntimeParams, workflowRuntimeParamsFromSettings } from '@shared/utils/workflow-runtime-params'
+import { setAgentContextParams, agentContextParamsFromSettings } from '@shared/utils/agent-context-params'
+import { setAgentToolParams, agentToolParams, agentToolParamsFromSettings } from '@shared/utils/agent-tool-params'
+import { setKnowledgeParams, knowledgeParamsFromSettings, setKnowledgeSummaryFlags, knowledgeFlagsFromSettings } from '@shared/utils/knowledge-params'
+import { setAssetParams, assetParamsFromSettings } from '@shared/utils/asset-params'
+import { eventParamsFromSettings } from '@shared/utils/event-params'
+import { setPortraitParams, portraitParamsFromSettings } from '@shared/utils/portrait-params'
+import { setLongwritingParams, longwritingParamsFromSettings } from '@shared/utils/longwriting-params'
+import { registerSettingsReloadHook, setSettingsReloadLogger } from '@shared/utils/settings-reload'
 import { WorkflowEngineService } from './engine/workflow-engine.service'
 import { makeEngineDeps, WorkflowRunService } from './workflow-run.service'
 import { WorkflowDefinitionService } from './workflow-definition.service'
@@ -123,8 +135,20 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
   //     消费者游标均已越过的事件导出 JSONL.gz 后删行；失败不致命（下轮继续）。
   if (eventBus) {
     try {
-      const { startEventArchiveJob } = await import('@core/platform/services/event-system/event-archive.service')
-      archiveJob = startEventArchiveJob()
+      const archiveMod = await import('@core/platform/services/event-system/event-archive.service')
+      // 「参数设置 → 事件系统 → 事件归档」：装配前先把生效值交给归档单例（改完需重启客户端）。
+      // 这里读一次 settings，用的是与设置页同一份登记表解析口径。
+      try {
+        const raw: Record<string, unknown> = {}
+        for (const key of [SETTINGS_KEYS.eventBus, SETTINGS_KEYS.eventArchive]) {
+          raw[key] = db.settings ? await getSettingWithLegacyFallback(db.settings, key) : null
+        }
+        const { archive } = eventParamsFromSettings(raw)
+        archiveMod.primeEventArchiveParams(archive)
+      } catch (e) {
+        logger.warn('[workflow-boot] 读取 event:archive 失败（使用内置默认）', e)
+      }
+      archiveJob = archiveMod.startEventArchiveJob()
     } catch (e) {
       logger.error('[workflow-boot] 事件归档作业启动失败（继续启动）', e)
     }
@@ -166,22 +190,167 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
     makeEngineDeps(db.workflowRuns, db.workflowNodeRuns, journal),
     registry
   )
-  // settings 表 wf:defaults 全局执行设置（配置链：默认值 → 全局层 → definition 覆盖）
-  let globalSettings: import('@shared/types/workflow.types').WorkflowExecutionSettings | null = null
-  try {
-    const raw = db.settings ? await db.settings.get('wf:defaults') : null
-    if (raw && typeof raw === 'object') {
-      globalSettings = raw as import('@shared/types/workflow.types').WorkflowExecutionSettings
+  // settings 表 wf:defaults 全局执行设置（配置链：默认值 → 全局层 → definition 覆盖；键名走注册表）。
+  // 2026-09-13「参数设置」改造：不再 boot 读一次存快照，而是传**读取器**下去 ——
+  // 设置页保存后**下一次运行**即生效（引擎侧本来就是每 run 解析一次，这里补上服务层）。
+  const readGlobalSettings = async (): Promise<import('@shared/types/workflow.types').WorkflowExecutionSettings> => {
+    try {
+      const raw = db.settings
+        ? await getSettingWithLegacyFallback(db.settings, SETTINGS_KEYS.wfDefaults)
+        : null
+      return raw && typeof raw === 'object'
+        ? (raw as import('@shared/types/workflow.types').WorkflowExecutionSettings)
+        : {}
+    } catch (e) {
+      logger.warn('[workflow-boot] 读取 wf:defaults 失败（使用内置默认值）', e)
+      return {}
     }
-  } catch (e) {
-    logger.warn('[workflow-boot] 读取 wf:defaults 失败（使用内置默认值）', e)
   }
+  /**
+   * 工具注册表单例引用（长生命周期）。
+   * 2026-09-13：护栏不再"启动读一次就固定"，settings 保存后由重注入钩子调
+   * `applyRuntimeOverrides` 刷新，所以需要在装配处留一个引用。
+   */
+  let agentToolRegistryRef: import('@core/platform/agent-runtime/tools/registry').AgentToolRegistry | null = null
+
+  // 平台预算（agent:budget）：这里只取护栏部分（工具结果截断/审计预览/遍历深度），
+  // 并把"进程级限额"（产物/流水/轨迹体积、事件载荷护栏、工作流 agent-loop 与子代理缺省步数）
+  // 注入 shared/utils/runtime-limits 持有者。
+  //
+  // 2026-09-13「参数设置」第二轮：不再"启动读一次、改完必须重启"——使用点都是现读持有者，
+  // 所以只要在 settings 写入后**重新注入**即可立刻生效（`settings-reload` 钩子）。
+  const applyAgentBudget = async (): Promise<
+    | {
+        maxToolResultBytes: number
+        maxToolResultFieldChars: number
+        maxAuditPreviewChars: number
+        maxResultWalkDepth: number
+      }
+    | undefined
+  > => {
+    try {
+      const { budget } = await loadAgentBudget(db.settings ?? null)
+      setRuntimeLimits(runtimeLimitsFromBudget(budget))
+      return {
+        maxToolResultBytes: budget.guards.maxToolResultBytes,
+        maxToolResultFieldChars: budget.guards.maxToolResultFieldChars,
+        maxAuditPreviewChars: budget.guards.maxAuditPreviewChars,
+        maxResultWalkDepth: budget.guards.maxResultWalkDepth,
+      }
+    } catch (e) {
+      logger.warn('[workflow-boot] 读取 agent:budget 护栏失败（使用内置默认）', e)
+      return undefined
+    }
+  }
+  const guardOverrides = await applyAgentBudget()
+  /** 工作流运行参数（抓取礼貌/长任务轮询/代码沙箱）：启动注入一次 */
+  const applyWorkflowParams = async (): Promise<void> => {
+    try {
+      const raw = db.settings
+        ? await getSettingWithLegacyFallback(db.settings, SETTINGS_KEYS.wfDefaults)
+        : null
+      setWorkflowRuntimeParams(workflowRuntimeParamsFromSettings(raw))
+    } catch (e) {
+      logger.warn('[workflow-boot] 读取 wf:defaults 运行参数失败（使用内置默认）', e)
+    }
+  }
+  await applyWorkflowParams()
+  /** Agent 上下文与记忆参数（窗口/压缩预算/记忆飞轮）：启动注入一次 */
+  const applyAgentContextParams = async (): Promise<void> => {
+    try {
+      const raw: Record<string, unknown> = {}
+      for (const key of [SETTINGS_KEYS.agentContext, SETTINGS_KEYS.agentMemory]) {
+        raw[key] = db.settings ? await getSettingWithLegacyFallback(db.settings, key) : null
+      }
+      setAgentContextParams(agentContextParamsFromSettings(raw))
+    } catch (e) {
+      logger.warn('[workflow-boot] 读取 agent:context/agent:memory 失败（使用内置默认）', e)
+    }
+  }
+  await applyAgentContextParams()
+  /** 工具与审批参数（工具执行超时/结果处理/审批超时）：启动注入一次 */
+  const applyAgentToolParams = async (): Promise<void> => {
+    try {
+      const raw: Record<string, unknown> = {}
+      for (const key of [SETTINGS_KEYS.agentTools, SETTINGS_KEYS.agentApproval]) {
+        raw[key] = db.settings ? await getSettingWithLegacyFallback(db.settings, key) : null
+      }
+      const params = agentToolParamsFromSettings(raw)
+      setAgentToolParams(params)
+    } catch (e) {
+      logger.warn('[workflow-boot] 读取 agent:tools/agent:approval 失败（使用内置默认）', e)
+    }
+  }
+  await applyAgentToolParams()
+  /** 知识库参数（检索/入库导入/章节摘要）：启动注入一次 */
+  const applyKnowledgeParams = async (): Promise<void> => {
+    try {
+      const raw: Record<string, unknown> = {}
+      for (const key of [
+        SETTINGS_KEYS.knowledgeRetrieval,
+        SETTINGS_KEYS.knowledgeIngest,
+        SETTINGS_KEYS.knowledgeSummary,
+      ]) {
+        raw[key] = db.settings ? await getSettingWithLegacyFallback(db.settings, key) : null
+      }
+      setKnowledgeParams(knowledgeParamsFromSettings(raw))
+      // 布尔开关（数字持有者不承载布尔，见 param-holder 注释）
+      setKnowledgeSummaryFlags(knowledgeFlagsFromSettings(raw))
+    } catch (e) {
+      logger.warn('[workflow-boot] 读取 knowledge:* 失败（使用内置默认）', e)
+    }
+  }
+  await applyKnowledgeParams()
+  /** 长文写作参数（章节生成主链/故事研讨室）：启动注入一次 */
+  const applyLongwritingParams = async (): Promise<void> => {
+    try {
+      const raw: Record<string, unknown> = {}
+      for (const key of [SETTINGS_KEYS.longwritingWriting, SETTINGS_KEYS.longwritingStoryRoom]) {
+        raw[key] = db.settings ? await getSettingWithLegacyFallback(db.settings, key) : null
+      }
+      setLongwritingParams(longwritingParamsFromSettings(raw))
+    } catch (e) {
+      logger.warn('[workflow-boot] 读取 longwriting:* 失败（使用内置默认）', e)
+    }
+  }
+  await applyLongwritingParams()
+  /** 素材与图片参数（素材下载/收藏/整页归档 + 站点图标 + 图片任务轮询）：启动注入一次 */
+  const applyAssetParams = async (): Promise<void> => {
+    try {
+      const raw: Record<string, unknown> = {}
+      for (const key of [
+        SETTINGS_KEYS.assetLimits,
+        SETTINGS_KEYS.faviconFetch,
+        SETTINGS_KEYS.imagePolling,
+      ]) {
+        raw[key] = db.settings ? await getSettingWithLegacyFallback(db.settings, key) : null
+      }
+      setAssetParams(assetParamsFromSettings(raw))
+    } catch (e) {
+      logger.warn('[workflow-boot] 读取 asset:*/favicon:*/image:* 失败（使用内置默认）', e)
+    }
+  }
+  await applyAssetParams()
+  /** 画像参数（生成默认尺寸与强度）：启动注入一次 */
+  const applyPortraitParams = async (): Promise<void> => {
+    try {
+      const raw: Record<string, unknown> = {
+        [SETTINGS_KEYS.portraitImage]: db.settings
+          ? await getSettingWithLegacyFallback(db.settings, SETTINGS_KEYS.portraitImage)
+          : null,
+      }
+      setPortraitParams(portraitParamsFromSettings(raw))
+    } catch (e) {
+      logger.warn('[workflow-boot] 读取 portrait:image 失败（使用内置默认）', e)
+    }
+  }
+  await applyPortraitParams()
   const runService = new WorkflowRunService({
     runs: db.workflowRuns,
     nodeRuns: db.workflowNodeRuns,
     definitions: db.workflowDefinitions,
     engine,
-    globalSettings,
+    globalSettingsProvider: readGlobalSettings,
     trajectories: trajectoryRepo,
   })
   const definitionService = new WorkflowDefinitionService(db.workflowDefinitions, registry)
@@ -275,7 +444,6 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
     const { ProviderAdapter } = await import('@core/platform/agent-runtime/provider/provider-adapter')
     const { registerBuiltinAgentTools } = await import('./tools/agent-builtin-tools')
     const { registerAgentLoopHarness } = await import('./nodes/agent-loop-node')
-
     // 工具调用审计落库（25 号 M2 批1 / 14 号 §4.1）：registry 审计面 → DB sink
     //（fire-and-forget；数据源缺失/写失败只 warn，不影响工具调用）
     const auditRepo = db.dataSource
@@ -294,8 +462,7 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
           ).AgentToolArtifactRepository(db.dataSource),
         })
       : null
-    const agentToolRegistry = new AgentToolRegistry({
-      audit: auditRepo
+    const agentToolRegistry = new AgentToolRegistry({      audit: auditRepo
         ? (record) => {
             void auditRepo
               .append({
@@ -318,6 +485,13 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
         : undefined,
       // 产物归档（39 号 P1-1）：截断序列化前落完整结果
       artifacts: artifactStore,
+      // 护栏（2026-09-13 参数配置化）：settings `agent:budget`.guards → 结果截断/预览/深度
+      guards: guardOverrides,
+    })
+    agentToolRegistryRef = agentToolRegistry
+    // 工具执行超时：持有者已在装配前注入，这里同步进注册表 deps（长生命周期单例只读构造值）
+    agentToolRegistryRef.applyRuntimeOverrides({
+      executeTimeoutMs: agentToolParams().tools.executeTimeoutMs,
     })
 
     registerBuiltinAgentTools(agentToolRegistry)
@@ -348,6 +522,61 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
   } catch (e) {
     logger.error('[workflow-boot] agent-loop harness 装配失败（agent-loop 节点将不可用）', e)
   }
+
+  // 7.5 参数重注入登记（2026-09-13「参数设置」第二轮）：settings 保存后立刻生效，不必重启。
+  // 覆盖两类"进程级、启动时装配"的参数：
+  // - agent:budget → 进程级限额持有者（体积/事件载荷/agent-loop 与子代理步数）+ 工具注册表护栏
+  // - wf:defaults → 工作流运行参数持有者（抓取礼貌/长任务轮询/代码沙箱超时）
+  // 钩子失败只记日志，不影响保存本身（见 shared/utils/settings-reload 的纪律）。
+  setSettingsReloadLogger({ warn: (msg, e) => logger.warn(msg, e) })
+  registerSettingsReloadHook('agent-budget-runtime', async (key) => {
+    if (key !== SETTINGS_KEYS.agentBudget) return
+    const guards = await applyAgentBudget()
+    if (guards) agentToolRegistryRef?.applyRuntimeOverrides({ guards })
+  })
+  registerSettingsReloadHook('workflow-runtime-params', async (key) => {
+    if (key !== SETTINGS_KEYS.wfDefaults) return
+    await applyWorkflowParams()
+  })
+  registerSettingsReloadHook('agent-context-params', async (key) => {
+    if (key !== SETTINGS_KEYS.agentContext && key !== SETTINGS_KEYS.agentMemory) return
+    await applyAgentContextParams()
+  })
+  registerSettingsReloadHook('agent-tool-params', async (key) => {
+    if (key !== SETTINGS_KEYS.agentTools && key !== SETTINGS_KEYS.agentApproval) return
+    await applyAgentToolParams()
+    agentToolRegistryRef?.applyRuntimeOverrides({
+      executeTimeoutMs: agentToolParams().tools.executeTimeoutMs,
+    })
+  })
+  registerSettingsReloadHook('knowledge-params', async (key) => {
+    if (
+      key !== SETTINGS_KEYS.knowledgeRetrieval &&
+      key !== SETTINGS_KEYS.knowledgeIngest &&
+      key !== SETTINGS_KEYS.knowledgeSummary
+    ) {
+      return
+    }
+    await applyKnowledgeParams()
+  })
+  registerSettingsReloadHook('longwriting-params', async (key) => {
+    if (key !== SETTINGS_KEYS.longwritingWriting && key !== SETTINGS_KEYS.longwritingStoryRoom) return
+    await applyLongwritingParams()
+  })
+  registerSettingsReloadHook('asset-params', async (key) => {
+    if (
+      key !== SETTINGS_KEYS.assetLimits &&
+      key !== SETTINGS_KEYS.faviconFetch &&
+      key !== SETTINGS_KEYS.imagePolling
+    ) {
+      return
+    }
+    await applyAssetParams()
+  })
+  registerSettingsReloadHook('portrait-params', async (key) => {
+    if (key !== SETTINGS_KEYS.portraitImage) return
+    await applyPortraitParams()
+  })
   // 8. P0 子工作流：runService 访问注册（sub-workflow 节点取用，避免循环依赖）
   try {
     const { registerRunServiceAccess } = await import('./run-service-access')

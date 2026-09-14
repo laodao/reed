@@ -212,6 +212,88 @@ export interface DlRelatedRef {
   rel?: string
 }
 
+// ==================== 方案确认流程（2026-09-13 用户需求） ====================
+
+/**
+ * 方案步骤：
+ * - `understanding`：模型对用户诉求的理解（先确认它，再规划体系）；
+ * - `syllabus`：知识体系方案（确认后才允许落库知识点）。
+ */
+export type DlPlanStep = 'understanding' | 'syllabus'
+
+/** 方案状态：draft=待用户确认 | confirmed=已确认（生效） | superseded=被新版本取代 */
+export type DlPlanStatus = 'draft' | 'confirmed' | 'superseded'
+
+/**
+ * 诉求理解（第一步提案）。
+ * 用户反馈「生成的知识点与期望差别较大」的正面解法：先让模型**复述**诉求并逐条列出要覆盖的
+ * 对象与场景、明确不做什么，用户确认或纠正后再往下走。
+ */
+export interface DlPlanUnderstanding {
+  /** 一句话重述：我理解你要学什么 */
+  goalSummary: string
+  /** 要覆盖的对象与场景（诉求点名的产品/市场/数据/动作，逐条有落点） */
+  coverage: string[]
+  /** 读者画像：从哪出发、到什么程度 */
+  audience?: string | null
+  /** 明确不做什么（防跑偏，如"不做个人记账与保险推销"） */
+  notDoing?: string[]
+  /** 关键期望：学完能做到什么（动词开头，可验证） */
+  keyExpectations?: string[]
+}
+
+/** 知识体系方案里的一个节点（分支用 nodeType=group） */
+export interface DlSyllabusConcept {
+  name: string
+  definitionShort?: string | null
+  /** 前置知识点名（学它之前要先掌握什么） */
+  prerequisites?: string[]
+  /** 学习层级（0=零基础可直接学） */
+  layer?: number
+  /** group=分支目录 | concept=知识点（缺省 concept） */
+  nodeType?: string
+}
+
+/** 知识体系方案（第二步提案）：分支 + 知识点 */
+export interface DlPlanSyllabus {
+  branches: Array<{
+    name: string
+    definitionShort?: string | null
+    concepts: DlSyllabusConcept[]
+  }>
+  /** 不归属任何分支的根层知识点（如领域总览） */
+  rootConcepts?: DlSyllabusConcept[]
+  /** 方案说明（取材自哪些资料/哪些是按主干补的先验） */
+  notes?: string | null
+}
+
+/** 方案版本行（IPC 视图） */
+export interface DlPlanRevisionView<P = unknown> {
+  id: string
+  step: DlPlanStep
+  status: DlPlanStatus
+  revision: number
+  payload: P
+  /** 用户调整指令或确认备注 */
+  feedback?: string | null
+  updatedAt?: string | null
+}
+
+/** 空间方案总览（确认弹窗数据源） */
+export interface DlPlanView {
+  spaceId: string
+  /** 当前诉求理解（最新版） */
+  understanding: DlPlanRevisionView<DlPlanUnderstanding> | null
+  /** 当前知识体系方案（最新版） */
+  syllabus: DlPlanRevisionView<DlPlanSyllabus> | null
+  /** 诉求理解是否已确认（未确认则不允许提交体系方案） */
+  understandingConfirmed: boolean
+  /** 知识体系是否已确认（= 允许落库知识点） */
+  syllabusConfirmed: boolean
+  /** 已确认方案里的知识点条目数（用于落库额度与界面提示） */
+  confirmedConceptCount: number
+}
+
 // ==================== 空间视图（列表页 / 三栏空间页） ====================
 
 /** 空间列表卡片 */

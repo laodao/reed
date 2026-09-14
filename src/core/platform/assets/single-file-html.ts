@@ -13,6 +13,7 @@
  */
 import { parse } from 'node-html-parser'
 import { validateOutboundUrl } from '@core/utils/outbound-url'
+import { assetParams } from '@shared/utils/asset-params'
 
 /** 单次资源抓取结果 */
 export type WebResourceFetchResult =
@@ -44,18 +45,18 @@ export interface InlineHtmlResult {
   warnings: string[]
 }
 
-const MAX_RESOURCE_BYTES = 10 * 1024 * 1024
-
-/** 内置抓取器：SSRF 校验 + 10MB 限长；文本（css）与二进制（图/字体）统一返回 */
+/** 内置抓取器：SSRF 校验 + 体积/超时护栏（走「参数设置 → 素材与图片 → 整页归档」）；
+ *  文本（css）与二进制（图/字体）统一返回 */
 export async function defaultWebResourceFetcher(url: string): Promise<WebResourceFetchResult> {
   const guard = validateOutboundUrl(url)
   if (!guard.ok) return { ok: false, reason: `URL 校验失败：${guard.reason}` }
+  const { maxResourceBytes, resourceTimeoutMs } = assetParams().asset
   try {
-    const resp = await fetch(url, { signal: AbortSignal.timeout(30_000) })
+    const resp = await fetch(url, { signal: AbortSignal.timeout(resourceTimeoutMs) })
     if (!resp.ok) return { ok: false, reason: `HTTP ${resp.status}` }
     const contentType = (resp.headers.get('content-type') ?? 'application/octet-stream').split(';')[0].trim()
     const buf = Buffer.from(await resp.arrayBuffer())
-    if (buf.byteLength > MAX_RESOURCE_BYTES) return { ok: false, reason: `超过 ${MAX_RESOURCE_BYTES / 1024 / 1024}MB 上限` }
+    if (buf.byteLength > maxResourceBytes) return { ok: false, reason: `超过 ${maxResourceBytes / 1024 / 1024}MB 上限` }
     const isText = contentType.startsWith('text/') || /(css|javascript|json|xml)/.test(contentType)
     return {
       ok: true,
@@ -139,7 +140,7 @@ async function inlineCssUrls(
 export async function inlineHtmlResources(html: string, options: InlineHtmlOptions = {}): Promise<InlineHtmlResult> {
   const warnings: string[] = []
   const fetcher = options.fetchResource ?? defaultWebResourceFetcher
-  const maxResources = options.maxResources ?? 40
+  const maxResources = options.maxResources ?? assetParams().asset.maxInlineResources
   let budgetCount = 0
   const budget = {
     used: () => budgetCount,

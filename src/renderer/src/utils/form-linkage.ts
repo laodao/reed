@@ -40,6 +40,23 @@ export function resolveLinkageValues(
 }
 
 /**
+ * 收窄候选选项：监听字段有值时只保留"选项元数据[matchBy] === 监听值"的项。
+ * 与 resolveLinkageValues 同一口径——用户能选到的候选，正是会被联动选中的候选。
+ * 监听值为空（未选择）时不过滤，返回全部选项。
+ */
+export function filterLinkageOptions(
+  linkage: LinkageDeclaration,
+  watchValue: unknown,
+  options: LinkageOption[],
+): LinkageOption[] {
+  if (watchValue === undefined || watchValue === null || watchValue === '') return options
+  const target = String(watchValue)
+  return options.filter(
+    o => o[linkage.matchBy] !== undefined && o[linkage.matchBy] !== null && String(o[linkage.matchBy]) === target,
+  )
+}
+
+/**
  * 生成联动后的字段值：
  * - multi：匹配的全部 value（数组）
  * - 单选：首个匹配 value（无匹配 → undefined）

@@ -164,6 +164,11 @@
           <ToolSettings />
         </el-tab-pane>
 
+        <!-- 参数设置：按模块分 Tab 的参数配置（2026-09-13 第二轮：由「AI 预算（高级）」升级而来） -->
+        <el-tab-pane label="参数设置" name="moduleParams">
+          <ModuleParamsSettings />
+        </el-tab-pane>
+
         <!-- 邮箱账号（邮件收发工具账号配置） -->
         <el-tab-pane label="邮箱账号" name="email">
           <EmailSettings />
@@ -378,75 +383,127 @@
           </div>
         </el-tab-pane>
 
-        <!-- 新闻来源设置 -->
-        <el-tab-pane label="新闻来源" name="newsSources">
+        <!-- 信息来源设置（类别 = 一个 Tab；内置「新闻来源」为其一） -->
+        <el-tab-pane label="信息来源" name="infoSources">
           <div class="settings-section">
             <div class="section-header">
               <div>
-                <h3>新闻来源</h3>
-                <p class="section-desc">管理早报/行业动态的数据源——按主题分组，工作流「新闻采集」节点可多选引用</p>
+                <h3>信息来源</h3>
+                <p class="section-desc">
+                  管理外部信息源（媒体 / 专栏 / 站点）——按来源类别分 Tab，工作流「信息采集」节点与各业务模块（领域学习等）可多选引用
+                </p>
               </div>
               <div class="section-header-actions">
-                <el-button type="primary" plain @click="openAddNewsTopicDialog">
+                <el-button type="primary" plain @click="openAddSourceCategoryDialog">
                   <el-icon><Plus /></el-icon>
-                  添加主题
+                  添加类别
                 </el-button>
-                <el-button type="primary" @click="openAddNewsSourceDialog">
+                <el-button type="primary" plain @click="openAddInfoSourceTopicDialog">
+                  <el-icon><Plus /></el-icon>
+                  添加分组
+                </el-button>
+                <el-button type="primary" @click="openAddInfoSourceDialog">
                   <el-icon><Plus /></el-icon>
                   添加来源
                 </el-button>
               </div>
             </div>
 
-            <!-- 按主题分组展示（点击主题标题可折叠/展开其下来源） -->
-            <div v-for="topic in newsSourceTopics" :key="topic.id" class="search-engine-group news-topic-group">
-              <div
-                class="group-title-row news-topic-header"
-                :class="{ collapsed: isTopicCollapsed(topic.id) }"
-                @click="toggleTopic(topic.id)"
+            <!-- 类别 Tab：新增类别即多一个 Tab -->
+            <el-tabs
+              v-if="infoSourceCategories.length"
+              v-model="activeSourceCategory"
+              type="card"
+              class="source-category-tabs"
+            >
+              <el-tab-pane
+                v-for="category in infoSourceCategories"
+                :key="category.id"
+                :name="category.id"
               >
-                <div class="news-topic-title">
-                  <el-icon class="topic-chevron"><ArrowRight /></el-icon>
-                  <h4 class="group-title">{{ topic.label }}（{{ sourcesOfTopic(topic.id).length }}）</h4>
+                <template #label>
+                  <span class="source-category-label">
+                    {{ category.name }}
+                    <span class="source-category-count">{{ sourcesOfCategory(category.id).length }}</span>
+                  </span>
+                </template>
+
+                <div class="source-category-toolbar">
+                  <span class="source-category-desc">
+                    <el-tag v-if="category.isBuiltin" type="warning" size="small" effect="plain">内置类别</el-tag>
+                    分组用于归类来源；不选分组的来源统一放在「{{ INFO_SOURCE_DEFAULT_TOPIC_NAME }}」
+                  </span>
+                  <div v-if="!category.isBuiltin" class="group-title-actions">
+                    <el-button text size="small" @click="editSourceCategory(category)">改类别名</el-button>
+                    <el-button text type="danger" size="small" @click="deleteSourceCategory(category)">删除类别</el-button>
+                  </div>
                 </div>
-                <div class="group-title-actions" @click.stop>
-                  <el-button v-if="!topic.isBuiltin" text size="small" @click="editNewsTopic(topic)">改主题名</el-button>
-                  <el-button v-if="!topic.isBuiltin" text type="danger" size="small" @click="deleteNewsTopic(topic)">删除主题</el-button>
-                </div>
-              </div>
-              <transition name="topic-collapse">
-                <div v-show="!isTopicCollapsed(topic.id)" class="news-topic-body">
-                  <p class="group-desc">内置主题预置全球知名媒体源；可新增自定义主题，来源按主题归组</p>
-                  <div v-if="sourcesOfTopic(topic.id).length" class="provider-config-list">
-                    <div
-                      v-for="source in sourcesOfTopic(topic.id)"
-                      :key="source.id"
-                      class="provider-config-item"
-                      :class="{ disabled: !source.enabled, 'is-default': false }"
-                    >
-                      <div class="config-icon">
-                        <FaviconIcon :url="source.url" :size="28" fallback="📰" />
-                      </div>
-                      <div class="config-info">
-                        <div class="config-header">
-                          <span class="config-name">{{ source.name }}</span>
-                          <el-tag v-if="source.isBuiltin" type="warning" size="small" effect="plain">内置</el-tag>
-                          <el-tag v-else type="success" size="small" effect="plain">自定义</el-tag>
-                        </div>
-                        <div class="config-details">
-                          <span class="config-template" :title="source.url">{{ source.url }}</span>
-                        </div>
-                      </div>
-                      <div class="config-actions">
-                        <el-switch v-model="source.enabled" @change="toggleNewsSourceEnabled(source)" />
-                        <el-button text size="small" :disabled="source.isBuiltin" @click="editNewsSource(source)">编辑</el-button>
-                        <el-button text type="danger" size="small" :disabled="source.isBuiltin" @click="deleteNewsSource(source)">删除</el-button>
-                      </div>
+
+                <!-- 分组折叠列表（点击分组标题折叠/展开其下来源） -->
+                <div
+                  v-for="topic in topicsOfCategory(category.id)"
+                  :key="topic.id"
+                  class="search-engine-group news-topic-group"
+                >
+                  <div
+                    class="group-title-row news-topic-header"
+                    :class="{ collapsed: isTopicCollapsed(topic.id) }"
+                    @click="toggleTopic(topic.id)"
+                  >
+                    <div class="news-topic-title">
+                      <el-icon class="topic-chevron"><ArrowRight /></el-icon>
+                      <h4 class="group-title">{{ topic.name }}（{{ sourcesOfTopic(topic.id).length }}）</h4>
+                      <el-tag v-if="topic.isDefault" type="info" size="small" effect="plain">未分组</el-tag>
+                      <el-tag v-else-if="topic.isBuiltin" type="warning" size="small" effect="plain">内置</el-tag>
+                    </div>
+                    <div class="group-title-actions" @click.stop>
+                      <el-button v-if="canEditInfoSourceTopic(topic)" text size="small" @click="editInfoSourceTopic(topic)">改分组名</el-button>
+                      <el-button v-if="canEditInfoSourceTopic(topic)" text type="danger" size="small" @click="deleteInfoSourceTopic(topic)">删除分组</el-button>
                     </div>
                   </div>
-                  <div v-else class="empty-config"><p>该主题暂无来源</p></div>
+                  <transition name="topic-collapse">
+                    <div v-show="!isTopicCollapsed(topic.id)" class="news-topic-body">
+                      <div v-if="sourcesOfTopic(topic.id).length" class="provider-config-list">
+                        <div
+                          v-for="source in sourcesOfTopic(topic.id)"
+                          :key="source.id"
+                          class="provider-config-item"
+                          :class="{ disabled: !source.enabled, 'is-default': false }"
+                        >
+                          <div class="config-icon">
+                            <FaviconIcon :url="source.url" :size="28" fallback="📰" />
+                          </div>
+                          <div class="config-info">
+                            <div class="config-header">
+                              <span class="config-name">{{ source.name }}</span>
+                              <el-tag v-if="source.isBuiltin" type="warning" size="small" effect="plain">内置</el-tag>
+                              <el-tag v-else type="success" size="small" effect="plain">自定义</el-tag>
+                            </div>
+                            <div class="config-details">
+                              <span class="config-template" :title="source.url">{{ source.url }}</span>
+                            </div>
+                          </div>
+                          <div class="config-actions">
+                            <el-switch v-model="source.enabled" @change="toggleInfoSourceEnabled(source)" />
+                            <el-button text size="small" :disabled="source.isBuiltin" @click="editInfoSource(source)">编辑</el-button>
+                            <el-button text type="danger" size="small" :disabled="source.isBuiltin" @click="deleteInfoSource(source)">删除</el-button>
+                          </div>
+                        </div>
+                      </div>
+                      <div v-else class="empty-config"><p>该分组暂无来源</p></div>
+                    </div>
+                  </transition>
                 </div>
-              </transition>
+
+                <div v-if="!topicsOfCategory(category.id).length" class="empty-config">
+                  <p>该类别暂无分组</p>
+                  <p class="hint">直接「添加来源」会自动归入「{{ INFO_SOURCE_DEFAULT_TOPIC_NAME }}」；需要归类时可先「添加分组」</p>
+                </div>
+              </el-tab-pane>
+            </el-tabs>
+            <div v-else class="empty-config">
+              <p>暂无信息来源类别</p>
+              <p class="hint">点击「添加类别」创建（如 金融信息来源 / 物理信息来源）</p>
             </div>
           </div>
         </el-tab-pane>
@@ -595,42 +652,80 @@
       @saved="loadSearchEngineConfigs"
     />
 
-    <!-- 添加/编辑新闻来源对话框 -->
+    <!-- 添加/编辑信息来源对话框 -->
     <el-dialog
-      v-model="showAddNewsSourceDialog"
-      :title="editingNewsSource ? '编辑新闻来源' : '添加新闻来源'"
+      v-model="showInfoSourceDialog"
+      :title="editingInfoSource ? '编辑信息来源' : '添加信息来源'"
       width="480px"
       append-to-body
     >
       <el-form label-width="80px" size="small">
-        <el-form-item label="主题">
-          <el-select v-model="newsSourceForm.topicId" style="width: 100%">
-            <el-option v-for="t in newsSourceTopics" :key="t.id" :label="t.label" :value="t.id" />
+        <el-form-item label="类别">
+          <el-select v-model="infoSourceForm.categoryId" style="width: 100%" @change="onInfoSourceCategoryChange">
+            <el-option v-for="c in infoSourceCategories" :key="c.id" :label="c.name" :value="c.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="分组">
+          <el-select v-model="infoSourceForm.topicId" clearable style="width: 100%" placeholder="不选 = 归入「未分组」">
+            <el-option
+              v-for="t in selectableTopicsOfCategory(infoSourceForm.categoryId)"
+              :key="t.id"
+              :label="t.name"
+              :value="t.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="名称">
-          <el-input v-model="newsSourceForm.name" placeholder="如 MIT Technology Review / 量子位" />
+          <el-input v-model="infoSourceForm.name" placeholder="如 MIT Technology Review / 量子位" />
         </el-form-item>
         <el-form-item label="URL">
-          <el-input v-model="newsSourceForm.url" placeholder="https://..." />
+          <el-input v-model="infoSourceForm.url" placeholder="https://..." />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showAddNewsSourceDialog = false">取消</el-button>
-        <el-button type="primary" @click="saveNewsSource">保存</el-button>
+        <el-button @click="showInfoSourceDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveInfoSource">保存</el-button>
       </template>
     </el-dialog>
 
-    <!-- 添加/编辑新闻主题对话框 -->
-    <el-dialog v-model="showNewsTopicDialog" :title="editingNewsTopic ? '编辑主题' : '添加主题'" width="420px" :close-on-click-modal="false">
+    <!-- 添加/编辑信息来源分组对话框 -->
+    <el-dialog
+      v-model="showInfoSourceTopicDialog"
+      :title="editingInfoSourceTopic ? '编辑分组' : '添加分组'"
+      width="440px"
+      :close-on-click-modal="false"
+    >
       <el-form label-width="80px" label-position="left">
-        <el-form-item label="主题名" required>
-          <el-input v-model="newsTopicName" placeholder="如：医疗健康 / 游戏电竞" @keyup.enter="saveNewsTopic" />
+        <el-form-item label="类别">
+          <el-select v-model="infoSourceTopicForm.categoryId" style="width: 100%">
+            <el-option v-for="c in infoSourceCategories" :key="c.id" :label="c.name" :value="c.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="分组名" required>
+          <el-input v-model="infoSourceTopicForm.name" placeholder="如：行业媒体 / 学术论文 / 官方文档" @keyup.enter="saveInfoSourceTopic" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showNewsTopicDialog = false">取消</el-button>
-        <el-button type="primary" @click="saveNewsTopic">保存</el-button>
+        <el-button @click="showInfoSourceTopicDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveInfoSourceTopic">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 添加/编辑信息来源类别对话框 -->
+    <el-dialog
+      v-model="showSourceCategoryDialog"
+      :title="editingSourceCategory ? '编辑类别' : '添加类别'"
+      width="440px"
+      :close-on-click-modal="false"
+    >
+      <el-form label-width="80px" label-position="left">
+        <el-form-item label="类别名" required>
+          <el-input v-model="sourceCategoryName" placeholder="如：金融信息来源 / 物理信息来源" @keyup.enter="saveSourceCategory" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showSourceCategoryDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveSourceCategory">保存</el-button>
       </template>
     </el-dialog>
 
@@ -716,6 +811,7 @@ import AddSearchEngineDialog from '@/components/settings/AddSearchEngineDialog.v
 import FaviconIcon from '@/components/common/FaviconIcon.vue'
 import ToolSettings from '@/components/settings/ToolSettings.vue'
 import EmailSettings from '@/components/settings/EmailSettings.vue'
+import ModuleParamsSettings from '@/components/settings/ModuleParamsSettings.vue'
 import DataSourceManager from '@/components/settings/DataSourceManager.vue'
 import type {
   ProviderTemplate,
@@ -726,6 +822,7 @@ import type {
   UserSearchEngineConfig
 } from '../../../shared/types/search-engine.types'
 import type { OSSConfig } from '../../../shared/types/oss.types'
+import { INFO_SOURCE_DEFAULT_TOPIC_NAME } from '../../../shared/types/info-source.types'
 
 // 定义组件名称用于 keep-alive
 defineOptions({
@@ -787,27 +884,53 @@ const disabledQuickEngines = ref<string[]>([])
 const showAddSearchEngineDialog = ref(false)
 const editingSearchEngineConfig = ref<UserSearchEngineConfig | undefined>(undefined)
 
-// 新闻来源配置
-interface NewsSourceItem {
+// 信息来源（类别 → 分组 → 来源）
+interface InfoSourceCategoryItem {
+  id: string
+  name: string
+  isBuiltin: boolean
+  sortOrder: number
+}
+interface InfoSourceTopicItem {
+  id: string
+  categoryId: string
+  name: string
+  isBuiltin: boolean
+  isDefault: boolean
+}
+interface InfoSourceItem {
   id: string
   topicId: string
+  categoryId: string
   name: string
   url: string
   isBuiltin: boolean
   enabled: boolean
   sortOrder: number
 }
-const newsSources = ref<NewsSourceItem[]>([])
-const showAddNewsSourceDialog = ref(false)
-const editingNewsSource = ref<NewsSourceItem | undefined>(undefined)
-const newsSourceForm = reactive({ topicId: 'ai', name: '', url: '' })
-/** 新闻主题（从数据库加载：内置 5 主题 + 用户自定义，可增删） */
-const newsSourceTopics = ref<Array<{ id: string; label: string; isBuiltin: boolean }>>([])
-/** 主题编辑弹窗 */
-const showNewsTopicDialog = ref(false)
-const editingNewsTopic = ref<{ id: string; isBuiltin: boolean } | undefined>(undefined)
-const newsTopicName = ref('')
-/** 已折叠的主题 id 集合（点击主题标题可折叠/展开其下来源） */
+
+const infoSourceCategories = ref<InfoSourceCategoryItem[]>([])
+const infoSourceTopics = ref<InfoSourceTopicItem[]>([])
+const infoSources = ref<InfoSourceItem[]>([])
+/** 当前选中的来源类别 Tab */
+const activeSourceCategory = ref('')
+
+// 来源对话框
+const showInfoSourceDialog = ref(false)
+const editingInfoSource = ref<InfoSourceItem | undefined>(undefined)
+const infoSourceForm = reactive({ categoryId: '', topicId: '', name: '', url: '' })
+
+// 分组对话框
+const showInfoSourceTopicDialog = ref(false)
+const editingInfoSourceTopic = ref<InfoSourceTopicItem | undefined>(undefined)
+const infoSourceTopicForm = reactive({ categoryId: '', name: '' })
+
+// 类别对话框
+const showSourceCategoryDialog = ref(false)
+const editingSourceCategory = ref<InfoSourceCategoryItem | undefined>(undefined)
+const sourceCategoryName = ref('')
+
+/** 已折叠的分组 id 集合（点击分组标题可折叠/展开其下来源） */
 const collapsedTopicIds = ref<Set<string>>(new Set())
 
 function isTopicCollapsed(topicId: string): boolean {
@@ -821,128 +944,221 @@ function toggleTopic(topicId: string): void {
   collapsedTopicIds.value = next
 }
 
-async function loadNewsTopics(): Promise<void> {
-  const api = (window as unknown as { electronAPI: any }).electronAPI
+function apiAny(): any {
+  return (window as unknown as { electronAPI: any }).electronAPI
+}
+
+/** 类别列表（同时纠正 Tab 选中项：新增类别后自动切到新 Tab） */
+async function loadInfoSourceCategories(preferId?: string): Promise<void> {
   try {
-    const resp = await api.newsTopic.list()
+    const resp = await apiAny().infoSourceCategory.list()
     if (resp.success) {
-      newsSourceTopics.value = (resp.data ?? []).map(t => ({ id: t.id, label: t.name, isBuiltin: t.isBuiltin }))
-      // 默认选中第一个主题（表单新建来源用）
-      if (newsSourceTopics.value.length && !newsSourceTopics.value.some(t => t.id === newsSourceForm.topicId)) {
-        newsSourceForm.topicId = newsSourceTopics.value[0].id
-      }
-    } else console.warn('[Settings] 新闻主题加载失败', resp.error)
+      infoSourceCategories.value = resp.data ?? []
+      const ids = infoSourceCategories.value.map(c => c.id)
+      if (preferId && ids.includes(preferId)) activeSourceCategory.value = preferId
+      else if (!ids.includes(activeSourceCategory.value)) activeSourceCategory.value = ids[0] ?? ''
+    } else console.warn('[Settings] 信息来源类别加载失败', resp.error)
   } catch (e) {
-    console.warn('[Settings] 新闻主题加载异常', e)
+    console.warn('[Settings] 信息来源类别加载异常', e)
   }
 }
 
-function openAddNewsTopicDialog(): void {
-  editingNewsTopic.value = undefined
-  newsTopicName.value = ''
-  showNewsTopicDialog.value = true
-}
-
-function editNewsTopic(topic: { id: string; isBuiltin: boolean }): void {
-  if (topic.isBuiltin) return
-  editingNewsTopic.value = topic
-  const found = newsSourceTopics.value.find(t => t.id === topic.id)
-  newsTopicName.value = found?.label ?? ''
-  showNewsTopicDialog.value = true
-}
-
-async function saveNewsTopic(): Promise<void> {
-  const name = newsTopicName.value.trim()
-  if (!name) { ElMessage.warning('请输入主题名'); return }
-  const api = (window as unknown as { electronAPI: any }).electronAPI
-  if (editingNewsTopic.value) {
-    const resp = await api.newsTopic.update({ id: editingNewsTopic.value.id, name })
-    if (resp.success) ElMessage.success('主题已更新')
-    else { ElMessage.error(resp.error ?? '更新失败'); return }
-  } else {
-    const resp = await api.newsTopic.create({ name })
-    if (resp.success) ElMessage.success('主题已创建')
-    else { ElMessage.error(resp.error ?? '创建失败'); return }
-  }
-  showNewsTopicDialog.value = false
-  await loadNewsTopics()
-  await loadNewsSources()
-}
-
-async function deleteNewsTopic(topic: { id: string; isBuiltin: boolean }): Promise<void> {
-  if (topic.isBuiltin) return
-  await ElMessageBox.confirm(`删除主题「${topic.label}」？其下全部来源将一并删除。`, '删除主题', { type: 'warning' })
-  const api = (window as unknown as { electronAPI: any }).electronAPI
-  const resp = await api.newsTopic.delete(topic.id)
-  if (resp.success) { ElMessage.success('主题已删除'); await loadNewsTopics(); await loadNewsSources() }
-  else ElMessage.error(resp.error ?? '删除失败')
-}
-
-function sourcesOfTopic(topicId: string): NewsSourceItem[] {
-  return newsSources.value.filter(s => s.topicId === topicId)
-}
-
-async function loadNewsSources(): Promise<void> {
-  const api = (window as unknown as { electronAPI: any }).electronAPI
+async function loadInfoSourceTopics(): Promise<void> {
   try {
-    const resp = await api.newsSource.list({})
-    if (resp.success) newsSources.value = resp.data ?? []
-    else console.warn('[Settings] 新闻来源加载失败', resp.error)
+    const resp = await apiAny().infoSourceTopic.list({})
+    if (resp.success) infoSourceTopics.value = resp.data ?? []
+    else console.warn('[Settings] 信息来源分组加载失败', resp.error)
   } catch (e) {
-    console.warn('[Settings] 新闻来源加载异常', e)
+    console.warn('[Settings] 信息来源分组加载异常', e)
   }
 }
 
-function openAddNewsSourceDialog(): void {
-  editingNewsSource.value = undefined
-  newsSourceForm.topicId = 'ai'
-  newsSourceForm.name = ''
-  newsSourceForm.url = ''
-  showAddNewsSourceDialog.value = true
-}
-
-function editNewsSource(source: NewsSourceItem): void {
-  editingNewsSource.value = source
-  newsSourceForm.topicId = source.topicId
-  newsSourceForm.name = source.name
-  newsSourceForm.url = source.url
-  showAddNewsSourceDialog.value = true
-}
-
-async function saveNewsSource(): Promise<void> {
-  const api = (window as unknown as { electronAPI: any }).electronAPI
-  if (!newsSourceForm.name.trim() || !newsSourceForm.url.trim()) {
-    ElMessage.warning('请填写名称与 URL')
-    return
-  }
-  const payload = { topicId: newsSourceForm.topicId, name: newsSourceForm.name.trim(), url: newsSourceForm.url.trim() }
-  const resp = editingNewsSource.value
-    ? await api.newsSource.update({ id: editingNewsSource.value.id, ...payload })
-    : await api.newsSource.create(payload)
-  if (resp.success) {
-    ElMessage.success(editingNewsSource.value ? '已更新' : '已添加')
-    showAddNewsSourceDialog.value = false
-    await loadNewsSources()
-  } else {
-    ElMessage.error(resp.error ?? '保存失败')
-  }
-}
-
-async function deleteNewsSource(source: NewsSourceItem): Promise<void> {
-  const api = (window as unknown as { electronAPI: any }).electronAPI
+async function loadInfoSources(): Promise<void> {
   try {
-    await ElMessageBox.confirm(`删除新闻来源「${source.name}」？`, '删除来源', { type: 'warning' })
+    const resp = await apiAny().infoSource.list({})
+    if (resp.success) infoSources.value = resp.data ?? []
+    else console.warn('[Settings] 信息来源加载失败', resp.error)
+  } catch (e) {
+    console.warn('[Settings] 信息来源加载异常', e)
+  }
+}
+
+function topicsOfCategory(categoryId: string): InfoSourceTopicItem[] {
+  return infoSourceTopics.value.filter(t => t.categoryId === categoryId)
+}
+
+/** 可选分组（默认分组「未分组」不出现在下拉里：留空即表示不分组） */
+function selectableTopicsOfCategory(categoryId: string): InfoSourceTopicItem[] {
+  return topicsOfCategory(categoryId).filter(t => !t.isDefault)
+}
+
+function sourcesOfTopic(topicId: string): InfoSourceItem[] {
+  return infoSources.value.filter(s => s.topicId === topicId)
+}
+
+function sourcesOfCategory(categoryId: string): InfoSourceItem[] {
+  return infoSources.value.filter(s => s.categoryId === categoryId)
+}
+
+/** 分组可否改名/删除（内置分组与默认分组「未分组」均不可） */
+function canEditInfoSourceTopic(topic: InfoSourceTopicItem): boolean {
+  return !topic.isBuiltin && !topic.isDefault
+}
+
+// ---- 类别增删改 ----
+
+function openAddSourceCategoryDialog(): void {
+  editingSourceCategory.value = undefined
+  sourceCategoryName.value = ''
+  showSourceCategoryDialog.value = true
+}
+
+function editSourceCategory(category: InfoSourceCategoryItem): void {
+  if (category.isBuiltin) return
+  editingSourceCategory.value = category
+  sourceCategoryName.value = category.name
+  showSourceCategoryDialog.value = true
+}
+
+async function saveSourceCategory(): Promise<void> {
+  const name = sourceCategoryName.value.trim()
+  if (!name) { ElMessage.warning('请输入类别名'); return }
+  const api = apiAny()
+  const resp = editingSourceCategory.value
+    ? await api.infoSourceCategory.update({ id: editingSourceCategory.value.id, name })
+    : await api.infoSourceCategory.create({ name })
+  if (!resp.success) { ElMessage.error(resp.error ?? '保存失败'); return }
+  ElMessage.success(editingSourceCategory.value ? '类别已更新' : '类别已创建')
+  showSourceCategoryDialog.value = false
+  await loadInfoSourceCategories(resp.data?.id)
+}
+
+async function deleteSourceCategory(category: InfoSourceCategoryItem): Promise<void> {
+  if (category.isBuiltin) return
+  try {
+    await ElMessageBox.confirm(
+      `删除类别「${category.name}」？其下全部分组与来源将一并删除。`,
+      '删除类别',
+      { type: 'warning' },
+    )
   } catch {
     return
   }
-  const resp = await api.newsSource.delete(source.id)
-  if (resp.success) { ElMessage.success('已删除'); await loadNewsSources() }
+  const resp = await apiAny().infoSourceCategory.delete(category.id)
+  if (!resp.success) { ElMessage.error(resp.error ?? '删除失败'); return }
+  ElMessage.success('类别已删除')
+  await loadInfoSourceCategories()
+  await loadInfoSourceTopics()
+  await loadInfoSources()
+}
+
+// ---- 分组增删改 ----
+
+function openAddInfoSourceTopicDialog(): void {
+  if (!infoSourceCategories.value.length) { ElMessage.warning('请先添加来源类别'); return }
+  editingInfoSourceTopic.value = undefined
+  infoSourceTopicForm.categoryId = activeSourceCategory.value || infoSourceCategories.value[0].id
+  infoSourceTopicForm.name = ''
+  showInfoSourceTopicDialog.value = true
+}
+
+function editInfoSourceTopic(topic: InfoSourceTopicItem): void {
+  if (!canEditInfoSourceTopic(topic)) return
+  editingInfoSourceTopic.value = topic
+  infoSourceTopicForm.categoryId = topic.categoryId
+  infoSourceTopicForm.name = topic.name
+  showInfoSourceTopicDialog.value = true
+}
+
+async function saveInfoSourceTopic(): Promise<void> {
+  const name = infoSourceTopicForm.name.trim()
+  if (!name) { ElMessage.warning('请输入分组名'); return }
+  if (!infoSourceTopicForm.categoryId) { ElMessage.warning('请选择类别'); return }
+  const api = apiAny()
+  const resp = editingInfoSourceTopic.value
+    ? await api.infoSourceTopic.update({ id: editingInfoSourceTopic.value.id, name, categoryId: infoSourceTopicForm.categoryId })
+    : await api.infoSourceTopic.create({ categoryId: infoSourceTopicForm.categoryId, name })
+  if (!resp.success) { ElMessage.error(resp.error ?? '保存失败'); return }
+  ElMessage.success(editingInfoSourceTopic.value ? '分组已更新' : '分组已创建')
+  showInfoSourceTopicDialog.value = false
+  await loadInfoSourceTopics()
+  if (infoSourceTopicForm.categoryId) activeSourceCategory.value = infoSourceTopicForm.categoryId
+}
+
+async function deleteInfoSourceTopic(topic: InfoSourceTopicItem): Promise<void> {
+  if (!canEditInfoSourceTopic(topic)) return
+  try {
+    await ElMessageBox.confirm(`删除分组「${topic.name}」？其下全部来源将一并删除。`, '删除分组', { type: 'warning' })
+  } catch {
+    return
+  }
+  const resp = await apiAny().infoSourceTopic.delete(topic.id)
+  if (!resp.success) { ElMessage.error(resp.error ?? '删除失败'); return }
+  ElMessage.success('分组已删除')
+  await loadInfoSourceTopics()
+  await loadInfoSources()
+}
+
+// ---- 来源增删改 ----
+
+function openAddInfoSourceDialog(): void {
+  if (!infoSourceCategories.value.length) { ElMessage.warning('请先添加来源类别'); return }
+  editingInfoSource.value = undefined
+  infoSourceForm.categoryId = activeSourceCategory.value || infoSourceCategories.value[0].id
+  infoSourceForm.topicId = ''
+  infoSourceForm.name = ''
+  infoSourceForm.url = ''
+  showInfoSourceDialog.value = true
+}
+
+/** 切换类别时清空分组（原分组属于另一个类别） */
+function onInfoSourceCategoryChange(): void {
+  infoSourceForm.topicId = ''
+}
+
+function editInfoSource(source: InfoSourceItem): void {
+  editingInfoSource.value = source
+  infoSourceForm.categoryId = source.categoryId
+  // 默认分组（未分组）在下拉里以「留空」表示
+  const topic = infoSourceTopics.value.find(t => t.id === source.topicId)
+  infoSourceForm.topicId = topic?.isDefault ? '' : source.topicId
+  infoSourceForm.name = source.name
+  infoSourceForm.url = source.url
+  showInfoSourceDialog.value = true
+}
+
+async function saveInfoSource(): Promise<void> {
+  const name = infoSourceForm.name.trim()
+  const url = infoSourceForm.url.trim()
+  if (!infoSourceForm.categoryId) { ElMessage.warning('请选择类别'); return }
+  if (!name || !url) { ElMessage.warning('请填写名称与 URL'); return }
+  if (!/^https?:\/\//i.test(url)) { ElMessage.warning('URL 需以 http:// 或 https:// 开头'); return }
+  const api = apiAny()
+  // topicId 为空串 = 归入该类别的「未分组」（后端按需创建默认分组）
+  const payload = { categoryId: infoSourceForm.categoryId, topicId: infoSourceForm.topicId, name, url }
+  const resp = editingInfoSource.value
+    ? await api.infoSource.update({ id: editingInfoSource.value.id, ...payload })
+    : await api.infoSource.create(payload)
+  if (!resp.success) { ElMessage.error(resp.error ?? '保存失败'); return }
+  ElMessage.success(editingInfoSource.value ? '已更新' : '已添加')
+  showInfoSourceDialog.value = false
+  await loadInfoSourceTopics()
+  await loadInfoSources()
+}
+
+async function deleteInfoSource(source: InfoSourceItem): Promise<void> {
+  try {
+    await ElMessageBox.confirm(`删除信息来源「${source.name}」？`, '删除来源', { type: 'warning' })
+  } catch {
+    return
+  }
+  const resp = await apiAny().infoSource.delete(source.id)
+  if (resp.success) { ElMessage.success('已删除'); await loadInfoSources() }
   else ElMessage.error(resp.error ?? '删除失败')
 }
 
-async function toggleNewsSourceEnabled(source: NewsSourceItem): Promise<void> {
-  const api = (window as unknown as { electronAPI: any }).electronAPI
-  const resp = await api.newsSource.update({ id: source.id, enabled: source.enabled })
+async function toggleInfoSourceEnabled(source: InfoSourceItem): Promise<void> {
+  const resp = await apiAny().infoSource.update({ id: source.id, enabled: source.enabled })
   if (!resp.success) {
     source.enabled = !source.enabled // 回滚
     ElMessage.error(resp.error ?? '更新失败')
@@ -1646,9 +1862,10 @@ onMounted(async () => {
   await loadDisabledQuickEngines()
   // 加载 OSS 配置
   await loadOSSConfigs()
-  // 加载新闻来源
-  await loadNewsTopics()
-  await loadNewsSources()
+  // 加载信息来源（类别 → 分组 → 来源）
+  await loadInfoSourceCategories()
+  await loadInfoSourceTopics()
+  await loadInfoSources()
 })
 </script>
 
@@ -1691,28 +1908,32 @@ onMounted(async () => {
     overflow: hidden;
     box-shadow: var(--shadow-card);
 
-    :deep(.el-tabs__header) {
+    /* 注意：这些 :deep() 规则必须限定为「直接子元素」（>）——它们是左侧竖向 tab 的专属
+       布局（nav 竖排、nav-scroll 带 16px 内边距、item 44px 行高）。用后代选择器会连
+       pane 里嵌套的子 tab（如「信息来源」内的类别 tab）一起命中：表头被 padding 顶出
+       固定高 + overflow:hidden 的可视区，标签文字只剩一半。 */
+    :deep(> .el-tabs__header) {
       margin: 0;
       background: var(--bg-color-page);
       border-right: 1px solid var(--border-color-lighter);
     }
 
-    :deep(.el-tabs__nav-wrap) {
+    :deep(> .el-tabs__header .el-tabs__nav-wrap) {
       height: 100%;
     }
 
-    :deep(.el-tabs__nav-scroll) {
+    :deep(> .el-tabs__header .el-tabs__nav-scroll) {
       height: 100%;
       padding: 16px 8px;
     }
 
-    :deep(.el-tabs__nav) {
+    :deep(> .el-tabs__header .el-tabs__nav) {
       display: flex;
       flex-direction: column;
       gap: 4px;
     }
 
-    :deep(.el-tabs__item) {
+    :deep(> .el-tabs__header .el-tabs__item) {
       height: 44px;
       line-height: 44px;
       padding: 0 20px;
@@ -1732,13 +1953,13 @@ onMounted(async () => {
       }
     }
 
-    :deep(.el-tabs__content) {
+    :deep(> .el-tabs__content) {
       height: 100%;
       padding: 24px 32px;
       overflow-y: auto;
     }
 
-    :deep(.el-tab-pane) {
+    :deep(> .el-tabs__content > .el-tab-pane) {
       // 底部留白放在 pane 上：滚动到底或内容不满一屏时都与容器下边框保持间距
       min-height: 100%;
       padding-bottom: 56px;
@@ -2252,10 +2473,51 @@ onMounted(async () => {
   margin: 0 0 4px 0;
 }
 
-/* 新闻主题：标题行（名称 + 操作按钮），整行可点击折叠 */
+/* 信息来源分组：标题行（名称 + 操作按钮），整行可点击折叠 */
 .group-title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .group-title-row .group-title { margin: 0; }
 .group-title-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+
+/* 信息来源：类别 Tab（一个类别 = 一个 Tab）。
+   刻意不覆盖 tab 高度/行高：样式泄漏已从源头堵住（外层左侧 tab 规则限定为直接子元素），
+   这里沿用 Element 默认 40px 表头，视觉与其它 tab 一致。 */
+.source-category-tabs {
+  margin-top: 4px;
+
+  :deep(.el-tabs__header) {
+    margin-bottom: 12px;
+  }
+}
+
+.source-category-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* 行高交给容器居中，不用固定值（固定行高 + 裁切容器会把字切一半） */
+  line-height: normal;
+}
+
+.source-category-count {
+  font-size: 11px;
+  line-height: normal;
+  color: var(--text-secondary);
+}
+
+.source-category-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.source-category-desc {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
 
 /* 头部操作按钮组（添加主题 在 添加来源 左侧） */
 .section-header-actions {
@@ -2265,7 +2527,7 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 
-/* 新闻主题折叠 */
+/* 信息来源分组折叠 */
 .news-topic-group {
   border: 1px solid var(--border-color-lighter);
   border-radius: var(--radius-md);

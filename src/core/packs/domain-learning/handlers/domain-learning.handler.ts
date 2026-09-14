@@ -22,6 +22,7 @@ import { LearningGraphService } from '../services/learning-graph.service'
 import { LearningViewService } from '../services/learning-view.service'
 import { DlAgentHarnessService } from '../services/dl-agent-harness.service'
 import { DlPaceSchedulerService } from '../services/dl-pace-scheduler.service'
+import { confirmDlPlan, getDlPlanView } from '../services/dl-plan.service'
 import { dlPublishNotice } from '../services/dl-notice'
 import type { DlPaceSettings, DlReviewSettings, DlSpacePrereq, DlCreateConceptInput } from '@shared/types/domain-learning.types'
 import type { DlAgentMode } from '../services/dl-agent.types'
@@ -210,6 +211,13 @@ export function registerDomainLearningHandlers(): void {
       await services().projects.ensureOwned(p.spaceId)
       return services().agent.isBusy(p.mode, { spaceId: p.spaceId, conceptId: p.conceptId ?? null })
     }))
+
+  // ---- 方案确认流程（2026-09-13：对齐诉求 → 确认知识体系 → 才允许落库） ----
+  // 注：通道字面量必须与 ipcBridge.handle( 同行——dl-channel-consistency 护栏按行内正则抽取三端键集合
+  ipcBridge.handle('dl:get-plan', (_e, p: { id: string }) =>
+    wrap(() => getDlPlanView(getCoreDatabaseManager(), p.id)))
+  ipcBridge.handle('dl:confirm-plan', (_e, p: { id: string; step: 'understanding' | 'syllabus'; payload?: unknown; feedback?: string | null }) =>
+    wrap(() => confirmDlPlan(getCoreDatabaseManager(), p.id, p.step, p.payload, p.feedback ?? null)))
 
   // ---- 周期推进（M2-C；pace 配置读写 + 调度器状态；读写经服务层校验） ----
   ipcBridge.handle('dl:get-space-pace', (_e, p: { id: string }) =>

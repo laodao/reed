@@ -11,6 +11,7 @@ import {
 import { KbChapterRepository, type KbChapterInput } from '@core/database/repositories/kb-chapter.repository'
 import { KbChapterSummaryService } from '@core/platform/services/kb-chapter-summary.service'
 import { LOCAL_DEFAULT_USER_ID, runWithUser } from '@core/context/user-context'
+import { resetKnowledgeParams, setKnowledgeParams } from '@shared/utils/knowledge-params'
 
 const DOC_ID = 'doc-summary-test'
 const KB_ID = 'kb-summary-test'
@@ -150,5 +151,40 @@ describe.each(getTestDialects())('KbChapterSummaryService [%s]', dialect => {
     // 无 pending（全部 done 或 failed）且不重试 failed → 待处理 0
     expect(again.total).toBe(0)
     expect(again.skipped).toBe(2)
+  })
+
+  /**
+   * 2026-09-13「参数设置 → 知识库 → 章节摘要」：单次处理章数/并发/单章字符上限
+   * 不再是函数里的硬编码缺省，而是读运行时持有者（保存后重注入即生效）。
+   * 这里**不传 opts**，证明缺省确实来自设置。
+   */
+  it('不传 opts 时，缺省值来自「参数设置 → 知识库 → 章节摘要」', async () => {
+    await runWithUser(LOCAL_DEFAULT_USER_ID, () =>
+      repo.replaceByDocument(DOC_ID, [
+        chapter({ id: 'a', title: '第一章', ordering: 0, content: '正文 A。' }),
+        chapter({ id: 'b', title: '第二章', ordering: 1, content: '正文 B。' }),
+        chapter({ id: 'c', title: '第三章', ordering: 2, content: '正文 C。' }),
+      ]),
+    )
+    const summarized: string[] = []
+    const service = new KbChapterSummaryService({
+      repo,
+      llm: async (req) => {
+        summarized.push(req.user)
+        return '摘要'
+      },
+    })
+
+    // 注入 maxSummaries = 2 → 一次只处理 2 章（默认是 60，这里证明读到了配置）
+    setKnowledgeParams({ summary: { maxSummaries: 2 } })
+    const result = await runWithUser(LOCAL_DEFAULT_USER_ID, () => service.summarizeDocument(DOC_ID))
+    expect(result.total).toBe(2)
+    expect(result.remaining).toBe(1)
+    expect(summarized).toHaveLength(2)
+
+    resetKnowledgeParams()
+    // 回到默认（60）后，剩余 1 章处理掉
+    const rest = await runWithUser(LOCAL_DEFAULT_USER_ID, () => service.summarizeDocument(DOC_ID))
+    expect(rest.total).toBe(1)
   })
 })

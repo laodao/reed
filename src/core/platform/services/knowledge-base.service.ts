@@ -47,9 +47,7 @@ import type {
   AddDocumentResult,
   KnowledgeBaseFolder,
 } from '@shared/types/knowledge-base.types'
-
-// 常量配置
-const BATCH_SIZE = 10
+import { knowledgeParams } from '@shared/utils/knowledge-params'
 
 /** D3：索引分词停用词（buildIndex 与 BM25 检索共用——同一套词表才能对得上） */
 const INDEX_STOP_WORDS = new Set([
@@ -73,12 +71,6 @@ function tokenizeForIndex(text: string): string[] {
 
 /** QA 对向量的 chunkId 命名空间前缀（与 addQaPair 写入一致；文档检索须剔除） */
 const QA_CHUNK_ID_PREFIX = 'qa:'
-/** 文档召回补偿条数：抵偿 QA 命名空间向量占用的 topK 名额 */
-const QA_VECTOR_FETCH_PADDING = 10
-/** QA xlsx 导入文件大小上限（评审 #77：解析无上限是 DoS 面） */
-const QA_IMPORT_MAX_FILE_BYTES = 10 * 1024 * 1024
-/** QA xlsx 导入行数上限（评审 #77） */
-const QA_IMPORT_MAX_ROWS = 10_000
 
 /** BM25 参数（k1 词频饱和、b 长度归一；业界标准值） */
 const BM25_K1 = 1.2
@@ -693,13 +685,14 @@ export class KnowledgeBaseService {
         }
       }
 
-      // 5. 生成向量
-      const totalBatches = Math.ceil(chunkRecords.length / BATCH_SIZE)
+      // 5. 生成向量（批量大小走「参数设置 → 知识库 → 入库与导入」）
+      const batchSize = knowledgeParams().ingest.embeddingBatchSize
+      const totalBatches = Math.ceil(chunkRecords.length / batchSize)
       const estimatedBatchTime = 2 // 秒
 
       let batchIndex = 0
-      for (let i = 0; i < chunkRecords.length; i += BATCH_SIZE) {
-        const batch = chunkRecords.slice(i, i + BATCH_SIZE)
+      for (let i = 0; i < chunkRecords.length; i += batchSize) {
+        const batch = chunkRecords.slice(i, i + batchSize)
         const texts = batch.map(c => c.content)
 
         const vectors = await this.getEmbeddingVectors(texts, embeddingConfig)
@@ -1008,7 +1001,8 @@ export class KnowledgeBaseService {
         }
       }
       const vectorWeight = effectiveVectorWeight != null ? Math.min(1, Math.max(0, effectiveVectorWeight)) : 1
-      const topK = req.topK || 5
+      // 检索默认值走「参数设置 → 知识库 → 检索」（调用方显式指定优先）
+      const topK = req.topK || knowledgeParams().retrieval.defaultTopK
       const threshold = req.threshold != null && req.threshold > 0 ? req.threshold : null
 
       // 向量召回（weight=0 时跳过嵌入调用省一次 API）。
@@ -1018,7 +1012,7 @@ export class KnowledgeBaseService {
         const vectors = await this.getEmbeddingVectors([req.query], config, req.signal)
         if (!vectors) return { success: false, error: '生成查询向量失败' }
         // 混合时 3 倍召回（融合需要候选并集）+ QA 前缀剔除补偿
-        const fetchK = (vectorWeight < 1 ? topK * 3 : topK) + QA_VECTOR_FETCH_PADDING
+        const fetchK = (vectorWeight < 1 ? topK * 3 : topK) + knowledgeParams().retrieval.qaVectorFetchPadding
         const raw = await db.kbVectors.searchSimilar(req.knowledgeBaseId, vectors[0], fetchK)
         for (const r of raw) {
           if (r.chunkId.startsWith(QA_CHUNK_ID_PREFIX)) continue
@@ -1398,9 +1392,10 @@ export class KnowledgeBaseService {
   // selectFiles 已移到 IPC handler（dialog.showOpenDialog 是 Electron 平台特性）
 
   getFileLimits() {
+    const ingest = knowledgeParams().ingest
     return {
-      maxFileSize: 50 * 1024 * 1024,
-      maxFilesPerUpload: 20,
+      maxFileSize: ingest.maxUploadBytes,
+      maxFilesPerUpload: ingest.maxUploadFiles,
       // 注意：doc（Word 97-2003 二进制格式）解析未实现（mammoth 仅支持 docx），
       // 不要列在这里 —— 上传收下却处理不了会永远卡 pending。
       supportedTypes: ['docx', 'txt', 'md', 'xlsx', 'xls', 'pdf', 'epub', 'mobi', 'azw3']
@@ -1792,7 +1787,11 @@ export class KnowledgeBaseService {
       const vectors = await this.getEmbeddingVectors([req.query], this.parseEmbeddingConfig(kb), req.signal)
       if (!vectors) return { success: false, error: '生成查询向量失败' }
 
-      const raw = await db.kbVectors.searchSimilar(req.knowledgeBaseId, vectors[0], req.topK || 3)
+      const raw = await db.kbVectors.searchSimilar(
+        req.knowledgeBaseId,
+        vectors[0],
+        req.topK || knowledgeParams().retrieval.qaTopK,
+      )
       const minScore = req.threshold ?? 0
       // QA 命中：chunkId 命名空间过滤 + 按 pair 去重（保留最高分变体）
       const best = new Map<string, { pairId: string; score: number }>()
@@ -1824,16 +1823,17 @@ export class KnowledgeBaseService {
    */
   async importQaPairs(knowledgeBaseId: string, fileBuffer: Buffer): Promise<{ success: boolean; data?: { imported: number; failed: number }; error?: string }> {
     try {
-      if (fileBuffer.length > QA_IMPORT_MAX_FILE_BYTES) {
-        return { success: false, error: `文件超出上限：${(fileBuffer.length / 1024 / 1024).toFixed(1)}MB > ${QA_IMPORT_MAX_FILE_BYTES / 1024 / 1024}MB` }
+      const { qaImportMaxBytes, qaImportMaxRows } = knowledgeParams().ingest
+      if (fileBuffer.length > qaImportMaxBytes) {
+        return { success: false, error: `文件超出上限：${(fileBuffer.length / 1024 / 1024).toFixed(1)}MB > ${qaImportMaxBytes / 1024 / 1024}MB` }
       }
       const XLSX = await import('xlsx')
       const wb = XLSX.read(fileBuffer)
       const sheet = wb.Sheets[wb.SheetNames[0]]
       if (!sheet) return { success: false, error: 'xlsx 中没有工作表' }
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet)
-      if (rows.length > QA_IMPORT_MAX_ROWS) {
-        return { success: false, error: `行数超出上限：${rows.length} 行 > ${QA_IMPORT_MAX_ROWS} 行，请拆分后分批导入` }
+      if (rows.length > qaImportMaxRows) {
+        return { success: false, error: `行数超出上限：${rows.length} 行 > ${qaImportMaxRows} 行，请拆分后分批导入` }
       }
       let imported = 0
       let failed = 0

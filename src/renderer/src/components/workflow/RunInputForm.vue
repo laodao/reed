@@ -80,7 +80,7 @@
           </div>
         </div>
 
-        <!-- 动态下拉（type='select-dynamic'，如模板资产/新闻来源） -->
+        <!-- 动态下拉（type='select-dynamic'，如模板资产/信息来源） -->
         <el-select v-else-if="item.type === 'select-dynamic'" v-model="values[item.key]"
           clearable filterable :multiple="!!item.multi" placeholder="请选择" style="width: 100%" @change="touch(item.key)">
           <el-option v-for="o in dynamicOptions(item)" :key="o.value" :label="o.label" :value="o.value" />
@@ -88,7 +88,7 @@
             <el-option disabled><span class="dyn-loading">加载中…</span></el-option>
           </template>
           <template v-else-if="dynamicOptions(item).length === 0">
-            <el-option disabled><span class="no-model-hint">暂无可选{{ dynamicLabel(item) }}，请先在资产中心创建</span></el-option>
+            <el-option disabled><span class="no-model-hint">暂无可选{{ dynamicLabel(item) }}{{ dynamicEmptyHint(item) }}</span></el-option>
           </template>
         </el-select>
 
@@ -111,8 +111,18 @@
  */
 import { reactive, computed, ref, watch, nextTick } from 'vue'
 import type { WorkflowStartInput } from '@shared/types/workflow.types'
+import { INFO_SOURCE_NEWS_CATEGORY_ID } from '@shared/types/info-source.types'
 import { toPlainData } from '../../utils/plain-data'
-import { linkageFieldValue, type LinkageOption } from '../../utils/form-linkage'
+import { filterLinkageOptions, linkageFieldValue, type LinkageOption } from '../../utils/form-linkage'
+
+/** 信息来源相关数据源（一次加载填满三个缓存键；newsTopics/newsSources 为旧定义兼容别名） */
+const INFO_SOURCE_SOURCES = new Set([
+  'infoSourceCategories',
+  'infoSourceTopics',
+  'infoSources',
+  'newsTopics',
+  'newsSources',
+])
 
 const props = defineProps<{
   inputs: WorkflowStartInput[]
@@ -242,7 +252,7 @@ const numValues = reactive<Record<string, number | undefined>>({})
 
 /**
  * 动态选项缓存：source → 选项列表。
- * 选项保留完整元数据（如 newsSources 的 topicId），供声明式联动（linkage）过滤——
+ * 选项保留完整元数据（如 infoSources 的 topicId / categoryId），供声明式联动（linkage）过滤——
  * 任何 source 的选项都可附带任意元数据，联动声明按 matchBy 匹配。
  */
 const dynamicCache = reactive<Record<string, LinkageOption[]>>({})
@@ -254,10 +264,15 @@ function dynamicSourceOf(item: WorkflowStartInput): string {
   return item.source ?? ''
 }
 
-/** 字段动态选项（按 source 缓存取；保留元数据供联动过滤） */
+/** 字段的动态选项（按 source 缓存取；保留元数据供联动过滤）
+ *  声明了 linkage 的字段：监听字段有值时把候选收窄为「选项元数据[watch] 匹配」的项，
+ *  与自动填充（applyLinkage）保持同一口径——用户看到的候选即会被选中的候选。 */
 function dynamicOptions(item: WorkflowStartInput): LinkageOption[] {
   const src = dynamicSourceOf(item)
-  return dynamicCache[src] ?? []
+  const all = dynamicCache[src] ?? []
+  const lk = item.linkage
+  if (!lk) return all
+  return filterLinkageOptions(lk, values[lk.watch], all)
 }
 
 function dynamicLoading(item: WorkflowStartInput): boolean {
@@ -277,7 +292,20 @@ const ASSET_SOURCE_LABELS: Record<string, string> = {
 function dynamicLabel(item: WorkflowStartInput): string {
   const src = dynamicSourceOf(item)
   if (src.startsWith('assets:')) return `${ASSET_SOURCE_LABELS[src.slice('assets:'.length)] ?? '资产'}资产`
+  if (src === 'infoSourceCategories') return '信息来源类别'
+  if (src === 'infoSourceTopics' || src === 'newsTopics') return '信息来源分组'
+  if (src === 'infoSources' || src === 'newsSources') return '信息来源'
   return src === 'assets:template' ? '模板' : '选项'
+}
+
+/** 动态下拉的空态引导（不同数据源的创建入口不同） */
+function dynamicEmptyHint(item: WorkflowStartInput): string {
+  const src = dynamicSourceOf(item)
+  if (src.startsWith('assets:')) return '，请先在资产中心创建'
+  if (['infoSourceCategories', 'infoSourceTopics', 'infoSources', 'newsTopics', 'newsSources'].includes(src)) {
+    return '，请先在「设置 → 信息来源」中添加'
+  }
+  return ''
 }
 
 // ── 声明式联动（通用机制，字段声明驱动，不感知业务字段名） ──
@@ -320,7 +348,8 @@ function hasDynamic(keys: WorkflowStartInput[]): boolean {
   return keys.some(i => i.type === 'select-dynamic' || (i.type === 'select' && !!i.source))
 }
 
-/** 拉取动态选项：assets:template → 资产中心模板大类列表（值=资产 ID）；newsTopics → 预置新闻主题（值=主题 id） */
+/** 拉取动态选项：assets:template → 资产中心模板大类列表（值=资产 ID）；
+ *  infoSource* → 信息来源类别/分组/来源（一次加载填满三个缓存键） */
 async function loadDynamicOptions(keys: WorkflowStartInput[]): Promise<void> {
   for (const item of keys) {
     const isDynamic = item.type === 'select-dynamic' || (item.type === 'select' && !!item.source)
@@ -368,11 +397,42 @@ async function loadDynamicOptions(keys: WorkflowStartInput[]): Promise<void> {
       } finally {
         dynamicBusy[src] = false
       }
-    } else if (src === 'newsTopics') {
+    } else if (INFO_SOURCE_SOURCES.has(src)) {
       dynamicBusy[src] = true
       try {
-        const { NEWS_TOPIC_LABELS } = await import('@shared/types/news-topics')
-        dynamicCache[src] = NEWS_TOPIC_LABELS.map(t => ({ label: t.label, value: t.value }))
+        const api = (window as never as { electronAPI: {
+          infoSourceCategory: { list: () => Promise<{ success: boolean; data?: Array<{ id: string; name: string }> }> }
+          infoSourceTopic: { list: (p?: Record<string, unknown>) => Promise<{ success: boolean; data?: Array<{ id: string; categoryId: string; name: string; isDefault: boolean }> }> }
+          infoSource: { list: (p?: Record<string, unknown>) => Promise<{ success: boolean; data?: Array<{ id: string; topicId: string; categoryId: string; name: string; isBuiltin: boolean }> }> }
+        } }).electronAPI
+        const [catResp, topicResp, srcResp] = await Promise.all([
+          api.infoSourceCategory.list(),
+          api.infoSourceTopic.list({}),
+          api.infoSource.list({}),
+        ])
+        const categories = catResp.success ? catResp.data ?? [] : []
+        const topics = topicResp.success ? topicResp.data ?? [] : []
+        const catName = new Map(categories.map(c => [c.id, c.name]))
+        const topicById = new Map(topics.map(t => [t.id, t]))
+        const catOptions: LinkageOption[] = categories.map(c => ({ label: c.name, value: c.id }))
+        // 选项保留 categoryId / topicId 元数据：供 linkage 声明（watch=类别/分组）过滤与自动填充
+        const topicOptions: LinkageOption[] = topics.map(t => ({
+          label: `${catName.get(t.categoryId) ?? t.categoryId} · ${t.name}`,
+          value: t.id,
+          categoryId: t.categoryId,
+        }))
+        const sourceOptions: LinkageOption[] = (srcResp.success ? srcResp.data ?? [] : []).map(s => ({
+          label: `${topicById.get(s.topicId)?.name ?? s.topicId} · ${s.name}${s.isBuiltin ? '' : '（自定义）'}`,
+          value: s.id,
+          topicId: s.topicId,
+          categoryId: s.categoryId,
+        }))
+        dynamicCache.infoSourceCategories = catOptions
+        dynamicCache.infoSourceTopics = topicOptions
+        dynamicCache.infoSources = sourceOptions
+        // 旧工作流兼容：newsTopics / newsSources 限定内置「新闻来源」类别
+        dynamicCache.newsTopics = topicOptions.filter(o => o.categoryId === INFO_SOURCE_NEWS_CATEGORY_ID)
+        dynamicCache.newsSources = sourceOptions.filter(o => o.categoryId === INFO_SOURCE_NEWS_CATEGORY_ID)
       } catch {
         dynamicCache[src] = []
       } finally {
@@ -385,27 +445,6 @@ async function loadDynamicOptions(keys: WorkflowStartInput[]): Promise<void> {
         const resp = await api.list()
         if (resp.success && resp.data) {
           dynamicCache[src] = resp.data.map(kb => ({ label: kb.name, value: kb.id }))
-        } else {
-          dynamicCache[src] = []
-        }
-      } catch {
-        dynamicCache[src] = []
-      } finally {
-        dynamicBusy[src] = false
-      }
-    } else if (src === 'newsSources') {
-      dynamicBusy[src] = true
-      try {
-        const api = (window as never as { electronAPI: { newsSource: { list: (p: Record<string, unknown>) => Promise<{ success: boolean; data?: Array<{ id: string; topicId: string; name: string; isBuiltin: boolean }> }> } } }).electronAPI.newsSource
-        const resp = await api.list({})
-        const TOPIC_LABELS: Record<string, string> = { ai: '人工智能', finance: '全球财经', energy: '新能源', tech: '科技产业', world: '国际时政' }
-        if (resp.success && resp.data) {
-          // 选项保留 topicId 元数据：供 sourceIds 等字段的 linkage 声明（watch=topic, matchBy=topicId）过滤
-          dynamicCache[src] = resp.data.map(s => ({
-            label: `${TOPIC_LABELS[s.topicId] ?? s.topicId} · ${s.name}${s.isBuiltin ? '' : '（自定义）'}`,
-            value: s.id,
-            topicId: s.topicId,
-          }))
         } else {
           dynamicCache[src] = []
         }

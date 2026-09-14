@@ -13,6 +13,7 @@ import { existsSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { createLogger } from '@core/utils/logger'
+import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 
 const logger = createLogger('YtDlpManager')
 
@@ -92,7 +93,7 @@ export class YtDlpManager {
     try {
       const res = await fetch(url, {
         redirect: 'follow',
-        signal: AbortSignal.timeout(120_000),
+        signal: AbortSignal.timeout(workflowRuntimeParams().tools.ytDlpDownloadTimeoutMs),
         headers: { 'User-Agent': 'the-bot/2.0' },
       })
       if (!res.ok) throw new Error(`下载失败 HTTP ${res.status}`)
@@ -144,7 +145,7 @@ export class YtDlpManager {
     const args = [
       '--no-playlist',          // 防误下整个播放列表
       '--no-progress', '--quiet', '--no-warnings',
-      '--socket-timeout', '30',
+      '--socket-timeout', String(workflowRuntimeParams().tools.ytDlpSocketTimeoutSec),
       '-x',                     // 提取音频
       '--audio-format', 'wav',  // STT 需要 wav
       '--audio-quality', '0',

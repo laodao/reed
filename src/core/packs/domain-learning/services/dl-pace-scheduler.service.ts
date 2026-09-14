@@ -21,6 +21,7 @@ import type { DlQuestionRow } from '@core/database/repositories/dl-question.repo
 import type { DlProjectRow } from '@core/database/repositories/dl-project.repository'
 import type { DlPaceSettings } from '@shared/types/domain-learning.types'
 import { DEFAULT_DL_PACE_SETTINGS } from '@shared/types/domain-learning.types'
+import { loadAgentBudget } from '@core/platform/agent-runtime/budget/agent-budget'
 
 const logger = createLogger('DlPaceScheduler')
 
@@ -144,7 +145,24 @@ export class DlPaceSchedulerService {
   }
 
   private get maxConcurrent(): number {
-    return this.deps?.maxConcurrent ?? DL_PACE_MAX_CONCURRENT
+    // 平台预算覆盖（settings 表 agent:budget → domainLearning.maxConcurrentRuns）；每次 tick 由
+    // refreshBudget() 刷新，故设置页改完下一轮即生效。显式注入的 deps.maxConcurrent 优先（测试用）。
+    return this.deps?.maxConcurrent ?? this.budgetConcurrent ?? DL_PACE_MAX_CONCURRENT
+  }
+
+  /** 预算里读到的并发上限（tick 时刷新；未读到 = null → 用常量默认） */
+  private budgetConcurrent: number | null = null
+
+  /** 读一次平台预算（失败/缺失都回落默认，不抛错） */
+  private async refreshBudget(): Promise<void> {
+    const settings = this.deps?.db?.settings ?? null
+    if (!settings) return
+    try {
+      const { budget } = await loadAgentBudget(settings)
+      this.budgetConcurrent = budget.domainLearning.maxConcurrentRuns
+    } catch (e) {
+      logger.debug(`[dl-pace] 读取预算失败，用默认并发：${e instanceof Error ? e.message : String(e)}`)
+    }
   }
 
   // ==================== 候选查询（公开便于测试） ====================
@@ -181,6 +199,8 @@ export class DlPaceSchedulerService {
   async tick(now: number = this.now()): Promise<number> {
     if (!this.deps) throw new Error('DlPaceScheduler 未 configure')
     const db = this.deps.db
+    // 每轮刷新一次平台预算（并发上限等；设置页改完下一 tick 生效）
+    await this.refreshBudget()
     const projects = (await db.dlProjects?.listAll()) ?? []
     let started = 0
     for (const p of projects) {

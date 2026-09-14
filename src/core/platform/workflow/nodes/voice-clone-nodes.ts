@@ -15,7 +15,7 @@ import { resolveAssetPath } from '@core/utils/asset-path'
 import { VoiceCloneService } from '../../services/voice-clone.service'
 import type { WorkflowNodeContext, WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
-import { WORKFLOW_DEFAULTS } from '@shared/types/workflow.types'
+import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 import { pollUntil } from '../engine/async-utils'
 
 /** 训练完成状态（VoiceCloneService 终态语义） */
@@ -141,8 +141,8 @@ const voiceCloneNode: WorkflowNodeHandler = {
         return undefined
       },
       {
-        intervalMs: WORKFLOW_DEFAULTS.voiceClonePollIntervalMs,
-        timeoutMs: WORKFLOW_DEFAULTS.voiceCloneWaitTimeoutMs,
+        intervalMs: workflowRuntimeParams().polling.voiceCloneIntervalMs,
+        timeoutMs: workflowRuntimeParams().polling.voiceCloneWaitTimeoutMs,
         signal: ctx.signal,
       }
     )

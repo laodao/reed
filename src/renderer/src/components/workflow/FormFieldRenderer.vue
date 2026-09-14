@@ -119,8 +119,9 @@
           <span class="default-label">数据源</span>
           <el-select v-model="item.source" size="small" placeholder="选择动态数据源" style="width: 220px" @change="syncInputs">
             <el-option label="模板资产（资产中心·模板）" value="assets:template" />
-            <el-option label="预置新闻主题" value="newsTopics" />
-            <el-option label="新闻来源库（可多选）" value="newsSources" />
+            <el-option label="信息来源类别" value="infoSourceCategories" />
+            <el-option label="信息来源分组" value="infoSourceTopics" />
+            <el-option label="信息来源库（可多选）" value="infoSources" />
             <el-option label="知识库" value="knowledgeBases" />
             <el-option label="搜索引擎（已配置）" value="searchEngineConfigs" />
             <el-option label="技能库" value="skills" />
@@ -146,8 +147,9 @@
           <span class="default-label">数据来源</span>
           <el-select v-model="item.source" size="small" placeholder="静态选项（留空）" clearable style="width: 220px" @change="syncInputs">
             <el-option label="模板资产（资产中心·模板）" value="assets:template" />
-            <el-option label="预置新闻主题" value="newsTopics" />
-            <el-option label="新闻来源库（可多选）" value="newsSources" />
+            <el-option label="信息来源类别" value="infoSourceCategories" />
+            <el-option label="信息来源分组" value="infoSourceTopics" />
+            <el-option label="信息来源库（可多选）" value="infoSources" />
             <el-option label="知识库" value="knowledgeBases" />
             <el-option label="搜索引擎（已配置）" value="searchEngineConfigs" />
             <el-option label="技能库" value="skills" />

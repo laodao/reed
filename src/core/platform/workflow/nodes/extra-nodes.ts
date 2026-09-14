@@ -11,7 +11,8 @@ import { callAIStream } from '../../services/ai-call'
 import type { WorkflowNodeContext } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
-import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from '@shared/types/workflow.types'
+import { WORKFLOW_LIMITS } from '@shared/types/workflow.types'
+import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 import { parse } from 'node-html-parser'
 import { validateOutboundUrl } from '@core/utils/outbound-url'
 import { politeFetch } from './http-politeness'
@@ -338,7 +339,10 @@ const webExtractNode: WorkflowNodeHandler = {
        */
       onError?: 'fail' | 'skip'
     }
-    const timeout = Math.min(WORKFLOW_DEFAULTS.httpRequestTimeoutMs, WORKFLOW_LIMITS.httpTimeoutMs)
+    const timeout = Math.min(
+      workflowRuntimeParams().crawl.httpRequestTimeoutMs,
+      WORKFLOW_LIMITS.httpTimeoutMs,
+    )
     const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(timeout)])
     // onError=skip：抓取失败时返回空结果而非报错
     const skipResult = () => ({
@@ -370,10 +374,10 @@ const webExtractNode: WorkflowNodeHandler = {
     }
     // 正文提取（启发式：文本密度选主内容容器，剔除导航/按钮/评论等噪声）
     const { title, text } = extractArticleContent(html)
-    const max = cfg.maxLength && cfg.maxLength > 0 ? cfg.maxLength : 100_000
+    const max = cfg.maxLength && cfg.maxLength > 0 ? cfg.maxLength : workflowRuntimeParams().crawl.extractMaxChars
     // 智能截断：按句子/段落边界，不切半（内容完整性优先）
     const trimmed = text.length > max ? truncateTextSmart(text, max) : text
-    const links = extractPageLinks(html, String(cfg.url), cfg.maxLinks ?? 30)
+    const links = extractPageLinks(html, String(cfg.url), cfg.maxLinks ?? workflowRuntimeParams().crawl.maxLinksPerSource)
     return { status: 'succeeded', output: { title, text: trimmed, length: trimmed.length, links } }
   },
 }
