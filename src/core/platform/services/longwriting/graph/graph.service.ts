@@ -132,7 +132,35 @@ export class GraphService {
       ...skills.map(s => ({ id: s.id, type: 'skill' as const, name: s.name, description: s.description })),
       ...events.map(e => ({ id: e.id, type: 'event' as const, name: e.name, description: e.description, chapterNumber: e.chapterNumber })),
     ]
-    return { nodes, edges }
+
+    // 52 号统一存储：事件→实体连线直接从 involved_entities JSON 推导，
+    // 不再读 lw_graph_edges 里的 involves 边副本（那个写入不可靠，导致图上大量节点悬空）
+    const derivedEdges: GraphEdge[] = []
+    for (const ev of events) {
+      try {
+        const ents = typeof ev.involvedEntities === 'string' ? JSON.parse(ev.involvedEntities) : ev.involvedEntities
+        if (!Array.isArray(ents)) continue
+        for (const ent of ents) {
+          if (ent?.id && ent?.type) {
+            derivedEdges.push({
+              id: `evt-${ev.id}-${ent.id}`,
+              projectId,
+              sourceType: 'event' as const,
+              sourceId: ev.id,
+              targetType: ent.type,
+              targetId: ent.id,
+              relationType: 'involves',
+              validFromChapter: ev.chapterNumber || 1,
+            })
+          }
+        }
+      } catch { /* JSON 解析失败跳过 */ }
+    }
+
+    // 语义关系边（人物→人物等）仍从 lw_graph_edges 读
+    const semanticEdges = edges.filter(e => e.relationType !== 'involves')
+
+    return { nodes, edges: [...derivedEdges, ...semanticEdges] }
   }
 
   // ==================== 名称 → ID 解析 ====================

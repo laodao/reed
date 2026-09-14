@@ -73,7 +73,9 @@ describe('GraphService', () => {
     const g = await svc.getGraph('p1')
     expect(g.nodes).toHaveLength(4) // 2 角色 + 1 地点 + 1 事件
     expect(g.nodes.map(n => n.type).sort()).toEqual(['character', 'character', 'event', 'location'])
-    expect(g.edges).toHaveLength(2)
+    // 52 号统一存储：2 条语义边 + 1 条从事件 involved_entities JSON 推导的 involves 边
+    expect(g.edges).toHaveLength(3)
+    expect(g.edges.filter(e => e.relationType === 'involves')).toHaveLength(1)
   })
 
   it('resolveEntities 名称→ID（命中/未命中）', async () => {
