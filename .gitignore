@@ -46,3 +46,10 @@ progress/**/*.png
 progress/*.png
 scripts/.settings-shots/
 *.screenshot.png
+
+# 探查脚本导出的数据快照（体积大、可由脚本重生成，不进版本库）
+progress/_*_dump.json
+progress/_*_dup_pairs.json
+
+# Agent harness 的大输出落盘文件（命令输出，不是工程产物）
+.dsh-*.txt
