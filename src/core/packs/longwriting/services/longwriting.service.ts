@@ -149,6 +149,15 @@ export class LongWritingService {
     } catch (e) {
       console.error('[longwriting] Agent 数据级联清理失败（不影响删除）:', e)
     }
+    // 复核修复：图谱边/事件/状态切片/伏笔/自定义实体/向量索引建表无 FK，
+    // 不显式清理会永久残留（基础表走 DB 层 FK CASCADE，此处只管伴生表）
+    try {
+      const { LwPurgeService } = await import('@core/platform/services/longwriting/purge.service')
+      const purge = new LwPurgeService(this.db)
+      purge.logResults('deleteProject', await purge.purgeProjectData(id))
+    } catch (e) {
+      console.error('[longwriting] 伴生数据级联清理失败（不影响删除）:', e)
+    }
     return ok
   }
 

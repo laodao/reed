@@ -21,6 +21,7 @@
 
 import { getCoreDatabaseManager, type ICoreDatabaseManager } from '@core/database/database-manager.interface'
 import { listAcknowledgedKeys, filterBlockingConflicts } from '../conflict-gate'
+import { buildOutlineDocOrder, outlineChapterNumber, type OutlineDocOrder } from '../outline-order'
 import type { GraphEntityType } from '@shared/types/longwriting.types'
 import { CLIFFHANGER_MARKER } from '../../writing-methodology'
 
@@ -441,9 +442,11 @@ export class ConsistencyService {
     const m = this.manager()
     if (!m) return []
     const outlines = (await m.lwOutlines?.getByProjectId(projectId)) || []
+    // 集号 = 文档序章号（复核修复：orderIndex 兄弟序在多卷树上扁平排序会交错）
+    const docOrder = buildOutlineDocOrder(outlines)
     const chapters = outlines
       .filter((o) => o.nodeType === 'chapter')
-      .sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0))
+      .sort((a, b) => (docOrder.leafNumbers.get(a.id) ?? 0) - (docOrder.leafNumbers.get(b.id) ?? 0))
     if (chapters.length === 0) return []
 
     const marked = chapters.filter((c) => (c.summary || '').includes(CLIFFHANGER_MARKER))
@@ -454,7 +457,7 @@ export class ConsistencyService {
     let prevType: string | null = null
     let prevNo = 0
     for (const c of chapters) {
-      const no = (c.orderIndex || 0) + 1
+      const no = docOrder.leafNumbers.get(c.id) ?? (c.orderIndex || 0) + 1
       const summary = c.summary || ''
       if (!summary.includes(CLIFFHANGER_MARKER)) {
         conflicts.push({
@@ -559,15 +562,16 @@ export class ConsistencyService {
     const foreshadows = (await m.lwForeshadows?.getByProjectId(projectId)) || []
     if (foreshadows.length === 0) return []
 
-    // 已写章节数 = 有正文章节的最大序号（按大纲 orderIndex 顺序推算）
+    // 已写章节数 = 有正文章节的最大文档序章号（复核修复：章号走文档序原语）
+    const docOrder = await this.docOrderOf(projectId)
     const outlines = (await m.lwOutlines?.getByProjectId(projectId)) || []
-    const chapterOutlines = outlines
-      .filter((o) => o.nodeType === 'chapter')
-      .sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0))
+    const chapterOutlines = outlines.filter((o) => o.nodeType === 'chapter')
     let writtenMax = 0
-    for (let i = 0; i < chapterOutlines.length; i++) {
-      const ch = await m.lwChapters?.getByOutlineId(chapterOutlines[i].id)
-      if (ch?.content && ch.content.trim().length > 0) writtenMax = Math.max(writtenMax, i + 1)
+    for (const o of chapterOutlines) {
+      const no = docOrder.leafNumbers.get(o.id)
+      if (!no) continue
+      const ch = await m.lwChapters?.getByOutlineId(o.id)
+      if (ch?.content && ch.content.trim().length > 0) writtenMax = Math.max(writtenMax, no)
     }
 
     const conflicts: ConflictItem[] = []
@@ -609,12 +613,17 @@ export class ConsistencyService {
   private async calcChapterNumber(projectId: string, outlineId: string): Promise<number> {
     const m = this.manager()
     if (!m) return 1
-    const outlines = await this.sortedOutlines(projectId)
-    let count = 0
-    for (const o of outlines) {
-      if (o.nodeType === 'chapter') count++
-      if (o.id === outlineId) return count
-    }
-    return count || 1
+    // 复核修复 P1-1：orderIndex 是兄弟序，扁平全局排序在多卷/含节树上交错错位——
+    // 统一走文档序原语（唯一章号权威）
+    const all = (await m.lwOutlines?.getByProjectId(projectId)) || []
+    const order = buildOutlineDocOrder(all)
+    return outlineChapterNumber(order, outlineId) ?? 1
+  }
+
+  /** 项目大纲的文档序缓存（R7/R8 等多处消费；单次扫描内复用一次构建） */
+  private async docOrderOf(projectId: string): Promise<OutlineDocOrder> {
+    const m = this.manager()
+    const all = m ? (await m.lwOutlines?.getByProjectId(projectId)) || [] : []
+    return buildOutlineDocOrder(all)
   }
 }

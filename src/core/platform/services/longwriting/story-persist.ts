@@ -663,11 +663,12 @@ export async function persistChapter(
     try {
       const { ChapterGraphProcessor } = await import('./graph/chapter-graph.processor')
       const processor = new ChapterGraphProcessor(db, ai)
-      const tree = (await db?.lwOutlines?.getTreeByProjectId(projectId)) || []
-      const leaves = (tree || [])
-        .filter((n: any) => n.nodeType === 'chapter' || n.nodeType === 'section')
-        .sort((a: any, b: any) => a.orderIndex - b.orderIndex)
-      const chapterNumber = leaves.findIndex((l: any) => l.id === outlineId) + 1 || 1
+      // 复核修复 P1-1：章号走文档序原语（旧实现把 chapter+section 按 orderIndex
+      // 扁平排序后 findIndex——多卷/含节树全局排序交错，章号系统性错位）
+      const { buildOutlineDocOrder, outlineChapterNumber } = await import('./outline-order')
+      const allNodes = (await db?.lwOutlines?.getByProjectId(projectId)) || []
+      const docOrder = buildOutlineDocOrder(allNodes)
+      const chapterNumber = outlineChapterNumber(docOrder, outlineId) ?? 1
       await processor.process({
         projectId,
         outlineId,

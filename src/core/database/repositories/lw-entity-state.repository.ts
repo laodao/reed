@@ -197,6 +197,11 @@ export class LwEntityStateRepository extends BaseRepository<
     return this.scoped.delete({ projectId, chapterNumber } as any)
   }
 
+  /** 实体删除级联清理（lw_entity_state_snapshots 按 entityType+entityId 泛化引用，无 FK） */
+  async deleteByEntity(projectId: string, entityType: string, entityId: string): Promise<number> {
+    return this.scoped.delete({ projectId, entityType, entityId } as any)
+  }
+
   async deleteByProjectId(projectId: string): Promise<number> {
     return this.scoped.delete({ projectId } as any)
   }
