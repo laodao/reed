@@ -42,6 +42,12 @@ import { registerEpisodeAgentHandlers } from './agent.handler'
  * 注册剧集制作模块所有 IPC handler（V2 老 channel + V2.5 新增资产域 ep:asset:* channel）
  */
 export function registerEpisodeProductionHandlers(): void {
+  // 启动恢复（复核修复 P1-9/10）：卡死中间态复位 + 超龄 temp 清扫。
+  // fire-and-forget——失败只留日志，绝不阻塞 handler 注册/应用启动
+  void import('@core/platform/episode-production/startup-recovery')
+    .then((m) => m.runEpisodeProductionStartupRecovery())
+    .catch((e) => console.warn('[episode-production] 启动恢复失败（忽略）:', e))
+
   registerProjectHandlers()
   registerEpisodeHandlers()
   registerCharacterAssetHandlers()

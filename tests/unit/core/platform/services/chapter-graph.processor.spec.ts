@@ -13,6 +13,11 @@ function makeFakeDb() {
   return {
     eventsStore, statesStore, edgesStore, foreshadowRows,
     lwCharacters: { getByProjectId: vi.fn(async () => [{ id: 'c1', name: '林晓' }, { id: 'c2', name: '顾言' }]) },
+    lwCustomEntities: {
+      getByProjectAndKind: vi.fn(async () => []),
+      createRow: vi.fn(async (_pid: string, kind: string, name: string) => ({ id: `bce-${name}`, kindKey: kind, name })),
+      deleteRow: vi.fn(async () => true),
+    },
     lwLocations: { getByProjectId: vi.fn(async () => [{ id: 'l1', name: '青云宗' }]) },
     lwItems: { getByProjectId: vi.fn(async () => []) },
     lwOutlines: {
@@ -20,6 +25,9 @@ function makeFakeDb() {
     },
     lwEvents: {
       batchCreate: vi.fn(async (list: any[]) => { const saved = list.map((e, i) => ({ id: `evt-${i}`, ...e })); eventsStore.push(...saved); return saved }),
+      // 清理步骤（复核修复后位于提取成功之后）
+      listByChapter: vi.fn(async () => [...eventsStore]),
+      deleteByChapter: vi.fn(async () => { const n = eventsStore.length; eventsStore.length = 0; return n }),
     },
     lwForeshadows: {
       deleteExtractByChapter: vi.fn(async () => 0),
@@ -34,6 +42,9 @@ function makeFakeDb() {
     },
     lwGraphEdges: {
       batchCreate: vi.fn(async (list: any[]) => { const saved = list.map((e, i) => ({ id: `edge-${i}`, ...e })); edgesStore.push(...saved); return saved }),
+      deleteBySourceEventIds: vi.fn(async () => 0),
+      // 44 号关系演变步骤的重跑幂等清理（fake 之前缺失，该步恒静默失败）
+      deleteByOriginChapter: vi.fn(async () => 0),
     },
     lwChapterStateSummaries: {
       getLatestBeforeChapter: vi.fn(async () => null),
@@ -51,6 +62,8 @@ function makeFakeAi(over: Record<string, unknown> = {}) {
         { name: '比武大会夺魁', description: '林晓击败宿敌', involvedEntities: [{ type: 'character', name: '林晓' }, { type: 'location', name: '青云宗' }], stateAfter: '林晓扬名' },
       ],
     })),
+    // 44 号关系演变（fake 之前缺失 → 该步恒静默失败；hash 聚合后必须补齐才能走"全成功"分支）
+    extractChapterRelationChanges: vi.fn(async () => ({ success: true, data: [] })),
     extractEntityStates: vi.fn(async () => ({
       success: true,
       data: [
@@ -93,8 +106,8 @@ describe('ChapterGraphProcessor', () => {
     expect(db.statesStore[0].entityId).toBe('c1')
 
     // 建边：事件→实体 involves
-    expect(result.edges).toHaveLength(2)
-    expect(db.edgesStore[0]).toMatchObject({ sourceType: 'event', targetType: 'character', targetId: 'c1', relationType: 'involves', validFromChapter: 3 })
+    expect(result.edges).toHaveLength(0) // 52 号：involves 边由 getGraph 从 JSON 推导，处理器不再写边副本
+    expect(db.edgesStore).toHaveLength(0)
 
     // 章节状态摘要
     expect(db.lwChapterStateSummaries.upsert).toHaveBeenCalledTimes(1)
@@ -113,26 +126,32 @@ describe('ChapterGraphProcessor', () => {
     expect(db.lwChapterStateSummaries.upsert).toHaveBeenCalledTimes(1)
   })
 
-  it('事件涉及未知实体：名称解析失败跳过（不建幽灵边）', async () => {
+  it('事件涉及未知实体：进未登记队列，正文共现补链挂真实实体（52 号，不建幽灵边）', async () => {
     const db = makeFakeDb()
+    // 正文里出现名册内的「林晓」与名册外的「李三」——模型只提案了未知实体
     const ai = makeFakeAi({
       extractChapterForeshadows: vi.fn(async () => ({ success: true, data: [] })),
     extractChapterEvents: vi.fn(async () => ({
         success: true,
-        data: [{ name: '神秘事件', involvedEntities: [{ type: 'character', name: '不存在的人' }] }],
+        data: [{ name: '李三遇害', involvedEntities: [{ type: 'character', name: '不存在的人' }] }],
       })),
     })
     const proc = new ChapterGraphProcessor(db as any, ai as any)
-    const result = await proc.process({ projectId: 'p1', outlineId: 'o1', chapterContent: '正文', chapterNumber: 2 })
+    const content = '林晓赶到现场时，李三已经断了气。'
+    const result = await proc.process({ projectId: 'p1', outlineId: 'o1', chapterContent: content, chapterNumber: 2 })
     expect(result.events).toHaveLength(1)
-    expect(db.eventsStore[0].involvedEntities).toEqual([]) // 未解析的实体被过滤
-    expect(result.edges).toHaveLength(0) // 无涉及实体 → 无边
+    // 「不存在的人」未解析不挂；共现补链把正文同句的名册实体「林晓」挂上（解析过的真实 ID，非幽灵边）
+    const linked = db.eventsStore[0].involvedEntities.map((e: any) => e.name)
+    expect(linked).toContain('林晓')
+    expect(linked).not.toContain('不存在的人')
+    // 名册外的「李三」进未登记队列（R9 数据源）
+    expect(db.lwCustomEntities.getByProjectAndKind).toHaveBeenCalledWith('p1', '未登记人物')
   })
 
   it('内容未变的二次保存 → 0 次 AI 调用（评审#61 幂等短路）', async () => {
     const ai = makeFakeAi()
     const proc = new ChapterGraphProcessor(makeFakeDb() as any, ai as any)
-    const input = { projectId: 'p9', outlineId: 'o1', chapterContent: '固定内容', chapterNumber: 1 }
+    const input = { projectId: 'p9-unchanged-test', outlineId: 'o1', chapterContent: '固定内容', chapterNumber: 1 }
     const r1 = await proc.process(input)
     expect(r1.events.length).toBeGreaterThan(0)
     const callsAfterFirst = ai.extractChapterEvents.mock.calls.length
@@ -159,6 +178,40 @@ describe('ChapterGraphProcessor', () => {
     expect(result.events).toHaveLength(0)
     expect(result.states).toHaveLength(0)
     expect(result.edges).toHaveLength(0)
+  })
+
+  it('复核修复：全部步骤成功才记 hash（失败步骤不短路，下次保存重跑）', async () => {
+    const db = makeFakeDb()
+    // 状态提取抛错 → failedSteps 非空 → hash 不记录
+    const ai = makeFakeAi({
+      extractEntityStates: vi.fn(async () => { throw new Error('状态提取炸了') }),
+    })
+    const proc = new ChapterGraphProcessor(db as any, ai as any)
+    const input = { projectId: 'p-fail', outlineId: 'o1', chapterContent: '同内容', chapterNumber: 1 }
+    const r1 = await proc.process(input)
+    expect(r1.failedSteps).toContain('状态切片')
+    // 内容未变但 hash 未记录 → 再次保存会重跑（旧实现会永久短路）
+    await proc.process(input)
+    expect(ai.extractChapterEvents.mock.calls.length).toBe(2)
+  })
+
+  it('复核修复：提取失败时旧事件保留（清理移至提取成功之后）', async () => {
+    const db = makeFakeDb()
+    db.eventsStore.push({ id: 'old-evt', projectId: 'p1', name: '旧事件', chapterNumber: 4 })
+    const ai = makeFakeAi({
+      extractChapterEvents: vi.fn(async () => { throw new Error('提取超时') }),
+    })
+    const proc = new ChapterGraphProcessor(db as any, ai as any)
+    await proc.process({ projectId: 'p1', outlineId: 'o1', chapterContent: '正文', chapterNumber: 4 })
+    // 提取失败：旧事件不被清理（旧实现先删后提取，失败即丢）
+    expect(db.eventsStore.some((e: any) => e.id === 'old-evt')).toBe(true)
+    // 提取成功时才清理：旧事件被删、新事件落库
+    const db2 = makeFakeDb()
+    db2.eventsStore.push({ id: 'old-evt', projectId: 'p1', name: '旧事件', chapterNumber: 4 })
+    const proc2 = new ChapterGraphProcessor(db2 as any, makeFakeAi() as any)
+    await proc2.process({ projectId: 'p1', outlineId: 'o1', chapterContent: '正文', chapterNumber: 4 })
+    expect(db2.eventsStore.some((e: any) => e.id === 'old-evt')).toBe(false)
+    expect(db2.eventsStore.length).toBeGreaterThan(0)
   })
 })
 

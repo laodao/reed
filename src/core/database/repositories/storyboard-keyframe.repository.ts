@@ -128,34 +128,32 @@ export class StoryboardKeyframeRepository extends BaseRepository<
     return this.toDto(saved)
   }
 
-  /** 批量创建（事务）*/
+  /** 批量创建（事务；scopedTx 保证事务内租户注入）*/
   async createMany(
     requests: CreateKeyframeRequest[],
   ): Promise<StoryboardKeyframe[]> {
     if (requests.length === 0) return []
-    return this.dataSource.transaction(async (manager) => {
-      const repo = manager.getRepository(StoryboardKeyframeEntity)
+    return this.scopedTx(async tx => {
+      const kfApi = tx.for(StoryboardKeyframeEntity)
       const result: StoryboardKeyframe[] = []
       const now = new Date()
       for (const data of requests) {
         const id = this.generateId()
-        const saved = await repo.save(
-          repo.create({
-            id,
-            storyboardId: data.storyboardId,
-            frameIndex: data.frameIndex,
-            timePercent: data.timePercent ?? this.defaultTimePercent(data.frameRole),
-            frameRole: data.frameRole,
-            imageAssetId: data.imageAssetId ?? null,
-            derivedFromKeyframeId: data.derivedFromKeyframeId ?? null,
-            prompt: data.prompt ?? null,
-            negativePrompt: data.negativePrompt ?? null,
-            userPromptOverride: data.userPromptOverride ?? null,
-            createdAt: now,
-            updatedAt: now,
-          }),
-        )
-        result.push(this.toDto(saved))
+        const saved = await kfApi.save({
+          id,
+          storyboardId: data.storyboardId,
+          frameIndex: data.frameIndex,
+          timePercent: data.timePercent ?? this.defaultTimePercent(data.frameRole),
+          frameRole: data.frameRole,
+          imageAssetId: data.imageAssetId ?? null,
+          derivedFromKeyframeId: data.derivedFromKeyframeId ?? null,
+          prompt: data.prompt ?? null,
+          negativePrompt: data.negativePrompt ?? null,
+          userPromptOverride: data.userPromptOverride ?? null,
+          createdAt: now,
+          updatedAt: now,
+        } as never)
+        result.push(this.toDto(saved as StoryboardKeyframeEntity))
       }
       return result
     })

@@ -149,6 +149,15 @@ export class LongWritingService {
     } catch (e) {
       console.error('[longwriting] Agent 数据级联清理失败（不影响删除）:', e)
     }
+    // 复核修复：图谱边/事件/状态切片/伏笔/自定义实体/向量索引建表无 FK，
+    // 不显式清理会永久残留（基础表走 DB 层 FK CASCADE，此处只管伴生表）
+    try {
+      const { LwPurgeService } = await import('@core/platform/services/longwriting/purge.service')
+      const purge = new LwPurgeService(this.db)
+      purge.logResults('deleteProject', await purge.purgeProjectData(id))
+    } catch (e) {
+      console.error('[longwriting] 伴生数据级联清理失败（不影响删除）:', e)
+    }
     return ok
   }
 
@@ -1345,6 +1354,43 @@ export class LongWritingService {
       throw new Error('数据库未初始化')
     }
     return await this.db.lwPrewrites.save(data)
+  }
+
+  /**
+   * 54 号章法：章节设计卡落库（未确认 prewrite upsert）+ 出场实体名→id 绑定大纲。
+   * IPC handler 与研讨室 agent 工具（lw_design_chapter_card）共用——绑定规则单一事实源。
+   */
+  async applyChapterCard(projectId: string, outlineId: string, card: any, markdown: string): Promise<{ prewrite: ChapterPrewrite; unresolvedNames: string[] }> {
+    const prewrite = await this.savePrewrite({ outlineId, content: markdown })
+    const [chars, locs, items] = await Promise.all([
+      this.db.lwCharacters?.getByProjectId(projectId) ?? Promise.resolve([]),
+      this.db.lwLocations?.getByProjectId(projectId) ?? Promise.resolve([]),
+      this.db.lwItems?.getByProjectId(projectId) ?? Promise.resolve([]),
+    ])
+    const outline = await this.db.lwOutlines?.getById(outlineId)
+    const unresolvedNames: string[] = []
+    const charIds = ((card?.involvedCharacters || []) as Array<{ name: string }>)
+      .map((c) => {
+        const hit = chars.find((x: any) => x.name === c.name)
+        if (!hit) unresolvedNames.push(c.name)
+        return hit?.id
+      })
+      .filter(Boolean) as string[]
+    const locIds = ((card?.involvedLocations || []) as string[])
+      .map((n) => locs.find((x: any) => x.name === n)?.id)
+      .filter(Boolean) as string[]
+    const itemIds = ((card?.involvedItems || []) as string[])
+      .map((n) => items.find((x: any) => x.name === n)?.id)
+      .filter(Boolean) as string[]
+    if (outline) {
+      const union = (a?: string[], b?: string[]) => Array.from(new Set([...(a || []), ...(b || [])]))
+      await this.updateOutline(outlineId, {
+        involvedCharacters: union(outline.involvedCharacters, charIds),
+        involvedLocations: union(outline.involvedLocations, locIds),
+        involvedItems: union(outline.involvedItems, itemIds),
+      } as any)
+    }
+    return { prewrite, unresolvedNames }
   }
 
   /**

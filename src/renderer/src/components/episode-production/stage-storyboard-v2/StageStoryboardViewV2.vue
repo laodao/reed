@@ -1812,6 +1812,10 @@ async function onAIFillStoryboard(): Promise<void> {
 
     // updateStoryboard刷新了storyboards数组，watcher会自动更新editDraft
     // computed getter会自动从editDraft.metadata读取最新值，无需手动同步
+    // 复核修复：AI 填充已落库但 dirty 未清，shouldResetStoryboardDraft 因
+    // dirtyFieldCount>0 恒返回 false，watcher 永远不重建草稿 → 界面一直显示
+    // "有未保存的修改"。保存成功即清 dirty，强制草稿按已保存数据重建。
+    editDirty.value = new Set()
 
     ElMessage.success('AI 已填充所有空字段')
   } catch (e: any) {

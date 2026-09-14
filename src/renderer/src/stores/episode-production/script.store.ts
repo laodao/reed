@@ -34,15 +34,20 @@ export const useEpScriptStore = defineStore('ep-script', () => {
 
   // ==================== 剧本管理 ====================
 
+  // 复核修复：请求序号防竞态——连续切换剧本时旧响应不再覆盖新数据
+  let loadScriptSeq = 0
+
   /**
    * 加载剧本
    */
   async function loadScript(scriptId: string): Promise<void> {
+    const seq = ++loadScriptSeq
     const wb = useEpWorkbenchStore()
     wb.loading = true
     wb.error = null
     try {
       const response = await window.electronAPI.episodeProduction.getScript(scriptId)
+      if (seq !== loadScriptSeq) return
       if (response.success && response.data) {
         currentScript.value = response.data as EpisodeScript
         // 加载场景列表

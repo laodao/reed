@@ -19,7 +19,10 @@
  * PC + Web 双端共用；不引入 Electron-only 依赖。
  */
 
-import type { DataSource } from 'typeorm'
+import type { DataSource, EntityManager } from 'typeorm'
+import { IsNull } from 'typeorm'
+import { getCurrentUserId } from '@core/context/user-context'
+import { EpisodeScriptEntity } from '@core/database/entities/episode-production/episode-script.entity'
 import type { ICoreDatabaseManager } from '@core/database/database-manager.interface'
 import {
   EpisodeScriptGenerator,
@@ -42,9 +45,13 @@ import type {
 /** 已有场次一览里单条场景描述的最大字符数（喂 AI 的上下文，别把窗口撑爆） */
 export const SCRIPT_SUMMARY_DESC_MAX = 60
 
-/** 场景写入器签名（可注入，便于单测绕开真实事务） */
+/**
+ * 场景写入函数签名（可注入，便于单测绕开真实事务）。
+ * 复核修复 P1-6：签名从 (ds, …) 改为 (EntityManager, …)——append 把场景写入
+ * 与剧本正文更新并入同一事务，注入方拿到的是事务内 manager。
+ */
 export type CreateScenesFn = (
-  ds: DataSource,
+  manager: EntityManager,
   episodeScriptId: string,
   scenes: GeneratedScene[],
 ) => Promise<SceneScript[]>
@@ -128,8 +135,8 @@ export class ScriptAppendService {
     this.generator = deps.generator ?? EpisodeScriptGenerator.getInstance()
     this.createScenes =
       deps.createScenes ??
-      ((ds, episodeScriptId, scenes) =>
-        SceneBindingWriter.createScenesWithBindings(ds, episodeScriptId, scenes))
+      ((manager, episodeScriptId, scenes) =>
+        SceneBindingWriter.createScenesWithBindingsIn(manager, episodeScriptId, scenes))
     this.buildRoster = deps.buildRoster ?? buildAssetRosterForProject
   }
 
@@ -344,10 +351,7 @@ export class ScriptAppendService {
       base,
     )
 
-    const addedScenes =
-      scenesToWrite.length > 0
-        ? await this.createScenes(dataSource, scriptId, scenesToWrite)
-        : []
+    let addedScenes: SceneScript[] = []
 
     const update: UpdateEpisodeScriptRequest = {
       scriptContent: ScriptAppendService.mergeScriptContent(
@@ -360,7 +364,23 @@ export class ScriptAppendService {
       update.status = 'reviewing'
     }
 
-    const saved = await episodeScripts.update(scriptId, update)
+    // 复核修复 P1-6：场景写入与剧本正文/状态更新并入同一事务（原实现两步
+    // 各自独立提交，场景写入成功而正文更新失败会留下不一致状态）
+    const userId = getCurrentUserId()
+    await dataSource.transaction(async manager => {
+      if (scenesToWrite.length > 0) {
+        addedScenes = await this.createScenes(manager, scriptId, scenesToWrite)
+      }
+      // manager.update 带 user 条件（与 scoped 语义一致）
+      await manager
+        .getRepository(EpisodeScriptEntity)
+        .update(
+          { id: scriptId, ...(userId ? { userId } : { userId: IsNull() }) } as any,
+          update as any,
+        )
+    })
+
+    const saved = await episodeScripts.getById(scriptId)
     if (!saved) throw new Error('剧本不存在')
 
     return { script: saved, addedScenes }

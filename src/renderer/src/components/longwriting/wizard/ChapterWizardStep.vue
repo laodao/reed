@@ -30,7 +30,15 @@
           <span class="chapter-name">{{ currentLeaf.name }}</span>
           <span class="chapter-summary">{{ currentLeaf.summary }}</span>
           <div class="editor-actions">
-            <el-button size="small" :loading="generating" :disabled="!canGenerate" @click="generateCurrent">
+            <el-tag v-if="cardConfirmed" type="success" size="small">设计已确认</el-tag>
+            <el-button size="small" :loading="cardLoading" @click="generateCard">
+              <el-icon><MagicStick /></el-icon>
+              {{ cardLoading ? '设计中...' : (cardExists ? '重新设计本章' : '设计本章') }}
+            </el-button>
+            <el-button size="small" type="primary" plain :disabled="!cardExists || cardConfirmed" @click="confirmCard">
+              确认设计
+            </el-button>
+            <el-button size="small" :loading="generating" :disabled="!canGenerate || !cardConfirmed" @click="generateCurrent">
               <el-icon><MagicStick /></el-icon>
               {{ generating ? '生成中...' : '生成本章' }}
             </el-button>
@@ -42,11 +50,25 @@
           </div>
         </div>
 
+        <!-- 54 号章法：先设计 → 自检 → 确认 → 再写正文 -->
+        <div v-if="cardVisible" class="chapter-card">
+          <pre class="card-content">{{ cardMarkdown }}</pre>
+          <div v-if="cardReview && cardReview.issues.length" class="card-review card-review-warn">
+            <div class="review-title">自检发现的问题（可重新设计，或确认带问题继续）：</div>
+            <div v-for="(issue, i) in cardReview.issues" :key="i" class="review-issue">· {{ issue }}</div>
+          </div>
+          <div v-else-if="cardReview" class="card-review card-review-ok">自检通过：情节服务主线、与前情无冲突。</div>
+          <div v-if="cardUnresolved.length" class="card-review card-review-warn">
+            <div class="review-title">以下人名未在人物册中（已按原样保留，建议先补入设定）：</div>
+            <div class="review-issue">{{ cardUnresolved.join('、') }}</div>
+          </div>
+        </div>
+
         <el-input
           v-model="content"
           type="textarea"
           :rows="20"
-          placeholder="AI 生成内容将显示在这里，你可以直接编辑..."
+          :placeholder="cardConfirmed ? 'AI 生成内容将显示在这里，你可以直接编辑...' : '请先「设计本章」并确认设计卡，再生成本章正文...'"
         />
         <div class="editor-status">
           <span v-if="wordCount > 0">{{ wordCount }} 字</span>
@@ -81,6 +103,61 @@ const emit = defineEmits<{
 
 const ai = useAiGeneration()
 const generating = ai.generating
+const cardLoading = ref(false)
+
+// 54 号章法：本章设计卡（先设计→自检→确认→后写正文）
+const cardMarkdown = ref('')
+const cardReview = ref<{ ok: boolean; issues: string[] } | null>(null)
+const cardUnresolved = ref<string[]>([])
+const cardConfirmed = ref(false)
+const cardExists = ref(false)
+const cardVisible = computed(() => !!cardMarkdown.value)
+
+async function generateCard(): Promise<void> {
+  if (!currentLeaf.value || cardLoading.value) return
+  cardLoading.value = true
+  try {
+    const eventId = `card-${props.projectId}-${Date.now()}`
+    const r = await window.electronAPI.longwriting.generateChapterCard(eventId, props.projectId, currentLeaf.value.id)
+    if (!r.success) {
+      ElMessage.error(r.error || '设计卡生成失败')
+      return
+    }
+    cardMarkdown.value = r.data.markdown || ''
+    cardReview.value = r.data.review || null
+    cardUnresolved.value = r.data.unresolvedNames || []
+    cardExists.value = true
+    cardConfirmed.value = false
+    ElMessage.success('本章设计卡已生成，请确认后开始写正文')
+  } finally {
+    cardLoading.value = false
+  }
+}
+
+async function confirmCard(): Promise<void> {
+  if (!currentLeaf.value) return
+  const r = await window.electronAPI.longwriting.confirmPrewrite(currentLeaf.value.id)
+  if (r.success) {
+    cardConfirmed.value = true
+    ElMessage.success('设计已确认，可以生成本章正文了')
+  } else {
+    ElMessage.error(r.error || '确认失败')
+  }
+}
+
+async function loadCardState(outlineId: string): Promise<void> {
+  cardMarkdown.value = ''
+  cardReview.value = null
+  cardUnresolved.value = []
+  cardConfirmed.value = false
+  cardExists.value = false
+  const r = await window.electronAPI.longwriting.getPrewrite(outlineId)
+  if (r.success && r.data?.content) {
+    cardMarkdown.value = r.data.content
+    cardExists.value = true
+    cardConfirmed.value = !!r.data.isConfirmed
+  }
+}
 
 const outlineNodes = ref<any[]>([])
 const leafChapters = ref<any[]>([])
@@ -118,6 +195,7 @@ async function selectChapter(leaf: any): Promise<void> {
   activeOutlineId.value = leaf.id
   content.value = ''
   savedAt.value = ''
+  void loadCardState(leaf.id)
   const r = await window.electronAPI.longwriting.getChapter(leaf.id)
   if (r.success && r.data) {
     content.value = r.data.content || ''
@@ -258,6 +336,42 @@ onMounted(() => {
 </script>
 
 <style lang="scss" scoped>
+.chapter-card {
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+  background: var(--el-fill-color-lighter);
+
+  .card-content {
+    margin: 0;
+    white-space: pre-wrap;
+    font-size: 13px;
+    line-height: 1.7;
+    font-family: inherit;
+  }
+
+  .card-review {
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 1.6;
+    border-radius: 4px;
+    padding: 6px 8px;
+
+    .review-title { font-weight: 600; margin-bottom: 2px; }
+  }
+
+  .card-review-warn {
+    background: var(--el-color-warning-light-9);
+    color: var(--el-color-warning-dark-2);
+  }
+
+  .card-review-ok {
+    background: var(--el-color-success-light-9);
+    color: var(--el-color-success-dark-2);
+  }
+}
+
 .chapter-wizard-step {
   max-width: 1100px;
   margin: 0 auto;

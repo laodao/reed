@@ -169,6 +169,7 @@ const CHANNELS = {
   GENERATE_CHAPTER_WITH_CONTEXT: 'longwriting:generateChapterWithContext',
   CHAPTER_CONTEXT_PREVIEW: 'longwriting:chapterContextPreview',
   GENERATE_CHAPTER_PREWRITE: 'longwriting:generateChapterPrewrite',
+  GENERATE_CHAPTER_CARD: 'longwriting:generateChapterCard',
   GENERATE_SECTION: 'longwriting:generateSection',
 
   // 导出
@@ -472,7 +473,7 @@ export function registerLongWritingHandlers(): void {
       const result = await service.deleteCharacter(id)
       if (result && char) {
         // 阶段2：实体删除级联清理图谱边（人物/地点/物品/技能/势力）
-        await cleanupEntityGraphEdges(char.projectId, 'character', id)
+        await cleanupEntityGraphEdges(char.projectId, 'character', id, char.name)
       }
       return { success: result }
     } catch (error: any) {
@@ -565,7 +566,7 @@ export function registerLongWritingHandlers(): void {
       const loc = await dbManager.lwLocations?.getById(id)
       const result = await service.deleteLocation(id)
       if (result && loc) {
-        await cleanupEntityGraphEdges(loc.projectId, 'location', id)
+        await cleanupEntityGraphEdges(loc.projectId, 'location', id, loc.name)
       }
       return { success: result }
     } catch (error: any) {
@@ -627,7 +628,7 @@ export function registerLongWritingHandlers(): void {
       const result = await service.deleteFaction(id)
       if (result && faction) {
         // 阶段2：实体删除级联清理图谱边（faction/skill 此前漏接，残留悬空边）
-        await cleanupEntityGraphEdges(faction.projectId, 'faction', id)
+        await cleanupEntityGraphEdges(faction.projectId, 'faction', id, faction.name)
       }
       return { success: result }
     } catch (error: any) {
@@ -980,7 +981,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       const result = await service.deleteSkill(id)
       if (result && skill) {
         // 阶段2：实体删除级联清理图谱边（faction/skill 此前漏接，残留悬空边）
-        await cleanupEntityGraphEdges(skill.projectId, 'skill', id)
+        await cleanupEntityGraphEdges(skill.projectId, 'skill', id, skill.name)
       }
       return { success: result }
     } catch (error: any) {
@@ -1032,7 +1033,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       const item = await dbManager.lwItems?.getById(id)
       const result = await service.deleteItem(id)
       if (result && item) {
-        await cleanupEntityGraphEdges(item.projectId, 'item', id)
+        await cleanupEntityGraphEdges(item.projectId, 'item', id, item.name)
       }
       return { success: result }
     } catch (error: any) {
@@ -1174,7 +1175,27 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
   ipcBridge.handle(CHANNELS.DELETE_OUTLINE, async (_event, id: string) => {
     try {
+      const dbManager = getCoreDatabaseManager()
+      // 章号在删除前计算（删除会引发后续章重排）；chapter/section 节点才挂章节伴生数据
+      const outline = await dbManager.lwOutlines?.getById(id)
+      const isWritableNode = outline?.nodeType === 'chapter' || outline?.nodeType === 'section'
+      const chapterNo = isWritableNode && outline
+        ? await (await import('@core/platform/services/longwriting/graph/consistency.service'))
+            .ConsistencyService.getInstance()
+            .chapterNumberOf(outline.projectId, id)
+        : 0
       const result = await service.deleteOutline(id)
+      // 复核修复：章节伴生数据（事件/演变边/切片/提取伏笔/向量）按章号键挂载且无 FK，
+      // 删章不清理会污染顶替该章号的新内容
+      if (result && isWritableNode && chapterNo > 0) {
+        try {
+          const { LwPurgeService } = await import('@core/platform/services/longwriting/purge.service')
+          const purge = new LwPurgeService(dbManager)
+          purge.logResults(`deleteOutline:${id}`, await purge.purgeChapterDerivedData(outline.projectId, chapterNo))
+        } catch (e) {
+          console.error('[LongWritingHandler] 章节伴生数据清理失败（不影响删除）:', e)
+        }
+      }
       return { success: result }
     } catch (error: any) {
       return { success: false, error: error.message }
@@ -1408,9 +1429,9 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
   ipcBridge.handle(
     CHANNELS.GENERATE_CHAPTER,
-    async (event, eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string, style?: string, extraPrompt?: string) => {
+    async (event, eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string, style?: string, extraPrompt?: string, options?: { skipChapterCardGate?: boolean }) => {
       try {
-        const result = await aiService.generateChapter(eventId, projectId, outlineId, targetWords, providerConfigId, modelId, style, extraPrompt)
+        const result = await aiService.generateChapter(eventId, projectId, outlineId, targetWords, providerConfigId, modelId, style, extraPrompt, options)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -1451,6 +1472,26 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       try {
         const result = await aiService.generateChapterWithContext(eventId, projectId, outlineId, params)
         return { ...result, eventId }
+      } catch (error: any) {
+        return { success: false, error: error.message }
+      }
+    }
+  )
+
+  // 54 号章法：生成章节设计卡（生成→LLM自检→落库未确认 prewrite→出场实体绑定大纲）
+  ipcBridge.handle(
+    CHANNELS.GENERATE_CHAPTER_CARD,
+    async (_event, eventId: string, projectId: string, outlineId: string, providerConfigId?: string, modelId?: string) => {
+      try {
+        const result = await aiService.generateChapterCard(eventId, projectId, outlineId, providerConfigId, modelId)
+        if (!result.success) return { ...result, eventId }
+        const { card, markdown, review, chapterNo } = result.data as any
+
+        // 落库未确认设计卡 + 出场实体绑定（规则单一事实源在 LongWritingService，
+        // 与研讨室 agent 工具 lw_design_chapter_card 共用）
+        const { prewrite, unresolvedNames } = await service.applyChapterCard(projectId, outlineId, card, markdown)
+
+        return { ...result, eventId, data: { card, markdown, review, chapterNo, prewriteId: prewrite?.id, unresolvedNames } }
       } catch (error: any) {
         return { success: false, error: error.message }
       }
@@ -3029,14 +3070,18 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   // ==================== 阶段2：图谱（节点/边/时间线/一致性） ====================
 
   /**
-   * 实体删除时级联清理其图谱边（source/target 双向）。
+   * 实体删除时级联清理伴生数据：图谱边（双向）、状态切片、向量 chunk；
+   * 人物另清「未登记人物」队列同名条目（复核修复——原实现只清图谱边，
+   * 其余伴生表建表无 FK，会永久残留并持续污染向量检索/R9 告警）。
    */
-  async function cleanupEntityGraphEdges(projectId: string, entityType: string, entityId: string): Promise<void> {
+  async function cleanupEntityGraphEdges(projectId: string, entityType: string, entityId: string, entityName?: string): Promise<void> {
     try {
       const dbManager = getCoreDatabaseManager()
-      await dbManager.lwGraphEdges?.deleteByEntity(projectId, entityType as any, entityId)
+      const { LwPurgeService } = await import('@core/platform/services/longwriting/purge.service')
+      const purge = new LwPurgeService(dbManager)
+      purge.logResults(`deleteEntity:${entityType}`, await purge.purgeEntityData(projectId, entityType as any, entityId, entityName))
     } catch (e) {
-      console.error('[LongWritingHandler] 清理图谱边失败（不影响实体删除）:', e)
+      console.error('[LongWritingHandler] 实体伴生数据清理失败（不影响实体删除）:', e)
     }
   }
 
@@ -3255,7 +3300,18 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     try {
       const dbManager = getCoreDatabaseManager()
       if (!dbManager.lwEvents) return { success: false, error: '数据库未初始化' }
-      return { success: true, data: await dbManager.lwEvents.delete(id) }
+      // 先取事件（删除后查不到 projectId），删完同步清掉 source 指向它的 involves 边
+      // （复核修复：原实现手动删事件不清关联边，悬空边永久残留）
+      const evt = await dbManager.lwEvents.getById(id)
+      const deleted = await dbManager.lwEvents.delete(id)
+      if (deleted && evt && dbManager.lwGraphEdges) {
+        try {
+          await dbManager.lwGraphEdges.deleteBySourceEventIds(evt.projectId, [id])
+        } catch (e) {
+          console.error('[LongWritingHandler] 事件关联边清理失败:', e)
+        }
+      }
+      return { success: true, data: deleted }
     } catch (error: any) {
       return { success: false, error: error.message }
     }

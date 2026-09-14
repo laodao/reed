@@ -391,7 +391,7 @@ async function main() {
     const ov = await lwCall('getStoryOverview', pid)
     const ovd = (ov.success && ov.data) || {}
     const lines = [`# ${ovd.title || premise.title}`, '']
-    if (ovd.summary) lines.push(`> ${String(ovd.summary).slice(0, 160)}`, '')
+    if (ovd.summary) lines.push(`> ${String(ovd.summary)}`, '')
     const tree = must('取大纲', await lwCall('getOutlineTree', pid))
     const chapters = (Array.isArray(tree.data) ? tree.data : [])
       .filter((n) => n.nodeType === 'chapter').sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0))

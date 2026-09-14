@@ -13,6 +13,7 @@ import { createLogger } from '@core/utils/logger'
 import type { WizardStateFull } from '@shared/types/longwriting.types'
 import type { RoomWorkspaceState } from '@shared/types/story-room.types'
 import { defaultRoomState } from '@shared/types/story-room.types'
+import { mutateWizardState } from '@core/platform/services/longwriting/wizard-state-rmw'
 
 const logger = createLogger('StoryRoomState')
 
@@ -41,25 +42,16 @@ export async function getRoomState(db: any, projectId: string): Promise<RoomWork
   return extractRoomState(project.wizardState)
 }
 
-/** 写整个 room 子键（先读项目，保留 wizardState 其余键） */
-/** per-project 写串行队列（同项目写严格按提交顺序执行，消除读-合并-写丢更新） */
-const writeChains = new Map<string, Promise<unknown>>()
+// 复核修复：写串行队列下沉到 platform 层（wizard-state-rmw）——wizardState 现有
+// 多个写方（room 键、conflictResolutions 键），队列必须跨层共享才能消除丢更新窗口。
+// 本模块导出签名不变，消费方无感。
 
-function enqueueWrite<T>(projectId: string, task: () => Promise<T>): Promise<T> {
-  const prev = writeChains.get(projectId) ?? Promise.resolve()
-  const next = prev.then(task, task)
-  writeChains.set(projectId, next.catch(() => undefined))
-  return next
-}
-
+/** 写整个 room 子键（队列内读-改-写，保留 wizardState 其余键） */
 export async function saveRoomState(db: any, projectId: string, next: RoomWorkspaceState): Promise<void> {
-  await enqueueWrite(projectId, async () => {
-    const project = await db?.lwProjects?.getById(projectId)
-    if (!project) throw new Error(`长文项目不存在：${projectId}`)
-    const merged: WizardStateFull = { ...(project.wizardState || {}), room: next }
-    const updated = await db.lwProjects.update(projectId, { wizardState: merged })
-    if (!updated) throw new Error(`房间状态保存失败（项目不存在）：${projectId}`)
-  })
+  await mutateWizardState<void>(db, projectId, (wizard) => ({
+    next: { ...(wizard || {}), room: next },
+    result: undefined,
+  }))
 }
 
 /**
@@ -71,15 +63,10 @@ export async function mutateRoomState(
   projectId: string,
   mutator: (current: RoomWorkspaceState) => RoomWorkspaceState | Promise<RoomWorkspaceState>,
 ): Promise<RoomWorkspaceState> {
-  return enqueueWrite(projectId, async () => {
-    const project = await db?.lwProjects?.getById(projectId)
-    if (!project) throw new Error(`长文项目不存在：${projectId}`)
-    const current = extractRoomState(project.wizardState)
+  return mutateWizardState<RoomWorkspaceState>(db, projectId, async (wizard) => {
+    const current = extractRoomState(wizard)
     const next = await mutator(current)
-    const merged: WizardStateFull = { ...(project.wizardState || {}), room: next }
-    const updated = await db.lwProjects.update(projectId, { wizardState: merged })
-    if (!updated) throw new Error(`房间状态保存失败（项目不存在）：${projectId}`)
-    return next
+    return { next: { ...(wizard || {}), room: next }, result: next }
   })
 }
 
@@ -88,15 +75,10 @@ export async function patchRoomState(
   projectId: string,
   patch: Partial<RoomWorkspaceState>,
 ): Promise<RoomWorkspaceState> {
-  return enqueueWrite(projectId, async () => {
-    const project = await db?.lwProjects?.getById(projectId)
-    if (!project) throw new Error(`长文项目不存在：${projectId}`)
-    const current = extractRoomState(project.wizardState)
+  return mutateWizardState<RoomWorkspaceState>(db, projectId, (wizard) => {
+    const current = extractRoomState(wizard)
     const next = { ...current, ...patch }
-    const merged: WizardStateFull = { ...(project.wizardState || {}), room: next }
-    const updated = await db.lwProjects.update(projectId, { wizardState: merged })
-    if (!updated) throw new Error(`房间状态保存失败（项目不存在）：${projectId}`)
-    return next
+    return { next: { ...(wizard || {}), room: next }, result: next }
   })
 }
 

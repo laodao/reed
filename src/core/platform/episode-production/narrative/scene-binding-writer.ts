@@ -9,7 +9,8 @@
  * - bridge tables 包含 characterBindingId FK 引用
  */
 
-import type { DataSource } from 'typeorm'
+import type { DataSource, EntityManager } from 'typeorm'
+import { IsNull } from 'typeorm'
 import type {
   GeneratedScene,
   SceneScript,
@@ -43,11 +44,37 @@ export class SceneBindingWriter {
     scenes: GeneratedScene[],
   ): Promise<SceneScript[]> {
     if (scenes.length === 0) return []
+    return ds.transaction(manager => this.writeScenesInTx(manager, episodeScriptId, scenes))
+  }
+
+  /**
+   * 在调用方已有事务内写入（复核修复 P1-6）：供「删旧场景 + 建新场景并入
+   * 同一事务」的复合场景使用——旧实现先物理删光旧场景再另起事务重建，
+   * 建新中途失败时旧场景不可恢复。
+   */
+  static async createScenesWithBindingsIn(
+    manager: EntityManager,
+    episodeScriptId: string,
+    scenes: GeneratedScene[],
+  ): Promise<SceneScript[]> {
+    return this.writeScenesInTx(manager, episodeScriptId, scenes)
+  }
+
+  private static async writeScenesInTx(
+    manager: EntityManager,
+    episodeScriptId: string,
+    scenes: GeneratedScene[],
+  ): Promise<SceneScript[]> {
+    if (scenes.length === 0) return []
 
     const userId = getCurrentUserId()
     const userScope = userId ? { userId } : {}
+    // 读/改路径的租户条件：与写入侧 userScope 同语义（Web 按当前用户，
+    // Electron 无 ALS userId → user_id IS NULL）——复核修复：AI 返回的
+    // bindingId 不得驱动跨租户读+写
+    const readScope = userId ? { userId } : { userId: IsNull() }
 
-    return ds.transaction(async manager => {
+    {
       const sceneRepo = manager.getRepository(SceneScriptEntity)
       const charRepo = manager.getRepository(SceneCharacterEntity)
       const dialogueRepo = manager.getRepository(SceneDialogueEntity)
@@ -216,7 +243,7 @@ export class SceneBindingWriter {
       for (const scene of scenes) {
         if (scene.locationBindingId && scene.sceneDescription) {
           const locationBinding = await locationBindingRepo.findOne({
-            where: { id: scene.locationBindingId },
+            where: { id: scene.locationBindingId, ...readScope } as any,
           })
           if (locationBinding && !locationBinding.baseDescription) {
             // 合成 baseDescription：sceneDescription + locationKeyObjects
@@ -224,10 +251,13 @@ export class SceneBindingWriter {
             if (scene.locationKeyObjects && scene.locationKeyObjects.length > 0) {
               baseDesc += `；关键物件：${scene.locationKeyObjects.join('、')}`
             }
-            await locationBindingRepo.update(scene.locationBindingId, {
-              baseDescription: baseDesc,
-              updatedAt: now,
-            })
+            await locationBindingRepo.update(
+              { id: scene.locationBindingId, ...readScope } as any,
+              {
+                baseDescription: baseDesc,
+                updatedAt: now,
+              } as any,
+            )
           }
         }
       }
@@ -248,18 +278,21 @@ export class SceneBindingWriter {
       for (const bindingId of outfitMap.keys()) {
         const outfit = outfitMap.get(bindingId)!
         const characterBinding = await characterBindingRepo.findOne({
-          where: { id: bindingId },
+          where: { id: bindingId, ...readScope } as any,
         })
         if (characterBinding && !characterBinding.overrideOutfit) {
-          await characterBindingRepo.update(bindingId, {
-            overrideOutfit: outfit,
-            updatedAt: now,
-          })
+          await characterBindingRepo.update(
+            { id: bindingId, ...readScope } as any,
+            {
+              overrideOutfit: outfit,
+              updatedAt: now,
+            } as any,
+          )
         }
       }
 
       return result
-    })
+    }
   }
 
   private static generateSceneId(): string {

@@ -4,7 +4,7 @@
  *
  * 把 generateChapter systemPrompt 里的"禁止"文案升级为数据驱动检测：
  * - validateBeforeGeneration：章节生成前，检查本章大纲涉及实体的时间线冲突
- * - scanContradictions：全项目矛盾扫描（规则 R1-R6）
+ * - scanContradictions：全项目矛盾扫描（规则 R1-R10）
  *
  * 规则：
  * - R1 死亡后出场（确定性）：角色最新切片含死亡语义，且后续章节大纲仍 involved 该角色
@@ -15,9 +15,16 @@
  * - R6 状态回退（确定性）：实体切片序列出现"死亡/覆灭"后状态又恢复非终态
  * - R7 钩子节拍（49 号，script 分集项目）：缺集尾卡点标注 / 卡点未标钩型 / 相邻集钩子同型
  * - R8 伏笔台账（49 号，promise/payoff 台账）：回收早于埋设（倒置）/ 超期未收
+ * - R9 名册外人名（52 号，来自图谱提取的「未登记人物」队列）：正文出现圣经外的人名，
+ *   直指《大宋女捕》实跑最大的漂移症状，且不依赖关系边/状态切片数据
+ * - R10 大纲承诺落点（54 号复测）：大纲概要承诺的事件在正文中无落点——
+ *   《大宋女捕·复测》实证"大纲写了正文没演"（翻案复职/纵火者落网/火场坐实父死因），
+ *   且下一章照常生成，R1-R9 均覆盖不到此类
  */
 
 import { getCoreDatabaseManager, type ICoreDatabaseManager } from '@core/database/database-manager.interface'
+import { listAcknowledgedKeys, filterBlockingConflicts } from '../conflict-gate'
+import { buildOutlineDocOrder, outlineChapterNumber, type OutlineDocOrder } from '../outline-order'
 import type { GraphEntityType } from '@shared/types/longwriting.types'
 import { CLIFFHANGER_MARKER } from '../../writing-methodology'
 
@@ -41,6 +48,128 @@ const TRANSFER_KEYWORDS = ['易主', '转手', '交出', '夺得', '夺走', '�
 const RECALL_KEYWORDS = ['回忆', '闪回', '回想', '往事', '记忆深处']
 /** R8：伏笔埋设后超过该章数仍未回收 → 超期提醒（叙事节奏惯例 3-5 章一个悬念单元） */
 const FORESHADOW_OVERDUE_CHAPTERS = 5
+
+/**
+ * R9 v2（52 号复测）：文本级人名候选扫描。
+ * 常见姓氏 + 1~2 字，后接动作/言说类字词；排除名册名及其子串、排除常见非名词汇。
+ * 出现 ≥minCount 次才报告——克制误报，交由人工确认「新角色入册 / 提取误报」。
+ */
+export const NAME_SCAN_SURNAMES =
+  '王李张刘陈杨赵黄周吴徐孙马朱胡郭何高林郑谢罗宋唐许韩冯邓曹彭曾肖田董袁潘于蒋蔡余杜叶程苏魏吕丁任沈姚卢姜崔钟谭陆汪范金石廖贾夏韦付方白邹孟熊秦邱江尹薛闫段雷侯龙史陶黎贺顾毛郝龚邵万钱严覃武戴莫孔向汤'
+
+const NAME_SCAN_STOPWORDS = new Set([
+  '白色', '黑色', '红色', '黄色', '周围', '向自己', '怎么知', '我知', '你知', '她知', '他知', '一抹', '自家',
+  '大人', '老爷', '小子', '老人', '少年', '女子', '男子', '众人', '左右', '下方', '上方', '背后', '面前',
+  '早已', '已然', '忽然', '突然', '低声', '厉声', '沉声', '缓缓', '轻轻', '微微', '冷冷',
+])
+
+export function scanNameCandidates(
+  chapters: Array<{ name: string; content: string }>,
+  knownNames: string[],
+  minCount = 3,
+): Array<{ name: string; chapters: string[]; count: number }> {
+  const known = new Set<string>()
+  for (const k of knownNames) {
+    const trimmed = String(k || '').trim()
+    if (!trimmed) continue
+    known.add(trimmed)
+    // 名册名与其去括号核心互为已知，防止「乔镜知」vs「乔镜知（补充）」误报
+    const core = trimmed.replace(/[（(][^）)]*[）)]/g, '').trim()
+    if (core) known.add(core)
+  }
+  // 已知判定：完全相等 / 子串关系 / 同姓+称谓后缀（魏大人→魏宗简 尊称不报）
+  const isKnown = (w: string): boolean => {
+    if (known.has(w)) return true
+    for (const k of known) {
+      if (k.includes(w) || w.includes(k)) return true
+      if (w.length >= 2 && k.length >= 2 && w[0] === k[0] && /[大人爷头儿老奶叔嫂]/.test(w.slice(1))) return true
+    }
+    return false
+  }
+  const counts = new Map<string, { count: number; chapters: Set<string> }>()
+  for (const { name: chName, content } of chapters) {
+    const text = content || ''
+    for (const m of text.matchAll(new RegExp(`[${NAME_SCAN_SURNAMES}][\u4e00-\u9fa5]{1,2}?(?=的|说|道|看|问|站|走|伸手|抬|冷|沉|低|喊|带|让|把|在|和|与|已|曾|要|指|冲|退|押|皱|点|摇|回|瞪|盯|瞧|笑|哭|追|拦|挥|递|接|派|跟|到|来|去|提|应|答|劝|骂|训|扶|拉|推|挡|迎|送|陪|领|率|传|召|命|求|劝)`, 'g'))) {
+      const w = m[0]
+      if (NAME_SCAN_STOPWORDS.has(w)) continue
+      if (isKnown(w)) continue
+      const rec = counts.get(w) ?? { count: 0, chapters: new Set() }
+      rec.count++
+      rec.chapters.add(chName)
+      counts.set(w, rec)
+    }
+  }
+  return [...counts.entries()]
+    .filter(([w, rec]) => rec.count >= minCount && !isKnown(w))
+    .map(([name, rec]) => ({ name, chapters: [...rec.chapters], count: rec.count }))
+    .sort((a, b) => b.count - a.count)
+}
+
+// ==================== R10：大纲承诺落点（纯函数，便于单测与离线验证） ====================
+
+/** 节拍句级切分（句号/分号/叹问/换行/破折号） */
+const BEAT_SENTENCE_SPLIT_RE = /[。；;！？\n—]+/
+/** 节拍子句切分（逗号/顿号/冒号） */
+const BEAT_CLAUSE_SPLIT_RE = /[，、,：:]+/
+/** 剥离括注与引号标记（保留引号内文字——如「对弈」的落点词在引号内） */
+const BEAT_ANNOTATION_RE = /[（(][^）)]*[）)]|「|」|『|』|“|”|"/g
+/** 短于该长度的子句不构成"事件承诺"（多为场景/情绪词） */
+export const BEAT_MIN_CHARS = 4
+/** 每章最多报告的未落点节拍数（压噪；确认已实现的走「知情保留」） */
+export const R10_MAX_REPORT_PER_CHAPTER = 3
+/** 尾部助词——谓词取词时跳过（"下葬了"→"下葬"） */
+const BEAT_TAIL_PARTICLES = new Set(['了', '的', '着', '得', '地'])
+/** 大纲里的叙事元语言（非故事事件，不参与落点判定） */
+const BEAT_META_WORDS = ['单元案', '主线', '卷终', '本集', '本章', '承接', '承上', 'C收进']
+
+export interface OutlineBeat {
+  /** 承诺事件原文（子句） */
+  text: string
+  /** 落点判定谓词：子句尾二字（事件结果词，如"落网/下葬/复职"） */
+  predicate: string
+}
+
+function beatTailPredicate(beat: string): string {
+  let s = beat
+  while (s.length > 2 && BEAT_TAIL_PARTICLES.has(s[s.length - 1])) s = s.slice(0, -1)
+  return s.slice(-2)
+}
+
+/**
+ * 从大纲概要拆出"承诺事件"节拍：句 → 子句。
+ * 复测大纲是电报体（"秦铁锁伏法、构陷全雪、父案昭雪下葬"），逗号/顿号切开后
+ * 每拍恰是一个可判定的事件承诺。
+ */
+export function extractOutlineBeats(summary: string): OutlineBeat[] {
+  const beats: OutlineBeat[] = []
+  const seen = new Set<string>()
+  for (const raw of String(summary || '').split(BEAT_SENTENCE_SPLIT_RE)) {
+    const clean = raw.replace(BEAT_ANNOTATION_RE, '')
+    for (const clause of clean.split(BEAT_CLAUSE_SPLIT_RE)) {
+      const text = clause.replace(/\s+/g, '')
+      if (text.length < BEAT_MIN_CHARS) continue
+      if (!/[\u4e00-\u9fa5]/.test(text)) continue
+      if (BEAT_META_WORDS.some((w) => text.includes(w))) continue
+      if (seen.has(text)) continue
+      seen.add(text)
+      beats.push({ text, predicate: beatTailPredicate(text) })
+    }
+  }
+  return beats
+}
+
+/**
+ * 判定节拍是否在正文落点：谓词（尾二字结果词）或节拍原文出现在正文 → 落点。
+ * 已知取舍：以对话"提到"结果词的会误判为已落点（如正文说"处分也该撤销了"但撤销
+ * 场景没演）——R10 定位为 warning 级人工复核线索，不作硬判；漏报优先于误报。
+ */
+export function findUnlandedOutlineBeats(summary: string, content: string): OutlineBeat[] {
+  const body = String(content || '')
+  if (!body) return []
+  return extractOutlineBeats(summary).filter(
+    (b) => !body.includes(b.predicate) && !body.includes(b.text),
+  )
+}
 
 export class ConsistencyService {
   private static instance: ConsistencyService | null = null
@@ -130,6 +259,21 @@ export class ConsistencyService {
   /**
    * 全项目矛盾扫描。
    */
+  /** 目标 outlineId 对应的章号（逐章门禁用） */
+  async chapterNumberOf(projectId: string, outlineId: string): Promise<number> {
+    return this.calcChapterNumber(projectId, outlineId)
+  }
+
+  /**
+   * 52 号流程闭环：扫描第 1..uptoChapter 章（已写范围）的一致性疑点，
+   * 剔除作者已登记（解决/知情保留）的与只引用未来章节的，剩余即阻断项。
+   */
+  async scanBlockingConflicts(projectId: string, uptoChapter: number): Promise<ConflictItem[]> {
+    const all = await this.scanContradictions(projectId)
+    const ack = await listAcknowledgedKeys(this.manager(), projectId)
+    return filterBlockingConflicts(all, uptoChapter, ack)
+  }
+
   async scanContradictions(projectId: string): Promise<ConflictItem[]> {
     const m = this.manager()
     if (!m) return []
@@ -142,6 +286,8 @@ export class ConsistencyService {
     conflicts.push(...await this.scanR6StateRegression(projectId))
     conflicts.push(...await this.scanR7HookRhythm(projectId))
     conflicts.push(...await this.scanR8ForeshadowLedger(projectId))
+    conflicts.push(...await this.scanR9UnregisteredNames(projectId))
+    conflicts.push(...await this.scanR10OutlineBeats(projectId))
     return conflicts
   }
 
@@ -366,9 +512,11 @@ export class ConsistencyService {
     const m = this.manager()
     if (!m) return []
     const outlines = (await m.lwOutlines?.getByProjectId(projectId)) || []
+    // 集号 = 文档序章号（复核修复：orderIndex 兄弟序在多卷树上扁平排序会交错）
+    const docOrder = buildOutlineDocOrder(outlines)
     const chapters = outlines
       .filter((o) => o.nodeType === 'chapter')
-      .sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0))
+      .sort((a, b) => (docOrder.leafNumbers.get(a.id) ?? 0) - (docOrder.leafNumbers.get(b.id) ?? 0))
     if (chapters.length === 0) return []
 
     const marked = chapters.filter((c) => (c.summary || '').includes(CLIFFHANGER_MARKER))
@@ -379,7 +527,7 @@ export class ConsistencyService {
     let prevType: string | null = null
     let prevNo = 0
     for (const c of chapters) {
-      const no = (c.orderIndex || 0) + 1
+      const no = docOrder.leafNumbers.get(c.id) ?? (c.orderIndex || 0) + 1
       const summary = c.summary || ''
       if (!summary.includes(CLIFFHANGER_MARKER)) {
         conflicts.push({
@@ -423,21 +571,112 @@ export class ConsistencyService {
    * - 台账倒置（error）：回收章早于埋设章——数据或提取错误
    * - 超期未收（warning）：status=open 且已写章节数超过埋设章 + 5（叙事节奏 3-5 章一个悬念单元）
    */
+  /**
+   * R9 名册外人名（52 号）：图谱提取时解析失败的人名会被登记进
+   * 「未登记人物」队列（lw_custom_entities, kindKey=未登记人物）——
+   * 每个名字出一条 warning，提示确认是新角色（入册）还是提取误报（忽略）。
+   */
+  private async scanR9UnregisteredNames(projectId: string): Promise<ConflictItem[]> {
+    const m = this.manager()
+    if (!m?.lwCustomEntities) return []
+    const conflicts: ConflictItem[] = []
+    // 1) 提取队列：解析失败的人名（52 号主实现）
+    let rows: Array<{ id: string; name: string; fields?: Record<string, unknown> | null }> = []
+    try {
+      rows = await m.lwCustomEntities.getByProjectAndKind(projectId, '未登记人物')
+    } catch {
+      rows = []
+    }
+    for (const r of rows) {
+      const ch = (r.fields as any)?.firstChapter
+      conflicts.push({
+        rule: 'R9',
+        severity: 'warning',
+        message: `正文出现名册外人名「${r.name}」（第 ${ch ?? '?'} 章提取）——若为新角色请补入人物圣经，若为提取误报请忽略`,
+        entityType: 'character',
+        entityId: r.id,
+        entityName: r.name,
+      })
+    }
+    // 2) R9 v2：正文姓氏扫描（52 号复测验证——提取器不提案的小人物（赵德全/陈头等）队列抓不到）
+    try {
+      if (m.lwCharacters && m.lwOutlines && m.lwChapters) {
+        const chars = (await m.lwCharacters.getByProjectId(projectId)) || []
+        const outlines = (await m.lwOutlines.getByProjectId(projectId)) || []
+        const chapters: Array<{ name: string; content: string }> = []
+        for (const o of outlines) {
+          if (o.nodeType !== 'chapter') continue
+          const c = await m.lwChapters.getByOutlineId(o.id)
+          if (c?.content) chapters.push({ name: o.name, content: c.content })
+        }
+        const known = chars.map((c: any) => c.name)
+        for (const cand of scanNameCandidates(chapters, known, 3)) {
+          conflicts.push({
+            rule: 'R9',
+            severity: 'warning',
+            message: `正文出现名册外人名「${cand.name}」（出现 ${cand.count} 次：${cand.chapters.join('、')}）——若为新角色请补入人物圣经，若为提取误报请忽略`,
+            entityType: 'character',
+            entityName: cand.name,
+          })
+        }
+      }
+    } catch {
+      // 文本扫描失败不影响队列告警
+    }
+    return conflicts
+  }
+
+  // ==================== R10：大纲承诺落点 ====================
+
+  /**
+   * R10 大纲承诺落点（54 号复测）：逐章比对"大纲概要承诺的事件"与正文落点。
+   * 《大宋女捕·复测》实证的缺口——大纲写明"翻案停职撤销、试用复职、收方小书为助手"、
+   * "纵火者落网"、"火场坐实父亲死因"，正文均未落点，下一章却照常生成；
+   * R1-R9 全部覆盖不到"大纲说了但正文没写"。
+   * 判定细节见 findUnlandedOutlineBeats；每章最多报 3 拍（压噪）。
+   */
+  private async scanR10OutlineBeats(projectId: string): Promise<ConflictItem[]> {
+    const m = this.manager()
+    if (!m?.lwOutlines || !m.lwChapters) return []
+    const outlines = (await m.lwOutlines.getByProjectId(projectId)) || []
+    const docOrder = buildOutlineDocOrder(outlines)
+    const conflicts: ConflictItem[] = []
+    for (const o of outlines) {
+      if (o.nodeType !== 'chapter') continue
+      const no = docOrder.leafNumbers.get(o.id)
+      if (!no) continue
+      const ch = await m.lwChapters.getByOutlineId(o.id)
+      const content = ch?.content || ''
+      if (!content.trim()) continue
+      const unlanded = findUnlandedOutlineBeats(o.summary || '', content)
+      for (const b of unlanded.slice(0, R10_MAX_REPORT_PER_CHAPTER)) {
+        conflicts.push({
+          rule: 'R10',
+          severity: 'warning',
+          message: `第 ${no} 章大纲承诺「${b.text}」未在正文落点（结果词「${b.predicate}」未出现）——已用其他情节实现请知情保留，否则补写正文或修订大纲`,
+          chapterNumber: no,
+        })
+      }
+    }
+    return conflicts
+  }
+
   private async scanR8ForeshadowLedger(projectId: string): Promise<ConflictItem[]> {
     const m = this.manager()
     if (!m) return []
     const foreshadows = (await m.lwForeshadows?.getByProjectId(projectId)) || []
     if (foreshadows.length === 0) return []
 
-    // 已写章节数 = 有正文章节的最大序号（按大纲 orderIndex 顺序推算）
+    // 已写章节数 = 有正文章节的最大文档序章号（复核修复：章号走文档序原语）
+    const docOrder = await this.docOrderOf(projectId)
     const outlines = (await m.lwOutlines?.getByProjectId(projectId)) || []
-    const chapterOutlines = outlines
-      .filter((o) => o.nodeType === 'chapter')
-      .sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0))
+    const chapterOutlines = outlines.filter((o) => o.nodeType === 'chapter')
     let writtenMax = 0
-    for (let i = 0; i < chapterOutlines.length; i++) {
-      const ch = await m.lwChapters?.getByOutlineId(chapterOutlines[i].id)
-      if (ch?.content && ch.content.trim().length > 0) writtenMax = Math.max(writtenMax, i + 1)
+    for (const o of chapterOutlines) {
+      const no = docOrder.leafNumbers.get(o.id)
+      if (!no) continue
+      const ch = await m.lwChapters?.getByOutlineId(o.id)
+      if (ch?.content && ch.content.trim().length > 0) writtenMax = Math.max(writtenMax, no)
     }
 
     const conflicts: ConflictItem[] = []
@@ -479,12 +718,17 @@ export class ConsistencyService {
   private async calcChapterNumber(projectId: string, outlineId: string): Promise<number> {
     const m = this.manager()
     if (!m) return 1
-    const outlines = await this.sortedOutlines(projectId)
-    let count = 0
-    for (const o of outlines) {
-      if (o.nodeType === 'chapter') count++
-      if (o.id === outlineId) return count
-    }
-    return count || 1
+    // 复核修复 P1-1：orderIndex 是兄弟序，扁平全局排序在多卷/含节树上交错错位——
+    // 统一走文档序原语（唯一章号权威）
+    const all = (await m.lwOutlines?.getByProjectId(projectId)) || []
+    const order = buildOutlineDocOrder(all)
+    return outlineChapterNumber(order, outlineId) ?? 1
+  }
+
+  /** 项目大纲的文档序缓存（R7/R8 等多处消费；单次扫描内复用一次构建） */
+  private async docOrderOf(projectId: string): Promise<OutlineDocOrder> {
+    const m = this.manager()
+    const all = m ? (await m.lwOutlines?.getByProjectId(projectId)) || [] : []
+    return buildOutlineDocOrder(all)
   }
 }

@@ -72,7 +72,7 @@ export class LwForeshadowRepository extends BaseRepository<LwForeshadowEntity, F
       status: 'open',
       origin: origin ? JSON.stringify(origin) : null,
     } as never) as never)
-    const row = await this.scoped.findOne({ where: { id } } as any)
+    const row = await this.scoped.findOne({ id } as any)
     return this.toDto(row!)
   }
 
@@ -89,7 +89,7 @@ export class LwForeshadowRepository extends BaseRepository<LwForeshadowEntity, F
   }
 
   async setStatus(id: string, status: 'open' | 'paid' | 'dropped', payoffChapter?: number | null): Promise<ForeshadowDto | null> {
-    const row = await this.scoped.findOne({ where: { id } } as any)
+    const row = await this.scoped.findOne({ id } as any)
     if (!row) return null
     row.status = status
     if (payoffChapter !== undefined) row.payoffChapter = payoffChapter
@@ -101,5 +101,10 @@ export class LwForeshadowRepository extends BaseRepository<LwForeshadowEntity, F
   async deleteRow(id: string): Promise<boolean> {
     const affected = await this.scoped.delete({ id } as any)
     return affected > 0
+  }
+
+  /** 项目删除级联清理（lw_foreshadows 无 FK，靠显式 purge） */
+  async deleteByProjectId(projectId: string): Promise<number> {
+    return this.scoped.delete({ projectId } as any)
   }
 }

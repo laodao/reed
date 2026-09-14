@@ -1875,8 +1875,8 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:generateOutlineStory', eventId, projectId, providerConfigId, modelId, structureLevel, opts),
     generateOutlineComment: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generateOutlineComment', eventId, projectId, providerConfigId, modelId),
-    generateChapter: (eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string, style?: string, extraPrompt?: string) =>
-      ipcRenderer.invoke('longwriting:generateChapter', eventId, projectId, outlineId, targetWords, providerConfigId, modelId, style, extraPrompt),
+    generateChapter: (eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string, style?: string, extraPrompt?: string, options?: { skipChapterCardGate?: boolean }) =>
+      ipcRenderer.invoke('longwriting:generateChapter', eventId, projectId, outlineId, targetWords, providerConfigId, modelId, style, extraPrompt, options),
     // 章节工作台（38 号）：上下文预览 + 按勾选上下文生成
     chapterContextPreview: (projectId: string, outlineId: string, opts?: { targetWords?: number; style?: string; extraPrompt?: string }) =>
       ipcRenderer.invoke('longwriting:chapterContextPreview', projectId, outlineId, opts),
@@ -1886,6 +1886,8 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:generateSection', eventId, projectId, outlineId, targetWords, providerConfigId, modelId),
     generateChapterPrewrite: (eventId: string, projectId: string, outlineId: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generateChapterPrewrite', eventId, projectId, outlineId, providerConfigId, modelId),
+    generateChapterCard: (eventId: string, projectId: string, outlineId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:generateChapterCard', eventId, projectId, outlineId, providerConfigId, modelId),
 
     // AI 生成事件监听
     onGenerateEvent: (eventId: string, callback: (event: any, data: any) => void) => {
@@ -2192,6 +2194,10 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:room:setPhase', projectId, phase),
     roomDistill: (projectId: string, scope: string, opts?: { providerConfigId?: string; modelId?: string }) =>
       ipcRenderer.invoke('longwriting:room:distill', projectId, scope, opts),
+    conflictPlan: (projectId: string, conflict: unknown, opts?: { providerConfigId?: string; modelId?: string }) =>
+      ipcRenderer.invoke('longwriting:room:conflict:plan', projectId, conflict, opts),
+    conflictExecute: (projectId: string, action: string, payload: Record<string, unknown>) =>
+      ipcRenderer.invoke('longwriting:room:conflict:execute', projectId, action, payload),
     roomAdoptCard: (projectId: string, cardId: string, patch?: Record<string, unknown>) =>
       ipcRenderer.invoke('longwriting:room:adoptCard', projectId, cardId, patch),
     roomRegenerateCard: (projectId: string, cardId: string, feedback: string, opts?: { providerConfigId?: string; modelId?: string }) =>

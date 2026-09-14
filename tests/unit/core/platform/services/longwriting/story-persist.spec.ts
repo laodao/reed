@@ -25,6 +25,8 @@ import {
   persistChapter,
   extractJsonObject,
   extractJsonArray,
+  normalizePlotInput,
+  normalizeOutlineVolume,
 } from '@core/platform/services/longwriting/story-persist'
 
 // ==================== 假仓库 ====================
@@ -199,6 +201,31 @@ describe('persistCharacters', () => {
 
 // ==================== 故事线 ====================
 
+  it('中文字段卡归一化：姓名/年龄/定位等映射到实体字段后入库（实跑修复）', async () => {
+    const db = makeFakeDb()
+    const r = await persistCharacters(db, 'p1', [{
+      姓名: '苏九龄', 年龄: '24 岁', 性别: '女', 身份: '女捕快', 定位: '主角',
+      外形: '利落干练', 背景: '穿越的现代刑警', 性格: '冷静锐利', 能力: '指纹比对、尸检',
+    }])
+    expect(r.ok).toBe(true)
+    expect(db._store.characters).toHaveLength(1)
+    const c = db._store.characters[0] as any
+    expect(c.name).toBe('苏九龄')
+    expect(c.age).toBe(24)
+    expect(c.gender).toBe('女')
+    expect(c.occupation).toBe('女捕快')
+    expect(c.rolePosition).toBe('protagonist')
+    expect(c.abilities).toBe('指纹比对、尸检')
+  })
+
+  it('全部缺姓名 → ok:false 且非 skipped（确认流据此保留条目，不静默吞卡）', async () => {
+    const db = makeFakeDb()
+    const r = await persistCharacters(db, 'p1', [{ 姓名: '' }])
+    expect(r.ok).toBe(false)
+    expect((r as any).skipped).toBe(false)
+    expect(db._store.characters).toHaveLength(0)
+  })
+
 describe('persistPlots', () => {
   it('按标题对库内去重 + batchCreate 载荷字段齐全（批内不去重——与原动作语义一致）', async () => {
     const db = makeFakeDb()
@@ -303,5 +330,29 @@ describe('extractJsonObject / extractJsonArray', () => {
     expect(extractJsonArray('前言\n[{"name":"林晓"}]\n后记')).toEqual([{ name: '林晓' }])
     expect(extractJsonObject('不是 JSON')).toBeNull()
     expect(extractJsonArray('')).toBeNull()
+  })
+})
+
+describe('normalizePlotInput / normalizeOutlineVolume（研讨室卡片键名归一化）', () => {
+  it('故事线卡：lineName→title，一句话+起止状态→summary', async () => {
+    const n = normalizePlotInput({ lineName: '主线『残卷博弈』', oneLine: '抢残卷就是抢真相', startingState: '前身被构陷', endingState: '段衡伏法' })
+    expect(n.title).toBe('主线『残卷博弈』')
+    expect(n.summary).toContain('抢残卷就是抢真相')
+    expect(n.summary).toContain('前身被构陷')
+  })
+
+  it('大纲卡：volumeTitle→卷名，title/estWords→章 name/estimatedWords，节拍暗线并入概要', async () => {
+    const v = normalizeOutlineVolume({
+      volumeTitle: '卷一（单卷十章·全书）',
+      spec: '每章预估2500字',
+      chapters: [{ number: 1, title: '冷雨监房', beat: '穿越+立案', summary: '苏九龄监房复盘', estWords: 2500, darkLineHook: '①前身记忆断片' }],
+    })
+    expect(v.name).toBe('卷一（单卷十章·全书）')
+    expect(v.chapters).toHaveLength(1)
+    expect(v.chapters[0].name).toBe('1 冷雨监房')
+    expect(v.chapters[0].estimatedWords).toBe(2500)
+    expect(v.chapters[0].summary).toContain('苏九龄监房复盘')
+    expect(v.chapters[0].summary).toContain('穿越+立案')
+    expect(v.chapters[0].summary).toContain('①前身记忆断片')
   })
 })

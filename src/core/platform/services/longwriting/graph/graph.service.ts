@@ -132,7 +132,35 @@ export class GraphService {
       ...skills.map(s => ({ id: s.id, type: 'skill' as const, name: s.name, description: s.description })),
       ...events.map(e => ({ id: e.id, type: 'event' as const, name: e.name, description: e.description, chapterNumber: e.chapterNumber })),
     ]
-    return { nodes, edges }
+
+    // 52 号统一存储：事件→实体连线直接从 involved_entities JSON 推导，
+    // 不再读 lw_graph_edges 里的 involves 边副本（那个写入不可靠，导致图上大量节点悬空）
+    const derivedEdges: GraphEdge[] = []
+    for (const ev of events) {
+      try {
+        const ents = typeof ev.involvedEntities === 'string' ? JSON.parse(ev.involvedEntities) : ev.involvedEntities
+        if (!Array.isArray(ents)) continue
+        for (const ent of ents) {
+          if (ent?.id && ent?.type) {
+            derivedEdges.push({
+              id: `evt-${ev.id}-${ent.id}`,
+              projectId,
+              sourceType: 'event' as const,
+              sourceId: ev.id,
+              targetType: ent.type,
+              targetId: ent.id,
+              relationType: 'involves',
+              validFromChapter: ev.chapterNumber || 1,
+            })
+          }
+        }
+      } catch { /* JSON 解析失败跳过 */ }
+    }
+
+    // 语义关系边（人物→人物等）仍从 lw_graph_edges 读
+    const semanticEdges = edges.filter(e => e.relationType !== 'involves')
+
+    return { nodes, edges: [...derivedEdges, ...semanticEdges] }
   }
 
   // ==================== 名称 → ID 解析 ====================
@@ -148,7 +176,7 @@ export class GraphService {
     for (const input of inputs) {
       const hit = await this.findByName(projectId, input.type, input.name)
       results.push(hit
-        ? { type: input.type, name: input.name, id: hit.id, resolved: true }
+        ? { type: input.type, name: hit.name, id: hit.id, resolved: true, matchedBy: hit.matchedBy }
         : { type: input.type, name: input.name, resolved: false })
     }
     return results
@@ -459,17 +487,50 @@ export class GraphService {
     }
   }
 
+  /**
+   * 实体名解析（52 号评审根因二修复）：精确 → 别名 → 归一化 → 唯一包含。
+   * - 别名：角色 aliases 字段；
+   * - 归一化：去空白/间隔号/书名号后相等；
+   * - 唯一包含：双向包含且候选唯一（多候选=歧义放弃，杜绝「赵德→刘都头」式硬攀）。
+   */
   private async findByName(
     projectId: string,
     entityType: GraphEntityType,
     name: string,
-  ): Promise<{ id: string; name: string } | null> {
+  ): Promise<{ id: string; name: string; matchedBy: 'exact' | 'alias' | 'normalized' | 'fuzzy' } | null> {
     const m = this.manager()
     if (!m) return null
     const target = name.trim()
     if (!target) return null
+    const list = await this.listByTypeWithAliases(projectId, entityType)
+    const exact = list.find(e => e.name === target)
+    if (exact) return { id: exact.id, name: exact.name, matchedBy: 'exact' }
+    const byAlias = list.find(e => (e.aliases ?? []).some(a => a === target))
+    if (byAlias) return { id: byAlias.id, name: byAlias.name, matchedBy: 'alias' }
+    const norm = (v: string) => v.replace(/[\s·・《》「」『』]/g, '')
+    const nt = norm(target)
+    if (!nt) return null
+    const normalized = list.find(e => norm(e.name) === nt)
+    if (normalized) return { id: normalized.id, name: normalized.name, matchedBy: 'normalized' }
+    const contained = list.filter(e => {
+      const en = norm(e.name)
+      if (en.length < 2 || nt.length < 2) return false
+      return en.includes(nt) || nt.includes(en)
+    })
+    if (contained.length === 1) return { id: contained[0].id, name: contained[0].name, matchedBy: 'fuzzy' }
+    return null
+  }
+
+  private async listByTypeWithAliases(projectId: string, entityType: GraphEntityType): Promise<Array<{ id: string; name: string; aliases?: string[] }>> {
     const list = await this.listByType(projectId, entityType)
-    return list.find(e => e.name === target) ?? null
+    if (entityType !== 'character') return list
+    const m = this.manager()
+    if (!m) return list
+    const rows = ((await m.lwCharacters?.getByProjectId(projectId)) || []) as any[]
+    return list.map(e => {
+      const row = rows.find(r => r.id === e.id)
+      return { ...e, aliases: Array.isArray(row?.aliases) ? row.aliases : undefined }
+    })
   }
 
   private async listByType(projectId: string, entityType: GraphEntityType): Promise<Array<{ id: string; name: string }>> {

@@ -26,21 +26,9 @@
         </template>
       </el-dropdown>
       <el-button v-if="canExportScript" size="small" type="warning" plain @click="exportToEp">转为短剧项目 ↗</el-button>
-      <el-dropdown v-if="store.state.value" trigger="click" @command="(p: string) => store.setPhase(p as never)">
-        <span class="tb-btn phase-btn">{{ phaseLabel(store.state.value.phase) }} ▾</span>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item
-              v-for="p in ROOM_PHASE_META"
-              :key="p.id"
-              :command="p.id"
-              :class="{ 'phase-on': p.id === store.state.value?.phase }"
-            >
-              {{ p.order }} · {{ p.label }}
-            </el-dropdown-item>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown>
+      <span class="tb-btn" @click="showGraph = true">图谱</span>
+      <span class="tb-btn" @click="showBible = true">设定集</span>
+      <span class="tb-btn" @click="showSettings = true">设定</span>
       <span class="tb-btn accent" @click="goEditor">✍ 写作台 ↗</span>
     </div>
 
@@ -55,14 +43,11 @@
           </div>
         </div>
         <!-- 矛盾教练：写作期连续性检查疑点（44 号补 UI 渲染，数据位此前已存在） -->
-        <el-alert v-if="store.conflicts.value.length" type="warning" :closable="true" class="conflict-banner">
-          <template #title>
-            ⚔ 连续性检查发现 {{ store.conflicts.value.length }} 处疑点（写作前请先核对）
-          </template>
-          <ul class="conflict-list">
-            <li v-for="(c, i) in store.conflicts.value" :key="i">{{ c.description || c.message }}</li>
-          </ul>
-        </el-alert>
+        <!-- 52 号 UI 优化：疑点折叠为摘要条，全量进抽屉（原平铺横幅吞掉 2/3 画布） -->
+        <div v-if="store.conflicts.value.length" class="conflict-bar" @click="conflictDrawer = true">
+          <span class="conflict-bar-text">⚔ 连续性检查发现 {{ store.conflicts.value.length }} 处疑点（写作前请先核对）</span>
+          <span class="conflict-bar-more">查看 ▸</span>
+        </div>
         <!-- 设计任务流水（46 号：design 轮的工具动作 chip，folded 摘要一条） -->
         <div v-if="store.taskLog.value.length" class="task-log" :class="{ open: taskLogOpen }">
           <div class="task-log-summary" @click="taskLogOpen = !taskLogOpen">
@@ -75,6 +60,9 @@
               <span class="tl-msg">{{ t.message }}</span>
             </div>
           </div>
+        </div>
+        <div v-if="draftPackage && draftPackage.items.length" class="task-log-review-row">
+          <el-button size="small" type="warning" plain @click.stop="reviewDraftPackage">审核设计包（{{ draftPackage.items.length }} 项待确认）</el-button>
         </div>
         <ChatCanvas
           :messages="store.messages.value"
@@ -91,8 +79,45 @@
         />
         <div class="composer">
           <div class="composer-inner">
-            <div class="chips">
-              <span v-for="c in chips" :key="c" class="chip" @click="applyChip(c)">{{ c }}</span>
+            <!-- 52 号 UI 优化：阶段机移到输入框工具栏（原顶栏纯文字难发现），快捷 chips 移除 -->
+            <div class="composer-toolbar">
+              <el-dropdown trigger="click" @command="(p: string) => store.setPhase(p as never)">
+                <span class="ct-btn phase-ct" :class="{ 'phase-live': store.state.value?.phase === 'writing' }">
+                  阶段 · {{ phaseLabel(store.state.value?.phase || 'story-core') }}
+                  <span class="ct-sub">{{ phaseIndex(store.state.value?.phase) }}/5</span>
+                  ▾
+                </span>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item
+                      v-for="p in ROOM_PHASE_META"
+                      :key="p.id"
+                      :command="p.id"
+                      :class="{ 'phase-on': p.id === store.state.value?.phase }"
+                    >
+                      {{ p.order }} · {{ p.label }}
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+              <el-dropdown trigger="click" @command="(sc: string) => onDistill(sc as never)">
+                <span class="ct-btn" :class="{ 'ct-busy': distilling }">{{ distilling ? '⏳ 提炼中…' : '⚡ 提炼 ▾' }}</span>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="overview">概要卡</el-dropdown-item>
+                    <el-dropdown-item command="characters">人物卡</el-dropdown-item>
+                    <el-dropdown-item command="plots">故事线卡</el-dropdown-item>
+                    <el-dropdown-item command="world">世界设定卡</el-dropdown-item>
+                    <el-dropdown-item command="outline">大纲卡（逐卷/逐集）</el-dropdown-item>
+                    <el-dropdown-item command="chapter">章节卡（写作交接）</el-dropdown-item>
+                    <el-dropdown-item command="foreshadow">伏笔卡</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+              <span v-if="store.conflicts.value.length" class="ct-btn conflict-ct" @click="conflictDrawer = true">
+                ⚔ 疑点 {{ store.conflicts.value.length }}
+              </span>
+              <span class="ct-hint">阶段决定主编的讨论焦点与产出物；提提炼把共识整理成卡</span>
             </div>
             <div class="input-row">
               <textarea
@@ -126,7 +151,72 @@
     </div>
 
     <!-- 设计包确认（46 号：长程任务产物整体确认制） -->
-    <el-dialog v-model="designVisible" :title="`设计成果确认 · ${store.designReady.value?.title ?? ''}`" width="640px">
+        <el-dialog v-model="showGraph" title="知识图谱" width="92%" top="3vh" destroy-on-close class="graph-dialog">
+      <GraphView :project-id="projectId" />
+    </el-dialog>
+
+    <el-dialog v-model="showBible" title="故事设定集" width="72%" top="3vh" destroy-on-close>
+      <BiblePanel
+        :project-id="projectId"
+        :ledger="store.state.value?.ledger || []"
+        :refresh-key="bibleRefresh"
+        :cards="store.state.value?.pendingCards || []"
+        @op="store.ledgerOp"
+        @revise="openRevise"
+        @ask="askAbout"
+        @distill="onDistill"
+        @open-editor="goEditor"
+        @locate-turn="locateTurn"
+        @foreshadow-status="onForeshadowStatus"
+      />
+    </el-dialog>
+
+    <el-drawer v-model="conflictDrawer" title="⚔ 连续性检查疑点" size="42%" :append-to-body="true">
+      <div class="conflict-drawer-list">
+        <div v-for="(c, i) in store.conflicts.value" :key="i" class="conflict-item-wrap">
+          <div class="conflict-item">
+            <span class="conflict-rule">{{ ruleLabel(c.rule) }}</span>
+            <span class="conflict-msg">{{ c.description || c.message }}</span>
+            <el-button size="small" type="primary" plain class="conflict-solve" :loading="plans[i]?.loading" @click="solveConflict(i)">
+              {{ plans[i]?.loading ? '解题中…' : 'AI 解题' }}
+            </el-button>
+          </div>
+          <div v-if="plans[i]?.plan || plans[i]?.error" class="conflict-plan">
+            <div v-if="plans[i]?.error" class="plan-error">解题失败：{{ plans[i].error }}</div>
+            <template v-else>
+              <div class="plan-diagnosis"><b>诊断：</b>{{ plans[i]!.plan!.diagnosis }}</div>
+              <div
+                v-for="(opt, oi) in plans[i]!.plan!.options"
+                :key="oi"
+                class="plan-option"
+                :class="{ recommended: plans[i]!.plan!.recommended === oi }"
+              >
+                <div class="po-head">
+                  <span class="po-label">{{ recommendedTag(plans[i]!.plan!.recommended === oi) }}{{ opt.label }}</span>
+                  <el-button size="small" @click="keepConflict(i)">知情保留</el-button>
+                  <el-button
+                    v-if="opt.action !== 'edit_chapter' && opt.action !== 'none'"
+                    size="small"
+                    type="primary"
+                    @click="execOption(i, oi, opt)"
+                  >执行</el-button>
+                  <el-button v-if="opt.action === 'edit_chapter'" size="small" @click="copyEdit(opt)">复制改文</el-button>
+                  <el-button v-if="opt.action === 'edit_chapter'" size="small" @click="goEditor">去写作台</el-button>
+                </div>
+                <div class="po-detail">{{ opt.detail }}</div>
+                <div v-if="opt.editText?.text" class="po-edit">建议文本：{{ opt.editText.text }}</div>
+                <div v-if="execResults[i + '-' + oi]" class="po-result">→ {{ execResults[i + '-' + oi] }}</div>
+              </div>
+            </template>
+          </div>
+        </div>
+        <div v-if="!store.conflicts.value.length" class="conflict-empty">当前没有疑点。</div>
+      </div>
+    </el-drawer>
+
+    <ProjectSettingsDialog v-model:visible="showSettings" :project-id="projectId" />
+
+<el-dialog v-model="designVisible" :title="`设计成果确认 · ${store.designReady.value?.title ?? ''}`" width="640px">
       <div class="design-hint">以下 {{ designItems.length }} 项为本轮任务的设计草稿，勾选确认后才会落库生效。</div>
       <div class="design-items">
         <label v-for="item in designItems" :key="item.id" class="design-item" :class="{ on: checkedIds.has(item.id) }">
@@ -181,6 +271,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import ChatCanvas from '@/components/longwriting/room/ChatCanvas.vue'
+import ProjectSettingsDialog from '@/components/longwriting/ProjectSettingsDialog.vue'
+import { defineAsyncComponent } from 'vue'
 import BiblePanel from '@/components/longwriting/room/BiblePanel.vue'
 import { useStoryRoom } from '@/composables/useStoryRoom'
 import type { ArtifactCard, ConsensusEntry } from '@shared/types/story-room.types'
@@ -195,7 +287,6 @@ const store = useStoryRoom(projectId.value)
 const projectName = ref('…')
 const storyType = ref('')
 const input = ref('')
-const chips = computed(() => store.chips.value)
 
 // ==================== 主编模型选择（原型顶栏「主编模型 ▾」） ====================
 
@@ -288,6 +379,15 @@ const taskLogOpen = ref(false)
 const designVisible = ref(false)
 const checkedIds = ref(new Set<string>())
 
+// 实跑修复：设计确认弹窗只在 design:ready 事件瞬间弹出，错过（切标签/刷新）后无入口——
+// 有草稿包时常驻「审核设计包」按钮，点开即复用同一确认面板
+const draftPackage = computed(() => store.state.value?.designPackages?.find((p) => p.status === 'draft') ?? null)
+
+function reviewDraftPackage(): void {
+  if (!draftPackage.value) return
+  store.designReady.value = draftPackage.value
+}
+
 const designItems = computed(() => store.designReady.value?.items ?? [])
 
 // design:ready → 弹确认面板（默认全选；用户可逐项取消）
@@ -307,6 +407,81 @@ function toggleItem(id: string): void {
   checkedIds.value = next
 }
 
+interface PlanOption { action: string; label: string; detail: string; editText?: { chapterName?: string; chapterNumber?: number; text: string }; applyPayload?: Record<string, unknown> }
+interface ConflictPlanView { plan?: { diagnosis: string; options: PlanOption[]; recommended?: number }; error?: string; loading?: boolean }
+const plans = ref<Record<number, ConflictPlanView>>({})
+const execResults = ref<Record<string, string>>({})
+
+async function solveConflict(i: number): Promise<void> {
+  const c: any = store.conflicts.value[i]
+  if (!c) return
+  plans.value[i] = { loading: true }
+  try {
+    const mo: any = store.modelOpts.value || {}
+    const res = await window.electronAPI.longwriting.conflictPlan(
+      projectId.value,
+      { rule: c.rule, message: c.description || c.message, entityName: c.entityName, entityType: c.entityType, chapterNumber: c.chapterNumber },
+      // IPC 结构化克隆不接受 Vue 响应式 Proxy——拆成纯值
+      { providerConfigId: mo.providerConfigId, modelId: mo.modelId },
+    )
+    if (res.success) plans.value[i] = { plan: res.data }
+    else plans.value[i] = { error: res.error || '解题失败' }
+  } catch (e: any) {
+    plans.value[i] = { error: e.message }
+  }
+}
+
+async function keepConflict(i: number): Promise<void> {
+  const c: any = store.conflicts.value[i]
+  if (!c) return
+  const res = await window.electronAPI.longwriting.conflictExecute(projectId.value, 'acknowledge_conflict', {
+    conflict: { rule: c.rule, message: c.description || c.message, entityName: c.entityName, entityType: c.entityType, chapterNumber: c.chapterNumber },
+    note: '作者知情保留',
+  })
+  if (res.success) {
+    ElMessage.success('已知情保留')
+    await store.loadConflictsIfWriting()
+  } else {
+    ElMessage.warning(res.error || '保留失败')
+  }
+}
+
+async function execOption(i: number, oi: number, opt: PlanOption): Promise<void> {
+  const c: any = store.conflicts.value[i]
+  const payload = { ...(opt.applyPayload || {}), name: c.entityName || opt.editText?.chapterName, chapterNumber: c.chapterNumber }
+  const res = await window.electronAPI.longwriting.conflictExecute(projectId.value, opt.action, payload)
+  const msg = (res.data && res.data.message) || res.error || (res.success ? '已执行' : '执行失败')
+  execResults.value[i + '-' + oi] = msg
+  ElMessage[res.success ? 'success' : 'warning'](msg)
+  if (res.success) {
+    plans.value[i] = { ...plans.value[i] }
+    await store.loadConflictsIfWriting()
+  }
+}
+
+function copyEdit(opt: PlanOption): void {
+  const t = opt.editText?.text || opt.detail
+  navigator.clipboard?.writeText(t).then(
+    () => ElMessage.success('建议文本已复制'),
+    () => ElMessage.warning('复制失败，请手动选择文本'),
+  )
+}
+
+function recommendedTag(rec: boolean): string {
+  return rec ? '★ ' : ''
+}
+
+function ruleLabel(rule?: string): string {
+  const map: Record<string, string> = {
+    R1: '死亡后出场', R2: '关系失效', R3: '物品易主', R4: '技能时间线', R5: '回忆冲突',
+    R6: '状态回退', R7: '钩子节拍', R8: '伏笔超期', R9: '名册外人名',
+  }
+  return rule && map[rule] ? `${rule} ${map[rule]}` : (rule || '疑点')
+}
+function phaseIndex(phase?: string): number {
+  const i = ROOM_PHASE_META.findIndex(p => p.id === phase)
+  return i < 0 ? 1 : i + 1
+}
 function kindLabel(kind: string): string {
   switch (kind) {
     case 'card': return '卡片'
@@ -354,11 +529,6 @@ function doSend(): void {
   store.send(text)
 }
 
-function applyChip(c: string): void {
-  // 原型交互：chips 是面向动作的讨论短语，点击即作为消息发送
-  input.value = c
-  doSend()
-}
 
 function askAbout(text: string): void {
   input.value = `${text} `
@@ -492,6 +662,11 @@ async function onDistill(scope?: string): Promise<void> {
 }
 
 const bibleRefresh = ref(0)
+const conflictDrawer = ref(false)
+const showGraph = ref(false)
+const showBible = ref(false)
+const showSettings = ref(false)
+const GraphView = defineAsyncComponent(() => import('@/components/longwriting/graph/GraphView.vue'))
 
 async function onForeshadowStatus(id: string, status: 'paid' | 'dropped', payoff?: number | null): Promise<void> {
   const res = await window.electronAPI.longwriting.bibleForeshadowStatus(projectId.value, id, status, payoff ?? null)
@@ -679,6 +854,12 @@ html.dark .story-room { --sr-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rg
   display: flex; align-items: center; justify-content: space-between;
   padding: 6px 16px; cursor: pointer; color: var(--el-text-color-secondary);
 }
+.task-log-review-row {
+  margin: 4px 0 6px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .task-log-summary:hover { color: var(--el-text-color-primary); }
 .task-log-caret { flex-shrink: 0; }
 .task-log-items { max-height: 150px; overflow-y: auto; padding: 0 16px 8px; }
@@ -704,4 +885,98 @@ html.dark .story-room { --sr-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rg
 .edit-rows { display: flex; flex-direction: column; gap: 10px; max-height: 55vh; overflow-y: auto; }
 .edit-row { display: flex; gap: 10px; align-items: flex-start; }
 .edit-label { width: 90px; flex-shrink: 0; font-size: 12.5px; color: var(--el-text-color-secondary); padding-top: 7px; text-align: right; }
+</style>
+<style scoped>
+.graph-dialog :deep(.el-dialog__body) {
+  height: 82vh;
+  overflow: hidden;
+}
+.graph-dialog :deep(.el-dialog__body) > * {
+  height: 100%;
+}
+
+.conflict-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  margin-bottom: 6px;
+  background: var(--el-color-warning-light-9);
+  border: 1px solid var(--el-color-warning-light-5);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--el-color-warning-dark-2);
+}
+.conflict-bar:hover { border-color: var(--el-color-warning); }
+.conflict-bar-more { font-size: 12px; opacity: 0.8; }
+
+.composer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px 8px;
+  border-bottom: 1px dashed var(--el-border-color-lighter);
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.ct-btn {
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--el-border-color);
+  background: var(--el-fill-color-blank);
+}
+.ct-btn:hover { color: var(--el-color-primary); border-color: var(--el-color-primary-light-5); }
+.phase-ct { font-weight: 600; }
+.phase-live { color: var(--el-color-success); border-color: var(--el-color-success-light-5); }
+.ct-sub { font-size: 11px; opacity: 0.65; margin-left: 2px; }
+.conflict-ct { color: var(--el-color-warning-dark-2); border-color: var(--el-color-warning-light-5); }
+.ct-hint { font-size: 11px; color: var(--el-text-color-placeholder); }
+
+.conflict-drawer-list { display: flex; flex-direction: column; gap: 10px; }
+.conflict-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.conflict-rule {
+  flex: none;
+  font-size: 12px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--el-color-warning-light-8);
+  color: var(--el-color-warning-dark-2);
+}
+.conflict-empty { color: var(--el-text-color-secondary); font-size: 13px; }
+
+
+.composer-toolbar .ct-btn {
+  height: 26px;
+  line-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.conflict-item-wrap { border: 1px solid var(--el-border-color-lighter); border-radius: 6px; padding: 8px 10px; }
+.conflict-item-wrap .conflict-item { display: flex; gap: 8px; align-items: flex-start; border: none; padding: 0; }
+.conflict-solve { margin-left: auto; flex: none; }
+.conflict-plan { margin-top: 8px; padding: 8px 10px; background: var(--el-fill-color-light); border-radius: 6px; font-size: 13px; line-height: 1.6; }
+.plan-diagnosis { margin-bottom: 6px; }
+.plan-error { color: var(--el-color-danger); }
+.plan-option { padding: 6px 0; border-top: 1px dashed var(--el-border-color-lighter); }
+.plan-option.recommended .po-label { color: var(--el-color-warning-dark-2); font-weight: 600; }
+.po-head { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+.po-label { font-weight: 600; }
+.po-detail { color: var(--el-text-color-regular); }
+.po-edit { margin-top: 4px; padding: 6px 8px; background: var(--el-fill-color); border-radius: 4px; color: var(--el-text-color-secondary); }
+.po-result { margin-top: 4px; color: var(--el-color-success); }
+
 </style>

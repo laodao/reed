@@ -7,7 +7,10 @@
  */
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
+import { IsNull } from 'typeorm'
+import { getCurrentUserId } from '@core/context/user-context'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type { SceneScript } from '@shared/types/story-to-video.types'
 import type {
@@ -467,17 +470,18 @@ async function handleGenerateScript(
       await db.videoEpisodes.update(episode.id, { scriptId: script.id })
     }
 
-    // 删除旧场景（如果有）
-    if (existingScript) {
-      await db.sceneScripts.deleteByEpisodeScriptId(existingScript.id)
-    }
-
-    // 创建场景及桥接表（规范化设计 · spec §4.1）
-    const sceneRecords = await SceneBindingWriter.createScenesWithBindings(
-      db.dataSource,
-      script.id,
-      result.scenes
-    )
+    // 复核修复 P1-6：删旧场景与建新场景并入同一事务——原实现先物理删光旧场景
+    // 再另起事务重建，建新中途失败（LLM 脏数据等）旧场景不可恢复
+    const userId = getCurrentUserId()
+    const delScope = userId ? { userId } : { userId: IsNull() }
+    const sceneRecords = await db.dataSource.transaction(async manager => {
+      if (existingScript) {
+        await manager
+          .getRepository(SceneScriptEntity)
+          .delete({ episodeScriptId: existingScript.id, ...delScope } as any)
+      }
+      return SceneBindingWriter.createScenesWithBindingsIn(manager, script.id, result.scenes)
+    })
 
     // 更新剧集状态为 scripting（确保前端正确显示剧本内容）
     // 如果当前是 pending/asset_prep，生成剧本后应进入 scripting 阶段
@@ -533,15 +537,15 @@ async function handleGenerateScenes(
       modelId
     )
 
-    // 5. 删除旧场景（包括关联的 bridge tables）
-    await db.sceneScripts.deleteByEpisodeScriptId(scriptId)
-
-    // 6. 写入新场景及桥接表
-    const sceneRecords = await SceneBindingWriter.createScenesWithBindings(
-      db.dataSource,
-      scriptId,
-      generatedScenes
-    )
+    // 5+6. 复核修复 P1-6：删旧场景与建新场景并入同一事务（同 generate-script）
+    const userId = getCurrentUserId()
+    const delScope = userId ? { userId } : { userId: IsNull() }
+    const sceneRecords = await db.dataSource.transaction(async manager => {
+      await manager
+        .getRepository(SceneScriptEntity)
+        .delete({ episodeScriptId: scriptId, ...delScope } as any)
+      return SceneBindingWriter.createScenesWithBindingsIn(manager, scriptId, generatedScenes)
+    })
 
     return { success: true, data: sceneRecords }
   } catch (error: any) {

@@ -130,35 +130,34 @@ export class SceneScriptRepository extends BaseRepository<
 
   async createMany(scenes: CreateSceneScriptRequest[]): Promise<SceneScript[]> {
     if (scenes.length === 0) return []
-    return this.dataSource.transaction(async manager => {
-      const repo = manager.getRepository(SceneScriptEntity)
+    // 复核修复 P0-3：事务内裸 repo 漏租户注入——改走 scopedTx 原语
+    return this.scopedTx(async tx => {
+      const sceneApi = tx.for(SceneScriptEntity)
       const result: SceneScript[] = []
       const now = new Date()
       for (const data of scenes) {
         const id = this.generateId()
-        const saved = await repo.save(
-          repo.create({
-            id,
-            episodeScriptId: data.episodeScriptId,
-            sceneNumber: data.sceneNumber,
-            location: data.location,
-            locationBindingId: data.locationBindingId ?? null,
-            locationType: data.locationType,
-            timeOfDay: data.timeOfDay,
-            weather: data.weather ?? null,
-            sceneDescription: data.sceneDescription,
-            mood: data.mood,
-            lighting: data.lighting ?? null,
-            characters: data.characters as unknown[],
-            originalText: data.originalText,
-            narration: data.narration,
-            dialogues: data.dialogues as unknown[],
-            actions: data.actions as unknown[],
-            createdAt: now,
-            updatedAt: now,
-          }),
-        )
-        result.push(this.toDto(saved))
+        const saved = await sceneApi.save({
+          id,
+          episodeScriptId: data.episodeScriptId,
+          sceneNumber: data.sceneNumber,
+          location: data.location,
+          locationBindingId: data.locationBindingId ?? null,
+          locationType: data.locationType,
+          timeOfDay: data.timeOfDay,
+          weather: data.weather ?? null,
+          sceneDescription: data.sceneDescription,
+          mood: data.mood,
+          lighting: data.lighting ?? null,
+          characters: data.characters as unknown[],
+          originalText: data.originalText,
+          narration: data.narration,
+          dialogues: data.dialogues as unknown[],
+          actions: data.actions as unknown[],
+          createdAt: now,
+          updatedAt: now,
+        } as never)
+        result.push(this.toDto(saved as SceneScriptEntity))
       }
       return result
     })

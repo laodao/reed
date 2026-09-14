@@ -94,7 +94,7 @@ src/core/platform/
 
 - ai-hub 的 `/v1/chat/completions`、`/v1/embeddings`、`/v1/models` 是 OpenAI 兼容的，现有 `OpenAICompatibleProvider` 直接可用，只需模板指向 `{BASE}/v1` 并把 Authorization 换成 JWT（现有架构 apiKey 就是 Bearer 值，天然兼容）；
 - image/video 必须按手册 §4.8 实现"提交→轮询→下载转存"三步走的适配器（`aihub-image/video.provider.ts`）；
-- **voice（修订）**：ai-hub 已新增音频 API（手册 §4.10，2026-09 更新）——OpenAI 兼容的 TTS `/v1/audio/speech`、STT `/v1/audio/transcriptions`、语音翻译 `/v1/audio/translations`，同步请求-响应（非任务模型），TTS 按字符、STT 按秒计费。可接入为本项目的第二语音来源，设计见 §3.10；但**声音复刻、声音设计 ai-hub 仍无对应能力，维持 DashScope 直连**。一期范围仍不含 voice（理由见 §3.10），列为 P5 可选扩展；
+- **voice（2026-09-14 修订）**：ai-hub 已新增音频 API（手册 §4.10）——OpenAI 兼容的 TTS `/v1/audio/speech`、STT `/v1/audio/transcriptions`、语音翻译 `/v1/audio/translations`，同步请求-响应（非任务模型），TTS 按字符、STT 按秒计费；并新增音色管理（手册 §4.12）——复刻 `/v1/audio/voices/clone`（阿里+火山）、设计 `/v1/audio/voices/design`（仅阿里）、list/get/delete，按次计费。可整体接入为本项目的第二语音来源，设计见 §3.10；一期范围仍不含 voice，统一列为 P5 可选扩展；
 - music 能力一期不做，留扩展位。
 
 **决策三（2026-09-06 修订）：任务轮询复用现有框架，一期不新建 AihubTaskService。**
@@ -233,27 +233,44 @@ image/video 适配器内部直接调 `AihubClient` 暴露的 `submitTask/pollTas
 3. 模型选择器（聊天页等）无需结构性改动——只加一个过滤：ai-hub config 在无有效会话时视为 disabled。自有 Key 的模型在任何登录态下行为与今天完全一致；
 4. 不做"默认提供商"的强制改写：新用户什么都不配时现状不变；引导交给文案，不交给默认逻辑。
 
-### 3.10 Voice 接入（P5 可选扩展，2026-09-06 新增）
+### 3.10 Voice 接入（P5 可选扩展，2026-09-06 新增；2026-09-14 补 §4.12 音色管理）
 
-ai-hub §4.10 提供三个 OpenAI 兼容音频端点，与本项目语音体系的能力对照：
+ai-hub §4.10/§4.12 提供音频端点，与本项目语音体系的能力对照：
 
 | 能力 | ai-hub | the-bot 现状 | 结论 |
 |---|---|---|---|
 | TTS | `POST /v1/audio/speech`（model/input/voice/format/speed/stream，≤4096 字符，按字符计费，支持 chunked 流式） | DashScope TTS / CosyVoice | **可接入**，作为第二 TTS 来源 |
 | STT | `POST /v1/audio/transcriptions`（multipart ≤25MB，按秒计费，响应直通上游） | DashScope STT | **可接入** |
 | 语音翻译 | `/v1/audio/translations`（固定译向英文） | 无此功能 | 可选新增能力 |
-| 声音复刻 | ❌ 无 | DashScope 复刻 + VoiceCloneJobScheduler | 维持 DashScope 直连 |
-| 声音设计 | ❌ 无 | DashScope voice-design | 维持 DashScope 直连 |
+| 声音复刻 | ✅ `POST /v1/audio/voices/clone`（阿里+火山渠道，按次计费） | DashScope 复刻 + VoiceCloneJobScheduler | **可接入**（经网关，见下） |
+| 声音设计 | ✅ `POST /v1/audio/voices/design`（**仅阿里渠道**，按次计费） | DashScope voice-design | **可接入**（经网关，仅阿里渠道） |
+
+**音色管理接口要点**（手册 §4.12，2026-09 新增）：
+
+- 五个端点：clone / design / `GET /v1/audio/voices?model=`（list）/ `GET /v1/audio/voices/{id}?model=`（状态·详情）/ `DELETE /v1/audio/voices/{id}?model=`。clone·design 按次计费（per_request），list/get/delete 免费；`model` query 参数必填（决定代理的上游渠道）；
+- 统一响应 `VoiceResult`：`{voice_id, status, kind(clone/design), provider, name, demo_audio/preview_audio, meta}`；状态轮询走 GET（替代现有直连的 `query_voice`）；
+- **租户隔离**：音色归属以 ai-hub 本地 `voice_assets` 表为源、按 workspace 隔离，list 只出本 workspace，越权 get/delete 返回 404；
+- **复刻音频输入简化为 base64**：`audio` 字段接受 data URI 或纯 base64（≤10MB，超出 413）——**不再需要现有直连实现里的 OSS 上传环节**（`dashscope-oss-uploader` 的 oss:// URL + `X-DashScope-OssResourceResolve` 头可以绕过）；
+- **渠道差异**：design 仅阿里渠道（火山 400/errcode 30017）；火山渠道 delete 不支持；`target_model` 仅阿里必传（复刻如 `qwen3-tts-vc-2026-01-22`、设计如 `qwen3-tts-vd-2026-01-26`）；**火山克隆的音色无法经网关合成**（网关不透传火山自定义音色的 speech）——因此本项目经网关只用**阿里渠道**的复刻/设计，火山渠道无实际价值；
+- **音色用于 TTS**：voice_id 直接填 `/v1/audio/speech` 的 `voice` 字段，音色与 TTS 模型须同渠道。
+
+**对本项目的影响与决策**：
+
+1. **走网关可简化现有实现**：复刻的"上传 OSS → 轮询训练"（VoiceCloneJobScheduler）可改为"base64 提交 → GET 轮询 VoiceResult.status"，链路明显变短；且复刻→设计→TTS 配音全链路只依赖 ai-hub 会话，用户无需自配 DashScope Key——对分发版是体验闭环（捏音色→配音全在网关内完成）；
+2. **存量音色不迁移**：用户此前经直连 DashScope 创建的复刻/设计音色归属在厂商账号下，**不会出现在网关的 workspace 音色列表里**——两条路径的音色互相不可见，UI 需明确区分"网关音色"与"直连音色"（或仅对网关路径开放新建，存量直连音色只读保留）；
+3. **target_model 待对齐**：现有直连实现默认 `cosyvoice-v3.5-plus`（`dashscope-voice-clone-provider.ts:112`），网关示例是 `qwen3-tts-vc-*`/`qwen3-tts-vd-*` 系列——实施前需与 ai-hub 运营确认渠道可用的 target_model 清单及与合成模型的配套关系；
+4. **前置条件（平台侧）**：ai-hub 管理端须注册音色伪模型（阿里 `qwen-voice-enrollment`/`qwen-voice-design`，`model_type=audio`、`billing_mode=per_request`）并绑定渠道，否则端点不可用；
+5. **建议**：复刻/设计与 TTS/STT 一起纳入 P5 语音扩展，走 ai-hub 阿里渠道；存量 DashScope 直连路径保留不动，用户自配 Key 时仍可用。
 
 接入约束（实施前必须知晓）：
 
-1. **仅 OpenAI 协议渠道可用**（手册 §4.10：channel type 须为 openai/azure/custom/deepseek 等映射到 openai provider 的类型）——即 ai-hub 的 TTS 上游是 OpenAI 系声线（alloy 等），**与现有 DashScope 声线集不通用**；`voice` 参数合法集由上游厂商决定、网关不做白名单，客户端声线列表需按模型/渠道动态获取或让用户填；
+1. **TTS/STT 渠道限定 OpenAI 协议渠道与阿里百炼渠道**（手册 §4.10：openai/azure/custom/deepseek 等映射到 openai provider 的类型 + aliyun；Claude/Gemini 渠道返回 400）——经网关的复刻/设计音色只能用阿里渠道合成（见上方渠道差异）；`voice` 参数合法集由上游厂商决定、网关不做白名单，客户端声线列表需按模型/渠道动态获取或让用户填；
 2. **同步请求-响应**，不是任务模型——不走 §4.8 的提交/轮询，适配器比 image/video 简单（一次 POST 拿音频二进制，STT 是 multipart）；
 3. **前置依赖**：`VoiceService`（`platform/services/voice.service.ts:105`）目前硬编码遍历配置并只认 DashScope 系，没有 voice 工厂。接入 ai-hub 语音需先做一个小型 voice 工厂（或等 router 收敛时把 voice 纳入 modality），再实现 `AihubVoiceProvider extends BaseVoiceProvider`；
 4. 错误码 30008~30015（文件超限/voice 非法/input 超 4096/渠道不支持等）需映射为中文提示；
 5. TTS input 上限 4096 字符——长文本配音（如剧集旁白）需按句/段切分多次调用，注意切分处语气连贯；现有 DashScope TTS 是否有同样限制需对比确认。
 
-**建议定位**：P5 可选扩展，排在 P1~P4 之后。理由：语音不是 ai-hub 集成的核心价值（对话/生图/生视频才是），且现有 DashScope 语音链路工作正常；其价值在于"用户零配置 Key 即可用 TTS/STT"，对分发版体验有提升。
+**建议定位**：P5 可选扩展，排在 P1~P4 之后。理由：语音不是 ai-hub 集成的核心价值（对话/生图/生视频才是），且现有 DashScope 语音链路工作正常；其价值在于"用户零配置 Key 即可用 TTS/STT/复刻/设计"，对分发版体验有提升。
 
 ---
 
@@ -267,13 +284,14 @@ ai-hub §4.10 提供三个 OpenAI 兼容音频端点，与本项目语音体系�
 | P2 生成类 | aihub-image / aihub-video 适配器 + 工厂注册 + **能力登记表条目 + 默认白名单扩展** + 视频轮询超时放宽 | providers/image、providers/video、model-capabilities、image.service、video-generation.service | 2~3 天 |
 | P3 计费闭环 | 余额/兑换码/充值跳转 + 402 处理 | aihub-billing、Settings | 1~2 天 |
 | P4 完善 | Web 端按用户会话绑定、music 能力、登出/账号切换、E2E 测试 | web/server、全链路 | 2~3 天 |
-| P5 语音（可选） | voice 小型工厂 + AihubVoiceProvider（TTS/STT/翻译）+ 声线列表 UI + 错误码映射 | providers/voice、voice.service、Settings | 2~3 天 |
+| P5 语音（可选） | voice 小型工厂 + AihubVoiceProvider（TTS/STT/翻译）+ 音色管理（clone/design/list/get/delete，阿里渠道）+ 声线列表 UI + 错误码映射 | providers/voice、voice.service、Settings | 3~4 天 |
 
 每阶段验收：
 - P1：登录后聊天页可选 ai-hub 模型对话（含流式）、模型列表可从网关刷新；**未登录时自有 Key 的对话/生成全部功能与现状一致（回归测试）**；
 - P2：图片生成（t2i+i2i）、剧集制作视频片段（t2v+i2v 首帧）全流程跑通，结果正确落库到资产；自有 Key 的 dashscope/火山生成链路回归通过；
 - P3：余额显示正确、兑换码到账、402 提示可跳转；
-- P4：Web 端两用户各自登录各自扣费互不串，且未登录用户用自有 Key 不受影响。
+- P4：Web 端两用户各自登录各自扣费互不串，且未登录用户用自有 Key 不受影响；
+- P5：经网关完成 复刻（base64 提交→轮询就绪→TTS 使用）、设计（阿里渠道）、STT 各一次全链路；存量 DashScope 直连音色与网关音色在 UI 上明确区分、互不可见不混淆。
 
 ---
 
@@ -283,7 +301,7 @@ ai-hub §4.10 提供三个 OpenAI 兼容音频端点，与本项目语音体系�
 2. **Web 端多用户会话绑定是现状缺口**：ai-hub 会话需按用户存（users 表加列或 user 级 KV），涉及数据库 migration，两端（SQLite/PG）都要做，放 P4。
 3. **JWT 7 天过期体验**：用户一周后需重新登录。可在过期前 24h 在 UI 提示，或向 ai-hub 提"记住我/长时效 token"需求——一期按 401 重登录处理。
 4. **download_url 3600s 过期**：现有轮询完成即下载的链路满足；但若用户中途关应用，重启后任务已 completed 而 URL 已过期——需要在重启恢复逻辑里检查 `expires_at`，过期则标记失败提示重新生成（现有图片/视频服务有没有 boot-resume 轮询需确认，voice-clone 有，image/video 疑似没有，这是个存量问题，不阻塞集成）。
-5. **music/embedding/rerank 能力**：手册有端点但本项目无对应业务，一期不接；**语音（TTS/STT/翻译）ai-hub 已支持**（§4.10），作为 P5 可选扩展，声音复刻/声音设计 ai-hub 仍无、维持 DashScope 直连（详见 §3.10）。
+5. **music/embedding/rerank 能力**：手册有端点但本项目无对应业务，一期不接；**语音（TTS/STT/翻译）与音色管理（复刻/设计）ai-hub 均已支持**（§4.10/§4.12），统一作为 P5 可选扩展（详见 §3.10——复刻/设计经网关仅走阿里渠道，存量直连音色与网关音色互相不可见）。
 6. **双模型来源并存的回归风险**：ai-hub 只是新增一路 provider，但 `getProviderConfig()`（及收敛后的 ProviderRouter）是全部业务的公共解析函数，JWT 物化/注入的特判必须严格限定 `templateId='ai-hub'`，任何情况下不得改变其他 provider 的解析结果——这是 P1 验收里"自有 Key 全功能回归"存在的原因。
 7. **模型选择器的"不可用模型"语义**：ai-hub 模型在未登录/登出后应从选择器消失或置灰；若某业务（如剧集制作的某个环节）已绑定了 ai-hub 模型，登出后要给"该模型不可用，请重新登录或更换模型"的明确提示，而不是静默失败（登出后物化 Key 被清空，底层会报"未配置 API 密钥"，UI 需把这错误映射成登录引导）。
 8. **Web 端"账号套账号"的 UX 开放问题**（review 补充）：Web 端已有自己的 users/JWT 登录体系（`/api/auth/login`），叠加 ai-hub 账号后用户要登录两次、且两个账号无映射关系。可选方向：a) 保持双账号独立（现状方案，Web 端用户在设置里自行登录 ai-hub）；b) 把 the-bot Web 端账号与 ai-hub 账号做绑定/映射（需要账号关联设计，工作量大）；c) 长期看若 ai-hub 是同一产品体系的账号中心，可考虑让 the-bot Web 端直接以 ai-hub 为 IdP（OIDC 反过来用）。**一期选 a，b/c 留作产品决策，不在本方案内。**
@@ -298,4 +316,4 @@ ai-hub §4.10 提供三个 OpenAI 兼容音频端点，与本项目语音体系�
 - 不做用户同步（`users/sync`）、X-User-Key——那是服务端集成的用户级计费，account session 天然用户级；
 - 不做自研充值/流水 UI（用托管门户）；
 - 不动现有五类 provider 的任何厂商实现；
-- 声音复刻/声音设计不走 ai-hub（其无此能力），维持 DashScope 直连；基础 TTS/STT 接入列为 P5 可选项而非一期范围。
+- 声音复刻/设计的**存量直连路径**不动（DashScope 直连保留）；经 ai-hub 网关的复刻/设计纳入 P5 可选项（仅阿里渠道），非一期范围。

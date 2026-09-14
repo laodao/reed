@@ -101,7 +101,7 @@
  * v-model 为字符串；组件内部 parse 字符串 -> 富文本，编辑后再 serialize 回字符串 emit。
  * 参数 token 的选项（景别/运镜/时长/风格）来自 param-options / styleOptions prop。
  */
-import { ref, computed, nextTick, onMounted, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
 import { Check, User, Location, Goods, ArrowLeft } from '@element-plus/icons-vue'
 import {
   SHOT_TYPE_OPTIONS,
@@ -702,6 +702,8 @@ watch(
 onMounted(() => {
   renderHtml()
   document.addEventListener('mousedown', onDocMouse)
+  // 复核修复：配套移除（旧实现每个实例挂载都向 document 泄漏一个监听）
+  onBeforeUnmount(() => document.removeEventListener('mousedown', onDocMouse))
 })
 function onDocMouse(e: MouseEvent): void {
   const hit = (refEl: HTMLElement | null) => refEl && refEl.contains(e.target as Node)

@@ -10,6 +10,7 @@ import crypto from 'node:crypto'
 import { getCoreDatabaseManager, type ICoreDatabaseManager } from '@core/database/database-manager.interface'
 import { LongWritingAIService } from '@core/platform/services/longwriting-ai.service'
 import { GraphService } from './graph.service'
+import { scanNameCandidates } from './consistency.service'
 import type {
   StoryEvent,
   EntityStateSnapshot,
@@ -26,6 +27,8 @@ export interface ChapterGraphProcessInput {
   modelId?: string
 }
 
+const UNREGISTERED_CHARACTER_KIND = '未登记人物'
+
 export interface ChapterGraphProcessResult {
   events: StoryEvent[]
   states: EntityStateSnapshot[]
@@ -36,6 +39,10 @@ export interface ChapterGraphProcessResult {
   foreshadowCount?: number
   /** 本次关系演变条数（关旧+开新，44 号图谱完善） */
   relationChangeCount?: number
+  /** 52 号：解析失败/名册外的人名（已入「未登记人物」待确认队列，R9 数据源） */
+  unresolvedNames?: Array<{ name: string; chapterNumber: number }>
+  /** 步骤级结果聚合：非空 = 本轮有失败步骤（hash 不记录，下次保存重跑） */
+  failedSteps?: string[]
 }
 
 export class ChapterGraphProcessor {
@@ -84,24 +91,15 @@ export class ChapterGraphProcessor {
       return { events: [], states: [], edges: [], stateCount: 0 }
     }
 
-    // ============ 0. 幂等清理（重跑 = 重建） ============
-    // 每次保存章节（含自动保存）都触发流水线；事件/边是纯 insert，旧事件 id 每次新生成，
-    // 不去重会导致 lw_events / lw_graph_edges 数据膨胀、图谱视图出现重复事件节点与边。
-    // 先删本章旧事件及其关联边（实体状态是 upsert 幂等，无需清理）。
-    if (m.lwEvents && m.lwGraphEdges) {
-      try {
-        const oldEvents = await m.lwEvents.listByChapter(projectId, chapterNumber)
-        const oldIds = oldEvents.map((e) => e.id).filter(Boolean)
-        if (oldIds.length > 0) {
-          await m.lwGraphEdges.deleteBySourceEventIds(projectId, oldIds)
-        }
-        await m.lwEvents.deleteByChapter(projectId, chapterNumber)
-      } catch (e) {
-        console.warn('[ChapterGraphProcessor] 本章旧数据清理失败（继续执行）:', e)
-      }
-    }
+    // 步骤级结果聚合：fail-soft 保留（单步失败不阻断后续），但成功信号必须真实——
+    // 内容 hash 只在全部步骤成功时记录，失败步骤下次保存自动重跑。
+    // （修复"失败一次永久短路"：旧实现每步都吞错，process() 结构上不可能抛错，
+    //  hash 被无条件记录，与"全程成功才记 hash"的注释语义相反）
+    const failedSteps: string[] = []
 
     // ============ 1. 提取事件 → 落库 lw_events ============
+    // 本章旧数据清理移至提取成功之后执行（旧实现在本步之前先删后提取——
+    // 一旦提取失败，旧事件/边已删而新数据未建，整章图谱数据丢失）
     const events: StoryEvent[] = []
     try {
       const resp = await this.aiService().extractChapterEvents(
@@ -115,12 +113,48 @@ export class ChapterGraphProcessor {
       )
       const extracted: Array<{ name?: string; description?: string; involvedEntities?: MemoryEntity[]; stateBefore?: string; stateAfter?: string }> =
         Array.isArray(resp.data) ? resp.data : []
+      // 幂等清理（重跑 = 重建）：事件/边是纯 insert，旧事件 id 每次新生成，
+      // 不去重会导致 lw_events / lw_graph_edges 膨胀、图谱出现重复节点与边。
+      // 实体状态是 upsert 幂等，无需清理。提取成功（0 条也是合法结果）才清理。
+      if (m.lwEvents && m.lwGraphEdges) {
+        try {
+          const oldEvents = await m.lwEvents.listByChapter(projectId, chapterNumber)
+          const oldIds = oldEvents.map((e) => e.id).filter(Boolean)
+          if (oldIds.length > 0) {
+            await m.lwGraphEdges.deleteBySourceEventIds(projectId, oldIds)
+          }
+          await m.lwEvents.deleteByChapter(projectId, chapterNumber)
+        } catch (e) {
+          failedSteps.push('旧数据清理')
+          console.error('[ChapterGraphProcessor] 本章旧数据清理失败（本轮不记 hash，下次重跑）:', e)
+        }
+      }
       if (extracted.length > 0 && m.lwEvents) {
+        // 52 号复测补链：先做全文级人名扫描，名册外高频名自动入「未登记人物」队列
+        try {
+          const roster = ((await m.lwCharacters?.getByProjectId(projectId)) || []).map((c: any) => c.name)
+          const graphSvc = new GraphService(m)
+          for (const cand of scanNameCandidates([{ name: `第${chapterNumber}章`, content: chapterContent }], roster, 2)) {
+            await this.registerUnresolvedName(projectId, chapterNumber, cand.name)
+            void graphSvc
+          }
+        } catch (e) {
+          console.warn('[ChapterGraphProcessor] 全文人名扫描入队失败（不阻断）:', e)
+        }
         // 名称 → ID 解析（事件涉及实体必须 ID）
         const resolvedEvents: Array<{ name: string; description?: string; involvedEntities?: MemoryEntity[]; stateBefore?: string; stateAfter?: string }> = []
         for (const ev of extracted) {
           if (!ev.name?.trim()) continue
-          const involved = await this.resolveEventEntities(projectId, ev.involvedEntities || [])
+          // 52 号：解析失败的实体不再静默跳过——收集进「未登记人物」队列（R9 数据源）
+          const { resolved: resolvedIn, unresolved: evUnresolved } = await this.resolveEventEntities(projectId, ev.involvedEntities || [])
+          for (const u of evUnresolved) {
+            if (u.type === 'character') await this.registerUnresolvedName(projectId, chapterNumber, u.name)
+          }
+          // 复测补链：模型漏挂实体的事件，按句子共现补挂（正文同句出现的人名）
+          let involved = resolvedIn
+          if (involved.length === 0) {
+            involved = await this.linkEventByCoOccurrence(projectId, chapterNumber, ev, chapterContent)
+          }
           resolvedEvents.push({
             name: ev.name.trim(),
             description: ev.description,
@@ -142,7 +176,8 @@ export class ChapterGraphProcessor {
         ))
       }
     } catch (e) {
-      console.error('[ChapterGraphProcessor] 事件提取失败（不影响后续步骤）:', e)
+      failedSteps.push('事件提取')
+      console.error('[ChapterGraphProcessor] 事件提取失败（后续步骤继续）:', e)
     }
 
         // ============ 1.5 伏笔提取（42 号 P1 写作教练位；fail-soft，不影响主链路） ============
@@ -172,6 +207,7 @@ export class ChapterGraphProcessor {
         }
       }
     } catch (e) {
+      failedSteps.push('伏笔提取')
       console.warn('[ChapterGraphProcessor] 伏笔提取失败（不阻断主链路）:', e)
     }
 
@@ -192,22 +228,48 @@ export class ChapterGraphProcessor {
         )
         const extractedStates: Array<{ entityType?: string; entityId?: string; entityName?: string; stateSummary?: string; keyChanges?: string[] }> =
           Array.isArray(resp.data) ? resp.data : []
-        const validStates = extractedStates.filter(s => s.entityType && s.entityId && s.stateSummary)
+        // 52 号评审根因三修复：AI 只可靠地回传 entityName，ID 由服务端按名册解析
+        // （旧实现要求 AI 回传 entityId，解析不出即被整条过滤 → 状态切片长期为 0 行，R1-R6 全盲）
+        const graph = new GraphService(m)
+        const validStates: Array<{ entityType: string; entityId: string; entityName: string; stateSummary: string; keyChanges: string[] }> = []
+        for (const st of extractedStates) {
+          if (!st.entityType || !st.stateSummary?.trim()) continue
+          const name = (st.entityName || '').trim()
+          if (!name && !st.entityId) continue
+          let entityId = st.entityId || ''
+          if (name) {
+            const [hit] = await graph.resolveEntities(projectId, [{ type: st.entityType, name }] as any)
+            if (hit?.resolved && hit.id) entityId = hit.id
+            else if (st.entityType === 'character') await this.registerUnresolvedName(projectId, chapterNumber, name)
+          }
+          if (!entityId) continue
+          validStates.push({
+            entityType: st.entityType,
+            entityId,
+            entityName: name || st.entityId,
+            stateSummary: st.stateSummary.trim(),
+            keyChanges: Array.isArray(st.keyChanges) ? st.keyChanges : [],
+          })
+        }
+        if (validStates.length === 0 && extractedStates.length > 0) {
+          console.warn(`[ChapterGraphProcessor] 状态切片全部未能解析（${extractedStates.length} 条）chapter=${chapterNumber}`)
+        }
         if (validStates.length > 0) {
           states.push(...await m.lwEntityStates.batchCreate(
             validStates.map(s => ({
               projectId,
-              entityType: s.entityType! as any,
-              entityId: s.entityId!,
-              entityName: s.entityName || s.entityId!,
+              entityType: s.entityType as any,
+              entityId: s.entityId,
+              entityName: s.entityName,
               chapterNumber,
-              stateSummary: s.stateSummary!,
-              keyChanges: s.keyChanges || [],
+              stateSummary: s.stateSummary,
+              keyChanges: s.keyChanges,
             })),
           ))
         }
       }
     } catch (e) {
+      failedSteps.push('状态切片')
       console.error('[ChapterGraphProcessor] 状态提取失败（不影响后续步骤）:', e)
     }
 
@@ -215,9 +277,10 @@ export class ChapterGraphProcessor {
     const edges: GraphEdge[] = []
     try {
       if (m.lwGraphEdges) {
-        edges.push(...await this.buildEdges(projectId, chapterNumber, events, states))
+        // 52 号统一存储：involves 关系由 getGraph 从 involved_entities JSON 推导，不再写边副本
       }
     } catch (e) {
+      failedSteps.push('自动建边')
       console.error('[ChapterGraphProcessor] 建边失败（不影响后续步骤）:', e)
     }
 
@@ -258,6 +321,7 @@ export class ChapterGraphProcessor {
         }
       }
     } catch (e) {
+      failedSteps.push('关系演变')
       console.warn('[ChapterGraphProcessor] 关系演变提取失败（不阻断主链路）:', e)
     }
 
@@ -289,11 +353,20 @@ export class ChapterGraphProcessor {
         })
       }
     } catch (e) {
+      failedSteps.push('章节状态摘要')
       console.error('[ChapterGraphProcessor] 章节状态摘要提取失败:', e)
     }
 
-    // 评审 #61：流水线全程成功才记 hash——中途失败的内容下次保存仍会重跑
-    ChapterGraphProcessor.contentHashes.set(contentKey, contentHash)
+    // 评审 #61 + 复核修复：全部步骤成功才记 hash——任一步骤失败都记入
+    // failedSteps，下次保存自动重跑（旧实现无条件记录，失败一次即永久短路，
+    // 该章图谱数据直到进程重启都不再生成）
+    if (failedSteps.length === 0) {
+      ChapterGraphProcessor.contentHashes.set(contentKey, contentHash)
+    } else {
+      console.error(
+        `[ChapterGraphProcessor] 流水线存在失败步骤（不记 hash，下次保存重跑）project=${projectId} chapter=${chapterNumber}: ${failedSteps.join('、')}`,
+      )
+    }
     return {
       events,
       states,
@@ -301,25 +374,104 @@ export class ChapterGraphProcessor {
       stateCount: states.length,
       foreshadowCount,
       relationChangeCount,
+      failedSteps,
     }
   }
 
   // ==================== 内部 ====================
 
-  /** 事件涉及实体名称 → ID 解析（匹配失败跳过） */
-  private async resolveEventEntities(projectId: string, entities: MemoryEntity[]): Promise<MemoryEntity[]> {
+  /** 事件涉及实体名称 → ID 解析（52 号：失败不再静默跳过，返回 unresolved 供登记/告警） */
+  private async resolveEventEntities(
+    projectId: string,
+    entities: MemoryEntity[],
+  ): Promise<{ resolved: MemoryEntity[]; unresolved: Array<{ type: string; name: string }> }> {
     const m = this.manager()
-    if (!m || entities.length === 0) return []
+    if (!m || entities.length === 0) return { resolved: [], unresolved: [] }
     const graph = new GraphService(m)
     const inputs = entities.map(e => ({ type: e.type, name: e.name }))
     const resolved = await graph.resolveEntities(projectId, inputs as any)
     const result: MemoryEntity[] = []
+    const unresolved: Array<{ type: string; name: string }> = []
     resolved.forEach((r, i) => {
       if (r.resolved && r.id) {
         result.push({ type: entities[i].type, id: r.id, name: entities[i].name })
+      } else {
+        unresolved.push({ type: entities[i].type, name: entities[i].name })
       }
     })
-    return result
+    return { resolved: result, unresolved }
+  }
+
+  /**
+   * 52 号复测补链：事件没有涉及实体时，在正文中定位事件所在句子，
+   * 把同句出现的具名人物解析后挂到事件上（模型漏标的最小代价补救）。
+   */
+  private async linkEventByCoOccurrence(
+    projectId: string,
+    chapterNumber: number,
+    ev: { name?: string; description?: string },
+    chapterContent: string,
+  ): Promise<MemoryEntity[]> {
+    try {
+      const clean = (ev.name || '').replace(/[「」『』【】\s]/g, '')
+      if (!clean) return []
+      const all = chapterContent.split(/[。！？\n]/).filter(Boolean)
+      // 模型起的事件名不一定是原文原词——关键串从 4 字逐级缩到 2 字找共现句
+      let sentences: string[] = []
+      for (const len of [Math.min(4, clean.length), 3, 2]) {
+        const key = clean.slice(0, len)
+        if (key.length < 2) break
+        sentences = all.filter(s => s.includes(key))
+        if (sentences.length > 0) break
+      }
+      if (sentences.length === 0 && ev.description) {
+        const dk = ev.description.replace(/[「」『』【】\s]/g, '').slice(0, 4)
+        if (dk.length >= 2) sentences = all.filter(s => s.includes(dk))
+      }
+      const scope = sentences.length > 0 ? sentences.join('。') : ''
+      if (!scope) return []
+      const graph = new GraphService(this.manager()!)
+      const seen = new Set<string>()
+      const entities: MemoryEntity[] = []
+      // 只认「姓氏开头」的 2-3 字词并滤掉常用词，避免把普通词汇灌进待确认队列
+      const stop = new Set(['自己', '他们', '我们', '你们', '什么', '怎么', '这时', '当时', '如今', '所有', '没有', '这个', '那个', '不是', '就是'])
+      for (const m of scope.matchAll(new RegExp(`[${'王李张刘陈杨赵黄周吴徐孙马朱胡郭何高林郑谢罗宋唐许韩冯邓曹彭曾肖田董袁潘于蒋蔡余杜叶程苏魏吕丁任沈姚卢姜崔钟谭陆汪范金石廖贾夏韦付方白邹孟熊秦邱江尹薛闫段雷侯龙史陶黎贺顾毛郝龚邵万钱严覃武戴莫孔向汤'}][\\u4e00-\\u9fa5]{1,2}`, 'g'))) {
+        const w = m[0]
+        if (seen.has(w) || stop.has(w)) continue
+        seen.add(w)
+        const [r] = await graph.resolveEntities(projectId, [{ type: 'character', name: w }] as any)
+        if (r?.resolved && r.id) entities.push({ type: 'character', id: r.id, name: r.name })
+        else await this.registerUnresolvedName(projectId, chapterNumber, w.slice(0, 2))
+      }
+      return entities.slice(0, 6)
+    } catch (e) {
+      console.warn('[ChapterGraphProcessor] 事件共现补链失败（不阻断）:', e)
+      return []
+    }
+  }
+
+  /**
+   * 52 号：未登记人名入「待确认」队列（lw_custom_entities，kindKey=未登记人物）。
+   * 按名字去重；首见记录章节。这是 R9 一致性规则的数据源，也让新角色在设定集可见、可一键转正。
+   */
+  private async registerUnresolvedName(projectId: string, chapterNumber: number, name: string): Promise<void> {
+    try {
+      const m = this.manager()
+      const trimmed = name.trim()
+      if (!m?.lwCustomEntities || !trimmed) return
+      const existing = await m.lwCustomEntities.getByProjectAndKind(projectId, UNREGISTERED_CHARACTER_KIND)
+      const dup = existing.find(e => e.name === trimmed)
+      if (dup) return
+      await m.lwCustomEntities.createRow(
+        projectId,
+        UNREGISTERED_CHARACTER_KIND,
+        trimmed,
+        { firstChapter: chapterNumber },
+        { type: 'extract', chapter: chapterNumber },
+      )
+    } catch (e) {
+      console.warn('[ChapterGraphProcessor] 未登记人名入队失败（不阻断）:', e)
+    }
   }
 
   /** 收集流水线涉及的实体（大纲 involved + 事件 involved），供状态提取 */
@@ -366,33 +518,17 @@ export class ChapterGraphProcessor {
     return result
   }
 
-  /** 自动建边：事件→实体 involves（valid_from=本章节） */
+  /**
+   * 52 号统一存储：不再写 involves 边——事件→实体关联由 getGraph 从
+   * lw_events.involved_entities JSON 推导（单一事实源，无副本同步问题）。
+   * 保留方法签名避免破坏调用方，但始终返回空数组。
+   */
   private async buildEdges(
-    projectId: string,
-    chapterNumber: number,
-    events: StoryEvent[],
+    _projectId: string,
+    _chapterNumber: number,
+    _events: StoryEvent[],
     _states: EntityStateSnapshot[],
   ): Promise<GraphEdge[]> {
-    const m = this.manager()
-    if (!m?.lwGraphEdges) return []
-    const edgesToCreate: Array<{ projectId: string; sourceType: any; sourceId: string; targetType: any; targetId: string; relationType: string; validFromChapter: number }> = []
-
-    for (const ev of events) {
-      for (const ent of ev.involvedEntities || []) {
-        if (ent.type === 'event') continue
-        edgesToCreate.push({
-          projectId,
-          sourceType: 'event',
-          sourceId: ev.id,
-          targetType: ent.type as any,
-          targetId: ent.id,
-          relationType: 'involves',
-          validFromChapter: chapterNumber,
-        })
-      }
-    }
-
-    if (edgesToCreate.length === 0) return []
-    return m.lwGraphEdges.batchCreate(edgesToCreate)
+    return []
   }
 }
