@@ -47,7 +47,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onBeforeUnmount } from 'vue'
 import { Close, MagicStick } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { toImageUrl } from '@/utils/asset-url'
@@ -114,6 +114,12 @@ async function onRegenerate(): Promise<void> {
 }
 
 /** 轮询 useImage.currentTask，最多等 5 分钟，完成后返回新 ImageRecord */
+const activePollTimers = new Set<ReturnType<typeof setInterval>>()
+onBeforeUnmount(() => {
+  // 复核修复：组件卸载后停止轮询（旧实现关闭弹窗后 interval 仍跑满 5 分钟）
+  for (const t of activePollTimers) clearInterval(t)
+  activePollTimers.clear()
+})
 function waitNewImage(beforeCount: number): Promise<ImageRecord | null> {
   return new Promise((resolve) => {
     const startedAt = Date.now()
@@ -123,6 +129,7 @@ function waitNewImage(beforeCount: number): Promise<ImageRecord | null> {
       const elapsed = Date.now() - startedAt
       if (task && (task.status === 'completed' || task.status === 'failed')) {
         clearInterval(timer)
+        activePollTimers.delete(timer)
         if (task.status === 'failed') {
           resolve(null)
           return
@@ -133,9 +140,11 @@ function waitNewImage(beforeCount: number): Promise<ImageRecord | null> {
       }
       if (elapsed > MAX_WAIT) {
         clearInterval(timer)
+        activePollTimers.delete(timer)
         resolve(null)
       }
     }, 1500)
+    activePollTimers.add(timer)
   })
 }
 </script>

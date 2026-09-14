@@ -4,12 +4,15 @@
  * @description 基于 TypeORM 实现，所有方法异步。
  */
 
+import { IsNull } from 'typeorm'
 import type { DataSource } from 'typeorm'
 import { StoryPlot, CreatePlotRequest, UpdatePlotRequest } from '@shared/types/longwriting.types'
 import { LwPlotEntity } from '../entities/lw-plot.entity'
+import { LwPlotCharacterEntity } from '../entities/lw-plot-character.entity'
 import { LwPlotCharacterRepository } from './lw-plot-character.repository'
 import { LwPlotLocationRepository } from './lw-plot-location.repository'
 import { BaseRepository } from '../base-repository'
+import { getCurrentUserId } from '@core/context/user-context'
 
 export class LwPlotRepository extends BaseRepository<LwPlotEntity, StoryPlot> {
   private plotCharacterRepo: LwPlotCharacterRepository
@@ -103,6 +106,9 @@ export class LwPlotRepository extends BaseRepository<LwPlotEntity, StoryPlot> {
   ): Promise<StoryPlot[]> {
     if (plots.length === 0) return []
     const now = new Date()
+    // 事务回调内的裸 manager 仓储不会走 scoped 注入租户——必须在回调外同步捕获
+    // userId 并显式落列（与 BaseRepository.scopeEntity 的口径一致：无 ALS → NULL）
+    const userId = getCurrentUserId()
     return this.dataSource.transaction(async manager => {
       const repo = manager.getRepository(LwPlotEntity)
       const result: StoryPlot[] = []
@@ -113,6 +119,7 @@ export class LwPlotRepository extends BaseRepository<LwPlotEntity, StoryPlot> {
           repo.create({
             id,
             projectId,
+            userId,
             title: plot.title,
             summary: plot.summary,
             plotOrder: i,
@@ -123,8 +130,14 @@ export class LwPlotRepository extends BaseRepository<LwPlotEntity, StoryPlot> {
             updatedAt: now,
           }),
         )
+        // 事务内直接用回调 manager 写桥表（评审修复：原经 plotCharacterRepo.batchAdd
+        // 会再开事务，撞 SQLite 串行门"事务回调内禁止再次开启事务"）
         if (plot.involvedCharacters?.length && this.isIdFormat(plot.involvedCharacters)) {
-          await this.plotCharacterRepo.batchAdd(id, plot.involvedCharacters)
+          const bridgeRepo = manager.getRepository(LwPlotCharacterEntity)
+          const bridgeNow = Date.now()
+          for (const cid of plot.involvedCharacters) {
+            await bridgeRepo.save(bridgeRepo.create({ id: this.generateId(), plotId: id, userId, characterId: cid, createdAt: bridgeNow }))
+          }
         }
         result.push(this.toDto(saved))
       }
@@ -170,10 +183,12 @@ export class LwPlotRepository extends BaseRepository<LwPlotEntity, StoryPlot> {
     orderList: { id: string; order: number }[],
   ): Promise<boolean> {
     if (orderList.length === 0) return true
+    // 裸 manager update 不带租户过滤，按 id 直改可跨租户改序——复刻 scopeWhere 口径补 userId
+    const userId = getCurrentUserId()
     await this.dataSource.transaction(async manager => {
       const repo = manager.getRepository(LwPlotEntity)
       for (const item of orderList) {
-        await repo.update({ id: item.id } as any, {
+        await repo.update({ id: item.id, userId: userId === null ? IsNull() : userId } as any, {
           plotOrder: item.order,
           updatedAt: new Date(),
         })

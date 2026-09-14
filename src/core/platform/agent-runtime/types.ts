@@ -172,7 +172,13 @@ export interface AgentLoopState {
   /** 完整对话（system 不入列，启动时重建） */
   messages: ModelMessage[]
   iteration: number
-  usage: { promptTokens: number; completionTokens: number; toolCalls: number }
+  usage: {
+    promptTokens: number
+    completionTokens: number
+    toolCalls: number
+    /** 缓存命中输入 token 累计（43号 O4；provider 上报 cacheRead 时记录，旧 state 无此字段按 0） */
+    cachedInputTokens?: number
+  }
   startedAtMs: number
   converged: boolean
   finalAnswer?: string
@@ -187,7 +193,13 @@ export interface AgentLoopState {
 export interface AgentResult {
   output: string
   stopReason: 'final' | 'max_steps' | 'stagnant' | 'human_rejected' | 'aborted' | 'error'
-  usage: { promptTokens: number; completionTokens: number; toolCalls: number }
+  usage: {
+    promptTokens: number
+    completionTokens: number
+    toolCalls: number
+    /** 缓存命中输入 token 累计（43号 O4；缺省 0——provider 未上报时无此键语义等价） */
+    cachedInputTokens?: number
+  }
   iterations: number
   error?: string
 }

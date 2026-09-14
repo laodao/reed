@@ -135,3 +135,17 @@ createHostKit(config, deps).runTurn(turn: TTurn, opts?: { signal?: AbortSignal }
 测试：host-kit.spec 14 条（turn_start/记忆双通道/topics 分离/registry 结算映射/
 异常结算/sessionStoreCritical/onEntry 广播/abort 桥）；三宿主迁移回归
 chat 16 + LW 10 + EP 54 全绿。
+
+## 关闭登记：知识飞轮整体停用（2026-09-12，用户拍板）
+
+- **范围**：飞轮全链暂停——蒸馏（distillFromTask）、落库前模型复核（review）、代谢
+  （archiveStale）、宿主召回装配（assemble/assembleUserLevel）全不启动；
+  `getMemoryFlywheel()` 返回 null，HostKit 走既有 null 降级形态（无飞轮召回，
+  `memory_assembly` 留痕随之消失）。结构化知识提供方（图谱双通道）**不受影响**。
+- **停用理由**：产出渠道单一（仅任务树成功蒸馏+手工），项目级知识与长文既有
+  结构化存储（共识账本/圣经/图谱）冗余；召回质量控制（相关度、分层语义）未达
+  可用线——六扇门复盘实证跨域串扰。待深度调研业内主流 memory 方案后重做再开。
+- **重开方式**：`AGENT_MEMORY_FLYWHEEL=on`（白名单式开关，其余值一律停用）。
+  表数据保留（清空为一次性操作，与开关解耦）。
+- **实现**：workflow-boot 构造闸 `isMemoryFlywheelEnabled()`；记忆相关 IPC
+  （agent-tasks.handler）返回「已停用」明示错误。

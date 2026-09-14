@@ -9,8 +9,9 @@
 
 import type { DlProjectRepository, DlProjectRow } from '@core/database/repositories/dl-project.repository'
 import type { DlConceptRepository } from '@core/database/repositories/dl-concept.repository'
-import type { DlPaceSettings, DlReviewSettings } from '@shared/types/domain-learning.types'
+import type { DlPaceSettings, DlReviewSettings, DlSpacePrereq } from '@shared/types/domain-learning.types'
 import { normalizeDlReviewSettings } from '../rules/learning-review.rules'
+import { normalizeSpacePrereqs } from '../rules/learning-prerequisites.rules'
 import { normalizePaceSettings } from './dl-pace-scheduler.service'
 import { randomUUID } from 'crypto'
 
@@ -23,6 +24,8 @@ export interface CreateSpaceInput {
   profile?: Record<string, unknown> | null
   /** 绑定的项目知识库 id（M4-B：研究/核验按此 kbId 检索） */
   kbId?: string | null
+  /** 主题学习前置要求（2026-09-12；可空，建空间后也可由研究/设置补） */
+  prerequisites?: DlSpacePrereq[]
 }
 
 export interface SpaceSummaryRow {
@@ -34,6 +37,12 @@ export interface SpaceSummaryRow {
   status: string
   createdAt: Date | null
   stats?: { mastered: number; total: number }
+}
+
+/** 空间默认模型设置（dl_project.default_model：{ providerConfigId?, modelId? }；双 null=跟随全局默认） */
+export type DlSpaceModelSettings = {
+  providerConfigId: string | null
+  modelId: string | null
 }
 
 export class LearningProjectService {
@@ -54,6 +63,7 @@ export class LearningProjectService {
       profile: input.profile,
       kbId: input.kbId ?? null,
       description: input.description,
+      prerequisites: normalizeSpacePrereqs(input.prerequisites),
     })
     await this.concepts.create({
       id: randomUUID(),
@@ -90,6 +100,30 @@ export class LearningProjectService {
     return next
   }
 
+  /** 空间默认模型（读；规范化兜底：双 null=跟随全局默认提供商） */
+  async getModelSettings(id: string): Promise<DlSpaceModelSettings> {
+    const row = await this.ensureOwned(id)
+    const dm = (row.defaultModel ?? null) as { providerConfigId?: string | null; modelId?: string | null } | null
+    return {
+      providerConfigId: dm?.providerConfigId?.trim() || null,
+      modelId: dm?.modelId?.trim() || null,
+    }
+  }
+
+  /** 空间默认模型（写；去空白，null 表示跟随全局默认） */
+  async setModelSettings(
+    id: string,
+    cfg: { providerConfigId?: string | null; modelId?: string | null } | null | undefined,
+  ): Promise<DlSpaceModelSettings> {
+    await this.ensureOwned(id)
+    const saved: DlSpaceModelSettings = {
+      providerConfigId: cfg?.providerConfigId?.trim() || null,
+      modelId: cfg?.modelId?.trim() || null,
+    }
+    await this.projects.patch(id, { defaultModel: saved })
+    return saved
+  }
+
   /** 自动推进配置(读写均校验空间,归一化兜底) */
   async getPaceSettings(id: string): Promise<DlPaceSettings> {
     const row = await this.ensureOwned(id)
@@ -113,6 +147,22 @@ export class LearningProjectService {
     const saved = normalizeDlReviewSettings(review)
     await this.ensureOwned(id)
     await this.projects.patch(id, { review: saved })
+    return saved
+  }
+
+  /**
+   * 主题学习前置要求（2026-09-12 用户需求：整个主题学习的前置要求）。
+   * 读：规范化兜底；写：规范化后落库（去空/去重/限条数），返回落库结果。
+   */
+  async getPrerequisites(id: string): Promise<DlSpacePrereq[]> {
+    const row = await this.ensureOwned(id)
+    return normalizeSpacePrereqs(row.prerequisites)
+  }
+
+  async setPrerequisites(id: string, prerequisites: unknown): Promise<DlSpacePrereq[]> {
+    const saved = normalizeSpacePrereqs(prerequisites)
+    await this.ensureOwned(id)
+    await this.projects.patch(id, { prerequisites: saved })
     return saved
   }
 

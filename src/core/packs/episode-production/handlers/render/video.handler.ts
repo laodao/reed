@@ -198,6 +198,8 @@ async function handleSynthesizeStoryboardVideo(
     if (!storyboard) {
       return { success: false, error: '分镜不存在' }
     }
+    // 闭包内 TS 收窄失效，先固定引用
+    const storyboardsRepo = db.storyboards
 
     // 检查分镜是否有画面
     if (!storyboard.frameImage) {
@@ -300,8 +302,20 @@ async function handleSynthesizeStoryboardVideo(
       customParams: providerConfig.customParams
     })
 
-    // 调用 AI 视频生成服务
-    const result = await VideoService.generateVideo(videoRequest)
+    // 调用 AI 视频生成服务；注册终态回调——同步等待超时后，后台轮询（75 分钟）
+    // 出片/失败仍能回写 DB（此前回写 owner 只有同步路径，超时即永久丢产物落库）
+    const result = await VideoService.generateVideo(videoRequest, {
+      onCompleted: async (video) => {
+        const localPath = (video as { localPath?: string }).localPath
+        if (localPath) {
+          await storyboardsRepo.update(storyboardId, { videoPath: localPath })
+          console.log('[handleSynthesizeStoryboardVideo] 后台任务完成，已回填 videoPath:', localPath)
+        }
+      },
+      onFailed: async (err) => {
+        console.warn('[handleSynthesizeStoryboardVideo] 后台任务失败:', err)
+      },
+    })
 
     if (result.success) {
       // 同步模式：直接返回了视频
@@ -323,8 +337,9 @@ async function handleSynthesizeStoryboardVideo(
       if (result.taskId) {
         console.log('[handleSynthesizeStoryboardVideo] 异步任务已创建，等待完成:', result.taskId)
 
-        // 等待任务完成（最多 5 分钟）
-        const taskStatus = await VideoService.waitForTaskCompletion(provider, result.taskId, 5 * 60 * 1000)
+        // 等待任务完成：评审 #103 实测局域网网关 15~25 分钟，原 5 分钟必然假超时——
+        // 提至 30 分钟；即便超时，后台轮询 + 终态回调仍会把产物回写 videoPath
+        const taskStatus = await VideoService.waitForTaskCompletion(provider, result.taskId, 30 * 60 * 1000)
 
         if (taskStatus.status === 'completed' && taskStatus.video?.url) {
           console.log('[handleSynthesizeStoryboardVideo] 视频生成成功，下载中...')
@@ -346,20 +361,24 @@ async function handleSynthesizeStoryboardVideo(
               }
             }
           } else {
-            // 下载失败，返回远程 URL
-            // 更新分镜的 videoPath
-            await db.storyboards.update(storyboardId, { videoPath: taskStatus.video.url })
-
+            // 下载失败：不再把（可能带签名、会过期的）远程 URL 写入 videoPath——
+            // 过期后合成阶段 ffmpeg 拉流必败。后台轮询会持续重试下载，
+            // 成功后经 onCompleted 回调自动回填本地路径
+            console.warn('[handleSynthesizeStoryboardVideo] 视频已生成但下载失败，后台将持续重试并自动回填')
             return {
-              success: true,
-              data: {
-                outputPath: taskStatus.video.url,
-                duration: taskStatus.video.duration || storyboard.duration
-              }
+              success: false,
+              error: '视频已生成但下载失败，系统将在后台持续重试下载并自动回填，请稍后刷新查看'
             }
           }
         } else {
-          // 任务失败
+          // 任务失败 / 同步等待超时。超时≠终局：后台轮询（约 75 分钟）仍在跑，
+          // 出片后经 onCompleted 回调自动回填 videoPath
+          if (taskStatus.error === '任务超时') {
+            return {
+              success: false,
+              error: '等待超时：视频任务仍在后台执行（实测最长约 25 分钟），完成后将自动回填，请稍后刷新查看'
+            }
+          }
           return { success: false, error: taskStatus.error || '视频生成失败' }
         }
       }

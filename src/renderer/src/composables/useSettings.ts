@@ -4,7 +4,8 @@
  * @description 管理应用程序的全局设置
  */
 
-import { ref, reactive, watch, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
+import { SETTINGS_KEYS, getSettingWithLegacyFallback } from '@shared/constants/settings-keys'
 
 /**
  * 字体大小配置
@@ -87,11 +88,14 @@ const loadSettings = async () => {
 
   try {
     if (window.electronAPI?.settings?.get) {
-      const result = await window.electronAPI.settings.get()
-      if (result.success && result.data) {
-        settings.language = result.data.language || 'zh-CN'
-        settings.fontSize = result.data.fontSize || 'medium'
-      }
+      // 键名走注册表（旧键 language / fontSize 兜底）
+      const port = { get: async (k: string) => (await window.electronAPI.settings.get(k))?.data ?? null }
+      const [language, fontSize] = await Promise.all([
+        getSettingWithLegacyFallback(port, SETTINGS_KEYS.uiLanguage),
+        getSettingWithLegacyFallback(port, SETTINGS_KEYS.uiFontSize),
+      ])
+      settings.language = language === 'en-US' ? 'en-US' : 'zh-CN'
+      settings.fontSize = fontSize === 'small' || fontSize === 'large' ? fontSize : 'medium'
     }
   } catch (error) {
     console.error('加载设置失败:', error)
@@ -110,8 +114,8 @@ const loadSettings = async () => {
 const saveSettings = async () => {
   try {
     if (window.electronAPI?.settings?.set) {
-      await window.electronAPI.settings.set('language', settings.language)
-      await window.electronAPI.settings.set('fontSize', settings.fontSize)
+      await window.electronAPI.settings.set(SETTINGS_KEYS.uiLanguage, settings.language)
+      await window.electronAPI.settings.set(SETTINGS_KEYS.uiFontSize, settings.fontSize)
     }
   } catch (error) {
     console.error('保存设置失败:', error)

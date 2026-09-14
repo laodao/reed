@@ -21,6 +21,7 @@ import { StoryboardEntity } from '@core/database/entities/episode-production/sto
 import {
   EpisodeMp4ExporterService,
   buildFilterComplex,
+  buildSilentInputSpecs,
   buildOutputArgs,
   type FfmpegRunner,
   type FileWriter,
@@ -151,6 +152,7 @@ function makeMockFileWriter(): FileWriter & {
 } {
   return {
     writeText: vi.fn(async () => undefined),
+    delete: vi.fn(async () => undefined),
     getTempPath: (suffix: string) => `/tmp/test_subtitle${suffix}`,
   } as any
 }
@@ -205,7 +207,9 @@ describe('EpisodeMp4ExporterService', () => {
     const writeArgs = writer.writeText.mock.calls[0]
     expect(writeArgs[0]).toBe('/tmp/test_subtitle.srt')
     expect(writeArgs[1]).toContain('张三：老板，来碗茶') // SRT 内容
-    expect(result.srtPath).toBe('/tmp/test_subtitle.srt')
+    // 复核修复：字幕已烧入成片，SRT 临时文件导出成功即清理（srtPath 不再外泄）
+    expect(result.srtPath).toBeUndefined()
+    expect(writer.delete).toHaveBeenCalledWith('/tmp/test_subtitle.srt')
 
     const filterComplex = runner.run.mock.calls[0][0].filterComplex
     expect(filterComplex).toContain("subtitles='/tmp/test_subtitle.srt'")
@@ -314,6 +318,68 @@ describe('buildFilterComplex (pure)', () => {
     })
     expect(fc).toContain("subtitles='/tmp/x.srt'")
     expect(fc).toContain('[0:a][1:a]concat=n=2:v=0:a=1[outa]')
+  })
+})
+
+describe('buildFilterComplex 音轨/帧率（复核修复 P1-7）', () => {
+  function makeShot(overrides: Partial<TimelineShot> = {}): TimelineShot {
+    return {
+      storyboardId: 'sb',
+      sceneId: 's',
+      shotNumber: 1,
+      startSec: 0,
+      endSec: 3,
+      durationSec: 3,
+      videoPath: '/v.mp4',
+      transition: null,
+      ...overrides,
+    }
+  }
+
+  it('缺省 audioFlags：保持旧行为（全部 [i:a]）', () => {
+    const fc = buildFilterComplex({
+      shots: [makeShot(), makeShot({ shotNumber: 2 })],
+      width: 1280,
+      height: 720,
+    })
+    expect(fc).toContain('[0:a][1:a]concat=n=2:v=0:a=1[outa]')
+  })
+
+  it('部分无音轨：无音轨输入映射到静音占位流（编号 = 文件数起顺延）', () => {
+    const fc = buildFilterComplex({
+      shots: [makeShot(), makeShot({ shotNumber: 2 })],
+      width: 1280,
+      height: 720,
+      audioFlags: [true, false],
+    })
+    // 第 2 路无音轨 → 用静音占位输入（文件数 2 + 第 0 个静音 = 流 2）
+    expect(fc).toContain('[0:a][2:a]concat=n=2:v=0:a=1[outa]')
+    // 静音占位规格与 audioFlags 对齐
+    expect(buildSilentInputSpecs([true, false])).toEqual(['anullsrc=r=44100:cl=stereo'])
+    expect(buildSilentInputSpecs([false, false])).toEqual([
+      'anullsrc=r=44100:cl=stereo',
+      'anullsrc=r=44100:cl=stereo',
+    ])
+    expect(buildSilentInputSpecs(undefined)).toEqual([])
+  })
+
+  it('全部无音轨：concat 全部走静音占位流', () => {
+    const fc = buildFilterComplex({
+      shots: [makeShot(), makeShot({ shotNumber: 2 })],
+      width: 1280,
+      height: 720,
+      audioFlags: [false, false],
+    })
+    expect(fc).toContain('[2:a][3:a]concat=n=2:v=0:a=1[outa]')
+  })
+
+  it('scale 链带 fps 归一（xfade 要求两路 fps 一致）', () => {
+    const fc = buildFilterComplex({
+      shots: [makeShot()],
+      width: 1280,
+      height: 720,
+    })
+    expect(fc).toContain('fps=30')
   })
 })
 

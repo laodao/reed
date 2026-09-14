@@ -8,12 +8,201 @@
  */
 
 import { pickNextToLearn } from '../rules/learning-sequence.rules'
+import { buildPrerequisiteBriefing } from '../rules/learning-prerequisites.rules'
+import { assessMapCoverage, mapCoverageBriefing, type MapCoverageResult } from '../rules/learning-map-coverage.rules'
 import type { ICoreDatabaseManager } from '@core/database/database-manager.interface'
+import type { DlSpacePrereq } from '@shared/types/domain-learning.types'
+import { DL_ESSENCE_TYPES, lessonTemplateHint } from '@shared/utils/lesson-template'
 import { BUILTIN_SKILLS } from '@core/platform/workflow/skills/builtin-skills'
 import { splitSkillFrontmatter } from '@core/platform/workflow/skills/skill-parser'
 
 /** 领域起步研究技能 id（dlEmptySpaceMission / 宿主注入共用） */
 export const DL_BOOTSTRAP_SKILL_ID = 'learning-space-bootstrap'
+
+/** 知识体系补全技能 id（2026-09-12：AI 补全地图的作业规范；宿主按消息标记注入正文） */
+export const DL_MAP_COMPLETION_SKILL_ID = 'learning-map-completion'
+
+// ==================== 固定流程（2026-09-13 用户需求：先对齐诉求 → 确认体系 → 才落库） ====================
+
+/**
+ * 用户确认「诉求理解」后，前端发给 agent 的消息标记。
+ * 宿主据此注入"第 2 步：规划知识体系"指令（与 MAP_COMPLETION_MARKER 同构：标记即契约）。
+ */
+export const PLAN_UNDERSTANDING_CONFIRMED_MARKER = '【已确认诉求理解】'
+/** 用户确认「知识体系」后，前端发给 agent 的消息标记（注入"第 3 步：按方案落库"指令）。 */
+export const PLAN_SYLLABUS_CONFIRMED_MARKER = '【已确认知识体系】'
+
+/**
+ * 该消息是否属于固定流程的某一阶段（含两个确认标记）。
+ * 宿主据此把这一轮也当「规划落库轮」处理——否则补图流程的第 2/3 轮会因为文案不含"补全"动词
+ * 而掉出规划轮，导致阶段指令不注入、门禁不生效（2026-09-13 自查发现的坑）。
+ */
+export function isPlanPhaseMessage(message: string): boolean {
+  const t = String(message ?? '')
+  return t.includes(PLAN_UNDERSTANDING_CONFIRMED_MARKER) || t.includes(PLAN_SYLLABUS_CONFIRMED_MARKER)
+}
+
+/** 阶段 1（对齐诉求）：本轮只提交诉求理解草案，不落库 */
+export function planUnderstandingPhaseInstruction(spaceName: string): string {
+  return `【固定流程·第 1 步：对齐诉求】
+本次不是"直接生成知识点"，而是**先确认对诉求的理解**：
+1. 读快照里的【学习主题诉求（用户原话）】，必要时先做少量资料探查（S1）；
+2. 调用 **dl_propose_understanding** 提交草案：goalSummary（一句话复述他把什么学到什么程度）、coverage（**逐条**列出要覆盖的对象与场景——用户点名的产品/市场/数据/动作各自都要有落点）、audience、notDoing（明确不做什么）、keyExpectations；
+3. **本轮不要调用 dl_save_concept / dl_save_relation**（规划轮门禁会直接拒绝），提交草案后就用一段话说明"等你确认或纠正"，然后停下。
+用户确认后，宿主会以新一轮消息驱动第 2 步（规划知识体系）。
+（空间：「${spaceName}」）`
+}
+
+/**
+ * 阶段 2（规划知识体系）：诉求已确认，本轮只提交知识体系草案。
+ */
+export function planSyllabusPhaseInstruction(input: {
+  spaceName: string
+  understandingSummary: string
+}): string {
+  return `【固定流程·第 2 步：规划知识体系】（用户已确认诉求理解）
+已确认的诉求理解：
+${input.understandingSummary}
+
+本轮只做一件事：
+1. 按已确认的诉求，结合资料与模型知识规划**分支目录 + 知识点**（粒度细到"学完能做一件具体小事"）；
+2. 调用 **dl_propose_syllabus** 提交：branches[].name + 每个分支下的 concepts[]（name/definitionShort/prerequisites/layer）——**每个分支都必须有知识点，不许出现空分支**（上一版「投资与配置」就是空的）；
+3. 前置关系要在方案里写清（prerequisites），落库时再落成边；诉求点名的对象必须在方案里有落点；
+4. **本轮不要调用 dl_save_concept / dl_save_relation**（门禁会拒绝），提交方案后说明"等你勾选确认"，然后停下。
+用户确认后，宿主会以新一轮消息驱动第 3 步（按方案落库）。
+（空间：「${input.spaceName}」）`
+}
+
+/**
+ * 阶段 3（按方案落库）：体系已确认，本轮才允许建点建边并出首份讲义。
+ */
+export function planSavePhaseInstruction(input: {
+  spaceName: string
+  syllabusLines: string
+  conceptCount: number
+}): string {
+  return `【固定流程·第 3 步：按已确认的知识体系落库】（用户已确认，落库门禁已放行）
+已确认方案（${input.conceptCount} 个知识点）：
+${input.syllabusLines}
+
+本轮执行顺序（**不要重新规划**，方案就是用户已确认的版本）：
+1. 先落分支目录：dl_save_concept（nodeType=group，parentId=领域根），拿到各 group 的 id；
+2. 再落知识点：dl_save_concept（parentId=所属分支 group id，definitionShort + prerequisites 必填）；
+3. 逐条落前置边：dl_save_relation（source=前置 → target=本概念）；
+4. 挑最基础的一个 dl_save_card 出第一份讲义（首区 meta + 前置声明 + 证据）；
+5. **方案里的知识点要全部落库**；确有必要新增（方案外的），要在总结里单独说明新增了什么、为什么；
+6. 收尾报数：建成几个分支/知识点/边、首份讲义给了谁、还有哪些没建成及原因。
+（空间：「${input.spaceName}」）`
+}
+
+/** 方案清单的可读行（注入阶段 3 指令用；与 planNodeNames 同源的渲染） */
+export function formatSyllabusLines(
+  syllabus: import('@shared/types/domain-learning.types').DlPlanSyllabus,
+): string {
+  const lines: string[] = []
+  for (const b of syllabus.branches ?? []) {
+    lines.push(`- 分支「${b.name}」${b.definitionShort ? `：${b.definitionShort}` : ''}`)
+    for (const c of b.concepts ?? []) {
+      const layer = c.layer != null ? `layer=${c.layer}` : 'layer=?'
+      const pre = c.prerequisites?.length ? ` 前置=${c.prerequisites.join('、')}` : ''
+      lines.push(`  · ${c.name}（${layer}${pre}）${c.definitionShort ? `：${c.definitionShort}` : ''}`)
+    }
+  }
+  for (const c of syllabus.rootConcepts ?? []) {
+    lines.push(`- 根层知识点：${c.name}${c.definitionShort ? `：${c.definitionShort}` : ''}`)
+  }
+  return lines.join('\n')
+}
+
+/**
+ * 整体知识点体系清单（分支配概念树，紧凑、有上限）。
+ * @module packs/domain-learning/services/dl-agent-deps
+ *
+ * 2026-09-14 补：此前研究轮快照只有聚合统计/缺口/当前概念邻居，模型看不到"空间里已有哪些分支与概念"，
+ * 导致研究时容易和已有概念撞名、分不清归属。这里把完整树（根层 group → 概念；孤点归到「未归类」）
+ * 折叠成有上限的行，注入 research/tutor/task 快照，让模型一眼看清全图。
+ *
+ * - 只输出**名字 + 类型 + 是否已有讲义**（✓），不输出定义/讲义全文——既有 current 概念文本与
+ *   前置/缺口清单已给细节，这里是"结构"盲区补全；
+ * - `limit` 上限（默认 80 行）：超长地图截断并注明，避免把上下文窗口/本轮长度撑爆。
+ * @returns 渲染好的行（空地图返回 []）
+ */
+export function buildMapInventoryLines(
+  concepts: Array<{
+    id: string
+    name: string
+    nodeType: string
+    parentId: string | null
+    cardId?: string | null
+  }>,
+  limit = 80,
+): string[] {
+  if (!concepts.length) return []
+
+  const isKnowledge = (c: { nodeType: string }): boolean => c.nodeType !== 'group'
+  const groups = concepts.filter((c) => c.nodeType === 'group')
+  const groupById = new Map(groups.map((g) => [g.id, g]))
+  const roots = groups.filter((g) => !g.parentId)
+  const sortedGroups = [...roots, ...groups.filter((g) => g.parentId)].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+
+  const lines: string[] = []
+  const visitedConcepts = new Set<string>()
+  const mark = (c: { nodeType: string; cardId?: string | null }): string =>
+    `${c.nodeType}${c.cardId ? ' ✓' : ''}`
+
+  // 根层分支（nodeType=group）
+  for (const g of sortedGroups) {
+    if (lines.length >= limit) break
+    lines.push(`- 分支「${g.name}」`)
+    for (const c of concepts.filter((x) => x.parentId === g.id && isKnowledge(x))) {
+      if (lines.length >= limit) break
+      lines.push(`  · ${c.name}（${mark(c)}）`)
+      visitedConcepts.add(c.id)
+    }
+  }
+
+  // 已挂在 group 下的概念已访问；剩下来的是根层知识概念，以及"父级不是本空间 group"的孤点
+  for (const c of concepts) {
+    if (!isKnowledge(c) || visitedConcepts.has(c.id)) continue
+    if (lines.length >= limit) break
+    const underLocalGroup = !!c.parentId && groupById.has(c.parentId)
+    lines.push(`${underLocalGroup ? '  ' : '- '}${underLocalGroup ? '' : '根层/未归类：'}· ${c.name}（${mark(c)}）`)
+    visitedConcepts.add(c.id)
+  }
+
+  // 超长地图：截断并注明，避免撑爆上下文
+  if (lines.length >= limit) {
+    lines.length = limit
+    lines.push(`…（地图共 ${concepts.length} 个节点，仅列示前 ${limit} 行，请按缺口清单与选题决定补哪些）`)
+  }
+  return [`【当前知识点体系清单】（分支 → 概念；✓=已有讲义）`, ...lines]
+}
+
+/** 诉求理解的可读摘要（注入阶段 2 指令用） */
+export function formatUnderstandingSummary(
+  u: import('@shared/types/domain-learning.types').DlPlanUnderstanding,
+): string {
+  const parts = [`目标：${u.goalSummary}`, `要覆盖：${u.coverage.join('、')}`]
+  if (u.audience) parts.push(`读者：${u.audience}`)
+  if (u.notDoing?.length) parts.push(`不做：${u.notDoing.join('、')}`)
+  if (u.keyExpectations?.length) parts.push(`期望：${u.keyExpectations.join('；')}`)
+  return parts.join('\n')
+}
+
+
+/**
+ * 「补全知识地图」消息标记（dlMapCompletionMission 的固定开头）。
+ * 宿主据此在 task 模式下注入 learning-map-completion 技能正文——两边共用同一常量/同一句话，
+ * 由契约用例钉死（改文案不改标记会导致注入失效，测试会红）。
+ */
+export const MAP_COMPLETION_MARKER = '【补全知识地图】'
+
+/** 取内置技能正文（去 frontmatter）；找不到返回 null */
+export function dlSkillBody(skillId: string): string | null {
+  const entry = BUILTIN_SKILLS.find((s) => s.id === skillId)
+  if (!entry) return null
+  return splitSkillFrontmatter(entry.markdown).body.trim() || null
+}
 
 /**
  * 取 learning-space-bootstrap 技能正文（S1~S5 全文，去掉 frontmatter）。
@@ -22,9 +211,26 @@ export const DL_BOOTSTRAP_SKILL_ID = 'learning-space-bootstrap'
  *  过程型技能会"看似完成实则零落库"，故不再依赖 invoke_skill 执行它。）
  */
 export function dlBootstrapSkillBody(): string | null {
-  const entry = BUILTIN_SKILLS.find((s) => s.id === DL_BOOTSTRAP_SKILL_ID)
-  if (!entry) return null
-  return splitSkillFrontmatter(entry.markdown).body.trim() || null
+  return dlSkillBody(DL_BOOTSTRAP_SKILL_ID)
+}
+
+/** 用户自然语言里同类意图的识别（用户在任务框直接说"补全知识体系"时也注入技能正文） */const MAP_COMPLETION_INTENT =
+  /(补全|补齐|完善|追加|添加|新增|补充).{0,12}(知识体系|知识地图|知识点|知识骨架|体系|骨架|地图|概念)/
+/** 语序颠倒的说法（"把缺的知识点补上"）：名词在前、动作在后 */
+const MAP_COMPLETION_INTENT_REVERSED =
+  /(知识体系|知识地图|知识点|知识骨架|体系|骨架|地图|概念).{0,8}(补上|补齐|补全|完善|添加|新增|落库)/
+
+/**
+ * 该轮消息是否要求「补全知识地图」（task 模式据此注入技能正文）。
+ * 命中条件：① 按钮指令的固定标记；② 用户自然语言里同义的建图/补全意图（含语序颠倒的说法）。
+ */
+export function shouldInjectMapCompletionSkill(message: string): boolean {
+  const text = String(message ?? '')
+  return (
+    text.includes(MAP_COMPLETION_MARKER) ||
+    MAP_COMPLETION_INTENT.test(text) ||
+    MAP_COMPLETION_INTENT_REVERSED.test(text)
+  )
 }
 
 /** 快照信息（宿主每轮装配时调用） */
@@ -36,6 +242,12 @@ export interface DlSpaceSnapshot {
   isEmptySpace: boolean
   /** 空间名（起步引导文案用；未知则回退 id） */
   spaceName: string | null
+  /** 学习主题诉求（dl_project.description 用户原话；2026-09-13 起进快照与起步指令） */
+  spaceDescription?: string | null
+  /** 主题学习前置要求（2026-09-12：整个领域的学习门槛；空数组=尚未声明） */
+  spacePrereqs: DlSpacePrereq[]
+  /** 地图完整度诊断（2026-09-12：结构缺口清单，供模型按缺口补全） */
+  coverage: MapCoverageResult
 }
 
 /** 纯判定：是否存在知识概念叶（group 目录不算） */
@@ -43,16 +255,35 @@ export function hasConceptLeaves(concepts: Array<{ nodeType: string }>): boolean
   return concepts.some((c) => c.nodeType !== 'group')
 }
 
-/** 空空间起步研究指令（research 会话在快照为空时追加；指向 learning-space-bootstrap 技能并保留兜底） */
-export function dlEmptySpaceMission(opts: { spaceName: string }): string {
-  return `【空领域起步研究】学习空间「${opts.spaceName}」当前还没有任何知识点，本次任务=给整个领域做一次"起步研究"。
-执行方式：宿主已把 learning-space-bootstrap 技能正文注入本会话快照（见下方【learning-space-bootstrap 技能正文】），请直接按该技能 S1~S5 阶段执行、每阶段向用户回报进度，不要再 discover/invoke 重复调用该技能；
-若技能不可用，按此摘要执行（同技能口径）：
-1. 先规划并落库 3-6 个最核心的知识点（dl_save_concept，parentId 优先填快照"目录分组"里的领域根 group id，没有则留 null）；
-2. 再为它们建立学习顺序关系（dl_save_relation，前置关系 prerequisite）；
-3. 挑其中"最基础、第一个要学"的概念 dl_save_card 产出一份可展示的讲义草稿（区级内容 + evidenceSources）；讲义每条论断的证据必须来自你实际读到的资料（知识库文档/网页/arXiv/API），查不到就少写，不得编造；
-4. 其余概念保持"待研究"即可，不必一次全部出讲义；
-5. 全部做完用一段话总结：建立了哪些概念与关系、首个讲义给谁、下一步建议。`
+/**
+ * 空空间起步研究指令（research 会话在快照为空时追加；指向 learning-space-bootstrap 技能并保留兜底）
+ *
+ * 2026-09-13 用户反馈「金融理财主题生成的知识点与期望差别较大」复盘：
+ * 原实现只吃 `spaceName`，用户写在空间描述里的真实诉求（"想听懂股票、债券、期货、做空做多、
+ * MBS、美元…能读财报与行情"）**从未进入模型上下文**，模型只能凭「金融理财」四个字猜，
+ * 于是做成了一份"个人理财规划"（记账→复利→风险→防线→配置）。
+ * 现在把诉求原文一并带上，并要求骨架覆盖诉求点名的对象与场景。
+ */
+export function dlEmptySpaceMission(opts: { spaceName: string; description?: string | null }): string {
+  const need = String(opts.description ?? '').trim()
+  const needBlock = need
+    ? `
+【用户诉求（用户原话，最高优先级）】
+${need}
+
+规划纪律（先对齐再规划，**不得凭空间名猜主题**）：
+1. 先把这段话复述成你理解的「学习目标 / 要覆盖的对象与场景 / 明确不做什么」，写进你的阶段回报；
+2. 骨架必须**覆盖诉求里点名的对象与场景**——诉求点到的名词（产品、市场、数据、动作）各自要有落点，不允许只搭一层抽象框架（如"地基/时间与风险/防线"）就交差；
+3. 诉求之外只补该领域公认主干，并在总结里注明"诉求未涵盖、按领域主干补的"。
+`
+    : ''
+  return `【空领域起步研究】学习空间「${opts.spaceName}」当前还没有任何知识点。本次任务**只是固定流程的第 1 步：对齐诉求**。${needBlock}
+执行方式（顺序不可跳）：
+1. **先做少量资料探查**：知识库优先（wf_kb_retrieve），其次联网（wf_web_extract / http_get / web_search 若可用）；预算 3-6 次读工具，够用即停，边读边记要点与出处；
+2. **提交诉求理解草案**：调用 dl_propose_understanding（goalSummary / coverage / audience / notDoing / keyExpectations），系统会弹窗让用户确认或纠正；
+3. **本轮不要调用 dl_save_concept / dl_save_relation**——规划轮门禁会直接拒绝（首批知识点必须等用户确认知识体系之后才允许落库）；
+4. 提交草案后用一段话说明"等你确认或纠正"，然后**停下**，不要继续规划细节；
+5. 用户确认后宿主会以新一轮消息驱动第 2 步（dl_propose_syllabus 规划知识体系），确认后再第 3 步（按方案落库建点/建边/出首份讲义）。`
 }
 
 export async function computeDlSpaceSnapshot(
@@ -109,17 +340,74 @@ export async function computeDlSpaceSnapshot(
     ? [`本空间绑定知识库 id：${project.kbId}（需要读私有资料时把 wf_kb_retrieve 的 knowledgeBaseId 填此 id；讲义证据可用 kbDocId 回链）`]
     : []
 
+  // 前置要求简报（2026-09-12 用户需求：主题级 + 知识点级；让模型每轮都按门槛与顺序生成）
+  // 读侧信任仓储已解析结果（写入时已规范化并物化 inSpace）
+  const spacePrereqs = project?.prerequisites ?? []
+  const prereqLines = buildPrerequisiteBriefing({
+    spacePrereqs,
+    concepts: concepts.map((c) => ({ id: c.id, name: c.name, nodeType: c.nodeType, attrs: c.attrs })),
+    relations: relations.map((r) => ({ source: r.sourceId, target: r.targetId, type: r.relationType })),
+  })
+
+  // 地图完整度简报（2026-09-12 用户反馈"知识体系不够完善"）：
+  // 研究模式一次只保证当前概念的讲义，地图不会自己变完整——这里把结构性缺口摆到模型面前，
+  // 让每一轮研究顺手补 1-3 个缺口概念（口径见 dlResearchSystemPrompt 第 14 条）。
+  const coverage = assessMapCoverage({
+    spaceName: project?.name ?? null,
+    concepts: concepts.map((c) => ({
+      id: c.id,
+      name: c.name,
+      nodeType: c.nodeType,
+      parentId: c.parentId,
+      researchState: c.researchState,
+      cardId: c.cardId,
+      attrs: c.attrs,
+    })),
+    relations: relations.map((r) => ({ source: r.sourceId, target: r.targetId, type: r.relationType, verified: r.verified })),
+    spacePrereqs,
+  })
+  const coverageLines = mapCoverageBriefing(coverage)
+
+  // 整体知识点体系清单（2026-09-14 补：让模型看清全部分支/概念的树形结构，避免撞名/归属不清）
+  const mapInventoryLines = buildMapInventoryLines(
+    concepts.map((c) => ({
+      id: c.id,
+      name: c.name,
+      nodeType: c.nodeType,
+      parentId: c.parentId,
+      cardId: c.cardId,
+    })),
+  )
+
+  // 学习主题诉求（2026-09-13）：用户创建空间时写的原话必须进上下文——
+  // 之前只送 name+goal，模型只能凭「金融理财」猜，规划出的骨架与用户期望完全不同。
+  const need = String(project?.description ?? '').trim()
+  const needLines = need ? [`【学习主题诉求（用户原话，规划与讲义都以它为准）】${need}`] : []
+  // 空间档案（题主选的领域类型：方法步骤/理论体系…；影响骨架取向）
+  const profile = project?.profile ?? null
+  const profileLines = profile
+    ? [
+        `空间档案：${String(profile.kindLabel ?? '—')}（${String(profile.nature ?? '—')}` +
+          `${Array.isArray(profile.emphasis) && profile.emphasis.length ? `；侧重 ${profile.emphasis.join('/')}` : ''}）`,
+      ]
+    : []
+
   const head = [
     `学习空间：${project?.name ?? spaceId}（目标：${project?.goal ?? '—'}）`,
+    ...needLines,
+    ...profileLines,
     `掌握度：${masteredCount}/${leafCount} 个知识概念已理解`,
     ready ? `推荐下一个待学概念：${concepts.find((c) => c.id === ready)?.name ?? ready}` : '（全部已理解）',
   ]
 
   return {
-    text: [...head, ...kbLines, ...groupLines, ...conceptText].join('\n'),
+    text: [...head, ...kbLines, ...groupLines, ...prereqLines, ...coverageLines, ...mapInventoryLines, ...conceptText].join('\n'),
     nextConceptId: ready,
     isEmptySpace: !hasConceptLeaves(concepts.map((c) => ({ nodeType: c.nodeType }))),
     spaceName: project?.name ?? null,
+    spaceDescription: need || null,
+    spacePrereqs,
+    coverage,
   }
 }
 
@@ -137,6 +425,10 @@ export function dlResearchSystemPrompt(): string {
 你的工作纪律：
 1. 需要研究概念时，先调用 discover_capabilities 查看可用技能，再用 invoke_skill 调用学习技能：learning-domain-map（建骨架）/ learning-concept-explainer（单概念讲义）/ learning-source-collector（采集前先规划资料路由）/ learning-question-generator（多视角补盲提问）/ learning-relation-miner（从材料提取关系与建议）/ learning-lesson-updater（已有讲义做增量修订，别整篇重写）/ learning-practice-builder（出分层练习与自测）；
 2. 研究产出经 dl_save_concept / dl_save_relation 把概念与关系建议落为草稿（用户会在地图人审中确认），经 dl_save_card 把讲义卡片落为草稿；
+   - **讲义区集契约（2026-09-13 起 dl_save_card 硬校验，违反会被拒绝）**：区名只能用下表中的在册区名，并按该知识本质类型给定的顺序排（用不到的区可以跳过，但不能乱序、不能自造区名）：
+${DL_ESSENCE_TYPES.map((t) => `     · ${t}：${lessonTemplateHint(t)}`).join('\n')}
+     区标题由模板派生（**不要自己起大标题**，同一类型同一区的标题必须一致）；区正文里的小标题一律用 \`###\`（区标题已占二级语义），不要写 \`##\`；
+     自测的**题目与答案必须分开**：题面放 selfcheck，答案放独立 answers 区；或所有题目写完后用**独占一行**的「答案」/「参考答案」小标题引出（系统会自动拆成独立区）。答案写在题目行里（\`**答案 1**：…\`、\`（答：…）\`）会被拒绝——渲染层据此把答案默认折叠，读者先做再对；
 3. 讲义必须带 evidence：dl_save_card 的 evidenceSources 至少一条，否则工具会拒绝——宁可少产出一条，也不落无出处的断言；evidence 必须来自你实际读到的资料（标题/URL/文档 id + 引文），不得编造；
 4. 采集纪律（会话提供读工具时）：资料不足先用 learning-source-collector 规划，再按需取——知识库优先（wf_kb_retrieve）；网页正文提取用 wf_web_extract；API/原文用 http_get（arXiv 论文用 http_get 请求 export.arxiv.org/api/query，如 search_query=all:关键词 或 id_list=编号）；模型先验与资料要区分：先验内容在卡片 attrs 或注释里标 needs_verification；
 5. 联网搜索只在提供了 web_search 工具时使用；没有 web_search 时不得假装搜索，改用知识库 / 给定 URL / arXiv；
@@ -145,8 +437,26 @@ export function dlResearchSystemPrompt(): string {
 8. 全部完成后用一段话总结：研究了什么、读了哪些资料、产出哪些草稿、下一步建议（等用户人审/继续学习）；
 9. 归属（M3-A）：快照「目录分组」里若存在契合的目录，dl_save_concept 的 parentId 填其目录 id；不确定就保持 null（根层），地图人审会再归类；
 10. 知识库优先（M4-B）：快照含「本空间绑定知识库 id」时，需用私有资料先以该 id 调 wf_kb_retrieve 检索（命中即据此提炼，讲义 evidence 可回链 kbDocId），再考虑联网与模型先验；无绑定则跳过 KB 检索；
-11. 难度门禁（入门目标必读）：空间目标为「入门/零基础」时，若目标概念需要进阶记号（∫ 积分、∂ 偏导、极限、期望/方差记号、iid、分布族 N(·)/Θ、测度等）而空间里还没有对应的基础概念与讲义，**先补前置**——用 dl_save_concept 建这些基础概念（如「积分基础」「随机变量与分布」「期望与方差」）、用 dl_save_relation 建 prerequisite（基础 → 本概念），并为其中最基础的那个先 dl_save_card 出讲义，再回来做本概念；若确实要直接产出本概念，必须在讲义首区（key=meta）加「记号热身」逐条给出这些记号的读法与最小例子，否则 dl_save_card 会被难度门禁拒绝（拒绝信息里会说明该补什么）；
-12. 数值自检：讲义里写出的算式要自己回算并写清中间量（如 0.99×0.01=0.0099、0.05×0.99=0.0495、0.0099/0.0594≈0.167）；落库时会自动回算，发现自相矛盾会提示你重发修订版。`
+11. 循序渐进与前置门禁（2026-09-12 起对**所有目标**生效，不再只拦「入门」）：
+   - 领域图必须自底向上成链——每个概念的前置都要用 dl_save_relation 落成 prerequisite 边，不能只在文字里说顺序；主干里出现需要进阶记号的概念（积分 ∫、偏导 ∂、极限、期望/方差、iid、分布族、矩阵/向量运算、导数/链式法则等）时，先把对应基础概念（如「线性代数基础」「导数与链式法则」「概率与随机变量」「期望与方差」）建成概念、建成前置边，并为其中最基础的那个先出讲义；
+   - 讲义首区必须是 meta 且必须写「前置」小节（已掌握哪些概念；确无前置就写"无需前置"）；
+   - 讲义正文用到的前置能力，必须二选一：图上已有对应前置概念并排在前面，或在 meta 的「记号热身」里给读法与最小例子；都没有 → dl_save_card 会被循序渐进门禁拒绝（拒绝信息里会写明该补哪些概念/关系/讲义）；
+   - 被门禁拒绝时不要原样重发，按拒绝信息先补前置概念与关系，再回来发本卡。
+12. 数值自检：讲义里写出的算式要自己回算并写清中间量（如 0.99×0.01=0.0099、0.05×0.99=0.0495、0.0099/0.0594≈0.167）；落库时会自动回算，发现自相矛盾会提示你重发修订版。
+13. 前置要求（2026-09-12 起，生成知识点阶段就要做，别等到出讲义）：
+   - **整个主题的前置**：进入一个空间后先看快照的【主题前置要求】。若尚未声明，用 dl_save_space_prereqs 落库"学这个领域之前需要具备什么"（name + why + level，含领域外需自备的能力，如 Python 基础 / 概率统计基础；inSpace 由系统反推，不用自己判断）；确无需前置就传空数组显式说明；
+   - **每个知识点的前置**：dl_save_concept 时必须填 prerequisites（学它之前必须先掌握的概念名数组）——这是"顺序"的声明；随后用 dl_save_relation 把每条前置落成边（source=前置 → target=本概念），顺序才真正生效；快照里带 ⚠️ 的条目就是"只有声明没建边/没落点"的欠账，优先补齐；
+   - **顺序即路径**：按 layer 从小到大检查"每一步只需要前面已出现的知识"；相邻层级跨度不得超过一步——例如「张量」到「自动微分与反向传播」之间必须先有「导数与链式法则」这类前置概念；前置在图上没有落点就先 dl_save_concept 建它，确实属领域外能力才放进主题前置要求。
+14. 补齐知识体系（2026-09-12 起，研究模式也要做；用户反馈"知识体系不够完善"）：
+   - 快照里有【地图完整度】与缺口清单；**每轮研究除了给当前概念产出讲义，还要顺手补 1-3 个结构性缺口**（本轮上限 3 个新概念，别把一轮做成大工程）：优先 high 缺口（无入口/不可达/平铺一层）→ 再补 medium（缺中间台阶的 funnel、声明未落边、粒度太粗）；
+   - 具体做法：dl_save_concept（给 definitionShort + prerequisites）→ dl_save_relation 落前置边（source=前置 → target=本概念）；补的缺口概念要保持"学完能做一件具体小事"的粒度，并按分支目录归类（有合适 group 就挂上去）；
+   - **不要**为了拉高分数而堆无意义概念：只补你确知属于该领域主干、且读者必经的概念；拿不准就不建，在总结里说明"想建但需要资料/确认"；
+   - 一轮结束时用一句话说明：地图完整度从多少变成多少（快照给了当前值）、本轮补了哪些概念与边。
+15. 以用户诉求为准（2026-09-13 用户反馈「金融理财主题生成的知识点与期望差别较大」）：
+   - 快照里的【学习主题诉求（用户原话）】是规划知识体系与写讲义的**最高优先级依据**；空间名只是一个标签，**不得凭名字猜主题**——例如名字叫「金融理财」而诉求写的是"听懂股票/债券/期货/做空做多/MBS/美元、能读财报与行情"时，要按证券与金融产品的知识搭骨架，而不是做成记账、保险、资产配置这类"个人理财规划"；
+   - 骨架要**覆盖诉求点名的对象与场景**（点到的产品、市场、数据、动作各自有落点），不要只搭一层抽象框架；
+   - **被额度或门禁拒绝的条目必须写进总结**：写明是哪些知识点/关系没建成、原因是什么（额度用尽 / 门禁拒绝）、用户下一步点哪个入口能补上（如「补全知识地图」）——只报成功数、让缺口无声消失是不可接受的。
+16. 失败与额度纪律：同一工具在本轮额度用尽后不要反复重试（会白烧额度），把未完成的条目按第 15 条写进总结；额度只在本轮有效，下一轮会重置。`
 }
 
 /** 研究模式采集可用性提示（追加进快照；web_search 是否有默认搜索源决定 bind） */
@@ -183,6 +493,15 @@ export function dlTaskSystemPrompt(): string {
    （wf_web_extract / http_get / arXiv；web_search 仅在会话提供该工具时使用，没有就明说未联网核验）收集内容；
 3. 整理/规划/生成：整理概念与笔记、归纳总结、制定学习顺序与计划、生成讲义/提纲等——需要落库时走
    dl_save_concept / dl_save_relation / dl_save_card（讲义每条论断须有真实证据来源，无证据不落卡）；
+   其中「**补全知识地图**」类指令（"追加/补充知识点""补全知识体系""AI 补全地图"）按下面的口径做
+   （**完整作业规范见技能 learning-map-completion**：宿主在该任务的会话里会注入其正文，按它的四阶段执行）：
+   - **顺序固定：先采集 → 再规划 → 再落库 → 最后自检**（2026-09-12 用户口径：先查知识库/联网，结合获取到的内容与模型自身知识规划整体体系，二者必须区分；不许跳过采集直接凭先验建图）；
+   - 采集（预算 3-6 次读工具，够用即停；同一步可并行多个调用）：知识库优先（wf_kb_retrieve 检索"目录/知识体系/大纲/综述/学习路径"）→ 再联网（web_search / wf_web_extract / http_get / arXiv）；边读边记要点与出处（标题/URL/文档 id + 引文）；两处都取不到就明说"本轮无外部资料"；
+   - 规划：用资料事实搭主干（分支/层级 layer/前置），资料没覆盖但属公认主干的概念可用先验补，但**必须标注**——有资料支撑写 attrs 的 evidenceLevel 为「有原文：<出处标题/URL/文档 id>」，纯先验写 attrs 的 prior=true 且 evidenceLevel 为「prior_needs_verification：本轮无资料覆盖」；逐条给 prerequisites 并自检「不跳级 + 相邻层级跨度不超过一步」；粒度细到"学完能做一件具体小事"；
+   - 落库：dl_save_concept（含 definitionShort/prerequisites/parentId/attrs 证据级别）→ dl_save_relation（逐条 prerequisite 边，source=前置 → target=本概念）→ 领域外需自备能力走 dl_save_space_prereqs；已有概念只补边不重建（同名 skipped 属正常）；
+   - 判缺口四类：① 主干缺失（零基础到目标之间缺台阶）② 前置缺失（快照带 ⚠️ 的条目）③ 跨度太大（相邻层级跨度超过一步，如 张量 → 自动微分之间缺「导数与链式法则」）④ 粒度太粗（把整个领域当知识点）；快照【地图完整度】的缺口清单要逐条落实；
+   - 只补结构：不改写已有概念、不产出讲义、**不编造出处**（没读到原文只能按先验标注）；收尾说明新增了什么、依据来自哪些资料、哪些是先验、还缺什么；
+   - 用户在界面上手工建的知识点（source=manual）没有讲义、researchState=unresearched：补全时优先把它们接进主干（补前置/补后继），不要另建同义概念；
 4. 技能与工作流：任务契合平台技能时，先 discover_capabilities 查看，再 invoke_skill 执行
    （如 learning-space-bootstrap 领域起步研究、learning-concept-explainer 概念讲义、learning-lesson-planner
    讲义规划、learning-domain-map 领域骨架、learning-lesson-updater 讲义增量修订、learning-practice-builder 出练习题等）；若平台已有适用的工作流模板/定义，也可用 run_workflow

@@ -129,18 +129,22 @@ export async function confirmDesignPackage(
     const targets = itemIds?.length ? pkg.items.filter((i) => itemIds.includes(i.id)) : pkg.items
     const rest = itemIds?.length ? pkg.items.filter((i) => !itemIds.includes(i.id)) : []
 
+    // 实跑修复：落库失败的条目保留在草稿包里（旧实现无论成败一律移出，失败即丢数据）
+    const failed: DesignItem[] = []
     for (const item of targets) {
       const r = await persistDesignItem(db, projectId, item, distiller, graph)
+      if (!r.ok) failed.push(item)
       results.push({ itemId: item.id, label: item.label, ok: r.ok, message: r.message })
     }
 
+    const allOk = failed.length === 0
     const packages = cur.designPackages.map((p) =>
       p.id === packageId
         ? {
             ...p,
-            items: rest,
-            status: itemIds?.length ? p.status : ('confirmed' as const),
-            confirmedAt: itemIds?.length ? p.confirmedAt : Date.now(),
+            items: [...rest, ...failed],
+            status: itemIds?.length ? p.status : allOk ? ('confirmed' as const) : ('draft' as const),
+            confirmedAt: itemIds?.length ? p.confirmedAt : allOk ? Date.now() : p.confirmedAt,
           }
         : p,
     )
@@ -177,17 +181,27 @@ async function persistDesignItem(
 ): Promise<{ ok: boolean; message: string }> {
   try {
     if (item.kind === 'card') {
-      const card = {
-        id: item.id,
-        kind: (item.payload.kind ?? 'custom') as never,
-        title: item.label,
-        data: (item.payload.data ?? {}) as Record<string, any>,
-        status: 'pending' as const,
-        sourceTurns: (item.payload.sourceTurns ?? []) as number[],
-        createdAt: item.createdAt,
+      // 实跑修复：lw_save_card 的 payload 形状是 { taskTitle, card:{kind,title,data,…} }——
+      // 旧实现读 payload.kind/payload.data 恒为 undefined，卡片一律误落 custom 分支且数据为空
+      try {
+        const raw = item.payload as Record<string, any>
+        const shell = (raw.card ?? raw) as Record<string, any>
+        const card = {
+          id: item.id,
+          kind: (shell.kind ?? raw.kind ?? 'custom') as never,
+          title: String(shell.title ?? item.label),
+          data: ((shell.data ?? raw.data ?? shell) as Record<string, any>),
+          status: 'pending' as const,
+          sourceTurns: (shell.sourceTurns ?? raw.sourceTurns ?? []) as number[],
+          createdAt: item.createdAt,
+        }
+        const r = await distiller.persistByKind(db, projectId, card as never, card.data)
+        if (!r.ok) logger.error(`[story-room] 设计条目落库失败 kind=${card.kind} label=${item.label}: ${r.message}`)
+        return { ok: r.ok || !!r.skipped, message: r.message }
+      } catch (e: any) {
+        logger.error(`[story-room] 设计条目落库异常 kind=card label=${item.label}:`, e)
+        return { ok: false, message: e?.message || '落库异常' }
       }
-      const r = await distiller.persistByKind(db, projectId, card as never, card.data)
-      return { ok: r.ok || !!r.skipped, message: r.message }
     }
 
     if (item.kind === 'event') {
@@ -253,9 +267,10 @@ async function persistDesignItem(
         }],
         { validFromChapter: p.validFromChapter ?? 1, origin: { type: 'discussion' } },
       )
+      // 实跑修复：已存在（skipped）与建边成功同视为完成——否则重复提交的关系永远卡在草稿包
       return {
-        ok: r.created > 0,
-        message: r.created > 0 ? '关系已建边' : r.skipped > 0 ? '关系已存在（或名称未解析）未重复建边' : '关系落库失败',
+        ok: r.created > 0 || r.skipped > 0,
+        message: r.created > 0 ? '关系已建边' : r.skipped > 0 ? '关系已存在，未重复建边' : '关系落库失败（名称未解析或数据缺失）',
       }
     }
 

@@ -155,38 +155,37 @@ export class VideoEpisodeRepository extends BaseRepository<
     episodes: CreateVideoEpisodeRequest[],
   ): Promise<VideoEpisode[]> {
     if (episodes.length === 0) return []
-    return this.dataSource.transaction(async manager => {
-      const repo = manager.getRepository(VideoEpisodeEntity)
+    // 复核修复 P0-3：事务内裸 repo 漏租户注入——改走 scopedTx 原语
+    return this.scopedTx(async tx => {
+      const epApi = tx.for(VideoEpisodeEntity)
       const result: VideoEpisode[] = []
       const now = new Date()
       for (const data of episodes) {
         const id = this.generateId()
-        const saved = await repo.save(
-          repo.create({
-            id,
-            projectId: data.projectId,
-            sourceType: data.sourceType,
-            outlineId: data.outlineId ?? null,
-            uploadedContent: data.uploadedContent ?? null,
-            uploadedCharacters:
-              (data.uploadedCharacters as unknown[] | undefined) ?? null,
-            episodeNumber: data.episodeNumber,
-            title: data.title,
-            status: 'pending',
-            duration: 0,
-            scriptId: null,
-            audioTracks: [] as unknown[],
-            storyEra: data.storyEra ? data.storyEra : null,
-            storyRegion: data.storyRegion ? data.storyRegion : null,
-            storyBackgroundExtra: data.storyBackgroundExtra
-              ? data.storyBackgroundExtra
-              : null,
-            createdAt: now,
-            updatedAt: now,
-            deletedAt: null,
-          }),
-        )
-        result.push(this.toDto(saved))
+        const saved = await epApi.save({
+          id,
+          projectId: data.projectId,
+          sourceType: data.sourceType,
+          outlineId: data.outlineId ?? null,
+          uploadedContent: data.uploadedContent ?? null,
+          uploadedCharacters:
+            (data.uploadedCharacters as unknown[] | undefined) ?? null,
+          episodeNumber: data.episodeNumber,
+          title: data.title,
+          status: 'pending',
+          duration: 0,
+          scriptId: null,
+          audioTracks: [] as unknown[],
+          storyEra: data.storyEra ? data.storyEra : null,
+          storyRegion: data.storyRegion ? data.storyRegion : null,
+          storyBackgroundExtra: data.storyBackgroundExtra
+            ? data.storyBackgroundExtra
+            : null,
+          createdAt: now,
+          updatedAt: now,
+          deletedAt: null,
+        } as never)
+        result.push(this.toDto(saved as VideoEpisodeEntity))
       }
       return result
     })

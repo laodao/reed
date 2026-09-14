@@ -6,6 +6,7 @@
 
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getSecureStorage, type ISecureStorage } from '@core/interfaces/storage.interface'
+import { SETTINGS_KEYS, getSettingWithLegacyFallback } from '@shared/constants/settings-keys'
 import {
   SEARCH_ENGINE_TEMPLATES,
   getSearchEngineTemplate,
@@ -318,7 +319,7 @@ export class SearchEngineService {
 
   // ========== 快速搜索引擎启用/停用管理 ==========
 
-  private readonly DISABLED_QUICK_ENGINES_KEY = 'disabledQuickSearchEngines'
+  private readonly DISABLED_QUICK_ENGINES_KEY = SETTINGS_KEYS.searchDisabledQuickEngines
 
   /**
    * 获取被禁用的快速搜索引擎 ID 列表
@@ -328,7 +329,8 @@ export class SearchEngineService {
     if (!db.settings) {
       return []
     }
-    const raw = (await db.settings.get(this.DISABLED_QUICK_ENGINES_KEY)) as
+    // 键名走注册表（旧键 disabledQuickSearchEngines 由 getSettingWithLegacyFallback 兜底）
+    const raw = (await getSettingWithLegacyFallback(db.settings, this.DISABLED_QUICK_ENGINES_KEY)) as
       | string[]
       | undefined
       | null

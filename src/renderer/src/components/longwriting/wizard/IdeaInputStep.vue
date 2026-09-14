@@ -89,8 +89,15 @@
           </div>
           <el-input v-model="blueprint.selectedTitle" placeholder="或直接输入标题" style="margin-top: 8px" />
         </el-form-item>
+        <el-form-item label="核心故事概要">
+          <el-input v-model="blueprint.coreStory" type="textarea" :rows="10" placeholder="核心主线：主角起点与困境 → 欲望与转机 → 关键波折 → 终局方向。这是全书基调，将指导每一章写作，请务必完整。" />
+          <div class="core-story-hint">按"起点→欲望与转机→波折→终局"写完整主线，禁止只写一句话或世界观介绍。</div>
+        </el-form-item>
+        <el-form-item label="风格基调">
+          <el-input v-model="blueprint.styleTone" type="textarea" :rows="2" placeholder="叙事视角、节奏、情绪底色、爽点类型，如：第三人称限知视角，明快凌厉，单元案串主线，智力对决的智性爽感" />
+        </el-form-item>
         <el-form-item label="一句话概念">
-          <el-input v-model="blueprint.oneLineConcept" type="textarea" :rows="2" placeholder="用一句话概括这个故事" />
+          <el-input v-model="blueprint.oneLineConcept" type="textarea" :rows="2" placeholder="用一句话概括这个故事（宣传语，可留空）" />
         </el-form-item>
         <el-form-item label="核心冲突">
           <el-input v-model="blueprint.coreConflict" type="textarea" :rows="3" placeholder="主角想要什么？阻碍是什么？赌注是什么？" />
@@ -156,6 +163,8 @@ interface Blueprint {
   titleSuggestions: string[]
   selectedTitle: string
   oneLineConcept: string
+  coreStory: string
+  styleTone: string
   coreConflict: string
   keyCharacters: BlueprintCharacter[]
   estimatedChapters: number
@@ -214,7 +223,7 @@ ${form.value.style ? `风格：${styleOptions.find(s => s.value === form.value.s
 ${form.value.targetReader ? `目标读者：${readerOptions.find(r => r.value === form.value.targetReader)?.label || form.value.targetReader}` : ''}
 ${form.value.estimatedLength ? `预估篇幅：${lengthOptions.find(l => l.value === form.value.estimatedLength)?.label || form.value.estimatedLength}` : ''}
 
-请以"故事蓝图"的形式输出：标题建议、一句话概念、核心冲突（主角想要什么/阻碍/赌注）、关键角色草案、预估章节数。`
+请以"故事蓝图"的形式输出：标题建议、一句话概念、核心故事概要（400-600字，按"主角起点与困境→欲望与转机→关键波折→终局方向"写完整主线，这是全书写作准绳）、风格基调（叙事视角/节奏/爽点类型）、核心冲突（主角想要什么/阻碍/赌注）、关键角色草案、预估章节数。`
 
   const ok = await ai.start({
     eventId,
@@ -254,7 +263,9 @@ function parseIntoBlueprint(content: string): void {
   blueprint.value = {
     titleSuggestions: titles,
     selectedTitle: title || titles[0],
-    oneLineConcept: data.oneLineConcept || data.summary || '',
+    oneLineConcept: data.oneLineConcept || '',
+    coreStory: data.coreStory || data.summary || '',
+    styleTone: data.styleTone || '',
     coreConflict: data.coreConflict || '',
     keyCharacters: data.keyCharacters || [],
     estimatedChapters: data.estimatedChapters || 20,
@@ -283,7 +294,7 @@ async function confirmBlueprint(): Promise<void> {
     targetReader: form.value.targetReader || undefined,
     estimatedLength: form.value.estimatedLength || undefined,
     enabledFeatures: form.value.enabledFeatures,
-    summary: b.oneLineConcept,
+    summary: [b.coreStory, b.styleTone ? `【风格基调】${b.styleTone}` : ''].filter(Boolean).join('\n\n'),
     coreConflict: b.coreConflict,
     keyCharacters: b.keyCharacters.map(c => ({
       name: c.name,
@@ -315,10 +326,14 @@ onMounted(async () => {
     if (r.data.estimatedLength) form.value.estimatedLength = r.data.estimatedLength
     if (r.data.enabledFeatures) form.value.enabledFeatures = r.data.enabledFeatures
     if (r.data.summary || r.data.coreConflict) {
+      const savedSummary = r.data.summary || ''
+      const toneMatch = savedSummary.match(/【风格基调】([\s\S]*?)$/)
       blueprint.value = {
         titleSuggestions: r.data.title ? [r.data.title] : [],
         selectedTitle: r.data.title || '',
-        oneLineConcept: r.data.summary || '',
+        oneLineConcept: '',
+        coreStory: (toneMatch ? savedSummary.slice(0, toneMatch.index).trim() : savedSummary),
+        styleTone: toneMatch ? toneMatch[1].trim() : '',
         coreConflict: r.data.coreConflict || '',
         keyCharacters: r.data.keyCharacters || [],
         estimatedChapters: r.data.estimatedChapters || 20,
@@ -332,6 +347,13 @@ onMounted(async () => {
 .idea-input-step {
   max-width: 820px;
   margin: 0 auto;
+}
+
+.core-story-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.5;
 }
 
 .step-header {

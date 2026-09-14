@@ -17,6 +17,116 @@
       </el-button>
     </div>
 
+    <!-- Agent 活动行（2026-09-13：起步研究/研究此概念这类长任务，滚动显示系统正在做什么）。
+         空主题的起步态改在起步卡片内、按钮下方显示（用户需求：反馈要贴着触发点），
+         这里让位避免同一轮出现两份活动行。
+         2026-09-14 追加：选中的概念没有讲义时（中栏是「生成中/研究此概念」空态），
+         活动行改在空态里、「研究此概念」按钮下方居中显示，这里同样让位。 -->
+    <AgentActivityStrip v-if="spaceId && !isEmptySpace && !currentConceptNoCard" :space-id="spaceId" />
+
+    <!-- 知识体系方案（固定流程入口：待确认时有高亮提示，确认后才生成知识点） -->
+    <div v-if="planHint" class="plan-bar" :class="{ pending: planHint.pending }">
+      <span class="plan-bar-text">{{ planHint.text }}</span>
+      <el-button link type="primary" size="small" @click="openPlan">查看方案</el-button>
+    </div>
+
+    <!-- 知识体系方案确认弹窗（2026-09-13 用户需求：对齐诉求 → 确认体系 → 才生成） -->
+    <PlanConfirmDialog
+      v-if="spaceId"
+      v-model="planVisible"
+      :space-id="spaceId"
+      :mode="planDriveMode"
+      :concept-id="null"
+      @done="onPlanDriven"
+    />
+
+    <!-- 主题学习前置要求（2026-09-12：整个领域的学习门槛；有则显示） -->
+    <div v-if="spacePrereqs.length" class="space-prereq">
+      <span class="space-prereq-label">学习前置</span>
+      <el-tooltip
+        v-for="p in spacePrereqs"
+        :key="p.name"
+        :content="prereqTip(p)"
+        placement="bottom"
+        :show-after="200"
+      >
+        <span class="space-prereq-chip" :class="{ external: !p.inSpace }">
+          {{ p.name }}
+          <span class="chip-flag">{{ p.inSpace ? '空间内会教' : '需自备' }}</span>
+        </span>
+      </el-tooltip>
+    </div>
+
+    <!-- 手工追加知识点（2026-09-12：用户补全知识体系；前置直连为已确认边） -->
+    <el-dialog v-model="createConceptVisible" title="追加知识点" width="520px" append-to-body>
+      <div class="cc-form">
+        <div class="cc-row">
+          <span class="cc-label">名称</span>
+          <el-input v-model="conceptDraft.name" size="small" placeholder="如：导数与链式法则" maxlength="60" />
+        </div>
+        <div class="cc-row">
+          <span class="cc-label">类型</span>
+          <el-select v-model="conceptDraft.nodeType" size="small" style="width: 200px">
+            <el-option
+              v-for="t in creatableNodeTypes"
+              :key="t"
+              :label="nodeTypeMeta(t).label"
+              :value="t"
+            />
+          </el-select>
+        </div>
+        <div class="cc-row">
+          <span class="cc-label">所属分支</span>
+          <el-select
+            v-model="conceptDraft.parentId"
+            size="small"
+            clearable
+            placeholder="不选=根层"
+            style="width: 260px"
+          >
+            <el-option v-for="g in groupOptions" :key="g.id" :label="g.label" :value="g.id" />
+          </el-select>
+        </div>
+        <div class="cc-row">
+          <span class="cc-label">一句话定义</span>
+          <el-input
+            v-model="conceptDraft.definitionShort"
+            type="textarea"
+            :rows="2"
+            size="small"
+            placeholder="选填：地图悬停显示"
+            maxlength="200"
+          />
+        </div>
+        <div class="cc-row">
+          <span class="cc-label">前置知识点</span>
+          <el-select
+            v-model="conceptDraft.prerequisites"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            :reserve-keyword="false"
+            size="small"
+            placeholder="学它之前必须先掌握什么（可多选，也可直接输入新名字）"
+            style="width: 100%"
+          >
+            <el-option v-for="c in prereqOptions" :key="c.id" :label="c.name" :value="c.name" />
+          </el-select>
+        </div>
+        <div class="cc-hint">
+          前置会自动落成「已确认」的学习顺序边（你选的就是你确认的）；若某个前置还选不到，
+          先用「AI 补全」把它建出来，或直接回车输入名字——它会记为"待补前置"，AI 下次会补上。
+        </div>
+      </div>
+      <template #footer>
+        <el-button size="small" @click="createConceptVisible = false">取消</el-button>
+        <el-button size="small" type="primary" :loading="creatingConcept" @click="submitCreateConcept">
+          创建
+        </el-button>
+      </template>
+    </el-dialog>
+
     <div class="space-body">
       <!-- 左栏：知识地图（大纲树，可折叠/搜索/掌握度过滤/父级聚合） -->
       <aside class="pane pane-map">
@@ -25,6 +135,45 @@
           <el-tooltip content="分支行显示子节点掌握度聚合；点击分支展开/收起；绿色=已理解 · 橙色=学习中 · 灰色=待学/待复习" placement="top">
             <el-icon><InfoFilled /></el-icon>
           </el-tooltip>
+          <span class="pane-title-actions">
+            <!-- 体系完整度（图标 + 分数徽标；悬停看缺口清单） -->
+            <el-tooltip placement="bottom" :show-after="150" effect="light">
+              <template #content>
+                <div class="coverage-tip">
+                  <div class="coverage-tip-head">{{ coverage.summary }}</div>
+                  <div v-if="coverage.gaps.length" class="coverage-tip-list">
+                    <div v-for="(g, i) in coverage.gaps" :key="i" class="coverage-tip-item" :class="g.severity">
+                      [{{ g.severity === 'high' ? '优先' : '建议' }}] {{ g.message }}
+                    </div>
+                  </div>
+                  <div v-else class="coverage-tip-ok">未发现结构性缺口 ✓</div>
+                </div>
+              </template>
+              <span class="coverage-btn" :class="coverageLevel">
+                <el-icon><DataAnalysis /></el-icon>
+                <span class="coverage-score">{{ coverage.score }}</span>
+              </span>
+            </el-tooltip>
+            <el-tooltip content="追加知识点：自己补一个（落库后出现在地图里，尚无讲义）" placement="top">
+              <el-button
+                link
+                class="map-icon-btn"
+                :icon="Plus"
+                aria-label="追加知识点"
+                @click="openCreateConcept"
+              />
+            </el-tooltip>
+            <el-tooltip content="AI 补全：先检索知识库/联网取资料，再结合资料与模型知识规划整体体系（只补结构，不产讲义）" placement="top">
+              <el-button
+                link
+                class="map-icon-btn"
+                :icon="MagicStick"
+                aria-label="AI 补全知识地图"
+                :loading="completingMap"
+                @click="completeMapWithAi"
+              />
+            </el-tooltip>
+          </span>
         </div>
         <div class="map-legend">
           <span><i class="dot dot-mastered" />已理解</span>
@@ -160,7 +309,7 @@
               </div>
             </div>
             <!-- 前置依赖就绪条（依赖拓扑门控：先学完前置再学本概念） -->
-            <div v-if="prereqs.length" class="lesson-prereq">
+            <div v-if="prereqs.length || declaredOnlyPrereqs.length" class="lesson-prereq">
               <span class="prereq-label">前置：</span>
               <template v-for="p in prereqs" :key="p.id">
                 <span class="prereq-chip" :class="p.ready ? 'ready' : 'pending'">
@@ -169,6 +318,23 @@
                   <el-icon v-else><Lock /></el-icon>
                 </span>
               </template>
+              <!-- 声明了但尚未建关系边的前置（2026-09-12：生成知识点时声明的顺序） -->
+              <el-tooltip
+                v-for="d in declaredOnlyPrereqs"
+                :key="`declared-${d.name}`"
+                :content="d.conceptId ? '已声明的前置（尚未建立关系边，暂未门控）；点击跳转' : '已声明的前置：空间里还没有对应知识点，先补它再学本概念'"
+                placement="top"
+                :show-after="200"
+              >
+                <span
+                  class="prereq-chip declared"
+                  :class="{ clickable: !!d.conceptId }"
+                  @click="d.conceptId && gotoRelatedConcept(d.conceptId)"
+                >
+                  {{ d.name }}
+                  <el-icon><InfoFilled /></el-icon>
+                </span>
+              </el-tooltip>
               <span v-if="!prereqReady" class="prereq-tip">先掌握带锁的前置概念再来学它</span>
             </div>
           </div>
@@ -194,6 +360,9 @@
                 研究此概念
               </el-button>
             </el-empty>
+            <!-- 研究此概念 的 agent 执行过程（滚动小字）：贴着触发按钮下方居中显示，表示 agent 正在工作；
+                 不再跑到页面顶部（顶部那只在普通讲义态显示） -->
+            <AgentActivityStrip v-if="spaceId" :space-id="spaceId" class="research-activity" />
           </div>
         </template>
         <template v-else>
@@ -209,6 +378,8 @@
               <el-button type="primary" size="large" :icon="Promotion" :loading="researching" @click="bootResearch">
                 {{ researching ? '正在研究领域…' : '生成首批知识' }}
               </el-button>
+              <!-- 起步研究的 agent 执行过程（滚动小字）：贴着触发按钮显示，不再跑到页面顶部 -->
+              <AgentActivityStrip v-if="spaceId" :space-id="spaceId" class="boot-activity" />
               <div v-if="bootMessage" class="boot-message" :class="{ warn: bootWarn }">{{ bootMessage }}</div>
             </div>
           </div>
@@ -430,7 +601,7 @@
       </el-dialog>
 
       <!-- 空间设置（M6：设置入口移到主题主界面；共享面板组件，打开时按空间加载） -->
-      <el-dialog v-model="settingsVisible" title="空间设置" width="520px" append-to-body :close-on-click-modal="false">
+      <el-dialog v-model="settingsVisible" title="空间设置" width="900px" append-to-body :close-on-click-modal="false">
         <SpaceSettingsPanel v-if="settingsVisible" :space-id="spaceId" @applied="settingsVisible = false" />
       </el-dialog>
     </div>
@@ -459,6 +630,9 @@ import {
   Search,
   Loading,
   Lock,
+  Plus,
+  DataAnalysis,
+  MagicStick,
   QuestionFilled,
   Position,
   Promotion,
@@ -470,6 +644,7 @@ import {
 } from '@element-plus/icons-vue'
 import { useTabsStore } from '@/stores/tabs'
 import { routeDlIntent } from '@shared/utils/domain-learning-intent'
+import { dlMapCompletionMission } from '@shared/utils/domain-learning-mission'
 import {
   useDomainLearningStore,
   type DlAgentUiEvent,
@@ -479,21 +654,27 @@ import {
   masteryDotClass,
   masteryLabel,
   masteryTagType,
+  nodeTypeMeta,
   relLabel,
 } from './domain-learning-ui'
 import SectionLesson from './SectionLesson.vue'
 import LessonSlides from './LessonSlides.vue'
 import SpaceSettingsPanel from './SpaceSettingsPanel.vue'
+import AgentActivityStrip from './AgentActivityStrip.vue'
+import PlanConfirmDialog from './PlanConfirmDialog.vue'
 import type {
   DlCardSection,
   DlChatTurn,
   DlConceptView,
+  DlMapCoverage,
   DlMastery,
   DlNote,
   DlRelationView,
+  DlSpacePrereq,
   DlSpaceView,
   DlTreeNode,
 } from '@shared/types/domain-learning.types'
+import { DL_KNOWLEDGE_NODE_TYPES } from '@shared/types/domain-learning.types'
 
 const route = useRoute()
 const router = useRouter()
@@ -595,6 +776,8 @@ const lastResearchScope = ref<{ conceptId: string | null }>({ conceptId: null })
 
 onMounted(() => {
   void loadSpace()
+  // 载入方案状态：从知识全景页起步研究回来时，也要能自动弹确认框（2026-09-13 固定流程）
+  void openPlanIfPending()
 })
 
 onUnmounted(() => {
@@ -779,6 +962,13 @@ const currentConcept = computed<DlConceptView | null>(
   () => concepts.value.find(x => x.id === currentConceptId.value) ?? null
 )
 
+/**
+ * 当前选中的概念没有讲义 → 中栏是「生成中/研究此概念」空态。
+ * 该空态下 agent 活动行要贴在按钮下方显示，顶部那条须让位（否则活动行跑到页面顶部，
+ * 2026-09-14 用户需求）。
+ */
+const currentConceptNoCard = computed(() => !isEmptySpace.value && !!currentConcept.value && !currentConcept.value.card)
+
 /** 前置依赖边类型（后端关系枚举：prerequisite） */
 const PREREQ_TYPE = 'prerequisite'
 
@@ -798,6 +988,194 @@ const prereqs = computed<Array<{ id: string; name: string; ready: boolean }>>(()
 
 /** 前置是否全部就绪（未就绪禁止"懂了/没懂"） */
 const prereqReady = computed(() => prereqs.value.every(p => p.ready))
+
+// ---------- 主题学习前置要求（2026-09-12：整个领域的学习门槛） ----------
+const spacePrereqs = computed<DlSpacePrereq[]>(() => view.value?.prerequisites ?? [])
+
+/** 前置 chip 的悬停说明（为什么需要 + 掌握到什么程度） */
+function prereqTip(p: DlSpacePrereq): string {
+  const bits = [p.why, p.level].filter((x): x is string => !!x)
+  return bits.length ? bits.join(' · ') : p.name
+}
+
+/** 当前概念"已声明但未建关系边"的前置（顺序声明可见，关系待补） */
+const declaredOnlyPrereqs = computed<Array<{ name: string; conceptId: string | null }>>(() => {
+  const cur = concepts.value.find(c => c.id === currentConceptId.value)
+  const declared = cur?.declaredPrereqs ?? []
+  if (!declared.length) return []
+  const linkedNames = new Set(prereqs.value.map(p => p.name))
+  return declared
+    .filter(name => !linkedNames.has(name))
+    .map(name => {
+      const hit = concepts.value.find(c => c.name === name)
+      return { name, conceptId: hit?.id ?? null }
+    })
+})
+
+// ---------- 手工追加知识点（2026-09-12 用户需求：用户建点 + AI 完善） ----------
+
+/** 地图完整度诊断（后端 assessMapCoverage；进空间即见，缺口清单可悬停查看） */
+const coverage = computed<DlMapCoverage>(
+  () =>
+    view.value?.coverage ?? {
+      score: 0,
+      summary: '地图完整度暂不可用（加载中）',
+      metrics: { leaves: 0, groups: 0, edges: 0, verifiedEdges: 0, entries: 0, levels: 0, lessons: 0 },
+      gaps: [],
+    },
+)
+
+/** 完整度徽标配色：≥85 好 / ≥60 中 / 其余差 */
+const coverageLevel = computed<'good' | 'mid' | 'low'>(() => {
+  const s = coverage.value.score
+  return s >= 85 ? 'good' : s >= 60 ? 'mid' : 'low'
+})
+
+const createConceptVisible = ref(false)
+const creatingConcept = ref(false)
+const completingMap = ref(false)
+
+const conceptDraft = reactive({
+  name: '',
+  nodeType: 'concept',
+  parentId: null as string | null,
+  definitionShort: '',
+  prerequisites: [] as string[],
+})
+
+/** 可建的知识节点类型（排除 group 目录） */
+const creatableNodeTypes = DL_KNOWLEDGE_NODE_TYPES
+
+/** 分支目录选项（带层级缩进，便于辨认归属） */
+const groupOptions = computed<Array<{ id: string; label: string }>>(() => {
+  const groups = concepts.value.filter(c => c.nodeType === 'group')
+  const byId = new Map(groups.map(g => [g.id, g]))
+  const depthOf = (id: string): number => {
+    let d = 0
+    let cur = byId.get(id)
+    while (cur?.parentId && d < 8) {
+      d++
+      cur = byId.get(cur.parentId)
+    }
+    return d
+  }
+  return groups.map(g => ({ id: g.id, label: `${'　'.repeat(depthOf(g.id))}${g.name}` }))
+})
+
+/** 前置候选（空间内已有知识节点） */
+const prereqOptions = computed(() =>
+  concepts.value.filter(c => c.nodeType !== 'group').map(c => ({ id: c.id, name: c.name })),
+)
+
+function openCreateConcept(): void {
+  conceptDraft.name = ''
+  conceptDraft.nodeType = 'concept'
+  // 只有一个分支目录时默认落在它下面（省一次选择）
+  conceptDraft.parentId = groupOptions.value.length === 1 ? groupOptions.value[0].id : null
+  conceptDraft.definitionShort = ''
+  conceptDraft.prerequisites = []
+  createConceptVisible.value = true
+}
+
+/** 提交新建：落库 → 选中新概念；有"待补前置"时提示可让 AI 补全 */
+async function submitCreateConcept(): Promise<void> {
+  const name = conceptDraft.name.trim()
+  if (!name) {
+    lastFeedbackIsWarn.value = true
+    lastFeedback.value = '请先填知识点名称'
+    return
+  }
+  creatingConcept.value = true
+  lastFeedback.value = ''
+  const r = await store.createConceptOf({
+    id: spaceId.value,
+    name,
+    nodeType: conceptDraft.nodeType,
+    parentId: conceptDraft.parentId,
+    definitionShort: conceptDraft.definitionShort.trim() || null,
+    prerequisites: conceptDraft.prerequisites,
+  })
+  creatingConcept.value = false
+  if (!r) {
+    lastFeedbackIsWarn.value = true
+    lastFeedback.value = store.error ?? '新建知识点失败，请重试'
+    return
+  }
+  createConceptVisible.value = false
+  lastFeedbackIsWarn.value = r.missingPrereqs.length > 0
+  lastFeedback.value = r.created
+    ? `已追加知识点「${name}」${r.linkedPrereqs.length ? `，前置 ${r.linkedPrereqs.map(l => l.name).join('、')} 已连上` : ''}`
+    : `「${name}」已存在，已更新它的定义/前置`
+  if (r.missingPrereqs.length) {
+    lastFeedback.value += `；待补前置：${r.missingPrereqs.join('、')}（可用「AI 补全」建出来）`
+  }
+  // 选中新建的概念（左栏高亮 + 中栏显示"讲义生成中/研究此概念"）
+  gotoRelatedConcept(r.conceptId)
+}
+
+/** 一键让研究助手补全地图（走 task 会话；指令见 shared/utils/domain-learning-mission） */
+async function completeMapWithAi(): Promise<void> {
+  if (completingMap.value || tutorStreaming.value) return
+  // 把后端诊断出的结构性缺口带进指令：让模型从"已知缺口"起步，而不是自由发挥
+  const c = coverage.value
+  const mission = dlMapCompletionMission({
+    spaceName: spaceName.value,
+    conceptCount: c.metrics.leaves,
+    goal: view.value?.goal ?? null,
+    coverageSummary: c.summary,
+    coverageGaps: c.gaps.map(
+      (g) => `[${g.severity === 'high' ? 'high' : 'medium'}] ${g.message}${g.conceptNames?.length ? `（涉及：${g.conceptNames.join('、')}）` : ''}`,
+    ),
+  })
+  completingMap.value = true
+  rightPane.value = 'qa'
+  planDriveMode.value = 'task'
+  try {
+    await runAsk(mission, 'task')
+    // 固定流程第 1 步：模型应已提交诉求理解草案 → 拉方案并弹窗确认
+    await openPlanIfPending()
+  } finally {
+    completingMap.value = false
+  }
+}
+
+// ==================== 知识体系方案（固定流程；2026-09-13） ====================
+
+/** 方案弹窗可见性 与 驱动下一轮的会话模式（research=起步研究 / task=补全地图） */
+const planVisible = ref(false)
+const planDriveMode = ref<'research' | 'task'>('research')
+
+/** 方案提示条（有草稿待确认时高亮） */
+const planHint = computed(() => {
+  const p = store.plan
+  if (!p) return null
+  if (p.syllabusConfirmed) return null // 已确认后不再显示提示条（2026-09-14 用户要求去掉那行常驻文案）
+  if (p.syllabus) return { pending: true, text: '知识体系方案待你确认：勾选要生成的知识点后才会开始生成' }
+  if (p.understandingConfirmed) return { pending: true, text: '诉求已确认——模型正在规划知识体系，稍后确认方案即可生成' }
+  if (p.understanding) return { pending: true, text: '模型提交了「我对你诉求的理解」，请确认或纠正后再生成知识点' }
+  return null
+})
+
+function openPlan(): void {
+  planVisible.value = true
+}
+
+/** 拉方案；若有待确认内容则自动弹窗（固定流程的"弹出对话框"体验）
+ *  @returns 是否弹了窗（调用方据此决定要不要再提示别的） */
+async function openPlanIfPending(): Promise<boolean> {
+  const p = await store.fetchPlan(spaceId.value)
+  if (!p) return false
+  if ((p.understanding && !p.understandingConfirmed) || (p.syllabus && !p.syllabusConfirmed)) {
+    planVisible.value = true
+    return true
+  }
+  return false
+}
+
+/** 弹窗驱动过一轮（确认/调整）后的收尾：刷新空间视图 */
+async function onPlanDriven(): Promise<void> {
+  await refreshView()
+}
 
 // ---------- 空间整体进度（后端 stats 为准） ----------
 const masteryPercent = computed(() => {
@@ -1031,6 +1409,7 @@ async function bootResearch(): Promise<void> {
   lastResearchScope.value = { conceptId: null }
   bootMessage.value = ''
   bootWarn.value = false
+  planDriveMode.value = 'research'
   // 空间级事件通道 dl:agent:<spaceId>（conceptId 为空）
   const unsub = store.subscribeAgentEvent(spaceId.value, null, (ev) => {
     // 只收本 space 级 research 轮事件（防与其他模式/概念并发混流）
@@ -1045,21 +1424,26 @@ async function bootResearch(): Promise<void> {
       mode: 'research',
       spaceId: spaceId.value,
       conceptId: null,
-      message: `这是新主题「${spaceName.value}」的首次研究——请为整个领域建立首批核心知识点并生成第一份讲义。`,
+      // 固定流程第 1 步：先对齐诉求（宿主会注入阶段指令；这一轮不会直接建点）
+      message: `这是新主题「${spaceName.value}」的首次研究——请先复述你对我的诉求的理解，提交诉求理解草案让我确认。`,
     })
     await refreshView()
-    const first = concepts.value.find((c) => c.nodeType !== 'group')
-    if (first) {
-      // 自动定位首批第一个概念，让用户直接看到讲义或研究入口
-      expandPathTo(first.id)
-      selectConcept(first)
-    } else if (!bootMessage.value) {
-      // 未产出：展示会话总结中的原因（资料不足时助手不编造），避免“干等无反馈”
-      const reason = (result?.content ?? '').trim()
-      bootWarn.value = true
-      bootMessage.value = reason
-        ? `本轮未生成知识点：${reason.slice(0, 260)}`
-        : '本轮未生成知识点。可先绑定含资料的知识库（知识全景 → 空间设置 → 关联知识库），或在可联网环境重试。'
+    // 模型应已提交「诉求理解」草案 → 拉方案并弹窗让用户确认（固定流程的起点）
+    const pending = await openPlanIfPending()
+    if (!pending) {
+      const first = concepts.value.find((c) => c.nodeType !== 'group')
+      if (first) {
+        // 已有知识点（例如空间非空）→ 自动定位，让用户直接看到讲义或研究入口
+        expandPathTo(first.id)
+        selectConcept(first)
+      } else if (!bootMessage.value) {
+        // 未产出：展示会话总结中的原因（资料不足时助手不编造），避免“干等无反馈”
+        const reason = (result?.content ?? '').trim()
+        bootWarn.value = true
+        bootMessage.value = reason
+          ? `本轮未提交诉求理解：${reason.slice(0, 260)}`
+          : '本轮未提交诉求理解。可先绑定含资料的知识库（知识全景 → 空间设置 → 关联知识库），或在可联网环境重试。'
+      }
     }
   } finally {
     unsub()
@@ -1183,14 +1567,23 @@ async function ask(e?: Event): Promise<void> {
   if (e instanceof KeyboardEvent && e.isComposing) return
   const q = draft.value.trim()
   if (!q || tutorStreaming.value) return
+  // 同框自动判断（M6-3 阶段一）：明确任务指令走 task 会话，答疑学习类走 tutor
+  await runAsk(q, routeDlIntent(q) === 'task' ? 'task' : 'tutor')
+}
+
+/**
+ * 发起一轮答疑/任务会话（2026-09-12：从 ask 抽出，供「AI 补全知识地图」等入口复用）。
+ * forcedMode 指定时不再走意图路由（按钮入口自带明确 mode）。
+ */
+async function runAsk(q: string, forcedMode?: 'tutor' | 'task'): Promise<void> {
+  if (!q || tutorStreaming.value) return
   // 研究进行中先不追问（避免同空间同概念双 agent 轮并发烧模型与写库；UI 级互斥）
   if (researching.value) {
     lastFeedbackIsWarn.value = true
     lastFeedback.value = '研究进行中——稍等它完成后再追问'
     return
   }
-  // 同框自动判断（M6-3 阶段一）：明确任务指令走 task 会话，答疑学习类走 tutor
-  const targetMode: 'tutor' | 'task' = routeDlIntent(q) === 'task' ? 'task' : 'tutor'
+  const targetMode: 'tutor' | 'task' = forcedMode ?? (routeDlIntent(q) === 'task' ? 'task' : 'tutor')
   lastAskMode.value = targetMode
   const scopeConceptId = currentConceptId.value
   lastAskScopeConceptId.value = scopeConceptId
@@ -1576,6 +1969,125 @@ watch(rightPane, (pane) => {
   min-height: 0;
 }
 
+// 追加知识点弹层（2026-09-12）
+.cc-form {
+  .cc-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 10px;
+
+    .cc-label {
+      width: 76px;
+      flex-shrink: 0;
+      padding-top: 4px;
+      font-size: 12.5px;
+      color: var(--el-text-color-regular);
+    }
+  }
+
+  .cc-hint {
+    margin-left: 84px;
+    font-size: 11.5px;
+    line-height: 1.6;
+    color: var(--el-text-color-placeholder);
+  }
+}
+
+// 体系完整度悬停卡（缺口清单；2026-09-12）
+.coverage-tip {
+  max-width: 340px;
+  font-size: 12px;
+  line-height: 1.7;
+
+  .coverage-tip-head {
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .coverage-tip-item {
+    &::before {
+      content: '';
+    }
+    &.high {
+      color: var(--el-color-danger);
+    }
+    &.medium {
+      color: var(--el-text-color-regular);
+    }
+  }
+
+  .coverage-tip-ok {
+    color: var(--el-color-success);
+  }
+}
+
+// 知识体系方案提示条（2026-09-13 固定流程：待确认时高亮，点开弹窗）
+.plan-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-lighter);
+  font-size: 12.5px;
+  color: var(--el-text-color-secondary);
+
+  &.pending {
+    background: var(--el-color-warning-light-9);
+    color: var(--el-color-warning);
+    font-weight: 600;
+  }
+
+  .plan-bar-text {
+    flex: 1 1 auto;
+  }
+}
+
+// 主题学习前置要求条（2026-09-12：整个领域的学习门槛，进空间即见）
+.space-prereq {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-lighter);
+  font-size: 12px;
+
+  .space-prereq-label {
+    color: var(--el-text-color-secondary);
+    font-weight: 600;
+  }
+
+  .space-prereq-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 9px;
+    border-radius: 10px;
+    color: var(--el-color-primary);
+    background: var(--el-color-primary-light-9);
+    cursor: default;
+
+    // 需自备（空间内不教）→ 弱化 + 明确标记，避免读者误以为这里会讲
+    &.external {
+      color: var(--el-text-color-regular);
+      background: var(--el-fill-color);
+    }
+
+    .chip-flag {
+      font-size: 10px;
+      color: var(--el-text-color-placeholder);
+    }
+  }
+
+  .space-prereq-note {
+    color: var(--el-text-color-placeholder);
+    font-size: 11px;
+  }
+}
+
 .pane {
   display: flex;
   flex-direction: column;
@@ -1611,6 +2123,58 @@ watch(rightPane, (pane) => {
   font-weight: 600;
   color: var(--el-text-color-primary);
   padding: 6px 4px;
+
+  // 地图编辑入口（图标按钮：体系完整度 / 追加知识点 / AI 补全；2026-09-12）
+  .pane-title-actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 400;
+
+    // 图标按钮：去掉 el-button 的内边距与最小宽度，压成纯图标
+    .map-icon-btn {
+      padding: 2px;
+      height: auto;
+      min-height: 0;
+      font-size: 16px;
+      color: var(--el-text-color-secondary);
+
+      &:hover {
+        color: var(--el-color-primary);
+      }
+    }
+
+    // 体系完整度：图标 + 分数徽标（颜色代表档位，悬停看缺口清单）
+    .coverage-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px 4px;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: default;
+
+      .coverage-score {
+        font-size: 11px;
+        font-weight: 600;
+        line-height: 1;
+      }
+
+      &.good {
+        color: var(--el-color-success);
+        background: var(--el-color-success-light-9);
+      }
+      &.mid {
+        color: var(--el-color-warning);
+        background: var(--el-color-warning-light-9);
+      }
+      &.low {
+        color: var(--el-color-danger);
+        background: var(--el-color-danger-light-9);
+      }
+    }
+  }
 
   &.pane-title-sub {
     margin-top: 16px;
@@ -1912,6 +2476,22 @@ watch(rightPane, (pane) => {
         color: var(--el-color-warning);
         background: var(--el-color-warning-light-9);
       }
+      // 已声明但尚未建关系边的前置：虚线弱化（顺序声明可见，图上门控待补）
+      &.declared {
+        color: var(--el-text-color-secondary);
+        background: transparent;
+        border: 1px dashed var(--el-border-color);
+        padding: 0 8px;
+
+        &.clickable {
+          cursor: pointer;
+
+          &:hover {
+            color: var(--el-color-primary);
+            border-color: var(--el-color-primary-light-5);
+          }
+        }
+      }
       .el-icon {
         font-size: 11px;
       }
@@ -1931,8 +2511,17 @@ watch(rightPane, (pane) => {
 
   &.empty-body {
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+  }
+
+  // 「研究此概念」下面的 agent 活动行（2026-09-14：空态下贴着按钮下方居中显示，表示 agent 正在工作）
+  .research-activity {
+    width: 100%;
+    max-width: 440px;
+    margin-top: 14px;
+    text-align: left;
   }
 
   // 块化知识点：卡片流间距由 SectionLesson 自管，压缩外层 padding 以留白更匀
@@ -2326,6 +2915,11 @@ watch(rightPane, (pane) => {
   .boot-tip {
     font-size: 12px;
     color: var(--el-text-color-placeholder);
+  }
+  /* 起步研究的活动行：贴在按钮下方、左对齐（卡片本体是居中的） */
+  .boot-activity {
+    margin: 12px 0 0;
+    text-align: left;
   }
   .boot-message {
     margin-top: 12px;

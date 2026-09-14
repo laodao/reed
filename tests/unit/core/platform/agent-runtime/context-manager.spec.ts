@@ -488,3 +488,56 @@ describe('39 号：collapseSupersededToolResults（工具返工只留最新全�
     expect(collapseSupersededToolResults(messages)).toBe(messages)
   })
 })
+
+// ==================== 43 号 O3：forceCompact（紧急压缩，跳过水位守卫） ====================
+
+describe('43 号 O3：forceCompact', () => {
+  /** 大工具结果历史：首条大结果落在近端保护带（8K）外，可被剪枝 */
+  function bigHistory(): ModelMessage[] {
+    return [
+      user('第一问'),
+      assistantToolCall('c1'),
+      toolResult('c1', '大'.repeat(12_000)),
+      user('中段问题'),
+      assistantToolCall('c2'),
+      toolResult('c2', '大'.repeat(12_000)),
+      user('最新问题'),
+    ]
+  }
+
+  it('水位未达软限时 maybeCompact 直通 null，forceCompact 仍执行剪枝', async () => {
+    const cm = mkManager({ contextWindowTokens: 1_000_000 }) // 软限远未达
+    const messages = bigHistory()
+    expect(await cm.maybeCompact({ messages, lastInputTokens: 0 })).toBeNull()
+    const out = await cm.forceCompact({ messages })
+    expect(out).not.toBeNull()
+    expect(JSON.stringify(out)).toContain('已从上下文移除')
+    // 近端保护：当轮输入不被剪
+    expect(JSON.stringify(out)).toContain('最新问题')
+  })
+
+  it('有摘要能力时输出含摘要消息（置尾）；旧原文被折叠', async () => {
+    const cm = mkManager({ contextWindowTokens: 1_000_000, summarize: async () => '交接摘要内容' })
+    const out = await cm.forceCompact({ messages: bigHistory() })
+    expect(out).not.toBeNull()
+    const msgs = out ?? []
+    expect(msgs.some((m) => classifyMessage(m) === 'compaction.summary')).toBe(true)
+    expect(JSON.stringify(msgs)).toContain('交接摘要内容')
+    // 守恒：当轮 user 保底
+    expect(JSON.stringify(msgs)).toContain('最新问题')
+  })
+
+  it('压无可压（零收益）返回 null；窗口 0 直通 null', async () => {
+    const cm = mkManager({ contextWindowTokens: 1_000_000, summarize: async () => 'x' })
+    expect(await cm.forceCompact({ messages: [user('hi')] })).toBeNull()
+    const cm0 = mkManager({ contextWindowTokens: 0 })
+    expect(await cm0.forceCompact({ messages: bigHistory() })).toBeNull()
+  })
+
+  it('摘要失败降级为纯剪枝（仍可返回剪枝结果）', async () => {
+    const cm = mkManager({ contextWindowTokens: 1_000_000, summarize: async () => { throw new Error('摘要模型挂了') } })
+    const out = await cm.forceCompact({ messages: bigHistory() })
+    expect(out).not.toBeNull()
+    expect(JSON.stringify(out)).toContain('已从上下文移除')
+  })
+})

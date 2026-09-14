@@ -34,6 +34,8 @@ import type {
 import type { ApprovalDecision, AgentToolBinding } from '@shared/types/agent.types'
 import { TrajectorySink, type TrajectoryAppendPort } from '@core/platform/agent-runtime/trajectory/sink'
 import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from '@shared/types/workflow.types'
+import { runtimeLimits } from '@shared/utils/runtime-limits'
+import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 import type {
   WorkflowNodeContext,
   WorkflowNodeExecutionResult,
@@ -47,7 +49,7 @@ const STATE_PERSIST_FAIL_PREFIX = '[agent-loop-state-persist]'
 /** delta 流合批窗口（与 event-bridge 同款观测面节流） */
 const DELTA_BATCH_MS = 30
 
-/** 审批卡里任务上下文截断上限（观测面字段裁剪，非行为参数） */
+/** 审批卡里任务上下文截断上限的内置默认值（参数设置可调：`ui.approvalTaskChars`） */
 const APPROVAL_TASK_CONTEXT_MAX_CHARS = 200
 
 /** 'agent-loop' 节点 config——单一事实源取自 WorkflowNodeConfigMap（曾双声明漏 editableFields） */
@@ -145,37 +147,47 @@ export function normalizeToolWhitelist(list: unknown): AgentToolBinding[] {
 }
 
 /**
- * 白名单 → AgentToolDef 映射 + 节点级调用预算包装（预算只包 execute，registry 管线所有权不动）。
+ * 白名单 → AgentToolDef 映射 + 调用预算包装（预算只包 execute，registry 管线所有权不动）。
  * initialUsed：挂起-恢复续段以 state.usage.toolCalls 为初值——护栏跨会话累计
  * （12 号 §6.4-2"累计 toolCalls ≥ maxToolCalls"，对抗 review P2-1）。
  * binding 富配置（approval/maxCalls/config/descriptionOverride）由
  * registry.buildToolDefs 生效；节点预算与 binding.maxCalls 独立计数（取并集约束）。
+ * runBudget（可选）：运行级总工具调用预算句柄（跨轮/跨节点共享，来自 ctx.toolBudget）——
+ * 先查节点级、再查运行级，各自 ++（同一次调用不重复计入两边之外）。
  */
 export function assembleTools(
   registry: AgentToolRegistry,
   toolWhitelist: Array<string | AgentToolBinding> | undefined,
   maxToolCalls: number | undefined,
   initialUsed = 0,
+  runBudget?: { max: number; used: number; readonly remaining: number; tryConsume(): boolean },
 ): Record<string, AgentToolDef> {
   const defs = registry.buildToolDefs(normalizeToolWhitelist(toolWhitelist))
   const budget =
     maxToolCalls !== undefined && Number.isFinite(maxToolCalls) && maxToolCalls > 0
       ? { used: initialUsed, max: Math.floor(maxToolCalls) }
       : null
-  if (!budget) return defs
+  if (!budget && !runBudget) return defs
   const out: Record<string, AgentToolDef> = {}
   for (const [name, def] of Object.entries(defs)) {
     out[name] = {
       ...def,
       execute: async (input, toolCtx) => {
-        if (budget.used >= budget.max) {
+        if (budget && budget.used >= budget.max) {
           return {
             ok: false,
             error: 'LIMIT_EXCEEDED',
             hint: `节点级工具调用上限 ${budget.max} 次已用尽，请直接给出最终答案。`,
           }
         }
-        budget.used++
+        if (runBudget && !runBudget.tryConsume()) {
+          return {
+            ok: false,
+            error: 'LIMIT_EXCEEDED',
+            hint: `运行级总工具调用预算（${runBudget.max} 次）已用尽，请直接给出最终答案，不要再调用工具。`,
+          }
+        }
+        if (budget) budget.used++
         return def.execute(input, toolCtx)
       },
     }
@@ -263,7 +275,11 @@ async function driveLoop(
 ): Promise<WorkflowNodeExecutionResult> {
   const cfg = ctx.config as AgentLoopNodeConfig
   const { resolveModel, registry, trajectoryRepo } = getAgentLoopHarness()
-  const maxSteps = Math.max(1, Math.floor(cfg.maxIterations ?? WORKFLOW_DEFAULTS.agentLoopMaxIterations))
+  // 缺省迭代轮数：节点未显式配 maxIterations 时用进程级限额（可由 settings agent:budget 覆盖）
+  const maxSteps = Math.max(
+    1,
+    Math.floor(cfg.maxIterations ?? runtimeLimits().maxWorkflowAgentLoopSteps ?? WORKFLOW_DEFAULTS.agentLoopMaxIterations),
+  )
 
   // 护栏信号：引擎取消 ∨ 节点时长护栏，本地合成（不篡改引擎 ctx.signal）
   const localAbort = new AbortController()
@@ -442,19 +458,34 @@ async function driveLoop(
         tool: tool.name,
         input,
         toolCallId: call.toolCallId,
-        task: stringifyValue(cfg.task).slice(0, APPROVAL_TASK_CONTEXT_MAX_CHARS),
+        task: stringifyValue(cfg.task).slice(
+          0,
+          workflowRuntimeParams().ui.approvalTaskChars || APPROVAL_TASK_CONTEXT_MAX_CHARS,
+        ),
       },
       timeoutMs: null,
     }) as Promise<ApprovalDecision>
   }
 
   try {
+    // 运行级总预算提示（跨轮共享）：让模型按剩余额度分配检索/抓取，避免前面几轮无差别用满
+    const budgetHint = ctx.toolBudget
+      ? `\n\n【运行级总预算】本次运行共 ${ctx.toolBudget.max} 次工具调用额度，当前剩余 ${ctx.toolBudget.remaining} 次` +
+        (cfg.maxToolCalls ? `（本节点单次上限 ${cfg.maxToolCalls} 次，取二者先到者）` : '') +
+        '；请据此安排检索/抓取的优先级，必要时提前收敛直接作答。'
+      : ''
     const task: AgentTask = {
       definitionId: 'workflow:agent-loop',
       scopeId: ctx.executionKey,
-      input: stringifyValue(cfg.task),
+      input: stringifyValue(cfg.task) + budgetHint,
       systemPrompt: stringifyValue(cfg.systemPrompt ?? ''),
-      tools: assembleTools(registry, cfg.toolWhitelist, cfg.maxToolCalls, opts.resumeFrom?.state.usage.toolCalls ?? 0),
+      tools: assembleTools(
+        registry,
+        cfg.toolWhitelist,
+        cfg.maxToolCalls,
+        opts.resumeFrom?.state.usage.toolCalls ?? 0,
+        ctx.toolBudget,
+      ),
       maxSteps,
       modelPreference: { providerConfigId: cfg.providerConfigId || undefined, modelId: cfg.modelId || undefined },
       // 工具审计 logContext（review D3：审计行 run_id/node_id 据此落库）

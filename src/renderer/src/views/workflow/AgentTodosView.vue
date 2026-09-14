@@ -7,60 +7,111 @@
       </div>
     </div>
 
-    <el-tabs v-model="tab">
+    <el-tabs v-model="tab" class="tabs-area">
       <el-tab-pane :label="`工作流审批 (${reviews.length})`" name="reviews">
-        <el-table :data="reviews" size="small" empty-text="暂无待审批">
-          <el-table-column prop="nodeName" label="节点" min-width="120" />
-          <el-table-column label="送审内容" min-width="240">
-            <template #default="{ row }"><span class="content">{{ outputSummary(row) }}</span></template>
-          </el-table-column>
-          <el-table-column label="截止" width="160">
-            <template #default="{ row }">{{ formatTime(row.waitExpiresAt) }}</template>
-          </el-table-column>
-          <el-table-column label="操作" width="330" fixed="right">
-            <template #default="{ row }">
-              <el-button text type="success" size="small" @click="decide(row, 'approve')">批准</el-button>
-              <el-button text type="warning" size="small" @click="decideEdit(row)">修改后批准</el-button>
-              <el-button text type="danger" size="small" @click="decide(row, 'reject')">驳回</el-button>
-              <el-button text type="primary" size="small" @click="gotoRun(row)">详情</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
+        <div class="list-wrap">
+          <el-table :data="pagedReviews" size="small" empty-text="暂无待审批" height="100%">
+            <el-table-column type="index" label="#" width="52" :index="reviewRowIndex" />
+            <el-table-column label="送审时间" width="150">
+              <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+            </el-table-column>
+            <el-table-column prop="nodeName" label="节点" min-width="120" />
+            <el-table-column label="送审内容" min-width="240">
+              <template #default="{ row }"><span class="content">{{ outputSummary(row) }}</span></template>
+            </el-table-column>
+            <el-table-column label="截止" width="150">
+              <template #default="{ row }">{{ formatTime(row.waitExpiresAt) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="330" fixed="right">
+              <template #default="{ row }">
+                <el-button text type="success" size="small" @click="decide(row, 'approve')">批准</el-button>
+                <el-button text type="warning" size="small" @click="decideEdit(row)">修改后批准</el-button>
+                <el-button text type="danger" size="small" @click="decide(row, 'reject')">驳回</el-button>
+                <el-button text type="primary" size="small" @click="gotoRun(row)">详情</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="pager">
+            <el-pagination
+              small
+              background
+              layout="total, sizes, prev, pager, next"
+              :total="reviews.length"
+              v-model:current-page="reviewPage"
+              v-model:page-size="reviewPageSize"
+              :page-sizes="[10, 20, 50]"
+            />
+          </div>
+        </div>
       </el-tab-pane>
 
       <el-tab-pane :label="`任务裁决 (${taskTodos.length})`" name="tasks">
-        <el-table :data="taskTodos" size="small" empty-text="暂无待裁决任务">
-          <el-table-column prop="title" label="任务" min-width="180" />
-          <el-table-column label="状态" width="120">
-            <template #default="{ row }"><el-tag size="small" :type="row.status === 'escalated' ? 'danger' : 'primary'" disable-transitions>{{ row.status }}</el-tag></template>
-          </el-table-column>
-          <el-table-column prop="rootTitle" label="所属计划" min-width="160" />
-          <el-table-column label="操作" width="120" fixed="right">
-            <template #default="{ row }">
-              <el-button text type="primary" size="small" @click="gotoTasks(row.rootId)">去裁决</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
+        <div class="list-wrap">
+          <el-table :data="pagedTaskTodos" size="small" empty-text="暂无待裁决任务" height="100%">
+            <el-table-column type="index" label="#" width="52" :index="taskRowIndex" />
+            <el-table-column label="创建时间" width="150">
+              <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+            </el-table-column>
+            <el-table-column prop="title" label="任务" min-width="180" />
+            <el-table-column label="状态" width="120">
+              <template #default="{ row }"><el-tag size="small" :type="row.status === 'escalated' ? 'danger' : 'primary'" disable-transitions>{{ row.status }}</el-tag></template>
+            </el-table-column>
+            <el-table-column prop="rootTitle" label="所属计划" min-width="160" />
+            <el-table-column label="操作" width="120" fixed="right">
+              <template #default="{ row }">
+                <el-button text type="primary" size="small" @click="gotoTasks(row.rootId)">去裁决</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="pager">
+            <el-pagination
+              small
+              background
+              layout="total, sizes, prev, pager, next"
+              :total="taskTodos.length"
+              v-model:current-page="taskPage"
+              v-model:page-size="taskPageSize"
+              :page-sizes="[10, 20, 50]"
+            />
+          </div>
+        </div>
       </el-tab-pane>
 
       <el-tab-pane :label="`记忆审批 (${memories.length})`" name="memory">
-        <el-table :data="memories" size="small" empty-text="暂无待审记忆">
-          <el-table-column label="类型" width="90">
-            <template #default="{ row }"><el-tag size="small" disable-transitions>{{ row.kind }}</el-tag></template>
-          </el-table-column>
-          <el-table-column label="标题" min-width="160">
-            <template #default="{ row }">{{ row.content.title }}</template>
-          </el-table-column>
-          <el-table-column label="内容" min-width="260">
-            <template #default="{ row }"><span class="content">{{ row.content.content }}</span></template>
-          </el-table-column>
-          <el-table-column label="操作" width="150" fixed="right">
-            <template #default="{ row }">
-              <el-button text type="success" size="small" @click="memory(row.id, 'approve')">批准</el-button>
-              <el-button text type="danger" size="small" @click="memory(row.id, 'archive')">归档</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
+        <div class="list-wrap">
+          <el-table :data="pagedMemories" size="small" empty-text="暂无待审记忆" height="100%">
+            <el-table-column type="index" label="#" width="52" :index="memoryRowIndex" />
+            <el-table-column label="提交时间" width="150">
+              <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+            </el-table-column>
+            <el-table-column label="类型" width="90">
+              <template #default="{ row }"><el-tag size="small" disable-transitions>{{ row.kind }}</el-tag></template>
+            </el-table-column>
+            <el-table-column label="标题" min-width="160">
+              <template #default="{ row }">{{ row.content.title }}</template>
+            </el-table-column>
+            <el-table-column label="内容" min-width="260">
+              <template #default="{ row }"><span class="content">{{ row.content.content }}</span></template>
+            </el-table-column>
+            <el-table-column label="操作" width="150" fixed="right">
+              <template #default="{ row }">
+                <el-button text type="success" size="small" @click="memory(row.id, 'approve')">批准</el-button>
+                <el-button text type="danger" size="small" @click="memory(row.id, 'archive')">归档</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="pager">
+            <el-pagination
+              small
+              background
+              layout="total, sizes, prev, pager, next"
+              :total="memories.length"
+              v-model:current-page="memoryPage"
+              v-model:page-size="memoryPageSize"
+              :page-sizes="[10, 20, 50]"
+            />
+          </div>
+        </div>
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -68,13 +119,23 @@
 
 <script setup lang="ts">
 defineOptions({ name: 'AgentTodosView' })
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
-interface ReviewRow { runId: string; nodeId: string; nodeName: string; nodeType?: string; error: string | null; output: Record<string, unknown> | null; waitExpiresAt: string | null }
-interface TaskTodo { id: string; title: string; status: string; rootId: string; rootTitle: string }
-interface MemoryRow { id: string; kind: string; content: { title?: string; content?: string }; confidence: number | null }
+interface ReviewRow {
+  runId: string
+  nodeId: string
+  nodeName: string
+  nodeType?: string
+  error: string | null
+  output: Record<string, unknown> | null
+  waitExpiresAt: string | null
+  /** 送审时间（节点创建时间，后端 WorkflowNodeRunRecord.createdAt） */
+  createdAt: string | null
+}
+interface TaskTodo { id: string; title: string; status: string; rootId: string; rootTitle: string; createdAt: string | null }
+interface MemoryRow { id: string; kind: string; content: { title?: string; content?: string }; confidence: number | null; createdAt: string | null }
 
 type WfResp = { success: boolean; data?: unknown; error?: string }
 type WfApi = Record<string, (payload?: unknown) => Promise<WfResp>>
@@ -85,6 +146,39 @@ const tab = ref<'reviews' | 'tasks' | 'memory'>('reviews')
 const reviews = ref<ReviewRow[]>([])
 const taskTodos = ref<TaskTodo[]>([])
 const memories = ref<MemoryRow[]>([])
+
+// ==================== 分页（每列表独立；分页栏固定底部，表格内滚动） ====================
+const pageSizeDefault = 10
+const reviewPage = ref(1)
+const reviewPageSize = ref(pageSizeDefault)
+const taskPage = ref(1)
+const taskPageSize = ref(pageSizeDefault)
+const memoryPage = ref(1)
+const memoryPageSize = ref(pageSizeDefault)
+
+function slicePage<T>(list: T[], page: number, pageSize: number): T[] {
+  return list.slice((page - 1) * pageSize, page * pageSize)
+}
+function clampPage(page: number, listLength: number, pageSize: number): number {
+  const maxPage = Math.max(1, Math.ceil(listLength / pageSize))
+  return Math.min(page, maxPage)
+}
+/** 序号列全局索引（带分页偏移） */
+function rowIndex(page: number, pageSize: number): (i: number) => number {
+  return (i: number) => (page - 1) * pageSize + i + 1
+}
+
+const pagedReviews = computed(() => slicePage(reviews.value, reviewPage.value, reviewPageSize.value))
+const pagedTaskTodos = computed(() => slicePage(taskTodos.value, taskPage.value, taskPageSize.value))
+const pagedMemories = computed(() => slicePage(memories.value, memoryPage.value, memoryPageSize.value))
+const reviewRowIndex = computed(() => rowIndex(reviewPage.value, reviewPageSize.value))
+const taskRowIndex = computed(() => rowIndex(taskPage.value, taskPageSize.value))
+const memoryRowIndex = computed(() => rowIndex(memoryPage.value, memoryPageSize.value))
+
+/** 列表刷新后把页码收敛回有效范围（数据变少时避免空页） */
+watch(reviews, (list) => { reviewPage.value = clampPage(reviewPage.value, list.length, reviewPageSize.value) })
+watch(taskTodos, (list) => { taskPage.value = clampPage(taskPage.value, list.length, taskPageSize.value) })
+watch(memories, (list) => { memoryPage.value = clampPage(memoryPage.value, list.length, memoryPageSize.value) })
 
 /** 单调请求序号（review M8：切 tab 交错覆盖曾让计数闪变） */
 let loadSeq = 0
@@ -107,10 +201,17 @@ async function load(): Promise<void> {
     if (seq !== loadSeq) return
     for (const t of trees) {
       if (!t.success) continue
-      for (const node of (t.data as { nodes: Array<{ id: string; title: string; status: string }> }).nodes) {
+      for (const node of (t.data as { nodes: Array<{ id: string; title: string; status: string; createdAt?: string | null }> }).nodes) {
         if (['verifying', 'escalated'].includes(node.status)) {
           const root = roots.find((x) => x.id === (t.data as { root: { id: string } }).root.id)
-          todos.push({ id: node.id, title: node.title, status: node.status, rootId: root?.id ?? '', rootTitle: root?.title ?? '' })
+          todos.push({
+            id: node.id,
+            title: node.title,
+            status: node.status,
+            rootId: root?.id ?? '',
+            rootTitle: root?.title ?? '',
+            createdAt: node.createdAt ?? null,
+          })
         }
       }
     }
@@ -128,8 +229,8 @@ function outputSummary(row: ReviewRow): string {
     return String(row.output)
   }
 }
-function formatTime(t: string | null): string {
-  return t ? new Date(t).toLocaleString('zh-CN') : '—'
+function formatTime(t: string | null | undefined): string {
+  return t ? new Date(t).toLocaleString('zh-CN', { hour12: false }) : '—'
 }
 
 /** 修改后批准（与运行详情同构；review M7：盲批曾对 choose/form 行必然失败） */
@@ -171,10 +272,38 @@ watch(tab, () => { void load() })
 </script>
 
 <style scoped>
-.page-container { padding: 20px; height: 100%; overflow: auto; }
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+.page-container {
+  padding: 20px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.page-header { flex: none; display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
 .meta { color: var(--el-text-color-secondary); font-size: 13px; }
-.mono { font-size: 11px; font-family: monospace; }
 .content { font-size: 12px; color: var(--el-text-color-regular); }
-.mono { font-size: 11px; font-family: monospace; }
+
+/* tabs 占据剩余高度；表头/分页固定，表格中间内容滚动 */
+.tabs-area {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.tabs-area :deep(.el-tabs__header) { flex: none; margin-bottom: 8px; }
+.tabs-area :deep(.el-tabs__content) { flex: 1; min-height: 0; }
+.tabs-area :deep(.el-tab-pane) { height: 100%; }
+
+.list-wrap {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.list-wrap :deep(.el-table) { flex: 1; min-height: 0; }
+.pager {
+  flex: none;
+  padding-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+}
 </style>

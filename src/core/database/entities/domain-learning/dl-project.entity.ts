@@ -58,6 +58,13 @@ export class DlProjectEntity {
   @Column({ name: 'review_settings', type: 'text', nullable: true })
   reviewSettings!: string | null
 
+  /**
+   * 主题学习前置要求 JSON（DlSpacePrereq[]；2026-09-12 用户需求）
+   * 学这个领域之前需要具备什么（含领域外需自备能力），学习者进空间即见。
+   */
+  @Column({ name: 'prerequisites', type: 'text', nullable: true })
+  prerequisites!: string | null
+
   @Column({ name: 'created_at', type: 'datetime', nullable: true })
   createdAt!: Date | null
 

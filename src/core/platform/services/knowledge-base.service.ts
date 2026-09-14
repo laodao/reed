@@ -6,7 +6,7 @@
 
 import fs from 'fs'
 import path from 'path'
-import { randomUUID } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import nodejieba from 'nodejieba'
 import { parse } from 'node-html-parser'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
@@ -14,8 +14,18 @@ import type { KbQaPairRecord } from '@core/database/repositories/kb-qa-pair.repo
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
-import { HybridSplitter, EmbeddingService, SplitConfig, DEFAULT_SPLIT_CONFIG, SplitChunk } from '@core/platform/services/chunk-splitter'
+import { HybridSplitter, EmbeddingService, SplitConfig, DEFAULT_SPLIT_CONFIG, SplitChunk, StructureDetector } from '@core/platform/services/chunk-splitter'
+import type { KbChapterInput, KbChapterRecord } from '@core/database/repositories/kb-chapter.repository'
+import {
+  buildChapterLookup,
+  chapterPathOf,
+  matchChapter,
+  type ChapterLookup,
+} from '@core/platform/services/kb-chapter-lookup'
+import { KbChapterSummaryService } from '@core/platform/services/kb-chapter-summary.service'
+import { detectKeywordIntent } from '@core/platform/services/query-routing'
 import { extractTextFromFile, inferFileType } from '@core/utils/extract-text'
+import { resolveAssetPath, toRelativeAssetPath } from '@core/utils/asset-path'
 import { publishDomainEvent } from '@core/platform/workflow/trigger/domain-event-bus'
 import { WORKFLOW_EVENT_NAMES } from '@shared/types/workflow.types'
 import type {
@@ -37,11 +47,7 @@ import type {
   AddDocumentResult,
   KnowledgeBaseFolder,
 } from '@shared/types/knowledge-base.types'
-
-// 常量配置
-const CHUNK_SIZE = 800
-const OVERLAP = 80
-const BATCH_SIZE = 10
+import { knowledgeParams } from '@shared/utils/knowledge-params'
 
 /** D3：索引分词停用词（buildIndex 与 BM25 检索共用——同一套词表才能对得上） */
 const INDEX_STOP_WORDS = new Set([
@@ -65,12 +71,6 @@ function tokenizeForIndex(text: string): string[] {
 
 /** QA 对向量的 chunkId 命名空间前缀（与 addQaPair 写入一致；文档检索须剔除） */
 const QA_CHUNK_ID_PREFIX = 'qa:'
-/** 文档召回补偿条数：抵偿 QA 命名空间向量占用的 topK 名额 */
-const QA_VECTOR_FETCH_PADDING = 10
-/** QA xlsx 导入文件大小上限（评审 #77：解析无上限是 DoS 面） */
-const QA_IMPORT_MAX_FILE_BYTES = 10 * 1024 * 1024
-/** QA xlsx 导入行数上限（评审 #77） */
-const QA_IMPORT_MAX_ROWS = 10_000
 
 /** BM25 参数（k1 词频饱和、b 长度归一；业界标准值） */
 const BM25_K1 = 1.2
@@ -281,6 +281,8 @@ export class KnowledgeBaseService {
         await db.kbInvertedIndex.deleteByDocumentId(doc.id)
       }
       await db.kbChunks.deleteByKnowledgeBaseId(id)
+      // 章节表冗余存全文，随库一起清理（与 deleteDocument 同口径）
+      if (db.kbChapters) await db.kbChapters.deleteByKnowledgeBaseId(id)
       await db.kbDocuments.deleteByKnowledgeBaseId(id)
       // D1：QA 对级联——QA 向量按 chunkId 命名空间逐条删（与文档向量无 documentId 关联）
       if (db.kbQaPairs) {
@@ -331,7 +333,8 @@ export class KnowledgeBaseService {
         requests.push({
           knowledgeBaseId: kbId,
           name: file.name,
-          filePath: destPath,
+          // 入库统一相对 dataPath（正斜杠）：换数据目录/跨平台后仍可解析，UI 也不会露出本机绝对路径
+          filePath: toRelativeAssetPath(destPath),
           fileType,
           fileSize: file.size
         })
@@ -380,8 +383,9 @@ export class KnowledgeBaseService {
         const existing = await db.kbDocuments.findBySource(kbId, data.source)
         if (existing) {
           const newBuf = Buffer.from(data.content, 'utf-8')
-          // 覆盖文件内容（复用 existing.filePath，避免文件孤立）
-          await fs.promises.writeFile(existing.filePath, newBuf)
+          // 覆盖文件内容（复用 existing.filePath，避免文件孤立）；
+          // file_path 是 dataPath 相对路径 → 必须解析回绝对路径，否则会按进程 CWD 写到别处
+          await fs.promises.writeFile(resolveAssetPath(existing.filePath), newBuf)
 
           const sizeDelta = newBuf.length - existing.fileSize
           const oldChunkCount = existing.chunkCount
@@ -439,7 +443,8 @@ export class KnowledgeBaseService {
       const request: CreateDocumentRequest = {
         knowledgeBaseId: kbId,
         name: data.name,
-        filePath: destPath,
+        // 同上传：入库相对 dataPath（正斜杠）
+        filePath: toRelativeAssetPath(destPath),
         fileType: 'txt',
         fileSize: contentBuffer.length,
         source: data.source,
@@ -487,10 +492,14 @@ export class KnowledgeBaseService {
       const kbId = doc.knowledgeBaseId
 
       this.deleteDocumentFile(doc.filePath)
+      // 内嵌资源目录（epub 图片等）随文档一起清理
+      this.removeDocumentAssets(kbId, docId)
 
       await db.kbVectors.deleteByDocumentId(docId)
       await db.kbInvertedIndex.deleteByDocumentId(docId)
       await db.kbChunks.deleteByDocumentId(docId)
+      // 章节表冗余存全文，必须随文档一起清理（否则删除后正文仍留在库里）
+      if (db.kbChapters) await db.kbChapters.deleteByDocument(docId)
       await db.kbDocuments.delete(docId)
 
       // 使用文档的 chunkCount 字段计算向量数（只有处理完成时才设置）
@@ -564,9 +573,10 @@ export class KnowledgeBaseService {
   }
 
   /**
-   * 清空一篇文档相关的所有派生数据：vectors / inverted-index / chunks。
+   * 清空一篇文档相关的所有派生数据：vectors / inverted-index / chunks / chapters。
    * 由 reprocessDocument 与 addDocument 的 upsert 分支共用。
    * 顺序与 deleteDocument 保持一致，避免外键约束被违反。
+   * 章节一并清掉：重解析中途失败时不能留下与已清空切片不一致的旧章节树。
    */
   private async clearDocumentArtifacts(docId: string): Promise<void> {
     const db = getCoreDatabaseManager()
@@ -574,6 +584,7 @@ export class KnowledgeBaseService {
     await db.kbVectors.deleteByDocumentId(docId)
     await db.kbInvertedIndex.deleteByDocumentId(docId)
     await db.kbChunks.deleteByDocumentId(docId)
+    if (db.kbChapters) await db.kbChapters.deleteByDocument(docId)
   }
 
   // ==================== 文档处理 ====================
@@ -592,13 +603,30 @@ export class KnowledgeBaseService {
       // 1. 解析
       await db.kbDocuments.updateProgress(doc.id, 10)
       this.emitProgress(doc.id, 10, undefined)
-      const content = await this.parseFile(doc.filePath, doc.fileType)
+      // 内嵌图片（epub 等）落到应用数据目录，正文只写 dataPath 相对路径；
+      // 重新处理前先清空旧的资源目录，避免上次残留的图片混入本次结果
+      const assets = this.documentAssetDir(kb.id, doc.id)
+      this.removeDocumentAssets(kb.id, doc.id)
+      const content = await this.parseFile(doc.filePath, doc.fileType, {
+        dir: assets.abs,
+        refPrefix: assets.rel,
+      })
+      const assetCount = this.countAssetFiles(assets.abs)
+      if (assetCount > 0) {
+        console.log(`[KB] 内嵌资源落盘: ${assetCount} 个 → ${assets.rel}`)
+      } else {
+        this.dropEmptyAssetDir(assets.abs)
+      }
       if (!content?.trim()) {
         await db.kbDocuments.markFailed(doc.id, '文档内容为空')
         this.emitStatus(doc.id, 'failed', undefined, '文档内容为空')
         return
       }
       console.log(`[KB] 解析完成, 长度: ${content.length}`)
+
+      // 1.5 章节树落库（与切片同源的结构检测；供检索上下文注入/章节摘要消费）
+      // 失败不影响切片与向量主流程（章节是增强能力，见 syncChapters 内部 fail-soft）
+      await this.syncChapters(doc.id, kb.id, doc.name, content)
 
       // 2. 切分配置
       const embeddingConfig: EmbeddingConfig = kb.embeddingConfig ? JSON.parse(kb.embeddingConfig) : {}
@@ -663,13 +691,14 @@ export class KnowledgeBaseService {
         }
       }
 
-      // 5. 生成向量
-      const totalBatches = Math.ceil(chunkRecords.length / BATCH_SIZE)
+      // 5. 生成向量（批量大小走「参数设置 → 知识库 → 入库与导入」）
+      const batchSize = knowledgeParams().ingest.embeddingBatchSize
+      const totalBatches = Math.ceil(chunkRecords.length / batchSize)
       const estimatedBatchTime = 2 // 秒
 
       let batchIndex = 0
-      for (let i = 0; i < chunkRecords.length; i += BATCH_SIZE) {
-        const batch = chunkRecords.slice(i, i + BATCH_SIZE)
+      for (let i = 0; i < chunkRecords.length; i += batchSize) {
+        const batch = chunkRecords.slice(i, i + batchSize)
         const texts = batch.map(c => c.content)
 
         const vectors = await this.getEmbeddingVectors(texts, embeddingConfig)
@@ -705,7 +734,13 @@ export class KnowledgeBaseService {
       this.emitProgress(doc.id, 100, 0)
       this.emitStatus(doc.id, 'completed', splitChunks.length)
       this.emitKnowledgeBaseStats(kb.id)
+      if (assetCount > 0) {
+        console.log(`[KB] 内嵌资源校验: ${this.countAssetFiles(assets.abs)}/${assetCount} 仍在磁盘`)
+      }
       console.log(`[KB] 处理完成: ${doc.name}, 耗时: ${Math.round((Date.now() - startTime) / 1000)}秒`)
+
+      // 7. 章节摘要（异步后台生成，不阻塞处理完成；单章失败标记 failed 可重试）
+      this.scheduleChapterSummaries(doc.id)
 
     } catch (e: any) {
       console.error(`[KB] 处理失败: ${doc.name}`, e)
@@ -715,175 +750,159 @@ export class KnowledgeBaseService {
   }
 
   /**
-   * 提取文件纯文本（委托 @core/utils/extract-text，逻辑同源）。
+   * 章节摘要调度（M2）：文档处理完成后异步生成章节摘要。
+   * fire-and-forget——不阻塞 reprocess 返回；未装配/异常只记日志。
+   */
+  private scheduleChapterSummaries(documentId: string): void {
+    const db = getCoreDatabaseManager()
+    if (!db.kbChapters) return
+    try {
+      const service = new KbChapterSummaryService({ repo: db.kbChapters })
+      service.scheduleDocumentSummaries(documentId)
+    } catch (e: unknown) {
+      console.warn(`[KB] 章节摘要调度失败（不影响主流程）: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  /**
+   * 章节树落库（M2）：用与切片同源的结构检测（StructureDetector）把文档章节
+   * 落成树形实体（kb_chapters），供检索上下文注入（M3）与章节摘要使用。
+   *
+   * - 有结构：按 sections 建树，父章节由「层级栈」解析（level 更小的最近前驱）
+   * - 无结构：落单条「整篇章节」（标题=文档名，摘要退化为整篇摘要）
+   * - 幂等：每次处理全量重建；摘要状态重置 pending，由摘要服务异步补齐
+   * - fail-soft：任何异常只记日志，绝不影响切片/向量主流程
+   */
+  private async syncChapters(
+    documentId: string,
+    knowledgeBaseId: string,
+    docName: string,
+    content: string,
+  ): Promise<void> {
+    const db = getCoreDatabaseManager()
+    if (!db.kbChapters) return // 未装配（旧库/部分测试环境）：跳过
+
+    try {
+      const structure = new StructureDetector().detect(content)
+      const inputs: KbChapterInput[] = []
+      const hash = (text: string): string => createHash('sha256').update(text).digest('hex')
+
+      if (structure.hasStructure && structure.sections.length > 0) {
+        // 层级栈：父 = 栈中最近的 level 更小者；同/更深层出栈
+        const stack: Array<{ id: string; level: number }> = []
+        structure.sections.forEach((section, index) => {
+          const id = randomUUID()
+          while (stack.length > 0 && stack[stack.length - 1].level >= section.level) {
+            stack.pop()
+          }
+          const parentId = stack.length > 0 ? stack[stack.length - 1].id : null
+          stack.push({ id, level: section.level })
+          inputs.push({
+            id,
+            documentId,
+            knowledgeBaseId,
+            title: section.title,
+            level: section.level,
+            parentTitle: section.parentTitle ?? null,
+            parentId,
+            ordering: index,
+            startOffset: section.startIndex,
+            endOffset: section.endIndex,
+            content: section.content,
+            contentHash: hash(section.content),
+          })
+        })
+      } else {
+        inputs.push({
+          id: randomUUID(),
+          documentId,
+          knowledgeBaseId,
+          title: docName,
+          level: 1,
+          parentTitle: null,
+          parentId: null,
+          ordering: 0,
+          startOffset: 0,
+          endOffset: content.length,
+          content,
+          contentHash: hash(content),
+        })
+      }
+
+      const count = await db.kbChapters.replaceByDocument(documentId, inputs)
+      console.log(`[KB] 章节树落库完成: ${count} 个章节`)
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      console.error(`[KB] 章节树落库失败（不影响切片入库）: ${msg}`)
+    }
+  }
+
+  /**
+   * 提取文件内容（pdf/epub 走 Rust 解析器输出 Markdown，供切片器按章节/段落结构切分；
+   * txt/md 原样返回）。
    * 支持 txt/md/pdf/epub/docx/xlsx；中文编码自动检测。
    * 注：原 decodeTextFile/hasGarbledChars 已迁入 extract-text，此处仅保留 parseFile 入口。
+   *
+   * @param assets 文档内嵌资源落盘信息（epub 图片等）；不传则解析器用临时目录、正文里的本地图片引用被清理
    */
-  private async parseFile(filePath: string, fileType: FileType): Promise<string> {
+  private async parseFile(
+    filePath: string,
+    fileType: FileType,
+    assets?: { dir: string; refPrefix: string },
+  ): Promise<string> {
     // file_path 入库约定为 dataPath 相对路径（asset-paths-to-relative 迁移会把绝对路径改写为相对），
     // 从 DB 重读（重新处理/重启后续跑）必须解析回绝对路径，否则按进程 CWD 解析必 ENOENT
-    const resolved = path.isAbsolute(filePath)
-      ? filePath
-      : path.join(getPathProvider().getDataPath(), filePath)
-    return extractTextFromFile(resolved, fileType)
+    const resolved = resolveAssetPath(filePath)
+    return extractTextFromFile(resolved, fileType, {
+      asMarkdown: true,
+      resourceDir: assets?.dir,
+      resourceRefPrefix: assets?.refPrefix,
+    })
+  }
+
+  /** 文档内嵌资源目录（dataPath 相对路径 + 绝对路径），与文档本体同属 knowledge-base/<kbId>/documents 下 */
+  private documentAssetDir(kbId: string, docId: string): { abs: string; rel: string } {
+    const abs = path.join(getPathProvider().getDataPath(), 'knowledge-base', kbId, 'documents', 'assets', docId)
+    return { abs, rel: toRelativeAssetPath(abs) }
   }
 
   /**
-   * 尝试多种编码解析文本文件
-   * 优先级：自动检测 > UTF-8 > GBK > GB2312
+   * 清理文档内嵌资源目录。
+   * @param keepEmpty 保留空目录？重新处理前清空用 true（解析器随后写入）；删除文档用 false
    */
-  private decodeTextFile(buffer: Buffer): string {
-    // 尝试 UTF-8（带BOM检测）
-    if (buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) {
-      // UTF-8 with BOM
-      return buffer.slice(3).toString('utf-8')
-    }
-
-    // 使用 jschardet 自动检测编码
+  private removeDocumentAssets(kbId: string, docId: string): void {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const jschardet = require('jschardet')
-      const detected = jschardet.detect(buffer)
-
-      if (detected && detected.encoding && detected.confidence > 0.7) {
-        const encoding = detected.encoding.toLowerCase()
-        console.log(`[KB] 检测到编码: ${encoding} (置信度: ${detected.confidence})`)
-
-        // 处理常见的编码名称别名
-        const encodingMap: Record<string, string> = {
-          'utf-8': 'utf-8',
-          'utf8': 'utf-8',
-          'gbk': 'gbk',
-          'gb2312': 'gbk',  // GB2312 是 GBK 的子集，用 GBK 解码更安全
-          'gb18030': 'gbk',
-          'big5': 'big5',
-          'shift_jis': 'shiftjis',
-          'euc-jp': 'eucjp',
-          'iso-8859-1': 'latin1',
-          'ascii': 'utf-8',  // ASCII 兼容 UTF-8
-        }
-
-        const targetEncoding = encodingMap[encoding] || encoding
-
-        if (targetEncoding === 'utf-8') {
-          const text = buffer.toString('utf-8')
-          if (!this.hasGarbledChars(text)) {
-            return text
-          }
-        } else {
-          try {
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
-            const iconv = require('iconv-lite')
-            if (iconv.encodingExists(targetEncoding)) {
-              const text = iconv.decode(buffer, targetEncoding)
-              if (!this.hasGarbledChars(text)) {
-                return text
-              }
-            }
-          } catch {
-            // iconv 解码失败，继续尝试其他方法
-          }
-        }
-      }
-    } catch (e) {
-      console.log('[KB] 编码检测失败:', e)
+      const { abs } = this.documentAssetDir(kbId, docId)
+      if (fs.existsSync(abs)) fs.rmSync(abs, { recursive: true, force: true })
+    } catch (e: unknown) {
+      console.warn(`[KB] 清理内嵌资源目录失败: ${e instanceof Error ? e.message : String(e)}`)
     }
-
-    // 尝试 UTF-8
-    try {
-      const utf8Text = buffer.toString('utf-8')
-      // 检查是否有乱码字符（UTF-8 解码错误通常会产生的替换字符）
-      if (!this.hasGarbledChars(utf8Text)) {
-        return utf8Text
-      }
-    } catch {
-      // UTF-8 解码失败，继续尝试其他编码
-    }
-
-    // 尝试 GBK（最常见的中文字符编码）
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const iconv = require('iconv-lite')
-      const gbkText = iconv.decode(buffer, 'gbk')
-      if (!this.hasGarbledChars(gbkText)) {
-        return gbkText
-      }
-    } catch {
-      // iconv-lite 未安装或解码失败
-    }
-
-    // 最后使用 UTF-8 强制解码（即使有乱码也比 latin1 好，因为 latin1 对中文完全不可读）
-    console.log('[KB] 警告: 无法确定文件编码，使用 UTF-8 强制解码')
-    return buffer.toString('utf-8')
   }
 
-  /**
-   * 检查文本是否包含乱码字符
-   */
-  private hasGarbledChars(text: string): boolean {
-    // 检查常见的乱码模式
-    const garbledPatterns = [
-      /\ufffd/,           // Unicode 替换字符
-      // eslint-disable-next-line no-control-regex
-      /[\x00-\x08\x0b\x0c\x0e-\x1f]/, // 控制字符（换行、制表符除外）
-    ]
-
-    // 统计非ASCII字符的比例，如果乱码太多可能是编码错误
-    let nonAsciiCount = 0
-    let garbledCount = 0
-
-    for (const char of text) {
-      const code = char.charCodeAt(0)
-      if (code > 127) {
-        nonAsciiCount++
-        // 检测是否为乱码字符
-        if (code === 0xfffd || (code >= 0x80 && code <= 0x9f)) {
-          garbledCount++
-        }
+  /** 递归统计资源目录里的文件数（0/不存在都返回 0） */
+  private countAssetFiles(dir: string): number {
+    try {
+      if (!fs.existsSync(dir)) return 0
+      let count = 0
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isDirectory()) count += this.countAssetFiles(path.join(dir, entry.name))
+        else count++
       }
+      return count
+    } catch {
+      return 0
     }
-
-    // 如果非ASCII字符中乱码比例超过20%，认为有乱码
-    if (nonAsciiCount > 0 && garbledCount / nonAsciiCount > 0.2) {
-      return true
-    }
-
-    // 检查是否有连续的乱码模式
-    for (const pattern of garbledPatterns) {
-      if (pattern.test(text)) {
-        return true
-      }
-    }
-
-    return false
   }
 
-  private splitText(text: string): Array<{ content: string; index: number; start: number; end: number }> {
-    const result: Array<{ content: string; index: number; start: number; end: number }> = []
-    let start = 0
-    let index = 0
-
-    while (start < text.length) {
-      let end = Math.min(start + CHUNK_SIZE, text.length)
-
-      // 只在不是文本末尾时寻找边界
-      if (end < text.length) {
-        const boundary = Math.max(
-          text.lastIndexOf('。', end),
-          text.lastIndexOf('\n', end)
-        )
-        if (boundary > start + CHUNK_SIZE / 2) end = boundary + 1
+  /** 解析后若资源目录为空（文档内无图片），顺手删掉，避免留下一堆空目录 */
+  private dropEmptyAssetDir(dir: string): void {
+    try {
+      if (fs.existsSync(dir) && fs.readdirSync(dir).length === 0) {
+        fs.rmSync(dir, { recursive: true, force: true })
       }
-
-      const content = text.slice(start, end).trim()
-      if (content) result.push({ content, index: index++, start, end })
-
-      // 修复：确保 start 总是前进，避免无限循环
-      const nextStart = end - OVERLAP
-      start = (nextStart <= start) ? end : nextStart
+    } catch {
+      /* 清理失败不影响主流程 */
     }
-
-    return result
   }
 
   async getEmbeddingVectors(texts: string[], config: EmbeddingConfig, signal?: AbortSignal): Promise<number[][] | null> {
@@ -972,8 +991,24 @@ export class KnowledgeBaseService {
 
       const config: EmbeddingConfig = kb.embeddingConfig ? JSON.parse(kb.embeddingConfig) : {}
       // D3 混合检索权重：1（缺省）= 纯向量（旧行为）；0 = 纯关键词；中间值 = 加权融合
-      const vectorWeight = req.vectorWeight != null ? Math.min(1, Math.max(0, req.vectorWeight)) : 1
-      const topK = req.topK || 5
+      // M5+：查询自适应路由——未显式指定 vectorWeight/fusion 时，按查询意图选策略：
+      // 关键词型（法条编号/版本号/API 符号/专有名词）→ RRF 混合（评估：recall@1 70%→80%），
+      // 语义型问句保持纯向量（评估：RRF 在语义型 @1 不损失，误判代价≈0）
+      let effectiveFusion = req.fusion
+      let effectiveVectorWeight = req.vectorWeight
+      if (effectiveFusion == null && effectiveVectorWeight == null && req.autoRoute !== false) {
+        const routing = detectKeywordIntent(req.query)
+        if (routing.keywordish) {
+          effectiveFusion = routing.suggested.fusion
+          effectiveVectorWeight = routing.suggested.vectorWeight
+          console.log(
+            `[KB] 查询路由: 关键词型(${routing.reasons.join(',')}) → ${effectiveFusion}/w=${effectiveVectorWeight}`,
+          )
+        }
+      }
+      const vectorWeight = effectiveVectorWeight != null ? Math.min(1, Math.max(0, effectiveVectorWeight)) : 1
+      // 检索默认值走「参数设置 → 知识库 → 检索」（调用方显式指定优先）
+      const topK = req.topK || knowledgeParams().retrieval.defaultTopK
       const threshold = req.threshold != null && req.threshold > 0 ? req.threshold : null
 
       // 向量召回（weight=0 时跳过嵌入调用省一次 API）。
@@ -983,7 +1018,7 @@ export class KnowledgeBaseService {
         const vectors = await this.getEmbeddingVectors([req.query], config, req.signal)
         if (!vectors) return { success: false, error: '生成查询向量失败' }
         // 混合时 3 倍召回（融合需要候选并集）+ QA 前缀剔除补偿
-        const fetchK = (vectorWeight < 1 ? topK * 3 : topK) + QA_VECTOR_FETCH_PADDING
+        const fetchK = (vectorWeight < 1 ? topK * 3 : topK) + knowledgeParams().retrieval.qaVectorFetchPadding
         const raw = await db.kbVectors.searchSimilar(req.knowledgeBaseId, vectors[0], fetchK)
         for (const r of raw) {
           if (r.chunkId.startsWith(QA_CHUNK_ID_PREFIX)) continue
@@ -1002,32 +1037,63 @@ export class KnowledgeBaseService {
       // H3 语义：阈值已在各路原始分上过滤（上方的余弦阈值 + BM25 的 idf 加权分无
       // 绝对含义，不做阈值过滤）；融合分只用于排序，不回写为结果 score——
       // 纯向量路径的 score 保持原始余弦，下游展示/过滤不失真。
-      const maxVec = Math.max(0, ...vecScores.values())
-      const maxBm = Math.max(0, ...bm25.values())
-      const candidates = new Set([...vecScores.keys(), ...bm25.keys()])
       const fused: Array<{ chunkId: string; score: number; raw: number }> = []
-      for (const chunkId of candidates) {
-        const v = maxVec > 0 ? (vecScores.get(chunkId) ?? 0) / maxVec : 0
-        const b = maxBm > 0 ? (bm25.get(chunkId) ?? 0) / maxBm : 0
-        // 融合分用于排序；回显 score 用原始最高分（向量优先，纯关键词路径用 BM25 分）
-        const raw = vecScores.get(chunkId) ?? bm25.get(chunkId) ?? 0
-        fused.push({ chunkId, score: vectorWeight * v + (1 - vectorWeight) * b, raw })
+
+      if (effectiveFusion === 'rrf') {
+        // M4 RRF：名次倒数融合（k=60）——只用排名、不做分数校准，跨库/跨路更稳健
+        const RRF_K = 60
+        const rrf = new Map<string, number>()
+        const byRankDesc = (m: Map<string, number>): Array<[string, number]> =>
+          [...m.entries()].sort((a, b) => b[1] - a[1])
+        byRankDesc(vecScores).forEach(([id], i) =>
+          rrf.set(id, (rrf.get(id) ?? 0) + 1 / (RRF_K + i + 1)),
+        )
+        byRankDesc(bm25).forEach(([id], i) =>
+          rrf.set(id, (rrf.get(id) ?? 0) + 1 / (RRF_K + i + 1)),
+        )
+        for (const [chunkId, score] of rrf) {
+          fused.push({ chunkId, score, raw: vecScores.get(chunkId) ?? bm25.get(chunkId) ?? 0 })
+        }
+      } else {
+        const maxVec = Math.max(0, ...vecScores.values())
+        const maxBm = Math.max(0, ...bm25.values())
+        const candidates = new Set([...vecScores.keys(), ...bm25.keys()])
+        for (const chunkId of candidates) {
+          const v = maxVec > 0 ? (vecScores.get(chunkId) ?? 0) / maxVec : 0
+          const b = maxBm > 0 ? (bm25.get(chunkId) ?? 0) / maxBm : 0
+          // 融合分用于排序；回显 score 用原始最高分（向量优先，纯关键词路径用 BM25 分）
+          const raw = vecScores.get(chunkId) ?? bm25.get(chunkId) ?? 0
+          fused.push({ chunkId, score: vectorWeight * v + (1 - vectorWeight) * b, raw })
+        }
       }
       fused.sort((a, b) => b.score - a.score)
 
       const searchResults: SearchResult[] = []
-      for (const r of fused.slice(0, topK)) {
+      // M3：章节上下文缓存（按 documentId 懒加载，同文档多命中只查一次章节表）
+      const chapterCache = new Map<string, ChapterLookup>()
+      // M4：限定文档检索（缺省整库）；按序迭代以便过滤后仍能补足 topK
+      const docFilter = req.documentIds && req.documentIds.length > 0 ? new Set(req.documentIds) : null
+      for (const r of fused) {
+        if (searchResults.length >= topK) break
         const chunk = await db.kbChunks.findById(r.chunkId)
         if (!chunk) continue
+        if (docFilter && !docFilter.has(chunk.documentId)) continue
         const doc = await db.kbDocuments.findById(chunk.documentId)
         if (!doc) continue
 
+        const chapter = await this.resolveChapterForChunk(chunk, chapterCache)
         searchResults.push({
           chunkId: chunk.id,
           documentId: doc.id,
           documentName: doc.name,
           content: chunk.content,
-          score: Number(r.raw.toFixed(4))
+          score: Number(r.raw.toFixed(4)),
+          ...(chapter
+            ? {
+                chapterPath: chapterPathOf(chapter, chapterCache.get(chapter.documentId)!.byId),
+                ...(chapter.summary ? { chapterSummary: chapter.summary } : {}),
+              }
+            : {}),
         })
       }
 
@@ -1042,6 +1108,31 @@ export class KnowledgeBaseService {
       console.error('[KB] 检索失败:', e)
       return { success: false, error: e.message }
     }
+  }
+
+  /**
+   * M3：解析命中块所属章节（检索结果携带章节路径 + 摘要）。
+   *
+   * 匹配优先级（review 修复同名章节歧义）：
+   *  1) 章节全路径 key（chunk.sectionPath 全路径归一化拼接）——「第一节 设立」这类
+   *     标题在多章下重复出现时靠父路径区分，避免摘要张冠李戴
+   *  2) 标题精确（chunk.title / sectionPath 末项 / 首项，归一化）
+   *  3) 标题包含兜底（标题带前缀/被截断时）
+   * 未装配章节表或无匹配返回 null。
+   */
+  private async resolveChapterForChunk(
+    chunk: KbChunk,
+    cache: Map<string, ChapterLookup>,
+  ): Promise<KbChapterRecord | null> {
+    const db = getCoreDatabaseManager()
+    if (!db.kbChapters) return null
+
+    let lookup = cache.get(chunk.documentId)
+    if (!lookup) {
+      lookup = buildChapterLookup(await db.kbChapters.findByDocument(chunk.documentId))
+      cache.set(chunk.documentId, lookup)
+    }
+    return matchChapter(lookup, chunk.title, chunk.sectionPath)
   }
 
   /**
@@ -1203,7 +1294,8 @@ export class KnowledgeBaseService {
   async getDocumentChunksPaginated(
     documentId: string,
     page: number = 1,
-    pageSize: number = 20
+    pageSize: number = 20,
+    chapterTitle?: string,
   ): Promise<{ success: boolean; data?: { chunks: KbChunk[]; total: number }; error?: string }> {
     try {
       const db = getCoreDatabaseManager()
@@ -1215,8 +1307,9 @@ export class KnowledgeBaseService {
       if (!doc) return { success: false, error: '文档不存在' }
 
       const offset = (page - 1) * pageSize
-      const chunks = await db.kbChunks.findByDocumentIdPaginated(documentId, offset, pageSize)
-      const total = await db.kbChunks.countByDocumentIdPaginated(documentId)
+      // M5：可选按章节过滤（章节树点选 → 只看该章节切片）
+      const chunks = await db.kbChunks.findByDocumentIdPaginated(documentId, offset, pageSize, chapterTitle)
+      const total = await db.kbChunks.countByDocumentIdPaginated(documentId, chapterTitle)
 
       // 移除 content 字段，减少内存占用
       const lightChunks = chunks.map(chunk => ({
@@ -1305,9 +1398,10 @@ export class KnowledgeBaseService {
   // selectFiles 已移到 IPC handler（dialog.showOpenDialog 是 Electron 平台特性）
 
   getFileLimits() {
+    const ingest = knowledgeParams().ingest
     return {
-      maxFileSize: 50 * 1024 * 1024,
-      maxFilesPerUpload: 20,
+      maxFileSize: ingest.maxUploadBytes,
+      maxFilesPerUpload: ingest.maxUploadFiles,
       // 注意：doc（Word 97-2003 二进制格式）解析未实现（mammoth 仅支持 docx），
       // 不要列在这里 —— 上传收下却处理不了会永远卡 pending。
       supportedTypes: ['docx', 'txt', 'md', 'xlsx', 'xls', 'pdf', 'epub', 'mobi', 'azw3']
@@ -1384,7 +1478,8 @@ export class KnowledgeBaseService {
       const request: CreateDocumentRequest = {
         knowledgeBaseId: kbId,
         name: docName,
-        filePath: destPath,
+        // 同上传：入库相对 dataPath（正斜杠）
+        filePath: toRelativeAssetPath(destPath),
         fileType: 'webpage',
         fileSize: contentBuffer.length
       }
@@ -1568,6 +1663,8 @@ export class KnowledgeBaseService {
       if (!db.knowledgeBases || !db.kbQaPairs || !db.kbVectors) {
         return { success: false, error: '数据库未初始化' }
       }
+      // 收窄成局部引用：闭包内 TS 不会保留上面的非空收窄
+      const kbVectors = db.kbVectors
       const old = await db.kbQaPairs.findById(id)
       if (!old) return { success: false, error: 'QA 对不存在' }
       const kb = await db.knowledgeBases.findById(old.knowledgeBaseId)
@@ -1595,7 +1692,7 @@ export class KnowledgeBaseService {
       )
       const oldVectors: Array<{ chunkId: string; knowledgeBaseId: string; vector: number[] }> = []
       for (const chunkId of oldChunkIds) {
-        const rec = await db.kbVectors.getByChunkId(chunkId).catch(() => null)
+        const rec = await db.kbVectors.findByChunkId(chunkId).catch(() => null)
         if (rec && rec.knowledgeBaseId === kb.id) oldVectors.push({ chunkId: rec.chunkId, knowledgeBaseId: rec.knowledgeBaseId, vector: rec.vector })
       }
 
@@ -1620,9 +1717,12 @@ export class KnowledgeBaseService {
       } catch (e) {
         // 补偿：清掉可能写了一半的新向量 → 恢复旧向量 → 回滚文本行
         console.error('[KB] 更新 QA 对失败，执行补偿回滚:', e)
-        await db.kbVectors.deleteByChunkIds(
-          vectors.map((_, i) => KnowledgeBaseService.qaVectorChunkId(id, i))
-        ).catch(() => {})
+        // 仓库只有单条删除接口（向量表按 chunkId 唯一），逐个删除等价且不引入新 API
+        await Promise.all(
+          vectors.map((_, i) =>
+            kbVectors.deleteByChunkId(KnowledgeBaseService.qaVectorChunkId(id, i)).catch(() => {}),
+          ),
+        )
         if (oldVectors.length) await db.kbVectors.createBatch(oldVectors).catch(() => {})
         await db.kbQaPairs.update(id, { ...rollbackTo }).catch(() => {})
         throw e
@@ -1693,7 +1793,11 @@ export class KnowledgeBaseService {
       const vectors = await this.getEmbeddingVectors([req.query], this.parseEmbeddingConfig(kb), req.signal)
       if (!vectors) return { success: false, error: '生成查询向量失败' }
 
-      const raw = await db.kbVectors.searchSimilar(req.knowledgeBaseId, vectors[0], req.topK || 3)
+      const raw = await db.kbVectors.searchSimilar(
+        req.knowledgeBaseId,
+        vectors[0],
+        req.topK || knowledgeParams().retrieval.qaTopK,
+      )
       const minScore = req.threshold ?? 0
       // QA 命中：chunkId 命名空间过滤 + 按 pair 去重（保留最高分变体）
       const best = new Map<string, { pairId: string; score: number }>()
@@ -1725,16 +1829,17 @@ export class KnowledgeBaseService {
    */
   async importQaPairs(knowledgeBaseId: string, fileBuffer: Buffer): Promise<{ success: boolean; data?: { imported: number; failed: number }; error?: string }> {
     try {
-      if (fileBuffer.length > QA_IMPORT_MAX_FILE_BYTES) {
-        return { success: false, error: `文件超出上限：${(fileBuffer.length / 1024 / 1024).toFixed(1)}MB > ${QA_IMPORT_MAX_FILE_BYTES / 1024 / 1024}MB` }
+      const { qaImportMaxBytes, qaImportMaxRows } = knowledgeParams().ingest
+      if (fileBuffer.length > qaImportMaxBytes) {
+        return { success: false, error: `文件超出上限：${(fileBuffer.length / 1024 / 1024).toFixed(1)}MB > ${qaImportMaxBytes / 1024 / 1024}MB` }
       }
       const XLSX = await import('xlsx')
       const wb = XLSX.read(fileBuffer)
       const sheet = wb.Sheets[wb.SheetNames[0]]
       if (!sheet) return { success: false, error: 'xlsx 中没有工作表' }
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet)
-      if (rows.length > QA_IMPORT_MAX_ROWS) {
-        return { success: false, error: `行数超出上限：${rows.length} 行 > ${QA_IMPORT_MAX_ROWS} 行，请拆分后分批导入` }
+      if (rows.length > qaImportMaxRows) {
+        return { success: false, error: `行数超出上限：${rows.length} 行 > ${qaImportMaxRows} 行，请拆分后分批导入` }
       }
       let imported = 0
       let failed = 0

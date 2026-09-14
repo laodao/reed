@@ -14,11 +14,17 @@
  *              由 evictPooled/配置变更驱逐兜底。
  */
 import type { DataSourceConnectionParams } from '@shared/types/datasource.types'
+import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 
-/** 池空闲回收时间：5 分钟无访问即销毁 */
+/** 池空闲回收时间的内置默认值：5 分钟无访问即销毁（参数设置可调） */
 export const POOL_IDLE_TTL_MS = 5 * 60_000
-/** 缓存池数上限（防配置轰炸）：超出时关闭最久未用的 */
+/** 缓存池数上限的内置默认值（防配置轰炸：超出时关闭最久未用的） */
 const MAX_POOLS = 20
+
+/** 生效的空闲回收时长（读「参数设置 → 工作流 → 数据源连接池」；未注入时为内置默认） */
+export const poolIdleTtlMs = (): number => workflowRuntimeParams().datasource.poolIdleTtlMs || POOL_IDLE_TTL_MS
+/** 生效的池数上限 */
+export const maxPools = (): number => workflowRuntimeParams().datasource.maxPools || MAX_POOLS
 
 function poolKey(driver: string, params: DataSourceConnectionParams): string {
   return [
@@ -56,7 +62,7 @@ export async function acquirePooled<T>(
     return hit.pool as T
   }
   // 容量上限：关闭最久未用的池
-  if (cache.size >= MAX_POOLS) {
+  if (cache.size >= maxPools()) {
     const lru = [...cache.entries()].sort((a, b) => a[1].lastUsed - b[1].lastUsed)[0]
     if (lru) {
       cache.delete(lru[0])
@@ -85,7 +91,7 @@ export async function evictPooled(driver: string, params: DataSourceConnectionPa
 async function sweepIdlePools(): Promise<void> {
   const now = Date.now()
   for (const [key, entry] of cache) {
-    if (now - entry.lastUsed > POOL_IDLE_TTL_MS) {
+    if (now - entry.lastUsed > poolIdleTtlMs()) {
       cache.delete(key)
       await Promise.resolve()
         .then(() => entry.destroy(entry.pool))

@@ -42,6 +42,30 @@ export class AssetImageRepository extends BaseRepository<
     return this.scoped.findOne({ assetType, assetId, isMain: 1 } as any)
   }
 
+  /**
+   * 写入主图（scoped 注入 user_id；替代裸 SQL INSERT 漏租户列的旧实现）。
+   * 幂等由调用方先 getMainImage 判断。
+   */
+  async createMainImage(input: {
+    assetType: AssetImageEntity['assetType']
+    assetId: string
+    imagePath: string
+  }): Promise<AssetImageEntity> {
+    const now = new Date()
+    const saved = await this.scoped.save({
+      id: `ai_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+      assetType: input.assetType,
+      assetId: input.assetId,
+      category: 'main',
+      imagePath: input.imagePath,
+      isMain: 1,
+      sortOrder: 0,
+      createdAt: now,
+      updatedAt: now,
+    } as never)
+    return saved
+  }
+
   /** 删除某 asset 下全部图（asset 本体被删除时调用） */
   async deleteByAsset(
     assetType: AssetImageEntity['assetType'],

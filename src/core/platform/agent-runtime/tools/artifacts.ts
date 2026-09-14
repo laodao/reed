@@ -14,11 +14,15 @@
  */
 
 import { createLogger } from '@core/utils/logger'
+import { runtimeLimits } from '@shared/utils/runtime-limits'
 
 const logger = createLogger('AgentToolArtifacts')
 
-/** 单条产物 JSON 字节上限（与轨迹 payload 同量级；超限整体拒存留痕——产物缺失
- *  可接受，脏行不可接受） */
+/**
+ * 单条产物 JSON 字节上限（与轨迹 payload 同量级；超限整体拒存留痕——产物缺失
+ *  可接受，脏行不可接受）。
+ * 2026-09-13 起可由 settings `agent:budget`.guards.maxArtifactBytes 覆盖（进程级，启动时注入）。
+ */
 export const ARTIFACT_MAX_BYTES = 256 * 1024
 
 export interface ToolArtifactRecord {
@@ -49,6 +53,8 @@ interface ArtifactRepoLike {
 
 export interface ToolArtifactStoreDeps {
   repo: ArtifactRepoLike
+  /** 单条产物字节上限覆盖（缺省读进程级限额 runtimeLimits().maxArtifactBytes） */
+  maxBytes?: number
 }
 
 /** DB 仓储适配（AgentToolArtifactRepository 满足 ArtifactRepoLike） */
@@ -57,7 +63,8 @@ export function createToolArtifactStore(deps: ToolArtifactStoreDeps): ToolArtifa
     async save(record) {
       const { getCurrentUserId } = await import('@core/context/user-context')
       const content = JSON.stringify({ args: record.args, result: record.result })
-      if (Buffer.byteLength(content, 'utf8') > ARTIFACT_MAX_BYTES) {
+      const maxBytes = deps.maxBytes ?? runtimeLimits().maxArtifactBytes
+      if (Buffer.byteLength(content, 'utf8') > maxBytes) {
         logger.warn(
           `[artifacts] 产物超限拒存 toolCallId=${record.toolCallId} tool=${record.toolName} bytes=${Buffer.byteLength(content, 'utf8')}`,
         )

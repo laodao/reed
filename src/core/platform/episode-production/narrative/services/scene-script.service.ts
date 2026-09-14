@@ -14,6 +14,7 @@
  */
 
 import type { DataSource } from 'typeorm'
+import { In } from 'typeorm'
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
 import { SceneCharacterEntity } from '@core/database/entities/episode-production/scene-character.entity'
 import { SceneDialogueEntity } from '@core/database/entities/episode-production/scene-dialogue.entity'
@@ -107,10 +108,11 @@ export class SceneScriptService {
       charsTable.length > 0 ? charsTable.map((c) => c.id) : []
     const propsTable: ScenePropEntity[] = []
     if (charIdsForProps.length > 0) {
-      const rows = await this.ds.getRepository(ScenePropEntity).find()
-      for (const r of rows) {
-        if (charIdsForProps.includes(r.sceneCharacterId)) propsTable.push(r)
-      }
+      // 复核修复：原实现 find() 无 where 全表拉取后 JS 过滤（全库线性放大 + 跨租户行混入）
+      const rows = await this.ds
+        .getRepository(ScenePropEntity)
+        .find({ where: { sceneCharacterId: In(charIdsForProps) } as any })
+      propsTable.push(...rows)
     }
 
     // 决定每类是否回退到 JSON：归一化表为空 + JSON 列非空 → 用 JSON

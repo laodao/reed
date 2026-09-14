@@ -1,0 +1,141 @@
+{
+  "generatedAt": "2026-09-11T16:07:43.952Z",
+  "total": 32,
+  "hits": 32,
+  "recallAt1": 87.5,
+  "recallAt3": 100,
+  "recallAt5": 100,
+  "recallAt10": 100,
+  "ndcg10": 95.38662191964322,
+  "perItem": [
+    {
+      "id": "dl-01",
+      "hitRank": 1
+    },
+    {
+      "id": "dl-02",
+      "hitRank": 1
+    },
+    {
+      "id": "dl-03",
+      "hitRank": 1
+    },
+    {
+      "id": "dl-04",
+      "hitRank": 1
+    },
+    {
+      "id": "dl-05",
+      "hitRank": 1
+    },
+    {
+      "id": "dl-06",
+      "hitRank": 2
+    },
+    {
+      "id": "dl-07",
+      "hitRank": 1
+    },
+    {
+      "id": "dl-08",
+      "hitRank": 1
+    },
+    {
+      "id": "dl-09",
+      "hitRank": 1
+    },
+    {
+      "id": "dl-10",
+      "hitRank": 1
+    },
+    {
+      "id": "dl-11",
+      "hitRank": 1
+    },
+    {
+      "id": "dl-12",
+      "hitRank": 1
+    },
+    {
+      "id": "np-01",
+      "hitRank": 2
+    },
+    {
+      "id": "np-02",
+      "hitRank": 1
+    },
+    {
+      "id": "np-03",
+      "hitRank": 2
+    },
+    {
+      "id": "np-04",
+      "hitRank": 1
+    },
+    {
+      "id": "np-05",
+      "hitRank": 1
+    },
+    {
+      "id": "np-06",
+      "hitRank": 1
+    },
+    {
+      "id": "np-07",
+      "hitRank": 2
+    },
+    {
+      "id": "np-08",
+      "hitRank": 1
+    },
+    {
+      "id": "np-09",
+      "hitRank": 1
+    },
+    {
+      "id": "np-10",
+      "hitRank": 1
+    },
+    {
+      "id": "gs-01",
+      "hitRank": 1
+    },
+    {
+      "id": "gs-02",
+      "hitRank": 1
+    },
+    {
+      "id": "gs-03",
+      "hitRank": 1
+    },
+    {
+      "id": "gs-04",
+      "hitRank": 1
+    },
+    {
+      "id": "gs-05",
+      "hitRank": 1
+    },
+    {
+      "id": "gs-06",
+      "hitRank": 1
+    },
+    {
+      "id": "gs-07",
+      "hitRank": 1
+    },
+    {
+      "id": "gs-08",
+      "hitRank": 1
+    },
+    {
+      "id": "gs-09",
+      "hitRank": 1
+    },
+    {
+      "id": "gs-10",
+      "hitRank": 1
+    }
+  ],
+  "missIds": []
+}

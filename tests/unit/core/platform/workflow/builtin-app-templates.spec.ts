@@ -75,7 +75,7 @@ describe('内置应用模板库（随包 JSON 自动发现）', () => {
   it('使用 select-dynamic 的 start 输入 source 合法', () => {
     // 运行时（RunInputForm.loadDynamicOptions）支持 assets:<大类> 前缀（资产中心按大类列表）+
     // 若干具名数据源；这里以白名单 + 前缀规则断言，避免与运行时能力脱节
-    const NON_ASSET_SOURCES = ['newsTopics', 'newsSources', 'knowledgeBases', 'assetCategories', 'searchEngineConfigs', 'providerConfigs']
+    const NON_ASSET_SOURCES = ['infoSourceCategories', 'infoSourceTopics', 'infoSources', 'newsTopics', 'newsSources', 'knowledgeBases', 'assetCategories', 'searchEngineConfigs', 'providerConfigs']
     const isAllowed = (source?: string): boolean =>
       !!source && (source.startsWith('assets:') || NON_ASSET_SOURCES.includes(source))
     for (const t of templates) {
@@ -85,6 +85,24 @@ describe('内置应用模板库（随包 JSON 自动发现）', () => {
         if (input.type === 'select-dynamic') {
           expect(isAllowed(input.source), `${t.name}/${input.key} source=${input.source}`).toBe(true)
         }
+      }
+    }
+  })
+
+  it('级联声明（linkage）跟随的字段必须在同一 start 节点中真实存在', () => {
+    // 信息来源三级联动（类别 → 分组 → 来源）依赖 watch 指向的字段；悬空引用会让
+    // 候选列表恒为空（选项元数据无人写入），必须在模板层拦下
+    for (const t of templates) {
+      const start = (t.raw.graph as WorkflowGraph).nodes.find(n => n.type === 'start')
+      const inputs = (start?.config?.inputs ?? []) as Array<{
+        key?: string
+        linkage?: { watch?: string; matchBy?: string }
+      }>
+      const keys = new Set(inputs.map(i => i.key))
+      for (const input of inputs) {
+        if (!input.linkage?.watch) continue
+        expect(keys.has(input.linkage.watch), `${t.name}/${input.key} linkage.watch=${input.linkage.watch}`).toBe(true)
+        expect(!!input.linkage.matchBy, `${t.name}/${input.key} linkage.matchBy 缺失`).toBe(true)
       }
     }
   })

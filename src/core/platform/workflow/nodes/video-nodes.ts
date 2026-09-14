@@ -20,6 +20,7 @@ import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
 import { submitWithTransientRetry } from './retry-submit'
 import { getVideoPreset, assembleVideoPresetPrompt, VIDEO_TYPE_PRESETS, CUSTOM_FALLBACK_POLICY } from '@shared/types/video-presets'
+import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 
 /** 主进程 ffmpeg 可执行路径（@ffmpeg-installer 缓存了与平台匹配的二进制） */
 function ffmpegBin(): string {
@@ -187,11 +188,14 @@ const videoGenNode: WorkflowNodeHandler = {
           }
         })
       } catch { /* tapEvents 缺失则等待后超时失败 */ }
-      // 评审 #103/#105：局域网 ComfyUI 网关 H3 单镜实测 5~40 分钟（视帧数/排队），
-      // 等待上限提至 70 分钟（< VideoService 轮询上限 75 分钟）；低画质/turbo 档显著更快。
-      setTimeout(() => resolve(null), 70 * 60 * 1000)
+      // 等待上限走「参数设置 → 工作流 → 长任务轮询与等待」（默认 70 分钟；
+      // ComfyUI 网关 H3 单镜实测 5~40 分钟，低画质/turbo 档显著更快）
+      setTimeout(() => resolve(null), workflowRuntimeParams().polling.videoWaitTimeoutMs)
     })
-    if (!videoPath) return { status: 'failed', error: '视频生成等待超时（70 分钟，可用「断点续跑」继续）' }
+    if (!videoPath) {
+      const minutes = Math.round(workflowRuntimeParams().polling.videoWaitTimeoutMs / 60_000)
+      return { status: 'failed', error: `视频生成等待超时（${minutes} 分钟，可用「断点续跑」继续）` }
+    }
     return { status: 'succeeded', output: { videoPath, videoUrl: '', taskId } }
   },
 }

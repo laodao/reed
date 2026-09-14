@@ -19,6 +19,11 @@ import { createLogger } from '@core/utils/logger'
 import { getCurrentUserId } from '@core/context/user-context'
 import { stableStringify } from '@core/platform/agent-runtime/runtime/approval'
 import type { AgentMemoryEntryRepository, AgentMemoryEntryRow, MemoryEntryKind } from '@core/database/repositories/agent-memory-entry.repository'
+import {
+  agentContextParams,
+  memoryConfidenceGate,
+  memoryDedupOverlapThreshold,
+} from '@shared/utils/agent-context-params'
 
 const logger = createLogger('AgentMemoryFlywheel')
 
@@ -38,6 +43,12 @@ export interface MemoryVectorPort {
 export const DEDUP_OVERLAP_THRESHOLD = 0.6
 /** 读取装配条数上限 */
 export const ASSEMBLE_TOP_K = 3
+/** L1（用户级/系统级）入选的最低关键词命中数。L1 跨所有业务模块共享，必须比
+ *  L2/L3 更高的相关度才可入选——2-gram 分词下单词碰撞就会把无关全局记忆带进
+ *  业务宿主（六扇门复盘：账本「审计师」的 2-gram「审计」撞上「多智能体框架
+ *  调研」SOP 里的「审计和事件驱动」，一行框架选型建议进了故事研讨室）。
+ *  向量召回命中不受此限（语义相关度已由向量分把关） */
+export const L1_MIN_KEYWORD_HITS = 2
 /** 蒸馏条数上限 */
 export const DISTILL_MAX_ITEMS = 3
 /** 代谢：零命中归档天数 */
@@ -50,13 +61,25 @@ export interface MemoryCandidate {
   confidence: number
 }
 
-/** 依赖端口：蒸馏 LLM / 仓储 / 时钟（宿主注入） */
+/** 复核裁决（闸门④）：index 对应传入 candidates 的下标；accept=false 拒收；
+ *  kind 给出时视为分类纠偏（如 distiller 把 SOP 标成 fact） */
+export interface MemoryReviewVerdict {
+  index: number
+  accept: boolean
+  kind?: MemoryCandidate['kind']
+  reason?: string
+}
+
+/** 依赖端口：蒸馏 LLM / 复核 LLM / 仓储 / 时钟（宿主注入） */
 export interface MemoryFlywheelDeps {
   /** KE-3 向量端口（可选；缺省纯关键词） */
   vector?: MemoryVectorPort
   repo: AgentMemoryEntryRepository
   /** 蒸馏：轨迹/结果文本 → 候选条目（宿主封装 resolveModel + generateText） */
   distill?: (input: { goal: string; output: string; signal?: AbortSignal }) => Promise<MemoryCandidate[]>
+  /** 落库前模型复核（第二意见）：核分类正确性 + 复用价值。缺省/抛错=跳过复核
+   *  （降级不阻塞——蒸馏本身置信度+查重+人工批准三道闸仍在） */
+  review?: (input: { goal: string; candidates: MemoryCandidate[]; signal?: AbortSignal }) => Promise<MemoryReviewVerdict[]>
   clock?: () => number
 }
 
@@ -81,15 +104,39 @@ export function overlapRatio(a: Set<string>, b: Set<string>): number {
   return inter / (a.size + b.size - inter)
 }
 
+/**
+ * 按原顺序统计「命中词数」：查询里相邻连续命中的 CJK 2-gram 合并为一个词
+ * （「审计师」= 审计+计师 两个相邻 bigram，只能算 1 个命中词——对抗 review
+ * P2-2：不合并的话共用一个 ≥3 字词就过 L1 门槛，等于门槛形同虚设）。
+ * 拉丁词逐词计数，与 tokenize 口径一致。
+ */
+export function countMatchedWords(queryText: string, entryTokens: Set<string>): number {
+  const cleaned = queryText.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ')
+  let runs = 0
+  for (const w of cleaned.split(' ')) if (w.length > 1 && entryTokens.has(w)) runs++
+  const cjkRuns = queryText.match(/[\u4e00-\u9fff]{2,}/g) ?? []
+  for (const run of cjkRuns) {
+    let inMatch = false
+    for (let i = 0; i < run.length - 1; i++) {
+      const isHit = entryTokens.has(run.slice(i, i + 2))
+      if (isHit && !inMatch) runs++
+      inMatch = isHit
+    }
+  }
+  return runs
+}
+
 export class MemoryFlywheelService {
-  private readonly deps: Required<Pick<MemoryFlywheelDeps, 'repo' | 'clock'>> & Pick<MemoryFlywheelDeps, 'distill' | 'vector'>
+  private readonly deps: Required<Pick<MemoryFlywheelDeps, 'repo' | 'clock'>> & Pick<MemoryFlywheelDeps, 'distill' | 'review' | 'vector'>
 
   constructor(deps: MemoryFlywheelDeps) {
-    this.deps = { repo: deps.repo, distill: deps.distill, vector: deps.vector, clock: deps.clock ?? (() => Date.now()) }
+    this.deps = { repo: deps.repo, distill: deps.distill, review: deps.review, vector: deps.vector, clock: deps.clock ?? (() => Date.now()) }
   }
 
   /**
    * 任务成功后蒸馏候选（fire-and-forget 语义由调用方决定；本方法不 throw）。
+   * 闸门顺序：①置信度 → ②查重 → ④模型复核（分类纠偏+价值把关，落库前第二意见；
+   * 缺省/失败降级跳过）→ ③落库 pending_review（人工批准为最终放行）。
    * 返回入库（pending_review）条数；置信度不足/蒸馏失败丢弃并留痕。
    */
   async distillFromTask(input: {
@@ -104,24 +151,62 @@ export class MemoryFlywheelService {
     if (!this.deps.distill) return 0
     let candidates: MemoryCandidate[]
     try {
-      candidates = await this.deps.distill({ goal: input.goal, output: input.outputText.slice(0, 16_000), signal: input.signal })
+      candidates = await this.deps.distill({
+        goal: input.goal,
+        output: input.outputText.slice(0, agentContextParams().memory.maxDistillInputChars),
+        signal: input.signal,
+      })
     } catch (e) {
       logger.warn(`[memory] 蒸馏失败（跳过）：${e instanceof Error ? e.message : String(e)}`)
       return 0
     }
-    let saved = 0
-    for (const c of candidates.slice(0, DISTILL_MAX_ITEMS)) {
+    // 闸门①②：置信度 + 查重（与既有 active 及待审条目重叠）
+    const survivors: MemoryCandidate[] = []
+    for (const c of candidates.slice(0, agentContextParams().memory.distillMaxItems)) {
       if (!c.title?.trim() || !c.content?.trim()) continue
-      // 闸门②：置信度（NaN 同拒——review T18）
-      if (!(Number(c.confidence) >= CONFIDENCE_GATE)) {
+      // 置信度（NaN 同拒——review T18）
+      if (!(Number(c.confidence) >= memoryConfidenceGate())) {
         logger.info(`[memory] 候选置信度不足（${c.confidence}），丢弃：${c.title}`)
         continue
       }
-      // 闸门①：查重（与既有 active 条目关键词重叠）
       if (await this.isDuplicate(c.content)) {
         logger.info(`[memory] 候选与既有条目重复，丢弃：${c.title}`)
         continue
       }
+      survivors.push(c)
+    }
+    // 闸门④：落库前模型复核——核分类正确性（可纠偏 kind）+ 复用价值（拒收一次性
+    // 任务细节）。复核器缺失或抛错按跳过处理：置信度/查重/人工批准三道闸仍在
+    if (this.deps.review && survivors.length > 0) {
+      try {
+        const verdicts = await this.deps.review({ goal: input.goal, candidates: survivors, signal: input.signal })
+        const byIndex = new Map<number, MemoryReviewVerdict>()
+        for (const v of Array.isArray(verdicts) ? verdicts : []) {
+          if (v && Number.isInteger(v.index)) byIndex.set(v.index, v)
+        }
+        const kept: MemoryCandidate[] = []
+        survivors.forEach((c, i) => {
+          const v = byIndex.get(i)
+          // 复核器未表态的下标视为通过（人工批准闸门兜底；防坏输出清杀好候选）
+          if (v && !v.accept) {
+            logger.info(`[memory] 复核拒收：${c.title}${v.reason ? `（${String(v.reason).slice(0, 80)}）` : ''}`)
+            return
+          }
+          if (v?.kind && v.kind !== c.kind && ['fact', 'sop', 'preference', 'skill', 'episode-ref'].includes(v.kind)) {
+            logger.info(`[memory] 复核分类纠偏：${c.title} ${c.kind} → ${v.kind}`)
+            kept.push({ ...c, kind: v.kind })
+            return
+          }
+          kept.push(c)
+        })
+        survivors.length = 0
+        survivors.push(...kept)
+      } catch (e) {
+        logger.warn(`[memory] 复核失败（降级跳过，人工闸门兜底）：${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+    let saved = 0
+    for (const c of survivors) {
       await this.deps.repo.create({
         id: `mem_${randomUUID()}`,
         kind: c.kind,
@@ -139,7 +224,7 @@ export class MemoryFlywheelService {
   }
 
   /** 用户层装配（chat 宿主：对话未绑定业务，只取 L1 用户级经验） */
-  async assembleUserLevel(taskText: string, topK = ASSEMBLE_TOP_K): Promise<AgentMemoryEntryRow[]> {
+  async assembleUserLevel(taskText: string, topK?: number): Promise<AgentMemoryEntryRow[]> {
     return this.assemble(taskText, topK, { bizModule: '' })
   }
 
@@ -150,7 +235,7 @@ export class MemoryFlywheelService {
     const tokens = tokenize(content)
     for (const entry of existing) {
       const text = String((entry.content as { content?: string }).content ?? '')
-      if (overlapRatio(tokens, tokenize(text)) >= DEDUP_OVERLAP_THRESHOLD) return true
+      if (overlapRatio(tokens, tokenize(text)) >= memoryDedupOverlapThreshold()) return true
     }
     return false
   }
@@ -159,9 +244,15 @@ export class MemoryFlywheelService {
    * 读取装配：按任务文本关键词匹配 active 条目 top-k（命中词数排序）。
    * 命中条目 use_count 在任务 succeeded 时回写（防装配即计数虚增）。
    */
-  async assemble(taskText: string, topK = ASSEMBLE_TOP_K, scope?: { bizModule?: string; projectId?: string } | null): Promise<AgentMemoryEntryRow[]> {
+  async assemble(
+    taskText: string,
+    topK?: number,
+    scope?: { bizModule?: string; projectId?: string } | null,
+  ): Promise<AgentMemoryEntryRow[]> {
+    // 召回条数：调用方显式传入优先，否则用「参数设置 → 上下文与记忆」的生效值
+    const k = topK ?? agentContextParams().memory.assembleTopK
     // KE-2 分层装配（34 号 v2）：候选按 scope 三层过滤，得分 = 命中数 × 层级权重，
-    // 分层配额（每层 topK 总 3×topK）——同题冲突时项目级事实优先
+    // 分层配额（每层 k 条，总量 3×k）——同题冲突时项目级事实优先
     // KE-3 混合检索：向量召回分（0.6 权重）与关键词命中并集融合；向量不可用纯关键词
     const partitions = scope
       ? [
@@ -177,7 +268,7 @@ export class MemoryFlywheelService {
         const embedded = await vp.embedTexts([taskText])
         if (embedded && embedded.vectors.length > 0 && embedded.vectors[0].length > 0) {
           for (const kbId of partitions) {
-            for (const hit of await vp.search(kbId, embedded.vectors[0], topK * 2)) {
+            for (const hit of await vp.search(kbId, embedded.vectors[0], k * 2)) {
               const entryId = hit.id.replace(/^memvec_/, '')
               vectorScores.set(entryId, Math.max(vectorScores.get(entryId) ?? 0, hit.score))
             }
@@ -199,23 +290,29 @@ export class MemoryFlywheelService {
         const entryTokens = tokenize(content)
         let hits = 0
         for (const w of tokens) if (entryTokens.has(w)) hits++
-        return { entry: e, hits, weight: layerWeight(e) }
+        // 词命中数（相邻 bigram 合并）——L1 门槛口径；hits 仍作排序分
+        const wordHits = countMatchedWords(taskText, entryTokens)
+        return { entry: e, hits, weight: layerWeight(e), wordHits }
       })
-      .filter((s) => s.hits > 0 || vectorScores.has(s.entry.id))
+      .filter((s) => {
+        if (s.hits <= 0 && !vectorScores.has(s.entry.id)) return false
+        // L1 相关度门槛（六扇门复盘）：纯关键词命中须达门槛（按词计）；向量命中豁免
+        if (!s.entry.bizModule && s.wordHits < L1_MIN_KEYWORD_HITS && !vectorScores.has(s.entry.id)) return false
+        return true
+      })
       .sort((a, b) => (b.hits + 0.6 * (vectorScores.get(b.entry.id) ?? 0)) * b.weight - (a.hits + 0.6 * (vectorScores.get(a.entry.id) ?? 0)) * a.weight)
-    if (!scope) return scored.slice(0, topK).map((s) => s.entry)
-    // 分层配额：L1/L2/L3 各 topK，总量 3×topK
-    const quota = { l1: topK, l2: topK, l3: topK }
+    if (!scope) return scored.slice(0, k).map((s) => s.entry)
+    // 分层配额：L1/L2/L3 各 k 条，总量 3×k
+    const quota = { l1: k, l2: k, l3: k }
     const picked: AgentMemoryEntryRow[] = []
     for (const s of scored) {
       const slot = s.entry.projectId ? 'l3' : s.entry.bizModule ? 'l2' : 'l1'
       if (quota[slot as keyof typeof quota] <= 0) continue
       quota[slot as keyof typeof quota]--
       picked.push(s.entry)
-      if (picked.length >= topK * 3) break
+      if (picked.length >= k * 3) break
     }
     return picked
-    return scored.map((s) => s.entry)
   }
 
   /** 人工批准（闸门③的唯一放行路径） */
@@ -333,7 +430,7 @@ export class MemoryFlywheelService {
 
   /** 代谢：零命中且超期条目归档（cron 接线后置；TaskService 批处理入口） */
   async archiveStale(): Promise<number> {
-    const cutoff = new Date(this.deps.clock() - ARCHIVE_STALE_DAYS * 86_400_000)
+    const cutoff = new Date(this.deps.clock() - agentContextParams().memory.archiveStaleDays * 86_400_000)
     return this.deps.repo.archiveStaleBefore(cutoff)
   }
 }

@@ -104,7 +104,7 @@ export type WorkflowNodeType =
   | 'collect-webpage'
   // 日记（知识提炼存日记等场景：成果落日记库，/diary 阅读）
   | 'save-diary'
-  // 新闻采集（内置应用 C1 早报 / C2 周报数据层：预置主题多源抓取链接）
+  // 信息采集（信息来源库多源抓取：来源多选/来源分组/自定义 URL → 链接清单）
   | 'crawl-news'
   // 批量抓取页面提取链接（两级采集：专栏页 → 新闻链接）
   | 'crawl-links'
@@ -126,18 +126,30 @@ export interface WorkflowStartInput {
    * type='select' 或 type='select-dynamic' 时的数据来源标识（选项由系统从数据源加载；
    * select 留空 = 手写 options）：
    * - 'assets:template'：模板资产列表（值=资产 ID；read-asset 节点引用 {{start.键}}）
-   * - 'newsTopics'：预置新闻主题列表（值=主题 id；crawl-news 节点 {{start.键}}）
-   * - 'newsSources'：新闻来源库列表（值=来源 ID；crawl-news 节点 {{start.键}}）
+   * - 'infoSourceCategories'：信息来源类别列表（值=类别 id，如 news）
+   * - 'infoSourceTopics'：信息来源分组列表（值=分组 id；crawl-news 节点 {{start.键}}）
+   * - 'infoSources'：信息来源列表（值=来源 ID；crawl-news 节点 {{start.键}}）
+   * - 'newsTopics' / 'newsSources'：等价于限定内置「新闻来源」类别的上一组来源
+   *   （旧工作流兼容：历史定义里存的是这两个标识）
    * - 'knowledgeBases'：用户知识库列表（值=知识库 ID；kb-ingest/kb-qa 节点引用）
    * - 'assetCategories'：已定义业务分类列表（值=分类名；save-asset 节点 subCategory）
    */
-  source?: 'assets:template' | 'newsTopics' | 'newsSources' | 'knowledgeBases' | 'assetCategories'
+  source?:
+    | 'assets:template'
+    | 'infoSourceCategories'
+    | 'infoSourceTopics'
+    | 'infoSources'
+    | 'newsTopics'
+    | 'newsSources'
+    | 'knowledgeBases'
+    | 'assetCategories'
   /**
    * 声明式联动（通用机制，工作流数据声明驱动，表单引擎不感知业务字段）：
-   * 监听 watch 字段的值 X，本字段自动填充所有"选项元数据[matchBy] === X"的选项
-   * （multi 填数组=全选，单选填首个匹配值）。用于 select / select-dynamic。
+   * 监听 watch 字段的值 X，本字段的候选选项收窄为"选项元数据[matchBy] === X"，
+   * 并自动填充这些选项（multi 填数组=全选，单选填首个匹配值）。
+   * 用于 select / select-dynamic；监听值为空时不过滤（全部选项可选）。
    * 例：sourceIds 字段 { linkage: { watch: 'topic', matchBy: 'topicId' } } ——
-   * 切换主题时自动选中该主题下的全部新闻来源（选项缓存需保留 topicId 元数据）。
+   * 切换分组时只列该分组下的信息来源，并自动选中全部（选项缓存需保留 topicId 元数据）。
    */
   linkage?: { watch: string; matchBy: string }
   /**
@@ -621,9 +633,9 @@ export interface WorkflowNodeConfigMap {
   }
 
   'crawl-news': {
-    /** 预置主题 id（NEWS_TOPICS；与 customUrls 二选一，可都填合并） */
+    /** 信息来源分组 id（设置 → 信息来源 中任意类别的分组；与 customUrls 可都填合并） */
     topicId?: string
-    /** 新闻来源库 ID 列表（多选） */
+    /** 信息来源 ID 列表（多选） */
     sourceIds?: string[] | string
     /** 自定义 URL 列表（JSON：string[] 或 [{name,url}]，或逗号/换行分隔） */
     customUrls?: string
@@ -733,11 +745,24 @@ export interface WorkflowExecutionSettings {
   /** 单节点最大执行次数（防环/重入失控；封顶 1000） */
   maxNodeRuns?: number
   /**
+   * 运行级总工具调用预算（可选；0/缺省 = 不启用）：agent-loop 等节点每次工具调用请求
+   * 从运行级共享计数器扣减，跨节点/跨轮累计（挂起恢复续用；快照随运行持久化）。
+   * 节点级 maxToolCalls 仍作为单节点护栏；二者取先到者。
+   */
+  maxTotalToolCalls?: number
+  /**
    * 多轮对话：开启后工作流内 LLM 节点按执行顺序共享对话上下文——
    * 前面 LLM 调用的 prompt 与输出会作为后续 LLM 节点的历史 messages 传入。
    * 默认 false（节点间仅靠 {{变量}} 显式注入，保持无状态单轮）。
    */
   multiTurn?: boolean
+  /**
+   * 全局并发运行数（同时最多跑几个工作流，超出的排队）。
+   * **只在全局层（settings 表 `wf:defaults`）生效**：并发是平台级护栏，
+   * 单个工作流的 `definition.settings` 不能抬高它（2026-09-13「参数设置」明确）。
+   * 缺省 = `WORKFLOW_DEFAULTS.maxConcurrentRuns`，封顶 `WORKFLOW_LIMITS.maxConcurrentRuns`。
+   */
+  maxConcurrentRuns?: number
 }
 
 // ==================== 触发器 ====================
@@ -1202,6 +1227,12 @@ export const WORKFLOW_DEFAULTS = {
   /** 语音复刻训练等待：轮询间隔 / 总超时 */
   voiceClonePollIntervalMs: 3_000,
   voiceCloneWaitTimeoutMs: 600_000,
+  /**
+   * 代码节点沙箱单次执行超时（毫秒）。
+   * 2026-09-13 参数设置：以前"默认值"和"上限"都是 `WORKFLOW_LIMITS.codeTimeoutMs`（5s），
+   * 于是节点想配更长也会被夹回 5s —— 现在默认在此、上限在 LIMITS（60s）。
+   */
+  codeTimeoutMs: 5_000,
 } as const
 
 /** 硬性上限（任何层级的配置都不可超过；防失控的最终防线） */
@@ -1213,14 +1244,18 @@ export const WORKFLOW_LIMITS = {
   maxParallelNodes: 20,
   maxConcurrentRuns: 10,
   maxNodeRuns: 1000,
+  /** 运行级总工具调用预算硬上限（防失控兜底） */
+  maxTotalToolCalls: 10_000,
   retryDelayMs: 60_000,
   httpTimeoutMs: 300_000,
   imagePollTimeoutMs: 600_000,
   /** 爬取礼貌硬上限：随机间隔上限 / 同站最大并发 */
   crawlDelayMsMax: 60_000,
+  /** 爬取礼貌间隔**下限**的硬上限（2026-09-13 参数设置补：此前 min 完全没有夹取，可配出 min > max） */
+  crawlDelayMsMin: 60_000,
   crawlHostConcurrency: 10,
-  /** 代码节点沙箱执行超时（防死循环拖垮引擎） */
-  codeTimeoutMs: 5_000,
+  /** 代码节点沙箱执行超时（防死循环拖垮引擎）；默认值见 WORKFLOW_DEFAULTS.codeTimeoutMs */
+  codeTimeoutMs: 60_000,
   /** 子工作流节点等待子运行终态的超时 */
   subflowTimeoutMs: 600_000,
 } as const

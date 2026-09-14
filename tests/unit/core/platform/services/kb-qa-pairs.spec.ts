@@ -52,11 +52,12 @@ class MemVectors {
     this.inserted.push(...items)
     return items
   }
-  async getByChunkId(chunkId: string) {
+  // 方法名必须与真实 KbVectorRepository 一致（曾因假仓库多出 getByChunkId/deleteByChunkIds
+  // 而掩盖了生产代码调用不存在方法的缺陷，见本文件末尾的「假仓库不漂移」用例）
+  async findByChunkId(chunkId: string) {
     return this.inserted.find(x => x.chunkId === chunkId) ?? null
   }
   async deleteByChunkId(chunkId: string) { this.deleted.push(chunkId) }
-  async deleteByChunkIds(chunkIds: string[]) { this.deleted.push(...chunkIds) }
   async searchSimilar(kbId: string, _v: number[], topK: number) {
     return this.inserted
       .filter(x => x.knowledgeBaseId === kbId)
@@ -132,7 +133,7 @@ describe('D1：QA 对 CRUD 与向量化', () => {
     expect(row.answer).toBe('a1')
     expect(row.similarQuestions).toEqual(['s1'])
     // 旧向量已恢复（快照重建），当前无残留新向量
-    const restored = await Promise.all(oldInserted.map(x => vectors.getByChunkId(x.chunkId)))
+    const restored = await Promise.all(oldInserted.map(x => vectors.findByChunkId(x.chunkId)))
     for (const rec of restored) expect(rec).not.toBeNull()
   })
 
@@ -228,5 +229,28 @@ describe('D1：xlsx 导入导出', () => {
     expect(res.success).toBe(false)
     expect(res.error).toContain('行数超出上限')
     expect(qa.rows.size).toBe(0)
+  })
+})
+
+describe('假仓库不漂移（评审 #75 回归）', () => {
+  /**
+   * 背景：假向量仓库曾提供 getByChunkId/deleteByChunkIds 这两个真实仓库**不存在**的方法，
+   * 于是服务层调用它们的缺陷在单测里全绿、到线上才崩（findByChunkId is not a function）。
+   * 这里用真实仓库原型校验「服务依赖的方法名」确实存在，并保证假仓库同形。
+   */
+  it('服务用到的向量仓库方法在真实仓库与假仓库上都存在', async () => {
+    const { KbVectorRepository } = await import('@core/database/repositories/kb-vector.repository')
+    const used = ['createBatch', 'findByChunkId', 'deleteByChunkId', 'searchSimilar']
+    const fake = new MemVectors() as unknown as Record<string, unknown>
+    const proto = KbVectorRepository.prototype as unknown as Record<string, unknown>
+    for (const name of used) {
+      expect(typeof proto[name], `真实仓库缺少 ${name}`).toBe('function')
+      expect(typeof fake[name], `假仓库缺少 ${name}`).toBe('function')
+    }
+    // 假仓库不得实现真实仓库没有的方法（避免再次掩盖调用缺陷）
+    for (const name of Object.getOwnPropertyNames(Object.getPrototypeOf(fake))) {
+      if (name === 'constructor') continue
+      expect(typeof proto[name], `假仓库多出不存在的 ${name}`).not.toBe('undefined')
+    }
   })
 })

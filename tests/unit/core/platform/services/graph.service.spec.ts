@@ -73,7 +73,9 @@ describe('GraphService', () => {
     const g = await svc.getGraph('p1')
     expect(g.nodes).toHaveLength(4) // 2 角色 + 1 地点 + 1 事件
     expect(g.nodes.map(n => n.type).sort()).toEqual(['character', 'character', 'event', 'location'])
-    expect(g.edges).toHaveLength(2)
+    // 52 号统一存储：2 条语义边 + 1 条从事件 involved_entities JSON 推导的 involves 边
+    expect(g.edges).toHaveLength(3)
+    expect(g.edges.filter(e => e.relationType === 'involves')).toHaveLength(1)
   })
 
   it('resolveEntities 名称→ID（命中/未命中）', async () => {
@@ -85,9 +87,9 @@ describe('GraphService', () => {
       { type: 'item', name: '无名剑' },
     ])
     expect(r).toEqual([
-      { type: 'character', name: '林晓', id: 'c1', resolved: true },
+      { type: 'character', name: '林晓', id: 'c1', resolved: true, matchedBy: 'exact' },
       { type: 'character', name: '不存在的人', resolved: false },
-      { type: 'location', name: '青云宗', id: 'l1', resolved: true },
+      { type: 'location', name: '青云宗', id: 'l1', resolved: true, matchedBy: 'exact' },
       { type: 'item', name: '无名剑', resolved: false },
     ])
   })
@@ -135,5 +137,56 @@ describe('GraphService', () => {
     const added = await svc.addEdge({ projectId: 'p1', sourceType: 'character', sourceId: 'c1', targetType: 'character', targetId: 'c2', relationType: 'friends' })
     expect(added?.id).toBe('new-edge')
     expect(await svc.deleteEdge('edge1')).toBe(true)
+  })
+})
+
+describe('resolveEntities 名称解析升级（52 号）', () => {
+  it('别名命中：角色 aliases 内的名字解析到本体', async () => {
+    const db = makeFakeDb()
+    db.lwCharacters.getByProjectId = vi.fn(async () => [
+      { id: 'c1', name: '苏九龄', aliases: ['苏捕头', '九龄'] },
+      { id: 'c2', name: '沈明远', aliases: [] },
+    ])
+    const svc = new GraphService(db as any)
+    const [r] = await svc.resolveEntities('p1', [{ type: 'character', name: '苏捕头' }] as any)
+    expect(r.resolved).toBe(true)
+    expect((r as any).id).toBe('c1')
+    expect((r as any).matchedBy).toBe('alias')
+  })
+
+  it('归一化命中：书名号/间隔号差异不影响解析', async () => {
+    const db = makeFakeDb()
+    const svc = new GraphService(db as any)
+    const [r] = await svc.resolveEntities('p1', [{ type: 'location', name: '「青云宗」' }] as any)
+    expect(r.resolved).toBe(true)
+    expect((r as any).matchedBy).toBe('normalized')
+  })
+
+  it('唯一包含命中：正文简称可解析到唯一名册名', async () => {
+    const db = makeFakeDb()
+    db.lwCharacters.getByProjectId = vi.fn(async () => [
+      { id: 'c1', name: '沈明远' },
+      { id: 'c2', name: '段衡' },
+    ])
+    const svc = new GraphService(db as any)
+    const [r] = await svc.resolveEntities('p1', [{ type: 'character', name: '沈大人' }] as any)
+    // 「沈大人」与「沈明远」无包含关系 → 不命中（防止硬攀）
+    expect(r.resolved).toBe(false)
+    const [r2] = await svc.resolveEntities('p1', [{ type: 'character', name: '明远' }] as any)
+    expect(r2.resolved).toBe(true)
+    expect((r2 as any).id).toBe('c1')
+    expect((r2 as any).matchedBy).toBe('fuzzy')
+  })
+
+  it('歧义不命中：多个候选包含同名片段时放弃解析', async () => {
+    const db = makeFakeDb()
+    db.lwCharacters.getByProjectId = vi.fn(async () => [
+      { id: 'c1', name: '苏九龄' },
+      { id: 'c2', name: '前身苏九龄' },
+    ])
+    const svc = new GraphService(db as any)
+    const [r] = await svc.resolveEntities('p1', [{ type: 'character', name: '前身苏九龄传' }] as any)
+    // 查询名同时包含「苏九龄」与「前身苏九龄」两个候选 → 歧义放弃
+    expect(r.resolved).toBe(false)
   })
 })

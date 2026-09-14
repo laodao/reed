@@ -18,6 +18,8 @@
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { createLogger } from '@core/utils/logger'
 import { createHostKit, formatStopNote } from '@core/platform/agent-runtime'
+import type { RawTranscriptPort } from '@core/platform/agent-runtime/memory/transcript-store'
+import { AgentSessionEventRepository } from '@core/database/repositories/agent-session-event.repository'
 import type { ModelMessage } from 'ai'
 import { getAgentLoopHarness } from '@core/platform/workflow/nodes/agent-loop-node'
 import { getMemoryFlywheel } from '@core/platform/workflow/workflow-boot'
@@ -29,24 +31,18 @@ import type { RoomEvent, RoomMessageView, RoomPhaseId, RoomStateView } from '@sh
 import { generateRoomText } from './room-llm'
 import { emitRoomEvent } from './room-events'
 import { getRoomState, patchRoomState, tryGetRoomState } from './room-state'
-import { registerLwRoomTools, lwRoomToolNames, LW_ROOM_MAX_STEPS } from './room-agent-tools'
+import { registerLwRoomTools, lwRoomToolNames } from './room-agent-tools'
+import { CHAPTER_WRITING_AGENT_INSTRUCTION } from '../skills/chapter-writing'
 import { ledgerSnapshotText, silentExtractLedger } from './room-ledger'
 import { buildStrategySection, getPhaseDef, loadQuestionBank } from './room-phases'
+import { longwritingParams } from '@shared/utils/longwriting-params'
 
 const logger = createLogger('StoryRoomSession')
 
 export const ROOM_EDITOR_DEFINITION_ID = 'story-room-editor'
 export const ROOM_CONVERSATION_PREFIX = 'room:'
-/** 每轮注入的历史条数（原生 messages 窗口） */
-export const ROOM_HISTORY_LIMIT = 40
-/** 历史单条注入截断（上限保护；实际生效窗口由 ContextManager 水位决定，评审 P2-12） */
-const HISTORY_CONTENT_MAX = 1200
-/** 未摘要轮数达到该值触发滚动摘要 */
-export const SUMMARY_THRESHOLD_TURNS = 20
-/** 每次滚动摘要压缩的轮数 */
-export const SUMMARY_BATCH_TURNS = 10
-/** 前情提要总长上限（超出从头丢弃最老分段） */
-const SUMMARY_MAX_CHARS = 6000
+// 历史条数 / 单条截断（用户输入与主编回复分级）/ 摘要阈值与批量 / 前情提要上限 / 主编步数
+// 均见「参数设置 → 长文写作 → 故事研讨室」（`longwriting:storyRoom`），使用点现读。
 
 /** 主编系统提示词：人格 + 双模式纪律（46 号：问答/长程任务自判）+ 阶段策略 + 题材问题库 */
 export function editorSystemPrompt(phase: RoomPhaseId, contentTarget: 'novel' | 'script', questionBank: string[]): string {
@@ -66,19 +62,27 @@ export function editorSystemPrompt(phase: RoomPhaseId, contentTarget: 'novel' | 
 
 ${buildStrategySection(phase, contentTarget)}
 
+${contentTarget === 'novel' ? CHAPTER_WRITING_AGENT_INSTRUCTION : ''}
+
 【题材问题库】（按需取用，不要一次抛出）
 ${questionBank.map((q) => `- ${q}`).join('\n')}`
 }
 
-/** 当轮快照：阶段 + 内容目标 + 故事圣经摘要 + 账本 + 前情提要（注入轮次上下文块） */
+/** 当轮快照：阶段 + 内容目标 + 故事圣经摘要 + 账本 + 前情提要（注入轮次上下文块）。
+ *  bibleEmpty 时显式声明「圣经尚未入库」，防止零值统计误导模型认为没有设计过
+ *  （六扇门复盘：12 轮设计了完整女主，快照却每轮说「人物 0 位」） */
 export function buildEditorSnapshot(state: {
   phase: RoomPhaseId
   contentTarget: 'novel' | 'script'
   turnNo: number
-}, bibleSummary: string, ledgerText: string, summary: string): string {
+}, bibleSummary: string, ledgerText: string, summary: string, bibleEmpty?: boolean): string {
   const parts: string[] = []
   parts.push(`【研讨进度】第 ${state.turnNo} 轮 · 阶段：${getPhaseDef(state.phase).label} · 内容目标：${state.contentTarget === 'script' ? '短剧剧本' : '长篇小说'}`)
-  if (bibleSummary) parts.push(`【故事圣经】\n${bibleSummary}`)
+  if (bibleEmpty) {
+    parts.push('【故事圣经】（尚无入库内容——不代表没有设计过；已设计的设定以对话记录与共识账本为准）')
+  } else if (bibleSummary) {
+    parts.push(`【故事圣经】\n${bibleSummary}`)
+  }
   if (ledgerText) parts.push(ledgerText)
   if (summary) parts.push(`【前情提要】（更早轮次的讨论过程，结论以账本为准）\n${summary}`)
   return parts.join('\n\n')
@@ -98,6 +102,21 @@ function getSessionStore(): DbAgentSessionStore | null {
   }
 }
 
+/** 原始流水端口（懒建；39 号 P0-2——六扇门复盘发现生产路径漏接，全库 0 行，
+ *  事后复盘只能靠工作集反推模型所见） */
+let transcriptPort: RawTranscriptPort | null = null
+function getRawTranscript(): RawTranscriptPort | null {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) return null
+    if (!transcriptPort) transcriptPort = new AgentSessionEventRepository(db.dataSource)
+    return transcriptPort
+  } catch (e) {
+    logger.warn('[story-room] 原始流水端口初始化失败（降级不落流水）', e)
+    return null
+  }
+}
+
 /** 飞轮安全获取（子系统未装配时 null——kit 记忆装配降级为仅结构化提供方） */
 function safeFlywheel() {
   try {
@@ -107,14 +126,25 @@ function safeFlywheel() {
   }
 }
 
-/** 圣经上下文（fail-soft）：摘要 + 题材（问题库选择用，评审 P1-2） */
-async function safeBibleContext(db: any, projectId: string): Promise<{ summary: string; storyType?: string }> {
+/** 圣经上下文（fail-soft）：摘要 + 题材（问题库选择用，评审 P1-2）+ 是否空库。
+ *  空库判定必须覆盖全部结构化维度（对抗 review P2-3：只看人物/故事线会把
+ *  「只有世界设定/只有大纲」的项目误报成空库，把真实摘要整体替换掉） */
+async function safeBibleContext(db: any, projectId: string): Promise<{ summary: string; storyType?: string; bibleEmpty: boolean }> {
   try {
     const ps = await computeProductionState(db, projectId)
-    return { summary: stateToSummary(ps), storyType: ps.overview?.storyType ?? undefined }
+    const bibleEmpty = !ps.overview?.exists
+      && (ps.characters?.count ?? 0) === 0
+      && (ps.plots?.count ?? 0) === 0
+      && !ps.world?.background
+      && (ps.world?.locations ?? 0) === 0
+      && (ps.world?.factions ?? 0) === 0
+      && (ps.world?.skills ?? 0) === 0
+      && (ps.world?.items ?? 0) === 0
+      && (ps.outline?.total ?? 0) === 0
+    return { summary: stateToSummary(ps), storyType: ps.overview?.storyType ?? undefined, bibleEmpty }
   } catch (e) {
     logger.warn(`[story-room] 圣经摘要读取失败（降级为空）project=${projectId}`, e)
-    return { summary: '' }
+    return { summary: '', bibleEmpty: true }
   }
 }
 
@@ -231,6 +261,9 @@ export class StoryRoomSessionService {
     const conversationId = `${ROOM_CONVERSATION_PREFIX}${projectId}`
     const scopeId = `story-room:${projectId}`
     const harness = getAgentLoopHarness()
+    // 「参数设置 → 长文写作 → 故事研讨室」：每轮现读（不要在模块顶层读，否则不跟随重注入）
+    const { historyLimit, historyUserMaxChars, historyAssistantMaxChars, editorMaxSteps } =
+      longwritingParams().storyRoom
 
     // 1. 房间状态（阶段/账本/摘要/轮号）
     const roomState = await getRoomState(m, projectId)
@@ -240,10 +273,16 @@ export class StoryRoomSessionService {
     const history = await m.lwDesignMessages.getByConversationId(conversationId)
     const seeded: ModelMessage[] = history
       .filter((h: { role: string }) => h.role === 'user' || h.role === 'assistant')
-      .slice(-ROOM_HISTORY_LIMIT)
+      .slice(-historyLimit)
       .map((h: { role: string; content: unknown }) => ({
         role: h.role as 'user' | 'assistant',
-        content: String(h.content ?? '').slice(0, HISTORY_CONTENT_MAX),
+        // 单条截断分级（六扇门复盘 P0：1200 一刀切把主编自己 2 千字的设计腰斩，
+        // 后续轮次模型看不到自己设计的后半段）。用户输入短句 600 足够；主编设计
+        // 消息放宽，总量仍由 ContextManager 水位兜底
+        content: String(h.content ?? '').slice(
+          0,
+          h.role === 'assistant' ? historyAssistantMaxChars : historyUserMaxChars,
+        ),
       } as ModelMessage))
 
     // 3. 保存用户消息（UI 权威历史；metadata 带轮次/阶段供 provenance）
@@ -260,6 +299,7 @@ export class StoryRoomSessionService {
       bible.summary,
       ledgerSnapshotText(roomState.ledger),
       roomState.summary,
+      bible.bibleEmpty,
     )
     const systemPrompt = editorSystemPrompt(roomState.phase, roomState.contentTarget, questionBank)
 
@@ -290,10 +330,16 @@ export class StoryRoomSessionService {
         systemPrompt: () => systemPrompt,
         snapshot: () => snapshot,
         seededHistory: () => seeded,
-        maxSteps: LW_ROOM_MAX_STEPS,
+        maxSteps: editorMaxSteps,
+        // 显式声明窗口（对抗 review P2-4）：默认 32K 下设计重历史每轮触发压缩，
+        // 4 千字设计消息正是被守恒摘要折叠的对象——「看不到自己设计后半段」
+        // 会以有损摘要形式回归。64K 给设计任务留头部空间
+        contextWindowTokens: 65536,
         memory: {
           scope: () => ({ bizModule: 'longwriting', projectId }),
-          recallText: () => `${message}\n${snapshot}`,
+          // 召回语料只用本轮输入（六扇门复盘：整段快照作召回语料会让账本里
+          // 的单个 2-gram 词撞上无关的全局记忆——「审计师」撞「审计和事件驱动」）
+          recallText: () => message,
           topicsText: () => message,
         },
         onStream: (_t, event) => {
@@ -302,14 +348,20 @@ export class StoryRoomSessionService {
             emitRoomEvent(projectId, { type: 'message:delta', text: event.text })
           }
         },
-        runtimeContext: () => ({ projectId }),
+        runtimeContext: () => ({
+          projectId,
+          // KE 分层打标（37 号）：宿主声明业务归属，create_task_plan 据此把
+          // scopeTag 盖进任务树 spec——六扇门复盘：缺此声明蒸馏全部退化 L1 用户级，
+          // 跨模块记忆互串（「多智能体框架调研」进了故事研讨室）
+          memoryScope: { bizModule: 'longwriting', projectId },
+        }),
         modelPreference: () => ({ providerConfigId: opts.providerConfigId, modelId: opts.modelId }),
       },
       {
         trajectoryPort: harness.trajectoryRepo ?? null,
         sessionStore: getSessionStore(),
         flywheel: safeFlywheel(),
-        rawTranscript: (this.testDeps?.rawTranscript ?? null) as never,
+        rawTranscript: (this.testDeps?.rawTranscript ?? getRawTranscript()) as never,
       },
     )
 
@@ -424,9 +476,11 @@ export class StoryRoomSessionService {
     signal?: AbortSignal,
   ): Promise<void> {
     try {
-      if (state.turnNo - state.summarizedTurn < SUMMARY_THRESHOLD_TURNS) return
+      // 「参数设置 → 长文写作 → 故事研讨室」：阈值/批量/前情提要上限现读
+      const { summaryThresholdTurns, summaryBatchTurns, maxSummaryChars } = longwritingParams().storyRoom
+      if (state.turnNo - state.summarizedTurn < summaryThresholdTurns) return
       const from = state.summarizedTurn + 1
-      const to = state.summarizedTurn + SUMMARY_BATCH_TURNS
+      const to = state.summarizedTurn + summaryBatchTurns
       const block = history
         .filter((h) => {
           const t = parseMeta(h.metadata).turnNo ?? 0
@@ -453,9 +507,9 @@ export class StoryRoomSessionService {
       const section = `\n--- 第 ${from}~${to} 轮 ---\n${digest.trim()}`
       let summary = (state.summary + section).trim()
       // 总长超限：从最老分段开始丢
-      if (summary.length > SUMMARY_MAX_CHARS) {
+      if (summary.length > maxSummaryChars) {
         const sections = summary.split('\n--- ')
-        while (sections.length > 1 && sections.join('\n--- ').length > SUMMARY_MAX_CHARS) sections.shift()
+        while (sections.length > 1 && sections.join('\n--- ').length > maxSummaryChars) sections.shift()
         summary = sections.join('\n--- ').replace(/^\n--- /, '')
       }
       await patchRoomState(m, projectId, { summary, summarizedTurn: to })

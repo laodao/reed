@@ -11,19 +11,19 @@
  */
 
 import { createLogger } from '@core/utils/logger'
-import type { ConsensusEntry, ConsensusKind, ConsensusStatus, LedgerOpInput, RoomPhaseId } from '@shared/types/story-room.types'
+import type { ConsensusEntry, ConsensusKind, ConsensusStatus, LedgerOpInput, RoomEvent, RoomPhaseId } from '@shared/types/story-room.types'
 import { extractJsonObject, extractJsonArray } from '@core/platform/services/longwriting/story-persist'
 import { generateRoomText } from './room-llm'
 import { getRoomState, mutateRoomState, patchRoomState } from './room-state'
 import { nextPhase, getPhaseDef } from './room-phases'
 import { emitRoomEvent } from './room-events'
+import { longwritingParams } from '@shared/utils/longwriting-params'
 
 const logger = createLogger('StoryRoomLedger')
 
-/** 账本容量上限（超出时丢弃最老的 tentative/rejected，confirmed 保留） */
-const LEDGER_CAP = 60
+// 账本容量上限见「参数设置 → 长文写作 → 故事研讨室 → 共识账本容量」（`longwriting:storyRoom`），
+// 由 `compactLedger` 的缺省参数在使用点现读。
 const KINDS: ConsensusKind[] = ['premise', 'character', 'plot', 'world', 'tone', 'taboo']
-const STATUSES: ConsensusStatus[] = ['tentative', 'confirmed', 'rejected']
 
 export function normalizeTitle(t: string): string {
   return String(t || '').replace(/[\s，。：:；;、!！?？·]/g, '').toLowerCase()
@@ -63,19 +63,20 @@ export interface GateSuggestion {
   reason: string
 }
 
-const EXTRACT_SYSTEM = `你是创作研讨记录员。从刚结束的一轮对话增量中提取"共识条目"——讨论中双方明确达成、明确否决、或新提出待定的方向性结论。
+const EXTRACT_SYSTEM = `你是创作研讨记录员。从刚结束的一轮对话增量中提取"共识条目"——故事本身的方向性结论（前提/人物/剧情/世界观层面的决定）。
 
-只提取方向级结论（如"主角动机=洗冤复仇"），不记录寒暄、不确定的随口设想、纯事实问答。
-每条输出：kind（premise/character/plot/world/tone/taboo 之一）、title（一句话短句）、
-points（支撑细节，最多 3 条）、status（tentative=新提出待确认 / confirmed=双方明确同意 / rejected=明确否决）。
-已有账本里已有的条目不要重复输出；若本轮与某条已定共识矛盾，输出一条 op=conflict 的条目（title 指出矛盾）。
-
-另外，判断当前阶段素材是否成熟（阶段门，设计文档 §6）：若当前阶段的门条件已满足，
-输出 gate 字段建议推进到下一阶段并给一句理由；不确定就不输出 gate。
+硬性规则：
+1. 只记故事事实，不记对话过程：禁止"用户说/主编认为/待用户拍板/尚待确认/与某条矛盾"这类元描述；条目就是设定本身的一句话（如"女主核心破案手段=审计师查账"）。
+2. status 只允许两个值：tentative（新提出或讨论中）/ rejected（明确否决）。confirmed 由用户在界面上确认产生，你不要输出 confirmed。
+3. rejected 条目的 points 只写"为什么被否"，不得为被否方向辩护，也不得附带"正确做法应该是"。
+4. title 是不超过 30 字的一句话；points 最多 3 条、每条不超过 40 字，只放落地细节，不放论证过程。
+5. 已有账本里已有的条目不要重复输出；本轮若推翻了某条已有条目，输出 {"op":"conflict","conflictWith":"被推翻条目标题"}，由系统处理，不要自行改状态。
+6. 若用户明确提出内容目标（长篇小说/短剧剧本）且与当前目标不同，输出 "target":"novel" 或 "script"。仅限用户明确提出；主编的建议、设想、反问都不算。
+7. 阶段门：若当前阶段素材已成熟，输出 gate 建议推进到下一阶段并给一句理由；不确定就不输出。
 
 只输出一个 JSON 对象，无其他文字：
-{"entries":[{"op":"add","kind":"premise","title":"...","points":["..."],"status":"tentative"}],"gate":{"toPhase":"characters","reason":"概要三要素齐了"}}
-没有可提取的结论且不建议推进就输出 {"entries":[]}。`
+{"entries":[{"op":"add","kind":"premise","title":"...","points":["..."],"status":"tentative"}],"target":"script","gate":{"toPhase":"characters","reason":"概要三要素齐了"}}
+没有可提取的结论且不建议推进、无目标变更就输出 {"entries":[]}。`
 
 /**
  * 静默共识提取（每轮后调用）：从增量对话提取条目并入账本。
@@ -95,6 +96,7 @@ export async function silentExtractLedger(
       : '（空）'
     const user = [
       `【现有账本】\n${existingText}`,
+      `【当前内容目标】${state.contentTarget === 'script' ? '短剧剧本' : '长篇小说'}`,
       `【本轮对话】第 ${input.turnNo} 轮\n用户：${input.userText.slice(0, 2000)}\n主编：${input.assistantText.slice(0, 2000)}`,
     ].join('\n\n')
 
@@ -111,6 +113,14 @@ export async function silentExtractLedger(
         ? parsed.entries
         : (extractJsonArray(raw) || [])
     const gate = (!Array.isArray(parsed) && parsed?.gate || null) as GateSuggestion | null
+    // 内容目标变更（六扇门复盘：用户第 3 轮明说短剧，contentTarget 停在 novel 十二轮，
+    // 阶段策略一直按长篇给——用户明确表达的全局目标必须落结构化状态）。
+    // 只解析不落库：真正写入在下方队列内 mutator 与账本合并一步完成（对抗 review
+    // P2-5：LLM 调用期间用户可能经 roomSetTarget 手动改目标，用陈旧快照比较会
+    // 重复 patch 甚至回滚用户操作）——mutator 拿队列内最新状态判断
+    const parsedTarget = (!Array.isArray(parsed) && (parsed?.target === 'novel' || parsed?.target === 'script'))
+      ? (parsed.target as 'novel' | 'script')
+      : null
 
     // 门建议：只朝下一阶段建议（不允许跳跃/回退），当前已是最后阶段则忽略
     if (gate?.toPhase) {
@@ -124,7 +134,8 @@ export async function silentExtractLedger(
       }
     }
 
-    if (!Array.isArray(ops) || ops.length === 0) return null
+    // 早退守卫须放行「仅目标变更」轮（{"entries":[],"target":"script"} 不是空提取）
+    if ((!Array.isArray(ops) || ops.length === 0) && !parsedTarget) return null
 
     const seen = new Set(state.ledger.map((e) => normalizeTitle(e.title)))
     const added: ConsensusEntry[] = []
@@ -142,14 +153,16 @@ export async function silentExtractLedger(
       added.push({
         id: `ce_${input.turnNo}_${state.ledger.length + added.length + 1}_${Date.now().toString(36).slice(-4)}`,
         kind: KINDS.includes(op?.kind) ? op.kind : 'premise',
-        title,
-        points: Array.isArray(op?.points) ? op.points.slice(0, 3).map((p: any) => String(p).slice(0, 60)) : [],
-        status: STATUSES.includes(op?.status) ? op.status : 'tentative',
+        // 钳制：提取器只产 tentative/rejected（confirmed 是用户操作专属——六扇门复盘
+        // 曾把元观察「待用户拍板」提为已定）；title/points 截断防过程叙事膨胀
+        status: op?.status === 'rejected' ? 'rejected' : 'tentative',
+        title: title.slice(0, 40),
+        points: Array.isArray(op?.points) ? op.points.slice(0, 3).map((p: any) => String(p).slice(0, 40)) : [],
         sourceTurn: input.turnNo,
         updatedAt: Date.now(),
       })
     }
-    if (added.length === 0 && !ops.some((op: any) => op?.op === 'conflict')) return null
+    if (added.length === 0 && !ops.some((op: any) => op?.op === 'conflict') && !parsedTarget) return null
 
     // 队列内 RMW（评审 P1-4）：以队列内最新账本为基线合并，消除「读在队列外」丢更新窗口
     const nextState = await mutateRoomState(db, projectId, (current) => {
@@ -160,8 +173,14 @@ export async function silentExtractLedger(
       const seenNow = new Set(current.ledger.map((e) => normalizeTitle(e.title)))
       const freshAdded = added.filter((a) => !seenNow.has(normalizeTitle(a.title)))
       const all = [...current.ledger, ...freshAdded]
-      return { ...current, ledger: compactLedger(all) }
+      // 目标变更与账本同事务落（比较对象是队列内最新 contentTarget）
+      const contentTarget = parsedTarget && parsedTarget !== current.contentTarget ? parsedTarget : current.contentTarget
+      return { ...current, ledger: compactLedger(all), contentTarget }
     })
+    if (nextState.contentTarget !== state.contentTarget) {
+      emitRoomEvent(projectId, { type: 'target:changed', target: nextState.contentTarget } as RoomEvent)
+      logger.info(`[story-room] 内容目标切换 project=${projectId} → ${nextState.contentTarget}（turn=${input.turnNo}）`)
+    }
     logger.info(`[story-room] 账本静默提取 project=${projectId} turn=${input.turnNo}`)
     return nextState.ledger
   } catch (e) {
@@ -176,7 +195,10 @@ export async function silentExtractLedger(
  * 最老 rejected（rejected 是"防重复推荐"的机制载体，尽量保留）；confirmed 不动，
  * budget 按 CAP - confirmed 夹紧（confirmed 自身不因超限被挤掉）。
  */
-export function compactLedger(ledger: ConsensusEntry[], cap = LEDGER_CAP): ConsensusEntry[] {
+export function compactLedger(
+  ledger: ConsensusEntry[],
+  cap: number = longwritingParams().storyRoom.ledgerCap,
+): ConsensusEntry[] {
   if (ledger.length <= cap) return ledger
   const keepConfirmed = ledger.filter((e) => e.status === 'confirmed')
   const rest = ledger.filter((e) => e.status !== 'confirmed')
@@ -214,8 +236,8 @@ export async function applyLedgerOp(
       await patchRoomState(db, projectId, { ledger })
       return ledger
     case 'revise':
-      if (op.title?.trim()) entry.title = op.title.trim()
-      if (Array.isArray(op.points)) entry.points = op.points.slice(0, 3).map((p) => String(p).slice(0, 60))
+      if (op.title?.trim()) entry.title = op.title.trim().slice(0, 40)
+      if (Array.isArray(op.points)) entry.points = op.points.slice(0, 3).map((p) => String(p).slice(0, 40))
       break
   }
   ledger[idx] = entry

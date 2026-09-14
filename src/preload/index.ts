@@ -861,24 +861,35 @@ const electronAPI = {
     refreshWebpage: (assetId: string) => ipcRenderer.invoke('asset:webpage-refresh', { assetId }),
   },
 
-  // ==================== 新闻来源库（内置应用 C1 早报 / C2 周报的数据源） ====================
-  newsSource: {
-    list: (p: { topicId?: string; keyword?: string }) => ipcRenderer.invoke('newsSource:list', p),
-    get: (id: string) => ipcRenderer.invoke('newsSource:get', { id }),
-    create: (p: { topicId: string; name: string; url: string }) => ipcRenderer.invoke('newsSource:create', p),
-    update: (p: { id: string; topicId?: string; name?: string; url?: string; enabled?: boolean }) => ipcRenderer.invoke('newsSource:update', p),
-    delete: (id: string) => ipcRenderer.invoke('newsSource:delete', { id }),
+  // ==================== 信息来源（设置 → 信息来源；工作流采集节点与各业务模块的数据源） ====================
+  // 类别（一个类别 = 设置界面一个 tab）→ 分组（类别内一级分组）→ 来源（名称 + URL）
+  infoSourceCategory: {
+    list: () => ipcRenderer.invoke('infoSourceCategory:list'),
+    create: (p: { name: string }) => ipcRenderer.invoke('infoSourceCategory:create', p),
+    update: (p: { id: string; name?: string }) => ipcRenderer.invoke('infoSourceCategory:update', p),
+    delete: (id: string) => ipcRenderer.invoke('infoSourceCategory:delete', { id }),
   },
 
-  // ==================== 新闻主题（入库可增删） ====================
-  newsTopic: {
-    list: () => ipcRenderer.invoke('newsTopic:list'),
-    create: (p: { name: string }) => ipcRenderer.invoke('newsTopic:create', p),
-    update: (p: { id: string; name?: string }) => ipcRenderer.invoke('newsTopic:update', p),
-    delete: (id: string) => ipcRenderer.invoke('newsTopic:delete', { id }),
+  infoSourceTopic: {
+    list: (p: { categoryId?: string } = {}) => ipcRenderer.invoke('infoSourceTopic:list', p),
+    create: (p: { categoryId: string; name: string }) => ipcRenderer.invoke('infoSourceTopic:create', p),
+    update: (p: { id: string; name?: string; categoryId?: string }) => ipcRenderer.invoke('infoSourceTopic:update', p),
+    delete: (id: string) => ipcRenderer.invoke('infoSourceTopic:delete', { id }),
   },
 
-  // ==================== 网站 favicon（新闻来源图标） ====================
+  infoSource: {
+    list: (p: { categoryId?: string; topicId?: string; keyword?: string; onlyEnabled?: boolean } = {}) =>
+      ipcRenderer.invoke('infoSource:list', p),
+    get: (id: string) => ipcRenderer.invoke('infoSource:get', { id }),
+    /** topicId 缺省时按 categoryId 落入该类别「未分组」（系统按需创建） */
+    create: (p: { topicId?: string; categoryId?: string; name: string; url: string }) =>
+      ipcRenderer.invoke('infoSource:create', p),
+    update: (p: { id: string; topicId?: string; name?: string; url?: string; enabled?: boolean }) =>
+      ipcRenderer.invoke('infoSource:update', p),
+    delete: (id: string) => ipcRenderer.invoke('infoSource:delete', { id }),
+  },
+
+  // ==================== 网站 favicon（信息来源图标） ====================
   favicon: {
     get: (url: string) => ipcRenderer.invoke('favicon:get', { url }),
   },
@@ -1256,11 +1267,17 @@ const electronAPI = {
     reprocessDocument: (documentId: string) => ipcRenderer.invoke('knowledge-base:reprocess-document', documentId),
     // 获取文档分片
     getDocumentChunks: (documentId: string) => ipcRenderer.invoke('knowledge-base:get-document-chunks', documentId),
-    // 分页获取文档分片
-    getDocumentChunksPaginated: (documentId: string, page: number, pageSize: number) =>
-      ipcRenderer.invoke('knowledge-base:get-document-chunks-paginated', { documentId, page, pageSize }),
+    // 分页获取文档分片（可选按章节过滤，M5 章节树定位）
+    getDocumentChunksPaginated: (documentId: string, page: number, pageSize: number, chapterTitle?: string) =>
+      ipcRenderer.invoke('knowledge-base:get-document-chunks-paginated', { documentId, page, pageSize, chapterTitle }),
     // 获取单个切片详情
     getChunk: (chunkId: string) => ipcRenderer.invoke('knowledge-base:get-chunk', chunkId),
+    // 章节树 + 摘要进度（M2）
+    getChapterTree: (documentId: string) =>
+      ipcRenderer.invoke('knowledge-base:get-chapter-tree', { documentId }),
+    // 章节摘要生成/重试（M2；自动调度在处理完成后异步进行）
+    summarizeDocument: (documentId: string, retryFailed?: boolean) =>
+      ipcRenderer.invoke('knowledge-base:summarize-document', { documentId, retryFailed }),
     // 检索知识库
     search: (request: {
       knowledgeBaseId: string
@@ -1305,6 +1322,10 @@ const electronAPI = {
       ipcRenderer.invoke('dl:create-space', p),
     // 绑定/改绑项目知识库（M4-B → { kbId }）
     setSpaceKb: (p: { id: string; kbId?: string | null }) => ipcRenderer.invoke('dl:set-space-kb', p),
+    // 主题学习前置要求（2026-09-12：整个领域的学习门槛；读 → DlSpacePrereq[]，写 → { prerequisites }）
+    getSpacePrereqs: (id: string) => ipcRenderer.invoke('dl:get-space-prereqs', { id }),
+    setSpacePrereqs: (p: { id: string; prerequisites: Array<{ name: string; why?: string; level?: string; inSpace?: boolean }> }) =>
+      ipcRenderer.invoke('dl:set-space-prereqs', p),
     // 空间行详情（DlProjectRow；本版界面少用）
     getSpace: (id: string) => ipcRenderer.invoke('dl:get-space', { id }),
     // 切换空间状态（active / paused / archived → { ok }）
@@ -1318,6 +1339,16 @@ const electronAPI = {
     getNodeProfile: (id: string, nodeId: string) => ipcRenderer.invoke('dl:get-node-profile', { id, nodeId }),
     // 推荐下一个待学概念（→ conceptId | null）
     pickNext: (id: string) => ipcRenderer.invoke('dl:pick-next', { id }),
+    // 手工追加知识点（2026-09-12：用户建点；勾选的前置直连为已确认边 → DlCreateConceptResult）
+    saveConcept: (p: {
+      id: string
+      name: string
+      nodeType?: string
+      parentId?: string | null
+      definitionShort?: string | null
+      en?: string | null
+      prerequisites?: string[]
+    }) => ipcRenderer.invoke('dl:save-concept', p),
     // 标记「懂了」（前置全就绪才放行 → { ok }）
     ackMastered: (id: string, conceptId: string) => ipcRenderer.invoke('dl:ack-mastered', { id, conceptId }),
     // 标记「没懂」（sectionKey 定位到讲义区 → { confusedCount, splitSuggested }）
@@ -1339,6 +1370,15 @@ const electronAPI = {
       ipcRenderer.invoke('dl:agent-busy', p),
     // 讲义发布（draft→published 人审确认；2026-09-09 复盘补闭环）
     publishCard: (p: { id: string; cardId: string }) => ipcRenderer.invoke('dl:publish-card', p),
+    // 方案确认流程（2026-09-13：对齐诉求 → 确认知识体系 → 才允许落库）
+    getPlan: (id: string) => ipcRenderer.invoke('dl:get-plan', { id }),
+    confirmPlan: (p: {
+      id: string
+      step: 'understanding' | 'syllabus'
+      /** 用户勾选增删/调序后的方案（仅 syllabus 需要；缺省=用最新草案原样确认） */
+      payload?: unknown
+      feedback?: string | null
+    }) => ipcRenderer.invoke('dl:confirm-plan', p),
     // 周期推进配置（M2-C：dl:get-space-pace / dl:set-space-pace / dl:scheduler-state）
     getSpacePace: (id: string) => ipcRenderer.invoke('dl:get-space-pace', { id }),
     setSpacePace: (p: {
@@ -1346,6 +1386,10 @@ const electronAPI = {
       pace: { enabled: boolean; intervalMin: number; autoResearchConcepts: boolean; autoResolveOpenQuestions: boolean }
     }) => ipcRenderer.invoke('dl:set-space-pace', p),
     schedulerState: () => ipcRenderer.invoke('dl:scheduler-state'),
+    // 空间默认模型（2026-09-14：知识生成默认模型，双 null=跟随全局默认）
+    getSpaceModel: (id: string) => ipcRenderer.invoke('dl:get-space-model', { id }),
+    setSpaceModel: (p: { id: string; model: { providerConfigId?: string | null; modelId?: string | null } }) =>
+      ipcRenderer.invoke('dl:set-space-model', p),
     // Atlas 增强视图与画像（M2-E）
     getAtlasViews: (id: string) => ipcRenderer.invoke('dl:get-atlas-views', { id }),
     setSpaceProfile: (p: { id: string; profileId?: string | null; profile?: Record<string, unknown> | null }) =>
@@ -1827,12 +1871,12 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:generateLocations', eventId, projectId, providerConfigId, modelId),
     generateFactions: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generateFactions', eventId, projectId, providerConfigId, modelId),
-    generateOutlineStory: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string, structureLevel?: number) =>
-      ipcRenderer.invoke('longwriting:generateOutlineStory', eventId, projectId, providerConfigId, modelId, structureLevel),
+    generateOutlineStory: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string, structureLevel?: number, opts?: { contentTarget?: 'novel' | 'script'; episodeCount?: number }) =>
+      ipcRenderer.invoke('longwriting:generateOutlineStory', eventId, projectId, providerConfigId, modelId, structureLevel, opts),
     generateOutlineComment: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generateOutlineComment', eventId, projectId, providerConfigId, modelId),
-    generateChapter: (eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string, style?: string, extraPrompt?: string) =>
-      ipcRenderer.invoke('longwriting:generateChapter', eventId, projectId, outlineId, targetWords, providerConfigId, modelId, style, extraPrompt),
+    generateChapter: (eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string, style?: string, extraPrompt?: string, options?: { skipChapterCardGate?: boolean }) =>
+      ipcRenderer.invoke('longwriting:generateChapter', eventId, projectId, outlineId, targetWords, providerConfigId, modelId, style, extraPrompt, options),
     // 章节工作台（38 号）：上下文预览 + 按勾选上下文生成
     chapterContextPreview: (projectId: string, outlineId: string, opts?: { targetWords?: number; style?: string; extraPrompt?: string }) =>
       ipcRenderer.invoke('longwriting:chapterContextPreview', projectId, outlineId, opts),
@@ -1842,6 +1886,8 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:generateSection', eventId, projectId, outlineId, targetWords, providerConfigId, modelId),
     generateChapterPrewrite: (eventId: string, projectId: string, outlineId: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generateChapterPrewrite', eventId, projectId, outlineId, providerConfigId, modelId),
+    generateChapterCard: (eventId: string, projectId: string, outlineId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:generateChapterCard', eventId, projectId, outlineId, providerConfigId, modelId),
 
     // AI 生成事件监听
     onGenerateEvent: (eventId: string, callback: (event: any, data: any) => void) => {
@@ -2148,6 +2194,10 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:room:setPhase', projectId, phase),
     roomDistill: (projectId: string, scope: string, opts?: { providerConfigId?: string; modelId?: string }) =>
       ipcRenderer.invoke('longwriting:room:distill', projectId, scope, opts),
+    conflictPlan: (projectId: string, conflict: unknown, opts?: { providerConfigId?: string; modelId?: string }) =>
+      ipcRenderer.invoke('longwriting:room:conflict:plan', projectId, conflict, opts),
+    conflictExecute: (projectId: string, action: string, payload: Record<string, unknown>) =>
+      ipcRenderer.invoke('longwriting:room:conflict:execute', projectId, action, payload),
     roomAdoptCard: (projectId: string, cardId: string, patch?: Record<string, unknown>) =>
       ipcRenderer.invoke('longwriting:room:adoptCard', projectId, cardId, patch),
     roomRegenerateCard: (projectId: string, cardId: string, feedback: string, opts?: { providerConfigId?: string; modelId?: string }) =>

@@ -130,6 +130,12 @@ export interface DlConceptView {
   source: DlConceptSource
   /** 类型专属扩展字段（法规效力/论文年份等） */
   attrs?: Record<string, unknown> | null
+  /**
+   * 本知识点声明的前置要求（attrs.prerequisites；2026-09-12 用户需求）。
+   * 生成知识点时即声明"学它之前必须先掌握什么"；与图上的 prerequisite 关系边互补——
+   * 这里可能包含"已声明但尚未建关系"的前置（UI 用虚线 chip 标出）。
+   */
+  declaredPrereqs?: string[]
   /** 有无已发布讲义（无讲义时中栏显示"生成中"） */
   hasCard?: boolean
   card?: DlCardView | null
@@ -143,6 +149,34 @@ export interface DlRelationView {
   /** 已人工/人审确认？ */
   verified?: boolean
   evidence?: string | null
+}
+
+// ==================== 手工建点（用户补全知识体系；2026-09-12） ====================
+
+/** 手工新建知识点入参（左栏「+ 知识点」→ dl:save-concept） */
+export interface DlCreateConceptInput {
+  /** 目标空间 id */
+  id: string
+  name: string
+  /** 知识节点类型（默认 concept；不允许 group） */
+  nodeType?: string
+  /** 所属分支目录（必须是本空间的 group 节点；null=根层） */
+  parentId?: string | null
+  definitionShort?: string | null
+  en?: string | null
+  /** 前置知识点名（勾选空间内已有概念）→ 直接落成已确认的前置边 */
+  prerequisites?: string[]
+}
+
+/** 手工建点结果 */
+export interface DlCreateConceptResult {
+  conceptId: string
+  /** false = 同父同名已存在，做了幂等更新 */
+  created: boolean
+  /** 已连上的前置（名 → 概念 id） */
+  linkedPrereqs: Array<{ name: string; conceptId: string }>
+  /** 空间里找不到落点的前置名（UI 提示"可让 AI 补全"） */
+  missingPrereqs: string[]
 }
 
 /** 讲义视图（一概念当前版） */
@@ -178,6 +212,88 @@ export interface DlRelatedRef {
   rel?: string
 }
 
+// ==================== 方案确认流程（2026-09-13 用户需求） ====================
+
+/**
+ * 方案步骤：
+ * - `understanding`：模型对用户诉求的理解（先确认它，再规划体系）；
+ * - `syllabus`：知识体系方案（确认后才允许落库知识点）。
+ */
+export type DlPlanStep = 'understanding' | 'syllabus'
+
+/** 方案状态：draft=待用户确认 | confirmed=已确认（生效） | superseded=被新版本取代 */
+export type DlPlanStatus = 'draft' | 'confirmed' | 'superseded'
+
+/**
+ * 诉求理解（第一步提案）。
+ * 用户反馈「生成的知识点与期望差别较大」的正面解法：先让模型**复述**诉求并逐条列出要覆盖的
+ * 对象与场景、明确不做什么，用户确认或纠正后再往下走。
+ */
+export interface DlPlanUnderstanding {
+  /** 一句话重述：我理解你要学什么 */
+  goalSummary: string
+  /** 要覆盖的对象与场景（诉求点名的产品/市场/数据/动作，逐条有落点） */
+  coverage: string[]
+  /** 读者画像：从哪出发、到什么程度 */
+  audience?: string | null
+  /** 明确不做什么（防跑偏，如"不做个人记账与保险推销"） */
+  notDoing?: string[]
+  /** 关键期望：学完能做到什么（动词开头，可验证） */
+  keyExpectations?: string[]
+}
+
+/** 知识体系方案里的一个节点（分支用 nodeType=group） */
+export interface DlSyllabusConcept {
+  name: string
+  definitionShort?: string | null
+  /** 前置知识点名（学它之前要先掌握什么） */
+  prerequisites?: string[]
+  /** 学习层级（0=零基础可直接学） */
+  layer?: number
+  /** group=分支目录 | concept=知识点（缺省 concept） */
+  nodeType?: string
+}
+
+/** 知识体系方案（第二步提案）：分支 + 知识点 */
+export interface DlPlanSyllabus {
+  branches: Array<{
+    name: string
+    definitionShort?: string | null
+    concepts: DlSyllabusConcept[]
+  }>
+  /** 不归属任何分支的根层知识点（如领域总览） */
+  rootConcepts?: DlSyllabusConcept[]
+  /** 方案说明（取材自哪些资料/哪些是按主干补的先验） */
+  notes?: string | null
+}
+
+/** 方案版本行（IPC 视图） */
+export interface DlPlanRevisionView<P = unknown> {
+  id: string
+  step: DlPlanStep
+  status: DlPlanStatus
+  revision: number
+  payload: P
+  /** 用户调整指令或确认备注 */
+  feedback?: string | null
+  updatedAt?: string | null
+}
+
+/** 空间方案总览（确认弹窗数据源） */
+export interface DlPlanView {
+  spaceId: string
+  /** 当前诉求理解（最新版） */
+  understanding: DlPlanRevisionView<DlPlanUnderstanding> | null
+  /** 当前知识体系方案（最新版） */
+  syllabus: DlPlanRevisionView<DlPlanSyllabus> | null
+  /** 诉求理解是否已确认（未确认则不允许提交体系方案） */
+  understandingConfirmed: boolean
+  /** 知识体系是否已确认（= 允许落库知识点） */
+  syllabusConfirmed: boolean
+  /** 已确认方案里的知识点条目数（用于落库额度与界面提示） */
+  confirmedConceptCount: number
+}
+
 // ==================== 空间视图（列表页 / 三栏空间页） ====================
 
 /** 空间列表卡片 */
@@ -205,6 +321,50 @@ export interface DlProfileView {
   custom?: boolean
 }
 
+/**
+ * 主题学习前置要求（整个空间的门槛；2026-09-12 用户需求）
+ *
+ * 学这个领域之前需要具备什么——可以是领域外能力（如「Python 基础」「线性代数基础」），
+ * 也可以是空间内已建的知识点。学习者一进空间就该看到门槛，研究模型生成知识点时
+ * 必须按它排顺序（dl_project.prerequisites）。
+ */
+export interface DlSpacePrereq {
+  /** 前置能力名（如「Python 基础」「线性代数基础」） */
+  name: string
+  /** 为什么学这个领域需要它（一句话） */
+  why?: string
+  /** 掌握到什么程度即可（如「能用 NumPy 索引与广播即可」） */
+  level?: string
+  /** true = 空间内已建成知识点并会教；false/缺省 = 需自备或另找资料 */
+  inSpace?: boolean
+}
+
+/**
+ * 知识地图完整度诊断（2026-09-12；后端 assessMapCoverage 产出，UI 展示 + 供 AI 补全起步）。
+ * 只暴露展示与指令所需的字段（完整诊断在 core rules 内）。
+ */
+export interface DlMapCoverage {
+  /** 0-100 */
+  score: number
+  /** 一行摘要（含规模/层数/交付率） */
+  summary: string
+  metrics: {
+    leaves: number
+    groups: number
+    edges: number
+    verifiedEdges: number
+    entries: number
+    levels: number
+    lessons: number
+  }
+  gaps: Array<{
+    kind: string
+    severity: 'high' | 'medium'
+    message: string
+    conceptNames?: string[]
+  }>
+}
+
 /** 空间三栏聚合视图（Space 页一次拉取） */
 export interface DlSpaceView {
   id: string
@@ -212,6 +372,10 @@ export interface DlSpaceView {
   goal: DlGoal
   tagline: string
   profile: DlProfileView | null
+  /** 主题学习前置要求（整个领域的学习门槛；可空=尚未声明） */
+  prerequisites: DlSpacePrereq[]
+  /** 地图完整度诊断（结构性缺口清单；2026-09-12） */
+  coverage: DlMapCoverage
   status: DlProjectStatus
   /** 掌握度统计 */
   stats: { mastered: number; learning: number; total: number }
@@ -288,8 +452,20 @@ export interface DlNodeProfile {
   node: DlAtlasNode
   /** 类型专属属性展示（法规效力/论文年份…按 nodeType 挑） */
   attrs: Record<string, unknown> | null
-  /** 直接邻居（含关系类型标注） */
-  relations: { conceptId: string; name: string; rel: DlRelationType; direction: 'out' | 'in' }[]
+  /**
+   * 直接邻居（含关系类型标注）。
+   * 2026-09-12：补 verified/source/target —— 未确认的边可在档案里直接「确认」（地图人审）。
+   */
+  relations: {
+    conceptId: string
+    name: string
+    rel: DlRelationType
+    direction: 'out' | 'in'
+    verified?: boolean
+    sourceId?: string
+    targetId?: string
+    evidence?: string | null
+  }[]
   /** 关联内容（论文/法规/案例…按 nodeType 聚合） */
   relatedContent: DlWorkRef[]
   /** 是否有子图谱（下层 group） */

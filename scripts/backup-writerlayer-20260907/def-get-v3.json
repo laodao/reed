@@ -1,0 +1,2479 @@
+{
+  "id": "builtin_def_script-to-video-v3",
+  "userId": "local-default-user",
+  "name": "[内置] 短视频脚本生成视频V3（通用视觉策略）",
+  "description": "脚本/主题+多知识库 → 视频类型预设与视觉策略装配（imagery 意象化空镜 / asset 素材驱动，按类型自动）→ 大纲生成与审核 → 分镜拆解（concept/意象 或 素材引用 assetIdx）→ 逐镜素材生产（imagery=意象文生图；asset=用户素材直用，缺素材即拦截）→ 图文素材板整体审核 → 逐片段视频生成（逐镜确认，ComfyUI H3）→ 配音+烧字幕+合成 → 大纲/素材板/成片存档。",
+  "category": "视频制作",
+  "draftGraph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始（脚本/主题+KB/风格/资产引用）",
+        "position": {
+          "x": 40,
+          "y": 600
+        },
+        "config": {
+          "inputs": [
+            {
+              "key": "scriptSource",
+              "label": "脚本来源",
+              "type": "select",
+              "required": true,
+              "defaultValue": "topic",
+              "options": [
+                {
+                  "label": "粘贴脚本文案（text）",
+                  "value": "text"
+                },
+                {
+                  "label": "引用脚本/文案资产（asset）",
+                  "value": "asset"
+                },
+                {
+                  "label": "主题+要点，从知识库生成脚本与大纲（topic）",
+                  "value": "topic"
+                }
+              ]
+            },
+            {
+              "key": "scriptText",
+              "label": "脚本文案（粘贴，可为空）",
+              "type": "textarea",
+              "required": false,
+              "defaultValue": "",
+              "help": "与 V1 相同的完整脚本 markdown；留空则由大纲阶段按主题+知识库生成"
+            },
+            {
+              "key": "topic",
+              "label": "选题主题（scriptSource=topic 或脚本文案为空时使用）",
+              "type": "string",
+              "required": false,
+              "defaultValue": ""
+            },
+            {
+              "key": "keyPoints",
+              "label": "要点/口径期望（可选）",
+              "type": "textarea",
+              "required": false,
+              "defaultValue": "",
+              "help": "希望覆盖的要点、涉及口径、倾向结论等"
+            },
+            {
+              "key": "scriptAssetIds",
+              "label": "脚本/文案资产（多选，scriptSource=asset）",
+              "type": "select-dynamic",
+              "source": "assets:text",
+              "multi": true,
+              "required": false,
+              "help": "资产中心文本类资产多选（值=资产 ID），多个资产正文会合并引用"
+            },
+            {
+              "key": "knowledgeBaseIds",
+              "label": "知识库（多选，脚本与大纲的事实口径参考）",
+              "type": "select-dynamic",
+              "source": "knowledgeBases",
+              "multi": true,
+              "required": false
+            },
+            {
+              "key": "videoType",
+              "label": "视频类型预设",
+              "type": "select",
+              "required": true,
+              "defaultValue": "financial-deep",
+              "options": [
+                {
+                  "label": "财经深度",
+                  "value": "financial-deep"
+                },
+                {
+                  "label": "资讯口播",
+                  "value": "news-talk"
+                },
+                {
+                  "label": "知识科普",
+                  "value": "knowledge"
+                },
+                {
+                  "label": "电商种草",
+                  "value": "ecommerce"
+                },
+                {
+                  "label": "品牌宣传",
+                  "value": "brand"
+                },
+                {
+                  "label": "旅行记录",
+                  "value": "travel"
+                }
+              ]
+            },
+            {
+              "key": "videoStyle",
+              "label": "自由风格叠加（可选）",
+              "type": "textarea",
+              "required": false,
+              "defaultValue": ""
+            },
+            {
+              "key": "visualStrategy",
+              "label": "画面策略",
+              "type": "select",
+              "required": false,
+              "defaultValue": "auto",
+              "options": [
+                {
+                  "label": "自动（按视频类型）",
+                  "value": "auto"
+                },
+                {
+                  "label": "意象化空镜（imagery）",
+                  "value": "imagery"
+                },
+                {
+                  "label": "素材驱动（asset）",
+                  "value": "asset"
+                }
+              ],
+              "help": "auto=按 videoType 预设默认：财经/资讯/知识/文旅→意象化空镜；电商/品牌→素材驱动(需提供素材图)。可手动强制。"
+            },
+            {
+              "key": "writerSkill",
+              "label": "脚本文体技能",
+              "type": "select",
+              "required": false,
+              "defaultValue": "auto",
+              "help": "auto=按视频类型默认映射；也可直接选技能",
+              "options": [
+                {
+                  "label": "自动（按视频类型）",
+                  "value": "auto"
+                },
+                {
+                  "label": "新闻调查·财经（video-writer-investigative）",
+                  "value": "video-writer-investigative"
+                },
+                {
+                  "label": "通用标准（video-writer-standard）",
+                  "value": "video-writer-standard"
+                }
+              ]
+            },
+            {
+              "key": "writerAttitude",
+              "label": "写作态度档",
+              "type": "select",
+              "required": false,
+              "defaultValue": "auto",
+              "help": "新闻调查技能的态度档：冷静调查/犀利质疑/共情叙事",
+              "options": [
+                {
+                  "label": "自动",
+                  "value": "auto"
+                },
+                {
+                  "label": "冷静调查",
+                  "value": "冷静调查"
+                },
+                {
+                  "label": "犀利质疑",
+                  "value": "犀利质疑"
+                },
+                {
+                  "label": "共情叙事",
+                  "value": "共情叙事"
+                }
+              ]
+            },
+            {
+              "key": "writerAngle",
+              "label": "报道角度/想质疑的点（可空）",
+              "type": "textarea",
+              "required": false,
+              "defaultValue": "",
+              "help": "自由描述报道主线/立场/想强调的质疑；空=技能默认角度"
+            },
+            {
+              "key": "referenceAssetIds",
+              "label": "参考图资产（多选，作风格/主体参考）",
+              "type": "select-dynamic",
+              "source": "assets:image",
+              "multi": true,
+              "required": false,
+              "help": "图片资产多选；生成时取第一张作参考图生图"
+            },
+            {
+              "key": "baseImageAssetIds",
+              "label": "底图资产（多选，供镜头直接作素材）",
+              "type": "select-dynamic",
+              "source": "assets:image",
+              "multi": true,
+              "required": false,
+              "help": "当某镜画面主体与某张底图一致时直接使用（拆解阶段自动匹配索引）"
+            },
+            {
+              "key": "width",
+              "label": "视频宽度",
+              "type": "number",
+              "defaultValue": 704
+            },
+            {
+              "key": "height",
+              "label": "视频高度",
+              "type": "number",
+              "defaultValue": 1248
+            },
+            {
+              "key": "voiceId",
+              "label": "配音音色",
+              "type": "string",
+              "required": true,
+              "defaultValue": ""
+            },
+            {
+              "key": "voiceProviderConfigId",
+              "label": "配音 Provider",
+              "type": "select-dynamic",
+              "source": "providerConfigs",
+              "required": true
+            },
+            {
+              "key": "videoProviderConfigId",
+              "label": "视频 Provider",
+              "type": "select-dynamic",
+              "source": "providerConfigs",
+              "required": true
+            },
+            {
+              "key": "videoModelId",
+              "label": "视频模型 ID",
+              "type": "string",
+              "required": true,
+              "defaultValue": "h3"
+            },
+            {
+              "key": "videoQuality",
+              "label": "H3 画质档",
+              "type": "select",
+              "required": false,
+              "defaultValue": "high",
+              "options": [
+                {
+                  "label": "高清 high（704×1248 全质量）",
+                  "value": "high"
+                },
+                {
+                  "label": "快速 low（480×864）",
+                  "value": "low"
+                }
+              ],
+              "help": "ComfyUI H3：高清慢、快速档数倍提速（成片分辨率仍按 width/height 合成）"
+            },
+            {
+              "key": "h3Steps",
+              "label": "H3 采样步数",
+              "type": "number",
+              "defaultValue": 20,
+              "help": "20=全质量（每镜约 5~15 分钟）；4=turbo（数倍提速，适合长视频试跑）"
+            },
+            {
+              "key": "imageProviderConfigId",
+              "label": "文生图 Provider",
+              "type": "select-dynamic",
+              "source": "providerConfigs",
+              "required": true
+            },
+            {
+              "key": "imageModelId",
+              "label": "文生图模型 ID",
+              "type": "string",
+              "required": true,
+              "defaultValue": "krea2"
+            },
+            {
+              "key": "bgmPath",
+              "label": "背景音乐（可选）",
+              "type": "string",
+              "required": false,
+              "defaultValue": ""
+            },
+            {
+              "key": "model",
+              "label": "文案/拆解模型",
+              "type": "model",
+              "modelTypes": [
+                "text"
+              ],
+              "required": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "readScript",
+        "type": "read-assets",
+        "name": "读取脚本/文案资产",
+        "position": {
+          "x": 320,
+          "y": 420
+        },
+        "config": {
+          "assetIds": "{{start.scriptAssetIds}}"
+        }
+      },
+      {
+        "id": "readRef",
+        "type": "read-assets",
+        "name": "读取参考图资产",
+        "position": {
+          "x": 320,
+          "y": 560
+        },
+        "config": {
+          "assetIds": "{{start.referenceAssetIds}}"
+        }
+      },
+      {
+        "id": "readBase",
+        "type": "read-assets",
+        "name": "读取底图资产",
+        "position": {
+          "x": 320,
+          "y": 700
+        },
+        "config": {
+          "assetIds": "{{start.baseImageAssetIds}}"
+        }
+      },
+      {
+        "id": "refPick",
+        "type": "code",
+        "name": "参考图取首张",
+        "position": {
+          "x": 600,
+          "y": 560
+        },
+        "config": {
+          "code": "const refs = inputs.refs || [];\nreturn { first: (Array.isArray(refs) && refs.length > 0) ? refs[0] : '' };",
+          "inputs": [
+            {
+              "key": "refs",
+              "value": "{{readRef.imagePaths}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "kbQuery",
+        "type": "kb-query-multi",
+        "name": "多知识库检索参考",
+        "position": {
+          "x": 600,
+          "y": 420
+        },
+        "config": {
+          "knowledgeBaseIds": "{{start.knowledgeBaseIds}}",
+          "query": "{{start.topic}} {{start.keyPoints}}",
+          "topKPerKb": 6,
+          "maxResults": 24
+        }
+      },
+      {
+        "id": "kbText",
+        "type": "code",
+        "name": "KB 结果转文本",
+        "position": {
+          "x": 760,
+          "y": 420
+        },
+        "config": {
+          "code": "const rows = Array.isArray(inputs.rows) ? inputs.rows : [];\nif (rows.length === 0) return { text: '' };\nreturn { text: rows.map((r, i) => '【来源' + (i + 1) + '｜库:' + String(r.knowledgeBaseId || '') + '｜文档:' + String(r.documentName || '') + '】' + String(r.content || '').slice(0, 500)).join('\\n\\n') };",
+          "inputs": [
+            {
+              "key": "rows",
+              "value": "{{kbQuery.results}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "scriptSrc",
+        "type": "code",
+        "name": "整理脚本文案来源",
+        "position": {
+          "x": 760,
+          "y": 700
+        },
+        "config": {
+          "code": "const mode = String(inputs.mode || 'topic');\nconst assetText = String(inputs.assetText || '');\nconst text = String(inputs.scriptText || '');\nif (mode === 'asset') return { text: assetText };\nif (mode === 'text') return { text };\nreturn { text: '' }; // topic：由大纲阶段按主题+KB 生成",
+          "inputs": [
+            {
+              "key": "mode",
+              "value": "{{start.scriptSource}}"
+            },
+            {
+              "key": "scriptText",
+              "value": "{{start.scriptText}}"
+            },
+            {
+              "key": "assetText",
+              "value": "{{readScript.textJoined}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "preset",
+        "type": "video-preset",
+        "name": "视频类型预设装配",
+        "position": {
+          "x": 600,
+          "y": 700
+        },
+        "config": {
+          "videoType": "{{start.videoType}}",
+          "freeStyle": "{{start.videoStyle}}"
+        }
+      },
+      {
+        "id": "outlineReview",
+        "type": "human-review",
+        "name": "大纲审核",
+        "position": {
+          "x": 1460,
+          "y": 560
+        },
+        "config": {
+          "payload": {
+            "stage": "大纲审核：批准后进入分镜拆解",
+            "md": "{{writerMd.result.md}}"
+          },
+          "editableFields": [
+            {
+              "key": "md",
+              "label": "大纲全文",
+              "type": "string"
+            }
+          ],
+          "timeoutMs": null,
+          "timeoutPolicy": "fail"
+        }
+      },
+      {
+        "id": "baseList",
+        "type": "code",
+        "name": "底图清单文本",
+        "position": {
+          "x": 1740,
+          "y": 760
+        },
+        "config": {
+          "code": "const assets = Array.isArray(inputs.assets) ? inputs.assets : [];\nreturn { text: assets.map((a, i) => '[' + i + '] ' + (a.name || '') + (a.description ? '：' + a.description : '')).join('\\n') };",
+          "inputs": [
+            {
+              "key": "assets",
+              "value": "{{readBase.assets}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "shotsGen",
+        "type": "llm-chat",
+        "name": "分镜拆解（含底图匹配）",
+        "position": {
+          "x": 2020,
+          "y": 560
+        },
+        "config": {
+          "systemPrompt": "你是资深视频分镜师。依据用户确认的大纲把视频拆为 1~20 个镜头。\n【视频类型/风格规范】\n{{preset.promptBlock}}\n【视觉策略（当前模式 {{strategy.result.mode}}）】\n{{strategy.result.policyText}}\n【素材池（asset 模式引用；imagery 模式可参考）】（名称/描述/索引）\n{{baseList.result.text}}\n【大纲全文（用户已审核）】\n{{outlineReview.md}}\n【画面硬性要求】visual 只描述可实拍物理场景（主体/动作/环境/光线/色调/构图景别/情绪/镜头运动），禁止任何文字/UI/图形/图表/水印/贴片字幕（所有文字一律走 caption 字幕层）；每镜 1~3 句并给出运镜。\n【镜头规则】字幕 caption 为画面要传达的文字（烧录为字幕）；duration 整数秒 4~16；每镜给出 concept（该镜语义主题）。\n【模式化镜头输出】依据上方“视觉策略”里的模式：\n - imagery 模式：每镜另给 imagery（意象对象：按意象表命中 + concept 细化的代表性意象画面，可拍无文字）与 visual（=该意象的可执行画面描述）。\n - asset 模式：每镜必须给 assetIdx（引用素材池索引，取值 0..{{strategy.result.baseCount}}-1）与 visual（描述该镜展示素材的角度/景别/运镜/氛围，主体来自素材，不新增文字）。\n输出 JSON 数组结构：{\"narration\":\"全片口播（原样保留可用 | 分句）\",\"shots\":[{\"concept\":\"语义主题\",\"visual\":\"画面描述\",\"caption\":\"字幕短句\",\"duration\":秒,\"imagery\":\"意象对象(仅 imagery)\",\"assetIdx\":素材索引(仅 asset)}]}。镜头总数 1~20。\n【分镜原子纪律】以“口播的 | 分句/大纲段落”为镜头原子：同一镜只承载一个事件、一个地点、一个语义点；一句口播含多个事件或地点时必须拆成多个镜头，禁止把多个场景塞进同一镜的 visual。",
+          "prompt": "请基于大纲与视觉策略输出镜头 JSON（concept/imagery 或 assetIdx 依模式填写）。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "splitShots",
+        "type": "code",
+        "name": "拆分镜头（生成/底图）",
+        "position": {
+          "x": 2300,
+          "y": 560
+        },
+        "config": {
+          "code": "const shots = Array.isArray(inputs.shots) ? inputs.shots : [];\nif (shots.length === 0) throw new Error('分镜拆解结果为空：请检查脚本/大纲内容后重试');\nconst mode = String(inputs.mode || 'imagery');\nconst bases = Array.isArray(inputs.bases) ? inputs.bases : [];\nconst gen = [];\nconst base = [];\nshots.forEach(function (s, i) {\n  const s2 = Object.assign({}, s, { _origIndex: i, mode: mode });\n  if (mode === 'asset') {\n    const idx = Number(s.assetIdx);\n    if (!Number.isInteger(idx) || idx < 0 || idx >= bases.length) {\n      throw new Error('素材驱动镜头 ' + (i + 1) + ' 缺少有效素材引用（assetIdx=' + String(s.assetIdx) + '，素材池 ' + bases.length + ' 张）：请为每个镜头标注素材索引后重试');\n    }\n    s2.assetIdx = idx;\n    s2.baseImagePath = bases[idx].path || '';\n    s2.baseImageUrl = bases[idx].url || '';\n    s2.baseImageName = bases[idx].name || '';\n    s2.baseAssetId = bases[idx].assetId || bases[idx].id || '';\n    base.push(s2);\n  } else {\n    s2.assetIdx = -1;\n    gen.push(s2);\n  }\n});\nreturn { shots: shots, gen: gen, base: base, mode: mode };",
+          "inputs": [
+            {
+              "key": "shots",
+              "value": "{{shotsGen.parsed.shots}}"
+            },
+            {
+              "key": "mode",
+              "value": "{{strategy.result.mode}}"
+            },
+            {
+              "key": "bases",
+              "value": "{{readBase.assets}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "loopMat",
+        "type": "loop",
+        "name": "素材循环（生成镜头）",
+        "position": {
+          "x": 2600,
+          "y": 560
+        },
+        "config": {
+          "listExpression": "{{splitShots.result.gen}}",
+          "emptyPolicy": "skip"
+        }
+      },
+      {
+        "id": "shotPack",
+        "type": "llm-chat",
+        "name": "片段提示词包",
+        "position": {
+          "x": 2800,
+          "y": 420
+        },
+        "config": {
+          "systemPrompt": "为单个镜头产出可执行素材包（JSON）：{\"concept\":\"语义主题\",\"visual\":\"画面描述（服从大纲/风格；仅实拍物理场景、无文字、含运镜）\",\"imagery\":\"意象对象（imagery 模式：依意象表命中细化为可执行画面；asset 模式填空）\",\"caption\":\"字幕短句\",\"duration\":秒,\"prompt\":\"给文生图的完整画面提示词（已含风格与参考图说明；asset 模式此字段可空）\"}\n【预设规范】\n{{preset.promptBlock}}\n【视觉策略】\n{{strategy.result.policyText}}\n【参考图提示】画面风格与主体须贴合参考图（若有）；意象化空镜禁止出现文字。\n【单场景纪律】visual 与 imagery 只描述“一个主体 + 一处环境”的单一可拍场景；严禁“先…随后…/接着切到…/再出现…”这类多场景转场拼接；对比性修辞句只取一个代表性意象。",
+          "prompt": "大纲段落：{{loopMat.item.sectionIdx}}\n语义主题：{{loopMat.item.concept}}\n画面要点：{{loopMat.item.visual}}\n意象对象：{{loopMat.item.imagery}}\n字幕：{{loopMat.item.caption}}\n时长：{{loopMat.item.duration}}秒\n\n输出该镜头素材包 JSON。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "imgShot",
+        "type": "image-gen",
+        "name": "文生图(镜头画面)",
+        "position": {
+          "x": 3000,
+          "y": 560
+        },
+        "config": {
+          "prompt": "{{shotPack.parsed.prompt}}（竖版构图；写实、干净、无任何文字）",
+          "negativePrompt": "文字、字体、logo、水印、UI 元素、图标、按钮、弹窗、乱码、涂鸦、图形、表格、图表、标注、贴片字幕、卡通",
+          "providerConfigId": "{{start.imageProviderConfigId}}",
+          "modelId": "{{start.imageModelId}}",
+          "width": "{{start.width}}",
+          "height": "{{start.height}}",
+          "referenceImages": "{{refPick.result.first}}",
+          "promptExtend": false
+        }
+      },
+      {
+        "id": "matItem",
+        "type": "code",
+        "name": "素材项（生成图）",
+        "position": {
+          "x": 3200,
+          "y": 560
+        },
+        "config": {
+          "code": "const list = Array.isArray(inputs.img) ? inputs.img : ((inputs.img && inputs.img.images) || []);\nconst img = (list && list[0]) || {};\nconst pack = inputs.pack || {};\nconst it = inputs.item || {};\nreturn { _origIndex: it._origIndex, mode: 'imagery', source: 'generated',\n  concept: pack.concept || it.concept || '', imagery: pack.imagery || it.imagery || '',\n  visual: pack.visual || it.visual, caption: pack.caption || it.caption,\n  duration: Number(pack.duration) > 0 ? pack.duration : it.duration,\n  prompt: pack.prompt || '', baseImagePath: '', imagePath: img.path || '', imageUrl: img.localUrl || img.url || '', imageAssetId: '' };",
+          "inputs": [
+            {
+              "key": "item",
+              "value": "{{loopMat.item}}"
+            },
+            {
+              "key": "pack",
+              "value": "{{shotPack.parsed}}"
+            },
+            {
+              "key": "img",
+              "value": "{{imgShot.images}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "loopBase",
+        "type": "loop",
+        "name": "素材循环（直接用底图镜头）",
+        "position": {
+          "x": 2600,
+          "y": 800
+        },
+        "config": {
+          "listExpression": "{{splitShots.result.base}}",
+          "emptyPolicy": "skip"
+        }
+      },
+      {
+        "id": "matBase",
+        "type": "code",
+        "name": "素材项（底图直用）",
+        "position": {
+          "x": 2800,
+          "y": 800
+        },
+        "config": {
+          "code": "const it = inputs.item || {};\nconst srcId = it.baseAssetId || '';\nreturn { _origIndex: it._origIndex, mode: 'asset', source: srcId ? 'asset:' + srcId : (it.baseImageName ? '素材:' + it.baseImageName : 'asset'),\n  concept: it.concept || '', imagery: '', assetIdx: it.assetIdx,\n  visual: it.visual || '', caption: it.caption || '', duration: Number(it.duration) > 0 ? it.duration : 5,\n  prompt: it.visual || '', baseImagePath: it.baseImagePath || '', imagePath: it.baseImagePath || '',\n  imageUrl: it.baseImageUrl || it.baseImagePath || '', imageAssetId: srcId, imageAssetName: it.baseImageName || '' };",
+          "inputs": [
+            {
+              "key": "item",
+              "value": "{{loopBase.item}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "boardMerge",
+        "type": "code",
+        "name": "素材板聚合",
+        "position": {
+          "x": 3400,
+          "y": 560
+        },
+        "config": {
+          "code": "const unwrap = (r) => (r && typeof r === 'object' && r.result && typeof r.result === 'object' && !('visual' in r)) ? r.result : r;\nconst a = (Array.isArray(inputs.a) ? inputs.a : []).map(unwrap);\nconst b = (Array.isArray(inputs.b) ? inputs.b : []).map(unwrap);\nconst all = a.concat(b).sort(function (x, y) { return (x._origIndex || 0) - (y._origIndex || 0); }).map(function (it, i) {\n  const c = Object.assign({}, it, { cardIndex: i });\n  delete c._origIndex;\n  return c;\n});\nconst summary = all.map(function (c, i) {\n  const src = c.source === 'asset' ? (c.imageAssetName ? '（素材:' + String(c.imageAssetName) + '）' : '（素材）') : (c.source === 'generated' ? '（意象生成）' : '');\n  return '镜头' + (i + 1) + '：' + String(c.caption || '') + '｜' + String(c.duration || '') + 's' + src;\n}).join('\\n');\nreturn { cards: all, summary: summary, mode: String(inputs.mode || '') };",
+          "inputs": [
+            {
+              "key": "a",
+              "value": "{{loopMat.results}}"
+            },
+            {
+              "key": "b",
+              "value": "{{loopBase.results}}"
+            },
+            {
+              "key": "mode",
+              "value": "{{strategy.result.mode}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "boardReview",
+        "type": "human-review",
+        "name": "素材板审核（图文）",
+        "position": {
+          "x": 3600,
+          "y": 560
+        },
+        "config": {
+          "payload": {
+            "stage": "素材板审核：大纲与逐镜素材批准后开始逐片段视频生成",
+            "videoType": "{{start.videoType}}",
+            "summary": "{{boardMerge.result.summary}}",
+            "cards": "{{boardMerge.result.cards}}",
+            "visualStrategy": "{{strategy.result.mode}}"
+          },
+          "editableFields": [
+            {
+              "key": "cards",
+              "label": "逐镜素材（可逐条改画面/字幕/时长）",
+              "type": "json"
+            }
+          ],
+          "timeoutMs": null,
+          "timeoutPolicy": "fail"
+        }
+      },
+      {
+        "id": "loopVideo",
+        "type": "loop",
+        "name": "逐片段视频循环",
+        "position": {
+          "x": 3820,
+          "y": 560
+        },
+        "config": {
+          "listExpression": "{{boardReview.cards}}",
+          "emptyPolicy": "skip"
+        }
+      },
+      {
+        "id": "shotReview",
+        "type": "human-review",
+        "name": "片段确认(生成视频前)",
+        "position": {
+          "x": 4000,
+          "y": 420
+        },
+        "config": {
+          "payload": {
+            "stage": "逐片段审核：图生视频前确认",
+            "shotIndex": "{{loopVideo.index}}",
+            "visual": "{{loopVideo.item.visual}}",
+            "caption": "{{loopVideo.item.caption}}",
+            "duration": "{{loopVideo.item.duration}}",
+            "imageLocalUrl": "{{loopVideo.item.imageUrl}}"
+          },
+          "editableFields": [
+            {
+              "key": "visual",
+              "label": "画面",
+              "type": "string"
+            },
+            {
+              "key": "caption",
+              "label": "字幕",
+              "type": "string"
+            },
+            {
+              "key": "duration",
+              "label": "时长(秒)",
+              "type": "number"
+            }
+          ],
+          "timeoutMs": null,
+          "timeoutPolicy": "fail"
+        }
+      },
+      {
+        "id": "vidShot",
+        "type": "video-gen",
+        "name": "图生视频(动化)",
+        "position": {
+          "x": 4180,
+          "y": 560
+        },
+        "config": {
+          "providerConfigId": "{{start.videoProviderConfigId}}",
+          "model": "{{start.videoModelId}}",
+          "image": "{{shotReview.imageLocalUrl}}",
+          "prompt": "{{shotReview.visual}}（镜头风格：{{preset.styleText}}）。保持首帧主体一致，生成连贯自然运动（运动幅度与画面描述一致，避免剧烈形变）",
+          "negativePrompt": "画面扭曲、形变、闪烁、乱码文字、多余文字",
+          "duration": "{{shotReview.duration}}",
+          "width": "{{start.width}}",
+          "height": "{{start.height}}",
+          "quality": "{{start.videoQuality}}",
+          "steps": "{{start.h3Steps}}"
+        }
+      },
+      {
+        "id": "tts1",
+        "type": "tts",
+        "name": "口播配音",
+        "position": {
+          "x": 4400,
+          "y": 560
+        },
+        "config": {
+          "text": "{{shotsGen.parsed.narration}}",
+          "voiceId": "{{start.voiceId}}",
+          "providerConfigId": "{{start.voiceProviderConfigId}}"
+        }
+      },
+      {
+        "id": "segments",
+        "type": "code",
+        "name": "组装片段段",
+        "position": {
+          "x": 4400,
+          "y": 760
+        },
+        "config": {
+          "code": "const cards = Array.isArray(inputs.cards) ? inputs.cards : [];\nconst res = Array.isArray(inputs.results) ? inputs.results : [];\nconst segs = [];\nfor (let i = 0; i < cards.length; i++) {\n  const r = res[i] || {};\n  const c = cards[i] || {};\n  const vid = r.videoPath || '';\n  if (vid) segs.push({ source: vid, kind: 'video', duration: Number(c.duration) || 3, caption: String(c.caption || '') });\n}\nreturn { segments: segs };",
+          "inputs": [
+            {
+              "key": "cards",
+              "value": "{{boardReview.cards}}"
+            },
+            {
+              "key": "results",
+              "value": "{{loopVideo.results}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "comp1",
+        "type": "video-compose",
+        "name": "合成视频",
+        "position": {
+          "x": 4600,
+          "y": 560
+        },
+        "config": {
+          "segments": "{{segments.result.segments}}",
+          "audioPath": "{{tts1.audioPath}}",
+          "bgmPath": "{{start.bgmPath}}",
+          "width": "{{start.width}}",
+          "height": "{{start.height}}",
+          "outputName": "脚本成片"
+        }
+      },
+      {
+        "id": "saveVideo",
+        "type": "save-asset",
+        "name": "视频存档",
+        "position": {
+          "x": 4820,
+          "y": 560
+        },
+        "config": {
+          "content": "{{comp1.videoPath}}",
+          "kind": "file",
+          "category": "video",
+          "subCategory": "短视频",
+          "name": "{{start.topic}}脚本成片-{{sys.today}}",
+          "tags": "短视频,视频,{{start.videoType}}"
+        }
+      },
+      {
+        "id": "saveOutline",
+        "type": "save-asset",
+        "name": "大纲存档",
+        "position": {
+          "x": 4820,
+          "y": 300
+        },
+        "config": {
+          "content": "{{outlineReview.md}}",
+          "kind": "text",
+          "category": "text",
+          "subCategory": "视频大纲",
+          "name": "{{start.topic}}视频大纲-{{sys.today}}",
+          "tags": "视频,大纲,{{start.videoType}}",
+          "enabled": true
+        }
+      },
+      {
+        "id": "saveBoard",
+        "type": "save-asset",
+        "name": "素材板存档",
+        "position": {
+          "x": 4820,
+          "y": 420
+        },
+        "config": {
+          "content": "{{boardMerge.result.summary}}",
+          "kind": "text",
+          "category": "text",
+          "subCategory": "视频素材板",
+          "name": "{{start.topic}}素材板-{{sys.today}}",
+          "tags": "视频,素材板,{{start.videoType}}",
+          "enabled": true
+        }
+      },
+      {
+        "id": "notify1",
+        "type": "app-notify",
+        "name": "通知完成",
+        "position": {
+          "x": 5020,
+          "y": 560
+        },
+        "config": {
+          "title": "短视频生成完成",
+          "message": "成片已保存到资产库：{{saveVideo.assetId}}（大纲/素材板同步存档）",
+          "level": "success"
+        }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": {
+          "x": 5220,
+          "y": 560
+        },
+        "config": {}
+      },
+      {
+        "id": "strategy",
+        "type": "code",
+        "name": "画面策略决策",
+        "position": {
+          "x": 1500,
+          "y": 700
+        },
+        "config": {
+          "code": "const choice = String(inputs.choice || 'auto');\nconst pol = inputs.policy || {};\nconst baseCount = (Array.isArray(inputs.baseAssets) ? inputs.baseAssets : []).length;\nconst dep = pol.assetDependency || 'none';\nconst mode0 = (pol.mode === 'asset') ? 'asset' : 'imagery';\nlet mode = (choice === 'auto') ? mode0 : ((choice === 'imagery' || choice === 'asset') ? choice : mode0);\nlet note = '';\nif (mode === 'asset') {\n  if (dep === 'required' && baseCount === 0) {\n    throw new Error('该视频类型为素材驱动（asset）：需要在「底图资产」中提供产品/素材图片后再运行（当前 0 张素材）');\n  }\n  if (dep !== 'required' && baseCount === 0) {\n    mode = 'imagery';\n    note = '未提供素材：画面策略由 asset 回落为意象化空镜（imagery）';\n  }\n}\nconst use = pol.assetUse || {};\nconst map = Array.isArray(pol.imageryMap) ? pol.imageryMap : [];\nconst rules = map.map(function (r) {\n  return '- 主题簇「' + String(r.conceptClass || '') + '」（触发：' + (r.match || []).join('/') + '）→ 意象：' + String(r.imagery || '');\n}).join('\\n');\nlet policyText = '';\nif (mode === 'asset') {\n  policyText = '【视觉策略】素材驱动 asset：画面主体一律来自用户提供的素材图（共 ' + baseCount + ' 张）。'\n    + (use.requireFirstFrame === false ? '' : '视频首帧必须=该镜素材图；')\n    + (use.allowGeneratedScene ? '允许少量氛围空镜补位（不改素材主体）。' : '禁止生成替代素材主体的画面。')\n    + '禁止在素材上加文字/改外观；负向提示：' + (Array.isArray(use.negative) ? use.negative.join('；') : '') + '。';\n} else {\n  policyText = '【视觉策略】意象化空镜 imagery：画面与口播语义相关、但不逐字还原；每镜按 narration 的语义主题命中原意象表，产出代表性意象空镜（真实可拍物理场景、无文字）。禁止把口播原文/名词直接画成文字或海报。'\n    + (rules ? '\\n【意象表】\\n' + rules : '');\n  if (baseCount > 0) policyText += '（用户已提供 ' + baseCount + ' 张素材：意象与素材主体一致时可用素材优先）';\n}\n// 注意：code 节点返回值会被引擎再包裹一层 {result}，故此处直接返回字段（勿再包 result）\nreturn { mode: mode, note: note, policyText: policyText, baseCount: baseCount, choice: choice };",
+          "inputs": [
+            {
+              "key": "choice",
+              "value": "{{start.visualStrategy}}"
+            },
+            {
+              "key": "policy",
+              "value": "{{preset.policy}}"
+            },
+            {
+              "key": "baseAssets",
+              "value": "{{readBase.assets}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "writerPick",
+        "type": "code",
+        "name": "按类型选写作技能",
+        "position": {
+          "x": 340,
+          "y": 260
+        },
+        "config": {
+          "inputs": [
+            {
+              "key": "videoType",
+              "value": "{{start.videoType}}"
+            },
+            {
+              "key": "writerSkill",
+              "value": "{{start.writerSkill}}"
+            }
+          ],
+          "code": "const t = String(inputs.videoType || '');\nconst w = String(inputs.writerSkill || 'auto');\nconst map = { 'financial-deep': 'video-writer-investigative' };\nif (w && w !== 'auto') return { skillId: w };\nreturn { skillId: map[t] || 'video-writer-standard' };"
+        }
+      },
+      {
+        "id": "writerCall",
+        "type": "skill-call",
+        "name": "写作技能调用",
+        "position": {
+          "x": 380,
+          "y": 290
+        },
+        "config": {
+          "skillId": "{{writerPick.result.skillId}}",
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}",
+          "inputs": [
+            {
+              "key": "material",
+              "value": "{{scriptSrc.result.text}}"
+            },
+            {
+              "key": "context",
+              "value": "{{kbText.result.text}}"
+            },
+            {
+              "key": "topic",
+              "value": "{{start.topic}}"
+            },
+            {
+              "key": "keyPoints",
+              "value": "{{start.keyPoints}}"
+            },
+            {
+              "key": "attitude",
+              "value": "{{start.writerAttitude}}"
+            },
+            {
+              "key": "angle",
+              "value": "{{start.writerAngle}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "writerMd",
+        "type": "code",
+        "name": "大纲规整",
+        "position": {
+          "x": 420,
+          "y": 320
+        },
+        "config": {
+          "inputs": [
+            {
+              "key": "content",
+              "value": "{{writerCall.content}}"
+            }
+          ],
+          "code": "const raw = String(inputs.content || '');\nconst cleaned = raw.replace(/^```[a-zA-Z]*\\n?/, '').replace(/```$/, '').trim();\nif (!cleaned) throw new Error('写作技能输出为空，请重试或更换技能');\nreturn { md: cleaned };"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e1",
+        "sourceNodeId": "loopMat",
+        "targetNodeId": "shotPack",
+        "kind": "loop-body"
+      },
+      {
+        "id": "e2",
+        "sourceNodeId": "shotPack",
+        "targetNodeId": "imgShot",
+        "kind": "normal"
+      },
+      {
+        "id": "e3",
+        "sourceNodeId": "imgShot",
+        "targetNodeId": "matItem",
+        "kind": "normal"
+      },
+      {
+        "id": "e4",
+        "sourceNodeId": "matItem",
+        "targetNodeId": "loopMat",
+        "kind": "loop-back"
+      },
+      {
+        "id": "e5",
+        "sourceNodeId": "loopBase",
+        "targetNodeId": "matBase",
+        "kind": "loop-body"
+      },
+      {
+        "id": "e6",
+        "sourceNodeId": "matBase",
+        "targetNodeId": "loopBase",
+        "kind": "loop-back"
+      },
+      {
+        "id": "e7",
+        "sourceNodeId": "loopVideo",
+        "targetNodeId": "shotReview",
+        "kind": "loop-body"
+      },
+      {
+        "id": "e8",
+        "sourceNodeId": "shotReview",
+        "targetNodeId": "vidShot",
+        "kind": "approve"
+      },
+      {
+        "id": "e9",
+        "sourceNodeId": "vidShot",
+        "targetNodeId": "loopVideo",
+        "kind": "loop-back"
+      },
+      {
+        "id": "e10",
+        "sourceNodeId": "start",
+        "targetNodeId": "readScript",
+        "kind": "normal"
+      },
+      {
+        "id": "e11",
+        "sourceNodeId": "readScript",
+        "targetNodeId": "readRef",
+        "kind": "normal"
+      },
+      {
+        "id": "e12",
+        "sourceNodeId": "readRef",
+        "targetNodeId": "readBase",
+        "kind": "normal"
+      },
+      {
+        "id": "e13",
+        "sourceNodeId": "readBase",
+        "targetNodeId": "refPick",
+        "kind": "normal"
+      },
+      {
+        "id": "e14",
+        "sourceNodeId": "refPick",
+        "targetNodeId": "kbQuery",
+        "kind": "normal"
+      },
+      {
+        "id": "e15",
+        "sourceNodeId": "kbQuery",
+        "targetNodeId": "kbText",
+        "kind": "normal"
+      },
+      {
+        "id": "e16",
+        "sourceNodeId": "kbText",
+        "targetNodeId": "scriptSrc",
+        "kind": "normal"
+      },
+      {
+        "id": "e17",
+        "sourceNodeId": "scriptSrc",
+        "targetNodeId": "preset",
+        "kind": "normal"
+      },
+      {
+        "id": "e20",
+        "sourceNodeId": "writerMd",
+        "targetNodeId": "outlineReview",
+        "kind": "normal"
+      },
+      {
+        "id": "e21",
+        "sourceNodeId": "outlineReview",
+        "targetNodeId": "baseList",
+        "kind": "approve"
+      },
+      {
+        "id": "e22",
+        "sourceNodeId": "outlineReview",
+        "targetNodeId": "end",
+        "kind": "reject"
+      },
+      {
+        "id": "e23",
+        "sourceNodeId": "baseList",
+        "targetNodeId": "shotsGen",
+        "kind": "normal"
+      },
+      {
+        "id": "e24",
+        "sourceNodeId": "shotsGen",
+        "targetNodeId": "splitShots",
+        "kind": "normal"
+      },
+      {
+        "id": "e25",
+        "sourceNodeId": "splitShots",
+        "targetNodeId": "loopMat",
+        "kind": "normal"
+      },
+      {
+        "id": "e26",
+        "sourceNodeId": "loopMat",
+        "targetNodeId": "loopBase",
+        "kind": "loop-done"
+      },
+      {
+        "id": "e27",
+        "sourceNodeId": "loopBase",
+        "targetNodeId": "boardMerge",
+        "kind": "loop-done"
+      },
+      {
+        "id": "e28",
+        "sourceNodeId": "boardMerge",
+        "targetNodeId": "boardReview",
+        "kind": "normal"
+      },
+      {
+        "id": "e29",
+        "sourceNodeId": "boardReview",
+        "targetNodeId": "loopVideo",
+        "kind": "approve"
+      },
+      {
+        "id": "e30",
+        "sourceNodeId": "boardReview",
+        "targetNodeId": "end",
+        "kind": "reject"
+      },
+      {
+        "id": "e31",
+        "sourceNodeId": "loopVideo",
+        "targetNodeId": "tts1",
+        "kind": "loop-done"
+      },
+      {
+        "id": "e32",
+        "sourceNodeId": "tts1",
+        "targetNodeId": "segments",
+        "kind": "normal"
+      },
+      {
+        "id": "e33",
+        "sourceNodeId": "segments",
+        "targetNodeId": "comp1",
+        "kind": "normal"
+      },
+      {
+        "id": "e34",
+        "sourceNodeId": "comp1",
+        "targetNodeId": "saveVideo",
+        "kind": "normal"
+      },
+      {
+        "id": "e35",
+        "sourceNodeId": "saveVideo",
+        "targetNodeId": "saveOutline",
+        "kind": "normal"
+      },
+      {
+        "id": "e36",
+        "sourceNodeId": "saveOutline",
+        "targetNodeId": "saveBoard",
+        "kind": "normal"
+      },
+      {
+        "id": "e37",
+        "sourceNodeId": "saveBoard",
+        "targetNodeId": "notify1",
+        "kind": "normal"
+      },
+      {
+        "id": "e38",
+        "sourceNodeId": "notify1",
+        "targetNodeId": "end",
+        "kind": "normal"
+      },
+      {
+        "id": "emtpzor1i2tcj",
+        "sourceNodeId": "preset",
+        "targetNodeId": "strategy",
+        "kind": "normal"
+      },
+      {
+        "id": "emtpzor1i2i8o",
+        "sourceNodeId": "strategy",
+        "targetNodeId": "writerPick",
+        "kind": "normal"
+      },
+      {
+        "id": "w1",
+        "sourceNodeId": "writerPick",
+        "targetNodeId": "writerCall",
+        "kind": "normal"
+      },
+      {
+        "id": "w2",
+        "sourceNodeId": "writerCall",
+        "targetNodeId": "writerMd",
+        "kind": "normal"
+      }
+    ]
+  },
+  "publishedGraph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始（脚本/主题+KB/风格/资产引用）",
+        "position": {
+          "x": 40,
+          "y": 600
+        },
+        "config": {
+          "inputs": [
+            {
+              "key": "scriptSource",
+              "label": "脚本来源",
+              "type": "select",
+              "required": true,
+              "defaultValue": "topic",
+              "options": [
+                {
+                  "label": "粘贴脚本文案（text）",
+                  "value": "text"
+                },
+                {
+                  "label": "引用脚本/文案资产（asset）",
+                  "value": "asset"
+                },
+                {
+                  "label": "主题+要点，从知识库生成脚本与大纲（topic）",
+                  "value": "topic"
+                }
+              ]
+            },
+            {
+              "key": "scriptText",
+              "label": "脚本文案（粘贴，可为空）",
+              "type": "textarea",
+              "required": false,
+              "defaultValue": "",
+              "help": "与 V1 相同的完整脚本 markdown；留空则由大纲阶段按主题+知识库生成"
+            },
+            {
+              "key": "topic",
+              "label": "选题主题（scriptSource=topic 或脚本文案为空时使用）",
+              "type": "string",
+              "required": false,
+              "defaultValue": ""
+            },
+            {
+              "key": "keyPoints",
+              "label": "要点/口径期望（可选）",
+              "type": "textarea",
+              "required": false,
+              "defaultValue": "",
+              "help": "希望覆盖的要点、涉及口径、倾向结论等"
+            },
+            {
+              "key": "scriptAssetIds",
+              "label": "脚本/文案资产（多选，scriptSource=asset）",
+              "type": "select-dynamic",
+              "source": "assets:text",
+              "multi": true,
+              "required": false,
+              "help": "资产中心文本类资产多选（值=资产 ID），多个资产正文会合并引用"
+            },
+            {
+              "key": "knowledgeBaseIds",
+              "label": "知识库（多选，脚本与大纲的事实口径参考）",
+              "type": "select-dynamic",
+              "source": "knowledgeBases",
+              "multi": true,
+              "required": false
+            },
+            {
+              "key": "videoType",
+              "label": "视频类型预设",
+              "type": "select",
+              "required": true,
+              "defaultValue": "financial-deep",
+              "options": [
+                {
+                  "label": "财经深度",
+                  "value": "financial-deep"
+                },
+                {
+                  "label": "资讯口播",
+                  "value": "news-talk"
+                },
+                {
+                  "label": "知识科普",
+                  "value": "knowledge"
+                },
+                {
+                  "label": "电商种草",
+                  "value": "ecommerce"
+                },
+                {
+                  "label": "品牌宣传",
+                  "value": "brand"
+                },
+                {
+                  "label": "旅行记录",
+                  "value": "travel"
+                }
+              ]
+            },
+            {
+              "key": "videoStyle",
+              "label": "自由风格叠加（可选）",
+              "type": "textarea",
+              "required": false,
+              "defaultValue": ""
+            },
+            {
+              "key": "visualStrategy",
+              "label": "画面策略",
+              "type": "select",
+              "required": false,
+              "defaultValue": "auto",
+              "options": [
+                {
+                  "label": "自动（按视频类型）",
+                  "value": "auto"
+                },
+                {
+                  "label": "意象化空镜（imagery）",
+                  "value": "imagery"
+                },
+                {
+                  "label": "素材驱动（asset）",
+                  "value": "asset"
+                }
+              ],
+              "help": "auto=按 videoType 预设默认：财经/资讯/知识/文旅→意象化空镜；电商/品牌→素材驱动(需提供素材图)。可手动强制。"
+            },
+            {
+              "key": "writerSkill",
+              "label": "脚本文体技能",
+              "type": "select",
+              "required": false,
+              "defaultValue": "auto",
+              "help": "auto=按视频类型默认映射；也可直接选技能",
+              "options": [
+                {
+                  "label": "自动（按视频类型）",
+                  "value": "auto"
+                },
+                {
+                  "label": "新闻调查·财经（video-writer-investigative）",
+                  "value": "video-writer-investigative"
+                },
+                {
+                  "label": "通用标准（video-writer-standard）",
+                  "value": "video-writer-standard"
+                }
+              ]
+            },
+            {
+              "key": "writerAttitude",
+              "label": "写作态度档",
+              "type": "select",
+              "required": false,
+              "defaultValue": "auto",
+              "help": "新闻调查技能的态度档：冷静调查/犀利质疑/共情叙事",
+              "options": [
+                {
+                  "label": "自动",
+                  "value": "auto"
+                },
+                {
+                  "label": "冷静调查",
+                  "value": "冷静调查"
+                },
+                {
+                  "label": "犀利质疑",
+                  "value": "犀利质疑"
+                },
+                {
+                  "label": "共情叙事",
+                  "value": "共情叙事"
+                }
+              ]
+            },
+            {
+              "key": "writerAngle",
+              "label": "报道角度/想质疑的点（可空）",
+              "type": "textarea",
+              "required": false,
+              "defaultValue": "",
+              "help": "自由描述报道主线/立场/想强调的质疑；空=技能默认角度"
+            },
+            {
+              "key": "referenceAssetIds",
+              "label": "参考图资产（多选，作风格/主体参考）",
+              "type": "select-dynamic",
+              "source": "assets:image",
+              "multi": true,
+              "required": false,
+              "help": "图片资产多选；生成时取第一张作参考图生图"
+            },
+            {
+              "key": "baseImageAssetIds",
+              "label": "底图资产（多选，供镜头直接作素材）",
+              "type": "select-dynamic",
+              "source": "assets:image",
+              "multi": true,
+              "required": false,
+              "help": "当某镜画面主体与某张底图一致时直接使用（拆解阶段自动匹配索引）"
+            },
+            {
+              "key": "width",
+              "label": "视频宽度",
+              "type": "number",
+              "defaultValue": 704
+            },
+            {
+              "key": "height",
+              "label": "视频高度",
+              "type": "number",
+              "defaultValue": 1248
+            },
+            {
+              "key": "voiceId",
+              "label": "配音音色",
+              "type": "string",
+              "required": true,
+              "defaultValue": ""
+            },
+            {
+              "key": "voiceProviderConfigId",
+              "label": "配音 Provider",
+              "type": "select-dynamic",
+              "source": "providerConfigs",
+              "required": true
+            },
+            {
+              "key": "videoProviderConfigId",
+              "label": "视频 Provider",
+              "type": "select-dynamic",
+              "source": "providerConfigs",
+              "required": true
+            },
+            {
+              "key": "videoModelId",
+              "label": "视频模型 ID",
+              "type": "string",
+              "required": true,
+              "defaultValue": "h3"
+            },
+            {
+              "key": "videoQuality",
+              "label": "H3 画质档",
+              "type": "select",
+              "required": false,
+              "defaultValue": "high",
+              "options": [
+                {
+                  "label": "高清 high（704×1248 全质量）",
+                  "value": "high"
+                },
+                {
+                  "label": "快速 low（480×864）",
+                  "value": "low"
+                }
+              ],
+              "help": "ComfyUI H3：高清慢、快速档数倍提速（成片分辨率仍按 width/height 合成）"
+            },
+            {
+              "key": "h3Steps",
+              "label": "H3 采样步数",
+              "type": "number",
+              "defaultValue": 20,
+              "help": "20=全质量（每镜约 5~15 分钟）；4=turbo（数倍提速，适合长视频试跑）"
+            },
+            {
+              "key": "imageProviderConfigId",
+              "label": "文生图 Provider",
+              "type": "select-dynamic",
+              "source": "providerConfigs",
+              "required": true
+            },
+            {
+              "key": "imageModelId",
+              "label": "文生图模型 ID",
+              "type": "string",
+              "required": true,
+              "defaultValue": "krea2"
+            },
+            {
+              "key": "bgmPath",
+              "label": "背景音乐（可选）",
+              "type": "string",
+              "required": false,
+              "defaultValue": ""
+            },
+            {
+              "key": "model",
+              "label": "文案/拆解模型",
+              "type": "model",
+              "modelTypes": [
+                "text"
+              ],
+              "required": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "readScript",
+        "type": "read-assets",
+        "name": "读取脚本/文案资产",
+        "position": {
+          "x": 320,
+          "y": 420
+        },
+        "config": {
+          "assetIds": "{{start.scriptAssetIds}}"
+        }
+      },
+      {
+        "id": "readRef",
+        "type": "read-assets",
+        "name": "读取参考图资产",
+        "position": {
+          "x": 320,
+          "y": 560
+        },
+        "config": {
+          "assetIds": "{{start.referenceAssetIds}}"
+        }
+      },
+      {
+        "id": "readBase",
+        "type": "read-assets",
+        "name": "读取底图资产",
+        "position": {
+          "x": 320,
+          "y": 700
+        },
+        "config": {
+          "assetIds": "{{start.baseImageAssetIds}}"
+        }
+      },
+      {
+        "id": "refPick",
+        "type": "code",
+        "name": "参考图取首张",
+        "position": {
+          "x": 600,
+          "y": 560
+        },
+        "config": {
+          "code": "const refs = inputs.refs || [];\nreturn { first: (Array.isArray(refs) && refs.length > 0) ? refs[0] : '' };",
+          "inputs": [
+            {
+              "key": "refs",
+              "value": "{{readRef.imagePaths}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "kbQuery",
+        "type": "kb-query-multi",
+        "name": "多知识库检索参考",
+        "position": {
+          "x": 600,
+          "y": 420
+        },
+        "config": {
+          "knowledgeBaseIds": "{{start.knowledgeBaseIds}}",
+          "query": "{{start.topic}} {{start.keyPoints}}",
+          "topKPerKb": 6,
+          "maxResults": 24
+        }
+      },
+      {
+        "id": "kbText",
+        "type": "code",
+        "name": "KB 结果转文本",
+        "position": {
+          "x": 760,
+          "y": 420
+        },
+        "config": {
+          "code": "const rows = Array.isArray(inputs.rows) ? inputs.rows : [];\nif (rows.length === 0) return { text: '' };\nreturn { text: rows.map((r, i) => '【来源' + (i + 1) + '｜库:' + String(r.knowledgeBaseId || '') + '｜文档:' + String(r.documentName || '') + '】' + String(r.content || '').slice(0, 500)).join('\\n\\n') };",
+          "inputs": [
+            {
+              "key": "rows",
+              "value": "{{kbQuery.results}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "scriptSrc",
+        "type": "code",
+        "name": "整理脚本文案来源",
+        "position": {
+          "x": 760,
+          "y": 700
+        },
+        "config": {
+          "code": "const mode = String(inputs.mode || 'topic');\nconst assetText = String(inputs.assetText || '');\nconst text = String(inputs.scriptText || '');\nif (mode === 'asset') return { text: assetText };\nif (mode === 'text') return { text };\nreturn { text: '' }; // topic：由大纲阶段按主题+KB 生成",
+          "inputs": [
+            {
+              "key": "mode",
+              "value": "{{start.scriptSource}}"
+            },
+            {
+              "key": "scriptText",
+              "value": "{{start.scriptText}}"
+            },
+            {
+              "key": "assetText",
+              "value": "{{readScript.textJoined}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "preset",
+        "type": "video-preset",
+        "name": "视频类型预设装配",
+        "position": {
+          "x": 600,
+          "y": 700
+        },
+        "config": {
+          "videoType": "{{start.videoType}}",
+          "freeStyle": "{{start.videoStyle}}"
+        }
+      },
+      {
+        "id": "outlineReview",
+        "type": "human-review",
+        "name": "大纲审核",
+        "position": {
+          "x": 1460,
+          "y": 560
+        },
+        "config": {
+          "payload": {
+            "stage": "大纲审核：批准后进入分镜拆解",
+            "md": "{{writerMd.result.md}}"
+          },
+          "editableFields": [
+            {
+              "key": "md",
+              "label": "大纲全文",
+              "type": "string"
+            }
+          ],
+          "timeoutMs": null,
+          "timeoutPolicy": "fail"
+        }
+      },
+      {
+        "id": "baseList",
+        "type": "code",
+        "name": "底图清单文本",
+        "position": {
+          "x": 1740,
+          "y": 760
+        },
+        "config": {
+          "code": "const assets = Array.isArray(inputs.assets) ? inputs.assets : [];\nreturn { text: assets.map((a, i) => '[' + i + '] ' + (a.name || '') + (a.description ? '：' + a.description : '')).join('\\n') };",
+          "inputs": [
+            {
+              "key": "assets",
+              "value": "{{readBase.assets}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "shotsGen",
+        "type": "llm-chat",
+        "name": "分镜拆解（含底图匹配）",
+        "position": {
+          "x": 2020,
+          "y": 560
+        },
+        "config": {
+          "systemPrompt": "你是资深视频分镜师。依据用户确认的大纲把视频拆为 1~20 个镜头。\n【视频类型/风格规范】\n{{preset.promptBlock}}\n【视觉策略（当前模式 {{strategy.result.mode}}）】\n{{strategy.result.policyText}}\n【素材池（asset 模式引用；imagery 模式可参考）】（名称/描述/索引）\n{{baseList.result.text}}\n【大纲全文（用户已审核）】\n{{outlineReview.md}}\n【画面硬性要求】visual 只描述可实拍物理场景（主体/动作/环境/光线/色调/构图景别/情绪/镜头运动），禁止任何文字/UI/图形/图表/水印/贴片字幕（所有文字一律走 caption 字幕层）；每镜 1~3 句并给出运镜。\n【镜头规则】字幕 caption 为画面要传达的文字（烧录为字幕）；duration 整数秒 4~16；每镜给出 concept（该镜语义主题）。\n【模式化镜头输出】依据上方“视觉策略”里的模式：\n - imagery 模式：每镜另给 imagery（意象对象：按意象表命中 + concept 细化的代表性意象画面，可拍无文字）与 visual（=该意象的可执行画面描述）。\n - asset 模式：每镜必须给 assetIdx（引用素材池索引，取值 0..{{strategy.result.baseCount}}-1）与 visual（描述该镜展示素材的角度/景别/运镜/氛围，主体来自素材，不新增文字）。\n输出 JSON 数组结构：{\"narration\":\"全片口播（原样保留可用 | 分句）\",\"shots\":[{\"concept\":\"语义主题\",\"visual\":\"画面描述\",\"caption\":\"字幕短句\",\"duration\":秒,\"imagery\":\"意象对象(仅 imagery)\",\"assetIdx\":素材索引(仅 asset)}]}。镜头总数 1~20。\n【分镜原子纪律】以“口播的 | 分句/大纲段落”为镜头原子：同一镜只承载一个事件、一个地点、一个语义点；一句口播含多个事件或地点时必须拆成多个镜头，禁止把多个场景塞进同一镜的 visual。",
+          "prompt": "请基于大纲与视觉策略输出镜头 JSON（concept/imagery 或 assetIdx 依模式填写）。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "splitShots",
+        "type": "code",
+        "name": "拆分镜头（生成/底图）",
+        "position": {
+          "x": 2300,
+          "y": 560
+        },
+        "config": {
+          "code": "const shots = Array.isArray(inputs.shots) ? inputs.shots : [];\nif (shots.length === 0) throw new Error('分镜拆解结果为空：请检查脚本/大纲内容后重试');\nconst mode = String(inputs.mode || 'imagery');\nconst bases = Array.isArray(inputs.bases) ? inputs.bases : [];\nconst gen = [];\nconst base = [];\nshots.forEach(function (s, i) {\n  const s2 = Object.assign({}, s, { _origIndex: i, mode: mode });\n  if (mode === 'asset') {\n    const idx = Number(s.assetIdx);\n    if (!Number.isInteger(idx) || idx < 0 || idx >= bases.length) {\n      throw new Error('素材驱动镜头 ' + (i + 1) + ' 缺少有效素材引用（assetIdx=' + String(s.assetIdx) + '，素材池 ' + bases.length + ' 张）：请为每个镜头标注素材索引后重试');\n    }\n    s2.assetIdx = idx;\n    s2.baseImagePath = bases[idx].path || '';\n    s2.baseImageUrl = bases[idx].url || '';\n    s2.baseImageName = bases[idx].name || '';\n    s2.baseAssetId = bases[idx].assetId || bases[idx].id || '';\n    base.push(s2);\n  } else {\n    s2.assetIdx = -1;\n    gen.push(s2);\n  }\n});\nreturn { shots: shots, gen: gen, base: base, mode: mode };",
+          "inputs": [
+            {
+              "key": "shots",
+              "value": "{{shotsGen.parsed.shots}}"
+            },
+            {
+              "key": "mode",
+              "value": "{{strategy.result.mode}}"
+            },
+            {
+              "key": "bases",
+              "value": "{{readBase.assets}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "loopMat",
+        "type": "loop",
+        "name": "素材循环（生成镜头）",
+        "position": {
+          "x": 2600,
+          "y": 560
+        },
+        "config": {
+          "listExpression": "{{splitShots.result.gen}}",
+          "emptyPolicy": "skip"
+        }
+      },
+      {
+        "id": "shotPack",
+        "type": "llm-chat",
+        "name": "片段提示词包",
+        "position": {
+          "x": 2800,
+          "y": 420
+        },
+        "config": {
+          "systemPrompt": "为单个镜头产出可执行素材包（JSON）：{\"concept\":\"语义主题\",\"visual\":\"画面描述（服从大纲/风格；仅实拍物理场景、无文字、含运镜）\",\"imagery\":\"意象对象（imagery 模式：依意象表命中细化为可执行画面；asset 模式填空）\",\"caption\":\"字幕短句\",\"duration\":秒,\"prompt\":\"给文生图的完整画面提示词（已含风格与参考图说明；asset 模式此字段可空）\"}\n【预设规范】\n{{preset.promptBlock}}\n【视觉策略】\n{{strategy.result.policyText}}\n【参考图提示】画面风格与主体须贴合参考图（若有）；意象化空镜禁止出现文字。\n【单场景纪律】visual 与 imagery 只描述“一个主体 + 一处环境”的单一可拍场景；严禁“先…随后…/接着切到…/再出现…”这类多场景转场拼接；对比性修辞句只取一个代表性意象。",
+          "prompt": "大纲段落：{{loopMat.item.sectionIdx}}\n语义主题：{{loopMat.item.concept}}\n画面要点：{{loopMat.item.visual}}\n意象对象：{{loopMat.item.imagery}}\n字幕：{{loopMat.item.caption}}\n时长：{{loopMat.item.duration}}秒\n\n输出该镜头素材包 JSON。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "imgShot",
+        "type": "image-gen",
+        "name": "文生图(镜头画面)",
+        "position": {
+          "x": 3000,
+          "y": 560
+        },
+        "config": {
+          "prompt": "{{shotPack.parsed.prompt}}（竖版构图；写实、干净、无任何文字）",
+          "negativePrompt": "文字、字体、logo、水印、UI 元素、图标、按钮、弹窗、乱码、涂鸦、图形、表格、图表、标注、贴片字幕、卡通",
+          "providerConfigId": "{{start.imageProviderConfigId}}",
+          "modelId": "{{start.imageModelId}}",
+          "width": "{{start.width}}",
+          "height": "{{start.height}}",
+          "referenceImages": "{{refPick.result.first}}",
+          "promptExtend": false
+        }
+      },
+      {
+        "id": "matItem",
+        "type": "code",
+        "name": "素材项（生成图）",
+        "position": {
+          "x": 3200,
+          "y": 560
+        },
+        "config": {
+          "code": "const list = Array.isArray(inputs.img) ? inputs.img : ((inputs.img && inputs.img.images) || []);\nconst img = (list && list[0]) || {};\nconst pack = inputs.pack || {};\nconst it = inputs.item || {};\nreturn { _origIndex: it._origIndex, mode: 'imagery', source: 'generated',\n  concept: pack.concept || it.concept || '', imagery: pack.imagery || it.imagery || '',\n  visual: pack.visual || it.visual, caption: pack.caption || it.caption,\n  duration: Number(pack.duration) > 0 ? pack.duration : it.duration,\n  prompt: pack.prompt || '', baseImagePath: '', imagePath: img.path || '', imageUrl: img.localUrl || img.url || '', imageAssetId: '' };",
+          "inputs": [
+            {
+              "key": "item",
+              "value": "{{loopMat.item}}"
+            },
+            {
+              "key": "pack",
+              "value": "{{shotPack.parsed}}"
+            },
+            {
+              "key": "img",
+              "value": "{{imgShot.images}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "loopBase",
+        "type": "loop",
+        "name": "素材循环（直接用底图镜头）",
+        "position": {
+          "x": 2600,
+          "y": 800
+        },
+        "config": {
+          "listExpression": "{{splitShots.result.base}}",
+          "emptyPolicy": "skip"
+        }
+      },
+      {
+        "id": "matBase",
+        "type": "code",
+        "name": "素材项（底图直用）",
+        "position": {
+          "x": 2800,
+          "y": 800
+        },
+        "config": {
+          "code": "const it = inputs.item || {};\nconst srcId = it.baseAssetId || '';\nreturn { _origIndex: it._origIndex, mode: 'asset', source: srcId ? 'asset:' + srcId : (it.baseImageName ? '素材:' + it.baseImageName : 'asset'),\n  concept: it.concept || '', imagery: '', assetIdx: it.assetIdx,\n  visual: it.visual || '', caption: it.caption || '', duration: Number(it.duration) > 0 ? it.duration : 5,\n  prompt: it.visual || '', baseImagePath: it.baseImagePath || '', imagePath: it.baseImagePath || '',\n  imageUrl: it.baseImageUrl || it.baseImagePath || '', imageAssetId: srcId, imageAssetName: it.baseImageName || '' };",
+          "inputs": [
+            {
+              "key": "item",
+              "value": "{{loopBase.item}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "boardMerge",
+        "type": "code",
+        "name": "素材板聚合",
+        "position": {
+          "x": 3400,
+          "y": 560
+        },
+        "config": {
+          "code": "const unwrap = (r) => (r && typeof r === 'object' && r.result && typeof r.result === 'object' && !('visual' in r)) ? r.result : r;\nconst a = (Array.isArray(inputs.a) ? inputs.a : []).map(unwrap);\nconst b = (Array.isArray(inputs.b) ? inputs.b : []).map(unwrap);\nconst all = a.concat(b).sort(function (x, y) { return (x._origIndex || 0) - (y._origIndex || 0); }).map(function (it, i) {\n  const c = Object.assign({}, it, { cardIndex: i });\n  delete c._origIndex;\n  return c;\n});\nconst summary = all.map(function (c, i) {\n  const src = c.source === 'asset' ? (c.imageAssetName ? '（素材:' + String(c.imageAssetName) + '）' : '（素材）') : (c.source === 'generated' ? '（意象生成）' : '');\n  return '镜头' + (i + 1) + '：' + String(c.caption || '') + '｜' + String(c.duration || '') + 's' + src;\n}).join('\\n');\nreturn { cards: all, summary: summary, mode: String(inputs.mode || '') };",
+          "inputs": [
+            {
+              "key": "a",
+              "value": "{{loopMat.results}}"
+            },
+            {
+              "key": "b",
+              "value": "{{loopBase.results}}"
+            },
+            {
+              "key": "mode",
+              "value": "{{strategy.result.mode}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "boardReview",
+        "type": "human-review",
+        "name": "素材板审核（图文）",
+        "position": {
+          "x": 3600,
+          "y": 560
+        },
+        "config": {
+          "payload": {
+            "stage": "素材板审核：大纲与逐镜素材批准后开始逐片段视频生成",
+            "videoType": "{{start.videoType}}",
+            "summary": "{{boardMerge.result.summary}}",
+            "cards": "{{boardMerge.result.cards}}",
+            "visualStrategy": "{{strategy.result.mode}}"
+          },
+          "editableFields": [
+            {
+              "key": "cards",
+              "label": "逐镜素材（可逐条改画面/字幕/时长）",
+              "type": "json"
+            }
+          ],
+          "timeoutMs": null,
+          "timeoutPolicy": "fail"
+        }
+      },
+      {
+        "id": "loopVideo",
+        "type": "loop",
+        "name": "逐片段视频循环",
+        "position": {
+          "x": 3820,
+          "y": 560
+        },
+        "config": {
+          "listExpression": "{{boardReview.cards}}",
+          "emptyPolicy": "skip"
+        }
+      },
+      {
+        "id": "shotReview",
+        "type": "human-review",
+        "name": "片段确认(生成视频前)",
+        "position": {
+          "x": 4000,
+          "y": 420
+        },
+        "config": {
+          "payload": {
+            "stage": "逐片段审核：图生视频前确认",
+            "shotIndex": "{{loopVideo.index}}",
+            "visual": "{{loopVideo.item.visual}}",
+            "caption": "{{loopVideo.item.caption}}",
+            "duration": "{{loopVideo.item.duration}}",
+            "imageLocalUrl": "{{loopVideo.item.imageUrl}}"
+          },
+          "editableFields": [
+            {
+              "key": "visual",
+              "label": "画面",
+              "type": "string"
+            },
+            {
+              "key": "caption",
+              "label": "字幕",
+              "type": "string"
+            },
+            {
+              "key": "duration",
+              "label": "时长(秒)",
+              "type": "number"
+            }
+          ],
+          "timeoutMs": null,
+          "timeoutPolicy": "fail"
+        }
+      },
+      {
+        "id": "vidShot",
+        "type": "video-gen",
+        "name": "图生视频(动化)",
+        "position": {
+          "x": 4180,
+          "y": 560
+        },
+        "config": {
+          "providerConfigId": "{{start.videoProviderConfigId}}",
+          "model": "{{start.videoModelId}}",
+          "image": "{{shotReview.imageLocalUrl}}",
+          "prompt": "{{shotReview.visual}}（镜头风格：{{preset.styleText}}）。保持首帧主体一致，生成连贯自然运动（运动幅度与画面描述一致，避免剧烈形变）",
+          "negativePrompt": "画面扭曲、形变、闪烁、乱码文字、多余文字",
+          "duration": "{{shotReview.duration}}",
+          "width": "{{start.width}}",
+          "height": "{{start.height}}",
+          "quality": "{{start.videoQuality}}",
+          "steps": "{{start.h3Steps}}"
+        }
+      },
+      {
+        "id": "tts1",
+        "type": "tts",
+        "name": "口播配音",
+        "position": {
+          "x": 4400,
+          "y": 560
+        },
+        "config": {
+          "text": "{{shotsGen.parsed.narration}}",
+          "voiceId": "{{start.voiceId}}",
+          "providerConfigId": "{{start.voiceProviderConfigId}}"
+        }
+      },
+      {
+        "id": "segments",
+        "type": "code",
+        "name": "组装片段段",
+        "position": {
+          "x": 4400,
+          "y": 760
+        },
+        "config": {
+          "code": "const cards = Array.isArray(inputs.cards) ? inputs.cards : [];\nconst res = Array.isArray(inputs.results) ? inputs.results : [];\nconst segs = [];\nfor (let i = 0; i < cards.length; i++) {\n  const r = res[i] || {};\n  const c = cards[i] || {};\n  const vid = r.videoPath || '';\n  if (vid) segs.push({ source: vid, kind: 'video', duration: Number(c.duration) || 3, caption: String(c.caption || '') });\n}\nreturn { segments: segs };",
+          "inputs": [
+            {
+              "key": "cards",
+              "value": "{{boardReview.cards}}"
+            },
+            {
+              "key": "results",
+              "value": "{{loopVideo.results}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "comp1",
+        "type": "video-compose",
+        "name": "合成视频",
+        "position": {
+          "x": 4600,
+          "y": 560
+        },
+        "config": {
+          "segments": "{{segments.result.segments}}",
+          "audioPath": "{{tts1.audioPath}}",
+          "bgmPath": "{{start.bgmPath}}",
+          "width": "{{start.width}}",
+          "height": "{{start.height}}",
+          "outputName": "脚本成片"
+        }
+      },
+      {
+        "id": "saveVideo",
+        "type": "save-asset",
+        "name": "视频存档",
+        "position": {
+          "x": 4820,
+          "y": 560
+        },
+        "config": {
+          "content": "{{comp1.videoPath}}",
+          "kind": "file",
+          "category": "video",
+          "subCategory": "短视频",
+          "name": "{{start.topic}}脚本成片-{{sys.today}}",
+          "tags": "短视频,视频,{{start.videoType}}"
+        }
+      },
+      {
+        "id": "saveOutline",
+        "type": "save-asset",
+        "name": "大纲存档",
+        "position": {
+          "x": 4820,
+          "y": 300
+        },
+        "config": {
+          "content": "{{outlineReview.md}}",
+          "kind": "text",
+          "category": "text",
+          "subCategory": "视频大纲",
+          "name": "{{start.topic}}视频大纲-{{sys.today}}",
+          "tags": "视频,大纲,{{start.videoType}}",
+          "enabled": true
+        }
+      },
+      {
+        "id": "saveBoard",
+        "type": "save-asset",
+        "name": "素材板存档",
+        "position": {
+          "x": 4820,
+          "y": 420
+        },
+        "config": {
+          "content": "{{boardMerge.result.summary}}",
+          "kind": "text",
+          "category": "text",
+          "subCategory": "视频素材板",
+          "name": "{{start.topic}}素材板-{{sys.today}}",
+          "tags": "视频,素材板,{{start.videoType}}",
+          "enabled": true
+        }
+      },
+      {
+        "id": "notify1",
+        "type": "app-notify",
+        "name": "通知完成",
+        "position": {
+          "x": 5020,
+          "y": 560
+        },
+        "config": {
+          "title": "短视频生成完成",
+          "message": "成片已保存到资产库：{{saveVideo.assetId}}（大纲/素材板同步存档）",
+          "level": "success"
+        }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": {
+          "x": 5220,
+          "y": 560
+        },
+        "config": {}
+      },
+      {
+        "id": "strategy",
+        "type": "code",
+        "name": "画面策略决策",
+        "position": {
+          "x": 1500,
+          "y": 700
+        },
+        "config": {
+          "code": "const choice = String(inputs.choice || 'auto');\nconst pol = inputs.policy || {};\nconst baseCount = (Array.isArray(inputs.baseAssets) ? inputs.baseAssets : []).length;\nconst dep = pol.assetDependency || 'none';\nconst mode0 = (pol.mode === 'asset') ? 'asset' : 'imagery';\nlet mode = (choice === 'auto') ? mode0 : ((choice === 'imagery' || choice === 'asset') ? choice : mode0);\nlet note = '';\nif (mode === 'asset') {\n  if (dep === 'required' && baseCount === 0) {\n    throw new Error('该视频类型为素材驱动（asset）：需要在「底图资产」中提供产品/素材图片后再运行（当前 0 张素材）');\n  }\n  if (dep !== 'required' && baseCount === 0) {\n    mode = 'imagery';\n    note = '未提供素材：画面策略由 asset 回落为意象化空镜（imagery）';\n  }\n}\nconst use = pol.assetUse || {};\nconst map = Array.isArray(pol.imageryMap) ? pol.imageryMap : [];\nconst rules = map.map(function (r) {\n  return '- 主题簇「' + String(r.conceptClass || '') + '」（触发：' + (r.match || []).join('/') + '）→ 意象：' + String(r.imagery || '');\n}).join('\\n');\nlet policyText = '';\nif (mode === 'asset') {\n  policyText = '【视觉策略】素材驱动 asset：画面主体一律来自用户提供的素材图（共 ' + baseCount + ' 张）。'\n    + (use.requireFirstFrame === false ? '' : '视频首帧必须=该镜素材图；')\n    + (use.allowGeneratedScene ? '允许少量氛围空镜补位（不改素材主体）。' : '禁止生成替代素材主体的画面。')\n    + '禁止在素材上加文字/改外观；负向提示：' + (Array.isArray(use.negative) ? use.negative.join('；') : '') + '。';\n} else {\n  policyText = '【视觉策略】意象化空镜 imagery：画面与口播语义相关、但不逐字还原；每镜按 narration 的语义主题命中原意象表，产出代表性意象空镜（真实可拍物理场景、无文字）。禁止把口播原文/名词直接画成文字或海报。'\n    + (rules ? '\\n【意象表】\\n' + rules : '');\n  if (baseCount > 0) policyText += '（用户已提供 ' + baseCount + ' 张素材：意象与素材主体一致时可用素材优先）';\n}\n// 注意：code 节点返回值会被引擎再包裹一层 {result}，故此处直接返回字段（勿再包 result）\nreturn { mode: mode, note: note, policyText: policyText, baseCount: baseCount, choice: choice };",
+          "inputs": [
+            {
+              "key": "choice",
+              "value": "{{start.visualStrategy}}"
+            },
+            {
+              "key": "policy",
+              "value": "{{preset.policy}}"
+            },
+            {
+              "key": "baseAssets",
+              "value": "{{readBase.assets}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "writerPick",
+        "type": "code",
+        "name": "按类型选写作技能",
+        "position": {
+          "x": 340,
+          "y": 260
+        },
+        "config": {
+          "inputs": [
+            {
+              "key": "videoType",
+              "value": "{{start.videoType}}"
+            },
+            {
+              "key": "writerSkill",
+              "value": "{{start.writerSkill}}"
+            }
+          ],
+          "code": "const t = String(inputs.videoType || '');\nconst w = String(inputs.writerSkill || 'auto');\nconst map = { 'financial-deep': 'video-writer-investigative' };\nif (w && w !== 'auto') return { skillId: w };\nreturn { skillId: map[t] || 'video-writer-standard' };"
+        }
+      },
+      {
+        "id": "writerCall",
+        "type": "skill-call",
+        "name": "写作技能调用",
+        "position": {
+          "x": 380,
+          "y": 290
+        },
+        "config": {
+          "skillId": "{{writerPick.result.skillId}}",
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}",
+          "inputs": [
+            {
+              "key": "material",
+              "value": "{{scriptSrc.result.text}}"
+            },
+            {
+              "key": "context",
+              "value": "{{kbText.result.text}}"
+            },
+            {
+              "key": "topic",
+              "value": "{{start.topic}}"
+            },
+            {
+              "key": "keyPoints",
+              "value": "{{start.keyPoints}}"
+            },
+            {
+              "key": "attitude",
+              "value": "{{start.writerAttitude}}"
+            },
+            {
+              "key": "angle",
+              "value": "{{start.writerAngle}}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "writerMd",
+        "type": "code",
+        "name": "大纲规整",
+        "position": {
+          "x": 420,
+          "y": 320
+        },
+        "config": {
+          "inputs": [
+            {
+              "key": "content",
+              "value": "{{writerCall.content}}"
+            }
+          ],
+          "code": "const raw = String(inputs.content || '');\nconst cleaned = raw.replace(/^```[a-zA-Z]*\\n?/, '').replace(/```$/, '').trim();\nif (!cleaned) throw new Error('写作技能输出为空，请重试或更换技能');\nreturn { md: cleaned };"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e1",
+        "sourceNodeId": "loopMat",
+        "targetNodeId": "shotPack",
+        "kind": "loop-body"
+      },
+      {
+        "id": "e2",
+        "sourceNodeId": "shotPack",
+        "targetNodeId": "imgShot",
+        "kind": "normal"
+      },
+      {
+        "id": "e3",
+        "sourceNodeId": "imgShot",
+        "targetNodeId": "matItem",
+        "kind": "normal"
+      },
+      {
+        "id": "e4",
+        "sourceNodeId": "matItem",
+        "targetNodeId": "loopMat",
+        "kind": "loop-back"
+      },
+      {
+        "id": "e5",
+        "sourceNodeId": "loopBase",
+        "targetNodeId": "matBase",
+        "kind": "loop-body"
+      },
+      {
+        "id": "e6",
+        "sourceNodeId": "matBase",
+        "targetNodeId": "loopBase",
+        "kind": "loop-back"
+      },
+      {
+        "id": "e7",
+        "sourceNodeId": "loopVideo",
+        "targetNodeId": "shotReview",
+        "kind": "loop-body"
+      },
+      {
+        "id": "e8",
+        "sourceNodeId": "shotReview",
+        "targetNodeId": "vidShot",
+        "kind": "approve"
+      },
+      {
+        "id": "e9",
+        "sourceNodeId": "vidShot",
+        "targetNodeId": "loopVideo",
+        "kind": "loop-back"
+      },
+      {
+        "id": "e10",
+        "sourceNodeId": "start",
+        "targetNodeId": "readScript",
+        "kind": "normal"
+      },
+      {
+        "id": "e11",
+        "sourceNodeId": "readScript",
+        "targetNodeId": "readRef",
+        "kind": "normal"
+      },
+      {
+        "id": "e12",
+        "sourceNodeId": "readRef",
+        "targetNodeId": "readBase",
+        "kind": "normal"
+      },
+      {
+        "id": "e13",
+        "sourceNodeId": "readBase",
+        "targetNodeId": "refPick",
+        "kind": "normal"
+      },
+      {
+        "id": "e14",
+        "sourceNodeId": "refPick",
+        "targetNodeId": "kbQuery",
+        "kind": "normal"
+      },
+      {
+        "id": "e15",
+        "sourceNodeId": "kbQuery",
+        "targetNodeId": "kbText",
+        "kind": "normal"
+      },
+      {
+        "id": "e16",
+        "sourceNodeId": "kbText",
+        "targetNodeId": "scriptSrc",
+        "kind": "normal"
+      },
+      {
+        "id": "e17",
+        "sourceNodeId": "scriptSrc",
+        "targetNodeId": "preset",
+        "kind": "normal"
+      },
+      {
+        "id": "e20",
+        "sourceNodeId": "writerMd",
+        "targetNodeId": "outlineReview",
+        "kind": "normal"
+      },
+      {
+        "id": "e21",
+        "sourceNodeId": "outlineReview",
+        "targetNodeId": "baseList",
+        "kind": "approve"
+      },
+      {
+        "id": "e22",
+        "sourceNodeId": "outlineReview",
+        "targetNodeId": "end",
+        "kind": "reject"
+      },
+      {
+        "id": "e23",
+        "sourceNodeId": "baseList",
+        "targetNodeId": "shotsGen",
+        "kind": "normal"
+      },
+      {
+        "id": "e24",
+        "sourceNodeId": "shotsGen",
+        "targetNodeId": "splitShots",
+        "kind": "normal"
+      },
+      {
+        "id": "e25",
+        "sourceNodeId": "splitShots",
+        "targetNodeId": "loopMat",
+        "kind": "normal"
+      },
+      {
+        "id": "e26",
+        "sourceNodeId": "loopMat",
+        "targetNodeId": "loopBase",
+        "kind": "loop-done"
+      },
+      {
+        "id": "e27",
+        "sourceNodeId": "loopBase",
+        "targetNodeId": "boardMerge",
+        "kind": "loop-done"
+      },
+      {
+        "id": "e28",
+        "sourceNodeId": "boardMerge",
+        "targetNodeId": "boardReview",
+        "kind": "normal"
+      },
+      {
+        "id": "e29",
+        "sourceNodeId": "boardReview",
+        "targetNodeId": "loopVideo",
+        "kind": "approve"
+      },
+      {
+        "id": "e30",
+        "sourceNodeId": "boardReview",
+        "targetNodeId": "end",
+        "kind": "reject"
+      },
+      {
+        "id": "e31",
+        "sourceNodeId": "loopVideo",
+        "targetNodeId": "tts1",
+        "kind": "loop-done"
+      },
+      {
+        "id": "e32",
+        "sourceNodeId": "tts1",
+        "targetNodeId": "segments",
+        "kind": "normal"
+      },
+      {
+        "id": "e33",
+        "sourceNodeId": "segments",
+        "targetNodeId": "comp1",
+        "kind": "normal"
+      },
+      {
+        "id": "e34",
+        "sourceNodeId": "comp1",
+        "targetNodeId": "saveVideo",
+        "kind": "normal"
+      },
+      {
+        "id": "e35",
+        "sourceNodeId": "saveVideo",
+        "targetNodeId": "saveOutline",
+        "kind": "normal"
+      },
+      {
+        "id": "e36",
+        "sourceNodeId": "saveOutline",
+        "targetNodeId": "saveBoard",
+        "kind": "normal"
+      },
+      {
+        "id": "e37",
+        "sourceNodeId": "saveBoard",
+        "targetNodeId": "notify1",
+        "kind": "normal"
+      },
+      {
+        "id": "e38",
+        "sourceNodeId": "notify1",
+        "targetNodeId": "end",
+        "kind": "normal"
+      },
+      {
+        "id": "emtpzor1i2tcj",
+        "sourceNodeId": "preset",
+        "targetNodeId": "strategy",
+        "kind": "normal"
+      },
+      {
+        "id": "emtpzor1i2i8o",
+        "sourceNodeId": "strategy",
+        "targetNodeId": "writerPick",
+        "kind": "normal"
+      },
+      {
+        "id": "w1",
+        "sourceNodeId": "writerPick",
+        "targetNodeId": "writerCall",
+        "kind": "normal"
+      },
+      {
+        "id": "w2",
+        "sourceNodeId": "writerCall",
+        "targetNodeId": "writerMd",
+        "kind": "normal"
+      }
+    ]
+  },
+  "publishedVersion": 1,
+  "publishedAt": "2026-09-06T15:45:37.982Z",
+  "triggers": [],
+  "settings": {
+    "maxOutputChars": 1200000,
+    "maxDurationMs": 43200000
+  },
+  "nextFireAt": null,
+  "lastFireAt": null,
+  "lastRunAt": "2026-09-06T15:46:36.010Z",
+  "shareToken": null,
+  "shareTokenHash": null,
+  "isBuiltin": true,
+  "templateVersion": 1,
+  "createdAt": "2026-09-06T15:45:37.982Z",
+  "updatedAt": "2026-09-07T04:08:18.725Z"
+}

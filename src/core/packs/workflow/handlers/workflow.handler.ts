@@ -8,6 +8,7 @@
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getWorkflowSubsystem } from '@core/platform/workflow/workflow-boot'
+import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 import { getWebCollectService } from '@core/platform/assets/web-collect-registry'
 import { getAssetService } from '@core/platform/assets/asset-registry'
 import { getCurrentUserId, LOCAL_DEFAULT_USER_ID } from '@core/context/user-context'
@@ -25,7 +26,7 @@ function subsystem() {
 export function registerWorkflowHandlers(): void {
   // ==================== 定义 ====================
   ipcBridge.handle('wf:list-definitions', (_e, p: { keyword?: string; page: number; pageSize: number }) =>
-    wrap(() => subsystem().definitionService.list(p ?? { page: 1, pageSize: 20 }))
+    wrap(() => subsystem().definitionService.list(p ?? { page: 1, pageSize: workflowRuntimeParams().ui.defaultPageSize }))
   )
   ipcBridge.handle('wf:get-definition', (_e, p: { id: string }) =>
     wrap(() => subsystem().definitionService.getById(p.id))
@@ -119,9 +120,12 @@ export function registerWorkflowHandlers(): void {
       // 否则 '../../x' 之类可逃逸 workflow-uploads 目录任意写文件（Web 端任意登录用户可达）
       if (!/^[A-Za-z0-9_-]+$/.test(p.runId)) throw new Error('非法 runId')
       if (!/^[A-Za-z0-9_-]+$/.test(p.nodeId)) throw new Error('非法 nodeId')
-      // base64 解码后大小上限 10MB（防内存/磁盘 DoS）
+      // base64 解码后大小上限（防内存/磁盘 DoS）：上限走「参数设置 → 工作流 → 界面展示截断」
+      const maxUpload = workflowRuntimeParams().ui.formUploadMaxBytes
       const buffer = Buffer.from(p.base64, 'base64')
-      if (buffer.byteLength > 10 * 1024 * 1024) throw new Error('文件超过 10MB 上限')
+      if (buffer.byteLength > maxUpload) {
+        throw new Error(`文件超过 ${Math.round(maxUpload / 1024 / 1024)}MB 上限`)
+      }
       const dataPath = getPathProvider().getDataPath()
       const uploadBase = path.resolve(dataPath, 'workflow-uploads')
       const dir = path.resolve(uploadBase, p.runId)
@@ -256,12 +260,12 @@ export function registerWorkflowHandlers(): void {
           ? subsystem().runService.listByDefinition(p.definitionId, {
               status: p.status as never,
               page: p.page ?? 1,
-              pageSize: p.pageSize ?? 20,
+              pageSize: p.pageSize ?? workflowRuntimeParams().ui.defaultPageSize,
             })
           : subsystem().runService.list({
               status: p.status as never,
               page: p.page ?? 1,
-              pageSize: p.pageSize ?? 20,
+              pageSize: p.pageSize ?? workflowRuntimeParams().ui.defaultPageSize,
             })
       )
   )

@@ -35,6 +35,7 @@ import {
 } from '../runtime/vendor/compaction'
 import { isTurnContextMessage } from './turn-context'
 import { stableStringify } from '../runtime/approval'
+import { agentContextParams } from '@shared/utils/agent-context-params'
 
 const logger = createLogger('AgentContext')
 
@@ -101,6 +102,10 @@ export interface ContextManagerDeps {
   hardWatermark?: number
   /** 用户消息保留预算 tokens（缺省 20K；当轮最后一条用户消息不受此预算约束） */
   userMessageBudgetTokens?: number
+  /** 近端保护预算 tokens（缺省 8K；保护边界内的工具结果不剪枝） */
+  protectedTailTokens?: number
+  /** 纯剪枝最小节省门槛 tokens（缺省 4K；不足则进摘要阶段） */
+  minPruneSavingsTokens?: number
   /** token 估算器（缺省 JSON UTF-8 字节/4） */
   estimateTokens?: (messages: ModelMessage[]) => number
   /** 摘要回调（生产端由门面注入 generateText 实现——提示词闭包在内；测试注入 fake；
@@ -123,6 +128,12 @@ export interface LoopContextPort {
     lastInputTokens: number
     signal?: AbortSignal
   }): Promise<ModelMessage[] | null>
+  /**
+   * 紧急压缩（43号 O3，借 codex ContextWindowExceeded 处置）：跳过水位与退避
+   * 守卫直接跑压缩管线（剪枝+摘要），供 provider 超窗错误后的强制降载重试。
+   * 返回 null = 无法再压（零收益）；否则返回压缩后消息。
+   */
+  forceCompact?(input: { messages: ModelMessage[]; signal?: AbortSignal }): Promise<ModelMessage[] | null>
 }
 
 export class ContextManager implements LoopContextPort {
@@ -130,6 +141,9 @@ export class ContextManager implements LoopContextPort {
   private readonly softTokens: number
   private readonly hardTokens: number
   private readonly userBudget: number
+  /** 近端保护预算 / 剪枝门槛（2026-09-13 起可由「参数设置 → 上下文与记忆」调；缺省=改造前常量） */
+  private readonly protectedTail: number
+  private readonly minPruneSavings: number
   private readonly estimate: (messages: ModelMessage[]) => number
   private readonly deps: Pick<ContextManagerDeps, 'summarize' | 'emit'>
   /** 压缩后估算回填值（防抖动——12 号 R6：本地估算覆盖过期的模型实测） */
@@ -153,7 +167,9 @@ export class ContextManager implements LoopContextPort {
     const hard = Math.min(deps.hardWatermark ?? HARD_WATERMARK, ContextManager.HARD_CEILING)
     this.softTokens = Math.floor(this.windowTokens * soft)
     this.hardTokens = Math.floor(this.windowTokens * Math.max(hard, soft))
-    this.userBudget = deps.userMessageBudgetTokens ?? USER_MESSAGE_BUDGET_TOKENS
+    this.userBudget = deps.userMessageBudgetTokens ?? agentContextParams().context.userMessageBudgetTokens
+    this.protectedTail = deps.protectedTailTokens ?? agentContextParams().context.protectedTailTokens
+    this.minPruneSavings = deps.minPruneSavingsTokens ?? agentContextParams().context.minPruneSavingsTokens
     this.estimate = deps.estimateTokens ?? defaultEstimateTokens
     this.deps = {
       summarize: deps.summarize,
@@ -207,29 +223,119 @@ export class ContextManager implements LoopContextPort {
       this.noProgressAt = null
     }
 
-    const emit = this.deps.emit
-    emit?.({ type: 'compaction', phase: 'start', tokensBefore })
+    const tokensBeforeLocal = this.estimate(input.messages)
+    this.deps.emit?.({ type: 'compaction', phase: 'start', tokensBefore })
+    // 摘要触发基准 = 剪枝后的工作集水位（对抗 review P1 回归：剪枝即可压回的
+    // 场景不应多付一次摘要 LLM 调用并折叠可回查细节）
+    const pipeline = await this.compactPipeline(input.messages, {
+      shouldSummarize: (working) =>
+        !!this.deps.summarize && (this.estimate(working) >= this.softTokens || input.lastInputTokens >= this.softTokens),
+      signal: input.signal,
+    })
+    let working = pipeline.working
+    const summary = pipeline.summary
 
+    let tokensAfter = this.estimate(working)
+
+    // 硬顶降级（review P1-4：硬顶此前只在日志出现无行为）：摘要后仍超硬顶 →
+    // 收缩用户保留集到仅当轮输入 + 摘要（保留语义让位于窗口可行性），一次性降级
+    if (summary !== undefined && tokensAfter > this.hardTokens && working.length > 2) {
+      working = pipeline.degradeToMinimal()
+      tokensAfter = this.estimate(working)
+      logger.warn(`[context] 压缩后仍超硬顶（${tokensAfter} > ${this.hardTokens}），用户保留集收缩到仅当轮输入`)
+    }
+
+    // 零/负收益：返回 null（调用方跳过落盘与事件轰炸——review P1-3 的空转形态）。
+    // 同口径比较（本地估算 vs 本地估算——曾 after 本地 vs before 混合模型实测，
+    // 恒判"成功"）并落无进展指纹供退避
+    if (working === input.messages || tokensAfter >= tokensBeforeLocal) {
+      logger.warn(`[context] 压缩零效果（水位 ${tokensBefore} / 本地 ${tokensBeforeLocal}→${tokensAfter}），保留原历史并退避`)
+      this.noProgressAt = {
+        messageCount: input.messages.length,
+        estimate: tokensBeforeLocal,
+        lastInputTokens: input.lastInputTokens,
+      }
+      this.backfilledInputTokens = tokensBeforeLocal
+      this.deps.emit?.({ type: 'compaction', phase: 'done', tokensBefore, tokensAfter })
+      return null
+    }
+    this.noProgressAt = null // 有收益：清除退避指纹
+
+    // 回填：以本地估算覆盖（压完立即复查不再触发——R6 防抖动）
+    this.backfilledInputTokens = tokensAfter
+    this.deps.emit?.({ type: 'compaction', phase: 'done', tokensBefore, tokensAfter })
+
+    logger.info(
+      `[context] 压缩完成 ${tokensBefore}→${tokensAfter} tok（窗口 ${this.windowTokens}，` +
+        `软限 ${this.softTokens}/硬顶 ${this.hardTokens}，摘要=${summary !== undefined ? 'yes' : 'prune-only'}）`,
+    )
+    return working
+  }
+
+  /**
+   * 紧急压缩（43号 O3）：跳过水位/退避守卫直接压缩——provider 超窗错误后的
+   * 强制降载路径，压缩与否只取决于「有没有可压的内容」（零收益返回 null）。
+   */
+  async forceCompact(input: { messages: ModelMessage[]; signal?: AbortSignal }): Promise<ModelMessage[] | null> {
+    if (this.windowTokens === 0 || input.messages.length === 0) return null
+    const tokensBefore = this.estimate(input.messages)
+    this.deps.emit?.({ type: 'compaction', phase: 'start', tokensBefore })
+
+    const pipeline = await this.compactPipeline(input.messages, {
+      shouldSummarize: () => !!this.deps.summarize, // 紧急路径：有摘要能力就摘要
+      signal: input.signal,
+    })
+    let working = pipeline.working
+    const summary = pipeline.summary
+
+    let tokensAfter = this.estimate(working)
+    if (summary !== undefined && tokensAfter > this.hardTokens && working.length > 2) {
+      working = pipeline.degradeToMinimal()
+      tokensAfter = this.estimate(working)
+    }
+
+    // 零收益 = 压不动（无剪枝空间且无摘要能力/摘要失败）：放弃并如实上报
+    if (working === input.messages || tokensAfter >= tokensBefore) {
+      this.deps.emit?.({ type: 'compaction', phase: 'done', tokensBefore, tokensAfter })
+      logger.warn(`[context] 紧急压缩零收益（本地 ${tokensBefore}→${tokensAfter}），放弃降载`)
+      return null
+    }
+    // 回填水位并清除退避指纹（压缩刚刚真实发生，旧指纹已失效）
+    this.backfilledInputTokens = tokensAfter
+    this.noProgressAt = null
+    this.deps.emit?.({ type: 'compaction', phase: 'done', tokensBefore, tokensAfter })
+    logger.info(`[context] 紧急压缩完成 ${tokensBefore}→${tokensAfter} tok（摘要=${summary !== undefined ? 'yes' : 'prune-only'}）`)
+    return working
+  }
+
+  /**
+   * 压缩管线（maybeCompact/forceCompact 共用）：Phase 1 剪枝（近端保护）+
+   * Phase 2 守恒摘要（用户消息 20K 预算 + 最新轮次上下文块保底 + 摘要置尾）。
+   * working === 入参引用 = 剪枝零节省且未摘要（调用方据此判零收益）。
+   */
+  private async compactPipeline(
+    messages: ModelMessage[],
+    opts: { shouldSummarize: (working: ModelMessage[]) => boolean; signal?: AbortSignal },
+  ): Promise<{ working: ModelMessage[]; summary: string | undefined; degradeToMinimal(): ModelMessage[] }> {
     // Phase 1：剪枝（近端保护；节省未达门槛时返回原数组——vendor 同形）
-    const pruned = pruneToolResults(input.messages, PROTECTED_TAIL_TOKENS, MIN_PRUNE_SAVINGS_TOKENS, this.estimate)
-    let working = pruned.tokensSaved > 0 ? pruned.messages : input.messages
+    const pruned = pruneToolResults(messages, this.protectedTail, this.minPruneSavings, this.estimate)
+    let working = pruned.tokensSaved > 0 ? pruned.messages : messages
     let summary: string | undefined
-    // 硬顶降级要用的保底位引用（作用域跨 Phase 2 与硬顶段——review 结构注释同源）
+    // 硬顶降级要用的保底位引用（闭包捕获——degradeToMinimal 复用同一保底集）
     let keptLastUser: ModelMessage | null = null
     let keptLastBlock: ModelMessage | null = null
 
     // Phase 2：守恒摘要——目标是把总量压回软限下（剪枝不足即摘要，目标导向而非
-    // "剪够门槛就停"——批 6 review P2-6 表述对齐）。门槛依据与触发同源：
-    // 本地估算仍超线，或模型实测超线（估算器对 system/工具 schema 膨胀不敏感时，
-    // 实测兜底触发摘要——review P1-3 修正的连带面）
-    if (this.deps.summarize && (this.estimate(working) >= this.softTokens || input.lastInputTokens >= this.softTokens)) {
+    // "剪够门槛就停"）。是否摘要由调用方按剪枝后水位判定（maybeCompact）或强制
+    // （forceCompact）
+    if (opts.shouldSummarize(working)) {
       // 滚动携带：前次摘要消息一并进入摘要输入（review P1-5——剔除曾使前次折叠
       // 内容在二次压缩时永久蒸发）；真实用户原话也在输入中，摘要可转述
       const conversationText = working
         .map((m) => `${classifyMessage(m)}: ${JSON.stringify(m.content)}`)
         .join('\n')
       try {
-        summary = await this.deps.summarize(conversationText, input.signal)
+        summary = await this.deps.summarize!(conversationText, opts.signal)
       } catch (e) {
         // 摘要失败降级为剪枝结果（压缩是优化不是正确性依赖）；留痕带因
         logger.warn(`[context] 摘要失败，降级为纯剪枝：${e instanceof Error ? e.message : String(e)}`)
@@ -254,50 +360,21 @@ export class ContextManager implements LoopContextPort {
         // preserveUserMessages 把保底位用户消息追加在 preserved 尾部
         keptLastUser = lastUserIdx >= 0 && preserved.length > 0 ? preserved[preserved.length - 1] : null
         working = [...preserved, ...(keptLastBlock ? [keptLastBlock] : []), summaryMessage(summary)]
-        emit?.({ type: 'compaction', phase: 'summary' })
+        this.deps.emit?.({ type: 'compaction', phase: 'summary' })
       }
     }
 
-    let tokensAfter = this.estimate(working)
-
-    // 硬顶降级（review P1-4：硬顶此前只在日志出现无行为）：摘要后仍超硬顶 →
-    // 收缩用户保留集到仅当轮输入 + 摘要（保留语义让位于窗口可行性），一次性降级
-    if (summary !== undefined && tokensAfter > this.hardTokens && working.length > 2) {
-      working = [
-        ...(keptLastUser ? [keptLastUser] : []),
-        ...(keptLastBlock ? [keptLastBlock] : []),
-        summaryMessage(summary),
-      ]
-      tokensAfter = this.estimate(working)
-      logger.warn(`[context] 压缩后仍超硬顶（${tokensAfter} > ${this.hardTokens}），用户保留集收缩到仅当轮输入`)
+    return {
+      working,
+      summary,
+      degradeToMinimal(): ModelMessage[] {
+        return [
+          ...(keptLastUser ? [keptLastUser] : []),
+          ...(keptLastBlock ? [keptLastBlock] : []),
+          summary !== undefined ? summaryMessage(summary) : null,
+        ].filter((m): m is ModelMessage => m !== null)
+      },
     }
-
-    // 零/负收益：返回 null（调用方跳过落盘与事件轰炸——review P1-3 的空转形态）。
-    // 同口径比较（本地估算 vs 本地估算——曾 after 本地 vs before 混合模型实测，
-    // 恒判"成功"）并落无进展指纹供退避
-    const tokensBeforeLocal = this.estimate(input.messages)
-    if (working === input.messages || tokensAfter >= tokensBeforeLocal) {
-      logger.warn(`[context] 压缩零效果（水位 ${tokensBefore} / 本地 ${tokensBeforeLocal}→${tokensAfter}），保留原历史并退避`)
-      this.noProgressAt = {
-        messageCount: input.messages.length,
-        estimate: tokensBeforeLocal,
-        lastInputTokens: input.lastInputTokens,
-      }
-      this.backfilledInputTokens = tokensBeforeLocal
-      emit?.({ type: 'compaction', phase: 'done', tokensBefore, tokensAfter })
-      return null
-    }
-    this.noProgressAt = null // 有收益：清除退避指纹
-
-    // 回填：以本地估算覆盖（压完立即复查不再触发——R6 防抖动）
-    this.backfilledInputTokens = tokensAfter
-    emit?.({ type: 'compaction', phase: 'done', tokensBefore, tokensAfter })
-
-    logger.info(
-      `[context] 压缩完成 ${tokensBefore}→${tokensAfter} tok（窗口 ${this.windowTokens}，` +
-        `软限 ${this.softTokens}/硬顶 ${this.hardTokens}，摘要=${summary !== undefined ? 'yes' : 'prune-only'}）`,
-    )
-    return working
   }
 
   /** 测试/运维观测位 */

@@ -1,0 +1,8 @@
+chore(gitignore): 忽略生成的探查数据快照与 harness 落盘输出
+
+延续「验证产物本地留证、不进版本库」的口径，补两类忽略规则：
+- progress/_*_dump.json / progress/_*_dup_pairs.json：探查脚本导出的大体积数据快照
+  （本次遗留 2 个：12.4 MB + 1.3 MB，可由 progress/_dl_bayes_dump.cjs 等脚本重生成）
+- .dsh-*.txt：Agent harness 的大输出落盘文件（命令输出，不是工程产物；本次曾在仓库根出现 20 个）
+
+两个数据快照仍保留在本地磁盘，未入库。

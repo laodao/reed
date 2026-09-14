@@ -6,6 +6,7 @@
  *              皮肤方案：docs/design/theme-skin-system-design.md §D2
  */
 import { ref, onMounted } from 'vue'
+import { SETTINGS_KEYS, getSettingWithLegacyFallback } from '@shared/constants/settings-keys'
 
 export type SkinId = 'classic' | 'modern'
 
@@ -23,8 +24,12 @@ function applySkin(skin: SkinId): void {
 async function loadSkin(): Promise<void> {
   try {
     if (window.electronAPI?.settings?.get) {
-      const result = await window.electronAPI.settings.get('skin')
-      const skin: SkinId = result.success && result.data === 'modern' ? 'modern' : 'classic'
+      // 键名走注册表（旧键 skin 兜底）
+      const raw = await getSettingWithLegacyFallback(
+        { get: async (k) => (await window.electronAPI.settings.get(k))?.data ?? null },
+        SETTINGS_KEYS.uiSkin,
+      )
+      const skin: SkinId = raw === 'modern' ? 'modern' : 'classic'
       currentSkin.value = skin
       applySkin(skin)
       return
@@ -40,7 +45,7 @@ async function setSkin(skin: SkinId): Promise<void> {
   applySkin(skin)
   try {
     if (window.electronAPI?.settings?.set) {
-      await window.electronAPI.settings.set('skin', skin)
+      await window.electronAPI.settings.set(SETTINGS_KEYS.uiSkin, skin)
     }
   } catch (error) {
     console.error('[useSkin] 保存皮肤失败:', error)

@@ -8,7 +8,8 @@
  *              - 输出：子运行 report 的 markdown，否则 message 输出，否则空
  */
 
-import { WORKFLOW_LIMITS, WORKFLOW_RUN_STATUSES, WORKFLOW_RUN_TERMINAL_STATUSES } from '@shared/types/workflow.types'
+import { WORKFLOW_RUN_STATUSES, WORKFLOW_RUN_TERMINAL_STATUSES } from '@shared/types/workflow.types'
+import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 import type { WorkflowNodeContext } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
@@ -43,7 +44,9 @@ const subWorkflowNode: WorkflowNodeHandler = {
       if (p.key) inputs[p.key] = p.value
     }
     const definitionId = stringifyValue(cfg.definitionId)
-    const timeoutMs = Math.min(cfg.timeoutMs ?? WORKFLOW_LIMITS.subflowTimeoutMs, WORKFLOW_LIMITS.subflowTimeoutMs)
+    // 等待上限与轮询间隔取「参数设置 → 工作流 → 长任务轮询与等待」（节点 config 只能配得更短）
+    const { subflowWaitTimeoutMs, subflowIntervalMs } = workflowRuntimeParams().polling
+    const timeoutMs = Math.min(cfg.timeoutMs ?? subflowWaitTimeoutMs, subflowWaitTimeoutMs)
 
     ctx.logger.info('子工作流启动', { definitionId, parentRunId: ctx.runId })
     const run = await runService.startRun({
@@ -76,7 +79,7 @@ const subWorkflowNode: WorkflowNodeHandler = {
           : msg ? String(msg.output.content) : ''
         return { status: 'succeeded', output: { runId: run.id, status, result } }
       }
-      await sleep(500)
+      await sleep(subflowIntervalMs)
     }
     return { status: 'failed', error: '子工作流执行超时', retryable: false }
   },

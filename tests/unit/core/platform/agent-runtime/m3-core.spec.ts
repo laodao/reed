@@ -135,7 +135,8 @@ describe('知识飞轮', () => {
     await repo.create({ id: 'm2', kind: 'fact', content: { title: 't2', content: '报告写作先列大纲' }, status: 'pending_review' })
     expect(await fw.assemble('报告 写作')).toHaveLength(0)
     await fw.approve('m2')
-    const hits = await fw.assemble('如何写报告？')
+    // ≥2 词相关才入选（L1 相关度门槛，六扇门复盘：单词 2-gram 碰撞不再放行）
+    const hits = await fw.assemble('如何写报告？写作大纲怎么安排')
     expect(hits.map((h) => h.id)).toContain('m2')
     await fw.reportTaskOutcome(['m2'], true)
     const m2 = rows.find((r) => r.id === 'm2') as unknown as { useCount: number; successCount: number }

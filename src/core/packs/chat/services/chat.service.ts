@@ -417,9 +417,19 @@ export class ChatService {
   private static formatKnowledgeContext(results: SearchResult[]): string {
     if (results.length === 0) return ''
 
-    const sections = results.map((r, i) =>
-      `【${i + 1}】来源: ${r.documentName}\n相关度: ${(r.score * 100).toFixed(1)}%\n\n${r.content}`
-    )
+    const sections = results.map((r, i) => {
+      const lines = [`【${i + 1}】来源: ${r.documentName}`]
+      // M3：章节路径 + 章节摘要 —— 补全「这段内容出自哪一章、该章在讲什么」的层级语义，
+      // 让命中片段在章节语境中被理解（对标 contextual retrieval 的上下文注入）
+      if (r.chapterPath && r.chapterPath.length > 0) {
+        lines.push(`章节: ${r.chapterPath.join(' › ')}`)
+      }
+      if (r.chapterSummary) {
+        lines.push(`章节摘要: ${r.chapterSummary}`)
+      }
+      lines.push(`相关度: ${(r.score * 100).toFixed(1)}%`, '', r.content)
+      return lines.join('\n')
+    })
 
     return sections.join('\n\n---\n\n')
   }

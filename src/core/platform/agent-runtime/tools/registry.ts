@@ -36,28 +36,32 @@ import type {
   ToolDangerLevel,
 } from '../types'
 import type { ToolArtifactPort } from './artifacts'
+import { agentToolParams } from '@shared/utils/agent-tool-params'
 
 const logger = createLogger('AgentToolRegistry')
 
 // —— 观测面/防御性常量（命名导出便于测试与复用方引用） ——
+// 注意：下面带「参数设置可调」标注的常量是**内置默认值**；真正的生效值在使用点从
+// `shared/utils/agent-tool-params` 的持有者现读（设置页「参数设置 → 工具与审批」），
+// 未注入时取值即这些常量（= 改造前写死的值）。
 
-/** 工具结果序列化上限（14 号 §5.5） */
+/** 工具结果序列化上限（14 号 §5.5）——护栏，可被 `agent:budget.guards.maxToolResultBytes` 覆盖 */
 export const TOOL_RESULT_MAX_BYTES = 16_384
-/** 截断时数组保留项数 */
+/** 截断时数组保留项数的内置默认值（参数设置可调：`agent:tools.maxResultArrayItems`） */
 export const TOOL_RESULT_ARRAY_KEEP = 20
-/** 单字段字符串截断上限 */
+/** 单字段字符串截断上限——可被 `agent:budget.guards.maxToolResultFieldChars` 覆盖 */
 export const TOOL_RESULT_FIELD_MAX_CHARS = 2_000
-/** 直调执行超时（缺省；宿主可经 AgentToolContext.signal 控制中止） */
+/** 直调执行超时的内置默认值（参数设置可调：`agent:tools.executeTimeoutMs`） */
 export const TOOL_EXECUTE_TIMEOUT_MS = 120_000
 /** 工具基础名式样（14 号 §3 命名规范；命名空间前缀另拼） */
 export const TOOL_NAME_RE = /^[a-z][a-z0-9_]{2,48}$/
-/** 结果遍历深度上限（同时兜循环引用） */
+/** 结果遍历深度上限（同时兜循环引用）——可被 `agent:budget.guards.maxResultWalkDepth` 覆盖 */
 export const RESULT_WALK_DEPTH_LIMIT = 8
-/** 二进制字段判定最小长度（短值原样保留） */
+/** 二进制字段判定最小长度的内置默认值（参数设置可调：`agent:tools.binaryFieldMinChars`） */
 export const BINARY_FIELD_MIN_CHARS = 256
-/** 审计 resultPreview 截断（14 号 §4.1） */
+/** 审计 resultPreview 截断（14 号 §4.1）——可被 `agent:budget.guards.maxAuditPreviewChars` 覆盖 */
 export const AUDIT_PREVIEW_MAX_CHARS = 500
-/** NOT_WHITELISTED hint 中可用工具列举上限 */
+/** NOT_WHITELISTED hint 中可用工具列举上限的内置默认值（参数设置可调：`agent:tools.hintToolListMax`） */
 export const HINT_TOOL_LIST_MAX = 10
 
 /** 需默认人工批准的危险级别（14 号 §8） */
@@ -111,6 +115,16 @@ export interface AgentToolRegistryDeps {
    */
   artifacts?: ToolArtifactPort | null
   clock?: () => number
+  /**
+   * 护栏覆盖（2026-09-13 参数配置化；来源 settings 表 `agent:budget`.guards）：
+   * 结果截断/字段截断/审计预览/遍历深度。缺省用本文件常量（= 改造前写死的值）。
+   */
+  guards?: {
+    maxToolResultBytes?: number
+    maxToolResultFieldChars?: number
+    maxAuditPreviewChars?: number
+    maxResultWalkDepth?: number
+  }
 }
 
 interface RegisteredTool {
@@ -175,37 +189,51 @@ export function mergeStaticConfig(
 
 // ==================== 结果序列化（14 号 §5.5 简化版；落盘引用化 M2） ====================
 
-export function serializeToolResult(raw: unknown): { data: unknown; truncated: boolean } {
+/** 结果序列化护栏覆盖（2026-09-13：来自 settings `agent:budget`.guards；缺省用本文件常量） */
+export interface ToolResultGuards {
+  maxToolResultBytes?: number
+  maxToolResultFieldChars?: number
+  maxResultWalkDepth?: number
+  /** 审计 resultPreview 截断（字符）——不在序列化里用，但同属一张护栏表，随 deps 一起透传 */
+  maxAuditPreviewChars?: number
+}
+
+export function serializeToolResult(raw: unknown, guards?: ToolResultGuards): { data: unknown; truncated: boolean } {
+  const fieldMaxChars = guards?.maxToolResultFieldChars ?? TOOL_RESULT_FIELD_MAX_CHARS
+  const walkDepthLimit = guards?.maxResultWalkDepth ?? RESULT_WALK_DEPTH_LIMIT
+  const resultMaxBytes = guards?.maxToolResultBytes ?? TOOL_RESULT_MAX_BYTES
+  // 工具结果处理参数（设置页「参数设置 → 工具与审批」；未注入时即改造前的常量）
+  const { maxResultArrayItems, binaryFieldMinChars } = agentToolParams().tools
   // 无返回值工具（合法形态）：归一为 null——walk(undefined) 会走 catch 误报
   // _unserializable + truncated（总收口 review P3 实证）
   if (raw === undefined) return { data: null, truncated: false }
   let truncated = false
   const walk = (value: unknown, depth: number): unknown => {
     if (value === null || typeof value !== 'object') {
-      if (typeof value === 'string' && value.length > TOOL_RESULT_FIELD_MAX_CHARS) {
+      if (typeof value === 'string' && value.length > fieldMaxChars) {
         truncated = true
-        return value.slice(0, TOOL_RESULT_FIELD_MAX_CHARS) + `…[truncated ${value.length} chars]`
+        return value.slice(0, fieldMaxChars) + `…[truncated ${value.length} chars]`
       }
       return value
     }
-    if (depth > RESULT_WALK_DEPTH_LIMIT) {
+    if (depth > walkDepthLimit) {
       truncated = true // 深度上限同时兜住循环引用（walk 替换后 stringify 不再遇环）
       return '[depth-limit]'
     }
     if (Array.isArray(value)) {
-      const keep = value.length > TOOL_RESULT_ARRAY_KEEP
-      const items = keep ? value.slice(0, TOOL_RESULT_ARRAY_KEEP) : value
+      const keep = value.length > maxResultArrayItems
+      const items = keep ? value.slice(0, maxResultArrayItems) : value
       const mapped = items.map((v) => walk(v, depth + 1))
       if (keep) {
         truncated = true
-        mapped.push({ _truncated: { totalItems: value.length, note: `仅保留前 ${TOOL_RESULT_ARRAY_KEEP} 项` } })
+        mapped.push({ _truncated: { totalItems: value.length, note: `仅保留前 ${maxResultArrayItems} 项` } })
       }
       return mapped
     }
     const out: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
       // 二进制类字段永不进 LLM 上下文（http-fetch 的 base64/dataUrl 形态）
-      if ((k === 'base64' || k === 'dataUrl') && typeof v === 'string' && v.length > BINARY_FIELD_MIN_CHARS) {
+      if ((k === 'base64' || k === 'dataUrl') && typeof v === 'string' && v.length > binaryFieldMinChars) {
         truncated = true
         out[k] = { _omitted: 'binary', sizeBytes: v.length }
         continue
@@ -219,15 +247,27 @@ export function serializeToolResult(raw: unknown): { data: unknown; truncated: b
   try {
     // 字节计量（中文场景 length 与 UTF-8 字节差 3 倍——对齐 SessionStore 批 3 先例）
     const serialized = JSON.stringify(data)
-    if (Buffer.byteLength(serialized, 'utf8') > TOOL_RESULT_MAX_BYTES) {
+    if (Buffer.byteLength(serialized, 'utf8') > resultMaxBytes) {
       truncated = true
       // preview 按字节截（字符切片对 CJK 是 3 倍差——曾产出 ~24KB 的"截断"结果）
-      const halfBytes = Math.floor(TOOL_RESULT_MAX_BYTES / 2)
+      const halfBytes = Math.floor(resultMaxBytes / 2)
       let preview = serialized
       while (Buffer.byteLength(preview, 'utf8') > halfBytes && preview.length > 0) {
         preview = preview.slice(0, Math.floor(preview.length * 0.8))
       }
-      return { data: { _oversize: true, preview }, truncated }
+      // totalBytes（43号 O7，借 codex 截断提示的 original token count）：按 walk 前
+      // 的 raw 序列化计量（walk 已做字段截断，post-walk 值会偏小误导回查判断——
+      // review P2-2）；模型据此知道原文体量，配合 get_tool_result 回查全文
+      let rawBytes: number | undefined
+      try {
+        rawBytes = Buffer.byteLength(JSON.stringify(raw), 'utf8')
+      } catch {
+        rawBytes = undefined // 循环引用等不可序列化形态：不标注总量
+      }
+      return {
+        data: { _oversize: true, ...(rawBytes !== undefined ? { totalBytes: rawBytes } : {}), preview },
+        truncated,
+      }
     }
   } catch {
     return { data: { _unserializable: true }, truncated: true }
@@ -246,19 +286,44 @@ export class AgentToolRegistry {
     requestApproval: AgentToolRegistryDeps['requestApproval'] | null
     artifacts: ToolArtifactPort | null
     clock: () => number
+    /** 护栏覆盖（agent:budget.guards；缺省 undefined = 用本文件常量） */
+    guards: ToolResultGuards | undefined
   }
 
   constructor(deps: AgentToolRegistryDeps = {}) {
     this.deps = {
       audit: deps.audit ?? null,
       requestApproval: deps.requestApproval ?? null,
-      executeTimeoutMs: deps.executeTimeoutMs ?? TOOL_EXECUTE_TIMEOUT_MS,
+      executeTimeoutMs: deps.executeTimeoutMs ?? agentToolParams().tools.executeTimeoutMs,
       artifacts: deps.artifacts ?? null,
       clock: deps.clock ?? (() => Date.now()),
+      guards: deps.guards,
     }
   }
 
   // —— 注册 ——
+
+  /**
+   * 重新注入运行时参数（2026-09-13 参数设置第二轮）：
+   * 注册表是长生命周期单例，护栏原本在启动时读一次（改完需重启）。
+   * settings 保存后由 `settings-reload` 钩子调本方法，护栏立刻按新值生效。
+   * 只接受有限正数（非法项忽略并保留原值）。
+   */
+  applyRuntimeOverrides(patch: {
+    executeTimeoutMs?: number
+    guards?: ToolResultGuards
+  }): void {
+    if (typeof patch.executeTimeoutMs === 'number' && Number.isFinite(patch.executeTimeoutMs) && patch.executeTimeoutMs > 0) {
+      this.deps.executeTimeoutMs = Math.floor(patch.executeTimeoutMs)
+    }
+    if (patch.guards) {
+      const merged: ToolResultGuards = { ...(this.deps.guards ?? {}) }
+      for (const [k, v] of Object.entries(patch.guards) as Array<[keyof ToolResultGuards, number | undefined]>) {
+        if (typeof v === 'number' && Number.isFinite(v) && v > 0) merged[k] = Math.floor(v)
+      }
+      this.deps.guards = merged
+    }
+  }
 
   /** 注册工具；ns 传入时名称命名空间化：
    * - { packId }: pack:<packId>:<name>（业务包 activate 调用，source='pack'）
@@ -360,12 +425,13 @@ export class AgentToolRegistry {
    *  工具集已随本轮 tools 参数注入，全量枚举只对越权调用方泄露其他模块的工具名。
    *  声明了 catalogPacks 的域内仍可列（同域名称不越权）。 */
   private notWhitelistedHint(context?: Record<string, unknown>): string {
+    const hintMax = agentToolParams().tools.hintToolListMax
     const packs = Array.isArray(context?.catalogPacks) ? (context!.catalogPacks as string[]) : null
     if (packs && packs.length > 0) {
       const scoped = this.listSpecs().filter((s) => s.packId && packs.includes(s.packId))
       const names = scoped.map((s) => s.name)
       if (names.length > 0) {
-        return `可用工具：${names.slice(0, HINT_TOOL_LIST_MAX).join(', ')}${names.length > HINT_TOOL_LIST_MAX ? ' …' : ''}`
+        return `可用工具：${names.slice(0, hintMax).join(', ')}${names.length > hintMax ? ' …' : ''}`
       }
       return '本轮域内无可列举工具；请使用本轮注入的工具集。'
     }
@@ -583,8 +649,8 @@ export class AgentToolRegistry {
         .catch((e: unknown) => logger.warn(`[tool-registry] 产物归档失败（不影响调用）tool=${tool.spec.name}`, e))
     }
 
-    // ⑥ 截断序列化
-    const { data, truncated } = serializeToolResult(raw)
+    // ⑥ 截断序列化（护栏可经 deps.guards 由 agent:budget 配置覆盖）
+    const { data, truncated } = serializeToolResult(raw, this.deps.guards)
     return this.finish(
       { ...call, args: effective },
       tool,
@@ -671,7 +737,12 @@ export class AgentToolRegistry {
           return {
             ok: false,
             error: 'LIMIT_EXCEEDED',
-            hint: `本工具单次运行上限 ${binding.maxCalls} 次已用尽，请改用其他方式完成任务。`,
+            // 提示要可执行（2026-09-13：原句"请改用其他方式完成任务"等于没说——领域共学起步研究
+            // 被额度拒掉的 3 个知识点就此无声消失，用户与模型都不知道少了什么）
+            hint:
+              `本工具单次运行上限 ${binding.maxCalls} 次已用尽。` +
+              `不要再重试本工具（会继续被拒）：把未完成的条目原样写进本轮总结——` +
+              `写明"哪些没做成、因为额度用尽"，并告诉用户下一步点哪个入口可以补上（如「补全知识地图」/再次开始研究）。`,
           }
         }
         counter.used++ // 计数为"尝试"（校验失败也烧额度）——防模型用错误入参刷穿上限
@@ -727,7 +798,10 @@ export class AgentToolRegistry {
           status: statusOverride ?? (result.ok ? 'succeeded' : approval === 'rejected' ? 'rejected' : 'failed'),
           errorCode: result.error?.code,
           durationMs: result.durationMs,
-          resultPreview: JSON.stringify(result.data ?? result.error?.message ?? '').slice(0, AUDIT_PREVIEW_MAX_CHARS),
+          resultPreview: JSON.stringify(result.data ?? result.error?.message ?? '').slice(
+            0,
+            this.deps.guards?.maxAuditPreviewChars ?? AUDIT_PREVIEW_MAX_CHARS,
+          ),
           truncated,
           context: call.context ?? {},
         })

@@ -169,6 +169,7 @@
                 </div>
               </div>
 
+            <div class="chapter-body">
               <!-- 可编辑模式：Markdown 编辑器 -->
               <div v-if="isEditableNode && currentChapter" class="chapter-editor-wrapper">
                 <MarkdownEditor
@@ -185,23 +186,24 @@
                 <div v-if="nodePreviewContent" class="preview-content-area" v-html="renderMarkdown(nodePreviewContent)"></div>
                 <el-empty v-else description="暂无内容，请在左侧选择具体的节进行编辑" />
               </div>
-            </div>
 
-            <!-- 章节工作台：上下文预览面板（38 号，原型 v2） -->
-            <ChapterContextPanel
-              v-if="isEditableNode && activeOutlineId"
-              :project-id="projectId"
-              :outline-id="activeOutlineId"
-              :generating="!!generatingMap[activeOutlineId]"
-              :target-words="generateForm.targetWords"
-              :style="generateForm.style || undefined"
-              :extra-prompt="generateForm.extraPrompt || undefined"
-              @generate="handleGenerateWithContext"
-            />
+              <!-- 章节工作台：上下文预览面板（38 号；布局修复：右侧栏，不再被纵向堆叠到底部） -->
+              <ChapterContextPanel
+                v-if="isEditableNode && activeOutlineId"
+                :project-id="projectId"
+                :outline-id="activeOutlineId"
+                :generating="!!generatingMap[activeOutlineId]"
+                :target-words="generateForm.targetWords"
+                :style="generateForm.style || undefined"
+                :extra-prompt="generateForm.extraPrompt || undefined"
+                @generate="handleGenerateWithContext"
+              />
+            </div>
           </div>
         </div>
       </div>
     </div>
+  </div>
 
     <!-- AI 生成参数设置对话框 -->
     <el-dialog
@@ -836,12 +838,20 @@ async function loadVersions(chapterId: string) {
 async function saveChapter(outlineId: string) {
   const content = chapterContentMap.value[outlineId]
   if (content === undefined) return
+  // 52 号数据安全：缓冲为空但库里已有正文 → 视为异常（加载竞态/误清空），拒绝保存
+  if (!content.trim() && (lastSavedContent[outlineId] || '').trim()) {
+    delete saveTimers[outlineId]
+    ElMessage.warning('章节内容为空，已跳过自动保存（防止覆盖已有正文）')
+    return
+  }
 
   savingMap.value[outlineId] = true
   try {
     const result = await window.electronAPI.longwriting.saveChapter(outlineId, content)
     if (result.success) {
       chapterIdMap.value[outlineId] = result.data.id
+      // 复核修复：保存成功才推进自动保存水位（失败则保持 dirty，下次自动保存重试）
+      lastSavedContent[outlineId] = content
       ElMessage.success('章节已保存')
 
       // 更新大纲状态为进行中
@@ -1305,7 +1315,8 @@ async function executeGeneration() {
 
   showGenerateDialog.value = false
   generatingMap.value[outlineId] = true
-  chapterContentMap.value[outlineId] = '' // 清空当前内容
+  const previousContent = chapterContentMap.value[outlineId] || ''
+  chapterContentMap.value[outlineId] = '' // 清空当前内容（失败时恢复）
 
   console.log('[ChapterStage] 生成章节, providerId:', selectedModel.value?.providerId, 'modelId:', selectedModel.value?.modelId)
 
@@ -1331,6 +1342,7 @@ async function executeGeneration() {
       } else if (event.type === 'error') {
         generatingMap.value[outlineId] = false
         generatingEventIdMap.value[outlineId] = null
+        if (!chapterContentMap.value[outlineId] && previousContent) chapterContentMap.value[outlineId] = previousContent
         ElMessage.error(event.error || '生成失败')
         unsubscribe()
       }
@@ -1346,7 +1358,8 @@ async function executeGeneration() {
     selectedModel.value!.providerId,
     selectedModel.value!.modelId,
     generateForm.value.style || undefined,
-    generateForm.value.extraPrompt || undefined
+    generateForm.value.extraPrompt || undefined,
+    { skipChapterCardGate: true }
   )
 
   if (!result.success) {
@@ -1372,6 +1385,9 @@ async function handleGenerateWithContext(payload: { enabledItemIds: string[]; it
   }
 
   generatingMap.value[outlineId] = true
+  // 52 号数据安全修复：记下清空前的内容——门禁拒绝/生成失败时必须恢复，
+  // 否则空缓冲会被 3 秒自动保存落库，覆盖已有正文（实跑中第 2 章曾被清空）
+  const previousContent = chapterContentMap.value[outlineId] || ''
   chapterContentMap.value[outlineId] = ''
 
   const eventId = `chapter-${outlineId}-${Date.now()}`
@@ -1393,6 +1409,7 @@ async function handleGenerateWithContext(payload: { enabledItemIds: string[]; it
       } else if (event.type === 'error') {
         generatingMap.value[outlineId] = false
         generatingEventIdMap.value[outlineId] = null
+        if (!chapterContentMap.value[outlineId] && previousContent) chapterContentMap.value[outlineId] = previousContent
         ElMessage.error(event.error || '生成失败')
         unsubscribe()
       }
@@ -1417,6 +1434,8 @@ async function handleGenerateWithContext(payload: { enabledItemIds: string[]; it
     generatingMap.value[outlineId] = false
     generatingEventIdMap.value[outlineId] = null
     unsubscribe()
+    // 数据安全：未产生任何内容即失败（如门禁拦截）→ 恢复清空前的正文
+    if (!chapterContentMap.value[outlineId] && previousContent) chapterContentMap.value[outlineId] = previousContent
     ElMessage.error(result.error || '生成失败')
   }
 }
@@ -1688,8 +1707,10 @@ watch(chapterContentMap, (newVal) => {
 
       if (saveTimers[outlineId]) clearTimeout(saveTimers[outlineId])
       saveTimers[outlineId] = setTimeout(() => {
-        saveChapter(outlineId)
-        lastSavedContent[outlineId] = currentContent
+        void saveChapter(outlineId)
+        // 复核修复：不再提前标记 lastSavedContent——旧实现在保存发起前就
+        // 记水位，保存失败后该版本内容被去重逻辑永久跳过，静默丢失。
+        // lastSavedContent 只在 saveChapter 成功分支更新。
       }, 3000)
     }
   }
@@ -1979,9 +2000,19 @@ onMounted(() => {
   }
 }
 
+// 卡片主体：编辑器/预览 + 右侧上下文面板横向排列（布局修复：原纵向堆叠把面板挤到底部）
+.chapter-body {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  min-height: 0;
+  overflow: hidden;
+}
+
 // 编辑器容器
 .chapter-editor-wrapper {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
   display: flex;
@@ -2001,6 +2032,7 @@ onMounted(() => {
 // 预览容器
 .chapter-preview-wrapper {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow-y: auto;
   padding: 24px;

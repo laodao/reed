@@ -26,6 +26,9 @@
  */
 
 import type { DataSource, Repository } from 'typeorm'
+import * as fs from 'fs'
+import * as path from 'path'
+import { getPathProvider } from '@core/interfaces/path.interface'
 import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
 import { EpisodeScriptEntity } from '@core/database/entities/episode-production/episode-script.entity'
@@ -238,9 +241,6 @@ export class KeyframeGenerationService {
     // 表（spec §4.5.3 分镜内角色独立配置）
     const sceneAssets = await this.resolveSceneAssets(scene, sb.id)
 
-    // 清掉旧的 keyframe（重新生成全量）
-    await this.keyframeRepo.deleteByStoryboard(sb.id)
-
     /*
      * 用户在 ⑤ 制作 stage 为本分镜挑选的资产参考图覆盖（spec storyboard.referenceImageIds）。
      * 这里把 storyboard 级 overrides 转成每帧生成时通用的 KeyframeReferenceOverride[]，
@@ -268,6 +268,11 @@ export class KeyframeGenerationService {
       console.error('[keyframe-generation] 解析 @[名字@索引] 失败，忽略：', e)
     }
 
+    // 复核修复 P1-8：不再"先删旧帧再生成"（原实现生成中途失败，旧帧行连数据引用
+    // 一起丢，磁盘图成孤儿）——先全部生成新帧，成功后换入：删旧行 + 回收旧图；
+    // frameIndex 无唯一约束，新旧行共存安全
+    const oldRows = await this.keyframeRepo.listByStoryboard(sb.id)
+
     const created: StoryboardKeyframe[] = []
     try {
       for (const planItem of plan) {
@@ -286,9 +291,20 @@ export class KeyframeGenerationService {
         }
       }
     } catch (e) {
-      // 失败写回 error 状态（与 video-segment 的失败写回一致）
+      // 失败：回滚本轮半成品新帧（保留旧帧），写回 error 状态
+      for (const kf of created) {
+        try {
+          await this.deleteKeyframeWithAsset(kf.id)
+        } catch { /* 回收容错，不掩盖原错误 */ }
+      }
       await this.sbRepo.update(sb.id, { status: 'error', updatedAt: new Date() })
       throw e
+    }
+    // 全部成功 → 换入：删旧行（按 id，不波及本轮新行）并回收旧图
+    for (const old of oldRows) {
+      try {
+        await this.deleteKeyframeWithAsset(old.id)
+      } catch { /* 回收容错 */ }
     }
     // 全部关键帧生成成功 → 分镜状态置 image_ready（与单图路径
     // handleGenerateStoryboardImage 的写回一致；此前本路径不写 status，
@@ -333,8 +349,8 @@ export class KeyframeGenerationService {
     const oldDto = await this.keyframeRepo.getById(input.keyframeId)
     const referenceOverrides = oldDto?.referenceOverrides ?? null
 
-    // 删旧帧再写新帧（保持 frameIndex 唯一性 / id 不复用）
-    await this.keyframeRepo.delete(old.id)
+    // 复核修复 P1-8：先生成新帧，成功后再删旧帧并回收旧图（原实现先删后生成，
+    // AI 失败连旧帧数据一起丢；frameIndex 无唯一约束，新旧共存安全）
     const created = await this.generateOneKeyframe({
       storyboard: sb,
       scene,
@@ -350,7 +366,34 @@ export class KeyframeGenerationService {
         referenceOverrides,
       })
     }
+    await this.deleteKeyframeWithAsset(old.id)
     return created
+  }
+
+  /**
+   * 删关键帧行并回收其 image_assets 行与磁盘文件（复核修复 P1-8：原删除链路
+   * 只删 storyboard_keyframe 行，image_assets 行与图片文件永久残留）。
+   * 文件/资产回收失败静默——不阻塞关键帧主流程。
+   */
+  private async deleteKeyframeWithAsset(keyframeId: string): Promise<void> {
+    const row = await this.keyframeRepo.getById(keyframeId)
+    if (!row) return
+    await this.keyframeRepo.delete(keyframeId)
+    const assetId = (row as any).imageAssetId
+    if (!assetId) return
+    try {
+      const asset = await this.imageAssetRepo.getById(assetId)
+      if (!asset) return
+      await this.imageAssetRepo.delete(assetId)
+      const dataPath = getPathProvider().getDataPath()
+      for (const p of [asset.imagePath, (asset as any).thumbnailPath]) {
+        if (!p) continue
+        try {
+          const abs = path.isAbsolute(p) ? p : path.join(dataPath, p)
+          if (fs.existsSync(abs)) fs.unlinkSync(abs)
+        } catch { /* 单个文件清理失败不阻塞 */ }
+      }
+    } catch { /* 资产行清理失败不阻塞 */ }
   }
 
   /**
@@ -409,18 +452,15 @@ export class KeyframeGenerationService {
     // 倒序 +1 避免冲突（如果将来加唯一约束也兼容）
     const toShift = sorted.slice(afterIdx + 1).slice().reverse()
     for (const kf of toShift) {
-      await this.keyframeRepo.update(kf.id, {
-        // UpdateKeyframeRequest 没暴露 frameIndex；用底层 repo 直接更新
-      } as any)
-      // BaseRepository 的 scoped.update 暴露 ⤵ 用 getRepository
       await this.ds
         .getRepository(StoryboardKeyframeEntity)
         .update({ id: kf.id }, { frameIndex: kf.frameIndex + 1 })
     }
-    // storyboard.keyframeCount += 1（保持配置一致）
+    // storyboard.keyframeCount += 1（复核修复：先读后 +1 回写是无锁 RMW，并发插入
+    // 会丢更新——改 SQL 原子自增）
     await this.ds
       .getRepository(StoryboardEntity)
-      .update({ id: sb.id }, { keyframeCount: (sb.keyframeCount ?? sorted.length) + 1 })
+      .increment({ id: sb.id } as any, 'keyframeCount', 1)
 
     // 用现有 plan 同口径构造 plan item（extra）
     // 参考帧用前后两个相邻帧（after / next）的 frameIndex（after 已 shift 后仍 == old after.frameIndex）

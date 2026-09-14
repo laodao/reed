@@ -75,12 +75,12 @@ export class LwCustomEntityRepository extends BaseRepository<LwCustomEntityEntit
       fields: fields ? JSON.stringify(fields) : null,
       origin: origin ? JSON.stringify(origin) : null,
     } as never) as never)
-    const row = await this.scoped.findOne({ where: { id } } as any)
+    const row = await this.scoped.findOne({ id } as any)
     return this.toDto(row!)
   }
 
   async updateRow(id: string, patch: { name?: string; fields?: Record<string, unknown> | null; parentId?: string | null }): Promise<CustomEntityDto | null> {
-    const row = await this.scoped.findOne({ where: { id } } as any)
+    const row = await this.scoped.findOne({ id } as any)
     if (!row) return null
     if (patch.name !== undefined) row.name = patch.name
     if (patch.parentId !== undefined) row.parentId = patch.parentId
@@ -93,5 +93,10 @@ export class LwCustomEntityRepository extends BaseRepository<LwCustomEntityEntit
   async deleteRow(id: string): Promise<boolean> {
     const affected = await this.scoped.delete({ id } as any)
     return affected > 0
+  }
+
+  /** 项目删除级联清理（图谱/伏笔等伴生表无 FK，靠显式 purge） */
+  async deleteByProjectId(projectId: string): Promise<number> {
+    return this.scoped.delete({ projectId } as any)
   }
 }

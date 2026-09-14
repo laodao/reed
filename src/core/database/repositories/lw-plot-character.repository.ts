@@ -4,11 +4,13 @@
  * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import { In, type DataSource } from 'typeorm'
+import { In, IsNull } from 'typeorm'
+import type { DataSource } from 'typeorm'
 import { LwPlotCharacterEntity } from '../entities/lw-plot-character.entity'
 import { LwPlotEntity } from '../entities/lw-plot.entity'
 import { LwCharacterEntity } from '../entities/lw-character.entity'
 import { BaseRepository } from '../base-repository'
+import { getCurrentUserId } from '@core/context/user-context'
 
 export interface PlotCharacterRelation {
   id: string
@@ -71,12 +73,16 @@ export class LwPlotCharacterRepository extends BaseRepository<
   }
 
   async replaceAll(plotId: string, characterIds: string[]): Promise<void> {
+    // 事务回调内的裸 manager 仓储不走 scoped 注入——事务外同步捕获 userId，
+    // 写入显式落列、删除显式过滤（口径与 base-repository 的 scopeWhere/scopeEntity 一致；
+    // 漏注入的行 user_id=NULL，对所有 scoped 读不可见）
+    const userId = getCurrentUserId()
     await this.dataSource.transaction(async manager => {
       const repo = manager.getRepository(LwPlotCharacterEntity)
-      await repo.delete({ plotId } as any)
+      await repo.delete({ plotId, userId: userId === null ? IsNull() : userId } as any)
       const now = Date.now()
       for (const cid of characterIds) {
-        await repo.save(repo.create({ id: this.generateId(), plotId, characterId: cid, createdAt: now }))
+        await repo.save(repo.create({ id: this.generateId(), plotId, userId, characterId: cid, createdAt: now }))
       }
     })
   }
@@ -104,6 +110,7 @@ export class LwPlotCharacterRepository extends BaseRepository<
     for (const c of characters) nameToId.set(c.name, c.id)
 
     let migrated = 0
+    const userId = getCurrentUserId()
     await this.dataSource.transaction(async manager => {
       const repo = manager.getRepository(LwPlotCharacterEntity)
       const now = Date.now()
@@ -114,7 +121,7 @@ export class LwPlotCharacterRepository extends BaseRepository<
           if (!cid) continue
           const existing = await repo.findOne({ where: { plotId: plot.id, characterId: cid } as any })
           if (!existing) {
-            await repo.save(repo.create({ id: this.generateId(), plotId: plot.id, characterId: cid, createdAt: now }))
+            await repo.save(repo.create({ id: this.generateId(), plotId: plot.id, userId, characterId: cid, createdAt: now }))
             migrated++
           }
         }

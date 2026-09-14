@@ -13,18 +13,35 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import { computeProductionState } from '@core/platform/services/longwriting/agent/agent-deps'
 import { stateToSummary } from '@core/platform/services/longwriting/agent/agent-context'
 import { extractJsonObject, persistChapter, persistCharacters, persistOverview, persistOutlineTree, persistPlots, persistWorld, type StoryPersistResult } from '@core/platform/services/longwriting/story-persist'
+import { assessBibleReadiness, buildBibleGateError } from '@core/platform/services/longwriting/bible-readiness-gate'
+import { normalizeCharacterInput } from '@core/platform/services/longwriting/story-persist'
+import { extractCharacterList, extractPlotList, extractWorldLists, normalizeOutlineVolume, normalizePlotInput } from '@core/platform/services/longwriting/story-persist'
 import type { ArtifactCard, ArtifactCardKind, BibleDistillScope, DistillScope, RoomWorkspaceState } from '@shared/types/story-room.types'
 import { emitRoomEvent } from './room-events'
 import { getRoomState, patchRoomState } from './room-state'
 import { ledgerSnapshotText } from './room-ledger'
 import { generateRoomText } from './room-llm'
+import { longwritingParams } from '@shared/utils/longwriting-params'
 
 const logger = createLogger('StoryRoomDistiller')
 
 export const ROOM_DISTILLER_DEFINITION_ID = 'story-room-distiller'
 
-/** 一次提炼的卡片数上限（人物/故事线可能多张） */
-const MAX_CARDS_PER_DISTILL = 6
+/**
+ * 50 号评审 P1-3：研讨室是固定流程的旁路——大纲卡/章节草稿卡落库前与写作台同受圣经就绪门约束。
+ * 概要/人物/故事线卡是圣经建设本身，不设门（否则流程无法起步）。
+ */
+async function bibleGateForPersist(m: any, projectId: string, purpose: string): Promise<string | null> {
+  const [overview, characters, plots] = await Promise.all([
+    m?.lwStoryOverviews?.getByProjectId(projectId),
+    m?.lwCharacters?.getByProjectId(projectId),
+    m?.lwPlots?.getByProjectId(projectId),
+  ])
+  return buildBibleGateError(purpose, assessBibleReadiness({ overview, characters, plots }).missing)
+}
+
+// 单次提炼卡片数上限 / 大纲叶子节点列出上限
+// 见「参数设置 → 长文写作 → 故事研讨室」（`longwriting:storyRoom`），使用点现读。
 
 // ==================== 提炼 prompt（输出与 story-persist 输入同构） ====================
 
@@ -206,11 +223,13 @@ export class StoryRoomDistillerService {
 
   /** 范围素材：大纲需知道当前卷/集序号与已有结构 */
   private async scopeContext(m: any, projectId: string, scope: BibleDistillScope, state: RoomWorkspaceState): Promise<string> {
+    // 「参数设置 → 长文写作 → 大纲叶子节点上限」：现读
+    const { outlineLeafLimit } = longwritingParams().storyRoom
     if (scope === 'chapter') {
       const tree = (await m?.lwOutlines?.getTreeByProjectId(projectId)) || []
       const leaves = tree
         .filter((n: any) => n.nodeType === 'chapter' || n.nodeType === 'section')
-        .slice(0, 30)
+        .slice(0, outlineLeafLimit)
       if (leaves.length === 0) return '\n【大纲】（空）——请先让用户完成大纲，或把章节对应到讨论中的章节划分'
       return `\n【大纲叶子节点】（章节卡对应其中一个）\n${leaves.map((n: any) => `- id=${n.id} ${n.name}`).join('\n')}`
     }
@@ -239,6 +258,8 @@ export class StoryRoomDistillerService {
       createdAt: now,
     })
 
+    // 「参数设置 → 长文写作 → 单次提炼卡片上限」：现读
+    const { maxCardsPerDistill } = longwritingParams().storyRoom
     const out: ArtifactCard[] = []
     if (scope === 'characters') {
       const name = String(parsed.name || '').trim() || '未命名人物'
@@ -268,7 +289,7 @@ export class StoryRoomDistillerService {
       const name = String(parsed.name || '').trim() || '未命名'
       out.push(mk('custom', `${key}卡 · ${name}`, { ...parsed, _kindKey: key }))
     }
-    return out.slice(0, MAX_CARDS_PER_DISTILL)
+    return out.slice(0, maxCardsPerDistill)
   }
 
   // ==================== 卡片操作 ====================
@@ -335,17 +356,20 @@ export class StoryRoomDistillerService {
       case 'overview':
         return persistOverview(m, projectId, data)
       case 'character':
-        return persistCharacters(m, projectId, [data])
+        // 复测实跑修复：一张人物卡可含多角色（{人物:[...]}），摊平后逐个归一化落库
+        return persistCharacters(m, projectId, extractCharacterList(data).map(normalizeCharacterInput))
       case 'plot':
-        return persistPlots(m, projectId, [data])
+        return persistPlots(m, projectId, extractPlotList(data).map(normalizePlotInput))
       case 'world':
-        return persistWorld(m, projectId, data)
+        return persistWorld(m, projectId, extractWorldLists(data))
       case 'outline': {
         if (card.data?.index !== undefined || data?.index !== undefined) {
           // 分集大纲卡：研讨室定稿即采纳（转短剧桥的分集种子，不落 lw_outlines）
           return { ok: true, message: '分集大纲已定稿（转短剧时作为该集种子）', changed: ['outline'] }
         }
-        const created = await persistOutlineTree(m, projectId, [data], 3)
+        const gateErr = await bibleGateForPersist(m, projectId, '大纲')
+        if (gateErr) return { ok: false, message: gateErr, changed: [] }
+        const created = await persistOutlineTree(m, projectId, [normalizeOutlineVolume(data)], 3)
         return { ok: true, message: `已建大纲卷「${data.name || ''}」（${created} 个节点）`, changed: ['outline'], data: { nodes: created } }
       }
       case 'chapter': {
@@ -354,6 +378,8 @@ export class StoryRoomDistillerService {
         if (!outlineId) {
           return { ok: true, message: '章节卡已定稿（未关联大纲节点，正文草稿未写入）', changed: ['chapters'] }
         }
+        const gateErr = await bibleGateForPersist(m, projectId, '章节草稿')
+        if (gateErr) return { ok: false, message: gateErr, changed: [] }
         const draft = [String(data.preview || ''), String(data.hook || '')].filter(Boolean).join('\n')
         const r2 = await persistChapter(m, projectId, { outlineId, content: draft || '（待写）' })
         if (!r2.ok) return r2

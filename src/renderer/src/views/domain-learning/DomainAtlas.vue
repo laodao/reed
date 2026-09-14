@@ -113,6 +113,11 @@
           <el-button type="primary" :icon="Promotion" :loading="atlasBooting" @click="bootAtlas">
             {{ atlasBooting ? '正在起步研究…' : '生成首批知识' }}
           </el-button>
+          <!-- 起步研究活动行（2026-09-13：滚动显示系统正在做什么，失败/被拒也要可见） -->
+          <AgentActivityStrip v-if="spaceId" :space-id="spaceId" class="ab-activity" />
+          <el-button v-if="atlasPlanPending" type="warning" plain size="small" @click="goSpaceForPlan">
+            去确认方案（诉求理解待你确认）
+          </el-button>
           <div v-if="atlasBootMsg" class="ab-msg" :class="{ warn: atlasBootWarn }">{{ atlasBootMsg }}</div>
         </div>
         <AtlasEnhancedViews
@@ -158,13 +163,32 @@
                 <span v-if="r.year" class="work-meta">· {{ r.year }}</span>
               </div>
             </div>
-            <!-- 直接关系 -->
+            <!-- 直接关系（2026-09-12：未确认的边可在此人审确认） -->
             <div class="p-block">
-              <div class="p-label">直接关系（{{ nodeProfile.relations.length }}）</div>
-              <div v-for="rel in nodeProfile.relations" :key="rel.conceptId + rel.rel + rel.direction" class="rel-item" @click="jumpTo(rel)">
+              <div class="p-label">
+                直接关系（{{ nodeProfile.relations.length }}）
+                <span v-if="unverifiedCount > 0" class="p-label-warn">{{ unverifiedCount }} 条待确认</span>
+              </div>
+              <div
+                v-for="rel in nodeProfile.relations"
+                :key="rel.conceptId + rel.rel + rel.direction"
+                class="rel-item"
+                @click="jumpTo(rel)"
+              >
                 <span class="rel-direction">{{ rel.direction === 'out' ? '→' : '←' }}</span>
                 <span class="rel-type">{{ relLabel(rel.rel) }}</span>
                 <span class="rel-name">{{ rel.name }}</span>
+                <template v-if="rel.verified === false">
+                  <el-tag size="small" type="warning" effect="plain">待确认</el-tag>
+                  <el-button
+                    link
+                    size="small"
+                    type="primary"
+                    :loading="confirmingKey === relKey(rel)"
+                    @click.stop="confirmRel(rel)"
+                  >确认</el-button>
+                </template>
+                <el-icon v-else-if="rel.verified" class="rel-verified" title="已确认"><CircleCheckFilled /></el-icon>
               </div>
               <div v-if="nodeProfile.relations.length === 0" class="p-empty">暂无直接关系</div>
             </div>
@@ -224,6 +248,7 @@ import { nodeTypeMeta, relLabel } from './domain-learning-ui'
 import AtlasGraph from './AtlasGraph.vue'
 import AtlasEnhancedViews from './AtlasEnhancedViews.vue'
 import SpaceStatsPopover from './SpaceStatsPopover.vue'
+import AgentActivityStrip from './AgentActivityStrip.vue'
 import { downloadBlob, graphSvgToPngBlob } from './atlas-export'
 import type {
   DlAtlasGraph,
@@ -387,6 +412,44 @@ function onSelect(node: DlAtlasNode | null): void {
   void selectNode(node?.id ?? null)
 }
 
+// ==================== 关系人审确认（2026-09-12：后端 dl:confirm-relation 接线到界面） ====================
+
+/** 未确认关系条数（档案标题提示用） */
+const unverifiedCount = computed(
+  () => (nodeProfile.value?.relations ?? []).filter((r) => r.verified === false).length,
+)
+
+/** 正在确认的边（loading 态键） */
+const confirmingKey = ref('')
+
+function relKey(rel: { sourceId?: string; targetId?: string; rel: string }): string {
+  return `${rel.sourceId ?? ''}|${rel.targetId ?? ''}|${rel.rel}`
+}
+
+/** 确认一条未验证关系 → verified=true（地图人审），完成后刷新档案与图谱 */
+async function confirmRel(rel: {
+  rel: DlRelationType
+  sourceId?: string
+  targetId?: string
+  evidence?: string | null
+}): Promise<void> {
+  if (!rel.sourceId || !rel.targetId) return
+  confirmingKey.value = relKey(rel)
+  const ok = await store.confirmRelationOf({
+    id: spaceId.value,
+    sourceId: rel.sourceId,
+    targetId: rel.targetId,
+    relationType: rel.rel,
+    ...(rel.evidence ? { evidence: rel.evidence } : {}),
+  })
+  confirmingKey.value = ''
+  if (!ok) return
+  const keepId = nodeProfile.value?.node.id ?? null
+  // 确认后刷新档案（关系 confirmed）与图谱（边样式/图例随 verified 变化）
+  await selectNode(keepId)
+  graph.value = await store.fetchAtlasGraph(spaceId.value)
+}
+
 function clearSelection(): void {
   void selectNode(null)
 }
@@ -457,6 +520,14 @@ function goLearn(node: DlAtlasNode): void {
 const atlasBooting = ref(false)
 const atlasBootMsg = ref('')
 const atlasBootWarn = ref(false)
+/** 起步研究后有待确认的方案（诉求理解）→ 提示去空间页确认（弹窗在空间页，自动打开） */
+const atlasPlanPending = ref(false)
+
+/** 去空间页确认方案（空间页 onMounted 会自动拉方案并弹窗） */
+function goSpaceForPlan(): void {
+  tabsStore.preloadTab(`/domain-learning/${spaceId.value}`, spaceView.value?.name ?? '领域学习')
+  router.push(`/domain-learning/${spaceId.value}`)
+}
 
 async function bootAtlas(): Promise<void> {
   if (atlasBooting.value) return
@@ -478,16 +549,23 @@ async function bootAtlas(): Promise<void> {
       mode: 'research',
       spaceId: id,
       conceptId: null,
-      message: `这是新主题「${spaceView.value?.name ?? '本空间'}」的首次研究——请为整个领域建立首批核心知识点并生成第一份讲义。`,
+      // 固定流程第 1 步：先提交诉求理解（不会再一轮直接建点）
+      message: `这是新主题「${spaceView.value?.name ?? '本空间'}」的首次研究——请先复述你对我的诉求的理解，提交诉求理解草案让我确认。`,
     })
     await loadAtlas()
-    if ((graph.value?.nodes.length ?? 0) === 0 && !atlasBootMsg.value) {
+    // 固定流程（2026-09-13）：第 1 轮只产出「诉求理解」草案，需到空间页弹窗确认后才能继续
+    const plan = await store.fetchPlan(id)
+    if (plan?.understanding && !plan.understandingConfirmed) {
+      atlasPlanPending.value = true
+      atlasBootWarn.value = false
+      atlasBootMsg.value = '模型已提交「我对你诉求的理解」——去空间页确认（或纠正）后，才会继续规划知识体系。'
+    } else if ((graph.value?.nodes.length ?? 0) === 0 && !atlasBootMsg.value) {
       // 未产出：展示会话总结中的原因，避免“干等无反馈”
       const reason = (result?.content ?? '').trim()
       atlasBootWarn.value = true
       atlasBootMsg.value = reason
-        ? `本轮未生成知识点：${reason.slice(0, 260)}`
-        : '本轮未生成知识点。可先绑定含资料的知识库（空间设置 → 关联知识库），或在可联网环境重试。'
+        ? `本轮未提交诉求理解：${reason.slice(0, 260)}`
+        : '本轮未提交诉求理解。可先绑定含资料的知识库（空间设置 → 关联知识库），或在可联网环境重试。'
     }
   } finally {
     unsub()
@@ -819,6 +897,13 @@ onUnmounted(() => {
   margin-bottom: 6px;
 }
 
+// 待确认提示（关系人审，2026-09-12）
+.p-label-warn {
+  margin-left: 6px;
+  font-weight: 400;
+  color: var(--el-color-warning);
+}
+
 .p-text {
   font-size: 13px;
   color: var(--el-text-color-regular);
@@ -898,6 +983,12 @@ onUnmounted(() => {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  // 已确认标记（人审通过）
+  .rel-verified {
+    color: var(--el-color-success);
+    font-size: 13px;
   }
 }
 

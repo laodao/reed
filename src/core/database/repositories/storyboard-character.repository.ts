@@ -134,6 +134,38 @@ export class StoryboardCharacterRepository extends BaseRepository<
     })
   }
 
+  /**
+   * 全量替换（复核修复 P1-6）：删旧 + 建新并入同一事务——原 service 层
+   * saveAll 是 deleteByStoryboardId 与 createMany 两个独立事务，注释却称
+   * "事务保证原子性"；createMany 失败时旧配置已被删光。
+   */
+  async replaceAll(
+    storyboardId: string,
+    characters: CreateStoryboardCharacterRequest[],
+  ): Promise<StoryboardCharacter[]> {
+    return this.scopedTx(async tx => {
+      const api = tx.for(StoryboardCharacterEntity)
+      await api.delete({ storyboardId } as any)
+      const result: StoryboardCharacter[] = []
+      for (const data of characters) {
+        const saved = await api.save({
+          id: this.generateId(),
+          storyboardId: data.storyboardId,
+          characterId: data.characterId,
+          positionX: data.positionX ?? 50,
+          positionY: data.positionY ?? 50,
+          positionScale: data.positionScale ?? 1.0,
+          expression: data.expression ?? null,
+          action: data.action ?? null,
+          facing: data.facing || 'front',
+          sortOrder: data.sortOrder,
+        } as never)
+        result.push(this.toDto(saved as StoryboardCharacterEntity))
+      }
+      return result
+    })
+  }
+
   async update(
     id: string,
     data: UpdateStoryboardCharacterRequest,

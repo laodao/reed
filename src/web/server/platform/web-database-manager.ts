@@ -24,6 +24,7 @@ import { DesignedVoiceRepository } from '@core/database/repositories/designed-vo
 import { KnowledgeBaseRepository } from '@core/database/repositories/knowledge-base.repository'
 import { KbDocumentRepository } from '@core/database/repositories/kb-document.repository'
 import { KbChunkRepository } from '@core/database/repositories/kb-chunk.repository'
+import { KbChapterRepository } from '@core/database/repositories/kb-chapter.repository'
 import { KbVectorRepository } from '@core/database/repositories/kb-vector.repository'
 import { KbQaPairRepository } from '@core/database/repositories/kb-qa-pair.repository'
 import { KbFolderRepository } from '@core/database/repositories/kb-folder.repository'
@@ -80,6 +81,7 @@ import { DlCardRepository } from '@core/database/repositories/dl-card.repository
 import { DlDocRepository } from '@core/database/repositories/dl-doc.repository'
 import { DlQuestionRepository } from '@core/database/repositories/dl-question.repository'
 import { DlNoteRepository } from '@core/database/repositories/dl-note.repository'
+import { DlPlanRepository } from '@core/database/repositories/dl-plan.repository'
 import { PackBindingRepository, PackRepository } from '@core/database/repositories/business-pack.repositories'
 import { LwPlotCharacterRepository } from '@core/database/repositories/lw-plot-character.repository'
 import { LwPlotLocationRepository } from '@core/database/repositories/lw-plot-location.repository'
@@ -116,8 +118,9 @@ import { AssetImageRepository } from '@core/database/repositories/asset-image.re
 import { AssetRepository } from '@core/database/repositories/asset.repository'
 import { AssetGroupRepository } from '@core/database/repositories/asset-group.repository'
 import { AssetCategoryRepository } from '@core/database/repositories/asset-category.repository'
-import { NewsSourceRepository } from '@core/database/repositories/news-source.repository'
-import { NewsTopicRepository } from '@core/database/repositories/news-topic.repository'
+import { InfoSourceRepository } from '@core/database/repositories/info-source.repository'
+import { InfoSourceTopicRepository } from '@core/database/repositories/info-source-topic.repository'
+import { InfoSourceCategoryRepository } from '@core/database/repositories/info-source-category.repository'
 import { UserNotificationReadRepository } from '@core/database/repositories/user-notification-read.repository'
 
 export class WebDatabaseManager implements ICoreDatabaseManager {
@@ -147,6 +150,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   kbFolders: KbFolderRepository | null
   kbDocuments: KbDocumentRepository | null
   kbChunks: KbChunkRepository | null
+  kbChapters: KbChapterRepository | null
   kbInvertedIndex: KbInvertedIndexRepository | null
   kbVectors: KbVectorRepository | null
   kbQaPairs: KbQaPairRepository | null
@@ -156,8 +160,9 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   assets: AssetRepository | null
   assetGroups: AssetGroupRepository | null
   assetCategories: AssetCategoryRepository | null
-  newsSources: NewsSourceRepository | null
-  newsTopics: NewsTopicRepository | null
+  infoSourceCategories: InfoSourceCategoryRepository | null
+  infoSources: InfoSourceRepository | null
+  infoSourceTopics: InfoSourceTopicRepository | null
   toolCredentials: ToolCredentialRepository | null
   customTools: CustomToolRepository | null
   emailAccounts: EmailAccountRepository | null
@@ -213,6 +218,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   dlDocs: import('@core/database/repositories/dl-doc.repository').DlDocRepository | null
   dlQuestions: import('@core/database/repositories/dl-question.repository').DlQuestionRepository | null
   dlNotes: import('@core/database/repositories/dl-note.repository').DlNoteRepository | null
+  dlPlans: import('@core/database/repositories/dl-plan.repository').DlPlanRepository | null
   // 业务包内核（第一期）
   packs: PackRepository | null
   packBindings: PackBindingRepository | null
@@ -277,6 +283,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.kbFolders = new KbFolderRepository(ds)
     this.kbDocuments = new KbDocumentRepository(ds)
     this.kbChunks = new KbChunkRepository(ds)
+    this.kbChapters = new KbChapterRepository(ds)
     this.kbInvertedIndex = new KbInvertedIndexRepository(ds)
     this.kbVectors = new KbVectorRepository()
     this.kbQaPairs = new KbQaPairRepository(ds)
@@ -286,8 +293,9 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.assets = new AssetRepository(ds)
     this.assetGroups = new AssetGroupRepository(ds)
     this.assetCategories = new AssetCategoryRepository(ds)
-    this.newsSources = new NewsSourceRepository(ds)
-    this.newsTopics = new NewsTopicRepository(ds)
+    this.infoSourceCategories = new InfoSourceCategoryRepository(ds)
+    this.infoSources = new InfoSourceRepository(ds)
+    this.infoSourceTopics = new InfoSourceTopicRepository(ds)
     this.toolCredentials = new ToolCredentialRepository(ds)
     this.customTools = new CustomToolRepository(ds)
     this.emailAccounts = new EmailAccountRepository(ds)
@@ -342,6 +350,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.dlDocs = new DlDocRepository(ds)
     this.dlQuestions = new DlQuestionRepository(ds)
     this.dlNotes = new DlNoteRepository(ds)
+    this.dlPlans = new DlPlanRepository(ds)
     // 业务包内核（第一期）：包快照 + 启用/配置覆写
     this.packs = new PackRepository(ds)
     this.packBindings = new PackBindingRepository(ds)

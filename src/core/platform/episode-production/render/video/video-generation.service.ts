@@ -42,6 +42,25 @@ const logger = {
 const activePollingTasks = new Map<string, NodeJS.Timeout>()
 
 /**
+ * 任务级完成/失败回调——后台轮询（75 分钟）出片后回写业务侧
+ * （如 storyboard.video_path）。修复"同步等待超时后，远端即使出片也
+ * 没有任何路径落库"的状态卡死：DB 回写的 owner 从唯一的同步路径
+ * 扩展到后台轮询终态。
+ */
+interface TaskLifecycleCallbacks {
+  onCompleted?: (video: NonNullable<VideoTaskStatus['video']>) => void | Promise<void>
+  onFailed?: (error: string) => void | Promise<void>
+}
+const taskCallbacks = new Map<string, TaskLifecycleCallbacks>()
+
+/** 取走并删除任务回调（终态只触发一次） */
+function consumeTaskCallbacks(taskId: string): TaskLifecycleCallbacks | undefined {
+  const cb = taskCallbacks.get(taskId)
+  taskCallbacks.delete(taskId)
+  return cb
+}
+
+/**
  * 将本地文件路径转换为渲染端可加载的 URL。
  * 协议由 PathProvider 决定（Electron: local-video://，Web: /assets/...）。
  */
@@ -61,7 +80,8 @@ export class VideoGenerationService {
    * @returns 生成响应
    */
   static async generateVideo(
-        request: VideoGenerationRequest
+        request: VideoGenerationRequest,
+    opts?: TaskLifecycleCallbacks
   ): Promise<VideoGenerationResponse> {
     logger.info('[VideoService.generateVideo] 开始处理请求')
 
@@ -182,6 +202,11 @@ export class VideoGenerationService {
         return { success: false, error: '未返回任务 ID 或视频结果' }
       }
 
+      // 注册业务侧终态回调（后台轮询出片/失败后回写 DB，与同步等待路径解耦）
+      if (opts?.onCompleted || opts?.onFailed) {
+        taskCallbacks.set(taskId, { onCompleted: opts.onCompleted, onFailed: opts.onFailed })
+      }
+
       // 发送任务开始事件
       this.sendVideoEvent({
         type: 'generation-started',
@@ -256,6 +281,12 @@ export class VideoGenerationService {
                 taskId: taskId,
                 video: status.video
               })
+              // 业务侧回写（如 storyboard.video_path）；同步等待超时后由此兜底落库
+              try {
+                await consumeTaskCallbacks(taskId)?.onCompleted?.(status.video)
+              } catch (cbErr) {
+                logger.error('[VideoService] 任务完成回调执行失败:', cbErr)
+              }
             }
             // 下载失败：不结束轮询，等下轮再试（5s 后）
           } else {
@@ -270,6 +301,11 @@ export class VideoGenerationService {
               taskId: taskId,
               error: '视频生成完成但缺少下载地址'
             })
+            try {
+              await consumeTaskCallbacks(taskId)?.onFailed?.('视频生成完成但缺少下载地址')
+            } catch (cbErr) {
+              logger.error('[VideoService] 任务失败回调执行失败:', cbErr)
+            }
           }
         } else if (status.status === 'failed') {
           // 停止轮询
@@ -280,11 +316,17 @@ export class VideoGenerationService {
           }
 
           // 发送失败事件
+          const failMsg = status.error || '视频生成失败'
           this.sendVideoEvent({
             type: 'generation-failed',
             taskId: taskId,
-            error: status.error || '视频生成失败'
+            error: failMsg
           })
+          try {
+            await consumeTaskCallbacks(taskId)?.onFailed?.(failMsg)
+          } catch (cbErr) {
+            logger.error('[VideoService] 任务失败回调执行失败:', cbErr)
+          }
         } else if (pollCount >= maxPolls) {
           // 超时
           const interval = activePollingTasks.get(taskId)
@@ -298,6 +340,11 @@ export class VideoGenerationService {
             taskId: taskId,
             error: '任务超时，请重试'
           })
+          try {
+            await consumeTaskCallbacks(taskId)?.onFailed?.('任务超时')
+          } catch (cbErr) {
+            logger.error('[VideoService] 任务失败回调执行失败:', cbErr)
+          }
         }
       } catch (error: any) {
         logger.error('[VideoService] 轮询任务状态失败:', error)
@@ -393,6 +440,7 @@ export class VideoGenerationService {
     if (interval) {
       clearInterval(interval)
       activePollingTasks.delete(taskId)
+      taskCallbacks.delete(taskId)
       return true
     }
     return false

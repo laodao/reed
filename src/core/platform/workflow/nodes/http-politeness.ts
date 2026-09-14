@@ -10,10 +10,12 @@
  *              - 同 host 并发受限（默认 1 = 同站单线程），不同 host 互不影响
  *              - 每次请求前随机等待 [delayMsMin, delayMsMax]（默认 WORKFLOW_DEFAULTS）
  *              - 队列跨节点共享（同一运行内 crawl-news 与 crawl-links 抓同站也会互相等待）
- *              - 参数走标准配置链：节点 config 覆盖 → WORKFLOW_DEFAULTS 默认 → WORKFLOW_LIMITS 上限
+ *              - 参数走标准配置链：节点 config 覆盖 → 运行参数（设置页「参数设置 → 工作流 →
+ *                抓取礼貌」；`workflowRuntimeParams()`）默认 → WORKFLOW_LIMITS 上限
  */
 
-import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from '@shared/types/workflow.types'
+import { WORKFLOW_LIMITS } from '@shared/types/workflow.types'
+import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 import { validateOutboundUrl } from '@core/utils/outbound-url'
 
 /** 重定向逐跳上限（与 http-fetch executeHttpFetch 同款收口——review B1：
@@ -85,8 +87,10 @@ export async function politeFetch(
     throw new Error(`URL 校验失败：${guard.reason}`)
   }
   const host = hostOf(url)
+  // 运行参数现读（设置页可调；未注入时即内置默认 = 改造前常量）
+  const params = workflowRuntimeParams().crawl
   const concurrency = Math.min(
-    Math.max(1, Math.floor(opts.hostConcurrency ?? WORKFLOW_DEFAULTS.crawlHostConcurrency)),
+    Math.max(1, Math.floor(opts.hostConcurrency ?? params.hostConcurrency)),
     WORKFLOW_LIMITS.crawlHostConcurrency,
   )
   let throttle = throttles.get(host)
@@ -97,9 +101,9 @@ export async function politeFetch(
   await throttle.acquire()
   try {
     // 随机间隔（每次请求前）
-    const min = opts.delayMsMin ?? WORKFLOW_DEFAULTS.crawlDelayMsMin
+    const min = opts.delayMsMin ?? params.delayMsMin
     const max = Math.min(
-      opts.delayMsMax ?? WORKFLOW_DEFAULTS.crawlDelayMsMax,
+      opts.delayMsMax ?? params.delayMsMax,
       WORKFLOW_LIMITS.crawlDelayMsMax,
     )
     if (max > 0 && min >= 0 && max >= min) {

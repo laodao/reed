@@ -34,6 +34,7 @@ import type { WorkflowDefinitionRecord } from '@core/database/repositories/workf
 import type { WorkflowRunRecord } from '@core/database/repositories/workflow-run.repository'
 import type { WorkflowNodeRunRecord } from '@core/database/repositories/workflow-node-run.repository'
 import type { WorkflowStartInput } from '@shared/types/workflow.types'
+import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 import type { LanguageModel } from 'ai'
 import { renderSkillTemplate, withSkillReferences } from '../skills/render'
 import type { WorkflowDraftService } from '../draft/workflow-draft.service'
@@ -41,7 +42,11 @@ import type { WorkflowDraftService } from '../draft/workflow-draft.service'
 const logger = createLogger('SystemAgentTools')
 
 // —— 目录封顶（防上下文爆炸）——与 registry 管线的 TOOL_RESULT_ARRAY_KEEP=20 对齐：
-// 超出部分由管线截断并注记 _truncated，agent 可用 keyword 收窄再查，此处不再放大
+// 超出部分由管线截断并注记 _truncated，agent 可用 keyword 收窄再查，此处不再放大。
+//
+// 注意（2026-09-13 参数设置）：下面这批导出常量现在是**内置默认值**，
+// 真正的生效值在使用点从「参数设置 → 工作流 → 系统工具面」现读
+// （`workflowRuntimeParams().systemTools`）。保留导出是因为既有单测拿它们当"默认口径"。
 export const CATALOG_MAX_WORKFLOWS = 20
 export const CATALOG_MAX_SKILLS = 20
 export const CATALOG_MAX_TOOLS = 20
@@ -56,6 +61,10 @@ export const NODE_OUTPUT_DIGEST_MAX = 400
 export const RUN_ERROR_DIGEST_MAX = 2_000
 /** getRunDetail 连续不可见次数上限（运行被删/异常数据——不再空等满超时） */
 export const RUN_MISSING_STREAK_LIMIT = 3
+
+/** 生效的「系统工具面」参数（使用点现读） */
+const systemToolsParams = (): import('@shared/types/workflow-params.types').WorkflowSystemToolsParams =>
+  workflowRuntimeParams().systemTools
 
 /** 直连白名单（registry 既有工具，聊天宿主直接装配；写/审批工具一律不进） */
 export const SYSTEM_AGENT_TOOL_NAMES = [
@@ -72,6 +81,9 @@ export const SYSTEM_AGENT_PASSTHROUGH_TOOLS = [
   'wf_web_extract',
   'http_get',
   'data_table_query',
+  // 本地读类两件（44 号）：免审批（围栏限定+只读）；写/执行类等聊天审批卡立项
+  'fs_read_file',
+  'fs_list_dir',
 ] as const
 
 export const SYSTEM_AGENT_WHITELIST: string[] = [...SYSTEM_AGENT_TOOL_NAMES, ...SYSTEM_AGENT_PASSTHROUGH_TOOLS]
@@ -154,7 +166,7 @@ export function extractStartInputs(def: WorkflowDefinitionRecord): Array<{ key: 
 /** 运行摘要（run_workflow 终态返回 / get_workflow_run 共用） */
 export function summarizeRun(detail: { run: WorkflowRunRecord; nodeRuns: WorkflowNodeRunRecord[] }): Record<string, unknown> {
   const { run, nodeRuns } = detail
-  const nodes = nodeRuns.slice(0, NODE_SUMMARY_MAX).map((n) => ({
+  const nodes = nodeRuns.slice(0, systemToolsParams().nodeSummaryMax).map((n) => ({
     node: n.nodeName || n.nodeId,
     type: n.nodeType,
     status: n.status,
@@ -174,7 +186,7 @@ export function summarizeRun(detail: { run: WorkflowRunRecord; nodeRuns: Workflo
   }
 }
 
-function digest(value: unknown, max = NODE_OUTPUT_DIGEST_MAX): string {
+function digest(value: unknown, max = systemToolsParams().nodeOutputDigestChars): string {
   let s: string
   try {
     s = JSON.stringify(value)
@@ -209,7 +221,8 @@ export async function waitForRunTerminal(
   signal?: AbortSignal,
 ): Promise<{ run: WorkflowRunRecord; nodeRuns: WorkflowNodeRunRecord[] } | { status: string; note: string; unavailable?: boolean }> {
   const clock = deps.clock ?? (() => Date.now())
-  const deadline = clock() + RUN_WORKFLOW_WAIT_TIMEOUT_MS
+  const params = systemToolsParams()
+  const deadline = clock() + params.runWaitTimeoutMs
   let lastStatus = 'pending'
   let missingStreak = 0
   while (clock() < deadline) {
@@ -221,13 +234,13 @@ export async function waitForRunTerminal(
       if (lastStatus === 'waiting_review') {
         return { status: lastStatus, note: '运行等待人工审核（工作流内部审批闸门）——请在工作流运行详情页处理，稍后可用 get_workflow_run 查询结果。' }
       }
-    } else if (++missingStreak >= RUN_MISSING_STREAK_LIMIT) {
+    } else if (++missingStreak >= params.runMissingStreakLimit) {
       return { status: 'unavailable', unavailable: true, note: `运行记录不可见（可能已删除）：${runId}` }
     }
     if (signal?.aborted) return { status: lastStatus, note: '等待已取消。' }
-    await sleep(RUN_WORKFLOW_POLL_INTERVAL_MS, signal)
+    await sleep(params.runPollIntervalMs, signal)
   }
-  return { status: lastStatus, note: `等待超时（${Math.round(RUN_WORKFLOW_WAIT_TIMEOUT_MS / 1000)}s）——工作流仍在运行，稍后可用 get_workflow_run 查询结果。` }
+  return { status: lastStatus, note: `等待超时（${Math.round(params.runWaitTimeoutMs / 1000)}s）——工作流仍在运行，稍后可用 get_workflow_run 查询结果。` }
 }
 
 // ==================== 工具定义 ====================
@@ -244,8 +257,9 @@ export function buildSystemAgentToolDefs(deps: SystemAgentToolsDeps): AgentToolD
     dangerLevel: 'read',
     execute: async (input, ctx) => {
       const keyword = input.keyword?.trim() || undefined
-      const wfPage = await deps.definitions.list({ keyword, page: 1, pageSize: CATALOG_MAX_WORKFLOWS })
-      const workflows = wfPage.items.slice(0, CATALOG_MAX_WORKFLOWS).map((d) => ({
+      const catalogMax = systemToolsParams().catalogMaxItems
+      const wfPage = await deps.definitions.list({ keyword, page: 1, pageSize: catalogMax })
+      const workflows = wfPage.items.slice(0, catalogMax).map((d) => ({
         id: d.id,
         name: d.name,
         description: d.description ?? '',
@@ -261,7 +275,7 @@ export function buildSystemAgentToolDefs(deps: SystemAgentToolsDeps): AgentToolD
         [s.id, s.name, s.description, s.whenToUse ?? ''].some((f) => f.toLowerCase().includes(kw))
       const matchedSkills = allSkills.filter(kwHit)
       const skills = matchedSkills
-        .slice(0, CATALOG_MAX_SKILLS)
+        .slice(0, catalogMax)
         .map((s) => ({
           id: s.id,
           name: s.name,
@@ -275,7 +289,7 @@ export function buildSystemAgentToolDefs(deps: SystemAgentToolsDeps): AgentToolD
         // 调用必败的 NOT_WHITELISTED，白耗步数）
         .filter((s) => (SYSTEM_AGENT_WHITELIST as readonly string[]).includes(s.name))
         .filter((s) => !SYSTEM_AGENT_TOOL_NAMES.includes(s.name as (typeof SYSTEM_AGENT_TOOL_NAMES)[number]))
-        .slice(0, CATALOG_MAX_TOOLS)
+        .slice(0, catalogMax)
         .map((s) => ({ name: s.name, description: s.description, requiresApproval: s.requiresApproval }))
       // 模块域工具（pack 命名空间，M6.5 共享注册）：只列当前宿主经 runtimeContext
       // 声明开放的 pack（catalogPacks）——不声明的宿主（如聊天）一律为空，
@@ -285,7 +299,7 @@ export function buildSystemAgentToolDefs(deps: SystemAgentToolsDeps): AgentToolD
         : []
       const moduleTools = catalogPacks
         .flatMap((pid) => deps.registry.listSpecs({ packId: pid }))
-        .slice(0, CATALOG_MAX_TOOLS)
+        .slice(0, catalogMax)
         .map((s) => ({ name: s.name, description: s.description, requiresApproval: s.requiresApproval }))
       return {
         workflows,
@@ -307,7 +321,8 @@ export function buildSystemAgentToolDefs(deps: SystemAgentToolsDeps): AgentToolD
       '运行一个既有工作流（手动触发，优先已发布版本），等待其到终态并返回结果摘要。运行前先 discover_capabilities 确认 id 与所需参数；参数不全时先向用户澄清。',
     inputSchema: RunWorkflowInput,
     dangerLevel: 'write',
-    executeTimeoutMs: RUN_WORKFLOW_WAIT_TIMEOUT_MS + 30_000,
+    // 工具自身超时 = 等待上限 + 30s 余量（两者都跟着「参数设置」走）
+    executeTimeoutMs: systemToolsParams().runWaitTimeoutMs + 30_000,
     execute: async (input, ctx) => {
       const run = await deps.runService.startRun({
         definitionId: input.definitionId,
@@ -326,7 +341,7 @@ export function buildSystemAgentToolDefs(deps: SystemAgentToolsDeps): AgentToolD
         const summary = summarizeRun(waited)
         if (waited.run.status !== 'succeeded') {
           // 失败/取消/超时：摘要进错误消息（截断防灌上下文），模型可读节点错误
-          throw new Error(`工作流运行结束于 ${waited.run.status}：${digest(summary, RUN_ERROR_DIGEST_MAX)}`)
+          throw new Error(`工作流运行结束于 ${waited.run.status}：${digest(summary, systemToolsParams().runErrorDigestChars)}`)
         }
         return summary
       }

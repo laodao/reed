@@ -33,6 +33,7 @@ import type { TrajectoryAppendPort } from '../trajectory/sink'
 import { getAgentRunRegistry } from '../runtime/run-registry'
 import { ContextManager } from '../context/context-manager'
 import type { LoopContextPort } from '../context/context-manager'
+import { agentContextParams } from '@shared/utils/agent-context-params'
 import { DEFAULT_SUMMARY_PROMPT } from '../runtime/vendor/compaction'
 import { listStructuredProviders } from '../memory/structured-provider'
 import type { RawTranscriptPort } from '../memory/transcript-store'
@@ -52,10 +53,25 @@ export interface HostKitFlywheelPort {
 
 const logger = createLogger('HostKit')
 
-/** 缺省上下文窗口（与各宿主既有值一致；env 统一从 AGENT_CONTEXT_WINDOW 读） */
+/**
+ * 缺省上下文窗口与快照截断（2026-09-13 起可由「参数设置 → 上下文与记忆」调）。
+ * 保留常量作为最后兜底：持有者未注入时取值即这两个数（= 改造前写死的值）。
+ */
 const DEFAULT_CONTEXT_WINDOW = 32_768
 /** turn_start 快照截断（与聊天宿主既有值一致） */
 const SNAPSHOT_MAX = 8_000
+
+/** 生效的缺省上下文窗口（env 优先 → 参数设置 → 内置默认） */
+function effectiveDefaultContextWindow(): number {
+  const fromEnv = Number(process.env.AGENT_CONTEXT_WINDOW)
+  if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv
+  return agentContextParams().context.windowTokens || DEFAULT_CONTEXT_WINDOW
+}
+
+/** 生效的快照截断（参数设置 → 内置默认） */
+function effectiveSnapshotMax(): number {
+  return agentContextParams().context.maxTurnSnapshotChars || SNAPSHOT_MAX
+}
 
 /** 结构化知识缺省预算（LW 通道A 既有值） */
 const DEFAULT_STRUCTURED_BUDGET = { maxSegments: 2, maxChars: 600 }
@@ -215,6 +231,14 @@ export function formatStopNote(stopReason: string, error?: string): string {
   return ''
 }
 
+/**
+ * 崩溃恢复缺省续跑指令（47号恢复能力面）：作为用户消息进入历史。
+ * 业务可用 resumeTurn 的 instruction 覆盖为任务恢复块（计划/进度/草稿现状——
+ * 任务语义平台不背，见 47 号 §边界）。
+ */
+export const DEFAULT_RESUME_INSTRUCTION =
+  '[系统恢复] 上一轮执行因故障中断。请先基于已有信息核实实际完成到哪一步，再从断点继续完成剩余任务；不要重复已完成的工作，也不要臆造中断期间发生的事。'
+
 /** 记忆装配（kit 内置的四大能力②）：行集合 = L0 + 通道A[设定事实] + 通道B 飞轮召回。
  *  纪律（对抗 review P2-2）：装配任何环节失败只降级不炸轮——「不影响主链路」 */
 async function assembleMemoryLines<TTurn extends HostKitTurnBase>(
@@ -229,7 +253,8 @@ async function assembleMemoryLines<TTurn extends HostKitTurnBase>(
 
     const scope = typeof mem?.scope === 'function' ? mem.scope(turn) : (mem?.scope ?? null)
     const text = mem?.recallText ? mem.recallText(turn) : turn.input
-    const topK = mem?.topK ?? 3
+    // 召回条数：宿主显式配置优先，否则用「参数设置 → 上下文与记忆」的生效值
+    const topK = mem?.topK ?? agentContextParams().memory.assembleTopK
 
     // 通道A：结构化知识提供方（平台注册表；图谱等——scope 不匹配的自动跳过）。
     // topics 语料与飞轮召回语料分离（评审 P1-1：LW 通道A 只用用户消息，摘要会污染 60 字窗口）
@@ -331,7 +356,7 @@ export function createHostKit<TTurn extends HostKitTurnBase>(
           iteration: 0,
           kind: 'decision',
           name: 'turn_start',
-          payload: { systemPrompt: effectivePrompt.slice(0, SNAPSHOT_MAX) },
+          payload: { systemPrompt: effectivePrompt.slice(0, effectiveSnapshotMax()) },
         })
         if (memoryLines.length > 0) {
           // kind 用语义化的 memory_assembly（对抗 review P1-2：decision 会被工作台
@@ -346,8 +371,7 @@ export function createHostKit<TTurn extends HostKitTurnBase>(
         if (deps.artifacts && !tools.get_tool_result) {
           tools.get_tool_result = createGetToolResultTool(deps.artifacts) as unknown as AgentToolDef
         }
-        const childWindowTokens =
-          config.contextWindowTokens ?? (Number(process.env.AGENT_CONTEXT_WINDOW ?? DEFAULT_CONTEXT_WINDOW) || DEFAULT_CONTEXT_WINDOW)
+        const childWindowTokens = config.contextWindowTokens ?? effectiveDefaultContextWindow()
         if (config.subagent && !tools.spawn_subagent) {
           tools.spawn_subagent = createSpawnSubagentTool({
             resolveModel: config.resolveModel,
@@ -460,8 +484,7 @@ export function createHostKit<TTurn extends HostKitTurnBase>(
           ?? (config.models?.summary ? makeSummarize(config.resolveModel, config.models.summary) : undefined)
         const context = deps.contextOverride
           ?? new ContextManager({
-            contextWindowTokens:
-              config.contextWindowTokens ?? (Number(process.env.AGENT_CONTEXT_WINDOW ?? DEFAULT_CONTEXT_WINDOW) || DEFAULT_CONTEXT_WINDOW),
+            contextWindowTokens: config.contextWindowTokens ?? effectiveDefaultContextWindow(),
             ...(summarize ? { summarize } : {}),
           })
 
@@ -490,6 +513,23 @@ export function createHostKit<TTurn extends HostKitTurnBase>(
           ...(result?.error ? { error: result.error } : failure ? { error: failure } : {}),
         })
       }
+    },
+
+    /**
+     * 崩溃恢复续跑（47号恢复能力面）：与审批形 resumeFromSuspend 并列的恢复变体。
+     * 中断轮的续跑机制本就存在——runTurn 管线自动完成 loadState（会话存储形态含
+     * sanitize）→ assemble 悬空哨兵修复 → 重进 loop；本入口只把「续跑指令」
+     * 正规化：缺省注入 DEFAULT_RESUME_INSTRUCTION，业务可传 instruction 覆盖为
+     * 任务恢复块（计划/进度/业务快照——任务语义平台不背）。baseTurn 其余字段
+     * （projectId 等）原样参与 scopeKey/记忆/快照装配。互斥与 runTurn 同职责
+     * （业务 busy 守卫）。
+     */
+    async resumeTurn(
+      baseTurn: TTurn,
+      opts: HostKitTurnOptions & { instruction?: string } = {},
+    ): Promise<HostKitTurnResult> {
+      const input = opts.instruction?.trim() ? opts.instruction.trim() : DEFAULT_RESUME_INSTRUCTION
+      return this.runTurn({ ...baseTurn, input }, { signal: opts.signal })
     },
   }
 }

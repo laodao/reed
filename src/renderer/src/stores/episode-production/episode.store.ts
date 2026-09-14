@@ -73,10 +73,14 @@ export const useEpEpisodeStore = defineStore('ep-episode', () => {
 
   // ==================== 剧集管理 ====================
 
+  // 复核修复：请求序号防竞态——连续切换项目时旧响应不再覆盖新数据
+  let loadEpisodesSeq = 0
+
   /**
    * 加载剧集列表
    */
   async function loadEpisodes(projectId: string): Promise<void> {
+    const seq = ++loadEpisodesSeq
     const wb = useEpWorkbenchStore()
     wb.loading = true
     wb.error = null
@@ -84,6 +88,7 @@ export const useEpEpisodeStore = defineStore('ep-episode', () => {
       console.log('[StoryToVideoStore] 加载剧集列表, projectId:', projectId)
       const response = await window.electronAPI.episodeProduction.listEpisodes(projectId)
       console.log('[StoryToVideoStore] 剧集列表响应:', response)
+      if (seq !== loadEpisodesSeq) return
       if (response.success && response.data) {
         episodes.value = response.data as VideoEpisode[]
         console.log('[StoryToVideoStore] 剧集数量:', episodes.value.length)

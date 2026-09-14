@@ -22,7 +22,7 @@ function tasks() {
 
 function flywheel() {
   const m = getWorkflowSubsystem().memoryFlywheel
-  if (!m) throw new Error('知识飞轮未装配（数据库不可用或装配失败）')
+  if (!m) throw new Error('知识飞轮已停用（2026-09 暂停；重开：AGENT_MEMORY_FLYWHEEL=on）')
   return m
 }
 

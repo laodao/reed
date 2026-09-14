@@ -29,6 +29,8 @@ const OPENAI_COMPATIBLE_CONFIGS: Record<string, { baseUrl: string; name: string 
   deepseek: { baseUrl: 'https://api.deepseek.com/v1', name: 'DeepSeek' },
   zhipu: { baseUrl: 'https://open.bigmodel.cn/api/paas/v4', name: '智谱AI' },
   bailian: { baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', name: '阿里百炼平台' },
+  // 阿里百炼 Token Plan（订阅套餐）：与按量计费的 bailian 端点/密钥完全隔离
+  'bailian-token-plan': { baseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1', name: '阿里百炼 Token Plan' },
   moonshot: { baseUrl: 'https://api.moonshot.cn/v1', name: 'Moonshot' },
   minimax: { baseUrl: 'https://api.minimax.chat/v1', name: 'MiniMax' },
   // 旧 ID 兼容映射
@@ -70,6 +72,20 @@ export function createProvider(
   template?: ProviderTemplate,
   userConfig?: UserProviderConfig
 ): BaseProvider {
+  // 协议族判定：模板 category 优先（同一厂商可能同时提供多套协议端点，
+  // 如阿里百炼 Token Plan 的 compatible-mode 与 apps/anthropic 是两张模板）
+  const category = template?.category
+
+  // Anthropic 协议（官方或第三方 Anthropic 兼容端点）
+  if (templateId === 'anthropic' || category === 'anthropic') {
+    return new AnthropicSdkProvider(config, template, userConfig)
+  }
+
+  // Google 协议
+  if (templateId === 'google' || category === 'google') {
+    return new GoogleSdkProvider(config, template, userConfig)
+  }
+
   // 检查是否是 OpenAI 兼容平台
   if (templateId in OPENAI_COMPATIBLE_CONFIGS) {
     const { baseUrl, name } = OPENAI_COMPATIBLE_CONFIGS[templateId]
@@ -81,16 +97,6 @@ export function createProvider(
       template,
       userConfig
     )
-  }
-
-  // Anthropic 使用官方 SDK
-  if (templateId === 'anthropic') {
-    return new AnthropicSdkProvider(config, template, userConfig)
-  }
-
-  // Google 使用官方 SDK
-  if (templateId === 'google') {
-    return new GoogleSdkProvider(config, template, userConfig)
   }
 
   // 火山引擎使用专用 Provider
@@ -154,6 +160,9 @@ export function getSupportedTemplateIds(): string[] {
     'deepseek',
     'zhipu',
     'bailian',
+    // 阿里百炼 Token Plan（订阅套餐）：OpenAI 兼容与 Anthropic 兼容两张模板
+    'bailian-token-plan',
+    'bailian-token-plan-anthropic',
     'moonshot',
     'minimax',
     'anthropic',

@@ -17,7 +17,8 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { getPathProvider } from '@core/interfaces/path.interface'
-import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from '@shared/types/workflow.types'
+import { WORKFLOW_LIMITS } from '@shared/types/workflow.types'
+import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 import { validateOutboundUrl } from '@core/utils/outbound-url'
 import { readBodyWithLimit } from './response-body'
 
@@ -96,7 +97,10 @@ export async function executeHttpFetch(
   if (!guard.ok) {
     return { ok: false, error: `URL 校验失败：${guard.reason}` }
   }
-  const timeout = Math.min(input.timeoutMs ?? WORKFLOW_DEFAULTS.httpRequestTimeoutMs, WORKFLOW_LIMITS.httpTimeoutMs)
+  const timeout = Math.min(
+    input.timeoutMs ?? workflowRuntimeParams().crawl.httpRequestTimeoutMs,
+    WORKFLOW_LIMITS.httpTimeoutMs,
+  )
   // 运行取消信号 + 超时信号合并
   const signal = AbortSignal.any([cancelSignal, AbortSignal.timeout(timeout)])
   // 重定向逐跳校验（总收口 review P2-3）：fetch 默认 follow 且不再过闸门——公网

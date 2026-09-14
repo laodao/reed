@@ -1,0 +1,146 @@
+{
+  "def": {
+    "id": "builtin_def_script-to-video",
+    "name": "[内置] 短视频脚本生成视频",
+    "templateVersion": 1,
+    "nodeIds": [
+      "start:start",
+      "parse1:llm-chat",
+      "htmlPre:code",
+      "loopShot:loop",
+      "img1:image-gen",
+      "review1:human-review",
+      "vid1:video-gen",
+      "tts1:tts",
+      "code1:code",
+      "comp1:video-compose",
+      "save1:save-asset",
+      "saveXml:save-asset",
+      "end:end"
+    ],
+    "edgeKinds": [
+      "start->parse1:normal",
+      "parse1->htmlPre:normal",
+      "htmlPre->loopShot:normal",
+      "loopShot->img1:loop-body",
+      "img1->review1:normal",
+      "review1->vid1:approve",
+      "vid1->loopShot:loop-back",
+      "loopShot->tts1:loop-done",
+      "tts1->code1:normal",
+      "code1->comp1:normal",
+      "comp1->save1:normal",
+      "save1->saveXml:normal",
+      "saveXml->end:normal"
+    ],
+    "startInputs": [
+      "script",
+      "videoStyle",
+      "styleReferenceImage",
+      "videoProviderConfigId",
+      "videoModelId",
+      "imageProviderConfigId",
+      "imageModelId",
+      "voiceId",
+      "voiceProviderConfigId",
+      "width",
+      "height",
+      "bgmPath",
+      "model"
+    ],
+    "review1Editable": [
+      {
+        "key": "visual"
+      },
+      {
+        "key": "caption"
+      },
+      {
+        "key": "duration"
+      }
+    ],
+    "vid1": {
+      "providerConfigId": "{{start.videoProviderConfigId}}",
+      "model": "{{start.videoModelId}}",
+      "image": "{{img1.images.0.localUrl}}",
+      "prompt": "{{review1.visual}} 镜头风格：{{start.videoStyle}}。保持首帧主体一致，生成连贯自然运动（运动幅度与画面描述一致，避免剧烈形变）",
+      "negativePrompt": "画面扭曲、形变、闪烁、乱码文字、多余文字",
+      "duration": "{{review1.duration}}",
+      "width": "{{start.width}}",
+      "height": "{{start.height}}"
+    },
+    "img1": {
+      "prompt": "{{loopShot.item.visual}}（整体风格：{{start.videoStyle}}；竖版构图；写实、干净、无任何文字）",
+      "negativePrompt": "文字、字体、logo、水印、UI 元素、图标、按钮、弹窗、乱码、涂鸦、图形、表格、图表、标注、贴片字幕、卡通",
+      "providerConfigId": "{{start.imageProviderConfigId}}",
+      "modelId": "{{start.imageModelId}}",
+      "width": "{{start.width}}",
+      "height": "{{start.height}}",
+      "referenceImages": "{{start.styleReferenceImage}}",
+      "promptExtend": false
+    }
+  },
+  "providerConfigs": [
+    {
+      "id": "pc_mtpifm8s_6673t2qzg",
+      "name": "ComfyUI 生成网关（本地）",
+      "templateId": "comfyui",
+      "imageBaseUrl": "http://192.168.2.128:8190",
+      "videoBaseUrl": "http://192.168.2.128:8190",
+      "models": [
+        "krea2:image",
+        "flux-kontext:image",
+        "h3:video"
+      ]
+    },
+    {
+      "id": "pc_mmyf038f_3do48dnca",
+      "name": "火山引擎",
+      "templateId": "volcengine",
+      "models": [
+        "ep-20260225205800-9clk4:text",
+        "ep-20260225205702-vh6zc:text",
+        "ep-20260324195047-cnpvj:image",
+        "ep-20260324195013-mw6z5:video",
+        "ep-20260325131500-8tbgj:embedding",
+        "ep-20260511121109-hchqf:video",
+        "ep-20260329002741-4wjp7:image"
+      ]
+    },
+    {
+      "id": "pc_mmxkxgpl_khcf6xrfp",
+      "name": "阿里百炼平台",
+      "templateId": "bailian",
+      "models": [
+        "qwen3.5-flash:text",
+        "qwen3.5-plus:text",
+        "glm-4.7:text",
+        "kimi-k2.5:text",
+        "qwen-image-2.0:image",
+        "qwen3-asr-flash-realtime-2026-02-10:audio",
+        "qwen3-tts-vd-2026-01-26:audio",
+        "qwen3-tts-vc-2026-01-22:audio",
+        "qwen3-tts-flash:audio",
+        "qwen-mt-flash:text",
+        "qwen3-asr-flash-2026-02-10:audio",
+        "text-embedding-v4:embedding",
+        "qwen3-vl-rerank:rerank",
+        "glm-5:text",
+        "qwen-image-2.0-pro:image",
+        "z-image-turbo:image",
+        "qwen-image-max:image",
+        "qwen3-max:text",
+        "qwen3.6-plus:text",
+        "wan2.7-image-pro:image",
+        "wan2.7-image:image",
+        "wan2.7-t2v:video",
+        "wan2.6-i2v:video",
+        "wan2.7-i2v:video",
+        "cosyvoice-v3.5-plus:audio",
+        "qwen3.7-plus:text",
+        "qwen3.8-2.4t-a95b:text",
+        "qwen3.8-max:text"
+      ]
+    }
+  ]
+}

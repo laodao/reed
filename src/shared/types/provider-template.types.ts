@@ -160,6 +160,16 @@ export interface ProviderTemplate {
   allowCustomModels: boolean
   /** 是否为官方模板 */
   isOfficial?: boolean
+  /**
+   * API Key 预期前缀（如阿里百炼 Token Plan 的 'sk-sp-'）。
+   * 用于输入框提示与失焦时的非阻断提醒——不硬拦（中转/代理场景前缀可能不同）
+   */
+  apiKeyPrefix?: string
+  /**
+   * 使用须知（模板级，配置界面以告警条逐条展示）。
+   * 用于承载官方平台的地域/限额/密钥隔离/使用范围限制等必须让用户知情的信息
+   */
+  usageNotes?: string[]
 }
 
 /**

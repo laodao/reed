@@ -4,9 +4,52 @@
  * @description 管理 AI 提供商模板和配置
  */
 
-import type { ProviderTemplate, ModelDefinition, ModelType } from '@shared/types/provider-template.types'
+import type { ProviderTemplate, ModelDefinition, ModelType, UserProviderConfig } from '@shared/types/provider-template.types'
 import { getSecureStorage, type ISecureStorage } from '@core/interfaces/storage.interface'
 import { createProvider } from '@core/platform/providers/llm'
+// 统一能力解析（落库/声明字段优先，缺失按模型名兜底）——本服务不再维护第二套猜测规则
+import { resolveCapabilities } from '@core/platform/providers/llm/model-capability'
+
+/**
+ * 阿里百炼 Token Plan（订阅套餐，个人版/团队版共用端点）文本/推理模型清单
+ *
+ * 来源：官方《Token Plan 个人版 概述》「支持的模型」表，仅取其中**文本/推理类**——
+ * 官方《更多工具》明确 `compatible-mode` 与 `apps/anthropic` 两个端点「仅文本生成类」，
+ * 图像（qwen-image-3.0-pro / wan2.7-image）、语音、视频模型不属于本模板能力范围。
+ *
+ * 规格与能力逐项取自各模型官方明细页（上下文长度 / 最大输出长度 / Function Calling / 视觉理解），
+ * 无一项为推测值；带日期后缀的模型（-0813 / -0731）为其基础模型的日期快照，规格沿用基础模型。
+ */
+const BAILIAN_TOKEN_PLAN_TEXT_MODELS: ModelDefinition[] = [
+  // ===== 千问（官方标注：推理模型、视觉理解、文本生成）=====
+  { id: 'qwen3.8-max', name: 'qwen3.8-max', type: 'multimodal', contextWindow: 1_000_000, maxOutputTokens: 131_072, features: ['chat', 'streaming'], supportsThinking: true, supportsTools: true },
+  { id: 'qwen3.8-flash', name: 'qwen3.8-flash', type: 'multimodal', contextWindow: 1_000_000, maxOutputTokens: 131_072, features: ['chat', 'streaming'], supportsThinking: true, supportsTools: true },
+  // 官方标注：推理模型、文本生成（不含视觉理解）
+  { id: 'qwen3.7-max', name: 'qwen3.7-max', type: 'text', contextWindow: 1_000_000, maxOutputTokens: 131_072, features: ['chat', 'streaming'], supportsThinking: true, supportsTools: true },
+  { id: 'qwen3.7-plus', name: 'qwen3.7-plus', type: 'multimodal', contextWindow: 1_000_000, maxOutputTokens: 131_072, features: ['chat', 'streaming'], supportsThinking: true, supportsTools: true },
+  { id: 'qwen3.6-flash', name: 'qwen3.6-flash', type: 'multimodal', contextWindow: 1_000_000, maxOutputTokens: 65_536, features: ['chat', 'streaming'], supportsThinking: true, supportsTools: true },
+  // ===== DeepSeek（官方标注：推理模型、文本生成）=====
+  { id: 'deepseek-v4-pro', name: 'deepseek-v4-pro', type: 'text', contextWindow: 1_000_000, maxOutputTokens: 393_216, features: ['chat', 'streaming'], supportsThinking: true, supportsTools: true },
+  { id: 'deepseek-v4-pro-0813', name: 'deepseek-v4-pro-0813', type: 'text', contextWindow: 1_000_000, maxOutputTokens: 393_216, features: ['chat', 'streaming'], supportsThinking: true, supportsTools: true },
+  { id: 'deepseek-v4-flash-0731', name: 'deepseek-v4-flash-0731', type: 'text', contextWindow: 1_000_000, maxOutputTokens: 393_216, features: ['chat', 'streaming'], supportsThinking: true, supportsTools: true },
+  // ===== 智谱 AI（官方标注：推理模型、文本生成）=====
+  { id: 'glm-5.2', name: 'glm-5.2', type: 'text', contextWindow: 1_048_576, maxOutputTokens: 131_072, features: ['chat', 'streaming'], supportsThinking: true, supportsTools: true }
+]
+
+/** 取一份 Token Plan 模型清单副本（两张协议模板各自持有，避免共享可变数组） */
+function cloneTokenPlanTextModels(): ModelDefinition[] {
+  return BAILIAN_TOKEN_PLAN_TEXT_MODELS.map((m) => ({ ...m, features: [...m.features] }))
+}
+
+/**
+ * 阿里百炼 Token Plan 使用须知（官方硬约束，配置界面逐条展示）
+ */
+const BAILIAN_TOKEN_PLAN_USAGE_NOTES: string[] = [
+  'API Key 以 sk-sp- 开头，与按量计费（sk-）、Coding Plan 的密钥及 Base URL 完全隔离，不可混用',
+  '仅支持华北2（北京）地域；个人版按 7 天窗口限额（Lite 2500 / Standard 10000 / Pro 40000 Credits），团队版按月总额度',
+  '官方限定：仅可在 AI 编程/智能体工具中交互式使用，不支持工作流平台与自定义应用后端批量调用；请勿把套餐密钥用于本应用的批量自动化任务，否则可能被暂停订阅或封禁',
+  '订阅到期后重新购买会更换 API Key，需在百炼控制台「我的订阅」重新获取并更新此处配置'
+]
 
 /**
  * 预定义的提供商模板
@@ -196,6 +239,75 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
         description: '图像尺寸'
       }
     ]
+  },
+  // 阿里百炼 Token Plan（订阅套餐）：与上面的「阿里百炼平台」按量计费**完全隔离**——
+  // 专属 Base URL（token-plan.cn-beijing.maas.aliyuncs.com）+ sk-sp- 专属密钥，两者不可混用。
+  // 官方文档：https://help.aliyun.com/zh/model-studio/token-plan-personal-quick-start
+  {
+    id: 'bailian-token-plan',
+    siteUrl: 'https://bailian.console.aliyun.com',
+    name: '阿里百炼 Token Plan',
+    description: '阿里云百炼订阅套餐（个人版/团队版），Credits 计量；专属 Base URL + sk-sp- 专属密钥（OpenAI 兼容协议）',
+    category: 'openai-compatible',
+    capabilities: ['chat'],
+    icon: '🟠',
+    isOfficial: true,
+    apiConfig: {
+      baseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+      authType: 'bearer',
+      authHeader: 'Authorization',
+      authPrefix: 'Bearer ',
+      requestFormat: 'openai',
+      chatEndpoint: '/chat/completions',
+      modelsEndpoint: '/models'
+    },
+    supportedParams: {
+      stream: true,
+      temperature: true,
+      maxTokens: true,
+      topP: true,
+      custom: []
+    },
+    models: cloneTokenPlanTextModels(),
+    allowCustomModels: true,
+    apiKeyPrefix: 'sk-sp-',
+    usageNotes: [...BAILIAN_TOKEN_PLAN_USAGE_NOTES]
+  },
+  // 同一套餐的 Anthropic 协议端点（apps/anthropic），供 Claude 协议链路使用；
+  // Anthropic SDK 会自行在 baseURL 后拼 /v1/messages，故 baseUrl 不含版本段
+  {
+    id: 'bailian-token-plan-anthropic',
+    siteUrl: 'https://bailian.console.aliyun.com',
+    name: '阿里百炼 Token Plan（Anthropic 兼容）',
+    description: '同上套餐的 Anthropic 协议端点（apps/anthropic），供 Claude 协议（tool use / thinking）链路使用',
+    category: 'anthropic',
+    capabilities: ['chat'],
+    icon: '🟠',
+    isOfficial: true,
+    apiConfig: {
+      baseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic',
+      authType: 'api-key',
+      authHeader: 'x-api-key',
+      authPrefix: '',
+      requestFormat: 'anthropic',
+      chatEndpoint: '/v1/messages',
+      defaultHeaders: {
+        'anthropic-version': '2023-06-01'
+      }
+    },
+    supportedParams: {
+      stream: true,
+      temperature: true,
+      maxTokens: true,
+      topP: true,
+      topK: true,
+      custom: []
+    },
+    // Anthropic 协议无模型列表接口，预置清单即唯一来源
+    models: cloneTokenPlanTextModels(),
+    allowCustomModels: true,
+    apiKeyPrefix: 'sk-sp-',
+    usageNotes: [...BAILIAN_TOKEN_PLAN_USAGE_NOTES]
   },
   {
     id: 'moonshot',
@@ -593,33 +705,40 @@ export class ProviderTemplateService {
       const modelDefinitions: ModelDefinition[] = models
         .filter((m) => m && m.id)  // 过滤掉无效的模型
         .map((m) => {
-          const modelId = m.id.toLowerCase()
+        const modelId = m.id.toLowerCase()
 
-        // 自动识别模型类型
-        const type = this.detectModelType(modelId)
+        // 模板预置声明优先：官方文档给定的能力/规格比按模型名猜更准，
+        // 且 Anthropic 协议端点没有 /models 接口——预置清单是唯一来源。
+        // 例：qwen3.8-max 官方支持视觉理解，但模型名里没有 vl，纯字符串推断会漏判。
+        const declared = template.models?.find((tm) => tm.id.toLowerCase() === modelId)
 
-        // 自动识别是否支持深度思考
-        const supportsThinking = this.detectThinkingSupport(modelId)
+        // 类型：模板显式声明优先，未声明才按模型名兜底
+        const type = declared?.type ?? this.detectModelType(modelId)
 
-        // 自动识别是否支持联网搜索
-        const supportsWebSearch = this.detectWebSearchSupport(modelId)
+        // 其余能力：声明字段优先，缺失字段按模型名兜底（复用统一能力解析，避免两套规则分叉）
+        const caps = resolveCapabilities(m.id, declared)
 
-        // 自动识别是否支持工具调用
-        const supportsTools = this.detectToolSupport(modelId)
+        // 规格：模板声明了有效值则用之（官方明细页数值），否则沿用 provider 返回的兜底值
+        const contextWindow = declared?.contextWindow && declared.contextWindow > 0
+          ? declared.contextWindow
+          : m.contextWindow
+        const maxOutputTokens = declared?.maxOutputTokens && declared.maxOutputTokens > 0
+          ? declared.maxOutputTokens
+          : m.maxTokens
 
         // 调试日志
-        console.log(`[testConnection] 模型: ${m.id}, 类型: ${type}, 思考: ${supportsThinking}, 搜索: ${supportsWebSearch}, 工具: ${supportsTools}`)
+        console.log(`[testConnection] 模型: ${m.id}, 类型: ${type}, 思考: ${caps.supportsThinking}, 搜索: ${caps.supportsWebSearch}, 工具: ${caps.supportsTools}, 声明来源: ${declared ? '模板' : '按名推断'}`)
 
         return {
           id: m.id,
           name: m.name,
           type,
-          contextWindow: m.contextWindow,
-          maxOutputTokens: m.maxTokens,
+          contextWindow,
+          maxOutputTokens,
           features: ['chat', 'streaming'],
-          supportsThinking,
-          supportsWebSearch,
-          supportsTools
+          supportsThinking: caps.supportsThinking,
+          supportsWebSearch: caps.supportsWebSearch,
+          supportsTools: caps.supportsTools
         }
       })
 
@@ -638,41 +757,10 @@ export class ProviderTemplateService {
   }
 
   /**
-   * 检测模型是否支持深度思考
-   * @param modelId - 模型 ID（小写）
-   * @returns boolean
-   */
-  private detectThinkingSupport(modelId: string): boolean {
-    // DeepSeek R1 / Reasoner
-    if (modelId.includes('deepseek-reasoner') || modelId.includes('deepseek-r1')) {
-      return true
-    }
-    // OpenAI o1 / o3 系列
-    if (modelId.match(/\bo1[-_]?/) || modelId.match(/\bo3[-_]?/)) {
-      return true
-    }
-    // Claude extended thinking（需要特定配置，暂不自动识别）
-    return false
-  }
-
-  /**
-   * 检测模型是否支持联网搜索
-   * @param modelId - 模型 ID（小写）
-   * @returns boolean
-   */
-  private detectWebSearchSupport(modelId: string): boolean {
-    // Perplexity sonar 系列
-    if (modelId.includes('sonar')) {
-      return true
-    }
-    // 其他内置搜索的模型
-    return false
-  }
-
-  /**
    * 检测模型类型
    * @param modelId - 模型 ID（小写）
    * @returns ModelType
+   * @description 仅作为「模板未声明能力」时的兜底；声明优先见 testConnection
    */
   private detectModelType(modelId: string): ModelType {
     // 嵌入模型 - 必须最先检查
@@ -756,55 +844,6 @@ export class ProviderTemplateService {
 
     // 默认为文本模型
     return 'text'
-  }
-
-  /**
-   * 检测模型是否支持工具调用
-   * @param modelId - 模型 ID（小写）
-   * @returns boolean
-   */
-  private detectToolSupport(modelId: string): boolean {
-    // OpenAI GPT-3.5/GPT-4 系列支持函数调用
-    if (modelId.includes('gpt-3.5') || modelId.includes('gpt-4') || modelId.includes('gpt-4o')) {
-      return true
-    }
-
-    // OpenAI o1/o3 系列（部分支持工具）
-    if (modelId.match(/\bo1[-_]?/) || modelId.match(/\bo3[-_]?/)) {
-      return true
-    }
-
-    // Anthropic Claude 3 系列支持工具使用
-    if (modelId.includes('claude-3') || modelId.includes('claude-sonnet') || modelId.includes('claude-opus') || modelId.includes('claude-haiku')) {
-      return true
-    }
-
-    // Google Gemini 支持函数调用
-    if (modelId.includes('gemini')) {
-      return true
-    }
-
-    // DeepSeek 支持函数调用（reasoner/r1 系列不支持）
-    if (modelId.includes('deepseek') && !modelId.includes('reasoner') && !modelId.includes('r1')) {
-      return true
-    }
-
-    // 智谱 GLM-4 支持
-    if (modelId.includes('glm-4')) {
-      return true
-    }
-
-    // 通义千问支持
-    if (modelId.includes('qwen') && !modelId.includes('vl')) {
-      return true
-    }
-
-    // Moonshot 支持
-    if (modelId.includes('moonshot') || modelId.includes('kimi')) {
-      return true
-    }
-
-    return false
   }
 
   /**

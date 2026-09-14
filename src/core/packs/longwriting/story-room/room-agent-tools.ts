@@ -24,9 +24,15 @@ import { getRoomState } from './room-state'
 import { ledgerSnapshotText } from './room-ledger'
 import { emitRoomEvent } from './room-events'
 import { GraphService } from '@core/platform/services/longwriting/graph/graph.service'
+import { LongWritingAIService } from '@core/platform/services/longwriting-ai.service'
+import { LongWritingService } from '../services/longwriting.service'
+import { ChapterGraphProcessor } from '@core/platform/services/longwriting/graph/chapter-graph.processor'
 
 export const LW_ROOM_PACK_ID = 'lw-room'
-export const LW_ROOM_MAX_STEPS = 12
+
+// 步数上限已迁入「参数设置 → 长文写作 → 故事研讨室」（`longwriting:storyRoom`.editorMaxSteps，
+// 默认 24 / 上限 60——六扇门复盘：上限本职是失控兜底而非预算），使用点现读；原
+// LW_ROOM_MAX_STEPS 环境变量覆盖通道退役。
 
 /** 从工具执行上下文还原研讨室上下文 */
 function lwCtxFrom(ctx: AgentToolContext): { projectId: string } {
@@ -318,6 +324,140 @@ function buildSaveRelationToolDef(): AgentToolDef {
 
 // ==================== 注册与白名单 ====================
 
+// ==================== 章法工具链（54 号：写正文章法=skill 定义 + 工具编排） ====================
+// 章法文本（步骤/提示词/agent 指令）单一事实源在 skills/chapter-writing.ts；
+// 本组工具让研讨室 agent 能自主执行"设计→自检→人确认→写正文"，
+// 人确认发生在对话中（设计卡与自检问题呈给用户，认可后才 confirm）。
+
+function buildDesignChapterCardToolDef(): AgentToolDef {
+  return {
+    name: 'lw_design_chapter_card',
+    description:
+      '为指定章节生成「章节设计卡」（情节概要/开场钩子/本章爽点/章尾卡点+钩型/出场实体/伏笔动作），工具内部已对齐全书概要、前情状态并做自检。写正文的章法第一步：生成后把卡片要点与自检问题讲给用户，经用户认可再确认。',
+    inputSchema: z.object({
+      outlineId: z.string().min(1).describe('章节大纲节点 id'),
+    }),
+    dangerLevel: 'write',
+    executeTimeoutMs: 120_000,
+    autoApprovableInWorkflow: false,
+    execute: async (input, ctx) => {
+      const { outlineId } = (input ?? {}) as { outlineId?: string }
+      if (!outlineId) return { ok: false, error: '缺少 outlineId' }
+      const { projectId } = lwCtxFrom(ctx)
+      try {
+        const result = await LongWritingAIService.getInstance().generateChapterCard(
+          `lw-room-card-${Date.now()}`,
+          projectId,
+          outlineId,
+        )
+        if (!result.success) return { ok: false, error: result.error }
+        const { card, markdown, review } = result.data as any
+        const applied = await LongWritingService.getInstance().applyChapterCard(projectId, outlineId, card, markdown)
+        return {
+          ok: true,
+          data: {
+            markdown,
+            review,
+            unresolvedNames: applied.unresolvedNames,
+            message: '设计卡已生成（未确认）。请把卡片要点与自检问题讲给用户，认可后调 lw_confirm_chapter_card。',
+          },
+        }
+      } catch (e: any) {
+        return { ok: false, error: e?.message || '设计卡生成失败' }
+      }
+    },
+  }
+}
+
+function buildConfirmChapterCardToolDef(): AgentToolDef {
+  return {
+    name: 'lw_confirm_chapter_card',
+    description:
+      '确认某章的章节设计卡（须先经用户在对话中认可）。确认后该章才允许生成正文——这是章法的人确认环节，禁止跳过或代替用户决定。',
+    inputSchema: z.object({
+      outlineId: z.string().min(1).describe('章节大纲节点 id'),
+    }),
+    dangerLevel: 'write',
+    executeTimeoutMs: 30_000,
+    autoApprovableInWorkflow: false,
+    execute: async (input, _ctx) => {
+      const { outlineId } = (input ?? {}) as { outlineId?: string }
+      if (!outlineId) return { ok: false, error: '缺少 outlineId' }
+      try {
+        const prewrite = await LongWritingService.getInstance().confirmPrewrite(outlineId)
+        if (!prewrite) return { ok: false, error: '该章还没有设计卡，请先 lw_design_chapter_card' }
+        return { ok: true, data: { message: '设计卡已确认，可以 lw_write_chapter 写正文。' } }
+      } catch (e: any) {
+        return { ok: false, error: e?.message || '确认失败' }
+      }
+    },
+  }
+}
+
+function buildWriteChapterToolDef(): AgentToolDef {
+  return {
+    name: 'lw_write_chapter',
+    description:
+      '按已确认的章节设计卡生成并保存某章正文（内部强制：无已确认设计卡会被门禁拒绝；一致性疑点未处理也会拒绝）。默认拒绝覆盖已有正文——确要重写须先征得用户同意再传 overwrite=true。',
+    inputSchema: z.object({
+      outlineId: z.string().min(1).describe('章节大纲节点 id'),
+      overwrite: z.boolean().optional().describe('该章已有正文时是否覆盖（须先征得用户同意）'),
+    }),
+    dangerLevel: 'write',
+    executeTimeoutMs: 600_000,
+    autoApprovableInWorkflow: false,
+    execute: async (input, ctx) => {
+      const { outlineId, overwrite } = (input ?? {}) as { outlineId?: string; overwrite?: boolean }
+      if (!outlineId) return { ok: false, error: '缺少 outlineId' }
+      const { projectId } = lwCtxFrom(ctx)
+      try {
+        const svc = LongWritingService.getInstance()
+        const existing = await svc.getChapter(outlineId)
+        if (existing?.content?.trim() && !overwrite) {
+          return { ok: false, error: '该章已有正文。询问用户是否重写，用户同意后带 overwrite=true 重新调用。' }
+        }
+        const result = await LongWritingAIService.getInstance().generateChapter(
+          `lw-room-write-${Date.now()}`,
+          projectId,
+          outlineId,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          // 章法工具链路径不走工作台跳过参数：门禁（设计卡+一致性）照常生效
+        )
+        if (!result.success) return { ok: false, error: result.error }
+        const content = (result.data as any)?.content || ''
+        if (!content.trim()) return { ok: false, error: '正文生成为空' }
+        const saved = await svc.saveChapter(outlineId, content)
+        // 保存后跑提取流水线（事件/状态切片/伏笔/摘要），失败不阻断
+        let pipelineNote = ''
+        try {
+          const { buildOutlineDocOrder, outlineChapterNumber } = await import('@core/platform/services/longwriting/outline-order')
+          const outlines = (await getCoreDatabaseManager().lwOutlines?.getByProjectId(projectId)) || []
+          const no = outlineChapterNumber(buildOutlineDocOrder(outlines), outlineId) ?? 0
+          await new ChapterGraphProcessor().process({ projectId, outlineId, chapterContent: content, chapterNumber: no })
+          pipelineNote = '图谱已更新'
+        } catch (e: any) {
+          pipelineNote = `图谱更新失败（下次保存重跑）：${e?.message || ''}`
+        }
+        return {
+          ok: true,
+          data: {
+            chapterId: saved?.id,
+            wordCount: content.replace(/\s/g, '').length,
+            qualityGate: (result.data as any)?.qualityGate,
+            message: `正文已保存。${pipelineNote}`,
+          },
+        }
+      } catch (e: any) {
+        return { ok: false, error: e?.message || '正文生成失败' }
+      }
+    },
+  }
+}
+
 function buildLwRoomToolDefs(): AgentToolDef[] {
   return [
     buildQueryBibleToolDef(),
@@ -325,6 +465,9 @@ function buildLwRoomToolDefs(): AgentToolDef[] {
     buildSaveCardToolDef(),
     buildSaveEventToolDef(),
     buildSaveRelationToolDef(),
+    buildDesignChapterCardToolDef(),
+    buildConfirmChapterCardToolDef(),
+    buildWriteChapterToolDef(),
   ]
 }
 

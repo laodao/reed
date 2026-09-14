@@ -11,26 +11,34 @@ import { KnowledgeBaseService } from '../../services/knowledge-base.service'
 import { augmentWithDialogFiles, mergeRetrievalResults, effectiveTopK } from './dialog-file-retriever'
 import { callAIStream } from '../../services/ai-call'
 import { getDocumentTools } from '../../services/document-tools/document-tools'
+import { knowledgeQaDirectMinScore } from '@shared/utils/knowledge-params'
 import { DOCUMENT_TEMPLATES } from '../../services/document-tools/templates'
 import { getPathProvider } from '../../../interfaces/path.interface'
 import type { WorkflowNodeContext } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
-import { WORKFLOW_DEFAULTS } from '@shared/types/workflow.types'
-
-/** D1 QA 直出缺省相似度阈值（比 RAG 检索更严——直出答案不容含糊） */
-const QA_DIRECT_MIN_SCORE = 0.75
+import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 
 /** 默认 RAG 系统提示词（用户可覆盖） */
 const DEFAULT_KB_QA_SYSTEM_PROMPT = `你是知识库问答助手。仅依据下面的参考资料回答用户问题；资料中没有的内容请如实说明未找到，不要编造。`
 
-/** 检索上下文拼接：逐条 [文档名] 内容，整体按 maxChars 截断（整条丢弃不切半） */
-function buildKbContext(results: Array<{ documentName: string; content: string }>, maxChars: number): string {
+/**
+ * 检索上下文拼接：逐条 [文档名] + 章节路径/摘要（M3）+ 内容，整体按 maxChars 截断
+ * （整条丢弃不切半）。
+ */
+function buildKbContext(
+  results: Array<{ documentName: string; content: string; chapterPath?: string[]; chapterSummary?: string }>,
+  maxChars: number,
+): string {
   if (results.length === 0) return '（未检索到相关内容）'
   const parts: string[] = []
   let total = 0
   for (const r of results) {
-    const part = `[${r.documentName}]\n${r.content}`
+    const header = [`[${r.documentName}]`]
+    // M3：章节上下文——让命中片段在「出自哪一章、该章讲什么」的语境中被理解
+    if (r.chapterPath && r.chapterPath.length > 0) header.push(`章节: ${r.chapterPath.join(' › ')}`)
+    if (r.chapterSummary) header.push(`章节摘要: ${r.chapterSummary}`)
+    const part = `${header.join('\n')}\n${r.content}`
     if (total + part.length > maxChars) break // 超限整条丢弃
     parts.push(part)
     total += part.length
@@ -76,9 +84,10 @@ const kbQaNode: WorkflowNodeHandler = {
       knowledgeBaseId: cfg.knowledgeBaseId,
       query: stringifyValue(cfg.question),
       topK: 1,
-      // 直出阈值更严（跳过 LLM 的答案不容含糊）：复用 threshold 覆盖，缺省 0.75
-      // M5b：直出阈值固定常量，与 RAG threshold 解耦（放宽 RAG 不应连带放宽直出）
-      threshold: QA_DIRECT_MIN_SCORE,
+      // 直出阈值更严（跳过 LLM 的答案不容含糊）：复用 threshold 覆盖，
+      // 缺省走「参数设置 → 知识库 → 检索 → QA 直出最低相似度」（改造前固定 0.75）
+      // M5b：直出阈值与 RAG threshold 解耦（放宽 RAG 不应连带放宽直出）
+      threshold: knowledgeQaDirectMinScore(),
       signal: ctx.signal,
     })
     if (qaResp.success && qaResp.data && qaResp.data.length > 0) {
@@ -116,7 +125,7 @@ const kbQaNode: WorkflowNodeHandler = {
     // 2. 拼接 context（P4：默认走 WORKFLOW_DEFAULTS.kbQaContextMaxChars）
     const maxChars = cfg.resultMaxLength && cfg.resultMaxLength > 0
       ? cfg.resultMaxLength
-      : WORKFLOW_DEFAULTS.kbQaContextMaxChars
+      : workflowRuntimeParams().polling.kbQaContextMaxChars
     // F1：dialog 命中优先入 context（maxChars 截断"超限整条丢弃"不再系统性牺牲附件命中）
     const context = buildKbContext(mergeRetrievalResults(results, dialogHits, topK), maxChars)
     const systemPrompt = `${cfg.systemPrompt?.trim() || DEFAULT_KB_QA_SYSTEM_PROMPT}\n\n===== 参考资料 =====\n${context}`

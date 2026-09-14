@@ -51,8 +51,22 @@ ffmpeg.setFfprobePath(RESOLVED_FFPROBE)
 
 /** fluent-ffmpeg 实现：跑 ffmpeg + 解析输出时长 */
 export class FluentFfmpegRunner implements FfmpegRunner {
+  /** 探测输入是否含音轨（复核修复 P1-7；探测失败按有音轨处理，保留旧行为） */
+  async probeHasAudio(input: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      ffmpeg.ffprobe(input, (err, data) => {
+        if (err) {
+          resolve(true)
+          return
+        }
+        resolve((data?.streams ?? []).some((s: { codec_type?: string }) => s.codec_type === 'audio'))
+      })
+    })
+  }
+
   async run(args: {
     inputs: string[]
+    lavfiInputs?: string[]
     filterComplex: string
     outputArgs: string[]
     outputPath: string
@@ -60,9 +74,16 @@ export class FluentFfmpegRunner implements FfmpegRunner {
     return new Promise((resolve, reject) => {
       const cmd = ffmpeg()
       for (const inp of args.inputs) cmd.input(inp)
+      // lavfi 合成输入（anullsrc 静音占位）追加在文件输入之后——
+      // 流编号约定与 episode-mp4-exporter.service 的 audioLabel 一致
+      for (const spec of args.lavfiInputs ?? []) {
+        cmd.input(spec).inputOptions(['-f lavfi'])
+      }
       cmd.complexFilter(args.filterComplex)
       cmd.outputOptions(args.outputArgs)
       cmd.output(args.outputPath)
+      // fluent-ffmpeg 运行时有 timeout(sec, signal)，但该版本 .d.ts 未声明
+      ;(cmd as unknown as { timeout: (sec: number, signal: string) => void }).timeout(FFMPEG_TIMEOUT_SEC, 'kill')
 
       let lastDurationSec = 0
       let stderrTail = ''
@@ -117,6 +138,15 @@ export class NodeFileWriter implements FileWriter {
     if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true })
     return path.join(tempDir, `subtitle_${Date.now()}${suffix}`)
   }
+
+  /** 导出完成后清理 SRT 临时文件（删除失败静默——临时文件不阻塞导出结果） */
+  async delete(filePath: string): Promise<void> {
+    try {
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+    } catch {
+      /* 忽略 */
+    }
+  }
 }
 
 function parseTimemark(tm: string): number {
@@ -125,3 +155,9 @@ function parseTimemark(tm: string): number {
   if (!m) return 0
   return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3])
 }
+
+/**
+ * ffmpeg 执行超时（秒）。复核修复 P1-10：坏文件/管道挂死会让合成 IPC 永不返回，
+ * 前端进度停在最后一格。默认 30 分钟，可用环境变量覆盖。
+ */
+const FFMPEG_TIMEOUT_SEC = Number(process.env.EP_FFMPEG_TIMEOUT_SEC) || 30 * 60

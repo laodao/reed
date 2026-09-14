@@ -88,3 +88,95 @@ dl run_workflow 触发复验。
 - 模板 v3：topic-research.json 重构为 until 循环（12 节点 14 边）：start(+maxRounds) → 澄清 → 规划 → round1(until: r→e→pack→loop-back, errorPolicy=skip) → writer(用 round1.last.result.*) → report → 人工确认 → 保存。
 - 测试：loop-until.spec 4 例 + 回归（9 files 94 passed）、eslint 0、本批 vue-tsc 零新增；本地提交待 push。
 - 待用户：真机（动态轮次/评估提前收尾/达上限收尾）、until+挂起恢复专项 spec（后续）。
+
+---
+
+## v4：运行级总预算落地（2026-09-09，run-budget-design.md）
+
+用户立项（"应该设置工作流的总预算，而不是工具的预算；每轮数据量不同，等额不合理"）。设计自查修订后 TDD 实现：
+
+- 新增运行级设置 `maxTotalToolCalls`（0/缺省=不启用；normalize：有限正数取整并封顶 `WORKFLOW_LIMITS.maxTotalToolCalls=10000`，NaN/负数→0）；`ResolvedExecutionSettings` 增字段。
+- 引擎：`RunExecution.toolBudget {max,used}` 恒建对象、跨节点/跨轮共享；`buildContext` 注入 `ctx.toolBudget`（max>0 才有；含只读 remaining + tryConsume）；快照序列化 toolBudget，journal-replay 快照恢复重建（旧快照无该字段则保持初值）。
+- agent-loop：`assembleTools` 支持运行级预算句柄——先查节点级（设了且耗尽→报节点级、不白扣运行级）再查运行级（耗尽→报运行级提示），双预算各自计数；模型 task 追加「运行级总预算：共 N 次，当前剩余 M 次」提示，引导按需分配。
+- 模板：`topic-research.json` `settings.maxTotalToolCalls = 120`（8 轮共享总额，不再每轮等额 16）。
+- 测试：agent-loop-node.spec 新增 7 例（normalize/直通/节点级优先/运行级耗尽/双预算并存/引擎级跨节点累计/剩余预算注入 prompt）；topic-research-graph 增 1 例（settings=120）；回归 batch1 8 文件 52 passed、batch2 5 文件 62 passed；eslint 0。
+- 待用户：真机复跑（重启 App → 主题深度研究 8 轮，观察总调用 ≤120、每轮不再整齐触 16 天花板、prompt 含剩余预算）。
+
+---
+
+## v4 真机验证 + 质量评估（2026-09-09，带运行级总预算）
+
+运行：`wmrun` runId `wfrun_1789128599106_e8giud8y0`（topic=TikTok 开店；问卷=cn-individual/无执照/MY,TH,PH,US/家居收纳+宠物/video-only/3-5万；maxRounds=8；研究 deepseek-v4-flash、评估 deepseek-v4-pro；默认搜索必应免Key）。
+
+### 流程验证（全部通过）
+- until 循环 8 轮全自动（澄清表单/终稿确认由脚本提交），每轮"研究→另一模型评估→打包"链路完整；8 轮评估全 revise → 达上限收尾（不失败）。
+- **运行级总预算精确生效**：执行工具调用合计 **120 = 预算**；第 8 轮仅剩 8 次可用；另有 8 次尝试被**节点级 16 次/轮**护栏拒绝（轮 0/2/6 各 1/3/4 次）→ 双层预算各自正确、不互相污染。
+- 每轮工具调用分布 17/16/19/16/16/16/20/8，末轮被总额压缩（符合预期，但也暴露单轮上限偏紧）。
+
+### 质量评估（对比元宝参照样本，指标脚本 progress/_topic_quality.js）
+- 结构：本次 12,861 字/49 标题/12 表 93 行/86 列表；元宝 22,619 字/13 表 115 行 → 篇幅约 57%，表格密度接近。
+- **强于参照**：证据分级（官方一手 19 处、未查到 42 处、先验显式标注）、门槛/停损量化（"门槛"23 处 vs 7）、清单（8 vs 7）、个性化（完全按用户问卷定制，元宝为自设场景）、诚实性（明确"预算与单位经济为模型先验，不可当事实"）。
+- **弱于参照**：URL 可点击来源 **0 vs 18**（只写域名/文章号）、公式 0 vs 3、时间线颗粒度 2 vs 42（缺 D1-D90 甘特）、止损 0 vs 2、篇幅约 57%。
+- 通道约束（非逻辑缺陷）：官方 SPA/后台不可达 + 必应免Key 搜索噪声大 → 费率/保证金/回款/物流/禁入清单等 42 处"未查到"，预算与单均模型只能建在假设上。
+
+### 待改进（ROI 排序）
+1. 模板把 r1 的节点级 `maxToolCalls` 留空（只由运行级总预算约束）→ 彻底实现"总额按需分配"，末轮不再只剩 8 次。
+2. 提示词契约补：来源必须输出 Markdown 链接 `[标题](URL)`；deep 档强制"贡献利润/采购倒推公式"与"D1–D90 逐日时间线"。
+3. 搜索质量是深度外部上限：建议有额度时换博查/Tavily/Perplexity；并在 clarify 提示用户提前准备 Seller Center 后台截图。
+
+---
+
+## v5：研究规格分层（产出要求交由用户，不写死进内核）
+
+用户质疑：「贡献利润/采购倒推公式 + D1–D90 逐日时间线」这类要求写进提示词，会不会让其它领域研究偏差？是否该由用户提供？
+结论：认同。实现 L1–L4 分层（详见 tasks/2026-09-09-topic-research-workflow/research-brief-design.md）：
+
+- **L1 通用纪律**留在内核（领域无关）；**L2 类型化深度模板**下沉到 plan1「做法/商业类」骨架（单位经济公式、逐日时间线、SOP、清单），只对命中类型生效；**L3 用户产出规格/要求**新增 start 输入 `outputSpecs`（7 项多选）+ `outputRequirements`（自由文本）；**L4 参照样本**新增 `referenceSample`（只对标结构与密度，禁止照抄结论）。
+- **闭环**：用户规格/要求 → plan1 逐条转成 acceptance → e1（另一模型）逐条核对（可检索/可执行未满足判 revise；通道不可达记非阻塞）→ writer 按 acceptance 成稿并落实公式/时间线/可点击链接/反方回应。
+- 验证：topic-research-graph spec 断言新输入与三处引用（12 例）、builtin-app-templates 过全量校验（7 例）→ 19 passed；未改动引擎/其它模板，未设置这些输入时行为不变。
+
+---
+
+## v6：调研经验固化为内置技能 research-method（2026-09-09，research-skill-design.md）
+
+用户纠偏：「你应该纠结某个细节，你需要总结的是经验——一个调研报告应该包含哪些内容、应该从哪些方面做分析、
+应该从哪些地方获取数据，这些经验可以作为调研某个领域的 skill」。即：停止在模板提示词里逐条调参，
+把调研这门手艺沉淀成可复用技能。用户批准范围：技能 + 模板改造 + 测试全做；经验只放一个技能。
+
+### 1. 新增内置技能 `research-method`（category 调研，modelInvocable）
+`src/core/platform/workflow/skills/builtin-skills.ts` 追加 SKILL.md（内置只读，可复制为用户技能），
+frontmatter inputs：topic/goal/domainType/depth/constraints/requiredOutputs/knownContext；正文六节＝经验本体：
+1. **范围与决策目标**：must-answer 逐条写颗粒度、明确不回答什么与口径、约束分主体/分地区落地；
+2. **报告骨架（报告应包含哪些内容）**：执行摘要→口径→现状→主体分析→数据与证据（表格/矩阵/公式/时间线）→
+   路径与方案（决策树）→成本与单位经济→风险与合规红线→行动清单与门槛条件→局限与待核验→分层参考来源→附录，
+   按主题类型裁剪 + 速览/标准/深度取裁口径；
+3. **分析维度矩阵（从哪些方面分析）**：18 项通用维度库（定义边界/主体角色/全流程环节/准入资质合规/成本与单位经济/
+   定价收益/需求规模/竞争替代/供给供应链/渠道流量/运营节奏/工具技术/人才组织/风险红线/门槛退出/时效趋势/分歧不确定/
+   失败模式），每项给"要回答的问题 × 关键指标 × 常见误区"；
+4. **数据来源路由（从哪些地方获取数据）**：8 类来源（官方一手/平台后台需复核/行业与市场数据/公开财报公告/学术与专利/
+   从业者与社区/竞品与实测/工具与数据库）× 去哪取 × 取哪些字段 × 可靠性 × 时效 × **取不到时的降级路径**，
+   附中英双语检索、站点与时间限定、双源交叉、登录墙与反爬的现实预期；
+5. **取证与呈现纪律**：三态标注（已验证/先验-待验证/未查到）、禁止编造、矛盾并列、采集时间、证据层级、反方与边界、可点击来源；
+6. **执行计划与验收标准**：步骤依赖、轮次节奏、逐条可判定验收、停手条件（非阻塞项即收尾）、深度档差异。
+关键纪律：公式/时间线/矩阵在技能里只是**类别 + 示例**，由模型按当前领域实例化；技能不含任何单一领域结论（测试断言无 TikTok/抖音/亚马逊等词）。
+
+### 2. 模板改造：经验出模板，只留编排与用户契约（v4，13 节点 15 边）
+`topic-research.json`：`start → clarify → method1(skill-call: research-method) → plan1(llm-chat 契约编译器) →
+round1(until: r1→e1→pack1→loop-back) → writer → report1 → final1 → save1/end`。
+- 新增 `method1`：技能参数由 start/clarify 注入（topic(含 focus)/goal/domainType=自适应/depth/constraints/requiredOutputs/knownContext），
+  用研究模型执行；`skillId` 与内置技能清单交叉断言防漂移。
+- `plan1` 瘦身为契约编译器：删除内联的主题类型骨架、验收深度化细则、信息源策略（已在技能里），
+  改为引用 `{{method1.content}}`，只做 先验地图 + 方案落地 + 用户契约转 acceptance + JSON 输出。
+- `writer` 按 `{{method1.content}}` 的骨架组织正文，删除内联的公式/时间线形状清单，保留用户规格硬契约与引用纪律。
+- `r1`/`e1` 执行与评审纪律不变（本轮验证过的部分不动）。
+- 分层边界由测试钉死：模板提示词（method1/plan1/r1/e1/writer）不得出现「贡献利润/采购倒推/D1–D90/逐日」，
+  而技能正文必须含这些经验（以类别+示例形式）；用户仍可在 outputSpecs 选项里点名具体形态。
+
+### 3. 验证
+- 新增 `builtin-skills-research-method.spec.ts` 11 例（frontmatter/参数/六节/报告内容/维度/来源+降级/纪律/验收/领域无关/可解析）；
+- `topic-research-graph.spec.ts` 扩到 14 例（13 节点 15 边、method1 绑定与参数、plan1/writer 引用技能、分层边界、可达性）；
+- 定向回归 9 文件 **118 passed**（skill-call/skill.service/builtin-skills×3/topic-research-graph/builtin-app-templates/
+  node-registry-consistency/graph-validator）；eslint 0；未改引擎、技能解析器、技能节点与其它模板。
+- 注：`tests/unit/core/platform/workflow` 全目录一次跑超 600s 上限（用例多），改为定向文件串行跑。
+- 待用户：真机复跑观察技能方案是否让报告结构/来源密度提升（技能产出→契约→循环→成稿链路）。
+

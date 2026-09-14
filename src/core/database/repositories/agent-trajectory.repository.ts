@@ -14,8 +14,13 @@ import { getCurrentUserId } from '@core/context/user-context'
 import { AgentTrajectoryEntity } from '../entities/agent-trajectory.entity'
 import { BaseRepository } from '../base-repository'
 import { escapeLikePrefix } from './platform-event.repository'
+import { runtimeLimits } from '@shared/utils/runtime-limits'
 
-/** 单条 payload JSON 字节上限（与工具结果截断同量级；超长字节截断留痕） */
+/**
+ * 单条 payload JSON 字节上限（与工具结果截断同量级；超长字节截断留痕）。
+ * 2026-09-13 起实际生效值可被 settings `agent:budget`.guards.maxTrajectoryPayloadBytes 覆盖
+ * （进程级，启动时注入）；此常量保留为**缺省值**与对外引用口径。
+ */
 export const TRAJECTORY_PAYLOAD_MAX_BYTES = 16_384
 
 /** 轨迹行 id：scopeKey+seq 确定性主键（可读；重放不产生第二套 id） */
@@ -52,25 +57,54 @@ export interface AgentTrajectoryRow {
 }
 
   /** payload 截断：先按内层预算截断（预留包装+转义膨胀余量——review A2：
-   *  JSON.stringify 包装会把引号密集文本膨胀近 2 倍，以最终字节数为准兜底） */
+   *  JSON.stringify 包装会把引号密集文本膨胀近 2 倍，以最终字节数为准兜底）。
+   *  上限 2026-09-13 起可由 settings `agent:budget`.guards.maxTrajectoryPayloadBytes 覆盖
+   *  （进程级，启动时注入；见 shared/utils/runtime-limits）。 */
   function truncatePayloadBytes(payload: Record<string, unknown> | null | undefined): string | null {
     if (!payload) return null
+    const limit = runtimeLimits().maxTrajectoryPayloadBytes
     let serialized: string
     try {
       serialized = JSON.stringify(payload)
     } catch {
       return '{"_unserializable":true}'
     }
-    if (Buffer.byteLength(serialized, 'utf8') <= TRAJECTORY_PAYLOAD_MAX_BYTES) return serialized
+    if (Buffer.byteLength(serialized, 'utf8') <= limit) return serialized
     let inner = serialized
     let wrapped = ''
     for (;;) {
       wrapped = JSON.stringify({ _truncated: inner })
-      if (Buffer.byteLength(wrapped, 'utf8') <= TRAJECTORY_PAYLOAD_MAX_BYTES || inner.length === 0) break
+      if (Buffer.byteLength(wrapped, 'utf8') <= limit || inner.length === 0) break
       inner = inner.slice(0, Math.floor(inner.length * 0.8))
     }
     return wrapped
   }
+
+// ==================== 可恢复轮枚举（47号恢复能力面） ====================
+
+/** 终态轨迹 kinds：一轮受控收束的标记（收敛发 final；stop() 各路径发 guardrail_stop） */
+export const TRAJECTORY_TERMINAL_KINDS: readonly string[] = ['final', 'guardrail_stop']
+/** 审批等待中的轮：挂起待人工，恢复走 resumeFromSuspend——不算崩溃可恢复 */
+export const TRAJECTORY_PAUSED_KIND = 'human_request'
+
+export interface RecoverableTurnRow {
+  scopeKey: string
+  seq: number
+  iteration: number
+  kind: string
+  name: string | null
+  createdAt: Date | null
+}
+
+/**
+ * 子代理 scope 判定（对抗 review P1）：子代理轨迹挂 `${parent}:sub_<rand>`
+ * （tools/subagent.ts 的 key 形状约定），一次性、无会话存储——对它 resumeTurn
+ * 只会拿指令对空会话冷启动出幽灵时间线，绝不入恢复枚举。判定留本仓储
+ * （database 层不反向依赖 platform），与 subagent.ts 约定互为锚点。
+ */
+function isSubagentScope(scopeKey: string): boolean {
+  return /:sub_[0-9a-zA-Z]/.test(scopeKey)
+}
 
 export class AgentTrajectoryRepository extends BaseRepository<AgentTrajectoryEntity, AgentTrajectoryRow> {
   constructor(dataSource: DataSource) {
@@ -173,6 +207,51 @@ export class AgentTrajectoryRepository extends BaseRepository<AgentTrajectoryEnt
     let n = 0
     for (const r of rows) n += await this.deleteByScopeRaw(r.sk)
     return n
+  }
+
+  // ==================== 可恢复轮枚举（47号恢复能力面） ====================
+
+  /**
+   * 各会话「末条轨迹」即该轮终态投影：末条既非终态也非审批等待 = 中断轮
+   * （崩溃/异常停在半途——步末持久化边界之后的任意形态）。只查 session scope
+   * （workflow 节点的恢复由节点挂起/恢复语义自成一体承担，36 号 §3）；子代理
+   * `:sub_*` 不可续跑，排除。租户：scoped 读过滤 ALS userId；降级（无 ALS）
+   * 按 user_id IS NULL 口径——与 listByScope 完全同口径。
+   */
+  async listRecoverable(opts: { scopePrefix?: string; limit?: number } = {}): Promise<RecoverableTurnRow[]> {
+    const prefix = `${escapeLikePrefix(opts.scopePrefix ?? '')}%`
+    const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200)
+    const maxRows: Array<{ sk: string; ms: number }> = await this.scoped
+      .qb('t')
+      .select('t.scope_key', 'sk')
+      .addSelect('MAX(t.seq)', 'ms')
+      .where("t.scope = 'session'")
+      .andWhere('t.scope_key LIKE :prefix ESCAPE \'\\\'', { prefix })
+      .groupBy('t.scope_key')
+      .getRawMany()
+    const scopes = maxRows.filter((r) => !isSubagentScope(r.sk))
+    if (scopes.length === 0) return []
+    const maxBy = new Map(scopes.map((r) => [r.sk, Number(r.ms)]))
+    const lastRows = await this.scoped
+      .qb('t')
+      .where("t.scope = 'session'")
+      .andWhere('t.scope_key LIKE :prefix ESCAPE \'\\\'', { prefix })
+      .andWhere('t.seq IN (:...seqs)', { seqs: [...maxBy.values()] })
+      .getMany()
+    const terminal = new Set(TRAJECTORY_TERMINAL_KINDS)
+    return lastRows
+      .filter((r) => r.seq === maxBy.get(r.scopeKey))
+      .filter((r) => !terminal.has(r.kind) && r.kind !== TRAJECTORY_PAUSED_KIND)
+      .sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0))
+      .slice(0, limit)
+      .map((r) => ({
+        scopeKey: r.scopeKey,
+        seq: r.seq,
+        iteration: r.iteration,
+        kind: r.kind,
+        name: r.name,
+        createdAt: r.createdAt,
+      }))
   }
 
   protected toDto(e: AgentTrajectoryEntity): AgentTrajectoryRow {

@@ -31,6 +31,8 @@ import {
   type AtlasViewInputRelation,
 } from '../rules/learning-atlas-views'
 import { normalizeDlReviewSettings, pickReviewCandidates } from '../rules/learning-review.rules'
+import { declaredPrereqsOf } from '../rules/learning-prerequisites.rules'
+import { assessMapCoverage } from '../rules/learning-map-coverage.rules'
 import { buildConceptTree, conceptStats, latestCardsByConcept } from '../rules/learning-aggregation.rules'
 import type { DlCardRow } from '@core/database/repositories/dl-card.repository'
 
@@ -109,6 +111,8 @@ export class LearningViewService {
         mastery: c.mastery as DlConceptView['mastery'],
         source: c.source as DlConceptView['source'],
         attrs: c.attrs,
+        // 声明的前置（2026-09-12）：可能与关系边不完全一致（声明了但还没建边），UI 分开标注
+        declaredPrereqs: declaredPrereqsOf({ id: c.id, name: c.name, nodeType: c.nodeType, attrs: c.attrs }),
         hasCard: !!card,
         ...(card ? { card } : {}),
       }
@@ -153,6 +157,29 @@ export class LearningViewService {
       goal: project.goal as DlSpaceView['goal'],
       tagline: project.description ?? '',
       profile,
+      // 主题学习前置要求（2026-09-12 用户需求：整个领域的学习门槛，进空间即见）
+      // 读侧信任仓储已解析结果（写入时已规范化并物化 inSpace）
+      prerequisites: project.prerequisites ?? [],
+      // 地图完整度诊断（2026-09-12 用户反馈"知识体系不够完善"）：结构性缺口可见 + 供 AI 补全起步
+      coverage: assessMapCoverage({
+        spaceName: project.name,
+        concepts: concepts.map((c) => ({
+          id: c.id,
+          name: c.name,
+          nodeType: c.nodeType,
+          parentId: c.parentId,
+          researchState: c.researchState,
+          cardId: c.cardId,
+          attrs: c.attrs,
+        })),
+        relations: relations.map((r) => ({
+          source: r.sourceId,
+          target: r.targetId,
+          type: r.relationType,
+          verified: r.verified,
+        })),
+        spacePrereqs: project.prerequisites ?? [],
+      }),
       status: project.status as DlSpaceView['status'],
       stats: { ...stats, learning: conceptViews.filter((c) => c.mastery === 'learning').length },
       concepts: conceptViews,
@@ -410,6 +437,11 @@ export class LearningViewService {
         name: other?.name ?? otherId,
         rel: r.relationType as DlRelationType,
         direction: (r.sourceId === nodeId ? 'out' : 'in') as 'out' | 'in',
+        // 2026-09-12：带上确认态与端点，档案里可直接「确认」（地图人审接线）
+        verified: r.verified,
+        sourceId: r.sourceId,
+        targetId: r.targetId,
+        evidence: r.evidence,
       }
     })
 

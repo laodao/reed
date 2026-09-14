@@ -14,6 +14,10 @@ import {
   contextConversationId,
   describeContextMessage,
 } from '@core/packs/workflow/handlers/agent-console-context'
+import {
+  resetWorkflowRuntimeParams,
+  setWorkflowRuntimeParams,
+} from '@shared/utils/workflow-runtime-params'
 
 describe('contextConversationId（scopeKey → 会话存储键）', () => {
   it('chat 会话：dialog:<id> → system-chat-agent:dialog:<id>（与聊天宿主 agentSessionId 互逆）', () => {
@@ -77,8 +81,31 @@ describe('describeContextMessage（ModelMessage → 展示投影）', () => {
     expect(d.toolCalls[0]!.argsDigest.length).toBeLessThanOrEqual(CONTEXT_PART_LIMIT + '…[截断]'.length)
   })
 
-  it('未知部件类型落入 otherParts 兜底可见', () => {
-    const m = {
+  /**
+   * 2026-09-13「参数设置 → 工作流 → 界面展示截断」：截断长度不再是模块常量，
+   * 改读运行时持有者。这里注入更小的值，证明行为跟着设置走（不再是固定 1600/400）。
+   */
+  it('截断长度读「参数设置 → 工作流 → 界面展示截断」', () => {
+    setWorkflowRuntimeParams({ ui: { contextTextChars: 20, contextPartChars: 8 } })
+    try {
+      const textMsg = { role: 'user', content: 'x'.repeat(200) } as ModelMessage
+      const dt = describeContextMessage(textMsg, 3)
+      expect(dt.truncated).toBe(true)
+      expect(dt.text.length).toBeLessThanOrEqual(20 + '…[截断]'.length)
+
+      const big = { q: 'y'.repeat(200) }
+      const toolMsg = {
+        role: 'assistant',
+        content: [{ type: 'tool-call', toolCallId: 'c', toolName: 't', input: big }],
+      } as unknown as ModelMessage
+      const dp = describeContextMessage(toolMsg, 4)
+      expect(dp.toolCalls[0]!.argsDigest.length).toBeLessThanOrEqual(8 + '…[截断]'.length)
+    } finally {
+      resetWorkflowRuntimeParams()
+    }
+  })
+
+  it('未知部件类型落入 otherParts 兜底可见', () => {    const m = {
       role: 'assistant',
       content: [
         { type: 'reasoning', text: '思考过程' },

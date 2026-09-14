@@ -141,6 +141,11 @@ const props = defineProps<{
   polishingSceneId?: string | null
   /** spec 2026-05-08 v4：本卡片是否在专注模式（占满主区） */
   focused?: boolean
+  /**
+   * 复核修复：父容器提供的异步保存（返回 true=成功）。传入后内联保存
+   * 等待回执再退编辑态，保存失败保留编辑器（用户稿不再丢失）。
+   */
+  onSceneSave?: (sceneId: string, partial: Partial<SceneScript>) => Promise<boolean>
 }>()
 
 const emit = defineEmits<{
@@ -189,11 +194,19 @@ function stopEditing(sceneId: string): void {
   editingSceneIds.value.delete(sceneId)
 }
 
-/** 编辑器保存事件中转：调父容器 onSaveSceneInline，成功后切回浏览模式。 */
-function onInlineSave(sceneId: string, partial: Partial<SceneScript>): void {
-  emit('save-scene', sceneId, partial)
-  // 父容器 await IPC 成功后会 reload 剧本，watch(scene) 重 init form；
-  // 这里乐观切回浏览模式（保存失败时 ElMessage.error 已由父容器弹出）。
+/**
+ * 编辑器保存事件中转：调父容器 onSaveSceneInline，成功后切回浏览模式。
+ * 复核修复：不再乐观退编辑态——await onSceneSave 回执，失败保留编辑器
+ * （旧实现保存失败时表单已销毁，用户对场景的全部修改丢失）。
+ */
+async function onInlineSave(sceneId: string, partial: Partial<SceneScript>): Promise<void> {
+  if (props.onSceneSave) {
+    const ok = await props.onSceneSave(sceneId, partial).catch(() => false)
+    if (!ok) return
+  } else {
+    // 兼容旧接入：无异步回执时按原 emit 语义（乐观切回）
+    emit('save-scene', sceneId, partial)
+  }
   stopEditing(sceneId)
 }
 

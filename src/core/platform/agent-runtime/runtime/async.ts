@@ -4,6 +4,26 @@
  * @module core/platform/agent-runtime/runtime/async
  */
 
+/** abort 感知睡眠（43号 O1 重试退避用）：signal 中止即拒绝（AbortError），否则到点 resolve */
+export function sleepWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+      return
+    }
+    const t = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    t.unref?.()
+    const onAbort = () => {
+      clearTimeout(t)
+      reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
 /** 墙钟超时 + signal 中止（注意：超时不中止底层执行——仅切断等待，副作用由工具自身幂等保证） */
 export function withTimeout<T>(p: Promise<T>, ms: number, signal?: AbortSignal): Promise<T> {
   return new Promise<T>((resolve, reject) => {

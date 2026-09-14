@@ -12,9 +12,12 @@
 import { createLogger } from '@core/utils/logger'
 import type { LanguageModel } from 'ai'
 import type { WorkflowGraph, WorkflowNode, WorkflowEdge, WorkflowStartInput } from '@shared/types/workflow.types'
+import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 
 const logger = createLogger('WorkflowDraft')
 
+// 注意（2026-09-13 参数设置）：下面两个导出常量现在是**内置默认值**，
+// 真正的生效值在使用点从「参数设置 → 工作流 → 自然语言生成草稿」现读。
 /** 生成-校验修复轮数上限（首轮 + 1 次修复） */
 export const DRAFT_MAX_ATTEMPTS = 2
 /** 节点数上限（防失控大图） */
@@ -47,7 +50,7 @@ ${DRAFT_NODE_CATALOG}
 1. 必须恰有一个 start 节点与一个 end 节点；其余节点从目录中选择，不得发明类型。
 2. 边用 {source, target}（节点 id）；condition 节点的每路出边附加 branchId。
 3. 节点 config 的字段名必须严格符合目录要求；引用上游输出用 {{节点id.输出key}}，引用开始输入用 {{start.<key>}}。
-4. 节点数量不超过 ${DRAFT_MAX_NODES}；不要添加目录之外的字段。
+4. 节点数量不超过 ${workflowRuntimeParams().draft.maxNodes}；不要添加目录之外的字段。
 5. 只输出 JSON，不要 markdown 代码块与解释。格式：
 {"name": "简短名称", "description": "一句话描述", "startInputs": [{"key":"...","label":"...","type":"string","required":true}], "nodes": [{"id":"小写下划线id","type":"目录中的类型","name":"中文节点名","config":{...}}], "edges": [{"source":"节点id","target":"节点id","branchId":"仅 condition 分支出边需要"}]}
 其中 startInputs 会填充到 start 节点的 config.inputs。
@@ -102,7 +105,9 @@ export class WorkflowDraftService {
     let repairErrors: string[] | undefined
     let lastError = ''
 
-    for (let attempt = 0; attempt < DRAFT_MAX_ATTEMPTS; attempt++) {
+    // 修复轮数走「参数设置 → 工作流 → 自然语言生成草稿」（默认 2 = 首轮 + 1 次修复）
+    const maxAttempts = workflowRuntimeParams().draft.maxAttempts
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const prompt = buildDraftPrompt(description, repairErrors)
       // 16384：思考型模型（deepseek-v4 等）会把推理算进输出预算——8192 曾被全部烧在
       // 思考上，正文恒为空（33 号实测 finishReason=length 输出长度=0 连续复现）
@@ -178,7 +183,8 @@ export function parseDraftJson(text: string): RawDraft | null {
 export function normalizeDraft(raw: RawDraft): { graph: WorkflowGraph; nodeCount: number } | string {
   const rawNodes = raw.nodes ?? []
   if (rawNodes.length === 0) return '未生成任何节点'
-  if (rawNodes.length > DRAFT_MAX_NODES) return `节点数超过上限（${DRAFT_MAX_NODES}）`
+  const maxNodes = workflowRuntimeParams().draft.maxNodes
+  if (rawNodes.length > maxNodes) return `节点数超过上限（${maxNodes}）`
 
   const ids = new Set<string>()
   const nodes: WorkflowNode[] = []

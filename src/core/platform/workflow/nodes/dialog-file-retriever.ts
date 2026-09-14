@@ -18,6 +18,7 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import type { Message } from '@shared/types/message.types'
 import { extractTextFromFile, inferFileType } from '@core/utils/extract-text'
 import { createLogger } from '@core/utils/logger'
+import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 
 const logger = createLogger('DialogFileRetriever')
 
@@ -39,11 +40,23 @@ export interface DialogFileHit {
   documentName: string
 }
 
-/** 分块参数：~800 字符、100 重叠（与 KB chunk 量级一致，短文档单块） */
+/** 分块参数的内置默认值：~800 字符、100 重叠（与 KB chunk 量级一致，短文档单块） */
 const CHUNK_SIZE = 800
 const CHUNK_OVERLAP = 100
-/** 扫描的消息条数上限（防超长对话全表扫） */
+/** 扫描的消息条数上限的内置默认值（防超长对话全表扫） */
 const MAX_MESSAGES = 200
+
+/** 生效的分块参数（读「参数设置 → 工作流 → 对话附件检索」；未注入时为内置默认） */
+const chunkParams = (): { size: number; overlap: number } => {
+  const r = workflowRuntimeParams().retrieval
+  const size = r.dialogFileChunkChars || CHUNK_SIZE
+  // 重叠超过分块一半会让检索块几乎全重叠（等于重复喂同一段）
+  const overlap = Math.min(r.dialogFileChunkOverlapChars ?? CHUNK_OVERLAP, Math.floor(size / 2))
+  return { size, overlap }
+}
+
+/** 生效的扫描条数上限 */
+const maxMessages = (): number => workflowRuntimeParams().retrieval.dialogFileMaxMessages || MAX_MESSAGES
 
 /** 依赖注入面（测试用；默认走真实仓库与解析） */
 export interface DialogFileDeps {
@@ -76,7 +89,7 @@ export async function collectDialogFileTexts(
     return extractTextFromFile(filePath, type)
   })
 
-  const messages = await getMessages(dialogId, MAX_MESSAGES)
+  const messages = await getMessages(dialogId, maxMessages())
   const seen = new Set<string>()
   const out: DialogFileText[] = []
   for (const msg of messages) {
@@ -135,12 +148,13 @@ export function tokenizeQuery(query: string): string[] {
 }
 
 function chunkText(text: string): string[] {
-  if (text.length <= CHUNK_SIZE) return [text]
+  const { size, overlap } = chunkParams()
+  if (text.length <= size) return [text]
   const chunks: string[] = []
-  const step = CHUNK_SIZE - CHUNK_OVERLAP
+  const step = size - overlap
   for (let i = 0; i < text.length; i += step) {
-    chunks.push(text.slice(i, i + CHUNK_SIZE))
-    if (i + CHUNK_SIZE >= text.length) break
+    chunks.push(text.slice(i, i + size))
+    if (i + size >= text.length) break
   }
   return chunks
 }
@@ -184,17 +198,17 @@ export async function augmentWithDialogFiles(
  * 两路 score 不同量纲（余弦 vs TF），不能直接数值比较——dialog 命中按
  * 「用户刚上传的文件优先」原则排在 KB 命中之前，整体截断 topK。
  */
-export function mergeRetrievalResults<T extends { source?: string }>(
-  kbResults: T[],
-  dialogHits: T[],
+export function mergeRetrievalResults<A extends object, B extends object>(
+  kbResults: A[],
+  dialogHits: B[],
   topK: number
-): T[] {
+): Array<A | B> {
   return [...dialogHits, ...kbResults].slice(0, Math.max(1, topK))
 }
 
-/** topK 归一（catalog/表单/服务三处默认值的唯一计算点） */
-export function effectiveTopK(v: number | undefined, fallback = 5): number {
-  return v && v > 0 ? v : fallback
+/** topK 归一（catalog/表单/服务三处默认值的唯一计算点；缺省取「参数设置 → 工作流 → 对话附件检索」） */
+export function effectiveTopK(v: number | undefined, fallback?: number): number {
+  return v && v > 0 ? v : (fallback ?? workflowRuntimeParams().retrieval.dialogFileTopK)
 }
 
 /**

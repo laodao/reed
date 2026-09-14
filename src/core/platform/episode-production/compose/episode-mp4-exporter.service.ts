@@ -53,6 +53,8 @@ export interface FfmpegRunner {
   /**
    * 执行一次 ffmpeg：
    * @param inputs 输入文件路径数组（按顺序映射到 -i）
+   * @param lavfiInputs 追加在文件输入之后的 lavfi 合成输入（如 anullsrc 静音占位；
+   *        其流编号 = inputs.length 起顺延——与 buildFilterComplex 的 audioLabel 约定一致）
    * @param filterComplex filter_complex 字符串
    * @param outputArgs 输出参数（含 -map 等）
    * @param outputPath 最终输出路径
@@ -60,15 +62,25 @@ export interface FfmpegRunner {
    */
   run(args: {
     inputs: string[]
+    lavfiInputs?: string[]
     filterComplex: string
     outputArgs: string[]
     outputPath: string
   }): Promise<{ outputPath: string; durationSec: number }>
+
+  /**
+   * 探测输入是否含音轨（可选能力；缺省时导出器按"全部有音轨"处理，保持旧行为）。
+   * 复核修复 P1-7：i2v 产物（如 volcengine generate_audio=false）常无音轨，
+   * `[i:a]` 对无流输入是确定性报错。
+   */
+  probeHasAudio?(input: string): Promise<boolean>
 }
 
 /** 文件写入抽象（写 SRT 临时文件） */
 export interface FileWriter {
   writeText(filePath: string, content: string): Promise<void>
+  /** 删除文件（可选；导出完成后清理 SRT 临时文件用） */
+  delete?(filePath: string): Promise<void>
   /** 临时目录路径（调用方可省略，默认走 path provider 提供的临时目录） */
   getTempPath?(suffix: string): string
 }
@@ -147,7 +159,15 @@ export class EpisodeMp4ExporterService {
       )
     }
     // 把 user-rel 相对路径解析为绝对路径再交给 ffmpeg
-    const inputs = exportShots.map((s) => resolveUserRelPath(s.videoPath!))
+    const fileInputs = exportShots.map((s) => resolveUserRelPath(s.videoPath!))
+
+    // 音轨探测（runner 支持时）：任一输入无音轨 → 该路用 anullsrc 静音占位
+    let audioFlags: boolean[] | undefined
+    let lavfiInputs: string[] | undefined
+    if (typeof this.ffmpegRunner.probeHasAudio === 'function') {
+      audioFlags = await Promise.all(fileInputs.map((p) => this.ffmpegRunner.probeHasAudio!(p)))
+      lavfiInputs = buildSilentInputSpecs(audioFlags)
+    }
 
     // 字幕（可选烧入）
     let srtPath: string | undefined
@@ -167,16 +187,29 @@ export class EpisodeMp4ExporterService {
       width,
       height,
       srtPath,
+      audioFlags,
     })
 
     const outputArgs = buildOutputArgs({ srtPath })
 
     const result = await this.ffmpegRunner.run({
-      inputs,
+      inputs: fileInputs,
+      lavfiInputs,
       filterComplex,
       outputArgs,
       outputPath: input.outputPath,
     })
+
+    // 字幕已烧入成片，临时 SRT 不再需要（删除失败不影响导出结果；
+    // 导出失败时保留 SRT 便于诊断）
+    if (srtPath && typeof this.fileWriter.delete === 'function') {
+      try {
+        await this.fileWriter.delete(srtPath)
+      } catch {
+        /* 清理失败仅忽略 */
+      }
+    }
+    srtPath = undefined
 
     return {
       outputPath: result.outputPath,
@@ -261,21 +294,34 @@ export function buildFilterComplex(args: {
   width: number
   height: number
   srtPath?: string
+  /** 统一帧率（复核修复 P1-7：xfade 要求两路 fps 一致，i2v 产物各异）；缺省 30 */
+  fps?: number
+  /** 每个输入是否含音轨；缺省视为全部有音轨（旧行为，兼容既有测试/mock runner） */
+  audioFlags?: boolean[]
 }): string {
   const { shots, width, height, srtPath } = args
+  const fps = args.fps ?? 30
+  const audioFlags = args.audioFlags
   const parts: string[] = []
 
-  // 1. 每个输入 scale 到统一尺寸；命名 [v0_norm], [v1_norm], ...
+  // 静音占位输入的流编号 = 文件输入数起顺延（与 buildSilentInputSpecs 的生成顺序一致）
+  const audioLabel = (i: number): string => {
+    if (!audioFlags || audioFlags[i]) return `[${i}:a]`
+    const silentBefore = audioFlags.slice(0, i).filter((f) => !f).length
+    return `[${shots.length + silentBefore}:a]`
+  }
+
+  // 1. 每个输入 scale + fps 归一到统一参数；命名 [v0_norm], [v1_norm], ...
   for (let i = 0; i < shots.length; i++) {
     parts.push(
-      `[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1[v${i}_n]`,
+      `[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,fps=${fps},pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1[v${i}_n]`,
     )
   }
 
   if (shots.length === 1) {
     // 单段：直接 [v0_n]
     parts.push(applySubtitlesIfAny('[v0_n]', srtPath, '[outv]'))
-    parts.push(`[0:a]anull[outa]`)
+    parts.push(`${audioLabel(0)}anull[outa]`)
     return parts.join(';')
   }
 
@@ -302,11 +348,23 @@ export function buildFilterComplex(args: {
   // 3. 字幕烧入（可选）
   parts.push(applySubtitlesIfAny('[vchain]', srtPath, '[outv]'))
 
-  // 4. 音轨：用 concat 拼所有音频；多输入 concat 简化版（无音频时也得给静音占位）
-  const audioInputs = shots.map((_, i) => `[${i}:a]`).join('')
+  // 4. 音轨：用 concat 拼所有音频；无音轨输入以 anullsrc 占位对齐
+  //    （concat 要求各路都有流且参数一致）
+  const audioInputs = shots.map((_, i) => audioLabel(i)).join('')
   parts.push(`${audioInputs}concat=n=${shots.length}:v=0:a=1[outa]`)
 
   return parts.join(';')
+}
+
+/**
+ * 为缺音轨的输入生成 anullsrc 静音占位 spec（复核修复 P1-7）。
+ * 返回数组按"第 j 个无音轨输入"顺序排列，runner 需把它追加在文件输入之后；
+ * filter 端流编号约定见 buildFilterComplex.audioLabel。
+ */
+export function buildSilentInputSpecs(audioFlags?: boolean[]): string[] {
+  if (!audioFlags) return []
+  const missing = audioFlags.filter((f) => !f).length
+  return Array.from({ length: missing }, () => 'anullsrc=r=44100:cl=stereo')
 }
 
 /** 给定上游 [vchain] 标签，按需追加字幕 filter；输出绑定 [outv] */

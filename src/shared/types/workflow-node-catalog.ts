@@ -759,8 +759,8 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
   },
   {
     type: 'crawl-news',
-    label: '新闻采集',
-    description: '按新闻来源库（多选）/预置主题/自定义 URL 多源抓取首页 → 提取链接列表',
+    label: '信息采集',
+    description: '按信息来源（多选）/来源分组/自定义 URL 多源抓取首页 → 提取链接列表',
     category: 'general',
     icon: 'Collection',
     controlKind: 'task',

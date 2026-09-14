@@ -9,7 +9,7 @@
 import { type DataSource } from 'typeorm'
 import { DlProjectEntity } from '../entities/domain-learning/dl-project.entity'
 import { BaseRepository } from '../base-repository'
-import type { DlPaceSettings, DlReviewSettings } from '@shared/types/domain-learning.types'
+import type { DlPaceSettings, DlReviewSettings, DlSpacePrereq } from '@shared/types/domain-learning.types'
 
 /** dl_project 行 DTO（JSON 列已解析） */
 export interface DlProjectRow {
@@ -29,6 +29,8 @@ export interface DlProjectRow {
   pace: DlPaceSettings | null
   /** 间隔复习配置（M3-B；可空 = 未配置，默认关闭） */
   review: DlReviewSettings | null
+  /** 主题学习前置要求（2026-09-12；空数组 = 尚未声明） */
+  prerequisites: DlSpacePrereq[]
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -44,6 +46,7 @@ export type DlProjectPatch = Partial<{
   defaultModel: Record<string, unknown> | null
   pace: DlPaceSettings | null
   review: DlReviewSettings | null
+  prerequisites: DlSpacePrereq[]
 }>
 
 function safeParse(json: string | null): Record<string, unknown> | null {
@@ -75,6 +78,27 @@ function parseReview(json: string | null): DlReviewSettings | null {
   }
 }
 
+/** 主题前置要求列解析（脏数据/非数组一律回落空数组，规范化在 rules 层） */
+function parsePrerequisites(json: string | null): DlSpacePrereq[] {
+  if (!json) return []
+  try {
+    const raw = JSON.parse(json) as unknown
+    if (!Array.isArray(raw)) return []
+    return raw
+      .map((item) => item as Partial<DlSpacePrereq>)
+      .filter((item) => typeof item?.name === 'string' && item.name.trim().length > 0)
+      .map((item) => ({
+        name: String(item.name),
+        ...(item.why ? { why: String(item.why) } : {}),
+        ...(item.level ? { level: String(item.level) } : {}),
+        // inSpace 落库后即"已判定"：读侧物化为确定布尔（false = 需自备），避免 UI 拿到 undefined
+        inSpace: item.inSpace === true,
+      }))
+  } catch {
+    return []
+  }
+}
+
 export class DlProjectRepository extends BaseRepository<DlProjectEntity, DlProjectRow> {
   constructor(dataSource: DataSource) {
     super(dataSource, DlProjectEntity)
@@ -92,6 +116,8 @@ export class DlProjectRepository extends BaseRepository<DlProjectEntity, DlProje
     defaultModel?: Record<string, unknown> | null
     pace?: DlPaceSettings | null
     review?: DlReviewSettings | null
+    /** 主题学习前置要求（2026-09-12；建空间即可带） */
+    prerequisites?: DlSpacePrereq[]
   }): Promise<DlProjectRow> {
     const now = new Date()
     const e = new DlProjectEntity()
@@ -107,6 +133,7 @@ export class DlProjectRepository extends BaseRepository<DlProjectEntity, DlProje
     e.defaultModel = input.defaultModel ? JSON.stringify(input.defaultModel) : null
     e.paceSettings = input.pace ? JSON.stringify(input.pace) : null
     e.reviewSettings = input.review ? JSON.stringify(input.review) : null
+    e.prerequisites = JSON.stringify(input.prerequisites ?? [])
     e.createdAt = now
     e.updatedAt = now
     await this.scoped.insert(e)
@@ -142,6 +169,7 @@ export class DlProjectRepository extends BaseRepository<DlProjectEntity, DlProje
       partial.paceSettings = patch.pace ? JSON.stringify(patch.pace) : null
     if (patch.review !== undefined)
       partial.reviewSettings = patch.review ? JSON.stringify(patch.review) : null
+    if (patch.prerequisites !== undefined) partial.prerequisites = JSON.stringify(patch.prerequisites ?? [])
     await this.scoped.update({ id }, partial)
   }
 
@@ -163,6 +191,7 @@ export class DlProjectRepository extends BaseRepository<DlProjectEntity, DlProje
       defaultModel: safeParse(e.defaultModel),
       pace: parsePace(e.paceSettings),
       review: parseReview(e.reviewSettings),
+      prerequisites: parsePrerequisites(e.prerequisites),
       createdAt: e.createdAt,
       updatedAt: e.updatedAt,
     }
