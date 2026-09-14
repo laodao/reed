@@ -1487,40 +1487,11 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
         if (!result.success) return { ...result, eventId }
         const { card, markdown, review, chapterNo } = result.data as any
 
-        // 落库为未确认设计卡（save 为按 outlineId 的 upsert，重生成幂等）
-        const prewrite = await service.savePrewrite({ outlineId, content: markdown })
+        // 落库未确认设计卡 + 出场实体绑定（规则单一事实源在 LongWritingService，
+        // 与研讨室 agent 工具 lw_design_chapter_card 共用）
+        const { prewrite, unresolvedNames } = await service.applyChapterCard(projectId, outlineId, card, markdown)
 
-        // 出场实体名字 → id 解析，并入大纲 involved（解析失败的名字返回给前端提示，不入册）
-        const m = getCoreDatabaseManager()
-        const [chars, locs, items] = await Promise.all([
-          m.lwCharacters?.getByProjectId(projectId) ?? Promise.resolve([]),
-          m.lwLocations?.getByProjectId(projectId) ?? Promise.resolve([]),
-          m.lwItems?.getByProjectId(projectId) ?? Promise.resolve([]),
-        ])
-        const outline = await m.lwOutlines?.getById(outlineId)
-        const unresolved: string[] = []
-        const charIds = (card.involvedCharacters || [])
-          .map((c: any) => chars.find((x: any) => x.name === c.name)?.id)
-          .filter(Boolean)
-        for (const c of card.involvedCharacters || []) {
-          if (!chars.find((x: any) => x.name === c.name)) unresolved.push(c.name)
-        }
-        const locIds = (card.involvedLocations || [])
-          .map((n: string) => locs.find((x: any) => x.name === n)?.id)
-          .filter(Boolean)
-        const itemIds = (card.involvedItems || [])
-          .map((n: string) => items.find((x: any) => x.name === n)?.id)
-          .filter(Boolean)
-        if (outline) {
-          const union = (a?: string[], b?: string[]) => Array.from(new Set([...(a || []), ...(b || [])]))
-          await service.updateOutline(outlineId, {
-            involvedCharacters: union(outline.involvedCharacters, charIds),
-            involvedLocations: union(outline.involvedLocations, locIds),
-            involvedItems: union(outline.involvedItems, itemIds),
-          } as any)
-        }
-
-        return { ...result, eventId, data: { card, markdown, review, chapterNo, prewriteId: prewrite?.id, unresolvedNames: unresolved } }
+        return { ...result, eventId, data: { card, markdown, review, chapterNo, prewriteId: prewrite?.id, unresolvedNames } }
       } catch (error: any) {
         return { success: false, error: error.message }
       }

@@ -10,6 +10,58 @@
 /** 内置技能清单（id → SKILL.md 文本） */
 export const BUILTIN_SKILLS: Array<{ id: string; markdown: string }> = [
   {
+    id: 'chapter-design-card',
+    markdown: `---
+name: chapter-design-card
+title: 章节设计卡（长文写作章法）
+description: 长文写正文章法的第一步：依据全书概要与本章大纲生成本章设计卡（情节概要/开场钩子/本章爽点/章尾卡点+钩型/出场实体/伏笔动作）并自检
+when_to_use: 长篇小说动笔写某章正文之前；或需要审视某一章的情节设计是否服务主线时
+category: 长文写作
+inputs:
+  - key: overview
+    label: 全书核心故事概要
+    type: textarea
+    required: true
+    help: 全书总纲（含风格基调），设计卡必须服务它
+  - key: chapterOutline
+    label: 本章大纲
+    type: textarea
+    required: true
+    help: 章节名 + 本章概要（可含相关故事线）
+  - key: prevState
+    label: 上一章结束状态
+    type: textarea
+    help: 时间/位置/人物状态；开篇可留空
+  - key: prevHookType
+    label: 上一章卡点钩型
+    type: select
+    default: 无
+    options:
+      - { label: 无, value: 无 }
+      - { label: 悬念, value: 悬念 }
+      - { label: 危机, value: 危机 }
+      - { label: 情绪, value: 情绪 }
+      - { label: 信息, value: 信息 }
+      - { label: 反转, value: 反转 }
+system_prompt: |-
+  你是严格的小说章节主编。写正文前必须先出「章节设计卡」——章法：先设计、自检、确认，再动笔。
+  输出 markdown 设计卡，字段固定：【本章概要】150-300字（承接上一章局面→推进→转折→章尾落点，节奏由你按剧情安排，必须服务全书核心故事）；
+  【开场钩子】承接上章卡点；【本章爽点】情绪回报点；【章尾卡点】+（钩型：悬念/危机/情绪/信息/反转 五选一，须与上一章不同）；
+  【出场角色】含本章目标/状态；【出场地点】【出场物品】；【伏笔动作】（埋/收/无）。
+  卡片之后附【自检】：逐条回答——是否推进全书核心冲突？是否与上一章结束状态冲突？出场角色是否全部来自大纲与人物册？爽点与卡点是否成立？有问题如实列出。
+output_desc: 输出 markdown 设计卡 + 自检清单
+---
+## 本章输入
+- 全书概要：{{param.overview}}
+- 本章大纲：{{param.chapterOutline}}
+- 上一章结束状态：{{param.prevState}}
+- 上一章钩型：{{param.prevHookType}}（本章钩型必须换型）
+
+## 设计卡（按系统提示的字段规范输出）
+## 自检（逐条如实回答，有问题列出问题）
+`,
+  },
+  {
     id: 'short-video-script',
     markdown: `---
 name: short-video-script

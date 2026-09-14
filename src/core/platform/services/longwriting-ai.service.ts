@@ -13,6 +13,7 @@ import type {
 import { composeChapterPrompt, estimateContextTokens } from './longwriting/chapter-context'
 import { applyChapterQualityGate } from './longwriting/chapter-quality-gate'
 import { buildChapterCardMarkdown, parseCardHookType, validateChapterCard, type ChapterCardData } from './longwriting/chapter-card'
+import { buildChapterCardDesignSystemPrompt, CHAPTER_CARD_REVIEW_SYSTEM_PROMPT, buildChapterCardReviewPrompt } from '@core/packs/longwriting/skills/chapter-writing'
 import { assessBibleReadiness, buildBibleGateError, buildCastRosterConstraint } from './longwriting/bible-readiness-gate'
 import { ConsistencyService } from './longwriting/graph/consistency.service'
 import { buildConflictGateError } from './longwriting/conflict-gate'
@@ -379,23 +380,23 @@ export class LongWritingAIService {
 你必须返回一个完整的 JSON 对象，包含以下所有字段（一个都不能少）：
 - title: 故事标题
 - storyType: 故事类型（wuxia/xianxia/xuanhuan/kehuan/xuanyi/dushi/yanqing/lishi/other）
-- summary: 核心故事概要（400-600字，必须讲清完整主线，写法见下方硬性要求）
+- summary: 核心故事概要（400-600字，一条完整主线，质量标准见下）
 - styleTone: 风格基调（80-150字：叙事视角、节奏、情绪底色、爽点类型，如"第三人称限知视角，明快凌厉，单元案串主线，智力对决的智性爽感"）
 - coreConflict: 核心冲突（150-300字：主角想要什么/谁或什么在阻碍/失败的赌注是什么）
 - keyCharacters: 关键角色数组（必须包含主角、重要配角、反派等关键人物，不能为空数组！）
 - keyLocations: 主要场景数组（必须包含故事发生的主要地点，不能为空数组！）
 - estimatedChapters: 预估章节数
 
-**summary 的硬性要求（按顺序覆盖，不得缺环）**：
-1. 主角起点：出身/身份/初始困境，用具体事实而非形容词（"出身贫寒、体弱多病"而非"可怜的"）
-2. 核心欲望与转机：主角最想要什么，什么偶然或必然事件把他推上旅程（获得秘籍/蒙冤入狱/重逢故人）
-3. 成长与波折：至少两个关键转折（获得什么、失去什么、看清什么），波折要具体可感
-4. 终局方向：故事走向哪个终点（创立天下第一大派成为一代宗师/历经磨难有情人终成眷属/真凶伏法沉冤昭雪）
-5. 全程紧扣主角命运，禁止写成世界观介绍或背景说明
+**summary 的质量标准（结果导向，结构由你设计）**：
+不同题材有不同的主线套路——升级流、复仇昭雪、解谜揭盖、生存经营、情感羁绊、群像权谋等，骨架各不相同。不要套用任何固定模板：先判断这个故事属于哪类叙事，再为它设计最合适的主线骨架。无论哪种骨架，结果上必须做到：
+1. 一条完整主线：从主角的具体起点走到明确的终局，中间的波折与转折真实可感（"什么事件让他失去了什么/看清了什么"），而不是形容词堆砌
+2. 紧扣主角命运：全程写"这个人身上发生了什么"，禁止写成世界观介绍或背景说明
+3. 起点、欲望、阻碍三者具体化：用事实与处境说话（"生母被害的庶女"而非"可怜的女孩"）
+4. 终局方向明确：读者能想象出最后一章的画面
 
-**合格的概要长什么样（模式示范，禁止照抄）**：
-- 成长型：出身贫寒、体弱多病，但天资聪颖、心性坚韧，偶然获秘籍练成神功，一路过关斩将，终创天下第一大派，成为一代宗师
-- 情感型：两小无猜的男女，造化弄人被迫分离，几经波折、历经苦难，兜兜转转破除万难，才有情人终成眷属
+**高质量概要示范（拆解它为什么好，禁止照抄设定）**：
+"十二年前，大梁最强盛的赤焰军以谋反罪名被剿，七万将士葬身梅岭，唯有少帅林殊生还——身中火寒之毒、容貌尽改。他化名梅长苏，以'琅琊榜首、江左梅郎'之名重返帝都，以病弱之躯搅动朝局。他要拨开重重迷雾、智博奸佞，为七万冤魂昭雪，辅佐靖王重整山河——而这每一步，都在把他拖回那个他最不愿面对的真相。"
+好在哪里：起点是具体事件（蒙冤剿杀+毁容）；欲望具体（昭雪）；阻碍制度化（帝都朝局）；转机与代价绑定（每一步复仇都在逼近真相）；终局有画面（昭雪+重整山河）。
 
 **关于角色生成**：
 - 必须包含：主角、重要配角、反派/对立角色；反派是推动剧情的关键，不能缺席
@@ -406,7 +407,7 @@ export class LongWritingAIService {
 {
   "title": "暗线追凶",
   "storyType": "other",
-  "summary": "（按硬性要求写足400-600字的完整主线）",
+  "summary": "（按质量标准写足400-600字的完整主线）",
   "styleTone": "第三人称限知视角，冷峻克制，双线叙事，真相反转的智性爽感",
   "coreConflict": "（主角想要什么/谁在阻碍/失败的赌注）",
   "keyCharacters": [
@@ -1534,26 +1535,8 @@ ${plotInfo || '暂无相关情节'}
       .map(id => characters.find(c => c.id === id)?.name)
       .filter(Boolean)
 
-    const systemPrompt = `你是严格的小说章节主编。在动笔写正文之前，必须先为本章产出一张「章节设计卡」——这是写作章法：先设计、自检、确认，再写正文。
-
-返回 JSON 对象：
-{
-  "plotSummary": "本章情节概要，150-300字：起（承接上章）→承（推进）→转（转折/升级）→章尾落点；必须服务全书核心故事",
-  "openingHook": "开场钩子，1-2句，承接上一章卡点",
-  "highlight": "本章爽点，1-2句，读者的情绪回报点（反转/打脸/突破/揭秘/情感共鸣）",
-  "endingCliffhanger": "章尾卡点，1-2句，让读者必须点开下一章",
-  "hookType": "章尾卡点钩型，五选一：悬念/危机/情绪/信息/反转",
-  "involvedCharacters": [{"name": "角色名（必须与人物册名字逐字一致）", "roleThisChapter": "本章目标/状态/行动"}],
-  "involvedLocations": ["地点名（与地点册逐字一致）"],
-  "involvedItems": ["物品名（与物品册逐字一致）"],
-  "foreshadowAction": "本章伏笔动作：埋什么/收什么（对应已有伏笔清单），无则写'无'"
-}
-
-硬性要求：
-1. plotSummary 必须与本章大纲概要一致，并把全书核心冲突向前推进一步——禁止写成与主线无关的过场
-2. 出场角色从本章大纲涉及角色中选，可增不可造（不得出现人物册外的名字）
-3. hookType 与上一章钩型不同（上一章：${prevHookType || '无记录，自选'}）
-4. 不得与上一章结束状态冲突`
+    // 提示词来自章法 skill 定义（单一事实源）：改章法改 skills/chapter-writing.ts
+    const systemPrompt = buildChapterCardDesignSystemPrompt(prevHookType)
 
     const prompt = `【全书核心故事概要】
 ${(overview?.summary || '').slice(0, 900) || '未指定'}
@@ -1592,8 +1575,12 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
       try {
         const reviewRaw = await this.callAIStream(
           eventId + '-review',
-          `【全书核心故事概要】\n${(overview?.summary || '').slice(0, 600)}\n\n【上一章结束状态】\n${prevState?.characterStates || prevState?.storyTime || '无记录'}\n\n【本章设计卡】\n${markdown}\n\n请审查这张章节设计卡：情节是否服务全书主线、是否与前情状态冲突、出场角色是否合规、爽点与卡点是否成立。返回 JSON：{"ok": true/false, "issues": ["问题1", "问题2"]}（无问题则 issues 为空数组）。只输出 JSON。`,
-          '你是苛刻的小说审稿编辑。只输出 JSON，不要任何其他文字。',
+          buildChapterCardReviewPrompt({
+            overviewSummary: overview?.summary || '',
+            prevStateText: prevState?.characterStates || prevState?.storyTime || '',
+            markdown,
+          }),
+          CHAPTER_CARD_REVIEW_SYSTEM_PROMPT,
           800,
           providerConfigId,
           modelId

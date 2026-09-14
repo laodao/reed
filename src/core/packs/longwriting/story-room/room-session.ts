@@ -32,6 +32,7 @@ import { generateRoomText } from './room-llm'
 import { emitRoomEvent } from './room-events'
 import { getRoomState, patchRoomState, tryGetRoomState } from './room-state'
 import { registerLwRoomTools, lwRoomToolNames, LW_ROOM_MAX_STEPS } from './room-agent-tools'
+import { CHAPTER_WRITING_AGENT_INSTRUCTION } from '../skills/chapter-writing'
 import { ledgerSnapshotText, silentExtractLedger } from './room-ledger'
 import { buildStrategySection, getPhaseDef, loadQuestionBank } from './room-phases'
 
@@ -71,6 +72,8 @@ export function editorSystemPrompt(phase: RoomPhaseId, contentTarget: 'novel' | 
 6. 讨论轮收在"推进研讨"上：抛出下一步该定的问题，或建议整理成卡片/推进阶段。
 
 ${buildStrategySection(phase, contentTarget)}
+
+${contentTarget === 'novel' ? CHAPTER_WRITING_AGENT_INSTRUCTION : ''}
 
 【题材问题库】（按需取用，不要一次抛出）
 ${questionBank.map((q) => `- ${q}`).join('\n')}`
