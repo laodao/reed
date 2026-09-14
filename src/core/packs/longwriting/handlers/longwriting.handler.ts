@@ -169,6 +169,7 @@ const CHANNELS = {
   GENERATE_CHAPTER_WITH_CONTEXT: 'longwriting:generateChapterWithContext',
   CHAPTER_CONTEXT_PREVIEW: 'longwriting:chapterContextPreview',
   GENERATE_CHAPTER_PREWRITE: 'longwriting:generateChapterPrewrite',
+  GENERATE_CHAPTER_CARD: 'longwriting:generateChapterCard',
   GENERATE_SECTION: 'longwriting:generateSection',
 
   // 导出
@@ -1428,9 +1429,9 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
   ipcBridge.handle(
     CHANNELS.GENERATE_CHAPTER,
-    async (event, eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string, style?: string, extraPrompt?: string) => {
+    async (event, eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string, style?: string, extraPrompt?: string, options?: { skipChapterCardGate?: boolean }) => {
       try {
-        const result = await aiService.generateChapter(eventId, projectId, outlineId, targetWords, providerConfigId, modelId, style, extraPrompt)
+        const result = await aiService.generateChapter(eventId, projectId, outlineId, targetWords, providerConfigId, modelId, style, extraPrompt, options)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -1471,6 +1472,55 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       try {
         const result = await aiService.generateChapterWithContext(eventId, projectId, outlineId, params)
         return { ...result, eventId }
+      } catch (error: any) {
+        return { success: false, error: error.message }
+      }
+    }
+  )
+
+  // 54 号章法：生成章节设计卡（生成→LLM自检→落库未确认 prewrite→出场实体绑定大纲）
+  ipcBridge.handle(
+    CHANNELS.GENERATE_CHAPTER_CARD,
+    async (_event, eventId: string, projectId: string, outlineId: string, providerConfigId?: string, modelId?: string) => {
+      try {
+        const result = await aiService.generateChapterCard(eventId, projectId, outlineId, providerConfigId, modelId)
+        if (!result.success) return { ...result, eventId }
+        const { card, markdown, review, chapterNo } = result.data as any
+
+        // 落库为未确认设计卡（save 为按 outlineId 的 upsert，重生成幂等）
+        const prewrite = await service.savePrewrite({ outlineId, content: markdown })
+
+        // 出场实体名字 → id 解析，并入大纲 involved（解析失败的名字返回给前端提示，不入册）
+        const m = getCoreDatabaseManager()
+        const [chars, locs, items] = await Promise.all([
+          m.lwCharacters?.getByProjectId(projectId) ?? Promise.resolve([]),
+          m.lwLocations?.getByProjectId(projectId) ?? Promise.resolve([]),
+          m.lwItems?.getByProjectId(projectId) ?? Promise.resolve([]),
+        ])
+        const outline = await m.lwOutlines?.getById(outlineId)
+        const unresolved: string[] = []
+        const charIds = (card.involvedCharacters || [])
+          .map((c: any) => chars.find((x: any) => x.name === c.name)?.id)
+          .filter(Boolean)
+        for (const c of card.involvedCharacters || []) {
+          if (!chars.find((x: any) => x.name === c.name)) unresolved.push(c.name)
+        }
+        const locIds = (card.involvedLocations || [])
+          .map((n: string) => locs.find((x: any) => x.name === n)?.id)
+          .filter(Boolean)
+        const itemIds = (card.involvedItems || [])
+          .map((n: string) => items.find((x: any) => x.name === n)?.id)
+          .filter(Boolean)
+        if (outline) {
+          const union = (a?: string[], b?: string[]) => Array.from(new Set([...(a || []), ...(b || [])]))
+          await service.updateOutline(outlineId, {
+            involvedCharacters: union(outline.involvedCharacters, charIds),
+            involvedLocations: union(outline.involvedLocations, locIds),
+            involvedItems: union(outline.involvedItems, itemIds),
+          } as any)
+        }
+
+        return { ...result, eventId, data: { card, markdown, review, chapterNo, prewriteId: prewrite?.id, unresolvedNames: unresolved } }
       } catch (error: any) {
         return { success: false, error: error.message }
       }

@@ -12,6 +12,7 @@ import type {
 } from './longwriting/chapter-context'
 import { composeChapterPrompt, estimateContextTokens } from './longwriting/chapter-context'
 import { applyChapterQualityGate } from './longwriting/chapter-quality-gate'
+import { buildChapterCardMarkdown, parseCardHookType, validateChapterCard, type ChapterCardData } from './longwriting/chapter-card'
 import { assessBibleReadiness, buildBibleGateError, buildCastRosterConstraint } from './longwriting/bible-readiness-gate'
 import { ConsistencyService } from './longwriting/graph/consistency.service'
 import { buildConflictGateError } from './longwriting/conflict-gate'
@@ -373,30 +374,41 @@ export class LongWritingAIService {
 
     const systemPrompt = `你是一位专业的小说创作顾问。请根据用户的想法，生成一个完整的故事概要。
 
+概要是整部作品的核心基调与总纲，后续每一章都将以它为写作准绳。一份合格的概要必须让读者看完就知道"这是一个关于什么的故事、主角如何成长、最终走向哪里"。
+
 你必须返回一个完整的 JSON 对象，包含以下所有字段（一个都不能少）：
 - title: 故事标题
 - storyType: 故事类型（wuxia/xianxia/xuanhuan/kehuan/xuanyi/dushi/yanqing/lishi/other）
-- summary: 故事摘要（500字左右）
-- coreConflict: 核心冲突（300字左右）
+- summary: 核心故事概要（400-600字，必须讲清完整主线，写法见下方硬性要求）
+- styleTone: 风格基调（80-150字：叙事视角、节奏、情绪底色、爽点类型，如"第三人称限知视角，明快凌厉，单元案串主线，智力对决的智性爽感"）
+- coreConflict: 核心冲突（150-300字：主角想要什么/谁或什么在阻碍/失败的赌注是什么）
 - keyCharacters: 关键角色数组（必须包含主角、重要配角、反派等关键人物，不能为空数组！）
 - keyLocations: 主要场景数组（必须包含故事发生的主要地点，不能为空数组！）
 - estimatedChapters: 预估章节数
 
-**关于角色生成**：
-- 仔细阅读故事内容，识别所有重要人物
-- 必须包含：主角、重要配角、反派/对立角色
-- 反派/对立角色是推动剧情的关键，必须包含在角色列表中
-- 角色数量根据故事需要确定，确保覆盖故事的主要人物
+**summary 的硬性要求（按顺序覆盖，不得缺环）**：
+1. 主角起点：出身/身份/初始困境，用具体事实而非形容词（"出身贫寒、体弱多病"而非"可怜的"）
+2. 核心欲望与转机：主角最想要什么，什么偶然或必然事件把他推上旅程（获得秘籍/蒙冤入狱/重逢故人）
+3. 成长与波折：至少两个关键转折（获得什么、失去什么、看清什么），波折要具体可感
+4. 终局方向：故事走向哪个终点（创立天下第一大派成为一代宗师/历经磨难有情人终成眷属/真凶伏法沉冤昭雪）
+5. 全程紧扣主角命运，禁止写成世界观介绍或背景说明
 
-每个角色必须包含：name(姓名), role(主角/配角/反派/中立), brief(150字内描述), importance(main/secondary/minor)
-每个场景必须包含：name(名称), type(类型), brief(150字内描述), importance(main/secondary/minor)
+**合格的概要长什么样（模式示范，禁止照抄）**：
+- 成长型：出身贫寒、体弱多病，但天资聪颖、心性坚韧，偶然获秘籍练成神功，一路过关斩将，终创天下第一大派，成为一代宗师
+- 情感型：两小无猜的男女，造化弄人被迫分离，几经波折、历经苦难，兜兜转转破除万难，才有情人终成眷属
+
+**关于角色生成**：
+- 必须包含：主角、重要配角、反派/对立角色；反派是推动剧情的关键，不能缺席
+- 每个角色必须包含：name(姓名), role(主角/配角/反派/中立), brief(80-150字：身份+欲望+与主线的纠缠，禁止一句话带过), importance(main/secondary/minor)
+- 每个场景必须包含：name(名称), type(类型), brief(80-150字：地点+在故事中的功能+氛围), importance(main/secondary/minor)
 
 **JSON 格式示例**：
 {
   "title": "暗线追凶",
   "storyType": "other",
-  "summary": "故事摘要内容...",
-  "coreConflict": "核心冲突内容...",
+  "summary": "（按硬性要求写足400-600字的完整主线）",
+  "styleTone": "第三人称限知视角，冷峻克制，双线叙事，真相反转的智性爽感",
+  "coreConflict": "（主角想要什么/谁在阻碍/失败的赌注）",
   "keyCharacters": [
     {"name": "林锋", "role": "主角", "brief": "前警员，因坚持调查真相被迫离职，六年后重启调查", "importance": "main"},
     {"name": "陈雪", "role": "配角", "brief": "警局法医，暗中协助林锋，提供关键证据分析", "importance": "secondary"},
@@ -518,7 +530,13 @@ ${input}
 示例返回格式：
 [{"name":"张三","gender":"male","age":28,"height":175,"weight":70,"race":"asian","occupation":"剑客","position":"掌门弟子","rolePosition":"protagonist","appearance":"瓜子脸，小麦色皮肤，剑眉星目","background":"出身寒门，自幼被掌门收养","personality":"沉稳内敛，重情重义","abilities":"剑法高超，轻功卓越","majorEvents":"在门派大比中击败宿敌，揭开身世之谜","relations":[{"targetName":"李四","relationType":"师徒","description":"李四是张三的授业恩师"}]}]
 
-请确保每个角色都包含全部必需字段（1-14），relations（第15项）按需填写。`
+请确保每个角色都包含全部必需字段（1-14），relations（第15项）按需填写。
+
+**质量硬性要求（不达标即不合格，禁止一句话人设）**：
+1. background（背景故事）不少于 80 字，必须覆盖四层：出身处境、核心欲望（他最想得到/改变什么）、最大障碍或代价、秘密或反差（藏着的与表面相反的东西）
+2. majorEvents 必须写"该角色在主线中的关键节点"——做了什么、导致什么后果，与故事概要的核心冲突直接挂钩；禁止"参与了许多事件"式的空话
+3. personality 要写出内在张力（如"善良但对背叛睚眦必报"），单一扁平标签（"善良""冷酷"）不合格
+4. 反派必须有作恶的动机链（他要什么→为什么用这种方式→他的底气是什么），禁止为坏而坏`
 
     // 构建提示词上下文
     const storyTypeNames: Record<string, string> = {
@@ -1449,6 +1467,153 @@ ${plotInfo || '暂无相关情节'}
   }
 
   /**
+   * 54 号章法门：正文生成前必须有已确认的「章节设计卡」——
+   * 先设计（情节概要/钩子/爽点/出场实体）→ 自检 → 确认 → 才动笔。
+   * 自由工作台可传 skipChapterCardGate 跳过；script 分集项目不设此门。
+   */
+  private async checkChapterCardGate(projectId: string, outlineId: string, skip?: boolean): Promise<string | null> {
+    if (skip) return null
+    try {
+      const dbManager = getCoreDatabaseManager()
+      const roomProject = await dbManager.lwProjects?.getById(projectId)
+      const roomTarget = this.readRoomContentTarget(roomProject)
+      if (roomTarget === 'script') return null
+      const prewrite = await dbManager.lwPrewrites?.getByOutlineId(outlineId)
+      if (!prewrite?.isConfirmed) {
+        return '本章还没有已确认的「章节设计卡」。按写作章法请先设计本章（情节概要/开场钩子/爽点/章尾卡点/出场实体）并确认，再生成正文。'
+      }
+      return null
+    } catch (e: any) {
+      console.warn('[longwriting] 章节卡门禁异常（跳过）:', e?.message)
+      return null
+    }
+  }
+
+  /**
+   * 54 号章法：章节设计卡生成 + 自检（先设计→自检→确认→后动笔的第一步）。
+   * 输入：全书概要/核心冲突 + 本章大纲 + 相关故事线 + 上一章状态与钩型（轮换约束）。
+   * 输出：结构化设计卡 + markdown（落库由 handler 完成）+ LLM 自检问题清单。
+   */
+  async generateChapterCard(
+        eventId: string,
+    projectId: string,
+    outlineId: string,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<GenerateResponse> {
+    const dbManager = getCoreDatabaseManager()
+    const gateError = await this.checkBibleGate(projectId, '章节设计卡')
+    if (gateError) return { success: false, error: gateError }
+    const conflictErr = await this.checkChapterConflictGate(projectId, outlineId)
+    if (conflictErr) return { success: false, error: conflictErr }
+
+    const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
+    const outline = await dbManager.lwOutlines?.getById(outlineId)
+    if (!outline) return { success: false, error: '大纲节点不存在' }
+    const characters = (await dbManager.lwCharacters?.getByProjectId(projectId)) || []
+    const plots = (await dbManager.lwPlots?.getByProjectId(projectId)) || []
+    const outlines = (await dbManager.lwOutlines?.getByProjectId(projectId)) || []
+
+    // 文档序章号 / 前一章（钩型轮换） / 前情状态摘要
+    const { buildOutlineDocOrder, outlineChapterNumber } = await import('./longwriting/outline-order')
+    const order = buildOutlineDocOrder(outlines)
+    const chapterNo = outlineChapterNumber(order, outlineId) ?? 1
+    const chapterOutlines = outlines
+      .filter((o: any) => o.nodeType === 'chapter')
+      .sort((a: any, b: any) => (order.leafNumbers.get(a.id) ?? 0) - (order.leafNumbers.get(b.id) ?? 0))
+    const idx = chapterOutlines.findIndex((o: any) => o.id === outlineId)
+    const prevOutline = idx > 0 ? chapterOutlines[idx - 1] : null
+    const prevPrewrite = prevOutline ? await dbManager.lwPrewrites?.getByOutlineId(prevOutline.id) : null
+    const prevHookType = parseCardHookType(prevPrewrite?.content)
+    const prevState = await dbManager.lwChapterStateSummaries?.getLatestBeforeChapter(projectId, chapterNo)
+
+    const relevantPlots = plots.filter(p =>
+      p.title?.includes(outline.name) || outline.summary?.includes(p.title)
+    )
+    const castNames = (outline.involvedCharacters || [])
+      .map(id => characters.find(c => c.id === id)?.name)
+      .filter(Boolean)
+
+    const systemPrompt = `你是严格的小说章节主编。在动笔写正文之前，必须先为本章产出一张「章节设计卡」——这是写作章法：先设计、自检、确认，再写正文。
+
+返回 JSON 对象：
+{
+  "plotSummary": "本章情节概要，150-300字：起（承接上章）→承（推进）→转（转折/升级）→章尾落点；必须服务全书核心故事",
+  "openingHook": "开场钩子，1-2句，承接上一章卡点",
+  "highlight": "本章爽点，1-2句，读者的情绪回报点（反转/打脸/突破/揭秘/情感共鸣）",
+  "endingCliffhanger": "章尾卡点，1-2句，让读者必须点开下一章",
+  "hookType": "章尾卡点钩型，五选一：悬念/危机/情绪/信息/反转",
+  "involvedCharacters": [{"name": "角色名（必须与人物册名字逐字一致）", "roleThisChapter": "本章目标/状态/行动"}],
+  "involvedLocations": ["地点名（与地点册逐字一致）"],
+  "involvedItems": ["物品名（与物品册逐字一致）"],
+  "foreshadowAction": "本章伏笔动作：埋什么/收什么（对应已有伏笔清单），无则写'无'"
+}
+
+硬性要求：
+1. plotSummary 必须与本章大纲概要一致，并把全书核心冲突向前推进一步——禁止写成与主线无关的过场
+2. 出场角色从本章大纲涉及角色中选，可增不可造（不得出现人物册外的名字）
+3. hookType 与上一章钩型不同（上一章：${prevHookType || '无记录，自选'}）
+4. 不得与上一章结束状态冲突`
+
+    const prompt = `【全书核心故事概要】
+${(overview?.summary || '').slice(0, 900) || '未指定'}
+
+【全书核心冲突】
+${overview?.coreConflict || '未指定'}
+
+【本章大纲】第${chapterNo}章 ${outline.name}
+${outline.summary || '（无概要，请依据全书概要与故事线合理设计）'}
+
+【相关故事线】
+${relevantPlots.map(p => `${p.title}：${p.summary}`).join('\n') || '暂无'}
+
+【上一章结束状态】
+${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevState.currentLocation || '未知'}；人物状态：${prevState.characterStates || '未知'}` : '（本章为开篇或无前情记录）'}
+
+【本章大纲建议出场角色】${castNames.join('、') || '未指定'}
+
+请生成本章设计卡（JSON）。`
+
+    try {
+      const raw = await this.callAIStream(eventId, prompt, systemPrompt, 2500, providerConfigId, modelId)
+      const jsonMatch = raw.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) return { success: false, error: '设计卡返回格式错误，请重试' }
+      const card = JSON.parse(jsonMatch[0]) as ChapterCardData
+
+      // 结构校验（硬伤直接打回）
+      const structureIssues = validateChapterCard(card)
+      if (structureIssues.length > 0) {
+        return { success: false, error: `设计卡不合格：${structureIssues.join('；')}` }
+      }
+
+      // LLM 自检：对照全书总纲与前情，审这张卡能不能落地
+      const markdown = buildChapterCardMarkdown(card, `第${chapterNo}章 ${outline.name}`)
+      let review: { ok: boolean; issues: string[] } = { ok: true, issues: [] }
+      try {
+        const reviewRaw = await this.callAIStream(
+          eventId + '-review',
+          `【全书核心故事概要】\n${(overview?.summary || '').slice(0, 600)}\n\n【上一章结束状态】\n${prevState?.characterStates || prevState?.storyTime || '无记录'}\n\n【本章设计卡】\n${markdown}\n\n请审查这张章节设计卡：情节是否服务全书主线、是否与前情状态冲突、出场角色是否合规、爽点与卡点是否成立。返回 JSON：{"ok": true/false, "issues": ["问题1", "问题2"]}（无问题则 issues 为空数组）。只输出 JSON。`,
+          '你是苛刻的小说审稿编辑。只输出 JSON，不要任何其他文字。',
+          800,
+          providerConfigId,
+          modelId
+        )
+        const rMatch = reviewRaw.match(/\{[\s\S]*\}/)
+        if (rMatch) {
+          const parsed = JSON.parse(rMatch[0])
+          review = { ok: !!parsed.ok, issues: Array.isArray(parsed.issues) ? parsed.issues.map(String) : [] }
+        }
+      } catch (e: any) {
+        console.warn('[longwriting] 设计卡自检失败（不阻断）:', e?.message)
+      }
+
+      return { success: true, data: { card, markdown, review, chapterNo } }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  /**
    * 生成章节内容
    */
   async generateChapter(
@@ -1459,12 +1624,15 @@ ${plotInfo || '暂无相关情节'}
     providerConfigId?: string,
     modelId?: string,
     style?: string,
-    extraPrompt?: string
+    extraPrompt?: string,
+    options?: { skipChapterCardGate?: boolean }
   ): Promise<GenerateResponse> {
     const gateError = await this.checkBibleGate(projectId, '章节正文')
     if (gateError) return { success: false, error: gateError }
     const conflictErr = await this.checkChapterConflictGate(projectId, outlineId)
     if (conflictErr) return { success: false, error: conflictErr }
+    const cardGateErr = await this.checkChapterCardGate(projectId, outlineId, options?.skipChapterCardGate)
+    if (cardGateErr) return { success: false, error: cardGateErr }
     const asm = await this.assembleChapterGeneration(projectId, outlineId, { targetWords, style, extraPrompt })
     if ('error' in asm) return { success: false, error: asm.error }
     try {
@@ -1532,12 +1700,15 @@ ${plotInfo || '暂无相关情节'}
       enabledItemIds?: string[]
       providerConfigId?: string
       modelId?: string
+      skipChapterCardGate?: boolean
     }
   ): Promise<GenerateResponse> {
     const gateError = await this.checkBibleGate(projectId, '章节正文')
     if (gateError) return { success: false, error: gateError }
     const conflictErr = await this.checkChapterConflictGate(projectId, outlineId)
     if (conflictErr) return { success: false, error: conflictErr }
+    const cardGateErr = await this.checkChapterCardGate(projectId, outlineId, params.skipChapterCardGate)
+    if (cardGateErr) return { success: false, error: cardGateErr }
     const asm = await this.assembleChapterGeneration(projectId, outlineId, {
       targetWords: params.targetWords, style: params.style, extraPrompt: params.extraPrompt,
     })
@@ -1783,7 +1954,11 @@ ${plotInfo || '暂无相关情节'}
 
     // —— 38 号：可控制上下文项清单（与下方 prompt 组装共用同源文本） ——
     // 背景独立成段（42号 review：曾内嵌于此——'background' 勾选是死开关）
-    const overviewText = `**故事标题**：${overview?.title || '未命名'}\n**故事类型**：${storyTypeName}\n**核心冲突**：${overview?.coreConflict || '未指定'}\n\n**预估总章节数**：${totalChapters}章\n**当前进度**：第${chapterNumber}章（${progressStage}）`
+    // 54 号：全书概要与风格基调必须进每一章——概要是全书核心基调（用户意见：
+    // "把最核心的故事主线简要介绍，把故事的风格说清楚，指导后续的写作"），
+    // 旧版 overviewText 只有标题/类型/冲突，概要从未进入正文上下文
+    const coreSummary = (overview?.summary || '').trim()
+    const overviewText = `**故事标题**：${overview?.title || '未命名'}\n**故事类型**：${storyTypeName}\n**核心冲突**：${overview?.coreConflict || '未指定'}\n**预估总章节数**：${totalChapters}章\n**当前进度**：第${chapterNumber}章（${progressStage}）${coreSummary ? `\n**核心故事概要（全书总纲，本章写作不得偏离）**：\n${coreSummary.slice(0, 900)}` : ''}${overview?.style ? `\n**风格基调**：${String(overview.style).slice(0, 200)}` : ''}`
     const taskText = `**章节名称**：${outline.name}\n**章节概要**：${outline.summary}`
     const prevEndingText = previousChapterEnding || '这是开篇章节'
     const constraintsText = `${memoryContext}${entityStateContext}${chapterStateSummaryContext}`
@@ -2322,18 +2497,19 @@ ${materialContext || '无特定素材'}
     const systemPrompt = `你是一位专业的小说创作顾问。请根据故事概要、背景设定、角色等信息，生成主要的故事情节列表。
 你的回复必须是纯 JSON 数组格式（不要包含 \`\`\`json 标记），每个情节包含以下字段：
 - title: 情节标题（不超过 15 字）
-- summary: 情节概要（50-100 字）
+- summary: 情节概要（100-200字，必须覆盖四拍：起因→冲突升级→转折→本线阶段性终点，并写明与核心主线的纠缠点；禁止一句话剧情简介）
 - involvedCharacters: 涉及的角色名称列表（字符串数组）
 - entityRelations: 本情节中体现的实体间**确定关系**（可选数组，没有可留空）。每项：{"sourceType": "character/location/item/faction", "sourceName": "源实体名（必须与项目中实体名逐字一致）", "targetType": "character/location/item/faction", "targetName": "目标实体名（逐字一致）", "relationType": "关系类型（师徒/宿敌/所在/持有等）", "description": "关系说明（20-40字）"}
 
 要求：
-1. 情节按时间顺序排列，有起承转合
-2. 情节之间要有逻辑关联，考虑背景设定的世界观
-3. 情节数量根据预估章节数合理设置（约 10-30 个）
-4. 每个情节要明确涉及的角色
-5. 充分利用背景设定中的时代、社会结构等元素
-6. 可以融入技能、物品等元素增加故事丰富度
-7. entityRelations 只输出情节中明确体现的关系，用于构建人物/地点/物品关系网络
+1. 第一条必须是主线（承载故事概要的核心冲突与终局）；其余情节需说明与主线的纠缠关系
+2. 情节按时间顺序排列，相邻情节间要有因果推动，禁止纯并列罗列
+3. 情节之间要有逻辑关联，考虑背景设定的世界观
+4. 情节数量根据预估章节数合理设置（约 10-30 个）
+5. 每个情节要明确涉及的角色
+6. 充分利用背景设定中的时代、社会结构等元素
+7. 可以融入技能、物品等元素增加故事丰富度
+8. entityRelations 只输出情节中明确体现的关系，用于构建人物/地点/物品关系网络
 
 请直接输出 JSON 数组，不要有任何额外文字。`
 
@@ -2522,7 +2698,7 @@ ${fieldPrompts[field] || '请扩展成详细的描述，内容控制在 200-400 
   "name": "地点名称",
   "type": "地点类型，可选值：city/village/mountain/palace/forest/sea/building/other",
   "importance": "重要程度，可选值：main/important/auxiliary",
-  "description": "地点描述（50-100字，说明地点的特点、氛围、在故事中的作用）",
+  "description": "地点描述（80-150字，必须覆盖三层：可感的场景特征、独有氛围、在故事中的功能——哪类情节在此发生/它如何推动主线；禁止一句风景介绍）",
   "suggestedMapId": "建议关联的地图ID（从已有地图中选择，如果没有合适的可不填）"
 }
 

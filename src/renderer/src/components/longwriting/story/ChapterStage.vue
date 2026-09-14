@@ -1358,7 +1358,8 @@ async function executeGeneration() {
     selectedModel.value!.providerId,
     selectedModel.value!.modelId,
     generateForm.value.style || undefined,
-    generateForm.value.extraPrompt || undefined
+    generateForm.value.extraPrompt || undefined,
+    { skipChapterCardGate: true }
   )
 
   if (!result.success) {
