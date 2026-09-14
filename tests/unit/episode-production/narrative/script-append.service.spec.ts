@@ -335,10 +335,22 @@ const EXISTING_SCENES = [
 ] as any[]
 
 function makeDb(scenes: any[] = EXISTING_SCENES) {
+  // 复核修复后 append 把场景写入 + 剧本更新包进同一事务：
+  // fake manager 提供 update spy（原先直接 spy 在 episodeScripts.update 上）
+  // 复核修复后 append 从库里重读剧本：fake getById 反映事务内 update 的最新状态
+  let currentScript: any = { ...EXISTING_SCRIPT }
+  const updateInTx = vi.fn(async (_where: any, data: any) => {
+    currentScript = { ...currentScript, ...data }
+    return { ...currentScript }
+  })
   return {
-    dataSource: {} as any,
+    updateInTx,
+    dataSource: {
+      transaction: async (fn: (m: any) => Promise<any>) =>
+        fn({ getRepository: () => ({ update: updateInTx }) }),
+    } as any,
     episodeScripts: {
-      getById: vi.fn(async () => EXISTING_SCRIPT),
+      getById: vi.fn(async () => ({ ...currentScript })),
       update: vi.fn(async (_id: string, data: any) => ({ ...EXISTING_SCRIPT, ...data })),
     },
     sceneScripts: {
@@ -359,6 +371,7 @@ function makeService(overrides: {
   createScenes?: any
 } = {}) {
   const db = makeDb(overrides.scenes)
+  const updateInTx = db.updateInTx
   const generator = {
     continueScript: vi.fn(async () => ({
       synopsis: '本段梗概',
@@ -374,7 +387,7 @@ function makeService(overrides: {
     createScenes,
     buildRoster: vi.fn(async () => ROSTER),
   }
-  return { db, generator, createScenes, service: new ScriptAppendService(db, deps) }
+  return { db, updateInTx, generator, createScenes, service: new ScriptAppendService(db, deps) }
 }
 
 describe('ScriptAppendService.prepare', () => {
@@ -482,9 +495,9 @@ describe('ScriptAppendService.append', () => {
   }
 
   it('正文追加到旧正文后面（不覆盖）', async () => {
-    const { service, db } = makeService()
+    const { service, updateInTx } = makeService()
     await service.append('es_1', draft)
-    const [, data] = db.episodeScripts.update.mock.calls[0]
+    const [, data] = updateInTx.mock.calls[0]
     expect(data.scriptContent).toBe('旧正文\n\n新增正文')
   })
 
@@ -505,39 +518,39 @@ describe('ScriptAppendService.append', () => {
   })
 
   it('已定稿剧本追加后回到草稿态（新内容需重新定稿）', async () => {
-    const { service, db } = makeService()
+    const { service, updateInTx } = makeService()
     await service.append('es_1', draft)
-    const [, data] = db.episodeScripts.update.mock.calls[0]
+    const [, data] = updateInTx.mock.calls[0]
     expect(data.status).toBe('reviewing')
   })
 
   it('keepApproved=true → 保持 approved（边做边加内容时不打断后续 stage）', async () => {
-    const { service, db } = makeService()
+    const { service, updateInTx } = makeService()
     await service.append('es_1', draft, { keepApproved: true })
-    const [, data] = db.episodeScripts.update.mock.calls[0]
+    const [, data] = updateInTx.mock.calls[0]
     expect(data.status).toBeUndefined()
   })
 
   it('未定稿剧本不会被强行改成 reviewing（状态不变）', async () => {
-    const { service, db } = makeService()
+    const { service, db, updateInTx } = makeService()
     db.episodeScripts.getById.mockResolvedValue({
       ...EXISTING_SCRIPT,
       status: 'pending',
     })
     await service.append('es_1', draft)
-    const [, data] = db.episodeScripts.update.mock.calls[0]
+    const [, data] = updateInTx.mock.calls[0]
     expect(data.status).toBeUndefined()
   })
 
   it('梗概不被覆盖（增量内容不该顶掉整集梗概）', async () => {
-    const { service, db } = makeService()
+    const { service, updateInTx } = makeService()
     await service.append('es_1', draft)
-    const [, data] = db.episodeScripts.update.mock.calls[0]
+    const [, data] = updateInTx.mock.calls[0]
     expect(data.synopsis).toBeUndefined()
   })
 
   it('没有新增场景 → 只追加正文，不调用场景写入器', async () => {
-    const { service, createScenes, db } = makeService()
+    const { service, createScenes, updateInTx } = makeService()
     const result = await service.append('es_1', {
       scriptContent: '只有正文',
       synopsis: '',
@@ -545,7 +558,7 @@ describe('ScriptAppendService.append', () => {
     })
     expect(createScenes).not.toHaveBeenCalled()
     expect(result.addedScenes).toEqual([])
-    expect(db.episodeScripts.update.mock.calls[0][1].scriptContent).toBe('旧正文\n\n只有正文')
+    expect(updateInTx.mock.calls[0][1].scriptContent).toBe('旧正文\n\n只有正文')
   })
 
   it('写库前重发对话 / 动作 id，避免与已有 scene_dialogues 主键撞车', async () => {
