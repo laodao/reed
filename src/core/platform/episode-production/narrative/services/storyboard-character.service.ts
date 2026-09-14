@@ -55,7 +55,8 @@ export class StoryboardCharacterService {
   /**
    * 全量替换某分镜的角色配置。
    *
-   * 操作：deleteByStoryboardId + createMany（事务保证原子性）。
+   * 操作：replaceAll = 删旧 + 建新同一事务（复核修复：旧实现是两个独立
+   * 事务，注释却称"事务保证原子性"；createMany 失败时旧配置已被删光）。
    *
    * sortOrder 按入参顺序自动赋值（idx 0..N-1）。
    */
@@ -66,10 +67,8 @@ export class StoryboardCharacterService {
     if (!storyboardId) {
       throw new Error('storyboardId 不能为空')
     }
-    // 先删旧（即使空入参也清空，符合"全量替换"语义）
-    await this.repo.deleteByStoryboardId(storyboardId)
-    if (inputs.length === 0) return []
-    return this.repo.createMany(
+    return this.repo.replaceAll(
+      storyboardId,
       inputs.map((it, idx) => ({
         storyboardId,
         characterId: it.characterId,

@@ -253,44 +253,44 @@ export class StoryboardRepository extends BaseRepository<
     storyboards: CreateStoryboardRequest[],
   ): Promise<Storyboard[]> {
     if (storyboards.length === 0) return []
-    return this.dataSource.transaction(async manager => {
-      const repo = manager.getRepository(StoryboardEntity)
+    // 复核修复 P0-3：事务内 manager.getRepository 是裸操作，user_id 恒 NULL
+    // （scoped 读不可见）——改走 scopedTx 原语，事务 + 租户注入一体
+    return this.scopedTx(async tx => {
+      const sbApi = tx.for(StoryboardEntity)
       const result: Storyboard[] = []
       const now = new Date()
       for (const data of storyboards) {
         const id = this.generateId()
-        const saved = await repo.save(
-          repo.create({
-            id,
-            sceneScriptId: data.sceneScriptId,
-            shotNumber: data.shotNumber,
-            shotType: data.shotType,
-            cameraAngle: data.cameraAngle,
-            cameraMovement: data.cameraMovement,
-            movementDuration: data.movementDuration ?? null,
-            frameDescription: data.frameDescription,
-            subject: data.subject ?? null,
-            composition: data.composition ?? null,
-            characters: data.characters as unknown[],
-            narrationId: data.narrationId ?? null,
-            dialogueIds: data.dialogueIds,
-            actionIds: data.actionIds,
-            frameImage: null,
-            frameImageId: null,
-            videoPath: null,
-            duration: data.duration,
-            transition: JSON.stringify(data.transition),
-            transitionType: null,
-            transitionDurationMs: null,
-            transitionDirection: null,
-            transitionEasing: null,
-            transitionColor: null,
-            status: 'pending',
-            createdAt: now,
-            updatedAt: now,
-          }),
-        )
-        result.push(this.toDto(saved))
+        const saved = await sbApi.save({
+          id,
+          sceneScriptId: data.sceneScriptId,
+          shotNumber: data.shotNumber,
+          shotType: data.shotType,
+          cameraAngle: data.cameraAngle,
+          cameraMovement: data.cameraMovement,
+          movementDuration: data.movementDuration ?? null,
+          frameDescription: data.frameDescription,
+          subject: data.subject ?? null,
+          composition: data.composition ?? null,
+          characters: data.characters as unknown[],
+          narrationId: data.narrationId ?? null,
+          dialogueIds: data.dialogueIds,
+          actionIds: data.actionIds,
+          frameImage: null,
+          frameImageId: null,
+          videoPath: null,
+          duration: data.duration,
+          transition: JSON.stringify(data.transition),
+          transitionType: null,
+          transitionDurationMs: null,
+          transitionDirection: null,
+          transitionEasing: null,
+          transitionColor: null,
+          status: 'pending',
+          createdAt: now,
+          updatedAt: now,
+        } as never)
+        result.push(this.toDto(saved as StoryboardEntity))
       }
       return result
     })

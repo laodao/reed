@@ -214,6 +214,32 @@ export abstract class BaseRepository<TEntity extends object, TDto> {
     return makeScopedApiForRepo(repo, () => this.scopedToUser)
   }
 
+  /**
+   * 事务内 scoped 数据访问原语（复核修复 P0-3 的机制层解法）。
+   *
+   * 背景：`dataSource.transaction(manager => ...)` 里 `manager.getRepository(...)`
+   * 是裸操作，scope 天然丢失——各仓库只能手工注入 userId（P5-T34 补丁只打在
+   * 个别仓库，createMany 家族全部漏打）。本原语把"事务 + scope"合成一件事：
+   * 回调里 `tx.for(Entity)` 拿到的 API 与 `this.scoped` 同一套语义（自动注入/
+   * 过滤 user_id），且所有语句走同一事务、同生同灭。
+   *
+   * 用法：
+   *   return this.scopedTx(async tx => {
+   *     const sbApi = tx.for(StoryboardEntity)
+   *     await sbApi.save(sbApi.create({ ... }))
+   *   })
+   */
+  protected scopedTx<T>(
+    fn: (tx: { for<E extends object>(target: EntityTarget<E>): ScopedRepoApi<E> }) => Promise<T>,
+  ): Promise<T> {
+    return this.dataSource.transaction(async manager => {
+      return fn({
+        for: <E extends object>(target: EntityTarget<E>) =>
+          makeScopedApiForRepo(manager.getRepository(target), () => this.scopedToUser),
+      })
+    })
+  }
+
   /** 子类必须实现：Entity → DTO */
   protected abstract toDto(entity: TEntity): TDto
 

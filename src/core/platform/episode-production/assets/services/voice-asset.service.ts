@@ -20,6 +20,8 @@
  */
 
 import type { DataSource, Repository } from 'typeorm'
+import { IsNull } from 'typeorm'
+import { getCurrentUserId } from '@core/context/user-context'
 import { ClonedVoiceEntity } from '@core/database/entities/cloned-voice.entity'
 import { CharacterBindingEntity } from '@core/database/entities/episode-production/character-binding.entity'
 
@@ -39,22 +41,37 @@ export class VoiceAssetService {
     return this.ds.getRepository(CharacterBindingEntity)
   }
 
-  /** 列出全部声音（不论 status；按 created_at 倒序，新建在前） */
-  async listAvailableVoices(): Promise<ClonedVoiceEntity[]> {
-    return await this.voiceRepo.find({ order: { createdAt: 'DESC' } })
+  /**
+   * 声音库租户过滤（复核修复：原查询零过滤，任何用户可见全部租户的克隆声音——
+   * 个人生物特征资产）。与全局 scoped 语义一致：Electron 单用户/无 ALS 时 userId
+   * 为 null → 查 IsNull 行；Web 多租户 → 查当前用户行。
+   */
+  private voiceUserScope(): Record<string, unknown> {
+    const userId = getCurrentUserId()
+    return { userId: userId ?? IsNull() }
   }
 
-  /** 仅列出 status='ready'（训练完成、可用）的声音 */
+  /** 列出当前用户全部声音（不论 status；按 created_at 倒序，新建在前） */
+  async listAvailableVoices(): Promise<ClonedVoiceEntity[]> {
+    return await this.voiceRepo.find({
+      where: this.voiceUserScope(),
+      order: { createdAt: 'DESC' },
+    } as never)
+  }
+
+  /** 仅列出当前用户 status='ready'（训练完成、可用）的声音 */
   async listReadyVoices(): Promise<ClonedVoiceEntity[]> {
     return await this.voiceRepo.find({
-      where: { status: 'ready' },
+      where: { status: 'ready', ...this.voiceUserScope() },
       order: { createdAt: 'DESC' },
-    })
+    } as never)
   }
 
-  /** 按声音 ID 取声音详情 */
+  /** 按声音 ID 取声音详情（限本租户） */
   async getVoiceById(voiceId: string): Promise<ClonedVoiceEntity | null> {
-    return await this.voiceRepo.findOne({ where: { id: voiceId } })
+    return await this.voiceRepo.findOne({
+      where: { id: voiceId, ...this.voiceUserScope() },
+    } as never)
   }
 
   /**

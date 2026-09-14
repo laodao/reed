@@ -8,9 +8,9 @@
  *              生成结果改为写入 asset_image 表（category='main'，is_main=1）。
  */
 
-import { randomBytes } from 'crypto'
 import type { DataSource } from 'typeorm'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { AssetImageRepository } from '@core/database/repositories/asset-image.repository'
 import { ImageService } from '@core/platform/services/image.service'
 import type { ImageGenerationRequest } from '@shared/types'
 
@@ -200,6 +200,9 @@ export class TempAssetService {
  * 实际上 temp-asset 阶段 binding 不一定存在，因此以 lwEntityId 作为 asset_id。
  * 若 asset_image 中已有 (asset_type, asset_id, is_main=1) 则跳过，保持幂等。
  *
+ * 复核修复：原实现裸 SQL INSERT 列清单漏 user_id，行落成 NULL 租户孤儿——
+ * 改走 AssetImageRepository（BaseRepository scoped），user_id 随 ALS 自动注入。
+ *
  * @param ds - TypeORM DataSource
  * @param assetType - 'character' | 'location'
  * @param assetId - 对应 binding 或 lw entity 的 id
@@ -212,20 +215,9 @@ async function writeAssetImageMain(
   imagePath: string,
 ): Promise<void> {
   if (!ds) return
-  const isPg = ds.options.type === 'postgres'
-  const ph = (n: number) => (isPg ? `$${n}` : '?')
-
-  // 幂等检查
-  const existing = await ds.query(
-    `SELECT 1 FROM asset_image WHERE asset_type = ${ph(1)} AND asset_id = ${ph(2)} AND is_main = 1 LIMIT 1`,
-    [assetType, assetId],
-  )
-  if (existing.length > 0) return
-
-  const id = `ai_${randomBytes(8).toString('hex')}`
-  await ds.query(
-    `INSERT INTO asset_image (id, asset_type, asset_id, category, image_path, is_main, sort_order, created_at)
-     VALUES (${ph(1)}, ${ph(2)}, ${ph(3)}, 'main', ${ph(4)}, 1, 0, ${isPg ? 'NOW()' : 'CURRENT_TIMESTAMP'})`,
-    [id, assetType, assetId, imagePath],
-  )
+  const repo = new AssetImageRepository(ds)
+  // 幂等检查：该 asset 已有主图则跳过
+  const existing = await repo.getMainImage(assetType, assetId)
+  if (existing) return
+  await repo.createMainImage({ assetType, assetId, imagePath })
 }
