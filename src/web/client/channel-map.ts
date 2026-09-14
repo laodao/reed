@@ -298,6 +298,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'domainLearning.confirmPlan': { channel: 'dl:confirm-plan' },
   'domainLearning.getSpacePace': { channel: 'dl:get-space-pace', wrap: (id) => [{ id }] },
   'domainLearning.setSpacePace': { channel: 'dl:set-space-pace' },
+  'domainLearning.getSpaceModel': { channel: 'dl:get-space-model', wrap: (id) => [{ id }] },
+  'domainLearning.setSpaceModel': { channel: 'dl:set-space-model' },
   'domainLearning.getAtlasViews': { channel: 'dl:get-atlas-views', wrap: (id) => [{ id }] },
   'domainLearning.setSpaceProfile': { channel: 'dl:set-space-profile' },
   'domainLearning.getSpaceStats': { channel: 'dl:get-space-stats', wrap: (id) => [{ id }] },

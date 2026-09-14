@@ -142,6 +142,15 @@ export function registerDomainLearningHandlers(): void {
       return { kbId }
     }))
 
+  // ---- 空间默认模型（2026-09-14：知识生成默认模型，双 null=跟随全局默认） ----
+  ipcBridge.handle('dl:get-space-model', (_e, p: { id: string }) =>
+    wrap(() => services().projects.getModelSettings(p.id)))
+  ipcBridge.handle('dl:set-space-model', (_e, p: { id: string; model: { providerConfigId?: string | null; modelId?: string | null } }) =>
+    wrap(async () => {
+      const saved = await services().projects.setModelSettings(p.id, p.model)
+      return { model: saved }
+    }))
+
   // ---- 主题学习前置要求（2026-09-12 用户需求：整个领域的学习门槛，含领域外需自备能力） ----
   ipcBridge.handle('dl:get-space-prereqs', (_e, p: { id: string }) =>
     wrap(() => services().projects.getPrerequisites(p.id)))
@@ -194,9 +203,20 @@ export function registerDomainLearningHandlers(): void {
   ipcBridge.handle('dl:agent-send', (_e, p: { mode: DlAgentMode; spaceId: string; conceptId?: string | null; message: string; providerConfigId?: string; modelId?: string; focusQuestionId?: string }) =>
     wrap(async () => {
       await services().projects.ensureOwned(p.spaceId)
+      // 2026-09-14 用户需求：知识生成（research/task）默认模型 = 空间默认；调用方没显式指定时读取。
+      // 显式指定（如空间设置选到的模型）优先；tutor 追问仍走全局默认。
+      let providerConfigId = p.providerConfigId
+      let modelId = p.modelId
+      if (!providerConfigId && (p.mode === 'research' || p.mode === 'task')) {
+        const dm = await services().projects.getModelSettings(p.spaceId)
+        if (dm.providerConfigId && dm.modelId) {
+          providerConfigId = dm.providerConfigId
+          modelId = dm.modelId
+        }
+      }
       return services().agent.sendMessage(p.mode, { spaceId: p.spaceId, conceptId: p.conceptId ?? null }, p.message, {
-        providerConfigId: p.providerConfigId,
-        modelId: p.modelId,
+        providerConfigId,
+        modelId,
         focusQuestionId: p.focusQuestionId,
       })
     }))

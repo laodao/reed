@@ -9,6 +9,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildFocusQuestionLines,
+  buildMapInventoryLines,
   computeDlSpaceSnapshot,
   dlBootstrapSkillBody,
   dlEmptySpaceMission,
@@ -401,5 +402,57 @@ describe('dl-agent-deps（M2-B）', () => {
     expect(s).toContain('读者：零基础')
     expect(s).toContain('不做：个人记账')
     expect(s).toContain('期望：能读财报')
+  })
+})
+
+describe('dl-agent-deps（2026-09-14 整体知识点体系清单）', () => {
+  const concepts = [
+    { id: 'g1', name: '金融产品', nodeType: 'group', parentId: null },
+    { id: 'g2', name: '市场与价格', nodeType: 'group', parentId: null },
+    { id: 'c1', name: '股票', nodeType: 'concept', parentId: 'g1', cardId: 'card1' },
+    { id: 'c2', name: '债券', nodeType: 'concept', parentId: 'g1', cardId: null },
+    { id: 'c3', name: '汇率与美元', nodeType: 'concept', parentId: 'g2', cardId: null },
+    { id: 'c4', name: '金融体系总览', nodeType: 'concept', parentId: null, cardId: null },
+  ] as Array<{ id: string; name: string; nodeType: string; parentId: string | null; cardId?: string | null }>
+
+  it('按分支列出概念（✓=已有讲义），根层知识概念单独列出', () => {
+    const lines = buildMapInventoryLines(concepts)
+    const joined = lines.join('\n')
+    expect(lines[0]).toContain('当前知识点体系清单')
+    expect(joined).toContain('分支「金融产品」')
+    expect(joined).toContain('分支「市场与价格」')
+    expect(joined).toContain('股票（concept ✓）') // 有讲义
+    expect(joined).toContain('债券（concept）') // 无讲义不加 ✓
+    expect(joined).toContain('汇率与美元（concept）')
+    expect(joined).toContain('根层/未归类：· 金融体系总览')
+  })
+
+  it('孤点（父级不是本空间 group 的概念）归到未归类', () => {
+    const lines = buildMapInventoryLines([{ id: 'g', name: '分支', nodeType: 'group', parentId: null }])
+    expect(lines.join('\n')).toContain('分支「分支」')
+    // 挂在不存在 group 下
+    const orphaned = buildMapInventoryLines([
+      { id: 'g', name: '分支', nodeType: 'group', parentId: null },
+      { id: 'o', name: '孤点概念', nodeType: 'concept', parentId: 'ghost' },
+    ])
+    expect(orphaned.join('\n')).toContain('未归类：· 孤点概念')
+  })
+
+  it('空地图 → 空数组', () => {
+    expect(buildMapInventoryLines([])).toEqual([])
+  })
+
+  it('limit 上限：行超限时截断并注明总数', () => {
+    const many = Array.from({ length: 60 }, (_, i) => ({
+      id: `c${i}`,
+      name: `概念${i}`,
+      nodeType: 'concept',
+      parentId: null,
+      cardId: null,
+    }))
+    const lines = buildMapInventoryLines(many, 10)
+    // 标题行 + 最多 limit 行 + 截断提示；总数有上界
+    expect(lines.length).toBeLessThanOrEqual(12)
+    expect(lines.some((l) => l.includes('地图共 60 个节点'))).toBe(true)
   })
 })

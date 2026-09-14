@@ -39,6 +39,12 @@ export interface SpaceSummaryRow {
   stats?: { mastered: number; total: number }
 }
 
+/** 空间默认模型设置（dl_project.default_model：{ providerConfigId?, modelId? }；双 null=跟随全局默认） */
+export type DlSpaceModelSettings = {
+  providerConfigId: string | null
+  modelId: string | null
+}
+
 export class LearningProjectService {
   constructor(
     private readonly projects: DlProjectRepository,
@@ -92,6 +98,30 @@ export class LearningProjectService {
     const next = kbId?.trim() || null
     await this.projects.patch(id, { kbId: next })
     return next
+  }
+
+  /** 空间默认模型（读；规范化兜底：双 null=跟随全局默认提供商） */
+  async getModelSettings(id: string): Promise<DlSpaceModelSettings> {
+    const row = await this.ensureOwned(id)
+    const dm = (row.defaultModel ?? null) as { providerConfigId?: string | null; modelId?: string | null } | null
+    return {
+      providerConfigId: dm?.providerConfigId?.trim() || null,
+      modelId: dm?.modelId?.trim() || null,
+    }
+  }
+
+  /** 空间默认模型（写；去空白，null 表示跟随全局默认） */
+  async setModelSettings(
+    id: string,
+    cfg: { providerConfigId?: string | null; modelId?: string | null } | null | undefined,
+  ): Promise<DlSpaceModelSettings> {
+    await this.ensureOwned(id)
+    const saved: DlSpaceModelSettings = {
+      providerConfigId: cfg?.providerConfigId?.trim() || null,
+      modelId: cfg?.modelId?.trim() || null,
+    }
+    await this.projects.patch(id, { defaultModel: saved })
+    return saved
   }
 
   /** 自动推进配置(读写均校验空间,归一化兜底) */

@@ -126,6 +126,8 @@ interface DomainLearningApi {
   publishCard(p: { id: string; cardId: string }): Promise<IpcLike<{ ok: boolean; already?: boolean }>>
   getSpacePace(id: string): Promise<IpcLike<DlPaceSettings>>
   setSpacePace(p: { id: string; pace: DlPaceSettings }): Promise<IpcLike<DlPaceSettings>>
+  getSpaceModel(id: string): Promise<IpcLike<{ providerConfigId: string | null; modelId: string | null }>>
+  setSpaceModel(p: { id: string; model: { providerConfigId?: string | null; modelId?: string | null } }): Promise<IpcLike<{ model: { providerConfigId: string | null; modelId: string | null } }>>
   getAtlasViews(id: string): Promise<IpcLike<DlAtlasViews | null>>
   getSpaceStats(id: string): Promise<IpcLike<DlSpaceStats | null>>
   exportLessonDigest(id: string): Promise<IpcLike<DlLessonDigest | null>>
@@ -379,6 +381,41 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     } catch (e: any) {
       error.value = e?.message ?? '保存自动推进失败'
       console.error('[domain-learning] 保存自动推进失败:', e)
+      return null
+    }
+  }
+
+  // ==================== 空间默认模型（2026-09-14：知识生成默认模型） ====================
+
+  /** 读取空间知识生成默认模型（dl:get-space-model；双 null=跟随全局默认，失败 → null） */
+  async function spaceModelOf(id: string): Promise<{ providerConfigId: string | null; modelId: string | null } | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.getSpaceModel(id)
+      if (r?.success && r.data) return r.data
+      error.value = r?.error ?? '读取空间模型设置失败'
+      return null
+    } catch {
+      return null
+    }
+  }
+
+  /** 保存空间知识生成默认模型（dl:set-space-model；null=跟随全局默认，失败 → null） */
+  async function saveSpaceModelOf(
+    id: string,
+    model: { providerConfigId?: string | null; modelId?: string | null },
+  ): Promise<{ providerConfigId: string | null; modelId: string | null } | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.setSpaceModel({ id, model })
+      if (r?.success && r.data) return r.data.model
+      error.value = r?.error ?? '保存空间模型设置失败'
+      return null
+    } catch (e: any) {
+      error.value = e?.message ?? '保存空间模型设置失败'
+      console.error('[domain-learning] 保存空间模型设置失败:', e)
       return null
     }
   }
@@ -945,6 +982,8 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     savePaceOf,
     saveKbOf,
     spaceMetaKbOf,
+    spaceModelOf,
+    saveSpaceModelOf,
     fetchSpacePrereqs,
     saveSpacePrereqsOf,
     createConceptOf,

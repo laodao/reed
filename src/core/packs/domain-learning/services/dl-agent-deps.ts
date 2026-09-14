@@ -114,6 +114,70 @@ export function formatSyllabusLines(
   return lines.join('\n')
 }
 
+/**
+ * 整体知识点体系清单（分支配概念树，紧凑、有上限）。
+ * @module packs/domain-learning/services/dl-agent-deps
+ *
+ * 2026-09-14 补：此前研究轮快照只有聚合统计/缺口/当前概念邻居，模型看不到"空间里已有哪些分支与概念"，
+ * 导致研究时容易和已有概念撞名、分不清归属。这里把完整树（根层 group → 概念；孤点归到「未归类」）
+ * 折叠成有上限的行，注入 research/tutor/task 快照，让模型一眼看清全图。
+ *
+ * - 只输出**名字 + 类型 + 是否已有讲义**（✓），不输出定义/讲义全文——既有 current 概念文本与
+ *   前置/缺口清单已给细节，这里是"结构"盲区补全；
+ * - `limit` 上限（默认 80 行）：超长地图截断并注明，避免把上下文窗口/本轮长度撑爆。
+ * @returns 渲染好的行（空地图返回 []）
+ */
+export function buildMapInventoryLines(
+  concepts: Array<{
+    id: string
+    name: string
+    nodeType: string
+    parentId: string | null
+    cardId?: string | null
+  }>,
+  limit = 80,
+): string[] {
+  if (!concepts.length) return []
+
+  const isKnowledge = (c: { nodeType: string }): boolean => c.nodeType !== 'group'
+  const groups = concepts.filter((c) => c.nodeType === 'group')
+  const groupById = new Map(groups.map((g) => [g.id, g]))
+  const roots = groups.filter((g) => !g.parentId)
+  const sortedGroups = [...roots, ...groups.filter((g) => g.parentId)].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+
+  const lines: string[] = []
+  const visitedConcepts = new Set<string>()
+  const mark = (c: { nodeType: string; cardId?: string | null }): string =>
+    `${c.nodeType}${c.cardId ? ' ✓' : ''}`
+
+  // 根层分支（nodeType=group）
+  for (const g of sortedGroups) {
+    if (lines.length >= limit) break
+    lines.push(`- 分支「${g.name}」`)
+    for (const c of concepts.filter((x) => x.parentId === g.id && isKnowledge(x))) {
+      if (lines.length >= limit) break
+      lines.push(`  · ${c.name}（${mark(c)}）`)
+      visitedConcepts.add(c.id)
+    }
+  }
+
+  // 已挂在 group 下的概念已访问；剩下来的是根层知识概念，以及"父级不是本空间 group"的孤点
+  for (const c of concepts) {
+    if (!isKnowledge(c) || visitedConcepts.has(c.id)) continue
+    if (lines.length >= limit) break
+    const underLocalGroup = !!c.parentId && groupById.has(c.parentId)
+    lines.push(`${underLocalGroup ? '  ' : '- '}${underLocalGroup ? '' : '根层/未归类：'}· ${c.name}（${mark(c)}）`)
+    visitedConcepts.add(c.id)
+  }
+
+  // 超长地图：截断并注明，避免撑爆上下文
+  if (lines.length >= limit) {
+    lines.length = limit
+    lines.push(`…（地图共 ${concepts.length} 个节点，仅列示前 ${limit} 行，请按缺口清单与选题决定补哪些）`)
+  }
+  return [`【当前知识点体系清单】（分支 → 概念；✓=已有讲义）`, ...lines]
+}
+
 /** 诉求理解的可读摘要（注入阶段 2 指令用） */
 export function formatUnderstandingSummary(
   u: import('@shared/types/domain-learning.types').DlPlanUnderstanding,
@@ -304,6 +368,17 @@ export async function computeDlSpaceSnapshot(
   })
   const coverageLines = mapCoverageBriefing(coverage)
 
+  // 整体知识点体系清单（2026-09-14 补：让模型看清全部分支/概念的树形结构，避免撞名/归属不清）
+  const mapInventoryLines = buildMapInventoryLines(
+    concepts.map((c) => ({
+      id: c.id,
+      name: c.name,
+      nodeType: c.nodeType,
+      parentId: c.parentId,
+      cardId: c.cardId,
+    })),
+  )
+
   // 学习主题诉求（2026-09-13）：用户创建空间时写的原话必须进上下文——
   // 之前只送 name+goal，模型只能凭「金融理财」猜，规划出的骨架与用户期望完全不同。
   const need = String(project?.description ?? '').trim()
@@ -326,7 +401,7 @@ export async function computeDlSpaceSnapshot(
   ]
 
   return {
-    text: [...head, ...kbLines, ...groupLines, ...prereqLines, ...coverageLines, ...conceptText].join('\n'),
+    text: [...head, ...kbLines, ...groupLines, ...prereqLines, ...coverageLines, ...mapInventoryLines, ...conceptText].join('\n'),
     nextConceptId: ready,
     isEmptySpace: !hasConceptLeaves(concepts.map((c) => ({ nodeType: c.nodeType }))),
     spaceName: project?.name ?? null,

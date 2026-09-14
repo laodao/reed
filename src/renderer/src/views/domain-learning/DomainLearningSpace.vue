@@ -19,8 +19,10 @@
 
     <!-- Agent 活动行（2026-09-13：起步研究/研究此概念这类长任务，滚动显示系统正在做什么）。
          空主题的起步态改在起步卡片内、按钮下方显示（用户需求：反馈要贴着触发点），
-         这里让位避免同一轮出现两份活动行。 -->
-    <AgentActivityStrip v-if="spaceId && !isEmptySpace" :space-id="spaceId" />
+         这里让位避免同一轮出现两份活动行。
+         2026-09-14 追加：选中的概念没有讲义时（中栏是「生成中/研究此概念」空态），
+         活动行改在空态里、「研究此概念」按钮下方居中显示，这里同样让位。 -->
+    <AgentActivityStrip v-if="spaceId && !isEmptySpace && !currentConceptNoCard" :space-id="spaceId" />
 
     <!-- 知识体系方案（固定流程入口：待确认时有高亮提示，确认后才生成知识点） -->
     <div v-if="planHint" class="plan-bar" :class="{ pending: planHint.pending }">
@@ -53,7 +55,6 @@
           <span class="chip-flag">{{ p.inSpace ? '空间内会教' : '需自备' }}</span>
         </span>
       </el-tooltip>
-      <span class="space-prereq-note">学这个主题之前需要具备；缺的先补再开始</span>
     </div>
 
     <!-- 手工追加知识点（2026-09-12：用户补全知识体系；前置直连为已确认边） -->
@@ -359,6 +360,9 @@
                 研究此概念
               </el-button>
             </el-empty>
+            <!-- 研究此概念 的 agent 执行过程（滚动小字）：贴着触发按钮下方居中显示，表示 agent 正在工作；
+                 不再跑到页面顶部（顶部那只在普通讲义态显示） -->
+            <AgentActivityStrip v-if="spaceId" :space-id="spaceId" class="research-activity" />
           </div>
         </template>
         <template v-else>
@@ -597,7 +601,7 @@
       </el-dialog>
 
       <!-- 空间设置（M6：设置入口移到主题主界面；共享面板组件，打开时按空间加载） -->
-      <el-dialog v-model="settingsVisible" title="空间设置" width="520px" append-to-body :close-on-click-modal="false">
+      <el-dialog v-model="settingsVisible" title="空间设置" width="900px" append-to-body :close-on-click-modal="false">
         <SpaceSettingsPanel v-if="settingsVisible" :space-id="spaceId" @applied="settingsVisible = false" />
       </el-dialog>
     </div>
@@ -957,6 +961,13 @@ function selectTreeLeaf(c?: DlConceptView): void {
 const currentConcept = computed<DlConceptView | null>(
   () => concepts.value.find(x => x.id === currentConceptId.value) ?? null
 )
+
+/**
+ * 当前选中的概念没有讲义 → 中栏是「生成中/研究此概念」空态。
+ * 该空态下 agent 活动行要贴在按钮下方显示，顶部那条须让位（否则活动行跑到页面顶部，
+ * 2026-09-14 用户需求）。
+ */
+const currentConceptNoCard = computed(() => !isEmptySpace.value && !!currentConcept.value && !currentConcept.value.card)
 
 /** 前置依赖边类型（后端关系枚举：prerequisite） */
 const PREREQ_TYPE = 'prerequisite'
@@ -2500,8 +2511,17 @@ watch(rightPane, (pane) => {
 
   &.empty-body {
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+  }
+
+  // 「研究此概念」下面的 agent 活动行（2026-09-14：空态下贴着按钮下方居中显示，表示 agent 正在工作）
+  .research-activity {
+    width: 100%;
+    max-width: 440px;
+    margin-top: 14px;
+    text-align: left;
   }
 
   // 块化知识点：卡片流间距由 SectionLesson 自管，压缩外层 padding 以留白更匀
