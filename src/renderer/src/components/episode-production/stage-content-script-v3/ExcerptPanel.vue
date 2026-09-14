@@ -193,6 +193,12 @@ const props = defineProps<{
   synopsis?: string
   /** 章节梗概重新生成中（loading 态） */
   regenerating?: boolean
+  /**
+   * 复核修复：父容器提供的异步保存（返回 true=成功）。传入后 onSave
+   * 等待回执再退编辑态——保存失败保留草稿（旧实现立即清空，1.5 万字
+   * 原文保存失败即丢稿）。
+   */
+  onContentSave?: (content: string) => Promise<boolean>
 }>()
 
 const emit = defineEmits<{
@@ -340,9 +346,14 @@ async function onSave(): Promise<void> {
   }
   savingContent.value = true
   try {
-    // 由父容器决定调哪个 IPC，结果不阻塞这里 ack
-    emit('save-content', editContentDraft.value)
-    // 父容器应负责 success message + episode 更新；这里直接退出编辑态
+    if (props.onContentSave) {
+      // 复核修复：等父容器保存回执，成功才退编辑态——失败保留草稿不丢稿
+      const ok = await props.onContentSave(editContentDraft.value).catch(() => false)
+      if (!ok) return
+    } else {
+      // 兼容旧接入：无异步回执时按原 emit 语义
+      emit('save-content', editContentDraft.value)
+    }
     cancelEditContent()
   } finally {
     savingContent.value = false

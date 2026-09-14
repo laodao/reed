@@ -850,6 +850,8 @@ async function saveChapter(outlineId: string) {
     const result = await window.electronAPI.longwriting.saveChapter(outlineId, content)
     if (result.success) {
       chapterIdMap.value[outlineId] = result.data.id
+      // 复核修复：保存成功才推进自动保存水位（失败则保持 dirty，下次自动保存重试）
+      lastSavedContent[outlineId] = content
       ElMessage.success('章节已保存')
 
       // 更新大纲状态为进行中
@@ -1704,8 +1706,10 @@ watch(chapterContentMap, (newVal) => {
 
       if (saveTimers[outlineId]) clearTimeout(saveTimers[outlineId])
       saveTimers[outlineId] = setTimeout(() => {
-        saveChapter(outlineId)
-        lastSavedContent[outlineId] = currentContent
+        void saveChapter(outlineId)
+        // 复核修复：不再提前标记 lastSavedContent——旧实现在保存发起前就
+        // 记水位，保存失败后该版本内容被去重逻辑永久跳过，静默丢失。
+        // lastSavedContent 只在 saveChapter 成功分支更新。
       }, 3000)
     }
   }

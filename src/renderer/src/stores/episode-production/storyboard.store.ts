@@ -20,15 +20,20 @@ export const useEpStoryboardStore = defineStore('ep-storyboard', () => {
 
   // ==================== 分镜管理 ====================
 
+  // 复核修复：请求序号防竞态（分镜批量生成期间进度事件会高频触发 reload）
+  let loadStoryboardsSeq = 0
+
   /**
    * 加载分镜列表
    */
   async function loadStoryboards(sceneScriptId: string): Promise<void> {
+    const seq = ++loadStoryboardsSeq
     const wb = useEpWorkbenchStore()
     wb.loading = true
     wb.error = null
     try {
       const response = await window.electronAPI.episodeProduction.listStoryboards(sceneScriptId)
+      if (seq !== loadStoryboardsSeq) return
       if (response.success && response.data) {
         storyboards.value = response.data as Storyboard[]
       } else {

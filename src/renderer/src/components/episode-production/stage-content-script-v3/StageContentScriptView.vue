@@ -122,6 +122,7 @@
           :regenerating="regenSynopsis"
           @reidentify="onIdentifyAll()"
           @save-content="onSaveContent"
+          :on-content-save="onSaveContent"
           @regenerate-synopsis="onRegenSynopsis"
           @save-synopsis="onSaveSynopsisInline"
         />
@@ -186,6 +187,7 @@
               @rewrite-scenes="onGenerateScript"
               @fix-bindings="onFixBindings"
               @save-scene="onSaveSceneInline"
+              :on-scene-save="onSaveSceneInline"
               @polish-scene="onPolishSceneInline"
               @expand="onExpandScene"
               @collapse="onCollapseScene"
@@ -319,14 +321,6 @@ const lastSaved = ref<{
   items: string
 } | null>(null)
 
-watch(
-  () => props.episode,
-  (ep) => {
-    syncFromEpisode(ep)
-  },
-  { immediate: true, deep: true },
-)
-
 function applyEntityDefaults<
   T extends UploadedCharacter | UploadedLocation | UploadedItem,
 >(arr: T[]): T[] {
@@ -381,6 +375,17 @@ const hasDirty = computed(() => {
     cur.items !== lastSaved.value.items
   )
 })
+
+watch(
+  () => props.episode,
+  (ep) => {
+    // 复核修复：本地有未保存修改时不再用后端对象覆盖（旧实现任何 updateEpisode
+    // 触发的对象替换都会静默回滚用户在侧栏的取舍）
+    if (hasDirty.value) return
+    syncFromEpisode(ep)
+  },
+  { immediate: true, deep: true },
+)
 
 // ===== 剧本 / 场景 / synopsis =====
 const script = computed(() => scriptStore.currentScript)
@@ -447,12 +452,6 @@ function onClickEntity(entity: EntityRef): void {
     highlightedEntity.value = null
   } else {
     highlightedEntity.value = entity
-  }
-}
-
-function onClickEntityFromText(meta: any): void {
-  if (meta?.kind && meta?.name) {
-    onClickEntity({ kind: meta.kind, name: meta.name, id: meta.id })
   }
 }
 
@@ -748,20 +747,22 @@ async function onConfirmEntities(): Promise<void> {
   }
 }
 
-/** 保存原文。ExcerptPanel 触发 save-content 事件后由容器实际调 IPC。 */
-async function onSaveContent(content: string): Promise<void> {
-  if (!props.episode) return
+/** 保存原文。ExcerptPanel 优先走 on-content-save 异步回执（失败保留编辑器草稿）。 */
+async function onSaveContent(content: string): Promise<boolean> {
+  if (!props.episode) return false
   try {
     const ok = await episodeStore.updateEpisode(props.episode.id, {
       uploadedContent: content,
     } as any)
     if (ok) {
       ElMessage.success('原文已保存 — 如要据此刷新角色 / 地点 / 物品，请点"重新 AI 分析"')
-    } else {
-      ElMessage.error(useEpWorkbenchStore().error || '保存原文失败')
+      return true
     }
+    ElMessage.error(useEpWorkbenchStore().error || '保存原文失败')
+    return false
   } catch (e: any) {
     ElMessage.error(e?.message ?? '保存原文失败')
+    return false
   }
 }
 
@@ -878,7 +879,8 @@ async function onFixBindings(): Promise<void> {
     const api = (window as any).electronAPI?.episodeProduction
     const resp = await api?.fixScriptBindingsByName?.(script.value.id)
     if (resp?.success) {
-      ElMessage.success(`已修复 ${resp.data?.fixed ?? 0} 处 binding`)
+      // 复核修复：后端返回字段是 matched（非 fixed），旧实现恒显示"已修复 0 处"
+      ElMessage.success(`已修复 ${resp.data?.matched ?? 0} 处 binding`)
       await scriptStore.loadScript(script.value.id)
     } else {
       ElMessage.error(resp?.error || '修复失败')
@@ -972,20 +974,24 @@ async function onAddScene(): Promise<void> {
 async function onSaveSceneInline(
   sceneId: string,
   partial: Partial<SceneScript>,
-): Promise<void> {
+): Promise<boolean> {
   const api = (window as any).electronAPI?.episodeProduction
   if (!api?.updateScene) {
     ElMessage.error('当前环境不支持 updateScene')
-    return
+    return false
   }
   savingSceneId.value = sceneId
   try {
     const resp = await api.updateScene(sceneId, partial)
     if (!resp?.success) {
       ElMessage.error(resp?.error || '更新场景失败')
-      return
+      return false
     }
     if (script.value?.id) await scriptStore.loadScript(script.value.id)
+    return true
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '更新场景失败')
+    return false
   } finally {
     savingSceneId.value = null
   }
