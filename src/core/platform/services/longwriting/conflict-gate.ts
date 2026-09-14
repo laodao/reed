@@ -13,6 +13,8 @@
  * 纯函数 + 薄封装，便于单测。
  */
 
+import { mutateWizardState } from './wizard-state-rmw'
+
 export interface ConflictLike {
   rule?: string
   message?: string
@@ -99,15 +101,21 @@ export async function acknowledgeConflict(
   status: 'resolved' | 'kept' = 'kept',
   note?: string,
 ): Promise<void> {
-  const project = await db?.lwProjects?.getById(projectId)
-  if (!project) throw new Error('项目不存在')
-  const ws = (project.wizardState || {}) as Record<string, any>
-  const rows: ResolutionRow[] = Array.isArray(ws.conflictResolutions) ? ws.conflictResolutions : []
-  const key = conflictKey(conflict)
-  if (!rows.some((r) => r.key === key)) {
-    rows.push({ key, rule: conflict.rule, status, note, at: Date.now() })
-  }
-  const merged = { ...(project.wizardState || {}), conflictResolutions: rows }
-  const updated = await db.lwProjects.update(projectId, { wizardState: merged })
-  if (!updated) throw new Error('登记失败（项目不存在）')
+  // 复核修复：wizardState 的读-改-写必须走共享 per-project 串行队列——
+  // 旧实现在队列外裸 RMW，与研讨室轮次写（turnNo/账本/设计包）并发会丢更新
+  await mutateWizardState<void>(db, projectId, (wizard) => {
+    const ws = (wizard || {}) as Record<string, any>
+    const rows: ResolutionRow[] = Array.isArray(ws.conflictResolutions) ? ws.conflictResolutions : []
+    const key = conflictKey(conflict)
+    if (!rows.some((r) => r.key === key)) {
+      rows.push({ key, rule: conflict.rule, status, note, at: Date.now() })
+    }
+    return {
+      next: { ...(wizard || {}), conflictResolutions: rows } as WizardStateFullLike,
+      result: undefined,
+    }
+  })
 }
+
+/** 与 @shared/types/longwriting WizardStateFull 同构（此处仅类型引用，避免额外依赖） */
+type WizardStateFullLike = Record<string, unknown>
