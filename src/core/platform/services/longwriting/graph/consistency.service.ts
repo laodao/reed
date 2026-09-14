@@ -4,7 +4,7 @@
  *
  * 把 generateChapter systemPrompt 里的"禁止"文案升级为数据驱动检测：
  * - validateBeforeGeneration：章节生成前，检查本章大纲涉及实体的时间线冲突
- * - scanContradictions：全项目矛盾扫描（规则 R1-R6）
+ * - scanContradictions：全项目矛盾扫描（规则 R1-R10）
  *
  * 规则：
  * - R1 死亡后出场（确定性）：角色最新切片含死亡语义，且后续章节大纲仍 involved 该角色
@@ -17,6 +17,9 @@
  * - R8 伏笔台账（49 号，promise/payoff 台账）：回收早于埋设（倒置）/ 超期未收
  * - R9 名册外人名（52 号，来自图谱提取的「未登记人物」队列）：正文出现圣经外的人名，
  *   直指《大宋女捕》实跑最大的漂移症状，且不依赖关系边/状态切片数据
+ * - R10 大纲承诺落点（54 号复测）：大纲概要承诺的事件在正文中无落点——
+ *   《大宋女捕·复测》实证"大纲写了正文没演"（翻案复职/纵火者落网/火场坐实父死因），
+ *   且下一章照常生成，R1-R9 均覆盖不到此类
  */
 
 import { getCoreDatabaseManager, type ICoreDatabaseManager } from '@core/database/database-manager.interface'
@@ -100,6 +103,72 @@ export function scanNameCandidates(
     .filter(([w, rec]) => rec.count >= minCount && !isKnown(w))
     .map(([name, rec]) => ({ name, chapters: [...rec.chapters], count: rec.count }))
     .sort((a, b) => b.count - a.count)
+}
+
+// ==================== R10：大纲承诺落点（纯函数，便于单测与离线验证） ====================
+
+/** 节拍句级切分（句号/分号/叹问/换行/破折号） */
+const BEAT_SENTENCE_SPLIT_RE = /[。；;！？\n—]+/
+/** 节拍子句切分（逗号/顿号/冒号） */
+const BEAT_CLAUSE_SPLIT_RE = /[，、,：:]+/
+/** 剥离括注与引号标记（保留引号内文字——如「对弈」的落点词在引号内） */
+const BEAT_ANNOTATION_RE = /[（(][^）)]*[）)]|「|」|『|』|“|”|"/g
+/** 短于该长度的子句不构成"事件承诺"（多为场景/情绪词） */
+export const BEAT_MIN_CHARS = 4
+/** 每章最多报告的未落点节拍数（压噪；确认已实现的走「知情保留」） */
+export const R10_MAX_REPORT_PER_CHAPTER = 3
+/** 尾部助词——谓词取词时跳过（"下葬了"→"下葬"） */
+const BEAT_TAIL_PARTICLES = new Set(['了', '的', '着', '得', '地'])
+/** 大纲里的叙事元语言（非故事事件，不参与落点判定） */
+const BEAT_META_WORDS = ['单元案', '主线', '卷终', '本集', '本章', '承接', '承上', 'C收进']
+
+export interface OutlineBeat {
+  /** 承诺事件原文（子句） */
+  text: string
+  /** 落点判定谓词：子句尾二字（事件结果词，如"落网/下葬/复职"） */
+  predicate: string
+}
+
+function beatTailPredicate(beat: string): string {
+  let s = beat
+  while (s.length > 2 && BEAT_TAIL_PARTICLES.has(s[s.length - 1])) s = s.slice(0, -1)
+  return s.slice(-2)
+}
+
+/**
+ * 从大纲概要拆出"承诺事件"节拍：句 → 子句。
+ * 复测大纲是电报体（"秦铁锁伏法、构陷全雪、父案昭雪下葬"），逗号/顿号切开后
+ * 每拍恰是一个可判定的事件承诺。
+ */
+export function extractOutlineBeats(summary: string): OutlineBeat[] {
+  const beats: OutlineBeat[] = []
+  const seen = new Set<string>()
+  for (const raw of String(summary || '').split(BEAT_SENTENCE_SPLIT_RE)) {
+    const clean = raw.replace(BEAT_ANNOTATION_RE, '')
+    for (const clause of clean.split(BEAT_CLAUSE_SPLIT_RE)) {
+      const text = clause.replace(/\s+/g, '')
+      if (text.length < BEAT_MIN_CHARS) continue
+      if (!/[\u4e00-\u9fa5]/.test(text)) continue
+      if (BEAT_META_WORDS.some((w) => text.includes(w))) continue
+      if (seen.has(text)) continue
+      seen.add(text)
+      beats.push({ text, predicate: beatTailPredicate(text) })
+    }
+  }
+  return beats
+}
+
+/**
+ * 判定节拍是否在正文落点：谓词（尾二字结果词）或节拍原文出现在正文 → 落点。
+ * 已知取舍：以对话"提到"结果词的会误判为已落点（如正文说"处分也该撤销了"但撤销
+ * 场景没演）——R10 定位为 warning 级人工复核线索，不作硬判；漏报优先于误报。
+ */
+export function findUnlandedOutlineBeats(summary: string, content: string): OutlineBeat[] {
+  const body = String(content || '')
+  if (!body) return []
+  return extractOutlineBeats(summary).filter(
+    (b) => !body.includes(b.predicate) && !body.includes(b.text),
+  )
 }
 
 export class ConsistencyService {
@@ -218,6 +287,7 @@ export class ConsistencyService {
     conflicts.push(...await this.scanR7HookRhythm(projectId))
     conflicts.push(...await this.scanR8ForeshadowLedger(projectId))
     conflicts.push(...await this.scanR9UnregisteredNames(projectId))
+    conflicts.push(...await this.scanR10OutlineBeats(projectId))
     return conflicts
   }
 
@@ -552,6 +622,41 @@ export class ConsistencyService {
       }
     } catch {
       // 文本扫描失败不影响队列告警
+    }
+    return conflicts
+  }
+
+  // ==================== R10：大纲承诺落点 ====================
+
+  /**
+   * R10 大纲承诺落点（54 号复测）：逐章比对"大纲概要承诺的事件"与正文落点。
+   * 《大宋女捕·复测》实证的缺口——大纲写明"翻案停职撤销、试用复职、收方小书为助手"、
+   * "纵火者落网"、"火场坐实父亲死因"，正文均未落点，下一章却照常生成；
+   * R1-R9 全部覆盖不到"大纲说了但正文没写"。
+   * 判定细节见 findUnlandedOutlineBeats；每章最多报 3 拍（压噪）。
+   */
+  private async scanR10OutlineBeats(projectId: string): Promise<ConflictItem[]> {
+    const m = this.manager()
+    if (!m?.lwOutlines || !m.lwChapters) return []
+    const outlines = (await m.lwOutlines.getByProjectId(projectId)) || []
+    const docOrder = buildOutlineDocOrder(outlines)
+    const conflicts: ConflictItem[] = []
+    for (const o of outlines) {
+      if (o.nodeType !== 'chapter') continue
+      const no = docOrder.leafNumbers.get(o.id)
+      if (!no) continue
+      const ch = await m.lwChapters.getByOutlineId(o.id)
+      const content = ch?.content || ''
+      if (!content.trim()) continue
+      const unlanded = findUnlandedOutlineBeats(o.summary || '', content)
+      for (const b of unlanded.slice(0, R10_MAX_REPORT_PER_CHAPTER)) {
+        conflicts.push({
+          rule: 'R10',
+          severity: 'warning',
+          message: `第 ${no} 章大纲承诺「${b.text}」未在正文落点（结果词「${b.predicate}」未出现）——已用其他情节实现请知情保留，否则补写正文或修订大纲`,
+          chapterNumber: no,
+        })
+      }
     }
     return conflicts
   }

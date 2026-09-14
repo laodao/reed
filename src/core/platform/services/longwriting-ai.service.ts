@@ -1737,6 +1737,7 @@ ${plotInfo || '暂无相关情节'}
 - **禁止**：已学会的技能再次"初学"
 - **禁止**：已获得的物品再次"首次获得"
 - **禁止**：忽略已建立的人物关系
+- **禁止**：与前情事实表冲突——已交付的信物/凭证/授权不得再次"首次"交付，人物身份、称谓与来历不得另起说法
 - **禁止**：与世界观设定冲突的内容
 
 ### 6. 输出要求
@@ -1838,6 +1839,7 @@ ${plotInfo || '暂无相关情节'}
    * 构建"图谱关系与事件"上下文段（阶段2）：
    * - 本章涉及实体的"生效关系边"（edgesAt，带有效期）
    * - 本项目已发生的事件摘要（涉及本章实体的，按章节倒序取最近 5 条）
+   * - 前情事实表（54 号复测：最近三章已发生事件，跨实体——实体过滤会饿死关键事实）
    */
   private async buildGraphContextSection(
     projectId: string,
@@ -1918,6 +1920,29 @@ ${plotInfo || '暂无相关情节'}
         }
       } catch { /* 伏笔读取失败不阻断 */ }
 
+      // 2.6 前情事实表（54 号复测）：跨实体取最近三章已发生事件。
+      // 上文 2.2 的实体过滤会饿死关键事实——《大宋女捕·复测》中第 2 章"乔镜知授予
+      // 勘验权"已被事件提取落库，但第 3 章生成时未进入上下文，正文照样"郑横再次
+      // 交出勘验令牌"。事实表不筛实体、按章聚合、封顶 12 条防撑爆上下文预算。
+      const factLines: string[] = []
+      try {
+        const allEvents = (await dbManager.lwEvents?.getByProjectId(projectId)) || []
+        const happened = allEvents
+          .filter(e => (e.state ?? 'happened') === 'happened')
+          .filter(e => e.chapterNumber > 0 && e.chapterNumber < chapterNumber)
+        const recentChapters = [...new Set(happened.map(e => e.chapterNumber))].sort((a, b) => b - a).slice(0, 3)
+        const seenFactNames = new Set<string>()
+        for (const cn of recentChapters) {
+          for (const e of happened.filter(x => x.chapterNumber === cn)) {
+            if (seenFactNames.has(e.name)) continue
+            seenFactNames.add(e.name)
+            factLines.push(`- 第${e.chapterNumber}章：${e.name}${e.description ? `（${e.description.slice(0, 40)}）` : ''}`)
+            if (factLines.length >= 12) break
+          }
+          if (factLines.length >= 12) break
+        }
+      } catch { /* 前情事实读取失败不阻断 */ }
+
       const parts: string[] = []
       if (edgeLines.length > 0) {
         parts.push(`【生效关系（第 ${chapterNumber} 章时间点）】\n${edgeLines.join('\n')}`)
@@ -1928,11 +1953,14 @@ ${plotInfo || '暂无相关情节'}
       if (relatedEvents.length > 0) {
         parts.push(`【已发生事件（涉及本章实体）】\n${relatedEvents.join('\n')}`)
       }
+      if (factLines.length > 0) {
+        parts.push(`【前情事实表（最近三章，全书已发生）】\n${factLines.join('\n')}`)
+      }
       if (foreshadowLines.length > 0) {
         parts.push(`【待回收伏笔】\n${foreshadowLines.join('\n')}`)
       }
       if (parts.length > 0) {
-        parts.push('注意：写作须符合上述关系与事件的时间线状态（已失效关系不得沿用，已发生事件不得重复）；本章若回收了某条伏笔，请在章末自然呼应。')
+        parts.push('注意：写作须符合上述关系与事件的时间线状态（已失效关系不得沿用，已发生事件不得重复）；前情已交付的信物、凭证、授权（如令牌、资格）不得在本章再次"首次"交付，人物的身份、称谓与来历一经前文确立不得另起说法；本章若回收了某条伏笔，请在章末自然呼应。')
         return parts.join('\n\n')
       }
       return ''
