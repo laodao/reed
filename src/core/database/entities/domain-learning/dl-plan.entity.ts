@@ -24,7 +24,15 @@ export class DlPlanEntity {
   @Column({ name: 'project_id', type: 'varchar' })
   projectId!: string
 
-  /** understanding（诉求理解）| syllabus（知识体系） */
+  /**
+   * 关联概念 id（可空；2026-09-14 讲义流水线）。
+   * space 级步骤（understanding/syllabus）为 NULL；`lesson`（讲义规格与区级计划）
+   * **按概念各存一套**，故读取时按 (projectId, step, conceptId) 定位。
+   */
+  @Column({ name: 'concept_id', type: 'varchar', nullable: true })
+  conceptId!: string | null
+
+  /** understanding（诉求理解）| syllabus（知识体系）| lesson（讲义规格与区级计划） */
   @Column({ name: 'step', type: 'varchar' })
   step!: string
 

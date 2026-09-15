@@ -48,6 +48,7 @@ const TOOL_ACTIONS: Record<string, string> = {
   dl_save_concept: '落库知识点',
   dl_save_relation: '建立前置关系',
   dl_save_card: '编写讲义',
+  dl_propose_lesson_plan: '规划讲义',
   dl_answer_question: '存档答疑',
   dl_task_progress: '上报进度',
   run_workflow: '运行工作流',
@@ -81,6 +82,10 @@ function subjectOf(toolName: string, args: unknown): string | null {
     case 'dl_save_card': {
       const c = nested('card')
       return pick(c?.conceptName, c?.conceptId, a.conceptName, a.conceptId)
+    }
+    case 'dl_propose_lesson_plan': {
+      const l = nested('lesson')
+      return pick(l?.conceptId, l?.conceptName, a.conceptId)
     }
     case 'dl_save_relation': {
       const r = nested('relation')

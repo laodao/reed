@@ -89,6 +89,15 @@ export async function createDomainLearningTables(ds: DataSource): Promise<void> 
   )
   // 2026-09-15 版本管理 B4：知识点节点字段变更审计（name/definitionShort/prerequisites 等）
   await ensureTable(ds, isPg, 'dl_concept_log', ddlConceptLog(isPg), () => conceptLogIndexes(ds, isPg))
+  // 2026-09-14 讲义流水线：dl_card.spec（讲义设计规格 JSON）+ dl_plan.concept_id（lesson 步按概念存）
+  await ensureColumn(ds, isPg, 'dl_card', 'spec', isPg ? 'spec text' : 'spec TEXT')
+  await ensureColumn(
+    ds,
+    isPg,
+    'dl_plan',
+    'concept_id',
+    isPg ? 'concept_id varchar' : 'concept_id TEXT',
+  )
 }
 
 // ==================== dl_project ====================
@@ -304,6 +313,7 @@ function ddlCard(pg: boolean): string {
         works           text,
         content_md      text,
         evidence_sources text,
+        spec            text,
         version         integer NOT NULL DEFAULT 1,
         status          varchar NOT NULL DEFAULT 'draft',
         verification    text,
@@ -323,6 +333,7 @@ function ddlCard(pg: boolean): string {
       works           TEXT,
       content_md      TEXT,
       evidence_sources TEXT,
+      spec            TEXT,
       version         INTEGER NOT NULL DEFAULT 1,
       status          TEXT NOT NULL DEFAULT 'draft',
       verification    TEXT,
@@ -346,6 +357,7 @@ function ddlPlan(pg: boolean): string {
         id         varchar PRIMARY KEY,
         user_id    varchar,
         project_id varchar NOT NULL,
+        concept_id varchar,
         step       varchar NOT NULL,
         status     varchar NOT NULL,
         revision   integer NOT NULL,
@@ -361,6 +373,7 @@ function ddlPlan(pg: boolean): string {
       id         TEXT PRIMARY KEY,
       user_id    TEXT,
       project_id TEXT NOT NULL,
+      concept_id TEXT,
       step       TEXT NOT NULL,
       status     TEXT NOT NULL,
       revision   INTEGER NOT NULL,

@@ -21,15 +21,27 @@ import {
   normalizeSpacePrereqs,
 } from '../rules/learning-prerequisites.rules'
 import {
+  getConfirmedLessonSpec,
   getConfirmedSyllabus,
+  proposeDlLessonPlan,
   proposeDlSyllabus,
   proposeDlUnderstanding,
 } from './dl-plan.service'
 import { checkNumericStatements } from '@shared/utils/lesson-numeric-check'
 import {
+  checkLessonDepth,
   checkLessonSectionsShape,
+  canonicalSectionKey,
   normalizeCardSections,
 } from '@shared/utils/lesson-template'
+import {
+  canonicalLessonLayout,
+  checkLessonVisualQuality,
+  defaultLayoutForSection,
+  lessonLayoutName,
+  type LessonQualityIssue,
+} from '@shared/utils/lesson-layout'
+import { checkLessonSpecAgreement } from '@shared/utils/lesson-spec'
 import type { DlCardEvidenceDto, DlCardSectionDto, DlCardWorkDto } from '@core/database/repositories/dl-card.repository'
 import type { DlAgentActionSummary, DlAgentExecutionContext } from './dl-agent.types'
 import type { DlEssenceType } from '@shared/types/domain-learning.types'
@@ -43,6 +55,7 @@ export type DlAgentActionType =
   | 'dl_answer_question'
   | 'dl_propose_understanding'
   | 'dl_propose_syllabus'
+  | 'dl_propose_lesson_plan'
 
 /** 动作参数（工具 schema 约束后透传） */
 export interface DlAgentActionParams {
@@ -95,6 +108,11 @@ export interface DlAgentActionParams {
   understanding?: Record<string, unknown>
   /** propose_syllabus：知识体系草案（流程第 2 步；需先确认诉求理解） */
   syllabus?: Record<string, unknown>
+  /**
+   * propose_lesson_plan：讲义设计规格与区级计划草案（讲义流水线 Plan 阶段；2026-09-14）。
+   * 形状 `{ conceptId, essenceType, spec:{ audience, outcomes, roster… } }`。
+   */
+  lesson?: Record<string, unknown>
 }
 
 /**
@@ -150,6 +168,25 @@ export async function executeDlAction(
           status: 'ok',
           message: r.message,
           data: { planId: r.planId, revision: r.revision },
+        },
+      }
+    }
+    case 'dl_propose_lesson_plan': {
+      // 讲义方案按概念写：概念 id 优先用载荷里的，其次用本轮研究概念（runtimeContext）
+      const raw = (params.lesson ?? {}) as Record<string, unknown>
+      const conceptId = String(raw.conceptId ?? ctx.conceptId ?? '').trim()
+      if (!conceptId) {
+        throw new Error(
+          'dl_propose_lesson_plan：缺 conceptId——讲义是按概念写的，请指定给哪个知识点做讲义方案。',
+        )
+      }
+      const r = await proposeDlLessonPlan(db, spaceId, conceptId, raw)
+      return {
+        summary: {
+          tool: 'dl_propose_lesson_plan',
+          status: 'ok',
+          message: r.message,
+          data: { planId: r.planId, revision: r.revision, conceptId },
         },
       }
     }
@@ -432,17 +469,77 @@ async function saveCard(
       style: s.style ?? null,
       md: s.md,
       folded: s.folded,
+      layout: s.layout ?? null,
+      takeaway: s.takeaway ?? null,
     })),
   })
   const shape = checkLessonSectionsShape({ essenceType: card.essenceType, sections: normalized.sections })
   if (!shape.ok) throw new Error(`dl_save_card：${shape.reason}`)
-  const sections: DlCardSectionDto[] = normalized.sections.map((s) => ({
-    key: s.key,
-    title: s.title ?? undefined,
-    style: s.style ?? undefined,
-    md: s.md,
-    folded: s.folded,
-  }))
+
+  // 重点深度提醒（2026-09-15 用户反馈「重点不突出」；**非阻断**）：
+  // 与数值自检同一模式——重点区（定义/详解/案例）写得太少、或导学把篇幅占了，就随落库结果
+  // 把"哪一区、要补什么、补到多少字"回给模型，由模型补写后重发一版。
+  // 不做硬门禁的理由：区是可选的（宁缺毋滥），硬拦"字数不够"会诱导模型**删区**而不是补写。
+  const depth = checkLessonDepth({ essenceType: card.essenceType, sections: normalized.sections })
+
+  // 讲义方案（Plan）一致性门禁（2026-09-14 讲义流水线）：
+  // 有**已确认规格**时，落库区集必须与大纲一致（区名/区序/声明的载体）——Plan 与 Do 不能两张皮；
+  // 没有大纲=快速模式（模型直接写），不阻断，但下面的视觉质检照样生效。
+  const lessonPlan = await getConfirmedLessonSpec(db, spaceId, card.conceptId)
+  if (lessonPlan && lessonPlan.essenceType !== card.essenceType) {
+    throw new Error(
+      `dl_save_card：本卡声明 essenceType=${card.essenceType}，而已确认的讲义方案是 ${lessonPlan.essenceType}——` +
+        '本质类型决定模板区集，改类型等于换大纲：请按方案的类型落卡，或先 dl_propose_lesson_plan 提交新方案并等用户确认。',
+    )
+  }
+  const plannedByKey = new Map(
+    (lessonPlan?.spec.roster ?? []).map((r) => [canonicalSectionKey(r.key), r]),
+  )
+
+  // 版式设备（2026-09-14 用户反馈「纯文字堆砌、布局单调」）：
+  // 模型给的 layout 优先（别名归一），其次大纲定的，最后按区 key 推导模板默认——
+  // 保证**每一区都有确定的版式**，渲染层据此出要点卡/对比表/图解…而不是一律段落。
+  const sections: DlCardSectionDto[] = normalized.sections.map((s) => {
+    const planned = plannedByKey.get(canonicalSectionKey(s.key))
+    const layout =
+      canonicalLessonLayout(s.layout) ||
+      canonicalLessonLayout(planned?.layout) ||
+      defaultLayoutForSection(s.key)
+    return {
+      key: s.key,
+      title: s.title ?? undefined,
+      style: s.style ?? undefined,
+      md: s.md,
+      folded: s.folded,
+      layout,
+      takeaway: (s.takeaway ?? '').trim() || undefined,
+    }
+  })
+
+  const planWarnings: LessonQualityIssue[] = []
+  if (lessonPlan) {
+    const agreement = checkLessonSpecAgreement({
+      essenceType: lessonPlan.essenceType,
+      spec: lessonPlan.spec,
+      sections,
+    })
+    if (!agreement.ok) throw new Error(`dl_save_card：${formatQualityIssues(agreement.blocking)}`)
+    planWarnings.push(...agreement.warnings)
+  }
+
+  // 视觉质检（2026-09-14）：**走完规划流程（有已确认讲义方案）时**，文字墙 / 通篇无图 / 声明版式与正文不符
+  // 一律拒绝落卡；快速模式（自动推进、起步轮）同类问题降级为警告随结果回给模型——避免质检把讲义卡死产不出来。
+  // 大纲声明的载体缺失与空区与模式无关（前者是 Plan↔Do 不一致，后者是空壳），始终阻断。
+  const visual = checkLessonVisualQuality({
+    essenceType: card.essenceType,
+    // 用**归一化后的原始区集**（layout 仍是模型声明的那个，没声明就是 undefined）——
+    // 下面落库用的 `sections` 里每区都已填好解析后的版式，若直接喂给它，
+    // 模板兜底也会被当成"声明"，把老卡/快速模式误伤成阻断。
+    sections: normalized.sections,
+    roster: lessonPlan?.spec.roster ?? null,
+    strict: !!lessonPlan,
+  })
+  if (visual.blocking.length) throw new Error(`dl_save_card：${formatQualityIssues(visual.blocking)}`)
 
   // 难度门禁（2026-09-09 复盘 + 用户拍板「遇超纲先补前置基础卡」）：
   // 目标=入门 且 讲义使用未做教学的进阶记号（∫/∂/iid/分布族…）→ 拒绝直接落卡并给出补前置路径
@@ -491,6 +588,8 @@ async function saveCard(
     sections,
     works: card.works ?? null,
     evidenceSources: card.evidenceSources,
+    // 讲义规格随卡留档（渲染层出规格条/区导航；区级重写据此重发规格锁）
+    spec: lessonPlan?.spec ?? null,
     version,
     status: 'draft',
   })
@@ -500,25 +599,59 @@ async function saveCard(
     researchState: 'extracted',
     attrs: { ...(targetConcept.attrs ?? {}), ...attrs },
   })
+  const qualityWarnings: LessonQualityIssue[] = [...planWarnings, ...visual.warnings]
+  const deviceSummary = visual.stats.devices.map((d) => lessonLayoutName(d) || d).join('/')
   return {
     summary: {
       tool: 'dl_save_card',
       status: 'ok',
       message:
-        `讲义已落库（v${version} 草稿，${sections.length} 区，证据 ${card.evidenceSources.length} 条）` +
+        `讲义已落库（v${version} 草稿，${sections.length} 区，证据 ${card.evidenceSources.length} 条` +
+        `${visual.stats.graphicSections ? `，含图/表/公式/代码的区 ${visual.stats.graphicSections} 个` : ''}` +
+        `${deviceSummary ? `，版式：${deviceSummary}` : ''}）` +
+        `${lessonPlan ? '（按已确认讲义方案落库）' : '（快速模式：未走讲义方案确认）'}` +
         `${existingCard ? '，旧稿 v' + existingCard.version + ' 留档' : ''}` +
         `${normalized.changes.length ? `；结构已按 ${card.essenceType} 模板归一：${normalized.changes.join('；')}` : ''}` +
+        `${shape.note ? `；${shape.note}` : ''}` +
         `${numericIssues.length ? `；⚠️ 数值自检发现 ${numericIssues.length} 处疑似不一致，请核对中间量后重发修订版` : ''}` +
-        `${progression.warnings.length ? `；提示：${progression.warnings.join(' ')}` : ''}`,
+        `${progression.warnings.length ? `；提示：${progression.warnings.join(' ')}` : ''}` +
+        `${depth.issues.length ? `；⚠️ 重点提醒（${depth.summary}）：${depth.issues.map((i) => `${i.message}${i.fix}`).join(' ')}` : ''}` +
+        `${qualityWarnings.length ? `；⚠️ 呈现提醒 ${qualityWarnings.length} 条：${qualityWarnings.map((i) => `${i.message}（${i.fix}）`).join(' ')}` : ''}`,
       data: {
         cardId,
         version,
         conceptId: card.conceptId,
         ...(numericIssues.length ? { numericIssues: numericIssues.map((i) => i.message) } : {}),
         ...(progression.warnings.length ? { progressionWarnings: progression.warnings } : {}),
+        ...(shape.note ? { shapeNote: shape.note } : {}),
+        ...(depth.issues.length ? { depthIssues: depth.issues.map((i) => i.message) } : {}),
+        ...(qualityWarnings.length
+          ? { layoutWarnings: qualityWarnings.map((i) => ({ code: i.code, sectionKey: i.sectionKey, message: i.message, fix: i.fix })) }
+          : {}),
+        layoutStats: {
+          sections: visual.stats.sections,
+          graphicSections: visual.stats.graphicSections,
+          devices: visual.stats.devices,
+        },
       },
     },
   }
+}
+
+/**
+ * 质检问题 → 可执行的拒绝原因（模型据此重发，不照抄重发）。
+ * 每条给出：哪一区、问题是什么、怎么改。
+ */
+function formatQualityIssues(issues: LessonQualityIssue[]): string {
+  const lines = issues.map((i, idx) => {
+    const where = i.sectionKey ? `[${i.sectionKey}]` : '[全文]'
+    return `${idx + 1}. ${where} ${i.message}\n   → ${i.fix}`
+  })
+  return (
+    `讲义未通过质检（${issues.length} 项，须先改好再落卡，读者体验不达标不落库）：\n` +
+    lines.join('\n') +
+    '\n改好后重发本卡（不要只删内容凑格式：要按建议把内容做成该有的形状）。'
+  )
 }
 
 // ==================== answer_question（答疑存档） ====================

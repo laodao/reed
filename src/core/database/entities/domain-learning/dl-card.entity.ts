@@ -44,6 +44,14 @@ export class DlCardEntity {
   @Column({ name: 'evidence_sources', type: 'text', nullable: true })
   evidenceSources!: string | null
 
+  /**
+   * 讲义设计规格 JSON（DlLessonSpec；2026-09-14 讲义流水线）。
+   * 记录「本卡是照哪份已确认规格写的」：渲染层据此出规格条与区导航，
+   * 区级重写据此重发规格锁。老卡为 NULL，照常按 sections 渲染。
+   */
+  @Column({ name: 'spec', type: 'text', nullable: true })
+  spec!: string | null
+
   /** 版本号（同一概念新讲义 +1） */
   @Column({ name: 'version', type: 'integer', default: 1 })
   version!: number

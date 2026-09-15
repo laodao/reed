@@ -28,7 +28,9 @@ import { getAgentLoopHarness } from '@core/platform/workflow/nodes/agent-loop-no
 import { getMemoryFlywheel } from '@core/platform/workflow/workflow-boot'
 import { registerDlAgentTools } from './dl-agent-tools'
 import { buildDlBindings, isPlanningSaveRound } from './dl-agent-bindings'
-import { getConfirmedSyllabus } from './dl-plan.service'
+import { getConfirmedLessonSpec, getConfirmedSyllabus } from './dl-plan.service'
+import { lessonSpecLock } from '@shared/utils/lesson-spec'
+import { DL_ESSENCE_TYPES, lessonTemplateHint } from '@shared/utils/lesson-template'
 import { planConceptNames, planSaveBudget } from '../rules/learning-plan.rules'
 import { loadAgentBudget } from '@core/platform/agent-runtime/budget/agent-budget'
 import {
@@ -41,9 +43,14 @@ import {
   dlSkillBody,
   DL_MAP_COMPLETION_SKILL_ID,
   shouldInjectMapCompletionSkill,
+  PLAN_LESSON_CONFIRMED_MARKER,
   PLAN_SYLLABUS_CONFIRMED_MARKER,
   PLAN_UNDERSTANDING_CONFIRMED_MARKER,
+  LESSON_QUICK_MODE_MARKER,
   isPlanPhaseMessage,
+  lessonAuthoringInstruction,
+  lessonPlanProposeInstruction,
+  lessonQuickModeHint,
   planSavePhaseInstruction,
   planSyllabusPhaseInstruction,
   planUnderstandingPhaseInstruction,
@@ -308,6 +315,43 @@ export class DlAgentHarnessService {
               : '【固定流程·第 2 步】诉求理解已确认，但系统读不到内容——请让用户在弹窗里重新确认一次。')
         } else {
           snapshotText += `\n${planUnderstandingPhaseInstruction(snapshot.spaceName ?? spaceId)}`
+        }
+      }
+
+      // ==================== 讲义流水线（2026-09-14：Plan 规格 → Do 逐区精写 → Check 质检） ====================
+      // 只在"研究某个知识点并产出讲义"的轮次里生效（有 conceptId 且非规划落库轮）。
+      // - 已有已确认讲义方案 → 注入规格锁 + 逐区精写指令（Do 阶段）；
+      // - 消息带【直接产出讲义】→ 快速模式（跳过方案确认，质检照样生效）；
+      // - 其它 → 注入"先提交讲义方案"指令（Plan 阶段），用户确认后前端再驱动下一轮。
+      if (mode === 'research' && conceptId && !planningRound) {
+        const lessonPlan = await getConfirmedLessonSpec(m, spaceId, conceptId)
+        const [targetConcept, space] = await Promise.all([
+          m.dlConcepts?.getById(conceptId) ?? Promise.resolve(null),
+          m.dlProjects?.getById(spaceId) ?? Promise.resolve(null),
+        ])
+        const conceptName = targetConcept?.name ?? conceptId
+        if (lessonPlan) {
+          snapshotText += `\n\n${lessonAuthoringInstruction({
+            conceptName,
+            specLock: lessonSpecLock(lessonPlan.spec, lessonPlan.essenceType),
+          })}`
+        } else if (message.includes(PLAN_LESSON_CONFIRMED_MARKER)) {
+          // 用户点了"确认讲义方案"，但系统读不到已确认规格（如确认被后续提案退位）——
+          // 不能默默退化成"自由发挥"，把恢复路径说清楚（与知识体系阶段的兜底同构）
+          snapshotText +=
+            '\n\n【讲义流水线·Do 阶段】用户已确认讲义方案，但系统读不到方案内容——' +
+            '请让用户在弹窗里重新确认一次，或先用 dl_propose_lesson_plan 重发一版方案。'
+        } else if (message.includes(LESSON_QUICK_MODE_MARKER)) {
+          snapshotText += `\n\n${lessonQuickModeHint()}`
+        } else {
+          const essenceHint =
+            '该概念的本质类型一旦定下，区集与区序就按它走：' +
+            DL_ESSENCE_TYPES.map((t) => `${t}：${lessonTemplateHint(t)}`).join('；')
+          snapshotText += `\n\n${lessonPlanProposeInstruction({
+            conceptName,
+            spaceGoal: space?.goal ?? null,
+            hasExistingCard: !!targetConcept?.cardId,
+          })}\n${essenceHint}`
         }
       }
     } else {

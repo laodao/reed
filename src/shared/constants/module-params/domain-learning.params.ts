@@ -74,6 +74,7 @@ export const DOMAIN_LEARNING_PARAMS: ModuleParamDefinition = {
             dl_answer_question: '回答问题',
             dl_propose_understanding: '提交诉求理解',
             dl_propose_syllabus: '提交知识体系',
+            dl_propose_lesson_plan: '提交讲义方案',
             dl_task_progress: '上报任务进度',
           },
         },

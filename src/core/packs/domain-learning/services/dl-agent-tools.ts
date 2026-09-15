@@ -130,14 +130,30 @@ const saveCardSchema = z.object({
     essenceType: z.enum(['K-concept', 'K-oper', 'K-stmt', 'K-inst', 'K-agent', 'K-open']).describe('知识本质类型（决定模板区集）'),
     sections: z
       .array(z.object({
-        key: z.string().min(1),
+        key: z.string().min(1).describe('区 key：只能用契约定在册的区名，并按该本质类型的固定区序（同义写法会被归一，自造区名会被拒绝）'),
         title: z.string().optional(),
         style: z.string().optional(),
-        md: z.string().min(1).describe('区内容 md（可含图/表/mermaid/KaTeX）'),
+        layout: z
+          .string()
+          .optional()
+          .describe(
+            '版式设备（这一区怎么呈现给读者）。**默认不填**（讲义按文档段落式呈现，2026-09-15 用户口径「不要卡片样式」）——' +
+              '只有正文确实是那种形状时才声明：prose 正文 / keypoints 要点卡 / compare 对比表 / steps 步骤条 / ' +
+              'figure 图解 / worked 算例推演 / formula 公式推导 / stats 数据看点 / quote 引文条文 / timeline 时间线 / ' +
+              'pitfall 误区警示 / checklist 上手清单 / code 可运行示例 / qa 自测题卡 / callout 结论条。' +
+              '**必须与正文形状一致**：声明 keypoints 就得是 2~6 条短要点（`- **要点**：一句话`），' +
+              '声明 figure 就真要有 ```figure 规格块，声明 compare 就要有对比表，声明 steps 就要有有序步骤；' +
+              '不一致会被落库质检拒绝（会告诉你哪一区差什么）。',
+          ),
+        takeaway: z.string().optional().describe('这一区的一句话结论（读者该记住什么；渲染成结论条）。较长的正文区建议给'),
+        md: z.string().min(1).describe('区内容 md（可含图/表/mermaid/KaTeX）；[重点] 的区（定义/详解/案例）是本讲重点，必须按该区写作要求写详细'),
         folded: z.boolean().optional(),
       }))
       .min(1)
-      .describe('讲义区集（模板语义；related 区不落库）'),
+      .describe(
+        '讲义区集（模板语义）。区序「学习前必读 → 为什么学它 → 定义 → 详解 → 案例 → …」：' +
+          '机制/结构/规则/公式/性质/步骤/依据/适用与局限已并入「详解」，本质并入「定义」开头，反例并入「案例」；不要自造区名',
+      ),
     works: z
       .array(z.object({ kind: z.string(), title: z.string(), authors: z.string().optional(), year: z.string().optional(), url: z.string().optional(), note: z.string().optional() }))
       .optional()
@@ -207,6 +223,65 @@ const proposeSyllabusSchema = z.object({
   }),
 })
 
+/**
+ * 讲义方案草案 schema（讲义流水线 Plan 阶段；2026-09-14）。
+ * 参考 ppt-master 的 design_spec/spec_lock + §IX 页级 roster：先把"写给谁、学完能做到什么、
+ * 多深多长、术语与记号怎么教、全讲用哪套算例数字、每个区用什么版式承载什么"写清楚，
+ * 弹窗给用户确认；确认后逐区精写，落库按它校验（区集/区序/载体一致）。
+ */
+const proposeLessonPlanSchema = z.object({
+  lesson: z.object({
+    conceptId: z.string().optional().describe('给哪个知识点做讲义方案（缺省=本轮研究概念）'),
+    essenceType: z
+      .enum(['K-concept', 'K-oper', 'K-stmt', 'K-inst', 'K-agent', 'K-open'])
+      .describe('知识本质类型（决定模板区集与区序，落库时必须与之一致）'),
+    spec: z.object({
+      audience: z.string().min(1).describe('读者画像：从哪出发、不是什么水平（决定类比密度与记号教学到哪一步）'),
+      outcomes: z
+        .array(z.string())
+        .min(1)
+        .describe('学完能做到（2~4 条**可测**动词句，如"能算出 (4,1)+(1,3) 广播后的形状"；禁用"了解/认识"）'),
+      depth: z.enum(['入门', '工作应用', '前沿']).optional().describe('深度（默认跟空间目标）'),
+      budget: z
+        .object({ sections: z.number().optional(), charsPerSection: z.number().optional() })
+        .optional()
+        .describe('篇幅预算：目标区数（3~20）与每区正文字数上限（120~1200）'),
+      tone: z.string().optional().describe('语气/风格（如"生活类比先行、不堆术语"）'),
+      glossary: z
+        .array(z.object({ term: z.string(), plain: z.string() }))
+        .optional()
+        .describe('术语表：本讲会用到的词 + 一句人话解释（正文首现必须解释）'),
+      notation: z
+        .array(z.object({ symbol: z.string(), read: z.string(), example: z.string().optional() }))
+        .optional()
+        .describe('记号表：数学/专业记号 + 读法 + 一个最小例子（正文出现未教学的记号会被门禁拒绝）'),
+      exampleParams: z
+        .array(z.object({ name: z.string(), value: z.string() }))
+        .optional()
+        .describe('示例参数表：全讲复用同一套数字（防跨区算例参数漂移）'),
+      roster: z
+        .array(
+          z.object({
+            key: z.string().min(1).describe('区 key（必须是该本质类型模板区集里的区，且按模板顺序）'),
+            layout: z
+              .string()
+              .min(1)
+              .describe('版式设备：prose/keypoints/compare/steps/figure/worked/formula/stats/quote/timeline/pitfall/checklist/code/qa/callout'),
+            job: z.string().min(1).describe('这一区替读者做什么（动词句；不是"讲一下 X"）'),
+            carrier: z
+              .string()
+              .optional()
+              .describe('用什么载体承载：figure/table/formula/code/points/stats/quote/checklist（没有就不填）'),
+            takeaway: z.string().optional().describe('这一区的一句话结论'),
+          }),
+        )
+        .min(1)
+        .describe('区级计划（roster）：与落库 sections 一一对应；用户会在弹窗里看到并可改版式'),
+      visualPlan: z.string().optional().describe('视觉计划：本讲靠什么图/表把结构讲清楚（写给读者看的一句说明）'),
+    }),
+  }),
+})
+
 /** 动作工具清单 */
 export function buildDlAgentToolDefs(): AgentToolDef[] {
   return [
@@ -225,7 +300,14 @@ export function buildDlAgentToolDefs(): AgentToolDef[] {
       '落库「主题学习前置要求」：学整个领域之前需要具备什么（含领域外需自备能力，如 Python 基础 / 线性代数基础），每条给"为什么需要"与"掌握到什么程度即可"。全量替换；确无需前置传空数组。',
       saveSpacePrereqsSchema,
     ),
-    dlActionTool('dl_save_card', '落库概念讲义卡片（区集 sections+著作 works+证据 evidenceSources；无证据会被拒绝；首区必须是 meta 且写前置声明）。', saveCardSchema),
+    dlActionTool(
+      'dl_save_card',
+      '落库概念讲义卡片（区集 sections+著作 works+证据 evidenceSources；无证据会被拒绝；首区必须是 meta 且写前置声明）。' +
+        '**重点就是定义、详解、案例这三节**——要写详细（标了 [重点] 的区有参考字数下限）；' +
+        '区序是「定义 → 详解 → 案例」；机制/结构/规则/公式/性质/步骤/依据/适用与局限一律并进「详解」，本质并进「定义」开头，反例并进「案例」；' +
+        '按文档写（段落+小标题+表格），不要做成要点卡堆砌（写不到位会在落库后被点名提醒）。',
+      saveCardSchema,
+    ),
     dlActionTool('dl_answer_question', '把答疑结果存档：答上写 answer+来源（answered）；答不上 unresolved=true 登记未解队列（保持 open）。', answerQuestionSchema),
     dlActionTool(
       'dl_propose_understanding',
@@ -238,6 +320,16 @@ export function buildDlAgentToolDefs(): AgentToolDef[] {
       '提交「知识体系」草案（固定流程第 2 步，需先有用户已确认的诉求理解）：分支目录 + 每个分支下的知识点（含一句话定义/前置/layer），' +
         '系统会弹窗让用户勾选增删与调序；**用户确认后才允许 dl_save_concept 落库**。每个分支都必须有知识点。',
       proposeSyllabusSchema,
+    ),
+    dlActionTool(
+      'dl_propose_lesson_plan',
+      '提交「讲义方案」草案（讲义生成固定流程第 1 步：先规划、用户确认、再逐区精写）：' +
+        '读者画像 / 学完能做到 / 深度 / 篇幅预算 / 语气 / 术语表 / 记号表 / 示例参数表 / **区级计划 roster**' +
+        '（每区：版式设备 + 这一区替读者做什么 + 用什么载体 + 一句话结论）。' +
+        '系统会弹窗让用户确认（可改每区版式或提调整意见）；**确认后再 dl_save_card 逐区精写**，' +
+        '落库时区集/区序/声明的载体必须与它一致。' +
+        '没有走这一步也能落卡（快速模式），但视觉质检（文字墙/通篇无图/声明与正文不符）照样拦。',
+      proposeLessonPlanSchema,
     ),
   ]
 }

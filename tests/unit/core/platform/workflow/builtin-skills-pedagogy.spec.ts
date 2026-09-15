@@ -172,6 +172,63 @@ describe('learning-concept-explainer 教学法契约（复盘：面向新人，�
     expect(body).toContain('不会运行')
     expect(body).toContain('200 行')
   })
+
+  // ============ 2026-09-15 用户口径：合并细碎章节、突出重点、示例放到详解之后、不要卡片样式 ============
+
+  it('重点分配：定义/详解/案例这三节写详细（[重点] 标记 + 参考字数下限；其它区不打"从简"标签）', () => {
+    expect(body).toContain('重点分配与区序')
+    expect(body).toContain('重点就是**定义、详解、案例**')
+    // 写作要求总表（与 lesson-template 同源渲染）必须进正文：重点标记 + 参考下限 + 各区要求
+    expect(body).toContain('definition（定义）[重点]')
+    expect(body).toContain('detail（详解）[重点]')
+    expect(body).toContain('examples（案例）[重点]')
+    expect(body).toContain('至少 320 字')
+    // v7：非重点区不再被贴上"导学/从简"标签
+    expect(body).not.toContain('meta（学习前必读）[')
+    expect(body).not.toContain('selfcheck（自测）[')
+  })
+
+  it('合并：机制/结构/规则/公式/性质/步骤/依据/适用与局限并进「详解」，本质并进「定义」，反例并进「案例」', () => {
+    expect(body).toContain('并进「详解」')
+    expect(body).toContain('并进「定义」')
+    expect(body).toContain('并进「案例」')
+    expect(body).toContain('并进「常见坑」')
+    expect(body).toContain('不再单列')
+    // 旧区名不再出现在新模板区序里
+    expect(body).not.toContain('structure（')
+    expect(body).not.toContain('rules（')
+  })
+
+  it('详解是篇幅最大的重点区：主线 + 逐类同维度展开 + 对比表 + 判定与计算规则', () => {
+    expect(body).toContain('贯穿主线')
+    expect(body).toContain('同一组维度')
+    expect(body).toContain('横向对比表')
+    expect(body).toContain('判定与计算规则')
+  })
+
+  it('案例紧跟详解之后，用来呼应定义与详解（不做反事实推演、不堆概念）', () => {
+    expect(body).toContain('定义 → 详解 → 案例')
+    expect(body).toContain('案例紧跟详解之后')
+    expect(body).toContain('不要拿案例当正文主体')
+    expect(body).toContain('反事实推演')
+  })
+
+  it('不要卡片样式：按文档写（段落 + 小标题 + 表格），不做要点卡堆砌', () => {
+    expect(body).toContain('不要卡片样式')
+    expect(body).toContain('按文档写')
+    expect(body).toContain('要点卡')
+  })
+
+  it('bootstrap S4 与 lesson-updater 同步 v7 口径（合并 + 新序 + 不要卡片）', () => {
+    const bootstrap = splitSkillFrontmatter(BUILTIN_SKILLS.find((s) => s.id === 'learning-space-bootstrap')!.markdown).body
+    expect(bootstrap).toContain('重点分配')
+    expect(bootstrap).toContain('区序「定义 → 详解 → 案例」')
+    expect(bootstrap).toContain('不要卡片样式')
+    const updater = splitSkillFrontmatter(BUILTIN_SKILLS.find((s) => s.id === 'learning-lesson-updater')!.markdown).body
+    expect(updater).toContain('区序「定义 → 详解 → 案例」')
+    expect(updater).toContain('并进「详解」')
+    expect(updater).toContain('案例紧跟详解之后')
+  })
 })
 
 describe('learning-map-completion 取材与四阶段契约（2026-09-12 用户口径）', () => {

@@ -161,6 +161,8 @@ export const AGENT_BUDGET_DEFAULTS: ResolvedAgentBudget = {
       dl_answer_question: 1,
       dl_propose_understanding: 3,
       dl_propose_syllabus: 3,
+      // 讲义流水线 Plan 阶段（2026-09-14）：一轮里提交/重做讲义方案的次数
+      dl_propose_lesson_plan: 3,
       dl_task_progress: 12,
     },
     // 领域共学采集读工具（原 DL_READ_TOOL_MAX_CALLS）

@@ -164,13 +164,15 @@ interface DomainLearningApi {
   }): Promise<IpcLike<{ note: DlNote; created: boolean }>>
   deleteNote(p: { id: string; noteId: string }): Promise<IpcLike<{ ok: boolean }>>
   schedulerState(): Promise<IpcLike<{ mode: 'desktop' | 'web'; running: boolean; runningCount: number }>>
-  /** 方案确认流程（2026-09-13）：读方案总览 / 确认某一步（可带用户编辑后的载荷） */
-  getPlan(id: string): Promise<IpcLike<DlPlanView>>
+  /** 方案确认流程（2026-09-13）：读方案总览 / 确认某一步（可带用户编辑后的载荷）
+   *  2026-09-14：带 conceptId 时一并读回该概念的**讲义方案**（lesson 步） */
+  getPlan(id: string, conceptId?: string | null): Promise<IpcLike<DlPlanView>>
   confirmPlan(p: {
     id: string
-    step: 'understanding' | 'syllabus'
+    step: 'understanding' | 'syllabus' | 'lesson'
     payload?: unknown
     feedback?: string | null
+    conceptId?: string | null
   }): Promise<IpcLike<{ message: string }>>
   onAgentEvent(spaceId: string, conceptId: string | null | undefined, cb: (event: DlAgentUiEvent) => void): () => void
   onStream(eventId: string, cb: (event: DlGenerateUiEvent) => void): () => void
@@ -872,12 +874,12 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
   /** 是否正在读写方案 */
   const planBusy = ref(false)
 
-  /** 拉方案总览（弹窗打开/每轮研究结束后调用） */
-  async function fetchPlan(id: string): Promise<DlPlanView | null> {
+  /** 拉方案总览（弹窗打开/每轮研究结束后调用）；带 conceptId 时一并取回该概念的讲义方案 */
+  async function fetchPlan(id: string, conceptId?: string | null): Promise<DlPlanView | null> {
     const a = api()
     if (!a) return null
     try {
-      const r = await a.getPlan(id)
+      const r = await a.getPlan(id, conceptId ?? null)
       if (r?.success && r.data) {
         plan.value = r.data
         return r.data
@@ -892,17 +894,20 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
   }
 
   /**
-   * 确认某一步（诉求理解 / 知识体系）。
-   * syllabus 可带 **用户编辑后的载荷**（勾选增删 + 调序的结果），落库门禁据此放行。
+   * 确认某一步（诉求理解 / 知识体系 / 讲义方案）。
+   * syllabus 可带 **用户编辑后的载荷**（勾选增删 + 调序的结果）；
+   * lesson 可带 **用户改过区级版式的载荷**（{ conceptId, essenceType, spec }）——
+   * 落库门禁与写作口径都据此更新。
    *
    * 载荷可能来自弹窗里的 reactive 草稿，Vue 代理过不了 `ipcRenderer.invoke` 的结构化克隆
    * （报「An object could not be cloned.」），故出站前统一纯化。
    */
   async function confirmPlan(p: {
     id: string
-    step: 'understanding' | 'syllabus'
+    step: 'understanding' | 'syllabus' | 'lesson'
     payload?: unknown
     feedback?: string | null
+    conceptId?: string | null
   }): Promise<{ ok: boolean; message: string }> {
     const a = api()
     if (!a) return { ok: false, message: '当前环境不支持方案确认' }
@@ -911,7 +916,7 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     try {
       const r = await a.confirmPlan(toPlainData(p))
       if (r?.success) {
-        await fetchPlan(p.id)
+        await fetchPlan(p.id, p.conceptId ?? null)
         return { ok: true, message: r.data?.message ?? '已确认' }
       }
       error.value = r?.error ?? '确认失败'

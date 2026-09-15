@@ -28,9 +28,9 @@ describe('区识别与兜底标题/样式', () => {
     expect(isAuthoringNotesSection({ key: 'definition', title: '定义' })).toBe(false)
   })
 
-  it('defaultSectionStyle：meta/essence=引言，edge/pitfalls=注意，selfcheck/review=检验', () => {
+  it('defaultSectionStyle：meta=引言，edge/pitfalls=注意，selfcheck/review=检验（essence 已并入定义 → body）', () => {
     expect(defaultSectionStyle('meta')).toBe('intro')
-    expect(defaultSectionStyle('essence')).toBe('intro')
+    expect(defaultSectionStyle('essence')).toBe('body')
     expect(defaultSectionStyle('edge')).toBe('note')
     expect(defaultSectionStyle('pitfalls')).toBe('note')
     expect(defaultSectionStyle('selfcheck')).toBe('review')
@@ -99,8 +99,8 @@ describe('planLessonSections', () => {
     expect(plan.content[0].title).toBe('学习前必读')
     expect(plan.content[0].style).toBe('intro')
     expect(plan.content[1].title).toBe('这是什么')
-    expect(plan.content[1].style).toBe('intro')
-    expect(plan.content[2].title).toBe('示例与注意')
+    expect(plan.content[1].style).toBe('body') // v7：essence 已并入 definition，样式随定义区
+    expect(plan.content[2].title).toBe('常见坑')
     expect(plan.content[2].style).toBe('review')
   })
 
@@ -151,7 +151,7 @@ describe('planLessonSections', () => {
       // 模型给定的标题仍优先（历史卡不改写），缺省才用契约兜底
       expect(plan.content[0].title).toBe('自测与检验清单')
     }
-    expect(planLessonSections([sec('worked', '正文')]).content[0].title).toBe('示例')
+    expect(planLessonSections([sec('worked', '正文')]).content[0].title).toBe('案例')
   })
 
   it('历史卡正文里的 ## 小标题在渲染期降到 ###（与区标题拉开层级）', () => {

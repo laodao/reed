@@ -7,7 +7,8 @@
  *              由 skill-parser 解析为 WorkflowSkill。
  */
 
-import { DL_ESSENCE_TYPES, lessonTemplateHint } from '@shared/utils/lesson-template'
+import { DL_ESSENCE_TYPES, lessonSectionBriefMenuHint, lessonTemplateHint } from '@shared/utils/lesson-template'
+import { LESSON_LAYOUT_CATALOG, LESSON_LAYOUT_RHYTHM } from '@shared/utils/lesson-layout'
 
 /**
  * 讲义区集契约提示（与 dl_save_card 落库门禁同源，读 `shared/utils/lesson-template`）。
@@ -18,15 +19,49 @@ const LESSON_SECTION_CONTRACT_HINT = DL_ESSENCE_TYPES.map(
   (type) => `      · ${type}：${lessonTemplateHint(type)}`,
 ).join('\n')
 
-/** 讲义区集纪律（技能正文里复用的三条硬要求；整体缩进 3 格，便于嵌进有序/无序列表项） */
+/**
+ * 区写作要求总表（v6：重点在「定义 + 详解 + 案例」，导学与收尾从简）。
+ * 与区序提示同一来源（`lesson-template`），落库后的重点深度提醒也读它。
+ */
+const LESSON_SECTION_BRIEF_HINT = lessonSectionBriefMenuHint()
+  .split('\n')
+  .map((line) => `     ${line}`)
+  .join('\n')
+
+/** 讲义区集纪律（技能正文里复用的硬要求；整体缩进 3 格，便于嵌进有序/无序列表项） */
 const LESSON_SECTION_CONTRACT_RULES = `区集契约（2026-09-13 起硬要求，违反会被 dl_save_card 拒绝）：
    - 只能用下列区名，且必须按给定顺序（可跳过用不到的区，但不能乱序、不能自造区名）：
 ${LESSON_SECTION_CONTRACT_HINT}
    - 区标题由契约派生（不要自己起大标题）；区正文里的小标题一律用 \`###\`（区标题已占二级语义），不要再写 \`##\`；
-   - 自测答案与题目必须分开：题面放 selfcheck，答案放独立 answers 区（或所有题目写完后用**独占一行**的「答案」/「参考答案」小标题引出，系统会自动拆区）——答案写在题目行里会被拒绝。`
+   - 自测答案与题目必须分开：题面放 selfcheck，答案放独立 answers 区（或所有题目写完后用**独占一行**的「答案」/「参考答案」小标题引出，系统会自动拆区）——答案写在题目行里会被拒绝。
+   - **重点分配与区序（2026-09-15 用户口径：合并细碎章节、突出重点、示例放到详解之后、不要卡片样式）**：一个知识点的重点就是**定义、详解、案例**这三节——要写详细；其余章节按原有分量写，不要扩写、不要抢篇幅。区序是「**定义 → 详解 → 案例**」，案例紧跟详解之后。**原来分散的「机制 / 构成与结构 / 规则 / 公式 / 性质 / 步骤 / 依据 / 适用与局限」不再单列，一律并进「详解」**（篇幅最大的重点区：主线 + 逐项/逐类同维度展开 + 横向对比表 + 判定与计算规则）；「本质」并进「定义」开头（两三句直觉）；「反例/边界」并进「案例」；「补充与注意」并进「常见坑」。**正文按文档写**：段落 + 必要的小标题与表格，不要做成一堆要点卡的堆砌。标了 [重点] 的区有参考字数下限，写不到会被点名提醒（不拒绝落库）；每个区要写什么，见下表：
+${LESSON_SECTION_BRIEF_HINT}`
 
-/** 内置技能清单（id → SKILL.md 文本） */
-export const BUILTIN_SKILLS: Array<{ id: string; markdown: string }> = [
+/**
+ * 讲义「版式设备」纪律（2026-09-14 用户反馈「纯粹的堆砌文字，没有对文字做精炼归纳，没有配图，
+ * 布局单调简陋」）。与落库的视觉质检（`checkLessonVisualQuality`）同源：技能正文里讲清
+ * 设备清单、句法与节奏，落库时按同一份契约拦"文字墙 / 通篇无图 / 声明与正文不符"。
+ */
+const LESSON_LAYOUT_MENU_HINT = LESSON_LAYOUT_CATALOG.map(
+  (d) => `     · \`${d.key}\`（${d.name}）：${d.purpose}｜正文形状：${d.shapeHint}`,
+).join('\n')
+
+const LESSON_LAYOUT_DISCIPLINE = `### 呈现纪律（2026-09-14 用户反馈落地，违反会被视觉质检拒绝）
+   - **一区一版式**：每区都要给 \`layout\`（版式设备），正文形状必须与它一致——声明 keypoints 就得是 2~6 条
+     \`- **要点**：一句话\`；compare 就得有对比表；steps 就得有序步骤；figure 就得有 \`\`\`figure 规格块；
+     stats 就得是 \`- 68% | 命中率 | 备注\`；quote 就得是 \`> 原文\` 引用块；code 就得是可运行的 \`\`\`js；
+     checklist 就得是 \`- [ ] 事项\`；qa 是题面（答案拆到 answers）。声明与正文不符会被拒绝落库。
+   - **精炼归纳（用户最不满的一点）**：禁止把一整段话糊进区里——一区超过 ${LESSON_LAYOUT_RHYTHM.longSectionChars} 字就必须
+     归纳成要点卡/小标题/对比表；纯文字且没有任何结构、又超过 ${LESSON_LAYOUT_RHYTHM.proseWallChars} 字的"文字墙"会被拒绝。
+   - **配图（每个知识点至少一个"看得见"的载体）**：整篇（≥${LESSON_LAYOUT_RHYTHM.minSectionsForGraphicCarrier} 区）必须有图/表/公式/代码，
+     否则拒绝落库。结构/形状用 shape|matrix|network，趋势/对比用 plot|bar，并列关系用对比表，公式用 $$ 块级公式，
+     能跑的东西用 \`\`\`js——用代码画图（渲染器画成 SVG），**不要用 ASCII 画图、也不要指望 AI 生图**。
+   - **布局要有节奏**：不要连续 ${LESSON_LAYOUT_RHYTHM.maxConsecutivePlain} 个区都用正文（readers 会疲劳），也不要整篇只用一种版式；
+     每区给 \`takeaway\`（一句话结论），读者先拿结论再决定细读。
+   - 设备菜单（选设备的依据是"这一区替读者做什么"，不是好看）：
+${LESSON_LAYOUT_MENU_HINT}`
+
+/** 内置技能清单（id → SKILL.md 文本） */export const BUILTIN_SKILLS: Array<{ id: string; markdown: string }> = [
   {
     id: 'chapter-design-card',
     markdown: `---
@@ -636,6 +671,62 @@ output_desc: 输出 JSON 对象，含 branches 数组（name/desc）、spacePrer
 `,
   },
   {
+    id: 'learning-lesson-designer',
+    markdown: `---
+name: learning-lesson-designer
+title: 讲义方案设计（先规划，再动笔）
+description: 为一个知识点设计「讲义方案」：读者画像 / 学完能做到 / 深度篇幅 / 术语表 / 记号表 / 示例参数表 / 区级计划（每区的版式设备 + 读者动作 + 载体 + 一句话结论）/ 视觉计划。参考 ppt-master 的 design_spec + 页级 roster：规划经用户确认后才逐区精写。
+when_to_use: 要为一个知识点产出讲义之前（先规划规格与大纲）；或用户说"这份讲义讲偏了/太堆砌/没有图"需要重新规划时
+category: 领域学习
+inputs:
+  - key: concept
+    label: 概念名
+    type: string
+    required: true
+  - key: material
+    label: 资料全文/摘录
+    type: textarea
+    help: 可选：知识库检索或网页提取到的资料（本步不必读完，够判结构与重点即可）
+  - key: goal
+    label: 学习目标
+    type: select
+    default: 入门
+    options:
+      - { label: 入门, value: 入门 }
+      - { label: 工作应用, value: 工作应用 }
+      - { label: 前沿, value: 前沿 }
+output_desc: 输出讲义方案 JSON（essence_type + spec：audience/outcomes/depth/budget/tone/glossary/notation/exampleParams/roster/visualPlan），供 dl_propose_lesson_plan 提交并弹窗确认
+---
+你是「讲义设计师」。任务不是写正文，而是**先把这份讲义设计出来**——让用户在动笔前就能看出：写给谁、学到什么程度、
+分几节、每节用什么形态呈现、靠什么图讲清楚。规划过的讲义才不容易写成"一堵字"。
+
+产出用 \`dl_propose_lesson_plan\` 提交（系统会弹窗让用户确认或改版式）：
+
+1. **本质类型**：先判 K-concept / K-oper / K-stmt / K-inst / K-agent / K-open——它决定模板区集与区序（区名与顺序不能自造）。
+2. **读者与目标**：\`audience\`（从哪出发、不是什么水平，例："会用 Excel、没读过金融教材的职场人"）；
+   \`outcomes\`（2~4 条**可测**动词句："能算出…""能判断…""能区分…"；禁用"了解/认识"）。
+3. **深度与篇幅**：\`depth\` + \`budget\`（区数 3~20、每区正文字数上限 120~1200）+ \`tone\`（语气/风格）。
+4. **术语表 / 记号表 / 示例参数表**：术语给一句人话解释（正文首现必须解释）；
+   记号给"读法 + 最小例子"（正文出现未教学的记号会被门禁拒绝）；示例参数是**全讲复用同一套数字**（防跨区漂移）。
+5. **区级计划 roster（核心）**：逐区给
+   - \`key\`：模板区集里的区名，按模板顺序；
+   - \`layout\`：**版式设备**（选设备看"这一区替读者做什么"）：
+${LESSON_LAYOUT_MENU_HINT}
+   - \`job\`：这一区替读者做什么（动词句，不是"讲一下 X"）；
+   - \`carrier\`：用什么载体承载（figure/table/formula/code/points/stats/quote/checklist；没有就不填）；
+   - \`takeaway\`：这一区的一句话结论。
+6. **视觉计划 \`visualPlan\`**：整份讲义靠哪些图/表把结构讲清楚——**至少一个"看得见"的载体**（图/表/公式/代码），
+   否则落库会被视觉质检拒绝。
+7. 规划纪律：
+   - 区数是"够讲清楚"的最小集合，宁少不滥（用不到的区直接跳过，别凑数）；
+   - 每区只承担一个读者动作；相邻区的版式要换（不要连着三区都是正文）；
+   - 重点在定义/详解/案例（v6 区集契约），导学与自测从简；
+   - 材料里没读到的东西不要写进方案（先验内容在后续正文里必须标注）。
+
+提交后停下，用一段话向用户说明：本质类型、准备分几区、每区什么形态、配什么图，等确认。
+`,
+  },
+  {
     id: 'learning-concept-explainer',
     markdown: `---
 name: learning-concept-explainer
@@ -667,23 +758,39 @@ output_desc: 输出 JSON 对象，含 concept_name、essence_type、sections 数
 ---
 你是「会教人的领域专家」。把概念「{{param.concept}}」讲成用户能顺读的结构化讲义卡片。
 
-先判定本质类型（默认 {{param.essenceHint}}，可改判）：
-- K-concept 概念：本质 → 定义 → 机制(可含图/推导) → 示例与注意 → 检验
-- K-oper 做法：本质 → 定义 → 步骤/算法 → 适用与局限 → 检验
-- K-stmt 陈述/定理/法规：本质 → 陈述/条文 → 依据/证明(公式) → 推论/适用 → 示例与反例 → 检验
-- K-inst 实例/数据：本质 → 实例/数据 → 怎么读 → 同族对比 → 检验
-- K-agent 主体/载体：本质 → 主张/贡献 → 背景/立场 → 争议/评价 → 检验
-- K-open 开放问题：现状 → 各方观点 → 未决点/为何难 → 检验
+**流程（2026-09-14 讲义流水线；参考 ppt-master 的 Plan → Do·Check·Act）**：
+1. **Plan（先规划，别急着写正文）**：采证之后先调 \`dl_propose_lesson_plan\` 提交**讲义方案**——
+   读者画像 / 学完能做到 / 深度 / 篇幅预算 / 语气 / 术语表 / 记号表 / 示例参数表 /
+   **区级计划 roster**（每区：key + layout 版式 + job 读者动作 + carrier 载体 + takeaway 一句话结论）+ 视觉计划；
+   用户在弹窗里确认后，宿主会把「规格锁」注入下一轮，你再逐区精写（此时消息会带【已确认讲义方案】）。
+2. **Do（逐区精写）**：严格按 roster 的顺序与版式写。用 \`dl_task_progress\`（action=plan/start/done）逐区报进度；
+   每写完 3 个区回读一次规格锁（防术语/记号/算例漂移）。
+3. **Check**：\`dl_save_card\` 落库时会按已确认大纲校验区集/区序/载体，并按视觉质检拦"文字墙 / 通篇无图 / 声明与正文不符"；
+   警告（版式单调、要点没精炼、长区没归纳）会随结果回给你——按建议补写后重发一版。
+4. 若宿主明确标注【直接产出讲义】（快速模式：自动推进/重新生成），可跳过第 1 步直接逐区精写，但**质检照样生效**。
 
-各区 md 为整段可顺读内容（可含表格/mermaid/KaTeX 公式——块级公式用 $$ 必须独立成行）。区标题用模板语义默认标题（本质/定义/机制/步骤/陈述/依据/示例/检验等），style 用 intro/body/note/review。证明、长条文等深水内容放独立区并设 folded: true。
+先判定本质类型（默认 {{param.essenceHint}}，可改判）；下面是每类的**主线**（完整区序与每区写作要求见后面的区集契约，以契约为准）：
+- K-concept 概念：为什么学它 → 定义 → 详解 → 案例 → 落到代码 → 辨析 → 常见坑 → 自测
+- K-oper 做法：为什么学它 → 定义 → 详解 → 落到代码 → 案例 → 辨析 → 常见坑 → 自测
+- K-stmt 陈述/定理/法规：陈述/条文 → 定义 → 详解（依据与证明并进来）→ 案例 → 辨析 → 常见坑 → 自测
+- K-inst 实例/数据：定义 → 详解 → 案例 → 辨析 → 常见坑 → 自测
+- K-agent 主体/载体：主张/贡献（陈述）→ 定义 → 详解 → 争议与评价 → 案例 → 辨析 → 常见坑 → 自测
+- K-open 开放问题：现状/陈述 → 定义 → 各方观点 → 详解（为何难）→ 案例 → 辨析 → 常见坑 → 自测
+
+各区 md 为整段可顺读内容（可含表格/mermaid/KaTeX 公式——块级公式用 $$ 必须独立成行）。区标题用模板语义默认标题（定义/详解/案例/辨析/常见坑/自测等），style 用 intro/body/note/review。**正文按文档写**（段落 + 必要的小标题与表格），不要做成一堆要点卡；长证明、长条文放本区末尾并设 folded: true。
 
 sections 之外：
 - works：相关著作/一手文献（K-stmt 定理挂提出文献、法规挂法规条文、K-agent 挂作品清单；没有就不给）；
 - evidence_sources：每条论断的依据——来自资料全文的给摘录与出处，来自模型先验的不要硬造引用；无资料支撑的先验论断记入 priors_used 并自报 needs_verification；
 - 硬纪律：宁可少写、不编造引用；写公式前确认推导无误；法规类注明效力与施行（若资料有）。
 
-面向读者的教学纪律（2026-09 复盘加入；本卡片最终面向学习该领域的「新人」，不是给研究者看的核查笔记）：
-1. 先例后律：任何公式/定义出现之前，正文必须先出现一个带具体数字、读者能代入真实场景（体检单/邮件/报警器/账本…）的完整示例；公式只能作为该例的"缩写"出现，禁止以定义句开头；
+面向读者的教学纪律（2026-09 复盘加入；2026-09-15 按用户口径重排为 v7：合并章节、突出重点、示例放到详解之后、不要卡片样式；本卡片面向学习该领域的「新人」，不是给研究者看的核查笔记）：
+1. **重点与顺序**：一个知识点的重点就是「**定义 + 详解 + 案例**」这三节——写详细；其余章节按原有分量写，不扩写。
+   - ① 「本质」不再单独成区：把两三句人话直觉放进「定义」区的开头，紧接着给正式定义；
+   - ② 「详解」是篇幅最大的重点区，把原来分散的机制/构成与结构/规则/公式/性质/步骤/依据/适用与局限全部并进来：先给一条**贯穿主线**（各部分之间是什么关系、为什么这样分），再逐项/逐类用**同一组维度**展开，最后用一张横向对比表和"判定与计算规则"收口；
+   - ③ 「案例」紧跟详解之后，用来呼应上面的定义与详解（**不要拿案例当正文主体**）：真实、具体、2~3 个，每个写 背景 → 对应定义/详解里的哪一条 → 得到什么结论；**不要**做"换条件会怎样"的反事实推演，不要抽象罗列；
+   - ④ 直觉先于抽象（原「先例后律」收窄）：定义/详解里首次出现公式或抽象规则之前，先用一句人话 + 一个**带具体数字**的例子垫直觉；公式只能作为该例的"缩写"出现，**禁止以定义句开头**；
+   - ⑤ **按文档写**：段落 + 必要的小标题（\`###\`）与表格，不要把内容做成"要点卡"式的加粗短句堆砌，也不要用引用块做装饰。
 2. 记号热身：每个首次出现的记号（Σ/∫/∝/∧/条件竖线/希腊字母等）先给"无符号的人话句 → 读法 → 一个最小数字例子"，并登记进全卡符号表；正文中出现未解释的记号即视为缺陷；
 3. 每节一个新概念：一个区只引入一个新概念，其余概念只能引用已讲过/旧称，不得同段塞两个新概念；
 4. 元信息（首区 meta）：card 的第一个区固定 key=meta，内容=读者画像（给谁看）、数学前置（需要会什么/不需要会什么）、记号热身清单、2~3 条可测学习目标（动词用"能说出/能算出/能区分/能判断"，禁用"了解/认识"）；
@@ -708,9 +815,11 @@ sections 之外：
      规格必须是**合法 JSON**（渲染失败会显示错误、读者只能看到原文）；矩阵不超过 24×24、点数不超过 400（超了先抽样或摘要）；图形要服务理解（讲形状规则用 shape/matrix，讲损失/激活曲线用 plot，讲优化器对比用 bar，讲网络结构用 network），不要为配图而配图；
    - **需要"跑一下看结果"的演示**用 js 代码块（三个反引号 + js）：讲义会显示「▶ 运行」按钮，读者能改数字重跑；只用 console.log 输出；**沙箱里没有 DOM、没有网络、没有外部库**，所以用原生 JS（数组/循环/对象）演示——例如用两层循环算矩阵乘、用数组存张量形状，不必写 numpy/torch 语法；输出限 200 行；
    - Python 代码块只做语法高亮、**不会运行**：要"能跑"的演示请改写成等价 JS 并另给 python 片段作对照（或直接只用 JS）；关系/流程用 mermaid、公式用 KaTeX，四类载体各司其职，别混用；
+11. 呈现纪律（2026-09-14 加入；落库视觉质检按同一份契约判）：
+   ${LESSON_LAYOUT_DISCIPLINE.replace(/\n/g, '\n   ')}
 
 输出严格为 JSON（不要 markdown 代码块）：
-{"concept_name":"","essence_type":"K-concept","sections":[{"key":"essence","title":"本质","style":"intro","md":"...","folded":false}],"works":[{"kind":"论文","title":"","authors":"","year":"","url":""}],"evidence_sources":[{"kind":"资料","title":"","url":"","quote":""}],"priors_used":[],"needs_verification":[]}
+{"concept_name":"","essence_type":"K-concept","sections":[{"key":"essence","title":"本质","style":"intro","layout":"callout","takeaway":"一句话结论","md":"...","folded":false}],"works":[{"kind":"论文","title":"","authors":"","year":"","url":""}],"evidence_sources":[{"kind":"资料","title":"","url":"","quote":""}],"priors_used":[],"needs_verification":[]}
 `,
   },
   {
@@ -740,7 +849,7 @@ output_desc: 输出 markdown 讲义正文（可直接作为中栏讲义呈现）
 你是教材作者。把下面的概念卡片改写成面向「{{param.audience}}」目标读者的讲义正文，能一口气顺读下来。
 
 要求：
-1. 讲解顺序自然：从读者熟悉处引入（类比先行），再进入正式定义与机制；
+1. 讲解顺序自然且**重点在前**：从读者熟悉处引入（类比先行），进入正式定义与**详解**，再把**案例**展开——顺序是「定义 → 详解 → 案例」，**不要拿例子当正文主体**；「学习前必读」「为什么学它」保持原有分量，其余篇幅让给定义、详解与案例；按文档写（段落+小标题+表格），不要做成要点卡堆砌；
 2. 图文并用：关系/流程用 mermaid 图，对比用表格，公式用 KaTeX（块级公式 $$ 独立成行）；内容以卡片 md 为素材，不新增卡片外的断言；
 3. 每节可顺读，深浅水分离：长证明/条文细节折叠处理；
 4. 结尾给 2~3 道自测题（含答案与讲解）；
@@ -1015,7 +1124,9 @@ output_desc: 输出 JSON 对象，含 concept_name、essence_type、sections（�
 纪律：
 1. 未受影响的区**原样保留**：md 逐字返回，不要润色、不要重排、不要"顺手改好一点"；只在 changed 里列出真正变动的区；
 2. 每个改动必须给理由与依据：reason（为什么要改：新证据 / 核验 issue / 表达不清）与 evidence（新材料摘录 + 出处）；**无依据不改**；
-3. 修订后仍须遵守教学法纪律（同 learning-concept-explainer）：保留 meta 首区、记号热身、先例后律（公式前有带数字示例）、自测带答案；新增内容不得引入未做教学的记号；
+3. 修订后仍须遵守教学法纪律（同 learning-concept-explainer）：保留 meta 首区、记号热身、直觉先于抽象（公式前有带数字的例子）、区序「定义 → 详解 → 案例」（**本质并进定义开头、案例紧跟详解之后**；已有卡片若把机制/结构/规则/适用单列成区，本次修订就顺手并进「详解」，把示例/案例移到详解之后）、自测带答案；新增内容不得引入未做教学的记号；
+   呈现纪律（2026-09-14）：改动区的 \`layout\`（版式设备）与正文形状必须一致，并保留/更新 \`takeaway\`（一句话结论）；
+   如果这次修订让某区变成长段纯文字，就顺手把它归纳成要点卡/对比表/小标题——落库时视觉质检会拦"文字墙 / 通篇无图 / 声明与正文不符"；
    ${LESSON_SECTION_CONTRACT_RULES}
 4. 与旧内容冲突时以新材料为准，并在 changed.reason 里写清「原文写 X，依据新材料改为 Y」；
 5. 宁可少改；看不懂、无法解释的内容不要动，在 changed 里标 needs_review 说明缺什么资料。
@@ -1027,7 +1138,7 @@ output_desc: 输出 JSON 对象，含 concept_name、essence_type、sections（�
 待处理核验问题：{{param.issues}}
 
 输出严格为 JSON（不要 markdown 代码块，不要多余解释）：
-{"concept_name":"","essence_type":"K-concept","sections":[{"key":"meta","title":"学习前必读","style":"intro","md":"...","folded":false}],"changed":[{"key":"examples","kind":"modified","reason":"...","evidence":"..."}]}
+{"concept_name":"","essence_type":"K-concept","sections":[{"key":"meta","title":"学习前必读","style":"intro","layout":"keypoints","takeaway":"...","md":"...","folded":false}],"changed":[{"key":"examples","kind":"modified","reason":"...","evidence":"..."}]}
 `,
   },
   {
@@ -1187,10 +1298,14 @@ S3 学习阶段规划（回报：正在规划学习顺序…）
 
 S4 讲义产出（回报：正在产出讲义…）
 - 挑「最基础、第一个要学」的概念 dl_save_card 产出一份可展示的讲义草稿：区级内容 + evidenceSources；
-- 该讲义面向零基础读者，必须遵守 learning-concept-explainer 技能的教学法纪律：首区为 meta（读者画像/前置声明/记号热身/可测目标）、先例后律（任何公式前先给带数字的真实示例）、记号逐一首现教学、示例带中间量并回算、末区自测带答案（**答案单独成段并以独占一行的「答案」小标题开头——答案默认折叠，读者先做再对**）、编写注记与学习者正文隔离；
+- 该讲义面向零基础读者，必须遵守 learning-concept-explainer 技能的教学法纪律：首区为 meta（读者画像/前置声明/记号热身/可测目标）、**重点分配**（定义/详解/案例这三节写详细，其余章节按原有分量、不扩写）、**区序「定义 → 详解 → 案例」**（本质并进定义开头、案例紧跟详解之后、机制/结构/规则等并进详解、不要卡片样式按文档写）、直觉先于抽象（任何公式前先给带数字的例子）、记号逐一首现教学、示例带中间量并回算、末区自测带答案（**答案单独成段并以独占一行的「答案」小标题开头——答案默认折叠，读者先做再对**）、编写注记与学习者正文隔离；
 - **区集与区序按讲义契约**（与落库门禁同源，违反会被 dl_save_card 拒绝）：
    ${LESSON_SECTION_CONTRACT_RULES}
 - **图文并茂 + 可运行演示**（领域涉及 AI/编程/数学时尤其要做）：数值图形用 figure 代码块（矩阵/曲线/对比/张量形状/网络结构，规格见 learning-concept-explainer 第 10 条），需要"跑一下看结果"的演示用 js 代码块（沙箱里没有 DOM/网络，只用原生 JS + console.log）；Python 片段只高亮不运行；
+- **呈现纪律（2026-09-14，起步轮属于快速模式：不必先提交讲义方案，但质检照样生效）**：
+  每区给 \`layout\`（版式设备：prose/keypoints/compare/steps/figure/worked/formula/stats/quote/timeline/pitfall/checklist/code/qa/callout）
+  与 \`takeaway\`（一句话结论），正文形状必须与版式一致；一区长段信息要归纳成要点卡/小标题/对比表，不要写成一堵文字墙；
+  **整篇至少一个"看得见"的载体**（figure 图 / 对比表 / 公式 / 可运行代码）——纯文字讲义会被视觉质检拒绝落库；
 - **meta 的「前置」小节要写明本讲依赖哪些已建概念**（对应 S3 里它自己的 prerequisites；无前置就写"无需前置"）；若正文用到领域图里还没有的前置能力，先回 S2 补概念/补关系，或在 meta 记号热身里讲清楚——否则 dl_save_card 的循序渐进门禁会拒绝；
 - evidence 必须来自你在 S1 实际读到的资料（kbDocId/URL/标题 + 引文）；没有读到任何可用资料时**宁可不落卡**，并在总结里说明缺什么资料、下一步去哪个知识库/来源找；
 - 其余概念保持「待研究」即可，不要一次把全部概念都出成卡。

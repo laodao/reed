@@ -52,6 +52,7 @@ const DL_TOOL_NAMES_FOR_BUDGET = [
   'dl_answer_question',
   'dl_propose_understanding',
   'dl_propose_syllabus',
+  'dl_propose_lesson_plan',
   'dl_task_progress',
 ] as const
 

@@ -1,16 +1,27 @@
 /**
- * 领域学习「方案确认」仓库（dl_plan，2026-09-13 用户需求）
+ * 领域学习「方案确认」仓库（dl_plan，2026-09-13 用户需求；2026-09-14 加 lesson 步）
  * @module database/repositories/dl-plan.repository
  *
  * 一步骤多版本：draft（待用户确认）/ confirmed（已生效）/ superseded（被取代）。
  * 读取口径：
  * - `getLatest`：最新版（弹窗展示当前草稿）；
  * - `getConfirmed`：已确认并生效的那一版（落库门禁与额度都读它）。
+ *
+ * 维度：understanding/syllabus 是**空间级**（conceptId = NULL）；
+ * `lesson`（讲义规格与区级计划）是**概念级**——同一空间每个概念各一套，
+ * 故所有读取/退位方法都带可选 conceptId（不传=空间级，按 IS NULL 精确匹配）。
  */
 
-import { type DataSource, type FindOptionsWhere } from 'typeorm'
+import { IsNull, type DataSource, type FindOptionsWhere } from 'typeorm'
 import { DlPlanEntity } from '../entities/domain-learning/dl-plan.entity'
-import type { DlPlanStep, DlPlanStatus, DlPlanView, DlPlanUnderstanding, DlPlanSyllabus } from '@shared/types/domain-learning.types'
+import type {
+  DlPlanStep,
+  DlPlanStatus,
+  DlPlanView,
+  DlPlanUnderstanding,
+  DlPlanSyllabus,
+  DlLessonPlanPayload,
+} from '@shared/types/domain-learning.types'
 import { BaseRepository } from '../base-repository'
 
 /** dl_plan 行 DTO（payload 已解析为对象） */
@@ -18,6 +29,8 @@ export interface DlPlanRow {
   id: string
   userId: string | null
   projectId: string
+  /** 关联概念 id（lesson 步有值；空间级步骤为 null） */
+  conceptId: string | null
   step: DlPlanStep
   status: DlPlanStatus
   revision: number
@@ -34,6 +47,18 @@ export type DlPlanPatch = Partial<{
 }>
 
 type PlanWhere = FindOptionsWhere<DlPlanEntity>
+
+/**
+ * 定位条件：空间级步骤（无 conceptId）用 `IS NULL` 精确匹配，
+ * 避免 lesson 步的行被空间级读取误捞（反之亦然）。
+ */
+function planWhere(projectId: string, step: DlPlanStep, conceptId?: string | null): PlanWhere {
+  return {
+    projectId,
+    step,
+    conceptId: conceptId ? conceptId : IsNull(),
+  } as PlanWhere
+}
 
 function safeParse(json: string | null): unknown {
   if (!json) return null
@@ -55,6 +80,8 @@ export class DlPlanRepository extends BaseRepository<DlPlanEntity, DlPlanRow> {
     step: DlPlanStep
     payload: unknown
     revision: number
+    /** 概念级步骤（lesson）必填；空间级步骤留空 */
+    conceptId?: string | null
     feedback?: string | null
     status?: DlPlanStatus
   }): Promise<DlPlanRow> {
@@ -63,6 +90,7 @@ export class DlPlanRepository extends BaseRepository<DlPlanEntity, DlPlanRow> {
     e.id = input.id
     e.userId = null // scoped.insert 注入
     e.projectId = input.projectId
+    e.conceptId = input.conceptId ?? null
     e.step = input.step
     e.status = input.status ?? 'draft'
     e.revision = input.revision
@@ -79,39 +107,39 @@ export class DlPlanRepository extends BaseRepository<DlPlanEntity, DlPlanRow> {
     return e ? this.toDto(e) : null
   }
 
-  /** 某空间某步骤的全部版本（revision 升序） */
-  async listVersions(projectId: string, step: DlPlanStep): Promise<DlPlanRow[]> {
+  /** 某空间某步骤的全部版本（revision 升序；conceptId 省略=空间级） */
+  async listVersions(projectId: string, step: DlPlanStep, conceptId?: string | null): Promise<DlPlanRow[]> {
     const rows = await this.scoped.find({
-      where: { projectId, step } as PlanWhere,
+      where: planWhere(projectId, step, conceptId),
       order: { revision: 'ASC' },
     })
     return this.toDtoList(rows)
   }
 
-  /** 某空间某步骤的最新版（无则 null） */
-  async getLatest(projectId: string, step: DlPlanStep): Promise<DlPlanRow | null> {
+  /** 某空间某步骤的最新版（无则 null；conceptId 省略=空间级） */
+  async getLatest(projectId: string, step: DlPlanStep, conceptId?: string | null): Promise<DlPlanRow | null> {
     const rows = await this.scoped.find({
-      where: { projectId, step } as PlanWhere,
+      where: planWhere(projectId, step, conceptId),
       order: { revision: 'DESC' },
       take: 1,
     })
     return rows.length > 0 ? this.toDto(rows[0]) : null
   }
 
-  /** 某空间某步骤已确认并生效的版本 */
-  async getConfirmed(projectId: string, step: DlPlanStep): Promise<DlPlanRow | null> {
+  /** 某空间某步骤已确认并生效的版本（conceptId 省略=空间级） */
+  async getConfirmed(projectId: string, step: DlPlanStep, conceptId?: string | null): Promise<DlPlanRow | null> {
     const rows = await this.scoped.find({
-      where: { projectId, step, status: 'confirmed' } as PlanWhere,
+      where: { ...planWhere(projectId, step, conceptId), status: 'confirmed' } as PlanWhere,
       order: { revision: 'DESC' },
       take: 1,
     })
     return rows.length > 0 ? this.toDto(rows[0]) : null
   }
 
-  /** 把某步的全部 draft 置为 superseded（确认新版本或提交新提案时用） */
-  async supersedeDrafts(projectId: string, step: DlPlanStep): Promise<number> {
+  /** 把某步的全部 draft 置为 superseded（确认新版本或提交新提案时用；按 conceptId 隔离） */
+  async supersedeDrafts(projectId: string, step: DlPlanStep, conceptId?: string | null): Promise<number> {
     const drafts = await this.scoped.find({
-      where: { projectId, step, status: 'draft' } as PlanWhere,
+      where: { ...planWhere(projectId, step, conceptId), status: 'draft' } as PlanWhere,
     })
     for (const e of drafts) {
       await this.scoped.update({ id: e.id }, { status: 'superseded', updatedAt: new Date() })
@@ -120,9 +148,9 @@ export class DlPlanRepository extends BaseRepository<DlPlanEntity, DlPlanRow> {
   }
 
   /** 把某步已 confirmed 的版本置为 superseded（确认新版本时保留历史但不双生效） */
-  async supersedeConfirmed(projectId: string, step: DlPlanStep): Promise<number> {
+  async supersedeConfirmed(projectId: string, step: DlPlanStep, conceptId?: string | null): Promise<number> {
     const rows = await this.scoped.find({
-      where: { projectId, step, status: 'confirmed' } as PlanWhere,
+      where: { ...planWhere(projectId, step, conceptId), status: 'confirmed' } as PlanWhere,
     })
     for (const e of rows) {
       await this.scoped.update({ id: e.id }, { status: 'superseded', updatedAt: new Date() })
@@ -143,6 +171,7 @@ export class DlPlanRepository extends BaseRepository<DlPlanEntity, DlPlanRow> {
       id: e.id,
       userId: e.userId,
       projectId: e.projectId,
+      conceptId: e.conceptId ?? null,
       step: e.step as DlPlanStep,
       status: e.status as DlPlanStatus,
       revision: e.revision,
@@ -181,6 +210,10 @@ export function buildDlPlanView(input: {
   understanding: DlPlanRow | null
   syllabus: DlPlanRow | null
   confirmedConceptCount: number
+  /** 当前概念的讲义方案（lesson 步；未指定概念时为 null） */
+  lesson?: DlPlanRow | null
+  /** lesson 对应的概念 id（前端据此判断是否属于当前选中概念） */
+  lessonConceptId?: string | null
 }): DlPlanView {
   return {
     spaceId: input.spaceId,
@@ -191,5 +224,8 @@ export function buildDlPlanView(input: {
     understandingConfirmed: input.understanding?.status === 'confirmed',
     syllabusConfirmed: input.syllabus?.status === 'confirmed',
     confirmedConceptCount: input.confirmedConceptCount,
+    lesson: input.lesson ? toDlPlanRevisionView<DlLessonPlanPayload>(input.lesson) : null,
+    lessonConceptId: input.lessonConceptId ?? input.lesson?.conceptId ?? null,
+    lessonConfirmed: input.lesson?.status === 'confirmed',
   }
 }

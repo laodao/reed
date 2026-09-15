@@ -28,6 +28,7 @@ import {
   parseLessonTimeline,
   presentLessonSections,
   resolveSectionLayout,
+  splitLessonDeviceMd,
   type DlLessonLayout,
 } from '@shared/utils/lesson-layout'
 
@@ -79,23 +80,17 @@ describe('版式设备目录', () => {
     expect(lessonLayoutName('不存在的')).toBe('')
   })
 
-  it('模板语义区有默认版式（老卡也能拿到设备，不靠模型补）', () => {
-    expect(defaultLayoutForSection('meta')).toBe('keypoints')
-    expect(defaultLayoutForSection('procedure')).toBe('steps')
-    expect(defaultLayoutForSection('pitfalls')).toBe('pitfall')
-    expect(defaultLayoutForSection('selfcheck')).toBe('qa')
-    expect(defaultLayoutForSection('checks')).toBe('qa') // 同义写法一并认
-    expect(defaultLayoutForSection('structure')).toBe('compare')
-    expect(defaultLayoutForSection('examples')).toBe('worked')
-    expect(defaultLayoutForSection('justification')).toBe('formula')
-    expect(defaultLayoutForSection('未知区')).toBe('prose')
+  it('默认版式一律 prose（2026-09-15 用户口径「不要卡片样式」：讲义按文档排，不自动套卡片）', () => {
+    for (const key of ['meta', 'why', 'definition', 'detail', 'examples', 'pitfalls', 'selfcheck', 'checks', 'structure', 'justification', '未知区']) {
+      expect(defaultLayoutForSection(key), `${key} 的默认版式应为 prose`).toBe('prose')
+    }
   })
 
-  it('版式解析优先级：显式 layout > 大纲 roster > 模板默认', () => {
+  it('版式解析优先级：显式 layout > 大纲 roster > 默认 prose', () => {
     expect(resolveSectionLayout({ key: 'definition', layout: 'callout' })).toBe('callout')
     expect(resolveSectionLayout({ key: 'definition', rosterLayout: 'compare' })).toBe('compare')
-    expect(resolveSectionLayout({ key: 'definition' })).toBe('prose') // definition 默认正文
-    expect(resolveSectionLayout({ key: 'procedure' })).toBe('steps')
+    expect(resolveSectionLayout({ key: 'definition' })).toBe('prose')
+    expect(resolveSectionLayout({ key: 'procedure' })).toBe('prose')
   })
 
   it('提示词可拿到完整设备菜单（生成侧与门禁同源）', () => {
@@ -185,10 +180,11 @@ describe('正文形状分析（质检判据输入）', () => {
 describe('视觉质检：阻断项（堆砌文字必须被拦下）', () => {
   const longProse = '张量的形状规则决定了运算能不能做，'.repeat(60) + '。'
 
-  it('纯文字长段（超过上限且无小标题/列表/图/表）= 文字墙 → 阻断', () => {
+  it('纯文字长段（超过上限且无小标题/列表/图/表）= 文字墙 → 阻断（走完规划流程时）', () => {
     const r = checkLessonVisualQuality({
       essenceType: 'K-concept',
       sections: [{ key: 'mechanism', md: longProse, layout: 'prose' }],
+      strict: true,
     })
     expect(longProse.length).toBeGreaterThan(LESSON_LAYOUT_RHYTHM.proseWallChars)
     expect(r.blocking.map((i) => i.code)).toContain('prose-wall')
@@ -197,25 +193,41 @@ describe('视觉质检：阻断项（堆砌文字必须被拦下）', () => {
     expect(issue.fix).toContain('要点卡') // 修复建议可执行
   })
 
+  it('快速模式（未走规划）同一个文字墙降级为警告（不卡死自动推进，但要让模型看见）', () => {
+    const r = checkLessonVisualQuality({
+      essenceType: 'K-concept',
+      sections: [{ key: 'mechanism', md: longProse, layout: 'prose' }],
+    })
+    expect(r.blocking.map((i) => i.code)).not.toContain('prose-wall')
+    const issue = r.warnings.find((i) => i.code === 'prose-wall')
+    expect(issue).toBeTruthy()
+    expect(issue!.fix).toContain('要点卡')
+  })
+
   it('长区但有小标题/列表 → 不算文字墙（归纳过就不拦）', () => {
     const summarized = '### 形状规则\n' + longProse + '\n\n- 要点一\n- 要点二'
     const r = checkLessonVisualQuality({
       essenceType: 'K-concept',
       sections: [{ key: 'mechanism', md: summarized, layout: 'prose' }],
+      strict: true,
     })
     expect(r.blocking.map((i) => i.code)).not.toContain('prose-wall')
   })
 
-  it('整篇（≥4 区）没有任何图/表/公式/代码 → 阻断（用户要的「配图」硬要求）', () => {
+  it('整篇（≥4 区）没有任何图/表/公式/代码 → 阻断（用户要的「配图」硬要求；走完规划流程时）', () => {
     const texts = [
       { key: 'meta', md: '- 读者画像：会 Python', layout: 'keypoints' },
       { key: 'essence', md: '张量是带形状的多维数组。', layout: 'prose' },
       { key: 'definition', md: '形状是一串整数。', layout: 'prose' },
       { key: 'rules', md: '- 加法要可广播\n- 乘法按轴约简', layout: 'keypoints' },
     ]
-    const r = checkLessonVisualQuality({ essenceType: 'K-concept', sections: texts })
+    const r = checkLessonVisualQuality({ essenceType: 'K-concept', sections: texts, strict: true })
     expect(r.blocking.map((i) => i.code)).toContain('no-graphic-carrier')
     expect(r.blocking.find((i) => i.code === 'no-graphic-carrier')!.fix).toContain('figure')
+    // 快速模式下降级为警告
+    const soft = checkLessonVisualQuality({ essenceType: 'K-concept', sections: texts })
+    expect(soft.blocking.map((i) => i.code)).not.toContain('no-graphic-carrier')
+    expect(soft.warnings.map((i) => i.code)).toContain('no-graphic-carrier')
   })
 
   it('区数少（3 区）时同一问题降级为警告（不误伤短讲义）', () => {
@@ -226,6 +238,7 @@ describe('视觉质检：阻断项（堆砌文字必须被拦下）', () => {
         { key: 'essence', md: '一句话本质。', layout: 'prose' },
         { key: 'definition', md: '一句话定义。', layout: 'prose' },
       ],
+      strict: true,
     })
     expect(r.blocking.map((i) => i.code)).not.toContain('no-graphic-carrier')
     expect(r.warnings.map((i) => i.code)).toContain('no-graphic-carrier')
@@ -240,6 +253,15 @@ describe('视觉质检：阻断项（堆砌文字必须被拦下）', () => {
     expect(issue).toBeTruthy()
     expect(issue!.message).toContain('要点卡')
     expect(issue!.fix).toContain('要点卡')
+  })
+
+  it('未声明版式的区按 prose 呈现（2026-09-15「不要卡片样式」），不会因模板兜底被判形状不符', () => {
+    const r = checkLessonVisualQuality({
+      essenceType: 'K-concept',
+      sections: [{ key: 'structure', md: '组成分三部分，这里只用文字说。' }],
+    })
+    expect(r.blocking.map((i) => i.code)).not.toContain('layout-shape-mismatch')
+    expect(r.warnings.some((i) => i.code === 'layout-shape-suggestion')).toBe(false)
   })
 
   it('大纲声明某区要配图、正文却没有 → 阻断（roster 载体覆盖）', () => {
@@ -369,6 +391,37 @@ describe('设备条目解析（渲染层按设备二次拆解，纯函数可测�
   it('解析不出条目时返回空数组（渲染层退回整段 markdown，不吞内容）', () => {
     expect(parseLessonPoints('就是一段散文，没有列表。')).toEqual([])
     expect(parseLessonStats('没有数据看点。')).toEqual([])
+  })
+
+  // 结构化设备只摘掉"已变成卡片的列表行"，夹在列表之外的正文原样保留——
+  // 渲染层用「卡片 + 残余 markdown」两段渲染，绝不静默丢内容。
+  describe('按设备拆分正文（卡片 + 残余，不缺斤少两）', () => {
+    it('要点卡：列表行进卡片，列表外的说明段留在残余', () => {
+      const md = ['先说一句总括。', '', '- **张量**：带形状的数组', '- **形状**：一串整数', '', '最后补一句边界。'].join('\n')
+      const { residual } = splitLessonDeviceMd(md, 'keypoints')
+      expect(residual).toContain('先说一句总括')
+      expect(residual).toContain('最后补一句边界')
+      expect(residual).not.toContain('- **张量**')
+    })
+
+    it('数据看点：只有 `值 | 说明` 行被摘走；普通列表行留在残余（不丢内容）', () => {
+      const md = ['- 68% | 命中率', '- 这条只是普通列表项，不是数据看点'].join('\n')
+      const { residual } = splitLessonDeviceMd(md, 'stats')
+      expect(residual).toContain('普通列表项')
+      expect(residual).not.toContain('68%')
+    })
+
+    it('时间线：没有「标记：事件」的列表行留在残余', () => {
+      const md = ['- 2012：AlexNet 夺冠', '- 无冒号的补充说明'].join('\n')
+      const { residual } = splitLessonDeviceMd(md, 'timeline')
+      expect(residual).toBe('- 无冒号的补充说明')
+    })
+
+    it('正文类版式不拆（prose/figure 整段交给 markdown 渲染）', () => {
+      const md = '- 一个列表项'
+      expect(splitLessonDeviceMd(md, 'prose').residual).toBe(md)
+      expect(splitLessonDeviceMd(md, 'figure').residual).toBe(md)
+    })
   })
 })
 

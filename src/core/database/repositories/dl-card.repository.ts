@@ -9,7 +9,7 @@
 import { type DataSource, type FindOptionsWhere } from 'typeorm'
 import { DlCardEntity } from '../entities/domain-learning/dl-card.entity'
 import { BaseRepository } from '../base-repository'
-import type { DlCardSection, DlWorkRef, DlEvidenceRef, DlCardVerification } from '@shared/types/domain-learning.types'
+import type { DlCardSection, DlWorkRef, DlEvidenceRef, DlCardVerification, DlLessonSpec } from '@shared/types/domain-learning.types'
 
 /** content-template-design v4 §3：区集元素（契约同 shared DlCardSection） */
 export type DlCardSectionDto = DlCardSection
@@ -31,6 +31,8 @@ export interface DlCardRow {
   works: DlCardWorkDto[] | null
   contentMd: string | null
   evidenceSources: DlCardEvidenceDto[] | null
+  /** 讲义设计规格（DlLessonSpec；2026-09-14；可空=老卡或未走规格流程） */
+  spec: DlLessonSpec | null
   version: number
   status: string
   /** 内部核验记录（M4-UX2；可空=未核验） */
@@ -51,6 +53,8 @@ export type DlCardPatch = Partial<{
   works: DlCardWorkDto[] | null
   contentMd: string | null
   evidenceSources: DlCardEvidenceDto[] | null
+  /** 讲义设计规格（2026-09-14）：写 null 清空 */
+  spec: DlLessonSpec | null
   status: string
   verification: DlCardVerification | null
   revisionNote: string | null
@@ -65,6 +69,17 @@ function safeParseArray<T>(json: string | null): T[] | null {
   try {
     const v = JSON.parse(json) as unknown
     return Array.isArray(v) ? (v as T[]) : null
+  } catch {
+    return null
+  }
+}
+
+/** JSON **对象**列解析（spec；坏数据回落 null，不抛） */
+function safeParseObject<T>(json: string | null): T | null {
+  if (!json) return null
+  try {
+    const v = JSON.parse(json) as unknown
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as T) : null
   } catch {
     return null
   }
@@ -106,6 +121,8 @@ export class DlCardRepository extends BaseRepository<DlCardEntity, DlCardRow> {
     works?: DlCardWorkDto[] | null
     contentMd?: string | null
     evidenceSources?: DlCardEvidenceDto[] | null
+    /** 讲义设计规格（已确认的 DlLessonSpec；未走规格流程时留空） */
+    spec?: DlLessonSpec | null
     version?: number
     status?: string
     verification?: DlCardVerification | null
@@ -124,6 +141,7 @@ export class DlCardRepository extends BaseRepository<DlCardEntity, DlCardRow> {
     e.works = input.works ? JSON.stringify(input.works) : null
     e.contentMd = input.contentMd ?? null
     e.evidenceSources = input.evidenceSources ? JSON.stringify(input.evidenceSources) : null
+    e.spec = input.spec ? JSON.stringify(input.spec) : null
     e.version = input.version ?? 1
     e.status = input.status ?? 'draft'
     e.verification = input.verification ? JSON.stringify(input.verification) : null
@@ -180,6 +198,7 @@ export class DlCardRepository extends BaseRepository<DlCardEntity, DlCardRow> {
       partial.evidenceSources = patch.evidenceSources
         ? JSON.stringify(patch.evidenceSources)
         : null
+    if (patch.spec !== undefined) partial.spec = patch.spec ? JSON.stringify(patch.spec) : null
     if (patch.status !== undefined) partial.status = patch.status
     if (patch.verification !== undefined)
       partial.verification = patch.verification ? JSON.stringify(patch.verification) : null
@@ -201,6 +220,7 @@ export class DlCardRepository extends BaseRepository<DlCardEntity, DlCardRow> {
       works: safeParseArray<DlCardWorkDto>(e.works),
       contentMd: e.contentMd,
       evidenceSources: safeParseArray<DlCardEvidenceDto>(e.evidenceSources),
+      spec: safeParseObject<DlLessonSpec>(e.spec),
       version: e.version,
       status: e.status,
       verification: parseVerification(e.verification),

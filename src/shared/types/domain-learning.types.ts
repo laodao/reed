@@ -199,6 +199,12 @@ export interface DlCardView {
   evidenceSources?: DlEvidenceRef[] | null
   version: number
   status: 'draft' | 'published'
+  /**
+   * 讲义设计规格（2026-09-14：本卡是照哪份「已确认规格」写的）。
+   * 有它 → 渲染层出规格条（读者画像/目标/术语与记号/区导航）、区级重写按规格锁重发；
+   * 老卡为 null，照常按 sections 渲染。
+   */
+  spec?: DlLessonSpec | null
   /** 自动核验摘要（2026-09-09 复盘：M4-UX2 的 verification 由"只写不读"改为消费；
    *  null=尚未核验） */
   verification?: DlCardVerificationSummary | null
@@ -279,6 +285,58 @@ export interface DlPlanSyllabus {
   notes?: string | null
 }
 
+/** 讲义区级计划条目（大纲 roster；对应 ppt-master 的 §IX 页级 roster 的 page job） */
+export interface DlLessonPlanEntry {
+  /** 区 key（必须属于该本质类型的模板区集，见 shared/utils/lesson-template） */
+  key: string
+  /** 版式设备（key 见 shared/utils/lesson-layout 的设备目录；别名在归一化时改规范名） */
+  layout: string
+  /** 这一区替读者做什么（动词句；不是"讲一下 X"） */
+  job: string
+  /** 需要的载体：figure/table/formula/code/points/stats/quote/checklist（无则 null） */
+  carrier?: string | null
+  /** 一句话结论（该区讲完读者该记住什么） */
+  takeaway?: string | null
+}
+
+/**
+ * 讲义设计规格（Plan 阶段产出、用户确认后作为**写作锁**）。
+ * 对应 ppt-master 的 `design_spec.md` + `spec_lock.md`：读者画像 / 学完能做到 / 深度 /
+ * 篇幅预算 / 语气 / 术语表 / 记号表 / 示例参数表 / 视觉计划 / 区级计划（roster）。
+ */
+export interface DlLessonSpec {
+  /** 读者画像：从哪出发、不是什么水平（决定类比与记号教学的密度） */
+  audience: string
+  /** 学完能做到（2~4 条，可测的动词句） */
+  outcomes: string[]
+  /** 深度（跟随空间目标，可微调） */
+  depth: DlGoal
+  /** 篇幅预算：目标区数 + 每区字数上限 */
+  budget: { sections: number; charsPerSection: number }
+  /** 语气/风格（如「生活类比先行、不堆术语」） */
+  tone?: string | null
+  /** 术语表：本讲会用到、首现必须给一句人话解释的词 */
+  glossary: Array<{ term: string; plain: string }>
+  /** 记号表：数学/专业记号（读法 + 一个最小例子，防"没教的记号"） */
+  notation: Array<{ symbol: string; read: string; example?: string | null }>
+  /** 示例参数表：全讲复用同一套数字（防跨区算例参数漂移） */
+  exampleParams: Array<{ name: string; value: string }>
+  /** 区级计划（严格按此顺序与版式写；与 sections 一一对应） */
+  roster: DlLessonPlanEntry[]
+  /** 视觉计划：本讲靠什么图/表把结构讲清楚（写给读者看的说明） */
+  visualPlan?: string | null
+}
+
+/**
+ * 讲义方案载荷（`lesson` 步）：知识本质类型 + 设计规格。
+ * essenceType 由规划阶段定（它决定模板区集 → roster），落库时 `dl_save_card` 的
+ * essenceType 必须与之一致（否则区集与大纲对不上）。
+ */
+export interface DlLessonPlanPayload {
+  essenceType: DlEssenceType
+  spec: DlLessonSpec
+}
+
 /** 方案版本行（IPC 视图） */
 export interface DlPlanRevisionView<P = unknown> {
   id: string
@@ -304,6 +362,12 @@ export interface DlPlanView {
   syllabusConfirmed: boolean
   /** 已确认方案里的知识点条目数（用于落库额度与界面提示） */
   confirmedConceptCount: number
+  /** 当前概念的讲义方案（最新版；未指定 conceptId 时为 null）——2026-09-14 讲义流水线 */
+  lesson: DlPlanRevisionView<DlLessonPlanPayload> | null
+  /** lesson 对应的概念 id（前端据此判断这份讲义方案是否属于当前选中的概念） */
+  lessonConceptId?: string | null
+  /** 讲义方案是否已确认（= 允许按规格逐区精写；未确认时前端弹确认框） */
+  lessonConfirmed: boolean
 }
 
 // ==================== 空间视图（列表页 / 三栏空间页） ====================

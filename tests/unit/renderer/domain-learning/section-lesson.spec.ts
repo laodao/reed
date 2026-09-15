@@ -135,9 +135,9 @@ describe('SectionLesson 章节结构', () => {
     expect(head.find('.sec-actions .sec-confuse').exists()).toBe(true)
   })
 
-  it('essence 等模板语义区有兜底标题（章节可辨识，不出现"无名章节"）', () => {
+  it('模板语义区有兜底标题（章节可辨识，不出现"无名章节"；v7 起 essence 折到「定义」）', () => {
     const w = mountLesson([{ key: 'essence', md: '本质是……' }])
-    expect(w.find('.sec-title').text()).toBe('本质')
+    expect(w.find('.sec-title').text()).toBe('定义')
     expect(w.find('.sec-index').text()).toBe('1')
   })
 

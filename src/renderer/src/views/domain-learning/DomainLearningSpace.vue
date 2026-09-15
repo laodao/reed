@@ -40,6 +40,17 @@
       @done="onPlanDriven"
     />
 
+    <!-- 讲义方案确认弹窗（2026-09-14 讲义流水线：先规划规格与区级计划 → 确认 → 再逐区精写） -->
+    <LessonPlanDialog
+      v-if="spaceId && currentConceptId"
+      v-model="lessonPlanVisible"
+      :space-id="spaceId"
+      :concept-id="currentConceptId"
+      :concept-name="currentConcept?.name"
+      mode="research"
+      @done="onLessonPlanDriven"
+    />
+
     <!-- 主题学习前置要求（2026-09-12：整个领域的学习门槛；有则显示） -->
     <div v-if="spacePrereqs.length" class="space-prereq">
       <span class="space-prereq-label">学习前置</span>
@@ -397,15 +408,26 @@
 
           <!-- 已发布/草稿讲义（DlCardView） -->
           <div v-if="currentConcept.card" ref="lessonBodyRef" class="lesson-body block-body-pad" @mouseup="onLessonMouseUp">
+            <!-- 讲义方案（讲义流水线 Plan 阶段）：待确认时高亮，已确认也可回看规格 -->
+            <div v-if="lessonPlanHint" class="lesson-plan-bar" :class="{ pending: lessonPlanHint.pending }">
+              <span class="lpb-text">{{ lessonPlanHint.text }}</span>
+              <el-button link type="primary" size="small" @click="openLessonPlan">查看讲义方案</el-button>
+            </div>
             <SectionLesson
               :card="currentConcept.card"
               :related="currentRelated"
               @not-understand="onSectionNotUnderstand"
               @goto-concept="gotoRelatedConcept"
+              @rewrite-section="onSectionRewrite"
             />
           </div>
           <!-- 无讲义：提示 + 研究入口（dl:agent-send mode='research' 产出草稿卡片） -->
           <div v-else class="lesson-body empty-body">
+            <!-- 已有讲义方案（正文还没写）：先确认方案，再逐区精写 -->
+            <div v-if="lessonPlanHint" class="lesson-plan-bar pending in-empty">
+              <span class="lpb-text">{{ lessonPlanHint.text }}</span>
+              <el-button link type="primary" size="small" @click="openLessonPlan">查看讲义方案</el-button>
+            </div>
             <el-empty description="本概念讲义生成中">
               <el-button
                 type="primary"
@@ -775,6 +797,7 @@ import QaAnswerView from './QaAnswerView.vue'
 import SpaceSettingsPanel from './SpaceSettingsPanel.vue'
 import AgentActivityStrip from './AgentActivityStrip.vue'
 import PlanConfirmDialog from './PlanConfirmDialog.vue'
+import LessonPlanDialog from './LessonPlanDialog.vue'
 import type {
   DlCardSection,
   DlChatTurn,
@@ -1292,6 +1315,87 @@ async function onPlanDriven(): Promise<void> {
   await refreshView()
 }
 
+// ==================== 讲义方案（讲义流水线；2026-09-14） ====================
+
+/** 讲义方案弹窗可见性 */
+const lessonPlanVisible = ref(false)
+
+/** 当前概念的讲义方案（只有属于当前概念时才认——讲义是按概念写的） */
+const currentLessonPlan = computed(() => {
+  const p = store.plan
+  const id = currentConceptId.value
+  if (!p?.lesson || !id) return null
+  if (p.lessonConceptId && p.lessonConceptId !== id) return null
+  return p.lesson
+})
+
+/**
+ * 讲义方案提示条：待确认时高亮催办；已确认时给"回看规格"的入口（有卡才提示，无卡时
+ * 由空态里的那份提示条承担）。没有方案时不出条（不干扰"研究此概念"入口）。
+ */
+const lessonPlanHint = computed(() => {
+  const lp = currentLessonPlan.value
+  if (!lp) return null
+  if (store.plan?.lessonConfirmed) {
+    return { pending: false, text: `讲义方案已确认（第 ${lp.revision} 版）——助手按它逐区精写；可回看规格与区级计划` }
+  }
+  return { pending: true, text: '讲义方案待你确认：确认后助手才按每区的版式逐区精写正文' }
+})
+
+function openLessonPlan(): void {
+  lessonPlanVisible.value = true
+}
+
+/**
+ * 拉当前概念的讲义方案；有**待确认**方案时自动弹窗（与知识体系弹窗同款体验）。
+ * @returns 是否弹了窗
+ */
+async function openLessonPlanIfPending(): Promise<boolean> {
+  const id = currentConceptId.value
+  if (!id) return false
+  const p = await store.fetchPlan(spaceId.value, id)
+  if (!p?.lesson) return false
+  if (p.lessonConceptId && p.lessonConceptId !== id) return false
+  if (!p.lessonConfirmed) {
+    lessonPlanVisible.value = true
+    return true
+  }
+  return false
+}
+
+/** 讲义方案弹窗驱动过一轮（确认后逐区精写 / 调整后重做方案）后的收尾 */
+async function onLessonPlanDriven(): Promise<void> {
+  await refreshView()
+}
+
+/**
+ * 区级「重写此区」（2026-09-14）：只重做这一区，不整篇重来。
+ * 把该区现状（key/版式/正文）交给研究助手，要求**只回这一区的新 md**，其余区逐字保留，
+ * 最后仍走 dl_save_card（门禁与质检照旧）——对应 ppt-master 的"在拥有该层的那一层修"。
+ */
+async function onSectionRewrite(section: DlCardSection): Promise<void> {
+  const c = currentConcept.value
+  if (!c || researching.value || tutorStreaming.value) return
+  const layout = section.layout ?? ''
+  const takeaway = section.takeaway ? `\n- 现有结论条：${section.takeaway}` : ''
+  const body = String(section.md ?? '').slice(0, 4000)
+  await runAsk(
+    [
+      `【重写此区】概念「${c.name}」的「${section.title ?? section.key}」区（key=${section.key}${layout ? `，版式=${layout}` : ''}）需要重做：`,
+      '要求：',
+      '1. 只重做这一区——其余区**逐字保留**，不要顺手改；',
+      `2. 按版式写：${layout || '按内容选一个合适版式（要点卡/对比表/步骤条/图解/算例/公式/数据看点/引文/时间线/误区/清单/代码/结论条）'}，正文形状要与版式一致（声明要点卡就是 2~6 条短要点，声明图解就真给 figure 规格块）；`,
+      '3. 长段信息要归纳成要点/小标题/表格，不要写成一堵文字墙；给这一区补 takeaway（一句话结论）；',
+      '4. 内容要有据：沿用原证据来源，新增论断必须来自资料（不要编造）；',
+      '5. 完成后用 dl_save_card 落库（sections 全量重发，未改动的区原样照抄）。',
+      '',
+      `【该区现状】${takeaway}`,
+      body,
+    ].join('\n'),
+    'task',
+  )
+}
+
 // ---------- 空间整体进度（后端 stats 为准） ----------
 const masteryPercent = computed(() => {
   const s = view.value?.stats
@@ -1373,6 +1477,8 @@ function selectConcept(c: DlConceptView): void {
   taskLog.value = []
   taskLogOpen.value = false
   void store.fetchNotesOf(spaceId.value, c.id)
+  // 讲义方案提示条按当前概念判定（2026-09-14）：切概念时把该概念的方案读回来（失败静默，不阻塞选课）
+  void store.fetchPlan(spaceId.value, c.id)
 }
 
 // ---------- 交互：掌握度反馈（后端推进 + 重拉视图） ----------
@@ -1780,6 +1886,9 @@ async function researchConcept(): Promise<void> {
     }
     // 研究完成后重拉视图：卡片草稿/新关系/掌握度一并刷新
     await refreshView()
+    // 讲义流水线（2026-09-14）：本轮若提交了「讲义方案」草案 → 自动弹窗请用户确认，
+    // 确认后才驱动逐区精写（Plan → Do 分离，与知识体系方案同款体验）
+    await openLessonPlanIfPending()
   } finally {
     unsub()
     researching.value = false
@@ -1820,6 +1929,8 @@ function taskActionText(tool: string): string {
       return '已建关系'
     case 'dl_save_card':
       return '已存讲义'
+    case 'dl_propose_lesson_plan':
+      return '已提交讲义方案'
     case 'dl_answer_question':
       return '已回答存档'
     default:
@@ -2342,6 +2453,36 @@ watch(rightPane, (pane) => {
   }
 
   .plan-bar-text {
+    flex: 1 1 auto;
+  }
+}
+
+// 讲义方案提示条（2026-09-14 讲义流水线）：挂在讲义上方/空态里，待确认时高亮
+.lesson-plan-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 6px 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-fill-color-lighter);
+  font-size: 12.5px;
+  color: var(--el-text-color-secondary);
+
+  &.pending {
+    border-color: var(--el-color-warning-light-7);
+    background: var(--el-color-warning-light-9);
+    color: var(--el-color-warning);
+    font-weight: 600;
+  }
+
+  &.in-empty {
+    margin-bottom: 4px;
+    max-width: 520px;
+  }
+
+  .lpb-text {
     flex: 1 1 auto;
   }
 }

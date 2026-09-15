@@ -23,7 +23,7 @@
  * 绝不静默吞掉模型写的内容。质检的阻断项都必须给出**可执行的修复**（哪一区、补什么、怎么写）。
  */
 
-import { canonicalSectionKey } from './lesson-template'
+import { canonicalSectionKey, lessonBodyChars } from './lesson-template'
 
 // ==================== 设备目录 ====================
 
@@ -254,39 +254,15 @@ export function lessonLayoutSpecOf(name: unknown): DlLessonLayoutSpec | null {
 }
 
 /**
- * 模板语义区 → 默认设备（老卡/未声明 layout 时也能拿到合理版式）。
- * 与 `lesson-template` 的区目录一一对应：选设备的依据是"这一区要替读者做什么"。
+ * 该区 key 的默认设备。
+ *
+ * **2026-09-15 用户口径「不要卡片样式」**：讲义默认一律按**文档段落式**（`prose`）呈现——
+ * 不再自动把某一区套成要点卡/引言卡/数据看点这类"卡片"。设备本身保留
+ * （`LESSON_LAYOUT_CATALOG` 与显式声明 `layout` 的路径不变），只在**明确声明**时才使用；
+ * 质量检查里"版式单调/要点没精炼"这类判据对 prose 区自然不适用。
  */
-const DEFAULT_LAYOUT_BY_SECTION: Record<string, DlLessonLayout> = {
-  meta: 'keypoints',
-  essence: 'callout',
-  why: 'keypoints',
-  examples: 'worked',
-  statement: 'quote',
-  justification: 'formula',
-  definition: 'prose',
-  mechanism: 'prose',
-  structure: 'compare',
-  rules: 'keypoints',
-  formula: 'formula',
-  property: 'compare',
-  procedure: 'steps',
-  application: 'compare',
-  counterexample: 'worked',
-  distinguish: 'compare',
-  code: 'code',
-  detail: 'prose',
-  controversy: 'compare',
-  edge: 'pitfall',
-  pitfalls: 'pitfall',
-  selfcheck: 'qa',
-  answers: 'qa',
-  notes: 'prose',
-}
-
-/** 该区 key 的默认设备（未收录 → prose） */
-export function defaultLayoutForSection(sectionKey: unknown): DlLessonLayout {
-  return DEFAULT_LAYOUT_BY_SECTION[canonicalSectionKey(String(sectionKey ?? ''))] ?? 'prose'
+export function defaultLayoutForSection(_sectionKey: unknown): DlLessonLayout {
+  return 'prose'
 }
 
 /** 解析区版式：显式 layout > 大纲 roster > 模板默认（渲染兜底与落库归一都走这里） */
@@ -356,9 +332,10 @@ const STAT_ITEM = /\|\s*\S/
  */
 export function analyzeLessonMd(md: string): LessonMdStats {
   const lines = String(md ?? '').split(/\r?\n/)
+  // 正文字数口径与区集契约（v6）的 lessonBodyChars 完全一致：围栏外非空白字符
+  const chars = lessonBodyChars(String(md ?? ''))
   let fence: string | null = null
   let fenceLang = ''
-  let chars = 0
   let headings = 0
   let bullets = 0
   let ordered = 0
@@ -413,12 +390,10 @@ export function analyzeLessonMd(md: string): LessonMdStats {
 
     if (HEADING_LINE.test(line)) {
       headings++
-      chars += countChars(line)
       continue
     }
     if (QUOTE_LINE.test(line)) {
       quotes++
-      chars += countChars(line.replace(QUOTE_LINE, ''))
       continue
     }
     if (TABLE_ROW.test(line)) {
@@ -428,23 +403,19 @@ export function analyzeLessonMd(md: string): LessonMdStats {
     if (CHECKBOX_LINE.test(line)) {
       checkboxes++
       bullets++
-      chars += countChars(line)
       continue
     }
     if (BULLET_LINE.test(line)) {
       bullets++
       if (STAT_ITEM.test(line.replace(BULLET_LINE, ''))) statsItems++
-      chars += countChars(line)
       continue
     }
     if (ORDERED_LINE.test(line)) {
       ordered++
       if (STAT_ITEM.test(line.replace(ORDERED_LINE, ''))) statsItems++
-      chars += countChars(line)
       continue
     }
     inlineFormulas += (line.match(INLINE_MATH) ?? []).length
-    chars += countChars(line)
   }
 
   const tables = tableRows >= 2 ? 1 : 0
@@ -489,11 +460,6 @@ export function analyzeLessonMd(md: string): LessonMdStats {
     structured,
     shape,
   }
-}
-
-/** 非空白字符数（中英文同口径；用于密度判据） */
-function countChars(text: string): number {
-  return text.replace(/\s+/g, '').length
 }
 
 /** 区最小形状（不强绑落库 DTO） */
@@ -587,16 +553,25 @@ function isPlainLayout(layout: DlLessonLayout): boolean {
 
 /**
  * 讲义视觉质检（两级）。
- * 阻断项只针对"读者体验明显不合格"的结构性问题；能靠渲染兜底的（老卡无 layout）一律不拦。
+ *
+ * 阻塞口径（重要，避免"顺手拦死"）：
+ * - **声明即义务**：区**显式**给了 `layout`（或大纲 roster 定了版式）时，正文形状必须兑现 → 不符即阻断；
+ *   没声明时按区 key 推导的版式只是**渲染兜底**，不符降级为警告（老卡/快速模式不被误伤）。
+ * - **走完规划才严判**：`strict=true`（该概念有已确认讲义方案 = 走完 Plan 流程）时，
+ *   文字墙与"通篇无图"才阻断；否则只警告（自动推进/起步轮等快速模式不会因此卡死产不出讲义）。
+ * - 大纲声明的载体缺失、空区：与 strict 无关，一律阻断（前者是 Plan↔Do 不一致，后者是空壳）。
  */
 export function checkLessonVisualQuality(input: {
   essenceType?: string | null
   sections: LessonLayoutSectionLike[]
   roster?: LessonRosterLike[] | null
+  /** 是否走完规划流程（有已确认讲义方案）——决定全文级问题是否阻断 */
+  strict?: boolean
 }): LessonQualityReport {
   const blocking: LessonQualityIssue[] = []
   const warnings: LessonQualityIssue[] = []
   const sections = input.sections ?? []
+  const strict = input.strict === true
 
   if (sections.length === 0) {
     blocking.push({
@@ -619,7 +594,9 @@ export function checkLessonVisualQuality(input: {
     const st = analyzeLessonMd(sec.md)
     statsList.push(st)
     const roster = rosterByKey.get(canonicalSectionKey(sec.key))
-    const layout = resolveSectionLayout({ key: sec.key, layout: sec.layout, rosterLayout: roster?.layout })
+    // 「声明的版式」= 区自己写的 layout，或大纲为该区定的版式；两者都没有才是模板兜底
+    const declared = canonicalLessonLayout(sec.layout) || canonicalLessonLayout(roster?.layout)
+    const layout: DlLessonLayout = declared || defaultLayoutForSection(sec.key)
     layouts.push(layout)
     const label = sectionLabel(sec)
 
@@ -636,24 +613,29 @@ export function checkLessonVisualQuality(input: {
 
     const shape = layoutShapeSatisfied(layout, st)
     if (!shape.ok) {
-      blocking.push({
-        code: 'layout-shape-mismatch',
-        level: 'blocking',
+      // 声明了版式却没兑现 → 阻断；只是模板兜底 → 提醒（换版式或补形状都行）
+      const issue: LessonQualityIssue = {
+        code: declared ? 'layout-shape-mismatch' : 'layout-shape-suggestion',
+        level: declared ? 'blocking' : 'warning',
         sectionKey: sec.key,
         message: `${label}声明版式为「${lessonLayoutName(layout)}」，但正文不是这个形状——需要：${shape.need}`,
         fix: `二选一：① 把这一区改写成「${lessonLayoutName(layout)}」要求的形状（${shape.need}）；② 换成与现有正文相符的版式（纯文字用 prose、要点用 keypoints）。改好后重发本卡。`,
-      })
+      }
+      if (declared) blocking.push(issue)
+      else warnings.push(issue)
     }
 
-    // 文字墙：纯文字长段、且没有任何可扫读的结构
+    // 文字墙：纯文字长段、且没有任何可扫读的结构（走完规划才阻断）
     if (st.chars > LESSON_LAYOUT_RHYTHM.proseWallChars && !st.structured) {
-      blocking.push({
+      const issue: LessonQualityIssue = {
         code: 'prose-wall',
-        level: 'blocking',
+        level: strict ? 'blocking' : 'warning',
         sectionKey: sec.key,
         message: `${label}是一堵 ${st.chars} 字的文字墙（没有任何小标题、列表、表格或图）。`,
         fix: '把这区拆开归纳：① 用 `### ` 小标题分段；② 把并列信息改成要点卡（`- **要点**：一句话`）或对比表；③ 需要看形状/趋势的地方补一个 ```figure 规格图。',
-      })
+      }
+      if (strict) blocking.push(issue)
+      else warnings.push(issue)
     } else if (st.chars > LESSON_LAYOUT_RHYTHM.longSectionChars) {
       warnings.push({
         code: 'long-section',
@@ -717,7 +699,11 @@ export function checkLessonVisualQuality(input: {
   const graphicSections = statsList.filter((s) => s.graphic).length
   const totalChars = statsList.reduce((sum, s) => sum + s.chars, 0)
   if (graphicSections === 0) {
-    const level = sections.length >= LESSON_LAYOUT_RHYTHM.minSectionsForGraphicCarrier ? 'blocking' : 'warning'
+    // 走完规划（strict）且区数足够 → 阻断；否则只警告（快速模式不因"没图"卡死产出）
+    const level =
+      strict && sections.length >= LESSON_LAYOUT_RHYTHM.minSectionsForGraphicCarrier
+        ? 'blocking'
+        : 'warning'
     const issue: LessonQualityIssue = {
       code: 'no-graphic-carrier',
       level,
@@ -922,6 +908,35 @@ function stripMark(text: string): string {
     .replace(/\*\*(.+?)\*\*/g, '$1')
     .replace(/`([^`]+)`/g, '$1')
     .trim()
+}
+
+/**
+ * 按设备拆分区正文：**已被解析成条目的列表行**从正文里摘掉，其余原样留在 `residual`。
+ * 渲染层用「条目卡片 + 残余 markdown」两段渲染——结构化设备不会吞掉夹在列表之外的正文
+ * （宁可多渲染一段，也不静默丢模型写的内容）。
+ */
+export function splitLessonDeviceMd(md: string, layout: DlLessonLayout): { residual: string } {
+  const lines = String(md ?? '').split(/\r?\n/)
+  const consumed = (line: string): boolean => {
+    if (!LIST_ITEM.test(line)) return false
+    switch (layout) {
+      case 'keypoints':
+      case 'pitfall':
+      case 'qa':
+        return parseLessonPoints(line).length > 0
+      case 'steps':
+        return parseLessonSteps(line).length > 0
+      case 'stats':
+        return parseLessonStats(line).length > 0
+      case 'checklist':
+        return parseLessonChecklist(line).length > 0
+      case 'timeline':
+        return parseLessonTimeline(line).length > 0
+      default:
+        return false
+    }
+  }
+  return { residual: lines.filter((line) => !consumed(line)).join('\n').trim() }
 }
 
 // ==================== 展示计划 ====================

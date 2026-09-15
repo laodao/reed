@@ -15,7 +15,7 @@ import {
   buildDlBindings,
   isPlanningSaveRound,
 } from '@core/packs/domain-learning/services/dl-agent-bindings'
-import { dlAgentToolNames, DL_TASK_PROGRESS_TOOL } from '@core/packs/domain-learning/services/dl-agent-tools'
+import { dlAgentToolNames, buildDlAgentToolDefs, DL_TASK_PROGRESS_TOOL } from '@core/packs/domain-learning/services/dl-agent-tools'
 import { loadAgentBudget } from '@core/platform/agent-runtime/budget/agent-budget'
 import { AGENT_BUDGET_DEFAULTS } from '@shared/types/agent-budget.types'
 import {
@@ -207,5 +207,15 @@ describe('dl-agent-bindings', () => {
     expect(bindings.find((b) => b.tool === 'dl_save_card')!.maxCalls).toBe(
       AGENT_BUDGET_DEFAULTS.maxCalls.byTool.dl_save_card,
     )
+  })
+
+  // ===== 2026-09-15 用户口径（重点 + 合并 + 不要卡片样式）：工具描述也必须带同一套口径 =====
+  it('dl_save_card 工具描述带"重点就是定义/详解/案例 + 区序 + 合并 + 不要卡片"（模型在工具层也看得到）', () => {
+    const def = buildDlAgentToolDefs().find((d) => d.name === 'dl_save_card')
+    expect(def, '缺 dl_save_card 工具定义').toBeTruthy()
+    expect(def!.description).toContain('重点就是定义、详解、案例')
+    expect(def!.description).toContain('区序是「定义 → 详解 → 案例」')
+    expect(def!.description).toContain('并进「详解」')
+    expect(def!.description).toContain('不要做成要点卡堆砌')
   })
 })

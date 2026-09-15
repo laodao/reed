@@ -1370,14 +1370,18 @@ const electronAPI = {
       ipcRenderer.invoke('dl:agent-busy', p),
     // 讲义发布（draft→published 人审确认；2026-09-09 复盘补闭环）
     publishCard: (p: { id: string; cardId: string }) => ipcRenderer.invoke('dl:publish-card', p),
-    // 方案确认流程（2026-09-13：对齐诉求 → 确认知识体系 → 才允许落库）
-    getPlan: (id: string) => ipcRenderer.invoke('dl:get-plan', { id }),
+    // 方案确认流程（2026-09-13：对齐诉求 → 确认知识体系 → 才允许落库；
+    // 2026-09-14 加讲义方案 lesson：带 conceptId 取/确认某概念的讲义规格与区级计划）
+    getPlan: (id: string, conceptId?: string | null) =>
+      ipcRenderer.invoke('dl:get-plan', { id, conceptId: conceptId ?? null }),
     confirmPlan: (p: {
       id: string
-      step: 'understanding' | 'syllabus'
-      /** 用户勾选增删/调序后的方案（仅 syllabus 需要；缺省=用最新草案原样确认） */
+      step: 'understanding' | 'syllabus' | 'lesson'
+      /** 用户勾选增删/调序后的方案（syllabus/lesson 需要；缺省=用最新草案原样确认） */
       payload?: unknown
       feedback?: string | null
+      /** lesson 步：给哪个知识点确认讲义方案（讲义是按概念写的） */
+      conceptId?: string | null
     }) => ipcRenderer.invoke('dl:confirm-plan', p),
     // 周期推进配置（M2-C：dl:get-space-pace / dl:set-space-pace / dl:scheduler-state）
     getSpacePace: (id: string) => ipcRenderer.invoke('dl:get-space-pace', { id }),
