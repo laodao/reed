@@ -23,8 +23,11 @@ import { LearningViewService } from '../services/learning-view.service'
 import { DlAgentHarnessService } from '../services/dl-agent-harness.service'
 import { DlPaceSchedulerService } from '../services/dl-pace-scheduler.service'
 import { confirmDlPlan, getDlPlanView } from '../services/dl-plan.service'
+import { DlLessonExportService } from '../services/dl-lesson-export.service'
+import { DlLessonVersionService } from '../services/dl-lesson-version.service'
 import { dlPublishNotice } from '../services/dl-notice'
-import type { DlPaceSettings, DlReviewSettings, DlSpacePrereq, DlCreateConceptInput } from '@shared/types/domain-learning.types'
+import type { DlPaceSettings, DlReviewSettings, DlSpacePrereq, DlCreateConceptInput, DlLessonExportFormat } from '@shared/types/domain-learning.types'
+import { normalizeLessonCardId, parseLessonExportFormat } from '@shared/utils/domain-learning-lesson-export'
 import type { DlAgentMode } from '../services/dl-agent.types'
 
 const logger = createLogger('DlHandlers')
@@ -68,6 +71,10 @@ interface DlServiceBundle {
   view: LearningViewService
   agent: DlAgentHarnessService
   scheduler: DlPaceSchedulerService
+  /** 单篇讲义导出（md/PDF/长图；平台文档工具层消费方） */
+  exportLesson: DlLessonExportService
+  /** 讲义版本管理（列表/预览/恢复；2026-09-15 用户需求） */
+  version: DlLessonVersionService
 }
 
 let bundle: DlServiceBundle | null = null
@@ -109,6 +116,8 @@ function services(): DlServiceBundle {
       view: new LearningViewService(db),
       agent,
       scheduler,
+      exportLesson: new DlLessonExportService(db),
+      version: new DlLessonVersionService(db),
     }
   }
   return bundle
@@ -168,6 +177,87 @@ export function registerDomainLearningHandlers(): void {
     wrap(() => services().view.buildNodeProfile(p.id, p.nodeId)))
   ipcBridge.handle('dl:get-space-stats', (_e, p: { id: string }) => wrap(() => services().view.buildSpaceStats(p.id)))
   ipcBridge.handle('dl:export-lesson-digest', (_e, p: { id: string }) => wrap(() => services().view.buildLessonDigest(p.id)))
+  // 单篇讲义导出（2026-09-15 用户需求：知识点正文导出 md/PDF/长图；cardId 缺省=当前版）
+  ipcBridge.handle('dl:export-lesson', (_e, p: { id: string; conceptId: string; format: DlLessonExportFormat; cardId?: string | null }) =>
+    wrap(async () => {
+      // 入站守卫（与前端同一份规则）：格式白名单 + cardId 只认非空字符串。
+      // 前端事件对象/代理若漏进来，这里直接拒绝，不会一路带进渲染管线。
+      const format = parseLessonExportFormat(p?.format)
+      if (!format) throw new Error('不支持的导出格式（请选择 Markdown / PDF / 长图）')
+      const cardId = normalizeLessonCardId(p?.cardId)
+      await services().projects.ensureOwned(p.id)
+      const r = await services().exportLesson.export({
+        spaceId: p.id,
+        conceptId: p.conceptId,
+        format,
+        cardId,
+      })
+      // IPC 结构化克隆防御：只传原始类型，显式构造纯净对象（不展开、不继承）
+      return {
+        format: r.format,
+        filename: r.filename,
+        mime: r.mime,
+        conceptId: r.conceptId,
+        conceptName: r.conceptName,
+        spaceName: r.spaceName,
+        version: r.version,
+        markdown: r.markdown ?? null,
+        contentBase64: r.contentBase64 ?? null,
+        html: r.html ?? null,
+      }
+    }))
+
+  // ---- 讲义版本管理（2026-09-15：历史列表/预览/恢复到草稿） ----
+  ipcBridge.handle('dl:list-card-versions', (_e, p: { id: string; conceptId: string }) =>
+    wrap(async () => {
+      await services().projects.ensureOwned(p.id)
+      const list = await services().version.listVersions(p.id, p.conceptId)
+      // 显式构造纯净数组（避免仓储返回值携带不可枚举属性）
+      return list.map((v) => ({
+        cardId: v.cardId,
+        version: v.version,
+        status: v.status,
+        essenceType: v.essenceType,
+        sectionsCount: v.sectionsCount,
+        worksCount: v.worksCount,
+        evidenceCount: v.evidenceCount,
+        verifyStatus: v.verifyStatus,
+        revisionNote: v.revisionNote,
+        changeSource: v.changeSource,
+        createdAt: v.createdAt,
+        updatedAt: v.updatedAt,
+        isCurrent: v.isCurrent,
+      }))
+    }))
+  ipcBridge.handle('dl:get-card-version', (_e, p: { id: string; cardId: string }) =>
+    wrap(async () => {
+      await services().projects.ensureOwned(p.id)
+      const c = await services().version.getVersion(p.id, p.cardId)
+      if (!c) return null
+      return {
+        id: c.id,
+        conceptId: c.conceptId,
+        essenceType: c.essenceType,
+        sections: c.sections,
+        works: c.works,
+        contentMd: c.contentMd,
+        evidenceSources: c.evidenceSources,
+        version: c.version,
+        status: c.status,
+        verification: c.verification,
+        revisionNote: c.revisionNote,
+        changeSource: c.changeSource,
+        changed: c.changed,
+        createdAt: c.createdAt instanceof Date ? c.createdAt.toISOString() : c.createdAt,
+        updatedAt: c.updatedAt instanceof Date ? c.updatedAt.toISOString() : c.updatedAt,
+      }
+    }))
+  ipcBridge.handle('dl:restore-card', (_e, p: { id: string; conceptId: string; cardId: string }) =>
+    wrap(async () => {
+      await services().projects.ensureOwned(p.id)
+      const r = await services().version.restore(p.id, p.conceptId, p.cardId)
+      return { cardId: r.cardId, version: r.version, restoredFrom: r.restoredFrom }
+    }))
 
   // ---- 图谱/掌握度 ----
   ipcBridge.handle('dl:pick-next', (_e, p: { id: string }) => wrap(() => services().graph.pickNextToLearn(p.id)))

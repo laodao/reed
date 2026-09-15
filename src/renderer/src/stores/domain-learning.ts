@@ -11,12 +11,18 @@
  */
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
+import { normalizeLessonCardId, parseLessonExportFormat } from '@shared/utils/domain-learning-lesson-export'
 import type {
   DlAtlasGraph,
   DlAtlasViews,
+  DlCardView,
   DlCreateConceptInput,
   DlCreateConceptResult,
   DlLessonDigest,
+  DlLessonExportFormat,
+  DlLessonExportResult,
+  DlCardVersionItem,
+  DlCardRestoreResult,
   DlNodeProfile,
   DlNote,
   DlNoteQueryResult,
@@ -131,6 +137,14 @@ interface DomainLearningApi {
   getAtlasViews(id: string): Promise<IpcLike<DlAtlasViews | null>>
   getSpaceStats(id: string): Promise<IpcLike<DlSpaceStats | null>>
   exportLessonDigest(id: string): Promise<IpcLike<DlLessonDigest | null>>
+  /** 单篇讲义导出（md/PDF/长图；cardId 缺省=当前版） */
+  exportLesson(p: { id: string; conceptId: string; format: DlLessonExportFormat; cardId?: string | null }): Promise<IpcLike<DlLessonExportResult | null>>
+  /** 讲义版本列表（降序，isCurrent 标注最新版） */
+  listCardVersions(p: { id: string; conceptId: string }): Promise<IpcLike<DlCardVersionItem[] | null>>
+  /** 取单版讲义（只读预览） */
+  getCardVersion(p: { id: string; cardId: string }): Promise<IpcLike<DlCardView | null>>
+  /** 恢复到草稿（新建最新版，旧版留档） */
+  restoreCard(p: { id: string; conceptId: string; cardId: string }): Promise<IpcLike<DlCardRestoreResult | null>>
   setSpaceProfile(p: { id: string; profileId?: string | null; profile?: Record<string, unknown> | null }): Promise<IpcLike<{ ok: boolean }>>
   getSpaceReview(id: string): Promise<IpcLike<DlReviewSettings>>
   setSpaceReview(p: { id: string; review: DlReviewSettings }): Promise<IpcLike<DlReviewSettings>>
@@ -586,6 +600,92 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     }
   }
 
+  /**
+   * 单篇讲义导出（2026-09-15：知识点正文 md / PDF / 长图）。
+   * IPC 不可用或失败时返回 null；错误信息写入 error ref。
+   *
+   * IPC 出站守卫（2026-09-15 用户报错「An object could not be cloned.」）：
+   * UI 事件对象（如 el-dropdown command 事件带的组件实例）、Vue 代理都过不了
+   * `ipcRenderer.invoke` 的结构化克隆，故出站载荷只允许原始类型：
+   * 格式走白名单、cardId 只认非空字符串（规则单一来源 shared/utils/domain-learning-lesson-export）。
+   */
+  async function exportLessonOf(input: {
+    spaceId: string
+    conceptId: string
+    format: DlLessonExportFormat
+    cardId?: string | null
+  }): Promise<DlLessonExportResult | null> {
+    const a = api()
+    if (!a) return null
+    error.value = null
+    const format = parseLessonExportFormat(input.format)
+    if (!format) {
+      error.value = '不支持的导出格式（请选择 Markdown / PDF / 长图）'
+      console.error('[domain-learning] 导出格式非法，已拒绝出站:', input.format)
+      return null
+    }
+    const conceptId = typeof input.conceptId === 'string' ? input.conceptId.trim() : ''
+    if (!conceptId) {
+      error.value = '缺少知识点标识，无法导出'
+      return null
+    }
+    const spaceId = typeof input.spaceId === 'string' ? input.spaceId.trim() : ''
+    if (!spaceId) {
+      error.value = '缺少学习空间标识，无法导出'
+      return null
+    }
+    try {
+      const r = await a.exportLesson({ id: spaceId, conceptId, format, cardId: normalizeLessonCardId(input.cardId) })
+      return r?.success && r.data ? r.data : null
+    } catch (e: any) {
+      error.value = e?.message ?? '导出讲义失败'
+      console.error('[domain-learning] 导出讲义失败:', e)
+      return null
+    }
+  }
+
+  /** 讲义版本列表（2026-09-15：历史抽屉数据源） */
+  async function listCardVersionsOf(spaceId: string, conceptId: string): Promise<DlCardVersionItem[] | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.listCardVersions({ id: spaceId, conceptId })
+      return r?.success && r.data ? r.data : null
+    } catch (e: any) {
+      error.value = e?.message ?? '拉取版本列表失败'
+      console.error('[domain-learning] 拉取版本列表失败:', e)
+      return null
+    }
+  }
+
+  /** 取单版讲义预览（只读） */
+  async function getCardVersionOf(spaceId: string, cardId: string): Promise<DlCardView | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.getCardVersion({ id: spaceId, cardId })
+      return r?.success && r.data ? (r.data as DlCardView) : null
+    } catch (e: any) {
+      error.value = e?.message ?? '拉取版本详情失败'
+      console.error('[domain-learning] 拉取版本详情失败:', e)
+      return null
+    }
+  }
+
+  /** 恢复到草稿（新建最新版，旧版留档；成功后调用方应刷新视图） */
+  async function restoreCardOf(input: { spaceId: string; conceptId: string; cardId: string }): Promise<DlCardRestoreResult | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.restoreCard({ id: input.spaceId, conceptId: input.conceptId, cardId: input.cardId })
+      return r?.success && r.data ? r.data : null
+    } catch (e: any) {
+      error.value = e?.message ?? '恢复版本失败'
+      console.error('[domain-learning] 恢复版本失败:', e)
+      return null
+    }
+  }
+
   // ==================== 概念笔记（M4-UX1） ====================
 
   /** 当前空间笔记（按概念过滤时只含该概念） */
@@ -1000,6 +1100,10 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     spaceStats,
     fetchSpaceStats,
     exportLessonDigestOf,
+    exportLessonOf,
+    listCardVersionsOf,
+    getCardVersionOf,
+    restoreCardOf,
     // 概念笔记
     notes,
     fetchNotesOf,

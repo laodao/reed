@@ -1397,6 +1397,16 @@ const electronAPI = {
     // 统计与导出（M3-C）
     getSpaceStats: (id: string) => ipcRenderer.invoke('dl:get-space-stats', { id }),
     exportLessonDigest: (id: string) => ipcRenderer.invoke('dl:export-lesson-digest', { id }),
+    /** 单篇讲义导出（2026-09-15：知识点正文 md / PDF / 长图；cardId 缺省=当前版） */
+    exportLesson: (p: { id: string; conceptId: string; format: 'md' | 'pdf' | 'image'; cardId?: string | null }) =>
+      ipcRenderer.invoke('dl:export-lesson', p),
+    /** 讲义版本管理（2026-09-15：历史列表/预览/恢复到草稿） */
+    listCardVersions: (p: { id: string; conceptId: string }) =>
+      ipcRenderer.invoke('dl:list-card-versions', p),
+    getCardVersion: (p: { id: string; cardId: string }) =>
+      ipcRenderer.invoke('dl:get-card-version', p),
+    restoreCard: (p: { id: string; conceptId: string; cardId: string }) =>
+      ipcRenderer.invoke('dl:restore-card', p),
     // 间隔复习（M3-B）
     getSpaceReview: (id: string) => ipcRenderer.invoke('dl:get-space-review', { id }),
     setSpaceReview: (p: {

@@ -3,7 +3,17 @@
  * @module core/platform/services/document-tools/templates
  * @description markdown → 完整排版 HTML。模板决定字体/配色/页眉页脚；
  *              marked 做正文转换。新增场景 = 加一个模板对象，不改服务。
+ *              可选 enhance 开启公式/mermaid 渲染（讲义导出用；缺省关闭，零回归）。
  */
+
+import {
+  buildEnhanceAssets,
+  extractMath,
+  mermaidBlocksToContainers,
+  renderMathInHtml,
+  type DocumentEnhanceOptions,
+  type MathPlaceholder,
+} from './markdown-enhance'
 
 /** 模板基础排版 CSS（中文字体栈、代码块、表格、引用——长图与 PDF 共用） */
 const BASE_CSS = `
@@ -451,6 +461,36 @@ export const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
       ${BASE_CSS}`,
     header: title => `<div class="doc-title">${escapeHtml(title)}</div><div class="doc-meta">${new Date().toLocaleString('zh-CN')}</div>`,
   },
+
+  /**
+   * 学习讲义（领域学习知识点正文导出：md / PDF / 长图共用）
+   * 版式取向：可顺读的层级（区标题左侧色条）、结论条（引用块）、公式/图表居中、
+   * 表格可读——与站内讲义阅读体验对齐，而不是报告/资讯风。
+   */
+  learningLesson: {
+    id: 'learningLesson',
+    name: '学习讲义',
+    width: 820,
+    css: `
+      :root { --accent: #2f6feb; --accent-soft: #eef4ff; --line: #e3e8f0; }
+      body { padding: 30px 34px 40px; background: #fff; }
+      .doc-title { font-size: 26px; font-weight: 700; color: #1f2d3d; line-height: 1.35; }
+      .doc-title-rule { height: 3px; width: 56px; background: var(--accent); border-radius: 2px; margin: 10px 0 20px; }
+      .doc-meta { font-size: 12px; color: #8a94a6; margin-top: 6px; }
+      h1 { font-size: 24px; color: #1f2d3d; margin: 22px 0 10px; }
+      h2 { font-size: 19px; color: #1f2d3d; margin: 28px 0 10px; padding-left: 10px; border-left: 4px solid var(--accent); }
+      h3 { font-size: 16px; color: #2c3e50; margin: 20px 0 8px; }
+      h4 { font-size: 15px; color: #47536b; margin: 16px 0 6px; }
+      p, li { font-size: 15px; }
+      hr { border: none; border-top: 1px solid var(--line); margin: 24px 0; }
+      table { font-size: 14px; }
+      th { font-size: 14px; }
+      /* 公式与图表居中（讲义里区块级公式/图为独立视觉单元） */
+      .katex-display { margin: 14px 0; text-align: center; }
+      .mermaid { margin: 16px 0; }
+      ${BASE_CSS}`,
+    header: title => `<div class="doc-title">${escapeHtml(title)}</div><div class="doc-title-rule"></div>`,
+  },
 }
 
 /** 对话消息（chatTranscript 模板专用入参） */
@@ -482,11 +522,19 @@ async function mdToHtml(md: string): Promise<string> {
 /** 渲染完整 HTML 文档（模板 + 正文）。markdown 为空且 messages 提供时走对话气泡版式 */
 export async function renderTemplateHtml(
   markdown: string,
-  opts: { template: DocumentTemplate; title?: string; messages?: TranscriptMessage[] }
+  opts: {
+    template: DocumentTemplate
+    title?: string
+    messages?: TranscriptMessage[]
+    /** 公式/mermaid 增强（缺省关闭；对话气泡版式不参与增强） */
+    enhance?: DocumentEnhanceOptions
+  }
 ): Promise<string> {
   const t = opts.template
   const title = opts.title ?? '文档'
+  const enhance = opts.enhance ?? {}
   let bodyHtml: string
+  let math: MathPlaceholder[] = []
   if (!markdown && opts.messages?.length) {
     bodyHtml = (await Promise.all(opts.messages.map(async m => {
       const inner = await mdToHtml(m.content)
@@ -495,9 +543,20 @@ export async function renderTemplateHtml(
         : chatBubble('assistant', escapeHtml(m.name), inner, '#67c23a', '#f0f9eb')
     }))).join('')
   } else {
-    bodyHtml = await mdToHtml(markdown)
+    // 公式先抽占位符再转 HTML：否则 marked 会把公式里的 `_`/`*` 当 markdown 语法吃掉
+    const src = enhance.math ? extractMath(markdown) : { text: markdown, math: [] as MathPlaceholder[] }
+    math = src.math
+    bodyHtml = await mdToHtml(src.text)
   }
+  let hasMermaid = false
+  if (enhance.mermaid) {
+    const converted = mermaidBlocksToContainers(bodyHtml)
+    bodyHtml = converted.html
+    hasMermaid = converted.hasMermaid
+  }
+  if (math.length) bodyHtml = await renderMathInHtml(bodyHtml, math)
+  const assets = buildEnhanceAssets(enhance, hasMermaid)
   const header = t.header?.(title) ?? ''
   const footer = t.footer?.() ?? ''
-  return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>${escapeHtml(title)}</title><style>${t.css}</style></head><body>${header}${bodyHtml}${footer}</body></html>`
+  return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>${escapeHtml(title)}</title><style>${t.css}</style>${assets.headHtml}</head><body>${header}${bodyHtml}${footer}${assets.bodyScript}</body></html>`
 }

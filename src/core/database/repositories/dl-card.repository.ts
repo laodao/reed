@@ -35,6 +35,12 @@ export interface DlCardRow {
   status: string
   /** 内部核验记录（M4-UX2；可空=未核验） */
   verification: DlCardVerification | null
+  /** 修订说明（人类可读；2026-09-15 版本管理 P1-1） */
+  revisionNote: string | null
+  /** 变更来源：agent | restore | template | manual */
+  changeSource: string | null
+  /** 结构化变更清单 JSON（对接技能 learning-lesson-updater 输出） */
+  changed: Array<{ key?: string; kind?: string; reason?: string; evidence?: string }> | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -47,6 +53,9 @@ export type DlCardPatch = Partial<{
   evidenceSources: DlCardEvidenceDto[] | null
   status: string
   verification: DlCardVerification | null
+  revisionNote: string | null
+  changeSource: string | null
+  changed: Array<{ key?: string; kind?: string; reason?: string; evidence?: string }> | null
 }>
 
 type CardWhere = FindOptionsWhere<DlCardEntity>
@@ -100,6 +109,9 @@ export class DlCardRepository extends BaseRepository<DlCardEntity, DlCardRow> {
     version?: number
     status?: string
     verification?: DlCardVerification | null
+    revisionNote?: string | null
+    changeSource?: string | null
+    changed?: Array<{ key?: string; kind?: string; reason?: string; evidence?: string }> | null
   }): Promise<DlCardRow> {
     const now = new Date()
     const e = new DlCardEntity()
@@ -115,6 +127,9 @@ export class DlCardRepository extends BaseRepository<DlCardEntity, DlCardRow> {
     e.version = input.version ?? 1
     e.status = input.status ?? 'draft'
     e.verification = input.verification ? JSON.stringify(input.verification) : null
+    e.revisionNote = input.revisionNote ?? null
+    e.changeSource = input.changeSource ?? null
+    e.changedJson = input.changed ? JSON.stringify(input.changed) : null
     e.createdAt = now
     e.updatedAt = now
     await this.scoped.insert(e)
@@ -168,6 +183,10 @@ export class DlCardRepository extends BaseRepository<DlCardEntity, DlCardRow> {
     if (patch.status !== undefined) partial.status = patch.status
     if (patch.verification !== undefined)
       partial.verification = patch.verification ? JSON.stringify(patch.verification) : null
+    if (patch.revisionNote !== undefined) partial.revisionNote = patch.revisionNote ?? null
+    if (patch.changeSource !== undefined) partial.changeSource = patch.changeSource ?? null
+    if (patch.changed !== undefined)
+      partial.changedJson = patch.changed ? JSON.stringify(patch.changed) : null
     await this.scoped.update({ id }, partial)
   }
 
@@ -185,6 +204,9 @@ export class DlCardRepository extends BaseRepository<DlCardEntity, DlCardRow> {
       version: e.version,
       status: e.status,
       verification: parseVerification(e.verification),
+      revisionNote: e.revisionNote,
+      changeSource: e.changeSource,
+      changed: safeParseArray<{ key?: string; kind?: string; reason?: string; evidence?: string }>(e.changedJson),
       createdAt: e.createdAt,
       updatedAt: e.updatedAt,
     }

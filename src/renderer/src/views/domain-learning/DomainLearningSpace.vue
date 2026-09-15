@@ -304,6 +304,22 @@
                     @click="publishCurrentLesson"
                   >确认发布 v{{ currentConcept.card.version }}</el-button>
                   <el-tag v-else size="small" type="success" effect="plain">已发布 v{{ currentConcept.card.version }}</el-tag>
+                  <!-- 讲义导出（2026-09-15：知识点正文 md / PDF / 长图） -->
+                  <!-- 注意：command 事件带 (command, 组件实例, 事件)，处理函数只收第一个参数（见 onExportCommand） -->
+                  <el-dropdown trigger="click" @command="onExportCommand">
+                    <el-button size="small" plain :loading="exportingLesson">
+                      导出 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                    </el-button>
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item command="md">Markdown</el-dropdown-item>
+                        <el-dropdown-item command="pdf">PDF</el-dropdown-item>
+                        <el-dropdown-item command="image">长图 PNG</el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
+                  <!-- 讲义版本历史（2026-09-15：查看/预览/恢复到草稿） -->
+                  <el-button size="small" plain @click="openVersionHistory">历史</el-button>
                 </template>
                 <span v-if="lastFeedback" class="feedback-toast" :class="{ warn: lastFeedbackIsWarn }">{{ lastFeedback }}</span>
               </div>
@@ -604,6 +620,49 @@
       <el-dialog v-model="settingsVisible" title="空间设置" width="900px" append-to-body :close-on-click-modal="false">
         <SpaceSettingsPanel v-if="settingsVisible" :space-id="spaceId" @applied="settingsVisible = false" />
       </el-dialog>
+
+      <!-- 讲义版本历史抽屉（2026-09-15：查看/预览/恢复/导出指定版本） -->
+      <el-drawer v-model="historyVisible" title="讲义版本历史" size="480px" append-to-body>
+        <template #header>
+          <div style="display: flex; align-items: center; gap: 8px">
+            <span>讲义版本历史</span>
+            <el-tag v-if="currentConcept" size="small" type="info">{{ currentConcept.name }}</el-tag>
+          </div>
+        </template>
+        <div v-if="!versions.length" style="color: #909399; padding: 20px 0; text-align: center">暂无历史版本</div>
+        <div v-for="v in versions" :key="v.cardId" class="version-item">
+          <div class="version-head">
+            <span class="version-tag">v{{ v.version }}</span>
+            <el-tag size="small" :type="v.status === 'published' ? 'success' : 'info'" effect="plain">{{ v.status === 'published' ? '已发布' : '草稿' }}</el-tag>
+            <el-tag v-if="v.isCurrent" size="small" type="warning" effect="dark">当前</el-tag>
+            <span class="version-time">{{ v.createdAt?.slice(0, 16).replace('T', ' ') }}</span>
+          </div>
+          <div v-if="v.revisionNote" class="version-note">{{ v.revisionNote }}</div>
+          <div v-if="v.changeSource" class="version-source">来源：{{ v.changeSource }}</div>
+          <div class="version-meta">
+            {{ v.sectionsCount }} 区 · {{ v.worksCount }} 著作 · {{ v.evidenceCount }} 证据
+            <template v-if="v.verifyStatus"> · 核验：{{ v.verifyStatus }}</template>
+          </div>
+          <div class="version-actions">
+            <el-button size="small" text type="primary" @click="previewVersion(v)">预览</el-button>
+            <el-button size="small" text type="primary" @click="exportVersion(v, 'md')">导出 MD</el-button>
+            <el-button size="small" text type="primary" @click="exportVersion(v, 'pdf')">导出 PDF</el-button>
+            <el-button
+              v-if="!v.isCurrent"
+              size="small"
+              text
+              type="warning"
+              :loading="restoringCardId === v.cardId"
+              @click="restoreVersion(v)"
+            >恢复到草稿</el-button>
+          </div>
+        </div>
+      </el-drawer>
+
+      <!-- 版本预览对话框（markdown 源码，便于看"改了什么"） -->
+      <el-dialog v-model="previewVisible" :title="`预览 v${previewVersionNo}`" width="720px" append-to-body>
+        <pre style="max-height: 60vh; overflow: auto; white-space: pre-wrap; font-size: 13px; background: #f6f8fa; padding: 12px; border-radius: 6px">{{ previewMarkdown }}</pre>
+      </el-dialog>
     </div>
   </div>
 </template>
@@ -623,6 +682,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowLeft,
+  ArrowDown,
   Share,
   InfoFilled,
   CircleCheckFilled,
@@ -642,6 +702,8 @@ import {
   Star,
   StarFilled,
 } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { saveBlobAs, base64ToBlob } from '@/utils/file-saver'
 import { useTabsStore } from '@/stores/tabs'
 import { routeDlIntent } from '@shared/utils/domain-learning-intent'
 import { dlMapCompletionMission } from '@shared/utils/domain-learning-mission'
@@ -666,6 +728,7 @@ import type {
   DlCardSection,
   DlChatTurn,
   DlConceptView,
+  DlLessonExportFormat,
   DlMapCoverage,
   DlMastery,
   DlNote,
@@ -675,6 +738,7 @@ import type {
   DlTreeNode,
 } from '@shared/types/domain-learning.types'
 import { DL_KNOWLEDGE_NODE_TYPES } from '@shared/types/domain-learning.types'
+import { normalizeLessonCardId, parseLessonExportFormat } from '@shared/utils/domain-learning-lesson-export'
 
 const route = useRoute()
 const router = useRouter()
@@ -1293,6 +1357,151 @@ async function markConfused(): Promise<void> {
 
 /** 确认发布当前讲义（draft→published；2026-09-09 复盘补发布闭环） */
 const publishing = ref(false)
+
+/** 讲义导出状态（2026-09-15：知识点正文 md / PDF / 长图） */
+const exportingLesson = ref(false)
+
+// ==================== 讲义版本历史（2026-09-15） ====================
+const historyVisible = ref(false)
+const versions = ref<Array<{ cardId: string; version: number; status: string; essenceType: string; sectionsCount: number; worksCount: number; evidenceCount: number; verifyStatus: string | null; revisionNote: string | null; changeSource: string | null; createdAt: string | null; updatedAt: string | null; isCurrent: boolean }>>([])
+const restoringCardId = ref<string | null>(null)
+const previewVisible = ref(false)
+const previewVersionNo = ref<number>(0)
+const previewMarkdown = ref('')
+
+async function openVersionHistory(): Promise<void> {
+  const c = currentConcept.value
+  if (!c) return
+  historyVisible.value = true
+  await loadVersions(c.id)
+}
+
+async function loadVersions(conceptId: string): Promise<void> {
+  const list = await store.listCardVersionsOf(spaceId.value, conceptId)
+  versions.value = list ?? []
+}
+
+async function previewVersion(v: typeof versions.value[number]): Promise<void> {
+  const row = await store.getCardVersionOf(spaceId.value, v.cardId)
+  if (!row) {
+    ElMessage.error('拉取版本详情失败')
+    return
+  }
+  // 拼接 markdown 预览（简化版：区标题 + 正文）
+  const lines: string[] = [`# ${currentConcept.value?.name ?? ''} v${v.version}`]
+  for (const s of row.sections ?? []) {
+    lines.push(`## ${s.title ?? s.key}`)
+    if (s.takeaway) lines.push(`> ${s.takeaway}`)
+    lines.push(s.md)
+    lines.push('')
+  }
+  previewVersionNo.value = v.version
+  previewMarkdown.value = lines.join('\n')
+  previewVisible.value = true
+}
+
+async function restoreVersion(v: typeof versions.value[number]): Promise<void> {
+  if (restoringCardId.value) return
+  const c = currentConcept.value
+  if (!c) return
+  try {
+    await ElMessageBox.confirm(
+      `恢复到 v${v.version}？将新建一版草稿（旧版全部保留），当前未保存的修改会丢失。`,
+      '恢复历史版本',
+      { confirmButtonText: '恢复', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return // 用户取消
+  }
+  restoringCardId.value = v.cardId
+  try {
+    const r = await store.restoreCardOf({ spaceId: spaceId.value, conceptId: c.id, cardId: v.cardId })
+    if (!r) {
+      ElMessage.error(store.error ?? '恢复失败')
+      return
+    }
+    ElMessage.success(`已恢复到 v${r.restoredFrom} → 新 v${r.version}（草稿）`)
+    await refreshView()
+    await loadVersions(c.id)
+  } finally {
+    restoringCardId.value = null
+  }
+}
+
+async function exportVersion(v: typeof versions.value[number], format: 'md' | 'pdf'): Promise<void> {
+  await handleExportLesson(format, v.cardId)
+}
+
+/**
+ * 「导出」下拉的命令处理（`el-dropdown` 的 command 事件）。
+ *
+ * ⚠️ Element Plus 的事件签名是 `(command, _instance, event)`：第二个参数是
+ * ElDropdownItem 的**组件实例**（element-plus 内部 `commandHandler(props.command, _instance, e)`），
+ * 第三个是原生事件。组件实例含函数与循环引用，过不了 IPC 的结构化克隆——2026-09-15 实测：
+ * 把它当 `cardId` 透传 → 导出必报「An object could not be cloned.」。
+ * 因此这里**只声明第一个参数**（格式），其余参数一律不接。
+ */
+function onExportCommand(command: unknown): void {
+  const format = parseLessonExportFormat(command)
+  if (!format) {
+    ElMessage.error('不支持的导出格式')
+    return
+  }
+  void handleExportLesson(format)
+}
+
+/**
+ * 导出讲义（md / PDF / 长图）。
+ * @param format 导出格式（白名单校验，未知格式直接拒绝）
+ * @param cardId 指定版本（缺省=当前版；历史抽屉里"导出该版"用；非字符串一律忽略）
+ */
+async function handleExportLesson(format: DlLessonExportFormat, cardId?: unknown): Promise<void> {
+  if (exportingLesson.value) return
+  const fmt = parseLessonExportFormat(format)
+  if (!fmt) {
+    ElMessage.error('不支持的导出格式')
+    return
+  }
+  const versionCardId = normalizeLessonCardId(cardId)
+  const c = currentConcept.value
+  if (!c?.card && !versionCardId) {
+    ElMessage.warning('该知识点还没有讲义，无法导出')
+    return
+  }
+  exportingLesson.value = true
+  try {
+    const r = await store.exportLessonOf({
+      spaceId: spaceId.value,
+      conceptId: c?.id ?? '',
+      format: fmt,
+      cardId: versionCardId,
+    })
+    if (!r) {
+      ElMessage.error(store.error ?? '导出失败')
+      return
+    }
+    if (r.format === 'md' && r.markdown) {
+      await saveBlobAs(r.markdown, { defaultName: r.filename, mimeType: r.mime })
+    } else if ((r.format === 'pdf' || r.format === 'image') && r.contentBase64) {
+      const blob = base64ToBlob(r.contentBase64, r.mime)
+      await saveBlobAs(blob, {
+        defaultName: r.filename,
+        filters: [{ name: r.format === 'pdf' ? 'PDF 文档' : 'PNG 图片', extensions: [r.format === 'pdf' ? 'pdf' : 'png'] }],
+      })
+    } else if (r.format === 'html' && r.html) {
+      await saveBlobAs(r.html, { defaultName: r.filename, mimeType: r.mime })
+      ElMessage.warning('当前端无 PDF/长图渲染能力，已导出排版 HTML——可打开后用浏览器「打印 → 另存为 PDF」')
+    } else {
+      ElMessage.error('导出产物异常')
+      return
+    }
+    ElMessage.success(`已导出「${r.conceptName}」v${r.version}`)
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '导出失败')
+  } finally {
+    exportingLesson.value = false
+  }
+}
 
 /** 自动核验摘要（当前卡；null=未核验） */
 const verifySummary = computed(() => currentConcept.value?.card?.verification ?? null)
@@ -2930,5 +3139,47 @@ watch(rightPane, (pane) => {
       color: var(--el-color-warning);
     }
   }
+}
+
+// ==================== 讲义版本历史抽屉（2026-09-15） ====================
+.version-item {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  &:last-child { border-bottom: none; }
+}
+.version-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.version-tag {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--el-text-color-primary);
+}
+.version-time {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.version-note {
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+  margin: 4px 0 2px;
+}
+.version-source {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.version-meta {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin: 4px 0;
+}
+.version-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
 }
 </style>

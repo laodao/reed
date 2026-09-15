@@ -10,6 +10,7 @@ import type {
   DlNodeType,
   DlRelationType,
 } from '@shared/types/domain-learning.types'
+import { DL_MASTERY_LABELS as L_MASTERY, DL_NODE_TYPE_LABELS as L } from '@shared/utils/domain-learning-labels'
 
 // ==================== 节点类型图例（Atlas / 结构索引着色用） ====================
 
@@ -20,24 +21,28 @@ export interface DlNodeTypeMeta {
   desc: string
 }
 
-/** 全部节点类型图例（覆盖 shared DlNodeType 全 16 种 + group 目录） */
+/**
+ * 全部节点类型图例（覆盖 shared DlNodeType 全 16 种 + group 目录）。
+ * label 单一来源：shared/utils/domain-learning-labels（后端讲义导出也用同一份文案）；
+ * 本表只承载 UI 专属的颜色与说明。
+ */
 export const DL_NODE_TYPE_META: Record<DlNodeType, DlNodeTypeMeta> = {
-  group: { label: '目录', color: '#909399', desc: '大纲分组（非知识节点）' },
-  concept: { label: '概念', color: '#409EFF', desc: '领域基本单元' },
-  fact: { label: '事实', color: '#4DB6AC', desc: '具体事实/数据点' },
-  definition: { label: '定义', color: '#00A8A8', desc: '术语界定' },
-  axiom: { label: '公理/假设', color: '#5B8C5A', desc: '不加证明的出发点' },
-  theory: { label: '理论/模型', color: '#8A5CF6', desc: '解释性结构' },
-  method: { label: '方法/流程', color: '#00B4A6', desc: '怎么做' },
-  artifact: { label: '产物/工件', color: '#7A8B99', desc: '实践产出物' },
-  paper: { label: '论文/文献', color: '#F0A020', desc: '知识一手载体' },
-  standard: { label: '标准/协议', color: '#607D8B', desc: '技术/国际标准' },
-  regulation: { label: '法规/监管', color: '#E05A4E', desc: '约束性规则' },
-  procedure: { label: '操作规范', color: '#E08A2A', desc: '合规/作业要求' },
-  case: { label: '案例', color: '#9E7B4F', desc: '情境化实例' },
-  person: { label: '人物/机构', color: '#5B8C5A', desc: '生产者与主体' },
-  controversy: { label: '争议/开放问题', color: '#D9539A', desc: '未决点' },
-  principle: { label: '原则', color: '#9C88FF', desc: '判断准则' },
+  group: { label: L.group, color: '#909399', desc: '大纲分组（非知识节点）' },
+  concept: { label: L.concept, color: '#409EFF', desc: '领域基本单元' },
+  fact: { label: L.fact, color: '#4DB6AC', desc: '具体事实/数据点' },
+  definition: { label: L.definition, color: '#00A8A8', desc: '术语界定' },
+  axiom: { label: L.axiom, color: '#5B8C5A', desc: '不加证明的出发点' },
+  theory: { label: L.theory, color: '#8A5CF6', desc: '解释性结构' },
+  method: { label: L.method, color: '#00B4A6', desc: '怎么做' },
+  artifact: { label: L.artifact, color: '#7A8B99', desc: '实践产出物' },
+  paper: { label: L.paper, color: '#F0A020', desc: '知识一手载体' },
+  standard: { label: L.standard, color: '#607D8B', desc: '技术/国际标准' },
+  regulation: { label: L.regulation, color: '#E05A4E', desc: '约束性规则' },
+  procedure: { label: L.procedure, color: '#E08A2A', desc: '合规/作业要求' },
+  case: { label: L.case, color: '#9E7B4F', desc: '情境化实例' },
+  person: { label: L.person, color: '#5B8C5A', desc: '生产者与主体' },
+  controversy: { label: L.controversy, color: '#D9539A', desc: '未决点' },
+  principle: { label: L.principle, color: '#9C88FF', desc: '判断准则' },
 }
 
 /** 未知类型兜底（画像侧重等非枚举值展示用） */
@@ -75,12 +80,12 @@ export function relLabel(type: string): string {
 
 // ==================== 掌握度文案与样式键 ====================
 
-/** 掌握度 → 展示文案（mastered 绿 / learning 橙 / untouched+review 灰） */
+/** 掌握度 → 展示文案（文案单一来源 shared；mastered 绿 / learning 橙 / untouched+review 灰） */
 export const DL_MASTERY_LABELS: Record<DlMastery, string> = {
-  mastered: '已理解',
-  learning: '学习中',
-  untouched: '待学',
-  review: '待复习',
+  mastered: L_MASTERY.mastered ?? '已理解',
+  learning: L_MASTERY.learning ?? '学习中',
+  untouched: L_MASTERY.untouched ?? '待学',
+  review: L_MASTERY.review ?? '待复习',
 }
 
 /** 掌握度 → 展示文案（未知原样回显） */

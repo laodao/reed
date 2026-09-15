@@ -9,6 +9,18 @@
  * 调用点不再判断 platform，统一调 saveBlobAs(...)。
  */
 
+/**
+ * base64 字符串 → Blob（PDF/PNG 等二进制产物经 IPC 传 base64，前端需转 Blob 才能保存）。
+ * @param base64 裸 base64（不含 `data:...;base64,` 前缀）
+ * @param mime MIME 类型（如 application/pdf、image/png）
+ */
+export function base64ToBlob(base64: string, mime: string): Blob {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return new Blob([bytes], { type: mime })
+}
+
 function isElectronRenderer(): boolean {
   if (typeof window === 'undefined') return false
   const w = window as unknown as {

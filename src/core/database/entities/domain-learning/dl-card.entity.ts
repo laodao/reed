@@ -56,6 +56,18 @@ export class DlCardEntity {
   @Column({ name: 'verification', type: 'text', nullable: true })
   verification!: string | null
 
+  /** 修订说明（人类可读：改了什么/为什么/依据；2026-09-15 版本管理 P1-1） */
+  @Column({ name: 'revision_note', type: 'text', nullable: true })
+  revisionNote!: string | null
+
+  /** 变更来源：agent | restore | template | manual（2026-09-15 版本管理 P1-1） */
+  @Column({ name: 'change_source', type: 'varchar', nullable: true })
+  changeSource!: string | null
+
+  /** 结构化变更清单 JSON：[{key,kind,reason,evidence}]（对接技能 learning-lesson-updater 输出） */
+  @Column({ name: 'changed_json', type: 'text', nullable: true })
+  changedJson!: string | null
+
   @Column({ name: 'created_at', type: 'datetime', nullable: true })
   createdAt!: Date | null
 

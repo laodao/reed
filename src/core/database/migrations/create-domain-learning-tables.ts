@@ -56,6 +56,39 @@ export async function createDomainLearningTables(ds: DataSource): Promise<void> 
     'prerequisites',
     isPg ? 'prerequisites text' : 'prerequisites TEXT',
   )
+  // 2026-09-15 版本管理 P0-3/P1-1：dl_card 唯一约束 + 修订说明落库
+  // 唯一约束防并发/重试产生同版本行；修订字段让"改了什么/为什么/依据"可追溯
+  await ensureIndex(
+    ds,
+    isPg,
+    'uniq_dl_card_concept_version',
+    'dl_card',
+    '(project_id, concept_id, version)',
+    true,
+  )
+  await ensureColumn(
+    ds,
+    isPg,
+    'dl_card',
+    'revision_note',
+    isPg ? 'revision_note text' : 'revision_note TEXT',
+  )
+  await ensureColumn(
+    ds,
+    isPg,
+    'dl_card',
+    'change_source',
+    isPg ? 'change_source varchar' : 'change_source TEXT',
+  )
+  await ensureColumn(
+    ds,
+    isPg,
+    'dl_card',
+    'changed_json',
+    isPg ? 'changed_json text' : 'changed_json TEXT',
+  )
+  // 2026-09-15 版本管理 B4：知识点节点字段变更审计（name/definitionShort/prerequisites 等）
+  await ensureTable(ds, isPg, 'dl_concept_log', ddlConceptLog(isPg), () => conceptLogIndexes(ds, isPg))
 }
 
 // ==================== dl_project ====================
@@ -465,4 +498,43 @@ async function noteIndexes(ds: DataSource, isPg: boolean): Promise<void> {
   // 2026-09-09 复盘：同空间同一问题只允许一条收藏笔记（qna 收藏幂等的库级兜底；
   // 消除"同问题多行 + findByQuestion 同毫秒排序不稳"；question_id 为 NULL 的选区笔记不受限）
   await ensureIndex(ds, isPg, 'uniq_dl_note_question', 'dl_note', '(project_id, question_id)', true)
+}
+
+// ==================== dl_concept_log（节点字段变更审计；2026-09-15 B4） ====================
+
+function ddlConceptLog(pg: boolean): string {
+  if (pg) {
+    return `
+      CREATE TABLE dl_concept_log (
+        id         varchar PRIMARY KEY,
+        user_id    varchar,
+        project_id varchar NOT NULL,
+        concept_id varchar NOT NULL,
+        field      varchar NOT NULL,
+        from_value text,
+        to_value   text,
+        trigger    varchar NOT NULL,
+        at         timestamp
+      )
+    `
+  }
+  return `
+    CREATE TABLE dl_concept_log (
+      id         TEXT PRIMARY KEY,
+      user_id    TEXT,
+      project_id TEXT NOT NULL,
+      concept_id TEXT NOT NULL,
+      field      TEXT NOT NULL,
+      from_value TEXT,
+      to_value   TEXT,
+      trigger    TEXT NOT NULL,
+      at         DATETIME
+    )
+  `
+}
+
+async function conceptLogIndexes(ds: DataSource, isPg: boolean): Promise<void> {
+  await ensureIndex(ds, isPg, 'idx_dl_concept_log_user', 'dl_concept_log', '(user_id)')
+  await ensureIndex(ds, isPg, 'idx_dl_concept_log_concept', 'dl_concept_log', '(project_id, concept_id)')
+  await ensureIndex(ds, isPg, 'idx_dl_concept_log_field', 'dl_concept_log', '(project_id, concept_id, field)')
 }

@@ -88,6 +88,15 @@ export interface DlCardSection {
   /** 区标题（模板语义；缺省用 key 映射默认标题） */
   title?: string
   style?: DlSectionStyle
+  /**
+   * 版式设备（2026-09-14 用户反馈「纯文字堆砌、布局单调」）：
+   * key 见 `shared/utils/lesson-layout` 的设备目录（prose/keypoints/compare/steps/figure/
+   * worked/formula/stats/quote/timeline/pitfall/checklist/code/qa/callout）；
+   * 缺省时渲染层按区 key 推导默认设备（老卡也有合理版式）。
+   */
+  layout?: string
+  /** 一句话结论（该区讲完读者该记住什么；渲染为结论条） */
+  takeaway?: string
   /** 区内容 md（可含图/表/mermaid/KaTeX） */
   md: string
   /** 深水内容默认折叠（证明/长条文） */
@@ -217,9 +226,12 @@ export interface DlRelatedRef {
 /**
  * 方案步骤：
  * - `understanding`：模型对用户诉求的理解（先确认它，再规划体系）；
- * - `syllabus`：知识体系方案（确认后才允许落库知识点）。
+ * - `syllabus`：知识体系方案（确认后才允许落库知识点）；
+ * - `lesson`：**讲义设计规格与区级计划**（2026-09-14；参考 ppt-master 的 design_spec +
+ *   §IX 页级 roster：确认后模型才逐区精写，落库门禁按它校验区集/版式/载体）。
+ *   按概念维度存储（dl_plan.concept_id），同一空间不同概念各有一套。
  */
-export type DlPlanStep = 'understanding' | 'syllabus'
+export type DlPlanStep = 'understanding' | 'syllabus' | 'lesson'
 
 /** 方案状态：draft=待用户确认 | confirmed=已确认（生效） | superseded=被新版本取代 */
 export type DlPlanStatus = 'draft' | 'confirmed' | 'superseded'
@@ -542,6 +554,69 @@ export interface DlLessonDigest {
   filename: string
   /** 收录概念数 */
   count: number
+}
+
+// ==================== 单篇讲义导出（2026-09-15 用户需求：md / PDF / 长图） ====================
+
+/** 讲义导出格式：md=markdown 正文 | pdf=PDF 文档 | image=PNG 长图 */
+export type DlLessonExportFormat = 'md' | 'pdf' | 'image'
+
+/**
+ * 讲义导出格式运行时白名单（与 {@link DlLessonExportFormat} 同源，双端共用）。
+ * UI 入口与 IPC 出站/入站都按它校验：未知格式一律拒绝，绝不"猜一个格式"往下渲染。
+ */
+export const DL_LESSON_EXPORT_FORMATS = ['md', 'pdf', 'image'] as const
+
+/**
+ * dl:export-lesson 载荷（单篇知识点讲义导出）。
+ * - md：正文走 markdown 字段；
+ * - pdf/image：二进制走 contentBase64（前端 base64→Blob 保存）；
+ * - html：当前端无平台渲染能力（Web）时的降级产物（含排版 HTML，供前端打印/另存）。
+ */
+export interface DlLessonExportResult {
+  /** 实际产出格式（请求 pdf/image 但无渲染器时为 html） */
+  format: 'md' | 'pdf' | 'image' | 'html'
+  filename: string
+  mime: string
+  conceptId: string
+  conceptName: string
+  spaceName: string
+  /** 导出所用讲义版本号 */
+  version: number
+  markdown?: string
+  contentBase64?: string
+  html?: string
+}
+
+// ==================== 讲义版本管理（2026-09-15 用户需求：历史查看/预览/恢复） ====================
+
+/** 讲义版本列表项（dl:list-card-versions） */
+export interface DlCardVersionItem {
+  cardId: string
+  version: number
+  status: 'draft' | 'published'
+  essenceType: string
+  sectionsCount: number
+  worksCount: number
+  evidenceCount: number
+  /** 核验状态摘要（null=未核验） */
+  verifyStatus: string | null
+  revisionNote: string | null
+  changeSource: string | null
+  createdAt: string | null
+  updatedAt: string | null
+  /** 是否为该概念当前最新版 */
+  isCurrent: boolean
+}
+
+/** dl:restore-card 载荷 */
+export interface DlCardRestoreResult {
+  /** 新生成的卡片 id */
+  cardId: string
+  /** 新版本号 */
+  version: number
+  /** 恢复来源版本号 */
+  restoredFrom: number
 }
 
 /** 笔记来源：讲义选区笔记 / 答疑回答收藏 */
