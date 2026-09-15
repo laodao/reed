@@ -56,6 +56,27 @@
   - 去掉前置能力输入框下的说明文字（`.set-hint` 块）；
   - 去掉各分区标题的括号后缀（`领域画像` / `自动推进` / `关联知识库` / `间隔复习` / `主题学习前置要求` / `知识生成模型`）。
 
+## 复盘确认（同日期 23:5x，用户再次反馈"选模型点保存提示保存失败"）
+
+上一次只写了"代码链路无误、根因是 preload 未重载"，本次做了**产物级取证**，确认结论成立：
+
+| 证据 | 结果 |
+| --- | --- |
+| 运行实例 | electron/node 进程启动时间 `2026-09-14 03:18`（4 个 electron + 2 个 node，至今未重启） |
+| `out/main/*.js`（构建时间 03:18） | `dl:get-space-prereqs` / `dl:set-space-prereqs` / `dl:confirm-plan` / `dl:set-space-kb` 均在 `builtin-packs-*.js` 命中（9/12–9/13 的特性有）；**`dl:get-space-model` / `dl:set-space-model` 命中 0** |
+| `out/preload/index.js`（03:18） | 有 `dl:get-space-prereqs`，**无 `dl:get-space-model`** → `window.electronAPI.domainLearning.setSpaceModel` 为 undefined，store 的 try/catch 吞掉 TypeError 返回 null → 面板红字"保存失败" |
+| 特性提交时间 | `9fc4bdf9`（21:06:55）晚于构建时间 03:18 → 运行中的 main/preload 天然不含该特性 |
+| 生产库 `the_bot.db`（自定义数据目录 `C:\Users\daoge\the-bot`） | `dl_project.default_model` **7 个空间全为 null**；而 `pace_settings`/`review_settings`/`prerequisites` 有值（金融理财 `updated_at` 15:51）→ 印证"只有模型这一项失败，其它分区保存正常" |
+| 源码三端 | preload（1390-1392）/ channel-map（301-302）/ handler（146-152）/ store（391-421, 983-986）/ 服务（104-125）齐备，`dl-channel-consistency` 护栏覆盖 |
+
+**当前实际使用的模型**（空间未设置时的兜底口径）：`dl-agent-harness.doSend` 在未显式给模型时遍历
+`providerConfigs.getEnabled()`（仓储按 `is_default DESC, created_at DESC` 排序）取第一个带 text 模型的配置 →
+命中全局默认 **DeepSeek**，其 models 首个 text 模型 = **`deepseek-v4-flash`**（与 `provider_configs.default_model` 一致）。
+research/task/自动推进优先读空间 `default_model`（现全为 null，故同样是它）；tutor 追问恒走这条兜底。
+
+**处置**：完全退出当前 dev 实例并重新 `npm run dev`（重建 main + preload）后重试保存；
+renderer 侧 HMR 只覆盖渲染进程，永远修不了 preload/main 的缺通道。
+
 ## 方案乙（同日期，用户反馈"空间设置里保存按钮太多"）
 
 把原来 6 个分区各自的保存按钮（应用画像 / 保存前置要求 / 保存自动推进 / 保存绑定 / 保存模型 / 保存复习设置）
