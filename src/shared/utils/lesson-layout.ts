@@ -589,6 +589,12 @@ export function checkLessonVisualQuality(input: {
 
   const statsList: LessonMdStats[] = []
   const layouts: DlLessonLayout[] = []
+  /**
+   * 每区**声明过的**版式（区自己写 / 大纲定的；模板兜底不算）——2026-09-15。
+   * 「版式单调」「连续纯文字」这两条只对**显式选择**生效：v7 起默认一律 `prose`（按文档写），
+   * 若拿兜底当义务，每份文档式讲义都会被建议"改成要点卡"，与用户口径（不要卡片堆砌）打架。
+   */
+  const declaredLayouts: Array<DlLessonLayout | null> = []
 
   for (const sec of sections) {
     const st = analyzeLessonMd(sec.md)
@@ -598,6 +604,7 @@ export function checkLessonVisualQuality(input: {
     const declared = canonicalLessonLayout(sec.layout) || canonicalLessonLayout(roster?.layout)
     const layout: DlLessonLayout = declared || defaultLayoutForSection(sec.key)
     layouts.push(layout)
+    declaredLayouts.push(declared || null)
     const label = sectionLabel(sec)
 
     if (!String(sec.md ?? '').trim()) {
@@ -720,23 +727,28 @@ export function checkLessonVisualQuality(input: {
     else warnings.push(issue)
   }
 
-  // 全文：版式单调（读者审美与节奏）
+  // 全文：版式单调（只对**显式选的**版式生效——默认是文档式 prose，不算"通篇一个样子"）
   const devices = [...new Set(layouts)]
-  if (sections.length >= LESSON_LAYOUT_RHYTHM.minSectionsForDeviceVariety && devices.length === 1) {
+  const declaredDevices = [...new Set(declaredLayouts.filter((d): d is DlLessonLayout => !!d))]
+  if (
+    declaredLayouts.filter(Boolean).length >= LESSON_LAYOUT_RHYTHM.minSectionsForDeviceVariety &&
+    declaredDevices.length === 1
+  ) {
     warnings.push({
       code: 'device-monotony',
       level: 'warning',
       sectionKey: null,
-      message: `全部 ${sections.length} 个区都用了同一种版式「${lessonLayoutName(devices[0])}」，通篇一个样子。`,
-      fix: '按内容换设备：定义/机制用正文或图解，并列关系用对比表，步骤用步骤条，数据用数据看点，误区用误区卡，收尾用结论条。',
+      message: `全部 ${declaredDevices.length} 个区都显式用了同一种版式「${lessonLayoutName(declaredDevices[0])}」，通篇一个样子。`,
+      fix: '按内容换设备：定义/机制用正文或图解，并列关系用对比表，步骤用步骤条，数据用数据看点，收尾用结论条。',
     })
   }
 
-  // 全文：连续纯文字区（读者会疲劳）
+  // 全文：连续纯文字区（只数**显式声明**为正文的区；默认文档式不在此列）
   let run = 0
   let runStart: string | null = null
-  for (let i = 0; i < layouts.length; i++) {
-    if (isPlainLayout(layouts[i])) {
+  for (let i = 0; i < declaredLayouts.length; i++) {
+    const declared = declaredLayouts[i]
+    if (declared && isPlainLayout(declared)) {
       if (run === 0) runStart = sections[i].key
       run++
       if (run === LESSON_LAYOUT_RHYTHM.maxConsecutivePlain) {
@@ -748,8 +760,8 @@ export function checkLessonVisualQuality(input: {
           code: 'consecutive-plain',
           level: 'warning',
           sectionKey: runStart,
-          message: `连续 ${run} 个区都是纯文字（${names}），中间没有图/表/卡。`,
-          fix: '把其中一区改成要点卡、对比表或补一张 figure 图，让读者的眼睛有落点。',
+          message: `连续 ${run} 个区都显式声明为纯文字（${names}），中间没有图/表/卡。`,
+          fix: '把其中一区改成对比表或补一张 figure 图，让读者的眼睛有落点。',
         })
         break
       }
