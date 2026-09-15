@@ -476,8 +476,14 @@
           <div ref="qaListRef" class="qa-list">
             <div v-for="(t, i) in displayTurns" :key="i" class="qa-turn" :class="t.role">
               <div class="qa-bubble">
-                <div class="qa-text">{{ t.text || '…' }}</div>
-                <div v-if="i === displayTurns.length - 1 && t.role === 'assistant' && tutorStreaming" class="qa-streaming">
+                <!-- 回答：渲染 markdown（公式/表格/图/代码），可切「源码」核对原文；提问保持纯文本 -->
+                <QaAnswerView
+                  v-if="t.role === 'assistant'"
+                  :md="t.text"
+                  :streaming="isTurnStreaming(i, t)"
+                />
+                <div v-else class="qa-text-user">{{ t.text || '…' }}</div>
+                <div v-if="isTurnStreaming(i, t)" class="qa-streaming">
                   <el-icon class="is-loading"><Loading /></el-icon>正在组织回答…
                 </div>
                 <div v-if="t.sourceLabel && !tutorStreaming" class="qa-source">
@@ -765,6 +771,7 @@ import {
 } from './domain-learning-ui'
 import SectionLesson from './SectionLesson.vue'
 import LessonSlides from './LessonSlides.vue'
+import QaAnswerView from './QaAnswerView.vue'
 import SpaceSettingsPanel from './SpaceSettingsPanel.vue'
 import AgentActivityStrip from './AgentActivityStrip.vue'
 import PlanConfirmDialog from './PlanConfirmDialog.vue'
@@ -1835,6 +1842,14 @@ const displayTurns = computed<DlChatTurn[]>(() => [
   ...liveTurns.value,
 ])
 
+/**
+ * 该轮是否为"正在流式输出"的 assistant 轮（末轮 + 本轮进行中）。
+ * 传给 QaAnswerView 用于节流刷新与"正在组织回答"提示的时机判断。
+ */
+function isTurnStreaming(index: number, turn: DlChatTurn): boolean {
+  return turn.role === 'assistant' && tutorStreaming.value && index === displayTurns.value.length - 1
+}
+
 /** 最近一次 ask 的模式（停止按钮据此取消对应后端轮次） */
 const lastAskMode = ref<'tutor' | 'task'>('tutor')
 /** 发起本轮 ask 时的概念快照（"停止"按发起时 scope 取消，切概念不落空） */
@@ -2878,7 +2893,8 @@ watch(rightPane, (pane) => {
   line-height: 1.6;
   background: var(--el-fill-color-light);
 
-  .qa-text {
+  // 提问（user 轮）：纯文本直出，不做 markdown 渲染（用户输入不当作富文本）
+  .qa-text-user {
     white-space: pre-wrap;
     word-break: break-word;
     overflow-wrap: anywhere;
