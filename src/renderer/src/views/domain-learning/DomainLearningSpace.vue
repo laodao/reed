@@ -289,37 +289,77 @@
                 <el-tooltip v-if="currentConcept.card" content="讲义生成演示（在线浏览）" placement="bottom" :show-after="300">
                   <el-button circle size="small" plain :icon="Promotion" @click="slidesVisible = true" />
                 </el-tooltip>
-                <!-- 发布闭环（2026-09-09 复盘）：draft=AI 草稿待人工确认；确认后正式采用并计入统计 -->
+                <!-- 发布闭环（2026-09-09 复盘）：draft=AI 草稿待人工确认；确认后正式采用并计入统计。
+                     2026-09-15 用户需求：标题栏右侧这几项一律压成图标（悬停看 tooltip），
+                     腾出横向空间给讲义标题——原本靠文字承载的信息（发布版本号、待复核条数、
+                     导出格式）分别挪进 tooltip / 角标，不许丢。 -->
                 <template v-if="currentConcept.card">
                   <!-- 自动核验结果消费（M4-UX2 的 verification 从"只写不读"到可见） -->
                   <el-tooltip :content="verifyTip" placement="bottom" :show-after="300">
-                    <el-tag size="small" effect="plain" :type="verifyTagType">{{ verifyLabel }}</el-tag>
+                    <!-- role=img + aria-label：文字撤掉后，读屏器与键盘用户仍拿得到状态 -->
+                    <span
+                      class="verify-chip"
+                      :class="verifyTone"
+                      role="img"
+                      :aria-label="verifyLabel"
+                      tabindex="0"
+                    >
+                      <el-icon :class="{ 'is-loading': verifyStatus === 'verifying' }">
+                        <component :is="verifyIcon" />
+                      </el-icon>
+                      <span v-if="verifyIssues > 0" class="verify-count">{{ verifyIssues }}</span>
+                    </span>
                   </el-tooltip>
-                  <el-button
+                  <el-tooltip
                     v-if="currentConcept.card.status === 'draft'"
-                    size="small"
-                    type="primary"
-                    plain
-                    :loading="publishing"
-                    @click="publishCurrentLesson"
-                  >确认发布 v{{ currentConcept.card.version }}</el-button>
+                    :content="publishTip"
+                    placement="bottom"
+                    :show-after="300"
+                  >
+                    <el-button
+                      circle
+                      size="small"
+                      type="primary"
+                      plain
+                      aria-label="确认发布"
+                      :loading="publishing"
+                      :icon="Stamp"
+                      @click="publishCurrentLesson"
+                    />
+                  </el-tooltip>
                   <el-tag v-else size="small" type="success" effect="plain">已发布 v{{ currentConcept.card.version }}</el-tag>
                   <!-- 讲义导出（2026-09-15：知识点正文 md / PDF / 长图） -->
                   <!-- 注意：command 事件带 (command, 组件实例, 事件)，处理函数只收第一个参数（见 onExportCommand） -->
-                  <el-dropdown trigger="click" @command="onExportCommand">
-                    <el-button size="small" plain :loading="exportingLesson">
-                      导出 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-                    </el-button>
-                    <template #dropdown>
-                      <el-dropdown-menu>
-                        <el-dropdown-item command="md">Markdown</el-dropdown-item>
-                        <el-dropdown-item command="pdf">PDF</el-dropdown-item>
-                        <el-dropdown-item command="image">长图 PNG</el-dropdown-item>
-                      </el-dropdown-menu>
-                    </template>
-                  </el-dropdown>
+                  <el-tooltip content="导出讲义（Markdown / PDF / 长图 PNG）" placement="bottom" :show-after="300">
+                    <el-dropdown trigger="click" @command="onExportCommand">
+                      <el-button
+                        circle
+                        size="small"
+                        plain
+                        aria-label="导出讲义"
+                        :loading="exportingLesson"
+                        :icon="Download"
+                      />
+                      <template #dropdown>
+                        <el-dropdown-menu>
+                          <el-dropdown-item command="md">Markdown</el-dropdown-item>
+                          <el-dropdown-item command="pdf">PDF</el-dropdown-item>
+                          <el-dropdown-item command="image">长图 PNG</el-dropdown-item>
+                        </el-dropdown-menu>
+                      </template>
+                    </el-dropdown>
+                  </el-tooltip>
                   <!-- 讲义版本历史（2026-09-15：查看/预览/恢复到草稿） -->
-                  <el-button size="small" plain @click="openVersionHistory">历史</el-button>
+                  <el-tooltip content="版本历史（预览 / 导出 / 恢复）" placement="bottom" :show-after="300">
+                    <el-button
+                      circle
+                      size="small"
+                      plain
+                      aria-label="版本历史"
+                      :icon="Clock"
+                      @click="openVersionHistory"
+                    />
+                  </el-tooltip>
                 </template>
                 <span v-if="lastFeedback" class="feedback-toast" :class="{ warn: lastFeedbackIsWarn }">{{ lastFeedback }}</span>
               </div>
@@ -682,7 +722,6 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowLeft,
-  ArrowDown,
   Share,
   InfoFilled,
   CircleCheckFilled,
@@ -701,6 +740,11 @@ import {
   Setting,
   Star,
   StarFilled,
+  // 讲义动作行图标化（2026-09-15）：核验状态 / 确认发布 / 导出 / 版本历史
+  WarningFilled,
+  Download,
+  Clock,
+  Stamp,
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { saveBlobAs, base64ToBlob } from '@/utils/file-saver'
@@ -1505,6 +1549,39 @@ async function handleExportLesson(format: DlLessonExportFormat, cardId?: unknown
 
 /** 自动核验摘要（当前卡；null=未核验） */
 const verifySummary = computed(() => currentConcept.value?.card?.verification ?? null)
+/** 核验状态（null=未核验） */
+const verifyStatus = computed(() => verifySummary.value?.status ?? null)
+/** 待复核条数（只有 needs_review 有值；图标化的角标，别把数字丢了） */
+const verifyIssues = computed(() =>
+  verifyStatus.value === 'needs_review' ? (verifySummary.value?.issues ?? 0) : 0
+)
+/** 核验状态 → 图标（通过=对勾 / 待复核=警示 / 核验中=转圈 / 未核验=问号） */
+const verifyIcon = computed(() => {
+  switch (verifyStatus.value) {
+    case 'verified':
+      return CircleCheckFilled
+    case 'needs_review':
+      return WarningFilled
+    case 'verifying':
+      return Loading
+    default:
+      return QuestionFilled
+  }
+})
+/** 核验状态 → 色调档位（ok/warn/busy/idle，样式见 .lesson-actions .verify-chip） */
+const verifyTone = computed(() => {
+  switch (verifyStatus.value) {
+    case 'verified':
+      return 'ok'
+    case 'needs_review':
+      return 'warn'
+    case 'verifying':
+      return 'busy'
+    default:
+      return 'idle'
+  }
+})
+/** 核验状态 → 展示文案（tooltip 详情用） */
 const verifyLabel = computed(() => {
   const v = verifySummary.value
   if (!v) return '未核验'
@@ -1513,18 +1590,19 @@ const verifyLabel = computed(() => {
   if (v.status === 'verifying') return '核验中'
   return '未核验'
 })
-const verifyTagType = computed<'success' | 'warning' | 'info'>(() => {
-  const v = verifySummary.value
-  if (v?.status === 'verified') return 'success'
-  if (v?.status === 'needs_review') return 'warning'
-  return 'info'
-})
 const verifyTip = computed(() => {
   const v = verifySummary.value
   if (!v) return '尚未自动核验——研究产出讲义后会自动交叉核验（知识库/权威来源）'
   const when = v.checkedAt ? new Date(v.checkedAt).toLocaleString() : '时间未知'
   const base = `自动核验：${verifyLabel.value}（${when}）`
   return v.note ? `${base}｜${v.note}` : base
+})
+
+/** 确认发布按钮的悬停提示（图标化后版本号挪到这里，信息不丢） */
+const publishTip = computed(() => {
+  const card = currentConcept.value?.card
+  if (!card) return '确认发布'
+  return `确认发布 v${card.version}（草稿 → 正式采用，并计入掌握度统计）`
 })
 
 async function publishCurrentLesson(): Promise<void> {
@@ -2642,6 +2720,36 @@ watch(rightPane, (pane) => {
       align-items: center;
       gap: 6px;
       flex-shrink: 0;
+
+      // 核验状态图标（2026-09-15 图标化：色调代表档位，待复核带条数角标，悬停看 verifyTip）
+      .verify-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 1px;
+        padding: 2px 3px;
+        border-radius: 6px;
+        font-size: 16px;
+        cursor: help;
+
+        .verify-count {
+          font-size: 11px;
+          font-weight: 600;
+          line-height: 1;
+        }
+
+        &.ok {
+          color: var(--el-color-success);
+        }
+        &.warn {
+          color: var(--el-color-warning);
+        }
+        &.busy {
+          color: var(--el-color-primary);
+        }
+        &.idle {
+          color: var(--el-text-color-placeholder);
+        }
+      }
 
       .feedback-toast {
         margin-left: 6px;
