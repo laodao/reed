@@ -134,7 +134,7 @@ Electron（单用户）：固定 userId `local-default-user`，一条会话记�
 
 > 一期简化建议：PC 端先行（单用户单会话）；Web 端按用户存会话列为 P4，避免一次性改动面过大。
 
-**ai-hub provider config 的生命周期**：首次登录成功后自动创建（若不存在）一条 `templateId='ai-hub'` 的 config（baseUrl=官方网关地址、is_enabled=true、models 由首次模型发现填充），同时把 JWT 物化进其 `api_key_encrypted`；此后它与其他 provider config 一样参与列表/启停用/模型管理。登出不删 config（模型清单缓存保留），只清空物化 Key——此后再调用会在前置检查处报"未配置 API 密钥"，由 UI 层把该错误映射为"请重新登录 AI Hub"。用户也可以手动禁用这条 config——即使已登录也不用网关。
+**ai-hub provider config 的生命周期**：首次登录成功后自动创建（若不存在）一条 `templateId='ai-hub'` 的 config（baseUrl=官方网关地址、is_enabled=true、models 由首次模型发现填充），同时把 JWT 物化进其 `api_key_encrypted`；此后它与其他 provider config 一样参与列表/启停用/模型管理。登出不删 config（模型清单缓存保留），清空物化 Key **并将 is_enabled 置 false**（2026-09-15 决策：登出即禁用，重新登录自动恢复——除非用户登录期间手动禁用，详见 `2026-09-15-ai-hub-integration-detailed-design.md` §2.2.1 状态机）——此后再调用会在前置检查处报"未配置 API 密钥"，由 UI 层把该错误映射为"请重新登录 AI Hub"。用户也可以手动禁用这条 config——即使已登录也不用网关。
 
 ### 3.3 AihubModelsService（模型发现）
 
