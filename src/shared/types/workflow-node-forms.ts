@@ -473,6 +473,12 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     { key: 'hostConcurrency', label: '同站并发', type: 'number', group: '爬取礼貌', min: 1, max: 10, help: '同一网站最大并发（默认 1=单线程）' },
   ],
 
+  'chapter-writing': [
+    T('projectId', '长文项目 ID', { type: 'text', help: '长文写作项目（lw_ 前缀），必填' }),
+    T('outlineId', '章节大纲节点 ID', { type: 'text', help: '要写的章节大纲节点 id（outline_ 前缀），必填' }),
+    { key: 'overwrite', label: '覆盖已有正文', type: 'switch', group: '参数', help: '该章已有正文时是否覆盖重写（默认否）' },
+    { key: 'targetWords', label: '目标字数', type: 'number', group: '参数', min: 500, max: 20000, help: '留空 = 大纲预估字数' },
+  ],
   'crawl-links': [
     T('urls', '待抓取页面列表', {
       type: 'textarea',

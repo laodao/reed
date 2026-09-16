@@ -790,6 +790,26 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
       { key: 'failedUrls', type: 'json', desc: '抓取失败的页面 [{ url, error }]' },
     ],
   },
+  // ==================== 长文写作 ====================
+  {
+    type: 'chapter-writing',
+    label: '章节写作章法',
+    description: '长文写作：按章法确定性写完一章——生成设计卡(情节概要/爽点/钩子)→自检→依卡定出场实体→一致性检查→通过后生成正文并做写后一致性检查',
+    category: 'general',
+    icon: 'EditPen',
+    controlKind: 'task',
+    cancellable: true,
+    ports: [{ kind: 'normal', label: '出', max: 1 }, { kind: 'fail', label: '失败' }],
+    requiredConfigKeys: ['projectId', 'outlineId'],
+    defaultConfig: { projectId: '', outlineId: '', overwrite: false, targetWords: 2500 },
+    outputSchema: [
+      { key: 'chapterId', type: 'string', desc: '正文版本 id' },
+      { key: 'wordCount', type: 'number', desc: '正文字数' },
+      { key: 'review', type: 'json', desc: '设计卡自检结果 { ok, issues }' },
+      { key: 'postCheck', type: 'json', desc: '写后一致性检查 { passed, report }' },
+      { key: 'error', type: 'string', desc: '失败原因（含自检未通过的问题清单）' },
+    ],
+  },
   // ==================== A2 扩展 ====================
   {
     type: 'kb-qa',
