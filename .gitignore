@@ -42,3 +42,6 @@ report.*.json
 
 # 会话进度产物只留本地，不入库（诊断脚本/验证截图/过程文档）
 progress/
+
+# ZCode 会话本地目录
+.zcode/

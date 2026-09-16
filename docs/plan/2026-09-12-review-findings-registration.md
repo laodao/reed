@@ -23,6 +23,8 @@
 | P2-4 confirmDesignPackage 非原子 | `room-design.ts:118-150`（298d4aee） | 正式表先直写、wizardState 后落库，中途失败重确认会重复建行；失败条目无重试入口 | 同上 |
 | P2-5 章节链路整本载入内存 | `kb-chapter.repository.ts` treeOf/findByDocument 带 content 列（ba180b8d/d51cdb32） | IPC 树接口与检索 lookup 只需 title/level/summary，缺瘦列查询 | 动检索热路径，改完跑 `tests/eval/kb-eval-golden.json` 评估基线对照 |
 | P2-6 M4 文档级过滤 N+1 | `knowledge-base.service.ts:1076-1082`（c709ba33） | 每候选 2 次串行 findById 后才丢弃；应先取 documentId 集合再批量查 | 同上 |
+| P2-7 设计包徽标 turn 末不同步 | `useStoryRoom.ts:153`（0915 忘川渡实跑发现） | turn 收尾仅在 `res.data?.mode === 'design'` 时 refreshState；忘川渡第 2 轮（人物卡批量入包）结束后「审核设计包(N)」停在旧计数，重进页面（roomHistory 全量拉取）才恢复。修法：收尾无条件 refreshState，或以"本轮 designPackages/pendingCards 是否变化"为锚 | 研讨室前端状态流 review |
+| P2-8 章法工具 outlineId 不可自助获取（已修待提交） | `room-agent-tools.ts`（0915 忘川渡实跑发现） | 章法五工具只认大纲节点 id，agent 无任何工具可列出/解析大纲节点——实跑 agent 试遍「第1章/ch_1/标题」全失败后向用户求 id（真人同样拿不到）。已加 `lw_query_outline` 只读工具 + `resolveOutlineRef`（精确 id→文档序章号→标题唯一包含）接线五工具，第 1 章走通验证 | 待提交 |
 
 ## 三档：吹毛求疵 / 低概率，登记备查
 
@@ -45,3 +47,31 @@
 1. **生命周期对称**：实体新增必须同步接入 deleteDocument / deleteKnowledgeBase / clearDocumentArtifacts 三个清理点——建议做成 checklist 或测试守卫，否则下一个一级表还会重演 P1-2。
 2. **事务回调内禁止裸 getRepository 直写带 user_id 的表**：scoped 注入只覆盖 BaseRepository 路径；建议加 lint 规则或评审守卫（本次 P1-1 根因）。
 3. **多租户视角缺位是系统性盲区**：Electron 单用户形态验证不出 user_id 缺失类缺陷，涉及租户的修复要专门走 web 多用户口径用例。
+
+## 忘川渡二轮实测补充登记（2026-09-15 下午）
+
+| 项 | 位置 | 说明 | 状态 |
+| --- | --- | --- | --- |
+| 章法入口三轨并存（已收口） | `room-agent-tools.ts` | lw_write_chapter_full（直调 executor）/ lw_run_chapter_workflow（工作流）/ lw_write_chapter（旧分步）三入口并存、两个工具描述都自称"推荐入口"，agent 每轮随机选路。已收口：lw_write_chapter_full 改为启动工作流并在工具内等待终态（runChapterWorkflowSync，agent 零轮询步数——旧工作流路径 agent 轮询曾烧光 24 步触发 max_steps）；删除 lw_run_chapter_workflow；lw_write_chapter 限定为分步模式步骤 | 已改待提交 |
+| 设计条目丢失（P1 候选） | `room-design.ts` / `room-session.ts` | 忘川渡二轮实测：第 2 轮 4 张人物卡 lw_save_card 全部返回 ok（itemId di_1-4），但确认时包内无此人卡、人物表 0 行——卡片在"轮末→下轮首"窗口被移除，机制未定位（写路径均已走 mutateRoomState 串行队列；agent_session_events 可复原时序）。同书重落第 2 次成功，问题单发 | **待查根因** |
+| 主编幻觉式完成 | room host（模型行为） | qwen3.8-27b 曾整轮未调任何工具却报告"已重落 4 张人物卡"；另有"正文已落库"与 DB 不符。章法改工作流驱动的动因即此；对 lw_save_card 类写操作可考虑工具结果回执对账 | 登记观察 |
+| R1/R5 死亡误判（已修） | `consistency.service.ts` | hasDeathSemantics 纯子串匹配，将来时/假设句（"七日后肉身死亡"）误判为已死亡（与 0915 上午程野/苏晚棠假死同根）。已加前 8 字守卫词表；另 extractEntityStates 提示词加接地约束（禁推断未揭示设定/将来时不得写为已发生），extractChapterForeshadows 加正文锚定硬约束（content 须附原句片段） | 已改待提交 |
+| R10 字面词匹配误报（已按用户拍板语义化） | `consistency.service.ts` R10 + `chapter-writing-executor.ts` | "拒渡/启动/初遇"按结果词字面匹配，正文语义已实现仍报。用户拍板（2026-09-15 晚）：落点判定程序难以胜任、交给 agent——字面扫描降级为候选生成器（宁漏勿错），章法写后新增 verifyUnlandedBeatsWithAI 语义复核：模型按"允许同义改写/对话侧写"逐拍判定，已落点的自动知情保留（带证据登记），确未落点的维持拦截。附：BEAT_ANNOTATION_RE 漏剥 U+2018/2019 弯引号致谓词成「过'」必然误报——语义复核路径覆盖后暂不改字面规则 | 已改待提交 |
+| 疑点抽屉 UX | `StoryRoom.vue` | ①知情保留按钮在 AI 解题出 plan 前不可见（保留需求无需先解题）；②列表刷新后已出的 plan 丢失；③已保留疑点仍显示、角标不减——③已修（2026-09-15 晚）：scanContradictions handler 默认只返回 pending（主进程 join 保留记录，渲染层无需感知保留数据），status='all' 供抽屉「已保留」分区+撤销保留（unacknowledge_conflict 动作，保留不再只进不出）；graph-knowledge-provider 同步改只注入 pending——此前已保留疑点仍以"已知设定矛盾（生成时规避）"喂给生成上下文（忘川渡 8 疑点=7 已保留+1 误报实证）。①②待修 | ③已修待提交，①②待修 |
+| 保留记录 key 随大纲改写漂移（已修） | `conflict-gate.ts` | conflictKey 哈希覆盖消息全文，R10 消息嵌大纲节拍原文——大纲一改旧保留全失效重生（忘川渡实证：21:27 保留 3 条、21:42 大纲修订后 1 条复活）。已锚点化：ResolutionRow 增 chapterNumber+beatText，R10 按归一化 bigram 非对称重叠系数（min 边，容忍"同拍补细节变长"）≥0.6 且同章即顺延保留；unacknowledgeConflict 同锚点语义撤销；存量无锚点行按 key 精确匹配不受影响 | 已改待提交 |
+| 单章大纲卡误建卷（已修） | `story-persist.ts` + `room-distiller.ts` | persistByKind outline 分支只会建卷，主编逐章落卡时每张误建一个「第一卷」空卷节点。已加 matchOutlineChapterCard 识别单章卡（章号键/标题前缀），挂首卷下按章号幂等 upsert | 已改待提交 |
+| 设计包徽标 turn 末不同步（P2-7 根因确认） | `useStoryRoom.ts:153` + `room-session.ts:383-388` | mode 判定=「本轮是否新建了 draft 包」（createdAt >= turnStartTs），复用旧包追加条目的轮次一律 mode=chat → 不 refreshState、不发 design:ready。与 P2-3 同根 | 已有登记，根因补充 |
+
+## 忘川渡三轮实测补充登记（2026-09-16 凌晨，qwen3.8-max 主编）
+
+**已修复（本轮）：**
+1. **章法生成无视 stage 模型配置**（P1）：章法三处生成调用（设计卡/正文/图谱提取）全传 undefined provider——静默落到应用默认提供商，项目设置里的 stage 模型对章法形同虚设。修复：chapter-writing-executor 统一 resolveStageModelOpts('chapters') 并贯通三处。
+2. **同名人物卡落库被吞**（P1，即前轮登记的"设计条目丢失"根因）：persistCharacters 对已存在人物返回 skipped + persistDesignItem 把 skipped 当成功移出草稿包 = 修正卡整体丢失。圣经永远得不到修正→设计卡每轮把旧口径织回来（第2章六轮回退的完整闭环）。修复：同名人物卡=权威更新（upsert 覆盖可归档字段）；normalizeCharacterInput 自由键（secret/写法约束等）不再仅在 background 为空时拼入——始终追加，防修正内容丢失。
+3. **账本 conflict op 被静默丢弃**（P1，测试抓出）：静默提取的 conflict op 无 title 字段，在 `if (!title) continue` 处被提前跳过——提取器报告的"推翻某条共识"从未生效。修复：conflict 分流先于 title 检查。
+4. **R10 旧稿疑点与重写互为死锁**（P1）：写前门禁拿旧正文的未落点疑点拦 overwrite 重写，而 R10 语义复核只在写后运行。修复：overwrite 时写前门禁放行「仅引用本章」的疑点（设计卡+正文两处同口径；跨章疑点仍拦）。
+5. **新能力：lw_update_ledger 写账本工具**（用户拍板）：set-status（id/标题定位，多命中不猜给候选）+ add（缺省 confirmed，同题查重）；回执由代码生成真实数据；机制层纯函数在 room-ledger.ts，87 测试全过。
+
+**待修（新登记）：**
+- **多实例共库时工作流节点双派发**（P1）：两应用实例共库时，同一 run 的 write 节点被派发两次（journal: node_launched×2 间隔 10.4s，run_finished×2），两套执行并发写 journal 撞 (run_id,seq) 唯一约束→run 误判 failed。引擎需要 run 属主/认领机制。复现：忘川渡 wfrun_1789489768898。
+- **R9 名册外人名误报两类**（P2）：①物品名被当人名（「孟婆汤」）；②名册功能人物（李二/孙婆/周贵——引渡名册记录的死人本就是设定内存在）被要求补圣经。R9 需要物品词表 + 名册死人白名单语义。
+- **主编重复调用工具**（P2，模型可靠性）：明确"只调用一次"后仍出现 45s 内二次调用撞互斥、且把 skipped 回执当成 run 终态汇报（成功 run 的结果被无视）。工具回执应携带 runId 并在 skipped 时引导查询已有 run；或工具层对同 (章节,定义) 的 in-flight run 直接返回其句柄。
