@@ -29,6 +29,10 @@ export const EP_TOOL_MAX_CALLS: Record<string, number> = {
   generate_script: 3,
   split_scenes: 3,
   generate_storyboards: 3,
+  generate_keyframes: 1,
+  generate_segment_video: 2,
+  generate_scene_audio: 2,
+  export_mp4: 1,
   generate_char_asset: 1,
   generate_location_asset: 1,
   generate_item_asset: 1,
@@ -67,6 +71,12 @@ const EP_ACTION_TIMEOUT_MS: Record<string, number> = {
   generate_script: 600_000,
   split_scenes: 300_000,
   generate_storyboards: 600_000,
+  // 后半程四件（2026-09-16）：关键帧/视频/导出为多分镜批量 + provider 长轮询，
+  // 对齐片段桥接 30min 口径；配音受 TTS 限流（500ms/条）也需放宽
+  generate_keyframes: 1_800_000,
+  generate_segment_video: 1_800_000,
+  generate_scene_audio: 900_000,
+  export_mp4: 1_800_000,
   generate_char_asset: 600_000,
   generate_location_asset: 600_000,
   generate_item_asset: 600_000,
@@ -99,7 +109,7 @@ const assetNameSchema = z.object({
   description: z.string().optional().describe('补充描述（外观/风格微调，可省略）'),
 })
 
-/** 9 个生产动作的工具定义（共享注册形态） */
+/** 13 个生产动作的工具定义（共享注册形态；2026-09-16 补后半程四件） */
 export function buildEpAgentToolDefs(): AgentToolDef[] {
   return [
     epActionTool('generate_script', '生成整集剧本（synopsis+结构化场景+正文）。可选 chapterContent 提供章节原文作为改编底稿。',
@@ -108,7 +118,28 @@ export function buildEpAgentToolDefs(): AgentToolDef[] {
       z.object({ scriptId: z.string().optional().describe('剧本 id（缺省用当前集剧本）') })),
     epActionTool('generate_storyboards', '按场景批量生成分镜。前置：已有场景拆分。',
       z.object({ scriptId: z.string().optional().describe('剧本 id（缺省用当前集剧本）') })),
-    epActionTool('generate_char_asset', '为角色生成定妆主图。name 必填，须为项目内已有角色。', assetNameSchema),
+    epActionTool('generate_keyframes', '为分镜生成关键帧图（首帧/中间帧/末帧）。前置：已有分镜。缺省只为本集"尚无关键帧图"的分镜生成，已有图的跳过（不重复烧图费）。',
+      z.object({
+        storyboardId: z.string().optional().describe('分镜 id（缺省=本集所有缺关键帧的分镜）'),
+      })),
+    epActionTool('generate_segment_video', '把分镜/片段生成为视频。需要项目已配置视频模型（如 wan2.x-i2v / kling）。缺省为本集全部缺视频的分镜逐个生成。',
+      z.object({
+        storyboardId: z.string().optional().describe('分镜 id（与 segmentId 二选一）'),
+        segmentId: z.string().optional().describe('片段 id（片段制出片；与 storyboardId 二选一）'),
+        providerConfigId: z.string().optional().describe('视频提供商配置 id（缺省自动挑第一个启用的视频模型）'),
+        modelId: z.string().optional().describe('视频模型 id（缺省自动挑选）'),
+      })),
+    epActionTool('generate_scene_audio', '为场景生成配音（对白+旁白 TTS，按角色绑定音色），产物落库后导出时自动混入成片。缺省为本集全部未配音场景。',
+      z.object({
+        sceneId: z.string().optional().describe('场景 id（缺省=本集所有未配音场景）'),
+      })),
+    epActionTool('export_mp4', '整集合成导出 MP4（末端硬锁：所有入选分镜须已有视频）。成功后剧集标记为已完成。',
+      z.object({
+        outputPath: z.string().optional().describe('导出文件路径（缺省存到应用导出目录）'),
+        burnSubtitles: z.boolean().optional().describe('是否烧入字幕（默认 true）'),
+      })),
+    epActionTool('generate_char_asset', '为角色生成定妆主图。name 必填，须为项目内已有角色。',
+      assetNameSchema),
     epActionTool('generate_location_asset', '为地点生成主图。name 必填，须为项目内已有地点。', assetNameSchema),
     epActionTool('generate_item_asset', '为物品生成主图。name 必填，须为项目内已有物品。', assetNameSchema),
     epActionTool('update_entity', '修改已有资产（角色/地点/物品）的设定字段。定位失败会明确报错，不静默创建。',
@@ -124,9 +155,9 @@ export function buildEpAgentToolDefs(): AgentToolDef[] {
         id: z.string().optional(),
         name: z.string().optional(),
       })),
-    epActionTool('query_database', '查询外部数据源（参数化 SQL 只读）。dataSourceId 来自用户选择或数据源清单。',
+    epActionTool('query_database', '查询外部数据源（参数化 SQL 只读）。dataSourceId 从状态快照的【候选数据源名单】里取名称或 id。',
       z.object({
-        dataSourceId: z.string().describe('数据源 id'),
+        dataSourceId: z.string().describe('数据源 id 或名称'),
         sql: z.string().describe('SQL 模板（$1,$2 占位）'),
         params: z.array(z.unknown()).optional(),
       })),
@@ -141,7 +172,7 @@ export function buildEpAgentToolDefs(): AgentToolDef[] {
 export const EP_CONFIRM_CHOICE_TOOL = 'ep_confirm_choice'
 
 const EpConfirmChoiceSchema = z.object({
-  actionType: z.enum(['generate_script', 'split_scenes', 'generate_storyboards', 'generate_char_asset', 'generate_location_asset', 'generate_item_asset', 'update_entity', 'delete_entity', 'query_database']),
+  actionType: z.enum(['generate_script', 'split_scenes', 'generate_storyboards', 'generate_keyframes', 'generate_segment_video', 'generate_scene_audio', 'export_mp4', 'generate_char_asset', 'generate_location_asset', 'generate_item_asset', 'update_entity', 'delete_entity', 'query_database']),
   param: z.string().describe('需要用户填充的参数名（如 name/dataSourceId）'),
   choices: z.array(z.string()).min(1).describe('候选清单'),
   prompt: z.string().optional().describe('给用户的选择提示'),

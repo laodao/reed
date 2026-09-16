@@ -21,6 +21,10 @@ export type EpAgentActionType =
   | 'generate_script'          // 生成整集剧本（synopsis + 结构化场景 + 正文）
   | 'split_scenes'             // 从剧本 synopsis 拆分场景
   | 'generate_storyboards'     // 按场景批量生成分镜
+  | 'generate_keyframes'       // 为分镜生成关键帧图（2026-09-16 后半程工具）
+  | 'generate_segment_video'   // 生成分镜/片段视频（2026-09-16 后半程工具）
+  | 'generate_scene_audio'     // 场景配音（对白+旁白 TTS，2026-09-16 后半程工具）
+  | 'export_mp4'               // 整集合成导出 MP4（2026-09-16 后半程工具）
   | 'generate_char_asset'      // 为角色生成定妆主图
   | 'generate_location_asset'  // 为地点生成主图
   | 'generate_item_asset'      // 为物品生成主图
@@ -80,6 +84,7 @@ export type EpAgentPanelSection =
   | 'scenes'
   | 'storyboards'
   | 'assets'
+  | 'compose'
 
 /**
  * 动作结果跳转意图：前端 action:done 后据此自动切到对应 tab/定位。
@@ -117,6 +122,8 @@ export interface EpAgentProductionState {
     hasScript: boolean
     synopsis?: string | null
     scriptContent?: string | null
+    /** ⑥ 合成完成标记（成功导出 MP4 的路径；2026-09-16 P0-CM2 后真实落库） */
+    composedVideoPath?: string | null
   }
   scenes: { total: number; countWithBindings: number; locations: string[] }
   storyboards: { total: number; scenesCovered: number; scenesTotal: number }
@@ -125,6 +132,17 @@ export interface EpAgentProductionState {
     locations: { count: number; names: string[] }
     items: { count: number; names: string[] }
   }
+  /** 后半程生产进度（2026-09-16 后半程工具配套快照；供模型判断下一步与成本） */
+  production?: {
+    /** 已出片的分镜数（storyboard.videoPath 非空） */
+    storyboardsWithVideo: number
+    /** 已有关键帧图的分镜数 */
+    storyboardsWithKeyframes: number
+    /** 已配音场景数（旁白或有对白音频） */
+    scenesWithAudio: number
+  }
+  /** 可查询的外部数据源名单「名称（id）」（≤5；query_database 决策依据） */
+  dataSources?: string[]
 }
 
 // ==================== 动作执行上下文 ====================

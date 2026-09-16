@@ -9,8 +9,11 @@
  * 严禁写死 / 假数据。签名以源码为准（详见调研笔记）。
  */
 
+import * as path from 'path'
+import * as fs from 'fs'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getCurrentUserId } from '@core/context/user-context'
+import { getPathProvider } from '@core/interfaces/path.interface'
 import { buildAssetRosterForProject } from '@core/platform/episode-production/narrative/asset-roster-builder'
 import { SceneBindingWriter } from '@core/platform/episode-production/narrative/scene-binding-writer'
 import { EpisodeScriptGenerator } from '@core/platform/episode-production/narrative/ai/script-generator'
@@ -34,6 +37,11 @@ import {
   appendItemConstraints,
   mergeItemNegative,
 } from '@core/platform/episode-production/assets/prompts/item-constraints'
+import { KeyframeGenerationService } from '@core/platform/episode-production/render/keyframe/keyframe-generation.service'
+import { VideoSegmentService } from '@core/platform/episode-production/render/video/video-segment.service'
+import { SegmentVideoService } from '@core/platform/episode-production/render/video/segment-video.service'
+import { createAdapterForProviderWithReason } from '@core/platform/episode-production/render/video/adapter-factory'
+import { SceneAudioOrchestratorService } from '@core/platform/episode-production/render/audio/scene-audio-orchestrator.service'
 import type {
   EpAgentAction,
   EpAgentActionSummary,
@@ -68,6 +76,10 @@ const ACTION_LABELS: Record<string, string> = {
   generate_script: '生成剧本',
   split_scenes: '拆分场景',
   generate_storyboards: '生成分镜',
+  generate_keyframes: '生成关键帧',
+  generate_segment_video: '生成分镜视频',
+  generate_scene_audio: '生成配音',
+  export_mp4: '导出成片',
   generate_char_asset: '生成角色定妆',
   generate_location_asset: '生成地点图',
   generate_item_asset: '生成物品图',
@@ -180,6 +192,10 @@ async function dispatchEpAction(
     case 'generate_script': return executeGenerateScript(ctx, action)
     case 'split_scenes': return executeSplitScenes(ctx)
     case 'generate_storyboards': return executeGenerateStoryboards(ctx, action)
+    case 'generate_keyframes': return executeGenerateKeyframes(ctx, action)
+    case 'generate_segment_video': return executeGenerateSegmentVideo(ctx, action)
+    case 'generate_scene_audio': return executeGenerateSceneAudio(ctx, action)
+    case 'export_mp4': return executeExportMp4(ctx, action)
     case 'generate_char_asset': return executeGenerateAsset(ctx, 'character', action)
     case 'generate_location_asset': return executeGenerateAsset(ctx, 'location', action)
     case 'generate_item_asset': return executeGenerateAsset(ctx, 'item', action)
@@ -433,9 +449,21 @@ async function executeGenerateAsset(
   const projectId = await resolveProjectId(m, ctx.episodeId)
   if (!projectId) throw new Error('剧集所属项目不存在')
 
-  // 1. 定位 / 创建 binding
-  const bindingId = await ensureBinding(m, kind, projectId, name, action)
-  if (!bindingId) throw new Error(`项目中没有资产「${name}」，已尝试创建失败`)
+  // 1. 定位资产（只定位不创建——2026-09-16 P2-AG3：旧 ensureBinding 找不到名字就静默
+  //    createStandalone，模型幻觉一个名字 = 静默建资产 + 烧一次图费；与 update/delete 对齐：
+  //    定位失败即报错并给出现有名单，模型可自纠）
+  const bindingId = await resolveBindingId(m, kind, projectId, {
+    id: action.params?.id ? String(action.params.id) : undefined,
+    name,
+  })
+  if (!bindingId) {
+    const known = await listAssetNames(m, kind, projectId)
+    throw new Error(
+      `项目中没有${assetLabel(kind)}「${name}」。现有${assetLabel(kind)}：${
+        known.slice(0, 8).join('、') || '（无）'
+      }。请改用现有资产名，或先由用户在资产页创建。`,
+    )
+  }
 
   // 2. 取生效数据 + 拼图片 prompt
   const storyBg = await readStoryBackground(m, ctx.episodeId)
@@ -486,55 +514,16 @@ async function executeGenerateAsset(
 
 // ==================== 辅助 ====================
 
-/** 定位或创建一个 binding，返回 bindingId */
-async function ensureBinding(
-  m: any,
-  kind: AssetKind,
-  projectId: string,
-  name: string,
-  action: EpAgentAction,
-): Promise<string | null> {
-  // 优先按 id 定位
-  if (action.params?.id) {
-    const byId = await getBindingById(m, kind, String(action.params.id))
-    if (byId) return byId.id
+/** 项目内某类资产的现有名单（≤20；供定位失败时给模型自纠线索） */
+async function listAssetNames(m: any, kind: AssetKind, projectId: string): Promise<string[]> {
+  const svc = getAssetServiceFor(kind, m)
+  const rows = await svc.listByProject(projectId)
+  const names: string[] = []
+  for (const r of rows.slice(0, 20)) {
+    const eff = await safeEffective(svc.getEffectiveData(r.id))
+    if (eff?.name) names.push(String(eff.name))
   }
-  // 其次按 name 定位（listByProject 中找同名）
-  const found = await findBindingByName(m, kind, projectId, name)
-  if (found) return found.id
-  // 都没有 → 创建 standalone
-  const userId = getCurrentUserId()
-  const svc = m.dataSource
-    ? kind === 'character'
-      ? new CharacterAssetService(m.dataSource)
-      : new LocationAssetService(m.dataSource, new AssetImageService(m.dataSource))
-    : null
-  if (kind === 'character' && svc) {
-    return (svc as CharacterAssetService).createStandalone({
-      projectId,
-      name,
-      description: action.params?.description ? String(action.params.description) : undefined,
-      userId,
-    }).then((b) => b.id)
-  }
-  if (kind === 'location' && svc) {
-    return (svc as LocationAssetService).createStandalone({
-      projectId,
-      name,
-      description: action.params?.description ? String(action.params.description) : undefined,
-      userId,
-    }).then((b) => b.id)
-  }
-  if (kind === 'item' && m.dataSource) {
-    const itemSvc = new ItemAssetService(m.dataSource)
-    return itemSvc.createStandalone({
-      projectId,
-      name,
-      description: action.params?.description ? String(action.params.description) : undefined,
-      userId,
-    }).then((b) => b.id)
-  }
-  return null
+  return names
 }
 
 async function getBindingById(m: any, kind: AssetKind, id: string): Promise<any | null> {
@@ -850,7 +839,7 @@ function stripSqlLiterals(sql: string): string {
  * 结果摘要：rows 前若干行 + 行数。不落库、不改剧集数据——纯读取。
  */
 async function executeQueryDatabase(
-  ctx: EpAgentExecutionContext,
+  _ctx: EpAgentExecutionContext,
   action: EpAgentAction,
 ): Promise<EpAgentActionSummary> {
   const { getDataSourceService } = await import('@core/platform/workflow/datasource/datasource.service')
@@ -908,6 +897,293 @@ async function executeQueryDatabase(
     return { type: 'query_database', status: 'error', message: `查询数据库失败：${e?.message || '未知错误'}`, error: e?.message }
   }
 }
+
+
+// ==================== 动作：后半程四件（2026-09-16 review 第一批·agent 视频制作闭环） ====================
+
+/**
+ * 生成关键帧（generate_keyframes）。
+ * params: { storyboardId? , scriptId? }
+ * 不传 storyboardId → 为本集全部"尚无关键帧图"的分镜生成（幂等，不重烧已有帧）。
+ */
+async function executeGenerateKeyframes(
+  ctx: EpAgentExecutionContext,
+  action: EpAgentAction,
+): Promise<EpAgentActionSummary> {
+  const m = ctx.db ?? getCoreDatabaseManager()
+  if (!m.dataSource) throw new Error('数据库未初始化')
+  const scriptId = action.params?.scriptId
+    ? String(action.params.scriptId)
+    : await resolveScriptId(m, ctx.episodeId)
+  if (!scriptId) throw new Error('剧本不存在，无法生成关键帧')
+
+  const scenes = (await m.sceneScripts?.getByEpisodeScriptId?.(scriptId)) || []
+  let targets: any[] = []
+  for (const scene of scenes) {
+    targets.push(...((await m.storyboards?.getBySceneScriptId?.(scene.id)) || []))
+  }
+  const wantStoryboardId = action.params?.storyboardId ? String(action.params.storyboardId) : ''
+  if (wantStoryboardId) {
+    targets = targets.filter((sb) => sb.id === wantStoryboardId)
+    if (targets.length === 0) {
+      throw new Error('指定的分镜不存在（id 需来自查询结果或用户消息，不要编造）')
+    }
+  } else {
+    // 只补缺失：已有任一关键帧图的分镜跳过（重烧=白烧图费）
+    const withImage = new Set<string>()
+    for (const sb of targets) {
+      try {
+        const kfs = (await m.storyboardKeyframes?.listByStoryboard?.(sb.id)) || []
+        if (kfs.some((kf: any) => !!kf.imageAssetId)) withImage.add(sb.id)
+      } catch { /* 查询失败按未生成处理 */ }
+    }
+    targets = targets.filter((sb) => !withImage.has(sb.id))
+  }
+  if (targets.length === 0) {
+    return { type: 'generate_keyframes', status: 'ok', message: '所有分镜都已有关键帧图，无需生成' }
+  }
+
+  const svc = new KeyframeGenerationService(m.dataSource)
+  let done = 0
+  const failed: string[] = []
+  for (const sb of targets) {
+    ctx.emit({
+      type: 'action:start',
+      actionType: 'generate_keyframes',
+      label: `生成关键帧 ${done + 1}/${targets.length}`,
+    })
+    try {
+      await svc.generateKeyframesForStoryboard({ storyboardId: sb.id })
+      done++
+    } catch (e: any) {
+      failed.push(`分镜${sb.shotNumber}:${e?.message || '未知错误'}`)
+    }
+  }
+  const suffix = failed.length > 0 ? `；失败 ${failed.length} 个（${failed.slice(0, 3).join('、')}）` : ''
+  return {
+    type: 'generate_keyframes',
+    status: done > 0 ? 'ok' : 'error',
+    message: `已为 ${done}/${targets.length} 个分镜生成关键帧${suffix}`,
+    changed: ['storyboards'],
+    data: { generated: done, total: targets.length },
+    nav: { tab: 'storyboard' },
+  }
+}
+
+/**
+ * 生成分镜/片段视频（generate_segment_video）。
+ * params: { segmentId? / storyboardId? / providerConfigId? / modelId? }
+ * 都不传 → 为本集全部缺视频的分镜逐个生成（自动挑第一个启用的视频模型）。
+ */
+async function executeGenerateSegmentVideo(
+  ctx: EpAgentExecutionContext,
+  action: EpAgentAction,
+): Promise<EpAgentActionSummary> {
+  const m = ctx.db ?? getCoreDatabaseManager()
+  if (!m.dataSource) throw new Error('数据库未初始化')
+
+  let providerConfigId = action.params?.providerConfigId ? String(action.params.providerConfigId) : undefined
+  let modelId = action.params?.modelId ? String(action.params.modelId) : undefined
+  if (!providerConfigId || !modelId) {
+    // 自动挑选：第一个启用 provider 里的第一个 video 模型（与文本模型兜底同策略）
+    const cfgs = (await m.providerConfigs?.getEnabled?.()) || []
+    outer: for (const c of cfgs) {
+      for (const mm of (c.models ?? []) as Array<{ id?: string; type?: string }>) {
+        if (mm.type === 'video' && mm.id) {
+          providerConfigId = providerConfigId ?? c.id
+          modelId = modelId ?? mm.id
+          break outer
+        }
+      }
+    }
+    if (!providerConfigId || !modelId) {
+      throw new Error('未配置视频模型：请在 设置 → 提供商配置 中为某提供商启用视频模型（如 wan2.x-i2v / kling-v2）')
+    }
+  }
+  const { adapter, reason } = await createAdapterForProviderWithReason(providerConfigId, modelId)
+  if (!adapter) throw new Error(`创建视频适配失败：${reason}`)
+
+  const segmentId = action.params?.segmentId ? String(action.params.segmentId) : ''
+  const storyboardId = action.params?.storyboardId ? String(action.params.storyboardId) : ''
+
+  if (segmentId) {
+    const svc = new SegmentVideoService(m.dataSource, adapter)
+    const r = await svc.generateForSegment({ segmentId, providerId: providerConfigId, modelId })
+    return {
+      type: 'generate_segment_video',
+      status: 'ok',
+      message: `片段视频已生成（模式 ${r.match.mode}，${r.output.durationSec}s），联动 ${r.completedStoryboardIds.length} 个分镜`,
+      changed: ['storyboards', 'compose'],
+      data: { segmentId, mode: r.match.mode, durationSec: r.output.durationSec },
+      nav: { tab: 'compose' },
+    }
+  }
+
+  if (storyboardId) {
+    const svc = new VideoSegmentService(m.dataSource, adapter)
+    const r = await svc.generateForStoryboard({ storyboardId })
+    return {
+      type: 'generate_segment_video',
+      status: 'ok',
+      message: `分镜视频已生成（模式 ${r.match.mode}，${r.output.durationSec}s）`,
+      changed: ['storyboards'],
+      data: { storyboardId, mode: r.match.mode, durationSec: r.output.durationSec },
+      nav: { tab: 'storyboard' },
+    }
+  }
+
+  // 批量：本集全部缺视频分镜
+  const scriptId = await resolveScriptId(m, ctx.episodeId)
+  if (!scriptId) throw new Error('剧本不存在，无法生成分镜视频')
+  const scenes = (await m.sceneScripts?.getByEpisodeScriptId?.(scriptId)) || []
+  const targets: any[] = []
+  for (const scene of scenes) {
+    const sbs = (await m.storyboards?.getBySceneScriptId?.(scene.id)) || []
+    targets.push(...sbs.filter((sb: any) => !sb.videoPath))
+  }
+  if (targets.length === 0) {
+    return { type: 'generate_segment_video', status: 'ok', message: '所有分镜都已有视频，无需生成' }
+  }
+  const svc = new VideoSegmentService(m.dataSource, adapter)
+  let done = 0
+  const failed: string[] = []
+  for (const sb of targets) {
+    ctx.emit({
+      type: 'action:start',
+      actionType: 'generate_segment_video',
+      label: `生成分镜视频 ${done + 1}/${targets.length}`,
+    })
+    try {
+      await svc.generateForStoryboard({ storyboardId: sb.id })
+      done++
+    } catch (e: any) {
+      failed.push(`分镜${sb.shotNumber}:${e?.message || '未知错误'}`)
+    }
+  }
+  const suffix = failed.length > 0 ? `；失败 ${failed.length} 个（${failed.slice(0, 3).join('、')}）` : ''
+  return {
+    type: 'generate_segment_video',
+    status: done > 0 ? 'ok' : 'error',
+    message: `已生成 ${done}/${targets.length} 个分镜视频${suffix}`,
+    changed: ['storyboards'],
+    data: { generated: done, total: targets.length },
+    nav: { tab: 'storyboard' },
+  }
+}
+
+/**
+ * 场景配音（generate_scene_audio）：对白 + 旁白 TTS，产物落库（audioAsset/narration_audio_path），
+ * 导出时自动混入音轨。
+ * params: { sceneId? }；不传 → 为本集全部未配音场景生成。
+ */
+async function executeGenerateSceneAudio(
+  ctx: EpAgentExecutionContext,
+  action: EpAgentAction,
+): Promise<EpAgentActionSummary> {
+  const m = ctx.db ?? getCoreDatabaseManager()
+  if (!m.dataSource) throw new Error('数据库未初始化')
+  const scriptId = await resolveScriptId(m, ctx.episodeId)
+  if (!scriptId) throw new Error('剧本不存在，无法配音')
+
+  let scenes = (await m.sceneScripts?.getByEpisodeScriptId?.(scriptId)) || []
+  const wantSceneId = action.params?.sceneId ? String(action.params.sceneId) : ''
+  if (wantSceneId) {
+    scenes = scenes.filter((s: any) => s.id === wantSceneId)
+    if (scenes.length === 0) throw new Error('指定的场景不存在')
+  } else {
+    scenes = scenes.filter((s: any) => {
+      if ((s as any).narrationAudioPath) return false
+      return !((s as any).dialogues ?? []).some((d: any) => !!d?.audioAsset?.audioPath)
+    })
+  }
+  if (scenes.length === 0) {
+    return { type: 'generate_scene_audio', status: 'ok', message: '所有场景都已有配音，无需生成' }
+  }
+
+  const svc = new SceneAudioOrchestratorService(m.dataSource)
+  const userDataPath = getPathProvider().getUserDataPath()
+  let done = 0
+  let fallbackCount = 0
+  const failed: string[] = []
+  for (const scene of scenes) {
+    ctx.emit({
+      type: 'action:start',
+      actionType: 'generate_scene_audio',
+      label: `生成配音 ${done + 1}/${scenes.length}（场景${scene.sceneNumber}）`,
+    })
+    try {
+      const result = await svc.orchestrateScene({
+        sceneScriptId: scene.id,
+        outputDir: path.join(userDataPath, 'episode-production', 'audio', scene.id),
+      })
+      await svc.persistToScene(scene.id, result)
+      done++
+      fallbackCount += result.fallbackDialogueCount
+    } catch (e: any) {
+      failed.push(`场景${scene.sceneNumber}:${e?.message || '未知错误'}`)
+    }
+  }
+  const fallbackNote = fallbackCount > 0 ? `（${fallbackCount} 条对白用了系统默认音色，可在资产页为角色绑定音色）` : ''
+  const suffix = failed.length > 0 ? `；失败 ${failed.length} 个（${failed.slice(0, 3).join('、')}）` : ''
+  return {
+    type: 'generate_scene_audio',
+    status: done > 0 ? 'ok' : 'error',
+    message: `已为 ${done}/${scenes.length} 个场景生成配音${fallbackNote}${suffix}`,
+    changed: ['scenes'],
+    data: { generated: done, total: scenes.length },
+  }
+}
+
+/**
+ * 整集导出 MP4（export_mp4）：合成末端硬锁 + 音轨混入（含 TTS）+ 状态闭环（composing/completed）。
+ * params: { outputPath?, burnSubtitles? }
+ */
+async function executeExportMp4(
+  ctx: EpAgentExecutionContext,
+  action: EpAgentAction,
+): Promise<EpAgentActionSummary> {
+  const m = ctx.db ?? getCoreDatabaseManager()
+  if (!m.dataSource) throw new Error('数据库未初始化')
+  const scriptId = await resolveScriptId(m, ctx.episodeId)
+  if (!scriptId) throw new Error('剧本不存在，无法导出')
+
+  const { EpisodeMp4ExporterService } = await import('../compose/episode-mp4-exporter.service')
+  // 惰性 import：runner 引 fs/fluent-ffmpeg 与 ffmpeg binary 探测，仅在真导出时加载
+  const { FluentFfmpegRunner, NodeFileWriter } = await import(
+    '@core/packs/episode-production/handlers/compose/episode-mp4-exporter.runner'
+  )
+
+  const userDataPath = getPathProvider().getUserDataPath()
+  const defaultDir = path.join(userDataPath, 'episode-production', 'exports')
+  let outputPath = action.params?.outputPath ? String(action.params.outputPath).trim() : ''
+  if (!outputPath) {
+    outputPath = path.join(defaultDir, `${scriptId}-${Date.now()}.mp4`)
+  } else if (!path.isAbsolute(outputPath)) {
+    outputPath = path.join(defaultDir, outputPath)
+  }
+  const dir = path.dirname(outputPath)
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+
+  const svc = new EpisodeMp4ExporterService(
+    m.dataSource,
+    new FluentFfmpegRunner(),
+    new NodeFileWriter('default'),
+  )
+  const result = await svc.exportEpisodeToMp4({
+    episodeScriptId: scriptId,
+    outputPath,
+    burnSubtitles: action.params?.burnSubtitles !== false,
+  })
+  return {
+    type: 'export_mp4',
+    status: 'ok',
+    message: `已导出 MP4（${(result.durationSec || 0).toFixed(1)}s）：${result.outputPath}`,
+    changed: ['compose'],
+    data: { outputPath: result.outputPath, durationSec: result.durationSec },
+    nav: { tab: 'compose' },
+  }
+}
+
 
 /** 供测试用的 standalone 纯度导出（可选） */
 export const __epAgentTest = {

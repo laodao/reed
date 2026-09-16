@@ -42,32 +42,58 @@ import { EP_AGENT_PACK_ID, EP_TOOL_MAX_CALLS, registerEpAgentTools, EP_CONFIRM_C
 
 const logger = createLogger('EpAgentHarness')
 
-/** 历史单条注入截断 */
-const HISTORY_CONTENT_MAX = 600
+/** 历史单条注入截断（分级：assistant 4000 保留行动自述 / user 600——对齐 room-session） */
+const HISTORY_USER_MAX = 600
+const HISTORY_ASSISTANT_MAX = 4000
 
-/** 系统提示词：角色 + 纪律（含规划判断纪律——能力透出，使用由 agent 按复杂度决定） */
+/**
+ * 系统提示词：角色 + 纪律（含规划判断纪律——能力透出，使用由 agent 按复杂度决定）。
+ * 2026-09-16 review 升级：补后半程流水线认知、成本配额纪律、风格/跨集一致性、
+ * 快照新鲜度声明——此前 7 条纪律 + 4 行计数快照不足以支撑「agent 视频制作」。
+ */
 export function epAgentSystemPrompt(): string {
-  return `你是剧集制作项目的制作助理，可以直接调用工具替用户完成制作任务（生成剧本/拆分场景/生成分镜/管理资产/查询外部数据）。当前项目与剧集状态快照会随每轮注入。
+  return `你是剧集制作项目的制作助理，可以直接调用工具替用户完成制作任务。你驱动的是一条完整生产流水线：
+剧本 → 场景 → 分镜 → 关键帧 → 视频 → 配音 → 合成导出 MP4（配套能力：资产主图、实体增改、外部数据查询）。
+当前项目与剧集状态快照会随每轮注入。
 
 纪律：
 1. 简单请求直接执行对应工具，不要拆解规划；只有跨集/多环节的复杂目标才考虑 create_task_plan 拆任务树（创建后需用户在「Agent 任务树」页批准才会执行）。
 2. 固定可复用的制作流水线才考虑 create_workflow_draft 沉淀为工作流草稿；一次性的需求不要沉淀。
-3. 依赖不满足（如未生成剧本就想拆场景）时工具会返回暂缓原因，请向用户解释缺什么前置，或先执行前置动作。
-4. 资产生成类操作成本高：name 必须用状态快照里的真实资产名，不要编造。
-5. 不要重复调用刚刚成功过的同一工具；工具失败后可换参数重试一次，仍失败就如实告知。
-6. 所有动作完成后，用一段话向用户总结：本轮做了什么、结果如何、下一步建议。
-7. 用户意图或关键参数不明确时，先用一句话确认，不要编造参数。`
+3. 依赖不满足（如未生成分镜就想生成关键帧）时工具会返回暂缓原因，请向用户解释缺什么前置，或先执行前置动作。
+4. 成本意识：生成关键帧/视频/资产图/配音都按次计费。资产生成类每轮限 1 次——用户要求"给多个角色出图"时，说明因成本限制每轮生成一个，建议用户继续对话逐个生成；关键帧/视频类工具缺省只补缺失项，不要重复生成已有产物。
+5. name 必须用状态快照或工具结果里的真实资产名，不要编造；工具找不到该名字时会报错并列出现有名单，请从名单中选择。
+6. 资产是项目级共享：跨集制作优先复用既有资产，避免为同一角色/地点重复建卡；生成资产图时沿用项目风格锚点（项目设定里的画风描述），保持全片画风一致。
+7. 不要重复调用刚刚成功过的同一工具；工具失败后可换参数重试一次，仍失败就如实告知。
+8. 所有动作完成后，用一段话向用户总结：本轮做了什么、结果如何、下一步建议（可参照快照中的生产进度给出缺口）。
+9. 用户意图或关键参数不明确时，先调用 ep_confirm_choice 发起选择卡或用一句话确认，不要编造参数。
+10. 状态快照是**轮初**快照：工具执行成功后的最新状态以工具返回结果为准。`
 }
 
 /** 生产状态 → 快照文本（initState 播种/任务 snapshot 用） */
 function epStateToSnapshot(state: EpAgentProductionState): string {
   const ep = state.episode
+  const prod = state.production
   const lines = [
     `剧集：${ep.title ?? '(未命名)'} 第${ep.episodeNumber ?? '?'}集（状态：${ep.status ?? '-'}，剧本：${ep.hasScript ? '已有' : '未生成'}）`,
-    `场景：${state.scenes.total} 个（${state.scenes.countWithBindings} 个已绑定地点）`,
-    `分镜：${state.storyboards.scenesCovered}/${state.storyboards.scenesTotal} 场已覆盖`,
-    `资产：角色 ${state.assets.characters.count}（${state.assets.characters.names.slice(0, 8).join('、')}）；地点 ${state.assets.locations.count}；物品 ${state.assets.items.count}`,
   ]
+  if (ep.synopsis) {
+    lines.push(`梗概：${ep.synopsis.slice(0, 80)}${ep.synopsis.length > 80 ? '…' : ''}`)
+  }
+  lines.push(
+    `场景：${state.scenes.total} 个（${state.scenes.countWithBindings} 个已绑定地点）`,
+    `分镜：${state.storyboards.total} 个，覆盖 ${state.storyboards.scenesCovered}/${state.storyboards.scenesTotal} 场`,
+  )
+  if (prod) {
+    lines.push(
+      `生产进度：关键帧 ${prod.storyboardsWithKeyframes}/${state.storyboards.total} 分镜、视频 ${prod.storyboardsWithVideo}/${state.storyboards.total} 分镜、配音 ${prod.scenesWithAudio}/${state.scenes.total} 场景、成片${ep.composedVideoPath ? '已导出' : '未导出'}`,
+    )
+  }
+  lines.push(
+    `资产：角色 ${state.assets.characters.count}（${state.assets.characters.names.slice(0, 8).join('、')}）；地点 ${state.assets.locations.count}；物品 ${state.assets.items.count}`,
+  )
+  if (state.dataSources && state.dataSources.length > 0) {
+    lines.push(`候选数据源名单：${state.dataSources.join('、')}`)
+  }
   return lines.join('\n')
 }
 
@@ -221,13 +247,15 @@ export class EpAgentHarnessService {
     } catch { /* 保持 projectId 兜底 */ }
 
     // 1. 历史（保存用户消息前取——当前消息由 initState 播种）
+    // 分级截断（2026-09-16 P1-AG5）：assistant 4000 保留行动自述与总结细节，
+    // user 600；此前一刀切 600 让多轮制作里 agent 只剩上一轮的压缩残影
     const history = await m.lwDesignMessages.getByConversationId(conversationId)
     const seeded = history
       .filter((h: { role: string }) => h.role === 'user' || h.role === 'assistant')
       .slice(-EP_AGENT_HISTORY_LIMIT)
       .map((h: { role: string; content: unknown }) => ({
         role: h.role as 'user' | 'assistant',
-        content: String(h.content ?? '').slice(0, HISTORY_CONTENT_MAX),
+        content: String(h.content ?? '').slice(0, h.role === 'assistant' ? HISTORY_ASSISTANT_MAX : HISTORY_USER_MAX),
       } as ModelMessage))
 
     // 2. 保存用户消息（UI 历史源不变）
@@ -299,9 +327,15 @@ export class EpAgentHarnessService {
         // EP 剧本/分镜文本大，32K 起步（保留 EP 专属旋钮，缺省回落全局——评审 P2-3）
         contextWindowTokens:
           Number(process.env.EP_AGENT_CONTEXT_WINDOW ?? process.env.AGENT_CONTEXT_WINDOW ?? 32_768) || 32_768,
+        // 审批挂起豁免空闲看门狗（2026-09-16 P1-AG1）：ep_confirm_choice 挂起期间
+        // fullStream 无事件，缺省 300s 空闲超时会把「等待用户选择」误判为步超时→
+        // 重试→撞单卡断言→晚到的用户选择被静默吞。EP 有审批卡，置 0 关闭看门狗。
+        streamIdleTimeoutMs: 0,
         memory: {
           scope: () => ({ bizModule: 'episode-production', projectId }),
-          recallText: () => `${message}\n${epStateToSnapshot(state)}`,
+          // 召回语料只用用户消息（story-room 复盘结论：整段快照作语料会让 2-gram
+          // 撞上无关全局记忆，构成污染源）
+          recallText: () => message,
         },
         requestApproval: (tool, input, call) => approvalCoordinator.request(call.scopeId, tool, input, call.signal),
         onStream: (_t, event) => {

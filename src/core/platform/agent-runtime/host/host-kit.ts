@@ -101,6 +101,8 @@ export interface HostKitConfig<TTurn extends HostKitTurnBase> {
    *  缺省 = 会话存储续聊（聊天形态：sanitize + 本轮 user 消息） */
   seededHistory?: (turn: TTurn) => ModelMessage[]
   maxSteps: number
+  /** 步级流空闲超时 ms（透传 LoopRunner；挂起审批的宿主建议 0 关闭或缺省放大） */
+  streamIdleTimeoutMs?: number
   /** 上下文窗口 tokens（缺省 32K / AGENT_CONTEXT_WINDOW） */
   contextWindowTokens?: number
   /** 记忆装配配置；显式 null = 关闭（36 号 §5 须登记理由）；缺省 = 用户级 L1 top3 */
@@ -477,6 +479,10 @@ export function createHostKit<TTurn extends HostKitTurnBase>(
           resolveModel: config.resolveModel,
           ...(config.requestApproval ? { requestApproval: config.requestApproval } : {}),
           ...(deps.artifacts ? { artifacts: deps.artifacts } : {}),
+          // 空闲看门狗透传（2026-09-16 P1-AG1）：挂起审批（如 ep_confirm_choice）期间
+          // fullStream 无事件，缺省 300s 会把「等待用户选择」误判为步超时→重试→撞
+          // 单卡断言→轮次失败。挂审批的宿主应显式放宽或置 0 关闭。
+          ...(config.streamIdleTimeoutMs !== undefined ? { streamIdleTimeoutMs: config.streamIdleTimeoutMs } : {}),
           context,
         }).run(taskBase, host)
         return { ...result, memoryLines, systemPrompt: effectivePrompt }

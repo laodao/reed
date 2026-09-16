@@ -6,7 +6,6 @@
  * 依赖规则与下一步建议只做"最小前置约束"，顺序/决策由 AI 推进。
  */
 
-import type { DataSource } from 'typeorm'
 import { CharacterAssetService } from '@core/platform/episode-production/assets/services/character-asset.service'
 import { LocationAssetService } from '@core/platform/episode-production/assets/services/location-asset.service'
 import { ItemAssetService } from '@core/platform/episode-production/assets/services/item-asset.service'
@@ -31,10 +30,13 @@ export async function computeEpProductionState(
       hasScript: false,
       synopsis: null,
       scriptContent: null,
+      composedVideoPath: null,
     },
     scenes: { total: 0, countWithBindings: 0, locations: [] },
     storyboards: { total: 0, scenesCovered: 0, scenesTotal: 0 },
     assets: { characters: { count: 0, names: [] }, locations: { count: 0, names: [] }, items: { count: 0, names: [] } },
+    production: { storyboardsWithVideo: 0, storyboardsWithKeyframes: 0, scenesWithAudio: 0 },
+    dataSources: [],
   }
 
   if (!db || !episodeId) return state
@@ -47,6 +49,7 @@ export async function computeEpProductionState(
       state.episode.episodeNumber = ep.episodeNumber ?? null
       state.episode.status = ep.status ?? null
       state.episode.hasScript = !!ep.scriptId
+      state.episode.composedVideoPath = (ep as any).composedVideoPath ?? null
       if (ep.scriptId) {
         const script = await db.episodeScripts?.getById?.(ep.scriptId)
         if (script) {
@@ -60,10 +63,12 @@ export async function computeEpProductionState(
   }
 
   // 2. scenes（需要 scriptId）
+  let cachedScenes: any[] | null = null
   try {
     const scriptId = await resolveScriptId(db, episodeId)
     if (scriptId) {
       const scenes = (await db.sceneScripts?.getByEpisodeScriptId?.(scriptId)) || []
+      cachedScenes = scenes
       state.scenes.total = scenes.length
       state.scenes.locations = Array.from(
         new Set(scenes.map((s: any) => s.location).filter(Boolean)),
@@ -71,6 +76,11 @@ export async function computeEpProductionState(
       state.scenes.countWithBindings = scenes.filter(
         (s: any) => s.locationBindingId || (s.characters?.length ?? 0) > 0,
       ).length
+      // 配音进度（P0-CM1）：旁白音频或任一对白有音频产物即视为已配音
+      state.production!.scenesWithAudio = scenes.filter((s: any) => {
+        if ((s as any).narrationAudioPath) return true
+        return ((s as any).dialogues ?? []).some((d: any) => !!d?.audioAsset?.audioPath)
+      }).length
     }
   } catch (e) {
     console.warn('[EpAgent] 读取 scenes 失败', e)
@@ -78,19 +88,29 @@ export async function computeEpProductionState(
 
   // 3. storyboards（跨所有场景聚合）
   try {
-    const scriptId = await resolveScriptId(db, episodeId)
-    if (scriptId) {
-      const scenes = (await db.sceneScripts?.getByEpisodeScriptId?.(scriptId)) || []
+    if (cachedScenes) {
+      const scenes = cachedScenes
       state.storyboards.scenesTotal = scenes.length
       let total = 0
+      let withVideo = 0
+      let withKeyframes = 0
       const covered = new Set<string>()
       for (const scene of scenes) {
         const sbs = (await db.storyboards?.getBySceneScriptId?.(scene.id)) || []
         if (sbs.length > 0) covered.add(scene.id)
         total += sbs.length
+        withVideo += sbs.filter((sb: any) => !!sb.videoPath).length
+        for (const sb of sbs) {
+          try {
+            const kfs = (await db.storyboardKeyframes?.listByStoryboard?.(sb.id)) || []
+            if (kfs.some((kf: any) => !!kf.imageAssetId)) withKeyframes++
+          } catch { /* 单分镜关键帧查询失败不阻断统计 */ }
+        }
       }
       state.storyboards.total = total
       state.storyboards.scenesCovered = covered.size
+      state.production!.storyboardsWithVideo = withVideo
+      state.production!.storyboardsWithKeyframes = withKeyframes
     }
   } catch (e) {
     console.warn('[EpAgent] 读取 storyboards 失败', e)
@@ -132,6 +152,18 @@ export async function computeEpProductionState(
     }
   } catch (e) {
     console.warn('[EpAgent] 读取 assets 失败', e)
+  }
+
+  // 5. 数据源名单（query_database 决策依据；0916 review P1-AG2：harness 快照此前无名单，
+  //    模型无从枚举 dataSourceId，工具基本不可用）
+  try {
+    const { getDataSourceService } = await import('@core/platform/workflow/datasource/datasource.service')
+    const eligible = await getDataSourceService().listEligible()
+    state.dataSources = eligible
+      .slice(0, 5)
+      .map((s: { id: string; name: string }) => `${s.name}（${s.id}）`)
+  } catch {
+    state.dataSources = []
   }
 
   return state
@@ -193,6 +225,10 @@ const ACTION_DEPENDENCIES: Record<EpAgentActionType, (s: EpAgentProductionState)
   generate_script: () => [],
   split_scenes: (s) => (s.episode.hasScript ? [] : ['剧本']),
   generate_storyboards: (s) => (s.scenes.total > 0 ? [] : ['场景']),
+  generate_keyframes: (s) => (s.storyboards.total > 0 ? [] : ['分镜']),
+  generate_segment_video: (s) => (s.storyboards.total > 0 ? [] : ['分镜']),
+  generate_scene_audio: (s) => (s.scenes.total > 0 ? [] : ['场景']),
+  export_mp4: (s) => (s.storyboards.total > 0 ? [] : ['分镜']),
   generate_char_asset: () => [],
   generate_location_asset: () => [],
   generate_item_asset: () => [],
@@ -215,6 +251,7 @@ export function checkEpActionDependency(
 
 export function buildEpSuggestions(state: EpAgentProductionState): string[] {
   const suggestions: string[] = []
+  const prod = state.production ?? { storyboardsWithVideo: 0, storyboardsWithKeyframes: 0, scenesWithAudio: 0 }
 
   if (!state.episode.hasScript) {
     suggestions.push('帮我生成这集的剧本')
@@ -224,6 +261,22 @@ export function buildEpSuggestions(state: EpAgentProductionState): string[] {
 
   if (state.scenes.total > 0 && state.storyboards.total === 0) {
     suggestions.push('为所有场景生成分镜')
+  }
+
+  if (state.storyboards.total > 0 && prod.storyboardsWithKeyframes < state.storyboards.total) {
+    suggestions.push('为分镜生成关键帧')
+  }
+
+  if (state.storyboards.total > 0 && prod.storyboardsWithVideo < state.storyboards.total) {
+    suggestions.push('为分镜生成视频')
+  }
+
+  if (state.scenes.total > 0 && prod.scenesWithAudio < state.scenes.total) {
+    suggestions.push('为场景生成配音')
+  }
+
+  if (state.storyboards.total > 0 && prod.storyboardsWithVideo === state.storyboards.total && !state.episode.composedVideoPath) {
+    suggestions.push('合成导出这一集的 MP4')
   }
 
   if (state.assets.characters.count === 0) {
