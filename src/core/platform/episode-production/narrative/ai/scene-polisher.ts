@@ -163,7 +163,7 @@ export class EpisodeScenePolisher {
     modelId?: string,
   ): Promise<ScenePolishResult> {
     const prompt = buildPrompt(scene, ctx)
-    const response = await callAI(prompt, SYSTEM_PROMPT, 4096, providerConfigId, modelId)
+    const response = await callAI(prompt, SYSTEM_PROMPT, 4096, providerConfigId, modelId, { temperature: 0.3 })
     const parsed = extractPolishedJson(response) as Partial<ScenePolishResult> | null
 
     if (!parsed || typeof parsed !== 'object') {

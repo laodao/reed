@@ -397,7 +397,7 @@ ${sceneDescription}
 
     const systemPrompt = '你是一个专业的影视导演。请根据场景内容分析分镜需求，严格按照 JSON 格式输出。'
 
-    const response = await callAI(prompt, systemPrompt, 1024, providerConfigId, modelId)
+    const response = await callAI(prompt, systemPrompt, 1024, providerConfigId, modelId, { temperature: 0.3 })
     const result = extractJsonFromResponse(response)
 
     return {
@@ -479,7 +479,7 @@ ${sceneScript.actions.map(a => `- ${a.description}`).join('\n')}
 
     const systemPrompt = '你是一个专业的影视导演和分镜师。请严格按照 JSON 格式输出，不要添加任何额外的文字说明。'
 
-    const response = await callAI(prompt, systemPrompt, 4096, providerConfigId, modelId)
+    const response = await callAI(prompt, systemPrompt, 4096, providerConfigId, modelId, { temperature: 0.3 })
     const result = extractJsonFromResponse(response)
 
     if (!Array.isArray(result.storyboards)) {
@@ -566,7 +566,7 @@ ${sceneScript.actions.map(a => `- ID: ${a.id}, 描述: ${a.description}`).join('
 
     const systemPrompt = '你是一个专业的影视导演和分镜师。请严格按照 JSON 格式输出单个分镜，不要添加任何额外的文字说明或数组包裹。'
 
-    const response = await callAI(prompt, systemPrompt, 2048, providerConfigId, modelId)
+    const response = await callAI(prompt, systemPrompt, 2048, providerConfigId, modelId, { temperature: 0.3 })
     const result = extractJsonFromResponse(response)
 
     // 验证结果
@@ -905,7 +905,7 @@ ${fieldsToFill}
 
     const systemPrompt = '你是一个专业的影视导演。请根据场景内容推荐分镜参数，严格按照 JSON 格式输出。'
 
-    const response = await callAI(prompt, systemPrompt, 4096, providerConfigId, modelId)
+    const response = await callAI(prompt, systemPrompt, 4096, providerConfigId, modelId, { temperature: 0.3 })
     const result = extractJsonFromResponse(response)
 
     // 确保返回的值符合预期格式

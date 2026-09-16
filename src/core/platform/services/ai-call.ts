@@ -108,13 +108,17 @@ function pickFirstChatModelId(
 
 /**
  * 调用 AI 生成（非流式）
+ *
+ * 2026-09-16 review P0 修复：增加 opts.temperature 透传。此前结构化抽取（场景/分镜 JSON）
+ * 与自由创作共用 provider 默认 0.7，格式抖动是下游解析兜底链的根因——JSON 任务建议 0.2~0.3。
  */
 export async function callAI(
   prompt: string,
   systemPrompt: string,
   maxTokens: number = 8192,
   providerConfigId?: string,
-  modelId?: string
+  modelId?: string,
+  opts?: { temperature?: number }
 ): Promise<string> {
   const providerInfo = await getProviderConfig(providerConfigId)
   if (!providerInfo) {
@@ -164,7 +168,10 @@ export async function callAI(
   const t0 = Date.now()
   let result: { success: boolean; content?: string; error?: string }
   try {
-    result = await provider.chatSync(context, { maxTokens })
+    result = await provider.chatSync(context, {
+      maxTokens,
+      ...(opts?.temperature !== undefined ? { temperature: opts.temperature } : {}),
+    })
   } catch (e: any) {
     aiLogger.error('text 调用失败', {
       callType: 'text',
@@ -212,6 +219,7 @@ export async function callVLM(
   maxTokens: number = 2048,
   providerConfigId?: string,
   modelId?: string,
+  opts?: { temperature?: number },
 ): Promise<string> {
   const providerInfo = await getProviderConfig(providerConfigId)
   if (!providerInfo) {
@@ -252,7 +260,10 @@ export async function callVLM(
   const t0 = Date.now()
   let result: { success: boolean; content?: string; error?: string }
   try {
-    result = await provider.chatSync(context, { maxTokens })
+    result = await provider.chatSync(context, {
+      maxTokens,
+      ...(opts?.temperature !== undefined ? { temperature: opts.temperature } : {}),
+    })
   } catch (e: any) {
     aiLogger.error('vlm 调用失败', {
       callType: 'vlm',
@@ -284,24 +295,117 @@ export async function callVLM(
 // ==================== JSON 解析 ====================
 
 /**
- * 解析 JSON 字符串，处理 AI 常见格式问题
+ * 解析 JSON 字符串，处理 AI 常见格式问题。
+ *
+ * 2026-09-16 review P0 修复：旧实现把「清洗」当作破坏性前置——首 parse 之前就
+ * 把字符串值内的中文引号替换成未转义 ASCII 引号（对白文本极常见，如「他说："你好"」），
+ * JSON.parse 必失败；`\/\/.*` 注释剥离还会砍掉值内 URL（http:// → http:）。
+ * 结构化场景（场景 JSON）解析失败后上游静默丢弃场景，产出只剩正文。
+ *
+ * 现改为「先 parse，失败才恢复」的渐进阶梯，每级只在上一级失败后生效：
+ *   1. 直接 parse —— 合规输出零损耗快路径；
+ *   2. 非破坏修复 —— 仅在字符串外剥离注释 + 移除尾随逗号；
+ *   3. 结构修复 —— 字符串外的中文引号转 ASCII 引号（修"整段用中文引号包裹"的输出风格），
+ *      字符串**值内**的中文引号原样保留；顺带修复值内非法转义 \'。
  */
 export function parseJsonString(jsonStr: string): any {
-  // 移除可能存在的注释（JSON 不支持注释，但有些 AI 会添加）
-  const cleaned = jsonStr
-    // 移除单行注释
-    .replace(/\/\/.*$/gm, '')
-    // 移除多行注释
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    // 移除尾随逗号（JSON 不支持）
-    .replace(/,(\s*[}\]])/g, '$1')
-    // 修复可能被转义的引号问题
-    .replace(/\\'/g, "'")
-    // 将中文引号转换为标准双引号（AI 经常在内容中使用中文引号）
-    .replace(/"/g, '"')
-    .replace(/"/g, '"')
+  const raw = String(jsonStr ?? '')
+  // 1. 合规 JSON 直接解析——任何预处理对合法输入都是有损风险
+  try {
+    return JSON.parse(raw)
+  } catch {
+    /* 进入恢复阶梯 */
+  }
 
-  return JSON.parse(cleaned)
+  // 2. 非破坏修复：字符串外注释 + 尾随逗号
+  try {
+    return JSON.parse(stripTrailingCommas(stripJsonCommentsOutsideStrings(raw)))
+  } catch {
+    /* 下一级 */
+  }
+
+  // 3. 结构中文引号 + 非法 \' 转义
+  try {
+    const converted = convertChineseQuotesOutsideStrings(
+      stripJsonCommentsOutsideStrings(raw),
+    ).replace(/\\'/g, "'")
+    return JSON.parse(stripTrailingCommas(converted))
+  } catch {
+    throw new Error('无法按 JSON 解析 AI 输出（已尝试注释/尾随逗号/中文引号恢复）')
+  }
+}
+
+/** 移除对象/数组字面量末尾的逗号（JSON 不支持尾随逗号） */
+function stripTrailingCommas(json: string): string {
+  return json.replace(/,(\s*[}\]])/g, '$1')
+}
+
+/**
+ * 逐字符扫描，只对 JSON **字符串外**的部分应用注释剥离：
+ * 值内 `//`（URL、路径）与中文引号内容不受影响。
+ */
+function stripJsonCommentsOutsideStrings(json: string): string {
+  let out = ''
+  let inString = false
+  let escaped = false
+  for (let i = 0; i < json.length; i++) {
+    const ch = json[i]
+    if (inString) {
+      out += ch
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') {
+      inString = true
+      out += ch
+      continue
+    }
+    if (ch === '/' && json[i + 1] === '/') {
+      while (i < json.length && json[i] !== '\n') i++
+      out += '\n'
+      continue
+    }
+    if (ch === '/' && json[i + 1] === '*') {
+      i += 2
+      while (i < json.length && !(json[i] === '*' && json[i + 1] === '/')) i++
+      i++ // 跳过结尾 '/'（循环再 +1）
+      continue
+    }
+    out += ch
+  }
+  return out
+}
+
+/**
+ * 把字符串**外**的中文引号（“ ”）转换为 ASCII 双引号——修「键/值整体用中文引号包裹」
+ * 的输出风格；已在 ASCII 字符串内的中文引号是对白内容，原样保留。
+ */
+function convertChineseQuotesOutsideStrings(json: string): string {
+  let out = ''
+  let inString = false
+  let escaped = false
+  for (const ch of json) {
+    if ((ch === '“' || ch === '”') && !inString) {
+      out += '"'
+      continue
+    }
+    if (inString) {
+      out += ch
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') {
+      inString = true
+      out += ch
+      continue
+    }
+    out += ch
+  }
+  return out
 }
 
 /**

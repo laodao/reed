@@ -10,7 +10,7 @@
 import { promises as fs } from 'node:fs'
 import { callVLM, parseJsonString, extractJsonFromResponse } from '../narrative/ai/_helpers'
 import type { ParsedShot } from '@core/database/entities/episode-production/reference-video-analysis.entity'
-import type { ShotType, CameraAngle, CameraMovement } from '@shared/types/episode-production/narrative.types'
+import type { CameraAngle, CameraMovement } from '@shared/types/episode-production/narrative.types'
 import { VLM_SHOT_TYPE_MAP } from '@shared/types/episode-production/narrative.types'
 
 /**
@@ -120,6 +120,7 @@ export function createVlmShotInferrer(opts: {
       1024,
       opts.providerConfigId,
       opts.modelId,
+      { temperature: 0.2 },
     )
 
     let parsed: any

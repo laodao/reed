@@ -989,7 +989,7 @@ export class EpisodeScriptGenerator {
     const systemPrompt =
       '你是一个专业的影视编剧，擅长将小说转换为视频剧本。请严格按照要求格式输出，所有引用使用提供的 binding ID。'
 
-    const response = await callAI(prompt, systemPrompt, 8192, providerConfigId, modelId)
+    const response = await callAI(prompt, systemPrompt, 8192, providerConfigId, modelId, { temperature: 0.3 })
     const result = extractJsonFromResponse(response)
 
     if (!result.synopsis || !Array.isArray(result.scenes)) {
@@ -1027,6 +1027,7 @@ export class EpisodeScriptGenerator {
       16000,
       input.providerConfigId,
       input.modelId,
+      { temperature: 0.3 },
     )
     const result = this.extractFullScriptFromResponse(response, input.roster)
 
@@ -1069,6 +1070,7 @@ export class EpisodeScriptGenerator {
       16000,
       input.providerConfigId,
       input.modelId,
+      { temperature: 0.3 },
     )
     const result = this.extractFullScriptFromResponse(response, input.roster)
     if (result.scenes.length === 0) {
@@ -1178,7 +1180,7 @@ ${synopsis}`
     const systemPrompt =
       '你是一位专业的影视编剧。请严格按照要求格式输出场景数据，所有引用使用提供的 binding ID。不要添加任何开场白或结束语。'
 
-    const response = await callAI(prompt, systemPrompt, 8192, providerConfigId, modelId)
+    const response = await callAI(prompt, systemPrompt, 8192, providerConfigId, modelId, { temperature: 0.3 })
 
     // 解析 JSON
     const scenesMatch = response.match(/===SCENES_JSON===\s*([\s\S]*?)\s*===SCENES_JSON_END===/)
