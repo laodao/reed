@@ -274,7 +274,11 @@ describe('buildFilterComplex (pure)', () => {
     })
     expect(fc).toContain('scale=1280:720')
     expect(fc).toContain('[v0_n]null[outv]')
-    expect(fc).toContain('[0:a]anull[outa]')
+    // 2026-09-16 P0-RD1：单段音轨也走 48k 归一 + apad/atrim 对齐链
+    expect(fc).toContain(
+      '[0:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000,apad,atrim=0:3,asetpts=N/SR/TB[au0]',
+    )
+    expect(fc).toContain('[au0]anull[outa]')
   })
 
   it('两段 + cut（无 transition）：xfade=fade duration=0', () => {
@@ -317,7 +321,10 @@ describe('buildFilterComplex (pure)', () => {
       srtPath: '/tmp/x.srt',
     })
     expect(fc).toContain("subtitles='/tmp/x.srt'")
-    expect(fc).toContain('[0:a][1:a]concat=n=2:v=0:a=1[outa]')
+    // 单元音频按 xfade 扣减对齐（shot0 len=3-0.5=2.5），concat 单元产物
+    expect(fc).toContain('[au0][au1]concat=n=2:v=0:a=1[outa]')
+    expect(fc).toContain('atrim=0:2.5')
+    expect(fc).toContain('atrim=0:3')
   })
 })
 
@@ -342,7 +349,9 @@ describe('buildFilterComplex 音轨/帧率（复核修复 P1-7）', () => {
       width: 1280,
       height: 720,
     })
-    expect(fc).toContain('[0:a][1:a]concat=n=2:v=0:a=1[outa]')
+    expect(fc).toContain('[au0][au1]concat=n=2:v=0:a=1[outa]')
+    expect(fc).toContain('[0:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000')
+    expect(fc).toContain('[1:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000')
   })
 
   it('部分无音轨：无音轨输入映射到静音占位流（编号 = 文件数起顺延）', () => {
@@ -353,12 +362,13 @@ describe('buildFilterComplex 音轨/帧率（复核修复 P1-7）', () => {
       audioFlags: [true, false],
     })
     // 第 2 路无音轨 → 用静音占位输入（文件数 2 + 第 0 个静音 = 流 2）
-    expect(fc).toContain('[0:a][2:a]concat=n=2:v=0:a=1[outa]')
-    // 静音占位规格与 audioFlags 对齐
-    expect(buildSilentInputSpecs([true, false])).toEqual(['anullsrc=r=44100:cl=stereo'])
+    expect(fc).toContain('[2:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000')
+    expect(fc).toContain('[au0][au1]concat=n=2:v=0:a=1[outa]')
+    // 静音占位规格与 audioFlags 对齐（2026-09-16 P0-RD1：44100 → 48000 与主流 t2v 音轨一致）
+    expect(buildSilentInputSpecs([true, false])).toEqual(['anullsrc=r=48000:cl=stereo'])
     expect(buildSilentInputSpecs([false, false])).toEqual([
-      'anullsrc=r=44100:cl=stereo',
-      'anullsrc=r=44100:cl=stereo',
+      'anullsrc=r=48000:cl=stereo',
+      'anullsrc=r=48000:cl=stereo',
     ])
     expect(buildSilentInputSpecs(undefined)).toEqual([])
   })
@@ -370,7 +380,29 @@ describe('buildFilterComplex 音轨/帧率（复核修复 P1-7）', () => {
       height: 720,
       audioFlags: [false, false],
     })
-    expect(fc).toContain('[2:a][3:a]concat=n=2:v=0:a=1[outa]')
+    expect(fc).toContain('[2:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000')
+    expect(fc).toContain('[3:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000')
+    expect(fc).toContain('[au0][au1]concat=n=2:v=0:a=1[outa]')
+  })
+
+  it('配音混入（P0-CM1）：附加文件按单元归一 + amix + 输入编号 = 视频数+占位数顺延', () => {
+    const fc = buildFilterComplex({
+      shots: [makeShot(), makeShot({ shotNumber: 2 })],
+      width: 1280,
+      height: 720,
+      audioFlags: [true, false],
+      extraAudioFiles: [['a.wav', 'b.wav'], ['c.wav']],
+    })
+    // 物理输入顺序：视频(0,1) → 配音文件(2,3,4) → 静音占位(5)；
+    // 单元0 音源 = [0:a] + [2:a] + [3:a]（视频自带音轨在前），单元1 = 占位[5:a] + [4:a]
+    expect(fc).toContain('[0:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000[as0_0]')
+    expect(fc).toContain('[2:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000[as0_1]')
+    expect(fc).toContain('[3:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000[as0_2]')
+    expect(fc).toContain('[as0_0][as0_1][as0_2]amix=inputs=3:duration=longest[am0]')
+    expect(fc).toContain('[5:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000[as1_0]')
+    expect(fc).toContain('[4:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000[as1_1]')
+    expect(fc).toContain('[as1_0][as1_1]amix=inputs=2:duration=longest[am1]')
+    expect(fc).toContain('[au0][au1]concat=n=2:v=0:a=1[outa]')
   })
 
   it('scale 链带 fps 归一（xfade 要求两路 fps 一致）', () => {
