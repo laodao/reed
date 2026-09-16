@@ -163,6 +163,8 @@ const IPC_CHANNELS = {
   EP_GENERATE_SCENES: 'ep:generate-scenes',
   EP_GENERATE_STORYBOARD: 'ep:generate-storyboard',
   EP_GENERATE_STORYBOARDS: 'ep:generate-storyboards',
+  // 2026-09-16 分镜与资产识别联合生成（D1/D2/D8）
+  EP_COGEN_STORYBOARDS: 'ep:cogen-storyboards',
   // spec 2026-05-27：单分镜 AI 填充
   EP_FILL_STORYBOARD: 'ep:fill-storyboard',
   // spec 2026-05-08：场景级 AI 润色
@@ -2415,6 +2417,13 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.EP_GENERATE_STORYBOARD, sceneId, providerConfigId, modelId),
     generateStoryboards: (scriptId: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_GENERATE_STORYBOARDS, scriptId, providerConfigId, modelId),
+    /**
+     * 2026-09-16 联合生成（D8 替换旧「批量生成分镜」入口）：
+     * 逐场景一次 LLM 调用产出资产清单 + 分镜，代码侧建/复用 binding 并回填全部 ID。
+     * 返回 { episodeId, results: [{ sceneId, shotCount, createdBindings, reusedBindings, error? }] }。
+     */
+    cogenStoryboards: (episodeId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_COGEN_STORYBOARDS, episodeId),
     // spec 2026-05-28：单分镜 AI 填充（扩展版，覆盖所有字段）
     fillStoryboard: (
       storyboardId: string,

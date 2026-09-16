@@ -35,6 +35,7 @@ import type {
   KeyframeInput,
 } from './video-provider-adapter'
 import { buildSegmentPrompt } from './segment-planner'
+import { resolveVideoParamsForEpisode } from './project-video-params'
 import { advanceEpisodeStatusForStoryboard } from '../../workflow/episode-status-advance'
 
 const DEFAULT_WIDTH = 1920
@@ -113,12 +114,17 @@ export class SegmentVideoService {
     })
 
     try {
+      // D6：项目 config.videoQuality/videoSteps 透传（未配置 → provider 默认 high/20）
+      const videoParams = await resolveVideoParamsForEpisode(this.ds, seg.episodeId)
+
       const result = await this.invokeGeneration(seg, shots, {
         prompt,
         durationSec,
         width,
         height,
         forceMode: input.forceMode,
+        quality: videoParams.quality,
+        steps: videoParams.steps,
       })
 
       await this.segmentRepo.update(seg.id, {
@@ -164,6 +170,8 @@ export class SegmentVideoService {
       width: number
       height: number
       forceMode?: VideoMode
+      quality?: 'high' | 'low'
+      steps?: number
     },
   ): Promise<{ match: VideoModeMatch; output: VideoSegmentOutput; keyframesUsed: KeyframeInput[] }> {
     // 首帧参考图：首镜头的关键帧（按 frameIndex 升序，取有图的帧）
@@ -200,6 +208,8 @@ export class SegmentVideoService {
       referenceImages: keyframesUsed.map(k => k.imagePath),
       size: `${opts.width}x${opts.height}`,
       durationSec: opts.durationSec,
+      quality: opts.quality,
+      steps: opts.steps,
     }
 
     let output: VideoSegmentOutput
@@ -213,6 +223,8 @@ export class SegmentVideoService {
           durationSec: opts.durationSec,
           width: opts.width,
           height: opts.height,
+          quality: opts.quality,
+          steps: opts.steps,
         })
       } else if (match.mode === 'image2video') {
         if (!this.adapter.imageToVideo) {
@@ -226,6 +238,8 @@ export class SegmentVideoService {
           durationSec: opts.durationSec,
           width: opts.width,
           height: opts.height,
+          quality: opts.quality,
+          steps: opts.steps,
         })
       } else {
         throw new Error('片段级生成 V1 不支持 keyframes2video（逐镜关键帧请用单镜生成）')

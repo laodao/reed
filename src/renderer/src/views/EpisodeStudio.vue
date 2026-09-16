@@ -19,6 +19,7 @@
               :value="ep.id"
             />
           </el-select>
+          <el-button text @click="settingsVisible = true"><el-icon><Setting /></el-icon> 设置</el-button>
           <div class="tab-nav">
             <button
               v-for="t in tabs"
@@ -62,6 +63,14 @@
         />
       </template>
     </EpisodeStudioLayout>
+
+    <SettingsDialog
+      v-model="settingsVisible"
+      :all-lw-projects="allLwProjects"
+      :provider-configs="providerConfigs"
+      :provider-templates="providerTemplates"
+      @saved="onSettingsSaved"
+    />
   </div>
 </template>
 
@@ -73,15 +82,18 @@
  */
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft } from '@element-plus/icons-vue'
+import { ArrowLeft, Setting } from '@element-plus/icons-vue'
 import EpisodeStudioLayout from '@/components/episode-production/studio/EpisodeStudioLayout.vue'
 import EpAgentPanel from '@/components/episode-production/agent/EpAgentPanel.vue'
+import SettingsDialog from '@/components/episode-production/dialogs/SettingsDialog.vue'
 import { useEpStudioContext, type EpStudioTab } from '@/composables/useEpStudioContext'
+import { useEpProjectStore } from '@/stores/episode-production'
 import StageScriptView from '@/components/episode-production/script/StageScriptView.vue'
 import StageAssetView from '@/components/episode-production/asset/StageAssetView.vue'
 import StageStoryboardTab from '@/components/episode-production/storyboard/StageStoryboardTab.vue'
 import StageComposeTab from '@/components/episode-production/compose/StageComposeTab.vue'
 import PlaceholderTab from '@/components/episode-production/studio/PlaceholderTab.vue'
+import type { UserProviderConfig, ProviderTemplate } from '../../../shared/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -104,6 +116,43 @@ const tabs: Array<{ key: EpStudioTab; label: string }> = [
 const episodes = ref<any[]>([])
 const currentEpisode = ref<any>(null)
 const resolutionReady = computed(() => !!projectId && !!episodeId.value)
+
+// ===== 项目设置对话框（D3） =====
+const projectStore = useEpProjectStore()
+const settingsVisible = ref(false)
+const allLwProjects = ref<Array<{ id: string; name: string }>>([])
+const providerConfigs = ref<UserProviderConfig[]>([])
+const providerTemplates = ref<ProviderTemplate[]>([])
+
+async function loadAllLwProjects(): Promise<void> {
+  try {
+    const response = await window.electronAPI.longwriting.getProjects()
+    if (response.success && response.data) {
+      allLwProjects.value = response.data.map((p: any) => ({ id: p.id, name: p.name }))
+    }
+  } catch (error) {
+    console.error('加载长文项目列表失败:', error)
+  }
+}
+
+async function loadProviderConfigs(): Promise<void> {
+  try {
+    const templatesResponse = await window.electronAPI.providerTemplate.list()
+    if (templatesResponse.success && templatesResponse.templates) {
+      providerTemplates.value = templatesResponse.templates
+    }
+    const response = await window.electronAPI.providerConfig.list()
+    if (response.success && response.data) {
+      providerConfigs.value = response.data.filter((c: UserProviderConfig) => c.isEnabled)
+    }
+  } catch (error) {
+    console.error('加载提供商配置失败:', error)
+  }
+}
+
+async function onSettingsSaved(): Promise<void> {
+  await projectStore.loadProject(projectId)
+}
 
 /** 工作区组件：按 tab 切换（剧本/资产 tab 的组件内部自管左导航+中央工作区） */
 const centerPanel = computed(() => {
@@ -168,6 +217,11 @@ function onTabDataChanged(_sections: string[]): void {
 watch(() => episodeId.value, () => void loadEpisode())
 
 onMounted(async () => {
+  await Promise.all([
+    projectStore.loadProject(projectId),
+    loadAllLwProjects(),
+    loadProviderConfigs(),
+  ])
   await loadEpisodes()
   if (!episodeId.value && episodes.value.length > 0 && episodes.value[0]?.id) {
     episodeId.value = episodes.value[0].id

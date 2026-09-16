@@ -57,6 +57,9 @@ export interface ImageGenerator {
     prompt: string
     negativePrompt?: string
     label: string
+    /** 输出尺寸（可选；不传由实现方按各自默认决定） */
+    width?: number
+    height?: number
   }): Promise<{ imagePath: string; thumbnailPath: string | null }>
 }
 

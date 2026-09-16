@@ -1,0 +1,76 @@
+/**
+ * 项目级视频画质参数读取 helper（tasks/2026-09-16-storyboard-asset-cogen D6）
+ * @module platform/episode-production/render/video/project-video-params
+ *
+ * 分镜 UI 路径（片段级 SegmentVideoService / 单镜 VideoSegmentService）生成视频时，
+ * 从 video_projects.config 读 videoQuality / videoSteps 透传到 VideoGenerationRequest
+ * （ComfyUI H3 provider 已支持，见评审 #105）。未配置 → 返回 {}，调用方不传字段，
+ * provider 保持各自默认（H3 为 high / steps 20）。
+ */
+
+import type { DataSource } from 'typeorm'
+import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
+import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
+import { EpisodeScriptEntity } from '@core/database/entities/episode-production/episode-script.entity'
+import { VideoEpisodeEntity } from '@core/database/entities/episode-production/video-episode.entity'
+import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
+import type { VideoProjectConfig } from '@shared/types/episode-production/workflow.types'
+
+export interface ProjectVideoParams {
+  quality?: 'high' | 'low'
+  steps?: number
+}
+
+/** 从 video_projects.config 读视频画质参数；项目不存在/未配置 → {}（provider 默认） */
+export async function getProjectVideoParams(
+  ds: DataSource,
+  projectId: string,
+): Promise<ProjectVideoParams> {
+  if (!ds.hasMetadata(VideoProjectEntity)) return {}
+  const project = await ds
+    .getRepository(VideoProjectEntity)
+    .findOne({ where: { id: projectId } })
+  const cfg = (project?.config ?? {}) as Partial<VideoProjectConfig>
+  const params: ProjectVideoParams = {}
+  if (cfg.videoQuality === 'high' || cfg.videoQuality === 'low') {
+    params.quality = cfg.videoQuality
+  }
+  if (typeof cfg.videoSteps === 'number' && cfg.videoSteps > 0) {
+    params.steps = cfg.videoSteps
+  }
+  return params
+}
+
+/** 片段级入口：episode → project（链断 → {}，不阻塞生成） */
+export async function resolveVideoParamsForEpisode(
+  ds: DataSource,
+  episodeId: string,
+): Promise<ProjectVideoParams> {
+  if (!ds.hasMetadata(VideoEpisodeEntity)) return {}
+  const episode = await ds
+    .getRepository(VideoEpisodeEntity)
+    .findOne({ where: { id: episodeId } })
+  if (!episode?.projectId) return {}
+  return await getProjectVideoParams(ds, episode.projectId)
+}
+
+/** 单镜入口：storyboard → scene → episodeScript → episode → project（链断 → {}） */
+export async function resolveVideoParamsForStoryboard(
+  ds: DataSource,
+  storyboardId: string,
+): Promise<ProjectVideoParams> {
+  if (!ds.hasMetadata(StoryboardEntity)) return {}
+  const sb = await ds
+    .getRepository(StoryboardEntity)
+    .findOne({ where: { id: storyboardId } })
+  if (!sb || !ds.hasMetadata(SceneScriptEntity)) return {}
+  const scene = await ds
+    .getRepository(SceneScriptEntity)
+    .findOne({ where: { id: sb.sceneScriptId } })
+  if (!scene || !ds.hasMetadata(EpisodeScriptEntity)) return {}
+  const script = await ds
+    .getRepository(EpisodeScriptEntity)
+    .findOne({ where: { id: scene.episodeScriptId } })
+  if (!script?.episodeId) return {}
+  return await resolveVideoParamsForEpisode(ds, script.episodeId)
+}

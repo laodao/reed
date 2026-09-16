@@ -96,6 +96,10 @@ export interface TextToVideoInput {
   width?: number
   height?: number
   negativePrompt?: string
+  /** 项目 config.videoQuality 透传（D6）；不传 → provider 默认 */
+  quality?: 'high' | 'low'
+  /** 项目 config.videoSteps 透传（D6）；不传 → provider 默认 */
+  steps?: number
 }
 
 export interface ImageToVideoInput {
@@ -105,6 +109,10 @@ export interface ImageToVideoInput {
   width?: number
   height?: number
   negativePrompt?: string
+  /** 项目 config.videoQuality 透传（D6）；不传 → provider 默认 */
+  quality?: 'high' | 'low'
+  /** 项目 config.videoSteps 透传（D6）；不传 → provider 默认 */
+  steps?: number
 }
 
 export interface KeyframesToVideoInput {
@@ -115,6 +123,10 @@ export interface KeyframesToVideoInput {
   width?: number
   height?: number
   negativePrompt?: string
+  /** 项目 config.videoQuality 透传（D6）；不传 → provider 默认 */
+  quality?: 'high' | 'low'
+  /** 项目 config.videoSteps 透传（D6）；不传 → provider 默认 */
+  steps?: number
   /**
    * spec 2026-05-09 ep-redesign §3.2 C1：原生 subject 注入。
    * 仅 capabilities.subjectSupport=true 时有效；caller 由 keyframe-generation 决定是否传入。

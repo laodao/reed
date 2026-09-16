@@ -491,20 +491,29 @@ function onEnterScene(sc: any): void {
 }
 
 async function onGenerateAllStoryboards(): Promise<void> {
-  // 注意：ep:generate-storyboards 需要的是剧本 id（episodeScriptId），不是 episode.id。
-  // getEpisode 返回的是剧集对象，剧本 id 在其 scriptId 字段上（load() 已保证存在）。
-  const scriptId = script.value?.scriptId
-  if (!scriptId || generating.value) return
+  // 2026-09-16 联合生成（D8）：改走 ep:cogen-storyboards（分镜 + 资产识别一次 LLM 调用，
+  // 绑定 ID 由代码侧构造回填）。参数是 episode.id（service 内部自解析 scriptId）。
+  if (!script.value?.scriptId || generating.value) return
   generating.value = true
   try {
-    const r = await window.electronAPI.episodeProduction.generateStoryboards(scriptId)
+    const r = await window.electronAPI.episodeProduction.cogenStoryboards(props.episodeId)
     if (r.success) {
-      ElMessage.success('分镜已批量生成')
+      const results = (r.data?.results ?? []) as Array<{ sceneNumber: number; shotCount: number; error?: string }>
+      const failed = results.filter(s => s.error)
+      if (failed.length > 0) {
+        ElMessage.warning(
+          `联合生成完成：${results.length - failed.length} 个场景成功，${failed.length} 个失败` +
+          `（场景 ${failed[0].sceneNumber}：${failed[0].error}）`,
+        )
+      } else {
+        ElMessage.success('分镜已批量生成（含资产绑定）')
+      }
       await Promise.all(scenes.value.map(s => loadStoryboards(s.id)))
       // 新生成的分镜立即自动分段（片段是分镜页最小单元，不允许出现裸分镜）
       autoSegDoneFor = null
       await autoEnsureSegments()
     } else {
+      // 失败消息原样展示（含"去项目设置配置模型"引导）
       ElMessage.error(r.error || '生成失败')
     }
   } catch (e: any) {

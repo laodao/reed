@@ -12,6 +12,7 @@ import type { IpcResponse } from '@shared/types/ipc.types'
 import type { Storyboard } from '@shared/types/story-to-video.types'
 import { StoryToVideoAIService } from '@core/packs/episode-production/services/story-to-video-ai.service'
 import { StoryboardService, normalizeShotNumbers } from '@core/platform/episode-production/narrative/services/storyboard.service'
+import { StoryboardCogenService } from '@core/platform/episode-production/narrative/services/storyboard-cogen.service'
 
 export function registerStoryboardHandlers(): void {
   // ==================== 分镜管理 ====================
@@ -24,6 +25,8 @@ export function registerStoryboardHandlers(): void {
   // ==================== AI 生成（分镜） ====================
   ipcBridge.handle('ep:generate-storyboard', handleGenerateStoryboard)
   ipcBridge.handle('ep:generate-storyboards', handleGenerateStoryboards)
+  // 2026-09-16 联合生成（D1/D2/D8）：分镜 + 资产识别单次 LLM 调用，绑定由代码构造
+  ipcBridge.handle('ep:cogen-storyboards', handleCogenStoryboards)
   // spec 2026-05-27：单分镜 AI 填充
   ipcBridge.handle('ep:fill-storyboard', handleFillStoryboard)
 
@@ -377,6 +380,31 @@ async function handleGenerateStoryboards(
     return { success: true, data: allStoryboards }
   } catch (error: any) {
     return { success: false, error: error.message || '批量生成分镜失败' }
+  }
+}
+
+/**
+ * 2026-09-16 联合生成（tasks/2026-09-16-storyboard-asset-cogen · D1/D2/D8）：
+ * 整集逐场景一次 LLM 调用同时产出资产清单 + 分镜，代码侧建/复用 binding 并
+ * 回填全部 ID。未配置 scriptModel 时返回明确报错（引导去项目设置配置模型）。
+ */
+async function handleCogenStoryboards(
+  _event: any,
+  episodeId: string,
+): Promise<IpcResponse> {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) {
+      return { success: false, error: '数据库未初始化' }
+    }
+    if (!episodeId) return { success: false, error: 'episodeId 不能为空' }
+
+    const result = await new StoryboardCogenService(db.dataSource).cogenStoryboardsForEpisode(
+      episodeId,
+    )
+    return { success: true, data: result }
+  } catch (error: any) {
+    return { success: false, error: error.message || '联合生成分镜失败' }
   }
 }
 

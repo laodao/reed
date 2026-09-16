@@ -88,6 +88,8 @@ export async function adaptBaseVideoProvider(
         duration: input.durationSec,
         width: input.width,
         height: input.height,
+        quality: input.quality,
+        steps: input.steps,
       })
     }
   }
@@ -103,6 +105,8 @@ export async function adaptBaseVideoProvider(
         duration: input.durationSec,
         width: input.width,
         height: input.height,
+        quality: input.quality,
+        steps: input.steps,
       })
     }
   }
@@ -123,6 +127,8 @@ export async function adaptBaseVideoProvider(
         duration: input.durationSec,
         width: input.width,
         height: input.height,
+        quality: input.quality,
+        steps: input.steps,
       })
     }
   }

@@ -29,6 +29,7 @@ import {
   clampKeyframesToCapability,
   type VideoModeMatch,
 } from './provider-capability-matcher'
+import { resolveVideoParamsForStoryboard } from './project-video-params'
 import type {
   VideoProviderAdapter,
   VideoMode,
@@ -122,6 +123,8 @@ export class VideoSegmentService {
 
     const promptForVideo =
       sb.frameDescription || sb.subject || '' // 简化：后续可拼更详细的 prompt
+    // D6：项目 config.videoQuality/videoSteps 透传（未配置 → provider 默认 high/20）
+    const videoParams = await resolveVideoParamsForStoryboard(this.ds, sb.id)
     let output: VideoSegmentOutput
     try {
       output = await this.invokeAdapter({
@@ -131,6 +134,8 @@ export class VideoSegmentService {
         height,
         keyframes: keyframesUsed,
         prompt: promptForVideo,
+        quality: videoParams.quality,
+        steps: videoParams.steps,
       })
     } catch (e) {
       // 失败写回 error 状态，UI 不再停留在"待生成/生成中"
@@ -190,8 +195,10 @@ export class VideoSegmentService {
     height: number
     keyframes: KeyframeInput[]
     prompt: string
+    quality?: 'high' | 'low'
+    steps?: number
   }): Promise<VideoSegmentOutput> {
-    const { mode, durationSec, width, height, keyframes, prompt } = opts
+    const { mode, durationSec, width, height, keyframes, prompt, quality, steps } = opts
     // 全局 logger 结构化日志（spec 2026-05-10 e2e 补充）
     const { createLogger } = await import('@core/utils/logger')
     const aiLogger = createLogger('ai-call')
@@ -203,6 +210,8 @@ export class VideoSegmentService {
       referenceImages: keyframes.map(k => k.imagePath),
       size: `${width}x${height}`,
       durationSec,
+      quality,
+      steps,
     }
     let result: VideoSegmentOutput
     try {
@@ -210,7 +219,7 @@ export class VideoSegmentService {
         if (!this.adapter.textToVideo) {
           throw new Error('Provider 声明支持 text2video 但未实现 textToVideo 方法')
         }
-        result = await this.adapter.textToVideo({ prompt, durationSec, width, height })
+        result = await this.adapter.textToVideo({ prompt, durationSec, width, height, quality, steps })
       } else if (mode === 'image2video') {
         if (!this.adapter.imageToVideo) {
           throw new Error('Provider 声明支持 image2video 但未实现 imageToVideo 方法')
@@ -223,6 +232,8 @@ export class VideoSegmentService {
           durationSec,
           width,
           height,
+          quality,
+          steps,
         })
       } else {
         // keyframes2video
@@ -238,6 +249,8 @@ export class VideoSegmentService {
           durationSec,
           width,
           height,
+          quality,
+          steps,
         })
       }
     } catch (e: any) {

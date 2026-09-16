@@ -146,6 +146,17 @@
         </el-select>
         <div class="model-hint">请选择图生视频模型，当前支持阿里百炼、火山方舟平台</div>
       </el-form-item>
+      <el-form-item label="视频质量">
+        <el-select v-model="form.config.videoQuality" style="width: 100%">
+          <el-option label="高（high，质量好、耗时长）" value="high" />
+          <el-option label="低（low，快速出片）" value="low" />
+        </el-select>
+        <div class="model-hint">low 用于快速验收，定稿建议回 high</div>
+      </el-form-item>
+      <el-form-item label="视频步数">
+        <el-input-number v-model="form.config.videoSteps" :min="1" :max="50" style="width: 100%" />
+        <div class="model-hint">默认 20；turbo 工作流用 4</div>
+      </el-form-item>
       <el-form-item label="音频生成">
         <el-select
           v-model="form.config.audioModel"
@@ -227,7 +238,9 @@ const form = reactive({
     storyboardModel: '' as string,
     imageModel: '' as string,
     videoModel: '' as string,
-    audioModel: '' as string
+    audioModel: '' as string,
+    videoQuality: 'high' as string,
+    videoSteps: 20
   }
 })
 
@@ -244,7 +257,9 @@ watch(() => props.modelValue, (val) => {
       storyboardModel: modelToString(config.storyboardModel),
       imageModel: modelToString(config.imageModel),
       videoModel: modelToString(config.videoModel),
-      audioModel: modelToString(config.audioModel)
+      audioModel: modelToString(config.audioModel),
+      videoQuality: config.videoQuality || 'high',
+      videoSteps: config.videoSteps ?? 20
     }
   }
 })
@@ -367,7 +382,9 @@ async function handleSubmit() {
     storyboardModel: stringToModel(form.config.storyboardModel),
     imageModel: stringToModel(form.config.imageModel),
     videoModel: stringToModel(form.config.videoModel),
-    audioModel: stringToModel(form.config.audioModel)
+    audioModel: stringToModel(form.config.audioModel),
+    videoQuality: (form.config.videoQuality === 'low' ? 'low' : 'high') as 'high' | 'low',
+    videoSteps: form.config.videoSteps
   }
 
   const success = await projectStore.updateProject(projectStore.currentProject.id, {

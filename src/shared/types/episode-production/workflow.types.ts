@@ -129,6 +129,16 @@ export interface VideoProjectConfig {
     modelId: string
   }
 
+  /**
+   * 视频生成质量（high|low，默认 high）。
+   * 透传到视频 provider 的 quality 入参（如 ComfyUI H3）；low 用于快速验收。
+   */
+  videoQuality?: 'high' | 'low'
+  /**
+   * 视频生成步数（默认 20，turbo 工作流用 4）。透传到视频 provider 的 steps 入参。
+   */
+  videoSteps?: number
+
   // 图像设置
   imageProviderId: string // 图像生成提供商
   imageModelId: string // 图像模型

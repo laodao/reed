@@ -33,6 +33,7 @@ import { StoryboardEntity } from '@core/database/entities/episode-production/sto
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
 import { EpisodeScriptEntity } from '@core/database/entities/episode-production/episode-script.entity'
 import { VideoEpisodeEntity } from '@core/database/entities/episode-production/video-episode.entity'
+import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
 import { StoryboardKeyframeEntity } from '@core/database/entities/episode-production/storyboard-keyframe.entity'
 import {
   StoryboardKeyframeRepository,
@@ -63,6 +64,24 @@ import type { SceneCharacter } from '@shared/types/episode-production'
 
 const DEFAULT_KEYFRAME_WIDTH = 1024
 const DEFAULT_KEYFRAME_HEIGHT = 1024
+
+/**
+ * 关键帧画幅跟随项目（tasks/2026-09-16-storyboard-asset-cogen D5，消除 F9 的
+ * 固定 1024×1024 与 16:9 视频画幅不匹配问题）：
+ *   16:9 → 1344×768；9:16 → 768×1344；1:1 / 缺省 → 1024×1024。
+ */
+function keyframeDimensionsForAspectRatio(
+  aspectRatio: string | null | undefined,
+): { width: number; height: number } {
+  switch (aspectRatio) {
+    case '16:9':
+      return { width: 1344, height: 768 }
+    case '9:16':
+      return { width: 768, height: 1344 }
+    default:
+      return { width: DEFAULT_KEYFRAME_WIDTH, height: DEFAULT_KEYFRAME_HEIGHT }
+  }
+}
 
 /**
  * 把 storyboard.referenceImageIds（JSON 字符串或对象）解析成
@@ -241,6 +260,12 @@ export class KeyframeGenerationService {
     // 表（spec §4.5.3 分镜内角色独立配置）
     const sceneAssets = await this.resolveSceneAssets(scene, sb.id)
 
+    // D4-3 空绑定守卫：场景名单有角色但一个绑定都解析不出来 → 拒绝生成
+    this.assertCharactersBound(scene, sceneAssets)
+
+    // D5：关键帧画幅跟随项目 config.aspectRatio（入口取一次，逐帧复用）
+    const dimensions = await this.resolveKeyframeDimensions(scene)
+
     /*
      * 用户在 ⑤ 制作 stage 为本分镜挑选的资产参考图覆盖（spec storyboard.referenceImageIds）。
      * 这里把 storyboard 级 overrides 转成每帧生成时通用的 KeyframeReferenceOverride[]，
@@ -282,6 +307,7 @@ export class KeyframeGenerationService {
           plan: planItem,
           sceneAssets,
           styleConfig,
+          dimensions,
           userPrompt: input.userPrompt ?? null,
           referenceOverrides: effectiveOverrides.length > 0 ? effectiveOverrides : null,
         })
@@ -328,6 +354,12 @@ export class KeyframeGenerationService {
     // P5-T31：传 storyboardId（同 generateKeyframesForStoryboard 路径）
     const sceneAssets = await this.resolveSceneAssets(scene, sb.id)
 
+    // D4-3 空绑定守卫（同 generateKeyframesForStoryboard）：无绑定不进入图像生成
+    this.assertCharactersBound(scene, sceneAssets)
+
+    // D5：关键帧画幅跟随项目 config.aspectRatio
+    const dimensions = await this.resolveKeyframeDimensions(scene)
+
     const keyframeCount = Math.max(1, sb.keyframeCount ?? 3)
     const plan = planKeyframes(keyframeCount)
     const planItem = plan.find((p) => p.frameIndex === old.frameIndex)
@@ -357,6 +389,7 @@ export class KeyframeGenerationService {
       plan: planItem,
       sceneAssets,
       styleConfig,
+      dimensions,
       userPrompt: effectiveUserPrompt,
       referenceOverrides,
     })
@@ -473,12 +506,14 @@ export class KeyframeGenerationService {
 
     const styleConfig = this.pickStyle(input.styleName)
     const sceneAssets = await this.resolveSceneAssets(scene, sb.id)
+    const dimensions = await this.resolveKeyframeDimensions(scene)
     return await this.generateOneKeyframe({
       storyboard: sb,
       scene,
       plan: planItem,
       sceneAssets,
       styleConfig,
+      dimensions,
       userPrompt: input.userPrompt ?? null,
     })
   }
@@ -533,6 +568,7 @@ export class KeyframeGenerationService {
 
     const styleConfig = this.pickStyle(input.styleName)
     const sceneAssets = await this.resolveSceneAssets(scene, sb.id)
+    const dimensions = await this.resolveKeyframeDimensions(scene)
     // 复用 storyboard 级资产参考图覆盖
     const sbLevelOverrides = parseSbReferenceImageIds((sb as any).referenceImageIds)
 
@@ -542,6 +578,7 @@ export class KeyframeGenerationService {
       plan: planItem,
       sceneAssets,
       styleConfig,
+      dimensions,
       userPrompt: input.userPrompt ?? null,
       referenceOverrides: sbLevelOverrides.length > 0 ? sbLevelOverrides : null,
     })
@@ -555,6 +592,47 @@ export class KeyframeGenerationService {
 
   private pickStyle(name?: keyof typeof PRESET_STYLES): StyleConfig {
     return PRESET_STYLES[name ?? 'cinematic'] ?? PRESET_STYLES.cinematic
+  }
+
+  /**
+   * D4-3 空绑定守卫（tasks/2026-09-16-storyboard-asset-cogen）：
+   * 场景级角色名单（scene.characters）非空、但 resolveSceneAssets 连一个角色绑定
+   * 都解析不出来时直接报错 —— 继续生成只会 referenceImages:[] 纯文生图静默降级
+   * （F6 的 else-if 死路 / F8 实测），成片角色必然漂移。场景本身无角色不拦截。
+   */
+  private assertCharactersBound(
+    scene: SceneScriptEntity,
+    sceneAssets: { characters: ResolvedCharacterRef[] },
+  ): void {
+    const sceneChars = (scene.characters as SceneCharacter[] | null) ?? []
+    if (sceneChars.length === 0) return
+    if (sceneAssets.characters.length > 0) return
+    throw new Error(
+      `场景 ${scene.sceneNumber} 名单中有 ${sceneChars.length} 个角色，但角色未绑定资产` +
+        `（characterBindingId 全部缺失或失效），拒绝生成关键帧。` +
+        `请先运行联合分镜生成或绑定修复（ScriptBindingFixer）后再生成。`,
+    )
+  }
+
+  /**
+   * D5：关键帧画幅跟随项目 config.aspectRatio（scene→episode→project 链路取一次）。
+   * 链路/配置缺失时回退 1024×1024（不阻塞生成；projectId 缺失会在
+   * generateOneKeyframe 写 image_assets 时按原逻辑抛错暴露）。
+   */
+  private async resolveKeyframeDimensions(
+    scene: SceneScriptEntity,
+  ): Promise<{ width: number; height: number }> {
+    try {
+      const projectId = await this.resolveProjectIdForScene(scene)
+      const project = await this.ds
+        .getRepository(VideoProjectEntity)
+        .findOne({ where: { id: projectId } })
+      const aspectRatio = (project?.config as { aspectRatio?: string } | null | undefined)
+        ?.aspectRatio
+      return keyframeDimensionsForAspectRatio(aspectRatio)
+    } catch {
+      return keyframeDimensionsForAspectRatio(null)
+    }
   }
 
   /**
@@ -736,12 +814,14 @@ export class KeyframeGenerationService {
       items: ResolvedItemRef[]
     }
     styleConfig: StyleConfig
+    /** D5：关键帧画幅（按项目 config.aspectRatio 推导，入口处取一次传入） */
+    dimensions: { width: number; height: number }
     /** P5-T26 用户额外提示词，传给 prompt-builder */
     userPrompt?: string | null
     /** 阶段 2：用户挑图覆盖 — 命中 (kind, bindingId) 的资产直接用指定 imageId 查图；其余走自动评分 */
     referenceOverrides?: KeyframeReferenceOverride[] | null
   }): Promise<StoryboardKeyframe> {
-    const { storyboard, scene, plan, sceneAssets, styleConfig, userPrompt } = args
+    const { storyboard, scene, plan, sceneAssets, styleConfig, dimensions, userPrompt } = args
 
     // 选 ref 图：先看用户 override，再走自动评分兜底
     const refImages = await this.collectReferenceImages(
@@ -778,6 +858,8 @@ export class KeyframeGenerationService {
       prompt: promptOut.prompt,
       negativePrompt: promptOut.negativePrompt,
       label: `keyframe_${plan.frameRole}_${plan.frameIndex}`,
+      width: dimensions.width,
+      height: dimensions.height,
     })
 
     // 写 image_assets 记录（type='generated'，子类型放 metadata.subType）
@@ -789,8 +871,8 @@ export class KeyframeGenerationService {
       negativePrompt: promptOut.negativePrompt,
       imagePath: generated.imagePath,
       thumbnailPath: generated.thumbnailPath ?? undefined,
-      width: DEFAULT_KEYFRAME_WIDTH,
-      height: DEFAULT_KEYFRAME_HEIGHT,
+      width: dimensions.width,
+      height: dimensions.height,
       metadata: {
         subType: 'storyboard_keyframe',
         storyboardId: storyboard.id,
