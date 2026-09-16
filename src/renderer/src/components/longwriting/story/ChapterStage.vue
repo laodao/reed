@@ -838,16 +838,17 @@ async function onLocateConflict(c: any): Promise<void> {
   }
 }
 
-/** 交主编修正：组装分级修正消息发进研讨室（会话在主进程常驻，跨视图可达） */
-async function onFixConflict(c: any): Promise<void> {
+/** 交主编修正：组装分级修正消息发进研讨室（会话在主进程常驻，跨视图可达）。
+ *  roomSend 是整轮同步 IPC（主编跑完才 resolve）——只发不等，立即提示去研讨室看进度。 */
+function onFixConflict(c: any): void {
   if (!c) return
-  try {
-    const res = await window.electronAPI.longwriting.roomSend(props.projectId, buildConflictFixMessage(c), {})
-    if (res?.success) ElMessage.success('已交主编处理——到研讨室查看进度并确认修正方案')
-    else ElMessage.warning(res?.error || '发送失败（研讨室会话可能未就绪）')
-  } catch (e: any) {
-    ElMessage.warning(e?.message || '发送失败')
-  }
+  ElMessage.success('已交主编处理——到研讨室查看进度并确认修正方案')
+  window.electronAPI.longwriting
+    .roomSend(props.projectId, buildConflictFixMessage(c), {})
+    .then((res: any) => {
+      if (!res?.success) ElMessage.warning(res?.error || '派发失败（研讨室会话可能未就绪）')
+    })
+    .catch((e: any) => ElMessage.warning(e?.message || '派发失败'))
 }
 
 // 名称映射

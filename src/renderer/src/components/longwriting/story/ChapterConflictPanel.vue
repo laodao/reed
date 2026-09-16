@@ -17,7 +17,7 @@
         </div>
         <div v-if="conflictLocLine(c)" class="ccp-loc">{{ conflictLocLine(c) }}</div>
         <div class="ccp-actions">
-          <el-button size="small" :disabled="!c.outlineId && !c.chapterNumber" @click="emit('locate', c)">定位</el-button>
+          <el-button size="small" :disabled="!canLocate(c)" @click="emit('locate', c)">定位</el-button>
           <el-button size="small" type="primary" plain @click="emit('fix', c)">交主编修正</el-button>
           <el-button size="small" @click="keep(c)">知情保留</el-button>
         </div>
@@ -70,6 +70,11 @@ const all = ref<any[]>([])
 
 const pending = computed(() => all.value.filter((c: any) => c.status !== 'kept'))
 const kept = computed(() => all.value.filter((c: any) => c.status === 'kept'))
+
+/** 可定位：有章节、有锚点条目（锚点的 outlineId 在 locs 上），或带实体名可现场重锚定 */
+function canLocate(c: any): boolean {
+  return !!(c?.outlineId || c?.chapterNumber || c?.locs?.length || c?.entityName)
+}
 
 async function load(): Promise<void> {
   loading.value = true

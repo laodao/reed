@@ -1094,7 +1094,9 @@ function buildPatchChapterToolDef(): AgentToolDef {
       conflictKey: z.string().optional().describe('关联疑点的 key（从疑点清单带来）；修正成功后自动登记 resolved，不再拦截生成'),
     }),
     dangerLevel: 'write',
-    executeTimeoutMs: 300_000,
+    // 工具内嵌图谱整章重提（3~5 次 LLM 提取）——300s 实测不够（忘川渡冒烟：patch 落库
+    // 后重建跑到超时，注册表判失败，agent 被迫自行验证收尾）。与写章工具对齐 600s。
+    executeTimeoutMs: 600_000,
     autoApprovableInWorkflow: false,
     execute: async (input, ctx) => {
       const { chapter, problem, excerpt, nth, replacement, conflictKey } = (input ?? {}) as {
