@@ -2,6 +2,14 @@
 
 来源：4 路并行 subagent 对抗 review（Agent 面 / 提示词质量 / 渲染合成管线 / 完成度与接线），关键 P0 均经主会话亲自复核。评审基线 = feat/story-room 工作区（含未提交改动）。
 
+> **修复进展（2026-09-16 第一批已落地，5 提交）**
+> - `2ffc724d` P0-PR1 parseJsonString 渐进恢复 + P0-PR2 callAI/callVLM temperature 透传（结构化调用点 0.2~0.3）
+> - `63e7e112` P0-CM2 状态闭环：advanceEpisodeStatus 只前进不回退原语 + 4 个后段写者 + composed_video_path/narration_audio_path 迁移（双端注册）；顺手 P1-RD3 单镜视频回写实际 duration
+> - `f28b0c49` P0-RD1 音轨 48k 归一 + P1-RD5 音频侧 xfade 对齐 + P0-CM1 导出侧 TTS 混入（amix）+ 导出 composing/completed 回写
+> - `0c5a5fa4` P0-CM1 落库侧：persistToScene 共享方法 + 合成 tab 配音入口（活路径）
+> - `8a70bf6e` agent 后半程四工具（generate_keyframes / generate_segment_video / generate_scene_audio / export_mp4，工具面 10→14 覆盖全流水线）+ 快照（梗概/生产进度/数据源名单）+ 系统提示词 7→10 纪律 + 历史分级截断 + 召回语料去污染（P2-AG4）+ 资产名幻觉对齐（P2-AG3）+ 审批/idle 竞态豁免（P1-AG1，HostKit 透传 streamIdleTimeoutMs）
+> - 第二批（运镜枚举单一事实源、关键帧链式参考接线、风格锚点打通、RD2 字幕漂移、RD4 片段制阻断、Windows ffmpeg、定稿关卡、EntityEditDialog、死代码山）与第三批（治理项）仍登记在案。
+
 用户标尺：**高质量、基于 agent 的视频制作功能；工具要完善；系统提示词质量要高。**
 
 ## 总体判断
