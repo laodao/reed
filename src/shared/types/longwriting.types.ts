@@ -826,6 +826,8 @@ export interface StoryOutline {
   involvedLocations: string[]   // 涉及地点 ID 列表
   involvedItems: string[]       // 涉及物品 ID 列表
   status: OutlineStatus
+  /** 设计锁级别 coarse/detailed/locked（2026-09-16 结构化设定 M1；与进度 status 正交） */
+  designStatus?: 'coarse' | 'detailed' | 'locked'
   estimatedWords: number
   orderIndex: number         // 排序索引
   prewriteConfirmed?: boolean // 是否已确认预写（附加字段，不在数据库中）

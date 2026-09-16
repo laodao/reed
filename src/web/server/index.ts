@@ -526,6 +526,16 @@ async function initDatabase(): Promise<void> {
   )
   await createLwGraphTables(ds)
 
+  // 谓词受控词表 + 存量关系归一（2026-09-16 结构化设定方案 M0；必须在图谱表之后——归一扫描 lw_graph_edges）
+  const { createLwPredicateRegistry } = await import(
+    '@core/database/migrations/create-lw-predicate-registry'
+  )
+  await createLwPredicateRegistry(ds)
+
+  // 设计文档表 + 暗线关联列 + 大纲设计锁级别（2026-09-16 结构化设定方案 M1；与 Electron 端同构）
+  const { addLwDesignDocuments } = await import('@core/database/migrations/add-lw-design-documents')
+  await addLwDesignDocuments(ds)
+
   // 飞轮记忆存量回填（按源任务 scopeTag 补 biz_module/project_id，幂等，双语种）
   const { backfillAgentMemoryScope } = await import(
     '@core/database/migrations/backfill-agent-memory-scope'

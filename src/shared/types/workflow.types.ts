@@ -110,6 +110,8 @@ export type WorkflowNodeType =
   | 'crawl-links'
   // 长文写作（章节写作章法：设计卡→自检→出场实体→一致性门禁→写正文→写后检查）
   | 'chapter-writing'
+  // 长文写作（卷设计章法：骨架→人物层→网格分批→整合，每 pass 过 L0 校验+修复回路）
+  | 'volume-design'
 
 // ==================== 开始节点输入参数 ====================
 
@@ -668,6 +670,28 @@ export interface WorkflowNodeConfigMap {
     /** 目标字数（缺省走大纲预估字数） */
     targetWords?: number
   }
+
+  'volume-design': {
+    /** 长文项目 id（模板传参，如 {{start.projectId}}） */
+    projectId: string
+    /** 卷标识（契约 volume 字段，如 v1） */
+    volumeId: string
+    /** 卷标题（缺省取已确认 spine 的卷声明） */
+    title?: string
+    /** 卷焦点 */
+    focus?: string
+    /** 起始章（缺省取 spine 章界） */
+    chapterFrom?: number
+    /** 结束章（缺省取 spine 章界） */
+    chapterTo?: number
+    /** 网格分批大小（缺省 10，上限 10） */
+    gridBatchSize?: number
+    /** 单次生成的 maxTokens（缺省 8192） */
+    maxTokens?: number
+    /** 模型路由（缺省走默认 provider） */
+    providerConfigId?: string
+    modelId?: string
+  }
 }
 
 // ==================== 图结构 ====================
@@ -1008,6 +1032,7 @@ export const WORKFLOW_NODE_TYPES = {
   'crawl-news': 'crawl-news',
   'crawl-links': 'crawl-links',
   'chapter-writing': 'chapter-writing',
+  'volume-design': 'volume-design',
   'video-gen': 'video-gen',
   'video-compose': 'video-compose',
   'video-preset': 'video-preset',

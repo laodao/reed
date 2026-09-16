@@ -40,6 +40,18 @@ export class LwForeshadowEntity {
   @Column({ name: 'origin', type: 'text', nullable: true })
   origin!: string | null
 
+  /** JSON [{type,id}]：暗线牵涉实体（2026-09-16 结构化设定 M1；卷设计 threads 分解落库） */
+  @Column({ name: 'involves', type: 'text', nullable: true })
+  involves!: string | null
+
+  /** JSON number[]：中途发展章（plant 与 payoff 之间） */
+  @Column({ name: 'develop_chapters', type: 'text', nullable: true })
+  developChapters!: string | null
+
+  /** 卷末清账"滚动"归宿章号（滚动到某卷的起点章；null=未滚动） */
+  @Column({ name: 'rolled_to', type: 'integer', nullable: true })
+  rolledTo!: number | null
+
   @Column({
     name: 'created_at',
     type: 'bigint',

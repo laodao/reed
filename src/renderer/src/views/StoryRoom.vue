@@ -526,6 +526,7 @@ function kindLabel(kind: string): string {
     case 'card': return '卡片'
     case 'event': return '事件'
     case 'relation': return '关系'
+    case 'design_doc': return '设计文档'
     default: return kind
   }
 }

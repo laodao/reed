@@ -141,6 +141,10 @@ export { UserNotificationReadEntity } from './user-notification-read.entity'
 export { LwBibleKindEntity } from './lw-bible-kind.entity'
 export { LwCustomEntityEntity } from './lw-custom-entity.entity'
 export { LwForeshadowEntity } from './lw-foreshadow.entity'
+// 谓词受控词表（2026-09-16 结构化设定方案 M0：关系/属性谓词规范 key + 同义词）
+export { LwPredicateRegistryEntity } from './lw-predicate-registry.entity'
+// 设计文档存档（2026-09-16 结构化设定方案 M1：spine/卷设计 JSON 契约草稿与版本）
+export { LwDesignDocumentEntity } from './lw-design-document.entity'
 // 领域共学空间（tasks/2026-09-07-domain-learning-space/design-v3.md §9）
 export { DlProjectEntity } from './domain-learning/dl-project.entity'
 export { DlConceptEntity } from './domain-learning/dl-concept.entity'

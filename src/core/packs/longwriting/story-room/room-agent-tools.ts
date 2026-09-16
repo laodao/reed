@@ -882,6 +882,98 @@ function buildSaveRelationToolDef(): AgentToolDef {
   }
 }
 
+const runVolumeDesignSchema = z.object({
+  volumeId: z.string().min(1).describe('卷标识（契约 volume 字段，如 v1；须与已确认 spine 的卷声明一致，或显式给章界）'),
+  title: z.string().optional().describe('卷标题（缺省取 spine 卷声明）'),
+  focus: z.string().optional().describe('卷焦点一句话'),
+  chapterFrom: z.number().int().min(1).optional().describe('起始章（缺省取 spine 章界）'),
+  chapterTo: z.number().int().min(1).optional().describe('结束章（缺省取 spine 章界）'),
+})
+
+function buildRunVolumeDesignToolDef(): AgentToolDef {
+  return {
+    name: 'lw_run_volume_design',
+    description:
+      '启动卷设计工作流（无人值守批量模式）：引擎确定性执行 骨架→人物层→网格分批→整合 多 pass 生成，每 pass 过 JSON 契约校验+修复回路。异步启动即返回 runId（生成耗时分钟级，不要轮询等待）；产物会自动出现在设计包，用户在设计包确认后落库。同卷有在途 run 时会被互斥跳过（skipped）。',
+    inputSchema: runVolumeDesignSchema,
+    dangerLevel: 'write',
+    executeTimeoutMs: 30_000,
+    autoApprovableInWorkflow: false,
+    execute: async (input, ctx) => {
+      const raw = (input ?? {}) as { volumeId?: string; title?: string; focus?: string; chapterFrom?: number; chapterTo?: number }
+      if (!raw.volumeId) return { ok: false, error: '缺少 volumeId' }
+      try {
+        const started = await ensureVolumeDesignWorkflowRun(lwCtxFrom(ctx).projectId, raw.volumeId, {
+          title: raw.title,
+          focus: raw.focus,
+          chapterFrom: raw.chapterFrom,
+          chapterTo: raw.chapterTo,
+        })
+        if (started.status === 'skipped') {
+          return { ok: false, error: `同卷已有在途/待审的卷设计运行（runId: ${started.runId}），已跳过——不要重复启动，等待其产物入设计包即可` }
+        }
+        return {
+          ok: true,
+          data: {
+            status: 'started',
+            runId: started.runId,
+            message: `卷设计工作流已启动（runId: ${started.runId}）。请告知用户生成需数分钟，完成后设计包会出现「卷设计」条目，确认后才落库生效。不要轮询本 run 状态。`,
+          },
+        }
+      } catch (e: any) {
+        return { ok: false, error: e?.message || '卷设计工作流启动失败' }
+      }
+    },
+  }
+}
+
+const saveDesignDocSchema = z.object({  taskTitle: z.string().optional(),
+  kind: z.enum(['spine', 'volume']).describe('文档层级：spine=全书总纲；volume=卷设计'),
+  title: z.string().min(1).describe('文档标题（如「第三卷 · 渡江风云」）'),
+  doc: z.record(z.string(), z.unknown()).describe('契约 JSON 全文——结构必须符合长文设计契约（spine/卷设计 schema），校验失败会返回带路径的错误清单'),
+})
+
+function buildSaveDesignDocToolDef(): AgentToolDef {
+  return {
+    name: 'lw_save_design_doc',
+    description:
+      '保存结构化设计文档（JSON 契约：spine=核心故事/主线/核心人物/卷目录；volume=cast/threads 暗线/grid 章节网格/events 计划事件）。服务端做结构+语义校验（ID 引用完整性、暗线 plant<develop<payoff、章界），失败返回 {path,code,message} 错误清单——逐条修复后重新提交，全部通过才进入设计包待用户确认。同卷重复保存=更新草稿（version+1）。',
+    inputSchema: saveDesignDocSchema,
+    dangerLevel: 'write',
+    executeTimeoutMs: 30_000,
+    autoApprovableInWorkflow: false,
+    execute: async (input, ctx) => {
+      const raw = (input ?? {}) as { taskTitle?: string; kind?: string; title?: string; doc?: any; volumeId?: string }
+      const kind = raw.kind === 'spine' ? 'spine' : 'volume'
+      const doc = raw.doc ?? {}
+      const { saveDesignDraft } = await import(
+        '@core/platform/services/longwriting/design/design-document.service'
+      )
+      const r = await saveDesignDraft(getCoreDatabaseManager(), lwCtxFrom(ctx).projectId, {
+        kind,
+        title: String(raw.title || '设计文档'),
+        doc,
+        volumeId: raw.volumeId,
+      })
+      if (!r.ok || !r.docId) {
+        return { ok: false, error: r.message }
+      }
+      // 文档本体在 lw_design_documents；设计包条目只带摘要引用（确认面板勾选 → confirmDesignDoc 落库）
+      const summary =
+        kind === 'volume'
+          ? `cast ${(doc as any).cast?.length ?? 0} · 暗线 ${(doc as any).threads?.length ?? 0} · 章节网格 ${(doc as any).grid?.length ?? 0}`
+          : `核心故事 + 主线 ${(doc as any).main_lines?.length ?? 0} + 卷目录 ${(doc as any).volumes?.length ?? 0}`
+      const saved = await saveDesign(ctx, { taskTitle: raw.taskTitle }, 'design_doc', `${kind === 'spine' ? '总纲' : '卷设计'} · ${raw.title ?? ''}`, {
+        docId: r.docId,
+        kind,
+        volumeId: kind === 'volume' ? (doc as any).volume ?? raw.volumeId ?? null : null,
+        summary,
+      } as Record<string, any>)
+      return { ok: true, data: { status: 'ok', docId: r.docId, version: r.version, message: `${r.message}；${(saved.data as any)?.message ?? ''}` } }
+    },
+  }
+}
+
 // ==================== 注册与白名单 ====================
 
 // ==================== 章法工具链（54 号：写正文章法=skill 定义 + 工具编排） ====================
@@ -1346,6 +1438,93 @@ async function ensureChapterWritingWorkflowRun(
   return { runId: run.id, definitionId, status: run.status }
 }
 
+const VOLUME_DESIGN_WF_DEF_NAME = '卷设计章法'
+
+/**
+ * 卷设计工作流触发（2026-09-16 结构化设定 M1-W2）：多 pass 卷设计生成
+ * （骨架→人物层→网格分批→整合，每 pass 过 L0 校验+修复回路）由引擎确定性
+ * 调度（volume-design 节点），产物自动入设计包待用户确认。定义按名称幂等
+ * 创建并发布；互斥按「项目+卷」作用域。异步启动返回 runId（多 pass 生成
+ * 耗时分钟级，不等待终态——结果以设计包条目为准）。
+ */
+export async function ensureVolumeDesignWorkflowRun(
+  projectId: string,
+  volumeId: string,
+  opts: { title?: string; focus?: string; chapterFrom?: number; chapterTo?: number } = {},
+): Promise<{ runId: string; definitionId: string; status: string }> {
+  const { getWorkflowSubsystem } = await import('@core/platform/workflow/workflow-boot')
+  const sub = getWorkflowSubsystem()
+
+  let definitionId: string | null = null
+  const listed = await sub.definitionService.list({ keyword: VOLUME_DESIGN_WF_DEF_NAME, page: 1, pageSize: 20 })
+  for (const d of listed.items ?? []) {
+    if (d.name === VOLUME_DESIGN_WF_DEF_NAME) { definitionId = d.id; break }
+  }
+  if (!definitionId) {
+    const graph = {
+      version: 1 as const,
+      nodes: [
+        {
+          id: 'start', type: 'start', name: '开始', position: { x: 80, y: 200 },
+          config: {
+            inputs: [
+              { key: 'projectId', label: '长文项目 ID', type: 'string', required: true },
+              { key: 'volumeId', label: '卷标识（如 v1）', type: 'string', required: true },
+              { key: 'title', label: '卷标题', type: 'string' },
+              { key: 'focus', label: '卷焦点', type: 'string' },
+              { key: 'chapterFrom', label: '起始章', type: 'number' },
+              { key: 'chapterTo', label: '结束章', type: 'number' },
+            ],
+          },
+        },
+        {
+          id: 'design', type: 'volume-design', name: '卷设计章法', position: { x: 320, y: 200 },
+          config: {
+            projectId: '{{start.projectId}}',
+            volumeId: '{{start.volumeId}}',
+            title: '{{start.title}}',
+            focus: '{{start.focus}}',
+            chapterFrom: '{{start.chapterFrom}}',
+            chapterTo: '{{start.chapterTo}}',
+            gridBatchSize: 10,
+            maxTokens: 8192,
+          },
+        },
+        { id: 'end', type: 'end', name: '结束', position: { x: 620, y: 200 }, config: {} },
+      ],
+      edges: [
+        { id: 'e_start_design', sourceNodeId: 'start', targetNodeId: 'design', kind: 'normal' },
+        { id: 'e_design_end', sourceNodeId: 'design', targetNodeId: 'end', kind: 'normal' },
+      ],
+    }
+    const created = await sub.definitionService.create({
+      name: VOLUME_DESIGN_WF_DEF_NAME,
+      description: '长文写作：确定性生成一卷的结构化设计文档（骨架→人物层→网格分批→整合，每 pass 过契约校验+修复回路），产物入设计包待确认',
+      category: 'longwriting',
+      draftGraph: graph as never,
+    })
+    definitionId = created.id
+    await sub.definitionService.publish(definitionId)
+  }
+
+  const run = await sub.runService.startRun({
+    definitionId,
+    triggerType: 'manual',
+    inputs: {
+      projectId,
+      volumeId,
+      title: opts.title ?? '',
+      focus: opts.focus ?? '',
+      chapterFrom: opts.chapterFrom,
+      chapterTo: opts.chapterTo,
+    },
+    usePublishedGraph: true,
+    // 互斥按「项目+卷」：同卷设计绝不双跑，不同卷可并行
+    mutexScope: `volume-design:${projectId}:${volumeId}`,
+  })
+  return { runId: run.id, definitionId, status: run.status }
+}
+
 function buildLwRoomToolDefs(): AgentToolDef[] {
   return [
     buildQueryBibleToolDef(),
@@ -1356,6 +1535,8 @@ function buildLwRoomToolDefs(): AgentToolDef[] {
     buildSaveCardToolDef(),
     buildSaveEventToolDef(),
     buildSaveRelationToolDef(),
+    buildSaveDesignDocToolDef(),
+    buildRunVolumeDesignToolDef(),
     buildDesignChapterCardToolDef(),
     buildConfirmChapterCardToolDef(),
     buildWriteChapterToolDef(),

@@ -4,7 +4,7 @@
  * @description 基于 TypeORM 实现，所有方法异步。含树形结构 + 3 个关联子表。
  */
 
-import { IsNull, type DataSource } from 'typeorm'
+import { type DataSource } from 'typeorm'
 import {
   StoryOutline,
   CreateOutlineRequest,
@@ -51,6 +51,7 @@ export class LwOutlineRepository extends BaseRepository<
       involvedLocations: ((e.involvedLocations as string[] | null) ?? []) as string[],
       involvedItems: ((e.involvedItems as string[] | null) ?? []) as string[],
       status: e.status as StoryOutline['status'],
+      designStatus: (e.designStatus ?? undefined) as StoryOutline['designStatus'],
       estimatedWords: e.estimatedWords ?? 0,
       orderIndex: e.orderIndex ?? 0,
       createdAt: this.toEpochMs(e.createdAt),
@@ -170,6 +171,22 @@ export class LwOutlineRepository extends BaseRepository<
     return affected > 0
   }
 
+  /** 设计锁级别流转（2026-09-16 结构化设定 M1）：coarse→detailed（卷设计确认）/→locked（章节落稿，W1 写入） */
+  async updateDesignStatus(id: string, designStatus: 'coarse' | 'detailed' | 'locked' | null): Promise<boolean> {
+    const existing = await this.scoped.findOne({ id } as any)
+    if (!existing) return false
+    existing.designStatus = designStatus
+    existing.updatedAt = new Date()
+    await this.scoped.save(existing)
+    return true
+  }
+
+  /** 按设计锁级别查卷节点（W2 扩展/结算流用） */
+  async listByDesignStatus(projectId: string, designStatus: 'coarse' | 'detailed' | 'locked'): Promise<StoryOutline[]> {
+    const rows = await this.scoped.find({ where: { projectId, designStatus } as any })
+    return this.toDtoList(rows)
+  }
+
   async moveTo(id: string, newParentId: string | null): Promise<boolean> {
     const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return false
@@ -273,9 +290,6 @@ export class LwOutlineRepository extends BaseRepository<
     projectId: string,
     parentId: string | null,
   ): Promise<number> {
-    const where = parentId
-      ? { projectId, parentId }
-      : { projectId, parentId: IsNull() }
     const row = await this.repo
       .createQueryBuilder('o')
       .select('MAX(o.order_index)', 'max')

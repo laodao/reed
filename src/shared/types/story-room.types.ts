@@ -73,7 +73,7 @@ export interface ArtifactCard {
  * 设计包条目：长程任务（design 模式）中 Agent 通过 lw_save_* 工具落下的
  * 草稿项。确认前不碰正式表——「全部设计完整体让用户确认」的载体。
  */
-export type DesignItemKind = 'card' | 'event' | 'relation'
+export type DesignItemKind = 'card' | 'event' | 'relation' | 'design_doc'
 
 /** 关系草稿：新增走名称解析建边；endOf 存在时为"终结某段关系" */
 export interface DesignRelationPayload {

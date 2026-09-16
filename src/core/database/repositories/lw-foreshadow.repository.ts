@@ -16,6 +16,10 @@ export interface ForeshadowDto {
   payoffChapter: number | null
   status: 'open' | 'paid' | 'dropped'
   origin: { type: 'discussion' | 'extract' | 'manual'; cardId?: string; turns?: number[]; chapter?: number } | null
+  /** 暗线关联（2026-09-16 结构化设定 M1） */
+  involves: Array<{ type: string; id: string }> | null
+  developChapters: number[] | null
+  rolledTo: number | null
   createdAt: number
   updatedAt: number
 }
@@ -43,9 +47,27 @@ export class LwForeshadowRepository extends BaseRepository<LwForeshadowEntity, F
       payoffChapter: e.payoffChapter,
       status: e.status as ForeshadowDto['status'],
       origin: this.parse<ForeshadowDto['origin']>(e.origin),
+      involves: this.parse<ForeshadowDto['involves']>(e.involves),
+      developChapters: this.parse<number[]>(e.developChapters),
+      rolledTo: e.rolledTo,
       createdAt: e.createdAt,
       updatedAt: e.updatedAt,
     }
+  }
+
+  /** 卷设计 threads 分解落库：回填暗线关联字段（M1） */
+  async updateDesignFields(
+    id: string,
+    fields: { payoffChapter?: number | null; involves?: Array<{ type: string; id: string }> | null; developChapters?: number[] | null },
+  ): Promise<void> {
+    const row = await this.scoped.findOne({ id } as any)
+    if (!row) return
+    if (fields.payoffChapter !== undefined) row.payoffChapter = fields.payoffChapter
+    if (fields.involves !== undefined) row.involves = fields.involves ? JSON.stringify(fields.involves) : null
+    if (fields.developChapters !== undefined)
+      row.developChapters = fields.developChapters ? JSON.stringify(fields.developChapters) : null
+    row.updatedAt = Date.now()
+    await this.scoped.save(row)
   }
 
   async getByProjectId(projectId: string): Promise<ForeshadowDto[]> {

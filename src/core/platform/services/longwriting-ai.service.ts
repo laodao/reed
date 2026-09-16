@@ -99,6 +99,22 @@ export class LongWritingAIService {
   }
 
   /**
+   * 公共一次性文本生成（卷设计流 W2 的 pass 调用入口；2026-09-16 M1）。
+   * 与抽取器同走 callAIStream（进度事件/取消/超时语义一致），只是暴露为公共方法
+   * 供工作流节点注入 VolumeDesignLlm。
+   */
+  async generateDesignPassText(
+    eventId: string,
+    prompt: string,
+    systemPrompt: string,
+    maxTokens: number,
+    providerConfigId?: string,
+    modelId?: string,
+  ): Promise<string> {
+    return this.callAIStream(eventId, prompt, systemPrompt, maxTokens, providerConfigId, modelId)
+  }
+
+  /**
    * 取消指定 eventId 的生成（中断流式请求；非流式为竞态丢弃）
    */
   cancelGeneration(eventId: string): void {

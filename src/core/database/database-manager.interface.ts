@@ -58,6 +58,8 @@ import type { LwDictionaryRepository } from './repositories/lw-dictionary.reposi
 import type { LwEntityStateRepository } from './repositories/lw-entity-state.repository'
 import type { LwEventRepository } from './repositories/lw-event.repository'
 import type { LwGraphEdgeRepository } from './repositories/lw-graph-edge.repository'
+import type { LwPredicateRegistryRepository } from './repositories/lw-predicate-registry.repository'
+import type { LwDesignDocumentRepository } from './repositories/lw-design-document.repository'
 import type { LwFactionRepository } from './repositories/lw-faction.repository'
 import type { LwGlobalSettingsRepository } from './repositories/lw-global-settings.repository'
 import type { LwItemRepository } from './repositories/lw-item.repository'
@@ -215,6 +217,10 @@ export interface ICoreDatabaseManager {
   lwForeshadows: LwForeshadowRepository | null
   /** 长文图谱：关系边（带 valid_from/valid_until_chapter 时间线） */
   lwGraphEdges: LwGraphEdgeRepository | null
+  /** 谓词受控词表（2026-09-16 结构化设定方案 M0：关系/属性谓词规范 key + 同义词） */
+  lwPredicateRegistry: LwPredicateRegistryRepository | null
+  /** 设计文档存档（2026-09-16 结构化设定方案 M1：spine/卷设计 JSON 契约草稿与版本） */
+  lwDesignDocuments: LwDesignDocumentRepository | null
 
   // ---- 工作流引擎（三表） ----
   /** 工作流定义（草稿/发布双图 + 触发器 + cron 调度状态） */

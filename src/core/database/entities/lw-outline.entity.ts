@@ -48,6 +48,10 @@ export class LwOutlineEntity {
   @Column({ name: 'status', type: 'text', default: 'pending' })
   status!: string
 
+  /** 设计锁级别 coarse/detailed/locked（2026-09-16 结构化设定 M1；与进度 status 正交，NULL=未走结构化设计） */
+  @Column({ name: 'design_status', type: 'varchar', nullable: true })
+  designStatus!: string | null
+
   @Column({ name: 'estimated_words', type: 'integer', nullable: true })
   estimatedWords!: number | null
 

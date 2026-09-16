@@ -71,6 +71,8 @@ import { LwBibleKindRepository } from '@core/database/repositories/lw-bible-kind
 import { LwCustomEntityRepository } from '@core/database/repositories/lw-custom-entity.repository'
 import { LwForeshadowRepository } from '@core/database/repositories/lw-foreshadow.repository'
 import { LwGraphEdgeRepository } from '@core/database/repositories/lw-graph-edge.repository'
+import { LwPredicateRegistryRepository } from '@core/database/repositories/lw-predicate-registry.repository'
+import { LwDesignDocumentRepository } from '@core/database/repositories/lw-design-document.repository'
 import { LwPlotCharacterRepository } from '@core/database/repositories/lw-plot-character.repository'
 import { LwPlotLocationRepository } from '@core/database/repositories/lw-plot-location.repository'
 import { LwOutlineCharacterRepository } from '@core/database/repositories/lw-outline-character.repository'
@@ -205,6 +207,8 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public lwCustomEntities: LwCustomEntityRepository | null = null
   public lwForeshadows: LwForeshadowRepository | null = null
   public lwGraphEdges: LwGraphEdgeRepository | null = null
+  public lwPredicateRegistry: LwPredicateRegistryRepository | null = null
+  public lwDesignDocuments: LwDesignDocumentRepository | null = null
 
   // 工作流引擎（三表）
   public workflowDefinitions: WorkflowDefinitionRepository | null = null
@@ -718,6 +722,16 @@ export class DatabaseManager implements ICoreDatabaseManager {
     // 设定集动态分组两表 + 人物别名列（P0-2026-09-09）
     const { createBibleTables } = await import('@core/database/migrations/create-bible-tables')
     await createBibleTables(this.dataSource)
+
+    // 谓词受控词表 + 存量关系归一（2026-09-16 结构化设定方案 M0）
+    const { createLwPredicateRegistry } = await import(
+      '@core/database/migrations/create-lw-predicate-registry'
+    )
+    await createLwPredicateRegistry(this.dataSource)
+
+    // 设计文档表 + 暗线关联列 + 大纲设计锁级别（2026-09-16 结构化设定方案 M1）
+    const { addLwDesignDocuments } = await import('@core/database/migrations/add-lw-design-documents')
+    await addLwDesignDocuments(this.dataSource)
 
     // Run Journal（11 号 §4.1 E1）：运行事件日志（先日志后内存的恢复事实源）
     const { createWorkflowRunEvents } = await import(
@@ -4487,6 +4501,8 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.lwCustomEntities = new LwCustomEntityRepository(this.dataSource)
     this.lwForeshadows = new LwForeshadowRepository(this.dataSource)
     this.lwGraphEdges = new LwGraphEdgeRepository(this.dataSource)
+    this.lwPredicateRegistry = new LwPredicateRegistryRepository(this.dataSource)
+    this.lwDesignDocuments = new LwDesignDocumentRepository(this.dataSource)
     this.workflowDefinitions = new WorkflowDefinitionRepository(this.dataSource)
     this.workflowRuns = new WorkflowRunRepository(this.dataSource)
     this.workflowNodeRuns = new WorkflowNodeRunRepository(this.dataSource)

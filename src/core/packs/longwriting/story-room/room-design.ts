@@ -274,6 +274,17 @@ async function persistDesignItem(
       }
     }
 
+    if (item.kind === 'design_doc') {
+      // 结构化设计文档（2026-09-16 M1）：payload 只带 docId（文档本体在 lw_design_documents）
+      const p = item.payload as { docId?: string }
+      if (!p.docId) return { ok: false, message: '设计文档条目缺 docId' }
+      const { confirmDesignDoc } = await import(
+        '@core/platform/services/longwriting/design/design-document.service'
+      )
+      const r = await confirmDesignDoc(db, projectId, p.docId)
+      return { ok: r.ok, message: r.message }
+    }
+
     return { ok: false, message: `未知条目类型：${item.kind}` }
   } catch (e: any) {
     return { ok: false, message: e?.message || '落库异常' }
