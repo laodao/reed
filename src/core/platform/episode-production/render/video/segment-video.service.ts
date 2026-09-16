@@ -35,6 +35,7 @@ import type {
   KeyframeInput,
 } from './video-provider-adapter'
 import { buildSegmentPrompt } from './segment-planner'
+import { advanceEpisodeStatusForStoryboard } from '../../workflow/episode-status-advance'
 
 const DEFAULT_WIDTH = 1920
 const DEFAULT_HEIGHT = 1080
@@ -70,7 +71,7 @@ export class SegmentVideoService {
   private readonly imageAssetRepo: ImageAssetRepository
 
   constructor(
-    ds: DataSource,
+    private readonly ds: DataSource,
     private readonly adapter: VideoProviderAdapter,
   ) {
     this.segmentRepo = new EpVideoSegmentRepository(ds)
@@ -131,6 +132,9 @@ export class SegmentVideoService {
       for (const shot of shots) {
         await this.storyboardRepo.setStatus(shot.id, 'completed')
       }
+
+      // 状态闭环（2026-09-16 P0-CM2）：片段出片 → episode.producing
+      await advanceEpisodeStatusForStoryboard(this.ds, shots[0].id, 'producing').catch(() => {})
 
       return {
         segmentId: seg.id,

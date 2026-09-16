@@ -361,6 +361,19 @@ async function handleGenerateStoryboards(
       }
     }
 
+    // 状态闭环（2026-09-16 P0-CM2）：分镜已生成 → episode.storyboarding
+    try {
+      const { advanceEpisodeStatus } = await import(
+        '@core/platform/episode-production/workflow/episode-status-advance'
+      )
+      const script = await db.episodeScripts?.getById(scriptId)
+      if (script?.episodeId && db.dataSource) {
+        await advanceEpisodeStatus(db.dataSource, script.episodeId, 'storyboarding')
+      }
+    } catch {
+      /* 状态推进失败不阻断分镜结果 */
+    }
+
     return { success: true, data: allStoryboards }
   } catch (error: any) {
     return { success: false, error: error.message || '批量生成分镜失败' }

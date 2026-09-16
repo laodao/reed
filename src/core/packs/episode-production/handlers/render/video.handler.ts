@@ -307,9 +307,21 @@ async function handleSynthesizeStoryboardVideo(
     const result = await VideoService.generateVideo(videoRequest, {
       onCompleted: async (video) => {
         const localPath = (video as { localPath?: string }).localPath
+        const actualDuration = (video as { duration?: number }).duration
         if (localPath) {
-          await storyboardsRepo.update(storyboardId, { videoPath: localPath })
+          // 2026-09-16 P1-RD3：回填实际时长——此前只写 videoPath，timeline 用声明的
+          // "理论"时长算 xfade offset，provider 实际时长不符时转场处冻结/黑屏
+          await storyboardsRepo.update(storyboardId, {
+            videoPath: localPath,
+            ...(actualDuration ? { duration: actualDuration } : {}),
+          })
           console.log('[handleSynthesizeStoryboardVideo] 后台任务完成，已回填 videoPath:', localPath)
+          try {
+            const { advanceEpisodeStatusForStoryboard } = await import(
+              '@core/platform/episode-production/workflow/episode-status-advance'
+            )
+            if (db.dataSource) await advanceEpisodeStatusForStoryboard(db.dataSource, storyboardId, 'producing')
+          } catch { /* 状态推进失败不影响产物回写 */ }
         }
       },
       onFailed: async (err) => {
@@ -321,8 +333,17 @@ async function handleSynthesizeStoryboardVideo(
       // 同步模式：直接返回了视频
       if (result.video?.localPath || result.video?.url) {
         const videoPath = result.video.localPath || result.video.url
-        // 更新分镜的 videoPath
-        await db.storyboards.update(storyboardId, { videoPath })
+        // 更新分镜的 videoPath + 实际时长（P1-RD3：避免 xfade offset 按理论时长错位）
+        await db.storyboards.update(storyboardId, {
+          videoPath,
+          ...(result.video.duration ? { duration: result.video.duration } : {}),
+        })
+        try {
+          const { advanceEpisodeStatusForStoryboard } = await import(
+            '@core/platform/episode-production/workflow/episode-status-advance'
+          )
+          if (db.dataSource) await advanceEpisodeStatusForStoryboard(db.dataSource, storyboardId, 'producing')
+        } catch { /* 状态推进失败不阻断返回 */ }
 
         return {
           success: true,
@@ -350,8 +371,17 @@ async function handleSynthesizeStoryboardVideo(
           if (savedPath) {
             const localUrl = localPathToUrl(savedPath)
             console.log('[handleSynthesizeStoryboardVideo] 视频保存成功:', savedPath)
-            // 更新分镜的 videoPath
-            await db.storyboards.update(storyboardId, { videoPath: savedPath })
+            // 更新分镜的 videoPath + 实际时长（P1-RD3）
+            await db.storyboards.update(storyboardId, {
+              videoPath: savedPath,
+              ...(taskStatus.video.duration ? { duration: taskStatus.video.duration } : {}),
+            })
+            try {
+              const { advanceEpisodeStatusForStoryboard } = await import(
+                '@core/platform/episode-production/workflow/episode-status-advance'
+              )
+              if (db.dataSource) await advanceEpisodeStatusForStoryboard(db.dataSource, storyboardId, 'producing')
+            } catch { /* 状态推进失败不阻断返回 */ }
 
             return {
               success: true,

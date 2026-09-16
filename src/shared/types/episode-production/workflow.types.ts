@@ -205,6 +205,9 @@ export interface VideoEpisode {
   // 关联剧本
   scriptId?: string
 
+  /** ⑥ 合成完成标记：成功导出 MP4 的路径（user-rel 优先）。stage-gate ⑥ 判定依据。 */
+  composedVideoPath?: string | null
+
   // 音轨
   audioTracks: AudioTrack[]
 

@@ -59,6 +59,13 @@ export class VideoEpisodeEntity {
   @Column({ name: 'script_id', type: 'text', nullable: true })
   scriptId!: string | null
 
+  /**
+   * ⑥ 合成完成标记：用户成功导出 MP4 的路径（user-rel 相对路径优先）。
+   * stage-gate ⑥ 判定依据；2026-09-16 review P0-CM2 前该列缺失导致合成进度恒 0。
+   */
+  @Column({ name: 'composed_video_path', type: 'text', nullable: true })
+  composedVideoPath!: string | null
+
   @Column({ name: 'audio_tracks', type: 'simple-json', nullable: true })
   audioTracks!: unknown[] | null
 

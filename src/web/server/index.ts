@@ -69,6 +69,7 @@ import { addKbDocumentSource } from '@core/database/migrations/add-kb-document-s
 import { addKeyframeReferenceOverrides } from '@core/database/migrations/add-keyframe-reference-overrides'
 import { addStoryboardUseKeyframes } from '@core/database/migrations/add-storyboard-use-keyframes'
 import { addStoryboardIncludeInFinal } from '@core/database/migrations/add-storyboard-include-in-final'
+import { addEpComposeClosure } from '@core/database/migrations/add-ep-compose-closure'
 import { addStoryboardReferenceImageIds } from '@core/database/migrations/add-storyboard-reference-image-ids'
 import { addBindingReferenceImagePath } from '@core/database/migrations/add-binding-reference-image-path'
 import { addStoryboardMetadata } from '@core/database/migrations/add-storyboard-metadata'
@@ -322,6 +323,9 @@ async function initDatabase(): Promise<void> {
   await addStoryboardUseKeyframes(ds)
   // 分镜 include_in_final：⑥ 合成时是否入最终成片（默认 1）
   await addStoryboardIncludeInFinal(ds)
+  // 剧集状态闭环：video_episodes.composed_video_path + scene_scripts.narration_audio_path
+  // （2026-09-16 review P0-CM2/P0-CM1）
+  await addEpComposeClosure(ds)
   // 分镜 reference_image_ids：⑤ 制作 stage 用户为本分镜挑选资产参考图
   await addStoryboardReferenceImageIds(ds)
   // 资产 binding（character/location/item）reference_image_path：用户上传的参考图，主图生成时作为 reference

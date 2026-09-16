@@ -805,6 +805,13 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-workflow-run-mutex-scope'
     )
     await addWorkflowRunMutexScope(this.dataSource)
+
+    // 剧集状态闭环：video_episodes.composed_video_path + scene_scripts.narration_audio_path
+    // （2026-09-16 review P0-CM2/P0-CM1：合成进度恒 0、TTS 产物无处落库）
+    const { addEpComposeClosure } = await import(
+      '@core/database/migrations/add-ep-compose-closure'
+    )
+    await addEpComposeClosure(this.dataSource)
     // 版本历史表：workflow_definition_versions（发布快照 + 恢复）
     const { createWorkflowDefinitionVersionsTable } = await import(
       '@core/database/migrations/create-workflow-definition-versions'

@@ -62,6 +62,13 @@ export class SceneScriptEntity {
   @Column({ name: 'narration', type: 'text', nullable: true })
   narration!: string | null
 
+  /**
+   * 场景旁白 TTS 产物路径（SceneAudioOrchestratorService V3 生成后落库；
+   * 导出时混入成片音轨。2026-09-16 review P0-CM1）。
+   */
+  @Column({ name: 'narration_audio_path', type: 'text', nullable: true })
+  narrationAudioPath!: string | null
+
   @Column({ name: 'dialogues', type: 'simple-json', nullable: true })
   dialogues!: unknown[] | null
 

@@ -41,6 +41,8 @@ export interface UpdateVideoEpisodeRequest {
   status?: EpisodeStatus
   duration?: number
   scriptId?: string
+  /** ⑥ 合成完成标记（成功导出 MP4 的路径；null 清空） */
+  composedVideoPath?: string | null
   audioTracks?: AudioTrack[]
   uploadedContent?: string
   uploadedCharacters?: UploadedCharacter[]
@@ -88,6 +90,7 @@ export class VideoEpisodeRepository extends BaseRepository<
       status: (e.status === 'draft' ? 'pending' : e.status) as EpisodeStatus,
       duration: e.duration,
       scriptId: e.scriptId || undefined,
+      composedVideoPath: (e as any).composedVideoPath ?? null,
       audioTracks: ((e.audioTracks as AudioTrack[] | null) ?? []) as AudioTrack[],
       storyEra: (e as any).storyEra ?? undefined,
       storyRegion: (e as any).storyRegion ?? undefined,
@@ -206,6 +209,10 @@ export class VideoEpisodeRepository extends BaseRepository<
     if (data.status !== undefined) { existing.status = data.status; changed = true }
     if (data.duration !== undefined) { existing.duration = data.duration; changed = true }
     if (data.scriptId !== undefined) { existing.scriptId = data.scriptId ?? null; changed = true }
+    if (data.composedVideoPath !== undefined) {
+      ;(existing as any).composedVideoPath = data.composedVideoPath ?? null
+      changed = true
+    }
     if (data.audioTracks !== undefined) {
       existing.audioTracks = data.audioTracks as unknown[]
       changed = true

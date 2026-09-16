@@ -236,6 +236,8 @@ export interface SceneScript {
   // 内容
   originalText: string // 原文片段
   narration: string // 旁白文本
+  /** 旁白 TTS 产物路径（V3 编排生成后落库；导出时混入音轨。2026-09-16 P0-CM1） */
+  narrationAudioPath?: string | null
   dialogues: Dialogue[] // 对话列表
   actions: ActionDescription[] // 动作描述
 

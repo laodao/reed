@@ -17,6 +17,7 @@
  */
 
 import type { DataSource, Repository } from 'typeorm'
+import { advanceEpisodeStatusForStoryboard } from '../../workflow/episode-status-advance'
 import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
 import {
   StoryboardKeyframeRepository,
@@ -149,6 +150,9 @@ export class VideoSegmentService {
       // 不在这里写 video_provider_id / model_id —— adapter 不暴露这些；UI 已知
       updatedAt: new Date(),
     })
+
+    // 状态闭环（2026-09-16 P0-CM2）：出片 → episode.producing（只前进不回退）
+    await advanceEpisodeStatusForStoryboard(this.ds, sb.id, 'producing').catch(() => {})
 
     return {
       storyboardId: sb.id,

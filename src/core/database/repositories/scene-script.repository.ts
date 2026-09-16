@@ -32,6 +32,7 @@ export interface CreateSceneScriptRequest {
   characters: SceneCharacter[]
   originalText: string
   narration: string
+  narrationAudioPath?: string | null
   dialogues: Dialogue[]
   actions: ActionDescription[]
 }
@@ -48,6 +49,7 @@ export interface UpdateSceneScriptRequest {
   characters?: SceneCharacter[]
   originalText?: string
   narration?: string
+  narrationAudioPath?: string | null
   dialogues?: Dialogue[]
   actions?: ActionDescription[]
 }
@@ -83,6 +85,7 @@ export class SceneScriptRepository extends BaseRepository<
       characters: ((e.characters as SceneCharacter[] | null) ?? []) as SceneCharacter[],
       originalText: e.originalText ?? '',
       narration: e.narration ?? '',
+      narrationAudioPath: (e as any).narrationAudioPath ?? null,
       dialogues: ((e.dialogues as Dialogue[] | null) ?? []) as Dialogue[],
       actions: ((e.actions as ActionDescription[] | null) ?? []) as ActionDescription[],
       createdAt: this.toEpochMs(e.createdAt),
@@ -187,6 +190,9 @@ export class SceneScriptRepository extends BaseRepository<
     }
     if (data.originalText !== undefined) { existing.originalText = data.originalText; changed = true }
     if (data.narration !== undefined) { existing.narration = data.narration; changed = true }
+    if (data.narrationAudioPath !== undefined) {
+      ;(existing as any).narrationAudioPath = data.narrationAudioPath ?? null; changed = true
+    }
     if (data.dialogues !== undefined) {
       existing.dialogues = data.dialogues as unknown[]; changed = true
     }
