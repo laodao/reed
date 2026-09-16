@@ -45,3 +45,8 @@ progress/
 
 # ZCode 会话本地目录
 .zcode/
+
+# 剧集渲染等会话产物不入库（体积大、可再生；本地保留）
+outputs/*.mp4
+outputs/*.mkv
+outputs/*.webm
