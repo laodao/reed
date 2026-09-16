@@ -15,9 +15,14 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DataSource } from 'typeorm'
+import * as fs from 'fs'
+import * as os from 'os'
+import * as nodePath from 'path'
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
 import { SceneDialogueEntity } from '@core/database/entities/episode-production/scene-dialogue.entity'
 import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
+import { EpisodeScriptEntity } from '@core/database/entities/episode-production/episode-script.entity'
+import { VideoEpisodeEntity } from '@core/database/entities/episode-production/video-episode.entity'
 import {
   EpisodeMp4ExporterService,
   buildFilterComplex,
@@ -27,12 +32,31 @@ import {
   type FileWriter,
 } from '@core/platform/episode-production/compose/episode-mp4-exporter.service'
 import type { TimelineShot } from '@core/platform/episode-production/compose/timeline-builder.service'
+import { registerPathProvider, type IPathProvider } from '@core/interfaces/path.interface'
+
+/** 最小 path provider stub（成功回写要算 user-rel 路径） */
+class StubPathProvider implements IPathProvider {
+  constructor(private readonly dataPath: string) {}
+  getUserDataPath(): string { return this.dataPath }
+  getAppDataPath(): string { return this.dataPath }
+  getTempPath(): string { return this.dataPath }
+  getDataPath(): string { return this.dataPath }
+  getSubDirectories(): never { throw new Error('not used') }
+  getSubDirectoryPath(): never { throw new Error('not used') }
+  toAssetUrl(rel: string): string { return `/assets/${rel}` }
+}
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({
     type: 'better-sqlite3',
     database: ':memory:',
-    entities: [SceneScriptEntity, SceneDialogueEntity, StoryboardEntity],
+    entities: [
+      SceneScriptEntity,
+      SceneDialogueEntity,
+      StoryboardEntity,
+      EpisodeScriptEntity,
+      VideoEpisodeEntity,
+    ],
     synchronize: true,
   })
   await ds.initialize()
@@ -249,6 +273,108 @@ describe('EpisodeMp4ExporterService', () => {
       }),
     ).rejects.toThrow(/没有任何场景/)
   })
+
+  // ==================== 状态闭环 + 配音健壮性（0916 晚 review 修复） ====================
+
+  /** es1 → ep1 链路播种（状态回写路径此前因实体未注册在测试中是死代码） */
+  async function seedEpisodeChain(status = 'producing'): Promise<void> {
+    await ds.getRepository(EpisodeScriptEntity).save({
+      id: 'es1',
+      projectId: 'p1',
+      episodeId: 'ep1',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as any)
+    await ds.getRepository(VideoEpisodeEntity).save({
+      id: 'ep1',
+      projectId: 'p1',
+      episodeNumber: 1,
+      title: '第一集',
+      status,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as any)
+  }
+
+  async function episodeStatus(): Promise<string | null> {
+    const ep = await ds
+      .getRepository(VideoEpisodeEntity)
+      .findOne({ where: { id: 'ep1' } as any })
+    return (ep as any)?.status ?? null
+  }
+
+  it('导出成功：composing→completed + composedVideoPath 回写', async () => {
+    await seedHappyTimeline(ds)
+    await seedEpisodeChain('producing')
+    registerPathProvider(() => new StubPathProvider('/tmp'))
+    const runner = makeMockRunner()
+    const svc = new EpisodeMp4ExporterService(ds, runner, makeMockFileWriter())
+
+    await svc.exportEpisodeToMp4({ episodeScriptId: 'es1', outputPath: '/tmp/out.mp4' })
+
+    expect(await episodeStatus()).toBe('completed')
+    const ep = await ds.getRepository(VideoEpisodeEntity).findOne({ where: { id: 'ep1' } as any })
+    expect((ep as any).composedVideoPath).toBeTruthy()
+  })
+
+  it('ffmpeg 失败：composing 回退 producing（不再恒卡 ⑥）', async () => {
+    await seedHappyTimeline(ds)
+    await seedEpisodeChain('producing')
+    const runner = makeMockRunner()
+    runner.run = vi.fn(async () => {
+      throw new Error('ffmpeg boom')
+    })
+    const svc = new EpisodeMp4ExporterService(ds, runner, makeMockFileWriter())
+
+    await expect(
+      svc.exportEpisodeToMp4({ episodeScriptId: 'es1', outputPath: '/tmp/out.mp4' }),
+    ).rejects.toThrow('ffmpeg boom')
+    expect(await episodeStatus()).toBe('producing')
+  })
+
+  it('校验阻断（缺视频）：不推进 composing（推进后置到校验之后）', async () => {
+    await seedHappyTimeline(ds)
+    await seedEpisodeChain('producing')
+    await ds.getRepository(StoryboardEntity).update({ id: 'sb2' }, { videoPath: null })
+    const svc = new EpisodeMp4ExporterService(ds, makeMockRunner(), makeMockFileWriter())
+
+    await expect(
+      svc.exportEpisodeToMp4({ episodeScriptId: 'es1', outputPath: '/tmp/out.mp4' }),
+    ).rejects.toThrow(/导出阻断/)
+    expect(await episodeStatus()).toBe('producing')
+  })
+
+  it('TTS 产物坏文件剔除：缺失的旁白/对白不进 ffmpeg 输入，导出继续', async () => {
+    await seedHappyTimeline(ds)
+    await seedEpisodeChain('producing')
+    // d1 → 真实临时文件；d2 → 不存在的路径；旁白 → 不存在的路径
+    const realWav = nodePath.join(os.tmpdir(), `ep-export-tts-${Date.now()}.wav`)
+    fs.writeFileSync(realWav, 'fake')
+    try {
+      await ds.getRepository(SceneScriptEntity).update({ id: 's1' } as any, {
+        narrationAudioPath: '/tmp/__missing_narration.wav',
+        dialogues: [
+          { id: 'd1', text: '老板，来碗茶', characterName: '张三', audioAsset: { audioPath: realWav } },
+          { id: 'd2', text: '好嘞', characterName: '李四', audioAsset: { audioPath: '/tmp/__missing_d2.wav' } },
+        ],
+      } as any)
+      await ds.getRepository(StoryboardEntity).update({ id: 'sb1' }, { dialogueIds: ['d1', 'd2'] } as any)
+
+      const runner = makeMockRunner()
+      const svc = new EpisodeMp4ExporterService(ds, runner, makeMockFileWriter())
+      await svc.exportEpisodeToMp4({ episodeScriptId: 'es1', outputPath: '/tmp/out.mp4' })
+
+      const inputs = runner.run.mock.calls[0][0].inputs
+      // 视频两路 + 唯一真实存在的 TTS 文件；坏文件被剔除而非让 ffmpeg 打不开输入
+      expect(inputs).toEqual(['/tmp/v1.mp4', '/tmp/v2.mp4', realWav])
+      // 单条人声：不进 concat，与视频轨 amix
+      expect(runner.run.mock.calls[0][0].filterComplex).toContain(
+        'amix=inputs=2:duration=longest:normalize=0',
+      )
+    } finally {
+      fs.unlinkSync(realWav)
+    }
+  })
 })
 
 describe('buildFilterComplex (pure)', () => {
@@ -385,7 +511,7 @@ describe('buildFilterComplex 音轨/帧率（复核修复 P1-7）', () => {
     expect(fc).toContain('[au0][au1]concat=n=2:v=0:a=1[outa]')
   })
 
-  it('配音混入（P0-CM1）：附加文件按单元归一 + amix + 输入编号 = 视频数+占位数顺延', () => {
+  it('配音混入（P0-CM1）：人声按顺序 concat 成一条轨再 amix（不叠音）+ normalize=0', () => {
     const fc = buildFilterComplex({
       shots: [makeShot(), makeShot({ shotNumber: 2 })],
       width: 1280,
@@ -394,14 +520,16 @@ describe('buildFilterComplex 音轨/帧率（复核修复 P1-7）', () => {
       extraAudioFiles: [['a.wav', 'b.wav'], ['c.wav']],
     })
     // 物理输入顺序：视频(0,1) → 配音文件(2,3,4) → 静音占位(5)；
-    // 单元0 音源 = [0:a] + [2:a] + [3:a]（视频自带音轨在前），单元1 = 占位[5:a] + [4:a]
-    expect(fc).toContain('[0:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000[as0_0]')
-    expect(fc).toContain('[2:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000[as0_1]')
-    expect(fc).toContain('[3:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000[as0_2]')
-    expect(fc).toContain('[as0_0][as0_1][as0_2]amix=inputs=3:duration=longest[am0]')
-    expect(fc).toContain('[5:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000[as1_0]')
-    expect(fc).toContain('[4:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000[as1_1]')
-    expect(fc).toContain('[as1_0][as1_1]amix=inputs=2:duration=longest[am1]')
+    // 单元0 人声 = [2:a][3:a] 逐路归一后 concat（旧实现同时 amix 叠音、且 concat 前不归一
+    // 混采样率必炸），再与视频轨 [0:a] amix；单元1 单条人声 [4:a] 不需 concat，与占位 [5:a] amix
+    expect(fc).toContain('[2:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000[vs0_0]')
+    expect(fc).toContain('[3:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000[vs0_1]')
+    expect(fc).toContain('[vs0_0][vs0_1]concat=n=2:v=0:a=1[vn0]')
+    expect(fc).toContain('[0:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000[an0]')
+    expect(fc).toContain('[an0][vn0]amix=inputs=2:duration=longest:normalize=0[am0]')
+    expect(fc).toContain('[4:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000[vn1]')
+    expect(fc).toContain('[5:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000[an1]')
+    expect(fc).toContain('[an1][vn1]amix=inputs=2:duration=longest:normalize=0[am1]')
     expect(fc).toContain('[au0][au1]concat=n=2:v=0:a=1[outa]')
   })
 

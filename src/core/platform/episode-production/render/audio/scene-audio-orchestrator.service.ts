@@ -44,6 +44,10 @@ export interface OrchestrateAudioResult {
   dialoguePaths: Map<string, string>
   /** 解析失败 / 兜底默认音色的对话计数 */
   fallbackDialogueCount: number
+  /** 场景有旁白文本但合成失败（0916 review：内部 catch 返回 null 会组装出"空结果不报错"） */
+  narrationFailed: boolean
+  /** 合成失败的对白条数（生成 null 未进 dialoguePaths） */
+  dialogueFailCount: number
 }
 
 /**
@@ -96,6 +100,8 @@ export class SceneAudioOrchestratorService {
       narrationPath: null,
       dialoguePaths: new Map(),
       fallbackDialogueCount: 0,
+      narrationFailed: false,
+      dialogueFailCount: 0,
     }
 
     // 1. 旁白
@@ -111,6 +117,7 @@ export class SceneAudioOrchestratorService {
         input.outputDir,
       )
       result.narrationPath = narrationPath
+      if (!narrationPath) result.narrationFailed = true
     }
 
     // 2. 对话（V3 binding-aware 路径）
@@ -132,6 +139,8 @@ export class SceneAudioOrchestratorService {
       )
       if (audioPath) {
         result.dialoguePaths.set(d.id, audioPath)
+      } else {
+        result.dialogueFailCount++
       }
 
       // API 限流防御
@@ -149,29 +158,33 @@ export class SceneAudioOrchestratorService {
    * scene_scripts.narration_audio_path。UI handler 与 agent 工具共用本方法。
    */
   async persistToScene(sceneScriptId: string, result: OrchestrateAudioResult): Promise<void> {
-    const repo = this.ds.getRepository(SceneScriptEntity)
-    const scene = await repo.findOne({ where: { id: sceneScriptId } as any })
-    if (!scene) return
-    if (result.dialoguePaths.size > 0) {
-      const dialogues = JSON.parse(JSON.stringify(scene.dialogues ?? []))
-      for (const [dialogueId, audioPath] of result.dialoguePaths) {
-        const idx = dialogues.findIndex((d: any) => d?.id === dialogueId)
-        if (idx !== -1) {
-          dialogues[idx].audioAsset = {
-            id: `audio_${dialogueId}_${Date.now()}`,
-            type: 'dialogue',
-            text: dialogues[idx].text,
-            audioPath,
+    if (result.dialoguePaths.size === 0 && !result.narrationPath) return
+    // 对白与旁白同事务落库——两次 update 非原子会出现"对白落了旁白没落"的半落库
+    await this.ds.transaction(async (em) => {
+      const repo = em.getRepository(SceneScriptEntity)
+      const scene = await repo.findOne({ where: { id: sceneScriptId } as any })
+      if (!scene) return
+      if (result.dialoguePaths.size > 0) {
+        const dialogues = JSON.parse(JSON.stringify(scene.dialogues ?? []))
+        for (const [dialogueId, audioPath] of result.dialoguePaths) {
+          const idx = dialogues.findIndex((d: any) => d?.id === dialogueId)
+          if (idx !== -1) {
+            dialogues[idx].audioAsset = {
+              id: `audio_${dialogueId}_${Date.now()}`,
+              type: 'dialogue',
+              text: dialogues[idx].text,
+              audioPath,
+            }
           }
         }
+        await repo.update({ id: sceneScriptId } as any, { dialogues } as any)
       }
-      await repo.update({ id: sceneScriptId } as any, { dialogues } as any)
-    }
-    if (result.narrationPath) {
-      await repo.update({ id: sceneScriptId } as any, {
-        narrationAudioPath: result.narrationPath,
-      } as any)
-    }
+      if (result.narrationPath) {
+        await repo.update({ id: sceneScriptId } as any, {
+          narrationAudioPath: result.narrationPath,
+        } as any)
+      }
+    })
   }
 
   /**

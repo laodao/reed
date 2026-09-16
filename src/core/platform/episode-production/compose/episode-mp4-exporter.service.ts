@@ -135,13 +135,6 @@ export class EpisodeMp4ExporterService {
       input.episodeScriptId,
     )
 
-    // 状态闭环（2026-09-16 P0-CM2）：导出开始 → composing；成功后写
-    // composedVideoPath + completed（stage-gate ⑥ 的判定依据此前是幽灵列恒 undefined）
-    const episodeId = await this.resolveEpisodeId(input.episodeScriptId)
-    if (episodeId) {
-      await advanceEpisodeStatus(this.ds, episodeId, 'composing').catch(() => {})
-    }
-
     const width = input.width ?? DEFAULT_WIDTH
     const height = input.height ?? DEFAULT_HEIGHT
 
@@ -171,12 +164,57 @@ export class EpisodeMp4ExporterService {
         }${missingInSelected.length > 3 ? '...' : ''}）`,
       )
     }
+
+    // 状态闭环（2026-09-16 P0-CM2）：导出开始 → composing；成功后写
+    // composedVideoPath + completed（stage-gate ⑥ 的判定依据此前是幽灵列恒 undefined）。
+    // 0916 晚 review：composing 推进必须放在全部前置校验**之后**——否则空选/缺视频
+    // 阻断路径也会把状态推到 composing（只前进原语下无 failed 态可回，恒卡 ⑥）。
+    const episodeId = await this.resolveEpisodeId(input.episodeScriptId)
+    if (episodeId) {
+      await advanceEpisodeStatus(this.ds, episodeId, 'composing').catch(() => {})
+    }
+
+    try {
+      return await this.composeAndWriteBack(input, {
+        timeline,
+        exportShots,
+        unitShotIds,
+        episodeId,
+        width,
+        height,
+      })
+    } catch (err) {
+      // 导出失败（ffmpeg 报错/超时/被 kill）：composing 回退到 producing（重试锚点）。
+      // 刻意不走只前进原语——失败回退是唯一合法的倒退场景；WHERE 守卫避免与并发
+      // 后段写者竞态（仅当仍停在 composing 时才回退）。
+      if (episodeId) await this.rollbackComposing(episodeId)
+      throw err
+    }
+  }
+
+  /** 校验通过后的合成执行 + 成功状态回写（失败由调用方统一回退 composing） */
+  private async composeAndWriteBack(
+    input: ExportEpisodeMp4Input,
+    ctx: {
+      timeline: Timeline
+      exportShots: TimelineShot[]
+      unitShotIds: string[][] | null
+      episodeId: string | null
+      width: number
+      height: number
+    },
+  ): Promise<ExportEpisodeMp4Result> {
+    const { timeline, exportShots, unitShotIds, episodeId, width, height } = ctx
     // 把 user-rel 相对路径解析为绝对路径再交给 ffmpeg
     const fileInputs = exportShots.map((s) => resolveUserRelPath(s.videoPath!))
 
     // 配音混入（2026-09-16 P0-CM1）：收集每单元的 TTS 音频（对白按 storyboard.dialogueIds
     // → dialogues[].audioAsset；旁白挂到各场景首个入选单元），作为附加文件输入混入该单元音轨
     const extraAudioFiles = await this.collectUnitAudioFiles(exportShots, unitShotIds)
+    // TTS 产物坏一路丢一路，不阻断整片（0916 review 回归修复：narration_audio_path/
+    // dialogues[].audioAsset 是当天才补的持久化列，存量数据残留路径时 ffmpeg 打不开
+    // 输入会让"以前无配音能导出"的场景变成全盘失败）
+    await this.filterBrokenExtraAudio(extraAudioFiles)
     for (const files of extraAudioFiles) {
       for (const f of files) fileInputs.push(resolveUserRelPath(f))
     }
@@ -256,6 +294,49 @@ export class EpisodeMp4ExporterService {
     }
   }
 
+  /**
+   * 逐单元剔除不存在/无音轨的 TTS 产物（就地修改）。
+   * 存在性检查始终做；runner 支持时叠加 ffprobe 探测（无音轨的残留文件同样会让
+   * filter 图的 `[i:a]` 报错）。坏文件只 warn 不阻断。
+   */
+  private async filterBrokenExtraAudio(extraAudioFiles: string[][]): Promise<void> {
+    const fs = await import('fs')
+    const probe = typeof this.ffmpegRunner.probeHasAudio === 'function'
+      ? this.ffmpegRunner.probeHasAudio!.bind(this.ffmpegRunner)
+      : null
+    for (let i = 0; i < extraAudioFiles.length; i++) {
+      const files = extraAudioFiles[i]
+      const kept: string[] = []
+      for (const f of files) {
+        const abs = resolveUserRelPath(f)
+        let ok = fs.existsSync(abs)
+        if (ok && probe) {
+          try {
+            ok = await probe(abs)
+          } catch {
+            ok = false
+          }
+        }
+        if (ok) kept.push(f)
+        else console.warn(`[EpisodeMp4Exporter] 剔除不可用配音文件（导出继续，该条无声）: ${abs}`)
+      }
+      extraAudioFiles[i] = kept
+    }
+  }
+
+  /** 导出失败时 composing → producing（仅当仍停在 composing；见 exportEpisodeToMp4 注释） */
+  private async rollbackComposing(episodeId: string): Promise<void> {
+    try {
+      await this.ds.createQueryBuilder()
+        .update(VideoEpisodeEntity)
+        .set({ status: 'producing', updatedAt: new Date() } as any)
+        .where('id = :id AND status = :st', { id: episodeId, st: 'composing' })
+        .execute()
+    } catch {
+      /* 回退失败不影响原始错误上抛 */
+    }
+  }
+
   /** episodeScriptId → episodeId（状态回写用；找不到返回 null 不阻断导出） */
   private async resolveEpisodeId(episodeScriptId: string): Promise<string | null> {
     try {
@@ -307,10 +388,11 @@ export class EpisodeMp4ExporterService {
           }
         }
 
-        // 旁白挂场景首个入选单元
+        // 旁白挂场景首个入选单元（顺序播语义 0916 review：排在单元内对白**之后**——
+        // 数据无时间戳，唯一可保证的下界是"不重叠"：对白（dialogueIds 顺序）→ 旁白）
         if (scene && (scene as any).narrationAudioPath && !narrationAttached.has(scene.id)) {
           narrationAttached.add(scene.id)
-          files.unshift(String((scene as any).narrationAudioPath))
+          files.push(String((scene as any).narrationAudioPath))
         }
 
         result[i] = files
@@ -468,12 +550,14 @@ export function buildFilterComplex(args: {
     parts.push(applySubtitlesIfAny('[vchain]', srtPath, '[outv]'))
   }
 
-  // 4. 音轨（2026-09-16 P0-RD1/RD5 重写）：
+  // 4. 音轨（2026-09-16 P0-RD1/RD5 重写 + 晚间 review 顺序化）：
   //    - 每路音源先 aresample=48000 + aformat 归一采样率/声道——旧实现 anullsrc 占位
   //      写死 44.1k，与真实 48k 音轨进同一 concat 滤镜图必败（混合 provider 场景必现）；
   //    - 每单元混音后 apad+atrim 到「时长 − 与下一段的重叠」，与 xfade 视频时间轴严格对齐
   //      （旧实现音频全长 concat，视频逐转场扣减，每个 0.5s 转场累积 0.5s 音画漂移）；
-  //    - 单元内多音源（视频自带音轨 + TTS 对白/旁白）用 amix 合成。
+  //    - 单元内多路人声（对白×N + 旁白）**先按顺序 concat 成一条人声轨**再与视频音轨
+  //      amix（旧实现全部从 t=0 同时 amix——多条 TTS 人声叠音、旁白与对白互相压）；
+  //      数据无对话时间戳，顺序播是可保证的下界：超出单元时长的部分仍被 atrim 截断。
   const normChain = 'aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000'
   const unitAudioLen = (i: number): number => {
     const isLast = i === shots.length - 1
@@ -486,26 +570,33 @@ export function buildFilterComplex(args: {
   const unitLabels: string[] = []
   for (let i = 0; i < shots.length; i++) {
     const len = unitAudioLen(i)
-    const sources: string[] = [audioLabel(i)]
     const extraCount = extraAudioFiles?.[i]?.length ?? 0
-    for (let k = 0; k < extraCount; k++) {
-      sources.push(`[${extraCursor}:a]`)
-      extraCursor++
-    }
-    // 单源：归一 + 对齐一条链直通；多源：逐源归一 → amix → 再对齐
+    // 单元音源头：视频自带音轨/占位（无人声时直通）；有人声时 = amix(视频轨, 顺序人声轨)
     let head: string
-    if (sources.length === 1) {
-      head = sources[0]
+    if (extraCount === 0) {
+      head = audioLabel(i)
     } else {
-      const normalized = sources
-        .map((label, si) => `${label}${normChain}[as${i}_${si}]`)
-        .join(';')
-      parts.push(normalized)
-      // amix 缺省 normalize 会把总音量除以输入数——环境音 + 人声场景可接受，
-      // 避免使用旧版 ffmpeg 不支持的 normalize=0 选项
-      parts.push(
-        `[as${i}_0]${sources.slice(1).map((_, k) => `[as${i}_${k + 1}]`).join('')}amix=inputs=${sources.length}:duration=longest[am${i}]`,
-      )
+      const voiceLabels: string[] = []
+      for (let k = 0; k < extraCount; k++) {
+        voiceLabels.push(`[${extraCursor}:a]`)
+        extraCursor++
+      }
+      // 逐路人声先归一（48k/stereo）再 concat——concat 要求各输入采样率/声道一致，
+      // 混合时期/混合 TTS provider 的存量产物直连会初始化即败（复核 P2）
+      if (extraCount === 1) {
+        parts.push(`${voiceLabels[0]}${normChain}[vn${i}]`)
+      } else {
+        parts.push(
+          voiceLabels
+            .map((label, k) => `${label}${normChain}[vs${i}_${k}]`)
+            .join(';') +
+            `;${voiceLabels.map((_, k) => `[vs${i}_${k}]`).join('')}concat=n=${extraCount}:v=0:a=1[vn${i}]`,
+        )
+      }
+      parts.push(`${audioLabel(i)}${normChain}[an${i}]`)
+      // normalize=0：能跑 xfade（4.3+）的构建事实上都 ≥4.4（normalize 选项引入版），
+      // 2018 兜底 binary 无 xfade 本就必挂——无需为它把人声压到 1/N 音量
+      parts.push(`[an${i}][vn${i}]amix=inputs=2:duration=longest:normalize=0[am${i}]`)
       head = `[am${i}]`
     }
     parts.push(`${head}${normChain},apad,atrim=0:${len},asetpts=N/SR/TB[au${i}]`)

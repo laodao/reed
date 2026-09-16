@@ -57,12 +57,28 @@ async function handleGenerateSceneAudioV3(
     // 导出器无从读取，成片永远无声。落库逻辑在 orchestrator.persistToScene
     // （对白写 dialogues[].audioAsset，旁白写 narration_audio_path），
     // UI 与 agent 工具共用。
+    let persistFailed = false
     try {
       await svc.persistToScene(sceneScriptId, result)
     } catch (persistErr) {
-      // 落库失败不掩盖生成成功——但要在返回里提示产物未持久化
+      // 落库失败不掩盖生成成功——但必须在返回里提示（0916 review：此前只 console.warn，
+      // UI 依旧弹"配音已生成"，导出读不到产物 → 无声成片静默复现）
+      persistFailed = true
       console.warn('[handleGenerateSceneAudioV3] 产物落库失败:', persistErr)
     }
+
+    // 假成功防线（0916 review P1）：TTS 内部失败返回 null，orchestrator 组装空结果
+    // 不抛错——若场景确实有待合成内容却一条产物都没有，必须报失败而非 success:true。
+    const producedAny = !!result.narrationPath || result.dialoguePaths.size > 0
+    const expectedAny = result.narrationFailed || result.dialogueFailCount > 0
+      || producedAny
+    if (expectedAny && !producedAny) {
+      return {
+        success: false,
+        error: '配音生成失败：旁白与全部对白均未合成成功（请检查 TTS provider 配置后重试）',
+      }
+    }
+    const partial = result.narrationFailed || result.dialogueFailCount > 0
 
     // dialoguePaths Map → object（IPC 序列化）
     const dialoguePathsObj: Record<string, string> = {}
@@ -76,6 +92,12 @@ async function handleGenerateSceneAudioV3(
         narrationPath: result.narrationPath,
         dialoguePaths: dialoguePathsObj,
         fallbackDialogueCount: result.fallbackDialogueCount,
+        /** 部分合成失败（旁白失败 / N 条对白失败）——UI 需提示而非静默 */
+        partial,
+        narrationFailed: result.narrationFailed,
+        dialogueFailCount: result.dialogueFailCount,
+        /** 生成成功但落库失败——导出将读不到产物，UI 需醒目提示 */
+        persistFailed,
       },
     }
   } catch (e: any) {

@@ -230,6 +230,14 @@ async function onGenerateAudio(sc: SceneAudioItem): Promise<void> {
     const r = await (window.electronAPI.episodeProduction as any).generateSceneAudioV3(sc.id)
     if (!r?.success) {
       ElMessage.error(r?.error || '生成配音失败')
+    } else if (r.data?.persistFailed) {
+      // 生成成功但落库失败——导出器读不到产物，成片仍会无声，必须醒目提示
+      ElMessage.error('配音已生成但保存到场景失败，导出将无法混入，请重试或检查数据库')
+    } else if (r.data?.partial) {
+      const parts: string[] = []
+      if (r.data?.narrationFailed) parts.push('旁白合成失败')
+      if ((r.data?.dialogueFailCount ?? 0) > 0) parts.push(`${r.data.dialogueFailCount} 条对白合成失败`)
+      ElMessage.warning(`配音部分生成：${parts.join('、')}；失败部分导出时将无声，可重试补齐`)
     } else {
       const fallbackCount = r.data?.fallbackDialogueCount ?? 0
       ElMessage.success(
