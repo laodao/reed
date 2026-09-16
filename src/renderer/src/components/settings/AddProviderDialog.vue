@@ -632,12 +632,16 @@ const enabledModelList = enabledModelsWithInfo
 // 认证类型
 const templateAuthType = computed(() => selectedTemplate.value?.apiConfig.authType || 'bearer')
 
+// 免密钥模板（如 llama.cpp 本地推理）：密钥可留空
+const apiKeyOptional = computed(() => selectedTemplate.value?.apiKeyOptional === true)
+
 // 使用须知（模板声明，如阿里百炼 Token Plan 的地域/限额/密钥隔离/使用范围限制）
 const usageNotes = computed(() => selectedTemplate.value?.usageNotes ?? [])
 
 // API Key 输入占位（模板声明的前缀提示，如 sk-sp-）
 const apiKeyPlaceholder = computed(() => {
   if (isEdit.value) return '留空保持不变'
+  if (apiKeyOptional.value) return '可留空（服务器启用 --api-key 时才需填写）'
   const prefix = selectedTemplate.value?.apiKeyPrefix
   return prefix ? `请输入 ${prefix} 开头的专属密钥` : '请输入 API 密钥'
 })
@@ -666,7 +670,7 @@ const rules: FormRules = {
   name: [{ required: true, message: '请输入配置名称', trigger: 'blur' }],
   apiKey: [
     {
-      required: computed(() => templateAuthType.value !== 'none' && !isEdit.value),
+      required: computed(() => templateAuthType.value !== 'none' && !apiKeyOptional.value && !isEdit.value),
       message: '请输入 API 密钥',
       trigger: 'blur'
     }
@@ -710,8 +714,8 @@ const fetchModelsFromApi = async () => {
   if (!selectedTemplate.value && !isEdit.value) return
 
   // 编辑模式下，如果没有输入新的 API Key，使用 configId 让后端从数据库读取
-  // 新建模式下，需要检查是否输入了 API Key
-  if (!isEdit.value && templateAuthType.value !== 'none' && !form.apiKey) {
+  // 新建模式下，需要检查是否输入了 API Key（免密钥模板如 llama.cpp 可留空）
+  if (!isEdit.value && templateAuthType.value !== 'none' && !apiKeyOptional.value && !form.apiKey) {
     return
   }
 

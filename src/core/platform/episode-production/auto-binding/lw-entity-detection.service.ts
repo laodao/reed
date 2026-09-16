@@ -248,7 +248,7 @@ export class LwEntityDetectionService {
     try {
       // 获取 AI 配置
       const { getSecureStorage } = await import('@core/interfaces/storage.interface')
-      const { PROVIDER_TEMPLATES } = await import('@core/platform/services/provider-template.service')
+      const { PROVIDER_TEMPLATES, isApiKeyOptional } = await import('@core/platform/services/provider-template.service')
 
       const dbManager = getCoreDatabaseManager()
       if (!dbManager.providerConfigs) {
@@ -265,30 +265,32 @@ export class LwEntityDetectionService {
         }
       }
 
-      if (!config || !config.apiKey) {
+      // 获取模板（空密钥挡板需要模板判定免密钥提供商，故先于挡板解析）
+      const template = config ? PROVIDER_TEMPLATES.find(t => t.id === config.templateId) : undefined
+      if (!config || !template) {
         console.warn('[LwEntityDetectionService] 未找到可用的 AI Provider，返回空结果')
         return { characters: [], locations: [], items: [] }
       }
 
-      const template = PROVIDER_TEMPLATES.find(t => t.id === config!.templateId)
-      if (!template) {
-        console.warn('[LwEntityDetectionService] 未找到 Provider 模板，返回空结果')
+      // 空密钥挡板：免密钥提供商（如 llama.cpp 本地推理）允许不配置密钥
+      if (!config.apiKey && !isApiKeyOptional(template)) {
+        console.warn('[LwEntityDetectionService] 提供商未配置 API 密钥，返回空结果')
         return { characters: [], locations: [], items: [] }
       }
 
-      // 解密 API 密钥
+      // 解密 API 密钥（免密钥提供商可无密钥，置空串）
       const secureStorage = getSecureStorage()
       if (!secureStorage.isInitialized()) {
         await secureStorage.initialize()
       }
-      const apiKey = secureStorage.decrypt(config.apiKey)
+      const apiKey = config.apiKey ? secureStorage.decrypt(config.apiKey) : ''
 
       const provider = createProvider(
         template.id,
         {
           apiKey,
           baseUrl: config.baseUrl,
-          defaultModel: config.defaultModel
+          defaultModel: config.defaultModelId
         },
         template,
         config

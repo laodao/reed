@@ -166,6 +166,11 @@ export interface ProviderTemplate {
    */
   apiKeyPrefix?: string
   /**
+   * API 密钥可留空（免密钥提供商，如本地推理服务 llama.cpp）。
+   * true 时：配置界面不强制填写密钥，测试连接与各调用链允许空密钥
+   */
+  apiKeyOptional?: boolean
+  /**
    * 使用须知（模板级，配置界面以告警条逐条展示）。
    * 用于承载官方平台的地域/限额/密钥隔离/使用范围限制等必须让用户知情的信息
    */

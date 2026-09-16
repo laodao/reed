@@ -596,8 +596,59 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
       { id: 'h3', name: 'MiniMax-H3 图生视频（自带配音）', type: 'video', contextWindow: 0, maxOutputTokens: 0, features: ['video'] }
     ],
     allowCustomModels: true
+  },
+  // llama.cpp 本地推理（llama-server，OpenAI 兼容端点，缺省免密钥）：与 comfyui 同为本地自建服务
+  {
+    id: 'llamacpp',
+    siteUrl: 'https://github.com/ggml-org/llama.cpp',
+    name: 'llama.cpp',
+    description: '本地 llama.cpp 推理服务（llama-server），OpenAI 兼容端点，无需 API 密钥',
+    category: 'openai-compatible',
+    capabilities: ['chat'],
+    icon: '🦙',
+    isOfficial: false,
+    apiConfig: {
+      // llama-server 默认监听 127.0.0.1:8080，OpenAI 兼容端点挂在 /v1 下；
+      // baseUrl 含版本段与 validateBaseUrl 的约定一致，joinUrl 会去重双侧 /v1
+      baseUrl: 'http://127.0.0.1:8080/v1',
+      authType: 'bearer',
+      authHeader: 'Authorization',
+      authPrefix: 'Bearer ',
+      requestFormat: 'openai',
+      chatEndpoint: '/chat/completions',
+      modelsEndpoint: '/models'
+    },
+    supportedParams: {
+      stream: true,
+      temperature: true,
+      maxTokens: true,
+      topP: true,
+      custom: []
+    },
+    // 模型列表从 /v1/models 动态获取（返回当前加载的模型），也允许手动添加自定义模型 ID
+    models: [],
+    allowCustomModels: true,
+    // llama-server 缺省不启用密钥认证（--api-key 时才需要），密钥可留空
+    apiKeyOptional: true,
+    usageNotes: [
+      '默认地址 http://127.0.0.1:8080/v1，对应 llama-server -m 模型文件.gguf 的缺省启动参数；自定义端点请以 /v1 结尾（如 http://192.168.1.10:8080/v1）',
+      '在「模型管理」页签点击「从 API 刷新」获取当前加载模型的 ID；服务未启动时刷新会失败，属正常现象',
+      '服务器以 --api-key 参数启动时才需要填写 API 密钥，否则可留空',
+      '思考类模型建议加 --jinja --reasoning-format deepseek 启动，思维链会进入 reasoning_content，不混入正文',
+      '/v1/models 不返回上下文长度，模型默认按 8K/4K 显示；可在「模型管理」编辑为实际上下文大小'
+    ]
   }
 ]
+
+/**
+ * 判断模板是否允许空 API 密钥（免密钥提供商：显式声明 apiKeyOptional，
+ * 或认证类型为 none 的本地服务）。配置界面必填校验与各调用链的空密钥挡板统一走此判定，
+ * 避免每处各写一套条件漂移。
+ */
+export function isApiKeyOptional(template?: Pick<ProviderTemplate, 'apiKeyOptional' | 'apiConfig'> | null): boolean {
+  if (!template) return false
+  return template.apiKeyOptional === true || template.apiConfig?.authType === 'none'
+}
 
 /**
  * 提供商模板服务
@@ -664,8 +715,8 @@ export class ProviderTemplateService {
       return { success: false, message: '模板不存在' }
     }
 
-    // 检查是否需要 API 密钥
-    if (template.apiConfig.authType !== 'none' && !config.apiKey) {
+    // 检查是否需要 API 密钥（免密钥提供商如 llama.cpp 可留空）
+    if (!isApiKeyOptional(template) && !config.apiKey) {
       return { success: false, message: '请提供 API 密钥' }
     }
 

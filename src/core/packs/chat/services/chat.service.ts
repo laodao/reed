@@ -7,7 +7,7 @@
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import { createProvider } from '@core/platform/providers/llm'
-import { PROVIDER_TEMPLATES } from '@core/platform/services/provider-template.service'
+import { PROVIDER_TEMPLATES, isApiKeyOptional } from '@core/platform/services/provider-template.service'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { FileService } from '@core/platform/services/file.service'
 import { KnowledgeBaseService } from '@core/platform/services/knowledge-base.service'
@@ -88,28 +88,29 @@ export class ChatService {
         return { success: false, error: '未配置 AI 提供商，请先在设置中添加提供商配置' }
       }
 
-      if (!providerConfig.apiKey) {
+      // 获取模板（空密钥挡板需要模板判定免密钥提供商，故先于挡板解析）
+      const template = PROVIDER_TEMPLATES.find(t => t.id === providerConfig.templateId)
+
+      if (!template) {
+        return { success: false, error: '提供商模板不存在' }
+      }
+
+      // 空密钥挡板：免密钥提供商（如 llama.cpp 本地推理）允许不配置密钥
+      if (!providerConfig.apiKey && !isApiKeyOptional(template)) {
         console.error('[ChatService.sendMessage] 错误: 提供商未配置 API 密钥')
         return { success: false, error: `提供商 "${providerConfig.name}" 未配置 API 密钥` }
       }
 
-      // 解密 API 密钥
+      // 解密 API 密钥（免密钥提供商可无密钥，置空串）
       let decryptedApiKey: string
       try {
         const secureStorage = getSecureStorage()
         if (!secureStorage.isInitialized()) {
           await secureStorage.initialize()
         }
-        decryptedApiKey = secureStorage.decrypt(providerConfig.apiKey)
+        decryptedApiKey = providerConfig.apiKey ? secureStorage.decrypt(providerConfig.apiKey) : ''
       } catch (decryptError) {
         return { success: false, error: 'API 密钥解密失败，请重新配置提供商' }
-      }
-
-      // 获取模板
-      const template = PROVIDER_TEMPLATES.find(t => t.id === providerConfig.templateId)
-
-      if (!template) {
-        return { success: false, error: '提供商模板不存在' }
       }
 
       console.log('[ChatService.sendMessage] 提供商信息:')

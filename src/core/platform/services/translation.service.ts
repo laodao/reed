@@ -9,7 +9,7 @@ import path from 'path'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { TranslationRepository } from '@core/database/repositories/translation.repository'
 import { createProvider } from '@core/platform/providers/llm'
-import { PROVIDER_TEMPLATES } from '@core/platform/services/provider-template.service'
+import { PROVIDER_TEMPLATES, isApiKeyOptional } from '@core/platform/services/provider-template.service'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import type {
@@ -68,8 +68,11 @@ export class TranslationService {
       const providers: TranslationProvider[] = []
 
       for (const config of configs) {
-        // 检查是否有 API 密钥
-        const configured = !!config.apiKey
+        // 获取模板（免密钥判定与缺省模型都要用）
+        const template = PROVIDER_TEMPLATES.find(t => t.id === config.templateId)
+
+        // 检查是否有 API 密钥（免密钥提供商如 llama.cpp 无密钥也算已配置）
+        const configured = !!config.apiKey || isApiKeyOptional(template)
 
         // 获取模型列表
         const models: Array<{ id: string; name: string }> = []
@@ -87,16 +90,8 @@ export class TranslationService {
           }
         }
 
-        // 如果没有配置模型，从模板获取默认模型
-        if (models.length === 0) {
-          const template = PROVIDER_TEMPLATES.find(t => t.id === config.templateId)
-          if (template && template.defaultModel) {
-            models.push({
-              id: template.defaultModel,
-              name: template.defaultModel
-            })
-          }
-        }
+        // ProviderTemplate 无 defaultModel 字段（模板不预置默认模型）：
+        // 配置未启用任何文本模型时该提供商不进翻译列表，与模型选择器行为一致
 
         if (models.length > 0) {
           providers.push({
@@ -152,30 +147,31 @@ export class TranslationService {
         return { success: false, error: '暂无可用的翻译服务，请先配置 AI 提供商' }
       }
 
-      if (!providerConfig.apiKey) {
+      // 获取模板（空密钥挡板需要模板判定免密钥提供商，故先于挡板解析）
+      const template = PROVIDER_TEMPLATES.find(t => t.id === providerConfig.templateId)
+      if (!template) {
+        return { success: false, error: '提供商模板不存在' }
+      }
+
+      // 空密钥挡板：免密钥提供商（如 llama.cpp 本地推理）允许不配置密钥
+      if (!providerConfig.apiKey && !isApiKeyOptional(template)) {
         return { success: false, error: `提供商 "${providerConfig.name}" 未配置 API 密钥` }
       }
 
-      // 解密 API 密钥
+      // 解密 API 密钥（免密钥提供商可无密钥，置空串）
       let decryptedApiKey: string
       try {
         const secureStorage = getSecureStorage()
         if (!secureStorage.isInitialized()) {
           await secureStorage.initialize()
         }
-        decryptedApiKey = secureStorage.decrypt(providerConfig.apiKey)
+        decryptedApiKey = providerConfig.apiKey ? secureStorage.decrypt(providerConfig.apiKey) : ''
       } catch (decryptError) {
         return { success: false, error: 'API 密钥解密失败，请重新配置提供商' }
       }
 
-      // 获取模板
-      const template = PROVIDER_TEMPLATES.find(t => t.id === providerConfig.templateId)
-      if (!template) {
-        return { success: false, error: '提供商模板不存在' }
-      }
-
-      // 获取模型
-      const modelId = request.modelId || providerConfig.defaultModelId || template.defaultModel
+      // 获取模型（ProviderTemplate 无 defaultModel 字段——显式指定或配置的默认模型）
+      const modelId = request.modelId || providerConfig.defaultModelId
       if (!modelId) {
         return { success: false, error: '没有可用的文本模型' }
       }

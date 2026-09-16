@@ -128,6 +128,9 @@ export class ProviderAdapter {
       apiKey,
       modelId: effectiveModelId,
       category: (template as { category?: string }).category,
+      // 供应商配置的自定义参数（如 vLLM 的 chat_template_kwargs.enable_thinking=false）
+      // 经请求体合并透传——与旧版 OpenAICompatibleProvider 的 customParams 行为对齐
+      customParams: (config as { customParams?: Record<string, unknown> | null }).customParams ?? undefined,
     })
 
     if (this.cacheCapacity > 0) {
@@ -171,6 +174,8 @@ export class ProviderAdapter {
     modelId: string
     /** 提供商模板类别（25 号 M2 批4）：anthropic/google 走原生 SDK，其余 OpenAI 兼容 */
     category?: string
+    /** 供应商配置自定义参数，OpenAI 兼容链路经自定义 fetch 合并进请求体顶层 */
+    customParams?: Record<string, unknown>
   }): Promise<LanguageModel> {
     const category = opts.category ?? 'openai-compatible'
     if (category === 'anthropic') {
@@ -219,8 +224,34 @@ export class ProviderAdapter {
     }
     const factory = this.compatFactory
     if (!factory) throw new AgentProviderNotConfiguredError('AI SDK provider 模块加载失败')
-    const provider = factory({ name: opts.name, baseURL: opts.baseURL, apiKey: opts.apiKey })
+    const provider = factory({
+      name: opts.name,
+      baseURL: opts.baseURL,
+      apiKey: opts.apiKey,
+      ...(opts.customParams && Object.keys(opts.customParams).length > 0
+        ? { fetch: mergeBodyFetch(opts.customParams) }
+        : {}),
+    })
     return provider(opts.modelId)
+  }
+}
+
+/** 生成把 customParams 合并进 JSON 请求体顶层的 fetch（对齐旧版 OpenAICompatibleProvider
+ * 的 customParams 行为——SDK 版 provider 原生不支持额外 body 字段，vLLM 的
+ * chat_template_kwargs 等参数只能在此层注入） */
+function mergeBodyFetch(customParams: Record<string, unknown>): typeof fetch {
+  return async (input, init) => {
+    let nextInit = init
+    if (init?.body && typeof init.body === 'string') {
+      try {
+        const body = JSON.parse(init.body)
+        Object.assign(body, customParams)
+        nextInit = { ...init, body: JSON.stringify(body) }
+      } catch {
+        // 非 JSON 体（如 multipart）原样放行
+      }
+    }
+    return fetch(input, nextInit)
   }
 }
 

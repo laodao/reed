@@ -16,7 +16,7 @@
  */
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { createProvider } from '@core/platform/providers/llm'
-import { PROVIDER_TEMPLATES } from '@core/platform/services/provider-template.service'
+import { PROVIDER_TEMPLATES, isApiKeyOptional } from '@core/platform/services/provider-template.service'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { createLogger } from '@core/utils/logger'
 import { validateOutboundUrl } from '@core/utils/outbound-url'
@@ -64,22 +64,23 @@ export async function getProviderConfig(providerConfigId?: string): Promise<Prov
     }
   }
 
-  if (!config || !config.apiKey) {
+  // 获取模板（空密钥挡板需要模板判定免密钥提供商，故先于挡板解析）
+  const template = config ? PROVIDER_TEMPLATES.find(t => t.id === config.templateId) : undefined
+  if (!config || !template) {
     return null
   }
 
-  // 获取模板
-  const template = PROVIDER_TEMPLATES.find(t => t.id === config!.templateId)
-  if (!template) {
+  // 空密钥挡板：免密钥提供商（如 llama.cpp 本地推理）允许不配置密钥
+  if (!config.apiKey && !isApiKeyOptional(template)) {
     return null
   }
 
-  // 解密 API 密钥
+  // 解密 API 密钥（免密钥提供商可无密钥，置空串）
   const secureStorage = getSecureStorage()
   if (!secureStorage.isInitialized()) {
     await secureStorage.initialize()
   }
-  const apiKey = secureStorage.decrypt(config.apiKey)
+  const apiKey = config.apiKey ? secureStorage.decrypt(config.apiKey) : ''
 
   return { config, template, apiKey }
 }
