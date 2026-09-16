@@ -70,10 +70,15 @@ describe('ep-agent-tools 共享注册（M6.5-a）', () => {
     registerEpAgentTools(registry)
     registerEpAgentTools(registry)
     const names = registry.listSpecs({ packId: EP_AGENT_PACK_ID }).map((s) => s.name)
-    expect(names).toHaveLength(10)
+    expect(names).toHaveLength(14)
     expect(names).toContain('pack:ep-agent:generate_script')
     expect(names).toContain('pack:ep-agent:ep_confirm_choice')
-    expect(new Set(names).size).toBe(10)
+    // 8a70bf6e 后半程四工具（工具面 10→14）
+    expect(names).toContain('pack:ep-agent:generate_keyframes')
+    expect(names).toContain('pack:ep-agent:generate_segment_video')
+    expect(names).toContain('pack:ep-agent:generate_scene_audio')
+    expect(names).toContain('pack:ep-agent:export_mp4')
+    expect(new Set(names).size).toBe(14)
   })
 
   it('ep_confirm_choice：需审批注册；未选择/越候选清单被拒、有效选择回显（直调 execute）', async () => {

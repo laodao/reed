@@ -326,8 +326,10 @@ export function parseJsonString(jsonStr: string): any {
 
   // 3. 结构中文引号 + 非法 \' 转义
   try {
-    const converted = convertChineseQuotesOutsideStrings(
-      stripJsonCommentsOutsideStrings(raw),
+    // 顺序：先转中文引号、再剥注释——中文引号结构下剥注释扫描器只认 ASCII 引号为
+    // 字符串边界，先剥会把值内 URL 的 `//` 当行注释砍掉（0916 review 复核发现）。
+    const converted = stripJsonCommentsOutsideStrings(
+      convertChineseQuotesOutsideStrings(raw),
     ).replace(/\\'/g, "'")
     return JSON.parse(stripTrailingCommas(converted))
   } catch {

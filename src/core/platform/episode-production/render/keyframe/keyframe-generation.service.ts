@@ -506,6 +506,9 @@ export class KeyframeGenerationService {
 
     const styleConfig = this.pickStyle(input.styleName)
     const sceneAssets = await this.resolveSceneAssets(scene, sb.id)
+    // D4-3 守卫补挂（0916 晚 review：insertExtraKeyframe/generateKeyframeAtIndex 两入口
+    // 此前漏挂——「插入中间帧/按索引补帧」仍会空参考纯文生图静默降级）
+    this.assertCharactersBound(scene, sceneAssets)
     const dimensions = await this.resolveKeyframeDimensions(scene)
     return await this.generateOneKeyframe({
       storyboard: sb,
@@ -568,6 +571,8 @@ export class KeyframeGenerationService {
 
     const styleConfig = this.pickStyle(input.styleName)
     const sceneAssets = await this.resolveSceneAssets(scene, sb.id)
+    // D4-3 守卫补挂（同 insertExtraKeyframe——按索引补帧也不能静默降级）
+    this.assertCharactersBound(scene, sceneAssets)
     const dimensions = await this.resolveKeyframeDimensions(scene)
     // 复用 storyboard 级资产参考图覆盖
     const sbLevelOverrides = parseSbReferenceImageIds((sb as any).referenceImageIds)

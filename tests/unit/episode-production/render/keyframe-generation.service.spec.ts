@@ -533,11 +533,14 @@ describe('KeyframeGenerationService', () => {
   })
 
   /**
-   * Bug B 边界：storyboard.characters JSON 中 characterId 全为空字符串
-   * （e2e 实测分镜 1.2 的真实数据）→ 单条无法 resolve 跳过；不应再回退
-   * 到 scene.characters 整场角色。
+   * D4-3 空绑定守卫（tasks/2026-09-16-storyboard-asset-cogen）：
+   * storyboard.characters JSON 中 characterId 全为空字符串（e2e 实测分镜 1.2 的
+   * 真实数据，F1/F2 形态）→ 单条无法 resolve、也不回退 scene.characters 整场，
+   * 场景名单有角色但解析结果为空 → 直接报错拒绝生成，不再纯文生图静默降级。
+   * （本用例取代原"Bug B：静默跳过"断言——回退不触发的事实不变，
+   *   但行为从静默降级升级为显式失败。）
    */
-  it('Bug B：characterId 全空时静默跳过，不回退整场', async () => {
+  it('D4-3：场景有角色但无任何可解析绑定 → 拒绝生成', async () => {
     const { sbId, sceneId } = await seedScene(ds)
 
     // scene.characters 加第二个角色
@@ -590,14 +593,11 @@ describe('KeyframeGenerationService', () => {
       },
     )
 
-    const result = await svc.generateKeyframesForStoryboard({
-      storyboardId: sbId,
-      keyframeCountOverride: 1,
-    })
-    const prompt = result[0].prompt ?? ''
-    // 不应包含整场另一角色（fallback 不应触发）
-    expect(prompt).not.toContain('李四')
-    expect(prompt).not.toContain('冷漠')
-    expect(prompt).not.toContain('靠墙')
+    await expect(
+      svc.generateKeyframesForStoryboard({
+        storyboardId: sbId,
+        keyframeCountOverride: 1,
+      }),
+    ).rejects.toThrow(/角色未绑定资产/)
   })
 })

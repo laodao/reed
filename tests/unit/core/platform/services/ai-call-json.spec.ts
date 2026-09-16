@@ -56,6 +56,15 @@ describe('parseJsonString：结构中文引号修复（键值整体被中文引�
     expect(parsed.sceneCount).toBe('3')
   })
 
+  it('中文引号结构 + 值内 URL：先转引号再剥注释（换序回归锁）', () => {
+    // 0916 晚 review 复核发现：旧顺序先剥注释，扫描器只认 ASCII 引号为字符串边界，
+    // 值内 URL 的 // 被当行注释砍掉（http:// → http:+换行）→ parse 必败。
+    const raw = '{“img”: “https://x.cn/a.png”, “name”: “甲板”}'
+    const parsed = parseJsonString(raw)
+    expect(parsed.img).toBe('https://x.cn/a.png')
+    expect(parsed.name).toBe('甲板')
+  })
+
   it('混合场景：值内中文引号保留，尾随逗号由第 2 级修复', () => {
     // 真实故障模式：值内中文引号（合法字符）+ 尾随逗号（非法）——
     // 恢复路径必须只修结构、不动内容

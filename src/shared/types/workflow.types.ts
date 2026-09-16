@@ -657,6 +657,17 @@ export interface WorkflowNodeConfigMap {
     /** 爬取礼貌：同一网站最大并发（缺省 1=单线程，上限 10） */
     hostConcurrency?: number
   }
+
+  'chapter-writing': {
+    /** 长文项目 id（模板传参，如 {{start.projectId}}） */
+    projectId: string
+    /** 大纲章节节点 id */
+    outlineId: string
+    /** 覆盖重写本章（缺省 false=章已有正文时拒绝，防误重写） */
+    overwrite?: boolean
+    /** 目标字数（缺省走大纲预估字数） */
+    targetWords?: number
+  }
 }
 
 // ==================== 图结构 ====================
@@ -996,6 +1007,7 @@ export const WORKFLOW_NODE_TYPES = {
   'save-diary': 'save-diary',
   'crawl-news': 'crawl-news',
   'crawl-links': 'crawl-links',
+  'chapter-writing': 'chapter-writing',
   'video-gen': 'video-gen',
   'video-compose': 'video-compose',
   'video-preset': 'video-preset',

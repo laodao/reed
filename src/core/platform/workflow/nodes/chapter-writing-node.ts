@@ -23,6 +23,7 @@ const chapterWritingNode: WorkflowNodeHandler = {
     { key: 'wordCount', type: 'number', desc: '正文字数' },
     { key: 'review', type: 'json', desc: '设计卡自检结果 { ok, issues }' },
     { key: 'postCheck', type: 'json', desc: '写后一致性检查 { passed, report }' },
+    { key: 'note', type: 'string', desc: '写后检查备注（通过/新疑点摘要）' },
     { key: 'error', type: 'string', desc: '失败原因（含自检未通过的问题清单）' },
   ],
   validateConfig(config) {

@@ -893,7 +893,7 @@ export class EpisodeScriptGenerator {
 
     console.log('[EpisodeScriptGenerator] 调用 AI，提示词长度:', prompt.length)
 
-    const response = await callAI(prompt, systemPrompt, 16000, providerConfigId, modelId)
+    const response = await callAI(prompt, systemPrompt, 16000, providerConfigId, modelId, { temperature: 0.3 })
 
     // 49 号：正文被截断时续写一次（fail-soft——续写失败保留原样，走既有解析兜底）
     let fullResponse = response
@@ -906,6 +906,7 @@ export class EpisodeScriptGenerator {
           8000,
           providerConfigId,
           modelId,
+          { temperature: 0.3 },
         )
         fullResponse = response.trimEnd() + '\n' + cont.replace(/【剧本正文开始】/g, '').trim()
         console.log('[EpisodeScriptGenerator] 正文截断续写完成，拼接后长度:', fullResponse.length)
@@ -941,7 +942,7 @@ export class EpisodeScriptGenerator {
         .replace('{locations}', formatRosterList(roster.locations))
         .replace('{chapterContent}', chapterContent)
       try {
-        const bodyResp = await callAI(rescuePrompt, systemPrompt, 8000, providerConfigId, modelId)
+        const bodyResp = await callAI(rescuePrompt, systemPrompt, 8000, providerConfigId, modelId, { temperature: 0.3 })
         const bodyMatch = bodyResp.match(/【剧本正文开始】\s*([\s\S]*?)\s*【剧本正文结束】/)
         const body = (bodyMatch ? bodyMatch[1] : bodyResp).trim()
         if (body) {
