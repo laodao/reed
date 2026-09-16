@@ -23,7 +23,7 @@
  */
 
 import { getCoreDatabaseManager, type ICoreDatabaseManager } from '@core/database/database-manager.interface'
-import { listAcknowledgedKeys, filterBlockingConflicts } from '../conflict-gate'
+import { listResolutions, filterBlockingConflicts } from '../conflict-gate'
 import { buildOutlineDocOrder, outlineChapterNumber, type OutlineDocOrder } from '../outline-order'
 import type { GraphEntityType } from '@shared/types/longwriting.types'
 import { CLIFFHANGER_MARKER } from '../../writing-methodology'
@@ -38,10 +38,14 @@ export interface ConflictItem {
   entityId?: string
   entityName?: string
   chapterNumber?: number
+  /** R10 专用：大纲承诺拍原文（知情保留按拍相似度顺延，不随大纲改写漂移） */
+  beatText?: string
 }
 
 /** 死亡语义关键词（状态切片文本命中即视为"已死亡"） */
 const DEATH_KEYWORDS = ['死亡', '牺牲', '阵亡', '遇害', '战死', '陨落', '离世', '被杀', '丧生', '身亡']
+/** 死亡判定的将来时/假设守卫：关键词前窗内出现这些字样不算已死亡 */
+const DEATH_FUTURE_GUARDS = ['将', '若', '如果', '可能', '险些', '差点', '几乎', '假死', '日后', '未', '没有', '传闻', '谎称']
 /** 物品易主语义关键词 */
 const TRANSFER_KEYWORDS = ['易主', '转手', '交出', '夺得', '夺走', '落入', '赠予', '获得', '易手', '失窃']
 /** 回忆/闪回标记 */
@@ -267,11 +271,12 @@ export class ConsistencyService {
   /**
    * 52 号流程闭环：扫描第 1..uptoChapter 章（已写范围）的一致性疑点，
    * 剔除作者已登记（解决/知情保留）的与只引用未来章节的，剩余即阻断项。
+   * 匹配走完整保留记录（R10 按节拍锚点相似度顺延，非仅 key 精确命中）。
    */
   async scanBlockingConflicts(projectId: string, uptoChapter: number): Promise<ConflictItem[]> {
     const all = await this.scanContradictions(projectId)
-    const ack = await listAcknowledgedKeys(this.manager(), projectId)
-    return filterBlockingConflicts(all, uptoChapter, ack)
+    const rows = await listResolutions(this.manager(), projectId)
+    return filterBlockingConflicts(all, uptoChapter, rows)
   }
 
   async scanContradictions(projectId: string): Promise<ConflictItem[]> {
@@ -332,10 +337,20 @@ export class ConsistencyService {
     const outlines = await this.sortedOutlines(projectId)
     const characters = (await m.lwCharacters?.getByProjectId(projectId)) || []
 
+    // 仍开放的同对角色关系集合：旧关系被开放关系接替（如盟友→同谋）不算失效矛盾，
+    // 否则每章大纲都会铸出新的 R10/R2 变体疑点，确认一次堵不住（忘川渡实跑）
+    const openPairs = new Set(
+      edges
+        .filter((e) => e.validUntilChapter === undefined)
+        .filter((e) => e.sourceType === 'character' && e.targetType === 'character')
+        .map((e) => [e.sourceId, e.targetId].sort().join('↔')),
+    )
+
     for (const edge of edges) {
       if (edge.validUntilChapter === undefined) continue
       // 只检查人物间关系
       if (edge.sourceType !== 'character' || edge.targetType !== 'character') continue
+      if (openPairs.has([edge.sourceId, edge.targetId].sort().join('↔'))) continue
       const srcName = characters.find(c => c.id === edge.sourceId)?.name || edge.sourceId
       const tgtName = characters.find(c => c.id === edge.targetId)?.name || edge.targetId
       for (const o of outlines) {
@@ -655,6 +670,7 @@ export class ConsistencyService {
           severity: 'warning',
           message: `第 ${no} 章大纲承诺「${b.text}」未在正文落点（结果词「${b.predicate}」未出现）——已用其他情节实现请知情保留，否则补写正文或修订大纲`,
           chapterNumber: no,
+          beatText: b.text,
         })
       }
     }
@@ -705,7 +721,17 @@ export class ConsistencyService {
   // ==================== 内部工具 ====================
 
   private hasDeathSemantics(text: string): boolean {
-    return DEATH_KEYWORDS.some(kw => text.includes(kw))
+    for (const kw of DEATH_KEYWORDS) {
+      let idx = (text ?? '').indexOf(kw)
+      while (idx !== -1) {
+        // 忘川渡实跑修复：将来时/假设语气的死亡（"七日后肉身死亡""险些丧生"）不是已死亡——
+        // 关键词前 8 字内出现这类修饰即跳过该命中（宁可漏报不可错杀活角色）
+        const head = (text ?? '').slice(Math.max(0, idx - 8), idx)
+        if (!DEATH_FUTURE_GUARDS.some(g => head.includes(g))) return true
+        idx = text.indexOf(kw, idx + kw.length)
+      }
+    }
+    return false
   }
 
   private async sortedOutlines(projectId: string): Promise<Array<{ id: string; nodeType?: string; level?: number; involvedCharacters?: string[]; involvedLocations?: string[]; involvedItems?: string[]; summary?: string }>> {

@@ -17,16 +17,30 @@
 
     <!-- 高级模式（默认入口）：完整 7 阶段编辑界面 -->
     <template v-else>
-    <!-- 顶部导航栏 -->
+    <!-- 顶部导航栏：返回+标题 | 7 阶段导航 | 视图动作（原独立阶段导航行已并入） -->
     <div class="editor-header">
       <div class="header-left">
         <el-button @click="goBack">
           <el-icon><ArrowLeft /></el-icon>
           返回
         </el-button>
+        <span class="project-title">{{ project?.name || '加载中...' }}</span>
       </div>
       <div class="header-center">
-        <span class="project-title">{{ project?.name || '加载中...' }}</span>
+        <div class="stage-list">
+          <div
+            v-for="(stage, index) in storyStages"
+            :key="stage.key"
+            class="stage-item"
+            :class="{ active: currentStage === stage.key, completed: isStageCompleted(stage.key) }"
+            @click="setStage(stage.key)"
+          >
+            <div class="stage-number">{{ index + 1 }}</div>
+            <div class="stage-info">
+              <span class="stage-label">{{ stage.label }}</span>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="header-right">
         <el-button @click="currentView = 'graph'">
@@ -41,24 +55,6 @@
           <el-icon><Setting /></el-icon>
           设定
         </el-button>
-      </div>
-    </div>
-
-    <!-- 阶段导航 -->
-    <div class="stage-nav">
-      <div class="stage-list">
-        <div
-          v-for="(stage, index) in storyStages"
-          :key="stage.key"
-          class="stage-item"
-          :class="{ active: currentStage === stage.key, completed: isStageCompleted(stage.key) }"
-          @click="setStage(stage.key)"
-        >
-          <div class="stage-number">{{ index + 1 }}</div>
-          <div class="stage-info">
-            <span class="stage-label">{{ stage.label }}</span>
-          </div>
-        </div>
       </div>
     </div>
 
@@ -497,6 +493,17 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-shrink: 0;
+
+  .project-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-color-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 240px;
+  }
 }
 
 .header-center {
@@ -504,17 +511,18 @@ onMounted(() => {
   align-items: center;
   flex: 1;
   justify-content: center;
+  min-width: 0;
+  overflow-x: auto;
 
-  .project-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text-color-primary);
+  .stage-list {
+    flex-shrink: 0;
   }
 }
 
 .header-right {
   display: flex;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .model-option {
@@ -533,25 +541,17 @@ onMounted(() => {
   }
 }
 
-.stage-nav {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 10px 16px;
-  background: var(--bg-color);
-  border-bottom: 1px solid var(--border-color-light);
-}
-
+// 阶段导航（已并入标题栏，紧凑形态）
 .stage-list {
   display: flex;
-  gap: 6px;
+  gap: 2px;
 }
 
 .stage-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: 6px;
+  padding: 5px 9px;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
@@ -583,8 +583,8 @@ onMounted(() => {
 }
 
 .stage-number {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -593,11 +593,13 @@ onMounted(() => {
   font-size: 12px;
   font-weight: 500;
   color: var(--text-color-secondary);
+  flex-shrink: 0;
 }
 
 .stage-label {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-color-regular);
+  white-space: nowrap;
 }
 
 .editor-content {

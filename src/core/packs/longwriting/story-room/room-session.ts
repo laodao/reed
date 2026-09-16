@@ -492,7 +492,7 @@ export class StoryRoomSessionService {
         return
       }
       const transcript = block
-        .map((h) => `${h.role === 'user' ? '用户' : '主编'}：${String(h.content ?? '').slice(0, 600)}`)
+        .map((h) => `${h.role === 'user' ? '用户' : '主编'}：${String(h.content ?? '').slice(0, 2000)}`)
         .join('\n')
       const digest = await generateRoomText(
         'rolling-summary',

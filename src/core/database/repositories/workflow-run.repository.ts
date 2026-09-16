@@ -40,6 +40,8 @@ export interface WorkflowRunRecord {
   graphSnapshot: WorkflowGraph | null
   triggerType: WorkflowTriggerType
   triggerInfo: Record<string, unknown> | null
+  /** 互斥作用域（'' = 无作用域；同 scope 只允许一个活动 run） */
+  mutexScope: string
   startInputs: Record<string, unknown> | null
   status: WorkflowRunStatus
   skipReason: string | null
@@ -64,6 +66,7 @@ export interface CreateWorkflowRunInput {
   graphSnapshot: WorkflowGraph
   triggerType: WorkflowTriggerType
   triggerInfo?: Record<string, unknown> | null
+  mutexScope?: string
   startInputs?: Record<string, unknown> | null
   status: WorkflowRunStatus
   timeoutAt?: Date | null
@@ -119,6 +122,7 @@ export class WorkflowRunRepository extends BaseRepository<WorkflowRunEntity, Wor
       graphSnapshot: safeParse<WorkflowGraph | null>(e.graphSnapshot, null, `id=${e.id}.graphSnapshot`),
       triggerType: e.triggerType as WorkflowTriggerType,
       triggerInfo: safeParse<Record<string, unknown> | null>(e.triggerInfo, null),
+      mutexScope: e.mutexScope ?? '',
       startInputs: safeParse<Record<string, unknown> | null>(e.startInputs, null),
       status: e.status as WorkflowRunStatus,
       skipReason: e.skipReason,
@@ -146,6 +150,7 @@ export class WorkflowRunRepository extends BaseRepository<WorkflowRunEntity, Wor
       graphSnapshot: JSON.stringify(data.graphSnapshot),
       triggerType: data.triggerType,
       triggerInfo: data.triggerInfo ? JSON.stringify(data.triggerInfo) : null,
+      mutexScope: data.mutexScope ?? '',
       startInputs: data.startInputs ? JSON.stringify(data.startInputs) : null,
       status: data.status,
       skipReason: null,

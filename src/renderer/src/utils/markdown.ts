@@ -34,7 +34,10 @@ export function renderMarkdown(content: string, opts: MarkdownRenderOptions = {}
     renderer.code = ({ text, lang }: { text: string; lang?: string }) => renderCode(lang || '', text, false)
     renderer.codespan = ({ text }: { text: string }) => `<code class="inline-code">${escapeHtmlKeepPlaceholders(text)}</code>`
     const parsed = marked.parse(contentWithPlaceholders, { breaks: true, gfm: true, renderer }) as string
-    return sanitizeHtml(restoreCodeBlocks(parsed, blocks, b => renderCode(b.language, b.code, !b.closed)))
+    // 消毒在先（带着占位符过白名单）、还原代码块在后：还原出的代码块 HTML 是本工具
+    // 生成的可信产物，依赖 class 样式，过消毒器会被剥掉 class（属性白名单无 class）。
+    const sanitized = sanitizeHtml(parsed)
+    return restoreCodeBlocks(sanitized, blocks, b => renderCode(b.language, b.code, !b.closed))
   } catch {
     return `<p>${escapeHtmlKeepPlaceholders(content).replace(/\n/g, '<br>')}</p>`
   }

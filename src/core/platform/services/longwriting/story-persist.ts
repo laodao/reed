@@ -118,6 +118,7 @@ export async function persistOverview(
     title?: string
     storyType?: string | null
     summary?: string
+    styleTone?: string
     coreConflict?: string
     keyCharacters?: any[]
     keyLocations?: any[]
@@ -127,10 +128,15 @@ export async function persistOverview(
 ): Promise<StoryPersistResult> {
   const data = normalizeOverviewInput(rawData)
   let overview = await db?.lwStoryOverviews?.getByProjectId(projectId)
+  // 风格基调与写作指导：概要是后续每章的写作准绳，风格段随 summary 一起持久化并在
+  // 每章生成时注入（无独立列，拼装在 summary 尾部，键名【风格基调】供下游识别）
+  const styleTone = String((rawData as { styleTone?: string }).styleTone || (rawData as { styleGuide?: string }).styleGuide || '').trim()
+  const baseSummary = String(data.summary || overview?.summary || '').replace(/\n*【风格基调】[\s\S]*$/, '').trim()
+  const summary = styleTone ? `${baseSummary}\n【风格基调】${styleTone}` : baseSummary
   const patch = {
     title: data.title || overview?.title || '未命名',
     storyType: data.storyType || overview?.storyType || null,
-    summary: data.summary || overview?.summary || '',
+    summary: summary || '',
     coreConflict: data.coreConflict || overview?.coreConflict || '',
     coreIdea: input || overview?.coreIdea || null,
     keyCharacters: data.keyCharacters || [],
@@ -221,6 +227,8 @@ export function normalizeCharacterInput(c: any): any {
       const v = c[k]
       if (typeof v === 'string' && v.trim()) return v.trim()
       if (typeof v === 'number') return String(v)
+      // 主编自由产卡时字段可能是字符串数组（如「能力与代价」逐条列出）
+      if (Array.isArray(v) && v.length && v.every((x) => typeof x === 'string' && x.trim())) return v.join('；')
     }
     return undefined
   }
@@ -230,7 +238,7 @@ export function normalizeCharacterInput(c: any): any {
     : /主角|女主|男主/.test(pick('identity', '身份') ?? '') ? 'protagonist' : undefined
   const ageRaw = pick('age', '年龄')
   const rawName = pick('name', '姓名', '名字') ?? c.name
-  return {
+  const normalized = {
     ...c,
     // 复测实跑修复：模型会把「乔镜知（补充，感情线载体）」这类注解写进名字——剥掉括号注解
     name: rawName ? rawName.replace(/[（(][^）)]*[）)]\s*$/, '').trim() : c.name,
@@ -239,13 +247,33 @@ export function normalizeCharacterInput(c: any): any {
     occupation: pick('occupation', '职业', '身份') ?? c.occupation,
     position: pick('position', '职位') ?? c.position,
     rolePosition: rolePosition ?? c.rolePosition,
-    appearance: pick('appearance', '外形', '外貌', '形象') ?? c.appearance,
-    background: pick('background', '背景', '来历') ?? c.background,
+    appearance: pick('appearance', '外形', '外貌', '形象', '体质') ?? c.appearance,
+    background: pick('background', '背景', '来历', '内在处境', '人物处境', '经历', '核心欲望') ?? c.background,
     personality: pick('personality', '性格') ?? c.personality,
-    abilities: pick('abilities', '能力', '技能', '特长') ?? c.abilities,
+    abilities: pick('abilities', '能力', '技能', '特长', '能力与代价', '能力代价', 'ability', '能力设定') ?? c.abilities,
     majorEvents: pick('majorEvents', '主要事件', '关键事件') ?? c.majorEvents,
     aliases: Array.isArray(c.aliases) ? c.aliases : c.aliases ? [String(c.aliases)] : (pick('别名') ? [pick('别名')!] : c.aliases),
   }
+  // 自由键收敛：未能映射到结构化字段的键一律拼入 background——保证主编产卡的信息
+  // 不因键名自由而丢失（实跑：《长夜提灯人》人物卡背景全 0 字）。此前仅 background
+  // 为空才拼：修正版人物卡带显式 background 时 secret/写法约束等自由键被静默丢弃，
+  // 圣经得不到修正，设计卡每轮把旧口径织回来（忘川渡第2章六轮回退根因之一）
+  {
+    const KNOWN = new Set([
+      'name', '姓名', '名字', 'gender', '性别', 'age', '年龄', 'occupation', '职业', '身份', 'position', '职位',
+      'rolePosition', '角色定位', '定位', 'appearance', '外形', '外貌', '形象', '体质', 'personality', '性格',
+      'abilities', '能力', '技能', '特长', '能力与代价', '能力代价', 'ability', '能力设定', 'majorEvents', '主要事件', '关键事件',
+      'aliases', '别名', 'background', '背景', '来历', '内在处境', '人物处境', '经历', '核心欲望',
+      'taskTitle', 'note', 'kind', 'title', 'id',
+    ])
+    const extra = Object.entries(c)
+      .filter(([k, v]) => !KNOWN.has(k) && ((typeof v === 'string' && v.trim()) || (Array.isArray(v) && v.length && v.every((x) => typeof x === 'string' && x.trim()))))
+      .map(([k, v]) => `${k}：${Array.isArray(v) ? v.join('；') : String(v).trim()}`)
+    const base = String(normalized.background ?? '').trim()
+    const merged = [base, ...extra].filter(Boolean).join('\n')
+    if (merged) normalized.background = merged
+  }
+  return normalized
 }
 
 /**
@@ -278,12 +306,20 @@ function pickKey(obj: any, keys: string[]): any {
 /**
  * 人物卡容器归一化（复测实跑修复）：一张人物卡可能装 8 个角色——
  * data 直接是数组、或 {人物:[...]}、{characters:[...]}、或单人物对象，统一摊平成列表。
+ * 实跑补（《长夜提灯人》）：主编产卡还可能是人名键字典形态 {程野:{...},苏晚棠:{...}}——
+ * 键即人名，摊平为 [{name:键, ...值}]，否则整卡被当单人物且缺姓名而拒收。
  */
 export function extractCharacterList(data: any): any[] {
   if (!data || typeof data !== 'object') return []
   if (Array.isArray(data)) return data
-  const nested = pickKey(data, ['人物', 'characters', '角色', 'list'])
+  const nested = pickKey(data, ['人物', 'characters', '角色', 'list', '人物卡', '主要人物'])
   if (Array.isArray(nested)) return nested
+  if (pickKey(data, ['name', '姓名', '名字'])) return [data]
+  const META = new Set(['taskTitle', 'note', 'kind', 'title'])
+  const entries = Object.entries(data).filter(([k]) => !META.has(k))
+  if (entries.length > 0 && entries.every(([, v]) => v && typeof v === 'object' && !Array.isArray(v))) {
+    return entries.map(([k, v]) => ({ name: k, ...(v as Record<string, unknown>) }))
+  }
   return [data]
 }
 
@@ -314,8 +350,11 @@ export function extractPlotList(data: any): any[] {
     })
 }
 
-export function extractWorldLists(data: any): { locations?: any[]; factions?: any[]; skills?: any[]; items?: any[] } {
+export function extractWorldLists(data: any): { locations?: any[]; factions?: any[]; skills?: any[]; items?: any[]; specialRules?: string } {
   if (!data || typeof data !== 'object') return {}
+  // 嵌套容器：{world:{...}}（主编自由产卡实跑形态）先摊开一层
+  const inner = pickKey(data, ['world', '世界'])
+  const source = inner && typeof inner === 'object' && !Array.isArray(inner) ? { ...(data as Record<string, unknown>), ...(inner as Record<string, unknown>) } : data
   const asNamedList = (v: any): any[] => {
     if (!Array.isArray(v)) return []
     return v
@@ -323,11 +362,27 @@ export function extractWorldLists(data: any): { locations?: any[]; factions?: an
       .map((x: any) => ({ ...x, name: String(pickKey(x, ['名称', '名字', 'name']) ?? x.name ?? '').trim() }))
       .filter((x: any) => x.name)
   }
+  // 自由键兜底：主编产卡的规则/因果链/组织层级等不属于四类实体，
+  // 拼成 specialRules 文本并入背景设定，保证设定信息不因结构不符而丢失
+  const KNOWN = new Set(['locations', '地点', 'factions', '势力', '门派', '阵营', 'skills', '技能', '武功', 'items', '物品', 'world', '世界', 'taskTitle', 'note', 'kind', 'title', '背景'])
+  const extra = Object.entries(source)
+    .filter(([k, v]) => !KNOWN.has(k) && v !== null && v !== undefined && v !== '' && !(typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0))
+    .map(([k, v]) => {
+      if (typeof v === 'string') return `【${k}】${v}`
+      if (Array.isArray(v)) {
+        const parts = v.map((x: any) => (typeof x === 'string' ? x : (() => { const n = pickKey(x, ['名称', '名字', 'name']); return n ? `${n}：${x.desc ?? x.description ?? ''}` : JSON.stringify(x) })()))
+        return `【${k}】${parts.filter(Boolean).join('\n')}`
+      }
+      const o = v as Record<string, unknown>
+      const body = Object.entries(o).map(([ok, ov]) => `${ok}：${Array.isArray(ov) ? ov.join('；') : String(ov)}`).join('\n')
+      return `【${k}】${body}`
+    })
   return {
-    locations: asNamedList(pickKey(data, ['locations', '地点'])),
-    factions: asNamedList(pickKey(data, ['factions', '势力', '门派', '阵营'])),
-    skills: asNamedList(pickKey(data, ['skills', '技能', '武功'])),
-    items: asNamedList(pickKey(data, ['items', '物品'])),
+    locations: asNamedList(pickKey(source, ['locations', '地点'])),
+    factions: asNamedList(pickKey(source, ['factions', '势力', '门派', '阵营'])),
+    skills: asNamedList(pickKey(source, ['skills', '技能', '武功'])),
+    items: asNamedList(pickKey(source, ['items', '物品'])),
+    specialRules: extra.length ? extra.join('\n\n') : undefined,
   }
 }
 
@@ -352,6 +407,75 @@ export function normalizeOutlineVolume(data: any): { name: string; summary: stri
   }
 }
 
+/**
+ * 单章大纲卡识别（忘川渡实跑修复）：主编会按章逐卡落大纲（每张卡 data 无 chapters
+ * 数组、只带章号/章名），旧实现一律 normalizeOutlineVolume 当卷建——每张章卡都误建
+ * 一个「第一卷」卷节点。带 chapters 数组的整卷卡返回 null 走原路径；识别规则：
+ * 显式章号键（number/chapterNo/章号），或卡片标题里的「第N章」前缀；有章名无章号不猜。
+ */
+export function matchOutlineChapterCard(
+  data: any,
+  cardTitle: string,
+): { no: number; name: string; summary: string } | null {
+  if (!data || typeof data !== 'object') return null
+  if (Array.isArray(data.chapters) || Array.isArray(pickKey(data, ['章节', '章']))) return null
+  const noRaw = Number(data.number ?? data.chapterNo ?? pickKey(data, ['章号', '序号']))
+  const no = Number.isFinite(noRaw) && noRaw > 0 ? noRaw : NaN
+  const title = String(data.title ?? data.章名 ?? data.chapterTitle ?? '').trim()
+  if (!Number.isFinite(no)) {
+    const m = /第\s*(\d+)\s*[章]/.exec(String(cardTitle || ''))
+    if (!m) return null
+    const noFromTitle = Number(m[1])
+    if (!Number.isFinite(noFromTitle) || noFromTitle <= 0) return null
+    if (title) {
+      return { no: noFromTitle, name: `${noFromTitle} ${title}`, summary: outlineChapterSummary(data) }
+    }
+    // 卡片标题形如「… 第1章 · 不喝汤的活人（第1日）」：取章名
+    const tm = /^(?:[^·]*·)?\s*第\s*\d+\s*章\s*[·:：、]?\s*(.+?)\s*(?:（[^）]*）)?\s*$/.exec(String(cardTitle))
+    const t = tm?.[1]?.trim()
+    if (!t) return null
+    return { no: noFromTitle, name: `${noFromTitle} ${t}`, summary: outlineChapterSummary(data) }
+  }
+  if (!title) return { no, name: `第${no}章`, summary: outlineChapterSummary(data) }
+  return { no, name: `${no} ${title}`, summary: outlineChapterSummary(data) }
+}
+
+function outlineChapterSummary(data: any): string {
+  return [pickKey(data, ['summary', '概要', '简介']), pickKey(data, ['hook', '钩子', '章尾卡点']), pickKey(data, ['beat', '要点'])]
+    .filter(Boolean)
+    .map(String)
+    .join('\n')
+}
+
+/**
+ * 单章卡落库：挂到首卷（无卷先建卷）下，按章号幂等（同名/同号章已存在则更新概要，
+ * 不重复建——设计包可能多次确认同一章卡）。
+ */
+export async function upsertOutlineChapter(
+  db: any,
+  projectId: string,
+  ch: { no: number; name: string; summary: string },
+): Promise<{ created: number; updated: number }> {
+  const outlines = ((await db?.lwOutlines?.getByProjectId(projectId)) || []) as Array<Record<string, any>>
+  let vol = outlines.find((o) => (o.nodeType ?? (o as any).node_type) === 'volume')
+  if (!vol) {
+    vol = await db?.lwOutlines?.create({ projectId, name: '第一卷', nodeType: 'volume' })
+    if (!vol) return { created: 0, updated: 0 }
+  }
+  const children = outlines.filter((o) => o.parentId === vol!.id)
+  const prefix = `${ch.no} `
+  const existing = children.find((o) => String(o.name ?? '') === ch.name || String(o.name ?? '').startsWith(prefix))
+  if (existing) {
+    await db?.lwOutlines?.update(existing.id, { summary: ch.summary || (existing as any).summary })
+    return { created: 0, updated: 1 }
+  }
+  const c = await db?.lwOutlines?.create({
+    projectId, parentId: vol.id, name: ch.name, nodeType: 'chapter',
+    summary: ch.summary || '', estimatedWords: 0,
+  })
+  return { created: c ? 1 : 0, updated: 0 }
+}
+
 export async function persistCharacters(db: any, projectId: string, list: any[]): Promise<StoryPersistResult> {
   const chars = (Array.isArray(list) ? list : []).map(normalizeCharacterInput)
   if (chars.length === 0) {
@@ -359,21 +483,48 @@ export async function persistCharacters(db: any, projectId: string, list: any[])
   }
 
   const existing = (await db?.lwCharacters?.getByProjectId(projectId)) || []
-  const existingNames = new Set(existing.map((c: any) => c.name))
-  const newChars = chars.filter((c: any) => c?.name?.trim() && !existingNames.has(c.name))
+  const existingByName = new Map(existing.map((c: any) => [String(c.name), c]))
+  const newChars: any[] = []
+  const updates: Array<{ before: any; next: any }> = []
+  for (const c of chars) {
+    if (!c?.name?.trim()) continue
+    const hit = existingByName.get(c.name.trim())
+    if (hit) updates.push({ before: hit, next: c })
+    else newChars.push(c)
+  }
 
-  if (newChars.length === 0) {
+  if (newChars.length === 0 && updates.length === 0) {
     // 实跑修复：全部缺姓名 = 数据不合格，按失败返回（确认流据此保留条目），
-    // 不再当 skipped 静默吞卡；仅「人都已存在」才是真 skipped
+    // 不再当 skipped 静默吞卡
     const allNameless = chars.every((c: any) => !c?.name?.trim())
     return {
       ok: false,
       skipped: !allNameless,
       message: allNameless
         ? '人物卡缺少姓名字段（name/姓名），已保留待模型补正'
-        : '没有新人物需要添加（结构化数据中的人物都已存在）',
+        : '人物卡缺少有效姓名',
       changed: [],
     }
+  }
+
+  // 同名人物卡 = 权威修正：覆盖可归档字段（新值为空则保留旧值），不再静默跳过。
+  // 旧实现「人都已存在→skipped」+ 确认流把 skipped 条目移出草稿包 = 修正整体丢失
+  // （忘川渡实跑：阿蘅修正卡确认后被吞，圣经停在旧口径，章法设计卡六轮回退）
+  const UPDATABLE = [
+    'gender', 'age', 'height', 'weight', 'race', 'occupation', 'position', 'rolePosition',
+    'appearance', 'background', 'personality', 'abilities', 'majorEvents',
+  ] as const
+  const updatedNames: string[] = []
+  for (const u of updates) {
+    const patch: Record<string, unknown> = {}
+    for (const f of UPDATABLE) {
+      const nv = u.next[f]
+      if (nv !== undefined && nv !== null && String(nv).trim() !== '') patch[f] = nv
+    }
+    if (Array.isArray(u.next.aliases) && u.next.aliases.length) patch.aliases = u.next.aliases
+    if (Object.keys(patch).length === 0) continue
+    await db?.lwCharacters?.update(u.before.id, patch)
+    updatedNames.push(u.next.name.trim())
   }
 
   const created: any[] = []
@@ -399,7 +550,7 @@ export async function persistCharacters(db: any, projectId: string, list: any[])
     if (saved) created.push(saved)
   }
 
-  await syncRelationsFromInput(db, projectId, newChars, (c: any) =>
+  await syncRelationsFromInput(db, projectId, [...newChars, ...updates.map((u) => u.next)], (c: any) =>
     (c.relations || []).map((rel: any) => ({
       sourceType: 'character',
       sourceName: c.name.trim(),
@@ -410,11 +561,15 @@ export async function persistCharacters(db: any, projectId: string, list: any[])
     })),
   )
 
+  const parts: string[] = []
+  if (updatedNames.length) parts.push(`更新人物：${updatedNames.join('、')}`)
+  if (created.length) parts.push(`新增人物：${created.map((c: any) => c.name).join('、')}`)
+
   return {
     ok: true,
-    message: `新增人物：${created.map((c: any) => c.name).join('、')}`,
+    message: parts.join('；') || '人物卡已处理（无可写字段）',
     changed: ['characters'],
-    data: { characters: created.map((c: any) => ({ id: c.id, name: c.name, rolePosition: c.rolePosition })) },
+    data: { characters: [...created, ...updates.map((u) => ({ ...u.before, ...u.next }))].map((c: any) => ({ id: c.id, name: c.name, rolePosition: c.rolePosition })) },
   }
 }
 
@@ -472,9 +627,27 @@ export async function persistPlots(db: any, projectId: string, list: any[]): Pro
 export async function persistWorld(
   db: any,
   projectId: string,
-  data: { locations?: any[]; factions?: any[]; skills?: any[]; items?: any[] },
+  data: { locations?: any[]; factions?: any[]; skills?: any[]; items?: any[]; specialRules?: string },
 ): Promise<StoryPersistResult> {
   const done: string[] = []
+
+  // 自由键设定文本（规则/因果链/组织层级等）→ 背景设定·特殊规则（追加不覆盖）
+  try {
+    const rules = String((data as { specialRules?: string }).specialRules ?? '').trim()
+    if (rules) {
+      const existing = await db?.lwBackgrounds?.getByProjectId(projectId)
+      if (existing) {
+        const merged = existing.specialRules ? `${existing.specialRules}\n\n${rules}` : rules
+        await db?.lwBackgrounds?.update(existing.id, { specialRules: merged })
+      } else {
+        const created = await db?.lwBackgrounds?.create(projectId)
+        if (created) await db?.lwBackgrounds?.update(created.id, { specialRules: rules })
+      }
+      done.push('特殊规则')
+    }
+  } catch (e) {
+    logger.warn('特殊规则落库失败', e)
+  }
 
   // 地点
   try {

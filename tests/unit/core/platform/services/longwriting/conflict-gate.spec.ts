@@ -1,6 +1,7 @@
 /**
  * 逐章一致性门禁单测（52 号流程闭环）
- * 覆盖：稳定 key、章节号提取、阻断过滤（已登记/未来章节/当章与已写章节）、报错文案。
+ * 覆盖：稳定 key、章节号提取、阻断过滤（已登记/未来章节/当章与已写章节）、报错文案、
+ * R10 节拍锚点相似度顺延（2026-09-15：大纲改写后旧保留不失效）、状态标注。
  */
 import { describe, it, expect } from 'vitest'
 import {
@@ -8,6 +9,11 @@ import {
   conflictChapters,
   filterBlockingConflicts,
   buildConflictGateError,
+  normalizeBeatText,
+  beatSimilarity,
+  isAcknowledgedConflict,
+  annotateConflicts,
+  R10_BEAT_SIMILARITY_THRESHOLD,
 } from '@core/platform/services/longwriting/conflict-gate'
 
 describe('conflictKey', () => {
@@ -71,5 +77,81 @@ describe('buildConflictGateError', () => {
     expect(msg).toContain('R6')
     expect(msg).toContain('AI 解题')
     expect(msg).toContain('知情保留')
+  })
+})
+
+describe('R10 节拍锚点（2026-09-15 忘川渡：大纲改写后旧保留失效问题）', () => {
+  it('normalizeBeatText 去标点/引号/空白', () => {
+    expect(normalizeBeatText("口述'方子动过'，不当场定性")).toBe('口述方子动过不当场定性')
+  })
+
+  it('beatSimilarity：同一拍补细节改写 → 高相似；换承诺 → 低相似', () => {
+    // 大纲修订常见形态：同一拍加前缀细节（overlap 系数取短边，不被拉长稀释）
+    const extended = beatSimilarity('逐户核对死而复生者', '夜访临安城核对死而复生者')
+    expect(extended).toBeGreaterThanOrEqual(R10_BEAT_SIMILARITY_THRESHOLD)
+    expect(beatSimilarity('逐户核对死而复生者', '阿蘅凭药气查篡改')).toBeLessThan(0.1)
+    // 剥引号后前后缀差异：口述'方子动过' vs 方子动过 → 完全包含
+    expect(beatSimilarity("口述'方子动过'", '方子动过')).toBeGreaterThanOrEqual(R10_BEAT_SIMILARITY_THRESHOLD)
+  })
+
+  const conflictOf = (beatText: string, chapterNumber = 2) => ({
+    rule: 'R10',
+    message: `第 ${chapterNumber} 章大纲承诺「${beatText}」未在正文落点`,
+    chapterNumber,
+    beatText,
+  })
+
+  it('精确 key 命中（所有规则通用）', () => {
+    const c = { rule: 'R9', entityName: '周伯通', message: '名册外人名' }
+    const rows = [{ key: conflictKey(c), status: 'kept' as const, at: 0 }]
+    expect(isAcknowledgedConflict(c, rows)).toBe(true)
+    expect(isAcknowledgedConflict({ ...c, message: '换了文案' }, rows)).toBe(false)
+  })
+
+  it('大纲改写（措辞变化、key 漂移）→ 保留按锚点顺延', () => {
+    const rows = [
+      { key: 'R10||2|staleold', rule: 'R10', status: 'kept' as const, at: 0, chapterNumber: 2, beatText: '逐户核对死而复生者' },
+    ]
+    const rewritten = conflictOf('夜访临安城核对死而复生者')
+    expect(conflictKey(rewritten)).not.toBe('R10||2|staleold')
+    expect(isAcknowledgedConflict(rewritten, rows)).toBe(true)
+  })
+
+  it('换了承诺（相似度低）→ 不顺延，重新拦截', () => {
+    const rows = [
+      { key: 'R10||2|staleold', rule: 'R10', status: 'kept' as const, at: 0, chapterNumber: 2, beatText: '逐户核对死而复生者' },
+    ]
+    expect(isAcknowledgedConflict(conflictOf('阿蘅凭药气查篡改'), rows)).toBe(false)
+  })
+
+  it('同拍不同章 → 不跨章顺延', () => {
+    const rows = [
+      { key: 'R10||2|x', rule: 'R10', status: 'kept' as const, at: 0, chapterNumber: 2, beatText: '逐户核对死而复生者' },
+    ]
+    expect(isAcknowledgedConflict(conflictOf('逐户核对死而复生者', 3), rows)).toBe(false)
+  })
+
+  it('filterBlockingConflicts 传保留记录数组：改写的 R10 不拦截', () => {
+    const conflicts = [
+      conflictOf('夜访临安城核对死而复生者'),
+      conflictOf('阿蘅凭药气查篡改'),
+    ]
+    const rows = [
+      { key: 'R10||2|staleold', rule: 'R10', status: 'kept' as const, at: 0, chapterNumber: 2, beatText: '逐户核对死而复生者' },
+    ]
+    expect(filterBlockingConflicts(conflicts, 3, rows).map((c) => c.beatText)).toEqual(['阿蘅凭药气查篡改'])
+  })
+
+  it('annotateConflicts：标注 pending/kept 并带回保留备注', () => {
+    const c1 = conflictOf('夜访临安城核对死而复生者')
+    const c2 = conflictOf('阿蘅凭药气查篡改')
+    const rows = [
+      { key: 'R10||2|staleold', rule: 'R10', status: 'kept' as const, note: 'AI 语义复核：已用其他措辞落点', at: 123, chapterNumber: 2, beatText: '逐户核对死而复生者' },
+    ]
+    const annotated = annotateConflicts([c1, c2], rows)
+    expect(annotated[0].status).toBe('kept')
+    expect(annotated[0].note).toBe('AI 语义复核：已用其他措辞落点')
+    expect(annotated[1].status).toBe('pending')
+    expect(annotated[1].note).toBeUndefined()
   })
 })

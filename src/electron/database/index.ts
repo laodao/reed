@@ -798,6 +798,13 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-workflow-template-version'
     )
     await addWorkflowTemplateVersion(this.dataSource)
+
+    // 工作流互斥作用域：runs 加 mutex_scope 列 + 唯一索引重建为含 scope
+    // （忘川渡实跑 P1：旧 (user,definition) 全局互斥让多项目共用章法定义互相 skip）
+    const { addWorkflowRunMutexScope } = await import(
+      '@core/database/migrations/add-workflow-run-mutex-scope'
+    )
+    await addWorkflowRunMutexScope(this.dataSource)
     // 版本历史表：workflow_definition_versions（发布快照 + 恢复）
     const { createWorkflowDefinitionVersionsTable } = await import(
       '@core/database/migrations/create-workflow-definition-versions'

@@ -10,7 +10,7 @@ import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { StoryRoomSessionService } from './room-session'
 import { planConflictResolution, executeConflictAction, type ConflictInput } from './room-conflict'
-import { acknowledgeConflict } from '@core/platform/services/longwriting/conflict-gate'
+import { acknowledgeConflict, unacknowledgeConflict } from '@core/platform/services/longwriting/conflict-gate'
 import { StoryRoomDistillerService } from './room-distiller'
 import { applyLedgerOp } from './room-ledger'
 import type { RoomPhaseId } from '@shared/types/story-room.types'
@@ -218,6 +218,13 @@ export function registerStoryRoomHandlers(): void {
       if (action === 'acknowledge_conflict' && conflict) {
         await acknowledgeConflict(db, projectId, conflict, 'kept', String(payload?.note || ''))
         return { success: true, data: { message: '已知情保留，该疑点不再拦截生成' } }
+      }
+      // 撤销保留：保留记录只进不出会让误保留无法回退——按锚点语义移除登记
+      if (action === 'unacknowledge_conflict' && conflict) {
+        const removed = await unacknowledgeConflict(db, projectId, conflict)
+        return removed > 0
+          ? { success: true, data: { message: '已撤销保留，该疑点恢复拦截' } }
+          : { success: false, error: '未找到对应的保留记录' }
       }
       const r = await executeConflictAction(db, projectId, action, payload)
       // 受控动作成功 → 源疑点自动登记为已解决（逐章门禁据此放行）

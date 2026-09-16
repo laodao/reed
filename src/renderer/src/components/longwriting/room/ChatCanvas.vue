@@ -20,6 +20,7 @@
           v-else-if="item.type === 'message'"
           :role="item.message.role"
           :content="item.message.content"
+          :timestamp="item.message.timestamp"
           :data-turn="item.message.metadata ? turnOf(item.message.metadata) : ''"
           :data-index="i"
         />

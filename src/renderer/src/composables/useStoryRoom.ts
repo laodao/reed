@@ -43,8 +43,10 @@ export function useStoryRoom(projectId: string) {
   const streamMessage = ref<RoomStreamMessage | null>(null)
   /** 阶段门建议（提取器产出，用户确认后推进） */
   const gateSuggestion = ref<{ toPhase: RoomPhaseId; reason: string } | null>(null)
-  /** 矛盾提醒（写作教练位：scanContradictions 结果） */
-  const conflicts = ref<Array<{ id?: string; description?: string; message?: string }>>([])
+  /** 矛盾提醒（写作教练位：scanContradictions 结果，仅待处理） */
+  const conflicts = ref<Array<{ id?: string; description?: string; message?: string; rule?: string }>>([])
+  /** 已登记（解决/知情保留）的疑点——抽屉「已保留」分区展示，可撤销 */
+  const keptConflicts = ref<Array<{ id?: string; description?: string; message?: string; rule?: string; note?: string }>>([])
   /** 设计任务流水（lw_task_progress / lw_save_* 的过程 chip） */
   const taskLog = ref<Array<{ message: string; tool?: string; status?: string }>>([])
   /** 待确认设计包（design:ready 事件置位；确认/驳回后清空） */
@@ -226,19 +228,22 @@ export function useStoryRoom(projectId: string) {
     await setPhase(to)
   }
 
-  /** 写作教练位：拉取矛盾提醒（writing 阶段） */
+  /** 写作教练位：拉取矛盾提醒（writing 阶段）。一次扫描拉全量，按 status 拆两个视图 */
   async function loadConflictsIfWriting(): Promise<void> {
     if (state.value?.phase !== 'writing') {
       conflicts.value = []
+      keptConflicts.value = []
       return
     }
     try {
-      const res = await api().graphScanContradictions(projectId)
+      const res = await api().graphScanContradictions(projectId, { status: 'all' })
       const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : []
       // 52 号：不再截断到 10 条——R9 文本扫描候选排在末尾，截断会把它们全部藏掉
-      conflicts.value = list.slice(0, 50)
+      conflicts.value = list.filter((c: any) => c.status !== 'kept').slice(0, 50)
+      keptConflicts.value = list.filter((c: any) => c.status === 'kept')
     } catch {
       conflicts.value = []
+      keptConflicts.value = []
     }
   }
 
@@ -311,6 +316,7 @@ export function useStoryRoom(projectId: string) {
     setModelOpts,
     gateSuggestion,
     conflicts,
+    keptConflicts,
     taskLog,
     designReady,
     load,

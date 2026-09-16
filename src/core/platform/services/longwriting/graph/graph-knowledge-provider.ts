@@ -16,6 +16,8 @@ import type {
 import { registerStructuredProvider } from '@core/platform/agent-runtime/memory/structured-provider'
 import { GraphService } from './graph.service'
 import { ConsistencyService } from './consistency.service'
+import { listResolutions, isAcknowledgedConflict } from '../conflict-gate'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 
 const ENTITY_TYPES = ['character', 'location', 'item', 'faction', 'skill', 'event'] as const
 
@@ -69,8 +71,15 @@ async function queryGraph(req: StructuredKnowledgeQuery): Promise<KnowledgeSegme
 
   if (segments.length < budget.maxSegments && chars < budget.maxChars) {
     try {
-      const conflicts = await consistency.scanContradictions(projectId)
-      const top = conflicts.slice(0, 3)
+      // 只注入待处理疑点：已登记（解决/知情保留）的是作者拍板"没问题"的，
+      // 再当矛盾喂给生成等于把已了结的疑点重新渗进正文（忘川渡 8 疑点实测教训）
+      // db 先于 Promise.all 解析——同步抛错不会孤儿化已创建的扫描 rejection
+      const db = getCoreDatabaseManager()
+      const [conflicts, rows] = await Promise.all([
+        consistency.scanContradictions(projectId),
+        listResolutions(db, projectId),
+      ])
+      const top = conflicts.filter((c) => !isAcknowledgedConflict(c, rows)).slice(0, 3)
       if (top.length > 0) {
         const text = `已知设定矛盾（生成时规避）：${top
           .map((c) => String((c as { description?: string }).description ?? (c as { message?: string }).message ?? ''))

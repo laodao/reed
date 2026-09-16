@@ -16,7 +16,7 @@ import { buildChapterCardMarkdown, parseCardHookType, validateChapterCard, type 
 import { buildChapterCardDesignSystemPrompt, CHAPTER_CARD_REVIEW_SYSTEM_PROMPT, buildChapterCardReviewPrompt } from '@core/packs/longwriting/skills/chapter-writing'
 import { assessBibleReadiness, buildBibleGateError, buildCastRosterConstraint } from './longwriting/bible-readiness-gate'
 import { ConsistencyService } from './longwriting/graph/consistency.service'
-import { buildConflictGateError } from './longwriting/conflict-gate'
+import { buildConflictGateError, conflictChapters } from './longwriting/conflict-gate'
 import {
   buildNovelChapterDiscipline,
   buildScriptChapterDiscipline,
@@ -26,7 +26,7 @@ import {
 } from './writing-methodology'
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import { createProvider } from '@core/platform/providers/llm'
-import { PROVIDER_TEMPLATES } from '@core/platform/services/provider-template.service'
+import { PROVIDER_TEMPLATES, isApiKeyOptional } from '@core/platform/services/provider-template.service'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import type { ProviderTemplate, UserProviderConfig, ChatContext } from '@shared/types'
 
@@ -182,22 +182,23 @@ export class LongWritingAIService {
       }
     }
 
-    if (!config || !config.apiKey) {
+    // 获取模板（空密钥挡板需要模板判定免密钥提供商，故先于挡板解析）
+    const template = config ? PROVIDER_TEMPLATES.find(t => t.id === config.templateId) : undefined
+    if (!config || !template) {
       return null
     }
 
-    // 获取模板
-    const template = PROVIDER_TEMPLATES.find(t => t.id === config!.templateId)
-    if (!template) {
+    // 空密钥挡板：免密钥提供商（如 llama.cpp 本地推理）允许不配置密钥
+    if (!config.apiKey && !isApiKeyOptional(template)) {
       return null
     }
 
-    // 解密 API 密钥
+    // 解密 API 密钥（免密钥提供商可无密钥，置空串）
     const secureStorage = getSecureStorage()
     if (!secureStorage.isInitialized()) {
       await secureStorage.initialize()
     }
-    const apiKey = secureStorage.decrypt(config.apiKey)
+    const apiKey = config.apiKey ? secureStorage.decrypt(config.apiKey) : ''
 
     return { config, template, apiKey }
   }
@@ -375,13 +376,13 @@ export class LongWritingAIService {
 
     const systemPrompt = `你是一位专业的小说创作顾问。请根据用户的想法，生成一个完整的故事概要。
 
-概要是整部作品的核心基调与总纲，后续每一章都将以它为写作准绳。一份合格的概要必须让读者看完就知道"这是一个关于什么的故事、主角如何成长、最终走向哪里"。
+概要是整部作品的宪法与总纲：后续每一章的角色言行、情节走向、节奏与风格都以它为唯一准绳。一份合格的概要必须让读者看完就知道"这是一个关于什么的故事、主角如何成长、最终走向哪里"，并且让写作者能直接从中推导出：每章该写什么、角色为什么会这样行动、全书用什么笔触去写。
 
 你必须返回一个完整的 JSON 对象，包含以下所有字段（一个都不能少）：
 - title: 故事标题
 - storyType: 故事类型（wuxia/xianxia/xuanhuan/kehuan/xuanyi/dushi/yanqing/lishi/other）
 - summary: 核心故事概要（400-600字，一条完整主线，质量标准见下）
-- styleTone: 风格基调（80-150字：叙事视角、节奏、情绪底色、爽点类型，如"第三人称限知视角，明快凌厉，单元案串主线，智力对决的智性爽感"）
+- styleTone: 风格基调与写作指导（100-200字：叙事视角、节奏、情绪底色、爽点类型、语言质感，以及对后续写作的硬性指导——如"第三人称限知视角，贴着程野写，信息只给他看过的"；禁止空泛形容词堆砌）
 - coreConflict: 核心冲突（150-300字：主角想要什么/谁或什么在阻碍/失败的赌注是什么）
 - keyCharacters: 关键角色数组（必须包含主角、重要配角、反派等关键人物，不能为空数组！）
 - keyLocations: 主要场景数组（必须包含故事发生的主要地点，不能为空数组！）
@@ -393,6 +394,7 @@ export class LongWritingAIService {
 2. 紧扣主角命运：全程写"这个人身上发生了什么"，禁止写成世界观介绍或背景说明
 3. 起点、欲望、阻碍三者具体化：用事实与处境说话（"生母被害的庶女"而非"可怜的女孩"）
 4. 终局方向明确：读者能想象出最后一章的画面
+5. 可执行性：主线上每个关键转折都能回答"这一步逼主角做了什么选择/付出什么代价"——后续每章写作都要能从概要里找到自己的位置；凡是概要承诺过的转折，正文必须兑现
 
 **高质量概要示范（拆解它为什么好，禁止照抄设定）**：
 "十二年前，大梁最强盛的赤焰军以谋反罪名被剿，七万将士葬身梅岭，唯有少帅林殊生还——身中火寒之毒、容貌尽改。他化名梅长苏，以'琅琊榜首、江左梅郎'之名重返帝都，以病弱之躯搅动朝局。他要拨开重重迷雾、智博奸佞，为七万冤魂昭雪，辅佐靖王重整山河——而这每一步，都在把他拖回那个他最不愿面对的真相。"
@@ -534,7 +536,7 @@ ${input}
 请确保每个角色都包含全部必需字段（1-14），relations（第15项）按需填写。
 
 **质量硬性要求（不达标即不合格，禁止一句话人设）**：
-1. background（背景故事）不少于 80 字，必须覆盖四层：出身处境、核心欲望（他最想得到/改变什么）、最大障碍或代价、秘密或反差（藏着的与表面相反的东西）
+1. background（背景故事）：主要人物（主角/重要配角/反派）不少于 150 字，必须覆盖五层且每层具体化：出身处境（用事实说话）、核心欲望（他最想得到/改变什么）、最大障碍或代价、秘密或反差（藏着的与表面相反的东西）、说话方式与行为习惯（口头禅/语气特征/标志性小动作——后续每章对话都要靠它保持"这个人说话像他"）
 2. majorEvents 必须写"该角色在主线中的关键节点"——做了什么、导致什么后果，与故事概要的核心冲突直接挂钩；禁止"参与了许多事件"式的空话
 3. personality 要写出内在张力（如"善良但对背叛睚眦必报"），单一扁平标签（"善良""冷酷"）不合格
 4. 反派必须有作恶的动机链（他要什么→为什么用这种方式→他的底气是什么），禁止为坏而坏`
@@ -1036,7 +1038,7 @@ ${castBlock}
 [
   {
     "name": "卷名",
-    "summary": "卷概要（50-100字）",
+    "summary": "卷概要（120-200字：本卷核心冲突、关键转折、卷末局面，以及与全书主线的推进关系）",
     "estimatedWords": 预估字数（数字）
   }
 ]
@@ -1102,12 +1104,12 @@ ${castBlock}
 [
   {
     "name": "章节名",
-    "summary": "章节概要（30-50字）",
+    "summary": "章节概要（150-300字）",
     "estimatedWords": 预估字数（数字）,
     "sections": [
       {
         "name": "小节名",
-        "summary": "小节概要（20-30字）",
+        "summary": "小节概要（60-100字）",
         "estimatedWords": 预估字数（数字）
       }
     ]
@@ -1118,7 +1120,8 @@ ${castBlock}
 1. 根据故事规模，生成5-15章
 2. 每章2-5节
 3. 预估字数总计应该与故事概要中的目标字数相近
-4. 只返回JSON数组，不要有任何其他文字`
+4. 章节概要必须写足150-300字：本章核心事件与冲突推进（起因→推进→转折）、出场角色、章末局面变化与结尾钩子；小节概要60-100字：本节场景、事件与出场角色。禁止一句话剧情简介
+5. 只返回JSON数组，不要有任何其他文字`
 
     const chapterPrompt = `故事标题：${storyInfo.title}
 核心主题：${storyInfo.coreTheme}
@@ -1162,7 +1165,7 @@ ${castBlock}
 [
   {
     "name": "章节名",
-    "summary": "章节概要（50-100字）",
+    "summary": "章节概要（150-300字）",
     "estimatedWords": 预估字数（数字）
   }
 ]
@@ -1170,7 +1173,8 @@ ${castBlock}
 注意：
 1. 根据故事规模，生成5-15章
 2. 预估字数总计应该与故事概要中的目标字数相近
-3. 只返回JSON数组，不要有任何其他文字`
+3. 章节概要必须写足150-300字，覆盖：本章核心事件与冲突推进（起因→推进→转折）、出场角色及其动作、章末局面变化与结尾钩子、与全书主线的关系；禁止一句话剧情简介
+4. 只返回JSON数组，不要有任何其他文字`
 
     const chapterPrompt = `故事标题：${storyInfo.title}
 核心主题：${storyInfo.coreTheme}
@@ -1214,12 +1218,12 @@ ${castBlock}
 [
   {
     "name": "章节名",
-    "summary": "章节概要（30-50字）",
+    "summary": "章节概要（150-300字）",
     "estimatedWords": 预估字数（数字）,
     "sections": [
       {
         "name": "小节名",
-        "summary": "小节概要（20-30字）",
+        "summary": "小节概要（60-100字）",
         "estimatedWords": 预估字数（数字）
       }
     ]
@@ -1229,7 +1233,8 @@ ${castBlock}
 注意：
 1. 每卷生成3-10章
 2. 每章2-5节
-3. 只返回JSON数组，不要有任何其他文字`
+3. 章节概要必须写足150-300字：本章核心事件与冲突推进、出场角色、章末局面变化与结尾钩子；小节概要60-100字：本节场景、事件与出场角色。禁止一句话剧情简介
+4. 只返回JSON数组，不要有任何其他文字`
 
     const chapterPrompt = `故事标题：${storyInfo.title}
 卷名：${volume.name}
@@ -1454,11 +1459,26 @@ ${plotInfo || '暂无相关情节'}
    * 52 号流程闭环：逐章一致性门禁——已写章节存在未处理疑点时，
    * 禁止生成下一章（正文/预写），直到 AI 解题、人工修改或知情保留。
    */
-  private async checkChapterConflictGate(projectId: string, outlineId: string): Promise<string | null> {
+  /** 逐章一致性门禁检查（54 号）：返回拦截文本或 null=通过。公开供章法"写后检查"复用。
+   *  skipCurrentChapterOnlyDoubts：重写（overwrite）本章时，仅引用本章的未处理疑点
+   *  描述的是将被替换的旧正文，不应拦截重写（跨章疑点仍然拦截）——否则旧稿疑点
+   *  与重写互为死锁（忘川渡实跑：R10 旧稿未落点疑点挡住 overwrite 重写，而语义
+   *  复核只在写后运行）。 */
+  async checkChapterConflictGate(
+    projectId: string,
+    outlineId: string,
+    opts?: { skipCurrentChapterOnlyDoubts?: boolean }
+  ): Promise<string | null> {
     try {
       const cs = ConsistencyService.getInstance()
       const chapterNo = await cs.chapterNumberOf(projectId, outlineId)
-      const blocking = await cs.scanBlockingConflicts(projectId, chapterNo)
+      let blocking = await cs.scanBlockingConflicts(projectId, chapterNo)
+      if (opts?.skipCurrentChapterOnlyDoubts) {
+        blocking = blocking.filter((c) => {
+          const chs = conflictChapters(c)
+          return !(chs.length > 0 && chs.every((n) => n === chapterNo))
+        })
+      }
       return buildConflictGateError(chapterNo, blocking)
     } catch (e: any) {
       // 门禁自身异常不阻断生成（扫描依赖的图谱数据缺失等），记日志
@@ -1500,12 +1520,16 @@ ${plotInfo || '暂无相关情节'}
     projectId: string,
     outlineId: string,
     providerConfigId?: string,
-    modelId?: string
+    modelId?: string,
+    consensusText?: string,
+    opts?: { overwrite?: boolean }
   ): Promise<GenerateResponse> {
     const dbManager = getCoreDatabaseManager()
     const gateError = await this.checkBibleGate(projectId, '章节设计卡')
     if (gateError) return { success: false, error: gateError }
-    const conflictErr = await this.checkChapterConflictGate(projectId, outlineId)
+    const conflictErr = await this.checkChapterConflictGate(projectId, outlineId, {
+      skipCurrentChapterOnlyDoubts: opts?.overwrite === true,
+    })
     if (conflictErr) return { success: false, error: conflictErr }
 
     const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
@@ -1536,14 +1560,28 @@ ${plotInfo || '暂无相关情节'}
       .filter(Boolean)
 
     // 提示词来自章法 skill 定义（单一事实源）：改章法改 skills/chapter-writing.ts
-    const systemPrompt = buildChapterCardDesignSystemPrompt(prevHookType)
+    // 前瞻防剧透（忘川渡实跑修复）：注入下一章大纲概要，设计卡与自检都能发现
+    // 「本章提前坐实后续章核心反转/关键线索」的进度冲突
+    const idxForNext = idx
+    const nextOutline = idxForNext >= 0 && idxForNext + 1 < chapterOutlines.length ? chapterOutlines[idxForNext + 1] : null
+    const nextOutlineText = nextOutline
+      ? `第${outlineChapterNumber(order, nextOutline.id) ?? '?'}章 ${nextOutline.name}：${(nextOutline.summary || '').slice(0, 160)}`
+      : ''
+    const systemPrompt = buildChapterCardDesignSystemPrompt(prevHookType, nextOutlineText)
+
+    // 作者拍板的共识与修正（研讨室账本）：设计卡必须遵守，否则会反复回退到已被
+    // 否决的旧设定（实跑：《长夜提灯人》第 2 章大纲写"乘客活下来了"，对话已拍板
+    // "救不回"，设计卡连续 4 次回退旧写法与自检死循环）
+    const consensusBlock = (consensusText || '').trim()
+      ? `\n【作者已拍板的共识与修正（最高优先级——与上文任何内容冲突时以此为准；已被否决的写法禁止再出现）】\n${consensusText!.trim()}\n`
+      : ''
 
     const prompt = `【全书核心故事概要】
-${(overview?.summary || '').slice(0, 900) || '未指定'}
+${overview?.summary || '未指定'}
 
 【全书核心冲突】
 ${overview?.coreConflict || '未指定'}
-
+${consensusBlock}
 【本章大纲】第${chapterNo}章 ${outline.name}
 ${outline.summary || '（无概要，请依据全书概要与故事线合理设计）'}
 
@@ -1579,6 +1617,8 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
             overviewSummary: overview?.summary || '',
             prevStateText: prevState?.characterStates || prevState?.storyTime || '',
             markdown,
+            ledgerText: consensusText,
+            nextOutlineText,
           }),
           CHAPTER_CARD_REVIEW_SYSTEM_PROMPT,
           800,
@@ -1612,11 +1652,13 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
     modelId?: string,
     style?: string,
     extraPrompt?: string,
-    options?: { skipChapterCardGate?: boolean }
+    options?: { skipChapterCardGate?: boolean; overwrite?: boolean }
   ): Promise<GenerateResponse> {
     const gateError = await this.checkBibleGate(projectId, '章节正文')
     if (gateError) return { success: false, error: gateError }
-    const conflictErr = await this.checkChapterConflictGate(projectId, outlineId)
+    const conflictErr = await this.checkChapterConflictGate(projectId, outlineId, {
+      skipCurrentChapterOnlyDoubts: options?.overwrite === true,
+    })
     if (conflictErr) return { success: false, error: conflictErr }
     const cardGateErr = await this.checkChapterCardGate(projectId, outlineId, options?.skipChapterCardGate)
     if (cardGateErr) return { success: false, error: cardGateErr }
@@ -1688,11 +1730,15 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
       providerConfigId?: string
       modelId?: string
       skipChapterCardGate?: boolean
+      /** 重写本章：写前门禁跳过仅引用本章的旧正文疑点（见 checkChapterConflictGate） */
+      overwrite?: boolean
     }
   ): Promise<GenerateResponse> {
     const gateError = await this.checkBibleGate(projectId, '章节正文')
     if (gateError) return { success: false, error: gateError }
-    const conflictErr = await this.checkChapterConflictGate(projectId, outlineId)
+    const conflictErr = await this.checkChapterConflictGate(projectId, outlineId, {
+      skipCurrentChapterOnlyDoubts: params.overwrite === true,
+    })
     if (conflictErr) return { success: false, error: conflictErr }
     const cardGateErr = await this.checkChapterCardGate(projectId, outlineId, params.skipChapterCardGate)
     if (cardGateErr) return { success: false, error: cardGateErr }
@@ -1945,7 +1991,7 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
     // "把最核心的故事主线简要介绍，把故事的风格说清楚，指导后续的写作"），
     // 旧版 overviewText 只有标题/类型/冲突，概要从未进入正文上下文
     const coreSummary = (overview?.summary || '').trim()
-    const overviewText = `**故事标题**：${overview?.title || '未命名'}\n**故事类型**：${storyTypeName}\n**核心冲突**：${overview?.coreConflict || '未指定'}\n**预估总章节数**：${totalChapters}章\n**当前进度**：第${chapterNumber}章（${progressStage}）${coreSummary ? `\n**核心故事概要（全书总纲，本章写作不得偏离）**：\n${coreSummary.slice(0, 900)}` : ''}${overview?.style ? `\n**风格基调**：${String(overview.style).slice(0, 200)}` : ''}`
+    const overviewText = `**故事标题**：${overview?.title || '未命名'}\n**故事类型**：${storyTypeName}\n**核心冲突**：${overview?.coreConflict || '未指定'}\n**预估总章节数**：${totalChapters}章\n**当前进度**：第${chapterNumber}章（${progressStage}）${coreSummary ? `\n**核心故事概要（全书总纲，本章写作不得偏离）**：\n${coreSummary}` : ''}${overview?.style ? `\n**风格基调**：${String(overview.style).slice(0, 200)}` : ''}`
     const taskText = `**章节名称**：${outline.name}\n**章节概要**：${outline.summary}`
     const prevEndingText = previousChapterEnding || '这是开篇章节'
     const constraintsText = `${memoryContext}${entityStateContext}${chapterStateSummaryContext}`
@@ -2685,7 +2731,7 @@ ${fieldPrompts[field] || '请扩展成详细的描述，内容控制在 200-400 
   "name": "地点名称",
   "type": "地点类型，可选值：city/village/mountain/palace/forest/sea/building/other",
   "importance": "重要程度，可选值：main/important/auxiliary",
-  "description": "地点描述（80-150字，必须覆盖三层：可感的场景特征、独有氛围、在故事中的功能——哪类情节在此发生/它如何推动主线；禁止一句风景介绍）",
+  "description": "地点描述（120-200字，必须覆盖四层：可感的场景特征——视听嗅至少两种感官细节、独有氛围、在故事中的功能——哪类情节在此发生/它如何推动主线、与角色的关系——谁常来/谁怕这里/这里发生过什么；禁止一句风景介绍）",
   "suggestedMapId": "建议关联的地图ID（从已有地图中选择，如果没有合适的可不填）"
 }
 
@@ -3198,9 +3244,10 @@ ${prewriteContent}
 ## 状态摘要原则
 1. 状态是"最新结果"，不是"过程描述"——如"已死亡"而非"第2章受伤，第3章死亡"
 2. 状态摘要应完整，包含该实体当前所有关键信息
-3. 如果实体在本章节无变化，但有上一状态，则继承上一状态并补充新变化
-4. 如果实体首次出现且无上一状态，从章节内容和设定信息推断初始状态
-5. keyChanges 只记录本章节新增的变化，便于追溯
+3. 只描述正文实际确立的状态（接地硬约束）：不得推断尚未揭示的目的/动机/隐藏标记/特殊体质；角色台词里的将来时与假设（"七日后将死""若不……就……"）是威胁不是当前状态，禁止写成已发生
+4. 如果实体在本章节无变化，但有上一状态，则继承上一状态并补充新变化
+5. 如果实体首次出现且无上一状态，从章节内容和设定信息推断初始状态
+6. keyChanges 只记录本章节新增的变化，便于追溯
 
 请直接输出 JSON 数组，不要有任何额外文字。`
 
@@ -3621,7 +3668,9 @@ ${previousInfo}
 要求：
 1. 0-3 条；没有就返回 []
 2. 宁缺毋滥：只登记有明确回收意图的
-3. 直接输出 JSON 数组，不要任何额外文字`
+3. 正文锚定（硬约束）：每条伏笔必须能在本章正文里指出对应原句；正文没明写的推测、脑补、依据大纲"应该有"的设定一律禁止登记
+4. content 末尾用《》附上正文原句关键片段（≤15字）；给不出原句依据的条目必须丢弃
+5. 直接输出 JSON 数组，不要任何额外文字`
 
     const prompt = `【本章正文（第 ${chapterNumber} 章）】
 ${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容已截断)' : ''}
@@ -3683,6 +3732,7 @@ ${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容
 
 要求：
 1. 只提取本章实际发生的事件（2-6 个），不要提取计划/回忆中的内容
+1.5. 幅度忠实（硬约束）：事件名/描述的幅度不得超出正文实际揭示范围——本章只发现线索的不许写成"揭露真相/查明实情"；正文没给出答案的悬念不得在 stateAfter 里给出结论
 2. involvedEntities 必须包含事件中出现的**全部具名人物/地点/物品**，一个都不能漏：
    - 名册内的实体：必须使用下方提供的 ID；
    - 名册外的实体（新配角/受害人/证人等）：照写名字，id 留空——系统会自动登记为「未登记人物」待作者确认，禁止因此省略；

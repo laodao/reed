@@ -52,28 +52,7 @@
 
           <!-- 单章节编辑模式 -->
           <div v-else class="single-chapter-container">
-            <!-- 章节导航 -->
-            <div class="chapter-nav" v-if="isEditableNode && currentChapter">
-              <el-button
-                :disabled="currentChapterIndex <= 0"
-                @click="prevChapter"
-              >
-                <el-icon><ArrowLeft /></el-icon>
-                上一节
-              </el-button>
-              <span class="chapter-position">
-                {{ currentChapter.name }}
-              </span>
-              <el-button
-                :disabled="currentChapterIndex >= allOutlines.length - 1"
-                @click="nextChapter"
-              >
-                下一节
-                <el-icon><ArrowRight /></el-icon>
-              </el-button>
-            </div>
-
-            <!-- 当前节点卡片 -->
+            <!-- 当前节点卡片（章节导航已并入标题栏中段） -->
             <div v-if="currentNode" class="chapter-card" :class="{ active: isEditableNode }">
               <!-- 节点标题栏 -->
               <div class="chapter-title-bar">
@@ -90,82 +69,94 @@
                     预览模式
                   </span>
                 </div>
+                <div class="title-center" v-if="isEditableNode && currentChapter">
+                  <el-button size="small" :disabled="currentChapterIndex <= 0" @click="prevChapter">
+                    <el-icon><ArrowLeft /></el-icon>
+                    上一节
+                  </el-button>
+                  <el-button size="small" :disabled="currentChapterIndex >= allOutlines.length - 1" @click="nextChapter">
+                    下一节
+                    <el-icon><ArrowRight /></el-icon>
+                  </el-button>
+                </div>
                 <div class="title-actions">
                   <template v-if="isEditableNode && currentChapter">
-                    <el-button
-                      v-if="!generatingMap[currentChapter.id]"
-                      type="primary"
-                      size="small"
-                      @click="startGenerate(currentChapter)"
-                    >
-                      <el-icon><MagicStick /></el-icon>
-                      AI 生成
-                    </el-button>
-                    <el-button
-                      v-else
-                      type="danger"
-                      size="small"
-                      @click="cancelGenerate(currentChapter.id)"
-                    >
-                      <el-icon><Close /></el-icon>
-                      取消
-                    </el-button>
-                    <el-button size="small" @click="showVersions(currentChapter)">
-                      <el-icon><Clock /></el-icon>
-                      版本
-                    </el-button>
-                    <el-button size="small" @click="exportChapter(currentChapter.id)">
-                      <el-icon><Download /></el-icon>
-                      导出
-                    </el-button>
-                    <el-button
-                      size="small"
-                      :loading="savingMap[currentChapter.id]"
-                      @click="saveChapter(currentChapter.id)"
-                    >
-                      <el-icon><DocumentChecked /></el-icon>
-                      保存
-                    </el-button>
-                    <el-button
-                      size="small"
-                      :loading="extractingStates"
-                      :disabled="!chapterContentMap[currentChapter.id] || chapterContentMap[currentChapter.id].length < 100"
-                      @click="extractEntityStatesFromChapter(currentChapter.id)"
-                    >
-                      <el-icon><Collection /></el-icon>
-                      提取状态
-                    </el-button>
-                    <el-button
-                      size="small"
-                      @click="viewChapterStates(currentChapter.id)"
-                    >
-                      <el-icon><View /></el-icon>
-                      查看状态
-                    </el-button>
+                    <el-tooltip v-if="!generatingMap[currentChapter.id]" content="AI 生成" placement="top">
+                      <el-button type="primary" size="small" @click="startGenerate(currentChapter)">
+                        <el-icon><MagicStick /></el-icon>
+                      </el-button>
+                    </el-tooltip>
+                    <el-tooltip v-else content="取消生成" placement="top">
+                      <el-button type="danger" size="small" @click="cancelGenerate(currentChapter.id)">
+                        <el-icon><Close /></el-icon>
+                      </el-button>
+                    </el-tooltip>
+                    <el-tooltip content="版本" placement="top">
+                      <el-button size="small" @click="showVersions(currentChapter)">
+                        <el-icon><Clock /></el-icon>
+                      </el-button>
+                    </el-tooltip>
+                    <el-tooltip content="导出" placement="top">
+                      <el-button size="small" @click="exportChapter(currentChapter.id)">
+                        <el-icon><Download /></el-icon>
+                      </el-button>
+                    </el-tooltip>
+                    <el-tooltip content="保存" placement="top">
+                      <el-button
+                        size="small"
+                        :loading="savingMap[currentChapter.id]"
+                        @click="saveChapter(currentChapter.id)"
+                      >
+                        <el-icon><DocumentChecked /></el-icon>
+                      </el-button>
+                    </el-tooltip>
+                    <el-tooltip content="提取状态" placement="top">
+                      <el-button
+                        size="small"
+                        :loading="extractingStates"
+                        :disabled="!chapterContentMap[currentChapter.id] || chapterContentMap[currentChapter.id].length < 100"
+                        @click="extractEntityStatesFromChapter(currentChapter.id)"
+                      >
+                        <el-icon><Collection /></el-icon>
+                      </el-button>
+                    </el-tooltip>
+                    <el-tooltip content="查看状态" placement="top">
+                      <el-button size="small" @click="viewChapterStates(currentChapter.id)">
+                        <el-icon><View /></el-icon>
+                      </el-button>
+                    </el-tooltip>
                   </template>
                   <template v-else-if="!isEditableNode && currentNode">
-                    <el-button size="small" @click="exportNode(currentNode.id)">
-                      <el-icon><Download /></el-icon>
-                      导出
-                    </el-button>
+                    <el-tooltip content="导出" placement="top">
+                      <el-button size="small" @click="exportNode(currentNode.id)">
+                        <el-icon><Download /></el-icon>
+                      </el-button>
+                    </el-tooltip>
                   </template>
                 </div>
               </div>
 
-              <!-- 节点信息 -->
+              <!-- 章节信息（默认折叠，点击标题行展开/收起；折叠态给编辑器让出纵向空间） -->
               <div class="chapter-info" v-if="currentNode.summary || currentNode.involvedCharacters?.length || currentNode.involvedLocations?.length">
-                <p v-if="currentNode.summary" class="chapter-summary">{{ currentNode.summary }}</p>
-                <div class="chapter-tags" v-if="currentNode.involvedCharacters?.length > 0 || currentNode.involvedLocations?.length > 0">
-                  <template v-if="currentNode.involvedCharacters?.length > 0">
-                    <el-tag v-for="id in currentNode.involvedCharacters" :key="id" size="small" type="info">
-                      {{ getCharacterName(id) }}
-                    </el-tag>
-                  </template>
-                  <template v-if="currentNode.involvedLocations?.length > 0">
-                    <el-tag v-for="id in currentNode.involvedLocations" :key="id" size="small" type="warning">
-                      {{ getLocationName(id) }}
-                    </el-tag>
-                  </template>
+                <div class="info-toggle" @click="infoExpanded = !infoExpanded">
+                  <el-icon class="toggle-arrow" :class="{ expanded: infoExpanded }"><ArrowRight /></el-icon>
+                  <span class="toggle-label">内容概要</span>
+                  <span v-if="!infoExpanded && currentNode.summary" class="toggle-preview">{{ currentNode.summary }}</span>
+                </div>
+                <div v-show="infoExpanded" class="info-detail">
+                  <p v-if="currentNode.summary" class="chapter-summary">{{ currentNode.summary }}</p>
+                  <div class="chapter-tags" v-if="currentNode.involvedCharacters?.length > 0 || currentNode.involvedLocations?.length > 0">
+                    <template v-if="currentNode.involvedCharacters?.length > 0">
+                      <el-tag v-for="id in currentNode.involvedCharacters" :key="id" size="small" type="info">
+                        {{ getCharacterName(id) }}
+                      </el-tag>
+                    </template>
+                    <template v-if="currentNode.involvedLocations?.length > 0">
+                      <el-tag v-for="id in currentNode.involvedLocations" :key="id" size="small" type="warning">
+                        {{ getLocationName(id) }}
+                      </el-tag>
+                    </template>
+                  </div>
                 </div>
               </div>
 
@@ -526,6 +517,9 @@ const generatingEventIdMap = ref<Record<string, string | null>>({})
 
 // 保存状态映射
 const savingMap = ref<Record<string, boolean>>({})
+
+// 章节内容概要展开态（默认折叠，点击标题行切换）
+const infoExpanded = ref(false)
 
 // 自动保存
 const autoSave = ref(true)
@@ -1728,7 +1722,6 @@ onMounted(() => {
 
 <style lang="scss" scoped>
 .chapter-stage {
-  max-width: 1200px;
   margin: 0 auto;
   flex: 1;
   min-height: 0;
@@ -1884,26 +1877,6 @@ onMounted(() => {
   min-height: 0;
 }
 
-// 章节导航
-.chapter-nav {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 20px;
-  padding: 8px;
-  background: var(--fill-color-lighter);
-  border-radius: 8px;
-  margin-bottom: 8px;
-  flex-shrink: 0;
-
-  .chapter-position {
-    font-size: 14px;
-    color: var(--text-color-secondary);
-    min-width: 80px;
-    text-align: center;
-  }
-}
-
 .empty-chapter {
   padding: 60px 0;
   display: flex;
@@ -1929,7 +1902,7 @@ onMounted(() => {
   }
 }
 
-// 标题栏（紧凑）
+// 标题栏（紧凑；三段式：标题信息 | 上一节/下一节 | icon 操作，两侧 flex:1 保证中段真正居中）
 .chapter-title-bar {
   display: flex;
   justify-content: space-between;
@@ -1972,19 +1945,72 @@ onMounted(() => {
     }
   }
 
-  .title-actions {
+  .title-center {
     display: flex;
+    align-items: center;
     gap: 6px;
     flex-shrink: 0;
   }
+
+  .title-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+  }
 }
 
-// 章节信息（可折叠）
+// 章节信息（可折叠：标题行常显，内容默认收起）
 .chapter-info {
-  padding: 8px 16px;
+  padding: 0 16px;
   background: var(--bg-color);
   border-bottom: 1px solid var(--border-color-lighter);
   flex-shrink: 0;
+
+  .info-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 0;
+    cursor: pointer;
+    user-select: none;
+    min-width: 0;
+
+    .toggle-arrow {
+      font-size: 12px;
+      color: var(--text-color-secondary);
+      transition: transform 0.2s ease;
+      flex-shrink: 0;
+
+      &.expanded {
+        transform: rotate(90deg);
+      }
+    }
+
+    .toggle-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-color-secondary);
+      flex-shrink: 0;
+    }
+
+    .toggle-preview {
+      font-size: 12px;
+      color: var(--text-color-secondary);
+      opacity: 0.75;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+      min-width: 0;
+    }
+  }
+
+  .info-detail {
+    padding-bottom: 8px;
+  }
 
   .chapter-summary {
     font-size: 12px;

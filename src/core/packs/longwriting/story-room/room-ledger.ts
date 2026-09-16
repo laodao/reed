@@ -5,7 +5,9 @@
  * 账本是「讨论成果的轻量沉淀」：tentative（讨论中）/ confirmed（已定）/
  * rejected（已否决，同样保留——防主编重复推荐被否方案）。写入渠道：
  * 1. 静默共识提取：每轮对话成功后直调 LLM 从增量提取（fail-soft，失败跳过）；
- * 2. 用户操作：确认/否决/修改一句话/丢弃（ledger:update IPC）。
+ * 2. 用户操作：确认/否决/修改一句话/丢弃（ledger:update IPC）；
+ * 3. agent 工具 lw_update_ledger（用户拍板/纠错时补记或翻转状态——机制层是
+ *    本文件底部的纯函数，工具薄封装在 room-agent-tools）。
  * 注入契约（设计文档 §3）：confirmed + rejected 全量注入主编上下文，
  * rejected 标注「已否决，勿重复推荐」。
  */
@@ -140,13 +142,15 @@ export async function silentExtractLedger(
     const added: ConsensusEntry[] = []
     const conflictKeys: string[] = []
     for (const op of ops) {
+      // conflict op 没有 title（只有 conflictWith）——必须先于 title 空检查分流，
+      // 否则提取器报告的「推翻某条共识」会被静默丢弃（实测：conflict 降级从未生效）
+      if (op?.op === 'conflict') {
+        conflictKeys.push(normalizeTitle(String(op?.conflictWith || '')))
+        continue
+      }
       const title = String(op?.title || '').trim()
       if (!title) continue
       const key = normalizeTitle(title)
-      // op=conflict：与既有共识矛盾 → 队列内 mutator 阶段统一处理（conflictKeys 收集）
-      if (op?.op === 'conflict') {
-        conflictKeys.push(normalizeTitle(String(op?.conflictWith || '')))
-      }
       if (seen.has(key)) continue
       seen.add(key)
       added.push({
@@ -211,6 +215,156 @@ export function compactLedger(ledger: ConsensusEntry[], cap = LEDGER_CAP): Conse
 // ==================== 用户操作（账本状态机） ====================
 
 export type LedgerOp = LedgerOpInput
+
+// ==================== Agent 写账本（lw_update_ledger 的机制层） ====================
+// 策略（用户拍板 2026-09-15）：账本此前只有「检索」工具，条目出错（互相矛盾的
+// 钩子方案、被误标已否决的正确方案）时 agent 无任何手段修正。本组纯函数承载
+// 定位/翻转/新增的通用逻辑（便于单测），队列写入与回执组装由 room-agent-tools
+// 的 lw_update_ledger 薄封装。回执必须由代码生成真实数据——本地模型会幻觉成功。
+
+/** 回执/候选用的条目摘要 */
+export interface LedgerEntryBrief {
+  id: string
+  title: string
+  status: ConsensusStatus
+}
+
+export type LedgerLocateFailure =
+  | { ref: string; reason: 'not-found' }
+  | { ref: string; reason: 'ambiguous'; candidates: LedgerEntryBrief[] }
+
+export type LedgerLocateResult =
+  | { entry: ConsensusEntry }
+  | { reason: 'not-found' }
+  | { reason: 'ambiguous'; candidates: LedgerEntryBrief[] }
+
+function toBrief(e: ConsensusEntry): LedgerEntryBrief {
+  return { id: e.id, title: e.title, status: e.status }
+}
+
+/**
+ * 条目定位（纯函数，lw_update_ledger 定位规则）：先按 id 精确匹配；否则按标题
+ * 归一化子串匹配（normalizeTitle 抹空白/标点+小写——模型传来的标题常带全半角/
+ * 标点差异，而字符过滤对拼接可分配，原始包含必推出归一化包含，不会漏判）。
+ * 命中多条不猜——返回候选列表让上层向模型澄清。
+ */
+export function locateLedgerEntry(ledger: ConsensusEntry[], ref: string): LedgerLocateResult {
+  const key = String(ref || '').trim()
+  if (!key) return { reason: 'not-found' }
+  const byId = ledger.find((e) => e.id === key)
+  if (byId) return { entry: byId }
+  const norm = normalizeTitle(key)
+  if (!norm) return { reason: 'not-found' }
+  const hits = ledger.filter((e) => normalizeTitle(e.title).includes(norm))
+  if (hits.length === 1) return { entry: hits[0] }
+  if (hits.length > 1) return { reason: 'ambiguous', candidates: hits.map(toBrief) }
+  return { reason: 'not-found' }
+}
+
+export interface LedgerSetStatusOutcome {
+  /** 翻转后的全量账本（有定位失败时原样返回——原子语义） */
+  ledger: ConsensusEntry[]
+  /** 改后回执（代码生成，含前后状态） */
+  updated: Array<LedgerEntryBrief & { from: ConsensusStatus }>
+  failures: LedgerLocateFailure[]
+}
+
+/**
+ * 批量状态翻转（纯函数，原子）：任一 ref 定位失败则整批不动并逐条给原因与候选；
+ * 全部命中才翻转（同条目多 ref 幂等去重），updatedAt 刷新。
+ */
+export function setLedgerEntriesStatus(
+  ledger: ConsensusEntry[],
+  refs: string[],
+  status: ConsensusStatus,
+  now = Date.now(),
+): LedgerSetStatusOutcome {
+  const failures: LedgerLocateFailure[] = []
+  const resolved = new Map<string, ConsensusEntry>()
+  for (const ref of refs) {
+    const r = locateLedgerEntry(ledger, ref)
+    if ('entry' in r) {
+      resolved.set(r.entry.id, r.entry)
+    } else if (r.reason === 'ambiguous') {
+      failures.push({ ref: String(ref), reason: 'ambiguous', candidates: r.candidates })
+    } else {
+      failures.push({ ref: String(ref), reason: 'not-found' })
+    }
+  }
+  if (failures.length > 0) return { ledger, updated: [], failures }
+  const updated: LedgerSetStatusOutcome['updated'] = []
+  const next = ledger.map((e) => {
+    if (!resolved.has(e.id)) return e
+    updated.push({ id: e.id, title: e.title, status, from: e.status })
+    return { ...e, status, updatedAt: now }
+  })
+  return { ledger: next, updated, failures: [] }
+}
+
+export interface LedgerAddInput {
+  kind: ConsensusKind
+  title: string
+  points: string[]
+  /** 缺省 confirmed（用户拍板后让 agent 补记的场景） */
+  status?: ConsensusStatus
+}
+
+export type LedgerAddOutcome =
+  | { ok: true; entry: ConsensusEntry; ledger: ConsensusEntry[] }
+  | { ok: false; error: string; duplicateOf?: LedgerEntryBrief; ledger: ConsensusEntry[] }
+
+/**
+ * 新增条目（纯函数）：规范化对齐静默提取（title≤40、points≤3×40、kind 枚举外
+ * 钳为 premise）；归一化标题查重——同题即拒（改状态走 set-status，防同题双条）。
+ * id 对齐静默提取的 `ce_<轮>_<序>_<时间尾>` 风格。
+ */
+export function addLedgerEntry(
+  ledger: ConsensusEntry[],
+  input: LedgerAddInput,
+  turnNo: number,
+  now = Date.now(),
+): LedgerAddOutcome {
+  const title = String(input.title || '').trim()
+  if (!title) return { ok: false, error: 'title 不能为空', ledger }
+  const norm = normalizeTitle(title)
+  const dup = norm ? ledger.find((e) => normalizeTitle(e.title) === norm) : undefined
+  if (dup) {
+    return {
+      ok: false,
+      error: `账本已有同题条目「${dup.title}」（id=${dup.id}，status=${dup.status}）——改状态用 set-status`,
+      duplicateOf: toBrief(dup),
+      ledger,
+    }
+  }
+  // id 唯一化：容量满时 compact 使 ledger.length 回弹、同轮内 now 尾片恒定，
+  // 连续 add 会撞出重复 id（忘川渡实跑：ce_60_61_rb3y ×5）——按现有 id 去重递增
+  const existingIds = new Set(ledger.map((e) => e.id))
+  let seq = ledger.length + 1
+  let id = `ce_${turnNo}_${seq}_${now.toString(36).slice(-4)}`
+  while (existingIds.has(id)) {
+    seq += 1
+    id = `ce_${turnNo}_${seq}_${now.toString(36).slice(-4)}${seq.toString(36).slice(-2)}`
+  }
+  const entry: ConsensusEntry = {
+    id,
+    kind: KINDS.includes(input.kind) ? input.kind : 'premise',
+    status: input.status ?? 'confirmed',
+    title: title.slice(0, 40),
+    points: Array.isArray(input.points) ? input.points.slice(0, 3).map((p) => String(p).slice(0, 40)) : [],
+    sourceTurn: turnNo,
+    updatedAt: now,
+  }
+  return { ok: true, entry, ledger: [...ledger, entry] }
+}
+
+/** 全账本状态计数（回执用：confirmed/tentative/rejected 各多少） */
+export function ledgerStatusCounts(ledger: ConsensusEntry[]): { confirmed: number; tentative: number; rejected: number } {
+  const counts = { confirmed: 0, tentative: 0, rejected: 0 }
+  for (const e of ledger) {
+    if (e.status in counts) counts[e.status] += 1
+  }
+  return counts
+}
 
 /** 用户操作账本条目：确认 / 否决 / 修改一句话 / 丢弃。返回更新后的账本。 */
 export async function applyLedgerOp(

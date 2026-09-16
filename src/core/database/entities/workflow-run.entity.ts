@@ -47,6 +47,10 @@ export class WorkflowRunEntity {
   @Column({ name: 'trigger_info', type: 'text', nullable: true })
   triggerInfo!: string | null
 
+  /** 互斥作用域（'' = 无作用域=同定义全局互斥；同 scope 只允许一个活动 run，DB 索引兜底） */
+  @Column({ name: 'mutex_scope', type: 'text', nullable: false, default: '' })
+  mutexScope!: string
+
   /** 开始节点输入实参 JSON */
   @Column({ name: 'start_inputs', type: 'text', nullable: true })
   startInputs!: string | null

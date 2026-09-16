@@ -286,7 +286,7 @@ async function openDetail(g: BibleGroupWire, id: string): Promise<void> {
       if (f.key === 'name') continue
       const v = raw[f.key]
       if (v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0)) continue
-      fields.push({ k: f.label, v: Array.isArray(v) ? v.join('、') : String(v).slice(0, 400) })
+      fields.push({ k: f.label, v: Array.isArray(v) ? v.join('、') : String(v) })
     }
     const relations = (res.data.relations || []).map((r: Record<string, any>) => {
       const who = r.targetName || r.target || ''

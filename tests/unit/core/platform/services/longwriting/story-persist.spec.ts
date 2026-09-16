@@ -54,6 +54,11 @@ function makeFakeDb() {
       rows.push(row)
       return row
     },
+    update: async (id: string, patch: Record<string, unknown>) => {
+      const row = rows.find((r) => r.id === id)
+      if (row) Object.assign(row, patch)
+      return row
+    },
   })
 
   const db = {
@@ -180,12 +185,26 @@ describe('persistCharacters', () => {
     expect(db._store.characters.find((c: any) => c.name === '林晓').gender).toBe('other')
   })
 
-  it('全部已存在 → skipped（不报错不重复入库）', async () => {
+  it('同名人物卡 = 权威修正：覆盖字段更新既有行，不重复入库', async () => {
+    const db = makeFakeDb()
+    await persistCharacters(db, 'p1', [{ name: '林晓', appearance: '旧外形' }])
+    const r = await persistCharacters(db, 'p1', [
+      { name: '林晓', appearance: '新外形', background: '新背景' },
+    ])
+    expect(r.ok).toBe(true)
+    expect(r.message).toContain('更新人物')
+    expect(db._store.characters).toHaveLength(1)
+    const lin = db._store.characters.find((c: any) => c.name === '林晓')
+    expect(lin.appearance).toBe('新外形')
+    expect(lin.background).toBe('新背景')
+  })
+
+  it('同名但无可写字段 → 幂等重申：不动库不报错', async () => {
     const db = makeFakeDb()
     await persistCharacters(db, 'p1', [{ name: '林晓' }])
     const r = await persistCharacters(db, 'p1', [{ name: '林晓' }])
-    expect(r.ok).toBe(false)
-    expect(r.skipped).toBe(true)
+    expect(r.ok).toBe(true)
+    expect(r.message).toContain('无可写字段')
     expect(db._store.characters).toHaveLength(1)
   })
 

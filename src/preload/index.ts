@@ -2122,8 +2122,8 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:graph:endRelation', id, chapterNumber),
     graphValidateBeforeGeneration: (projectId: string, outlineId: string, chapterNumber?: number) =>
       ipcRenderer.invoke('longwriting:graph:validateBeforeGeneration', projectId, outlineId, chapterNumber),
-    graphScanContradictions: (projectId: string) =>
-      ipcRenderer.invoke('longwriting:graph:scanContradictions', projectId),
+    graphScanContradictions: (projectId: string, opts?: { status?: 'pending' | 'all' }) =>
+      ipcRenderer.invoke('longwriting:graph:scanContradictions', projectId, opts),
     graphExtractChapter: (
       projectId: string,
       outlineId: string,

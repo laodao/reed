@@ -25,6 +25,8 @@ export interface ConflictInput {
   entityName?: string
   entityType?: string
   chapterNumber?: number
+  /** R10 锚点：大纲承诺拍原文（保留/撤销按拍相似度匹配，见 conflict-gate） */
+  beatText?: string
 }
 
 export interface ConflictPlanOption {

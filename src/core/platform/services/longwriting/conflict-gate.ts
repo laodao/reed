@@ -21,6 +21,8 @@ export interface ConflictLike {
   entityName?: string
   entityId?: string
   chapterNumber?: number
+  /** R10 专用锚点：大纲承诺拍原文（保留/撤销按拍内容相似度匹配，文案改写不失效） */
+  beatText?: string
 }
 
 /** 稳定 key：规则 + 实体 + 章节号 + 消息短哈希（重扫消息尾部变化不漂移） */
@@ -48,14 +50,17 @@ export function conflictChapters(c: ConflictLike): number[] {
  * - 作者已登记（解决/知情保留）的不拦；
  * - 只引用未来章节（> N）的疑点不拦——那是后续章节要处理的；
  * - 其余（含本章与已写章节的）全部拦截。
+ * 第三个参数兼容两种形态：裸 key 集合（仅精确匹配）或完整保留记录
+ * （R10 走节拍相似度顺延，见 isAcknowledgedConflict）。
  */
 export function filterBlockingConflicts<T extends ConflictLike>(
   conflicts: T[],
   uptoChapter: number,
-  acknowledgedKeys: Set<string>,
+  acknowledged: Set<string> | ResolutionRow[],
 ): T[] {
+  const rows: ResolutionRow[] = acknowledged instanceof Set ? [...acknowledged].map((key) => ({ key })) : acknowledged
   return conflicts.filter((c) => {
-    if (acknowledgedKeys.has(conflictKey(c))) return false
+    if (isAcknowledgedConflict(c, rows)) return false
     const chs = conflictChapters(c)
     if (chs.length === 0) return true
     return chs.some((n) => n <= uptoChapter)
@@ -81,17 +86,100 @@ interface ResolutionRow {
   status: 'resolved' | 'kept'
   note?: string
   at: number
+  /** 锚点：登记时的章节号（R10 相似度顺延时校验同章） */
+  chapterNumber?: number
+  /** 锚点：R10 大纲承诺拍原文——大纲改写后按相似度续用，替代易漂移的消息哈希 */
+  beatText?: string
 }
 
-export async function listAcknowledgedKeys(db: any, projectId: string): Promise<Set<string>> {
+/** R10 节拍相似度达到该值视为"同一承诺改写"（保留顺延）；低于则视为新承诺（重新拦截） */
+export const R10_BEAT_SIMILARITY_THRESHOLD = 0.6
+
+/** 归一化：去标点/空白/引号，只留文字与数字——大纲微调标点不影响相似度 */
+export function normalizeBeatText(text: string): string {
+  return String(text || '').replace(/[\s\p{P}\p{S}「」『』“”‘’"']/gu, '')
+}
+
+/**
+ * 节拍相似度：归一化后字符 bigram 的非对称重叠系数（|A∩B| / min(|A|,|B|)）。
+ * 选非对称而非 Jaccard：大纲修订的常见形态是"同一拍补细节变长"（逐户核对→
+ * 夜访临安城逐户核对），分子不变分母取短边才能续用；Jaccard 会被拉长稀释。
+ */
+export function beatSimilarity(a: string, b: string): number {
+  const na = normalizeBeatText(a)
+  const nb = normalizeBeatText(b)
+  if (!na || !nb) return 0
+  if (na === nb) return 1
+  const bigrams = (s: string): Set<string> => {
+    const set = new Set<string>()
+    for (let i = 0; i < s.length - 1; i++) set.add(s.slice(i, i + 2))
+    return set
+  }
+  const ba = bigrams(na)
+  const bb = bigrams(nb)
+  let inter = 0
+  for (const g of ba) if (bb.has(g)) inter++
+  const min = Math.min(ba.size, bb.size)
+  return min === 0 ? 0 : inter / min
+}
+
+/**
+ * 疑点是否已登记（解决/知情保留）：
+ * 1. 精确 key 命中（所有规则）；
+ * 2. R10 锚点顺延：登记时的节拍原文与当前节拍相似度达阈值且同章——
+ *    大纲按共识改写后旧保留不失效，换了承诺才重新拦截。
+ */
+export function isAcknowledgedConflict(conflict: ConflictLike, rows: ResolutionRow[]): boolean {
+  return matchResolution(conflict, rows) !== null
+}
+
+/** 命中的保留记录（无则 null）——标注时顺带带回 note/at 供展示 */
+export function matchResolution(conflict: ConflictLike, rows: ResolutionRow[]): ResolutionRow | null {
+  const key = conflictKey(conflict)
+  for (const r of rows) {
+    if (r.key === key) return r
+  }
+  if (conflict.rule === 'R10' && conflict.beatText) {
+    for (const r of rows) {
+      if (r.rule !== 'R10' || !r.beatText) continue
+      if (
+        Number.isFinite(conflict.chapterNumber) &&
+        Number.isFinite(r.chapterNumber) &&
+        conflict.chapterNumber !== r.chapterNumber
+      ) continue
+      if (beatSimilarity(r.beatText, conflict.beatText) >= R10_BEAT_SIMILARITY_THRESHOLD) return r
+    }
+  }
+  return null
+}
+
+/** 扫描结果标注处理状态（handler 层一次扫描同时供待处理/已保留两个视图） */
+export function annotateConflicts<T extends ConflictLike>(
+  conflicts: T[],
+  rows: ResolutionRow[],
+): Array<T & { status: 'pending' | 'kept'; note?: string; keptAt?: number }> {
+  return conflicts.map((c) => {
+    const row = matchResolution(c, rows)
+    return row
+      ? { ...c, status: 'kept' as const, note: row.note, keptAt: row.at }
+      : { ...c, status: 'pending' as const }
+  })
+}
+
+export async function listResolutions(db: any, projectId: string): Promise<ResolutionRow[]> {
   try {
     const project = await db?.lwProjects?.getById(projectId)
     const ws = (project?.wizardState || {}) as Record<string, any>
     const rows: ResolutionRow[] = Array.isArray(ws.conflictResolutions) ? ws.conflictResolutions : []
-    return new Set(rows.map((r) => r.key))
+    return rows
   } catch {
-    return new Set()
+    return []
   }
+}
+
+export async function listAcknowledgedKeys(db: any, projectId: string): Promise<Set<string>> {
+  const rows = await listResolutions(db, projectId)
+  return new Set(rows.map((r) => r.key))
 }
 
 export async function acknowledgeConflict(
@@ -108,13 +196,50 @@ export async function acknowledgeConflict(
     const rows: ResolutionRow[] = Array.isArray(ws.conflictResolutions) ? ws.conflictResolutions : []
     const key = conflictKey(conflict)
     if (!rows.some((r) => r.key === key)) {
-      rows.push({ key, rule: conflict.rule, status, note, at: Date.now() })
+      rows.push({
+        key,
+        rule: conflict.rule,
+        status,
+        note,
+        at: Date.now(),
+        chapterNumber: Number.isFinite(conflict.chapterNumber) ? conflict.chapterNumber : undefined,
+        beatText: conflict.beatText ? String(conflict.beatText).slice(0, 120) : undefined,
+      })
     }
     return {
       next: { ...(wizard || {}), conflictResolutions: rows } as WizardStateFullLike,
       result: undefined,
     }
   })
+}
+
+/** 撤销保留：精确 key 命中，或 R10 同章相似拍——撤销也要按锚点语义撤销 */
+export async function unacknowledgeConflict(db: any, projectId: string, conflict: ConflictLike): Promise<number> {
+  let removed = 0
+  await mutateWizardState<void>(db, projectId, (wizard) => {
+    const ws = (wizard || {}) as Record<string, any>
+    const rows: ResolutionRow[] = Array.isArray(ws.conflictResolutions) ? ws.conflictResolutions : []
+    const key = conflictKey(conflict)
+    const kept = rows.filter((r) => {
+      const hit =
+        r.key === key ||
+        (conflict.rule === 'R10' &&
+          r.rule === 'R10' &&
+          !!r.beatText &&
+          !!conflict.beatText &&
+          (!Number.isFinite(conflict.chapterNumber) ||
+            !Number.isFinite(r.chapterNumber) ||
+            conflict.chapterNumber === r.chapterNumber) &&
+          beatSimilarity(r.beatText!, conflict.beatText!) >= R10_BEAT_SIMILARITY_THRESHOLD)
+      if (hit) removed++
+      return !hit
+    })
+    return {
+      next: { ...(wizard || {}), conflictResolutions: kept } as WizardStateFullLike,
+      result: undefined,
+    }
+  })
+  return removed
 }
 
 /** 与 @shared/types/longwriting WizardStateFull 同构（此处仅类型引用，避免额外依赖） */

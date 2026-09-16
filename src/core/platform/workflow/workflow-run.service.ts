@@ -50,6 +50,12 @@ export interface StartRunInput {
   triggerType: WorkflowTriggerType
   triggerInfo?: Record<string, unknown>
   inputs?: Record<string, unknown>
+  /**
+   * 互斥作用域（可选）：提供后，互斥只对「同 mutexScope」的在途运行生效——
+   * 不同作用域（如不同项目/不同章节的章法 run）可并行。缺省保持旧语义：
+   * 同定义全局互斥（保守兼容既有单例工作流）。
+   */
+  mutexScope?: string
   /** C3 一次性配置覆盖（REST invoke 实验参数；透传引擎，不落定义） */
   configOverrides?: Record<string, Record<string, unknown>>
   /**
@@ -123,15 +129,25 @@ export class WorkflowRunService {
     const def = await this.deps.definitions.getById(input.definitionId)
     if (!def) throw new Error('工作流不存在')
 
-    // 互斥：同工作流已有 pending/running/waiting_review → 记 skipped（审计留痕）
+    // 互斥：同工作流已有 pending/running/waiting_review → 记 skipped（审计留痕）。
+    // 带 mutexScope 的运行只与「同 scope」的持有者互斥（不同项目/章节的章法 run
+    // 可并行——忘川渡实跑：全局粒度让两个项目的章节写作互相 skip）；任一方
+    // 无 scope 时保守回退为同定义互斥。
     const holders = await this.deps.runs.findMutexHolders(input.definitionId)
-    if (holders.length > 0) {
+    const blocking = holders.filter((h) => {
+      if (!input.mutexScope) return true
+      // 带作用域的启动只与「同作用域」持有者互斥；无作用域持有者（旧调用方）不拦截——
+      // 作用域语义以调用方声明为准（DB 唯一索引按 (user,definition,scope) 兜底同章双跑）
+      return !!h.mutexScope && h.mutexScope === input.mutexScope
+    })
+    if (blocking.length > 0) {
       return this.deps.runs.create({
         definitionId: input.definitionId,
         definitionVersion: def.publishedVersion,
         graphSnapshot: def.draftGraph ?? { version: 1, nodes: [], edges: [] },
         triggerType: input.triggerType,
         triggerInfo: input.triggerInfo,
+        mutexScope: input.mutexScope ?? '',
         startInputs: input.inputs,
         status: WORKFLOW_RUN_STATUSES.skipped,
         skipReason: '同工作流已有运行中实例',
@@ -223,6 +239,7 @@ export class WorkflowRunService {
         graphSnapshot: graph,
         triggerType: input.triggerType,
         triggerInfo: input.triggerInfo,
+        mutexScope: input.mutexScope ?? '',
         startInputs: mergedInputs,
         status: WORKFLOW_RUN_STATUSES.pending,
         timeoutAt: new Date(Date.now() + (def.settings?.maxDurationMs ?? WORKFLOW_DEFAULTS.maxDurationMs)),
@@ -235,6 +252,7 @@ export class WorkflowRunService {
           graphSnapshot: graph,
           triggerType: input.triggerType,
           triggerInfo: input.triggerInfo,
+          mutexScope: input.mutexScope ?? '',
           startInputs: mergedInputs,
           status: WORKFLOW_RUN_STATUSES.skipped,
           skipReason: '同工作流已有运行中实例（并发启动被互斥约束拦截）',

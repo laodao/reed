@@ -45,7 +45,7 @@
         <!-- 矛盾教练：写作期连续性检查疑点（44 号补 UI 渲染，数据位此前已存在） -->
         <!-- 52 号 UI 优化：疑点折叠为摘要条，全量进抽屉（原平铺横幅吞掉 2/3 画布） -->
         <div v-if="store.conflicts.value.length" class="conflict-bar" @click="conflictDrawer = true">
-          <span class="conflict-bar-text">⚔ 连续性检查发现 {{ store.conflicts.value.length }} 处疑点（写作前请先核对）</span>
+          <span class="conflict-bar-text">⚔ 连续性检查 {{ store.conflicts.value.length }} 处待处理疑点（写作前请先核对）</span>
           <span class="conflict-bar-more">查看 ▸</span>
         </div>
         <!-- 设计任务流水（46 号：design 轮的工具动作 chip，folded 摘要一条） -->
@@ -210,7 +210,20 @@
             </template>
           </div>
         </div>
-        <div v-if="!store.conflicts.value.length" class="conflict-empty">当前没有疑点。</div>
+        <div v-if="!store.conflicts.value.length" class="conflict-empty">当前没有待处理疑点。</div>
+
+        <!-- 已保留分区：保留不再只进不出，误保留可撤销；折叠避免淹没待处理项 -->
+        <details v-if="store.keptConflicts.value.length" class="conflict-kept">
+          <summary class="conflict-kept-summary">已保留（{{ store.keptConflicts.value.length }}）· 不拦截生成</summary>
+          <div v-for="(c, i) in store.keptConflicts.value" :key="'kept-' + i" class="conflict-item-wrap">
+            <div class="conflict-item kept">
+              <span class="conflict-rule">{{ ruleLabel(c.rule) }}</span>
+              <span class="conflict-msg">{{ c.description || c.message }}</span>
+              <el-button size="small" class="conflict-solve" @click="unkeepConflict(i)">撤销保留</el-button>
+            </div>
+            <div v-if="c.note" class="conflict-kept-note">保留备注：{{ c.note }}</div>
+          </div>
+        </details>
       </div>
     </el-drawer>
 
@@ -435,7 +448,7 @@ async function keepConflict(i: number): Promise<void> {
   const c: any = store.conflicts.value[i]
   if (!c) return
   const res = await window.electronAPI.longwriting.conflictExecute(projectId.value, 'acknowledge_conflict', {
-    conflict: { rule: c.rule, message: c.description || c.message, entityName: c.entityName, entityType: c.entityType, chapterNumber: c.chapterNumber },
+    conflict: { rule: c.rule, message: c.description || c.message, entityName: c.entityName, entityType: c.entityType, chapterNumber: c.chapterNumber, beatText: c.beatText },
     note: '作者知情保留',
   })
   if (res.success) {
@@ -444,6 +457,18 @@ async function keepConflict(i: number): Promise<void> {
   } else {
     ElMessage.warning(res.error || '保留失败')
   }
+}
+
+/** 撤销保留：误保留的疑点恢复拦截（保留记录此前只进不出） */
+async function unkeepConflict(i: number): Promise<void> {
+  const c: any = store.keptConflicts.value[i]
+  if (!c) return
+  const res = await window.electronAPI.longwriting.conflictExecute(projectId.value, 'unacknowledge_conflict', {
+    conflict: { rule: c.rule, message: c.description || c.message, entityName: c.entityName, entityType: c.entityType, chapterNumber: c.chapterNumber, beatText: c.beatText },
+  })
+  const msg = (res.data && res.data.message) || res.error || (res.success ? '已撤销保留' : '撤销失败')
+  ElMessage[res.success ? 'success' : 'warning'](msg)
+  if (res.success) await store.loadConflictsIfWriting()
 }
 
 async function execOption(i: number, oi: number, opt: PlanOption): Promise<void> {
@@ -474,7 +499,7 @@ function recommendedTag(rec: boolean): string {
 function ruleLabel(rule?: string): string {
   const map: Record<string, string> = {
     R1: '死亡后出场', R2: '关系失效', R3: '物品易主', R4: '技能时间线', R5: '回忆冲突',
-    R6: '状态回退', R7: '钩子节拍', R8: '伏笔超期', R9: '名册外人名',
+    R6: '状态回退', R7: '钩子节拍', R8: '伏笔超期', R9: '名册外人名', R10: '大纲承诺落点',
   }
   return rule && map[rule] ? `${rule} ${map[rule]}` : (rule || '疑点')
 }
@@ -492,17 +517,40 @@ function kindLabel(kind: string): string {
 }
 
 async function onConfirmDesign(): Promise<void> {
-  const pkg = store.designReady.value
-  if (!pkg || checkedIds.value.size === 0) return
-  await store.confirmDesign(pkg.id, [...checkedIds.value])
+  const ready = store.designReady.value
+  if (!ready || checkedIds.value.size === 0) return
+  // 防过期快照（实跑修复）：面板持有的包可能已被确认/驳回——按 id 从最新 state 重新解析，
+  // 校验通过才提交，避免"确认所选"静默无效且面板卡在旧批次上
+  const latest = store.state.value?.designPackages?.find((p) => p.id === ready.id)
+  if (!latest || latest.status !== 'draft') {
+    ElMessage.warning('该设计包已处理过，请从「审核设计包」重新打开')
+    store.designReady.value = null
+    return
+  }
+  const validIds = latest.items.filter((i) => checkedIds.value.has(i.id)).map((i) => i.id)
+  if (!validIds.length) {
+    store.designReady.value = latest
+    checkedIds.value = new Set(latest.items.map((i) => i.id))
+    ElMessage.info('草稿内容已更新，已重新勾选，请确认')
+    return
+  }
+  checkedIds.value = new Set(validIds)
+  await store.confirmDesign(ready.id, validIds)
 }
 
 async function onDiscardDesign(): Promise<void> {
-  const pkg = store.designReady.value
-  if (!pkg) return
+  const ready = store.designReady.value
+  if (!ready) return
   const yes = await ElMessageBox.confirm('整包驳回后草稿不落库（保留回看记录），确定？', '驳回设计包', { type: 'warning' }).catch(() => false)
   if (!yes) return
-  await store.discardDesign(pkg.id)
+  // 同上：按最新 state 校验包仍是 draft，避免驳回过期快照
+  const latest = store.state.value?.designPackages?.find((p) => p.id === ready.id)
+  if (!latest || latest.status !== 'draft') {
+    ElMessage.warning('该设计包已处理过，面板已刷新')
+    store.designReady.value = null
+    return
+  }
+  await store.discardDesign(ready.id)
 }
 
 onMounted(async () => {
@@ -956,6 +1004,16 @@ html.dark .story-room { --sr-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rg
   color: var(--el-color-warning-dark-2);
 }
 .conflict-empty { color: var(--el-text-color-secondary); font-size: 13px; }
+.conflict-kept { margin-top: 6px; }
+.conflict-kept-summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  padding: 6px 2px;
+}
+.conflict-kept .conflict-item { opacity: 0.72; }
+.conflict-kept .conflict-rule { background: var(--el-fill-color); color: var(--el-text-color-secondary); }
+.conflict-kept-note { margin-top: 6px; font-size: 12px; color: var(--el-text-color-secondary); }
 
 
 .composer-toolbar .ct-btn {

@@ -15,7 +15,7 @@ import { stateToSummary } from '@core/platform/services/longwriting/agent/agent-
 import { extractJsonObject, persistChapter, persistCharacters, persistOverview, persistOutlineTree, persistPlots, persistWorld, type StoryPersistResult } from '@core/platform/services/longwriting/story-persist'
 import { assessBibleReadiness, buildBibleGateError } from '@core/platform/services/longwriting/bible-readiness-gate'
 import { normalizeCharacterInput } from '@core/platform/services/longwriting/story-persist'
-import { extractCharacterList, extractPlotList, extractWorldLists, normalizeOutlineVolume, normalizePlotInput } from '@core/platform/services/longwriting/story-persist'
+import { extractCharacterList, extractPlotList, extractWorldLists, matchOutlineChapterCard, normalizeOutlineVolume, normalizePlotInput, upsertOutlineChapter } from '@core/platform/services/longwriting/story-persist'
 import type { ArtifactCard, ArtifactCardKind, BibleDistillScope, DistillScope, RoomWorkspaceState } from '@shared/types/story-room.types'
 import { emitRoomEvent } from './room-events'
 import { getRoomState, patchRoomState } from './room-state'
@@ -53,7 +53,7 @@ const DISTILLER_PERSONA = `你是创作研讨室的「整理器」——把研�
 
 function outlineStrategyNovel(nextVolume: number): string {
   return `本任务是第 ${nextVolume} 卷大纲（逐卷产出）。输出：
-{"name":"卷名","summary":"本卷主线概述","estimatedWords":300000,"chapters":[{"name":"第N章 章节名","summary":"一句话要点+钩子","estimatedWords":3000}]}`
+{"name":"卷名","summary":"本卷主线概述（120-200字：核心冲突、关键转折、卷末局面与主线推进关系）","estimatedWords":300000,"chapters":[{"name":"第N章 章节名","summary":"章节概要150-300字（核心事件与冲突推进、出场角色、章末局面变化与结尾钩子；禁止一句话要点）","estimatedWords":3000}]}`
 }
 
 function outlineStrategyScript(nextEpisode: number): string {
@@ -63,11 +63,11 @@ function outlineStrategyScript(nextEpisode: number): string {
 
 const SCOPE_PROMPTS: Partial<Record<DistillScope, string>> = {
   overview: `整理「故事概要卡」。输出：
-{"title":"作品名","storyType":"题材","summary":"两百字内概要","coreConflict":"核心冲突","hook":"钩子","keyCharacters":["主角名",...],"keyLocations":["关键地点",...],"estimatedChapters":预估章节数}`,
+{"title":"作品名","storyType":"题材","summary":"300-500字完整故事主线（起点→欲望与转机→转折→终局，按讨论共识忠实整理，禁止压缩成一句话或百字简介）","styleTone":"风格基调与写作指导100-200字（叙事视角/节奏/情绪底色/爽点类型/对后续写作的硬性指导）","coreConflict":"核心冲突","hook":"钩子","keyCharacters":["主角名",...],"keyLocations":["关键地点",...],"estimatedChapters":预估章节数}`,
   characters: `整理「人物卡」——一次整理一个最重要的人物（依据讨论优先级）。输出：
 {"name":"人物名","aliases":["别名/称呼，如 晓哥/林师妹"],"gender":"male/female/other","age":年龄或0,"rolePosition":"protagonist/supporting/minor","occupation":"身份","appearance":"外貌","background":"背景","personality":"性格","arc":"人物弧光","relations":[{"targetName":"对方名","relationType":"关系","description":"备注"}]}`,
   plots: `整理「故事线卡」——一次整理一条故事线。输出：
-{"title":"故事线名","summary":"起点→冲突升级→终点","involvedCharacters":["人物名"],"entityRelations":[{"sourceName":"实体","targetName":"实体","relationType":"关系","description":"备注"}]}`,
+{"title":"故事线名","summary":"100-200字，覆盖四拍：起因→冲突升级→转折→本线阶段性终点，并写明与核心主线的纠缠点；禁止一句话剧情简介","involvedCharacters":["人物名"],"entityRelations":[{"sourceName":"实体","targetName":"实体","relationType":"关系","description":"备注"}]}`,
   world: `整理「世界设定卡」（地点/势力/技能/物品四类，只收讨论中明确提到的）。输出：
 {"locations":[{"name":"名称","type":"类型","importance":"core/main/auxiliary","description":"描述"}],"factions":[{"name":"名称","factionType":"类型","description":"描述"}],"skills":[{"name":"名称","type":"类型","level":"等级","description":"描述"}],"items":[{"name":"名称","type":"类型","level":"品级","description":"描述"}]}`,
   outline: '大纲（分卷/分集策略见任务说明）',
@@ -213,7 +213,7 @@ export class StoryRoomDistillerService {
       const rows = (await m.lwDesignMessages.getByConversationId(`room:${projectId}`)) || []
       return rows
         .slice(-limit)
-        .map((r: any) => `${r.role === 'user' ? '作者' : '主编'}：${String(r.content ?? '').slice(0, 800)}`)
+        .map((r: any) => `${r.role === 'user' ? '作者' : '主编'}：${String(r.content ?? '').slice(0, 2000)}`)
         .join('\n\n')
     } catch {
       return ''
@@ -354,10 +354,23 @@ export class StoryRoomDistillerService {
         // 复测实跑修复：一张人物卡可含多角色（{人物:[...]}），摊平后逐个归一化落库
         return persistCharacters(m, projectId, extractCharacterList(data).map(normalizeCharacterInput))
       case 'plot':
-        return persistPlots(m, projectId, extractPlotList(data).map(normalizePlotInput))
+        // 实跑修复：主编产卡时 title 在 card 层、data 里可能没有 title 键——
+        // 若不注入，extractPlotList 会把单张卡的 summary/纠缠点等自由键误当多条故事线拆分
+        return persistPlots(m, projectId, extractPlotList({ title: card.title, ...data }).map(normalizePlotInput))
       case 'world':
         return persistWorld(m, projectId, extractWorldLists(data))
       case 'outline': {
+        // 单章卡判定必须先于分集 index 早退：单章修正卡常带 index/volumeIndex 字段，
+        // 旧顺序会把它当"分集种子"直接 ok 不落库——确认后卡被消费而大纲未更新
+        // （忘川渡实跑：第4/6章修正卡首轮全被吞，"确认了但没生效"）
+        const chapterCard = matchOutlineChapterCard(data, card.title)
+        if (chapterCard) {
+          const gateErr = await bibleGateForPersist(m, projectId, '大纲')
+          if (gateErr) return { ok: false, message: gateErr, changed: [] }
+          const r = await upsertOutlineChapter(m, projectId, chapterCard)
+          if (r.created + r.updated === 0) return { ok: false, message: `章节点落库失败「${chapterCard.name}」`, changed: [] }
+          return { ok: true, message: `大纲章节点已${r.updated ? '更新' : '就位'}「${chapterCard.name}」`, changed: ['outline'], data: { nodes: [chapterCard.name] } }
+        }
         if (card.data?.index !== undefined || data?.index !== undefined) {
           // 分集大纲卡：研讨室定稿即采纳（转短剧桥的分集种子，不落 lw_outlines）
           return { ok: true, message: '分集大纲已定稿（转短剧时作为该集种子）', changed: ['outline'] }

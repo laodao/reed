@@ -3238,11 +3238,21 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  // 矛盾扫描
-  ipcBridge.handle(CHANNELS.GRAPH_SCAN_CONTRADICTIONS, async (_event, projectId: string) => {
+  // 矛盾扫描。默认只返回待处理（pending）——已登记（解决/知情保留）的在主进程
+  // join 保留记录后过滤，渲染层拿不到保留数据也无需感知；status='all' 供
+  // 疑点抽屉的「已保留」分区与撤销保留，每条带 status 字段，一次扫描两视图共用。
+  ipcBridge.handle(CHANNELS.GRAPH_SCAN_CONTRADICTIONS, async (_event, projectId: string, opts?: { status?: 'pending' | 'all' }) => {
     try {
       const { ConsistencyService } = await import('@core/platform/services/longwriting/graph/consistency.service')
-      return { success: true, data: await ConsistencyService.getInstance().scanContradictions(projectId) }
+      const { listResolutions, annotateConflicts } = await import('@core/platform/services/longwriting/conflict-gate')
+      const db = getCoreDatabaseManager()
+      const [conflicts, rows] = await Promise.all([
+        ConsistencyService.getInstance().scanContradictions(projectId),
+        listResolutions(db, projectId),
+      ])
+      const annotated = annotateConflicts(conflicts, rows)
+      const data = opts?.status === 'all' ? annotated : annotated.filter((c) => c.status === 'pending')
+      return { success: true, data }
     } catch (error: any) {
       return { success: false, error: error.message }
     }

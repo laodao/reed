@@ -54,21 +54,25 @@ const rows = computed<Array<{ k: string; v: string }>>(() => {
     if (v === undefined || v === null || v === '') continue
     if (Array.isArray(v)) {
       if (v.length === 0 || v.some((x) => typeof x === 'object')) continue // 对象数组（如场景表）不进文本行
-      out.push({ k: label, v: v.map((x) => String(x)).join('；').slice(0, 120) })
+      out.push({ k: label, v: v.map((x) => String(x)).join('；') })
     } else {
-      out.push({ k: label, v: String(v).slice(0, 160) })
+      out.push({ k: label, v: String(v) })
     }
   }
-  // 有未映射字段时补充展示（截断；数组/对象/空值不进文本行）
+  // 有未映射字段时补充展示（数组/对象/空值不进文本行）
   for (const [field, v] of Object.entries(data)) {
     if (labels[field] || out.length >= 8) continue
-    if (typeof v === 'string' && v.trim()) out.push({ k: field, v: v.slice(0, 160) })
+    if (typeof v === 'string' && v.trim()) out.push({ k: field, v })
     else if (typeof v === 'number') out.push({ k: field, v: String(v) })
   }
   return out
 })
 
-const summaryText = computed(() => JSON.stringify(props.card.data).slice(0, 120))
+// 无任何可展示字段时的 JSON 兜底预览（调试用途，仅截断展示）
+const summaryText = computed(() => {
+  const s = JSON.stringify(props.card.data)
+  return s.length > 200 ? `${s.slice(0, 200)}…` : s
+})
 </script>
 
 <style scoped>

@@ -45,6 +45,49 @@ const ENTITY_ADAPTERS: Record<string, { nameField: string; subFields: string[] }
   location: { nameField: 'name', subFields: ['description'] },
 }
 
+/**
+ * 内置实体类分类的默认字段 schema（实跑修复 09-15）：
+ * overview/plot/outline/faction/skill/item/location 的 fields_schema 在种子里为空，
+ * 设定集详情按 schema 渲染字段——空 schema 导致详情一行不出、回退到 24 字截断 sub
+ * （用户看到"故事概要只有十几个字"）。详情兜底用：按实体类型给默认字段集。
+ */
+const DEFAULT_ENTITY_SCHEMAS: Record<string, Array<{ key: string; label: string; type: string }>> = {
+  overview: [
+    { key: 'title', label: '故事标题', type: 'text' },
+    { key: 'summary', label: '故事概要', type: 'textarea' },
+    { key: 'coreConflict', label: '核心冲突', type: 'textarea' },
+    { key: 'coreIdea', label: '核心构想', type: 'textarea' },
+    { key: 'estimatedChapters', label: '预估章节数', type: 'number' },
+  ],
+  plot: [
+    { key: 'title', label: '故事线名称', type: 'text' },
+    { key: 'summary', label: '故事线概要', type: 'textarea' },
+  ],
+  outline: [
+    { key: 'name', label: '章节名', type: 'text' },
+    { key: 'summary', label: '章节概要', type: 'textarea' },
+  ],
+  faction: [
+    { key: 'name', label: '名称', type: 'text' },
+    { key: 'description', label: '描述', type: 'textarea' },
+  ],
+  skill: [
+    { key: 'name', label: '名称', type: 'text' },
+    { key: 'type', label: '类型', type: 'text' },
+    { key: 'description', label: '描述', type: 'textarea' },
+  ],
+  item: [
+    { key: 'name', label: '名称', type: 'text' },
+    { key: 'type', label: '类型', type: 'text' },
+    { key: 'description', label: '描述', type: 'textarea' },
+  ],
+  location: [
+    { key: 'name', label: '名称', type: 'text' },
+    { key: 'type', label: '类型', type: 'text' },
+    { key: 'description', label: '描述', type: 'textarea' },
+  ],
+}
+
 const outlineSub = (t: unknown) => (t === 'volume' ? '卷' : t === 'chapter' ? '章' : t === 'section' ? '节' : '')
 
 export class BibleQueryService {
@@ -277,10 +320,21 @@ export class BibleQueryService {
     } else {
       const repo = kind.entityRepo ? m[kind.entityRepo] : null
       if (kindKey === 'overview') {
-        fields = (await repo?.getByProjectId(projectId)) || {}
+        // 实跑修复：getByProjectId 返回数组——概要详情此前把整个数组当 fields，
+        // summary 等键全部取空，前端回退到 24 字列表摘要（用户看到"概要只有十几个字"）
+        const rows = (await repo?.getByProjectId(projectId)) || []
+        const first = Array.isArray(rows) ? rows[0] : (rows as unknown)
+        fields = (first as Record<string, unknown>) || {}
       } else if (repo?.getById) {
         fields = (await repo.getById(id)) || {}
       }
+    }
+    // 空 schema 兜底（实跑修复）：内置实体类分类（overview/plot/outline/faction/skill/item/location）
+    // 的 fields_schema 为空，前端按 schema 渲染详情会一行不出、回退到截断 sub
+    let effKind = kind
+    if (!kind.fieldsSchema || (Array.isArray(kind.fieldsSchema) && kind.fieldsSchema.length === 0)) {
+      const fallback = DEFAULT_ENTITY_SCHEMAS[kindKey]
+      if (fallback) effKind = { ...kind, fieldsSchema: fallback }
     }
 
     // 关系边（数据在 lw_graph_edges——P0 只做读取小节）
@@ -299,7 +353,7 @@ export class BibleQueryService {
       logger.warn('[bible] 关系读取失败（降级为空）', e)
     }
 
-    return { kind, fields: fields || {}, relations: relations as never }
+    return { kind: effKind, fields: fields || {}, relations: relations as never }
   }
 
   customCreate(projectId: string, kindKey: string, name: string, fields: Record<string, unknown> | null, origin?: CustomEntityDto['origin'], parentId?: string | null) {
