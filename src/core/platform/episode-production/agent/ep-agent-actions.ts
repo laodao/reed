@@ -42,6 +42,7 @@ import { VideoSegmentService } from '@core/platform/episode-production/render/vi
 import { SegmentVideoService } from '@core/platform/episode-production/render/video/segment-video.service'
 import { createAdapterForProviderWithReason } from '@core/platform/episode-production/render/video/adapter-factory'
 import { SceneAudioOrchestratorService } from '@core/platform/episode-production/render/audio/scene-audio-orchestrator.service'
+import { EpVideoSegmentEntity } from '@core/database/entities/episode-production/video-segment.entity'
 import type {
   EpAgentAction,
   EpAgentActionSummary,
@@ -902,6 +903,25 @@ async function executeQueryDatabase(
 // ==================== 动作：后半程四件（2026-09-16 review 第一批·agent 视频制作闭环） ====================
 
 /**
+ * 批量分页纪律（0916 晚 review）：补缺省批量是"本集全部"，40+ 镜 × 分钟级产物极易
+ * 超 30min 工具超时——withTimeout 只切断等待、底层循环会继续烧。按上限分页（模型带
+ * 着"已完成 X/Y"回执自行续调）；循环体在步边界感知 ctx.signal（用户取消/超时中止），
+ * 已开始的一项无法打断，但后续不再启动。
+ */
+const KEYFRAME_BATCH_LIMIT = 8
+const VIDEO_BATCH_LIMIT = 4
+const AUDIO_BATCH_LIMIT = 6
+function batchAborted(ctx: EpAgentExecutionContext): boolean {
+  return ctx.signal?.aborted === true
+}
+function batchCapNote(remaining: number, limit: number): string {
+  return remaining > 0 ? `；剩余 ${remaining} 个未生成（本轮上限 ${limit}，再次调用继续）` : ''
+}
+function batchAbortNote(interrupted: boolean): string {
+  return interrupted ? '；执行被中止（取消/超时），未开始的项不再启动' : ''
+}
+
+/**
  * 生成关键帧（generate_keyframes）。
  * params: { storyboardId? , scriptId? }
  * 不传 storyboardId → 为本集全部"尚无关键帧图"的分镜生成（幂等，不重烧已有帧）。
@@ -945,8 +965,14 @@ async function executeGenerateKeyframes(
 
   const svc = new KeyframeGenerationService(m.dataSource)
   let done = 0
+  let interrupted = false
   const failed: string[] = []
-  for (const sb of targets) {
+  const batch = targets.slice(0, KEYFRAME_BATCH_LIMIT)
+  for (const sb of batch) {
+    if (batchAborted(ctx)) {
+      interrupted = true
+      break
+    }
     ctx.emit({
       type: 'action:start',
       actionType: 'generate_keyframes',
@@ -963,7 +989,7 @@ async function executeGenerateKeyframes(
   return {
     type: 'generate_keyframes',
     status: done > 0 ? 'ok' : 'error',
-    message: `已为 ${done}/${targets.length} 个分镜生成关键帧${suffix}`,
+    message: `已为 ${done}/${targets.length} 个分镜生成关键帧${suffix}${batchCapNote(targets.length - batch.length, KEYFRAME_BATCH_LIMIT)}${batchAbortNote(interrupted)}`,
     changed: ['storyboards'],
     data: { generated: done, total: targets.length },
     nav: { tab: 'storyboard' },
@@ -1007,6 +1033,14 @@ async function executeGenerateSegmentVideo(
   const storyboardId = action.params?.storyboardId ? String(action.params.storyboardId) : ''
 
   if (segmentId) {
+    // 归属校验（0916 review 多租户防线）：姊妹工具都按本集 targets 过滤 id，唯独视频
+    // 曾把模型给的任意 id 直通服务层全库查找并写库+烧费——对话注入他项目 id 即越权。
+    const seg = await m.dataSource
+      .getRepository(EpVideoSegmentEntity)
+      .findOne({ where: { id: segmentId } as any })
+    if (!seg || seg.episodeId !== ctx.episodeId) {
+      throw new Error('指定的片段不存在于当前剧集（id 需来自查询结果或用户消息，不要编造）')
+    }
     const svc = new SegmentVideoService(m.dataSource, adapter)
     const r = await svc.generateForSegment({ segmentId, providerId: providerConfigId, modelId })
     return {
@@ -1020,6 +1054,18 @@ async function executeGenerateSegmentVideo(
   }
 
   if (storyboardId) {
+    // 同上：storyboardId 也校验本集归属
+    const scriptIdForCheck = await resolveScriptId(m, ctx.episodeId)
+    const scenesForCheck = scriptIdForCheck
+      ? (await m.sceneScripts?.getByEpisodeScriptId?.(scriptIdForCheck)) || []
+      : []
+    const validSbIds = new Set<string>()
+    for (const sc of scenesForCheck) {
+      for (const sb of (await m.storyboards?.getBySceneScriptId?.(sc.id)) || []) validSbIds.add(sb.id)
+    }
+    if (!validSbIds.has(storyboardId)) {
+      throw new Error('指定的分镜不存在于当前剧集（id 需来自查询结果或用户消息，不要编造）')
+    }
     const svc = new VideoSegmentService(m.dataSource, adapter)
     const r = await svc.generateForStoryboard({ storyboardId })
     return {
@@ -1046,8 +1092,14 @@ async function executeGenerateSegmentVideo(
   }
   const svc = new VideoSegmentService(m.dataSource, adapter)
   let done = 0
+  let interrupted = false
   const failed: string[] = []
-  for (const sb of targets) {
+  const batch = targets.slice(0, VIDEO_BATCH_LIMIT)
+  for (const sb of batch) {
+    if (batchAborted(ctx)) {
+      interrupted = true
+      break
+    }
     ctx.emit({
       type: 'action:start',
       actionType: 'generate_segment_video',
@@ -1064,7 +1116,7 @@ async function executeGenerateSegmentVideo(
   return {
     type: 'generate_segment_video',
     status: done > 0 ? 'ok' : 'error',
-    message: `已生成 ${done}/${targets.length} 个分镜视频${suffix}`,
+    message: `已生成 ${done}/${targets.length} 个分镜视频${suffix}${batchCapNote(targets.length - batch.length, VIDEO_BATCH_LIMIT)}${batchAbortNote(interrupted)}`,
     changed: ['storyboards'],
     data: { generated: done, total: targets.length },
     nav: { tab: 'storyboard' },
@@ -1104,8 +1156,14 @@ async function executeGenerateSceneAudio(
   const userDataPath = getPathProvider().getUserDataPath()
   let done = 0
   let fallbackCount = 0
+  let interrupted = false
   const failed: string[] = []
-  for (const scene of scenes) {
+  const batch = scenes.slice(0, AUDIO_BATCH_LIMIT)
+  for (const scene of batch) {
+    if (batchAborted(ctx)) {
+      interrupted = true
+      break
+    }
     ctx.emit({
       type: 'action:start',
       actionType: 'generate_scene_audio',
@@ -1117,8 +1175,15 @@ async function executeGenerateSceneAudio(
         outputDir: path.join(userDataPath, 'episode-production', 'audio', scene.id),
       })
       await svc.persistToScene(scene.id, result)
-      done++
       fallbackCount += result.fallbackDialogueCount
+      // 假成功防线与 UI 同口径（0916 晚复核 P1）：有待合成内容却一条产物都没有 → 视为失败。
+      // 注意无旁白文本的场景 narrationFailed 恒 false，须同时看对白失败数。
+      const producedAny = !!result.narrationPath || result.dialoguePaths.size > 0
+      if ((result.narrationFailed || result.dialogueFailCount > 0) && !producedAny) {
+        failed.push(`场景${scene.sceneNumber}:配音生成失败（旁白与全部对白均未合成成功）`)
+      } else {
+        done++
+      }
     } catch (e: any) {
       failed.push(`场景${scene.sceneNumber}:${e?.message || '未知错误'}`)
     }
@@ -1128,7 +1193,7 @@ async function executeGenerateSceneAudio(
   return {
     type: 'generate_scene_audio',
     status: done > 0 ? 'ok' : 'error',
-    message: `已为 ${done}/${scenes.length} 个场景生成配音${fallbackNote}${suffix}`,
+    message: `已为 ${done}/${scenes.length} 个场景生成配音${fallbackNote}${suffix}${batchCapNote(scenes.length - batch.length, AUDIO_BATCH_LIMIT)}${batchAbortNote(interrupted)}`,
     changed: ['scenes'],
     data: { generated: done, total: scenes.length },
   }
@@ -1158,7 +1223,15 @@ async function executeExportMp4(
   let outputPath = action.params?.outputPath ? String(action.params.outputPath).trim() : ''
   if (!outputPath) {
     outputPath = path.join(defaultDir, `${scriptId}-${Date.now()}.mp4`)
-  } else if (!path.isAbsolute(outputPath)) {
+  } else {
+    // 安全收口（0916 review）：导出路径强制落在应用导出目录内——只接受文件名，
+    // 绝对路径/目录穿越一律拒绝（此前模型被对话注入即可用 mp4 内容覆盖任意可写文件）
+    if (path.isAbsolute(outputPath)) {
+      throw new Error(`outputPath 只接受文件名（导出固定写入 ${defaultDir}），不要传绝对路径`)
+    }
+    if (outputPath.split(/[\\/]/).some((seg) => seg === '..')) {
+      throw new Error('outputPath 不允许包含 ..（导出固定写入应用导出目录）')
+    }
     outputPath = path.join(defaultDir, outputPath)
   }
   const dir = path.dirname(outputPath)

@@ -329,8 +329,12 @@ export class EpAgentHarnessService {
           Number(process.env.EP_AGENT_CONTEXT_WINDOW ?? process.env.AGENT_CONTEXT_WINDOW ?? 32_768) || 32_768,
         // 审批挂起豁免空闲看门狗（2026-09-16 P1-AG1）：ep_confirm_choice 挂起期间
         // fullStream 无事件，缺省 300s 空闲超时会把「等待用户选择」误判为步超时→
-        // 重试→撞单卡断言→晚到的用户选择被静默吞。EP 有审批卡，置 0 关闭看门狗。
-        streamIdleTimeoutMs: 0,
+        // 重试→撞单卡断言→晚到的用户选择被静默吞。
+        // 0916 晚 review 修正：曾置 0=永久关闭看门狗——审批（30min auto-reject）与
+        // 长工具（30min executeTimeout）都有兜底，唯独纯流假死（网络黑洞）无界：
+        // runTurn 永不返回、busy Map 锁死。改为 35min：既盖过两类挂起不误伤，
+        // 又给真挂死留下限。
+        streamIdleTimeoutMs: 2_100_000,
         memory: {
           scope: () => ({ bizModule: 'episode-production', projectId }),
           // 召回语料只用用户消息（story-room 复盘结论：整段快照作语料会让 2-gram

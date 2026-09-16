@@ -2,14 +2,15 @@
  * EP Agent 工具集（M6.5-a，35 号 subtasks/ep-1）
  * @module platform/episode-production/agent/ep-agent-tools
  *
- * 共享注册形态：9 个生产动作注册进共享 registry 的 pack 命名空间（pack:ep-agent:*），
+ * 共享注册形态：13 个生产动作 + ep_confirm_choice 注册进共享 registry 的 pack 命名空间（pack:ep-agent:*），
  * 宿主白名单经 listSpecs({packId}) 组装（全名匹配）。与长文 M6 的宿主本地闭包不同：
  * - def **不捕获项目**——projectId/episodeId 从 ctx.logContext（宿主 runtimeContext 注入）
  *   运行时读取，缺失即抛错（聊天宿主不注入 → 无法误调）；
  * - 懒注册幂等（boot 时序：pack activate 早于 workflow-boot，评审 P0-1——lw-agent-tools.ts:5-7 坑）；
  * - 每次调用前重算生产状态做依赖检查（#49 同轮依赖语义，评审 P1-5）。
  *
- * ep_confirm_choice（choice→审批映射）在 EP-2 引入，本期不含。
+ * ep_confirm_choice（choice→审批映射，EP-2）；8a70bf6e 起补齐后半程四工具
+ * （generate_keyframes / generate_segment_video / generate_scene_audio / export_mp4）。
  */
 
 import { z } from 'zod'
@@ -24,15 +25,19 @@ import type { EpAgentActionType, EpAgentExecutionContext } from './ep-agent.type
 
 export const EP_AGENT_PACK_ID = 'ep-agent'
 
-/** 每轮频控（bind 时写入 maxCalls）：花费类 1、文本类 3（35 号 §4 成本闸门） */
+/** 每轮频控（bind 时写入 maxCalls）：花费类 1、文本类 3（35 号 §4 成本闸门）。
+ * 0916 晚 review 修正：批量长工具改为分页执行（keyframes/video/audio 每次调用
+ * 限 8/4/6 个目标，见 ep-agent-actions），上限须允许典型剧集多页跑完 + 一次失败
+ * 重试——原 keyframes:1/video:2 会让「补片→再导出」「多页续调」合法流被
+ * LIMIT_EXCEEDED 拦死；export_mp4 放宽到 2 容纳一次前置校验失败后的重试。 */
 export const EP_TOOL_MAX_CALLS: Record<string, number> = {
   generate_script: 3,
   split_scenes: 3,
   generate_storyboards: 3,
-  generate_keyframes: 1,
-  generate_segment_video: 2,
-  generate_scene_audio: 2,
-  export_mp4: 1,
+  generate_keyframes: 6,
+  generate_segment_video: 8,
+  generate_scene_audio: 4,
+  export_mp4: 2,
   generate_char_asset: 1,
   generate_location_asset: 1,
   generate_item_asset: 1,
@@ -58,6 +63,7 @@ function epCtxFrom(ctx: AgentToolContext): EpAgentExecutionContext {
     db: getCoreDatabaseManager(),
     ai: LongWritingAIService.getInstance(),
     emit: (event) => emitEpAgentEvent(projectId, episodeId, event),
+    signal: ctx.signal,
   }
 }
 
@@ -135,7 +141,7 @@ export function buildEpAgentToolDefs(): AgentToolDef[] {
       })),
     epActionTool('export_mp4', '整集合成导出 MP4（末端硬锁：所有入选分镜须已有视频）。成功后剧集标记为已完成。',
       z.object({
-        outputPath: z.string().optional().describe('导出文件路径（缺省存到应用导出目录）'),
+        outputPath: z.string().optional().describe('导出文件名（只接受文件名如 "第1集.mp4"，固定写入应用导出目录；不传自动命名）'),
         burnSubtitles: z.boolean().optional().describe('是否烧入字幕（默认 true）'),
       })),
     epActionTool('generate_char_asset', '为角色生成定妆主图。name 必填，须为项目内已有角色。',

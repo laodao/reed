@@ -155,6 +155,8 @@ export interface EpAgentExecutionContext {
   db: any
   ai: any
   emit: (event: EpAgentEvent) => void
+  /** 工具调用的中止信号（0916 review：批量长工具循环在步边界感知取消/超时，及时停烧） */
+  signal?: AbortSignal
 }
 
 // ==================== 服务结果 ====================
