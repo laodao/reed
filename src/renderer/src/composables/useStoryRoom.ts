@@ -8,6 +8,7 @@
 
 import { ref, computed, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
+import type { ConflictLoc } from '@shared/types/longwriting.types'
 import type {
   ArtifactCard,
   BibleDistillScope,
@@ -22,6 +23,21 @@ import type {
 } from '@shared/types/story-room.types'
 
 export type RoomStatus = 'idle' | 'loading' | 'streaming' | 'error'
+
+/** 疑点视图（扫描行透传：正文定位/大纲锚点供抽屉展示与「交主编修正」组装） */
+export interface ConflictView {
+  id?: string
+  description?: string
+  message?: string
+  rule?: string
+  entityName?: string
+  entityType?: string
+  chapterNumber?: number
+  beatText?: string
+  outlineId?: string
+  locs?: ConflictLoc[]
+  note?: string
+}
 
 export interface RoomStreamMessage {
   /** 流式累积中的主编发言（turnNo 对齐本轮） */
@@ -44,9 +60,9 @@ export function useStoryRoom(projectId: string) {
   /** 阶段门建议（提取器产出，用户确认后推进） */
   const gateSuggestion = ref<{ toPhase: RoomPhaseId; reason: string } | null>(null)
   /** 矛盾提醒（写作教练位：scanContradictions 结果，仅待处理） */
-  const conflicts = ref<Array<{ id?: string; description?: string; message?: string; rule?: string }>>([])
+  const conflicts = ref<ConflictView[]>([])
   /** 已登记（解决/知情保留）的疑点——抽屉「已保留」分区展示，可撤销 */
-  const keptConflicts = ref<Array<{ id?: string; description?: string; message?: string; rule?: string; note?: string }>>([])
+  const keptConflicts = ref<ConflictView[]>([])
   /** 设计任务流水（lw_task_progress / lw_save_* 的过程 chip） */
   const taskLog = ref<Array<{ message: string; tool?: string; status?: string }>>([])
   /** 待确认设计包（design:ready 事件置位；确认/驳回后清空） */

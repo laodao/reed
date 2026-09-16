@@ -25,7 +25,8 @@
 import { getCoreDatabaseManager, type ICoreDatabaseManager } from '@core/database/database-manager.interface'
 import { listResolutions, filterBlockingConflicts } from '../conflict-gate'
 import { buildOutlineDocOrder, outlineChapterNumber, type OutlineDocOrder } from '../outline-order'
-import type { GraphEntityType } from '@shared/types/longwriting.types'
+import type { ConflictLoc, GraphEntityType } from '@shared/types/longwriting.types'
+import { locateAll } from '@shared/utils/text-locate'
 import { CLIFFHANGER_MARKER } from '../../writing-methodology'
 
 export type ConflictSeverity = 'error' | 'warning'
@@ -40,6 +41,10 @@ export interface ConflictItem {
   chapterNumber?: number
   /** R10 专用：大纲承诺拍原文（知情保留按拍相似度顺延，不随大纲改写漂移） */
   beatText?: string
+  /** 章节大纲节点 id（编辑器跳转用；attach 时回填） */
+  outlineId?: string
+  /** 正文定位（可缺=章节级发现；偏移是扫描时快照，消费方按 excerpt 现场重锚定） */
+  locs?: ConflictLoc[]
 }
 
 /** 死亡语义关键词（状态切片文本命中即视为"已死亡"） */
@@ -175,6 +180,60 @@ export function findUnlandedOutlineBeats(summary: string, content: string): Outl
   )
 }
 
+// ==================== 正文定位回填（纯函数，便于单测） ====================
+
+/** attach 用章节索引：章号 → 内容与大纲节点（缺内容=未写章节，只回填 outlineId） */
+export interface LocChapterSource {
+  outlineId: string
+  number: number
+  title?: string
+  content: string
+}
+
+/** 单疑点单章定位条数与总量上限（多处提及全标会变成噪音） */
+const LOC_CAP_TOTAL = 5
+
+/**
+ * 给疑点回填正文定位 locs 与 outlineId（扫描后置 pass）：
+ * - R10 跳过——未落点承诺是"正文缺一段"，定义上没有可锚定的错句（锚点在大纲 beatText）；
+ * - 有 entityName 的按名定位提及处：R9 名册外人名的首次出现即问题本身（kind=exact），
+ *   其余规则（R1-R8）的提及只是导航锚（kind=mention），不代表提及句就是矛盾句；
+ * - 无 chapterNumber 的（如 R9 v2 跨章人名）在全部已写章节中定位（总量封顶）；
+ * - 偏移是扫描时快照，消费方（高亮/局部修正）必须按 excerpt 现场重锚定。
+ */
+export function attachConflictLocations<T extends ConflictItem>(conflicts: T[], chapters: LocChapterSource[]): T[] {
+  for (const c of conflicts) {
+    const target = Number.isFinite(c.chapterNumber)
+      ? chapters.find((ch) => ch.number === c.chapterNumber)
+      : undefined
+    if (target) c.outlineId = target.outlineId
+
+    if (c.rule === 'R10') continue
+    const query = String(c.entityName || '').trim()
+    if (!query) continue
+    const sources = target ? [target] : chapters
+    const kind: ConflictLoc['kind'] = c.rule === 'R9' ? 'exact' : 'mention'
+    const locs: ConflictLoc[] = []
+    for (const ch of sources) {
+      if (!ch.content) continue
+      for (const hit of locateAll(ch.content, query, { cap: LOC_CAP_TOTAL - locs.length })) {
+        locs.push({
+          chapterNumber: ch.number,
+          outlineId: ch.outlineId,
+          paragraph: hit.paragraph,
+          start: hit.start,
+          end: hit.end,
+          excerpt: query.slice(0, 80),
+          kind,
+        })
+      }
+      if (locs.length >= LOC_CAP_TOTAL) break
+    }
+    if (locs.length > 0) c.locs = locs
+  }
+  return conflicts
+}
+
 export class ConsistencyService {
   private static instance: ConsistencyService | null = null
 
@@ -293,6 +352,23 @@ export class ConsistencyService {
     conflicts.push(...await this.scanR8ForeshadowLedger(projectId))
     conflicts.push(...await this.scanR9UnregisteredNames(projectId))
     conflicts.push(...await this.scanR10OutlineBeats(projectId))
+    // 定位回填：章号→内容一次建索引（R1-R9 提及级 + R9 exact；R10 结构性无正文位置）
+    try {
+      const outlines = (await m.lwOutlines?.getByProjectId(projectId)) || []
+      const order = buildOutlineDocOrder(outlines)
+      const chapters: LocChapterSource[] = []
+      for (const o of outlines) {
+        if (o.nodeType !== 'chapter') continue
+        const no = order.leafNumbers.get(o.id)
+        if (!no) continue
+        const ch = await m.lwChapters?.getByOutlineId(o.id)
+        if (!ch?.content) continue
+        chapters.push({ outlineId: o.id, number: no, title: o.name, content: ch.content })
+      }
+      attachConflictLocations(conflicts, chapters)
+    } catch {
+      // 定位回填失败不阻断扫描（疑点仍可用，只是无高亮锚点）
+    }
     return conflicts
   }
 

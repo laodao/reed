@@ -66,6 +66,18 @@ function handleChange(value: string) {
   emit('update:modelValue', value)
 }
 
+/**
+ * 底层 CodeMirror 5 实例（一致性疑点编辑器高亮挂点）。
+ * CM5 会把实例挂到 .CodeMirror wrapper 元素的 CodeMirror 属性上——不依赖
+ * bytemd 暴露 API。未挂载/加载中返回 null，调用方自行降级。
+ */
+function getCodemirror(): any | null {
+  const cmEl = wrapperRef.value?.querySelector('.CodeMirror') as any
+  return cmEl?.CodeMirror ?? null
+}
+
+defineExpose({ getCodemirror })
+
 // 隐藏不需要的工具栏按钮
 function hideUnwantedButtons() {
   nextTick(() => {

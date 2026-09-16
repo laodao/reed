@@ -1857,3 +1857,22 @@ export interface ExtractChapterEventsRequest {
   providerConfigId?: string
   modelId?: string
 }
+
+/**
+ * 一致性疑点的正文定位（可缺——章节级发现/未写章节无定位）。
+ * 偏移/段落由扫描时计算，后续编辑会使其过期——消费方（编辑器高亮/局部修正）
+ * 一律以 excerpt 现场重锚定为准（见 @shared/utils/text-locate）。
+ */
+export interface ConflictLoc {
+  chapterNumber: number
+  outlineId?: string
+  /** 1-based 非空段落序号 */
+  paragraph: number
+  /** 全文字符偏移，区间 [start, end) */
+  start: number
+  end: number
+  /** 命中文本（≤80 字符，重锚定依据） */
+  excerpt: string
+  /** exact=问题文本本身的跨度（如名册外人名）；mention=实体提及处（导航用） */
+  kind: 'exact' | 'mention'
+}

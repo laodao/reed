@@ -39,9 +39,13 @@ import { emitRoomEvent } from './room-events'
 import { LongWritingAIService } from '@core/platform/services/longwriting-ai.service'
 import { LongWritingService } from '../services/longwriting.service'
 import { ChapterGraphProcessor } from '@core/platform/services/longwriting/graph/chapter-graph.processor'
+import { ConsistencyService } from '@core/platform/services/longwriting/graph/consistency.service'
 import { BibleQueryService } from '@core/platform/services/longwriting/bible.service'
 import type { BibleEntryView, BibleGroupView } from '@core/platform/services/longwriting/bible.service'
 import { buildOutlineDocOrder, outlineChapterNumber } from '@core/platform/services/longwriting/outline-order'
+import { acknowledgeConflictByKey } from '@core/platform/services/longwriting/conflict-gate'
+import { resolveStageModelOpts } from '../services/chapter-writing-executor'
+import { locateAll, locateExcerpt } from '@shared/utils/text-locate'
 
 export const LW_ROOM_PACK_ID = 'lw-room'
 
@@ -1076,6 +1080,114 @@ function buildWriteChapterFullToolDef(): AgentToolDef {
 
 const CHAPTER_WF_DEF_NAME = '章节写作章法'
 
+function buildPatchChapterToolDef(): AgentToolDef {
+  return {
+    name: 'lw_patch_chapter',
+    description:
+      '章节正文局部修正（措辞级修错首选，避免整章重写引入新漂移）：按「原文摘录」在该章已写正文中精确定位并替换。内部自动完成：保存（版本快照）→ 重跑图谱提取 → 重扫一致性疑点 → 回执修正前后文与剩余疑点。约束：① 修正方案必须先经用户认可，禁止擅自改动正文；② excerpt 必须逐字复制自该章正文（拿不准先 lw_query_chapter），定位失败整单拒绝、绝不模糊替换；③ replacement 只放替换后的正文文字（删除类修正传空串），不要夹解释或批注；④ 该章章法工作流运行中时会被拒绝。',
+    inputSchema: z.object({
+      chapter: z.string().min(1).describe('章节大纲节点 id，或「第N章」/章节标题（自动解析）'),
+      problem: z.string().min(1).describe('问题一句话（进版本备注与修正回执，如「第5章纪日与第7章公决差一天」）'),
+      excerpt: z.string().min(2).describe('待替换的原文摘录（逐字复制自正文；同一短语多处出现时配合 nth）'),
+      nth: z.number().int().min(1).max(50).optional().describe('摘录第几处命中（默认第 1 处）'),
+      replacement: z.string().max(2000).describe('替换后的正文文字（删除类修正传空串）'),
+      conflictKey: z.string().optional().describe('关联疑点的 key（从疑点清单带来）；修正成功后自动登记 resolved，不再拦截生成'),
+    }),
+    dangerLevel: 'write',
+    executeTimeoutMs: 300_000,
+    autoApprovableInWorkflow: false,
+    execute: async (input, ctx) => {
+      const { chapter, problem, excerpt, nth, replacement, conflictKey } = (input ?? {}) as {
+        chapter?: string
+        problem?: string
+        excerpt?: string
+        nth?: number
+        replacement?: string
+        conflictKey?: string
+      }
+      if (!chapter || !problem || !excerpt) return { ok: false, error: '缺少 chapter/problem/excerpt' }
+      const { projectId } = lwCtxFrom(ctx)
+      try {
+        const ref = await resolveOutlineRef(projectId, chapter)
+        if (!ref.ok) return { ok: false, error: ref.error }
+        if (ref.chapterNo == null) {
+          return { ok: false, error: `「${ref.title}」不是章节节点（可能是卷）——局部修正只针对章节` }
+        }
+        // 与章法工作流互斥：同章并发写是 last-write-win，会互相覆盖
+        const holders = (await getCoreDatabaseManager().workflowRuns?.findByMutexScope(`chapter-writing:${projectId}:${ref.id}`)) || []
+        if (holders.length > 0) {
+          return { ok: false, error: '该章「章节写作章法」工作流正在运行——等它结束再局部修正，否则两边互相覆盖' }
+        }
+        const svc = LongWritingService.getInstance()
+        const existing = await svc.getChapter(ref.id)
+        const content = existing?.content || ''
+        if (!content.trim()) {
+          return { ok: false, error: '该章还没有正文——局部修正只改已写章节，写正文用 lw_write_chapter_full' }
+        }
+        const loc = locateExcerpt(content, excerpt, nth ?? 1)
+        if (!loc) {
+          // 救援线索：拿摘录前半段找近似片段，帮 agent 核对原文后重试
+          const half = excerpt.slice(0, Math.max(4, Math.ceil(excerpt.length / 2)))
+          const near = locateAll(content, half, { cap: 3 }).map((l) => `…${content.slice(Math.max(0, l.start - 8), l.end + 8)}…`)
+          return {
+            ok: false,
+            error: `摘录在该章正文找不到（含引号/空白归一化匹配）——请 lw_query_chapter 核对原文后逐字重试${near.length ? `。近似片段：${near.join('；')}` : ''}`,
+          }
+        }
+        const rep = String(replacement ?? '')
+        const before = content.slice(loc.start, loc.end)
+        const patched = content.slice(0, loc.start) + rep + content.slice(loc.end)
+        await svc.saveChapter(ref.id, patched)
+        // 图谱重提（整章重建，幂等有 hash 短路；失败不阻断修正本身，下次保存重跑）
+        let pipelineNote = '图谱已更新'
+        try {
+          const stage = await resolveStageModelOpts(projectId)
+          await new ChapterGraphProcessor().process({
+            projectId,
+            outlineId: ref.id,
+            chapterContent: patched,
+            chapterNumber: ref.chapterNo,
+            providerConfigId: stage.providerConfigId,
+            modelId: stage.modelId,
+          })
+        } catch (e: any) {
+          pipelineNote = `图谱更新失败（下次保存重跑）：${e?.message || ''}`
+        }
+        let resolvedNote = ''
+        if (conflictKey) {
+          try {
+            const added = await acknowledgeConflictByKey(getCoreDatabaseManager(), projectId, conflictKey, 'resolved', `lw_patch_chapter：${problem.slice(0, 60)}`)
+            resolvedNote = added ? '；关联疑点已登记 resolved' : '；关联疑点此前已登记'
+          } catch {
+            resolvedNote = '；关联疑点登记失败（可手动知情保留）'
+          }
+        }
+        let remaining: Array<{ rule?: string; message?: string }> = []
+        try {
+          remaining = await ConsistencyService.getInstance().scanBlockingConflicts(projectId, ref.chapterNo)
+        } catch { /* 重扫失败不影响修正回执 */ }
+        return {
+          ok: true,
+          data: {
+            chapter: `第${ref.chapterNo}章 ${ref.title}`,
+            paragraph: loc.paragraph,
+            start: loc.start,
+            end: loc.start + rep.length,
+            before,
+            after: rep,
+            wordCount: patched.replace(/\s/g, '').length,
+            remainingConflicts: remaining.length,
+            remainingList: remaining.slice(0, 5).map((c) => `[${c.rule || '?'}] ${String(c.message || '').slice(0, 60)}`),
+            message: `已修正第${ref.chapterNo}章第${loc.paragraph}段（${before.length}字→${rep.length}字）：「${before.slice(0, 24)}」→「${rep.slice(0, 24)}」。${pipelineNote}${resolvedNote}${remaining.length ? `。注意：第 1~${ref.chapterNo} 章仍有 ${remaining.length} 处未处理疑点（见 remainingList）` : '。一致性扫描无阻断疑点'}`,
+          },
+        }
+      } catch (e: any) {
+        return { ok: false, error: e?.message || '局部修正失败' }
+      }
+    },
+  }
+}
+
 /**
  * 启动章法工作流并在工具内等待终态（工作流唯一入口的收口实现，用户意见 2026-09-15：
  * 章法执行必须走工作流引擎——run 记录可审计、失败停在具体步骤）。
@@ -1203,6 +1315,7 @@ function buildLwRoomToolDefs(): AgentToolDef[] {
     buildConfirmChapterCardToolDef(),
     buildWriteChapterToolDef(),
     buildWriteChapterFullToolDef(),
+    buildPatchChapterToolDef(),
   ]
 }
 

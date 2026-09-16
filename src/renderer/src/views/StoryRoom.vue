@@ -177,10 +177,12 @@
           <div class="conflict-item">
             <span class="conflict-rule">{{ ruleLabel(c.rule) }}</span>
             <span class="conflict-msg">{{ c.description || c.message }}</span>
+            <el-button size="small" @click="askAgentFix(i)">交主编修正</el-button>
             <el-button size="small" type="primary" plain class="conflict-solve" :loading="plans[i]?.loading" @click="solveConflict(i)">
               {{ plans[i]?.loading ? '解题中…' : 'AI 解题' }}
             </el-button>
           </div>
+          <div v-if="conflictLocLine(c)" class="conflict-loc">{{ conflictLocLine(c) }}</div>
           <div v-if="plans[i]?.plan || plans[i]?.error" class="conflict-plan">
             <div v-if="plans[i]?.error" class="plan-error">解题失败：{{ plans[i].error }}</div>
             <template v-else>
@@ -289,6 +291,7 @@ import { defineAsyncComponent } from 'vue'
 import BiblePanel from '@/components/longwriting/room/BiblePanel.vue'
 import { useStoryRoom } from '@/composables/useStoryRoom'
 import type { ArtifactCard, ConsensusEntry } from '@shared/types/story-room.types'
+import { conflictLocLine, buildConflictFixMessage } from '@/utils/conflict-fix'
 
 defineOptions({ name: 'StoryRoom' })
 
@@ -425,8 +428,19 @@ interface ConflictPlanView { plan?: { diagnosis: string; options: PlanOption[]; 
 const plans = ref<Record<number, ConflictPlanView>>({})
 const execResults = ref<Record<string, string>>({})
 
-async function solveConflict(i: number): Promise<void> {
+/** 交主编修正（分级）：有 exact loc 走精确锚点；否则让主编读章自定位 */
+async function askAgentFix(i: number): Promise<void> {
   const c: any = store.conflicts.value[i]
+  if (!c) return
+  if (store.busy.value) {
+    ElMessage.warning('主编正在发言，等本轮结束后再交')
+    return
+  }
+  await store.send(buildConflictFixMessage(c))
+  conflictDrawer.value = false
+}
+
+async function solveConflict(i: number): Promise<void> {  const c: any = store.conflicts.value[i]
   if (!c) return
   plans.value[i] = { loading: true }
   try {
@@ -1004,6 +1018,12 @@ html.dark .story-room { --sr-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rg
   color: var(--el-color-warning-dark-2);
 }
 .conflict-empty { color: var(--el-text-color-secondary); font-size: 13px; }
+.conflict-loc {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  padding-left: 2px;
+}
 .conflict-kept { margin-top: 6px; }
 .conflict-kept-summary {
   cursor: pointer;

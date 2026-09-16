@@ -1,5 +1,5 @@
 <template>
-  <div class="markdown-editor-wrapper">
+  <div class="markdown-editor-wrapper" ref="rootRef">
     <!-- 重型编辑器加载完成前：轻量占位（只读文本域），保证页面立即可交互 -->
     <div v-if="!heavyComponent" class="editor-loading">
       <textarea
@@ -20,6 +20,7 @@
     <component
       :is="heavyComponent"
       v-else
+      ref="heavyRef"
       :model-value="modelValue"
       :placeholder="placeholder"
       :height="height"
@@ -42,7 +43,7 @@ import { ref, shallowRef, onMounted, type Component } from 'vue'
 import { ElButton } from 'element-plus'
 import { scheduleIdleLoad } from '@/utils/lazy-libs'
 
-const props = defineProps<{
+defineProps<{
   modelValue: string
   placeholder?: string
   height?: string
@@ -57,6 +58,8 @@ const emit = defineEmits<{
  * 重型编辑器组件（动态加载，null = 尚未加载完成）
  */
 const heavyComponent = shallowRef<Component | null>(null)
+const heavyRef = ref<any>(null)
+const rootRef = ref<HTMLElement | null>(null)
 /** 评审 #102：动态 import 失败置 true（占位区显示错误与重试按钮） */
 const loadFailed = ref(false)
 
@@ -77,6 +80,21 @@ function retryLoad(): void {
   // 重试立即加载（不再等空闲）
   loadHeavy()
 }
+
+/**
+ * 底层 CodeMirror 实例（转发重型编辑器；写作台疑点高亮挂点）。
+ * 轻量占位/加载中返回 null——调用方可用 getFallbackTextarea() 降级。
+ */
+function getCodemirror(): any | null {
+  return heavyRef.value?.getCodemirror?.() ?? null
+}
+
+/** 轻量占位 textarea（重型编辑器未加载时的降级定位目标） */
+function getFallbackTextarea(): HTMLTextAreaElement | null {
+  return rootRef.value?.querySelector('.editor-loading-textarea') ?? null
+}
+
+defineExpose({ getCodemirror, getFallbackTextarea })
 
 onMounted(() => {
   scheduleIdleLoad(loadHeavy)

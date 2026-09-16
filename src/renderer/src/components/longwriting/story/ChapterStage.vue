@@ -125,6 +125,13 @@
                         <el-icon><View /></el-icon>
                       </el-button>
                     </el-tooltip>
+                    <el-tooltip content="一致性检查（疑点定位与修正）" placement="top">
+                      <el-badge :value="conflictCount" :hidden="!conflictCount" :max="99" class="conflict-badge">
+                        <el-button size="small" @click="openConflictPanel">
+                          <el-icon><Warning /></el-icon>
+                        </el-button>
+                      </el-badge>
+                    </el-tooltip>
                   </template>
                   <template v-else-if="!isEditableNode && currentNode">
                     <el-tooltip content="导出" placement="top">
@@ -164,6 +171,7 @@
               <!-- 可编辑模式：Markdown 编辑器 -->
               <div v-if="isEditableNode && currentChapter" class="chapter-editor-wrapper">
                 <MarkdownEditor
+                  ref="editorRef"
                   :key="currentChapter.id"
                   v-model="chapterContentMap[currentChapter.id]"
                   :placeholder="getEditorPlaceholder(currentChapter)"
@@ -195,6 +203,16 @@
       </div>
     </div>
   </div>
+
+    <!-- 一致性检查疑点抽屉（定位/交主编修正/知情保留） -->
+    <ChapterConflictPanel
+      ref="conflictPanelRef"
+      :project-id="projectId"
+      :current-outline-id="activeOutlineId"
+      @locate="onLocateConflict"
+      @fix="onFixConflict"
+      @scanned="conflictCount = $event"
+    />
 
     <!-- AI 生成参数设置对话框 -->
     <el-dialog
@@ -460,11 +478,14 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, inject, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { MagicStick, Clock, DocumentChecked, View, RefreshLeft, Close, Fold, Download, Loading, InfoFilled, Collection } from '@element-plus/icons-vue'
+import { MagicStick, Clock, DocumentChecked, View, RefreshLeft, Close, Fold, Download, Loading, InfoFilled, Collection, Warning } from '@element-plus/icons-vue'
 import MarkdownEditor from '@/components/common/MarkdownEditor.vue'
 import ChapterContextPanel from './ChapterContextPanel.vue'
+import ChapterConflictPanel from './ChapterConflictPanel.vue'
 import { ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import { marked } from 'marked'
+import { locateExcerpt } from '@shared/utils/text-locate'
+import { buildConflictFixMessage } from '@/utils/conflict-fix'
 import type { StoryOutline, ChapterVersion, OutlineStatus, OutlineNodeType, StoryCharacter, ChapterPrewrite } from '../../../../shared/types/longwriting.types'
 import type { ElTree } from 'element-plus'
 
@@ -739,6 +760,94 @@ function collapseAll() {
 function handleNodeClick(data: StoryOutline) {
   activeOutlineId.value = data.id
   treeRef.value?.setCurrentKey(data.id)
+}
+
+// ==================== 一致性疑点：抽屉入口 / 编辑器定位高亮 / 交主编修正 ====================
+
+const conflictPanelRef = ref<any>(null)
+/** 待处理疑点数（工具栏徽标；ChapterConflictPanel 扫描后回报） */
+const conflictCount = ref(0)
+const editorRef = ref<any>(null)
+/** CM5 TextMarker 句柄（换章时旧实例随之销毁，无需逐个清理，这里只兜当前实例） */
+let conflictMarks: any[] = []
+
+function clearConflictMarks(): void {
+  for (const m of conflictMarks) {
+    try { m.clear() } catch { /* 实例已销毁 */ }
+  }
+  conflictMarks = []
+}
+
+function openConflictPanel(): void {
+  conflictPanelRef.value?.open()
+}
+
+/**
+ * 疑点定位：跳章（如需）→ 等 CodeMirror 就绪（切章后编辑器重挂载）→
+ * 按 excerpt 现场重锚定（扫描偏移可能已过期）→ markText 高亮 + 滚动选中。
+ */
+async function onLocateConflict(c: any): Promise<void> {
+  const outlineId: string | undefined = c?.locs?.[0]?.outlineId || c?.outlineId
+  if (!outlineId) {
+    ElMessage.warning('该疑点没有定位信息')
+    return
+  }
+  if (outlineId !== activeOutlineId.value) {
+    const node = allOutlines.value.find((o: any) => o.id === outlineId)
+    if (!node) {
+      ElMessage.warning('未在大纲中找到该章节')
+      return
+    }
+    activeOutlineId.value = outlineId
+    treeRef.value?.setCurrentKey(outlineId)
+    await nextTick()
+  }
+  const excerpt: string | undefined = c?.locs?.[0]?.excerpt || c?.entityName
+  const content = chapterContentMap.value[outlineId] || ''
+  if (!excerpt || !content) {
+    ElMessage.info('该疑点为章节级（无正文锚点），已跳到对应章节')
+    return
+  }
+  // 等编辑器就绪：轻壳动态加载重模块 + 切章重挂载，轮询上限约 3s
+  let cm: any = null
+  for (let i = 0; i < 20 && !cm; i++) {
+    cm = editorRef.value?.getCodemirror?.() ?? null
+    if (!cm) await new Promise((r) => setTimeout(r, 150))
+  }
+  const loc = locateExcerpt(content, excerpt, 1)
+  if (!loc) {
+    ElMessage.warning('原文已变化，无法精确高亮——请按章节内容自行查找')
+    return
+  }
+  if (cm) {
+    clearConflictMarks()
+    const from = cm.posFromIndex(loc.start)
+    const to = cm.posFromIndex(loc.end)
+    conflictMarks.push(cm.markText(from, to, { className: 'lw-conflict-mark' }))
+    cm.scrollIntoView(from, 120)
+    cm.setSelection(from, to)
+    cm.focus()
+  } else {
+    // 降级：轻量占位 textarea 选中（无滚动定位，仅示意）
+    const ta: HTMLTextAreaElement | null = editorRef.value?.getFallbackTextarea?.() ?? null
+    if (ta) {
+      ta.focus()
+      ta.setSelectionRange(loc.start, loc.end)
+    }
+    ElMessage.info('编辑器未就绪，已在文本域中选中（降级）')
+  }
+}
+
+/** 交主编修正：组装分级修正消息发进研讨室（会话在主进程常驻，跨视图可达） */
+async function onFixConflict(c: any): Promise<void> {
+  if (!c) return
+  try {
+    const res = await window.electronAPI.longwriting.roomSend(props.projectId, buildConflictFixMessage(c), {})
+    if (res?.success) ElMessage.success('已交主编处理——到研讨室查看进度并确认修正方案')
+    else ElMessage.warning(res?.error || '发送失败（研讨室会话可能未就绪）')
+  } catch (e: any) {
+    ElMessage.warning(e?.message || '发送失败')
+  }
 }
 
 // 名称映射
@@ -1959,6 +2068,13 @@ onMounted(() => {
     gap: 4px;
     flex: 1;
     min-width: 0;
+
+    // 疑点徽标：包着工具按钮，垂直对齐修正
+    .conflict-badge {
+      display: inline-flex;
+      align-items: center;
+      margin-left: 4px;
+    }
   }
 }
 

@@ -226,6 +226,18 @@ export class WorkflowRunRepository extends BaseRepository<WorkflowRunEntity, Wor
     return this.toDtoList(rows)
   }
 
+  /** 按互斥作用域查在途运行（lw_patch_chapter 防与章法工作流并发写同一章） */
+  async findByMutexScope(mutexScope: string): Promise<WorkflowRunRecord[]> {
+    const rows = await this.scoped.find({
+      where: {
+        mutexScope,
+        status: In([...MUTEX_RUN_STATUSES]),
+      } as FindOptionsWhere<WorkflowRunEntity>,
+      order: { createdAt: 'ASC' } as any,
+    })
+    return this.toDtoList(rows)
+  }
+
   /** 按工作流分页列出运行历史（含 skipped；新→旧） */
   async listByDefinition(
     definitionId: string,

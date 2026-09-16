@@ -213,6 +213,30 @@ export async function acknowledgeConflict(
   })
 }
 
+/** 按 key 直接登记（lw_patch_chapter 修正成功后消除关联疑点）——已存在返回 false */
+export async function acknowledgeConflictByKey(
+  db: any,
+  projectId: string,
+  key: string,
+  status: 'resolved' | 'kept' = 'resolved',
+  note?: string,
+): Promise<boolean> {
+  let added = false
+  await mutateWizardState<void>(db, projectId, (wizard) => {
+    const ws = (wizard || {}) as Record<string, any>
+    const rows: ResolutionRow[] = Array.isArray(ws.conflictResolutions) ? ws.conflictResolutions : []
+    if (!rows.some((r) => r.key === key)) {
+      rows.push({ key, status, note, at: Date.now() })
+      added = true
+    }
+    return {
+      next: { ...(wizard || {}), conflictResolutions: rows } as WizardStateFullLike,
+      result: undefined,
+    }
+  })
+  return added
+}
+
 /** 撤销保留：精确 key 命中，或 R10 同章相似拍——撤销也要按锚点语义撤销 */
 export async function unacknowledgeConflict(db: any, projectId: string, conflict: ConflictLike): Promise<number> {
   let removed = 0

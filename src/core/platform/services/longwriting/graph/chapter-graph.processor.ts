@@ -41,6 +41,8 @@ export interface ChapterGraphProcessResult {
   relationChangeCount?: number
   /** 52 号：解析失败/名册外的人名（已入「未登记人物」待确认队列，R9 数据源） */
   unresolvedNames?: Array<{ name: string; chapterNumber: number }>
+  /** 本章自动入册的新实体清单提示（0b 步骤产出；空串=无新实体） */
+  newEntitiesNote?: string
   /** 步骤级结果聚合：非空 = 本轮有失败步骤（hash 不记录，下次保存重跑） */
   failedSteps?: string[]
 }
@@ -96,6 +98,18 @@ export class ChapterGraphProcessor {
     // （修复"失败一次永久短路"：旧实现每步都吞错，process() 结构上不可能抛错，
     //  hash 被无条件记录，与"全程成功才记 hash"的注释语义相反）
     const failedSteps: string[] = []
+
+    // ============ 0b. 新实体检测→入册（写作台「提取状态」链路的管道化下沉） ============
+    // 用户拍板（2026-09-16）：正文自由发挥的新人物/地点/物品每章自动入册——否则状态切片/
+    // 关系边按名册解析 ID 解析不到，R1-R6 对圣经外实体全盲（研讨室右栏人物远少于正文的
+    // 机制根因）。放在事件提取之前：新实体当章拿到 ID，事件挂实体/状态切片/关系边一遍全挂上。
+    // 与写作台 autoAddEntities 同行为（重要性分级，temporary 进 minor 位，可删+purge 级联）。
+    let newEntitiesNote = ''
+    try {
+      newEntitiesNote = await this.detectAndAddNewEntities(projectId, chapterContent)
+    } catch (e: any) {
+      console.warn('[ChapterGraphProcessor] 新实体检测入册失败（不阻断主链路）:', e?.message || e)
+    }
 
     // ============ 1. 提取事件 → 落库 lw_events ============
     // 本章旧数据清理移至提取成功之后执行（旧实现在本步之前先删后提取——
@@ -374,8 +388,48 @@ export class ChapterGraphProcessor {
       stateCount: states.length,
       foreshadowCount,
       relationChangeCount,
+      newEntitiesNote,
       failedSteps,
     }
+  }
+
+  /**
+   * 0b 步骤：检测正文新出现的人物/地点/物品并入册（复用写作台的
+   * LwEntityDetectionService——AI 检测 + 重要性分级 + 临时实体模板）。
+   * 入册后同名清「未登记人物」队列（R9 不再重复告警）。全程 fail-soft。
+   * 已知口径：检测服务走默认提供商（与写作台按钮行为一致），不走 stage 模型。
+   */
+  private async detectAndAddNewEntities(projectId: string, chapterContent: string): Promise<string> {
+    const { LwEntityDetectionService } = await import(
+      '@core/platform/episode-production/auto-binding/lw-entity-detection.service'
+    )
+    const detect = await LwEntityDetectionService.detectNewEntities(projectId, chapterContent)
+    const chars = detect.newCharacters || []
+    const locs = detect.newLocations || []
+    const items = detect.newItems || []
+    if (chars.length === 0 && locs.length === 0 && items.length === 0) return ''
+    const added = await LwEntityDetectionService.autoAddEntities(projectId, chars, locs, items)
+
+    // 入册成功的人物：同名清「未登记人物」队列，避免 R9 疑点残留
+    try {
+      const m = this.manager()
+      const names = new Set((added.addedCharacters || []).map((c: any) => c.name).filter(Boolean))
+      if (names.size > 0 && m?.lwCustomEntities) {
+        const rows = await m.lwCustomEntities.getByProjectAndKind(projectId, UNREGISTERED_CHARACTER_KIND)
+        for (const r of rows) {
+          if (names.has(r.name)) await m.lwCustomEntities.deleteRow(r.id)
+        }
+      }
+    } catch (e) {
+      console.warn('[ChapterGraphProcessor] 未登记队列同名清理失败（不阻断）:', e)
+    }
+
+    const parts = [
+      (added.addedCharacters || []).length > 0 ? `人物 ${added.addedCharacters.map((c: any) => c.name).join('、')}` : '',
+      (added.addedLocations || []).length > 0 ? `地点 ${added.addedLocations.map((l: any) => l.name).join('、')}` : '',
+      (added.addedItems || []).length > 0 ? `物品 ${added.addedItems.map((i: any) => i.name).join('、')}` : '',
+    ].filter(Boolean)
+    return parts.length > 0 ? `本章新入册：${parts.join('；')}` : ''
   }
 
   // ==================== 内部 ====================

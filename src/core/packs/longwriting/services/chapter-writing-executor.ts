@@ -36,8 +36,9 @@ export interface ChapterWritingProgress {
  * 此前三处生成调用全传 undefined——静默落到应用默认提供商，项目设置里的
  * stage 模型对章法形同虚设（实测：切了 stage 配置正文仍走 vLLM）。
  * 未配置时返回空对象，回退应用默认提供商（老项目行为不变）。
+ * lw_patch_chapter 的图谱重提共用此解析（保持提取模型口径一致）。
  */
-async function resolveStageModelOpts(projectId: string): Promise<{ providerConfigId?: string; modelId?: string }> {
+export async function resolveStageModelOpts(projectId: string): Promise<{ providerConfigId?: string; modelId?: string }> {
   try {
     const cfg = await getCoreDatabaseManager().lwProjectModelConfigs?.getByProjectAndStage(projectId, 'chapters')
     if (cfg?.providerConfigId && cfg?.modelId) return { providerConfigId: cfg.providerConfigId, modelId: cfg.modelId }
@@ -234,18 +235,20 @@ export async function runChapterWritingMethod(opts: ChapterWritingMethodOptions)
 
   onProgress?.({ step: 'save', message: '保存正文并提取图谱（事件/状态切片/伏笔）' })
   const saved = await svc.saveChapter(outlineId, content)
+  let newEntitiesNote = ''
   try {
     const { buildOutlineDocOrder, outlineChapterNumber } = await import('@core/platform/services/longwriting/outline-order')
     const outlines = (await getCoreDatabaseManager().lwOutlines?.getByProjectId(projectId)) || []
     const no = outlineChapterNumber(buildOutlineDocOrder(outlines), outlineId) ?? 0
     const { ChapterGraphProcessor } = await import('@core/platform/services/longwriting/graph/chapter-graph.processor')
-    await new ChapterGraphProcessor().process({
+    const graphResult = await new ChapterGraphProcessor().process({
       projectId,
       outlineId,
       chapterContent: content,
       chapterNumber: no,
       ...stageModel,
     })
+    newEntitiesNote = (graphResult as any)?.newEntitiesNote || ''
   } catch (e: any) {
     logger.warn('[chapter-writing] 图谱提取失败（下次保存重跑）:', e?.message)
   }
@@ -256,6 +259,7 @@ export async function runChapterWritingMethod(opts: ChapterWritingMethodOptions)
   onProgress?.({ step: 'post-check', message: '写后一致性检查（落点复核 + 规则扫描 + LLM 章节审读）' })
   let postCheck: NonNullable<ChapterWritingOutcome['data']>['postCheck'] = { passed: true, report: null }
   const reportLines: string[] = []
+  if (newEntitiesNote) reportLines.push(`【新实体入册】${newEntitiesNote}（次要实体自动归 minor 位，可在设定集修正或删除）`)
   try {
     const landingReport = await verifyUnlandedBeatsWithAI(projectId, outlineId, content, consensusText, opts.signal)
     if (landingReport) reportLines.push(`【大纲落点复核】${landingReport}`)
