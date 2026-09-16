@@ -43,7 +43,7 @@ import { ConsistencyService } from '@core/platform/services/longwriting/graph/co
 import { BibleQueryService } from '@core/platform/services/longwriting/bible.service'
 import type { BibleEntryView, BibleGroupView } from '@core/platform/services/longwriting/bible.service'
 import { buildOutlineDocOrder, outlineChapterNumber } from '@core/platform/services/longwriting/outline-order'
-import { acknowledgeConflictByKey } from '@core/platform/services/longwriting/conflict-gate'
+import { acknowledgeConflictByKey, conflictKey as conflictKeyOf } from '@core/platform/services/longwriting/conflict-gate'
 import { resolveStageModelOpts } from '../services/chapter-writing-executor'
 import { locateAll, locateExcerpt } from '@shared/utils/text-locate'
 
@@ -992,16 +992,28 @@ function buildWriteChapterToolDef(): AgentToolDef {
         if (existing?.content?.trim() && !overwrite) {
           return { ok: false, error: '该章已有正文。询问用户是否重写，用户同意后带 overwrite=true 重新调用。' }
         }
+        // 与章法 executor 同口径（0916 review 软收口修复）：分步路径同样注入共识账本
+        // 并透传 overwrite——否则研讨室拍板的修正对分步正文不可见（「乘客活下来了」
+        // 回退 bug 在此路径复现），且 overwrite 重写会被仅引用本章的 R10 旧稿疑点死锁。
+        let consensusText = ''
+        try {
+          const roomState = await getRoomState(getCoreDatabaseManager(), projectId)
+          consensusText = ledgerSnapshotText(roomState.ledger) || ''
+        } catch { /* 账本读取失败不阻断（项目可能不经研讨室） */ }
+        const stageModel = await resolveStageModelOpts(projectId)
         const result = await LongWritingAIService.getInstance().generateChapter(
           `lw-room-write-${Date.now()}`,
           projectId,
           nodeId,
           undefined,
+          stageModel.providerConfigId,
+          stageModel.modelId,
           undefined,
-          undefined,
-          undefined,
-          undefined,
-          // 章法工具链路径不走工作台跳过参数：门禁（设计卡+一致性）照常生效
+          consensusText
+            ? `【作者已拍板的共识与修正（最高优先级，与大纲/上文冲突时以此为准，禁止出现被否决的写法）】\n${consensusText}`
+            : undefined,
+          // 门禁（设计卡+一致性）照常生效；overwrite 放行仅引用本章的旧稿疑点
+          { overwrite: overwrite === true },
         )
         if (!result.success) return { ok: false, error: result.error }
         const content = (result.data as any)?.content || ''
@@ -1091,7 +1103,7 @@ function buildPatchChapterToolDef(): AgentToolDef {
       excerpt: z.string().min(2).describe('待替换的原文摘录（逐字复制自正文；同一短语多处出现时配合 nth）'),
       nth: z.number().int().min(1).max(50).optional().describe('摘录第几处命中（默认第 1 处）'),
       replacement: z.string().max(2000).describe('替换后的正文文字（删除类修正传空串）'),
-      conflictKey: z.string().optional().describe('关联疑点的 key（从疑点清单带来）；修正成功后自动登记 resolved，不再拦截生成'),
+      conflictKey: z.string().optional().describe('关联疑点 key——从疑点清单、修正消息或工具回执的 remainingList 里原样携带（勿自行构造，校验不过不登记）；修正成功后自动登记 resolved，不再拦截生成'),
     }),
     dangerLevel: 'write',
     // 工具内嵌图谱整章重提（3~5 次 LLM 提取）——300s 实测不够（忘川渡冒烟：patch 落库
@@ -1128,6 +1140,22 @@ function buildPatchChapterToolDef(): AgentToolDef {
         }
         const loc = locateExcerpt(content, excerpt, nth ?? 1)
         if (!loc) {
+          // 幂等短路（0916 review）：超时/中断重试时补丁可能已落库（saveChapter 在图谱
+          // 重提之前，慢段全在保存之后）——摘录已不存在且替换文本已在正文 = 此前已应用，
+          // 直接回成功，避免重试命中 excerpt 下一处错位二次替换。
+          // 长度门槛（复核 P2-5）：replacement 明显短于摘录时不短路（常见短语误判面），
+          // 宁可报错让模型核对，不可静默吞掉一次修正。
+          const repEarly = String(replacement ?? '')
+          if (repEarly && repEarly.length * 2 >= excerpt.length && content.includes(repEarly)) {
+            return {
+              ok: true,
+              data: {
+                chapter: `第${ref.chapterNo}章 ${ref.title}`,
+                idempotent: true,
+                message: '该补丁此前已应用（正文中已存在替换文本、原摘录已不存在），本次未重复修改。',
+              },
+            }
+          }
           // 救援线索：拿摘录前半段找近似片段，帮 agent 核对原文后重试
           const half = excerpt.slice(0, Math.max(4, Math.ceil(excerpt.length / 2)))
           const near = locateAll(content, half, { cap: 3 }).map((l) => `…${content.slice(Math.max(0, l.start - 8), l.end + 8)}…`)
@@ -1158,8 +1186,21 @@ function buildPatchChapterToolDef(): AgentToolDef {
         let resolvedNote = ''
         if (conflictKey) {
           try {
-            const added = await acknowledgeConflictByKey(getCoreDatabaseManager(), projectId, conflictKey, 'resolved', `lw_patch_chapter：${problem.slice(0, 60)}`)
-            resolvedNote = added ? '；关联疑点已登记 resolved' : '；关联疑点此前已登记'
+            // key 契约校验（0916 review）：key 含消息哈希、模型不可能自行算出合法值——
+            // 此前幻觉 key 会被无条件入账成垃圾登记且回执谎称已 resolved。先与现存
+            // 疑点集合比对，不匹配则忽略并明说。
+            const pending = await ConsistencyService.getInstance().scanContradictions(projectId)
+            const validKeys = new Set(pending.map((c: any) => conflictKeyOf(c)))
+            if (!validKeys.has(conflictKey)) {
+              // 两种情形（复核 P2-4）：①本次修正已消除该疑点（重扫不再复现）——正常；
+              // ②key 是编造/过期的——未登记。文案都要说清，别让模型以为拿错了 key。
+              resolvedNote = pending.length === 0
+                ? '；当前已无任何未处理疑点（关联疑点应已被消除，无需登记）'
+                : '；关联疑点 key 未匹配现存疑点、未登记——若该疑点已被本次修正消除属正常，否则请从疑点清单/修正消息原样携带 conflictKey，不要自行构造'
+            } else {
+              const added = await acknowledgeConflictByKey(getCoreDatabaseManager(), projectId, conflictKey, 'resolved', `lw_patch_chapter：${problem.slice(0, 60)}`)
+              resolvedNote = added ? '；关联疑点已登记 resolved' : '；关联疑点此前已登记'
+            }
           } catch {
             resolvedNote = '；关联疑点登记失败（可手动知情保留）'
           }
@@ -1179,7 +1220,9 @@ function buildPatchChapterToolDef(): AgentToolDef {
             after: rep,
             wordCount: patched.replace(/\s/g, '').length,
             remainingConflicts: remaining.length,
-            remainingList: remaining.slice(0, 5).map((c) => `[${c.rule || '?'}] ${String(c.message || '').slice(0, 60)}`),
+            // 带上 conflictKey（后端 conflictKey() 计算）——模型后续修正时作为
+            // conflictKey 参数原样传回即可自动登记 resolved（key 契约的合法来源）
+            remainingList: remaining.slice(0, 5).map((c) => `[${c.rule || '?'}] ${String(c.message || '').slice(0, 60)}（conflictKey: ${conflictKeyOf(c as any)}）`),
             message: `已修正第${ref.chapterNo}章第${loc.paragraph}段（${before.length}字→${rep.length}字）：「${before.slice(0, 24)}」→「${rep.slice(0, 24)}」。${pipelineNote}${resolvedNote}${remaining.length ? `。注意：第 1~${ref.chapterNo} 章仍有 ${remaining.length} 处未处理疑点（见 remainingList）` : '。一致性扫描无阻断疑点'}`,
           },
         }

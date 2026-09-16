@@ -447,6 +447,17 @@ function outlineChapterSummary(data: any): string {
     .join('\n')
 }
 
+/** 从既有章名解析章号：「第N章 …」「N …」「N. …」；无章号返回 NaN */
+function outlineChapterNoOf(name: string | null | undefined): number {
+  const s = String(name ?? '').trim()
+  if (!s) return NaN
+  let m = /^第\s*(\d+)\s*章/.exec(s)
+  if (m) return Number(m[1])
+  m = /^(\d+)(?:[\s.、:：]|$)/.exec(s)
+  if (m) return Number(m[1])
+  return NaN
+}
+
 /**
  * 单章卡落库：挂到首卷（无卷先建卷）下，按章号幂等（同名/同号章已存在则更新概要，
  * 不重复建——设计包可能多次确认同一章卡）。
@@ -464,7 +475,15 @@ export async function upsertOutlineChapter(
   }
   const children = outlines.filter((o) => o.parentId === vol!.id)
   const prefix = `${ch.no} `
-  const existing = children.find((o) => String(o.name ?? '') === ch.name || String(o.name ?? '').startsWith(prefix))
+  const existing = children.find((o) => {
+    const n = String(o.name ?? '')
+    if (n === ch.name || n.startsWith(prefix)) return true
+    // 0916 review：向导/AI 大纲的章名是「第N章 标题」，与单章卡产出的「N 标题」格式
+    // 互不为前缀——此前永不命中 → 同章重复节点挂卷尾 → 全文档序章号错位。按解析出的
+    // 章号对齐（无章号的同名仍走上面的精确匹配兜底）。
+    const no = outlineChapterNoOf(n)
+    return Number.isFinite(no) && no === ch.no
+  })
   if (existing) {
     await db?.lwOutlines?.update(existing.id, { summary: ch.summary || (existing as any).summary })
     return { created: 0, updated: 1 }
@@ -621,6 +640,27 @@ export async function persistPlots(db: any, projectId: string, list: any[]): Pro
 // ==================== 世界设定 ====================
 
 /**
+ * specialRules 追加式合并（0916 review）：按 \n\n 分块，比较时折叠全部空白——
+ * 语义相同（仅换行/空格差异）的块不重复追加；全为旧块时原样返回（不触发无谓 update）。
+ */
+function mergeSpecialRules(existing: string | null | undefined, incoming: string): string {
+  const norm = (s: string): string => s.replace(/\s+/g, '')
+  const have = new Set(
+    String(existing ?? '')
+      .split(/\n{2,}/)
+      .map((b) => norm(b))
+      .filter(Boolean),
+  )
+  const fresh = String(incoming)
+    .split(/\n{2,}/)
+    .map((b) => b.trim())
+    .filter((b) => b && !have.has(norm(b)))
+  const base = String(existing ?? '').trim()
+  if (fresh.length === 0) return String(existing ?? '')
+  return base ? `${base}\n\n${fresh.join('\n\n')}` : fresh.join('\n\n')
+}
+
+/**
  * 世界设定四类入库（原 executeGenerateWorld 落库段；背景润色属生成不在此层）。
  * data 各数组可选，按名称去重只入新增。
  */
@@ -637,8 +677,13 @@ export async function persistWorld(
     if (rules) {
       const existing = await db?.lwBackgrounds?.getByProjectId(projectId)
       if (existing) {
-        const merged = existing.specialRules ? `${existing.specialRules}\n\n${rules}` : rules
-        await db?.lwBackgrounds?.update(existing.id, { specialRules: merged })
+        // 0916 review：旧实现纯字符串拼接——同一规则文本每确认一张世界卡就追加一次
+        // （agent 重复产卡/设计包多次确认），specialRules 线性膨胀不可逆且注入每章
+        // prompt。改为按归一化块（\n\n 分块、比较时折叠空白）去重后追加。
+        const merged = mergeSpecialRules(existing.specialRules, rules)
+        if (merged !== existing.specialRules) {
+          await db?.lwBackgrounds?.update(existing.id, { specialRules: merged })
+        }
       } else {
         const created = await db?.lwBackgrounds?.create(projectId)
         if (created) await db?.lwBackgrounds?.update(created.id, { specialRules: rules })

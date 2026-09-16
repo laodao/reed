@@ -7,6 +7,7 @@ import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { isElectron, loadElectronModules, getBrowserWindowFromEvent } from '@electron/ipc/handlers/_platform'
 import * as fs from 'fs'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { DELETED_CHARACTER_KIND } from '@core/platform/episode-production/auto-binding/lw-entity-detection.service'
 import { LongWritingService } from '../services/longwriting.service'
 import { LongWritingAIService } from '@core/platform/services/longwriting-ai.service'
 import { MaterialProcessorService } from '../services/material-processor.service'
@@ -474,6 +475,18 @@ export function registerLongWritingHandlers(): void {
       if (result && char) {
         // 阶段2：实体删除级联清理图谱边（人物/地点/物品/技能/势力）
         await cleanupEntityGraphEdges(char.projectId, 'character', id, char.name)
+        // 删除墓志（0916 review 图谱污染防线）：旧章正文仍会提及该名字，章节重提的
+        // 0b 自动入册会把它当「名册外新人物」加回——留名拒绝复活。失败不阻断删除。
+        try {
+          await dbManager.lwCustomEntities?.createRow(
+            char.projectId,
+            DELETED_CHARACTER_KIND,
+            String(char.name || '').trim(),
+            null,
+          )
+        } catch (e) {
+          console.warn('[longwriting] 删除墓志写入失败（不阻断删除）:', e)
+        }
       }
       return { success: result }
     } catch (error: any) {

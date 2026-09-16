@@ -40,6 +40,54 @@ interface AiExtractedEntities {
 }
 
 /**
+ * 已删除人物墓志的 kind（lw_custom_entities）。
+ * DELETE_CHARACTER 时写入名字；实体检测读到墓志即拒绝同名（含去括号核心）再入册——
+ * 防止用户清理名册后、旧章重提把「已删角色」自动加回（0916 review 图谱污染防线）。
+ */
+export const DELETED_CHARACTER_KIND = '已删除人物墓志'
+
+/**
+ * 已知名匹配器（与 R9 告警端 consistency.service isKnown 同口径）：
+ * exact / 去括号核心 / 双向子串（双方 ≥2 字）/ 同姓+称谓后缀（魏大人→魏宗简）。
+ * 0916 review：入册端此前只有 exact 同名去重，别名变体每章重复建实体。
+ * 复核收紧（P2-3）：模糊口径只用于**人物**（别名问题是实测痛点）；地点/物品用
+ * exact+核心——跨类/子串误吞在入册端是实体永久丢失，比告警端漏报代价高。
+ */
+function makeKnownNameMatcher(names: Array<string | undefined | null>, extraNames: string[] = []): (w: string) => boolean {
+  const known = new Set<string>()
+  for (const k of [...names, ...extraNames]) {
+    const t = String(k || '').trim()
+    if (!t) continue
+    known.add(t)
+    const core = t.replace(/[（(][^）)]*[）)]/g, '').trim()
+    if (core) known.add(core)
+  }
+  return (w: string): boolean => {
+    const s = String(w || '').trim()
+    if (!s) return true
+    if (known.has(s)) return true
+    for (const k of known) {
+      if (s.length >= 2 && k.length >= 2 && (k.includes(s) || s.includes(k))) return true
+      if (s.length >= 2 && k.length >= 2 && s[0] === k[0] && /[大人爷头儿老奶叔嫂]/.test(s.slice(1))) return true
+    }
+    return false
+  }
+}
+
+/** exact 口径匹配器（地点/物品）：仅精确同名与去括号核心——保守，宁可多入册不误吞 */
+function makeExactNameMatcher(names: Array<string | undefined | null>): (w: string) => boolean {
+  const known = new Set<string>()
+  for (const k of names) {
+    const t = String(k || '').trim()
+    if (!t) continue
+    known.add(t)
+    const core = t.replace(/[（(][^）)]*[）)]/g, '').trim()
+    if (core) known.add(core)
+  }
+  return (w: string): boolean => known.has(String(w || '').trim())
+}
+
+/**
  * 实体检测服务
  */
 export class LwEntityDetectionService {
@@ -66,12 +114,35 @@ export class LwEntityDetectionService {
     const existingLocations = (await db.lwLocations?.getByProjectId(projectId)) || []
     const existingItems = (await db.lwItems?.getByProjectId(projectId)) || []
 
+    // 已删除人物墓志（0916 review 图谱污染防线）：用户从设定集删角色后，旧章正文仍提及
+    // 其名——重启后 hash 缓存清空、章节重提会把「名册外」名字再自动加回（删除复活）。
+    let tombstoneNames: string[] = []
+    try {
+      const rows = (await db.lwCustomEntities?.getByProjectAndKind(projectId, DELETED_CHARACTER_KIND)) || []
+      tombstoneNames = rows.map((r: any) => String(r.name || '').trim()).filter(Boolean)
+    } catch { /* 墓志读取失败按无墓志处理，不阻断检测 */ }
+
     // 通过 AI 分析文本，提取所有实体
     const allEntities = await this.extractEntitiesWithAI(text)
 
-    // 过滤出新实体
+    // 过滤出新实体。人物已知名判定与 R9 告警端 isKnown 同口径（0916 review：此前入册端
+    // 只有 exact 同名去重，别名「老周 vs 周铁嘴」每章提取都重复建实体——告警端有模糊
+    // 判定、入册端反而没有，标准倒挂）。人物额外叠加删除墓志；地点/物品 exact 口径。
+    const knownCharNames = existingCharacters.map((c: any) => c.name)
+    const isKnownChar = makeKnownNameMatcher(knownCharNames, tombstoneNames)
+    const isKnownPlace = makeExactNameMatcher([...existingLocations.map((l: any) => l.name), ...existingItems.map((i: any) => i.name)])
+
+    // 模糊拦截留痕（复核 P2-3）：被拦下的候选名 warn 一声——入册端静默吞名是实体
+    // 永久丢失，人工需要有机会发现补录
+    const fuzzySuppressed = allEntities.characters
+      .map((c: any) => String(c.name || '').trim())
+      .filter((n: string) => n && isKnownChar(n) && !knownCharNames.includes(n))
+    if (fuzzySuppressed.length > 0) {
+      console.warn(`[LwEntityDetection] 以下人物按模糊口径视为已有/墓志，未入册（若是新角色请手动添加）：${fuzzySuppressed.join('、')}`)
+    }
+
     const newCharacters: NewCharacterInfo[] = allEntities.characters
-      .filter(c => !existingCharacters.some(ec => ec.name === c.name))
+      .filter(c => !isKnownChar(c.name))
       .map(c => ({
         name: c.name,
         description: c.description,
@@ -87,7 +158,7 @@ export class LwEntityDetectionService {
       }))
 
     const newLocations: NewLocationInfo[] = allEntities.locations
-      .filter(l => !existingLocations.some(el => el.name === l.name))
+      .filter(l => !isKnownPlace(l.name))
       .map(l => ({
         name: l.name,
         description: l.description,
@@ -97,7 +168,7 @@ export class LwEntityDetectionService {
       }))
 
     const newItems: NewItemInfo[] = allEntities.items
-      .filter(i => !existingItems.some(ei => ei.name === i.name))
+      .filter(i => !isKnownPlace(i.name))
       .map(i => ({
         name: i.name,
         description: i.description,

@@ -31,6 +31,9 @@ export function buildConflictFixMessage(c: any): string {
     where ? `位置：${where}${loc ? ` 第${loc.paragraph}段（字符偏移 ${loc.start}-${loc.end}）` : ''}` : '',
     loc ? `原文摘录：「${loc.excerpt}」` : '',
     c?.beatText ? `大纲承诺拍：「${c.beatText}」` : '',
+    // key 由后端 annotateConflicts 回填（conflictKey 契约）——原样带给主编，
+    // 修正成功后它传给 lw_patch_chapter 的 conflictKey 参数即可自动登记 resolved
+    c?.key ? `疑点 key：${c.key}（调 lw_patch_chapter 时作为 conflictKey 参数原样传入）` : '',
     loc?.kind === 'exact'
       ? '摘录可信。给出修正方案，我确认后用 lw_patch_chapter 按摘录精确替换。'
       : '请先用 lw_query_chapter 读该章定位问题根由，给出修正方案，我确认后再局部修正。',

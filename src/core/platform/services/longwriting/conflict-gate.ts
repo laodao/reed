@@ -153,16 +153,21 @@ export function matchResolution(conflict: ConflictLike, rows: ResolutionRow[]): 
   return null
 }
 
-/** 扫描结果标注处理状态（handler 层一次扫描同时供待处理/已保留两个视图） */
+/**
+ * 扫描结果标注处理状态（handler 层一次扫描同时供待处理/已保留两个视图）。
+ * 0916 review（conflictKey 契约）：每个条目回填 key=conflictKey(c)——此前 key 只在
+ * 登记侧使用、全链路无合法生产者，agent/前端拿不到合法 key，lw_patch_chapter 的
+ * conflictKey 参数只能靠编造。回填后前端修正消息与工具回执都可原样携带。
+ */
 export function annotateConflicts<T extends ConflictLike>(
   conflicts: T[],
   rows: ResolutionRow[],
-): Array<T & { status: 'pending' | 'kept'; note?: string; keptAt?: number }> {
+): Array<T & { status: 'pending' | 'kept'; note?: string; keptAt?: number; key: string }> {
   return conflicts.map((c) => {
     const row = matchResolution(c, rows)
     return row
-      ? { ...c, status: 'kept' as const, note: row.note, keptAt: row.at }
-      : { ...c, status: 'pending' as const }
+      ? { ...c, key: conflictKey(c), status: 'kept' as const, note: row.note, keptAt: row.at }
+      : { ...c, key: conflictKey(c), status: 'pending' as const }
   })
 }
 

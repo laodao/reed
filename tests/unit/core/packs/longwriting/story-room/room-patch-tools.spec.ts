@@ -46,7 +46,13 @@ vi.mock('@core/platform/services/longwriting/graph/consistency.service', () => (
 
 const CONTENT = '第一段原文。\n\n第五日丑时三刻，崔九登船。七日之限只剩最后两夜。\n\n第三段。'
 
-function mkFake(opts: { content?: string | null; busy?: boolean; remaining?: any[] } = {}) {
+import { conflictKey } from '@core/platform/services/longwriting/conflict-gate'
+
+/** 现存疑点（scanContradictions 返回形态）与它算出的合法 key */
+const PENDING_CONFLICT = { rule: 'R10', entityName: 'x', chapterNumber: 5, message: '第5章纪日与第7章公决差一天' }
+const VALID_KEY = conflictKey(PENDING_CONFLICT)
+
+function mkFake(opts: { content?: string | null; busy?: boolean; remaining?: any[]; pending?: any[] } = {}) {
   const saves: Array<{ id: string; content: string }> = []
   const processCalls: any[] = []
   const resolutions: any[] = []
@@ -75,7 +81,10 @@ function mkFake(opts: { content?: string | null; busy?: boolean; remaining?: any
         return { id }
       }),
     },
-    consistency: { scanBlockingConflicts: vi.fn(async () => opts.remaining ?? []) },
+    consistency: {
+      scanBlockingConflicts: vi.fn(async () => opts.remaining ?? []),
+      scanContradictions: vi.fn(async () => opts.pending ?? []),
+    },
   }
   return fake
 }
@@ -124,11 +133,14 @@ const INPUT = {
   problem: '七日倒计时差一整天',
   excerpt: '第五日丑时三刻',
   replacement: '第六日丑时三刻',
-  conflictKey: 'R10|x|5|abc',
+  conflictKey: VALID_KEY,
 }
 
 describe('lw_patch_chapter 正常链路', () => {
   it('定位→splice→保存→图谱重提（整章新全文）→回执字段', async () => {
+    fake = mkFake({ content: CONTENT, pending: [PENDING_CONFLICT] })
+    ;(globalThis as unknown as { __lwPatchFake?: any }).__lwPatchFake = fake
+    ;(globalThis as unknown as { __lwRoomFakeDb?: unknown }).__lwRoomFakeDb = fake.db
     const r = await run('lw_patch_chapter', INPUT)
     expect(r.ok).toBe(true)
     expect(r.data.paragraph).toBe(2)
@@ -146,14 +158,42 @@ describe('lw_patch_chapter 正常链路', () => {
     expect(String(r.data.message)).toContain('已修正第1章第2段')
   })
 
-  it('conflictKey 修正成功后自动登记 resolved（key 直存）', async () => {
-    await run('lw_patch_chapter', INPUT)
+  it('conflictKey 与现存疑点匹配：修正成功后自动登记 resolved', async () => {
+    fake = mkFake({ content: CONTENT, pending: [PENDING_CONFLICT] })
+    ;(globalThis as unknown as { __lwPatchFake?: any }).__lwPatchFake = fake
+    ;(globalThis as unknown as { __lwRoomFakeDb?: unknown }).__lwRoomFakeDb = fake.db
+    const r = await run('lw_patch_chapter', INPUT)
+    expect(r.ok).toBe(true)
     expect(fake.resolutions).toHaveLength(1)
-    expect(fake.resolutions[0]).toMatchObject({ key: 'R10|x|5|abc', status: 'resolved' })
+    expect(fake.resolutions[0]).toMatchObject({ key: VALID_KEY, status: 'resolved' })
+    expect(String(r.data.message)).toContain('已登记 resolved')
+  })
+
+  it('幻觉 key（不匹配任何现存疑点）：忽略不登记，回执明说（key 契约）', async () => {
+    fake = mkFake({ content: CONTENT, pending: [PENDING_CONFLICT] })
+    ;(globalThis as unknown as { __lwPatchFake?: any }).__lwPatchFake = fake
+    ;(globalThis as unknown as { __lwRoomFakeDb?: unknown }).__lwRoomFakeDb = fake.db
+    const r = await run('lw_patch_chapter', { ...INPUT, conflictKey: 'R10|y|9|deadbeef' })
+    expect(r.ok).toBe(true)
+    expect(fake.resolutions).toHaveLength(0)
+    expect(String(r.data.message)).toContain('未匹配现存疑点、未登记')
+  })
+
+  it('幂等短路：摘录已不存在且替换文本已在正文 → 回成功不重复改（超时重试场景）', async () => {
+    // 模拟补丁此前已落库：正文里只有 replacement、没有 excerpt
+    const already = CONTENT.replace('第五日丑时三刻', '第六日丑时三刻')
+    fake = mkFake({ content: already, pending: [PENDING_CONFLICT] })
+    ;(globalThis as unknown as { __lwPatchFake?: any }).__lwPatchFake = fake
+    ;(globalThis as unknown as { __lwRoomFakeDb?: unknown }).__lwRoomFakeDb = fake.db
+    const r = await run('lw_patch_chapter', INPUT)
+    expect(r.ok).toBe(true)
+    expect(r.data.idempotent).toBe(true)
+    expect(fake.saves).toHaveLength(0)
+    expect(fake.processCalls).toHaveLength(0)
   })
 
   it('替换文本跨多句：replacement 原样插入（不加解释）', async () => {
-    const r = await run('lw_patch_chapter', { ...INPUT, replacement: '第六日丑时三刻，崔九登船。只剩最后一夜。' })
+    const r = await run('lw_patch_chapter', { ...INPUT, replacement: '第六日丑时三刻，崔九登船。只剩最后一夜。', conflictKey: undefined })
     expect(r.ok).toBe(true)
     expect(fake.saves[0].content).toContain('只剩最后一夜。')
     expect(fake.saves[0].content).not.toContain('第五日丑时三刻')

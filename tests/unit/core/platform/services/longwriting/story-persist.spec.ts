@@ -27,6 +27,7 @@ import {
   extractJsonArray,
   normalizePlotInput,
   normalizeOutlineVolume,
+  upsertOutlineChapter,
 } from '@core/platform/services/longwriting/story-persist'
 
 // ==================== 假仓库 ====================
@@ -43,6 +44,7 @@ function makeFakeDb() {
     outlines: [] as Array<Record<string, unknown>>,
     chapters: new Map<string, string>(),
     chapterVersions: [] as Array<Record<string, unknown>>,
+    backgrounds: [] as Array<Record<string, unknown>>,
   }
   let idSeq = 100
   const nextId = () => `e${++idSeq}`
@@ -96,10 +98,29 @@ function makeFakeDb() {
     },
     lwOutlines: {
       getTreeByProjectId: async () => store.outlines,
+      getByProjectId: async () => store.outlines,
       getById: async (id: string) => store.outlines.find((o) => o.id === id) ?? null,
       create: async (input: any) => {
         const row = { id: nextId(), orderIndex: store.outlines.length, ...input }
         store.outlines.push(row)
+        return row
+      },
+      update: async (id: string, patch: Record<string, unknown>) => {
+        const row = store.outlines.find((o) => o.id === id)
+        if (row) Object.assign(row, patch)
+        return row
+      },
+    },
+    lwBackgrounds: {
+      getByProjectId: async () => (store.backgrounds.length > 0 ? store.backgrounds[0] : null),
+      create: async (_projectId: string) => {
+        const row = { id: nextId() }
+        store.backgrounds.push(row)
+        return row
+      },
+      update: async (id: string, patch: Record<string, unknown>) => {
+        const row = store.backgrounds.find((b) => b.id === id)
+        if (row) Object.assign(row, patch)
         return row
       },
     },
@@ -373,5 +394,36 @@ describe('normalizePlotInput / normalizeOutlineVolume（研讨室卡片键名归
     expect(v.chapters[0].summary).toContain('苏九龄监房复盘')
     expect(v.chapters[0].summary).toContain('穿越+立案')
     expect(v.chapters[0].summary).toContain('①前身记忆断片')
+  })
+})
+
+describe('persistWorld specialRules（0916 review：追加去重，不再线性膨胀）', () => {
+  it('首次落库 → 再确认同块不重复 → 新块按序追加', async () => {
+    const db = makeFakeDb()
+    await persistWorld(db, 'p1', { specialRules: '【供货线】回春堂每旬供药' })
+    await persistWorld(db, 'p1', { specialRules: '【供货线】回春堂每旬供药' }) // 同块（含空白差异）不重复
+    await persistWorld(db, 'p1', { specialRules: '【供货线】回春堂每旬供药\n\n【火场】西厢有人被困' })
+    const row = (db as any)._store.backgrounds[0]
+    expect(String(row.specialRules)).toBe('【供货线】回春堂每旬供药\n\n【火场】西厢有人被困')
+    // 空白折叠语义：换行/空格差异视为同一块
+    await persistWorld(db, 'p1', { specialRules: '【火场】西厢 有人被困' })
+    expect((db as any)._store.backgrounds[0].specialRules).toBe('【供货线】回春堂每旬供药\n\n【火场】西厢有人被困')
+  })
+})
+
+describe('upsertOutlineChapter（0916 review：「第N章 X」命名幂等）', () => {
+  it('向导式章名「第2章 初雪」与单章卡「2 初雪」视为同章：更新不重建', async () => {
+    const db = makeFakeDb()
+    // 模拟向导/AI 大纲建的章节点（挂在首卷下）
+    const vol = await (db as any).lwOutlines.create({ projectId: 'p1', name: '第一卷', nodeType: 'volume' })
+    await (db as any).lwOutlines.create({ projectId: 'p1', parentId: vol.id, name: '第1章 落发', nodeType: 'chapter' })
+    await (db as any).lwOutlines.create({ projectId: 'p1', parentId: vol.id, name: '第2章 初雪', nodeType: 'chapter' })
+
+    // 研讨室单章修正卡产出「N 标题」格式
+    const r = await upsertOutlineChapter(db, 'p1', { no: 2, name: '2 初雪', summary: '修正后的概要' })
+    expect(r).toEqual({ created: 0, updated: 1 })
+    const chapters = (db as any)._store.outlines.filter((o: any) => o.nodeType === 'chapter')
+    expect(chapters).toHaveLength(2) // 不再重复建第2章
+    expect(chapters.find((c: any) => c.name === '第2章 初雪').summary).toBe('修正后的概要')
   })
 })
