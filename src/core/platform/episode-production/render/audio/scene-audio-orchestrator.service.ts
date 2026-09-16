@@ -144,6 +144,37 @@ export class SceneAudioOrchestratorService {
   }
 
   /**
+   * 产物落库（2026-09-16 P0-CM1）：此前 V3 结果只经 IPC 返回不持久化，导出器无从
+   * 读取，成片永远无声。对白写 dialogues[].audioAsset（与 V2 路径同构），旁白写
+   * scene_scripts.narration_audio_path。UI handler 与 agent 工具共用本方法。
+   */
+  async persistToScene(sceneScriptId: string, result: OrchestrateAudioResult): Promise<void> {
+    const repo = this.ds.getRepository(SceneScriptEntity)
+    const scene = await repo.findOne({ where: { id: sceneScriptId } as any })
+    if (!scene) return
+    if (result.dialoguePaths.size > 0) {
+      const dialogues = JSON.parse(JSON.stringify(scene.dialogues ?? []))
+      for (const [dialogueId, audioPath] of result.dialoguePaths) {
+        const idx = dialogues.findIndex((d: any) => d?.id === dialogueId)
+        if (idx !== -1) {
+          dialogues[idx].audioAsset = {
+            id: `audio_${dialogueId}_${Date.now()}`,
+            type: 'dialogue',
+            text: dialogues[idx].text,
+            audioPath,
+          }
+        }
+      }
+      await repo.update({ id: sceneScriptId } as any, { dialogues } as any)
+    }
+    if (result.narrationPath) {
+      await repo.update({ id: sceneScriptId } as any, {
+        narrationAudioPath: result.narrationPath,
+      } as any)
+    }
+  }
+
+  /**
    * 解析对话的 voice ID（spec §4.1 优先级）：
    *   1. dialogue.voiceId（场景级覆盖）
    *   2. character_binding.voiceId（resolver 取）

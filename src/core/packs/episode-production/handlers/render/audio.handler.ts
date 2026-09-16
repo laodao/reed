@@ -53,6 +53,17 @@ async function handleGenerateSceneAudioV3(
       defaultNarratorVoiceId: opts?.defaultNarratorVoiceId,
     })
 
+    // 产物落库（2026-09-16 P0-CM1）：此前 V3 结果只经 IPC 返回不持久化，
+    // 导出器无从读取，成片永远无声。落库逻辑在 orchestrator.persistToScene
+    // （对白写 dialogues[].audioAsset，旁白写 narration_audio_path），
+    // UI 与 agent 工具共用。
+    try {
+      await svc.persistToScene(sceneScriptId, result)
+    } catch (persistErr) {
+      // 落库失败不掩盖生成成功——但要在返回里提示产物未持久化
+      console.warn('[handleGenerateSceneAudioV3] 产物落库失败:', persistErr)
+    }
+
     // dialoguePaths Map → object（IPC 序列化）
     const dialoguePathsObj: Record<string, string> = {}
     result.dialoguePaths.forEach((v, k) => {

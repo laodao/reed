@@ -50,6 +50,38 @@
         </div>
       </div>
 
+      <!-- 配音音频（2026-09-16 P0-CM1：活路径此前无任何音频入口，成片无声） -->
+      <div class="seg-section">
+        <div class="sec-title">
+          配音音频
+          <span class="sec-hint">对白/旁白 TTS；生成后导出时自动混入成片音轨</span>
+        </div>
+        <div v-if="!scriptId || scenes.length === 0" class="seg-empty">
+          <el-empty description="暂无场景：请先在「剧本」页生成场景" :image-size="60" />
+        </div>
+        <div v-else class="seg-rows">
+          <div v-for="sc in scenes" :key="sc.id" class="seg-row audio-row">
+            <span class="seg-name">场景 {{ sc.sceneNumber }}</span>
+            <span class="seg-scene">{{ sc.location || '?' }}</span>
+            <span class="seg-dur">
+              对白 {{ audioCountOf(sc).dialogueDone }}/{{ sc.dialogues?.length ?? 0 }}
+              <template v-if="hasNarrationText(sc)">· 旁白 {{ sc.narrationAudioPath ? '✓' : '待生成' }}</template>
+            </span>
+            <el-tag size="small" :type="audioTagType(sc)" effect="light">{{ audioLabelOf(sc) }}</el-tag>
+            <el-button
+              size="small"
+              type="primary"
+              plain
+              :loading="generatingSceneId === sc.id"
+              :disabled="generatingSceneId !== null"
+              @click="onGenerateAudio(sc)"
+            >
+              生成配音
+            </el-button>
+          </div>
+        </div>
+      </div>
+
       <!-- 时间线（read-only 预览） -->
       <TimelineEditor v-if="scriptId" :episode-script-id="scriptId" />
 
@@ -118,6 +150,16 @@ interface ExportResult {
   relPath?: string
 }
 
+/** 场景（ep:list-scenes 返回；只取配音区关心的字段） */
+interface SceneAudioItem {
+  id: string
+  sceneNumber: number
+  location?: string
+  narration?: string
+  narrationAudioPath?: string | null
+  dialogues?: Array<{ id: string; audioAsset?: { audioPath?: string } | null }>
+}
+
 const props = defineProps<{
   episodeId: string
   projectId: string
@@ -126,6 +168,8 @@ const props = defineProps<{
 
 const scriptId = ref<string | null>(null)
 const segments = ref<SegmentItem[]>([])
+const scenes = ref<SceneAudioItem[]>([])
+const generatingSceneId = ref<string | null>(null)
 const dialogVisible = ref(false)
 const lastExport = ref<ExportResult | null>(null)
 
@@ -139,10 +183,67 @@ const lastExportPlayUrl = computed(() =>
 )
 
 async function load(): Promise<void> {
-  if (!props.episodeId) { scriptId.value = null; segments.value = []; return }
+  if (!props.episodeId) { scriptId.value = null; segments.value = []; scenes.value = []; return }
   const ep = await window.electronAPI.episodeProduction.getEpisode(props.episodeId)
   scriptId.value = ep.success ? (ep.data?.scriptId ?? null) : null
-  await loadSegments()
+  await Promise.all([loadSegments(), loadScenes()])
+}
+
+async function loadScenes(): Promise<void> {
+  try {
+    const r = await (window.electronAPI.episodeProduction as any).listScenes(scriptId.value)
+    scenes.value = r?.success ? (r.data ?? []) : []
+  } catch {
+    scenes.value = []
+  }
+}
+
+function audioCountOf(sc: SceneAudioItem): { dialogueDone: number } {
+  const list = sc.dialogues ?? []
+  return {
+    dialogueDone: list.filter(d => !!d?.audioAsset?.audioPath).length,
+  }
+}
+
+function hasNarrationText(sc: SceneAudioItem): boolean {
+  return !!(sc.narration ?? '').trim()
+}
+
+function audioLabelOf(sc: SceneAudioItem): string {
+  const total = (sc.dialogues?.length ?? 0) + (hasNarrationText(sc) ? 1 : 0)
+  if (total === 0) return '无内容'
+  const done = audioCountOf(sc).dialogueDone + (sc.narrationAudioPath && hasNarrationText(sc) ? 1 : 0)
+  if (done === 0) return '待生成'
+  return done >= total ? '已配音' : `${done}/${total}`
+}
+
+function audioTagType(sc: SceneAudioItem): 'info' | 'success' | 'warning' {
+  const label = audioLabelOf(sc)
+  if (label === '已配音') return 'success'
+  if (label === '无内容') return 'info'
+  return 'warning'
+}
+
+async function onGenerateAudio(sc: SceneAudioItem): Promise<void> {
+  generatingSceneId.value = sc.id
+  try {
+    const r = await (window.electronAPI.episodeProduction as any).generateSceneAudioV3(sc.id)
+    if (!r?.success) {
+      ElMessage.error(r?.error || '生成配音失败')
+    } else {
+      const fallbackCount = r.data?.fallbackDialogueCount ?? 0
+      ElMessage.success(
+        fallbackCount > 0
+          ? `配音已生成（${fallbackCount} 条对白使用了系统默认音色，可在资产页为角色绑定音色）`
+          : '配音已生成，导出时将自动混入',
+      )
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || '生成配音失败')
+  } finally {
+    generatingSceneId.value = null
+    await loadScenes()
+  }
 }
 
 async function loadSegments(): Promise<void> {
@@ -214,6 +315,7 @@ onMounted(() => void load())
   border-radius: var(--radius-lg);
   padding: 12px 16px;
   .sec-title { font-size: 13px; font-weight: 600; color: var(--text-color-primary); margin-bottom: 10px; }
+  .sec-hint { margin-left: 8px; font-size: 12px; font-weight: 400; color: var(--text-color-placeholder); }
 }
 .seg-empty { padding: 8px 0; }
 .seg-rows { display: flex; flex-direction: column; gap: 6px; }
@@ -238,6 +340,7 @@ onMounted(() => void load())
   .seg-scene { color: var(--text-color-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .seg-dur { color: var(--text-color-placeholder); flex-shrink: 0; margin-left: auto; }
   .seg-warn { color: var(--color-warning); }
+  .audio-row .el-button { margin-left: 8px; flex-shrink: 0; }
 }
 
 .last-export {
