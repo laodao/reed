@@ -525,6 +525,17 @@ async function handleGenerateScenes(
       return { success: false, error: '剧集不存在' }
     }
 
+    // 2.5 模型回退：调用方未显式传 provider/model 时，用项目配置的剧本生成模型，
+    //     避免静默落到宿主默认 provider（与 cogen 的 scriptModel 语义一致）
+    if ((!providerConfigId || !modelId) && db.videoProjects) {
+      const project = await db.videoProjects.getById(episode.projectId).catch(() => null)
+      const sm = (project?.config as any)?.scriptModel
+      if (sm?.providerConfigId && sm?.modelId) {
+        providerConfigId = providerConfigId || sm.providerConfigId
+        modelId = modelId || sm.modelId
+      }
+    }
+
     // 3. 构建资产花名册
     const roster = await buildAssetRosterForProject(db.dataSource, episode.projectId)
 

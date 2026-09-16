@@ -68,12 +68,18 @@ export function normalizeAiCharacters(
 
     if (resolved === null) {
       // 未识别 / 空：保留 entry（保持本分镜角色数量），characterId 设空让 fallback 接管
+      // H10：AI 常把角色名抄进 characterId，反查失败时把原值存到 characterName，
+      // 供下游统计"未绑定角色名清单"（collectUnboundCharacters）
       // eslint-disable-next-line no-console
       console.warn(
         `[storyboard-generator] AI 输出的 characterId="${original}" 无法反查到 character_binding；` +
           `保留为空字符串，下游按场景级 fallback 解析（report-shot-1.2.md Bug C）`,
       )
-      out.push({ ...c, characterId: '' })
+      out.push({
+        ...c,
+        characterId: '',
+        ...(original && !(c as any).characterName ? { characterName: original } : {}),
+      })
     } else {
       out.push({ ...c, characterId: resolved })
     }

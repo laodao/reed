@@ -82,8 +82,12 @@ export class FluentFfmpegRunner implements FfmpegRunner {
       cmd.complexFilter(args.filterComplex)
       cmd.outputOptions(args.outputArgs)
       cmd.output(args.outputPath)
-      // fluent-ffmpeg 运行时有 timeout(sec, signal)，但该版本 .d.ts 未声明
-      ;(cmd as unknown as { timeout: (sec: number, signal: string) => void }).timeout(FFMPEG_TIMEOUT_SEC, 'kill')
+      // fluent-ffmpeg 此版本运行时没有 .timeout()：用看门狗定时 kill，防坏文件/管道挂死（P1-10）
+      const watchdog = setTimeout(() => {
+        try {
+          cmd.kill('SIGKILL')
+        } catch { /* 已结束则忽略 */ }
+      }, FFMPEG_TIMEOUT_SEC * 1000)
 
       let lastDurationSec = 0
       let stderrTail = ''
@@ -101,10 +105,12 @@ export class FluentFfmpegRunner implements FfmpegRunner {
       })
 
       cmd.on('error', (err) => {
+        clearTimeout(watchdog)
         console.error('[FluentFfmpegRunner] failed; stderr tail:\n', stderrTail)
         reject(new Error(`${err.message}\n--- ffmpeg stderr ---\n${stderrTail}`))
       })
       cmd.on('end', () => {
+        clearTimeout(watchdog)
         // 通过 ffprobe 取最终 duration，比 progress 更精确
         ffmpeg.ffprobe(args.outputPath, (probeErr, data) => {
           if (probeErr || !data?.format?.duration) {

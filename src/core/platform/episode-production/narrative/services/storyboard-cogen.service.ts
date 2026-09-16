@@ -14,6 +14,9 @@
  *      scene.location_binding_id；
  *   5. D4-2 断言：落库后复读，任一 characterId 为空 → throw。
  *
+ * H13：每场景开始/完成/失败经 onProgress 回调上报（handler 转成
+ * ep:cogen-progress 事件推 renderer）。
+ *
  * 写库时机：全部写库在「本场景生成 + 校验成功之后」才执行，失败保留旧分镜；
  * 单场景失败不阻断后续场景（结果聚合 error 字段返回）。
  */
@@ -51,6 +54,15 @@ export interface CogenEpisodeResult {
   results: CogenSceneResult[]
 }
 
+/** H13：逐场景进度事件（handler 侧经 webContents.send('ep:cogen-progress') 推到 renderer） */
+export interface CogenProgressEvent {
+  episodeId: string
+  sceneNumber: number
+  totalScenes: number
+  status: 'start' | 'done' | 'error'
+  error?: string
+}
+
 /** binding 名 → 快照（按 standaloneName/overrideName 索引，跨场景去重的依据） */
 interface BindingSnapshot {
   id: string
@@ -75,9 +87,14 @@ export class StoryboardCogenService {
   /**
    * 整集联合生成分镜（逐场景串行：第 1 场景建资产，后续场景按名复用）。
    *
+   * @param onProgress H13：每场景开始/完成/失败回调（handler 转成 ep:cogen-progress
+   *   事件推 renderer）；回调异常被吞掉，不阻断生成。
    * @throws 剧集/剧本/场景不存在，或项目未配置 scriptModel（D3：不静默落回默认模型）
    */
-  async cogenStoryboardsForEpisode(episodeId: string): Promise<CogenEpisodeResult> {
+  async cogenStoryboardsForEpisode(
+    episodeId: string,
+    onProgress?: (event: CogenProgressEvent) => void,
+  ): Promise<CogenEpisodeResult> {
     // ─── 加载链：episode → script → scenes；episode → project.config.scriptModel ───
     const episode = await this.ds
       .getRepository(VideoEpisodeEntity)
@@ -178,6 +195,18 @@ export class StoryboardCogenService {
 
     // ─── 逐场景串行 ───
     const results: CogenSceneResult[] = []
+    const totalScenes = scenes.length
+    const emitProgress = (
+      sceneNumber: number,
+      status: CogenProgressEvent['status'],
+      error?: string,
+    ): void => {
+      try {
+        onProgress?.({ episodeId, sceneNumber, totalScenes, status, error })
+      } catch {
+        /* 进度推送失败不阻断生成 */
+      }
+    }
     for (const scene of scenes) {
       const result: CogenSceneResult = {
         sceneId: scene.id,
@@ -188,6 +217,7 @@ export class StoryboardCogenService {
       }
       results.push(result)
 
+      emitProgress(scene.sceneNumber, 'start')
       try {
         // 1) LLM 联合生成（含校验 + 纠错重试 1 次；失败抛错，本场景不写库）
         const output = await generateCogenForScene(
@@ -237,10 +267,12 @@ export class StoryboardCogenService {
           `[StoryboardCogenService] 场景 ${scene.sceneNumber} 完成：${output.shots.length} 个分镜，` +
             `新建绑定 ${result.createdBindings.length}，复用 ${result.reusedBindings.length}`,
         )
+        emitProgress(scene.sceneNumber, 'done')
       } catch (e: any) {
         // 单场景失败不阻断后续场景；旧分镜保留（删旧发生在生成成功之后）
         result.error = e?.message ?? '联合生成失败（未知异常）'
         console.error(`[StoryboardCogenService] 场景 ${scene.sceneNumber} 失败：`, e)
+        emitProgress(scene.sceneNumber, 'error', result.error)
       }
     }
 

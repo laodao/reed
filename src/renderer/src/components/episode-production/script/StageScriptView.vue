@@ -10,6 +10,10 @@
         </el-tag>
       </div>
       <div class="tb-right">
+        <el-button text size="small" :loading="identifying" @click="onIdentifyEntities">
+          <el-icon><Aim /></el-icon>
+          识别要素
+        </el-button>
         <el-button text size="small" @click="openAppend('ai-continue')" :disabled="!hasScript">
           <el-icon><MagicStick /></el-icon>
           AI 续写
@@ -92,6 +96,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
+  Aim,
   Document,
   DocumentAdd,
   MagicStick,
@@ -110,7 +115,7 @@ const props = defineProps<{
   contextHint?: string | null
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'dataChanged', sections: string[]): void
 }>()
 
@@ -119,6 +124,8 @@ const scenes = ref<any[]>([])
 const selectedScene = ref<any>(null)
 const generating = ref(false)
 const regenerating = ref(false)
+/** H9：「识别要素」手动入口（batchIdentifyEntities，需要项目 scriptModel） */
+const identifying = ref(false)
 
 /** 追加剧本弹窗 */
 const appendVisible = ref(false)
@@ -207,6 +214,43 @@ async function onRegenerate(): Promise<void> {
     ElMessage.error(e?.message || '拆分失败')
   } finally {
     regenerating.value = false
+  }
+}
+
+/**
+ * H9：「识别要素」手动入口（旧 Workbench ① 内容 stage 的「AI 识别要素」在 Studio 侧的对应物）。
+ * 调 ep:batch-identify-entities（跨集去重创建/复用项目级 binding）。
+ * 依赖项目 config.scriptModel；未配置时报错并引导到 Studio 顶栏「设置」。
+ */
+async function onIdentifyEntities(): Promise<void> {
+  if (identifying.value || !props.episodeId) return
+  identifying.value = true
+  try {
+    const proj = await window.electronAPI.episodeProduction.getProject(props.projectId)
+    const sm = proj?.data?.config?.scriptModel
+    if (!sm?.providerConfigId || !sm?.modelId) {
+      ElMessage.warning('未配置剧本生成模型，无法识别要素；请点击 Studio 顶栏「设置」配置剧本生成模型后重试')
+      return
+    }
+    const r = await window.electronAPI.episodeProduction.batchIdentifyEntities({
+      projectId: props.projectId,
+      episodeIds: [props.episodeId],
+      providerConfigId: sm.providerConfigId,
+      modelId: sm.modelId,
+    })
+    if (r.success) {
+      const d = r.data as { characters?: number; locations?: number; items?: number } | undefined
+      ElMessage.success(
+        `要素识别完成：角色 ${d?.characters ?? 0}、地点 ${d?.locations ?? 0}、物品 ${d?.items ?? 0}`,
+      )
+      emit('dataChanged', ['assets'])
+    } else {
+      ElMessage.error(r.error || '要素识别失败')
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || '要素识别失败')
+  } finally {
+    identifying.value = false
   }
 }
 

@@ -49,6 +49,9 @@ export interface GenerateVideoSegmentInput {
   height?: number
   /** 强制使用某个 mode（用户在 UI 选择时传）；不传则按 capability-matcher 自动选 */
   forceMode?: VideoMode
+  /** 实际调用的 providerConfigId / modelId（提交时记录到 storyboard，H5 崩溃恢复用） */
+  providerId?: string
+  modelId?: string
 }
 
 export interface VideoSegmentResult {
@@ -125,9 +128,19 @@ export class VideoSegmentService {
       sb.frameDescription || sb.subject || '' // 简化：后续可拼更详细的 prompt
     // D6：项目 config.videoQuality/videoSteps 透传（未配置 → provider 默认 high/20）
     const videoParams = await resolveVideoParamsForStoryboard(this.ds, sb.id)
+    // H5 崩溃恢复：提交前先把 provider/model 落库（后续 onTaskId 再补 provider_task_id），
+    // 进程重启后启动恢复凭 video_provider_id 解析网关地址回查任务终态
+    if (input.providerId || input.modelId) {
+      await this.sbRepo.update(sb.id, {
+        videoProviderId: input.providerId ?? sb.videoProviderId,
+        videoModelId: input.modelId ?? sb.videoModelId,
+        updatedAt: new Date(),
+      })
+    }
     let output: VideoSegmentOutput
     try {
       output = await this.invokeAdapter({
+        storyboardId: sb.id,
         mode: match.mode,
         durationSec,
         width,
@@ -189,6 +202,7 @@ export class VideoSegmentService {
 
   /** dispatch by mode */
   private async invokeAdapter(opts: {
+    storyboardId: string
     mode: VideoMode
     durationSec: number
     width: number
@@ -213,13 +227,20 @@ export class VideoSegmentService {
       quality,
       steps,
     }
+    // H5 崩溃恢复：异步任务拿到 taskId 立即落库 provider_task_id
+    const onTaskId = async (taskId: string) => {
+      await this.sbRepo.update(opts.storyboardId, {
+        providerTaskId: taskId,
+        updatedAt: new Date(),
+      })
+    }
     let result: VideoSegmentOutput
     try {
       if (mode === 'text2video') {
         if (!this.adapter.textToVideo) {
           throw new Error('Provider 声明支持 text2video 但未实现 textToVideo 方法')
         }
-        result = await this.adapter.textToVideo({ prompt, durationSec, width, height, quality, steps })
+        result = await this.adapter.textToVideo({ prompt, durationSec, width, height, quality, steps, onTaskId })
       } else if (mode === 'image2video') {
         if (!this.adapter.imageToVideo) {
           throw new Error('Provider 声明支持 image2video 但未实现 imageToVideo 方法')
@@ -234,6 +255,7 @@ export class VideoSegmentService {
           height,
           quality,
           steps,
+          onTaskId,
         })
       } else {
         // keyframes2video
@@ -251,6 +273,7 @@ export class VideoSegmentService {
           height,
           quality,
           steps,
+          onTaskId,
         })
       }
     } catch (e: any) {

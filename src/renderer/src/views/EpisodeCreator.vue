@@ -177,6 +177,9 @@ async function createFirstEpisode(content: string, title: string): Promise<void>
           providerConfigId: sm.providerConfigId,
           modelId: sm.modelId,
         })
+      } else {
+        // H9：未配置剧本模型时不再静默跳过——明确告知并给出配置入口
+        ElMessage.warning('未配置剧本生成模型，已跳过要素识别；请到 Studio 顶栏「设置」配置后可重新识别')
       }
     } catch { /* 忽略识别失败 */ }
 

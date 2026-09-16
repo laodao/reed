@@ -200,6 +200,7 @@ const IPC_CHANNELS = {
   EP_RECOMPUTE_SEGMENTS: 'ep:recompute-segments',
   EP_LIST_SEGMENTS: 'ep:list-segments',
   EP_GENERATE_SEGMENT_VIDEO: 'ep:generate-segment-video',
+  EP_DELETE_SEGMENT: 'ep:delete-segment',
 
   // P6-T5 合成 + 导出 MP4
   EP_BUILD_TIMELINE: 'ep:build-timeline',
@@ -2576,10 +2577,12 @@ const electronAPI = {
     // 视频片段制（2026-09-04 重构）：分段预览/重算 + 片段级一次视频调用
     recomputeSegments: (episodeId: string, opts?: { budgetSec?: number }) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_RECOMPUTE_SEGMENTS, episodeId, opts),
-    listSegments: (episodeId: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.EP_LIST_SEGMENTS, episodeId),
+    listSegments: (episodeId: string, opts?: { includeSuperseded?: boolean }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_LIST_SEGMENTS, episodeId, opts),
     generateSegmentVideo: (segmentId: string, opts?: any) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_GENERATE_SEGMENT_VIDEO, segmentId, opts),
+    deleteSegment: (segmentId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_DELETE_SEGMENT, segmentId),
 
     // P6-T5 合成 + 导出 MP4
     buildTimeline: (episodeScriptId: string) =>
@@ -2695,6 +2698,12 @@ const electronAPI = {
       const handler = (_event: any, data: any) => callback(_event, data)
       ipcRenderer.on('ep:storyboards-progress', handler)
       return () => ipcRenderer.removeListener('ep:storyboards-progress', handler)
+    },
+    // cogen 联合生成进度（逐场景推送；2026-09-16 H13）
+    onCogenProgress: (callback: (event: any, data: { sceneNumber: number; totalScenes: number; status: 'start' | 'done' | 'error' }) => void) => {
+      const handler = (_event: any, data: any) => callback(_event, data)
+      ipcRenderer.on('ep:cogen-progress', handler)
+      return () => ipcRenderer.removeListener('ep:cogen-progress', handler)
     },
 
     // 视频合成

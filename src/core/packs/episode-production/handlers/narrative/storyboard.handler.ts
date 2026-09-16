@@ -11,7 +11,7 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type { Storyboard } from '@shared/types/story-to-video.types'
 import { StoryToVideoAIService } from '@core/packs/episode-production/services/story-to-video-ai.service'
-import { StoryboardService, normalizeShotNumbers } from '@core/platform/episode-production/narrative/services/storyboard.service'
+import { StoryboardService, normalizeShotNumbers, collectUnboundCharacters } from '@core/platform/episode-production/narrative/services/storyboard.service'
 import { StoryboardCogenService } from '@core/platform/episode-production/narrative/services/storyboard-cogen.service'
 
 export function registerStoryboardHandlers(): void {
@@ -377,7 +377,19 @@ async function handleGenerateStoryboards(
       /* 状态推进失败不阻断分镜结果 */
     }
 
-    return { success: true, data: allStoryboards }
+    // H10（2026-09-16 ep-hardening）：统计未绑定资产的角色（characterId 为空），
+    // 随结果返回 unboundCharacters（去重角色名，能从 scene 名单推就推）+ unboundCount，
+    // 供 renderer toast 告警"将影响画面一致性"。
+    const unbound = collectUnboundCharacters(allStoryboards, scenes)
+
+    return {
+      success: true,
+      data: {
+        storyboards: allStoryboards,
+        unboundCharacters: unbound.names,
+        unboundCount: unbound.count,
+      },
+    }
   } catch (error: any) {
     return { success: false, error: error.message || '批量生成分镜失败' }
   }
@@ -387,9 +399,13 @@ async function handleGenerateStoryboards(
  * 2026-09-16 联合生成（tasks/2026-09-16-storyboard-asset-cogen · D1/D2/D8）：
  * 整集逐场景一次 LLM 调用同时产出资产清单 + 分镜，代码侧建/复用 binding 并
  * 回填全部 ID。未配置 scriptModel 时返回明确报错（引导去项目设置配置模型）。
+ *
+ * H13：每场景开始/完成/失败时通过 ep:cogen-progress 推送进度（同
+ * ep:storyboards-progress 的 getBrowserWindowFromEvent + webContents.send 机制；
+ * Web 模式 window 为 null 时静默跳过）。
  */
 async function handleCogenStoryboards(
-  _event: any,
+  event: any,
   episodeId: string,
 ): Promise<IpcResponse> {
   try {
@@ -399,8 +415,14 @@ async function handleCogenStoryboards(
     }
     if (!episodeId) return { success: false, error: 'episodeId 不能为空' }
 
+    const window = getBrowserWindowFromEvent(event)
     const result = await new StoryboardCogenService(db.dataSource).cogenStoryboardsForEpisode(
       episodeId,
+      (progress) => {
+        if (window) {
+          window.webContents.send('ep:cogen-progress', progress)
+        }
+      },
     )
     return { success: true, data: result }
   } catch (error: any) {

@@ -728,6 +728,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.recomputeSegments': { channel: 'ep:recompute-segments' },
   'episodeProduction.listSegments': { channel: 'ep:list-segments' },
   'episodeProduction.generateSegmentVideo': { channel: 'ep:generate-segment-video' },
+  'episodeProduction.deleteSegment': { channel: 'ep:delete-segment' },
   // P6-T5 合成 + 导出 MP4
   'episodeProduction.buildTimeline': { channel: 'ep:build-timeline' },
   'episodeProduction.previewSubtitle': { channel: 'ep:preview-subtitle' },
@@ -861,6 +862,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.onAudioProgress': { channel: 'ep:audio-progress', legacyEventArg: true },
   'episodeProduction.onStoryboardProgress': { channel: 'ep:storyboard-progress', legacyEventArg: true },
   'episodeProduction.onStoryboardsProgress': { channel: 'ep:storyboards-progress', legacyEventArg: true },
+  'episodeProduction.onCogenProgress': { channel: 'ep:cogen-progress', legacyEventArg: true },
   'episodeProduction.onSynthesisProgress': { channel: 'ep:synthesis-progress', legacyEventArg: true },
   // P6 对话式制作 Agent
   'episodeProduction.agentSend': { channel: 'ep:agent:send' },

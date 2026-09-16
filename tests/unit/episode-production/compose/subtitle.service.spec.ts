@@ -174,6 +174,55 @@ describe('SubtitleService', () => {
     expect(srt).toContain('老板娘：好嘞，您稍等')
   })
 
+  it('H8 说话人：narration 标"旁白"；dialogue 优先取 scene_dialogues 表角色名；解析不到兜底"未知角色"', async () => {
+    await seed(ds)
+    // 归一化表角色名与 JSON 列不同 → 应以表为准
+    await ds.getRepository(SceneDialogueEntity).save([
+      {
+        id: 'sd1',
+        sceneScriptId: 's1',
+        characterId: 'c1',
+        characterBindingId: null,
+        characterName: '张三（表）',
+        text: '老板，来一壶碧螺春',
+        emotion: null,
+        volume: 'normal',
+        pace: 'normal',
+        pause: 0,
+        voiceId: null,
+        audioAssetId: null,
+        sortOrder: 0,
+      },
+      {
+        id: 'sd2',
+        sceneScriptId: 's1',
+        characterId: 'c2',
+        characterBindingId: null,
+        characterName: '  ', // 空白 → 兜底未知角色
+        text: '好嘞，您稍等',
+        emotion: null,
+        volume: 'normal',
+        pace: 'normal',
+        pause: 0,
+        voiceId: null,
+        audioAssetId: null,
+        sortOrder: 1,
+      },
+    ] as any)
+
+    const tl = await timelineSvc.buildEpisodeTimeline('es1')
+    const cues = await svc.buildCues(tl)
+    const narration = cues.find((c) => c.source === 'narration')
+    expect(narration?.characterName).toBe('旁白')
+    const dialogueCues = cues.filter((c) => c.source === 'dialogue')
+    expect(dialogueCues.map((c) => c.characterName)).toEqual(['张三（表）', '未知角色'])
+
+    const srt = svc.toSrt(cues)
+    expect(srt).toContain('旁白：清晨的茶馆')
+    expect(srt).toContain('张三（表）：老板，来一壶碧螺春')
+    expect(srt).toContain('未知角色：好嘞，您稍等')
+  })
+
   it('无对话 / 无旁白：返回空 cues 不报错', async () => {
     await ds.getRepository(SceneScriptEntity).save({
       id: 's1',

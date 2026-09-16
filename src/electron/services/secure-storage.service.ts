@@ -4,8 +4,10 @@
  * @description 用于管理加密密钥和加密解密操作，保护敏感数据
  */
 
-import { safeStorage } from 'electron'
+import { app, safeStorage } from 'electron'
 import crypto from 'crypto'
+import fs from 'fs'
+import path from 'path'
 import type { ISecureStorage } from '@core/interfaces/storage.interface'
 import { registerSecureStorage } from '@core/interfaces/storage.interface'
 
@@ -46,8 +48,9 @@ export class SecureStorageService implements ISecureStorage {
     if (safeStorage.isEncryptionAvailable()) {
       this.initialized = true
     } else {
-      // 回退方案：生成一个随机密钥
-      this.masterKey = this.generateMasterKey()
+      // 回退方案：持久化主密钥（load-or-generate）。
+      // 早期版本每次启动随机生成，重启后所有已加密数据（如 API Key）永久无法解密。
+      this.masterKey = this.loadOrGenerateMasterKey()
       this.initialized = true
     }
   }
@@ -98,7 +101,10 @@ export class SecureStorageService implements ISecureStorage {
       }
     } catch (error) {
       console.error('解密失败:', error)
-      throw error
+      const rawMessage = error instanceof Error ? error.message : String(error)
+      throw new Error(
+        `API 密钥无法解密（可能更换了运行环境），请到 设置→AI 模型配置 重新编辑该提供商并重新输入密钥（原始错误：${rawMessage}）`,
+      )
     }
   }
 
@@ -117,11 +123,30 @@ export class SecureStorageService implements ISecureStorage {
   }
 
   /**
-   * 生成主密钥
+   * 加载或生成持久化主密钥（回退方案用）
+   *
+   * 密钥以 base64 存于 userData/secure-key（权限 0600），重启后仍可解密旧数据。
+   * 文件缺失或内容损坏（解出非 32 字节）时重新生成并覆盖。
    * @returns Buffer - 32字节的主密钥
    */
-  private generateMasterKey(): Buffer {
-    return crypto.randomBytes(32)
+  private loadOrGenerateMasterKey(): Buffer {
+    const keyPath = path.join(app.getPath('userData'), 'secure-key')
+
+    try {
+      const key = Buffer.from(fs.readFileSync(keyPath, 'utf8').trim(), 'base64')
+      if (key.length === 32) {
+        return key
+      }
+      console.error('[SecureStorage] secure-key 内容损坏（非 32 字节），重新生成；旧加密数据将无法解密')
+    } catch (error: any) {
+      if (error?.code !== 'ENOENT') {
+        console.error('[SecureStorage] 读取 secure-key 失败，重新生成:', error)
+      }
+    }
+
+    const key = crypto.randomBytes(32)
+    fs.writeFileSync(keyPath, key.toString('base64'), { encoding: 'utf8', mode: 0o600 })
+    return key
   }
 
   /**

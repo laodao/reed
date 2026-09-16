@@ -273,7 +273,7 @@ async function loadScript(): Promise<void> {
 
 async function loadScenes(): Promise<void> {
   const ep = currentEpisode.value
-  if (!ep?.scriptId) { scenes.value = []; storyboards = {}; return }
+  if (!ep?.scriptId) { scenes.value = []; Object.keys(storyboards).forEach(k => delete storyboards[k]); return }
   const r = await window.electronAPI.episodeProduction.listScenes(ep.scriptId)
   if (r.success) {
     scenes.value = r.data || []
@@ -334,6 +334,16 @@ async function onGenerateStoryboards(): Promise<void> {
     if (r.success) {
       await loadScenes()
       ElMessage.success('分镜已生成')
+      // H10：旧批量路径绑定缺失告警（Studio 分镜 tab 已改走 cogen，此处为仍用旧 IPC 的入口）
+      const unbound: string[] = Array.isArray((r.data as any)?.unboundCharacters)
+        ? (r.data as any).unboundCharacters
+        : []
+      const unboundCount = typeof (r.data as any)?.unboundCount === 'number' ? (r.data as any).unboundCount : 0
+      if (unbound.length > 0) {
+        ElMessage.warning(`⚠️ ${unbound.length} 个角色未绑定资产：${unbound.join('、')}，将影响画面一致性`)
+      } else if (unboundCount > 0) {
+        ElMessage.warning(`⚠️ ${unboundCount} 处分镜角色未绑定资产（无法反查角色名），将影响画面一致性`)
+      }
     } else {
       ElMessage.error(r.error || '生成失败')
     }

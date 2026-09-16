@@ -44,8 +44,9 @@ import type {
 
 const POLL_INTERVAL_MS = 2_000
 // 局域网 ComfyUI 网关实测 15~25 分钟（评审 #103），原 10 分钟会在远端仍在跑时
-// 假失败写回 error（用户重试即双份计费）。提至 30 分钟，可用环境变量覆盖。
-const POLL_MAX_DURATION_MS = Number(process.env.EP_VIDEO_POLL_TIMEOUT_MS) || 30 * 60 * 1000
+// 假失败写回 error（用户重试即双份计费）。图生视频高质量模式实测 30~45 分钟
+//（H3 实测），默认提至 75 分钟，可用环境变量覆盖。
+const POLL_MAX_DURATION_MS = Number(process.env.EP_VIDEO_POLL_TIMEOUT_MS) || 75 * 60 * 1000
 
 /** 桥接选项 */
 export interface BridgeOptions {
@@ -90,7 +91,7 @@ export async function adaptBaseVideoProvider(
         height: input.height,
         quality: input.quality,
         steps: input.steps,
-      })
+      }, input.onTaskId)
     }
   }
 
@@ -107,7 +108,7 @@ export async function adaptBaseVideoProvider(
         height: input.height,
         quality: input.quality,
         steps: input.steps,
-      })
+      }, input.onTaskId)
     }
   }
 
@@ -129,7 +130,7 @@ export async function adaptBaseVideoProvider(
         height: input.height,
         quality: input.quality,
         steps: input.steps,
-      })
+      }, input.onTaskId)
     }
   }
 
@@ -189,10 +190,15 @@ async function inferCapabilitiesFromBase(
 
 /**
  * 调 generateVideo + 同步等待结果（处理同步 + 异步 taskId 两路）。
+ *
+ * @param onTaskId 异步路径拿到 taskId 后、进入轮询前回调（H5：service 层落库
+ *                 provider_task_id，进程崩溃后启动恢复可凭 taskId 回网关查终态）。
+ *                 回调失败不阻断生成（仅记日志）——taskId 落库是兜底，不是主流程。
  */
 async function callAndPoll(
   baseProvider: BaseVideoProvider,
   request: any, // VideoGenerationRequest（避免再次导入循环）
+  onTaskId?: (taskId: string) => void | Promise<void>,
 ): Promise<VideoSegmentOutput> {
   const resp = await baseProvider.generateVideo(request)
 
@@ -207,6 +213,13 @@ async function callAndPoll(
 
   // 异步路径：taskId → polling
   if (resp.taskId) {
+    if (onTaskId) {
+      try {
+        await onTaskId(resp.taskId)
+      } catch (e) {
+        console.warn('[base-video-provider-bridge] onTaskId 回调失败（不阻断生成）:', e)
+      }
+    }
     const final = await pollUntilDone(baseProvider, resp.taskId)
     if (!final.video) {
       throw new Error('任务完成但 provider 未返回视频信息')
@@ -243,8 +256,10 @@ function sleep(ms: number): Promise<void> {
  * 落到 <userDataPath>/episode-production/video-segments/seg_<ts>_<rand>.mp4，
  * 返回 user-rel 相对路径（与 image_assets.image_path 同一约定，兼容 web /assets
  * 路由直接播放 + ffmpeg 通过 resolveImagePath 反向解析为绝对路径）。
+ *
+ * 导出给 startup-recovery 复用（H5：崩溃恢复时把网关已完成的产物下载落盘）。
  */
-async function downloadVideoToLocal(url: string, defaultExt = '.mp4'): Promise<string> {
+export async function downloadVideoToLocal(url: string, defaultExt = '.mp4'): Promise<string> {
   if (!/^https?:\/\//i.test(url)) {
     // 不是 http URL，原样返回（可能是 file:// 或别的本地形式）
     return url

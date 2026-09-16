@@ -15,6 +15,10 @@
 import { randomBytes } from 'crypto'
 import type { Repository, DataSource } from 'typeorm'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
+import { CharacterBindingEntity } from '@core/database/entities/episode-production/character-binding.entity'
+import { LocationBindingEntity } from '@core/database/entities/episode-production/location-binding.entity'
+import { ItemBindingEntity } from '@core/database/entities/episode-production/item-binding.entity'
+import { VideoEpisodeEntity } from '@core/database/entities/episode-production/video-episode.entity'
 import { AssetImageService, type AssetType } from './asset-image.service'
 import type { ImageGenerator } from './gallery-derivation.service'
 import {
@@ -69,6 +73,58 @@ export class MainImageGeneratorService {
     return `ai_${randomBytes(8).toString('hex')}`
   }
 
+  /**
+   * 故事背景锚点前缀（H12b）：asset → binding.projectId → 项目最新一集
+   * （episodeNumber DESC）的 storyEra/storyRegion/storyBackgroundExtra，
+   * 拼成 `时代背景：…；地域：…；故事背景：…。` 前缀，避免资产描述太薄时
+   * 图像模型自由发挥成现代装（阿蘅现代装事故）。
+   *
+   * - 三字段全空 / 资产无 projectId（全局 preset）/ 解析失败 → 返回 ''（不拼）。
+   * - 幂等：renderer 主入口（main-image-generator.ts）已在 prompt 尾部拼过
+   *   「故事年代/地域/背景」段，已包含同值的段不再重复拼。
+   */
+  private async buildStoryAnchorPrefix(
+    assetType: AssetType,
+    assetId: string,
+    prompt: string,
+  ): Promise<string> {
+    try {
+      const bindingRepo =
+        assetType === 'character'
+          ? this.ds.getRepository(CharacterBindingEntity)
+          : assetType === 'location'
+            ? this.ds.getRepository(LocationBindingEntity)
+            : this.ds.getRepository(ItemBindingEntity)
+      const binding = await bindingRepo.findOne({ where: { id: assetId } as any })
+      const projectId = (binding as any)?.projectId as string | null | undefined
+      if (!projectId) return ''
+
+      const episodes = await this.ds.getRepository(VideoEpisodeEntity).find({
+        where: { projectId },
+        order: { episodeNumber: 'DESC' },
+      })
+      const ep = episodes.find(
+        (e) =>
+          (e.storyEra ?? '').trim() ||
+          (e.storyRegion ?? '').trim() ||
+          (e.storyBackgroundExtra ?? '').trim(),
+      )
+      if (!ep) return ''
+
+      const era = (ep.storyEra ?? '').trim()
+      const region = (ep.storyRegion ?? '').trim()
+      const extra = (ep.storyBackgroundExtra ?? '').trim()
+      const segments: string[] = []
+      if (era && !prompt.includes(era)) segments.push(`时代背景：${era}`)
+      if (region && !prompt.includes(region)) segments.push(`地域：${region}`)
+      if (extra && !prompt.includes(extra)) segments.push(`故事背景：${extra}`)
+      return segments.length > 0 ? `${segments.join('；')}。` : ''
+    } catch (e) {
+      console.warn('[MainImageGeneratorService] 故事背景锚点解析失败（跳过拼接）:', e)
+      return ''
+    }
+  }
+
   /** 资产引用校验：assetType 合法 + assetId 非空（防止 asset_id='' 孤儿行 / 非法类型） */
   private requireAssetRef(assetType: string, assetId: string): void {
     if (assetType !== 'character' && assetType !== 'location' && assetType !== 'item') {
@@ -94,17 +150,18 @@ export class MainImageGeneratorService {
 
     // 类资产硬约束（service 层收口；renderer 不重复加）：
     //   location → 全域无人；item → 居中干净背景；character 在 renderer 层已加 framing 约束
-    let effectivePrompt = input.prompt
+    const anchor = await this.buildStoryAnchorPrefix(input.assetType, input.assetId, input.prompt)
+    let effectivePrompt = anchor ? `${anchor}${input.prompt}` : input.prompt
     let effectiveNegative = input.negativePrompt
     if (input.assetType === 'location') {
-      effectivePrompt = appendLocationNoHumanConstraint(input.prompt)
+      effectivePrompt = appendLocationNoHumanConstraint(effectivePrompt)
       // 主图作为派生基准：补稳定全景构图锚点
       effectivePrompt = appendLocationBaseComposition(effectivePrompt)
       effectiveNegative = mergeLocationNoHumanNegative(input.negativePrompt)
       effectiveNegative = mergeLocationBaseCompositionNegative(effectiveNegative)
     }
     if (input.assetType === 'item') {
-      effectivePrompt = appendItemConstraints(input.prompt)
+      effectivePrompt = appendItemConstraints(effectivePrompt)
       effectiveNegative = mergeItemNegative(input.negativePrompt)
     }
 
@@ -211,10 +268,11 @@ export class MainImageGeneratorService {
       throw new Error('多主图必须提供 label（区分用途）')
     }
 
-    let effectivePrompt = input.prompt
+    const anchor = await this.buildStoryAnchorPrefix(input.assetType, input.assetId, input.prompt)
+    let effectivePrompt = anchor ? `${anchor}${input.prompt}` : input.prompt
     let effectiveNegative = input.negativePrompt
     if (input.assetType === 'location') {
-      effectivePrompt = appendLocationNoHumanConstraint(input.prompt)
+      effectivePrompt = appendLocationNoHumanConstraint(effectivePrompt)
       // 主图作为派生基准：补稳定全景构图锚点
       effectivePrompt = appendLocationBaseComposition(effectivePrompt)
       effectiveNegative = mergeLocationNoHumanNegative(input.negativePrompt)

@@ -25,6 +25,57 @@ export function normalizeShotNumbers<T extends { shotNumber: number }>(storyboar
 }
 
 /**
+ * H10（2026-09-16 ep-hardening）：旧分镜路径（ep:generate-storyboards / agent
+ * generate_storyboards）生成完成后统计"未绑定资产"的角色。
+ *
+ * 判定：分镜 characters[] 中 characterId 为空的 entry（AI 输出无法反查到
+ * character_binding 时 normalizeAiCharacters 会置空并保留 characterName 原名）。
+ *
+ * 角色名来源（去重）：
+ *   1. entry 上残留的 characterName（normalize 保留的 AI 原始输出）；
+ *   2. 该场 scene.characters 名单里本身就没有 characterBindingId 的角色名
+ *      （能从 scene 名单推就推）。
+ * count 为未绑定 entry 总数（一名角色可能在多个分镜里出现，count ≥ names.length
+ * 不必然成立，两者口径不同：names 给人看，count 反映影响面）。
+ */
+export interface UnboundCharacterStats {
+  /** 去重后的角色名清单（推不出来时可能为空） */
+  names: string[]
+  /** characterId 为空的分镜角色 entry 总数 */
+  count: number
+}
+
+export function collectUnboundCharacters(
+  storyboards: Array<{
+    sceneScriptId: string
+    characters?: Array<{ characterId?: string | null; characterName?: string | null }> | null
+  }>,
+  scenes: Array<{
+    id: string
+    characters?: Array<{ characterName?: string | null; characterBindingId?: string | null }> | null
+  }>,
+): UnboundCharacterStats {
+  const sceneById = new Map(scenes.map((s) => [s.id, s]))
+  const names = new Set<string>()
+  let count = 0
+  for (const sb of storyboards) {
+    const chars = Array.isArray(sb.characters) ? sb.characters : []
+    const unbound = chars.filter((c) => !c?.characterId)
+    if (unbound.length === 0) continue
+    count += unbound.length
+    for (const c of unbound) {
+      const n = typeof c?.characterName === 'string' ? c.characterName.trim() : ''
+      if (n) names.add(n)
+    }
+    const scene = sceneById.get(sb.sceneScriptId)
+    for (const sc of scene?.characters ?? []) {
+      if (!sc?.characterBindingId && sc?.characterName) names.add(sc.characterName)
+    }
+  }
+  return { names: [...names], count }
+}
+
+/**
  * 分镜业务 service。
  *
  * 当前仅实现 setBackgroundRefImage / getBackgroundRefImageId 两个方法，

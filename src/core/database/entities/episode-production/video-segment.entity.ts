@@ -66,6 +66,13 @@ export class EpVideoSegmentEntity {
   @Column({ name: 'model_id', type: 'varchar', nullable: true })
   modelId!: string | null
 
+  /**
+   * 视频 provider 异步任务 ID（2026-09-16 ep-hardening H5）。
+   * 提交视频任务拿到 taskId 即落库；进程重启后启动恢复凭它回网关查终态。
+   */
+  @Column({ name: 'provider_task_id', type: 'text', nullable: true })
+  providerTaskId!: string | null
+
   @Column({ name: 'error', type: 'text', nullable: true })
   error!: string | null
 

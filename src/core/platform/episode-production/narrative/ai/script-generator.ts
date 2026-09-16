@@ -147,7 +147,14 @@ const FIELD_QUALITY_SPEC = `## ⭐ 字段输出质量要求（必须严格遵守
 - 颜色：主色调（如"淡青色"、"深红色"）
 - 风格：服装风格（如"古典仕女风格"、"粗布短衣风格"）
 
-示例："素色衣裙（淡青色，古典仕女风格）"、"粗布短衣（灰褐色，市井平民风格）"`
+示例："素色衣裙（淡青色，古典仕女风格）"、"粗布短衣（灰褐色，市井平民风格）"
+
+### dialogues（对话列表）
+每条对话**必须**带 characterName（从本场景 characters 名单里选择，逐字一致），并在能确定时同时给 characterBindingId。
+- 剧本原文里对白前有说话人名的（如"阿蘅：……"或单独成行的角色名），必须保留该说话人，不得丢失；
+- 拿不准说话人时优先按上下文推断，仍无法确定才允许省略 characterName。
+
+示例：{ "id": "dlg_1", "characterBindingId": "cb_xxxxx", "characterName": "张三", "text": "请来一壶碧螺春" }`
 
 /**
  * 共享片段 ⑤：三类资产花名册清单（保留 {characters}/{locations}/{items} 占位符）。
@@ -778,22 +785,29 @@ export class EpisodeScriptGenerator {
       )
 
       const dialogues: GeneratedDialogue[] = (scene.dialogues || []).map(
-        (dlg: any, dlgIndex: number) => ({
-          id: dlg.id || `dlg_${Date.now()}_${dlgIndex}`,
-          characterBindingId: resolveBindingId(
-            roster.characters,
-            dlg.characterBindingId,
-            dlg.characterName,
-          ),
-          characterId: dlg.characterId || '',
-          characterName: dlg.characterName || '未知角色',
-          text: dlg.text || '',
-          emotion: dlg.emotion,
-          volume: dlg.volume || 'normal',
-          pace: dlg.pace || 'normal',
-          pause: dlg.pause || 0,
-          voiceId: dlg.voiceId ?? null,
-        }),
+        (dlg: any, dlgIndex: number) => {
+          // AI 漏填说话人时的兜底：本场景只有一个角色时，对话必属该角色
+          const soleChar =
+            !dlg.characterName && !dlg.characterBindingId && characters.length === 1
+              ? characters[0]!
+              : null
+          return {
+            id: dlg.id || `dlg_${Date.now()}_${dlgIndex}`,
+            characterBindingId: resolveBindingId(
+              roster.characters,
+              dlg.characterBindingId ?? soleChar?.characterBindingId,
+              dlg.characterName ?? soleChar?.characterName,
+            ),
+            characterId: dlg.characterId || '',
+            characterName: dlg.characterName || soleChar?.characterName || '未知角色',
+            text: dlg.text || '',
+            emotion: dlg.emotion,
+            volume: dlg.volume || 'normal',
+            pace: dlg.pace || 'normal',
+            pause: dlg.pause || 0,
+            voiceId: dlg.voiceId ?? null,
+          }
+        },
       )
 
       const actions: GeneratedAction[] = (scene.actions || []).map(
@@ -1139,7 +1153,18 @@ export class EpisodeScriptGenerator {
       ],
       "originalText": "原文片段",
       "narration": "旁白文本",
-      "dialogues": [...],
+      "dialogues": [
+        {
+          "id": "dlg_1",
+          "characterBindingId": "cb_xxxxx",
+          "characterName": "张三",
+          "text": "请来一壶碧螺春",
+          "emotion": "平静",
+          "volume": "normal",
+          "pace": "normal",
+          "pause": 0
+        }
+      ],
       "actions": [...]
     }
   ]
@@ -1161,6 +1186,12 @@ export class EpisodeScriptGenerator {
 ### outfit（角色服装）
 格式：服装名称（颜色，风格）
 示例："素色衣裙（淡青色，古典仕女风格）"
+
+### dialogues（对话列表）
+每条对话**必须**带 characterName 和 text：
+- characterName 从本场景 characters 名单里选择，逐字一致；剧本原文里对白前有说话人名的必须保留，不得丢失；
+- text 为对白的完整台词原文，**不得为空**；
+- 能确定时同时给 characterBindingId。
 
 ## 可用角色列表
 

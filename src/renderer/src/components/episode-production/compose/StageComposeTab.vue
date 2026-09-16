@@ -4,15 +4,15 @@
     <div class="cp-toolbar">
       <div class="tb-left">
         <span class="tb-title">合成</span>
-        <el-tag v-if="segments.length" size="small" round effect="plain" type="info">{{ segments.length }} 个片段</el-tag>
+        <el-tag v-if="activeSegments.length" size="small" round effect="plain" type="info">{{ activeSegments.length }} 个片段</el-tag>
         <el-tag v-if="pendingCount > 0" size="small" round effect="plain" type="warning">{{ pendingCount }} 个待生成</el-tag>
-        <el-tag v-else-if="segments.length" size="small" round effect="plain" type="success">可导出</el-tag>
+        <el-tag v-else-if="activeSegments.length" size="small" round effect="plain" type="success">可导出</el-tag>
       </div>
       <div class="tb-right">
         <el-button
           type="primary"
           size="small"
-          :disabled="!scriptId || segments.length === 0"
+          :disabled="!scriptId || activeSegments.length === 0"
           @click="dialogVisible = true"
         >
           <el-icon><Download /></el-icon>
@@ -25,7 +25,7 @@
       <!-- 片段就绪清单：导出前确认每段都有视频（末端硬锁：缺视频导出会失败） -->
       <div class="seg-section">
         <div class="sec-title">视频片段</div>
-        <div v-if="segments.length === 0" class="seg-empty">
+        <div v-if="activeSegments.length === 0" class="seg-empty">
           <el-empty description="暂无片段：请先在「分镜」页重新分段并生成片段视频" :image-size="60" />
         </div>
         <div v-else class="seg-rows">
@@ -43,9 +43,19 @@
             <span class="seg-scene">场景 {{ seg.sceneNumber }} · {{ seg.sceneLocation || '?' }}</span>
             <span class="seg-dur">{{ seg.shotCount }} 镜 · {{ formatSec(seg.duration ?? seg.estDuration) }}</span>
             <el-tag size="small" :type="statusTagType(seg.status)" effect="light">{{ statusLabel(seg.status) }}</el-tag>
-            <el-tooltip v-if="!seg.videoPath" content="该片段还没有视频，导出会失败" placement="top">
+            <el-tooltip v-if="!seg.videoPath && seg.status !== 'superseded'" content="该片段还没有视频，导出会失败" placement="top">
               <el-icon class="seg-warn" :size="14"><Warning /></el-icon>
             </el-tooltip>
+            <el-button
+              size="small"
+              text
+              type="danger"
+              :disabled="seg.status === 'generating'"
+              :loading="removingSegmentId === seg.segmentId"
+              @click="onRemoveSegment(seg)"
+            >
+              移除
+            </el-button>
           </div>
         </div>
       </div>
@@ -124,7 +134,7 @@
  * 导出结果展示与回放（toVideoUrl(relPath)，见 compose.handler 的 relPath 说明）。
  */
 import { ref, computed, watch, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { CircleCheck, Download, FolderOpened, Picture, Warning } from '@element-plus/icons-vue'
 import TimelineEditor from '@/components/episode-production/stage-compose/TimelineEditor.vue'
 import ExportDialog from '@/components/episode-production/stage-compose/ExportDialog.vue'
@@ -136,7 +146,7 @@ interface SegmentItem {
   sceneId: string
   sceneNumber: number
   sceneLocation: string
-  status: 'pending' | 'generating' | 'completed' | 'error'
+  status: 'pending' | 'generating' | 'completed' | 'error' | 'superseded'
   shotCount: number
   estDuration: number
   duration: number | null
@@ -170,11 +180,17 @@ const scriptId = ref<string | null>(null)
 const segments = ref<SegmentItem[]>([])
 const scenes = ref<SceneAudioItem[]>([])
 const generatingSceneId = ref<string | null>(null)
+const removingSegmentId = ref<string | null>(null)
 const dialogVisible = ref(false)
 const lastExport = ref<ExportResult | null>(null)
 
+/** 有效片段（superseded 不计入合成/导出语义，仅置灰展示可追溯、可移除） */
+const activeSegments = computed(() =>
+  segments.value.filter(s => s.status !== 'superseded'),
+)
+
 const pendingCount = computed(() =>
-  segments.value.filter(s => s.status === 'pending' || s.status === 'generating' || s.status === 'error').length,
+  activeSegments.value.filter(s => s.status === 'pending' || s.status === 'generating' || s.status === 'error').length,
 )
 
 /** 播放地址：relPath（dataPath 相对）优先；无则不提供应用内回放（路径出错了也还有"打开所在目录"） */
@@ -256,19 +272,46 @@ async function onGenerateAudio(sc: SceneAudioItem): Promise<void> {
 
 async function loadSegments(): Promise<void> {
   try {
-    const r = await (window.electronAPI.episodeProduction as any).listSegments(props.episodeId)
+    // includeSuperseded：已废弃片段置灰展示以便追溯/手动移除；计数与导出入口只看 activeSegments
+    const r = await (window.electronAPI.episodeProduction as any).listSegments(props.episodeId, { includeSuperseded: true })
     segments.value = r?.success ? (r.data?.segments ?? []) : []
   } catch {
     segments.value = []
   }
 }
 
+async function onRemoveSegment(seg: SegmentItem): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      `确认移除片段 ${seg.seq}？片段行将被删除（磁盘上的视频文件保留），不可恢复。`,
+      '移除片段',
+      { confirmButtonText: '移除', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  removingSegmentId.value = seg.segmentId
+  try {
+    const r = await (window.electronAPI.episodeProduction as any).deleteSegment(seg.segmentId)
+    if (!r?.success) {
+      ElMessage.error(r?.error || '移除片段失败')
+    } else {
+      ElMessage.success('片段已移除')
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || '移除片段失败')
+  } finally {
+    removingSegmentId.value = null
+    await loadSegments()
+  }
+}
+
 function statusLabel(s: SegmentItem['status']): string {
-  return ({ pending: '待生成', generating: '生成中', completed: '已完成', error: '失败' } as const)[s] ?? s
+  return ({ pending: '待生成', generating: '生成中', completed: '已完成', error: '失败', superseded: '已废弃' } as const)[s] ?? s
 }
 
 function statusTagType(s: SegmentItem['status']): 'info' | 'warning' | 'success' | 'danger' {
-  return ({ pending: 'info', generating: 'warning', completed: 'success', error: 'danger' } as const)[s] ?? 'info'
+  return ({ pending: 'info', generating: 'warning', completed: 'success', error: 'danger', superseded: 'info' } as const)[s] ?? 'info'
 }
 
 function formatSec(n?: number | null): string {
@@ -337,6 +380,7 @@ onMounted(() => void load())
   &[data-status='error'] { border-left: 3px solid var(--color-danger); }
   &[data-status='generating'] { border-left: 3px solid var(--color-warning); }
   &[data-status='pending'] { border-left: 3px solid var(--border-color); }
+  &[data-status='superseded'] { border-left: 3px solid var(--border-color); opacity: 0.55; }
   .seg-thumb {
     width: 48px; height: 30px; flex-shrink: 0;
     background: #111; border-radius: 4px; overflow: hidden;

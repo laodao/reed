@@ -160,7 +160,11 @@ export const useEpStoryboardStore = defineStore('ep-storyboard', () => {
         modelId
       )
       if (response.success && response.data) {
-        const result = response.data as Storyboard[]
+        // H10：handler 返回 { storyboards, unboundCharacters, unboundCount }（旧版直接返回数组，做兼容）
+        const payload = response.data as
+          | Storyboard[]
+          | { storyboards?: Storyboard[]; unboundCharacters?: string[]; unboundCount?: number }
+        const result = Array.isArray(payload) ? payload : (payload?.storyboards ?? [])
         // 更新当前场景的分镜（依赖 script store 的 currentScene）
         // 注意：此处通过动态 import 避免循环依赖
         const { useEpScriptStore } = await import('./script.store')

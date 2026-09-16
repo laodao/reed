@@ -213,6 +213,11 @@ export class SegmentVideoService {
     }
 
     let output: VideoSegmentOutput
+    // H5 崩溃恢复：异步任务拿到 taskId 立即落库 provider_task_id（轮询可能持续
+    // 30~45 分钟，期间进程崩溃后启动恢复凭 taskId 回网关查终态、避免算力白费）
+    const onTaskId = async (taskId: string) => {
+      await this.segmentRepo.update(seg.id, { providerTaskId: taskId })
+    }
     try {
       if (match.mode === 'text2video') {
         if (!this.adapter.textToVideo) {
@@ -225,6 +230,7 @@ export class SegmentVideoService {
           height: opts.height,
           quality: opts.quality,
           steps: opts.steps,
+          onTaskId,
         })
       } else if (match.mode === 'image2video') {
         if (!this.adapter.imageToVideo) {
@@ -240,6 +246,7 @@ export class SegmentVideoService {
           height: opts.height,
           quality: opts.quality,
           steps: opts.steps,
+          onTaskId,
         })
       } else {
         throw new Error('片段级生成 V1 不支持 keyframes2video（逐镜关键帧请用单镜生成）')

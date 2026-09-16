@@ -59,7 +59,7 @@
         </el-form-item>
         <el-form-item label="烧入字幕">
           <el-switch v-model="form.burnSubtitles" />
-          <span class="form-hint">字幕直接绘制到画面上（不可关闭）</span>
+          <span class="form-hint">开启后字幕直接绘制到画面上；关闭则导出无字幕的成片</span>
         </el-form-item>
         <el-form-item label="输出路径">
           <el-input

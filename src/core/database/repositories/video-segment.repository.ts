@@ -9,7 +9,13 @@ import { IsNull } from 'typeorm'
 import { EpVideoSegmentEntity } from '../entities/episode-production/video-segment.entity'
 import { BaseRepository } from '../base-repository'
 
-export type EpVideoSegmentStatus = 'pending' | 'generating' | 'completed' | 'error'
+export type EpVideoSegmentStatus =
+  | 'pending'
+  | 'generating'
+  | 'completed'
+  | 'error'
+  /** 分镜被 cogen/重拆替换后，关联分镜已全删的旧片段（保留行与 video_path 可追溯，不参与合成/导出） */
+  | 'superseded'
 
 export interface EpVideoSegment {
   id: string
@@ -25,6 +31,7 @@ export interface EpVideoSegment {
   duration: number | null
   providerId: string | null
   modelId: string | null
+  providerTaskId: string | null
   error: string | null
   createdAt: number
   updatedAt: number
@@ -48,6 +55,7 @@ export interface UpdateVideoSegmentRequest {
   duration?: number | null
   providerId?: string | null
   modelId?: string | null
+  providerTaskId?: string | null
   error?: string | null
   shotCount?: number
   estDuration?: number | null
@@ -83,6 +91,7 @@ export class EpVideoSegmentRepository extends BaseRepository<
       duration: e.duration,
       providerId: e.providerId,
       modelId: e.modelId,
+      providerTaskId: e.providerTaskId,
       error: e.error,
       createdAt: this.toEpochMs(e.createdAt),
       updatedAt: this.toEpochMs(e.updatedAt),
@@ -119,6 +128,7 @@ export class EpVideoSegmentRepository extends BaseRepository<
       duration: null,
       providerId: null,
       modelId: null,
+      providerTaskId: null,
       error: null,
       createdAt: now,
       updatedAt: now,
@@ -143,6 +153,7 @@ export class EpVideoSegmentRepository extends BaseRepository<
     if (data.duration !== undefined) { existing.duration = data.duration ?? null; changed = true }
     if (data.providerId !== undefined) { existing.providerId = data.providerId ?? null; changed = true }
     if (data.modelId !== undefined) { existing.modelId = data.modelId ?? null; changed = true }
+    if (data.providerTaskId !== undefined) { existing.providerTaskId = data.providerTaskId ?? null; changed = true }
     if (data.error !== undefined) { existing.error = data.error ?? null; changed = true }
     if (data.shotCount !== undefined) { existing.shotCount = data.shotCount; changed = true }
     if (data.estDuration !== undefined) { existing.estDuration = data.estDuration ?? null; changed = true }

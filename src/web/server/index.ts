@@ -570,6 +570,13 @@ async function initDatabase(): Promise<void> {
   )
   await createDomainLearningTables(ds)
 
+  // H5 视频任务崩溃恢复（2026-09-16 ep-hardening）：storyboards / ep_video_segments
+  // 加 provider_task_id（幂等，双语种；与 Electron 端 runMultiTenantMigrations 同构登记）
+  const { addVideoProviderTaskId } = await import(
+    '@core/database/migrations/add-video-provider-task-id'
+  )
+  await addVideoProviderTaskId(ds)
+
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)
   console.log('[web-server] PostgreSQL 数据库初始化完成')

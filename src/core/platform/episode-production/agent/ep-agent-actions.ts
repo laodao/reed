@@ -16,6 +16,7 @@ import { getCurrentUserId } from '@core/context/user-context'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { buildAssetRosterForProject } from '@core/platform/episode-production/narrative/asset-roster-builder'
 import { SceneBindingWriter } from '@core/platform/episode-production/narrative/scene-binding-writer'
+import { collectUnboundCharacters } from '@core/platform/episode-production/narrative/services/storyboard.service'
 import { EpisodeScriptGenerator } from '@core/platform/episode-production/narrative/ai/script-generator'
 import { EpisodeStoryboardGenerator } from '@core/platform/episode-production/narrative/ai/storyboard-generator'
 import { CharacterAssetService } from '@core/platform/episode-production/assets/services/character-asset.service'
@@ -396,10 +397,11 @@ async function executeGenerateStoryboards(
 
   // 持久化（每场景先删后写）
   let total = 0
+  const createdStoryboards: any[] = []
   for (const [sceneId, result] of results) {
     await m.storyboards?.deleteBySceneScriptId(sceneId)
     for (const sb of result.storyboards) {
-      await m.storyboards?.create({
+      const created = await m.storyboards?.create({
         sceneScriptId: sceneId,
         shotNumber: sb.shotNumber,
         shotType: sb.shotType,
@@ -416,17 +418,33 @@ async function executeGenerateStoryboards(
         duration: sb.duration,
         transition: sb.transition,
       })
+      if (created) createdStoryboards.push(created)
       total++
     }
+  }
+
+  // H10（2026-09-16 ep-hardening）：统计未绑定资产的角色并在结果文本里显式告警，
+  // 避免"生成成功但角色全部未绑定 → 画面一致性静默受损"。
+  const unbound = collectUnboundCharacters(createdStoryboards, scenes as any)
+  let unboundNote = ''
+  if (unbound.names.length > 0) {
+    unboundNote = `；⚠️ ${unbound.names.length} 个角色未绑定资产：${unbound.names.join('、')}，将影响画面一致性（请到资产页创建/绑定后重新生成）`
+  } else if (unbound.count > 0) {
+    unboundNote = `；⚠️ ${unbound.count} 处分镜角色未绑定资产（无法反查角色名），将影响画面一致性`
   }
 
   const changed: EpAgentPanelSection[] = ['storyboards']
   return {
     type: 'generate_storyboards',
     status: 'ok',
-    message: `已为 ${scenes.length} 场生成 ${total} 个分镜`,
+    message: `已为 ${scenes.length} 场生成 ${total} 个分镜${unboundNote}`,
     changed,
-    data: { scenesCount: scenes.length, storyboardsCount: total },
+    data: {
+      scenesCount: scenes.length,
+      storyboardsCount: total,
+      unboundCharacters: unbound.names,
+      unboundCount: unbound.count,
+    },
     nav: { tab: 'storyboard' },
   }
 }
@@ -497,8 +515,25 @@ async function executeGenerateAsset(
     userId: getCurrentUserId(),
   })
 
-  const changed: EpAgentPanelSection[] = ['assets']
   const label = assetLabel(kind)
+  // H11（2026-09-16 ep-hardening）：写后核验——asset_image 行必须真实存在且已出图，
+  // 不符则按失败语义返回，让助手的回复基于真实落库状态而非 service 的返回承诺。
+  const verified = await new AssetImageService(m.dataSource).getById(img.id).catch(() => null)
+  if (!verified?.imagePath) {
+    return {
+      type: kind === 'character'
+        ? 'generate_char_asset'
+        : kind === 'location'
+          ? 'generate_location_asset'
+          : 'generate_item_asset',
+      status: 'error',
+      message: `为${label}「${name}」生成主图实际未生效：数据库核验未找到图片记录（assetId=${bindingId}），请勿向用户声称已生成`,
+      error: 'DB 核验失败：asset_image 行不存在或 imagePath 为空',
+      data: { assetType: kind, assetId: bindingId },
+    }
+  }
+
+  const changed: EpAgentPanelSection[] = ['assets']
   return {
     type: kind === 'character'
       ? 'generate_char_asset'
@@ -508,7 +543,7 @@ async function executeGenerateAsset(
     status: 'ok',
     message: `已为${label}「${name}」生成主图（asset_image 已落库）`,
     changed,
-    data: { assetType: kind, assetId: bindingId, imagePath: img.imagePath },
+    data: { assetType: kind, assetId: bindingId, imagePath: verified.imagePath },
     nav: { tab: 'asset', asset: { kind, id: bindingId, name } },
   }
 }
@@ -681,11 +716,20 @@ async function executeUpdateEntity(
   const svc = getAssetServiceFor(kind, m)
   const binding = await getBindingById(m, kind, bindingId)
 
+  // H11：记录本次实际写入的列 → 期望值，写后重查核验（见函数末尾）
+  const writtenCols: Record<string, unknown> = {}
+
   // 身份块字段（name/description/appearance/outfit）按 sourceType 分发
   if (binding?.sourceType === 'standalone') {
     const sp: Partial<{ name: string; description: string }> = {}
-    if ('name' in patch && patch.name != null) sp.name = String(patch.name)
-    if ('description' in patch && patch.description != null) sp.description = String(patch.description)
+    if ('name' in patch && patch.name != null) {
+      sp.name = String(patch.name)
+      writtenCols.standaloneName = sp.name
+    }
+    if ('description' in patch && patch.description != null) {
+      sp.description = String(patch.description)
+      writtenCols.standaloneDescription = sp.description
+    }
     await svc.updateStandalone(bindingId, sp)
   } else {
     const op: Partial<{
@@ -694,10 +738,22 @@ async function executeUpdateEntity(
       appearance: string | null
       outfit: string | null
     }> = {}
-    if ('name' in patch) op.name = patch.name == null ? null : String(patch.name)
-    if ('description' in patch) op.description = patch.description == null ? null : String(patch.description)
-    if ('appearance' in patch && kind === 'character') op.appearance = patch.appearance == null ? null : String(patch.appearance)
-    if ('outfit' in patch && kind === 'character') op.outfit = patch.outfit == null ? null : String(patch.outfit)
+    if ('name' in patch) {
+      op.name = patch.name == null ? null : String(patch.name)
+      writtenCols.overrideName = op.name
+    }
+    if ('description' in patch) {
+      op.description = patch.description == null ? null : String(patch.description)
+      writtenCols.overrideDescription = op.description
+    }
+    if ('appearance' in patch && kind === 'character') {
+      op.appearance = patch.appearance == null ? null : String(patch.appearance)
+      writtenCols.overrideAppearance = op.appearance
+    }
+    if ('outfit' in patch && kind === 'character') {
+      op.outfit = patch.outfit == null ? null : String(patch.outfit)
+      writtenCols.overrideOutfit = op.outfit
+    }
     await svc.updateOverride(bindingId, op)
   }
 
@@ -715,14 +771,57 @@ async function executeUpdateEntity(
       styleAnchors: string[] | null
       outfitsExtra: string[] | null
     }> = {}
-    if ('alias' in patch) extra.alias = patch.alias == null ? null : String(patch.alias)
-    if ('role' in patch) extra.role = patch.role == null ? null : String(patch.role)
-    if ('gender' in patch) extra.gender = patch.gender == null ? null : String(patch.gender)
-    if ('age' in patch) extra.age = patch.age == null ? null : Number(patch.age)
-    if ('race' in patch) extra.race = patch.race == null ? null : String(patch.race)
-    if ('styleAnchors' in patch) extra.styleAnchors = Array.isArray(patch.styleAnchors) ? patch.styleAnchors.map(String) : null
-    if ('outfitsExtra' in patch) extra.outfitsExtra = Array.isArray(patch.outfitsExtra) ? patch.outfitsExtra.map(String) : null
+    if ('alias' in patch) {
+      extra.alias = patch.alias == null ? null : String(patch.alias)
+      writtenCols.alias = extra.alias
+    }
+    if ('role' in patch) {
+      extra.role = patch.role == null ? null : String(patch.role)
+      writtenCols.role = extra.role
+    }
+    if ('gender' in patch) {
+      extra.gender = patch.gender == null ? null : String(patch.gender)
+      writtenCols.gender = extra.gender
+    }
+    if ('age' in patch) {
+      extra.age = patch.age == null ? null : Number(patch.age)
+      writtenCols.age = extra.age
+    }
+    if ('race' in patch) {
+      extra.race = patch.race == null ? null : String(patch.race)
+      writtenCols.race = extra.race
+    }
+    if ('styleAnchors' in patch) {
+      extra.styleAnchors = Array.isArray(patch.styleAnchors) ? patch.styleAnchors.map(String) : null
+      writtenCols.styleAnchors = extra.styleAnchors ? JSON.stringify(extra.styleAnchors) : null
+    }
+    if ('outfitsExtra' in patch) {
+      extra.outfitsExtra = Array.isArray(patch.outfitsExtra) ? patch.outfitsExtra.map(String) : null
+      writtenCols.outfitsExtra = extra.outfitsExtra ? JSON.stringify(extra.outfitsExtra) : null
+    }
     await (svc as CharacterAssetService).updateExtra(bindingId, extra)
+  }
+
+  // H11：写后核验——重查 binding，逐列比对实际值与本次写入的期望值；
+  // 不符则按失败语义返回（防"声称已改但库里没变"，如 user_id scope 不匹配导致的静默 no-op）。
+  const after = await getBindingById(m, kind, bindingId).catch(() => null)
+  const mismatches: string[] = []
+  if (!after) {
+    mismatches.push('binding 行不存在')
+  } else {
+    for (const [col, expected] of Object.entries(writtenCols)) {
+      const actual = (after as any)[col]
+      if (String(actual ?? null) !== String(expected ?? null)) mismatches.push(col)
+    }
+  }
+  if (mismatches.length > 0) {
+    return {
+      type: 'update_entity',
+      status: 'error',
+      message: `修改${assetLabel(kind)}「${params.name ?? bindingId}」实际未生效：数据库核验不符（${mismatches.join('、')} 未写入），请勿向用户声称已修改`,
+      error: `DB 核验失败：${mismatches.join('、')} 与期望值不一致`,
+      data: { assetType: kind, assetId: bindingId },
+    }
   }
 
   return {
@@ -760,6 +859,19 @@ async function executeDeleteEntity(
 
   const svc = getAssetServiceFor(kind, m)
   await svc.delete(bindingId)
+
+  // H11：写后核验——删除后重查，行必须不存在（防 repo.delete 静默 no-op，
+  // 如 user_id scope 不匹配时"声称已删但库里还在"）。
+  const stillThere = await getBindingById(m, kind, bindingId).catch(() => null)
+  if (stillThere) {
+    return {
+      type: 'delete_entity',
+      status: 'error',
+      message: `删除${assetLabel(kind)}「${params.name ?? bindingId}」实际未生效：数据库核验发现记录仍存在，请勿向用户声称已删除`,
+      error: 'DB 核验失败：删除后记录仍存在',
+      data: { assetType: kind, assetId: bindingId },
+    }
+  }
 
   return {
     type: 'delete_entity',
@@ -1067,7 +1179,7 @@ async function executeGenerateSegmentVideo(
       throw new Error('指定的分镜不存在于当前剧集（id 需来自查询结果或用户消息，不要编造）')
     }
     const svc = new VideoSegmentService(m.dataSource, adapter)
-    const r = await svc.generateForStoryboard({ storyboardId })
+    const r = await svc.generateForStoryboard({ storyboardId, providerId: providerConfigId, modelId })
     return {
       type: 'generate_segment_video',
       status: 'ok',
@@ -1106,7 +1218,7 @@ async function executeGenerateSegmentVideo(
       label: `生成分镜视频 ${done + 1}/${targets.length}`,
     })
     try {
-      await svc.generateForStoryboard({ storyboardId: sb.id })
+      await svc.generateForStoryboard({ storyboardId: sb.id, providerId: providerConfigId, modelId })
       done++
     } catch (e: any) {
       failed.push(`分镜${sb.shotNumber}:${e?.message || '未知错误'}`)

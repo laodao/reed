@@ -1901,10 +1901,18 @@ async function onGenerateAllScenes(): Promise<void> {
       ElMessage.error(resp?.error || '批量生成分镜失败')
       return
     }
-    const totalShots = Array.isArray(resp.data)
-      ? resp.data.reduce((acc: number, r: any) => acc + (r?.storyboards?.length ?? 0), 0)
-      : 0
-    ElMessage.success(`已为 ${scenes.value.length} 个场景生成共 ${totalShots} 个分镜`)
+    // H10：handler 返回 { storyboards, unboundCharacters, unboundCount }（旧版直接返回数组，做兼容）
+    const shots = Array.isArray(resp.data)
+      ? resp.data
+      : (Array.isArray(resp.data?.storyboards) ? resp.data.storyboards : [])
+    ElMessage.success(`已为 ${scenes.value.length} 个场景生成共 ${shots.length} 个分镜`)
+    const unbound: string[] = Array.isArray(resp.data?.unboundCharacters) ? resp.data.unboundCharacters : []
+    const unboundCount = typeof resp.data?.unboundCount === 'number' ? resp.data.unboundCount : 0
+    if (unbound.length > 0) {
+      ElMessage.warning(`⚠️ ${unbound.length} 个角色未绑定资产：${unbound.join('、')}，将影响画面一致性`)
+    } else if (unboundCount > 0) {
+      ElMessage.warning(`⚠️ ${unboundCount} 处分镜角色未绑定资产（无法反查角色名），将影响画面一致性`)
+    }
     if (selectedScene.value) {
       await storyboardStore.loadStoryboards(selectedScene.value.id)
     }

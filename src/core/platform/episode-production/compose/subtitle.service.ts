@@ -6,9 +6,10 @@
  * 输出：SRT 字幕字符串 + 字幕条目数组（可写 .srt 文件 + 给 ffmpeg-assembler 用）
  *
  * 字幕来源：
- *   - 旁白（scene.narration）：场景级，在场景的第一个分镜起始处显示
- *   - 对话（dialogues 表 / scene.dialogues JSON）：分镜级，按 storyboard.dialogue_ids
- *     关联（V3 normalized）；JSON 列回退（V2 兼容）
+ *   - 旁白（scene.narration）：场景级，在场景的第一个分镜起始处显示，说话人标"旁白"
+ *   - 对话：分镜级，按场景内 shot 位置均分。说话人优先取归一化 scene_dialogues 表
+ *     的 character_name（V3），空表回退 scene.dialogues JSON 列（V2 兼容），
+ *     都解析不到才标"未知角色"
  *
  * 时间分配（简化策略）：
  *   - 一个分镜内的对话按顺序均分该分镜时长
@@ -20,6 +21,7 @@
 
 import type { DataSource } from 'typeorm'
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
+import { SceneDialogueEntity } from '@core/database/entities/episode-production/scene-dialogue.entity'
 import type { Timeline, TimelineShot } from './timeline-builder.service'
 
 /** 一条字幕 */
@@ -41,6 +43,8 @@ export interface SubtitleCue {
 
 const MIN_CUE_DURATION_SEC = 1
 const NARRATION_LEAD_SEC = 2 // 旁白默认显示 2 秒
+const NARRATION_SPEAKER = '旁白'
+const UNKNOWN_SPEAKER = '未知角色' // 说话人实在解析不到时的兜底
 
 export class SubtitleService {
   constructor(private readonly ds: DataSource) {}
@@ -57,7 +61,7 @@ export class SubtitleService {
         .findOne({ where: { id: scene.sceneId } })
       if (!sceneEntity) continue
 
-      // 旁白：场景首镜
+      // 旁白：场景首镜（说话人标"旁白"）
       const firstShot = scene.shots[0]
       if (firstShot && sceneEntity.narration?.trim()) {
         const lead = Math.min(NARRATION_LEAD_SEC, firstShot.durationSec)
@@ -66,6 +70,7 @@ export class SubtitleService {
           endSec: firstShot.startSec + lead,
           text: sceneEntity.narration.trim(),
           source: 'narration',
+          characterName: NARRATION_SPEAKER,
           storyboardId: firstShot.storyboardId,
         })
       }
@@ -84,16 +89,14 @@ export class SubtitleService {
   /**
    * 把 cues 转 SRT 字符串。
    * 行号从 1 开始；时间格式 hh:mm:ss,mmm。
+   * 有说话人（dialogue 角色名 / narration "旁白"）时以"说话人：内容"呈现。
    */
   toSrt(cues: SubtitleCue[]): string {
     return cues
       .map((c, i) => {
         const start = formatSrtTime(c.startSec)
         const end = formatSrtTime(c.endSec)
-        const text =
-          c.source === 'dialogue' && c.characterName
-            ? `${c.characterName}：${c.text}`
-            : c.text
+        const text = c.characterName ? `${c.characterName}：${c.text}` : c.text
         return `${i + 1}\n${start} --> ${end}\n${text}\n`
       })
       .join('\n')
@@ -113,10 +116,29 @@ export class SubtitleService {
     shot: TimelineShot,
     sceneEntity: SceneScriptEntity,
   ): Promise<Array<{ id: string; text: string; characterName: string }>> {
-    // V3：从 storyboard.dialogue_ids 关联（实际 schema：storyboard_dialogue_links 表）
-    // 简化：用 sceneEntity.dialogues JSON 顺序按 shot 数均分（兼容 V2 路径）
-    // 真正的精细分配需要 storyboard_dialogue_links 表，留 follow-up
-    const allDialogues = (sceneEntity.dialogues as any[] | null) ?? []
+    // 说话人解析优先级（H8）：
+    //   1. 归一化 scene_dialogues 表（character_name 为权威角色名，V3 路径）
+    //   2. scene_scripts.dialogues JSON 列（V2 兼容回退）
+    //   3. 都解析不到 → "未知角色"
+    // 对话到分镜的分配保持原有简化策略：按 shot 在场景内的位置均分
+    // （真正的精细分配需要 storyboard_dialogue_links 表，留 follow-up）
+    const dialoguesTable = await this.ds
+      .getRepository(SceneDialogueEntity)
+      .find({ where: { sceneScriptId: sceneEntity.id }, order: { sortOrder: 'ASC' } })
+      .catch(() => [] as SceneDialogueEntity[])
+
+    const allDialogues: Array<{ id: string; text: string; characterName: string }> =
+      dialoguesTable.length > 0
+        ? dialoguesTable.map((d) => ({
+            id: d.id,
+            text: d.text ?? '',
+            characterName: d.characterName?.trim() || UNKNOWN_SPEAKER,
+          }))
+        : ((sceneEntity.dialogues as any[] | null) ?? []).map((d: any, i: number) => ({
+            id: d.id ?? `d_${i}`,
+            text: d.text ?? '',
+            characterName: (typeof d.characterName === 'string' && d.characterName.trim()) || UNKNOWN_SPEAKER,
+          }))
 
     // 这里的简化：平均分给场景内的 shots
     // 算 shot 在场景内的位置，按比例切分对话
@@ -126,11 +148,7 @@ export class SubtitleService {
     const dialoguesPerShot = Math.ceil(allDialogues.length / sceneShots)
     const start = idxInScene * dialoguesPerShot
     const end = Math.min(start + dialoguesPerShot, allDialogues.length)
-    return allDialogues.slice(start, end).map((d: any) => ({
-      id: d.id ?? `d_${start}_${end}`,
-      text: d.text ?? '',
-      characterName: d.characterName ?? '',
-    }))
+    return allDialogues.slice(start, end)
   }
 
   private async countShotsInScene(sceneId: string): Promise<number> {
@@ -174,7 +192,7 @@ export class SubtitleService {
         endSec: Math.min(endSec, shot.endSec),
         text: d.text.trim(),
         source: 'dialogue',
-        characterName: d.characterName || undefined,
+        characterName: d.characterName,
         dialogueId: d.id,
         storyboardId: shot.storyboardId,
       })

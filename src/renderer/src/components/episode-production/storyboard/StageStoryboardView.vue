@@ -31,13 +31,27 @@
           <el-icon><Scissor /></el-icon>
           重新分段
         </el-button>
-        <el-button text size="small" type="primary" :loading="generatingAll" :disabled="pendingSegments.length === 0" @click="onGenerateAll">
+        <el-button
+          text
+          size="small"
+          type="primary"
+          :loading="generatingAll"
+          :disabled="pendingSegments.length === 0"
+          title="参考图模式请进入制作页生成（自动带关键帧）"
+          @click="onGenerateAll"
+        >
           <el-icon><VideoCamera /></el-icon>
           {{ generatingAll ? `生成中 ${genAllDone}/${genAllTotal}` : '全部生成' }}
         </el-button>
-        <el-button text size="small" :disabled="scenes.length === 0" :loading="generating" @click="onGenerateAllStoryboards">
+        <el-button
+          text
+          size="small"
+          :disabled="scenes.length === 0"
+          :loading="generating"
+          @click="onGenerateAllStoryboards"
+        >
           <el-icon><MagicStick /></el-icon>
-          批量生成分镜
+          {{ generating && cogenProgress ? `场景 ${cogenProgress.sceneNumber}/${cogenProgress.totalScenes}` : '批量生成分镜' }}
         </el-button>
       </div>
     </div>
@@ -110,6 +124,7 @@
                       :type="seg.status === 'completed' ? 'info' : 'primary'"
                       :loading="generatingSegmentId === seg.segmentId"
                       :disabled="generatingAll"
+                      title="参考图模式请进入制作页生成（自动带关键帧）"
                       @click="onGenerateSegment(seg)"
                     >
                       {{ seg.status === 'completed' ? '重新生成' : seg.status === 'error' ? '重试' : '生成视频' }}
@@ -176,7 +191,7 @@
  *
  * 数据：getEpisode → scriptId → listScenes → listStoryboards(sceneId) + listSegments(episodeId)。
  */
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { MagicStick, Picture, Plus, Scissor, VideoCamera, VideoPlay } from '@element-plus/icons-vue'
 import SceneNav from '@/components/episode-production/script/SceneNav.vue'
@@ -220,6 +235,13 @@ const genAllDone = ref(0)
 const genAllTotal = ref(0)
 const playDialogVisible = ref(false)
 const playSegment = ref<SegmentItem | null>(null)
+
+/**
+ * H13 cogen 进度（ep:cogen-progress 事件，负载 { sceneNumber, totalScenes, status }）：
+ * 「批量生成分镜」按钮 loading 期间显示"场景 x/N"。主进程逐场景推送。
+ */
+const cogenProgress = ref<{ sceneNumber: number; totalScenes: number; status: 'start' | 'done' | 'error' } | null>(null)
+let unsubscribeCogenProgress: (() => void) | null = null
 
 // 视频 provider / model（片段级生成用；默认取项目 config.videoModel，否则第一个可用 provider）
 const videoProviders = ref<Array<{ providerConfigId: string; name: string; ready: boolean; models: Array<{ id: string; name: string }> }>>([])
@@ -395,7 +417,7 @@ async function onRecompute(): Promise<void> {
   }
 }
 
-/** 片段级生成（默认 text2video；单段失败后状态写回 error，可重试） */
+/** 片段级生成（不传 forceMode：由后端 pickVideoMode 按关键帧数自动选 text2video/参考图模式） */
 async function onGenerateSegment(seg: SegmentItem): Promise<void> {
   if (!videoProviderId.value || !videoModelId.value) {
     ElMessage.warning('请先在右上角选择视频模型')
@@ -406,7 +428,6 @@ async function onGenerateSegment(seg: SegmentItem): Promise<void> {
     const r = await (window.electronAPI.episodeProduction as any).generateSegmentVideo(seg.segmentId, {
       providerConfigId: videoProviderId.value,
       modelId: videoModelId.value,
-      forceMode: 'text2video',
     })
     if (r?.success) {
       ElMessage.success(`片段 ${seg.seq} 视频已生成`)
@@ -441,7 +462,6 @@ async function onGenerateAll(): Promise<void> {
       const r = await (window.electronAPI.episodeProduction as any).generateSegmentVideo(seg.segmentId, {
         providerConfigId: videoProviderId.value,
         modelId: videoModelId.value,
-        forceMode: 'text2video',
       })
       results.push({ seq: seg.seq, ok: !!r?.success, error: r?.success ? undefined : (r?.error || '未知错误') })
     } catch (e: any) {
@@ -495,6 +515,7 @@ async function onGenerateAllStoryboards(): Promise<void> {
   // 绑定 ID 由代码侧构造回填）。参数是 episode.id（service 内部自解析 scriptId）。
   if (!script.value?.scriptId || generating.value) return
   generating.value = true
+  cogenProgress.value = null
   try {
     const r = await window.electronAPI.episodeProduction.cogenStoryboards(props.episodeId)
     if (r.success) {
@@ -520,6 +541,7 @@ async function onGenerateAllStoryboards(): Promise<void> {
     ElMessage.error(e?.message || '生成失败')
   } finally {
     generating.value = false
+    cogenProgress.value = null
   }
 }
 
@@ -536,8 +558,21 @@ function durationLabel(d?: number): string {
 
 watch(() => props.episodeId, () => void load())
 onMounted(() => {
+  // H13：订阅 cogen 逐场景进度（ep:cogen-progress；onCogenProgress 返回退订函数，同 onStoryboardsProgress 写法）
+  const api = window.electronAPI?.episodeProduction as any
+  if (typeof api?.onCogenProgress === 'function') {
+    unsubscribeCogenProgress = api.onCogenProgress(
+      (_event: any, data: { sceneNumber: number; totalScenes: number; status: 'start' | 'done' | 'error' }) => {
+        cogenProgress.value = data
+      },
+    )
+  }
   void loadVideoProviders()
   void load()
+})
+onUnmounted(() => {
+  unsubscribeCogenProgress?.()
+  unsubscribeCogenProgress = null
 })
 </script>
 

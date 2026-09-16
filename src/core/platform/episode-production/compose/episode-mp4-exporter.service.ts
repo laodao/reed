@@ -412,6 +412,7 @@ export class EpisodeMp4ExporterService {
    *     （片段视频是整段产物，无法按镜裁剪）。
    *   - 全部入选分镜都没有 segmentId（存量未分段项目）→ 返回 null，
    *     调用方回退现有逐镜 xfade 路径，行为与改造前完全一致。
+   *   - status='superseded' 的片段一律跳过（其分镜被替换后不得拼进成片）。
    * 返回 unitShotIds：每单元包含的分镜 ID（配音收集按镜定位对白用）。
    */
   private async buildExportUnits(
@@ -438,6 +439,11 @@ export class EpisodeMp4ExporterService {
         // 未分段分镜：保持单镜单元（混合态过渡兼容）
         units.push({ ...shot })
         unitShotIds.push([shot.storyboardId])
+        continue
+      }
+      // superseded 片段（分镜已被 cogen/重拆替换）不参与导出——
+      // 正常路径下其分镜已删不会到达这里，此处防御旧数据/竞态
+      if (segMap.get(shot.segmentId)?.status === 'superseded') {
         continue
       }
       const existingIdx = unitBySegment.get(shot.segmentId)

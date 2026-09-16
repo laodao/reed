@@ -927,6 +927,13 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-domain-learning-tables'
     )
     await createDomainLearningTables(this.dataSource)
+
+    // H5 视频任务崩溃恢复（2026-09-16 ep-hardening）：storyboards / ep_video_segments
+    // 加 provider_task_id（幂等，双语种；Web 端 initDatabase 有同构调用，两处必须同步）
+    const { addVideoProviderTaskId } = await import(
+      '@core/database/migrations/add-video-provider-task-id'
+    )
+    await addVideoProviderTaskId(this.dataSource)
   }
 
   /**

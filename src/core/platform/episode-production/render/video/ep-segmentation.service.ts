@@ -7,8 +7,10 @@
  *   2. 场景边界必切；场景内按镜头 duration 累加、超预算（默认 15s，项目级可配）切分；
  *      单镜超预算独成段（规则实现见 segment-planner.ts 纯函数）
  *   3. 幂等：先删该 episode 未完成的 segment（pending/generating/error）并清除其
- *      分镜回填关系；已 completed 的 segment 及其分镜不动，剩余分镜重新分段，
- *      seq 从现有 max(seq) 续排
+ *      分镜回填关系；已 completed 的 segment 做有效性校验——其关联分镜
+ *      （storyboards.segment_id 回填）若已全部不存在（cogen/重拆替换），
+ *      标记 status='superseded'（保留行与 video_path 可追溯，不参与合成/导出）；
+ *      其余 completed 段及其分镜不动，剩余分镜重新分段，seq 从现有 max(seq) 续排
  *   4. 输出分段预览（segment 列表含 shot 数/预估时长/状态）
  *
  * 预算来源优先级：调用方 opts.budgetSec → 项目 config.segmentDurationBudgetSec → 15s。
@@ -72,10 +74,16 @@ export class EpSegmentationService {
     this.segmentRepo = new EpVideoSegmentRepository(ds)
   }
 
-  /** 读取当前分段（不重算），供 UI 展示 */
-  async preview(episodeId: string): Promise<SegmentPreview> {
+  /** 读取当前分段（不重算），供 UI 展示；默认排除 superseded（合成/导出语义） */
+  async preview(
+    episodeId: string,
+    opts?: { includeSuperseded?: boolean },
+  ): Promise<SegmentPreview> {
     const { scenes, budgetSec } = await this.loadContext(episodeId)
-    const segments = await this.segmentRepo.listByEpisode(episodeId)
+    const all = await this.segmentRepo.listByEpisode(episodeId)
+    const segments = opts?.includeSuperseded
+      ? all
+      : all.filter(s => s.status !== 'superseded')
     const sceneMap = new Map(scenes.map(s => [s.id, s]))
     const items: SegmentPreviewItem[] = []
     for (const seg of segments) {
@@ -114,15 +122,28 @@ export class EpSegmentationService {
     const { scenes, budgetSec: ctxBudget } = await this.loadContext(episodeId)
     const budgetSec = clampBudgetSec(opts?.budgetSec ?? ctxBudget)
 
-    // 1. 清掉未完成的 segment + 其分镜回填；completed 的不动
+    // 1. 清掉未完成的 segment + 其分镜回填；completed 的先做有效性校验
     const existing = await this.segmentRepo.listByEpisode(episodeId)
-    const kept = existing.filter(s => s.status === 'completed')
-    const keptIds = new Set(kept.map(s => s.id))
+    const kept: EpVideoSegment[] = []
     for (const seg of existing) {
-      if (seg.status === 'completed') continue
-      await this.storyboardRepo.clearSegment(seg.id)
-      await this.segmentRepo.delete(seg.id)
+      if (seg.status !== 'completed') {
+        await this.storyboardRepo.clearSegment(seg.id)
+        await this.segmentRepo.delete(seg.id)
+        continue
+      }
+      // completed 段的关联分镜（storyboards.segment_id 回填）已全部不存在
+      // （被 cogen/重拆替换删除）→ superseded，不再保留参与分段/合成/导出
+      const shots = await this.storyboardRepo.getBySegmentId(seg.id)
+      if (shots.length === 0) {
+        await this.segmentRepo.update(seg.id, { status: 'superseded' })
+        console.warn(
+          `[ep-segmentation] 片段 seq=${seg.seq} (${seg.id}) 关联分镜已全部不存在，标记 superseded`,
+        )
+        continue
+      }
+      kept.push(seg)
     }
+    const keptIds = new Set(kept.map(s => s.id))
 
     // 2. 逐场景拆分未归入 completed 段的分镜
     let nextSeq = existing.reduce((max, s) => Math.max(max, s.seq), 0) + 1

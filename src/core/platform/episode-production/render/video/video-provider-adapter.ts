@@ -100,6 +100,11 @@ export interface TextToVideoInput {
   quality?: 'high' | 'low'
   /** 项目 config.videoSteps 透传（D6）；不传 → provider 默认 */
   steps?: number
+  /**
+   * 异步任务拿到 taskId 后立即回调（轮询开始前；2026-09-16 ep-hardening H5）。
+   * 用于把 taskId 落库——进程崩溃后启动恢复凭它回网关查终态。
+   */
+  onTaskId?: (taskId: string) => void | Promise<void>
 }
 
 export interface ImageToVideoInput {
@@ -113,6 +118,8 @@ export interface ImageToVideoInput {
   quality?: 'high' | 'low'
   /** 项目 config.videoSteps 透传（D6）；不传 → provider 默认 */
   steps?: number
+  /** 异步任务拿到 taskId 后立即回调（轮询开始前；H5 崩溃恢复落库用） */
+  onTaskId?: (taskId: string) => void | Promise<void>
 }
 
 export interface KeyframesToVideoInput {
@@ -132,6 +139,8 @@ export interface KeyframesToVideoInput {
    * 仅 capabilities.subjectSupport=true 时有效；caller 由 keyframe-generation 决定是否传入。
    */
   subjects?: SubjectInput[]
+  /** 异步任务拿到 taskId 后立即回调（轮询开始前；H5 崩溃恢复落库用） */
+  onTaskId?: (taskId: string) => void | Promise<void>
 }
 
 /**

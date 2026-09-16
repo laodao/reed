@@ -189,6 +189,8 @@ async function handleGenerateVideoSegment(
       width: opts?.width,
       height: opts?.height,
       forceMode: opts?.forceMode,
+      providerId: opts?.providerConfigId,
+      modelId: opts?.modelId,
     } satisfies GenerateVideoSegmentInput)
     return { success: true, data }
   } catch (e: any) {

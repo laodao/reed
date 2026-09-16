@@ -38,7 +38,7 @@ export class AnthropicSdkProvider extends BaseProvider {
     this.client = new Anthropic({
       apiKey: config.apiKey,
       baseURL: config.baseUrl || template?.apiConfig?.baseUrl || this.getDefaultBaseUrl(),
-      timeout: 60_000,
+      timeout: 300_000,
       maxRetries: 0
     })
   }

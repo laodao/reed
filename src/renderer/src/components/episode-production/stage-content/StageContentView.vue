@@ -11,7 +11,7 @@
     本 stage 显示当前剧集的内容来源（outline / uploaded）+ AI 识别出的
     要素清单，让用户确认后进入 ② 资产 stage。
 
-    AI 识别在创建剧集时跑（CreateEpisodeDialog 内）；本 stage 仅展示 +
+    AI 识别在创建剧集时跑（episode.handler 创建流程内）；本 stage 仅展示 +
     "确认要素"。重新识别 / 编辑识别结果 留 P6 follow-up。
   -->
   <div class="stage-content-view">
