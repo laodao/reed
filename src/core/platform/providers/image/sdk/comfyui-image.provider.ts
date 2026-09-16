@@ -98,7 +98,9 @@ export class ComfyUIImageProvider extends BaseImageProvider {
   async generateImage(request: ImageGenerationRequest): Promise<ImageGenerationResponse> {
     try {
       const baseUrl = this.buildUrl('')
-      const refs = collectReferences(request)
+      // 网关 Kontext 为单图模式：多参考图会被 HTTP 400 拒绝，只取第一张（关键帧管线把
+      // 最重要的资产参考图排在前面，见 keyframe-generation collectReferenceImages）
+      const refs = collectReferences(request).slice(0, 1)
       const payload: Record<string, unknown> = {
         prompt: request.prompt,
         size: sizeFor(request.width, request.height),

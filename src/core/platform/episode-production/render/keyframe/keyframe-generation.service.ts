@@ -936,19 +936,6 @@ export class KeyframeGenerationService {
       return { id: hit.id, imagePath: hit.imagePath }
     }
 
-    if (assets.location) {
-      const ov = await tryOverride('location', assets.location.bindingId)
-      if (ov) {
-        refs.push(ov)
-      } else {
-        const r = await pickReferenceImage(this.imageSvc, {
-          kind: 'location',
-          bindingId: assets.location.bindingId,
-          dims: { time: scene.timeOfDay, weather: scene.weather ?? undefined },
-        })
-        if (r.image) refs.push({ id: r.image.id, imagePath: r.image.imagePath })
-      }
-    }
     for (const c of assets.characters) {
       const ov = await tryOverride('character', c.bindingId)
       if (ov) {
@@ -995,6 +982,20 @@ export class KeyframeGenerationService {
         dims: {},
       })
       if (r.image) refs.push({ id: r.image.id, imagePath: r.image.imagePath })
+    }
+    // 地点最后：单图参考的网关（Kontext 单图模式）只取第一张时，优先保住角色/物品身份
+    if (assets.location) {
+      const ov = await tryOverride('location', assets.location.bindingId)
+      if (ov) {
+        refs.push(ov)
+      } else {
+        const r = await pickReferenceImage(this.imageSvc, {
+          kind: 'location',
+          bindingId: assets.location.bindingId,
+          dims: { time: scene.timeOfDay, weather: scene.weather ?? undefined },
+        })
+        if (r.image) refs.push({ id: r.image.id, imagePath: r.image.imagePath })
+      }
     }
     return refs
   }
