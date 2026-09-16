@@ -22,6 +22,7 @@ import { CronExpressionParser } from 'cron-parser'
 import { LOCAL_DEFAULT_USER_ID, runWithUserAsync } from '@core/context/user-context'
 import type { WorkflowTrigger } from '@shared/types/workflow.types'
 import { WORKFLOW_DEFAULTS, WORKFLOW_TRIGGER_TYPES } from '@shared/types/workflow.types'
+import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 import { subscribeDomainEvents, type DomainEvent } from './domain-event-bus'
 import type { WorkflowDefinitionRepository } from '../../../database/repositories/workflow-definition.repository'
 import type { WorkflowRunService } from '../workflow-run.service'
@@ -35,8 +36,15 @@ const logger = createLogger('WorkflowTriggerScheduler')
  * 等），"运行 → 发事件 → 再触发"可形成无限自触发链；跨工作流互相触发可无限乒乓。
  * 限流让任何单条链在 1 分钟内衰减到静默（超限记 skipped 由 runService 互斥兜底），
  * 而非无限烧 LLM/存储。内存单实例实现（部署多实例时按实例分别计数，可接受）。
+ *
+ * 2026-09-13 参数设置：次数上限改为**现读**「参数设置 → 工作流 → 触发与调度」
+ * （`workflowRuntimeParams().trigger.eventMaxPerMinute`）；下面这个常量是内置默认值。
  */
 const EVENT_TRIGGER_MAX_PER_MINUTE = 20
+
+/** 生效的事件触发限流上限（使用点现读） */
+const eventTriggerMaxPerMinute = (): number =>
+  workflowRuntimeParams().trigger.eventMaxPerMinute || EVENT_TRIGGER_MAX_PER_MINUTE
 
 /** 定时器注入接口（测试用 fake timers） */
 export interface SchedulerTimer {
@@ -133,7 +141,7 @@ export class WorkflowTriggerScheduler {
       logger.error('[WorkflowTriggerScheduler] 扫描到期触发器失败', e)
       return
     }
-    const graceMs = this.tickMs * WORKFLOW_DEFAULTS.cronGraceFactor
+    const graceMs = this.tickMs * (workflowRuntimeParams().trigger.cronGraceFactor || WORKFLOW_DEFAULTS.cronGraceFactor)
     for (const row of due) {
       const cronTriggers = row.triggers.filter(
         (t): t is Extract<WorkflowTrigger, { type: 'cron' }> => t.type === WORKFLOW_TRIGGER_TYPES.cron && t.enabled
@@ -237,7 +245,7 @@ export class WorkflowTriggerScheduler {
       if (t.match && !matchPayload(t.match, event.payload)) continue
       // 风暴防护：滑动窗口限流（自触发链/跨工作流乒乓在此衰减到静默）
       if (!this.allowEventTrigger(t.definitionId)) {
-        logger.warn(`[WorkflowTriggerScheduler] 事件触发限流：${t.definitionId} 在 1 分钟内触发超过 ${EVENT_TRIGGER_MAX_PER_MINUTE} 次，本次跳过（疑似自触发链/事件风暴）`)
+        logger.warn(`[WorkflowTriggerScheduler] 事件触发限流：${t.definitionId} 在 1 分钟内触发超过 ${eventTriggerMaxPerMinute()} 次，本次跳过（疑似自触发链/事件风暴）`)
         continue
       }
       try {
@@ -254,12 +262,13 @@ export class WorkflowTriggerScheduler {
     }
   }
 
-  /** 滑动窗口限流：1 分钟内每定义最多 EVENT_TRIGGER_MAX_PER_MINUTE 次事件触发 */
+  /** 滑动窗口限流：1 分钟内每定义最多 N 次事件触发（N 现读「参数设置 → 工作流 → 触发与调度」） */
   private allowEventTrigger(definitionId: string): boolean {
     const now = Date.now()
     const windowStart = now - 60_000
+    const limit = eventTriggerMaxPerMinute()
     const stamps = (this.eventTriggerWindow.get(definitionId) ?? []).filter((ts) => ts > windowStart)
-    if (stamps.length >= EVENT_TRIGGER_MAX_PER_MINUTE) {
+    if (stamps.length >= limit) {
       this.eventTriggerWindow.set(definitionId, stamps)
       return false
     }

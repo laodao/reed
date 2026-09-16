@@ -13,6 +13,7 @@
 import { markdownToDocx } from '@core/utils/markdown-to-docx'
 import type { DocumentTemplate } from './templates'
 import { renderTemplateHtml, DOCUMENT_TEMPLATES } from './templates'
+import type { DocumentEnhanceOptions } from './markdown-enhance'
 
 /** HTML→二进制产物的平台渲染器（Electron 注入；Web 端可缺省降级） */
 export interface IHtmlRenderer {
@@ -29,6 +30,8 @@ export interface RenderDocumentInput {
   template?: DocumentTemplate
   /** 文档标题（页眉/文件名用） */
   title?: string
+  /** 公式（KaTeX）与 mermaid 增强；缺省关闭（既有消费方行为不变） */
+  enhance?: DocumentEnhanceOptions
 }
 
 export interface RenderedDocument {
@@ -81,6 +84,7 @@ export class DocumentToolsService {
     return await renderTemplateHtml(input.markdown, {
       template: input.template ?? DOCUMENT_TEMPLATES.generic,
       title: input.title,
+      enhance: input.enhance,
     })
   }
 

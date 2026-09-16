@@ -30,6 +30,7 @@ import type {
   TrajectoryEntry,
 } from '@core/platform/agent-runtime/types'
 import { createHostKit } from '@core/platform/agent-runtime'
+import { loadAgentBudget } from '@core/platform/agent-runtime/budget/agent-budget'
 import { DbAgentSessionStore } from '@core/platform/agent-runtime/memory/session-store'
 import type { TrajectoryAppendPort } from '@core/platform/agent-runtime/trajectory/sink'
 import { getMemoryFlywheel } from '@core/platform/workflow/workflow-boot'
@@ -40,13 +41,17 @@ import {
   type SystemAgentTurnRef,
 } from '@core/platform/workflow/tools/system-agent-tools'
 import type { AgentMessageMeta } from '@shared/types'
+import { AGENT_BUDGET_DEFAULTS } from '@shared/types/agent-budget.types'
 
 const logger = createLogger('SystemAgentChat')
 
 /** 定义 id（轨迹/审计/会话定位用） */
 export const SYSTEM_AGENT_DEFINITION_ID = 'system-chat-agent'
-/** 每轮最大步数（与任务执行器同量级；多轮对话靠用户消息分轮，不靠大 maxSteps） */
-export const SYSTEM_AGENT_MAX_STEPS = 12
+/**
+ * 每轮最大步数的**内置默认值**（真正的生效值从 `agent:budget.maxSteps.systemAgent` 读，
+ * 设置页「参数设置 → 系统助手」可调）。这里只作为默认来源登记，业务代码不再直接引它。
+ */
+export const SYSTEM_AGENT_DEFAULT_MAX_STEPS = AGENT_BUDGET_DEFAULTS.maxSteps.systemAgent
 /** 工具入参摘要上限（流式 chips 展示） */
 export const AGENT_ARGS_DIGEST_MAX = 120
 
@@ -142,6 +147,11 @@ export interface AgentChatTurnDeps {
   emit: (event: StreamEvent) => void
   /** 轨迹逐条外推（工作台实时时间线；可选——缺省不推） */
   onTrajectoryEntry?: OnTrajectoryEntry
+  /**
+   * settings 读取端口（平台预算 `agent:budget`；可选——缺省用内置默认预算）。
+   * 生产由 sendMessage 装配真实 settings；单测可省。
+   */
+  settings?: import('@core/platform/agent-runtime/budget/agent-budget').AgentBudgetSettingsPort | null
 }
 
 export interface AgentChatTurnResult {
@@ -170,7 +180,9 @@ export async function runAgentChatTurn(
   },
 ): Promise<AgentChatTurnResult> {
   // 写类工具每轮频控（总收口 C-P1-2：免审批 write 工具曾零频控——12 步×N 个
-  // run_workflow 的成本放大面；读类不限）
+  // run_workflow 的成本放大面；读类不限）。2026-09-13 参数配置化：用户可在设置页按工具名覆盖，
+  // 没配就用这里的默认（**只认用户显式覆盖**，避免读到别的宿主对同名工具的默认）
+  const { budget } = await loadAgentBudget(deps.settings)
   const WRITE_CALL_CAPS: Record<string, number> = {
     run_workflow: 2,
     create_task_plan: 1,
@@ -178,10 +190,10 @@ export async function runAgentChatTurn(
     invoke_skill: 3,
   }
   const defs = deps.registry.buildToolDefs(
-    SYSTEM_AGENT_WHITELIST.map((tool) => ({
-      tool,
-      ...(WRITE_CALL_CAPS[tool] !== undefined ? { maxCalls: WRITE_CALL_CAPS[tool] } : {}),
-    })),
+    SYSTEM_AGENT_WHITELIST.map((tool) => {
+      const maxCalls = budget.maxCalls.overrides[tool] ?? WRITE_CALL_CAPS[tool]
+      return { tool, ...(maxCalls !== undefined ? { maxCalls } : {}) }
+    }),
   )
   if (!defs['discover_capabilities']) {
     return { success: false, error: '系统 Agent 工具集未注册（workflow-boot 装配失败），Agent 模式不可用', stopReason: 'error', toolCalls: [], refs: [] }
@@ -216,7 +228,7 @@ export async function runAgentChatTurn(
       tools: () => defs,
       resolveModel: deps.resolveModel,
       systemPrompt: () => params.systemPrompt,
-      maxSteps: SYSTEM_AGENT_MAX_STEPS,
+      maxSteps: budget.maxSteps.systemAgent,
       // 记忆装配（原 sendMessage 层 L0+L1）收敛 kit 内置 + memory_assembly 统一留痕
       memory: {
         scope: null,
@@ -394,6 +406,8 @@ export class SystemAgentChatService {
           trajectoryPort,
           registry,
           resolveModel,
+          // 平台预算（agent:budget）：步数与写类工具频控可由设置页调整（2026-09-13）
+          settings: dbManager.settings ?? null,
           emit: (event) => getEventEmitter().emit('chat:stream', event),
           onTrajectoryEntry: (scopeKey, entry) => {
             try {

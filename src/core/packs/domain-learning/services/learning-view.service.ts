@@ -85,6 +85,8 @@ export class LearningViewService {
         works: row.works,
         contentMd: row.contentMd,
         evidenceSources: row.evidenceSources,
+        // 讲义设计规格（2026-09-14）：渲染层据此出规格条与区导航、区级重写据此重发规格锁
+        spec: row.spec,
         version: row.version,
         status: row.status as 'draft' | 'published',
         verification: row.verification

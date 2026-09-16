@@ -17,6 +17,40 @@
       </el-button>
     </div>
 
+    <!-- Agent 活动行（2026-09-13：起步研究/研究此概念这类长任务，滚动显示系统正在做什么）。
+         空主题的起步态改在起步卡片内、按钮下方显示（用户需求：反馈要贴着触发点），
+         这里让位避免同一轮出现两份活动行。
+         2026-09-14 追加：选中的概念没有讲义时（中栏是「生成中/研究此概念」空态），
+         活动行改在空态里、「研究此概念」按钮下方居中显示，这里同样让位。 -->
+    <AgentActivityStrip v-if="spaceId && !isEmptySpace && !currentConceptNoCard" :space-id="spaceId" />
+
+    <!-- 知识体系方案（固定流程入口：待确认时有高亮提示，确认后才生成知识点） -->
+    <div v-if="planHint" class="plan-bar" :class="{ pending: planHint.pending }">
+      <span class="plan-bar-text">{{ planHint.text }}</span>
+      <el-button link type="primary" size="small" @click="openPlan">查看方案</el-button>
+    </div>
+
+    <!-- 知识体系方案确认弹窗（2026-09-13 用户需求：对齐诉求 → 确认体系 → 才生成） -->
+    <PlanConfirmDialog
+      v-if="spaceId"
+      v-model="planVisible"
+      :space-id="spaceId"
+      :mode="planDriveMode"
+      :concept-id="null"
+      @done="onPlanDriven"
+    />
+
+    <!-- 讲义方案确认弹窗（2026-09-14 讲义流水线：先规划规格与区级计划 → 确认 → 再逐区精写） -->
+    <LessonPlanDialog
+      v-if="spaceId && currentConceptId"
+      v-model="lessonPlanVisible"
+      :space-id="spaceId"
+      :concept-id="currentConceptId"
+      :concept-name="currentConcept?.name"
+      mode="research"
+      @done="onLessonPlanDriven"
+    />
+
     <!-- 主题学习前置要求（2026-09-12：整个领域的学习门槛；有则显示） -->
     <div v-if="spacePrereqs.length" class="space-prereq">
       <span class="space-prereq-label">学习前置</span>
@@ -32,7 +66,6 @@
           <span class="chip-flag">{{ p.inSpace ? '空间内会教' : '需自备' }}</span>
         </span>
       </el-tooltip>
-      <span class="space-prereq-note">学这个主题之前需要具备；缺的先补再开始</span>
     </div>
 
     <!-- 手工追加知识点（2026-09-12：用户补全知识体系；前置直连为已确认边） -->
@@ -267,21 +300,77 @@
                 <el-tooltip v-if="currentConcept.card" content="讲义生成演示（在线浏览）" placement="bottom" :show-after="300">
                   <el-button circle size="small" plain :icon="Promotion" @click="slidesVisible = true" />
                 </el-tooltip>
-                <!-- 发布闭环（2026-09-09 复盘）：draft=AI 草稿待人工确认；确认后正式采用并计入统计 -->
+                <!-- 发布闭环（2026-09-09 复盘）：draft=AI 草稿待人工确认；确认后正式采用并计入统计。
+                     2026-09-15 用户需求：标题栏右侧这几项一律压成图标（悬停看 tooltip），
+                     腾出横向空间给讲义标题——原本靠文字承载的信息（发布版本号、待复核条数、
+                     导出格式）分别挪进 tooltip / 角标，不许丢。 -->
                 <template v-if="currentConcept.card">
                   <!-- 自动核验结果消费（M4-UX2 的 verification 从"只写不读"到可见） -->
                   <el-tooltip :content="verifyTip" placement="bottom" :show-after="300">
-                    <el-tag size="small" effect="plain" :type="verifyTagType">{{ verifyLabel }}</el-tag>
+                    <!-- role=img + aria-label：文字撤掉后，读屏器与键盘用户仍拿得到状态 -->
+                    <span
+                      class="verify-chip"
+                      :class="verifyTone"
+                      role="img"
+                      :aria-label="verifyLabel"
+                      tabindex="0"
+                    >
+                      <el-icon :class="{ 'is-loading': verifyStatus === 'verifying' }">
+                        <component :is="verifyIcon" />
+                      </el-icon>
+                      <span v-if="verifyIssues > 0" class="verify-count">{{ verifyIssues }}</span>
+                    </span>
                   </el-tooltip>
-                  <el-button
+                  <el-tooltip
                     v-if="currentConcept.card.status === 'draft'"
-                    size="small"
-                    type="primary"
-                    plain
-                    :loading="publishing"
-                    @click="publishCurrentLesson"
-                  >确认发布 v{{ currentConcept.card.version }}</el-button>
+                    :content="publishTip"
+                    placement="bottom"
+                    :show-after="300"
+                  >
+                    <el-button
+                      circle
+                      size="small"
+                      type="primary"
+                      plain
+                      aria-label="确认发布"
+                      :loading="publishing"
+                      :icon="Stamp"
+                      @click="publishCurrentLesson"
+                    />
+                  </el-tooltip>
                   <el-tag v-else size="small" type="success" effect="plain">已发布 v{{ currentConcept.card.version }}</el-tag>
+                  <!-- 讲义导出（2026-09-15：知识点正文 md / PDF / 长图） -->
+                  <!-- 注意：command 事件带 (command, 组件实例, 事件)，处理函数只收第一个参数（见 onExportCommand） -->
+                  <el-tooltip content="导出讲义（Markdown / PDF / 长图 PNG）" placement="bottom" :show-after="300">
+                    <el-dropdown trigger="click" @command="onExportCommand">
+                      <el-button
+                        circle
+                        size="small"
+                        plain
+                        aria-label="导出讲义"
+                        :loading="exportingLesson"
+                        :icon="Download"
+                      />
+                      <template #dropdown>
+                        <el-dropdown-menu>
+                          <el-dropdown-item command="md">Markdown</el-dropdown-item>
+                          <el-dropdown-item command="pdf">PDF</el-dropdown-item>
+                          <el-dropdown-item command="image">长图 PNG</el-dropdown-item>
+                        </el-dropdown-menu>
+                      </template>
+                    </el-dropdown>
+                  </el-tooltip>
+                  <!-- 讲义版本历史（2026-09-15：查看/预览/恢复到草稿） -->
+                  <el-tooltip content="版本历史（预览 / 导出 / 恢复）" placement="bottom" :show-after="300">
+                    <el-button
+                      circle
+                      size="small"
+                      plain
+                      aria-label="版本历史"
+                      :icon="Clock"
+                      @click="openVersionHistory"
+                    />
+                  </el-tooltip>
                 </template>
                 <span v-if="lastFeedback" class="feedback-toast" :class="{ warn: lastFeedbackIsWarn }">{{ lastFeedback }}</span>
               </div>
@@ -319,15 +408,26 @@
 
           <!-- 已发布/草稿讲义（DlCardView） -->
           <div v-if="currentConcept.card" ref="lessonBodyRef" class="lesson-body block-body-pad" @mouseup="onLessonMouseUp">
+            <!-- 讲义方案（讲义流水线 Plan 阶段）：待确认时高亮，已确认也可回看规格 -->
+            <div v-if="lessonPlanHint" class="lesson-plan-bar" :class="{ pending: lessonPlanHint.pending }">
+              <span class="lpb-text">{{ lessonPlanHint.text }}</span>
+              <el-button link type="primary" size="small" @click="openLessonPlan">查看讲义方案</el-button>
+            </div>
             <SectionLesson
               :card="currentConcept.card"
               :related="currentRelated"
               @not-understand="onSectionNotUnderstand"
               @goto-concept="gotoRelatedConcept"
+              @rewrite-section="onSectionRewrite"
             />
           </div>
           <!-- 无讲义：提示 + 研究入口（dl:agent-send mode='research' 产出草稿卡片） -->
           <div v-else class="lesson-body empty-body">
+            <!-- 已有讲义方案（正文还没写）：先确认方案，再逐区精写 -->
+            <div v-if="lessonPlanHint" class="lesson-plan-bar pending in-empty">
+              <span class="lpb-text">{{ lessonPlanHint.text }}</span>
+              <el-button link type="primary" size="small" @click="openLessonPlan">查看讲义方案</el-button>
+            </div>
             <el-empty description="本概念讲义生成中">
               <el-button
                 type="primary"
@@ -338,6 +438,9 @@
                 研究此概念
               </el-button>
             </el-empty>
+            <!-- 研究此概念 的 agent 执行过程（滚动小字）：贴着触发按钮下方居中显示，表示 agent 正在工作；
+                 不再跑到页面顶部（顶部那只在普通讲义态显示） -->
+            <AgentActivityStrip v-if="spaceId" :space-id="spaceId" class="research-activity" />
           </div>
         </template>
         <template v-else>
@@ -353,6 +456,8 @@
               <el-button type="primary" size="large" :icon="Promotion" :loading="researching" @click="bootResearch">
                 {{ researching ? '正在研究领域…' : '生成首批知识' }}
               </el-button>
+              <!-- 起步研究的 agent 执行过程（滚动小字）：贴着触发按钮显示，不再跑到页面顶部 -->
+              <AgentActivityStrip v-if="spaceId" :space-id="spaceId" class="boot-activity" />
               <div v-if="bootMessage" class="boot-message" :class="{ warn: bootWarn }">{{ bootMessage }}</div>
             </div>
           </div>
@@ -393,8 +498,14 @@
           <div ref="qaListRef" class="qa-list">
             <div v-for="(t, i) in displayTurns" :key="i" class="qa-turn" :class="t.role">
               <div class="qa-bubble">
-                <div class="qa-text">{{ t.text || '…' }}</div>
-                <div v-if="i === displayTurns.length - 1 && t.role === 'assistant' && tutorStreaming" class="qa-streaming">
+                <!-- 回答：渲染 markdown（公式/表格/图/代码），可切「源码」核对原文；提问保持纯文本 -->
+                <QaAnswerView
+                  v-if="t.role === 'assistant'"
+                  :md="t.text"
+                  :streaming="isTurnStreaming(i, t)"
+                />
+                <div v-else class="qa-text-user">{{ t.text || '…' }}</div>
+                <div v-if="isTurnStreaming(i, t)" class="qa-streaming">
                   <el-icon class="is-loading"><Loading /></el-icon>正在组织回答…
                 </div>
                 <div v-if="t.sourceLabel && !tutorStreaming" class="qa-source">
@@ -574,8 +685,51 @@
       </el-dialog>
 
       <!-- 空间设置（M6：设置入口移到主题主界面；共享面板组件，打开时按空间加载） -->
-      <el-dialog v-model="settingsVisible" title="空间设置" width="520px" append-to-body :close-on-click-modal="false">
+      <el-dialog v-model="settingsVisible" title="空间设置" width="900px" append-to-body :close-on-click-modal="false">
         <SpaceSettingsPanel v-if="settingsVisible" :space-id="spaceId" @applied="settingsVisible = false" />
+      </el-dialog>
+
+      <!-- 讲义版本历史抽屉（2026-09-15：查看/预览/恢复/导出指定版本） -->
+      <el-drawer v-model="historyVisible" title="讲义版本历史" size="480px" append-to-body>
+        <template #header>
+          <div style="display: flex; align-items: center; gap: 8px">
+            <span>讲义版本历史</span>
+            <el-tag v-if="currentConcept" size="small" type="info">{{ currentConcept.name }}</el-tag>
+          </div>
+        </template>
+        <div v-if="!versions.length" style="color: #909399; padding: 20px 0; text-align: center">暂无历史版本</div>
+        <div v-for="v in versions" :key="v.cardId" class="version-item">
+          <div class="version-head">
+            <span class="version-tag">v{{ v.version }}</span>
+            <el-tag size="small" :type="v.status === 'published' ? 'success' : 'info'" effect="plain">{{ v.status === 'published' ? '已发布' : '草稿' }}</el-tag>
+            <el-tag v-if="v.isCurrent" size="small" type="warning" effect="dark">当前</el-tag>
+            <span class="version-time">{{ v.createdAt?.slice(0, 16).replace('T', ' ') }}</span>
+          </div>
+          <div v-if="v.revisionNote" class="version-note">{{ v.revisionNote }}</div>
+          <div v-if="v.changeSource" class="version-source">来源：{{ v.changeSource }}</div>
+          <div class="version-meta">
+            {{ v.sectionsCount }} 区 · {{ v.worksCount }} 著作 · {{ v.evidenceCount }} 证据
+            <template v-if="v.verifyStatus"> · 核验：{{ v.verifyStatus }}</template>
+          </div>
+          <div class="version-actions">
+            <el-button size="small" text type="primary" @click="previewVersion(v)">预览</el-button>
+            <el-button size="small" text type="primary" @click="exportVersion(v, 'md')">导出 MD</el-button>
+            <el-button size="small" text type="primary" @click="exportVersion(v, 'pdf')">导出 PDF</el-button>
+            <el-button
+              v-if="!v.isCurrent"
+              size="small"
+              text
+              type="warning"
+              :loading="restoringCardId === v.cardId"
+              @click="restoreVersion(v)"
+            >恢复到草稿</el-button>
+          </div>
+        </div>
+      </el-drawer>
+
+      <!-- 版本预览对话框（markdown 源码，便于看"改了什么"） -->
+      <el-dialog v-model="previewVisible" :title="`预览 v${previewVersionNo}`" width="720px" append-to-body>
+        <pre style="max-height: 60vh; overflow: auto; white-space: pre-wrap; font-size: 13px; background: #f6f8fa; padding: 12px; border-radius: 6px">{{ previewMarkdown }}</pre>
       </el-dialog>
     </div>
   </div>
@@ -614,7 +768,14 @@ import {
   Setting,
   Star,
   StarFilled,
+  // 讲义动作行图标化（2026-09-15）：核验状态 / 确认发布 / 导出 / 版本历史
+  WarningFilled,
+  Download,
+  Clock,
+  Stamp,
 } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { saveBlobAs, base64ToBlob } from '@/utils/file-saver'
 import { useTabsStore } from '@/stores/tabs'
 import { routeDlIntent } from '@shared/utils/domain-learning-intent'
 import { dlMapCompletionMission } from '@shared/utils/domain-learning-mission'
@@ -632,11 +793,16 @@ import {
 } from './domain-learning-ui'
 import SectionLesson from './SectionLesson.vue'
 import LessonSlides from './LessonSlides.vue'
+import QaAnswerView from './QaAnswerView.vue'
 import SpaceSettingsPanel from './SpaceSettingsPanel.vue'
+import AgentActivityStrip from './AgentActivityStrip.vue'
+import PlanConfirmDialog from './PlanConfirmDialog.vue'
+import LessonPlanDialog from './LessonPlanDialog.vue'
 import type {
   DlCardSection,
   DlChatTurn,
   DlConceptView,
+  DlLessonExportFormat,
   DlMapCoverage,
   DlMastery,
   DlNote,
@@ -646,6 +812,7 @@ import type {
   DlTreeNode,
 } from '@shared/types/domain-learning.types'
 import { DL_KNOWLEDGE_NODE_TYPES } from '@shared/types/domain-learning.types'
+import { normalizeLessonCardId, parseLessonExportFormat } from '@shared/utils/domain-learning-lesson-export'
 
 const route = useRoute()
 const router = useRouter()
@@ -747,6 +914,8 @@ const lastResearchScope = ref<{ conceptId: string | null }>({ conceptId: null })
 
 onMounted(() => {
   void loadSpace()
+  // 载入方案状态：从知识全景页起步研究回来时，也要能自动弹确认框（2026-09-13 固定流程）
+  void openPlanIfPending()
 })
 
 onUnmounted(() => {
@@ -931,6 +1100,13 @@ const currentConcept = computed<DlConceptView | null>(
   () => concepts.value.find(x => x.id === currentConceptId.value) ?? null
 )
 
+/**
+ * 当前选中的概念没有讲义 → 中栏是「生成中/研究此概念」空态。
+ * 该空态下 agent 活动行要贴在按钮下方显示，顶部那条须让位（否则活动行跑到页面顶部，
+ * 2026-09-14 用户需求）。
+ */
+const currentConceptNoCard = computed(() => !isEmptySpace.value && !!currentConcept.value && !currentConcept.value.card)
+
 /** 前置依赖边类型（后端关系枚举：prerequisite） */
 const PREREQ_TYPE = 'prerequisite'
 
@@ -1091,11 +1267,133 @@ async function completeMapWithAi(): Promise<void> {
   })
   completingMap.value = true
   rightPane.value = 'qa'
+  planDriveMode.value = 'task'
   try {
     await runAsk(mission, 'task')
+    // 固定流程第 1 步：模型应已提交诉求理解草案 → 拉方案并弹窗确认
+    await openPlanIfPending()
   } finally {
     completingMap.value = false
   }
+}
+
+// ==================== 知识体系方案（固定流程；2026-09-13） ====================
+
+/** 方案弹窗可见性 与 驱动下一轮的会话模式（research=起步研究 / task=补全地图） */
+const planVisible = ref(false)
+const planDriveMode = ref<'research' | 'task'>('research')
+
+/** 方案提示条（有草稿待确认时高亮） */
+const planHint = computed(() => {
+  const p = store.plan
+  if (!p) return null
+  if (p.syllabusConfirmed) return null // 已确认后不再显示提示条（2026-09-14 用户要求去掉那行常驻文案）
+  if (p.syllabus) return { pending: true, text: '知识体系方案待你确认：勾选要生成的知识点后才会开始生成' }
+  if (p.understandingConfirmed) return { pending: true, text: '诉求已确认——模型正在规划知识体系，稍后确认方案即可生成' }
+  if (p.understanding) return { pending: true, text: '模型提交了「我对你诉求的理解」，请确认或纠正后再生成知识点' }
+  return null
+})
+
+function openPlan(): void {
+  planVisible.value = true
+}
+
+/** 拉方案；若有待确认内容则自动弹窗（固定流程的"弹出对话框"体验）
+ *  @returns 是否弹了窗（调用方据此决定要不要再提示别的） */
+async function openPlanIfPending(): Promise<boolean> {
+  const p = await store.fetchPlan(spaceId.value)
+  if (!p) return false
+  if ((p.understanding && !p.understandingConfirmed) || (p.syllabus && !p.syllabusConfirmed)) {
+    planVisible.value = true
+    return true
+  }
+  return false
+}
+
+/** 弹窗驱动过一轮（确认/调整）后的收尾：刷新空间视图 */
+async function onPlanDriven(): Promise<void> {
+  await refreshView()
+}
+
+// ==================== 讲义方案（讲义流水线；2026-09-14） ====================
+
+/** 讲义方案弹窗可见性 */
+const lessonPlanVisible = ref(false)
+
+/** 当前概念的讲义方案（只有属于当前概念时才认——讲义是按概念写的） */
+const currentLessonPlan = computed(() => {
+  const p = store.plan
+  const id = currentConceptId.value
+  if (!p?.lesson || !id) return null
+  if (p.lessonConceptId && p.lessonConceptId !== id) return null
+  return p.lesson
+})
+
+/**
+ * 讲义方案提示条：待确认时高亮催办；已确认时给"回看规格"的入口（有卡才提示，无卡时
+ * 由空态里的那份提示条承担）。没有方案时不出条（不干扰"研究此概念"入口）。
+ */
+const lessonPlanHint = computed(() => {
+  const lp = currentLessonPlan.value
+  if (!lp) return null
+  if (store.plan?.lessonConfirmed) {
+    return { pending: false, text: `讲义方案已确认（第 ${lp.revision} 版）——助手按它逐区精写；可回看规格与区级计划` }
+  }
+  return { pending: true, text: '讲义方案待你确认：确认后助手才按每区的版式逐区精写正文' }
+})
+
+function openLessonPlan(): void {
+  lessonPlanVisible.value = true
+}
+
+/**
+ * 拉当前概念的讲义方案；有**待确认**方案时自动弹窗（与知识体系弹窗同款体验）。
+ * @returns 是否弹了窗
+ */
+async function openLessonPlanIfPending(): Promise<boolean> {
+  const id = currentConceptId.value
+  if (!id) return false
+  const p = await store.fetchPlan(spaceId.value, id)
+  if (!p?.lesson) return false
+  if (p.lessonConceptId && p.lessonConceptId !== id) return false
+  if (!p.lessonConfirmed) {
+    lessonPlanVisible.value = true
+    return true
+  }
+  return false
+}
+
+/** 讲义方案弹窗驱动过一轮（确认后逐区精写 / 调整后重做方案）后的收尾 */
+async function onLessonPlanDriven(): Promise<void> {
+  await refreshView()
+}
+
+/**
+ * 区级「重写此区」（2026-09-14）：只重做这一区，不整篇重来。
+ * 把该区现状（key/版式/正文）交给研究助手，要求**只回这一区的新 md**，其余区逐字保留，
+ * 最后仍走 dl_save_card（门禁与质检照旧）——对应 ppt-master 的"在拥有该层的那一层修"。
+ */
+async function onSectionRewrite(section: DlCardSection): Promise<void> {
+  const c = currentConcept.value
+  if (!c || researching.value || tutorStreaming.value) return
+  const layout = section.layout ?? ''
+  const takeaway = section.takeaway ? `\n- 现有结论条：${section.takeaway}` : ''
+  const body = String(section.md ?? '').slice(0, 4000)
+  await runAsk(
+    [
+      `【重写此区】概念「${c.name}」的「${section.title ?? section.key}」区（key=${section.key}${layout ? `，版式=${layout}` : ''}）需要重做：`,
+      '要求：',
+      '1. 只重做这一区——其余区**逐字保留**，不要顺手改；',
+      `2. 按版式写：${layout || '按内容选一个合适版式（要点卡/对比表/步骤条/图解/算例/公式/数据看点/引文/时间线/误区/清单/代码/结论条）'}，正文形状要与版式一致（声明要点卡就是 2~6 条短要点，声明图解就真给 figure 规格块）；`,
+      '3. 长段信息要归纳成要点/小标题/表格，不要写成一堵文字墙；给这一区补 takeaway（一句话结论）；',
+      '4. 内容要有据：沿用原证据来源，新增论断必须来自资料（不要编造）；',
+      '5. 完成后用 dl_save_card 落库（sections 全量重发，未改动的区原样照抄）。',
+      '',
+      `【该区现状】${takeaway}`,
+      body,
+    ].join('\n'),
+    'task',
+  )
 }
 
 // ---------- 空间整体进度（后端 stats 为准） ----------
@@ -1179,6 +1477,8 @@ function selectConcept(c: DlConceptView): void {
   taskLog.value = []
   taskLogOpen.value = false
   void store.fetchNotesOf(spaceId.value, c.id)
+  // 讲义方案提示条按当前概念判定（2026-09-14）：切概念时把该概念的方案读回来（失败静默，不阻塞选课）
+  void store.fetchPlan(spaceId.value, c.id)
 }
 
 // ---------- 交互：掌握度反馈（后端推进 + 重拉视图） ----------
@@ -1215,8 +1515,186 @@ async function markConfused(): Promise<void> {
 /** 确认发布当前讲义（draft→published；2026-09-09 复盘补发布闭环） */
 const publishing = ref(false)
 
+/** 讲义导出状态（2026-09-15：知识点正文 md / PDF / 长图） */
+const exportingLesson = ref(false)
+
+// ==================== 讲义版本历史（2026-09-15） ====================
+const historyVisible = ref(false)
+const versions = ref<Array<{ cardId: string; version: number; status: string; essenceType: string; sectionsCount: number; worksCount: number; evidenceCount: number; verifyStatus: string | null; revisionNote: string | null; changeSource: string | null; createdAt: string | null; updatedAt: string | null; isCurrent: boolean }>>([])
+const restoringCardId = ref<string | null>(null)
+const previewVisible = ref(false)
+const previewVersionNo = ref<number>(0)
+const previewMarkdown = ref('')
+
+async function openVersionHistory(): Promise<void> {
+  const c = currentConcept.value
+  if (!c) return
+  historyVisible.value = true
+  await loadVersions(c.id)
+}
+
+async function loadVersions(conceptId: string): Promise<void> {
+  const list = await store.listCardVersionsOf(spaceId.value, conceptId)
+  versions.value = list ?? []
+}
+
+async function previewVersion(v: typeof versions.value[number]): Promise<void> {
+  const row = await store.getCardVersionOf(spaceId.value, v.cardId)
+  if (!row) {
+    ElMessage.error('拉取版本详情失败')
+    return
+  }
+  // 拼接 markdown 预览（简化版：区标题 + 正文）
+  const lines: string[] = [`# ${currentConcept.value?.name ?? ''} v${v.version}`]
+  for (const s of row.sections ?? []) {
+    lines.push(`## ${s.title ?? s.key}`)
+    if (s.takeaway) lines.push(`> ${s.takeaway}`)
+    lines.push(s.md)
+    lines.push('')
+  }
+  previewVersionNo.value = v.version
+  previewMarkdown.value = lines.join('\n')
+  previewVisible.value = true
+}
+
+async function restoreVersion(v: typeof versions.value[number]): Promise<void> {
+  if (restoringCardId.value) return
+  const c = currentConcept.value
+  if (!c) return
+  try {
+    await ElMessageBox.confirm(
+      `恢复到 v${v.version}？将新建一版草稿（旧版全部保留），当前未保存的修改会丢失。`,
+      '恢复历史版本',
+      { confirmButtonText: '恢复', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return // 用户取消
+  }
+  restoringCardId.value = v.cardId
+  try {
+    const r = await store.restoreCardOf({ spaceId: spaceId.value, conceptId: c.id, cardId: v.cardId })
+    if (!r) {
+      ElMessage.error(store.error ?? '恢复失败')
+      return
+    }
+    ElMessage.success(`已恢复到 v${r.restoredFrom} → 新 v${r.version}（草稿）`)
+    await refreshView()
+    await loadVersions(c.id)
+  } finally {
+    restoringCardId.value = null
+  }
+}
+
+async function exportVersion(v: typeof versions.value[number], format: 'md' | 'pdf'): Promise<void> {
+  await handleExportLesson(format, v.cardId)
+}
+
+/**
+ * 「导出」下拉的命令处理（`el-dropdown` 的 command 事件）。
+ *
+ * ⚠️ Element Plus 的事件签名是 `(command, _instance, event)`：第二个参数是
+ * ElDropdownItem 的**组件实例**（element-plus 内部 `commandHandler(props.command, _instance, e)`），
+ * 第三个是原生事件。组件实例含函数与循环引用，过不了 IPC 的结构化克隆——2026-09-15 实测：
+ * 把它当 `cardId` 透传 → 导出必报「An object could not be cloned.」。
+ * 因此这里**只声明第一个参数**（格式），其余参数一律不接。
+ */
+function onExportCommand(command: unknown): void {
+  const format = parseLessonExportFormat(command)
+  if (!format) {
+    ElMessage.error('不支持的导出格式')
+    return
+  }
+  void handleExportLesson(format)
+}
+
+/**
+ * 导出讲义（md / PDF / 长图）。
+ * @param format 导出格式（白名单校验，未知格式直接拒绝）
+ * @param cardId 指定版本（缺省=当前版；历史抽屉里"导出该版"用；非字符串一律忽略）
+ */
+async function handleExportLesson(format: DlLessonExportFormat, cardId?: unknown): Promise<void> {
+  if (exportingLesson.value) return
+  const fmt = parseLessonExportFormat(format)
+  if (!fmt) {
+    ElMessage.error('不支持的导出格式')
+    return
+  }
+  const versionCardId = normalizeLessonCardId(cardId)
+  const c = currentConcept.value
+  if (!c?.card && !versionCardId) {
+    ElMessage.warning('该知识点还没有讲义，无法导出')
+    return
+  }
+  exportingLesson.value = true
+  try {
+    const r = await store.exportLessonOf({
+      spaceId: spaceId.value,
+      conceptId: c?.id ?? '',
+      format: fmt,
+      cardId: versionCardId,
+    })
+    if (!r) {
+      ElMessage.error(store.error ?? '导出失败')
+      return
+    }
+    if (r.format === 'md' && r.markdown) {
+      await saveBlobAs(r.markdown, { defaultName: r.filename, mimeType: r.mime })
+    } else if ((r.format === 'pdf' || r.format === 'image') && r.contentBase64) {
+      const blob = base64ToBlob(r.contentBase64, r.mime)
+      await saveBlobAs(blob, {
+        defaultName: r.filename,
+        filters: [{ name: r.format === 'pdf' ? 'PDF 文档' : 'PNG 图片', extensions: [r.format === 'pdf' ? 'pdf' : 'png'] }],
+      })
+    } else if (r.format === 'html' && r.html) {
+      await saveBlobAs(r.html, { defaultName: r.filename, mimeType: r.mime })
+      ElMessage.warning('当前端无 PDF/长图渲染能力，已导出排版 HTML——可打开后用浏览器「打印 → 另存为 PDF」')
+    } else {
+      ElMessage.error('导出产物异常')
+      return
+    }
+    ElMessage.success(`已导出「${r.conceptName}」v${r.version}`)
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '导出失败')
+  } finally {
+    exportingLesson.value = false
+  }
+}
+
 /** 自动核验摘要（当前卡；null=未核验） */
 const verifySummary = computed(() => currentConcept.value?.card?.verification ?? null)
+/** 核验状态（null=未核验） */
+const verifyStatus = computed(() => verifySummary.value?.status ?? null)
+/** 待复核条数（只有 needs_review 有值；图标化的角标，别把数字丢了） */
+const verifyIssues = computed(() =>
+  verifyStatus.value === 'needs_review' ? (verifySummary.value?.issues ?? 0) : 0
+)
+/** 核验状态 → 图标（通过=对勾 / 待复核=警示 / 核验中=转圈 / 未核验=问号） */
+const verifyIcon = computed(() => {
+  switch (verifyStatus.value) {
+    case 'verified':
+      return CircleCheckFilled
+    case 'needs_review':
+      return WarningFilled
+    case 'verifying':
+      return Loading
+    default:
+      return QuestionFilled
+  }
+})
+/** 核验状态 → 色调档位（ok/warn/busy/idle，样式见 .lesson-actions .verify-chip） */
+const verifyTone = computed(() => {
+  switch (verifyStatus.value) {
+    case 'verified':
+      return 'ok'
+    case 'needs_review':
+      return 'warn'
+    case 'verifying':
+      return 'busy'
+    default:
+      return 'idle'
+  }
+})
+/** 核验状态 → 展示文案（tooltip 详情用） */
 const verifyLabel = computed(() => {
   const v = verifySummary.value
   if (!v) return '未核验'
@@ -1225,18 +1703,19 @@ const verifyLabel = computed(() => {
   if (v.status === 'verifying') return '核验中'
   return '未核验'
 })
-const verifyTagType = computed<'success' | 'warning' | 'info'>(() => {
-  const v = verifySummary.value
-  if (v?.status === 'verified') return 'success'
-  if (v?.status === 'needs_review') return 'warning'
-  return 'info'
-})
 const verifyTip = computed(() => {
   const v = verifySummary.value
   if (!v) return '尚未自动核验——研究产出讲义后会自动交叉核验（知识库/权威来源）'
   const when = v.checkedAt ? new Date(v.checkedAt).toLocaleString() : '时间未知'
   const base = `自动核验：${verifyLabel.value}（${when}）`
   return v.note ? `${base}｜${v.note}` : base
+})
+
+/** 确认发布按钮的悬停提示（图标化后版本号挪到这里，信息不丢） */
+const publishTip = computed(() => {
+  const card = currentConcept.value?.card
+  if (!card) return '确认发布'
+  return `确认发布 v${card.version}（草稿 → 正式采用，并计入掌握度统计）`
 })
 
 async function publishCurrentLesson(): Promise<void> {
@@ -1330,6 +1809,7 @@ async function bootResearch(): Promise<void> {
   lastResearchScope.value = { conceptId: null }
   bootMessage.value = ''
   bootWarn.value = false
+  planDriveMode.value = 'research'
   // 空间级事件通道 dl:agent:<spaceId>（conceptId 为空）
   const unsub = store.subscribeAgentEvent(spaceId.value, null, (ev) => {
     // 只收本 space 级 research 轮事件（防与其他模式/概念并发混流）
@@ -1344,21 +1824,26 @@ async function bootResearch(): Promise<void> {
       mode: 'research',
       spaceId: spaceId.value,
       conceptId: null,
-      message: `这是新主题「${spaceName.value}」的首次研究——请为整个领域建立首批核心知识点并生成第一份讲义。`,
+      // 固定流程第 1 步：先对齐诉求（宿主会注入阶段指令；这一轮不会直接建点）
+      message: `这是新主题「${spaceName.value}」的首次研究——请先复述你对我的诉求的理解，提交诉求理解草案让我确认。`,
     })
     await refreshView()
-    const first = concepts.value.find((c) => c.nodeType !== 'group')
-    if (first) {
-      // 自动定位首批第一个概念，让用户直接看到讲义或研究入口
-      expandPathTo(first.id)
-      selectConcept(first)
-    } else if (!bootMessage.value) {
-      // 未产出：展示会话总结中的原因（资料不足时助手不编造），避免“干等无反馈”
-      const reason = (result?.content ?? '').trim()
-      bootWarn.value = true
-      bootMessage.value = reason
-        ? `本轮未生成知识点：${reason.slice(0, 260)}`
-        : '本轮未生成知识点。可先绑定含资料的知识库（知识全景 → 空间设置 → 关联知识库），或在可联网环境重试。'
+    // 模型应已提交「诉求理解」草案 → 拉方案并弹窗让用户确认（固定流程的起点）
+    const pending = await openPlanIfPending()
+    if (!pending) {
+      const first = concepts.value.find((c) => c.nodeType !== 'group')
+      if (first) {
+        // 已有知识点（例如空间非空）→ 自动定位，让用户直接看到讲义或研究入口
+        expandPathTo(first.id)
+        selectConcept(first)
+      } else if (!bootMessage.value) {
+        // 未产出：展示会话总结中的原因（资料不足时助手不编造），避免“干等无反馈”
+        const reason = (result?.content ?? '').trim()
+        bootWarn.value = true
+        bootMessage.value = reason
+          ? `本轮未提交诉求理解：${reason.slice(0, 260)}`
+          : '本轮未提交诉求理解。可先绑定含资料的知识库（知识全景 → 空间设置 → 关联知识库），或在可联网环境重试。'
+      }
     }
   } finally {
     unsub()
@@ -1401,6 +1886,9 @@ async function researchConcept(): Promise<void> {
     }
     // 研究完成后重拉视图：卡片草稿/新关系/掌握度一并刷新
     await refreshView()
+    // 讲义流水线（2026-09-14）：本轮若提交了「讲义方案」草案 → 自动弹窗请用户确认，
+    // 确认后才驱动逐区精写（Plan → Do 分离，与知识体系方案同款体验）
+    await openLessonPlanIfPending()
   } finally {
     unsub()
     researching.value = false
@@ -1441,6 +1929,8 @@ function taskActionText(tool: string): string {
       return '已建关系'
     case 'dl_save_card':
       return '已存讲义'
+    case 'dl_propose_lesson_plan':
+      return '已提交讲义方案'
     case 'dl_answer_question':
       return '已回答存档'
     default:
@@ -1462,6 +1952,14 @@ const displayTurns = computed<DlChatTurn[]>(() => [
   ...(view.value?.turns ?? []),
   ...liveTurns.value,
 ])
+
+/**
+ * 该轮是否为"正在流式输出"的 assistant 轮（末轮 + 本轮进行中）。
+ * 传给 QaAnswerView 用于节流刷新与"正在组织回答"提示的时机判断。
+ */
+function isTurnStreaming(index: number, turn: DlChatTurn): boolean {
+  return turn.role === 'assistant' && tutorStreaming.value && index === displayTurns.value.length - 1
+}
 
 /** 最近一次 ask 的模式（停止按钮据此取消对应后端轮次） */
 const lastAskMode = ref<'tutor' | 'task'>('tutor')
@@ -1937,6 +2435,58 @@ watch(rightPane, (pane) => {
   }
 }
 
+// 知识体系方案提示条（2026-09-13 固定流程：待确认时高亮，点开弹窗）
+.plan-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-lighter);
+  font-size: 12.5px;
+  color: var(--el-text-color-secondary);
+
+  &.pending {
+    background: var(--el-color-warning-light-9);
+    color: var(--el-color-warning);
+    font-weight: 600;
+  }
+
+  .plan-bar-text {
+    flex: 1 1 auto;
+  }
+}
+
+// 讲义方案提示条（2026-09-14 讲义流水线）：挂在讲义上方/空态里，待确认时高亮
+.lesson-plan-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 6px 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-fill-color-lighter);
+  font-size: 12.5px;
+  color: var(--el-text-color-secondary);
+
+  &.pending {
+    border-color: var(--el-color-warning-light-7);
+    background: var(--el-color-warning-light-9);
+    color: var(--el-color-warning);
+    font-weight: 600;
+  }
+
+  &.in-empty {
+    margin-bottom: 4px;
+    max-width: 520px;
+  }
+
+  .lpb-text {
+    flex: 1 1 auto;
+  }
+}
+
 // 主题学习前置要求条（2026-09-12：整个领域的学习门槛，进空间即见）
 .space-prereq {
   display: flex;
@@ -2327,6 +2877,36 @@ watch(rightPane, (pane) => {
       gap: 6px;
       flex-shrink: 0;
 
+      // 核验状态图标（2026-09-15 图标化：色调代表档位，待复核带条数角标，悬停看 verifyTip）
+      .verify-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 1px;
+        padding: 2px 3px;
+        border-radius: 6px;
+        font-size: 16px;
+        cursor: help;
+
+        .verify-count {
+          font-size: 11px;
+          font-weight: 600;
+          line-height: 1;
+        }
+
+        &.ok {
+          color: var(--el-color-success);
+        }
+        &.warn {
+          color: var(--el-color-warning);
+        }
+        &.busy {
+          color: var(--el-color-primary);
+        }
+        &.idle {
+          color: var(--el-text-color-placeholder);
+        }
+      }
+
       .feedback-toast {
         margin-left: 6px;
         font-size: 12px;
@@ -2404,8 +2984,17 @@ watch(rightPane, (pane) => {
 
   &.empty-body {
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+  }
+
+  // 「研究此概念」下面的 agent 活动行（2026-09-14：空态下贴着按钮下方居中显示，表示 agent 正在工作）
+  .research-activity {
+    width: 100%;
+    max-width: 440px;
+    margin-top: 14px;
+    text-align: left;
   }
 
   // 块化知识点：卡片流间距由 SectionLesson 自管，压缩外层 padding 以留白更匀
@@ -2445,7 +3034,8 @@ watch(rightPane, (pane) => {
   line-height: 1.6;
   background: var(--el-fill-color-light);
 
-  .qa-text {
+  // 提问（user 轮）：纯文本直出，不做 markdown 渲染（用户输入不当作富文本）
+  .qa-text-user {
     white-space: pre-wrap;
     word-break: break-word;
     overflow-wrap: anywhere;
@@ -2800,6 +3390,11 @@ watch(rightPane, (pane) => {
     font-size: 12px;
     color: var(--el-text-color-placeholder);
   }
+  /* 起步研究的活动行：贴在按钮下方、左对齐（卡片本体是居中的） */
+  .boot-activity {
+    margin: 12px 0 0;
+    text-align: left;
+  }
   .boot-message {
     margin-top: 12px;
     font-size: 13px;
@@ -2809,5 +3404,47 @@ watch(rightPane, (pane) => {
       color: var(--el-color-warning);
     }
   }
+}
+
+// ==================== 讲义版本历史抽屉（2026-09-15） ====================
+.version-item {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  &:last-child { border-bottom: none; }
+}
+.version-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.version-tag {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--el-text-color-primary);
+}
+.version-time {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.version-note {
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+  margin: 4px 0 2px;
+}
+.version-source {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.version-meta {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin: 4px 0;
+}
+.version-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
 }
 </style>

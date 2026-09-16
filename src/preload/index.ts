@@ -864,24 +864,35 @@ const electronAPI = {
     refreshWebpage: (assetId: string) => ipcRenderer.invoke('asset:webpage-refresh', { assetId }),
   },
 
-  // ==================== 新闻来源库（内置应用 C1 早报 / C2 周报的数据源） ====================
-  newsSource: {
-    list: (p: { topicId?: string; keyword?: string }) => ipcRenderer.invoke('newsSource:list', p),
-    get: (id: string) => ipcRenderer.invoke('newsSource:get', { id }),
-    create: (p: { topicId: string; name: string; url: string }) => ipcRenderer.invoke('newsSource:create', p),
-    update: (p: { id: string; topicId?: string; name?: string; url?: string; enabled?: boolean }) => ipcRenderer.invoke('newsSource:update', p),
-    delete: (id: string) => ipcRenderer.invoke('newsSource:delete', { id }),
+  // ==================== 信息来源（设置 → 信息来源；工作流采集节点与各业务模块的数据源） ====================
+  // 类别（一个类别 = 设置界面一个 tab）→ 分组（类别内一级分组）→ 来源（名称 + URL）
+  infoSourceCategory: {
+    list: () => ipcRenderer.invoke('infoSourceCategory:list'),
+    create: (p: { name: string }) => ipcRenderer.invoke('infoSourceCategory:create', p),
+    update: (p: { id: string; name?: string }) => ipcRenderer.invoke('infoSourceCategory:update', p),
+    delete: (id: string) => ipcRenderer.invoke('infoSourceCategory:delete', { id }),
   },
 
-  // ==================== 新闻主题（入库可增删） ====================
-  newsTopic: {
-    list: () => ipcRenderer.invoke('newsTopic:list'),
-    create: (p: { name: string }) => ipcRenderer.invoke('newsTopic:create', p),
-    update: (p: { id: string; name?: string }) => ipcRenderer.invoke('newsTopic:update', p),
-    delete: (id: string) => ipcRenderer.invoke('newsTopic:delete', { id }),
+  infoSourceTopic: {
+    list: (p: { categoryId?: string } = {}) => ipcRenderer.invoke('infoSourceTopic:list', p),
+    create: (p: { categoryId: string; name: string }) => ipcRenderer.invoke('infoSourceTopic:create', p),
+    update: (p: { id: string; name?: string; categoryId?: string }) => ipcRenderer.invoke('infoSourceTopic:update', p),
+    delete: (id: string) => ipcRenderer.invoke('infoSourceTopic:delete', { id }),
   },
 
-  // ==================== 网站 favicon（新闻来源图标） ====================
+  infoSource: {
+    list: (p: { categoryId?: string; topicId?: string; keyword?: string; onlyEnabled?: boolean } = {}) =>
+      ipcRenderer.invoke('infoSource:list', p),
+    get: (id: string) => ipcRenderer.invoke('infoSource:get', { id }),
+    /** topicId 缺省时按 categoryId 落入该类别「未分组」（系统按需创建） */
+    create: (p: { topicId?: string; categoryId?: string; name: string; url: string }) =>
+      ipcRenderer.invoke('infoSource:create', p),
+    update: (p: { id: string; topicId?: string; name?: string; url?: string; enabled?: boolean }) =>
+      ipcRenderer.invoke('infoSource:update', p),
+    delete: (id: string) => ipcRenderer.invoke('infoSource:delete', { id }),
+  },
+
+  // ==================== 网站 favicon（信息来源图标） ====================
   favicon: {
     get: (url: string) => ipcRenderer.invoke('favicon:get', { url }),
   },
@@ -1362,6 +1373,19 @@ const electronAPI = {
       ipcRenderer.invoke('dl:agent-busy', p),
     // 讲义发布（draft→published 人审确认；2026-09-09 复盘补闭环）
     publishCard: (p: { id: string; cardId: string }) => ipcRenderer.invoke('dl:publish-card', p),
+    // 方案确认流程（2026-09-13：对齐诉求 → 确认知识体系 → 才允许落库；
+    // 2026-09-14 加讲义方案 lesson：带 conceptId 取/确认某概念的讲义规格与区级计划）
+    getPlan: (id: string, conceptId?: string | null) =>
+      ipcRenderer.invoke('dl:get-plan', { id, conceptId: conceptId ?? null }),
+    confirmPlan: (p: {
+      id: string
+      step: 'understanding' | 'syllabus' | 'lesson'
+      /** 用户勾选增删/调序后的方案（syllabus/lesson 需要；缺省=用最新草案原样确认） */
+      payload?: unknown
+      feedback?: string | null
+      /** lesson 步：给哪个知识点确认讲义方案（讲义是按概念写的） */
+      conceptId?: string | null
+    }) => ipcRenderer.invoke('dl:confirm-plan', p),
     // 周期推进配置（M2-C：dl:get-space-pace / dl:set-space-pace / dl:scheduler-state）
     getSpacePace: (id: string) => ipcRenderer.invoke('dl:get-space-pace', { id }),
     setSpacePace: (p: {
@@ -1369,6 +1393,10 @@ const electronAPI = {
       pace: { enabled: boolean; intervalMin: number; autoResearchConcepts: boolean; autoResolveOpenQuestions: boolean }
     }) => ipcRenderer.invoke('dl:set-space-pace', p),
     schedulerState: () => ipcRenderer.invoke('dl:scheduler-state'),
+    // 空间默认模型（2026-09-14：知识生成默认模型，双 null=跟随全局默认）
+    getSpaceModel: (id: string) => ipcRenderer.invoke('dl:get-space-model', { id }),
+    setSpaceModel: (p: { id: string; model: { providerConfigId?: string | null; modelId?: string | null } }) =>
+      ipcRenderer.invoke('dl:set-space-model', p),
     // Atlas 增强视图与画像（M2-E）
     getAtlasViews: (id: string) => ipcRenderer.invoke('dl:get-atlas-views', { id }),
     setSpaceProfile: (p: { id: string; profileId?: string | null; profile?: Record<string, unknown> | null }) =>
@@ -1376,6 +1404,16 @@ const electronAPI = {
     // 统计与导出（M3-C）
     getSpaceStats: (id: string) => ipcRenderer.invoke('dl:get-space-stats', { id }),
     exportLessonDigest: (id: string) => ipcRenderer.invoke('dl:export-lesson-digest', { id }),
+    /** 单篇讲义导出（2026-09-15：知识点正文 md / PDF / 长图；cardId 缺省=当前版） */
+    exportLesson: (p: { id: string; conceptId: string; format: 'md' | 'pdf' | 'image'; cardId?: string | null }) =>
+      ipcRenderer.invoke('dl:export-lesson', p),
+    /** 讲义版本管理（2026-09-15：历史列表/预览/恢复到草稿） */
+    listCardVersions: (p: { id: string; conceptId: string }) =>
+      ipcRenderer.invoke('dl:list-card-versions', p),
+    getCardVersion: (p: { id: string; cardId: string }) =>
+      ipcRenderer.invoke('dl:get-card-version', p),
+    restoreCard: (p: { id: string; conceptId: string; cardId: string }) =>
+      ipcRenderer.invoke('dl:restore-card', p),
     // 间隔复习（M3-B）
     getSpaceReview: (id: string) => ipcRenderer.invoke('dl:get-space-review', { id }),
     setSpaceReview: (p: {

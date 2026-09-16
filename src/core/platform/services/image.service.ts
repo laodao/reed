@@ -36,6 +36,7 @@ import type {
 import { createLogger } from '@core/utils/logger'
 import { publishDomainEvent } from '@core/platform/workflow/trigger/domain-event-bus'
 import { WORKFLOW_EVENT_NAMES } from '@shared/types/workflow.types'
+import { assetParams } from '@shared/utils/asset-params'
 const logger = createLogger('ImageService')
 const aiLogger = createLogger('ai-call')
 
@@ -387,7 +388,8 @@ export class ImageService {
     }
 
     let pollCount = 0
-    const maxPolls = 60 // 最多轮询 60 次（约 5 分钟）
+    // 轮询次数上限走「参数设置 → 素材与图片 → 图片生成任务」（默认 60 次）
+    const maxPolls = assetParams().image.maxPolls
 
     const pollTask = async () => {
       pollCount++
@@ -465,8 +467,8 @@ export class ImageService {
       }
     }
 
-    // 每 5 秒轮询一次
-    const interval = setInterval(pollTask, 5000)
+    // 轮询间隔走「参数设置 → 素材与图片 → 图片生成任务」（默认每 5 秒一次）
+    const interval = setInterval(pollTask, assetParams().image.pollIntervalMs)
     activePollingTasks.set(taskId, interval)
 
     // 立即执行一次

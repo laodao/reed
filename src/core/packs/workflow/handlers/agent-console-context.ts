@@ -8,11 +8,20 @@
 
 import type { ModelMessage } from 'ai'
 import type { AgentConsoleContextMessage } from '@shared/types/agent.types'
+import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 
+// 注意（2026-09-13 参数设置）：下面两个导出常量现在是**内置默认值**，
+// 真正的生效值在使用点从「参数设置 → 工作流 → 界面展示截断」现读。
 /** 文本预览上限（上下文查看是"看清构成"不是全文导出；全量在会话存储里） */
 export const CONTEXT_TEXT_LIMIT = 1600
 /** 工具部件摘要上限 */
 export const CONTEXT_PART_LIMIT = 400
+
+/** 生效的展示截断（使用点现读） */
+const uiLimits = (): { text: number; part: number } => {
+  const ui = workflowRuntimeParams().ui
+  return { text: ui.contextTextChars, part: ui.contextPartChars }
+}
 
 /** scopeKey → 会话存储 conversationId（与两个宿主的落库键约定互逆：
  *  聊天宿主 agentSessionId = `system-chat-agent:dialog:<id>`；任务执行器直接用 `task:<id>`） */
@@ -46,17 +55,17 @@ export function describeContextMessage(message: ModelMessage, seq: number): Agen
   for (const part of parts) {
     const type = (part as { type?: unknown }).type
     if (type === 'text' || (type === undefined && typeof (part as { text?: unknown }).text === 'string')) {
-      const r = truncate(String((part as { text?: unknown }).text ?? ''), CONTEXT_TEXT_LIMIT)
+      const r = truncate(String((part as { text?: unknown }).text ?? ''), uiLimits().text)
       if (r.text) textChunks.push(r.text)
       truncated = truncated || r.truncated
     } else if (type === 'tool-call') {
       const p = part as { toolName?: unknown; input?: unknown }
-      const r = truncate(safeJson(p.input), CONTEXT_PART_LIMIT)
+      const r = truncate(safeJson(p.input), uiLimits().part)
       toolCalls.push({ name: String(p.toolName ?? '?'), argsDigest: r.text })
       truncated = truncated || r.truncated
     } else if (type === 'tool-result') {
       const p = part as { toolName?: unknown; output?: unknown }
-      const r = truncate(safeJson(p.output), CONTEXT_PART_LIMIT)
+      const r = truncate(safeJson(p.output), uiLimits().part)
       toolResults.push({ name: String(p.toolName ?? '?'), digest: r.text })
       truncated = truncated || r.truncated
     } else if (typeof type === 'string') {

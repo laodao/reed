@@ -17,6 +17,7 @@ import { DlConceptRepository } from '@core/database/repositories/dl-concept.repo
 import { DlRelationRepository, PREREQUISITE_TYPE } from '@core/database/repositories/dl-relation.repository'
 import { DlCardRepository } from '@core/database/repositories/dl-card.repository'
 import { DlQuestionRepository } from '@core/database/repositories/dl-question.repository'
+import { DlPlanRepository } from '@core/database/repositories/dl-plan.repository'
 import { executeDlAction } from '@core/packs/domain-learning/services/dl-agent-actions'
 import type { DlAgentExecutionContext } from '@core/packs/domain-learning/services/dl-agent.types'
 import type { ICoreDatabaseManager } from '@core/database/database-manager.interface'
@@ -31,6 +32,7 @@ const ENTITY_IMPORTS = [
   () => import('@core/database/entities/domain-learning/dl-card.entity'),
   () => import('@core/database/entities/domain-learning/dl-doc.entity'),
   () => import('@core/database/entities/domain-learning/dl-question.entity'),
+  () => import('@core/database/entities/domain-learning/dl-plan.entity'),
 ]
 
 async function buildDs(): Promise<DataSource> {
@@ -58,6 +60,7 @@ function buildDb(d: DataSource): ICoreDatabaseManager {
     dlRelations: new DlRelationRepository(d),
     dlCards: new DlCardRepository(d),
     dlQuestions: new DlQuestionRepository(d),
+    dlPlans: new DlPlanRepository(d),
   } as unknown as ICoreDatabaseManager
 }
 
@@ -676,6 +679,260 @@ describe('dl-agent-actions', () => {
         },
       })
       expect(r.summary.status).toBe('ok')
+    })
+  })
+
+  // 2026-09-13 用户反馈：同一主题下不同知识点结构/标题/答案形态各不相同
+  it('save_card：区集按本质类型模板归一（同义区名改名、标题派生、正文 ## 降到 ###、答案拆独立区）', async () => {
+    ds = await buildDs()
+    await seedProject(ds, 'sp1')
+    const db = buildDb(ds)
+    await runWithUserAsync('u1', async () => {
+      await db.dlConcepts!.create({ id: 'c-tensor', projectId: 'sp1', nodeType: 'concept', name: '张量' })
+    })
+    const r = await runWithUserAsync('u1', () =>
+      executeDlAction(execCtx(db, 'sp1'), {
+        type: 'dl_save_card',
+        params: {
+          card: {
+            conceptId: 'c-tensor',
+            essenceType: 'K-concept',
+            sections: [
+              { key: 'meta', title: '导读：前置、记号与目标', md: '## 前置\n无需前置（本讲只用四则运算）。' },
+              { key: 'worked', title: '手算两例（含回算校验）', md: '## 例 1\n正文' },
+              { key: 'checks', title: '自测与检验清单', md: '**Q1** 题目\n\n**答案**\n\n**A1** 解答' },
+            ],
+            evidenceSources: [{ kind: '教材', title: 'T', url: 'https://e.org/t' }],
+          },
+        },
+      }),
+    )
+    expect(r.summary.status).toBe('ok')
+    expect(r.summary.message).toContain('结构已按 K-concept 模板归一')
+    await runWithUserAsync('u1', async () => {
+      const saved = await db.dlCards!.getCurrentByConcept('sp1', 'c-tensor')
+      expect(saved?.sections.map((s) => s.key)).toEqual(['meta', 'examples', 'selfcheck', 'answers'])
+      // 标题由模板派生（不再"每张卡自己起大标题"）
+      expect(saved?.sections[0].title).toBe('学习前必读')
+      expect(saved?.sections[1].title).toBe('案例')
+      expect(saved?.sections[2].title).toBe('自测')
+      // 正文标题层级统一（区标题已占二级语义）
+      expect(saved?.sections[0].md).toContain('### 前置')
+      // 答案已拆到独立区，题面里看不到答案
+      expect(saved?.sections[2].md).not.toContain('A1')
+      expect(saved?.sections[3].md).toContain('A1')
+    })
+  })
+
+  it('save_card：自造区名（practice）→ 拒绝并给出该类型的模板区序', async () => {
+    ds = await buildDs()
+    await seedProject(ds, 'sp1')
+    const db = buildDb(ds)
+    await runWithUserAsync('u1', async () => {
+      await db.dlConcepts!.create({ id: 'c-ad', projectId: 'sp1', nodeType: 'concept', name: '自动微分' })
+    })
+    await runWithUserAsync('u1', async () => {
+      const err = await executeDlAction(execCtx(db, 'sp1'), {
+        type: 'dl_save_card',
+        params: {
+          card: {
+            conceptId: 'c-ad',
+            essenceType: 'K-concept',
+            sections: [
+              { key: 'meta', md: '### 前置\n无需前置。' },
+              { key: 'examples', md: '正文' },
+              { key: 'practice', md: '落到代码' },
+            ],
+            evidenceSources: [{ kind: '教材', title: 'T', url: 'https://e.org/t' }],
+          },
+        },
+      }).catch((e: Error) => e)
+      expect(err).toBeInstanceOf(Error)
+      const message = (err as Error).message
+      expect(message).toContain('practice')
+      expect(message).toContain('meta → definition → detail → examples')
+    })
+  })
+
+  it('save_card：区序乱（案例写在定义之前）→ 落库时按当前契约自动重排，并在结果里说明', async () => {
+    ds = await buildDs()
+    await seedProject(ds, 'sp1')
+    const db = buildDb(ds)
+    await runWithUserAsync('u1', async () => {
+      await db.dlConcepts!.create({ id: 'c-x', projectId: 'sp1', nodeType: 'concept', name: 'X' })
+    })
+    const r = await runWithUserAsync('u1', () =>
+      executeDlAction(execCtx(db, 'sp1'), {
+        type: 'dl_save_card',
+        params: {
+          card: {
+            conceptId: 'c-x',
+            essenceType: 'K-concept',
+            sections: [
+              { key: 'meta', md: '### 前置\n无需前置。' },
+              { key: 'examples', md: '案例正文' },
+              { key: 'definition', md: '定义正文' },
+              { key: 'selfcheck', md: '**Q1** 题' },
+            ],
+            evidenceSources: [{ kind: '教材', title: 'T', url: 'https://e.org/t' }],
+          },
+        },
+      }),
+    )
+    expect(r.summary.status).toBe('ok')
+    expect(r.summary.message).toContain('区序已按当前契约重排')
+    await runWithUserAsync('u1', async () => {
+      const saved = await db.dlCards!.getCurrentByConcept('sp1', 'c-x')
+      expect(saved?.sections.map((s) => s.key)).toEqual(['meta', 'definition', 'examples', 'selfcheck'])
+    })
+  })
+
+  // 2026-09-15 用户口径「章节合并 + 案例放到详解之后」：老卡重存时**归一化合并并重排**
+  // （内容一字不删），新卡直接按当前契约区序落库。
+  it('save_card：v5 旧序老卡（示例在前、规则单列）→ 归一化合并进详解并重排，内容不丢', async () => {
+    ds = await buildDs()
+    await seedProject(ds, 'sp1')
+    const db = buildDb(ds)
+    await runWithUserAsync('u1', async () => {
+      await db.dlConcepts!.create({ id: 'c-legacy', projectId: 'sp1', nodeType: 'concept', name: '旧序卡' })
+    })
+    const r = await runWithUserAsync('u1', () =>
+      executeDlAction(execCtx(db, 'sp1'), {
+        type: 'dl_save_card',
+        params: {
+          card: {
+            conceptId: 'c-legacy',
+            essenceType: 'K-concept',
+            sections: [
+              { key: 'meta', title: '学习前必读', md: '### 前置\n无需前置。' },
+              { key: 'essence', title: '本质', md: '一句话直觉。' },
+              { key: 'examples', title: '示例', md: '先看两个例子。' },
+              { key: 'definition', title: '定义', md: '严格定义。' },
+              { key: 'rules', title: '规则', md: '### 规则一\n逐条规则正文。' },
+              { key: 'selfcheck', md: '**Q1** 题目' },
+            ],
+            evidenceSources: [{ kind: '教材', title: 'T', url: 'https://e.org/t' }],
+          },
+        },
+      }),
+    )
+    expect(r.summary.status).toBe('ok')
+    expect(r.summary.message).toContain('并入')
+    await runWithUserAsync('u1', async () => {
+      const saved = await db.dlCards!.getCurrentByConcept('sp1', 'c-legacy')
+      // v7/v8 区序：定义 → 详解 → 案例；本质并入定义、规则并入详解（内容保留）
+      expect(saved?.sections.map((s) => s.key)).toEqual(['meta', 'definition', 'detail', 'examples', 'selfcheck'])
+      const definition = saved!.sections.find((s) => s.key === 'definition')!
+      expect(definition.md).toContain('一句话直觉') // 原 essence 内容
+      expect(definition.md).toContain('严格定义')
+      const detail = saved!.sections.find((s) => s.key === 'detail')!
+      expect(detail.md).toContain('逐条规则正文') // 原 rules 内容
+      expect(detail.md).toContain('### 规则') // 原区标题作为小标题保留
+    })
+  })
+
+  it('save_card：重点区过简 → 落库成功但附"重点提醒"（非阻断，模型据此补写重发）', async () => {
+    ds = await buildDs()
+    await seedProject(ds, 'sp1')
+    const db = buildDb(ds)
+    await runWithUserAsync('u1', async () => {
+      await db.dlConcepts!.create({ id: 'c-thin', projectId: 'sp1', nodeType: 'concept', name: '薄卡' })
+    })
+    const r = await runWithUserAsync('u1', () =>
+      executeDlAction(execCtx(db, 'sp1'), {
+        type: 'dl_save_card',
+        params: {
+          card: {
+            conceptId: 'c-thin',
+            essenceType: 'K-concept',
+            sections: [
+              { key: 'meta', title: '学习前必读', md: '### 前置\n无需前置。' },
+              { key: 'definition', title: '定义', md: '一句话定义。' },
+            ],
+            evidenceSources: [{ kind: '教材', title: 'T', url: 'https://e.org/t' }],
+          },
+        },
+      }),
+    )
+    expect(r.summary.status).toBe('ok')
+    expect(r.summary.message).toContain('重点提醒')
+    expect(r.summary.message).toContain('定义')
+  })
+
+  // 2026-09-13 用户需求：首批知识点必须"先对齐诉求 → 确认知识体系 → 才允许落库"
+  it('规划轮门禁：没有已确认的知识体系方案 → 拒绝建点（非规划轮不受影响）', async () => {
+    ds = await buildDs()
+    await seedProject(ds, 'sp1')
+    const db = buildDb(ds)
+    await runWithUserAsync('u1', async () => {
+      const planningCtx = { ...execCtx(db, 'sp1'), planningRound: true }
+      const err = await executeDlAction(planningCtx, {
+        type: 'dl_save_concept',
+        params: { concept: { name: '股票', definitionShort: '公司所有权凭证' } },
+      }).catch((e: Error) => e)
+      expect(err).toBeInstanceOf(Error)
+      expect((err as Error).message).toContain('已确认的知识体系方案')
+      expect(await db.dlConcepts!.listByProject('sp1')).toHaveLength(0)
+
+      // 同一动作在非规划轮（如单个概念的普通研究轮）不受此门禁约束
+      const r = await executeDlAction(execCtx(db, 'sp1'), {
+        type: 'dl_save_concept',
+        params: { concept: { name: '股票', definitionShort: '公司所有权凭证' } },
+      })
+      expect(r.summary.status).toBe('ok')
+    })
+  })
+
+  it('规划轮门禁：诉求理解→体系 确认后放行，且提案动作本身可用', async () => {
+    ds = await buildDs()
+    await seedProject(ds, 'sp1')
+    const db = buildDb(ds)
+    const { confirmDlPlan } = await import('@core/packs/domain-learning/services/dl-plan.service')
+    await runWithUserAsync('u1', async () => {
+      const ctx = { ...execCtx(db, 'sp1'), planningRound: true }
+      const u = await executeDlAction(ctx, {
+        type: 'dl_propose_understanding',
+        params: {
+          understanding: {
+            goalSummary: '想搞懂金融产品与市场，能自己看数据',
+            coverage: ['股票', '债券', '期货', '美元'],
+            notDoing: ['个人记账'],
+          },
+        },
+      })
+      expect(u.summary.status).toBe('ok')
+      expect(u.summary.message).toContain('等待用户在弹窗里确认')
+
+      // 未确认诉求理解就提体系 → 拒绝（顺序不能跳）
+      await expect(
+        executeDlAction(ctx, {
+          type: 'dl_propose_syllabus',
+          params: { syllabus: { branches: [{ name: '金融产品', concepts: [{ name: '股票' }] }] } },
+        }),
+      ).rejects.toThrow(/诉求理解还没有被用户确认/)
+
+      await confirmDlPlan(db, 'sp1', 'understanding')
+      const s = await executeDlAction(ctx, {
+        type: 'dl_propose_syllabus',
+        params: {
+          syllabus: {
+            branches: [
+              { name: '金融产品', concepts: [{ name: '股票', layer: 0 }, { name: '债券', layer: 0 }] },
+              { name: '市场与价格', concepts: [{ name: '汇率与美元', layer: 1, prerequisites: ['股票'] }] },
+            ],
+          },
+        },
+      })
+      expect(s.summary.message).toContain('3 个知识点')
+      // 体系未确认 → 仍拒绝建点
+      await expect(
+        executeDlAction(ctx, { type: 'dl_save_concept', params: { concept: { name: '股票' } } }),
+      ).rejects.toThrow(/已确认的知识体系方案/)
+
+      await confirmDlPlan(db, 'sp1', 'syllabus')
+      const saved = await executeDlAction(ctx, { type: 'dl_save_concept', params: { concept: { name: '股票' } } })
+      expect(saved.summary.status).toBe('ok')
+      expect((await db.dlConcepts!.listByProject('sp1')).map((c) => c.name)).toEqual(['股票'])
     })
   })
 })

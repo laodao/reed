@@ -96,6 +96,7 @@ import { app, BrowserWindow, Tray, Menu, nativeImage, shell, protocol, dialog } 
 import { join } from 'path'
 import * as path from 'path'
 import { DataPathService } from './services/data-path.service'
+import { cspForRequest } from './platform/app-csp'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { getDatabaseManager } from './database'
 import { ElectronPathProvider } from './services/electron-path.provider'
@@ -112,7 +113,7 @@ import { registerExportHandlers } from './ipc/handlers/export.handler'
 import { registerSearchEngineHandlers } from './ipc/handlers/search-engine.handler'
 import { registerToolHandlers } from './ipc/handlers/tool.handler'
 import { registerEmailHandlers } from './ipc/handlers/email.handler'
-import { registerNewsSourceHandlers } from './ipc/handlers/news-source.handler'
+import { registerInfoSourceHandlers } from './ipc/handlers/info-source.handler'
 import { registerFaviconHandlers } from './ipc/handlers/favicon.handler'
 import { registerOSSHandlers } from './ipc/handlers/oss.handler'
 import { registerDataSourceHandlers } from './ipc/handlers/datasource.handler'
@@ -334,19 +335,16 @@ function createWindow(): void {
   // 修改 CSP 以允许 local-image 协议 + 讲义代码运行沙箱（worker-src blob:）
   // 注：worker-src 放开 blob: 供「运行 JS」用 Worker 沙箱（片段内联为 Worker 顶层代码，
   //     因此不需要 'unsafe-eval'；沙箱内无 DOM、网络 API 被遮蔽、3 秒超时）
+  //
+  // ⚠️ CSP 装在 session 上 → 会作用于该 session 的所有 WebContents，包括"把本地排版 HTML
+  //    渲染成 PDF/长图"的隐藏窗口。那种页面必须能跑内联脚本（mermaid）与 data: 字体（KaTeX），
+  //    被应用界面的严格策略拦住会**静默**少图（2026-09-15 实测：导出 PDF 里只剩 `graph TD` 源码）。
+  //    故按 WebContents 分流，策略与理由见 electron/platform/app-csp.ts。
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        'Content-Security-Policy': [
-          "default-src 'self'; " +
-          "script-src 'self' 'wasm-unsafe-eval'; " +
-          "worker-src 'self' blob:; " +
-          "style-src 'self' 'unsafe-inline'; " +
-          "img-src 'self' data: blob: local-image: file:; " +
-          "media-src 'self' file: local-image: local-file: local-video:; " +
-          "connect-src 'self' ws://localhost:* http://localhost:*"
-        ]
+        'Content-Security-Policy': [cspForRequest(details, mainWindow?.webContents.id)],
       }
     })
   })
@@ -401,7 +399,7 @@ function initIpcHandlers(): void {
   registerSearchEngineHandlers()
   registerToolHandlers()
   registerEmailHandlers()
-  registerNewsSourceHandlers()
+  registerInfoSourceHandlers()
   registerFaviconHandlers()
   registerOSSHandlers()
   registerDataSourceHandlers()

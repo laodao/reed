@@ -1,24 +1,45 @@
 <template>
   <div class="section-lesson">
-    <!-- 正文章节：带序号标题行（与区级动作同排，不再有右上悬浮元素） -->
+    <!-- 讲义规格条 + 区导航（2026-09-14：有已确认规格才显示；老卡不显示，不猜内容） -->
+    <LessonSpecBar :spec="props.card.spec ?? null" :nav="navItems" @jump="jumpTo" />
+
+    <!-- 正文章节：带序号标题行（与区级动作同排，不再有右上悬浮元素）
+         2026-09-14：正文按「版式设备」渲染（要点卡/对比表/步骤条/图解/数据看点…），
+         不再一律输出一段 markdown —— 这正是"堆砌文字、布局单调"的正面解法。 -->
     <div
       v-for="item in plan.content"
       :key="item.key"
+      :id="sectionAnchor(item.index)"
       class="sec"
-      :class="`sec-${item.style}`"
+      :class="[`sec-${item.style}`, `sec-device-${presentationOf(item.index).layout}`]"
     >
-      <div class="sec-head" :class="{ 'sec-head-bare': !item.title }">
-        <span v-if="item.title" class="sec-index">{{ item.no }}</span>
+      <div
+        class="sec-head"
+        :class="{
+          'sec-head-bare': !item.title,
+          'sec-head-numbered': item.no > 0,
+          'sec-head-follower': item.follower,
+        }"
+      >
+        <span v-if="item.no > 0" class="sec-index">{{ item.no }}</span>
         <span v-if="item.title" class="sec-title">{{ item.title }}</span>
+        <span v-if="presentationOf(item.index).badge" class="sec-badge">
+          {{ presentationOf(item.index).badge }}
+        </span>
         <span class="sec-actions">
           <span class="sec-confuse" @click="notUnderstand(item)">这块没懂</span>
+          <span class="sec-rewrite" @click="rewriteSection(item)">重写此区</span>
           <span v-if="item.folded" class="fold-hint" @click="toggleFold(item.index)">
             {{ expanded.has(item.index) ? '收起' : '展开全文' }}
           </span>
         </span>
       </div>
       <div v-if="!item.folded || expanded.has(item.index)" class="sec-body">
-        <MarkdownViewer :md="item.body" />
+        <!-- 一句话结论（takeaway）：读者先拿到结论，再决定要不要细读 -->
+        <div v-if="presentationOf(item.index).takeaway" class="sec-takeaway">
+          {{ presentationOf(item.index).takeaway }}
+        </div>
+        <LessonSectionBody :layout="presentationOf(item.index).layout" :body="item.body" />
         <!-- 自测答案：默认折叠（先自己做，再对答案；2026-09-12 用户需求） -->
         <div v-if="item.answers" class="selfcheck-answers">
           <span class="answers-toggle" @click="toggleAnswers(item.index)">
@@ -122,14 +143,23 @@
  *
  * 2026-09-12 排版复盘：
  * - 区结构由 `planLessonSections`（shared 纯函数）算好：正文章节按序编号，
- *   编写注记区整体剥离并汇总到置底折叠面板（此前它作为章节渲染，标题行右侧的
- *   「展开全文」与右上悬浮的「这块没懂」重叠）；
+ *   编写注记区整体剥离并汇总到置底折叠面板；
  * - 区级动作（这块没懂 / 展开全文）统一收进标题行 `.sec-actions` 同排，不再绝对定位。
+ *
+ * 2026-09-14 版式化（用户反馈「纯粹的堆砌文字，没有对文字做精炼归纳，没有配图，布局单调简陋」）：
+ * - 顶部出**讲义规格条 + 区导航**（有已确认规格时）：读者画像/目标/术语与记号 + 点击跳区；
+ * - 每区按**版式设备**渲染（`presentLessonSections` → LessonSectionBody）：
+ *   要点卡/对比表/步骤条/图解/算例/公式/数据看点/引文/时间线/误区/清单/代码/自测/结论条；
+ * - 区标题行加**版式徽标**，正文上方加**一句话结论**（takeaway）；
+ * - 区级新增「重写此区」（带该区正文与版式，交给助手定点重写，不整篇重来）。
  */
-import { computed, reactive, ref } from 'vue'
+import { computed, nextTick, reactive, ref } from 'vue'
 import { Link } from '@element-plus/icons-vue'
 import MarkdownViewer from './MarkdownViewer.vue'
+import LessonSectionBody from './LessonSectionBody.vue'
+import LessonSpecBar from './LessonSpecBar.vue'
 import { planLessonSections } from '@shared/utils/lesson-sections'
+import { lessonLayoutName, presentLessonSections } from '@shared/utils/lesson-layout'
 import { externalHostLabel, isSafeExternalUrl, openExternalUrl } from '@shared/utils/external-link'
 import type { DlCardSection, DlCardView, DlRelatedRef } from '@shared/types/domain-learning.types'
 
@@ -144,10 +174,57 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   notUnderstand: [section: DlCardSection]
   gotoConcept: [conceptId: string]
+  /** 重写此区（2026-09-14：带区 key/版式，父级据此驱动助手定点重写） */
+  rewriteSection: [section: DlCardSection]
 }>()
 
 /** 区结构计划（正文编号 + 编写注记汇总；纯函数，随 card.sections 变化重算） */
 const plan = computed(() => planLessonSections(props.card.sections))
+
+/** 区展示计划（版式设备/徽标/结论条；与 sections 同序） */
+const presentations = computed(() =>
+  presentLessonSections({ essenceType: props.card.essenceType, sections: props.card.sections }),
+)
+
+function presentationOf(index: number) {
+  return (
+    presentations.value[index] ?? {
+      layout: 'prose' as const,
+      layoutName: '',
+      badge: '',
+      takeaway: '',
+      stats: null,
+    }
+  )
+}
+
+/** 区导航（规格条用）：序号 + 标题 + 版式名 + 该区读者动作（规格 roster 里有则带上） */
+const navItems = computed(() => {
+  const jobByKey = new Map((props.card.spec?.roster ?? []).map((r) => [r.key, r.job]))
+  return plan.value.content.map((c) => {
+    const p = presentationOf(c.index)
+    return {
+      index: c.index,
+      no: c.no,
+      title: c.title || c.key,
+      device: lessonLayoutName(p.layout) || p.layout,
+      job: jobByKey.get(c.key) ?? '',
+    }
+  })
+})
+
+/** 区锚点 id（导航跳转用） */
+function sectionAnchor(index: number): string {
+  return `dl-sec-${index}`
+}
+
+/** 跳到某区（滚动到视口内；元素缺失时静默——渲染期/测试环境无布局） */
+function jumpTo(index: number): void {
+  void nextTick(() => {
+    const el = document.getElementById(sectionAnchor(index))
+    el?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+  })
+}
 
 /** 折叠区展开态（按原 sections 下标；默认收起） */
 const expanded = reactive(new Set<number>())
@@ -169,6 +246,10 @@ const notesPanelOpen = ref(false)
 function notUnderstand(item: { index: number }): void {
   const section = props.card.sections[item.index]
   if (section) emit('notUnderstand', section)
+}
+function rewriteSection(item: { index: number }): void {
+  const section = props.card.sections[item.index]
+  if (section) emit('rewriteSection', section)
 }
 function gotoRelated(r: DlRelatedRef): void {
   emit('gotoConcept', r.conceptId)
@@ -206,6 +287,23 @@ function gotoRelated(r: DlRelatedRef): void {
       justify-content: flex-end;
     }
 
+    // 有编号的大标题：加底色突出（2026-09-15 用户口径「有编号的大标题，增加底色突出一下」）。
+    // 只给标题行上底色（正文仍是文档式），符合上一轮"不要卡片样式"的口径。
+    &.sec-head-numbered {
+      margin-bottom: 10px;
+      padding: 5px 10px;
+      border-bottom: none;
+      border-radius: 6px;
+      background: var(--el-color-primary-light-9);
+    }
+
+    // 跟随区（自测的「参考答案」）：不占章节编号，弱化为收尾块
+    &.sec-head-follower {
+      margin-bottom: 6px;
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+
     .sec-index {
       flex-shrink: 0;
       display: inline-flex;
@@ -221,11 +319,37 @@ function gotoRelated(r: DlRelatedRef): void {
       line-height: 1;
     }
 
+    // 带底色的标题行里，序号用实色块，与底色拉开层次
+    &.sec-head-numbered .sec-index {
+      background: var(--el-color-primary);
+      color: #fff;
+    }
+
     .sec-title {
-      font-size: 15px;
+      // 2026-09-15 用户口径「有编号的大标题，字体加大一号」：15px → 17px
+      // （正文 14px / 正文 h3 14.5px：区标题必须明显压过它们，层级才立得住）
+      font-size: 17px;
       font-weight: 700;
       line-height: 1.4;
       color: var(--el-text-color-primary);
+    }
+
+    // 跟随区（参考答案）不上主字号：它是上一个章节的收尾块，不与章节标题抢层级
+    &.sec-head-follower .sec-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--el-text-color-regular);
+    }
+
+    // 版式徽标（2026-09-14）：读者一眼知道这一区是什么形态（要点卡/图解/对比表…）
+    .sec-badge {
+      flex-shrink: 0;
+      padding: 0 6px;
+      border-radius: 8px;
+      background: var(--el-fill-color);
+      color: var(--el-text-color-secondary);
+      font-size: 11px;
+      line-height: 16px;
     }
 
     .sec-actions {
@@ -251,12 +375,35 @@ function gotoRelated(r: DlRelatedRef): void {
           color: var(--el-color-warning);
         }
       }
+
+      // 区级定点重写（2026-09-14）：只重做这一区，不整篇重来
+      .sec-rewrite {
+        color: var(--el-text-color-placeholder);
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity 0.15s;
+
+        &:hover {
+          color: var(--el-color-primary);
+        }
+      }
     }
   }
 
-  &:hover .sec-actions .sec-confuse {
+  &:hover .sec-actions .sec-confuse,
+  &:hover .sec-actions .sec-rewrite {
     opacity: 1;
   }
+}
+
+// 一句话结论（takeaway）：读者先拿结论，再决定细读
+// 2026-09-15 用户口径「不要卡片样式」：去掉底色/圆角/左色条，按普通段落呈现（只保留加粗引导）
+.sec-takeaway {
+  margin-bottom: 8px;
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+  line-height: 1.7;
+  font-weight: 600;
 }
 
 .sec-body {
@@ -266,46 +413,33 @@ function gotoRelated(r: DlRelatedRef): void {
 }
 
 // 自测答案（默认折叠）：读者先自己做，再展开对答案（检索练习）
+// 折叠入口保留（这是功能，不是装饰）；展开后的答案区 2026-09-15 起也按普通段落呈现
 .selfcheck-answers {
   margin-top: 10px;
 
   .answers-toggle {
     display: inline-block;
-    padding: 3px 12px;
-    border: 1px dashed var(--el-color-primary-light-5);
-    border-radius: 14px;
     color: var(--el-color-primary);
-    background: var(--el-color-primary-light-9);
     font-size: 12px;
     cursor: pointer;
     user-select: none;
-
-    &:hover {
-      border-style: solid;
-      background: var(--el-color-primary-light-7);
-    }
+    text-decoration: underline;
+    text-underline-offset: 3px;
   }
 
   .answers-body {
     margin-top: 8px;
-    padding: 10px 14px;
-    border-left: 3px solid var(--el-color-primary-light-5);
-    border-radius: 0 6px 6px 0;
-    background: var(--el-fill-color-lighter);
   }
 }
 
+// 2026-09-15 用户口径「不要卡片样式」：引言区/注意区不再做卡片（无底色、无圆角、无左色条），
+// 讲义整篇按文档排（标题 + 正文 + 表格），避免"一堆卡片"的观感。
 .sec-intro {
-  background: var(--el-fill-color-lighter);
-  border-radius: 8px;
-  padding: 12px 18px 14px 14px;
+  padding: 0;
 }
 
 .sec-note {
-  background: var(--el-color-warning-light-9);
-  border-left: 3px solid var(--el-color-warning);
-  border-radius: 6px;
-  padding: 10px 14px;
+  padding: 0;
 }
 
 .sec-review {

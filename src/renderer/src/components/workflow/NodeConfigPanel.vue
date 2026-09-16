@@ -50,6 +50,7 @@ import { computed, inject, provide, ref, watch, type Ref } from 'vue'
 import type { Node } from '@vue-flow/core'
 import { NODE_TYPE_CATALOG_MAP } from '@shared/types/workflow-node-catalog'
 import { NODE_CONFIG_FORMS, type CatalogFormField } from '@shared/types/workflow-node-forms'
+import { INFO_SOURCE_NEWS_CATEGORY_ID } from '@shared/types/info-source.types'
 import FieldRenderer from './FormFieldRenderer.vue'
 
 const props = defineProps<{ node: Node }>()
@@ -135,17 +136,46 @@ async function loadDynamicOptions() {
       }
     } catch { /* 列表失败时退化为手填 */ }
   }
-  if (sources.has('newsSources')) {
+  // 信息来源（来源类别 → 分组 → 来源）：三个下拉共用一次加载，标签带「类别 · 分组」前缀
+  if (
+    sources.has('infoSourceCategories') ||
+    sources.has('infoSourceTopics') ||
+    sources.has('infoSources') ||
+    sources.has('newsTopics') ||
+    sources.has('newsSources')
+  ) {
     try {
-      const resp = await api.newsSource.list({})
-      if (resp.success && resp.data) {
-        // 按主题分组显示：label = 主题前缀 + 名称
-        const TOPIC_LABELS: Record<string, string> = { ai: '人工智能', finance: '全球财经', energy: '新能源', tech: '科技产业', world: '国际时政' }
-        dynamicOptions.value.newsSources = resp.data.map((s: any) => ({
-          label: `${TOPIC_LABELS[s.topicId] ?? s.topicId} · ${s.name}${s.isBuiltin ? '' : '（自定义）'}`,
-          value: s.id,
-        }))
-      }
+      const [catResp, topicResp, srcResp] = await Promise.all([
+        api.infoSourceCategory.list(),
+        api.infoSourceTopic.list({}),
+        api.infoSource.list({}),
+      ])
+      const categories: any[] = catResp.success ? (catResp.data ?? []) : []
+      const topics: any[] = topicResp.success ? (topicResp.data ?? []) : []
+      const catName = new Map<string, string>(categories.map((c: any) => [c.id, c.name]))
+      const topicById = new Map<string, any>(topics.map((t: any) => [t.id, t]))
+      const topicOptions = topics.map((t: any) => ({
+        label: `${catName.get(t.categoryId) ?? t.categoryId} · ${t.name}`,
+        value: t.id,
+        categoryId: t.categoryId,
+      }))
+      const sourceOptions = (srcResp.success ? (srcResp.data ?? []) : []).map((s: any) => ({
+        label: `${catName.get(s.categoryId) ?? s.categoryId} · ${topicById.get(s.topicId)?.name ?? ''} · ${s.name}${s.isBuiltin ? '' : '（自定义）'}`,
+        value: s.id,
+        topicId: s.topicId,
+        categoryId: s.categoryId,
+      }))
+      const catOptions = categories.map((c: any) => ({ label: c.name, value: c.id }))
+      dynamicOptions.value.infoSourceCategories = catOptions
+      dynamicOptions.value.infoSourceTopics = topicOptions
+      dynamicOptions.value.infoSources = sourceOptions
+      // 旧工作流兼容：newsSources / newsTopics 只列内置「新闻来源」类别
+      dynamicOptions.value.newsTopics = topicOptions.filter(
+        (o: any) => o.categoryId === INFO_SOURCE_NEWS_CATEGORY_ID,
+      )
+      dynamicOptions.value.newsSources = sourceOptions.filter(
+        (o: any) => o.categoryId === INFO_SOURCE_NEWS_CATEGORY_ID,
+      )
     } catch { /* 列表失败时退化为手填 */ }
   }
   if (sources.has('assetCategories')) {

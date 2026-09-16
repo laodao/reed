@@ -10,6 +10,7 @@
  *              依赖注入（页面抓取器 / 资源抓取器）便于单测与限速定制。
  */
 import { validateOutboundUrl } from '@core/utils/outbound-url'
+import { assetParams } from '@shared/utils/asset-params'
 import { htmlToMarkdown } from '@core/utils/html-to-markdown'
 import { inlineHtmlResources, defaultWebResourceFetcher, type WebResourceFetcher } from './single-file-html'
 import type { AssetRecord, AssetSourceType, SaveAssetInput } from '@shared/types/asset.types'
@@ -29,14 +30,17 @@ export interface FetchedPage {
 
 export type PageFetcher = (url: string) => Promise<FetchedPage>
 
-/** 页面默认抓取器：SSRF 校验 + 30s 超时 + 50MB 限长 */
+/** 页面默认抓取器：SSRF 校验 + 超时/限长（走「参数设置 → 素材与图片 → 素材下载与网页收藏」） */
 export async function defaultPageFetcher(url: string): Promise<FetchedPage> {
   const guard = validateOutboundUrl(url)
   if (!guard.ok) throw new Error(`页面 URL 校验失败：${guard.reason}`)
-  const resp = await fetch(url, { signal: AbortSignal.timeout(30_000) })
+  const { collectTimeoutMs, maxCollectBytes } = assetParams().asset
+  const resp = await fetch(url, { signal: AbortSignal.timeout(collectTimeoutMs) })
   if (!resp.ok) throw new Error(`抓取失败: HTTP ${resp.status}`)
   const buf = Buffer.from(await resp.arrayBuffer())
-  if (buf.byteLength > 50 * 1024 * 1024) throw new Error('页面超过 50MB 上限')
+  if (buf.byteLength > maxCollectBytes) {
+    throw new Error(`页面超过 ${Math.round(maxCollectBytes / 1024 / 1024)}MB 上限`)
+  }
   return { url: resp.url || url, html: buf.toString('utf-8') }
 }
 

@@ -46,6 +46,7 @@ import {
   DEFAULT_PORTRAIT_WIDTH,
 } from '@shared/types/portrait.types'
 import type { PortraitCharacter, PortraitVariant } from '@shared/types/portrait.types'
+import { resetPortraitParams, setPortraitParams } from '@shared/utils/portrait-params'
 
 // ====================================================================
 // mock 工具
@@ -226,6 +227,47 @@ describe('PortraitService.changeClothes 尺寸优先级', () => {
       height: DEFAULT_PORTRAIT_HEIGHT,
       seed: 3,
     })
+  })
+
+  /**
+   * 2026-09-13「参数设置 → 画像」：默认尺寸不再写死，改读运行时持有者。
+   * （生成强度只在 `generateFullBody`/`editFace` 两条路径上有缺省值，其证明见
+   *  `portrait-edit-face.spec.ts` 的「editFace 读取参数设置」用例。）
+   */
+  it('注入画像参数后，默认尺寸按设置走（不再写死 768×1024）', async () => {
+    const db = installMockDb()
+    const genSpy = mockImageSuccess()
+    mockVariantCreateUpdate(db)
+
+    db.portraitCharacters.getById.mockResolvedValue(makeCharacter())
+    db.portraitVariants.getBaseVariants.mockResolvedValue([
+      makeVariant({ angle: 'front', config: { seed: 3 } }),
+    ])
+
+    setPortraitParams({ image: { width: 1024, height: 1536 } })
+    try {
+      await PortraitService.changeClothes({
+        characterId: 'char-1',
+        clothesDescription: 'green shirt',
+        angles: ['front'],
+      })
+      expect(genSpy.mock.calls[0][0].width).toBe(1024)
+      expect(genSpy.mock.calls[0][0].height).toBe(1536)
+    } finally {
+      resetPortraitParams()
+    }
+
+    // 复位后回到默认（768×1024）——证明"读的是持有者"而不是常量被换成了别的常量
+    const genSpy2 = mockImageSuccess()
+    mockVariantCreateUpdate(db)
+    db.portraitVariants.getBaseVariants.mockResolvedValue([makeVariant({ angle: 'front', config: { seed: 4 } })])
+    await PortraitService.changeClothes({
+      characterId: 'char-1',
+      clothesDescription: 'red shirt',
+      angles: ['front'],
+    })
+    expect(genSpy2.mock.calls[0][0].width).toBe(DEFAULT_PORTRAIT_WIDTH)
+    expect(genSpy2.mock.calls[0][0].height).toBe(DEFAULT_PORTRAIT_HEIGHT)
   })
 })
 

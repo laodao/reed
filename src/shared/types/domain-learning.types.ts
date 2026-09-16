@@ -88,6 +88,15 @@ export interface DlCardSection {
   /** 区标题（模板语义；缺省用 key 映射默认标题） */
   title?: string
   style?: DlSectionStyle
+  /**
+   * 版式设备（2026-09-14 用户反馈「纯文字堆砌、布局单调」）：
+   * key 见 `shared/utils/lesson-layout` 的设备目录（prose/keypoints/compare/steps/figure/
+   * worked/formula/stats/quote/timeline/pitfall/checklist/code/qa/callout）；
+   * 缺省时渲染层按区 key 推导默认设备（老卡也有合理版式）。
+   */
+  layout?: string
+  /** 一句话结论（该区讲完读者该记住什么；渲染为结论条） */
+  takeaway?: string
   /** 区内容 md（可含图/表/mermaid/KaTeX） */
   md: string
   /** 深水内容默认折叠（证明/长条文） */
@@ -190,6 +199,12 @@ export interface DlCardView {
   evidenceSources?: DlEvidenceRef[] | null
   version: number
   status: 'draft' | 'published'
+  /**
+   * 讲义设计规格（2026-09-14：本卡是照哪份「已确认规格」写的）。
+   * 有它 → 渲染层出规格条（读者画像/目标/术语与记号/区导航）、区级重写按规格锁重发；
+   * 老卡为 null，照常按 sections 渲染。
+   */
+  spec?: DlLessonSpec | null
   /** 自动核验摘要（2026-09-09 复盘：M4-UX2 的 verification 由"只写不读"改为消费；
    *  null=尚未核验） */
   verification?: DlCardVerificationSummary | null
@@ -210,6 +225,149 @@ export interface DlRelatedRef {
   name: string
   /** 关系描述（前置/后继/对比…） */
   rel?: string
+}
+
+// ==================== 方案确认流程（2026-09-13 用户需求） ====================
+
+/**
+ * 方案步骤：
+ * - `understanding`：模型对用户诉求的理解（先确认它，再规划体系）；
+ * - `syllabus`：知识体系方案（确认后才允许落库知识点）；
+ * - `lesson`：**讲义设计规格与区级计划**（2026-09-14；参考 ppt-master 的 design_spec +
+ *   §IX 页级 roster：确认后模型才逐区精写，落库门禁按它校验区集/版式/载体）。
+ *   按概念维度存储（dl_plan.concept_id），同一空间不同概念各有一套。
+ */
+export type DlPlanStep = 'understanding' | 'syllabus' | 'lesson'
+
+/** 方案状态：draft=待用户确认 | confirmed=已确认（生效） | superseded=被新版本取代 */
+export type DlPlanStatus = 'draft' | 'confirmed' | 'superseded'
+
+/**
+ * 诉求理解（第一步提案）。
+ * 用户反馈「生成的知识点与期望差别较大」的正面解法：先让模型**复述**诉求并逐条列出要覆盖的
+ * 对象与场景、明确不做什么，用户确认或纠正后再往下走。
+ */
+export interface DlPlanUnderstanding {
+  /** 一句话重述：我理解你要学什么 */
+  goalSummary: string
+  /** 要覆盖的对象与场景（诉求点名的产品/市场/数据/动作，逐条有落点） */
+  coverage: string[]
+  /** 读者画像：从哪出发、到什么程度 */
+  audience?: string | null
+  /** 明确不做什么（防跑偏，如"不做个人记账与保险推销"） */
+  notDoing?: string[]
+  /** 关键期望：学完能做到什么（动词开头，可验证） */
+  keyExpectations?: string[]
+}
+
+/** 知识体系方案里的一个节点（分支用 nodeType=group） */
+export interface DlSyllabusConcept {
+  name: string
+  definitionShort?: string | null
+  /** 前置知识点名（学它之前要先掌握什么） */
+  prerequisites?: string[]
+  /** 学习层级（0=零基础可直接学） */
+  layer?: number
+  /** group=分支目录 | concept=知识点（缺省 concept） */
+  nodeType?: string
+}
+
+/** 知识体系方案（第二步提案）：分支 + 知识点 */
+export interface DlPlanSyllabus {
+  branches: Array<{
+    name: string
+    definitionShort?: string | null
+    concepts: DlSyllabusConcept[]
+  }>
+  /** 不归属任何分支的根层知识点（如领域总览） */
+  rootConcepts?: DlSyllabusConcept[]
+  /** 方案说明（取材自哪些资料/哪些是按主干补的先验） */
+  notes?: string | null
+}
+
+/** 讲义区级计划条目（大纲 roster；对应 ppt-master 的 §IX 页级 roster 的 page job） */
+export interface DlLessonPlanEntry {
+  /** 区 key（必须属于该本质类型的模板区集，见 shared/utils/lesson-template） */
+  key: string
+  /** 版式设备（key 见 shared/utils/lesson-layout 的设备目录；别名在归一化时改规范名） */
+  layout: string
+  /** 这一区替读者做什么（动词句；不是"讲一下 X"） */
+  job: string
+  /** 需要的载体：figure/table/formula/code/points/stats/quote/checklist（无则 null） */
+  carrier?: string | null
+  /** 一句话结论（该区讲完读者该记住什么） */
+  takeaway?: string | null
+}
+
+/**
+ * 讲义设计规格（Plan 阶段产出、用户确认后作为**写作锁**）。
+ * 对应 ppt-master 的 `design_spec.md` + `spec_lock.md`：读者画像 / 学完能做到 / 深度 /
+ * 篇幅预算 / 语气 / 术语表 / 记号表 / 示例参数表 / 视觉计划 / 区级计划（roster）。
+ */
+export interface DlLessonSpec {
+  /** 读者画像：从哪出发、不是什么水平（决定类比与记号教学的密度） */
+  audience: string
+  /** 学完能做到（2~4 条，可测的动词句） */
+  outcomes: string[]
+  /** 深度（跟随空间目标，可微调） */
+  depth: DlGoal
+  /** 篇幅预算：目标区数 + 每区字数上限 */
+  budget: { sections: number; charsPerSection: number }
+  /** 语气/风格（如「生活类比先行、不堆术语」） */
+  tone?: string | null
+  /** 术语表：本讲会用到、首现必须给一句人话解释的词 */
+  glossary: Array<{ term: string; plain: string }>
+  /** 记号表：数学/专业记号（读法 + 一个最小例子，防"没教的记号"） */
+  notation: Array<{ symbol: string; read: string; example?: string | null }>
+  /** 示例参数表：全讲复用同一套数字（防跨区算例参数漂移） */
+  exampleParams: Array<{ name: string; value: string }>
+  /** 区级计划（严格按此顺序与版式写；与 sections 一一对应） */
+  roster: DlLessonPlanEntry[]
+  /** 视觉计划：本讲靠什么图/表把结构讲清楚（写给读者看的说明） */
+  visualPlan?: string | null
+}
+
+/**
+ * 讲义方案载荷（`lesson` 步）：知识本质类型 + 设计规格。
+ * essenceType 由规划阶段定（它决定模板区集 → roster），落库时 `dl_save_card` 的
+ * essenceType 必须与之一致（否则区集与大纲对不上）。
+ */
+export interface DlLessonPlanPayload {
+  essenceType: DlEssenceType
+  spec: DlLessonSpec
+}
+
+/** 方案版本行（IPC 视图） */
+export interface DlPlanRevisionView<P = unknown> {
+  id: string
+  step: DlPlanStep
+  status: DlPlanStatus
+  revision: number
+  payload: P
+  /** 用户调整指令或确认备注 */
+  feedback?: string | null
+  updatedAt?: string | null
+}
+
+/** 空间方案总览（确认弹窗数据源） */
+export interface DlPlanView {
+  spaceId: string
+  /** 当前诉求理解（最新版） */
+  understanding: DlPlanRevisionView<DlPlanUnderstanding> | null
+  /** 当前知识体系方案（最新版） */
+  syllabus: DlPlanRevisionView<DlPlanSyllabus> | null
+  /** 诉求理解是否已确认（未确认则不允许提交体系方案） */
+  understandingConfirmed: boolean
+  /** 知识体系是否已确认（= 允许落库知识点） */
+  syllabusConfirmed: boolean
+  /** 已确认方案里的知识点条目数（用于落库额度与界面提示） */
+  confirmedConceptCount: number
+  /** 当前概念的讲义方案（最新版；未指定 conceptId 时为 null）——2026-09-14 讲义流水线 */
+  lesson: DlPlanRevisionView<DlLessonPlanPayload> | null
+  /** lesson 对应的概念 id（前端据此判断这份讲义方案是否属于当前选中的概念） */
+  lessonConceptId?: string | null
+  /** 讲义方案是否已确认（= 允许按规格逐区精写；未确认时前端弹确认框） */
+  lessonConfirmed: boolean
 }
 
 // ==================== 空间视图（列表页 / 三栏空间页） ====================
@@ -460,6 +618,69 @@ export interface DlLessonDigest {
   filename: string
   /** 收录概念数 */
   count: number
+}
+
+// ==================== 单篇讲义导出（2026-09-15 用户需求：md / PDF / 长图） ====================
+
+/** 讲义导出格式：md=markdown 正文 | pdf=PDF 文档 | image=PNG 长图 */
+export type DlLessonExportFormat = 'md' | 'pdf' | 'image'
+
+/**
+ * 讲义导出格式运行时白名单（与 {@link DlLessonExportFormat} 同源，双端共用）。
+ * UI 入口与 IPC 出站/入站都按它校验：未知格式一律拒绝，绝不"猜一个格式"往下渲染。
+ */
+export const DL_LESSON_EXPORT_FORMATS = ['md', 'pdf', 'image'] as const
+
+/**
+ * dl:export-lesson 载荷（单篇知识点讲义导出）。
+ * - md：正文走 markdown 字段；
+ * - pdf/image：二进制走 contentBase64（前端 base64→Blob 保存）；
+ * - html：当前端无平台渲染能力（Web）时的降级产物（含排版 HTML，供前端打印/另存）。
+ */
+export interface DlLessonExportResult {
+  /** 实际产出格式（请求 pdf/image 但无渲染器时为 html） */
+  format: 'md' | 'pdf' | 'image' | 'html'
+  filename: string
+  mime: string
+  conceptId: string
+  conceptName: string
+  spaceName: string
+  /** 导出所用讲义版本号 */
+  version: number
+  markdown?: string
+  contentBase64?: string
+  html?: string
+}
+
+// ==================== 讲义版本管理（2026-09-15 用户需求：历史查看/预览/恢复） ====================
+
+/** 讲义版本列表项（dl:list-card-versions） */
+export interface DlCardVersionItem {
+  cardId: string
+  version: number
+  status: 'draft' | 'published'
+  essenceType: string
+  sectionsCount: number
+  worksCount: number
+  evidenceCount: number
+  /** 核验状态摘要（null=未核验） */
+  verifyStatus: string | null
+  revisionNote: string | null
+  changeSource: string | null
+  createdAt: string | null
+  updatedAt: string | null
+  /** 是否为该概念当前最新版 */
+  isCurrent: boolean
+}
+
+/** dl:restore-card 载荷 */
+export interface DlCardRestoreResult {
+  /** 新生成的卡片 id */
+  cardId: string
+  /** 新版本号 */
+  version: number
+  /** 恢复来源版本号 */
+  restoredFrom: number
 }
 
 /** 笔记来源：讲义选区笔记 / 答疑回答收藏 */

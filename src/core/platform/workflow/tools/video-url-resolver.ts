@@ -11,6 +11,7 @@
  */
 
 import crypto from 'node:crypto'
+import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 
 /** B站 WBI 签名密钥置换表（公开固定常量） */
 const MIXIN_KEY_ENC_TAB = [
@@ -38,7 +39,7 @@ export async function getBilibiliSession(): Promise<BilibiliSession> {
   try {
     const res = await fetch('https://api.bilibili.com/x/frontend/finger/spi', {
       headers: { 'User-Agent': UA },
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(workflowRuntimeParams().tools.videoUrlResolveTimeoutMs),
     })
     if (!res.ok) return { cookie: '', origin: '' }
     const data = (await res.json()) as { code: number; data?: { b_3?: string } }
@@ -111,7 +112,7 @@ export async function bilibiliWbiSign(
 ): Promise<Record<string, string>> {
   const navRes = await fetch('https://api.bilibili.com/x/web-interface/nav', {
     headers: headers ?? { 'User-Agent': UA },
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(workflowRuntimeParams().tools.videoUrlResolveTimeoutMs),
   })
   if (!navRes.ok) throw new Error('B站 nav 接口失败（可能被风控，稍后再试）')
   const nav = (await navRes.json()) as {
@@ -141,7 +142,7 @@ export async function resolveBilibili(inputUrl: string): Promise<ResolvedVideoSo
   // 1. view 接口拿 cid + 标题：优先普通接口；412/失败回退 WBI 签名版（wbi/view）
   let viewRes = await fetch(`https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`, {
     headers: apiHeaders,
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(workflowRuntimeParams().tools.videoUrlResolveTimeoutMs),
   })
   let view = viewRes.ok
     ? ((await viewRes.json()) as { code: number; data?: { cid?: number; title?: string } })
@@ -152,7 +153,7 @@ export async function resolveBilibili(inputUrl: string): Promise<ResolvedVideoSo
     const qs = new URLSearchParams(signed).toString()
     viewRes = await fetch(`https://api.bilibili.com/x/web-interface/wbi/view?${qs}`, {
       headers: apiHeaders,
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(workflowRuntimeParams().tools.videoUrlResolveTimeoutMs),
     })
     if (!viewRes.ok) throw new Error('B站 view 接口失败')
     view = (await viewRes.json()) as { code: number; data?: { cid?: number; title?: string } }
@@ -168,7 +169,7 @@ export async function resolveBilibili(inputUrl: string): Promise<ResolvedVideoSo
   const qs = new URLSearchParams(signed).toString()
   const playRes = await fetch(`https://api.bilibili.com/x/player/wbi/playurl?${qs}`, {
     headers: apiHeaders,
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(workflowRuntimeParams().tools.videoUrlResolveTimeoutMs),
   })
   if (!playRes.ok) throw new Error('B站 playurl 接口失败')
   const play = (await playRes.json()) as {

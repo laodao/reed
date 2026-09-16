@@ -1,8 +1,8 @@
 /**
- * 新闻采集节点（内置应用 C1 早报 / C2 周报的数据层）
+ * 信息采集节点（信息来源库 → 链接清单）
  * @module core/platform/workflow/nodes/news-nodes
- * @description 极简采集：给定主题（预置源目录）或自定义 URL 列表 → 并发 fetch 各源首页 →
- *              提取页面内链接（web-extract 同款 extractPageLinks）→ 跨源合并去重。
+ * @description 极简采集：给定来源分组（信息来源库中任意类别的分组）或来源 ID 多选或自定义 URL 列表
+ *              → 并发 fetch 各源首页 → 提取页面内链接（web-extract 同款 extractPageLinks）→ 跨源合并去重。
  *
  *              不做 CSS 选择器配置、不做 JS 渲染、不做 RSS——任何能 fetch 到 HTML 的
  *              站点都可用；"哪些链接有价值"由下游 LLM 判断（这是通用性的来源）。
@@ -14,7 +14,8 @@ import { getNewsTopicSources } from '@shared/types/news-topics'
 import type { WorkflowNodeContext } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
-import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from '@shared/types/workflow.types'
+import { WORKFLOW_LIMITS } from '@shared/types/workflow.types'
+import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 import { extractPageLinks } from './extra-nodes'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { validateOutboundUrl } from '@core/utils/outbound-url'
@@ -23,7 +24,7 @@ import { politeFetch } from './http-politeness'
 
 const UA = 'Mozilla/5.0 (compatible; the-bot-workflow)'
 
-/** 解析输入源列表：预置主题 + 新闻来源库（sourceIds 多选）+ 自定义 URL（去重） */
+/** 解析输入源列表：来源库多选（sourceIds）+ 分组（topicId）+ 自定义 URL（去重） */
 export async function resolveSourceUrls(
   topicId: string | undefined,
   sourceIdsRaw: unknown,
@@ -40,23 +41,42 @@ export async function resolveSourceUrls(
     seen.add(u)
     out.push({ name, url: u })
   }
-  // 1. 新闻来源库（sourceIds 多选：用户设置页管理，工作流中直接选）
+  // 1. 信息来源库（sourceIds 多选：设置 → 信息来源 中管理，工作流中直接选）
   const ids = parseSourceIds(sourceIdsRaw)
   if (ids.length > 0) {
     try {
       const db = getCoreDatabaseManager()
-      if (db.newsSources) {
-        const rows = await db.newsSources.listByIds(ids)
+      if (db.infoSources) {
+        const rows = await db.infoSources.listByIds(ids)
         for (const r of rows) push(r.name, r.url)
       }
     } catch (e) {
-      // 来源库不可用时降级（不影响预置主题/自定义 URL 路径）
-      console.warn('[crawl-news] 新闻来源库读取失败（降级）', e)
+      // 来源库不可用时降级（不影响分组/自定义 URL 路径）
+      console.warn('[crawl-news] 信息来源库读取失败（降级）', e)
     }
   }
-  // 2. 预置主题源（topicId）
-  for (const s of getNewsTopicSources((topicId ?? '').trim())) {
-    push(s.name, s.url)
+  // 2. 分组整组抓取（topicId）：以库内分组（任意类别，含用户自建）为准；
+  //    库不可用或分组为空时回落到内置新闻源目录（预置目录只作为种子与兜底）
+  const topic = (topicId ?? '').trim()
+  if (topic) {
+    let fromDb = 0
+    try {
+      const db = getCoreDatabaseManager()
+      if (db.infoSources) {
+        const rows = await db.infoSources.listByTopic(topic)
+        for (const r of rows) {
+          push(r.name, r.url)
+          fromDb++
+        }
+      }
+    } catch (e) {
+      console.warn('[crawl-news] 信息来源分组读取失败（回落内置目录）', e)
+    }
+    if (fromDb === 0) {
+      for (const s of getNewsTopicSources(topic)) {
+        push(s.name, s.url)
+      }
+    }
   }
   // 3. 自定义 URL（JSON 数组（string[] 或 [{name,url}]）或逗号分隔）
   const raw = customUrlsRaw
@@ -122,7 +142,7 @@ const crawlNewsNode: WorkflowNodeHandler = {
   validateConfig(config) {
     const cfg = config as { topicId?: string; sourceIds?: string; customUrls?: string }
     if (!cfg.topicId && !stringifyValue(cfg.sourceIds).trim() && !stringifyValue(cfg.customUrls).trim()) {
-      return ['需要选择新闻来源（sourceIds）、预置主题（topicId）或提供自定义 URL（customUrls）']
+      return ['需要选择信息来源（sourceIds）、来源分组（topicId）或提供自定义 URL（customUrls）']
     }
     return []
   },
@@ -140,13 +160,20 @@ const crawlNewsNode: WorkflowNodeHandler = {
     }
     const sources = await resolveSourceUrls(cfg.topicId, cfg.sourceIds, cfg.customUrls)
     if (sources.length === 0) {
-      return { status: 'failed', error: '没有可抓取的来源（预置主题为空或自定义 URL 为空）', retryable: false }
+      return { status: 'failed', error: '没有可抓取的来源（来源分组为空或自定义 URL 为空）', retryable: false }
     }
-    // 并发上限保护：最多并行抓 maxSources 个源
-    const maxSources = Math.min(cfg.maxSources && cfg.maxSources > 0 ? cfg.maxSources : 10, 10)
-    const maxLinksPerSource = Math.min(cfg.maxLinks && cfg.maxLinks > 0 ? cfg.maxLinks : 30, 50)
+    // 并发上限保护：最多并行抓 maxSources 个源（默认与上限都取「参数设置 → 工作流 → 抓取礼貌与网页抓取」）
+    const crawlParams = workflowRuntimeParams().crawl
+    const maxSources = Math.min(cfg.maxSources && cfg.maxSources > 0 ? cfg.maxSources : crawlParams.maxSources, crawlParams.maxSources)
+    const maxLinksPerSource = Math.min(
+      cfg.maxLinks && cfg.maxLinks > 0 ? cfg.maxLinks : crawlParams.maxLinksPerSource,
+      crawlParams.maxLinksPerSource,
+    )
 
-    const timeout = Math.min(WORKFLOW_DEFAULTS.httpRequestTimeoutMs, WORKFLOW_LIMITS.httpTimeoutMs)
+    const timeout = Math.min(
+      workflowRuntimeParams().crawl.httpRequestTimeoutMs,
+      WORKFLOW_LIMITS.httpTimeoutMs,
+    )
     const seen = new Set<string>()
     const links: Array<{ title: string; url: string; source: string }> = []
     const failedSources: Array<{ name: string; url: string; error: string }> = []
@@ -294,13 +321,17 @@ const crawlLinksNode: WorkflowNodeHandler = {
     if (targets.length === 0) {
       return { status: 'failed', error: '待抓取页面列表为空', retryable: false }
     }
-    const maxLinksPerPage = Math.min(cfg.maxLinks && cfg.maxLinks > 0 ? cfg.maxLinks : 50, 100)
+    const linkCrawl = workflowRuntimeParams().crawl
+    const maxLinksPerPage = Math.min(
+      cfg.maxLinks && cfg.maxLinks > 0 ? cfg.maxLinks : linkCrawl.maxLinksPerPage,
+      linkCrawl.maxLinksPerPage,
+    )
     const maxConcurrent = Math.min(
-      cfg.maxConcurrent && cfg.maxConcurrent > 0 ? cfg.maxConcurrent : 5,
-      10
+      cfg.maxConcurrent && cfg.maxConcurrent > 0 ? cfg.maxConcurrent : linkCrawl.maxConcurrentPages,
+      linkCrawl.maxConcurrentPages
     )
     const timeout = Math.min(
-      cfg.timeoutMs && cfg.timeoutMs > 0 ? cfg.timeoutMs : WORKFLOW_DEFAULTS.httpRequestTimeoutMs,
+      cfg.timeoutMs && cfg.timeoutMs > 0 ? cfg.timeoutMs : workflowRuntimeParams().crawl.httpRequestTimeoutMs,
       WORKFLOW_LIMITS.httpTimeoutMs
     )
 

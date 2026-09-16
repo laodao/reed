@@ -12,7 +12,7 @@
 import { LOCAL_DEFAULT_USER_ID, runWithUserAsync } from '@core/context/user-context'
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import type { WorkflowGraph, WorkflowRunStatus, WorkflowStartInput, WorkflowTriggerType } from '@shared/types/workflow.types'
-import { WORKFLOW_DEFAULTS, WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_STATUSES, WORKFLOW_NODE_TYPES, WORKFLOW_TRIGGER_TYPES } from '@shared/types/workflow.types'
+import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS, WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_STATUSES, WORKFLOW_NODE_TYPES, WORKFLOW_TRIGGER_TYPES } from '@shared/types/workflow.types'
 import { WorkflowEngineService, type ExecuteRunInput, type ReviewDecisionInput } from './engine/workflow-engine.service'
 import type { WorkflowEngineDeps, WorkflowEventPort } from './engine/ports'
 import { createWorkflowRunEventProducer } from '@core/platform/services/event-system/workflow-run-producer'
@@ -38,7 +38,14 @@ export interface WorkflowRunServiceDeps {
   engine: WorkflowEngineService
   /** 全局并发运行上限（默认 WORKFLOW_DEFAULTS.maxConcurrentRuns） */
   maxConcurrentRuns?: number
-  /** settings 表 wf:defaults 的全局执行设置覆盖层（boot 读取注入；优先级介于默认值与 definition.settings 之间） */
+  /**
+   * settings 表 `wf:defaults` 的全局执行设置**读取器**（每次运行前现读）。
+   *
+   * 2026-09-13「参数设置」改造：原来是 boot 时读一次的快照（改完必须重启客户端），
+   * 改为读取器后，设置页保存即对**下一次运行**生效。
+   */
+  globalSettingsProvider?: () => Promise<import('@shared/types/workflow.types').WorkflowExecutionSettings | null>
+  /** 兼容：静态全局执行设置（没有 provider 时用；测试与旧调用方） */
   globalSettings?: import('@shared/types/workflow.types').WorkflowExecutionSettings | null
   /** 轨迹查询端口（25 号 M2 批2；缺省/未装配时查询返回空——观测面降级） */
   trajectories?: { listByScope(scopeKey: string): Promise<import('@core/database/repositories/agent-trajectory.repository').AgentTrajectoryRow[]> } | null
@@ -110,15 +117,37 @@ export class WorkflowRunService {
   private queue: Array<{ runId: string; userId: string; execInput: ExecuteRunInput }> = []
   /** 评审 #35：重启后 keptWaiting 审核运行的死线定时器（runId → timer），到期释放互斥槽 */
   private reviewTimeoutTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  private readonly maxConcurrentRuns: number
 
-  constructor(private readonly deps: WorkflowRunServiceDeps) {
-    this.maxConcurrentRuns = deps.maxConcurrentRuns ?? WORKFLOW_DEFAULTS.maxConcurrentRuns
+  constructor(private readonly deps: WorkflowRunServiceDeps) {}
+
+  /**
+   * 现读全局层（`wf:defaults`）：每次运行/出队都读一次，设置页保存后下一次运行即生效。
+   * 读取失败回落静态快照/空对象——配置读不到绝不能让工作流跑不起来。
+   */
+  private async readGlobalSettings(): Promise<import('@shared/types/workflow.types').WorkflowExecutionSettings> {
+    if (this.deps.globalSettingsProvider) {
+      try {
+        return (await this.deps.globalSettingsProvider()) ?? {}
+      } catch (e) {
+        logger.warn('[WorkflowRunService] 读取 wf:defaults 失败（退回静态快照/内置默认）', e)
+      }
+    }
+    return this.deps.globalSettings ?? {}
   }
 
-  /** 合并配置链：definition.settings 覆盖全局层（globalSettings） */
-  private effectiveSettings(definitionSettings: unknown): import('@shared/types/workflow.types').WorkflowExecutionSettings | null {
-    return { ...(this.deps.globalSettings ?? {}), ...((definitionSettings as object) ?? {}) }
+  /** 合并配置链：definition.settings 覆盖全局层（wf:defaults） */
+  private async effectiveSettings(definitionSettings: unknown): Promise<import('@shared/types/workflow.types').WorkflowExecutionSettings | null> {
+    return { ...(await this.readGlobalSettings()), ...((definitionSettings as object) ?? {}) }
+  }
+
+  /**
+   * 全局并发运行上限：现读全局层 `maxConcurrentRuns`（夹到 WORKFLOW_LIMITS）。
+   * 只认全局层——并发是平台级护栏，单个工作流不能靠 definition.settings 抬高它。
+   */
+  private async maxConcurrentRuns(): Promise<number> {
+    const raw = (await this.readGlobalSettings()).maxConcurrentRuns
+    const value = typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : (this.deps.maxConcurrentRuns ?? WORKFLOW_DEFAULTS.maxConcurrentRuns)
+    return Math.min(value, WORKFLOW_LIMITS.maxConcurrentRuns)
   }
 
   /**
@@ -260,7 +289,7 @@ export class WorkflowRunService {
       }
       throw e
     }
-    await this.launch(run.id, run.userId ?? LOCAL_DEFAULT_USER_ID, input.definitionId, graph, this.effectiveSettings(def.settings), mergedInputs, undefined, input.configOverrides, input.triggerInfo)
+    await this.launch(run.id, run.userId ?? LOCAL_DEFAULT_USER_ID, input.definitionId, graph, await this.effectiveSettings(def.settings), mergedInputs, undefined, input.configOverrides, input.triggerInfo)
     return (await this.deps.runs.getById(run.id)) ?? run
   }
 
@@ -287,7 +316,7 @@ export class WorkflowRunService {
       configOverrides,
       triggerInfo,
     }
-    if (this.deps.engine.activeRunningCount >= this.maxConcurrentRuns) {
+    if (this.deps.engine.activeRunningCount >= (await this.maxConcurrentRuns())) {
       this.queue.push({ runId, userId, execInput })
       return
     }
@@ -326,7 +355,13 @@ export class WorkflowRunService {
 
   /** FIFO 出队一个排队运行 */
   private drainQueue(): void {
-    while (this.queue.length > 0 && this.deps.engine.activeRunningCount < this.maxConcurrentRuns) {
+    void this.drainQueueAsync()
+  }
+
+  /** 出队实现（并发上限现读全局层，故是异步的） */
+  private async drainQueueAsync(): Promise<void> {
+    const limit = await this.maxConcurrentRuns()
+    while (this.queue.length > 0 && this.deps.engine.activeRunningCount < limit) {
       const next = this.queue.shift()
       if (!next) break
       void this.executeRun(next.runId, next.userId, next.execInput)
@@ -473,7 +508,7 @@ export class WorkflowRunService {
       source.definitionId,
       graph,
       // 评审 #33：续跑丢定义级执行设置（并发/循环/超时全落默认）——按 startRun 同款装配
-      this.effectiveSettings(def.settings),
+      await this.effectiveSettings(def.settings),
       source.startInputs,
       // 只装配根作用域 checkpoint（iteration 0）；循环体迭代行随未完成循环重跑
       checkpoints

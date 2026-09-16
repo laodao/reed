@@ -3,8 +3,14 @@
  * @description 超大/恶意响应全量入内存可 OOM：content-length 超限直接拒绝；
  *              无 content-length 时流式累计，超限即中止。text 工具函数同步覆盖。
  */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import { readBodyWithLimit, readTextWithLimit, MAX_RESPONSE_BYTES } from '@core/platform/workflow/nodes/response-body'
+import {
+  resetWorkflowRuntimeParams,
+  setWorkflowRuntimeParams,
+} from '@shared/utils/workflow-runtime-params'
+
+afterEach(() => resetWorkflowRuntimeParams())
 
 function resWith(body: string, headers: Record<string, string> = {}): Response {
   return new Response(body, { status: 200, headers })
@@ -55,5 +61,19 @@ describe('response-body 限长读取', () => {
 
   it('readTextWithLimit: 超限抛错', async () => {
     await expect(readTextWithLimit(resWith('x', { 'content-length': String(MAX_RESPONSE_BYTES + 1) }), undefined)).rejects.toThrow('超出')
+  })
+
+  /**
+   * 2026-09-13「参数设置 → 工作流 → 抓取礼貌与网页抓取」：不传 limit 时取**生效参数**，
+   * 而不再是固定常量。注入更小的上限后，同一个响应会被拒。
+   */
+  it('不传 limit 时用「参数设置」的响应体上限', async () => {
+    // 默认 50MB：200 字节放行
+    expect((await readBodyWithLimit(resWith('x'.repeat(200)))).byteLength).toBe(200)
+
+    setWorkflowRuntimeParams({ crawl: { responseMaxBytes: 100 } })
+    await expect(readBodyWithLimit(resWith('x'.repeat(200)))).rejects.toThrow('超出')
+    // 显式传 limit 仍然优先（调用方口径不变）
+    expect((await readBodyWithLimit(resWith('x'.repeat(200)), 1000)).byteLength).toBe(200)
   })
 })

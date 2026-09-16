@@ -18,7 +18,7 @@ import { executeHttpFetch } from '../nodes/http-fetch'
 import { runCodeInSandbox, isElectronRuntime } from '../nodes/code-nodes'
 import { getVariableDataService } from '../variables/variable-data.service'
 import { getSearchEngineService } from '@core/platform/services/search-engine.service'
-import { WORKFLOW_LIMITS } from '@shared/types/workflow.types'
+import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 import type { AgentToolDef } from '@core/platform/agent-runtime/types'
 import type { AgentToolRegistry } from '@core/platform/agent-runtime/tools/registry'
 
@@ -135,7 +135,9 @@ const codeRunTool: AgentToolDef<z.infer<typeof CodeRunInput>> = {
     if (!isElectronRuntime()) {
       throw new Error('code_run 仅桌面端可用（Web 端不支持在服务端执行任意 JS）')
     }
-    return { result: runCodeInSandbox(input.code, input.inputs ?? {}, WORKFLOW_LIMITS.codeTimeoutMs) }
+    return {
+      result: runCodeInSandbox(input.code, input.inputs ?? {}, workflowRuntimeParams().codeSandbox.timeoutMs),
+    }
   },
 }
 

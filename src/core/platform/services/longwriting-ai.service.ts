@@ -29,6 +29,7 @@ import { createProvider } from '@core/platform/providers/llm'
 import { PROVIDER_TEMPLATES, isApiKeyOptional } from '@core/platform/services/provider-template.service'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import type { ProviderTemplate, UserProviderConfig, ChatContext } from '@shared/types'
+import { longwritingParams } from '@shared/utils/longwriting-params'
 
 /**
  * 生成任务类型
@@ -1809,6 +1810,13 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
       }
   > {
     const dbManager = getCoreDatabaseManager()
+    // 「参数设置 → 长文写作 → 章节生成」：方法内现读（不要在模块顶层读，否则不跟随重注入）
+    const {
+      windowTokens: windowTokensParam,
+      maxOutputTokens,
+      chapterTargetWords,
+      previousChapterEndingChars,
+    } = longwritingParams().writing
 
     // 获取大纲节点
     const outline = await dbManager.lwOutlines?.getById(outlineId)
@@ -1840,7 +1848,10 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
     if (lastChapterOutline) {
       const lastChapter = await dbManager.lwChapters?.getByOutlineId(lastChapterOutline.id)
       if (lastChapter?.content) {
-        previousChapterEnding = this.extractEndingContentByParagraph(lastChapter.content)
+        previousChapterEnding = this.extractEndingContentByParagraph(
+          lastChapter.content,
+          previousChapterEndingChars,
+        )
       }
     }
 
@@ -2041,17 +2052,17 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
       extraText,
     }
 
-    const targetWordsFinal = opts.targetWords || outline.estimatedWords || 3000
+    const targetWordsFinal = opts.targetWords || outline.estimatedWords || chapterTargetWords
     const prompt = composeChapterPrompt(parts, () => true, { targetWords: targetWordsFinal, style: opts.style, extraPrompt: opts.extraPrompt })
     // 评审 P3-1：纪律注入后 systemPrompt 也有千字级体量，预算估算应包含它
     const estimateTokens = estimateContextTokens(prompt) + estimateContextTokens(systemPrompt)
-    const windowTokens = 32_768
+    const windowTokens = windowTokensParam
 
     return {
       ok: true,
       prompt,
       systemPrompt,
-      maxTokens: Math.min(targetWordsFinal * 2, 8192),
+      maxTokens: Math.min(targetWordsFinal * 2, maxOutputTokens),
       estimateTokens,
       windowTokens,
       items,
@@ -2250,11 +2261,11 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
   /**
    * 从上一章正文结尾按段落截取指定字数的内容
    * @param content 章节正文内容
-   * @param targetChars 目标字数（默认550字）
+   * @param targetChars 目标字数（缺省取「参数设置 → 长文写作 → 上章结尾注入字数」）
    */
   private extractEndingContentByParagraph(
     content: string,
-    targetChars: number = 550
+    targetChars: number = longwritingParams().writing.previousChapterEndingChars
   ): string {
     if (!content || content.length <= targetChars) {
       return content || ''
@@ -2454,6 +2465,8 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
     modelId?: string
   ): Promise<GenerateResponse> {
     const dbManager = getCoreDatabaseManager()
+    // 「参数设置 → 长文写作 → 段落目标字数」：方法内现读
+    const { sectionTargetWords } = longwritingParams().writing
 
     // 获取大纲节点
     const outline = await dbManager.lwOutlines?.getById(outlineId)
@@ -2488,7 +2501,7 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
 核心观点：${overview?.coreIdea || '未指定'}
 段落标题：${outline.name}
 段落要点：${outline.summary}
-目标字数：${targetWords || outline.estimatedWords || 500}字
+目标字数：${targetWords || outline.estimatedWords || sectionTargetWords}字
 
 可用素材：
 ${materialContext || '无特定素材'}
@@ -2500,7 +2513,7 @@ ${materialContext || '无特定素材'}
         eventId,
         prompt,
         systemPrompt,
-        Math.min((targetWords || outline.estimatedWords || 500) * 2, 4096),
+        Math.min((targetWords || outline.estimatedWords || sectionTargetWords) * 2, 4096),
         providerConfigId,
         modelId
       )
@@ -3144,6 +3157,8 @@ ${prewriteContent}
    */
   private async getMemoryContext(projectId: string, chapterNumber: number): Promise<string> {
     const dbManager = getCoreDatabaseManager()
+    // 「参数设置 → 长文写作 → 记忆注入条数」：方法内现读
+    const { normalMemoryLimit, minorMemoryLimit } = longwritingParams().writing
     const memories = await dbManager.lwMemories?.getMemoriesBeforeChapter(projectId, chapterNumber) || []
 
     if (memories.length === 0) {
@@ -3169,18 +3184,18 @@ ${prewriteContent}
     // 重要记忆
     if (normalMemories.length > 0) {
       context += '\n【重要情节】\n'
-      normalMemories.slice(0, 10).forEach(m => {
+      normalMemories.slice(0, normalMemoryLimit).forEach(m => {
         context += `- [${this.getMemoryTypeLabel(m.memoryType)}] ${m.title}：${m.description}\n`
       })
-      if (normalMemories.length > 10) {
-        context += `  ... 还有 ${normalMemories.length - 10} 条记忆\n`
+      if (normalMemories.length > normalMemoryLimit) {
+        context += `  ... 还有 ${normalMemories.length - normalMemoryLimit} 条记忆\n`
       }
     }
 
     // 次要记忆（只显示最近几条）
     if (minorMemories.length > 0) {
       context += '\n【其他参考】\n'
-      minorMemories.slice(-5).forEach(m => {
+      minorMemories.slice(-minorMemoryLimit).forEach(m => {
         context += `- ${m.title}\n`
       })
     }

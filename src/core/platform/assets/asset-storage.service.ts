@@ -16,6 +16,7 @@ import * as path from 'path'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { resolveAssetPath } from '@core/utils/asset-path'
 import { validateOutboundUrl } from '@core/utils/outbound-url'
+import { assetParams } from '@shared/utils/asset-params'
 import { ASSET_CATEGORIES, type AssetCategory } from '@shared/types/asset.types'
 
 /** 常见扩展名 → MIME（探测不到时兜底 application/octet-stream） */
@@ -94,14 +95,15 @@ export class AssetStorageService {
     if (!guard.ok) {
       throw new Error(`下载 URL 校验失败：${guard.reason}`)
     }
-    const resp = await fetch(url, { signal: AbortSignal.timeout(30_000) })
+    // 超时与体积上限走「参数设置 → 素材与图片 → 素材下载与网页收藏」
+    const { downloadTimeoutMs, maxDownloadBytes } = assetParams().asset
+    const resp = await fetch(url, { signal: AbortSignal.timeout(downloadTimeoutMs) })
     if (!resp.ok) {
       throw new Error(`下载失败: HTTP ${resp.status}`)
     }
     const buffer = Buffer.from(await resp.arrayBuffer())
-    // 响应大小上限 50MB（防 OOM）
-    if (buffer.byteLength > 50 * 1024 * 1024) {
-      throw new Error('下载内容超过 50MB 上限')
+    if (buffer.byteLength > maxDownloadBytes) {
+      throw new Error(`下载内容超过 ${Math.round(maxDownloadBytes / 1024 / 1024)}MB 上限`)
     }
     const mimeType = resp.headers.get('content-type')?.split(';')[0]?.trim() || undefined
     return this.writeBuffer(buffer, category, name, mimeType)
@@ -222,10 +224,10 @@ function extOf(fileNameOrUrl: string): string {
   return /^[a-zA-Z0-9]{1,10}$/.test(ext) ? ext.toLowerCase() : ''
 }
 
-/** 文件名净化：去掉路径分隔与非法字符，限制长度 */
+/** 文件名净化：去掉路径分隔与非法字符，限制长度（长度上限走「参数设置 → 素材与图片」） */
 function sanitizeFileName(name: string): string {
   const cleaned = name.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').replace(/\s+/g, ' ').trim()
-  return cleaned.slice(0, 120) || 'asset'
+  return cleaned.slice(0, assetParams().asset.maxFileNameChars) || 'asset'
 }
 
 /** 重名去重：追加 -1/-2... 序号 */

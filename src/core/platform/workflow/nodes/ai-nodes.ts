@@ -24,7 +24,9 @@ import { getPathProvider } from '@core/interfaces/path.interface'
 import type { WorkflowNodeContext } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
-import { WORKFLOW_DEFAULTS, WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_EVENT_TYPES } from '@shared/types/workflow.types'
+import { WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_EVENT_TYPES } from '@shared/types/workflow.types'
+import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
+import { knowledgeParams } from '@shared/utils/knowledge-params'
 import { pollUntil } from '../engine/async-utils'
 import { submitWithTransientRetry } from './retry-submit'
 import { getEventEmitter } from '@core/interfaces/event.interface'
@@ -153,8 +155,10 @@ const kbQueryMultiNode: WorkflowNodeHandler = {
     if (ctx.signal.aborted) throw new Error('已取消')
     const service = new KnowledgeBaseService()
     const query = stringifyValue(cfg.query)
-    const perKb = Math.max(1, Math.min(20, Number(cfg.topKPerKb) || 5))
-    const mergedCap = Math.max(1, Math.min(60, Number(cfg.maxResults) || 20))
+    // 多库检索的每库/合并条数上限走「参数设置 → 知识库 → 检索」（节点配置仍是硬夹的上界内取值）
+    const kb = knowledgeParams().retrieval
+    const perKb = Math.max(1, Math.min(kb.maxTopKPerKb, Number(cfg.topKPerKb) || 5))
+    const mergedCap = Math.max(1, Math.min(kb.maxMergedResults, Number(cfg.maxResults) || 20))
 
     const rows: Array<{
       content: string
@@ -273,7 +277,11 @@ const kbIngestNode: WorkflowNodeHandler = {
         if (doc.status === 'completed' || doc.status === 'failed') return doc
         return undefined
       },
-      { intervalMs: WORKFLOW_DEFAULTS.kbIngestPollIntervalMs, timeoutMs: WORKFLOW_DEFAULTS.kbIngestWaitTimeoutMs, signal: ctx.signal }
+      {
+        intervalMs: workflowRuntimeParams().polling.kbIngestIntervalMs,
+        timeoutMs: workflowRuntimeParams().polling.kbIngestWaitTimeoutMs,
+        signal: ctx.signal,
+      }
     )
     if (doc.status === 'failed') {
       return { status: 'failed', error: '知识库文档处理失败', retryable: true }
@@ -471,7 +479,11 @@ const imageGenNode: WorkflowNodeHandler = {
           if (st.status === 'failed') throw new Error(st.error ?? '图像生成失败')
           return undefined
         },
-        { intervalMs: WORKFLOW_DEFAULTS.imagePollIntervalMs, timeoutMs: WORKFLOW_DEFAULTS.imagePollTimeoutMs, signal: ctx.signal }
+        {
+          intervalMs: workflowRuntimeParams().polling.imageIntervalMs,
+          timeoutMs: workflowRuntimeParams().polling.imageWaitTimeoutMs,
+          signal: ctx.signal,
+        }
       )
       images = task.images ?? []
       ctx.emitProgress(100)

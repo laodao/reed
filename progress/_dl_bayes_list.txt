@@ -1,0 +1,500 @@
+﻿共 499 个知识点（本次打印 1~499）
+2026 ISBA 世界会议 | en=2026 ISBA World Meeting | 目录=验收·贝叶斯入门·领域根 | 卡1 边0 | untouched/undefined | def: 国际贝叶斯分析学会（ISBA）2026 年世界会议，ISBA 官网世界会议列表列为 2026-06-28 至 07-03；是 2026 年贝
+Barron 可忽略先验质量条件 | en=Barron's negligible prior mass condition | 目录=验收·贝叶斯入门·领域根 | 卡1 边3 | untouched/undefined | def: 筛（sieve）模型下把 Schwartz 型一致性推广出去所用的条件：筛外先验质量必须随 n 小到可忽略（指数级小，如 Π(Θ_n^c) 
+Barron–Schervish–Wasserman 定理 | en=Barron–Schervish–Wasserman consistency theorem | 目录=验收·贝叶斯入门·领域根 | 卡0 边5 | untouched/undefined | def: 非参数后验一致性的经典充分条件定理：KL 邻域先验正测度 + 筛上指数小错误概率的检验 + 筛外先验质量指数级可忽略，三者合起来推出后验沿真
+Bernstein–von Mises 定理 | en=Bernstein-von Mises theorem | 目录=验收·贝叶斯入门·领域根 | 卡3 边5 | untouched/undefined | def: 大样本下后验分布近似正态 N(θ̂_n, I(θ_0)^{-1}/n)：后验不仅像一致性那样集中到真值附近，还复制了极大似然估计的渐近正态形
+Bernstein–von Mises 定理（正确指定下的经典版本） | en=Bernstein–von Mises theorem (classical, well-specified case) | 目录=验收·贝叶斯入门·领域根 | 卡1 边13 | untouched/undefined | def: 在模型正确指定且正则条件下，后验分布随样本量增大收敛到以极大似然估计为中心、协方差为 (1/n)I(θ0)^{-1} 的高斯分布，与频率派 
+Berry–Esseen 定理 | en=Berry–Esseen theorem | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: CLT 的非渐近量化：标准化和与标准正态 CDF 的一致距离 ≤ C·E|X−μ|³/(σ³√n)，即误差阶 O(n^{−1/2})。
+Beta 分布 Beta(α, β) | en=Beta Distribution | 目录=验收·贝叶斯入门·领域根 | 卡3 边13 | untouched/undefined | def: 定义在 [0,1] 上的两参数连续分布：密度 x^{α-1}(1-x)^{β-1}/B(α,β)，是伯努利/二项似然的共轭先验与单形参数的概
+Borel σ-代数 | en=Borel σ-algebra B(ℝ) | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 实数集 ℝ 上由所有开区间（等价地：所有开集、所有 (−∞,x]）生成的 σ-代数 B(ℝ)；连续型随机变量的取值事件都取在它里面。
+Box–Muller 变换 | en=Box–Muller transform | 目录=随机数生成与采样方法 | 卡0 边2 | untouched/undefined | def: 用两个独立均匀数经极坐标变换直接得到标准正态样本：正态 CDF 无初等反函数时的替代路线。
+CDF 的广义逆（inf 定义） | en=- | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: F^{-1}(u)=inf{x: F(x)≥u}：即使 CDF 有跳点（原子）也成立，保证逆变换采样在离散/混合分布上仍然正确。
+Cramér–Rao 下界 | en=Cramér–Rao bound | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 无偏估计量方差的下界：Var(θ̂) ≥ 1/I(θ)，其中 I(θ) 为 Fisher 信息量（得分函数的方差）。
+Dirichlet 分布 | en=Dirichlet distribution | 目录=验收·贝叶斯入门·领域根 | 卡1 边9 | untouched/undefined | def: 定义在 K 维概率单纯形上的分布：它的一个样本就是一个完整的 K 类概率分布（狄利克雷分布）。
+Dirichlet 过程 | en=Dirichlet process | 目录=验收·贝叶斯入门·领域根 | 卡1 边3 | untouched/undefined | def: 取值本身就是「概率分布」的随机过程：它的一次抽样给出一个完整分布，是贝叶斯非参数最常用的先验构件。
+Doob 一致性定理 | en=Doob's consistency theorem (1949) | 目录=验收·贝叶斯入门·领域根 | 卡1 边3 | untouched/undefined | def: iid 抽样下，对先验 π 的几乎每个真参数 θ，后验随样本量增大在 θ 处弱相合（先验零测集以外成立）。
+Doob 上穿不等式（upcrossing inequality） | en=Doob's upcrossing inequality | 目录=验收·贝叶斯入门·领域根 | 卡0 边4 | untouched/undefined | def: 对下鞅 X，区间 (a,b) 上的上穿次数 U_N 满足 E[U_N] ≤ (E[X_N^+] + |a|)/(b−a)——它把「振荡」的期
+Dvoretzky–Kolmogorov–Wolfowitz（DKW）不等式 | en=Dvoretzky–Kolmogorov–Wolfowitz inequality | 目录=根层 | 卡0 边2 | untouched/undefined | def: 对任意 ε>0，P(sup_x|F_n(x)−F(x)| > ε) ≤ 2e^{−2nε²}（Massart 常数 2 为最优），给出 KS
+Einstein 求和约定（Einstein summation convention） | en=Einstein summation convention | 目录=验收·贝叶斯入门·领域根 | 卡2 边5 | untouched/undefined | def: 同一项内重复出现恰好两次的指标默认对其全部取值范围求和，从而省略 Σ 的记号缩写约定（如 c = A_i B_i）。
+Fisher 信息 | en=Fisher information | 目录=验收·贝叶斯入门·领域根 | 卡1 边8 | untouched/undefined | def: 对数似然得分函数平方的期望 I(θ)=E[(∂log f(X;θ)/∂θ)²]，度量数据对参数 θ 的敏感度。
+Fisher 信息量 | en=Fisher information | 目录=验收·贝叶斯入门·领域根 | 卡1 边12 | untouched/undefined | def: 似然对参数的敏感度的平方期望 I(θ)=E[(∂log p(X|θ)/∂θ)²]=-E[∂²log p/∂θ²]，是 Jeffreys 先验
+Ghosal–Ghosh–van der Vaart 先验质量条件 | en=Ghosal–Ghosh–van der Vaart prior mass condition | 目录=验收·贝叶斯入门·领域根 | 卡1 边3 | untouched/undefined | def: 为得到后验收缩速率，要求先验在小球（Schwartz KL 邻域与度量球的指数型小球）上给出 exp(−nε²) 量级的质量下界；Kleij
+Glivenko–Cantelli 定理 | en=Glivenko–Cantelli theorem | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: sup_x|F_n(x)−F(x)| → 0 几乎必然成立：经验分布函数一致（在最坏点上）收敛于真实分布函数，是一切 EDF 型检验一致性的
+Halton 序列 | en=Halton sequence | 目录=根层 | 卡0 边2 | untouched/undefined | def: 把不同素数为底的 van der Corput 序列作为各维坐标拼起来的多维低差异序列，构造简单（无需数字网理论）但高维时星偏差界变差。
+Hammersley–Clifford 定理 | en=Hammersley-Clifford theorem | 目录=验收·贝叶斯入门·领域根 | 卡2 边8 | untouched/undefined | def: 在密度处处为正（正性条件）的前提下，关于无向图满足全局马尔可夫性的分布恰好等于按图的最大团因式分解的吉布斯分布 p(x)=∏_C ψ_C(x
+Hellinger 距离（Hellinger distance） | en=Hellinger distance | 目录=验收·贝叶斯入门·领域根 | 卡1 边3 | untouched/undefined | def: 两个概率分布之间对称、有界的距离：H(p,q)=√(1-Σ√(pᵢqᵢ))（离散）或 √(1-∫√(p q)dx)（连续），取值 [0,1]
+Hölder 光滑类（Hölder smoothness class） | en=Hölder smoothness class | 目录=验收·贝叶斯入门·领域根 | 卡0 边1 | untouched/undefined | def: 前 s 阶导数存在、且 s 阶导数满足 |f⁽ˢ⁾(x)−f⁽ˢ⁾(y)| ≤ L|x−y|^β（β∈(0,1]）的函数类；光滑度 s+β 
+Jeffreys 先验 | en=Jeffreys prior | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 以 Fisher 信息行列式开方为密度的不变（客观）先验：单参数 π(θ) ∝ √I(θ)，多参数 π(θ) ∝ √det I(θ)。
+Jensen 不等式 | en=- | 目录=根层 | 卡1 边4 | untouched/undefined | def: 
+KL 一致性（Kullback–Leibler consistency） | en=Kullback–Leibler consistency | 目录=验收·贝叶斯入门·领域根 | 卡1 边3 | untouched/undefined | def: 要求后验在每个 KL 邻域 U(ε)={p:K(p₀,p)<ε} 之外的质量趋于 0（∀ε>0）；因 K(p₀,p) ≥ 2h²，它蕴含 H
+KL 散度 | en=Kullback-Leibler divergence | 目录=验收·贝叶斯入门·领域根 | 卡1 边15 | untouched/undefined | def: 两个分布间的相对熵；收缩率的先验质量条件与指数分离检验都用它度量“接近真值”。
+KL 散度（KL divergence） | en=Kullback-Leibler divergence | 目录=验收·贝叶斯入门·领域根 | 卡1 边1 | untouched/undefined | def: 衡量两个概率分布差异的非对称量 KL(p‖q)=∫p(x)log(p(x)/q(x))dx；在敏感性分析中用来度量基础先验与备择先验下两个后
+KL 散度（Kullback–Leibler 散度） | en=Kullback–Leibler divergence | 目录=验收·贝叶斯入门·领域根 | 卡1 边9 | untouched/undefined | def: 衡量两个分布差异的非负、不对称量 D_KL(p‖q)=E_p[log p−log q]；模型中「最接近真实分布的分布」就是用它度量的。
+KL 散度（相对熵） | en=Kullback-Leibler divergence | 目录=验收·贝叶斯入门·领域根 | 卡1 边7 | untouched/undefined | def: 衡量两个分布差异的非负量：KL(q‖p)=E_q[log q(z)-log p(z)]≥0，等于 0 当且仅当 q=p；VI 用它度量近似分
+KL 邻域（Kullback–Leibler neighborhood） | en=Kullback–Leibler neighborhood | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 以真实分布 p0 为中心、用 KL 散度 K(p0‖p) 与（绝对连续性所需的）L1/密度比偏差刻画的弱邻域，Schwartz 定理的条件一
+Koksma–Hlawka 不等式 | en=Koksma–Hlawka inequality | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 把积分近似误差拆成两部分的经典界：|误差| ≤ V(f)·D*_N，即「被积函数的变差」×「点集的偏差」——它解释了低差异点为何有用。
+Kolmogorov 分布（KS 检验零分布） | en=Kolmogorov distribution | 目录=验收·贝叶斯入门·领域根 | 卡1 边5 | untouched/undefined | def: 参数完全已知时 √n·D_n 的极限零分布（sup|Brownian bridge|），给出 KS 检验的临界值与 p 值。
+Kolmogorov–Smirnov 拟合优度检验 | en=Kolmogorov-Smirnov goodness-of-fit test | 目录=验收·贝叶斯入门·领域根 | 卡2 边4 | untouched/undefined | def: 以 D_n = sup_x|F_n(x)−F_0(x)| 为统计量、在「分布参数全部指定」前提下分布无关的拟合优度检验；p 值只依赖 α 与
+Kolmogorov–Smirnov 统计量 D_n | en=Kolmogorov–Smirnov statistic | 目录=验收·贝叶斯入门·领域根 | 卡1 边9 | untouched/undefined | def: 经验分布函数与假设分布函数的最大绝对差 sup_x|F_n(x)−F(x)|（一侧形式 D⁺/D⁻）。
+Kullback–Leibler 性质（KL property） | en=Kullback-Leibler property (KL property) | 目录=验收·贝叶斯入门·领域根 | 卡0 边1 | untouched/undefined | def: 先验在真实分布 p0 的每个 KL 邻域上都赋正质量：Π(K(p0,ε))>0 对所有 ε>0 成立；这是后验一致性的第一个（先验质量）条件
+L2 星偏差（Warnock 公式） | en=L2 star discrepancy / Warnock's formula | 目录=根层 | 卡0 边2 | untouched/undefined | def: 把星偏差里的 sup 换成对 [0,1)^s 的 L2 平均，得到的量可用 O(N·s) 的 Warnock 公式精确计算，因此是工程上可算
+Lilliefors 检验（参数估计后的 KS 失效） | en=Lilliefors test / KS test with estimated parameters | 目录=验收·贝叶斯入门·领域根 | 卡2 边6 | untouched/undefined | def: 当 KS 统计量所用的分布参数由同一批数据估计（如正态的 x̄、s）时，Kolmogorov 零分布不再适用，须改用 Lilliefors 
+Lindeberg 条件与李雅普诺夫条件 | en=Lindeberg / Lyapunov condition | 目录=根层 | 卡0 边3 | untouched/undefined | def: 独立但不同分布时替代 iid 的条件：Lindeberg 条件要求每个「小」加项对总方差的贡献可忽略，满足则 CLT 仍成立；李雅普诺夫条件
+MCMC | en=Markov Chain Monte Carlo | 目录=验收·贝叶斯入门·领域根 | 卡1 边3 | untouched/undefined | def: 马尔可夫链蒙特卡罗：用马尔可夫链采样近似后验分布，再以样本均值估计 E[θ|数据] 等期望量。
+MCMC 收敛诊断 | en=MCMC convergence diagnostics | 目录=贝叶斯方法论的开放问题 [目录非group] | 卡3 边5 | untouched/undefined | def: 如何判断 MCMC 链已收敛到目标后验：现有诊断（如 R-hat）都是启发式，不存在通用可证明的停机判据。
+MCMC 收敛诊断（R-hat 与 ESS） | en=MCMC Convergence Diagnostics (R-hat, ESS) | 目录=验收·贝叶斯入门·领域根 | 卡1 边2 | untouched/undefined | def: 用多个并行链的组间/组内方差比（R-hat）与有效样本量（ESS）判断 MCMC 是否收敛、样本能否当作独立样本来算期望与方差。
+MCMC（马尔可夫链蒙特卡罗） | en=Markov chain Monte Carlo (MCMC) | 目录=根层 | 卡2 边3 | untouched/undefined | def: 贝叶斯统计的核心计算工具：构造马尔可夫链并让它的样本近似目标后验分布。
+Matérn 核 | en=Matérn kernel | 目录=验收·贝叶斯入门·领域根 | 卡0 边0 | untouched/undefined | def: 由平滑度参数 ν>0 控制样本函数可微次数的核族：ν 越小样本函数越粗糙；ν=1/2 对应指数核（OU 过程），ν→∞ 趋于平方指数核。
+Metropolis 接受率与细致平衡 | en=Metropolis acceptance / detailed balance | 目录=验收·贝叶斯入门·领域根 | 卡1 边5 | untouched/undefined | def: MH 类算法的接受概率 α(x,x′)=min(1, [π(x′)q(x|x′)]/[π(x)q(x′|x)]) 及其保证 π 为平稳分布的
+Metropolis 校正朗之万算法（MALA） | en=Metropolis-Adjusted Langevin Algorithm (MALA) | 目录=验收·贝叶斯入门·领域根 | 卡1 边2 | untouched/undefined | def: 在 ULA 的朗之万提议后加一步 Metropolis-Hastings 接受/拒绝校正，使链的平稳分布精确为目标 π，代价是每次迭代都要算
+Metropolis–Hastings 算法 | en=Metropolis–Hastings algorithm | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 以提议分布 q(θ′|θ) 生成候选、按接受比 α=min(1, p̃(θ′)q(θ|θ′)/(p̃(θ)q(θ′|θ))) 判决的 MCM
+Nadaraya–Watson 核回归 | en=Nadaraya-Watson kernel regression | 目录=根层 | 卡2 边6 | untouched/undefined | def: 用核权重对邻近观测的响应值做加权平均来估计回归函数：m̂(x)=ΣᵢK((x−xᵢ)/h)yᵢ / ΣᵢK((x−xᵢ)/h)。
+Niederreiter 序列（多项式构造的数字序列） | en=Niederreiter sequence | 目录=根层 | 卡0 边2 | untouched/undefined | def: 用有限域上不可约多项式与生成矩阵直接构造的数字 (t,s)-序列（基数 b 可为素数幂），Niederreiter 的构造框架；与 Sobo
+PCG 系列生成器（PCG64） | en=Permuted congruential generator (PCG64) | 目录=根层 | 卡0 边1 | untouched/undefined | def: 把弱线性状态（128 位 LCG）与强输出置换解耦的生成器；状态 128 位、周期 2^128，是 NumPy default_rng 的默
+Pareto k̂ 诊断（Pareto k̂ diagnostic） | en=Pareto k̂ diagnostic | 目录=根层 | 卡0 边3 | untouched/undefined | def: 对重要性比上尾拟合广义 Pareto 分布得到形状参数 k̂，用于判断权重退化是否已严重到估计量方差（甚至均值）不存在的程度。
+Pareto 平滑重要抽样（PSIS） | en=Pareto smoothed importance sampling (PSIS) | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 对 SNIS 权重上尾拟合广义 Pareto 分布并平滑极端权重，得到更稳的估计与 k̂ 诊断（权重尾部厚度的判据）。
+R-hat（潜在尺度缩减因子） | en=R-hat / potential scale reduction factor | 目录=根层 | 卡1 边5 | untouched/undefined | def: 比较链内与链间估计的收敛诊断量：链没混合好（两者不一致）时 R-hat 大于 1；2021 年起推荐用秩归一化+折叠+分链版本，阈值 1.0
+RKHS（再生核希尔伯特空间） | en=reproducing kernel Hilbert space (RKHS) | 目录=验收·贝叶斯入门·领域根 | 卡1 边10 | untouched/undefined | def: 高斯过程先验支撑所对应的函数空间（含范数 ||·||_H）；后验收缩速率取决于真实函数相对该空间的『位置』。
+R̂（Gelman–Rubin 收敛诊断量） | en=R-hat (Gelman-Rubin convergence diagnostic) | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 用多条 MCMC 链的链内/链间方差之比判断是否收敛的诊断量；传统版本在重尾或链间方差不等时会漏诊，故有秩归一化等改进版本。
+SGMCMC 完整构造 recipe（两矩阵框架） | en=complete recipe for stochastic gradient MCMC | 目录=验收·贝叶斯入门·领域根 | 卡1 边5 | untouched/undefined | def: 用两个矩阵（漂移/扩散结构 D 与 G）指定连续马尔可夫过程来统一构造采样器（含随机梯度版本）的完备框架：任何能从目标分布采样的连续马尔可夫
+SNIS 的有限样本偏差与方差（delta 方法） | en=finite-sample bias and variance of SNIS (delta method) | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: SNIS 是有偏估计：用 delta 方法可得偏差≈(1/n)(μE_g[w²]−E_g[w²h])/Z²、方差≈(1/n)Var_g(w(
+Schwartz 定理 | en=Schwartz's theorem (1965) | 目录=验收·贝叶斯入门·领域根 | 卡1 边7 | untouched/undefined | def: 先验质量条件（先验给 KL 邻域正质量/可控下界）+ 指数分离检验条件（存在两类错误指数小的检验）两条成立时，后验一致的经典充分条件定理。
+Slutsky 定理 | en=Slutsky's theorem | 目录=根层 | 卡0 边2 | untouched/undefined | def: 若 X_n ⇒ X 且 Y_n 依概率收敛到常数 c，则 X_n+Y_n ⇒ X+c、X_n·Y_n ⇒ cX（c≠0 时 X_n/Y_n 
+Sobol 序列（Sobol' sequence） | en=Sobol' sequence | 目录=根层 | 卡0 边2 | untouched/undefined | def: 基数 2 的数字 (t,s)-序列，只需一组方向数（生成矩阵）即可穷尽式地产生无穷多点，是 scipy.stats.qmc.Sobol 背后
+Walker 一致性定理 | en=- | 目录=根层 | 卡1 边3 | untouched/undefined | def: 在可分模型下用先验质量下界（ABC 型条件）替代 Schwartz 定理中较难验证的条件的后验一致性定理（见 Kleijn & Zhao 摘
+Walsh 函数与数字网的 Walsh 级数分析 | en=Walsh functions & Walsh series analysis of digital nets | 目录=根层 | 卡0 边2 | untouched/undefined | def: 把 [0,1)^s 上的函数展开为 Walsh 基（以二进制数字为变量的 ±1 正交函数）级数，用来把数字网的星偏差/积分误差拆成“对偶网”
+Ziggurat 算法 | en=Ziggurat algorithm | 目录=根层 | 卡0 边2 | untouched/undefined | def: 把密度（或其尾部）下方用若干等面积矩形/分层覆盖，绝大多数抽帧只需查表与一次均匀判决即可接受的快速拒绝采样，典型用于标准正态与指数分布。
+d-分离（d-separation） | en=d-separation | 目录=验收·贝叶斯入门·领域根 | 卡1 边8 | untouched/undefined | def: 有向图中两个变量集被第三个集合「阻断路径」的图形判据，用于读出条件独立性；do-演算三条规则的适用条件都用它表述。
+do-演算 | en=do-calculus | 目录=根层 | 卡1 边1 | untouched/undefined | def: 把含 do 算子的概率表达式改写为普通条件概率的三条公理规则，是判定因果量是否可识别的句法工具。
+do-演算（do-calculus） | en=do-calculus | 目录=验收·贝叶斯入门·领域根 | 卡1 边3 | untouched/undefined | def: 把含 do 算子的概率表达式换成普通条件概率的三条公理模式（插入/删除观测、动作与观测互换、插入/删除动作）。
+k 阶忠实性放松（k-order relaxation of faithfulness） | en=k-order relaxation of the faithfulness assumption | 目录=根层 | 卡0 边3 | untouched/undefined | def: 只要求「由图上最多 k 个变量子集构成的条件独立」忠实，允许更高阶的巧合独立存在，作为强忠实性的较弱替代以保证算法一致性的可用性。
+n 步转移概率矩阵 Pⁿ 与 Chapman–Kolmogorov 方程 | en=n-step transition matrix P^n / Chapman–Kolmogorov equation | 目录=根层 | 卡1 边7 | untouched/undefined | def: P^n 的第 (i,j) 元是 n 步转移概率 P(X_{n}=j|X_0=i)；Chapman–Kolmogorov 方程 P^{m+n}
+van der Corput 序列（根式逆序） | en=van der Corput sequence | 目录=根层 | 卡0 边3 | untouched/undefined | def: 一维低差异序列的最小样板：把 n 写成二进小数后按位镜像（radical inverse）得到 [0,1) 中的点，N 个点即可达到最优量级
+z 检验（正态近似检验） | en=One-sample z-test (normal approximation test) | 目录=验收·贝叶斯入门·领域根 | 卡0 边1 | untouched/undefined | def: 以 z=(x̄−μ₀)/(σ/√n) 为统计量、查标准正态分位数定拒绝域的检验；大样本下由 CLT 保证其零分布近似 N(0,1)。
+z-可识别性 | en=z-identifiability | 目录=根层 | 卡1 边1 | untouched/undefined | def: 用可操作的变量集 Z 上的实验，去识别对另一变量集 X 的干预效应；Z 为空时退化为普通可识别性。
+一元函数导数与求导法则 | en=Derivative of a Single-Variable Function and Differentiation Rules | 目录=验收·贝叶斯入门·领域根 | 卡2 边9 | untouched/undefined | def: 用差商 f(x+Δx)−f(x) 除以 Δx 并取 Δx→0 的极限定义导数（瞬时变化率），配合幂/积/商/链式法则快速求导。
+一致可积（uniform integrability） | en=uniform integrability | 目录=验收·贝叶斯入门·领域根 | 卡0 边4 | untouched/undefined | def: 一簇随机变量 {X_i} 尾部对期望的贡献可一致地压小：sup_i E|X_i|<∞ 且 sup_i E[|X_i|·1{|X_i|>K}]
+万有逼近定理（Universal approximation theorem） | en=universal approximation theorem | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 紧支撑上的任意连续函数都能被隐藏单元数足够大的单隐层网络逼近到任意精度（Hornik et al., 1989）——这是把神经网络当作「筛」
+三明治方差（sandwich variance） | en=sandwich variance | 目录=验收·贝叶斯入门·领域根 | 卡2 边8 | untouched/undefined | def: 错误指定下极大似然估计的渐近抽样方差（Huber 1967 提出）：面包-肉-面包 H_inv * J * H_inv，其中 H 为对数似然
+三角级数基（Fourier basis） | en=Trigonometric / Fourier basis | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 用 sin/cos（或复指数 e^{iωx}）作为基函数展开周期函数，基在标准内积下正交，系数彼此解耦。
+下鞅与上鞅（submartingale / supermartingale） | en=submartingale / supermartingale | 目录=验收·贝叶斯入门·领域根 | 卡0 边6 | untouched/undefined | def: 下鞅 E[X_{n+1}|F_n] ≥ X_n（资金过程平均上升，如次公平博弈）；上鞅取反号 E[X_{n+1}|F_n] ≤ X_n。鞅两
+不可约性与非周期性 | en=Irreducibility and aperiodicity | 目录=根层 | 卡1 边4 | untouched/undefined | def: 不可约：状态空间内任意两状态互达（∀i,j ∃n≥0 使 P^n_{ij}>0）；非周期：每个状态的返回步数集合的最大公约数为 1。二者（连
+不适定逆问题（ill-posed inverse problem） | en=Ill-posed inverse problem | 目录=根层 | 卡0 边1 | untouched/undefined | def: 需要从数据反解一个不连续（无界逆）的算子时出现的统计问题：解不连续依赖于数据，样本增大也不能消除不稳定性，必须靠正则化/惩罚或筛的最小速率约
+世界概率与统计大会（World Congress in Probability and Statistics） | en=World Congress in Probability and Statistics | 目录=验收·贝叶斯入门·领域根 | 卡1 边0 | untouched/undefined | def: 概率统计领域国际旗舰大会；arXiv 可核实的最近一届为 2024-08 德国波鸿，未见 2026 届官方记录
+严平稳（严格平稳） | en=strict stationarity / strongly stationary | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 任意有限维联合分布对时间平移不变：(X_{t1},…,X_{tn}) 与 (X_{t1+h},…,X_{tn+h}) 同分布。
+中国餐馆过程（Chinese Restaurant Process, CRP） | en=Chinese restaurant process | 目录=验收·贝叶斯入门·领域根 | 卡2 边7 | untouched/undefined | def: DP 的预测分布/交换性划分：第 n+1 个顾客以概率 n_k/(α+n) 坐进已有第 k 桌（n_k 人），以概率 α/(α+n) 开新桌
+中心极限定理 | en=Central Limit Theorem (CLT) | 目录=验收·贝叶斯入门·领域根 | 卡1 边20 | untouched/undefined | def: iid 样本均值标准化后依分布收敛到标准正态：√n(X̄−μ)/σ ⇒ N(0,1)；标准误 σ/√n、置信区间与蒙特卡洛误差 O(1/√n
+事件 | en=event | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 样本空间的子集（严格说：事件域中的集合），代表我们关心其是否发生的那些结果；事件发生＝试验结果 ω 落在这个子集里。
+事件域（σ-代数） | en=event space (σ-algebra / Borel field) | 目录=验收·贝叶斯入门·领域根 | 卡1 边12 | untouched/undefined | def: 样本空间 Ω 上的一族事件（子集族 F）：含 Ω、对取补与可数并封闭；它是「能被分辨/被提问的事件清单」，也是概率与条件期望的信息单位。
+五级可反驳验证（DTCF） | en=- | 目录=验收·贝叶斯入门·领域根 | 卡0 边6 | untouched/undefined | def: DTCF 中用来替代统计识别假设的验证阶梯：把反事实结论按可被观测/实验/异构孪生体反驳的强度分级（名称与分级方案来自本空间定义，待文献核验
+交叉熵损失（对数损失） | en=cross-entropy loss / log loss | 目录=根层 | 卡0 边1 | untouched/undefined | def: 分类任务常用的损失：ℓ(y,p)=−[y·log p+(1−y)·log(1−p)]（二分类），多分类为 −log p_y；等价于模型预测分
+人口蒙特卡洛（Population Monte Carlo, PMC） | en=Population Monte Carlo (PMC) | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 用一族（population）提议按轮采样、加权，再用加权样本重置提议参数的迭代自适应重要抽样框架：同一批样本既用于估计，也用于更新下一轮提
+伪真参数（pseudo-true parameter） | en=pseudo-true parameter | 目录=验收·贝叶斯入门·领域根 | 卡1 边9 | untouched/undefined | def: 在模型集合内使 KL 散度（模型到真实过程）最小的那个参数，是误设下贝叶斯后验最终集中的位置。
+伪真集（pseudo-true set） | en=pseudo-true set | 目录=验收·贝叶斯入门·领域根 | 卡2 边4 | untouched/undefined | def: 模型不完整/部分识别时，KL 信息准则的最小值可能由一组参数共同取得，这组「最接近」参数构成的集合即为伪真集（真参数不唯一时的推广）。
+伪随机数生成器（PRNG） | en=pseudo-random number generator (PRNG) | 目录=验收·贝叶斯入门·领域根 | 卡2 边8 | untouched/undefined | def: 用确定性算法从种子出发产生看似随机的数列，下一个数完全由内部状态决定。
+伯努利随机游走（对称随机游走） | en=Bernoulli random walk / symmetric random walk | 目录=验收·贝叶斯入门·领域根 | 卡0 边1 | untouched/undefined | def: 步长为 ±1 且每一步等概率（p=1/2）的随机游走，即抛公平硬币决定左右走一格；是随机游走最简单、也最常用于演示均值为 0、波动按 √n 
+似然函数 | en=likelihood function | 目录=验收·贝叶斯入门·领域根 | 卡1 边15 | untouched/undefined | def: 把观测数据 x 固定、把参数 θ 当变量看的 p(x|θ)，刻画“不同参数解释这份数据的合理程度”。
+似然比检验 | en=likelihood ratio test (LRT) | 目录=验收·贝叶斯入门·领域根 | 卡2 边5 | untouched/undefined | def: 用似然比统计量 λ=L(θ̂_0)/L(θ̂) 或 Λ=2log(1/λ) 作为检验统计量的检验：Neyman–Pearson 引理下简单对
+伽玛函数 Γ(·) | en=Gamma function Γ(·) | 目录=验收·贝叶斯入门·领域根 | 卡2 边5 | untouched/undefined | def: Γ(z)=∫_0^∞ t^{z−1}e^{−t}dt（ℜz>0），阶乘的连续推广：Γ(n)=(n−1)!、Γ(z+1)=zΓ(z)；连续分布
+位级可复现性（bitwise reproducibility） | en=bitwise reproducibility | 目录=验收·贝叶斯入门·领域根 | 卡0 边1 | untouched/undefined | def: 同种子、同代码下逐位一致地重现结果，受浮点实现、编译器与硬件限制，是最严格的可复现级别。
+低差异序列 | en=low-discrepancy sequence | 目录=根层 | 卡0 边0 | untouched/undefined | def: 确定性生成的、星偏差 D*_N 以 O((log N)^s/N)（远快于随机点的 N^{-1/2}）趋于 0 的点列；用它替代伪随机数即得准
+低差异序列（low-discrepancy sequence） | en=low-discrepancy sequence | 目录=验收·贝叶斯入门·领域根 | 卡2 边7 | untouched/undefined | def: 星偏差随 N 以接近 O((log N)^s/N) 速度增长的确定性点列，用于准蒙特卡洛积分；数字网/序列是其中由有限域线性构造的一族。
+依分布收敛（Convergence in distribution） | en=Convergence in distribution | 目录=根层 | 卡0 边6 | untouched/undefined | def: 随机变量序列的累积分布函数逐点收敛到极限的 CDF，刻画 BvM 中缩放后后验的收敛方式。
+依概率收敛与大数定律 | en=convergence in probability; law of large numbers | 目录=验收·贝叶斯入门·领域根 | 卡1 边33 | untouched/undefined | def: 样本均值随样本量增大收敛到期望（弱=依概率、强=几乎必然）；是「频率≈概率」与 MCMC 遍历平均的理论基石。
+假设检验与两类错误 | en=hypothesis testing and type I/II errors | 目录=验收·贝叶斯入门·领域根 | 卡1 边11 | untouched/undefined | def: 在第一类错误（弃真，概率 α）与第二类错误（取伪）之间权衡的决策框架，实践中常用大样本正态近似给出拒绝域。
+假阳性 | en=false positive | 目录=验收·贝叶斯入门·领域根 | 卡2 边1 | untouched/undefined | def: 证据指向“有”但假设实际为“无”的情形；假阳性率高时，即使检测很准，阳性结果的后验概率仍可能很低。
+偏导数 | en=partial derivative | 目录=验收·贝叶斯入门·领域根 | 卡2 边3 | untouched/undefined | def: ∂/∂θ：把其它变量当常数、只对一个变量求导得到的斜率，如 f(θ,α)=αθ² → ∂f/∂θ=2αθ。
+偏导数与对数求导 | en=Partial derivative and log-derivative | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 对多变量函数只对其中一个变量求导得到偏导数 ∂/∂θ；对 log p(x|θ) 求导即把 p 的乘性结构变成加性结构，是得分函数的关键工具。
+偏差–方差权衡（bias–variance trade-off） | en=bias–variance trade-off | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 估计误差可拆为偏差²+方差：放松贴合（欠拟合/收缩）会升高偏差但降方差，最优复杂度在这两者之间取平衡。
+偏差与星偏差（discrepancy / star discrepancy） | en=discrepancy / star discrepancy | 目录=验收·贝叶斯入门·领域根 | 卡2 边7 | untouched/undefined | def: 衡量有限点集偏离均匀分布程度的量：D*_N = sup_{x∈[0,1]^s} |(1/N)#{n: x_n ∈ [0,x)} − x₁x₂
+先验敏感性分析 | en=Prior sensitivity analysis | 目录=验收·贝叶斯入门·领域根 | 卡1 边3 | untouched/undefined | def: 检查先验分布的选择对后验分布影响程度的方法；可用基础先验与备择先验下两个后验之间的 KL 散度（或 Hellinger 距离）来量化。
+先验概率 | en=Prior Probability | 目录=根层 | 卡1 边2 | mastered/undefined | def: 在看到当前数据之前对未知量（参数/事件）的概率分布或概率，是贝叶斯更新的起点。
+先验概率 | en=prior probability | 目录=验收·贝叶斯入门·领域根 | 卡1 边1 | untouched/undefined | def: 观察到证据/数据 B 之前，对假设 A 成立的把握程度；即贝叶斯公式 P(A|B)=P(B|A)P(A)/P(B) 中的 P(A)。
+先验浓度函数（concentration function） | en=concentration function | 目录=根层 | 卡1 边3 | untouched/undefined | def: 刻画高斯过程先验在真值 w0 附近 ε 尺度上「浓度」的量：φ(w0,ε)=inf_{h∈H, ‖h−w0‖≤ε} ‖h‖²_H/2 − l
+先验质量条件（KL 邻域与小球概率） | en=Prior mass condition (Kullback–Leibler neighbourhood, small ball probability) | 目录=验收·贝叶斯入门·领域根 | 卡2 边12 | untouched/undefined | def: 要求先验在真值附近的 KL 邻域/小球上赋予足够质量，是后验收缩（及收缩率）的基本前提。
+先验选择与稳健性 | en=prior elicitation and robustness | 目录=贝叶斯方法论的开放问题 [目录非group] | 卡1 边2 | untouched/undefined | def: 先验怎么选、结论对先验有多敏感：怎样系统评估与降低先验敏感性，没有公认的通用答案。
+克罗内克 δ（Kronecker delta） | en=Kronecker delta | 目录=验收·贝叶斯入门·领域根 | 卡0 边1 | untouched/undefined | def: δ_ij 在 i=j 时为 1、否则为 0；在求和约定下起「换名/筛选」作用，δ_ij a_j = a_i。
+全局马尔可夫性 | en=global Markov property | 目录=验收·贝叶斯入门·领域根 | 卡1 边8 | untouched/undefined | def: 无向图中被节点子集 S 分离（separate）的两个子集 A、B 在给定 S 后条件独立：X_A ⊥ X_B | X_S。
+全方差公式 | en=Law of total variance | 目录=根层 | 卡0 边3 | untouched/undefined | def: Var(X) = E[Var(X|G)] + Var(E[X|G])：总波动 = 组内平均波动 + 组间均值波动（条件方差的期望 + 条件期
+全期望公式（塔性质） | en=Law of total expectation / tower property | 目录=根层 | 卡0 边2 | untouched/undefined | def: E[E[X|G]] = E[X]：先按信息 G 条件化求平均，再对 G 求平均，回到原均值；对嵌套信息 H⊆G 有 E[E[X|G]|H]=
+全概率公式 | en=law of total probability | 目录=根层 | 卡1 边7 | untouched/undefined | def: P(A)=Σ_i P(B_i)P(A|B_i)：按完备事件组 {B_i} 把 A 的概率分摊求和（对离散状态求和版）。
+共辄先验 | en=conjugate prior | 目录=验收·贝叶斯入门·领域根 | 卡1 边4 | untouched/undefined | def: 选得与似然“同族”的先验：先验与后验属于同一分布族（如 Beta 先验 + 二项似然 ⇒ Beta 后验），后验可闭式写出、免求归一化常数。
+兴趣参数与讨厌参数 | en=parameter of interest and nuisance parameter | 目录=验收·贝叶斯入门·领域根 | 卡2 边3 | untouched/undefined | def: 把多参数模型的参数分成真正关心的（兴趣参数）与其余仅为了模型完整而必须带着的（讨厌参数）；参考先验依赖这一分组与排序，顺序不同会得到不同的参
+典型分布（canonical distribution） | en=Canonical distribution (π(q,p) ∝ e^{−H(q,p)}) | 目录=根层 | 卡1 边5 | untouched/undefined | def: 在相空间 (q,p) 上定义 π(q,p)∝e^{−H(q,p)} 的联合分布；把动量 p 积分掉后正比于目标 π(q)，是 HMC 正确性
+典型集（typical set）与维度 | en=Typical set | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 高维分布中集中了几乎全部概率质量的那层壳；它在高维里与密度最大点（众数/MAP）分离，是「随机游走采样在高维失效、梯度方法（HMC）有效」的
+内曼最优分配（Neyman allocation） | en=Neyman allocation (optimal allocation) | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 在总样本量 n 固定时按 n_h ∝ N_h·S_h 分配（层内标准差越大、层越大，抽得越多），使分层估计量方差取到最小。
+再生性（reproducing property） | en=reproducing property | 目录=根层 | 卡0 边3 | untouched/undefined | def: 希尔伯特空间 H 上的函数值可由内积读出：存在 K_x∈H 使 f(x)=⟨f,K_x⟩_H 对所有 f∈H 成立；等价地说点值泛函 f↦f
+准蒙特卡洛方法 | en=Quasi-Monte Carlo (QMC) | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 用低差异（low-discrepancy）序列替代伪随机抽样点做数值积分，对光滑被积函数通常获得比 O(N^-1/2) 更快的误差率。
+几乎必然收敛 | en=almost sure convergence | 目录=验收·贝叶斯入门·领域根 | 卡1 边11 | untouched/undefined | def: 随机变量序列以概率 1 收敛到极限：P(lim_n X_n = X) = 1；事件序列版本等价于「该事件只发生有限多次」（Borel–Can
+凸函数与凹函数（Convexity / Concavity） | en=Convex function / Concave function | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 图像「碗口朝上」的函数：割线在图像上方、切线在图像下方；凹函数则是它的镜像（碗口朝下）。Jensen 不等式的主角。
+分位数与 5%/95% 尾部（Quantile） | en=Quantile | 目录=根层 | 卡2 边7 | untouched/undefined | def: 分位数是累积分布函数的反函数：q_α 满足 F(q_α)=α；诊断中常用 5% 与 95% 分位数代表分布尾部。
+分位数函数（Quantile function） | en=Quantile function (generalized inverse CDF) | 目录=随机数生成与采样方法 | 卡0 边3 | untouched/undefined | def: CDF 的广义逆 Q(u)=F^{-1}(u)=inf{x: F(x)≥u}，把概率水平 u 映回分位点；它是逆变换采样真正调用的对象。
+分割链 | en=split chains | 目录=验收·贝叶斯入门·领域根 | 卡1 边1 | untouched/undefined | def: 把每条 MCMC 链从中间切成两半（M 条→2M 条、长度减半），再用这些子链计算 R̂，使诊断能看见「链内」漂移而非只看见「链间」差异。
+分层抽样 | en=stratified sampling | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 把抽样区域按辅助变量分层，在层内按比例（或最优）分配样本，用全概率公式把各层均值加权汇总，通常方差小于简单随机抽样。
+分层抽样的方差分解 | en=variance decomposition for stratified sampling | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 把分层估计量的方差写成各层内方差按层权平方加权的和，并指出它比简单随机抽样少了层间方差那一块——分层的收益上限由此而来。
+分布无关性（distribution-free） | en=distribution-free property | 目录=验收·贝叶斯入门·领域根 | 卡2 边5 | untouched/undefined | def: 统计量在零假设下分布不依赖具体分布族的性质；参数完全已知时 KS 具备，参数估计后丧失，这正是 Lilliefors 修正的由来。
+切比雪夫不等式 | en=Chebyshev's inequality | 目录=验收·贝叶斯入门·领域根 | 卡1 边5 | untouched/undefined | def: 对期望 μ、方差 σ² 有限的随机变量，P(|X−μ| ≥ ε) ≤ σ²/ε²：把偏离中心一个多倍标准差的概率用方差定量卡住（ε=kσ 时
+切片采样（slice sampling） | en=Slice sampling | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 引入辅助变量把密度下的均匀抽样变成「在子水平集内均匀抽样」的采样家族；NUTS 用它从整条哈密顿轨迹上合法地挑候选点。
+列维-奇维塔符号（Levi-Civita symbol） | en=Levi-Civita symbol / permutation symbol | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: ε_ijk 全反对称：偶排列取 +1、奇排列取 −1、有重复指标取 0；用它把叉积与行列式写成缩并式。
+势函数（因子, potential / factor） | en=Potential function (factor) | 目录=验收·贝叶斯入门·领域根 | 卡0 边4 | untouched/undefined | def: 定义在某个变量子集（通常是一个团）上的非负实值函数 ψ_C(x_C)，本身不必归一化，乘积再除以配分函数才成为概率。
+包络常数 M 与接受率 | en=envelope constant M and acceptance rate | 目录=根层 | 卡0 边3 | untouched/undefined | def: 若目标密度 f 与易采样提议密度 g 满足 f(x) ≤ M·g(x)（M=sup f/g），则 M 是包络常数，接受概率恰为 1/M（f 
+协方差与相关系数（Covariance and Correlation） | en=Covariance and Correlation | 目录=验收·贝叶斯入门·领域根 | 卡2 边15 | untouched/undefined | def: Cov(X,Y)=E[(X−EX)(Y−EY)] 度量两随机变量的共同变动；标准化后得相关系数 ρ=Cov(X,Y)/(σ_X σ_Y)∈[
+单隐层前馈神经网络（single-hidden-layer feedforward network） | en=single-hidden-layer feedforward neural network | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 形如 f(x)=Σ_{j=1}^{m} a_j σ(w_j'x + b_j) 的参数化函数族：输入 x 经 m 个隐藏单元 σ(w_j'x+
+卡方分布（chi-square distribution） | en=chi-square distribution | 目录=验收·贝叶斯入门·领域根 | 卡0 边4 | untouched/undefined | def: k 个独立标准正态变量平方和的分布 χ²_k：均值 k、方差 2k；是 Pearson 卡方统计量在 H0 下的极限零分布，拟合优度检验取其
+参数化与重参数化（parameterization / reparameterization） | en=parameterization / reparameterization | 目录=验收·贝叶斯入门·领域根 | 卡0 边0 | untouched/undefined | def: 同一个概率模型用不同参数（如 σ 与 σ²、或 log σ）表示；换参数时密度必须按变量替换法则重写，否则先验与后验的「不变性」讨论无从谈起
+参考先验 | en=reference prior | 目录=验收·贝叶斯入门·领域根 | 卡2 边6 | untouched/undefined | def: Bernardo 提出的一类客观先验：选择使「先验到后验」的期望信息增益（KL 散度）最大的先验；单参数时与 Jeffreys 先验一致，多
+反事实 | en=Counterfactual | 目录=验收·贝叶斯入门·领域根 | 卡2 边5 | untouched/undefined | def: 对同一单元在「未实际发生的干预」下结果取何值的推断：Y_i(x) 中与实际处理相反的那一路，不能等同于条件概率 P(Y|X=x)。
+反事实（counterfactual） | en=counterfactual | 目录=验收·贝叶斯入门·领域根 | 卡1 边3 | untouched/undefined | def: 关于「已观察事实若取另一种取值会怎样」的概率量，如 P(康复 | 事实上未用药，若当时用药)；与总体层面的干预分布 P(Y|do(X=x))
+变分推断 | en=variational inference (VI) | 目录=验收·贝叶斯入门·领域根 | 卡1 边4 | untouched/undefined | def: 用一个易处理的分布族去逼近后验分布的可扩展近似推断方法（小批量技巧是其大规模化的关键零件）。
+变分推断（VI） | en=Variational Inference (VI) | 目录=验收·贝叶斯入门·领域根 | 卡1 边10 | untouched/undefined | def: 先假定一个较简单的候选分布族（如平均场），再在族内找一个与目标后验最接近（KL 散度最小）的成员，把推断变成优化问题；通常比 MCMC 快。
+变分族 | en=Variational family Q | 目录=验收·贝叶斯入门·领域根 | 卡1 边3 | untouched/undefined | def: 研究者预先指定的一类“好算”的候选分布 Q（如平均场族、高斯族）；VI 的近似能力上限由它决定——族太窄，答案再好也算不出来。
+变分自编码器（VAE） | en=Variational Autoencoder | 目录=验收·贝叶斯入门·领域根 | 卡1 边4 | untouched/undefined | def: 用神经网络参数化 q(z|x)（编码器）与 p(x|z)（解码器），以重参数化技巧对 ELBO 做随机梯度优化的生成模型。
+可信区间（Credible interval） | en=Credible interval | 目录=验收·贝叶斯入门·领域根 | 卡1 边5 | untouched/undefined | def: 直接由后验分布分位数给出的区间：θ 以 1−α 的后验概率落在其中（与频率派置信区间语义不同）。
+可忽略性（无混杂性 / unconfoundedness） | en=Ignorability / unconfoundedness | 目录=验收·贝叶斯入门·领域根 | 卡0 边4 | untouched/undefined | def: 给定协变量 X 后，处理分配与潜在结果独立：(Y(1),Y(0)) ⟂ T | X——观察研究里用「可观测变量已捕捉全部混杂」换回反事实的可
+可扩展贝叶斯计算 | en=scalable Bayesian computation | 目录=贝叶斯方法论的开放问题 [目录非group] | 卡2 边3 | untouched/undefined | def: 让贝叶斯推断在大数据/高维模型上可算：精确 MCMC 代价过高，变分推断等近似方法的误差与可靠性仍是未决课题。
+可数并（countable union） | en=countable union | 目录=根层 | 卡0 边3 | untouched/undefined | def: 把一列（可数多个）集合 A_1,A_2,… 的全部元素合起来的集合 ⋃_{n=1}^∞ A_n；「可数」= 能像 1,2,3,… 一样排成一
+可识别性 | en=identifiability | 目录=验收·贝叶斯入门·领域根 | 卡1 边9 | untouched/undefined | def: 给定假设与可观测分布，因果量能否被唯一确定；不可识别意味着数据本身无法把效应与假设分开。
+可选停时定理（optional stopping theorem） | en=Optional stopping theorem | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 在鞅上停住不改变期望：满足一致可积（或有界停时/可支配等）条件时 E[M_τ]=E[M_0]；条件缺失时失败。
+吉布斯分布（Gibbs distribution） | en=Gibbs distribution (Boltzmann distribution) | 目录=验收·贝叶斯入门·领域根 | 卡0 边4 | untouched/undefined | def: 形如 p(x)=exp(−E(x))/Z（或等价地按团势函数乘积再归一化）的概率分布族；在无向图上它就是「按最大团因式分解」的分布。
+吉布斯采样（Gibbs sampling） | en=Gibbs sampling | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 只从每个变量的完全条件分布轮流抽样的 MCMC 算法：z_j ~ p(z_j|z_{-j},x)，按 j 扫一遍即构成一步转移，其平稳分布正
+名义模型（nominal model） | en=Nominal Model | 目录=根层 | 卡1 边1 | untouched/undefined | def: 研究者用来构造估计量/做推断的那一层假定模型；它与真实数据生成机制（true DGP）在评估时被明确区分开。
+后门准则 | en=back-door criterion | 目录=验收·贝叶斯入门·领域根 | 卡1 边5 | untouched/undefined | def: 若变量集 Z 阻断了 X 到 Y 的所有以指向 X 的箭头为终点的「后门路径」（且 Z 不含 X 的后代），则 P(y|do(x)) 可由调
+后验一致性 | en=Posterior consistency | 目录=验收·贝叶斯入门·领域根 | 卡2 边15 | untouched/undefined | def: 大样本下后验质量向真分布（或 KL 最优伪真分布）的任意邻域集中：对任意邻域 U，Π(U^c | X_{1:n}) → 0（依真分布概率为弱
+后验一致性与收敛速率 | en=Posterior consistency and contraction rate | 目录=验收·贝叶斯入门·领域根 | 卡1 边8 | untouched/undefined | def: 样本量 n→∞ 时后验是否越来越集中到真值附近（一致性）、以及以多快的速度 ε_n 集中（收缩速率）的理论保证。
+后验一致性（大样本集中） | en=posterior consistency / concentration | 目录=验收·贝叶斯入门·领域根 | 卡1 边10 | untouched/undefined | def: 样本量增长时后验质量集中到真值（或伪真集）任意邻域内，即 ε_n 可任取固定值仍成立。
+后验中心化与缩放（√n(θ−θ̂_n)） | en=Centering and scaling of the posterior | 目录=验收·贝叶斯入门·领域根 | 卡0 边0 | untouched/undefined | def: 把参数后验从 θ 尺度变换到 √n(θ−θ̂_n) 尺度（中心取 MLE/后验众数、按 n^{-1/2} 缩放），使极限分布不退化，是 Be
+后验分布 | en=posterior distribution | 目录=验收·贝叶斯入门·领域根 | 卡1 边16 | untouched/undefined | def: 给定数据后参数的（条件）分布，正比于似然乘先验；收缩率量化它向真值集中的速度。
+后验分布（Posterior distribution） | en=Posterior distribution | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 看到数据后参数的分布 p(θ|D) ∝ p(D|θ)p(θ)；贝叶斯推断的输出，也是 MCMC/VI 要采样的目标分布。
+后验均值 | en=Posterior Mean | 目录=验收·贝叶斯入门·领域根 | 卡2 边3 | untouched/undefined | def: 后验分布下参数的期望 E[θ|数据]，是均方误差(MSE)意义上的最优点估计，也是贝叶斯模型的默认汇报量。
+后验收缩三条件（检验＋熵＋先验质量） | en=conditions for posterior contraction (tests, entropy, prior mass) | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 后验收缩/集中定理需要同时成立的一套充分条件：指数分离检验条件（决定可分离距离）、熵条件（控制模型复杂度与搜索代价）、先验质量条件（保证伪真
+后验收缩率 | en=posterior contraction rate | 目录=验收·贝叶斯入门·领域根 | 卡1 边10 | untouched/undefined | def: 后验质量集中在真值 θ0 的 ε_n 邻域内时 ε_n 随 n 衰减的速度，是一致性（ε_n 不衰减到 0）之外的更强量化。
+后验收缩速率 | en=Posterior contraction rate | 目录=验收·贝叶斯入门·领域根 | 卡1 边9 | untouched/undefined | def: 后验向真值（或伪真参数）集中的速度：后验在半径 εₙ 之外的期望质量 → 0，其中 εₙ 通常取 n 的负幂；速率由先验小球概率（随 n 收
+后验概率 | en=Posterior Probability | 目录=根层 | 卡1 边2 | untouched/undefined | def: 在观察到证据 E 之后，假设 H 成立的概率 P(H|E)；由先验（含基础率）与似然共同更新得到。
+后验预测分布（Posterior predictive distribution） | en=Posterior predictive distribution | 目录=验收·贝叶斯入门·领域根 | 卡2 边4 | untouched/undefined | def: 用后验分布对所有可能的参数值加权，得到下一个观测的分布 p(x_new|D)=∫p(x_new|θ)p(θ|D)dθ。
+后验高斯逼近（Laplace 型正态近似） | en=Gaussian approximation of the posterior | 目录=验收·贝叶斯入门·领域根 | 卡0 边0 | untouched/undefined | def: 用二阶 Taylor 展开把对数后验近似为二次型，从而把后验近似为 N(θ̂, j(θ̂)^{-1}) 的高斯分布；BvM 定理可看作它在 
+向量与内积 | en=Vectors and Inner Product | 目录=验收·贝叶斯入门·领域根 | 卡2 边19 | untouched/undefined | def: 把一组数看成向量；内积 ⟨u,v⟩=Σ_l u_l v_l 度量长度与夹角，正交（⟨u,v⟩=0）与投影在其上定义，是张量积、基展开与最小二
+向量场散度（divergence ∇·） | en=Divergence of a vector field | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 把向量场 v 逐坐标求偏导再求和：∇·v=Σ_i ∂v_i/∂x_i；它衡量流场的净流出，是把 SDE（样本路径）改写成密度方程（福克–普朗
+吸收马尔可夫链（Absorbing Markov Chain） | en=Absorbing Markov chain | 目录=根层 | 卡2 边6 | untouched/undefined | def: 含吸收态（进入后永不再离开，P_ii=1）的马尔可夫链；用基本矩阵 N=(I−Q)^{-1} 求吸收概率与平均吸收时间。
+哈密顿动力学与相空间 | en=Hamiltonian dynamics / phase space | 目录=验收·贝叶斯入门·领域根 | 卡1 边4 | untouched/undefined | def: 把“位置 q”和“动量 p”放在同一个空间里，用总能量 H(q,p)=U(q)+K(p) 描述系统演化的力学框架。
+哈密顿蒙特卡罗（HMC）/NUTS | en=Hamiltonian Monte Carlo (HMC) | 目录=验收·贝叶斯入门·领域根 | 卡2 边6 | untouched/undefined | def: 用梯度信息模拟物理动力学来提议的 MCMC 采样器家族（NUTS 是其常用实现），在高维、强相关后验上远优于随机游走 Metropolis。
+因果图与结构因果模型 | en=causal graph and structural causal model (SCM) | 目录=验收·贝叶斯入门·领域根 | 卡2 边8 | untouched/undefined | def: 用有向图表示变量间的因果机制、用结构方程把每个变量写成其父节点的函数，从而把「干预」形式化为对机制的替换。
+因果效应的可识别性 | en=Identifiability of causal effects | 目录=验收·贝叶斯入门·领域根 | 卡1 边5 | untouched/undefined | def: 因果量（如 P(y|do(x))）能否由观测数据分布唯一确定；根本问题使个体层反事实不可识别，识别工作就是把不可观测的反事实换成可检验的结构
+因果马尔可夫条件（Causal Markov condition） | en=causal Markov condition | 目录=验收·贝叶斯入门·领域根 | 卡1 边3 | untouched/undefined | def: 把全局马尔可夫性用在因果 DAG 上：每个变量在给定其直接原因（父节点）后与其非后代独立，等价说法是「d-分离 ⇒ 条件独立」。
+团与最大团（Clique / maximal clique） | en=Clique and maximal clique | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 无向图中两两相连的顶点子集叫团；不被任何更大团真包含的团叫最大团。Hammersley–Clifford 定理就是用最大团来界定势函数的定义
+国际数学家大会（ICM） | en=International Congress of Mathematicians (ICM) | 目录=验收·贝叶斯入门·领域根 | 卡1 边3 | untouched/undefined | def: 由国际数学联盟（IMU）主办的四年一度国际数学界最大会议，含大会报告、分组报告与颁奖；2026 年 7 月 23–30 日在美国费城举办。
+国际数学联盟（IMU） | en=International Mathematical Union (IMU) | 目录=验收·贝叶斯入门·领域根 | 卡1 边2 | untouched/undefined | def: 国际数学家大会的主办机构（1950 年建立），负责指定程序委员会拟定议程并颁发菲尔兹奖等国际数学奖项。
+均值标准误（SEM, standard error of the mean） | en=Standard Error of the Mean (SEM) | 目录=验收·贝叶斯入门·领域根 | 卡0 边5 | untouched/undefined | def: 样本均值 x̄ 这一估计量的标准误：SE=σ/√n，用样本标准差 s 估计得 s/√n；它是“均值的不确定度”，不是数据的离散度。
+均值（算术平均） | en=mean (arithmetic mean) | 目录=验收·贝叶斯入门·领域根 | 卡3 边8 | untouched/undefined | def: x̄=(1/n)Σx_i：使离差平方和 Σ(x_i−a)² 最小的中心点，也是「样本均值≈期望」的参照中心。
+均匀分布（Uniform distribution） | en=Continuous uniform distribution | 目录=验收·贝叶斯入门·领域根 | 卡1 边18 | untouched/undefined | def: 在 [0,1)^s 上密度恒为 1 的分布 U(0,1)^s；低差异序列与数字网的目的就是在该区域上比随机点更均匀地布点。
+基展开（Basis Expansion） | en=Basis / Series Expansion | 目录=验收·贝叶斯入门·领域根 | 卡2 边11 | untouched/undefined | def: 用一组已知函数 {φ_k} 的线性组合 Σ_k β_k φ_k 逼近未知函数 f，把无穷维函数问题化为有限个系数 β 的估计问题。
+基数 b 的数字展开与数字向量（base-b digit expansion） | en=base-b digit expansion | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 把 [0,1) 中的数与整数索引写成 b 进制数字串 x=0.x₁x₂…_b（x=Σ_{k≥1} x_k b^{-k}），并把前若干位打包成
+基础率 | en=base rate | 目录=验收·贝叶斯入门·领域根 | 卡1 边2 | untouched/undefined | def: 在考虑证据之前，某假设在总体中成立的比例（=先验概率），如疾病患病率、入侵流量在总流量中的占比。
+基础率谬误 | en=base rate fallacy / base-rate fallacy | 目录=验收·贝叶斯入门·领域根 | 卡2 边5 | untouched/undefined | def: 在用证据更新信念时忽略先验（基础率），把 P(证据|假设) 误当成 P(假设|证据)，从而严重高估后验的推理谬误。
+多元高斯分布（多元正态分布） | en=Multivariate normal distribution | 目录=验收·贝叶斯入门·领域根 | 卡2 边10 | untouched/undefined | def: 由均值向量 μ 与协方差矩阵 Σ 确定的向量值分布 N(μ,Σ)：各分量的任意线性组合仍服从高斯分布，联合密度由二次型 (x−μ)ᵀΣ⁻¹(
+多重控制变量（multiple control variates） | en=multiple control variates / regression control variates | 目录=根层 | 卡0 边3 | untouched/undefined | def: 用一组已知期望的控制变量 C=(C1,…,Ck) 并取 β = Σ_C⁻¹ Cov(C,h)，等价于用最小二乘回归残差做蒙特卡洛。
+多重重要抽样与确定性混合（MIS / deterministic mixture） | en=Multiple Importance Sampling / deterministic mixture | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 合并 M 个提议的样本、并按确定性混合密度 (1/M)Σ_m q_m(x) 计算每个样本权重的重要性抽样策略，通常比「每个样本只用自己那条提
+大数定律 | en=Law of large numbers | 目录=验收·贝叶斯入门·领域根 | 卡1 边12 | untouched/undefined | def: 样本量足够大时，样本均值 X̄ₙ 会（依概率或几乎必然地）靠近真实期望 μ——这是「用抽样平均代表期望/积分」的合法性保证。
+夹心方差（sandwich variance） | en=sandwich variance | 目录=验收·贝叶斯入门·领域根 | 卡1 边7 | untouched/undefined | def: Huber(1967)/White(1980) 提出的稳健方差公式 V = A⁻¹ B A⁻¹：用「面包」A（模型假定的信息量）夹住「肉」B
+完全条件分布 | en=complete conditional | 目录=验收·贝叶斯入门·领域根 | 卡1 边7 | untouched/undefined | def: 在联合分布 p(z,x) 中把其余变量（z_{-j} 与观测 x）都固定，只对 z_j 归一化得到的条件分布 p(z_j|z_{-j},x)
+完全随机测度（CRM） | en=completely random measure (CRM) | 目录=根层 | 卡0 边0 | untouched/undefined | def: 一类随机测度：互不相交的可测集上取值相互独立（「完全随机」），由强度测度与拉普拉斯泛函刻画，是归一化随机测度与 Dirichlet 过程的构
+客观贝叶斯 | en=objective Bayesian analysis | 目录=贝叶斯方法论的开放问题 [目录非group] | 卡1 边4 | untouched/undefined | def: 企图让先验由模型结构与不变性准则自动生成（如 Jeffreys/参考先验），但无信息先验在多参数、模型选择下常自相矛盾。
+对偶变量法（反变量法） | en=antithetic variates | 目录=验收·贝叶斯入门·领域根 | 卡3 边3 | untouched/undefined | def: 成对使用互补样本（U 与 1−U、Z 与 −Z）使同一对内两个取值负相关，把配对均值的方差压到 σ²(1+ρ)/(2m)；ρ<0 时优于独立
+对数与信息量（bit/nat） | en=Logarithm (bits vs nats) | 目录=验收·贝叶斯入门·领域根 | 卡1 边5 | untouched/undefined | def: -log p 是事件的自信息：概率越小越"意外"；log 以 2 为底单位为 bit（底 e 为 nat），且 log(ab)=log a+
+对数与指数函数 | en=Logarithmic and Exponential Functions | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: ln x 与 e^x 互为反函数：ln(ab)=ln a+ln b、ln(a^k)=k·ln a、d/dx ln x=1/x，是把乘性结构转
+对数与指数运算 | en=- | 目录=验收·贝叶斯入门·领域根 | 卡0 边1 | untouched/undefined | def: 指数与对数的基本运算：e^{a+b}=e^a e^b、log(ab)=log a+log b、log 与 exp 互逆；化简指数积分核与阶乘
+对数似然函数 | en=Log-likelihood function | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 把观测数据 x 下的模型概率 p(x|θ) 视为参数 θ 的函数并取对数：ℓ(θ)=log p(x|θ)；iid 数据下等于各点对数概率之和
+对数凹密度（log-concave density） | en=log-concave density | 目录=验收·贝叶斯入门·领域根 | 卡0 边0 | untouched/undefined | def: 在凸支撑上“未归一化密度的对数为凹函数”的分布（即 −log p 凸）；它保证单峰、且使切线包络可采，是自适应拒绝采样（ARS）的前提条件。
+导数与偏导数 | en=Derivative and Partial Derivative | 目录=验收·贝叶斯入门·领域根 | 卡2 边6 | untouched/undefined | def: 函数随自变量变化的瞬时变化率；多元时固定其它变量、只对一个变量求导即偏导，记号 ∂f/∂x。
+导数与链式法则 | en=Derivative and chain rule | 目录=验收·贝叶斯入门·领域根 | 卡2 边3 | untouched/undefined | def: 导数刻画函数随参数变化的瞬时速率，链式法则处理复合函数的求导；CRLB 里用于对 log 似然求 ∂/∂θ。
+小批量随机梯度 | en=Mini-batch Stochastic Gradient | 目录=验收·贝叶斯入门·领域根 | 卡1 边4 | untouched/undefined | def: 每次只从数据集中抽一小批样本估计梯度：梯度期望不变但带噪声，使单步计算代价与总数据量脱钩，是可扩展贝叶斯计算的关键零件。
+小球概率与小球条件 | en=Small ball probability | 目录=验收·贝叶斯入门·领域根 | 卡1 边10 | untouched/undefined | def: 高斯过程先验落在半径 ε 小球内的概率 P(‖W‖≤ε)；它与真实参数到 RKHS 的距离共同决定先验浓度函数，进而决定后验收缩速率。
+尾部失配与权重方差无穷 | en=- | 目录=验收·贝叶斯入门·领域根 | 卡0 边6 | untouched/undefined | def: 当提议 p 的尾部比 h²f² 所需的尾部更薄时，E_f[h²f/p]=∞，重要抽样估计量的方差无穷：点估计仍收敛，但标准误、置信区间与 E
+局部—成对—全局马尔可夫性的等价 | en=Equivalence of local, pairwise and global Markov properties | 目录=验收·贝叶斯入门·领域根 | 卡0 边5 | untouched/undefined | def: 在正性条件（正密度）下，全局、局部、成对三种马尔可夫性质互相等价；一般情形只有全局⇒局部⇒成对单向成立。
+局部马尔可夫性（local Markov property） | en=local Markov property | 目录=验收·贝叶斯入门·领域根 | 卡1 边4 | untouched/undefined | def: 无向图中每个节点在给定其全部邻居后，与其余所有节点条件独立：X_i ⊥ X_{V\{i}∪N(i)} | X_{N(i)}。
+嵌套采样（nested sampling） | en=nested sampling | 目录=根层 | 卡0 边2 | untouched/undefined | def: Skilling 提出的证据专用采样法：把证据写成关于先验质量 X 的一维积分 ∫L dX，按“似然阈值逐步收缩”的活点集合估计，兼得证据与
+布朗桥（Brownian bridge） | en=Brownian bridge | 目录=根层 | 卡0 边4 | untouched/undefined | def: 在 [0,1] 上取值的高斯过程 B，均值 0，协方差 B(s,t)=min(s,t)−st，且 B(0)=B(1)=0；可写成 B(t)=
+希尔伯特空间（Hilbert space） | en=Hilbert space | 目录=根层 | 卡0 边3 | untouched/undefined | def: 完备的内积空间：可以定义内积 ⟨·,·⟩ 与由内积诱导的范数 ‖f‖=√⟨f,f⟩，且在该范数下每个柯西列都收敛（完备）。
+带宽选择（经验法则与交叉验证） | en=Bandwidth selection: rule of thumb and cross-validation | 目录=根层 | 卡1 边5 | untouched/undefined | def: 从数据中自动定出平滑参数 h 的做法：Silverman/Scott 经验法则（h=0.9·min(σ̂,IQR/1.34)·n^(−1/5
+带宽（平滑参数） | en=bandwidth / smoothing parameter | 目录=验收·贝叶斯入门·领域根 | 卡1 边9 | untouched/undefined | def: 核平滑中的平滑参数 h（或缩放矩阵 H）：决定局部邻域大小/核被拉伸的程度，直接控制偏差与方差（光滑度）的权衡。
+干预与 do 算子 | en=intervention and do-operator | 目录=验收·贝叶斯入门·领域根 | 卡1 边9 | untouched/undefined | def: 把系统中某变量强行设定为某值的操作 do(X=x)；由此得到干预分布 P(Y|do(X=x))，与观测条件概率 P(Y|X=x) 不同。
+平均场假设 | en=mean-field assumption | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 把近似后验假定为各变量块相互独立之积 q(z)=∏_i q_i(z_i) 的简化假设，是变分族中最常用的一支，使 ELBO 可用坐标上升逐块
+平均场近似 | en=Mean-field approximation | 目录=验收·贝叶斯入门·领域根 | 卡1 边5 | untouched/undefined | def: 把联合后验按维度拆成互不相关的因子乘积 q(z)=∏_j q_j(z_j)，用一族“可算”的分布换掉难算的相关后验；是 VI 最常用的一种变
+平均处理效应（ATE） | en=Average Treatment Effect (ATE) | 目录=验收·贝叶斯入门·领域根 | 卡2 边1 | untouched/undefined | def: 个体因果效应 Y(1)−Y(0) 在目标人群上的期望 E[Y(1)−Y(0)]；个体层不可观测，退而识别与估计这个总体量。
+平方指数核（squared exponential kernel） | en=squared exponential kernel | 目录=验收·贝叶斯入门·领域根 | 卡0 边0 | untouched/undefined | def: k(x,x′)=σ_f²·exp(−‖x−x′‖²/(2ℓ²))，又称 RBF 核；其样本函数无限次可微（非常平滑），是 GPR 最常用的默
+平方损失（均方误差） | en=squared loss / mean squared error (MSE) | 目录=根层 | 卡0 边1 | untouched/undefined | def: 回归任务最常用的损失：L(θ)=(1/n)Σ(y_i−f_θ(x_i))²；对大误差惩罚重、对离群点敏感，且它是「在常数预测里取均值最省」的
+平稳分布 | en=Stationary distribution | 目录=验收·贝叶斯入门·领域根 | 卡1 边9 | untouched/undefined | def: 满足 πP=π（即 π_j=Σ_i π_i P(i,j)）的分布 π：以此为初始分布，链的边际分布永远不变。
+平稳分布（不变分布） | en=stationary (invariant) distribution | 目录=验收·贝叶斯入门·领域根 | 卡1 边3 | untouched/undefined | def: 马尔可夫链在某分布下继续演化后分布保持不变（πP=π），该分布即平稳分布；MCMC 就是构造一条以目标后验为平稳分布的链。
+平行趋势假设（parallel trends） | en=Parallel trends assumption | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 若无处理，处理组与对照组的潜在结果会保持相同的平均变化（共同趋势）——DID 用它把「对照组的平均变化」当作处理组的反事实变化。
+并行随机数生成与独立子流 | en=parallel RNG and independent substreams | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 给每个进程/每条链分配互不重叠的随机数子流（seed spawn），使并行与多链采样既可复现又不重复。
+张量积空间上的筛回归 | en=- | 目录=验收·贝叶斯入门·领域根 | 卡1 边5 | untouched/undefined | def: 在多元非参数函数空间上取「一元基函数的张量积」作为有限维筛空间，用（惩罚）筛最小二乘/极值估计做回归；张量结构使筛维数按 p^d 增长、估计
+张量积（Tensor product） | en=Tensor product | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 把两个向量空间（或两组基函数）组合成一个更大空间的运算：⊗ 后空间里纯张量是 u⊗v，维数/基个数相乘；对函数而言 (f⊗g)(x,y)=f
+张量缩并（tensor contraction） | en=tensor contraction | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 对一个上下/重复指标求和使张量阶数降 2 的运算；矩阵乘 C_ij = A_ik B_kj、取迹 A_ii 都是缩并。
+弱后验一致性与强后验一致性 | en=weak and strong posterior consistency | 目录=验收·贝叶斯入门·领域根 | 卡1 边3 | untouched/undefined | def: 同一收敛目标下的两种收敛模式：后验在真分布邻域外的质量依 P_0^n-概率趋于 0 为弱一致性，同样的收敛以 P_0^∞-a.s. 成立为强
+弱大数定律 | en=weak law of large numbers (WLLN) | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 独立同分布且期望有限时，样本均值依概率收敛到总体期望 μ（辛钦形式）。
+弱平稳性（宽平稳） | en=Weak stationarity (covariance stationarity) | 目录=根层 | 卡1 边6 | untouched/undefined | def: 随机过程的一阶矩与自协方差只依赖时间间隔、不依赖绝对时刻：E[X_t]=μ 为常数，Cov(X_t, X_{t+t'}) 只随滞后 t' 变
+强大数定律 | en=strong law of large numbers (SLLN) | 目录=验收·贝叶斯入门·领域根 | 卡2 边6 | untouched/undefined | def: 在独立同分布且期望有限（E|X|<∞）时，样本均值以概率 1（几乎必然）收敛到 μ：P(lim_{n→∞} X̄_n = μ)=1，几乎每条
+强忠实性（strong faithfulness） | en=strong faithfulness | 目录=根层 | 卡0 边1 | untouched/undefined | def: 一致化（强化）版本的忠实性：要求真分布与每条 d-分离蕴含的独立之间至少有可检出的最小差距（如 |ρ| ≥ λ、或条件互信息下界），从而保证
+归一化随机测度（NRM） | en=normalized random measure (NRM) | 目录=根层 | 卡0 边0 | untouched/undefined | def: 把总质量有限的随机测度除以它的总质量 $G(\cdot)/G(S)$ 得到的随机概率测度，是构造贝叶斯非参数先验（含 Dirichlet 过
+得分函数 | en=Score function | 目录=验收·贝叶斯入门·领域根 | 卡1 边7 | untouched/undefined | def: 对数似然对参数的导数 S(θ;x)=∂log f(x;θ)/∂θ，其期望为 0、方差即 Fisher 信息。
+得分函数（Score） | en=Score function | 目录=验收·贝叶斯入门·领域根 | 卡1 边9 | untouched/undefined | def: 对数似然对参数的导数 s(θ)=∂ℓ(θ)/∂θ，衡量「参数变动一点，对数似然动多少」；正则条件下期望为 0，方差（平方期望）等于 Fish
+忠实性（faithfulness） | en=faithfulness | 目录=验收·贝叶斯入门·领域根 | 卡2 边4 | untouched/undefined | def: 全局马尔可夫性的反向假设：分布中出现的每一处条件独立都能在图上由分离读出来（没有「图分离之外」的巧合独立）。
+总变差距离（total variation distance） | en=Total variation distance | 目录=验收·贝叶斯入门·领域根 | 卡0 边0 | untouched/undefined | def: 两个概率测度之间的整体差异度量 TV(P,Q)=sup_A|P(A)−Q(A)|=½∫|p−q| ∈ [0,1]；BvM 的后验逼近常写成两
+惩罚筛 GEL（penalized sieve GEL） | en=Penalized sieve generalized empirical likelihood (GEL) | 目录=根层 | 卡0 边2 | untouched/undefined | def: 把广义经验似然（GEL）准则与筛逼近、惩罚项结合的估计与推断程序，用于非参数分位数 IV（NPQIV）等不适定逆问题。
+惩罚筛估计（Penalized sieve estimation） | en=- | 目录=验收·贝叶斯入门·领域根 | 卡1 边7 | untouched/undefined | def: 在筛内极值目标上再加惩罚项（如 roughness / 稀疏惩罚），以在不缩小模型类的前提下抑制方差、改善高维表现。
+惩罚筛最小距离估计量（PSMD） | en=Penalized sieve minimum distance (PSMD) estimator | 目录=根层 | 卡0 边2 | untouched/undefined | def: 在筛空间上极小化「样本矩条件的加权平方距离 + 惩罚项」得到的半/非参数估计量，用于条件矩模型（含非参数 IV）这类常为不适定的问题。
+惩罚项（penalty） | en=penalty term | 目录=验收·贝叶斯入门·领域根 | 卡0 边4 | untouched/undefined | def: 加在目标函数背后的一项复杂度代价：对粗糙、非稀疏或过大的系数收取代价，用可控偏差换取方差下降。
+成对马尔可夫性（pairwise Markov property） | en=pairwise Markov property | 目录=验收·贝叶斯入门·领域根 | 卡2 边3 | untouched/undefined | def: 无向图中不相邻的两个节点在给定其余所有节点后条件独立：X_i ⊥ X_j | X_{V\{i,j}}（(i,j)∉E）。
+截断折棍狄利克雷过程混合模型 | en=Truncated stick-breaking DPMM (variational DP mixture) | 目录=验收·贝叶斯入门·领域根 | 卡0 边0 | untouched/undefined | def: 把 DPMM 的折棍表示截到有限个成分 K（π_k 阶乘后再归一化），用变分推断/EM 求后验近似，是工程上最常用的 DPMM 近似：K 设
+折叠 R̂ | en=folded R-hat | 目录=验收·贝叶斯入门·领域根 | 卡2 边2 | untouched/undefined | def: 把秩归一化后的抽样值做折叠变换 z^fold=|z−median(z)|，再对折叠值算一次 split-R̂；专门捕捉链间尺度/方差差异与重
+折棍表示（Stick-breaking） | en=stick-breaking representation | 目录=验收·贝叶斯入门·领域根 | 卡1 边5 | untouched/undefined | def: Sethuraman 给出的 DP 构造：独立 V_k ~ Beta(1, α)，权重 π_k = V_k∏_{j<k}(1−V_j)，原子
+抽样链（chain） | en=chain (Markov chain sampler run) | 目录=验收·贝叶斯入门·领域根 | 卡2 边5 | untouched/undefined | def: 一次 MCMC 运行产生的一串后验抽样序列（含烧入段）；为做收敛诊断通常并列跑多条链，比较链间与链内差异。
+拉普拉斯近似（Laplace approximation） | en=Laplace approximation | 目录=根层 | 卡0 边3 | untouched/undefined | def: 在众数（MAP/MLE）处对被积函数做二阶泰勒展开，把边缘似然近似为“峰值高度 × 高斯体量”：log p(x) ≈ log p(x,ẑ) 
+拒绝采样 | en=rejection sampling | 目录=验收·贝叶斯入门·领域根 | 卡2 边7 | untouched/undefined | def: 用易采样的提议分布 g 与包络常数 M（M·g ≥ f）做「接受/拒绝」判决，从目标密度 f 中取样本，平均接受率 1/M。
+拒绝采样的高维失效 | en=curse of dimensionality in rejection sampling | 目录=根层 | 卡0 边2 | untouched/undefined | def: 当提议 g 与目标 f 在高维空间中不匹配时，包络常数 M = sup_x f/g 随维数近似指数增长，接受率 1/M 随之指数衰减，固定包
+拟合优度检验（goodness-of-fit test） | en=Goodness-of-fit test | 目录=验收·贝叶斯入门·领域根 | 卡2 边8 | untouched/undefined | def: 检验样本是否与某个假定分布族/指定分布 F0 相符的一类检验：H0=数据来自 F0；统计量度量「观测频数 vs 期望频数」（Pearson 
+指数分离检验条件（testing condition） | en=Exponentially consistent tests | 目录=验收·贝叶斯入门·领域根 | 卡2 边11 | untouched/undefined | def: 要求存在检验把真值邻域外与真值指数分离，配合先验质量条件给出后验收缩率。
+指数族 | en=exponential family | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 能把密度写成 p(y|θ)=h(y)exp(η(θ)·T(y)−A(θ)) 的分布族（如二项、Poisson、正态）；η 为自然参数、T(y
+指标记号与分量表示 | en=index notation / component notation | 目录=验收·贝叶斯入门·领域根 | 卡0 边7 | untouched/undefined | def: 用带下标的符号 a_i、A_ij 表示向量/矩阵/张量的分量，并说明每个指标的取值范围，是张量式书写的语言。
+指示函数（indicator function） | en=Indicator function | 目录=验收·贝叶斯入门·领域根 | 卡0 边6 | untouched/undefined | def: 1{A} 表示事件 A 发生取 1、不发生取 0，是把「是否发生」写成可求和数字的记号。
+振幅编码（概率分布编码为量子振幅） | en=amplitude encoding of a probability distribution | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 把概率分布 p(x) 的平方根放进量子态振幅：|ψ⟩=Σ_x √p(x)|x⟩，使「按 p 抽样」变成「测量该态」，因此对 p 的期望可写成
+损失函数 | en=Loss Function | 目录=验收·贝叶斯入门·领域根 | 卡2 边7 | untouched/undefined | def: 度量一组参数好坏、由预测与真实标签偏差构成的标量函数；梯度下降就是要最小化它。
+排除限制（exclusion restriction） | en=Exclusion restriction | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 工具变量 Z 只能通过影响处理 T 来影响结果 Y：Y(t,z)=Y(t)，即 Z 被排除在结果方程之外——这是 IV 识别 LATE 的关
+控制变量法 | en=control variates | 目录=验收·贝叶斯入门·领域根 | 卡2 边5 | untouched/undefined | def: 用已知期望的辅助变量 C（与 h 相关）做控制变量：μ̂=mean(h(X)-β(C(X)-E[C]))，负相关时方差下降。
+控制变量的最优系数 | en=optimal control-variate coefficient β* | 目录=根层 | 卡0 边4 | untouched/undefined | def: 使控制变量估计量方差最小的系数 β* = Cov(h,C)/Var(C)，此时方差降为 σ_h²(1−ρ²)。
+控制变量（SGMCMC） | en=control variates for stochastic gradient MCMC | 目录=验收·贝叶斯入门·领域根 | 卡2 边6 | untouched/undefined | def: 用「锚点处全批梯度」抵消子采样梯度噪声的方差缩减技巧，使随机梯度 MCMC 的每迭代成本不再随数据量 n 增长。
+提议分布 | en=proposal distribution | 目录=验收·贝叶斯入门·领域根 | 卡2 边10 | untouched/undefined | def: 实际用于抽样的密度 p：重要抽样、拒绝采样与 Metropolis–Hastings 都从它取样本，再由权重/包络/接受率把样本换算到目标 
+提议分布的尺度缩放与接受率 | en=proposal scaling and acceptance rate | 目录=根层 | 卡0 边2 | untouched/undefined | def: 提议步长 σ（尺度）过小则链几乎每步都接受但移动极慢、自相关大；过大则频繁被拒、链卡住；高维下随机游走 MH 的经验最优接受率约为 0.23
+提议分布的支撑条件（覆盖条件） | en=support / coverage condition of a proposal | 目录=根层 | 卡0 边3 | untouched/undefined | def: 要求提议分布 p 在目标 f 的每一处正密度点上都为正（f(x)>0 ⇒ p(x)>0），这样似然比 f/p 才良定义、重要抽样估计才无偏；
+摊销变分推断（amortized variational inference / 识别模型） | en=amortized variational inference | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 不再为每个数据点单独优化一组变分参数，而是用一个共享的推断网络 q_φ(z|x)（识别模型/编码器）一次前向就算出该点的后验近似，把推断成本
+收敛诊断 R-hat | en=R-hat (Gelman-Rubin convergence diagnostic) | 目录=验收·贝叶斯入门·领域根 | 卡2 边2 | untouched/undefined | def: 比较多条 MCMC 链「链间方差」与「链内方差」的收敛诊断量：若各链都从同一后验稳定采样，两者应当一致。
+数值反演（无解析反函数时的逆变换采样） | en=- | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 当 F 没有解析反函数时，对每个 u 用求根算法（二分/Brent/牛顿）解 F(x)=u 得到 x，是逆变换采样的数值实现。
+数字孪生 | en=digital twin | 目录=验收·贝叶斯入门·领域根 | 卡0 边4 | untouched/undefined | def: 物理实体/过程在信息系统中的高保真虚拟副本，靠实时数据与模型耦合，可模拟该实体在不同输入下的行为（本空间内按 DTCF 用法定义，待文献核验
+数字孪生反事实框架（DTCF） | en=- | 目录=验收·贝叶斯入门·领域根 | 卡1 边7 | untouched/undefined | def: 用数字孪生仿真生成反事实分支、以「分级保真度假设 + 五级可反驳验证」替代统计识别假设的因果推断方法路线（本空间内定义，需文献核验）
+数字网与数字序列（digital nets and sequences） | en=digital nets and sequences | 目录=验收·贝叶斯入门·领域根 | 卡0 边8 | untouched/undefined | def: 用有限域上的线性（矩阵）构造出的低差异点集/序列族，是 Sobol、Niederreiter 等实际使用序列的统一框架，便于做数字移位随机化
+数据生成机制（DGP） | en=data generating mechanism / process | 目录=验收·贝叶斯入门·领域根 | 卡1 边2 | untouched/undefined | def: 产生观测数据的真实概率机制；贝叶斯模型（似然+先验）只是对它的一层近似描述，模型错误指定就是这层近似不成立。
+方向导数 | en=directional derivative | 目录=验收·贝叶斯入门·领域根 | 卡1 边3 | untouched/undefined | def: 函数沿某个指定单位方向 u 的变化率，即 (d/dt) f(x+tu)|_{t=0}；它是「梯度指向增长最快方向」这一命题的出发点。
+方差与标准差 | en=variance and standard deviation | 目录=验收·贝叶斯入门·领域根 | 卡3 边13 | untouched/undefined | def: Var(X)=E[(X−EX)²] 度量取值分散程度，标准差 σ=√Var(X) 与原量同量纲。
+方差与样本方差 | en=Variance and sample variance | 目录=验收·贝叶斯入门·领域根 | 卡2 边4 | untouched/undefined | def: 刻画一组数值散布程度的量：方差=各值与均值差的平方的平均，样本方差用 n−1 作分母（无偏）；R̂ 的分子分母都是方差。
+方差的可加性（独立随机变量和的方差） | en=additivity of variance for independent sums | 目录=验收·贝叶斯入门·领域根 | 卡0 边5 | untouched/undefined | def: X,Y 独立时 Var(X+Y)=Var(X)+Var(Y)；因此 n 个 iid 变量之和的方差是 nσ²，样本均值 X̄ 的方差是 σ²
+方差缩减与重要抽样 | en=Variance reduction / importance sampling | 目录=验收·贝叶斯入门·领域根 | 卡2 边4 | untouched/undefined | def: 在保持估计无偏的前提下降低蒙特卡洛估计方差的技术总称；重要抽样通过改换提议分布 p 提高稀有事件的有效样本效率。
+无信息先验（默认先验） | en=uninformative prior / default prior | 目录=验收·贝叶斯入门·领域根 | 卡1 边2 | untouched/undefined | def: 不表达具体个人信念、只由模型结构与客观准则（不变性、信息量最小等）确定的先验，如均匀先验、Jeffreys 先验、参考先验；常为反常（积分发
+无偏估计 | en=unbiased estimator | 目录=验收·贝叶斯入门·领域根 | 卡2 边10 | untouched/undefined | def: 估计量 θ̂ 的期望等于真参数：E[θ̂]=θ；无偏性是 Cramér–Rao 下界成立的条件之一。
+无向图（Undirected graph） | en=Undirected graph | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 由顶点集与无向边集组成的图，边 {i,j} 表示两个变量之间存在对称的相互影响，是马尔可夫随机场与 Hammersley–Clifford 
+最优提议分布（∝ |h|f） | en=- | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 使权重方差最小的提议密度 p*(x) ∝ |h(x)|f(x)：正的 h 下可做到零方差，是评判提议好坏的极限基准。
+最高后验密度区间（HDI / HPD） | en=highest posterior density interval (HDI / HPD interval) | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 在所有后验概率为 1−α 的区间中长度最短者：后验密度不低于某阈值的参数集合（亦称 HPD interval）。
+有向图与有向路径 | en=Directed graph and directed path | 目录=验收·贝叶斯入门·领域根 | 卡1 边2 | untouched/undefined | def: 有向图由节点集合与有向边（箭头）集合构成；有向路径是从一个节点沿箭头方向可依次到达另一节点的节点序列，图论层面对「谁影响谁」的记号基础。
+有向无环图与 d-分离 | en=Directed Acyclic Graph and d-separation | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 以节点=变量、有向边=直接因果影响构成的无环图；d-分离给出「两变量是否被某变量集合阻断（条件独立）」的图判据。
+有向无环图（DAG） | en=Directed acyclic graph (DAG) | 目录=验收·贝叶斯入门·领域根 | 卡1 边4 | untouched/undefined | def: 不含有向环的有向图：从任一节点出发沿边方向走，永远回不到出发点。贝叶斯网络用它编码变量间的直接依赖结构。
+有效估计量（efficient estimator） | en=efficient estimator | 目录=验收·贝叶斯入门·领域根 | 卡1 边5 | untouched/undefined | def: 无偏且方差恰好达到 Cramér–Rao 下界的估计量——即「方差已经压到理论下限」，判别等价于得分函数是该估计量偏差的线性函数。
+有效提议数（ENP）与提议崩塌 | en=Effective Number of Proposals (ENP) / proposal collapse | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 总体式自适应重要抽样中兼顾「权重分配」与「提议间相似度」的诊断量：ENP 小说明多个提议挤在同一区域（提议崩塌、冗余），大 ESS 也可能掩
+有效样本量 ESS | en=effective sample size (Bulk-ESS, Tail-ESS) | 目录=验收·贝叶斯入门·领域根 | 卡2 边9 | untouched/undefined | def: 把相关样本的 MCMC 输出折算成“等价独立样本数”的 MCMC 诊断量（n_eff / ESS），相对效率 ESS/N 反映采样与后验的相
+有效样本量（ESS） | en=Effective sample size (ESS) | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 把相关抽样折算成「等价多少条独立样本」的效率指标（S_eff）；与 R-hat 同属收敛/效率诊断，2021 年后与分位数局部效率一起报告。
+有效样本量（bulk-ESS / tail-ESS） | en=effective sample size (ESS) | 目录=根层 | 卡2 边3 | untouched/undefined | def: 考虑链内自相关后，与独立样本等效的样本量：bulk-ESS 管分布主体，tail-ESS 管 5%/95% 分位处的尾部。
+有效维度（effective dimension） | en=effective dimension | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 刻画高维被积函数「实质上依赖多少维」的指标：即使名义维度 s 很大，若方差主要由少数变量子集贡献（有效维度小），低差异点仍能高效积分。
+有限域与模 b 线性代数（finite field GF(b)） | en=finite field / linear algebra over GF(b) | 目录=验收·贝叶斯入门·领域根 | 卡0 边4 | untouched/undefined | def: 在 {0,1,…,b−1} 上做「逐位模 b 相加、模 b 相乘」的域运算与矩阵运算——数字网用生成矩阵把索引数字向量线性映射成点的数字向量
+朗之万动力学 | en=Langevin Dynamics | 目录=验收·贝叶斯入门·领域根 | 卡2 边8 | untouched/undefined | def: 在梯度方向上走一步、同时注入与步长同量级的高斯噪声的随机迭代；连续时间极限下其平稳分布正比于 exp(目标对数密度)，因此可用来采样而非只求
+期望 | en=Expectation | 目录=验收·贝叶斯入门·领域根 | 卡1 边4 | untouched/undefined | def: 随机变量在概率分布加权下的平均值：离散情形 Σ x p(x)，连续情形 ∫ x f(x) dx；ELBO 里的 E_q[·] 就是「在 q 
+期望与方差 | en=expectation and variance | 目录=根层 | 卡1 边111 | untouched/undefined | def: 随机变量的均值 E[X] 与方差 Var(X)=E[(X−EX)²]；均匀分布的 E=(a+b)/2、Var=(b−a)²/12 都由这两个
+期望与方差（Expectation and Variance） | en=Expectation and Variance | 目录=验收·贝叶斯入门·领域根 | 卡2 边6 | untouched/undefined | def: 随机变量取值的平均水平 E[X] 与离散程度 Var(X)；本空间的基础坐标，几乎所有概念都建在它之上。
+期望的线性性质 | en=Linearity of expectation | 目录=验收·贝叶斯入门·领域根 | 卡3 边1 | untouched/undefined | def: E[aX+bY]=aE[X]+bE[Y]（a、b 为常数），不要求 X、Y 独立；是期望最常用的运算性质。
+期望（Expectation） | en=Expectation | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 随机变量取值的加权平均：离散时 Σ x·p(x)，连续时 ∫ f(x)·p(x)dx；MCMC 要估计的目标量就是它。
+期望（数学期望） | en=Expectation | 目录=验收·贝叶斯入门·领域根 | 卡2 边8 | untouched/undefined | def: 随机变量的概率加权平均取值：离散时 E[X]=Σ_x x·p(x)，连续时 E[X]=∫ x·f(x)dx；刻画分布中心，是 KL 散度、蒙
+未校正朗之万算法（ULA） | en=Unadjusted Langevin Algorithm (ULA) | 目录=验收·贝叶斯入门·领域根 | 卡1 边3 | untouched/undefined | def: 把朗之万扩散按欧拉–丸山离散、直接拿梯度步当采样更新而不做接受/拒绝校正的算法；简单但没有精确平稳分布，步长 ε 有限时带 O(ε²) 偏差
+权重退化 | en=weight degeneracy | 目录=验收·贝叶斯入门·领域根 | 卡3 边6 | untouched/undefined | def: 重要性权重高度不等时，极少数样本主导估计，估计量方差巨大、ESS 远小于 n，是重要抽样最主要的失败模式。
+条件方差（Conditional variance） | en=Conditional variance | 目录=根层 | 卡0 边2 | untouched/undefined | def: E[(X−E[X|G])²|G]：在已知信息 G 下 X 绕其条件均值的平均波动，是一个 G-可测的随机变量而非常数。
+条件期望的 L² 投影性质（最优预测） | en=Conditional expectation as L2 projection / best predictor | 目录=根层 | 卡0 边1 | untouched/undefined | def: 在所有 G-可测且平方可积的 Y 中，E[X|G] 唯一地最小化均方误差 E[(X−Y)²]：它是 X 在「已知信息可达的函数空间」上的正交
+条件期望（Conditional expectation） | en=Conditional expectation | 目录=验收·贝叶斯入门·领域根 | 卡1 边13 | untouched/undefined | def: 给定子 σ-代数 G（或给定随机变量 Y）时 X 的条件期望 E[X|G]：一个 G-可测随机变量，对每个 A∈G 满足 ∫_A E[X|G
+条件概率 | en=Conditional Probability | 目录=验收·贝叶斯入门·领域根 | 卡2 边17 | untouched/undefined | def: 在已知事件 B 发生的条件下，事件 A 发生的概率 P(A|B)=P(A∩B)/P(B)（P(B)>0）。
+条件独立（Conditional Independence） | en=Conditional independence | 目录=根层 | 卡1 边16 | untouched/undefined | def: 给定 Z 后 X 与 Y 联合分布可分解：P(X,Y|Z)=P(X|Z)P(Y|Z)。
+条件高斯分布（多元正态条件化） | en=Conditional Gaussian (conditioning of a multivariate normal) | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 多元正态分布在给定部分分量取值后，其余分量仍服从正态分布；其条件均值与条件协方差由分块公式给出，是 GPR 预测公式的代数来源。
+极大似然估计 | en=Maximum likelihood estimation (MLE) | 目录=验收·贝叶斯入门·领域根 | 卡2 边16 | untouched/undefined | def: 在所有候选参数值中挑出让观测数据出现概率（似然）最大的那个作为估计：θ̂ = argmax_θ L(θ|x)，实际计算用对数似然并解得分方程
+极小极大速率 | en=minimax rate | 目录=验收·贝叶斯入门·领域根 | 卡2 边10 | untouched/undefined | def: 在所有估计量中最坏情形风险的最优衰减速度，用作后验收缩率是否最优的基准。
+极限 | en=Limit | 目录=验收·贝叶斯入门·领域根 | 卡1 边11 | untouched/undefined | def: 极限 lim：当下标 n 越来越大（或自变量趋近某点）时，序列/函数的值无限接近某个固定数；记号 limₙxₙ=a 或 lim_{x→x₀}
+标准化与 z 分数（standardization / z-score） | en=standardization / z-score | 目录=验收·贝叶斯入门·领域根 | 卡0 边5 | untouched/undefined | def: 把变量减去均值再除以标准差得到无量纲的 z 分数：z=(x−μ)/σ，标准化后均值为 0、标准差为 1——CLT 的陈述就是把部分和/样本均
+标准差 | en=standard deviation | 目录=验收·贝叶斯入门·领域根 | 卡2 边2 | untouched/undefined | def: 方差的算术平方根 s=√s²（或 σ=√σ²），把散布的度量从「平方单位」还原回原始数据的单位。
+标准误（Standard Error） | en=Standard Error (SE) | 目录=验收·贝叶斯入门·领域根 | 卡1 边10 | untouched/undefined | def: 估计量自身的标准差：衡量「用有限样本估一次」时估计值会飘多远；iid 样本均值的标准误为 SE=σ/√n，实用中用 s/√n 估计。
+样本均值的抽样分布（sampling distribution of the mean） | en=sampling distribution of the mean | 目录=验收·贝叶斯入门·领域根 | 卡0 边6 | untouched/undefined | def: 反复抽样得到的样本均值 X̄ 自身的概率分布：期望 μ、标准差 σ/√n（标准误），且 n 增大时形状趋近正态——CLT 说的就是最后这一条
+样本点 | en=sample point / outcome | 目录=验收·贝叶斯入门·领域根 | 卡2 边4 | untouched/undefined | def: 样本空间中的一个元素，即一次试验的单个可能结果，记作 ω；掷两枚骰子时共 36 个样本点。
+样本空间 | en=sample space | 目录=根层 | 卡2 边9 | untouched/undefined | def: 一次随机试验所有可能结果构成的集合，事件是它的子集；条件概率定义中的 P(A∩B)、P(B) 都是在该空间上取值的概率。
+样本空间与事件 | en=sample space and events | 目录=验收·贝叶斯入门·领域根 | 卡2 边4 | untouched/undefined | def: 随机试验所有可能结果构成的集合叫样本空间 S（MathWorld 亦称 event space / possibility space），S
+样条基（spline basis） | en=Spline basis (B-spline) | 目录=验收·贝叶斯入门·领域根 | 卡0 边1 | untouched/undefined | def: 由分段多项式与结点（knot）拼成的基函数族，B 样条具有局部支撑：改一个系数只改函数的一个局部片段。
+核函数（Kernel function） | en=Kernel function | 目录=根层 | 卡1 边15 | untouched/undefined | def: 非负、对称、积分为 1 的加权函数（如 gaussian、epanechnikov、rectangular、triangular、biwei
+核密度估计（KDE） | en=Kernel Density Estimation | 目录=根层 | 卡2 边7 | untouched/undefined | def: 用核函数 K 把每个样本点摊成一个小峰再平均得到密度估计 f̂_h(x)=(1/n)Σ_i K((x−X_i)/h)，光滑程度由带宽 h 控
+核平滑（核方法） | en=kernel smoothing | 目录=验收·贝叶斯入门·领域根 | 卡2 边10 | untouched/undefined | def: 用核函数给邻近观测加权（局部加权平均）来估计密度或回归函数的非参数估计方法。
+核的二阶矩 κ₂(K) | en=second moment of a kernel | 目录=验收·贝叶斯入门·领域根 | 卡0 边4 | untouched/undefined | def: κ₂(K)=∫u²K(u)du，度量核横向「散开」的程度；在核密度估计的渐近方差/带宽公式里以常数形式出现（高斯核与均匀核均为有限值）。
+核的阶（kernel order） | en=order of a kernel | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 若核的 1…r−1 阶矩全为 0、第 r 阶矩非零，则称 r 阶核：二阶核（r=2，普通对称核）最常用，高阶核可减小偏差但会取负值。
+核超参数优化（边际似然最大化） | en=kernel hyperparameter optimization by marginal likelihood | 目录=验收·贝叶斯入门·领域根 | 卡0 边1 | untouched/undefined | def: 把观测 y 的联合密度对隐函数 f 积分得到 log p(y|X,θ)，再对 θ（长度尺度、信号方差、噪声方差）求梯度最大化，从而在无需交叉
+根本性因果推断难题 | en=Fundamental Problem of Causal Inference | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 每个个体至多只能观测到一个潜在结果（接受处理或未接受处理之一），另一个永远缺失，因此个体因果效应无法直接观测，只能用假设+统计模型去估计。
+梅森旋转算法（Mersenne Twister, MT19937） | en=Mersenne Twister | 目录=根层 | 卡0 边1 | untouched/undefined | def: 以 19937 位状态（624 个 32 位字）做位级移位-异或递推的 PRNG，周期 2^19937−1、623 维等分布；NumPy 旧
+梯度与梯度下降 | en=gradient and gradient descent | 目录=验收·贝叶斯入门·领域根 | 卡1 边9 | untouched/undefined | def: 梯度由各偏导组成、指向函数上升最快方向；梯度下降即沿负梯度方向按步长反复更新参数，是 SGD 的全批量对照版本。
+梯度（gradient ∇） | en=gradient | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 函数在某点增长最快的方向与速率（多变量导数的向量形式），HMC 用它算出“力”来推进采样轨迹。
+检验统计量与拒绝域 | en=Test statistic and rejection region | 目录=验收·贝叶斯入门·领域根 | 卡0 边6 | untouched/undefined | def: 把样本压缩成一个标量统计量，并规定它在哪些取值下拒绝零假设；其零分布常由 CLT 给出（大样本正态近似）。
+棣莫弗–拉普拉斯定理 | en=De Moivre–Laplace theorem | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: CLT 的 Bernoulli/二项特例：X_i~Bernoulli(p) 时二项分布标准化后趋 N(0,1)，是 CLT 最早的历史形式。
+概率与随机变量 | en=Probability and random variables | 目录=验收·贝叶斯入门·领域根 | 卡2 边9 | untouched/undefined | def: 随机变量是把样本空间映射到实数的可测函数 X:S→ℝ；它的概率规律由分布给出（离散用 pmf，连续用 pdf，统一用 CDF/概率测度），贝
+概率分布 | en=probability distribution | 目录=验收·贝叶斯入门·领域根 | 卡2 边9 | untouched/undefined | def: 给随机变量各取值指派概率（离散：概率质量函数；连续：概率密度需满足积分为 1）的规则。
+概率单纯形 | en=probability simplex | 目录=验收·贝叶斯入门·领域根 | 卡3 边3 | untouched/undefined | def: 非负且和为 1 的 K 维向量组成的集合，是“K 类概率分布”的几何化身。
+概率密度与归一化常数 | en=probability density and normalizing constant | 目录=验收·贝叶斯入门·领域根 | 卡1 边45 | untouched/undefined | def: 连续分布的密度 f≥0 且 ∫f=1；常写作「正比于」的核乘以归一化常数，如标准正态的 1/√(2π)。
+概率密度的变量替换 | en=Change of variables for probability densities | 目录=验收·贝叶斯入门·领域根 | 卡1 边7 | untouched/undefined | def: 单调变换 φ=φ(θ) 下密度按 π_φ(φ)=π_θ(θ)·|dθ/dφ| 变化（多元时用 |det J|）；它是 Jeffreys 先验
+概率的链式法则（chain rule of probability） | en=chain rule of probability | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 任意联合分布都可无损拆成条件分布连乘：P(x_1,…,x_n)=∏_i P(x_i | x_1,…,x_{i-1})，是贝叶斯网络分解的出发
+概率积分变换（Probability Integral Transform） | en=probability integral transform | 目录=根层 | 卡0 边4 | untouched/undefined | def: 若 X 有连续 CDF F，则 U=F(X) ~ U(0,1)：逆变换采样成立的另一半事实。
+概率空间与事件 | en=Probability Space and Events | 目录=验收·贝叶斯入门·领域根 | 卡1 边5 | untouched/undefined | def: 概率空间是三元组 (Ω, F, P)：Ω 是样本空间，F 是事件域（对补与可列并封闭的事件集合族，即 σ-代数），P 是概率测度，满足 P(
+概率论与统计学的未决问题清单 | en=Open Problem Lists in Probability and Statistics | 目录=验收·贝叶斯入门·领域根 | 卡1 边1 | untouched/undefined | def: 数学界（ICM、伯努利学会、IMS 等）公开整理/发布的开放问题集合；截至 2026-09 未发现任何官方发布的「贝叶斯定理未决问题清单」。
+模型保真度（fidelity） | en=model fidelity | 目录=验收·贝叶斯入门·领域根 | 卡0 边5 | untouched/undefined | def: 仿真模型在多大程度上忠实重现目标系统行为与机制的分级刻画；DTCF 用它替代统计识别假设作为反事实可信度的依据（本空间内定义，待文献核验）
+模型错误指定 | en=misspecification | 目录=验收·贝叶斯入门·领域根 | 卡3 边1 | untouched/undefined | def: 真实数据生成分布 p₀ 不在假设的参数族 {p_θ: θ∈Θ} 内；此时 Bayes 后验向族内「最接近」的伪真值集中，标准 BvM/后验一
+模型错误指定（misspecification） | en=Model misspecification | 目录=验收·贝叶斯入门·领域根 | 卡1 边12 | untouched/undefined | def: 真实数据生成过程不属于研究者/学习者的模型集合（先验所支撑的参数化模型族）的情形。
+欧拉–丸山离散（Euler–Maruyama discretization） | en=Euler–Maruyama discretization | 目录=根层 | 卡0 边3 | untouched/undefined | def: 把随机微分方程按固定步长 γ 离散的数值格式：X_{k+1} = X_k + γμ(X_k) + σ(X_k)√γ·ξ_k，ξ_k ~ N(
+正交基与系数解耦（orthogonal basis） | en=Orthogonal basis and coefficient decoupling | 目录=验收·贝叶斯入门·领域根 | 卡0 边1 | untouched/undefined | def: 基函数两两正交（标准内积下 ∫φ_iφ_j=0，i≠j）时，展开系数可逐个单独求出、互不影响，称为系数解耦。
+正则性匹配（regularity matching） | en=regularity matching | 目录=验收·贝叶斯入门·领域根 | 卡0 边0 | untouched/undefined | def: 材料结论：为获得好速率，GP 先验的正则性应与未知真值的正则性相匹配；不匹配则速率次优（自适应先验要解决的正事）。
+正半定矩阵与反对称矩阵 | en=Positive semidefinite & skew-symmetric matrices | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 两类矩阵条件：D=D^T 且 x^T D x ≥ 0（正半定，代表耗散/扩散）；G=-G^T（反对称，代表守恒/环流）；两矩阵框架正是用它们
+正定核（Mercer 核） | en=positive definite (Mercer) kernel | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 满足 Gram 矩阵半正定性的二元函数 k(x,x′)，用于 SVM / 高斯过程 / RKHS；与统计中的平滑核（非负、积分为 1）语义不
+正性条件（positivity condition） | en=Positivity condition | 目录=验收·贝叶斯入门·领域根 | 卡0 边4 | untouched/undefined | def: 要求联合分布密度处处严格为正（x 的每个赋值概率 >0），是成对/局部马尔可夫性反推全局马尔可夫性（Hammersley–Clifford）
+步出与收缩（stepping out & shrinkage） | en=stepping out & shrinkage | 目录=验收·贝叶斯入门·领域根 | 卡1 边2 | untouched/undefined | def: 切片采样中构造区间的实现技巧：先用「步出」从当前点按固定步长 w 向两侧扩窗，得到一个包住目标切片的区间 (L,R)，再用「收缩」在其中反复
+比例分配（proportional allocation） | en=proportional allocation | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 按层大小等比例分配样本量（n_h = n·N_h/N），使分层估计量的权重与抽样比例自然对齐、可用自加权样本直接算均值。
+水平集与子图（level set & epigraph） | en=level set & epigraph under a density | 目录=验收·贝叶斯入门·领域根 | 卡1 边3 | untouched/undefined | def: 子图 = 密度曲线下方区域 {(x,u): 0 ≤ u ≤ p(x)}；固定高度 u 切出的水平集 {x: p(x) ≥ u} 就是「切片」
+测度（Measure / Probability measure） | en=- | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 概率测度 P 是定义在事件域上的集函数：P(A)∈[0,1]、P(Ω)=1、互斥事件可数可加；它是一般测度（非负可数可加集函数）概率归一化后
+测度（Measure） | en=Measure | 目录=验收·贝叶斯入门·领域根 | 卡0 边0 | untouched/undefined | def: 给事件族赋“大小”的集函数 μ：μ(∅)=0，非负，且可数可加；概率 P 是总大小为 1 的测度。
+混合 DAG（mixture of DAGs） | en=mixture of DAGs | 目录=根层 | 卡1 边1 | untouched/undefined | def: 多张 DAG（或参数不同的同一骨架）按权重混合而成的图模型：引入潜在组别变量，在不同有向图结构/参数之间切换，以容纳「同一批变量在不同子群里
+混合分布的逆变换采样 | en=- | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 先按权重 π_k 抽分量标签 K，再在该分量内独立做逆变换采样；处理连续+离散（含原子）混合的后验分布。
+混合提议分布 | en=mixture proposal distribution | 目录=根层 | 卡0 边3 | untouched/undefined | def: 由若干基提议加权而成的提议分布 p(x)=Σ λ_k p_k(x)（Σλ_k=1）；只要能有一个分量覆盖 f 就满足覆盖条件，多峰目标下比单
+混合模型 | en=Mixture Model | 目录=验收·贝叶斯入门·领域根 | 卡1 边9 | untouched/undefined | def: 分量分布按权重混合而成的分布：p(x)=Σ_k π_k p_k(x)，Σ_k π_k=1；刻画“先选组、再在该组内取值”的两步机制。
+混杂 | en=confounding | 目录=验收·贝叶斯入门·领域根 | 卡1 边7 | untouched/undefined | def: 存在同时影响处理与结果的共同原因（或共同原因未测），使观测关联不等于因果效应。
+渐近正态性（Asymptotic normality） | en=Asymptotic normality | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 正则条件下，估计量在 √n 尺度上依分布收敛到均值 0、方差为 Fisher 信息逆 I(θ0)^{-1} 的高斯分布；极大似然估计是标准例
+滤子（filtration） | en=filtration | 目录=验收·贝叶斯入门·领域根 | 卡0 边4 | untouched/undefined | def: 滤子：递增的事件域序列 F_0 ⊆ F_1 ⊆ …，代表「到时刻 n 为止可用的信息」；条件期望 E[·|F_n] 是相对该信息的可测投影。
+潜在结果与反事实 | en=potential outcomes and counterfactuals | 目录=验收·贝叶斯入门·领域根 | 卡1 边11 | untouched/undefined | def: 个体 i 在每个可能处置 x 下的结果 Y_i(x) 构成的框架；实际未发生的那一支即反事实。
+熵条件（entropy condition） | en=entropy condition (metric entropy / covering numbers) | 目录=验收·贝叶斯入门·领域根 | 卡1 边4 | untouched/undefined | def: 对参数集（或模型类）用 ε-网覆盖所需的规模 log N(ε, Θ, d) 不超过 nε² 量级的条件，用来控制后验质量在半径 ε 处的“搜
+狄利克雷过程 | en=Dirichlet Process (DP) | 目录=验收·贝叶斯入门·领域根 | 卡2 边8 | untouched/undefined | def: 「分布上的分布」：随机测度 G ~ DP(α, G₀)，对任意可测划分其概率向量服从 Dirichlet 分布；样本路径以概率 1 为离散原
+狄利克雷过程混合模型（DPMM） | en=Dirichlet process mixture model | 目录=验收·贝叶斯入门·领域根 | 卡2 边4 | untouched/undefined | def: 层次模型：x_i|θ_i~F(θ_i)，θ_i|G~G，G~DP(α,G₀)。用狄利克雷过程作混合测度的先验，等价于成分数不设上限的无限混合
+独立同分布（iid） | en=independent and identically distributed (i.i.d.) | 目录=验收·贝叶斯入门·领域根 | 卡1 边28 | untouched/undefined | def: 样本 X1,…,Xn 相互独立且服从同一分布：卡方统计量的极限卡方零分布、KS 统计量的分布无关性都以 iid 为前提，独立或同分布被破坏时
+独立提议分布 | en=independence proposal / independence sampler | 目录=根层 | 卡0 边0 | untouched/undefined | def: Metropolis–Hastings 中不依赖当前状态的提议分布 p(x'|x)=g(x')；接受率 α=min(1,[f(x')g(x)
+生成 σ-代数（由事件族生成） | en=σ-algebra generated by a family of sets, σ(A) | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 包含给定事件族 A 的最小 σ-代数 σ(A)——把 A 里的事件补上“取补、可数并”的所有必需结果，不额外加多余事件。
+用标准误构造均值的置信区间（t 区间） | en=Confidence interval for the mean using the standard error | 目录=验收·贝叶斯入门·领域根 | 卡0 边4 | untouched/undefined | def: 把标准误当“误差尺”乘以临界值得到区间：σ 未知时用 x̄ ± t_{α/2, N−1}·s/√N。
+矩阵乘法与矩阵幂 | en=Matrix multiplication and matrix powers | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: (AB)_{ij}=Σ_k A_{ik}B_{kj}；方阵幂 P^n=P·P⋯P 表示同一转移的 n 次复合，满足 P^{m+n}=P^mP
+神经网络筛估计量（Neural network sieve estimators） | en=- | 目录=验收·贝叶斯入门·领域根 | 卡1 边9 | untouched/undefined | def: 把（单隐层/深层）神经网络看作一列随样本量增长的筛（Sieve），用筛法估计的渐近理论给出其一致性、收敛速率与渐近正态性，从而绕开网络参数本
+福克–普朗克方程 | en=Fokker–Planck equation | 目录=验收·贝叶斯入门·领域根 | 卡0 边6 | untouched/undefined | def: 描述扩散过程概率密度随时间演化的偏微分方程 ∂_t p(z,t)=∇^T·([D+Q](p∇H+∇p))，用来验证一个 SDE 的平稳分布是
+离散分布的逆变换采样（累积和查表法） | en=discrete inverse transform sampling | 目录=根层 | 卡0 边3 | untouched/undefined | def: 把概率质量累加成阶梯 CDF，用均匀数 u 查表落入的区间即得离散样点。
+种子与可复现性 | en=seed and reproducibility | 目录=验收·贝叶斯入门·领域根 | 卡1 边4 | untouched/undefined | def: 固定种子（seed）决定 PRNG 的输出序列，使随机实验可复现；多链采样需互不重叠的子流/独立种子。
+秩图 | en=rank plot | 目录=验收·贝叶斯入门·领域根 | 卡3 边6 | untouched/undefined | def: 把多条链的抽样混在一起排名次，再按链统计各秩区间落入次数所作的直方/阶梯图；各链图形应近似平坦且互相重叠，用来替代 trace plot 做
+秩图（rank plot） | en=Rank plot | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 把多条链的全部抽样混在一起排名次，再按链统计各秩区间落入次数所作的直方/阶梯图；各链图形应近似平坦且互相重叠，用来取代 trace plot
+秩归一化 | en=rank normalization | 目录=验收·贝叶斯入门·领域根 | 卡1 边7 | untouched/undefined | def: 把一组抽样值换成它们在合并样本中的秩，再用标准正态分位数函数 Φ⁻¹ 映射到正态尺度，使重尾与链间尺度差异不再主导诊断量的方差。
+秩归一化 split-R̂ | en=Rank-normalized split R-hat | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 先把抽样值换成秩并映射到正态尺度，再把每条链对半切开后计算的 R̂；能处理重尾与链间方差不等时的漏诊，现代阈值 <1.01。
+秩（rank） | en=rank | 目录=根层 | 卡1 边7 | untouched/undefined | def: 把一组数值从小到大排序后，某个值所处的位置编号（并列时取平均位置）；它只保留次序信息、丢弃具体量纲，是秩归一化与秩图的原料。
+积分与密度（Integral & Density） | en=Integral / Density | 目录=验收·贝叶斯入门·领域根 | 卡2 边8 | untouched/undefined | def: 积分是把连续量「切片再求和」（黎曼和取极限）；密度 p(x) 是面积归一化的权重，概率与目标量写作 ∫ 形式的面积积分。
+积分与期望记号（∫ 与 E_p[·]） | en=Integral and expectation notation | 目录=验收·贝叶斯入门·领域根 | 卡2 边4 | untouched/undefined | def: 连续情形把 Σ p(x)·f(x) 换成 ∫ p(x)f(x)dx，即按分布 p 的加权平均（期望）。
+积分与求和记号 | en=Summation and Integral Notation | 目录=验收·贝叶斯入门·领域根 | 卡2 边4 | untouched/undefined | def: ∑ 把离散项的贡献按索引加起来（∑ₖ pₖ = 1），∫ 把连续区间的贡献按「密度×宽度」累积起来（∫ p(x)dx = 1）；两者是同一本
+积分与求和记号（∫ 与 Σ） | en=Integral and Summation Notation | 目录=验收·贝叶斯入门·领域根 | 卡2 边36 | untouched/undefined | def: 把「全加起来」写成符号的两种写法：离散情形用求和 Σ_x，连续情形用积分 ∫dx；归一化、区间概率、期望都靠它们表达。
+积分基础 | en=basics of integration | 目录=验收·贝叶斯入门·领域根 | 卡2 边16 | untouched/undefined | def: 积分作为「分割—求和—取极限」的操作：连续型期望/概率的记号基础。
+等尾可信区间（Equal-tailed interval, ETI） | en=equal-tailed credible interval (ETI) | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 两端各留 α/2 尾部概率的区间 [q_{α/2}, q_{1−α/2}]：最常见的可信区间取法。
+筛法估计的收敛速率 | en=- | 目录=验收·贝叶斯入门·领域根 | 卡1 边3 | untouched/undefined | def: 筛法估计量的误差可分解为近似误差（随 k_n 增大而降）与估计误差（随 k_n 增大而升），平衡后得到 k_n 的最优阶与 O_p(δ_n 
+筛法估计（Sieve） | en=sieve estimation | 目录=验收·贝叶斯入门·领域根 | 卡2 边13 | untouched/undefined | def: 用一列随样本量增长的有限维近似空间（筛空间 Θ_n）逼近原本难以直接优化的无穷维参数空间，再在近似空间上求解估计量的方法。
+筛法极值估计（Sieve extremum estimation） | en=- | 目录=验收·贝叶斯入门·领域根 | 卡2 边7 | untouched/undefined | def: 把「在筛空间内最大化经验准则」这一动作本身命名出来的估计模式：θ̂_n = argmax_{θ∈Θ_n} ℓ_n(θ)，是筛法估计的执行形式
+筛空间（Sieve space） | en=Sieve space Θ_k | 目录=验收·贝叶斯入门·领域根 | 卡1 边5 | untouched/undefined | def: 一列随样本量增大而扩张的有限维函数空间 Θ_n，用「筛子」逐步逼近无限维参数空间，使估计在最优点位于空间内部。
+累积分布函数（CDF） | en=Cumulative Distribution Function | 目录=验收·贝叶斯入门·领域根 | 卡2 边30 | untouched/undefined | def: F(x)=P(X≤x)，单调不减、右连续，F(−∞)=0、F(+∞)=1；它完全刻画一个（实值）随机变量的分布，逆变换采样就是从它的反函数取
+约翰·查尔斯·菲尔兹 | en=John Charles Fields | 目录=验收·贝叶斯入门·领域根 | 卡1 边1 | untouched/undefined | def: 加拿大数学家（1863–1932），1924 年多伦多国际数学家大会的主要筹备者；遗嘱捐出遗产促成以其命名的国际数学大奖——菲尔兹奖。
+线性同余生成器（LCG） | en=Linear congruential generator (LCG) | 目录=根层 | 卡0 边1 | untouched/undefined | def: 用 X_{n+1}=(a·X_n+c) mod m 一步乘加取模递推的经典 PRNG 家族；实现只需一个乘法和一次取模。
+细致平衡条件 | en=detailed balance | 目录=根层 | 卡2 边7 | untouched/undefined | def: 对任意两状态 i,j 有 π_i P_ij = π_j P_ji（逐对概率流量相等）；成立时 π 必为平稳分布，且链可逆。
+经验分布函数（ECDF） | en=Empirical distribution function (ECDF) | 目录=验收·贝叶斯入门·领域根 | 卡1 边9 | untouched/undefined | def: F_n(x)=#{x_i≤x}/n，是 EDF 型检验（KS、Lilliefors、Cramér–von Mises）里与假设分布比较的台阶
+经验贝叶斯 | en=Empirical Bayes | 目录=根层 | 卡1 边2 | untouched/undefined | def: 一类方法：先验 G 不主观设定，而是从大量『平行单元』的边际数据中估计（如边际极大似然），再把估计值当先验对每个单元做贝叶斯更新
+经验贝叶斯（Empirical Bayes） | en=Empirical Bayes (EB) | 目录=根层 | 卡1 边4 | untouched/undefined | def: 用数据（其他/历史可交换单元的数据，或同一批数据的边际）估计先验 G，再套用贝叶斯公式做推断的统计方法族
+维数灾难 | en=curse of dimensionality | 目录=验收·贝叶斯入门·领域根 | 卡1 边8 | untouched/undefined | def: 协变量维数升高时，非参数估计所需样本量近似指数增长、收敛速度急剧恶化的现象。
+维纳过程（布朗运动） | en=Wiener process / Brownian motion | 目录=验收·贝叶斯入门·领域根 | 卡0 边4 | untouched/undefined | def: 连续时间随机过程 W_t：W_0=0、增量独立且 W_{t+s}-W_t ~ N(0,sI)；它是 SDE 记号 dW 的来源，也是朗之万类
+自协方差函数 γ(k) | en=autocovariance function | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 宽平稳序列中滞后 k 的协方差 γ(k)=Cov(X_t,X_{t+k})；γ(0)=方差，归一化后得自相关 ρ(k)=γ(k)/γ(0)。
+自归一化重要抽样（SNIS） | en=self-normalized importance sampling | 目录=验收·贝叶斯入门·领域根 | 卡3 边7 | untouched/undefined | def: 当目标密度只知道到常数倍（未归一化）时，用 μ̂_SNIS=Σ w_i h(X_i)/Σ w_i 加权平均；一般有偏但一致，且权重对尺度不变
+自由指标与哑指标 | en=free index and dummy index | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 项中只出现一次的指标是自由指标（在各求和项与等式两边必须一致）；恰好出现两次并被求和的指标是哑指标（可改名、不留在结果里）。
+自相关 | en=Autocorrelation | 目录=验收·贝叶斯入门·领域根 | 卡2 边6 | untouched/undefined | def: 同一条 MCMC 链中相隔 t 步的样本之间的相关性 ρ_t；自相关越强，同样步数提供的独立信息越少，这正是有效样本量 ESS 要折算的东西
+自相关与积分自相关时间 | en=autocorrelation and integrated autocorrelation time | 目录=验收·贝叶斯入门·领域根 | 卡1 边5 | untouched/undefined | def: 抽样序列中相隔 t 步的取值之间的相关 ρ_t；把各阶相关累加得 tau = 1 + 2Σ_{t≥1} ρ_t，即「一条相关样本 ≈ 等价 
+自相关（Autocorrelation） | en=Autocorrelation | 目录=根层 | 卡1 边4 | untouched/undefined | def: 同一条链中相隔 t 步的两个取值的相关性 ρ_t；它使 MCMC 抽样的信息量低于同样长度的独立样本。
+自适应包络（切线包络，tangent envelope） | en=tangent / adaptive envelope | 目录=验收·贝叶斯入门·领域根 | 卡0 边0 | untouched/undefined | def: 对数凹密度的对数可用切线（及割线）构造分段指数上界；该上界既是包络又容易采样，且随迭代（纳入更多切点）自动收紧、接受率自动提高——这是 AR
+自适应拒绝采样（ARS） | en=adaptive rejection sampling (ARS) | 目录=根层 | 卡0 边2 | untouched/undefined | def: 在拒绝采样前先用若干点评估 f、拟合分段指数包络（对数凹密度下切线与割线构成上下包络），从而免去人工选 M 并自动提高接受率。
+自适应收缩率 | en=adaptive contraction rate (rate adaptivity) | 目录=验收·贝叶斯入门·领域根 | 卡1 边2 | untouched/undefined | def: 真值的光滑度/稀疏度未知时，先验仍能自动达到该情形（近）极小极大收缩率的性质，即 ε_n 随未知正则性自适应而非预先设定。
+自适应重要抽样 | en=adaptive importance sampling | 目录=验收·贝叶斯入门·领域根 | 卡2 边5 | untouched/undefined | def: 把提议分布参数化并用已有样本迭代调优（如最小化估计方差、或拟合目标密度），从而自动找到比固定 p 更高效的提议分布。
+菲尔兹奖 | en=Fields Medal | 目录=验收·贝叶斯入门·领域根 | 卡1 边4 | untouched/undefined | def: 由约翰·查尔斯·菲尔兹遗嘱捐资设立、以其命名的国际数学大奖，被誉为「数学界的诺贝尔奖」。
+蒙特卡洛估计量 | en=Monte Carlo estimator | 目录=验收·贝叶斯入门·领域根 | 卡2 边12 | untouched/undefined | def: 用样本均值 (1/n)Σ f(X_i) 估计期望 E[f(X)] 的估计量，无偏且方差随样本数递减。
+蒙特卡洛估计（Monte Carlo Estimation） | en=Monte Carlo Estimation | 目录=根层 | 卡3 边9 | untouched/undefined | def: 用样本平均逼近期望：E[X]≈(1/n)Σ X_i，抽样次数越大越接近（MCMC 后验均值即其应用）。
+蒙特卡洛方法 | en=Monte Carlo method | 目录=验收·贝叶斯入门·领域根 | 卡3 边16 | untouched/undefined | def: 用随机样本近似计算积分/期望的数值方法；其随机性全部来自随机数生成。
+蒙特卡洛标准误（MCSE） | en=Monte Carlo standard error (MCSE) | 目录=验收·贝叶斯入门·领域根 | 卡1 边4 | untouched/undefined | def: 用抽样估计期望或分位数时，估计量本身的误差尺度，约为「后验标准差 / sqrt(ESS)」；ESS 越大，MCSE 越小。
+蛙跳积分（leapfrog） | en=leapfrog integrator | 目录=验收·贝叶斯入门·领域根 | 卡1 边3 | untouched/undefined | def: 先走半步动量、再走整步位置、再走半步动量的三明治式数值积分，能近似保持哈密顿量并保持可逆性。
+行列式（determinant） | en=determinant | 目录=验收·贝叶斯入门·领域根 | 卡0 边4 | untouched/undefined | def: 方阵的标量函数 det A：2×2 时 det[[a,b],[c,d]]=ad−bc；它度量线性变换对体积的伸缩倍数，是多元密度换变量与 s
+观测 Fisher 信息（observed Fisher information） | en=Observed Fisher information | 目录=验收·贝叶斯入门·领域根 | 卡0 边1 | untouched/undefined | def: 对数似然在当前参数处的负二阶导 j(θ)=−ℓ''(θ)（多维为 −∇²ℓ），度量似然曲率；在 MLE 处 (1/n)j(θ̂) 依概率收敛
+证据下界（ELBO） | en=Evidence Lower BOund (ELBO) | 目录=验收·贝叶斯入门·领域根 | 卡3 边7 | untouched/undefined | def: log p(x) = ELBO(q) + KL(q‖p(z|x))，因 KL≥0 故 ELBO 是边缘似然（证据）的下界；VI 实际优化的目
+识别假设（可忽略性 / 平行趋势 / 排除限制） | en=- | 目录=验收·贝叶斯入门·领域根 | 卡1 边9 | untouched/undefined | def: 为填补反事实缺口而外加的假设（ignorability、parallel trends、exclusion restrictions）：它们
+误设代价（cost of misspecification） | en=cost of misspecification | 目录=验收·贝叶斯入门·领域根 | 卡1 边3 | untouched/undefined | def: 模型集合不包含真实过程时，用「最优近似模型」做推断与决策所付出的代价（预测偏差、稳态分布与比较静态结论的变形）；单调比较静态框架下可得其上界
+贝叶斯因子（Bayes factor） | en=Bayes factor | 目录=根层 | 卡0 边2 | untouched/undefined | def: 两个模型边缘似然之比 BF₁₂=p(x|M₁)/p(x|M₂)，是贝叶斯模型比较与假设检验的核心量；也可写成“先验×后验”比，即 BF=后验
+贝叶斯因果推断 | en=Bayesian causal inference | 目录=贝叶斯方法论的开放问题 [目录非group] | 卡1 边6 | untouched/undefined | def: 把先验与因果图/结构因果模型结合做因果效应估计：混杂、可识别性与先验敏感性使因果结论比预测更脆弱。
+贝叶斯定理 | en=Bayes' Theorem | 目录=根层 | 卡2 边12 | mastered/undefined | def: P(θ|D) = P(D|θ)P(θ)/P(D)：把先验与似然合成为后验的更新规则。
+贝叶斯定理的代数证明 | en=algebraic proof of Bayes' theorem | 目录=验收·贝叶斯入门·领域根 | 卡2 边3 | untouched/undefined | def: 由条件概率定义 P(A|B)=P(A∩B)/P(B) 出发做两行代数变形，得到 P(A|B)=P(B|A)P(A)/P(B)：定理是恒等式，
+贝叶斯定理：定理已证，未决问题在其方法论层面 | en=Bayes' theorem: theorem is settled; open problems live at the methodological level | 目录=验收·贝叶斯入门·领域根 | 卡2 边0 | untouched/undefined | def: 贝叶斯定理（Bayes' theorem）是被普遍证明的数学恒等式，本身不存在社区维护的『未决问题清单』；公开未决问题位于贝叶斯推断/计算/
+贝叶斯推断中的开放问题 | en=Open problems in Bayesian inference | 目录=验收·贝叶斯入门·领域根 | 卡1 边0 | untouched/undefined | def: 贝叶斯定理本身早已被证明，公开未决的是它的用法：先验从哪来、后验算不算得动、估计界是否可达等问题。
+贝叶斯方法论的开放问题 | en=open problems in Bayesian methodology | 目录=验收·贝叶斯入门·领域根 | 卡1 边9 | untouched/undefined | def: 贝叶斯定理本身已证、不存在未决问题；公开的未决/挑战集中在计算、先验、基础与应用（因果推断）等方法论层面。
+贝叶斯统计的公开未决问题 | en=Open Problems in Bayesian Statistics | 目录=验收·贝叶斯入门·领域根 | 卡1 边0 | untouched/undefined | def: 贝叶斯定理本身是已证恒等式，无未决问题；未决问题集中在「先验怎么选、后验怎么算、模型怎么比、因果与风险建模怎么用」等方法学层面。
+贝叶斯网络（Bayesian network） | en=Bayesian network / directed graphical model | 目录=验收·贝叶斯入门·领域根 | 卡2 边6 | untouched/undefined | def: 用有向无环图紧凑参数化一族概率分布的有向图模型：联合分布按图分解为 P(x_1,…,x_n)=∏_i P(x_i | pa_i)，每个因子只
+贝叶斯非参数 | en=Bayesian nonparametrics | 目录=贝叶斯方法论的开放问题 [目录非group] | 卡2 边5 | untouched/undefined | def: 在无穷维参数空间（函数/分布/随机过程）上放先验做推断：后验一致性与收敛速率的刻画尚未完成。
+质量参数 t 与对偶条件（quality parameter t） | en=quality parameter t and the dual condition | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: t 是 (t,m,s)-网/数字序列的均匀性质量指标：t 越小、基本区间的计数越完美（t=0 为完全均匀），其取值由生成矩阵的对偶（线性无关
+赌徒破产问题（首达边界） | en=Gambler's ruin (first passage to a boundary) | 目录=验收·贝叶斯入门·领域根 | 卡0 边1 | untouched/undefined | def: 随机游走首次碰到两个边界水平之一时停止的经典首达问题：甲初始资金 b、乙初始资金 a，游走首次触及某水平时赌局结束；公平硬币情形下甲赢的概率
+路径阻断：链、分叉、对撞 | en=Blocking: chain, fork, collider | 目录=验收·贝叶斯入门·领域根 | 卡2 边3 | untouched/undefined | def: DAG 中判定变量间信息通道开闭的三块积木：链 A→B→C 与分叉 A←B→C 在条件化中间节点 B（非对撞点）后阻断；对撞 A→B←C 在
+转移概率矩阵 | en=Transition probability matrix | 目录=验收·贝叶斯入门·领域根 | 卡1 边13 | untouched/undefined | def: 状态 i 到 j 的一步转移概率组成的矩阵 P=(P(i,j))，行和为 1；马尔可夫链的全部一步动力学由它决定。
+辅助变量法（auxiliary variable method） | en=auxiliary variable / data augmentation method | 目录=验收·贝叶斯入门·领域根 | 卡2 边6 | untouched/undefined | def: 引入辅助变量 u 使 (x,u) 的联合分布好抽，再边缘化 u 仍得目标 p(x)；把难抽的一步拆成两个易抽的条件步。
+边缘似然（证据） | en=Marginal likelihood / evidence | 目录=验收·贝叶斯入门·领域根 | 卡2 边9 | untouched/undefined | def: p(x)=∫p(x|z)p(z)dz，即对潜变量积分后的数据概率；贝叶斯模型比较的核心里，通常因积分不可算而需要下界近似。
+连续性校正（continuity correction） | en=Continuity correction | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 对取整数值的变量用连续正态近似时，把区间端点向外扩半格（P(Y≤k)≈Φ((k+0.5−μ)/σ)）以对齐离散与连续 CDF。
+连续时间扩散过程（continuous-time diffusion process） | en=continuous-time diffusion process | 目录=根层 | 卡0 边4 | untouched/undefined | def: 用随机微分方程 dX_t = μ(X_t)dt + σ(X_t)dB_t 描述的连续时间马尔可夫过程；朗之万动力学是其中一类。
+迹图与秩图（trace plot / rank plot） | en=trace plot and rank plot | 目录=根层 | 卡3 边2 | untouched/undefined | def: 看多链是否混合的图形诊断：迹图看样本随迭代的走势，秩图看各链的秩分布是否均匀。
+迹图（trace plot） | en=trace plot | 目录=验收·贝叶斯入门·领域根 | 卡1 边4 | untouched/undefined | def: 以迭代序号 t 为横轴、抽样值 θ^(t) 为纵轴，把每条链画成一条折线的收敛诊断图：看单链是否在一段水平带内稳定游走，多链叠画时看各链迹带
+逆变换采样 | en=inverse transform sampling | 目录=验收·贝叶斯入门·领域根 | 卡1 边9 | untouched/undefined | def: 把 U(0,1) 均匀数 u 通过目标分布 CDF 的（广义）反函数变换成样本：x = F^{-1}(u)。
+遍历性 | en=ergodicity | 目录=根层 | 卡1 边8 | untouched/undefined | def: 不可约且非周期（常返）的链，无论从哪个初始分布出发，分布都会收敛到唯一的平稳分布，且时间平均≈空间平均。
+重参数化技巧（reparameterization trick） | en=reparameterization trick | 目录=验收·贝叶斯入门·领域根 | 卡0 边5 | untouched/undefined | def: 把「从分布中采样」改写成「确定性函数作用在无参数噪声上」（如 z=μ+σ⊙ε, ε~N(0,1)），使采样结果对分布参数可微，从而能用标准随
+重尾提议分布 | en=heavy-tailed proposal distribution | 目录=根层 | 卡0 边2 | untouched/undefined | def: 尾部比目标更重的提议（如用 t 分布代正态），使重要性权重有界、方差有限，从根上避免权重退化；代价是平坦区域采样变多、ESS 降低。
+重要性权重截断（weight truncation / clipping） | en=weight truncation / clipping | 目录=根层 | 卡0 边3 | untouched/undefined | def: 用阈值或序统计量削平/截掉极端重要性比，以少量渐近偏差换取方差与 ESS 的立刻改善，是权重退化的最直接补救。
+重要性权重（似然比） | en=importance weight / likelihood ratio | 目录=验收·贝叶斯入门·领域根 | 卡2 边8 | untouched/undefined | def: 权重 w(x)=f(x)/p(x)，即目标密度与提议密度之比（似然比），用来把在 p 下抽的样本「折算」回目标分布 f 下的期望。
+重要抽样估计量 | en=importance sampling estimator | 目录=验收·贝叶斯入门·领域根 | 卡1 边10 | untouched/undefined | def: 用 μ̂_IS=(1/n)Σ h(X_i)f(X_i)/p(X_i)（X_i~p）估计 μ=E_f[h]，对任意满足支撑条件的提议分布 p 
+重要抽样的方差恒等式 | en=variance identity for importance sampling | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: Var_p(W)=E_f[h²f/p]−μ²（W=hf/p），它把「提议选得好不好」化成一个可比较的每样本方差，并给出零方差基准 p*∝|h
+量子振幅估计 | en=quantum amplitude estimation / amplitude amplification | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 把「以概率 a 产出好解」的量子线路 A 的振幅 a 估计出来：振幅放大用 O(1/√a) 次 A 与 A⁻¹ 放大成功概率，估计则以 O(
+量子比特与量子叠加 | en=qubit and quantum superposition | 目录=验收·贝叶斯入门·领域根 | 卡0 边4 | untouched/undefined | def: 量子信息的单位：态写成 |ψ⟩=α|0⟩+β|1⟩，α、β 是振幅，测量后以概率 |α|²、|β|² 得到 0 或 1。
+量子相位估计 | en=quantum phase estimation (QPE) | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 给定量子线路 U 与特征态，估计其特征相位 φ（U|ψ⟩=e^{2πiφ}|ψ⟩），是振幅估计等量子算法的读出子程序。
+量子蒙特卡洛积分 | en=Quantum Monte Carlo integration | 目录=验收·贝叶斯入门·领域根 | 卡2 边2 | untouched/undefined | def: 用振幅编码＋量子振幅估计替代经典样本平均来算 E[f(X)]=∫f(x)p(x)dx，把误差率从经典的 O(1/√N) 提升到 O(1/N)
+错误指定下的 Bernstein–von Mises 定理 | en=Bernstein-von Mises theorem under misspecification | 目录=验收·贝叶斯入门·领域根 | 卡2 边6 | untouched/undefined | def: 模型错误指定时，后验仍收敛到「最佳参数近似」（即伪真参数）处的点质量并在其附近局部呈高斯，但方差不再等于 Fisher 信息。
+错误指定下的后验集中（posterior concentration under misspecification） | en=posterior concentration under misspecification | 目录=验收·贝叶斯入门·领域根 | 卡1 边9 | untouched/undefined | def: 模型错误指定时，后验质量集中到先验支撑中使 KL 散度（相对真实分布 P0）最小的那些参数点（伪真集）附近，收敛速率由熵条件与先验质量条件决
+错误概率的指数衰减（exponentially small error probability） | en=exponentially small error probability / error exponent | 目录=验收·贝叶斯入门·领域根 | 卡1 边9 | untouched/undefined | def: 在 n 个 iid 样本下，检验的两类错误概率之和可以随 n 以 e^(-c·n) 的速度衰减，指数 c 由 KL/Chernoff 信息给
+长度尺度（length scale） | en=length scale | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 核函数中控制相似度随输入距离衰减快慢的超参数 ℓ，决定拟合函数的平滑或振荡尺度（ℓ 大→函数变化慢、更平滑）。
+阿贝尔奖 | en=Abel Prize | 目录=验收·贝叶斯入门·领域根 | 卡1 边1 | untouched/undefined | def: 由挪威政府设立、每年颁发一次的数学大奖，与菲尔兹奖并称数学界最高荣誉之一，常被拿来与诺贝尔奖类比。
+随机化准蒙特卡洛（RQMC）与数字移位 | en=randomized quasi-Monte Carlo / digital shift | 目录=验收·贝叶斯入门·领域根 | 卡0 边4 | untouched/undefined | def: 对低差异点集做随机置乱（尤其是数字移位）得到一组随机点集：单组保持低差异，多组之间相互独立，从而既能无偏估计积分、又能用均方误差界与样本标准
+随机变量与分布 | en=random variable and probability distribution | 目录=验收·贝叶斯入门·领域根 | 卡2 边34 | untouched/undefined | def: 随机变量是把样本点映射为实数的函数；其概率规律由分布（PMF/PDF/CDF）刻画，是“随机数→样本值”的底座。
+随机变量与概率分布 | en=Random variable and probability distribution | 目录=验收·贝叶斯入门·领域根 | 卡1 边14 | untouched/undefined | def: 把随机试验的结果（样本点）映射成数值的函数是随机变量，它在实数轴上诱导出的概率测度就是该随机变量的概率分布。
+随机变量的独立性 | en=independence of random variables | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 两个随机变量的联合分布等于边缘分布之积（P(X,Y)=P(X)P(Y)），知道一个的取值不改变另一个的分布。
+随机数流的版本兼容性（stream compatibility） | en=stream compatibility | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 同一种子在同一 PRNG 实现/同一环境下产生同一数列的保证；换版本、换平台或改调用方式可能失效。
+随机数生成 | en=Random number generation | 目录=验收·贝叶斯入门·领域根 | 卡1 边10 | untouched/undefined | def: 生成服从指定分布的独立样本序列（先均匀伪随机数，再变换/拒绝采样），是蒙特卡洛方法的前置步骤。
+随机梯度与数据子采样 | en=Stochastic Gradient / Data Subsampling | 目录=验收·贝叶斯入门·领域根 | 卡1 边5 | untouched/undefined | def: 每次迭代只用一小批数据估计全体数据的梯度，得到便宜但带噪声的梯度估计，把单步计算代价从全部数据量级降到小批量量级。
+随机梯度哈密顿蒙特卡洛（SGHMC） | en=Stochastic Gradient Hamiltonian Monte Carlo (SGHMC) | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 用带摩擦项的二阶朗之万动力学来抵消随机梯度噪声的哈密顿式 SGMCMC 采样器；说明「直接拿随机梯度替换 HMC 的梯度」可能任意坏。
+随机梯度噪声 | en=stochastic gradient noise | 目录=验收·贝叶斯入门·领域根 | 卡1 边6 | untouched/undefined | def: 用数据子集估计全数据梯度带来的估计误差 ξ = ∇Ũ(θ) − ∇U(θ)：零均值、协方差随批量增大而缩小，是 SGMCMC 必须显式修正的
+随机梯度朗之万动力学（SGLD） | en=Stochastic Gradient Langevin Dynamics (SGLD) | 目录=可扩展贝叶斯计算 [目录非group] | 卡1 边7 | untouched/undefined | def: 用“快速但有噪声”的小批量梯度估计来驱动朗之万动力学、从而对大规模后验采样的一类随机梯度 MCMC 方法。
+随机梯度马尔可夫链蒙特卡洛（SGMCMC） | en=Stochastic Gradient MCMC | 目录=马尔可夫链蒙特卡洛（MCMC） [目录非group] | 卡1 边8 | untouched/undefined | def: 用数据子采样得到的随机梯度替代精确梯度、从而降低每次迭代代价的一类可扩展 MCMC 算法族，SGLD 是其中最基础的代表。
+随机梯度黎曼哈密顿蒙特卡洛（SGRHMC） | en=Stochastic Gradient Riemann Hamiltonian Monte Carlo (SGRHMC) | 目录=验收·贝叶斯入门·领域根 | 卡1 边2 | untouched/undefined | def: 用上述 recipe 直接提出的状态自适应 SGMCMC 采样器（Ma, Chen & Fox 2015）。
+随机梯度（子采样梯度估计） | en=stochastic gradient | 目录=验收·贝叶斯入门·领域根 | 卡1 边9 | untouched/undefined | def: 只用一个（或一小批）样本算出的梯度，作为全数据平均梯度的随机估计——它无偏但带噪声，用迭代次数换取每次迭代的廉价计算。
+随机测度（random measure） | en=random measure | 目录=验收·贝叶斯入门·领域根 | 卡1 边3 | untouched/undefined | def: 取值是「测度」的随机对象：对每个可测集 A，G(A) 是随机变量，且样本路径 G(·) 几乎必然是一个测度（可加、非负、G(∅)=0）。
+随机游走提议分布 | en=random-walk proposal distribution | 目录=根层 | 卡0 边3 | untouched/undefined | def: Metropolis–Hastings 中最常用的提议：x' = x + ε，ε 对称分布于 0 附近（如 N(0, σ²I)），此时接受概
+随机游走（Random Walk） | en=Random walk | 目录=根层 | 卡1 边4 | untouched/undefined | def: 状态空间为整数（或网格）、每步以固定概率向邻格移动的马尔可夫链，是理解马尔可夫链与 MCMC 提议机制的最小模型。
+随机试验 | en=random experiment / trial | 目录=验收·贝叶斯入门·领域根 | 卡1 边3 | untouched/undefined | def: 在相同条件下可重复进行、每次结果事先不可预知、但全部可能结果事先已知的试验；其结果集合构成样本空间，单个结果为样本点。
+随机过程 | en=Stochastic process | 目录=验收·贝叶斯入门·领域根 | 卡1 边16 | untouched/undefined | def: 一族由指标（时间/位置）索引的随机变量，可直观理解为「随机函数」；是把先验放在函数/分布上的载体。
+集合运算（并、交、补） | en=set operations (union, intersection, complement) | 目录=根层 | 卡0 边5 | untouched/undefined | def: 把子集拼起来或取反的基本操作：A∪B（属于 A 或 B）、A∩B（同时属于 A 与 B）、A^c=Ω\A（不属于 A）。σ-代数的三条公理就
+零假设与备择假设 | en=Null and alternative hypotheses (H0/H1) | 目录=验收·贝叶斯入门·领域根 | 卡0 边3 | untouched/undefined | def: 把要检验的命题写成一对互补陈述：H0 含等号、是「被举证」的一方并决定可计算的零分布，H1 是研究者想证实的偏离方向（单侧或双侧）。
+零方差控制变量 | en=zero-variance control variates | 目录=根层 | 卡0 边1 | untouched/undefined | def: 对 MCMC 输出做事后方差缩减的一类控制变量（依赖对数后验梯度），在 SGMCMC 上可「免费」加装。
+非参数回归 | en=nonparametric regression | 目录=验收·贝叶斯入门·领域根 | 卡1 边9 | untouched/undefined | def: 不预设回归函数的具体参数形式，直接用数据（核权重/近邻等）估计 m(x)=E[Y|X=x] 的回归方法族。
+非参数检验（non-parametric test） | en=non-parametric test | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 不把数据分布限定在某个由有限个参数刻画的分布族内的检验（如 KS 检验、秩检验），与分布无关性常同时出现但并不等价。
+非参数统计模型 | en=Nonparametric model | 目录=验收·贝叶斯入门·领域根 | 卡1 边8 | untouched/undefined | def: 不预先固定参数个数、让模型复杂度随数据增长的统计模型（直接对密度/回归函数等建模）。
+非参数贝叶斯建模 | en=- | 目录=根层 | 卡1 边4 | untouched/undefined | def: 不固定有限参数个数、用无限维先验（如 Dirichlet 过程）拡族建模，以应对模型误设。
+非参数贝叶斯建模（应对误设的扩族路线） | en=nonparametric Bayes (as a remedy for misspecification) | 目录=验收·贝叶斯入门·领域根 | 卡1 边7 | untouched/undefined | def: 用非参数/半参数模型（核混合、Dirichlet 过程混合、高斯过程等）代替固定参数族，使模型族足够丰富以缓解误设；含后验一致性理论。
+鞅与鞅收敛定理（Martingale convergence theorem） | en=Martingale and martingale convergence theorem | 目录=验收·贝叶斯入门·领域根 | 卡2 边9 | untouched/undefined | def: 鞅：E[M_{n+1}|F_n]=M_n（公平博弈的资金过程）；若 sup_n E|M_n|<∞ 则 M_n 几乎必然收敛到可积极限，再有一
+马尔可夫不等式 | en=Markov's inequality | 目录=验收·贝叶斯入门·领域根 | 卡0 边2 | untouched/undefined | def: 非负随机变量 X 与任意 a>0 满足 P(X ≥ a) ≤ E[X]/a：用一阶矩给尾部概率上界，是切比雪夫不等式与弱大数定律的推导引擎。
+马尔可夫性 | en=Markov property | 目录=验收·贝叶斯入门·领域根 | 卡1 边5 | untouched/undefined | def: 「给定现在，未来与过去独立」：P(X_{n+1}=j | X_n=i, X_{n-1},…,X_0) = P(X_{n+1}=j | X_n
+马尔可夫链 | en=Markov chain | 目录=根层 | 卡1 边7 | untouched/undefined | def: 具有马尔可夫性的离散状态序列：给定现在，将来与过去条件独立；MCMC 的载体。
+马尔可夫链与平稳分布 | en=Markov Chain and Stationary Distribution | 目录=验收·贝叶斯入门·领域根 | 卡1 边10 | untouched/undefined | def: 若分布 π 满足 π=πP（不动点），它在该链的每一步都保持不变，称为平稳分布；不可约且非周期的链有唯一平稳分布，且是任意初始分布下的长期极
+马尔可夫链的遍历定理 | en=Ergodic theorem for Markov chains | 目录=根层 | 卡1 边6 | untouched/undefined | def: 不可约、非周期、正常返链上，时间平均 (1/N)Σ f(Xₙ) 几乎必然收敛到平稳期望 E_π[f]；这是 MCMC 用样本均值估计后验期望
+马尔可夫链蒙特卡洛（MCMC） | en=Markov Chain Monte Carlo (MCMC) | 目录=验收·贝叶斯入门·领域根 | 卡1 边21 | untouched/undefined | def: 当无法直接抽样时，构造一条马尔可夫链，使它的长期停留分布正好是目标分布，再沿链取样本。
+马尔可夫链蒙特卡罗（MCMC） | en=Markov chain Monte Carlo (MCMC) | 目录=根层 | 卡2 边4 | untouched/undefined | def: 用迭代的随机链从后验分布中抽样的计算方法：构造以目标分布为平稳分布的马尔可夫链，用链上的样本近似后验推断。
+马尔可夫链（Markov Chain） | en=Markov Chain | 目录=验收·贝叶斯入门·领域根 | 卡1 边10 | untouched/undefined | def: 状态序列 X₀,X₁,…，给定当前状态后下一状态与更早历史条件独立（马尔可夫性），由转移概率矩阵 P 驱动；MCMC 抽样产生的就是这种链。
+马尔可夫链（Markov chain） | en=Markov chain | 目录=验收·贝叶斯入门·领域根 | 卡1 边4 | untouched/undefined | def: 状态序列 θ0→θ1→…，下一步只依赖当前状态（马尔可夫性），长期演化会收敛到平稳分布。
+马尔可夫随机场（Markov random field） | en=Markov random field (MRF) | 目录=验收·贝叶斯入门·领域根 | 卡3 边5 | untouched/undefined | def: 用无向图编码一族条件独立假设的联合概率模型：p(x) = (1/Z)∏_{C∈𝒞} φ_C(x_C)，即在图上团（clique）处定义的非
+高斯分布（正态分布） | en=Gaussian (normal) distribution | 目录=验收·贝叶斯入门·领域根 | 卡2 边18 | untouched/undefined | def: 密度 φ(x)=exp(−x²/2)/√(2π) 的标准正态及其位置–尺度推广 N(μ,σ²)，由均值 μ 与方差 σ² 完全确定。
+高斯过程 | en=Gaussian Process (GP) | 目录=验收·贝叶斯入门·领域根 | 卡2 边7 | untouched/undefined | def: 函数上的先验分布：任意有限个点上的函数值服从联合正态，由均值函数 m(·) 与协方差核 k(·,·) 完全刻画。
+高斯过程先验 | en=Gaussian process prior | 目录=验收·贝叶斯入门·领域根 | 卡1 边9 | untouched/undefined | def: 以随机过程 W=(W_t) 作为函数/分布上的先验：要求任意有限个指标点的取值联合服从多元高斯分布，从而由均值函数 m(t) 与协方差核 k
+高斯过程回归（GPR） | en=Gaussian process regression (GPR) | 目录=验收·贝叶斯入门·领域根 | 卡2 边6 | untouched/undefined | def: 以高斯过程为先验、叠加 iid 高斯噪声建模观测，再用多元正态条件化给出新点预测均值与后验方差的非参数贝叶斯回归方法。
+黎曼和（Riemann sum） | en=Riemann sum | 目录=验收·贝叶斯入门·领域根 | 卡2 边2 | untouched/undefined | def: 把区间切成 n 小段、每段用取样点函数值乘小段宽度再相加的和 S_n=Σ f(x_i*)Δx_i；网格尺寸趋 0 时其极限即定积分（Riem
+黎曼度量与预条件矩阵 | en=Riemannian metric / preconditioning matrix | 目录=验收·贝叶斯入门·领域根 | 卡0 边0 | untouched/undefined | def: 用位置相关的正定矩阵 G(θ) 改写局部几何（预条件），使采样器在不同方向采用不同尺度，从而得到 SGRLD/SGRHMC 这类状态自适应采

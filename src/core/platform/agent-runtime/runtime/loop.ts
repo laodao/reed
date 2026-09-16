@@ -31,6 +31,8 @@ import type {
   ParsedToolCall,
 } from '../types'
 import type { ApprovalDecision } from '@shared/types/agent.types'
+import { agentContextParams } from '@shared/utils/agent-context-params'
+import { agentToolParams } from '@shared/utils/agent-tool-params'
 import type { LoopContextPort } from '../context/context-manager'
 import {
   turnContextMessage,
@@ -429,7 +431,10 @@ export class LoopRunner {
         state.messages = [...state.messages, ...stepMessages]
         // 同签名大结果折叠（39 号 P1-1）：重试/返工场景旧的大结果占位化，只留
         // 最新全文——失败原因本身很小不受影响；折叠改写不进流水（原文已在）
-        const collapsed = collapseSupersededToolResults(state.messages)
+        const collapsed = collapseSupersededToolResults(state.messages, {
+          // 「参数设置 → 上下文与记忆」可调（缺省 1500 tokens）
+          minTokens: agentContextParams().context.supersedeCollapseMinTokens,
+        })
         if (collapsed !== state.messages) state.messages = collapsed
         pendingAppended.push(...stepMessages)
         for (const c of calls) {
@@ -623,7 +628,7 @@ export class LoopRunner {
   ): ToolSet {
     const ai = this.aiModule
     if (!ai) return {}
-    const timeoutMs = this.deps.toolTimeoutMs ?? 120_000
+    const timeoutMs = this.deps.toolTimeoutMs ?? agentToolParams().tools.executeTimeoutMs
     const out: Record<string, unknown> = {}
 
     const requestApproval = this.deps.requestApproval

@@ -44,6 +44,14 @@ export class DlCardEntity {
   @Column({ name: 'evidence_sources', type: 'text', nullable: true })
   evidenceSources!: string | null
 
+  /**
+   * 讲义设计规格 JSON（DlLessonSpec；2026-09-14 讲义流水线）。
+   * 记录「本卡是照哪份已确认规格写的」：渲染层据此出规格条与区导航，
+   * 区级重写据此重发规格锁。老卡为 NULL，照常按 sections 渲染。
+   */
+  @Column({ name: 'spec', type: 'text', nullable: true })
+  spec!: string | null
+
   /** 版本号（同一概念新讲义 +1） */
   @Column({ name: 'version', type: 'integer', default: 1 })
   version!: number
@@ -55,6 +63,18 @@ export class DlCardEntity {
   /** 内部核验 JSON（DlCardVerification；M4-UX2 后端自动核验，不向用户展示） */
   @Column({ name: 'verification', type: 'text', nullable: true })
   verification!: string | null
+
+  /** 修订说明（人类可读：改了什么/为什么/依据；2026-09-15 版本管理 P1-1） */
+  @Column({ name: 'revision_note', type: 'text', nullable: true })
+  revisionNote!: string | null
+
+  /** 变更来源：agent | restore | template | manual（2026-09-15 版本管理 P1-1） */
+  @Column({ name: 'change_source', type: 'varchar', nullable: true })
+  changeSource!: string | null
+
+  /** 结构化变更清单 JSON：[{key,kind,reason,evidence}]（对接技能 learning-lesson-updater 输出） */
+  @Column({ name: 'changed_json', type: 'text', nullable: true })
+  changedJson!: string | null
 
   @Column({ name: 'created_at', type: 'datetime', nullable: true })
   createdAt!: Date | null

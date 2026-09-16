@@ -1,5 +1,5 @@
 <template>
-  <div ref="rootRef" class="markdown-viewer">
+  <div ref="rootRef" class="markdown-viewer" :class="{ compact }">
     <!-- bytemd 只读渲染：懒加载（模块求值较重，避免阻塞首开）；sanitize 传 schema 变更器 -->
     <component :is="viewerComp" v-if="viewerComp" :value="md" :plugins="plugins" :sanitize="extendSanitizeSchema" />
     <el-skeleton v-else :rows="6" animated />
@@ -28,6 +28,9 @@
  * - ```js / ```javascript 代码块 → 加「运行」按钮，在 Web Worker 沙箱里跑并内联看输出。
  *   两者都在 DOM 渲染完成后处理（与 mermaid 插件同一时机），用 MutationObserver
  *   跟随 bytemd 的 innerHTML 变化重跑。
+ *
+ * 2026-09-15：新增 `compact` 变体——右栏追问回答（QaAnswerView）在窄气泡里复用本渲染器，
+ * 用紧凑排版覆盖讲义级首行缩进与大间距（见文件末样式块）。
  */
 import { onBeforeUnmount, onMounted, shallowRef, type Component } from 'vue'
 import { extendSanitizeSchema } from '@/utils/markdown-sanitize-schema'
@@ -38,9 +41,17 @@ import 'bytemd/dist/index.css'
 import 'highlight.js/styles/github.css'
 import 'katex/dist/katex.css'
 
-defineProps<{
-  md: string
-}>()
+withDefaults(
+  defineProps<{
+    md: string
+    /**
+     * 紧凑排版（对话气泡等窄容器）：不套讲义级首行缩进与大段间距。
+     * 讲义正文（SectionLesson / LessonSlides）不传，保持原排版。
+     */
+    compact?: boolean
+  }>(),
+  { compact: false },
+)
 
 const viewerComp = shallowRef<Component | null>(null)
 const plugins = shallowRef<unknown[]>([])
@@ -200,6 +211,64 @@ onBeforeUnmount(() => {
   :deep(.bytemd-preview) {
     background: transparent;
     padding: 0;
+  }
+}
+
+/**
+ * 紧凑排版（`compact`）：右栏追问气泡等窄容器。
+ * 讲义排版（lesson-markdown.scss）按整页阅读设计——段落首行缩进两字、章节大间距、
+ * 表格上下的留白；塞进对话气泡后每段都缩进、行又短，读起来反而不像对话。
+ * 这里只做"容器变窄"的增量覆盖：`.markdown-viewer.compact` 多一层类名，
+ * 特异性高于讲义规则（0,3,1 > 0,2,1），与样式表加载顺序无关。
+ */
+.markdown-viewer.compact {
+  :deep(.markdown-body) {
+    font-size: 13px;
+    line-height: 1.7;
+
+    p {
+      margin: 0 0 6px;
+      text-indent: 0; // 对话气泡内不做首行缩进
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 10px 0 6px;
+      font-size: 13.5px;
+      padding-left: 8px;
+    }
+
+    h4,
+    h5,
+    h6 {
+      margin: 8px 0 4px;
+      font-size: 13px;
+    }
+
+    ul,
+    ol {
+      margin: 0 0 6px;
+      padding-left: 1.8em;
+    }
+
+    table,
+    pre,
+    blockquote {
+      margin: 6px 0;
+    }
+
+    // 图（mermaid / figure）在窄栏里允许横向滚动，避免撑破气泡
+    .bytemd-mermaid,
+    .dl-figure {
+      margin: 8px 0;
+      padding: 8px;
+      overflow-x: auto;
+    }
+
+    .katex-display {
+      margin: 8px 0;
+    }
   }
 }
 </style>

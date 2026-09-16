@@ -22,8 +22,12 @@ import { LearningGraphService } from '../services/learning-graph.service'
 import { LearningViewService } from '../services/learning-view.service'
 import { DlAgentHarnessService } from '../services/dl-agent-harness.service'
 import { DlPaceSchedulerService } from '../services/dl-pace-scheduler.service'
+import { confirmDlPlan, getDlPlanView } from '../services/dl-plan.service'
+import { DlLessonExportService } from '../services/dl-lesson-export.service'
+import { DlLessonVersionService } from '../services/dl-lesson-version.service'
 import { dlPublishNotice } from '../services/dl-notice'
-import type { DlPaceSettings, DlReviewSettings, DlSpacePrereq, DlCreateConceptInput } from '@shared/types/domain-learning.types'
+import type { DlPaceSettings, DlReviewSettings, DlSpacePrereq, DlCreateConceptInput, DlLessonExportFormat } from '@shared/types/domain-learning.types'
+import { normalizeLessonCardId, parseLessonExportFormat } from '@shared/utils/domain-learning-lesson-export'
 import type { DlAgentMode } from '../services/dl-agent.types'
 
 const logger = createLogger('DlHandlers')
@@ -67,6 +71,10 @@ interface DlServiceBundle {
   view: LearningViewService
   agent: DlAgentHarnessService
   scheduler: DlPaceSchedulerService
+  /** 单篇讲义导出（md/PDF/长图；平台文档工具层消费方） */
+  exportLesson: DlLessonExportService
+  /** 讲义版本管理（列表/预览/恢复；2026-09-15 用户需求） */
+  version: DlLessonVersionService
 }
 
 let bundle: DlServiceBundle | null = null
@@ -108,6 +116,8 @@ function services(): DlServiceBundle {
       view: new LearningViewService(db),
       agent,
       scheduler,
+      exportLesson: new DlLessonExportService(db),
+      version: new DlLessonVersionService(db),
     }
   }
   return bundle
@@ -141,6 +151,15 @@ export function registerDomainLearningHandlers(): void {
       return { kbId }
     }))
 
+  // ---- 空间默认模型（2026-09-14：知识生成默认模型，双 null=跟随全局默认） ----
+  ipcBridge.handle('dl:get-space-model', (_e, p: { id: string }) =>
+    wrap(() => services().projects.getModelSettings(p.id)))
+  ipcBridge.handle('dl:set-space-model', (_e, p: { id: string; model: { providerConfigId?: string | null; modelId?: string | null } }) =>
+    wrap(async () => {
+      const saved = await services().projects.setModelSettings(p.id, p.model)
+      return { model: saved }
+    }))
+
   // ---- 主题学习前置要求（2026-09-12 用户需求：整个领域的学习门槛，含领域外需自备能力） ----
   ipcBridge.handle('dl:get-space-prereqs', (_e, p: { id: string }) =>
     wrap(() => services().projects.getPrerequisites(p.id)))
@@ -158,6 +177,87 @@ export function registerDomainLearningHandlers(): void {
     wrap(() => services().view.buildNodeProfile(p.id, p.nodeId)))
   ipcBridge.handle('dl:get-space-stats', (_e, p: { id: string }) => wrap(() => services().view.buildSpaceStats(p.id)))
   ipcBridge.handle('dl:export-lesson-digest', (_e, p: { id: string }) => wrap(() => services().view.buildLessonDigest(p.id)))
+  // 单篇讲义导出（2026-09-15 用户需求：知识点正文导出 md/PDF/长图；cardId 缺省=当前版）
+  ipcBridge.handle('dl:export-lesson', (_e, p: { id: string; conceptId: string; format: DlLessonExportFormat; cardId?: string | null }) =>
+    wrap(async () => {
+      // 入站守卫（与前端同一份规则）：格式白名单 + cardId 只认非空字符串。
+      // 前端事件对象/代理若漏进来，这里直接拒绝，不会一路带进渲染管线。
+      const format = parseLessonExportFormat(p?.format)
+      if (!format) throw new Error('不支持的导出格式（请选择 Markdown / PDF / 长图）')
+      const cardId = normalizeLessonCardId(p?.cardId)
+      await services().projects.ensureOwned(p.id)
+      const r = await services().exportLesson.export({
+        spaceId: p.id,
+        conceptId: p.conceptId,
+        format,
+        cardId,
+      })
+      // IPC 结构化克隆防御：只传原始类型，显式构造纯净对象（不展开、不继承）
+      return {
+        format: r.format,
+        filename: r.filename,
+        mime: r.mime,
+        conceptId: r.conceptId,
+        conceptName: r.conceptName,
+        spaceName: r.spaceName,
+        version: r.version,
+        markdown: r.markdown ?? null,
+        contentBase64: r.contentBase64 ?? null,
+        html: r.html ?? null,
+      }
+    }))
+
+  // ---- 讲义版本管理（2026-09-15：历史列表/预览/恢复到草稿） ----
+  ipcBridge.handle('dl:list-card-versions', (_e, p: { id: string; conceptId: string }) =>
+    wrap(async () => {
+      await services().projects.ensureOwned(p.id)
+      const list = await services().version.listVersions(p.id, p.conceptId)
+      // 显式构造纯净数组（避免仓储返回值携带不可枚举属性）
+      return list.map((v) => ({
+        cardId: v.cardId,
+        version: v.version,
+        status: v.status,
+        essenceType: v.essenceType,
+        sectionsCount: v.sectionsCount,
+        worksCount: v.worksCount,
+        evidenceCount: v.evidenceCount,
+        verifyStatus: v.verifyStatus,
+        revisionNote: v.revisionNote,
+        changeSource: v.changeSource,
+        createdAt: v.createdAt,
+        updatedAt: v.updatedAt,
+        isCurrent: v.isCurrent,
+      }))
+    }))
+  ipcBridge.handle('dl:get-card-version', (_e, p: { id: string; cardId: string }) =>
+    wrap(async () => {
+      await services().projects.ensureOwned(p.id)
+      const c = await services().version.getVersion(p.id, p.cardId)
+      if (!c) return null
+      return {
+        id: c.id,
+        conceptId: c.conceptId,
+        essenceType: c.essenceType,
+        sections: c.sections,
+        works: c.works,
+        contentMd: c.contentMd,
+        evidenceSources: c.evidenceSources,
+        version: c.version,
+        status: c.status,
+        verification: c.verification,
+        revisionNote: c.revisionNote,
+        changeSource: c.changeSource,
+        changed: c.changed,
+        createdAt: c.createdAt instanceof Date ? c.createdAt.toISOString() : c.createdAt,
+        updatedAt: c.updatedAt instanceof Date ? c.updatedAt.toISOString() : c.updatedAt,
+      }
+    }))
+  ipcBridge.handle('dl:restore-card', (_e, p: { id: string; conceptId: string; cardId: string }) =>
+    wrap(async () => {
+      await services().projects.ensureOwned(p.id)
+      const r = await services().version.restore(p.id, p.conceptId, p.cardId)
+      return { cardId: r.cardId, version: r.version, restoredFrom: r.restoredFrom }
+    }))
 
   // ---- 图谱/掌握度 ----
   ipcBridge.handle('dl:pick-next', (_e, p: { id: string }) => wrap(() => services().graph.pickNextToLearn(p.id)))
@@ -193,9 +293,20 @@ export function registerDomainLearningHandlers(): void {
   ipcBridge.handle('dl:agent-send', (_e, p: { mode: DlAgentMode; spaceId: string; conceptId?: string | null; message: string; providerConfigId?: string; modelId?: string; focusQuestionId?: string }) =>
     wrap(async () => {
       await services().projects.ensureOwned(p.spaceId)
+      // 2026-09-14 用户需求：知识生成（research/task）默认模型 = 空间默认；调用方没显式指定时读取。
+      // 显式指定（如空间设置选到的模型）优先；tutor 追问仍走全局默认。
+      let providerConfigId = p.providerConfigId
+      let modelId = p.modelId
+      if (!providerConfigId && (p.mode === 'research' || p.mode === 'task')) {
+        const dm = await services().projects.getModelSettings(p.spaceId)
+        if (dm.providerConfigId && dm.modelId) {
+          providerConfigId = dm.providerConfigId
+          modelId = dm.modelId
+        }
+      }
       return services().agent.sendMessage(p.mode, { spaceId: p.spaceId, conceptId: p.conceptId ?? null }, p.message, {
-        providerConfigId: p.providerConfigId,
-        modelId: p.modelId,
+        providerConfigId,
+        modelId,
         focusQuestionId: p.focusQuestionId,
       })
     }))
@@ -210,6 +321,14 @@ export function registerDomainLearningHandlers(): void {
       await services().projects.ensureOwned(p.spaceId)
       return services().agent.isBusy(p.mode, { spaceId: p.spaceId, conceptId: p.conceptId ?? null })
     }))
+
+  // ---- 方案确认流程（2026-09-13：对齐诉求 → 确认知识体系 → 才允许落库；
+  //      2026-09-14 加讲义方案 lesson 步：按 conceptId 取/确认某概念的讲义规格与区级计划） ----
+  // 注：通道字面量必须与 ipcBridge.handle( 同行——dl-channel-consistency 护栏按行内正则抽取三端键集合
+  ipcBridge.handle('dl:get-plan', (_e, p: { id: string; conceptId?: string | null }) =>
+    wrap(() => getDlPlanView(getCoreDatabaseManager(), p.id, p.conceptId ?? null)))
+  ipcBridge.handle('dl:confirm-plan', (_e, p: { id: string; step: 'understanding' | 'syllabus' | 'lesson'; payload?: unknown; feedback?: string | null; conceptId?: string | null }) =>
+    wrap(() => confirmDlPlan(getCoreDatabaseManager(), p.id, p.step, p.payload, p.feedback ?? null, p.conceptId ?? null)))
 
   // ---- 周期推进（M2-C；pace 配置读写 + 调度器状态；读写经服务层校验） ----
   ipcBridge.handle('dl:get-space-pace', (_e, p: { id: string }) =>

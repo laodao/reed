@@ -35,6 +35,7 @@ import {
 } from '../runtime/vendor/compaction'
 import { isTurnContextMessage } from './turn-context'
 import { stableStringify } from '../runtime/approval'
+import { agentContextParams } from '@shared/utils/agent-context-params'
 
 const logger = createLogger('AgentContext')
 
@@ -101,6 +102,10 @@ export interface ContextManagerDeps {
   hardWatermark?: number
   /** 用户消息保留预算 tokens（缺省 20K；当轮最后一条用户消息不受此预算约束） */
   userMessageBudgetTokens?: number
+  /** 近端保护预算 tokens（缺省 8K；保护边界内的工具结果不剪枝） */
+  protectedTailTokens?: number
+  /** 纯剪枝最小节省门槛 tokens（缺省 4K；不足则进摘要阶段） */
+  minPruneSavingsTokens?: number
   /** token 估算器（缺省 JSON UTF-8 字节/4） */
   estimateTokens?: (messages: ModelMessage[]) => number
   /** 摘要回调（生产端由门面注入 generateText 实现——提示词闭包在内；测试注入 fake；
@@ -136,6 +141,9 @@ export class ContextManager implements LoopContextPort {
   private readonly softTokens: number
   private readonly hardTokens: number
   private readonly userBudget: number
+  /** 近端保护预算 / 剪枝门槛（2026-09-13 起可由「参数设置 → 上下文与记忆」调；缺省=改造前常量） */
+  private readonly protectedTail: number
+  private readonly minPruneSavings: number
   private readonly estimate: (messages: ModelMessage[]) => number
   private readonly deps: Pick<ContextManagerDeps, 'summarize' | 'emit'>
   /** 压缩后估算回填值（防抖动——12 号 R6：本地估算覆盖过期的模型实测） */
@@ -159,7 +167,9 @@ export class ContextManager implements LoopContextPort {
     const hard = Math.min(deps.hardWatermark ?? HARD_WATERMARK, ContextManager.HARD_CEILING)
     this.softTokens = Math.floor(this.windowTokens * soft)
     this.hardTokens = Math.floor(this.windowTokens * Math.max(hard, soft))
-    this.userBudget = deps.userMessageBudgetTokens ?? USER_MESSAGE_BUDGET_TOKENS
+    this.userBudget = deps.userMessageBudgetTokens ?? agentContextParams().context.userMessageBudgetTokens
+    this.protectedTail = deps.protectedTailTokens ?? agentContextParams().context.protectedTailTokens
+    this.minPruneSavings = deps.minPruneSavingsTokens ?? agentContextParams().context.minPruneSavingsTokens
     this.estimate = deps.estimateTokens ?? defaultEstimateTokens
     this.deps = {
       summarize: deps.summarize,
@@ -308,7 +318,7 @@ export class ContextManager implements LoopContextPort {
     opts: { shouldSummarize: (working: ModelMessage[]) => boolean; signal?: AbortSignal },
   ): Promise<{ working: ModelMessage[]; summary: string | undefined; degradeToMinimal(): ModelMessage[] }> {
     // Phase 1：剪枝（近端保护；节省未达门槛时返回原数组——vendor 同形）
-    const pruned = pruneToolResults(messages, PROTECTED_TAIL_TOKENS, MIN_PRUNE_SAVINGS_TOKENS, this.estimate)
+    const pruned = pruneToolResults(messages, this.protectedTail, this.minPruneSavings, this.estimate)
     let working = pruned.tokensSaved > 0 ? pruned.messages : messages
     let summary: string | undefined
     // 硬顶降级要用的保底位引用（闭包捕获——degradeToMinimal 复用同一保底集）

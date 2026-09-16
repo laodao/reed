@@ -22,7 +22,8 @@ import { validateOutboundUrl } from '@core/utils/outbound-url'
 import { politeFetch } from '../nodes/http-politeness'
 import { readTextWithLimit } from '../nodes/response-body'
 import { extractArticleContent, truncateTextSmart, extractPageLinks } from '../nodes/extra-nodes'
-import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from '@shared/types/workflow.types'
+import { WORKFLOW_LIMITS } from '@shared/types/workflow.types'
+import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 import { KnowledgeBaseService } from '../../services/knowledge-base.service'
 import { TranslationService } from '../../services/translation.service'
 import { ImageService } from '../../services/image.service'
@@ -46,7 +47,10 @@ const webExtractTool: AgentToolDef<z.infer<typeof WebExtractInput>> = {
     const guard = validateOutboundUrl(input.url)
     if (!guard.ok) throw new Error(`URL 校验失败：${guard.reason}`)
     // 与 web-extract 节点同链：礼貌抓取（同站单线程+随机间隔）→ 限长读取 → 启发式正文提取
-    const timeout = Math.min(WORKFLOW_DEFAULTS.httpRequestTimeoutMs, WORKFLOW_LIMITS.httpTimeoutMs)
+    const timeout = Math.min(
+      workflowRuntimeParams().crawl.httpRequestTimeoutMs,
+      WORKFLOW_LIMITS.httpTimeoutMs,
+    )
     const signal = AbortSignal.any([ctx.signal ?? new AbortController().signal, AbortSignal.timeout(timeout)])
     const res = await politeFetch(
       input.url,
@@ -56,9 +60,9 @@ const webExtractTool: AgentToolDef<z.infer<typeof WebExtractInput>> = {
     if (!res.ok) throw new Error(`请求失败：HTTP ${res.status}`)
     const html = await readTextWithLimit(res)
     const { title, text } = extractArticleContent(html)
-    const max = input.maxLength && input.maxLength > 0 ? input.maxLength : 100_000
+    const max = input.maxLength && input.maxLength > 0 ? input.maxLength : workflowRuntimeParams().crawl.extractMaxChars
     const trimmed = text.length > max ? truncateTextSmart(text, max) : text
-    const links = extractPageLinks(html, input.url, input.maxLinks ?? 30)
+    const links = extractPageLinks(html, input.url, input.maxLinks ?? workflowRuntimeParams().crawl.maxLinksPerSource)
     return { title, text: trimmed, length: trimmed.length, links }
   },
 }

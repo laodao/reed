@@ -63,7 +63,19 @@ export interface CatalogFormField {
   /** select / select-dynamic 是否多选（提交值为数组） */
   multi?: boolean
   /** select-dynamic 的数据源标识（编辑器按 source 拉取选项） */
-  source?: 'knowledgeBases' | 'newsTopics' | 'assets' | 'newsSources' | 'assetCategories' | 'dataSources' | 'searchEngineConfigs' | 'skills' | 'agentTools'
+  source?:
+    | 'knowledgeBases'
+    | 'infoSourceCategories'
+    | 'infoSourceTopics'
+    | 'infoSources'
+    | 'newsTopics'
+    | 'newsSources'
+    | 'assets'
+    | 'assetCategories'
+    | 'dataSources'
+    | 'searchEngineConfigs'
+    | 'skills'
+    | 'agentTools'
   help?: string
   /** 字段值支持 {{}} 模板的提示标记（表单角标） */
   templateHint?: boolean
@@ -459,8 +471,8 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
   ],
 
   'crawl-news': [
-    { key: 'sourceIds', label: '新闻来源（多选）', type: 'select-dynamic', source: 'newsSources', multi: true, help: '从「设置 → 新闻来源」管理的来源库中多选；与预置主题/自定义 URL 合并去重' },
-    { key: 'topicId', label: '预置主题', type: 'select-dynamic', source: 'newsTopics', help: '选择内置主题自动带出全球媒体源列表（可与来源库/自定义 URL 合并）' },
+    { key: 'sourceIds', label: '信息来源（多选）', type: 'select-dynamic', source: 'infoSources', multi: true, help: '从「设置 → 信息来源」管理的来源库中多选（含各来源类别）；与分组/自定义 URL 合并去重' },
+    { key: 'topicId', label: '来源分组', type: 'select-dynamic', source: 'infoSourceTopics', help: '选择信息来源分组即整组采集（如内置新闻来源的「人工智能」分组）' },
     T('customUrls', '自定义 URL 列表', {
       type: 'textarea', group: '自定义源',
       placeholder: '["https://...","https://..."] 或每行一个 URL',

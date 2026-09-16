@@ -12,6 +12,7 @@
 import type { KbChapterRecord, KbChapterRepository } from '@core/database/repositories/kb-chapter.repository'
 import { generateCompletionText } from './simple-llm'
 import { createLogger } from '@core/utils/logger'
+import { knowledgeParams, knowledgeSummaryFlags } from '@shared/utils/knowledge-params'
 
 const logger = createLogger('KbChapterSummary')
 
@@ -75,7 +76,14 @@ export class KbChapterSummaryService {
    * @returns 统计（total=本次处理数，done/failed/skipped/remaining）
    */
   async summarizeDocument(documentId: string, opts?: SummarizeOptions): Promise<SummarizeResult> {
-    const { retryFailed = true, concurrency = 3, maxChars = 6000, maxSummaries = 60 } = opts ?? {}
+    // 缺省值走「参数设置 → 知识库 → 章节摘要」（调用方显式传入优先）
+    const summaryDefaults = knowledgeParams().summary
+    const {
+      retryFailed = knowledgeSummaryFlags().retryFailed,
+      concurrency = summaryDefaults.concurrency,
+      maxChars = summaryDefaults.maxChars,
+      maxSummaries = summaryDefaults.maxSummaries,
+    } = opts ?? {}
     const statuses: Array<'pending' | 'failed'> = retryFailed ? ['pending', 'failed'] : ['pending']
     const all = await this.deps.repo.findByStatuses(documentId, statuses)
     // 优先：层级最浅（顶层章更有概括价值）→ 内容较长（信息量大）

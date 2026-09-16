@@ -5,12 +5,15 @@
  * themeMode: 'auto'（跟随系统 prefers-color-scheme）| 'light' | 'dark'
  * 切换 html.dark class（Element Plus dark css-vars 生效）+ data-theme-mode 属性。
  * 与 useTheme（主题色，data-theme）正交：主题色 + 深浅色可自由组合。
- * 持久化：settings 存储 themeMode 键。
+ * 持久化：settings 存储 `ui:themeMode`（键名走 shared/constants/settings-keys 注册表）。
  */
 
-export type ThemeMode = 'auto' | 'light' | 'dark'
+import {
+  SETTINGS_KEYS,
+  getSettingWithLegacyFallback,
+} from '@shared/constants/settings-keys'
 
-const THEME_MODE_KEY = 'themeMode'
+export type ThemeMode = 'auto' | 'light' | 'dark'
 
 // 模块级状态（单例，与 useAppSettings 同风格）
 let mode: ThemeMode = 'auto'
@@ -49,10 +52,12 @@ function setupSystemListener(): void {
 export async function initThemeMode(): Promise<void> {
   try {
     if (window.electronAPI?.settings?.get) {
-      const r = await window.electronAPI.settings.get()
-      if (r.success && r.data && typeof r.data[THEME_MODE_KEY] === 'string') {
-        mode = r.data[THEME_MODE_KEY] as ThemeMode
-      }
+      // 键名走注册表（统一命名规范；旧键 themeMode 由 getSettingWithLegacyFallback 兜底）
+      const raw = await getSettingWithLegacyFallback(
+        { get: async (k) => (await window.electronAPI.settings.get(k))?.data ?? null },
+        SETTINGS_KEYS.uiThemeMode,
+      )
+      if (typeof raw === 'string') mode = raw as ThemeMode
     }
   } catch {
     /* 读取失败用默认 auto */
@@ -68,7 +73,7 @@ export async function setThemeMode(m: ThemeMode): Promise<void> {
   setupSystemListener()
   try {
     if (window.electronAPI?.settings?.set) {
-      await window.electronAPI.settings.set(THEME_MODE_KEY, m)
+      await window.electronAPI.settings.set(SETTINGS_KEYS.uiThemeMode, m)
     }
   } catch {
     /* 持久化失败不影响本次切换 */

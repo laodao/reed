@@ -22,6 +22,8 @@ export async function createDomainLearningTables(ds: DataSource): Promise<void> 
   await ensureTable(ds, isPg, 'dl_doc', ddlDoc(isPg), () => docIndexes(ds, isPg))
   await ensureTable(ds, isPg, 'dl_question', ddlQuestion(isPg), () => questionIndexes(ds, isPg))
   await ensureTable(ds, isPg, 'dl_note', ddlNote(isPg), () => noteIndexes(ds, isPg))
+  // 2026-09-13：dl_plan（方案确认流程：诉求理解 → 知识体系 → 才允许落库）
+  await ensureTable(ds, isPg, 'dl_plan', ddlPlan(isPg), () => planIndexes(ds, isPg))
   // M2-C：pace_settings 列（老库升级路径——ensureTable 只补索引，新增列显式 ALTER）
   await ensureColumn(
     ds,
@@ -53,6 +55,48 @@ export async function createDomainLearningTables(ds: DataSource): Promise<void> 
     'dl_project',
     'prerequisites',
     isPg ? 'prerequisites text' : 'prerequisites TEXT',
+  )
+  // 2026-09-15 版本管理 P0-3/P1-1：dl_card 唯一约束 + 修订说明落库
+  // 唯一约束防并发/重试产生同版本行；修订字段让"改了什么/为什么/依据"可追溯
+  await ensureIndex(
+    ds,
+    isPg,
+    'uniq_dl_card_concept_version',
+    'dl_card',
+    '(project_id, concept_id, version)',
+    true,
+  )
+  await ensureColumn(
+    ds,
+    isPg,
+    'dl_card',
+    'revision_note',
+    isPg ? 'revision_note text' : 'revision_note TEXT',
+  )
+  await ensureColumn(
+    ds,
+    isPg,
+    'dl_card',
+    'change_source',
+    isPg ? 'change_source varchar' : 'change_source TEXT',
+  )
+  await ensureColumn(
+    ds,
+    isPg,
+    'dl_card',
+    'changed_json',
+    isPg ? 'changed_json text' : 'changed_json TEXT',
+  )
+  // 2026-09-15 版本管理 B4：知识点节点字段变更审计（name/definitionShort/prerequisites 等）
+  await ensureTable(ds, isPg, 'dl_concept_log', ddlConceptLog(isPg), () => conceptLogIndexes(ds, isPg))
+  // 2026-09-14 讲义流水线：dl_card.spec（讲义设计规格 JSON）+ dl_plan.concept_id（lesson 步按概念存）
+  await ensureColumn(ds, isPg, 'dl_card', 'spec', isPg ? 'spec text' : 'spec TEXT')
+  await ensureColumn(
+    ds,
+    isPg,
+    'dl_plan',
+    'concept_id',
+    isPg ? 'concept_id varchar' : 'concept_id TEXT',
   )
 }
 
@@ -269,6 +313,7 @@ function ddlCard(pg: boolean): string {
         works           text,
         content_md      text,
         evidence_sources text,
+        spec            text,
         version         integer NOT NULL DEFAULT 1,
         status          varchar NOT NULL DEFAULT 'draft',
         verification    text,
@@ -288,6 +333,7 @@ function ddlCard(pg: boolean): string {
       works           TEXT,
       content_md      TEXT,
       evidence_sources TEXT,
+      spec            TEXT,
       version         INTEGER NOT NULL DEFAULT 1,
       status          TEXT NOT NULL DEFAULT 'draft',
       verification    TEXT,
@@ -300,6 +346,48 @@ function ddlCard(pg: boolean): string {
 async function cardIndexes(ds: DataSource, isPg: boolean): Promise<void> {
   await ensureIndex(ds, isPg, 'idx_dl_card_user', 'dl_card', '(user_id)')
   await ensureIndex(ds, isPg, 'idx_dl_card_concept', 'dl_card', '(project_id, concept_id)')
+}
+
+// ==================== dl_plan（方案确认流程；2026-09-13） ====================
+
+function ddlPlan(pg: boolean): string {
+  if (pg) {
+    return `
+      CREATE TABLE dl_plan (
+        id         varchar PRIMARY KEY,
+        user_id    varchar,
+        project_id varchar NOT NULL,
+        concept_id varchar,
+        step       varchar NOT NULL,
+        status     varchar NOT NULL,
+        revision   integer NOT NULL,
+        payload    text NOT NULL,
+        feedback   text,
+        created_at timestamp,
+        updated_at timestamp
+      )
+    `
+  }
+  return `
+    CREATE TABLE dl_plan (
+      id         TEXT PRIMARY KEY,
+      user_id    TEXT,
+      project_id TEXT NOT NULL,
+      concept_id TEXT,
+      step       TEXT NOT NULL,
+      status     TEXT NOT NULL,
+      revision   INTEGER NOT NULL,
+      payload    TEXT NOT NULL,
+      feedback   TEXT,
+      created_at DATETIME,
+      updated_at DATETIME
+    )
+  `
+}
+
+async function planIndexes(ds: DataSource, isPg: boolean): Promise<void> {
+  await ensureIndex(ds, isPg, 'idx_dl_plan_user', 'dl_plan', '(user_id)')
+  await ensureIndex(ds, isPg, 'idx_dl_plan_step', 'dl_plan', '(project_id, step, revision)')
 }
 
 // ==================== dl_doc ====================
@@ -423,4 +511,43 @@ async function noteIndexes(ds: DataSource, isPg: boolean): Promise<void> {
   // 2026-09-09 复盘：同空间同一问题只允许一条收藏笔记（qna 收藏幂等的库级兜底；
   // 消除"同问题多行 + findByQuestion 同毫秒排序不稳"；question_id 为 NULL 的选区笔记不受限）
   await ensureIndex(ds, isPg, 'uniq_dl_note_question', 'dl_note', '(project_id, question_id)', true)
+}
+
+// ==================== dl_concept_log（节点字段变更审计；2026-09-15 B4） ====================
+
+function ddlConceptLog(pg: boolean): string {
+  if (pg) {
+    return `
+      CREATE TABLE dl_concept_log (
+        id         varchar PRIMARY KEY,
+        user_id    varchar,
+        project_id varchar NOT NULL,
+        concept_id varchar NOT NULL,
+        field      varchar NOT NULL,
+        from_value text,
+        to_value   text,
+        trigger    varchar NOT NULL,
+        at         timestamp
+      )
+    `
+  }
+  return `
+    CREATE TABLE dl_concept_log (
+      id         TEXT PRIMARY KEY,
+      user_id    TEXT,
+      project_id TEXT NOT NULL,
+      concept_id TEXT NOT NULL,
+      field      TEXT NOT NULL,
+      from_value TEXT,
+      to_value   TEXT,
+      trigger    TEXT NOT NULL,
+      at         DATETIME
+    )
+  `
+}
+
+async function conceptLogIndexes(ds: DataSource, isPg: boolean): Promise<void> {
+  await ensureIndex(ds, isPg, 'idx_dl_concept_log_user', 'dl_concept_log', '(user_id)')
+  await ensureIndex(ds, isPg, 'idx_dl_concept_log_concept', 'dl_concept_log', '(project_id, concept_id)')
+  await ensureIndex(ds, isPg, 'idx_dl_concept_log_field', 'dl_concept_log', '(project_id, concept_id, field)')
 }

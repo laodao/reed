@@ -40,6 +40,20 @@ coverage/
 C:/
 report.*.json
 
+# 验证截图/界面截图：本地留证即可，不进版本库
+# （已有历史截图仍被跟踪，如需一并清理需单独 git rm --cached）
+progress/**/*.png
+progress/*.png
+scripts/.settings-shots/
+*.screenshot.png
+
+# 探查脚本导出的数据快照（体积大、可由脚本重生成，不进版本库）
+progress/_*_dump.json
+progress/_*_dup_pairs.json
+
+# Agent harness 的大输出落盘文件（命令输出，不是工程产物）
+.dsh-*.txt
+
 # 会话进度产物只留本地，不入库（诊断脚本/验证截图/过程文档）
 progress/
 

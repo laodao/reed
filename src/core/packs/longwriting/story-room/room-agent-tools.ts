@@ -49,15 +49,9 @@ import { locateAll, locateExcerpt } from '@shared/utils/text-locate'
 
 export const LW_ROOM_PACK_ID = 'lw-room'
 
-/** 步数上限（六扇门复盘：12 是贴着「设计反派+关系网」的最低配，复杂级联会被截断；
- *  上限本职是失控兜底而非预算——正常讨论轮 1~3 步自终，抬高对聊天零成本。
- *  LW_ROOM_MAX_STEPS 环境变量可覆盖，夹到 [1,60]） */
-export const LW_ROOM_MAX_STEPS = (() => {
-  const raw = Number(process.env.LW_ROOM_MAX_STEPS)
-  if (!Number.isFinite(raw) || raw <= 0) return 24
-  // 对抗 review P2-1：(0,0.5) 区间 round 后为 0 → loop 首轮即 max_steps，整轮瘫痪
-  return Math.max(1, Math.min(60, Math.round(raw)))
-})()
+// 步数上限已迁入「参数设置 → 长文写作 → 故事研讨室」（`longwriting:storyRoom`.editorMaxSteps，
+// 默认 24 / 上限 60——六扇门复盘：上限本职是失控兜底而非预算），使用点现读；原
+// LW_ROOM_MAX_STEPS 环境变量覆盖通道退役。
 
 /** 从工具执行上下文还原研讨室上下文 */
 function lwCtxFrom(ctx: AgentToolContext): { projectId: string } {

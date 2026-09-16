@@ -1,5 +1,5 @@
 /**
- * 文档排版模板测试：13 套模板齐全且可渲染 / 表单选项与模板注册表一致 / 内置应用 templateId 有效
+ * 文档排版模板测试：模板注册表齐全且可渲染 / 表单选项与模板注册表一致 / 内置应用 templateId 有效
  * @module tests/unit/core/platform/services/document-templates
  */
 import { describe, it, expect } from 'vitest'
@@ -10,9 +10,10 @@ import { NODE_CONFIG_FORMS } from '@shared/types/workflow-node-forms'
 import { NODE_TYPE_CATALOG_MAP } from '@shared/types/workflow-node-catalog'
 import type { WorkflowGraph } from '@shared/types/workflow.types'
 
-/** 全部模板 id（早报/周报/通用/对话/吃瓜） */
+/** 全部模板 id（早报/周报/通用/对话/吃瓜/电商卖点卡/学习讲义）——新增模板必须同步这里（本用例即护栏） */
 const EXPECTED_IDS = [
   'generic',
+  'ecommerceSellpoint',
   'morningReport',
   'morningReportBlue',
   'morningReportMinimal',
@@ -20,6 +21,7 @@ const EXPECTED_IDS = [
   'industryWeeklyGreen',
   'industryWeeklyDark',
   'chatTranscript',
+  'learningLesson',
   'gossipTabloid',
   'gossipTimeline',
   'gossipArticle',
@@ -29,7 +31,7 @@ const EXPECTED_IDS = [
 ]
 
 describe('DOCUMENT_TEMPLATES 注册表', () => {
-  it('包含全部预期模板（早报×3 / 周报×3 / 通用 / 对话 / 吃瓜×6）', () => {
+  it('包含全部预期模板（通用 / 电商卖点 / 早报×3 / 周报×3 / 对话 / 学习讲义 / 吃瓜×6）', () => {
     for (const id of EXPECTED_IDS) {
       expect(DOCUMENT_TEMPLATES[id], `缺少模板 ${id}`).toBeDefined()
     }

@@ -74,7 +74,24 @@ function trimTrailingRules(text: string): string {
  */
 export function isAnswerSection(sec: { key?: string | null; title?: string | null }): boolean {
   const key = String(sec.key ?? '').toLowerCase()
-  if (['answers', 'answer', 'selfcheck-answers', 'solutions', 'solution'].includes(key)) return true
+  // 与 lesson-template 目录里 answers 的同义写法保持一致（别名清单由
+  // tests/unit/shared/lesson-template.spec.ts 的「平权」用例守护，避免两处漂移）
+  if (
+    [
+      'answers',
+      'answer',
+      'selfcheck-answers',
+      'selfcheck_answers',
+      'check-ans',
+      'check-answer',
+      'selftest-answers',
+      'selftest_answers',
+      'solutions',
+      'solution',
+    ].includes(key)
+  ) {
+    return true
+  }
   const title = String(sec.title ?? '').trim()
   if (!title) return false
   return /^(?:(?:参考|标准|正确)?答案|解答|解析|答案解析)/.test(title)
