@@ -87,15 +87,17 @@ describe('记忆飞轮读「参数设置 → 上下文与记忆」', () => {
 
   it('召回条数：注入 1 时 assemble 最多返回 1 条', async () => {
     const { repo } = buildRepo([
-      { id: 'm1', content: { title: 't1', content: '报告写作先列大纲' } },
-      { id: 'm2', content: { title: 't2', content: '报告写作要分节展开' } },
-      { id: 'm3', content: { title: 't3', content: '报告写作最后统一润色' } },
+      { id: 'm1', content: { title: 't1', content: '报告写作先列大纲再总结' } },
+      { id: 'm2', content: { title: 't2', content: '报告写作要分节展开做总结' } },
+      { id: 'm3', content: { title: 't3', content: '报告写作最后统一润色并总结' } },
     ])
     const fw = new MemoryFlywheelService({ repo })
-    expect((await fw.assemble('报告写作')).length).toBe(3) // 默认 3
+    // 查询须含 ≥2 个命中词（相邻 bigram 合并口径）——否则过不了 L1 相关度门槛
+    // （六扇门复盘），参数化断言就无从谈起
+    expect((await fw.assemble('报告写作 总结')).length).toBe(3) // 默认 3
 
     setAgentContextParams({ memory: { assembleTopK: 1 } })
-    expect((await fw.assemble('报告写作')).length).toBe(1)
+    expect((await fw.assemble('报告写作 总结')).length).toBe(1)
   })
 
   it('查重阈值：调到 10% 后，弱重叠也算重复', async () => {
