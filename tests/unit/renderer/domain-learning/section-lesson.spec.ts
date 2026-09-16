@@ -12,12 +12,20 @@
  * - 每个正文章节都有标题行 + 序号，区级动作都收在同一行 `.sec-actions` 内；
  * - 页面里不再存在绝对定位的右上角「这块没懂」；
  * - 编写注记是**唯一的置底折叠面板**，不再是正文章节。
+ *
+ * v8 增补（2026-09-15 用户口径）：有编号的大标题带底色（`.sec-head-numbered`）；
+ * 「参考答案」是跟随区（不占章节编号、无序号徽标）。
  */
 
 import { describe, it, expect, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { mount } from '@vue/test-utils'
 import SectionLesson from '../../../../src/renderer/src/views/domain-learning/SectionLesson.vue'
 import type { DlCardView, DlCardSection } from '@shared/types/domain-learning.types'
+
+const SFC_PATH = resolve(__dirname, '../../../../src/renderer/src/views/domain-learning/SectionLesson.vue')
+const MARKDOWN_SCSS_PATH = resolve(__dirname, '../../../../src/renderer/src/views/domain-learning/lesson-markdown.scss')
 
 const MdStub = { props: ['md'], template: '<div class="md-stub">{{ md }}</div>' }
 
@@ -139,6 +147,55 @@ describe('SectionLesson 章节结构', () => {
     const w = mountLesson([{ key: 'essence', md: '本质是……' }])
     expect(w.find('.sec-title').text()).toBe('定义')
     expect(w.find('.sec-index').text()).toBe('1')
+  })
+
+  // 2026-09-15 用户口径「知识内容正文，有编号的大标题，增加底色突出一下」
+  it('有编号的大标题带底色样式（sec-head-numbered）；无标题/相关区不加', () => {
+    const w = mountLesson(TENSOR_LIKE)
+    const heads = w.findAll('.sec-head')
+    for (const head of heads) {
+      expect(head.classes()).toContain('sec-head-numbered')
+    }
+    // 相关知识点/相关著作这类无编号标题行不加底色
+    const withRelated = mount(SectionLesson, {
+      props: {
+        card: card([{ key: 'definition', title: '定义', md: 'x' }]),
+        related: [{ conceptId: 'k2', name: '自动微分', rel: '后继' }],
+      },
+      global: { stubs: STUBS },
+    })
+    expect(withRelated.find('.sec-related .sec-head').classes()).not.toContain('sec-head-numbered')
+  })
+
+  // 2026-09-15 用户口径「有编号的大标题，字体加大一号」：样式表契约（happy-dom 不算版式，读 SFC 源码断言）
+  it('有编号的大标题字号压过正文与正文小标题（sec-title 17px > h3 14.5px > 正文 14px）', () => {
+    const src = readFileSync(SFC_PATH, 'utf8')
+    const numbered = /\.sec-title\s*\{[\s\S]*?font-size:\s*([\d.]+)px/.exec(src)
+    expect(numbered, '找不到 .sec-title 的字号声明').toBeTruthy()
+    const numberedPx = Number(numbered![1])
+    const follower = /\.sec-head-follower\s+\.sec-title\s*\{[\s\S]*?font-size:\s*([\d.]+)px/.exec(src)
+    expect(follower, '找不到跟随区标题的字号声明').toBeTruthy()
+    // 加大后必须明显大于正文（14px）与正文小标题（lesson-markdown.scss 的 h3 14.5px）
+    expect(numberedPx).toBeGreaterThanOrEqual(17)
+    expect(numberedPx).toBeGreaterThan(Number(follower![1]))
+    const markdownScss = readFileSync(MARKDOWN_SCSS_PATH, 'utf8')
+    const h3 = /h3\s*\{[\s\S]*?font-size:\s*([\d.]+)px/.exec(markdownScss)
+    expect(h3, '找不到正文 h3 的字号声明').toBeTruthy()
+    expect(numberedPx).toBeGreaterThan(Number(h3![1]))
+  })
+
+  // 2026-09-15 用户口径「章节还是太细碎」：参考答案不占章节编号
+  it('参考答案是跟随区：无序号徽标、带 sec-head-follower，章节只数到自测', () => {
+    const w = mountLesson([
+      { key: 'definition', title: '定义', md: '张量是……' },
+      { key: 'selfcheck', title: '自测', md: '**Q1** 题目' },
+      { key: 'answers', title: '参考答案', md: '**A1** 答案', folded: true },
+    ])
+    expect(w.findAll('.sec-index').map((n) => n.text())).toEqual(['1', '2'])
+    const follower = w.findAll('.sec')[2]
+    expect(follower.find('.sec-head').classes()).toContain('sec-head-follower')
+    expect(follower.find('.sec-index').exists()).toBe(false)
+    expect(follower.find('.sec-title').text()).toBe('参考答案')
   })
 
   it('「这块没懂」回传原区对象（下标映射不因剔除注记区而错位）', async () => {

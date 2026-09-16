@@ -173,30 +173,41 @@ describe('learning-concept-explainer 教学法契约（复盘：面向新人，�
     expect(body).toContain('200 行')
   })
 
-  // ============ 2026-09-15 用户口径：合并细碎章节、突出重点、示例放到详解之后、不要卡片样式 ============
+  // ============ 2026-09-15 用户口径：核心骨架＝定义/详解/案例/自测，章节再合并，有操作才写实操 ============
 
-  it('重点分配：定义/详解/案例这三节写详细（[重点] 标记 + 参考字数下限；其它区不打"从简"标签）', () => {
+  it('重点分配：定义/详解/案例这三节写详细（[重点] 标记 + 参考字数下限；实操/辨析不打 [重点]）', () => {
     expect(body).toContain('重点分配与区序')
-    expect(body).toContain('重点就是**定义、详解、案例**')
+    expect(body).toContain('核心骨架')
+    expect(body).toContain('重点永远是**定义、详解、案例**')
     // 写作要求总表（与 lesson-template 同源渲染）必须进正文：重点标记 + 参考下限 + 各区要求
     expect(body).toContain('definition（定义）[重点]')
     expect(body).toContain('detail（详解）[重点]')
     expect(body).toContain('examples（案例）[重点]')
     expect(body).toContain('至少 320 字')
-    // v7：非重点区不再被贴上"导学/从简"标签
+    // v7/v8：非重点区不再被贴上"导学/从简"标签
     expect(body).not.toContain('meta（学习前必读）[')
     expect(body).not.toContain('selfcheck（自测）[')
+    expect(body).not.toContain('operation（实操）[')
+    expect(body).not.toContain('confusions（辨析与易错）[')
   })
 
-  it('合并：机制/结构/规则/公式/性质/步骤/依据/适用与局限并进「详解」，本质并进「定义」，反例并进「案例」', () => {
+  it('合并：机制/结构/规则等并进「详解」，为什么学它并进「学习前必读」，步骤/代码并进「实操」，辨析/常见坑并进「辨析与易错」', () => {
     expect(body).toContain('并进「详解」')
     expect(body).toContain('并进「定义」')
     expect(body).toContain('并进「案例」')
-    expect(body).toContain('并进「常见坑」')
-    expect(body).toContain('不再单列')
+    expect(body).toContain('并进「学习前必读」')
+    expect(body).toContain('并进「实操」')
+    expect(body).toContain('并进「辨析与易错」')
+    expect(body).toContain('不再单列成章')
     // 旧区名不再出现在新模板区序里
     expect(body).not.toContain('structure（')
     expect(body).not.toContain('rules（')
+    expect(body).not.toContain('pitfalls（')
+  })
+
+  it('实操只在本领域确实有可照做的操作时才写（不硬凑），并落到提示词里', () => {
+    expect(body).toContain('operation（实操）：')
+    expect(body).toContain('照着做')
   })
 
   it('详解是篇幅最大的重点区：主线 + 逐类同维度展开 + 对比表 + 判定与计算规则', () => {
@@ -219,14 +230,16 @@ describe('learning-concept-explainer 教学法契约（复盘：面向新人，�
     expect(body).toContain('要点卡')
   })
 
-  it('bootstrap S4 与 lesson-updater 同步 v7 口径（合并 + 新序 + 不要卡片）', () => {
+  it('bootstrap S4 与 lesson-updater 同步 v8 口径（再合并 + 主干区序 + 不要卡片 + 答案折叠）', () => {
     const bootstrap = splitSkillFrontmatter(BUILTIN_SKILLS.find((s) => s.id === 'learning-space-bootstrap')!.markdown).body
     expect(bootstrap).toContain('重点分配')
-    expect(bootstrap).toContain('区序「定义 → 详解 → 案例」')
+    expect(bootstrap).toContain('区序「定义 → 详解 → 案例 →（实操）→ 辨析与易错 → 自测」')
     expect(bootstrap).toContain('不要卡片样式')
+    expect(bootstrap).toContain('答案默认折叠')
     const updater = splitSkillFrontmatter(BUILTIN_SKILLS.find((s) => s.id === 'learning-lesson-updater')!.markdown).body
-    expect(updater).toContain('区序「定义 → 详解 → 案例」')
+    expect(updater).toContain('区序「定义 → 详解 → 案例 →（实操）→ 辨析与易错 → 自测」')
     expect(updater).toContain('并进「详解」')
+    expect(updater).toContain('并进「实操」')
     expect(updater).toContain('案例紧跟详解之后')
   })
 })

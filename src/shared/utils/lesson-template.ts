@@ -37,6 +37,18 @@
  *   在归一化时**内容一字不删地并进目标区**，新生成则只出合并后的区（章节从 15 降到 10 左右）；
  * - 区序：学习前必读 → 为什么学它 → （陈述）→ 定义 → **详解** → **案例** → …；
  * - 「详解」是篇幅最大的重点区：主线 + 逐项/逐类同维度展开 + 横向对比表 + 判定与计算规则。
+ *
+ * v8（2026-09-15 用户口径「章节还是太细碎；核心骨架就是定义、详解（含规则和逻辑）、示例、自测，
+ * 有些领域还会有具体的操作」）：
+ * - **再合并**：为什么学它 → 学习前必读（动机收进导学区，`### 为什么学它` 小标题保留）；
+ *   步骤/落到代码 → **实操**（新生效区，只有本知识点确实有可照做的操作时才出现）；
+ *   辨析 + 常见坑 + 补充与注意 → **辨析与易错**（新生效区）；
+ * - **每种本质类型的骨架显式化**：`meta →（陈述）→ definition → detail →（争议）→ examples
+ *   → operation → confusions → selfcheck → answers → notes`——六类模板只在这条主干上增减
+ *   （K-stmt/K-agent/K-open 有「陈述/条文」，K-agent/K-open 另有「争议与评价」），
+ *   即用户说的"不同领域会有所不同，但核心结构类似"；
+ * - 生效区从 13 降到 11（章节数 K-concept 10 → 8），重点是 definition/detail/examples 三区；
+ * - 自测的「参考答案」不再占章节编号（渲染层按跟随区折叠在自测之后），见 `lesson-sections`。
  */
 
 import { splitSelfCheckAnswers } from './lesson-selfcheck'
@@ -83,7 +95,7 @@ export interface LessonSectionSpec {
   /** 重点区（core/case）的最少正文字数；低于此判"没讲透"（导学/支撑/收尾不设） */
   minChars?: number
   /**
-   * v7 合并去向（2026-09-15 用户口径「章节太细碎，合并」）：
+   * 合并去向（v7 起；2026-09-15 用户口径「章节太细碎，合并」）：
    * 该区已并入目标区——它的 key 与全部同义写法都会被归一成目标 key，
    * 老卡重存时内容按原顺序**合并进目标区**（内容不删、标题按目标区派生）。
    * 带 mergedInto 的条目不再出现在任何新模板里，也不再进提示词的区写作要求总表（仅历史留档）。
@@ -94,12 +106,9 @@ export interface LessonSectionSpec {
 }
 
 /**
- * 区目录（**生效区**全集，v7）。
+ * 全量条目（**生效区 + 已合并的历史区**；仅内部使用，v8：生效区 11 个）。
  * 标题取自既有 `DEFAULT_SECTION_TITLES` 口径（历史卡与新卡标题一致），样式沿用 v4 语义；
  * role/brief/minChars 为 v6 增补，mergedInto（已合并的历史区）见 `LESSON_MERGED_SECTION_SPECS`。
- */
-/**
- * 全量条目（**生效区 + 已合并的历史区**；仅内部使用）。
  * 对外只暴露两个视图：`LESSON_SECTION_CATALOG`（生效区）与 `LESSON_MERGED_SECTION_SPECS`（历史合并区），
  * 免得"目录里还列着「本质/结构/规则」"看起来像没合并。
  */
@@ -109,24 +118,25 @@ const ALL_SECTION_SPECS: LessonSectionSpec[] = [
     title: '学习前必读',
     style: 'intro',
     role: 'lead',
-    brief: '读者的入场券：读者画像、本讲前置（逐条列前置概念名，确无前置就写"无需前置"）、记号热身、学完能做到（2~3 条可测目标）。保持 v1 的完整写法，不要压缩。',
-  },
-  {
-    key: 'essence',
-    title: '本质',
-    style: 'intro',
-    role: 'lead',
-    brief: '（v7 已并入「定义」区开头：用两三句人话给直觉，然后直接进正式定义。）保留此条仅为历史键归一，新生成不再单独出这一区。',
-    mergedInto: 'definition',
-    aliases: ['core', 'intuition', 'intuit', 'overview', 'what'],
+    brief: '读者的入场券（原来单独的「为什么学它」也并进这一区，用 `### 为什么学它` 小标题收在里面）：读者画像、本讲前置（逐条列前置概念名，确无前置就写"无需前置"）、记号热身、学完能做到（2~3 条可测目标）、为什么学它（解决什么问题、不学卡在哪）。全文唯一的导学区，只列不展开。',
   },
   {
     key: 'why',
     title: '为什么学它',
     style: 'body',
     role: 'lead',
-    brief: '回答"学它解决什么问题、不学它会卡在哪"（v1 的写法：可含"为什么听不懂/对工作应用的用处"这类小标题）。保持原有分量，不压缩。',
+    brief: '（v8 已并入「学习前必读」区：动机写成该区里的 `### 为什么学它` 小标题。）保留此条仅为历史键归一，新生成不再单独出这一区。',
+    mergedInto: 'meta',
     aliases: ['motivation', 'background', 'purpose', 'goal', 'problem', 'why-here', 'why_here'],
+  },
+  {
+    key: 'essence',
+    title: '本质',
+    style: 'intro',
+    role: 'lead',
+    brief: '（v7 起已并入「定义」区开头：用两三句人话给直觉，然后直接进正式定义。）保留此条仅为历史键归一，新生成不再单独出这一区。',
+    mergedInto: 'definition',
+    aliases: ['core', 'intuition', 'intuit', 'overview', 'what'],
   },
   {
     key: 'examples',
@@ -221,9 +231,18 @@ const ALL_SECTION_SPECS: LessonSectionSpec[] = [
     style: 'body',
     role: 'core',
     minChars: 180,
-    brief: '（v7 已并入「详解」区：有序步骤与走查。）保留此条仅为历史键归一。',
-    mergedInto: 'detail',
+    brief: '（v8 已并入「实操」区：有序步骤与走查。）保留此条仅为历史键归一。',
+    mergedInto: 'operation',
     aliases: ['steps', 'recipe', 'checklist', 'workflow', 'process', 'method', 'implementation', 'implement'],
+  },
+  {
+    key: 'operation',
+    title: '实操',
+    style: 'body',
+    role: 'support',
+    brief:
+      '本知识点确实有"能照着做一遍"的操作时才写这一区（没有就整区不出现，不要硬凑）：把操作写成可照做的步骤/命令/最小代码/办理流程——每步给"做什么 → 得到什么、在哪验证"，代码给最小可运行片段并写明期望输出。形态随领域不同（编程=代码与命令、法规=申报与办理流程、金融=计算与下单步骤），但都要能让读者跟着走通一遍。原来单独的「步骤」「落到代码」都并到这里。',
+    aliases: ['hands-on', 'hands_on', 'how-to-do', 'how_to_do', 'runbook'],
   },
   {
     key: 'application',
@@ -245,11 +264,21 @@ const ALL_SECTION_SPECS: LessonSectionSpec[] = [
     aliases: ['counter-example', 'counter_example', 'edge-case'],
   },
   {
+    key: 'confusions',
+    title: '辨析与易错',
+    style: 'note',
+    role: 'support',
+    brief:
+      '最容易混淆的邻近概念逐项对比（对比维度要一致，并给一句判据："看到 X 就是 A，看到 Y 就是 B"）+ 本讲范围内真会踩的 3~6 个坑（现象 → 为什么错 → 正确做法，每条一句话）。原来单独的「辨析」「常见坑」「补充与注意」都并到这里；既没有可辨析的邻概念、也没有真会踩的坑，就整区不出现。',
+    aliases: ['confusion', 'confusions-and-pitfalls'],
+  },
+  {
     key: 'distinguish',
     title: '辨析',
     style: 'body',
     role: 'support',
-    brief: '与最容易混淆的概念逐项对比：对比维度要一致，并给一句判据（"看到 X 就是 A，看到 Y 就是 B"）。',
+    brief: '（v8 已并入「辨析与易错」区：与邻近概念的对比。）保留此条仅为历史键归一。',
+    mergedInto: 'confusions',
     aliases: ['contrast', 'compare', 'comparison', 'vs', 'misconception', 'misconceptions', 'disambiguation', 'discreteness'],
   },
   {
@@ -257,8 +286,9 @@ const ALL_SECTION_SPECS: LessonSectionSpec[] = [
     title: '落到代码',
     style: 'body',
     role: 'support',
-    brief: '最小可运行代码（JS 优先，能跑用 js 围栏；Python 只作对照）：每段代码注明它演示本讲哪条规则，并写出期望输出。',
-    aliases: ['js', 'implement-code'],
+    brief: '（v8 已并入「实操」区：最小可运行代码与命令、期望输出。）保留此条仅为历史键归一。',
+    mergedInto: 'operation',
+    aliases: ['js', 'implement-code', 'snippet'],
   },
   {
     key: 'detail',
@@ -282,8 +312,8 @@ const ALL_SECTION_SPECS: LessonSectionSpec[] = [
     title: '补充与注意',
     style: 'note',
     role: 'support',
-    brief: '（v7 已并入「常见坑」区。）保留此条仅为历史键归一。',
-    mergedInto: 'pitfalls',
+    brief: '（v8 起并入「辨析与易错」区。）保留此条仅为历史键归一。',
+    mergedInto: 'confusions',
     aliases: ['edge-cases'],
   },
   {
@@ -291,7 +321,8 @@ const ALL_SECTION_SPECS: LessonSectionSpec[] = [
     title: '常见坑',
     style: 'note',
     role: 'support',
-    brief: '3~6 条：现象 → 为什么错 → 正确做法；每条一句话，只讲本讲范围内真会踩的坑。原来单独的「补充与注意」也并到这里。',
+    brief: '（v8 已并入「辨析与易错」区：现象 → 为什么错 → 正确做法。）保留此条仅为历史键归一。',
+    mergedInto: 'confusions',
     aliases: ['pitfall', 'mistakes', 'failure', 'failures', 'trap', 'traps', 'misuse', 'misuses'],
   },
   {
@@ -320,13 +351,14 @@ const ALL_SECTION_SPECS: LessonSectionSpec[] = [
   },
 ]
 
-/** **生效区目录**（v7）：只含当前讲义会真正出现的区——提示词、模板、UI 都读它 */
+/** **生效区目录**（v8）：只含当前讲义会真正出现的区——提示词、模板、UI 都读它 */
 export const LESSON_SECTION_CATALOG: LessonSectionSpec[] = ALL_SECTION_SPECS.filter((s) => !s.mergedInto)
 
 /**
- * **已合并的历史区**（v7）：本质 / 机制 / 构成与结构 / 规则 / 公式 / 性质 / 步骤 / 依据 / 适用与局限 /
- * 反例与边界 / 补充与注意。保留目的有二：① 老卡的这些 key 与同义写法仍能归一到目标区；
- * ② 老卡渲染时仍能取到原区标题。**不在任何模板里，也不进提示词。**
+ * **已合并的历史区**（v8）：本质 / 为什么学它 / 机制 / 构成与结构 / 规则 / 公式 / 性质 / 步骤 /
+ * 依据 / 适用与局限 / 落到代码 / 反例与边界 / 辨析 / 常见坑 / 补充与注意。
+ * 保留目的有二：① 老卡的这些 key 与同义写法仍能归一到目标区；
+ * ② 老卡渲染时仍能取到原区标题（合并时作为 `### 小标题` 留在目标区里）。**不在任何模板里，也不进提示词。**
  */
 export const LESSON_MERGED_SECTION_SPECS: LessonSectionSpec[] = ALL_SECTION_SPECS.filter((s) => !!s.mergedInto)
 
@@ -338,14 +370,57 @@ export const LESSON_SECTION_MERGE_MAP: Record<string, string> = Object.fromEntri
 /**
  * 每种知识本质类型的**固定区序**（有序子序列校验的依据）。
  *
- * v7 顺序（2026-09-15 用户口径：**合并细碎章节、突出重点、示例放到详解之后**）：
- *   学习前必读 → 为什么学它 → （陈述）→ 定义 → **详解** → **案例** → 落到代码 → 辨析 → 常见坑 → 自测 → 答案 → 注记
+ * v8 主干（2026-09-15 用户口径：**章节还是太细碎；核心骨架＝定义、详解（含规则和逻辑）、示例、自测，
+ * 有些领域还有具体的操作**）——六类模板都长在这条主干上：
+ *   学习前必读 →（陈述/条文）→ 定义 → 详解 →（争议与评价）→ 案例 → 实操 → 辨析与易错 → 自测 → 答案 → 注记
+ * 类型差异只在「有没有陈述/条文」（K-stmt/K-agent/K-open）与「有没有争议与评价」（K-agent/K-open）；
+ * 每个区都可以**按需跳过**（某概念确实没有可照做的操作，就不该硬凑一个「实操」区）。
+ * 唯一一处顺序差异：**K-oper（做法）把「实操」排在「案例」之前**——做法类知识的本体就是"怎么做"，
+ * 先跟做一遍，再看别人怎么用；其余类型都是「案例 → 实操」（先看清情形，再自己动手）。
+ *
  * 合并关系（内容不删，只是不再单列成章）：
- *   本质 → 定义；机制/构成与结构/规则/公式/性质/步骤/依据/适用与局限 → 详解；
- *   反例与边界 → 案例；补充与注意 → 常见坑。
+ *   本质 → 定义；为什么学它 → 学习前必读；
+ *   机制/构成与结构/规则/公式/性质/依据/适用与局限 → 详解；
+ *   步骤/落到代码 → 实操；反例与边界 → 案例；
+ *   辨析/常见坑/补充与注意 → 辨析与易错。
  * 收尾仍按纪律：自测收尾、答案紧随自测、注记置底。
  */
 export const LESSON_TEMPLATES: Record<DlEssenceType, string[]> = {
+  'K-concept': [
+    'meta', 'definition', 'detail', 'examples', 'operation', 'confusions',
+    'selfcheck', 'answers', 'notes',
+  ],
+  'K-oper': [
+    'meta', 'definition', 'detail', 'operation', 'examples', 'confusions',
+    'selfcheck', 'answers', 'notes',
+  ],
+  'K-stmt': [
+    'meta', 'statement', 'definition', 'detail', 'examples', 'operation', 'confusions',
+    'selfcheck', 'answers', 'notes',
+  ],
+  'K-inst': [
+    'meta', 'definition', 'detail', 'examples', 'operation', 'confusions',
+    'selfcheck', 'answers', 'notes',
+  ],
+  'K-agent': [
+    'meta', 'statement', 'definition', 'detail', 'controversy', 'examples', 'operation',
+    'confusions', 'selfcheck', 'answers', 'notes',
+  ],
+  'K-open': [
+    'meta', 'statement', 'definition', 'controversy', 'detail', 'examples', 'operation',
+    'confusions', 'selfcheck', 'answers', 'notes',
+  ],
+}
+
+/** 当前生效的模板版本（新生成按它走；老卡见 `LESSON_LEGACY_TEMPLATES`） */
+export const LESSON_TEMPLATE_VERSION_CURRENT = 'v8'
+
+/**
+ * **历史模板留档：v7**（2026-09-15 下午，同日第二轮）。
+ * 与 v8 的差别：为什么学它仍单独成区；步骤并进「详解」、代码另有「落到代码」区；
+ * 辨析与常见坑各自成区（v8 才并成「实操」「辨析与易错」两个区）。
+ */
+export const LESSON_TEMPLATES_V7: Record<DlEssenceType, string[]> = {
   'K-concept': [
     'meta', 'why', 'definition', 'detail', 'examples', 'code', 'distinguish', 'pitfalls',
     'selfcheck', 'answers', 'notes',
@@ -371,9 +446,6 @@ export const LESSON_TEMPLATES: Record<DlEssenceType, string[]> = {
     'pitfalls', 'selfcheck', 'answers', 'notes',
   ],
 }
-
-/** 当前生效的模板版本（新生成按它走；老卡见 `LESSON_LEGACY_TEMPLATES`） */
-export const LESSON_TEMPLATE_VERSION_CURRENT = 'v7'
 
 /**
  * **历史模板留档：v6**（2026-09-15 当天短暂存在的一版）。
@@ -451,6 +523,7 @@ export const LESSON_TEMPLATES_V5: Record<DlEssenceType, string[]> = {
 
 /** 历史模板清单（新→旧；门禁逐个尝试，命中任一即算区序合法，只读不改写） */
 export const LESSON_LEGACY_TEMPLATES: Array<{ version: string; templates: Record<DlEssenceType, string[]> }> = [
+  { version: 'v7', templates: LESSON_TEMPLATES_V7 },
   { version: 'v6', templates: LESSON_TEMPLATES_V6 },
   { version: 'v5', templates: LESSON_TEMPLATES_V5 },
 ]
@@ -517,7 +590,7 @@ export function sectionSpecOf(key: string): LessonSectionSpec | null {
   return SPEC_BY_KEY[canonicalSectionKey(key)] ?? null
 }
 
-/** 该本质类型当前允许的区序（v6） */
+/** 该本质类型当前允许的区序（v8） */
 export function lessonTemplateKeys(essenceType: DlEssenceType): string[] {
   return LESSON_TEMPLATES[essenceType] ?? LESSON_TEMPLATES['K-concept']
 }
@@ -612,11 +685,12 @@ export interface NormalizeLessonSectionsResult {
  * 可无损映射的归一化（不改语义、不丢内容）：
  * 1. 别名 / 已合并的区 → 规范 key（checks → selfcheck、worked → examples、
  *    cost/scope → detail、types → detail、edge-cases → pitfalls…）；
- * 2. **同 key 的多个区合并成一个**（v7）：内容按原出现顺序拼接、标题按目标区派生，
- *    内容一字不删（老卡的「组成/结构 + 规则 + 详解 + 适用与局限」重存后并成一个「详解」区）；
+ * 2. **同 key 的多个区合并成一个**（v7 起）：内容按原出现顺序拼接、标题按目标区派生，
+ *    内容一字不删（老卡的「组成/结构 + 规则 + 详解 + 适用与局限」重存后并成一个「详解」区，
+ *    「辨析 + 常见坑」并成一个「辨析与易错」区）；
  * 3. 标题 / 样式按模板派生（同一类型同一区的标题完全一致）；
  * 4. 正文标题层级统一到 `###`；
- * 5. **按当前模板区序重排**（v7：示例/案例在详解之后）；
+ * 5. **按当前模板区序重排**（v8：定义 → 详解 → 案例 → 实操 → 辨析与易错）；
  * 6. 自测区里"独占一行答案标记"的答案拆成独立 `answers` 区（渲染层按整区折叠）；已有 answers 区时不重复拆。
  *
  * 未收录的 key **原样保留**（是否拒绝由 `checkLessonSectionsShape` 决定，避免静默吞掉内容）。
@@ -630,9 +704,11 @@ export function normalizeCardSections(input: {
   let hasAnswersSection = (input.sections ?? []).some((s) => canonicalSectionKey(s.key) === 'answers')
 
   const pushOrMerge = (sec: LessonSectionShape, fromRawKey: string): void => {
-    // v7：原 key 已被合并掉（structure/rules/mechanism/application… → detail）→ 记一条变更
+    // 原 key 已被合并掉（structure/rules/mechanism/why/code/pitfalls… → 目标区）→ 记一条变更
     if (fromRawKey && fromRawKey !== sec.key && SPEC_BY_KEY[fromRawKey]?.mergedInto) {
-      changes.push(`区 key「${fromRawKey}」按 v7 并入「${sec.key}（${sectionTitleOf(sec.key)}）」区（内容保留，未删除）`)
+      changes.push(
+        `区 key「${fromRawKey}」按 ${LESSON_TEMPLATE_VERSION_CURRENT} 契约并入「${sec.key}（${sectionTitleOf(sec.key)}）」区（内容保留，未删除）`,
+      )
     }
     const existing = merged.get(sec.key)
     if (!existing) {
@@ -654,7 +730,7 @@ export function normalizeCardSections(input: {
     if (key !== rawKey && !SPEC_BY_KEY[rawKey]) {
       changes.push(`区 key「${rawKey}」按同义写法归一为「${key}」`)
     }
-    // v7 合并：原区标题作为 `### ` 小标题保留在目标区正文里（章法不丢、内容不删）
+    // 合并：原区标题作为 `### ` 小标题保留在目标区正文里（章法不丢、内容不删）
     const ownerSpec = SPEC_BY_KEY[OWNER_KEY_BY_NAME[rawKey.toLowerCase()] ?? rawKey] ?? null
     const ownerTitle = ownerSpec?.title ?? ''
     const willMerge = !!ownerSpec && (ownerSpec.mergedInto ? ownerSpec.mergedInto === key : ownerSpec.key !== key)
@@ -684,7 +760,7 @@ export function normalizeCardSections(input: {
     pushOrMerge({ key, title, style, md, folded: sec.folded, layout: sec.layout ?? null, takeaway: sec.takeaway ?? null }, rawKey)
   }
 
-  // v7：按当前模板区序重排（合并后的区落在目标区的位置；未收录 key 保序置底）
+  // 按当前模板区序重排（合并后的区落在目标区的位置；未收录 key 保序置底）
   const template = lessonTemplateKeys(input.essenceType)
   const orderOf = (key: string): number => {
     const at = template.indexOf(key)
@@ -696,7 +772,9 @@ export function normalizeCardSections(input: {
     .sort((a, b) => orderOf(a.sec.key) - orderOf(b.sec.key) || a.index - b.index)
     .map(({ sec }) => sec)
   if (sections.map((s) => s.key).join('>') !== beforeOrder.join('>')) {
-    changes.push('区序已按当前契约重排（学习前必读 → 为什么学它 → 定义 → 详解 → 案例 → …：示例/案例在详解之后）')
+    changes.push(
+      '区序已按当前契约重排（学习前必读 → 定义 → 详解 → 案例 → 实操 → 辨析与易错 → 自测：重点在前、案例跟着详解）',
+    )
   }
 
   return { sections, changes }
@@ -759,8 +837,8 @@ export function checkLessonSectionsShape(input: {
 
   let note: string | null = null
   if (!isSectionOrderOk(keys, template)) {
-    // 老卡兼容（2026-09-15）：v5 时期落库的讲义区序（示例在定义之前）仍然放行——
-    // 已有内容不删除、不自动重排；只附一句提示，等下次修订该卡时再对齐 v6。
+    // 老卡兼容（2026-09-15）：历史模板时期落库的讲义区序仍然放行——
+    // 已有内容不删除、不自动重排；只附一句提示，等下次修订该卡时再对齐当前契约。
     const legacy = legacyTemplateVersionFor(input.essenceType, keys)
     if (!legacy) {
       return {
@@ -773,8 +851,9 @@ export function checkLessonSectionsShape(input: {
       }
     }
     note =
-      `区序沿用历史模板 ${legacy}（示例排在定义/详解之前）——内容保留不动、本次放行；` +
-      `契约 v6 的顺序是「定义 → 详解 → 案例」，下次修订这张卡时建议把「案例与示例」移到定义与详解之后。`
+      `区序沿用历史模板 ${legacy}——内容保留不动、本次放行；` +
+      `当前契约（${LESSON_TEMPLATE_VERSION_CURRENT}）的顺序是「定义 → 详解 → 案例 → 实操 → 辨析与易错 → 自测」，` +
+      `下次修订这张卡时建议按它重排。`
   }
 
   const leaking = (input.sections ?? []).find(
@@ -836,7 +915,7 @@ export function sectionBriefLine(key: string): string {
 }
 
 /**
- * 提示词用：某类型的区清单 + 写作要求（v7）。
+ * 提示词用：某类型的区清单 + 写作要求（v8）。
  * 与 `lessonTemplateHint`（只给区序）配套：**写作要求只在这一份里**，
  * 生成侧提示词与落库后的深度提醒都读它，杜绝"提示词一份、检查另一份"。
  */
@@ -919,7 +998,7 @@ export function lessonBodyChars(md: string): number {
 /**
  * 重点深度检查（**非阻断**）：按 `LESSON_SECTION_CATALOG` 的 role/brief/minChars 判——
  * 1. 重点区（定义/详解/案例）字数低于 minChars → 这一区没讲透（附该区写作要求与参考下限）；
- * 2. 重点区占比低于 `LESSON_DEPTH.coreShareMin` → 非重点章节挤占了篇幅（v7 合并后一般不会触发）。
+ * 2. 重点区占比低于 `LESSON_DEPTH.coreShareMin` → 非重点章节挤占了篇幅（v7/v8 合并后一般不会触发）。
  *
  * 为什么不做硬门禁：区是可选的（宁缺毋滥），硬拦"字数不够"会诱导模型**删区**而不是**补写**，
  * 反而丢内容；因此提醒随 `dl_save_card` 结果一起回给模型，由模型自行重发修订版。

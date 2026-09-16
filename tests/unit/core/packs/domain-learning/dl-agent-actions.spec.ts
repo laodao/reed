@@ -750,11 +750,11 @@ describe('dl-agent-actions', () => {
       expect(err).toBeInstanceOf(Error)
       const message = (err as Error).message
       expect(message).toContain('practice')
-      expect(message).toContain('meta → why → definition → detail → examples')
+      expect(message).toContain('meta → definition → detail → examples')
     })
   })
 
-  it('save_card：区序乱（案例写在定义之前）→ 落库时按 v7 契约自动重排，并在结果里说明', async () => {
+  it('save_card：区序乱（案例写在定义之前）→ 落库时按当前契约自动重排，并在结果里说明', async () => {
     ds = await buildDs()
     await seedProject(ds, 'sp1')
     const db = buildDb(ds)
@@ -787,8 +787,8 @@ describe('dl-agent-actions', () => {
     })
   })
 
-  // 2026-09-15 用户口径「章节合并 + 示例放到详解之后」：老卡重存时**归一化合并并重排**
-  // （内容一字不删），新卡直接按 v7 区序落库。
+  // 2026-09-15 用户口径「章节合并 + 案例放到详解之后」：老卡重存时**归一化合并并重排**
+  // （内容一字不删），新卡直接按当前契约区序落库。
   it('save_card：v5 旧序老卡（示例在前、规则单列）→ 归一化合并进详解并重排，内容不丢', async () => {
     ds = await buildDs()
     await seedProject(ds, 'sp1')
@@ -820,7 +820,7 @@ describe('dl-agent-actions', () => {
     expect(r.summary.message).toContain('并入')
     await runWithUserAsync('u1', async () => {
       const saved = await db.dlCards!.getCurrentByConcept('sp1', 'c-legacy')
-      // v7 区序：定义 → 详解 → 案例；本质并入定义、规则并入详解（内容保留）
+      // v7/v8 区序：定义 → 详解 → 案例；本质并入定义、规则并入详解（内容保留）
       expect(saved?.sections.map((s) => s.key)).toEqual(['meta', 'definition', 'detail', 'examples', 'selfcheck'])
       const definition = saved!.sections.find((s) => s.key === 'definition')!
       expect(definition.md).toContain('一句话直觉') // 原 essence 内容

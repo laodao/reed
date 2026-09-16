@@ -5,6 +5,9 @@
  * 背景（2026-09-12 用户反馈「章节结构不清 / 编写注记与这块没懂重叠」）：
  * 区集里混着「正文章节」与「编写注记」，渲染层需要一份明确的计划——
  * 正文按序编号、编写注记区整体剥离并汇总置底折叠（唯一的注记入口）。
+ *
+ * v8 增补（2026-09-15 用户口径「章节还是太细碎」）：
+ * 「参考答案」是自测的收尾折叠块——`follower=true`、`no=0`，不占章节编号（章节只数到自测）。
  */
 
 import { describe, it, expect } from 'vitest'
@@ -100,7 +103,7 @@ describe('planLessonSections', () => {
     expect(plan.content[0].style).toBe('intro')
     expect(plan.content[1].title).toBe('这是什么')
     expect(plan.content[1].style).toBe('body') // v7：essence 已并入 definition，样式随定义区
-    expect(plan.content[2].title).toBe('常见坑')
+    expect(plan.content[2].title).toBe('辨析与易错') // v8：edge 已并入辨析与易错
     expect(plan.content[2].style).toBe('review')
   })
 
@@ -129,13 +132,25 @@ describe('planLessonSections', () => {
     expect(plan.content[0].answers).toBe('')
   })
 
-  it('整区就是答案（key=answers / 标题以答案开头）→ 默认整区折叠', () => {
+  it('整区就是答案（key=answers / 标题以答案开头）→ 默认整区折叠，且**不占章节编号**（v8 跟随区）', () => {
     const plan = planLessonSections([
-      sec('answers', '**A1** 答案正文', { title: '参考答案' }),
+      sec('definition', '张量是……', { title: '定义' }),
       sec('selfcheck', '**Q1** 题目', { title: '自测' }),
+      sec('answers', '**A1** 答案正文', { title: '参考答案' }),
     ])
-    expect(plan.content[0].folded).toBe(true)
-    expect(plan.content[1].folded).toBe(false)
+    expect(plan.content.map((c) => c.folded)).toEqual([false, false, true])
+    // 章节编号只数到自测（1 定义、2 自测），参考答案是自测的收尾折叠块
+    expect(plan.content.map((c) => c.no)).toEqual([1, 2, 0])
+    expect(plan.content.map((c) => c.follower)).toEqual([false, false, true])
+  })
+
+  it('跟随区不打断后续章节编号（答案之后若还有正文区，编号继续）', () => {
+    const plan = planLessonSections([
+      sec('definition', 'a', { title: '定义' }),
+      sec('answers', '**A1** 答案', { title: '参考答案' }),
+      sec('selfcheck', '**Q1** 题', { title: '自测' }),
+    ])
+    expect(plan.content.map((c) => c.no)).toEqual([1, 0, 2])
   })
 
   it('空区集 → 空计划（渲染层走空态）', () => {

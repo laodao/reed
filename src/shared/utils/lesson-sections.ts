@@ -89,8 +89,13 @@ export function splitNoteItems(md: string): string[] {
 export interface LessonContentSection {
   /** 在原 sections 数组中的下标（供折叠/展开状态稳定引用） */
   index: number
-  /** 正文区序号（从 1 开始；仅正文章节计数） */
+  /** 正文章节序号（从 1 开始；**跟随区为 0**——它不占章节编号） */
   no: number
+  /**
+   * 跟随区（2026-09-15 v8）：归属上一个正文章节、不占章节编号的收尾块（当前只有自测的
+   * 「参考答案」——它整区默认折叠，读者先做再对，不该在目录里再算一章）。
+   */
+  follower: boolean
   key: string
   title: string
   /** 已剥离编写注记的学习者正文（自测区=题目部分） */
@@ -115,6 +120,9 @@ export interface LessonSectionPlan {
  * - 正文区的「⚠️ 待核验 / 先验待查」等注记从正文剥离，带区名并入 `authoringNotes`；
  * - 自测区的答案按独占一行的「答案」标记切出到 `answers`（渲染层默认折叠，
  *   让读者先自己做再对答案）；key/title 是答案区的默认整区折叠；
+ * - **跟随区**（v8）：整区就是答案的区（key=answers / 标题以「答案/解析」开头）**不占章节编号**
+ *   （`follower=true`、`no=0`）——它是上一个正文章节的收尾折叠块，不是独立一章（用户口径：
+ *   「章节太细碎」，核心骨架只有定义/详解/案例/自测这几节）；
  * - 标题/样式按 AI 给定值优先，缺省用**区集契约**（lesson-template）兜底；
  * - 2026-09-13（用户反馈「同一主题不同知识点结构与标题层级不一致」）：
  *   ① 区 key 先按同义写法归一（checks/quiz/selftest → selfcheck），历史卡也能拿到
@@ -125,6 +133,7 @@ export interface LessonSectionPlan {
 export function planLessonSections(sections: LessonSectionLike[]): LessonSectionPlan {
   const content: LessonContentSection[] = []
   const authoringNotes: string[] = []
+  let chapterNo = 0
 
   for (let index = 0; index < sections.length; index++) {
     const sec = sections[index]
@@ -137,20 +146,23 @@ export function planLessonSections(sections: LessonSectionLike[]): LessonSection
     const split = splitSelfCheckAnswers(body)
     const title = (sec.title ?? '').trim() || DEFAULT_SECTION_TITLES[key] || ''
     const style = (sec.style as LessonSectionStyle | undefined) ?? defaultSectionStyle(key)
+    // 答案区：整区默认折叠 + 不占章节编号（归属上一个正文章节，见模块头说明）
+    const follower = isAnswerSection({ key, title: sec.title })
+    if (!follower) chapterNo += 1
     for (const note of notes) {
       authoringNotes.push(title ? `【${title}】${note}` : note)
     }
     content.push({
       index,
-      no: content.length + 1,
+      no: follower ? 0 : chapterNo,
+      follower,
       key: sec.key,
       title,
       body: split.questions,
       answers: normalizeLessonHeadingLevels(split.answers),
       notes,
       style,
-      // 答案区默认折叠（整区就是答案时别把答案摊在正文里；别名 key 一并认）
-      folded: !!sec.folded || isAnswerSection({ key, title: sec.title }),
+      folded: !!sec.folded || follower,
     })
   }
 

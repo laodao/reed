@@ -5,11 +5,11 @@
  * 背景（2026-09-13 用户反馈）：同一主题下不同知识点的讲义结构完全不同——
  * 深度学习「张量」与「自动微分与反向传播」本质类型相同（K-concept），区集却是两套。
  *
- * v7 增补（2026-09-15 用户口径：**章节太细碎要合并、重点写详细、示例放到详解之后、不要卡片样式**）：
- * - 合并：本质 → 定义；机制/构成与结构/规则/公式/性质/步骤/依据/适用与局限 → 详解；
- *   反例与边界 → 案例；补充与注意 → 常见坑；
- * - 区序：「定义 → 详解 → 案例」；归一化会把老卡**合并 + 按新序重排**（内容一字不删）；
- * - 重点区（定义/详解/案例）带写作要求与参考字数下限；历史模板 v5/v6 留档。
+ * v8 增补（2026-09-15 用户口径：**章节还是太细碎；核心骨架＝定义、详解（含规则和逻辑）、
+ * 示例、自测，有些领域还有具体的操作**）：
+ * - 再合并：为什么学它 → 学习前必读；步骤/落到代码 → 实操；辨析/常见坑/补充与注意 → 辨析与易错；
+ * - 六类模板都长在同一条主干上（类型差异只在「陈述/条文」与「争议与评价」）；
+ * - 重点区（定义/详解/案例）带写作要求与参考字数下限；历史模板 v5/v6/v7 留档。
  */
 
 import { describe, it, expect } from 'vitest'
@@ -21,6 +21,7 @@ import {
   LESSON_TEMPLATES,
   LESSON_TEMPLATES_V5,
   LESSON_TEMPLATES_V6,
+  LESSON_TEMPLATES_V7,
   LESSON_LEGACY_TEMPLATES,
   LESSON_TEMPLATE_VERSION_CURRENT,
   LESSON_DEPTH,
@@ -115,23 +116,57 @@ describe('契约自洽性', () => {
     }
   })
 
-  it('isSectionAllowed 按类型判定，且历史区名折到合并后的生效区（cost → detail）', () => {
-    expect(isSectionAllowed('K-concept', 'cost')).toBe(true)
-    expect(isSectionAllowed('K-concept', 'rules')).toBe(true)
-    expect(isSectionAllowed('K-concept', 'code')).toBe(true)
-    expect(isSectionAllowed('K-open', 'code')).toBe(false)
+  it('六类模板都长在同一条主干上：类型差异只在「陈述/条文」与「争议与评价」', () => {
+    // 主干（用户口径）：定义 → 详解 → 案例/实操 → 辨析与易错 → 自测
+    const SPINE = ['definition', 'detail', 'examples', 'operation', 'confusions', 'selfcheck']
+    for (const type of DL_ESSENCE_TYPES) {
+      const tpl = LESSON_TEMPLATES[type]
+      const at = (k: string): number => tpl.indexOf(k)
+      for (const key of SPINE) expect(tpl, `${type} 缺核心骨架区 ${key}`).toContain(key)
+      expect(tpl.includes('statement'), `${type} 只有 K-stmt/K-agent/K-open 才该有陈述区`).toBe(
+        type === 'K-stmt' || type === 'K-agent' || type === 'K-open',
+      )
+      expect(tpl.includes('controversy'), `${type} 只有 K-agent/K-open 才该有争议区`).toBe(
+        type === 'K-agent' || type === 'K-open',
+      )
+      // 顺序：定义在详解前；案例与实操都在详解之后；收尾按「辨析与易错 → 自测 → 答案 → 注记」
+      expect(at('definition'), `${type} 定义应排在详解之前`).toBeLessThan(at('detail'))
+      for (const key of ['examples', 'operation']) {
+        expect(at('detail'), `${type} 的 ${key} 应排在详解之后`).toBeLessThan(at(key))
+      }
+      // K-oper 是唯一把「实操」提到「案例」之前的类型（做法类知识的本体就是操作）
+      expect(at('examples') < at('operation'), `${type} 案例/实操顺序应按模板声明`).toBe(type !== 'K-oper')
+      expect(at('operation')).toBeLessThan(at('confusions'))
+      expect(at('confusions')).toBeLessThan(at('selfcheck'))
+      expect(at('selfcheck')).toBeLessThan(at('answers'))
+      expect(at('answers')).toBeLessThan(at('notes'))
+    }
   })
 
-  it('lessonTemplateHint：区序为「定义 → 详解 → 案例」（示例/案例在详解之后）', () => {
+  it('isSectionAllowed 按类型判定，且历史区名折到合并后的生效区（cost → detail／code → operation）', () => {
+    expect(isSectionAllowed('K-concept', 'cost')).toBe(true)
+    expect(isSectionAllowed('K-concept', 'rules')).toBe(true)
+    expect(isSectionAllowed('K-concept', 'code')).toBe(true) // code 已折到 operation
+    expect(isSectionAllowed('K-concept', 'statement')).toBe(false)
+    expect(isSectionAllowed('K-stmt', 'statement')).toBe(true)
+  })
+
+  it('lessonTemplateHint：区序为「定义 → 详解 → 案例 → 实操 → 辨析与易错」，导学只留学习前必读', () => {
     const hint = lessonTemplateHint('K-concept')
     expect(hint).toContain('definition（定义）')
     expect(hint).toContain('detail（详解）')
     expect(hint).toContain('examples（案例）')
-    expect(hint.indexOf('definition（定义）')).toBeLessThan(hint.indexOf('detail（详解）'))
-    expect(hint.indexOf('detail（详解）')).toBeLessThan(hint.indexOf('examples（案例）'))
-    // 合并后的历史区不再出现在区序里
+    expect(hint).toContain('operation（实操）')
+    expect(hint).toContain('confusions（辨析与易错）')
+    const at = (s: string): number => hint.indexOf(s)
+    expect(at('definition（定义）')).toBeLessThan(at('detail（详解）'))
+    expect(at('detail（详解）')).toBeLessThan(at('examples（案例）'))
+    expect(at('examples（案例）')).toBeLessThan(at('operation（实操）'))
+    expect(at('operation（实操）')).toBeLessThan(at('selfcheck（自测）'))
+    // 已合并的区不再出现在区序里
+    expect(hint).not.toContain('why（')
     expect(hint).not.toContain('structure（')
-    expect(hint).not.toContain('rules（')
+    expect(hint).not.toContain('pitfalls（')
   })
 })
 
@@ -156,24 +191,39 @@ describe('区职责与写作说明（重点＝定义/详解/案例）', () => {
     expect(LESSON_DEPTH.minTotalForShareCheck).toBeGreaterThan(0)
   })
 
-  it('合并去向声明齐全（本质→定义、机制/结构/规则/公式/性质/步骤/依据/适用→详解、反例→案例、补充→常见坑）', () => {
+  it('合并去向声明齐全（v7 合并 + v8 再合并：为什么学它→学习前必读、步骤/代码→实操、辨析/常见坑→辨析与易错）', () => {
     const merged = (key: string): string | undefined =>
       LESSON_MERGED_SECTION_SPECS.find((s) => s.key === key)?.mergedInto
     expect(merged('essence')).toBe('definition')
     expect(LESSON_SECTION_MERGE_MAP['essence']).toBe('definition')
-    // 生效目录里不再出现这些历史区（用户 2026-09-15：「本质和定义并没有合并」的观感来源）
-    for (const key of ['essence', 'structure', 'rules', 'mechanism', 'justification', 'application', 'counterexample', 'edge']) {
+    // v8：再合并的三组
+    expect(merged('why')).toBe('meta')
+    expect(merged('procedure')).toBe('operation')
+    expect(merged('code')).toBe('operation')
+    expect(merged('distinguish')).toBe('confusions')
+    expect(merged('pitfalls')).toBe('confusions')
+    expect(merged('edge')).toBe('confusions')
+    // 生效目录里不再出现这些历史区
+    for (const key of ['essence', 'why', 'structure', 'rules', 'mechanism', 'justification', 'application', 'counterexample', 'edge', 'code', 'procedure', 'distinguish', 'pitfalls']) {
       expect(LESSON_SECTION_CATALOG.some((s) => s.key === key), `${key} 不该出现在生效目录里`).toBe(false)
     }
-    for (const key of ['mechanism', 'structure', 'rules', 'formula', 'property', 'procedure', 'justification', 'application']) {
+    for (const key of ['mechanism', 'structure', 'rules', 'formula', 'property', 'justification', 'application']) {
       expect(merged(key), `${key} 应并入 detail`).toBe('detail')
     }
     expect(merged('counterexample')).toBe('examples')
-    expect(merged('edge')).toBe('pitfalls')
-    // 生效区必须都是模板里出现的区
+    // 生效区必须都是模板里出现的区（controversy/statement 只在部分类型里）
     for (const key of LESSON_ACTIVE_SECTION_KEYS) {
       expect(LESSON_TEMPLATES['K-concept'].includes(key) || key === 'controversy' || key === 'statement').toBe(true)
     }
+  })
+
+  it('实操与辨析区的写作说明把"什么时候写、写到什么程度"讲清楚（操作类知识的落点）', () => {
+    const operation = sectionSpecOf('operation')!
+    expect(operation.title).toBe('实操')
+    expect(operation.brief).toContain('照着做')
+    const confusions = sectionSpecOf('confusions')!
+    expect(confusions.title).toBe('辨析与易错')
+    expect(confusions.brief).toContain('判据')
   })
 
   it('lessonTemplateBriefHint 按类型渲染区清单 + 写作要求（重点区带 [重点] 标记，其它区不打标签）', () => {
@@ -183,11 +233,15 @@ describe('区职责与写作说明（重点＝定义/详解/案例）', () => {
     expect(hint).toContain('examples（案例）[重点]')
     expect(hint).toContain('meta（学习前必读）：')
     expect(hint).not.toContain('meta（学习前必读）[')
+    // 实操/辨析是支撑区：不给 [重点] 标签（重点始终是定义/详解/案例）
+    expect(hint).toContain('operation（实操）：')
+    expect(hint).not.toContain('operation（实操）[')
     // brief 正文与参考下限必须进提示词（不是只给区名）
     expect(hint).toContain(sectionSpecOf('detail')!.brief.slice(0, 12))
     expect(hint).toContain(`至少 ${sectionSpecOf('detail')!.minChars} 字`)
     // 已合并的历史区不进提示词
     expect(hint).not.toContain('structure（')
+    expect(hint).not.toContain('why（')
   })
 
   it('lessonSectionBriefMenuHint：只列生效区，每区一行写作要求', () => {
@@ -201,6 +255,7 @@ describe('区职责与写作说明（重点＝定义/详解/案例）', () => {
     }
     expect(menu).not.toContain('structure（')
     expect(menu).not.toContain('essence（')
+    expect(menu).not.toContain('pitfalls（')
   })
 })
 
@@ -243,7 +298,7 @@ describe('checkLessonDepth（重点深度：非阻断提醒，与 brief 同源�
       essenceType: 'K-concept',
       sections: [
         { key: 'meta', md: long(700, '读者画像') },
-        { key: 'why', md: long(700, '动机') },
+        { key: 'why', md: long(700, '动机') }, // v8：why 已折到 meta，两个导学区都算进 meta
         { key: 'definition', md: long(360, '定义细则') },
         { key: 'detail', md: long(700, '明细') },
         { key: 'examples', md: long(300, '案例') },
@@ -288,18 +343,24 @@ describe('canonicalSectionKey / 标题 / 样式', () => {
     expect(canonicalSectionKey('worked-example')).toBe('examples')
     expect(canonicalSectionKey('def')).toBe('definition')
     expect(canonicalSectionKey('core')).toBe('definition') // v7：本质并入定义
+    expect(canonicalSectionKey('why')).toBe('meta') // v8：为什么学它并入学习前必读
   })
 
-  it('v7 已合并的区名折到目标区（cost/scope → 详解、proof → 详解、types → 详解、edge-cases → 常见坑）', () => {
+  it('已合并的区名折到目标区（cost → 详解、code/steps → 实操、pitfalls/contrast → 辨析与易错）', () => {
     expect(canonicalSectionKey('cost')).toBe('detail')
     expect(canonicalSectionKey('scope')).toBe('detail')
     expect(canonicalSectionKey('proof')).toBe('detail')
     expect(canonicalSectionKey('types')).toBe('detail')
-    expect(canonicalSectionKey('steps')).toBe('detail')
-    expect(canonicalSectionKey('edge-cases')).toBe('pitfalls')
+    expect(canonicalSectionKey('steps')).toBe('operation')
+    expect(canonicalSectionKey('code')).toBe('operation')
+    expect(canonicalSectionKey('js')).toBe('operation')
+    expect(canonicalSectionKey('edge-cases')).toBe('confusions')
+    expect(canonicalSectionKey('pitfall')).toBe('confusions')
+    expect(canonicalSectionKey('contrast')).toBe('confusions')
     expect(canonicalSectionKey('counter-example')).toBe('examples')
     expect(sectionTitleOf('structure')).toBe('详解')
-    expect(sectionTitleOf('edge')).toBe('常见坑')
+    expect(sectionTitleOf('edge')).toBe('辨析与易错')
+    expect(sectionTitleOf('code')).toBe('实操')
   })
 
   it('未收录的名字原样返回（交给门禁拒绝，不静默吞内容）', () => {
@@ -316,6 +377,7 @@ describe('canonicalSectionKey / 标题 / 样式', () => {
     expect(sectionStyleOf('answers')).toBe('review')
     expect(sectionTitleOf('checks')).toBe('自测')
     expect(DEFAULT_SECTION_TITLES['meta']).toBe('学习前必读')
+    expect(sectionStyleOf('confusions')).toBe('note')
   })
 })
 
@@ -340,31 +402,39 @@ describe('normalizeLessonHeadingLevels（区标题占二级语义，正文小标
   })
 })
 
-describe('normalizeCardSections（v7：合并 + 按新序重排，内容一字不删）', () => {
-  it('张量卡（v5 序）：规则并入详解、示例移到详解之后、标题按目标区派生、自测答案拆独立区', () => {
+describe('normalizeCardSections（v8：再合并 + 按主干重排，内容一字不删）', () => {
+  it('张量卡（v5 序）：为什么学它并进学习前必读、规则并进详解、代码并进实操、示例后置、自测答案拆独立区', () => {
     const { sections, changes } = normalizeCardSections({ essenceType: 'K-concept', sections: TENSOR_SECTIONS })
     expect(sections.map((s) => s.key)).toEqual([
-      'meta', 'why', 'definition', 'detail', 'examples', 'code', 'pitfalls', 'selfcheck', 'answers', 'notes',
+      'meta', 'definition', 'detail', 'examples', 'operation', 'confusions', 'selfcheck', 'answers', 'notes',
     ])
     expect(sections[0].title).toBe('学习前必读')
-    expect(sections[3].title).toBe('详解')
-    expect(sections[3].md).toContain('规则一：逐元素运算') // rules 的内容并入详解，未丢
-    expect(sections[8].title).toBe('参考答案')
-    expect(sections[8].folded).toBe(true)
+    // 原「为什么学它」作为小标题留在导学区里
+    expect(sections[0].md).toContain('### 为什么学它')
+    expect(sections[0].md).toContain('你刚学完') // meta 原内容未丢
+    expect(sections[2].title).toBe('详解')
+    expect(sections[2].md).toContain('规则一：逐元素运算') // rules 的内容并入详解，未丢
+    expect(sections[4].key).toBe('operation')
+    expect(sections[4].title).toBe('实操')
+    expect(sections[4].md).toContain('### 落到代码') // 原区标题作为小标题保留
+    expect(sections[5].title).toBe('辨析与易错')
+    expect(sections[5].md).toContain('### 常见坑')
+    expect(sections[7].title).toBe('参考答案')
+    expect(sections[7].folded).toBe(true)
     // 答案不在题面里
-    expect(sections[7].md).toContain('Q1')
-    expect(sections[7].md).not.toContain('A1')
-    expect(sections[8].md).toContain('A1')
+    expect(sections[6].md).toContain('Q1')
+    expect(sections[6].md).not.toContain('A1')
+    expect(sections[7].md).toContain('A1')
     expect(changes.some((c) => c.includes('并入'))).toBe(true)
     expect(changes.some((c) => c.includes('answers'))).toBe(true)
     // 代码围栏里的注释未被标题归一化破坏
-    expect(sections[5].md).toContain('# 注释')
+    expect(sections[4].md).toContain('# 注释')
   })
 
-  it('自动微分卡：worked→案例、cost/mechanism→详解（内容合并）、checks→自测，自造区名 practice 保留', () => {
+  it('自动微分卡：worked→案例、cost/mechanism→详解（内容合并）、why→导学，自造区名 practice 保留', () => {
     const { sections, changes } = normalizeCardSections({ essenceType: 'K-concept', sections: AUTODIFF_SECTIONS })
     expect(sections.map((s) => s.key)).toEqual([
-      'meta', 'why', 'detail', 'examples', 'pitfalls', 'selfcheck', 'practice',
+      'meta', 'detail', 'examples', 'confusions', 'selfcheck', 'practice',
     ])
     const detail = sections.find((s) => s.key === 'detail')!
     expect(detail.md).toContain('把前向计算记成一张图') // 原 mechanism
@@ -373,6 +443,7 @@ describe('normalizeCardSections（v7：合并 + 按新序重排，内容一字�
     // 正文 ## 小标题统一降到 ###
     expect(detail.md).toContain('### 1. 把前向计算记成一张图')
     expect(changes.some((c) => c.includes('并入'))).toBe(true)
+    expect(sections[0].md).toContain('### 为什么学它')
   })
 
   it('已有 answers 区时不重复拆（题面里也不含答案标记）', () => {
@@ -397,27 +468,29 @@ describe('normalizeCardSections（v7：合并 + 按新序重排，内容一字�
 })
 
 describe('checkLessonSectionsShape（归一后仍不合规 → 可执行的拒绝）', () => {
-  it('v5 老卡归一后即为 v7 形状（合并 + 重排），无需历史模板兜底', () => {
+  it('v5 老卡归一后即为 v8 形状（再合并 + 重排），无需历史模板兜底', () => {
     const { sections } = normalizeCardSections({ essenceType: 'K-concept', sections: TENSOR_SECTIONS })
     const result = checkLessonSectionsShape({ essenceType: 'K-concept', sections })
     expect(result.ok).toBe(true)
     expect(result.note).toBeNull()
   })
 
-  it('v5/v6 模板作为历史版本留档（v7 是它们的子集；示例位置由前挪后）', () => {
-    expect(LESSON_TEMPLATE_VERSION_CURRENT).toBe('v7')
-    expect(LESSON_LEGACY_TEMPLATES.map((l) => l.version)).toEqual(['v6', 'v5'])
+  it('v5/v6/v7 模板作为历史版本留档（章节数逐版下降）', () => {
+    expect(LESSON_TEMPLATE_VERSION_CURRENT).toBe('v8')
+    expect(LESSON_LEGACY_TEMPLATES.map((l) => l.version)).toEqual(['v7', 'v6', 'v5'])
     for (const type of DL_ESSENCE_TYPES) {
       const v5 = LESSON_TEMPLATES_V5[type]
       const v6 = LESSON_TEMPLATES_V6[type]
-      const v7 = LESSON_TEMPLATES[type]
+      const v7 = LESSON_TEMPLATES_V7[type]
+      const v8 = LESSON_TEMPLATES[type]
       expect(v5.includes('examples')).toBe(true)
       expect(v6.indexOf('examples')).toBeGreaterThan(v6.indexOf('definition'))
       expect(v7.length).toBeLessThan(v5.length)
-      // v7 的区都能在 v6 里找到（例外：v7 给 K-agent/K-open 补了「定义」区，给它们补了「辨析」区）
-      for (const key of v7) {
-        const addedInV7 = key === 'definition' || key === 'distinguish'
-        expect(v6.includes(key) || addedInV7, `${type}: v7 的 ${key} 不在 v6 里`).toBe(true)
+      expect(v8.length).toBeLessThan(v7.length)
+      // v8 的区都能在 v7 里找到（例外：v8 把辨析/常见坑并成「辨析与易错」，把步骤/代码并成「实操」）
+      for (const key of v8) {
+        const mergedInV8 = key === 'confusions' || key === 'operation'
+        expect(v7.includes(key) || mergedInV8, `${type}: v8 的 ${key} 不在 v7 里`).toBe(true)
       }
     }
   })
@@ -427,7 +500,7 @@ describe('checkLessonSectionsShape（归一后仍不合规 → 可执行的拒�
     const result = checkLessonSectionsShape({ essenceType: 'K-concept', sections })
     expect(result.ok).toBe(false)
     expect(result.reason).toContain('practice')
-    expect(result.reason).toContain('meta → why → definition → detail → examples')
+    expect(result.reason).toContain('meta → definition → detail → examples → operation')
   })
 
   it('未归一的老卡（详解排在定义之前）→ 拒绝并说明要求顺序', () => {
@@ -445,7 +518,7 @@ describe('checkLessonSectionsShape（归一后仍不合规 → 可执行的拒�
     expect(result.reason).toContain('区序不符合')
   })
 
-  it('未归一的 v5 老卡（案例排在详解之前）→ 按历史模板 v6 兼容放行并附重排提示（内容不动）', () => {
+  it('未归一的 v5 老卡（案例排在详解之前）→ 按历史模板兼容放行并附重排提示（内容不动）', () => {
     const result = checkLessonSectionsShape({
       essenceType: 'K-concept',
       sections: [
@@ -479,16 +552,16 @@ describe('checkLessonSectionsShape（归一后仍不合规 → 可执行的拒�
     expect(hasInlineAnswers('（答：就是链式法则）')).toBe(true)
   })
 
-  it('v7 合规卡（定义 → 详解 → 案例）→ 通过且无附注', () => {
+  it('v8 合规卡（定义 → 详解 → 案例 → 实操 → 辨析与易错）→ 通过且无附注', () => {
     const { sections } = normalizeCardSections({
       essenceType: 'K-concept',
       sections: [
-        { key: 'meta', md: '### 前置\n无需前置。' },
-        { key: 'why', md: '动机' },
+        { key: 'meta', md: '### 前置\n无需前置。\n\n### 为什么学它\n动机。' },
         { key: 'definition', md: '严格定义与边界' },
         { key: 'detail', md: '主线 + 逐类展开 + 对比表 + 判定规则' },
         { key: 'examples', md: '案例' },
-        { key: 'pitfalls', md: '常见坑' },
+        { key: 'operation', md: '照着做的三步' },
+        { key: 'confusions', md: '辨析与易错' },
         { key: 'selfcheck', md: '**Q1** 题目' },
         { key: 'answers', md: '**A1** 答案' },
         { key: 'notes', md: '- 注记' },

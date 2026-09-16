@@ -17,7 +17,7 @@
         :title="n.job"
         @click="$emit('jump', n.index)"
       >
-        <span class="lsb-nav-no">{{ n.no }}</span>
+        <span class="lsb-nav-no">{{ n.no > 0 ? n.no : '·' }}</span>
         <span class="lsb-nav-text">{{ n.title }}</span>
         <span class="lsb-nav-device">{{ n.device }}</span>
       </span>

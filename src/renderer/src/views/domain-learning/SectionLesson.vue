@@ -13,8 +13,15 @@
       class="sec"
       :class="[`sec-${item.style}`, `sec-device-${presentationOf(item.index).layout}`]"
     >
-      <div class="sec-head" :class="{ 'sec-head-bare': !item.title }">
-        <span v-if="item.title" class="sec-index">{{ item.no }}</span>
+      <div
+        class="sec-head"
+        :class="{
+          'sec-head-bare': !item.title,
+          'sec-head-numbered': item.no > 0,
+          'sec-head-follower': item.follower,
+        }"
+      >
+        <span v-if="item.no > 0" class="sec-index">{{ item.no }}</span>
         <span v-if="item.title" class="sec-title">{{ item.title }}</span>
         <span v-if="presentationOf(item.index).badge" class="sec-badge">
           {{ presentationOf(item.index).badge }}
@@ -280,6 +287,23 @@ function gotoRelated(r: DlRelatedRef): void {
       justify-content: flex-end;
     }
 
+    // 有编号的大标题：加底色突出（2026-09-15 用户口径「有编号的大标题，增加底色突出一下」）。
+    // 只给标题行上底色（正文仍是文档式），符合上一轮"不要卡片样式"的口径。
+    &.sec-head-numbered {
+      margin-bottom: 10px;
+      padding: 5px 10px;
+      border-bottom: none;
+      border-radius: 6px;
+      background: var(--el-color-primary-light-9);
+    }
+
+    // 跟随区（自测的「参考答案」）：不占章节编号，弱化为收尾块
+    &.sec-head-follower {
+      margin-bottom: 6px;
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+
     .sec-index {
       flex-shrink: 0;
       display: inline-flex;
@@ -295,11 +319,26 @@ function gotoRelated(r: DlRelatedRef): void {
       line-height: 1;
     }
 
+    // 带底色的标题行里，序号用实色块，与底色拉开层次
+    &.sec-head-numbered .sec-index {
+      background: var(--el-color-primary);
+      color: #fff;
+    }
+
     .sec-title {
-      font-size: 15px;
+      // 2026-09-15 用户口径「有编号的大标题，字体加大一号」：15px → 17px
+      // （正文 14px / 正文 h3 14.5px：区标题必须明显压过它们，层级才立得住）
+      font-size: 17px;
       font-weight: 700;
       line-height: 1.4;
       color: var(--el-text-color-primary);
+    }
+
+    // 跟随区（参考答案）不上主字号：它是上一个章节的收尾块，不与章节标题抢层级
+    &.sec-head-follower .sec-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--el-text-color-regular);
     }
 
     // 版式徽标（2026-09-14）：读者一眼知道这一区是什么形态（要点卡/图解/对比表…）

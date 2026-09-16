@@ -478,7 +478,8 @@ export const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
       .doc-title-rule { height: 3px; width: 56px; background: var(--accent); border-radius: 2px; margin: 10px 0 20px; }
       .doc-meta { font-size: 12px; color: #8a94a6; margin-top: 6px; }
       h1 { font-size: 24px; color: #1f2d3d; margin: 22px 0 10px; }
-      h2 { font-size: 19px; color: #1f2d3d; margin: 28px 0 10px; padding-left: 10px; border-left: 4px solid var(--accent); }
+      /* 章节大标题带底色（2026-09-15 用户口径：大标题要突出；与站内讲义「有编号的大标题」同一视觉） */
+      h2 { font-size: 19px; color: #1f2d3d; margin: 28px 0 10px; padding: 6px 12px; border-left: 4px solid var(--accent); border-radius: 0 6px 6px 0; background: var(--accent-soft); }
       h3 { font-size: 16px; color: #2c3e50; margin: 20px 0 8px; }
       h4 { font-size: 15px; color: #47536b; margin: 16px 0 6px; }
       p, li { font-size: 15px; }
