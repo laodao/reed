@@ -108,7 +108,7 @@ async function handleListVideoProviders(): Promise<IpcResponse> {
         ready:
           isProviderImplemented(def.type) &&
           videoModels.length > 0 &&
-          (cfg.apiKey ? cfg.apiKey.length > 0 : false),
+          (def.requiresApiKey ? (cfg.apiKey ? cfg.apiKey.length > 0 : false) : true),
         // 用第一个 model 的真实 features 推断 capabilities；多个 model 时调用方
         // 实际选 model 后 generate-video-segment 会用具体 model 的 features 覆盖
         capabilities: deriveCapabilitiesFromModel(videoModels[0], def.type),
