@@ -3,7 +3,7 @@
     <!-- 顶部小提示条 -->
     <div class="p-toolbar">
       <span class="p-label">提示词</span>
-      <span class="p-hint">当前片段 · 输入 @ 引用资产 · 点击蓝色参数可切换 · 拖资产图到框内引用</span>
+      <span class="p-hint">当前场次 · 输入 @ 引用资产 · 点击蓝色参数可切换 · 拖资产图到框内引用</span>
     </div>
 
     <!-- 一个整体富文本框（contenteditable）：一行 = 一个镜头（分镜） -->

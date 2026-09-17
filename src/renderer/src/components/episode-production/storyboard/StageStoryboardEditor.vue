@@ -145,7 +145,7 @@
           <!-- 操作 -->
           <div class="edit-actions">
             <el-radio-group v-model="videoGenMode" size="small" class="gen-mode">
-              <el-radio-button value="t2v">文生视频</el-radio-button>
+              <el-radio-button value="t2v" :disabled="isComfyUIProvider" :title="isComfyUIProvider ? 'ComfyUI 网关（H3）必须提供首帧参考图，文生视频不可用' : ''">文生视频</el-radio-button>
               <el-radio-button value="ref">参考图模式</el-radio-button>
             </el-radio-group>
             <el-button type="primary" :loading="generating" @click="onGenerate">
@@ -228,10 +228,18 @@ const mentionEntities = ref<MentionEntity[]>([])
  */
 const videoGenMode = ref<'t2v' | 'ref'>('t2v')
 // 视频 provider / model（生成视频用）
-const videoProviders = ref<Array<{ providerConfigId: string; name: string; ready: boolean; models: Array<{ id: string; name: string }> }>>([])
+const videoProviders = ref<Array<{ providerConfigId: string; name: string; type?: string; ready: boolean; models: Array<{ id: string; name: string }> }>>([])
 const videoProviderId = ref('')
 const videoModelId = ref('')
 const videoModels = computed(() => videoProviders.value.find(p => p.providerConfigId === videoProviderId.value)?.models ?? [])
+
+/** ComfyUI 网关的 H3 必须带参考图：文生视频必然失败（refs 为空直接报错），强制参考图模式 */
+const isComfyUIProvider = computed(
+  () => videoProviders.value.find(p => p.providerConfigId === videoProviderId.value)?.type === 'comfyui',
+)
+watch(isComfyUIProvider, (v) => {
+  if (v) videoGenMode.value = 'ref'
+})
 
 const styleOptions = computed<ParamOption[]>(() =>
   stylePresets.value.map((p) => ({ value: p.id, label: p.name })),

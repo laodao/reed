@@ -71,7 +71,7 @@
                   >
                     <el-icon><MagicStick /></el-icon>
                   </el-button>
-                  <span v-if="storyboards[sc.id]?.length" class="done-mark">制作中</span>
+                  <span v-if="storyboards[sc.id]?.length" class="done-mark">已有分镜</span>
                   <el-button
                     text
                     size="small"
@@ -552,7 +552,7 @@ async function onGenerateAllStoryboards(): Promise<void> {
   generating.value = true
   cogenProgress.value = null
   try {
-    const r = await window.electronAPI.episodeProduction.cogenStoryboards(props.episodeId)
+    const r = await window.electronAPI.episodeProduction.cogenStoryboards(props.episodeId, { force: true })
     if (r.success) {
       const results = (r.data?.results ?? []) as Array<{ sceneNumber: number; shotCount: number; error?: string }>
       const failed = results.filter(s => s.error)
@@ -777,7 +777,7 @@ onUnmounted(() => {
 .sb-scene-group { background: var(--bg-color); border: 1px solid var(--border-color-lighter); border-radius: var(--radius-lg); padding: 16px 18px; }
 .group-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .group-title { font-size: 14px; font-weight: 600; color: var(--text-color-primary); }
-.done-mark { font-size: 12px; color: var(--color-danger); }
+.done-mark { font-size: 12px; color: var(--color-success); }
 
 .group-shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
 .shot-tile {
