@@ -14,6 +14,8 @@ import { generateStoryText } from '@core/platform/episode-production/narrative/a
 import { EpisodeAutoBindingService } from '@core/platform/episode-production/auto-binding/episode-auto-binding.service'
 import { UploadedEntityService } from '@core/platform/episode-production/auto-binding/uploaded-entity.service'
 import { analyzeScriptToEpisodes } from '@core/platform/episode-production/narrative/services/script-splitter.service'
+import { EpisodeReadinessService } from '@core/platform/episode-production/services/readiness.service'
+import { QualityCheckService } from '@core/platform/episode-production/services/quality-check.service'
 import { extractTextFromFile, inferFileType } from '@core/utils/extract-text'
 
 const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
@@ -42,6 +44,31 @@ export function registerEpisodeHandlers(): void {
   ipcBridge.handle('ep:batch-identify-entities', handleBatchIdentifyEntities)
   // FU5-B2 ① 内容 stage 整理 / 取舍（覆写三数组）
   ipcBridge.handle('ep:update-uploaded-entities', handleUpdateUploadedEntities)
+  // S-01 阶段就绪状态机：四 tab（剧本/资产/分镜/合成）就绪评估
+  ipcBridge.handle('ep:episode-readiness', handleEpisodeReadiness)
+  // S-08 产出质量自检：关键帧 refs 覆盖率 / 字幕↔对白 / 时长偏差 / VLM 相似度
+  ipcBridge.handle('ep:episode-quality-check', handleEpisodeQualityCheck)
+}
+
+/**
+ * S-08 产出质量自检：返回四项指标（见 quality-check.service.ts），
+ * 合成 tab「质量自检」面板按 status 渲红/黄/绿。
+ */
+async function handleEpisodeQualityCheck(
+  _event: any,
+  episodeId: string,
+): Promise<IpcResponse> {
+  try {
+    if (!episodeId) return { success: false, error: 'episodeId 不能为空' }
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+    const svc = new QualityCheckService(db.dataSource)
+    const report = await svc.checkEpisode(episodeId)
+    return { success: true, data: report }
+  } catch (e: any) {
+    console.error('[handleEpisodeQualityCheck] 异常:', e)
+    return { success: false, error: e?.message ?? '质量自检失败' }
+  }
 }
 
 async function handleUpdateUploadedEntities(
@@ -67,6 +94,29 @@ async function handleUpdateUploadedEntities(
   } catch (e: any) {
     console.error('[handleUpdateUploadedEntities] 异常:', e)
     return { success: false, error: e?.message ?? '更新识别要素失败' }
+  }
+}
+
+// ==================== S-01 阶段就绪状态机 ====================
+
+/**
+ * 评估剧集四阶段（剧本/资产/分镜/合成）就绪状态。
+ * Studio 状态点 / 提示条 / 按钮 gating 共用此结果，规则见 readiness.service.ts。
+ */
+async function handleEpisodeReadiness(
+  _event: any,
+  episodeId: string,
+): Promise<IpcResponse> {
+  try {
+    if (!episodeId) return { success: false, error: 'episodeId 不能为空' }
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+    const svc = new EpisodeReadinessService(db.dataSource)
+    const readiness = await svc.evaluateEpisode(episodeId)
+    return { success: true, data: readiness }
+  } catch (e: any) {
+    console.error('[handleEpisodeReadiness] 异常:', e)
+    return { success: false, error: e?.message ?? '评估阶段就绪状态失败' }
   }
 }
 

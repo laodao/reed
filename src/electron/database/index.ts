@@ -830,6 +830,19 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-ep-compose-closure'
     )
     await addEpComposeClosure(this.dataSource)
+
+    // S-07 导出留档：ep_export_history 表（幂等，双语种）
+    const { createEpExportHistory } = await import(
+      '@core/database/migrations/create-ep-export-history'
+    )
+    await createEpExportHistory(this.dataSource)
+
+    // S-09 用量落库：ai_call_stats 表（幂等，双语种）
+    const { createAiCallStats } = await import(
+      '@core/database/migrations/create-ai-call-stats'
+    )
+    await createAiCallStats(this.dataSource)
+
     // 版本历史表：workflow_definition_versions（发布快照 + 恢复）
     const { createWorkflowDefinitionVersionsTable } = await import(
       '@core/database/migrations/create-workflow-definition-versions'
@@ -939,6 +952,13 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-video-provider-task-id'
     )
     await addVideoProviderTaskId(this.dataSource)
+
+    // S-05 定妆图确认闸门（2026-09-17）：asset_image 加 confirmed 列 +
+    // 存量 is_main=1 行回填 confirmed=1（幂等，双语种；Web 端 initDatabase 有同构调用，两处必须同步）
+    const { addAssetImageConfirmed } = await import(
+      '@core/database/migrations/add-asset-image-confirmed'
+    )
+    await addAssetImageConfirmed(this.dataSource)
   }
 
   /**

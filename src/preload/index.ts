@@ -141,6 +141,10 @@ const IPC_CHANNELS = {
   EP_CREATE_EPISODE: 'ep:create-episode',
   EP_UPDATE_EPISODE: 'ep:update-episode',
   EP_DELETE_EPISODE: 'ep:delete-episode',
+  // S-01 阶段就绪状态机（四 tab 状态点/提示条/gating）
+  EP_EPISODE_READINESS: 'ep:episode-readiness',
+  // S-08 产出质量自检（关键帧 refs / 字幕↔对白 / 时长偏差 / VLM 相似度）
+  EP_EPISODE_QUALITY_CHECK: 'ep:episode-quality-check',
 
   EP_GET_SCRIPT: 'ep:get-script',
   EP_UPDATE_SCRIPT: 'ep:update-script',
@@ -165,10 +169,14 @@ const IPC_CHANNELS = {
   EP_GENERATE_STORYBOARDS: 'ep:generate-storyboards',
   // 2026-09-16 分镜与资产识别联合生成（D1/D2/D8）
   EP_COGEN_STORYBOARDS: 'ep:cogen-storyboards',
+  // S-06：单场景分镜重拆（cogen 场景级入口）
+  EP_COGEN_SCENE_STORYBOARDS: 'ep:cogen-scene-storyboards',
   // spec 2026-05-27：单分镜 AI 填充
   EP_FILL_STORYBOARD: 'ep:fill-storyboard',
   // spec 2026-05-08：场景级 AI 润色
   EP_POLISH_SCENE: 'ep:polish-scene',
+  // S-06：场景级局部重拆（只重生成该场景结构化数据，作废其分镜）
+  EP_REGENERATE_SCENE: 'ep:regenerate-scene',
 
   // 追加剧本（已有剧本继续增加内容 · 增量不覆盖已有场次）
   EP_PREPARE_SCRIPT_APPEND: 'ep:prepare-script-append',
@@ -201,12 +209,22 @@ const IPC_CHANNELS = {
   EP_LIST_SEGMENTS: 'ep:list-segments',
   EP_GENERATE_SEGMENT_VIDEO: 'ep:generate-segment-video',
   EP_DELETE_SEGMENT: 'ep:delete-segment',
+  // S-03 手动分段（tasks/2026-09-16-ep-studio-polish）
+  EP_MERGE_SEGMENTS: 'ep:merge-segments',
+  EP_SPLIT_SEGMENT: 'ep:split-segment',
+  // S-07 片段排序：同场景相邻交换 seq
+  EP_MOVE_SEGMENT: 'ep:move-segment',
 
   // P6-T5 合成 + 导出 MP4
   EP_BUILD_TIMELINE: 'ep:build-timeline',
   EP_PREVIEW_SUBTITLE: 'ep:preview-subtitle',
   EP_EXPORT_MP4: 'ep:export-mp4',
   EP_OPEN_EXPORT_FOLDER: 'ep:open-export-folder',
+  // S-07 导出版本留档：最近 5 条导出记录
+  EP_LIST_EXPORT_HISTORY: 'ep:list-export-history',
+
+  // S-09 AI 用量统计（ai_call_stats 聚合）
+  EP_AI_USAGE_STATS: 'ep:ai-usage-stats',
 
   // P5-T14/T15 V3 binding-aware 场景音频
   EP_GENERATE_SCENE_AUDIO_V3: 'ep:generate-scene-audio-v3',
@@ -363,6 +381,10 @@ const IPC_CHANNELS = {
   EP_ASSET_IMAGE_ADD_MAIN: 'ep:asset:image:add-main',
   EP_ASSET_IMAGE_SWITCH_MAIN: 'ep:asset:image:switch-main',
   EP_ASSET_IMAGE_UPDATE_METADATA: 'ep:asset:image:update-metadata',
+  // S-05 定妆图确认闸门（2026-09-17）
+  EP_ASSET_IMAGE_SET_CONFIRMED: 'ep:asset-image-set-confirmed',
+  EP_ASSET_REFERENCE_IMPACT: 'ep:asset:reference-impact',
+  EP_ASSET_REGEN_REFERENCING_KEYFRAMES: 'ep:asset:regenerate-referencing-keyframes',
 
   // 360 全景 + 视角截图（7 个 · P3c Task 4）
   EP_ASSET_PANORAMA_LIST: 'ep:asset:panorama:list',
@@ -2383,6 +2405,12 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.EP_UPDATE_EPISODE, episodeId, data),
     deleteEpisode: (episodeId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_DELETE_EPISODE, episodeId),
+    /** S-01 阶段就绪状态机：四 tab（剧本/资产/分镜/合成）就绪评估 */
+    episodeReadiness: (episodeId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_EPISODE_READINESS, episodeId),
+    /** S-08 产出质量自检：四项指标（红/黄/绿/跳过），合成 tab 结果面板用 */
+    episodeQualityCheck: (episodeId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_EPISODE_QUALITY_CHECK, episodeId),
 
     // 剧本管理
     getScript: (scriptId: string) =>
@@ -2461,8 +2489,11 @@ const electronAPI = {
      * 逐场景一次 LLM 调用产出资产清单 + 分镜，代码侧建/复用 binding 并回填全部 ID。
      * 返回 { episodeId, results: [{ sceneId, shotCount, createdBindings, reusedBindings, error? }] }。
      */
-    cogenStoryboards: (episodeId: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.EP_COGEN_STORYBOARDS, episodeId),
+    cogenStoryboards: (episodeId: string, opts?: { force?: boolean }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_COGEN_STORYBOARDS, episodeId, opts),
+    /** S-06：单场景分镜重拆（替换式重写该场景分镜 + 资产绑定回填） */
+    cogenSceneStoryboards: (sceneId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_COGEN_SCENE_STORYBOARDS, sceneId),
     // spec 2026-05-28：单分镜 AI 填充（扩展版，覆盖所有字段）
     fillStoryboard: (
       storyboardId: string,
@@ -2497,6 +2528,12 @@ const electronAPI = {
     // spec 2026-05-08：场景级 AI 润色 — 不直接落库，返回字段子集让前端 SceneEditDialog 对比
     polishScene: (sceneId: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_POLISH_SCENE, sceneId, providerConfigId, modelId),
+    /**
+     * S-06：场景级局部重拆 — 只重新生成该场景的结构化数据并写回（其它场景不动），
+     * 该场景分镜删除（关联片段由 ep-segmentation 的 superseded 逻辑后续收敛）。
+     */
+    regenerateScene: (sceneId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_REGENERATE_SCENE, sceneId, providerConfigId, modelId),
 
     /**
      * 追加剧本 · 生成草稿（不落库）。
@@ -2601,6 +2638,18 @@ const electronAPI = {
       assetId: string,
     ) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_LIST_ASSET_IMAGES, assetType, assetId),
+    /** S-05：资产被关键帧 / 分镜引用的影响面统计（口径见 service 注释） */
+    getAssetReferenceImpact: (
+      kind: 'character' | 'location' | 'item',
+      bindingId: string,
+    ) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_REFERENCE_IMPACT, kind, bindingId),
+    /** S-05 级联重生：逐个重生引用该资产的关键帧（串行，失败单个跳过） */
+    regenerateReferencingKeyframes: (
+      kind: 'character' | 'location' | 'item',
+      bindingId: string,
+    ) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_REGEN_REFERENCING_KEYFRAMES, kind, bindingId),
     planKeyframeRegen: (changedFrameIndex: number, keyframeCount: number) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_PLAN_KEYFRAME_REGEN, changedFrameIndex, keyframeCount),
 
@@ -2621,6 +2670,14 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.EP_GENERATE_SEGMENT_VIDEO, segmentId, opts),
     deleteSegment: (segmentId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_DELETE_SEGMENT, segmentId),
+    /** S-03 手动分段：合并相邻两段 / 断点镜后拆分（均返回重排后的分段预览） */
+    mergeSegments: (segIdA: string, segIdB: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_MERGE_SEGMENTS, segIdA, segIdB),
+    splitSegments: (segmentId: string, afterShotId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_SPLIT_SEGMENT, segmentId, afterShotId),
+    /** S-07 片段排序：同场景相邻交换 seq（返回交换后的分段预览） */
+    moveSegment: (segmentId: string, direction: 'up' | 'down') =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_MOVE_SEGMENT, segmentId, direction),
 
     // P6-T5 合成 + 导出 MP4
     buildTimeline: (episodeScriptId: string) =>
@@ -2631,6 +2688,12 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.EP_EXPORT_MP4, episodeScriptId, outputPath, opts),
     openExportFolder: (filePath: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_OPEN_EXPORT_FOLDER, filePath),
+    /** S-07 导出留档：该集最近 5 条导出记录（时间/路径/时长） */
+    listExportHistory: (episodeId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_LIST_EXPORT_HISTORY, episodeId),
+    /** S-09 用量面板：按 call_type+model 聚合（projectId 可选，缺省全量） */
+    aiUsageStats: (projectId?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_AI_USAGE_STATS, projectId),
 
     // P5-T14/T15 V3 binding-aware 场景音频
     generateSceneAudioV3: (sceneScriptId: string, opts?: any) =>
@@ -2925,6 +2988,9 @@ const electronAPI = {
         /** 更新单图 metadata（angle/time/weather/...） */
         updateMetadata: (imageId: string, metadata: Record<string, unknown> | null) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_UPDATE_METADATA, imageId, metadata),
+        /** S-05：确认 / 撤销确认定妆图（confirmed=1 才会被关键帧选图选用） */
+        setConfirmed: (imageId: string, confirmed: boolean) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_SET_CONFIRMED, imageId, confirmed),
       },
       // 派生（2 个）
       derive: {
@@ -3069,8 +3135,8 @@ const electronAPI = {
     },
 
     // ===== P6 对话式制作 Agent（剧本/资产/分镜右侧助手） =====
-    agentSend: (projectId: string, episodeId: string, message: string, providerConfigId?: string, modelId?: string) =>
-      ipcRenderer.invoke('ep:agent:send', projectId, episodeId, message, providerConfigId, modelId),
+    agentSend: (projectId: string, episodeId: string, message: string, providerConfigId?: string, modelId?: string, contextHint?: string) =>
+      ipcRenderer.invoke('ep:agent:send', projectId, episodeId, message, providerConfigId, modelId, contextHint),
     agentHistory: (episodeId: string) =>
       ipcRenderer.invoke('ep:agent:history', episodeId),
     agentCancel: (projectId: string, episodeId: string) =>

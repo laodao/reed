@@ -19,6 +19,7 @@ import type {
   GeneratedScenePropRef,
   AssetRosterForScript,
   AssetRosterEntry,
+  SceneScript,
 } from '@shared/types/episode-production'
 import type { ScriptGenerationResult } from './types'
 import { callAI, extractJsonFromResponse, parseJsonString } from './_helpers'
@@ -1214,7 +1215,73 @@ ${synopsis}`
 
     const response = await callAI(prompt, systemPrompt, 8192, providerConfigId, modelId, { temperature: 0.3 })
 
-    // 解析 JSON
+    return this.parseScenesResponse(response, roster)
+  }
+
+  /**
+   * S-06 场景级局部重拆（tasks/2026-09-16-ep-studio-polish）：只重新生成单个
+   * 场景的结构化数据，其它场景不动。以该场景现有内容（原文/旁白/对白/动作）
+   * 为源材料重出全部结构化字段；binding 强约束与整集拆分一致。
+   * 返回的 sceneNumber 强制回写为原场景编号（不信任 AI 回填）。
+   */
+  async regenerateScene(
+    scene: SceneScript,
+    roster: AssetRosterForScript,
+    providerConfigId?: string,
+    modelId?: string,
+  ): Promise<GeneratedScene> {
+    const prompt = `你是一位专业的影视编剧。下面给出一个场景的现有内容，请重新输出该场景的结构化数据（剧情走向与场景编号保持不变，重出全部结构化字段）。
+
+## 输出要求
+
+使用 ===SCENES_JSON=== 作为开始标记，===SCENES_JSON_END=== 作为结束标记。
+输出 JSON 格式的结构化场景数据，"scenes" 数组恰好包含 1 个场景，sceneNumber 必须为 ${scene.sceneNumber}。
+
+${BINDING_CONSTRAINT_SPEC}
+
+${SCENE_JSON_EXAMPLE_SPEC}
+
+${FIELD_QUALITY_SPEC}
+
+${fillPromptTemplate(ROSTER_LIST_SPEC, {
+  characters: formatRosterList(roster.characters),
+  locations: formatRosterList(roster.locations),
+  items: formatRosterList(roster.items),
+})}
+
+## 场景源材料
+
+场景编号：${scene.sceneNumber}
+地点：${scene.location}
+场景描述：${scene.sceneDescription ?? '（无）'}
+氛围：${scene.mood ?? '（无）'}
+原文片段：${scene.originalText ?? '（无）'}
+旁白：${scene.narration ?? '（无）'}
+现有对白：${JSON.stringify(scene.dialogues ?? [])}
+现有动作：${JSON.stringify(scene.actions ?? [])}`
+
+    const systemPrompt =
+      '你是一位专业的影视编剧。请严格按照要求格式输出场景数据，所有引用使用提供的 binding ID。不要添加任何开场白或结束语。'
+
+    const response = await callAI(prompt, systemPrompt, 8192, providerConfigId, modelId, { temperature: 0.3 })
+
+    const scenes = this.parseScenesResponse(response, roster)
+    if (scenes.length === 0) {
+      throw new Error('AI 未返回该场景的结构化数据')
+    }
+    const result = scenes[0]
+    result.sceneNumber = scene.sceneNumber
+    return result
+  }
+
+  /**
+   * 解析 ===SCENES_JSON=== / ```json 包裹的场景数据
+   * （generateScenesFromSynopsis / regenerateScene 共用）。
+   */
+  private parseScenesResponse(
+    response: string,
+    roster: AssetRosterForScript,
+  ): GeneratedScene[] {
     const scenesMatch = response.match(/===SCENES_JSON===\s*([\s\S]*?)\s*===SCENES_JSON_END===/)
     if (!scenesMatch) {
       // 尝试 ```json 格式

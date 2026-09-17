@@ -181,7 +181,7 @@ describe('adaptBaseVideoProvider', () => {
     )
   })
 
-  it('keyframesToVideo（策略 A）：用首帧走 image2video', async () => {
+  it('keyframesToVideo（O1）：image 传首帧兼容单图 provider，images 传全部帧', async () => {
     const base = makeMockProvider({
       generateResponse: {
         success: true,
@@ -206,9 +206,46 @@ describe('adaptBaseVideoProvider', () => {
       prompt: 'fade',
       durationSec: 5,
     })
-    // 桥接策略 A：用首帧
+    // 兼容字段 image=首帧；images=首尾全部帧（H3 等多 refs provider 读此字段）
     expect(base.generateVideo).toHaveBeenCalledWith(
-      expect.objectContaining({ image: '/tmp/k0.png' }),
+      expect.objectContaining({
+        image: '/tmp/k0.png',
+        images: ['/tmp/k0.png', '/tmp/k1.png'],
+      }),
+    )
+  })
+
+  it('keyframesToVideo：超过 maxKeyframes 的帧按上限截断', async () => {
+    const base = makeMockProvider({
+      generateResponse: {
+        success: true,
+        video: { localPath: '/tmp/kf.mp4', duration: 5 },
+      },
+    })
+    const adapter = await adaptBaseVideoProvider(base, {
+      modelId: 'mock-model',
+      capabilitiesOverride: {
+        text: true,
+        image: true,
+        keyframes: true,
+        maxKeyframes: 2,
+        maxDurationSec: 5,
+      },
+    })
+    await adapter.keyframesToVideo!({
+      keyframes: [
+        { imagePath: '/tmp/k0.png', timePercent: 0 },
+        { imagePath: '/tmp/k1.png', timePercent: 0.5 },
+        { imagePath: '/tmp/k2.png', timePercent: 1 },
+      ],
+      prompt: 'fade',
+      durationSec: 5,
+    })
+    expect(base.generateVideo).toHaveBeenCalledWith(
+      expect.objectContaining({
+        image: '/tmp/k0.png',
+        images: ['/tmp/k0.png', '/tmp/k1.png'],
+      }),
     )
   })
 

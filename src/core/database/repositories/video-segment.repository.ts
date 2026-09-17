@@ -49,6 +49,8 @@ export interface CreateVideoSegmentRequest {
 
 export interface UpdateVideoSegmentRequest {
   status?: EpVideoSegmentStatus
+  /** 手动分段（merge/split）后的 seq 重排 */
+  seq?: number
   prompt?: string | null
   videoPath?: string | null
   videoMode?: 'text2video' | 'image2video' | 'keyframes2video' | null
@@ -147,6 +149,7 @@ export class EpVideoSegmentRepository extends BaseRepository<
 
     let changed = false
     if (data.status !== undefined) { existing.status = data.status; changed = true }
+    if (data.seq !== undefined) { existing.seq = data.seq; changed = true }
     if (data.prompt !== undefined) { existing.prompt = data.prompt ?? null; changed = true }
     if (data.videoPath !== undefined) { existing.videoPath = data.videoPath ?? null; changed = true }
     if (data.videoMode !== undefined) { existing.videoMode = data.videoMode ?? null; changed = true }

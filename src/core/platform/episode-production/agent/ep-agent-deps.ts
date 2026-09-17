@@ -22,6 +22,7 @@ export async function computeEpProductionState(
   const ds = db?.dataSource ?? null
 
   const state: EpAgentProductionState = {
+    project: { name: null },
     episode: {
       id: episodeId,
       title: null,
@@ -40,6 +41,12 @@ export async function computeEpProductionState(
   }
 
   if (!db || !episodeId) return state
+
+  // 0. project（名注入快照——2026-09-16 S-04）
+  try {
+    const vp = await db.videoProjects?.getById?.(projectId)
+    state.project = { name: vp?.name ?? null }
+  } catch { /* 项目名缺失不阻断状态计算 */ }
 
   // 1. episode
   try {

@@ -61,20 +61,24 @@ export function epAgentSystemPrompt(): string {
 1. 简单请求直接执行对应工具，不要拆解规划；只有跨集/多环节的复杂目标才考虑 create_task_plan 拆任务树（创建后需用户在「Agent 任务树」页批准才会执行）。
 2. 固定可复用的制作流水线才考虑 create_workflow_draft 沉淀为工作流草稿；一次性的需求不要沉淀。
 3. 依赖不满足（如未生成分镜就想生成关键帧）时工具会返回暂缓原因，请向用户解释缺什么前置，或先执行前置动作。
-4. 成本意识：生成关键帧/视频/资产图/配音都按次计费。资产生成类每轮限 1 次——用户要求"给多个角色出图"时，说明因成本限制每轮生成一个，建议用户继续对话逐个生成；关键帧/视频类工具缺省只补缺失项，不要重复生成已有产物。
+4. 成本意识：生成关键帧/视频/资产图/配音都按次计费。资产生成类每轮限 3 次且按参数去重——用户要求"给多个角色出图"时，用不同 name 逐个调用（同参数重复调用会被拦截）；关键帧/视频类工具缺省只补缺失项，不要重复生成已有产物。
 5. name 必须用状态快照或工具结果里的真实资产名，不要编造；工具找不到该名字时会报错并列出现有名单，请从名单中选择。
 6. 资产是项目级共享：跨集制作优先复用既有资产，避免为同一角色/地点重复建卡；生成资产图时沿用项目风格锚点（项目设定里的画风描述），保持全片画风一致。
 7. 不要重复调用刚刚成功过的同一工具；工具失败后可换参数重试一次，仍失败就如实告知。
 8. 所有动作完成后，用一段话向用户总结：本轮做了什么、结果如何、下一步建议（可参照快照中的生产进度给出缺口）。
 9. 用户意图或关键参数不明确时，先调用 ep_confirm_choice 发起选择卡或用一句话确认，不要编造参数。
-10. 状态快照是**轮初**快照：工具执行成功后的最新状态以工具返回结果为准。`
+10. 状态快照是**轮初**快照：工具执行成功后的最新状态以工具返回结果为准。
+11. 生成视频/导出 MP4 是分钟级后台任务：工具返回「已启动」即代表成功开始，**不要**为等完成而重复调用同一目标（在途任务会被去重拦截）；回复用户时说明需数分钟、完成后状态会自动更新，可在分镜/合成页查看。`
 }
 
-/** 生产状态 → 快照文本（initState 播种/任务 snapshot 用） */
-function epStateToSnapshot(state: EpAgentProductionState): string {
+/** 生产状态 → 快照文本（initState 播种/任务 snapshot 用）。
+ * 2026-09-16 S-04：注入项目名 + 四阶段就绪粗判 + 用户当前界面（renderer 随消息带的
+ * contextHint）。readiness 专项服务（S-01）落地前用现有快照字段推导粗判，不引入新依赖。 */
+function epStateToSnapshot(state: EpAgentProductionState, contextHint?: string): string {
   const ep = state.episode
   const prod = state.production
   const lines = [
+    `项目：${state.project?.name ?? '(未知项目)'}`,
     `剧集：${ep.title ?? '(未命名)'} 第${ep.episodeNumber ?? '?'}集（状态：${ep.status ?? '-'}，剧本：${ep.hasScript ? '已有' : '未生成'}）`,
   ]
   if (ep.synopsis) {
@@ -89,13 +93,37 @@ function epStateToSnapshot(state: EpAgentProductionState): string {
       `生产进度：关键帧 ${prod.storyboardsWithKeyframes}/${state.storyboards.total} 分镜、视频 ${prod.storyboardsWithVideo}/${state.storyboards.total} 分镜、配音 ${prod.scenesWithAudio}/${state.scenes.total} 场景、成片${ep.composedVideoPath ? '已导出' : '未导出'}`,
     )
   }
+  lines.push(`阶段就绪：${epReadinessLine(state)}`)
   lines.push(
     `资产：角色 ${state.assets.characters.count}（${state.assets.characters.names.slice(0, 8).join('、')}）；地点 ${state.assets.locations.count}；物品 ${state.assets.items.count}`,
   )
   if (state.dataSources && state.dataSources.length > 0) {
     lines.push(`候选数据源名单：${state.dataSources.join('、')}`)
   }
+  if (contextHint) {
+    lines.push(`用户当前界面：${contextHint}（用户说"这个/当前"时优先按此理解）`)
+  }
   return lines.join('\n')
+}
+
+/** 四阶段就绪粗判（快照字段推导；S-01 readiness service 就位后可替换为其结论） */
+function epReadinessLine(state: EpAgentProductionState): string {
+  const scriptReady = state.episode.hasScript && state.scenes.total > 0
+  const assetCount =
+    state.assets.characters.count + state.assets.locations.count + state.assets.items.count
+  const sbReady = state.storyboards.total > 0
+  const prod = state.production
+  const composeText = state.episode.composedVideoPath
+    ? '已导出✓'
+    : sbReady && prod && prod.storyboardsWithVideo >= state.storyboards.total
+      ? '可导出✓'
+      : '未就绪✗'
+  return (
+    `剧本${scriptReady ? '✓' : '✗（缺剧本/场景）'}` +
+    ` / 资产${assetCount > 0 ? `✓（${assetCount} 项）` : '✗（未建资产）'}` +
+    ` / 分镜${sbReady ? `✓（${state.storyboards.total} 镜）` : '✗'}` +
+    ` / 合成${composeText}`
+  )
 }
 
 /** 会话存储单例（懒建；观测面） */
@@ -176,7 +204,7 @@ export class EpAgentHarnessService {
     projectId: string,
     episodeId: string,
     message: string,
-    opts: { providerConfigId?: string; modelId?: string } = {},
+    opts: { providerConfigId?: string; modelId?: string; contextHint?: string } = {},
   ): Promise<EpAgentSendResult> {
     const key = `${projectId}:${episodeId}`
     if (this.busy.has(key)) {
@@ -195,7 +223,7 @@ export class EpAgentHarnessService {
     projectId: string,
     episodeId: string,
     message: string,
-    opts: { providerConfigId?: string; modelId?: string },
+    opts: { providerConfigId?: string; modelId?: string; contextHint?: string },
     controller: AbortController,
   ): Promise<EpAgentSendResult> {
     const m = this.manager()
@@ -274,7 +302,9 @@ export class EpAgentHarnessService {
     const bindings: AgentToolBinding[] = [
       ...packNames.map((name) => {
         const short = name.replace(`pack:${EP_AGENT_PACK_ID}:`, '')
-        return { tool: name, maxCalls: budget.maxCalls.overrides[short] ?? EP_TOOL_MAX_CALLS[short] }
+        // dedupArgs（2026-09-16 S-04）：maxCalls 放宽到同类 3 次/轮后，按 action+参数
+        // 去重防模型对同一目标重复点火（不同资产/分镜各占一次额度）
+        return { tool: name, maxCalls: budget.maxCalls.overrides[short] ?? EP_TOOL_MAX_CALLS[short], dedupArgs: true }
       }),
       ...planningTools.map((tool) => ({
         tool,
@@ -331,7 +361,7 @@ export class EpAgentHarnessService {
         tools: () => toolMap,
         resolveModel: (o) => harness.resolveModel({ providerConfigId: o?.providerConfigId, modelId: o?.modelId }),
         systemPrompt: () => epAgentSystemPrompt(),
-        snapshot: () => epStateToSnapshot(state),
+        snapshot: () => epStateToSnapshot(state, opts.contextHint),
         seededHistory: () => seeded,
         maxSteps: budget.maxSteps.episode,
         // EP 剧本/分镜文本大，32K 起步（保留 EP 专属旋钮，缺省回落全局——评审 P2-3）

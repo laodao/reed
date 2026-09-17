@@ -91,6 +91,7 @@ async function seedScene(ds: DataSource): Promise<{ sceneId: string; sbId: strin
       category: 'main',
       imagePath: '/tmp/lb1.png',
       isMain: 1,
+      confirmed: 1,
       sortOrder: 0,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -102,6 +103,7 @@ async function seedScene(ds: DataSource): Promise<{ sceneId: string; sbId: strin
       category: 'main',
       imagePath: '/tmp/cb1.png',
       isMain: 1,
+      confirmed: 1,
       sortOrder: 0,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -431,6 +433,7 @@ describe('KeyframeGenerationService', () => {
       category: 'main',
       imagePath: '/tmp/cb2.png',
       isMain: 1,
+      confirmed: 1,
       sortOrder: 0,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -599,5 +602,73 @@ describe('KeyframeGenerationService', () => {
         keyframeCountOverride: 1,
       }),
     ).rejects.toThrow(/角色未绑定资产/)
+  })
+
+  /**
+   * S-05 影响面统计口径：
+   * - keyframes：storyboard_keyframe.reference_overrides LIKE 含 bindingId 的行
+   * - storyboards：storyboards.characters JSON LIKE 含 bindingId 的分镜数（character）
+   */
+  it('S-05 countAssetReferences：referenceOverrides + storyboards.characters 双口径', async () => {
+    const { sbId } = await seedScene(ds)
+    const all = await svc.generateKeyframesForStoryboard({ storyboardId: sbId })
+    expect(all).toHaveLength(3)
+
+    // 两帧用户挑图引用 cb1；另一帧引用 lb1
+    await svc.setReferenceOverrides(all[0].id, [
+      { kind: 'character', bindingId: 'cb1', imageId: 'ai_char' },
+    ])
+    await svc.setReferenceOverrides(all[1].id, [
+      { kind: 'character', bindingId: 'cb1', imageId: 'ai_char' },
+    ])
+    await svc.setReferenceOverrides(all[2].id, [
+      { kind: 'location', bindingId: 'lb1', imageId: 'ai_loc' },
+    ])
+    // 分镜名单含 cb1（characterId 口径）
+    await ds.getRepository(StoryboardEntity).update(
+      { id: sbId },
+      { characters: [{ characterId: 'cb1' }] as any },
+    )
+
+    const impact = await svc.countAssetReferences('character', 'cb1')
+    expect(impact.keyframes).toBe(2)
+    expect(impact.storyboards).toBe(1)
+    expect(impact.keyframeIds.sort()).toEqual([all[0].id, all[1].id].sort())
+
+    const locImpact = await svc.countAssetReferences('location', 'lb1')
+    expect(locImpact.keyframes).toBe(1)
+    // storyboards.location_binding_ids 未含 lb1 → 0
+    expect(locImpact.storyboards).toBe(0)
+  })
+
+  /**
+   * S-05 级联重生：对 referenceOverrides 引用该资产的帧逐个重生；
+   * 串行执行，单帧失败跳过（id 换新，失败帧保留旧行）。
+   */
+  it('S-05 regenerateKeyframesReferencingAsset：串行重生，失败单个跳过', async () => {
+    const { sbId } = await seedScene(ds)
+    const all = await svc.generateKeyframesForStoryboard({ storyboardId: sbId })
+    for (const kf of all) {
+      await svc.setReferenceOverrides(kf.id, [
+        { kind: 'character', bindingId: 'cb1', imageId: 'ai_char' },
+      ])
+    }
+
+    // 第二次重生调用失败一次（mock 计数：前 3 次是初次生成，第 5 次调用失败）
+    let callCount = 0
+    imageGen.generate.mockImplementation(async (_opts: any) => {
+      callCount += 1
+      if (callCount === 2) throw new Error('provider boom')
+      return { imagePath: `/tmp/regen_${callCount}.png`, thumbnailPath: null }
+    })
+
+    const r = await svc.regenerateKeyframesReferencingAsset('character', 'cb1')
+    expect(r.total).toBe(3)
+    expect(r.succeeded).toBe(2)
+    expect(r.failed).toBe(1)
+
+    // 列表仍是 3 帧；成功的两帧 id 已换新
+    const list = await svc.listKeyframes(sbId)
+    expect(list).toHaveLength(3)
   })
 })

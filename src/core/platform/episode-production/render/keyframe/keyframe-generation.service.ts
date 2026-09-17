@@ -57,6 +57,7 @@ import {
   type StyleConfig,
 } from './keyframe-prompt-builder'
 import { pickReferenceImage } from './reference-image-selector'
+import { resolveCharacterViewLabel } from './keyframe-view-mapping'
 import { parseAssetRefOverrides, toRefCandidates } from './parse-asset-refs'
 import type { ImageGenerator } from '@core/platform/episode-production/assets/services/gallery-derivation.service'
 import { createGalleryImageGenerator } from '@core/platform/episode-production/assets/services/image-provider-adapter'
@@ -450,6 +451,75 @@ export class KeyframeGenerationService {
   }
 
   /**
+   * S-05 影响面统计：某资产 binding 被关键帧 / 分镜引用的面。
+   *
+   * 统计口径（选实现成本最低的 LIKE 文本口径，注释留存）：
+   * - keyframes：storyboard_keyframe.reference_overrides JSON 文本 LIKE '%bindingId%' 的行
+   *   ——即用户精细挑图（referenceOverrides）显式引用该资产的关键帧；
+   *   自动评分选中的引用不落 overrides，不在此口径内。
+   * - storyboards：分镜 JSON 列 LIKE '%bindingId%' 的分镜数
+   *   ——character 查 characters（[].characterId）；location 查 location_binding_ids；
+   *   item 查 item_binding_ids。bindingId 带 cb_/lb_/ib_ 前缀，天然区分 kind。
+   *
+   * 返回 keyframeIds 供级联重生逐个调 regenerateKeyframe。
+   */
+  async countAssetReferences(
+    kind: 'character' | 'location' | 'item',
+    bindingId: string,
+  ): Promise<{ keyframes: number; storyboards: number; keyframeIds: string[] }> {
+    const pat = `%${bindingId}%`
+    const kfRows = await this.ds
+      .getRepository(StoryboardKeyframeEntity)
+      .createQueryBuilder('kf')
+      .where('kf.reference_overrides LIKE :pat', { pat })
+      .getMany()
+
+    const sbColumn =
+      kind === 'character'
+        ? 'characters'
+        : kind === 'location'
+          ? 'location_binding_ids'
+          : 'item_binding_ids'
+    const storyboards = await this.ds
+      .getRepository(StoryboardEntity)
+      .createQueryBuilder('sb')
+      .where(`sb.${sbColumn} LIKE :pat`, { pat })
+      .getCount()
+
+    return {
+      keyframes: kfRows.length,
+      storyboards,
+      keyframeIds: kfRows.map((r) => r.id),
+    }
+  }
+
+  /**
+   * S-05 级联重生：对 referenceOverrides 引用该资产的全部 storyboard_keyframe 行
+   * 逐个调 regenerateKeyframe。串行执行（避免并发打爆图 provider），单帧失败跳过继续。
+   */
+  async regenerateKeyframesReferencingAsset(
+    kind: 'character' | 'location' | 'item',
+    bindingId: string,
+  ): Promise<{ total: number; succeeded: number; failed: number }> {
+    const { keyframeIds } = await this.countAssetReferences(kind, bindingId)
+    let succeeded = 0
+    let failed = 0
+    for (const keyframeId of keyframeIds) {
+      try {
+        await this.regenerateKeyframe({ keyframeId })
+        succeeded++
+      } catch (e) {
+        failed++
+        console.warn(
+          `[keyframe-generation] 级联重生跳过失败帧 ${keyframeId}（资产 ${kind}:${bindingId}）:`,
+          e,
+        )
+      }
+    }
+    return { total: keyframeIds.length, succeeded, failed }
+  }
+
+  /**
    * 在指定关键帧之后插入一张"extra"帧。
    * - 必须存在 after 帧的下一帧（不能在序列末尾追加 — 末尾用"全部重新生成"调 keyframeCount+1）
    * - 新帧的 timePercent 取 (after + next) / 2
@@ -833,6 +903,7 @@ export class KeyframeGenerationService {
       sceneAssets,
       scene,
       args.referenceOverrides ?? null,
+      storyboard.shotType,
     )
 
     // 拼提示词
@@ -907,6 +978,8 @@ export class KeyframeGenerationService {
    *
    * @param overrides 用户挑图覆盖列表；命中的 (kind, bindingId) 直接用指定 imageId
    *                  查图（找不到 imageId 则回退到自动评分）。
+   * @param shotType 分镜景别（P-A：与角色 facing 一起映射 view 维度，
+   *                 让近景镜优先命中半身派生图、远景镜命中全身/主图）
    */
   private async collectReferenceImages(
     assets: {
@@ -916,6 +989,7 @@ export class KeyframeGenerationService {
     },
     scene: SceneScriptEntity,
     overrides: KeyframeReferenceOverride[] | null = null,
+    shotType?: string | null,
   ): Promise<Array<{ id: string; imagePath: string }>> {
     const refs: Array<{ id: string; imagePath: string }> = []
     const overrideMap = new Map<string, string>()
@@ -947,6 +1021,12 @@ export class KeyframeGenerationService {
         kind: 'character',
         bindingId: c.bindingId,
         dims: {
+          // P-A：view 由分镜景别 + 角色朝向映射到 AssetGallery 派生槽位 label
+          // （正面半身 front_half / 左侧半身 left_3q / 全景左侧 full_left 等）
+          view: resolveCharacterViewLabel(
+            shotType,
+            (sceneRole as { facing?: string | null }).facing ?? null,
+          ),
           expression: sceneRole.expression ?? undefined,
           outfit: sceneRole.outfit ?? c.effective.outfit ?? undefined,
         },
@@ -963,7 +1043,8 @@ export class KeyframeGenerationService {
           for (const id of setIds) {
             if (refs.some((rr) => rr.id === id)) continue
             const img = list.find((i) => i.id === id)
-            if (img?.imagePath) refs.push({ id: img.id, imagePath: img.imagePath })
+            // S-05：形象组补充图同样只收 confirmed=1（定妆确认闸门）
+            if (img?.imagePath && img.confirmed === 1) refs.push({ id: img.id, imagePath: img.imagePath })
           }
         }
       } catch {

@@ -29,7 +29,9 @@ export const EP_AGENT_PACK_ID = 'ep-agent'
  * 0916 晚 review 修正：批量长工具改为分页执行（keyframes/video/audio 每次调用
  * 限 8/4/6 个目标，见 ep-agent-actions），上限须允许典型剧集多页跑完 + 一次失败
  * 重试——原 keyframes:1/video:2 会让「补片→再导出」「多页续调」合法流被
- * LIMIT_EXCEEDED 拦死；export_mp4 放宽到 2 容纳一次前置校验失败后的重试。 */
+ * LIMIT_EXCEEDED 拦死；export_mp4 放宽到 2 容纳一次前置校验失败后的重试。
+ * 2026-09-16 S-04：资产生成类 1→3（同类动作每轮 3 次，配合 registry 的 dedupArgs
+ * 按 action+参数去重——不同资产各烧一次额度，同参数重复点火直接拒）。 */
 export const EP_TOOL_MAX_CALLS: Record<string, number> = {
   generate_script: 3,
   split_scenes: 3,
@@ -38,9 +40,9 @@ export const EP_TOOL_MAX_CALLS: Record<string, number> = {
   generate_segment_video: 8,
   generate_scene_audio: 4,
   export_mp4: 2,
-  generate_char_asset: 1,
-  generate_location_asset: 1,
-  generate_item_asset: 1,
+  generate_char_asset: 3,
+  generate_location_asset: 3,
+  generate_item_asset: 3,
   update_entity: 3,
   delete_entity: 2,
   query_database: 3,
@@ -77,12 +79,12 @@ const EP_ACTION_TIMEOUT_MS: Record<string, number> = {
   generate_script: 600_000,
   split_scenes: 300_000,
   generate_storyboards: 600_000,
-  // 后半程四件（2026-09-16）：关键帧/视频/导出为多分镜批量 + provider 长轮询，
-  // 对齐片段桥接 30min 口径；配音受 TTS 限流（500ms/条）也需放宽
+  // 后半程四件（2026-09-16）：关键帧/配音为批量 + provider 长调用，对齐片段桥接口径；
+  // 视频/导出 S-04 起改 started 语义（启动+grace 校验后即返回），不再需 30min 长超时
   generate_keyframes: 1_800_000,
-  generate_segment_video: 1_800_000,
+  generate_segment_video: 300_000,
   generate_scene_audio: 900_000,
-  export_mp4: 1_800_000,
+  export_mp4: 300_000,
   generate_char_asset: 600_000,
   generate_location_asset: 600_000,
   generate_item_asset: 600_000,
@@ -128,18 +130,18 @@ export function buildEpAgentToolDefs(): AgentToolDef[] {
       z.object({
         storyboardId: z.string().optional().describe('分镜 id（缺省=本集所有缺关键帧的分镜）'),
       })),
-    epActionTool('generate_segment_video', '把分镜/片段生成为视频。需要项目已配置视频模型（如 wan2.x-i2v / kling）。缺省为本集全部缺视频的分镜逐个生成。',
+    epActionTool('generate_segment_video', '把分镜/片段生成为视频（分钟级后台任务：返回"已启动"即成功，每段需数分钟，完成后片段/分镜状态自动变为已完成，不要为等完成而重复调用）。视频模型缺省读项目设置（config.videoModel），未配置则报错并引导去项目设置。缺省为本集全部缺视频的分镜逐个生成。',
       z.object({
         storyboardId: z.string().optional().describe('分镜 id（与 segmentId 二选一）'),
         segmentId: z.string().optional().describe('片段 id（片段制出片；与 storyboardId 二选一）'),
-        providerConfigId: z.string().optional().describe('视频提供商配置 id（缺省自动挑第一个启用的视频模型）'),
-        modelId: z.string().optional().describe('视频模型 id（缺省自动挑选）'),
+        providerConfigId: z.string().optional().describe('视频提供商配置 id（缺省读项目设置，再自动挑第一个启用的视频模型）'),
+        modelId: z.string().optional().describe('视频模型 id（缺省同上）'),
       })),
     epActionTool('generate_scene_audio', '为场景生成配音（对白+旁白 TTS，按角色绑定音色），产物落库后导出时自动混入成片。缺省为本集全部未配音场景。',
       z.object({
         sceneId: z.string().optional().describe('场景 id（缺省=本集所有未配音场景）'),
       })),
-    epActionTool('export_mp4', '整集合成导出 MP4（末端硬锁：所有入选分镜须已有视频）。成功后剧集标记为已完成。',
+    epActionTool('export_mp4', '整集合成导出 MP4（分钟级后台任务：返回"已启动"即成功，合成需数分钟；末端硬锁：所有入选分镜须已有视频，未满足会立即报错）。成功后剧集标记为已完成。',
       z.object({
         outputPath: z.string().optional().describe('导出文件名（只接受文件名如 "第1集.mp4"，固定写入应用导出目录；不传自动命名）'),
         burnSubtitles: z.boolean().optional().describe('是否烧入字幕（默认 true）'),

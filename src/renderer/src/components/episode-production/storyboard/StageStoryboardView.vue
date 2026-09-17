@@ -88,6 +88,16 @@
               <div class="group-head" @click="onEnterScene(sc)">
                 <span class="group-title">场次 {{ sc.sceneNumber }}：{{ sc.location }}</span>
                 <span class="group-actions">
+                  <el-button
+                    text
+                    size="small"
+                    :loading="cogenSceneId === sc.id"
+                    title="只重新生成该场景的分镜（替换式：该场现有分镜被删除重写）"
+                    @click.stop="onCogenScene(sc)"
+                  >
+                    <el-icon><MagicStick /></el-icon>
+                    重新生成此场景分镜
+                  </el-button>
                   <span v-if="storyboards[sc.id]?.length" class="done-mark">制作中</span>
                   <span class="enter-link">进入制作 →</span>
                 </span>
@@ -130,6 +140,26 @@
                       {{ seg.status === 'completed' ? '重新生成' : seg.status === 'error' ? '重试' : '生成视频' }}
                     </el-button>
                     <el-button v-else size="small" text loading disabled>生成中</el-button>
+                    <!-- S-03 手动分段：拆分（选断点镜）/ 与下一段合并 -->
+                    <el-button
+                      size="small"
+                      text
+                      :disabled="seg.status === 'generating' || seg.shotCount < 2"
+                      title="在指定镜头之后把片段拆成两段"
+                      @click="openSplitDialog(seg)"
+                    >
+                      拆分
+                    </el-button>
+                    <el-button
+                      v-if="nextSegmentOf(sc.id, seg)"
+                      size="small"
+                      text
+                      :disabled="!canMergeWithNext(sc.id, seg)"
+                      :title="mergeDisabledReason(sc.id, seg) || '与相邻下一片段合并为一段'"
+                      @click="onMergeWithNext(sc.id, seg)"
+                    >
+                      合并
+                    </el-button>
                   </div>
                 </div>
               </div>
@@ -171,6 +201,34 @@
         controls
         autoplay
       />
+    </el-dialog>
+
+    <!-- S-03 片段拆分：选断点镜（在该镜之后另起一段） -->
+    <el-dialog
+      v-model="splitDialogVisible"
+      :title="splitTarget ? `拆分片段 ${splitTarget.seq}（选择断点镜）` : '拆分片段'"
+      width="480px"
+      destroy-on-close
+    >
+      <div v-if="splitTarget" class="split-body">
+        <p class="split-hint">在选中的镜头之后拆分：该镜留在片段 {{ splitTarget.seq }}，后续镜头另起一段。</p>
+        <el-radio-group v-model="splitAfterShotId" class="split-options">
+          <el-radio
+            v-for="(sb, i) in splitShots.slice(0, -1)"
+            :key="sb.id"
+            :value="sb.id"
+            class="split-option"
+          >
+            第 {{ i + 1 }} 镜（SHT-{{ String(sb.shotNumber).padStart(2, '0') }} · {{ durationLabel(sb.duration) }}）之后
+          </el-radio>
+        </el-radio-group>
+      </div>
+      <template #footer>
+        <el-button @click="splitDialogVisible = false">取消</el-button>
+        <el-button type="primary" :disabled="!splitAfterShotId" :loading="splitting" @click="onConfirmSplit">
+          确认拆分
+        </el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -235,6 +293,21 @@ const genAllDone = ref(0)
 const genAllTotal = ref(0)
 const playDialogVisible = ref(false)
 const playSegment = ref<SegmentItem | null>(null)
+
+// S-06：单场景分镜重拆（ep:cogen-scene-storyboards）进行中的场景
+const cogenSceneId = ref<string | null>(null)
+
+// S-03 手动分段：拆分弹窗状态
+const splitDialogVisible = ref(false)
+const splitTarget = ref<SegmentItem | null>(null)
+const splitAfterShotId = ref('')
+const splitting = ref(false)
+/** 拆分目标片段内的分镜（按段内顺序） */
+const splitShots = computed(() =>
+  (splitTarget.value?.storyboardIds ?? [])
+    .map(id => storyboardById.value.get(id))
+    .filter(Boolean),
+)
 
 /**
  * H13 cogen 进度（ep:cogen-progress 事件，负载 { sceneNumber, totalScenes, status }）：
@@ -513,7 +586,20 @@ function onEnterScene(sc: any): void {
 async function onGenerateAllStoryboards(): Promise<void> {
   // 2026-09-16 联合生成（D8）：改走 ep:cogen-storyboards（分镜 + 资产识别一次 LLM 调用，
   // 绑定 ID 由代码侧构造回填）。参数是 episode.id（service 内部自解析 scriptId）。
-  if (!script.value?.scriptId || generating.value) return
+  if (generating.value) return
+  // S-01 gating：剧本未就绪时给出明确提示，不再静默返回/等 LLM 报错
+  try {
+    const rd = await window.electronAPI.episodeProduction.episodeReadiness(props.episodeId)
+    if (rd?.success && rd.data && !rd.data.script?.ready) {
+      const missing = (rd.data.script.missing ?? []).join('；') || '剧本尚未生成'
+      ElMessage.warning(`剧本未就绪：${missing}。请先到「剧本」页完成剧本，再批量生成分镜`)
+      return
+    }
+  } catch { /* readiness 拉取失败不阻断，走原有 scriptId 守卫 */ }
+  if (!script.value?.scriptId) {
+    ElMessage.warning('剧本未就绪：请先到「剧本」页生成剧本并拆分场景，再批量生成分镜')
+    return
+  }
   generating.value = true
   cogenProgress.value = null
   try {
@@ -549,6 +635,106 @@ function frameUrl(sb: any): string | null {
   const img = sb.frameImage
   const p = img?.filePath || img?.url || (sb as any).frameImagePath
   return p ? toImageUrl(p) : null
+}
+
+/** S-06：重新生成此场景分镜（ep:cogen-scene-storyboards，替换式重写该场分镜） */
+async function onCogenScene(sc: any): Promise<void> {
+  if (cogenSceneId.value) return
+  try {
+    await ElMessageBox.confirm(
+      `将重新生成场次 ${sc.sceneNumber} 的分镜：该场现有分镜会被删除重写，` +
+        '其所属视频片段将失效（需重新分段/生成视频）。其它场景不受影响。继续？',
+      '重新生成此场景分镜',
+      { type: 'warning', confirmButtonText: '重新生成', cancelButtonText: '取消' },
+    )
+  } catch { return }
+  cogenSceneId.value = sc.id
+  try {
+    const r = await (window.electronAPI.episodeProduction as any).cogenSceneStoryboards(sc.id)
+    if (r?.success) {
+      ElMessage.success(`场次 ${sc.sceneNumber} 分镜已重新生成（${r.data?.shotCount ?? 0} 镜）`)
+      await loadStoryboards(sc.id)
+      // 新分镜未入段 → 触发自动分段收编（旧片段由后端 superseded/重排收敛）
+      autoSegDoneFor = null
+      await autoEnsureSegments()
+      await loadSegments()
+    } else {
+      ElMessage.error(r?.error || '重新生成场景分镜失败')
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || '重新生成场景分镜失败')
+  } finally {
+    cogenSceneId.value = null
+  }
+}
+
+/** S-03：同场景内按 seq 相邻的下一片段（合并目标） */
+function nextSegmentOf(sceneId: string, seg: SegmentItem): SegmentItem | null {
+  const list = segmentsByScene.value.get(sceneId) ?? []
+  const idx = list.findIndex(s => s.segmentId === seg.segmentId)
+  return idx >= 0 ? (list[idx + 1] ?? null) : null
+}
+
+/** S-03 合并禁用原因（可合并返回空串） */
+function mergeDisabledReason(sceneId: string, seg: SegmentItem): string {
+  const next = nextSegmentOf(sceneId, seg)
+  if (!next) return ''
+  if (seg.status === 'generating' || next.status === 'generating') return '片段正在生成中，不能合并'
+  if (seg.estDuration + next.estDuration > 15) {
+    return `合并后预估时长 ${seg.estDuration + next.estDuration}s 超过 15s 上限`
+  }
+  return ''
+}
+
+function canMergeWithNext(sceneId: string, seg: SegmentItem): boolean {
+  return mergeDisabledReason(sceneId, seg) === ''
+}
+
+/** S-03：与相邻下一片段合并（内容变化 → 合并结果重置为待生成，需重新生成视频） */
+async function onMergeWithNext(sceneId: string, seg: SegmentItem): Promise<void> {
+  const next = nextSegmentOf(sceneId, seg)
+  if (!next) return
+  try {
+    await ElMessageBox.confirm(
+      `将片段 ${seg.seq} 与片段 ${next.seq} 合并为一段。合并后需重新生成视频（已有视频产出作废，磁盘文件保留）。继续？`,
+      '合并片段',
+      { type: 'warning', confirmButtonText: '合并', cancelButtonText: '取消' },
+    )
+  } catch { return }
+  const r = await (window.electronAPI.episodeProduction as any).mergeSegments(seg.segmentId, next.segmentId)
+  if (r?.success) {
+    ElMessage.success('片段已合并')
+    await loadSegments()
+  } else {
+    ElMessage.error(r?.error || '合并片段失败')
+  }
+}
+
+/** S-03：打开拆分弹窗（选断点镜，在该镜之后另起一段） */
+function openSplitDialog(seg: SegmentItem): void {
+  splitTarget.value = seg
+  splitAfterShotId.value = ''
+  splitDialogVisible.value = true
+}
+
+async function onConfirmSplit(): Promise<void> {
+  const seg = splitTarget.value
+  if (!seg || !splitAfterShotId.value || splitting.value) return
+  splitting.value = true
+  try {
+    const r = await (window.electronAPI.episodeProduction as any).splitSegments(seg.segmentId, splitAfterShotId.value)
+    if (r?.success) {
+      ElMessage.success(`片段 ${seg.seq} 已拆分为两段`)
+      splitDialogVisible.value = false
+      await loadSegments()
+    } else {
+      ElMessage.error(r?.error || '拆分片段失败')
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || '拆分片段失败')
+  } finally {
+    splitting.value = false
+  }
 }
 
 function durationLabel(d?: number): string {
@@ -663,4 +849,11 @@ onUnmounted(() => {
 }
 
 .play-video { width: 100%; max-height: 60vh; background: #000; border-radius: var(--radius-md); }
+
+/* S-03 拆分弹窗 */
+.split-body {
+  .split-hint { font-size: 12px; color: var(--text-color-secondary); margin: 0 0 10px; }
+  .split-options { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+  .split-option { margin-right: 0; }
+}
 </style>

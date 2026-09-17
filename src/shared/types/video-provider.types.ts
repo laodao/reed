@@ -31,6 +31,10 @@ export interface VideoModelFeatures {
   textToVideo: boolean      // 文生视频
   imageToVideo: boolean     // 图生视频
   videoToVideo: boolean     // 视频生视频
+  /** 多关键帧生视频（首尾帧；可选，缺省视为不支持） */
+  keyframesToVideo?: boolean
+  /** 关键帧模式下最大 refs 数（keyframesToVideo=true 时有效，缺省 2） */
+  maxKeyframes?: number
   maxDuration: number       // 最大时长（秒）
   supportedResolutions: string[]  // 支持的分辨率
   supportedAspectRatios: string[] // 支持的宽高比
@@ -80,6 +84,9 @@ export interface VideoGenerationRequest {
 
   // 图生视频参数
   image?: string             // 输入图片（URL 或 base64）
+  /** 多参考图（O1 首尾帧：H3 网关 refs 支持 1~2 张，[0]=首帧 [1]=尾帧）。
+   *  支持多 refs 的 provider（ComfyUI H3）优先读此字段；其余 provider 忽略、仍用 image（首帧）。 */
+  images?: string[]
 
   // 文生视频参数
   prompt?: string            // 视频描述提示词

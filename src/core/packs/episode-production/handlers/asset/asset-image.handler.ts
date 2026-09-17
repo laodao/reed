@@ -58,6 +58,8 @@ export function registerAssetImageHandlers(): void {
   ipcBridge.handle('ep:asset:image:add-main', handleAddAdditionalMain)
   ipcBridge.handle('ep:asset:image:switch-main', handleSwitchDefaultMain)
   ipcBridge.handle('ep:asset:image:update-metadata', handleUpdateMetadata)
+  // S-05 定妆图确认闸门（2026-09-17）
+  ipcBridge.handle('ep:asset-image-set-confirmed', handleSetConfirmed)
   // spec 2026-05-09 ep-redesign §3.2 B3 · 角色多角度参考图（一键三视图）
   ipcBridge.handle('ep:asset:character:generate-three-views', handleGenerateThreeViews)
 }
@@ -350,6 +352,23 @@ async function handleUpdateMetadata(
 ): Promise<IpcResponse> {
   try {
     await buildService().updateMetadata(imageId, metadata)
+    return { success: true, data: { updated: true } }
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+/**
+ * S-05 定妆确认闸门：设置 / 撤销一张图的 confirmed 标记。
+ * confirmed=1 的图才会被关键帧参考图选择器选用。
+ */
+async function handleSetConfirmed(
+  _event: any,
+  imageId: string,
+  confirmed: boolean,
+): Promise<IpcResponse> {
+  try {
+    await buildService().setConfirmed(imageId, !!confirmed)
     return { success: true, data: { updated: true } }
   } catch (err: any) {
     return { success: false, error: err?.message ?? String(err) }

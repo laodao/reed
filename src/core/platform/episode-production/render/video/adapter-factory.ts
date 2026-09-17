@@ -97,7 +97,8 @@ export async function createAdapterForProviderWithReason(
  *          按 keyframeCount 自选，单步失败再降级）
  *   3. type='video' 但 id 无线索 → 假设支持 text + image
  *
- * keyframes 维度：BaseVideoProvider features 不声明，需用户在
+ * keyframes 维度：读 features.keyframesToVideo/maxKeyframes（O1 起 VideoModelFeatures 可选声明）；
+ *   未声明时内置 provider 按类型修正（ComfyUI H3 refs 支持首尾 2 张），其余仍需用户在
  *   customParams.videoCapabilities.keyframes 显式开启（避免 matcher 选错调用失败）。
  *
  * P7-bug-2 修复：之前直接 `!!f.textToVideo` 假设对象，但用户填字符串数组
@@ -113,15 +114,17 @@ export function deriveCapabilitiesFromModel(
   // Path 1：features 是 VideoModelFeatures 对象
   if (f && typeof f === 'object' && !Array.isArray(f) &&
       ('textToVideo' in f || 'imageToVideo' in f || 'maxDuration' in f)) {
-    return {
+    const caps: VideoProviderCapabilities = {
       text: !!f.textToVideo,
       image: !!f.imageToVideo,
-      keyframes: false,
-      maxKeyframes: 0,
+      keyframes: !!f.keyframesToVideo,
+      maxKeyframes:
+        typeof f.maxKeyframes === 'number' ? f.maxKeyframes : f.keyframesToVideo ? 2 : 0,
       maxDurationSec: typeof f.maxDuration === 'number' && f.maxDuration > 0 ? f.maxDuration : 5,
       subjectSupport,
       maxSubjects,
     }
+    return withBuiltinKeyframesOverride(caps, type)
   }
   // Path 2：按 model.id 命名约定推断
   const id = (model?.id ?? '').toLowerCase()
@@ -138,7 +141,7 @@ export function deriveCapabilitiesFromModel(
     text = true
     image = true
   }
-  return {
+  return withBuiltinKeyframesOverride({
     text,
     image,
     keyframes: false,
@@ -146,7 +149,23 @@ export function deriveCapabilitiesFromModel(
     maxDurationSec: 5,
     subjectSupport,
     maxSubjects,
+  }, type)
+}
+
+/**
+ * 内置 provider 的 keyframes 能力修正（O1）：
+ * ComfyUI H3 网关 /api/video refs 支持 1~2 张（首帧/首尾帧语义），
+ * 用户 config 的 model features 通常不含 keyframesToVideo 声明，这里按 provider 类型补上，
+ * 免去手工 customParams.videoCapabilities 覆盖。
+ */
+function withBuiltinKeyframesOverride(
+  caps: VideoProviderCapabilities,
+  type: VideoProviderType,
+): VideoProviderCapabilities {
+  if (type === 'comfyui' && !caps.keyframes) {
+    return { ...caps, keyframes: true, maxKeyframes: 2 }
   }
+  return caps
 }
 
 /**

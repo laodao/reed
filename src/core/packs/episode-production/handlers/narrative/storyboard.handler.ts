@@ -27,6 +27,8 @@ export function registerStoryboardHandlers(): void {
   ipcBridge.handle('ep:generate-storyboards', handleGenerateStoryboards)
   // 2026-09-16 联合生成（D1/D2/D8）：分镜 + 资产识别单次 LLM 调用，绑定由代码构造
   ipcBridge.handle('ep:cogen-storyboards', handleCogenStoryboards)
+  // S-06：单场景分镜重拆（cogen 场景级入口，替换式重写该场景分镜）
+  ipcBridge.handle('ep:cogen-scene-storyboards', handleCogenSceneStoryboards)
   // spec 2026-05-27：单分镜 AI 填充
   ipcBridge.handle('ep:fill-storyboard', handleFillStoryboard)
 
@@ -407,6 +409,7 @@ async function handleGenerateStoryboards(
 async function handleCogenStoryboards(
   event: any,
   episodeId: string,
+  opts?: { force?: boolean },
 ): Promise<IpcResponse> {
   try {
     const db = getCoreDatabaseManager()
@@ -416,8 +419,10 @@ async function handleCogenStoryboards(
     if (!episodeId) return { success: false, error: 'episodeId 不能为空' }
 
     const window = getBrowserWindowFromEvent(event)
+    // O2：opts.force 透传（renderer 批量按钮恒 true=全量重写；缺省=增量跳过合格场景）
     const result = await new StoryboardCogenService(db.dataSource).cogenStoryboardsForEpisode(
       episodeId,
+      opts,
       (progress) => {
         if (window) {
           window.webContents.send('ep:cogen-progress', progress)
@@ -427,6 +432,29 @@ async function handleCogenStoryboards(
     return { success: true, data: result }
   } catch (error: any) {
     return { success: false, error: error.message || '联合生成分镜失败' }
+  }
+}
+
+/**
+ * S-06 场景级局部重生（tasks/2026-09-16-ep-studio-polish）：
+ * 只重拆指定场景的分镜（cogen 单次 LLM 调用，替换式重写；绑定由代码侧构造回填）。
+ * 失败返回 error 且旧分镜保留。关联片段由 ep-segmentation 的 superseded 逻辑收敛。
+ */
+async function handleCogenSceneStoryboards(
+  _event: any,
+  sceneId: string,
+): Promise<IpcResponse> {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) {
+      return { success: false, error: '数据库未初始化' }
+    }
+    if (!sceneId) return { success: false, error: 'sceneId 不能为空' }
+
+    const result = await new StoryboardCogenService(db.dataSource).cogenStoryboardsForScene(sceneId)
+    return { success: true, data: result }
+  } catch (error: any) {
+    return { success: false, error: error.message || '重新生成场景分镜失败' }
   }
 }
 

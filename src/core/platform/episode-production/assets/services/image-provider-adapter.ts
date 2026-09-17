@@ -100,9 +100,15 @@ const DEFAULT_PANORAMA_HEIGHT = 1024
  *
  * 不写死任何 model 名 —— 由用户在 settings 里启用什么模型，就用什么。
  *
+ * P-B 透传：override.providerConfigId 指定时直接用该 provider（校验其处于启用状态）；
+ * override.modelId 指定时直接用该模型，否则仍在该 provider 内自动挑第一个 image 模型。
+ *
  * @throws 找不到任何已启用的 image model 时抛错（用户需要先去 settings 配 image 类型模型）
  */
-async function pickImageModel(): Promise<{ providerConfigId: string; model: string }> {
+async function pickImageModel(override?: {
+  providerConfigId?: string | null
+  modelId?: string | null
+}): Promise<{ providerConfigId: string; model: string }> {
   const db = getCoreDatabaseManager()
   if (!db.providerConfigs) {
     throw new Error('数据库未初始化（providerConfigs 仓库不可用）')
@@ -113,14 +119,35 @@ async function pickImageModel(): Promise<{ providerConfigId: string; model: stri
   }
   // 把 default 排前面
   enabled.sort((a, b) => Number(b.isDefault ?? 0) - Number(a.isDefault ?? 0))
-  for (const cfg of enabled) {
+
+  const pickFrom = (cfg: (typeof enabled)[number]): { providerConfigId: string; model: string } | null => {
     const models = (cfg.models ?? []) as Array<{ id?: string; type?: string }>
+    if (override?.modelId) {
+      // 显式模型：直接使用（前端下拉只列 image/multimodal 类型，这里信任调用方）
+      return { providerConfigId: cfg.id, model: override.modelId }
+    }
     const imgModel = models.find(
       (m) => m.id && (m.type === 'image' || m.type === 'multimodal'),
     )
-    if (imgModel?.id) {
-      return { providerConfigId: cfg.id, model: imgModel.id }
+    return imgModel?.id ? { providerConfigId: cfg.id, model: imgModel.id } : null
+  }
+
+  // 指定 provider：只在该 provider 内挑（未启用则明确报错，不静默降级到别的 provider）
+  if (override?.providerConfigId) {
+    const cfg = enabled.find((c) => c.id === override.providerConfigId)
+    if (!cfg) {
+      throw new Error('指定的图像 provider 未启用或不存在，请到「设置 → 模型服务」检查')
     }
+    const picked = pickFrom(cfg)
+    if (picked) return picked
+    throw new Error(
+      '指定的 provider 中没有 image 类型模型，请到「设置 → 模型服务」为其添加 type=image 的模型',
+    )
+  }
+
+  for (const cfg of enabled) {
+    const picked = pickFrom(cfg)
+    if (picked) return picked
   }
   throw new Error(
     '已启用的 provider 中没有 image 类型模型，请到「设置 → 模型服务」' +
@@ -156,7 +183,10 @@ export function createGalleryImageGenerator(): ImageGenerator {
       // 兼容 referenceImage 单值（旧 provider 可能仅认此字段）
       const referenceImage = referenceImages[0]
 
-      const { providerConfigId, model } = await pickImageModel()
+      const { providerConfigId, model } = await pickImageModel({
+        providerConfigId: opts.providerConfigId,
+        modelId: opts.modelId,
+      })
       const resp = await ImageService.generateImage({
         providerConfigId,
         model,

@@ -114,6 +114,17 @@ export function isModeSupported(
 }
 
 /**
+ * 取关键帧序列的首（frameRole='start'）尾（frameRole='end'）各一张（O1 首尾帧参考）。
+ * 返回顺序固定 [start, end]；缺哪个角色就不含哪个。middle/extra 帧不参与视频 refs
+ * （H3 网关 refs 仅支持 1~2 张，首帧/首尾帧语义）。
+ */
+export function pickStartEndKeyframes<T extends { frameRole: string }>(kfs: T[]): T[] {
+  const start = kfs.find(k => k.frameRole === 'start')
+  const end = kfs.find(k => k.frameRole === 'end')
+  return [start, end].filter((k): k is T => !!k)
+}
+
+/**
  * 对 keyframes2video 入参做"按 capability 截断"。
  * 当 capabilities.maxKeyframes < keyframes.length 时，按时间顺序均匀采样到上限。
  */

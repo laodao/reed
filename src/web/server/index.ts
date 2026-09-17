@@ -326,6 +326,16 @@ async function initDatabase(): Promise<void> {
   // 剧集状态闭环：video_episodes.composed_video_path + scene_scripts.narration_audio_path
   // （2026-09-16 review P0-CM2/P0-CM1）
   await addEpComposeClosure(ds)
+  // S-07 导出留档：ep_export_history 表
+  const { createEpExportHistory } = await import(
+    '@core/database/migrations/create-ep-export-history'
+  )
+  await createEpExportHistory(ds)
+  // S-09 用量落库：ai_call_stats 表
+  const { createAiCallStats } = await import(
+    '@core/database/migrations/create-ai-call-stats'
+  )
+  await createAiCallStats(ds)
   // 分镜 reference_image_ids：⑤ 制作 stage 用户为本分镜挑选资产参考图
   await addStoryboardReferenceImageIds(ds)
   // 资产 binding（character/location/item）reference_image_path：用户上传的参考图，主图生成时作为 reference
@@ -576,6 +586,13 @@ async function initDatabase(): Promise<void> {
     '@core/database/migrations/add-video-provider-task-id'
   )
   await addVideoProviderTaskId(ds)
+
+  // S-05 定妆图确认闸门（2026-09-17）：asset_image 加 confirmed 列 +
+  // 存量 is_main=1 行回填 confirmed=1（幂等，双语种；与 Electron 端 runMultiTenantMigrations 同构登记）
+  const { addAssetImageConfirmed } = await import(
+    '@core/database/migrations/add-asset-image-confirmed'
+  )
+  await addAssetImageConfirmed(ds)
 
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)

@@ -339,4 +339,28 @@ describe('AssetImageService', () => {
       ).rejects.toThrow(/提示词/)
     })
   })
+
+  describe('S-05 setConfirmed（定妆确认闸门）', () => {
+    it('新图默认 confirmed=0；setConfirmed 置 1 / 撤销回 0', async () => {
+      const img = await svc.addImage({
+        assetType: 'character',
+        assetId: 'cb1',
+        category: 'main',
+        imagePath: '/m.png',
+        isMain: true,
+      })
+      // addImage 未显式传 confirmed → entity 默认 0
+      expect((await svc.getById(img.id))!.confirmed).toBe(0)
+
+      await svc.setConfirmed(img.id, true)
+      expect((await svc.getById(img.id))!.confirmed).toBe(1)
+
+      await svc.setConfirmed(img.id, false)
+      expect((await svc.getById(img.id))!.confirmed).toBe(0)
+    })
+
+    it('setConfirmed 对不存在的图抛错', async () => {
+      await expect(svc.setConfirmed('ai_ghost', true)).rejects.toThrow(/不存在/)
+    })
+  })
 })

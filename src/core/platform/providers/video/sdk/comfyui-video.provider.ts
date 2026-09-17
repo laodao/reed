@@ -78,6 +78,8 @@ export class ComfyUIVideoProvider extends BaseVideoProvider {
           textToVideo: true,
           imageToVideo: true,
           videoToVideo: false,
+          keyframesToVideo: true, // O1：H3 网关 refs 支持首尾两帧
+          maxKeyframes: 2,
           maxDuration: 15,
           supportedResolutions: ['480x864', '704x1248'],
           supportedAspectRatios: ['9:16', '16:9'],
@@ -86,27 +88,41 @@ export class ComfyUIVideoProvider extends BaseVideoProvider {
     ]
   }
 
-  /** 图生视频：image 已由 video-gen 节点解析为公网 URL / base64 data URI；网关 refs 支持 data URL 直传 */
+  /** 图生视频：image/images 已由 video-gen 节点解析为公网 URL / base64 data URI；网关 refs 支持 data URL 直传。
+   *  O1：images（首尾帧）优先，网关 refs 上限 2 张（[0]=首帧 [1]=尾帧）；无 images 退 image 单图。 */
   private toRefs(request: VideoGenerationRequest): string[] {
+    const sources =
+      request.images && request.images.length > 0
+        ? request.images
+        : request.image
+          ? [request.image]
+          : []
     const refs: string[] = []
-    if (!request.image) return refs
+    for (const src of sources.slice(0, 2)) {
+      const ref = this.toRef(src)
+      if (ref) refs.push(ref)
+    }
+    return refs
+  }
+
+  /** 单张参考图 → data URI / URL；无法解析（本地文件不存在）→ null */
+  private toRef(image: string): string | null {
     if (
-      request.image.startsWith('data:') ||
-      request.image.startsWith('http://') ||
-      request.image.startsWith('https://')
+      image.startsWith('data:') ||
+      image.startsWith('http://') ||
+      image.startsWith('https://')
     ) {
-      refs.push(request.image)
-      return refs
+      return image
     }
     // 本地路径：读文件转 base64 data URI（跨机器直传内容）
-    const stripped = request.image.replace(/^local-[a-z]+:\/\//i, '').replace(/^file:\/\//, '')
+    const stripped = image.replace(/^local-[a-z]+:\/\//i, '').replace(/^file:\/\//, '')
     const abs = path.isAbsolute(stripped) ? stripped : path.resolve(getPathProvider().getDataPath(), stripped)
     if (fs.existsSync(abs)) {
       const ext = path.extname(abs).toLowerCase()
       const mime = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png'
-      refs.push(`data:${mime};base64,${fs.readFileSync(abs).toString('base64')}`)
+      return `data:${mime};base64,${fs.readFileSync(abs).toString('base64')}`
     }
-    return refs
+    return null
   }
 
   /** 时长（秒）→ 总帧数（24fps；文档表格 3s=73、5s=121、10s=241、15s=361 ⇒ frames=秒×24+1；上限 362） */
@@ -119,16 +135,31 @@ export class ComfyUIVideoProvider extends BaseVideoProvider {
   /**
    * H3 提示词协议适配：上游 prompt 若已是三段式（含 subject_definitions/summary/
    * retention_analysis 段）则原样透传（尊重 LLM 生成的高质量文案）；
-   * 否则按协议骨架组装一次——把镜头描述放入 summary，Picture 1 声明与 refs[0] 对应。
+   * 否则按协议骨架组装一次——把镜头描述放入 summary，Picture 声明与 refs 对应。
    * 组装不写死任何业务内容，仅补协议必需结构（模型不吃单段 prompt）。
+   *
+   * refCount=1：Picture 1 = 首帧语义（image2video）；
+   * refCount=2：Picture 1 = 首帧、Picture 2 = 尾帧（O1 keyframes2video 首尾帧锚定）。
    */
-  private toH3Prompt(rawPrompt: string): string {
+  private toH3Prompt(rawPrompt: string, refCount: number): string {
     const p = (rawPrompt || '').trim()
     const looksStructured =
       p.includes('subject_definitions:') &&
       p.includes('summary:') &&
       p.includes('retention_analysis:')
     if (looksStructured || !p) return p
+    if (refCount >= 2) {
+      return [
+        'subject_definitions:',
+        'Picture 1 作为视频首帧、Picture 2 作为视频尾帧，两者共同作为 Subject 1（画面主体）外观来源，需保持其画面主体、构图与整体视觉风格一致；视频画面从 Picture 1 首帧自然过渡到 Picture 2 尾帧，Subject 1 在视频中按画面描述自然运动，不做剧烈形变，画面不含任何文字。',
+        '',
+        'summary:',
+        `[reference generation + audio reference] ${p}。镜头语言简洁，动作单一自然，画面由 Picture 1 首帧自然过渡到 Picture 2 尾帧、无文字。`,
+        '',
+        'retention_analysis:',
+        'Subject 1（Picture 1 首帧 / Picture 2 尾帧）：fully_preserved - 保持画面主体外观、构图与整体风格，首尾帧锚定，中间仅产生自然过渡运动。',
+      ].join('\n')
+    }
     return [
       'subject_definitions:',
       'Picture 1 作为 Subject 1（画面主体）外观来源，需保持其画面主体、构图与整体视觉风格；Subject 1 在视频中按画面描述自然运动，不做剧烈形变，画面不含任何文字。',
@@ -150,7 +181,7 @@ export class ComfyUIVideoProvider extends BaseVideoProvider {
       }
       const portrait = !request.width || !request.height || request.height >= request.width
       const body: Record<string, unknown> = {
-        prompt: this.toH3Prompt(request.prompt || ''),
+        prompt: this.toH3Prompt(request.prompt || '', refs.length),
         refs,
         // 评审 #105：画质/步数可由上层（工作流 start 输入）透传；默认 high / steps20 全质量
         quality: request.quality ?? 'high',

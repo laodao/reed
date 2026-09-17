@@ -107,6 +107,33 @@
             <span v-if="previewIsSegmentVideo" class="seg-video-badge">片段视频 · {{ selectedShotSegment?.shotCount ?? '?' }} 镜一段</span>
           </div>
 
+          <!-- S-02 关键帧画廊：当前镜头的首尾关键帧缩略图 + 重新生成 / 换参考图 -->
+          <div class="kf-gallery">
+            <span class="kf-title">关键帧</span>
+            <template v-if="kfGalleryHasImage">
+              <div v-for="kf in kfGalleryRows" :key="kf.id" class="kf-card">
+                <div class="kf-thumb">
+                  <el-image v-if="kf.imagePath" :src="toImageUrl(kf.imagePath)" fit="cover" class="thumb-img" />
+                  <div v-else class="thumb-empty"><el-icon :size="14"><Picture /></el-icon></div>
+                  <span class="kf-role">{{ kfRoleLabel(kf.frameRole) }}</span>
+                </div>
+                <div class="kf-ops">
+                  <button
+                    class="kf-op-btn"
+                    :disabled="!!kfRegenerating"
+                    title="按当前提示词与参考图重新生成此帧"
+                    @click="onRegenerateKeyframe(kf)"
+                  >
+                    <el-icon v-if="kfRegenerating === kf.id" class="is-loading"><Loading /></el-icon>
+                    <span v-else>重新生成</span>
+                  </button>
+                  <button class="kf-op-btn" title="手动挑选该帧各资产的参考图" @click="openKfPicker(kf)">换参考图</button>
+                </div>
+              </div>
+            </template>
+            <span v-else class="kf-empty">未生成（生成视频时自动创建）</span>
+          </div>
+
           <!-- 提示词富文本（一个整体框，一行一个镜头；提示词本体就是一个字符串字段） -->
           <ShotPromptEditor
             v-model="promptText"
@@ -134,6 +161,16 @@
         </div>
       </main>
     </div>
+
+    <!-- S-02：换参考图（复用既有挑图 dialog；保存/保存并重生后刷新画廊） -->
+    <KeyframeReferencePicker
+      v-model="kfPickerOpen"
+      :keyframe-id="kfPickerKeyframe?.id ?? null"
+      :assets="kfPickerAssets"
+      :existing-references="kfPickerExistingReferences"
+      :existing-overrides="kfPickerExistingOverrides"
+      @saved="onKfPickerSaved"
+    />
   </div>
 </template>
 
@@ -156,6 +193,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Picture, Loading, ArrowLeft, VideoCamera } from '@element-plus/icons-vue'
 import AssetGalleryPicker from '@/components/episode-production/storyboard/AssetGalleryPicker.vue'
+import KeyframeReferencePicker from '@/components/episode-production/stage-production/KeyframeReferencePicker.vue'
 import ShotPromptEditor, {
   type MentionEntity,
   type ParamOption,
@@ -333,6 +371,7 @@ async function load(): Promise<void> {
 
 function selectShot(shot: any): void {
   selectedShot.value = shot
+  void loadKeyframesForShot(shot?.id)
 }
 
 /** 由 shots 构建提示词字符串（一行一个镜头） */
@@ -364,8 +403,9 @@ async function onGenerate(): Promise<void> {
       modelId: videoModelId.value,
     }
     if (videoGenMode.value === 'ref') {
-      // 参考图模式：片段级 V1 首帧=首镜头关键帧（§5）。确保首镜头有带图关键帧后不传
-      // forceMode，由后端 pickVideoMode 自动选 image2video / text2video。
+      // 参考图模式：片段级取首镜头首尾关键帧（O1：start+end 两帧 refs → keyframes2video）。
+      // generateKeyframes 一次调用即产出 start+end（含 middle），故此处只需确保首镜头有带图关键帧；
+      // 之后不传 forceMode，由后端 pickVideoMode 按 refs 数自动选 keyframes2video / image2video / text2video。
       const firstShotId = seg.storyboardIds[0]
       if (firstShotId) {
         const kfResp = await window.electronAPI.episodeProduction
@@ -396,7 +436,7 @@ async function onGenerate(): Promise<void> {
     )
     if (r?.success) {
       ElMessage.success(`片段 ${seg.seq} 视频已生成（${seg.shotCount} 镜一段）`)
-      await Promise.all([loadSegments(), reloadShots()])
+      await Promise.all([loadSegments(), reloadShots(), loadKeyframesForShot(selectedShot.value?.id)])
     } else {
       ElMessage.error(r?.error || '生成失败')
       await loadSegments()
@@ -476,6 +516,114 @@ async function reloadShots(): Promise<void> {
     const cur = r.data.find((s: any) => s.id === selectedShot.value?.id)
     if (cur) selectedShot.value = cur
   }
+}
+
+// ── S-02 关键帧画廊（2026-09-16）：当前镜头首尾关键帧 + 重新生成 / 换参考图 ──
+interface KeyframeRow {
+  id: string
+  storyboardId: string
+  frameIndex: number
+  frameRole: 'start' | 'middle' | 'end' | 'extra'
+  imagePath?: string | null
+  /** handler join image_assets.metadata.referenceImageIds 后返回的真实参考图列表 */
+  references?: Array<{
+    id: string
+    assetType: 'character' | 'location' | 'item' | string
+    assetId: string
+    assetName: string
+  }>
+  /** 用户挑图覆盖（keyframe.referenceOverrides） */
+  referenceOverrides?: Array<{ kind: 'character' | 'location' | 'item'; bindingId: string; imageId: string }>
+}
+const keyframes = ref<KeyframeRow[]>([])
+const kfRegenerating = ref<string | null>(null)
+
+/** 画廊只展示首尾帧（start/end），按 frameIndex 升序 */
+const kfGalleryRows = computed(() =>
+  keyframes.value
+    .filter(k => k.frameRole === 'start' || k.frameRole === 'end')
+    .sort((a, b) => a.frameIndex - b.frameIndex),
+)
+/** 有任一帧带图才展示画廊；否则显示"未生成（生成视频时自动创建）" */
+const kfGalleryHasImage = computed(() => kfGalleryRows.value.some(k => !!k.imagePath))
+
+async function loadKeyframesForShot(shotId: string | null | undefined): Promise<void> {
+  if (!shotId) { keyframes.value = []; return }
+  try {
+    const r = await window.electronAPI.episodeProduction.listKeyframes(shotId).catch(() => null)
+    keyframes.value = (r as any)?.success ? ((r as any).data ?? []) : []
+  } catch {
+    keyframes.value = []
+  }
+}
+
+function kfRoleLabel(role: string): string {
+  return role === 'start' ? '开始帧' : role === 'end' ? '结束帧' : role === 'middle' ? '中间帧' : '附加帧'
+}
+
+/** 重新生成单帧（沿用页面级风格），完成后刷新画廊与镜头数据 */
+async function onRegenerateKeyframe(kf: KeyframeRow): Promise<void> {
+  if (kfRegenerating.value) return
+  kfRegenerating.value = kf.id
+  try {
+    const r = await window.electronAPI.episodeProduction.regenerateKeyframe(kf.id, styleName.value)
+    if (!r?.success) {
+      ElMessage.error((r as any)?.error || '重新生成关键帧失败')
+      return
+    }
+    ElMessage.success('关键帧已重新生成')
+    await Promise.all([loadKeyframesForShot(kf.storyboardId), reloadShot(kf.storyboardId)])
+  } catch (e: any) {
+    ElMessage.error(e?.message || '重新生成关键帧失败')
+  } finally {
+    kfRegenerating.value = null
+  }
+}
+
+// 换参考图：复用 KeyframeReferencePicker（保存/保存并重生后刷新画廊）
+const kfPickerOpen = ref(false)
+const kfPickerKeyframe = ref<KeyframeRow | null>(null)
+
+/**
+ * 该帧出场资产清单（kind/bindingId/name，picker props 契约）：
+ * 角色来自本分镜 characters JSON（characterId → mentionEntities 查名字）；
+ * 地点来自当前场次 locationBindingId。
+ */
+const kfPickerAssets = computed(() => {
+  const list: Array<{ kind: 'character' | 'location' | 'item'; bindingId: string; name: string }> = []
+  const chars = Array.isArray(selectedShot.value?.characters) ? selectedShot.value.characters : []
+  for (const c of chars as any[]) {
+    const id = typeof c?.characterId === 'string' ? c.characterId : ''
+    if (!id) continue
+    const ent = mentionEntities.value.find(e => e.kind === 'character' && e.id === id)
+    list.push({ kind: 'character', bindingId: id, name: ent?.name ?? c.characterName ?? id.slice(0, 8) })
+  }
+  const locBindingId = (currentScene.value as any)?.locationBindingId
+  if (locBindingId) {
+    const ent = mentionEntities.value.find(e => e.kind === 'location' && e.id === locBindingId)
+    list.push({ kind: 'location', bindingId: locBindingId, name: ent?.name ?? (currentScene.value as any)?.location ?? '地点' })
+  }
+  return list
+})
+
+const kfPickerExistingReferences = computed(() =>
+  (kfPickerKeyframe.value?.references ?? []).map(r => ({
+    bindingId: r.assetId,
+    assetType: r.assetType,
+    id: r.id,
+    assetName: r.assetName,
+  })),
+)
+const kfPickerExistingOverrides = computed(() => kfPickerKeyframe.value?.referenceOverrides ?? [])
+
+function openKfPicker(kf: KeyframeRow): void {
+  kfPickerKeyframe.value = kf
+  kfPickerOpen.value = true
+}
+
+async function onKfPickerSaved(_: { regenerated: boolean }): Promise<void> {
+  // 关键帧图/引用变化后同步刷新画廊引用
+  await loadKeyframesForShot(selectedShot.value?.id)
 }
 
 /** 加载可用的视频 provider（带模型的），默认选第一个可用的 */
@@ -734,4 +882,38 @@ async function loadMentionEntities(): Promise<void> {
 
 .edit-actions { display: flex; gap: 8px; margin-top: 12px; }
 .no-shot { flex: 1; display: flex; align-items: center; justify-content: center; }
+
+/* S-02 关键帧画廊 */
+.kf-gallery {
+  flex-shrink: 0;
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 10px; padding: 6px 10px;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color-lighter);
+  border-radius: var(--radius-md);
+  .kf-title { flex-shrink: 0; font-size: 12px; font-weight: 600; color: var(--text-color-secondary); }
+  .kf-empty { font-size: 12px; color: var(--text-color-placeholder); }
+  .kf-card { display: flex; align-items: center; gap: 8px; }
+  .kf-thumb {
+    position: relative;
+    width: 96px; height: 54px;
+    background: #111; border-radius: 4px; overflow: hidden;
+    .thumb-img { width: 100%; height: 100%; }
+    .thumb-empty { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--text-color-placeholder); }
+    .kf-role {
+      position: absolute; left: 4px; top: 4px;
+      background: rgba(0, 0, 0, .55); color: #fff;
+      font-size: 10px; padding: 1px 6px; border-radius: 8px;
+    }
+  }
+  .kf-ops { display: flex; flex-direction: column; gap: 4px; }
+  .kf-op-btn {
+    border: 1px solid var(--border-color-lighter); background: transparent; cursor: pointer;
+    font-size: 11px; color: var(--text-color-secondary);
+    padding: 2px 8px; border-radius: 4px; line-height: 1.4;
+    display: inline-flex; align-items: center; gap: 4px;
+    &:hover { border-color: var(--color-primary); color: var(--color-primary); }
+    &:disabled { cursor: not-allowed; opacity: .5; }
+  }
+}
 </style>

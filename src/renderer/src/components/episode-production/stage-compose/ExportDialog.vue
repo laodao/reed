@@ -56,6 +56,7 @@
             <el-radio-button label="1280x720">720p</el-radio-button>
             <el-radio-button label="1920x1080">1080p</el-radio-button>
           </el-radio-group>
+          <div class="form-hint">源分辨率由生成网关决定（当前 1248×704），1080p 为放大输出</div>
         </el-form-item>
         <el-form-item label="烧入字幕">
           <el-switch v-model="form.burnSubtitles" />
@@ -64,9 +65,9 @@
         <el-form-item label="输出路径">
           <el-input
             v-model="form.outputPath"
-            placeholder="/path/to/output.mp4"
+            placeholder="留空自动使用默认输出目录 + 时间戳文件名"
           />
-          <span class="form-hint">绝对路径，含 .mp4 后缀</span>
+          <span class="form-hint">绝对路径，含 .mp4 后缀；留空自动生成带时间戳的默认路径</span>
         </el-form-item>
       </el-form>
     </div>
@@ -181,8 +182,8 @@ const canExport = computed(
   () =>
     !exporting.value &&
     timeline.value !== null &&
-    timeline.value.missingVideoStoryboardIds.length === 0 &&
-    form.value.outputPath.trim().length > 0,
+    timeline.value.missingVideoStoryboardIds.length === 0,
+    // S-07：输出路径允许留空——主进程 resolveOutputPath 自动落默认目录 + 时间戳文件名
 )
 
 async function onOpen(): Promise<void> {

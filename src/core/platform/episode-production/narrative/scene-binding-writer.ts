@@ -76,10 +76,6 @@ export class SceneBindingWriter {
 
     {
       const sceneRepo = manager.getRepository(SceneScriptEntity)
-      const charRepo = manager.getRepository(SceneCharacterEntity)
-      const dialogueRepo = manager.getRepository(SceneDialogueEntity)
-      const actionRepo = manager.getRepository(SceneActionEntity)
-      const propRepo = manager.getRepository(ScenePropEntity)
 
       const result: SceneScript[] = []
       const now = new Date()
@@ -111,81 +107,8 @@ export class SceneBindingWriter {
         })
         await sceneRepo.save(sceneEntity)
 
-        // 2. 创建 scene_characters 记录
-        for (let i = 0; i < scene.characters.length; i++) {
-          const char = scene.characters[i]
-          const charId = this.generateCharId()
-          await charRepo.save(
-            charRepo.create({
-              id: charId,
-              ...userScope,
-              sceneScriptId: sceneId,
-              characterId: char.characterId || '',
-              characterName: char.characterName,
-              characterBindingId: char.characterBindingId,
-              position: char.position || 'center',
-              expression: char.expression ?? null,
-              action: char.action ?? null,
-              outfit: char.outfit ?? null,
-              sortOrder: i,
-            }),
-          )
-
-          // 创建 props（如果有）
-          if (char.props && char.props.length > 0) {
-            for (const prop of char.props) {
-              await propRepo.save(
-                propRepo.create({
-                  id: this.generatePropId(),
-                  ...userScope,
-                  sceneCharacterId: charId,
-                  propName: prop.name,
-                }),
-              )
-            }
-          }
-        }
-
-        // 3. 创建 scene_dialogues 记录
-        for (let i = 0; i < scene.dialogues.length; i++) {
-          const dlg = scene.dialogues[i]
-          await dialogueRepo.save(
-            dialogueRepo.create({
-              id: dlg.id || this.generateDialogueId(),
-              ...userScope,
-              sceneScriptId: sceneId,
-              characterId: dlg.characterId || '',
-              characterName: dlg.characterName,
-              characterBindingId: dlg.characterBindingId,
-              text: dlg.text,
-              emotion: dlg.emotion ?? null,
-              volume: dlg.volume || 'normal',
-              pace: dlg.pace || 'normal',
-              pause: dlg.pause || 0,
-              voiceId: dlg.voiceId ?? null,
-              audioAssetId: null,
-              sortOrder: i,
-            }),
-          )
-        }
-
-        // 4. 创建 scene_actions 记录
-        for (let i = 0; i < scene.actions.length; i++) {
-          const act = scene.actions[i]
-          await actionRepo.save(
-            actionRepo.create({
-              id: act.id || this.generateActionId(),
-              ...userScope,
-              sceneScriptId: sceneId,
-              characterId: act.characterId ?? null,
-              characterBindingId: act.characterBindingId,
-              description: act.description,
-              timing: act.timing || 'during',
-              duration: act.duration ?? null,
-              sortOrder: i,
-            }),
-          )
-        }
+        // 2-4. scene_characters(+props) / scene_dialogues / scene_actions
+        await this.writeSceneChildrenIn(manager, sceneId, userScope, scene)
 
         // 返回 DTO
         result.push({
@@ -238,60 +161,232 @@ export class SceneBindingWriter {
         })
       }
 
-      // 5. 同步更新地点绑定的 baseDescription（如果为空）
-      const locationBindingRepo = manager.getRepository(LocationBindingEntity)
-      for (const scene of scenes) {
-        if (scene.locationBindingId && scene.sceneDescription) {
-          const locationBinding = await locationBindingRepo.findOne({
-            where: { id: scene.locationBindingId, ...readScope } as any,
-          })
-          if (locationBinding && !locationBinding.baseDescription) {
-            // 合成 baseDescription：sceneDescription + locationKeyObjects
-            let baseDesc = scene.sceneDescription
-            if (scene.locationKeyObjects && scene.locationKeyObjects.length > 0) {
-              baseDesc += `；关键物件：${scene.locationKeyObjects.join('、')}`
-            }
-            await locationBindingRepo.update(
-              { id: scene.locationBindingId, ...readScope } as any,
-              {
-                baseDescription: baseDesc,
-                updatedAt: now,
-              } as any,
-            )
-          }
-        }
-      }
+      // 5-6. 地点 baseDescription / 角色 overrideOutfit 兜底回填
+      await this.syncBindingSideEffects(manager, scenes, readScope, now)
 
-      // 6. 同步更新角色绑定的 overrideOutfit（如果为空）
-      const characterBindingRepo = manager.getRepository(CharacterBindingEntity)
-      const outfitMap = new Map<string, string>()
-      for (const scene of scenes) {
-        for (const char of scene.characters) {
-          if (char.characterBindingId && char.outfit) {
-            // 只记录第一个场景的 outfit（不覆盖后续场景的）
-            if (!outfitMap.has(char.characterBindingId)) {
-              outfitMap.set(char.characterBindingId, char.outfit)
-            }
-          }
+      return result
+    }
+  }
+
+  /**
+   * S-06 场景级局部重拆写回（tasks/2026-09-16-ep-studio-polish）：
+   * 就地更新已有场景行（保留 id / sceneNumber），事务内替换其
+   * scene_characters(+props) / scene_dialogues / scene_actions bridge 行。
+   * 调用方负责先删该场景的分镜（storyboards）。
+   */
+  static async rewriteSceneWithBindings(
+    ds: DataSource,
+    sceneId: string,
+    scene: GeneratedScene,
+  ): Promise<void> {
+    await ds.transaction(async manager => {
+      const userId = getCurrentUserId()
+      const userScope = userId ? { userId } : {}
+      const readScope = userId ? { userId } : { userId: IsNull() }
+      const now = new Date()
+
+      const sceneRepo = manager.getRepository(SceneScriptEntity)
+      const existing = await sceneRepo.findOne({
+        where: { id: sceneId, ...readScope } as any,
+      })
+      if (!existing) throw new Error(`场景不存在：${sceneId}`)
+
+      // 1. 就地更新 scene_scripts 字段（id / sceneNumber / 归属不动）
+      await sceneRepo.update({ id: sceneId, ...readScope } as any, {
+        location: scene.location,
+        locationBindingId: scene.locationBindingId,
+        locationType: scene.locationType,
+        timeOfDay: scene.timeOfDay,
+        weather: scene.weather ?? null,
+        sceneDescription: scene.sceneDescription,
+        mood: scene.mood,
+        lighting: scene.lighting ?? null,
+        // 向后兼容：保留 JSON 字段
+        characters: scene.characters as unknown[],
+        originalText: scene.originalText,
+        narration: scene.narration,
+        dialogues: scene.dialogues as unknown[],
+        actions: scene.actions as unknown[],
+        updatedAt: now,
+      } as any)
+
+      // 2. 清旧 bridge 行（props 挂在 scene_characters 上，先删 props）
+      const charRepo = manager.getRepository(SceneCharacterEntity)
+      const propRepo = manager.getRepository(ScenePropEntity)
+      const oldChars = await charRepo.find({
+        where: { sceneScriptId: sceneId, ...readScope } as any,
+      })
+      for (const c of oldChars) {
+        await propRepo.delete({ sceneCharacterId: c.id, ...readScope } as any)
+      }
+      await charRepo.delete({ sceneScriptId: sceneId, ...readScope } as any)
+      await manager
+        .getRepository(SceneDialogueEntity)
+        .delete({ sceneScriptId: sceneId, ...readScope } as any)
+      await manager
+        .getRepository(SceneActionEntity)
+        .delete({ sceneScriptId: sceneId, ...readScope } as any)
+
+      // 3. 按新数据重建 bridge 行 + binding 兜底回填（与批量创建同规则）
+      await this.writeSceneChildrenIn(manager, sceneId, userScope, scene)
+      await this.syncBindingSideEffects(manager, [scene], readScope, now)
+    })
+  }
+
+  /**
+   * 写一个场景的子表记录（scene_characters + props / scene_dialogues /
+   * scene_actions）。批量创建与单场景重写共用。
+   */
+  private static async writeSceneChildrenIn(
+    manager: EntityManager,
+    sceneId: string,
+    userScope: { userId?: string },
+    scene: GeneratedScene,
+  ): Promise<void> {
+    const charRepo = manager.getRepository(SceneCharacterEntity)
+    const dialogueRepo = manager.getRepository(SceneDialogueEntity)
+    const actionRepo = manager.getRepository(SceneActionEntity)
+    const propRepo = manager.getRepository(ScenePropEntity)
+
+    // scene_characters 记录
+    for (let i = 0; i < scene.characters.length; i++) {
+      const char = scene.characters[i]
+      const charId = this.generateCharId()
+      await charRepo.save(
+        charRepo.create({
+          id: charId,
+          ...userScope,
+          sceneScriptId: sceneId,
+          characterId: char.characterId || '',
+          characterName: char.characterName,
+          characterBindingId: char.characterBindingId,
+          position: char.position || 'center',
+          expression: char.expression ?? null,
+          action: char.action ?? null,
+          outfit: char.outfit ?? null,
+          sortOrder: i,
+        }),
+      )
+
+      // 创建 props（如果有）
+      if (char.props && char.props.length > 0) {
+        for (const prop of char.props) {
+          await propRepo.save(
+            propRepo.create({
+              id: this.generatePropId(),
+              ...userScope,
+              sceneCharacterId: charId,
+              propName: prop.name,
+            }),
+          )
         }
       }
-      for (const bindingId of outfitMap.keys()) {
-        const outfit = outfitMap.get(bindingId)!
-        const characterBinding = await characterBindingRepo.findOne({
-          where: { id: bindingId, ...readScope } as any,
+    }
+
+    // scene_dialogues 记录
+    for (let i = 0; i < scene.dialogues.length; i++) {
+      const dlg = scene.dialogues[i]
+      await dialogueRepo.save(
+        dialogueRepo.create({
+          id: dlg.id || this.generateDialogueId(),
+          ...userScope,
+          sceneScriptId: sceneId,
+          characterId: dlg.characterId || '',
+          characterName: dlg.characterName,
+          characterBindingId: dlg.characterBindingId,
+          text: dlg.text,
+          emotion: dlg.emotion ?? null,
+          volume: dlg.volume || 'normal',
+          pace: dlg.pace || 'normal',
+          pause: dlg.pause || 0,
+          voiceId: dlg.voiceId ?? null,
+          audioAssetId: null,
+          sortOrder: i,
+        }),
+      )
+    }
+
+    // scene_actions 记录
+    for (let i = 0; i < scene.actions.length; i++) {
+      const act = scene.actions[i]
+      await actionRepo.save(
+        actionRepo.create({
+          id: act.id || this.generateActionId(),
+          ...userScope,
+          sceneScriptId: sceneId,
+          characterId: act.characterId ?? null,
+          characterBindingId: act.characterBindingId,
+          description: act.description,
+          timing: act.timing || 'during',
+          duration: act.duration ?? null,
+          sortOrder: i,
+        }),
+      )
+    }
+  }
+
+  /**
+   * binding 兜底回填（批量创建与单场景重写共用）：
+   *   - 地点绑定的 baseDescription（为空时由 sceneDescription + locationKeyObjects 合成）
+   *   - 角色绑定的 overrideOutfit（为空时取该批次首个场景的 outfit）
+   */
+  private static async syncBindingSideEffects(
+    manager: EntityManager,
+    scenes: GeneratedScene[],
+    readScope: Record<string, unknown>,
+    now: Date,
+  ): Promise<void> {
+    // 5. 同步更新地点绑定的 baseDescription（如果为空）
+    const locationBindingRepo = manager.getRepository(LocationBindingEntity)
+    for (const scene of scenes) {
+      if (scene.locationBindingId && scene.sceneDescription) {
+        const locationBinding = await locationBindingRepo.findOne({
+          where: { id: scene.locationBindingId, ...readScope } as any,
         })
-        if (characterBinding && !characterBinding.overrideOutfit) {
-          await characterBindingRepo.update(
-            { id: bindingId, ...readScope } as any,
+        if (locationBinding && !locationBinding.baseDescription) {
+          // 合成 baseDescription：sceneDescription + locationKeyObjects
+          let baseDesc = scene.sceneDescription
+          if (scene.locationKeyObjects && scene.locationKeyObjects.length > 0) {
+            baseDesc += `；关键物件：${scene.locationKeyObjects.join('、')}`
+          }
+          await locationBindingRepo.update(
+            { id: scene.locationBindingId, ...readScope } as any,
             {
-              overrideOutfit: outfit,
+              baseDescription: baseDesc,
               updatedAt: now,
             } as any,
           )
         }
       }
+    }
 
-      return result
+    // 6. 同步更新角色绑定的 overrideOutfit（如果为空）
+    const characterBindingRepo = manager.getRepository(CharacterBindingEntity)
+    const outfitMap = new Map<string, string>()
+    for (const scene of scenes) {
+      for (const char of scene.characters) {
+        if (char.characterBindingId && char.outfit) {
+          // 只记录第一个场景的 outfit（不覆盖后续场景的）
+          if (!outfitMap.has(char.characterBindingId)) {
+            outfitMap.set(char.characterBindingId, char.outfit)
+          }
+        }
+      }
+    }
+    for (const bindingId of outfitMap.keys()) {
+      const outfit = outfitMap.get(bindingId)!
+      const characterBinding = await characterBindingRepo.findOne({
+        where: { id: bindingId, ...readScope } as any,
+      })
+      if (characterBinding && !characterBinding.overrideOutfit) {
+        await characterBindingRepo.update(
+          { id: bindingId, ...readScope } as any,
+          {
+            overrideOutfit: outfit,
+            updatedAt: now,
+          } as any,
+        )
+      }
     }
   }
 

@@ -4,7 +4,8 @@
  * in-memory sqlite + mock VideoProviderAdapter 验证：
  * - text2video：多镜头提示词拼接 + 写回 segment（video_path/mode/duration/prompt 快照/status）
  * - 完成后联动片段内 shots status=completed
- * - image2video：首帧取首镜头首帧关键帧
+ * - image2video：首帧取首镜头首帧关键帧（provider 不支持 keyframes 时降级）
+ * - keyframes2video：首镜头 start+end 两帧 refs（O1 首尾帧锚定）
  * - provider 失败 → segment status=error + error 信息，shots 不动
  * - 空片段 / 片段不存在 → 抛错
  *
@@ -35,6 +36,13 @@ const CAPS: VideoProviderCapabilities = {
   maxDurationSec: 30,
   subjectSupport: false,
   maxSubjects: 0,
+}
+
+/** 全能 capabilities（O1：H3 类 provider 支持首尾两帧 keyframes2video） */
+const CAPS_KF: VideoProviderCapabilities = {
+  ...CAPS,
+  keyframes: true,
+  maxKeyframes: 2,
 }
 
 async function buildDb(): Promise<DataSource> {
@@ -132,11 +140,34 @@ function makeAdapter(override: Partial<VideoProviderAdapter> = {}) {
       width: opts.width,
       height: opts.height,
     })),
+    keyframesToVideo: vi.fn(async (opts: any) => ({
+      videoPath: '/tmp/seg_kf2v.mp4',
+      durationSec: opts.durationSec,
+      width: opts.width,
+      height: opts.height,
+    })),
     ...override,
   } as VideoProviderAdapter & {
     textToVideo: ReturnType<typeof vi.fn>
     imageToVideo: ReturnType<typeof vi.fn>
+    keyframesToVideo: ReturnType<typeof vi.fn>
   }
+}
+
+/** 给首镜头 sb1 种 start + end 两张带图关键帧 */
+async function seedFirstShotStartEnd(ds: DataSource): Promise<void> {
+  const iaRepo = new ImageAssetRepository(ds)
+  const kfRepo = new StoryboardKeyframeRepository(ds)
+  const ia1 = await iaRepo.create({
+    projectId: 'es1', type: 'generated', prompt: 'p',
+    imagePath: '/tmp/kf_first.png', width: 1024, height: 1024,
+  })
+  const ia2 = await iaRepo.create({
+    projectId: 'es1', type: 'generated', prompt: 'p',
+    imagePath: '/tmp/kf_second.png', width: 1024, height: 1024,
+  })
+  await kfRepo.create({ storyboardId: 'sb1', frameIndex: 0, frameRole: 'start', imageAssetId: ia1.id })
+  await kfRepo.create({ storyboardId: 'sb1', frameIndex: 1, frameRole: 'end', imageAssetId: ia2.id })
 }
 
 describe('SegmentVideoService', () => {
@@ -182,21 +213,10 @@ describe('SegmentVideoService', () => {
     expect((await sbRepo.getById('sb2'))?.status).toBe('completed')
   })
 
-  it('image2video：首帧取首镜头首帧关键帧', async () => {
+  it('image2video：provider 不支持 keyframes → 降级用首帧', async () => {
     const segId = await seedSegment(ds)
     // 首镜头种 2 帧关键帧（有图）；第二镜头的关键帧不应被用
-    const iaRepo = new ImageAssetRepository(ds)
-    const kfRepo = new StoryboardKeyframeRepository(ds)
-    const ia1 = await iaRepo.create({
-      projectId: 'es1', type: 'generated', prompt: 'p',
-      imagePath: '/tmp/kf_first.png', width: 1024, height: 1024,
-    })
-    const ia2 = await iaRepo.create({
-      projectId: 'es1', type: 'generated', prompt: 'p',
-      imagePath: '/tmp/kf_second.png', width: 1024, height: 1024,
-    })
-    await kfRepo.create({ storyboardId: 'sb1', frameIndex: 0, frameRole: 'start', imageAssetId: ia1.id })
-    await kfRepo.create({ storyboardId: 'sb1', frameIndex: 1, frameRole: 'end', imageAssetId: ia2.id })
+    await seedFirstShotStartEnd(ds)
 
     const adapter = makeAdapter()
     const svc = new SegmentVideoService(ds, adapter)
@@ -208,6 +228,57 @@ describe('SegmentVideoService', () => {
     expect(result.keyframesUsed).toHaveLength(1)
     const seg = await new EpVideoSegmentRepository(ds).getById(segId)
     expect(seg?.videoMode).toBe('image2video')
+  })
+
+  it('keyframes2video（O1）：首镜头 start+end 两帧 refs，middle/第二镜头不参与', async () => {
+    const segId = await seedSegment(ds)
+    await seedFirstShotStartEnd(ds)
+    // middle 帧有图也不应进入 refs
+    const iaRepo = new ImageAssetRepository(ds)
+    const kfRepo = new StoryboardKeyframeRepository(ds)
+    const iaMid = await iaRepo.create({
+      projectId: 'es1', type: 'generated', prompt: 'p',
+      imagePath: '/tmp/kf_mid.png', width: 1024, height: 1024,
+    })
+    await kfRepo.create({ storyboardId: 'sb1', frameIndex: 2, frameRole: 'middle', imageAssetId: iaMid.id })
+
+    const adapter = makeAdapter({ capabilities: CAPS_KF })
+    const svc = new SegmentVideoService(ds, adapter)
+    const result = await svc.generateForSegment({ segmentId: segId })
+
+    expect(result.match.mode).toBe('keyframes2video')
+    expect(adapter.keyframesToVideo).toHaveBeenCalledTimes(1)
+    const kfs = adapter.keyframesToVideo.mock.calls[0][0].keyframes
+    expect(kfs).toHaveLength(2)
+    expect(kfs[0].imagePath).toBe('/tmp/kf_first.png')
+    expect(kfs[0].timePercent).toBe(0)
+    expect(kfs[1].imagePath).toBe('/tmp/kf_second.png')
+    expect(kfs[1].timePercent).toBe(1)
+    expect(result.keyframesUsed).toHaveLength(2)
+    const seg = await new EpVideoSegmentRepository(ds).getById(segId)
+    expect(seg?.videoMode).toBe('keyframes2video')
+    expect(seg?.videoPath).toBe('/tmp/seg_kf2v.mp4')
+  })
+
+  it('end 帧无图 → 退 image2video 仅用首帧（O1 降级）', async () => {
+    const segId = await seedSegment(ds)
+    const iaRepo = new ImageAssetRepository(ds)
+    const kfRepo = new StoryboardKeyframeRepository(ds)
+    const ia1 = await iaRepo.create({
+      projectId: 'es1', type: 'generated', prompt: 'p',
+      imagePath: '/tmp/kf_first.png', width: 1024, height: 1024,
+    })
+    await kfRepo.create({ storyboardId: 'sb1', frameIndex: 0, frameRole: 'start', imageAssetId: ia1.id })
+    await kfRepo.create({ storyboardId: 'sb1', frameIndex: 1, frameRole: 'end', imageAssetId: null })
+
+    const adapter = makeAdapter({ capabilities: CAPS_KF })
+    const svc = new SegmentVideoService(ds, adapter)
+    const result = await svc.generateForSegment({ segmentId: segId })
+
+    expect(result.match.mode).toBe('image2video')
+    expect(adapter.imageToVideo).toHaveBeenCalledTimes(1)
+    expect(adapter.imageToVideo.mock.calls[0][0].imagePath).toBe('/tmp/kf_first.png')
+    expect(result.keyframesUsed).toHaveLength(1)
   })
 
   it('provider 失败 → segment status=error + error 信息，shots 不置 completed', async () => {

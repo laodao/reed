@@ -671,6 +671,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.createEpisode': { channel: 'ep:create-episode' },
   'episodeProduction.updateEpisode': { channel: 'ep:update-episode' },
   'episodeProduction.deleteEpisode': { channel: 'ep:delete-episode' },
+  'episodeProduction.episodeReadiness': { channel: 'ep:episode-readiness' },
+  'episodeProduction.episodeQualityCheck': { channel: 'ep:episode-quality-check' },
   'episodeProduction.getScript': { channel: 'ep:get-script' },
   'episodeProduction.updateScript': { channel: 'ep:update-script' },
   'episodeProduction.listScenes': { channel: 'ep:list-scenes' },
@@ -733,6 +735,9 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.generateKeyframeAtIndex': { channel: 'ep:generate-keyframe-at-index' },
   'episodeProduction.setKeyframeReferenceOverrides': { channel: 'ep:set-keyframe-reference-overrides' },
   'episodeProduction.listAssetImages': { channel: 'ep:list-asset-images' },
+  // S-05 定妆图确认闸门（2026-09-17）：影响面统计 + 级联重生
+  'episodeProduction.getAssetReferenceImpact': { channel: 'ep:asset:reference-impact' },
+  'episodeProduction.regenerateReferencingKeyframes': { channel: 'ep:asset:regenerate-referencing-keyframes' },
   // P5-T13 视频片段
   'episodeProduction.listVideoProviders': { channel: 'ep:list-video-providers' },
   'episodeProduction.getProviderCapabilities': { channel: 'ep:get-provider-capabilities' },
@@ -742,11 +747,23 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.listSegments': { channel: 'ep:list-segments' },
   'episodeProduction.generateSegmentVideo': { channel: 'ep:generate-segment-video' },
   'episodeProduction.deleteSegment': { channel: 'ep:delete-segment' },
+  // S-03 手动分段（2026-09-16 ep-studio-polish）
+  'episodeProduction.mergeSegments': { channel: 'ep:merge-segments' },
+  'episodeProduction.splitSegments': { channel: 'ep:split-segment' },
+  // S-07 片段排序
+  'episodeProduction.moveSegment': { channel: 'ep:move-segment' },
+  // S-06 场景级局部重拆 / 局部重生
+  'episodeProduction.regenerateScene': { channel: 'ep:regenerate-scene' },
+  'episodeProduction.cogenSceneStoryboards': { channel: 'ep:cogen-scene-storyboards' },
   // P6-T5 合成 + 导出 MP4
   'episodeProduction.buildTimeline': { channel: 'ep:build-timeline' },
   'episodeProduction.previewSubtitle': { channel: 'ep:preview-subtitle' },
   'episodeProduction.exportMp4': { channel: 'ep:export-mp4' },
   'episodeProduction.openExportFolder': { channel: 'ep:open-export-folder' },
+  // S-07 导出留档
+  'episodeProduction.listExportHistory': { channel: 'ep:list-export-history' },
+  // S-09 用量统计
+  'episodeProduction.aiUsageStats': { channel: 'ep:ai-usage-stats' },
   // P5-T14/T15 V3 binding-aware 场景音频
   'episodeProduction.generateSceneAudioV3': { channel: 'ep:generate-scene-audio-v3' },
   // P6-T13 顶部 6 段阶段进度条（spec §2.1）
@@ -849,6 +866,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.asset.image.addMain': { channel: 'ep:asset:image:add-main' },
   'episodeProduction.asset.image.switchMain': { channel: 'ep:asset:image:switch-main' },
   'episodeProduction.asset.image.updateMetadata': { channel: 'ep:asset:image:update-metadata' },
+  'episodeProduction.asset.image.setConfirmed': { channel: 'ep:asset-image-set-confirmed' },
   // AI 设定反推（spec 2026-05-07）
   'episodeProduction.asset.enrichSettings': { channel: 'ep:asset:enrich-settings' },
   // AI 正向字段提取（spec 2026-05-09 ep-redesign §3.2 B2）

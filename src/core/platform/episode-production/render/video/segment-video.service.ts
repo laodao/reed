@@ -5,7 +5,8 @@
  * 与单镜生成的 VideoSegmentService 并列（单镜生成保留不动）：
  *   1. 按 segment_seq 取片段内分镜，拼接多镜头提示词（segment-planner.buildSegmentPrompt；
  *      @资产引用沿用现有行为——标记文本原样传入，与单镜路径一致）
- *   2. 参考图模式下首帧用首镜头的关键帧（按 frameIndex 升序取有图的帧）
+ *   2. 参考图模式下取首镜头的首尾关键帧（frame_role=start + end 各一张，end 缺则退首帧 1 张），
+ *      2 张 refs → keyframes2video（O1 首尾帧锚定）
  *   3. 一次视频调用产出整段，写 segment.video_path / video_mode / duration / prompt 快照
  *   4. 状态机 pending → generating → completed/error；
  *      completed 后联动把片段内 shots 的 status 置 completed
@@ -26,6 +27,8 @@ import {
 import { ImageAssetRepository } from '@core/database/repositories/image-asset.repository'
 import {
   pickVideoMode,
+  clampKeyframesToCapability,
+  pickStartEndKeyframes,
   type VideoModeMatch,
 } from './provider-capability-matcher'
 import type {
@@ -174,10 +177,11 @@ export class SegmentVideoService {
       steps?: number
     },
   ): Promise<{ match: VideoModeMatch; output: VideoSegmentOutput; keyframesUsed: KeyframeInput[] }> {
-    // 首帧参考图：首镜头的关键帧（按 frameIndex 升序，取有图的帧）
+    // 首尾帧参考（O1）：首镜头的 frame_role=start + end 各取一张（按 timePercent 排：start 前 end 后）。
+    // end 帧无图/不存在 → 只剩首帧 1 张 → pickVideoMode 自动落 image2video。
     const firstShotKfs = await this.keyframeRepo.listByStoryboard(shots[0].id)
     const candidateKfs: KeyframeInput[] = []
-    for (const kf of firstShotKfs) {
+    for (const kf of pickStartEndKeyframes(firstShotKfs)) {
       const imagePath = await this.resolveKeyframeImagePath(kf)
       if (imagePath) candidateKfs.push({ imagePath, timePercent: kf.timePercent })
     }
@@ -193,8 +197,13 @@ export class SegmentVideoService {
       )
     }
 
-    // 片段级 V1 只做"首帧参考图"（§5）：image2video 用首帧；keyframes2video 不在片段模式使用
-    const keyframesUsed = match.mode === 'image2video' ? candidateKfs.slice(0, 1) : []
+    // O1：首尾两帧 refs → keyframes2video；仅首帧 → image2video；text2video 不带参考图
+    const keyframesUsed =
+      match.mode === 'keyframes2video'
+        ? clampKeyframesToCapability(candidateKfs, this.adapter.capabilities)
+        : match.mode === 'image2video'
+          ? candidateKfs.slice(0, 1)
+          : []
 
     const { createLogger } = await import('@core/utils/logger')
     const aiLogger = createLogger('ai-call')
@@ -249,7 +258,23 @@ export class SegmentVideoService {
           onTaskId,
         })
       } else {
-        throw new Error('片段级生成 V1 不支持 keyframes2video（逐镜关键帧请用单镜生成）')
+        // keyframes2video：首尾两帧参考（O1）
+        if (!this.adapter.keyframesToVideo) {
+          throw new Error('Provider 声明支持 keyframes2video 但未实现 keyframesToVideo 方法')
+        }
+        if (keyframesUsed.length < 2) {
+          throw new Error('keyframes2video 需要首尾两帧关键帧（首镜头 end 帧缺图）')
+        }
+        output = await this.adapter.keyframesToVideo({
+          keyframes: keyframesUsed,
+          prompt: opts.prompt,
+          durationSec: opts.durationSec,
+          width: opts.width,
+          height: opts.height,
+          quality: opts.quality,
+          steps: opts.steps,
+          onTaskId,
+        })
       }
     } catch (e: any) {
       aiLogger.error('video 调用失败（片段级）', {

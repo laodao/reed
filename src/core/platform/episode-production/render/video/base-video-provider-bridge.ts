@@ -12,11 +12,10 @@
  *   - imageToVideo({ imagePath, prompt, durationSec }) →
  *       baseProvider.generateVideo({ image: imagePath, prompt, duration, width, height })
  *   - keyframesToVideo：
- *       底层 BaseVideoProvider 不直接支持多关键帧（VideoGenerationRequest 只有 image 单字段）。
- *       策略 A（保守）：用首帧走 imageToVideo，丢失中间帧信息（capabilities.keyframes=false 兜底）
- *       策略 B（DashScope wanx 2.5 keyframes 模式）：扩展 generateVideo 入参或新建 method
- *       本桥接采用策略 A——首帧 fallback；具体多帧 provider 接入后续可重写本桥接的
- *       keyframesToVideo 方法以走原生 keyframes API
+ *       底层 BaseVideoProvider 的 VideoGenerationRequest 历史上只有 image 单字段；
+ *       O1 起新增 images?: string[]——桥接同时传 image（首帧，兼容只认单图的 provider）
+ *       与 images（全部帧，按 maxKeyframes 截断；支持多 refs 的 provider 如 ComfyUI H3
+ *       取首尾两帧走原生 keyframes 语义，其余 provider 忽略 images 即用首帧 fallback）。
  *
  * 异步轮询：
  *   - generateVideo 可能返回 taskId（异步任务）；本桥接内置 polling，每 2 秒查 getTaskStatus
@@ -113,9 +112,14 @@ export async function adaptBaseVideoProvider(
   }
 
   if (capabilities.keyframes) {
-    // 策略 A：首帧 fallback（多关键帧原生 API 后续 provider-specific 重写）
+    // O1：image 传首帧（兼容只认单图的 provider），images 传全部帧（按 maxKeyframes 截断；
+    // 支持多 refs 的 provider 如 ComfyUI H3 取首尾两帧）
     adapter.keyframesToVideo = async (input: KeyframesToVideoInput) => {
-      const firstFrame = input.keyframes[0]
+      const frames =
+        capabilities.maxKeyframes > 0
+          ? input.keyframes.slice(0, capabilities.maxKeyframes)
+          : input.keyframes
+      const firstFrame = frames[0]
       if (!firstFrame) {
         throw new Error('keyframesToVideo 需要至少一帧关键帧')
       }
@@ -123,6 +127,7 @@ export async function adaptBaseVideoProvider(
         providerConfigId: opts.providerConfigId,
         model: opts.modelId,
         image: resolveImagePath(firstFrame.imagePath),
+        images: frames.map(k => resolveImagePath(k.imagePath)),
         prompt: input.prompt,
         negativePrompt: input.negativePrompt,
         duration: input.durationSec,
@@ -164,7 +169,7 @@ function resolveImagePath(imagePath: string): string {
 /**
  * 从 BaseVideoProvider 的 model features 推断 capabilities。
  * - features.textToVideo / imageToVideo 直读
- * - keyframes：BaseVideoProvider 不暴露此字段；保守置 false（依赖具体 provider override）
+ * - keyframes：读 features.keyframesToVideo / maxKeyframes（O1 起 VideoModelFeatures 可选声明）
  * - maxDurationSec：取 features.maxDuration
  */
 async function inferCapabilitiesFromBase(
@@ -182,8 +187,9 @@ async function inferCapabilitiesFromBase(
   return {
     text: !!f?.textToVideo,
     image: !!f?.imageToVideo,
-    keyframes: false,
-    maxKeyframes: 0,
+    keyframes: !!f?.keyframesToVideo,
+    maxKeyframes:
+      typeof f?.maxKeyframes === 'number' ? f.maxKeyframes : f?.keyframesToVideo ? 2 : 0,
     maxDurationSec: f?.maxDuration ?? 5,
   }
 }

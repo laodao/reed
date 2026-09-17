@@ -16,9 +16,8 @@ import { getCurrentUserId } from '@core/context/user-context'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { buildAssetRosterForProject } from '@core/platform/episode-production/narrative/asset-roster-builder'
 import { SceneBindingWriter } from '@core/platform/episode-production/narrative/scene-binding-writer'
-import { collectUnboundCharacters } from '@core/platform/episode-production/narrative/services/storyboard.service'
 import { EpisodeScriptGenerator } from '@core/platform/episode-production/narrative/ai/script-generator'
-import { EpisodeStoryboardGenerator } from '@core/platform/episode-production/narrative/ai/storyboard-generator'
+import { StoryboardCogenService } from '@core/platform/episode-production/narrative/services/storyboard-cogen.service'
 import { CharacterAssetService } from '@core/platform/episode-production/assets/services/character-asset.service'
 import { LocationAssetService } from '@core/platform/episode-production/assets/services/location-asset.service'
 import { ItemAssetService } from '@core/platform/episode-production/assets/services/item-asset.service'
@@ -368,82 +367,55 @@ async function executeSplitScenes(ctx: EpAgentExecutionContext): Promise<EpAgent
 
 async function executeGenerateStoryboards(
   ctx: EpAgentExecutionContext,
-  action: EpAgentAction,
+  _action: EpAgentAction,
 ): Promise<EpAgentActionSummary> {
-  const { db, providerConfigId, modelId } = ctx
-  const m = db ?? getCoreDatabaseManager()
+  const m = ctx.db ?? getCoreDatabaseManager()
+  if (!m.dataSource) throw new Error('数据库未初始化')
 
-  const scriptId = action.params?.scriptId
-    ? String(action.params.scriptId)
-    : await resolveScriptId(m, ctx.episodeId)
-  if (!scriptId) throw new Error('剧本不存在，无法生成分镜')
-
-  const scenes = await m.sceneScripts?.getByEpisodeScriptId(scriptId)
-  if (!scenes || scenes.length === 0) throw new Error('没有场景，请先生成场景')
-
-  // AI 批量生成（逐个分镜模式）
-  const results = await EpisodeStoryboardGenerator.getInstance().generateStoryboards(
-    scenes,
-    providerConfigId,
-    modelId,
-    (sceneIndex, total, shotProgress) => {
+  // O4（2026-09-16 ep-optimization）：agent 拆镜改走 cogen 联合生成——资产识别 + 分镜
+  // 一次 LLM 调用，代码侧建/复用 binding 并回填全部 ID（旧逐镜生成器无绑定能力，
+  // 生成结果角色全部未绑定）。force：助手语境「生成分镜」=重写（与 renderer 批量按钮一致）。
+  const result = await new StoryboardCogenService(m.dataSource).cogenStoryboardsForEpisode(
+    ctx.episodeId,
+    { force: true },
+    (progress) => {
       ctx.emit({
         type: 'action:start',
         actionType: 'generate_storyboards',
-        label: `生成分镜 ${sceneIndex + 1}/${total}${shotProgress ? `（镜头 ${shotProgress.current}/${shotProgress.total}）` : ''}`,
+        label: `生成分镜 场景 ${progress.sceneNumber}/${progress.totalScenes}`,
       })
     },
   )
 
-  // 持久化（每场景先删后写）
-  let total = 0
-  const createdStoryboards: any[] = []
-  for (const [sceneId, result] of results) {
-    await m.storyboards?.deleteBySceneScriptId(sceneId)
-    for (const sb of result.storyboards) {
-      const created = await m.storyboards?.create({
-        sceneScriptId: sceneId,
-        shotNumber: sb.shotNumber,
-        shotType: sb.shotType,
-        cameraAngle: sb.cameraAngle,
-        cameraMovement: sb.cameraMovement,
-        movementDuration: sb.movementDuration ?? null,
-        frameDescription: sb.frameDescription,
-        subject: sb.subject ?? null,
-        composition: sb.composition ?? null,
-        characters: sb.characters,
-        narrationId: sb.narrationId ?? null,
-        dialogueIds: sb.dialogueIds,
-        actionIds: sb.actionIds,
-        duration: sb.duration,
-        transition: sb.transition,
-      })
-      if (created) createdStoryboards.push(created)
-      total++
-    }
+  const succeeded = result.results.filter((r) => !r.error)
+  const failed = result.results.filter((r) => r.error)
+  const total = succeeded.reduce((sum, r) => sum + r.shotCount, 0)
+
+  // 落库后重读分镜列表（保持旧返回结构里的 storyboards 字段）
+  const scriptId = await resolveScriptId(m, ctx.episodeId)
+  const scenes = scriptId ? ((await m.sceneScripts?.getByEpisodeScriptId(scriptId)) || []) : []
+  const storyboards: any[] = []
+  for (const scene of scenes) {
+    storyboards.push(...((await m.storyboards?.getBySceneScriptId(scene.id)) || []))
   }
 
-  // H10（2026-09-16 ep-hardening）：统计未绑定资产的角色并在结果文本里显式告警，
-  // 避免"生成成功但角色全部未绑定 → 画面一致性静默受损"。
-  const unbound = collectUnboundCharacters(createdStoryboards, scenes as any)
-  let unboundNote = ''
-  if (unbound.names.length > 0) {
-    unboundNote = `；⚠️ ${unbound.names.length} 个角色未绑定资产：${unbound.names.join('、')}，将影响画面一致性（请到资产页创建/绑定后重新生成）`
-  } else if (unbound.count > 0) {
-    unboundNote = `；⚠️ ${unbound.count} 处分镜角色未绑定资产（无法反查角色名），将影响画面一致性`
-  }
-
+  // cogen 由代码构造绑定并断言 characterId 全非空（D4-2），unboundCharacters 恒空（字段保留兼容）
+  const failNote =
+    failed.length > 0
+      ? `；${failed.length} 个场景失败（场景 ${failed[0].sceneNumber}：${failed[0].error}）`
+      : ''
   const changed: EpAgentPanelSection[] = ['storyboards']
   return {
     type: 'generate_storyboards',
-    status: 'ok',
-    message: `已为 ${scenes.length} 场生成 ${total} 个分镜${unboundNote}`,
+    status: succeeded.length > 0 ? 'ok' : 'error',
+    message: `已为 ${succeeded.length}/${scenes.length} 场生成 ${total} 个分镜（含资产绑定）${failNote}`,
     changed,
     data: {
       scenesCount: scenes.length,
       storyboardsCount: total,
-      unboundCharacters: unbound.names,
-      unboundCount: unbound.count,
+      storyboards,
+      unboundCharacters: [],
+      unboundCount: 0,
     },
     nav: { tab: 'storyboard' },
   }
@@ -1016,9 +988,10 @@ async function executeQueryDatabase(
 
 /**
  * 批量分页纪律（0916 晚 review）：补缺省批量是"本集全部"，40+ 镜 × 分钟级产物极易
- * 超 30min 工具超时——withTimeout 只切断等待、底层循环会继续烧。按上限分页（模型带
- * 着"已完成 X/Y"回执自行续调）；循环体在步边界感知 ctx.signal（用户取消/超时中止），
- * 已开始的一项无法打断，但后续不再启动。
+ * 超 30min 工具超时——按上限分页（模型带着"已完成 X/Y"回执自行续调）；关键帧/配音
+ * 循环体在步边界感知 ctx.signal（用户取消/超时中止），已开始的一项无法打断，但后续不再启动。
+ * 2026-09-16 S-04：视频/导出改 started 语义（见下方"分钟级任务启动器"）——动作只启动
+ * 后台任务并立即返回，批量视频的后台循环逐段执行、终态补发 action:done。
  */
 const KEYFRAME_BATCH_LIMIT = 8
 const VIDEO_BATCH_LIMIT = 4
@@ -1031,6 +1004,62 @@ function batchCapNote(remaining: number, limit: number): string {
 }
 function batchAbortNote(interrupted: boolean): string {
   return interrupted ? '；执行被中止（取消/超时），未开始的项不再启动' : ''
+}
+
+// ==================== 分钟级任务启动器（2026-09-16 S-04 started 语义） ====================
+//
+// generateForSegment / exportEpisodeToMp4 均同步等到产物落地（视频 4~45 分钟/段），
+// agent 工具不允许阻塞整轮：grace 窗口内同步捕获前置校验失败（缺视频/无入选分镜等
+// 立即抛给模型自纠）；越过窗口视为"已启动"返回，终态经 action:done 事件与落库呈现。
+// H11 核验语义相应调整为"任务确实起来了"（在途登记 + 前置校验通过），不承诺产物完成。
+
+/** 启动宽限：视频=选模式/拼 prompt/提交 provider 的早期失败窗口；导出=时间线构建+末端硬锁校验窗口 */
+const VIDEO_START_GRACE_MS = 12_000
+const EXPORT_START_GRACE_MS = 15_000
+
+/** 视频在途目标（segmentId 或 storyboardId）：进程内防重 guard，DB status 为最终事实 */
+const inFlightVideoTargets = new Set<string>()
+/** 导出在途（episodeId）：整集合成一集同时只允许一个 */
+const inFlightExports = new Set<string>()
+
+async function launchLongRunning<T>(
+  job: Promise<T>,
+  graceMs: number,
+  onDone: (r: T) => void,
+  onFail: (e: any) => void,
+  flight?: { set: Set<string>; key: string },
+): Promise<{ kind: 'started' } | { kind: 'finished'; result: T }> {
+  let settled: { ok: boolean; value?: T; error?: any } | null = null
+  const watched = job.then(
+    (v) => { settled = { ok: true, value: v } },
+    (e) => { settled = { ok: false, error: e } },
+  )
+  await Promise.race([watched, new Promise((r) => setTimeout(r, graceMs))])
+  if (settled) {
+    const s = settled as { ok: boolean; value?: T; error?: any }
+    // grace 内落终态（含前置校验失败）：在途登记同步解除，不残留假 guard
+    if (flight) flight.set.delete(flight.key)
+    if (s.ok) return { kind: 'finished', result: s.value as T }
+    throw s.error
+  }
+  void watched.then(() => {
+    const s = settled as { ok: boolean; value?: T; error?: any } | null
+    if (!s) return
+    if (flight) flight.set.delete(flight.key)
+    if (s.ok) onDone(s.value as T)
+    else onFail(s.error)
+  })
+  return { kind: 'started' }
+}
+
+/** 后台终态回流：完成后补发 action:done（轮内 tap 已解订阅也不影响——事件总线留痕给任意订阅方） */
+function emitBackgroundDone(
+  ctx: EpAgentExecutionContext,
+  summary: EpAgentActionSummary,
+): void {
+  try {
+    ctx.emit({ type: 'action:done', summary })
+  } catch { /* 轮结束后 emit 失败仅弃事件 */ }
 }
 
 /**
@@ -1111,7 +1140,14 @@ async function executeGenerateKeyframes(
 /**
  * 生成分镜/片段视频（generate_segment_video）。
  * params: { segmentId? / storyboardId? / providerConfigId? / modelId? }
- * 都不传 → 为本集全部缺视频的分镜逐个生成（自动挑第一个启用的视频模型）。
+ * 都不传 → 为本集全部缺视频的分镜逐个后台生成。
+ *
+ * 模型解析序（2026-09-16 S-04）：显式参数 > 项目设置 config.videoModel > 自动挑第一个
+ * 启用的视频模型；全落空 → 引导错误。quality/steps 由服务层读项目 config.videoQuality/
+ * videoSteps（resolveVideoParamsForEpisode，未配置 → provider 默认 high/20）。
+ *
+ * started 语义：generateForSegment 同步等产物落地（分钟级），动作只"启动+确认已启动"——
+ * grace 窗口内前置校验失败同步报错；越过窗口返回"已启动，需数分钟"，终态补发 action:done。
  */
 async function executeGenerateSegmentVideo(
   ctx: EpAgentExecutionContext,
@@ -1122,6 +1158,17 @@ async function executeGenerateSegmentVideo(
 
   let providerConfigId = action.params?.providerConfigId ? String(action.params.providerConfigId) : undefined
   let modelId = action.params?.modelId ? String(action.params.modelId) : undefined
+  if (!providerConfigId || !modelId) {
+    // 项目设置优先（与分镜/合成页下拉默认同源：config.videoModel）
+    try {
+      const project = await m.videoProjects?.getById?.(ctx.projectId)
+      const vm = (project?.config as Record<string, any> | undefined)?.videoModel
+      if (vm?.providerConfigId && vm?.modelId) {
+        providerConfigId = providerConfigId ?? String(vm.providerConfigId)
+        modelId = modelId ?? String(vm.modelId)
+      }
+    } catch { /* 项目配置读取失败继续走自动挑选 */ }
+  }
   if (!providerConfigId || !modelId) {
     // 自动挑选：第一个启用 provider 里的第一个 video 模型（与文本模型兜底同策略）
     const cfgs = (await m.providerConfigs?.getEnabled?.()) || []
@@ -1135,7 +1182,7 @@ async function executeGenerateSegmentVideo(
       }
     }
     if (!providerConfigId || !modelId) {
-      throw new Error('未配置视频模型：请在 设置 → 提供商配置 中为某提供商启用视频模型（如 wan2.x-i2v / kling-v2）')
+      throw new Error('未配置视频模型：请先在 项目设置 → 视频模型（或 设置 → 提供商配置）中选择/启用视频模型（如 wan2.x-i2v / kling-v2），然后再让我生成视频')
     }
   }
   const { adapter, reason } = await createAdapterForProviderWithReason(providerConfigId, modelId)
@@ -1153,14 +1200,59 @@ async function executeGenerateSegmentVideo(
     if (!seg || seg.episodeId !== ctx.episodeId) {
       throw new Error('指定的片段不存在于当前剧集（id 需来自查询结果或用户消息，不要编造）')
     }
+    if (seg.status === 'generating' || inFlightVideoTargets.has(segmentId)) {
+      return {
+        type: 'generate_segment_video',
+        status: 'ok',
+        message: '该片段视频已在生成中（后台任务，需数分钟），完成后片段状态会变为已完成，请勿重复启动',
+        changed: ['compose'],
+        data: { segmentId, started: false, alreadyRunning: true },
+        nav: { tab: 'compose' },
+      }
+    }
     const svc = new SegmentVideoService(m.dataSource, adapter)
-    const r = await svc.generateForSegment({ segmentId, providerId: providerConfigId, modelId })
+    inFlightVideoTargets.add(segmentId)
+    const outcome = await launchLongRunning(
+      svc.generateForSegment({ segmentId, providerId: providerConfigId, modelId }),
+      VIDEO_START_GRACE_MS,
+      (r) => {
+        emitBackgroundDone(ctx, {
+          type: 'generate_segment_video',
+          status: 'ok',
+          message: `片段视频已完成（模式 ${r.match.mode}，${r.output.durationSec}s），联动 ${r.completedStoryboardIds.length} 个分镜`,
+          changed: ['storyboards', 'compose'],
+          data: { segmentId, mode: r.match.mode, durationSec: r.output.durationSec },
+          nav: { tab: 'compose' },
+        })
+      },
+      (e) => {
+        emitBackgroundDone(ctx, {
+          type: 'generate_segment_video',
+          status: 'error',
+          message: `片段视频生成失败：${e?.message || '未知错误'}`,
+          error: e?.message || '未知错误',
+          data: { segmentId },
+        })
+      },
+      { set: inFlightVideoTargets, key: segmentId },
+    )
+    if (outcome.kind === 'finished') {
+      const r = outcome.result
+      return {
+        type: 'generate_segment_video',
+        status: 'ok',
+        message: `片段视频已生成（模式 ${r.match.mode}，${r.output.durationSec}s），联动 ${r.completedStoryboardIds.length} 个分镜`,
+        changed: ['storyboards', 'compose'],
+        data: { segmentId, mode: r.match.mode, durationSec: r.output.durationSec },
+        nav: { tab: 'compose' },
+      }
+    }
     return {
       type: 'generate_segment_video',
       status: 'ok',
-      message: `片段视频已生成（模式 ${r.match.mode}，${r.output.durationSec}s），联动 ${r.completedStoryboardIds.length} 个分镜`,
+      message: `片段视频生成已启动（后台执行，需数分钟；完成后片段状态自动变为已完成，不要重复调用或等待）。视频模型：${modelId}`,
       changed: ['storyboards', 'compose'],
-      data: { segmentId, mode: r.match.mode, durationSec: r.output.durationSec },
+      data: { segmentId, started: true, providerConfigId, modelId },
       nav: { tab: 'compose' },
     }
   }
@@ -1178,59 +1270,112 @@ async function executeGenerateSegmentVideo(
     if (!validSbIds.has(storyboardId)) {
       throw new Error('指定的分镜不存在于当前剧集（id 需来自查询结果或用户消息，不要编造）')
     }
+    if (inFlightVideoTargets.has(storyboardId)) {
+      return {
+        type: 'generate_segment_video',
+        status: 'ok',
+        message: '该分镜视频已在生成中（后台任务，需数分钟），请勿重复启动',
+        changed: ['storyboards'],
+        data: { storyboardId, started: false, alreadyRunning: true },
+      }
+    }
     const svc = new VideoSegmentService(m.dataSource, adapter)
-    const r = await svc.generateForStoryboard({ storyboardId, providerId: providerConfigId, modelId })
+    inFlightVideoTargets.add(storyboardId)
+    const outcome = await launchLongRunning(
+      svc.generateForStoryboard({ storyboardId, providerId: providerConfigId, modelId }),
+      VIDEO_START_GRACE_MS,
+      (r) => {
+        emitBackgroundDone(ctx, {
+          type: 'generate_segment_video',
+          status: 'ok',
+          message: `分镜视频已完成（模式 ${r.match.mode}，${r.output.durationSec}s）`,
+          changed: ['storyboards'],
+          data: { storyboardId, mode: r.match.mode, durationSec: r.output.durationSec },
+          nav: { tab: 'storyboard' },
+        })
+      },
+      (e) => {
+        emitBackgroundDone(ctx, {
+          type: 'generate_segment_video',
+          status: 'error',
+          message: `分镜视频生成失败：${e?.message || '未知错误'}`,
+          error: e?.message || '未知错误',
+          data: { storyboardId },
+        })
+      },
+      { set: inFlightVideoTargets, key: storyboardId },
+    )
+    if (outcome.kind === 'finished') {
+      const r = outcome.result
+      return {
+        type: 'generate_segment_video',
+        status: 'ok',
+        message: `分镜视频已生成（模式 ${r.match.mode}，${r.output.durationSec}s）`,
+        changed: ['storyboards'],
+        data: { storyboardId, mode: r.match.mode, durationSec: r.output.durationSec },
+        nav: { tab: 'storyboard' },
+      }
+    }
     return {
       type: 'generate_segment_video',
       status: 'ok',
-      message: `分镜视频已生成（模式 ${r.match.mode}，${r.output.durationSec}s）`,
+      message: `分镜视频生成已启动（后台执行，需数分钟；完成后分镜状态自动变为已完成，不要重复调用或等待）。视频模型：${modelId}`,
       changed: ['storyboards'],
-      data: { storyboardId, mode: r.match.mode, durationSec: r.output.durationSec },
+      data: { storyboardId, started: true, providerConfigId, modelId },
       nav: { tab: 'storyboard' },
     }
   }
 
-  // 批量：本集全部缺视频分镜
+  // 批量：本集全部缺视频分镜——后台逐段执行，动作立即返回"已启动"
   const scriptId = await resolveScriptId(m, ctx.episodeId)
   if (!scriptId) throw new Error('剧本不存在，无法生成分镜视频')
   const scenes = (await m.sceneScripts?.getByEpisodeScriptId?.(scriptId)) || []
   const targets: any[] = []
   for (const scene of scenes) {
     const sbs = (await m.storyboards?.getBySceneScriptId?.(scene.id)) || []
-    targets.push(...sbs.filter((sb: any) => !sb.videoPath))
+    targets.push(...sbs.filter((sb: any) => !sb.videoPath && sb.status !== 'generating' && !inFlightVideoTargets.has(sb.id)))
   }
   if (targets.length === 0) {
-    return { type: 'generate_segment_video', status: 'ok', message: '所有分镜都已有视频，无需生成' }
+    return { type: 'generate_segment_video', status: 'ok', message: '所有分镜都已有视频或正在生成中，无需启动' }
   }
   const svc = new VideoSegmentService(m.dataSource, adapter)
-  let done = 0
-  let interrupted = false
-  const failed: string[] = []
   const batch = targets.slice(0, VIDEO_BATCH_LIMIT)
-  for (const sb of batch) {
-    if (batchAborted(ctx)) {
-      interrupted = true
-      break
+  for (const sb of batch) inFlightVideoTargets.add(sb.id)
+  const totalTargets = targets.length
+  void (async () => {
+    let done = 0
+    const failed: string[] = []
+    for (const sb of batch) {
+      ctx.emit({
+        type: 'action:start',
+        actionType: 'generate_segment_video',
+        label: `生成分镜视频 ${done + 1}/${batch.length}`,
+      })
+      try {
+        await svc.generateForStoryboard({ storyboardId: sb.id, providerId: providerConfigId, modelId })
+        done++
+      } catch (e: any) {
+        failed.push(`分镜${sb.shotNumber}:${e?.message || '未知错误'}`)
+      } finally {
+        inFlightVideoTargets.delete(sb.id)
+      }
     }
-    ctx.emit({
-      type: 'action:start',
-      actionType: 'generate_segment_video',
-      label: `生成分镜视频 ${done + 1}/${targets.length}`,
+    const suffix = failed.length > 0 ? `；失败 ${failed.length} 个（${failed.slice(0, 3).join('、')}）` : ''
+    emitBackgroundDone(ctx, {
+      type: 'generate_segment_video',
+      status: done > 0 ? 'ok' : 'error',
+      message: `后台分镜视频批次完成：成功 ${done}/${batch.length}${suffix}`,
+      changed: ['storyboards'],
+      data: { generated: done, batch: batch.length, total: totalTargets },
+      nav: { tab: 'storyboard' },
     })
-    try {
-      await svc.generateForStoryboard({ storyboardId: sb.id, providerId: providerConfigId, modelId })
-      done++
-    } catch (e: any) {
-      failed.push(`分镜${sb.shotNumber}:${e?.message || '未知错误'}`)
-    }
-  }
-  const suffix = failed.length > 0 ? `；失败 ${failed.length} 个（${failed.slice(0, 3).join('、')}）` : ''
+  })().catch(() => { /* 循环体内已逐项捕获；兜底防未处理拒绝 */ })
   return {
     type: 'generate_segment_video',
-    status: done > 0 ? 'ok' : 'error',
-    message: `已生成 ${done}/${targets.length} 个分镜视频${suffix}${batchCapNote(targets.length - batch.length, VIDEO_BATCH_LIMIT)}${batchAbortNote(interrupted)}`,
+    status: 'ok',
+    message: `已启动 ${batch.length}/${totalTargets} 个分镜视频的后台生成（逐段执行，每段需数分钟，完成后状态自动更新，不要重复调用或等待）${batchCapNote(totalTargets - batch.length, VIDEO_BATCH_LIMIT)}。视频模型：${modelId}`,
     changed: ['storyboards'],
-    data: { generated: done, total: targets.length },
+    data: { started: true, batch: batch.length, total: totalTargets, providerConfigId, modelId },
     nav: { tab: 'storyboard' },
   }
 }
@@ -1314,6 +1459,10 @@ async function executeGenerateSceneAudio(
 /**
  * 整集导出 MP4（export_mp4）：合成末端硬锁 + 音轨混入（含 TTS）+ 状态闭环（composing/completed）。
  * params: { outputPath?, burnSubtitles? }
+ *
+ * started 语义（2026-09-16 S-04）：ffmpeg 合成为分钟级，动作只"启动+确认已启动"——
+ * grace 窗口内完成时间线构建与末端硬锁校验（缺视频/无入选分镜立即同步报错）；
+ * 越过窗口返回"已启动"，终态补发 action:done。同一剧集同时只允许一个导出任务。
  */
 async function executeExportMp4(
   ctx: EpAgentExecutionContext,
@@ -1323,6 +1472,17 @@ async function executeExportMp4(
   if (!m.dataSource) throw new Error('数据库未初始化')
   const scriptId = await resolveScriptId(m, ctx.episodeId)
   if (!scriptId) throw new Error('剧本不存在，无法导出')
+
+  if (inFlightExports.has(ctx.episodeId)) {
+    return {
+      type: 'export_mp4',
+      status: 'ok',
+      message: '本集已有导出任务在后台执行中，请勿重复启动（完成后剧集状态会变为已完成）',
+      changed: ['compose'],
+      data: { started: false, alreadyRunning: true },
+      nav: { tab: 'compose' },
+    }
+  }
 
   const { EpisodeMp4ExporterService } = await import('../compose/episode-mp4-exporter.service')
   // 惰性 import：runner 引 fs/fluent-ffmpeg 与 ffmpeg binary 探测，仅在真导出时加载
@@ -1354,17 +1514,52 @@ async function executeExportMp4(
     new FluentFfmpegRunner(),
     new NodeFileWriter('default'),
   )
-  const result = await svc.exportEpisodeToMp4({
-    episodeScriptId: scriptId,
-    outputPath,
-    burnSubtitles: action.params?.burnSubtitles !== false,
-  })
+  inFlightExports.add(ctx.episodeId)
+  const outcome = await launchLongRunning(
+    svc.exportEpisodeToMp4({
+      episodeScriptId: scriptId,
+      outputPath,
+      burnSubtitles: action.params?.burnSubtitles !== false,
+    }),
+    EXPORT_START_GRACE_MS,
+    (result) => {
+      emitBackgroundDone(ctx, {
+        type: 'export_mp4',
+        status: 'ok',
+        message: `MP4 导出完成（${(result.durationSec || 0).toFixed(1)}s）：${result.outputPath}`,
+        changed: ['compose'],
+        data: { outputPath: result.outputPath, durationSec: result.durationSec },
+        nav: { tab: 'compose' },
+      })
+    },
+    (e) => {
+      emitBackgroundDone(ctx, {
+        type: 'export_mp4',
+        status: 'error',
+        message: `MP4 导出失败：${e?.message || '未知错误'}`,
+        error: e?.message || '未知错误',
+        data: { outputPath },
+      })
+    },
+    { set: inFlightExports, key: ctx.episodeId },
+  )
+  if (outcome.kind === 'finished') {
+    const result = outcome.result
+    return {
+      type: 'export_mp4',
+      status: 'ok',
+      message: `已导出 MP4（${(result.durationSec || 0).toFixed(1)}s）：${result.outputPath}`,
+      changed: ['compose'],
+      data: { outputPath: result.outputPath, durationSec: result.durationSec },
+      nav: { tab: 'compose' },
+    }
+  }
   return {
     type: 'export_mp4',
     status: 'ok',
-    message: `已导出 MP4（${(result.durationSec || 0).toFixed(1)}s）：${result.outputPath}`,
+    message: `导出已启动（后台合成需数分钟）：${outputPath}。完成后剧集状态自动变为已完成、文件写入应用导出目录，不要重复调用或等待`,
     changed: ['compose'],
-    data: { outputPath: result.outputPath, durationSec: result.durationSec },
+    data: { outputPath, started: true },
     nav: { tab: 'compose' },
   }
 }

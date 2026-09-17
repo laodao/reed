@@ -60,6 +60,12 @@ export interface ImageGenerator {
     /** 输出尺寸（可选；不传由实现方按各自默认决定） */
     width?: number
     height?: number
+    /**
+     * P-B：显式指定图像 provider/模型（资产图生成器下拉选择）。
+     * 不传 → 实现方自动挑启用 provider 的第一个 image 模型（pickImageModel）。
+     */
+    providerConfigId?: string
+    modelId?: string
   }): Promise<{ imagePath: string; thumbnailPath: string | null }>
 }
 

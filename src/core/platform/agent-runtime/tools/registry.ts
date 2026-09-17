@@ -162,6 +162,25 @@ function deriveRequiresApproval(def: AgentToolDef): boolean {
   return def.requiresApproval === true || APPROVAL_DANGER_LEVELS.has(def.dangerLevel ?? 'read')
 }
 
+/** dedupArgs 的参数指纹：键序无关的稳定序列化（循环引用等异常输入退化为 String） */
+function stableStringifyArgs(value: unknown): string {
+  try {
+    return stringifyArgsInner(value)
+  } catch {
+    return String(value)
+  }
+}
+function stringifyArgsInner(value: unknown): string {
+  if (value === undefined) return 'undefined'
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? String(value)
+  if (Array.isArray(value)) return `[${value.map(stringifyArgsInner).join(',')}]`
+  const body = Object.keys(value as Record<string, unknown>)
+    .sort()
+    .map((k) => `${JSON.stringify(k)}:${stringifyArgsInner((value as Record<string, unknown>)[k])}`)
+    .join(',')
+  return `{${body}}`
+}
+
 /** 深合并：静态 config 键优先（递归 plain object；数组/标量静态整体替换） */
 export function mergeStaticConfig(
   staticConfig: Record<string, unknown> | undefined,
@@ -692,6 +711,9 @@ export class AgentToolRegistry {
     counter: { used: number },
   ): AgentToolDef {
     const base = tool.def
+    // 同参数去重（2026-09-16 S-04：maxCalls 放宽后防模型对同一目标重复点火——
+    // 关键在"按 action+参数 hash"，不同参数（不同资产/分镜）各自占一次额度）
+    const seenArgs = binding.dedupArgs ? new Set<string>() : null
     const needsApproval =
       binding.approval === 'always'
         ? true
@@ -712,6 +734,38 @@ export class AgentToolRegistry {
       requiresApproval: needsApproval,
       registryWrapped: true, // loop 层据此跳过自身校验/超时/截断（所有权在 registry 管线）
       execute: async (input, ctx: AgentToolContext) => {
+        if (seenArgs) {
+          const argsKey = stableStringifyArgs(input)
+          if (seenArgs.has(argsKey)) {
+            if (this.deps.audit) {
+              try {
+                this.deps.audit({
+                  toolName: binding.tool,
+                  args: input as Record<string, unknown>,
+                  dangerLevel: tool.spec.dangerLevel,
+                  approval: 'not-required',
+                  status: 'blocked',
+                  errorCode: 'DUPLICATE_CALL',
+                  durationMs: 0,
+                  resultPreview: '',
+                  truncated: false,
+                  context: ctx.logContext ?? {},
+                })
+              } catch (e) {
+                logger.warn('[tool-registry] 审计 sink 异常（不影响调用结果）', e)
+              }
+            }
+            logger.warn(`[tool-registry] ${binding.tool} 同参数重复调用被去重拦截`)
+            return {
+              ok: false,
+              error: 'DUPLICATE_CALL',
+              hint:
+                `相同参数的调用本轮已执行过，结果被去重拦截。不要对同一目标重复调用本工具；` +
+                `如需对其他目标执行请更换参数（如换一个资产名/分镜 id）。`,
+            }
+          }
+          seenArgs.add(argsKey)
+        }
         if (binding.maxCalls !== undefined && counter.used >= binding.maxCalls) {
           // 审计留痕（总收口 review P3：拦截曾绕过 finish——模型刷上限/借超限探测
           // 在审计面不可见，与 NOT_WHITELISTED 的 blocked 留痕不对称）

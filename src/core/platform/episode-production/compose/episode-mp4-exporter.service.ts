@@ -31,6 +31,7 @@ import { StoryboardEntity } from '@core/database/entities/episode-production/sto
 import { EpisodeScriptEntity } from '@core/database/entities/episode-production/episode-script.entity'
 import { VideoEpisodeEntity } from '@core/database/entities/episode-production/video-episode.entity'
 import { advanceEpisodeStatus } from '../workflow/episode-status-advance'
+import { getCurrentUserId } from '@core/context/user-context'
 import {
   TimelineBuilderService,
   type Timeline,
@@ -283,6 +284,26 @@ export class EpisodeMp4ExporterService {
         )
       } catch {
         /* 状态回写失败不影响导出产物 */
+      }
+
+      // S-07 导出版本留档：ep_export_history 写一行（fail-soft，失败不影响导出结果）
+      try {
+        const isPg = this.ds.options.type === 'postgres'
+        const ph = (n: number) => (isPg ? `$${n}` : '?')
+        await this.ds.query(
+          `INSERT INTO ep_export_history
+             (id, episode_id, output_path, duration_sec, created_at, user_id)
+           VALUES (${ph(1)}, ${ph(2)}, ${ph(3)}, ${ph(4)}, ${isPg ? 'NOW()' : 'CURRENT_TIMESTAMP'}, ${ph(5)})`,
+          [
+            `eeh_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+            episodeId,
+            input.outputPath,
+            result.durationSec || timeline.totalDurationSec,
+            getCurrentUserId(),
+          ],
+        )
+      } catch {
+        /* 留档失败静默忽略 */
       }
     }
 
@@ -564,7 +585,10 @@ export function buildFilterComplex(args: {
   //    - 单元内多路人声（对白×N + 旁白）**先按顺序 concat 成一条人声轨**再与视频音轨
   //      amix（旧实现全部从 t=0 同时 amix——多条 TTS 人声叠音、旁白与对白互相压）；
   //      数据无对话时间戳，顺序播是可保证的下界：超出单元时长的部分仍被 atrim 截断。
-  const normChain = 'aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000'
+  //    - P-D 响度归一防爆音：每路音源 aresample 后追加 loudnorm（I=-16/TP=-1.5/LRA=11，
+  //      单遍动态模式，避免两遍扫描）；单元混音后的 head 链再过一次（amix normalize=0
+  //      叠加近满幅的终片 max -0.7dB 炸音即来源于此）。
+  const normChain = 'aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000,loudnorm=I=-16:TP=-1.5:LRA=11'
   const unitAudioLen = (i: number): number => {
     const isLast = i === shots.length - 1
     const nextTransition = isLast ? null : shots[i + 1].transition
@@ -609,10 +633,13 @@ export function buildFilterComplex(args: {
     unitLabels.push(`[au${i}]`)
   }
   if (shots.length === 1) {
-    parts.push(`[au0]anull[outa]`)
+    parts.push(`[au0]anull[outa_mix]`)
   } else {
-    parts.push(`${unitLabels.join('')}concat=n=${shots.length}:v=0:a=1[outa]`)
+    parts.push(`${unitLabels.join('')}concat=n=${shots.length}:v=0:a=1[outa_mix]`)
   }
+  // 终级限幅：单遍 loudnorm 是响度目标而非硬限幅，concat 后仍可能超 0dBFS（实测终片
+  // max -0.0dB 削波）——alimiter 硬顶 -0.5dB（limit 为线性幅度 0.94）
+  parts.push(`[outa_mix]alimiter=limit=0.94:level=false[outa]`)
 
   return parts.join(';')
 }

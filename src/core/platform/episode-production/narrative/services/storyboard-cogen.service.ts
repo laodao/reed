@@ -14,6 +14,10 @@
  *      scene.location_binding_id；
  *   5. D4-2 断言：落库后复读，任一 characterId 为空 → throw。
  *
+ * O2（2026-09-16 ep-optimization）：默认增量模式——场景已有合格分镜则跳过
+ * （force=true 全量重写）；LLM 超时错误 sleep 60s 后原样重试恰好 1 次。
+ * O3：按名复用 binding 时若旧描述过薄，用新资产卡描述富化回填（enrichedBindings）。
+ *
  * H13：每场景开始/完成/失败经 onProgress 回调上报（handler 转成
  * ep:cogen-progress 事件推 renderer）。
  *
@@ -52,6 +56,15 @@ export interface CogenSceneResult {
 export interface CogenEpisodeResult {
   episodeId: string
   results: CogenSceneResult[]
+  /** O2 增量模式：已有合格分镜被跳过的场景（force=true 时恒空） */
+  skippedScenes: Array<{ sceneId: string; sceneNumber: number }>
+  /** O3：复用命中但描述过薄、已用新资产卡描述富化回填的 binding */
+  enrichedBindings: Array<{ kind: 'character' | 'location' | 'item'; id: string; name: string }>
+}
+
+/** O2：cogen 选项。force=true 全量重写（renderer 批量按钮 / agent 拆镜语义） */
+export interface CogenOptions {
+  force?: boolean
 }
 
 /** H13：逐场景进度事件（handler 侧经 webContents.send('ep:cogen-progress') 推到 renderer） */
@@ -87,14 +100,129 @@ export class StoryboardCogenService {
   /**
    * 整集联合生成分镜（逐场景串行：第 1 场景建资产，后续场景按名复用）。
    *
+   * O2 增量模式（默认，opts.force falsy）：场景已有分镜且所有
+   * characters[].characterId 非空 → 跳过（计入 skippedScenes，不删不写）；
+   * force=true 保持全量重写语义。
+   *
+   * @param opts O2：{ force?: boolean }
    * @param onProgress H13：每场景开始/完成/失败回调（handler 转成 ep:cogen-progress
    *   事件推 renderer）；回调异常被吞掉，不阻断生成。
    * @throws 剧集/剧本/场景不存在，或项目未配置 scriptModel（D3：不静默落回默认模型）
    */
   async cogenStoryboardsForEpisode(
     episodeId: string,
+    opts?: CogenOptions,
     onProgress?: (event: CogenProgressEvent) => void,
   ): Promise<CogenEpisodeResult> {
+    const ctx = await this.loadEpisodeContext(episodeId)
+    const state = await this.buildBindingState(ctx.projectId)
+
+    // ─── 逐场景串行 ───
+    const results: CogenSceneResult[] = []
+    const skippedScenes: CogenEpisodeResult['skippedScenes'] = []
+    const enrichedBindings: CogenEpisodeResult['enrichedBindings'] = []
+    const totalScenes = ctx.scenes.length
+    const emitProgress = (
+      sceneNumber: number,
+      status: CogenProgressEvent['status'],
+      error?: string,
+    ): void => {
+      try {
+        onProgress?.({ episodeId, sceneNumber, totalScenes, status, error })
+      } catch {
+        /* 进度推送失败不阻断生成 */
+      }
+    }
+    for (const scene of ctx.scenes) {
+      // O2 增量模式：已有分镜且全部 characterId 非空 → 跳过（不删不写）
+      if (!opts?.force && (await this.isSceneStoryboardsComplete(scene.id))) {
+        skippedScenes.push({ sceneId: scene.id, sceneNumber: scene.sceneNumber })
+        console.log(`[StoryboardCogenService] 场景 ${scene.sceneNumber} 已有合格分镜，增量模式跳过`)
+        emitProgress(scene.sceneNumber, 'done')
+        continue
+      }
+
+      const result: CogenSceneResult = {
+        sceneId: scene.id,
+        sceneNumber: scene.sceneNumber,
+        shotCount: 0,
+        createdBindings: [],
+        reusedBindings: [],
+      }
+      results.push(result)
+
+      emitProgress(scene.sceneNumber, 'start')
+      try {
+        await this.runSceneCogen(scene, state, ctx, result, enrichedBindings)
+        console.log(
+          `[StoryboardCogenService] 场景 ${scene.sceneNumber} 完成：${result.shotCount} 个分镜，` +
+            `新建绑定 ${result.createdBindings.length}，复用 ${result.reusedBindings.length}`,
+        )
+        emitProgress(scene.sceneNumber, 'done')
+      } catch (e: any) {
+        // 单场景失败不阻断后续场景；旧分镜保留（删旧发生在生成成功之后）
+        result.error = e?.message ?? '联合生成失败（未知异常）'
+        console.error(`[StoryboardCogenService] 场景 ${scene.sceneNumber} 失败：`, e)
+        emitProgress(scene.sceneNumber, 'error', result.error)
+      }
+    }
+
+    // 状态闭环（同 ep:generate-storyboards 的 P0-CM2 写法）：分镜已生成 → storyboarding
+    if (results.some((r) => !r.error)) {
+      await this.advanceToStoryboarding(episodeId)
+    }
+
+    return { episodeId, results, skippedScenes, enrichedBindings }
+  }
+
+  /**
+   * S-06 场景级局部重生（tasks/2026-09-16-ep-studio-polish）：
+   * 单场景联合生成的公共入口（cogenStoryboardsForEpisode 复用同一套
+   * runSceneCogen 逻辑）。语义=替换式重写该场景分镜（等价 force），
+   * 失败抛错且旧分镜保留（删旧发生在生成+校验成功之后）。
+   *
+   * @throws 场景/剧本/剧集不存在，项目未配置 scriptModel，或 LLM 生成/校验失败
+   */
+  async cogenStoryboardsForScene(sceneId: string): Promise<CogenSceneResult> {
+    const scene = await this.ds
+      .getRepository(SceneScriptEntity)
+      .findOne({ where: { id: sceneId } })
+    if (!scene) throw new Error(`场景不存在：${sceneId}`)
+
+    const script = await this.ds
+      .getRepository(EpisodeScriptEntity)
+      .findOne({ where: { id: scene.episodeScriptId } })
+    if (!script) throw new Error(`剧本不存在：${scene.episodeScriptId}`)
+
+    const ctx = await this.loadEpisodeContext(script.episodeId)
+    const state = await this.buildBindingState(ctx.projectId)
+
+    const result: CogenSceneResult = {
+      sceneId: scene.id,
+      sceneNumber: scene.sceneNumber,
+      shotCount: 0,
+      createdBindings: [],
+      reusedBindings: [],
+    }
+    const enrichedBindings: CogenEpisodeResult['enrichedBindings'] = []
+    await this.runSceneCogen(scene, state, ctx, result, enrichedBindings)
+    console.log(
+      `[StoryboardCogenService] 场景 ${scene.sceneNumber} 单独重拆完成：${result.shotCount} 个分镜，` +
+        `新建绑定 ${result.createdBindings.length}，复用 ${result.reusedBindings.length}`,
+    )
+    await this.advanceToStoryboarding(script.episodeId)
+    return result
+  }
+
+  // ==================== 加载链 / binding 快照 / 单场景执行（整集与单场景入口共用） ====
+
+  /** 单场景执行上下文（loadEpisodeContext 产物） */
+  private async loadEpisodeContext(episodeId: string): Promise<{
+    scenes: SceneScriptEntity[]
+    projectId: string
+    providerConfigId: string
+    modelId: string
+  }> {
     // ─── 加载链：episode → script → scenes；episode → project.config.scriptModel ───
     const episode = await this.ds
       .getRepository(VideoEpisodeEntity)
@@ -126,11 +254,27 @@ export class StoryboardCogenService {
         '未配置剧本生成模型：请先到 Studio 顶栏「设置」中为项目配置剧本生成模型（scriptModel），再批量生成分镜',
       )
     }
-    const providerConfigId = scriptModel.providerConfigId
-    const modelId = scriptModel.modelId
+    return {
+      scenes,
+      projectId: project.id,
+      providerConfigId: scriptModel.providerConfigId,
+      modelId: scriptModel.modelId,
+    }
+  }
 
-    // ─── 项目现有 binding 快照（按名索引；随建随更新，跨场景去重） ───
-    const projectId = project.id
+  /** 项目现有 binding 快照（按名索引；随建随更新，跨场景去重）+ 资产 service 组 */
+  private async buildBindingState(projectId: string): Promise<{
+    projectId: string
+    userId: string | null
+    charSvc: CharacterAssetService
+    locSvc: LocationAssetService
+    itemSvc: ItemAssetService
+    charIndex: Map<string, BindingSnapshot>
+    locIndex: Map<string, BindingSnapshot>
+    itemIndex: Map<string, BindingSnapshot>
+    /** 当前快照 → 注入 prompt 的已有资产清单（每场景重建，含前序场景新建资产） */
+    buildExistingAssets: () => CogenExistingAsset[]
+  }> {
     const userId = getCurrentUserId()
     const charSvc = new CharacterAssetService(this.ds)
     const locSvc = new LocationAssetService(this.ds, new AssetImageService(this.ds))
@@ -171,124 +315,200 @@ export class StoryboardCogenService {
       }
     }
 
-    /** 当前快照 → 注入 prompt 的已有资产清单（每场景重建，含前序场景新建资产） */
-    const buildExistingAssets = (): CogenExistingAsset[] => [
-      ...[...charIndex.values()].map((b) => ({
-        kind: 'character' as const,
-        id: b.id,
-        name: b.name,
-        description: b.description,
-      })),
-      ...[...locIndex.values()].map((b) => ({
-        kind: 'location' as const,
-        id: b.id,
-        name: b.name,
-        description: b.description,
-      })),
-      ...[...itemIndex.values()].map((b) => ({
-        kind: 'item' as const,
-        id: b.id,
-        name: b.name,
-        description: b.description,
-      })),
-    ]
-
-    // ─── 逐场景串行 ───
-    const results: CogenSceneResult[] = []
-    const totalScenes = scenes.length
-    const emitProgress = (
-      sceneNumber: number,
-      status: CogenProgressEvent['status'],
-      error?: string,
-    ): void => {
-      try {
-        onProgress?.({ episodeId, sceneNumber, totalScenes, status, error })
-      } catch {
-        /* 进度推送失败不阻断生成 */
-      }
+    return {
+      projectId,
+      userId,
+      charSvc,
+      locSvc,
+      itemSvc,
+      charIndex,
+      locIndex,
+      itemIndex,
+      buildExistingAssets: () => [
+        ...[...charIndex.values()].map((b) => ({
+          kind: 'character' as const,
+          id: b.id,
+          name: b.name,
+          description: b.description,
+        })),
+        ...[...locIndex.values()].map((b) => ({
+          kind: 'location' as const,
+          id: b.id,
+          name: b.name,
+          description: b.description,
+        })),
+        ...[...itemIndex.values()].map((b) => ({
+          kind: 'item' as const,
+          id: b.id,
+          name: b.name,
+          description: b.description,
+        })),
+      ],
     }
-    for (const scene of scenes) {
-      const result: CogenSceneResult = {
-        sceneId: scene.id,
-        sceneNumber: scene.sceneNumber,
-        shotCount: 0,
-        createdBindings: [],
-        reusedBindings: [],
-      }
-      results.push(result)
+  }
 
-      emitProgress(scene.sceneNumber, 'start')
-      try {
-        // 1) LLM 联合生成（含校验 + 纠错重试 1 次；失败抛错，本场景不写库）
-        const output = await generateCogenForScene(
-          scene as unknown as SceneScript,
-          buildExistingAssets(),
-          providerConfigId,
-          modelId,
-        )
+  /**
+   * 单场景执行体（整集循环与 S-06 单场景入口共用）：LLM 联合生成 →
+   * D2 绑定构造 → 替换式写分镜 → 场景级回填 → D4-2 断言。失败抛错（不写库）。
+   */
+  private async runSceneCogen(
+    scene: SceneScriptEntity,
+    state: Awaited<ReturnType<StoryboardCogenService['buildBindingState']>>,
+    ctx: { providerConfigId: string; modelId: string },
+    result: CogenSceneResult,
+    enrichedBindings: CogenEpisodeResult['enrichedBindings'],
+  ): Promise<void> {
+    // 1) LLM 联合生成（含校验 + 纠错重试 1 次；失败抛错，本场景不写库）
+    //    O2：超时类错误 sleep 60s 后原样重试恰好 1 次
+    const output = await this.generateWithTimeoutRetry(
+      scene,
+      state.buildExistingAssets(),
+      ctx.providerConfigId,
+      ctx.modelId,
+    )
 
-        // 2) D2 绑定构造：按名复用 / createStandalone 新建
-        const charBindings = await this.resolveCharacterBindings(
-          output,
-          charIndex,
-          charSvc,
-          projectId,
-          userId,
-          result,
-        )
-        const locationBinding = await this.resolveLocationBinding(
-          output,
-          locIndex,
-          locSvc,
-          projectId,
-          userId,
-          result,
-        )
-        const itemBindings = await this.resolveItemBindings(
-          output,
-          itemIndex,
-          itemSvc,
-          projectId,
-          userId,
-          result,
-        )
+    // 2) D2 绑定构造：按名复用 / createStandalone 新建（O3：复用命中但描述过薄时富化回填）
+    const charBindings = await this.resolveCharacterBindings(
+      output,
+      state.charIndex,
+      state.charSvc,
+      state.projectId,
+      state.userId,
+      result,
+      enrichedBindings,
+    )
+    const locationBinding = await this.resolveLocationBinding(
+      output,
+      state.locIndex,
+      state.locSvc,
+      state.projectId,
+      state.userId,
+      result,
+      enrichedBindings,
+    )
+    const itemBindings = await this.resolveItemBindings(
+      output,
+      state.itemIndex,
+      state.itemSvc,
+      state.projectId,
+      state.userId,
+      result,
+      enrichedBindings,
+    )
 
-        // 3) 替换式写分镜（删旧 → 插新；仅在生成+校验成功后执行）
-        await this.replaceSceneStoryboards(scene.id, output, charBindings, locationBinding.id, itemBindings)
+    // 3) 替换式写分镜（删旧 → 插新；仅在生成+校验成功后执行）
+    await this.replaceSceneStoryboards(scene.id, output, charBindings, locationBinding.id, itemBindings)
 
-        // 4) 回填场景级绑定字段
-        await this.backfillSceneBindings(scene, charBindings, locationBinding.id)
+    // 4) 回填场景级绑定字段
+    await this.backfillSceneBindings(scene, charBindings, locationBinding.id)
 
-        // 5) D4-2 断言：落库后复读，characterId 必须全部非空
-        await this.assertCharacterIdsFilled(scene.id)
+    // 5) D4-2 断言：落库后复读，characterId 必须全部非空
+    await this.assertCharacterIdsFilled(scene.id)
 
-        result.shotCount = output.shots.length
-        console.log(
-          `[StoryboardCogenService] 场景 ${scene.sceneNumber} 完成：${output.shots.length} 个分镜，` +
-            `新建绑定 ${result.createdBindings.length}，复用 ${result.reusedBindings.length}`,
-        )
-        emitProgress(scene.sceneNumber, 'done')
-      } catch (e: any) {
-        // 单场景失败不阻断后续场景；旧分镜保留（删旧发生在生成成功之后）
-        result.error = e?.message ?? '联合生成失败（未知异常）'
-        console.error(`[StoryboardCogenService] 场景 ${scene.sceneNumber} 失败：`, e)
-        emitProgress(scene.sceneNumber, 'error', result.error)
-      }
+    result.shotCount = output.shots.length
+  }
+
+  /** 状态推进（P0-CM2）：分镜已生成 → storyboarding；失败不阻断 */
+  private async advanceToStoryboarding(episodeId: string): Promise<void> {
+    try {
+      const { advanceEpisodeStatus } = await import(
+        '@core/platform/episode-production/workflow/episode-status-advance'
+      )
+      await advanceEpisodeStatus(this.ds, episodeId, 'storyboarding')
+    } catch {
+      /* 状态推进失败不阻断分镜结果 */
     }
+  }
 
-    // 状态闭环（同 ep:generate-storyboards 的 P0-CM2 写法）：分镜已生成 → storyboarding
-    if (results.some((r) => !r.error)) {
-      try {
-        const { advanceEpisodeStatus } = await import(
-          '@core/platform/episode-production/workflow/episode-status-advance'
-        )
-        await advanceEpisodeStatus(this.ds, episodeId, 'storyboarding')
-      } catch {
-        /* 状态推进失败不阻断分镜结果 */
-      }
+  // ==================== O2 增量判定 / 超时重试 ====================
+
+  /**
+   * O2 增量跳过判定：场景已有分镜，且每个分镜 characters[] 里所有
+   * characterId 非空 → 视为合格（无人物出镜的空 characters 数组视为合格）。
+   */
+  private async isSceneStoryboardsComplete(sceneId: string): Promise<boolean> {
+    const storyboards = await this.storyboardRepo.getBySceneScriptId(sceneId)
+    if (storyboards.length === 0) return false
+    return storyboards.every((sb) =>
+      ((sb.characters as any[] | null) ?? []).every((c) => !!c?.characterId),
+    )
+  }
+
+  /**
+   * O2 超时自动重试：generateCogenForScene 抛错且消息含 "timed out" / "超时"
+   * 时 sleep 60s 后原样重试恰好 1 次（百炼限流类瞬时故障实测 1~2 分钟自愈）。
+   * 重试仍失败则原样抛出（含 generateCogenForScene 内部纠错重试，共最多 2 轮 LLM 往返）。
+   */
+  private async generateWithTimeoutRetry(
+    scene: SceneScriptEntity,
+    existingAssets: CogenExistingAsset[],
+    providerConfigId: string,
+    modelId: string,
+  ): Promise<CogenOutput> {
+    try {
+      return await generateCogenForScene(
+        scene as unknown as SceneScript,
+        existingAssets,
+        providerConfigId,
+        modelId,
+      )
+    } catch (e: any) {
+      const msg = e?.message ?? ''
+      if (!/timed out|超时/i.test(msg)) throw e
+      console.log(
+        `[StoryboardCogenService] 场景 ${scene.sceneNumber} LLM 请求超时（${msg}），60s 后原样重试 1 次`,
+      )
+      await new Promise((r) => setTimeout(r, 60_000))
+      return await generateCogenForScene(
+        scene as unknown as SceneScript,
+        existingAssets,
+        providerConfigId,
+        modelId,
+      )
     }
+  }
 
-    return { episodeId, results }
+  // ==================== O3 复用资产描述富化回填 ====================
+
+  /** O3 服饰关键词：描述不含其一视为「过薄」（无法约束定妆/分镜文本的服装一致性） */
+  private static readonly OUTFIT_KEYWORDS = /[衣袍裙衫装服]/
+
+  /** O3 过薄判定：standaloneDescription 为 null / 长度 < 30 / 不含服饰关键词 */
+  private isDescriptionThin(description: string | null): boolean {
+    return (
+      !description ||
+      description.length < 30 ||
+      !StoryboardCogenService.OUTFIT_KEYWORDS.test(description)
+    )
+  }
+
+  /**
+   * O3：复用命中的 binding 描述过薄时，用 cogen 响应里的新资产卡描述更新
+   * （standaloneDescription = description + "\n服饰：" + outfit，与新建分支同规则）。
+   * 更新成功同步快照（后续场景 prompt 注入即见新描述）；失败 warn 不阻断。
+   */
+  private async enrichBindingIfThin(
+    svc: { updateStandalone: (bindingId: string, patch: { description?: string }) => Promise<void> },
+    kind: 'character' | 'location' | 'item',
+    snap: BindingSnapshot,
+    newDescription: string,
+    enriched: CogenEpisodeResult['enrichedBindings'],
+  ): Promise<void> {
+    if (!this.isDescriptionThin(snap.description)) return
+    if (!newDescription || newDescription === snap.description) return
+    try {
+      await svc.updateStandalone(snap.id, { description: newDescription })
+      snap.description = newDescription
+      enriched.push({ kind, id: snap.id, name: snap.name })
+      console.log(
+        `[StoryboardCogenService] 复用 ${kind} "${snap.name}" 描述过薄，已用新资产卡富化回填（${snap.id}）`,
+      )
+    } catch (e) {
+      console.warn(
+        `[StoryboardCogenService] 富化回填失败（不阻断）：${kind} "${snap.name}"（${snap.id}）`,
+        e,
+      )
+    }
   }
 
   // ==================== D2 绑定构造 ====================
@@ -304,15 +524,18 @@ export class StoryboardCogenService {
     projectId: string,
     userId: string | null,
     result: CogenSceneResult,
+    enriched: CogenEpisodeResult['enrichedBindings'],
   ): Promise<Map<string, BindingSnapshot>> {
     const resolved = new Map<string, BindingSnapshot>()
     for (const c of output.assets.characters) {
       let snap = index.get(c.name)
+      // 描述用资产卡：外貌/服饰描述并入 standaloneDescription，定妆图与分镜共用（消除 F12 漂移）
+      const description = c.outfit ? `${c.description}\n服饰：${c.outfit}` : c.description
       if (snap) {
         result.reusedBindings.push({ kind: 'character', id: snap.id, name: c.name })
+        // O3：复用命中但旧描述过薄 → 用新资产卡描述富化回填（不动定妆图）
+        await this.enrichBindingIfThin(svc, 'character', snap, description, enriched)
       } else {
-        // 描述用资产卡：外貌/服饰描述并入 standaloneDescription，定妆图与分镜共用（消除 F12 漂移）
-        const description = c.outfit ? `${c.description}\n服饰：${c.outfit}` : c.description
         const created = await svc.createStandalone({
           projectId,
           name: c.name,
@@ -338,11 +561,13 @@ export class StoryboardCogenService {
     projectId: string,
     userId: string | null,
     result: CogenSceneResult,
+    enriched: CogenEpisodeResult['enrichedBindings'],
   ): Promise<BindingSnapshot> {
     const loc = output.assets.location
     let snap = index.get(loc.name)
     if (snap) {
       result.reusedBindings.push({ kind: 'location', id: snap.id, name: loc.name })
+      await this.enrichBindingIfThin(svc, 'location', snap, loc.description, enriched)
     } else {
       const created = await svc.createStandalone({
         projectId,
@@ -365,12 +590,14 @@ export class StoryboardCogenService {
     projectId: string,
     userId: string | null,
     result: CogenSceneResult,
+    enriched: CogenEpisodeResult['enrichedBindings'],
   ): Promise<Map<string, BindingSnapshot>> {
     const resolved = new Map<string, BindingSnapshot>()
     for (const it of output.assets.items) {
       let snap = index.get(it.name)
       if (snap) {
         result.reusedBindings.push({ kind: 'item', id: snap.id, name: it.name })
+        await this.enrichBindingIfThin(svc, 'item', snap, it.description, enriched)
       } else {
         const created = await svc.createStandalone({
           projectId,

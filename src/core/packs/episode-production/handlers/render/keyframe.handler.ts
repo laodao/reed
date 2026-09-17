@@ -35,6 +35,51 @@ export function registerKeyframeHandlers(): void {
   ipcBridge.handle('ep:set-keyframe-reference-overrides', handleSetKeyframeReferenceOverrides)
   // 阶段 2 配套：列某资产下全部图（让前端"挑图"dialog 渲染网格）
   ipcBridge.handle('ep:list-asset-images', handleListAssetImages)
+  // S-05 定妆图确认闸门配套（2026-09-17）：影响面统计 + 级联重生
+  ipcBridge.handle('ep:asset:reference-impact', handleAssetReferenceImpact)
+  ipcBridge.handle('ep:asset:regenerate-referencing-keyframes', handleRegenerateReferencingKeyframes)
+}
+
+/**
+ * S-05：某资产被关键帧 / 分镜引用的影响面统计。
+ * 口径见 KeyframeGenerationService.countAssetReferences 注释。
+ */
+async function handleAssetReferenceImpact(
+  _event: any,
+  kind: 'character' | 'location' | 'item',
+  bindingId: string,
+): Promise<IpcResponse> {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+    const svc = new KeyframeGenerationService(db.dataSource)
+    const data = await svc.countAssetReferences(kind, bindingId)
+    return { success: true, data }
+  } catch (e: any) {
+    console.error('[handleAssetReferenceImpact] 失败:', e)
+    return { success: false, error: e?.message ?? '统计资产引用失败' }
+  }
+}
+
+/**
+ * S-05 级联重生：对 referenceOverrides 引用该资产的 storyboard_keyframe 行
+ * 逐个重生（service 内串行，单帧失败跳过）。
+ */
+async function handleRegenerateReferencingKeyframes(
+  _event: any,
+  kind: 'character' | 'location' | 'item',
+  bindingId: string,
+): Promise<IpcResponse> {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+    const svc = new KeyframeGenerationService(db.dataSource)
+    const data = await svc.regenerateKeyframesReferencingAsset(kind, bindingId)
+    return { success: true, data }
+  } catch (e: any) {
+    console.error('[handleRegenerateReferencingKeyframes] 失败:', e)
+    return { success: false, error: e?.message ?? '级联重生关键帧失败' }
+  }
 }
 
 async function handleSetKeyframeReferenceOverrides(

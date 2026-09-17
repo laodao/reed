@@ -11,7 +11,7 @@
  * - metadata 解析容错（null / 非 JSON 字符串 / object 直接给）
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   pickReferenceImage,
   scoreVariant,
@@ -22,6 +22,8 @@ import type { AssetImageEntity } from '@core/database/entities/episode-productio
 function makeImg(opts: {
   id: string
   isMain?: number
+  /** S-05 定妆确认标记；默认 1（等价于迁移回填后的存量主图/已确认图） */
+  confirmed?: number
   meta?: Record<string, unknown> | string | null
 }): AssetImageEntity {
   return {
@@ -36,6 +38,7 @@ function makeImg(opts: {
     imagePath: `/tmp/${opts.id}.png`,
     thumbnailPath: null,
     isMain: opts.isMain ?? 0,
+    confirmed: opts.confirmed ?? 1,
     derivedFromImageId: null,
     sortOrder: 0,
     metadata:
@@ -173,5 +176,92 @@ describe('pickReferenceImage', () => {
     })
     expect(r.image?.id).toBe('c')
     expect(r.score).toBe(7)
+  })
+
+  /*
+   * P-A（2026-09-16）：AssetGallery 派生槽位图把视角写在 label 列（front_half 等），
+   * metadata.view 缺失时 selector 用 label 补齐 view 维度，dims.view 得以命中。
+   */
+  it('metadata.view 缺失时以 label 列对齐 view 维度（P-A 派生槽位图）', async () => {
+    const withLabel = (opts: { id: string; label: string | null; isMain?: number; meta?: Record<string, unknown> | null }) => {
+      const img = makeImg({ id: opts.id, isMain: opts.isMain, meta: opts.meta ?? null })
+      ;(img as any).label = opts.label
+      return img
+    }
+    const imgs = [
+      withLabel({ id: 'i_half', label: 'front_half' }), // label 命中 view +4
+      withLabel({ id: 'i_left', label: 'left_3q' }), // 0 分
+      withLabel({ id: 'i_main', label: null, isMain: 1 }),
+    ]
+    const r = await pickReferenceImage(fakeImageSvc(imgs), {
+      kind: 'character',
+      bindingId: 'cb1',
+      dims: { view: 'front_half' },
+    })
+    expect(r.image?.id).toBe('i_half')
+    expect(r.score).toBe(4)
+    expect(r.matchedFields).toEqual(['view'])
+  })
+
+  it('metadata.view 有值时优先于 label（手工标注权威）', async () => {
+    const img = makeImg({ id: 'i1', meta: { view: 'front' } })
+    ;(img as any).label = 'left_3q'
+    const r = await pickReferenceImage(fakeImageSvc([img, makeImg({ id: 'm', isMain: 1, meta: null })]), {
+      kind: 'character',
+      bindingId: 'cb1',
+      dims: { view: 'front' },
+    })
+    expect(r.image?.id).toBe('i1')
+    expect(r.score).toBe(4)
+  })
+
+  /*
+   * S-05 定妆确认闸门（2026-09-17）：
+   * 只有 confirmed=1 的图参与选图；资产无 confirmed 图时回退 is_main 主图 + console.warn。
+   */
+  it('S-05：未 confirmed 的变体不参与评分（即使维度命中）', async () => {
+    const imgs = [
+      makeImg({ id: 'i_unconfirmed', confirmed: 0, meta: { view: 'front', expression: 'happy' } }), // 7 分但未确认
+      makeImg({ id: 'i_confirmed', confirmed: 1, meta: {} }), // 0 分但已确认
+      makeImg({ id: 'i_main', isMain: 1, confirmed: 1, meta: {} }),
+    ]
+    const r = await pickReferenceImage(fakeImageSvc(imgs), {
+      kind: 'character',
+      bindingId: 'cb1',
+      dims: { view: 'front', expression: 'happy' },
+    })
+    // 未确认变体被排除；confirmed 变体 0 分 → 兜底 confirmed 主图
+    expect(r.image?.id).toBe('i_main')
+    expect(r.fellBackToMain).toBe(true)
+  })
+
+  it('S-05：资产无 confirmed 图 → 回退 is_main 主图并 console.warn（老数据兼容）', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const imgs = [
+        makeImg({ id: 'i1', confirmed: 0, meta: { view: 'front' } }),
+        makeImg({ id: 'i_main', isMain: 1, confirmed: 0, meta: {} }),
+      ]
+      const r = await pickReferenceImage(fakeImageSvc(imgs), {
+        kind: 'character',
+        bindingId: 'cb1',
+        dims: { view: 'front' },
+      })
+      expect(r.image?.id).toBe('i_main')
+      expect(r.fellBackToMain).toBe(true)
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('无 confirmed 定妆图'))
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('S-05：无 confirmed 图且无主图 → image=null（不注入参考）', async () => {
+    const imgs = [makeImg({ id: 'i1', confirmed: 0, meta: { view: 'front' } })]
+    const r = await pickReferenceImage(fakeImageSvc(imgs), {
+      kind: 'character',
+      bindingId: 'cb1',
+      dims: { view: 'front' },
+    })
+    expect(r.image).toBeNull()
   })
 })

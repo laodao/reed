@@ -6,7 +6,8 @@
  * mode 调对应方法生成视频片段，落 storyboard.video_path。
  *
  * 流程：
- *   1. 加载 storyboard + 关键帧（按 frameIndex 升序）+ image_assets 取每帧 imagePath
+ *   1. 加载 storyboard + 首尾关键帧（frame_role=start + end 各一张，O1；end 缺则仅首帧）
+ *      + image_assets 取每帧 imagePath
  *   2. matcher 按 keyframeCount + adapter.capabilities 选 mode
  *   3. 按 mode 调 adapter.textToVideo / imageToVideo / keyframesToVideo
  *   4. 写 storyboard.videoPath / video_mode / video_provider_id / video_model_id
@@ -27,6 +28,7 @@ import { ImageAssetRepository } from '@core/database/repositories/image-asset.re
 import {
   pickVideoMode,
   clampKeyframesToCapability,
+  pickStartEndKeyframes,
   type VideoModeMatch,
 } from './provider-capability-matcher'
 import { resolveVideoParamsForStoryboard } from './project-video-params'
@@ -95,10 +97,10 @@ export class VideoSegmentService {
     const width = input.width ?? DEFAULT_WIDTH
     const height = input.height ?? DEFAULT_HEIGHT
 
-    // 加载关键帧（按 frameIndex 升序）+ 取每帧 image asset 路径
+    // 加载首尾关键帧（O1：start + end 各一张，end 缺 → 仅首帧退 image2video）+ 取每帧 image asset 路径
     const keyframes = await this.keyframeRepo.listByStoryboard(sb.id)
     const candidateKfs: KeyframeInput[] = []
-    for (const kf of keyframes) {
+    for (const kf of pickStartEndKeyframes(keyframes)) {
       const imagePath = await this.resolveKeyframeImagePath(kf)
       if (imagePath) {
         candidateKfs.push({ imagePath, timePercent: kf.timePercent })

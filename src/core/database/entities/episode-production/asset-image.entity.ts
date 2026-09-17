@@ -81,6 +81,14 @@ export class AssetImageEntity {
   @Column({ name: 'is_main', type: 'integer', default: 0 })
   isMain!: number
 
+  /**
+   * 定妆确认闸门（S-05 · 2026-09-17）：0/1，用户「确认定妆」后置 1。
+   * 关键帧参考图选择器只选用 confirmed=1 的图（无 confirmed 图时回退 is_main=1 兼容老数据）。
+   * 迁移 add-asset-image-confirmed 把存量 is_main=1 行回填为 1。
+   */
+  @Column({ name: 'confirmed', type: 'integer', default: 0 })
+  confirmed!: number
+
   /** 衍生自哪张图（局部重绘等场景使用） */
   @Column({ name: 'derived_from_image_id', type: 'varchar', nullable: true })
   derivedFromImageId!: string | null

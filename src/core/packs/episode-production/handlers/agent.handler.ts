@@ -4,7 +4,7 @@
  * @description 双端共用 handler — PC 由 electron/index.ts 注册，Web 由 register-channels.ts 注册。
  *
  * 暴露 channel：
- *   - ep:agent:send(projectId, episodeId, message, providerConfigId?, modelId?) → EpAgentSendResult
+ *   - ep:agent:send(projectId, episodeId, message, providerConfigId?, modelId?, contextHint?) → EpAgentSendResult
  *   - ep:agent:history(episodeId) → EpAgentHistoryItem[]
  *   - ep:agent:state(projectId, episodeId) → EpAgentProductionState
  *   - ep:agent:cancel(episodeId)
@@ -21,10 +21,10 @@ import { EpAgentHarnessService } from '@core/platform/episode-production/agent/e
  * 注册剧集制作 Agent 相关 IPC 处理器
  */
 export function registerEpisodeAgentHandlers(): void {
-  ipcBridge.handle('ep:agent:send', async (_event, projectId: string, episodeId: string, message: string, providerConfigId?: string, modelId?: string) => {
+  ipcBridge.handle('ep:agent:send', async (_event, projectId: string, episodeId: string, message: string, providerConfigId?: string, modelId?: string, contextHint?: string) => {
     try {
       const result = isEpAgentHarnessEnabled()
-        ? await EpAgentHarnessService.getInstance().sendMessage(projectId, episodeId, message, { providerConfigId, modelId })
+        ? await EpAgentHarnessService.getInstance().sendMessage(projectId, episodeId, message, { providerConfigId, modelId, contextHint })
         : await EpisodeProductionAgentService.getInstance().sendMessage(projectId, episodeId, message, { providerConfigId, modelId })
       return { success: true, data: result }
     } catch (error: any) {

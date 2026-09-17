@@ -36,7 +36,14 @@
     <!-- 主体：左侧场次导航 + 中央场景卡 -->
     <div class="script-body">
       <aside class="script-left">
-        <SceneNav :scenes="scenes" :selected-scene-id="selectedSceneId" @select="onSelectScene" />
+        <SceneNav
+          :scenes="scenes"
+          :selected-scene-id="selectedSceneId"
+          regenerable
+          :regenerating-id="regeneratingSceneId"
+          @select="onSelectScene"
+          @regenerate="onRegenerateScene"
+        />
       </aside>
       <main class="script-center">
         <!-- 空态：无剧本 -->
@@ -126,6 +133,8 @@ const generating = ref(false)
 const regenerating = ref(false)
 /** H9：「识别要素」手动入口（batchIdentifyEntities，需要项目 scriptModel） */
 const identifying = ref(false)
+/** S-06：正在局部重拆的场景 id（ep:regenerate-scene） */
+const regeneratingSceneId = ref<string | null>(null)
 
 /** 追加剧本弹窗 */
 const appendVisible = ref(false)
@@ -251,6 +260,43 @@ async function onIdentifyEntities(): Promise<void> {
     ElMessage.error(e?.message || '要素识别失败')
   } finally {
     identifying.value = false
+  }
+}
+
+/**
+ * S-06 场景级局部重拆（ep:regenerate-scene）：只重新生成该场景的结构化数据，
+ * 其它场景不动。会作废该场景的分镜与片段（片段由后端 superseded 逻辑收敛），
+ * 故二次确认。
+ */
+async function onRegenerateScene(sc: any): Promise<void> {
+  if (regeneratingSceneId.value) return
+  try {
+    await ElMessageBox.confirm(
+      `将重新生成场次 ${sc.sceneNumber}（${sc.location || '未命名地点'}）的结构化数据：` +
+        '该场景现有的分镜会被删除作废，其所属视频片段也将失效（视频文件保留但不再参与合成）。' +
+        '其它场景及其分镜、视频不受影响。继续？',
+      '重新生成此场景',
+      { type: 'warning', confirmButtonText: '仍要重新生成', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  regeneratingSceneId.value = sc.id
+  try {
+    const r = await (window.electronAPI.episodeProduction as any).regenerateScene(sc.id)
+    if (r?.success) {
+      ElMessage.success(`场次 ${sc.sceneNumber} 已重新生成（其分镜已作废，请到「分镜」页重新生成）`)
+      const keepId = sc.id
+      await load()
+      // 重新选中该场景（id 不变，就地写回）
+      selectedScene.value = scenes.value.find(s => s.id === keepId) ?? scenes.value[0] ?? null
+    } else {
+      ElMessage.error(r?.error || '重新生成场景失败')
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || '重新生成场景失败')
+  } finally {
+    regeneratingSceneId.value = null
   }
 }
 

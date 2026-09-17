@@ -8,6 +8,9 @@
  *   - ep:generate-segment-video  输入 segmentId → 片段级一次视频调用，写 segment.video_path
  *   - ep:delete-segment          输入 segmentId → 移除片段（generating 拒绝；
  *                                物理删除行，磁盘视频文件保留）
+ *   - ep:merge-segments          输入 segIdA, segIdB → S-03 手动合并相邻片段（返回重排后的预览）
+ *   - ep:split-segment           输入 segmentId, afterShotId → S-03 断点镜后拆分（返回重排后的预览）
+ *   - ep:move-segment            输入 segmentId, direction → S-07 同场景相邻交换 seq（返回分段预览）
  *
  * 单镜生成 ep:generate-video-segment 保留不动（video-segment.handler.ts）。
  */
@@ -29,6 +32,32 @@ export function registerSegmentHandlers(): void {
   ipcBridge.handle('ep:list-segments', handleListSegments)
   ipcBridge.handle('ep:generate-segment-video', handleGenerateSegmentVideo)
   ipcBridge.handle('ep:delete-segment', handleDeleteSegment)
+  // S-03 手动分段（tasks/2026-09-16-ep-studio-polish）
+  ipcBridge.handle('ep:merge-segments', handleMergeSegments)
+  ipcBridge.handle('ep:split-segment', handleSplitSegment)
+  // S-07 片段排序：同场景相邻交换 seq
+  ipcBridge.handle('ep:move-segment', handleMoveSegment)
+}
+
+/** S-07：上移/下移片段（同场景相邻交换 seq；返回交换后的分段预览） */
+async function handleMoveSegment(
+  _event: any,
+  segmentId: string,
+  direction: 'up' | 'down',
+): Promise<IpcResponse> {
+  try {
+    if (!segmentId) return { success: false, error: 'segmentId 不能为空' }
+    if (direction !== 'up' && direction !== 'down') {
+      return { success: false, error: "direction 只能是 'up' 或 'down'" }
+    }
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+    const svc = new EpSegmentationService(db.dataSource)
+    const data = await svc.moveSegment(segmentId, direction)
+    return { success: true, data }
+  } catch (e: any) {
+    return { success: false, error: e?.message || '移动片段失败' }
+  }
 }
 
 async function handleRecomputeSegments(
@@ -82,6 +111,42 @@ async function handleDeleteSegment(
     return { success: true, data: { segmentId, hardDeleted: true } }
   } catch (e: any) {
     return { success: false, error: e?.message || '移除片段失败' }
+  }
+}
+
+/** S-03：合并两个相邻片段（校验在 service 内；返回重排后的分段预览） */
+async function handleMergeSegments(
+  _event: any,
+  segIdA: string,
+  segIdB: string,
+): Promise<IpcResponse> {
+  try {
+    if (!segIdA || !segIdB) return { success: false, error: 'segIdA/segIdB 不能为空' }
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+    const svc = new EpSegmentationService(db.dataSource)
+    const data = await svc.mergeSegments(segIdA, segIdB)
+    return { success: true, data }
+  } catch (e: any) {
+    return { success: false, error: e?.message || '合并片段失败' }
+  }
+}
+
+/** S-03：在断点镜之后拆分片段（返回重排后的分段预览） */
+async function handleSplitSegment(
+  _event: any,
+  segmentId: string,
+  afterShotId: string,
+): Promise<IpcResponse> {
+  try {
+    if (!segmentId || !afterShotId) return { success: false, error: 'segmentId/afterShotId 不能为空' }
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+    const svc = new EpSegmentationService(db.dataSource)
+    const data = await svc.splitSegment(segmentId, afterShotId)
+    return { success: true, data }
+  } catch (e: any) {
+    return { success: false, error: e?.message || '拆分片段失败' }
   }
 }
 

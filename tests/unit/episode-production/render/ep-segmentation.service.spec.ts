@@ -269,4 +269,114 @@ describe('EpSegmentationService', () => {
     const svc = new EpSegmentationService(ds)
     await expect(svc.recompute('ep_ghost')).rejects.toThrow(/还没有剧本/)
   })
+
+  // ─── S-03 手动分段（mergeSegments / splitSegment） ───
+
+  it('mergeSegments：相邻同场景段合并 → shot 续接 + seq 重排 + prompt 重算', async () => {
+    // 场景1：3 镜 ×4s，预算 8 → 段1（2 镜 8s）+ 段2（1 镜 4s）
+    await seedEpisode(ds, [[4, 4, 4]], { budgetSec: 8 })
+    const svc = new EpSegmentationService(ds)
+    const first = await svc.recompute('ep1')
+    expect(first.segments).toHaveLength(2)
+
+    const merged = await svc.mergeSegments(
+      first.segments[0].segmentId,
+      first.segments[1].segmentId,
+    )
+    expect(merged.segments).toHaveLength(1)
+    const seg = merged.segments[0]
+    expect(seg.seq).toBe(1)
+    expect(seg.shotCount).toBe(3)
+    expect(seg.estDuration).toBe(12)
+    expect(seg.status).toBe('pending')
+    expect(seg.videoPath).toBeNull()
+    expect(seg.storyboardIds).toEqual(['sb_sc1_1', 'sb_sc1_2', 'sb_sc1_3'])
+
+    // prompt 按合并后全部镜头重算
+    const segRepo = new EpVideoSegmentRepository(ds)
+    const row = await segRepo.getById(seg.segmentId)
+    expect(row?.prompt).toContain('镜头1')
+    expect(row?.prompt).toContain('镜头3')
+    expect(row?.prompt).toContain('画面1-3')
+
+    // 段内 segment_seq 连续
+    const sbRepo = new StoryboardRepository(ds)
+    const shots = await sbRepo.getBySegmentId(seg.segmentId)
+    expect(shots.map(s => s.segmentSeq)).toEqual([1, 2, 3])
+  })
+
+  it('mergeSegments：校验——跨场景 / 不相邻 / 超 15s / generating 均拒绝', async () => {
+    await seedEpisode(ds, [[4, 4, 4, 4, 4, 4], [4, 4]], { budgetSec: 8 })
+    const svc = new EpSegmentationService(ds)
+    const preview = await svc.recompute('ep1')
+    // 场景1：段1(2镜8s) 段2(2镜8s) 段3(2镜8s)；场景2：段4(2镜8s)
+    expect(preview.segments.map(s => s.shotCount)).toEqual([2, 2, 2, 2])
+    const [s1, s2, s3, s4] = preview.segments
+
+    // 跨场景
+    await expect(svc.mergeSegments(s3.segmentId, s4.segmentId)).rejects.toThrow(/同一场景/)
+    // 不相邻（seq 差 2）
+    await expect(svc.mergeSegments(s1.segmentId, s3.segmentId)).rejects.toThrow(/相邻/)
+    // 合计 > 15s（8+8=16）
+    await expect(svc.mergeSegments(s1.segmentId, s2.segmentId)).rejects.toThrow(/超过/)
+
+    // generating 拒绝
+    const segRepo = new EpVideoSegmentRepository(ds)
+    await segRepo.update(s2.segmentId, { status: 'generating' })
+    await expect(svc.mergeSegments(s2.segmentId, s3.segmentId)).rejects.toThrow(/生成中/)
+  })
+
+  it('splitSegment：断点镜后另起一段 → seq 重排 + prompt 重算；再合并可还原', async () => {
+    // 场景1：3 镜 ×4s，预算 15 → 单段 3 镜
+    await seedEpisode(ds, [[4, 4, 4]])
+    const svc = new EpSegmentationService(ds)
+    const first = await svc.recompute('ep1')
+    expect(first.segments).toHaveLength(1)
+    const seg = first.segments[0]
+
+    const split = await svc.splitSegment(seg.segmentId, 'sb_sc1_1')
+    expect(split.segments).toHaveLength(2)
+    expect(split.segments.map(s => s.seq)).toEqual([1, 2])
+    expect(split.segments.map(s => s.shotCount)).toEqual([1, 2])
+    expect(split.segments.map(s => s.estDuration)).toEqual([4, 8])
+    // 头段保留原 segment id
+    expect(split.segments[0].segmentId).toBe(seg.segmentId)
+    expect(split.segments[0].storyboardIds).toEqual(['sb_sc1_1'])
+    expect(split.segments[1].storyboardIds).toEqual(['sb_sc1_2', 'sb_sc1_3'])
+
+    // prompt 各自重算
+    const segRepo = new EpVideoSegmentRepository(ds)
+    const head = await segRepo.getById(split.segments[0].segmentId)
+    const tail = await segRepo.getById(split.segments[1].segmentId)
+    expect(head?.prompt).toContain('画面1-1')
+    expect(head?.prompt).not.toContain('画面1-2')
+    expect(tail?.prompt).toContain('画面1-2')
+    expect(tail?.prompt).toContain('画面1-3')
+
+    // 再合并回来（4+8=12 ≤ 15）→ 段数恢复
+    const remerged = await svc.mergeSegments(
+      split.segments[0].segmentId,
+      split.segments[1].segmentId,
+    )
+    expect(remerged.segments).toHaveLength(1)
+    expect(remerged.segments[0].shotCount).toBe(3)
+  })
+
+  it('splitSegment：校验——不足 2 镜 / 断点为最后一镜 / 断点不属于该段 / generating', async () => {
+    await seedEpisode(ds, [[4, 4], [10]], { budgetSec: 15 })
+    const svc = new EpSegmentationService(ds)
+    const preview = await svc.recompute('ep1')
+    const [segA, segB] = preview.segments // segA 2 镜；segB 单镜
+
+    // 单镜段不可拆
+    await expect(svc.splitSegment(segB.segmentId, 'sb_sc2_1')).rejects.toThrow(/不足 2 镜/)
+    // 断点为最后一镜
+    await expect(svc.splitSegment(segA.segmentId, 'sb_sc1_2')).rejects.toThrow(/最后一镜/)
+    // 断点不属于该段
+    await expect(svc.splitSegment(segA.segmentId, 'sb_sc2_1')).rejects.toThrow(/不属于/)
+
+    const segRepo = new EpVideoSegmentRepository(ds)
+    await segRepo.update(segA.segmentId, { status: 'generating' })
+    await expect(svc.splitSegment(segA.segmentId, 'sb_sc1_1')).rejects.toThrow(/生成中/)
+  })
 })

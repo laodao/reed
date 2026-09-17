@@ -52,6 +52,9 @@ export function registerScriptHandlers(): void {
   // ==================== AI 润色（场景级 · spec 2026-05-08） ====================
   ipcBridge.handle('ep:polish-scene', handlePolishScene)
 
+  // ==================== S-06 场景级局部重拆（tasks/2026-09-16-ep-studio-polish） ============
+  ipcBridge.handle('ep:regenerate-scene', handleRegenerateScene)
+
   // ==================== 剧本文本分析（粘贴导入拆集 · M1 首页） ====================
   ipcBridge.handle('ep:analyze-script-text', handleAnalyzeScriptText)
 }
@@ -328,6 +331,72 @@ async function handleAppendScript(
 }
 
 // ==================== AI 生成处理器（剧本与场景） ====================
+
+/**
+ * S-06 场景级局部重拆（tasks/2026-09-16-ep-studio-polish）：
+ * 只重新生成该场景的结构化数据（LLM 重出，保留其它场景），
+ * SceneBindingWriter.rewriteSceneWithBindings 就地写回该场景（id/sceneNumber 不变）。
+ * 该场景的 storyboards 删除——关联片段靠 ep-segmentation 的 superseded
+ * 逻辑后续收敛（recompute 时发现分镜全没了自动标 superseded），不在此处理。
+ *
+ * 与 ep:generate-scenes 的区别：那是覆盖式全量重拆（删全部场景重建），
+ * 这里只动一个场景。
+ */
+async function handleRegenerateScene(
+  _event: any,
+  sceneId: string,
+  providerConfigId?: string,
+  modelId?: string,
+): Promise<IpcResponse> {
+  try {
+    if (!sceneId) return { success: false, error: 'sceneId 不能为空' }
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource || !db.sceneScripts || !db.episodeScripts || !db.videoEpisodes || !db.storyboards) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    const scene = await db.sceneScripts.getById(sceneId)
+    if (!scene) return { success: false, error: '场景不存在' }
+
+    const script = await db.episodeScripts.getById(scene.episodeScriptId)
+    if (!script) return { success: false, error: '关联的剧本不存在' }
+    const episode = await db.videoEpisodes.getById(script.episodeId)
+    if (!episode) return { success: false, error: '剧集不存在' }
+
+    // 模型回退：与 handleGenerateScenes 一致——未显式传时用项目 config.scriptModel
+    if ((!providerConfigId || !modelId) && db.videoProjects) {
+      const project = await db.videoProjects.getById(episode.projectId).catch(() => null)
+      const sm = (project?.config as any)?.scriptModel
+      if (sm?.providerConfigId && sm?.modelId) {
+        providerConfigId = providerConfigId || sm.providerConfigId
+        modelId = modelId || sm.modelId
+      }
+    }
+
+    // 资产花名册（spec §4.1 强约束，与整集拆分同来源）
+    const roster = await buildAssetRosterForProject(db.dataSource, episode.projectId)
+
+    // 只重生成该场景的结构化数据（sceneNumber 由 generator 强制回写为原值）
+    const generated = await EpisodeScriptGenerator.getInstance().regenerateScene(
+      scene as any,
+      roster,
+      providerConfigId,
+      modelId,
+    )
+
+    // 作废该场景分镜（关联片段由 ep-segmentation superseded 逻辑后续收敛）
+    await db.storyboards.deleteBySceneScriptId(sceneId)
+
+    // 就地写回（事务内替换 characters/dialogues/actions bridge 行）
+    await SceneBindingWriter.rewriteSceneWithBindings(db.dataSource, sceneId, generated)
+
+    const updated = await db.sceneScripts.getById(sceneId)
+    return { success: true, data: updated }
+  } catch (error: any) {
+    console.error('[handleRegenerateScene] 异常:', error)
+    return { success: false, error: error?.message || '重新生成场景失败' }
+  }
+}
 
 async function handleGenerateScript(
   _event: any,

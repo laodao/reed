@@ -12,6 +12,9 @@
  *      标记 status='superseded'（保留行与 video_path 可追溯，不参与合成/导出）；
  *      其余 completed 段及其分镜不动，剩余分镜重新分段，seq 从现有 max(seq) 续排
  *   4. 输出分段预览（segment 列表含 shot 数/预估时长/状态）
+ *   5. S-03 手动分段：mergeSegments（同场景相邻段合并，合计 ≤15s）/
+ *      splitSegment（断点镜后另起一段），均重排 seq 并按 buildSegmentPrompt 重算 prompt；
+ *      S-07 片段排序：moveSegment（同场景相邻交换 seq，跨场景不允许）
  *
  * 预算来源优先级：调用方 opts.budgetSec → 项目 config.segmentDurationBudgetSec → 15s。
  */
@@ -29,6 +32,7 @@ import {
 import {
   splitShotsIntoSegments,
   clampBudgetSec,
+  buildSegmentPrompt,
   DEFAULT_SEGMENT_BUDGET_SEC,
 } from './segment-planner'
 
@@ -174,6 +178,175 @@ export class EpSegmentationService {
     }
 
     return this.preview(episodeId)
+  }
+
+  // ─── S-03 手动分段（merge / split，tasks/2026-09-16-ep-studio-polish） ───
+
+  /**
+   * 合并两个相邻片段（同场景、seq 相邻、合计预估时长 ≤15s、均非 generating）。
+   * 保留 seq 较小的一段作为合并结果：另一方分镜按 segment_seq 续接到其后，
+   * prompt 按 buildSegmentPrompt 对合并后全部镜头重算；另一方片段行物理删除，
+   * 最后全剧 seq 重排为连续 1..N。
+   *
+   * 内容已变化 → 合并结果一律重置为 pending 并清掉 videoPath 等产出快照
+   * （磁盘视频文件保留，不再参与合成/导出），需重新生成。
+   */
+  async mergeSegments(segIdA: string, segIdB: string): Promise<SegmentPreview> {
+    const [a, b] = await Promise.all([
+      this.segmentRepo.getById(segIdA),
+      this.segmentRepo.getById(segIdB),
+    ])
+    if (!a || !b) throw new Error('片段不存在或已被移除')
+    if (a.episodeId !== b.episodeId) throw new Error('只能合并同一剧集内的片段')
+    if (a.sceneId !== b.sceneId) throw new Error('只能合并同一场景内的片段')
+    if (Math.abs(a.seq - b.seq) !== 1) throw new Error('只能合并 seq 相邻的片段')
+    if (a.status === 'generating' || b.status === 'generating') {
+      throw new Error('片段正在生成中，不能合并')
+    }
+    const estA = a.estDuration ?? 0
+    const estB = b.estDuration ?? 0
+    if (estA + estB > DEFAULT_SEGMENT_BUDGET_SEC) {
+      throw new Error(
+        `合并后预估时长 ${estA + estB}s 超过 ${DEFAULT_SEGMENT_BUDGET_SEC}s 上限，不能合并`,
+      )
+    }
+
+    const [first, second] = a.seq < b.seq ? [a, b] : [b, a]
+    const shotsFirst = await this.storyboardRepo.getBySegmentId(first.id)
+    const shotsSecond = await this.storyboardRepo.getBySegmentId(second.id)
+    const merged = [...shotsFirst, ...shotsSecond]
+    if (merged.length === 0) throw new Error('两个片段内都没有分镜，无法合并')
+
+    for (let i = 0; i < merged.length; i++) {
+      await this.storyboardRepo.assignSegment(merged[i].id, first.id, i + 1)
+    }
+    await this.segmentRepo.update(first.id, {
+      shotCount: merged.length,
+      estDuration: estA + estB,
+      prompt: buildSegmentPrompt(
+        merged.map(s => ({ frameDescription: s.frameDescription ?? '', duration: s.duration })),
+      ),
+      status: 'pending',
+      videoPath: null,
+      videoMode: null,
+      duration: null,
+      providerTaskId: null,
+      error: null,
+    })
+    await this.segmentRepo.delete(second.id)
+    await this.resequenceSegments(first.episodeId)
+    return this.preview(first.episodeId)
+  }
+
+  /**
+   * 在指定断点镜之后把片段拆成两段（段内须 ≥2 镜，afterShotId 不能是最后一镜）。
+   * 头段保留原 segment 行（重算 shotCount/estDuration/prompt），尾段新建一行
+   * 临时插在原 seq 之后，最后全剧 seq 重排为连续 1..N。
+   * 两段均重置为 pending（原片段产出快照随内容变化作废，磁盘视频文件保留）。
+   */
+  async splitSegment(segId: string, afterShotId: string): Promise<SegmentPreview> {
+    const seg = await this.segmentRepo.getById(segId)
+    if (!seg) throw new Error('片段不存在或已被移除')
+    if (seg.status === 'generating') throw new Error('片段正在生成中，不能拆分')
+
+    const shots = await this.storyboardRepo.getBySegmentId(segId)
+    if (shots.length < 2) throw new Error('片段内不足 2 镜，无法拆分')
+    const idx = shots.findIndex(s => s.id === afterShotId)
+    if (idx < 0) throw new Error('断点镜不属于该片段')
+    if (idx === shots.length - 1) throw new Error('断点不能是最后一镜（之后没有镜头可另起一段）')
+
+    const head = shots.slice(0, idx + 1)
+    const tail = shots.slice(idx + 1)
+    const headDuration = head.reduce((n, s) => n + (s.duration || 0), 0)
+    const tailDuration = tail.reduce((n, s) => n + (s.duration || 0), 0)
+
+    // 目标顺序：新段紧跟原段（先记下来，建段后按此重排 seq）
+    const order: string[] = []
+    for (const s of await this.segmentRepo.listByEpisode(seg.episodeId)) {
+      order.push(s.id)
+      if (s.id === seg.id) order.push('__new__')
+    }
+
+    const newSeg = await this.segmentRepo.create({
+      episodeId: seg.episodeId,
+      sceneId: seg.sceneId,
+      seq: seg.seq + 1, // 临时值，随后 resequence 统一重排
+      shotCount: tail.length,
+      estDuration: tailDuration,
+      prompt: buildSegmentPrompt(
+        tail.map(s => ({ frameDescription: s.frameDescription ?? '', duration: s.duration })),
+      ),
+    })
+    for (let i = 0; i < tail.length; i++) {
+      await this.storyboardRepo.assignSegment(tail[i].id, newSeg.id, i + 1)
+    }
+    await this.segmentRepo.update(seg.id, {
+      shotCount: head.length,
+      estDuration: headDuration,
+      prompt: buildSegmentPrompt(
+        head.map(s => ({ frameDescription: s.frameDescription ?? '', duration: s.duration })),
+      ),
+      status: 'pending',
+      videoPath: null,
+      videoMode: null,
+      duration: null,
+      providerTaskId: null,
+      error: null,
+    })
+
+    await this.applySeqOrder(
+      order.map(id => (id === '__new__' ? newSeg.id : id)),
+    )
+    return this.preview(seg.episodeId)
+  }
+
+  /**
+   * S-07 片段排序：与相邻片段交换 seq（仅同场景内允许；跨场景/越界报错由 UI 置灰前置，
+   * 服务端仍校验兜底）。seq 交换走两步偏移（与 applySeqOrder 同策略，避免临时撞序）。
+   */
+  async moveSegment(
+    segmentId: string,
+    direction: 'up' | 'down',
+  ): Promise<SegmentPreview> {
+    const seg = await this.segmentRepo.getById(segmentId)
+    if (!seg) throw new Error('片段不存在或已被移除')
+    if (seg.status === 'generating') throw new Error('片段正在生成中，不能移动')
+
+    const all = await this.segmentRepo.listByEpisode(seg.episodeId)
+    const idx = all.findIndex(s => s.id === seg.id)
+    if (idx < 0) throw new Error('片段不存在或已被移除')
+    const neighbor = direction === 'up' ? all[idx - 1] : all[idx + 1]
+    if (!neighbor) throw new Error(direction === 'up' ? '已是第一个片段' : '已是最后一个片段')
+    if (neighbor.sceneId !== seg.sceneId) throw new Error('不能跨场景移动片段')
+    if (neighbor.status === 'generating') throw new Error('相邻片段正在生成中，不能移动')
+
+    const TEMP_OFFSET = 10000
+    await this.segmentRepo.update(seg.id, { seq: seg.seq + TEMP_OFFSET })
+    await this.segmentRepo.update(neighbor.id, { seq: seg.seq })
+    await this.segmentRepo.update(seg.id, { seq: neighbor.seq })
+
+    return this.preview(seg.episodeId)
+  }
+
+  /** 全剧片段 seq 重排为连续 1..N（保持当前 seq 升序的相对顺序） */
+  private async resequenceSegments(episodeId: string): Promise<void> {
+    const all = await this.segmentRepo.listByEpisode(episodeId)
+    await this.applySeqOrder(all.map(s => s.id))
+  }
+
+  /**
+   * 按给定顺序重排 seq 为 1..N。两步走（先整体偏移避开临时 seq 撞序，
+   * 再按目标顺序写回），与 storyboard reorderInScene 同策略。
+   */
+  private async applySeqOrder(orderedIds: string[]): Promise<void> {
+    const TEMP_OFFSET = 10000
+    for (const id of orderedIds) {
+      const seg = await this.segmentRepo.getById(id)
+      if (seg) await this.segmentRepo.update(id, { seq: seg.seq + TEMP_OFFSET })
+    }
+    for (let i = 0; i < orderedIds.length; i++) {
+      await this.segmentRepo.update(orderedIds[i], { seq: i + 1 })
+    }
   }
 
   // ─── 内部 ──────────────────────────────────────────────

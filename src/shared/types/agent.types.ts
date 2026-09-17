@@ -118,6 +118,7 @@ export type AgentToolErrorCode =
   | 'TIMEOUT'
   | 'CANCELLED'
   | 'LIMIT_EXCEEDED' // 单 run 调用次数上限（maxCalls）
+  | 'DUPLICATE_CALL' // 单 run 内同参数重复调用（dedupArgs 去重拦截）
   | 'INTERNAL'
 
 /** 统一工具调用结果（错误永不 throw，一律回填模型） */
@@ -147,6 +148,8 @@ export interface AgentToolBinding {
   approvalNeverConfirmed?: boolean
   /** 单 run 内此工具调用上限 */
   maxCalls?: number
+  /** 同参数去重：true 时同一 run 内"参数完全相同"的重复调用直接拒（DUPLICATE_CALL），不消耗 maxCalls 额度 */
+  dedupArgs?: boolean
   /** 宿主定制的模型侧描述 */
   descriptionOverride?: string
 }

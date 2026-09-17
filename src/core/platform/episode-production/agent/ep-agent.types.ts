@@ -114,6 +114,8 @@ export type EpAgentEvent =
  * 以 episode 为粒度。
  */
 export interface EpAgentProductionState {
+  /** 项目快照（2026-09-16 S-04 上下文注入：项目名进系统快照） */
+  project?: { name: string | null }
   episode: {
     id: string | null
     title?: string | null

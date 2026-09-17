@@ -2,10 +2,10 @@
  * VideoSegmentService 集成单测（P5-T11）
  *
  * 用 in-memory sqlite + 手写 VideoProviderAdapter mock 验证：
- * - 按 keyframeCount + capabilities 选 mode + dispatch 到对应方法
+ * - 按首尾关键帧数（O1：start+end 两帧）+ capabilities 选 mode + dispatch 到对应方法
  * - 写回 storyboard.video_path + video_mode
  * - 强制 forceMode 覆盖自动匹配
- * - keyframes 上限截断（capabilities.maxKeyframes < 实际帧数）
+ * - middle 帧不参与视频 refs（H3 refs 上限 2 张，首尾帧语义）
  * - storyboard 不存在抛错
  * - provider 全不支持时抛错
  */
@@ -150,7 +150,7 @@ describe('VideoSegmentService', () => {
     if (ds.isInitialized) await ds.destroy()
   })
 
-  it('3 帧 + 全能 provider → keyframes2video 调用，写 storyboard.video_path', async () => {
+  it('3 帧 + 全能 provider → keyframes2video 用首尾 2 帧（O1），写 storyboard.video_path', async () => {
     const { sbId } = await seedStoryboardWithKeyframes(ds, 3)
     const adapter = makeAdapter(FULL_CAP)
     const svc = new VideoSegmentService(ds, adapter)
@@ -159,13 +159,16 @@ describe('VideoSegmentService', () => {
 
     expect(result.match.mode).toBe('keyframes2video')
     expect(result.match.degraded).toBe(false)
-    expect(result.keyframesUsed).toHaveLength(3)
+    // O1：只取 start + end 两帧，middle 帧不参与 refs
+    expect(result.keyframesUsed).toHaveLength(2)
+    expect(result.keyframesUsed[0].timePercent).toBe(0)
+    expect(result.keyframesUsed[1].timePercent).toBe(1)
     expect(adapter.keyframesToVideo).toHaveBeenCalledTimes(1)
     expect(adapter.imageToVideo).not.toHaveBeenCalled()
     expect(adapter.textToVideo).not.toHaveBeenCalled()
 
     const sb = await ds.getRepository(StoryboardEntity).findOne({ where: { id: sbId } })
-    expect(sb?.videoPath).toBe('/tmp/kfs_3.mp4')
+    expect(sb?.videoPath).toBe('/tmp/kfs_2.mp4')
     expect(sb?.videoMode).toBe('keyframes2video')
   })
 
@@ -189,7 +192,7 @@ describe('VideoSegmentService', () => {
     expect(adapter.textToVideo).toHaveBeenCalledTimes(1)
   })
 
-  it('5 帧 + provider maxKeyframes=3 → keyframes2video 用 3 帧（首尾+中间均匀）', async () => {
+  it('5 帧 + provider maxKeyframes=3 → keyframes2video 仍取首尾 2 帧（O1：middle 不入 refs）', async () => {
     const { sbId } = await seedStoryboardWithKeyframes(ds, 5)
     const cap: VideoProviderCapabilities = {
       ...FULL_CAP,
@@ -200,12 +203,12 @@ describe('VideoSegmentService', () => {
 
     const result = await svc.generateForStoryboard({ storyboardId: sbId })
     expect(result.match.mode).toBe('keyframes2video')
-    expect(result.keyframesUsed).toHaveLength(3)
+    expect(result.keyframesUsed).toHaveLength(2)
 
     const callArg = adapter.keyframesToVideo.mock.calls[0][0]
-    expect(callArg.keyframes).toHaveLength(3)
+    expect(callArg.keyframes).toHaveLength(2)
     expect(callArg.keyframes[0].timePercent).toBe(0)
-    expect(callArg.keyframes[2].timePercent).toBe(1)
+    expect(callArg.keyframes[1].timePercent).toBe(1)
   })
 
   it('3 帧 + provider 仅 image → 降级 image2video', async () => {

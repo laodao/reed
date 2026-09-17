@@ -90,7 +90,24 @@ export async function pickReferenceImage(
   input: ReferencePickInput,
 ): Promise<PickResult> {
   const all = await imageSvc.listByAsset(input.kind, input.bindingId)
-  const defaultMain = all.find((img) => img.isMain === 1) ?? null
+  /*
+   * S-05 定妆确认闸门（2026-09-17）：只有 confirmed=1 的图参与选图。
+   * 老数据兼容兜底：该资产一张 confirmed 图都没有时，回退 is_main=1 主图并 warn
+   * （迁移 add-asset-image-confirmed 已把存量 is_main=1 回填 confirmed=1，
+   *  正常不会走到；走到说明数据未迁移/异常，至少不让老剧集断供参考图）。
+   */
+  let pool = all.filter((img) => (img as unknown as { confirmed?: number }).confirmed === 1)
+  if (pool.length === 0) {
+    const legacyMain = all.find((img) => img.isMain === 1)
+    if (legacyMain) {
+      console.warn(
+        `[reference-image-selector] ${input.kind}:${input.bindingId} 无 confirmed 定妆图，` +
+          `回退 is_main 主图（老数据兼容兜底）`,
+      )
+      pool = [legacyMain]
+    }
+  }
+  const defaultMain = pool.find((img) => img.isMain === 1) ?? null
 
   /*
    * spec 2026-05-09 location 多主图模型：
@@ -100,12 +117,19 @@ export async function pickReferenceImage(
    */
   const candidates =
     input.kind === 'location'
-      ? all // 所有图（含主图）参评
-      : all.filter((img) => img.isMain !== 1) // 老逻辑：仅非主图
+      ? pool // 所有图（含主图）参评
+      : pool.filter((img) => img.isMain !== 1) // 老逻辑：仅非主图
 
   let best: { image: AssetImageEntity; score: number; matchedFields: string[] } | null = null
   for (const img of candidates) {
     const meta = parseMetadata(img.metadata)
+    /*
+     * P-A 视角对齐（2026-09-16）：AssetGallery 派生槽位图（front_half / left_3q /
+     * right_3q / full_left / full_right）落库时视角写在 label 列而非 metadata.view，
+     * metadata.view 缺失时用 label 补齐 view 维度，让 dims.view 能命中派生槽位图。
+     * metadata.view 有值时优先（用户手工标注的维度信息权威）。
+     */
+    if (meta.view === undefined && img.label) meta.view = img.label
     const evaluation = scoreVariant(input, meta)
     if (evaluation.score > 0) {
       if (!best || evaluation.score > best.score) {

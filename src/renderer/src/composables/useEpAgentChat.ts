@@ -46,6 +46,8 @@ export interface EpAgentPendingChoice {
 interface EpAgentChatOptions {
   projectId: string | Ref<string>
   episodeId: string | Ref<string>
+  /** 当前界面上下文（当前 tab/选中场景/资产），随消息注入 agent 系统快照（2026-09-16 S-04） */
+  contextHint?: Ref<string | null> | string | null
 }
 
 let uidSeed = 0
@@ -70,6 +72,8 @@ function parseAssistantMetadata(metadata?: string): { actions?: EpAgentActionSum
 export function useEpAgentChat(options: EpAgentChatOptions) {
   const projectIdRef = typeof options.projectId === 'string' ? ref(options.projectId) : options.projectId
   const episodeIdRef = typeof options.episodeId === 'string' ? ref(options.episodeId) : options.episodeId
+  const contextHintRef =
+    options.contextHint && typeof options.contextHint === 'object' ? options.contextHint : ref(options.contextHint ?? null)
 
   const messages = ref<EpAgentChatMessage[]>([])
   const sending = ref(false)
@@ -143,6 +147,9 @@ export function useEpAgentChat(options: EpAgentChatOptions) {
         projectIdRef.value,
         episodeIdRef.value,
         content,
+        undefined,
+        undefined,
+        contextHintRef.value ?? undefined,
       )
       if (!r.success) {
         appendError(r.error || '发送失败')

@@ -14,6 +14,17 @@
       >
         <span class="idx">{{ sc.sceneNumber }}</span>
         <span class="name">{{ sc.location || '场景 ' + sc.sceneNumber }}</span>
+        <el-button
+          v-if="regenerable"
+          class="regen-btn"
+          text
+          size="small"
+          :loading="regeneratingId === sc.id"
+          title="重新生成此场景（会作废该场景的分镜与片段）"
+          @click.stop="$emit('regenerate', sc)"
+        >
+          <el-icon><Refresh /></el-icon>
+        </el-button>
       </div>
       <div v-if="scenes.length === 0" class="nav-empty">
         暂无场景<br />可在右侧让助手拆分，或点「重新拆分」
@@ -25,14 +36,26 @@
 <script setup lang="ts">
 /**
  * M2 剧本页 · 左侧场次导航。点击选中 → emit select。
+ * S-06：regenerable=true 时每场显示「重新生成此场景」入口（emit regenerate，
+ * 由宿主页做二次确认与 ep:regenerate-scene 调用）。
  */
-defineProps<{
+import { Refresh } from '@element-plus/icons-vue'
+
+withDefaults(defineProps<{
   scenes: any[]
   selectedSceneId: string | null
-}>()
+  /** S-06：是否显示每场「重新生成此场景」按钮 */
+  regenerable?: boolean
+  /** S-06：正在重拆的场景 id（该场按钮 loading） */
+  regeneratingId?: string | null
+}>(), {
+  regenerable: false,
+  regeneratingId: null,
+})
 
 defineEmits<{
   (e: 'select', scene: any): void
+  (e: 'regenerate', scene: any): void
 }>()
 </script>
 
@@ -79,6 +102,13 @@ defineEmits<{
     font-size: 11px; color: var(--text-color-secondary); flex-shrink: 0;
   }
   .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .regen-btn {
+    flex-shrink: 0;
+    padding: 0 2px;
+    height: auto;
+    color: var(--text-color-placeholder);
+    &:hover { color: var(--color-primary); }
+  }
 }
 
 .nav-empty {

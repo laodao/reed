@@ -178,6 +178,20 @@ export class AssetImageService {
     return await this.repo.findOne({ where: { id: imageId } })
   }
 
+  /**
+   * S-05 定妆确认闸门：设置 / 撤销一张图的 confirmed 标记。
+   * 关键帧参考图选择器（reference-image-selector）只选用 confirmed=1 的图。
+   */
+  async setConfirmed(imageId: string, confirmed: boolean): Promise<void> {
+    const result = await this.repo.update(
+      { id: imageId },
+      { confirmed: confirmed ? 1 : 0, updatedAt: new Date() },
+    )
+    if (result && result.affected === 0) {
+      throw new Error(`AssetImage 不存在: ${imageId}`)
+    }
+  }
+
   /** 删除单张图（方案A：连同落盘的图片文件与缩略图一并清理） */
   async deleteImage(imageId: string): Promise<void> {
     const target = await this.repo.findOne({ where: { id: imageId } })

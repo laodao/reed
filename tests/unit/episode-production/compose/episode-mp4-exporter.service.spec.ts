@@ -401,10 +401,12 @@ describe('buildFilterComplex (pure)', () => {
     expect(fc).toContain('scale=1280:720')
     expect(fc).toContain('[v0_n]null[outv]')
     // 2026-09-16 P0-RD1：单段音轨也走 48k 归一 + apad/atrim 对齐链
+    // P-D：归一链含 loudnorm（I=-16/TP=-1.5/LRA=11 单遍动态）防 amix 叠加爆音
+    expect(fc).toContain('loudnorm=I=-16:TP=-1.5:LRA=11')
     expect(fc).toContain(
-      '[0:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000,apad,atrim=0:3,asetpts=N/SR/TB[au0]',
+      '[0:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000,loudnorm=I=-16:TP=-1.5:LRA=11,apad,atrim=0:3,asetpts=N/SR/TB[au0]',
     )
-    expect(fc).toContain('[au0]anull[outa]')
+    expect(fc).toContain('[au0]anull[outa_mix];[outa_mix]alimiter=limit=0.94:level=false[outa]')
   })
 
   it('两段 + cut（无 transition）：xfade=fade duration=0', () => {
@@ -448,7 +450,7 @@ describe('buildFilterComplex (pure)', () => {
     })
     expect(fc).toContain("subtitles='/tmp/x.srt'")
     // 单元音频按 xfade 扣减对齐（shot0 len=3-0.5=2.5），concat 单元产物
-    expect(fc).toContain('[au0][au1]concat=n=2:v=0:a=1[outa]')
+    expect(fc).toContain('[au0][au1]concat=n=2:v=0:a=1[outa_mix];[outa_mix]alimiter=limit=0.94:level=false[outa]')
     expect(fc).toContain('atrim=0:2.5')
     expect(fc).toContain('atrim=0:3')
   })
@@ -475,7 +477,7 @@ describe('buildFilterComplex 音轨/帧率（复核修复 P1-7）', () => {
       width: 1280,
       height: 720,
     })
-    expect(fc).toContain('[au0][au1]concat=n=2:v=0:a=1[outa]')
+    expect(fc).toContain('[au0][au1]concat=n=2:v=0:a=1[outa_mix];[outa_mix]alimiter=limit=0.94:level=false[outa]')
     expect(fc).toContain('[0:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000')
     expect(fc).toContain('[1:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000')
   })
@@ -489,7 +491,7 @@ describe('buildFilterComplex 音轨/帧率（复核修复 P1-7）', () => {
     })
     // 第 2 路无音轨 → 用静音占位输入（文件数 2 + 第 0 个静音 = 流 2）
     expect(fc).toContain('[2:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000')
-    expect(fc).toContain('[au0][au1]concat=n=2:v=0:a=1[outa]')
+    expect(fc).toContain('[au0][au1]concat=n=2:v=0:a=1[outa_mix];[outa_mix]alimiter=limit=0.94:level=false[outa]')
     // 静音占位规格与 audioFlags 对齐（2026-09-16 P0-RD1：44100 → 48000 与主流 t2v 音轨一致）
     expect(buildSilentInputSpecs([true, false])).toEqual(['anullsrc=r=48000:cl=stereo'])
     expect(buildSilentInputSpecs([false, false])).toEqual([
@@ -508,7 +510,7 @@ describe('buildFilterComplex 音轨/帧率（复核修复 P1-7）', () => {
     })
     expect(fc).toContain('[2:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000')
     expect(fc).toContain('[3:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000')
-    expect(fc).toContain('[au0][au1]concat=n=2:v=0:a=1[outa]')
+    expect(fc).toContain('[au0][au1]concat=n=2:v=0:a=1[outa_mix];[outa_mix]alimiter=limit=0.94:level=false[outa]')
   })
 
   it('配音混入（P0-CM1）：人声按顺序 concat 成一条轨再 amix（不叠音）+ normalize=0', () => {
@@ -522,15 +524,15 @@ describe('buildFilterComplex 音轨/帧率（复核修复 P1-7）', () => {
     // 物理输入顺序：视频(0,1) → 配音文件(2,3,4) → 静音占位(5)；
     // 单元0 人声 = [2:a][3:a] 逐路归一后 concat（旧实现同时 amix 叠音、且 concat 前不归一
     // 混采样率必炸），再与视频轨 [0:a] amix；单元1 单条人声 [4:a] 不需 concat，与占位 [5:a] amix
-    expect(fc).toContain('[2:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000[vs0_0]')
-    expect(fc).toContain('[3:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000[vs0_1]')
+    expect(fc).toContain('[2:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000,loudnorm=I=-16:TP=-1.5:LRA=11[vs0_0]')
+    expect(fc).toContain('[3:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000,loudnorm=I=-16:TP=-1.5:LRA=11[vs0_1]')
     expect(fc).toContain('[vs0_0][vs0_1]concat=n=2:v=0:a=1[vn0]')
-    expect(fc).toContain('[0:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000[an0]')
+    expect(fc).toContain('[0:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000,loudnorm=I=-16:TP=-1.5:LRA=11[an0]')
     expect(fc).toContain('[an0][vn0]amix=inputs=2:duration=longest:normalize=0[am0]')
-    expect(fc).toContain('[4:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000[vn1]')
-    expect(fc).toContain('[5:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000[an1]')
+    expect(fc).toContain('[4:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000,loudnorm=I=-16:TP=-1.5:LRA=11[vn1]')
+    expect(fc).toContain('[5:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000,loudnorm=I=-16:TP=-1.5:LRA=11[an1]')
     expect(fc).toContain('[an1][vn1]amix=inputs=2:duration=longest:normalize=0[am1]')
-    expect(fc).toContain('[au0][au1]concat=n=2:v=0:a=1[outa]')
+    expect(fc).toContain('[au0][au1]concat=n=2:v=0:a=1[outa_mix];[outa_mix]alimiter=limit=0.94:level=false[outa]')
   })
 
   it('scale 链带 fps 归一（xfade 要求两路 fps 一致）', () => {

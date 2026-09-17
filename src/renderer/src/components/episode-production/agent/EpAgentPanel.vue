@@ -151,6 +151,8 @@ function onJump(nav: any): void {
 const chat = useEpAgentChat({
   projectId: props.projectId,
   episodeId: props.episodeId,
+  // 随消息注入主进程 agent 快照（当前 tab/选中场景/资产——2026-09-16 S-04 上下文注入）
+  contextHint: computed(() => props.contextHint ?? null),
 })
 
 const draft = ref('')

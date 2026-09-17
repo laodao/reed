@@ -4,6 +4,11 @@
     <div class="gallery-top">
       <div class="top-left">
         <span class="top-title">{{ kindLabel }}定妆：{{ assetName }}</span>
+        <span
+          v-if="assetId && (impact.keyframes > 0 || impact.storyboards > 0)"
+          class="impact-hint"
+          title="统计口径：关键帧=用户挑图(referenceOverrides)显式引用该资产的关键帧数；分镜=分镜角色/地点/物品名单含该资产的分镜数"
+        >被 {{ impact.keyframes }} 个关键帧引用 / {{ impact.storyboards }} 个分镜使用</span>
       </div>
       <div class="top-actions">
         <el-button text size="small" :disabled="!assetId" @click="showAddOutfit = true">
@@ -36,6 +41,7 @@
           <div class="nav-thumb" :class="{ derived: !!navImage(item.label)?.derivedFromImageId }">
             <el-image v-if="navImage(item.label)?.imagePath" :src="toUrl(navImage(item.label)!.imagePath)" fit="cover" class="thumb-img" title="双击放大查看" @dblclick.stop="openPreviewer(navImage(item.label))" />
             <div v-else class="thumb-empty"><el-icon :size="16"><Picture /></el-icon></div>
+            <span v-if="navImage(item.label)?.confirmed === 1" class="confirm-badge" title="已确认定妆">✓</span>
           </div>
           <div class="nav-info">
             <div class="nav-name">{{ item.title }}</div>
@@ -114,9 +120,37 @@
             :disabled="deletingLabel !== ''"
             @click.stop="onDeleteImage(selectedItem)"
           />
+          <div v-if="selectedImage?.imagePath && selectedImage?.confirmed === 1" class="confirmed-chip">✓ 已确认定妆</div>
+          <el-button
+            v-if="isMainSlot && selectedImage?.imagePath"
+            class="preview-confirm"
+            :type="selectedImage?.confirmed === 1 ? 'success' : 'primary'"
+            :plain="selectedImage?.confirmed === 1"
+            size="small"
+            :loading="confirmToggling"
+            :title="selectedImage?.confirmed === 1 ? '撤销后关键帧不再选用该图' : '确认后关键帧选图只使用已确认的定妆图'"
+            @click.stop="onToggleConfirm"
+          >
+            {{ selectedImage?.confirmed === 1 ? '撤销确认' : '确认定妆' }}
+          </el-button>
         </div>
         <div class="preview-bottom">
           <el-input v-model="localPrompt" type="textarea" :rows="5" resize="vertical" placeholder="镜头提示词…" class="prompt-input" :disabled="!isMainSlot" :title="isMainSlot ? '' : '派生图提示词由系统固定，以主图为参考'" @blur="onSavePrompt" />
+          <el-select
+            v-model="selectedImageModel"
+            size="small"
+            class="model-select"
+            :disabled="!isMainSlot"
+            title="生成模型（P-B）：默认自动挑启用 provider 的第一个图像模型；物品图汉字渲染可选手动指定在线模型"
+          >
+            <el-option label="自动" value="" />
+            <el-option
+              v-for="opt in imageModelOptions"
+              :key="`${opt.providerConfigId}/${opt.modelId}`"
+              :label="opt.label"
+              :value="`${opt.providerConfigId}/${opt.modelId}`"
+            />
+          </el-select>
           <el-button
             v-if="selectedImage?.imagePath"
             :icon="Download"
@@ -205,6 +239,20 @@ const deletingLabel = ref('')
 const openViewer = ref(false)
 const viewerUrlList = ref<string[]>([])
 
+/**
+ * S-05：当前资产被关键帧 / 分镜引用的影响面。
+ * 统计口径（service countAssetReferences 同款注释）：
+ *   关键帧 = storyboard_keyframe.referenceOverrides 显式引用该资产的关键帧数；
+ *   分镜   = 分镜名单（characters[].characterId / location_binding_ids / item_binding_ids）含该资产的分镜数。
+ */
+const impact = ref<{ keyframes: number; storyboards: number; keyframeIds: string[] }>({
+  keyframes: 0,
+  storyboards: 0,
+  keyframeIds: [],
+})
+/** 「确认定妆 / 撤销确认」切换中 */
+const confirmToggling = ref(false)
+
 /** 下载当前选中图（PC 保存对话框复制 / Web 浏览器下载，双端兼容） */
 const { downloadImage } = useAssetImageActions()
 const loading = ref(false)
@@ -285,6 +333,38 @@ const showBatchDerive = ref(false)
 /** 关联人像对话框显隐 */
 const showLinkPortrait = ref(false)
 
+/** P-B：生成模型下拉。'' = 自动（后端 pickImageModel 挑启用 provider 的第一个 image 模型） */
+const selectedImageModel = ref('')
+const imageModelOptions = ref<Array<{ providerConfigId: string; modelId: string; label: string }>>([])
+
+/** 启用 provider 的 image/multimodal 类型模型（数据加载同设置页 / EpisodeStudio） */
+async function loadImageModelOptions(): Promise<void> {
+  try {
+    const response = await window.electronAPI.providerConfig.list()
+    if (!response?.success || !response.data) return
+    const opts: Array<{ providerConfigId: string; modelId: string; label: string }> = []
+    for (const cfg of response.data.filter((c: any) => c.isEnabled)) {
+      for (const m of (cfg.models ?? []) as Array<{ id?: string; type?: string }>) {
+        if (m.id && (m.type === 'image' || m.type === 'multimodal')) {
+          opts.push({ providerConfigId: cfg.id, modelId: m.id, label: `${cfg.name} / ${m.id}` })
+        }
+      }
+    }
+    imageModelOptions.value = opts
+  } catch (e) {
+    console.error('[AssetGallery] 加载图像模型列表失败:', e)
+  }
+}
+
+/** 当前下拉选择解析为 { providerConfigId, modelId }；'' → undefined（自动） */
+function currentModelSelection(): { providerConfigId?: string; modelId?: string } {
+  const v = selectedImageModel.value
+  if (!v) return {}
+  const sep = v.indexOf('/')
+  if (sep <= 0) return {}
+  return { providerConfigId: v.slice(0, sep), modelId: v.slice(sep + 1) }
+}
+
 /** 待生成的衍生 slot（无图），供一键生成对话框勾选 */
 const pendingDeriveItems = computed(() =>
   navItems.value
@@ -311,12 +391,13 @@ function toUrl(path?: string): string {
 }
 
 async function load(): Promise<void> {
-  if (!props.assetId) { images.value = []; return }
+  if (!props.assetId) { images.value = []; impact.value = { keyframes: 0, storyboards: 0, keyframeIds: [] }; return }
   loading.value = true
   try {
     const root = (window as any).electronAPI?.episodeProduction?.asset
     const r = await root.image.listByAsset(props.kind, props.assetId)
     images.value = r?.success ? r.data : []
+    void refreshImpact()
     // 切换资产后主图查看索引归零
     selectedMainIndex.value = 0
     // 仅当当前选中的 slot 无效时才重置为默认：
@@ -367,7 +448,7 @@ async function onGenerate(item: { label: string; category: string }): Promise<vo
       const img = await generateMainFor(
         props.kind,
         props.assetId,
-        override ? { promptOverride: override } : undefined,
+        { ...(override ? { promptOverride: override } : {}), ...currentModelSelection() },
       )
       void img
       ElMessage.success('主图已生成')
@@ -437,10 +518,16 @@ async function onDeleteImage(item: { label: string; category: string }): Promise
   const img = navImage(item.label)
   if (!img?.id || !img.imagePath) return
   const isMain = img.category === 'main' || img.isMain === 1
+  // S-05：删除主图前刷新影响面，确认文案带上引用数字
+  if (isMain) await refreshImpact()
+  const impactText =
+    isMain && (impact.value.keyframes > 0 || impact.value.storyboards > 0)
+      ? `该资产当前被 ${impact.value.keyframes} 个关键帧引用 / ${impact.value.storyboards} 个分镜使用。`
+      : ''
   try {
     await ElMessageBox.confirm(
       isMain
-        ? `删除主图后该资产将进入"缺主图"状态。确认删除"${item.title}"？`
+        ? `${impactText}删除主图后该资产将进入"缺主图"状态。确认删除"${item.title}"？`
         : `确认删除"${item.title}"这张图？文件将一并删除，不可恢复。`,
       '删除图片',
       { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
@@ -466,6 +553,91 @@ async function onDeleteImage(item: { label: string; category: string }): Promise
     ElMessage.error(e?.message || '删除失败')
   } finally {
     deletingLabel.value = ''
+  }
+}
+
+/** S-05：拉取当前资产的关键帧 / 分镜引用影响面（失败静默，不阻塞图集） */
+async function refreshImpact(): Promise<void> {
+  if (!props.assetId) return
+  try {
+    const ep = (window as any).electronAPI?.episodeProduction
+    const r = await ep?.getAssetReferenceImpact?.(props.kind, props.assetId)
+    if (r?.success && r.data) {
+      impact.value = {
+        keyframes: r.data.keyframes ?? 0,
+        storyboards: r.data.storyboards ?? 0,
+        keyframeIds: r.data.keyframeIds ?? [],
+      }
+    }
+  } catch { /* 统计失败不阻塞 */ }
+}
+
+/**
+ * S-05：确认 / 撤销确认定妆图。
+ * 确认后若该资产已被关键帧引用 → 弹窗询问是否级联重生这些关键帧。
+ */
+async function onToggleConfirm(): Promise<void> {
+  const img = selectedImage.value
+  if (!img?.id || confirmToggling.value) return
+  const root = (window as any).electronAPI?.episodeProduction
+  if (!root?.asset?.image?.setConfirmed) {
+    ElMessage.error('image.setConfirmed IPC 未暴露')
+    return
+  }
+  const next = img.confirmed === 1 ? 0 : 1
+  confirmToggling.value = true
+  try {
+    const r = await root.asset.image.setConfirmed(img.id, next === 1)
+    if (!r?.success) {
+      ElMessage.error(r?.error || '操作失败')
+      return
+    }
+    img.confirmed = next
+    const cur = images.value.find(i => i.id === img.id)
+    if (cur) cur.confirmed = next
+    ElMessage.success(next === 1 ? '已确认定妆，关键帧将选用该图作参考' : '已撤销确认')
+    if (next === 1) await maybeCascadeRegenerate()
+    await refreshImpact()
+  } catch (e: any) {
+    ElMessage.error(e?.message || '操作失败')
+  } finally {
+    confirmToggling.value = false
+  }
+}
+
+/** S-05 级联重生：确认新主图后，询问并逐个重生引用该资产的关键帧（串行，失败单个跳过） */
+async function maybeCascadeRegenerate(): Promise<void> {
+  await refreshImpact()
+  const n = impact.value.keyframes
+  if (n <= 0) return
+  try {
+    await ElMessageBox.confirm(
+      `该资产正被 ${n} 个关键帧引用。是否按新定妆图重新生成这些关键帧？（逐帧串行，失败的帧自动跳过）`,
+      '级联重新生成',
+      { type: 'warning', confirmButtonText: '重新生成', cancelButtonText: '暂不' },
+    )
+  } catch {
+    return // 用户选"暂不"
+  }
+  const ep = (window as any).electronAPI?.episodeProduction
+  if (!ep?.regenerateReferencingKeyframes) {
+    ElMessage.error('regenerateReferencingKeyframes IPC 未暴露')
+    return
+  }
+  generating.value = true
+  try {
+    const r = await ep.regenerateReferencingKeyframes(props.kind, props.assetId)
+    if (r?.success && r.data) {
+      const { succeeded = 0, failed = 0 } = r.data
+      if (failed === 0) ElMessage.success(`已重新生成 ${succeeded} 个关键帧`)
+      else ElMessage.warning(`已重新生成 ${succeeded} 个关键帧，${failed} 个失败已跳过`)
+    } else {
+      ElMessage.error(r?.error || '级联重生失败')
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || '级联重生失败')
+  } finally {
+    generating.value = false
   }
 }
 
@@ -592,7 +764,7 @@ async function saveAsPlaceholder(text: string): Promise<void> {
 }
 
 watch(() => [props.assetId, props.kind], () => void load())
-onMounted(() => void load())
+onMounted(() => { void load(); void loadImageModelOptions() })
 // keep-alive 缓存组件被重新激活时（从其它 tab/路由切回）重新拉取，保证显示最新提示词；
 // 但输入框有未保存编辑时跳过刷新，避免用 DB 旧值覆盖用户正在写的内容
 onActivated(() => {
@@ -619,6 +791,7 @@ onActivated(() => {
   background: var(--bg-color);
   .top-left { display: flex; align-items: center; gap: 14px; }
   .top-title { font-size: 14px; font-weight: 600; color: var(--text-color-primary); }
+  .impact-hint { font-size: 11px; color: var(--color-warning); }
   .top-view-pills { display: flex; gap: 6px; }
   .top-actions { display: flex; align-items: center; gap: 4px; }
   .pill {
@@ -664,6 +837,21 @@ onActivated(() => {
     position: relative;
     .thumb-img { width: 100%; height: 100%; object-fit: cover; }
     .thumb-empty { color: var(--text-color-placeholder); }
+    // S-05 已确认定妆角标
+    .confirm-badge {
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--color-success);
+      color: #fff;
+      font-size: 9px;
+      line-height: 14px;
+      text-align: center;
+      z-index: 2;
+    }
     // 衍生图（半身/角度等）：小缩略 + 角标，与主图区分
     &.derived {
       width: 36px; height: 36px;
@@ -728,6 +916,24 @@ onActivated(() => {
     left: 14px;
     z-index: 3;
   }
+  // S-05 定妆确认：已确认角标 + 确认/撤销切换按钮
+  .confirmed-chip {
+    position: absolute;
+    bottom: 10px;
+    left: 14px;
+    z-index: 3;
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+    background: var(--color-success);
+    color: #fff;
+    font-size: 11px;
+  }
+  .preview-confirm {
+    position: absolute;
+    bottom: 10px;
+    right: 14px;
+    z-index: 3;
+  }
 }
 .preview-bottom {
   display: flex;
@@ -738,6 +944,7 @@ onActivated(() => {
     flex: 1;
     :deep(.el-textarea__inner) { font-size: 13px; line-height: 1.6; }
   }
+  .model-select { width: 200px; flex-shrink: 0; }
 }
 
 .empty {

@@ -20,6 +20,7 @@
             />
           </el-select>
           <el-button text @click="settingsVisible = true"><el-icon><Setting /></el-icon> 设置</el-button>
+          <el-button text @click="openUsage"><el-icon><DataAnalysis /></el-icon> 用量</el-button>
           <div class="tab-nav">
             <button
               v-for="t in tabs"
@@ -28,6 +29,7 @@
               :class="{ active: activeTab === t.key }"
               @click="setTab(t.key)"
             >
+              <span class="tab-dot" :class="{ ready: stageOf(t.key)?.ready }" />
               {{ t.label }}
             </button>
           </div>
@@ -40,15 +42,31 @@
       <!-- 主体：左+中由业务 tab 组件整体承载（其内部自管左导航+中央工作区），右侧 agent 全局 -->
       <div class="studio-body">
         <div class="studio-body-inner">
-          <component
-            :is="centerPanel"
-            v-if="resolutionReady"
-            :episode-id="episodeId"
-            :project-id="projectId"
-            :context-hint="ctx.contextHint.value"
-            :external-asset="ctx.selectedAsset.value"
-            @data-changed="onTabDataChanged"
-          />
+          <!-- S-01：当前 tab 未就绪时的提示条（缺什么 + 去哪一步补） -->
+          <el-alert
+            v-if="activeStage && !activeStage.ready"
+            class="readiness-bar"
+            type="warning"
+            :closable="false"
+            show-icon
+          >
+            <template #title>
+              <span class="rb-title">{{ tabLabel(activeTab) }}未就绪</span>
+              <span class="rb-missing">{{ activeStage.missing.join('；') }}</span>
+              <span class="rb-suggestion">{{ stageSuggestion(activeTab) }}</span>
+            </template>
+          </el-alert>
+          <div class="panel-wrap">
+            <component
+              :is="centerPanel"
+              v-if="resolutionReady"
+              :episode-id="episodeId"
+              :project-id="projectId"
+              :context-hint="ctx.contextHint.value"
+              :external-asset="ctx.selectedAsset.value"
+              @data-changed="onTabDataChanged"
+            />
+          </div>
         </div>
       </div>
 
@@ -71,6 +89,28 @@
       :provider-templates="providerTemplates"
       @saved="onSettingsSaved"
     />
+
+    <!-- S-09 用量面板：ai_call_stats 按 call_type+model 聚合（项目级） -->
+    <el-dialog v-model="usageVisible" title="AI 用量统计（本项目）" width="680px">
+      <div v-if="usageLoading" class="usage-loading">加载中...</div>
+      <template v-else>
+        <el-table v-if="usageRows.length" :data="usageRows" size="small" max-height="380">
+          <el-table-column prop="callType" label="调用类型" width="110" />
+          <el-table-column label="模型" min-width="180">
+            <template #default="{ row }">{{ row.modelId || '—' }}</template>
+          </el-table-column>
+          <el-table-column prop="count" label="次数" width="80" align="right" />
+          <el-table-column label="总耗时" width="110" align="right">
+            <template #default="{ row }">{{ formatMs(row.totalMs) }}</template>
+          </el-table-column>
+          <el-table-column label="平均耗时" width="110" align="right">
+            <template #default="{ row }">{{ formatMs(row.avgMs) }}</template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-else description="暂无用量记录：跑一次生成后再看" :image-size="60" />
+        <div class="usage-ref">参考：turbo≈4 分钟/段、高质量≈35 分钟/段</div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -82,7 +122,7 @@
  */
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Setting } from '@element-plus/icons-vue'
+import { ArrowLeft, Setting, DataAnalysis } from '@element-plus/icons-vue'
 import EpisodeStudioLayout from '@/components/episode-production/studio/EpisodeStudioLayout.vue'
 import EpAgentPanel from '@/components/episode-production/agent/EpAgentPanel.vue'
 import SettingsDialog from '@/components/episode-production/dialogs/SettingsDialog.vue'
@@ -116,6 +156,55 @@ const tabs: Array<{ key: EpStudioTab; label: string }> = [
 const episodes = ref<any[]>([])
 const currentEpisode = ref<any>(null)
 const resolutionReady = computed(() => !!projectId && !!episodeId.value)
+
+// ===== S-01 阶段就绪状态机（ep:episode-readiness） =====
+interface StageReadiness { ready: boolean; missing: string[] }
+interface EpisodeReadiness {
+  script: StageReadiness
+  assets: StageReadiness
+  storyboard: StageReadiness
+  compose: StageReadiness
+}
+const readiness = ref<EpisodeReadiness | null>(null)
+
+/** tab key → readiness 阶段 key（资产 tab 对应 assets） */
+const STAGE_KEY: Record<EpStudioTab, keyof EpisodeReadiness> = {
+  script: 'script',
+  asset: 'assets',
+  storyboard: 'storyboard',
+  compose: 'compose',
+}
+
+function stageOf(tab: EpStudioTab): StageReadiness | null {
+  return readiness.value?.[STAGE_KEY[tab]] ?? null
+}
+
+const activeStage = computed(() => stageOf(activeTab.value))
+
+function tabLabel(tab: EpStudioTab): string {
+  return tabs.find(t => t.key === tab)?.label ?? ''
+}
+
+/** 未就绪时的"去哪一步补"建议 */
+function stageSuggestion(tab: EpStudioTab): string {
+  switch (tab) {
+    case 'script': return '请在本页生成剧本并拆分场景'
+    case 'asset': return '请到「资产」页创建资产并生成主图'
+    case 'storyboard': return '请先在「剧本」页完成剧本，再在本页批量生成分镜'
+    case 'compose': return '请到「分镜」页生成全部片段视频后再导出'
+    default: return ''
+  }
+}
+
+async function loadReadiness(): Promise<void> {
+  if (!episodeId.value) { readiness.value = null; return }
+  try {
+    const r = await window.electronAPI.episodeProduction.episodeReadiness(episodeId.value)
+    readiness.value = r?.success ? (r.data ?? null) : null
+  } catch {
+    readiness.value = null
+  }
+}
 
 // ===== 项目设置对话框（D3） =====
 const projectStore = useEpProjectStore()
@@ -154,6 +243,34 @@ async function onSettingsSaved(): Promise<void> {
   await projectStore.loadProject(projectId)
 }
 
+// ===== S-09 用量面板（ep:ai-usage-stats，项目级聚合） =====
+interface UsageRow { callType: string; modelId: string | null; count: number; totalMs: number; avgMs: number }
+const usageVisible = ref(false)
+const usageLoading = ref(false)
+const usageRows = ref<UsageRow[]>([])
+
+async function openUsage(): Promise<void> {
+  usageVisible.value = true
+  usageLoading.value = true
+  try {
+    const r = await (window.electronAPI.episodeProduction as any).aiUsageStats(projectId)
+    usageRows.value = r?.success ? (r.data ?? []) : []
+  } catch {
+    usageRows.value = []
+  } finally {
+    usageLoading.value = false
+  }
+}
+
+function formatMs(ms: number): string {
+  if (!ms) return '0s'
+  const sec = ms / 1000
+  if (sec < 60) return `${sec.toFixed(1)}s`
+  const m = Math.floor(sec / 60)
+  const s = Math.round(sec % 60)
+  return `${m}m ${s}s`
+}
+
 /** 工作区组件：按 tab 切换（剧本/资产 tab 的组件内部自管左导航+中央工作区） */
 const centerPanel = computed(() => {
   switch (activeTab.value) {
@@ -190,16 +307,19 @@ function goBack(): void {
 
 function setTab(tab: EpStudioTab): void {
   ctx.setTab(tab)
+  // S-01：每次 tab 切换刷新就绪状态（状态点 + 提示条）
+  void loadReadiness()
 }
 
 async function onEpisodeChange(): Promise<void> {
   ctx.setEpisode(episodeId.value)
   router.replace(`/episode-production/${projectId}/studio/${episodeId.value}`)
-  await loadEpisode()
+  await Promise.all([loadEpisode(), loadReadiness()])
 }
 
 function onAgentDataChanged(_sections: string[]): void {
   void loadEpisode()
+  void loadReadiness()
 }
 
 /** agent 发起跳转：切到对应 tab，并按需定位场景/资产 */
@@ -212,9 +332,10 @@ function onAgentNavigate(target: { tab: EpStudioTab; sceneId?: string | null; as
 
 function onTabDataChanged(_sections: string[]): void {
   void loadEpisode()
+  void loadReadiness()
 }
 
-watch(() => episodeId.value, () => void loadEpisode())
+watch(() => episodeId.value, () => { void loadEpisode(); void loadReadiness() })
 
 onMounted(async () => {
   await Promise.all([
@@ -227,7 +348,7 @@ onMounted(async () => {
     episodeId.value = episodes.value[0].id
     ctx.setEpisode(episodeId.value)
   }
-  await loadEpisode()
+  await Promise.all([loadEpisode(), loadReadiness()])
 })
 </script>
 
@@ -251,6 +372,9 @@ onMounted(async () => {
     gap: 2px;
     margin: 0 6px;
     .tab-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       border: none;
       background: transparent;
       padding: 6px 14px;
@@ -261,8 +385,42 @@ onMounted(async () => {
       transition: all var(--transition-fast);
       &.active { background: var(--color-primary-light-9); color: var(--color-primary); font-weight: 600; }
       &:hover { color: var(--color-primary); }
+      .tab-dot {
+        width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+        background: var(--text-color-placeholder); // 未就绪/未加载 = 灰
+        &.ready { background: var(--color-success); } // 就绪 = 绿
+      }
     }
   }
+}
+
+.readiness-bar {
+  flex-shrink: 0;
+  margin: 10px 16px 0;
+  .rb-title { font-weight: 600; margin-right: 8px; }
+  .rb-missing { margin-right: 8px; }
+  .rb-suggestion { color: var(--text-color-secondary); }
+}
+
+.panel-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.usage-loading {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-color-secondary);
+}
+
+.usage-ref {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-color-lighter);
+  font-size: 12px;
+  color: var(--text-color-placeholder);
 }
 
 .studio-body {

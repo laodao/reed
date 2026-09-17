@@ -35,6 +35,7 @@ import { registerVideoSegmentHandlers } from './render/video-segment.handler'
 import { registerSegmentHandlers } from './render/segment.handler'
 import { registerAudioHandlers } from './render/audio.handler'
 import { registerComposeHandlers } from './compose.handler'
+import { registerUsageHandlers } from './usage.handler'
 import { registerWorkflowHandlers } from './workflow.handler'
 import { registerEpisodeAgentHandlers } from './agent.handler'
 
@@ -90,6 +91,8 @@ export function registerEpisodeProductionHandlers(): void {
   registerSegmentHandlers()
   registerAudioHandlers()
   registerComposeHandlers()
+  // S-09 用量统计（ai_call_stats 聚合查询）
+  registerUsageHandlers()
   registerWorkflowHandlers()
   registerEpisodeAgentHandlers()
 }

@@ -24,6 +24,46 @@ import type { ProviderTemplate, UserProviderConfig, ChatContext } from '@shared/
 
 const aiLogger = createLogger('ai-call')
 
+// ==================== 用量落库（S-09） ====================
+
+/**
+ * 异步 insert ai_call_stats（fail-soft）：
+ * 表不存在（迁移未跑/测试库）、DB 未初始化、写入失败均只静默忽略，绝不阻塞/影响调用。
+ * projectId 从调用上下文拿不到就 null（调用方可经 opts.projectId 显式传入）。
+ */
+function recordAiCallStat(entry: {
+  callType: 'text' | 'vlm' | 'stream'
+  providerConfigId?: string
+  modelId?: string
+  durationMs?: number
+  projectId?: string | null
+}): void {
+  void (async () => {
+    try {
+      const ds = getCoreDatabaseManager().dataSource
+      if (!ds) return
+      const isPg = ds.options.type === 'postgres'
+      const id = `acs_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
+      const ph = (n: number) => (isPg ? `$${n}` : '?')
+      await ds.query(
+        `INSERT INTO ai_call_stats
+           (id, call_type, provider_config_id, model_id, duration_ms, project_id, created_at)
+         VALUES (${ph(1)}, ${ph(2)}, ${ph(3)}, ${ph(4)}, ${ph(5)}, ${ph(6)}, ${isPg ? 'NOW()' : 'CURRENT_TIMESTAMP'})`,
+        [
+          id,
+          entry.callType,
+          entry.providerConfigId ?? null,
+          entry.modelId ?? null,
+          entry.durationMs ?? null,
+          entry.projectId ?? null,
+        ],
+      )
+    } catch {
+      /* 落库失败静默忽略——用量统计绝不阻塞 AI 调用 */
+    }
+  })()
+}
+
 // ==================== 类型 ====================
 
 export interface ProviderInfo {
@@ -118,7 +158,7 @@ export async function callAI(
   maxTokens: number = 8192,
   providerConfigId?: string,
   modelId?: string,
-  opts?: { temperature?: number }
+  opts?: { temperature?: number; projectId?: string }
 ): Promise<string> {
   const providerInfo = await getProviderConfig(providerConfigId)
   if (!providerInfo) {
@@ -182,6 +222,13 @@ export async function callAI(
       durationMs: Date.now() - t0,
       error: e?.message ?? String(e),
     })
+    recordAiCallStat({
+      callType: 'text',
+      providerConfigId: config.id,
+      modelId: effectiveModelId,
+      durationMs: Date.now() - t0,
+      projectId: opts?.projectId,
+    })
     throw e
   }
 
@@ -195,6 +242,13 @@ export async function callAI(
     durationMs: Date.now() - t0,
     error: result.success ? undefined : result.error,
     maxTokens,
+  })
+  recordAiCallStat({
+    callType: 'text',
+    providerConfigId: config.id,
+    modelId: effectiveModelId,
+    durationMs: Date.now() - t0,
+    projectId: opts?.projectId,
   })
 
   if (!result.success) {
@@ -219,7 +273,7 @@ export async function callVLM(
   maxTokens: number = 2048,
   providerConfigId?: string,
   modelId?: string,
-  opts?: { temperature?: number },
+  opts?: { temperature?: number; projectId?: string },
 ): Promise<string> {
   const providerInfo = await getProviderConfig(providerConfigId)
   if (!providerInfo) {
@@ -275,6 +329,13 @@ export async function callVLM(
       durationMs: Date.now() - t0,
       error: e?.message ?? String(e),
     })
+    recordAiCallStat({
+      callType: 'vlm',
+      providerConfigId: config.id,
+      modelId: effectiveModelId,
+      durationMs: Date.now() - t0,
+      projectId: opts?.projectId,
+    })
     throw e
   }
   aiLogger.info('vlm 调用完成', {
@@ -287,6 +348,13 @@ export async function callVLM(
     response: result.content,
     durationMs: Date.now() - t0,
     error: result.success ? undefined : result.error,
+  })
+  recordAiCallStat({
+    callType: 'vlm',
+    providerConfigId: config.id,
+    modelId: effectiveModelId,
+    durationMs: Date.now() - t0,
+    projectId: opts?.projectId,
   })
   if (!result.success) throw new Error(result.error || 'VLM 调用失败')
   return result.content || ''
@@ -584,6 +652,8 @@ export interface CallAIStreamOptions {
   providerConfigId?: string
   modelId?: string
   temperature?: number
+  /** 用量落库归属（S-09）；拿不到就 null */
+  projectId?: string
   /**
    * 前置对话历史（多轮）：按顺序拼在本次 prompt 之前（role: user/assistant 交替）。
    * 工作流 multiTurn 开启时由 llm-chat / skill-call 节点注入前面 LLM 轮次。
@@ -637,22 +707,42 @@ export async function callAIStream(opts: CallAIStreamOptions): Promise<CallAIStr
 
   const t0 = Date.now()
   let usage: CallAIStreamResult['usage'] | undefined
-  const content = await provider.chatStream(
-    context,
-    event => {
-      if (event.type === 'delta' && event.content) {
-        opts.onDelta?.(event.content)
+  let content: string
+  try {
+    content = await provider.chatStream(
+      context,
+      event => {
+        if (event.type === 'delta' && event.content) {
+          opts.onDelta?.(event.content)
+        }
+        if (event.type === 'done' && event.usage) {
+          usage = event.usage
+        }
+      },
+      opts.signal,
+      {
+        ...(opts.maxTokens !== undefined ? { maxTokens: opts.maxTokens } : {}),
+        ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
       }
-      if (event.type === 'done' && event.usage) {
-        usage = event.usage
-      }
-    },
-    opts.signal,
-    {
-      ...(opts.maxTokens !== undefined ? { maxTokens: opts.maxTokens } : {}),
-      ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
-    }
-  )
+    )
+  } catch (e: any) {
+    aiLogger.error('stream 调用失败', {
+      callType: 'stream',
+      providerConfigId: config.id,
+      modelId: effectiveModelId,
+      userPrompt: opts.prompt,
+      durationMs: Date.now() - t0,
+      error: e?.message ?? String(e),
+    })
+    recordAiCallStat({
+      callType: 'stream',
+      providerConfigId: config.id,
+      modelId: effectiveModelId,
+      durationMs: Date.now() - t0,
+      projectId: opts.projectId,
+    })
+    throw e
+  }
 
   aiLogger.info('stream 调用完成', {
     callType: 'stream',
@@ -661,6 +751,13 @@ export async function callAIStream(opts: CallAIStreamOptions): Promise<CallAIStr
     userPrompt: opts.prompt,
     responseLength: content.length,
     durationMs: Date.now() - t0,
+  })
+  recordAiCallStat({
+    callType: 'stream',
+    providerConfigId: config.id,
+    modelId: effectiveModelId,
+    durationMs: Date.now() - t0,
+    projectId: opts.projectId,
   })
 
   return { content, usage }

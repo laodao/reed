@@ -49,6 +49,12 @@ export interface GenerateMainInput {
    * 优先级高于 referenceImagePath；全部非空路径会进 referenceImagePaths。
    */
   referenceImagePaths?: string[] | null
+  /**
+   * P-B：显式指定图像 provider/模型（资产图生成器下拉选择，如在线模型出汉字物品图）。
+   * 不传 → 走 pickImageModel 自动挑启用 provider 的第一个 image 模型。
+   */
+  providerConfigId?: string | null
+  modelId?: string | null
 }
 
 export class MainImageGeneratorService {
@@ -175,6 +181,8 @@ export class MainImageGeneratorService {
       prompt: effectivePrompt,
       negativePrompt: effectiveNegative,
       label: 'main',
+      providerConfigId: input.providerConfigId ?? undefined,
+      modelId: input.modelId ?? undefined,
     })
 
     // 旧主图降级
@@ -295,6 +303,8 @@ export class MainImageGeneratorService {
       prompt: effectivePrompt,
       negativePrompt: effectiveNegative,
       label: input.label,
+      providerConfigId: input.providerConfigId ?? undefined,
+      modelId: input.modelId ?? undefined,
     })
 
     // makeDefault=true 时把同 asset 已有 isMain=1 降为 0，让目标成为默认
