@@ -282,7 +282,7 @@ export function parseBrainConfig(raw: string | null): KbBrainConfig | null
 // null/缺 enabled → 返回 null = 大脑关闭（一切入口早退，等价现状）
 ```
 
-写入路径：现有 updateKnowledgeBase 的请求体透传 `brainConfig` JSON 列（knowledge_bases 增列，迁移并入 §1.8 函数）。
+写入路径（复核修正 F4）：`knowledge-base.repository.update` 是**显式字段映射**（rerankConfig 先例），不是透传——需同步改四处：knowledge_base.entity 加 `brain_config`/`brain_state` 列、repository toDto/update 映射、shared types 的 KnowledgeBase/UpdateKnowledgeBaseRequest 加字段、迁移加列。`parseBrainConfig`/`ajv` 依赖已就位（ajv ^8.20.0 在依赖中，无需新增）。
 
 ---
 
@@ -326,9 +326,13 @@ runBasePass(chapter):
   batches = 按句切窗（每窗 ≤ N=40 句）
   for batch:
     out = callLlm(ATOMIZE_PROMPT, {章节标题, 窗口文本, 类型说明}, schema=AtomizeOutput)
-    atoms += out.atoms            # [{statement,type,certainty,quote,startOffset,endOffset,validFrom?,validUntil?,subjectMention?,objectMention?}]
-    events += out.events          # [{fromIdx,toIdx,relation:'leads-to',evidence}]（句级索引，后续换算成 atom 对）
+    atoms += out.atoms            # [{statement,type,certainty,quote,validFrom?,validUntil?,subjectMention?,objectMention?}]
+    events += out.events          # [{fromQuote,toQuote,relation:'leads-to',evidence}]（quote 锚定）
     解析链路：extractJsonFromResponse → parseJsonString → isJsonTruncated?callAIWithContinue → ajv 校验失败→错误清单回喂重试1次（cogen 范式）
+  【复核修正 F1】偏移量不由模型产出（LLM 数字符偏移不可靠）：模型只输出 quote；
+  偏移由定位器推导——窗口文本在章节内的起点已知，indexOf(quote) 命中即得
+  start/endOffset（截断至200字）；未命中（模型改写引句）→ offsets=null，溯源退化为章节级。
+  events 同理以 quote 定位映射到 atom（多命中取最近）。
   # 步骤2 实体解析
   entities = entityResolve.upsertMentions(kbId, collectMentions(atoms))   # 规范名/别名合并；负面清单在 prompt 内
   atoms 挂 subjectEntityId/objectEntityId
@@ -505,6 +509,7 @@ interface SearchResult {
 ```
 
 倒排建索引：`buildIndex` 泛化为 `buildIndexFor(items, keyId)`，atom 入池时对 statement 建行（chunkId 列存 atom id——该列本就是字符串键，无 schema 变更；**注意**：现有 `bm25Scores` 的 docLen 回查会 miss atom，brain 路径用自己的长度计算，见上）。
+【复核修正 F2】倒排清理缺口：现有 `kbInvertedIndex.deleteByDocumentId` 是经 kb_chunks 查 chunkId 后删除——atom 的倒排行（chunkId=`atom:<id>`）不在该路径上，**永不随文档删除而清理**。文档删除/重消化的清理入口必须显式按 atom id 列表调 `deleteByChunkId`（kb_atoms 先查后删）。
 
 ### 5.2 PPR 多跳（M2）
 
