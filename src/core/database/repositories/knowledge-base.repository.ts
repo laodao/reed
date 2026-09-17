@@ -32,6 +32,8 @@ export class KnowledgeBaseRepository extends BaseRepository<
       embeddingDimension: e.embeddingDimension,
       embeddingConfig: e.embeddingConfig || undefined,
       rerankConfig: e.rerankConfig || undefined,
+      brainConfig: e.brainConfig || undefined,
+      brainState: e.brainState || undefined,
       folderId: e.folderId ?? null,
       documentCount: e.documentCount,
       vectorCount: e.vectorCount,
@@ -98,6 +100,10 @@ export class KnowledgeBaseRepository extends BaseRepository<
     }
     if (request.rerankConfig !== undefined) {
       existing.rerankConfig = request.rerankConfig ?? null
+      changed = true
+    }
+    if (request.brainConfig !== undefined) {
+      existing.brainConfig = request.brainConfig ?? null
       changed = true
     }
     if (request.folderId !== undefined) {

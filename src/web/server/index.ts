@@ -487,6 +487,11 @@ async function initDatabase(): Promise<void> {
     '@core/database/migrations/create-kb-chapters'
   )
   await createKbChapters(ds)
+  // 知识大脑 6 表（与 Electron 端同构，幂等双语种）
+  const { createKbBrainTables } = await import(
+    '@core/database/migrations/create-kb-brain-tables'
+  )
+  await createKbBrainTables(ds)
   // 应用模块：apps / app_sessions 表（幂等，双语种；消息复用 messages 无需建表）
   const { createAppsTables } = await import(
     '@core/database/migrations/create-apps-tables'

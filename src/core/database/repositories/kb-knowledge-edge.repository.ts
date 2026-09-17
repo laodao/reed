@@ -1,0 +1,171 @@
+/**
+ * 知识大脑·语义边仓库（kb_knowledge_edges 表）
+ * @module database/repositories/kb-knowledge-edge.repository
+ */
+import { In, type DataSource, type FindOptionsWhere } from 'typeorm'
+import { randomUUID } from 'crypto'
+import {
+  KbKnowledgeEdgeEntity,
+  type KbEdgeNodeKind,
+  type KbEdgeRelation,
+} from '../entities/kb-brain/kb-knowledge-edge.entity'
+import { BaseRepository } from '../base-repository'
+import { getCurrentUserId } from '@core/context/user-context'
+
+export interface KbEdgeRecord {
+  id: string
+  userId: string | null
+  knowledgeBaseId: string
+  sourceKind: KbEdgeNodeKind
+  sourceId: string
+  relation: KbEdgeRelation
+  targetKind: KbEdgeNodeKind
+  targetId: string
+  evidence: string
+  confidence: number
+  origin: 'ai' | 'human'
+  verified: number
+  createdAt: Date | null
+}
+
+export interface KbEdgeInput {
+  sourceKind: KbEdgeNodeKind
+  sourceId: string
+  relation: KbEdgeRelation
+  targetKind: KbEdgeNodeKind
+  targetId: string
+  evidence: string
+  confidence?: number
+  origin?: 'ai' | 'human'
+}
+
+export class KbKnowledgeEdgeRepository extends BaseRepository<KbKnowledgeEdgeEntity, KbEdgeRecord> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, KbKnowledgeEdgeEntity)
+  }
+
+  protected toDto(e: KbKnowledgeEdgeEntity): KbEdgeRecord {
+    return {
+      id: e.id,
+      userId: e.userId,
+      knowledgeBaseId: e.knowledgeBaseId,
+      sourceKind: e.sourceKind,
+      sourceId: e.sourceId,
+      relation: e.relation,
+      targetKind: e.targetKind,
+      targetId: e.targetId,
+      evidence: e.evidence,
+      confidence: e.confidence,
+      origin: e.origin,
+      verified: e.verified,
+      createdAt: e.createdAt ?? null,
+    }
+  }
+
+  /**
+   * 批量落边：命中唯一键（五元组）跳过并计数（幂等——同批重跑/重复萃取不产生重复边）。
+   */
+  async createBatch(kbId: string, rows: KbEdgeInput[]): Promise<{ created: number; deduped: number }> {
+    if (rows.length === 0) return { created: 0, deduped: 0 }
+    const userId = getCurrentUserId()
+    const now = new Date()
+    let created = 0
+    let deduped = 0
+    await this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(KbKnowledgeEdgeEntity)
+      for (const r of rows) {
+        const existing = await repo.findOne({
+          where: {
+            sourceKind: r.sourceKind,
+            sourceId: r.sourceId,
+            relation: r.relation,
+            targetKind: r.targetKind,
+            targetId: r.targetId,
+          } as never,
+        })
+        if (existing) {
+          deduped++
+          continue
+        }
+        const e = new KbKnowledgeEdgeEntity()
+        e.id = randomUUID()
+        e.userId = userId
+        e.knowledgeBaseId = kbId
+        e.sourceKind = r.sourceKind
+        e.sourceId = r.sourceId
+        e.relation = r.relation
+        e.targetKind = r.targetKind
+        e.targetId = r.targetId
+        e.evidence = r.evidence
+        e.confidence = r.confidence ?? 0.7
+        e.origin = r.origin ?? 'ai'
+        e.verified = 0
+        e.createdAt = now
+        await repo.save(e)
+        created++
+      }
+    })
+    return { created, deduped }
+  }
+
+  /** 邻域查询（PPR 展开与卡片 related 区共用）：给定节点集合的一跳边 */
+  async neighborsOf(
+    kbId: string,
+    ids: string[],
+  ): Promise<KbEdgeRecord[]> {
+    if (ids.length === 0) return []
+    const rows = await this.scoped
+      .qb('e')
+      .where('e.knowledge_base_id = :kbId', { kbId })
+      .andWhere('(e.source_id IN (:...ids) OR e.target_id IN (:...ids))', { ids })
+      .getMany()
+    return this.toDtoList(rows)
+  }
+
+  /** 图快照（PPR 输入；缓存与失效在 BrainQueryService，仓储只出数据） */
+  async graphSnapshot(
+    kbId: string,
+  ): Promise<{ nodes: Array<{ id: string; kind: string }>; edges: Array<[string, string, number]> }> {
+    const entityRows = await this.scoped.find({
+      where: { knowledgeBaseId: kbId } as FindOptionsWhere<KbKnowledgeEdgeEntity>,
+    })
+    const nodes = new Map<string, { id: string; kind: string }>()
+    const edges: Array<[string, string, number]> = []
+    for (const e of entityRows) {
+      nodes.set(e.sourceId, { id: e.sourceId, kind: e.sourceKind })
+      nodes.set(e.targetId, { id: e.targetId, kind: e.targetKind })
+      edges.push([e.sourceId, e.targetId, e.confidence])
+    }
+    return { nodes: [...nodes.values()], edges }
+  }
+
+  /** 实体合并时的边端点改指（消歧协调方调用）。边表无 updated_at，只改端点 */
+  async redirectNode(
+    fromKind: KbEdgeNodeKind,
+    fromId: string,
+    toId: string,
+  ): Promise<number> {
+    let affected = 0
+    affected += await this.scoped.update(
+      { sourceKind: fromKind, sourceId: fromId } as FindOptionsWhere<KbKnowledgeEdgeEntity>,
+      { sourceId: toId } as never,
+    )
+    affected += await this.scoped.update(
+      { targetKind: fromKind, targetId: fromId } as FindOptionsWhere<KbKnowledgeEdgeEntity>,
+      { targetId: toId } as never,
+    )
+    return affected
+  }
+
+  async deleteByKnowledgeBaseId(knowledgeBaseId: string): Promise<void> {
+    await this.scoped.delete({ knowledgeBaseId } as FindOptionsWhere<KbKnowledgeEdgeEntity>)
+  }
+
+  async deleteBySourceIds(sourceKind: KbEdgeNodeKind, ids: string[]): Promise<void> {
+    if (ids.length === 0) return
+    await this.scoped.delete({
+      sourceKind,
+      sourceId: In(ids),
+    } as FindOptionsWhere<KbKnowledgeEdgeEntity>)
+  }
+}
