@@ -19,8 +19,6 @@
               :value="ep.id"
             />
           </el-select>
-          <el-button text @click="settingsVisible = true"><el-icon><Setting /></el-icon> 设置</el-button>
-          <el-button text @click="openUsage"><el-icon><DataAnalysis /></el-icon> 用量</el-button>
           <div class="tab-nav">
             <button
               v-for="t in tabs"
@@ -36,6 +34,10 @@
           <el-tag v-if="currentEpisode" effect="plain" round :type="statusTagType(currentEpisode.status)">
             {{ statusLabel(currentEpisode.status) }}
           </el-tag>
+          <div class="header-right">
+            <el-button text title="AI 用量统计" @click="openUsage"><el-icon><DataAnalysis /></el-icon></el-button>
+            <el-button text title="项目设置" @click="settingsVisible = true"><el-icon><Setting /></el-icon></el-button>
+          </div>
         </div>
       </template>
 
@@ -366,6 +368,12 @@ onMounted(async () => {
   align-items: center;
   gap: 10px;
   .episode-select { width: 240px; }
+  .header-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
   .tab-nav {
     display: flex;
     align-items: center;

@@ -107,8 +107,8 @@
             <span v-if="previewIsSegmentVideo" class="seg-video-badge">片段视频 · {{ selectedShotSegment?.shotCount ?? '?' }} 镜一段</span>
           </div>
 
-          <!-- S-02 关键帧画廊：当前镜头的首尾关键帧缩略图 + 重新生成 / 换参考图 -->
-          <div class="kf-gallery">
+          <!-- S-02 关键帧画廊（按产品要求暂时隐藏，保留实现以便后续恢复） -->
+          <div v-if="false" class="kf-gallery">
             <span class="kf-title">关键帧</span>
             <template v-if="kfGalleryHasImage">
               <div v-for="kf in kfGalleryRows" :key="kf.id" class="kf-card">

@@ -8,50 +8,16 @@
         <el-tag v-if="segments.length" size="small" round effect="plain" type="success">{{ segments.length }} 个片段</el-tag>
       </div>
       <div class="tb-right">
-        <span class="tb-label">时长预算</span>
-        <el-input-number
-          v-model="budgetSec"
-          :min="5"
-          :max="30"
-          :step="1"
-          size="small"
-          controls-position="right"
-          class="budget-input"
-          @change="onBudgetChange"
-        />
-        <span class="tb-unit">s</span>
-        <span class="tb-label">视频模型</span>
-        <el-select v-model="videoProviderId" size="small" placeholder="视频服务" class="provider-select" @change="onVideoProviderChange">
-          <el-option v-for="p in videoProviders" :key="p.providerConfigId" :label="p.name" :value="p.providerConfigId" :disabled="!p.ready" />
-        </el-select>
-        <el-select v-model="videoModelId" size="small" placeholder="模型" class="model-select">
-          <el-option v-for="m in videoModels" :key="m.id" :label="m.name" :value="m.id" />
-        </el-select>
-        <el-button text size="small" :loading="recomputing" :disabled="totalStoryboards === 0" @click="onRecompute">
-          <el-icon><Scissor /></el-icon>
-          重新分段
-        </el-button>
-        <el-button
-          text
-          size="small"
-          type="primary"
-          :loading="generatingAll"
-          :disabled="pendingSegments.length === 0"
-          title="参考图模式请进入制作页生成（自动带关键帧）"
-          @click="onGenerateAll"
-        >
-          <el-icon><VideoCamera /></el-icon>
-          {{ generatingAll ? `生成中 ${genAllDone}/${genAllTotal}` : '全部生成' }}
-        </el-button>
         <el-button
           text
           size="small"
           :disabled="scenes.length === 0"
           :loading="generating"
+          title="批量生成分镜（cogen 联合生成：资产识别+分镜一次完成）"
           @click="onGenerateAllStoryboards"
         >
           <el-icon><MagicStick /></el-icon>
-          {{ generating && cogenProgress ? `场景 ${cogenProgress.sceneNumber}/${cogenProgress.totalScenes}` : '批量生成分镜' }}
+          <template v-if="generating && cogenProgress">场景 {{ cogenProgress.sceneNumber }}/{{ cogenProgress.totalScenes }}</template>
         </el-button>
       </div>
     </div>
@@ -77,7 +43,7 @@
             show-icon
           >
             <template #title>
-              该剧集尚未分段（视频片段制：一次生成多镜一段的视频）。点击右上角「重新分段」按场景 + 时长预算自动分段。
+              该剧集尚未分段（视频片段制：一次生成多镜一段的视频）。点击右侧按钮按场景 + 时长预算自动分段。
               <el-button size="small" type="warning" plain :loading="recomputing" @click="onRecompute">立即分段</el-button>
             </template>
           </el-alert>
@@ -85,22 +51,44 @@
           <!-- 按场次分组（原样式） -->
           <div class="sb-scenes">
             <div v-for="sc in scenes" :key="sc.id" class="sb-scene-group" :data-scene="sc.id">
-              <div class="group-head" @click="onEnterScene(sc)">
-                <span class="group-title">场次 {{ sc.sceneNumber }}：{{ sc.location }}</span>
+              <div class="group-head">
+                <span class="group-title" @click="onEnterScene(sc)">场次 {{ sc.sceneNumber }}：{{ sc.location }}</span>
                 <span class="group-actions">
                   <el-button
                     text
                     size="small"
+                    title="查看该场次的剧本内容"
+                    @click.stop="toggleSceneScript(sc.id)"
+                  >
+                    <el-icon><Document /></el-icon>
+                  </el-button>
+                  <el-button
+                    text
+                    size="small"
                     :loading="cogenSceneId === sc.id"
-                    title="只重新生成该场景的分镜（替换式：该场现有分镜被删除重写）"
+                    title="重新生成此场景分镜（替换式：该场现有分镜被删除重写）"
                     @click.stop="onCogenScene(sc)"
                   >
                     <el-icon><MagicStick /></el-icon>
-                    重新生成此场景分镜
                   </el-button>
                   <span v-if="storyboards[sc.id]?.length" class="done-mark">制作中</span>
-                  <span class="enter-link">进入制作 →</span>
+                  <el-button
+                    text
+                    size="small"
+                    title="进入制作（编辑提示词并生成视频）"
+                    @click.stop="onEnterScene(sc)"
+                  >
+                    <el-icon><Right /></el-icon>
+                  </el-button>
                 </span>
+              </div>
+              <!-- 场次剧本（默认收起，Document 图标展开） -->
+              <div v-if="expandedSceneScripts.has(sc.id)" class="scene-script">
+                <div v-if="sc.sceneDescription" class="ss-block"><span class="ss-label">场景</span>{{ sc.sceneDescription }}</div>
+                <div v-if="sc.narration" class="ss-block"><span class="ss-label">旁白</span>{{ sc.narration }}</div>
+                <div v-for="(d, di) in sceneDialogues(sc)" :key="di" class="ss-block ss-dlg">
+                  <span class="ss-label">{{ d.characterName || '台词' }}</span>{{ d.text }}
+                </div>
               </div>
 
               <!-- 已分段：一片段一格（原 tile 样式；一个片段多个分镜 → 一段视频，不再逐镜展示） -->
@@ -133,7 +121,6 @@
                       text
                       :type="seg.status === 'completed' ? 'info' : 'primary'"
                       :loading="generatingSegmentId === seg.segmentId"
-                      :disabled="generatingAll"
                       title="参考图模式请进入制作页生成（自动带关键帧）"
                       @click="onGenerateSegment(seg)"
                     >
@@ -251,7 +238,7 @@
  */
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { MagicStick, Picture, Plus, Scissor, VideoCamera, VideoPlay } from '@element-plus/icons-vue'
+import { MagicStick, Picture, Plus, VideoPlay, Document, Right } from '@element-plus/icons-vue'
 import SceneNav from '@/components/episode-production/script/SceneNav.vue'
 import { toImageUrl, toVideoUrl } from '@/utils/asset-url'
 
@@ -288,14 +275,32 @@ const segmentsLoaded = ref(false)
 const budgetSec = ref(15)
 const recomputing = ref(false)
 const generatingSegmentId = ref<string | null>(null)
-const generatingAll = ref(false)
-const genAllDone = ref(0)
-const genAllTotal = ref(0)
 const playDialogVisible = ref(false)
 const playSegment = ref<SegmentItem | null>(null)
 
 // S-06：单场景分镜重拆（ep:cogen-scene-storyboards）进行中的场景
 const cogenSceneId = ref<string | null>(null)
+
+/** 场次剧本展开状态（分镜列表每个场次的剧本内容，默认收起） */
+const expandedSceneScripts = ref<Set<string>>(new Set())
+function toggleSceneScript(sceneId: string): void {
+  const s = new Set(expandedSceneScripts.value)
+  if (s.has(sceneId)) s.delete(sceneId)
+  else s.add(sceneId)
+  expandedSceneScripts.value = s
+}
+/** 场次对白（scene.dialogues 为 JSON 字符串或数组，统一成数组） */
+function sceneDialogues(sc: any): Array<{ characterName?: string; text?: string }> {
+  const d = sc?.dialogues
+  if (Array.isArray(d)) return d
+  if (typeof d === 'string') {
+    try {
+      const parsed = JSON.parse(d)
+      return Array.isArray(parsed) ? parsed : []
+    } catch { return [] }
+  }
+  return []
+}
 
 // S-03 手动分段：拆分弹窗状态
 const splitDialogVisible = ref(false)
@@ -324,11 +329,6 @@ const videoModels = computed(() => videoProviders.value.find(p => p.providerConf
 
 const totalStoryboards = computed(() =>
   Object.values(storyboards.value).reduce((acc, arr) => acc + (arr?.length || 0), 0),
-)
-
-/** 待生成/失败的片段（全部生成的目标集） */
-const pendingSegments = computed(() =>
-  segments.value.filter(s => s.status === 'pending' || s.status === 'error'),
 )
 
 /** storyboardId → storyboard 索引（片段内分镜格展示用） */
@@ -444,22 +444,6 @@ async function loadVideoProviders(): Promise<void> {
   }
 }
 
-function onVideoProviderChange(): void {
-  videoModelId.value = videoModels.value[0]?.id ?? ''
-}
-
-/** 时长预算变更 → 写 video_projects.config.segmentDurationBudgetSec（合并其他 config 键） */
-async function onBudgetChange(val: number | undefined): Promise<void> {
-  if (!val || !props.projectId) return
-  const clamped = Math.min(30, Math.max(5, Math.round(val)))
-  budgetSec.value = clamped
-  const r = await window.electronAPI.episodeProduction.getProject(props.projectId)
-  if (!r?.success || !r.data) return
-  const cfg = { ...(r.data.config ?? {}), segmentDurationBudgetSec: clamped }
-  const u = await window.electronAPI.episodeProduction.updateProject(props.projectId, { config: cfg })
-  if (!u?.success) ElMessage.error(u?.error || '保存时长预算失败')
-}
-
 /** 重新分段（确认后执行：会清掉未生成的片段，completed 段保留） */
 async function onRecompute(): Promise<void> {
   if (recomputing.value) return
@@ -515,41 +499,6 @@ async function onGenerateSegment(seg: SegmentItem): Promise<void> {
   } finally {
     generatingSegmentId.value = null
   }
-}
-
-/** 全部生成：按片段串行，单段失败不阻断后续，最后汇总报告 */
-async function onGenerateAll(): Promise<void> {
-  if (generatingAll.value) return
-  if (!videoProviderId.value || !videoModelId.value) {
-    ElMessage.warning('请先在右上角选择视频模型')
-    return
-  }
-  const targets = pendingSegments.value
-  if (targets.length === 0) return
-  generatingAll.value = true
-  genAllDone.value = 0
-  genAllTotal.value = targets.length
-  const results: Array<{ seq: number; ok: boolean; error?: string }> = []
-  for (const seg of targets) {
-    try {
-      const r = await (window.electronAPI.episodeProduction as any).generateSegmentVideo(seg.segmentId, {
-        providerConfigId: videoProviderId.value,
-        modelId: videoModelId.value,
-      })
-      results.push({ seq: seg.seq, ok: !!r?.success, error: r?.success ? undefined : (r?.error || '未知错误') })
-    } catch (e: any) {
-      results.push({ seq: seg.seq, ok: false, error: e?.message || String(e) })
-    }
-    genAllDone.value++
-    await loadSegments()
-  }
-  generatingAll.value = false
-  await Promise.all([loadSegments(), ...scenes.value.map(s => loadStoryboards(s.id))])
-  const okCnt = results.filter(r => r.ok).length
-  const lines = results.map(r => `片段 ${r.seq}：${r.ok ? '✅ 成功' : `❌ ${r.error}`}`).join('\n')
-  await ElMessageBox.alert(`全部生成完成：${okCnt}/${results.length} 个片段成功\n\n${lines}`, '生成汇总', {
-    confirmButtonText: '知道了',
-  })
 }
 
 /** 该场景下未入段的分镜（兜底显示；正常会被自动分段收编为空） */
@@ -769,6 +718,28 @@ onUnmounted(() => {
   height: 100%;
   min-height: 0;
   background: var(--bg-color-page);
+}
+
+.scene-script {
+  padding: 8px 12px;
+  margin: 0 8px 8px;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color-lighter);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-color-regular);
+  line-height: 1.7;
+  .ss-block { margin-bottom: 6px; }
+  .ss-label {
+    display: inline-block;
+    margin-right: 8px;
+    padding: 0 6px;
+    border-radius: 4px;
+    background: var(--color-info-light-9, #ecf5ff);
+    color: var(--text-color-secondary);
+    font-size: 11px;
+  }
+  .ss-dlg .ss-label { color: var(--color-primary); }
 }
 
 .sb-toolbar {

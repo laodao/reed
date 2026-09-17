@@ -710,6 +710,19 @@ export class KeyframeGenerationService {
     }
   }
 
+  /** 项目设置里的风格 prompt（config.stylePrompt）→ 拼进关键帧提示词；空/异常 → '' */
+  private async resolveProjectStylePrompt(scene: SceneScriptEntity): Promise<string> {
+    try {
+      const projectId = await this.resolveProjectIdForScene(scene)
+      const project = await this.ds
+        .getRepository(VideoProjectEntity)
+        .findOne({ where: { id: projectId } })
+      return ((project?.config as { stylePrompt?: string } | null | undefined)?.stylePrompt ?? '').trim()
+    } catch {
+      return ''
+    }
+  }
+
   /**
    * 解析场景资产引用（chars / location / items）一次，逐帧复用。
    *
@@ -929,9 +942,12 @@ export class KeyframeGenerationService {
     })
 
     // 调 image generator 生成图（label 用 frame 角色 + frameIndex 便于追踪）
+    // 项目设置的 stylePrompt 追加到关键帧提示词尾部（不覆盖既有结构）
+    const projectStyle = await this.resolveProjectStylePrompt(scene)
+    const finalPrompt = projectStyle ? `${promptOut.prompt}，${projectStyle}` : promptOut.prompt
     const generated = await this.imageGenerator.generate({
       referenceImagePaths: refImages.map((r) => r.imagePath),
-      prompt: promptOut.prompt,
+      prompt: finalPrompt,
       negativePrompt: promptOut.negativePrompt,
       label: `keyframe_${plan.frameRole}_${plan.frameIndex}`,
       width: dimensions.width,

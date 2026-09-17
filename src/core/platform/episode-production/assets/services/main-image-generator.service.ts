@@ -19,6 +19,7 @@ import { CharacterBindingEntity } from '@core/database/entities/episode-producti
 import { LocationBindingEntity } from '@core/database/entities/episode-production/location-binding.entity'
 import { ItemBindingEntity } from '@core/database/entities/episode-production/item-binding.entity'
 import { VideoEpisodeEntity } from '@core/database/entities/episode-production/video-episode.entity'
+import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
 import { AssetImageService, type AssetType } from './asset-image.service'
 import type { ImageGenerator } from './gallery-derivation.service'
 import {
@@ -124,10 +125,44 @@ export class MainImageGeneratorService {
       if (era && !prompt.includes(era)) segments.push(`时代背景：${era}`)
       if (region && !prompt.includes(region)) segments.push(`地域：${region}`)
       if (extra && !prompt.includes(extra)) segments.push(`故事背景：${extra}`)
+      // 项目设置的全局风格 prompt（config.stylePrompt）——此前在设置里可填但无人消费（死设置）
+      const project = await this.ds
+        .getRepository(VideoProjectEntity)
+        .findOne({ where: { id: projectId } })
+      const style = ((project?.config as { stylePrompt?: string } | null | undefined)?.stylePrompt ?? '').trim()
+      if (style && !prompt.includes(style)) segments.push(`风格：${style}`)
       return segments.length > 0 ? `${segments.join('；')}。` : ''
     } catch (e) {
       console.warn('[MainImageGeneratorService] 故事背景锚点解析失败（跳过拼接）:', e)
       return ''
+    }
+  }
+
+  /** 资产 → 项目 config.imageModel（设置里的「画面生成」模型，此前无人消费）；无 → null */
+  private async resolveProjectImageModel(
+    assetType: AssetType,
+    assetId: string,
+  ): Promise<{ providerConfigId: string; modelId: string } | null> {
+    try {
+      const bindingRepo =
+        assetType === 'character'
+          ? this.ds.getRepository(CharacterBindingEntity)
+          : assetType === 'location'
+            ? this.ds.getRepository(LocationBindingEntity)
+            : this.ds.getRepository(ItemBindingEntity)
+      const binding = await bindingRepo.findOne({ where: { id: assetId } as any })
+      const projectId = (binding as any)?.projectId as string | null | undefined
+      if (!projectId) return null
+      const project = await this.ds
+        .getRepository(VideoProjectEntity)
+        .findOne({ where: { id: projectId } })
+      const im = (project?.config as { imageModel?: { providerConfigId?: string; modelId?: string } } | null | undefined)
+        ?.imageModel
+      return im?.providerConfigId && im?.modelId
+        ? { providerConfigId: im.providerConfigId, modelId: im.modelId }
+        : null
+    } catch {
+      return null
     }
   }
 
@@ -176,13 +211,19 @@ export class MainImageGeneratorService {
       refPaths.push(input.referenceImagePath.trim())
     }
 
+    // 模型解析序：调用方显式指定 > 项目设置「画面生成」模型 > pickImageModel 自动
+    const projectImageModel =
+      input.providerConfigId && input.modelId
+        ? null
+        : await this.resolveProjectImageModel(input.assetType, input.assetId)
+
     const result = await this.imageGen.generate({
       referenceImagePaths: refPaths,
       prompt: effectivePrompt,
       negativePrompt: effectiveNegative,
       label: 'main',
-      providerConfigId: input.providerConfigId ?? undefined,
-      modelId: input.modelId ?? undefined,
+      providerConfigId: input.providerConfigId ?? projectImageModel?.providerConfigId,
+      modelId: input.modelId ?? projectImageModel?.modelId,
     })
 
     // 旧主图降级
@@ -298,13 +339,18 @@ export class MainImageGeneratorService {
       refPaths.push(input.referenceImagePath.trim())
     }
 
+    const projectImageModel =
+      input.providerConfigId && input.modelId
+        ? null
+        : await this.resolveProjectImageModel(input.assetType, input.assetId)
+
     const result = await this.imageGen.generate({
       referenceImagePaths: refPaths,
       prompt: effectivePrompt,
       negativePrompt: effectiveNegative,
       label: input.label,
-      providerConfigId: input.providerConfigId ?? undefined,
-      modelId: input.modelId ?? undefined,
+      providerConfigId: input.providerConfigId ?? projectImageModel?.providerConfigId,
+      modelId: input.modelId ?? projectImageModel?.modelId,
     })
 
     // makeDefault=true 时把同 asset 已有 isMain=1 降为 0，让目标成为默认
