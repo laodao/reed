@@ -19,6 +19,8 @@ import type { VideoProjectConfig } from '@shared/types/episode-production/workfl
 export interface ProjectVideoParams {
   quality?: 'high' | 'low'
   steps?: number
+  /** 项目风格词（config.stylePrompt），拼进视频提示词约束 */
+  stylePrompt?: string
 }
 
 /** 从 video_projects.config 读视频画质参数；项目不存在/未配置 → {}（provider 默认） */
@@ -37,6 +39,9 @@ export async function getProjectVideoParams(
   }
   if (typeof cfg.videoSteps === 'number' && cfg.videoSteps > 0) {
     params.steps = cfg.videoSteps
+  }
+  if (typeof (cfg as any).stylePrompt === 'string' && (cfg as any).stylePrompt.trim()) {
+    params.stylePrompt = (cfg as any).stylePrompt.trim()
   }
   return params
 }

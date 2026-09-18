@@ -123,16 +123,47 @@ describe('buildSegmentPrompt', () => {
     expect(p).not.toContain('多个镜头之间')
   })
 
-  it('@资产引用标记原样保留（沿用现有单镜行为）', () => {
-    const p = buildSegmentPrompt([
-      { frameDescription: '@[杜十娘] 推门进入', duration: 5 },
-    ])
-    expect(p).toContain('@[杜十娘] 推门进入')
-  })
-
   it('缺省尺寸 → 无宽高比约束；非法时长按 3s 计入总时长', () => {
     const p = buildSegmentPrompt([{ frameDescription: 'x', duration: 0 }])
     expect(p).not.toContain('画面比例')
     expect(p).toContain('总时长约3s')
+  })
+
+  it('@[资产@索引] 标记替换为资产名纯文本（2026-09-18 数据面补全）', () => {
+    const p = buildSegmentPrompt([
+      { frameDescription: '@[杜十娘] 推门进入，@[杜十娘@2] 回头', duration: 5 },
+    ])
+    expect(p).toContain('杜十娘 推门进入，杜十娘 回头')
+    expect(p).not.toContain('@[')
+  })
+
+  it('景别/角度/运镜拼进镜头头（中文标签）', () => {
+    const p = buildSegmentPrompt([
+      {
+        frameDescription: '苏晚伏案修书',
+        duration: 5,
+        shotType: 'full',
+        cameraAngle: 'low',
+        cameraMovement: 'dolly_in',
+      },
+    ])
+    expect(p).toContain('镜头1（约5s，全景，仰拍，推镜）：苏晚伏案修书')
+  })
+
+  it('未知枚举值静默省略，镜头头退化为只有时长', () => {
+    const p = buildSegmentPrompt([
+      { frameDescription: 'x', duration: 3, shotType: 'weird', cameraMovement: 'unknown_move' },
+    ])
+    expect(p).toContain('镜头1（约3s）：x')
+  })
+
+  it('项目风格词追加「画面风格」约束；未传则没有', () => {
+    const withStyle = buildSegmentPrompt(
+      [{ frameDescription: 'x', duration: 3 }],
+      { stylePrompt: '冷青色调，电影质感' },
+    )
+    expect(withStyle).toContain('画面风格：冷青色调，电影质感')
+    const without = buildSegmentPrompt([{ frameDescription: 'x', duration: 3 }])
+    expect(without).not.toContain('画面风格')
   })
 })

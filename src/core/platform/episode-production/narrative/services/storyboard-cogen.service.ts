@@ -107,7 +107,7 @@ export class StoryboardCogenService {
    * @param opts O2：{ force?: boolean }
    * @param onProgress H13：每场景开始/完成/失败回调（handler 转成 ep:cogen-progress
    *   事件推 renderer）；回调异常被吞掉，不阻断生成。
-   * @throws 剧集/剧本/场景不存在，或项目未配置 scriptModel（D3：不静默落回默认模型）
+   * @throws 剧集/剧本/场景不存在，或项目未配置分镜生成模型（回退剧本生成模型；D3：不静默落回默认模型）
    */
   async cogenStoryboardsForEpisode(
     episodeId: string,
@@ -181,7 +181,7 @@ export class StoryboardCogenService {
    * runSceneCogen 逻辑）。语义=替换式重写该场景分镜（等价 force），
    * 失败抛错且旧分镜保留（删旧发生在生成+校验成功之后）。
    *
-   * @throws 场景/剧本/剧集不存在，项目未配置 scriptModel，或 LLM 生成/校验失败
+   * @throws 场景/剧本/剧集不存在，项目未配置分镜生成模型（回退剧本生成模型），或 LLM 生成/校验失败
    */
   async cogenStoryboardsForScene(sceneId: string): Promise<CogenSceneResult> {
     const scene = await this.ds
@@ -223,7 +223,7 @@ export class StoryboardCogenService {
     providerConfigId: string
     modelId: string
   }> {
-    // ─── 加载链：episode → script → scenes；episode → project.config.scriptModel ───
+    // ─── 加载链：episode → script → scenes；episode → project.config 分镜/剧本模型 ───
     const episode = await this.ds
       .getRepository(VideoEpisodeEntity)
       .findOne({ where: { id: episodeId } })
@@ -246,19 +246,29 @@ export class StoryboardCogenService {
       .findOne({ where: { id: episode.projectId } })
     if (!project) throw new Error(`项目不存在：${episode.projectId}`)
 
-    const scriptModel = (project.config as any)?.scriptModel as
+    // 2026-09-18 修复：cogen 是分镜生成，应消费「分镜生成」模型设置（此前错用
+    // scriptModel，设置里的「分镜生成」是死设置）；未配置时回退「剧本生成」模型。
+    const cfg = project.config as any
+    const storyboardModel = cfg?.storyboardModel as
       | { providerConfigId?: string; modelId?: string }
       | undefined
-    if (!scriptModel?.providerConfigId || !scriptModel?.modelId) {
+    const scriptModel = cfg?.scriptModel as
+      | { providerConfigId?: string; modelId?: string }
+      | undefined
+    const chosen =
+      storyboardModel?.providerConfigId && storyboardModel?.modelId
+        ? storyboardModel
+        : scriptModel
+    if (!chosen?.providerConfigId || !chosen?.modelId) {
       throw new Error(
-        '未配置剧本生成模型：请先到 Studio 顶栏「设置」中为项目配置剧本生成模型（scriptModel），再批量生成分镜',
+        '未配置分镜生成模型：请先到 Studio 顶栏「设置」中为项目配置分镜生成模型（未配置时将回退剧本生成模型），再批量生成分镜',
       )
     }
     return {
       scenes,
       projectId: project.id,
-      providerConfigId: scriptModel.providerConfigId,
-      modelId: scriptModel.modelId,
+      providerConfigId: chosen.providerConfigId,
+      modelId: chosen.modelId,
     }
   }
 
@@ -437,7 +447,7 @@ export class StoryboardCogenService {
   /**
    * O2 超时自动重试：generateCogenForScene 抛错且消息含 "timed out" / "超时"
    * 时 sleep 60s 后原样重试恰好 1 次（百炼限流类瞬时故障实测 1~2 分钟自愈）。
-   * 重试仍失败则原样抛出（含 generateCogenForScene 内部纠错重试，共最多 2 轮 LLM 往返）。
+   * 重试仍失败则原样抛出（含 generateCogenForScene 内部纠错重试，共最多 3 轮 LLM 往返）。
    */
   private async generateWithTimeoutRetry(
     scene: SceneScriptEntity,

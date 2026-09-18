@@ -8,7 +8,7 @@
  * （D2，不让模型回填 ID）。
  *
  * 本文件只负责：prompt 构建、响应解析、schema 校验（不合法时把错误清单
- * 喂回模型纠错重试恰好 1 次，仍失败抛错）。
+ * 喂回模型纠错重试最多 2 次，仍失败抛错）。
  */
 
 import type { SceneScript } from '@shared/types/episode-production'
@@ -202,16 +202,20 @@ ${sceneSection}
 6. duration 为镜头时长（秒，2~10 的数字）。
 7. assets.location 恰好一个（本场景主地点）；assets.items 只列会在画面中出现、需要视觉一致性的关键物品，没有则给空数组 []。
 8. 剧本细节必须照抄原文：药理名/药名、对白、数字、称谓、专有名词等细节必须与上方「场景剧本」逐字一致，禁止同义转述、替换或自由发挥（例如剧本写"曼陀罗花""忘忧草"，就不得改写成"断魂草"）。
-9. shots[].frameDescription 的【人物】段中，角色的服饰/外貌描述必须逐字引用对应资产卡的 description / outfit 原文（已有资产 = 上方「项目已有资产」里注入的描述；新资产 = 本响应 assets.characters 中你给出的 description / outfit），不得改写、概括或同义替换；【人物】段的其余部分（位置/表情/动作/姿态）按镜头需要描写。`
+9. shots[].frameDescription 的【人物】段中，角色的服饰/外貌描述必须逐字引用对应资产卡的 description / outfit 原文（已有资产 = 上方「项目已有资产」里注入的描述；新资产 = 本响应 assets.characters 中你给出的 description / outfit），不得改写、概括或同义替换；【人物】段的其余部分（位置/表情/动作/姿态）按镜头需要描写。
+   示例：资产卡写「服饰：素白衣裙，外披淡青披风」，则该角色出镜的每个镜头【人物】段必须原样包含「素白衣裙」或「外披淡青披风」；写成「素色布衣」「浅色长裙」等均属违规，会被校验拒绝。`
 }
 
-/** 纠错重试提示词：把校验错误清单 + 上次输出喂回模型（D4-1，恰好重试 1 次） */
+/** 纠错重试提示词：把校验错误清单 + 上次输出喂回模型（D4-1，最多重试 2 次） */
 function buildCorrectionPrompt(errors: string[], previousResponse: string): string {
   return `你上一次输出的 JSON 未通过校验，存在以下问题：
 
 ${errors.map((e, i) => `${i + 1}. ${e}`).join('\n')}
 
 请修正后重新输出完整的 JSON（保持原有结构与字段名，只修复上述问题；场景与全部强约束不变）。
+特别注意：
+- 每一个 shots[i].characters 中出现的角色，其 frameDescription【人物】段都必须逐字包含该角色资产卡里的服饰/外貌片段（上方错误清单已给出各角色可用片段，直接照抄即可）——不要只改错误清单点名的镜头，所有镜头的所有出镜角色都要自查一遍；
+- 已合规的镜头、资产、字段保持原样，不得增删镜头或资产，不得改动已正确的内容。
 不要输出任何解释说明，只输出修正后的 JSON。
 
 你上一次的输出：
@@ -228,6 +232,25 @@ interface ExistingNameSets {
 
 function isNonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.trim() !== ''
+}
+
+/**
+ * 从资产卡文本提取外貌/服饰片段（约束 9 校验用）：
+ * 按中英文标点/换行切分，保留 ≥4 字的片段。校验时分镜【人物】段至少
+ * 逐字命中一个片段，防止模型自由发挥与资产卡打架（如资产卡"素白衣裙"
+ * 被写成"素色布衣"）。
+ */
+function appearanceFragments(text: string | null | undefined): string[] {
+  if (!text) return []
+  return text
+    .split(/[，。；、,;．.！!？?\n\r：:【】[\]（）()「」]/)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 4)
+}
+
+/** 去空白后包含（模型输出可能换行/加空格） */
+function includesNormalized(haystack: string, needle: string): boolean {
+  return haystack.replace(/\s+/g, '').includes(needle.replace(/\s+/g, ''))
 }
 
 /**
@@ -349,6 +372,23 @@ export function validateCogenOutput(
     ...(assetItems ?? []).filter((it) => it && isNonEmptyString(it.name)).map((it) => it.name),
   ])
 
+  // 约束 9 校验素材：角色名 → 资产卡外貌/服饰片段（新资产 = outfit+description；已有资产 = 注入的描述）
+  const charFragments = new Map<string, string[]>()
+  for (const c of assetChars ?? []) {
+    if (!c || !isNonEmptyString(c.name)) continue
+    const frags = appearanceFragments(
+      [isNonEmptyString(c.outfit) ? c.outfit : '', isNonEmptyString(c.description) ? c.description : '']
+        .filter(Boolean)
+        .join('，'),
+    )
+    if (frags.length > 0) charFragments.set(c.name, frags)
+  }
+  for (const a of existingAssets) {
+    if (a.kind !== 'character' || charFragments.has(a.name)) continue
+    const frags = appearanceFragments(a.description)
+    if (frags.length > 0) charFragments.set(a.name, frags)
+  }
+
   shots.forEach((s, i) => {
     const tag = `shots[${i}]`
     if (!s || typeof s !== 'object') {
@@ -382,6 +422,17 @@ export function validateCogenOutput(
           errors.push(
             `${tag}.characters[${j}] 的角色名 "${c.name}" 不在资产清单与已有资产名单里（name 必须 ⊆ assets.characters ∪ 已有角色）`,
           )
+          return
+        }
+        // 约束 9 落地：【人物】段的服饰/外貌必须逐字引用资产卡片段，至少命中一个
+        if (isNonEmptyString(s.frameDescription)) {
+          const frags = charFragments.get(c.name)
+          if (frags && !frags.some((f) => includesNormalized(s.frameDescription, f))) {
+            errors.push(
+              `${tag}【人物】段的角色 "${c.name}" 未引用其资产卡服饰/外貌原文（强约束 9）：` +
+                `请逐字包含至少一个片段，如 ${frags.slice(0, 5).map((f) => `"${f}"`).join(' / ')}`,
+            )
+          }
         }
       })
     }
@@ -468,7 +519,7 @@ function tryParse(response: string): any | null {
  * 流程（D1/D4-1）：
  *   callAI（maxTokens 16000；截断时 callAIWithContinue 续写）
  *   → extractJsonFromResponse → validateCogenOutput
- *   → 不合法：把具体错误清单喂回模型纠错重试恰好 1 次
+ *   → 不合法：把具体错误清单喂回模型纠错重试最多 2 次
  *   → 仍不合法：抛错（错误信息含全部原因）
  *
  * @param scene          场景剧本（shared SceneScript 形态）
@@ -499,21 +550,22 @@ export async function generateCogenForScene(
   let parsed = tryParse(response)
   let errors = parsed === null ? ['无法解析 AI 响应为 JSON 格式'] : validateCogenOutput(parsed, existingAssets)
 
-  // D4-1：纠错重试恰好 1 次
-  if (errors.length > 0) {
+  // D4-1：纠错重试最多 2 次（约束 9 服饰校验落地后，弱模型一次纠正常常改不干净；
+  // 每次把最新错误清单喂回，仍失败才抛错——旧分镜保留，宁缺毋滥）
+  for (let attempt = 1; errors.length > 0 && attempt <= 2; attempt++) {
     console.warn(
-      `[storyboard-cogen] 场景 ${scene.sceneNumber} 输出校验失败（${errors.length} 项），纠错重试 1 次:`,
+      `[storyboard-cogen] 场景 ${scene.sceneNumber} 输出校验失败（${errors.length} 项），纠错重试第 ${attempt} 次:`,
       errors,
     )
     const correctionPrompt = buildCorrectionPrompt(errors, response)
-    const retryResponse = await callAI(
+    response = await callAI(
       correctionPrompt,
       COGEN_SYSTEM_PROMPT,
       16000,
       providerConfigId,
       modelId,
     )
-    parsed = tryParse(retryResponse)
+    parsed = tryParse(response)
     errors = parsed === null ? ['无法解析 AI 响应为 JSON 格式'] : validateCogenOutput(parsed, existingAssets)
   }
 

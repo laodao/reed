@@ -4,7 +4,7 @@
  *
  * 与单镜生成的 VideoSegmentService 并列（单镜生成保留不动）：
  *   1. 按 segment_seq 取片段内分镜，拼接多镜头提示词（segment-planner.buildSegmentPrompt；
- *      @资产引用沿用现有行为——标记文本原样传入，与单镜路径一致）
+ *      2026-09-18 起含景别/角度/运镜标签 + 项目风格词，@[资产] 标记替换为资产名纯文本）
  *   2. 参考图模式下取首镜头的首尾关键帧（frame_role=start + end 各一张，end 缺则退首帧 1 张），
  *      2 张 refs → keyframes2video（O1 首尾帧锚定）
  *   3. 一次视频调用产出整段，写 segment.video_path / video_mode / duration / prompt 快照
@@ -102,9 +102,17 @@ export class SegmentVideoService {
       1,
       Math.round(input.durationSec ?? seg.estDuration ?? shots.reduce((n, s) => n + (s.duration || 3), 0)),
     )
+    // D6：项目 config.videoQuality/videoSteps/stylePrompt 透传（未配置 → provider 默认）
+    const videoParams = await resolveVideoParamsForEpisode(this.ds, seg.episodeId)
     const prompt = buildSegmentPrompt(
-      shots.map(s => ({ frameDescription: s.frameDescription, duration: s.duration })),
-      { width, height },
+      shots.map(s => ({
+        frameDescription: s.frameDescription,
+        duration: s.duration,
+        shotType: s.shotType,
+        cameraAngle: s.cameraAngle,
+        cameraMovement: s.cameraMovement,
+      })),
+      { width, height, stylePrompt: videoParams.stylePrompt },
     )
 
     // generating + prompt 快照先落库（崩溃可追）
@@ -117,9 +125,6 @@ export class SegmentVideoService {
     })
 
     try {
-      // D6：项目 config.videoQuality/videoSteps 透传（未配置 → provider 默认 high/20）
-      const videoParams = await resolveVideoParamsForEpisode(this.ds, seg.episodeId)
-
       const result = await this.invokeGeneration(seg, shots, {
         prompt,
         durationSec,

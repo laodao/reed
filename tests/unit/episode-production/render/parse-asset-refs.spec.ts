@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   parseAssetRefOverrides,
+  replaceAssetRefMarkers,
   toRefCandidates,
 } from '@core/platform/episode-production/render/keyframe/parse-asset-refs'
 
@@ -72,5 +73,18 @@ describe('parse-asset-refs', () => {
       { kind: 'location', bindingId: 'loc_1', name: '江面' },
       { kind: 'item', bindingId: 'it_1', name: '百宝箱' },
     ])
+  })
+})
+
+describe('replaceAssetRefMarkers（视频提示词：@[..] → 资产名纯文本）', () => {
+  it('@[名字] / @[名字@索引] / @[名字@索引@id] 都替换为名字', () => {
+    expect(replaceAssetRefMarkers('@[杜十娘] 推门，@[杜十娘@2] 回头，@[江面@1@loc_1] 波光'))
+      .toBe('杜十娘 推门，杜十娘 回头，江面 波光')
+  })
+
+  it('无标记文本原样返回；空名字标记整体移除', () => {
+    expect(replaceAssetRefMarkers('普通描述')).toBe('普通描述')
+    expect(replaceAssetRefMarkers('a @[@2] b')).toBe('a  b')
+    expect(replaceAssetRefMarkers('')).toBe('')
   })
 })

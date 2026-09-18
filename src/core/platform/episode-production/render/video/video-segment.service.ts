@@ -31,6 +31,7 @@ import {
   pickStartEndKeyframes,
   type VideoModeMatch,
 } from './provider-capability-matcher'
+import { buildSegmentPrompt } from './segment-planner'
 import { resolveVideoParamsForStoryboard } from './project-video-params'
 import type {
   VideoProviderAdapter,
@@ -126,10 +127,21 @@ export class VideoSegmentService {
         ? clampKeyframesToCapability(candidateKfs, this.adapter.capabilities)
         : candidateKfs
 
-    const promptForVideo =
-      sb.frameDescription || sb.subject || '' // 简化：后续可拼更详细的 prompt
-    // D6：项目 config.videoQuality/videoSteps 透传（未配置 → provider 默认 high/20）
+    // D6：项目 config.videoQuality/videoSteps/stylePrompt 透传（未配置 → provider 默认 high/20）
     const videoParams = await resolveVideoParamsForStoryboard(this.ds, sb.id)
+    // 与片段级共用同一拼接器：景别/角度/运镜 + 风格词进 prompt，@[资产] 标记换成纯文本
+    const promptForVideo = buildSegmentPrompt(
+      [
+        {
+          frameDescription: sb.frameDescription || sb.subject || '',
+          duration: durationSec,
+          shotType: sb.shotType,
+          cameraAngle: sb.cameraAngle,
+          cameraMovement: sb.cameraMovement,
+        },
+      ],
+      { width, height, stylePrompt: videoParams.stylePrompt },
+    )
     // H5 崩溃恢复：提交前先把 provider/model 落库（后续 onTaskId 再补 provider_task_id），
     // 进程重启后启动恢复凭 video_provider_id 解析网关地址回查任务终态
     if (input.providerId || input.modelId) {

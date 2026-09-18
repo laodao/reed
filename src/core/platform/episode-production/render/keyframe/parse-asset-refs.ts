@@ -41,6 +41,16 @@ export function splitRefToken(inner: string): { name: string; index: number | nu
 }
 
 /**
+ * 把文本里的 @[名字@索引@实体id] 标记替换成资产名纯文本（视频提示词用）。
+ * 视频模型不认识 @[..] 引用语法，原样传入只会变成噪声；替换成名字后
+ * 「@[杜十娘@2] 推门」→「杜十娘 推门」。名字为空时整个标记移除。
+ */
+export function replaceAssetRefMarkers(text: string): string {
+  if (!text) return text
+  return text.replace(REF_RE, (_m, inner: string) => splitRefToken(inner).name)
+}
+
+/**
  * 解析 frameDescription 里的 @[名字@索引]，生成参考图 override。
  *
  * @param text      frameDescription（含 @[..] 标记）

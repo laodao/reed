@@ -191,8 +191,8 @@ describe('SegmentVideoService', () => {
     // 一次视频调用；提示词按 segment_seq 拼接
     expect(adapter.textToVideo).toHaveBeenCalledTimes(1)
     const call = adapter.textToVideo.mock.calls[0][0]
-    expect(call.prompt).toContain('镜头1（约5s）：苏晚伏案修书')
-    expect(call.prompt).toContain('镜头2（约4s）：古书无风自动')
+    expect(call.prompt).toContain('镜头1（约5s，中景，平视，固定镜头）：苏晚伏案修书')
+    expect(call.prompt).toContain('镜头2（约4s，中景，平视，固定镜头）：古书无风自动')
     expect(call.prompt).toContain('总时长约9s')
     expect(call.durationSec).toBe(9)
 
