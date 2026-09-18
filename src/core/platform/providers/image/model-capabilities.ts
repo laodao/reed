@@ -28,7 +28,7 @@ interface CapabilityEntry {
   caps: ImageModelCapabilities
 }
 
-/** 万相 wan2.x / wanx（dashscope 与 bailian 共用同一套能力） */
+/** 万相 wan2.x / wanx（dashscope 用；bailian 的 wan 实测只吃 1 张参考图，见注册表内条目） */
 const WAN_CAPS: ImageModelCapabilities = {
   negativePrompt: true,
   seed: true,
@@ -66,12 +66,22 @@ const MODEL_CAPABILITIES: CapabilityEntry[] = [
     sizeMode: 'aspect_ratio_resolution', maxReferenceImages: 1,
     watermark: 'optional', promptRewrite: 'none', sequentialGeneration: false,
   }},
-  { provider: 'bailian', match: /^wan/, caps: WAN_CAPS },
+  { provider: 'bailian', match: /^wan/, caps: {
+    // 2026-09-18 场次2实测修正：bailian 网关对 wan 走老 text2image 形态
+    // （bailian-image.provider.buildRequestBody），只有 input.image_url=refs[0] 被消费，
+    // 多出来的 ref 进 element_list —— 该字段仅 kling-v3 识别，wan 一律忽略，
+    // 多角色参考图被静默丢弃（阿蘅漂移根因）。dashscope 的 wan2.7-image 走多模态
+    // content[] 是真多图，不受影响（仍用 WAN_CAPS）。
+    ...WAN_CAPS,
+    maxReferenceImages: 1,
+  }},
   // KE-4 实测补充：bailian 专属网关的 qwen-image 系（与 dashscope 同能力面）
+  // 2026-09-19 实测修正：网关路由到 qwen-image-3.0-distill，API 明确报错
+  // "supports 0~3 image content items" → 参考图上限 3（非 4）
   { provider: 'bailian', match: /^qwen-image/, caps: {
     negativePrompt: true, seed: true, quality: false, style: false,
     guidanceScale: false, strength: false,
-    sizeMode: 'pixels', maxReferenceImages: 4,
+    sizeMode: 'pixels', maxReferenceImages: 3,
     watermark: 'optional', promptRewrite: 'optional', sequentialGeneration: false,
   }},
 

@@ -198,6 +198,8 @@ const IPC_CHANNELS = {
   EP_GENERATE_KEYFRAME_AT_INDEX: 'ep:generate-keyframe-at-index',
   EP_SET_KEYFRAME_REFERENCE_OVERRIDES: 'ep:set-keyframe-reference-overrides',
   EP_LIST_ASSET_IMAGES: 'ep:list-asset-images',
+  EP_REVIEW_KEYFRAME: 'ep:review-keyframe',
+  EP_REVIEW_KEYFRAMES: 'ep:review-keyframes',
 
   // P5-T13 视频片段 + provider 列表
   EP_LIST_VIDEO_PROVIDERS: 'ep:list-video-providers',
@@ -2594,6 +2596,15 @@ const electronAPI = {
       ),
     listKeyframes: (storyboardId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_LIST_KEYFRAMES, storyboardId),
+    /** 关键帧一致性校验（VLM，2026-09-19）：单帧 / 整分镜 */
+    reviewKeyframe: (
+      keyframeId: string,
+      opts?: { providerConfigId?: string; modelId?: string },
+    ) => ipcRenderer.invoke(IPC_CHANNELS.EP_REVIEW_KEYFRAME, keyframeId, opts),
+    reviewKeyframes: (
+      storyboardId: string,
+      opts?: { providerConfigId?: string; modelId?: string },
+    ) => ipcRenderer.invoke(IPC_CHANNELS.EP_REVIEW_KEYFRAMES, storyboardId, opts),
     /** 确保关键帧记录存在（不生成图片，用于先挑图再生成场景） */
     ensureKeyframes: (storyboardId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_ENSURE_KEYFRAMES, storyboardId),

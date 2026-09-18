@@ -78,11 +78,12 @@ describe('getModelCapabilities · 已登记模型', () => {
     expect(caps.maxReferenceImages).toBeGreaterThan(0)
   })
 
-  it('bailian 万相模型与 dashscope 同能力', () => {
+  it('bailian 万相模型：与 dashscope 同基础能力，但实测只吃 1 张参考图', () => {
     const caps = getModelCapabilities('bailian', 'wan2.6-image')
     expect(caps.negativePrompt).toBe(true)
     expect(caps.seed).toBe(true)
-    expect(caps.maxReferenceImages).toBe(4)
+    // 2026-09-19 修正：bailian 网关对 wan 走老 text2image 形态，element_list 不被消费
+    expect(caps.maxReferenceImages).toBe(1)
   })
 })
 

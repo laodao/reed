@@ -21,6 +21,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { ImageService } from '@core/platform/services/image.service'
+import { getModelCapabilities } from '@core/platform/providers/image/model-capabilities'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import type { ImageGenerator } from './gallery-derivation.service'
@@ -108,7 +109,7 @@ const DEFAULT_PANORAMA_HEIGHT = 1024
 async function pickImageModel(override?: {
   providerConfigId?: string | null
   modelId?: string | null
-}): Promise<{ providerConfigId: string; model: string }> {
+}): Promise<{ providerConfigId: string; model: string; providerType: string; modelName?: string }> {
   const db = getCoreDatabaseManager()
   if (!db.providerConfigs) {
     throw new Error('数据库未初始化（providerConfigs 仓库不可用）')
@@ -120,16 +121,18 @@ async function pickImageModel(override?: {
   // 把 default 排前面
   enabled.sort((a, b) => Number(b.isDefault ?? 0) - Number(a.isDefault ?? 0))
 
-  const pickFrom = (cfg: (typeof enabled)[number]): { providerConfigId: string; model: string } | null => {
-    const models = (cfg.models ?? []) as Array<{ id?: string; type?: string }>
+  const pickFrom = (cfg: (typeof enabled)[number]): { providerConfigId: string; model: string; providerType: string; modelName?: string } | null => {
+    const providerType = String(cfg.templateId ?? '').replace('image-', '')
+    const models = (cfg.models ?? []) as Array<{ id?: string; type?: string; name?: string }>
     if (override?.modelId) {
       // 显式模型：直接使用（前端下拉只列 image/multimodal 类型，这里信任调用方）
-      return { providerConfigId: cfg.id, model: override.modelId }
+      const hit = models.find((m) => m.id === override.modelId)
+      return { providerConfigId: cfg.id, model: override.modelId, providerType, modelName: hit?.name }
     }
     const imgModel = models.find(
       (m) => m.id && (m.type === 'image' || m.type === 'multimodal'),
     )
-    return imgModel?.id ? { providerConfigId: cfg.id, model: imgModel.id } : null
+    return imgModel?.id ? { providerConfigId: cfg.id, model: imgModel.id, providerType, modelName: imgModel.name } : null
   }
 
   // 指定 provider：只在该 provider 内挑（未启用则明确报错，不静默降级到别的 provider）
@@ -173,20 +176,51 @@ export function createGalleryImageGenerator(): ImageGenerator {
         ? `${opts.prompt}, variant: ${opts.label}`
         : opts.prompt
 
+      const { providerConfigId, model, providerType, modelName } = await pickImageModel({
+        providerConfigId: opts.providerConfigId,
+        modelId: opts.modelId,
+      })
+
+      /*
+       * 参考图按模型能力截断（2026-09-19 场次2根因修复）：
+       * 此前全部 ref 无脑发给 provider，单图模型（bailian wan2.7-image / flux-kontext 等）
+       * 静默只吃第一张，多角色场景的其余角色视觉锚丢失且无人知晓。
+       * 现在按 model-capabilities 的 maxReferenceImages 截断（调用方传入顺序即优先级：
+       * 角色 → 物品 → 地点），并把实际生效路径返回给调用方落库展示。
+       * 未登记模型（getModelCapabilities 抛错）不截断，保持原行为。
+       */
+      let effectiveRefPaths = opts.referenceImagePaths ?? []
+      try {
+        const caps = getModelCapabilities(providerType, model, modelName)
+        const max = caps.maxReferenceImages
+        if (max <= 0) {
+          if (effectiveRefPaths.length > 0) {
+            console.warn(
+              `[image-provider-adapter] ${providerType}/${model} 不支持参考图，` +
+              `已丢弃 ${effectiveRefPaths.length} 张（退化为纯文生图）`,
+            )
+          }
+          effectiveRefPaths = []
+        } else if (effectiveRefPaths.length > max) {
+          console.warn(
+            `[image-provider-adapter] ${providerType}/${model} 最多消费 ${max} 张参考图，` +
+            `截断 ${effectiveRefPaths.length} → ${max}（被丢弃：${effectiveRefPaths.slice(max).join(', ')}）`,
+          )
+          effectiveRefPaths = effectiveRefPaths.slice(0, max)
+        }
+      } catch {
+        // 未登记能力：不截断，交由 provider 自行处理
+      }
+
       // spec 2026-05-09 ep-redesign §3.2 D1：multi-reference
-      // 把全部 referenceImagePaths 转为 data URLs，喂给 ImageGenerationRequest.referenceImages
+      // 把全部（截断后）referenceImagePaths 转为 data URLs，喂给 ImageGenerationRequest.referenceImages
       // 各 provider adapter 的 collectReferences helper 会按各家形态适配（万相 1-4 / Seedream 多张 / 可灵 element_list）
-      const refPaths = opts.referenceImagePaths ?? []
-      const referenceImages = refPaths
+      const referenceImages = effectiveRefPaths
         .map((p) => readImageAsDataUrl(p))
         .filter((url): url is string => !!url)
       // 兼容 referenceImage 单值（旧 provider 可能仅认此字段）
       const referenceImage = referenceImages[0]
 
-      const { providerConfigId, model } = await pickImageModel({
-        providerConfigId: opts.providerConfigId,
-        modelId: opts.modelId,
-      })
       const resp = await ImageService.generateImage({
         providerConfigId,
         model,
@@ -208,7 +242,12 @@ export function createGalleryImageGenerator(): ImageGenerator {
       if (!imagePath) {
         throw new Error('图像生成成功但 provider 未返回可用路径 / URL')
       }
-      return { imagePath, thumbnailPath: null }
+      return {
+        imagePath,
+        thumbnailPath: null,
+        resolvedModel: { providerConfigId, modelId: model },
+        effectiveReferencePaths: effectiveRefPaths,
+      }
     },
   }
 }

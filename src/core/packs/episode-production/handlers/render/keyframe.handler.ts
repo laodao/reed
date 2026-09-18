@@ -12,6 +12,7 @@ import type { IpcResponse } from '@shared/types/ipc.types'
 import type { CharacterBinding, Storyboard } from '@shared/types/story-to-video.types'
 import { StoryToVideoResourceService, PRESET_STYLES } from '@core/packs/episode-production/services/story-to-video-resource.service'
 import { KeyframeGenerationService } from '@core/platform/episode-production/render/keyframe/keyframe-generation.service'
+import { KeyframeReviewService } from '@core/platform/episode-production/render/keyframe/keyframe-review.service'
 import { planRegenPropagation } from '@core/platform/episode-production/render/keyframe/keyframe-chain-strategy'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 
@@ -20,6 +21,9 @@ export function registerKeyframeHandlers(): void {
   ipcBridge.handle('ep:get-style-presets', handleGetStylePresets)
   ipcBridge.handle('ep:generate-storyboard-image', handleGenerateStoryboardImage)
   ipcBridge.handle('ep:generate-scene-images', handleGenerateSceneImages)
+  // 关键帧一致性校验（2026-09-19）：单帧 / 整分镜
+  ipcBridge.handle('ep:review-keyframe', handleReviewKeyframe)
+  ipcBridge.handle('ep:review-keyframes', handleReviewKeyframes)
   // P5-T8 多关键帧
   ipcBridge.handle('ep:generate-keyframes', handleGenerateKeyframes)
   ipcBridge.handle('ep:regenerate-keyframe', handleRegenerateKeyframe)
@@ -389,7 +393,46 @@ async function handleGenerateSceneImages(
 // ==================== P5-T8 多关键帧 ====================
 
 /**
+ * 关键帧一致性校验（2026-09-19 · 复盘整改）：VLM 以"生成时实际 prompt + 实际生效参考图"
+ * 为基准审核产出图，结果落 image_assets.metadata.review。校验只给证据，不自动重生。
+ */
+async function handleReviewKeyframe(
+  _event: any,
+  keyframeId: string,
+  opts?: { providerConfigId?: string; modelId?: string },
+): Promise<IpcResponse> {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+    const svc = new KeyframeReviewService(db.dataSource)
+    const data = await svc.reviewKeyframe(keyframeId, opts)
+    return { success: true, data }
+  } catch (e: any) {
+    return { success: false, error: e?.message || '关键帧校验失败' }
+  }
+}
+
+async function handleReviewKeyframes(
+  _event: any,
+  storyboardId: string,
+  opts?: { providerConfigId?: string; modelId?: string },
+): Promise<IpcResponse> {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+    const svc = new KeyframeReviewService(db.dataSource)
+    const data = await svc.reviewStoryboardKeyframes(storyboardId, opts)
+    return { success: true, data }
+  } catch (e: any) {
+    return { success: false, error: e?.message || '关键帧批量校验失败' }
+  }
+}
+
+/**
  * 生成单个分镜的全部关键帧（spec §4.3 链式：start → end → middle）
+ *
+ * 2026-09-19：生成成功后自动对每帧做一致性校验（VLM），失败不阻断生成结果——
+ * 校验结果随 listKeyframes 的 review 字段上界面，由用户决定是否重生。
  */
 async function handleGenerateKeyframes(
   _event: any,
@@ -409,6 +452,13 @@ async function handleGenerateKeyframes(
       keyframeCountOverride,
       userPrompt,
     })
+    // 自动一致性校验（复盘整改：错图不能再静默进视频）。串行逐帧，单帧失败只记日志。
+    try {
+      const reviewSvc = new KeyframeReviewService(db.dataSource)
+      await reviewSvc.reviewStoryboardKeyframes(storyboardId)
+    } catch (reviewErr) {
+      console.warn('[handleGenerateKeyframes] 自动一致性校验失败（不影响生成结果）:', reviewErr)
+    }
     return { success: true, data }
   } catch (e: any) {
     return { success: false, error: e?.message || '生成关键帧失败' }
@@ -435,7 +485,7 @@ async function handleEnsureKeyframes(
   }
 }
 
-/** 重生成单帧（不级联；级联由 UI 拿 plan-keyframe-regen 决定） */
+/** 重生成单帧（不级联；级联由 UI 拿 plan-keyframe-regen 决定）。重生后自动校验该帧 */
 async function handleRegenerateKeyframe(
   _event: any,
   keyframeId: string,
@@ -452,6 +502,13 @@ async function handleRegenerateKeyframe(
       styleName: styleName as any,
       userPrompt,
     })
+    // 与整批生成一致：重生后自动校验（失败不阻断）
+    try {
+      const reviewSvc = new KeyframeReviewService(db.dataSource)
+      await reviewSvc.reviewKeyframe(data.id)
+    } catch (reviewErr) {
+      console.warn('[handleRegenerateKeyframe] 自动一致性校验失败（不影响生成结果）:', reviewErr)
+    }
     return { success: true, data }
   } catch (e: any) {
     return { success: false, error: e?.message || '重生成关键帧失败' }
@@ -484,11 +541,17 @@ async function handleListKeyframes(
       keyframes.map(async (kf) => {
         let imagePath: string | null = null
         let references: KeyframeReferenceRef[] = []
+        let review: unknown = null
         if (kf.imageAssetId) {
           const ia = await db.imageAssets!.getById(kf.imageAssetId)
           imagePath = ia?.imagePath ?? null
+          review = extractMetadataField(ia?.metadata, 'review')
 
           const refIds = extractReferenceImageIds(ia?.metadata)
+          // 生效参考图（2026-09-19）：模型能力截断后实际消费的图；
+          // 老数据无此字段 → 全部视为生效（不改变旧展示语义）
+          const effectiveIds = extractMetadataField(ia?.metadata, 'referenceImageIdsEffective')
+          const effectiveSet = Array.isArray(effectiveIds) ? new Set(effectiveIds as string[]) : null
           if (refIds.length > 0) {
             const refRows = await assetImageRepo
               .createQueryBuilder('ai')
@@ -531,10 +594,11 @@ async function handleListKeyframes(
               category: r.category,
               label: r.label ?? null,
               isMain: r.isMain === 1,
+              effective: effectiveSet ? effectiveSet.has(r.id) : true,
             }))
           }
         }
-        return { ...kf, imagePath, references }
+        return { ...kf, imagePath, references, review }
       }),
     )
     return { success: true, data: enriched }
@@ -553,6 +617,23 @@ interface KeyframeReferenceRef {
   category: string
   label: string | null
   isMain: boolean
+  /** 是否实际被模型消费（能力截断后生效）；老数据无此信息时恒 true */
+  effective: boolean
+}
+
+/** 从 image_assets.metadata（string | object）取一个字段；失败 → null */
+function extractMetadataField(metadata: unknown, field: string): unknown {
+  if (!metadata) return null
+  let obj: any = metadata
+  if (typeof metadata === 'string') {
+    try {
+      obj = JSON.parse(metadata)
+    } catch {
+      return null
+    }
+  }
+  if (!obj || typeof obj !== 'object') return null
+  return obj[field] ?? null
 }
 
 /** 从 image_assets.metadata 解析出 referenceImageIds（兼容 string / object） */

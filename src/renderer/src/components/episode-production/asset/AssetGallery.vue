@@ -45,8 +45,14 @@
           </div>
           <div class="nav-info">
             <div class="nav-name">{{ item.title }}</div>
-            <div class="nav-status" :class="imageByLabel(item.label)?.imagePath ? 'done' : 'pending'">
-              {{ imageByLabel(item.label)?.imagePath ? '已定妆' : '待生成' }}
+            <!-- 2026-09-19 修正：有图≠已定妆。confirmed=0 的派生图不会被关键帧选用，
+                 此前显示「已定妆」是误导（场次2 阿蘅派生图全部 confirmed=0 永不参选，UI 却显示已定妆） -->
+            <div
+              class="nav-status"
+              :class="!imageByLabel(item.label)?.imagePath ? 'pending' : imageByLabel(item.label)?.confirmed === 1 ? 'done' : 'unconfirmed'"
+              :title="imageByLabel(item.label)?.imagePath && imageByLabel(item.label)?.confirmed !== 1 ? '已生成但未确认定妆，关键帧不会选用；选中后点「确认定妆」' : ''"
+            >
+              {{ !imageByLabel(item.label)?.imagePath ? '待生成' : imageByLabel(item.label)?.confirmed === 1 ? '已定妆' : '未确认' }}
             </div>
           </div>
           <el-button v-if="!imageByLabel(item.label)?.imagePath" text circle size="small" class="nav-add" title="生成" @click.stop="onGenerate(item)">
@@ -467,6 +473,10 @@ async function onGenerate(item: { label: string; category: string }): Promise<vo
       })
       if (!r?.success) { ElMessage.error(r?.error || '生成失败'); generating.value = false; return }
       ElMessage.success(`${item.title} 已生成`)
+      await load()
+      if (r.data?.id) await promptConfirmDerived([r.data.id])
+      generating.value = false
+      return
     }
     await load()
   } catch (e: any) {
@@ -505,6 +515,7 @@ async function onRegenerate(item: { label: string; category: string }): Promise<
     if (old?.id) await root.image.delete(old.id)
     ElMessage.success(`${item.title} 已重新生成`)
     await load()
+    if (r.data?.id) await promptConfirmDerived([r.data.id])
   } catch (e: any) {
     ElMessage.error(e?.message || '重新生成失败')
   } finally {
@@ -666,6 +677,7 @@ function onDownloadImage(): void {
 async function onBatchDerive(labels: string[]): Promise<void> {
   if (!props.assetId || labels.length === 0 || generating.value) return
   generating.value = true
+  const newImageIds: string[] = []
   try {
     const root = (window as any).electronAPI?.episodeProduction?.asset
     const main = imageByLabel('main')
@@ -682,6 +694,7 @@ async function onBatchDerive(labels: string[]): Promise<void> {
           baseImageId: main?.id || null,
         })
         results.push({ ok: !!r?.success, error: r?.success ? undefined : (r?.error ?? undefined) })
+        if (r?.success && r.data?.id) newImageIds.push(r.data.id)
       } catch (e: any) {
         results.push({ ok: false, error: e?.message || '请求失败' })
       }
@@ -697,6 +710,35 @@ async function onBatchDerive(labels: string[]): Promise<void> {
   } finally {
     generating.value = false
   }
+  await promptConfirmDerived(newImageIds)
+}
+
+/**
+ * 派生视角图确认引导（2026-09-19 复盘整改）：
+ * 派生图落库 confirmed=0，而关键帧选图只认 confirmed=1（S-05 定妆闸门）——
+ * 用户不逐张点"确认定妆"，这些视角图永远不会被选用（场次2阿蘅漂移的帮凶）。
+ * 派生完成后主动询问是否把本次新图全部确认；用户拒绝则保持未确认。
+ */
+async function promptConfirmDerived(newImageIds: string[]): Promise<void> {
+  if (newImageIds.length === 0) return
+  try {
+    await ElMessageBox.confirm(
+      `本次生成的 ${newImageIds.length} 张派生图需「确认定妆」后才会被关键帧选为参考图。是否全部确认？（也可稍后逐张确认）`,
+      '确认定妆',
+      { type: 'info', confirmButtonText: '全部确认', cancelButtonText: '稍后手动确认' },
+    )
+  } catch {
+    return // 用户选稍后
+  }
+  const root = (window as any).electronAPI?.episodeProduction
+  if (!root?.asset?.image?.setConfirmed) return
+  let ok = 0
+  for (const id of newImageIds) {
+    const r = await root.asset.image.setConfirmed(id, true).catch(() => null)
+    if (r?.success) ok++
+  }
+  if (ok > 0) ElMessage.success(`已确认定妆 ${ok} 张，关键帧选图将优先使用`)
+  await load()
 }
 
 async function onSavePrompt(): Promise<void> {
@@ -860,7 +902,7 @@ onActivated(() => {
   }
   .nav-info { flex: 1; min-width: 0; }
   .nav-name { font-size: 13px; color: var(--text-color-primary); font-weight: 500; }
-  .nav-status { font-size: 11px; margin-top: 2px; &.done { color: var(--color-success); } &.pending { color: var(--text-color-placeholder); } }
+  .nav-status { font-size: 11px; margin-top: 2px; &.done { color: var(--color-success); } &.pending { color: var(--text-color-placeholder); } &.unconfirmed { color: #cc8400; } }
   .nav-add { color: var(--color-primary); }
   .nav-regen { color: var(--color-info); }
   .nav-del { color: var(--color-danger); }

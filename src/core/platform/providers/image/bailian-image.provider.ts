@@ -129,9 +129,17 @@ export class BailianImageProvider extends BaseImageProvider {
   /**
    * qwen-image 系同步多模态生成（input.contents 形态）。
    * 响应：output.choices[0].message.content[] 内含 { image: url }。
+   *
+   * 2026-09-19 修复：参考图此前完全没进请求体（contents 只有文本），
+   * 能力表却声明 maxReferenceImages=4 —— 参考图被静默丢弃。
+   * 与 dashscope 同模型行为对齐：refs 以 { image: dataUrl } 追加进 contents。
    */
   private async generateQwenImageMultimodal(request: ImageGenerationRequest): Promise<ImageGenerationResponse> {
     const contents: Array<Record<string, unknown>> = [{ text: request.prompt }]
+    const refs = collectReferences(request)
+    for (const ref of refs) {
+      contents.push({ image: ref })
+    }
     if (request.negativePrompt) contents.push({ text: `避免出现：${request.negativePrompt}` })
     const body = {
       model: request.model,

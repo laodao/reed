@@ -25,6 +25,7 @@ import { LwItemEntity } from '@core/database/entities/lw-item.entity'
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
 import { EpisodeScriptEntity } from '@core/database/entities/episode-production/episode-script.entity'
 import { VideoEpisodeEntity } from '@core/database/entities/episode-production/video-episode.entity'
+import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
 import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
 import { StoryboardKeyframeEntity } from '@core/database/entities/episode-production/storyboard-keyframe.entity'
 import { StoryboardCharacterEntity } from '@core/database/entities/episode-production/storyboard-character.entity'
@@ -48,6 +49,7 @@ async function buildDb(): Promise<DataSource> {
       SceneScriptEntity,
       EpisodeScriptEntity,
       VideoEpisodeEntity,
+      VideoProjectEntity,
       StoryboardEntity,
       StoryboardKeyframeEntity,
       StoryboardCharacterEntity,
@@ -290,6 +292,50 @@ describe('KeyframeGenerationService', () => {
     expect(start?.prompt).toContain('开始时刻')
     expect(end?.prompt).toContain('结束时刻')
     expect(middle?.prompt).toContain('50%')
+  })
+
+  it('2026-09-19：项目「画面生成」模型（config.imageModel）透传给图像生成', async () => {
+    const { sbId } = await seedScene(ds)
+    await ds.getRepository(VideoProjectEntity).save({
+      id: 'proj1',
+      name: 'p',
+      status: 'draft',
+      config: { imageModel: { providerConfigId: 'pc_img', modelId: 'wan2.7-image' } },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      deletedAt: null,
+    } as any)
+
+    await svc.generateKeyframesForStoryboard({ storyboardId: sbId })
+
+    expect(imageGen.generate).toHaveBeenCalledTimes(3)
+    for (const call of imageGen.generate.mock.calls) {
+      const opts = call[0] as { providerConfigId?: string; modelId?: string }
+      expect(opts.providerConfigId).toBe('pc_img')
+      expect(opts.modelId).toBe('wan2.7-image')
+    }
+  })
+
+  it('2026-09-19：生效参考图截断落库（referenceImageIdsEffective ⊂ referenceImageIds）', async () => {
+    const { sbId } = await seedScene(ds)
+    // 模拟单图模型：adapter 截断后只有角色图生效（地点图被丢弃）
+    imageGen.generate.mockImplementation(async (_opts: any) => ({
+      imagePath: '/tmp/generated_x.png',
+      thumbnailPath: null,
+      resolvedModel: { providerConfigId: 'pc_img', modelId: 'wan2.7-image' },
+      effectiveReferencePaths: ['/tmp/cb1.png'],
+    }))
+
+    await svc.generateKeyframesForStoryboard({ storyboardId: sbId })
+
+    const ias = await ds.getRepository(ImageAssetEntity).find()
+    expect(ias).toHaveLength(3)
+    for (const ia of ias) {
+      // 选中 2 张（角色 + 地点兜底主图），生效只有角色 1 张
+      expect(ia.metadata?.referenceImageIds).toEqual(['ai_char', 'ai_loc'])
+      expect(ia.metadata?.referenceImageIdsEffective).toEqual(['ai_char'])
+      expect(ia.metadata?.resolvedModel).toEqual({ providerConfigId: 'pc_img', modelId: 'wan2.7-image' })
+    }
   })
 
   it('regenerateKeyframe：单帧重生成（id 换新，frameIndex 保留）', async () => {

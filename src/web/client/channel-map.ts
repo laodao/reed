@@ -735,6 +735,9 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.generateKeyframeAtIndex': { channel: 'ep:generate-keyframe-at-index' },
   'episodeProduction.setKeyframeReferenceOverrides': { channel: 'ep:set-keyframe-reference-overrides' },
   'episodeProduction.listAssetImages': { channel: 'ep:list-asset-images' },
+  // 关键帧一致性校验（2026-09-19）
+  'episodeProduction.reviewKeyframe': { channel: 'ep:review-keyframe' },
+  'episodeProduction.reviewKeyframes': { channel: 'ep:review-keyframes' },
   // S-05 定妆图确认闸门（2026-09-17）：影响面统计 + 级联重生
   'episodeProduction.getAssetReferenceImpact': { channel: 'ep:asset:reference-impact' },
   'episodeProduction.regenerateReferencingKeyframes': { channel: 'ep:asset:regenerate-referencing-keyframes' },

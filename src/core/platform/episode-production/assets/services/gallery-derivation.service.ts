@@ -66,7 +66,20 @@ export interface ImageGenerator {
      */
     providerConfigId?: string
     modelId?: string
-  }): Promise<{ imagePath: string; thumbnailPath: string | null }>
+  }): Promise<{
+    imagePath: string
+    thumbnailPath: string | null
+    /**
+     * 实际解析使用的 provider/模型（2026-09-19）：实现方自动挑模型时调用方无法预知，
+     * 返回给调用方落库（image_assets.metadata.resolvedModel）让"这张图是哪个模型画的"可查。
+     */
+    resolvedModel?: { providerConfigId: string; modelId: string }
+    /**
+     * 实际生效的参考图路径（按模型 maxReferenceImages 能力截断后）。
+     * 缺省/与传入相同表示全部生效；被截断时调用方应把差异暴露给用户（生效参考图标记）。
+     */
+    effectiveReferencePaths?: string[]
+  }>
 }
 
 /** 单张派生入参 */

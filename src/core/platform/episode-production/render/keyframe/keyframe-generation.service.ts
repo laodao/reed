@@ -724,6 +724,28 @@ export class KeyframeGenerationService {
   }
 
   /**
+   * 项目「画面生成」模型（config.imageModel）→ 关键帧生成的 provider/model 覆盖。
+   * 与 main-image-generator.resolveProjectImageModel 同源（那边按资产反查 projectId，
+   * 这里 generateOneKeyframe 已持有 projectId，直接查项目）。未配置/异常 → null（自动挑）。
+   */
+  private async resolveProjectImageModel(
+    projectId: string,
+  ): Promise<{ providerConfigId: string; modelId: string } | null> {
+    try {
+      const project = await this.ds
+        .getRepository(VideoProjectEntity)
+        .findOne({ where: { id: projectId } })
+      const im = (project?.config as { imageModel?: { providerConfigId?: string; modelId?: string } } | null | undefined)
+        ?.imageModel
+      return im?.providerConfigId && im?.modelId
+        ? { providerConfigId: im.providerConfigId, modelId: im.modelId }
+        : null
+    } catch {
+      return null
+    }
+  }
+
+  /**
    * 解析场景资产引用（chars / location / items）一次，逐帧复用。
    *
    * P5-T31（spec §4.5.3 分镜内角色独立配置）：
@@ -945,6 +967,12 @@ export class KeyframeGenerationService {
     // 项目设置的 stylePrompt 追加到关键帧提示词尾部（不覆盖既有结构）
     const projectStyle = await this.resolveProjectStylePrompt(scene)
     const finalPrompt = projectStyle ? `${promptOut.prompt}，${projectStyle}` : promptOut.prompt
+    // 2026-09-19：关键帧生成接线项目「画面生成」模型（config.imageModel）。
+    // 此前不传 provider/model → pickImageModel 自动乱挑（场次2根因：挑中只吃 1 张
+    // 参考图的 bailian wan2.7-image，多角色视觉锚丢失）。与资产主图生成
+    // （main-image-generator）同一解析序：项目设置 > 自动。
+    const projectId = await this.resolveProjectIdForScene(scene)
+    const projectImageModel = await this.resolveProjectImageModel(projectId)
     const generated = await this.imageGenerator.generate({
       referenceImagePaths: refImages.map((r) => r.imagePath),
       prompt: finalPrompt,
@@ -952,10 +980,21 @@ export class KeyframeGenerationService {
       label: `keyframe_${plan.frameRole}_${plan.frameIndex}`,
       width: dimensions.width,
       height: dimensions.height,
+      providerConfigId: projectImageModel?.providerConfigId,
+      modelId: projectImageModel?.modelId,
     })
 
+    // 生效参考图：adapter 按模型能力截断后返回实际生效路径；缺省=全部生效。
+    // 截断差异（选中但未生效）必须落库让 UI 可见——这是"多角色参考图被静默丢弃"的根因面。
+    let effectiveReferenceImageIds = refImages.map((r) => r.id)
+    if (generated.effectiveReferencePaths) {
+      const effectiveSet = new Set(generated.effectiveReferencePaths)
+      effectiveReferenceImageIds = refImages
+        .filter((r) => effectiveSet.has(r.imagePath))
+        .map((r) => r.id)
+    }
+
     // 写 image_assets 记录（type='generated'，子类型放 metadata.subType）
-    const projectId = await this.resolveProjectIdForScene(scene)
     const ia = await this.imageAssetRepo.create({
       projectId,
       type: 'generated',
@@ -971,6 +1010,8 @@ export class KeyframeGenerationService {
         frameIndex: plan.frameIndex,
         frameRole: plan.frameRole,
         referenceImageIds: refImages.map((r) => r.id),
+        referenceImageIdsEffective: effectiveReferenceImageIds,
+        resolvedModel: generated.resolvedModel ?? null,
       },
     })
 

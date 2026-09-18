@@ -275,6 +275,23 @@ export async function callVLM(
   modelId?: string,
   opts?: { temperature?: number; projectId?: string },
 ): Promise<string> {
+  return callVLMMulti(prompt, [imageDataUrl], systemPrompt, maxTokens, providerConfigId, modelId, opts)
+}
+
+/**
+ * 多图版 VLM 调用（2026-09-19 关键帧一致性校验用）：
+ * 第一张通常是待审图，后续是参考图（角色定妆照等），prompt 里说明各自角色。
+ * 与 callVLM 同一调用链；callVLM 已改为本函数的单图委托。
+ */
+export async function callVLMMulti(
+  prompt: string,
+  imageDataUrls: string[],
+  systemPrompt: string,
+  maxTokens: number = 2048,
+  providerConfigId?: string,
+  modelId?: string,
+  opts?: { temperature?: number; projectId?: string },
+): Promise<string> {
   const providerInfo = await getProviderConfig(providerConfigId)
   if (!providerInfo) {
     throw new Error('未配置 AI 提供商，请先在设置中添加提供商配置')
@@ -305,7 +322,7 @@ export async function callVLM(
         role: 'user',
         content: [
           { type: 'text', text: prompt },
-          { type: 'image', image_url: { url: imageDataUrl } },
+          ...imageDataUrls.map((url) => ({ type: 'image', image_url: { url } })),
         ] as any,
       },
     ],
@@ -325,7 +342,7 @@ export async function callVLM(
       modelId: effectiveModelId,
       systemPrompt,
       userPrompt: prompt,
-      imageDataUrlLength: imageDataUrl.length,
+      imageCount: imageDataUrls.length,
       durationMs: Date.now() - t0,
       error: e?.message ?? String(e),
     })
@@ -344,7 +361,7 @@ export async function callVLM(
     modelId: effectiveModelId,
     systemPrompt,
     userPrompt: prompt,
-    imageDataUrlLength: imageDataUrl.length,
+    imageCount: imageDataUrls.length,
     response: result.content,
     durationMs: Date.now() - t0,
     error: result.success ? undefined : result.error,

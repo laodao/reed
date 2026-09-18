@@ -107,8 +107,8 @@
             <span v-if="previewIsSegmentVideo" class="seg-video-badge">片段视频 · {{ selectedShotSegment?.shotCount ?? '?' }} 镜一段</span>
           </div>
 
-          <!-- S-02 关键帧画廊（按产品要求暂时隐藏，保留实现以便后续恢复） -->
-          <div v-if="false" class="kf-gallery">
+          <!-- S-02 关键帧画廊（2026-09-19 恢复展示 + 一致性校验徽章 + 生效参考图提示） -->
+          <div class="kf-gallery">
             <span class="kf-title">关键帧</span>
             <template v-if="kfGalleryHasImage">
               <div v-for="kf in kfGalleryRows" :key="kf.id" class="kf-card">
@@ -116,6 +116,15 @@
                   <el-image v-if="kf.imagePath" :src="toImageUrl(kf.imagePath)" fit="cover" class="thumb-img" />
                   <div v-else class="thumb-empty"><el-icon :size="14"><Picture /></el-icon></div>
                   <span class="kf-role">{{ kfRoleLabel(kf.frameRole) }}</span>
+                  <span
+                    v-if="kf.review"
+                    class="kf-review-badge"
+                    :class="`review-${kf.review.status}`"
+                    :title="kfReviewTitle(kf)"
+                  >{{ kfReviewLabel(kf) }}</span>
+                </div>
+                <div v-if="kfIneffectiveRefs(kf).length > 0" class="kf-ref-warn" :title="`模型参考图上限，以下资产图未生效：${kfIneffectiveRefs(kf).join('、')}`">
+                  ⚠ {{ kfIneffectiveRefs(kf).join('、') }} 的参考图未生效
                 </div>
                 <div class="kf-ops">
                   <button
@@ -128,10 +137,30 @@
                     <span v-else>重新生成</span>
                   </button>
                   <button class="kf-op-btn" title="手动挑选该帧各资产的参考图" @click="openKfPicker(kf)">换参考图</button>
+                  <button
+                    class="kf-op-btn"
+                    :disabled="!!kfReviewing"
+                    title="用 VLM 校验该帧与参考图/提示词的一致性"
+                    @click="onReviewKeyframe(kf)"
+                  >
+                    <el-icon v-if="kfReviewing === kf.id" class="is-loading"><Loading /></el-icon>
+                    <span v-else>校验</span>
+                  </button>
                 </div>
               </div>
             </template>
-            <span v-else class="kf-empty">未生成（生成视频时自动创建）</span>
+            <span v-else class="kf-empty">
+              未生成
+              <button
+                class="kf-op-btn"
+                :disabled="!!kfGeneratingAll"
+                title="按当前提示词与已确认定妆的资产图生成分镜关键帧"
+                @click="onGenerateKeyframes"
+              >
+                <el-icon v-if="kfGeneratingAll" class="is-loading"><Loading /></el-icon>
+                <span v-else>生成关键帧</span>
+              </button>
+            </span>
           </div>
 
           <!-- 提示词富文本（一个整体框，一行一个镜头；提示词本体就是一个字符串字段） -->
@@ -190,7 +219,7 @@
  * 并同步 shotType/cameraMovement/duration 列，供下游消费。
  */
 import { ref, computed, watch, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Picture, Loading, ArrowLeft, VideoCamera } from '@element-plus/icons-vue'
 import AssetGalleryPicker from '@/components/episode-production/storyboard/AssetGalleryPicker.vue'
 import KeyframeReferencePicker from '@/components/episode-production/stage-production/KeyframeReferencePicker.vue'
@@ -527,6 +556,14 @@ async function reloadShots(): Promise<void> {
 }
 
 // ── S-02 关键帧画廊（2026-09-16）：当前镜头首尾关键帧 + 重新生成 / 换参考图 ──
+interface KeyframeReviewInfo {
+  status: 'pass' | 'issues' | 'error'
+  issues: string[]
+  summary: string
+  model: string
+  reviewedAt: string
+}
+
 interface KeyframeRow {
   id: string
   storyboardId: string
@@ -539,12 +576,83 @@ interface KeyframeRow {
     assetType: 'character' | 'location' | 'item' | string
     assetId: string
     assetName: string
+    /** 是否实际被模型消费（能力截断后生效）；老数据恒 true */
+    effective?: boolean
   }>
+  /** 一致性校验结果（image_assets.metadata.review；未校验 → null） */
+  review?: KeyframeReviewInfo | null
   /** 用户挑图覆盖（keyframe.referenceOverrides） */
   referenceOverrides?: Array<{ kind: 'character' | 'location' | 'item'; bindingId: string; imageId: string }>
 }
 const keyframes = ref<KeyframeRow[]>([])
 const kfRegenerating = ref<string | null>(null)
+const kfReviewing = ref<string | null>(null)
+const kfGeneratingAll = ref(false)
+
+/** 整批生成当前镜头关键帧（空态入口；生成后自动一致性校验由后端完成） */
+async function onGenerateKeyframes(): Promise<void> {
+  const shot = selectedShot.value
+  if (!shot || kfGeneratingAll.value) return
+  kfGeneratingAll.value = true
+  try {
+    ElMessage.info('正在生成关键帧（含自动一致性校验），可能需要 1-2 分钟…')
+    const g = await window.electronAPI.episodeProduction.generateKeyframes(shot.id, styleName.value)
+    if (!g?.success) {
+      ElMessage.error(g?.error || '关键帧生成失败')
+      return
+    }
+    ElMessage.success('关键帧已生成')
+    await Promise.all([loadKeyframesForShot(shot.id), reloadShot(shot.id)])
+  } catch (e: any) {
+    ElMessage.error(e?.message || '关键帧生成失败')
+  } finally {
+    kfGeneratingAll.value = false
+  }
+}
+
+/** 该帧被模型能力截断而未生效的参考图资产名（参考图适配 2026-09-19） */
+function kfIneffectiveRefs(kf: KeyframeRow): string[] {
+  return (kf.references ?? []).filter(r => r.effective === false).map(r => r.assetName)
+}
+
+function kfReviewLabel(kf: KeyframeRow): string {
+  const s = kf.review?.status
+  return s === 'pass' ? '✓ 一致' : s === 'issues' ? '⚠ 存疑' : '校验失败'
+}
+
+function kfReviewTitle(kf: KeyframeRow): string {
+  const r = kf.review
+  if (!r) return ''
+  const lines = [
+    `校验模型：${r.model}`,
+    r.summary,
+    ...(r.issues ?? []).map(i => `· ${i}`),
+    r.reviewedAt ? `时间：${new Date(r.reviewedAt).toLocaleString()}` : '',
+  ]
+  return lines.filter(Boolean).join('\n')
+}
+
+/** 手动触发单帧一致性校验（VLM），完成后刷新画廊 */
+async function onReviewKeyframe(kf: KeyframeRow): Promise<void> {
+  if (kfReviewing.value) return
+  kfReviewing.value = kf.id
+  try {
+    const r = await (window.electronAPI.episodeProduction as any).reviewKeyframe(kf.id)
+    if (!r?.success) {
+      ElMessage.error(r?.error || '校验失败')
+      return
+    }
+    const review = r.data as KeyframeReviewInfo
+    if (review.status === 'pass') ElMessage.success('校验通过：与参考图/提示词一致')
+    else if (review.status === 'issues') ElMessage.warning(`发现 ${review.issues.length} 处不一致，详见徽章悬浮提示`)
+    else ElMessage.error('校验调用失败（详见徽章悬浮提示）')
+    await loadKeyframesForShot(kf.storyboardId)
+  } catch (e: any) {
+    ElMessage.error(e?.message || '校验失败')
+  } finally {
+    kfReviewing.value = null
+  }
+}
 
 /** 画廊只展示首尾帧（start/end），按 frameIndex 升序 */
 const kfGalleryRows = computed(() =>
@@ -671,6 +779,8 @@ async function doSave(): Promise<void> {
   let saved = 0
   let failed = 0
   let unmatched = 0
+  // 2026-09-19：记录 frameDescription 实际变化的镜头，保存后提示是否重生关键帧
+  const descChangedShots: any[] = []
   for (const sb of shots.value) {
     const no = sb.shotNumber || 0
     const line = byShotNo.get(no)
@@ -690,6 +800,7 @@ async function doSave(): Promise<void> {
     const r = await window.electronAPI.episodeProduction.updateStoryboard(sb.id, patch)
     if (r.success) {
       saved++
+      if ((sb.frameDescription ?? '') !== line.description) descChangedShots.push(sb)
       const idx = shots.value.findIndex((s) => s.id === sb.id)
       if (idx !== -1) shots.value[idx] = { ...shots.value[idx], ...patch }
     } else {
@@ -708,6 +819,46 @@ async function doSave(): Promise<void> {
     ElMessage.success(`已保存 ${saved} 个镜头`)
     dirty.value = false
   }
+  await promptStaleKeyframeRegen(descChangedShots)
+}
+
+/**
+ * 改提示词提示重生关键帧（2026-09-19 复盘整改）：
+ * 提示词变了但关键帧还是旧提示词画的，视频会继续吃旧帧 → 内容漂移且无人察觉。
+ * 这里只做"检测 + 提示"，重生由用户确认（生成成本不低，不擅自触发）。
+ */
+async function promptStaleKeyframeRegen(changedShots: any[]): Promise<void> {
+  if (changedShots.length === 0) return
+  // 只提示已有带图关键帧的镜头（没生成过关键帧的无需重生）
+  const stale: any[] = []
+  for (const shot of changedShots) {
+    const r = await window.electronAPI.episodeProduction
+      .listKeyframes(shot.id)
+      .catch(() => null)
+    const hasImage = (((r as any)?.data || []) as any[]).some(k => k.imagePath || k.imageAssetId)
+    if (hasImage) stale.push(shot)
+  }
+  if (stale.length === 0) return
+  const labels = stale.map(s => `镜头${s.shotNumber || '?'}`).join('、')
+  try {
+    await ElMessageBox.confirm(
+      `${labels} 的提示词已修改，但其关键帧仍基于旧提示词生成，继续使用会让视频内容与提示词脱节。是否立即重新生成关键帧？`,
+      '关键帧待更新',
+      { confirmButtonText: '重新生成', cancelButtonText: '暂不', type: 'warning' },
+    )
+  } catch {
+    return // 用户选"暂不"
+  }
+  for (const shot of stale) {
+    ElMessage.info(`正在重新生成 镜头${shot.shotNumber || '?'} 的关键帧…`)
+    const g = await window.electronAPI.episodeProduction.generateKeyframes(shot.id, styleName.value)
+    if (!g?.success) {
+      ElMessage.error(g?.error || `镜头${shot.shotNumber || '?'} 关键帧重生失败`)
+      continue
+    }
+    ElMessage.success(`镜头${shot.shotNumber || '?'} 关键帧已重新生成`)
+  }
+  await Promise.all([loadKeyframesForShot(selectedShot.value?.id), reloadShots()])
 }
 
 async function reloadShot(shotId: string): Promise<void> {
@@ -900,7 +1051,7 @@ async function loadMentionEntities(): Promise<void> {
   border: 1px solid var(--border-color-lighter);
   border-radius: var(--radius-md);
   .kf-title { flex-shrink: 0; font-size: 12px; font-weight: 600; color: var(--text-color-secondary); }
-  .kf-empty { font-size: 12px; color: var(--text-color-placeholder); }
+  .kf-empty { font-size: 12px; color: var(--text-color-placeholder); display: inline-flex; align-items: center; gap: 8px; }
   .kf-card { display: flex; align-items: center; gap: 8px; }
   .kf-thumb {
     position: relative;
@@ -913,6 +1064,19 @@ async function loadMentionEntities(): Promise<void> {
       background: rgba(0, 0, 0, .55); color: #fff;
       font-size: 10px; padding: 1px 6px; border-radius: 8px;
     }
+    .kf-review-badge {
+      position: absolute; right: 4px; top: 4px;
+      font-size: 10px; padding: 1px 6px; border-radius: 8px;
+      background: rgba(0, 0, 0, .55); color: #fff; cursor: default;
+      white-space: pre-line;
+      &.review-pass { background: rgba(34, 139, 34, .75); }
+      &.review-issues { background: rgba(204, 132, 0, .85); }
+      &.review-error { background: rgba(178, 34, 34, .8); }
+    }
+  }
+  .kf-ref-warn {
+    max-width: 140px; font-size: 10px; line-height: 1.3;
+    color: #cc8400; cursor: default;
   }
   .kf-ops { display: flex; flex-direction: column; gap: 4px; }
   .kf-op-btn {
