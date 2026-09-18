@@ -85,15 +85,18 @@ function probeVideoInfo(bin: string, file: string): Promise<ProbedVideoInfo | nu
 
 /**
  * 解析可能带自定义协议的本地资源路径（local-file:// / local-video:// / local-image:// 等）。
- * 这些协议 URL 由 toAssetUrl 生成；这里去掉协议前缀后按 dataPath 拼接成真实绝对路径，
- * 便于 existsSync / ffmpeg 读取。若已是绝对路径或无协议则按 resolveAssetPath 处理。
+ * 这些协议 URL 由 toAssetUrl 生成（dataPath 相对路径）；去协议前缀后按 dataPath 拼接成
+ * 真实绝对路径，便于 existsSync / ffmpeg 读取。
+ * 无协议的路径不做前缀剥离：POSIX 绝对路径（如 video-gen 落盘的 userDataPath 绝对路径）
+ * 原样交 resolveAssetPath（绝对直接返回）；此前无条件剥 `/` 会把绝对路径二次拼 dataPath，
+ * Linux/macOS 桌面端合成阶段必然"镜头段文件不存在"。
  */
 function resolveMediaPath(p: string): string {
   const trimmed = (p ?? '').trim()
   if (!trimmed) return trimmed
-  // 去掉自定义协议前缀（local-*://...）
+  if (!/^local-[a-z]+:\/\//i.test(trimmed)) return resolveAssetPath(trimmed)
+  // 去掉自定义协议前缀（local-*://...）后仍可能是相对路径（如 voice/tts/x.wav）→ 拼 dataPath
   const stripped = trimmed.replace(/^local-[a-z]+:\/\//i, '').replace(/^\//, '')
-  // 去掉协议后仍可能是相对路径（如 voice/tts/x.wav）→ 拼 dataPath；绝对路径原样
   return resolveAssetPath(stripped)
 }
 

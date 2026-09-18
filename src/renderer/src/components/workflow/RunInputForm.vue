@@ -155,17 +155,20 @@ async function handleFilePick(item: { key: string }, e: Event): Promise<void> {
   const api = (window as never as { electronAPI: { workflow: { uploadFormFile: (p: Record<string, string>) => Promise<{ success: boolean; data?: { path: string; name: string; text?: string }; error?: string }> } } }).electronAPI.workflow
   const runId = fileUploadContext.runId ?? ''
   const nodeId = fileUploadContext.nodeId ?? ''
-  if (!runId || !nodeId) { values[item.key] = file.name; return } // 无运行上下文（start 输入表单）：记文件名占位
+  // 无运行上下文（start 输入表单）：上传到 workflow-uploads/start/ 固定目录。
+  // file 型 start 输入的下游模板是 {{start.x.path}}——只记文件名会让引用图/底图静默丢路径。
   const base64 = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '')
     reader.onerror = () => reject(reader.error)
     reader.readAsDataURL(file)
   })
-  const resp = await api.uploadFormFile({ runId, nodeId, fileName: file.name, base64 })
+  const resp = await api.uploadFormFile({ runId: runId || 'start', nodeId: nodeId || item.key, fileName: file.name, base64 })
   if (resp.success && resp.data) {
     files[item.key] = resp.data
     values[item.key] = resp.data
+  } else if (!runId || !nodeId) {
+    values[item.key] = file.name // 上传失败兜底：仅记名（引擎按缺失处理，不阻断填表）
   }
 }
 
@@ -563,7 +566,6 @@ async function loadModelProviders(): Promise<void> {
         }
         continue
       }
-      const mix = item.modelTypes?.length ? item.modelTypes : undefined
       const hasMatch = (p: { models: Array<{ value: string; type?: string }> }): boolean =>
         p.models.some(m => modelMatches(item, m))
       // 默认 Provider 需真正有匹配模型；否则取第一个有匹配模型的启用 Provider
