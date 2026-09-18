@@ -7,7 +7,6 @@
 import fs from 'fs'
 import path from 'path'
 import { createHash, randomUUID } from 'crypto'
-import nodejieba from 'nodejieba'
 import { parse } from 'node-html-parser'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { KbQaPairRecord } from '@core/database/repositories/kb-qa-pair.repository'
@@ -1023,7 +1022,15 @@ export class KnowledgeBaseService {
         const fetchK = (vectorWeight < 1 ? topK * 3 : topK) + knowledgeParams().retrieval.qaVectorFetchPadding
         const raw = await db.kbVectors.searchSimilar(req.knowledgeBaseId, vectors[0], fetchK)
         for (const r of raw) {
-          if (r.chunkId.startsWith(QA_CHUNK_ID_PREFIX)) continue
+          // 存量语义泛化（T09 防污染的向量半边）：qa: 之外，atom:/note: 也不属于
+          // chunk 检索候选（否则消化后 topK 名额被 brain 行占据再丢弃，结果变少）
+          if (
+            r.chunkId.startsWith(QA_CHUNK_ID_PREFIX) ||
+            r.chunkId.startsWith('atom:') ||
+            r.chunkId.startsWith('note:')
+          ) {
+            continue
+          }
           if (threshold !== null && r.score < threshold) continue // H3：阈值作用于原始余弦（保留既有语义）
           vecScores.set(r.chunkId, r.score)
           // 混合模式不按 topK 截断：候选集必须是 topK*3 的完整并集（排名第 topK+1~
@@ -1911,22 +1918,21 @@ let brainQuerySingleton: BrainQueryService | null = null
 function getBrainQueryService(kbService: KnowledgeBaseService): BrainQueryService | null {
   const db = getCoreDatabaseManager()
   if (!db.kbAtoms || !db.kbNotes || !db.kbChunks || !db.kbDocuments) return null
+  // F14 防陈旧闭包：deps 内每次现取 manager（单例只缓存服务对象，不缓存 db 引用）
   if (brainQuerySingleton) return brainQuerySingleton
+  const inv = (): typeof db.kbInvertedIndex => getCoreDatabaseManager().kbInvertedIndex
   const deps: BrainQueryDeps = {
     embed: (texts, kb) => kbService.getEmbeddingVectors(texts, kb.embeddingConfig ? JSON.parse(kb.embeddingConfig) : {}),
     searchSimilar: (kbId, vector, topK) => {
-      if (!db.kbVectors) return Promise.resolve([])
-      return db.kbVectors.searchSimilar(kbId, vector, topK)
+      const vectors = getCoreDatabaseManager().kbVectors
+      if (!vectors) return Promise.resolve([])
+      return vectors.searchSimilar(kbId, vector, topK)
     },
     inverted: {
-      findByTerms: (kbId, terms) =>
-        db.kbInvertedIndex ? db.kbInvertedIndex.findByTerms(kbId, terms) : Promise.resolve(new Map()),
-      getDocumentFrequencies: (kbId, opts) =>
-        db.kbInvertedIndex ? db.kbInvertedIndex.getDocumentFrequencies(kbId, opts) : Promise.resolve(new Map()),
-      getChunkCount: (kbId, opts) =>
-        db.kbInvertedIndex ? db.kbInvertedIndex.getChunkCount(kbId, opts) : Promise.resolve(0),
-      getAverageChunkLength: (kbId, opts) =>
-        db.kbInvertedIndex ? db.kbInvertedIndex.getAverageChunkLength(kbId, opts) : Promise.resolve(0),
+      findByTerms: (kbId, terms) => inv()?.findByTerms(kbId, terms) ?? Promise.resolve(new Map()),
+      getDocumentFrequencies: (kbId, opts) => inv()?.getDocumentFrequencies(kbId, opts) ?? Promise.resolve(new Map()),
+      getChunkCount: (kbId, opts) => inv()?.getChunkCount(kbId, opts) ?? Promise.resolve(0),
+      getAverageChunkLength: (kbId, opts) => inv()?.getAverageChunkLength(kbId, opts) ?? Promise.resolve(0),
     },
     atoms: db.kbAtoms,
     notes: db.kbNotes,

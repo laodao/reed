@@ -51,17 +51,19 @@ ${jsonSoFar}
 请直接继续输出剩余的 JSON 内容，不要重复已经输出的部分，不要添加任何解释说明。`
 }
 
-/** 拼接两段输出（重复开头检测照 callAIWithContinue；导出供单测） */
+/** 拼接两段截断输出（导出供单测）。语义对齐 ai-call 原版并修正其重开头分支：
+ * - 续写重复了开头（模型整份重答）→ 丢弃半截 previous，用续写替换；
+ * - 正常续写 → 剥掉续写的前导散文，只拼 JSON 主体（散文混进 JSON 流必解析失败）。 */
 export function stitchContinuation(previous: string, continuation: string): string {
   const start = continuation.indexOf('{')
-  if (start !== -1) {
-    const contJson = continuation.substring(start)
-    const soFar = previous.indexOf('{') !== -1 ? previous.substring(previous.indexOf('{')) : previous
-    if (soFar.startsWith(contJson.substring(0, 50))) {
-      return previous.trimEnd() + '\n' + contJson
-    }
+  if (start === -1) return previous.trimEnd() + continuation
+  const contJson = continuation.substring(start)
+  const jsonStart = previous.indexOf('{')
+  const soFar = jsonStart !== -1 ? previous.substring(jsonStart) : previous
+  if (soFar.startsWith(contJson.substring(0, 50))) {
+    return contJson // 整份重答：替换而非串联
   }
-  return previous.trimEnd() + continuation
+  return soFar.trimEnd() + contJson
 }
 
 /**

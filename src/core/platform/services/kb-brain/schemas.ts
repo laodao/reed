@@ -108,7 +108,9 @@ const ADJUDICATE_SCHEMA = {
   additionalProperties: false,
 } as const
 
-const ajv = new Ajv({ allErrors: true })
+// removeAdditional：剥离模型多吐的未知字段（如 confidence/注释键）再校验——
+// 「多吐字段」从整章致命降为可容忍；必需键缺失/类型错仍响亮失败
+const ajv = new Ajv({ allErrors: true, removeAdditional: true })
 const validateAtomize = ajv.compile(ATOMIZE_SCHEMA)
 const validateAdjudicate = ajv.compile(ADJUDICATE_SCHEMA)
 

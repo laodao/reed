@@ -84,8 +84,12 @@ export class KbBrainDigestService {
   /** 文档任务串行队列（并发=1） */
   private chain: Promise<void> = Promise.resolve()
 
+  private readonly adjudicateLlm: BrainLlmFn
+
   constructor(deps: KbBrainDigestDeps = {}) {
     this.llm = deps.llm ?? defaultBrainLlm('kb-brain-atomize')
+    // 裁决走独立档位（KB_ADJUDICATE_MODEL env 路由）；测试注入 deps.llm 时同步复用
+    this.adjudicateLlm = deps.llm ?? defaultBrainLlm('kb-brain-adjudicate')
     this.embedFn = deps.embed ?? (async () => null)
     this.reposFn =
       deps.repos ??
@@ -115,7 +119,9 @@ export class KbBrainDigestService {
     if (event.name !== WORKFLOW_EVENT_NAMES.kbDocumentCompleted) return
     const documentId = String(event.payload?.documentId ?? '')
     if (!documentId) return
-    void this.enqueueDocument(documentId, event.userId)
+    this.enqueueDocument(documentId, event.userId).catch((e) =>
+      logger.warn(`[kb-brain] 消化任务失败 doc=${documentId}: ${e instanceof Error ? e.message : String(e)}`),
+    )
   }
 
   /** 入队（串行）；返回队列尾 promise 供测试等待 */
@@ -133,10 +139,16 @@ export class KbBrainDigestService {
     const repos = this.reposFn()
     if (!repos) return
     const stale = await repos.passes.recoverPending()
-    const docIds = [...new Set(stale.filter((p) => p.status === 'pending').map((p) => p.documentId))]
+    // 僵死 running（>10min 无心跳）复位 pending——否则 ensurePass 永久 skip 封死该章
+    for (const p of stale) {
+      if (p.status === 'running') await repos.passes.resetToPending(p.id)
+    }
+    const docIds = [...new Set(stale.map((p) => p.documentId))]
     for (const docId of docIds) {
       logger.info(`[kb-brain] 恢复消化: doc=${docId}`)
-      this.enqueueDocument(docId, LOCAL_DEFAULT_USER_ID)
+      this.enqueueDocument(docId, LOCAL_DEFAULT_USER_ID).catch((e) =>
+        logger.warn(`[kb-brain] 恢复任务失败 doc=${docId}: ${e instanceof Error ? e.message : String(e)}`),
+      )
     }
   }
 
@@ -169,12 +181,24 @@ export class KbBrainDigestService {
     try {
       const chapterRows = await chapters.findByDocument(documentId)
       let done = 0
+      const exhaustedChapters: string[] = []
       for (const chapter of chapterRows) {
-        await this.digestChapter(kbId, documentId, chapter.id, chapter.title, chapter.content ?? '', chapter.contentHash)
+        const outcome = await this.digestChapter(kbId, documentId, chapter.id, chapter.title, chapter.content ?? '', chapter.contentHash, cfg)
+        if (outcome === 'exhausted') exhaustedChapters.push(chapter.id)
         done++
         const progress = Math.round((done / Math.max(1, chapterRows.length)) * 95)
         await docs.updateBrainStatus(documentId, { status: 'digesting', progress })
         this.emitProgress(documentId, 'base', progress)
+      }
+      if (exhaustedChapters.length > 0) {
+        // 重试耗尽的章不能谎报 digested（F3）：标 failed 留 error 线索，可人工重触发
+        await docs.updateBrainStatus(documentId, {
+          status: 'failed',
+          progress: 100,
+          error: `章节重试耗尽: ${exhaustedChapters.slice(0, 5).join(',')}`,
+        })
+        this.emitStatus(documentId, 'failed', '章节重试耗尽')
+        return
       }
 
       await this.staleUncovered(documentId, atoms, chapterRows.map((c) => c.contentHash).filter(Boolean) as string[])
@@ -189,7 +213,7 @@ export class KbBrainDigestService {
     }
   }
 
-  /** 章级基础遍：台账幂等 → 原子化 → 实体 → 裁决 → 入池 */
+  /** 章级基础遍：台账幂等 → 原子化 → 实体 → 裁决 → 入池。返回 'done' | 'exhausted'（重试耗尽被跳过） */
   async digestChapter(
     kbId: string,
     documentId: string,
@@ -197,9 +221,10 @@ export class KbBrainDigestService {
     chapterTitle: string,
     content: string,
     chapterHash: string | null,
-  ): Promise<void> {
+    cfg: KbBrainConfig,
+  ): Promise<'done' | 'exhausted'> {
     const repos = this.reposFn()
-    if (!repos) return
+    if (!repos) return 'done'
     const { atoms, entities, edges, passes } = repos
 
     const decision = await passes.ensurePass({
@@ -210,7 +235,10 @@ export class KbBrainDigestService {
       passKey: 'base',
       chapterHash,
     })
-    if (decision.action === 'skip') return
+    if (decision.action === 'skip') {
+      // 重试耗尽的章不是正常跳过：调用方要据此把文档标记为部分失败
+      return decision.reason === 'done-same-hash' ? 'done' : 'exhausted'
+    }
     const pass = decision.pass
     await passes.setRunning(pass.id)
 
@@ -219,7 +247,7 @@ export class KbBrainDigestService {
       if (!content.trim()) {
         // 零产出是合法终态（纯过场章）——台账 done 防重复跑
         await passes.setDone(pass.id, stats, { calls: 0, tokensIn: 0, tokensOut: 0 })
-        return
+        return 'done'
       }
 
       // 1. 原子化（低档；已知实体名作为挂点规范名提示）
@@ -259,6 +287,8 @@ export class KbBrainDigestService {
           sourceQuote: a.quote.slice(0, 200),
           startOffset: a.startOffset,
           endOffset: a.endOffset,
+          validFrom: a.validFrom,
+          validUntil: a.validUntil,
           extractionPass: 'base#1',
           origin: 'ai',
         })
@@ -271,48 +301,96 @@ export class KbBrainDigestService {
         if (o) entityIdsForCandidates.add(o)
       }
       const candidates = entityIdsForCandidates.size
-        ? await atoms.findByEntities(kbId, [...entityIdsForCandidates], { lensNoteId: null, statuses: ['supported', 'suspected'] })
+        ? await atoms.findByEntities(kbId, [...entityIdsForCandidates], { lensNoteId: null, statuses: ['supported', 'suspected', 'superseded'] })
         : []
       const capped = candidates.slice(0, ADJUDICATE_CANDIDATE_CAP)
 
-      let keptInputs = atomInputs
+      // 4. 裁决过滤 → 开新 → 关旧（带血缘）。失败方向安全：先落新再关旧，
+      // 中途崩溃只可能"新已入库旧未关"（下轮裁决按 duplicate 合并），不会丢知识。
+      // 过滤 duplicates + 同批内 statement 去重；keptIdx 记录保留项的原下标（顺序对位用）
+      const keptIdx: number[] = []
+      let verdict: Awaited<ReturnType<AdjudicateService['adjudicate']>> | null = null
       if (capped.length > 0 && atomInputs.length > 0) {
-        const judge = new AdjudicateService({ llm: this.llm })
-        const verdict = await judge.adjudicate({
+        const judge = new AdjudicateService({ llm: this.adjudicateLlm })
+        verdict = await judge.adjudicate({
           newItems: atomInputs.map((a, i) => ({ idx: i, statement: a.statement })),
           existingItems: capped.map((c, i) => ({ idx: i, statement: c.statement, status: c.status })),
         })
         stats.costCalls += 1
         const dupNew = new Set(verdict.duplicates.map((d) => d.newIdx))
-        const conflictOld = new Set(verdict.contradictions.filter((c) => c.severity === 'conflict').map((c) => c.oldIdx))
-        const updateOld = new Set(verdict.contradictions.filter((c) => c.severity === 'update').map((c) => c.oldIdx))
-        keptInputs = atomInputs.filter((_, i) => !dupNew.has(i))
+        // duplicates：语义等同 → 使用信号归并到旧条（Graphiti 协议）
+        const dupOldIds = verdict.duplicates.map((d) => capped[d.oldIdx].id)
+        if (dupOldIds.length > 0) await atoms.incUse(dupOldIds)
         stats.merged = dupNew.size
-        // 关旧开新（裁决与写入同批次——飞轮教训：永不裸 ADD）
-        for (const oldIdx of updateOld) await atoms.updateStatus(capped[oldIdx].id, { status: 'superseded' })
-        stats.superseded = updateOld.size
-        for (const oldIdx of conflictOld) await atoms.updateStatus(capped[oldIdx].id, { status: 'suspected' })
-        stats.suspected = conflictOld.size
+        const seen = new Set<string>()
+        atomInputs.forEach((inp, i) => {
+          if (dupNew.has(i)) return
+          if (seen.has(inp.statement)) return
+          seen.add(inp.statement)
+          keptIdx.push(i)
+        })
+      } else {
+        atomInputs.forEach((_, i) => keptIdx.push(i))
       }
+      const keptInputs = keptIdx.map((i) => atomInputs[i])
 
-      // 4. 落库新论断 + 实体挂点
       const inserted = keptInputs.length > 0 ? await atoms.createBatch(keptInputs) : []
       stats.atoms = inserted.length
-      // 挂点回填（createBatch 后按 statement 对位）
-      const statementToId = new Map(inserted.map((r) => [r.statement, r.id]))
-      const idByInputIdx = new Map<number, string>()
-      keptInputs.forEach((inp, i) => {
-        const id = statementToId.get(inp.statement)
-        if (id) idByInputIdx.set(i, id)
+      // 顺序对位：keptInputs[j] ↔ inserted[j]（createBatch 保序）——不依赖 statement 文本
+      const newIdByOrigIdx = new Map<number, string>()
+      keptIdx.forEach((origIdx, j) => {
+        const id = inserted[j]?.id
+        if (id) newIdByOrigIdx.set(origIdx, id)
       })
-      for (const a of result.atoms) {
+
+      if (verdict) {
+        for (const c of verdict.contradictions) {
+          if (c.severity === 'update') {
+            await atoms.updateStatus(capped[c.oldIdx].id, {
+              status: 'superseded',
+              supersededByAtomId: newIdByOrigIdx.get(c.newIdx),
+            })
+          } else {
+            await atoms.updateStatus(capped[c.oldIdx].id, { status: 'suspected' })
+          }
+        }
+        stats.superseded = verdict.contradictions.filter((c) => c.severity === 'update').length
+        stats.suspected = verdict.contradictions.filter((c) => c.severity === 'conflict').length
+      }
+
+      // 4.5 autoApproveThreshold（§3.3）：低置信论断标记 suspected 待人审，不无门槛入池
+      {
+        const threshold = cfg.autoApproveThreshold
+        for (let j = 0; j < keptInputs.length; j++) {
+          const cert = keptInputs[j].certainty ?? 0.8
+          const id = inserted[j]?.id
+          if (id && cert < threshold) {
+            await atoms.updateStatus(id, { status: 'suspected' })
+            stats.suspected += 1
+          }
+        }
+      }
+
+      // 4.6 实体挂点回填（顺序对位）
+      for (let j = 0; j < keptIdx.length; j++) {
+        const a = result.atoms[keptIdx[j]]
+        const targetId = inserted[j]?.id
+        if (!a || !targetId) continue
         const sid = await resolveEntity(a.subject)
         const oid = await resolveEntity(a.object)
-        const targetId = idByInputIdx.get(atomInputs.findIndex((inp) => inp.statement === a.statement))
-        if (!targetId) continue
         if (sid || oid) {
           await atoms.relinkEntity(targetId, sid, oid)
         }
+      }
+      // statement → 原下标（事件边用；同文取首见——同文已在同批去重，唯一）
+      const statementToOrigIdx = new Map<string, number>()
+      result.atoms.forEach((a, i) => {
+        if (!statementToOrigIdx.has(a.statement)) statementToOrigIdx.set(a.statement, i)
+      })
+      const statementToId = new Map<string, string>()
+      for (const [stmt, origIdx] of statementToOrigIdx) {
+        const id = newIdByOrigIdx.get(origIdx)
+        if (id) statementToId.set(stmt, id)
       }
 
       // 5. 入池：向量（失败不阻塞——可补建）+ 倒排
@@ -329,7 +407,7 @@ export class KbBrainDigestService {
         const rows = inserted.flatMap((r) => {
           const terms = new Map<string, number>()
           for (const t of tokenizeForIndex(r.statement)) terms.set(t, (terms.get(t) ?? 0) + 1)
-          return [...terms.entries()].map(([term, tf]) => ({ term, chunkId: r.id, knowledgeBaseId: kbId, termFrequency: tf }))
+          return [...terms.entries()].map(([term, tf]) => ({ term, chunkId: `atom:${r.id}`, knowledgeBaseId: kbId, termFrequency: tf }))
         })
         if (repos.inverted && rows.length > 0) await repos.inverted.insertBatch(rows)
       }
@@ -356,6 +434,7 @@ export class KbBrainDigestService {
       }
 
       await passes.setDone(pass.id, stats, { calls: stats.costCalls, tokensIn: 0, tokensOut: 0 })
+      return 'done'
     } catch (e) {
       await passes.setFailed(pass.id, e instanceof Error ? e.message : String(e))
       throw e
@@ -372,15 +451,17 @@ export class KbBrainDigestService {
     const hashSet = new Set(currentHashes)
     for (const a of live) {
       if (a.extractionPass.startsWith('human')) continue // 用户观感不随 reprocess 失效
-      if (a.sourceChapterHash && !hashSet.has(a.sourceChapterHash)) {
+      if (a.extractionPass.startsWith('lens:')) continue // 视角遍产物由视角遍生命周期管理
+      // hash 不在当前章节集（含 hash 为 null 的失锚论断）→ 失去出处，防幽灵
+      if (!a.sourceChapterHash || !hashSet.has(a.sourceChapterHash)) {
         await atoms.updateStatus(a.id, { status: 'stale' })
       }
     }
   }
 
   private async knownEntityNames(kbId: string, entities: KbEntityRepository): Promise<string[]> {
-    const pending = await entities.pendingSummaries(kbId, 50)
-    return pending.map((e) => e.name)
+    // 全部 active 实体的规范名（pendingSummaries 会让摘要完成的实体退出词表——语义错位）
+    return entities.listActiveNames(kbId, 200)
   }
 
   private async kbEmbeddingConfig(kbId: string): Promise<string | null> {
@@ -412,17 +493,26 @@ export class KbBrainDigestService {
 let installed = false
 
 /** pack activate / boot 时调用：订阅域事件 + 启动恢复（幂等；旧库未装配则跳过） */
-export function installKbBrainDigest(deps?: KbBrainDigestDeps): void {
+export function installKbBrainDigest(
+  deps?: KbBrainDigestDeps & { kbService?: { getEmbeddingVectors(texts: string[], config: Record<string, unknown>): Promise<number[][] | null> } },
+): void {
   if (installed) return
-  const svc = new KbBrainDigestService(deps)
+  const db = getCoreDatabaseManager()
   // 生产环境探活：仓储未装配（老库）→ 不安装，日志说明
-  if (!deps?.repos) {
-    const db = getCoreDatabaseManager()
-    if (!db.kbAtoms) {
-      logger.info('[kb-brain] kbAtoms 仓储未装配（旧库），消化流水线不启用')
-      return
+  if (!deps?.repos && !db.kbAtoms) {
+    logger.info('[kb-brain] kbAtoms 仓储未装配（旧库），消化流水线不启用')
+    return
+  }
+  // 生产缺省：embed 绑定宿主 KB 服务的嵌入调用（否则向量入池恒失败，atom 只进倒排）
+  const effective: KbBrainDigestDeps = { ...deps }
+  if (!effective.embed) {
+    const kbSvc = deps?.kbService
+    if (kbSvc) {
+      effective.embed = async (texts, kb) =>
+        kbSvc.getEmbeddingVectors(texts, kb.embeddingConfig ? (JSON.parse(kb.embeddingConfig) as Record<string, unknown>) : {})
     }
   }
+  const svc = new KbBrainDigestService(effective)
   installed = true
   subscribeDomainEvents((event) => svc.onDomainEvent(event))
   void svc.recover().catch((e) => logger.warn(`[kb-brain] 启动恢复失败: ${e instanceof Error ? e.message : String(e)}`))

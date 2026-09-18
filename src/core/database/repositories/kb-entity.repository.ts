@@ -149,6 +149,16 @@ export class KbEntityRepository extends BaseRepository<KbEntityEntity, KbEntityR
     )
   }
 
+  /** 全部 active 实体规范名（原子化的挂点提示词表；按创建时间稳定排序） */
+  async listActiveNames(kbId: string, limit: number): Promise<string[]> {
+    const rows = await this.scoped.find({
+      where: { knowledgeBaseId: kbId, status: 'active' } as FindOptionsWhere<KbEntityEntity>,
+      order: { createdAt: 'ASC' } as never,
+      take: limit,
+    })
+    return rows.map((r) => r.name)
+  }
+
   async pendingSummaries(kbId: string, limit: number): Promise<KbEntityRecord[]> {
     const rows = await this.scoped.find({
       where: { knowledgeBaseId: kbId, summaryStatus: 'pending' } as FindOptionsWhere<KbEntityEntity>,

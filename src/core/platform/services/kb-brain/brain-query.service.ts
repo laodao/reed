@@ -55,6 +55,10 @@ export interface BrainSearchRequest {
   lensNoteId?: string
   embeddingConfig: string | null
   signal?: AbortSignal
+  /** 限定文档（SearchRequest.documentIds 透传——缺失会静默变全库检索） */
+  documentIds?: string[]
+  /** 分数下限（SearchRequest.threshold 透传，作用于各通道原始分） */
+  threshold?: number
 }
 
 /** RRF 融合分（用于排序，不回写为结果 score——score 保持各类型原始分） */
@@ -80,6 +84,7 @@ export class BrainQueryService {
           const { ns, id } = parseVectorNamespace(r.chunkId)
           if (ns === 'qa') continue // 存量语义：文档检索剔除 QA 命名空间
           if (!includeSet.has(ns)) continue
+          if (req.threshold != null && req.threshold > 0 && r.score < req.threshold) continue
           vecHits.push({ ns, id, score: r.score })
         }
       }
@@ -113,11 +118,18 @@ export class BrainQueryService {
               c.tfByTerm.set(term, item.termFrequency)
             }
           }
-          // docLen：chunk=内容分词长；atom=statement；note=title+description
-          const docLen = new Map<string, number>()
-          for (const c of candidates.values()) {
-            docLen.set(c.id, await this.docLenOf(c.ns, c.id))
+          // docLen：chunk=内容分词长；atom=statement；note=title+description。
+          // 先粗裁候选（按命中词数降序）再取长度——高频词大库的无界 N+1 在此收口
+          let candList = [...candidates.values()]
+          if (candList.length > BM25_CANDIDATE_CAP) {
+            candList = candList
+              .sort((a, b) => b.tfByTerm.size - a.tfByTerm.size)
+              .slice(0, BM25_CANDIDATE_CAP)
+            candidates.clear()
+            for (const c of candList) candidates.set(c.id, c)
           }
+          const docLen = new Map<string, number>()
+          await Promise.all(candList.map(async (c) => docLen.set(c.id, await this.docLenOf(c.ns, c.id))))
           for (const c of candidates.values()) {
             let score = 0
             for (const [term, tf] of c.tfByTerm) {
@@ -129,12 +141,6 @@ export class BrainQueryService {
               score += idf * norm
             }
             if (score > 0) bm25Scores.set(c.id, { ns: c.ns, id: c.id, score })
-          }
-          // 截断词法候选（防大库膨胀）
-          if (bm25Scores.size > BM25_CANDIDATE_CAP) {
-            const sorted = [...bm25Scores.values()].sort((a, b) => b.score - a.score).slice(0, BM25_CANDIDATE_CAP)
-            bm25Scores.clear()
-            for (const s of sorted) bm25Scores.set(s.id, s)
           }
         }
       }
@@ -155,20 +161,26 @@ export class BrainQueryService {
 
       const ordered = [...fused.values()].sort((a, b) => b.fused - a.fused)
 
-      /* ---------- 4. 命名空间分流解析 + 去重 ---------- */
-      const results: SearchResult[] = []
+      /* ---------- 4. 命名空间分流解析 + 同源去重 + 截断 ---------- */
+      // 先解析（上限 3*topK）、后去重、再截断——保证去重后仍尽量满 topK（F12）
       const sourceChunkIdsOfAtoms = new Set<string>()
+      const parsed: Array<{ entry: (typeof ordered)[number]; result: SearchResult }> = []
+      const docIdFilter = req.documentIds?.length ? new Set(req.documentIds) : null
       for (const entry of ordered) {
-        if (results.length >= topK) break
+        if (parsed.length >= topK * FETCH_MULTIPLIER) break
         const resolved = await this.resolveHit(entry, req)
         if (!resolved) continue
+        if (docIdFilter && !docIdFilter.has(resolved.searchResult.documentId)) continue
         if (resolved.kind === 'atom') sourceChunkIdsOfAtoms.add(resolved.sourceChunkId ?? '')
         // score 回填原始分（余弦/BM25），fused 只用于排序——与存量检索的 score 语义一致
         resolved.searchResult.score = Number(entry.raw.toFixed(4))
-        results.push(resolved.searchResult)
+        parsed.push({ entry, result: resolved.searchResult })
       }
-      // 同文档去重：chunk 项的 chunkId 命中某 atom 的 sourceChunkId → 丢弃（atom 已带 quote 回链）
-      const deduped = results.filter((r) => !(r.kind === 'chunk' && sourceChunkIdsOfAtoms.has(r.chunkId)))
+      // 同源去重：chunk 的 chunkId 命中某 atom 的 sourceChunkId → 丢弃（atom 已带 quote 回链）
+      const deduped = parsed
+        .filter((p) => !(p.result.kind === 'chunk' && sourceChunkIdsOfAtoms.has(p.result.chunkId)))
+        .slice(0, topK)
+        .map((p) => p.result)
 
       /* ---------- 5. 使用即再巩固（fire-and-forget） ---------- */
       const atomIds = deduped.filter((r) => r.kind === 'atom').map((r) => (r.atom as { id: string }).id)
@@ -248,7 +260,7 @@ export class BrainQueryService {
       kind: 'note',
       searchResult: {
         chunkId: `note:${note.id}`,
-        documentId: note.knowledgeBaseId,
+        documentId: '', // note 是库级实体，无文档归属（下游按 kind 判别，勿当文档 id 跳转）
         documentName: note.title,
         content: note.description,
         score: 0,

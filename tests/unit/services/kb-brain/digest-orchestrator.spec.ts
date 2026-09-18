@@ -148,8 +148,8 @@ describe('KbBrainDigestService 全链路', () => {
     const firstReloaded = await atomRepo.findById(first.id)
     expect(firstReloaded?.subjectEntityId).toBe(chengye!.id)
 
-    // 倒排行存在（chunkId = atom id）
-    const invRows = (await ds.query(`SELECT COUNT(*) as count FROM kb_inverted_index WHERE chunk_id = '${first.id}'`)) as Array<{ count: number }>
+    // 倒排行存在（chunkId = atom:<id>，带命名空间前缀——review F1 修复）
+    const invRows = (await ds.query(`SELECT COUNT(*) as count FROM kb_inverted_index WHERE chunk_id = 'atom:${first.id}'`)) as Array<{ count: number }>
     expect(Number(invRows[0].count)).toBeGreaterThan(0)
 
     // leads-to 边（ch1 内一对）
@@ -206,6 +206,22 @@ describe('KbBrainDigestService 全链路', () => {
     expect(passRows[0].status).toBe('done')
     const stats = JSON.parse(passRows[0].statsJson ?? '{}') as { vectorsFailed: number }
     expect(stats.vectorsFailed).toBe(2)
+  })
+
+  it('autoApproveThreshold：低于阈值的论断标 suspected 待人审（§3.3）', async () => {
+    await insertTestDoc(ds, { id: 'doc-thr', kbId: 'kb-t' })
+    await ds.query(`UPDATE knowledge_bases SET brain_config='{"enabled":true,"digestion":{"enabled":true},"autoApproveThreshold":0.95}' WHERE id='kb-t'`)
+    const chapters = new KbChapterRepository(ds)
+    await chapters.replaceByDocument('doc-thr', [
+      { id: 'ch-thr', documentId: 'doc-thr', knowledgeBaseId: 'kb-t', title: '第1章', level: 1, ordering: 0, content: CH1_CONTENT, contentHash: 'hash-thr' },
+    ])
+    //ATOMIZE_RESPONSE certainty=0.9 < 0.95 → suspected
+    const thr = new KbBrainDigestService(makeDeps())
+    await thr.enqueueDocument('doc-thr', null)
+    const atoms2 = await atomRepo.findByDocument('doc-thr', { lensNoteId: null })
+    expect(atoms2.length).toBeGreaterThan(0)
+    expect(atoms2.every((a) => a.status === 'suspected')).toBe(true)
+    await ds.query(`UPDATE knowledge_bases SET brain_config='{"enabled":true,"digestion":{"enabled":true}}' WHERE id='kb-t'`)
   })
 
   it('章节内容变更 → 重跑旧论断 stale、新论断 supported', async () => {

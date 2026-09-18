@@ -21,6 +21,7 @@
  */
 
 import { registerKnowledgeBaseHandlers } from './handlers/knowledge-base.handler'
+import { KnowledgeBaseService } from '@core/platform/services/knowledge-base.service'
 import type { PackDefinition } from '../registry'
 
 export const knowledgeBasePack: PackDefinition = {
@@ -36,5 +37,9 @@ export const knowledgeBasePack: PackDefinition = {
   },
   activate() {
     registerKnowledgeBaseHandlers()
+    // 知识大脑 P1 消化流水线装配（review P0 修复：此前零调用方，流水线整体不可达）
+    import('@core/platform/services/kb-brain/digest-orchestrator.service').then(({ installKbBrainDigest }) => {
+      installKbBrainDigest({ kbService: new KnowledgeBaseService() })
+    })
   },
 }

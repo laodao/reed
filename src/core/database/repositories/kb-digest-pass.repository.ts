@@ -40,7 +40,7 @@ export interface KbDigestPassRecord {
 /** ensurePass 的决策结果 */
 export type EnsurePassDecision =
   | { action: 'run'; pass: KbDigestPassRecord }
-  | { action: 'skip'; reason: 'done-same-hash' | 'running'; pass: KbDigestPassRecord }
+  | { action: 'skip'; reason: 'done-same-hash' | 'running' | 'exhausted'; pass: KbDigestPassRecord }
 
 const MAX_ATTEMPTS = 3
 
@@ -82,7 +82,8 @@ export class KbDigestPassRepository extends BaseRepository<KbDigestPassEntity, K
     chapterHash: string | null
   }): Promise<EnsurePassDecision> {
     const existing = await this.scoped.findOne({
-      ...(input.chapterId !== null ? { chapterId: input.chapterId } : {}),
+      // chapterId=null（文档级任务）必须按 (document_id, pass_key) 判重——UNIQUE 对 NULL 不生效（F7）
+      ...(input.chapterId !== null ? { chapterId: input.chapterId } : { documentId: input.documentId }),
       passKey: input.passKey,
     } as FindOptionsWhere<KbDigestPassEntity>)
     const now = new Date()
@@ -92,8 +93,9 @@ export class KbDigestPassRepository extends BaseRepository<KbDigestPassEntity, K
         return { action: 'skip', reason: 'done-same-hash', pass: this.toDto(existing) }
       }
       if (existing.status === 'failed' && existing.attempts >= MAX_ATTEMPTS) {
-        // 超过重试上限：视同跳过（错误保留在行上，人工触发才复活）
-        return { action: 'skip', reason: 'done-same-hash', pass: this.toDto(existing) }
+        // 超过重试上限：跳过（错误保留在行上，人工触发才复活）。reason 必须可辨——
+        // 上游据此把文档标为部分失败而非谎报 digested
+        return { action: 'skip', reason: 'exhausted', pass: this.toDto(existing) }
       }
       existing.status = 'pending'
       existing.chapterHash = input.chapterHash
@@ -119,13 +121,24 @@ export class KbDigestPassRepository extends BaseRepository<KbDigestPassEntity, K
       await this.scoped.save(e)
       return { action: 'run', pass: this.toDto(e) }
     } catch {
-      // 章级任务的唯一键并发兜底：读回已存在行再决策
+      // 章级任务的唯一键并发兜底：读回已存在行，原子抢占 pending→running。
+      // 递归重判会让双方都拿到 run（pending 不在 skip 分支）→ 整章重复消化
       const raced = await this.scoped.findOne({
         chapterId: input.chapterId!,
         passKey: input.passKey,
       } as FindOptionsWhere<KbDigestPassEntity>)
       if (!raced) throw new Error('[kb-digest-pass] ensurePass 冲突且读不回')
-      return this.ensurePass(input)
+      if (raced.status === 'running') return { action: 'skip', reason: 'running', pass: this.toDto(raced) }
+      const claimed = await this.scoped.update(
+        { id: raced.id, status: 'pending' } as unknown as FindOptionsWhere<KbDigestPassEntity>,
+        { status: 'running', attempts: raced.attempts + 1, chapterHash: input.chapterHash, updatedAt: new Date() } as never,
+      )
+      if (claimed > 0) {
+        raced.status = 'running'
+        raced.attempts += 1
+        return { action: 'run', pass: this.toDto(raced) }
+      }
+      return { action: 'skip', reason: 'running', pass: this.toDto(raced) }
     }
   }
 
@@ -156,6 +169,14 @@ export class KbDigestPassRepository extends BaseRepository<KbDigestPassEntity, K
     row.error = error.slice(0, 500)
     row.updatedAt = new Date()
     await this.scoped.save(row)
+  }
+
+  /** 僵死 running 复位 pending（recover 调用；ensurePass 对 running 一律 skip，不复位就永久封死） */
+  async resetToPending(id: string): Promise<void> {
+    await this.scoped.update(
+      { id, status: 'running' } as unknown as FindOptionsWhere<KbDigestPassEntity>,
+      { status: 'pending', updatedAt: new Date() } as never,
+    )
   }
 
   /** 启动恢复：pending 或僵死 running（>10min 无心跳）的台账行重新可跑 */

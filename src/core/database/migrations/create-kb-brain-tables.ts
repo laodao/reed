@@ -13,7 +13,7 @@ import type { DataSource } from 'typeorm'
 
 async function checkTableExists(ds: DataSource, table: string, isPg: boolean): Promise<boolean> {
   const sql = isPg
-    ? `SELECT COUNT(*) as count FROM information_schema.tables WHERE table_name = '${table}'`
+    ? `SELECT COUNT(*) as count FROM information_schema.tables WHERE table_name = '${table}' AND table_schema = current_schema()`
     : `SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name='${table}'`
   const rows = (await ds.query(sql)) as Array<{ count: number }>
   return Number(rows[0]?.count ?? 0) > 0
@@ -21,7 +21,7 @@ async function checkTableExists(ds: DataSource, table: string, isPg: boolean): P
 
 async function checkColumnExists(ds: DataSource, table: string, column: string, isPg: boolean): Promise<boolean> {
   const sql = isPg
-    ? `SELECT COUNT(*) as count FROM information_schema.columns WHERE table_name = '${table}' AND column_name = '${column}'`
+    ? `SELECT COUNT(*) as count FROM information_schema.columns WHERE table_name = '${table}' AND column_name = '${column}' AND table_schema = current_schema()`
     : `PRAGMA table_info(${table})`
   const rows = (await ds.query(sql)) as Array<Record<string, unknown>>
   if (isPg) return Number(rows[0]?.count ?? 0) > 0
