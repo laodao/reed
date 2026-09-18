@@ -13,6 +13,7 @@ import { KbKnowledgeEdgeRepository } from '@core/database/repositories/kb-knowle
 import { KbDigestPassRepository } from '@core/database/repositories/kb-digest-pass.repository'
 import { KbDocumentRepository } from '@core/database/repositories/kb-document.repository'
 import { KbChapterRepository } from '@core/database/repositories/kb-chapter.repository'
+import { KbChunkRepository } from '@core/database/repositories/kb-chunk.repository'
 import { KnowledgeBaseRepository } from '@core/database/repositories/knowledge-base.repository'
 import { KbInvertedIndexRepository } from '@core/database/repositories/kb-inverted-index.repository'
 import { KbBrainDigestService, type KbBrainDigestDeps } from '@core/platform/services/kb-brain/digest-orchestrator.service'
@@ -68,6 +69,7 @@ describe('KbBrainDigestService 全链路', () => {
           docs: new KbDocumentRepository(ds),
           chapters: new KbChapterRepository(ds),
           kbs: new KnowledgeBaseRepository(ds),
+          chunks: new KbChunkRepository(ds),
           vectors: {
             createBatch: async () => {}, // 假向量存储：记录由 embedCalls 断言
           },

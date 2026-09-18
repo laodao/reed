@@ -59,6 +59,8 @@ export interface BrainSearchRequest {
   documentIds?: string[]
   /** 分数下限（SearchRequest.threshold 透传，作用于各通道原始分） */
   threshold?: number
+  /** 检索模式：synthesize 时 chunk 名次后移（§5.1 第5点——综合型 atom/note 主导） */
+  intent?: 'lookup' | 'synthesize'
 }
 
 /** RRF 融合分（用于排序，不回写为结果 score——score 保持各类型原始分） */
@@ -147,17 +149,27 @@ export class BrainQueryService {
 
       /* ---------- 3. 跨类型 RRF：两路各自名次，名次倒数求和 ---------- */
       const fused = new Map<string, FusedEntry>()
-      const addRank = (ranked: Array<{ ns: 'chunk' | 'atom' | 'note'; id: string; score: number }>): void => {
+      const addRank = (
+        ranked: Array<{ ns: 'chunk' | 'atom' | 'note'; id: string; score: number }>,
+        offsetOf?: (h: { ns: string; id: string; score: number }) => number,
+      ): void => {
         ranked.forEach((h, i) => {
           const key = h.id
+          const rank = i + (offsetOf?.(h) ?? 0)
           const prev = fused.get(key)
-          const contribution = 1 / (RRF_K + i + 1)
-          if (prev) prev.fused += contribution
-          else fused.set(key, { ns: h.ns, id: h.id, fused: contribution, raw: h.score })
+          const contribution = 1 / (RRF_K + rank + 1)
+          if (prev) {
+            prev.fused += contribution
+          } else {
+            fused.set(key, { ns: h.ns, id: h.id, fused: contribution, raw: h.score })
+          }
         })
       }
-      addRank([...vecHits].sort((a, b) => b.score - a.score))
-      addRank([...bm25Scores.values()].sort((a, b) => b.score - a.score))
+      const synthesize = req.intent === 'synthesize'
+      const rankOffset = synthesize ? Math.floor(topK / 2) : 0
+      // synthesize：chunk 名次整体后移（贡献减半语义）——综合型问题 atom/note 主导
+      addRank([...vecHits].sort((a, b) => b.score - a.score), (h) => (synthesize && h.ns === 'chunk' ? rankOffset : 0))
+      addRank([...bm25Scores.values()].sort((a, b) => b.score - a.score), (h) => (synthesize && h.ns === 'chunk' ? rankOffset : 0))
 
       const ordered = [...fused.values()].sort((a, b) => b.fused - a.fused)
 
@@ -176,11 +188,20 @@ export class BrainQueryService {
         resolved.searchResult.score = Number(entry.raw.toFixed(4))
         parsed.push({ entry, result: resolved.searchResult })
       }
-      // 同源去重：chunk 的 chunkId 命中某 atom 的 sourceChunkId → 丢弃（atom 已带 quote 回链）
+      // 同源去重：chunk 命中某 atom 的 sourceChunkId → 不丢弃，降级为该 atom 的 context（§5.1）
+      const chunkContentById = new Map(parsed.filter((p) => p.result.kind === 'chunk').map((p) => [p.result.chunkId, p.result.content]))
+      const vecIds = new Set(vecHits.map((h) => h.id))
       const deduped = parsed
         .filter((p) => !(p.result.kind === 'chunk' && sourceChunkIdsOfAtoms.has(p.result.chunkId)))
         .slice(0, topK)
-        .map((p) => p.result)
+        .map((p) => {
+          if (p.result.kind === 'atom') {
+            const ctx = p.result.atom ? chunkContentById.get(p.result.atom.id) : undefined
+            p.result.context = ctx
+          }
+          p.result.scoreKind = vecIds.has(p.result.chunkId) ? 'cosine' : 'bm25'
+          return p.result
+        })
 
       /* ---------- 5. 使用即再巩固（fire-and-forget） ---------- */
       const atomIds = deduped.filter((r) => r.kind === 'atom').map((r) => (r.atom as { id: string }).id)

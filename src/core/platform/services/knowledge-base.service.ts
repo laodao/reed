@@ -977,6 +977,9 @@ export class KnowledgeBaseService {
           lensNoteId: req.lensNoteId,
           embeddingConfig: await this.resolveKbEmbeddingConfig(req.knowledgeBaseId),
           signal: req.signal,
+          documentIds: req.documentIds,
+          threshold: req.threshold,
+          intent: req.intent ?? detectSynthesizeIntent(req.query),
         })
       }
       // 旧库未装配大脑仓储 → fail-soft 降级存量路径（等价 include=['chunk']）
@@ -1911,6 +1914,13 @@ export class KnowledgeBaseService {
 }
 
 /* ==================== 知识大脑统一检索池装配（T10） ==================== */
+
+/** 综合型查询轻判（§8.1 路由延伸）：命中比较/方法论类词 → brain 池 chunk 降权 */
+function detectSynthesizeIntent(query: string): 'lookup' | 'synthesize' {
+  return /比较|异同|不同|对比|方法论|套路|规律|总结|归纳|流派|风格|共性|分歧|怎么样|如何写|思路/.test(query)
+    ? 'synthesize'
+    : 'lookup'
+}
 
 let brainQuerySingleton: BrainQueryService | null = null
 

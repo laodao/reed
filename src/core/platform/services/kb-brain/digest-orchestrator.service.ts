@@ -20,6 +20,7 @@ import type { KbKnowledgeEdgeRepository } from '@core/database/repositories/kb-k
 import type { KbDigestPassRepository } from '@core/database/repositories/kb-digest-pass.repository'
 import type { KbDocumentRepository } from '@core/database/repositories/kb-document.repository'
 import type { KbChapterRepository } from '@core/database/repositories/kb-chapter.repository'
+import type { KbChunkRepository } from '@core/database/repositories/kb-chunk.repository'
 import type { KnowledgeBaseRepository } from '@core/database/repositories/knowledge-base.repository'
 import { AtomizeService, AdjudicateService } from './atomize.service'
 import { parseBrainConfig, type KbBrainConfig } from './brain-config'
@@ -57,24 +58,28 @@ interface PassStats {
   costCalls: number
 }
 
+/** 仓储访问集（repos() 的返回形态，供内部方法签名引用） */
+export interface KbBrainRepos {
+  atoms: KbAtomRepository
+  entities: KbEntityRepository
+  edges: KbKnowledgeEdgeRepository
+  passes: KbDigestPassRepository
+  docs: KbDocumentRepository
+  chapters: KbChapterRepository
+  kbs: KnowledgeBaseRepository
+  /** chunk 仓储（T11 重链用；未装配则跳过重链） */
+  chunks: KbChunkRepository | null
+  vectors: { createBatch(rows: Array<{ chunkId: string; knowledgeBaseId: string; vector: number[] }>): Promise<void> } | null
+  inverted: { insertBatch(rows: Array<{ term: string; chunkId: string; knowledgeBaseId: string; termFrequency: number }>): Promise<void> } | null
+}
+
 export interface KbBrainDigestDeps {
   /** 注入假 LLM（测试）；生产走 defaultBrainLlm */
   llm?: BrainLlmFn
   /** 注入假嵌入（测试）；生产用 KnowledgeBaseService.getEmbeddingVectors 绑定 */
   embed?: (texts: string[], kb: { id: string; embeddingConfig: string | null }) => Promise<number[][] | null>
   /** 覆盖仓储来源（测试传内存库组装的仓储集；生产 getCoreDatabaseManager） */
-  repos?: () => {
-    atoms: KbAtomRepository
-    entities: KbEntityRepository
-    edges: KbKnowledgeEdgeRepository
-    passes: KbDigestPassRepository
-    docs: KbDocumentRepository
-    chapters: KbChapterRepository
-    kbs: KnowledgeBaseRepository
-    /** 入池两端：向量存储与倒排索引（缺省/未装配 → 跳过对应入池，论断落库不受阻） */
-    vectors: { createBatch(rows: Array<{ chunkId: string; knowledgeBaseId: string; vector: number[] }>): Promise<void> } | null
-    inverted: { insertBatch(rows: Array<{ term: string; chunkId: string; knowledgeBaseId: string; termFrequency: number }>): Promise<void> } | null
-  } | null
+  repos?: () => KbBrainRepos | null
 }
 
 export class KbBrainDigestService {
@@ -93,7 +98,7 @@ export class KbBrainDigestService {
     this.embedFn = deps.embed ?? (async () => null)
     this.reposFn =
       deps.repos ??
-      (() => {
+      ((): KbBrainRepos | null => {
         const db = getCoreDatabaseManager()
         if (!db.kbAtoms || !db.kbBrainEntities || !db.kbKnowledgeEdges || !db.kbDigestPasses || !db.kbDocuments || !db.kbChapters || !db.knowledgeBases) {
           return null
@@ -106,6 +111,7 @@ export class KbBrainDigestService {
           docs: db.kbDocuments,
           chapters: db.kbChapters,
           kbs: db.knowledgeBases,
+          chunks: db.kbChunks,
           vectors: db.kbVectors,
           inverted: db.kbInvertedIndex,
         }
@@ -138,17 +144,24 @@ export class KbBrainDigestService {
   async recover(): Promise<void> {
     const repos = this.reposFn()
     if (!repos) return
-    const stale = await repos.passes.recoverPending()
-    // 僵死 running（>10min 无心跳）复位 pending——否则 ensurePass 永久 skip 封死该章
+    // 多租户（L7 修复）：跨租户扫描（最小字段）+ 按行携带的 userId 分组重放，不再固定 LOCAL 用户
+    const stale = await repos.passes.recoverPendingAllUsers()
     for (const p of stale) {
       if (p.status === 'running') await repos.passes.resetToPending(p.id)
     }
-    const docIds = [...new Set(stale.map((p) => p.documentId))]
-    for (const docId of docIds) {
-      logger.info(`[kb-brain] 恢复消化: doc=${docId}`)
-      this.enqueueDocument(docId, LOCAL_DEFAULT_USER_ID).catch((e) =>
-        logger.warn(`[kb-brain] 恢复任务失败 doc=${docId}: ${e instanceof Error ? e.message : String(e)}`),
-      )
+    const byUser = new Map<string, Set<string>>()
+    for (const p of stale) {
+      const uid = p.userId ?? LOCAL_DEFAULT_USER_ID
+      if (!byUser.has(uid)) byUser.set(uid, new Set())
+      byUser.get(uid)!.add(p.documentId)
+    }
+    for (const [uid, docIds] of byUser) {
+      for (const docId of docIds) {
+        logger.info(`[kb-brain] 恢复消化: doc=${docId} user=${uid}`)
+        this.enqueueDocument(docId, uid).catch((e) =>
+          logger.warn(`[kb-brain] 恢复任务失败 doc=${docId}: ${e instanceof Error ? e.message : String(e)}`),
+        )
+      }
     }
   }
 
@@ -157,7 +170,7 @@ export class KbBrainDigestService {
   async digestDocument(documentId: string): Promise<void> {
     const repos = this.reposFn()
     if (!repos) return
-    const { atoms, docs, chapters, kbs } = repos
+    const { atoms, docs, chapters, kbs, passes } = repos
 
     const docRow = await docs.findById(documentId)
     if (!docRow) return
@@ -173,6 +186,19 @@ export class KbBrainDigestService {
     if (cfg.digestion.scopeDocumentIds?.length && !cfg.digestion.scopeDocumentIds.includes(documentId)) {
       await docs.updateBrainStatus(documentId, { status: 'skipped' })
       return
+    }
+
+    // 成本熔断（§12）：单库当日成本超阈值 → 暂停排队（KB_BRAIN_DAILY_COST_LIMIT，缺省不限）
+    const costLimit = Number(process.env.KB_BRAIN_DAILY_COST_LIMIT ?? '')
+    if (Number.isFinite(costLimit) && costLimit > 0) {
+      const since = new Date()
+      since.setHours(0, 0, 0, 0)
+      const today = await passes.costByKb(kbId, since)
+      if (today.calls > costLimit) {
+        logger.warn(`[kb-brain] 成本熔断: kb=${kbId} 今日 ${today.calls} 次 > 限额 ${costLimit}，暂停消化`)
+        await docs.updateBrainStatus(documentId, { status: 'failed', error: `成本熔断（今日 ${today.calls} 次）` })
+        return
+      }
     }
 
     await docs.updateBrainStatus(documentId, { status: 'digesting', progress: 0 })
@@ -200,6 +226,9 @@ export class KbBrainDigestService {
         this.emitStatus(documentId, 'failed', '章节重试耗尽')
         return
       }
+
+      // T11 重链：hash 未变的章（本轮 skip 的），论断按 offsets 落进新 chunk 区间，恢复出处跳转
+      await this.relinkChunksForUnchanged(documentId, atoms, repos)
 
       await this.staleUncovered(documentId, atoms, chapterRows.map((c) => c.contentHash).filter(Boolean) as string[])
 
@@ -260,14 +289,18 @@ export class KbBrainDigestService {
       })
       stats.costCalls += 1
 
-      // 2. 实体解析：mention 负面清单过滤 → upsert（规范名/别名合并）
+      // 2. 实体解析（P-2 语义并入 P-1 mentions）：负面清单过滤 → upsert（类型来自 mentions，缺省 concept）
+      const mentionTypeByName = new Map<string, string>()
+      for (const m of result.mentions ?? []) {
+        if (m.name?.trim() && m.type?.trim()) mentionTypeByName.set(m.name.trim(), m.type.trim())
+      }
       const mentionCache = new Map<string, string | null>()
       const resolveEntity = async (mention: string | undefined): Promise<string | null> => {
         if (!mention) return null
         const name = mention.trim()
         if (!name || name.length < 2 || MENTION_BLOCKLIST.has(name)) return null
         if (mentionCache.has(name)) return mentionCache.get(name)!
-        const ent = await entities.upsertMention(kbId, { name, type: 'concept' })
+        const ent = await entities.upsertMention(kbId, { name, type: mentionTypeByName.get(name) ?? 'concept' })
         stats.entities += 1
         mentionCache.set(name, ent.id)
         return ent.id
@@ -438,6 +471,41 @@ export class KbBrainDigestService {
     } catch (e) {
       await passes.setFailed(pass.id, e instanceof Error ? e.message : String(e))
       throw e
+    }
+  }
+
+  /**
+   * T11 重链（D5）：内容未变的章（台账 done 同 hash 跳过），其论断的 sourceChunkId
+   * 仍指向 reprocess 重建前的旧 chunk——按 offsets 落进新 chunk 区间并回写。
+   */
+  private async relinkChunksForUnchanged(
+    documentId: string,
+    atoms: KbAtomRepository,
+    repos: KbBrainRepos,
+  ): Promise<void> {
+    if (!repos.chunks) return
+    const allPasses = await repos.passes.listByDocument(documentId)
+    const unchangedChapterIds = new Set(
+      allPasses.filter((p) => p.chapterId && p.status === 'done').map((p) => p.chapterId as string),
+    )
+    if (unchangedChapterIds.size === 0) return
+    const chapterRows = await repos.chapters.findByDocument(documentId)
+    const hashByChapter = new Map(chapterRows.map((c) => [c.id, c.contentHash]))
+    const chunks = await repos.chunks.findByDocumentId(documentId)
+    if (chunks.length === 0) return
+    for (const chapterId of unchangedChapterIds) {
+      const hash = hashByChapter.get(chapterId)
+      if (!hash) continue
+      const chapterAtoms = await atoms.findByChapterHash(documentId, hash)
+      for (const a of chapterAtoms) {
+        if (a.startOffset == null || a.endOffset == null) continue
+        const target = chunks.find(
+          (c) => c.startOffset != null && c.endOffset != null && a.startOffset! >= c.startOffset && a.endOffset! <= c.endOffset,
+        )
+        if (target && target.id !== a.sourceChunkId) {
+          await atoms.relinkChunk(a.id, target.id)
+        }
+      }
     }
   }
 

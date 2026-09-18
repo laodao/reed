@@ -21,6 +21,9 @@ export const ATOMIZE_SYSTEM = `你是文学资料研究员。把给定章节文�
 5. 事件序列：相邻句之间若有因果/转折推进，输出 events（fromQuote/toQuote 引原文短句 + 一句 evidence）。
 6. 宁缺毋滥：纯过场描写、无信息量的对话不产出。
 7. quote 必须是原文中连续的一小段文字（供程序定位，禁止改写、禁止拼接两处）。
+8. mentions：把本段出现的实体整理为规范名词表，每个标注类型
+   （character=人物 location=地点 organization=组织 item=物品 concept=概念
+   plot-motif=情节母题 setting-system=设定体系）。论断的 subject/object 必须引用 mentions 里的规范名。
 
 只输出 JSON，不要任何解释。`
 

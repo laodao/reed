@@ -25,9 +25,15 @@ export interface RawEvent {
   evidence: string
 }
 
+export interface RawMention {
+  name: string
+  type: string
+}
+
 export interface AtomizeOutput {
   atoms: RawAtom[]
   events: RawEvent[]
+  mentions?: RawMention[]
 }
 
 const ATOMIZE_SCHEMA = {
@@ -61,6 +67,18 @@ const ATOMIZE_SCHEMA = {
           evidence: { type: 'string', minLength: 1 },
         },
         required: ['fromQuote', 'toQuote', 'evidence'],
+        additionalProperties: false,
+      },
+    },
+    mentions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', minLength: 1 },
+          type: { type: 'string', minLength: 1 },
+        },
+        required: ['name', 'type'],
         additionalProperties: false,
       },
     },

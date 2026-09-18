@@ -1244,6 +1244,26 @@ const electronAPI = {
     updateQaPair: (p: { id: string; question?: string; answer?: string; similarQuestions?: string[] }) => ipcRenderer.invoke('kb-qa:update', p),
     deleteQaPair: (id: string) => ipcRenderer.invoke('kb-qa:delete', { id }),
     searchQa: (p: { knowledgeBaseId: string; query: string; topK?: number; threshold?: number }) => ipcRenderer.invoke('kb-qa:search', p),
+    brain: {
+      getConfig: (kbId: string) => ipcRenderer.invoke('kb:brain:get-config', { kbId }),
+      updateConfig: (p: { kbId: string; patch: Record<string, unknown> }) => ipcRenderer.invoke('kb:brain:update-config', p),
+      docStatus: (kbId: string) => ipcRenderer.invoke('kb:brain:doc-status', { kbId }),
+      listAtoms: (p: { kbId: string; documentId?: string; page?: number; pageSize?: number; status?: string; type?: string }) =>
+        ipcRenderer.invoke('kb:brain:list-atoms', p),
+      getAtom: (atomId: string) => ipcRenderer.invoke('kb:brain:get-atom', { atomId }),
+      listNotes: (p: { kbId: string; status?: string; type?: string; page?: number; pageSize?: number }) => ipcRenderer.invoke('kb:brain:list-notes', p),
+      proposalInbox: (p: { kbId: string; page?: number; pageSize?: number }) => ipcRenderer.invoke('kb:brain:proposal-inbox', p),
+      decideProposal: (p: { noteId: string; action: 'publish' | 'publish-edited' | 'reject'; patch?: { title?: string; body?: string; description?: string } }) =>
+        ipcRenderer.invoke('kb:brain:decide-proposal', p),
+      listLens: (kbId: string) => ipcRenderer.invoke('kb:brain:list-lens', { kbId }),
+      upsertLens: (p: { kbId: string; id?: string; title: string; description: string; attendTo: string[]; questions: string[] }) =>
+        ipcRenderer.invoke('kb:brain:upsert-lens', p),
+      captureReading: (p: { kbId: string; documentId: string; chapterId?: string; chapterHash?: string; quote: string; remark: string; startOffset?: number; endOffset?: number; lensNoteId?: string }) =>
+        ipcRenderer.invoke('kb:brain:capture-reading', p),
+      stats: (kbId: string) => ipcRenderer.invoke('kb:brain:stats', { kbId }),
+      search: (p: { knowledgeBaseId: string; query: string; topK?: number; include?: string[]; lensNoteId?: string; intent?: string }) =>
+        ipcRenderer.invoke('kb:brain:search', p),
+    },
     importQaXlsx: (knowledgeBaseId: string, base64: string) => ipcRenderer.invoke('kb-qa:import-xlsx', { knowledgeBaseId, base64 }),
     exportQaXlsx: (knowledgeBaseId: string) => ipcRenderer.invoke('kb-qa:export-xlsx', { knowledgeBaseId }),
     // 获取知识库详情

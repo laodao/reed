@@ -171,6 +171,23 @@ export class KbDigestPassRepository extends BaseRepository<KbDigestPassEntity, K
     await this.scoped.save(row)
   }
 
+  /**
+   * 跨租户恢复扫描（后台任务专用）：裸 repo 查询不带 user_id 过滤——
+   * 显式安全性确认：仅返回 id/documentId/userId/status 最小字段供按用户重放，
+   * 不外泄内容；ALS 无用户（boot）时 scoped 生成 IS NULL 查不到任何行，
+   * 恢复扫描必须走裸仓库（base-repository 头注允许的跨租户管理场景）。
+   */
+  async recoverPendingAllUsers(staleRunningMs = 10 * 60 * 1000): Promise<Array<{ id: string; documentId: string; userId: string | null; status: string }>> {
+    const cutoff = new Date(Date.now() - staleRunningMs)
+    const rows = await this.repo
+      .createQueryBuilder('p')
+      .select(['p.id', 'p.documentId', 'p.userId', 'p.status'])
+      .where('p.status = :st', { st: 'pending' })
+      .orWhere('p.status = :run AND p.updated_at < :cutoff', { run: 'running', cutoff })
+      .getMany()
+    return rows.map((r) => ({ id: r.id, documentId: r.documentId, userId: r.userId, status: r.status }))
+  }
+
   /** 僵死 running 复位 pending（recover 调用；ensurePass 对 running 一律 skip，不复位就永久封死） */
   async resetToPending(id: string): Promise<void> {
     await this.scoped.update(

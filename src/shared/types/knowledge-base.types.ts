@@ -354,6 +354,9 @@ export interface SearchRequest {
   include?: Array<'chunk' | 'atom' | 'note'>
   /** 视角过滤："取面不取书"——只返回该视角下的观感论断 */
   lensNoteId?: string
+  /** 检索模式：lookup（事实型，缺省）| synthesize（综合型——chunk 在融合中降权）。
+   *  缺省时按查询关键词自动判定（比较/异同/方法论/规律/总结等 → synthesize） */
+  intent?: 'lookup' | 'synthesize'
   /** 限定检索的文档 ID 列表（缺省=整库；用于「在这篇文档里找」） */
   documentIds?: string[]
   /** 相似度阈值 */
@@ -368,6 +371,10 @@ export interface SearchRequest {
 export interface SearchResult {
   /** 命中类型（知识大脑扩展；缺省 'chunk' = 原文切片） */
   kind?: 'chunk' | 'atom' | 'note'
+  /** score 的量纲标注（余弦 0-1 vs BM25 无界，跨 kind 不可直接比较） */
+  scoreKind?: 'cosine' | 'bm25'
+  /** kind='atom' 时：与其同源的 chunk 内容降级为上下文（设计 §5.1，不丢弃原文） */
+  context?: string
   /** kind='atom' 时的论断载荷（provenance 回链） */
   atom?: {
     id: string

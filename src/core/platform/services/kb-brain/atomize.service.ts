@@ -31,6 +31,8 @@ export interface LocatedEvent {
 export interface AtomizeResult {
   atoms: LocatedAtom[]
   events: LocatedEvent[]
+  /** P-2 语义并入：实体规范名词表（含类型），供实体解析 upsert */
+  mentions: Array<{ name: string; type: string }>
 }
 
 export interface AtomizeDeps {
@@ -53,6 +55,7 @@ export class AtomizeService {
     const windows = splitWindows(input.chapterContent, MAX_WINDOW_CHARS)
     const atoms: LocatedAtom[] = []
     const events: LocatedEvent[] = []
+    const mentions = new Map<string, string>()
     for (let i = 0; i < windows.length; i++) {
       const out = await this.atomizeWindow({
         chapterTitle: input.chapterTitle,
@@ -63,8 +66,9 @@ export class AtomizeService {
       })
       atoms.push(...out.atoms)
       events.push(...out.events)
+      for (const m of out.mentions) mentions.set(m.name, m.type)
     }
-    return { atoms, events }
+    return { atoms, events, mentions: [...mentions.entries()].map(([name, type]) => ({ name, type })) }
   }
 
   /**
@@ -77,7 +81,7 @@ export class AtomizeService {
     windowStartOffset: number
     windowIndex: number
     knownEntityNames?: string[]
-  }): Promise<{ atoms: LocatedAtom[]; events: LocatedEvent[] }> {
+  }): Promise<{ atoms: LocatedAtom[]; events: LocatedEvent[]; mentions: Array<{ name: string; type: string }> }> {
     const out = await this.callWithRetry(
       ATOMIZE_SYSTEM,
       buildAtomizeUser({
@@ -121,7 +125,7 @@ export class AtomizeService {
       }))
       .filter((ev) => ev.fromStatement !== null && ev.toStatement !== null && ev.fromStatement !== ev.toStatement)
 
-    return { atoms, events }
+    return { atoms, events, mentions: out.mentions ?? [] }
   }
 
   /**

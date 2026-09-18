@@ -145,6 +145,15 @@
             QA 问答对
             <span class="tab-count">{{ qaPairs.length }}</span>
           </button>
+          <button
+            type="button"
+            class="data-tab"
+            :class="{ active: activeDataTab === 'brain' }"
+            @click="activeDataTab = 'brain'"
+          >
+            大脑
+            <span v-if="brainStats" class="tab-count">{{ brainStats }}</span>
+          </button>
         </div>
 
         <!-- 文档列表（三段式：头部操作区 / 表格滚动区 / 底部固定分页栏） -->
@@ -283,6 +292,10 @@
         </div>
 
         <!-- D1 QA 问答对列表 -->
+        <div v-if="activeDataTab === 'brain' && currentKnowledgeBase" class="document-section">
+          <BrainPanel :kb-id="currentKnowledgeBase.id" @stats="brainStatsCount" />
+        </div>
+
         <div v-if="activeDataTab === 'qa'" class="document-section">
           <div class="section-header">
             <h3>QA 问答对</h3>
@@ -721,6 +734,7 @@ import {
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { useKnowledgeBase } from '@/composables'
+import BrainPanel from '@/components/knowledge-base/BrainPanel.vue'
 import { saveBlobAs } from '@/utils/file-saver'
 import type { KnowledgeBase, KbDocument, KbChunk } from '../../../shared/types/knowledge-base.types'
 
@@ -792,7 +806,11 @@ function rerankValueOf(raw: string): string {
 }
 
 // ==================== D1 QA 问答对 ====================
-const activeDataTab = ref<'docs' | 'qa'>('docs')
+const activeDataTab = ref<'docs' | 'qa' | 'brain'>('docs')
+const brainStats = ref<number | null>(null)
+function brainStatsCount(n: number): void {
+  brainStats.value = n
+}
 const qaPairs = ref<Array<{ id: string; question: string; answer: string; similarQuestions: string[] }>>([])
 const qaLoading = ref(false)
 const qaDialogVisible = ref(false)
