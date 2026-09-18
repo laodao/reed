@@ -208,6 +208,14 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
     )
   }
 
+  /** 实体挂点回填（裁决落库后按 mention→实体 解析结果更新） */
+  async relinkEntity(id: string, subjectEntityId: string | null, objectEntityId: string | null): Promise<void> {
+    await this.scoped.update(
+      { id } as FindOptionsWhere<KbAtomEntity>,
+      { subjectEntityId, objectEntityId, updatedAt: new Date() } as never,
+    )
+  }
+
   /** 章节内容变更后，未被新萃取覆盖的旧论断标记 stale（防幽灵论断，D2） */
   async markChapterStale(documentId: string, keepIds: string[]): Promise<number> {
     const where: Record<string, unknown> = {

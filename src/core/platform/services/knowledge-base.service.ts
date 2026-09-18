@@ -24,6 +24,7 @@ import {
 } from '@core/platform/services/kb-chapter-lookup'
 import { KbChapterSummaryService } from '@core/platform/services/kb-chapter-summary.service'
 import { detectKeywordIntent } from '@core/platform/services/query-routing'
+import { tokenizeForIndex } from '@core/platform/services/kb-tokenize'
 import { extractTextFromFile, inferFileType } from '@core/utils/extract-text'
 import { resolveAssetPath, toRelativeAssetPath } from '@core/utils/asset-path'
 import { publishDomainEvent } from '@core/platform/workflow/trigger/domain-event-bus'
@@ -49,25 +50,7 @@ import type {
 } from '@shared/types/knowledge-base.types'
 import { knowledgeParams } from '@shared/utils/knowledge-params'
 
-/** D3：索引分词停用词（buildIndex 与 BM25 检索共用——同一套词表才能对得上） */
-const INDEX_STOP_WORDS = new Set([
-  '的', '了', '和', '是', '就', '都', '而', '及', '与', '着',
-  '或', '一个', '没有', '我们', '你们', '他们', '它们', '这个', '那个',
-  '这些', '那些', '不是', '什么', '怎么', '如何', '为什么', '因为',
-  '所以', '但是', '如果', '虽然', '可以', '可能', '应该', '需要',
-  '会', '能', '要', '有', '在', '上', '下', '里', '外', '中',
-  '很', '太', '更', '最', '非常', '十分', '极其', '相当',
-])
-
-/** D3：索引分词（jieba cutForSearch 中文 + 英文词元，去停用词/单字）——建索引与查询同源 */
-function tokenizeForIndex(text: string): string[] {
-  const chineseText = text.replace(/[a-zA-Z0-9\s]+/g, ' ')
-  const chineseTerms = nodejieba.cutForSearch(chineseText)
-  const englishWords = text.toLowerCase().match(/[a-z]+/g) || []
-  return [...chineseTerms, ...englishWords]
-    .map(t => t.trim())
-    .filter(t => t.length >= 2 && !INDEX_STOP_WORDS.has(t))
-}
+// D3：索引分词抽至 kb-tokenize（知识大脑论断入池同源复用；词表与分词必须一处定义）
 
 /** QA 对向量的 chunkId 命名空间前缀（与 addQaPair 写入一致；文档检索须剔除） */
 const QA_CHUNK_ID_PREFIX = 'qa:'

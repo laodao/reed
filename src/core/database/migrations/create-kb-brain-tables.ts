@@ -219,12 +219,31 @@ export async function createKbBrainTables(ds: DataSource): Promise<void> {
   await ds.query('CREATE INDEX IF NOT EXISTS idx_kb_note_reviews_note ON kb_note_reviews (note_id)')
 
   // ---------- knowledge_bases 补列（brain_config 开关 + brain_state 运行态） ----------
-  if (!(await checkColumnExists(ds, 'knowledge_bases', 'brain_config', isPg))) {
-    await ds.query(`ALTER TABLE knowledge_bases ADD COLUMN brain_config ${vc}`)
-    console.log('[create-kb-brain-tables] knowledge_bases 加列 brain_config')
+  // 表存在才补列（防御：测试内存库/极端老库可能未建基表——基表由基础迁移负责）
+  if (await checkTableExists(ds, 'knowledge_bases', isPg)) {
+    if (!(await checkColumnExists(ds, 'knowledge_bases', 'brain_config', isPg))) {
+      await ds.query(`ALTER TABLE knowledge_bases ADD COLUMN brain_config ${vc}`)
+      console.log('[create-kb-brain-tables] knowledge_bases 加列 brain_config')
+    }
+    if (!(await checkColumnExists(ds, 'knowledge_bases', 'brain_state', isPg))) {
+      await ds.query(`ALTER TABLE knowledge_bases ADD COLUMN brain_state ${vc}`)
+      console.log('[create-kb-brain-tables] knowledge_bases 加列 brain_state')
+    }
   }
-  if (!(await checkColumnExists(ds, 'knowledge_bases', 'brain_state', isPg))) {
-    await ds.query(`ALTER TABLE knowledge_bases ADD COLUMN brain_state ${vc}`)
-    console.log('[create-kb-brain-tables] knowledge_bases 加列 brain_state')
+
+  // ---------- kb_documents 补列（消化进度，与现有 status/progress 并列不混用，详细设计 §3.1） ----------
+  if (await checkTableExists(ds, 'kb_documents', isPg)) {
+    if (!(await checkColumnExists(ds, 'kb_documents', 'brain_status', isPg))) {
+      await ds.query(`ALTER TABLE kb_documents ADD COLUMN brain_status ${vc}`)
+      console.log('[create-kb-brain-tables] kb_documents 加列 brain_status')
+    }
+    if (!(await checkColumnExists(ds, 'kb_documents', 'brain_progress', isPg))) {
+      await ds.query(`ALTER TABLE kb_documents ADD COLUMN brain_progress INTEGER`)
+      console.log('[create-kb-brain-tables] kb_documents 加列 brain_progress')
+    }
+    if (!(await checkColumnExists(ds, 'kb_documents', 'brain_error', isPg))) {
+      await ds.query(`ALTER TABLE kb_documents ADD COLUMN brain_error ${vc}`)
+      console.log('[create-kb-brain-tables] kb_documents 加列 brain_error')
+    }
   }
 }
