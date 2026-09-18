@@ -31,6 +31,16 @@ export async function createKbBrainTestTables(ds: DataSource): Promise<void> {
   )`)
   await createKbBrainTables(ds)
   await createKbChapters(ds)
+  // 存量表：切片（大脑检索的 docLen/结果解析需要）
+  await ds.query(`CREATE TABLE IF NOT EXISTS kb_chunks (
+    id varchar PRIMARY KEY, user_id varchar,
+    document_id varchar NOT NULL, knowledge_base_id varchar NOT NULL,
+    content text NOT NULL, chunk_index INTEGER DEFAULT 0,
+    start_offset INTEGER, end_offset INTEGER,
+    title text, level INTEGER DEFAULT 1, parent_chunk_id text,
+    split_method text, section_path text, metadata text,
+    created_at datetime
+  )`)
   // 存量表：倒排索引（对齐 kb-inverted-index.entity DDL）
   await ds.query(`CREATE TABLE IF NOT EXISTS kb_inverted_index (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

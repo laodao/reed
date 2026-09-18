@@ -25,6 +25,7 @@ import {
 import { KbChapterSummaryService } from '@core/platform/services/kb-chapter-summary.service'
 import { detectKeywordIntent } from '@core/platform/services/query-routing'
 import { tokenizeForIndex } from '@core/platform/services/kb-tokenize'
+import { BrainQueryService, type BrainQueryDeps } from './kb-brain/brain-query.service'
 import { extractTextFromFile, inferFileType } from '@core/utils/extract-text'
 import { resolveAssetPath, toRelativeAssetPath } from '@core/utils/asset-path'
 import { publishDomainEvent } from '@core/platform/workflow/trigger/domain-event-bus'
@@ -963,6 +964,24 @@ export class KnowledgeBaseService {
   // ==================== 检索 ====================
 
   async search(req: SearchRequest): Promise<{ success: boolean; data?: SearchResult[]; error?: string }> {
+    // 知识大脑（详细设计 §5.1）：include 含 atom/note → 统一池检索；
+    // 缺省/纯 chunk → 走下方存量路径（逐字节旧行为，D4 门线）
+    const include = req.include?.length ? req.include : (['chunk'] as Array<'chunk' | 'atom' | 'note'>)
+    if (include.some((x) => x !== 'chunk')) {
+      const brain = getBrainQueryService(this)
+      if (brain) {
+        return brain.search({
+          knowledgeBaseId: req.knowledgeBaseId,
+          query: req.query,
+          topK: req.topK,
+          include,
+          lensNoteId: req.lensNoteId,
+          embeddingConfig: await this.resolveKbEmbeddingConfig(req.knowledgeBaseId),
+          signal: req.signal,
+        })
+      }
+      // 旧库未装配大脑仓储 → fail-soft 降级存量路径（等价 include=['chunk']）
+    }
     try {
       const db = getCoreDatabaseManager()
       if (!db.kbChunks || !db.kbDocuments || !db.kbVectors || !db.knowledgeBases) {
@@ -1122,24 +1141,39 @@ export class KnowledgeBaseService {
    * D3 BM25 关键词打分：返回 chunkId -> 分数（未归一）。
    * 依赖倒排索引（文档入库时 buildIndex 写入）；索引缺失/无命中返回空 Map（调用方降级）。
    */
+  /** 读 KB 的 embedding 配置（brain 查询的嵌入入参） */
+  private async resolveKbEmbeddingConfig(kbId: string): Promise<string | null> {
+    const db = getCoreDatabaseManager()
+    const kb = await db.knowledgeBases?.findById(kbId)
+    return kb?.embeddingConfig ?? null
+  }
+
   private async bm25Scores(knowledgeBaseId: string, query: string): Promise<Map<string, number>> {
     const db = getCoreDatabaseManager()
     if (!db.kbInvertedIndex) return new Map()
     const terms = [...new Set(tokenizeForIndex(query))]
     if (terms.length === 0) return new Map()
+    // 知识大脑：atom:/note: 倒排与切片同表——统计与候选都排除 brain 命名空间，
+    // 保证纯 chunk 检索的 BM25 分数不受消化进度影响（存量行为保持）
+    const EXCLUDE_NS = ['atom:', 'note:']
 
     const [postings, dfMap, totalChunks, avgLen] = await Promise.all([
       db.kbInvertedIndex.findByTerms(knowledgeBaseId, terms),
-      db.kbInvertedIndex.getDocumentFrequencies(knowledgeBaseId),
-      db.kbInvertedIndex.getChunkCount(knowledgeBaseId),
-      db.kbInvertedIndex.getAverageChunkLength(knowledgeBaseId),
+      db.kbInvertedIndex.getDocumentFrequencies(knowledgeBaseId, { excludeChunkIdPrefixes: EXCLUDE_NS }),
+      db.kbInvertedIndex.getChunkCount(knowledgeBaseId, { excludeChunkIdPrefixes: EXCLUDE_NS }),
+      db.kbInvertedIndex.getAverageChunkLength(knowledgeBaseId, { excludeChunkIdPrefixes: EXCLUDE_NS }),
     ])
     if (totalChunks === 0 || avgLen === 0) return new Map()
 
     // M3：长度归一需要候选 chunk 的真实文档长度（倒排索引不存 chunk 长度，
     // 从 kb_chunks 现取——候选集是命中的少量 chunk，代价可控）
     const candidateIds = new Set<string>()
-    for (const items of postings.values()) for (const item of items) candidateIds.add(item.chunkId)
+    for (const items of postings.values()) {
+      for (const item of items) {
+        if (EXCLUDE_NS.some((p) => item.chunkId.startsWith(p))) continue
+        candidateIds.add(item.chunkId)
+      }
+    }
     const docLen = new Map<string, number>()
     for (const chunkId of candidateIds) {
       const chunk = await db.kbChunks?.findById(chunkId)
@@ -1867,4 +1901,38 @@ export class KnowledgeBaseService {
       return { success: false, error: e.message }
     }
   }
+}
+
+/* ==================== 知识大脑统一检索池装配（T10） ==================== */
+
+let brainQuerySingleton: BrainQueryService | null = null
+
+/** brain 模式检索服务（懒装配；旧库仓储缺失返回 null，调用方降级存量路径） */
+function getBrainQueryService(kbService: KnowledgeBaseService): BrainQueryService | null {
+  const db = getCoreDatabaseManager()
+  if (!db.kbAtoms || !db.kbNotes || !db.kbChunks || !db.kbDocuments) return null
+  if (brainQuerySingleton) return brainQuerySingleton
+  const deps: BrainQueryDeps = {
+    embed: (texts, kb) => kbService.getEmbeddingVectors(texts, kb.embeddingConfig ? JSON.parse(kb.embeddingConfig) : {}),
+    searchSimilar: (kbId, vector, topK) => {
+      if (!db.kbVectors) return Promise.resolve([])
+      return db.kbVectors.searchSimilar(kbId, vector, topK)
+    },
+    inverted: {
+      findByTerms: (kbId, terms) =>
+        db.kbInvertedIndex ? db.kbInvertedIndex.findByTerms(kbId, terms) : Promise.resolve(new Map()),
+      getDocumentFrequencies: (kbId, opts) =>
+        db.kbInvertedIndex ? db.kbInvertedIndex.getDocumentFrequencies(kbId, opts) : Promise.resolve(new Map()),
+      getChunkCount: (kbId, opts) =>
+        db.kbInvertedIndex ? db.kbInvertedIndex.getChunkCount(kbId, opts) : Promise.resolve(0),
+      getAverageChunkLength: (kbId, opts) =>
+        db.kbInvertedIndex ? db.kbInvertedIndex.getAverageChunkLength(kbId, opts) : Promise.resolve(0),
+    },
+    atoms: db.kbAtoms,
+    notes: db.kbNotes,
+    chunks: db.kbChunks,
+    docs: db.kbDocuments,
+  }
+  brainQuerySingleton = new BrainQueryService(deps)
+  return brainQuerySingleton
 }

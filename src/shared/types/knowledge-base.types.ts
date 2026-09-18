@@ -347,6 +347,13 @@ export interface SearchRequest {
    * 默认 true；显式传 vectorWeight 或 fusion 时该开关不生效。
    */
   autoRoute?: boolean
+  /**
+   * 知识大脑（详细设计 §5.1）：进池的知识层。缺省/['chunk'] = 现行为零变化；
+   * 含 'atom'/'note' 时走 BrainQueryService（论断/卡片与原文统一池检索）。
+   */
+  include?: Array<'chunk' | 'atom' | 'note'>
+  /** 视角过滤："取面不取书"——只返回该视角下的观感论断 */
+  lensNoteId?: string
   /** 限定检索的文档 ID 列表（缺省=整库；用于「在这篇文档里找」） */
   documentIds?: string[]
   /** 相似度阈值 */
@@ -359,6 +366,23 @@ export interface SearchRequest {
  * 检索结果
  */
 export interface SearchResult {
+  /** 命中类型（知识大脑扩展；缺省 'chunk' = 原文切片） */
+  kind?: 'chunk' | 'atom' | 'note'
+  /** kind='atom' 时的论断载荷（provenance 回链） */
+  atom?: {
+    id: string
+    type: string
+    status: string
+    quote: string
+    jumpTo: { chapterId: string; startOffset: number }
+  }
+  /** kind='note' 时的卡片载荷 */
+  note?: {
+    id: string
+    title: string
+    type: string
+    evidenceCount: number
+  }
   /** 切片 ID */
   chunkId: string
   /** 文档 ID */
