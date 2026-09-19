@@ -151,7 +151,7 @@ async function refresh(): Promise<void> {
   if (cfgRes.success && cfgRes.data) {
     config.value = cfgRes.data.config
     enabled.value = !!cfgRes.data.config?.enabled
-    if (cfgRes.data.config) configDraft.value = { ...cfgRes.data.config }
+    if (cfgRes.data.config) configDraft.value = JSON.parse(JSON.stringify(cfgRes.data.config))
   }
   if (statsRes.success) stats.value = statsRes.data
   if (atomsRes.success && atomsRes.data) {
@@ -171,7 +171,7 @@ async function saveConfig(): Promise<void> {
   try {
     const res = await (window as any).electronAPI.knowledgeBase.brain.updateConfig({
       kbId: props.kbId,
-      patch: { ...configDraft.value },
+      patch: JSON.parse(JSON.stringify(configDraft.value)),
     })
     if (res.success) {
       config.value = res.data
