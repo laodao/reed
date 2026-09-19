@@ -25,3 +25,14 @@ export interface ForceGraphEdge {
   /** 悬停提示（可选） */
   title?: string
 }
+
+/**
+ * 图引擎实现（2D SVG / 3D WebGL）统一暴露面。
+ * ForceGraph 门面按 mode 把 zoomAt/fitView/zoomPercent 转发给当前实现；
+ * zoomPercent 在 defineExpose 后为解包的响应式数值。
+ */
+export interface ForceGraphImplExpose {
+  zoomAt(factor: number): void
+  fitView(): void
+  readonly zoomPercent: number
+}

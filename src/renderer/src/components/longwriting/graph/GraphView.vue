@@ -14,8 +14,28 @@
           :show-tooltip="true"
         />
         <span class="filter-value">{{ chapterFilter === 0 ? '全部' : `第 ${chapterFilter} 章` }}</span>
+        <!-- 实体类型过滤：大作品下关掉事件类是最直接的减密手段（2D/3D 通用） -->
+        <div class="type-filter">
+          <span
+            v-for="t in FILTER_TYPES"
+            :key="t"
+            class="type-chip"
+            :class="{ off: !typeFilter.has(t) }"
+            :title="typeFilter.has(t) ? '点击隐藏该类型' : '点击显示该类型'"
+            @click="toggleType(t)"
+          >
+            <i class="chip-dot" :style="{ background: nodeColor(t) }" />
+            {{ typeLabel(t) }}
+            <span class="chip-count">{{ typeCounts[t] || 0 }}</span>
+          </span>
+        </div>
       </div>
       <div class="toolbar-actions">
+        <!-- 渲染模式：默认 3D（WebGL 力导向，大图治密）；2D SVG 兜底 -->
+        <el-radio-group v-model="renderMode" size="small">
+          <el-radio-button value="3d">3D</el-radio-button>
+          <el-radio-button value="2d">2D</el-radio-button>
+        </el-radio-group>
         <!-- 视图缩放控制（图引擎 = 公共 ForceGraph） -->
         <div class="zoom-controls">
           <el-button size="small" :icon="ZoomOut" circle :disabled="zoomPercent <= 20" title="缩小" @click="graphRef?.zoomAt(1 / 1.2)" />
@@ -47,6 +67,11 @@
           <p>暂无图谱数据</p>
           <span>完成设定（人物/地点/物品等）后，点击「AI 分析实体关系」构建关系网络；<br />写完章节后事件会自动挂到图谱上</span>
         </div>
+        <div v-else-if="fgNodes.length === 0" class="graph-empty">
+          <el-icon><Share /></el-icon>
+          <p>当前过滤条件下无节点</p>
+          <el-button size="small" @click="resetFilters">重置过滤</el-button>
+        </div>
 
         <ForceGraph
           ref="graphRef"
@@ -59,6 +84,7 @@
           :max-zoom-scale="5"
           :selected-id="selectedNode"
           :layout-key="graphVersion"
+          :mode="renderMode"
           @update:selected-id="selectedNode = $event"
           @select="onGraphSelect"
           @click="onGraphClick"
@@ -153,7 +179,8 @@
 <script setup lang="ts">
 /**
  * 知识图谱（新 Tab 视图）
- * 左图右详情：力导向 SVG 自绘；章节时间轴过滤生效边 + 选中实体按章节显示状态；
+ * 左图右详情：渲染走公共 ForceGraph（默认 3D WebGL 力导向，可切 2D SVG 兜底）；
+ * 工具栏 = 章节时间轴过滤 + 实体类型过滤 chips + 3D/2D 切换 + 缩放；
  * 点击实体右侧详情栏显示：基本信息/当前状态/相关实体（点击跳转）/状态时间线/相关事件。
  * 「AI 分析实体关系」：调 AI 识别设定关系 → 幂等落库 lw_graph_edges → 刷新图谱。
  */
@@ -199,13 +226,43 @@ const relatedEntities = ref<RelatedEntity[]>([])
 const timeline = ref<Array<{ chapterNumber: number; stateSummary: string; keyChanges?: string[] }>>([])
 const detailState = ref<any>(null)
 
+// ==================== 渲染模式（3D 默认）与实体类型过滤 ====================
+
+const RENDER_MODE_KEY = 'lw.graph.renderMode'
+const renderMode = ref<'2d' | '3d'>(localStorage.getItem(RENDER_MODE_KEY) === '2d' ? '2d' : '3d')
+watch(renderMode, (mode) => localStorage.setItem(RENDER_MODE_KEY, mode))
+
+const FILTER_TYPES = ['character', 'location', 'item', 'faction', 'skill', 'event']
+const typeFilter = ref<Set<string>>(new Set(FILTER_TYPES))
+
+function toggleType(type: string): void {
+  const next = new Set(typeFilter.value)
+  if (next.has(type)) next.delete(type)
+  else next.add(type)
+  typeFilter.value = next
+}
+
+function resetFilters(): void {
+  typeFilter.value = new Set(FILTER_TYPES)
+  chapterFilter.value = 0
+}
+
+const typeCounts = computed<Record<string, number>>(() => {
+  const counts: Record<string, number> = {}
+  for (const n of nodes.value) counts[n.type] = (counts[n.type] || 0) + 1
+  return counts
+})
+
 const hasEntities = computed(() => nodes.value.length > 0)
 
-/** 时间轴节点过滤：事件节点只在"发生章节 ≤ 当前章节"时显示（实体节点无章节概念常显） */
+/** 可见性过滤：类型 chips + 章节时间轴（事件节点只在"发生章节 ≤ 当前章节"时显示；
+ *  实体节点无章节概念常显）。过滤只动可见集不重排（layoutKey 语义） */
 const visibleNodes = computed(() => {
-  if (chapterFilter.value === 0) return nodes.value
   const cn = chapterFilter.value
-  return nodes.value.filter(n => n.type !== 'event' || (n.chapterNumber !== undefined && n.chapterNumber <= cn))
+  return nodes.value.filter(n =>
+    typeFilter.value.has(n.type) &&
+    (cn === 0 || n.type !== 'event' || (n.chapterNumber !== undefined && n.chapterNumber <= cn)),
+  )
 })
 
 /** 公共模型：节点 = 类型色/半径；边 = 双向端点 + 关系标题 */
@@ -440,13 +497,65 @@ onMounted(() => {
       white-space: nowrap;
     }
 
-    .filter-value {
-      font-size: 12px;
-      color: var(--text-color-secondary);
-      min-width: 56px;
-      white-space: nowrap;
+      .filter-value {
+        font-size: 12px;
+        color: var(--text-color-secondary);
+        min-width: 56px;
+        white-space: nowrap;
+      }
     }
-  }
+
+    .type-filter {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+
+      .type-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 2px 10px;
+        border-radius: var(--radius-full);
+        border: 1px solid var(--border-color-lighter);
+        background: var(--fill-color-lighter);
+        font-size: 12px;
+        color: var(--text-color-primary);
+        cursor: pointer;
+        user-select: none;
+        transition: all var(--transition-fast);
+        white-space: nowrap;
+
+        &:hover {
+          border-color: var(--color-primary-light-5);
+        }
+
+        .chip-dot {
+          width: 9px;
+          height: 9px;
+          border-radius: 50%;
+          flex-shrink: 0;
+        }
+
+        .chip-count {
+          font-size: 11px;
+          color: var(--text-color-secondary);
+          font-variant-numeric: tabular-nums;
+        }
+
+        &.off {
+          opacity: 0.45;
+
+          .chip-dot {
+            background: var(--text-color-placeholder) !important;
+          }
+
+          .chip-count {
+            color: var(--text-color-placeholder);
+          }
+        }
+      }
+    }
 
   .toolbar-actions {
     display: flex;
