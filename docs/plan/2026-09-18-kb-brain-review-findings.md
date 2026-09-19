@@ -115,3 +115,20 @@ P3 已修：PPR iterations 40/eps 1e-4 正名；graphSupplement scoreKind='ppr'�
 | P3 | 迁移 kb_notes 补列嵌在 kb_documents 守卫内（错位嵌套）；provider 每次 new 服务（graphCache 永不命中）；budget 超限 break 丢后续短结果（改截断）；review-grade 信封不统一；CRAG 零命中门槛（incorrect 改写重试的经典场景被排除——登记改：保留门槛，零命中时主路本来空，改写重试在下一轮检索可再触发）等 | 择要修复，其余登记 |
 
 登记不改：grade 不拒 archived/lens 卡（dueNext 已排除，评分侧口径对称性待 UI 一起定）；provider 多库串行 search 的线性延迟（cap3 可接受）。
+
+
+---
+
+# 第五轮：T19+bindings+代谢 v1（2e4f643b 前置）对抗 review（2026-09-19，随提交修复）
+
+盲审 P1×2 + P2×2 + P3×8：
+
+| 级别 | 问题 | 修复 |
+|---|---|---|
+| **P1** | **skippedSameChapters 结构性恒空**：reprocess 后章节树重建全新 id，ensurePass(新id,'base') 找不到旧行 → 未变章全量重萃取（整本 LLM 成本）+ T11 重链目标场景不可达 + 幸存论断出处永久悬挂 | ensurePass 兜底键 (documentId, passKey, chapterHash)：同 hash 历史行命中即复用并改指新 chapterId（内容没变就不重跑） |
+| **P1** | 设定卡实体窗口 createdAt ASC take 20——实体 >20 的库新设定实体永久饿死，且前 20 个每轮重复归纳 | listActiveWithAliases 加 excludeTypes/orderByUpdated；设定卡改排除人物/地点类 + updatedAt 序 |
+| P2 | lens version 重跑不清旧观感（staleLensAtoms 只 stale hash 变更，同 hash 的 v1 观感与 v2 并存双份 supported） | staleLensAtoms 按 extractionPass 前缀 ≠ 当前遍次判定（hash 与 version 变更都覆盖） |
+| P2 | 设定卡不按 entityType 过滤——人物实体产出伪设定卡且每轮重提 | 排除 character/location/organization/item/plot-motif |
+| P3 | scheduleLensPasses 与 runLensPasses 双遍 ensurePass 冗余；代谢 then 无 catch；EP binding 无 dedupArgs；recomputeClassic 类型缺 plot-pattern/methodology/synthesis；P-5 被聚类早退门控；metabolize knowledgeBases 闭包收窄 | 全修 |
+
+登记不改：lens 观感不进倒排（分域主观层，关键词不可达——有意，登记）；同文档两章正文完全相同的极端并案（ensurePass 兜底键的已知代价，论断本就相同）；旧 version 台账行残留（惰性：不冲突不误扫，仅表膨胀）。
