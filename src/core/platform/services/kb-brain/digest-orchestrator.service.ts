@@ -147,6 +147,13 @@ export class KbBrainDigestService {
     return task
   }
 
+  /** 手动重试入口用：某文档耗尽的章级台账复位 pending（人工意图明确才复活） */
+  async reviveExhaustedChapters(documentId: string): Promise<number> {
+    const repos = this.reposFn()
+    if (!repos) return 0
+    return repos.passes.reviveExhaustedForDocument(documentId)
+  }
+
   /** 启动恢复：pending / 僵死 running 的章级台账 → 重新触发所属文档（幂等由台账保证） */
   async recover(): Promise<void> {
     const repos = this.reposFn()
@@ -813,9 +820,12 @@ let activeService: KbBrainDigestService | null = null
  * 消化——开脑之前完成的文档不会再发 completed 事件，这是它们的补上车通道。
  * 未装配（旧库）/未启用时返回 false。
  */
-export function enqueueDigestForExisting(documentId: string): boolean {
+export async function enqueueDigestForExisting(documentId: string): Promise<boolean> {
   if (!activeService) return false
   const uid = getCurrentUserId()
+  // 手动重试语义：耗尽章（attempts>=上限）复活，否则「提取知识」永远重不动失败章
+  const revived = await activeService.reviveExhaustedChapters(documentId)
+  if (revived > 0) logger.info(`[kb-brain] 手动重试复活耗尽章: doc=${documentId} count=${revived}`)
   activeService.enqueueDocument(documentId, uid)
   return true
 }

@@ -243,4 +243,31 @@ describe('KbBrainDigestService 全链路', () => {
     expect(fresh.length).toBeGreaterThan(0)
     expect(fresh.every((a) => a.status === 'supported')).toBe(true)
   })
+
+  it('手动重试：耗尽章（attempts>=3）复活后可完成（reviveExhaustedChapters）', async () => {
+    const chapters = new KbChapterRepository(ds)
+    await chapters.replaceByDocument('doc-t', [
+      { id: 'ch-r', documentId: 'doc-t', knowledgeBaseId: 'kb-t', title: '重试章', level: 1, ordering: 0, content: '全新重试剧情内容。', contentHash: 'hash-retry' },
+    ])
+    // LLM 一直炸 → 连跑 3 次 → 章耗尽、文档 failed
+    const badDeps = makeDeps()
+    badDeps.llm = (async () => {
+      throw new Error('provider down')
+    }) as BrainLlmFn
+    const bad = new KbBrainDigestService(badDeps)
+    for (let i = 0; i < 3; i++) await bad.digestDocument('doc-t')
+    const passRow = (await ds.query("SELECT status, attempts FROM kb_digest_passes WHERE chapter_id='ch-r'")) as Array<{ status: string; attempts: number }>
+    expect(passRow[0].status).toBe('failed')
+    expect(Number(passRow[0].attempts)).toBeGreaterThanOrEqual(3)
+
+    // 复活 + 好 LLM 重跑 → 文档 digested、论断落库
+    const revived = await svc.reviveExhaustedChapters('doc-t')
+    expect(revived).toBeGreaterThan(0)
+    const resetRow = (await ds.query("SELECT status FROM kb_digest_passes WHERE chapter_id='ch-r'")) as Array<{ status: string }>
+    expect(resetRow[0].status).toBe('pending')
+    const good = new KbBrainDigestService(makeDeps())
+    await good.digestDocument('doc-t')
+    const docRow = (await ds.query("SELECT brain_status FROM kb_documents WHERE id='doc-t'")) as Array<{ brain_status: string }>
+    expect(docRow[0].brain_status).toBe('digested')
+  })
 })

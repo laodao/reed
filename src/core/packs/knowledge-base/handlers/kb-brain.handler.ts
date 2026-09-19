@@ -182,8 +182,8 @@ export function registerKbBrainHandlers(): void {
   )
 
   // 补消化：对已上传（开脑前完成）的文档直接触发提取
-  ipcBridge.handle('kb:brain:digest-document', (_e, p: { documentId: string }) => {
-    const ok = enqueueDigestForExisting(p.documentId)
+  ipcBridge.handle('kb:brain:digest-document', async (_e, p: { documentId: string }) => {
+    const ok = await enqueueDigestForExisting(p.documentId)
     return ok
       ? { success: true, data: { queued: true } }
       : { success: false, error: '知识大脑未启用或仓储未装配' }

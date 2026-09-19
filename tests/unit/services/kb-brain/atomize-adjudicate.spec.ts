@@ -287,3 +287,47 @@ describe('normalizeAdjudicateRaw（裁决缺键/别名归一——真机修）',
     expect(() => validateAdjudicateOutput({ duplicates: [], contradictions: [], novel: 'x' }, bounds)).toThrow(/校验失败/)
   })
 })
+
+describe('normalizeAtomizeRaw 长尾加固（真机第二轮）', () => {
+  it('atoms 数组混入裸字符串 → 坏条目剔除，好条目保留', () => {
+    const out = validateAtomizeOutput({
+      atoms: [
+        { statement: '韩立资质平庸', type: 'fact', quote: 'q1' },
+        '韩立是个农家子弟',
+        { statement: '墨大夫收徒', type: 'fact', quote: 'q2' },
+      ],
+      events: [],
+    })
+    expect(out.atoms).toHaveLength(2)
+    expect(out.atoms[0].statement).toBe('韩立资质平庸')
+  })
+
+  it('mentions 对象映射形态 {名:类型} → 对象数组', () => {
+    const out = validateAtomizeOutput({
+      atoms: [{ statement: 'x', type: 'fact', quote: 'q' }],
+      events: [],
+      mentions: { 韩立: 'character', 墨大夫: 'character' },
+    })
+    expect(out.mentions).toEqual([
+      { name: '韩立', type: 'character' },
+      { name: '墨大夫', type: 'character' },
+    ])
+  })
+
+  it('mentions 非数组非对象（如字符串）→ 剥离不致命', () => {
+    const out = validateAtomizeOutput({
+      atoms: [{ statement: 'x', type: 'fact', quote: 'q' }],
+      events: [],
+      mentions: '韩立、墨大夫',
+    })
+    expect(out.mentions).toBeUndefined()
+  })
+
+  it('events 非数组 → 剥离（丢边不丢章）', () => {
+    const out = validateAtomizeOutput({
+      atoms: [{ statement: 'x', type: 'fact', quote: 'q' }],
+      events: { from: 'a', to: 'b' },
+    })
+    expect(out.events).toBeUndefined()
+  })
+})

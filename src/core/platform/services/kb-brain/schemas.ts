@@ -143,8 +143,12 @@ export function normalizeAtomizeRaw(data: unknown): unknown {
   if (!Array.isArray(out.atoms) && Array.isArray(out.claims)) out.atoms = out.claims
   if (!Array.isArray(out.atoms) && Array.isArray(out.statements)) out.atoms = out.statements
   if (Array.isArray(out.atoms)) {
+    // 坏条目剔除（真机实证：atoms 数组混入裸字符串——一条坏条目不值得毁整章，
+    // 与裁决越界索引丢弃同一策略；全部为坏条目时按空论断章处理）
+    out.atoms = (out.atoms as Array<unknown>).filter(
+      (a) => typeof a === 'object' && a !== null && !Array.isArray(a),
+    ) as Array<Record<string, unknown>>
     out.atoms = (out.atoms as Array<Record<string, unknown>>).map((a) => {
-      if (typeof a !== 'object' || a === null) return a
       const item = { ...a }
       if (item.statement === undefined) {
         // 别名优先：text/claim/content/desc
@@ -167,9 +171,23 @@ export function normalizeAtomizeRaw(data: unknown): unknown {
   }
   // mentions 字符串数组 → 对象数组（模型常把类型省略成纯名字列表）
   if (Array.isArray(out.mentions)) {
-    out.mentions = (out.mentions as Array<unknown>).map((m) =>
-      typeof m === 'string' ? { name: m, type: 'concept' } : m,
-    )
+    out.mentions = (out.mentions as Array<unknown>)
+      .map((m) => (typeof m === 'string' ? { name: m, type: 'concept' } : m))
+      .filter((m) => typeof m === 'object' && m !== null)
+  } else if (out.mentions !== undefined && out.mentions !== null) {
+    // mentions 对象映射形态 {名:类型} → 对象数组（真机实证）；其余非数组类型剥离
+    //（schema 中 mentions 可选，丢挂点不丢论断）
+    if (typeof out.mentions === 'object') {
+      out.mentions = Object.entries(out.mentions as Record<string, unknown>)
+        .filter(([k, v]) => typeof k === 'string' && k.trim() && typeof v === 'string' && v.trim())
+        .map(([name, type]) => ({ name: name.trim(), type: (type as string).trim() }))
+    } else {
+      delete out.mentions
+    }
+  }
+  // events 非数组 → 剥离（可选段：丢事件边不丢整章论断）
+  if (out.events !== undefined && out.events !== null && !Array.isArray(out.events)) {
+    delete out.events
   }
   return out
 }

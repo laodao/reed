@@ -217,6 +217,26 @@ export class KbDigestPassRepository extends BaseRepository<KbDigestPassEntity, K
       .execute()
   }
 
+  /**
+   * 手动重试：某文档耗尽的章级台账（failed 且 attempts>=MAX_ATTEMPTS）复位 pending。
+   * ensurePass 对耗尽行一律 skip——不复活的话「提取知识」按钮永远重不动失败章。
+   * 仅手动入队路径调用（人工意图明确）；自动恢复 recover 不碰耗尽行。
+   */
+  async reviveExhaustedForDocument(documentId: string): Promise<number> {
+    const now = new Date()
+    const rows = await this.scoped.find({
+      where: { documentId, status: 'failed' } as FindOptionsWhere<KbDigestPassEntity>,
+    })
+    const exhausted = rows.filter((r) => r.attempts >= MAX_ATTEMPTS)
+    for (const r of exhausted) {
+      r.status = 'pending'
+      r.error = null
+      r.updatedAt = now
+      await this.scoped.save(r)
+    }
+    return exhausted.length
+  }
+
   /** 启动恢复：pending 或僵死 running（>10min 无心跳）的台账行重新可跑 */
   async recoverPending(staleRunningMs = 10 * 60 * 1000): Promise<KbDigestPassRecord[]> {
     const cutoff = new Date(Date.now() - staleRunningMs)
