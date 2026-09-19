@@ -4,6 +4,7 @@
  */
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
+import { runChapterWorkflowSync } from '../services/chapter-workflow-runner'
 import { isElectron, loadElectronModules, getBrowserWindowFromEvent } from '@electron/ipc/handlers/_platform'
 import * as fs from 'fs'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
@@ -166,8 +167,8 @@ const CHANNELS = {
   GENERATE_ITEMS_ONLY: 'longwriting:generateItemsOnly',
   GENERATE_OUTLINE_STORY: 'longwriting:generateOutlineStory',
   GENERATE_OUTLINE_COMMENT: 'longwriting:generateOutlineComment',
-  GENERATE_CHAPTER: 'longwriting:generateChapter',
-  GENERATE_CHAPTER_WITH_CONTEXT: 'longwriting:generateChapterWithContext',
+  /** 唯一正文写作入口：章法工作流（设计卡→自检→门禁→写→存→图谱→写后检查），无旁路 */
+  WRITE_CHAPTER_FULL: 'longwriting:writeChapterFull',
   CHAPTER_CONTEXT_PREVIEW: 'longwriting:chapterContextPreview',
   GENERATE_CHAPTER_PREWRITE: 'longwriting:generateChapterPrewrite',
   GENERATE_CHAPTER_CARD: 'longwriting:generateChapterCard',
@@ -1440,18 +1441,6 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   )
 
-  ipcBridge.handle(
-    CHANNELS.GENERATE_CHAPTER,
-    async (event, eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string, style?: string, extraPrompt?: string, options?: { skipChapterCardGate?: boolean }) => {
-      try {
-        const result = await aiService.generateChapter(eventId, projectId, outlineId, targetWords, providerConfigId, modelId, style, extraPrompt, options)
-        return { ...result, eventId }
-      } catch (error: any) {
-        return { success: false, error: error.message }
-      }
-    }
-  )
-
   // 章节工作台（38 号）：上下文预览（结构化条目 + token 预算）
   ipcBridge.handle(
     CHANNELS.CHAPTER_CONTEXT_PREVIEW,
@@ -1465,28 +1454,25 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   )
 
-  // 章节工作台（38 号）：按勾选上下文生成（流式与 GENERATE_CHAPTER 同链路）
+  // ==================== 正文写作唯一入口：章法工作流（无旁路） ====================
+  // 2026-09-18 用户指令：删除不经写后一致性检查的直写路径。渲染层/工具一律经
+  // runChapterWorkflowSync（设计卡→自检→出场实体→一致性门禁→写→存→图谱→写后检查），
+  // 结果含 postCheck 报告；content 一并返回供 UI 展示。
   ipcBridge.handle(
-    CHANNELS.GENERATE_CHAPTER_WITH_CONTEXT,
+    CHANNELS.WRITE_CHAPTER_FULL,
     async (
       _event,
-      eventId: string,
+      _eventId: string,
       projectId: string,
       outlineId: string,
-      params: {
-        targetWords?: number
-        style?: string
-        extraPrompt?: string
-        enabledItemIds?: string[]
-        providerConfigId?: string
-        modelId?: string
-      }
+      opts?: { targetWords?: number; overwrite?: boolean; providerConfigId?: string; modelId?: string }
     ) => {
       try {
-        const result = await aiService.generateChapterWithContext(eventId, projectId, outlineId, params)
-        return { ...result, eventId }
+        const outcome = await runChapterWorkflowSync(projectId, outlineId, opts?.overwrite === true)
+        if (!outcome.ok) return { success: false, error: outcome.error, eventId: _eventId }
+        return { success: true, data: outcome.data, eventId: _eventId }
       } catch (error: any) {
-        return { success: false, error: error.message }
+        return { success: false, error: error.message, eventId: _eventId }
       }
     }
   )

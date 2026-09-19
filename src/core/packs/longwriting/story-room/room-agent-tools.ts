@@ -40,6 +40,7 @@ import { LongWritingAIService } from '@core/platform/services/longwriting-ai.ser
 import { LongWritingService } from '../services/longwriting.service'
 import { ChapterGraphProcessor } from '@core/platform/services/longwriting/graph/chapter-graph.processor'
 import { ConsistencyService } from '@core/platform/services/longwriting/graph/consistency.service'
+import { runChapterWorkflowSync } from '../services/chapter-workflow-runner'
 import { BibleQueryService } from '@core/platform/services/longwriting/bible.service'
 import type { BibleEntryView, BibleGroupView } from '@core/platform/services/longwriting/bible.service'
 import { buildOutlineDocOrder, outlineChapterNumber } from '@core/platform/services/longwriting/outline-order'
@@ -1176,8 +1177,6 @@ function buildWriteChapterFullToolDef(): AgentToolDef {
   }
 }
 
-const CHAPTER_WF_DEF_NAME = '章节写作章法'
-
 function buildPatchChapterToolDef(): AgentToolDef {
   return {
     name: 'lw_patch_chapter',
@@ -1325,113 +1324,6 @@ function buildPatchChapterToolDef(): AgentToolDef {
  * 等待放在工具内部而非让 agent 轮询：agent 每次状态查询消耗一步，实跑第 1 章曾因
  * 轮询烧光 24 步触发 max_steps。进度经 onProgress 转 task:progress 事件上屏。
  */
-async function runChapterWorkflowSync(
-  projectId: string,
-  outlineId: string,
-  overwrite: boolean,
-  onProgress?: (p: { step: string; message: string }) => void,
-): Promise<{ ok: boolean; error?: string; data?: Record<string, any> }> {
-  const started = await ensureChapterWritingWorkflowRun(projectId, outlineId, overwrite)
-  onProgress?.({ step: 'workflow', message: `章法工作流已启动（运行 ${started.runId}），工具内等待完成` })
-  const { getWorkflowSubsystem } = await import('@core/platform/workflow/workflow-boot')
-  const sub = getWorkflowSubsystem()
-  const deadline = Date.now() + 570_000 // executeTimeoutMs 600s 内留余量
-  const TERMINAL = new Set(['succeeded', 'failed', 'cancelled', 'skipped'])
-  let lastNodeStatus = ''
-  while (Date.now() < deadline) {
-    const detail = await sub.runService.getRunDetail(started.runId)
-    if (!detail) return { ok: false, error: `工作流运行不存在：${started.runId}` }
-    const { run, nodeRuns } = detail
-    const node = nodeRuns.find((n) => n.nodeType === 'chapter-writing') ?? nodeRuns[nodeRuns.length - 1]
-    if (node && node.status && node.status !== lastNodeStatus) {
-      lastNodeStatus = node.status
-      onProgress?.({ step: 'workflow', message: `章法运行状态：${run.status}${node.status ? `（${node.nodeName || node.nodeType} ${node.status}）` : ''}` })
-    }
-    if (run.status === 'succeeded') {
-      const out = (node?.output ?? {}) as Record<string, any>
-      return { ok: true, data: out }
-    }
-    if (TERMINAL.has(run.status)) {
-      const nodeErr = nodeRuns.find((n) => n.error)?.error
-      return { ok: false, error: nodeErr || run.error || `工作流 ${run.status}` }
-    }
-    await new Promise((r) => setTimeout(r, 3000))
-  }
-  return { ok: false, error: `等待章法工作流超时（运行 ${started.runId} 仍在执行，可稍后用 get_workflow_run 查询结果）` }
-}
-
-/**
- * 章法工作流触发（用户意见 2026-09-15）：agent 不能保证指令遵循——写正文不再依赖
- * 主编逐工具调用，改为启动工作流 run 由引擎确定性调度（chapter-writing 节点内部
- * 按序执行五步，每步状态进 run 记录可审计、失败停在具体步骤）。
- * 定义按名称幂等创建并发布（启动工作流要求已发布图）。
- */
-async function ensureChapterWritingWorkflowRun(
-  projectId: string,
-  outlineId: string,
-  overwrite: boolean,
-): Promise<{ runId: string; definitionId: string; status: string }> {
-  const { getWorkflowSubsystem } = await import('@core/platform/workflow/workflow-boot')
-  const sub = getWorkflowSubsystem()
-
-  // 幂等：按名称找已发布定义
-  let definitionId: string | null = null
-  const listed = await sub.definitionService.list({ keyword: CHAPTER_WF_DEF_NAME, page: 1, pageSize: 20 })
-  for (const d of listed.items ?? []) {
-    if (d.name === CHAPTER_WF_DEF_NAME) { definitionId = d.id; break }
-  }
-  if (!definitionId) {
-    const graph = {
-      version: 1 as const,
-      nodes: [
-        {
-          id: 'start', type: 'start', name: '开始', position: { x: 80, y: 200 },
-          config: {
-            inputs: [
-              { key: 'projectId', label: '长文项目 ID', type: 'string', required: true },
-              { key: 'outlineId', label: '章节大纲节点 ID', type: 'string', required: true },
-              { key: 'overwrite', label: '覆盖已有正文', type: 'boolean' },
-            ],
-          },
-        },
-        {
-          id: 'write', type: 'chapter-writing', name: '章节写作章法', position: { x: 320, y: 200 },
-          config: {
-            projectId: '{{start.projectId}}',
-            outlineId: '{{start.outlineId}}',
-            overwrite: '{{start.overwrite}}',
-            targetWords: 2500,
-          },
-        },
-        { id: 'end', type: 'end', name: '结束', position: { x: 620, y: 200 }, config: {} },
-      ],
-      edges: [
-        { id: 'e_start_write', sourceNodeId: 'start', targetNodeId: 'write', kind: 'normal' },
-        { id: 'e_write_end', sourceNodeId: 'write', targetNodeId: 'end', kind: 'normal' },
-      ],
-    }
-    const created = await sub.definitionService.create({
-      name: CHAPTER_WF_DEF_NAME,
-      description: '长文写作：按章法确定性写完一章（设计卡→自检→出场实体→一致性检查→写正文→写后检查）',
-      category: 'longwriting',
-      draftGraph: graph as never,
-    })
-    definitionId = created.id
-    await sub.definitionService.publish(definitionId)
-  }
-
-  const run = await sub.runService.startRun({
-    definitionId,
-    triggerType: 'manual',
-    inputs: { projectId, outlineId, overwrite },
-    usePublishedGraph: true,
-    // 互斥按「项目+章节」作用域：不同项目（甚至同项目不同章）的章法 run 可并行，
-    // 同一章绝不双跑。全局定义级互斥会让多项目共用章法定义时互相 skip（忘川渡实跑）。
-    mutexScope: `chapter-writing:${projectId}:${outlineId}`,
-  })
-  return { runId: run.id, definitionId, status: run.status }
-}
-
 const VOLUME_DESIGN_WF_DEF_NAME = '卷设计章法'
 
 /**
@@ -1450,9 +1342,13 @@ export async function ensureVolumeDesignWorkflowRun(
   const sub = getWorkflowSubsystem()
 
   let definitionId: string | null = null
-  const listed = await sub.definitionService.list({ keyword: VOLUME_DESIGN_WF_DEF_NAME, page: 1, pageSize: 20 })
+  const listed = await sub.definitionService.list({ keyword: VOLUME_DESIGN_WF_DEF_NAME, page: 1, pageSize: 20, includeInternal: true })
   for (const d of listed.items ?? []) {
-    if (d.name === VOLUME_DESIGN_WF_DEF_NAME) { definitionId = d.id; break }
+    if (d.name === VOLUME_DESIGN_WF_DEF_NAME) {
+      definitionId = d.id
+      if (!d.internal) await sub.definitionService.update(d.id, { internal: true })
+      break
+    }
   }
   if (!definitionId) {
     const graph = {
@@ -1495,6 +1391,7 @@ export async function ensureVolumeDesignWorkflowRun(
       name: VOLUME_DESIGN_WF_DEF_NAME,
       description: '长文写作：确定性生成一卷的结构化设计文档（骨架→人物层→网格分批→整合，每 pass 过契约校验+修复回路），产物入设计包待确认',
       category: 'longwriting',
+      internal: true,
       draftGraph: graph as never,
     })
     definitionId = created.id

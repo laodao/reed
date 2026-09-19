@@ -1916,13 +1916,12 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:generateOutlineStory', eventId, projectId, providerConfigId, modelId, structureLevel, opts),
     generateOutlineComment: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generateOutlineComment', eventId, projectId, providerConfigId, modelId),
-    generateChapter: (eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string, style?: string, extraPrompt?: string, options?: { skipChapterCardGate?: boolean }) =>
-      ipcRenderer.invoke('longwriting:generateChapter', eventId, projectId, outlineId, targetWords, providerConfigId, modelId, style, extraPrompt, options),
     // 章节工作台（38 号）：上下文预览 + 按勾选上下文生成
     chapterContextPreview: (projectId: string, outlineId: string, opts?: { targetWords?: number; style?: string; extraPrompt?: string }) =>
       ipcRenderer.invoke('longwriting:chapterContextPreview', projectId, outlineId, opts),
-    generateChapterWithContext: (eventId: string, projectId: string, outlineId: string, params: { targetWords?: number; style?: string; extraPrompt?: string; enabledItemIds?: string[]; providerConfigId?: string; modelId?: string }) =>
-      ipcRenderer.invoke('longwriting:generateChapterWithContext', eventId, projectId, outlineId, params),
+    /** 唯一正文写作入口：章法工作流全流程（含写后一致性检查），无旁路 */
+    writeChapterFull: (eventId: string, projectId: string, outlineId: string, opts?: { targetWords?: number; overwrite?: boolean; providerConfigId?: string; modelId?: string }) =>
+      ipcRenderer.invoke('longwriting:writeChapterFull', eventId, projectId, outlineId, opts),
     generateSection: (eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generateSection', eventId, projectId, outlineId, targetWords, providerConfigId, modelId),
     generateChapterPrewrite: (eventId: string, projectId: string, outlineId: string, providerConfigId?: string, modelId?: string) =>

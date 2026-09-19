@@ -477,7 +477,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, inject, nextTick } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { MagicStick, Clock, DocumentChecked, View, RefreshLeft, Close, Fold, Download, Loading, InfoFilled, Collection, Warning } from '@element-plus/icons-vue'
 import MarkdownEditor from '@/components/common/MarkdownEditor.vue'
 import ChapterContextPanel from './ChapterContextPanel.vue'
@@ -1006,15 +1006,6 @@ async function runChapterGraphPipeline(outlineId: string): Promise<void> {
   }
 }
 
-// 处理章节生成完成后的自动保存（图谱流水线由 saveChapter 统一触发）
-async function handleChapterGenerated(outlineId: string) {
-  try {
-    // 先保存章节（内部会触发章节图谱流水线）
-    await saveChapter(outlineId)
-  } catch (e) {
-    console.error('[ChapterStage] handleChapterGenerated 失败:', e)
-  }
-}
 
 // 开始生成 - 显示对话框
 async function startGenerate(outline: StoryOutline) {
@@ -1418,130 +1409,82 @@ async function executeGeneration() {
   const outlineId = outline.id
 
   showGenerateDialog.value = false
+  currentOutlineForAction.value = null
+  await runChapterWorkflow(outlineId)
+}
+
+/**
+ * 正文写作唯一入口（2026-09-18 用户指令：删除无写后检查的旁路）。
+ * 一律走章法工作流 writeChapterFull：设计卡→自检→出场实体→一致性门禁→写→存→图谱→写后检查。
+ * 工作流已落库，成功后从返回的 content 刷新编辑缓冲并同步自动保存水位。
+ */
+async function runChapterWorkflow(outlineId: string, opts?: { overwrite?: boolean }) {
+  if (generatingMap.value[outlineId]) {
+    ElMessage.warning('该章节正在生成中')
+    return
+  }
   generatingMap.value[outlineId] = true
-  const previousContent = chapterContentMap.value[outlineId] || ''
-  chapterContentMap.value[outlineId] = '' // 清空当前内容（失败时恢复）
-
-  console.log('[ChapterStage] 生成章节, providerId:', selectedModel.value?.providerId, 'modelId:', selectedModel.value?.modelId)
-
-  // 生成唯一事件 ID
-  const eventId = `chapter-${outlineId}-${Date.now()}`
-  generatingEventIdMap.value[outlineId] = eventId
-
-  // 监听流式生成事件
-  const unsubscribe = window.electronAPI.longwriting.onGenerateEvent(
-    eventId,
-    (event: { type: string; content?: string; error?: string }) => {
-      if (event.type === 'content' && event.content) {
-        chapterContentMap.value[outlineId] += event.content
-      } else if (event.type === 'done') {
-        generatingMap.value[outlineId] = false
-        generatingEventIdMap.value[outlineId] = null
-        // 自动保存并提取状态摘要
-        if (autoSave.value && chapterContentMap.value[outlineId]) {
-          handleChapterGenerated(outlineId)
-        }
-        ElMessage.success('章节内容已生成')
-        unsubscribe()
-      } else if (event.type === 'error') {
-        generatingMap.value[outlineId] = false
-        generatingEventIdMap.value[outlineId] = null
-        if (!chapterContentMap.value[outlineId] && previousContent) chapterContentMap.value[outlineId] = previousContent
-        ElMessage.error(event.error || '生成失败')
-        unsubscribe()
+  try {
+    const result = await window.electronAPI.longwriting.writeChapterFull(
+      `wf-${outlineId}-${Date.now()}`,
+      props.projectId,
+      outlineId,
+      { overwrite: opts?.overwrite }
+    )
+    if (!result.success) {
+      const err = result.error || '生成失败'
+      // 工作流门禁：该章已有正文需用户确认覆盖
+      if (err.includes('已有正文') && !opts?.overwrite) {
+        try {
+          await ElMessageBox.confirm('该章已有正文。确定走章法工作流重新生成覆盖吗？', '确认重写', {
+            confirmButtonText: '重新生成',
+            cancelButtonText: '取消',
+            type: 'warning'
+          })
+          generatingMap.value[outlineId] = false
+          return runChapterWorkflow(outlineId, { overwrite: true })
+        } catch { /* 用户取消 */ }
       }
+      ElMessage.error(err)
+      return
     }
-  )
-
-  // 调用 AI API（写作风格/附加提示激活：传入后端并入章节 prompt）
-  const result = await window.electronAPI.longwriting.generateChapter(
-    eventId,
-    props.projectId,
-    outlineId,
-    generateForm.value.targetWords,
-    selectedModel.value!.providerId,
-    selectedModel.value!.modelId,
-    generateForm.value.style || undefined,
-    generateForm.value.extraPrompt || undefined,
-    { skipChapterCardGate: true }
-  )
-
-  if (!result.success) {
+    const data: any = result.data || {}
+    const content: string = data.content || ''
+    if (content) {
+      chapterContentMap.value[outlineId] = content
+      // 同步自动保存水位：工作流已落库，避免 3 秒自动保存重复写
+      lastSavedContent[outlineId] = content
+    }
+    if (data.chapterId) chapterIdMap.value[outlineId] = data.chapterId
+    ElMessage.success(`章节已按章法生成并保存（${data.wordCount || content.length} 字）`)
+    if (data.postCheck && data.postCheck.passed === false) {
+      ElNotification({ title: '写后一致性检查发现疑点', message: String(data.postCheck.report || '').slice(0, 800), type: 'warning', duration: 0 })
+    }
+    const outline = outlineNodes.value.find(n => n.id === outlineId)
+    if (outline && outline.status === 'pending') {
+      await window.electronAPI.longwriting.updateOutline(outlineId, { status: 'progressing' })
+      await loadOutlineTree()
+    }
+    updateProgress()
+  } catch (e: any) {
+    ElMessage.error('章法工作流失败：' + (e?.message || e))
+  } finally {
     generatingMap.value[outlineId] = false
     generatingEventIdMap.value[outlineId] = null
-    unsubscribe()
-    ElMessage.error(result.error || '生成失败')
   }
-
-  currentOutlineForAction.value = null
 }
 
 // 章节工作台（38 号）：按勾选上下文生成——流式/自动保存与 confirmGenerate 同链路
 async function handleGenerateWithContext(payload: { enabledItemIds: string[]; itemTextOverrides: Record<string, string> }) {
   const outlineId = activeOutlineId.value
-  if (!outlineId || !selectedModel.value) {
-    ElMessage.warning('请先选择章节与写作模型')
+  if (!outlineId) {
+    ElMessage.warning('请先选择章节')
     return
   }
-  if (generatingMap.value[outlineId]) {
-    ElMessage.warning('该章节正在生成中')
-    return
-  }
-
-  generatingMap.value[outlineId] = true
-  // 52 号数据安全修复：记下清空前的内容——门禁拒绝/生成失败时必须恢复，
-  // 否则空缓冲会被 3 秒自动保存落库，覆盖已有正文（实跑中第 2 章曾被清空）
-  const previousContent = chapterContentMap.value[outlineId] || ''
-  chapterContentMap.value[outlineId] = ''
-
-  const eventId = `chapter-${outlineId}-${Date.now()}`
-  generatingEventIdMap.value[outlineId] = eventId
-
-  const unsubscribe = window.electronAPI.longwriting.onGenerateEvent(
-    eventId,
-    (event: { type: string; content?: string; error?: string }) => {
-      if (event.type === 'content' && event.content) {
-        chapterContentMap.value[outlineId] += event.content
-      } else if (event.type === 'done') {
-        generatingMap.value[outlineId] = false
-        generatingEventIdMap.value[outlineId] = null
-        if (autoSave.value && chapterContentMap.value[outlineId]) {
-          handleChapterGenerated(outlineId)
-        }
-        ElMessage.success('章节内容已生成（按勾选上下文）')
-        unsubscribe()
-      } else if (event.type === 'error') {
-        generatingMap.value[outlineId] = false
-        generatingEventIdMap.value[outlineId] = null
-        if (!chapterContentMap.value[outlineId] && previousContent) chapterContentMap.value[outlineId] = previousContent
-        ElMessage.error(event.error || '生成失败')
-        unsubscribe()
-      }
-    }
-  )
-
-  const result = await window.electronAPI.longwriting.generateChapterWithContext(
-    eventId,
-    props.projectId,
-    outlineId,
-    {
-      targetWords: generateForm.value.targetWords,
-      style: generateForm.value.style || undefined,
-      extraPrompt: generateForm.value.extraPrompt || undefined,
-      enabledItemIds: payload.enabledItemIds,
-      providerConfigId: selectedModel.value.providerId,
-      modelId: selectedModel.value.modelId,
-    }
-  )
-
-  if (!result.success) {
-    generatingMap.value[outlineId] = false
-    generatingEventIdMap.value[outlineId] = null
-    unsubscribe()
-    // 数据安全：未产生任何内容即失败（如门禁拦截）→ 恢复清空前的正文
-    if (!chapterContentMap.value[outlineId] && previousContent) chapterContentMap.value[outlineId] = previousContent
-    ElMessage.error(result.error || '生成失败')
-  }
+  // 2026-09-18 用户指令：正文写作只剩章法工作流入口。勾选的上下文条目/微调不再参与
+  // 直写——工作流内部按设计卡自选出场实体并注入前情；postCheck 报告在完成后弹出。
+  void payload
+  await runChapterWorkflow(outlineId)
 }
 
 // 取消生成

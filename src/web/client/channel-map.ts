@@ -488,9 +488,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'longwriting.generateFactions': { channel: 'longwriting:generateFactions' },
   'longwriting.generateOutlineStory': { channel: 'longwriting:generateOutlineStory' },
   'longwriting.generateOutlineComment': { channel: 'longwriting:generateOutlineComment' },
-  'longwriting.generateChapter': { channel: 'longwriting:generateChapter' },
   'longwriting.chapterContextPreview': { channel: 'longwriting:chapterContextPreview', wrap: (p: unknown) => (Array.isArray(p) ? p : [p]) },
-  'longwriting.generateChapterWithContext': { channel: 'longwriting:generateChapterWithContext' },
+  'longwriting.writeChapterFull': { channel: 'longwriting:writeChapterFull' },
   'longwriting.generateSection': { channel: 'longwriting:generateSection' },
   'longwriting.generateChapterPrewrite': { channel: 'longwriting:generateChapterPrewrite' },
   // longwriting.onGenerateEvent(eventId, cb) — 后端 emit(`longwriting:generate:${eventId}`, ...)

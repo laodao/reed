@@ -89,7 +89,7 @@
  * 写前校验/提取更新图谱留待阶段 2；本步实现：章节列表 → 生成（generateChapter 流式）→ 编辑 → 保存
  */
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { MagicStick, Check } from '@element-plus/icons-vue'
 import { useAiGeneration } from '@/composables/useAiGeneration'
 
@@ -215,35 +215,34 @@ async function generateCurrent(): Promise<void> {
   if (conflicts === false) return // 用户取消
 
   const outlineId = currentLeaf.value.id
-  const eventId = `chapter-${outlineId}-${Date.now()}`
   content.value = ''
 
-  const ok = await ai.start({
-    eventId,
-    subscribe: (handlers: { onContent: (c: string) => void; onDone: () => void; onError: (e: string) => void }) =>
-      window.electronAPI.longwriting.onGenerateEvent(eventId, (event: { type: string; content?: string; error?: string }) => {
-        if (event.type === 'content' && event.content) {
-          handlers.onContent(event.content)
-          content.value = ai.content.value // 同步到编辑区
-        } else if (event.type === 'done') {
-          handlers.onDone()
-          content.value = ai.content.value
-        } else if (event.type === 'error') {
-          handlers.onError(event.error || '生成失败')
-        }
-      }),
-    invoke: async () => {
-      const r = await window.electronAPI.longwriting.generateChapter(eventId, props.projectId, outlineId, currentLeaf.value.estimatedWords || 3000)
-      return { success: r.success, error: r.error }
-    },
-  })
-
-  if (!ok) {
-    ElMessage.error(ai.error.value || '生成失败')
-    return
+  // 2026-09-18 用户指令：正文写作只剩章法工作流入口（设计卡→自检→门禁→写→存→图谱→写后检查）。
+  // 工作流在主进程已落库，完成后从返回的 content 刷新编辑区，不再走流式直写 + 前端保存。
+  generating.value = true
+  try {
+    const r = await window.electronAPI.longwriting.writeChapterFull(
+      `wf-${outlineId}-${Date.now()}`,
+      props.projectId,
+      outlineId
+    )
+    if (!r.success) {
+      ElMessage.error(r.error || '生成失败')
+      return
+    }
+    const data: any = r.data || {}
+    content.value = data.content || ''
+    if (data.chapterId) chapterIdMap.value[outlineId] = data.chapterId
+    ElMessage.success(`章节已按章法生成并保存（${data.wordCount || content.value.length} 字）`)
+    if (data.postCheck && data.postCheck.passed === false) {
+      ElNotification({ title: '写后一致性检查发现疑点', message: String(data.postCheck.report || '').slice(0, 800), type: 'warning', duration: 0 })
+    }
+    savedAt.value = new Date().toLocaleTimeString()
+  } catch (e: any) {
+    ElMessage.error('章法工作流失败：' + (e?.message || e))
+  } finally {
+    generating.value = false
   }
-  content.value = ai.content.value
-  await saveCurrent(true)
 }
 
 /**

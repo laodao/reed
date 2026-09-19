@@ -1507,10 +1507,10 @@ ${plotInfo || '暂无相关情节'}
   /**
    * 54 号章法门：正文生成前必须有已确认的「章节设计卡」——
    * 先设计（情节概要/钩子/爽点/出场实体）→ 自检 → 确认 → 才动笔。
-   * 自由工作台可传 skipChapterCardGate 跳过；script 分集项目不设此门。
+   * script 分集项目不设此门。2026-09-18 用户指令：删除 skipChapterCardGate 旁路，
+   * 卡门禁对 novel 项目一律生效。
    */
-  private async checkChapterCardGate(projectId: string, outlineId: string, skip?: boolean): Promise<string | null> {
-    if (skip) return null
+  private async checkChapterCardGate(projectId: string, outlineId: string): Promise<string | null> {
     try {
       const dbManager = getCoreDatabaseManager()
       const roomProject = await dbManager.lwProjects?.getById(projectId)
@@ -1669,7 +1669,7 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
     modelId?: string,
     style?: string,
     extraPrompt?: string,
-    options?: { skipChapterCardGate?: boolean; overwrite?: boolean }
+    options?: { overwrite?: boolean }
   ): Promise<GenerateResponse> {
     const gateError = await this.checkBibleGate(projectId, '章节正文')
     if (gateError) return { success: false, error: gateError }
@@ -1677,7 +1677,8 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
       skipCurrentChapterOnlyDoubts: options?.overwrite === true,
     })
     if (conflictErr) return { success: false, error: conflictErr }
-    const cardGateErr = await this.checkChapterCardGate(projectId, outlineId, options?.skipChapterCardGate)
+    // 2026-09-18 用户指令：章法卡门禁不再可跳过（删除 skipChapterCardGate 旁路）
+    const cardGateErr = await this.checkChapterCardGate(projectId, outlineId)
     if (cardGateErr) return { success: false, error: cardGateErr }
     const asm = await this.assembleChapterGeneration(projectId, outlineId, { targetWords, style, extraPrompt })
     if ('error' in asm) return { success: false, error: asm.error }
@@ -1735,58 +1736,6 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
    * 按勾选上下文生成（38 号）：enabledItemIds 过滤重组装；流式/落库与 generateChapter 同链路。
    * 未传 enabledItemIds = 全部默认项（与 generateChapter 等价）。
    */
-  async generateChapterWithContext(
-        eventId: string,
-    projectId: string,
-    outlineId: string,
-    params: {
-      targetWords?: number
-      style?: string
-      extraPrompt?: string
-      enabledItemIds?: string[]
-      providerConfigId?: string
-      modelId?: string
-      skipChapterCardGate?: boolean
-      /** 重写本章：写前门禁跳过仅引用本章的旧正文疑点（见 checkChapterConflictGate） */
-      overwrite?: boolean
-    }
-  ): Promise<GenerateResponse> {
-    const gateError = await this.checkBibleGate(projectId, '章节正文')
-    if (gateError) return { success: false, error: gateError }
-    const conflictErr = await this.checkChapterConflictGate(projectId, outlineId, {
-      skipCurrentChapterOnlyDoubts: params.overwrite === true,
-    })
-    if (conflictErr) return { success: false, error: conflictErr }
-    const cardGateErr = await this.checkChapterCardGate(projectId, outlineId, params.skipChapterCardGate)
-    if (cardGateErr) return { success: false, error: cardGateErr }
-    const asm = await this.assembleChapterGeneration(projectId, outlineId, {
-      targetWords: params.targetWords, style: params.style, extraPrompt: params.extraPrompt,
-    })
-    if ('error' in asm) return { success: false, error: asm.error }
-    const enabled = new Set(params.enabledItemIds ?? asm.items.map((i) => i.id))
-    const prompt = composeChapterPrompt(asm.parts, (id) => enabled.has(id), asm.composeOpts)
-    try {
-      const result = await this.callAIStream(
-        eventId,
-        prompt,
-        asm.systemPrompt,
-        asm.maxTokens,
-        params.providerConfigId,
-        params.modelId
-      )
-
-      // 49 号：字数质量门（同 generateChapter；扩写走独立 eventId 流）
-      const gated = await applyChapterQualityGate(result, asm.composeOpts.targetWords, (expandPrompt) => {
-        getEventEmitter().emit(`longwriting:generate:${eventId}`, { type: 'progress', content: '初稿字数未达标，正在扩写…' })
-        return this.callAIStream(eventId + '-expand', expandPrompt, asm.systemPrompt, asm.maxTokens, params.providerConfigId, params.modelId)
-      })
-
-      return { success: true, data: { content: gated.content, qualityGate: gated.gate } }
-    } catch (error: any) {
-      return { success: false, error: error.message }
-    }
-  }
-
   /**
    * 章节生成组装（38 号重构）：generateChapter / getChapterContextItems / generateChapterWithContext
    * 的单一事实源。产出可控制上下文项（items）+ 组装原料（parts）+ 默认组装结果（prompt）。

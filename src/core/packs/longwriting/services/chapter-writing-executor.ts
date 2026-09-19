@@ -52,6 +52,7 @@ export interface ChapterWritingOutcome {
   needsReview?: string[]
   data?: {
     chapterId?: string
+    content?: string
     wordCount?: number
     designCard?: string
     review?: { ok: boolean; issues: string[] }
@@ -309,6 +310,7 @@ ${content}
     ok: true,
     data: {
       chapterId: saved?.id,
+      content,
       wordCount: content.replace(/\s/g, '').length,
       designCard: markdown,
       review,

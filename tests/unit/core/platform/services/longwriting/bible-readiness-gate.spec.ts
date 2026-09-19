@@ -195,11 +195,11 @@ describe('LongWritingAIService 圣经就绪门接线', () => {
     expect(spy).not.toHaveBeenCalled()
   })
 
-  it('generateChapterWithContext：缺角色 → 拒绝', async () => {
+  it('generateChapter：缺角色 → 拒绝（2026-09-18 删除WithContext旁路后单入口口径）', async () => {
     db.lwStoryOverviews.getByProjectId.mockResolvedValue(READY_DB.overview)
     db.lwPlots.getByProjectId.mockResolvedValue(READY_DB.plots)
     const spy = callSpy()
-    const r = await svc.generateChapterWithContext('ev-gate-5', 'p1', 'ol1', { targetWords: 2500 })
+    const r = await svc.generateChapter('ev-gate-5', 'p1', 'ol1', 2500, 'pc1', 'm1')
     expect(r.success).toBe(false)
     expect(String(r.error)).toContain('角色')
     expect(spy).not.toHaveBeenCalled()
@@ -245,7 +245,7 @@ describe('LongWritingAIService 逐章冲突门禁接线（52 号流程闭环）'
       { rule: 'R6', severity: 'warning', message: '实体「魏宗简」第 1 章终态，第 2 章恢复', entityName: '魏宗简', chapterNumber: 1 },
     ] as never)
     const spy = callSpy()
-    const r = await svc.generateChapterWithContext('ev-cg-1', 'p1', 'ol1', { targetWords: 2500 })
+    const r = await svc.generateChapter('ev-cg-1', 'p1', 'ol1', 2500, 'pc1', 'm1')
     expect(r.success).toBe(false)
     expect(String(r.error)).toContain('一致性疑点')
     expect(String(r.error)).toContain('AI 解题')
