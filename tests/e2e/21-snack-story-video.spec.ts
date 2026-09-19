@@ -9,7 +9,7 @@
  *   2. 运行测试：npx playwright test tests/e2e/21-snack-story-video.spec.ts --headed
  */
 
-import { test, expect } from '@playwright/test'
+import { test } from '@playwright/test'
 import { ElectronTestHelper, createElectronHelper } from '../electron.setup'
 
 const TEST_TIMEOUT = 10 * 60 * 1000 // 10 分钟
@@ -317,9 +317,9 @@ test.describe('零食大作战 - 端到端视频生成测试', () => {
     }
 
     if (projectId && episodeId) {
-      await helper.navigateTo(`/episode-production/${projectId}/episode/${episodeId}`)
+      await helper.navigateTo(`/episode-production/${projectId}/studio/${episodeId}`)
       await page.waitForLoadState('networkidle')
-      console.log('[测试] 已进入剧集工作台')
+      console.log('[测试] 已进入剧集工作室（Studio）')
     } else {
       throw new Error('无法获取项目/剧集 ID，无法继续测试')
     }
