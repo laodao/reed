@@ -608,13 +608,16 @@ async function handleGenerateScenes(
     // 3. 构建资产花名册
     const roster = await buildAssetRosterForProject(db.dataSource, episode.projectId)
 
-    // 4. 调用 AI 生成场景（带 binding 引用）
+    // 4. 调用 AI 生成场景（带 binding 引用）。
+    //    拆分输入优先剧本正文（含对白/动作，比梗概信息全）；正文为空才回退梗概。
     const scriptGenerator = EpisodeScriptGenerator.getInstance()
+    const useContent = !!script.scriptContent?.trim()
     const generatedScenes = await scriptGenerator.generateScenesFromSynopsis(
-      script.synopsis,
+      useContent ? script.scriptContent! : script.synopsis,
       roster,
       providerConfigId,
-      modelId
+      modelId,
+      { source: useContent ? 'scriptContent' : 'synopsis' }
     )
 
     // 5+6. 复核修复 P1-6：删旧场景与建新场景并入同一事务（同 generate-script）

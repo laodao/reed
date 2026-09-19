@@ -20,7 +20,8 @@
         >
           <el-icon class="item-icon"><User /></el-icon>
           <span class="item-name">{{ nameOf(c) }}</span>
-          <el-tag v-if="isDone(c)" size="small" effect="light" type="success" round class="done-tag">已定妆</el-tag>
+          <el-tag v-if="statusOf(c) === 'done'" size="small" effect="light" type="success" round class="done-tag">已定妆</el-tag>
+          <el-tag v-else-if="statusOf(c) === 'unconfirmed'" size="small" effect="plain" type="warning" round class="done-tag">未确认</el-tag>
           <el-tag v-else size="small" effect="plain" type="info" round class="done-tag">待生成</el-tag>
         </div>
       </div>
@@ -37,7 +38,8 @@
         >
           <el-icon class="item-icon"><Location /></el-icon>
           <span class="item-name">{{ nameOf(l) }}</span>
-          <el-tag v-if="isDone(l)" size="small" effect="light" type="success" round class="done-tag">已定妆</el-tag>
+          <el-tag v-if="statusOf(l) === 'done'" size="small" effect="light" type="success" round class="done-tag">已定妆</el-tag>
+          <el-tag v-else-if="statusOf(l) === 'unconfirmed'" size="small" effect="plain" type="warning" round class="done-tag">未确认</el-tag>
           <el-tag v-else size="small" effect="plain" type="info" round class="done-tag">待生成</el-tag>
         </div>
       </div>
@@ -54,7 +56,8 @@
         >
           <el-icon class="item-icon"><Goods /></el-icon>
           <span class="item-name">{{ nameOf(i) }}</span>
-          <el-tag v-if="isDone(i)" size="small" effect="light" type="success" round class="done-tag">已定妆</el-tag>
+          <el-tag v-if="statusOf(i) === 'done'" size="small" effect="light" type="success" round class="done-tag">已定妆</el-tag>
+          <el-tag v-else-if="statusOf(i) === 'unconfirmed'" size="small" effect="plain" type="warning" round class="done-tag">未确认</el-tag>
           <el-tag v-else size="small" effect="plain" type="info" round class="done-tag">待生成</el-tag>
         </div>
       </div>
@@ -68,8 +71,9 @@
 
 <script setup lang="ts">
 /**
- * M3 资产页 · 左侧资产树（角色/地点/物品分组 + 选中态 + 已定妆标注）。
- * "已定妆"判定：该资产 binding 行有主图标记（由父级通过 doneMap 传入，或用 referenceImagePath 兜底）。
+ * M3 资产页 · 左侧资产树（角色/地点/物品分组 + 选中态 + 定妆三态标注）。
+ * 三态判定（与 AssetGallery 图集导航口径一致）：有主图且 confirmed=1 → 已定妆；
+ * 有主图未确认 → 未确认；无主图 → 待生成。
  */
 import { computed } from 'vue'
 import { Plus, User, Location, Goods } from '@element-plus/icons-vue'
@@ -94,10 +98,13 @@ function nameOf(binding: any): string {
   return binding.name || binding.standaloneName || binding.overrideName || binding.locationName || binding.itemName || '(未命名)'
 }
 
-function isDone(binding: any): boolean {
-  // projectSummary 的 BindingSummary 带 hasMain；raw 行用 referenceImagePath 兜底
-  if (typeof binding.hasMain === 'boolean') return binding.hasMain
-  return !!(binding as any).referenceImagePath
+function statusOf(binding: any): 'done' | 'unconfirmed' | 'pending' {
+  // projectSummary 的 BindingSummary 带 hasMain/mainConfirmed；raw 行用 referenceImagePath 兜底
+  const hasMain = typeof binding.hasMain === 'boolean' ? binding.hasMain : !!(binding as any).referenceImagePath
+  if (!hasMain) return 'pending'
+  if (typeof binding.mainConfirmed === 'boolean') return binding.mainConfirmed ? 'done' : 'unconfirmed'
+  // raw 行没有 mainConfirmed 字段：保持旧行为，有主图即视为已定妆
+  return 'done'
 }
 
 const empty = computed(() =>

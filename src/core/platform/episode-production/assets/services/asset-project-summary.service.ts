@@ -26,6 +26,8 @@ export interface BindingSummary {
   name: string
   sourceType: 'linked_lw' | 'standalone'
   hasMain: boolean
+  /** 主图已确认定妆（mainImg.confirmed === 1）；配合 hasMain 供前端区分「已定妆/未确认/待生成」三态 */
+  mainConfirmed: boolean
   /** 已有主图时给前端的缩略图路径（thumbnail 优先，否则 imagePath；URL 由前端 toImageUrl 适配双端） */
   mainImagePath?: string
   galleryCount: number
@@ -352,6 +354,7 @@ export class AssetProjectSummaryService {
       name: binding.name,
       sourceType: binding.sourceType,
       hasMain: !!mainImg,
+      mainConfirmed: mainImg?.confirmed === 1,
       mainImagePath,
       galleryCount,
       categoryCounts,

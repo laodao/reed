@@ -11,7 +11,7 @@
         >被 {{ impact.keyframes }} 个关键帧引用 / {{ impact.storyboards }} 个分镜使用</span>
       </div>
       <div class="top-actions">
-        <el-button text size="small" :disabled="!assetId" @click="showAddOutfit = true">
+        <el-button v-if="kind === 'character'" text size="small" :disabled="!assetId" @click="showAddOutfit = true">
           <el-icon><Plus /></el-icon>
           新增正面全身
         </el-button>
@@ -19,7 +19,7 @@
           <el-icon><MagicStick /></el-icon>
           一键生成
         </el-button>
-        <el-button text size="small" :disabled="!assetId" @click="showLinkPortrait = true">
+        <el-button v-if="kind === 'character'" text size="small" :disabled="!assetId" @click="showLinkPortrait = true">
           <el-icon><Link /></el-icon>
           关联人像
         </el-button>
@@ -104,6 +104,7 @@
           </div>
           <div v-if="generating" class="gen-overlay">
             <el-icon class="is-loading" :size="28"><Loading /></el-icon>
+            <span v-if="deriveProgress" class="gen-progress">派生中 {{ deriveProgress.current }}/{{ deriveProgress.total }}</span>
           </div>
           <el-button
             v-if="selectedImage?.imagePath"
@@ -128,7 +129,7 @@
           />
           <div v-if="selectedImage?.imagePath && selectedImage?.confirmed === 1" class="confirmed-chip">✓ 已确认定妆</div>
           <el-button
-            v-if="isMainSlot && selectedImage?.imagePath"
+            v-if="selectedImage?.imagePath"
             class="preview-confirm"
             :type="selectedImage?.confirmed === 1 ? 'success' : 'primary'"
             :plain="selectedImage?.confirmed === 1"
@@ -258,6 +259,8 @@ const impact = ref<{ keyframes: number; storyboards: number; keyframeIds: string
 })
 /** 「确认定妆 / 撤销确认」切换中 */
 const confirmToggling = ref(false)
+/** 一键派生进度（串行逐张生成时在大图区显示「派生中 x/N」，参照分镜页 cogenProgress） */
+const deriveProgress = ref<{ current: number; total: number } | null>(null)
 
 /** 下载当前选中图（PC 保存对话框复制 / Web 浏览器下载，双端兼容） */
 const { downloadImage } = useAssetImageActions()
@@ -584,8 +587,9 @@ async function refreshImpact(): Promise<void> {
 }
 
 /**
- * S-05：确认 / 撤销确认定妆图。
- * 确认后若该资产已被关键帧引用 → 弹窗询问是否级联重生这些关键帧。
+ * S-05：确认 / 撤销确认定妆图（任意槽位有图均可操作）。
+ * 仅主图确认时，若该资产已被关键帧引用 → 弹窗询问是否级联重生这些关键帧；
+ * 派生图确认只做 setConfirmed，不触发级联。
  */
 async function onToggleConfirm(): Promise<void> {
   const img = selectedImage.value
@@ -607,7 +611,7 @@ async function onToggleConfirm(): Promise<void> {
     const cur = images.value.find(i => i.id === img.id)
     if (cur) cur.confirmed = next
     ElMessage.success(next === 1 ? '已确认定妆，关键帧将选用该图作参考' : '已撤销确认')
-    if (next === 1) await maybeCascadeRegenerate()
+    if (next === 1 && isMainSlot.value) await maybeCascadeRegenerate()
     await refreshImpact()
   } catch (e: any) {
     ElMessage.error(e?.message || '操作失败')
@@ -677,6 +681,7 @@ function onDownloadImage(): void {
 async function onBatchDerive(labels: string[]): Promise<void> {
   if (!props.assetId || labels.length === 0 || generating.value) return
   generating.value = true
+  deriveProgress.value = { current: 0, total: labels.length }
   const newImageIds: string[] = []
   try {
     const root = (window as any).electronAPI?.episodeProduction?.asset
@@ -685,6 +690,7 @@ async function onBatchDerive(labels: string[]): Promise<void> {
     for (const label of labels) {
       const item = navItems.value.find(i => i.label === label)
       if (!item) continue
+      deriveProgress.value = { current: results.length + 1, total: labels.length }
       try {
         const r = await root.derive.single({
           assetType: props.kind,
@@ -709,6 +715,7 @@ async function onBatchDerive(labels: string[]): Promise<void> {
     ElMessage.error(e?.message || '批量生成失败')
   } finally {
     generating.value = false
+    deriveProgress.value = null
   }
   await promptConfirmDerived(newImageIds)
 }
@@ -944,7 +951,9 @@ onActivated(() => {
     position: absolute; inset: 0;
     background: rgba(0,0,0,0.4);
     display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 8px;
     color: #fff; font-size: 28px;
+    .gen-progress { font-size: 13px; }
   }
   .preview-del {
     position: absolute;

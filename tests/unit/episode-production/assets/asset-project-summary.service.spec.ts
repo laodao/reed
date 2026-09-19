@@ -181,6 +181,54 @@ describe('AssetProjectSummaryService.summarizeProject 显示名投影', () => {
     expect(summary.items[0].name).toBe('佩剑')
   })
 
+  it('主图确认态透出：confirmed=1 → mainConfirmed=true，未确认/无主图 → false', async () => {
+    const charRepo = ds.getRepository(CharacterBindingEntity)
+    const imgRepo = ds.getRepository(AssetImageEntity)
+
+    await charRepo.save([
+      {
+        id: 'cb_confirmed',
+        projectId: 'p1',
+        sourceType: 'standalone',
+        standaloneName: '已定妆',
+        voiceConfig: '{}', createdAt: new Date(), updatedAt: new Date(),
+      } as any,
+      {
+        id: 'cb_unconfirmed',
+        projectId: 'p1',
+        sourceType: 'standalone',
+        standaloneName: '未确认',
+        voiceConfig: '{}', createdAt: new Date(), updatedAt: new Date(),
+      } as any,
+      {
+        id: 'cb_nomimg',
+        projectId: 'p1',
+        sourceType: 'standalone',
+        standaloneName: '待生成',
+        voiceConfig: '{}', createdAt: new Date(), updatedAt: new Date(),
+      } as any,
+    ])
+    const now = new Date()
+    await imgRepo.save([
+      {
+        id: 'img_1', projectId: 'p1', assetType: 'character', assetId: 'cb_confirmed',
+        category: 'main', label: null, imagePath: 'a.png', isMain: 1, confirmed: 1,
+        prompt: '', createdAt: now, updatedAt: now,
+      } as any,
+      {
+        id: 'img_2', projectId: 'p1', assetType: 'character', assetId: 'cb_unconfirmed',
+        category: 'main', label: null, imagePath: 'b.png', isMain: 1, confirmed: 0,
+        prompt: '', createdAt: now, updatedAt: now,
+      } as any,
+    ])
+
+    const summary = await svc.summarizeProject('p1')
+    const byId = Object.fromEntries(summary.characters.map((c) => [c.bindingId, c]))
+    expect(byId['cb_confirmed']).toMatchObject({ hasMain: true, mainConfirmed: true })
+    expect(byId['cb_unconfirmed']).toMatchObject({ hasMain: true, mainConfirmed: false })
+    expect(byId['cb_nomimg']).toMatchObject({ hasMain: false, mainConfirmed: false })
+  })
+
   it('多 binding 共享同一 LW：批量预取只查一次（间接通过结果验证）', async () => {
     const lwRepo = ds.getRepository(LwCharacterEntity)
     const charRepo = ds.getRepository(CharacterBindingEntity)

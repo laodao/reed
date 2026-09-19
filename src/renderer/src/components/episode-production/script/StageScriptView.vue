@@ -10,7 +10,24 @@
         </el-tag>
       </div>
       <div class="tb-right">
-        <el-button text size="small" :loading="identifying" @click="onIdentifyEntities">
+        <el-button
+          text
+          size="small"
+          :disabled="!hasScript"
+          :loading="approving"
+          @click="onToggleApprove"
+        >
+          <el-icon><CircleCheck /></el-icon>
+          {{ approved ? '取消定稿' : '定稿' }}
+        </el-button>
+        <el-button
+          text
+          size="small"
+          :loading="identifying"
+          :disabled="!hasIdentifyInput"
+          :title="hasIdentifyInput ? '' : '该集既无已生成剧本也无导入内容，无法识别要素'"
+          @click="onIdentifyEntities"
+        >
           <el-icon><Aim /></el-icon>
           识别要素
         </el-button>
@@ -92,7 +109,7 @@
 <script setup lang="ts">
 /**
  * M2 剧本页（tab 宿主内的完整左+中央工作区）。
- * 左侧：场次导航；中央：场景卡 / 空态。工具条：AI续写、追加正文、剧本全文、重新拆分。
+ * 左侧：场次导航；中央：场景卡 / 空态。工具条：定稿/取消定稿、识别要素、AI续写、追加正文、剧本全文、重新拆分。
  * 数据链路：getEpisode → scriptId → getScript + listScenes。agent data-changed 时刷新。
  *
  * 「继续增加剧本」：剧本常常没写完就先开机制作，后续要陆续往里加内容。
@@ -104,6 +121,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Aim,
+  CircleCheck,
   Document,
   DocumentAdd,
   MagicStick,
@@ -120,12 +138,15 @@ const props = defineProps<{
   episodeId: string
   projectId: string
   contextHint?: string | null
+  /** 外部（EpisodeStudio agent data-changed）递增触发本页全量刷新 */
+  refreshTick?: number
 }>()
 
 const emit = defineEmits<{
   (e: 'dataChanged', sections: string[]): void
 }>()
 
+const episode = ref<any>(null)
 const script = ref<any>(null)
 const scenes = ref<any[]>([])
 const selectedScene = ref<any>(null)
@@ -133,6 +154,8 @@ const generating = ref(false)
 const regenerating = ref(false)
 /** H9：「识别要素」手动入口（batchIdentifyEntities，需要项目 scriptModel） */
 const identifying = ref(false)
+/** 定稿/取消定稿 切换中 */
+const approving = ref(false)
 /** S-06：正在局部重拆的场景 id（ep:regenerate-scene） */
 const regeneratingSceneId = ref<string | null>(null)
 
@@ -145,10 +168,16 @@ const textVisible = ref(false)
 const hasScript = computed(() => !!script.value)
 const approved = computed(() => script.value?.status === 'approved')
 const selectedSceneId = computed(() => selectedScene.value?.id ?? null)
+/** 识别要素输入源：已生成剧本正文 或 剧集导入内容（与后端 batchIdentifyEntities 口径一致） */
+const hasIdentifyInput = computed(() => {
+  if (script.value?.scriptContent?.trim()) return true
+  return !!episode.value?.uploadedContent?.trim()
+})
 
 async function load(): Promise<void> {
-  if (!props.episodeId) { script.value = null; scenes.value = []; selectedScene.value = null; return }
+  if (!props.episodeId) { episode.value = null; script.value = null; scenes.value = []; selectedScene.value = null; return }
   const ep = await window.electronAPI.episodeProduction.getEpisode(props.episodeId)
+  episode.value = ep.success ? ep.data : null
   if (!ep.success || !ep.data?.scriptId) { script.value = null; scenes.value = []; selectedScene.value = null; return }
   const scriptResp = await window.electronAPI.episodeProduction.getScript(ep.data.scriptId)
   if (scriptResp.success) script.value = scriptResp.data
@@ -190,13 +219,37 @@ async function onGenerateScript(): Promise<void> {
   }
 }
 
+/**
+ * 定稿 / 取消定稿：无定稿专用 IPC，走通用 updateScript（同 StageContentScriptView onApproveScript）。
+ * 定稿 → status='approved'；取消定稿 → 回 'reviewing'。
+ */
+async function onToggleApprove(): Promise<void> {
+  if (!script.value?.id || approving.value) return
+  approving.value = true
+  try {
+    const next = approved.value ? 'reviewing' : 'approved'
+    const resp = await window.electronAPI.episodeProduction.updateScript(script.value.id, { status: next })
+    if (resp?.success) {
+      ElMessage.success(next === 'approved' ? '剧本已定稿' : '已取消定稿')
+      await load()
+      emit('dataChanged', ['script'])
+    } else {
+      ElMessage.error(resp?.error || (next === 'approved' ? '定稿失败' : '取消定稿失败'))
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || '操作失败')
+  } finally {
+    approving.value = false
+  }
+}
+
 async function onRegenerate(): Promise<void> {
   if (!script.value?.id || regenerating.value) return
   // 覆盖式操作：会删掉已有场次（连带其分镜 / 关键帧 / 视频），必须先确认
   try {
     await ElMessageBox.confirm(
-      `重新拆分将**删除当前全部 ${scenes.value.length} 个场次**并重新生成，` +
-        '这些场次上已有的分镜 / 关键帧 / 视频也会一并丢失。\n\n' +
+      `重新拆分将**删除当前全部 ${scenes.value.length} 个场次**，并**按剧本正文重新拆分**` +
+        '（无正文时回退梗概），这些场次上已有的分镜 / 关键帧 / 视频也会一并丢失。\n\n' +
         '如果你只是想接着往下增加剧本，请改用「AI 续写」或「追加正文」。',
       '重新拆分场景（覆盖式）',
       {
@@ -249,9 +302,14 @@ async function onIdentifyEntities(): Promise<void> {
     })
     if (r.success) {
       const d = r.data as { characters?: number; locations?: number; items?: number } | undefined
-      ElMessage.success(
-        `要素识别完成：角色 ${d?.characters ?? 0}、地点 ${d?.locations ?? 0}、物品 ${d?.items ?? 0}`,
-      )
+      const total = (d?.characters ?? 0) + (d?.locations ?? 0) + (d?.items ?? 0)
+      if (total === 0) {
+        ElMessage.warning('未识别到要素：请确认剧本/导入内容中包含角色、地点、物品描述')
+      } else {
+        ElMessage.success(
+          `要素识别完成：角色 ${d?.characters ?? 0}、地点 ${d?.locations ?? 0}、物品 ${d?.items ?? 0}`,
+        )
+      }
       emit('dataChanged', ['assets'])
     } else {
       ElMessage.error(r.error || '要素识别失败')
@@ -321,6 +379,8 @@ async function onAppended(payload: { addedSceneCount: number }): Promise<void> {
 }
 
 watch(() => props.episodeId, () => { selectedScene.value = null; void load() })
+// 外部（EpisodeStudio agent data-changed）通过 refreshTick 触发全量刷新
+watch(() => props.refreshTick, () => { if (props.refreshTick != null) void load() })
 onMounted(() => void load())
 
 </script>

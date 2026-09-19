@@ -1096,17 +1096,21 @@ export class EpisodeScriptGenerator {
   }
 
   /**
-   * 从章节梗概拆分场景（spec §4.1 强引用）
-   * 用于 handleGenerateScenes 场景——已有 synopsis，仅需生成结构化场景数据。
+   * 从章节梗概 / 剧本正文拆分场景（spec §4.1 强引用）
+   * 用于 handleGenerateScenes 场景——已有 synopsis / scriptContent，仅需生成结构化场景数据。
+   * options.source：'scriptContent' 时提示词按「剧本正文」语义引导（正文含对白/动作，拆分更准）；
+   * 默认 'synopsis' 保持既有调用兼容。
    */
   async generateScenesFromSynopsis(
     synopsis: string,
     roster: AssetRosterForScript,
     providerConfigId?: string,
     modelId?: string,
+    options?: { source?: 'synopsis' | 'scriptContent' },
   ): Promise<GeneratedScene[]> {
+    const sourceLabel = options?.source === 'scriptContent' ? '剧本正文' : '章节梗概'
     // 简化提示词：只输出场景数据，不需要剧本正文
-    const prompt = `你是一位专业的影视编剧。请将以下章节梗概拆分为结构化的场景数据。
+    const prompt = `你是一位专业的影视编剧。请将以下${sourceLabel}拆分为结构化的场景数据。
 
 ## 输出要求
 
@@ -1206,7 +1210,7 @@ ${formatRosterList(roster.locations)}
 
 ${formatRosterList(roster.items)}
 
-## 章节梗概
+## ${sourceLabel}
 
 ${synopsis}`
 

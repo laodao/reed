@@ -343,6 +343,8 @@ async function handleBatchCreateEpisodes(
 /**
  * 批量识别资产：对指定剧集逐集跑 AI 识别角色/地点/物品，创建 project 级 binding（跨集去重）。
  * 复用 identifyCharacters/Locations/Items + createAndBindUploadedEntities（含去重）。
+ * 输入源：优先该集已生成剧本的正文（episode_scripts.scriptContent），无则回退 uploadedContent；
+ * 两者都无的剧集跳过，details 记录每集实际输入源 / skip 原因。
  */
 async function handleBatchIdentifyEntities(
   _event: any,
@@ -365,15 +367,29 @@ async function handleBatchIdentifyEntities(
     let totalChars = 0
     let totalLocs = 0
     let totalItems = 0
+    const details: Array<{ episodeId: string; source?: 'scriptContent' | 'uploadedContent'; skipped?: boolean; reason?: string }> = []
 
     for (const episodeId of req.episodeIds) {
       const episode = await db.videoEpisodes.getById(episodeId)
-      if (!episode || episode.sourceType !== 'uploaded' || !episode.uploadedContent) continue
+      if (!episode) {
+        details.push({ episodeId, skipped: true, reason: '剧集不存在' })
+        continue
+      }
+
+      // 输入源：剧本正文优先，回退导入内容
+      const script = await db.episodeScripts?.getByEpisodeId?.(episodeId).catch(() => null)
+      const useScript = !!script?.scriptContent?.trim()
+      const content = useScript ? script!.scriptContent! : episode.uploadedContent?.trim() ? episode.uploadedContent : null
+      if (!content) {
+        details.push({ episodeId, skipped: true, reason: '无剧本正文且无导入内容' })
+        continue
+      }
+      const source = useScript ? 'scriptContent' as const : 'uploadedContent' as const
 
       const [characters, locations, items] = await Promise.all([
-        aiService.identifyCharacters(episode.uploadedContent, req.providerConfigId, req.modelId),
-        aiService.identifyLocations(episode.uploadedContent, req.providerConfigId, req.modelId),
-        aiService.identifyItems(episode.uploadedContent, req.providerConfigId, req.modelId),
+        aiService.identifyCharacters(content, req.providerConfigId, req.modelId),
+        aiService.identifyLocations(content, req.providerConfigId, req.modelId),
+        aiService.identifyItems(content, req.providerConfigId, req.modelId),
       ])
 
       // createAndBindUploadedEntities 内部跨集去重（同 project 同名只建一份）
@@ -389,11 +405,12 @@ async function handleBatchIdentifyEntities(
       totalLocs += locations?.length ?? 0
       totalItems += items?.length ?? 0
       processed++
+      details.push({ episodeId, source })
     }
 
     return {
       success: true,
-      data: { episodes: processed, characters: totalChars, locations: totalLocs, items: totalItems },
+      data: { episodes: processed, characters: totalChars, locations: totalLocs, items: totalItems, details },
     }
   } catch (e: any) {
     console.error('[handleBatchIdentifyEntities] 异常:', e)

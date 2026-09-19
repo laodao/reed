@@ -68,6 +68,8 @@ const props = defineProps<{
   contextHint?: string | null
   /** 外部（如 Agent 助手"去查看"）指定要定位的资产 */
   externalAsset?: { kind: 'character' | 'location' | 'item'; id: string; name: string } | null
+  /** 外部（EpisodeStudio agent data-changed）递增触发本页全量刷新 */
+  refreshTick?: number
 }>()
 
 const summary = reactive<{ characters: any[]; locations: any[]; items: any[] }>({ characters: [], locations: [], items: [] })
@@ -158,6 +160,8 @@ async function submitCreate(): Promise<void> {
 }
 
 watch(() => [props.projectId, props.episodeId], () => void load())
+// 外部（EpisodeStudio agent data-changed）通过 refreshTick 触发全量刷新
+watch(() => props.refreshTick, () => { if (props.refreshTick != null) void load() })
 // Agent 助手"去查看"跳转：按外部指定资产定位选中
 watch(() => props.externalAsset, (asset) => {
   if (!asset?.id) return
