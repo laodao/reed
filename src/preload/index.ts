@@ -1267,6 +1267,14 @@ const electronAPI = {
       conflicts: (kbId: string) => ipcRenderer.invoke('kb:brain:conflicts', { kbId }),
       resolveConflict: (p: { atomId: string; verdict: 'supported' | 'superseded'; supersededByAtomId?: string }) =>
         ipcRenderer.invoke('kb:brain:resolve-conflict', p),
+      research: (question: string) => ipcRenderer.invoke('kb:brain:research', { question }),
+      exportSkill: (noteId: string) => ipcRenderer.invoke('kb:brain:export-skill', { noteId }),
+      taste: (kbId: string) => ipcRenderer.invoke('kb:brain:taste', { kbId }),
+      onResearch: (cb: (data: { phase: string; detail: string }) => void) => {
+        const h = (_e: unknown, data: { phase: string; detail: string }): void => cb(data)
+        ipcRenderer.on('kb:brain:research', h)
+        return () => ipcRenderer.removeListener('kb:brain:research', h)
+      },
       reviewNext: (p: { kbId: string; limit?: number }) => ipcRenderer.invoke('kb:brain:review-next', p),
       reviewGrade: (p: { kbId: string; noteId: string; rating: 1 | 2 | 3 | 4 }) => ipcRenderer.invoke('kb:brain:review-grade', p),
       onProgress: (cb: (data: { documentId: string; phase: string; progress: number }) => void) => {

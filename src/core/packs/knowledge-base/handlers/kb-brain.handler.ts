@@ -10,6 +10,7 @@ import { KnowledgeBaseService } from '@core/platform/services/knowledge-base.ser
 import { getKbBrainPanelService } from '@core/platform/services/kb-brain/brain-panel.service'
 import { KbDistillService } from '@core/platform/services/kb-brain/distill.service'
 import { KbBrainFsrsService } from '@core/platform/services/kb-brain/fsrs.service'
+import { KbResearchService } from '@core/platform/services/kb-brain/research.service'
 import type { SearchResult } from '@shared/types/knowledge-base.types'
 
 let kbService: KnowledgeBaseService | null = null
@@ -121,6 +122,29 @@ export function registerKbBrainHandlers(): void {
   ipcBridge.handle('kb:brain:review-grade', async (_e, p: { kbId: string; noteId: string; rating: 1 | 2 | 3 | 4 }) =>
     fsrs.grade(p.kbId, p.noteId, p.rating),
   )
+
+  // M4 深度研究流（分钟级多次 LLM；invoke 长等待 + research 事件推送过程）
+  let researchBusy = false
+  ipcBridge.handle('kb:brain:research', async (_e, p: { question: string }) => {
+    if (researchBusy) return { success: false, error: '研究进行中，请稍候' }
+    if (!p?.question?.trim()) return { success: false, error: '研究问题不能为空' }
+    researchBusy = true
+    try {
+      const svc2 = new KbResearchService()
+      const report = await svc2.research(p.question)
+      return { success: true, data: report }
+    } catch (e) {
+      return { success: false, error: e instanceof Error ? e.message : String(e) }
+    } finally {
+      researchBusy = false
+    }
+  })
+
+  // M4 技能导出（published 卡 → SKILL.md 内容，前端 saveBlobAs 落盘）
+  ipcBridge.handle('kb:brain:export-skill', (_e, p: { noteId: string }) => panel.exportSkill(p.noteId))
+
+  // M4 品味侧写（taste 计算+落 brain_state）
+  ipcBridge.handle('kb:brain:taste', (_e, p: { kbId: string }) => panel.computeTaste(p.kbId))
 
   // brain 检索直通（论断页签的调试检索 / 面板预览）
   ipcBridge.handle(

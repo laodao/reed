@@ -108,8 +108,12 @@ async function queryKbBrain(req: StructuredKnowledgeQuery, deps?: KbBrainProvide
   return segments
 }
 
-/** 缺省 brain query（模块级缓存；deps 内现取 manager 防陈旧闭包） */
+/** 缺省 brain query（模块级缓存；deps 内现取 manager 防陈旧闭包）。
+ *  导出供深度研究流复用同一装配（架构统一：不为不同模块写第二份 deps 组装）。 */
 let cachedQuery: BrainQueryService | null = null
+export function createDefaultBrainQuery(): BrainQueryService | null {
+  return providerBrainQuery()
+}
 function providerBrainQuery(): BrainQueryService | null {
   if (cachedQuery) return cachedQuery
   const db = getCoreDatabaseManager()

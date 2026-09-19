@@ -207,9 +207,20 @@ export class BrainQueryService {
       // 同源去重：chunk 命中某 atom 的 sourceChunkId → 不丢弃，降级为该 atom 的 context（§5.1）
       const chunkContentById = new Map(parsed.filter((p) => p.result.kind === 'chunk').map((p) => [p.result.chunkId, p.result.content]))
       const vecRawIds = new Set(vecHits.map((h) => h.id))
+      // M4 软衰减（呈现层，§6.3）：细节型论断随时间降权、常用论断增强——
+      // boost = 1/(1+ageDays/180) * (1+ln(1+useCount))，作用于排序键（fused 不变，score 不变）
+      const atomIdList = [...new Set(parsed.filter((p) => p.result.kind === 'atom').map((p) => (p.result.atom as { id: string }).id))]
+      const atomCreatedAt = new Map<string, Date>()
+      const atomUseCount = new Map<string, number>()
+      if (atomIdList.length > 0 && this.deps.atoms) {
+        for (const a of await this.deps.atoms.findByIds(atomIdList)) {
+          atomCreatedAt.set(a.id, a.createdAt ?? new Date())
+          atomUseCount.set(a.id, a.useCount)
+        }
+      }
       const deduped = parsed
         .filter((p) => !(p.result.kind === 'chunk' && sourceChunkIdsOfAtoms.has(p.result.chunkId)))
-        .slice(0, topK)
+        .map((p) => ({ ...p, sortKey: p.entry.fused }))
         .map((p) => {
           if (p.result.kind === 'atom') {
             const srcChunk = atomSourceChunk.get((p.result.atom as { id: string }).id)
@@ -217,20 +228,33 @@ export class BrainQueryService {
           }
           // scoreKind：向量通道命中的（entry.id 即裸 id，与 vecHits 同键）
           p.result.scoreKind = vecRawIds.has(p.entry.id) ? 'cosine' : 'bm25'
-          return p.result
+          return p
         })
+      // M4 软衰减（呈现层，§6.3）：排序键 = fused × boost；boost = 1/(1+ageDays/180) × (1+ln(1+useCount))——
+      // 细节随时间衰减、常用论断增强。注意：180 天参数在 RRF 分数尺度下可越位多名（非"微降"），需实测调优
+      if (atomIdList.length >= 2) {
+        const boostOf = (item: (typeof parsed)[number]): number => {
+          if (item.result.kind !== 'atom' || !item.result.atom) return 1
+          const created = atomCreatedAt.get(item.result.atom.id)
+          const ageDays = created ? Math.max(0, (Date.now() - created.getTime()) / 86400000) : 0
+          const useBoost = 1 + Math.log(1 + (atomUseCount.get(item.result.atom.id) ?? 0))
+          return (1 / (1 + ageDays / 180)) * useBoost
+        }
+        deduped.sort((x, y) => y.sortKey * boostOf(y) - x.sortKey * boostOf(x))
+      }
+      const finalRows = deduped.slice(0, topK).map((p) => p.result)
 
       // M2 图路补充：综合型查询把 PPR 邻域论断并入尾部位（补多跳关联；主路不动）
-      if (req.intent === 'synthesize' && deduped.length < topK) {
+      if (req.intent === 'synthesize' && finalRows.length < topK) {
         try {
           const supplement = await this.graphSupplement(kbId, req.query, topK - deduped.length)
-          const seen = new Set(deduped.map((r) => r.chunkId))
+          const seen = new Set(finalRows.map((r) => r.chunkId))
           for (const s of supplement) {
-            if (deduped.length >= topK) break
+            if (finalRows.length >= topK) break
             if (seen.has(s.chunkId)) continue
             if (docIdFilter && !docIdFilter.has(s.documentId)) continue
             s.scoreKind = 'ppr'
-            deduped.push(s)
+            finalRows.push(s)
           }
         } catch {
           /* 图路失败不影响主路 */
@@ -238,9 +262,9 @@ export class BrainQueryService {
       }
 
       // M3 CRAG 纠错（§8.1）：判级 incorrect → 改写重试一次 + 图路兜底；失败/ambiguous 降级原序
-      if (req.cragEnabled && this.deps.cragLlm && deduped.length > 0) {
+      if (req.cragEnabled && this.deps.cragLlm && finalRows.length > 0) {
         try {
-          const verdict = await this.cragJudge(req.query, deduped.slice(0, 3))
+          const verdict = await this.cragJudge(req.query, finalRows.slice(0, 3))
           if (verdict.grade === 'incorrect' && verdict.rewrittenQuery) {
             const retry = await this.search({ ...req, query: verdict.rewrittenQuery, cragEnabled: false, intent: 'synthesize' })
             if (retry.success && retry.data && retry.data.length > 0) {
@@ -253,12 +277,12 @@ export class BrainQueryService {
       }
 
       /* ---------- 5. 使用即再巩固（fire-and-forget） ---------- */
-      const atomIds = deduped.filter((r) => r.kind === 'atom').map((r) => (r.atom as { id: string }).id)
-      const noteIds = deduped.filter((r) => r.kind === 'note').map((r) => (r.note as { id: string }).id)
+      const atomIds = finalRows.filter((r) => r.kind === 'atom').map((r) => (r.atom as { id: string }).id)
+      const noteIds = finalRows.filter((r) => r.kind === 'note').map((r) => (r.note as { id: string }).id)
       if (atomIds.length > 0) void this.deps.atoms.incUse(atomIds).catch(() => {})
       if (noteIds.length > 0) void this.deps.notes.incCited(noteIds).catch(() => {})
 
-      return { success: true, data: deduped }
+      return { success: true, data: finalRows }
     } catch (e) {
       return { success: false, error: e instanceof Error ? e.message : String(e) }
     }

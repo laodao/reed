@@ -176,6 +176,69 @@ export class KbBrainPanelService {
     return { success: true, data: { atomId: row.id } }
   }
 
+  /** M4 技能导出：published 卡 → SKILL.md（YAML frontmatter + markdown，生态互通格式） */
+  async exportSkill(noteId: string): Promise<{ success: boolean; data?: { fileName: string; content: string }; error?: string }> {
+    const db = getCoreDatabaseManager()
+    if (!db.kbNotes) return { success: false, error: '知识大脑未启用（旧库）' }
+    const note = await db.kbNotes.findById(noteId)
+    if (!note) return { success: false, error: '卡片不存在' }
+    if (note.status !== 'published') return { success: false, error: '仅已批准的卡片可导出' }
+    let evidenceRefs: string[] = []
+    try {
+      evidenceRefs = (JSON.parse(note.evidence) as Array<Record<string, unknown>>).map((e) => String(e.atomId ?? e.noteId ?? '')).filter(Boolean)
+    } catch {
+      evidenceRefs = []
+    }
+    // YAML 标量安全（盲审 P2）：JSON.stringify 输出是合法的 YAML 双引号标量（单行、控制字符已转义）
+    const safeName = note.title.replace(/[\\/:*?"<>|[\]{}'&#\s]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'untitled'
+    const frontmatter = [
+      '---',
+      `name: ${JSON.stringify(safeName)}`,
+      `description: ${JSON.stringify(note.description.replace(/\n/g, ' ').slice(0, 200))}`,
+      `version: ${note.version}`,
+      `origin: kb-brain/${note.type}`,
+      `evidence-count: ${evidenceRefs.length}`,
+      '---',
+    ].join('\n')
+    const body = [
+      frontmatter,
+      '',
+      `# ${note.title}`,
+      '',
+      note.body || note.description,
+      '',
+      '## 证据锚点',
+      ...(evidenceRefs.length > 0 ? evidenceRefs.map((id) => `- atom:${id}`) : ['-（无）']),
+    ].join('\n')
+    return { success: true, data: { fileName: `${safeName}.SKILL.md`, content: body } }
+  }
+
+  /** M4 品味侧写（§5.2）：各视角卡产物的 publish/cited 统计 → brain_state.taste */
+  async computeTaste(kbId: string): Promise<{ success: boolean; data?: Record<string, number>; error?: string }> {
+    const db = getCoreDatabaseManager()
+    if (!db.kbNotes || !db.kbAtoms || !db.knowledgeBases) return { success: false, error: '知识大脑未启用' }
+    const lenses = await db.kbNotes.listLens(kbId)
+    const weights: Record<string, number> = {}
+    const rows = (await db.kbAtoms.findByKb(kbId, { limit: 500 })).filter(
+      (a) => a.status === 'supported' || a.status === 'suspected',
+    )
+    for (const lens of lenses) {
+      // 视角权重 = 该视角论断的被用次数之和（human 观感 ×2——用户自己的信号最强）
+      weights[lens.id] = rows
+        .filter((a) => a.lensNoteId === lens.id)
+        .reduce((s, a) => s + a.useCount + (a.origin === 'human' ? 2 : 0), 0)
+    }
+    // 落 brain_state.taste（规范入口：parseBrainState 容错 + stringifyBrainState 统一写）
+    const kb = await db.knowledgeBases.findById(kbId)
+    if (kb) {
+      const { parseBrainState, stringifyBrainState } = await import('./brain-config')
+      const state = parseBrainState(kb.brainState)
+      state.taste = { lensWeights: weights }
+      await db.knowledgeBases.updateBrainState(kbId, stringifyBrainState(state))
+    }
+    return { success: true, data: weights }
+  }
+
   /** 消化率仪表（§8.5 最小版） */
   async stats(kbId: string): Promise<{ success: boolean; data?: Record<string, unknown>; error?: string }> {
     const db = getCoreDatabaseManager()
