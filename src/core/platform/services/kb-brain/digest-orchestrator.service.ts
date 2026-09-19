@@ -9,6 +9,7 @@
  * （并发=1，满足 ≤2 上限更保守）；原子层任何故障不影响现有检索主链路（fail-soft）。
  */
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { getCurrentUserId } from '@core/context/user-context'
 import { KbEntitySummaryService } from './entity-summary.service'
 import { KbDistillService } from './distill.service'
 import { getEventEmitter } from '@core/interfaces/event.interface'
@@ -777,6 +778,7 @@ export function installKbBrainDigest(
     }
   }
   const svc = new KbBrainDigestService(effective)
+  activeService = svc
   installed = true
   // T17：装配通道注册（长文/学习/剧集三宿主消费大脑论断与卡片）
   import('./brain-provider').then(({ installKbBrainProvider }) => installKbBrainProvider())
@@ -794,6 +796,21 @@ export function installKbBrainDigest(
 /** 测试用：卸载安装标记 */
 export function resetKbBrainDigestInstall(): void {
   installed = false
+  activeService = null
+}
+
+let activeService: KbBrainDigestService | null = null
+
+/**
+ * 补消化入口（面板「提取知识」按钮）：对已上传（章节树已存在）的文档直接触发
+ * 消化——开脑之前完成的文档不会再发 completed 事件，这是它们的补上车通道。
+ * 未装配（旧库）/未启用时返回 false。
+ */
+export function enqueueDigestForExisting(documentId: string): boolean {
+  if (!activeService) return false
+  const uid = getCurrentUserId()
+  activeService.enqueueDocument(documentId, uid)
+  return true
 }
 
 /* ==================== 内部工具 ==================== */

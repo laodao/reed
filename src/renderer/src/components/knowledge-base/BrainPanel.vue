@@ -49,6 +49,20 @@
       </div>
     </div>
 
+    <!-- 文档消化：开脑前上传的文档在此补提取 -->
+    <div class="digest-section" v-if="pendingDigestDocs.length > 0">
+      <div class="inbox-title">
+        待提取文档（{{ pendingDigestDocs.length }}）
+        <button type="button" class="digest-all-btn" @click="digestAll">全部提取</button>
+      </div>
+      <div v-for="d in pendingDigestDocs" :key="d.id" class="digest-row">
+        <span class="d-name">{{ d.name }}</span>
+        <button type="button" :disabled="d.busy" @click="digestOne(d)">
+          {{ d.busy ? '提取中…' : '提取知识' }}
+        </button>
+      </div>
+    </div>
+
     <!-- 论断列表 -->
     <table class="brain-table">
       <thead>
@@ -134,17 +148,24 @@ const configDraft = ref<BrainConfig>({
 })
 const configOpen = ref(false)
 const enabled = ref(false)
+interface DigestDoc {
+  id: string
+  name: string
+  busy?: boolean
+}
+const pendingDigestDocs = ref<DigestDoc[]>([])
 
 async function refresh(): Promise<void> {
   if (!props.kbId) return
   const gen = ++requestGen
   const client = (window as any).electronAPI.knowledgeBase.brain
   try {
-  const [cfgRes, statsRes, atomsRes, inboxRes] = await Promise.all([
+  const [cfgRes, statsRes, atomsRes, inboxRes, docRes] = await Promise.all([
     client.getConfig(props.kbId),
     client.stats(props.kbId),
     client.listAtoms({ kbId: props.kbId, pageSize: 50 }),
     client.proposalInbox({ kbId: props.kbId, pageSize: 20 }),
+    client.docStatus(props.kbId),
   ])
   if (gen !== requestGen) return // 过期响应丢弃
   if (cfgRes.success && cfgRes.data) {
@@ -160,6 +181,12 @@ async function refresh(): Promise<void> {
   if (inboxRes.success && inboxRes.data) {
     proposals.value = inboxRes.data.rows as BrainNote[]
     proposalTotal.value = inboxRes.data.total
+  }
+  // 待提取文档：已处理完成但大脑未消化的（开脑前上传的存量）
+  if (docRes.success && docRes.data) {
+    pendingDigestDocs.value = (docRes.data as Array<{ id: string; name: string; brainStatus: string | null; status?: string }>)
+      .filter((d) => d.brainStatus !== 'digested' && d.brainStatus !== 'digesting')
+      .map((d) => ({ id: d.id, name: d.name }))
   }
   } catch (e) {
     console.warn('[BrainPanel] 刷新失败', e)
@@ -187,6 +214,25 @@ async function saveConfig(): Promise<void> {
 
 async function decide(noteId: string, action: 'publish' | 'reject'): Promise<void> {
   await (window as any).electronAPI.knowledgeBase.brain.decideProposal({ noteId, action })
+  await refresh()
+}
+
+async function digestOne(d: DigestDoc): Promise<void> {
+  d.busy = true
+  try {
+    await (window as any).electronAPI.knowledgeBase.brain.digestDocument(d.id)
+  } finally {
+    d.busy = false
+  }
+  await refresh()
+}
+
+async function digestAll(): Promise<void> {
+  for (const d of pendingDigestDocs.value) {
+    d.busy = true
+    await (window as any).electronAPI.knowledgeBase.brain.digestDocument(d.id)
+    d.busy = false
+  }
   await refresh()
 }
 
@@ -291,6 +337,29 @@ defineExpose({ refresh })
   text-align: center;
   opacity: 0.55;
   padding: 16px 0;
+}
+.digest-section {
+  margin: 12px 0;
+}
+.digest-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.d-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.digest-row button,
+.digest-all-btn {
+  cursor: pointer;
+}
+.digest-all-btn {
+  margin-left: 8px;
 }
 .inbox {
   margin-top: 12px;

@@ -1264,6 +1264,8 @@ const electronAPI = {
       search: (p: { knowledgeBaseId: string; query: string; topK?: number; include?: string[]; lensNoteId?: string; intent?: string }) =>
         ipcRenderer.invoke('kb:brain:search', p),
       distill: (p: { kbId: string; documentIds?: string[] }) => ipcRenderer.invoke('kb:brain:distill', p),
+      digestDocument: (documentId: string) => ipcRenderer.invoke('kb:brain:digest-document', { documentId }),
+      docStatus: (kbId: string) => ipcRenderer.invoke('kb:brain:doc-status', { kbId }),
       conflicts: (kbId: string) => ipcRenderer.invoke('kb:brain:conflicts', { kbId }),
       resolveConflict: (p: { atomId: string; verdict: 'supported' | 'superseded'; supersededByAtomId?: string }) =>
         ipcRenderer.invoke('kb:brain:resolve-conflict', p),

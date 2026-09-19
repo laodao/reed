@@ -11,6 +11,7 @@ import { getKbBrainPanelService } from '@core/platform/services/kb-brain/brain-p
 import { KbDistillService } from '@core/platform/services/kb-brain/distill.service'
 import { KbBrainFsrsService } from '@core/platform/services/kb-brain/fsrs.service'
 import { KbResearchService } from '@core/platform/services/kb-brain/research.service'
+import { enqueueDigestForExisting } from '@core/platform/services/kb-brain/digest-orchestrator.service'
 import type { SearchResult } from '@shared/types/knowledge-base.types'
 
 let kbService: KnowledgeBaseService | null = null
@@ -122,6 +123,14 @@ export function registerKbBrainHandlers(): void {
   ipcBridge.handle('kb:brain:review-grade', async (_e, p: { kbId: string; noteId: string; rating: 1 | 2 | 3 | 4 }) =>
     fsrs.grade(p.kbId, p.noteId, p.rating),
   )
+
+  // 补消化：对已上传（开脑前完成）的文档直接触发提取
+  ipcBridge.handle('kb:brain:digest-document', (_e, p: { documentId: string }) => {
+    const ok = enqueueDigestForExisting(p.documentId)
+    return ok
+      ? { success: true, data: { queued: true } }
+      : { success: false, error: '知识大脑未启用或仓储未装配' }
+  })
 
   // M4 深度研究流（分钟级多次 LLM；invoke 长等待 + research 事件推送过程）
   let researchBusy = false

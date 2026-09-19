@@ -256,6 +256,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'knowledgeBase.brain.getConfig': { channel: 'kb:brain:get-config', wrap: (kbId: string) => [{ kbId }] },
   'knowledgeBase.brain.updateConfig': { channel: 'kb:brain:update-config' },
   'knowledgeBase.brain.docStatus': { channel: 'kb:brain:doc-status', wrap: (kbId: string) => [{ kbId }] },
+  'knowledgeBase.brain.digestDocument': { channel: 'kb:brain:digest-document', wrap: (documentId: string) => [{ documentId }] },
   'knowledgeBase.brain.listAtoms': { channel: 'kb:brain:list-atoms' },
   'knowledgeBase.brain.getAtom': { channel: 'kb:brain:get-atom', wrap: (atomId: string) => [{ atomId }] },
   'knowledgeBase.brain.listNotes': { channel: 'kb:brain:list-notes' },
