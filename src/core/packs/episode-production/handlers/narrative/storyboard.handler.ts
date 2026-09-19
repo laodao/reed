@@ -13,6 +13,7 @@ import type { Storyboard } from '@shared/types/story-to-video.types'
 import { StoryToVideoAIService } from '@core/packs/episode-production/services/story-to-video-ai.service'
 import { StoryboardService, normalizeShotNumbers, collectUnboundCharacters } from '@core/platform/episode-production/narrative/services/storyboard.service'
 import { StoryboardCogenService } from '@core/platform/episode-production/narrative/services/storyboard-cogen.service'
+import { cleanupStoryboards } from '@core/platform/episode-production/narrative/storyboard-cleanup.service'
 
 export function registerStoryboardHandlers(): void {
   // ==================== 分镜管理 ====================
@@ -129,12 +130,10 @@ async function handleReorderStoryboards(
 }
 
 /*
- * 删除单个分镜：级联清理 keyframes + storyboard_characters，再删 storyboard 本身，
- * 最后把场景内剩余分镜按当前 shotNumber 升序重排为 1..N（避免出现 1,3,4 这种缝隙）。
- *
- * 注：repo 之间没有共享 transaction，与既有 generate-storyboards 流程
- *（先 deleteBySceneScriptId 再批量 create）的事务粒度一致；中途失败会留下
- * 已删的子表数据，但不会出现"分镜还在但 keyframe 不齐"的更严重不一致。
+ * 删除单个分镜：cleanupStoryboards 级联清 keyframes（含 image_assets 行与磁盘
+ * 文件）+ storyboard_characters + 受影响片段置 superseded，再删 storyboard
+ * 本身；最后把场景内剩余分镜按当前 shotNumber 升序重排为 1..N（避免出现
+ * 1,3,4 这种缝隙）。
  */
 async function handleDeleteStoryboard(
   _event: any,
@@ -144,7 +143,7 @@ async function handleDeleteStoryboard(
     if (!storyboardId) return { success: false, error: 'storyboardId 不能为空' }
 
     const db = getCoreDatabaseManager()
-    if (!db.storyboards) {
+    if (!db.storyboards || !db.dataSource) {
       return { success: false, error: '数据库未初始化' }
     }
 
@@ -153,20 +152,14 @@ async function handleDeleteStoryboard(
       return { success: false, error: '分镜不存在' }
     }
 
-    // 级联清理子表（FK 未配 cascade，需手工删）
-    if (db.storyboardKeyframes) {
-      await db.storyboardKeyframes.deleteByStoryboard(storyboardId)
-    }
-    if (db.storyboardCharacters) {
-      await db.storyboardCharacters.deleteByStoryboardId(storyboardId)
-    }
+    // 级联清理子表 + 资产/磁盘回收（P2-14，FK 未配 cascade）
+    await cleanupStoryboards(db.dataSource, [storyboardId])
 
     /*
      * 不依赖 repo.delete() 的 boolean —— 部分 typeorm 驱动（PG 某些版本）
      * 不可靠地填充 result.affected，导致已成功 DELETE 但返回 false。
-     * 这里调完后用 getById 复查：拿不到 → 判定删除成功。
+     * cleanupStoryboards 删完后用 getById 复查：拿不到 → 判定删除成功。
      */
-    await db.storyboards.delete(storyboardId)
     const stillExists = await db.storyboards.getById(storyboardId)
     if (stillExists) {
       console.error(
@@ -291,6 +284,19 @@ async function handleGenerateStoryboard(
       storyboardRecords.push(storyboard)
     }
 
+    // P1-13：单场景分镜生成也推进 episode → storyboarding（与批量路径 :369 一致）
+    try {
+      const { advanceEpisodeStatus } = await import(
+        '@core/platform/episode-production/workflow/episode-status-advance'
+      )
+      const script = await db.episodeScripts?.getById(scene.episodeScriptId)
+      if (script?.episodeId && db.dataSource) {
+        await advanceEpisodeStatus(db.dataSource, script.episodeId, 'storyboarding')
+      }
+    } catch {
+      /* 状态推进失败不阻断分镜结果 */
+    }
+
     return { success: true, data: storyboardRecords }
   } catch (error: any) {
     return { success: false, error: error.message || '生成分镜失败' }
@@ -305,7 +311,7 @@ async function handleGenerateStoryboards(
 ): Promise<IpcResponse> {
   try {
     const db = getCoreDatabaseManager()
-    if (!db.sceneScripts || !db.storyboards) {
+    if (!db.sceneScripts || !db.storyboards || !db.dataSource) {
       return { success: false, error: '数据库未初始化' }
     }
 
@@ -340,8 +346,9 @@ async function handleGenerateStoryboards(
     // 创建分镜记录
     const allStoryboards: Storyboard[] = []
     for (const [sceneId, result] of results) {
-      // 删除该场景的旧分镜
-      await db.storyboards.deleteBySceneScriptId(sceneId)
+      // 删除该场景的旧分镜（P2-14：级联清关键帧/图，受影响片段置 superseded）
+      const oldStoryboards = await db.storyboards.getBySceneScriptId(sceneId)
+      await cleanupStoryboards(db.dataSource!, oldStoryboards.map(sb => sb.id))
 
       // 创建新分镜（shotNumber 按 AI 返回顺序强制重排为 1..N，AI 返回可能跳号）
       for (const sb of normalizeShotNumbers(result.storyboards)) {

@@ -19,6 +19,7 @@ import { randomBytes } from 'crypto'
 import type { DataSource, Repository } from 'typeorm'
 import { CharacterBindingEntity } from '@core/database/entities/episode-production/character-binding.entity'
 import { getProjectStyleAnchorsAsJson } from './project-style.helper'
+import { AssetImageService } from './asset-image.service'
 import { LwCharacterEntity } from '@core/database/entities/lw-character.entity'
 import type { EffectiveCharacterData } from '@shared/types/episode-production/domain.types'
 
@@ -379,9 +380,17 @@ export class CharacterAssetService {
     })
   }
 
-  /** 删除一个角色 binding */
+  /**
+   * 删除一个角色 binding。级联清该 binding 的 asset_image 行与落盘文件
+   * （P2-14d；deleteImage 内含路径安全守卫）。场景/分镜/关键帧里的悬空引用
+   * 不主动清——关键帧 D4-3 守卫会给出明确错误。
+   */
   async delete(bindingId: string): Promise<void> {
     await this.bindingRepo.delete(bindingId)
+    const imageSvc = new AssetImageService(this.ds)
+    for (const img of await imageSvc.listByAsset('character', bindingId)) {
+      await imageSvc.deleteImage(img.id)
+    }
   }
 
   /**

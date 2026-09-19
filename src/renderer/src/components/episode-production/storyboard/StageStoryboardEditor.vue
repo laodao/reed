@@ -322,7 +322,7 @@ const shotGroups = computed(() => {
     bySeg.set(seg.segmentId, arr)
   }
   if (unsegmented.length > 0) {
-    groups.push({ key: '__unsegmented__', title: '未分段镜头', status: null, statusLabel: '回列表页点「重新分段」', isSegment: false, videoUrl: null, shots: unsegmented })
+    groups.push({ key: '__unsegmented__', title: '未分段镜头', status: null, statusLabel: '未分段（进入制作时自动分段）', isSegment: false, videoUrl: null, shots: unsegmented })
   }
   const statusLabelOf = (s: SegmentInfo['status']) =>
     ({ pending: '待生成', generating: '生成中', completed: '已完成', error: '失败' } as const)[s]
@@ -471,7 +471,7 @@ function syncPrompt(): void {
 
 /**
  * 默认生成入口：片段级生成（视频片段制 §5——一次视频调用产出多镜一段）。
- * 选中镜头须已分段；未分段时引导回列表页「重新分段」（单镜生成走镜头行 🎬 按钮）。
+ * 选中镜头须已分段；未分段时提示返回分镜列表自动分段（单镜生成走镜头行 🎬 按钮）。
  */
 async function onGenerate(): Promise<void> {
   if (!selectedShot.value || generating.value) return

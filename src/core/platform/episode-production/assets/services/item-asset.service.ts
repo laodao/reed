@@ -22,6 +22,7 @@ import { ItemBindingEntity } from '@core/database/entities/episode-production/it
 import { LwItemEntity } from '@core/database/entities/lw-item.entity'
 import type { EffectiveItemData } from '@shared/types/episode-production/domain.types'
 import { getProjectStyleAnchorsAsJson } from './project-style.helper'
+import { AssetImageService } from './asset-image.service'
 
 /** 新建 standalone 物品入参 */
 export interface CreateStandaloneItemInput {
@@ -239,8 +240,12 @@ export class ItemAssetService {
     await this.bindingRepo.update(bindingId, update)
   }
 
-  /** 删除一个物品 binding */
+  /** 删除一个物品 binding（级联清 asset_image 行与落盘文件，同 character-asset） */
   async delete(bindingId: string): Promise<void> {
     await this.bindingRepo.delete(bindingId)
+    const imageSvc = new AssetImageService(this.ds)
+    for (const img of await imageSvc.listByAsset('item', bindingId)) {
+      await imageSvc.deleteImage(img.id)
+    }
   }
 }

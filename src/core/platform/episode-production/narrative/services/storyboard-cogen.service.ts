@@ -41,6 +41,7 @@ import { AssetImageService } from '@core/platform/episode-production/assets/serv
 import { generateCogenForScene } from '../ai/storyboard-cogen'
 import type { CogenExistingAsset, CogenOutput } from '../ai/storyboard-cogen'
 import { normalizeShotNumbers } from './storyboard.service'
+import { cleanupStoryboards } from '../storyboard-cleanup.service'
 
 /** 单场景联合生成结果 */
 export interface CogenSceneResult {
@@ -627,7 +628,8 @@ export class StoryboardCogenService {
   // ==================== 写库 ====================
 
   /**
-   * 替换式写分镜：先删该场景旧分镜，再按 cogen 输出插入新分镜。
+   * 替换式写分镜：先删该场景旧分镜（cleanupStoryboards 级联清关键帧/图，
+   * 受影响片段置 superseded），再按 cogen 输出插入新分镜。
    * characters[].characterId = binding.id（代码构造，D2）；shotNumber 强制 1..N。
    */
   private async replaceSceneStoryboards(
@@ -637,7 +639,8 @@ export class StoryboardCogenService {
     locationBindingId: string,
     itemBindings: Map<string, BindingSnapshot>,
   ): Promise<void> {
-    await this.storyboardRepo.deleteBySceneScriptId(sceneId)
+    const oldStoryboards = await this.storyboardRepo.getBySceneScriptId(sceneId)
+    await cleanupStoryboards(this.ds, oldStoryboards.map(sb => sb.id))
 
     // shotNumber 按数组顺序强制重排为 1..N（与旧批量生成一致，防跳号）
     for (const shot of normalizeShotNumbers(

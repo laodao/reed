@@ -311,9 +311,12 @@ export class LocationAssetService {
     await this.bindingRepo.update(bindingId, update)
   }
 
-  /** 删除一个地点 binding */
+  /** 删除一个地点 binding（级联清 asset_image 行与落盘文件，同 character-asset） */
   async delete(bindingId: string): Promise<void> {
     await this.bindingRepo.delete(bindingId)
+    for (const img of await this.imageSvc.listByAsset('location', bindingId)) {
+      await this.imageSvc.deleteImage(img.id)
+    }
   }
 
   /** FU5-C3 一次性更新场景类型 + 规模 + 氛围 + 风格锚点 + 默认时间/天气 */

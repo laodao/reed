@@ -26,9 +26,6 @@
  */
 
 import type { DataSource, Repository } from 'typeorm'
-import * as fs from 'fs'
-import * as path from 'path'
-import { getPathProvider } from '@core/interfaces/path.interface'
 import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
 import { EpisodeScriptEntity } from '@core/database/entities/episode-production/episode-script.entity'
@@ -57,6 +54,7 @@ import {
   type StyleConfig,
 } from './keyframe-prompt-builder'
 import { pickReferenceImage } from './reference-image-selector'
+import { deleteKeyframeWithAsset } from './keyframe-cleanup'
 import { resolveCharacterViewLabel } from './keyframe-view-mapping'
 import { parseAssetRefOverrides, toRefCandidates } from './parse-asset-refs'
 import type { ImageGenerator } from '@core/platform/episode-production/assets/services/gallery-derivation.service'
@@ -321,7 +319,7 @@ export class KeyframeGenerationService {
       // 失败：回滚本轮半成品新帧（保留旧帧），写回 error 状态
       for (const kf of created) {
         try {
-          await this.deleteKeyframeWithAsset(kf.id)
+          await deleteKeyframeWithAsset(this.ds, kf.id)
         } catch { /* 回收容错，不掩盖原错误 */ }
       }
       await this.sbRepo.update(sb.id, { status: 'error', updatedAt: new Date() })
@@ -330,7 +328,7 @@ export class KeyframeGenerationService {
     // 全部成功 → 换入：删旧行（按 id，不波及本轮新行）并回收旧图
     for (const old of oldRows) {
       try {
-        await this.deleteKeyframeWithAsset(old.id)
+        await deleteKeyframeWithAsset(this.ds, old.id)
       } catch { /* 回收容错 */ }
     }
     // 全部关键帧生成成功 → 分镜状态置 image_ready（与单图路径
@@ -400,34 +398,8 @@ export class KeyframeGenerationService {
         referenceOverrides,
       })
     }
-    await this.deleteKeyframeWithAsset(old.id)
+    await deleteKeyframeWithAsset(this.ds, old.id)
     return created
-  }
-
-  /**
-   * 删关键帧行并回收其 image_assets 行与磁盘文件（复核修复 P1-8：原删除链路
-   * 只删 storyboard_keyframe 行，image_assets 行与图片文件永久残留）。
-   * 文件/资产回收失败静默——不阻塞关键帧主流程。
-   */
-  private async deleteKeyframeWithAsset(keyframeId: string): Promise<void> {
-    const row = await this.keyframeRepo.getById(keyframeId)
-    if (!row) return
-    await this.keyframeRepo.delete(keyframeId)
-    const assetId = (row as any).imageAssetId
-    if (!assetId) return
-    try {
-      const asset = await this.imageAssetRepo.getById(assetId)
-      if (!asset) return
-      await this.imageAssetRepo.delete(assetId)
-      const dataPath = getPathProvider().getDataPath()
-      for (const p of [asset.imagePath, (asset as any).thumbnailPath]) {
-        if (!p) continue
-        try {
-          const abs = path.isAbsolute(p) ? p : path.join(dataPath, p)
-          if (fs.existsSync(abs)) fs.unlinkSync(abs)
-        } catch { /* 单个文件清理失败不阻塞 */ }
-      }
-    } catch { /* 资产行清理失败不阻塞 */ }
   }
 
   /**
