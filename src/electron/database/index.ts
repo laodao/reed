@@ -875,6 +875,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-kb-brain-tables'
     )
     await createKbBrainTables(this.dataSource)
+    // 统一知识池：kb_inverted_index 去过期 FK（伪 chunkId atom:/qa:/note: 入池被旧外键拒绝——真机根因）
+    const { fixKbInvertedIndexFk } = await import(
+      '@core/database/migrations/fix-kb-inverted-index-fk'
+    )
+    await fixKbInvertedIndexFk(this.dataSource)
     // 应用模块：apps / app_sessions 表（幂等，双语种；消息复用 messages 无需建表）
     const { createAppsTables } = await import(
       '@core/database/migrations/create-apps-tables'
