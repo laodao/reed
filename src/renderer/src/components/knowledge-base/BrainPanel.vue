@@ -22,9 +22,8 @@
         <span class="stat-num">{{ stats?.openQuestions ?? '—' }}</span>
         <span class="stat-label">悬而未决</span>
       </div>
-      <button type="button" class="brain-config-btn" @click="configOpen = !configOpen">
-        {{ config?.enabled ? '大脑·开' : '大脑·关' }}
-      </button>
+      <span class="brain-state" :class="enabled ? 'on' : 'off'">{{ enabled ? '已启用' : '未启用' }}</span>
+      <button type="button" class="brain-config-btn" @click="configOpen = !configOpen">设置</button>
     </div>
 
     <!-- 配置（精简版：开关 + 阈值 + 情节卡开关） -->
@@ -223,6 +222,19 @@ defineExpose({ refresh })
 .brain-config-btn {
   margin-left: auto;
   cursor: pointer;
+}
+.brain-state {
+  font-size: 12px;
+  padding: 1px 8px;
+  border-radius: 4px;
+}
+.brain-state.on {
+  background: var(--el-color-success-light-8);
+  color: var(--el-color-success);
+}
+.brain-state.off {
+  background: var(--el-fill-color);
+  opacity: 0.6;
 }
 .brain-config {
   padding: 10px 12px;
