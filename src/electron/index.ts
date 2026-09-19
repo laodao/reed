@@ -93,6 +93,15 @@ import { setFlagsFromString } from 'v8'
 setFlagsFromString('--max-old-space-size=4096')
 
 import { app, BrowserWindow, Tray, Menu, nativeImage, shell, protocol, dialog } from 'electron'
+
+// 多实例数据隔离（dev 设施）：THE_BOT_USER_DATA 指定时重定向 userData——
+// 供并行会话/特性分支实例与主实例共存（否则共写同一 SQLite/LanceDB/9222 端口）。
+// 必须在 app ready 前调用；隔离目录为全新环境（secure-key 不随迁，提供商需重新配置）。
+if (process.env.THE_BOT_USER_DATA) {
+  app.setPath('userData', process.env.THE_BOT_USER_DATA)
+  // eslint-disable-next-line no-console
+  console.log(`[isolate] userData → ${process.env.THE_BOT_USER_DATA}`)
+}
 import { join } from 'path'
 import * as path from 'path'
 import { DataPathService } from './services/data-path.service'
