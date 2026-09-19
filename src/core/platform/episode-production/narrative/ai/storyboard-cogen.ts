@@ -13,6 +13,7 @@
 
 import type { SceneScript } from '@shared/types/episode-production'
 import { callAI, callAIWithContinue, extractJsonFromResponse, isJsonTruncated } from './_helpers'
+import { validateShotPacing } from './shot-pacing'
 
 // ==================== 类型定义（对齐 design.md D1 输出 schema） ====================
 
@@ -199,11 +200,14 @@ ${sceneSection}
 3. 引用已有资产时：existing 填 true，name 必须与已有资产名单完全一致（不得改名），description 照抄已有描述（可补充细节，但不得与已有描述矛盾）。
 4. 新资产（existing=false）：name 不得与任何已有资产重名；description 必须完整（角色必须含外貌 + 服饰），这份描述就是定妆图与后续所有分镜文本的唯一依据。
 5. frameDescription 必须按四段式填写：【场景】地点 + 空间布局 + 关键物件；【人物】角色 + 位置 + 表情 + 服饰外观 + 姿态；【动作】正在发生什么 + 细节；【氛围】光线 + 色调 + 情绪基调。其中【人物】段的服饰/外貌必须与对应资产卡完全一致，跨镜头不得漂移。
-6. duration 为镜头时长（秒，2~10 的数字）。
+6. duration 为镜头时长（秒，1~10 的数字），按下方密度分档选择：钩子开场/冲突爆发/打脸/身份揭示/高潮清算 → 1-1.5s（15s 片段 8-12 镜）；对话交锋/情绪递进/常规叙事 → 1.5-2.5s（15s 片段 6-9 镜）；关键台词特写/反转停顿/蓄势 → 2.5-4s；情感沉淀/静态凝视/空镜（呼吸镜头）→ 3-8s，仅用于情感节点、整片少量使用。常规叙事段镜头平均时长不得超过 2.5s（每 2 秒 1 镜是短剧留存底线），情感沉淀段除外。
 7. assets.location 恰好一个（本场景主地点）；assets.items 只列会在画面中出现、需要视觉一致性的关键物品，没有则给空数组 []。
 8. 剧本细节必须照抄原文：药理名/药名、对白、数字、称谓、专有名词等细节必须与上方「场景剧本」逐字一致，禁止同义转述、替换或自由发挥（例如剧本写"曼陀罗花""忘忧草"，就不得改写成"断魂草"）。
 9. shots[].frameDescription 的【人物】段中，角色的服饰/外貌描述必须逐字引用对应资产卡的 description / outfit 原文（已有资产 = 上方「项目已有资产」里注入的描述；新资产 = 本响应 assets.characters 中你给出的 description / outfit），不得改写、概括或同义替换；【人物】段的其余部分（位置/表情/动作/姿态）按镜头需要描写。
-   示例：资产卡写「服饰：素白衣裙，外披淡青披风」，则该角色出镜的每个镜头【人物】段必须原样包含「素白衣裙」或「外披淡青披风」；写成「素色布衣」「浅色长裙」等均属违规，会被校验拒绝。`
+   示例：资产卡写「服饰：素白衣裙，外披淡青披风」，则该角色出镜的每个镜头【人物】段必须原样包含「素白衣裙」或「外披淡青披风」；写成「素色布衣」「浅色长裙」等均属违规，会被校验拒绝。
+10. 命名纪律延伸：frameDescription 正文中角色/道具全程使用名册登记名（与资产名单一字不差），禁止"他/那个男人/少年"等代词或别称；禁止"三个人""众人""反派们"等群体量词概括，多角色出场须逐个写出登记名。
+11. 情绪具象外化：禁止"很悲伤""非常愤怒"等抽象情绪词，必须写具体身体细节（悲伤=低头/肩膀微颤/眼眶泛红/攥紧衣角；喜悦=嘴角上扬/眉眼舒展/脚步轻快；紧张=频繁看表/手指敲桌/呼吸急促；愤怒=双拳紧握/下颔线紧绷/胸口起伏；释然=长舒一口气/肩膀放松/淡淡微笑）。
+12. 台词长度适配镜头时长：3 秒以内的镜头只能容纳一两句短语。`
 }
 
 /** 纠错重试提示词：把校验错误清单 + 上次输出喂回模型（D4-1，最多重试 2 次） */
@@ -575,5 +579,12 @@ export async function generateCogenForScene(
     )
   }
 
-  return normalizeCogenOutput(parsed)
+  const output = normalizeCogenOutput(parsed)
+
+  // 节奏密度校验（2026-09-20 prompt 优化）：只警告不阻断
+  for (const w of validateShotPacing(output.shots, { sceneLabel: `场景 ${scene.sceneNumber}` })) {
+    console.warn(`[storyboard-cogen] ${w}`)
+  }
+
+  return output
 }

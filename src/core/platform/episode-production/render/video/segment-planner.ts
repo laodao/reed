@@ -91,6 +91,11 @@ export interface SegmentPromptOptions {
   height?: number
   /** 项目风格词（config.stylePrompt）；传入则追加「画面风格」约束 */
   stylePrompt?: string
+  /**
+   * 剧情确需画面内文字（如手机屏/信件特写不由关键帧承载时）置 true，
+   * 跳过默认的「不得出现字幕、文字、水印、LOGO」负向约束；缺省/false 一律追加
+   */
+  allowOnScreenText?: boolean
 }
 
 /** 景别/角度/运动枚举 → 中文标签（取值域与 storyboard-cogen 镜头语言说明一致） */
@@ -147,6 +152,7 @@ function shotHeaderMeta(s: SegmentPromptShot): string[] {
  *   镜头1（约5s，全景，推镜）：<frameDescription>；镜头2（约4s，近景）：<frameDescription>。
  *   总时长约 9 秒，画面比例 16:9（1920x1080）。多个镜头之间保持人物、场景、
  *   光影与风格一致，镜头切换自然连贯。画面风格：<stylePrompt>。
+ *   画面中不得出现字幕、文字、水印、LOGO（默认负向尾巴，allowOnScreenText 可豁免）。
  *
  * 数据面原则：界面上已选的景别/角度/运镜、项目风格词必须到达视频模型；
  * @[资产@索引] 标记替换为资产名纯文本（模型不认识引用语法）。
@@ -178,6 +184,10 @@ export function buildSegmentPrompt(
   }
   if (opts.stylePrompt?.trim()) {
     constraints.push(`画面风格：${opts.stylePrompt.trim()}`)
+  }
+  // 默认负向尾巴（ep-video-prompt 方法论）：字幕在合成阶段后加，烧进画面是事故
+  if (!opts.allowOnScreenText) {
+    constraints.push('画面中不得出现字幕、文字、水印、LOGO')
   }
   return `${parts.join('；')}。${constraints.join('，')}。`
 }

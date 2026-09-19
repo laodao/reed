@@ -58,6 +58,8 @@ export interface SceneGenerationResult {
  */
 export interface StoryboardGenerationResult {
   storyboards: StoryboardResult[]
+  /** 节奏密度校验警告（2026-09-20 shot-pacing；仅警告不阻断，无问题时缺省） */
+  pacingWarnings?: string[]
 }
 
 /**

@@ -7,6 +7,7 @@
 | 文件 | 职责 |
 |------|------|
 | `video-generation.service.ts` | AI 视频生成服务：调用视频 provider、管理轮询任务、下载保存视频、provider 列表查询与测试 |
+| `segment-planner.ts` | 片段拆分规则 + 多镜头提示词拼接（纯函数）；`buildSegmentPrompt` 默认在约束尾巴追加「画面中不得出现字幕、文字、水印、LOGO」（字幕由合成阶段后加；`SegmentPromptOptions.allowOnScreenText=true` 可豁免） |
 | `index.ts` | barrel 导出 |
 
 ## 依赖关系

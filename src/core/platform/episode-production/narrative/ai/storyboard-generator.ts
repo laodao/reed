@@ -10,6 +10,7 @@
 import type { SceneCharacter, SceneScript } from '@shared/types/episode-production'
 import type { StoryboardGenerationResult, StoryboardResult } from './types'
 import { callAI, extractJsonFromResponse } from './_helpers'
+import { NAMING_EMOTION_PROMPT, PACING_DENSITY_PROMPT, validateShotPacing } from './shot-pacing'
 
 // ==================== 后处理 helpers ====================
 
@@ -148,7 +149,11 @@ const STORYBOARD_GENERATION_PROMPT = `你是一个专业的影视导演和分镜
 3. **情感**：近景或特写强调情感
 4. **动作**：全景或中景展示动作
 5. **转场**：考虑前后分镜的衔接
-6. **节奏**：快节奏用短镜头，慢节奏用长镜头
+6. **节奏**：按下方「镜头节奏密度分档」执行
+
+${PACING_DENSITY_PROMPT}
+
+${NAMING_EMOTION_PROMPT}
 
 ## 画面描述格式要求（必须按此结构填写 frameDescription）
 
@@ -268,7 +273,11 @@ const SINGLE_STORYBOARD_GENERATION_PROMPT = `你是一个专业的影视导演�
 3. **情感镜头**：近景或特写强调情感变化
 4. **动作镜头**：全景或中景展示动作细节
 5. **转场设计**：考虑与前后分镜的衔接
-6. **节奏控制**：快节奏用短镜头（2-3秒），慢节奏用长镜头（5-8秒）
+6. **节奏控制**：按下方「镜头节奏密度分档」执行
+
+${PACING_DENSITY_PROMPT}
+
+${NAMING_EMOTION_PROMPT}
 
 ## 上下文信息
 
@@ -667,7 +676,16 @@ ${sceneScript.actions.map(a => `- ID: ${a.id}, 描述: ${a.description}`).join('
     // 如果 AI 没有正确分配对话，我们根据分镜数量平均分配
     this.distributeDialoguesToStoryboards(sceneScript, storyboards)
 
-    return { storyboards }
+    // 节奏密度校验（2026-09-20 prompt 优化）：只警告不阻断，
+    // 同时挂到返回结果的 pacingWarnings 供上游展示
+    const pacingWarnings = validateShotPacing(storyboards, {
+      sceneLabel: `场景 ${sceneScript.sceneNumber}`,
+    })
+    for (const w of pacingWarnings) {
+      console.warn(`[EpisodeStoryboardGenerator] ${w}`)
+    }
+
+    return { storyboards, ...(pacingWarnings.length > 0 ? { pacingWarnings } : {}) }
   }
 
   /**
@@ -881,10 +899,14 @@ ${fieldsToFill}
 2. **对话镜头**：常用中景或近景，交替使用正反打
 3. **情感镜头**：近景或特写强调情感变化
 4. **动作镜头**：全景或中景展示动作细节
-5. **节奏控制**：快节奏用短镜头（2-3秒），慢节奏用长镜头（5-8秒）
+5. **节奏控制**：按下方「镜头节奏密度分档」执行
 6. **焦距匹配**：人像特写用85mm，场景全景用35mm
 7. **光圈匹配**：突出主体用大光圈f/2.8，展示环境用小光圈f/8
 8. **打光匹配**：压抑氛围用noir_hard，温馨用golden_hour或cozy_candle，紧张用blue_hour或cold_clinical
+
+${PACING_DENSITY_PROMPT}
+
+${NAMING_EMOTION_PROMPT}
 
 ## 输出要求
 
