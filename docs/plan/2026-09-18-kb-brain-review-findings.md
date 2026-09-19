@@ -57,3 +57,26 @@
 - 两路盲审 + 主审交叉的发现**全部经行级验证**才进修复清单（防止 reviewer 幻觉）；"看似有问题其实没问题"清单 16 条也已归档（如 recoverPending 的 qb 代理租户重挂正确、markChapterStale 空数组守卫正确、chain 吞错机制本身正确）。
 - 存量回归：修复后重跑 repositories+KB 存量套件，失败清单与 A/B 基线**完全一致**（9 文件/23 例，lw 关联表/multi-tenant/排序敏感等存量红灯），零新增破坏。
 - 大脑测试 60 例全绿（config 11 / atomize+adjudicate 13 / 迁移 5 / 仓储 19 / 编排器 6 / brain-query 6）。
+
+
+---
+
+# 第二轮：53be0f0b（承诺项落地+T12+T04）的对抗 review（2026-09-19，b96861b6 修复）
+
+自查+盲审交叉。修复 11 项：
+
+| 级别 | 问题 | 修复 |
+|---|---|---|
+| P1 | **T11 重链坐标系错配**：论断 offset 是章内相对，chunk offset 是文档全局——直接比较多章文档必错挂出处；且重链范围用旧 pass 的 chapterId（reprocess 后章节 id 全新失配），重链从不生效 | 按章节文档全局 startOffset 平移后匹配；范围改为本轮 skipped-same 章 |
+| P1 | resetToPending 走 scoped——boot 无 ALS 时按 IS NULL 过滤，跨租户 running 行复位静默 no-op，章节永久封死且文档被误标 failed | 改跨租户裸仓库版（与扫描同款豁免） |
+| P1 | listAtoms 忽略 kbId 且缺省 documentId=''——面板论断列表恒空 | 仓储加 findByKb；documentId 可选分流 |
+| P2 | context 降级查错 key（atom.id ≠ chunk id），context 恒 undefined | atomId→sourceChunkId 映射 |
+| P2 | scoreKind 对 atom/note 恒判 bm25（vecIds 存裸 id，结果 chunkId 带前缀） | 用 entry.id（裸 id）对齐 |
+| P2 | doc-status 恒 null：KbDocument DTO/shared 类型没有 brain 三字段，handler 强转读取 | DTO+类型补字段，删强转与死代码 |
+| P2 | **web channel-map 缺 13 条 brain 映射**——web 端面板整体不可达（fallback 拼出不存在的 channel） | 补齐 13 条 |
+| P2 | updateConfig 浅合并——嵌套 partial 丢 required 字段 → ajv 校验炸；configDraft 缺段 | 按段深合并 |
+| P2 | digestChapter 'done' 语义混杂（真跑 vs 跳过）；'running' 瞬态被误标 exhausted→文档 failed | 四态返回（digested/skipped-same/busy/exhausted），busy 不触发 failed |
+| P3 | synthesize 降权用名次偏移在 K=60 下仅 ~3% 无效 | 改乘法权重 ×0.5；threshold 作用于 BM25；成本熔断 NaN 告警+calls 语义注明；eval 判据统一；BrainPanel 竞态守卫+错误处理；preload 补 onProgress/onStatus |
+| P3 | decideProposal 可复活 archived | 加状态守卫 |
+
+登记不改：run-eval CLI 需在宿主进程 bootstrap（registerCoreDatabaseManager）才能直跑——真机基线随导库一并处理；intent/scoreKind/context 已补集成用例。
