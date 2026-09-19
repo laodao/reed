@@ -19,6 +19,7 @@
               :value="ep.id"
             />
           </el-select>
+          <el-button text title="新建剧集" @click="newEpisodeVisible = true"><el-icon><Plus /></el-icon></el-button>
           <div class="tab-nav">
             <button
               v-for="t in tabs"
@@ -92,6 +93,15 @@
       @saved="onSettingsSaved"
     />
 
+    <!-- 新建剧集（方案A 2026-09-19）：长文章节 / 粘贴文本 / AI 生成三种来源 -->
+    <NewEpisodeDialog
+      v-model="newEpisodeVisible"
+      :project-id="projectId"
+      :existing-episode-count="episodes.length"
+      :long-writing-project-id="projectLongWritingId"
+      @created="onNewEpisodeCreated"
+    />
+
     <!-- S-09 用量面板：ai_call_stats 按 call_type+model 聚合（项目级） -->
     <el-dialog v-model="usageVisible" title="AI 用量统计（本项目）" width="680px">
       <div v-if="usageLoading" class="usage-loading">加载中...</div>
@@ -124,10 +134,11 @@
  */
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Setting, DataAnalysis } from '@element-plus/icons-vue'
+import { ArrowLeft, Setting, DataAnalysis, Plus } from '@element-plus/icons-vue'
 import EpisodeStudioLayout from '@/components/episode-production/studio/EpisodeStudioLayout.vue'
 import EpAgentPanel from '@/components/episode-production/agent/EpAgentPanel.vue'
 import SettingsDialog from '@/components/episode-production/dialogs/SettingsDialog.vue'
+import NewEpisodeDialog from '@/components/episode-production/dialogs/NewEpisodeDialog.vue'
 import { useEpStudioContext, type EpStudioTab } from '@/composables/useEpStudioContext'
 import { useEpProjectStore } from '@/stores/episode-production'
 import StageScriptView from '@/components/episode-production/script/StageScriptView.vue'
@@ -214,6 +225,20 @@ const settingsVisible = ref(false)
 const allLwProjects = ref<Array<{ id: string; name: string }>>([])
 const providerConfigs = ref<UserProviderConfig[]>([])
 const providerTemplates = ref<ProviderTemplate[]>([])
+
+// ===== 新建剧集（方案A 2026-09-19） =====
+const newEpisodeVisible = ref(false)
+/** 项目关联的长文项目 ID（video_projects.longWritingProjectId 列） */
+const projectLongWritingId = computed(
+  () => (projectStore.currentProject as any)?.longWritingProjectId ?? null,
+)
+
+/** 创建成功：刷新列表并切到新集 */
+async function onNewEpisodeCreated(newEpisodeId: string): Promise<void> {
+  await loadEpisodes()
+  episodeId.value = newEpisodeId
+  await onEpisodeChange()
+}
 
 async function loadAllLwProjects(): Promise<void> {
   try {
