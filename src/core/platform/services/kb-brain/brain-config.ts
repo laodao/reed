@@ -30,6 +30,21 @@ export interface KbBrainConfig {
    * 值格式："modelId" 或 "providerConfigId:modelId"；空串=跟随宿主模型。
    */
   models: { atomize: string; adjudicate: string }
+  /**
+   * 提取目标（经验提炼维度）。机制通用、内容是数据：不同类型项目配不同目标
+   * （小说库=修真体系/写作套路/经典场面/人物亮点；其他库自行定义）。
+   * hint 即提炼指引（找什么、怎么组织），由 goal-distill 消费。
+   */
+  goals: KbBrainGoal[]
+}
+
+/** 单个提取目标（经验提炼维度） */
+export interface KbBrainGoal {
+  id: string
+  name: string
+  /** 提炼指引：要提取什么经验、如何组织成卡 */
+  hint: string
+  enabled: boolean
 }
 
 /** brain_state（运行态，非用户配置）：重要性账户/品味侧写/上次提炼时间 */
@@ -104,6 +119,20 @@ const BRAIN_CONFIG_SCHEMA = {
       required: ['atomize', 'adjudicate'],
       additionalProperties: false,
     },
+    goals: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', minLength: 1 },
+          name: { type: 'string', minLength: 1 },
+          hint: { type: 'string', minLength: 1 },
+          enabled: { type: 'boolean' },
+        },
+        required: ['id', 'name', 'hint', 'enabled'],
+        additionalProperties: false,
+      },
+    },
   },
   required: ['enabled'],
   additionalProperties: false,
@@ -124,6 +153,7 @@ export function defaultBrainConfig(enabled = true): KbBrainConfig {
     learning: { enabled: false, desiredRetention: 0.9 },
     crag: { enabled: false },
     models: { atomize: '', adjudicate: '' },
+    goals: [],
   }
 }
 
@@ -158,6 +188,7 @@ export function normalizeBrainConfig(partial: Partial<KbBrainConfig>): KbBrainCo
     learning: { ...def.learning, ...partial.learning },
     crag: { ...def.crag, ...partial.crag },
     models: { ...def.models, ...partial.models },
+    goals: Array.isArray(partial.goals) ? partial.goals : def.goals,
   }
 }
 
@@ -188,6 +219,7 @@ export function mergeBrainConfig(base: KbBrainConfig, patch: Partial<KbBrainConf
     learning: mergeSeg(base.learning, patch.learning),
     crag: mergeSeg(base.crag, patch.crag),
     models: mergeSeg(base.models, patch.models),
+    goals: patch.goals ?? base.goals,
   })
 }
 

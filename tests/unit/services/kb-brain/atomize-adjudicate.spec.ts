@@ -15,7 +15,7 @@ import {
 import { defaultBrainLlm, brainModelOverride, parseModelRef, stitchContinuation } from '@core/platform/services/kb-brain/llm'
 import { isJsonTruncated } from '@core/platform/services/ai-call'
 import type { BrainLlmFn } from '@core/platform/services/kb-brain/llm'
-import { validateAtomizeOutput, normalizeAtomizeRaw } from '@core/platform/services/kb-brain/schemas'
+import { validateAtomizeOutput, normalizeAtomizeRaw, validateAdjudicateOutput, normalizeAdjudicateRaw } from '@core/platform/services/kb-brain/schemas'
 
 const CONTENT = '程野推开舱门。他失去了左臂。苏晚早已等候多时。'
 
@@ -249,5 +249,41 @@ describe('normalizeAtomizeRaw（模型字段别名归一）', () => {
     expect(() =>
       validateAtomizeOutput({ atoms: [{ type: 'fact', quote: 'q' }], events: [] }),
     ).toThrow(/statement/)
+  })
+})
+
+describe('normalizeAdjudicateRaw（裁决缺键/别名归一——真机修）', () => {
+  const bounds = { newCount: 3, oldCount: 2 }
+
+  it('缺 contradictions（真机诛仙失败形态）→ 补空数组通过，不再整章失败', () => {
+    // 本地 qwen3.8-27b 真实输出形态：判了 novel 却省略空的 contradictions
+    const out = validateAdjudicateOutput({ duplicates: [], novel: [0, 1, 2] }, bounds)
+    expect(out.novel).toEqual([0, 1, 2])
+    expect(out.contradictions).toEqual([])
+    expect(out.duplicates).toEqual([])
+  })
+
+  it('全缺三键（模型只回 {}）→ 全空通过', () => {
+    const out = validateAdjudicateOutput({}, bounds)
+    expect(out).toEqual({ duplicates: [], contradictions: [], novel: [] })
+  })
+
+  it('近义命名 conflicts/same/new → 归一', () => {
+    const out = validateAdjudicateOutput(
+      { same: [{ newIdx: 0, oldIdx: 0 }], conflicts: [{ newIdx: 1, oldIdx: 1, severity: 'conflict' }], new: [2] },
+      bounds,
+    )
+    expect(out.duplicates).toEqual([{ newIdx: 0, oldIdx: 0 }])
+    expect(out.contradictions).toEqual([{ newIdx: 1, oldIdx: 1, severity: 'conflict' }])
+    expect(out.novel).toEqual([2])
+  })
+
+  it('越界索引仍被丢弃（归一不放松内容校验）', () => {
+    const out = validateAdjudicateOutput({ duplicates: [], contradictions: [], novel: [0, 99] }, bounds)
+    expect(out.novel).toEqual([0])
+  })
+
+  it('类型错误（novel 非数组）→ 仍响亮失败', () => {
+    expect(() => validateAdjudicateOutput({ duplicates: [], contradictions: [], novel: 'x' }, bounds)).toThrow(/校验失败/)
   })
 })

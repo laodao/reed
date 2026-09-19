@@ -70,6 +70,40 @@
           <el-option v-for="m in modelOptions" :key="m.value" :label="m.label" :value="m.value" />
         </el-select>
       </div>
+      <div class="cfg-goals">
+        <div class="cfg-goals-head">
+          <span class="cfg-label">提取目标（经验提炼维度，按项目定义）</span>
+          <div class="cfg-goals-actions">
+            <el-select
+              v-model="presetPick"
+              placeholder="从模板添加…"
+              size="small"
+              style="width: 200px"
+              @change="addGoalFromPreset"
+            >
+              <el-option-group v-for="g in presetGroups" :key="g.group" :label="g.group">
+                <el-option v-for="(p, i) in g.goals" :key="g.group + i" :label="p.name" :value="g.group + '|' + p.name" />
+              </el-option-group>
+            </el-select>
+            <el-button size="small" @click="addCustomGoal">新建</el-button>
+          </div>
+        </div>
+        <div v-for="(g, gi) in configDraft.goals" :key="g.id" class="goal-edit">
+          <div class="goal-edit-head">
+            <el-checkbox v-model="g.enabled" size="small" />
+            <el-input v-model="g.name" size="small" placeholder="目标名称" style="width: 180px" />
+            <el-button size="small" text type="danger" @click="configDraft.goals.splice(gi, 1)">删除</el-button>
+          </div>
+          <el-input
+            v-model="g.hint"
+            type="textarea"
+            :rows="4"
+            size="small"
+            placeholder="提炼指引：要提取什么经验、如何组织成卡"
+          />
+        </div>
+        <div v-if="configDraft.goals.length === 0" class="goal-empty">暂无目标——从模板添加或新建（保存后生效）</div>
+      </div>
       <div class="cfg-actions">
         <el-button size="small" @click="discardConfig">取消</el-button>
         <el-button type="primary" size="small" :loading="saving" @click="saveConfig">保存</el-button>
@@ -100,6 +134,18 @@
           {{ d.busy ? '提取中…' : '提取知识' }}
         </el-button>
       </div>
+    </div>
+
+    <!-- 经验提炼（提取目标：按库配置维度，机制通用内容是数据） -->
+    <div v-if="enabledGoals.length > 0" class="digest-section">
+      <div class="digest-title">经验提炼</div>
+      <div v-for="g in enabledGoals" :key="g.id" class="digest-row">
+        <span class="d-name" :title="g.hint">{{ g.name }}</span>
+        <el-button size="small" :loading="runningGoalIds.includes(g.id)" @click="runGoal(g)">
+          {{ runningGoalIds.includes(g.id) ? '提炼中…' : '提炼' }}
+        </el-button>
+      </div>
+      <div class="goal-tip">提炼基于全书章节摘要，约需一至十几分钟；完成后经验卡出现在「待审提议」。</div>
     </div>
 
     <!-- 论断列表 -->
@@ -151,8 +197,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
+import { KB_BRAIN_GOAL_PRESETS } from '@shared/constants/kb-brain-goal-presets'
 
 const props = defineProps<{ kbId: string }>()
 const emit = defineEmits<{ (e: 'stats', count: number): void }>()
@@ -174,12 +221,19 @@ interface BrainNote {
   title: string
   description: string
 }
+interface BrainGoal {
+  id: string
+  name: string
+  hint: string
+  enabled: boolean
+}
 interface BrainConfig {
   enabled: boolean
   digestion: { enabled: boolean }
   patterns: { plotEnabled: boolean }
   autoApproveThreshold: number
   models: { atomize: string; adjudicate: string }
+  goals: BrainGoal[]
 }
 const modelOptions = ref<Array<{ label: string; value: string }>>([])
 
@@ -194,6 +248,7 @@ const configDraft = ref<BrainConfig>({
   patterns: { plotEnabled: false },
   autoApproveThreshold: 0.8,
   models: { atomize: '', adjudicate: '' },
+  goals: [],
 })
 const configOpen = ref(false)
 const saving = ref(false)
@@ -205,6 +260,90 @@ interface DigestDoc {
 }
 const pendingDigestDocs = ref<DigestDoc[]>([])
 const digestAllBusy = ref(false)
+
+// ===== 提取目标 =====
+const presetGroups = KB_BRAIN_GOAL_PRESETS
+const presetPick = ref('')
+const enabledGoals = computed(() => (config.value?.goals ?? []).filter((g) => g.enabled))
+const runningGoalIds = ref<string[]>([])
+const lastGoalResults = ref<Record<string, { ok: boolean; error?: string; proposed?: boolean; skippedDuplicate?: boolean; cardTitle?: string | null; fragments?: number }>>({})
+let goalPollTimer: ReturnType<typeof setInterval> | null = null
+
+function addGoalFromPreset(val: string): void {
+  const [group, name] = val.split('|')
+  const preset = presetGroups.find((g) => g.group === group)?.goals.find((p) => p.name === name)
+  if (!preset) return
+  configDraft.value.goals.push({ id: genGoalId(), name: preset.name, hint: preset.hint, enabled: true })
+  presetPick.value = ''
+}
+
+function addCustomGoal(): void {
+  configDraft.value.goals.push({ id: genGoalId(), name: '新目标', hint: '要提取什么经验、如何组织成卡', enabled: true })
+}
+
+function genGoalId(): string {
+  return `g_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
+}
+
+async function runGoal(g: BrainGoal): Promise<void> {
+  if (runningGoalIds.value.includes(g.id)) return
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  try {
+    const res = await client.goalRun({ kbId: props.kbId, goalId: g.id })
+    if (!res.success) {
+      ElMessage.error(res.error || '提炼启动失败')
+      return
+    }
+    runningGoalIds.value = [...runningGoalIds.value, g.id]
+    ElMessage.info(`「${g.name}」提炼已开始，完成后出现在待审提议`)
+    startGoalPoll()
+  } catch (e) {
+    ElMessage.error(`提炼启动失败: ${(e as Error).message}`)
+  }
+}
+
+function startGoalPoll(): void {
+  if (goalPollTimer) return
+  goalPollTimer = setInterval(pollGoalStatus, 8000)
+  void pollGoalStatus()
+}
+
+async function pollGoalStatus(): Promise<void> {
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  try {
+    const res = await client.goalStatus(props.kbId)
+    if (res.success && res.data) {
+      const prev = [...runningGoalIds.value]
+      runningGoalIds.value = res.data.running as string[]
+      lastGoalResults.value = res.data.last ?? {}
+      // 刚完成的：报结果
+      for (const id of prev) {
+        if (!runningGoalIds.value.includes(id)) reportGoalDone(id)
+      }
+    }
+  } catch {
+    /* 轮询失败静默，下轮再试 */
+  }
+  if (runningGoalIds.value.length === 0 && goalPollTimer) {
+    clearInterval(goalPollTimer)
+    goalPollTimer = null
+  }
+}
+
+function reportGoalDone(goalId: string): void {
+  const rec = lastGoalResults.value[goalId]
+  const name = config.value?.goals.find((g) => g.id === goalId)?.name ?? goalId
+  if (!rec) return
+  if (!rec.ok) ElMessage.error(`「${name}」提炼失败: ${rec.error || '未知错误'}`)
+  else if (rec.skippedDuplicate) ElMessage.info(`「${name}」已有同题经验卡，未重复生成`)
+  else if (rec.proposed) ElMessage.success(`「${name}」经验卡已生成（素材 ${rec.fragments ?? 0} 条），待审提议中`)
+  void refresh()
+}
+
+onBeforeUnmount(() => {
+  if (goalPollTimer) clearInterval(goalPollTimer)
+  goalPollTimer = null
+})
 
 function statusTagType(status: string): 'success' | 'warning' | 'info' | 'danger' {
   switch (status) {
@@ -264,6 +403,17 @@ async function refresh(): Promise<void> {
     if (modelsRes.success && modelsRes.data) modelOptions.value = modelsRes.data
   } catch {
     /* 旧宿主无此通道：下拉为空但不影响其他功能 */
+  }
+  // 提炼中的目标状态同步（面板重开后恢复 busy）
+  try {
+    const gsRes = await client.goalStatus(props.kbId)
+    if (gsRes.success && gsRes.data) {
+      runningGoalIds.value = gsRes.data.running as string[]
+      lastGoalResults.value = gsRes.data.last ?? {}
+      if (runningGoalIds.value.length > 0) startGoalPoll()
+    }
+  } catch {
+    /* 旧宿主无此通道：忽略 */
   }
 }
 
@@ -399,6 +549,46 @@ defineExpose({ refresh })
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+.cfg-goals {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+.cfg-goals-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.cfg-goals-actions {
+  display: flex;
+  gap: 8px;
+}
+.goal-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+}
+.goal-edit-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.goal-empty {
+  font-size: 12px;
+  opacity: 0.55;
+}
+.goal-tip {
+  font-size: 12px;
+  opacity: 0.55;
+  margin-top: 2px;
 }
 .digest-section {
   margin: 12px 0;

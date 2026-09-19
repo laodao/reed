@@ -1278,6 +1278,8 @@ const electronAPI = {
         return () => ipcRenderer.removeListener('kb:brain:research', h)
       },
       listModels: () => ipcRenderer.invoke('kb:brain:list-models'),
+      goalRun: (p: { kbId: string; goalId: string }) => ipcRenderer.invoke('kb:brain:goal-run', p),
+      goalStatus: (kbId: string) => ipcRenderer.invoke('kb:brain:goal-status', { kbId }),
       reviewNext: (p: { kbId: string; limit?: number }) => ipcRenderer.invoke('kb:brain:review-next', p),
       reviewGrade: (p: { kbId: string; noteId: string; rating: 1 | 2 | 3 | 4 }) => ipcRenderer.invoke('kb:brain:review-grade', p),
       onProgress: (cb: (data: { documentId: string; phase: string; progress: number }) => void) => {

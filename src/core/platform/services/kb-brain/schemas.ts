@@ -183,15 +183,38 @@ export function validateAtomizeOutput(data: unknown): AtomizeOutput {
   return normalized as AtomizeOutput
 }
 
+/**
+ * 裁决输出归一（真机实证：本地小模型常省略空结果段——
+ * {"duplicates":[],"novel":[...]} 缺 contradictions 键导致整章失败）。
+ * 缺失数组键补空（「没判出冲突」是合法语义，不是格式错误）；
+ * 近义命名（conflicts/same/new）归一。内容级错误仍交 ajv 响亮失败。
+ */
+export function normalizeAdjudicateRaw(data: unknown): unknown {
+  if (typeof data !== 'object' || data === null) return data
+  const out = { ...(data as Record<string, unknown>) }
+  // 只补「缺失」：省略空结果段是合法语义；类型错了保留原值交 ajv 响亮失败
+  if (out.duplicates === undefined || out.duplicates === null) {
+    out.duplicates = out.same ?? []
+  }
+  if (out.contradictions === undefined || out.contradictions === null) {
+    out.contradictions = out.conflicts ?? []
+  }
+  if (out.novel === undefined || out.novel === null) {
+    out.novel = out.new ?? []
+  }
+  return out
+}
+
 /** 校验并做索引合法性过滤（越界索引丢弃——模型幻觉编号不致污染落库） */
 export function validateAdjudicateOutput(
   data: unknown,
   bounds: { newCount: number; oldCount: number },
 ): AdjudicateOutput {
-  if (!validateAdjudicate(data)) {
+  const normalized = normalizeAdjudicateRaw(data)
+  if (!validateAdjudicate(normalized)) {
     throw new Error(`adjudicate 输出校验失败: ${ajv.errorsText(validateAdjudicate.errors)}`)
   }
-  const out = data as AdjudicateOutput
+  const out = normalized as AdjudicateOutput
   const inNew = (i: number): boolean => Number.isInteger(i) && i >= 0 && i < bounds.newCount
   const inOld = (i: number): boolean => Number.isInteger(i) && i >= 0 && i < bounds.oldCount
   return {

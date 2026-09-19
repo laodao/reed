@@ -12,7 +12,9 @@ import { KbDistillService } from '@core/platform/services/kb-brain/distill.servi
 import { KbBrainFsrsService } from '@core/platform/services/kb-brain/fsrs.service'
 import { KbResearchService } from '@core/platform/services/kb-brain/research.service'
 import { enqueueDigestForExisting } from '@core/platform/services/kb-brain/digest-orchestrator.service'
+import { KbGoalDistillService } from '@core/platform/services/kb-brain/goal-distill.service'
 import { parseModelRef } from '@core/platform/services/kb-brain/llm'
+import { parseBrainConfig } from '@core/platform/services/kb-brain/brain-config'
 import type { SearchResult } from '@shared/types/knowledge-base.types'
 
 let kbService: KnowledgeBaseService | null = null
@@ -127,6 +129,46 @@ export function registerKbBrainHandlers(): void {
         value: m.providerConfigId ? `${m.providerConfigId}:${m.id}` : m.id,
       })),
     }
+  })
+
+  // 提取目标提炼（经验维度 map-reduce；分钟级多次 LLM → 立即入队返回，前端轮询状态）
+  const goalDistill = new KbGoalDistillService()
+  interface GoalRunRecord {
+    ok: boolean
+    error?: string
+    proposed?: boolean
+    skippedDuplicate?: boolean
+    cardTitle?: string | null
+    fragments?: number
+  }
+  const goalLastResult = new Map<string, GoalRunRecord>()
+  ipcBridge.handle('kb:brain:goal-run', async (_e, p: { kbId: string; goalId: string }) => {
+    const kbRow = await svc().getKnowledgeBase(p.kbId).then((r) => r.data)
+    const cfg = kbRow?.brainConfig ? parseBrainConfig(kbRow.brainConfig) : null
+    const goal = cfg?.goals.find((g) => g.id === p.goalId)
+    if (!goal) return { success: false, error: '提取目标不存在或已删除' }
+    if (!goal.enabled) return { success: false, error: '目标未启用' }
+    if (goalDistill.isRunning(p.kbId, goal.id)) return { success: false, error: '该目标提炼进行中' }
+    goalDistill
+      .runGoal(p.kbId, goal)
+      .then((out) => {
+        goalLastResult.set(`${p.kbId}:${goal.id}`, { ok: true, ...out })
+        console.info(`[kb-brain] 目标提炼完成 kb=${p.kbId} goal=${goal.name} fragments=${out.fragments} proposed=${out.proposed}`)
+      })
+      .catch((e) => {
+        goalLastResult.set(`${p.kbId}:${goal.id}`, { ok: false, error: e instanceof Error ? e.message : String(e) })
+        console.warn(`[kb-brain] 目标提炼失败 kb=${p.kbId} goal=${goal.name}: ${e instanceof Error ? e.message : String(e)}`)
+      })
+    return { success: true, data: { queued: true } }
+  })
+  ipcBridge.handle('kb:brain:goal-status', (_e, p: { kbId: string }) => {
+    const running = goalDistill.runningGoals(p.kbId)
+    const last: Record<string, GoalRunRecord> = {}
+    for (const [key, rec] of goalLastResult) {
+      const [kbId, goalId] = key.split(':')
+      if (kbId === p.kbId && goalId) last[goalId] = rec
+    }
+    return { success: true, data: { running, last } }
   })
 
   // T18 FSRS 复习：到期队列 / 评分

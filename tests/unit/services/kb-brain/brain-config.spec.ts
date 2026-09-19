@@ -146,3 +146,33 @@ describe('mergeBrainConfig（updateConfig 段级深合并）', () => {
     expect(mergeBrainConfig(base, {})).toEqual(base)
   })
 })
+
+describe('goals 段（提取目标）', () => {
+  const goalJson = JSON.stringify({
+    id: 'g_1',
+    name: '修炼体系',
+    hint: '梳理境界划分与突破条件',
+    enabled: true,
+  })
+
+  it('缺省 goals=[]', () => {
+    expect(parseBrainConfig('{"enabled":true}')!.goals).toEqual([])
+  })
+  it('带 goals 解析与 roundtrip', () => {
+    const cfg = parseBrainConfig(`{"enabled":true,"goals":[${goalJson}]}`)!
+    expect(cfg.goals).toHaveLength(1)
+    expect(cfg.goals[0].name).toBe('修炼体系')
+    const raw = stringifyBrainConfig(cfg)
+    expect(parseBrainConfig(raw)!.goals).toEqual(cfg.goals)
+  })
+  it('merge：patch 带 goals → 整组替换；不带 → 沿用 base', () => {
+    const base = parseBrainConfig(`{"enabled":true,"goals":[${goalJson}]}`)!
+    const replaced = mergeBrainConfig(base, { goals: [{ id: 'g_2', name: '写作套路', hint: 'h', enabled: false }] })
+    expect(replaced.goals).toEqual([{ id: 'g_2', name: '写作套路', hint: 'h', enabled: false }])
+    const kept = mergeBrainConfig(base, {})
+    expect(kept.goals).toEqual(base.goals)
+  })
+  it('goals 条目缺字段 → 响亮失败', () => {
+    expect(() => parseBrainConfig('{"enabled":true,"goals":[{"id":"x","name":"n","hint":"h"}]}')).toThrow(/校验失败/)
+  })
+})
