@@ -15,6 +15,7 @@ import {
 import { defaultBrainLlm, brainModelOverride, stitchContinuation } from '@core/platform/services/kb-brain/llm'
 import { isJsonTruncated } from '@core/platform/services/ai-call'
 import type { BrainLlmFn } from '@core/platform/services/kb-brain/llm'
+import { validateAtomizeOutput, normalizeAtomizeRaw } from '@core/platform/services/kb-brain/schemas'
 
 const CONTENT = '程野推开舱门。他失去了左臂。苏晚早已等候多时。'
 
@@ -202,5 +203,25 @@ describe('llm 路由与续写辅助', () => {
     // defaultBrainLlm 绑定 simple-llm（生产路径），此处仅验证其存在与调用形状；
     // 续写拼接逻辑已由 AtomizeService 测试中的拼接用例覆盖。
     expect(typeof defaultBrainLlm('kb-brain-atomize')).toBe('function')
+  })
+})
+
+describe('normalizeAtomizeRaw（模型字段别名归一）', () => {
+  it('顶层 claims → atoms、条目 text → statement', () => {
+    const out = validateAtomizeOutput({
+      claims: [{ text: '张三丰创立武当派', type: 'fact', quote: 'q', confidence: 0.9 }],
+      events: [],
+    })
+    expect(out.atoms[0].statement).toBe('张三丰创立武当派')
+    expect(out.atoms[0].certainty).toBe(0.9)
+  })
+  it('合规输入原样通过（不被归一破坏）', () => {
+    const good = { atoms: [{ statement: 'x', type: 'fact', quote: 'q' }], events: [] }
+    expect(validateAtomizeOutput(JSON.parse(JSON.stringify(good))).atoms[0].statement).toBe('x')
+  })
+  it('缺失 statement 且无别名 → 校验失败（回喂重试路径）', () => {
+    expect(() =>
+      validateAtomizeOutput({ atoms: [{ type: 'fact', quote: 'q' }], events: [] }),
+    ).toThrow(/statement/)
   })
 })

@@ -132,12 +132,42 @@ const ajv = new Ajv({ allErrors: true, removeAdditional: true })
 const validateAtomize = ajv.compile(ATOMIZE_SCHEMA)
 const validateAdjudicate = ajv.compile(ADJUDICATE_SCHEMA)
 
+/**
+ * 模型输出字段归一（ajv 校验前执行）。真机实证：模型会用近义命名
+ * （顶层 claims 代替 atoms、条目 text 代替 statement）——内容质量没问题，
+ * 纯字段名漂移。别名映射在解析层归一，让「多吐字段」与「近义命名」都不致命。
+ */
+export function normalizeAtomizeRaw(data: unknown): unknown {
+  if (typeof data !== 'object' || data === null) return data
+  const out = { ...(data as Record<string, unknown>) }
+  if (!Array.isArray(out.atoms) && Array.isArray(out.claims)) out.atoms = out.claims
+  if (!Array.isArray(out.atoms) && Array.isArray(out.statements)) out.atoms = out.statements
+  if (Array.isArray(out.atoms)) {
+    out.atoms = (out.atoms as Array<Record<string, unknown>>).map((a) => {
+      if (typeof a !== 'object' || a === null) return a
+      const item = { ...a }
+      if (item.statement === undefined) {
+        for (const alias of ['text', 'claim', 'content', 'desc']) {
+          if (typeof item[alias] === 'string') {
+            item.statement = item[alias]
+            break
+          }
+        }
+      }
+      if (item.certainty === undefined && typeof item.confidence !== 'undefined') item.certainty = item.confidence
+      return item
+    })
+  }
+  return out
+}
+
 /** 校验并收窄；失败抛错（错误清单供回喂重试） */
 export function validateAtomizeOutput(data: unknown): AtomizeOutput {
-  if (!validateAtomize(data)) {
+  const normalized = normalizeAtomizeRaw(data)
+  if (!validateAtomize(normalized)) {
     throw new Error(`atomize 输出校验失败: ${ajv.errorsText(validateAtomize.errors)}`)
   }
-  return data as AtomizeOutput
+  return normalized as AtomizeOutput
 }
 
 /** 校验并做索引合法性过滤（越界索引丢弃——模型幻觉编号不致污染落库） */

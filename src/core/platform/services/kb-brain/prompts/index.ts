@@ -25,6 +25,10 @@ export const ATOMIZE_SYSTEM = `你是文学资料研究员。把给定章节文�
    （character=人物 location=地点 organization=组织 item=物品 concept=概念
    plot-motif=情节母题 setting-system=设定体系）。论断的 subject/object 必须引用 mentions 里的规范名。
 
+字段名严格约定（不得使用任何同义词替代）：论断句的字段是 statement（不是 text/claim/content）；
+顶层键是 atoms（不是 claims）。输出示例（仅示意结构）：
+{"atoms":[{"statement":"张三丰创立武当派","type":"fact","certainty":0.9,"quote":"张三丰开创武当","subject":"张三丰"}],"events":[]}
+
 只输出 JSON，不要任何解释。`
 
 export function buildAtomizeUser(input: {
