@@ -219,6 +219,25 @@ describe('normalizeAtomizeRaw（模型字段别名归一）', () => {
     const good = { atoms: [{ statement: 'x', type: 'fact', quote: 'q' }], events: [] }
     expect(validateAtomizeOutput(JSON.parse(JSON.stringify(good))).atoms[0].statement).toBe('x')
   })
+  it('三元组形态（subject/predicate/object）→ 拼接为 statement；mentions 字符串数组归一', () => {
+    const out = validateAtomizeOutput({
+      atoms: [
+        {
+          id: 'a1',
+          subject: '人类',
+          predicate: '相信',
+          object: '九天之上诸般神灵',
+          type: 'fact',
+          quote: '遂以为九天之上',
+        },
+      ],
+      events: [],
+      mentions: ['人类', '九天之上诸般神灵'],
+    })
+    expect(out.atoms[0].statement).toBe('人类相信九天之上诸般神灵')
+    expect((out.mentions ?? [])[0]).toEqual({ name: '人类', type: 'concept' })
+  })
+
   it('缺失 statement 且无别名 → 校验失败（回喂重试路径）', () => {
     expect(() =>
       validateAtomizeOutput({ atoms: [{ type: 'fact', quote: 'q' }], events: [] }),

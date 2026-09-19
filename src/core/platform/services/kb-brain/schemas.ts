@@ -147,6 +147,7 @@ export function normalizeAtomizeRaw(data: unknown): unknown {
       if (typeof a !== 'object' || a === null) return a
       const item = { ...a }
       if (item.statement === undefined) {
+        // 别名优先：text/claim/content/desc
         for (const alias of ['text', 'claim', 'content', 'desc']) {
           if (typeof item[alias] === 'string') {
             item.statement = item[alias]
@@ -154,9 +155,21 @@ export function normalizeAtomizeRaw(data: unknown): unknown {
           }
         }
       }
+      // 三元组形态（subject/predicate/object）→ 拼接为论断句
+      if (item.statement === undefined && typeof item.subject === 'string') {
+        const pred = typeof item.predicate === 'string' ? item.predicate : ''
+        const obj = typeof item.object === 'string' ? item.object : ''
+        if (obj) item.statement = `${item.subject}${pred}${obj}`
+      }
       if (item.certainty === undefined && typeof item.confidence !== 'undefined') item.certainty = item.confidence
       return item
     })
+  }
+  // mentions 字符串数组 → 对象数组（模型常把类型省略成纯名字列表）
+  if (Array.isArray(out.mentions)) {
+    out.mentions = (out.mentions as Array<unknown>).map((m) =>
+      typeof m === 'string' ? { name: m, type: 'concept' } : m,
+    )
   }
   return out
 }
