@@ -12,6 +12,7 @@ import {
   parseBrainConfig,
   stringifyBrainConfig,
   defaultBrainConfig,
+  mergeBrainConfig,
   type KbBrainConfig,
 } from './brain-config'
 
@@ -36,16 +37,8 @@ export class KbBrainPanelService {
     const kb = await db.knowledgeBases?.findById(kbId)
     if (!kb) return { success: false, error: '知识库不存在' }
     const base = kb.brainConfig ? parseBrainConfig(kb.brainConfig) ?? defaultBrainConfig(true) : defaultBrainConfig(true)
-    // 按段深合并（盲审修复：浅合并会让嵌套 partial 丢 required 字段 → 校验炸）
-    const merged: KbBrainConfig = {
-      ...base,
-      ...patch,
-      digestion: { ...base.digestion, ...(patch.digestion ?? {}) },
-      lenses: { ...base.lenses, ...(patch.lenses ?? {}) },
-      patterns: { ...base.patterns, ...(patch.patterns ?? {}) },
-      distillation: { ...base.distillation, ...(patch.distillation ?? {}) },
-      learning: { ...base.learning, ...(patch.learning ?? {}) },
-    }
+    // 段级深合并（mergeBrainConfig 与 parseBrainConfig 同段清单——浅合并/漏段会让嵌套 partial 丢 required 字段 → 校验炸）
+    const merged: KbBrainConfig = mergeBrainConfig(base, patch)
     const raw = stringifyBrainConfig(merged)
     const ok = await db.knowledgeBases!.update(kbId, { brainConfig: raw })
     if (!ok) return { success: false, error: '保存失败' }

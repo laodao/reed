@@ -20,6 +20,7 @@ import { PROVIDER_TEMPLATES, isApiKeyOptional } from '@core/platform/services/pr
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { createLogger } from '@core/utils/logger'
 import { validateOutboundUrl } from '@core/utils/outbound-url'
+import { isChatModel } from '@shared/utils/model-predicates'
 import type { ProviderTemplate, UserProviderConfig, ChatContext } from '@shared/types'
 
 const aiLogger = createLogger('ai-call')
@@ -132,14 +133,10 @@ function pickFirstChatModelId(
   models: Array<{ id: string; type?: string; features?: string[] }> | undefined | null,
 ): string | undefined {
   if (!Array.isArray(models) || models.length === 0) return undefined
-  // 优先 type='text' 且 features 含 'chat'
+  // 优先 chat 模型（共享谓词），兜底任意 text 模型，再兜底第一个有 id 的
   const m =
-    models.find(
-      (x) => x?.id && (x.type === 'text' || !x.type) && Array.isArray(x.features) && x.features.includes('chat'),
-    ) ??
-    // 兜底：任意 type='text' 模型
+    models.find((x) => isChatModel(x)) ??
     models.find((x) => x?.id && (x.type === 'text' || !x.type)) ??
-    // 最弱兜底：第一个有 id 的
     models.find((x) => !!x?.id)
   return m?.id
 }

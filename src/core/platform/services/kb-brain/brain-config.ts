@@ -142,7 +142,11 @@ export function parseBrainConfig(raw: string | null | undefined): KbBrainConfig 
     const detail = ajv.errorsText(validate.errors)
     throw new Error(`brainConfig 校验失败: ${detail}`)
   }
-  const partial = json as Partial<KbBrainConfig>
+  return normalizeBrainConfig(json as Partial<KbBrainConfig>)
+}
+
+/** partial → 全量配置：所有嵌套段深合并（浅合并会丢段内 required 字段 → 校验炸） */
+export function normalizeBrainConfig(partial: Partial<KbBrainConfig>): KbBrainConfig {
   const def = defaultBrainConfig(partial.enabled ?? true)
   return {
     enabled: partial.enabled ?? def.enabled,
@@ -155,6 +159,36 @@ export function parseBrainConfig(raw: string | null | undefined): KbBrainConfig 
     crag: { ...def.crag, ...partial.crag },
     models: { ...def.models, ...partial.models },
   }
+}
+
+/** 段合并：base 打底，仅采纳 patch 中显式定义（非 undefined）的键——半段 patch 不丢 base 子键 */
+function mergeSeg<T extends object>(base: T, patch: Partial<T> | undefined): T {
+  const out = { ...base } as unknown as Record<string, unknown>
+  if (patch) {
+    for (const [k, v] of Object.entries(patch)) {
+      if (v !== undefined) out[k] = v
+    }
+  }
+  return out as T
+}
+
+/**
+ * 已有配置 + 前端 patch → 合并配置（updateConfig 写路径）。
+ * 段级深合并且段内保留 base 子键（缺省键回退默认值的是 parseBrainConfig 的职责，
+ * 两处语义不同：merge 丢 base 子键 = 用户已保存设置被静默重置）。
+ * patch 顶层 undefined 值键同样剥离（显式 undefined 不翻 enabled）。
+ */
+export function mergeBrainConfig(base: KbBrainConfig, patch: Partial<KbBrainConfig>): KbBrainConfig {
+  return normalizeBrainConfig({
+    ...mergeSeg(base, patch),
+    digestion: mergeSeg(base.digestion, patch.digestion),
+    lenses: mergeSeg(base.lenses, patch.lenses),
+    patterns: mergeSeg(base.patterns, patch.patterns),
+    distillation: mergeSeg(base.distillation, patch.distillation),
+    learning: mergeSeg(base.learning, patch.learning),
+    crag: mergeSeg(base.crag, patch.crag),
+    models: mergeSeg(base.models, patch.models),
+  })
 }
 
 /** 序列化前校验（写路径统一走这里，非法配置写不进库） */

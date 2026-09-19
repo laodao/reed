@@ -10,6 +10,7 @@ import {
   stringifyBrainConfig,
   parseBrainState,
   defaultBrainConfig,
+  mergeBrainConfig,
 } from '@core/platform/services/kb-brain/brain-config'
 
 describe('parseBrainConfig', () => {
@@ -102,5 +103,46 @@ describe('parseBrainState', () => {
     const s = parseBrainState('{"importance":12,"lastDistillAt":"2026-09-16T00:00:00Z"}')
     expect(s.importance).toBe(12)
     expect(s.lastDistillAt).toBe('2026-09-16T00:00:00Z')
+  })
+})
+
+describe('mergeBrainConfig（updateConfig 段级深合并）', () => {
+  it('patch 带 models 全段 → 其余段沿用 base', () => {
+    const base = parseBrainConfig('{"enabled":true,"autoApproveThreshold":0.6}')!
+    const merged = mergeBrainConfig(base, { models: { atomize: 'prov-1:qwen-max', adjudicate: '' } })
+    expect(merged.models).toEqual({ atomize: 'prov-1:qwen-max', adjudicate: '' })
+    expect(merged.autoApproveThreshold).toBe(0.6)
+    expect(merged.digestion).toEqual(base.digestion)
+    expect(() => stringifyBrainConfig(merged)).not.toThrow()
+  })
+
+  it('判别回归：models 半段 patch → base 子键保留，不回退默认（旧实现丢 adjudicate）', () => {
+    const base = { ...defaultBrainConfig(true), models: { atomize: 'old-m', adjudicate: 'old-adj' } }
+    const merged = mergeBrainConfig(base, { models: { atomize: 'new-m' } })
+    expect(merged.models).toEqual({ atomize: 'new-m', adjudicate: 'old-adj' })
+  })
+
+  it('判别回归：digestion 半段 patch → scopeDocumentIds 保留（旧实现静默抹掉）', () => {
+    const base = { ...defaultBrainConfig(true), digestion: { enabled: true, scopeDocumentIds: ['doc-1'] } }
+    const merged = mergeBrainConfig(base, { digestion: { enabled: false } })
+    expect(merged.digestion).toEqual({ enabled: false, scopeDocumentIds: ['doc-1'] })
+  })
+
+  it('crag 半段 patch（单键即满足 schema required）→ stringify 不炸', () => {
+    const base = defaultBrainConfig(true)
+    const merged = mergeBrainConfig(base, { crag: { enabled: true } } as never)
+    expect(merged.crag).toEqual({ enabled: true })
+    expect(() => stringifyBrainConfig(merged)).not.toThrow()
+  })
+
+  it('patch 显式 enabled: undefined → 剥离，不翻 base.enabled', () => {
+    const base = { ...defaultBrainConfig(false), enabled: false }
+    const merged = mergeBrainConfig(base, { enabled: undefined } as never)
+    expect(merged.enabled).toBe(false)
+  })
+
+  it('空 patch → base 原样', () => {
+    const base = defaultBrainConfig(true)
+    expect(mergeBrainConfig(base, {})).toEqual(base)
   })
 })

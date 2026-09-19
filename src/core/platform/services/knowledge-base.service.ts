@@ -50,6 +50,7 @@ import type {
   KnowledgeBaseFolder,
 } from '@shared/types/knowledge-base.types'
 import { knowledgeParams } from '@shared/utils/knowledge-params'
+import { isListableChatModel } from '@shared/utils/model-predicates'
 
 // D3：索引分词抽至 kb-tokenize（知识大脑论断入池同源复用；词表与分词必须一处定义）
 
@@ -1404,9 +1405,37 @@ export class KnowledgeBaseService {
     return this.listModelsByType('rerank', 0, 0)
   }
 
-  /** 知识大脑：列出系统已启用的对话模型（面板模型设置下拉源） */
+  /**
+   * 知识大脑：列出系统已启用的对话模型（面板模型设置下拉源）。
+   * 判定用共享谓词 isListableChatModel（与 ai-call / provider-adapter 选型口径一致）——
+   * 不能按 type='chat' 过滤：ModelType 枚举里没有 'chat'；text（或缺省）与
+   * multimodal+chat（视觉理解主力款）都可作为对话模型。
+   */
   async getChatModels(): Promise<{ success: boolean; data?: EmbeddingModel[]; error?: string }> {
-    return this.listModelsByType('chat', 0, 0)
+    try {
+      const db = getCoreDatabaseManager()
+      if (!db.providerConfigs) return { success: false, error: '数据库未初始化' }
+      const configs = await db.providerConfigs.getEnabled()
+      const models: EmbeddingModel[] = []
+      for (const cfg of configs) {
+        if (!cfg.models) continue
+        for (const m of cfg.models) {
+          if (!isListableChatModel(m)) continue
+          models.push({
+            id: m.id,
+            name: `${cfg.name} - ${m.name || m.id}`,
+            provider: 'cloud',
+            dimension: 0,
+            maxTokens: m.maxOutputTokens || 0,
+            providerConfigId: cfg.id,
+            providerTemplateId: cfg.templateId,
+          })
+        }
+      }
+      return { success: true, data: models }
+    } catch (e: any) {
+      return { success: false, error: e.message }
+    }
   }
 
   /** 按模型类型列出已启用提供商的模型（embedding/rerank 共用；严禁复制粘贴两份） */
