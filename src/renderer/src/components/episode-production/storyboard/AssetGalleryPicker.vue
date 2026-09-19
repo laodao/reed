@@ -48,7 +48,7 @@
 <script setup lang="ts">
 /**
  * 资产图集选择器（分镜制作左侧栏）。
- * 左：资产树；右：选中资产的图集缩略网格。图片可拖拽，dragstart 时写入资产名供提示词框 drop 引用。
+ * 左：资产树；右：选中资产的图集缩略网格。图片可拖拽，dragstart 时写入资产引用（含图索引）供提示词框 drop 精确引用。
  */
 import { ref, reactive, watch, onMounted } from 'vue'
 import AssetTree from '@/components/episode-production/asset/AssetTree.vue'
@@ -106,8 +106,11 @@ function categoryLabel(cat: string): string {
   return map[cat] || cat
 }
 
-/** 拖拽开始：写入资产名（分镜提示词框 drop 时读取并 @ 引用） */
+/** 拖拽开始：写入资产引用（含图索引；提示词框 drop 时按 @[名字@索引] 精确引用） */
 function onDragStart(img: any, e: DragEvent): void {
+  const idx = images.value.findIndex(im => im.id === img.id)
+  const ref = { id: selected.value.id, name: selected.value.name, index: idx >= 0 ? idx + 1 : null }
+  e.dataTransfer?.setData('text/asset-ref', JSON.stringify(ref))
   e.dataTransfer?.setData('text/asset-name', selected.value.name)
   e.dataTransfer?.setData('text/plain', selected.value.name)
   if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy'

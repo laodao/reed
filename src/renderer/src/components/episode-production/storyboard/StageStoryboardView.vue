@@ -18,6 +18,7 @@
         >
           <el-icon><MagicStick /></el-icon>
           <template v-if="generating && cogenProgress">场景 {{ cogenProgress.sceneNumber }}/{{ cogenProgress.totalScenes }}</template>
+          <template v-else>生成分镜</template>
         </el-button>
       </div>
     </div>
@@ -30,10 +31,26 @@
       <main class="sb-center">
         <!-- 空态：无场景 -->
         <div v-if="scenes.length === 0" class="no-scenes">
-          <el-empty description="请先在「剧本」页拆分场景" />
+          <el-empty description="请先在「剧本」页拆分场景">
+            <el-button type="primary" @click="emit('switch-tab', 'script')">去「剧本」页拆分场景</el-button>
+          </el-empty>
         </div>
 
         <template v-else>
+          <!-- 空态：有场景但全剧还没有分镜 → 主按钮走批量联合生成 -->
+          <div v-if="totalStoryboards === 0" class="no-storyboards">
+            <el-button
+              type="primary"
+              :loading="generating"
+              title="批量生成分镜（cogen 联合生成：资产识别+分镜一次完成）"
+              @click="onGenerateAllStoryboards"
+            >
+              <el-icon><MagicStick /></el-icon>
+              <template v-if="generating && cogenProgress">场景 {{ cogenProgress.sceneNumber }}/{{ cogenProgress.totalScenes }}</template>
+              <template v-else>生成全部分镜（自动识别并绑定资产）</template>
+            </el-button>
+          </div>
+
           <!-- 兼容存量：有分镜但尚未分段 → 引导重新分段 -->
           <el-alert
             v-if="segmentsLoaded && segments.length === 0 && totalStoryboards > 0"
@@ -164,8 +181,8 @@
                   </div>
                 </div>
                 <!-- 无分镜时占位 -->
-                <div v-if="!(storyboards[sc.id] || []).length" class="shot-tile empty-tile" @click="onEnterScene(sc)">
-                  <div class="tile-empty"><el-icon :size="18"><Plus /></el-icon><span>进入制作</span></div>
+                <div v-if="!(storyboards[sc.id] || []).length" class="shot-tile empty-tile">
+                  <div class="tile-empty"><el-icon :size="18"><Plus /></el-icon><span>尚未生成分镜</span></div>
                 </div>
               </div>
             </div>
@@ -229,9 +246,6 @@
  * 恢复原有按场次分组样式，且一片段一格（一个片段多个分镜 → 一段视频，不逐镜展示，
  * 镜数体现在格的 meta 里）：片段格 = 视频封面/状态角标 + 片段序号 + 镜数·时长 + 播放/生成。
  *   - 片段 = 制作/生成最小单元；分镜格保持原样式，占位文字跟随所属片段状态
- *   - 顶部：时长预算（写 video_projects.config.segmentDurationBudgetSec，5-30s）
- *     + 重新分段（ep:recompute-segments，确认后执行——会清未生成段，completed 段保留）
- *     + 全部生成（片段串行，单段失败不阻断，最后汇总）
  *   - 未分段的存量项目 → 提示"未分段"并引导重新分段
  *
  * 数据：getEpisode → scriptId → listScenes → listStoryboards(sceneId) + listSegments(episodeId)。
@@ -241,13 +255,16 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { MagicStick, Picture, Plus, VideoPlay, Document, Right } from '@element-plus/icons-vue'
 import SceneNav from '@/components/episode-production/script/SceneNav.vue'
 import { toImageUrl, toVideoUrl } from '@/utils/asset-url'
+import type { EpStudioTab } from '@/composables/useEpStudioContext'
 
 const props = defineProps<{
   episodeId: string
   projectId: string
   contextHint?: string | null
+  /** agent 改数据后由 Studio 递增，触发本页重载 */
+  refreshTick?: number
 }>()
-const emit = defineEmits<{ 'enter-scene': [sceneId: string] }>()
+const emit = defineEmits<{ 'enter-scene': [sceneId: string]; 'switch-tab': [tab: EpStudioTab] }>()
 
 /** 片段预览条目（与后端 EpSegmentationService.SegmentPreviewItem 对齐） */
 interface SegmentItem {
@@ -477,7 +494,7 @@ async function onRecompute(): Promise<void> {
 /** 片段级生成（不传 forceMode：由后端 pickVideoMode 按关键帧数自动选 text2video/参考图模式） */
 async function onGenerateSegment(seg: SegmentItem): Promise<void> {
   if (!videoProviderId.value || !videoModelId.value) {
-    ElMessage.warning('请先在右上角选择视频模型')
+    ElMessage.warning('未找到可用的视频服务：请在顶栏「设置」中配置视频服务/模型')
     return
   }
   generatingSegmentId.value = seg.segmentId
@@ -629,8 +646,8 @@ function mergeDisabledReason(sceneId: string, seg: SegmentItem): string {
   const next = nextSegmentOf(sceneId, seg)
   if (!next) return ''
   if (seg.status === 'generating' || next.status === 'generating') return '片段正在生成中，不能合并'
-  if (seg.estDuration + next.estDuration > 15) {
-    return `合并后预估时长 ${seg.estDuration + next.estDuration}s 超过 15s 上限`
+  if (seg.estDuration + next.estDuration > budgetSec.value) {
+    return `合并后预估时长 ${seg.estDuration + next.estDuration}s 超过 ${budgetSec.value}s 上限`
   }
   return ''
 }
@@ -692,7 +709,8 @@ function durationLabel(d?: number): string {
 }
 
 watch(() => props.episodeId, () => void load())
-onMounted(() => {
+watch(() => props.refreshTick, () => void load())
+onMounted(async () => {
   // H13：订阅 cogen 逐场景进度（ep:cogen-progress；onCogenProgress 返回退订函数，同 onStoryboardsProgress 写法）
   const api = window.electronAPI?.episodeProduction as any
   if (typeof api?.onCogenProgress === 'function') {
@@ -702,8 +720,9 @@ onMounted(() => {
       },
     )
   }
-  void loadVideoProviders()
-  void load()
+  // 先等 provider 列表就绪再 load（load 内的 loadProjectConfig 要按 providers 校验项目 config.videoModel）
+  await loadVideoProviders()
+  await load()
 })
 onUnmounted(() => {
   unsubscribeCogenProgress?.()
@@ -755,9 +774,6 @@ onUnmounted(() => {
   .tb-right { display: flex; align-items: center; gap: 6px; }
   .tb-label { font-size: 12px; color: var(--text-color-secondary); }
   .tb-unit { font-size: 12px; color: var(--text-color-placeholder); }
-  .budget-input { width: 72px; }
-  .provider-select { width: 120px; }
-  .model-select { width: 140px; }
 }
 
 .sb-body { flex: 1; min-height: 0; display: flex; }
@@ -769,6 +785,7 @@ onUnmounted(() => {
 .sb-center { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; padding: 20px 24px; }
 
 .no-scenes { height: 100%; display: flex; align-items: center; justify-content: center; }
+.no-storyboards { display: flex; justify-content: center; padding: 24px 0 8px; }
 
 .seg-hint { max-width: 900px; margin-bottom: 14px; }
 
@@ -797,7 +814,11 @@ onUnmounted(() => {
   .tile-meta { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; }
   .tile-no { font-size: 12px; font-weight: 600; color: var(--text-color-primary); }
   .tile-dur { font-size: 11px; color: var(--text-color-placeholder); }
-  &.empty-tile .tile-preview { height: 110px; }
+  &.empty-tile {
+    cursor: default;
+    &:hover { border-color: var(--border-color-lighter); box-shadow: none; }
+    .tile-preview { height: 110px; }
+  }
 }
 
 /* ── 片段格（原 tile 样式；一片段一格，状态角标 + 操作行） ── */

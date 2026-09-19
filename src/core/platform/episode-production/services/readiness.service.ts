@@ -13,7 +13,9 @@
  *                  + 分镜 characters[].characterId + 分镜 locationBindingIds；
  *   分镜：storyboards 非空，且每个镜的 characters[].characterId 全非空
  *         （characters 为空数组的镜算合格）；
- *   合成：非 superseded 片段存在且全部 completed 且有 video_path。
+ *   合成：逐镜判定——分镜自身有 video_path，或其所属非 superseded 片段
+ *         completed 且有 video_path（与 timeline-builder 同口径）；未入段的
+ *         老数据只看分镜自身 video_path；无分镜时回退到片段级检查。
  *
  * 与 workflow/stage-gate.service.ts 的区别：stage-gate 面向 6 段状态机流转
  * （含 approved 定稿、 composedVideoPath 等），本 service 面向 Studio 四 tab 的
@@ -84,7 +86,7 @@ export class EpisodeReadinessService {
       script: this.evalScript(script != null, scenes.length),
       assets: await this.evalAssets(episode.projectId, scenes, storyboards),
       storyboard: this.evalStoryboard(scenes, storyboards),
-      compose: await this.evalCompose(episodeId),
+      compose: await this.evalCompose(episodeId, storyboards),
     }
   }
 
@@ -185,20 +187,48 @@ export class EpisodeReadinessService {
     return { ready: missing.length === 0, missing }
   }
 
-  /** 合成：非 superseded 片段存在且全部 completed 且有 video_path */
-  private async evalCompose(episodeId: string): Promise<EpisodeStageReadiness> {
+  /**
+   * 合成：与 timeline-builder 同口径的逐镜判定——分镜有视频 = 自身 video_path
+   * 或其所属非 superseded 片段 completed 且有 video_path；未入段的老数据只看
+   * 分镜自身 video_path。无分镜时回退到片段级检查（兼容无分镜存量的旧剧集）。
+   */
+  private async evalCompose(
+    episodeId: string,
+    storyboards: Awaited<ReturnType<StoryboardRepository['getBySceneScriptId']>>,
+  ): Promise<EpisodeStageReadiness> {
     const all = await this.segmentRepo.listByEpisode(episodeId)
     const active = all.filter(s => s.status !== 'superseded')
     const missing: string[] = []
-    if (active.length === 0) {
-      missing.push('尚无视频片段（请先在「分镜」页分段并生成片段视频）')
+    if (storyboards.length === 0 && active.length === 0) {
+      missing.push('尚无分镜/片段（请先在「分镜」页生成分镜并生成片段视频）')
       return { ready: false, missing }
     }
-    for (const seg of active) {
+    if (storyboards.length === 0) {
+      for (const seg of active) {
+        if (seg.status !== 'completed') {
+          missing.push(`片段 ${seg.seq} 未完成生成（当前状态：${seg.status}）`)
+        } else if (!seg.videoPath) {
+          missing.push(`片段 ${seg.seq} 缺少视频文件`)
+        }
+      }
+      return { ready: missing.length === 0, missing }
+    }
+    const activeById = new Map(active.map(s => [s.id, s] as const))
+    const reportedSeg = new Set<string>()
+    for (const sb of storyboards) {
+      if (sb.videoPath) continue
+      const seg = sb.segmentId ? activeById.get(sb.segmentId) : undefined
+      if (!seg) {
+        missing.push(`镜头 ${sb.shotNumber} 尚无视频（未入片段或片段已废弃）`)
+        continue
+      }
+      if (reportedSeg.has(seg.id)) continue
       if (seg.status !== 'completed') {
         missing.push(`片段 ${seg.seq} 未完成生成（当前状态：${seg.status}）`)
+        reportedSeg.add(seg.id)
       } else if (!seg.videoPath) {
         missing.push(`片段 ${seg.seq} 缺少视频文件`)
+        reportedSeg.add(seg.id)
       }
     }
     return { ready: missing.length === 0, missing }

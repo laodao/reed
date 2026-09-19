@@ -186,7 +186,13 @@
         </template>
 
         <div v-else class="no-shot">
-          <el-empty description="左侧选择分镜" />
+          <el-empty v-if="emptyKind === 'scene'" description="本场还没有分镜">
+            <el-button type="primary" :loading="sceneCogenLoading" @click="onGenerateSceneStoryboards">生成本场分镜</el-button>
+          </el-empty>
+          <el-empty v-else-if="emptyKind === 'all'" description="还没有分镜">
+            <el-button type="primary" @click="emit('go-back')">返回列表生成</el-button>
+          </el-empty>
+          <el-empty v-else description="左侧选择分镜" />
         </div>
       </main>
     </div>
@@ -236,12 +242,16 @@ const props = defineProps<{
   /** 指定编辑的场次（来自列表页点击）；为空则取第一个有分镜的场次 */
   sceneId?: string | null
   contextHint?: string | null
+  /** agent 改数据后由 Studio 递增，触发本页重载 */
+  refreshTick?: number
 }>()
 const emit = defineEmits<{ 'go-back': [] }>()
 
 const scenes = ref<any[]>([])
 const shots = ref<any[]>([])
 const selectedShot = ref<any>(null)
+/** 空态类型：none=有分镜；scene=目标场无分镜；all=全剧无分镜 */
+const emptyKind = ref<'none' | 'scene' | 'all'>('none')
 const promptText = ref('')
 const generating = ref(false)
 const dirty = ref(false)
@@ -375,27 +385,39 @@ function videoUrl(sb: any): string | null {
 }
 
 async function load(): Promise<void> {
-  if (!props.episodeId) { scenes.value = []; shots.value = []; promptText.value = ''; return }
+  if (!props.episodeId) { scenes.value = []; shots.value = []; promptText.value = ''; emptyKind.value = 'none'; return }
   const ep = await window.electronAPI.episodeProduction.getEpisode(props.episodeId)
-  if (!ep.success || !ep.data?.scriptId) { scenes.value = []; shots.value = []; promptText.value = ''; return }
+  if (!ep.success || !ep.data?.scriptId) { scenes.value = []; shots.value = []; promptText.value = ''; emptyKind.value = 'none'; return }
 
   const scResp = await window.electronAPI.episodeProduction.listScenes(ep.data.scriptId)
   scenes.value = scResp.success ? (scResp.data || []) : []
   await loadSegments()
-  // 优先加载指定场次（来自列表页点击）；否则取第一个有分镜的场次
-  const target = props.sceneId ? scenes.value.find(s => s.id === props.sceneId) : null
-  const order = target ? [target, ...scenes.value.filter(s => s.id !== target.id)] : scenes.value
-  for (const sc of order) {
+  emptyKind.value = 'none'
+  // 指定了目标场次（来自列表页点击）：只加载该场；该场无分镜 → 本场空态，不串到别的场
+  if (props.sceneId) {
+    const target = scenes.value.find(s => s.id === props.sceneId)
+    const sbResp = target
+      ? await window.electronAPI.episodeProduction.listStoryboards(target.id)
+      : null
+    if (sbResp?.success && sbResp.data?.length) {
+      shots.value = sbResp.data
+      await ensureSegments()
+      selectShot(shots.value[0])
+      syncPrompt()
+    } else {
+      shots.value = []
+      selectedShot.value = null
+      promptText.value = ''
+      emptyKind.value = 'scene'
+    }
+    return
+  }
+  // 未指定场次：取第一个有分镜的场次
+  for (const sc of scenes.value) {
     const sbResp = await window.electronAPI.episodeProduction.listStoryboards(sc.id)
     if (sbResp.success && sbResp.data?.length) {
       shots.value = sbResp.data
-      // 有分镜但未分段 → 静默补齐分段（片段是制作页最小单元；completed 段后端保留）
-      if (shots.value.some(sb => !segmentByShotId.value.get(sb.id))) {
-        try {
-          const r = await (window.electronAPI.episodeProduction as any).recomputeSegments(props.episodeId, {})
-          if (r?.success) await loadSegments()
-        } catch { /* 静默失败：保留未分段的单镜回退视图 */ }
-      }
+      await ensureSegments()
       selectShot(shots.value[0])
       syncPrompt()
       return
@@ -404,6 +426,37 @@ async function load(): Promise<void> {
   shots.value = []
   selectedShot.value = null
   promptText.value = ''
+  emptyKind.value = 'all'
+}
+
+/** 有分镜但未分段 → 静默补齐分段（片段是制作页最小单元；completed 段后端保留） */
+async function ensureSegments(): Promise<void> {
+  if (!shots.value.some(sb => !segmentByShotId.value.get(sb.id))) return
+  try {
+    const r = await (window.electronAPI.episodeProduction as any).recomputeSegments(props.episodeId, {})
+    if (r?.success) await loadSegments()
+  } catch { /* 静默失败：保留未分段的单镜回退视图 */ }
+}
+
+/** 空态主按钮：生成本场分镜（ep:cogen-scene-storyboards），成功后重载 */
+const sceneCogenLoading = ref(false)
+async function onGenerateSceneStoryboards(): Promise<void> {
+  const sc = scenes.value.find(s => s.id === props.sceneId)
+  if (!sc || sceneCogenLoading.value) return
+  sceneCogenLoading.value = true
+  try {
+    const r = await (window.electronAPI.episodeProduction as any).cogenSceneStoryboards(sc.id)
+    if (r?.success) {
+      ElMessage.success(`场次 ${sc.sceneNumber} 分镜已生成（${r.data?.shotCount ?? 0} 镜）`)
+      await load()
+    } else {
+      ElMessage.error(r?.error || '生成场景分镜失败')
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || '生成场景分镜失败')
+  } finally {
+    sceneCogenLoading.value = false
+  }
 }
 
 function selectShot(shot: any): void {
@@ -424,7 +477,7 @@ async function onGenerate(): Promise<void> {
   if (!selectedShot.value || generating.value) return
   const seg = selectedShotSegment.value
   if (!seg) {
-    ElMessage.warning('该镜头尚未分段：请返回分镜列表点「重新分段」（或用镜头行 🎬 单镜生成）')
+    ElMessage.warning('该镜头尚未分段：请返回分镜列表（会自动分段），或用镜头行 🎬 单镜生成')
     return
   }
   if (!videoProviderId.value || !videoModelId.value) {
@@ -758,6 +811,19 @@ async function loadVideoProviders(): Promise<void> {
   }
 }
 
+/** 读项目 config.videoModel 作为默认视频模型（provider 未配置则保留第一个可用项） */
+async function loadProjectConfig(): Promise<void> {
+  if (!props.projectId) return
+  const r = await window.electronAPI.episodeProduction.getProject(props.projectId)
+  if (!r?.success || !r.data) return
+  const vm = r.data.config?.videoModel
+  if (vm?.providerConfigId && videoProviders.value.some(p => p.providerConfigId === vm.providerConfigId)) {
+    videoProviderId.value = vm.providerConfigId
+    const models = videoModels.value
+    videoModelId.value = models.some(m => m.id === vm.modelId) ? vm.modelId : (models[0]?.id ?? '')
+  }
+}
+
 function onVideoProviderChange(): void {
   // 切换服务时选中其第一个模型
   videoModelId.value = videoModels.value[0]?.id ?? ''
@@ -871,6 +937,7 @@ async function reloadShot(shotId: string): Promise<void> {
 }
 
 watch(() => [props.episodeId, props.sceneId] as const, () => void load())
+watch(() => props.refreshTick, () => void load())
 watch(styleName, () => {
   // 页面级风格变化 → 同步每行风格参数
   if (!promptText.value) return
@@ -889,7 +956,9 @@ watch(styleName, () => {
 onMounted(async () => {
   const sp = await window.electronAPI.episodeProduction.getStylePresets()
   if (sp.success && sp.data?.length) stylePresets.value = sp.data
-  void loadVideoProviders()
+  // 先 provider 列表、再应用项目 config.videoModel 默认项（顺序不能反）
+  await loadVideoProviders()
+  await loadProjectConfig()
   await loadMentionEntities()
   void load()
 })

@@ -67,7 +67,9 @@
               :project-id="projectId"
               :context-hint="ctx.contextHint.value"
               :external-asset="ctx.selectedAsset.value"
+              :refresh-tick="agentTick"
               @data-changed="onTabDataChanged"
+              @switch-tab="setTab"
             />
           </div>
         </div>
@@ -180,6 +182,9 @@ interface EpisodeReadiness {
 }
 const readiness = ref<EpisodeReadiness | null>(null)
 
+/** agent 改数据的版本号：作为 refresh-tick 传给当前 tab 组件触发其重载 */
+const agentTick = ref(0)
+
 /** tab key → readiness 阶段 key（资产 tab 对应 assets） */
 const STAGE_KEY: Record<EpStudioTab, keyof EpisodeReadiness> = {
   script: 'script',
@@ -203,8 +208,8 @@ function stageSuggestion(tab: EpStudioTab): string {
   switch (tab) {
     case 'script': return '请在本页生成剧本并拆分场景'
     case 'asset': return '请到「资产」页创建资产并生成主图'
-    case 'storyboard': return '请先在「剧本」页完成剧本，再在本页批量生成分镜'
-    case 'compose': return '请到「分镜」页生成全部片段视频后再导出'
+    case 'storyboard': return '请先在「剧本」页完成剧本，再点本页「生成分镜」'
+    case 'compose': return '请到「分镜」页逐片段生成视频后再导出'
     default: return ''
   }
 }
@@ -345,6 +350,7 @@ async function onEpisodeChange(): Promise<void> {
 }
 
 function onAgentDataChanged(_sections: string[]): void {
+  agentTick.value++
   void loadEpisode()
   void loadReadiness()
 }

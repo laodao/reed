@@ -36,7 +36,7 @@
       <div class="seg-section">
         <div class="sec-title">视频片段</div>
         <div v-if="activeSegments.length === 0" class="seg-empty">
-          <el-empty description="暂无片段：请先在「分镜」页重新分段并生成片段视频" :image-size="60" />
+          <el-empty description="暂无片段：请先在「分镜」页生成片段视频" :image-size="60" />
         </div>
         <div v-else class="seg-rows">
           <div
@@ -306,6 +306,8 @@ const props = defineProps<{
   episodeId: string
   projectId: string
   contextHint?: string | null
+  /** agent 改数据后由 Studio 递增，触发本页重载 */
+  refreshTick?: number
 }>()
 
 const scriptId = ref<string | null>(null)
@@ -601,6 +603,7 @@ function formatTime(ts: number): string {
 }
 
 watch(() => props.episodeId, () => void load())
+watch(() => props.refreshTick, () => void load())
 onMounted(() => void load())
 </script>
 

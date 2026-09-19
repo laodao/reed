@@ -679,6 +679,26 @@ function adjacentToken(dir: 'before' | 'after'): HTMLElement | null {
 // ==================== 拖图引用 ====================
 function onDrop(e: DragEvent): void {
   dragOver.value = false
+  // AssetGalleryPicker 拖入：text/asset-ref 带资产 id + 图索引，插入与 @ 弹层选图相同的 token
+  const rawRef = e.dataTransfer?.getData('text/asset-ref')
+  if (rawRef) {
+    try {
+      const ref = JSON.parse(rawRef) as { id?: string; name?: string; index?: number | null }
+      if (ref?.name) {
+        const ent = (props.entities ?? []).find(en => en.id === ref.id)
+          ?? (props.entities ?? []).find(en => en.name === ref.name)
+        const idx = typeof ref.index === 'number' ? ref.index : null
+        const display = idx != null ? `${ref.name} 图${idx}` : ref.name
+        const thumb = ent ? entityThumb(ent, idx) : ''
+        const thumbHtml = thumb ? `<img class="ent-thumb" src="${esc(thumb)}" alt="" />` : ''
+        insertAtCaret(
+          `<span class="pk-token entity" data-key="@entity" data-entity-id="${esc(ref.id ?? ent?.id ?? '')}" data-img-index="${idx ?? ''}" contenteditable="false"><span class="ent-thumb-wrap">${thumbHtml}</span>@${esc(display)}</span>&nbsp;`,
+        )
+        void nextTick(() => editorRef.value?.focus())
+        return
+      }
+    } catch { /* 非法负载回退到纯名字路径 */ }
+  }
   const name = e.dataTransfer?.getData('text/asset-name') || e.dataTransfer?.getData('text/plain') || ''
   if (!name) return
   insertAtCaret(`<span class="pk-token entity" data-key="@entity" data-entity-id="" contenteditable="false">@${esc(name.trim())}</span>&nbsp;`)
