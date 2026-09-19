@@ -24,6 +24,7 @@ const COSINE_CLUSTER_THRESHOLD = 0.72
 
 export interface DistillDeps {
   llm?: BrainLlmFn
+  modelOverride?: () => { providerConfigId?: string; modelId?: string }
   embed?: (texts: string[], kb: { id: string; embeddingConfig: string | null }) => Promise<number[][] | null>
   repos?: () => { atoms: KbAtomRepository; notes: KbNoteRepository; entities: KbEntityRepository } | null
   /** 设定模式卡开关（brainConfig.patterns.settingEnabled；缺省开） */
@@ -46,7 +47,7 @@ export class KbDistillService {
 
   constructor(deps: DistillDeps = {}) {
     this.settingPatternEnabled = deps.settingPatternEnabled ?? true
-    this.llm = deps.llm ?? defaultBrainLlm('kb-brain-adjudicate') // 高档：提炼走裁决档
+    this.llm = deps.llm ?? defaultBrainLlm('kb-brain-adjudicate', deps.modelOverride) // 高档：提炼走裁决档
     this.embedFn = deps.embed ?? (async () => null)
     this.reposFn =
       deps.repos ??

@@ -22,21 +22,18 @@ export interface BrainLlmRequest {
 
 export type BrainLlmFn = (req: BrainLlmRequest) => Promise<string>
 
-/** 环境变量模型覆盖（缺省回落宿主模型链） */
-export function brainModelOverride(kind: 'atomize' | 'adjudicate'): { providerConfigId?: string; modelId?: string } {
-  const raw = kind === 'atomize' ? process.env.KB_ATOMIZE_MODEL : process.env.KB_ADJUDICATE_MODEL
-  if (!raw) return {}
-  // 约定格式：modelId 或 providerConfigId:modelId（后者显式指提供商）
+/** 模型引用解析："modelId" 或 "providerConfigId:modelId" */
+export function parseModelRef(raw: string): { providerConfigId?: string; modelId?: string } {
   const sep = raw.indexOf(':')
   if (sep > 0) return { providerConfigId: raw.slice(0, sep), modelId: raw.slice(sep + 1) }
   return { modelId: raw }
 }
 
-function defaultLlmOnce(purpose: 'kb-brain-atomize' | 'kb-brain-adjudicate'): BrainLlmFn {
-  return async (req) => {
-    const opts = brainModelOverride(purpose === 'kb-brain-atomize' ? 'atomize' : 'adjudicate')
-    return generateCompletionText(purpose, { system: req.system, user: req.user, maxTokens: req.maxTokens }, opts)
-  }
+/** 环境变量模型覆盖（缺省回落宿主模型链） */
+export function brainModelOverride(kind: 'atomize' | 'adjudicate'): { providerConfigId?: string; modelId?: string } {
+  const raw = kind === 'atomize' ? process.env.KB_ATOMIZE_MODEL : process.env.KB_ADJUDICATE_MODEL
+  if (!raw) return {}
+  return parseModelRef(raw)
 }
 
 /** 续写指令（照 callAIWithContinue 的提示词，去其 provider 绑定） */
@@ -68,10 +65,17 @@ export function stitchContinuation(previous: string, continuation: string): stri
 
 /**
  * 生产默认 LLM：simple-llm + 截断续写（≤2 次）。
- * purpose 同时决定模型 env 覆盖通道（KB_ATOMIZE_MODEL / KB_ADJUDICATE_MODEL）。
+ * purpose 决定模型 env 覆盖通道；dynamicOverride（每库模型设置）优先于 env——
+ * 由调用方每次现求值（库配置运行时可变）。
  */
-export function defaultBrainLlm(purpose: 'kb-brain-atomize' | 'kb-brain-adjudicate'): BrainLlmFn {
-  const once = defaultLlmOnce(purpose)
+export function defaultBrainLlm(
+  purpose: 'kb-brain-atomize' | 'kb-brain-adjudicate',
+  dynamicOverride?: () => { providerConfigId?: string; modelId?: string },
+): BrainLlmFn {
+  const once = (req: BrainLlmRequest): Promise<string> => {
+    const opts = dynamicOverride?.() ?? brainModelOverride(purpose === 'kb-brain-atomize' ? 'atomize' : 'adjudicate')
+    return generateCompletionText(purpose, { system: req.system, user: req.user, maxTokens: req.maxTokens }, opts)
+  }
   return async (req) => {
     let full = await once(req)
     let continues = 0

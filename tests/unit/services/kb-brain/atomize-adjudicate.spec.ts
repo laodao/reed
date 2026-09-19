@@ -12,7 +12,7 @@ import {
   createQuoteLocator,
   splitWindows,
 } from '@core/platform/services/kb-brain/atomize.service'
-import { defaultBrainLlm, brainModelOverride, stitchContinuation } from '@core/platform/services/kb-brain/llm'
+import { defaultBrainLlm, brainModelOverride, parseModelRef, stitchContinuation } from '@core/platform/services/kb-brain/llm'
 import { isJsonTruncated } from '@core/platform/services/ai-call'
 import type { BrainLlmFn } from '@core/platform/services/kb-brain/llm'
 import { validateAtomizeOutput, normalizeAtomizeRaw } from '@core/platform/services/kb-brain/schemas'
@@ -186,6 +186,13 @@ describe('AdjudicateService', () => {
     const out = await svc.adjudicate({ newItems, existingItems })
     expect(out.novel).toEqual([0, 1, 2])
     expect(calls[1]).toContain('不合法')
+  })
+})
+
+describe('parseModelRef', () => {
+  it('纯 modelId 与 provider:model 两种格式', () => {
+    expect(parseModelRef('qwen-max')).toEqual({ modelId: 'qwen-max' })
+    expect(parseModelRef('prov-1:qwen-max')).toEqual({ providerConfigId: 'prov-1', modelId: 'qwen-max' })
   })
 })
 

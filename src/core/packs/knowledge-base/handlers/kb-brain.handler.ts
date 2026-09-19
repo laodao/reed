@@ -12,6 +12,7 @@ import { KbDistillService } from '@core/platform/services/kb-brain/distill.servi
 import { KbBrainFsrsService } from '@core/platform/services/kb-brain/fsrs.service'
 import { KbResearchService } from '@core/platform/services/kb-brain/research.service'
 import { enqueueDigestForExisting } from '@core/platform/services/kb-brain/digest-orchestrator.service'
+import { parseModelRef } from '@core/platform/services/kb-brain/llm'
 import type { SearchResult } from '@shared/types/knowledge-base.types'
 
 let kbService: KnowledgeBaseService | null = null
@@ -82,6 +83,7 @@ export function registerKbBrainHandlers(): void {
       const svc2 = new KbDistillService({
         embed: (texts, kb) => svc().getEmbeddingVectors(texts, kb.embeddingConfig ? JSON.parse(kb.embeddingConfig) : {}),
         settingPatternEnabled: cfg?.patterns.settingEnabled ?? true,
+        modelOverride: () => (cfg?.models.adjudicate ? parseModelRef(cfg.models.adjudicate) : {}),
       })
       const embCfg = kbRow?.embeddingConfig ?? null
       const outcome = await svc2.distill(p.kbId, embCfg, { documentIds: p.documentIds })
@@ -112,6 +114,19 @@ export function registerKbBrainHandlers(): void {
       supersededByAtomId: p.verdict === 'superseded' ? p.supersededByAtomId ?? null : undefined,
     })
     return { success: true }
+  })
+
+  // 模型设置下拉源（系统已启用提供商的对话模型）
+  ipcBridge.handle('kb:brain:list-models', async (_e) => {
+    const out = await svc().getChatModels()
+    if (!out.success || !out.data) return out
+    return {
+      success: true,
+      data: out.data.map((m) => ({
+        label: m.name,
+        value: m.providerConfigId ? `${m.providerConfigId}:${m.id}` : m.id,
+      })),
+    }
   })
 
   // T18 FSRS 复习：到期队列 / 评分

@@ -30,7 +30,7 @@ import { AtomizeService, AdjudicateService } from './atomize.service'
 import { parseBrainConfig, parseBrainState, stringifyBrainState, type KbBrainConfig } from './brain-config'
 import { tokenizeForIndex } from '@core/platform/services/kb-tokenize'
 import { buildLensPassSystem } from './prompts'
-import { defaultBrainLlm, type BrainLlmFn } from './llm'
+import { defaultBrainLlm, parseModelRef, type BrainLlmFn } from './llm'
 
 const logger = createLogger('KbBrainDigest')
 
@@ -326,7 +326,10 @@ export class KbBrainDigestService {
 
       // 1. 原子化（低档；已知实体名作为挂点规范名提示）
       const existingNames = await this.knownEntityNames(kbId, entities)
-      const atomizer = new AtomizeService({ llm: this.llm })
+      const atomizer = new AtomizeService({
+        llm: this.llm,
+        modelOverride: () => (cfg.models.atomize ? parseModelRef(cfg.models.atomize) : {}),
+      })
       const result = await atomizer.atomizeChapter({
         chapterTitle,
         chapterContent: content,
@@ -389,7 +392,10 @@ export class KbBrainDigestService {
       const keptIdx: number[] = []
       let verdict: Awaited<ReturnType<AdjudicateService['adjudicate']>> | null = null
       if (capped.length > 0 && atomInputs.length > 0) {
-        const judge = new AdjudicateService({ llm: this.adjudicateLlm })
+        const judge = new AdjudicateService({
+          llm: this.adjudicateLlm,
+          modelOverride: () => (cfg.models.adjudicate ? parseModelRef(cfg.models.adjudicate) : {}),
+        })
         verdict = await judge.adjudicate({
           newItems: atomInputs.map((a, i) => ({ idx: i, statement: a.statement })),
           existingItems: capped.map((c, i) => ({ idx: i, statement: c.statement, status: c.status })),
@@ -711,6 +717,7 @@ export class KbBrainDigestService {
           embed: this.embedFn,
           repos: () => ({ atoms: repos.atoms, notes: repos.notes, entities: repos.entities }),
           settingPatternEnabled: cfg.patterns.settingEnabled,
+          modelOverride: () => (cfg.models.adjudicate ? parseModelRef(cfg.models.adjudicate) : {}),
         })
         const embCfg = await this.kbEmbeddingConfig(kbId)
         const out = await distiller.distill(kbId, embCfg)

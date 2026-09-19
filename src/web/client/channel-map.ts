@@ -276,6 +276,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'knowledgeBase.brain.onStatus': { channel: 'kb:brain:status' },
   'knowledgeBase.brain.exportSkill': { channel: 'kb:brain:export-skill', wrap: (noteId: string) => [{ noteId }] },
   'knowledgeBase.brain.taste': { channel: 'kb:brain:taste', wrap: (kbId: string) => [{ kbId }] },
+  'knowledgeBase.brain.listModels': { channel: 'kb:brain:list-models' },
   'knowledgeBase.brain.reviewNext': { channel: 'kb:brain:review-next' },
   'knowledgeBase.brain.reviewGrade': { channel: 'kb:brain:review-grade' },
   'knowledgeBase.importQaXlsx': { channel: 'kb-qa:import-xlsx' },

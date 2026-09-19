@@ -1404,6 +1404,11 @@ export class KnowledgeBaseService {
     return this.listModelsByType('rerank', 0, 0)
   }
 
+  /** 知识大脑：列出系统已启用的对话模型（面板模型设置下拉源） */
+  async getChatModels(): Promise<{ success: boolean; data?: EmbeddingModel[]; error?: string }> {
+    return this.listModelsByType('chat', 0, 0)
+  }
+
   /** 按模型类型列出已启用提供商的模型（embedding/rerank 共用；严禁复制粘贴两份） */
   private async listModelsByType(
     type: string,

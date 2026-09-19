@@ -44,6 +44,20 @@
         自动入库阈值（低于则进待审）
         <input v-model.number="configDraft.autoApproveThreshold" type="number" min="0" max="1" step="0.05" />
       </label>
+      <label class="cfg-row">
+        原子化模型
+        <select v-model="configDraft.models.atomize" class="model-select">
+          <option value="">跟随宿主模型</option>
+          <option v-for="m in modelOptions" :key="m.value" :value="m.value">{{ m.label }}</option>
+        </select>
+      </label>
+      <label class="cfg-row">
+        裁决/提炼模型
+        <select v-model="configDraft.models.adjudicate" class="model-select">
+          <option value="">跟随宿主模型</option>
+          <option v-for="m in modelOptions" :key="m.value" :value="m.value">{{ m.label }}</option>
+        </select>
+      </label>
       <div class="cfg-actions">
         <button type="button" @click="saveConfig">保存</button>
       </div>
@@ -133,7 +147,9 @@ interface BrainConfig {
   digestion: { enabled: boolean }
   patterns: { plotEnabled: boolean }
   autoApproveThreshold: number
+  models: { atomize: string; adjudicate: string }
 }
+const modelOptions = ref<Array<{ label: string; value: string }>>([])
 
 const stats = ref<Record<string, any> | null>(null)
 const atoms = ref<BrainAtom[]>([])
@@ -145,6 +161,7 @@ const configDraft = ref<BrainConfig>({
   digestion: { enabled: true },
   patterns: { plotEnabled: false },
   autoApproveThreshold: 0.8,
+  models: { atomize: '', adjudicate: '' },
 })
 const configOpen = ref(false)
 const enabled = ref(false)
@@ -160,13 +177,15 @@ async function refresh(): Promise<void> {
   const gen = ++requestGen
   const client = (window as any).electronAPI.knowledgeBase.brain
   try {
-  const [cfgRes, statsRes, atomsRes, inboxRes, docRes] = await Promise.all([
+  const [cfgRes, statsRes, atomsRes, inboxRes, docRes, modelsRes] = await Promise.all([
     client.getConfig(props.kbId),
     client.stats(props.kbId),
     client.listAtoms({ kbId: props.kbId, pageSize: 50 }),
     client.proposalInbox({ kbId: props.kbId, pageSize: 20 }),
     client.docStatus(props.kbId),
+    client.listModels(),
   ])
+  if (modelsRes.success && modelsRes.data) modelOptions.value = modelsRes.data
   if (gen !== requestGen) return // 过期响应丢弃
   if (cfgRes.success && cfgRes.data) {
     config.value = cfgRes.data.config
@@ -360,6 +379,9 @@ defineExpose({ refresh })
 }
 .digest-all-btn {
   margin-left: 8px;
+}
+.model-select {
+  max-width: 240px;
 }
 .inbox {
   margin-top: 12px;

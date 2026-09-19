@@ -73,6 +73,24 @@ describe('parseBrainConfig', () => {
   })
 })
 
+describe('models 段（每库模型设置）', () => {
+  it('缺省空串=跟随宿主模型', () => {
+    const cfg = parseBrainConfig('{"enabled":true}')
+    expect(cfg!.models).toEqual({ atomize: '', adjudicate: '' })
+  })
+  it('partial 保存 models 段（深合并）', () => {
+    const cfg = parseBrainConfig(
+      '{"enabled":true,"models":{"atomize":"prov-1:qwen-max","adjudicate":""}}',
+    )
+    expect(cfg!.models.atomize).toBe('prov-1:qwen-max')
+    expect(cfg!.models.adjudicate).toBe('')
+  })
+  it('roundtrip 保留 models', () => {
+    const raw = stringifyBrainConfig({ ...defaultBrainConfig(true), models: { atomize: 'm1', adjudicate: 'p2:m2' } })
+    expect(parseBrainConfig(raw)!.models).toEqual({ atomize: 'm1', adjudicate: 'p2:m2' })
+  })
+})
+
 describe('parseBrainState', () => {
   it('空 → 初始态', () => {
     expect(parseBrainState(null)).toEqual({ importance: 0, lastDistillAt: null })

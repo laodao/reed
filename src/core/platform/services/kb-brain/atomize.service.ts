@@ -40,6 +40,8 @@ export interface AtomizeDeps {
   llm?: BrainLlmFn
   /** 萃取 system 覆盖（视角遍 P-6 注入视角框架；缺省 ATOMIZE_SYSTEM） */
   systemOverride?: string
+  /** 每库模型设置动态解析（brainConfig.models；优先于 env） */
+  modelOverride?: () => { providerConfigId?: string; modelId?: string }
 }
 
 export class AtomizeService {
@@ -47,7 +49,7 @@ export class AtomizeService {
   private readonly system: string
 
   constructor(deps: AtomizeDeps = {}) {
-    this.llm = deps.llm ?? defaultBrainLlm('kb-brain-atomize')
+    this.llm = deps.llm ?? defaultBrainLlm('kb-brain-atomize', deps.modelOverride)
     this.system = deps.systemOverride ?? ATOMIZE_SYSTEM
   }
 
@@ -169,8 +171,8 @@ export class AtomizeService {
 export class AdjudicateService {
   private readonly llm: BrainLlmFn
 
-  constructor(deps: { llm?: BrainLlmFn } = {}) {
-    this.llm = deps.llm ?? defaultBrainLlm('kb-brain-adjudicate')
+  constructor(deps: { llm?: BrainLlmFn; modelOverride?: () => { providerConfigId?: string; modelId?: string } } = {}) {
+    this.llm = deps.llm ?? defaultBrainLlm('kb-brain-adjudicate', deps.modelOverride)
   }
 
   async adjudicate(input: {

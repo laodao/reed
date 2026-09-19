@@ -25,6 +25,11 @@ export interface KbBrainConfig {
   learning: { enabled: boolean; desiredRetention: number }
   /** CRAG 检索纠错（M3：判级 + 改写重试；默认关——检索热路径多一次 LLM 调用） */
   crag: { enabled: boolean }
+  /**
+   * 模型设置（M3 用户反馈：从系统设置选模型，免 env）。
+   * 值格式："modelId" 或 "providerConfigId:modelId"；空串=跟随宿主模型。
+   */
+  models: { atomize: string; adjudicate: string }
 }
 
 /** brain_state（运行态，非用户配置）：重要性账户/品味侧写/上次提炼时间 */
@@ -90,6 +95,15 @@ const BRAIN_CONFIG_SCHEMA = {
       required: ['enabled'],
       additionalProperties: false,
     },
+    models: {
+      type: 'object',
+      properties: {
+        atomize: { type: 'string' },
+        adjudicate: { type: 'string' },
+      },
+      required: ['atomize', 'adjudicate'],
+      additionalProperties: false,
+    },
   },
   required: ['enabled'],
   additionalProperties: false,
@@ -109,6 +123,7 @@ export function defaultBrainConfig(enabled = true): KbBrainConfig {
     distillation: { enabled: true, importanceThreshold: 50 },
     learning: { enabled: false, desiredRetention: 0.9 },
     crag: { enabled: false },
+    models: { atomize: '', adjudicate: '' },
   }
 }
 
@@ -138,6 +153,7 @@ export function parseBrainConfig(raw: string | null | undefined): KbBrainConfig 
     distillation: { ...def.distillation, ...partial.distillation },
     learning: { ...def.learning, ...partial.learning },
     crag: { ...def.crag, ...partial.crag },
+    models: { ...def.models, ...partial.models },
   }
 }
 
