@@ -123,6 +123,11 @@ export class KnowledgeBaseRepository extends BaseRepository<
     return affected > 0
   }
 
+  /** 知识大脑运行态读写（重要性账户/品味侧写；损坏容错在 parseBrainState） */
+  async updateBrainState(id: string, brainState: string): Promise<void> {
+    await this.scoped.update({ id } as any, { brainState, updatedAt: new Date() })
+  }
+
   async updateStats(id: string, stats: KnowledgeBaseStats): Promise<void> {
     await this.scoped.update({ id } as any, {
       documentCount: stats.documentCount,

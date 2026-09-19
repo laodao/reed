@@ -1030,7 +1030,8 @@ export class KnowledgeBaseService {
           if (
             r.chunkId.startsWith(QA_CHUNK_ID_PREFIX) ||
             r.chunkId.startsWith('atom:') ||
-            r.chunkId.startsWith('note:')
+            r.chunkId.startsWith('note:') ||
+            r.chunkId.startsWith('ent:')
           ) {
             continue
           }
@@ -1165,7 +1166,7 @@ export class KnowledgeBaseService {
     if (terms.length === 0) return new Map()
     // 知识大脑：atom:/note: 倒排与切片同表——统计与候选都排除 brain 命名空间，
     // 保证纯 chunk 检索的 BM25 分数不受消化进度影响（存量行为保持）
-    const EXCLUDE_NS = ['atom:', 'note:']
+    const EXCLUDE_NS = ['atom:', 'note:', 'ent:']
 
     const [postings, dfMap, totalChunks, avgLen] = await Promise.all([
       db.kbInvertedIndex.findByTerms(knowledgeBaseId, terms),
@@ -1948,6 +1949,8 @@ function getBrainQueryService(kbService: KnowledgeBaseService): BrainQueryServic
     notes: db.kbNotes,
     chunks: db.kbChunks,
     docs: db.kbDocuments,
+    entities: db.kbBrainEntities ?? undefined,
+    edges: db.kbKnowledgeEdges ?? undefined,
   }
   brainQuerySingleton = new BrainQueryService(deps)
   return brainQuerySingleton

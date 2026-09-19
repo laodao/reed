@@ -8,6 +8,7 @@
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { KnowledgeBaseService } from '@core/platform/services/knowledge-base.service'
 import { getKbBrainPanelService } from '@core/platform/services/kb-brain/brain-panel.service'
+import { KbDistillService } from '@core/platform/services/kb-brain/distill.service'
 import type { SearchResult } from '@shared/types/knowledge-base.types'
 
 let kbService: KnowledgeBaseService | null = null
@@ -65,6 +66,46 @@ export function registerKbBrainHandlers(): void {
   )
 
   ipcBridge.handle('kb:brain:stats', (_e, p: { kbId: string }) => panel.stats(p.kbId))
+
+  // T14 手动提炼（任务边界闸门）
+  let distillBusy = false
+  ipcBridge.handle('kb:brain:distill', async (_e, p: { kbId: string; documentIds?: string[] }) => {
+    if (distillBusy) return { success: false, error: '提炼进行中，请稍候' }
+    distillBusy = true
+    try {
+      const svc2 = new KbDistillService({
+        embed: (texts, kb) => svc().getEmbeddingVectors(texts, kb.embeddingConfig ? JSON.parse(kb.embeddingConfig) : {}),
+      })
+      const embCfg = await svc().getKnowledgeBase(p.kbId).then((r) => r.data?.embeddingConfig ?? null)
+      const outcome = await svc2.distill(p.kbId, embCfg, { documentIds: p.documentIds })
+      return { success: true, data: outcome }
+    } catch (e) {
+      return { success: false, error: e instanceof Error ? e.message : String(e) }
+    } finally {
+      distillBusy = false
+    }
+  })
+
+  // 冲突面：suspected 论断列表（人审裁决）
+  ipcBridge.handle('kb:brain:conflicts', async (_e, p: { kbId: string }) => {
+    const db = await import('@core/database/database-manager.interface')
+    const manager = db.getCoreDatabaseManager()
+    if (!manager.kbAtoms) return { success: false, error: '知识大脑未启用（旧库）' }
+    const rows = await manager.kbAtoms.findByKb(p.kbId, { status: ['suspected'], limit: 100 })
+    return { success: true, data: rows }
+  })
+
+  // 冲突裁决：人工判 supported（保留）或 superseded（废弃，可指认替代论断）
+  ipcBridge.handle('kb:brain:resolve-conflict', async (_e, p: { atomId: string; verdict: 'supported' | 'superseded'; supersededByAtomId?: string }) => {
+    const db = await import('@core/database/database-manager.interface')
+    const manager = db.getCoreDatabaseManager()
+    if (!manager.kbAtoms) return { success: false, error: '知识大脑未启用（旧库）' }
+    await manager.kbAtoms.updateStatus(p.atomId, {
+      status: p.verdict,
+      supersededByAtomId: p.verdict === 'superseded' ? p.supersededByAtomId ?? null : undefined,
+    })
+    return { success: true }
+  })
 
   // brain 检索直通（论断页签的调试检索 / 面板预览）
   ipcBridge.handle(

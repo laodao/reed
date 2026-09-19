@@ -68,3 +68,46 @@ export function buildAdjudicateUser(input: {
       .join('\n')
   return `NEW FACTS:\n${fmt(input.newItems)}\n\nEXISTING FACTS:\n${fmt(input.existingItems)}`
 }
+
+/* ==================== P-4 DISTILL（两段式反思 → 思想卡） ==================== */
+
+export const DISTILL_SYSTEM = `你是知识研究员。给定一批相关的原子论断（已编号），提炼一张可复用的思想卡。
+
+两步思考（内部完成，只输出结果 JSON）：
+一、对这批论断提出 3 个高阶问题：它们共同回答了什么？分歧在哪？边界条件是什么？
+二、基于回答产出一张卡：
+- title：完整论断句（可独立引用的结论），禁止名词短语（"复仇节奏"✗；"复仇爽点在第三次后必然递减"✓）
+- description：第三人称"何时用我"——写清触发场景与边界，≤200字（agent 靠它路由）
+- body：markdown 正文，展开论据与反例
+- evidence：引用支撑本卡论断的编号数组（because-of 指针，禁止无证据断言）
+
+只输出 JSON，不要任何解释。`
+
+export function buildDistillUser(input: {
+  clusterStatements: Array<{ idx: number; statement: string; type: string }>
+}): string {
+  return input.clusterStatements.map((r) => `[${r.idx}] (${r.type}) ${r.statement}`).join('\n')
+}
+
+/* ==================== P-6 LENS-PASS（视角遍重萃取） ==================== */
+
+export const LENS_PASS_SYSTEM = `你是「{lensTitle}」视角的评论家。对给定章节文本重读，产出该视角下的观感论断。
+
+看什么：{attendTo}
+问什么：{questions}
+
+规则：
+1. 每条观感必须是自包含短句（无回指），≤60字，且必须指回原文证据（quote 为原文连续片段）。
+2. type 偏 claim（观点）或 insight（可迁移洞见）；事实性内容不在此遍产出（基础遍已覆盖）。
+3. 只做视角性观察，不做事实裁决。
+4. 宁缺毋滥：没有可观察的内容就输出空数组。
+5. mentions 按基础遍同规则输出（含类型）。
+
+只输出 JSON，与基础遍相同的 schema（atoms/events/mentions）。`
+
+export function buildLensPassSystem(lens: { title: string; attendTo: string[]; questions: string[] }): string {
+  // 函数形式 replace：标题/词表含 $& 等 `$` 序列不会被当替换模式解释
+  return LENS_PASS_SYSTEM.replace('{lensTitle}', () => lens.title)
+    .replace('{attendTo}', () => lens.attendTo.join('、') || '（未定义，凭视角常识）')
+    .replace('{questions}', () => lens.questions.join('；') || '（未定义）')
+}

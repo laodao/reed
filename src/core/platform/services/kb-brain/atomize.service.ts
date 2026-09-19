@@ -35,15 +35,20 @@ export interface AtomizeResult {
   mentions: Array<{ name: string; type: string }>
 }
 
+
 export interface AtomizeDeps {
   llm?: BrainLlmFn
+  /** 萃取 system 覆盖（视角遍 P-6 注入视角框架；缺省 ATOMIZE_SYSTEM） */
+  systemOverride?: string
 }
 
 export class AtomizeService {
   private readonly llm: BrainLlmFn
+  private readonly system: string
 
   constructor(deps: AtomizeDeps = {}) {
     this.llm = deps.llm ?? defaultBrainLlm('kb-brain-atomize')
+    this.system = deps.systemOverride ?? ATOMIZE_SYSTEM
   }
 
   /** 章级入口：按 MAX_WINDOW_CHARS 分窗顺序处理，逐窗收集论断与事件 */
@@ -83,7 +88,7 @@ export class AtomizeService {
     knownEntityNames?: string[]
   }): Promise<{ atoms: LocatedAtom[]; events: LocatedEvent[]; mentions: Array<{ name: string; type: string }> }> {
     const out = await this.callWithRetry(
-      ATOMIZE_SYSTEM,
+      this.system,
       buildAtomizeUser({
         chapterTitle: input.chapterTitle,
         windowText: input.windowText,

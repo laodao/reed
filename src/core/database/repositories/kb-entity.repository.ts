@@ -149,6 +149,16 @@ export class KbEntityRepository extends BaseRepository<KbEntityEntity, KbEntityR
     )
   }
 
+  /** 全部 active 实体（id+规范名+别名；PPR 种子与挂点提示用） */
+  async listActiveWithAliases(kbId: string, limit: number): Promise<Array<{ id: string; name: string; aliases: string[] }>> {
+    const rows = await this.scoped.find({
+      where: { knowledgeBaseId: kbId, status: 'active' } as FindOptionsWhere<KbEntityEntity>,
+      order: { createdAt: 'ASC' } as never,
+      take: limit,
+    })
+    return rows.map((r) => ({ id: r.id, name: r.name, aliases: safeParseArray(r.aliases) }))
+  }
+
   /** 全部 active 实体规范名（原子化的挂点提示词表；按创建时间稳定排序） */
   async listActiveNames(kbId: string, limit: number): Promise<string[]> {
     const rows = await this.scoped.find({
@@ -160,8 +170,10 @@ export class KbEntityRepository extends BaseRepository<KbEntityEntity, KbEntityR
   }
 
   async pendingSummaries(kbId: string, limit: number): Promise<KbEntityRecord[]> {
+    // createdAt ASC 轮转（盲审：无 order 的集合不稳定，僵尸 pending 恒占坑）
     const rows = await this.scoped.find({
       where: { knowledgeBaseId: kbId, summaryStatus: 'pending' } as FindOptionsWhere<KbEntityEntity>,
+      order: { createdAt: 'ASC' } as never,
       take: limit,
     })
     return this.toDtoList(rows)

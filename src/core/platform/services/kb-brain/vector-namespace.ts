@@ -12,6 +12,8 @@ export const KB_VECTOR_NS = {
   qa: 'qa:',
   atom: 'atom:',
   note: 'note:',
+  /** 实体演化摘要（T13a 入池） */
+  ent: 'ent:',
 } as const
 
 export type KbVectorNamespace = keyof typeof KB_VECTOR_NS

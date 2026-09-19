@@ -139,6 +139,11 @@ export function stringifyBrainConfig(config: KbBrainConfig): string {
   return JSON.stringify(config)
 }
 
+/** brain_state 序列化（写回统一入口） */
+export function stringifyBrainState(state: KbBrainState): string {
+  return JSON.stringify(state)
+}
+
 /** brain_state 列解析：损坏返回干净初始态（运行态容错，与配置的响亮失败不同） */
 export function parseBrainState(raw: string | null | undefined): KbBrainState {
   if (!raw) return { importance: 0, lastDistillAt: null }

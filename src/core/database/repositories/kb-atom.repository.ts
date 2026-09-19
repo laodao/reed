@@ -6,7 +6,7 @@
  * 批量写入走事务 + getCurrentUserId() 显式带租户（base-repository 纪律：
  * 事务/批量路径 scoped 不可用时手动注入）。
  */
-import { In, IsNull, Not, type DataSource, type FindOptionsWhere } from 'typeorm'
+import { In, IsNull, MoreThanOrEqual, Not, type DataSource, type FindOptionsWhere } from 'typeorm'
 import { randomUUID } from 'crypto'
 import { KbAtomEntity, type KbAtomStatus, type KbAtomType } from '../entities/kb-brain/kb-atom.entity'
 import { BaseRepository } from '../base-repository'
@@ -134,6 +134,18 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
     return row ? this.toDto(row) : null
   }
 
+  /** 近期入库的计分论断（重要性账户用；仅 ai 来源） */
+  async findRecentByTypes(kbId: string, since: Date): Promise<KbAtomRecord[]> {
+    const rows = await this.scoped.find({
+      where: {
+        knowledgeBaseId: kbId,
+        status: In(['supported', 'suspected']),
+        createdAt: MoreThanOrEqual(since),
+      } as FindOptionsWhere<KbAtomEntity>,
+    })
+    return this.toDtoList(rows)
+  }
+
   /** 按库查（面板论断列表；可选 status/type 过滤，创建时间倒序） */
   async findByKb(
     kbId: string,
@@ -185,6 +197,12 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
     return this.toDtoList(rows)
   }
 
+  async findByIds(ids: string[]): Promise<KbAtomRecord[]> {
+    if (ids.length === 0) return []
+    const rows = await this.scoped.find({ where: { id: In(ids) } as FindOptionsWhere<KbAtomEntity> })
+    return this.toDtoList(rows)
+  }
+
   async findByChapterHash(documentId: string, chapterHash: string): Promise<KbAtomRecord[]> {
     const rows = await this.scoped.find({
       where: { sourceDocumentId: documentId, sourceChapterHash: chapterHash } as FindOptionsWhere<KbAtomEntity>,
@@ -229,6 +247,25 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
       { id } as FindOptionsWhere<KbAtomEntity>,
       { subjectEntityId, objectEntityId, updatedAt: new Date() } as never,
     )
+  }
+
+  /** 视角遍生命周期：同章旧 hash 的 lens 旧观感置 stale（重跑前调用，防 supported 堆积） */
+  async staleLensAtoms(documentId: string, lensNoteId: string, chapterId: string, currentHash: string | null): Promise<number> {
+    const rows = await this.scoped.find({
+      where: {
+        sourceDocumentId: documentId,
+        lensNoteId,
+        sourceChapterId: chapterId,
+        status: In(['supported', 'suspected']),
+      } as FindOptionsWhere<KbAtomEntity>,
+    })
+    let n = 0
+    for (const a of rows) {
+      if (a.sourceChapterHash === currentHash) continue
+      await this.updateStatus(a.id, { status: 'stale' })
+      n++
+    }
+    return n
   }
 
   /** 章节内容变更后，未被新萃取覆盖的旧论断标记 stale（防幽灵论断，D2） */

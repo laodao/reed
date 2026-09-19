@@ -13,9 +13,12 @@ import type { KbAtomRepository } from '@core/database/repositories/kb-atom.repos
 import type { KbNoteRepository } from '@core/database/repositories/kb-note.repository'
 import type { KbChunkRepository } from '@core/database/repositories/kb-chunk.repository'
 import type { KbDocumentRepository } from '@core/database/repositories/kb-document.repository'
+import type { KbEntityRepository } from '@core/database/repositories/kb-entity.repository'
+import type { KbKnowledgeEdgeRepository } from '@core/database/repositories/kb-knowledge-edge.repository'
 import type { SearchResult } from '@shared/types/knowledge-base.types'
 import { parseVectorNamespace } from './vector-namespace'
 import { tokenizeForIndex } from '@core/platform/services/kb-tokenize'
+import { personalizedPageRank } from '@core/platform/services/graph/ppr'
 
 const RRF_K = 60
 /** 向量过召系数（混合融合需要并集；QA 存量 padding 同量级） */
@@ -45,6 +48,9 @@ export interface BrainQueryDeps {
   notes: KbNoteRepository
   chunks: KbChunkRepository
   docs: KbDocumentRepository
+  /** 图路三件（M2；缺失则 PPR 图路跳过，不影响向量+词法主路） */
+  entities?: KbEntityRepository
+  edges?: KbKnowledgeEdgeRepository
 }
 
 export interface BrainSearchRequest {
@@ -84,7 +90,7 @@ export class BrainQueryService {
         const raw = await this.deps.searchSimilar(kbId, vectors[0], fetchK)
         for (const r of raw) {
           const { ns, id } = parseVectorNamespace(r.chunkId)
-          if (ns === 'qa') continue // 存量语义：文档检索剔除 QA 命名空间
+          if (ns === 'qa' || ns === 'ent') continue // qa 存量语义；ent=实体摘要（只供图路邻域，不进主池）
           if (!includeSet.has(ns)) continue
           if (req.threshold != null && req.threshold > 0 && r.score < req.threshold) continue
           vecHits.push({ ns, id, score: r.score })
@@ -110,7 +116,7 @@ export class BrainQueryService {
           for (const [term, items] of postings) {
             for (const item of items) {
               const { ns, id } = parseVectorNamespace(item.chunkId)
-              if (ns === 'qa' || !includeSet.has(ns)) continue
+              if (ns === 'qa' || ns === 'ent' || !includeSet.has(ns)) continue
               const key = item.chunkId
               let c = candidates.get(key)
               if (!c) {
@@ -209,6 +215,23 @@ export class BrainQueryService {
           return p.result
         })
 
+      // M2 图路补充：综合型查询把 PPR 邻域论断并入尾部位（补多跳关联；主路不动）
+      if (req.intent === 'synthesize' && deduped.length < topK) {
+        try {
+          const supplement = await this.graphSupplement(kbId, req.query, topK - deduped.length)
+          const seen = new Set(deduped.map((r) => r.chunkId))
+          for (const s of supplement) {
+            if (deduped.length >= topK) break
+            if (seen.has(s.chunkId)) continue
+            if (docIdFilter && !docIdFilter.has(s.documentId)) continue
+            s.scoreKind = 'ppr'
+            deduped.push(s)
+          }
+        } catch {
+          /* 图路失败不影响主路 */
+        }
+      }
+
       /* ---------- 5. 使用即再巩固（fire-and-forget） ---------- */
       const atomIds = deduped.filter((r) => r.kind === 'atom').map((r) => (r.atom as { id: string }).id)
       const noteIds = deduped.filter((r) => r.kind === 'note').map((r) => (r.note as { id: string }).id)
@@ -295,6 +318,114 @@ export class BrainQueryService {
         note: { id: note.id, title: note.title, type: note.type, evidenceCount },
       },
     }
+  }
+
+  /* ---------- M2 图路（PPR） ---------- */
+
+  private graphCache = new Map<
+    string,
+    { nodes: Array<{ id: string; kind: string }>; edges: Array<[string, string, number]>; builtAt: number }
+  >()
+  /** 缓存 60s：写边后图路最长 1 分钟延迟（跨模块失效调用经评估引入耦合，不划算） */
+  private static GRAPH_TTL = 60 * 1000
+
+  private async graphSnapshotCached(kbId: string): Promise<{ nodes: Array<{ id: string; kind: string }>; edges: Array<[string, string, number]> } | null> {
+    if (!this.deps.edges || !this.deps.atoms) return null
+    const hit = this.graphCache.get(kbId)
+    if (hit && Date.now() - hit.builtAt < BrainQueryService.GRAPH_TTL) {
+      return hit
+    }
+    // 投影到实体空间（盲审 P1 修复）：leads-to 是 atom→atom 边，经论断的实体挂点折叠为
+    // entity→entity 边——种子（实体 id）与图节点才在同一 id 空间，PPR 多跳才可达
+    const raw = await this.deps.edges.graphSnapshot(kbId)
+    const atomIds = new Set<string>()
+    for (const [s, t] of raw.edges) {
+      atomIds.add(s)
+      atomIds.add(t)
+    }
+    const atoms = await this.deps.atoms.findByIds([...atomIds])
+    const subj = new Map<string, string>()
+    const obj = new Map<string, string>()
+    for (const a of atoms) {
+      if (a.subjectEntityId) subj.set(a.id, a.subjectEntityId)
+      if (a.objectEntityId) obj.set(a.id, a.objectEntityId)
+    }
+    const projNodes = new Set<string>()
+    const projEdges: Array<[string, string, number]> = []
+    const seen = new Set<string>()
+    for (const [s, t, w] of raw.edges) {
+      const from = subj.get(s) ?? obj.get(s)
+      const to = subj.get(t) ?? obj.get(t)
+      if (!from || !to || from === to) continue
+      projNodes.add(from)
+      projNodes.add(to)
+      const key = `${from}->${to}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      projEdges.push([from, to, w])
+    }
+    this.graphCache.set(kbId, {
+      nodes: [...projNodes].map((id) => ({ id, kind: 'entity' })),
+      edges: projEdges,
+      builtAt: Date.now(),
+    })
+    return { nodes: [...projNodes].map((id) => ({ id, kind: 'entity' })), edges: projEdges }
+  }
+
+  /** 图快照失效（写边/实体合并后调用；IPC 层不感知） */
+  invalidateGraph(kbId: string): void {
+    this.graphCache.delete(kbId)
+  }
+
+  /**
+   * 图路补充：query 实体提及 → PPR 种子扩散 → top 邻域论断并入结果尾部位。
+   * 只在 synthesize intent 或纠错兜底时使用；事实主路仍是向量+BM25（HippoRAG 2 警训）。
+   */
+  private async graphSupplement(kbId: string, query: string, limit: number): Promise<SearchResult[]> {
+    if (!this.deps.edges || !this.deps.entities || !this.deps.atoms) return []
+    const snap = await this.graphSnapshotCached(kbId)
+    if (!snap || snap.nodes.length === 0) return []
+    // 种子：query 分词与实体名/别名精确命中
+    const entities = await this.deps.entities.listActiveWithAliases(kbId, 500)
+    const q = query.trim()
+    const seeds = new Map<string, number>()
+    for (const ent of entities) {
+      // 精确等值或别名精确命中（盲审修复：双向子串会过度播种稀释 PPR）
+      const aliasHit = ent.aliases.some((a) => a === q)
+      if (ent.name === q || aliasHit) seeds.set(ent.id, 1)
+    }
+    if (seeds.size === 0) return []
+    const scores = personalizedPageRank({ nodes: snap.nodes.map((n) => n.id), edges: snap.edges }, seeds, { iterations: 40, eps: 1e-4 })
+    const topEntities = [...scores.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([id]) => id)
+    if (topEntities.length === 0) return []
+    const neighborAtoms = await this.deps.atoms.findByEntities(kbId, topEntities, {
+      lensNoteId: null,
+      statuses: ['supported', 'suspected'],
+    })
+    const docNames = new Map<string, string>()
+    return neighborAtoms.slice(0, limit).map((a) => {
+      if (!docNames.has(a.sourceDocumentId)) {
+        void this.deps.docs.findById(a.sourceDocumentId).then((d) => docNames.set(a.sourceDocumentId, d?.name ?? a.sourceDocumentId))
+      }
+      return {
+      chunkId: `atom:${a.id}`,
+      documentId: a.sourceDocumentId,
+      documentName: docNames.get(a.sourceDocumentId) ?? a.sourceDocumentId,
+      content: a.statement,
+      score: 0,
+      kind: 'atom' as const,
+      atom: {
+        id: a.id,
+        type: a.type,
+        status: a.status,
+        quote: a.sourceQuote,
+        jumpTo: { chapterId: a.sourceChapterId ?? '', startOffset: a.startOffset ?? 0 },
+      },
+      }
+    })
   }
 
   /** docLen：与建索引口径同源（分词项频次和） */

@@ -9,6 +9,8 @@
  * （并发=1，满足 ≤2 上限更保守）；原子层任何故障不影响现有检索主链路（fail-soft）。
  */
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { KbEntitySummaryService } from './entity-summary.service'
+import { KbDistillService } from './distill.service'
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import { runWithUserAsync, LOCAL_DEFAULT_USER_ID } from '@core/context/user-context'
 import { subscribeDomainEvents, type DomainEvent } from '@core/platform/workflow/trigger/domain-event-bus'
@@ -17,14 +19,16 @@ import { createLogger } from '@core/utils/logger'
 import type { KbAtomRepository, KbAtomInput } from '@core/database/repositories/kb-atom.repository'
 import type { KbEntityRepository } from '@core/database/repositories/kb-entity.repository'
 import type { KbKnowledgeEdgeRepository } from '@core/database/repositories/kb-knowledge-edge.repository'
+import type { KbNoteRepository } from '@core/database/repositories/kb-note.repository'
 import type { KbDigestPassRepository } from '@core/database/repositories/kb-digest-pass.repository'
 import type { KbDocumentRepository } from '@core/database/repositories/kb-document.repository'
 import type { KbChapterRepository } from '@core/database/repositories/kb-chapter.repository'
 import type { KbChunkRepository } from '@core/database/repositories/kb-chunk.repository'
 import type { KnowledgeBaseRepository } from '@core/database/repositories/knowledge-base.repository'
 import { AtomizeService, AdjudicateService } from './atomize.service'
-import { parseBrainConfig, type KbBrainConfig } from './brain-config'
+import { parseBrainConfig, parseBrainState, stringifyBrainState, type KbBrainConfig } from './brain-config'
 import { tokenizeForIndex } from '@core/platform/services/kb-tokenize'
+import { buildLensPassSystem } from './prompts'
 import { defaultBrainLlm, type BrainLlmFn } from './llm'
 
 const logger = createLogger('KbBrainDigest')
@@ -62,6 +66,7 @@ interface PassStats {
 export interface KbBrainRepos {
   atoms: KbAtomRepository
   entities: KbEntityRepository
+  notes: KbNoteRepository
   edges: KbKnowledgeEdgeRepository
   passes: KbDigestPassRepository
   docs: KbDocumentRepository
@@ -100,12 +105,13 @@ export class KbBrainDigestService {
       deps.repos ??
       ((): KbBrainRepos | null => {
         const db = getCoreDatabaseManager()
-        if (!db.kbAtoms || !db.kbBrainEntities || !db.kbKnowledgeEdges || !db.kbDigestPasses || !db.kbDocuments || !db.kbChapters || !db.knowledgeBases) {
+        if (!db.kbAtoms || !db.kbBrainEntities || !db.kbKnowledgeEdges || !db.kbDigestPasses || !db.kbDocuments || !db.kbChapters || !db.knowledgeBases || !db.kbNotes) {
           return null
         }
         return {
           atoms: db.kbAtoms,
           entities: db.kbBrainEntities,
+          notes: db.kbNotes,
           edges: db.kbKnowledgeEdges,
           passes: db.kbDigestPasses,
           docs: db.kbDocuments,
@@ -214,9 +220,11 @@ export class KbBrainDigestService {
       let done = 0
       const exhaustedChapters: string[] = []
       const skippedSameChapters: Array<{ id: string; hash: string | null }> = []
+      const insertedThisRun: KbAtomInput[] = []
       let busyChapters = 0
       for (const chapter of chapterRows) {
-        const outcome = await this.digestChapter(kbId, documentId, chapter.id, chapter.title, chapter.content ?? '', chapter.contentHash, cfg)
+        const { outcome, inserted } = await this.digestChapter(kbId, documentId, chapter.id, chapter.title, chapter.content ?? '', chapter.contentHash, cfg)
+        insertedThisRun.push(...inserted)
         if (outcome === 'exhausted') exhaustedChapters.push(chapter.id)
         else if (outcome === 'skipped-same') skippedSameChapters.push({ id: chapter.id, hash: chapter.contentHash })
         else if (outcome === 'busy') busyChapters++
@@ -244,6 +252,29 @@ export class KbBrainDigestService {
 
       await this.staleUncovered(documentId, atoms, chapterRows.map((c) => c.contentHash).filter(Boolean) as string[])
 
+      await docs.updateBrainStatus(documentId, { status: 'digesting', progress: 96 })
+
+      // T13a 实体摘要演化（fail-soft，不阻塞状态流转）
+      try {
+        const summarizer = new KbEntitySummaryService({
+          llm: this.llm,
+          embed: this.embedFn,
+          repos: () => ({ entities: repos.entities, atoms: repos.atoms, vectors: repos.vectors, inverted: repos.inverted }),
+        })
+        const embCfg = await this.kbEmbeddingConfig(kbId)
+        const sum = await summarizer.summarizePending(kbId, embCfg, 20)
+        if (sum.done > 0) logger.info(`[kb-brain] 实体摘要: kb=${kbId} done=${sum.done} failed=${sum.failed}`)
+      } catch (e) {
+        logger.warn(`[kb-brain] 实体摘要调度失败（不阻塞）: ${e instanceof Error ? e.message : String(e)}`)
+      }
+
+      // T14 重要性账户（§6.2）：按本轮实际落库论断计分，超阈值直接提炼
+      await this.accrueImportance(kbId, repos, insertedThisRun)
+
+      // T15 视角遍：排队（幂等）+ 执行 pending 的 lens 章
+      await this.scheduleLensPasses(kbId, documentId, repos, cfg)
+      await this.runLensPasses(kbId, documentId, repos, cfg)
+
       await docs.updateBrainStatus(documentId, { status: 'digested', progress: 100, error: null })
       this.emitStatus(documentId, 'digested')
     } catch (e) {
@@ -264,9 +295,9 @@ export class KbBrainDigestService {
     content: string,
     chapterHash: string | null,
     cfg: KbBrainConfig,
-  ): Promise<'digested' | 'skipped-same' | 'busy' | 'exhausted'> {
+  ): Promise<{ outcome: 'digested' | 'skipped-same' | 'busy' | 'exhausted'; inserted: KbAtomInput[] }> {
     const repos = this.reposFn()
-    if (!repos) return 'skipped-same'
+    if (!repos) return { outcome: 'skipped-same', inserted: [] }
     const { atoms, entities, edges, passes } = repos
 
     const decision = await passes.ensurePass({
@@ -279,9 +310,8 @@ export class KbBrainDigestService {
     })
     if (decision.action === 'skip') {
       // 三态可辨（review：'running' 是瞬态，与真耗尽不同质，不可同标 failed）
-      if (decision.reason === 'done-same-hash') return 'skipped-same'
-      if (decision.reason === 'running') return 'busy'
-      return 'exhausted'
+      const outcome = decision.reason === 'done-same-hash' ? 'skipped-same' : decision.reason === 'running' ? 'busy' : 'exhausted'
+      return { outcome, inserted: [] }
     }
     const pass = decision.pass
     await passes.setRunning(pass.id)
@@ -291,7 +321,7 @@ export class KbBrainDigestService {
       if (!content.trim()) {
         // 零产出是合法终态（纯过场章）——台账 done 防重复跑
         await passes.setDone(pass.id, stats, { calls: 0, tokensIn: 0, tokensOut: 0 })
-        return 'digested'
+        return { outcome: 'digested', inserted: [] }
       }
 
       // 1. 原子化（低档；已知实体名作为挂点规范名提示）
@@ -482,11 +512,28 @@ export class KbBrainDigestService {
       }
 
       await passes.setDone(pass.id, stats, { calls: stats.costCalls, tokensIn: 0, tokensOut: 0 })
-      return 'digested'
+      return { outcome: 'digested', inserted: keptInputs }
     } catch (e) {
       await passes.setFailed(pass.id, e instanceof Error ? e.message : String(e))
       throw e
     }
+  }
+
+  /** mention → 实体 id（负面清单+类型+缓存；基础遍与视角遍共用） */
+  private async resolveEntityId(
+    kbId: string,
+    mention: string | undefined,
+    repos: KbBrainRepos,
+    typeByName: Map<string, string>,
+    cache?: Map<string, string | null>,
+  ): Promise<string | null> {
+    if (!mention) return null
+    const name = mention.trim()
+    if (!name || name.length < 2 || MENTION_BLOCKLIST.has(name)) return null
+    if (cache?.has(name)) return cache.get(name)!
+    const ent = await repos.entities.upsertMention(kbId, { name, type: typeByName.get(name) ?? 'concept' })
+    cache?.set(name, ent.id)
+    return ent.id
   }
 
   /**
@@ -510,7 +557,8 @@ export class KbBrainDigestService {
       // 用章节的文档全局 startOffset 平移后再匹配
       const chapter = chapterById.get(chapterId)
       const chapterDocStart = chapter?.startOffset ?? 0
-      const chapterAtoms = await atoms.findByChapterHash(documentId, hash)
+      // 同 hash 多章防串（盲审）：按 sourceChapterId 收窄到本章
+      const chapterAtoms = (await atoms.findByChapterHash(documentId, hash)).filter((a) => a.sourceChapterId === chapterId)
       for (const a of chapterAtoms) {
         if (a.startOffset == null || a.endOffset == null) continue
         const docStart = chapterDocStart + a.startOffset
@@ -539,6 +587,156 @@ export class KbBrainDigestService {
       // hash 不在当前章节集（含 hash 为 null 的失锚论断）→ 失去出处，防幽灵
       if (!a.sourceChapterHash || !hashSet.has(a.sourceChapterHash)) {
         await atoms.updateStatus(a.id, { status: 'stale' })
+      }
+    }
+  }
+
+  /** T15 视角遍执行：pending 的 lens 台账章 → 视角卡透镜重萃取（观感论断，分域入库） */
+  private async runLensPasses(kbId: string, documentId: string, repos: KbBrainRepos, cfg: KbBrainConfig): Promise<void> {
+    if (!cfg.lenses.enabledLensNoteIds.length) return
+    const lensIds = cfg.lenses.enabledLensNoteIds
+    const lensCards = await repos.notes.findByIds(lensIds)
+    const attentionByLens = new Map<string, { title: string; attendTo: string[]; questions: string[]; version: number }>()
+    for (const card of lensCards) {
+      if (card.type !== 'lens' || card.status !== 'published') continue
+      try {
+        const att = JSON.parse(card.lensAttention ?? '{}') as { attendTo?: string[]; questions?: string[] }
+        attentionByLens.set(card.id, {
+          title: card.title,
+          attendTo: att.attendTo ?? [],
+          questions: att.questions ?? [],
+          version: card.version,
+        })
+      } catch {
+        continue
+      }
+    }
+    if (attentionByLens.size === 0) return
+    const chapterRows = await repos.chapters.findByDocument(documentId)
+    const mentionCache = new Map<string, string | null>()
+    for (const lensId of cfg.lenses.enabledLensNoteIds) {
+      const lens = attentionByLens.get(lensId)
+      if (!lens) continue // 视角卡缺失/未发布/格式坏——跳过该视角
+      const lensAtomizer = new AtomizeService({
+        llm: this.llm,
+        systemOverride: buildLensPassSystem(lens),
+      })
+      for (const chapter of chapterRows) {
+        const decision = await repos.passes.ensurePass({
+          knowledgeBaseId: kbId,
+          documentId,
+          chapterId: chapter.id,
+          passType: 'lens',
+          passKey: `lens:${lensId}:v${lens.version}`,
+          chapterHash: chapter.contentHash,
+        })
+        if (decision.action === 'skip') continue
+        // 生命周期（盲审修复）：重跑前把同章旧 hash 的 lens 旧观感置 stale，防 supported 无限堆积
+        await repos.atoms.staleLensAtoms(documentId, lensId, chapter.id, chapter.contentHash)
+        const pass = decision.pass
+        await repos.passes.setRunning(pass.id)
+        const stats: PassStats = { atoms: 0, merged: 0, superseded: 0, suspected: 0, entities: 0, edges: 0, vectorsFailed: 0, costCalls: 1 }
+        try {
+          const content = chapter.content ?? ''
+          if (!content.trim()) {
+            await repos.passes.setDone(pass.id, stats, { calls: 0, tokensIn: 0, tokensOut: 0 })
+            continue
+          }
+          const result = await lensAtomizer.atomizeChapter({ chapterTitle: chapter.title, chapterContent: content })
+          // 观感论断：lensNoteId + extractionPass 标注；裁决天然分域（lensNoteId 域），不与公共层互裁
+          const inputs: KbAtomInput[] = result.atoms.map((a) => ({
+            knowledgeBaseId: kbId,
+            statement: a.statement,
+            type: isValidType(a.type) ? a.type : 'claim',
+            certainty: a.certainty,
+            sourceDocumentId: documentId,
+            sourceChapterId: chapter.id,
+            sourceChapterHash: chapter.contentHash,
+            sourceQuote: a.quote.slice(0, 200),
+            startOffset: a.startOffset,
+            endOffset: a.endOffset,
+            lensNoteId: lensId,
+            extractionPass: `lens:${lensId}:v${lens.version}#1`,
+            origin: 'ai',
+          }))
+          const inserted = inputs.length > 0 ? await repos.atoms.createBatch(inputs) : []
+          stats.atoms = inserted.length
+          // 实体挂点（同基础遍口径）
+          const mentionTypeByName = new Map<string, string>()
+          for (const m of result.mentions ?? []) mentionTypeByName.set(m.name.trim(), m.type.trim())
+          for (let j = 0; j < result.atoms.length; j++) {
+            const a = result.atoms[j]
+            const sid = await this.resolveEntityId(kbId, a.subject, repos, mentionTypeByName, mentionCache)
+            const oid = await this.resolveEntityId(kbId, a.object, repos, mentionTypeByName, mentionCache)
+            if ((sid || oid) && inserted[j]) await repos.atoms.relinkEntity(inserted[j].id, sid, oid)
+          }
+          // 视角观感入池
+          if (inserted.length > 0 && repos.vectors) {
+            const vectors = await this.embedFn(inserted.map((r) => r.statement), { id: kbId, embeddingConfig: await this.kbEmbeddingConfig(kbId) })
+            if (vectors && vectors.length === inserted.length) {
+              await repos.vectors.createBatch(vectors.map((vector, i) => ({ chunkId: `atom:${inserted[i].id}`, knowledgeBaseId: kbId, vector })))
+            } else {
+              stats.vectorsFailed = inserted.length
+            }
+          }
+          await repos.passes.setDone(pass.id, stats, { calls: 1, tokensIn: 0, tokensOut: 0 })
+        } catch (e) {
+          await repos.passes.setFailed(pass.id, e instanceof Error ? e.message : String(e))
+          logger.warn(`[kb-brain] 视角遍失败 lens=${lensId} ch=${chapter.id}（不阻塞其他视角）`)
+        }
+      }
+    }
+  }
+
+  /** T14 重要性账户：按本轮实际落库论断计分（无窗口重复计分；仅 ai 基础遍产物计分） */
+  private async accrueImportance(kbId: string, repos: KbBrainRepos, insertedThisRun: KbAtomInput[]): Promise<void> {
+    const kb = await repos.kbs.findById(kbId)
+    if (!kb) return
+    const cfg = safeParseConfig(kb.brainConfig)
+    if (!cfg?.distillation.enabled) return
+    const state = parseBrainState(kb.brainState)
+    let gained = 0
+    for (const a of insertedThisRun) {
+      gained += a.type === 'method' || a.type === 'insight' ? 3 : a.type === 'open-question' ? 2 : a.type === 'claim' ? 1 : 0.2
+    }
+    if (gained <= 0) return
+    const importance = state.importance + gained
+    logger.info(`[kb-brain] 重要性账户: kb=${kbId} +${gained.toFixed(1)} = ${importance.toFixed(1)} / 阈值 ${cfg.distillation.importanceThreshold}`)
+    if (importance >= cfg.distillation.importanceThreshold) {
+      // 超阈值直接在队列内提炼（串行天然限流；台账借用方案是无消费方的死代码，废弃）
+      logger.info(`[kb-brain] 重要性超阈值 → 执行提炼 kb=${kbId}`)
+      try {
+        const distiller = new KbDistillService({ llm: this.adjudicateLlm, embed: this.embedFn, repos: () => ({ atoms: repos.atoms, notes: repos.notes }) })
+        const embCfg = await this.kbEmbeddingConfig(kbId)
+        const out = await distiller.distill(kbId, embCfg)
+        logger.info(`[kb-brain] 自动提炼完成: 提议=${out.cardsProposed} 簇=${out.clustersFormed}`)
+      } catch (e) {
+        logger.warn(`[kb-brain] 自动提炼失败（不阻塞）: ${e instanceof Error ? e.message : String(e)}`)
+      }
+      await repos.kbs.updateBrainState(kbId, stringifyBrainState({ ...state, importance: 0, lastDistillAt: new Date().toISOString() }))
+    } else {
+      await repos.kbs.updateBrainState(kbId, stringifyBrainState({ ...state, importance }))
+    }
+  }
+
+  /** T15 视角遍：按启用的视角卡对全文档排队（章级台账幂等，优先级低于基础遍） */
+  private async scheduleLensPasses(kbId: string, documentId: string, repos: KbBrainRepos, cfg: KbBrainConfig): Promise<void> {
+    if (!cfg.lenses.enabledLensNoteIds.length) return
+    // passKey 掺视角卡 version（盲审修复：透镜编辑后已 done 的章必须重读）
+    const lensCards = await repos.notes.findByIds(cfg.lenses.enabledLensNoteIds)
+    const versionById = new Map(lensCards.map((c) => [c.id, c.version]))
+    const chapterRows = await repos.chapters.findByDocument(documentId)
+    for (const lensId of cfg.lenses.enabledLensNoteIds) {
+      const v = versionById.get(lensId) ?? 1
+      for (const chapter of chapterRows) {
+        await repos.passes.ensurePass({
+          knowledgeBaseId: kbId,
+          documentId,
+          chapterId: chapter.id,
+          passType: 'lens',
+          passKey: `lens:${lensId}:v${v}`,
+          chapterHash: chapter.contentHash,
+        })
       }
     }
   }
@@ -617,6 +815,7 @@ function safeParseConfig(raw: string | null | undefined): KbBrainConfig | null {
     return null // 配置损坏按关闭处理（写入侧已响亮失败，读取侧容错）
   }
 }
+
 
 function isValidType(t: string): t is KbAtomInput['type'] {
   return ['fact', 'claim', 'concept', 'method', 'insight', 'open-question'].includes(t)

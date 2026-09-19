@@ -376,8 +376,8 @@ export interface SearchRequest {
 export interface SearchResult {
   /** 命中类型（知识大脑扩展；缺省 'chunk' = 原文切片） */
   kind?: 'chunk' | 'atom' | 'note'
-  /** score 的量纲标注（余弦 0-1 vs BM25 无界，跨 kind 不可直接比较） */
-  scoreKind?: 'cosine' | 'bm25'
+  /** score 的量纲标注（余弦 0-1 vs BM25 无界 vs PPR 概率，跨 kind 不可直接比较） */
+  scoreKind?: 'cosine' | 'bm25' | 'ppr'
   /** kind='atom' 时：与其同源的 chunk 内容降级为上下文（设计 §5.1，不丢弃原文） */
   context?: string
   /** kind='atom' 时的论断载荷（provenance 回链） */

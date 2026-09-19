@@ -1263,6 +1263,10 @@ const electronAPI = {
       stats: (kbId: string) => ipcRenderer.invoke('kb:brain:stats', { kbId }),
       search: (p: { knowledgeBaseId: string; query: string; topK?: number; include?: string[]; lensNoteId?: string; intent?: string }) =>
         ipcRenderer.invoke('kb:brain:search', p),
+      distill: (p: { kbId: string; documentIds?: string[] }) => ipcRenderer.invoke('kb:brain:distill', p),
+      conflicts: (kbId: string) => ipcRenderer.invoke('kb:brain:conflicts', { kbId }),
+      resolveConflict: (p: { atomId: string; verdict: 'supported' | 'superseded'; supersededByAtomId?: string }) =>
+        ipcRenderer.invoke('kb:brain:resolve-conflict', p),
       onProgress: (cb: (data: { documentId: string; phase: string; progress: number }) => void) => {
         const h = (_e: unknown, data: { documentId: string; phase: string; progress: number }): void => cb(data)
         ipcRenderer.on('kb:brain:progress', h)
