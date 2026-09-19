@@ -81,11 +81,29 @@ export class KbDigestPassRepository extends BaseRepository<KbDigestPassEntity, K
     passKey: string
     chapterHash: string | null
   }): Promise<EnsurePassDecision> {
-    const existing = await this.scoped.findOne({
-      // chapterId=null（文档级任务）必须按 (document_id, pass_key) 判重——UNIQUE 对 NULL 不生效（F7）
+    // 主键查找：章级按 (chapterId, passKey)；文档级（chapterId=null）按 (documentId, passKey)
+    // ——UNIQUE 对 NULL 不生效（F7）
+    let existing = await this.scoped.findOne({
       ...(input.chapterId !== null ? { chapterId: input.chapterId } : { documentId: input.documentId }),
       passKey: input.passKey,
     } as FindOptionsWhere<KbDigestPassEntity>)
+    // 兜底键（review P1：reprocess 后章节 id 全新，主键查找必 miss → 未变章全量重萃取）：
+    // 同文档同 passKey 同 chapterHash 的历史行命中即复用（内容没变就不重跑），并把
+    // chapterId 改指新章节。代价：同文档两章正文完全相同的极端场景会被并案（可接受——
+    // 论断本就相同，出处指向先到章）。
+    if (!existing && input.chapterId !== null && input.chapterHash) {
+      existing = await this.scoped.findOne({
+        documentId: input.documentId,
+        passKey: input.passKey,
+        chapterHash: input.chapterHash,
+        status: 'done',
+      } as FindOptionsWhere<KbDigestPassEntity>)
+      if (existing && existing.chapterId !== input.chapterId) {
+        existing.chapterId = input.chapterId
+        existing.updatedAt = new Date()
+        await this.scoped.save(existing)
+      }
+    }
     const now = new Date()
     if (existing) {
       if (existing.status === 'running') return { action: 'skip', reason: 'running', pass: this.toDto(existing) }

@@ -310,6 +310,8 @@ export class EpAgentHarnessService {
         tool,
         ...(budget.maxCalls.overrides[tool] !== undefined ? { maxCalls: budget.maxCalls.overrides[tool] } : {}),
       })),
+      // kb_brain_query（T17/M3）：分镜/编剧会话主动查知识大脑（read，无频控上限）
+      { tool: 'kb_brain_query', dedupArgs: true },
     ]
 
     // choice→审批（EP-2）：协调器按轮创建；approval:request 转译为前端 choice:request

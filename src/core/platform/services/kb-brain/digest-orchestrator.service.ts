@@ -271,8 +271,7 @@ export class KbBrainDigestService {
       // T14 重要性账户（§6.2）：按本轮实际落库论断计分，超阈值直接提炼
       await this.accrueImportance(kbId, repos, insertedThisRun)
 
-      // T15 视角遍：排队（幂等）+ 执行 pending 的 lens 章
-      await this.scheduleLensPasses(kbId, documentId, repos, cfg)
+      // T15 视角遍：runLensPasses 内 ensurePass 幂等入队+执行（schedule 独立遍是冗余双查，已删）
       await this.runLensPasses(kbId, documentId, repos, cfg)
 
       await docs.updateBrainStatus(documentId, { status: 'digested', progress: 100, error: null })
@@ -632,7 +631,7 @@ export class KbBrainDigestService {
         })
         if (decision.action === 'skip') continue
         // 生命周期（盲审修复）：重跑前把同章旧 hash 的 lens 旧观感置 stale，防 supported 无限堆积
-        await repos.atoms.staleLensAtoms(documentId, lensId, chapter.id, chapter.contentHash)
+        await repos.atoms.staleLensAtoms(documentId, lensId, chapter.id, chapter.contentHash, `lens:${lensId}:v${lens.version}`)
         const pass = decision.pass
         await repos.passes.setRunning(pass.id)
         const stats: PassStats = { atoms: 0, merged: 0, superseded: 0, suspected: 0, entities: 0, edges: 0, vectorsFailed: 0, costCalls: 1 }
@@ -706,7 +705,12 @@ export class KbBrainDigestService {
       // 超阈值直接在队列内提炼（串行天然限流；台账借用方案是无消费方的死代码，废弃）
       logger.info(`[kb-brain] 重要性超阈值 → 执行提炼 kb=${kbId}`)
       try {
-        const distiller = new KbDistillService({ llm: this.adjudicateLlm, embed: this.embedFn, repos: () => ({ atoms: repos.atoms, notes: repos.notes }) })
+        const distiller = new KbDistillService({
+          llm: this.adjudicateLlm,
+          embed: this.embedFn,
+          repos: () => ({ atoms: repos.atoms, notes: repos.notes, entities: repos.entities }),
+          settingPatternEnabled: cfg.patterns.settingEnabled,
+        })
         const embCfg = await this.kbEmbeddingConfig(kbId)
         const out = await distiller.distill(kbId, embCfg)
         logger.info(`[kb-brain] 自动提炼完成: 提议=${out.cardsProposed} 簇=${out.clustersFormed}`)
@@ -716,28 +720,6 @@ export class KbBrainDigestService {
       await repos.kbs.updateBrainState(kbId, stringifyBrainState({ ...state, importance: 0, lastDistillAt: new Date().toISOString() }))
     } else {
       await repos.kbs.updateBrainState(kbId, stringifyBrainState({ ...state, importance }))
-    }
-  }
-
-  /** T15 视角遍：按启用的视角卡对全文档排队（章级台账幂等，优先级低于基础遍） */
-  private async scheduleLensPasses(kbId: string, documentId: string, repos: KbBrainRepos, cfg: KbBrainConfig): Promise<void> {
-    if (!cfg.lenses.enabledLensNoteIds.length) return
-    // passKey 掺视角卡 version（盲审修复：透镜编辑后已 done 的章必须重读）
-    const lensCards = await repos.notes.findByIds(cfg.lenses.enabledLensNoteIds)
-    const versionById = new Map(lensCards.map((c) => [c.id, c.version]))
-    const chapterRows = await repos.chapters.findByDocument(documentId)
-    for (const lensId of cfg.lenses.enabledLensNoteIds) {
-      const v = versionById.get(lensId) ?? 1
-      for (const chapter of chapterRows) {
-        await repos.passes.ensurePass({
-          knowledgeBaseId: kbId,
-          documentId,
-          chapterId: chapter.id,
-          passType: 'lens',
-          passKey: `lens:${lensId}:v${v}`,
-          chapterHash: chapter.contentHash,
-        })
-      }
     }
   }
 
@@ -800,6 +782,12 @@ export function installKbBrainDigest(
   import('./brain-provider').then(({ installKbBrainProvider }) => installKbBrainProvider())
   subscribeDomainEvents((event) => svc.onDomainEvent(event))
   void svc.recover().catch((e) => logger.warn(`[kb-brain] 启动恢复失败: ${e instanceof Error ? e.message : String(e)}`))
+  // M4 代谢整固：Electron 挂机 interval（Web 多租户不启用——dl-pace 同款限制）
+  if ((process.versions as Record<string, string | undefined>).electron) {
+    import('./metabolize.service')
+      .then(({ KbBrainMetabolizeService }) => new KbBrainMetabolizeService().start())
+      .catch((e) => logger.warn(`[kb-brain] 代谢服务启动失败: ${e instanceof Error ? e.message : String(e)}`))
+  }
   logger.info('[kb-brain] 消化流水线已装配（kb:document-completed 订阅 + 台账恢复）')
 }
 

@@ -2,7 +2,7 @@
  * 知识大脑·实体仓库（kb_entities 表）
  * @module database/repositories/kb-entity.repository
  */
-import { In, type DataSource, type FindOptionsWhere } from 'typeorm'
+import { In, Not, type DataSource, type FindOptionsWhere } from 'typeorm'
 import { randomUUID } from 'crypto'
 import { KbEntityEntity } from '../entities/kb-brain/kb-entity.entity'
 import { BaseRepository } from '../base-repository'
@@ -149,14 +149,21 @@ export class KbEntityRepository extends BaseRepository<KbEntityEntity, KbEntityR
     )
   }
 
-  /** 全部 active 实体（id+规范名+别名；PPR 种子与挂点提示用） */
-  async listActiveWithAliases(kbId: string, limit: number): Promise<Array<{ id: string; name: string; aliases: string[] }>> {
+  /** 全部 active 实体（id+规范名+别名+类型；PPR 种子/挂点提示/设定卡归纳用） */
+  async listActiveWithAliases(
+    kbId: string,
+    limit: number,
+    opts?: { excludeTypes?: string[]; orderByUpdated?: boolean },
+  ): Promise<Array<{ id: string; name: string; aliases: string[]; entityType: string }>> {
+    const where: Record<string, unknown> = { knowledgeBaseId: kbId, status: 'active' }
+    if (opts?.excludeTypes?.length) where.entityType = Not(In(opts.excludeTypes))
     const rows = await this.scoped.find({
-      where: { knowledgeBaseId: kbId, status: 'active' } as FindOptionsWhere<KbEntityEntity>,
-      order: { createdAt: 'ASC' } as never,
+      where: where as FindOptionsWhere<KbEntityEntity>,
+      // 默认按创建序（稳定）；orderByUpdated 供设定卡归纳（近期活跃优先，防新实体饿死）
+      order: (opts?.orderByUpdated ? { updatedAt: 'DESC' } : { createdAt: 'ASC' }) as never,
       take: limit,
     })
-    return rows.map((r) => ({ id: r.id, name: r.name, aliases: safeParseArray(r.aliases) }))
+    return rows.map((r) => ({ id: r.id, name: r.name, aliases: safeParseArray(r.aliases), entityType: r.entityType }))
   }
 
   /** 全部 active 实体规范名（原子化的挂点提示词表；按创建时间稳定排序） */

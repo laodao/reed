@@ -233,6 +233,35 @@ export class KbNoteRepository extends BaseRepository<KbNoteEntity, KbNoteRecord>
     return this.toDto(e)
   }
 
+  /**
+   * 经典性重算（浮现式：引用×实例；P4 周期）。返回重算卡数。
+   * classicScore = ln(1+citedCount) * (1 + ln(1+instanceCount))——引用为主、实例加成。
+   * 覆盖类型：思想卡/情节与设定模式卡（lens/skill-seed 不参与）。
+   */
+  async recomputeClassic(kbId: string): Promise<number> {
+    const rows = await this.scoped.find({
+      where: {
+        knowledgeBaseId: kbId,
+        type: In(['setting-pattern', 'plot-pattern', 'insight', 'methodology', 'synthesis']),
+      } as FindOptionsWhere<KbNoteEntity>,
+    })
+    let n = 0
+    for (const note of rows) {
+      let instanceCount = 0
+      try {
+        instanceCount = note.patternInstances ? (JSON.parse(note.patternInstances) as unknown[]).length : 0
+      } catch {
+        instanceCount = 0
+      }
+      const score = Math.log(1 + note.citedCount) * (1 + Math.log(1 + instanceCount))
+      if (Math.abs(score - note.classicScore) > 1e-6) {
+        await this.scoped.update({ id: note.id } as FindOptionsWhere<KbNoteEntity>, { classicScore: score, updatedAt: new Date() } as never)
+        n++
+      }
+    }
+    return n
+  }
+
   /** FSRS 当前态缓存回写（评分历史在 kb_note_reviews） */
   async updateFsrsState(
     id: string,

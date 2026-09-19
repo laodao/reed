@@ -119,3 +119,23 @@ export const CRAG_SYSTEM = `你是检索质量评判员。判断检索结果能�
 - incorrect：结果与查询无关或完全不能支撑回答——给出改写后的查询（rewrittenQuery，换更具体/同义/上位表述）。
 - ambiguous：结果部分相关，无法判定。
 只输出 JSON：{ "grade": "correct|incorrect|ambiguous", "rewrittenQuery": "..." }（rewrittenQuery 仅 incorrect 时必填）。`
+
+/* ==================== P-5 SETTING-PATTERN（设定模式卡归纳） ==================== */
+
+export const SETTING_PATTERN_SYSTEM = `你是叙事设定研究员。给定某类设定体系（如金手指/力量体系）在多本书中的规则论断，归纳一张设定模式卡。
+
+产出 JSON：
+- title：该设定模式的完整论断式标题（如"代价型金手指的代价结构决定情感曲线形状"）
+- description：第三人称"何时用我"≤200字（设计新书的这类设定时使用）
+- body：markdown 正文：参数空间（各维度与常见取值）、已被验证的组合、崩坏点（有反例证据时）
+- skeleton：规则集维度定义（JSON 数组，如 [{dim:"代价结构", values:["累积型","即付型","延迟型"]}]）
+- instances：每本书的取值与变形（JSON 数组 [{label, values, note}]；label 用论断里提到的书名/标识，没有就省略）
+
+规则：只基于给定论断归纳，不编造；崩坏点必须有论断支撑；实例不足 2 本时如实标注"单例，待验证"。
+只输出 JSON。`
+
+export function buildSettingPatternUser(input: { entityName: string; statements: Array<{ statement: string; source: string }> }): string {
+  return `设定体系：${input.entityName}\n\n跨书规则论断：\n${input.statements
+    .map((s) => `- （${s.source}）${s.statement}`)
+    .join('\n')}`
+}

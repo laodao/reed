@@ -311,7 +311,8 @@ export class StoryRoomSessionService {
     // 5.5 工具集（46 号双模式：问答时模型不调用即纯对话；设计任务走 loop）
     registerLwRoomTools(harness.registry)
     const systemToolNames = ['discover_capabilities', 'invoke_skill', 'run_workflow', 'get_workflow_run']
-    const bindings = [...lwRoomToolNames(), ...systemToolNames].map((tool) => ({ tool }))
+    // kb_brain_query（T17/M3）：写作会话主动查知识大脑（与 brain-provider 被动注入互补）
+    const bindings = [...lwRoomToolNames(), 'kb_brain_query', ...systemToolNames].map((tool) => ({ tool }))
     const toolMap = harness.registry.buildToolDefs(bindings)
 
     // 设计轮判定锚点：本轮期间新建的 draft 设计包（轮开始时间戳比对）

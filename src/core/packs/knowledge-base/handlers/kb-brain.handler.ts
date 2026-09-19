@@ -74,10 +74,14 @@ export function registerKbBrainHandlers(): void {
     if (distillBusy) return { success: false, error: '提炼进行中，请稍候' }
     distillBusy = true
     try {
+      const kbRow = await svc().getKnowledgeBase(p.kbId).then((r) => r.data)
+      const { parseBrainConfig } = await import('@core/platform/services/kb-brain/brain-config')
+      const cfg = kbRow?.brainConfig ? parseBrainConfig(kbRow.brainConfig) : null
       const svc2 = new KbDistillService({
         embed: (texts, kb) => svc().getEmbeddingVectors(texts, kb.embeddingConfig ? JSON.parse(kb.embeddingConfig) : {}),
+        settingPatternEnabled: cfg?.patterns.settingEnabled ?? true,
       })
-      const embCfg = await svc().getKnowledgeBase(p.kbId).then((r) => r.data?.embeddingConfig ?? null)
+      const embCfg = kbRow?.embeddingConfig ?? null
       const outcome = await svc2.distill(p.kbId, embCfg, { documentIds: p.documentIds })
       return { success: true, data: outcome }
     } catch (e) {

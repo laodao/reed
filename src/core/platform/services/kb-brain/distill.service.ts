@@ -11,7 +11,8 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import type { KbAtomRepository, KbAtomRecord } from '@core/database/repositories/kb-atom.repository'
 import type { KbNoteRepository } from '@core/database/repositories/kb-note.repository'
 import { extractJsonFromResponse } from '@core/platform/services/ai-call'
-import { DISTILL_SYSTEM, buildDistillUser } from './prompts'
+import { DISTILL_SYSTEM, buildDistillUser, SETTING_PATTERN_SYSTEM, buildSettingPatternUser } from './prompts'
+import type { KbEntityRepository } from '@core/database/repositories/kb-entity.repository'
 import { defaultBrainLlm, type BrainLlmFn } from './llm'
 
 const logger = createLogger('KbBrainDistill')
@@ -24,7 +25,9 @@ const COSINE_CLUSTER_THRESHOLD = 0.72
 export interface DistillDeps {
   llm?: BrainLlmFn
   embed?: (texts: string[], kb: { id: string; embeddingConfig: string | null }) => Promise<number[][] | null>
-  repos?: () => { atoms: KbAtomRepository; notes: KbNoteRepository } | null
+  repos?: () => { atoms: KbAtomRepository; notes: KbNoteRepository; entities: KbEntityRepository } | null
+  /** 设定模式卡开关（brainConfig.patterns.settingEnabled；缺省开） */
+  settingPatternEnabled?: boolean
 }
 
 export interface DistillOutcome {
@@ -39,15 +42,18 @@ export class KbDistillService {
   private readonly embedFn: NonNullable<DistillDeps['embed']>
   private readonly reposFn: NonNullable<DistillDeps['repos']>
 
+  private readonly settingPatternEnabled: boolean
+
   constructor(deps: DistillDeps = {}) {
+    this.settingPatternEnabled = deps.settingPatternEnabled ?? true
     this.llm = deps.llm ?? defaultBrainLlm('kb-brain-adjudicate') // 高档：提炼走裁决档
     this.embedFn = deps.embed ?? (async () => null)
     this.reposFn =
       deps.repos ??
       (() => {
         const db = getCoreDatabaseManager()
-        if (!db.kbAtoms || !db.kbNotes) return null
-        return { atoms: db.kbAtoms, notes: db.kbNotes }
+        if (!db.kbAtoms || !db.kbNotes || !db.kbBrainEntities) return null
+        return { atoms: db.kbAtoms, notes: db.kbNotes, entities: db.kbBrainEntities }
       })
   }
 
@@ -67,8 +73,8 @@ export class KbDistillService {
       const allow = new Set(scope.documentIds)
       candidates = candidates.filter((a) => allow.has(a.sourceDocumentId))
     }
-    if (candidates.length < CLUSTER_MIN) return outcome
-    outcome.atomsConsumed = candidates.length
+    if (candidates.length < CLUSTER_MIN && !this.settingPatternEnabled) return outcome
+    if (candidates.length >= CLUSTER_MIN) outcome.atomsConsumed = candidates.length
 
     // 2. 嵌入聚类（贪心种子聚类：阈值内归簇；嵌入失败 → 按 type 分组降级）
     const vectors = await this.embedFn(candidates.map((a) => a.statement), { id: kbId, embeddingConfig })
@@ -101,10 +107,93 @@ export class KbDistillService {
       })
       outcome.cardsProposed++
     }
+
+    // T19 设定模式卡（P-5）：setting-system 实体的规则论断跨书归纳
+    if (this.settingPatternEnabled) {
+      try {
+        const patternCards = await this.distillSettingPatterns(kbId, embeddingConfig)
+        outcome.cardsProposed += patternCards
+      } catch (e) {
+        logger.warn(`[kb-distill] 设定模式卡归纳失败（不阻塞）: ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+
     logger.info(
       `[kb-distill] kb=${kbId} 簇=${outcome.clustersFormed} 提议=${outcome.cardsProposed} 同题跳过=${outcome.duplicatesSkipped}`,
     )
     return outcome
+  }
+
+  /** P-5：按 setting-system 实体分组 → 规则论断跨书归纳 → setting-pattern 卡（proposed） */
+  private async distillSettingPatterns(kbId: string, _embeddingConfig: string | null): Promise<number> {
+    const repos = this.reposFn()
+    if (!repos) return 0
+    // 只对非人物/地点类实体归纳（盲审 P2：人物实体论断最多，会产出伪设定卡）；
+    // updatedAt 序 + cap 20（近期活跃优先，防新实体饿死）
+    let proposed = 0
+    const allActive = await repos.entities.listActiveWithAliases(kbId, 20, {
+      excludeTypes: ['character', 'location', 'organization', 'item', 'plot-motif'],
+      orderByUpdated: true,
+    })
+    for (const ent of allActive) {
+      const atoms = await repos.atoms.findByEntities(kbId, [ent.id], { lensNoteId: null, statuses: ['supported'] })
+      const ruleAtoms = atoms.filter((a) => ['fact', 'method', 'insight'].includes(a.type))
+      if (ruleAtoms.length < 3) continue
+      const card = await this.reflectSettingPattern(ent.name, ruleAtoms)
+      if (!card) continue
+      const similar = await repos.notes.findSimilarTitle(kbId, card.title)
+      if (similar.some((s) => s.title === card.title && s.status !== 'archived')) continue
+      await repos.notes.propose(kbId, {
+        title: card.title,
+        description: card.description,
+        body: card.body,
+        type: 'setting-pattern',
+        evidence: JSON.stringify(ruleAtoms.slice(0, 12).map((a) => ({ atomId: a.id, statement: a.statement }))),
+        origin: 'ai-distill',
+        patternSkeleton: card.skeleton,
+        patternInstances: card.instances,
+      })
+      proposed++
+    }
+    return proposed
+  }
+
+  /** P-5 反思（校验失败重试 1 次） */
+  private async reflectSettingPattern(
+    entityName: string,
+    ruleAtoms: KbAtomRecord[],
+  ): Promise<{ title: string; description: string; body: string; skeleton: string; instances: string } | null> {
+    let lastError = ''
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const user =
+        attempt === 0
+          ? buildSettingPatternUser({ entityName, statements: ruleAtoms.map((a) => ({ statement: a.statement, source: a.sourceDocumentId.slice(0, 8) })) })
+          : `${buildSettingPatternUser({ entityName, statements: ruleAtoms.map((a) => ({ statement: a.statement, source: a.sourceDocumentId.slice(0, 8) })) })}\n\n【上次输出不合法】\n${lastError}\n请重新输出完整合法的 JSON。`
+      try {
+        const raw = await this.llm({ system: SETTING_PATTERN_SYSTEM, user, maxTokens: 3000 })
+        const parsed = extractJsonFromResponse(raw) as Partial<{
+          title: string
+          description: string
+          body: string
+          skeleton: unknown
+          instances: unknown
+        }>
+        const title = String(parsed.title ?? '').trim()
+        if (!title || title.length < 8) throw new Error('title 缺失或过短')
+        const description = String(parsed.description ?? '').trim()
+        if (!description) throw new Error('description 缺失')
+        return {
+          title,
+          description,
+          body: String(parsed.body ?? '').trim(),
+          skeleton: JSON.stringify(parsed.skeleton ?? []),
+          instances: JSON.stringify(parsed.instances ?? []),
+        }
+      } catch (e) {
+        lastError = e instanceof Error ? e.message : String(e)
+      }
+    }
+    return null
   }
 
   /** P-4 两段式反思（校验失败重试 1 次，复用 atomize 的解析纪律） */

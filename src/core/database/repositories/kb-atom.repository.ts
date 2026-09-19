@@ -249,8 +249,8 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
     )
   }
 
-  /** 视角遍生命周期：同章旧 hash 的 lens 旧观感置 stale（重跑前调用，防 supported 堆积） */
-  async staleLensAtoms(documentId: string, lensNoteId: string, chapterId: string, currentHash: string | null): Promise<number> {
+  /** 视角遍生命周期：同章「非当前遍次前缀」的旧观感置 stale（hash 或 version 变更都覆盖） */
+  async staleLensAtoms(documentId: string, lensNoteId: string, chapterId: string, currentHash: string | null, currentPassPrefix: string): Promise<number> {
     const rows = await this.scoped.find({
       where: {
         sourceDocumentId: documentId,
@@ -261,7 +261,10 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
     })
     let n = 0
     for (const a of rows) {
-      if (a.sourceChapterHash === currentHash) continue
+      // 当前遍次前缀相同且 hash 未变 → 保留；否则（旧 version 或旧 hash）置 stale
+      const samePass = a.extractionPass.startsWith(currentPassPrefix)
+      const sameHash = a.sourceChapterHash === currentHash
+      if (samePass && sameHash) continue
       await this.updateStatus(a.id, { status: 'stale' })
       n++
     }

@@ -139,6 +139,29 @@ export class KbKnowledgeEdgeRepository extends BaseRepository<KbKnowledgeEdgeEnt
     return { nodes: [...nodes.values()], edges }
   }
 
+  /**
+   * 孤儿边降权（代谢 v1）：端点论断已 stale/superseded 的边 confidence 减半
+   * （不物理删——设计 §12 红线；置信度衰减即呈现层降权）。返回降权边数。
+   * statusById 由调用方（代谢服务）查询传入——仓储不做跨仓储全局调用。
+   */
+  async decayOrphans(kbId: string, statusById: Map<string, string>): Promise<number> {
+    const edges = await this.scoped.find({
+      where: { knowledgeBaseId: kbId, relation: 'leads-to' } as never,
+    })
+    let n = 0
+    for (const e of edges) {
+      const stS = statusById.get(e.sourceId)
+      const stT = statusById.get(e.targetId)
+      const orphan =
+        stS === undefined || stT === undefined || stS === 'stale' || stS === 'superseded' || stT === 'stale' || stT === 'superseded'
+      if (orphan && e.confidence > 0.1) {
+        await this.scoped.update({ id: e.id } as never, { confidence: e.confidence * 0.5 } as never)
+        n++
+      }
+    }
+    return n
+  }
+
   /** 实体合并时的边端点改指（消歧协调方调用）。边表无 updated_at，只改端点 */
   async redirectNode(
     fromKind: KbEdgeNodeKind,
