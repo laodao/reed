@@ -132,3 +132,15 @@ P3 已修：PPR iterations 40/eps 1e-4 正名；graphSupplement scoreKind='ppr'�
 | P3 | scheduleLensPasses 与 runLensPasses 双遍 ensurePass 冗余；代谢 then 无 catch；EP binding 无 dedupArgs；recomputeClassic 类型缺 plot-pattern/methodology/synthesis；P-5 被聚类早退门控；metabolize knowledgeBases 闭包收窄 | 全修 |
 
 登记不改：lens 观感不进倒排（分域主观层，关键词不可达——有意，登记）；同文档两章正文完全相同的极端并案（ensurePass 兜底键的已知代价，论断本就相同）；旧 version 台账行残留（惰性：不冲突不误扫，仅表膨胀）。
+
+
+---
+
+# 第六轮：M4 收尾（9918a6d7 前置）对抗 review（2026-09-19，随提交修复）
+
+盲审 P1×2 + P2×5 + P3×7：
+- P1 研究流 synthesize LLM 调用与解析不同保护域（调用 throw 穿透降级路径，分钟级流程最后一步丢全部成果）→ 同域包裹
+- P1 研究回写无异常保护（propose/createBatch throw 丢已生成的完整报告，且"卡已入队+前端显示失败"的组合态会让用户永远不去看）→ 整体 try/catch 保留报告返回
+- P2 plan LLM 同款穿透；exportSkill YAML frontmatter 无引号注入（description 含": "即崩对端解析器→JSON.stringify 标量）；软衰减 useCount 项缺失+死存储（注释宣称未实现的行为）；computeTaste 裸 JSON 绕过规范入口+无 status 过滤
+- P3 全修：research question 空校验、open-question 前缀查重防重复研究堆积、web 事件通道补 onResearch/onProgress/onStatus、衰减注释如实化（180 天在 RRF 尺度可越位多名，需实测调优）
+登记不改：研究产物 sourceDocumentId=库 id（库级列表可见、按文档视图不出现——有意）；researchBusy 无超时（LLM 挂起锁到重启，与 distillBusy 同模式）
