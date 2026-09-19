@@ -80,3 +80,17 @@
 | P3 | decideProposal 可复活 archived | 加状态守卫 |
 
 登记不改：run-eval CLI 需在宿主进程 bootstrap（registerCoreDatabaseManager）才能直跑——真机基线随导库一并处理；intent/scoreKind/context 已补集成用例。
+
+
+---
+
+# 第三轮：M2（97bf4ee4 前置）对抗 review（2026-09-19，提交前完成并修复）
+
+盲审 2×P1 + 9×P2 + 若干 P3，全部在提交前修复。最重的两条都是「新机制两端没对上」：
+
+1. **P1 PPR 种子/图节点 id 空间不相交**：种子是实体 id，图节点只有 leads-to 边端点（atom id）→ 种子无出边，PPR 立即收敛返回种子自身——多跳整体空转。修复：把 atom→atom 边经论断实体挂点投影为 entity→entity 空间，种子与节点同 id 空间。
+2. **P1 `ent:` 命名空间未注册**：实体摘要向量（`ent:`）会直通存量文档检索的向量路径并污染 BM25 统计。修复：注册命名空间 + 存量向量过滤与 BM25 EXCLUDE 同步加 `ent:`；brain 主池也显式剔除（实体摘要只供图路邻域）。
+
+P2 已修：invalidateGraph 零调用（TTL 降 60s 并注明取舍）；种子改 active 实体（含别名）等值精确匹配（原 pendingSummaries 会在摘要完成后静默死亡 + 双向子串过度播种）；lens 观感生命周期（重跑前置 stale，防 supported 堆积）；lens 台账 passKey 掺视角卡 version（透镜编辑触发重读）；relink 同 hash 多章按 sourceChapterId 收窄；重要性账户改「本轮 inserted 直接计分」（10 分钟窗口在批量消化时重复计分 + human/lens 误计分）；distill 台账死代码废弃（超阈值直接队列内提炼）；graphSupplement 补 documentIds 过滤；pendingSummaries 按 createdAt 轮转；distill archived 放行。
+P3 已修：PPR iterations 40/eps 1e-4 正名；graphSupplement scoreKind='ppr'；P-6 `$` 替换转义；AtomizeDeps 声明去重；entity-summary 证据收窄 supported；lens 遍 mentionCache。
+登记不改：lens costCalls 用调用次数近似（真实窗口数待 AtomizeResult 补 windowCount）；手动 distill 不写台账（熔断对其盲）；run-eval 宿主 bootstrap；ppr 40 次迭代的 eps 仍未严格达成（排序器够用）。
