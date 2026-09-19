@@ -3202,12 +3202,12 @@ ${prewriteContent}
 
     const systemPrompt = `你是一位专业的小说创作顾问。请分析章节正文内容，提取涉及实体的最新状态。
 
-**重要**：请控制回复长度，总字数不超过2000字。
+**重要**：请控制回复长度，总字数不超过3500字。这份状态是后续章节一致性检查（写后审查）的数据面——漏一个实体，下一章的矛盾就查不出来，覆盖优先于简洁。
 
-## 实体类型说明
-- character（角色）：存活状态、当前位置、掌握技能、持有物品、人际关系、身体状态
-- location（地点）：状态（正常/毁坏/发现中）、归属势力、重要特征变化
-- item（物品）：持有者、状态（完好/损坏/丢失）、当前位置
+## 实体类型说明（各维度尽可能覆盖全面）
+- character（角色）：存活状态、当前位置、身体状态与永久性标记（伤病/疤/茧/孕等）、能力与技能变化（新习得/生疏/丧失）、持有物品变化（得到/交出/丢失了什么）、人际关系变化（与谁结成/破裂/转变了什么关系）、身份地位变化、知情范围（知道/不知道哪些关键信息）
+- location（地点）：状态（正常/毁坏/戒严/发现中）、归属势力、重要特征变化
+- item（物品）：持有者、状态（完好/损坏/丢失/易主）、当前位置
 - faction（势力）：领导者、状态（兴盛/衰落/覆灭）、控制区域变化
 - skill（技能）：掌握者列表、传承情况、等级分布
 
@@ -3218,7 +3218,7 @@ ${prewriteContent}
   "entityId": "实体ID",
   "entityName": "实体名称",
   "stateSummary": "完整的状态摘要描述（100-200字，包含所有关键状态信息）",
-  "keyChanges": ["本章节导致的关键变化列表"]
+  "keyChanges": ["本章节导致的关键变化列表（分类覆盖：发生的事件/能力变化/持有物变化/关系变化/身体变化/知情变化，有什么写什么）"]
 }
 
 ## 状态摘要原则
@@ -3228,6 +3228,7 @@ ${prewriteContent}
 4. 如果实体在本章节无变化，但有上一状态，则继承上一状态并补充新变化
 5. 如果实体首次出现且无上一状态，从章节内容和设定信息推断初始状态
 6. keyChanges 只记录本章节新增的变化，便于追溯
+7. 全要素覆盖（硬约束）：只要实体在本章正文有戏份（出场/被提及行动/状态被改变），就必须输出该实体——即使状态无变化也输出继承状态；禁止因"整体变化不大"而整章跳过
 
 请直接输出 JSON 数组，不要有任何额外文字。`
 
@@ -3238,7 +3239,7 @@ ${prewriteContent}
       .join('\n')
 
     const prompt = `【章节正文内容】
-${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容已截断)' : ''}
+${chapterContent.substring(0, 12000)}${chapterContent.length > 12000 ? '...(内容已截断)' : ''}
 
 【涉及的实体】
 ${involvedEntities.map(e => `- ${e.name}（类型：${e.type}，ID：${e.id}）`).join('\n')}
@@ -3246,10 +3247,10 @@ ${involvedEntities.map(e => `- ${e.name}（类型：${e.type}，ID：${e.id}）`
 【实体上一章节状态】
 ${previousStatesInfo || '无历史状态'}
 
-请分析以上章节内容，为涉及的实体生成状态快照。如果一个实体在本章节没有变化且没有上一状态，可以不输出该实体。直接返回 JSON 数组格式的结果。`
+请分析以上章节内容，为涉及的实体生成状态快照。涉及实体中只要在本章正文有戏份的都必须输出；完全未出场的实体可以不输出。直接返回 JSON 数组格式的结果。`
 
     try {
-      const result = await this.callAIStream(eventId, prompt, systemPrompt, 3000, providerConfigId, modelId)
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, 4000, providerConfigId, modelId)
 
       // 尝试解析 JSON 数组
       const jsonMatch = result.match(/\[[\s\S]*\]/)
@@ -3413,7 +3414,7 @@ ${characterList || '无'}
 ${locationList || '无'}
 
 【章节正文内容】
-${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容已截断)' : ''}
+${chapterContent.substring(0, 12000)}${chapterContent.length > 12000 ? '...(内容已截断)' : ''}
 
 请分析以上章节内容，识别其中涉及的角色和地点，并简要列出发生的事件。直接返回 JSON 格式的结果。`
 
@@ -3544,7 +3545,7 @@ ${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容
       : '\n【说明】这是第一章，没有上一章信息。'
 
     const prompt = `【章节正文内容】
-${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容已截断)' : ''}
+${chapterContent.substring(0, 12000)}${chapterContent.length > 12000 ? '...(内容已截断)' : ''}
 
 【章节序号】第${chapterNumber}章
 ${previousInfo}
@@ -3653,7 +3654,7 @@ ${previousInfo}
 5. 直接输出 JSON 数组，不要任何额外文字`
 
     const prompt = `【本章正文（第 ${chapterNumber} 章）】
-${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容已截断)' : ''}
+${chapterContent.substring(0, 12000)}${chapterContent.length > 12000 ? '...(内容已截断)' : ''}
 
 请识别本章新埋下的伏笔，直接返回 JSON 数组。`
 
@@ -3699,9 +3700,10 @@ ${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容
 **重要**：请控制回复长度，总字数不超过 2000 字。
 
 ## 输出格式
-返回 JSON 数组，每个事件一条记录：
+返回 JSON 数组，每个事件一条记录（按正文发生顺序排列）：
 {
   "name": "事件名（不超过 15 字）",
+  "storyTime": "事件发生的故事内时间（用正文原词，如：二更天/上元夜/三个月前；正文未明示则填空串）",
   "description": "事件经过描述（50-100 字）",
   "involvedEntities": [
     {"type": "character/location/item/faction/skill", "id": "实体ID（必须使用提供的ID）", "name": "实体名"}
@@ -3721,7 +3723,7 @@ ${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容
 4. 请直接输出 JSON 数组，不要有任何额外文字`
 
     const prompt = `【本章正文】
-${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容已截断)' : ''}
+${chapterContent.substring(0, 12000)}${chapterContent.length > 12000 ? '...(内容已截断)' : ''}
 
 【项目角色】
 ${entityRef(characters, 'character') || '暂无'}
@@ -3750,10 +3752,11 @@ ${entityRef(factions, 'faction') || '暂无'}
           }
         } catch (parseError: any) {
           console.error('[LongWritingAI] extractChapterEvents JSON 解析失败:', parseError.message)
-          return { success: true, data: result }
         }
       }
-      return { success: false, error: 'AI 返回格式错误' }
+      // 解析失败必须报失败（空转防线）：旧实现这里返回 success:true + 原始字符串，
+      // 调用方 Array.isArray 过滤后成空数组且不算失败步骤——整章事件静默丢失（ep11 事故根因）
+      return { success: false, error: 'AI 返回格式错误：事件提取结果不是合法 JSON 数组' }
     } catch (error: any) {
       return { success: false, error: error.message }
     }
@@ -3817,7 +3820,7 @@ ${entityRef(factions, 'faction') || '暂无'}
 4. 请直接输出 JSON 数组，不要有任何额外文字`
 
     const prompt = `【本章正文】
-${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容已截断)' : ''}
+${chapterContent.substring(0, 12000)}${chapterContent.length > 12000 ? '...(内容已截断)' : ''}
 
 【项目角色】
 ${characters.map(c => `- ${c.name}`).join('\n') || '暂无'}

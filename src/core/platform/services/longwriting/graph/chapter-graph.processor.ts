@@ -114,9 +114,12 @@ export class ChapterGraphProcessor {
     // ============ 1. 提取事件 → 落库 lw_events ============
     // 本章旧数据清理移至提取成功之后执行（旧实现在本步之前先删后提取——
     // 一旦提取失败，旧事件/边已删而新数据未建，整章图谱数据丢失）
+    // 空转防线（2026-09-19）：解析失败/空数组都算本轮失败——重试一次，仍空则记
+    // failedSteps（不记 hash，下次保存重跑）。旧实现"0 条也是合法结果"让
+    // 解析假成功/模型空转静默吞掉整章事件（ep11 事件=0 事故根因）。
     const events: StoryEvent[] = []
     try {
-      const resp = await this.aiService().extractChapterEvents(
+      let resp = await this.aiService().extractChapterEvents(
         `extract-events-${Date.now()}`,
         projectId,
         outlineId,
@@ -125,11 +128,28 @@ export class ChapterGraphProcessor {
         providerConfigId,
         modelId,
       )
-      const extracted: Array<{ name?: string; description?: string; involvedEntities?: MemoryEntity[]; stateBefore?: string; stateAfter?: string }> =
+      if (!resp.success || !Array.isArray(resp.data) || resp.data.length === 0) {
+        resp = await this.aiService().extractChapterEvents(
+          `extract-events-retry-${Date.now()}`,
+          projectId,
+          outlineId,
+          chapterContent,
+          chapterNumber,
+          providerConfigId,
+          modelId,
+        )
+      }
+      const extracted: Array<{ name?: string; storyTime?: string; description?: string; involvedEntities?: MemoryEntity[]; stateBefore?: string; stateAfter?: string }> =
         Array.isArray(resp.data) ? resp.data : []
+      if (!resp.success || extracted.length === 0) {
+        failedSteps.push('事件提取')
+        console.error(
+          `[ChapterGraphProcessor] 事件提取空产物（重试后仍空，记失败步骤）project=${projectId} chapter=${chapterNumber}: ${resp.error || '0 个事件'}`,
+        )
+      } else {
       // 幂等清理（重跑 = 重建）：事件/边是纯 insert，旧事件 id 每次新生成，
       // 不去重会导致 lw_events / lw_graph_edges 膨胀、图谱出现重复节点与边。
-      // 实体状态是 upsert 幂等，无需清理。提取成功（0 条也是合法结果）才清理。
+      // 实体状态是 upsert 幂等，无需清理。提取成功才清理（失败路径旧数据原样保留）。
       if (m.lwEvents && m.lwGraphEdges) {
         try {
           const oldEvents = await m.lwEvents.listByChapter(projectId, chapterNumber)
@@ -143,7 +163,7 @@ export class ChapterGraphProcessor {
           console.error('[ChapterGraphProcessor] 本章旧数据清理失败（本轮不记 hash，下次重跑）:', e)
         }
       }
-      if (extracted.length > 0 && m.lwEvents) {
+      if (m.lwEvents) {
         // 52 号复测补链：先做全文级人名扫描，名册外高频名自动入「未登记人物」队列
         try {
           const roster = ((await m.lwCharacters?.getByProjectId(projectId)) || []).map((c: any) => c.name)
@@ -156,7 +176,7 @@ export class ChapterGraphProcessor {
           console.warn('[ChapterGraphProcessor] 全文人名扫描入队失败（不阻断）:', e)
         }
         // 名称 → ID 解析（事件涉及实体必须 ID）
-        const resolvedEvents: Array<{ name: string; description?: string; involvedEntities?: MemoryEntity[]; stateBefore?: string; stateAfter?: string }> = []
+        const resolvedEvents: Array<{ name: string; storyTime?: string; description?: string; involvedEntities?: MemoryEntity[]; stateBefore?: string; stateAfter?: string }> = []
         for (const ev of extracted) {
           if (!ev.name?.trim()) continue
           // 52 号：解析失败的实体不再静默跳过——收集进「未登记人物」队列（R9 数据源）
@@ -171,6 +191,7 @@ export class ChapterGraphProcessor {
           }
           resolvedEvents.push({
             name: ev.name.trim(),
+            storyTime: ev.storyTime?.trim() || undefined,
             description: ev.description,
             involvedEntities: involved,
             stateBefore: ev.stateBefore,
@@ -183,11 +204,13 @@ export class ChapterGraphProcessor {
             name: e.name,
             description: e.description,
             chapterNumber,
+            storyTime: e.storyTime,
             involvedEntities: e.involvedEntities,
             stateBefore: e.stateBefore,
             stateAfter: e.stateAfter,
           })),
         ))
+      }
       }
     } catch (e) {
       failedSteps.push('事件提取')
@@ -228,10 +251,14 @@ export class ChapterGraphProcessor {
 // ============ 2. 提取实体状态 → upsert 状态切片 ============
     const states: EntityStateSnapshot[] = []
     try {
-      const involved = await this.collectInvolvedEntities(projectId, outlineId, events)
+      const involved = await this.collectInvolvedEntities(projectId, outlineId, events, chapterContent)
       if (involved.length > 0 && m.lwEntityStates) {
-        const resp = await this.aiService().extractEntityStates(
-          `extract-states-${Date.now()}`,
+        // 空转防线：有戏份实体却提不出任何切片 = 本轮失败（重试一次，仍空记 failedSteps）。
+        // 「有戏份」判定 = 涉及实体名单里至少一个名字在正文出现——大纲挂名但正文
+        // 完全没写的实体提不出状态是正常的，不算失败。
+        const mentionedInvolved = involved.filter(e => chapterContent.includes(e.name))
+        const callStates = (runId: string) => this.aiService().extractEntityStates(
+          runId,
           projectId,
           outlineId,
           chapterContent,
@@ -240,8 +267,19 @@ export class ChapterGraphProcessor {
           providerConfigId,
           modelId,
         )
+        let resp = await callStates(`extract-states-${Date.now()}`)
+        const emptyStates = !resp.success || !Array.isArray(resp.data) || resp.data.length === 0
+        if (emptyStates && mentionedInvolved.length > 0) {
+          resp = await callStates(`extract-states-retry-${Date.now()}`)
+        }
         const extractedStates: Array<{ entityType?: string; entityId?: string; entityName?: string; stateSummary?: string; keyChanges?: string[] }> =
           Array.isArray(resp.data) ? resp.data : []
+        if ((!resp.success || extractedStates.length === 0) && mentionedInvolved.length > 0) {
+          failedSteps.push('状态切片')
+          console.error(
+            `[ChapterGraphProcessor] 状态切片空产物（重试后仍空，记失败步骤）project=${projectId} chapter=${chapterNumber}: ${resp.error || '0 条切片'}`,
+          )
+        }
         // 52 号评审根因三修复：AI 只可靠地回传 entityName，ID 由服务端按名册解析
         // （旧实现要求 AI 回传 entityId，解析不出即被整条过滤 → 状态切片长期为 0 行，R1-R6 全盲）
         const graph = new GraphService(m)
@@ -266,6 +304,8 @@ export class ChapterGraphProcessor {
           })
         }
         if (validStates.length === 0 && extractedStates.length > 0) {
+          // 提到了切片但全部解析失败 = 本轮失败（下次保存重跑，不记 hash）
+          failedSteps.push('状态切片')
           console.warn(`[ChapterGraphProcessor] 状态切片全部未能解析（${extractedStates.length} 条）chapter=${chapterNumber}`)
         }
         if (validStates.length > 0) {
@@ -340,12 +380,14 @@ export class ChapterGraphProcessor {
     }
 
     // ============ 4. 章节状态摘要（沿用现有链路） ============
+    // 空转防线（2026-09-19）：摘要失败/空产物也记 failedSteps（旧实现静默跳过，
+    // ep8 摘要缺失事故根因——下一章写作与跨章审查都拿不到上一章结束状态）
     try {
       const prev = m.lwChapterStateSummaries
         ? await m.lwChapterStateSummaries.getLatestBeforeChapter(projectId, chapterNumber)
         : null
-      const resp = await this.aiService().extractChapterStateSummary(
-        `extract-summary-${Date.now()}`,
+      const callSummary = (runId: string) => this.aiService().extractChapterStateSummary(
+        runId,
         projectId,
         outlineId,
         chapterContent,
@@ -354,17 +396,28 @@ export class ChapterGraphProcessor {
         providerConfigId,
         modelId,
       )
-      if (resp.success && resp.data && m.lwChapterStateSummaries) {
+      let resp = await callSummary(`extract-summary-${Date.now()}`)
+      const summaryUsable = (d: typeof resp.data): boolean =>
+        !!d && !!(d.storyTime || d.characterStates || d.keyChanges)
+      if (!resp.success || !summaryUsable(resp.data)) {
+        resp = await callSummary(`extract-summary-retry-${Date.now()}`)
+      }
+      if (resp.success && summaryUsable(resp.data) && m.lwChapterStateSummaries) {
         await m.lwChapterStateSummaries.upsert({
           projectId,
           outlineId,
           chapterNumber,
-          storyTime: resp.data.storyTime || '',
-          currentLocation: resp.data.currentLocation || '',
-          characterStates: resp.data.characterStates || '',
-          pendingEvents: resp.data.pendingEvents || '',
-          keyChanges: resp.data.keyChanges || '',
+          storyTime: resp.data!.storyTime || '',
+          currentLocation: resp.data!.currentLocation || '',
+          characterStates: resp.data!.characterStates || '',
+          pendingEvents: resp.data!.pendingEvents || '',
+          keyChanges: resp.data!.keyChanges || '',
         })
+      } else {
+        failedSteps.push('章节状态摘要')
+        console.error(
+          `[ChapterGraphProcessor] 章节状态摘要空产物（重试后仍不可用，记失败步骤）project=${projectId} chapter=${chapterNumber}: ${resp.error || '摘要字段全空'}`,
+        )
       }
     } catch (e) {
       failedSteps.push('章节状态摘要')
@@ -528,48 +581,72 @@ export class ChapterGraphProcessor {
     }
   }
 
-  /** 收集流水线涉及的实体（大纲 involved + 事件 involved），供状态提取 */
+  /**
+   * 收集流水线涉及的实体（大纲 involved + 事件 involved + 名册正文命中），供状态提取。
+   * 全要素覆盖（2026-09-19）：名册内实体只要名字在本章正文出现就纳入——旧实现只走
+   * "大纲挂名 + 事件挂载"两条窄路，事件漏挂的地点/物品拿不到状态切片，R3（物品易主）/R5
+   * （回忆冲突）长期空转。新入册实体（0b 步骤）也在名册里，自动覆盖。
+   */
   private async collectInvolvedEntities(
     projectId: string,
     outlineId: string,
     events: StoryEvent[],
+    chapterContent: string,
   ): Promise<Array<{ type: string; id: string; name: string }>> {
     const m = this.manager()
     if (!m) return []
     const result: Array<{ type: string; id: string; name: string }> = []
     const seen = new Set<string>()
+    const push = (type: string, id: string, name: string): void => {
+      const key = `${type}:${id}`
+      if (!id || seen.has(key)) return
+      seen.add(key)
+      result.push({ type, id, name })
+    }
+
+    const [characters, locations, items] = await Promise.all([
+      m.lwCharacters?.getByProjectId(projectId) ?? Promise.resolve([]),
+      m.lwLocations?.getByProjectId(projectId) ?? Promise.resolve([]),
+      m.lwItems?.getByProjectId(projectId) ?? Promise.resolve([]),
+    ])
 
     const outline = await m.lwOutlines?.getById(outlineId)
     if (outline) {
-      const [characters, locations, items] = await Promise.all([
-        m.lwCharacters?.getByProjectId(projectId) ?? Promise.resolve([]),
-        m.lwLocations?.getByProjectId(projectId) ?? Promise.resolve([]),
-        m.lwItems?.getByProjectId(projectId) ?? Promise.resolve([]),
-      ])
       for (const id of outline.involvedCharacters || []) {
         const c = characters.find(x => x.id === id)
-        if (c && !seen.has(`character:${id}`)) { seen.add(`character:${id}`); result.push({ type: 'character', id, name: c.name }) }
+        if (c) push('character', id, c.name)
       }
       for (const id of outline.involvedLocations || []) {
         const l = locations.find(x => x.id === id)
-        if (l && !seen.has(`location:${id}`)) { seen.add(`location:${id}`); result.push({ type: 'location', id, name: l.name }) }
+        if (l) push('location', id, l.name)
       }
       for (const id of outline.involvedItems || []) {
         const i = items.find(x => x.id === id)
-        if (i && !seen.has(`item:${id}`)) { seen.add(`item:${id}`); result.push({ type: 'item', id, name: i.name }) }
+        if (i) push('item', id, i.name)
       }
     }
 
     for (const ev of events) {
       for (const ent of ev.involvedEntities || []) {
-        const key = `${ent.type}:${ent.id}`
-        if (!seen.has(key)) {
-          seen.add(key)
-          result.push({ type: ent.type, id: ent.id, name: ent.name })
-        }
+        push(ent.type, ent.id, ent.name)
       }
     }
-    return result
+
+    // 名册正文命中扫描：大纲/事件都没挂到、但正文确实写到的实体补进来
+    const scanMentioned = (list: Array<{ id: string; name: string }>, type: string): void => {
+      for (const e of list) {
+        const name = (e.name || '').trim()
+        if (name.length < 2) continue
+        if (chapterContent.includes(name)) push(type, e.id, name)
+      }
+    }
+    scanMentioned(characters, 'character')
+    scanMentioned(locations, 'location')
+    scanMentioned(items, 'item')
+
+    // 输出预算护栏：状态提取逐实体产出 100-200 字，实体过多会截断尾部——
+    // 保序截断（大纲/事件涉及优先于纯命中），40 个覆盖绝大多数单章规模
+    return result.slice(0, 40)
   }
 
   /**

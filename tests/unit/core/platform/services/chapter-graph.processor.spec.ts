@@ -216,6 +216,81 @@ describe('ChapterGraphProcessor', () => {
 })
 
 
+// ==================== 空转防线 + 全要素覆盖（2026-09-19 写后审查数据面加固） ====================
+
+describe('ChapterGraphProcessor 空转防线与全要素覆盖（2026-09-19）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    ChapterGraphProcessor.clearContentHashCache()
+  })
+
+  it('事件提取空产物：重试一次仍空 → failedSteps 记录 + 旧事件保留', async () => {
+    const db = makeFakeDb()
+    db.eventsStore.push({ id: 'old-evt', projectId: 'p1', name: '旧事件', chapterNumber: 4 })
+    const ai = makeFakeAi({
+      extractChapterEvents: vi.fn(async () => ({ success: true, data: [] })),
+    })
+    const proc = new ChapterGraphProcessor(db as any, ai as any)
+    const r = await proc.process({ projectId: 'p1', outlineId: 'o1', chapterContent: '正文', chapterNumber: 4 })
+    expect(r.failedSteps).toContain('事件提取')
+    expect(ai.extractChapterEvents).toHaveBeenCalledTimes(2)
+    // 空产物与提取失败同口径：旧数据不被清理
+    expect(db.eventsStore.some((e: any) => e.id === 'old-evt')).toBe(true)
+  })
+
+  it('事件提取解析假成功（data 非数组）：重试一次仍失败 → failedSteps 记录（ep11 事故回归）', async () => {
+    const db = makeFakeDb()
+    const ai = makeFakeAi({
+      extractChapterEvents: vi.fn(async () => ({ success: true, data: '不是数组的原始文本' as any })),
+    })
+    const proc = new ChapterGraphProcessor(db as any, ai as any)
+    const r = await proc.process({ projectId: 'p1', outlineId: 'o1', chapterContent: '正文', chapterNumber: 1 })
+    expect(r.failedSteps).toContain('事件提取')
+    expect(ai.extractChapterEvents).toHaveBeenCalledTimes(2)
+  })
+
+  it('章节状态摘要空产物：重试一次仍不可用 → failedSteps 记录（ep8 事故回归）', async () => {
+    const db = makeFakeDb()
+    const ai = makeFakeAi({
+      extractChapterStateSummary: vi.fn(async () => ({
+        success: true,
+        data: { storyTime: '', currentLocation: '', characterStates: '', pendingEvents: '', keyChanges: '' },
+      })),
+    })
+    const proc = new ChapterGraphProcessor(db as any, ai as any)
+    const r = await proc.process({ projectId: 'p1', outlineId: 'o1', chapterContent: '正文', chapterNumber: 2 })
+    expect(r.failedSteps).toContain('章节状态摘要')
+    expect(ai.extractChapterStateSummary).toHaveBeenCalledTimes(2)
+  })
+
+  it('事件 storyTime 透传落库', async () => {
+    const db = makeFakeDb()
+    const ai = makeFakeAi({
+      extractChapterEvents: vi.fn(async () => ({
+        success: true,
+        data: [{ name: '州桥夜市救人', storyTime: '二更天', involvedEntities: [{ type: 'character', name: '林晓' }] }],
+      })),
+    })
+    const proc = new ChapterGraphProcessor(db as any, ai as any)
+    await proc.process({ projectId: 'p1', outlineId: 'o1', chapterContent: '林晓在州桥救人', chapterNumber: 3 })
+    expect(db.eventsStore[0].storyTime).toBe('二更天')
+  })
+
+  it('全要素覆盖：名册内实体正文命中即纳入状态提取（不依赖大纲/事件挂载）', async () => {
+    const db = makeFakeDb()
+    const ai = makeFakeAi()
+    const proc = new ChapterGraphProcessor(db as any, ai as any)
+    // 顾言在大纲与事件里都没挂载，只在本章正文出现
+    await proc.process({ projectId: 'p1', outlineId: 'o1', chapterContent: '林晓与顾言在青云宗重逢，旧怨未消。', chapterNumber: 3 })
+    const involvedArg = ai.extractEntityStates.mock.calls[0][5] as Array<{ name: string }>
+    const names = involvedArg.map((e) => e.name)
+    expect(names).toContain('顾言')
+    expect(names).toContain('林晓')
+    expect(names).toContain('青云宗')
+  })
+})
+
+
 // ==================== 42 号 P1：伏笔提取段 ====================
 
 describe('ChapterGraphProcessor 伏笔提取段（42 号 P1）', () => {

@@ -237,19 +237,22 @@ export async function runChapterWritingMethod(opts: ChapterWritingMethodOptions)
   onProgress?.({ step: 'save', message: '保存正文并提取图谱（事件/状态切片/伏笔）' })
   const saved = await svc.saveChapter(outlineId, content)
   let newEntitiesNote = ''
+  let chapterNo = 0
   try {
     const { buildOutlineDocOrder, outlineChapterNumber } = await import('@core/platform/services/longwriting/outline-order')
     const outlines = (await getCoreDatabaseManager().lwOutlines?.getByProjectId(projectId)) || []
-    const no = outlineChapterNumber(buildOutlineDocOrder(outlines), outlineId) ?? 0
-    const { ChapterGraphProcessor } = await import('@core/platform/services/longwriting/graph/chapter-graph.processor')
-    const graphResult = await new ChapterGraphProcessor().process({
-      projectId,
-      outlineId,
-      chapterContent: content,
-      chapterNumber: no,
-      ...stageModel,
-    })
-    newEntitiesNote = (graphResult as any)?.newEntitiesNote || ''
+    chapterNo = outlineChapterNumber(buildOutlineDocOrder(outlines), outlineId) ?? 0
+    if (chapterNo > 0) {
+      const { ChapterGraphProcessor } = await import('@core/platform/services/longwriting/graph/chapter-graph.processor')
+      const graphResult = await new ChapterGraphProcessor().process({
+        projectId,
+        outlineId,
+        chapterContent: content,
+        chapterNumber: chapterNo,
+        ...stageModel,
+      })
+      newEntitiesNote = (graphResult as any)?.newEntitiesNote || ''
+    }
   } catch (e: any) {
     logger.warn('[chapter-writing] 图谱提取失败（下次保存重跑）:', e?.message)
   }
@@ -276,6 +279,18 @@ export async function runChapterWritingMethod(opts: ChapterWritingMethodOptions)
   try {
     const characters = (await getCoreDatabaseManager().lwCharacters?.getByProjectId(projectId)) || []
     const roster = characters.map((c: any) => c.name).join('、')
+    // 跨章事实表（用户拍板 2026-09-19）：审读不再只看本章——注入截至上一章结束时点的
+    // 图谱事实（实体状态切片/章节摘要/事件时间线/上一章结尾），跨章冲突成为可检查项。
+    // 构建失败退化为只查本章内部矛盾（不阻断）。
+    let factSheet = ''
+    if (chapterNo > 1) {
+      try {
+        const { buildCrossChapterFactSheet } = await import('./cross-chapter-facts')
+        factSheet = await buildCrossChapterFactSheet(projectId, chapterNo)
+      } catch (e: any) {
+        logger.warn('[chapter-writing] 跨章事实表构建失败（审查退化为本章内检查）:', e?.message)
+      }
+    }
     const reviewRaw = await generateChapterReviewText(
       'chapter-consistency-review',
       {
@@ -283,6 +298,7 @@ export async function runChapterWritingMethod(opts: ChapterWritingMethodOptions)
           '你是苛刻但只报实情的小说一致性审读员。逐段核对这一章正文，只输出 JSON，不要任何其他文字。',
         user: `【角色名册（正文中的角色必须与此处名字逐字一致）】${roster || '（空）'}
 ${consensusText ? `【作者已拍板的共识（与此矛盾即为问题）】\n${consensusText}` : ''}
+${factSheet || '（无跨章事实数据：跳过第5、6项跨章检查）'}
 【本章正文】
 ${content}
 
@@ -291,9 +307,11 @@ ${content}
 2. 人物生死或位置矛盾（本章内有人被写死却又说话行动等）
 3. 称谓/名字不一致（同一人前后称呼不同、名字写错）
 4. 与能力/代价规则冲突（设定了代价的技能被无偿使用等）
-每项给出：{"item": "矛盾点简述", "evidence": "正文原句", "why": "为什么矛盾"}
+5. 与前文事实冲突（对照【跨章要素状态表】：已死亡/重伤人物正常行动、物品已易主仍按旧持有者描写、关系已变化仍按旧关系互动、未习得的能力被使用、无过渡地出现在别处。注意：回忆/闪回/幻觉中呈现的历史状态、反派谎言与误会都不算冲突）
+6. 时间线冲突（本章故事内时间早于或重合上一章结束时间、季节/日夜倒流）
+每项给出：{"item": "矛盾点简述", "evidence": "正文原句", "why": "为什么矛盾（第5、6项必须引用事实表/上一章状态中的具体条目）"}
 返回 JSON：{"issues": [...]}。没有问题返回 {"issues": []}。只输出 JSON。`,
-        maxTokens: 1500,
+        maxTokens: 2000,
       },
       opts.signal,
     )
