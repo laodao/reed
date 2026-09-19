@@ -189,11 +189,14 @@ export class KbDigestPassRepository extends BaseRepository<KbDigestPassEntity, K
   }
 
   /** 僵死 running 复位 pending（recover 调用；ensurePass 对 running 一律 skip，不复位就永久封死） */
+  /** 跨租户复位（与扫描同款裸仓库豁免）：boot 时 ALS 为空，scoped 会按 IS NULL 过滤导致静默 no-op */
   async resetToPending(id: string): Promise<void> {
-    await this.scoped.update(
-      { id, status: 'running' } as unknown as FindOptionsWhere<KbDigestPassEntity>,
-      { status: 'pending', updatedAt: new Date() } as never,
-    )
+    await this.repo
+      .createQueryBuilder()
+      .update(KbDigestPassEntity)
+      .set({ status: 'pending', updatedAt: new Date() })
+      .where('id = :id AND status = :st', { id, st: 'running' })
+      .execute()
   }
 
   /** 启动恢复：pending 或僵死 running（>10min 无心跳）的台账行重新可跑 */

@@ -1263,6 +1263,16 @@ const electronAPI = {
       stats: (kbId: string) => ipcRenderer.invoke('kb:brain:stats', { kbId }),
       search: (p: { knowledgeBaseId: string; query: string; topK?: number; include?: string[]; lensNoteId?: string; intent?: string }) =>
         ipcRenderer.invoke('kb:brain:search', p),
+      onProgress: (cb: (data: { documentId: string; phase: string; progress: number }) => void) => {
+        const h = (_e: unknown, data: { documentId: string; phase: string; progress: number }): void => cb(data)
+        ipcRenderer.on('kb:brain:progress', h)
+        return () => ipcRenderer.removeListener('kb:brain:progress', h)
+      },
+      onStatus: (cb: (data: { documentId: string; brainStatus: string; error?: string }) => void) => {
+        const h = (_e: unknown, data: { documentId: string; brainStatus: string; error?: string }) => cb(data)
+        ipcRenderer.on('kb:brain:status', h)
+        return () => ipcRenderer.removeListener('kb:brain:status', h)
+      },
     },
     importQaXlsx: (knowledgeBaseId: string, base64: string) => ipcRenderer.invoke('kb-qa:import-xlsx', { knowledgeBaseId, base64 }),
     exportQaXlsx: (knowledgeBaseId: string) => ipcRenderer.invoke('kb-qa:export-xlsx', { knowledgeBaseId }),

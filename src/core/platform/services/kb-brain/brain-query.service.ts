@@ -142,7 +142,9 @@ export class BrainQueryService {
               const norm = (tf * 2.2) / (tf + 1.2 * (1 - 0.75 + (0.75 * len) / avgLen))
               score += idf * norm
             }
-            if (score > 0) bm25Scores.set(c.id, { ns: c.ns, id: c.id, score })
+            if (score > 0 && !(req.threshold != null && req.threshold > 0 && score < req.threshold)) {
+              bm25Scores.set(c.id, { ns: c.ns, id: c.id, score })
+            }
           }
         }
       }
@@ -151,13 +153,13 @@ export class BrainQueryService {
       const fused = new Map<string, FusedEntry>()
       const addRank = (
         ranked: Array<{ ns: 'chunk' | 'atom' | 'note'; id: string; score: number }>,
-        offsetOf?: (h: { ns: string; id: string; score: number }) => number,
+        _offsetOf?: unknown,
+        weightOf?: (h: { ns: string; id: string; score: number }) => number,
       ): void => {
         ranked.forEach((h, i) => {
           const key = h.id
-          const rank = i + (offsetOf?.(h) ?? 0)
           const prev = fused.get(key)
-          const contribution = 1 / (RRF_K + rank + 1)
+          const contribution = (1 / (RRF_K + i + 1)) * (weightOf?.(h) ?? 1)
           if (prev) {
             prev.fused += contribution
           } else {
@@ -166,16 +168,16 @@ export class BrainQueryService {
         })
       }
       const synthesize = req.intent === 'synthesize'
-      const rankOffset = synthesize ? Math.floor(topK / 2) : 0
-      // synthesize：chunk 名次整体后移（贡献减半语义）——综合型问题 atom/note 主导
-      addRank([...vecHits].sort((a, b) => b.score - a.score), (h) => (synthesize && h.ns === 'chunk' ? rankOffset : 0))
-      addRank([...bm25Scores.values()].sort((a, b) => b.score - a.score), (h) => (synthesize && h.ns === 'chunk' ? rankOffset : 0))
+      // synthesize：chunk 的 RRF 贡献减半（名次偏移在 K=60 下仅 ~3%，乘法权重才达到设计语义）
+      addRank([...vecHits].sort((a, b) => b.score - a.score), undefined, (h) => (synthesize && h.ns === 'chunk' ? 0.5 : 1))
+      addRank([...bm25Scores.values()].sort((a, b) => b.score - a.score), undefined, (h) => (synthesize && h.ns === 'chunk' ? 0.5 : 1))
 
       const ordered = [...fused.values()].sort((a, b) => b.fused - a.fused)
 
       /* ---------- 4. 命名空间分流解析 + 同源去重 + 截断 ---------- */
       // 先解析（上限 3*topK）、后去重、再截断——保证去重后仍尽量满 topK（F12）
       const sourceChunkIdsOfAtoms = new Set<string>()
+      const atomSourceChunk = new Map<string, string>() // atomId → sourceChunkId（context 降级用）
       const parsed: Array<{ entry: (typeof ordered)[number]; result: SearchResult }> = []
       const docIdFilter = req.documentIds?.length ? new Set(req.documentIds) : null
       for (const entry of ordered) {
@@ -183,23 +185,27 @@ export class BrainQueryService {
         const resolved = await this.resolveHit(entry, req)
         if (!resolved) continue
         if (docIdFilter && !docIdFilter.has(resolved.searchResult.documentId)) continue
-        if (resolved.kind === 'atom') sourceChunkIdsOfAtoms.add(resolved.sourceChunkId ?? '')
+        if (resolved.kind === 'atom' && resolved.sourceChunkId) {
+          sourceChunkIdsOfAtoms.add(resolved.sourceChunkId)
+          atomSourceChunk.set(resolved.searchResult.atom!.id, resolved.sourceChunkId)
+        }
         // score 回填原始分（余弦/BM25），fused 只用于排序——与存量检索的 score 语义一致
         resolved.searchResult.score = Number(entry.raw.toFixed(4))
         parsed.push({ entry, result: resolved.searchResult })
       }
       // 同源去重：chunk 命中某 atom 的 sourceChunkId → 不丢弃，降级为该 atom 的 context（§5.1）
       const chunkContentById = new Map(parsed.filter((p) => p.result.kind === 'chunk').map((p) => [p.result.chunkId, p.result.content]))
-      const vecIds = new Set(vecHits.map((h) => h.id))
+      const vecRawIds = new Set(vecHits.map((h) => h.id))
       const deduped = parsed
         .filter((p) => !(p.result.kind === 'chunk' && sourceChunkIdsOfAtoms.has(p.result.chunkId)))
         .slice(0, topK)
         .map((p) => {
           if (p.result.kind === 'atom') {
-            const ctx = p.result.atom ? chunkContentById.get(p.result.atom.id) : undefined
-            p.result.context = ctx
+            const srcChunk = atomSourceChunk.get((p.result.atom as { id: string }).id)
+            if (srcChunk) p.result.context = chunkContentById.get(srcChunk)
           }
-          p.result.scoreKind = vecIds.has(p.result.chunkId) ? 'cosine' : 'bm25'
+          // scoreKind：向量通道命中的（entry.id 即裸 id，与 vecHits 同键）
+          p.result.scoreKind = vecRawIds.has(p.entry.id) ? 'cosine' : 'bm25'
           return p.result
         })
 

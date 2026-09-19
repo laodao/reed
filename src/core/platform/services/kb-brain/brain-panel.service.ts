@@ -35,7 +35,17 @@ export class KbBrainPanelService {
     const db = getCoreDatabaseManager()
     const kb = await db.knowledgeBases?.findById(kbId)
     if (!kb) return { success: false, error: '知识库不存在' }
-    const merged: KbBrainConfig = { ...(kb.brainConfig ? parseBrainConfig(kb.brainConfig) ?? defaultBrainConfig(true) : defaultBrainConfig(true)), ...patch }
+    const base = kb.brainConfig ? parseBrainConfig(kb.brainConfig) ?? defaultBrainConfig(true) : defaultBrainConfig(true)
+    // 按段深合并（盲审修复：浅合并会让嵌套 partial 丢 required 字段 → 校验炸）
+    const merged: KbBrainConfig = {
+      ...base,
+      ...patch,
+      digestion: { ...base.digestion, ...(patch.digestion ?? {}) },
+      lenses: { ...base.lenses, ...(patch.lenses ?? {}) },
+      patterns: { ...base.patterns, ...(patch.patterns ?? {}) },
+      distillation: { ...base.distillation, ...(patch.distillation ?? {}) },
+      learning: { ...base.learning, ...(patch.learning ?? {}) },
+    }
     const raw = stringifyBrainConfig(merged)
     const ok = await db.knowledgeBases!.update(kbId, { brainConfig: raw })
     if (!ok) return { success: false, error: '保存失败' }
@@ -54,14 +64,20 @@ export class KbBrainPanelService {
     if (!db.kbAtoms) return { success: false, error: '知识大脑未启用（旧库）' }
     const page = Math.max(1, input.page ?? 1)
     const pageSize = Math.min(100, Math.max(1, input.pageSize ?? 20))
-    const all = await db.kbAtoms.findByDocument(input.documentId ?? '', {
-      status: input.status ? [input.status as never] : undefined,
-    })
-    const filtered = input.type ? all.filter((a) => a.type === input.type) : all
+    // documentId 传入=按文档；否则按库（盲审修复：原实现缺省 documentId='' 恒空）
+    const all = input.documentId
+      ? await db.kbAtoms.findByDocument(input.documentId, {
+          status: input.status ? [input.status as never] : undefined,
+        })
+      : await db.kbAtoms.findByKb(input.kbId, {
+          status: input.status ? [input.status as never] : undefined,
+          type: input.type,
+          limit: 500,
+        })
     const start = (page - 1) * pageSize
     return {
       success: true,
-      data: { rows: filtered.slice(start, start + pageSize), total: filtered.length },
+      data: { rows: all.slice(start, start + pageSize), total: all.length },
     }
   }
 
@@ -99,6 +115,9 @@ export class KbBrainPanelService {
       const row = await db.kbNotes.reject(input.noteId)
       return row ? { success: true, data: row } : { success: false, error: '卡片不存在' }
     }
+    const existing = await db.kbNotes.findById(input.noteId)
+    if (!existing) return { success: false, error: '卡片不存在' }
+    if (existing.status === 'archived') return { success: false, error: '已拒绝的卡片不可再发布（可重新提议）' }
     const row = await db.kbNotes.publish(input.noteId, input.action === 'publish-edited' ? input.patch : undefined)
     return row ? { success: true, data: row } : { success: false, error: '卡片不存在' }
   }

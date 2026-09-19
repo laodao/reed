@@ -188,8 +188,13 @@ export class KbBrainDigestService {
       return
     }
 
-    // 成本熔断（§12）：单库当日成本超阈值 → 暂停排队（KB_BRAIN_DAILY_COST_LIMIT，缺省不限）
-    const costLimit = Number(process.env.KB_BRAIN_DAILY_COST_LIMIT ?? '')
+    // 成本熔断（§12）：KB_BRAIN_DAILY_COST_LIMIT=单库当日 LLM 调用次数上限（calls 口径近似成本；
+    // token/金额口径待 provider usage 回填后升级）。缺省/非法 = 不限。
+    const rawLimit = process.env.KB_BRAIN_DAILY_COST_LIMIT
+    const costLimit = Number(rawLimit ?? '')
+    if (rawLimit && !Number.isFinite(costLimit)) {
+      logger.warn(`[kb-brain] KB_BRAIN_DAILY_COST_LIMIT 非法值 '${rawLimit}'，熔断禁用`)
+    }
     if (Number.isFinite(costLimit) && costLimit > 0) {
       const since = new Date()
       since.setHours(0, 0, 0, 0)
@@ -208,9 +213,13 @@ export class KbBrainDigestService {
       const chapterRows = await chapters.findByDocument(documentId)
       let done = 0
       const exhaustedChapters: string[] = []
+      const skippedSameChapters: Array<{ id: string; hash: string | null }> = []
+      let busyChapters = 0
       for (const chapter of chapterRows) {
         const outcome = await this.digestChapter(kbId, documentId, chapter.id, chapter.title, chapter.content ?? '', chapter.contentHash, cfg)
         if (outcome === 'exhausted') exhaustedChapters.push(chapter.id)
+        else if (outcome === 'skipped-same') skippedSameChapters.push({ id: chapter.id, hash: chapter.contentHash })
+        else if (outcome === 'busy') busyChapters++
         done++
         const progress = Math.round((done / Math.max(1, chapterRows.length)) * 95)
         await docs.updateBrainStatus(documentId, { status: 'digesting', progress })
@@ -226,9 +235,12 @@ export class KbBrainDigestService {
         this.emitStatus(documentId, 'failed', '章节重试耗尽')
         return
       }
+      if (busyChapters > 0) {
+        logger.warn(`[kb-brain] doc=${documentId} 有 ${busyChapters} 章在并发运行中被跳过（瞬态）`)
+      }
 
-      // T11 重链：hash 未变的章（本轮 skip 的），论断按 offsets 落进新 chunk 区间，恢复出处跳转
-      await this.relinkChunksForUnchanged(documentId, atoms, repos)
+      // T11 重链：本轮 skip（内容未变）的章，论断按「章全局偏移+章内偏移」落进新 chunk 区间
+      await this.relinkChunksForUnchanged(documentId, atoms, repos, skippedSameChapters)
 
       await this.staleUncovered(documentId, atoms, chapterRows.map((c) => c.contentHash).filter(Boolean) as string[])
 
@@ -242,7 +254,8 @@ export class KbBrainDigestService {
     }
   }
 
-  /** 章级基础遍：台账幂等 → 原子化 → 实体 → 裁决 → 入池。返回 'done' | 'exhausted'（重试耗尽被跳过） */
+  /** 章级基础遍：台账幂等 → 原子化 → 实体 → 裁决 → 入池。
+   *  'digested'=本轮真跑 | 'skipped-same'=同 hash 跳过 | 'busy'=并发运行中 | 'exhausted'=重试耗尽 */
   async digestChapter(
     kbId: string,
     documentId: string,
@@ -251,9 +264,9 @@ export class KbBrainDigestService {
     content: string,
     chapterHash: string | null,
     cfg: KbBrainConfig,
-  ): Promise<'done' | 'exhausted'> {
+  ): Promise<'digested' | 'skipped-same' | 'busy' | 'exhausted'> {
     const repos = this.reposFn()
-    if (!repos) return 'done'
+    if (!repos) return 'skipped-same'
     const { atoms, entities, edges, passes } = repos
 
     const decision = await passes.ensurePass({
@@ -265,8 +278,10 @@ export class KbBrainDigestService {
       chapterHash,
     })
     if (decision.action === 'skip') {
-      // 重试耗尽的章不是正常跳过：调用方要据此把文档标记为部分失败
-      return decision.reason === 'done-same-hash' ? 'done' : 'exhausted'
+      // 三态可辨（review：'running' 是瞬态，与真耗尽不同质，不可同标 failed）
+      if (decision.reason === 'done-same-hash') return 'skipped-same'
+      if (decision.reason === 'running') return 'busy'
+      return 'exhausted'
     }
     const pass = decision.pass
     await passes.setRunning(pass.id)
@@ -276,7 +291,7 @@ export class KbBrainDigestService {
       if (!content.trim()) {
         // 零产出是合法终态（纯过场章）——台账 done 防重复跑
         await passes.setDone(pass.id, stats, { calls: 0, tokensIn: 0, tokensOut: 0 })
-        return 'done'
+        return 'digested'
       }
 
       // 1. 原子化（低档；已知实体名作为挂点规范名提示）
@@ -467,7 +482,7 @@ export class KbBrainDigestService {
       }
 
       await passes.setDone(pass.id, stats, { calls: stats.costCalls, tokensIn: 0, tokensOut: 0 })
-      return 'done'
+      return 'digested'
     } catch (e) {
       await passes.setFailed(pass.id, e instanceof Error ? e.message : String(e))
       throw e
@@ -482,25 +497,26 @@ export class KbBrainDigestService {
     documentId: string,
     atoms: KbAtomRepository,
     repos: KbBrainRepos,
+    skippedSame: Array<{ id: string; hash: string | null }>,
   ): Promise<void> {
-    if (!repos.chunks) return
-    const allPasses = await repos.passes.listByDocument(documentId)
-    const unchangedChapterIds = new Set(
-      allPasses.filter((p) => p.chapterId && p.status === 'done').map((p) => p.chapterId as string),
-    )
-    if (unchangedChapterIds.size === 0) return
+    if (!repos.chunks || skippedSame.length === 0) return
     const chapterRows = await repos.chapters.findByDocument(documentId)
-    const hashByChapter = new Map(chapterRows.map((c) => [c.id, c.contentHash]))
+    const chapterById = new Map(chapterRows.map((c) => [c.id, c]))
     const chunks = await repos.chunks.findByDocumentId(documentId)
     if (chunks.length === 0) return
-    for (const chapterId of unchangedChapterIds) {
-      const hash = hashByChapter.get(chapterId)
+    for (const { id: chapterId, hash } of skippedSame) {
       if (!hash) continue
+      // 坐标系修正（盲审 P1）：论断 offset 是章内相对，chunk offset 是文档全局——
+      // 用章节的文档全局 startOffset 平移后再匹配
+      const chapter = chapterById.get(chapterId)
+      const chapterDocStart = chapter?.startOffset ?? 0
       const chapterAtoms = await atoms.findByChapterHash(documentId, hash)
       for (const a of chapterAtoms) {
         if (a.startOffset == null || a.endOffset == null) continue
+        const docStart = chapterDocStart + a.startOffset
+        const docEnd = chapterDocStart + a.endOffset
         const target = chunks.find(
-          (c) => c.startOffset != null && c.endOffset != null && a.startOffset! >= c.startOffset && a.endOffset! <= c.endOffset,
+          (c) => c.startOffset != null && c.endOffset != null && docStart >= c.startOffset && docEnd <= c.endOffset,
         )
         if (target && target.id !== a.sourceChunkId) {
           await atoms.relinkChunk(a.id, target.id)

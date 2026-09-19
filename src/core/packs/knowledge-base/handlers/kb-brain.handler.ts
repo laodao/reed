@@ -28,16 +28,13 @@ export function registerKbBrainHandlers(): void {
   ipcBridge.handle('kb:brain:doc-status', async (_e, p: { kbId: string }) => {
     const out = await svc().getDocuments(p.kbId)
     if (!out.success || !out.data) return out
-    const db = await import('@core/database/database-manager.interface')
-    const manager = db.getCoreDatabaseManager()
     const docs = out.data.map((d) => ({
       id: d.id,
       name: d.name,
-      brainStatus: (d as unknown as { brainStatus?: string }).brainStatus ?? null,
-      brainProgress: (d as unknown as { brainProgress?: number }).brainProgress ?? null,
-      brainError: (d as unknown as { brainError?: string }).brainError ?? null,
+      brainStatus: d.brainStatus ?? null,
+      brainProgress: d.brainProgress ?? null,
+      brainError: d.brainError ?? null,
     }))
-    void manager
     return { success: true, data: docs }
   })
 

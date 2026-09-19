@@ -37,6 +37,9 @@ export class KbDocumentRepository extends BaseRepository<
       progress: e.progress,
       chunkCount: e.chunkCount,
       errorMessage: e.errorMessage || undefined,
+      brainStatus: (e.brainStatus as KbDocument['brainStatus']) ?? undefined,
+      brainProgress: e.brainProgress ?? undefined,
+      brainError: e.brainError || undefined,
       metadata: (e.metadata as DocumentMetadata | null) ?? undefined,
       source: (e.sourceType && e.sourceId)
         ? { type: e.sourceType as DocumentSource['type'], id: e.sourceId }

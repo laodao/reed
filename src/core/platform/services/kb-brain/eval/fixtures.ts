@@ -65,9 +65,13 @@ export function evaluateCase(results: Array<{ documentId: string; content: strin
 }
 
 export function summarize(setName: string, mode: 'chunk' | 'brain', cases: EvalCase[], results: CaseResult[]): EvalReport {
+  // 判据统一：标注了文档 OR 标注了关键词的 case 都计入（与 evaluateCase 的回退判据一致）
   const paired = cases
     .map((c) => ({ c, r: results.find((x) => x.caseId === c.id) }))
-    .filter((p): p is { c: EvalCase; r: CaseResult } => !!p.r && (p.c.expectedDocumentIds !== null))
+    .filter(
+      (p): p is { c: EvalCase; r: CaseResult } =>
+        !!p.r && (p.c.expectedDocumentIds !== null || p.c.expectedKeywords.length > 0),
+    )
   const byIntent: EvalReport['byIntent'] = {}
   for (const { c, r } of paired) {
     const bucket = (byIntent[c.intent] ??= { recallAt5: 0, mrr: 0, n: 0 })

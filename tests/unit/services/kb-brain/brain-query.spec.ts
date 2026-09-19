@@ -251,6 +251,42 @@ describe('BrainQueryService', () => {
     expect(out.data![0].note?.evidenceCount).toBe(1)
   })
 
+  it('synthesize：chunk 贡献减半（RRF 乘法权重）；scoreKind/context 正确回填', async () => {
+    // 先建 chunk 拿真实 id（createBatch 生成 UUID，不认传入 id）
+    await chunks.createBatch([{ documentId: 'docq', knowledgeBaseId: KB, content: '秘银原文上下文', chunkIndex: 5 } as never])
+    const realChunk = (await chunks.findByDocumentId('docq')).find((c) => c.content === '秘银原文上下文')!
+    const [atomD] = await atoms.createBatch([
+      {
+        knowledgeBaseId: KB,
+        statement: '综合型验证论断 秘银',
+        type: 'fact',
+        sourceDocumentId: 'docq',
+        sourceQuote: '秘银quote',
+        sourceChunkId: realChunk.id,
+      },
+    ])
+    await inverted.insertBatch([{ term: '秘银', chunkId: `atom:${atomD.id}`, knowledgeBaseId: KB, termFrequency: 1 }])
+    fakeSimilarHits = [
+      { chunkId: `atom:${atomD.id}`, score: 0.9 },
+      { chunkId: realChunk.id, score: 0.85 },
+    ]
+    const out = await svc.search({
+      knowledgeBaseId: KB,
+      query: '秘银',
+      include: ['chunk', 'atom'],
+      intent: 'synthesize',
+      embeddingConfig: null,
+    })
+    const atomHit = out.data!.find((r) => r.kind === 'atom')!
+    const chunkHit = out.data!.find((r) => r.kind === 'chunk')
+    // 同源去重+context：chunk 降级为 atom 的 context
+    expect(atomHit).toBeTruthy()
+    expect(atomHit.context).toBe('秘银原文上下文')
+    expect(chunkHit).toBeUndefined()
+    // scoreKind：向量命中 → cosine
+    expect(atomHit.scoreKind).toBe('cosine')
+  })
+
   it('RRF 融合：两路都命中的条目排前（向量第1+词法第1 > 单路第1）', async () => {
     const [a] = await atoms.createBatch([
       { knowledgeBaseId: KB, statement: '双路命中论断 重剑', type: 'fact', sourceDocumentId: 'docq', sourceQuote: 'rr' },

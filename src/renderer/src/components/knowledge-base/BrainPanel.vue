@@ -97,6 +97,7 @@ import { ref, watch } from 'vue'
 
 const props = defineProps<{ kbId: string }>()
 const emit = defineEmits<{ (e: 'stats', count: number): void }>()
+let requestGen = 0 // kbId 快速切换时丢弃过期响应
 
 interface BrainAtom {
   id: string
@@ -137,13 +138,16 @@ const enabled = ref(false)
 
 async function refresh(): Promise<void> {
   if (!props.kbId) return
+  const gen = ++requestGen
   const client = (window as any).electronAPI.knowledgeBase.brain
+  try {
   const [cfgRes, statsRes, atomsRes, inboxRes] = await Promise.all([
     client.getConfig(props.kbId),
     client.stats(props.kbId),
     client.listAtoms({ kbId: props.kbId, pageSize: 50 }),
     client.proposalInbox({ kbId: props.kbId, pageSize: 20 }),
   ])
+  if (gen !== requestGen) return // 过期响应丢弃
   if (cfgRes.success && cfgRes.data) {
     config.value = cfgRes.data.config
     enabled.value = !!cfgRes.data.config?.enabled
@@ -158,17 +162,27 @@ async function refresh(): Promise<void> {
     proposals.value = inboxRes.data.rows as BrainNote[]
     proposalTotal.value = inboxRes.data.total
   }
+  } catch (e) {
+    console.warn('[BrainPanel] 刷新失败', e)
+  }
 }
 
 async function saveConfig(): Promise<void> {
-  const res = await (window as any).electronAPI.knowledgeBase.brain.updateConfig({
-    kbId: props.kbId,
-    patch: { ...configDraft.value },
-  })
-  if (res.success) {
-    config.value = res.data
-    enabled.value = !!res.data?.enabled
-    configOpen.value = false
+  try {
+    const res = await (window as any).electronAPI.knowledgeBase.brain.updateConfig({
+      kbId: props.kbId,
+      patch: { ...configDraft.value },
+    })
+    if (res.success) {
+      config.value = res.data
+      enabled.value = !!res.data?.enabled
+      configOpen.value = false
+    } else {
+      console.warn('[BrainPanel] 保存失败', res.error)
+    }
+  } catch (e) {
+    // ajv 校验失败（如手输越界阈值）响亮可见
+    alert(`保存失败: ${(e as Error).message}`)
   }
 }
 

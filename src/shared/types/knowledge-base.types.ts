@@ -162,6 +162,11 @@ export interface KbDocument {
   chunkCount: number
   /** 错误信息 */
   errorMessage?: string
+  /** 知识大脑消化状态（pending|digesting|digested|failed|skipped；undefined=未开始） */
+  brainStatus?: 'pending' | 'digesting' | 'digested' | 'failed' | 'skipped'
+  /** 消化进度 0-100 */
+  brainProgress?: number
+  brainError?: string
   /** 元数据（JSON） */
   metadata?: DocumentMetadata
   /** 文档来源（DTO 由 sourceType/sourceId 还原） */
