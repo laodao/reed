@@ -23,9 +23,7 @@ export const episodeProductionPack: RendererPackDefinition = {
         '/episode-production/all',
         '/episode-production/:projectId',
         '/episode-production/:projectId/creator',
-        '/episode-production/:projectId/episode/:episodeId',
         '/episode-production/:projectId/studio/:episodeId',
-        '/episode-production/:projectId/production/:sceneId',
       ],
     },
   },
@@ -77,26 +75,12 @@ export const episodeProductionPack: RendererPackDefinition = {
       meta: { title: '剧集制作' },
     },
     {
-      path: '/episode-production/:projectId/episode/:episodeId',
-      name: 'EpisodeWorkbench',
-      component: () => import('@/views/EpisodeWorkbench.vue'),
-      meta: { title: '剧集编辑' },
-    },
-    {
       // 新版工作台（三段式 + 右侧 agent）：菜单入口 → 项目列表 → 本工作台
       path: '/episode-production/:projectId/studio/:episodeId',
       name: 'EpisodeAgentStudio',
       component: () => import('@/views/EpisodeStudio.vue'),
       meta: { title: '剧集制作' },
     },
-    {
-      path: '/episode-production/:projectId/production/:sceneId',
-      name: 'EpisodeProduction',
-      component: () => import('@/views/EpisodeProductionPage.vue'),
-      meta: {
-        title: '画面制作'
-      }
-    }
   ],
   menuItems: [
     {

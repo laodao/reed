@@ -37,11 +37,6 @@ const routes: RouteRecordRaw[] = [
     redirect: (to) => `/episode-production/${to.params.projectId}`
   },
   {
-    path: '/story-to-video/:projectId/production/:sceneId',
-    redirect: (to) =>
-      `/episode-production/${to.params.projectId}/production/${to.params.sceneId}`
-  },
-  {
     path: '/settings',
     name: 'Settings',
     component: () => import('@/views/Settings.vue'),

@@ -228,7 +228,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Picture, Loading, ArrowLeft, VideoCamera } from '@element-plus/icons-vue'
 import AssetGalleryPicker from '@/components/episode-production/storyboard/AssetGalleryPicker.vue'
-import KeyframeReferencePicker from '@/components/episode-production/stage-production/KeyframeReferencePicker.vue'
+import KeyframeReferencePicker from '@/components/episode-production/storyboard/KeyframeReferencePicker.vue'
 import ShotPromptEditor, {
   type MentionEntity,
   type ParamOption,
