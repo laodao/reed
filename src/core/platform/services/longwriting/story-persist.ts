@@ -421,9 +421,9 @@ export function matchOutlineChapterCard(
   if (Array.isArray(data.chapters) || Array.isArray(pickKey(data, ['章节', '章']))) return null
   const noRaw = Number(data.number ?? data.chapterNo ?? pickKey(data, ['章号', '序号']))
   const no = Number.isFinite(noRaw) && noRaw > 0 ? noRaw : NaN
-  const title = String(data.title ?? data.章名 ?? data.chapterTitle ?? '').trim()
+  const title = String(data.title ?? data.章名 ?? data.集名 ?? data.chapterTitle ?? '').trim()
   if (!Number.isFinite(no)) {
-    const m = /第\s*(\d+)\s*[章]/.exec(String(cardTitle || ''))
+    const m = /第\s*(\d+)\s*[章集]/.exec(String(cardTitle || ''))
     if (!m) return null
     const noFromTitle = Number(m[1])
     if (!Number.isFinite(noFromTitle) || noFromTitle <= 0) return null
@@ -431,7 +431,7 @@ export function matchOutlineChapterCard(
       return { no: noFromTitle, name: `${noFromTitle} ${title}`, summary: outlineChapterSummary(data) }
     }
     // 卡片标题形如「… 第1章 · 不喝汤的活人（第1日）」：取章名
-    const tm = /^(?:[^·]*·)?\s*第\s*\d+\s*章\s*[·:：、]?\s*(.+?)\s*(?:（[^）]*）)?\s*$/.exec(String(cardTitle))
+    const tm = /^(?:[^·]*·)?\s*第\s*\d+\s*[章集]\s*[·:：、]?\s*(.+?)\s*(?:（[^）]*）)?\s*$/.exec(String(cardTitle))
     const t = tm?.[1]?.trim()
     if (!t) return null
     return { no: noFromTitle, name: `${noFromTitle} ${t}`, summary: outlineChapterSummary(data) }
@@ -441,7 +441,7 @@ export function matchOutlineChapterCard(
 }
 
 function outlineChapterSummary(data: any): string {
-  return [pickKey(data, ['summary', '概要', '简介']), pickKey(data, ['hook', '钩子', '章尾卡点']), pickKey(data, ['beat', '要点'])]
+  return [pickKey(data, ['summary', '概要', '简介', '本集事件概要']), pickKey(data, ['hook', '钩子', '章尾卡点', '结尾钩子']), pickKey(data, ['beat', '要点'])]
     .filter(Boolean)
     .map(String)
     .join('\n')

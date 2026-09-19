@@ -28,6 +28,7 @@ import {
   normalizePlotInput,
   normalizeOutlineVolume,
   upsertOutlineChapter,
+  matchOutlineChapterCard,
 } from '@core/platform/services/longwriting/story-persist'
 
 // ==================== 假仓库 ====================
@@ -408,6 +409,35 @@ describe('persistWorld specialRules（0916 review：追加去重，不再线性�
     // 空白折叠语义：换行/空格差异视为同一块
     await persistWorld(db, 'p1', { specialRules: '【火场】西厢 有人被困' })
     expect((db as any)._store.backgrounds[0].specialRules).toBe('【供货线】回春堂每旬供药\n\n【火场】西厢有人被困')
+  })
+})
+
+describe('matchOutlineChapterCard（一枕两界实跑：「第N集」分集卡识别）', () => {
+  it('集卡（中文键 + 「第N集 · 集名」标题）应识别为章卡而非卷卡', () => {
+    const card = {
+      kind: 'outline',
+      title: '第1集 · 夜市常客',
+      data: {
+        集名: '第1集 · 夜市常客',
+        本集事件概要: '沈觉救下不睡觉的商人赵四，宋晏温首次锁定沈觉。',
+        结尾钩子: '宋晏温写下待查。',
+      },
+    }
+    const r = matchOutlineChapterCard(card.data, card.title)
+    expect(r).not.toBeNull()
+    expect(r?.no).toBe(1)
+    expect(r?.name).toContain('夜市常客')
+    expect(r?.summary).toContain('赵四')
+    expect(r?.summary).toContain('待查')
+  })
+
+  it('「第N章」卡仍按原口径识别（无回归）', () => {
+    const r = matchOutlineChapterCard(
+      { 章名: '初雪', 概要: '雪夜验尸', 钩子: '尸身开口' },
+      '第2章 · 初雪',
+    )
+    expect(r).not.toBeNull()
+    expect(r?.no).toBe(2)
   })
 })
 
