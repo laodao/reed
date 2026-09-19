@@ -824,6 +824,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
     )
     await addWorkflowRunMutexScope(this.dataSource)
 
+    // 工作流内部定义标记：definitions 加 internal 列（业务包运行载体，列表默认过滤）
+    const { addWorkflowDefinitionInternal } = await import(
+      '@core/database/migrations/add-workflow-definition-internal'
+    )
+    await addWorkflowDefinitionInternal(this.dataSource)
+
     // 剧集状态闭环：video_episodes.composed_video_path + scene_scripts.narration_audio_path
     // （2026-09-16 review P0-CM2/P0-CM1：合成进度恒 0、TTS 产物无处落库）
     const { addEpComposeClosure } = await import(

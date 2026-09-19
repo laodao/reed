@@ -25,6 +25,8 @@
 
 import { registerLongWritingHandlers } from './handlers/longwriting.handler'
 import { registerStoryRoomHandlers } from './story-room/room.handler'
+import { LONGWRITING_WORKFLOW_NODE_HANDLERS } from './workflow-nodes'
+import { registerPackNodeHandlers } from '@core/platform/workflow/nodes'
 import type { PackDefinition } from '../registry'
 
 export const longwritingPack: PackDefinition = {
@@ -42,5 +44,8 @@ export const longwritingPack: PackDefinition = {
     registerLongWritingHandlers()
     // 故事研讨室（v2.1）：room:* 二级前缀，仍落在 longwriting: 之下
     registerStoryRoomHandlers()
+    // 业务专用工作流节点（chapter-writing / volume-design）：经平台扩展点注册，
+    // boot 序（pack 先于工作流子系统）保证赶在注册表装配与一致性自检之前
+    registerPackNodeHandlers(LONGWRITING_WORKFLOW_NODE_HANDLERS)
   },
 }

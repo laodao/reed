@@ -491,6 +491,16 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     { key: 'overwrite', label: '覆盖已有正文', type: 'switch', group: '参数', help: '该章已有正文时是否覆盖重写（默认否）' },
     { key: 'targetWords', label: '目标字数', type: 'number', group: '参数', min: 500, max: 20000, help: '留空 = 大纲预估字数' },
   ],
+  'volume-design': [
+    T('projectId', '长文项目 ID', { type: 'text', help: '长文写作项目（lw_ 前缀），必填' }),
+    T('volumeId', '卷标识', { type: 'text', help: '要设计的卷（如 v1），必填' }),
+    T('title', '卷标题', { type: 'text', help: '留空 = 卷设计 {volumeId}' }),
+    T('focus', '卷焦点', { type: 'text', help: '本卷要重点展开的主题/冲突（可选）' }),
+    { key: 'chapterFrom', label: '起始章', type: 'number', group: '参数', min: 1, help: '限定章节范围（可选）' },
+    { key: 'chapterTo', label: '结束章', type: 'number', group: '参数', min: 1, help: '限定章节范围（可选）' },
+    { key: 'gridBatchSize', label: '网格分批大小', type: 'number', group: '参数', min: 1, max: 50, help: '每批生成的章节数（默认 10）' },
+    { key: 'maxTokens', label: '单 pass 最大 token', type: 'number', group: '参数', min: 1024, help: '默认 8192' },
+  ],
   'crawl-links': [
     T('urls', '待抓取页面列表', {
       type: 'textarea',

@@ -29,11 +29,15 @@ vi.mock('fs', async importOriginal => {
   return { ...actual, mkdirSync: vi.fn(), writeFileSync: (...a: any[]) => fsWriteMock(...a) }
 })
 
-import { EXTRA_NODE_HANDLERS } from '@core/platform/workflow/nodes/extra-nodes'
 import { A2_NODE_HANDLERS } from '@core/platform/workflow/nodes/a2-nodes'
-import { createFullNodeRegistry } from '@core/platform/workflow/nodes'
+import { createFullNodeRegistry, registerPackNodeHandlers } from '@core/platform/workflow/nodes'
+import { LONGWRITING_WORKFLOW_NODE_HANDLERS } from '@core/packs/longwriting/workflow-nodes'
 import { checkRegistryConsistency } from '@core/platform/workflow/engine/node-registry'
 import type { WorkflowNodeContext } from '@core/platform/workflow/engine/node-handler'
+
+// 全量注册表一致性断言需要 boot 序等价：业务节点由 pack 贡献注册
+// （initPackSubsystem 先于 initWorkflowSubsystem；重复注册会抛，本文件只注册一次）
+registerPackNodeHandlers(LONGWRITING_WORKFLOW_NODE_HANDLERS)
 
 const makeCtx = (config: Record<string, unknown>, extra: Partial<WorkflowNodeContext> = {}): WorkflowNodeContext => ({
   runId: 'run_1',

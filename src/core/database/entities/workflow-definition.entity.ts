@@ -50,6 +50,14 @@ export class WorkflowDefinitionEntity {
   @Column({ name: 'template_version', type: 'integer', default: 0, nullable: true })
   templateVersion!: number | null
 
+  /**
+   * 内部定义（1=业务包自动创建的运行载体，如「章节写作章法」）：
+   * 定义列表默认不展示（用户不可见、不进编辑/删/分享入口），
+   * run 记录与运行历史照常可见；业务包按名称查找时须显式 includeInternal。
+   */
+  @Column({ name: 'internal', type: 'integer', nullable: false, default: 0 })
+  internal!: number
+
   /** 草稿图（WorkflowGraph JSON；新建时可含 start/end 骨架） */
   @Column({ name: 'draft_graph', type: 'text', nullable: true })
   draftGraph!: string | null

@@ -6,6 +6,9 @@
  *
  *              新增节点 = 此处加一项 + core 实现一个 WorkflowNodeHandler 并注册。
  *              core 的 node-registry 有配套测试保证「目录每项都有 handler」。
+ *              业务专用节点（internal: true）例外：handler 实现与注册放对应
+ *              业务包（pack activate 时经 registerPackNodeHandlers 注册），
+ *              平台 nodes/ 不实现、不硬编码业务 handler。
  *
  *              端口约束语义：
  *              - ports 列出该节点类型的合法出边类型及数量约束
@@ -62,6 +65,13 @@ export interface WorkflowCatalogEntry {
   defaultConfig: Record<string, unknown>
   /** 输出字段（变量选择器提示） */
   outputSchema: readonly WorkflowOutputField[]
+  /**
+   * 内部节点（业务包贡献）：handler 由对应业务包在 activate 时注册
+   * （core/platform/workflow/nodes 的 registerPackNodeHandlers 扩展点），
+   * 编辑器面板不展示、用户不可拖入；目录仍保留条目供运行图回放/
+   * 变量提示/图校验使用（一致性自检同样覆盖）。
+   */
+  internal?: boolean
 }
 
 /** 目录常量：所有内置节点类型 */
@@ -790,12 +800,13 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
       { key: 'failedUrls', type: 'json', desc: '抓取失败的页面 [{ url, error }]' },
     ],
   },
-  // ==================== 长文写作 ====================
+  // ==================== 长文写作（业务包贡献：handler 由 longwriting pack 注册，internal 不进面板） ====================
   {
     type: 'chapter-writing',
     label: '章节写作章法',
     description: '长文写作：按章法确定性写完一章——生成设计卡(情节概要/爽点/钩子)→自检→依卡定出场实体→一致性检查→通过后生成正文并做写后一致性检查',
     category: 'general',
+    internal: true,
     icon: 'EditPen',
     controlKind: 'task',
     cancellable: true,
@@ -816,6 +827,7 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
     label: '卷设计章法',
     description: '长文写作：确定性生成一卷的结构化设计——骨架→人物层→网格分批→整合，每 pass 过 JSON 契约校验+修复回路；产物自动入设计包，用户确认后分解落库',
     category: 'general',
+    internal: true,
     icon: 'Document',
     controlKind: 'task',
     cancellable: true,

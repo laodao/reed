@@ -112,6 +112,8 @@ export class WorkflowDefinitionService {
     pageSize: number
     sortBy?: WorkflowDefinitionSortBy
     sortOrder?: WorkflowSortOrder
+    /** 业务包查找自己的内部运行载体定义时传 true（默认过滤 internal） */
+    includeInternal?: boolean
   }) {
     return this.repo.list(params)
   }
@@ -383,9 +385,11 @@ export class WorkflowDefinitionService {
       return { success: false, error: `图结构校验未通过：${structure.errors.slice(0, 5).join('；')}` }
     }
     // 覆盖策略：overwrite = 更新同名工作流的草稿（保留 id/版本/运行历史）
+    // includeInternal 只为重名探测完整；internal 定义是业务包运行载体，
+    // 导入覆盖不得命中（match 排除 internal，重名时落到新建）
     if (opts?.duplicatePolicy === 'overwrite') {
-      const existing = await this.repo.list({ keyword: parsed.name, page: 1, pageSize: 50 })
-      const match = existing.items.find(d => d.name === parsed.name)
+      const existing = await this.repo.list({ keyword: parsed.name, page: 1, pageSize: 50, includeInternal: true })
+      const match = existing.items.find(d => d.name === parsed.name && !d.internal)
       if (match) {
         const updated = await this.repo.update(match.id, {
           name: parsed.name,

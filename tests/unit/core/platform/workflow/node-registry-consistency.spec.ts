@@ -1,24 +1,53 @@
 /**
- * 全节点目录一致性测试：21 个内置节点 handler 与 NODE_TYPE_CATALOG 全对齐
+ * 全节点目录一致性测试：内置节点 handler 与 NODE_TYPE_CATALOG 全对齐
  * @module tests/workflow/node-registry-consistency
  * @description 这是不变量测试：目录是编辑器 UI 的单一事实源，handler 是运行时实现，
  *              两者的 controlKind/cancellable/outputSchema 漂移会造成
  *              "界面说可取消实际不能""变量提示与实际输出不符"——必须锁死。
+ *
+ *              分层纪律（2026-09-18）：业务专用节点（chapter-writing/volume-design，
+ *              目录标 internal）的 handler 归业务包（longwriting pack）实现与注册，
+ *              平台注册表不得包含——本文件同时锁这两条。
  */
 import { describe, it, expect } from 'vitest'
-import { createFullNodeRegistry, assertNodeRegistryConsistent } from '@core/platform/workflow/nodes/index'
+import {
+  createFullNodeRegistry,
+  createPlatformNodeRegistry,
+  registerPackNodeHandlers,
+  assertNodeRegistryConsistent,
+} from '@core/platform/workflow/nodes/index'
 import { checkRegistryConsistency } from '@core/platform/workflow/engine/node-registry'
 import { NODE_TYPE_CATALOG } from '@shared/types/workflow-node-catalog'
+import { LONGWRITING_WORKFLOW_NODE_HANDLERS } from '@core/packs/longwriting/workflow-nodes'
+
+/** 目录中的业务内部节点（internal: true） */
+const INTERNAL_TYPES = NODE_TYPE_CATALOG.filter(e => e.internal).map(e => e.type)
 
 describe('全节点目录一致性', () => {
-  it('全部节点注册且元数据一致（assert 不抛错）', () => {
-    const registry = createFullNodeRegistry()
-    expect(registry.list()).toHaveLength(NODE_TYPE_CATALOG.length)
-    expect(() => assertNodeRegistryConsistent(registry)).not.toThrow()
+  it('平台注册表不含业务节点（分层纪律：业务 handler 不进 platform）', () => {
+    expect(INTERNAL_TYPES.length).toBeGreaterThan(0)
+    const platform = createPlatformNodeRegistry()
+    for (const type of INTERNAL_TYPES) {
+      expect(platform.get(type as never), `${type} 不应注册在平台注册表`).toBeUndefined()
+    }
+    // 目录侧：internal 条目必须正好是这批业务节点，防止误标平台节点
+    expect(INTERNAL_TYPES).toEqual(['chapter-writing', 'volume-design'])
   })
 
-  it('checkRegistryConsistency 对全量注册表返回空问题列表', () => {
-    expect(checkRegistryConsistency(createFullNodeRegistry())).toEqual([])
+  it('pack 注册后全量注册表对齐目录（boot 序等价：pack 先于工作流装配）', () => {
+    registerPackNodeHandlers(LONGWRITING_WORKFLOW_NODE_HANDLERS)
+    const registry = createFullNodeRegistry()
+    for (const type of INTERNAL_TYPES) {
+      expect(registry.get(type as never), `${type} 应由 pack 贡献注册`).toBeDefined()
+    }
+    expect(registry.list()).toHaveLength(NODE_TYPE_CATALOG.length)
+    expect(() => assertNodeRegistryConsistent(registry)).not.toThrow()
+    expect(checkRegistryConsistency(registry)).toEqual([])
+  })
+
+  it('pack 贡献重复注册同一 type 抛错（fail-fast，与注册表同纪律）', () => {
+    expect(() => registerPackNodeHandlers(LONGWRITING_WORKFLOW_NODE_HANDLERS)).toThrow(/重复注册/)
+    expect(() => registerPackNodeHandlers([{ ...LONGWRITING_WORKFLOW_NODE_HANDLERS[0] }])).toThrow(/重复注册/)
   })
 
   it('validateConfig 快速抽检：关键必填项（不触发服务调用）', () => {
@@ -37,6 +66,8 @@ describe('全节点目录一致性', () => {
       ['llm-chat', {}],
       ['delay', {}],
       ['human-review', {}],
+      ['chapter-writing', {}],
+      ['volume-design', {}],
     ]
     for (const [type, config] of cases) {
       const handler = registry.get(type as never)!

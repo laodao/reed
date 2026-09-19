@@ -472,6 +472,12 @@ async function initDatabase(): Promise<void> {
   )
   await createWorkflowDefinitionVersionsTable(ds)
 
+  // 工作流内部定义标记：definitions 加 internal 列（业务包运行载体，列表默认过滤）
+  const { addWorkflowDefinitionInternal } = await import(
+    '@core/database/migrations/add-workflow-definition-internal'
+  )
+  await addWorkflowDefinitionInternal(ds)
+
   // D1 QA 知识库：kb_qa_pairs 问答对表（与 Electron 端同构）
   const { createKbQaPairs } = await import(
     '@core/database/migrations/create-kb-qa-pairs'

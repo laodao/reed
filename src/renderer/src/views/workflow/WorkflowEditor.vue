@@ -264,7 +264,7 @@ watch(edges, (list: any) => { canvasEdgesRef.value = list }, { immediate: true, 
 provide('wfCanvasEdges', canvasEdgesRef)
 
 /** 屏幕坐标 → 画布流坐标（拖放落点精确） */
-const { screenToFlowCoordinate, setNodes, setEdges, toObject, fromObject } = useVueFlow()
+const { screenToFlowCoordinate, setNodes, setEdges } = useVueFlow()
 
 // ==================== 撤销 / 重做（历史栈快照） ====================
 
@@ -435,6 +435,8 @@ const paletteGroups = computed(() => {
       category: cat,
       label: CATEGORY_META[cat].label,
       items: NODE_TYPE_CATALOG.filter(e =>
+        // internal=业务包贡献的内部节点（handler 归业务包注册），不进面板不可拖入
+        !e.internal &&
         e.category === cat &&
         (!kw || e.label.toLowerCase().includes(kw) || e.type.includes(kw) || e.description.toLowerCase().includes(kw))
       ),

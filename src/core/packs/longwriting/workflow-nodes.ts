@@ -1,8 +1,104 @@
 /**
- * 卷设计章法节点（2026-09-16 结构化设定方案 M1-W2）
- * @module core/platform/workflow/nodes/volume-design-node
+ * 长文写作业务包贡献的工作流节点 handler
+ * @module core/packs/longwriting/workflow-nodes
  *
- * 与 chapter-writing-node 同构：agent 不能保证指令遵循——卷设计的多 pass
+ * 分层归属（2026-09-18）：业务专用节点不属于平台引擎——实现放本包，
+ * 由 longwritingPack activate 时经 registerPackNodeHandlers() 注册
+ * （boot 序保证先于工作流子系统装配与一致性自检）。目录元数据
+ * （internal: true 条目）仍在 shared 的 NODE_TYPE_CATALOG，供运行图
+ * 回放/变量提示/图校验使用；编辑器面板不展示，用户不可拖入。
+ *
+ * 章法执行逻辑复用 chapter-writing-executor（与研讨室主编工具
+ * lw_write_chapter_full 同一实现——两条触发路径，同一章法，行为一致）。
+ */
+
+import type { WorkflowNodeHandler } from '@core/platform/workflow/engine/node-handler'
+import { stringifyValue } from '@core/platform/workflow/engine/variable-resolver'
+
+/**
+ * 章节写作章法节点（长文写作 × 工作流）
+ *
+ * 用户意见（2026-09-15）：agent 不能保证百分百指令遵循——多步章法不能依赖
+ * LLM 逐步自觉调用工具。本节点把章法五步（设计卡→自检→出场实体→一致性门禁→
+ * 写正文）作为确定性代码由工作流引擎强制调度：触发即执行、失败即停在具体步骤、
+ * 步骤状态进 run 记录可审计。
+ */
+const chapterWritingNode: WorkflowNodeHandler = {
+  type: 'chapter-writing',
+  controlKind: 'task',
+  cancellable: true,
+  outputSchema: [
+    { key: 'chapterId', type: 'string', desc: '正文版本 id' },
+    { key: 'wordCount', type: 'number', desc: '正文字数' },
+    { key: 'review', type: 'json', desc: '设计卡自检结果 { ok, issues }' },
+    { key: 'postCheck', type: 'json', desc: '写后一致性检查 { passed, report }' },
+    { key: 'note', type: 'string', desc: '写后检查备注（通过/新疑点摘要）' },
+    { key: 'error', type: 'string', desc: '失败原因（含自检未通过的问题清单）' },
+  ],
+  validateConfig(config) {
+    const cfg = config as { projectId?: string; outlineId?: string }
+    const errors: string[] = []
+    if (!stringifyValue(cfg.projectId ?? '').trim()) errors.push('projectId 不能为空')
+    if (!stringifyValue(cfg.outlineId ?? '').trim()) errors.push('outlineId 不能为空')
+    return errors
+  },
+  async execute(ctx) {
+    const cfg = ctx.config as {
+      projectId?: string
+      outlineId?: string
+      overwrite?: boolean
+      targetWords?: number
+    }
+    const projectId = stringifyValue(cfg.projectId ?? '')
+    const outlineId = stringifyValue(cfg.outlineId ?? '')
+    if (!projectId) return { status: 'failed', error: '缺少 projectId' }
+    if (!outlineId) return { status: 'failed', error: '缺少 outlineId' }
+    // 工作流模板传参是字符串（'true'/'false'）——不能直接真值判断
+    const overwrite = cfg.overwrite === true || stringifyValue(cfg.overwrite ?? '') === 'true'
+
+    const { runChapterWritingMethod } = await import(
+      '@core/packs/longwriting/services/chapter-writing-executor'
+    )
+
+    const outcome = await runChapterWritingMethod({
+      projectId,
+      outlineId,
+      overwrite,
+      targetWords: cfg.targetWords,
+      signal: ctx.signal,
+      onProgress: (p) => ctx.emitProgress(-1, `${p.step}：${p.message}`),
+    })
+
+    if (!outcome.ok) {
+      const parts = [outcome.error || '章法执行失败']
+      if (outcome.data?.designCard) parts.push(`——当前设计卡已留存，可据此修正方向后重试`)
+      return { status: 'failed', error: parts.join(' '), retryable: false }
+    }
+
+    const postCheck = outcome.data?.postCheck
+    const postNote = postCheck
+      ? postCheck.passed
+        ? '写后一致性检查通过'
+        : `写后一致性检查发现新疑点：${postCheck.report || ''}`
+      : ''
+
+    return {
+      status: 'succeeded',
+      output: {
+        chapterId: outcome.data?.chapterId ?? '',
+        wordCount: outcome.data?.wordCount ?? 0,
+        review: outcome.data?.review ?? null,
+        postCheck: postCheck ?? null,
+        note: postNote,
+      },
+    }
+  },
+}
+
+/**
+ * 卷设计章法节点（2026-09-16 结构化设定方案 M1-W2）
+ *
+ * 与 chapter-writing 节点同构：agent 不能保证指令遵循——卷设计的多 pass
  * 生成（骨架→人物层→网格分批→整合，每 pass 过 L0 校验+修复回路）由本节点
  * 确定性执行，引擎管调度/互斥（volume-design:{projectId}:{volumeId}）/审计。
  *
@@ -10,10 +106,6 @@
  * （design_doc 条目），人审沿用设计包确认面板——与对话驱动路径同一落库与
  * 审批通道，保证两条触发路径行为一致。
  */
-
-import type { WorkflowNodeHandler } from '../engine/node-handler'
-import { stringifyValue } from '../engine/variable-resolver'
-
 const volumeDesignNode: WorkflowNodeHandler = {
   type: 'volume-design',
   controlKind: 'task',
@@ -58,7 +150,7 @@ const volumeDesignNode: WorkflowNodeHandler = {
       return Number.isFinite(n) && n > 0 ? n : undefined
     }
 
-    // 懒 import（platform→pack/services 运行期解析，避免装配期循环依赖）
+    // 懒 import（重服务运行期解析，降低装配期加载面）
     const { getCoreDatabaseManager } = await import('@core/database/database-manager.interface')
     const { LongWritingAIService } = await import('@core/platform/services/longwriting-ai.service')
     const { runVolumeDesignFlow } = await import(
@@ -140,4 +232,7 @@ const volumeDesignNode: WorkflowNodeHandler = {
   },
 }
 
-export const VOLUME_DESIGN_NODE_HANDLERS = [volumeDesignNode]
+export const LONGWRITING_WORKFLOW_NODE_HANDLERS: WorkflowNodeHandler[] = [
+  chapterWritingNode,
+  volumeDesignNode,
+]

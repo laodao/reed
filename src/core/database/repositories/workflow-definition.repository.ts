@@ -22,7 +22,6 @@ import { WorkflowDefinitionEntity } from '../entities/workflow-definition.entity
 import { WorkflowDefinitionVersionEntity } from '../entities/workflow-definition-version.entity'
 import { BaseRepository } from '../base-repository'
 import { getCurrentUserId } from '@core/context/user-context'
-import { createHash } from 'node:crypto'
 import { createLogger } from '@core/utils/logger'
 
 const logger = createLogger('WorkflowDefinitionRepository')
@@ -51,6 +50,8 @@ export interface WorkflowDefinitionRecord {
   isBuiltin?: boolean
   /** 内置模板版本（0=用户已接管，迁移不再同步覆盖；>0=跟随内置模板） */
   templateVersion: number
+  /** 内部定义（业务包自动创建的运行载体；列表默认过滤，run 记录照常可见） */
+  internal: boolean
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -63,6 +64,8 @@ export interface CreateWorkflowDefinitionInput {
   draftGraph?: WorkflowGraph | null
   triggers?: WorkflowTrigger[]
   settings?: WorkflowExecutionSettings | null
+  /** 内部定义（业务包运行载体；列表默认不展示） */
+  internal?: boolean
 }
 
 /** 更新入参（浅合并，未提供的字段不动） */
@@ -70,6 +73,8 @@ export interface UpdateWorkflowDefinitionInput {
   name?: string
   description?: string | null
   category?: string | null
+  /** 标记为内部定义（业务包运行载体；存量行由业务包触发时自愈升级） */
+  internal?: boolean
   draftGraph?: WorkflowGraph | null
   /** 发布动作：发布图 + 版本号 + 触发器/设置快照（由 service 计算后传入） */
   publishedGraph?: WorkflowGraph | null
@@ -166,6 +171,7 @@ export class WorkflowDefinitionRepository extends BaseRepository<
       shareTokenHash: e.shareTokenHash,
       isBuiltin: e.isBuiltin === 1,
       templateVersion: e.templateVersion ?? 0,
+      internal: e.internal === 1,
       createdAt: e.createdAt,
       updatedAt: e.updatedAt,
     }
@@ -178,6 +184,7 @@ export class WorkflowDefinitionRepository extends BaseRepository<
       name: data.name,
       description: data.description ?? null,
       category: data.category ?? null,
+      internal: data.internal ? 1 : 0,
       draftGraph: data.draftGraph ? JSON.stringify(data.draftGraph) : null,
       publishedGraph: null,
       publishedVersion: 0,
@@ -208,13 +215,15 @@ export class WorkflowDefinitionRepository extends BaseRepository<
   }
 
   /** 分页列表（默认创建时间降序；keyword 模糊匹配名称/描述；含全局内置）。
-   *  sortBy 白名单映射列名（防注入），表头点击切换字段与方向。 */
+   *  sortBy 白名单映射列名（防注入），表头点击切换字段与方向。
+   *  internal 定义默认过滤（业务包运行载体对用户不可见）；业务包自身查找传 includeInternal。 */
   async list(params: {
     keyword?: string
     page: number
     pageSize: number
     sortBy?: WorkflowDefinitionSortBy
     sortOrder?: WorkflowSortOrder
+    includeInternal?: boolean
   }): Promise<{ items: WorkflowDefinitionRecord[]; total: number }> {
     // 内置（is_builtin=1）全局共享 + 用户自有；userId 为 null 时兼容 IS NULL 旧数据
     const userId = getCurrentUserId()
@@ -224,6 +233,9 @@ export class WorkflowDefinitionRepository extends BaseRepository<
         userId ? '(d.user_id = :userId OR d.is_builtin = 1)' : '(d.user_id IS NULL OR d.is_builtin = 1)',
         userId ? { userId } : {},
       )
+    if (!params.includeInternal) {
+      qb.andWhere('d.internal = 0')
+    }
     const column = WORKFLOW_DEF_SORT_COLUMN[params.sortBy ?? 'createdAt']
     const order = params.sortOrder === 'asc' ? 'ASC' : 'DESC'
     qb.orderBy(column, order).addOrderBy('d.id', 'ASC')
@@ -254,6 +266,7 @@ export class WorkflowDefinitionRepository extends BaseRepository<
     if (patch.name !== undefined) partial.name = patch.name
     if (patch.description !== undefined) partial.description = patch.description
     if (patch.category !== undefined) partial.category = patch.category
+    if (patch.internal !== undefined) partial.internal = patch.internal ? 1 : 0
     if (patch.draftGraph !== undefined) {
       partial.draftGraph = patch.draftGraph ? JSON.stringify(patch.draftGraph) : null
     }
