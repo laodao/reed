@@ -161,6 +161,7 @@ export async function createKbBrainTables(ds: DataSource): Promise<void> {
         lapse_count         INTEGER NOT NULL DEFAULT 0,
         cited_count         INTEGER NOT NULL DEFAULT 0,
         last_cited_at       ${dt},
+        due_at              ${dt},
         created_at          ${dt},
         updated_at          ${dt}
       )
@@ -244,6 +245,18 @@ export async function createKbBrainTables(ds: DataSource): Promise<void> {
     if (!(await checkColumnExists(ds, 'kb_documents', 'brain_error', isPg))) {
       await ds.query(`ALTER TABLE kb_documents ADD COLUMN brain_error ${vc}`)
       console.log('[create-kb-brain-tables] kb_documents 加列 brain_error')
+    }
+  }
+
+  // ---------- kb_notes 补列（FSRS：due_at 排期 + fsrs_state 状态机；顶层守卫不嵌套） ----------
+  if (await checkTableExists(ds, 'kb_notes', isPg)) {
+    if (!(await checkColumnExists(ds, 'kb_notes', 'due_at', isPg))) {
+      await ds.query(`ALTER TABLE kb_notes ADD COLUMN due_at ${dt}`)
+      console.log('[create-kb-brain-tables] kb_notes 加列 due_at')
+    }
+    if (!(await checkColumnExists(ds, 'kb_notes', 'fsrs_state', isPg))) {
+      await ds.query(`ALTER TABLE kb_notes ADD COLUMN fsrs_state INTEGER`)
+      console.log('[create-kb-brain-tables] kb_notes 加列 fsrs_state')
     }
   }
 }

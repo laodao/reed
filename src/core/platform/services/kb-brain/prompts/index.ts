@@ -111,3 +111,11 @@ export function buildLensPassSystem(lens: { title: string; attendTo: string[]; q
     .replace('{attendTo}', () => lens.attendTo.join('、') || '（未定义，凭视角常识）')
     .replace('{questions}', () => lens.questions.join('；') || '（未定义）')
 }
+
+/* ==================== CRAG 检索判级（M3） ==================== */
+
+export const CRAG_SYSTEM = `你是检索质量评判员。判断检索结果能否回答查询。
+- correct：结果包含回答查询所需的实质信息。
+- incorrect：结果与查询无关或完全不能支撑回答——给出改写后的查询（rewrittenQuery，换更具体/同义/上位表述）。
+- ambiguous：结果部分相关，无法判定。
+只输出 JSON：{ "grade": "correct|incorrect|ambiguous", "rewrittenQuery": "..." }（rewrittenQuery 仅 incorrect 时必填）。`

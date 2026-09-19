@@ -269,6 +269,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'knowledgeBase.brain.distill': { channel: 'kb:brain:distill' },
   'knowledgeBase.brain.conflicts': { channel: 'kb:brain:conflicts', wrap: (kbId: string) => [{ kbId }] },
   'knowledgeBase.brain.resolveConflict': { channel: 'kb:brain:resolve-conflict' },
+  'knowledgeBase.brain.reviewNext': { channel: 'kb:brain:review-next' },
+  'knowledgeBase.brain.reviewGrade': { channel: 'kb:brain:review-grade' },
   'knowledgeBase.importQaXlsx': { channel: 'kb-qa:import-xlsx' },
   'knowledgeBase.exportQaXlsx': { channel: 'kb-qa:export-xlsx' },
   'knowledgeBase.addDocument': { channel: 'knowledge-base:add-document', wrap: (knowledgeBaseId, data) => [{ knowledgeBaseId, data }] },

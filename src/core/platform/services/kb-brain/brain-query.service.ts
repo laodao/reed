@@ -16,6 +16,7 @@ import type { KbDocumentRepository } from '@core/database/repositories/kb-docume
 import type { KbEntityRepository } from '@core/database/repositories/kb-entity.repository'
 import type { KbKnowledgeEdgeRepository } from '@core/database/repositories/kb-knowledge-edge.repository'
 import type { SearchResult } from '@shared/types/knowledge-base.types'
+import { CRAG_SYSTEM } from './prompts'
 import { parseVectorNamespace } from './vector-namespace'
 import { tokenizeForIndex } from '@core/platform/services/kb-tokenize'
 import { personalizedPageRank } from '@core/platform/services/graph/ppr'
@@ -51,6 +52,8 @@ export interface BrainQueryDeps {
   /** 图路三件（M2；缺失则 PPR 图路跳过，不影响向量+词法主路） */
   entities?: KbEntityRepository
   edges?: KbKnowledgeEdgeRepository
+  /** CRAG 判级 LLM（M3；未注入则 cragEnabled 不生效） */
+  cragLlm?: (req: { system: string; user: string; maxTokens?: number }) => Promise<string>
 }
 
 export interface BrainSearchRequest {
@@ -67,6 +70,8 @@ export interface BrainSearchRequest {
   threshold?: number
   /** 检索模式：synthesize 时 chunk 名次后移（§5.1 第5点——综合型 atom/note 主导） */
   intent?: 'lookup' | 'synthesize'
+  /** CRAG 纠错（§8.1 M3）：判级 incorrect → 改写重试 + 图路兜底（热路径多一次 LLM，默认关） */
+  cragEnabled?: boolean
 }
 
 /** RRF 融合分（用于排序，不回写为结果 score——score 保持各类型原始分） */
@@ -232,6 +237,21 @@ export class BrainQueryService {
         }
       }
 
+      // M3 CRAG 纠错（§8.1）：判级 incorrect → 改写重试一次 + 图路兜底；失败/ambiguous 降级原序
+      if (req.cragEnabled && this.deps.cragLlm && deduped.length > 0) {
+        try {
+          const verdict = await this.cragJudge(req.query, deduped.slice(0, 3))
+          if (verdict.grade === 'incorrect' && verdict.rewrittenQuery) {
+            const retry = await this.search({ ...req, query: verdict.rewrittenQuery, cragEnabled: false, intent: 'synthesize' })
+            if (retry.success && retry.data && retry.data.length > 0) {
+              return { success: true, data: retry.data }
+            }
+          }
+        } catch {
+          /* CRAG 失败降级原序（rerank 同款 fail-soft） */
+        }
+      }
+
       /* ---------- 5. 使用即再巩固（fire-and-forget） ---------- */
       const atomIds = deduped.filter((r) => r.kind === 'atom').map((r) => (r.atom as { id: string }).id)
       const noteIds = deduped.filter((r) => r.kind === 'note').map((r) => (r.note as { id: string }).id)
@@ -318,6 +338,17 @@ export class BrainQueryService {
         note: { id: note.id, title: note.title, type: note.type, evidenceCount },
       },
     }
+  }
+
+  /* ---------- M3 CRAG 判级 ---------- */
+
+  private async cragJudge(query: string, top: SearchResult[]): Promise<{ grade: 'correct' | 'incorrect' | 'ambiguous'; rewrittenQuery?: string }> {
+    const excerpt = top.map((r, i) => `[${i + 1}] ${r.content.slice(0, 120)}`).join('\n')
+    const raw = await this.deps.cragLlm!({ system: CRAG_SYSTEM, user: `查询：${query}\n\n检索结果：\n${excerpt}`, maxTokens: 800 })
+    const { extractJsonFromResponse } = await import('@core/platform/services/ai-call')
+    const parsed = extractJsonFromResponse(raw) as { grade?: string; rewrittenQuery?: string }
+    const grade = parsed.grade === 'incorrect' ? 'incorrect' : parsed.grade === 'ambiguous' ? 'ambiguous' : 'correct'
+    return { grade, rewrittenQuery: typeof parsed.rewrittenQuery === 'string' ? parsed.rewrittenQuery : undefined }
   }
 
   /* ---------- M2 图路（PPR） ---------- */

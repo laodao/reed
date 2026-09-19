@@ -9,6 +9,7 @@ import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { KnowledgeBaseService } from '@core/platform/services/knowledge-base.service'
 import { getKbBrainPanelService } from '@core/platform/services/kb-brain/brain-panel.service'
 import { KbDistillService } from '@core/platform/services/kb-brain/distill.service'
+import { KbBrainFsrsService } from '@core/platform/services/kb-brain/fsrs.service'
 import type { SearchResult } from '@shared/types/knowledge-base.types'
 
 let kbService: KnowledgeBaseService | null = null
@@ -106,6 +107,16 @@ export function registerKbBrainHandlers(): void {
     })
     return { success: true }
   })
+
+  // T18 FSRS 复习：到期队列 / 评分
+  const fsrs = new KbBrainFsrsService()
+  ipcBridge.handle('kb:brain:review-next', async (_e, p: { kbId: string; limit?: number }) => {
+    const items = await fsrs.dueNext(p.kbId, p.limit ?? 10)
+    return { success: true, data: items }
+  })
+  ipcBridge.handle('kb:brain:review-grade', async (_e, p: { kbId: string; noteId: string; rating: 1 | 2 | 3 | 4 }) =>
+    fsrs.grade(p.kbId, p.noteId, p.rating),
+  )
 
   // brain 检索直通（论断页签的调试检索 / 面板预览）
   ipcBridge.handle(

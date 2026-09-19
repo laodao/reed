@@ -23,6 +23,8 @@ export interface KbBrainConfig {
   distillation: { enabled: boolean; importanceThreshold: number }
   /** 学习模式（FSRS 复习队列） */
   learning: { enabled: boolean; desiredRetention: number }
+  /** CRAG 检索纠错（M3：判级 + 改写重试；默认关——检索热路径多一次 LLM 调用） */
+  crag: { enabled: boolean }
 }
 
 /** brain_state（运行态，非用户配置）：重要性账户/品味侧写/上次提炼时间 */
@@ -82,6 +84,12 @@ const BRAIN_CONFIG_SCHEMA = {
       required: ['enabled', 'desiredRetention'],
       additionalProperties: false,
     },
+    crag: {
+      type: 'object',
+      properties: { enabled: { type: 'boolean' } },
+      required: ['enabled'],
+      additionalProperties: false,
+    },
   },
   required: ['enabled'],
   additionalProperties: false,
@@ -100,6 +108,7 @@ export function defaultBrainConfig(enabled = true): KbBrainConfig {
     autoApproveThreshold: 0.8,
     distillation: { enabled: true, importanceThreshold: 50 },
     learning: { enabled: false, desiredRetention: 0.9 },
+    crag: { enabled: false },
   }
 }
 
@@ -128,6 +137,7 @@ export function parseBrainConfig(raw: string | null | undefined): KbBrainConfig 
     autoApproveThreshold: partial.autoApproveThreshold ?? def.autoApproveThreshold,
     distillation: { ...def.distillation, ...partial.distillation },
     learning: { ...def.learning, ...partial.learning },
+    crag: { ...def.crag, ...partial.crag },
   }
 }
 

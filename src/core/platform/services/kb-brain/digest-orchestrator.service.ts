@@ -796,6 +796,8 @@ export function installKbBrainDigest(
   }
   const svc = new KbBrainDigestService(effective)
   installed = true
+  // T17：装配通道注册（长文/学习/剧集三宿主消费大脑论断与卡片）
+  import('./brain-provider').then(({ installKbBrainProvider }) => installKbBrainProvider())
   subscribeDomainEvents((event) => svc.onDomainEvent(event))
   void svc.recover().catch((e) => logger.warn(`[kb-brain] 启动恢复失败: ${e instanceof Error ? e.message : String(e)}`))
   logger.info('[kb-brain] 消化流水线已装配（kb:document-completed 订阅 + 台账恢复）')

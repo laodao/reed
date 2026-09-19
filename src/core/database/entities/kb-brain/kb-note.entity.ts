@@ -114,6 +114,14 @@ export class KbNoteEntity {
   @Column({ name: 'last_cited_at', type: 'datetime', nullable: true })
   lastCitedAt!: Date | null
 
+  /** FSRS 到期时间（复习排期；null=未排期/未启用学习模式） */
+  @Column({ name: 'due_at', type: 'datetime', nullable: true })
+  dueAt!: Date | null
+
+  /** FSRS 状态机（New=0 Learning=1 Review=2 Relearning=3；学习步骤卡的时间间隔依赖此态） */
+  @Column({ name: 'fsrs_state', type: 'integer', nullable: true })
+  fsrsState!: number | null
+
   @Column({ name: 'created_at', type: 'datetime', nullable: true })
   createdAt!: Date | null
 

@@ -25,6 +25,7 @@ import { KbChapterSummaryService } from '@core/platform/services/kb-chapter-summ
 import { detectKeywordIntent } from '@core/platform/services/query-routing'
 import { tokenizeForIndex } from '@core/platform/services/kb-tokenize'
 import { BrainQueryService, type BrainQueryDeps } from './kb-brain/brain-query.service'
+import { defaultBrainLlm } from './kb-brain/llm'
 import { extractTextFromFile, inferFileType } from '@core/utils/extract-text'
 import { resolveAssetPath, toRelativeAssetPath } from '@core/utils/asset-path'
 import { publishDomainEvent } from '@core/platform/workflow/trigger/domain-event-bus'
@@ -980,6 +981,7 @@ export class KnowledgeBaseService {
           documentIds: req.documentIds,
           threshold: req.threshold,
           intent: req.intent ?? detectSynthesizeIntent(req.query),
+          cragEnabled: await this.resolveKbCragEnabled(req.knowledgeBaseId),
         })
       }
       // 旧库未装配大脑仓储 → fail-soft 降级存量路径（等价 include=['chunk']）
@@ -1152,6 +1154,19 @@ export class KnowledgeBaseService {
    * D3 BM25 关键词打分：返回 chunkId -> 分数（未归一）。
    * 依赖倒排索引（文档入库时 buildIndex 写入）；索引缺失/无命中返回空 Map（调用方降级）。
    */
+  /** 读 KB 的 CRAG 开关（brain 查询纠错入参） */
+  private async resolveKbCragEnabled(kbId: string): Promise<boolean> {
+    const db = getCoreDatabaseManager()
+    const kb = await db.knowledgeBases?.findById(kbId)
+    if (!kb?.brainConfig) return false
+    try {
+      const { parseBrainConfig } = await import('./kb-brain/brain-config')
+      return parseBrainConfig(kb.brainConfig)?.crag.enabled ?? false
+    } catch {
+      return false
+    }
+  }
+
   /** 读 KB 的 embedding 配置（brain 查询的嵌入入参） */
   private async resolveKbEmbeddingConfig(kbId: string): Promise<string | null> {
     const db = getCoreDatabaseManager()
@@ -1951,6 +1966,7 @@ function getBrainQueryService(kbService: KnowledgeBaseService): BrainQueryServic
     docs: db.kbDocuments,
     entities: db.kbBrainEntities ?? undefined,
     edges: db.kbKnowledgeEdges ?? undefined,
+    cragLlm: defaultBrainLlm('kb-brain-adjudicate'),
   }
   brainQuerySingleton = new BrainQueryService(deps)
   return brainQuerySingleton

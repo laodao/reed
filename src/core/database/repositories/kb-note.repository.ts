@@ -38,6 +38,8 @@ export interface KbNoteRecord {
   lapseCount: number
   citedCount: number
   lastCitedAt: Date | null
+  dueAt: Date | null
+  fsrsState: number | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -86,6 +88,8 @@ export class KbNoteRepository extends BaseRepository<KbNoteEntity, KbNoteRecord>
       lapseCount: e.lapseCount,
       citedCount: e.citedCount,
       lastCitedAt: e.lastCitedAt ?? null,
+      dueAt: e.dueAt ?? null,
+      fsrsState: e.fsrsState ?? null,
       createdAt: e.createdAt ?? null,
       updatedAt: e.updatedAt ?? null,
     }
@@ -227,6 +231,40 @@ export class KbNoteRepository extends BaseRepository<KbNoteEntity, KbNoteRecord>
     e.updatedAt = now
     await this.scoped.save(e)
     return this.toDto(e)
+  }
+
+  /** FSRS 当前态缓存回写（评分历史在 kb_note_reviews） */
+  async updateFsrsState(
+    id: string,
+    patch: { stability: number; difficulty: number; lastReviewAt: Date; dueAt: Date; lapses: number; state: number },
+  ): Promise<void> {
+    await this.scoped.update(
+      { id } as FindOptionsWhere<KbNoteEntity>,
+      {
+        fsrsStability: patch.stability,
+        fsrsDifficulty: patch.difficulty,
+        fsrsState: patch.state,
+        lastReviewAt: patch.lastReviewAt,
+        dueAt: patch.dueAt,
+        lapseCount: patch.lapses,
+        reviewCount: () => 'review_count + 1',
+        updatedAt: new Date(),
+      } as never,
+    )
+  }
+
+  /** 到期复习队列：published 且 due_at ≤ now，到期最早优先 */
+  async dueReviews(kbId: string, now: Date, limit: number): Promise<KbNoteRecord[]> {
+    const rows = await this.scoped
+      .qb('n')
+      .where('n.knowledge_base_id = :kbId', { kbId })
+      .andWhere("n.status = 'published'")
+      .andWhere('n.type != :lens', { lens: 'lens' })
+      .andWhere('n.due_at IS NOT NULL AND n.due_at <= :now', { now })
+      .orderBy('n.due_at', 'ASC')
+      .take(limit)
+      .getMany()
+    return this.toDtoList(rows)
   }
 
   /** 创作引用计数（消化率仪表与代谢晋升/衰减的输入） */
