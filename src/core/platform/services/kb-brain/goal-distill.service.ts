@@ -101,13 +101,14 @@ export class KbGoalDistillService {
     const docs = await repos.docs.findByKnowledgeBaseId(kbId)
     const units: Array<{ label: string; text: string; documentId: string }> = []
     for (const doc of docs) {
+      const book = shortBookName(doc.name)
       const chapters = await repos.chapters.findByDocument(doc.id)
       chapters.forEach((c, i) => {
         const summary = c.summary?.trim()
         const text = summary || c.content?.slice(0, SUMMARY_CHARS) || ''
         if (!text) return
         units.push({
-          label: `《${doc.name}》#${i + 1} ${c.title}`,
+          label: `《${book}》#${i + 1} ${c.title}`,
           text: text.slice(0, SUMMARY_CHARS),
           documentId: doc.id,
         })
@@ -192,6 +193,16 @@ export class KbGoalDistillService {
   }
 }
 
+/** 文件名 → 短书名：去扩展名、去括注（校对版/来源站等）、去「作者-」前缀——出处标签可读 */
+export function shortBookName(fileName: string): string {
+  const noExt = fileName.replace(/\.(epub|mobi|azw3|txt|pdf|docx?)\s*$/i, '')
+  const noParens = noExt.replace(/[（(【\[].*$/, '').trim()
+  const noDash = noParens.includes('-') && noParens.indexOf('-') <= 6
+    ? noParens.slice(noParens.indexOf('-') + 1).trim()
+    : noParens
+  return noDash || fileName
+}
+
 function buildMapUser(goal: KbBrainGoal, slice: Array<{ label: string; text: string }>): string {
   const lines = slice.map((u) => `【${u.label}】\n${u.text}`)
   return [
@@ -214,7 +225,7 @@ function buildReduceUser(goal: KbBrainGoal, fragments: MapFragment[]): string {
     goal.hint,
     '',
     '以下是从全书各章提取的相关素材（方括号内是出处）。据此写一份可直接指导创作的经验文档，输出 JSON：',
-    '{"title":"论断式标题（含目标维度名）","description":"何时用我（第三人称，≤200字，含触发场景）","body":"markdown 正文"}',
+    '{"title":"卡片标题（直接给论断本身，禁止出现「论断式标题」等指令词或前缀）","description":"何时用我（第三人称，≤200字，含触发场景）","body":"markdown 正文"}',
     '正文要求：',
     '1) 按提炼目标 hint 指定的结构分小节组织；',
     '2) 每条经验/结论后标注出处（如 [《书名》#12 章节]），多章印证的列多个；',

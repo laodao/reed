@@ -222,3 +222,14 @@ describe('KbGoalDistillService', () => {
     expect(evidence[0].quote).toBe('《诛仙》#1 第一章')
   })
 })
+
+describe('shortBookName', () => {
+  it('真机文件名 → 短书名', async () => {
+    const { shortBookName } = await import('@core/platform/services/kb-brain/goal-distill.service')
+    expect(shortBookName('凡人修仙传 (忘语) (z-library.sk, 1lib.sk, z-lib.sk).epub')).toBe('凡人修仙传')
+    expect(shortBookName('辰东-《完美世界》（校对版全本） (辰东) (z-library.sk).epub')).toBe('《完美世界》')
+    expect(shortBookName('诛仙 (萧鼎) (z-library.sk, 1lib.sk, z-lib.sk).epub')).toBe('诛仙')
+    expect(shortBookName('斗破苍穹.epub')).toBe('斗破苍穹')
+    expect(shortBookName('无扩展名文档')).toBe('无扩展名文档')
+  })
+})
