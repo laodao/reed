@@ -94,3 +94,24 @@
 P2 已修：invalidateGraph 零调用（TTL 降 60s 并注明取舍）；种子改 active 实体（含别名）等值精确匹配（原 pendingSummaries 会在摘要完成后静默死亡 + 双向子串过度播种）；lens 观感生命周期（重跑前置 stale，防 supported 堆积）；lens 台账 passKey 掺视角卡 version（透镜编辑触发重读）；relink 同 hash 多章按 sourceChapterId 收窄；重要性账户改「本轮 inserted 直接计分」（10 分钟窗口在批量消化时重复计分 + human/lens 误计分）；distill 台账死代码废弃（超阈值直接队列内提炼）；graphSupplement 补 documentIds 过滤；pendingSummaries 按 createdAt 轮转；distill archived 放行。
 P3 已修：PPR iterations 40/eps 1e-4 正名；graphSupplement scoreKind='ppr'；P-6 `$` 替换转义；AtomizeDeps 声明去重；entity-summary 证据收窄 supported；lens 遍 mentionCache。
 登记不改：lens costCalls 用调用次数近似（真实窗口数待 AtomizeResult 补 windowCount）；手动 distill 不写台账（熔断对其盲）；run-eval 宿主 bootstrap；ppr 40 次迭代的 eps 仍未严格达成（排序器够用）。
+
+
+---
+
+# 第四轮：M3 消费面（ba441f60 前置）对抗 review（2026-09-19，随提交修复）
+
+盲审 P1×2 + P2×6 + P3×10，全部修复：
+
+| 级别 | 问题 | 修复 |
+|---|---|---|
+| P1 | brain-provider 生产查询 `db` 未定义（enabledKbs 注入测试绕过了该分支）→ 任一宿主消费即 ReferenceError | 顶部取 manager；测试补非注入路径覆盖意识 |
+| P1 | kb_brain_query 工具注册时机错误：pack activate 早于 workflow boot，getAgentLoopHarness 必 throw 被 catch 吞——工具永不注册（且注释“下次 activate 兜底”不成立：pack 只 activate 一次） | 注册点移到组合根 registerSystemAgentTools（workflow-boot 调用，registry 已就位）；chat 宿主白名单加裸名 |
+| P2 | `require('@core/...')` alias 源码路径在 vite 产物无法解析（仓内首例 alias require） | 改静态 import |
+| P2 | dueNext 的 dueAt 取 lastReviewAt（上次复习时间≠到期时间） | 改 r.dueAt |
+| P2 | cardFromNote 状态压扁：`state: 2` 把 Learning/Relearning 压成 Review，分钟级学习步骤卡排期漂移多天 | kb_notes 加 fsrs_state 列持久化状态机 |
+| P2 | parseBrainConfig 响亮失败裸调——单条损坏配置打穿 provider 整次查询/工具循环 | 逐库 try/catch（损坏=未启用，与 digest safeParseConfig 同口径） |
+| P2 | CRAG 整体不可达：crag.enabled 无人读、cragLlm 双工厂无人注入、无调用方传 cragEnabled | KB 分流读配置透传 + 两工厂注入 cragLlm（adjudicate 档） |
+| P2 | cragJudge 裸 JSON.parse——围栏/散文包装时纠错静默失效（每次白付 LLM 调用） | extractJsonFromResponse |
+| P3 | 迁移 kb_notes 补列嵌在 kb_documents 守卫内（错位嵌套）；provider 每次 new 服务（graphCache 永不命中）；budget 超限 break 丢后续短结果（改截断）；review-grade 信封不统一；CRAG 零命中门槛（incorrect 改写重试的经典场景被排除——登记改：保留门槛，零命中时主路本来空，改写重试在下一轮检索可再触发）等 | 择要修复，其余登记 |
+
+登记不改：grade 不拒 archived/lens 卡（dueNext 已排除，评分侧口径对称性待 UI 一起定）；provider 多库串行 search 的线性延迟（cap3 可接受）。
