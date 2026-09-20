@@ -185,3 +185,16 @@ export const CONSOLIDATE_SYSTEM = `你是知识库整理员。GIVEN 是一批已
 export function buildConsolidateUser(input: { items: Array<{ idx: number; type: string; statement: string }> }): string {
   return `GIVEN:\n${input.items.map((r) => `[${r.idx}] (${r.type}) ${r.statement}`).join('\n')}`
 }
+
+/* ==================== 存量垃圾论断清理（cleanup 分诊） ==================== */
+
+export const CLEANUP_SYSTEM = `你是知识库质检员。GIVEN 是一批已编号的知识论断。找出其中确定无疑的「垃圾论断」——只标记有把握的，拿不准一律保留（宁漏勿杀）。
+
+垃圾判定标准（三条都不符就保留）：
+1. 元描述式：转述书中创作物（诗/词/铭文等）的内容而不含任何评价——
+   如「某某在人物诗中创作了题为"无题"的诗」「无题诗将角色特征关联为X」。
+   注意：含评价结论的不算（如"人物诗以极端意象立人物内核，值得学"要保留）。
+2. 结构性残留：章节标题、目录条目、题记、插图/剧照说明、卷名。
+3. 空洞重复：与同批另一条几乎逐字相同且信息量完全被其覆盖的条目（只标重复组中较差的一条）。
+
+输出 JSON：{ "junk": [垃圾条目编号数组] }。没有垃圾输出空数组。`

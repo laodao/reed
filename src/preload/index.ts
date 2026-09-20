@@ -1252,6 +1252,8 @@ const electronAPI = {
         ipcRenderer.invoke('kb:brain:list-atoms', p),
       consolidateRun: (kbId: string) => ipcRenderer.invoke('kb:brain:consolidate-run', { kbId }),
       consolidateStatus: (kbId: string) => ipcRenderer.invoke('kb:brain:consolidate-status', { kbId }),
+      cleanupRun: (kbId: string) => ipcRenderer.invoke('kb:brain:cleanup-run', { kbId }),
+      cleanupStatus: (kbId: string) => ipcRenderer.invoke('kb:brain:cleanup-status', { kbId }),
       getAtom: (atomId: string) => ipcRenderer.invoke('kb:brain:get-atom', { atomId }),
       listNotes: (p: { kbId: string; status?: string; type?: string; page?: number; pageSize?: number }) => ipcRenderer.invoke('kb:brain:list-notes', p),
       proposalInbox: (p: { kbId: string; page?: number; pageSize?: number }) => ipcRenderer.invoke('kb:brain:proposal-inbox', p),

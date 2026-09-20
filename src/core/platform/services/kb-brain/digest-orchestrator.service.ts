@@ -366,7 +366,8 @@ export class KbBrainDigestService {
       for (const a of result.atoms) {
         atomInputs.push({
           knowledgeBaseId: kbId,
-          statement: a.statement,
+          // 长度护栏：语句放开篇幅后防跑飞——嵌入模型输入普遍 ~512 token，超长被静默截断稀释检索
+          statement: a.statement.slice(0, 600),
           type: (isValidType(a.type) ? a.type : 'fact'),
           certainty: a.certainty,
           sourceDocumentId: documentId,

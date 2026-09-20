@@ -14,6 +14,7 @@ import { KbResearchService } from '@core/platform/services/kb-brain/research.ser
 import { enqueueDigestForExisting } from '@core/platform/services/kb-brain/digest-orchestrator.service'
 import { KbGoalDistillService } from '@core/platform/services/kb-brain/goal-distill.service'
 import { getKbConsolidateService } from '@core/platform/services/kb-brain/consolidate.service'
+import { getKbCleanupService } from '@core/platform/services/kb-brain/cleanup.service'
 import { parseModelRef } from '@core/platform/services/kb-brain/llm'
 import { parseBrainConfig } from '@core/platform/services/kb-brain/brain-config'
 import type { SearchResult } from '@shared/types/knowledge-base.types'
@@ -189,6 +190,24 @@ export function registerKbBrainHandlers(): void {
   })
   ipcBridge.handle('kb:brain:consolidate-status', (_e, p: { kbId: string }) => {
     return { success: true, data: consolidate.status(p.kbId) }
+  })
+
+  // 存量垃圾论断清理（LLM 分诊归档；fire-and-forget + 进度轮询）
+  const cleanup = getKbCleanupService()
+  ipcBridge.handle('kb:brain:cleanup-run', (_e, p: { kbId: string }) => {
+    if (cleanup.isRunning(p.kbId)) return { success: false, error: '垃圾清理进行中' }
+    cleanup
+      .run(p.kbId)
+      .then((st) =>
+        console.info(
+          `[kb-brain] 垃圾清理完成 kb=${p.kbId} 批次=${st.processedBatches}/${st.totalBatches} 归档=${st.archivedCount} 失败批=${st.failedBatches}`,
+        ),
+      )
+      .catch((e) => console.warn(`[kb-brain] 垃圾清理失败 kb=${p.kbId}: ${e instanceof Error ? e.message : String(e)}`))
+    return { success: true, data: { queued: true } }
+  })
+  ipcBridge.handle('kb:brain:cleanup-status', (_e, p: { kbId: string }) => {
+    return { success: true, data: cleanup.status(p.kbId) }
   })
 
   // T18 FSRS 复习：到期队列 / 评分

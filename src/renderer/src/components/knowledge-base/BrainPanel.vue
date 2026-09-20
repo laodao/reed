@@ -274,25 +274,49 @@
             AI 分批审读论断池，把同主题的细碎碎片合并为综合论断（如「主要法宝」逐条罗列→一条）；
             被合并的原论断归档可查回。
           </div>
-          <el-button
-            v-if="!consolidateRunning"
-            size="small"
-            type="warning"
-            plain
-            style="width: 100%"
-            @click="startConsolidate"
-          >
-            归纳整理
-          </el-button>
-          <template v-else>
+          <div style="display: flex; gap: 8px">
+            <el-button
+              v-if="!consolidateRunning"
+              size="small"
+              type="warning"
+              plain
+              style="flex: 1"
+              :disabled="cleanupRunning"
+              @click="startConsolidate"
+            >
+              归纳整理
+            </el-button>
+            <el-button
+              v-if="!cleanupRunning"
+              size="small"
+              type="danger"
+              plain
+              style="flex: 1"
+              :disabled="consolidateRunning"
+              @click="startCleanup"
+            >
+              垃圾清理
+            </el-button>
+          </div>
+          <template v-if="consolidateRunning">
             <el-progress :percentage="consolidatePct" :stroke-width="6" />
             <div class="side-tip">
               归纳中… 批次 {{ consolidateProgress?.processedBatches ?? 0 }}/{{ consolidateProgress?.totalBatches ?? 0 }}，已合并
               {{ consolidateProgress?.mergedGroups ?? 0 }} 组
             </div>
           </template>
+          <template v-if="cleanupRunning">
+            <el-progress :percentage="cleanupPct" :stroke-width="6" />
+            <div class="side-tip">
+              清理中… 批次 {{ cleanupProgress?.processedBatches ?? 0 }}/{{ cleanupProgress?.totalBatches ?? 0 }}，已归档
+              {{ cleanupProgress?.archivedCount ?? 0 }} 条
+            </div>
+          </template>
           <div v-if="consolidateSummary && !consolidateRunning" class="side-tip">
             上次归纳：合并 {{ consolidateSummary.mergedGroups }} 组，归档 {{ consolidateSummary.supersededAtoms }} 条
+          </div>
+          <div v-if="cleanupSummary && !cleanupRunning" class="side-tip">
+            上次清理：归档 {{ cleanupSummary }} 条垃圾论断
           </div>
         </section>
 
@@ -653,6 +677,87 @@ const remarkDocId = ref('')
 const remarkQuote = ref('')
 const remarkBusy = ref(false)
 
+// ===== 垃圾清理 =====
+interface CleanupProgress {
+  running: boolean
+  totalBatches: number
+  processedBatches: number
+  archivedCount: number
+  failedBatches: number
+  lastError?: string
+}
+const cleanupRunning = ref(false)
+const cleanupProgress = ref<CleanupProgress | null>(null)
+const cleanupSummary = ref<number | null>(null)
+let cleanupPollTimer: ReturnType<typeof setInterval> | null = null
+const cleanupPct = computed(() => {
+  const p = cleanupProgress.value
+  if (!p || p.totalBatches === 0) return 0
+  return Math.min(100, Math.round((p.processedBatches / p.totalBatches) * 100))
+})
+
+function startCleanupPoll(): void {
+  if (cleanupPollTimer) return
+  cleanupPollTimer = setInterval(pollCleanup, 5000)
+  void pollCleanup()
+}
+
+async function pollCleanup(): Promise<void> {
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  const kbAtCall = props.kbId // 代际守卫：切库后丢弃过期响应
+  try {
+    const res = await client.cleanupStatus(props.kbId)
+    if (kbAtCall !== props.kbId) return
+    if (res.success && res.data) {
+      const wasRunning = cleanupRunning.value
+      cleanupProgress.value = res.data
+      cleanupRunning.value = !!res.data.running
+      if (wasRunning && !cleanupRunning.value) {
+        if (res.data.lastError && res.data.archivedCount === 0) {
+          ElMessage.error(`清理失败: ${res.data.lastError}`)
+        } else if (res.data.failedBatches > 0) {
+          ElMessage.warning(`清理完成，但 ${res.data.failedBatches} 批失败：${res.data.lastError || '未知错误'}`)
+          cleanupSummary.value = res.data.archivedCount
+        } else {
+          ElMessage.success(`清理完成：归档 ${res.data.archivedCount} 条垃圾论断`)
+          cleanupSummary.value = res.data.archivedCount
+        }
+        await refresh()
+      }
+    }
+  } catch {
+    /* 轮询失败静默，下轮再试 */
+  }
+  if (!cleanupRunning.value && cleanupPollTimer) {
+    clearInterval(cleanupPollTimer)
+    cleanupPollTimer = null
+  }
+}
+
+async function startCleanup(): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      '将用 AI 分批审读论断，把确定无疑的垃圾（纯转述诗句/章节标题/剧照说明类）归档；拿不准的一律保留。会产生 LLM 调用费用。',
+      '垃圾清理',
+      { type: 'warning', confirmButtonText: '开始清理', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  try {
+    const res = await client.cleanupRun(props.kbId)
+    if (!res.success) {
+      ElMessage.error(res.error || '清理启动失败')
+      return
+    }
+    cleanupRunning.value = true
+    startCleanupPoll()
+  } catch (e) {
+    ElMessage.error(`清理启动失败: ${(e as Error).message}`)
+  }
+}
+
 // ===== 论断归纳整理 =====
 interface ConsolidateProgress {
   running: boolean
@@ -807,6 +912,8 @@ onBeforeUnmount(() => {
   goalPollTimer = null
   if (consolidatePollTimer) clearInterval(consolidatePollTimer)
   consolidatePollTimer = null
+  if (cleanupPollTimer) clearInterval(cleanupPollTimer)
+  cleanupPollTimer = null
 })
 
 function statusTagType(status: string): 'success' | 'warning' | 'info' | 'danger' {
@@ -1009,6 +1116,18 @@ async function refresh(): Promise<void> {
       runningGoalIds.value = gsRes.data.running as string[]
       lastGoalResults.value = gsRes.data.last ?? {}
       if (runningGoalIds.value.length > 0) startGoalPoll()
+    }
+  } catch {
+    /* 旧宿主无此通道：忽略 */
+  }
+  // 清理进行中状态同步
+  try {
+    const clRes = await client.cleanupStatus(props.kbId)
+    if (clRes.success && clRes.data) {
+      cleanupProgress.value = clRes.data
+      if (clRes.data.archivedCount > 0) cleanupSummary.value = clRes.data.archivedCount
+      cleanupRunning.value = !!clRes.data.running
+      if (cleanupRunning.value) startCleanupPoll()
     }
   } catch {
     /* 旧宿主无此通道：忽略 */

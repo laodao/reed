@@ -260,6 +260,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'knowledgeBase.brain.listAtoms': { channel: 'kb:brain:list-atoms' },
   'knowledgeBase.brain.consolidateRun': { channel: 'kb:brain:consolidate-run', wrap: (kbId: unknown) => [{ kbId: kbId as string }] },
   'knowledgeBase.brain.consolidateStatus': { channel: 'kb:brain:consolidate-status', wrap: (kbId: unknown) => [{ kbId: kbId as string }] },
+  'knowledgeBase.brain.cleanupRun': { channel: 'kb:brain:cleanup-run', wrap: (kbId: unknown) => [{ kbId: kbId as string }] },
+  'knowledgeBase.brain.cleanupStatus': { channel: 'kb:brain:cleanup-status', wrap: (kbId: unknown) => [{ kbId: kbId as string }] },
   'knowledgeBase.brain.getAtom': { channel: 'kb:brain:get-atom', wrap: (atomId: string) => [{ atomId }] },
   'knowledgeBase.brain.listNotes': { channel: 'kb:brain:list-notes' },
   'knowledgeBase.brain.proposalInbox': { channel: 'kb:brain:proposal-inbox' },

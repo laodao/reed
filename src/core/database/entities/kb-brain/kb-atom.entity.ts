@@ -19,13 +19,14 @@ export type KbAtomType =
   | 'insight'
   | 'open-question'
 
-/** 命题状态：五态（supported/suspected/contradicted/superseded + stale=失去出处） */
+/** 命题状态：五态（supported/suspected/contradicted/superseded + stale=失去出处）+ archived=垃圾清理归档 */
 export type KbAtomStatus =
   | 'supported'
   | 'suspected'
   | 'contradicted'
   | 'superseded'
   | 'stale'
+  | 'archived'
 
 /** 产出方：ai=流水线萃取；human=用户划线/批注/对话捕捉（原话保留，永不改写） */
 export type KbAtomOrigin = 'ai' | 'human'

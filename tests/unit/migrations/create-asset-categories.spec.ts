@@ -40,14 +40,14 @@ describe('createAssetCategories 迁移', () => {
     await createAssetCategories(ds)
   })
 
-  it('内置种子：11 个业务分类，早报=report+morningReport，行业周报=report+industryWeekly，吃瓜报告=report+gossipTabloid，网页收藏=html', async () => {
+  it('内置种子：11 个业务分类，早报/行业周报/吃瓜报告=auto 预览，网页收藏=html', async () => {
     await createAssetCategories(ds)
     const rows = (await ds.query(`SELECT name, preview_mode, preview_template_id, is_builtin, sort_order FROM asset_categories ORDER BY sort_order`)) as Array<Record<string, unknown>>
     expect(rows).toHaveLength(11)
     const byName = Object.fromEntries(rows.map(r => [r.name, r]))
-    expect(byName['早报']).toMatchObject({ preview_mode: 'report', preview_template_id: 'morningReport', is_builtin: 1 })
-    expect(byName['行业周报']).toMatchObject({ preview_mode: 'report', preview_template_id: 'industryWeekly' })
-    expect(byName['吃瓜报告']).toMatchObject({ preview_mode: 'report', preview_template_id: 'gossipTabloid' })
+    expect(byName['早报']).toMatchObject({ preview_mode: 'auto', preview_template_id: null, is_builtin: 1 })
+    expect(byName['行业周报']).toMatchObject({ preview_mode: 'auto' })
+    expect(byName['吃瓜报告']).toMatchObject({ preview_mode: 'auto' })
     expect(byName['报告模板']).toMatchObject({ preview_mode: 'markdown' })
     expect(byName['视频文案']).toMatchObject({ preview_mode: 'markdown' })
     expect(byName['文案']).toMatchObject({ preview_mode: 'markdown' })
@@ -78,8 +78,8 @@ describe('createAssetCategories 迁移', () => {
     await createAssetCategories(ds)
     const rows = (await ds.query(`SELECT preview_mode FROM asset_categories WHERE name = '早报'`)) as Array<{ preview_mode: string }>
     expect(rows).toHaveLength(1)
-    // 迁移会把定义同步回内置版（早报应回到 report 渲染长图）
-    expect(rows[0].preview_mode).toBe('report')
+    // 迁移会把定义同步回内置版（早报应回到 auto 预览）
+    expect(rows[0].preview_mode).toBe('auto')
     const total = (await ds.query(`SELECT COUNT(*) AS c FROM asset_categories`))[0] as { c: number }
     expect(Number(total.c)).toBe(11)
   })
