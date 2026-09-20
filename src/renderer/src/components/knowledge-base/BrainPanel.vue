@@ -160,21 +160,51 @@
           <div class="bp-main-toolbar">
             <span class="bp-main-title">待审提议</span>
             <span class="bp-main-hint">批准后经验卡正式入库，拒绝则归档留痕</span>
+            <el-button
+              size="small"
+              :disabled="proposals.length === 0"
+              style="margin-left: auto"
+              @click="toggleSelectAll"
+            >
+              {{ allProposalsSelected ? '取消全选' : '全选本页' }}
+            </el-button>
+            <el-button
+              size="small"
+              type="danger"
+              plain
+              :disabled="selectedProposalIds.length === 0"
+              :loading="batchBusy"
+              @click="batchDecide('reject')"
+            >
+              拒绝所选{{ selectedProposalIds.length ? `（${selectedProposalIds.length}）` : '' }}
+            </el-button>
+            <el-button
+              size="small"
+              type="primary"
+              :disabled="selectedProposalIds.length === 0"
+              :loading="batchBusy"
+              @click="batchDecide('publish')"
+            >
+              批准入库{{ selectedProposalIds.length ? `（${selectedProposalIds.length}）` : '' }}
+            </el-button>
           </div>
           <div class="cards-region">
             <div v-if="proposals.length === 0" class="side-empty">暂无待审提议</div>
+            <el-checkbox-group v-model="selectedProposalIds" class="proposal-group">
             <div v-for="p in proposals" :key="p.id" class="note-card">
               <div class="n-head">
+                <el-checkbox :value="p.id" class="p-check" />
                 <span class="n-title">{{ p.title }}</span>
                 <el-tag size="small" type="warning" effect="light">{{ kbNoteStatusLabel(p.status) }}</el-tag>
               </div>
               <div class="n-desc">{{ p.description }}</div>
               <pre v-if="p.body" class="n-body preview">{{ p.body }}</pre>
               <div class="p-actions">
-                <el-button size="small" @click="decide(p.id, 'reject')">拒绝</el-button>
-                <el-button size="small" type="primary" @click="decide(p.id, 'publish')">批准入库</el-button>
+                <el-button size="small" :disabled="batchBusy" @click="decide(p.id, 'reject')">拒绝</el-button>
+                <el-button size="small" type="primary" :disabled="batchBusy" @click="decide(p.id, 'publish')">批准入库</el-button>
               </div>
             </div>
+            </el-checkbox-group>
           </div>
           <div v-if="proposalTotal > inboxPageSize" class="atoms-pagination-bar">
             <el-pagination
@@ -692,6 +722,7 @@ function showCards(): void {
 function showProposals(): void {
   activeView.value = 'proposals'
   inboxPage.value = 1
+  selectedProposalIds.value = []
   void fetchProposals()
 }
 
@@ -887,7 +918,49 @@ async function handleNotesPageChange(page: number): Promise<void> {
 
 async function handleInboxPageChange(page: number): Promise<void> {
   inboxPage.value = page
+  selectedProposalIds.value = []
   await fetchProposals()
+}
+
+// ===== 批量审批 =====
+const selectedProposalIds = ref<string[]>([])
+const batchBusy = ref(false)
+const allProposalsSelected = computed(
+  () => proposals.value.length > 0 && selectedProposalIds.value.length === proposals.value.length,
+)
+
+function toggleSelectAll(): void {
+  selectedProposalIds.value = allProposalsSelected.value ? [] : proposals.value.map((p) => p.id)
+}
+
+async function batchDecide(action: 'publish' | 'reject'): Promise<void> {
+  const ids = [...selectedProposalIds.value]
+  if (ids.length === 0) return
+  batchBusy.value = true
+  let ok = 0
+  const failed: string[] = []
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  try {
+    for (const id of ids) {
+      try {
+        const res = await client.decideProposal({ noteId: id, action })
+        if (res?.success) ok++
+        else failed.push(id)
+      } catch {
+        failed.push(id)
+      }
+    }
+    if (failed.length === 0) {
+      ElMessage.success(`已${action === 'publish' ? '批准入库' : '拒绝'} ${ok} 张卡片`)
+    } else {
+      ElMessage.warning(`成功 ${ok} 张，失败 ${failed.length} 张`)
+    }
+    selectedProposalIds.value = []
+  } finally {
+    batchBusy.value = false
+  }
+  await refresh()
+  if (activeView.value === 'cards') void fetchNotes()
 }
 
 async function refresh(): Promise<void> {
@@ -1022,6 +1095,7 @@ async function saveConfig(): Promise<void> {
 
 async function decide(noteId: string, action: 'publish' | 'reject'): Promise<void> {
   await (window as any).electronAPI.knowledgeBase.brain.decideProposal({ noteId, action })
+  selectedProposalIds.value = selectedProposalIds.value.filter((id) => id !== noteId)
   await refresh()
   // 审批的是当前浏览的经验卡列表之外的数据时，卡片视图也跟着刷新
   if (activeView.value === 'cards') void fetchNotes()
@@ -1175,6 +1249,7 @@ watch(
     atomPage.value = 1 // 换库回到第一页
     atomFilter.value = 'all'
     atomDocFilter.value = ''
+    selectedProposalIds.value = [] // 跨库选中是幽灵操作：decideProposal 只按 noteId，不清会误审别库的卡
     activeView.value = 'atoms'
     inboxPage.value = 1
     notesPage.value = 1
@@ -1356,6 +1431,16 @@ defineExpose({ refresh })
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  gap: 10px;
+}
+.p-check {
+  flex: none;
+  height: auto;
+  margin-right: -4px;
+}
+.proposal-group {
+  display: flex;
+  flex-direction: column;
   gap: 10px;
 }
 .n-title {
