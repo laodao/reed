@@ -15,6 +15,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { DataSource } from 'typeorm'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
+import { CharacterBindingEntity } from '@core/database/entities/episode-production/character-binding.entity'
 import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
 import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
 import {
@@ -26,7 +27,7 @@ async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({
     type: 'better-sqlite3',
     database: ':memory:',
-    entities: [VideoProjectEntity, AssetImageEntity],
+    entities: [VideoProjectEntity, AssetImageEntity, CharacterBindingEntity],
     synchronize: true,
   })
   await ds.initialize()
@@ -38,6 +39,8 @@ interface GenerateCall {
   prompt: string
   negativePrompt?: string
   label: string
+  providerConfigId?: string
+  modelId?: string
 }
 
 class MockImageGenerator implements ImageGenerator {
@@ -153,5 +156,55 @@ describe('GalleryDerivationService', () => {
 
     expect(mockGen.calls).toHaveLength(1) // 只生成新的
     expect(mockGen.calls[0].label).toBe('3q_left')
+  })
+
+  /*
+   * F1（2026-09-20 人物一致性修复）：派生图钉项目「画面生成」模型
+   * （binding.projectId → project.config.imageModel），与主图 / 三视图同源；
+   * 解析不到 → 不传 providerConfigId/modelId，回退 imageGen 自动挑。
+   */
+  it('F1：项目配置了画面模型 → deriveSingle 钉 providerConfigId/modelId', async () => {
+    await ds.getRepository(VideoProjectEntity).save({
+      id: 'vp1',
+      name: '测试项目',
+      status: 'draft',
+      config: { imageModel: { providerConfigId: 'pc-seedream', modelId: 'seedream-4' } },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Partial<VideoProjectEntity>)
+    await ds.getRepository(CharacterBindingEntity).save({
+      id: 'cb1',
+      projectId: 'vp1',
+      voiceConfig: {},
+      sourceType: 'standalone',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Partial<CharacterBindingEntity>)
+
+    const svcWithDs = new GalleryDerivationService(imageSvc, mockGen, ds)
+    await svcWithDs.deriveSingle({
+      assetType: 'character',
+      assetId: 'cb1',
+      category: 'view',
+      label: '3q_left',
+    })
+
+    expect(mockGen.calls).toHaveLength(1)
+    expect(mockGen.calls[0].providerConfigId).toBe('pc-seedream')
+    expect(mockGen.calls[0].modelId).toBe('seedream-4')
+  })
+
+  it('F1：无 ds / 资产无项目画面模型 → 回退自动挑（不传 providerConfigId）', async () => {
+    // beforeEach 的 derivSvc 未注入 ds → resolveProjectImageModel 直接返回 null
+    await derivSvc.deriveSingle({
+      assetType: 'character',
+      assetId: 'cb1',
+      category: 'view',
+      label: '3q_left',
+    })
+
+    expect(mockGen.calls).toHaveLength(1)
+    expect(mockGen.calls[0].providerConfigId).toBeUndefined()
+    expect(mockGen.calls[0].modelId).toBeUndefined()
   })
 })

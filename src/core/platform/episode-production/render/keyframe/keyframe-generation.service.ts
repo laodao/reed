@@ -906,7 +906,8 @@ export class KeyframeGenerationService {
     const { storyboard, scene, plan, sceneAssets, styleConfig, dimensions, userPrompt } = args
 
     // 选 ref 图：先看用户 override，再走自动评分兜底
-    const refImages = await this.collectReferenceImages(
+    // F4：选图在拼 prompt 之前，hasCharacterReference 决定风格前缀是否让位给参考图
+    const { refs: refImages, hasCharacterReference } = await this.collectReferenceImages(
       sceneAssets,
       scene,
       args.referenceOverrides ?? null,
@@ -931,6 +932,7 @@ export class KeyframeGenerationService {
       timePercent: plan.timePercent,
       styleConfig,
       userPrompt,
+      hasCharacterReference,
       // spec 2026-05-09 ep-redesign §3.2 B5 镜头扩展（焦距 / 光圈 / 相机风格 / 打光预设）
       cameraMetadata: (storyboard as any).metadata ?? null,
     })
@@ -1009,6 +1011,8 @@ export class KeyframeGenerationService {
    *                  查图（找不到 imageId 则回退到自动评分）。
    * @param shotType 分镜景别（P-A：与角色 facing 一起映射 view 维度，
    *                 让近景镜优先命中半身派生图、远景镜命中全身/主图）
+   * @returns refs + hasCharacterReference（F4：是否有角色参考图生效，决定关键帧
+   *          prompt 风格前缀是否让位给参考图）
    */
   private async collectReferenceImages(
     assets: {
@@ -1019,8 +1023,9 @@ export class KeyframeGenerationService {
     scene: SceneScriptEntity,
     overrides: KeyframeReferenceOverride[] | null = null,
     shotType?: string | null,
-  ): Promise<Array<{ id: string; imagePath: string }>> {
+  ): Promise<{ refs: Array<{ id: string; imagePath: string }>; hasCharacterReference: boolean }> {
     const refs: Array<{ id: string; imagePath: string }> = []
+    let hasCharacterReference = false
     const overrideMap = new Map<string, string>()
     for (const o of overrides ?? []) {
       overrideMap.set(`${o.kind}:${o.bindingId}`, o.imageId)
@@ -1043,6 +1048,7 @@ export class KeyframeGenerationService {
       const ov = await tryOverride('character', c.bindingId)
       if (ov) {
         refs.push(ov)
+        hasCharacterReference = true
         continue
       }
       const sceneRole = c.sceneRole ?? {}
@@ -1060,7 +1066,10 @@ export class KeyframeGenerationService {
           outfit: sceneRole.outfit ?? c.effective.outfit ?? undefined,
         },
       })
-      if (r.image) refs.push({ id: r.image.id, imagePath: r.image.imagePath })
+      if (r.image) {
+        refs.push({ id: r.image.id, imagePath: r.image.imagePath })
+        hasCharacterReference = true
+      }
 
       // spec 2026-05-09 ep-redesign §3.2 D1：把 character 的形象组其余成员也加进来
       // 跨分镜稳定参考集，让 provider 多 ref 入参吃满（万相 4 / Seedream 多张）。
@@ -1073,7 +1082,10 @@ export class KeyframeGenerationService {
             if (refs.some((rr) => rr.id === id)) continue
             const img = list.find((i) => i.id === id)
             // S-05：形象组补充图同样只收 confirmed=1（定妆确认闸门）
-            if (img?.imagePath && img.confirmed === 1) refs.push({ id: img.id, imagePath: img.imagePath })
+            if (img?.imagePath && img.confirmed === 1) {
+              refs.push({ id: img.id, imagePath: img.imagePath })
+              hasCharacterReference = true
+            }
           }
         }
       } catch {
@@ -1107,7 +1119,7 @@ export class KeyframeGenerationService {
         if (r.image) refs.push({ id: r.image.id, imagePath: r.image.imagePath })
       }
     }
-    return refs
+    return { refs, hasCharacterReference }
   }
 
   /**

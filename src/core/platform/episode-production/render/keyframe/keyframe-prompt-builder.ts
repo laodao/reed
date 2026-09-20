@@ -47,6 +47,15 @@ export interface StyleConfig {
 }
 
 /**
+ * F4 / C6（2026-09-20，人物一致性修复）：当该帧带角色参考图时使用的风格前缀。
+ * PRESET_STYLES.cinematic 的写实电影词（"professional photography, movie scene"）
+ * 会把 Q 版等非写实角色参考图写实化——风格词压过参考图。有角色参考图时改用
+ * "与参考图保持一致"前缀，把风格决定权交给参考图；无参考图时仍用 styleConfig.stylePrefix。
+ */
+export const REFERENCE_MATCH_STYLE_PREFIX =
+  '画面风格、人物外观与参考图保持一致（match the reference images exactly: same character face, hairstyle, outfit and art style）'
+
+/**
  * 预设风格配置
  */
 export const PRESET_STYLES: Record<string, StyleConfig> = {
@@ -265,6 +274,12 @@ export interface BuildKeyframePromptInput {
    * builder 解析后按 promptHint 拼到镜头段末尾。
    */
   cameraMetadata?: string | Record<string, unknown> | null
+  /**
+   * F4 / C6：该帧是否带角色参考图（caller 在选图后传入）。
+   * true 时风格前缀从 styleConfig.stylePrefix 换成 REFERENCE_MATCH_STYLE_PREFIX，
+   * 避免写实电影风格词把非写实（如 Q 版）角色参考图写实化；false / 缺省维持原前缀。
+   */
+  hasCharacterReference?: boolean
 }
 
 /** 多帧 prompt 输出：正向 + 负向 */
@@ -290,8 +305,12 @@ export function buildKeyframePrompt(
 ): KeyframePromptOutput {
   const parts: string[] = []
 
-  // 1. 风格前缀
-  parts.push(input.styleConfig.stylePrefix)
+  // 1. 风格前缀（F4：有角色参考图时改用"与参考图一致"前缀，风格决定权交给参考图）
+  parts.push(
+    input.hasCharacterReference
+      ? REFERENCE_MATCH_STYLE_PREFIX
+      : input.styleConfig.stylePrefix,
+  )
 
   // 2. 场景描述
   if (input.sceneDescription) parts.push(input.sceneDescription)

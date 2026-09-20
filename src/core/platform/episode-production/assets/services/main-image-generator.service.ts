@@ -29,6 +29,10 @@ import {
   mergeLocationBaseCompositionNegative,
 } from '../prompts/location-constraints'
 import {
+  appendCharacterIdentityPreservation,
+  mergeCharacterIdentityNegative,
+} from '../prompts/character-constraints'
+import {
   appendItemConstraints,
   mergeItemNegative,
 } from '../prompts/item-constraints'
@@ -161,7 +165,10 @@ export class MainImageGeneratorService {
       return im?.providerConfigId && im?.modelId
         ? { providerConfigId: im.providerConfigId, modelId: im.modelId }
         : null
-    } catch {
+    } catch (e) {
+      // 解析失败回退 imageGen 自动挑模型（不阻塞生成），但必须留痕——
+      // 自动挑到的模型与主图模型不同源是角色风格分叉的根因之一
+      console.warn('[MainImageGeneratorService] 项目画面模型解析失败，回退自动挑模型:', e)
       return null
     }
   }
@@ -443,6 +450,11 @@ export class MainImageGeneratorService {
 
     const refPaths = [baseImage.imagePath]
 
+    // F1：三视图钉项目「画面生成」模型（与主图 generateMain 同一解析序），
+    // 避免自动挑到与主图不同源的模型导致 Q版主图 vs 写实视图的风格分叉。
+    // 解析不到（全局 preset / 未配置）→ 传 undefined 走 imageGen 自动挑（既有行为）。
+    const projectImageModel = await this.resolveProjectImageModel(input.assetType, input.assetId)
+
     // 2. 三个视角配置（label 为存储 key，promptHint 为给 AI 的视角指令）
     const views: Array<{ label: string; promptHint: string }> = [
       { label: 'front',    promptHint: '正面视角（front view, full body, looking at camera）' },
@@ -453,12 +465,21 @@ export class MainImageGeneratorService {
     // 3. 串行调 imageGen 3 次（不并发：避免触发 rate limit + 简化 mock 计数）
     const results: AssetImageEntity[] = []
     for (const v of views) {
-      const viewPrompt = `${input.prompt.trim()}，${v.promptHint}`
+      let viewPrompt = `${input.prompt.trim()}，${v.promptHint}`
+      let viewNegative = input.negativePrompt
+      // F2：角色三视图注入身份保持约束（与派生图路径 gallery-derivation.deriveSingle 同源），
+      // 此前只有文字描述+视角提示，模型容易偏离 base 主图的人物身份/画风
+      if (input.assetType === 'character') {
+        viewPrompt = appendCharacterIdentityPreservation(viewPrompt)
+        viewNegative = mergeCharacterIdentityNegative(viewNegative)
+      }
       const genResult = await this.imageGen.generate({
         referenceImagePaths: refPaths,
         prompt: viewPrompt,
-        negativePrompt: input.negativePrompt,
+        negativePrompt: viewNegative,
         label: v.label,
+        providerConfigId: projectImageModel?.providerConfigId,
+        modelId: projectImageModel?.modelId,
       })
 
       const entity = this.imageRepo.create({
@@ -474,7 +495,7 @@ export class MainImageGeneratorService {
         sortOrder: 0,
         derivedFromImageId: baseImage.id,
         prompt: viewPrompt,
-        negativePrompt: input.negativePrompt ?? null,
+        negativePrompt: viewNegative ?? null,
         width: null,
         height: null,
         createdAt: new Date(),

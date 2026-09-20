@@ -6,6 +6,11 @@
  *       或地点 time/weather/angle 或物品 view/context）。
  * 输出：从 asset_image 表中按评分挑最匹配的变体；找不到匹配变体兜底用主图；都没有 → null。
  *
+ * 选图策略（B4 · 2026-09-20 人物一致性修复）：
+ *   - character：confirmed 池内优先 is_main=1 主图（角色身份权威锚点）；
+ *     无主图 / 主图无实际图片时才按维度评分挑 view 等变体作补充
+ *   - location / item：维持评分规则（见下），主图兜底
+ *
  * 评分规则（spec §3.4 + §4.5）：
  *   角色 character：  view +4 / expression +3 / outfit +2 / pose +1
  *   地点 location：   angle +4 / time +2 / weather +1
@@ -108,6 +113,17 @@ export async function pickReferenceImage(
     }
   }
   const defaultMain = pool.find((img) => img.isMain === 1) ?? null
+
+  /*
+   * B4 选图策略 main 优先（2026-09-20，人物一致性修复）：
+   *   角色类资产在 confirmed 池内优先 is_main=1 主图——主图是角色身份的唯一权威锚点，
+   *   在风格曾分叉的资产池里评分挑图会让同一角色的不同关键帧选到 Q版 main /
+   *   写实 view 不同版本。view / expression 等变体图仅在无主图（或主图无实际图片）
+   *   时作补充，走下方既有评分逻辑。location / item 维持现有评分逻辑不变。
+   */
+  if (input.kind === 'character' && defaultMain && defaultMain.imagePath) {
+    return { image: defaultMain, fellBackToMain: true, score: 0, matchedFields: [] }
+  }
 
   /*
    * spec 2026-05-09 location 多主图模型：

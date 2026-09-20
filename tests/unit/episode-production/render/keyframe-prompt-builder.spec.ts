@@ -16,6 +16,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildKeyframePrompt,
   PRESET_STYLES,
+  REFERENCE_MATCH_STYLE_PREFIX,
   type BuildKeyframePromptInput,
 } from '@core/platform/episode-production/render/keyframe/keyframe-prompt-builder'
 
@@ -205,5 +206,25 @@ describe('buildKeyframePrompt', () => {
     )
     expect(out.prompt).toContain('[user direction] 背景虚化')
     expect(out.prompt).not.toContain('[user direction]   背景虚化')
+  })
+
+  /*
+   * F4 / C6（2026-09-20 人物一致性修复）：有角色参考图时风格前缀换成
+   * "与参考图保持一致"，避免 cinematic 写实电影词把 Q 版参考图写实化。
+   */
+  it('F4：hasCharacterReference=true → 风格前缀让位给参考图（不含 cinematic 写实词）', () => {
+    const out = buildKeyframePrompt(baseInput({ hasCharacterReference: true }))
+    expect(out.prompt).toContain(REFERENCE_MATCH_STYLE_PREFIX)
+    expect(out.prompt).not.toContain(STYLE.stylePrefix)
+    expect(out.prompt).not.toContain('professional photography')
+  })
+
+  it('F4：hasCharacterReference=false / 缺省 → 维持原 cinematic 前缀', () => {
+    const explicit = buildKeyframePrompt(baseInput({ hasCharacterReference: false }))
+    const omitted = buildKeyframePrompt(baseInput())
+    for (const out of [explicit, omitted]) {
+      expect(out.prompt).toContain(STYLE.stylePrefix)
+      expect(out.prompt).not.toContain(REFERENCE_MATCH_STYLE_PREFIX)
+    }
   })
 })

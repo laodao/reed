@@ -103,13 +103,34 @@ describe('scoreVariant (pure)', () => {
 })
 
 describe('pickReferenceImage', () => {
-  it('多变体取最高分；相同分数取查询顺序第一个', async () => {
+  /*
+   * B4 main 优先（2026-09-20 人物一致性修复）：character 在 confirmed 池内
+   * 有可用主图（isMain=1 且有实际图片）时直接选主图，不再按维度评分挑变体——
+   * 避免风格分叉的资产池里同角色不同关键帧选到 Q版 main / 写实 view 不同版本。
+   */
+  it('B4：character 有 confirmed 主图 → 主图优先，变体评分不参与', async () => {
+    const imgs = [
+      makeImg({ id: 'i1', meta: { view: 'left' } }),
+      makeImg({ id: 'i4', meta: { view: 'front', expression: 'happy', outfit: 'casual' } }), // 9 分但不让选
+      makeImg({ id: 'i_main', isMain: 1, meta: {} }),
+    ]
+    const input: ReferencePickInput = {
+      kind: 'character',
+      bindingId: 'cb1',
+      dims: { view: 'front', expression: 'happy', outfit: 'casual' },
+    }
+    const r = await pickReferenceImage(fakeImageSvc(imgs), input)
+    expect(r.image?.id).toBe('i_main')
+    expect(r.fellBackToMain).toBe(true)
+    expect(r.score).toBe(0)
+  })
+
+  it('B4：character 无主图 → view 等变体作补充，多变体取最高分', async () => {
     const imgs = [
       makeImg({ id: 'i1', meta: { view: 'left' } }), // 0 分
       makeImg({ id: 'i2', meta: { view: 'front' } }), // 4 分
       makeImg({ id: 'i3', meta: { view: 'front', expression: 'happy' } }), // 7 分
       makeImg({ id: 'i4', meta: { view: 'front', expression: 'happy', outfit: 'casual' } }), // 9 分
-      makeImg({ id: 'i_main', isMain: 1, meta: {} }),
     ]
     const input: ReferencePickInput = {
       kind: 'character',
@@ -120,6 +141,49 @@ describe('pickReferenceImage', () => {
     expect(r.image?.id).toBe('i4')
     expect(r.score).toBe(9)
     expect(r.fellBackToMain).toBe(false)
+  })
+
+  it('B4：character 主图无实际图片（占位行 imagePath=\'\'）→ 变体评分兜底', async () => {
+    const placeholder = makeImg({ id: 'i_main', isMain: 1, meta: {} })
+    ;(placeholder as any).imagePath = ''
+    const imgs = [
+      makeImg({ id: 'i2', meta: { view: 'front' } }), // 4 分
+      placeholder,
+    ]
+    const r = await pickReferenceImage(fakeImageSvc(imgs), {
+      kind: 'character',
+      bindingId: 'cb1',
+      dims: { view: 'front' },
+    })
+    expect(r.image?.id).toBe('i2')
+    expect(r.score).toBe(4)
+    expect(r.fellBackToMain).toBe(false)
+  })
+
+  it('B4：location / item 不受 main 优先影响，维持维度评分', async () => {
+    const locImgs = [
+      makeImg({ id: 'loc_var', meta: { angle: 'wide' } }), // 4 分
+      makeImg({ id: 'loc_main', isMain: 1, meta: {} }),
+    ]
+    const rl = await pickReferenceImage(fakeImageSvc(locImgs), {
+      kind: 'location',
+      bindingId: 'lb1',
+      dims: { angle: 'wide' },
+    })
+    expect(rl.image?.id).toBe('loc_var')
+    expect(rl.score).toBe(4)
+
+    const itemImgs = [
+      makeImg({ id: 'item_var', meta: { view: 'front' } }), // 3 分
+      makeImg({ id: 'item_main', isMain: 1, meta: {} }),
+    ]
+    const ri = await pickReferenceImage(fakeImageSvc(itemImgs), {
+      kind: 'item',
+      bindingId: 'ib1',
+      dims: { view: 'front' },
+    })
+    expect(ri.image?.id).toBe('item_var')
+    expect(ri.score).toBe(3)
   })
 
   it('全部变体 0 分 → 兜底主图（fellBackToMain=true，score=0）', async () => {
@@ -191,7 +255,6 @@ describe('pickReferenceImage', () => {
     const imgs = [
       withLabel({ id: 'i_half', label: 'front_half' }), // label 命中 view +4
       withLabel({ id: 'i_left', label: 'left_3q' }), // 0 分
-      withLabel({ id: 'i_main', label: null, isMain: 1 }),
     ]
     const r = await pickReferenceImage(fakeImageSvc(imgs), {
       kind: 'character',
@@ -206,7 +269,7 @@ describe('pickReferenceImage', () => {
   it('metadata.view 有值时优先于 label（手工标注权威）', async () => {
     const img = makeImg({ id: 'i1', meta: { view: 'front' } })
     ;(img as any).label = 'left_3q'
-    const r = await pickReferenceImage(fakeImageSvc([img, makeImg({ id: 'm', isMain: 1, meta: null })]), {
+    const r = await pickReferenceImage(fakeImageSvc([img]), {
       kind: 'character',
       bindingId: 'cb1',
       dims: { view: 'front' },

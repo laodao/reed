@@ -14,6 +14,10 @@ import type {
   AssetImageCategory,
 } from './asset-image.service'
 import type { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
+import { CharacterBindingEntity } from '@core/database/entities/episode-production/character-binding.entity'
+import { LocationBindingEntity } from '@core/database/entities/episode-production/location-binding.entity'
+import { ItemBindingEntity } from '@core/database/entities/episode-production/item-binding.entity'
+import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
 import {
   appendCharacterConstraints,
   framingForCategory,
@@ -178,6 +182,43 @@ export class GalleryDerivationService {
   }
 
   /**
+   * F1：派生图钉项目「画面生成」模型（config.imageModel），与主图 / 三视图同源，
+   * 避免自动挑到不同源模型导致同一资产主图与派生图风格分叉。
+   * 解析序与 main-image-generator.resolveProjectImageModel 一致：
+   * 资产 binding → projectId → project.config.imageModel。
+   * ds 未注入 / 资产无 projectId（全局 preset）/ 未配置 → null（走 imageGen 自动挑，既有行为）；
+   * 解析异常 → warn 留痕后回退自动挑。
+   */
+  private async resolveProjectImageModel(
+    assetType: AssetType,
+    assetId: string,
+  ): Promise<{ providerConfigId: string; modelId: string } | null> {
+    if (!this.ds) return null
+    try {
+      const bindingRepo =
+        assetType === 'character'
+          ? this.ds.getRepository(CharacterBindingEntity)
+          : assetType === 'location'
+            ? this.ds.getRepository(LocationBindingEntity)
+            : this.ds.getRepository(ItemBindingEntity)
+      const binding = await bindingRepo.findOne({ where: { id: assetId } as any })
+      const projectId = (binding as any)?.projectId as string | null | undefined
+      if (!projectId) return null
+      const project = await this.ds
+        .getRepository(VideoProjectEntity)
+        .findOne({ where: { id: projectId } })
+      const im = (project?.config as { imageModel?: { providerConfigId?: string; modelId?: string } } | null | undefined)
+        ?.imageModel
+      return im?.providerConfigId && im?.modelId
+        ? { providerConfigId: im.providerConfigId, modelId: im.modelId }
+        : null
+    } catch (e) {
+      console.warn('[GalleryDerivationService] 项目画面模型解析失败，回退自动挑模型:', e)
+      return null
+    }
+  }
+
+  /**
    * 派生单张图：
    * 1. 取基图（spec 2026-05-09：input.baseImageId 优先；不传时回退到默认主图）
    * 2. 调 imageGen 生成新图（参考基图）
@@ -297,11 +338,15 @@ export class GalleryDerivationService {
       negativePrompt = mergeItemIdentityNegative(negativePrompt)
     }
     // spec 2026-05-09 ep-redesign §3.2 B6：多基图全部进 referenceImagePaths
+    // F1：钉项目「画面生成」模型（与主图 / 三视图同源）；解析不到 → undefined 走自动挑
+    const projectImageModel = await this.resolveProjectImageModel(input.assetType, input.assetId)
     const result = await this.imageGen.generate({
       referenceImagePaths: baseList.map((b) => b.imagePath),
       prompt,
       negativePrompt,
       label: input.label,
+      providerConfigId: projectImageModel?.providerConfigId,
+      modelId: projectImageModel?.modelId,
     })
 
     const existing = await this.imageSvc.listByCategory(
