@@ -35,6 +35,16 @@ function makeDeps(
     { title: '第一章', summary: '青云门背景，张小凡入草庙村' },
     { title: '第二章', summary: '太极玄清道境界：太极初分' },
   ]
+  // chapters 仓提外层单例：repos() 每次调用返回新字面量会丢掉测试注入的 findById
+  const chaptersRepo = {
+    findByDocument: async (docId: string) =>
+      chapters.filter((c) => !c.docId || c.docId === docId).map((c, i) => ({
+        id: `${docId}-ch${i}`,
+        title: c.title,
+        summary: c.summary ?? null,
+        content: c.content ?? null,
+      })),
+  }
   return {
     llm,
     notes,
@@ -42,15 +52,7 @@ function makeDeps(
       docs: {
         findByKnowledgeBaseId: async () => docs,
       } as never,
-      chapters: {
-        findByDocument: async (docId: string) =>
-          chapters.filter((c) => !c.docId || c.docId === docId).map((c, i) => ({
-            id: `${docId}-ch${i}`,
-            title: c.title,
-            summary: c.summary ?? null,
-            content: c.content ?? null,
-          })),
-      } as never,
+      chapters: chaptersRepo as never,
       notes: {
         findSimilarTitle: async (_kbId: string, title: string) => notes.filter((n) => n.title === title),
         propose: async (_kbId: string, input: { title: string; description: string; body: string; evidence: string }) => {
@@ -231,5 +233,89 @@ describe('shortBookName', () => {
     expect(shortBookName('诛仙 (萧鼎) (z-library.sk, 1lib.sk, z-lib.sk).epub')).toBe('诛仙')
     expect(shortBookName('斗破苍穹.epub')).toBe('斗破苍穹')
     expect(shortBookName('无扩展名文档')).toBe('无扩展名文档')
+  })
+})
+
+describe('KbGoalDistillService 精读阶段', () => {
+  function makeChapterDeps(llm: BrainLlmFn, notes: NoteRow[] = []) {
+    const deps = makeDeps(llm, {
+      notes,
+      chapters: [
+        { docId: 'doc1', title: '第一章', summary: '主角进入遗迹' },
+        { docId: 'doc1', title: '第二章', summary: '大战爆发' },
+      ],
+    })
+    // 给 findById 注入全文（makeDeps 的 fake 只有 findByDocument）
+    const repos = (deps.repos as () => { chapters: { findById?: unknown } })()
+    ;(repos.chapters as { findById: (id: string) => Promise<{ content: string } | null> }).findById = async (id: string) => {
+      // findByDocument 生成 id 规则：${docId}-ch${index}——第一章是 doc1-ch0
+      if (id === 'doc1-ch0') return { content: '【第一章全文】他推开石门，符文在墙上亮起，三重考验依次降临：心、力、道。'.repeat(3) }
+      return null
+    }
+    return deps
+  }
+
+  it('提名章触发精读：全文进入提示词、素材带【精读】前缀并入卡片证据', async () => {
+    const calls: string[] = []
+    const llm: BrainLlmFn = async ({ user }) => {
+      calls.push(user)
+      if (user.includes('【章节摘要】')) {
+        return JSON.stringify({
+          fragments: [{ chapter: '《诛仙》#1 第一章', info: '主角进入遗迹', note: '' }],
+          nominations: [{ chapter: '《诛仙》#1 第一章', reason: '遗迹考验是核心场面', score: 5 }],
+        })
+      }
+      if (user.includes('【章全文】')) {
+        return JSON.stringify({
+          fragments: [{ chapter: '《诛仙》#1 第一章', info: '三重考验结构：心、力、道', note: '经典试炼设计' }],
+        })
+      }
+      return JSON.stringify({ title: '试炼设计经验', description: 'd', body: 'b' })
+    }
+    const deps = makeChapterDeps(llm)
+    const svc = new KbGoalDistillService(deps)
+    const out = await svc.runGoal('kb1', goal)
+    expect(out.proposed).toBe(true)
+    expect(out.fragments).toBe(2) // 1 摘要 + 1 精读
+    const closeCall = calls.find((c) => c.includes('【章全文】'))
+    expect(closeCall).toContain('三重考验依次降临')
+    const reduceCall = calls[calls.length - 1]
+    expect(reduceCall).toContain('【精读】')
+    expect(deps.notes[0].evidence).toContain('【精读】')
+  })
+
+  it('无提名 → 不触发精读调用（向后兼容旧流程）', async () => {
+    const calls: string[] = []
+    const llm: BrainLlmFn = async ({ user }) => {
+      calls.push(user)
+      if (user.includes('【章节摘要】')) {
+        return JSON.stringify({ fragments: [{ chapter: '《诛仙》#1 第一章', info: 'x', note: '' }] })
+      }
+      return JSON.stringify({ title: 't', description: 'd', body: 'b' })
+    }
+    const deps = makeChapterDeps(llm)
+    const svc = new KbGoalDistillService(deps)
+    await svc.runGoal('kb1', goal)
+    expect(calls.filter((c) => c.includes('【章全文】'))).toHaveLength(0)
+  })
+
+  it('提名标签对不回取材清单 → 丢弃（防编章）', async () => {
+    let closeCalls = 0
+    const llm: BrainLlmFn = async ({ user }) => {
+      if (user.includes('【章节摘要】')) {
+        return JSON.stringify({
+          fragments: [],
+          nominations: [{ chapter: '《幻觉之书》#99', reason: 'r', score: 5 }],
+        })
+      }
+      if (user.includes('【章全文】')) closeCalls++
+      return JSON.stringify({ title: 't', description: 'd', body: 'b' })
+    }
+    const deps = makeChapterDeps(llm)
+    const svc = new KbGoalDistillService(deps)
+    // 素材为空 → 不出卡（fragments 空在精读前就 return）
+    const out = await svc.runGoal('kb1', goal)
+    expect(closeCalls).toBe(0)
+    expect(out.proposed).toBe(false)
   })
 })

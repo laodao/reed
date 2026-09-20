@@ -292,7 +292,8 @@
         </div>
 
         <!-- D1 QA 问答对列表 -->
-        <div v-if="activeDataTab === 'brain' && currentKnowledgeBase" class="document-section">
+        <!-- 大脑数据面（面板内表格滚动，分页栏固定底部） -->
+        <div v-if="activeDataTab === 'brain' && currentKnowledgeBase" class="brain-tab">
           <BrainPanel :kb-id="currentKnowledgeBase.id" @stats="brainStatsCount" />
         </div>
 
@@ -1755,6 +1756,15 @@ onMounted(() => {
   flex: 1;
   padding: 20px 24px;
   overflow: auto;
+}
+
+/* 大脑数据面：有界 flex 列，BrainPanel 内部表格滚动、分页栏固定底部 */
+.brain-tab {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 24px;
 }
 
 /* 文档列表三段式：头部操作区固定，表格区内部滚动，分页栏固定在底部 */

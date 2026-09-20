@@ -148,38 +148,60 @@
       <div class="goal-tip">提炼基于全书章节摘要，约需一至十几分钟；完成后经验卡出现在「待审提议」。</div>
     </div>
 
-    <!-- 论断列表 -->
-    <el-table :data="atoms" :empty-text="enabled ? '尚未消化出论断（上传文档后自动进行）' : '大脑未启用，在设置中开启后上传文档自动消化'" style="width: 100%">
-      <el-table-column prop="statement" label="论断" min-width="280">
-        <template #default="{ row }">
-          <el-tooltip v-if="row.sourceQuote" :content="row.sourceQuote" placement="top" :show-after="200">
-            <span class="stmt">{{ row.statement }}</span>
-          </el-tooltip>
-          <span v-else class="stmt">{{ row.statement }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column prop="type" label="类型" width="90">
-        <template #default="{ row }">
-          <el-tag size="small" effect="plain">{{ row.type }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="status" label="状态" width="100">
-        <template #default="{ row }">
-          <el-tag :type="statusTagType(row.status)" size="small">{{ row.status }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="视角" width="70">
-        <template #default="{ row }">
-          {{ row.lensNoteId ? '视角' : row.origin === 'human' ? '我' : '—' }}
-        </template>
-      </el-table-column>
-      <el-table-column label="来源" width="110">
-        <template #default="{ row }">
-          <span class="muted">{{ (row.sourceChapterHash || '').slice(0, 8) || '—' }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column prop="useCount" label="被用" width="60" align="center" />
-    </el-table>
+    <!-- 论断列表（三段式：表格区内滚动，分页栏固定底部不随滚动） -->
+    <div class="atoms-section">
+      <div class="atoms-table-region">
+        <el-table
+          :data="atoms"
+          height="100%"
+          :empty-text="enabled ? '尚未消化出论断（上传文档后自动进行）' : '大脑未启用，在设置中开启后上传文档自动消化'"
+          style="width: 100%"
+        >
+          <el-table-column type="index" label="序号" width="60" align="center" :index="atomIndex" />
+          <el-table-column prop="statement" label="论断" min-width="280">
+            <template #default="{ row }">
+              <el-tooltip v-if="row.sourceQuote" :content="row.sourceQuote" placement="top" :show-after="200">
+                <span class="stmt">{{ row.statement }}</span>
+              </el-tooltip>
+              <span v-else class="stmt">{{ row.statement }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="type" label="类型" width="90">
+            <template #default="{ row }">
+              <el-tag size="small" effect="plain">{{ row.type }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="status" label="状态" width="100">
+            <template #default="{ row }">
+              <el-tag :type="statusTagType(row.status)" size="small">{{ row.status }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="视角" width="70">
+            <template #default="{ row }">
+              {{ row.lensNoteId ? '视角' : row.origin === 'human' ? '我' : '—' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="来源" width="110">
+            <template #default="{ row }">
+              <span class="muted">{{ (row.sourceChapterHash || '').slice(0, 8) || '—' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="useCount" label="被用" width="60" align="center" />
+        </el-table>
+      </div>
+      <div v-if="atomTotal > 0" class="atoms-pagination-bar">
+        <el-pagination
+          :current-page="atomPage"
+          :page-size="atomPageSize"
+          :page-sizes="[20, 50, 100]"
+          :total="atomTotal"
+          layout="total, sizes, prev, pager, next"
+          background
+          @current-change="handleAtomPageChange"
+          @size-change="handleAtomPageSizeChange"
+        />
+      </div>
+    </div>
 
     <!-- 提议收件箱 -->
     <div v-if="proposals.length > 0" class="inbox">
@@ -239,6 +261,10 @@ const modelOptions = ref<Array<{ label: string; value: string }>>([])
 
 const stats = ref<Record<string, any> | null>(null)
 const atoms = ref<BrainAtom[]>([])
+const atomPage = ref(1)
+const atomPageSize = ref(50)
+const atomTotal = ref(0)
+let atomsGen = 0 // 论断列表独立代际：翻页请求与刷新竞态时丢弃过期响应
 const proposals = ref<BrainNote[]>([])
 const proposalTotal = ref(0)
 const config = ref<BrainConfig | null>(null)
@@ -361,15 +387,54 @@ function statusTagType(status: string): 'success' | 'warning' | 'info' | 'danger
   }
 }
 
+/** 跨页连续序号：第 N 页从 (N-1)*pageSize+1 起编 */
+function atomIndex(index: number): number {
+  return (atomPage.value - 1) * atomPageSize.value + index + 1
+}
+
+async function fetchAtoms(): Promise<void> {
+  if (!props.kbId) return
+  const gen = ++atomsGen
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  try {
+    const res = await client.listAtoms({ kbId: props.kbId, page: atomPage.value, pageSize: atomPageSize.value })
+    if (gen !== atomsGen) return // 过期响应丢弃
+    if (res.success && res.data) {
+      atoms.value = res.data.rows as BrainAtom[]
+      atomTotal.value = res.data.total
+      emit('stats', res.data.total)
+      // 数据收缩后当前页可能越界（重消化/清理后论断变少）：回退到有效末页重取
+      const maxPage = Math.max(1, Math.ceil(atomTotal.value / atomPageSize.value))
+      if (atomPage.value > maxPage) {
+        atomPage.value = maxPage
+        void fetchAtoms()
+      }
+    }
+  } catch (e) {
+    console.warn('[BrainPanel] 论断列表加载失败', e)
+  }
+}
+
+async function handleAtomPageChange(page: number): Promise<void> {
+  atomPage.value = page
+  await fetchAtoms()
+}
+
+async function handleAtomPageSizeChange(size: number): Promise<void> {
+  atomPageSize.value = size
+  atomPage.value = 1
+  await fetchAtoms()
+}
+
 async function refresh(): Promise<void> {
   if (!props.kbId) return
   const gen = ++requestGen
   const client = (window as any).electronAPI.knowledgeBase.brain
   try {
-    const [cfgRes, statsRes, atomsRes, inboxRes, docRes] = await Promise.all([
+    const [cfgRes, statsRes, , inboxRes, docRes] = await Promise.all([
       client.getConfig(props.kbId),
       client.stats(props.kbId),
-      client.listAtoms({ kbId: props.kbId, pageSize: 50 }),
+      fetchAtoms(),
       client.proposalInbox({ kbId: props.kbId, pageSize: 20 }),
       client.docStatus(props.kbId),
     ])
@@ -380,10 +445,6 @@ async function refresh(): Promise<void> {
       if (cfgRes.data.config) configDraft.value = JSON.parse(JSON.stringify(cfgRes.data.config))
     }
     if (statsRes.success) stats.value = statsRes.data
-    if (atomsRes.success && atomsRes.data) {
-      atoms.value = atomsRes.data.rows as BrainAtom[]
-      emit('stats', atomsRes.data.total)
-    }
     if (inboxRes.success && inboxRes.data) {
       proposals.value = inboxRes.data.rows as BrainNote[]
       proposalTotal.value = inboxRes.data.total
@@ -494,15 +555,27 @@ async function digestAll(): Promise<void> {
   await refresh()
 }
 
-watch(() => props.kbId, refresh, { immediate: true })
+watch(
+  () => props.kbId,
+  () => {
+    atomPage.value = 1 // 换库回到第一页
+    void refresh()
+  },
+  { immediate: true },
+)
 defineExpose({ refresh })
 </script>
 
 <style scoped>
 .brain-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   padding: 0;
 }
 .section-header {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -528,6 +601,10 @@ defineExpose({ refresh })
   font-weight: 600;
 }
 .brain-config {
+  /* 配置展开时不挤压论断表：超出自身滚动 */
+  flex: none;
+  max-height: 55%;
+  overflow: auto;
   padding: 12px 14px;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
@@ -591,6 +668,7 @@ defineExpose({ refresh })
   margin-top: 2px;
 }
 .digest-section {
+  flex: none;
   margin: 12px 0;
 }
 .digest-title {
@@ -623,10 +701,31 @@ defineExpose({ refresh })
   white-space: nowrap;
   vertical-align: bottom;
 }
+/* 论断三段式：表格区弹性伸展内部滚动，分页栏固定底部 */
+.atoms-section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.atoms-table-region {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background-color: var(--el-bg-color);
+}
+.atoms-pagination-bar {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 0 0;
+}
 .muted {
   opacity: 0.5;
 }
 .inbox {
+  flex: none;
   margin-top: 12px;
 }
 .proposal {

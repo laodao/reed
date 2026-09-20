@@ -28,6 +28,10 @@ const CHAPTERS_PER_BATCH = 12
 const MAX_BATCHES = 40
 /** 单章摘要截断长度（摘要本身短，兜底防超长） */
 const SUMMARY_CHARS = 500
+/** 精读章数上限（摘要初筛提名后，取分最高的前 N 章读全文） */
+const MAX_CLOSE_READ = 12
+/** 单章精读正文截断 */
+const CLOSE_READ_CHARS = 9000
 
 export interface GoalDistillDeps {
   llm?: BrainLlmFn
@@ -53,6 +57,15 @@ interface MapFragment {
   chapter: string
   info: string
   note: string
+}
+
+/** 摘要初筛提名：值得读全文的章（场面/设定密集处） */
+interface Nomination {
+  label: string
+  chapterId: string
+  documentId: string
+  score: number
+  reason: string
 }
 
 export class KbGoalDistillService {
@@ -93,13 +106,50 @@ export class KbGoalDistillService {
     }
   }
 
+  /**
+   * 精读阶段：提名章取全文（每章截 CLOSE_READ_CHARS），逐章深读产出高质量素材。
+   * 单章失败跳过；无提名直接返回 0。素材以【精读】前缀并入 fragments。
+   */
+  private async closeReadStage(
+    kbId: string,
+    goal: KbBrainGoal,
+    repos: { chapters: KbChapterRepository },
+    nominations: Nomination[],
+    fragments: MapFragment[],
+    fragmentDocIds: string[],
+  ): Promise<number> {
+    if (nominations.length === 0) return 0
+    const top = [...nominations].sort((a, b) => b.score - a.score).slice(0, MAX_CLOSE_READ)
+    let done = 0
+    for (const n of top) {
+      try {
+        const chapter = await repos.chapters.findById(n.chapterId)
+        const content = chapter?.content?.trim()
+        if (!content) continue
+        const user = buildCloseReadUser(goal, n, content.slice(0, CLOSE_READ_CHARS))
+        const raw = await this.llm({ system: MAP_SYSTEM, user, maxTokens: 2500 })
+        const parsed = extractJsonFromResponse(raw) as Partial<{ fragments: MapFragment[] }> | null
+        for (const f of parsed?.fragments ?? []) {
+          if (typeof f?.info !== 'string' || !f.info.trim()) continue
+          fragments.push({ chapter: `【精读】${n.label}`, info: f.info, note: typeof f.note === 'string' ? f.note : '' })
+          fragmentDocIds.push(n.documentId)
+        }
+        done++
+      } catch (e) {
+        logger.warn(`[kb-brain-goal] kb=${kbId} goal=${goal.name} 精读 ${n.label} 失败跳过: ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+    logger.info(`[kb-brain-goal] kb=${kbId} goal=${goal.name} 精读完成 ${done}/${top.length} 章`)
+    return done
+  }
+
   private async doRun(kbId: string, goal: KbBrainGoal): Promise<GoalDistillOutcome> {
     const repos = this.reposFn()
     if (!repos) throw new Error('知识大脑未启用（旧库）')
 
     // 1. 取材：全库章节摘要（未生成摘要的回退正文前段）
     const docs = await repos.docs.findByKnowledgeBaseId(kbId)
-    const units: Array<{ label: string; text: string; documentId: string }> = []
+    const units: Array<{ label: string; text: string; documentId: string; chapterId: string }> = []
     for (const doc of docs) {
       const book = shortBookName(doc.name)
       const chapters = await repos.chapters.findByDocument(doc.id)
@@ -111,6 +161,7 @@ export class KbGoalDistillService {
           label: `《${book}》#${i + 1} ${c.title}`,
           text: text.slice(0, SUMMARY_CHARS),
           documentId: doc.id,
+          chapterId: c.id,
         })
       })
     }
@@ -119,14 +170,15 @@ export class KbGoalDistillService {
     // 2. map：分批提取素材片段（单批失败跳过不废全场——素材收集是尽力而为，还有后续批次和 reduce）
     const fragments: MapFragment[] = []
     const fragmentDocIds: string[] = []
+    const nominations: Nomination[] = []
     const batches = Math.min(Math.ceil(units.length / CHAPTERS_PER_BATCH), MAX_BATCHES)
     for (let b = 0; b < batches; b++) {
       const slice = units.slice(b * CHAPTERS_PER_BATCH, (b + 1) * CHAPTERS_PER_BATCH)
       const user = buildMapUser(goal, slice)
-      let parsed: Partial<{ fragments: MapFragment[] }> | null
+      let parsed: Partial<{ fragments: MapFragment[]; nominations: Array<{ chapter: string; reason: string; score: number }> }> | null
       try {
         const raw = await this.llm({ system: MAP_SYSTEM, user, maxTokens: 2500 })
-        parsed = extractJsonFromResponse(raw) as Partial<{ fragments: MapFragment[] }> | null
+        parsed = extractJsonFromResponse(raw) as typeof parsed
       } catch (e) {
         logger.warn(`[kb-brain-goal] kb=${kbId} goal=${goal.name} 第 ${b + 1}/${batches} 批提取失败，跳过: ${e instanceof Error ? e.message : String(e)}`)
         continue
@@ -143,10 +195,29 @@ export class KbGoalDistillService {
         fragments.push({ chapter: matched?.label ?? slice[0].label, info: f.info, note: typeof f.note === 'string' ? f.note : '' })
         fragmentDocIds.push(matched?.documentId ?? slice[0].documentId)
       }
+      // 提名收集：值得读全文的章（score 1-5，标签对不回取材清单则丢弃）
+      for (const n of parsed?.nominations ?? []) {
+        if (typeof n?.chapter !== 'string') continue
+        const matched = slice.find(
+          (u) => u.label.includes(n.chapter.trim()) || n.chapter.includes(u.label.slice(1, 20)),
+        )
+        if (!matched) continue
+        nominations.push({
+          label: matched.label,
+          chapterId: matched.chapterId,
+          documentId: matched.documentId,
+          score: Number(n.score) || 3,
+          reason: typeof n.reason === 'string' ? n.reason : '',
+        })
+      }
     }
     if (batches >= MAX_BATCHES && units.length > MAX_BATCHES * CHAPTERS_PER_BATCH) {
       logger.warn(`[kb-brain-goal] kb=${kbId} 章节 ${units.length} 超出单次上限，只取前 ${MAX_BATCHES * CHAPTERS_PER_BATCH} 章`)
     }
+
+    // 2.5 精读：提名章读全文（摘要只能指出"哪里可能有货"，写法层面的经验必须读原文）
+    const closeReadN = await this.closeReadStage(kbId, goal, repos, nominations, fragments, fragmentDocIds)
+    void closeReadN
     if (fragments.length === 0) {
       return { batches, fragments: 0, proposed: false, skippedDuplicate: false, cardTitle: null }
     }
@@ -209,12 +280,32 @@ function buildMapUser(goal: KbBrainGoal, slice: Array<{ label: string; text: str
     `【提炼目标】${goal.name}`,
     goal.hint,
     '',
-    '下面是若干章节的摘要。只提取与提炼目标直接相关的信息，输出 JSON：',
-    '{"fragments":[{"chapter":"<原样复制该章的【】内标签>","info":"具体信息，保留专有名词/数值/结构","note":"一句话说明它对目标的价值"}]}',
-    '没有相关内容就输出 {"fragments":[]}。禁止编造摘要中没有的信息。',
+    '下面是若干章节的摘要。完成两件事，输出 JSON：',
+    '1) fragments：提取与提炼目标直接相关的信息',
+    '   {"fragments":[{"chapter":"<原样复制该章的【】内标签>","info":"具体信息，保留专有名词/数值/结构","note":"一句话说明它对目标的价值"}]}',
+    '2) nominations：如果某章摘要显示它可能包含与目标高度相关的重要内容',
+    '   （关键场面/核心设定/重大转折——值得读原文细看写法），提名它：',
+    '   {"nominations":[{"chapter":"<该章【】内标签>","reason":"提名理由一句话","score":1到5}]}',
+    '   宁缺毋滥，最多提名 3 章。',
+    '没有相关内容就输出 {"fragments":[],"nominations":[]}。禁止编造摘要中没有的信息。',
     '',
     '【章节摘要】',
     ...lines,
+  ].join('\n')
+}
+
+function buildCloseReadUser(goal: KbBrainGoal, n: Nomination, content: string): string {
+  return [
+    `【提炼目标】${goal.name}`,
+    goal.hint,
+    '',
+    `下面是提名章的全文（${n.label}，提名理由：${n.reason || '与目标相关'}）。`,
+    '细读原文，提取与提炼目标直接相关的素材——写法层面（怎么写的）与设定层面（写了什么）并重，输出 JSON：',
+    '{"fragments":[{"chapter":"' + n.label + '","info":"具体信息，引用/概括原文关键句","note":"一句话说明它对目标的价值"}]}',
+    '没有相关内容就输出 {"fragments":[]}。禁止编造原文没有的信息。',
+    '',
+    '【章全文】',
+    content,
   ].join('\n')
 }
 

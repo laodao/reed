@@ -65,7 +65,8 @@ export class KbBrainPanelService {
       : await db.kbAtoms.findByKb(input.kbId, {
           status: input.status ? [input.status as never] : undefined,
           type: input.type,
-          limit: 500,
+          // 内存分页的截断上限：翻页序号/总数以此为界（type 过滤在仓储层内存做，SQL 分页不适用）
+          limit: 5000,
         })
     const start = (page - 1) * pageSize
     return {
