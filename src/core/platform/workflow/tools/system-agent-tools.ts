@@ -38,6 +38,7 @@ import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 import type { LanguageModel } from 'ai'
 import { renderSkillTemplate, withSkillReferences } from '../skills/render'
 import type { WorkflowDraftService } from '../draft/workflow-draft.service'
+import { filterModuleCapabilityCards } from './module-capability-catalog'
 
 const logger = createLogger('SystemAgentTools')
 
@@ -120,7 +121,7 @@ export interface SystemAgentToolsDeps {
 // ==================== 入参 schema ====================
 
 const DiscoverCapabilitiesInput = z.object({
-  keyword: z.string().optional().describe('按名称/描述过滤工作流与技能（可选；目录被截断时用它收窄）'),
+  keyword: z.string().optional().describe('按名称/描述过滤模块能力卡、工作流与技能（可选；目录被截断时用它收窄）'),
 })
 
 const RunWorkflowInput = z.object({
@@ -252,12 +253,23 @@ export function buildSystemAgentToolDefs(deps: SystemAgentToolsDeps): AgentToolD
   const discoverTool: AgentToolDef<z.infer<typeof DiscoverCapabilitiesInput>> = {
     name: 'discover_capabilities',
     description:
-      '列出本系统可调度的能力：工作流（含开始节点参数 schema）、技能（含参数）、直连工具、本宿主开放的模块域工具、任务树。执行任务前先查目录，匹配到既有工作流/技能就复用，不要重复造轮子。',
+      '列出本系统可调度的能力：功能模块能力卡（各模块能做什么、典型指令、调用路径）、工作流（含开始节点参数 schema）、技能（含参数）、直连工具、本宿主开放的模块域工具、任务树。执行任务前先查目录，匹配到既有工作流/技能就复用，不要重复造轮子。',
     inputSchema: DiscoverCapabilitiesInput,
     dangerLevel: 'read',
     execute: async (input, ctx) => {
       const keyword = input.keyword?.trim() || undefined
       const catalogMax = systemToolsParams().catalogMaxItems
+      // 模块能力卡（keyword 收窄；卡数远小于封顶，slice 只是防御）
+      const modules = filterModuleCapabilityCards(keyword)
+        .slice(0, catalogMax)
+        .map((c) => ({
+          moduleId: c.moduleId,
+          name: c.name,
+          tagline: c.tagline,
+          intents: c.intents,
+          capabilities: c.capabilities,
+          invocation: c.invocation,
+        }))
       const wfPage = await deps.definitions.list({ keyword, page: 1, pageSize: catalogMax })
       const workflows = wfPage.items.slice(0, catalogMax).map((d) => ({
         id: d.id,
@@ -302,6 +314,8 @@ export function buildSystemAgentToolDefs(deps: SystemAgentToolsDeps): AgentToolD
         .slice(0, catalogMax)
         .map((s) => ({ name: s.name, description: s.description, requiresApproval: s.requiresApproval }))
       return {
+        modules,
+        modulesNote: 'modules=系统功能模块能力卡：按典型指令匹配模块，按 invocation 里的路径调用能力（tool=直连工具 / workflow=工作流 / skill=invoke_skill / ui=引导用户到页面）。',
         workflows,
         workflowsTotal: wfPage.total,
         skills,

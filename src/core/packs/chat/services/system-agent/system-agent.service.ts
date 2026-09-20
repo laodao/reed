@@ -40,6 +40,7 @@ import {
   SYSTEM_AGENT_WHITELIST,
   type SystemAgentTurnRef,
 } from '@core/platform/workflow/tools/system-agent-tools'
+import { renderModuleCapabilityDigest } from '@core/platform/workflow/tools/module-capability-catalog'
 import type { AgentMessageMeta } from '@shared/types'
 import { AGENT_BUDGET_DEFAULTS } from '@shared/types/agent-budget.types'
 
@@ -56,28 +57,32 @@ export const SYSTEM_AGENT_DEFAULT_MAX_STEPS = AGENT_BUDGET_DEFAULTS.maxSteps.sys
 export const AGENT_ARGS_DIGEST_MAX = 120
 
 /**
- * 系统提示词（路由纪律，28 号 §4）：识别需求 → 选能力 → 执行或澄清。
- * 追加对话设定的位置在 buildSystemPrompt（保留角色人设）。
+ * 系统提示词（路由纪律，28 号 §4）：识别需求 → 匹配模块/能力 → 执行或澄清。
+ * 系统功能模块能力图（模块注册制目录的摘要）由 buildSystemPrompt 拼入提示词末尾
+ * ——模型先按「意图→模块」匹配，再按卡上的调用路径执行；参数级细节再查
+ * discover_capabilities。追加对话设定的位置在 buildSystemPrompt（保留角色人设）。
  */
-export const SYSTEM_AGENT_CHAT_PROMPT = `你是本系统的智能助手，可以直接调用系统能力完成用户的任务，而不只是给建议。
+export const SYSTEM_AGENT_CHAT_PROMPT = `你是本系统的智能助手，可以直接调用系统能力完成用户的任务，而不只是给建议。提示词末尾附有【系统功能模块能力图】：系统全部功能模块能做什么、怎么调用。工具/工作流/技能的完整目录与参数用 discover_capabilities 查询。
 
 选择能力的纪律（按序判断）：
-1. 闲聊/常识/创作类问题：直接回答，不用工具。
-2. 需要外部实时信息：用 web_search / wf_web_extract / http_get 等工具查证后再答（给出来源）。
-3. 用户的任务匹配系统里已有的工作流或技能：先 discover_capabilities 查目录，命中就用 run_workflow / invoke_skill 执行，不要手工重复实现工作流已有的能力。
-4. 复杂的多步目标（需要分解、自主执行、逐任务验收）：用 create_task_plan 创建任务树，并明确告知用户到「Agent 任务树」页批准后才会执行。
-4b. 用户想要一个可复用的自动化流程（描述了固定的处理步骤）：用 create_workflow_draft 生成工作流草稿，并告知用户到工作流编辑器检查发布后才能运行。一次性的任务用任务树，可复用的流程用工作流。
-5. 需求信息不全（如运行工作流缺必填参数、目标含歧义）：用自然语言一次性问清所有缺失项，不要猜、不要编造参数，也不要发明系统里不存在的能力。
+1. 闲聊/常识类问题：直接回答，不用工具。
+2. 创作与产出类请求（写小说、做视频、写报告/文案、出图、配音等）：先对照能力图匹配模块——模块有现成技能/工作流就直接调用（例：「生成某事件的报告」= web_search 取材 + invoke_skill 的 deep-analysis；「写一篇公众号文章」= invoke_skill 的 wechat-article），没有现成的再手工完成；模块是 UI 主导的（长文写作的故事研讨室、短剧制作流水线、语音工作台等），明确告知用户去哪个页面、进去后怎么说，不要在对话里用纯文字空谈替代品。
+3. 需要外部实时信息：用 web_search / wf_web_extract / http_get 等工具查证后再答（给出来源）。
+4. 用户的任务匹配系统里已有的工作流：先 discover_capabilities 查目录，命中就用 run_workflow 执行，不要手工重复实现工作流已有的能力。
+5. 没有现成工作流但任务可自动化：一次性的多步目标用 create_task_plan 创建任务树（告知用户到「Agent 任务树」页批准后执行）；可复用的固定流程用 create_workflow_draft 生成工作流草稿（告知用户到工作流编辑器检查发布后才可运行）。工作流节点库覆盖 LLM、知识库、搜索、翻译、文生图、TTS、语音转写、音色复刻、视频生成/合成、爬虫、数据表、代码、HTTP 等——媒体与数据类能力的流程化处理优先考虑工作流承载。
+6. 需求信息不全（如运行工作流缺必填参数、目标含歧义）：用自然语言一次性问清所有缺失项，不要猜、不要编造参数，也不要发明系统里不存在的能力。
 
 其他纪律：
-- 目录里没有匹配能力时如实告知，可给替代方案（直连工具/创建任务树），绝不虚构工作流或技能。
+- 能力图与目录里都没有匹配能力时如实告知，可给替代方案（直连工具/创建任务树），绝不虚构工作流、技能或模块能力。
 - 工具失败时如实转述原因，可换路重试，不掩盖。
 - 执行类操作完成后，把结果要点汇报给用户（引用产出的关键内容，而不是只说"完成了"）。`
 
-/** 系统提示词 + 用户对话人设（角色 systemPrompt 保留，路由纪律在前） */
+/** 系统提示词 = 路由纪律 + 模块能力图（每轮现拼，pack 能力演进随卡生效）+ 用户对话人设 */
 export function buildSystemPrompt(dialogSystemPrompt?: string): string {
+  const capabilityMap = `【系统功能模块能力图】（完整目录与参数用 discover_capabilities 查询）\n${renderModuleCapabilityDigest()}`
+  const base = `${SYSTEM_AGENT_CHAT_PROMPT}\n\n${capabilityMap}`
   const persona = dialogSystemPrompt?.trim()
-  return persona ? `${SYSTEM_AGENT_CHAT_PROMPT}\n\n[对话设定（用户自定义）]\n${persona}` : SYSTEM_AGENT_CHAT_PROMPT
+  return persona ? `${base}\n\n[对话设定（用户自定义）]\n${persona}` : base
 }
 
 /** 工具入参摘要（流式 chips；超长截断） */
@@ -230,11 +235,11 @@ export async function runAgentChatTurn(
       systemPrompt: () => params.systemPrompt,
       maxSteps: budget.maxSteps.systemAgent,
       // 记忆装配（原 sendMessage 层 L0+L1）收敛 kit 内置 + memory_assembly 统一留痕
-      memory: {
-        scope: null,
-        systemLine:
-          '[系统能力] 可用工具/工作流/技能以 discover_capabilities 目录为准；复杂多步目标可用 create_task_plan 拆解为任务树。',
-      },
+        memory: {
+          scope: null,
+          systemLine:
+            '[系统能力] 功能模块能力图已随系统提示注入；工具/工作流/技能完整目录用 discover_capabilities 查询；复杂多步目标可用 create_task_plan 拆解为任务树。',
+        },
       // 会话存储=多轮续聊权威源（保存失败上抛——静默丢历史会破坏下一轮记忆）
       sessionStoreCritical: true,
       onStream: (_t, event) => {
