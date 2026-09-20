@@ -57,3 +57,7 @@ progress/
 outputs/*.mp4
 outputs/*.mkv
 outputs/*.webm
+
+# ===== 创作资产（本地保留，不入库）=====
+# 天下捕快设定集/旧稿与 skill 包原始归档（docs/other/，约 12MB 二进制）
+docs/other/
