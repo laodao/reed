@@ -23,7 +23,7 @@ export const MODULE_CAPABILITY_CARDS: ModuleCapability[] = [
     moduleId: 'workflow',
     name: '工作流引擎',
     tagline:
-      '把能力节点编排成可复用流程：已有工作流用 run_workflow 直接运行，没有的用 create_workflow_draft 按描述现写草稿（用户在编辑器检查发布后可复用）；节点库覆盖 LLM、知识库检索/问答/入库、联网搜索、网页提取、新闻抓取、翻译、文生图、TTS、语音转写、音色复刻、视频生成、视频合成、HTTP、代码、数据表、人工审核、循环/并行/条件、技能调用、子工作流、agent 循环',
+      '把能力节点编排成可复用流程——已有工作流用 run_workflow 直接运行，没有的用 create_workflow_draft 按描述现写草稿（用户在编辑器检查发布后可复用）；节点库覆盖 LLM、知识库检索/问答/入库、联网搜索、网页提取、新闻抓取、翻译、文生图、TTS、语音转写、音色复刻、视频生成、视频合成、HTTP、代码、数据表、人工审核、循环/并行/条件、技能调用、子工作流、agent 循环',
     intents: [
       '帮我把这套流程自动化 / 定期执行',
       '做一个「抓新闻→写稿→存库」的流程',
@@ -61,7 +61,7 @@ export const MODULE_CAPABILITY_CARDS: ModuleCapability[] = [
   {
     moduleId: 'skills',
     name: '技能包',
-    tagline: '参数化提示词模板，invoke_skill 直接出内容：短视频脚本、公众号图文、小红书/微博文案、文章润色、事件深度分析（多视角报告）、短视频大纲/口播（标准与调查体）、学习地图/讲义/概念卡片',
+    tagline: '参数化提示词模板，invoke_skill 直接出内容——短视频脚本、公众号图文、小红书/微博文案、文章润色、事件深度分析（多视角报告）、短视频大纲/口播（标准与调查体）、学习地图/讲义/概念卡片',
     intents: ['给这个事件写篇深度分析报告', '生成一条短视频脚本', '写一篇公众号文章/小红书笔记', '把这段文字润色一下'],
     capabilities: [
       'deep-analysis：事件/主题多视角结构化分析（概述、时间线、多视角、结论）',
@@ -79,7 +79,7 @@ export const MODULE_CAPABILITY_CARDS: ModuleCapability[] = [
   {
     moduleId: 'longwriting',
     name: '长文写作',
-    tagline: '长篇小说/网文创作：故事研讨室（多轮研讨→设计包→确认落库）、设定集/大纲/一致性图谱、章法写正文——重交互在 UI，「故事研讨室」里直接说「我要写什么」即可；chapter-writing / volume-design 节点可把章节写作、卷设计编排进工作流（需项目 projectId）',
+    tagline: '长篇小说/网文创作——故事研讨室（多轮研讨→设计包→确认落库）、设定集/大纲/一致性图谱、章法写正文——重交互在 UI，「故事研讨室」里直接说「我要写什么」即可；chapter-writing / volume-design 节点可把章节写作、卷设计编排进工作流（需项目 projectId）',
     intents: ['我想写一本小说', '帮我设计人物/世界观/大纲', '写第 N 章正文', '修正第 N 章的一处情节错误'],
     capabilities: [
       '故事研讨室：与「主编」agent 研讨收敛故事，设计包整体确认后落库',
@@ -95,7 +95,7 @@ export const MODULE_CAPABILITY_CARDS: ModuleCapability[] = [
   {
     moduleId: 'episode-production',
     name: '短剧制作',
-    tagline: '短剧/视频生产线：剧本→场景→分镜→关键帧→视频→配音→合成导出 MP4——项目内「制作助理」agent 可直接驱动全流水线；生成类按次计费、有频控',
+    tagline: '短剧/视频生产线——剧本→场景→分镜→关键帧→视频→配音→合成导出 MP4——项目内「制作助理」agent 可直接驱动全流水线；生成类按次计费、有频控',
     intents: ['把这个故事做成短剧视频', '给这一集生成分镜/关键帧', '配音并导出成片'],
     capabilities: [
       '剧本/场景/分镜生成与绑定',
@@ -105,6 +105,7 @@ export const MODULE_CAPABILITY_CARDS: ModuleCapability[] = [
     ],
     invocation: [
       { via: 'ui', how: '/episode-production 建项目/剧集 → 制作助理对话直接驱动', note: '制作工具为项目域（需项目上下文），不在聊天宿主直调' },
+      { via: 'workflow', how: 'video-gen / video-compose 节点（轻量文生视频/合成；完整短剧流水线在项目 UI）' },
     ],
   },
   {
@@ -126,7 +127,7 @@ export const MODULE_CAPABILITY_CARDS: ModuleCapability[] = [
   {
     moduleId: 'image',
     name: '图像生成',
-    tagline: '文生图（多 Provider）：image-gen 工作流节点承载，批量/流程化出图走工作流',
+    tagline: '文生图（多 Provider），image-gen 工作流节点承载，批量/流程化出图走工作流',
     intents: ['画一张…的图', '给这段故事每个角色出一张立绘'],
     capabilities: ['image-gen：按提示词生成图片，可入工作流批量执行'],
     invocation: [
@@ -137,7 +138,7 @@ export const MODULE_CAPABILITY_CARDS: ModuleCapability[] = [
   {
     moduleId: 'translate',
     name: '翻译',
-    tagline: '多语言文本翻译：translate 工作流节点承载（任务树执行器内为 wf_translate 直连工具）',
+    tagline: '多语言文本翻译，translate 工作流节点承载（任务树执行器内为 wf_translate 直连工具）',
     intents: ['把这篇文章翻译成英文'],
     capabilities: ['translate 节点：文本/批量翻译入工作流'],
     invocation: [
@@ -148,7 +149,7 @@ export const MODULE_CAPABILITY_CARDS: ModuleCapability[] = [
   {
     moduleId: 'knowledge-base',
     name: '知识库',
-    tagline: '文档知识库：入库、检索、问答——kb-ingest / kb-retrieve / kb-qa 工作流节点承载，「先查资料再产出」类任务与知识库组合',
+    tagline: '文档知识库的入库、检索、问答——kb-ingest / kb-retrieve / kb-qa 工作流节点承载，「先查资料再产出」类任务与知识库组合',
     intents: ['根据我的资料回答…', '把这份文档收进知识库', '在知识库里查一下…'],
     capabilities: ['kb-ingest：文档入库', 'kb-retrieve / kb-query-multi：检索', 'kb-qa：知识库问答'],
     invocation: [
@@ -159,7 +160,7 @@ export const MODULE_CAPABILITY_CARDS: ModuleCapability[] = [
   {
     moduleId: 'asset-center',
     name: '资产中心',
-    tagline: '模板/素材/图片等创作资产管理：save-asset / read-asset / read-assets 工作流节点承载',
+    tagline: '模板/素材/图片等创作资产管理，save-asset / read-asset / read-assets 工作流节点承载',
     intents: ['把生成的图存为资产', '取模板资产给流程用'],
     capabilities: ['save-asset：产物入资产库', 'read-asset(s)：读资产供流程引用'],
     invocation: [
@@ -170,7 +171,7 @@ export const MODULE_CAPABILITY_CARDS: ModuleCapability[] = [
   {
     moduleId: 'diary',
     name: '日记',
-    tagline: '日记记录：save-diary 工作流节点可把工作流产出自动物化成日记',
+    tagline: '日记记录，save-diary 工作流节点可把工作流产出自动物化成日记',
     intents: ['把今天的总结写进日记'],
     capabilities: ['save-diary 节点：流程产物落日记'],
     invocation: [{ via: 'workflow', how: 'save-diary 节点' }, { via: 'ui', how: '/diary' }],
@@ -186,7 +187,7 @@ export const MODULE_CAPABILITY_CARDS: ModuleCapability[] = [
   {
     moduleId: 'domain-learning',
     name: '领域共学',
-    tagline: '领域学习空间：学习地图、概念讲义、教学讲义生成与复习——learning-* 技能可产出草稿，空间管理在界面',
+    tagline: '领域学习空间——学习地图、概念讲义、教学讲义生成与复习，learning-* 技能可产出草稿，空间管理在界面',
     intents: ['我要系统地学某个领域', '帮我出一份学习地图'],
     capabilities: ['学习地图/讲义方案/概念讲义/讲义正文（learning-domain-map / learning-lesson-designer / learning-concept-explainer / learning-lesson-writer 技能）'],
     invocation: [
@@ -206,16 +207,37 @@ export function renderModuleCapabilityDigest(cards: ModuleCapability[] = MODULE_
 }
 
 /**
- * 按 keyword 过滤能力卡（命中面：id/名称/职责/意图/能力条目/调用路径——
- * 大小写不敏感；空 keyword 返回全量）。discover_capabilities 用。
+ * 按 keyword 过滤能力卡。命中面（大小写不敏感）：
+ * ① 整串子串包含（覆盖 ASCII 与完整词组）；
+ * ② keyword 的 CJK bigram 命中数达到 max(1, floor(n/2))——目录消费者是模型，
+ *    「写小说」这类口语短语不必逐字出现在卡上也能命中含「小说」的卡（纯子串
+ *    匹配下 0 命中，audit 实测）；比例阈值挡住长查询里单个高频词（如「能力」）
+ *    的噪声误报，避免「不存在的能力」被误判为系统已有该能力。
+ * 空 keyword 返回全量。discover_capabilities 用。
  */
 export function filterModuleCapabilityCards(keyword?: string, cards: ModuleCapability[] = MODULE_CAPABILITY_CARDS): ModuleCapability[] {
   const kw = keyword?.trim().toLowerCase()
   if (!kw) return cards
-  return cards.filter((c) =>
-    [c.moduleId, c.name, c.tagline, ...c.intents, ...c.capabilities, ...c.invocation.map((i) => `${i.via} ${i.how}`)]
+  const grams = [...new Set(cjkBigrams(kw))]
+  const need = Math.max(1, Math.floor(grams.length / 2))
+  return cards.filter((c) => {
+    const text = [c.moduleId, c.name, c.tagline, ...c.intents, ...c.capabilities, ...c.invocation.map((i) => `${i.via} ${i.how}`)]
       .join('\n')
       .toLowerCase()
-      .includes(kw),
-  )
+    if (text.includes(kw)) return true
+    let hits = 0
+    for (const g of grams) {
+      if (text.includes(g) && ++hits >= need) return true
+    }
+    return false
+  })
+}
+
+/** CJK 连续片段的滑窗 bigram（ASCII 等非 CJK 字符不参与——英文短串切 bigram 会噪声命中） */
+function cjkBigrams(text: string): string[] {
+  const grams: string[] = []
+  for (const run of text.match(/[\u4e00-\u9fff]+/g) ?? []) {
+    for (let i = 0; i + 2 <= run.length; i++) grams.push(run.slice(i, i + 2))
+  }
+  return grams
 }

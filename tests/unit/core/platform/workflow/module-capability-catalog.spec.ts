@@ -60,6 +60,9 @@ describe('模块能力卡目录（能力卡注册制）', () => {
     expect(filterModuleCapabilityCards().length).toBe(MODULE_CAPABILITY_CARDS.length)
     const novel = filterModuleCapabilityCards('小说')
     expect(novel.map((c) => c.moduleId)).toContain('longwriting')
+    // 口语短语不必逐字出现在卡上：CJK bigram 命中（audit 实测：纯子串匹配下 0 命中）
+    const phrase = filterModuleCapabilityCards('写小说')
+    expect(phrase.map((c) => c.moduleId)).toContain('longwriting')
     const clone = filterModuleCapabilityCards('音色复刻')
     expect(clone.map((c) => c.moduleId)).toContain('voice')
     const id = filterModuleCapabilityCards('EPISODE-PRODUCTION') // 大小写不敏感
