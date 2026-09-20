@@ -149,9 +149,10 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
   /** 按库查（面板论断列表；可选 status/type/types/origin 过滤，创建时间倒序） */
   async findByKb(
     kbId: string,
-    opts?: { status?: KbAtomStatus[]; type?: string; types?: string[]; origin?: string; limit?: number },
+    opts?: { status?: KbAtomStatus[]; type?: string; types?: string[]; origin?: string; documentId?: string; limit?: number },
   ): Promise<KbAtomRecord[]> {
     const where: Record<string, unknown> = { knowledgeBaseId: kbId }
+    if (opts?.documentId) where.sourceDocumentId = opts.documentId
     if (opts?.status?.length) where.status = In(opts.status)
     if (opts?.origin) where.origin = opts.origin
     if (opts?.type) where.type = opts.type // SQL 层过滤：type 独立于 take 截断（悬而未决视图不受 5000 上限漏数据）

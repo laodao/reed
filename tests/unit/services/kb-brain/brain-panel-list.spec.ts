@@ -92,6 +92,17 @@ describe('brain-panel listAtoms（origin 过滤 + documentName 解析）', () =>
     expect(res.data!.total).toBe(5)
   })
 
+  it('documentId 过滤与 origin/types 组合（统一 findByKb 路径）', async () => {
+    const svc = getKbBrainPanelService()
+    const byDoc = await svc.listAtoms({ kbId: KB, documentId: DOC_A, page: 1, pageSize: 50 })
+    const stmts = (byDoc.data!.rows as Array<{ statement: string }>).map((r) => r.statement)
+    expect(stmts).toContain('A-事实论断')
+    expect(stmts).not.toContain('B-事实论断')
+    // 文档 × origin 组合
+    const combo = await svc.listAtoms({ kbId: KB, documentId: DOC_A, origin: 'human', page: 1, pageSize: 50 })
+    expect((combo.data!.rows as Array<{ statement: string }>).map((r) => r.statement)).toEqual(['A-我的观感'])
+  })
+
   it('缺省状态=工作集：superseded/archived 不入列表，显式 status 可查', async () => {
     const atoms = new KbAtomRepository(ds)
     const [archived] = await atoms.createBatch([

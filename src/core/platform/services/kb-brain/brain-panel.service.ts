@@ -63,17 +63,16 @@ export class KbBrainPanelService {
     //（归纳合并后的碎片由归档层管理，显式传 status 可查全量）
     const workingSet = ['supported', 'suspected', 'stale'] as const
     const statusFilter = input.status ? [input.status as never] : [...workingSet]
-    // documentId 传入=按文档；否则按库（盲审修复：原实现缺省 documentId='' 恒空）
-    const all = input.documentId
-      ? await db.kbAtoms.findByDocument(input.documentId, { status: statusFilter })
-      : await db.kbAtoms.findByKb(input.kbId, {
-          status: statusFilter,
-          type: input.type,
-          types: input.types,
-          origin: input.origin,
-          // 内存分页的截断上限：翻页序号/总数以此为界（type 过滤已下推 SQL，此处是兜底上限）
-          limit: 5000,
-        })
+    // 统一走 findByKb：documentId 与 type/types/origin/status 过滤可自由组合
+    const all = await db.kbAtoms.findByKb(input.kbId, {
+      status: statusFilter,
+      type: input.type,
+      types: input.types,
+      origin: input.origin,
+      documentId: input.documentId,
+      // 内存分页的截断上限：翻页序号/总数以此为界（type 过滤已下推 SQL，此处是兜底上限）
+      limit: 5000,
+    })
     const start = (page - 1) * pageSize
     const rows = all.slice(start, start + pageSize)
     // 来源文档名（批量解析，仅当前页涉及的文档；解析不出保留 null 由前端回退）

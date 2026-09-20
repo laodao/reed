@@ -49,7 +49,17 @@
               <el-radio-button value="opinions">AI观点</el-radio-button>
               <el-radio-button value="open-question">悬而未决</el-radio-button>
             </el-radio-group>
-            <el-button size="small" type="primary" plain style="margin-left: auto" @click="openRemark">
+            <el-select
+              v-model="atomDocFilter"
+              clearable
+              placeholder="全部文档"
+              size="small"
+              style="width: 160px; margin-left: auto"
+              @change="onDocFilterChange"
+            >
+              <el-option v-for="d in allDocs" :key="d.id" :label="d.name" :value="d.id" />
+            </el-select>
+            <el-button size="small" type="primary" plain @click="openRemark">
               <el-icon><Edit /></el-icon>
               记观感
             </el-button>
@@ -89,6 +99,11 @@
                 </template>
               </el-table-column>
               <el-table-column prop="useCount" label="被用" width="60" align="center" />
+              <el-table-column label="操作" width="70" align="center">
+                <template #default="{ row }">
+                  <el-button link type="primary" size="small" @click="openAtomDetail(row)">详情</el-button>
+                </template>
+              </el-table-column>
             </el-table>
           </div>
           <div v-if="atomTotal > 0" class="atoms-pagination-bar">
@@ -419,6 +434,52 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 论断详情 -->
+    <el-dialog v-model="atomDetailOpen" title="论断详情" width="640px">
+      <div v-loading="atomDetailLoading" style="min-height: 120px">
+        <template v-if="atomDetail">
+          <div class="ad-stmt">{{ atomDetail.statement }}</div>
+          <div class="ad-meta">
+            <el-tag size="small" effect="plain">{{ kbAtomTypeLabel(atomDetail.type) }}</el-tag>
+            <el-tag size="small" :type="statusTagType(atomDetail.status)">{{ kbAtomStatusLabel(atomDetail.status) }}</el-tag>
+            <el-tag size="small" effect="plain">{{ kbAtomOriginLabel(atomDetail.origin) }}</el-tag>
+          </div>
+          <div v-if="atomDetail.supersededBy" class="ad-row">
+            <span class="ad-label">已被替代</span>
+            <span class="ad-value">新论断：{{ atomDetail.supersededBy.statement }}</span>
+          </div>
+          <div class="ad-row">
+            <span class="ad-label">原文出处</span>
+            <span class="ad-value ad-quote">{{ atomDetail.sourceQuote || '—' }}</span>
+          </div>
+          <div class="ad-row">
+            <span class="ad-label">来源文档</span>
+            <span class="ad-value">{{ atomDetail.documentName || '—' }}</span>
+          </div>
+          <div class="ad-row">
+            <span class="ad-label">置信度</span>
+            <span class="ad-value">{{ atomDetail.certainty }}</span>
+          </div>
+          <div class="ad-row">
+            <span class="ad-label">被引用</span>
+            <span class="ad-value">{{ atomDetail.useCount }} 次</span>
+          </div>
+          <div class="ad-row">
+            <span class="ad-label">提炼批次</span>
+            <span class="ad-value">{{ atomDetail.extractionPass }}</span>
+          </div>
+          <div class="ad-row">
+            <span class="ad-label">章节指纹</span>
+            <span class="ad-value muted">{{ (atomDetail.sourceChapterHash || '—').slice(0, 12) }}</span>
+          </div>
+          <div class="ad-row">
+            <span class="ad-label">记录时间</span>
+            <span class="ad-value">{{ fmtTime(atomDetail.createdAt) }}</span>
+          </div>
+        </template>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -426,7 +487,7 @@
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { KB_BRAIN_GOAL_PRESETS } from '@shared/constants/kb-brain-goal-presets'
-import { kbAtomStatusLabel, kbAtomTypeLabel, kbNoteStatusLabel, kbNoteTypeLabel } from '@shared/constants/kb-brain-labels'
+import { kbAtomOriginLabel, kbAtomStatusLabel, kbAtomTypeLabel, kbNoteStatusLabel, kbNoteTypeLabel } from '@shared/constants/kb-brain-labels'
 
 const props = defineProps<{ kbId: string }>()
 const emit = defineEmits<{ (e: 'stats', count: number): void }>()
@@ -517,6 +578,43 @@ const pendingDigestDocs = ref<DigestDoc[]>([])
 const digestAllBusy = ref(false)
 // 全量文档清单（记观感的关联文档下拉用，与待提取列表分开）
 const allDocs = ref<Array<{ id: string; name: string }>>([])
+
+// ===== 文档过滤 + 论断详情 =====
+const atomDocFilter = ref('')
+interface AtomDetail extends BrainAtom {
+  certainty: number
+  extractionPass: string
+  createdAt?: string
+  supersededBy?: { id: string; statement: string } | null
+}
+const atomDetailOpen = ref(false)
+const atomDetailLoading = ref(false)
+const atomDetail = ref<AtomDetail | null>(null)
+
+function onDocFilterChange(): void {
+  atomPage.value = 1
+  void fetchAtoms()
+}
+
+function fmtTime(v?: string): string {
+  if (!v) return '—'
+  const d = new Date(v)
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString()
+}
+
+async function openAtomDetail(row: BrainAtom): Promise<void> {
+  atomDetailOpen.value = true
+  atomDetailLoading.value = true
+  atomDetail.value = null
+  try {
+    const res = await (window as any).electronAPI.knowledgeBase.brain.getAtom(row.id)
+    if (res?.success && res.data) {
+      atomDetail.value = { ...row, ...res.data, documentName: row.documentName }
+    }
+  } finally {
+    atomDetailLoading.value = false
+  }
+}
 
 // ===== 记观感（human origin 论断录入） =====
 const remarkOpen = ref(false)
@@ -713,6 +811,7 @@ async function fetchAtoms(): Promise<void> {
       origin: atomFilter.value === 'human' ? 'human' : undefined,
       type: atomFilter.value === 'open-question' ? 'open-question' : undefined,
       types: atomFilter.value === 'opinions' ? ['claim', 'insight'] : undefined,
+      documentId: atomDocFilter.value || undefined,
     })
     if (gen !== atomsGen) return // 过期响应丢弃
     if (res.success && res.data) {
@@ -1075,6 +1174,7 @@ watch(
   () => {
     atomPage.value = 1 // 换库回到第一页
     atomFilter.value = 'all'
+    atomDocFilter.value = ''
     activeView.value = 'atoms'
     inboxPage.value = 1
     notesPage.value = 1
@@ -1481,6 +1581,40 @@ defineExpose({ refresh })
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* ===== 论断详情 ===== */
+.ad-stmt {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.6;
+  margin-bottom: 10px;
+}
+.ad-meta {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.ad-row {
+  display: flex;
+  gap: 12px;
+  padding: 7px 0;
+  border-top: 1px solid var(--el-border-color-extra-light);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.ad-label {
+  flex: none;
+  width: 64px;
+  color: var(--el-text-color-secondary);
+}
+.ad-value {
+  min-width: 0;
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+.ad-quote {
+  color: var(--el-text-color-primary);
 }
 
 /* ===== 记观感对话框 ===== */

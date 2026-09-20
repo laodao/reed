@@ -24,6 +24,11 @@ export const KB_ATOM_STATUS_LABELS: Record<string, string> = {
   archived: '已归档',
 }
 
+export const KB_ATOM_ORIGIN_LABELS: Record<string, string> = {
+  ai: 'AI 提炼',
+  human: '我的记录',
+}
+
 export const KB_NOTE_TYPE_LABELS: Record<string, string> = {
   methodology: '方法论',
   insight: '思想洞见',
@@ -48,4 +53,5 @@ function makeLabeler(map: Record<string, string>): (v: string | null | undefined
 export const kbAtomTypeLabel = makeLabeler(KB_ATOM_TYPE_LABELS)
 export const kbAtomStatusLabel = makeLabeler(KB_ATOM_STATUS_LABELS)
 export const kbNoteTypeLabel = makeLabeler(KB_NOTE_TYPE_LABELS)
+export const kbAtomOriginLabel = makeLabeler(KB_ATOM_ORIGIN_LABELS)
 export const kbNoteStatusLabel = makeLabeler(KB_NOTE_STATUS_LABELS)
