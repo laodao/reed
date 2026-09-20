@@ -259,6 +259,10 @@ export function buildSystemAgentToolDefs(deps: SystemAgentToolsDeps): AgentToolD
     execute: async (input, ctx) => {
       const keyword = input.keyword?.trim() || undefined
       const catalogMax = systemToolsParams().catalogMaxItems
+      // 当前对话所配模型（runtimeContext.turnModel）：内置工作流的 model 类必填参数
+      // 提交值格式为 {providerConfigId, modelId}——不透出它，agent 只能让用户去设置页
+      // 查 Provider 名，统一入口就堵死在这类参数上
+      const turnModel = (ctx.logContext as { turnModel?: { providerConfigId?: string; modelId?: string } } | undefined)?.turnModel
       // 模块能力卡（keyword 收窄；卡数远小于封顶，slice 只是防御）
       const modules = filterModuleCapabilityCards(keyword)
         .slice(0, catalogMax)
@@ -316,6 +320,10 @@ export function buildSystemAgentToolDefs(deps: SystemAgentToolsDeps): AgentToolD
       return {
         modules,
         modulesNote: 'modules=系统功能模块能力卡：按典型指令匹配模块，按 invocation 里的路径调用能力（tool=直连工具 / workflow=工作流 / skill=invoke_skill / ui=引导用户到页面）。',
+        turnModel,
+        turnModelNote: turnModel
+          ? `当前对话模型：${turnModel.modelId}（providerConfigId=${turnModel.providerConfigId}）。run_workflow 的 model 类必填参数直接用它，不要让用户去设置页查。`
+          : '',
         workflows,
         workflowsTotal: wfPage.total,
         skills,

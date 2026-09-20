@@ -23,7 +23,7 @@ export const MODULE_CAPABILITY_CARDS: ModuleCapability[] = [
     moduleId: 'workflow',
     name: '工作流引擎',
     tagline:
-      '把能力节点编排成可复用流程——已有工作流用 run_workflow 直接运行，没有的用 create_workflow_draft 按描述现写草稿（用户在编辑器检查发布后可复用）；节点库覆盖 LLM、知识库检索/问答/入库、联网搜索、网页提取、新闻抓取、翻译、文生图、TTS、语音转写、音色复刻、视频生成、视频合成、HTTP、代码、数据表、人工审核、循环/并行/条件、技能调用、子工作流、agent 循环',
+      '把能力编排成流程并在对话内直接执行：系统预置长文写作、主题深度研究、事件分析报告、短视频生成、每日早报、文案润色等 20+ 内置工作流，常见任务查目录命中后 run_workflow 直接跑；没有现成的用 create_workflow_draft 现写草稿（用户发布后复用）；节点库覆盖 LLM/知识库/搜索/网页提取/翻译/文生图/TTS/语音转写/音色复刻/视频生成与合成/爬虫/HTTP/代码/数据表',
     intents: [
       '帮我把这套流程自动化 / 定期执行',
       '做一个「抓新闻→写稿→存库」的流程',
@@ -79,7 +79,7 @@ export const MODULE_CAPABILITY_CARDS: ModuleCapability[] = [
   {
     moduleId: 'longwriting',
     name: '长文写作',
-    tagline: '长篇小说/网文创作——故事研讨室（多轮研讨→设计包→确认落库）、设定集/大纲/一致性图谱、章法写正文——重交互在 UI，「故事研讨室」里直接说「我要写什么」即可；chapter-writing / volume-design 节点可把章节写作、卷设计编排进工作流（需项目 projectId）',
+    tagline: '小说/长文创作，对话内直接产出成文：run_workflow 内置「长文写作」（topic/章节数/每章字数/文风/model → 故事线→章节大纲→逐章写作→合并存资产/知识库）；深度共创（研讨室多轮研讨、设定集/一致性图谱、章法逐章）在 UI',
     intents: ['我想写一本小说', '帮我设计人物/世界观/大纲', '写第 N 章正文', '修正第 N 章的一处情节错误'],
     capabilities: [
       '故事研讨室：与「主编」agent 研讨收敛故事，设计包整体确认后落库',
@@ -88,14 +88,14 @@ export const MODULE_CAPABILITY_CARDS: ModuleCapability[] = [
       '正文局部修正与一致性疑点管理',
     ],
     invocation: [
-      { via: 'ui', how: '/longwriting 建项目 → 故事研讨室直接对话', note: '项目域工具（lw_*）只在研讨室宿主内开放；跨模块组合用 create_task_plan' },
-      { via: 'workflow', how: 'chapter-writing / volume-design 节点入工作流（需 projectId 入参）' },
+      { via: 'workflow', how: 'run_workflow 内置「长文写作」（model 必填，用用户当前模型或先问）' },
+      { via: 'ui', how: '/longwriting 建项目 → 故事研讨室深度共创（多轮研讨/章法逐章）' },
     ],
   },
   {
     moduleId: 'episode-production',
     name: '短剧制作',
-    tagline: '短剧/视频生产线——剧本→场景→分镜→关键帧→视频→配音→合成导出 MP4——项目内「制作助理」agent 可直接驱动全流水线；生成类按次计费、有频控',
+    tagline: '视频生成，对话内可执行：run_workflow 内置「短视频脚本生成视频」（scriptSource/topic+音色+视频/图像 Provider → 拆镜→文生图→图生视频→配音→合成 MP4，按次计费）；多集短剧项目流水线（剧本→分镜→关键帧→逐集制作→导出）在 UI 用制作助理',
     intents: ['把这个故事做成短剧视频', '给这一集生成分镜/关键帧', '配音并导出成片'],
     capabilities: [
       '剧本/场景/分镜生成与绑定',
@@ -104,8 +104,8 @@ export const MODULE_CAPABILITY_CARDS: ModuleCapability[] = [
       '合成导出 MP4（分钟级后台任务）',
     ],
     invocation: [
-      { via: 'ui', how: '/episode-production 建项目/剧集 → 制作助理对话直接驱动', note: '制作工具为项目域（需项目上下文），不在聊天宿主直调' },
-      { via: 'workflow', how: 'video-gen / video-compose 节点（轻量文生视频/合成；完整短剧流水线在项目 UI）' },
+      { via: 'workflow', how: 'run_workflow 内置「短视频脚本生成视频」V1/V2/V3（音色 voiceId 与视频/图像 Provider/模型 ID 必填，缺了先问用户）' },
+      { via: 'ui', how: '/episode-production 建项目/剧集 → 制作助理对话驱动多集流水线' },
     ],
   },
   {
@@ -151,7 +151,7 @@ export const MODULE_CAPABILITY_CARDS: ModuleCapability[] = [
     name: '知识库',
     tagline: '文档知识库的入库、检索、问答——kb-ingest / kb-retrieve / kb-qa 工作流节点承载，「先查资料再产出」类任务与知识库组合',
     intents: ['根据我的资料回答…', '把这份文档收进知识库', '在知识库里查一下…'],
-    capabilities: ['kb-ingest：文档入库', 'kb-retrieve / kb-query-multi：检索', 'kb-qa：知识库问答'],
+    capabilities: ['kb-ingest：文档入库', 'kb-retrieve / kb-query-multi：检索', 'kb-qa：知识库问答', '内置工作流：网页摘要入库、知识提炼存日记（run_workflow）'],
     invocation: [
       { via: 'workflow', how: 'kb-ingest / kb-retrieve / kb-qa 节点（需知识库 id，向用户澄清）' },
       { via: 'ui', how: '/knowledge-base' },
