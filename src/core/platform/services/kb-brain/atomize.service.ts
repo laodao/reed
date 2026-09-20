@@ -72,7 +72,7 @@ export class AtomizeService {
         knownEntityNames: input.knownEntityNames,
       })
       atoms.push(...out.atoms)
-      events.push(...out.events)
+      events.push(...(out.events ?? []))
       for (const m of out.mentions) mentions.set(m.name, m.type)
     }
     return { atoms, events, mentions: [...mentions.entries()].map(([name, type]) => ({ name, type })) }
@@ -124,7 +124,8 @@ export class AtomizeService {
       const hit = statementsByPos.find((s) => s.pos >= pos)
       return hit?.statement ?? null
     }
-    const events: LocatedEvent[] = out.events
+    // events 可选（schema 只必填 atoms）——模型省略时为 undefined，不能直接 .map
+    const events: LocatedEvent[] = (out.events ?? [])
       .map((ev) => ({
         fromStatement: resolveEventEnd(ev.fromQuote),
         toStatement: resolveEventEnd(ev.toQuote),

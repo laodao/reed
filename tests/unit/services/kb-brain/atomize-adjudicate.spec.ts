@@ -283,8 +283,48 @@ describe('normalizeAdjudicateRaw（裁决缺键/别名归一——真机修）',
     expect(out.novel).toEqual([0])
   })
 
-  it('类型错误（novel 非数组）→ 仍响亮失败', () => {
-    expect(() => validateAdjudicateOutput({ duplicates: [], contradictions: [], novel: 'x' }, bounds)).toThrow(/校验失败/)
+  it('类型错误（novel 非数组）→ 空结果（裁决是尽力而为信号，不毁整章）', () => {
+    const out = validateAdjudicateOutput({ duplicates: [], contradictions: [], novel: 'x' }, bounds)
+    expect(out.novel).toEqual([])
+  })
+
+  it('novel 条目级清洗：数字字符串收编、非整数剔除（真机形态）', () => {
+    // bounds.newCount=3：4 越界被边界过滤丢弃（归一保留，过滤层兜底）
+    const out = validateAdjudicateOutput({ duplicates: [], contradictions: [], novel: [0, '2', 3.5, 'x', 4] }, bounds)
+    expect(out.novel).toEqual([0, 2])
+  })
+
+  it('contradictions 负数索引 → 校验通过、越界过滤丢弃（真机形态）', () => {
+    const out = validateAdjudicateOutput(
+      { duplicates: [], contradictions: [{ newIdx: 1, oldIdx: -1, severity: 'update' }], novel: [1] },
+      bounds,
+    )
+    expect(out.contradictions).toEqual([])
+    expect(out.novel).toEqual([1])
+  })
+
+  it('severity 非枚举 → 保守归 conflict（人审，不误毁旧论断）', () => {
+    const out = validateAdjudicateOutput(
+      { duplicates: [], contradictions: [{ newIdx: 1, oldIdx: 0, severity: 'major' }], novel: [] },
+      bounds,
+    )
+    expect(out.contradictions[0].severity).toBe('conflict')
+  })
+
+  it('duplicates 数字字符串索引 → 收编', () => {
+    const out = validateAdjudicateOutput(
+      { duplicates: [{ newIdx: '0', oldIdx: '1' }], contradictions: [], novel: [] },
+      bounds,
+    )
+    expect(out.duplicates).toEqual([{ newIdx: 0, oldIdx: 1 }])
+  })
+
+  it('duplicates 坏条目（缺键/非对象）→ 剔除不毁整章', () => {
+    const out = validateAdjudicateOutput(
+      { duplicates: [{ newIdx: 0 }, 'garbage', { newIdx: 1, oldIdx: 0 }], contradictions: [], novel: [] },
+      bounds,
+    )
+    expect(out.duplicates).toEqual([{ newIdx: 1, oldIdx: 0 }])
   })
 })
 

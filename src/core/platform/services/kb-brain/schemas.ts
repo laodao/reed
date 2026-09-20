@@ -102,7 +102,7 @@ const ADJUDICATE_SCHEMA = {
       type: 'array',
       items: {
         type: 'object',
-        properties: { newIdx: { type: 'integer', minimum: 0 }, oldIdx: { type: 'integer', minimum: 0 } },
+        properties: { newIdx: { type: 'integer' }, oldIdx: { type: 'integer' } },
         required: ['newIdx', 'oldIdx'],
         additionalProperties: false,
       },
@@ -112,15 +112,15 @@ const ADJUDICATE_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          newIdx: { type: 'integer', minimum: 0 },
-          oldIdx: { type: 'integer', minimum: 0 },
+          newIdx: { type: 'integer' },
+          oldIdx: { type: 'integer' },
           severity: { enum: ['update', 'conflict'] },
         },
         required: ['newIdx', 'oldIdx', 'severity'],
         additionalProperties: false,
       },
     },
-    novel: { type: 'array', items: { type: 'integer', minimum: 0 } },
+    novel: { type: 'array', items: { type: 'integer' } },
   },
   required: ['duplicates', 'contradictions', 'novel'],
   additionalProperties: false,
@@ -207,19 +207,48 @@ export function validateAtomizeOutput(data: unknown): AtomizeOutput {
  * 缺失数组键补空（「没判出冲突」是合法语义，不是格式错误）；
  * 近义命名（conflicts/same/new）归一。内容级错误仍交 ajv 响亮失败。
  */
+/** 索引清洗：数字/数字字符串 → 整数；其余丢弃（返回 NaN 触发调用方过滤） */
+function toIdx(v: unknown): number {
+  const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : v
+  return typeof n === 'number' && Number.isInteger(n) ? n : Number.NaN
+}
+
 export function normalizeAdjudicateRaw(data: unknown): unknown {
   if (typeof data !== 'object' || data === null) return data
   const out = { ...(data as Record<string, unknown>) }
   // 只补「缺失」：省略空结果段是合法语义；类型错了保留原值交 ajv 响亮失败
-  if (out.duplicates === undefined || out.duplicates === null) {
-    out.duplicates = out.same ?? []
+  if (!Array.isArray(out.duplicates)) {
+    out.duplicates = Array.isArray(out.same) ? out.same : []
   }
-  if (out.contradictions === undefined || out.contradictions === null) {
-    out.contradictions = out.conflicts ?? []
+  if (!Array.isArray(out.contradictions)) {
+    out.contradictions = Array.isArray(out.conflicts) ? out.conflicts : []
   }
-  if (out.novel === undefined || out.novel === null) {
-    out.novel = out.new ?? []
+  if (!Array.isArray(out.novel)) {
+    out.novel = Array.isArray(out.new) ? out.new : []
   }
+  // 条目级清洗（真机实证：novel 混入非整数、contradictions 出负数索引/坏条目）——
+  // 坏条目剔除不毁整章，与 atoms 坏条目剔除同一策略；severity 非枚举保守归 'conflict'
+  //（标 suspected 走人审，绝不误毁旧论断）
+  out.novel = (out.novel as unknown[]).map(toIdx).filter((n) => Number.isInteger(n))
+  const cleanEntry = (e: Record<string, unknown>): Record<string, unknown> | null => {
+    const newIdx = toIdx(e.newIdx)
+    const oldIdx = toIdx(e.oldIdx)
+    // 回写收编后的整数索引（数字字符串 '2' → 2）；坏条目剔除
+    if (!Number.isInteger(newIdx) || !Number.isInteger(oldIdx)) return null
+    return { ...e, newIdx, oldIdx }
+  }
+  out.duplicates = (out.duplicates as unknown[]).flatMap((d) => {
+    if (typeof d !== 'object' || d === null) return []
+    const e = cleanEntry(d as Record<string, unknown>)
+    return e ? [e] : []
+  })
+  out.contradictions = (out.contradictions as unknown[]).flatMap((c) => {
+    if (typeof c !== 'object' || c === null) return []
+    const e = cleanEntry(c as Record<string, unknown>)
+    if (!e) return []
+    if (e.severity !== 'update' && e.severity !== 'conflict') e.severity = 'conflict'
+    return [e]
+  })
   return out
 }
 
