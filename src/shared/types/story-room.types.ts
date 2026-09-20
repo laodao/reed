@@ -122,6 +122,66 @@ export interface DesignPackage {
   confirmedAt?: number
 }
 
+// ==================== 待审批项（写作期门禁：章法产物 → 用户审批 → 继续） ====================
+
+export type RoomApprovalType = 'chapter_review'
+
+export type RoomApprovalStatus = 'pending' | 'approved' | 'rejected'
+
+/** 审批内容载荷：type=chapter_review 时为章法产物摘要（全文按 outlineId 现取，不进状态 JSON） */
+export interface RoomApprovalPayload {
+  outlineId?: string
+  chapterNo?: number | null
+  chapterTitle?: string
+  wordCount?: number
+  /** 章法工作流 run id（可审计） */
+  runId?: string
+  /** 设计卡自检 { ok, issues } */
+  review?: { ok: boolean; issues: string[] } | null
+  /** 写后一致性检查结论 */
+  postCheck?: { passed: boolean; report: string | null } | null
+  /** 故事性检查结论（钩子/爽点/吸引依据） */
+  storyCheck?: Record<string, any> | null
+}
+
+/**
+ * 待审批项：写作期「写完一章 → 用户在审批界面确认 → 才继续下一章」的载体。
+ * 聊天流中由消息文本里的审批标记 `[待审批:<id>]` 渲染成按钮（标记常量见下）；
+ * 独立于标记，顶栏「待审批 N」入口常驻（标记丢失也能进入审批界面）。
+ */
+export interface RoomApproval {
+  id: string
+  type: RoomApprovalType
+  title: string
+  status: RoomApprovalStatus
+  payload: RoomApprovalPayload
+  /** 产出该审批单的轮次（溯源） */
+  sourceTurn: number
+  createdAt: number
+  decidedAt?: number
+  /** 通过/驳回时用户的备注 */
+  note?: string
+}
+
+/** 聊天消息中的审批标记：`[待审批:apr_xxx]`——ChatCanvas 解析后渲染为审批按钮 */
+export function approvalMarker(id: string): string {
+  return `[待审批:${id}]`
+}
+
+/** 从消息文本中提取全部审批标记 id（去重保序） */
+export function extractApprovalMarkers(text: string): string[] {
+  const out: string[] = []
+  for (const m of String(text || '').matchAll(/\[待审批[:：]([A-Za-z0-9_:-]+)\]/g)) {
+    if (!out.includes(m[1])) out.push(m[1])
+  }
+  return out
+}
+
+/** 去掉消息文本中的审批标记（标记由审批按钮组件渲染，不进正文） */
+export function stripApprovalMarkers(text: string): string {
+  return String(text || '').replace(/\s*\[待审批[:：][A-Za-z0-9_:-]+\]/g, '')
+}
+
 // ==================== 房间状态（wizard_state.room） ====================
 
 /** 研讨室持久状态——`lw_projects.wizard_state.room` 子键 */
@@ -141,6 +201,9 @@ export interface RoomWorkspaceState {
   /** 设计包（长程任务草稿 → 整体确认；确认/驳回后保留终态供回看） */
   designPackages: DesignPackage[]
   designSeq: number
+  /** 待审批项（章法产物评审等；approve/reject 后保留终态供回看） */
+  approvals: RoomApproval[]
+  approvalSeq: number
 }
 
 export function defaultRoomState(): RoomWorkspaceState {
@@ -155,6 +218,8 @@ export function defaultRoomState(): RoomWorkspaceState {
     cardSeq: 0,
     designPackages: [],
     designSeq: 0,
+    approvals: [],
+    approvalSeq: 0,
   }
 }
 
@@ -172,6 +237,8 @@ export type RoomEventType =
   | 'design:ready'
   | 'target:changed'
   | 'chapter:saved'
+  | 'approval:ready'
+  | 'approval:decided'
   | 'error'
 
 export type RoomEvent =
@@ -187,6 +254,10 @@ export type RoomEvent =
   | { type: 'target:changed'; target: 'novel' | 'script' }
   /** 章节正文已落库（写/重写/局部修正）——研讨室右侧实况面板据此实时上正文 */
   | { type: 'chapter:saved'; outlineId: string; chapterNo: number | null; title: string; wordCount: number; patched?: boolean }
+  /** 新待审批项生成（章法完成自动建单）——前端弹审批界面/更新角标 */
+  | { type: 'approval:ready'; approvalId: string; title: string }
+  /** 审批已决（通过/驳回）——多端状态同步 */
+  | { type: 'approval:decided'; approvalId: string; status: 'approved' | 'rejected'; note?: string }
   | { type: 'error'; error: string }
 
 // ==================== 视图 / 请求类型 ====================
@@ -207,6 +278,8 @@ export interface RoomStateView {
   pendingCards: ArtifactCard[]
   /** 设计包（长程任务草稿/终态，整体确认制） */
   designPackages: DesignPackage[]
+  /** 待审批项（章法产物评审；pending 项在审批界面处理） */
+  approvals: RoomApproval[]
 }
 
 /** 按需提炼范围（设计文档 §9 + v2.1 章节卡 + P0 动态分类 kind:<key>） */

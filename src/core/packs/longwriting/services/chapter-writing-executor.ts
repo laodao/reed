@@ -57,8 +57,38 @@ export interface ChapterWritingOutcome {
     designCard?: string
     review?: { ok: boolean; issues: string[] }
     postCheck?: { passed: boolean; report: string | null }
+    storyCheck?: StoryQualityCheck | null
     qualityGate?: unknown
   }
+}
+
+/** 故事性检查单项：where=正文摘句定位，what=说明（为什么是钩子/爽点） */
+export interface StoryQualityItem {
+  where: string
+  what: string
+}
+
+/**
+ * 故事性检查结论（用户要求 2026-09-20：每章除一致性检查外增加故事性检查，
+ * 评估是否有爽点、是否吸引人，并输出结论——钩子在哪里、爽点在哪里、吸引人的依据）。
+ * 与 postCheck 并列独立汇报；失败不阻断（ran=false 带原因）。
+ */
+export interface StoryQualityCheck {
+  /** 模型结论是否成功解析；false 时看 error */
+  ran: boolean
+  /** 本章是否吸引人（模型综合判定） */
+  attractive?: boolean
+  /** 一句话检查结论 */
+  verdict?: string
+  /** 钩子：埋设的悬念/期待点/章尾卡点 */
+  hooks: StoryQualityItem[]
+  /** 爽点：让读者痛快的段落（打脸/立威/智斗/解谜/情感糖等） */
+  highlights: StoryQualityItem[]
+  /** 是否吸引人的根据（须落到正文） */
+  reasons: string[]
+  /** 修改建议（钩子/爽点缺位或偏弱时给出） */
+  suggestions: string[]
+  error?: string
 }
 
 export interface ChapterWritingMethodOptions {
@@ -99,6 +129,79 @@ function safeParseIssues(raw: string): Array<{ item?: string; evidence?: string;
     return Array.isArray(parsed?.issues) ? parsed.issues : []
   } catch {
     return []
+  }
+}
+
+/**
+ * 解析故事性检查输出（容错：截断/包 markdown 降级为 ran=false，
+ * 与 safeParseIssues 同一容错口径——宁可报"未运行"，不编造结论）。
+ */
+export function parseStoryQualityCheck(raw: string): StoryQualityCheck {
+  const empty: StoryQualityCheck = { ran: false, hooks: [], highlights: [], reasons: [], suggestions: [] }
+  const first = raw.indexOf('{')
+  const last = raw.lastIndexOf('}')
+  if (first === -1 || last <= first) return { ...empty, error: '故事性检查输出未包含 JSON' }
+  let obj: any
+  try {
+    obj = JSON.parse(raw.slice(first, last + 1))
+  } catch {
+    return { ...empty, error: '故事性检查 JSON 解析失败（可能截断）' }
+  }
+  const item = (v: any): StoryQualityItem | null =>
+    v && typeof v === 'object' && typeof v.what === 'string' && v.what.trim()
+      ? { where: typeof v.where === 'string' ? v.where : '', what: v.what }
+      : null
+  const items = (v: any): StoryQualityItem[] => (Array.isArray(v) ? (v.map(item).filter(Boolean) as StoryQualityItem[]) : [])
+  const strs = (v: any): string[] => (Array.isArray(v) ? (v.filter((s) => typeof s === 'string' && s.trim()) as string[]) : [])
+  return {
+    ran: true,
+    attractive: typeof obj?.attractive === 'boolean' ? obj.attractive : undefined,
+    verdict: typeof obj?.verdict === 'string' && obj.verdict.trim() ? obj.verdict : undefined,
+    hooks: items(obj?.hooks),
+    highlights: items(obj?.highlights),
+    reasons: strs(obj?.reasons),
+    suggestions: strs(obj?.suggestions),
+  }
+}
+
+/**
+ * 故事性检查（用户要求 2026-09-20）：评估本章是否有爽点、是否吸引人，
+ * 输出结构化结论（钩子在哪/爽点在哪/吸引人依据），由调用方随一致性结果一并汇报。
+ * 审读走 harness 的模型解析（与一致性审读同模型源）；失败不阻断。
+ */
+export async function runStoryQualityCheck(
+  projectId: string,
+  outlineId: string,
+  content: string,
+  signal?: AbortSignal,
+): Promise<StoryQualityCheck> {
+  try {
+    const outlines = (await getCoreDatabaseManager().lwOutlines?.getByProjectId(projectId)) || []
+    const summary = outlines.find((o) => o.id === outlineId)?.summary || ''
+    const raw = await generateChapterReviewText(
+      'story-quality-check',
+      {
+        system: '你是长篇网文的故事性审读员，站在目标读者角度评估「这一章好不好看」。只输出 JSON，不要任何其他文字。',
+        user: `【本章大纲概要】${summary || '（无）'}
+【本章正文】
+${content}
+
+请完成故事性评估并只输出 JSON：
+1. hooks：本章埋设的钩子（悬念/期待点/章尾卡点），每项 {"where":"正文摘句（≤30字）","what":"钩子是什么、勾住读者什么期待"}；没有则 []。
+2. highlights：本章爽点（打脸/立威/智斗/解谜/情感糖等让读者痛快的段落），每项 {"where":"正文摘句（≤30字）","what":"爽在哪"}；没有则 []。
+3. attractive：布尔值，综合判断本章是否吸引人。
+4. verdict：一句话检查结论。
+5. reasons：是否吸引人的具体依据（节奏/张力/期待感/信息增量等，须落到正文），每项一句。
+6. suggestions：若钩子或爽点缺位/偏弱，给出可直接执行的修改建议；够好则 []。
+返回 JSON：{"attractive":true,"verdict":"…","hooks":[…],"highlights":[…],"reasons":[…],"suggestions":[…]}。只输出 JSON。`,
+        maxTokens: 1600,
+      },
+      signal,
+    )
+    return parseStoryQualityCheck(raw)
+  } catch (e: any) {
+    logger.warn('[chapter-writing] 故事性检查失败（不阻断）:', e?.message)
+    return { ran: false, hooks: [], highlights: [], reasons: [], suggestions: [], error: e?.message || '故事性检查失败' }
   }
 }
 
@@ -324,6 +427,11 @@ ${content}
   }
   postCheck = { passed: reportLines.length === 0, report: reportLines.length ? reportLines.join('\n') : null }
 
+  // 故事性检查（用户要求 2026-09-20）：与一致性检查并列的独立汇报项，
+  // 评估钩子/爽点/吸引度并输出结论；失败不阻断正文交付。
+  onProgress?.({ step: 'story-check', message: '故事性检查（钩子/爽点/吸引度结论）' })
+  const storyCheck = await runStoryQualityCheck(projectId, outlineId, content, opts.signal)
+
   return {
     ok: true,
     data: {
@@ -333,6 +441,7 @@ ${content}
       designCard: markdown,
       review,
       postCheck: postCheck ?? null,
+      storyCheck,
       qualityGate: (writeResult.data as any)?.qualityGate,
     },
   }

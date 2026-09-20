@@ -16,6 +16,7 @@ import type {
   DesignPackage,
   DistillScope,
   LedgerOpInput,
+  RoomApproval,
   RoomEvent,
   RoomMessageView,
   RoomPhaseId,
@@ -72,6 +73,12 @@ export function useStoryRoom(projectId: string, hooks?: StoryRoomHooks) {
   const taskLog = ref<Array<{ message: string; tool?: string; status?: string }>>([])
   /** 待确认设计包（design:ready 事件置位；确认/驳回后清空） */
   const designReady = ref<DesignPackage | null>(null)
+  /** 当前打开审批界面的审批单（审批按钮/角标点击置位；决定后清空） */
+  const approvalOpen = ref<RoomApproval | null>(null)
+  /** 待审批单（最新 pending；顶栏角标用） */
+  const pendingApprovals = computed<RoomApproval[]>(() =>
+    (state.value?.approvals ?? []).filter((a) => a.status === 'pending'),
+  )
 
   const busy = computed(() => status.value === 'streaming')
 
@@ -130,6 +137,11 @@ export function useStoryRoom(projectId: string, hooks?: StoryRoomHooks) {
             }
           } catch { /* 状态刷新失败不阻断 */ }
         })()
+        break
+      case 'approval:ready':
+      case 'approval:decided':
+        // 状态同步（角标/按钮终态）；入口是聊天里的审批按钮与顶栏角标，不抢焦点弹窗
+        void refreshState()
         break
       case 'target:changed':
         if (state.value) state.value = { ...state.value, contentTarget: event.target }
@@ -217,6 +229,24 @@ export function useStoryRoom(projectId: string, hooks?: StoryRoomHooks) {
     else ElMessage.info('设计包已驳回（未落库）')
     designReady.value = null
     await refreshState()
+  }
+
+  /** 审批决定（通过/驳回）。成功后由调用方决定是否发继续消息给主编 */
+  async function decideApproval(approvalId: string, action: 'approve' | 'reject', note?: string): Promise<RoomApproval | null> {
+    const res = await api().roomApprovalDecide(projectId, approvalId, action, note)
+    if (!res.success) {
+      ElMessage.error(res.error || '审批操作失败')
+      return null
+    }
+    const approval = res.data?.approval ?? null
+    if (state.value) {
+      state.value = {
+        ...state.value,
+        approvals: (state.value.approvals ?? []).map((a) => (a.id === approvalId && approval ? approval : a)),
+      }
+    }
+    if (approvalOpen.value?.id === approvalId) approvalOpen.value = null
+    return approval
   }
 
   function cancel(): void {
@@ -344,6 +374,8 @@ export function useStoryRoom(projectId: string, hooks?: StoryRoomHooks) {
     keptConflicts,
     taskLog,
     designReady,
+    approvalOpen,
+    pendingApprovals,
     load,
     send,
     cancel,
@@ -359,6 +391,7 @@ export function useStoryRoom(projectId: string, hooks?: StoryRoomHooks) {
     ignoreCard,
     confirmDesign,
     discardDesign,
+    decideApproval,
   }
 }
 

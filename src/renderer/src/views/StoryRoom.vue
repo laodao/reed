@@ -72,10 +72,12 @@
           :cards="pendingCards"
           :project-name="projectName"
           :locate-turn="locateReq"
+          :approvals="store.state.value?.approvals ?? []"
           @adopt="onAdopt"
           @edit="openEdit"
           @regen="openFeedback"
           @ignore="store.ignoreCard"
+          @open-approval="openApproval"
         />
         <div class="composer">
           <div class="composer-inner">
@@ -116,6 +118,9 @@
               </el-dropdown>
               <span v-if="store.conflicts.value.length" class="ct-btn conflict-ct" @click="conflictDrawer = true">
                 ⚔ 疑点 {{ store.conflicts.value.length }}
+              </span>
+              <span v-if="store.pendingApprovals.value.length" class="ct-btn approval-ct" @click="openApproval(store.pendingApprovals.value[0]!.id)">
+                ✍ 待审批 {{ store.pendingApprovals.value.length }}
               </span>
               <span class="ct-hint">阶段决定主编的讨论焦点与产出物；提提炼把共识整理成卡</span>
             </div>
@@ -318,6 +323,59 @@
       <template #footer>
         <el-button @click="editVisible = false">取消</el-button>
         <el-button type="primary" @click="saveEditAndAdopt">保存并采纳</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 待审批界面：聊天里的审批按钮/顶栏「待审批」角标点击打开，通过后才继续下一章 -->
+    <el-dialog
+      v-model="approvalVisible"
+      :title="`待审批 · ${store.approvalOpen.value?.title || ''}`"
+      width="760px"
+      top="4vh"
+      class="approval-dialog"
+    >
+      <div v-if="store.approvalOpen.value" class="approval-body">
+        <div class="ap-meta">
+          <span v-if="store.approvalOpen.value.payload?.chapterNo">第 {{ store.approvalOpen.value.payload.chapterNo }} 章</span>
+          <span v-if="store.approvalOpen.value.payload?.wordCount">{{ store.approvalOpen.value.payload.wordCount }} 字</span>
+          <span v-if="store.approvalOpen.value.payload?.runId" class="ap-run">章法 run：{{ store.approvalOpen.value.payload.runId }}</span>
+        </div>
+        <div class="ap-checks">
+          <div class="ap-check" :class="store.approvalOpen.value.payload?.postCheck?.passed ? 'ok' : 'warn'">
+            <div class="ap-check-head">
+              <b>一致性检查</b>
+              <span>{{ store.approvalOpen.value.payload?.postCheck?.passed ? '✓ 通过' : '有疑点（见下）' }}</span>
+            </div>
+            <pre v-if="store.approvalOpen.value.payload?.postCheck?.report" class="ap-report">{{ store.approvalOpen.value.payload?.postCheck?.report }}</pre>
+          </div>
+          <div v-if="store.approvalOpen.value.payload?.storyCheck?.ran" class="ap-check" :class="store.approvalOpen.value.payload?.storyCheck?.attractive ? 'ok' : 'warn'">
+            <div class="ap-check-head">
+              <b>故事性检查</b>
+              <span>{{ store.approvalOpen.value.payload?.storyCheck?.attractive ? '✓ 吸引人' : '偏弱' }} · {{ store.approvalOpen.value.payload?.storyCheck?.verdict }}</span>
+            </div>
+            <ul class="ap-sc-list">
+              <li v-for="(h, i) in store.approvalOpen.value.payload?.storyCheck?.hooks || []" :key="'hk' + i">
+                <b>钩子</b>{{ h.where ? `「${h.where}」` : '' }}——{{ h.what }}
+              </li>
+              <li v-for="(h, i) in store.approvalOpen.value.payload?.storyCheck?.highlights || []" :key="'hl' + i">
+                <b>爽点</b>{{ h.where ? `「${h.where}」` : '' }}——{{ h.what }}
+              </li>
+              <li v-for="(r, i) in store.approvalOpen.value.payload?.storyCheck?.reasons || []" :key="'rs' + i">
+                <b>依据</b>{{ r }}
+              </li>
+            </ul>
+          </div>
+        </div>
+        <div class="ap-content">
+          <div class="ap-content-head">本章正文</div>
+          <div class="ap-content-text">{{ approvalContent || '（正文加载中…）' }}</div>
+        </div>
+        <el-input v-model="approvalNote" type="textarea" :rows="2" placeholder="评审意见（可选；驳回时建议填写修改方向，将转给主编）" />
+      </div>
+      <template #footer>
+        <el-button @click="approvalVisible = false">稍后再看</el-button>
+        <el-button type="danger" plain :loading="deciding" @click="onRejectApproval">驳回</el-button>
+        <el-button type="primary" :loading="deciding" @click="onApproveApproval">通过并继续</el-button>
       </template>
     </el-dialog>
   </div>
@@ -1344,6 +1402,75 @@ async function openFeedback(card: ArtifactCard): Promise<void> {
   }
 }
 
+// ==================== 待审批界面（章法产物 → 用户确认 → 继续） ====================
+
+const approvalVisible = ref(false)
+const approvalContent = ref('')
+const approvalNote = ref('')
+const deciding = ref(false)
+
+/** 打开审批界面：拉审批单 + 现取本章正文（正文不进状态 JSON，按 outlineId 现读） */
+async function openApproval(id: string): Promise<void> {
+  const ap = (store.state.value?.approvals ?? []).find((a) => a.id === id)
+  if (!ap) {
+    ElMessage.warning('审批单不存在或已删除')
+    return
+  }
+  store.approvalOpen.value = ap
+  approvalNote.value = ap.note || ''
+  approvalContent.value = ''
+  approvalVisible.value = true
+  const oid = ap.payload?.outlineId
+  if (oid) {
+    try {
+      const res = await window.electronAPI.longwriting.getChapter(oid)
+      approvalContent.value = res?.data?.content || ''
+    } catch {
+      approvalContent.value = '（正文读取失败，可去写作台查看）'
+    }
+  }
+}
+
+/** 通过：落审批终态 + 以用户身份把通过结论发进研讨室，主编据此继续下一章 */
+async function onApproveApproval(): Promise<void> {
+  const ap = store.approvalOpen.value
+  if (!ap || deciding.value) return
+  deciding.value = true
+  try {
+    const decided = await store.decideApproval(ap.id, 'approve', approvalNote.value || undefined)
+    if (decided) {
+      approvalVisible.value = false
+      const title = ap.payload?.chapterTitle || ap.title
+      const note = approvalNote.value.trim()
+      await store.send(
+        `【评审通过】《${title}》已确认。${note ? `评审意见：${note}。` : ''}请继续执行既定流程：写下一章，写完自动出审批单等我确认。`,
+      )
+    }
+  } finally {
+    deciding.value = false
+  }
+}
+
+/** 驳回：落审批终态 + 把驳回意见发进研讨室，主编据此修改或与用户确认方向 */
+async function onRejectApproval(): Promise<void> {
+  const ap = store.approvalOpen.value
+  if (!ap || deciding.value) return
+  deciding.value = true
+  try {
+    const decided = await store.decideApproval(ap.id, 'reject', approvalNote.value || undefined)
+    if (decided) {
+      approvalVisible.value = false
+      const title = ap.payload?.chapterTitle || ap.title
+      const note = approvalNote.value.trim()
+      await store.send(
+        `【评审驳回】《${title}》未通过。${note ? `修改方向：${note}。` : '请给出你的修改建议，与我确认方向后重写。'}`,
+      )
+    }
+  } finally {
+    deciding.value = false
+  }
+}
+
 function goBack(): void {
   router.push('/longwriting')
 }
@@ -1559,7 +1686,27 @@ body.side-resizing { cursor: col-resize; user-select: none; }
 .phase-live { color: var(--el-color-success); border-color: var(--el-color-success-light-5); }
 .ct-sub { font-size: 11px; opacity: 0.65; margin-left: 2px; }
 .conflict-ct { color: var(--el-color-warning-dark-2); border-color: var(--el-color-warning-light-5); }
+.approval-ct { color: var(--el-color-danger); border-color: var(--el-color-danger-light-5); }
 .ct-hint { font-size: 11px; color: var(--el-text-color-placeholder); }
+
+/* 待审批界面 */
+.approval-body { display: flex; flex-direction: column; gap: 12px; }
+.ap-meta { display: flex; gap: 14px; font-size: 12.5px; color: var(--el-text-color-secondary); }
+.ap-run { user-select: all; }
+.ap-checks { display: flex; flex-direction: column; gap: 8px; }
+.ap-check { border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; }
+.ap-check.ok { border-color: var(--el-color-success-light-5); background: var(--el-color-success-light-9); }
+.ap-check.warn { border-color: var(--el-color-warning-light-5); background: var(--el-color-warning-light-9); }
+.ap-check-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 4px; }
+.ap-report { margin: 6px 0 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; line-height: 1.6; max-height: 180px; overflow-y: auto; }
+.ap-sc-list { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; line-height: 1.6; }
+.ap-sc-list b { margin-right: 6px; }
+.ap-content { border: 1px solid var(--el-border-color-lighter); border-radius: 8px; overflow: hidden; }
+.ap-content-head { padding: 7px 12px; font-size: 12.5px; font-weight: 600; background: var(--el-fill-color-light); }
+.ap-content-text {
+  padding: 12px 14px; font-size: 13.5px; line-height: 1.9; white-space: pre-wrap; word-break: break-word;
+  max-height: 42vh; overflow-y: auto;
+}
 
 .conflict-drawer-list { display: flex; flex-direction: column; gap: 10px; }
 .conflict-item {

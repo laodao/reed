@@ -2254,6 +2254,8 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:room:ignoreCard', projectId, cardId),
     roomSetTarget: (projectId: string, target: string) =>
       ipcRenderer.invoke('longwriting:room:setTarget', projectId, target),
+    roomApprovalDecide: (projectId: string, approvalId: string, action: 'approve' | 'reject', note?: string) =>
+      ipcRenderer.invoke('longwriting:room:approval:decide', projectId, approvalId, action, note),
     roomDesignConfirm: (projectId: string, packageId: string, itemIds?: string[]) =>
       ipcRenderer.invoke('longwriting:room:designConfirm', projectId, packageId, itemIds),
     roomDesignDiscard: (projectId: string, packageId: string) =>

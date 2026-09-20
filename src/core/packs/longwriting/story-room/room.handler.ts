@@ -13,6 +13,7 @@ import { planConflictResolution, executeConflictAction, type ConflictInput } fro
 import { acknowledgeConflict, unacknowledgeConflict } from '@core/platform/services/longwriting/conflict-gate'
 import { StoryRoomDistillerService } from './room-distiller'
 import { applyLedgerOp } from './room-ledger'
+import { emitRoomEvent } from './room-events'
 import type { RoomPhaseId } from '@shared/types/story-room.types'
 
 export const ROOM_CHANNELS = {
@@ -29,6 +30,7 @@ export const ROOM_CHANNELS = {
   ROOM_SET_TARGET: 'longwriting:room:setTarget',
   ROOM_DESIGN_CONFIRM: 'longwriting:room:designConfirm',
   ROOM_DESIGN_DISCARD: 'longwriting:room:designDiscard',
+  ROOM_APPROVAL_DECIDE: 'longwriting:room:approval:decide',
 } as const
 
 export function registerStoryRoomHandlers(): void {
@@ -101,6 +103,29 @@ export function registerStoryRoomHandlers(): void {
       return { success: false, error: error.message }
     }
   })
+
+  // ==================== 待审批项（写作期门禁：章法产物 → 用户审批 → 继续） ====================
+
+  ipcBridge.handle(
+    ROOM_CHANNELS.ROOM_APPROVAL_DECIDE,
+    async (_event, projectId: string, approvalId: string, action: 'approve' | 'reject', note?: string) => {
+      try {
+        const { decideApproval } = await import('./room-approvals')
+        const approval = await decideApproval(getDb(), projectId, approvalId, action, note)
+        if (!approval) return { success: false, error: '审批单不存在或已决定' }
+        emitRoomEvent(projectId, {
+          type: 'approval:decided',
+          approvalId: approval.id,
+          status: approval.status as 'approved' | 'rejected',
+          note: approval.note,
+        })
+        return { success: true, data: { approval } }
+      } catch (error: any) {
+        console.error('[StoryRoomHandler] approval:decide 失败:', error)
+        return { success: false, error: error.message }
+      }
+    },
+  )
 
   // ==================== 故事圣经统一读模型（P0） ====================
 

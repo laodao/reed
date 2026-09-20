@@ -231,6 +231,7 @@ export class StoryRoomSessionService {
       turnNo: state.turnNo,
       pendingCards: state.pendingCards,
       designPackages: state.designPackages ?? [],
+      approvals: state.approvals ?? [],
     }
   }
 

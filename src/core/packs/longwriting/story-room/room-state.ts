@@ -33,6 +33,8 @@ export function extractRoomState(wizard: WizardStateFull | undefined): RoomWorks
     cardSeq: Number.isFinite(room.cardSeq) ? Number(room.cardSeq) : def.cardSeq,
     designPackages: Array.isArray(room.designPackages) ? room.designPackages : def.designPackages,
     designSeq: Number.isFinite(room.designSeq) ? Number(room.designSeq) : def.designSeq,
+    approvals: Array.isArray(room.approvals) ? room.approvals : def.approvals,
+    approvalSeq: Number.isFinite(room.approvalSeq) ? Number(room.approvalSeq) : def.approvalSeq,
   }
 }
 

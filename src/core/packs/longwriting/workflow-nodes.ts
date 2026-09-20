@@ -82,6 +82,14 @@ const chapterWritingNode: WorkflowNodeHandler = {
         : `写后一致性检查发现新疑点：${postCheck.report || ''}`
       : ''
 
+    // 故事性检查（2026-09-20）：与一致性检查并列的结论项，随 run 输出透出
+    const sc = outcome.data?.storyCheck
+    const storyNote = sc?.ran
+      ? sc.attractive
+        ? `故事性检查：吸引人（${sc.verdict || '无结论'}）；钩子 ${sc.hooks.length} 处、爽点 ${sc.highlights.length} 处`
+        : `故事性检查：偏弱（${sc.verdict || '无结论'}）${sc.suggestions.length ? '；建议：' + sc.suggestions.join('；') : ''}`
+      : '故事性检查未运行'
+
     return {
       status: 'succeeded',
       output: {
@@ -89,7 +97,8 @@ const chapterWritingNode: WorkflowNodeHandler = {
         wordCount: outcome.data?.wordCount ?? 0,
         review: outcome.data?.review ?? null,
         postCheck: postCheck ?? null,
-        note: postNote,
+        storyCheck: sc ?? null,
+        note: [postNote, storyNote].filter(Boolean).join('；'),
       },
     }
   },

@@ -15,15 +15,30 @@
           <span class="badge">{{ item.phaseLabel }}</span>
           <span class="line"></span>
         </div>
-        <!-- 消息气泡 -->
-        <MessageBubble
-          v-else-if="item.type === 'message'"
-          :role="item.message.role"
-          :content="item.message.content"
-          :timestamp="item.message.timestamp"
-          :data-turn="item.message.metadata ? turnOf(item.message.metadata) : ''"
-          :data-index="i"
-        />
+        <!-- 消息气泡（assistant 消息中的审批标记剥离后由下方审批按钮渲染） -->
+        <template v-else-if="item.type === 'message'">
+          <MessageBubble
+            :role="item.message.role"
+            :content="displayContent(item.message)"
+            :timestamp="item.message.timestamp"
+            :data-turn="item.message.metadata ? turnOf(item.message.metadata) : ''"
+            :data-index="i"
+          />
+          <div
+            v-for="aid in item.message.role === 'assistant' ? markersOf(item.message.content) : []"
+            :key="`${item.key}-apr-${aid}`"
+            class="approval-row"
+          >
+            <button class="approval-btn" :class="{ done: approvalStatus(aid) !== 'pending' }" @click="$emit('open-approval', aid)">
+              <span class="ab-ico">📝</span>
+              <span class="ab-body">
+                <span class="ab-title">{{ approvalLabel(aid) }}</span>
+                <span class="ab-sub">{{ approvalStatus(aid) === 'pending' ? '点击查看审批内容并确认' : approvalStatus(aid) === 'approved' ? '已通过' : '已驳回' }}</span>
+              </span>
+              <span class="ab-go">{{ approvalStatus(aid) === 'pending' ? '去审批 →' : '查看' }}</span>
+            </button>
+          </div>
+        </template>
       </template>
 
       <!-- 流式中的主编发言 -->
@@ -59,7 +74,8 @@ import { computed, ref, watch, nextTick } from 'vue'
 import MessageBubble from './MessageBubble.vue'
 import ArtifactCard from './ArtifactCard.vue'
 import { ROOM_PHASE_META } from './roomKinds'
-import type { ArtifactCard as ArtifactCardData, RoomMessageView } from '@shared/types/story-room.types'
+import { extractApprovalMarkers, stripApprovalMarkers } from '@shared/types/story-room.types'
+import type { ArtifactCard as ArtifactCardData, RoomApproval, RoomMessageView } from '@shared/types/story-room.types'
 
 defineOptions({ name: 'RoomChatCanvas' })
 
@@ -72,20 +88,45 @@ const props = defineProps<{
   projectName?: string
   /** 溯源定位请求：{turn, n}——n 为递增序号驱动 watch */
   locateTurn?: { turn: number; n: number } | null
+  /** 审批单状态表（按钮标题/终态展示用；未知 id 按 pending 处理） */
+  approvals?: RoomApproval[]
 }>()
-
-const welcomeText = [
-  '我是你的**故事主编**。《' + (props.projectName || '未命名作品') + '》已就绪。',
-  '',
-  '没有步骤、没有表单——**一个对话聊到底**：加人物/门派/武功直接说；改设定说"把××的××改成××"；右侧**世界设定集**随时查看，点条目可在对话中追问。讨论中的共识会沉淀成**讨论成果**，随时「提炼入库」。',
-].join('\n')
 
 defineEmits<{
   (e: 'adopt', card: ArtifactCardData): void
   (e: 'edit', card: ArtifactCardData): void
   (e: 'regen', card: ArtifactCardData): void
   (e: 'ignore', card: ArtifactCardData): void
+  (e: 'open-approval', approvalId: string): void
 }>()
+
+/** 提取 assistant 消息里的审批标记 id */
+function markersOf(content: string): string[] {
+  return extractApprovalMarkers(content || '')
+}
+
+/** 展示正文：剥离审批标记（标记由审批按钮渲染，不进 markdown） */
+function displayContent(m: RoomMessageView): string {
+  return m.role === 'assistant' ? stripApprovalMarkers(m.content || '') : m.content || ''
+}
+
+function approvalOf(id: string): RoomApproval | undefined {
+  return (props.approvals ?? []).find((a) => a.id === id)
+}
+
+function approvalLabel(id: string): string {
+  return approvalOf(id)?.title || '待审批单'
+}
+
+function approvalStatus(id: string): string {
+  return approvalOf(id)?.status || 'pending'
+}
+
+const welcomeText = [
+  '我是你的**故事主编**。《' + (props.projectName || '未命名作品') + '》已就绪。',
+  '',
+  '没有步骤、没有表单——**一个对话聊到底**：加人物/门派/武功直接说；改设定说"把××的××改成××"；右侧**世界设定集**随时查看，点条目可在对话中追问。讨论中的共识会沉淀成**讨论成果**，随时「提炼入库」。',
+].join('\n')
 
 type TimelineItem =
   | { key: string; type: 'divider'; phaseLabel: string }
@@ -199,6 +240,21 @@ watch(() => props.busy, () => scrollToBottom(false), { flush: 'post' })
   border: 1px solid var(--el-color-primary-light-8); border-radius: 999px; padding: 2.5px 13px;
 }
 .cards-head { text-align: center; font-size: 12px; color: var(--el-text-color-secondary); margin: 18px 0 6px; }
+.approval-row { display: flex; justify-content: flex-start; margin: -6px 0 14px 52px; }
+.approval-btn {
+  display: inline-flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer;
+  border: 1px solid var(--el-color-warning-light-5); border-radius: 10px;
+  background: var(--el-color-warning-light-9); transition: box-shadow .15s, border-color .15s;
+  text-align: left;
+}
+.approval-btn:hover { border-color: var(--el-color-warning); box-shadow: 0 2px 10px rgba(230, 162, 60, .18); }
+.approval-btn.done { border-color: var(--el-border-color-lighter); background: var(--el-fill-color-light); }
+.ab-ico { font-size: 18px; }
+.ab-body { display: flex; flex-direction: column; gap: 2px; }
+.ab-title { font-size: 13px; font-weight: 600; color: var(--el-text-color-primary); }
+.ab-sub { font-size: 11.5px; color: var(--el-text-color-secondary); }
+.ab-go { font-size: 12px; color: var(--el-color-warning); font-weight: 600; white-space: nowrap; }
+.approval-btn.done .ab-go { color: var(--el-text-color-secondary); font-weight: 400; }
 .typing { display: inline-flex; gap: 4px; padding: 10px 4px; }
 .typing i {
   width: 6px; height: 6px; border-radius: 50%; background: var(--el-color-primary);

@@ -46,6 +46,7 @@ import type { BibleEntryView, BibleGroupView } from '@core/platform/services/lon
 import { buildOutlineDocOrder, outlineChapterNumber } from '@core/platform/services/longwriting/outline-order'
 import { acknowledgeConflictByKey, conflictKey as conflictKeyOf } from '@core/platform/services/longwriting/conflict-gate'
 import { resolveStageModelOpts } from '../services/chapter-writing-executor'
+import { createLogger } from '@core/utils/logger'
 import { locateAll, locateExcerpt } from '@shared/utils/text-locate'
 
 export const LW_ROOM_PACK_ID = 'lw-room'
@@ -53,6 +54,8 @@ export const LW_ROOM_PACK_ID = 'lw-room'
 // 步数上限已迁入「参数设置 → 长文写作 → 故事研讨室」（`longwriting:storyRoom`.editorMaxSteps，
 // 默认 24 / 上限 60——六扇门复盘：上限本职是失控兜底而非预算），使用点现读；原
 // LW_ROOM_MAX_STEPS 环境变量覆盖通道退役。
+
+const logger = createLogger('LwRoomTools')
 
 /** 从工具执行上下文还原研讨室上下文 */
 function lwCtxFrom(ctx: AgentToolContext): { projectId: string } {
@@ -1144,7 +1147,7 @@ function buildWriteChapterFullToolDef(): AgentToolDef {
   return {
     name: 'lw_write_chapter_full',
     description:
-      '按章法一键写完一章（写正文唯一推荐入口）：内部启动「章节写作章法」工作流并在本工具内等待完成（工作流引擎确定性执行「生成章节设计卡（情节概要/开场钩子/爽点/章尾卡点）→ 自检 → 依据设计卡确定出场角色/地点/物品并确认 → 一致性检查 → 通过后生成并保存正文 → 写后一致性检查 → 故事性检查（钩子/爽点/吸引度结论）」，run 记录可审计）。自检或一致性检查不通过时返回具体问题清单——此时把问题讲给用户，修正方向确认后重新调用；禁止跳过章法直接写正文。该章已有正文时须用户同意后传 overwrite=true。完成后必须把一致性检查与故事性检查的结论原文转述给用户，然后停下等用户评审，未经用户明确同意不得继续写下一章。',
+      '按章法一键写完一章（写正文唯一推荐入口）：内部启动「章节写作章法」工作流并在本工具内等待完成（工作流引擎确定性执行「生成章节设计卡（情节概要/开场钩子/爽点/章尾卡点）→ 自检 → 依据设计卡确定出场角色/地点/物品并确认 → 一致性检查 → 通过后生成并保存正文 → 写后一致性检查 → 故事性检查（钩子/爽点/吸引度结论）」，run 记录可审计）。自检或一致性检查不通过时返回具体问题清单——此时把问题讲给用户，修正方向确认后重新调用；禁止跳过章法直接写正文。该章已有正文时须用户同意后传 overwrite=true。完成后必须把一致性检查与故事性检查的结论原文转述给用户；章法成功时系统自动生成审批单，回执会给出审批标记——你必须在回复末尾原样附上该标记（用户点它打开审批界面），不得省略、改写或凭记忆重造。用户在审批界面点「通过」之前不得继续写下一章。',
     inputSchema: z.object({
       outlineId: z.string().min(1).describe('章节大纲节点 id，或「第N章」/章节标题（自动解析；拿不准先 lw_query_outline）'),
       overwrite: z.boolean().optional().describe('该章已有正文时是否覆盖（须先征得用户同意）'),
@@ -1183,6 +1186,30 @@ function buildWriteChapterFullToolDef(): AgentToolDef {
         const storyMsg = sc?.ran
           ? `故事性检查结论：${sc.attractive ? '吸引人' : '偏弱'}（${sc.verdict || '无结论'}）——钩子 ${(sc.hooks || []).length} 处、爽点 ${(sc.highlights || []).length} 处。`
           : '故事性检查未运行。'
+        // 待审批单（用户要求 2026-09-20）：章法成功即自动建单，用户在审批界面确认后才继续。
+        // 回执携带标记，主编必须在回复末尾原样附上——聊天流据此渲染审批按钮。
+        let approvalMsg = ''
+        let approvalId = ''
+        try {
+          const { createChapterReviewApproval } = await import('./room-approvals')
+          const created = await createChapterReviewApproval(getCoreDatabaseManager(), projectId, {
+            outlineId: ref.id,
+            chapterNo: ref.chapterNo,
+            chapterTitle: ref.title,
+            wordCount: Number(out.wordCount) || 0,
+            runId: out.runId,
+            review: out.review ?? null,
+            postCheck: out.postCheck ?? null,
+            storyCheck: sc ?? null,
+          })
+          if (created.approval) {
+            approvalId = created.approval.id
+            emitRoomEvent(projectId, { type: 'approval:ready', approvalId, title: created.approval.title })
+            approvalMsg = `已生成本章审批单，你回复的末尾必须原样附上此标记（用户点它打开审批界面）：[待审批:${approvalId}]`
+          }
+        } catch (e: any) {
+          logger.warn('[story-room] 审批单生成失败（不阻断章法产物）:', e?.message)
+        }
         return {
           ok: true,
           data: {
@@ -1191,7 +1218,8 @@ function buildWriteChapterFullToolDef(): AgentToolDef {
             review: out.review,
             postCheck: out.postCheck,
             storyCheck: sc,
-            message: `章法完成：设计卡→自检→出场实体→一致性→正文已保存（${out.wordCount} 字）。${out.postCheck?.passed ? '写后一致性检查通过。' : '写后一致性检查发现新疑点：' + (out.postCheck?.report || '')}${storyMsg}`,
+            approvalId: approvalId || undefined,
+            message: `章法完成：设计卡→自检→出场实体→一致性→正文已保存（${out.wordCount} 字）。${out.postCheck?.passed ? '写后一致性检查通过。' : '写后一致性检查发现新疑点：' + (out.postCheck?.report || '')}${storyMsg}${approvalMsg ? '\n' + approvalMsg : ''}`,
           },
         }
       } catch (e: any) {

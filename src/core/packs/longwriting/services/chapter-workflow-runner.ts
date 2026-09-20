@@ -41,7 +41,8 @@ export async function runChapterWorkflowSync(
     }
     if (run.status === 'succeeded') {
       const out = (node?.output ?? {}) as Record<string, any>
-      return { ok: true, data: out }
+      // runId 随产物透出：研讨室审批单等消费方需可溯源到章法 run 记录
+      return { ok: true, data: { ...out, runId: started.runId } }
     }
     if (TERMINAL_RUN_STATUSES.has(run.status)) {
       const nodeErr = nodeRuns.find((n) => n.error)?.error
