@@ -46,8 +46,13 @@
             <el-radio-group v-model="atomFilter" size="small" @change="onAtomFilterChange">
               <el-radio-button value="all">全部论断</el-radio-button>
               <el-radio-button value="human">我的观感</el-radio-button>
+              <el-radio-button value="opinions">AI观点</el-radio-button>
               <el-radio-button value="open-question">悬而未决</el-radio-button>
             </el-radio-group>
+            <el-button size="small" type="primary" plain style="margin-left: auto" @click="openRemark">
+              <el-icon><Edit /></el-icon>
+              记观感
+            </el-button>
           </div>
           <div class="atoms-table-region">
             <el-table
@@ -215,6 +220,37 @@
           </div>
         </section>
 
+        <!-- 论断整理 -->
+        <section class="side-card">
+          <header class="side-head">
+            <span class="side-title">论断整理</span>
+          </header>
+          <div class="side-tip" style="margin: 0 0 8px">
+            AI 分批审读论断池，把同主题的细碎碎片合并为综合论断（如「主要法宝」逐条罗列→一条）；
+            被合并的原论断归档可查回。
+          </div>
+          <el-button
+            v-if="!consolidateRunning"
+            size="small"
+            type="warning"
+            plain
+            style="width: 100%"
+            @click="startConsolidate"
+          >
+            归纳整理
+          </el-button>
+          <template v-else>
+            <el-progress :percentage="consolidatePct" :stroke-width="6" />
+            <div class="side-tip">
+              归纳中… 批次 {{ consolidateProgress?.processedBatches ?? 0 }}/{{ consolidateProgress?.totalBatches ?? 0 }}，已合并
+              {{ consolidateProgress?.mergedGroups ?? 0 }} 组
+            </div>
+          </template>
+          <div v-if="consolidateSummary && !consolidateRunning" class="side-tip">
+            上次归纳：合并 {{ consolidateSummary.mergedGroups }} 组，归档 {{ consolidateSummary.supersededAtoms }} 条
+          </div>
+        </section>
+
         <!-- 待提取文档（开脑前上传的存量，有才显示） -->
         <section v-if="pendingDigestDocs.length > 0" class="side-card">
           <header class="side-head">
@@ -353,12 +389,42 @@
         </div>
       </template>
     </el-drawer>
+
+    <!-- 记观感（human origin 论断录入） -->
+    <el-dialog v-model="remarkOpen" title="记观感" width="480px" :close-on-click-modal="false">
+      <div class="rf-body">
+        <div class="rf-label">
+          我的观感
+          <span class="rf-req">*</span>
+        </div>
+        <el-input
+          v-model="remarkText"
+          type="textarea"
+          :rows="3"
+          maxlength="200"
+          show-word-limit
+          placeholder="写下你对这本书的判断与喜好，例如：我喜欢反派智斗多于正面对轰；金手指后期不能失控膨胀"
+        />
+        <div class="rf-label" style="margin-top: 12px">关联文档（可选）</div>
+        <el-select v-model="remarkDocId" clearable placeholder="不关联具体文档" style="width: 100%">
+          <el-option v-for="d in allDocs" :key="d.id" :label="d.name" :value="d.id" />
+        </el-select>
+        <div class="rf-label" style="margin-top: 12px">原文引用（可选）</div>
+        <el-input v-model="remarkQuote" maxlength="200" placeholder="触动你产生这条观感的原文片段" />
+      </div>
+      <template #footer>
+        <div class="cfg-actions">
+          <el-button @click="remarkOpen = false">取消</el-button>
+          <el-button type="primary" :loading="remarkBusy" @click="saveRemark">保存观感</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { KB_BRAIN_GOAL_PRESETS } from '@shared/constants/kb-brain-goal-presets'
 
 const props = defineProps<{ kbId: string }>()
@@ -406,7 +472,7 @@ const stats = ref<Record<string, any> | null>(null)
 
 // ===== 主区视图：论断 / 经验卡 / 待审提议 =====
 type MainView = 'atoms' | 'cards' | 'proposals'
-type AtomFilter = 'all' | 'human' | 'open-question'
+type AtomFilter = 'all' | 'human' | 'opinions' | 'open-question'
 const activeView = ref<MainView>('atoms')
 const atomFilter = ref<AtomFilter>('all')
 
@@ -448,6 +514,35 @@ interface DigestDoc {
 }
 const pendingDigestDocs = ref<DigestDoc[]>([])
 const digestAllBusy = ref(false)
+// 全量文档清单（记观感的关联文档下拉用，与待提取列表分开）
+const allDocs = ref<Array<{ id: string; name: string }>>([])
+
+// ===== 记观感（human origin 论断录入） =====
+const remarkOpen = ref(false)
+const remarkText = ref('')
+const remarkDocId = ref('')
+const remarkQuote = ref('')
+const remarkBusy = ref(false)
+
+// ===== 论断归纳整理 =====
+interface ConsolidateProgress {
+  running: boolean
+  totalBatches: number
+  processedBatches: number
+  mergedGroups: number
+  supersededAtoms: number
+  failedBatches: number
+  lastError?: string
+}
+const consolidateRunning = ref(false)
+const consolidateProgress = ref<ConsolidateProgress | null>(null)
+const consolidateSummary = ref<{ mergedGroups: number; supersededAtoms: number } | null>(null)
+let consolidatePollTimer: ReturnType<typeof setInterval> | null = null
+const consolidatePct = computed(() => {
+  const p = consolidateProgress.value
+  if (!p || p.totalBatches === 0) return 0
+  return Math.min(100, Math.round((p.processedBatches / p.totalBatches) * 100))
+})
 
 // ===== 提取目标 =====
 const presetGroups = KB_BRAIN_GOAL_PRESETS
@@ -468,7 +563,8 @@ const statActive = computed(() => {
 
 const atomsEmptyText = computed(() => {
   if (!enabled.value) return '大脑未启用，打开顶部开关后上传文档自动消化'
-  if (atomFilter.value === 'human') return '暂无我的观感（用户手动记录的论断会出现在这里）'
+  if (atomFilter.value === 'human') return '暂无我的观感——点击右上角「记观感」写下你自己的判断'
+  if (atomFilter.value === 'opinions') return '暂无 AI 观点类论断（claim/insight 随消化产出）'
   if (atomFilter.value === 'open-question') return '暂无悬而未决的问题'
   return '尚未消化出论断（上传文档后自动进行）'
 })
@@ -579,6 +675,8 @@ function reportGoalDone(goalId: string): void {
 onBeforeUnmount(() => {
   if (goalPollTimer) clearInterval(goalPollTimer)
   goalPollTimer = null
+  if (consolidatePollTimer) clearInterval(consolidatePollTimer)
+  consolidatePollTimer = null
 })
 
 function statusTagType(status: string): 'success' | 'warning' | 'info' | 'danger' {
@@ -613,6 +711,7 @@ async function fetchAtoms(): Promise<void> {
       pageSize: atomPageSize.value,
       origin: atomFilter.value === 'human' ? 'human' : undefined,
       type: atomFilter.value === 'open-question' ? 'open-question' : undefined,
+      types: atomFilter.value === 'opinions' ? ['claim', 'insight'] : undefined,
     })
     if (gen !== atomsGen) return // 过期响应丢弃
     if (res.success && res.data) {
@@ -715,6 +814,7 @@ async function refresh(): Promise<void> {
     if (statsRes.success) stats.value = statsRes.data
     // 待提取文档：已处理完成但大脑未消化的（开脑前上传的存量）
     if (docRes.success && docRes.data) {
+      allDocs.value = (docRes.data as Array<{ id: string; name: string }>).map((d) => ({ id: d.id, name: d.name }))
       pendingDigestDocs.value = (docRes.data as Array<{ id: string; name: string; brainStatus: string | null }>)
         .filter((d) => d.brainStatus !== 'digested' && d.brainStatus !== 'digesting')
         .map((d) => ({ id: d.id, name: d.name }))
@@ -736,6 +836,18 @@ async function refresh(): Promise<void> {
       runningGoalIds.value = gsRes.data.running as string[]
       lastGoalResults.value = gsRes.data.last ?? {}
       if (runningGoalIds.value.length > 0) startGoalPoll()
+    }
+  } catch {
+    /* 旧宿主无此通道：忽略 */
+  }
+  // 归纳进行中状态同步（面板重开后恢复进度条）
+  try {
+    const csRes = await client.consolidateStatus(props.kbId)
+    if (csRes.success && csRes.data) {
+      consolidateProgress.value = csRes.data
+      consolidateSummary.value = csRes.data.mergedGroups > 0 ? { mergedGroups: csRes.data.mergedGroups, supersededAtoms: csRes.data.supersededAtoms } : null
+      consolidateRunning.value = !!csRes.data.running
+      if (consolidateRunning.value) startConsolidatePoll()
     }
   } catch {
     /* 旧宿主无此通道：忽略 */
@@ -851,6 +963,110 @@ async function digestAll(): Promise<void> {
     digestAllBusy.value = false
   }
   await refresh()
+}
+
+// ===== 记观感 =====
+function openRemark(): void {
+  remarkText.value = ''
+  remarkDocId.value = ''
+  remarkQuote.value = ''
+  remarkOpen.value = true
+}
+
+async function saveRemark(): Promise<void> {
+  const text = remarkText.value.trim()
+  if (!text) {
+    ElMessage.warning('观感内容不能为空')
+    return
+  }
+  remarkBusy.value = true
+  try {
+    const res = await (window as any).electronAPI.knowledgeBase.brain.captureReading({
+      kbId: props.kbId,
+      documentId: remarkDocId.value || '',
+      quote: remarkQuote.value.trim(),
+      remark: text,
+    })
+    if (res?.success) {
+      ElMessage.success('观感已记录，在「我的观感」中查看')
+      remarkOpen.value = false
+      atomFilter.value = 'human'
+      atomPage.value = 1
+      activeView.value = 'atoms'
+      await refresh()
+    } else {
+      ElMessage.error(`保存失败: ${res?.error || '未知错误'}`)
+    }
+  } catch (e) {
+    ElMessage.error(`保存失败: ${(e as Error).message}`)
+  } finally {
+    remarkBusy.value = false
+  }
+}
+
+// ===== 论断归纳整理 =====
+function startConsolidatePoll(): void {
+  if (consolidatePollTimer) return
+  consolidatePollTimer = setInterval(pollConsolidate, 5000)
+  void pollConsolidate()
+}
+
+async function pollConsolidate(): Promise<void> {
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  const kbAtCall = props.kbId // 代际守卫：切库后丢弃旧库的过期轮询响应
+  try {
+    const res = await client.consolidateStatus(props.kbId)
+    if (kbAtCall !== props.kbId) return
+    if (res.success && res.data) {
+      const wasRunning = consolidateRunning.value
+      consolidateProgress.value = res.data
+      consolidateRunning.value = !!res.data.running
+      // 刚跑完：报结果 + 刷新列表（合并出的新论断 / 归档的碎片）
+      if (wasRunning && !consolidateRunning.value) {
+        if (res.data.lastError && res.data.mergedGroups === 0) {
+          // 顶层失败（如全批失败/库异常）：零产出不得报成功
+          ElMessage.error(`归纳失败: ${res.data.lastError}`)
+        } else if (res.data.failedBatches > 0) {
+          ElMessage.warning(`归纳完成，但 ${res.data.failedBatches} 批失败：${res.data.lastError || '未知错误'}`)
+          consolidateSummary.value = { mergedGroups: res.data.mergedGroups, supersededAtoms: res.data.supersededAtoms }
+        } else {
+          ElMessage.success(`归纳完成：合并 ${res.data.mergedGroups} 组，归档 ${res.data.supersededAtoms} 条碎片`)
+          consolidateSummary.value = { mergedGroups: res.data.mergedGroups, supersededAtoms: res.data.supersededAtoms }
+        }
+        await refresh()
+      }
+    }
+  } catch {
+    /* 轮询失败静默，下轮再试 */
+  }
+  if (!consolidateRunning.value && consolidatePollTimer) {
+    clearInterval(consolidatePollTimer)
+    consolidatePollTimer = null
+  }
+}
+
+async function startConsolidate(): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      '将用 AI 分批审读库内论断，把同主题碎片合并为综合论断，被合并的原论断归档（列表默认不再显示）。会产生 LLM 调用费用。',
+      '论断归纳整理',
+      { type: 'warning', confirmButtonText: '开始归纳', cancelButtonText: '取消' },
+    )
+  } catch {
+    return // 用户取消
+  }
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  try {
+    const res = await client.consolidateRun(props.kbId)
+    if (!res.success) {
+      ElMessage.error(res.error || '归纳启动失败')
+      return
+    }
+    consolidateRunning.value = true
+    startConsolidatePoll()
+  } catch (e) {
+    ElMessage.error(`归纳启动失败: ${(e as Error).message}`)
+  }
 }
 
 watch(
@@ -1264,5 +1480,15 @@ defineExpose({ refresh })
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* ===== 记观感对话框 ===== */
+.rf-label {
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 6px;
+}
+.rf-req {
+  color: var(--el-color-danger);
 }
 </style>

@@ -13,6 +13,7 @@ import { KbBrainFsrsService } from '@core/platform/services/kb-brain/fsrs.servic
 import { KbResearchService } from '@core/platform/services/kb-brain/research.service'
 import { enqueueDigestForExisting } from '@core/platform/services/kb-brain/digest-orchestrator.service'
 import { KbGoalDistillService } from '@core/platform/services/kb-brain/goal-distill.service'
+import { getKbConsolidateService } from '@core/platform/services/kb-brain/consolidate.service'
 import { parseModelRef } from '@core/platform/services/kb-brain/llm'
 import { parseBrainConfig } from '@core/platform/services/kb-brain/brain-config'
 import type { SearchResult } from '@shared/types/knowledge-base.types'
@@ -45,7 +46,7 @@ export function registerKbBrainHandlers(): void {
     return { success: true, data: docs }
   })
 
-  ipcBridge.handle('kb:brain:list-atoms', (_e, p: { kbId: string; documentId?: string; page?: number; pageSize?: number; status?: string; type?: string; origin?: string }) =>
+  ipcBridge.handle('kb:brain:list-atoms', (_e, p: { kbId: string; documentId?: string; page?: number; pageSize?: number; status?: string; type?: string; types?: string[]; origin?: string }) =>
     panel.listAtoms(p),
   )
 
@@ -169,6 +170,24 @@ export function registerKbBrainHandlers(): void {
       if (kbId === p.kbId && goalId) last[goalId] = rec
     }
     return { success: true, data: { running, last } }
+  })
+
+  // 论断归纳整理（二次提炼：细碎合并；fire-and-forget + 进度轮询，与 goal-run 同款动线）
+  const consolidate = getKbConsolidateService()
+  ipcBridge.handle('kb:brain:consolidate-run', (_e, p: { kbId: string }) => {
+    if (consolidate.isRunning(p.kbId)) return { success: false, error: '论断归纳进行中' }
+    consolidate
+      .run(p.kbId)
+      .then((s) =>
+        console.info(
+          `[kb-brain] 论断归纳完成 kb=${p.kbId} 批次=${s.processedBatches}/${s.totalBatches} 合并组=${s.mergedGroups} 归档=${s.supersededAtoms} 失败批=${s.failedBatches}`,
+        ),
+      )
+      .catch((e) => console.warn(`[kb-brain] 论断归纳失败 kb=${p.kbId}: ${e instanceof Error ? e.message : String(e)}`))
+    return { success: true, data: { queued: true } }
+  })
+  ipcBridge.handle('kb:brain:consolidate-status', (_e, p: { kbId: string }) => {
+    return { success: true, data: consolidate.status(p.kbId) }
   })
 
   // T18 FSRS 复习：到期队列 / 评分

@@ -146,21 +146,28 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
     return this.toDtoList(rows)
   }
 
-  /** 按库查（面板论断列表；可选 status/type/origin 过滤，创建时间倒序） */
+  /** 按库查（面板论断列表；可选 status/type/types/origin 过滤，创建时间倒序） */
   async findByKb(
     kbId: string,
-    opts?: { status?: KbAtomStatus[]; type?: string; origin?: string; limit?: number },
+    opts?: { status?: KbAtomStatus[]; type?: string; types?: string[]; origin?: string; limit?: number },
   ): Promise<KbAtomRecord[]> {
     const where: Record<string, unknown> = { knowledgeBaseId: kbId }
     if (opts?.status?.length) where.status = In(opts.status)
     if (opts?.origin) where.origin = opts.origin
     if (opts?.type) where.type = opts.type // SQL 层过滤：type 独立于 take 截断（悬而未决视图不受 5000 上限漏数据）
+    if (opts?.types?.length) where.type = In(opts.types)
     const rows = await this.scoped.find({
       where: where as FindOptionsWhere<KbAtomEntity>,
       order: { createdAt: 'DESC' } as never,
       take: opts?.limit ?? 200,
     })
-    return this.toDtoList(rows).filter((r) => (!opts?.type || r.type === opts.type) && (!opts?.origin || r.origin === opts.origin))
+    const typeSet = opts?.types?.length ? new Set(opts.types) : null
+    return this.toDtoList(rows).filter(
+      (r) =>
+        (!opts?.type || r.type === opts.type) &&
+        (!typeSet || typeSet.has(r.type)) &&
+        (!opts?.origin || r.origin === opts.origin),
+    )
   }
 
   async findByDocument(
@@ -308,6 +315,7 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
     byType: Record<string, number>
     humanOrigin: number
     cited: number
+    openQuestions: number
   }> {
     const rows = await this.scoped.find({
       where: { knowledgeBaseId: kbId } as FindOptionsWhere<KbAtomEntity>,
@@ -316,12 +324,17 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
     const byType: Record<string, number> = {}
     let humanOrigin = 0
     let cited = 0
+    let openQuestions = 0
+    // 工作集口径：与面板列表缺省一致（superseded/archived 不计入 humanOrigin/openQuestions）
+    const working = new Set(['supported', 'suspected', 'stale'])
     for (const r0 of rows) {
       byStatus[r0.status] = (byStatus[r0.status] ?? 0) + 1
       byType[r0.type] = (byType[r0.type] ?? 0) + 1
+      if (!working.has(r0.status)) continue
       if (r0.origin === 'human') humanOrigin++
       if (r0.useCount > 0) cited++
+      if (r0.type === 'open-question') openQuestions++
     }
-    return { total: rows.length, byStatus, byType, humanOrigin, cited }
+    return { total: rows.length, byStatus, byType, humanOrigin, cited, openQuestions }
   }
 }

@@ -36,6 +36,8 @@ export const ATOMIZE_SYSTEM = `你是文学资料研究员。把给定章节文�
 4. validFrom/validUntil 仅当文本明确给出事实的有效期或先后变化时填写（如"第三卷开始后"），否则省略。
 5. 事件序列：仅当跨越章节的因果链（伏笔/转折）值得记录时输出 events（fromQuote/toQuote 引原文短句 + 一句 evidence）。
 6. 宁缺毋滥是最高原则：一章产出 0-8 条长效论断是正常的；本章全是过场就输出空数组。
+   适度归纳：同一主体在本窗口的多条零散事实合并为一条综合论断
+   （例：同一法宝的品阶、威力、归属不要各出一条，合并为一条），宁合勿碎。
 7. quote 必须是原文中连续的一小段文字（供程序定位，禁止改写、禁止拼接两处）。
 8. mentions：把本段出现的实体整理为规范名词表，每个标注类型
    （character=人物 location=地点 organization=组织 item=物品 concept=概念
@@ -162,4 +164,22 @@ export function buildSettingPatternUser(input: { entityName: string; statements:
   return `设定体系：${input.entityName}\n\n跨书规则论断：\n${input.statements
     .map((s) => `- （${s.source}）${s.statement}`)
     .join('\n')}`
+}
+
+/* ==================== 论断归纳整理（consolidate，细碎合并） ==================== */
+
+export const CONSOLIDATE_SYSTEM = `你是知识库整理员。GIVEN 是一批已编号的知识论断。找出其中「细碎堆叠」的组——
+同一主题被拆成多条碎片（如同一法宝一条、同一人物的多条零散细节、同一设定的逐条罗列）——
+每组合并为一条信息完整但不啰嗦的综合论断。
+
+合并判据（全部满足才合并）：
+- 同一主题/同一主体集合（例：多条"XX是主要法宝"、同一人物的多条独立小事）
+- 合并后一句话 ≤90 字能装下全部关键信息（枚举用顿号连接，不许丢细节）
+不满足就不合并——宁少勿滥，没有可合并的组输出空数组。禁止把不同主题硬凑成一组。
+
+字段：groups 数组，每组 { "idx": [成员编号数组], "statement": "合并后论断", "type": "fact|concept|method|insight" }。
+只输出 JSON：{ "groups": [] }`
+
+export function buildConsolidateUser(input: { items: Array<{ idx: number; type: string; statement: string }> }): string {
+  return `GIVEN:\n${input.items.map((r) => `[${r.idx}] (${r.type}) ${r.statement}`).join('\n')}`
 }

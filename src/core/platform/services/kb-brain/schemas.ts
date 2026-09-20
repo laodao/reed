@@ -270,3 +270,75 @@ export function validateAdjudicateOutput(
     novel: out.novel.filter((i) => inNew(i)),
   }
 }
+
+/* ==================== 论断归纳（consolidate） ==================== */
+
+const CONSOLIDATE_SCHEMA = {
+  type: 'object',
+  properties: {
+    groups: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          idx: { type: 'array', items: { type: 'integer' } },
+          statement: { type: 'string' },
+          type: { enum: ['fact', 'concept', 'method', 'insight'] },
+        },
+        required: ['idx', 'statement', 'type'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['groups'],
+  additionalProperties: false,
+} as const
+
+const validateConsolidate = ajv.compile(CONSOLIDATE_SCHEMA)
+
+export interface ConsolidateGroup {
+  idx: number[]
+  statement: string
+  type: 'fact' | 'concept' | 'method' | 'insight'
+}
+
+/** 归纳输出归一：groups/idx 缺失补空、条目级清洗（坏组剔除），与裁决同一「尽力而为」策略 */
+export function normalizeConsolidateRaw(data: unknown): unknown {
+  if (typeof data !== 'object' || data === null) return data
+  const out = { ...(data as Record<string, unknown>) }
+  if (!Array.isArray(out.groups)) {
+    // 近义命名容错：merges/clusters → groups
+    out.groups = Array.isArray(out.merges) ? out.merges : Array.isArray(out.clusters) ? out.clusters : []
+  }
+  out.groups = (out.groups as unknown[]).flatMap((g) => {
+    if (typeof g !== 'object' || g === null) return []
+    const e = g as Record<string, unknown>
+    if (!Array.isArray(e.idx)) return []
+    const idx = [...new Set(e.idx.map(toIdx).filter((n: number) => Number.isInteger(n)))]
+    const statement = typeof e.statement === 'string' ? e.statement.trim() : ''
+    const type = e.type === 'concept' || e.type === 'method' || e.type === 'insight' ? e.type : 'fact'
+    // 无有效成员编号或缺合并句：剔除
+    if (idx.length === 0 || !statement) return []
+    return [{ idx, statement, type }]
+  })
+  return out
+}
+
+/** 校验 + 边界过滤（越界编号/单成员组丢弃）+ 跨组去重（同一编号只归先到组，防重复归档与重叠产物） */
+export function validateConsolidateOutput(data: unknown, bounds: { count: number }): ConsolidateGroup[] {
+  const normalized = normalizeConsolidateRaw(data)
+  if (!validateConsolidate(normalized)) {
+    throw new Error(`consolidate 输出校验失败: ${ajv.errorsText(validateConsolidate.errors)}`)
+  }
+  const groups = (normalized as { groups: ConsolidateGroup[] }).groups
+  const inBounds = (i: number): boolean => Number.isInteger(i) && i >= 0 && i < bounds.count
+  const used = new Set<number>()
+  const out: ConsolidateGroup[] = []
+  for (const g of groups) {
+    const idx = [...new Set(g.idx.filter(inBounds))].filter((i) => !used.has(i))
+    if (idx.length < 2) continue // 剔重后不足两成员的组没有合并意义
+    idx.forEach((i) => used.add(i))
+    out.push({ ...g, idx })
+  }
+  return out
+}

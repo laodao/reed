@@ -52,22 +52,26 @@ export class KbBrainPanelService {
     pageSize?: number
     status?: string
     type?: string
+    types?: string[]
     origin?: string
   }): Promise<{ success: boolean; data?: { rows: unknown[]; total: number }; error?: string }> {
     const db = getCoreDatabaseManager()
     if (!db.kbAtoms) return { success: false, error: '知识大脑未启用（旧库）' }
     const page = Math.max(1, input.page ?? 1)
     const pageSize = Math.min(100, Math.max(1, input.pageSize ?? 20))
+    // 缺省状态=工作集（supported/suspected/stale）：superseded/archived 不出现在列表
+    //（归纳合并后的碎片由归档层管理，显式传 status 可查全量）
+    const workingSet = ['supported', 'suspected', 'stale'] as const
+    const statusFilter = input.status ? [input.status as never] : [...workingSet]
     // documentId 传入=按文档；否则按库（盲审修复：原实现缺省 documentId='' 恒空）
     const all = input.documentId
-      ? await db.kbAtoms.findByDocument(input.documentId, {
-          status: input.status ? [input.status as never] : undefined,
-        })
+      ? await db.kbAtoms.findByDocument(input.documentId, { status: statusFilter })
       : await db.kbAtoms.findByKb(input.kbId, {
-          status: input.status ? [input.status as never] : undefined,
+          status: statusFilter,
           type: input.type,
+          types: input.types,
           origin: input.origin,
-          // 内存分页的截断上限：翻页序号/总数以此为界（type 过滤在仓储层内存做，SQL 分页不适用）
+          // 内存分页的截断上限：翻页序号/总数以此为界（type 过滤已下推 SQL，此处是兜底上限）
           limit: 5000,
         })
     const start = (page - 1) * pageSize
@@ -256,6 +260,9 @@ export class KbBrainPanelService {
     const db = getCoreDatabaseManager()
     if (!db.kbAtoms || !db.kbNotes || !db.kbDigestPasses) return { success: false, error: '知识大脑未启用（旧库）' }
     const atomStats = await db.kbAtoms.statsByKb(kbId)
+    // 头部「论断」口径=工作集（与列表缺省一致）；superseded/archived 归档层不计入
+    const workingTotal =
+      (atomStats.byStatus.supported ?? 0) + (atomStats.byStatus.suspected ?? 0) + (atomStats.byStatus.stale ?? 0)
     const proposed = await db.kbNotes.listByStatus(kbId, 'proposed', 1, 1)
     const published = await db.kbNotes.listByStatus(kbId, 'published', 1, 1)
     const lenses = await db.kbNotes.listLens(kbId)
@@ -263,10 +270,10 @@ export class KbBrainPanelService {
     return {
       success: true,
       data: {
-        atoms: atomStats,
+        atoms: { ...atomStats, total: workingTotal },
         notes: { proposed: proposed.total, published: published.total },
         lensCount: lenses.length,
-        openQuestions: atomStats.byType['open-question'] ?? 0,
+        openQuestions: atomStats.openQuestions ?? 0,
         cost,
       },
     }

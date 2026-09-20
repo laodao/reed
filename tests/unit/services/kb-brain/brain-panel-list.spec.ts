@@ -91,4 +91,19 @@ describe('brain-panel listAtoms（origin 过滤 + documentName 解析）', () =>
     expect(res.data!.rows).toHaveLength(2)
     expect(res.data!.total).toBe(5)
   })
+
+  it('缺省状态=工作集：superseded/archived 不入列表，显式 status 可查', async () => {
+    const atoms = new KbAtomRepository(ds)
+    const [archived] = await atoms.createBatch([
+      { knowledgeBaseId: KB, statement: '已归档碎片', type: 'fact', sourceDocumentId: DOC_A, sourceQuote: 'q6' },
+    ])
+    await atoms.updateStatus(archived!.id, { status: 'superseded' })
+    const svc = getKbBrainPanelService()
+    const def = await svc.listAtoms({ kbId: KB, page: 1, pageSize: 50 })
+    const stmts = (def.data!.rows as Array<{ statement: string }>).map((r) => r.statement)
+    expect(stmts).not.toContain('已归档碎片')
+    expect(def.data!.total).toBe(5)
+    const all = await svc.listAtoms({ kbId: KB, page: 1, pageSize: 50, status: 'superseded' })
+    expect((all.data!.rows as Array<{ statement: string }>).map((r) => r.statement)).toContain('已归档碎片')
+  })
 })
