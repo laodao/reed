@@ -179,3 +179,31 @@ export function getModelCapabilities(
   // 3. 显式报错
   throw new UnregisteredModelCapabilityError(providerType, modelId)
 }
+
+/**
+ * F1b（2026-09-21）：在 provider 的模型清单里找第一个支持参考图（maxReferenceImages > 0）
+ * 的 image/multimodal 模型。
+ *
+ * 场景：项目「画面生成」被钉到 maxReferenceImages=0 的纯 T2I 模型（如 comfyui/krea2）时，
+ * 视图/派生这类必须吃主图参考的生成若仍用它，参考图会被静默丢弃、人物风格漂移。
+ * 此时回退到同 provider 下支持参考图的模型（如 flux-kontext）。
+ * 未登记能力的模型跳过（不猜）；找不到 → null。
+ */
+export function findReferenceCapableModelInProvider(
+  providerType: string,
+  models: Array<{ id?: string; type?: string; name?: string }>,
+  excludeModelId: string,
+): string | null {
+  for (const m of models) {
+    if (!m.id || m.id === excludeModelId) continue
+    if (m.type !== 'image' && m.type !== 'multimodal') continue
+    try {
+      if (getModelCapabilities(providerType, m.id, m.name).maxReferenceImages > 0) {
+        return m.id
+      }
+    } catch {
+      // 未登记能力 → 跳过（不隐瞒原则：不猜测能力）
+    }
+  }
+  return null
+}

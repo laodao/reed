@@ -23,6 +23,7 @@ import type {
 } from '@shared/types/episode-production'
 import type { ScriptGenerationResult } from './types'
 import { callAI, extractJsonFromResponse, parseJsonString } from './_helpers'
+import { validateScriptCoverage, coverageWarnings } from './script-coverage'
 import { buildScriptGenerationDiscipline } from '@core/platform/services/writing-methodology'
 
 // ==================== 提示词共享片段 ====================
@@ -185,6 +186,22 @@ const SCRIPT_ADAPTATION_DISCIPLINE_SPEC = `## 短剧剧本改编纪律（原著�
 ${buildScriptGenerationDiscipline()}`
 
 /**
+ * 共享片段 ⑥.5（2026-09-21）：原文保真纪律。
+ *
+ * 雪麓山庄实测：生成剧本丢了"约法三章+叫帮手"整段对白与"旧信"伏笔——
+ * 改编纪律强调节奏/钩子，却没约束"原文内容不许丢"。此片段把保真提到与 JSON 输出同级。
+ */
+const SCRIPT_FIDELITY_SPEC = `## ⭐ 原文保真纪律（与 JSON 场景数据同级重要）
+
+- **原文对白必须全保留**：原文中每一句带引号的对白（"……"）都必须出现在生成剧本的 dialogues 中，
+  说话人正确、台词可微调语气但不得整句删除，也不得把两句不同意思的对白合并成一句。
+- **关键节拍必须全保留**：约定/规则类对白（如"约法三章"）、伏笔物件（如信件、信物）、
+  反转、笑点/口头禅（如吃喝玩笑）、人物关系揭示（如身世问答）等节拍，必须各有场次与对白/动作承接，
+  不得因"篇幅精简"或"节奏快"丢弃。
+- 确需省略或合并时，必须在本章梗概末尾以「省略说明：…」逐条写明省略内容与理由；不写视为违规。
+- 自检标准：把原文逐句对照生成结果，任意一句原文对白找不到对应台词即不合格，必须补回。`
+
+/**
  * 占位符填充：把 `{key}` 全部替换为 value。
  *
  * 用 split/join 而不是 String.replace —— 后者会把替换值里的 `$&` / `$'` / `$1`
@@ -262,6 +279,10 @@ ${SCENE_SPLIT_PRINCIPLES_SPEC}
 ---
 
 ${SCRIPT_ADAPTATION_DISCIPLINE_SPEC}
+
+---
+
+${SCRIPT_FIDELITY_SPEC}
 
 ---
 
@@ -381,6 +402,7 @@ const SCENE_SPLIT_FROM_TEXT_PROMPT = `你是一位拥有10年以上一线影视�
 - JSON 必须包含 scenes 数组
 - **场次号从第 {startSceneNumber} 场开始按顺序递增**（接续已有场次，严禁从 1 重新编号）
 - **只拆分这段正文里已有的情节，严禁补写正文里没有的内容**
+- **正文中的每一句对白都必须进入 dialogues，不得整句丢弃**；伏笔物件、约定/规则、笑点等关键节拍必须各有场次承接
 - 正文没写明的视觉细节（空间布局 / 材质 / 光线 / 服装）按下方字段质量要求合理补全，不要留空字符串
 
 ---
@@ -985,6 +1007,19 @@ export class EpisodeScriptGenerator {
       scenesCount: result.scenes.length
     })
 
+    // 2026-09-21：原文覆盖度校验（仿 shot-pacing；只警告不阻断）——
+    // 雪麓山庄实测丢过整段对白与伏笔，这里把缺失对白打到主进程日志。
+    for (const w of coverageWarnings(validateScriptCoverage(
+      chapterContent,
+      [
+        ...result.scenes.flatMap(s => (s.dialogues ?? []).map(d => d.text)),
+        ...result.scenes.map(s => s.narration ?? ''),
+        result.scriptContent,
+      ],
+    ))) {
+      console.warn(`[script-coverage] ${w}`)
+    }
+
     return result
   }
 
@@ -1091,6 +1126,16 @@ export class EpisodeScriptGenerator {
     const result = this.extractFullScriptFromResponse(response, input.roster)
     if (result.scenes.length === 0) {
       console.warn('[EpisodeScriptGenerator] 未能从正文中识别出场景')
+    }
+    // 2026-09-21：粘贴正文拆分也做覆盖度校验（只警告不阻断）
+    for (const w of coverageWarnings(validateScriptCoverage(
+      input.scriptText,
+      [
+        ...result.scenes.flatMap(s => (s.dialogues ?? []).map(d => d.text)),
+        ...result.scenes.map(s => s.narration ?? ''),
+      ],
+    ))) {
+      console.warn(`[script-coverage] ${w}`)
     }
     return result.scenes
   }

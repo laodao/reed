@@ -32,6 +32,7 @@ import {
   appendCharacterIdentityPreservation,
   mergeCharacterIdentityNegative,
 } from '../prompts/character-constraints'
+import { fallbackToReferenceCapableModel } from './image-provider-adapter'
 import {
   appendItemConstraints,
   mergeItemNegative,
@@ -453,7 +454,10 @@ export class MainImageGeneratorService {
     // F1：三视图钉项目「画面生成」模型（与主图 generateMain 同一解析序），
     // 避免自动挑到与主图不同源的模型导致 Q版主图 vs 写实视图的风格分叉。
     // 解析不到（全局 preset / 未配置）→ 传 undefined 走 imageGen 自动挑（既有行为）。
-    const projectImageModel = await this.resolveProjectImageModel(input.assetType, input.assetId)
+    // F1b：钉住的模型不支持参考图（如 krea2 maxReferenceImages=0）→ 回退同 provider 的 I2I 模型。
+    const projectImageModel = await fallbackToReferenceCapableModel(
+      await this.resolveProjectImageModel(input.assetType, input.assetId),
+    )
 
     // 2. 三个视角配置（label 为存储 key，promptHint 为给 AI 的视角指令）
     const views: Array<{ label: string; promptHint: string }> = [

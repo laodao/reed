@@ -33,6 +33,7 @@ import { ImageAssetEntity } from '@core/database/entities/image-asset.entity'
 import { KeyframeGenerationService } from '@core/platform/episode-production/render/keyframe/keyframe-generation.service'
 import { ImageAssetRepository } from '@core/database/repositories/image-asset.repository'
 import { StoryboardKeyframeRepository } from '@core/database/repositories/storyboard-keyframe.repository'
+import * as dbModule from '@core/database/database-manager.interface'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({
@@ -231,6 +232,7 @@ describe('KeyframeGenerationService', () => {
   })
 
   afterEach(async () => {
+    vi.restoreAllMocks()
     if (ds.isInitialized) await ds.destroy()
   })
 
@@ -313,6 +315,46 @@ describe('KeyframeGenerationService', () => {
       const opts = call[0] as { providerConfigId?: string; modelId?: string }
       expect(opts.providerConfigId).toBe('pc_img')
       expect(opts.modelId).toBe('wan2.7-image')
+    }
+  })
+
+  /*
+   * F1b（2026-09-21）：关键帧带参考图时，钉住的模型不支持参考图
+   * （comfyui/krea2 maxReferenceImages=0）→ 回退同 provider 的 flux-kontext
+   */
+  it('F1b：关键帧钉住 krea2（不支持参考图）→ 回退 flux-kontext', async () => {
+    const { sbId } = await seedScene(ds)
+    await ds.getRepository(VideoProjectEntity).save({
+      id: 'proj1',
+      name: 'p',
+      status: 'draft',
+      config: { imageModel: { providerConfigId: 'pc_comfy', modelId: 'krea2' } },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      deletedAt: null,
+    } as any)
+    vi.spyOn(dbModule, 'getCoreDatabaseManager').mockReturnValue({
+      providerConfigs: {
+        getEnabled: vi.fn(async () => [{
+          id: 'pc_comfy',
+          templateId: 'comfyui',
+          isEnabled: true,
+          models: [
+            { id: 'h3', name: 'MiniMax-H3 图生视频', type: 'video' },
+            { id: 'krea2', name: 'Krea2 文生图', type: 'image' },
+            { id: 'flux-kontext', name: 'Flux Kontext 参考图生图', type: 'image' },
+          ],
+        }]),
+      },
+    } as any)
+
+    await svc.generateKeyframesForStoryboard({ storyboardId: sbId })
+
+    expect(imageGen.generate).toHaveBeenCalledTimes(3)
+    for (const call of imageGen.generate.mock.calls) {
+      const opts = call[0] as { providerConfigId?: string; modelId?: string }
+      expect(opts.providerConfigId).toBe('pc_comfy')
+      expect(opts.modelId).toBe('flux-kontext')
     }
   })
 

@@ -58,7 +58,7 @@ import { deleteKeyframeWithAsset } from './keyframe-cleanup'
 import { resolveCharacterViewLabel } from './keyframe-view-mapping'
 import { parseAssetRefOverrides, toRefCandidates } from './parse-asset-refs'
 import type { ImageGenerator } from '@core/platform/episode-production/assets/services/gallery-derivation.service'
-import { createGalleryImageGenerator } from '@core/platform/episode-production/assets/services/image-provider-adapter'
+import { createGalleryImageGenerator, fallbackToReferenceCapableModel } from '@core/platform/episode-production/assets/services/image-provider-adapter'
 import type { SceneCharacter } from '@shared/types/episode-production'
 
 const DEFAULT_KEYFRAME_WIDTH = 1024
@@ -947,6 +947,12 @@ export class KeyframeGenerationService {
     // （main-image-generator）同一解析序：项目设置 > 自动。
     const projectId = await this.resolveProjectIdForScene(scene)
     const projectImageModel = await this.resolveProjectImageModel(projectId)
+    // F1b（2026-09-21）：关键帧带参考图时，钉住的模型若不支持参考图
+    // （如 krea2 maxReferenceImages=0 纯 T2I），参考图会被能力截断静默丢弃、
+    // 人物视觉锚丢失——与视图/派生同源回退到同 provider 的 I2I 模型（flux-kontext）。
+    const effectiveImageModel = refImages.length > 0
+      ? await fallbackToReferenceCapableModel(projectImageModel)
+      : projectImageModel
     const generated = await this.imageGenerator.generate({
       referenceImagePaths: refImages.map((r) => r.imagePath),
       prompt: finalPrompt,
@@ -954,8 +960,8 @@ export class KeyframeGenerationService {
       label: `keyframe_${plan.frameRole}_${plan.frameIndex}`,
       width: dimensions.width,
       height: dimensions.height,
-      providerConfigId: projectImageModel?.providerConfigId,
-      modelId: projectImageModel?.modelId,
+      providerConfigId: effectiveImageModel?.providerConfigId,
+      modelId: effectiveImageModel?.modelId,
     })
 
     // 生效参考图：adapter 按模型能力截断后返回实际生效路径；缺省=全部生效。

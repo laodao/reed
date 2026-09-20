@@ -45,6 +45,7 @@ import {
   type StoryBackground,
 } from '@core/platform/episode-production/assets/prompts/asset-identity-prompt'
 import { viewHintForLabel } from '@core/platform/episode-production/assets/prompts/character-view-hints'
+import { fallbackToReferenceCapableModel } from './image-provider-adapter'
 import { CharacterAssetService } from './character-asset.service'
 import { LocationAssetService } from './location-asset.service'
 import { ItemAssetService } from './item-asset.service'
@@ -339,7 +340,10 @@ export class GalleryDerivationService {
     }
     // spec 2026-05-09 ep-redesign §3.2 B6：多基图全部进 referenceImagePaths
     // F1：钉项目「画面生成」模型（与主图 / 三视图同源）；解析不到 → undefined 走自动挑
-    const projectImageModel = await this.resolveProjectImageModel(input.assetType, input.assetId)
+    // F1b：钉住的模型不支持参考图（如 krea2 maxReferenceImages=0）→ 回退同 provider 的 I2I 模型
+    const projectImageModel = await fallbackToReferenceCapableModel(
+      await this.resolveProjectImageModel(input.assetType, input.assetId),
+    )
     const result = await this.imageGen.generate({
       referenceImagePaths: baseList.map((b) => b.imagePath),
       prompt,

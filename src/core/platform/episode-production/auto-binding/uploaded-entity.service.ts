@@ -64,14 +64,18 @@ export class UploadedEntityService {
 
     // 跨集去重：取项目已有的 binding 名字集合，避免逐集识别产生同名重复资产。
     // 资产是 project 级（binding 无 episodeId），同项目同名只应保留一份。
+    // 2026-09-21 修复：DTO 没有 name 字段（名字在 standaloneName / overrideName），
+    // 此前 `c.name` 恒 undefined → 去重集合恒空 → 每次识别都整套重复建 binding。
+    const nameOf = (b: { name?: string | null; standaloneName?: string | null; overrideName?: string | null }): string | undefined =>
+      (b.standaloneName ?? b.overrideName ?? b.name ?? undefined)?.trim() || undefined
     const [existingChars, existingLocs, existingItems] = await Promise.all([
       db.characterBindings?.getByProjectId(projectId) ?? [],
       db.locationBindings?.getByProjectId(projectId) ?? [],
       db.itemBindings?.getByProjectId(projectId) ?? [],
     ])
-    const charNames = new Set(existingChars.map((c) => c.name).filter((n): n is string => !!n))
-    const locNames = new Set(existingLocs.map((l) => l.name).filter((n): n is string => !!n))
-    const itemNames = new Set(existingItems.map((i) => i.name).filter((n): n is string => !!n))
+    const charNames = new Set(existingChars.map(nameOf).filter((n): n is string => !!n))
+    const locNames = new Set(existingLocs.map(nameOf).filter((n): n is string => !!n))
+    const itemNames = new Set(existingItems.map(nameOf).filter((n): n is string => !!n))
 
     // 创建 standalone 角色 binding（不再 INSERT lw_story_characters）
     for (const char of characters) {

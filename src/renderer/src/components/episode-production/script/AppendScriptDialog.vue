@@ -285,9 +285,12 @@ async function onConfirm(): Promise<void> {
   if (!props.scriptId || !preview.value || appending.value) return
   appending.value = true
   try {
+    // reactive draft（Vue proxy）直接走 IPC structuredClone 会抛
+    // "An object could not be cloned"——JSON 往返一次剥掉 proxy（同 NewProjectDialog 的做法）
+    const draft = JSON.parse(JSON.stringify(preview.value.draft))
     const resp = await window.electronAPI.episodeProduction.appendScript(
       props.scriptId,
-      preview.value.draft,
+      draft,
       { keepApproved: keepApproved.value },
     )
     if (!resp?.success) {

@@ -298,31 +298,46 @@ export class StoryboardCogenService {
     for (const b of await charSvc.listByProject(projectId)) {
       const name = b.standaloneName ?? b.overrideName
       if (name) {
-        charIndex.set(name, {
-          id: b.id,
-          name,
-          description: b.standaloneDescription ?? b.overrideDescription ?? null,
-        })
+        // 2026-09-21：同名重复 binding（历史上识别去重失效产物）取最早创建的——
+        // 定妆图/资产图都挂在最早的 binding 上，Map 直接 set 会被后来的空 binding 覆盖，
+        // 分镜绑到无图副本 → 关键帧拿不到角色参考图（雪麓山庄实测根因）。
+        if (charIndex.has(name)) {
+          console.warn(`[StoryboardCogenService] 角色 "${name}" 存在重复 binding，沿用最早创建的 ${charIndex.get(name)!.id}（忽略 ${b.id}）`)
+        } else {
+          charIndex.set(name, {
+            id: b.id,
+            name,
+            description: b.standaloneDescription ?? b.overrideDescription ?? null,
+          })
+        }
       }
     }
     for (const b of await locSvc.listByProject(projectId)) {
       const name = b.standaloneName ?? b.overrideName
       if (name) {
-        locIndex.set(name, {
-          id: b.id,
-          name,
-          description: b.standaloneDescription ?? b.overrideDescription ?? null,
-        })
+        if (locIndex.has(name)) {
+          console.warn(`[StoryboardCogenService] 地点 "${name}" 存在重复 binding，沿用最早创建的 ${locIndex.get(name)!.id}（忽略 ${b.id}）`)
+        } else {
+          locIndex.set(name, {
+            id: b.id,
+            name,
+            description: b.standaloneDescription ?? b.overrideDescription ?? null,
+          })
+        }
       }
     }
     for (const b of await itemSvc.listByProject(projectId)) {
       const name = b.standaloneName ?? b.overrideName
       if (name) {
-        itemIndex.set(name, {
-          id: b.id,
-          name,
-          description: b.standaloneDescription ?? b.overrideDescription ?? null,
-        })
+        if (itemIndex.has(name)) {
+          console.warn(`[StoryboardCogenService] 物品 "${name}" 存在重复 binding，沿用最早创建的 ${itemIndex.get(name)!.id}（忽略 ${b.id}）`)
+        } else {
+          itemIndex.set(name, {
+            id: b.id,
+            name,
+            description: b.standaloneDescription ?? b.overrideDescription ?? null,
+          })
+        }
       }
     }
 

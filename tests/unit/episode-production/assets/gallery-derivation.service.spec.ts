@@ -12,11 +12,12 @@
  * 验证派生服务对底层 image API 的编排逻辑，与真实 image.service 解耦。
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { DataSource } from 'typeorm'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 import { CharacterBindingEntity } from '@core/database/entities/episode-production/character-binding.entity'
 import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
+import * as dbModule from '@core/database/database-manager.interface'
 import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
 import {
   GalleryDerivationService,
@@ -77,6 +78,7 @@ describe('GalleryDerivationService', () => {
   })
 
   afterEach(async () => {
+    vi.restoreAllMocks()
     if (ds.isInitialized) await ds.destroy()
   })
 
@@ -206,5 +208,96 @@ describe('GalleryDerivationService', () => {
     expect(mockGen.calls).toHaveLength(1)
     expect(mockGen.calls[0].providerConfigId).toBeUndefined()
     expect(mockGen.calls[0].modelId).toBeUndefined()
+  })
+
+  /*
+   * F1b（2026-09-21）：钉住的项目画面模型不支持参考图（comfyui/krea2 maxReferenceImages=0）
+   * → 派生回退到同 provider 下支持参考图的 flux-kontext；若钉的是支持参考图的模型则不动。
+   */
+  it('F1b：钉住 krea2（不支持参考图）→ 回退同 provider 的 flux-kontext', async () => {
+    await ds.getRepository(VideoProjectEntity).save({
+      id: 'vp1',
+      name: '测试项目',
+      status: 'draft',
+      config: { imageModel: { providerConfigId: 'pc-comfy', modelId: 'krea2' } },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Partial<VideoProjectEntity>)
+    await ds.getRepository(CharacterBindingEntity).save({
+      id: 'cb1',
+      projectId: 'vp1',
+      voiceConfig: {},
+      sourceType: 'standalone',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Partial<CharacterBindingEntity>)
+    vi.spyOn(dbModule, 'getCoreDatabaseManager').mockReturnValue({
+      providerConfigs: {
+        getEnabled: vi.fn(async () => [{
+          id: 'pc-comfy',
+          templateId: 'comfyui',
+          isEnabled: true,
+          models: [
+            { id: 'h3', name: 'MiniMax-H3 图生视频', type: 'video' },
+            { id: 'krea2', name: 'Krea2 文生图', type: 'image' },
+            { id: 'flux-kontext', name: 'Flux Kontext 参考图生图', type: 'image' },
+          ],
+        }]),
+      },
+    } as any)
+
+    const svcWithDs = new GalleryDerivationService(imageSvc, mockGen, ds)
+    await svcWithDs.deriveSingle({
+      assetType: 'character',
+      assetId: 'cb1',
+      category: 'view',
+      label: '3q_left',
+    })
+
+    expect(mockGen.calls).toHaveLength(1)
+    expect(mockGen.calls[0].providerConfigId).toBe('pc-comfy')
+    expect(mockGen.calls[0].modelId).toBe('flux-kontext')
+  })
+
+  it('F1b：钉住的模型支持参考图（seedream-4 maxRef=14）→ 保持不动', async () => {
+    await ds.getRepository(VideoProjectEntity).save({
+      id: 'vp1',
+      name: '测试项目',
+      status: 'draft',
+      config: { imageModel: { providerConfigId: 'pc-volc', modelId: 'doubao-seedream-4-5' } },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Partial<VideoProjectEntity>)
+    await ds.getRepository(CharacterBindingEntity).save({
+      id: 'cb1',
+      projectId: 'vp1',
+      voiceConfig: {},
+      sourceType: 'standalone',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Partial<CharacterBindingEntity>)
+    vi.spyOn(dbModule, 'getCoreDatabaseManager').mockReturnValue({
+      providerConfigs: {
+        getEnabled: vi.fn(async () => [{
+          id: 'pc-volc',
+          templateId: 'volcengine',
+          isEnabled: true,
+          models: [
+            { id: 'doubao-seedream-4-5', name: 'Doubao-Seedream-4.5', type: 'image' },
+          ],
+        }]),
+      },
+    } as any)
+
+    const svcWithDs = new GalleryDerivationService(imageSvc, mockGen, ds)
+    await svcWithDs.deriveSingle({
+      assetType: 'character',
+      assetId: 'cb1',
+      category: 'view',
+      label: '3q_left',
+    })
+
+    expect(mockGen.calls).toHaveLength(1)
+    expect(mockGen.calls[0].modelId).toBe('doubao-seedream-4-5')
   })
 })

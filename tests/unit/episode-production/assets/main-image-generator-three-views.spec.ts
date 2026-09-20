@@ -10,7 +10,7 @@
  *   - derivedFromImageId 都指向 baseImage
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DataSource } from 'typeorm'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 import { CharacterBindingEntity } from '@core/database/entities/episode-production/character-binding.entity'
@@ -18,6 +18,7 @@ import { VideoProjectEntity } from '@core/database/entities/episode-production/v
 import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
 import { MainImageGeneratorService } from '@core/platform/episode-production/assets/services/main-image-generator.service'
 import type { ImageGenerator } from '@core/platform/episode-production/assets/services/gallery-derivation.service'
+import * as dbModule from '@core/database/database-manager.interface'
 
 interface ImageGenCall {
   prompt: string
@@ -85,6 +86,7 @@ describe('MainImageGeneratorService.generateThreeViews', () => {
   })
 
   afterEach(async () => {
+    vi.restoreAllMocks()
     if (ds.isInitialized) await ds.destroy()
   })
 
@@ -263,6 +265,57 @@ describe('MainImageGeneratorService.generateThreeViews', () => {
     for (const call of gen.calls) {
       expect(call.prompt).toContain('保持人物身份（preserve character identity）')
       expect(call.negativePrompt).toContain('different face')
+    }
+  })
+
+  /*
+   * F1b（2026-09-21）：钉住的项目画面模型不支持参考图（comfyui/krea2 maxReferenceImages=0）
+   * → 三视图回退到同 provider 下支持参考图的 flux-kontext（视图必须吃主图参考）。
+   */
+  it('F1b：钉住 krea2（不支持参考图）→ 三次生成全部回退 flux-kontext', async () => {
+    await ds.getRepository(VideoProjectEntity).save({
+      id: 'vp1',
+      name: '测试项目',
+      status: 'draft',
+      config: { imageModel: { providerConfigId: 'pc-comfy', modelId: 'krea2' } },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Partial<VideoProjectEntity>)
+    await ds.getRepository(CharacterBindingEntity).save({
+      id: 'cb1',
+      projectId: 'vp1',
+      voiceConfig: {},
+      sourceType: 'standalone',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Partial<CharacterBindingEntity>)
+    vi.spyOn(dbModule, 'getCoreDatabaseManager').mockReturnValue({
+      providerConfigs: {
+        getEnabled: vi.fn(async () => [{
+          id: 'pc-comfy',
+          templateId: 'comfyui',
+          isEnabled: true,
+          models: [
+            { id: 'h3', name: 'MiniMax-H3 图生视频', type: 'video' },
+            { id: 'krea2', name: 'Krea2 文生图', type: 'image' },
+            { id: 'flux-kontext', name: 'Flux Kontext 参考图生图', type: 'image' },
+          ],
+        }]),
+      },
+    } as any)
+
+    const baseId = await seedMain(imageSvc)
+    await svc.generateThreeViews({
+      assetType: 'character',
+      assetId: 'cb1',
+      prompt: '林清',
+      baseImageId: baseId,
+    })
+
+    expect(gen.calls).toHaveLength(3)
+    for (const call of gen.calls) {
+      expect(call.providerConfigId).toBe('pc-comfy')
+      expect(call.modelId).toBe('flux-kontext')
     }
   })
 })

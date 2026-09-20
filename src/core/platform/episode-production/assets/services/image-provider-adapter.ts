@@ -21,7 +21,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { ImageService } from '@core/platform/services/image.service'
-import { getModelCapabilities } from '@core/platform/providers/image/model-capabilities'
+import { getModelCapabilities, findReferenceCapableModelInProvider } from '@core/platform/providers/image/model-capabilities'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import type { ImageGenerator } from './gallery-derivation.service'
@@ -94,6 +94,53 @@ const DEFAULT_DERIVE_HEIGHT = 1024
 /** 360 全景默认尺寸（equirectangular 2:1） */
 const DEFAULT_PANORAMA_WIDTH = 2048
 const DEFAULT_PANORAMA_HEIGHT = 1024
+
+/**
+ * F1b（2026-09-21）：视图/派生必须吃主图参考，若钉住的项目画面模型不支持参考图
+ * （maxReferenceImages=0，如 comfyui/krea2 纯 T2I），回退到同 provider 下首个支持
+ * 参考图的模型（如 flux-kontext）；主图（纯 T2I）调用方不走此回退。
+ *
+ * 解析失败 / provider 配置找不到 / 模型未登记能力 → 保持原样（既有行为不截断）；
+ * 同 provider 无替代 → 保持原样并 warn（参考图会在 generate 边界按能力表丢弃，同样有 warn）。
+ */
+export async function fallbackToReferenceCapableModel(
+  resolved: { providerConfigId: string; modelId: string } | null,
+): Promise<{ providerConfigId: string; modelId: string } | null> {
+  if (!resolved) return null
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.providerConfigs) return resolved
+    const enabled = await db.providerConfigs.getEnabled()
+    const cfg = enabled.find(c => c.id === resolved.providerConfigId)
+    if (!cfg) return resolved
+    const providerType = String(cfg.templateId ?? '').replace('image-', '')
+    const models = (cfg.models ?? []) as Array<{ id?: string; type?: string; name?: string }>
+    const cur = models.find(m => m.id === resolved.modelId)
+    let maxRefs: number | null = null
+    try {
+      maxRefs = getModelCapabilities(providerType, resolved.modelId, cur?.name).maxReferenceImages
+    } catch {
+      maxRefs = null // 未登记 → 不截断（既有行为）
+    }
+    if (maxRefs === null || maxRefs > 0) return resolved
+    const alt = findReferenceCapableModelInProvider(providerType, models, resolved.modelId)
+    if (alt) {
+      console.warn(
+        `[image-provider-adapter] F1b: ${providerType}/${resolved.modelId} 不支持参考图（maxReferenceImages=0），` +
+        `视图/派生回退到同 provider 的 ${alt}（保持吃主图参考）`,
+      )
+      return { providerConfigId: resolved.providerConfigId, modelId: alt }
+    }
+    console.warn(
+      `[image-provider-adapter] F1b: ${providerType}/${resolved.modelId} 不支持参考图，` +
+      `且同 provider 无支持参考图的替代模型，参考图将被能力截断丢弃`,
+    )
+    return resolved
+  } catch (e) {
+    console.warn('[image-provider-adapter] F1b 回退解析失败，保持钉住模型:', e)
+    return resolved
+  }
+}
 
 /**
  * 从用户已启用的 provider configs 里挑一个 image 类型 model 的 ID。
