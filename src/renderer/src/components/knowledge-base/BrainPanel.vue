@@ -72,12 +72,12 @@
               </el-table-column>
               <el-table-column prop="type" label="类型" width="90">
                 <template #default="{ row }">
-                  <el-tag size="small" effect="plain">{{ row.type }}</el-tag>
+                  <el-tag size="small" effect="plain">{{ kbAtomTypeLabel(row.type) }}</el-tag>
                 </template>
               </el-table-column>
               <el-table-column prop="status" label="状态" width="100">
                 <template #default="{ row }">
-                  <el-tag :type="statusTagType(row.status)" size="small">{{ row.status }}</el-tag>
+                  <el-tag :type="statusTagType(row.status)" size="small">{{ kbAtomStatusLabel(row.status) }}</el-tag>
                 </template>
               </el-table-column>
               <el-table-column label="来源文档" width="130">
@@ -118,7 +118,7 @@
             <div v-for="n in notes" :key="n.id" class="note-card">
               <div class="n-head">
                 <span class="n-title">{{ n.title }}</span>
-                <el-tag size="small" effect="plain">{{ n.type }}</el-tag>
+                <el-tag size="small" effect="plain">{{ kbNoteTypeLabel(n.type) }}</el-tag>
               </div>
               <div class="n-desc">{{ n.description }}</div>
               <el-collapse v-if="n.body" class="n-body-collapse">
@@ -151,7 +151,7 @@
             <div v-for="p in proposals" :key="p.id" class="note-card">
               <div class="n-head">
                 <span class="n-title">{{ p.title }}</span>
-                <el-tag size="small" type="warning" effect="light">待审</el-tag>
+                <el-tag size="small" type="warning" effect="light">{{ kbNoteStatusLabel(p.status) }}</el-tag>
               </div>
               <div class="n-desc">{{ p.description }}</div>
               <pre v-if="p.body" class="n-body preview">{{ p.body }}</pre>
@@ -426,6 +426,7 @@
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { KB_BRAIN_GOAL_PRESETS } from '@shared/constants/kb-brain-goal-presets'
+import { kbAtomStatusLabel, kbAtomTypeLabel, kbNoteStatusLabel, kbNoteTypeLabel } from '@shared/constants/kb-brain-labels'
 
 const props = defineProps<{ kbId: string }>()
 const emit = defineEmits<{ (e: 'stats', count: number): void }>()
