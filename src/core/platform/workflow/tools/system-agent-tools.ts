@@ -108,7 +108,7 @@ export function collectSystemAgentRef(ctx: AgentToolContext, ref: SystemAgentTur
 export interface SystemAgentToolsDeps {
   registry: AgentToolRegistry
   runService: Pick<WorkflowRunService, 'startRun' | 'getRunDetail'>
-  definitions: Pick<WorkflowDefinitionService, 'list'>
+  definitions: Pick<WorkflowDefinitionService, 'list' | 'getById'>
   /** 任务树子系统未装配（M3 降级）时为 null——create_task_plan 结构化报错 */
   tasks: Pick<AgentTaskService, 'createPlan'> | null
   skills: Pick<SkillService, 'list' | 'resolveSkill'>
@@ -151,7 +151,7 @@ const CreateWorkflowDraftInput = z.object({
 // ==================== 纯函数（可独立单测） ====================
 
 /** 提取工作流 start 节点参数 schema（目录展示 + agent 填参依据） */
-export function extractStartInputs(def: WorkflowDefinitionRecord): Array<{ key: string; label: string; type: string; required: boolean }> {
+export function extractStartInputs(def: WorkflowDefinitionRecord): Array<{ key: string; label: string; type: string; required: boolean; autoFill?: 'host-model' }> {
   const graph = def.publishedGraph ?? def.draftGraph
   if (!graph) return []
   const start = graph.nodes.find((n) => n.type === WORKFLOW_NODE_TYPES.start)
@@ -161,7 +161,13 @@ export function extractStartInputs(def: WorkflowDefinitionRecord): Array<{ key: 
     label: i.label,
     type: i.type,
     required: i.required === true,
+    ...(i.type === 'model' && hostModelFillable(i.modelTypes) ? { autoFill: 'host-model' as const } : {}),
   }))
+}
+
+/** model 类参数是否可用「当前对话模型」填充：未限类型或含 text（文本对话） */
+function hostModelFillable(modelTypes?: string[]): boolean {
+  return !modelTypes || modelTypes.length === 0 || modelTypes.includes('text')
 }
 
 /** 运行摘要（run_workflow 终态返回 / get_workflow_run 共用） */
@@ -346,9 +352,33 @@ export function buildSystemAgentToolDefs(deps: SystemAgentToolsDeps): AgentToolD
     // 工具自身超时 = 等待上限 + 30s 余量（两者都跟着「参数设置」走）
     executeTimeoutMs: systemToolsParams().runWaitTimeoutMs + 30_000,
     execute: async (input, ctx) => {
+      const inputs: Record<string, unknown> = { ...(input.inputs ?? {}) }
+      // model 类必填参数缺省 → 自动用当前对话模型填充（统一入口不问「用哪个 Provider/模型」；
+      // 非文本类如 video/image 模型参数不在此列，仍由 agent 向用户确认）。fail-soft：取图失败按原样提交
+      const autoFilled: string[] = []
+      try {
+        const def = await deps.definitions.getById(input.definitionId)
+        const graph = def?.publishedGraph ?? def?.draftGraph
+        const start = graph?.nodes.find((n) => n.type === WORKFLOW_NODE_TYPES.start)
+        const turnModel = (ctx.logContext as { turnModel?: { providerConfigId?: string; modelId?: string } } | undefined)?.turnModel
+        for (const mi of (start?.config as { inputs?: Array<WorkflowStartInput & { modelTypes?: string[] }> } | undefined)?.inputs ?? []) {
+          if (mi.type !== 'model' || !hostModelFillable(mi.modelTypes)) continue
+          // 形状校正：缺省必填项、或 agent 传了裸字符串（schema 标 required，它常硬填 modelId
+          // 一枚而格式错被引擎打回——实测）都覆盖为宿主当前对话模型
+          const v = inputs[mi.key]
+          const wellShaped = !!v && typeof v === 'object' && !Array.isArray(v)
+            && typeof (v as { providerConfigId?: unknown }).providerConfigId === 'string'
+            && typeof (v as { modelId?: unknown }).modelId === 'string'
+          if (wellShaped) continue
+          if (mi.required !== true && v === undefined) continue
+          if (!turnModel?.providerConfigId || !turnModel?.modelId) continue
+          inputs[mi.key] = { providerConfigId: turnModel.providerConfigId, modelId: turnModel.modelId }
+          if (!autoFilled.includes(mi.key)) autoFilled.push(mi.key)
+        }
+      } catch { /* 图谱读取失败：按用户原样提交，缺参由引擎/agent 兜底 */ }
       const run = await deps.runService.startRun({
         definitionId: input.definitionId,
-        inputs: input.inputs,
+        inputs,
         triggerType: WORKFLOW_TRIGGER_TYPES.manual,
         usePublishedGraph: true,
       })
@@ -365,11 +395,13 @@ export function buildSystemAgentToolDefs(deps: SystemAgentToolsDeps): AgentToolD
           // 失败/取消/超时：摘要进错误消息（截断防灌上下文），模型可读节点错误
           throw new Error(`工作流运行结束于 ${waited.run.status}：${digest(summary, systemToolsParams().runErrorDigestChars)}`)
         }
-        return summary
+        return autoFilled.length > 0 ? { ...summary, modelAutoFilled: autoFilled } : summary
       }
       if (waited.unavailable) throw new Error(waited.note)
       // 超时/取消/等待人工：运行本身仍在推进——返回状态让 agent 如实转告
-      return { runId: run.id, status: waited.status, note: waited.note }
+      return autoFilled.length > 0
+        ? { runId: run.id, status: waited.status, note: waited.note, modelAutoFilled: autoFilled }
+        : { runId: run.id, status: waited.status, note: waited.note }
     },
   }
 

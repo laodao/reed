@@ -150,6 +150,7 @@ function setup(overrides: Partial<SystemAgentToolsDeps> = {}) {
     },
     definitions: {
       list: async () => ({ items: [mkDefinition()], total: 1 }),
+      getById: async () => mkDefinition(),
     },
     tasks: {
       createPlan: async () => ({ id: 'root-1', title: '调研任务', status: 'pending_review' }),
