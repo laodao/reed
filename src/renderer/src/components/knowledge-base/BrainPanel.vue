@@ -1,84 +1,247 @@
 <template>
   <div class="brain-panel">
-    <!-- 统计条（§8.5 消化率最小版） -->
-    <div class="section-header">
-      <h3>知识大脑</h3>
-      <el-tag :type="enabled ? 'success' : 'info'" size="small">{{ enabled ? '已启用' : '未启用' }}</el-tag>
-      <span class="brain-stats">
-        <span class="stat">论断 <b>{{ stats?.atoms?.total ?? '—' }}</b></span>
-        <el-divider direction="vertical" />
-        <span class="stat">我的观感 <b>{{ stats?.atoms?.humanOrigin ?? '—' }}</b></span>
-        <el-divider direction="vertical" />
-        <span class="stat">卡片 <b>{{ stats?.notes?.published ?? '—' }}</b></span>
-        <el-divider direction="vertical" />
-        <span class="stat">待审提议 <b>{{ proposalTotal }}</b></span>
-        <el-divider direction="vertical" />
-        <span class="stat">悬而未决 <b>{{ stats?.openQuestions ?? '—' }}</b></span>
-      </span>
-      <div class="section-actions">
-        <el-button size="small" @click="configOpen = !configOpen">设置</el-button>
+    <!-- 顶部状态条：标题 + 启用开关 + 统计 + 设置入口 -->
+    <header class="bp-header">
+      <div class="bp-title">
+        <span class="bp-name">知识大脑</span>
+        <el-switch v-model="enabled" size="small" :loading="enabling" @change="toggleEnabled" />
+        <el-tag :type="enabled ? 'success' : 'info'" size="small" effect="light" round>
+          {{ enabled ? '运行中' : '未启用' }}
+        </el-tag>
       </div>
+      <div class="bp-stats">
+        <div class="bp-stat">
+          <b>{{ stats?.atoms?.total ?? '—' }}</b>
+          <span>论断</span>
+        </div>
+        <div class="bp-stat">
+          <b>{{ stats?.atoms?.humanOrigin ?? '—' }}</b>
+          <span>我的观感</span>
+        </div>
+        <div class="bp-stat">
+          <b>{{ stats?.notes?.published ?? '—' }}</b>
+          <span>经验卡</span>
+        </div>
+        <div class="bp-stat">
+          <b>{{ proposalTotal }}</b>
+          <span>待审提议</span>
+        </div>
+        <div class="bp-stat">
+          <b>{{ stats?.openQuestions ?? '—' }}</b>
+          <span>悬而未决</span>
+        </div>
+      </div>
+      <el-button size="small" @click="openConfig">
+        <el-icon><Setting /></el-icon>
+        设置
+      </el-button>
+    </header>
+
+    <!-- 主体双栏：左=论断库主表，右=提炼目标/待审提议/待提取文档 -->
+    <div class="bp-body">
+      <div class="bp-main">
+        <div class="atoms-table-region">
+          <el-table
+            :data="atoms"
+            height="100%"
+            :empty-text="enabled ? '尚未消化出论断（上传文档后自动进行）' : '大脑未启用，打开顶部开关后上传文档自动消化'"
+            style="width: 100%"
+          >
+            <el-table-column type="index" label="序号" width="60" align="center" :index="atomIndex" />
+            <el-table-column prop="statement" label="论断" min-width="280">
+              <template #default="{ row }">
+                <el-tooltip v-if="row.sourceQuote" :content="row.sourceQuote" placement="top" :show-after="200">
+                  <span class="stmt">{{ row.statement }}</span>
+                </el-tooltip>
+                <span v-else class="stmt">{{ row.statement }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="type" label="类型" width="90">
+              <template #default="{ row }">
+                <el-tag size="small" effect="plain">{{ row.type }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="status" label="状态" width="100">
+              <template #default="{ row }">
+                <el-tag :type="statusTagType(row.status)" size="small">{{ row.status }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="视角" width="70">
+              <template #default="{ row }">
+                {{ row.lensNoteId ? '视角' : row.origin === 'human' ? '我' : '—' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="来源" width="110">
+              <template #default="{ row }">
+                <span class="muted">{{ (row.sourceChapterHash || '').slice(0, 8) || '—' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="useCount" label="被用" width="60" align="center" />
+          </el-table>
+        </div>
+        <div v-if="atomTotal > 0" class="atoms-pagination-bar">
+          <el-pagination
+            :current-page="atomPage"
+            :page-size="atomPageSize"
+            :page-sizes="[20, 50, 100]"
+            :total="atomTotal"
+            layout="total, sizes, prev, pager, next"
+            background
+            @current-change="handleAtomPageChange"
+            @size-change="handleAtomPageSizeChange"
+          />
+        </div>
+      </div>
+
+      <aside class="bp-side">
+        <!-- 提炼目标 -->
+        <section class="side-card">
+          <header class="side-head">
+            <span class="side-title">提炼目标</span>
+            <el-button link type="primary" size="small" @click="openConfig">管理</el-button>
+          </header>
+          <div v-if="enabledGoals.length === 0" class="side-empty">暂无目标，点击「管理」添加</div>
+          <div v-for="g in enabledGoals" :key="g.id" class="goal-run" :title="g.hint">
+            <div class="goal-run-info">
+              <span class="goal-run-name">{{ g.name }}</span>
+              <span class="goal-run-hint">{{ g.hint }}</span>
+            </div>
+            <el-button
+              size="small"
+              :loading="runningGoalIds.includes(g.id)"
+              @click="runGoal(g)"
+            >
+              {{ runningGoalIds.includes(g.id) ? '提炼中' : '提炼' }}
+            </el-button>
+          </div>
+          <div v-if="enabledGoals.length > 0" class="side-tip">
+            基于全书章节摘要提炼，约需一至十几分钟；完成后经验卡出现在「待审提议」。
+          </div>
+        </section>
+
+        <!-- 待审提议 -->
+        <section class="side-card">
+          <header class="side-head">
+            <span class="side-title">待审提议</span>
+            <span v-if="proposalTotal > 0" class="side-count">{{ proposalTotal }}</span>
+          </header>
+          <div v-if="proposals.length === 0" class="side-empty">暂无待审提议</div>
+          <div v-for="p in proposals" :key="p.id" class="proposal">
+            <div class="p-title">{{ p.title }}</div>
+            <div class="p-desc">{{ p.description }}</div>
+            <div class="p-actions">
+              <el-button size="small" @click="decide(p.id, 'reject')">拒绝</el-button>
+              <el-button size="small" type="primary" @click="decide(p.id, 'publish')">批准入库</el-button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 待提取文档（开脑前上传的存量，有才显示） -->
+        <section v-if="pendingDigestDocs.length > 0" class="side-card">
+          <header class="side-head">
+            <span class="side-title">待提取文档</span>
+            <el-button size="small" type="primary" plain :loading="digestAllBusy" @click="digestAll">
+              全部提取
+            </el-button>
+          </header>
+          <div v-for="d in pendingDigestDocs" :key="d.id" class="doc-run">
+            <span class="doc-run-name" :title="d.name">{{ d.name }}</span>
+            <el-button size="small" :loading="!!d.busy" @click="digestOne(d)">
+              {{ d.busy ? '提取中' : '提取' }}
+            </el-button>
+          </div>
+        </section>
+      </aside>
     </div>
 
-    <!-- 配置 -->
-    <div v-if="configOpen" class="brain-config">
-      <div class="cfg-row">
-        <span class="cfg-label">启用知识大脑</span>
-        <el-switch v-model="configDraft.enabled" />
-      </div>
-      <div class="cfg-row">
-        <span class="cfg-label">自动消化新文档（原子化+裁决）</span>
-        <el-switch v-model="configDraft.digestion.enabled" />
-      </div>
-      <div class="cfg-row">
-        <span class="cfg-label">情节模式卡归纳（实验性，成本较高）</span>
-        <el-switch v-model="configDraft.patterns.plotEnabled" />
-      </div>
-      <div class="cfg-row">
-        <span class="cfg-label">自动入库阈值（低于则进待审）</span>
-        <el-input-number
-          v-model="configDraft.autoApproveThreshold"
-          :min="0"
-          :max="1"
-          :step="0.05"
-          size="small"
-        />
-      </div>
-      <div class="cfg-row">
-        <span class="cfg-label">原子化模型</span>
-        <el-select
-          v-model="configDraft.models.atomize"
-          placeholder="跟随宿主模型"
-          clearable
-          value-on-clear=""
-          size="small"
-          style="width: 260px"
-        >
-          <el-option v-for="m in modelOptions" :key="m.value" :label="m.label" :value="m.value" />
-        </el-select>
-      </div>
-      <div class="cfg-row">
-        <span class="cfg-label">裁决/提炼模型</span>
-        <el-select
-          v-model="configDraft.models.adjudicate"
-          placeholder="跟随宿主模型"
-          clearable
-          value-on-clear=""
-          size="small"
-          style="width: 260px"
-        >
-          <el-option v-for="m in modelOptions" :key="m.value" :label="m.label" :value="m.value" />
-        </el-select>
-      </div>
-      <div class="cfg-goals">
-        <div class="cfg-goals-head">
-          <span class="cfg-label">提取目标（经验提炼维度，按项目定义）</span>
+    <!-- 设置抽屉 -->
+    <el-drawer v-model="configOpen" title="大脑设置" size="600px" :close-on-click-modal="false">
+      <div class="cfg-body">
+        <section class="cfg-section">
+          <h4>基础</h4>
+          <div class="cfg-row">
+            <label class="cfg-label">
+              启用知识大脑
+              <span class="cfg-desc">总开关；关闭后暂停消化与提炼</span>
+            </label>
+            <el-switch v-model="configDraft.enabled" />
+          </div>
+          <div class="cfg-row">
+            <label class="cfg-label">
+              自动消化新文档
+              <span class="cfg-desc">上传文档后自动原子化 + 裁决</span>
+            </label>
+            <el-switch v-model="configDraft.digestion.enabled" />
+          </div>
+          <div class="cfg-row">
+            <label class="cfg-label">
+              情节模式卡归纳
+              <span class="cfg-desc">实验性，成本较高</span>
+            </label>
+            <el-switch v-model="configDraft.patterns.plotEnabled" />
+          </div>
+          <div class="cfg-row">
+            <label class="cfg-label">
+              自动入库阈值
+              <span class="cfg-desc">论断置信度不低于该值直接入库，否则进待审提议</span>
+            </label>
+            <el-input-number
+              v-model="configDraft.autoApproveThreshold"
+              :min="0"
+              :max="1"
+              :step="0.05"
+              size="small"
+            />
+          </div>
+        </section>
+
+        <section class="cfg-section">
+          <h4>模型</h4>
+          <div class="cfg-row">
+            <label class="cfg-label">
+              原子化模型
+              <span class="cfg-desc">从章节原文提取知识论断</span>
+            </label>
+            <el-select
+              v-model="configDraft.models.atomize"
+              placeholder="跟随宿主模型"
+              clearable
+              value-on-clear=""
+              size="small"
+              style="width: 240px"
+            >
+              <el-option v-for="m in modelOptions" :key="m.value" :label="m.label" :value="m.value" />
+            </el-select>
+          </div>
+          <div class="cfg-row">
+            <label class="cfg-label">
+              裁决 / 提炼模型
+              <span class="cfg-desc">论断查重裁决与经验卡归纳</span>
+            </label>
+            <el-select
+              v-model="configDraft.models.adjudicate"
+              placeholder="跟随宿主模型"
+              clearable
+              value-on-clear=""
+              size="small"
+              style="width: 240px"
+            >
+              <el-option v-for="m in modelOptions" :key="m.value" :label="m.label" :value="m.value" />
+            </el-select>
+          </div>
+        </section>
+
+        <section class="cfg-section">
+          <h4>提取目标</h4>
+          <div class="cfg-desc" style="margin-bottom: 8px">
+            经验提炼的维度，按项目类型定义；保存后在右侧「提炼目标」中运行
+          </div>
           <div class="cfg-goals-actions">
             <el-select
               v-model="presetPick"
               placeholder="从模板添加…"
               size="small"
-              style="width: 200px"
+              style="width: 220px"
               @change="addGoalFromPreset"
             >
               <el-option-group v-for="g in presetGroups" :key="g.group" :label="g.group">
@@ -87,134 +250,30 @@
             </el-select>
             <el-button size="small" @click="addCustomGoal">新建</el-button>
           </div>
-        </div>
-        <div v-for="(g, gi) in configDraft.goals" :key="g.id" class="goal-edit">
-          <div class="goal-edit-head">
-            <el-checkbox v-model="g.enabled" size="small" />
-            <el-input v-model="g.name" size="small" placeholder="目标名称" style="width: 180px" />
-            <el-button size="small" text type="danger" @click="configDraft.goals.splice(gi, 1)">删除</el-button>
+          <div v-for="(g, gi) in configDraft.goals" :key="g.id" class="goal-edit">
+            <div class="goal-edit-head">
+              <el-checkbox v-model="g.enabled" size="small" />
+              <el-input v-model="g.name" size="small" placeholder="目标名称" style="flex: 1" />
+              <el-button size="small" text type="danger" @click="configDraft.goals.splice(gi, 1)">删除</el-button>
+            </div>
+            <el-input
+              v-model="g.hint"
+              type="textarea"
+              :rows="4"
+              size="small"
+              placeholder="提炼指引：要提取什么经验、如何组织成卡"
+            />
           </div>
-          <el-input
-            v-model="g.hint"
-            type="textarea"
-            :rows="4"
-            size="small"
-            placeholder="提炼指引：要提取什么经验、如何组织成卡"
-          />
+          <div v-if="configDraft.goals.length === 0" class="side-empty">暂无目标——从模板添加或新建</div>
+        </section>
+      </div>
+      <template #footer>
+        <div class="cfg-actions">
+          <el-button @click="discardConfig">取消</el-button>
+          <el-button type="primary" :loading="saving" @click="saveConfig">保存</el-button>
         </div>
-        <div v-if="configDraft.goals.length === 0" class="goal-empty">暂无目标——从模板添加或新建（保存后生效）</div>
-      </div>
-      <div class="cfg-actions">
-        <el-button size="small" @click="discardConfig">取消</el-button>
-        <el-button type="primary" size="small" :loading="saving" @click="saveConfig">保存</el-button>
-      </div>
-    </div>
-
-    <!-- 文档消化：开脑前上传的文档在此补提取 -->
-    <div v-if="pendingDigestDocs.length > 0" class="digest-section">
-      <div class="digest-title">
-        待提取文档（{{ pendingDigestDocs.length }}）
-        <el-button
-          size="small"
-          type="primary"
-          plain
-          :loading="digestAllBusy"
-          @click="digestAll"
-        >
-          全部提取
-        </el-button>
-      </div>
-      <div v-for="d in pendingDigestDocs" :key="d.id" class="digest-row">
-        <span class="d-name" :title="d.name">{{ d.name }}</span>
-        <el-button
-          size="small"
-          :loading="!!d.busy"
-          @click="digestOne(d)"
-        >
-          {{ d.busy ? '提取中…' : '提取知识' }}
-        </el-button>
-      </div>
-    </div>
-
-    <!-- 经验提炼（提取目标：按库配置维度，机制通用内容是数据） -->
-    <div v-if="enabledGoals.length > 0" class="digest-section">
-      <div class="digest-title">经验提炼</div>
-      <div v-for="g in enabledGoals" :key="g.id" class="digest-row">
-        <span class="d-name" :title="g.hint">{{ g.name }}</span>
-        <el-button size="small" :loading="runningGoalIds.includes(g.id)" @click="runGoal(g)">
-          {{ runningGoalIds.includes(g.id) ? '提炼中…' : '提炼' }}
-        </el-button>
-      </div>
-      <div class="goal-tip">提炼基于全书章节摘要，约需一至十几分钟；完成后经验卡出现在「待审提议」。</div>
-    </div>
-
-    <!-- 论断列表（三段式：表格区内滚动，分页栏固定底部不随滚动） -->
-    <div class="atoms-section">
-      <div class="atoms-table-region">
-        <el-table
-          :data="atoms"
-          height="100%"
-          :empty-text="enabled ? '尚未消化出论断（上传文档后自动进行）' : '大脑未启用，在设置中开启后上传文档自动消化'"
-          style="width: 100%"
-        >
-          <el-table-column type="index" label="序号" width="60" align="center" :index="atomIndex" />
-          <el-table-column prop="statement" label="论断" min-width="280">
-            <template #default="{ row }">
-              <el-tooltip v-if="row.sourceQuote" :content="row.sourceQuote" placement="top" :show-after="200">
-                <span class="stmt">{{ row.statement }}</span>
-              </el-tooltip>
-              <span v-else class="stmt">{{ row.statement }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="type" label="类型" width="90">
-            <template #default="{ row }">
-              <el-tag size="small" effect="plain">{{ row.type }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="status" label="状态" width="100">
-            <template #default="{ row }">
-              <el-tag :type="statusTagType(row.status)" size="small">{{ row.status }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="视角" width="70">
-            <template #default="{ row }">
-              {{ row.lensNoteId ? '视角' : row.origin === 'human' ? '我' : '—' }}
-            </template>
-          </el-table-column>
-          <el-table-column label="来源" width="110">
-            <template #default="{ row }">
-              <span class="muted">{{ (row.sourceChapterHash || '').slice(0, 8) || '—' }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="useCount" label="被用" width="60" align="center" />
-        </el-table>
-      </div>
-      <div v-if="atomTotal > 0" class="atoms-pagination-bar">
-        <el-pagination
-          :current-page="atomPage"
-          :page-size="atomPageSize"
-          :page-sizes="[20, 50, 100]"
-          :total="atomTotal"
-          layout="total, sizes, prev, pager, next"
-          background
-          @current-change="handleAtomPageChange"
-          @size-change="handleAtomPageSizeChange"
-        />
-      </div>
-    </div>
-
-    <!-- 提议收件箱 -->
-    <div v-if="proposals.length > 0" class="inbox">
-      <div class="digest-title">待审提议（{{ proposals.length }}）</div>
-      <div v-for="p in proposals" :key="p.id" class="proposal">
-        <div class="p-title">{{ p.title }}</div>
-        <div class="p-desc">{{ p.description }}</div>
-        <div class="p-actions">
-          <el-button type="primary" size="small" @click="decide(p.id, 'publish')">批准</el-button>
-          <el-button size="small" @click="decide(p.id, 'reject')">拒绝</el-button>
-        </div>
-      </div>
-    </div>
+      </template>
+    </el-drawer>
   </div>
 </template>
 
@@ -279,6 +338,7 @@ const configDraft = ref<BrainConfig>({
 const configOpen = ref(false)
 const saving = ref(false)
 const enabled = ref(false)
+const enabling = ref(false)
 interface DigestDoc {
   id: string
   name: string
@@ -435,14 +495,17 @@ async function refresh(): Promise<void> {
       client.getConfig(props.kbId),
       client.stats(props.kbId),
       fetchAtoms(),
-      client.proposalInbox({ kbId: props.kbId, pageSize: 20 }),
+      client.proposalInbox({ kbId: props.kbId, pageSize: 50 }),
       client.docStatus(props.kbId),
     ])
     if (gen !== requestGen) return // 过期响应丢弃
     if (cfgRes.success && cfgRes.data) {
       config.value = cfgRes.data.config
       enabled.value = !!cfgRes.data.config?.enabled
-      if (cfgRes.data.config) configDraft.value = JSON.parse(JSON.stringify(cfgRes.data.config))
+      // 抽屉打开期间不覆写草稿：用户可能正在编辑未保存的设置
+      if (cfgRes.data.config && !configOpen.value) {
+        configDraft.value = JSON.parse(JSON.stringify(cfgRes.data.config))
+      }
     }
     if (statsRes.success) stats.value = statsRes.data
     if (inboxRes.success && inboxRes.data) {
@@ -475,6 +538,38 @@ async function refresh(): Promise<void> {
     }
   } catch {
     /* 旧宿主无此通道：忽略 */
+  }
+}
+
+function openConfig(): void {
+  if (config.value) configDraft.value = JSON.parse(JSON.stringify(config.value))
+  configOpen.value = true
+}
+
+/** 头部总开关：立即落库（部分 patch 只动 enabled），失败回滚 */
+async function toggleEnabled(): Promise<void> {
+  const next = enabled.value
+  if (!props.kbId) {
+    enabled.value = !next
+    return
+  }
+  enabling.value = true
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  try {
+    const res = await client.updateConfig({ kbId: props.kbId, patch: { enabled: next } })
+    if (res.success) {
+      config.value = res.data
+      enabled.value = !!res.data?.enabled
+      configDraft.value = JSON.parse(JSON.stringify(res.data))
+    } else {
+      enabled.value = !next
+      ElMessage.error(`操作失败: ${res.error || '未知错误'}`)
+    }
+  } catch (e) {
+    enabled.value = !next
+    ElMessage.error(`操作失败: ${(e as Error).message}`)
+  } finally {
+    enabling.value = false
   }
 }
 
@@ -572,126 +667,92 @@ defineExpose({ refresh })
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 0;
 }
-.section-header {
+
+/* ===== 顶部状态条 ===== */
+.bp-header {
   flex: none;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.bp-title {
   display: flex;
   align-items: center;
   gap: 10px;
-  justify-content: space-between;
-  margin-bottom: 12px;
+  flex: none;
 }
-.section-header h3 {
-  margin: 0;
+.bp-name {
   font-size: 15px;
-  flex: none;
-}
-.section-actions {
-  flex: none;
-}
-.brain-stats {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  opacity: 0.85;
-}
-.stat b {
   font-weight: 600;
 }
-.brain-config {
-  /* 配置展开时不挤压论断表：超出自身滚动 */
-  flex: none;
-  max-height: 55%;
-  overflow: auto;
-  padding: 12px 14px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
-  margin: 10px 0;
+.bp-stats {
+  display: flex;
+  align-items: stretch;
+  margin-left: auto;
+}
+.bp-stat {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-.cfg-row {
-  display: flex;
-  gap: 12px;
   align-items: center;
-  font-size: 13px;
+  justify-content: center;
+  min-width: 68px;
+  padding: 0 12px;
+  border-left: 1px solid var(--el-border-color-lighter);
+  line-height: 1.3;
 }
-.cfg-label {
-  min-width: 220px;
+.bp-stat:first-child {
+  border-left: none;
 }
-.cfg-actions {
+.bp-stat b {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  font-variant-numeric: tabular-nums;
+}
+.bp-stat span {
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+}
+
+/* ===== 主体双栏 ===== */
+.bp-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 16px;
+}
+.bp-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.bp-side {
+  width: 320px;
+  flex: none;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 4px;
+}
+
+/* 论断三段式：表格区弹性伸展内部滚动，分页栏固定底部 */
+.atoms-table-region {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background-color: var(--el-bg-color);
+}
+.atoms-pagination-bar {
+  flex: none;
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-}
-.cfg-goals {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--el-border-color-lighter);
-}
-.cfg-goals-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.cfg-goals-actions {
-  display: flex;
-  gap: 8px;
-}
-.goal-edit {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
-}
-.goal-edit-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.goal-empty {
-  font-size: 12px;
-  opacity: 0.55;
-}
-.goal-tip {
-  font-size: 12px;
-  opacity: 0.55;
-  margin-top: 2px;
-}
-.digest-section {
-  flex: none;
-  margin: 12px 0;
-}
-.digest-title {
-  font-weight: 600;
-  font-size: 13px;
-  margin-bottom: 6px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.digest-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 4px 0;
-  font-size: 13px;
-}
-.d-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin-right: 12px;
+  padding: 12px 0 0;
 }
 .stmt {
   display: inline-block;
@@ -701,50 +762,185 @@ defineExpose({ refresh })
   white-space: nowrap;
   vertical-align: bottom;
 }
-/* 论断三段式：表格区弹性伸展内部滚动，分页栏固定底部 */
-.atoms-section {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.atoms-table-region {
-  flex: 1;
-  min-height: 0;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
-  background-color: var(--el-bg-color);
-}
-.atoms-pagination-bar {
-  flex: none;
-  display: flex;
-  justify-content: flex-end;
-  padding: 12px 0 0;
-}
 .muted {
   opacity: 0.5;
 }
-.inbox {
+
+/* ===== 右侧行动栏 ===== */
+.side-card {
   flex: none;
-  margin-top: 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-bg-color);
+  padding: 12px;
 }
+.side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.side-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.side-count {
+  font-size: 11px;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+  border-radius: 8px;
+  padding: 0 7px;
+  line-height: 16px;
+}
+.side-empty {
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+  text-align: center;
+  padding: 12px 0;
+}
+.side-tip {
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
+  line-height: 1.5;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--el-border-color-lighter);
+}
+
+.goal-run {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+.goal-run:hover {
+  background: var(--el-fill-color-light);
+}
+.goal-run-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.goal-run-name {
+  font-size: 13px;
+  color: var(--el-text-color-primary);
+}
+.goal-run-hint {
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .proposal {
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
-  padding: 8px 10px;
-  margin-bottom: 8px;
+  padding: 10px;
+}
+.proposal + .proposal {
+  margin-top: 8px;
 }
 .p-title {
-  font-weight: 600;
   font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
 }
 .p-desc {
   font-size: 12px;
-  opacity: 0.7;
-  margin: 4px 0;
+  color: var(--el-text-color-secondary);
+  line-height: 1.5;
+  margin: 4px 0 8px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .p-actions {
   display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.doc-run {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+}
+.doc-run + .doc-run {
+  border-top: 1px solid var(--el-border-color-extra-light);
+}
+.doc-run-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ===== 设置抽屉 ===== */
+.cfg-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.cfg-section h4 {
+  margin: 0 0 2px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.cfg-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+}
+.cfg-row + .cfg-row {
+  border-top: 1px solid var(--el-border-color-extra-light);
+}
+.cfg-label {
+  font-size: 13px;
+  display: block;
+}
+.cfg-desc {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--el-text-color-secondary);
+  margin-top: 2px;
+}
+.cfg-goals-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.goal-edit {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.goal-edit + .goal-edit {
+  margin-top: 8px;
+}
+.goal-edit-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cfg-actions {
+  display: flex;
+  justify-content: flex-end;
   gap: 8px;
 }
 </style>
