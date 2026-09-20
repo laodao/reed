@@ -50,7 +50,12 @@ export interface RoomModelOpts {
   modelId?: string
 }
 
-export function useStoryRoom(projectId: string) {
+/** 组合式函数可选钩子：观测原始房间事件（实况面板据此实时推送卡片/正文） */
+export interface StoryRoomHooks {
+  onEvent?: (event: RoomEvent) => void
+}
+
+export function useStoryRoom(projectId: string, hooks?: StoryRoomHooks) {
   const messages = ref<RoomMessageView[]>([])
   /** 主编/整理器模型偏好（顶栏选择；缺省 undefined 走宿主默认） */
   const modelOpts = ref<RoomModelOpts>({})
@@ -76,6 +81,10 @@ export function useStoryRoom(projectId: string) {
   let dispose: (() => void) | null = null
 
   function handleEvent(event: RoomEvent) {
+    // 观测者先于内部状态处理（实况面板只读事件，不依赖内部处理顺序）
+    try {
+      hooks?.onEvent?.(event)
+    } catch { /* 观测面失败不影响主链路 */ }
     switch (event.type) {
       case 'message:delta':
         if (!streamMessage.value) streamMessage.value = { content: '', turnNo: (state.value?.turnNo ?? 0) + 1 }

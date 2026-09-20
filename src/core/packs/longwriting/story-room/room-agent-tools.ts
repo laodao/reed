@@ -1116,6 +1116,14 @@ function buildWriteChapterToolDef(): AgentToolDef {
         } catch (e: any) {
           pipelineNote = `图谱更新失败（下次保存重跑）：${e?.message || ''}`
         }
+        // 实况面板：正文落库即推右侧（写完就能审阅，不等 agent 收尾发言）
+        emitRoomEvent(projectId, {
+          type: 'chapter:saved',
+          outlineId: nodeId,
+          chapterNo: ref.chapterNo,
+          title: ref.title,
+          wordCount: content.replace(/\s/g, '').length,
+        })
         return {
           ok: true,
           data: {
@@ -1136,7 +1144,7 @@ function buildWriteChapterFullToolDef(): AgentToolDef {
   return {
     name: 'lw_write_chapter_full',
     description:
-      '按章法一键写完一章（写正文唯一推荐入口）：内部启动「章节写作章法」工作流并在本工具内等待完成（工作流引擎确定性执行「生成章节设计卡（情节概要/开场钩子/爽点/章尾卡点）→ 自检 → 依据设计卡确定出场角色/地点/物品并确认 → 一致性检查 → 通过后生成并保存正文 → 写后一致性检查」，run 记录可审计）。自检或一致性检查不通过时返回具体问题清单——此时把问题讲给用户，修正方向确认后重新调用；禁止跳过章法直接写正文。该章已有正文时须用户同意后传 overwrite=true。',
+      '按章法一键写完一章（写正文唯一推荐入口）：内部启动「章节写作章法」工作流并在本工具内等待完成（工作流引擎确定性执行「生成章节设计卡（情节概要/开场钩子/爽点/章尾卡点）→ 自检 → 依据设计卡确定出场角色/地点/物品并确认 → 一致性检查 → 通过后生成并保存正文 → 写后一致性检查 → 故事性检查（钩子/爽点/吸引度结论）」，run 记录可审计）。自检或一致性检查不通过时返回具体问题清单——此时把问题讲给用户，修正方向确认后重新调用；禁止跳过章法直接写正文。该章已有正文时须用户同意后传 overwrite=true。完成后必须把一致性检查与故事性检查的结论原文转述给用户，然后停下等用户评审，未经用户明确同意不得继续写下一章。',
     inputSchema: z.object({
       outlineId: z.string().min(1).describe('章节大纲节点 id，或「第N章」/章节标题（自动解析；拿不准先 lw_query_outline）'),
       overwrite: z.boolean().optional().describe('该章已有正文时是否覆盖（须先征得用户同意）'),
@@ -1160,6 +1168,21 @@ function buildWriteChapterFullToolDef(): AgentToolDef {
           return { ok: false, error: outcome.error }
         }
         const out = outcome.data ?? {}
+        // 实况面板：章法工作流正文落库即推右侧
+        emitRoomEvent(projectId, {
+          type: 'chapter:saved',
+          outlineId: ref.id,
+          chapterNo: ref.chapterNo,
+          title: ref.title,
+          wordCount: Number(out.wordCount) || 0,
+        })
+        // 故事性检查（2026-09-20）：与一致性检查并列的独立结论，一并回给主编汇报用户
+        const sc = out.storyCheck as
+          | { ran?: boolean; attractive?: boolean; verdict?: string; hooks?: unknown[]; highlights?: unknown[]; suggestions?: string[] }
+          | null
+        const storyMsg = sc?.ran
+          ? `故事性检查结论：${sc.attractive ? '吸引人' : '偏弱'}（${sc.verdict || '无结论'}）——钩子 ${(sc.hooks || []).length} 处、爽点 ${(sc.highlights || []).length} 处。`
+          : '故事性检查未运行。'
         return {
           ok: true,
           data: {
@@ -1167,7 +1190,8 @@ function buildWriteChapterFullToolDef(): AgentToolDef {
             wordCount: out.wordCount,
             review: out.review,
             postCheck: out.postCheck,
-            message: `章法完成：设计卡→自检→出场实体→一致性→正文已保存（${out.wordCount} 字）。${out.postCheck?.passed ? '写后一致性检查通过。' : '写后一致性检查发现新疑点：' + (out.postCheck?.report || '')}`,
+            storyCheck: sc,
+            message: `章法完成：设计卡→自检→出场实体→一致性→正文已保存（${out.wordCount} 字）。${out.postCheck?.passed ? '写后一致性检查通过。' : '写后一致性检查发现新疑点：' + (out.postCheck?.report || '')}${storyMsg}`,
           },
         }
       } catch (e: any) {
@@ -1294,6 +1318,15 @@ function buildPatchChapterToolDef(): AgentToolDef {
         try {
           remaining = await ConsistencyService.getInstance().scanBlockingConflicts(projectId, ref.chapterNo)
         } catch { /* 重扫失败不影响修正回执 */ }
+        // 实况面板：局部修正也刷新右侧正文（patched 标记让面板显示「已修正」而不是重滚全文）
+        emitRoomEvent(projectId, {
+          type: 'chapter:saved',
+          outlineId: ref.id,
+          chapterNo: ref.chapterNo,
+          title: ref.title,
+          wordCount: patched.replace(/\s/g, '').length,
+          patched: true,
+        })
         return {
           ok: true,
           data: {

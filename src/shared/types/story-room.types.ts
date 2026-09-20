@@ -171,6 +171,7 @@ export type RoomEventType =
   | 'task:progress'
   | 'design:ready'
   | 'target:changed'
+  | 'chapter:saved'
   | 'error'
 
 export type RoomEvent =
@@ -184,6 +185,8 @@ export type RoomEvent =
   | { type: 'task:progress'; message: string; tool?: string; status?: 'ok' | 'skipped' | 'error' }
   | { type: 'design:ready'; packageId: string; title: string; itemCount: number }
   | { type: 'target:changed'; target: 'novel' | 'script' }
+  /** 章节正文已落库（写/重写/局部修正）——研讨室右侧实况面板据此实时上正文 */
+  | { type: 'chapter:saved'; outlineId: string; chapterNo: number | null; title: string; wordCount: number; patched?: boolean }
   | { type: 'error'; error: string }
 
 // ==================== 视图 / 请求类型 ====================

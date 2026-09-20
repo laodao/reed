@@ -27,7 +27,7 @@
       </el-dropdown>
       <el-button v-if="canExportScript" size="small" type="warning" plain @click="exportToEp">转为短剧项目 ↗</el-button>
       <span class="tb-btn" @click="showGraph = true">图谱</span>
-      <span class="tb-btn" @click="showBible = true">设定集</span>
+      <span class="tb-btn" @click="sideTab = 'bible'">设定集</span>
       <span class="tb-btn" @click="showSettings = true">设定</span>
       <span class="tb-btn accent" @click="goEditor">✍ 写作台 ↗</span>
     </div>
@@ -120,11 +120,37 @@
               <span class="ct-hint">阶段决定主编的讨论焦点与产出物；提提炼把共识整理成卡</span>
             </div>
             <div class="input-row">
+              <!-- @ 引用弹层：输入 @ 唤起；设定/章节分页签找，↑↓ 选择回车插入；发送后被 @ 的要素自动在右侧打开 -->
+              <div v-if="mentionOpen && mentionSources.length" ref="mentionPopEl" class="mention-pop">
+                <div class="mention-tabs">
+                  <span class="mt-tab" :class="{ on: mentionTab === 'settings' }" @mousedown.prevent="mentionTab = 'settings'">🧩 设定</span>
+                  <span class="mt-tab" :class="{ on: mentionTab === 'chapters' }" @mousedown.prevent="mentionTab = 'chapters'">📄 章节</span>
+                  <span class="mt-hint">↑↓ 选择 · 回车插入</span>
+                </div>
+                <div class="mention-list">
+                  <div
+                    v-for="(m, i) in mentionFiltered"
+                    :key="m.key"
+                    class="mention-item"
+                    :class="{ on: i === mentionIndex }"
+                    @mousedown.prevent="selectMention(m)"
+                    @mouseenter="mentionIndex = i"
+                  >
+                    <span class="m-ico">{{ m.icon }}</span>
+                    <span class="m-label">{{ m.label }}</span>
+                    <span class="m-sub">{{ m.sub }}</span>
+                  </div>
+                  <div v-if="!mentionFiltered.length" class="mention-none">这一类里没有匹配项（输入关键词会在当前页签内搜索）</div>
+                </div>
+              </div>
               <textarea
+                ref="inputBoxEl"
                 v-model="input"
                 class="input-box"
-                placeholder="随便聊：讨论故事、加人物/门派/武功、查询设定、修改已有内容、生成大纲…"
-                @keydown.enter.exact.prevent="doSend"
+                placeholder="随便聊；输入 @ 可引用章节/人物/设定，如「@第一章 开头钩子太弱，改得更抓人」"
+                @input="updateMention"
+                @keydown="onInputKeydown"
+                @blur="closeMentionSoon"
               ></textarea>
               <button v-if="store.busy.value" class="send-btn stop" @click="store.cancel()">⏹ 停止</button>
               <button v-else class="send-btn" :disabled="!input.trim()" @click="doSend">➤ 发送</button>
@@ -133,8 +159,55 @@
         </div>
       </div>
 
-      <div class="side">
+      <!-- 右栏：内容（agent 产出的完整设定/整章正文实时平铺）+ 设定集，宽度可拖 -->
+      <div class="side-resizer" title="拖动调整右栏宽度" @mousedown="startSideResize"></div>
+      <div class="side" :style="{ width: sideWidth + 'px' }">
+        <div class="side-tabs">
+          <div class="s-tab" :class="{ on: sideTab === 'live' }" @click="sideTab = 'live'">
+            📖 内容<span v-if="liveItems.length" class="s-cnt">{{ liveItems.length }}</span>
+          </div>
+          <div class="s-tab" :class="{ on: sideTab === 'bible' }" @click="sideTab = 'bible'">🌏 设定集</div>
+        </div>
+        <LiveStage
+          v-show="sideTab === 'live' && !store.designReady.value"
+          :items="liveItems"
+          :active-id="liveActiveId"
+          :chapters="chapterList"
+          :busy="store.busy.value"
+          @activate="liveActiveId = $event"
+          @ask="askAbout"
+          @open-editor="goEditor"
+          @switch-tab="sideTab = $event"
+          @feedback="onFeedbackChapter"
+          @revise="onReviseProfile"
+          @edit-card="onEditCard"
+          @open-chapter="onOpenChapter"
+          @toggle-review="toggleReviewed"
+          @chapter-updated="onChapterUpdated"
+        />
+        <!-- 设计包审核（46 号整体确认制）：面板内直接勾选，不再弹窗挡输入 -->
+        <div v-if="store.designReady.value" class="design-review">
+          <div class="dr-head">
+            <span class="dr-title">📋 审核设计包 · {{ store.designReady.value.title }}</span>
+            <span class="dr-close" title="暂不处理（可从对话区「审核设计包」再打开）" @click="closeDesignReview">收起</span>
+          </div>
+          <div class="dr-hint">以下 {{ designItems.length }} 项为本轮任务的设计草稿，勾选确认后才会落库生效。</div>
+          <div class="dr-items">
+            <label v-for="item in designItems" :key="item.id" class="design-item" :class="{ on: checkedIds.has(item.id) }">
+              <input type="checkbox" :checked="checkedIds.has(item.id)" @change="toggleItem(item.id)" />
+              <span class="di-kind">{{ kindLabel(item.kind) }}</span>
+              <span class="di-label">{{ item.label }}</span>
+              <span v-if="item.note" class="di-note">{{ item.note }}</span>
+            </label>
+          </div>
+          <div class="dr-ops">
+            <el-button size="small" @click="onDiscardDesign">整包驳回</el-button>
+            <el-button size="small" type="primary" :disabled="checkedIds.size === 0" @click="onConfirmDesign">确认所选（{{ checkedIds.size }}）</el-button>
+          </div>
+        </div>
         <BiblePanel
+          v-show="sideTab === 'bible'"
+          dock
           :project-id="projectId"
           :ledger="store.state.value?.ledger || []"
           :refresh-key="bibleRefresh"
@@ -146,6 +219,7 @@
           @open-editor="goEditor"
           @locate-turn="locateTurn"
           @foreshadow-status="onForeshadowStatus"
+          @view="onBibleView"
         />
       </div>
     </div>
@@ -153,22 +227,6 @@
     <!-- 设计包确认（46 号：长程任务产物整体确认制） -->
         <el-dialog v-model="showGraph" title="知识图谱" width="92%" top="3vh" destroy-on-close class="graph-dialog">
       <GraphView :project-id="projectId" />
-    </el-dialog>
-
-    <el-dialog v-model="showBible" title="故事设定集" width="72%" top="3vh" destroy-on-close>
-      <BiblePanel
-        :project-id="projectId"
-        :ledger="store.state.value?.ledger || []"
-        :refresh-key="bibleRefresh"
-        :cards="store.state.value?.pendingCards || []"
-        @op="store.ledgerOp"
-        @revise="openRevise"
-        @ask="askAbout"
-        @distill="onDistill"
-        @open-editor="goEditor"
-        @locate-turn="locateTurn"
-        @foreshadow-status="onForeshadowStatus"
-      />
     </el-dialog>
 
     <el-drawer v-model="conflictDrawer" title="⚔ 连续性检查疑点" size="42%" :append-to-body="true">
@@ -231,22 +289,6 @@
 
     <ProjectSettingsDialog v-model:visible="showSettings" :project-id="projectId" />
 
-<el-dialog v-model="designVisible" :title="`设计成果确认 · ${store.designReady.value?.title ?? ''}`" width="640px">
-      <div class="design-hint">以下 {{ designItems.length }} 项为本轮任务的设计草稿，勾选确认后才会落库生效。</div>
-      <div class="design-items">
-        <label v-for="item in designItems" :key="item.id" class="design-item" :class="{ on: checkedIds.has(item.id) }">
-          <input type="checkbox" :checked="checkedIds.has(item.id)" @change="toggleItem(item.id)" />
-          <span class="di-kind">{{ kindLabel(item.kind) }}</span>
-          <span class="di-label">{{ item.label }}</span>
-          <span v-if="item.note" class="di-note">{{ item.note }}</span>
-        </label>
-      </div>
-      <template #footer>
-        <el-button @click="onDiscardDesign">整包驳回</el-button>
-        <el-button type="primary" :disabled="checkedIds.size === 0" @click="onConfirmDesign">确认所选（{{ checkedIds.size }}）</el-button>
-      </template>
-    </el-dialog>
-
     <!-- 账本条目轻编辑 -->
     <el-dialog v-model="reviseVisible" title="修改共识" width="460px">
       <el-input v-model="reviseTitle" placeholder="共识一句话" />
@@ -282,15 +324,24 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import ChatCanvas from '@/components/longwriting/room/ChatCanvas.vue'
 import ProjectSettingsDialog from '@/components/longwriting/ProjectSettingsDialog.vue'
 import { defineAsyncComponent } from 'vue'
 import BiblePanel from '@/components/longwriting/room/BiblePanel.vue'
+import LiveStage from '@/components/longwriting/room/LiveStage.vue'
+import {
+  cardToProfile,
+  cardProfileId,
+  resolveBibleProfile,
+  resolveCardPersistedProfile,
+  type LiveItem,
+  type LiveProfileItem,
+} from '@/components/longwriting/room/liveItems'
 import { useStoryRoom } from '@/composables/useStoryRoom'
-import type { ArtifactCard, ConsensusEntry } from '@shared/types/story-room.types'
+import type { ArtifactCard, BibleGroupWire, ConsensusEntry, RoomEvent } from '@shared/types/story-room.types'
 import { conflictLocLine, buildConflictFixMessage } from '@/utils/conflict-fix'
 
 defineOptions({ name: 'StoryRoom' })
@@ -298,7 +349,7 @@ defineOptions({ name: 'StoryRoom' })
 const route = useRoute()
 const router = useRouter()
 const projectId = computed(() => String(route.params.projectId || ''))
-const store = useStoryRoom(projectId.value)
+const store = useStoryRoom(projectId.value, { onEvent: onRoomLiveEvent })
 
 const projectName = ref('…')
 const storyType = ref('')
@@ -390,9 +441,8 @@ const reviseEntry = ref<ConsensusEntry | null>(null)
 const reviseTitle = ref('')
 const revisePoints = ref<string[]>([])
 
-// ==================== 设计包确认（46 号：长程任务整体确认制） ====================
+// ==================== 设计包确认（46 号：长程任务整体确认制，面板内卡片而非弹窗） ====================
 const taskLogOpen = ref(false)
-const designVisible = ref(false)
 const checkedIds = ref(new Set<string>())
 
 // 实跑修复：设计确认弹窗只在 design:ready 事件瞬间弹出，错过（切标签/刷新）后无入口——
@@ -402,19 +452,25 @@ const draftPackage = computed(() => store.state.value?.designPackages?.find((p) 
 function reviewDraftPackage(): void {
   if (!draftPackage.value) return
   store.designReady.value = draftPackage.value
+  sideTab.value = 'live'
 }
 
 const designItems = computed(() => store.designReady.value?.items ?? [])
 
-// design:ready → 弹确认面板（默认全选；用户可逐项取消）
+// 打开审核卡片（design:ready / 手动入口）→ 默认全选；用户可逐项取消
 watch(
   () => store.designReady.value,
   (pkg) => {
     if (!pkg) return
     checkedIds.value = new Set(pkg.items.map((i) => i.id))
-    designVisible.value = true
+    sideTab.value = 'live'
   },
 )
+
+/** 收起审核卡片（草稿仍在，可从对话区「审核设计包」再打开） */
+function closeDesignReview(): void {
+  store.designReady.value = null
+}
 
 function toggleItem(id: string): void {
   const next = new Set(checkedIds.value)
@@ -550,7 +606,18 @@ async function onConfirmDesign(): Promise<void> {
     return
   }
   checkedIds.value = new Set(validIds)
-  await store.confirmDesign(ready.id, validIds)
+  const ok = await store.confirmDesign(ready.id, validIds)
+  if (ok) {
+    // 确认落库 → 内容面板直出完整档案（设计成果从「确认列表」变成可审阅的设定全文）
+    bibleRefresh.value++
+    for (const item of ready.items) {
+      if (item.kind !== 'card') continue
+      const card = item.payload as ArtifactCard
+      if (!card || (card as { status?: string }).status === 'ignored') continue
+      const persisted = await resolveCardPersistedProfile(projectId.value, card)
+      pushLivePersisted(persisted ?? cardToProfile(card, 'saved'))
+    }
+  }
 }
 
 async function onDiscardDesign(): Promise<void> {
@@ -571,6 +638,11 @@ async function onDiscardDesign(): Promise<void> {
 onMounted(async () => {
   await store.load()
   store.loadConflictsIfWriting()
+  // 章节目录（@ 引用/自由浏览共用）与设定引用源
+  void loadOutlineTree()
+  void loadBibleGroups()
+  // 写作阶段入场：最近有正文的章节挂上内容面板（回访即见最新成品）
+  if (store.state.value?.phase === 'writing') void seedLatestChapter()
   await loadModels()
   try {
     const res = await window.electronAPI.longwriting.getProject(projectId.value)
@@ -581,6 +653,25 @@ onMounted(async () => {
   } catch { /* 标题兜底 */ }
 })
 
+/** 发送后：被 @ 的要素自动在右侧「内容」打开（改哪看哪；按提及顺序最后聚焦最后一个） */
+async function openMentionedItems(text: string): Promise<void> {
+  const hits = mentionSources.value.filter((m) => text.includes(`@${m.insert}`))
+  if (hits.length === 0) return
+  sideTab.value = 'live'
+  for (const m of hits) {
+    if (m.chapterId) {
+      const meta = chapterList.value.find((c) => c.id === m.chapterId)
+      await pushChapterLive(m.chapterId, { chapterNo: meta?.no ?? null, title: meta?.name || '', wordCount: 0, patched: false })
+    } else if (m.bibleKind && m.bibleEntryId) {
+      const item = await resolveBibleProfile(projectId.value, m.bibleKind, { id: m.bibleEntryId })
+      if (item) pushLive(item)
+    } else if (m.cardId) {
+      const card = (store.state.value?.pendingCards || []).find((c) => c.id === m.cardId)
+      if (card && card.status !== 'ignored' && card.status !== 'failed') pushLive(cardToProfile(card))
+    }
+  }
+}
+
 function doSend(): void {
   if (store.busy.value) return
   if (!modelSel.value) {
@@ -589,6 +680,8 @@ function doSend(): void {
   }
   const text = input.value
   input.value = ''
+  closeMention()
+  void openMentionedItems(text)
   store.send(text)
 }
 
@@ -616,9 +709,451 @@ function saveRevise(): void {
   reviseVisible.value = false
 }
 
+// ==================== 右栏内容面板（agent 产出实时平铺：完整设定 + 整章正文） ====================
+
+const sideTab = ref<'live' | 'bible'>('live')
+const liveItems = ref<LiveItem[]>([])
+const liveActiveId = ref<string | null>(null)
+
+/** 推送内容条目：同槽位覆盖，最新在前并自动聚焦（右侧实时显示、免翻菜单） */
+function pushLive(item: LiveItem): void {
+  const idx = liveItems.value.findIndex((i) => i.id === item.id)
+  if (idx >= 0) liveItems.value.splice(idx, 1)
+  liveItems.value.unshift(item)
+  if (liveItems.value.length > 30) liveItems.value.pop()
+  liveActiveId.value = item.id
+  sideTab.value = 'live'
+}
+
+/** 落库档案推送：顺手撤下同名的草稿预览槽位，避免页签里同名双条 */
+function pushLivePersisted(item: LiveProfileItem): void {
+  for (const it of [...liveItems.value]) {
+    if (it.type === 'profile' && it.status === 'draft' && it.title === item.title && it.id !== item.id) {
+      removeLive(it.id)
+    }
+  }
+  pushLive(item)
+}
+
+function removeLive(id: string): void {
+  const idx = liveItems.value.findIndex((i) => i.id === id)
+  if (idx < 0) return
+  liveItems.value.splice(idx, 1)
+  if (liveActiveId.value === id) liveActiveId.value = liveItems.value[0]?.id ?? null
+}
+
+/** 房间事件 → 内容面板推送：卡片产出/更新即渲染完整档案；章节落库即上整章正文 */
+function onRoomLiveEvent(event: RoomEvent): void {
+  switch (event.type) {
+    case 'card:ready':
+      for (const c of event.cards) pushLive(cardToProfile(c))
+      break
+    case 'card:update':
+      void onCardUpdated(event.card)
+      break
+    case 'chapter:saved':
+      void pushChapterLive(event.outlineId, {
+        chapterNo: event.chapterNo,
+        title: event.title,
+        wordCount: event.wordCount,
+        patched: event.patched === true,
+      })
+      break
+  }
+}
+
+/** 卡片更新：采纳→回查落库档案（全字段+关系网）；重提→刷新预览；忽略→撤下 */
+async function onCardUpdated(card: ArtifactCard): Promise<void> {
+  if (card.status === 'ignored' || card.status === 'failed') {
+    removeLive(cardProfileId(card))
+    return
+  }
+  if (card.status === 'adopted') {
+    const persisted = await resolveCardPersistedProfile(projectId.value, card)
+    pushLivePersisted(persisted ?? cardToProfile(card, 'saved'))
+    return
+  }
+  pushLive(cardToProfile(card))
+}
+
+/** 章节正文落库 → 拉整章上内容面板（读失败静默，不打断研讨） */
+async function pushChapterLive(
+  outlineId: string,
+  hint: { chapterNo: number | null; title: string; wordCount: number; patched: boolean },
+): Promise<void> {
+  try {
+    const res = await window.electronAPI.longwriting.getChapter(outlineId)
+    const ch = res.success ? res.data : null
+    const content = String(ch?.content || '')
+    if (!content.trim()) return
+    const meta = chapterList.value.find((c) => c.id === outlineId)
+    pushLive({
+      id: `chapter:${outlineId}`,
+      type: 'chapter',
+      outlineId,
+      chapterNo: hint.chapterNo ?? meta?.no ?? null,
+      title: hint.title || meta?.name || '未命名章节',
+      content,
+      wordCount: Number(ch?.wordCount) || hint.wordCount || content.replace(/\s/g, '').length,
+      patched: hint.patched,
+      updatedAt: Date.now(),
+    })
+  } catch { /* 忽略 */ }
+}
+
+/** 设定集（停靠页签）点条目 → 内容面板直出完整档案（替代 380px 抽屉） */
+async function onBibleView(group: BibleGroupWire, entryId: string): Promise<void> {
+  const item = await resolveBibleProfile(projectId.value, group.kindKey, { id: entryId })
+  if (item) {
+    pushLive(item)
+    return
+  }
+  const entry = group.entries.find((e) => e.id === entryId)
+  if (!entry) return
+  pushLive({
+    id: `profile:${group.kindKey}:${entry.name}`,
+    type: 'profile',
+    icon: group.icon || '🧩',
+    title: entry.name,
+    kindLabel: group.label,
+    accentVar: 'var(--ka-overview)',
+    fields: [{ k: '简介', v: entry.sub || '（详情加载失败，可重试）' }],
+    relations: [],
+    status: 'saved',
+    askText: `关于「${entry.name}」（${group.label}）：`,
+    updatedAt: Date.now(),
+  })
+}
+
+// ==================== 章节目录与自由浏览（非对话时也能翻任意内容） ====================
+
+/** 大纲树（章节标题/目录/序号来源；入场即拉，@ 引用与播种共用） */
+const outlineTree = ref<Array<Record<string, any>>>([])
+
+async function loadOutlineTree(): Promise<void> {
+  try {
+    const res = await window.electronAPI.longwriting.getOutlineTree(projectId.value)
+    if (res.success && Array.isArray(res.data)) outlineTree.value = res.data
+  } catch { /* 目录加载失败不阻断 */ }
+}
+
+/** 按书中顺序展平章节（卷序→卷内序→散章），no 为全书章号 */
+const chapterList = computed<Array<{ id: string; no: number | null; name: string }>>(() => {
+  const nodes = outlineTree.value
+  const chapterNodes = nodes.filter((n) => n.nodeType === 'chapter')
+  if (chapterNodes.length === 0) return []
+  const volumes = nodes
+    .filter((n) => n.nodeType === 'volume')
+    .sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
+  const ordered: Array<Record<string, any>> = []
+  const byParent = (pid: string) =>
+    chapterNodes.filter((n) => (n.parentId || '') === pid).sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
+  for (const v of volumes) ordered.push(...byParent(String(v.id)))
+  const volumeIds = new Set(volumes.map((v) => String(v.id)))
+  ordered.push(...chapterNodes.filter((n) => !n.parentId || !volumeIds.has(String(n.parentId))))
+  return ordered.map((n, i) => ({ id: String(n.id), no: i + 1, name: String(n.name || '') }))
+})
+
+/** 目录点开任意章（还没有正文时提示去让主编写，不推空条目） */
+async function onOpenChapter(outlineId: string): Promise<void> {
+  const meta = chapterList.value.find((c) => c.id === outlineId)
+  await pushChapterLive(outlineId, { chapterNo: meta?.no ?? null, title: meta?.name || '', wordCount: 0, patched: false })
+  const exists = liveItems.value.some((i) => i.id === `chapter:${outlineId}`)
+  if (!exists) ElMessage.info('该章还没有正文——可在左侧输入「@章节名 开始写作」让主编开写')
+}
+
+/** 入场播种：写作阶段把最近有正文的章节挂上面板（回访即见最新成品） */
+async function seedLatestChapter(): Promise<void> {
+  try {
+    if (outlineTree.value.length === 0) await loadOutlineTree()
+    const chapters = chapterList.value
+    for (const c of chapters.slice(-3).reverse()) {
+      const before = liveItems.value.length
+      await pushChapterLive(c.id, { chapterNo: c.no, title: c.name, wordCount: 0, patched: false })
+      if (liveItems.value.length > before) break
+    }
+  } catch { /* 播种失败不影响研讨室 */ }
+}
+
+// ==================== 面板审改：提意见 / 让主编改 / 编辑后采纳 / 认可标记 ====================
+
+/** 面板动作统一发送口（busy 时拦截并提示，不静默丢指令） */
+function sendInstruction(text: string): void {
+  if (store.busy.value) {
+    ElMessage.warning('主编正在发言，等本轮结束后再交')
+    return
+  }
+  store.send(text)
+}
+
+/** 章节提修改意见 → 组装指令交主编（局部修正/重写，落库后 chapter:saved 自动刷新面板） */
+async function onFeedbackChapter(item: Extract<LiveItem, { type: 'chapter' }>): Promise<void> {
+  const label = `${item.chapterNo ? `第${item.chapterNo}章` : ''}《${item.title}》`
+  const res = await ElMessageBox.prompt('', `提修改意见 · ${label}`, {
+    confirmButtonText: '交给主编',
+    cancelButtonText: '取消',
+    inputType: 'textarea',
+    inputPlaceholder: '例如：开头钩子太弱，前三段直接进入冲突；结尾卡点换成主角视角',
+  }).catch(() => null)
+  const v = (res as unknown as { value?: string } | null)?.value?.trim()
+  if (!v) return
+  sendInstruction(`请修改${label}：${v}`)
+}
+
+/** 档案「让主编改」→ 填空式指令（主编走设计工具，产出再进设计包确认） */
+async function onReviseProfile(item: Extract<LiveItem, { type: 'profile' }>): Promise<void> {
+  const res = await ElMessageBox.prompt('', `让主编改 · ${item.title}`, {
+    confirmButtonText: '交给主编',
+    cancelButtonText: '取消',
+    inputType: 'textarea',
+    inputPlaceholder: '例如：把动机从复仇改成赎罪；背景补一段与师门决裂的往事',
+  }).catch(() => null)
+  const v = (res as unknown as { value?: string } | null)?.value?.trim()
+  if (!v) return
+  sendInstruction(`请修改「${item.title}」（${item.kindLabel}）的设定：${v}`)
+}
+
+/** 草稿卡「编辑后采纳」：复用对话区的字段编辑对话框（保存即采纳→面板原地升级） */
+function onEditCard(cardId: string): void {
+  const card = (store.state.value?.pendingCards || []).find((c) => c.id === cardId)
+  if (!card) {
+    ElMessage.warning('该草稿已不在待定列表（可能已被处理）')
+    return
+  }
+  openEdit(card)
+}
+
+/** 「认可这版」：会话内轻量标记（不落库），便于回头核对哪些章已过目 */
+function toggleReviewed(itemId: string): void {
+  const it = liveItems.value.find((i) => i.id === itemId)
+  if (it && it.type === 'chapter') it.reviewed = !it.reviewed
+}
+
+/** 就地编辑保存回调（LiveStage 已走与写作台同一 saveChapter 通道，这里同步条目） */
+function onChapterUpdated(p: { outlineId: string; content: string; wordCount: number }): void {
+  const it = liveItems.value.find((i) => i.id === `chapter:${p.outlineId}`)
+  if (it && it.type === 'chapter') {
+    it.content = p.content
+    it.wordCount = p.wordCount
+    it.updatedAt = Date.now()
+  }
+}
+
+// ==================== 输入框 @ 引用（章节/人物/设定项） ====================
+
+interface MentionItem {
+  key: string
+  insert: string
+  label: string
+  sub: string
+  icon: string
+  /** 发送后自动打开用：章节/设定/卡片三选其一 */
+  chapterId?: string
+  bibleKind?: string
+  bibleEntryId?: string
+  cardId?: string
+}
+const inputBoxEl = ref<HTMLTextAreaElement | null>(null)
+const mentionPopEl = ref<HTMLElement | null>(null)
+const mentionOpen = ref(false)
+const mentionQuery = ref('')
+const mentionIndex = ref(0)
+/** 弹层页签：设定 / 章节（默认设定——章节另有全量「📑 目录」） */
+const mentionTab = ref<'settings' | 'chapters'>('settings')
+/** 当前 @token 在输入框中的起点（@ 符号处） */
+let mentionStart = -1
+
+/** 设定项引用源：bible 全分组（挂载、设定集刷新、@ 弹层打开时兜底重拉） */
+const bibleGroups = ref<BibleGroupWire[]>([])
+async function loadBibleGroups(): Promise<void> {
+  try {
+    const res = await window.electronAPI.longwriting.bibleList(projectId.value)
+    if (res.success && Array.isArray(res.data)) bibleGroups.value = res.data
+    else console.warn('[StoryRoom] @ 引用源(bible:list)返回异常:', res?.error)
+  } catch (e) {
+    console.warn('[StoryRoom] @ 引用源(bible:list)加载失败:', e)
+  }
+}
+
+const mentionSources = computed<MentionItem[]>(() => {
+  const out: MentionItem[] = []
+  // ① 章节（目录序）
+  for (const c of chapterList.value) {
+    const name = String(c.name || '')
+    const insert = /^第\s*\d+\s*[章集]/.test(name) ? name : c.no ? `第${c.no}章 ${name}` : name
+    out.push({ key: `ch:${c.id}`, insert, label: insert, sub: '章节', icon: '📄', chapterId: c.id })
+  }
+  // ② 设定集条目（已落库档案）
+  const seen = new Set<string>()
+  for (const g of bibleGroups.value) {
+    for (const e of g.entries) {
+      if (!e.name || seen.has(e.name)) continue
+      seen.add(e.name)
+      out.push({ key: `${g.kindKey}:${e.id}`, insert: e.name, label: e.name, sub: g.label, icon: g.icon || '🧩', bibleKind: g.kindKey, bibleEntryId: e.id })
+    }
+  }
+  // ③ 讨论中的卡片（新设计的人物/势力等尚未落库——设定集里还没有，也要能 @）
+  for (const c of store.state.value?.pendingCards || []) {
+    if (c.status === 'ignored' || c.status === 'failed') continue
+    const d = (c.data || {}) as Record<string, any>
+    const name = String(d.name || d.title || '').trim()
+    if (!name || seen.has(name)) continue
+    seen.add(name)
+    const meta = KIND_META[c.kind] || KIND_META.custom
+    out.push({ key: `card:${c.id}`, insert: name, label: name, sub: `${meta.label}卡`, icon: meta.ico, cardId: c.id })
+  }
+  return out
+})
+
+/** @ 弹层的匹配口径（标签含关键词或分类名含关键词） */
+function mentionHit(m: MentionItem, raw: string): boolean {
+  if (!raw) return true
+  const q = raw.toLowerCase()
+  return m.label.toLowerCase().includes(q) || m.sub.includes(raw)
+}
+
+const mentionFiltered = computed<MentionItem[]>(() => {
+  const raw = mentionQuery.value.trim()
+  const pool = mentionSources.value.filter((m) => (mentionTab.value === 'chapters' ? m.sub === '章节' : m.sub !== '章节'))
+  const list = pool.filter((m) => mentionHit(m, raw))
+  if (raw) list.sort((a, b) => Number(b.label.toLowerCase().startsWith(raw.toLowerCase())) - Number(a.label.toLowerCase().startsWith(raw.toLowerCase())))
+  return list.slice(0, 50)
+})
+
+// 打了关键词但当前页签无匹配、另一页签有 → 自动切过去（搜索不在空列表上终结）
+watch([mentionQuery, mentionSources], () => {
+  const raw = mentionQuery.value.trim()
+  if (!raw) return
+  const inTab = (tab: 'settings' | 'chapters') =>
+    mentionSources.value.some((m) => (tab === 'chapters' ? m.sub === '章节' : m.sub !== '章节') && mentionHit(m, raw))
+  if (!inTab(mentionTab.value)) {
+    const other = mentionTab.value === 'chapters' ? 'settings' : 'chapters'
+    if (inTab(other)) mentionTab.value = other
+  }
+})
+
+watch(mentionFiltered, () => {
+  mentionIndex.value = 0
+})
+watch(mentionIndex, async () => {
+  await nextTick()
+  mentionPopEl.value?.querySelector('.mention-item.on')?.scrollIntoView({ block: 'nearest' })
+})
+
+function closeMention(): void {
+  mentionOpen.value = false
+  mentionQuery.value = ''
+  mentionStart = -1
+}
+
+/** 失焦延迟关：给「mousedown 插入」留一拍（mousedown.prevent 已保住焦点，这里只兜底） */
+function closeMentionSoon(): void {
+  setTimeout(() => {
+    if (!inputBoxEl.value || document.activeElement !== inputBoxEl.value) closeMention()
+  }, 120)
+}
+
+/** 输入变化 → 检测光标前的 @token，决定弹层开关与过滤词 */
+function updateMention(): void {
+  const ta = inputBoxEl.value
+  if (!ta) return
+  const pos = ta.selectionStart ?? input.value.length
+  const before = input.value.slice(0, pos)
+  const m = before.match(/(^|\s)@([^\s@]*)$/)
+  if (!m) {
+    closeMention()
+    return
+  }
+  // 引用源兜底重拉：挂载期加载失败/竞态时，第一次打 @ 也能拿到设定项
+  if (bibleGroups.value.length === 0) void loadBibleGroups()
+  if (outlineTree.value.length === 0) void loadOutlineTree()
+  mentionStart = pos - m[2].length - 1
+  mentionQuery.value = m[2]
+  mentionOpen.value = true
+  mentionIndex.value = 0
+}
+
+/** 插入 @引用：可见文本即规范名（写章工具/查设定工具都能按名称解析，零后端改动） */
+function selectMention(item: MentionItem): void {
+  if (mentionStart < 0) return
+  const ta = inputBoxEl.value
+  const pos = ta?.selectionStart ?? input.value.length
+  const next = input.value.slice(0, mentionStart) + '@' + item.insert + ' ' + input.value.slice(pos)
+  const caret = mentionStart + item.insert.length + 2
+  input.value = next
+  closeMention()
+  nextTick(() => {
+    ta?.focus()
+    ta?.setSelectionRange(caret, caret)
+  })
+}
+
+function onInputKeydown(e: KeyboardEvent): void {
+  // 中文输入法组词中的回车是"确认候选"，不是发送/选择
+  if (e.isComposing || e.keyCode === 229) return
+  if (mentionOpen.value && mentionFiltered.value.length > 0) {
+    const len = mentionFiltered.value.length
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      mentionIndex.value = (mentionIndex.value + 1) % len
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      mentionIndex.value = (mentionIndex.value - 1 + len) % len
+      return
+    }
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault()
+      const pick = mentionFiltered.value[mentionIndex.value]
+      if (pick) selectMention(pick)
+      return
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      closeMention()
+      return
+    }
+  }
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    doSend()
+  }
+}
+
+// ==================== 右栏宽度拖拽（看正文与下指令并排，宽度可调） ====================
+
+const SIDE_WIDTH_KEY = 'story-room.side-width'
+const SIDE_MIN = 380
+
+function loadSideWidth(): number {
+  const v = Number(localStorage.getItem(SIDE_WIDTH_KEY))
+  const max = Math.max(SIDE_MIN + 40, Math.round(window.innerWidth * 0.66))
+  if (Number.isFinite(v) && v >= SIDE_MIN) return Math.min(v, max)
+  return 500
+}
+const sideWidth = ref(loadSideWidth())
+
+function startSideResize(e: MouseEvent): void {
+  e.preventDefault()
+  document.body.classList.add('side-resizing')
+  const move = (ev: MouseEvent): void => {
+    const max = Math.max(SIDE_MIN + 40, Math.round(window.innerWidth * 0.66))
+    sideWidth.value = Math.min(max, Math.max(SIDE_MIN, window.innerWidth - ev.clientX))
+  }
+  const up = (): void => {
+    document.body.classList.remove('side-resizing')
+    window.removeEventListener('mousemove', move)
+    window.removeEventListener('mouseup', up)
+    localStorage.setItem(SIDE_WIDTH_KEY, String(sideWidth.value))
+  }
+  window.addEventListener('mousemove', move)
+  window.addEventListener('mouseup', up)
+}
+
 // ==================== 阶段门 / 内容目标 / 转短剧桥 ====================
 
-import { ROOM_PHASE_META } from '@/components/longwriting/room/roomKinds'
+import { ROOM_PHASE_META, KIND_META } from '@/components/longwriting/room/roomKinds'
 
 function phaseLabel(id: string): string {
   return ROOM_PHASE_META.find((p) => p.id === id)?.label || id
@@ -727,8 +1262,12 @@ async function onDistill(scope?: string): Promise<void> {
 const bibleRefresh = ref(0)
 const conflictDrawer = ref(false)
 const showGraph = ref(false)
-const showBible = ref(false)
 const showSettings = ref(false)
+
+// 设定集数据变化（采纳/确认/伏笔操作）→ @ 引用源同步刷新
+watch(bibleRefresh, () => {
+  void loadBibleGroups()
+})
 const GraphView = defineAsyncComponent(() => import('@/components/longwriting/graph/GraphView.vue'))
 
 async function onForeshadowStatus(id: string, status: 'paid' | 'dropped', payoff?: number | null): Promise<void> {
@@ -875,6 +1414,7 @@ html.dark .story-room { --sr-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rg
 }
 .chip:hover { background: var(--el-color-primary-light-8); transform: translateY(-1px); }
 .input-row {
+  position: relative;
   display: flex; gap: 10px; align-items: flex-end; border: 1.5px solid var(--el-border-color);
   border-radius: 14px; padding: 8px 8px 8px 16px; background: var(--el-bg-color);
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -894,12 +1434,36 @@ html.dark .story-room { --sr-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rg
 .send-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .send-btn.stop { background: var(--el-color-danger); }
 
-/* 右栏 */
+/* 右栏：宽度可拖（默认 500px， localStorage 记忆），内容/设定集双页签 */
 .side {
-  width: 360px; flex-shrink: 0; border-left: 1px solid var(--el-border-color-lighter);
-  background: var(--el-bg-color); display: flex; flex-direction: column; min-height: 0;
+  flex-shrink: 0; border-left: 1px solid var(--el-border-color-lighter);
+  background: var(--el-bg-color); display: flex; flex-direction: column; min-height: 0; min-width: 0;
 }
-.side-split { border-top: 1px solid var(--el-border-color-lighter); }
+.side-resizer {
+  width: 5px; flex-shrink: 0; cursor: col-resize; background: transparent;
+  transition: background 0.15s; margin-left: -2px; z-index: 5;
+}
+.side-resizer:hover, body.side-resizing .side-resizer { background: var(--el-color-primary-light-7); }
+body.side-resizing { cursor: col-resize; user-select: none; }
+.side-tabs {
+  display: flex; flex-shrink: 0; border-bottom: 1px solid var(--el-border-color-lighter);
+  background: color-mix(in srgb, var(--el-fill-color-lighter) 55%, transparent);
+}
+.s-tab {
+  flex: 1; text-align: center; font-size: 12.5px; padding: 9px 4px; cursor: pointer;
+  color: var(--el-text-color-secondary); border-bottom: 2px solid transparent;
+  transition: all 0.15s; user-select: none; display: inline-flex; align-items: center;
+  justify-content: center; gap: 5px;
+}
+.s-tab:hover { color: var(--el-text-color-primary); }
+.s-tab.on {
+  color: var(--el-color-primary); font-weight: 600; border-bottom-color: var(--el-color-primary);
+  background: var(--el-bg-color);
+}
+.s-cnt {
+  font-size: 10.5px; min-width: 16px; line-height: 16px; border-radius: 999px; padding: 0 4px;
+  background: var(--el-color-primary); color: #fff; font-weight: 600;
+}
 
 .gate-banner {
   display: flex; align-items: center; gap: 12px; padding: 9px 16px; flex-shrink: 0;
@@ -930,9 +1494,7 @@ html.dark .story-room { --sr-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rg
 .tl-tool { flex-shrink: 0; color: var(--el-color-primary); font-size: 11px; }
 .tl-msg { color: var(--el-text-color-regular); min-width: 0; }
 
-/* 设计包确认面板（46 号） */
-.design-hint { font-size: 12.5px; color: var(--el-text-color-secondary); margin-bottom: 10px; }
-.design-items { max-height: 46vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+/* 设计包审核卡条目（di-* 沿用原确认面板样式） */
 .design-item {
   display: flex; align-items: baseline; gap: 8px; padding: 7px 10px;
   border: 1px solid var(--el-border-color-lighter); border-radius: 8px; cursor: pointer;
@@ -1058,4 +1620,57 @@ html.dark .story-room { --sr-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rg
 .po-edit { margin-top: 4px; padding: 6px 8px; background: var(--el-fill-color); border-radius: 4px; color: var(--el-text-color-secondary); }
 .po-result { margin-top: 4px; color: var(--el-color-success); }
 
+/* 输入框 @ 引用弹层（锚在输入框上方，设定/章节分页签） */
+.mention-pop {
+  position: absolute; bottom: calc(100% + 8px); left: 8px; width: min(420px, 90%);
+  z-index: 30; display: flex; flex-direction: column;
+  background: var(--el-bg-color-overlay); border: 1px solid var(--el-border-color-light);
+  border-radius: 10px; box-shadow: var(--el-box-shadow-light); padding: 4px;
+}
+.mention-tabs {
+  display: flex; align-items: center; gap: 4px; padding: 4px 6px 6px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.mt-tab {
+  font-size: 12px; padding: 3px 10px; border-radius: 999px; cursor: pointer;
+  color: var(--el-text-color-secondary); user-select: none;
+}
+.mt-tab:hover { color: var(--el-text-color-primary); }
+.mt-tab.on {
+  color: var(--el-color-primary); background: var(--el-color-primary-light-9); font-weight: 600;
+}
+.mt-hint { margin-left: auto; font-size: 10.5px; color: var(--el-text-color-placeholder); }
+.mention-list { max-height: 240px; overflow-y: auto; padding-top: 4px; }
+.mention-item {
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px;
+  cursor: pointer; font-size: 13px;
+}
+.mention-item.on { background: var(--el-color-primary-light-9); }
+.m-ico { flex-shrink: 0; font-size: 13px; }
+.m-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--el-text-color-primary); }
+.mention-item.on .m-label { color: var(--el-color-primary); font-weight: 600; }
+.m-sub { flex-shrink: 0; font-size: 11px; color: var(--el-text-color-secondary); }
+.mention-none { text-align: center; font-size: 12px; color: var(--el-text-color-placeholder); padding: 16px 8px; }
+
+/* 设计包审核卡（面板内，替代弹窗） */
+.design-review {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  border-bottom: 1px solid var(--el-border-color-lighter); background: var(--el-bg-color);
+}
+.dr-head {
+  display: flex; align-items: center; gap: 8px; padding: 11px 14px 4px;
+}
+.dr-title { font-size: 13px; font-weight: 600; color: var(--el-text-color-primary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dr-close { font-size: 12px; color: var(--el-text-color-secondary); cursor: pointer; flex-shrink: 0; }
+.dr-close:hover { color: var(--el-color-primary); }
+.dr-hint { font-size: 12px; color: var(--el-text-color-secondary); padding: 2px 14px 8px; }
+.dr-items { flex: 1; min-height: 0; overflow-y: auto; padding: 0 14px; display: flex; flex-direction: column; gap: 6px; }
+.dr-ops { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px dashed var(--el-border-color-lighter); }
+.dr-ops .el-button + .el-button { margin-left: 0; }
+
+</style>
+<style>
+/* 右栏拖宽进行中：全局光标 + 禁选中（scoped 选择器带不到 body） */
+body.side-resizing,
+body.side-resizing * { cursor: col-resize !important; user-select: none !important; }
 </style>

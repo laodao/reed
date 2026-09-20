@@ -186,6 +186,11 @@ const props = defineProps<{
   ledger: ConsensusEntry[]
   refreshKey?: number
   cards?: Array<Record<string, any>>
+  /**
+   * 停靠模式（右栏固定页签）：点条目不再开 380px 抽屉，改为 emit view 由宿主
+   * 在「实况」页签渲染完整档案（内容与输入并排看）；伏笔仍走抽屉（状态操作在此）。
+   */
+  dock?: boolean
 }>()
 const emit = defineEmits<{
   (e: 'op', op: LedgerOpInput): void
@@ -195,6 +200,7 @@ const emit = defineEmits<{
   (e: 'open-editor'): void
   (e: 'locate-turn', turn: number): void
   (e: 'foreshadow-status', id: string, status: 'paid' | 'dropped', payoff?: number | null): void
+  (e: 'view', group: BibleGroupWire, entryId: string): void
 }>()
 
 const keyword = ref('')
@@ -245,6 +251,11 @@ function findProvenance(kind: string, name: string): { turns: number[]; cardTitl
 async function openDetail(g: BibleGroupWire, id: string): Promise<void> {
   const entry = g.entries.find((e) => e.id === id)
   if (!entry) return
+  // 停靠模式：实体条目直出「实况」页签渲染完整档案；伏笔保留抽屉（标记已收/弃置操作在此）
+  if (props.dock && g.kindKey !== 'foreshadow') {
+    emit('view', g, id)
+    return
+  }
   detailOpen.value = true
   // 伏笔：条目 fields 即行数据（含状态），不走 bible:detail
   if (g.kindKey === 'foreshadow') {
