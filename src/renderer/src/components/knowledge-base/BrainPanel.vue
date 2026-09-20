@@ -549,7 +549,7 @@ const presetGroups = KB_BRAIN_GOAL_PRESETS
 const presetPick = ref('')
 const enabledGoals = computed(() => (config.value?.goals ?? []).filter((g) => g.enabled))
 const runningGoalIds = ref<string[]>([])
-const lastGoalResults = ref<Record<string, { ok: boolean; error?: string; proposed?: boolean; skippedDuplicate?: boolean; cardTitle?: string | null; fragments?: number }>>({})
+const lastGoalResults = ref<Record<string, { ok: boolean; error?: string; proposed?: boolean; skippedDuplicate?: boolean; cardTitle?: string | null; fragments?: number; cards?: number }>>({})
 let goalPollTimer: ReturnType<typeof setInterval> | null = null
 
 // 顶部统计块的高亮态：与主区视图联动
@@ -668,7 +668,7 @@ function reportGoalDone(goalId: string): void {
   if (!rec) return
   if (!rec.ok) ElMessage.error(`「${name}」提炼失败: ${rec.error || '未知错误'}`)
   else if (rec.skippedDuplicate) ElMessage.info(`「${name}」已有同题经验卡，未重复生成`)
-  else if (rec.proposed) ElMessage.success(`「${name}」经验卡已生成（素材 ${rec.fragments ?? 0} 条），待审提议中`)
+  else if (rec.proposed) ElMessage.success(`「${name}」生成 ${rec.cards ?? 1} 张经验卡（素材 ${rec.fragments ?? 0} 条），待审提议中`)
   void refresh()
 }
 

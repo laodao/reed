@@ -86,9 +86,13 @@ describe('KbGoalDistillService', () => {
         })
       }
       return JSON.stringify({
-        title: '修炼体系：《诛仙》境界三层递进',
-        description: '需要设计修真世界力量体系时使用。',
-        body: '## 境界\n- 太极玄清道分三重 [《诛仙》#2 第二章]',
+        cards: [
+          {
+            title: '修炼体系：《诛仙》境界三层递进',
+            description: '需要设计修真世界力量体系时使用。',
+            body: '## 境界\n- 太极玄清道分三重 [《诛仙》#2 第二章]',
+          },
+        ],
       })
     }
     const deps = makeDeps(llm)
@@ -103,6 +107,66 @@ describe('KbGoalDistillService', () => {
     // reduce 输入必须带出处标签（防幻觉根）
     const reduceCall = calls[calls.length - 1]
     expect(reduceCall).toContain('《诛仙》#1 第一章')
+  })
+
+  it('reduce 一次产出多张卡（主题分组）→ 逐张入提议箱', async () => {
+    const llm: BrainLlmFn = async ({ user }) => {
+      if (user.includes('【章节摘要】')) {
+        return JSON.stringify({ fragments: [{ chapter: '第一章', info: 'i1', note: 'n1' }] })
+      }
+      return JSON.stringify({
+        cards: [
+          { title: '卡甲', description: 'd1', body: 'b1' },
+          { title: '卡乙', description: 'd2', body: 'b2' },
+          { title: '卡丙', description: 'd3', body: 'b3' },
+          { title: '卡丁', description: 'd4', body: 'b4' }, // 超上限被裁
+        ],
+      })
+    }
+    const deps = makeDeps(llm)
+    const svc = new KbGoalDistillService(deps)
+    const out = await svc.runGoal('kb1', goal)
+    expect(out.proposed).toBe(true)
+    expect(out.cards).toBe(3) // MAX_CARDS_PER_GOAL=3 裁剪
+    expect(deps.notes).toHaveLength(3)
+    expect(deps.notes.map((n) => n.title)).toEqual(['卡甲', '卡乙', '卡丙'])
+  })
+
+  it('reduce 旧单卡形状 {title,description,body} 兼容为 1 张卡', async () => {
+    const llm: BrainLlmFn = async ({ user }) => {
+      if (user.includes('【章节摘要】')) {
+        return JSON.stringify({ fragments: [{ chapter: '第一章', info: 'i1', note: 'n1' }] })
+      }
+      return JSON.stringify({ title: '旧形状卡', description: 'd', body: 'b' })
+    }
+    const deps = makeDeps(llm)
+    const svc = new KbGoalDistillService(deps)
+    const out = await svc.runGoal('kb1', goal)
+    expect(out.proposed).toBe(true)
+    expect(out.cards).toBe(1)
+    expect(out.cardTitle).toBe('旧形状卡')
+    expect(deps.notes).toHaveLength(1)
+  })
+
+  it('部分去重：2 张卡 1 张同题 → cards=1、proposed=true、skippedDuplicate=false', async () => {
+    const llm: BrainLlmFn = async ({ user }) => {
+      if (user.includes('【章节摘要】')) {
+        return JSON.stringify({ fragments: [{ chapter: '第一章', info: 'i1', note: 'n1' }] })
+      }
+      return JSON.stringify({
+        cards: [
+          { title: '已存在卡', description: 'd1', body: 'b1' },
+          { title: '新卡', description: 'd2', body: 'b2' },
+        ],
+      })
+    }
+    const deps = makeDeps(llm, { notes: [{ id: 'n0', kbId: 'kb1', title: '已存在卡', body: '', status: 'published' }] })
+    const svc = new KbGoalDistillService(deps)
+    const out = await svc.runGoal('kb1', goal)
+    expect(out.cards).toBe(1)
+    expect(out.proposed).toBe(true)
+    expect(out.skippedDuplicate).toBe(false)
+    expect(deps.notes.map((n) => n.title)).toContain('新卡')
   })
 
   it('map 返回空素材 → 不出卡（proposed=false）', async () => {
@@ -120,7 +184,7 @@ describe('KbGoalDistillService', () => {
       if (user.includes('【章节摘要】')) {
         return JSON.stringify({ fragments: [{ chapter: '《诛仙》#1 第一章', info: 'x', note: '' }] })
       }
-      return JSON.stringify({ title: '同题卡', description: 'd', body: 'b' })
+      return JSON.stringify({ cards: [{ title: '同题卡', description: 'd', body: 'b' }] })
     }
     const deps = makeDeps(llm, { notes: [{ id: 'n0', kbId: 'kb1', title: '同题卡', body: '', status: 'published' }] })
     const svc = new KbGoalDistillService(deps)
@@ -137,7 +201,7 @@ describe('KbGoalDistillService', () => {
         return JSON.stringify({ fragments: [{ chapter: '《诛仙》#1 第一章', info: 'x', note: '' }] })
       }
       calls++
-      return JSON.stringify({ title: 't' }) // 永远缺 body
+      return JSON.stringify({ cards: [{ title: 't' }] }) // 永远缺 body
     }
     const deps = makeDeps(llm)
     const svc = new KbGoalDistillService(deps)
@@ -160,7 +224,7 @@ describe('KbGoalDistillService', () => {
         await gate
         return JSON.stringify({ fragments: [{ chapter: '《诛仙》#1 第一章', info: 'x', note: '' }] })
       }
-      return JSON.stringify({ title: 't', description: 'd', body: 'b' })
+      return JSON.stringify({ cards: [{ title: 't', description: 'd', body: 'b' }] })
     }
     const deps = makeDeps(llm)
     const svc = new KbGoalDistillService(deps)
@@ -180,7 +244,7 @@ describe('KbGoalDistillService', () => {
         if (mapCalls === 1) throw new Error('provider 超时')
         return JSON.stringify({ fragments: [{ chapter: '《诛仙》#1 第一章', info: '第二批素材', note: '' }] })
       }
-      return JSON.stringify({ title: 't', description: 'd', body: 'b' })
+      return JSON.stringify({ cards: [{ title: 't', description: 'd', body: 'b' }] })
     }
     // 25 章 → 3 批（12/12/1）：批 1 失败，批 2/3 正常
     const chapters = Array.from({ length: 25 }, (_, i) => ({ title: `第${i + 1}章`, summary: `摘要${i + 1}` }))
@@ -197,7 +261,7 @@ describe('KbGoalDistillService', () => {
       if (user.includes('【章节摘要】')) {
         return JSON.stringify({ fragments: [{ chapter: '#2 第二章', info: '境界信息', note: '' }] })
       }
-      return JSON.stringify({ title: 't', description: 'd', body: 'b' })
+      return JSON.stringify({ cards: [{ title: 't', description: 'd', body: 'b' }] })
     }
     const deps = makeDeps(llm)
     const svc = new KbGoalDistillService(deps)
@@ -214,7 +278,7 @@ describe('KbGoalDistillService', () => {
           fragments: [{ chapter: '《不存在的书》#99 幻觉章', info: '真实信息', note: '' }],
         })
       }
-      return JSON.stringify({ title: 't', description: 'd', body: 'b' })
+      return JSON.stringify({ cards: [{ title: 't', description: 'd', body: 'b' }] })
     }
     const deps = makeDeps(llm)
     const svc = new KbGoalDistillService(deps)
@@ -291,7 +355,7 @@ describe('KbGoalDistillService 精读阶段', () => {
       if (user.includes('【章节摘要】')) {
         return JSON.stringify({ fragments: [{ chapter: '《诛仙》#1 第一章', info: 'x', note: '' }] })
       }
-      return JSON.stringify({ title: 't', description: 'd', body: 'b' })
+      return JSON.stringify({ cards: [{ title: 't', description: 'd', body: 'b' }] })
     }
     const deps = makeChapterDeps(llm)
     const svc = new KbGoalDistillService(deps)
@@ -309,7 +373,7 @@ describe('KbGoalDistillService 精读阶段', () => {
         })
       }
       if (user.includes('【章全文】')) closeCalls++
-      return JSON.stringify({ title: 't', description: 'd', body: 'b' })
+      return JSON.stringify({ cards: [{ title: 't', description: 'd', body: 'b' }] })
     }
     const deps = makeChapterDeps(llm)
     const svc = new KbGoalDistillService(deps)

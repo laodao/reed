@@ -45,13 +45,20 @@ export interface GoalDistillOutcome {
   proposed: boolean
   skippedDuplicate: boolean
   cardTitle: string | null
+  /** 本轮实际入提议箱的卡数（reduce 一次可产 1-N 张） */
+  cards: number
 }
+
+/** 单个提炼目标一次最多产出几张卡（reduce 按主题分组，模型自评 1-3 张） */
+const MAX_CARDS_PER_GOAL = 3
 
 const MAP_SYSTEM =
   '你是资深图书编辑，正在为写作知识库定向提取经验素材。只输出 JSON，不输出任何其他文字。'
 
 const REDUCE_SYSTEM =
-  '你是资深图书编辑，擅长从素材中提炼可复用的创作经验。只输出 JSON，不输出任何其他文字。'
+  '你是资深图书编辑，擅长把作品素材提炼成可迁移的创作方法论。' +
+  '卡必须是方法论而非作品分析：跨书可用、写清何时用/怎么用/何时会失效，禁止复述情节。' +
+  '只输出 JSON，不输出任何其他文字。'
 
 interface MapFragment {
   chapter: string
@@ -219,55 +226,81 @@ export class KbGoalDistillService {
     const closeReadN = await this.closeReadStage(kbId, goal, repos, nominations, fragments, fragmentDocIds)
     void closeReadN
     if (fragments.length === 0) {
-      return { batches, fragments: 0, proposed: false, skippedDuplicate: false, cardTitle: null }
+      return { batches, fragments: 0, proposed: false, skippedDuplicate: false, cardTitle: null, cards: 0 }
     }
 
-    // 3. reduce：素材 → 经验卡（失败重试 1 次，带错误回喂）
-    let card: { title: string; description: string; body: string } | null = null
+    // 3. reduce：素材 → 1-N 张经验卡（失败重试 1 次，带错误回喂）
+    interface ReduceCard {
+      title: string
+      description: string
+      body: string
+    }
+    let cards: ReduceCard[] = []
     let lastError = ''
     for (let attempt = 0; attempt < 2; attempt++) {
       const user = buildReduceUser(goal, fragments) + (lastError ? `\n\n【上次输出不合法】\n${lastError}\n请重新输出完整合法的 JSON。` : '')
       try {
-        const raw = await this.llm({ system: REDUCE_SYSTEM, user, maxTokens: 6000 })
-        const parsed = extractJsonFromResponse(raw) as Partial<{ title: string; description: string; body: string }> | null
-        if (!parsed?.body || typeof parsed.body !== 'string' || !parsed.body.trim()) {
-          throw new Error('缺少 body')
-        }
-        card = {
-          title: parsed.title?.trim() || `经验：${goal.name}`,
-          description: parsed.description?.trim() || `从本书提炼的「${goal.name}」经验`,
-          body: parsed.body,
-        }
+        const raw = await this.llm({ system: REDUCE_SYSTEM, user, maxTokens: 9000 })
+        const parsed = extractJsonFromResponse(raw) as Partial<{ cards: unknown; title: unknown; body: unknown }> | null
+        // 新契约 {cards:[...]}；兼容旧单卡 {title,description,body}
+        const rawCards: unknown[] = Array.isArray(parsed?.cards)
+          ? (parsed!.cards as unknown[])
+          : parsed && typeof parsed === 'object' && typeof parsed.title === 'string' && typeof parsed.body === 'string'
+            ? [parsed]
+            : []
+        const cleaned: ReduceCard[] = rawCards
+          .map((c) => c as Partial<ReduceCard>)
+          .filter((c) => typeof c?.body === 'string' && c.body.trim())
+          .map((c) => ({
+            title: (typeof c.title === 'string' && c.title.trim()) || `经验：${goal.name}`,
+            description: (typeof c.description === 'string' && c.description.trim()) || `从本书提炼的「${goal.name}」经验`,
+            body: (c as { body: string }).body,
+          }))
+        if (cleaned.length === 0) throw new Error('cards 为空或缺少 body')
+        cards = cleaned.slice(0, MAX_CARDS_PER_GOAL)
         break
       } catch (e) {
         lastError = e instanceof Error ? e.message : String(e)
       }
     }
-    if (!card) throw new Error(`经验卡生成失败：${lastError}`)
+    if (cards.length === 0) throw new Error(`经验卡生成失败：${lastError}`)
 
-    // 4. 入提议箱（同题非重名去重；AI 产物永不直接 published）
-    const similar = await repos.notes.findSimilarTitle(kbId, card.title)
-    if (similar.some((s) => s.title === card!.title && s.status !== 'archived')) {
-      return { batches, fragments: fragments.length, proposed: false, skippedDuplicate: true, cardTitle: card.title }
+    // 4. 逐张入提议箱（同题非重名去重；AI 产物永不直接 published）
+    let proposedCount = 0
+    let skippedDup = false
+    for (const card of cards) {
+      const similar = await repos.notes.findSimilarTitle(kbId, card.title)
+      if (similar.some((s) => s.title === card.title && s.status !== 'archived')) {
+        skippedDup = true
+        continue
+      }
+      await repos.notes.propose(kbId, {
+        title: card.title,
+        description: card.description,
+        body: card.body,
+        type: 'synthesis',
+        evidence: JSON.stringify(
+          fragments.slice(0, 30).map((f, i) => ({ quote: f.chapter, documentId: fragmentDocIds[i], note: f.note })),
+        ),
+        origin: 'ai-distill',
+      })
+      proposedCount++
     }
-    await repos.notes.propose(kbId, {
-      title: card.title,
-      description: card.description,
-      body: card.body,
-      type: 'synthesis',
-      evidence: JSON.stringify(
-        fragments.slice(0, 30).map((f, i) => ({ quote: f.chapter, documentId: fragmentDocIds[i], note: f.note })),
-      ),
-      origin: 'ai-distill',
-    })
-    return { batches, fragments: fragments.length, proposed: true, skippedDuplicate: false, cardTitle: card.title }
+    return {
+      batches,
+      fragments: fragments.length,
+      proposed: proposedCount > 0,
+      skippedDuplicate: skippedDup && proposedCount === 0,
+      cardTitle: cards[0]!.title,
+      cards: proposedCount,
+    }
   }
 }
 
 /** 文件名 → 短书名：去扩展名、去括注（校对版/来源站等）、去「作者-」前缀——出处标签可读 */
 export function shortBookName(fileName: string): string {
   const noExt = fileName.replace(/\.(epub|mobi|azw3|txt|pdf|docx?)\s*$/i, '')
-  const noParens = noExt.replace(/[（(【\[].*$/, '').trim()
+  const noParens = noExt.replace(/[（(【[].*$/, '').trim()
   const noDash = noParens.includes('-') && noParens.indexOf('-') <= 6
     ? noParens.slice(noParens.indexOf('-') + 1).trim()
     : noParens
@@ -315,12 +348,15 @@ function buildReduceUser(goal: KbBrainGoal, fragments: MapFragment[]): string {
     `【提炼目标】${goal.name}`,
     goal.hint,
     '',
-    '以下是从全书各章提取的相关素材（方括号内是出处）。据此写一份可直接指导创作的经验文档，输出 JSON：',
-    '{"title":"卡片标题（直接给论断本身，禁止出现「论断式标题」等指令词或前缀）","description":"何时用我（第三人称，≤200字，含触发场景）","body":"markdown 正文"}',
-    '正文要求：',
+    '以下是从全书各章提取的相关素材（方括号内是出处）。据此提炼 1-3 张可复用的创作方法论卡：',
+    '素材能分出几个独立主题就出几张（每张卡聚焦一个主题），只够一张就一张，禁止硬凑或重复。',
+    '输出 JSON：',
+    '{"cards":[{"title":"卡片标题（直接给论断本身，禁止出现「论断式标题」等指令词或前缀）","description":"何时用我（第三人称，≤200字，含触发场景）","body":"markdown 正文"}]}',
+    '每张卡的正文 ≤1000 字（小节讲清即可，宁精炼勿堆砌，超长会被截断作废）；',
+    '每张卡的正文要求：',
     '1) 按提炼目标 hint 指定的结构分小节组织；',
     '2) 每条经验/结论后标注出处（如 [《书名》#12 章节]），多章印证的列多个；',
-    '3) 提炼可复用的模式与规则，不复述剧情；',
+    '3) 提炼可复用的模式与规则（何时用/怎么用/何时失效），不复述剧情；',
     '4) 素材不足的部分明确写「素材不足，待补充」，禁止编造。',
     '',
     '【素材】',

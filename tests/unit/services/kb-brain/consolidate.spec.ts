@@ -113,24 +113,25 @@ describe('KbConsolidateService', () => {
   })
 
   it('单批失败跳过：第一批炸、第二批照常处理', async () => {
-    // BATCH_SIZE=120：122 条种子构造两批（第二批 2 条，可容纳一个合法合并组）
+    // BATCH_SIZE=60：122 条种子构造三批（末批 2 条，可容纳合法合并组）
     const seed = Array.from({ length: 122 }, (_, i) => makeAtom({ id: `c${i}`, statement: `论断${i}` }))
     const repo = makeAtomsRepo(seed)
     let call = 0
     const llm: BrainLlmFn = async () => {
       call += 1
       if (call === 1) throw new Error('LLM 超时')
-      return JSON.stringify({ groups: [{ idx: [0, 1], statement: '第二批合并论断', type: 'fact' }] })
+      return JSON.stringify({ groups: [{ idx: [0, 1], statement: `合并论断${call}`, type: 'fact' }] })
     }
     const svc = new KbConsolidateService({ llm, atoms: repo as never })
     const progress = await svc.run('kb1')
-    expect(progress.totalBatches).toBe(2)
+    expect(progress.totalBatches).toBe(3)
     expect(progress.failedBatches).toBe(1)
-    expect(progress.processedBatches).toBe(2)
-    expect(progress.mergedGroups).toBe(1)
+    expect(progress.processedBatches).toBe(3)
+    expect(progress.mergedGroups).toBe(2)
     expect(progress.lastError).toContain('LLM 超时')
-    // 第二批的合并真实落库
-    expect(repo.rows.some((r) => r.statement === '第二批合并论断')).toBe(true)
+    // 第 2/3 批的合并真实落库，第 1 批碎片未被动
+    expect(repo.rows.some((r) => r.statement === '合并论断2')).toBe(true)
+    expect(repo.rows.some((r) => r.statement === '合并论断3')).toBe(true)
   })
 
   it('输入排除：consolidate 产物 / human / 视角论断不参与归纳', async () => {

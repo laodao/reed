@@ -14,8 +14,8 @@ import { defaultBrainLlm, type BrainLlmFn } from './llm'
 import { CONSOLIDATE_SYSTEM, buildConsolidateUser } from './prompts'
 import { validateConsolidateOutput, type ConsolidateGroup } from './schemas'
 
-/** 单批论断数：~120 条 ×60 字 ≈ 8k token 输入，安全余量内 */
-const BATCH_SIZE = 120
+/** 单批论断数：论断放开篇幅后均值 ~150 字，60 条 ≈ 7-9k token 输入，安全余量内 */
+const BATCH_SIZE = 60
 
 export interface ConsolidateProgress {
   running: boolean
@@ -125,11 +125,11 @@ export class KbConsolidateService {
       ) {
         continue
       }
-      // 合并句长度护栏：模型违抗 ≤90 字指令时截断（完整性靠成员归档兜底）
+      // 合并句长度护栏：模型跑偏时兜底截断（完整性靠成员归档兜底）
       const [created] = await atoms.createBatch([
         {
           knowledgeBaseId: kbId,
-          statement: g.statement.slice(0, 200),
+          statement: g.statement.slice(0, 400),
           type: g.type,
           certainty: 0.85,
           sourceDocumentId: head.sourceDocumentId,

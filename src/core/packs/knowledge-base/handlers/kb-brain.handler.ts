@@ -138,6 +138,7 @@ export function registerKbBrainHandlers(): void {
     ok: boolean
     error?: string
     proposed?: boolean
+    cards?: number
     skippedDuplicate?: boolean
     cardTitle?: string | null
     fragments?: number
