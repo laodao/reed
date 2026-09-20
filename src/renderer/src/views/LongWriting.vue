@@ -23,11 +23,20 @@
           class="project-card"
           @click="project.type === 'story' ? openRoom(project) : openProject(project)"
         >
-          <div class="project-icon">
-            <el-icon size="32">
+          <div class="project-icon" :class="{ 'has-cover': project.coverPath }">
+            <img
+              v-if="project.coverPath"
+              :src="toImageUrl(project.coverPath)"
+              class="cover-thumb"
+              alt=""
+            />
+            <el-icon v-else size="32">
               <Reading v-if="project.type === 'story'" />
               <Document v-else />
             </el-icon>
+            <button class="cover-edit-btn" title="设置封面" @click.stop="openCoverDialog(project)">
+              <el-icon><Picture /></el-icon>
+            </button>
           </div>
           <div class="project-info">
             <h3 class="project-name">{{ project.name }}</h3>
@@ -172,6 +181,14 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 封面设置对话框 -->
+    <CoverSettingsDialog
+      v-model:visible="showCoverDialog"
+      :project-id="coverDialogProject?.id || ''"
+      :cover-path="coverDialogProject?.coverPath ?? null"
+      @updated="onCoverUpdated"
+    />
   </div>
 </template>
 
@@ -179,8 +196,10 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Edit, Delete, Reading, Document, Setting } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, Reading, Document, Setting, Picture } from '@element-plus/icons-vue'
 import DictionaryEditor from '../components/longwriting/DictionaryEditor.vue'
+import CoverSettingsDialog from '../components/longwriting/CoverSettingsDialog.vue'
+import { toImageUrl } from '../utils/asset-url'
 import { useTabsStore } from '@/stores/tabs'
 import type { LongWritingProject } from '../../../../shared/types/longwriting.types'
 import type { DictionaryCategory, DictionaryItem } from '../../../../shared/types/longwriting.types'
@@ -202,6 +221,20 @@ const createForm = ref({
 // 设置对话框
 const showSettingsDialog = ref(false)
 const activeSettingsTab = ref('')
+
+// 封面设置对话框
+const showCoverDialog = ref(false)
+const coverDialogProject = ref<LongWritingProject | null>(null)
+
+function openCoverDialog(project: LongWritingProject) {
+  coverDialogProject.value = project
+  showCoverDialog.value = true
+}
+
+function onCoverUpdated(updated: LongWritingProject) {
+  const idx = projects.value.findIndex((p: LongWritingProject) => p.id === updated.id)
+  if (idx >= 0) projects.value[idx] = updated
+}
 
 // 字典分类列表
 const categories = ref<DictionaryCategory[]>([])
@@ -611,6 +644,35 @@ onMounted(() => {
   border-radius: 12px;
   color: var(--color-primary);
   margin-right: 16px;
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+
+  .cover-thumb {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .cover-edit-btn {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    cursor: pointer;
+    background: rgba(0, 0, 0, 0.45);
+    color: #fff;
+    font-size: 18px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  &:hover .cover-edit-btn {
+    opacity: 1;
+  }
 }
 
 .project-info {

@@ -25,6 +25,8 @@ export class ElectronDocumentRenderer implements IHtmlRenderer {
     return this.withWindow(html, opts?.width ?? 800, async (win) => {
       // 页面内异步渲染（mermaid 图等）完成后再打印，否则图会缺失
       await this.prepareForCapture(win)
+      // 注：Electron 28 的 printToPDF 不支持 generateDocumentOutline（二进制里无该选项映射），
+      // 需要 PDF 书签大纲的导出方在产物上自行后处理注入（见 core/utils/pdf-outline-writer.ts）
       return await win.webContents.printToPDF({
         pageSize: 'A4',
         printBackground: true,
@@ -147,8 +149,9 @@ export class ElectronDocumentRenderer implements IHtmlRenderer {
     fn: (win: Electron.BrowserWindow) => Promise<T>
   ): Promise<T> {
     const run = async (): Promise<T> => {
-      // 运行期 require：避免模块加载期依赖 electron（与 diary-export 同策略）
-      const electron = require('electron') as typeof import('electron')
+        // 运行期 require：避免模块加载期依赖 electron（与 diary-export 同策略）
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const electron = require('electron') as typeof import('electron')
       let win: Electron.BrowserWindow | null = null
       try {
         win = new electron.BrowserWindow({

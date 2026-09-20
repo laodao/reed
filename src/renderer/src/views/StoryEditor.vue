@@ -127,6 +127,7 @@
     <ProjectSettingsDialog
       v-model:visible="showSettingsDialog"
       :project-id="projectId"
+      :cover-path="project?.coverPath ?? null"
       @model-configs-changed="loadStageModelConfigs"
     />
     </template>

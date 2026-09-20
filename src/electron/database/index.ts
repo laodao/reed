@@ -965,6 +965,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-asset-image-confirmed'
     )
     await addAssetImageConfirmed(this.dataSource)
+
+    // 长文项目封面：lw_projects 加 cover_path 列（幂等，双语种；Web 端 initDatabase 有同构调用）
+    const { addLwProjectCoverPath } = await import(
+      '@core/database/migrations/add-lw-project-cover-path'
+    )
+    await addLwProjectCoverPath(this.dataSource)
   }
 
   /**

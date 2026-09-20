@@ -4,7 +4,12 @@
  * @description 长文写作业务逻辑服务
  */
 
+import * as fs from 'fs'
+import * as path from 'path'
 import { getCoreDatabaseManager, type ICoreDatabaseManager } from '@core/database/database-manager.interface'
+import { getPathProvider } from '@core/interfaces/path.interface'
+import { toRelativeAssetPath, resolveAssetPath } from '@core/utils/asset-path'
+import type { SetCoverSource } from '@shared/types/longwriting.types'
 import {
   LongWritingProject,
   CreateProjectRequest,
@@ -158,7 +163,98 @@ export class LongWritingService {
     } catch (e) {
       console.error('[longwriting] 伴生数据级联清理失败（不影响删除）:', e)
     }
+    // 封面文件目录（项目自持副本）随项目删除
+    try {
+      await fs.promises.rm(this.coverDir(id), { recursive: true, force: true })
+    } catch (e) {
+      console.error('[longwriting] 封面目录清理失败（不影响删除）:', e)
+    }
     return ok
+  }
+
+  // ==================== 项目封面 ====================
+
+  /** 允许作为封面的图片扩展名 → mime（落 EPUB/PDF 时按扩展名推断） */
+  private static readonly COVER_IMAGE_MIMES: Record<string, string> = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+  }
+
+  private static readonly COVER_MAX_BYTES = 10 * 1024 * 1024
+
+  /** 封面文件目录：<dataPath>/longwriting/covers/<projectId>/（项目自持副本） */
+  private coverDir(projectId: string): string {
+    return path.join(getPathProvider().getDataPath(), 'longwriting', 'covers', projectId)
+  }
+
+  /**
+   * 设置项目封面（上传 / 系统资产选图 / 清除）。
+   * 无论来源，文件统一拷贝为项目自持副本落盘 covers/<projectId>/，
+   * DB 存相对 dataPath 路径（资产被删封面不失效）。
+   */
+  async setProjectCover(projectId: string, source: SetCoverSource): Promise<LongWritingProject | null> {
+    if (!this.db.lwProjects) {
+      throw new Error('数据库未初始化')
+    }
+    const project = await this.db.lwProjects.getById(projectId)
+    if (!project) {
+      throw new Error('项目不存在')
+    }
+
+    if (source.type === 'clear') {
+      const prev = project.coverPath
+      const updated = await this.db.lwProjects.update(projectId, { coverPath: null })
+      this.removeCoverFile(prev)
+      return updated
+    }
+
+    let bytes: Buffer
+    let ext: string
+    if (source.type === 'upload') {
+      bytes = Buffer.from(source.base64, 'base64')
+      if (bytes.length === 0) throw new Error('图片内容为空')
+      if (bytes.length > LongWritingService.COVER_MAX_BYTES) throw new Error('图片大小不能超过 10MB')
+      ext = path.extname(source.fileName || '').toLowerCase()
+      if (!LongWritingService.COVER_IMAGE_MIMES[ext]) throw new Error('仅支持 jpg/png/webp/gif 格式图片')
+    } else {
+      const { getAssetService } = await import('@core/platform/assets')
+      const asset = await getAssetService().getAsset(source.assetId)
+      if (!asset) throw new Error('资产不存在')
+      if (asset.kind !== 'file' || !asset.storagePath) throw new Error('该资产不是文件型图片')
+      ext = path.extname(asset.storagePath).toLowerCase()
+      if (!LongWritingService.COVER_IMAGE_MIMES[ext]) throw new Error('该资产不是支持的图片格式')
+      bytes = await fs.promises.readFile(resolveAssetPath(asset.storagePath))
+    }
+
+    const dir = this.coverDir(projectId)
+    await fs.promises.mkdir(dir, { recursive: true })
+    const absPath = path.join(dir, `cover_${Date.now()}${ext}`)
+    await fs.promises.writeFile(absPath, bytes)
+
+    const prev = project.coverPath
+    const updated = await this.db.lwProjects.update(projectId, { coverPath: toRelativeAssetPath(absPath) })
+    this.removeCoverFile(prev)
+    return updated
+  }
+
+  /** best-effort 删除旧封面文件（只清理本项目 covers 目录内的自持副本，不碰外部路径） */
+  private removeCoverFile(coverPath: string | null | undefined): void {
+    if (!coverPath) return
+    try {
+      const abs = resolveAssetPath(coverPath)
+      const rel = path.relative(this.coverRoot(), abs)
+      if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return
+      if (fs.existsSync(abs)) fs.unlinkSync(abs)
+    } catch (e) {
+      console.warn('[longwriting] 旧封面文件清理失败（不影响）:', e)
+    }
+  }
+
+  private coverRoot(): string {
+    return path.join(getPathProvider().getDataPath(), 'longwriting', 'covers')
   }
 
   // ==================== 故事概要 ====================

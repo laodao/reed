@@ -35,6 +35,10 @@ export class LwProjectEntity {
   @Column({ name: 'wizard_state', type: 'text', nullable: true })
   wizardState!: string | null
 
+  /** 封面图相对 dataPath 路径（与 lw_project_maps.image_path 同约定）；NULL=未设置 */
+  @Column({ name: 'cover_path', type: 'text', nullable: true })
+  coverPath!: string | null
+
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 

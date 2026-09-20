@@ -57,6 +57,8 @@ export interface LongWritingProject {
   progress: number         // 进度百分比 0-100
   /** 向导状态（跳过的步骤 key 列表；旧项目无数据时按数据存在性回推） */
   wizardState?: WizardStateFull
+  /** 封面图相对 dataPath 路径；未设置为 null/undefined */
+  coverPath?: string | null
   createdAt: number
   updatedAt: number
 }
@@ -951,7 +953,20 @@ export interface UpdateProjectRequest {
   stage?: StoryStage | CommentStage
   progress?: number
   wizardState?: WizardStateFull
+  /** 封面相对路径（一般经 setCover 由后端写入，不直改） */
+  coverPath?: string | null
 }
+
+/**
+ * 设置项目封面的来源（判别联合）：
+ * - upload：本地上传图片（base64，不带 data: 前缀）
+ * - asset：从系统资产（assets 表，kind=file 的图片资产）选择，后端拷贝自包含副本
+ * - clear：清除封面
+ */
+export type SetCoverSource =
+  | { type: 'upload'; base64: string; fileName: string }
+  | { type: 'asset'; assetId: string }
+  | { type: 'clear' }
 
 /**
  * 创建角色请求

@@ -600,6 +600,12 @@ async function initDatabase(): Promise<void> {
   )
   await addAssetImageConfirmed(ds)
 
+  // 长文项目封面：lw_projects 加 cover_path 列（幂等，双语种；与 Electron 端 runMultiTenantMigrations 同构登记）
+  const { addLwProjectCoverPath } = await import(
+    '@core/database/migrations/add-lw-project-cover-path'
+  )
+  await addLwProjectCoverPath(ds)
+
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)
   console.log('[web-server] PostgreSQL 数据库初始化完成')

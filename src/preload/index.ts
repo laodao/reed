@@ -1944,8 +1944,16 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:exportMarkdown', projectId),
     exportWord: (projectId: string) =>
       ipcRenderer.invoke('longwriting:exportWord', projectId),
+    exportPdf: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:exportPdf', projectId),
+    exportEpub: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:exportEpub', projectId),
     exportChapter: (data: { outlineId: string; content: string; fileName: string; format: string }) =>
       ipcRenderer.invoke('longwriting:exportChapter', data),
+
+    // 项目封面（上传 / 系统资产选图 / 清除）
+    setCover: (projectId: string, source: { type: 'upload'; base64: string; fileName: string } | { type: 'asset'; assetId: string } | { type: 'clear' }) =>
+      ipcRenderer.invoke('longwriting:setCover', projectId, source),
 
     // 全局配置
     getGlobalSettings: () =>

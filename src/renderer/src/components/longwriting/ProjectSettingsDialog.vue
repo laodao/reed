@@ -8,6 +8,15 @@
     destroy-on-close
   >
     <el-tabs v-model="activeTab">
+      <!-- 封面设定 -->
+      <el-tab-pane label="封面" name="cover">
+        <CoverSettingPanel
+          :project-id="projectId"
+          :cover-path="coverPath"
+          @updated="onCoverUpdated"
+        />
+      </el-tab-pane>
+
       <!-- 技能类型设定 -->
       <el-tab-pane label="技能类型设定" name="skills">
         <div class="config-container">
@@ -363,20 +372,45 @@
 import { ref, watch, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Delete } from '@element-plus/icons-vue'
-import type { ProjectSkillTypeConfig, ProjectItemTypeConfig, SkillLevelConfig, ItemLevelConfig, StoryStage } from '../../../../shared/types/longwriting.types'
+import type { ProjectSkillTypeConfig, ProjectItemTypeConfig, SkillLevelConfig, ItemLevelConfig, LongWritingProject } from '../../../../shared/types/longwriting.types'
 import type { UserProviderConfig, ProviderTemplate } from '../../../shared/types'
+import CoverSettingPanel from './CoverSettingPanel.vue'
 
 const props = defineProps<{
   visible: boolean
   projectId: string
+  /** 项目封面相对路径（打开时由调用方传入最新值） */
+  coverPath?: string | null
 }>()
 
 const emit = defineEmits<{
   'update:visible': [value: boolean]
   'model-configs-changed': []
+  /** 封面变更（调用方可刷新列表卡片） */
+  'cover-changed': [project: LongWritingProject]
 }>()
 
 const activeTab = ref('models')
+
+// 封面（打开弹窗时同步调用方最新值；调用方未提供时自行拉取项目）
+const coverPath = ref<string | null>(props.coverPath ?? null)
+watch(
+  () => props.visible,
+  async (visible) => {
+    if (!visible) return
+    if (props.coverPath === undefined) {
+      const resp = await window.electronAPI.longwriting.getProject(props.projectId)
+      coverPath.value = resp.success ? (resp.data?.coverPath ?? null) : null
+    } else {
+      coverPath.value = props.coverPath ?? null
+    }
+  }
+)
+
+function onCoverUpdated(project: LongWritingProject) {
+  coverPath.value = project.coverPath ?? null
+  emit('cover-changed', project)
+}
 
 // ==================== 模型设定相关 ====================
 const providerConfigs = ref<UserProviderConfig[]>([])
@@ -812,15 +846,6 @@ async function deleteItemLevel(id: string) {
     }
   } catch {
     // 用户取消
-  }
-}
-
-// 初始化默认配置
-async function initDefaultConfigs() {
-  const result = await window.electronAPI.longwriting.initDefaultTypeConfigs(props.projectId)
-  if (result.success) {
-    await loadSkillTypes()
-    await loadItemTypes()
   }
 }
 

@@ -10,6 +10,7 @@ import * as fs from 'fs'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { DELETED_CHARACTER_KIND } from '@core/platform/episode-production/auto-binding/lw-entity-detection.service'
 import { LongWritingService } from '../services/longwriting.service'
+import { collectBookData, renderBookPdf, buildEpub } from '../services/lw-book-export.service'
 import { LongWritingAIService } from '@core/platform/services/longwriting-ai.service'
 import { MaterialProcessorService } from '../services/material-processor.service'
 import { markdownToDocx } from '@core/utils/markdown-to-docx'
@@ -37,7 +38,8 @@ import {
   UpdateMapRequest,
   CreatePrewriteRequest,
   CreateMemoryRequest,
-  UpdateMemoryRequest
+  UpdateMemoryRequest,
+  SetCoverSource
 } from '@shared/types/longwriting.types'
 
 /**
@@ -50,6 +52,7 @@ const CHANNELS = {
   CREATE_PROJECT: 'longwriting:createProject',
   UPDATE_PROJECT: 'longwriting:updateProject',
   DELETE_PROJECT: 'longwriting:deleteProject',
+  SET_COVER: 'longwriting:setCover',
 
   // 故事概要
   GET_STORY_OVERVIEW: 'longwriting:getStoryOverview',
@@ -179,6 +182,8 @@ const CHANNELS = {
   EXPORT_WORD: 'longwriting:exportWord',
   EXPORT_CHAPTER: 'longwriting:exportChapter',
   GET_EXPORT_DATA: 'longwriting:getExportData',
+  EXPORT_PDF: 'longwriting:exportPdf',
+  EXPORT_EPUB: 'longwriting:exportEpub',
 
   // 全局配置
   GET_GLOBAL_SETTINGS: 'longwriting:getGlobalSettings',
@@ -341,6 +346,7 @@ export function registerLongWritingHandlers(): void {
     type: project.type,
     stage: project.stage,
     progress: project.progress,
+    coverPath: project.coverPath ?? null,
     createdAt: project.createdAt,
     updatedAt: project.updatedAt
   })
@@ -393,6 +399,19 @@ export function registerLongWritingHandlers(): void {
     try {
       const result = await service.deleteProject(id)
       return { success: result }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 设置项目封面（上传 / 系统资产选图 / 清除）
+  ipcBridge.handle(CHANNELS.SET_COVER, async (_event, projectId: string, source: SetCoverSource) => {
+    try {
+      const project = await service.setProjectCover(projectId, source)
+      if (!project) {
+        return { success: true, data: null }
+      }
+      return { success: true, data: serializeProject(project) }
     } catch (error: any) {
       return { success: false, error: error.message }
     }
@@ -1524,61 +1543,66 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   // ==================== 导出功能 ====================
 
   /**
+   * 收集整书导出数据（项目 + 设定 + 大纲平铺列表 + 逐章正文）。
+   * md / word / getExportData 三条链路共用（原三份重复代码块收敛于此）。
+   */
+  const collectExportData = async (projectId: string) => {
+    const project = await service.getProject(projectId)
+    if (!project) {
+      throw new Error('项目不存在')
+    }
+    const exportData: any = {
+      project,
+      overview: null,
+      background: null,
+      characters: [],
+      locations: [],
+      skills: [],
+      items: [],
+      outline: [],
+      chapters: []
+    }
+
+    // 根据项目类型获取数据
+    if (project.type === 'story') {
+      exportData.overview = await service.getStoryOverview(projectId)
+      exportData.background = await service.getBackground(projectId)
+      exportData.characters = await service.getCharacters(projectId)
+      exportData.locations = await service.getLocations(projectId)
+      exportData.skills = await service.getSkills(projectId)
+      exportData.items = await service.getItems(projectId)
+    }
+
+    // 大纲（平铺列表，含 summary）
+    exportData.outline = await service.getOutlineTree(projectId)
+
+    // 获取所有章节内容
+    const chapterContents: Record<string, string> = {}
+    const fetchChapterContent = async (nodes: any[]) => {
+      for (const node of nodes) {
+        if (node.nodeType === 'chapter' || node.nodeType === 'section') {
+          const chapter = await service.getChapter(node.id)
+          if (chapter?.content) {
+            chapterContents[node.id] = chapter.content
+          }
+        }
+        if (node.children?.length) {
+          await fetchChapterContent(node.children)
+        }
+      }
+    }
+    await fetchChapterContent(exportData.outline)
+    exportData.chapters = chapterContents
+
+    return exportData
+  }
+
+  /**
    * 获取导出数据
    */
   ipcBridge.handle(CHANNELS.GET_EXPORT_DATA, async (_event, projectId: string) => {
     try {
-      const project = await service.getProject(projectId)
-      if (!project) {
-        return { success: false, error: '项目不存在' }
-      }
-
-      const exportData: any = {
-        project,
-        overview: null,
-        background: null,
-        characters: [],
-        locations: [],
-        skills: [],
-        items: [],
-        outline: [],
-        chapters: []
-      }
-
-      // 根据项目类型获取数据
-      if (project.type === 'story') {
-        exportData.overview = await service.getStoryOverview(projectId)
-        exportData.background = await service.getBackground(projectId)
-        exportData.characters = await service.getCharacters(projectId)
-        exportData.locations = await service.getLocations(projectId)
-        exportData.skills = await service.getSkills(projectId)
-        exportData.items = await service.getItems(projectId)
-      }
-
-      // 获取大纲树
-      exportData.outline = await service.getOutlineTree(projectId)
-
-      // 获取所有章节内容
-      const outlineTree = exportData.outline
-      const chapterContents: Record<string, string> = {}
-
-      const fetchChapterContent = async (nodes: any[]) => {
-        for (const node of nodes) {
-          if (node.nodeType === 'chapter' || node.nodeType === 'section') {
-            const chapter = await service.getChapter(node.id)
-            if (chapter?.content) {
-              chapterContents[node.id] = chapter.content
-            }
-          }
-          if (node.children?.length) {
-            await fetchChapterContent(node.children)
-          }
-        }
-      }
-
-      await fetchChapterContent(outlineTree)
-      exportData.chapters = chapterContents
-
+      const exportData = await collectExportData(projectId)
       return { success: true, data: exportData }
     } catch (error: any) {
       return { success: false, error: error.message }
@@ -1747,47 +1771,12 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       }
       const { dialog, shell } = loadElectronModules()
 
-      // 获取导出数据
-      const dataResult = await service.getProject(projectId)
-      if (!dataResult) {
-        return { success: false, error: '项目不存在' }
-      }
-
-      // 直接调用获取数据
-      const exportData: any = { project: dataResult }
-      if (dataResult.type === 'story') {
-        exportData.overview = await service.getStoryOverview(projectId)
-        exportData.background = await service.getBackground(projectId)
-        exportData.characters = await service.getCharacters(projectId)
-        exportData.locations = await service.getLocations(projectId)
-        exportData.skills = await service.getSkills(projectId)
-        exportData.items = await service.getItems(projectId)
-      }
-      exportData.outline = await service.getOutlineTree(projectId)
-
-      // 获取章节内容
-      const chapterContents: Record<string, string> = {}
-      const fetchChapterContent = async (nodes: any[]) => {
-        for (const node of nodes) {
-          if (node.nodeType === 'chapter' || node.nodeType === 'section') {
-            const chapter = await service.getChapter(node.id)
-            if (chapter?.content) {
-              chapterContents[node.id] = chapter.content
-            }
-          }
-          if (node.children?.length) {
-            await fetchChapterContent(node.children)
-          }
-        }
-      }
-      await fetchChapterContent(exportData.outline)
-      exportData.chapters = chapterContents
-
-      // 格式化为 Markdown
+      // 获取导出数据并格式化为 Markdown
+      const exportData = await collectExportData(projectId)
       const markdown = formatExportMarkdown(exportData)
+      const safeName = exportData.project.name.replace(/[\\/:*?"<>|]/g, '_')
 
       // 选择保存路径
-      const safeName = dataResult.name.replace(/[\\/:*?"<>|]/g, '_')
       const result = await dialog.showSaveDialog(getBrowserWindowFromEvent(event), {
         defaultPath: `${safeName}.md`,
         filters: [{ name: 'Markdown 文件', extensions: ['md'] }]
@@ -1819,47 +1808,12 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       }
       const { dialog, shell } = loadElectronModules()
 
-      // 获取项目数据
-      const dataResult = await service.getProject(projectId)
-      if (!dataResult) {
-        return { success: false, error: '项目不存在' }
-      }
-
-      // 获取导出数据
-      const exportData: any = { project: dataResult }
-      if (dataResult.type === 'story') {
-        exportData.overview = await service.getStoryOverview(projectId)
-        exportData.background = await service.getBackground(projectId)
-        exportData.characters = await service.getCharacters(projectId)
-        exportData.locations = await service.getLocations(projectId)
-        exportData.skills = await service.getSkills(projectId)
-        exportData.items = await service.getItems(projectId)
-      }
-      exportData.outline = await service.getOutlineTree(projectId)
-
-      // 获取章节内容
-      const chapterContents: Record<string, string> = {}
-      const fetchChapterContent = async (nodes: any[]) => {
-        for (const node of nodes) {
-          if (node.nodeType === 'chapter' || node.nodeType === 'section') {
-            const chapter = await service.getChapter(node.id)
-            if (chapter?.content) {
-              chapterContents[node.id] = chapter.content
-            }
-          }
-          if (node.children?.length) {
-            await fetchChapterContent(node.children)
-          }
-        }
-      }
-      await fetchChapterContent(exportData.outline)
-      exportData.chapters = chapterContents
-
-      // 格式化为 Markdown
+      // 获取导出数据并格式化为 Markdown
+      const exportData = await collectExportData(projectId)
       const markdown = formatExportMarkdown(exportData)
+      const safeName = exportData.project.name.replace(/[\\/:*?"<>|]/g, '_')
 
       // 选择保存路径
-      const safeName = dataResult.name.replace(/[\\/:*?"<>|]/g, '_')
       const result = await dialog.showSaveDialog(getBrowserWindowFromEvent(event), {
         defaultPath: `${safeName}.docx`,
         filters: [{ name: 'Word 文档', extensions: ['docx'] }]
@@ -1871,13 +1825,82 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
       // 生成 Word 文档
       const buffer = await markdownToDocx(markdown, {
-        title: dataResult.name
+        title: exportData.project.name
       })
 
       // 写入文件
       fs.writeFileSync(result.filePath, buffer)
 
       // 打开文件所在目录
+      shell.showItemInFolder(result.filePath)
+
+      return { success: true, filePath: result.filePath }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 导出 PDF（封面页 + 章节大纲 + 正文；成书排版走 printToPDF）
+   */
+  ipcBridge.handle(CHANNELS.EXPORT_PDF, async (event, projectId: string) => {
+    try {
+      if (!isElectron) {
+        return { success: false, error: '该功能仅在桌面端可用' }
+      }
+      const { dialog, shell } = loadElectronModules()
+
+      const book = await collectBookData(service, projectId)
+      if (book.chapterCount === 0) {
+        return { success: false, error: '暂无章节内容，请先在大纲设计阶段创建章节' }
+      }
+
+      // 先选保存路径（用户取消则不做耗时的 PDF 渲染）
+      const safeName = book.title.replace(/[\\/:*?"<>|]/g, '_')
+      const result = await dialog.showSaveDialog(getBrowserWindowFromEvent(event), {
+        defaultPath: `${safeName}.pdf`,
+        filters: [{ name: 'PDF 文档', extensions: ['pdf'] }]
+      })
+      if (result.canceled || !result.filePath) {
+        return { success: true, message: '用户取消' }
+      }
+
+      const buffer = await renderBookPdf(book)
+      fs.writeFileSync(result.filePath, buffer)
+      shell.showItemInFolder(result.filePath)
+
+      return { success: true, filePath: result.filePath }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 导出 EPUB（封面 + 章节大纲 + 正文；EPUB3 nav + NCX 双目录）
+   */
+  ipcBridge.handle(CHANNELS.EXPORT_EPUB, async (event, projectId: string) => {
+    try {
+      if (!isElectron) {
+        return { success: false, error: '该功能仅在桌面端可用' }
+      }
+      const { dialog, shell } = loadElectronModules()
+
+      const book = await collectBookData(service, projectId)
+      if (book.chapterCount === 0) {
+        return { success: false, error: '暂无章节内容，请先在大纲设计阶段创建章节' }
+      }
+
+      const safeName = book.title.replace(/[\\/:*?"<>|]/g, '_')
+      const result = await dialog.showSaveDialog(getBrowserWindowFromEvent(event), {
+        defaultPath: `${safeName}.epub`,
+        filters: [{ name: 'EPUB 电子书', extensions: ['epub'] }]
+      })
+      if (result.canceled || !result.filePath) {
+        return { success: true, message: '用户取消' }
+      }
+
+      const buffer = await buildEpub(book)
+      fs.writeFileSync(result.filePath, buffer)
       shell.showItemInFolder(result.filePath)
 
       return { success: true, filePath: result.filePath }

@@ -37,6 +37,7 @@ export class LwProjectRepository extends BaseRepository<
       stage: e.stage as LongWritingProject['stage'],
       progress: e.progress,
       wizardState: this.parseWizardState(e.wizardState),
+      coverPath: e.coverPath ?? null,
       createdAt: this.toEpochMs(e.createdAt),
       updatedAt: this.toEpochMs(e.updatedAt),
     }
@@ -100,6 +101,7 @@ export class LwProjectRepository extends BaseRepository<
       existing.wizardState = JSON.stringify(data.wizardState)
       changed = true
     }
+    if (data.coverPath !== undefined) { existing.coverPath = data.coverPath; changed = true }
 
     if (!changed) return this.toDto(existing)
 

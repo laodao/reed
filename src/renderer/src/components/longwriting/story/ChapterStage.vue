@@ -3,10 +3,25 @@
     <div class="stage-header">
       <h2>章节写作</h2>
       <p class="stage-desc">根据大纲生成章节内容，支持手动编辑和版本管理</p>
-      <el-button type="primary" size="small" class="header-export-btn" @click="exportAll">
-        <el-icon><Download /></el-icon>
-        导出全部
-      </el-button>
+      <el-dropdown
+        class="header-export-btn"
+        trigger="click"
+        :disabled="exporting"
+        @command="handleExportAll"
+      >
+        <el-button type="primary" size="small" :loading="exporting">
+          <el-icon v-if="!exporting"><Download /></el-icon>
+          导出全部
+          <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+        </el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="txt">TXT · 全部章节正文</el-dropdown-item>
+            <el-dropdown-item command="pdf" divided>PDF · 封面 + 章节大纲 + 正文</el-dropdown-item>
+            <el-dropdown-item command="epub">EPUB · 封面 + 章节大纲 + 正文</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
     </div>
 
     <div class="stage-content">
@@ -478,7 +493,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, inject, nextTick } from 'vue'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
-import { MagicStick, Clock, DocumentChecked, View, RefreshLeft, Close, Fold, Download, Loading, InfoFilled, Collection, Warning } from '@element-plus/icons-vue'
+import { MagicStick, Clock, DocumentChecked, View, RefreshLeft, Close, Fold, Download, Loading, InfoFilled, Collection, Warning, ArrowDown } from '@element-plus/icons-vue'
 import MarkdownEditor from '@/components/common/MarkdownEditor.vue'
 import ChapterContextPanel from './ChapterContextPanel.vue'
 import ChapterConflictPanel from './ChapterConflictPanel.vue'
@@ -1640,8 +1655,43 @@ async function exportNode(nodeId: string) {
   }
 }
 
-// 导出全部章节
-async function exportAll() {
+// 导出全部（TXT=章节正文；PDF/EPUB=封面 + 章节大纲 + 正文，由后端组装）
+const exporting = ref(false)
+
+async function handleExportAll(command: string) {
+  if (allOutlines.value.length === 0) {
+    ElMessage.warning('暂无章节内容')
+    return
+  }
+  if (command === 'txt') {
+    await exportAllTxt()
+    return
+  }
+  if (exporting.value) return
+  exporting.value = true
+  try {
+    const fn = command === 'pdf'
+      ? window.electronAPI.longwriting.exportPdf
+      : window.electronAPI.longwriting.exportEpub
+    const result = await fn(props.projectId)
+    if (result.success) {
+      if (result.message === '用户取消') {
+        // 用户取消，不做提示
+      } else {
+        ElMessage.success(`已导出：${result.filePath}`)
+      }
+    } else {
+      ElMessage.error(result.error || '导出失败')
+    }
+  } catch (error: any) {
+    ElMessage.error('导出失败：' + error.message)
+  } finally {
+    exporting.value = false
+  }
+}
+
+// 导出全部章节（TXT，章节正文拼接）
+async function exportAllTxt() {
   if (allOutlines.value.length === 0) {
     ElMessage.warning('暂无章节内容')
     return

@@ -17,7 +17,7 @@ import type { DocumentEnhanceOptions } from './markdown-enhance'
 
 /** HTML→二进制产物的平台渲染器（Electron 注入；Web 端可缺省降级） */
 export interface IHtmlRenderer {
-  /** HTML → PDF Buffer（A4 分页排版） */
+  /** HTML → PDF Buffer（A4 分页排版；Electron 28 不支持原生书签大纲，需导出方后处理注入） */
   htmlToPdf(html: string, opts?: { width?: number }): Promise<Buffer>
   /** HTML → PNG 长图 Buffer（按内容高度整页截图，不分页） */
   htmlToImage(html: string, opts?: { width?: number }): Promise<Buffer>
@@ -100,6 +100,19 @@ export class DocumentToolsService {
     const html = await this.renderHtml(input)
     if (!this.renderer) return { buffer: Buffer.from(html, 'utf-8'), html, format: 'html' }
     return { buffer: await this.renderer.htmlToPdf(html, { width: input.width }), html, format: 'pdf' }
+  }
+
+  /**
+   * 已排版完整 HTML → PDF Buffer（供自定义封面/版式的高级导出方使用，
+   * 如长文成书导出：封面页 + 章节大纲 + 正文，不经通用排版模板）。
+   * 仅桌面端可用（依赖平台渲染器）；注意 HTML 内外部资源须自包含
+   * （图片用 data URI 内嵌，data: URL 页面加载 file:// 会被拦）。
+   */
+  async renderHtmlToPdf(html: string, opts?: { width?: number }): Promise<Buffer> {
+    if (!this.renderer) {
+      throw new Error('当前环境无 PDF 渲染器，该功能仅桌面端可用')
+    }
+    return await this.renderer.htmlToPdf(html, opts)
   }
 
   /** markdown → docx（core 纯能力，双端一致） */

@@ -111,6 +111,7 @@
     "nodejieba": "^3.5.8",
     "nodemailer": "^9.0.5",
     "openai": "^6.32.0",
+    "pdf-lib": "^1.17.1",
     "pdf-parse": "^1.1.1",
     "pdfjs-dist": "^3.11.174",
     "pg": "^8.20.0",
