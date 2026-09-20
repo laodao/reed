@@ -315,6 +315,10 @@ const CHANNELS = {
   GRAPH_END_RELATION: 'longwriting:graph:endRelation',
   GRAPH_VALIDATE_BEFORE_GENERATION: 'longwriting:graph:validateBeforeGeneration',
   GRAPH_SCAN_CONTRADICTIONS: 'longwriting:graph:scanContradictions',
+  ROSTER_WHITELIST_LIST: 'longwriting:roster:whitelist:list',
+  ROSTER_WHITELIST_ADD: 'longwriting:roster:whitelist:add',
+  ROSTER_WHITELIST_REMOVE: 'longwriting:roster:whitelist:remove',
+  CONFLICT_BATCH_ACKNOWLEDGE: 'longwriting:conflict:batchAcknowledge',
   GRAPH_EXTRACT_CHAPTER: 'longwriting:graph:extractChapterGraph',
 
   // 阶段2：事件节点
@@ -3275,6 +3279,53 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       const annotated = annotateConflicts(conflicts, rows)
       const data = opts?.status === 'all' ? annotated : annotated.filter((c) => c.status === 'pending')
       return { success: true, data }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // §3a R9 名册白名单（wizardState.rosterWhitelist）：单元案死者/路人一次性人名不再反复上报
+  ipcBridge.handle(CHANNELS.ROSTER_WHITELIST_LIST, async (_event, projectId: string) => {
+    try {
+      const { getRosterWhitelist } = await import('@core/platform/services/longwriting/roster-whitelist')
+      return { success: true, data: await getRosterWhitelist(getCoreDatabaseManager(), projectId) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+  ipcBridge.handle(CHANNELS.ROSTER_WHITELIST_ADD, async (_event, projectId: string, name: string, note?: string) => {
+    try {
+      const { addToRosterWhitelist } = await import('@core/platform/services/longwriting/roster-whitelist')
+      const entry = await addToRosterWhitelist(getCoreDatabaseManager(), projectId, name, note)
+      return { success: true, data: entry }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+  ipcBridge.handle(CHANNELS.ROSTER_WHITELIST_REMOVE, async (_event, projectId: string, name: string) => {
+    try {
+      const { removeFromRosterWhitelist } = await import('@core/platform/services/longwriting/roster-whitelist')
+      const removed = await removeFromRosterWhitelist(getCoreDatabaseManager(), projectId, name)
+      return removed ? { success: true, data: { removed } } : { success: false, error: '白名单中不存在该名字' }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // §3b 疑点批量知情保留：按 key 循环登记，返回逐条结果（失效 key 不算错误）
+  ipcBridge.handle(CHANNELS.CONFLICT_BATCH_ACKNOWLEDGE, async (_event, projectId: string, keys: string[], note?: string) => {
+    try {
+      const { acknowledgeConflictByKey } = await import('@core/platform/services/longwriting/conflict-gate')
+      const db = getCoreDatabaseManager()
+      const results: Array<{ key: string; ok: boolean }> = []
+      for (const key of Array.isArray(keys) ? keys : []) {
+        try {
+          results.push({ key, ok: await acknowledgeConflictByKey(db, projectId, key, 'kept', note) })
+        } catch {
+          results.push({ key, ok: false })
+        }
+      }
+      return { success: true, data: { results } }
     } catch (error: any) {
       return { success: false, error: error.message }
     }

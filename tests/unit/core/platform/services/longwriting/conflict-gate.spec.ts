@@ -61,6 +61,16 @@ describe('filterBlockingConflicts', () => {
     const blocking = filterBlockingConflicts(conflicts, 3, new Set([key]))
     expect(blocking).toHaveLength(blockingAll.length - 1)
   })
+
+  it('§3c：blocking=false 的节奏提醒（R8 超期）豁免阻断，未标记规则行为不变', () => {
+    const withFlag = [
+      { rule: 'R8', message: '「x」第 3 章埋下，已写至第 10 章仍未回收', blocking: false },
+      { rule: 'R2', message: '第 2 章关系失效', chapterNumber: 2 }, // 未标记 warning：行为必须不变
+      { rule: 'R1', message: '角色已死亡', chapterNumber: 1, blocking: true }, // 显式 true：仍阻断
+    ]
+    const blocking = filterBlockingConflicts(withFlag as never, 3, new Set())
+    expect(blocking.map((c) => c.rule)).toEqual(['R2', 'R1'])
+  })
 })
 
 describe('buildConflictGateError', () => {

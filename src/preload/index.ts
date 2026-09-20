@@ -2246,6 +2246,14 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:room:conflict:plan', projectId, conflict, opts),
     conflictExecute: (projectId: string, action: string, payload: Record<string, unknown>) =>
       ipcRenderer.invoke('longwriting:room:conflict:execute', projectId, action, payload),
+    conflictBatchAcknowledge: (projectId: string, keys: string[], note?: string) =>
+      ipcRenderer.invoke('longwriting:conflict:batchAcknowledge', projectId, keys, note),
+    rosterWhitelistList: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:roster:whitelist:list', projectId),
+    rosterWhitelistAdd: (projectId: string, name: string, note?: string) =>
+      ipcRenderer.invoke('longwriting:roster:whitelist:add', projectId, name, note),
+    rosterWhitelistRemove: (projectId: string, name: string) =>
+      ipcRenderer.invoke('longwriting:roster:whitelist:remove', projectId, name),
     roomAdoptCard: (projectId: string, cardId: string, patch?: Record<string, unknown>) =>
       ipcRenderer.invoke('longwriting:room:adoptCard', projectId, cardId, patch),
     roomRegenerateCard: (projectId: string, cardId: string, feedback: string, opts?: { providerConfigId?: string; modelId?: string }) =>

@@ -45,6 +45,8 @@ export interface ConflictItem {
   outlineId?: string
   /** 正文定位（可缺=章节级发现；偏移是扫描时快照，消费方按 excerpt 现场重锚定） */
   locs?: ConflictLoc[]
+  /** §3c 写前门禁豁免标记：false=仅提醒不阻断（R8 超期）；未标记=维持现状拦截 */
+  blocking?: boolean
 }
 
 /** 死亡语义关键词（状态切片文本命中即视为"已死亡"） */
@@ -667,10 +669,28 @@ export class ConsistencyService {
    * 「未登记人物」队列（lw_custom_entities, kindKey=未登记人物）——
    * 每个名字出一条 warning，提示确认是新角色（入册）还是提取误报（忽略）。
    */
+  /** §3a：R9 名册白名单（wizardState.rosterWhitelist，条目 {name, note?, at}，兼容裸字符串） */
+  private async rosterWhitelistOf(projectId: string): Promise<string[]> {
+    try {
+      const project = await this.manager()?.lwProjects?.getById(projectId)
+      const ws = (project?.wizardState || {}) as Record<string, unknown>
+      const list = Array.isArray(ws.rosterWhitelist) ? ws.rosterWhitelist : []
+      return list
+        .map((e: unknown) => (typeof e === 'string' ? e : (e as { name?: unknown })?.name))
+        .filter((n: unknown): n is string => typeof n === 'string' && n.trim().length > 0)
+    } catch {
+      return []
+    }
+  }
+
   private async scanR9UnregisteredNames(projectId: string): Promise<ConflictItem[]> {
     const m = this.manager()
     if (!m?.lwCustomEntities) return []
     const conflicts: ConflictItem[] = []
+    // §3a 名册白名单（wizardState.rosterWhitelist）：单元案死者/路人等一次性人名，
+    // 用户确认「提取误报/无需入册」后不再反复上报
+    const whitelist = await this.rosterWhitelistOf(projectId)
+    const inWhitelist = (name: string) => whitelist.some((w) => name === w || name.includes(w) || w.includes(name))
     // 1) 提取队列：解析失败的人名（52 号主实现）
     let rows: Array<{ id: string; name: string; fields?: Record<string, unknown> | null }> = []
     try {
@@ -679,6 +699,7 @@ export class ConsistencyService {
       rows = []
     }
     for (const r of rows) {
+      if (inWhitelist(r.name)) continue
       const ch = (r.fields as any)?.firstChapter
       conflicts.push({
         rule: 'R9',
@@ -700,7 +721,7 @@ export class ConsistencyService {
           const c = await m.lwChapters.getByOutlineId(o.id)
           if (c?.content) chapters.push({ name: o.name, content: c.content })
         }
-        const known = chars.map((c: any) => c.name)
+        const known = chars.map((c: any) => c.name).concat(whitelist)
         for (const cand of scanNameCandidates(chapters, known, 3)) {
           conflicts.push({
             rule: 'R9',
@@ -786,6 +807,8 @@ export class ConsistencyService {
         conflicts.push({
           rule: 'R8',
           severity: 'warning',
+          // §3c：超期未回收是节奏提醒而非一致性错误——不阻断写前门禁（台账/看板管理）
+          blocking: false,
           message: `伏笔「${label}…」第 ${f.plantedChapter} 章埋下，已写至第 ${writtenMax} 章仍未回收——考虑安排回收或标记弃置`,
           chapterNumber: f.plantedChapter,
         })

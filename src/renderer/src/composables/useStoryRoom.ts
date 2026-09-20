@@ -28,6 +28,8 @@ export type RoomStatus = 'idle' | 'loading' | 'streaming' | 'error'
 /** 疑点视图（扫描行透传：正文定位/大纲锚点供抽屉展示与「交主编修正」组装） */
 export interface ConflictView {
   id?: string
+  /** 稳定 key（annotateConflicts 回填）：批量知情保留按 key 精确登记 */
+  key?: string
   description?: string
   message?: string
   rule?: string
@@ -79,6 +81,8 @@ export function useStoryRoom(projectId: string, hooks?: StoryRoomHooks) {
   const pendingApprovals = computed<RoomApproval[]>(() =>
     (state.value?.approvals ?? []).filter((a) => a.status === 'pending'),
   )
+  /** R9 名册白名单（wizardState.rosterWhitelist；条目 {name, note?, at}） */
+  const rosterWhitelist = ref<Array<{ name: string; note?: string; at: number }>>([])
 
   const busy = computed(() => status.value === 'streaming')
 
@@ -249,6 +253,52 @@ export function useStoryRoom(projectId: string, hooks?: StoryRoomHooks) {
     return approval
   }
 
+  // ==================== §3 疑点噪音治理（白名单 / 批量保留） ====================
+
+  /** 拉取 R9 名册白名单（进入疑点抽屉时调用） */
+  async function loadRosterWhitelist(): Promise<void> {
+    try {
+      const res = await api().rosterWhitelistList(projectId)
+      rosterWhitelist.value = res.success ? res.data ?? [] : []
+    } catch {
+      rosterWhitelist.value = []
+    }
+  }
+
+  async function addRosterWhitelist(name: string, note?: string): Promise<boolean> {
+    const res = await api().rosterWhitelistAdd(projectId, name, note)
+    if (!res.success) {
+      ElMessage.error(res.error || '加入白名单失败')
+      return false
+    }
+    await loadRosterWhitelist()
+    await loadConflictsIfWriting()
+    ElMessage.success(`「${name}」已加入名册白名单`)
+    return true
+  }
+
+  async function removeRosterWhitelist(name: string): Promise<void> {
+    const res = await api().rosterWhitelistRemove(projectId, name)
+    if (!res.success) ElMessage.error(res.error || '移除失败')
+    await loadRosterWhitelist()
+    await loadConflictsIfWriting()
+  }
+
+  /** 批量知情保留（§3b）：按 key 循环登记，返回成功条数 */
+  async function batchAcknowledge(keys: string[], note?: string): Promise<number> {
+    if (!keys.length) return 0
+    const res = await api().conflictBatchAcknowledge(projectId, keys, note)
+    if (!res.success) {
+      ElMessage.error(res.error || '批量保留失败')
+      return 0
+    }
+    const results: Array<{ key: string; ok: boolean }> = res.data?.results ?? []
+    const okCount = results.filter((r) => r.ok).length
+    ElMessage.success(`已批量保留 ${okCount} 处疑点`)
+    await loadConflictsIfWriting()
+    return okCount
+  }
+
   function cancel(): void {
     api().roomCancel(projectId)
   }
@@ -300,6 +350,7 @@ export function useStoryRoom(projectId: string, hooks?: StoryRoomHooks) {
       conflicts.value = []
       keptConflicts.value = []
     }
+    await loadRosterWhitelist()
   }
 
   /** 动作建议 chips（原型：面向动作的短语，点击即发送） */
@@ -392,6 +443,11 @@ export function useStoryRoom(projectId: string, hooks?: StoryRoomHooks) {
     confirmDesign,
     discardDesign,
     decideApproval,
+    rosterWhitelist,
+    loadRosterWhitelist,
+    addRosterWhitelist,
+    removeRosterWhitelist,
+    batchAcknowledge,
   }
 }
 

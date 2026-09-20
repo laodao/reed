@@ -23,6 +23,8 @@ export interface ConflictLike {
   chapterNumber?: number
   /** R10 专用锚点：大纲承诺拍原文（保留/撤销按拍内容相似度匹配，文案改写不失效） */
   beatText?: string
+  /** §3c 写前门禁豁免：false=仅提醒不阻断（R8 超期）；未标记=维持现状拦截 */
+  blocking?: boolean
 }
 
 /** 稳定 key：规则 + 实体 + 章节号 + 消息短哈希（重扫消息尾部变化不漂移） */
@@ -47,6 +49,7 @@ export function conflictChapters(c: ConflictLike): number[] {
 
 /**
  * 过滤出会阻断第 N 章生成的疑点：
+ * - 扫描器显式标记 blocking===false 的（R8 超期等节奏提醒）不拦——§3c 降级；
  * - 作者已登记（解决/知情保留）的不拦；
  * - 只引用未来章节（> N）的疑点不拦——那是后续章节要处理的；
  * - 其余（含本章与已写章节的）全部拦截。
@@ -60,6 +63,7 @@ export function filterBlockingConflicts<T extends ConflictLike>(
 ): T[] {
   const rows: ResolutionRow[] = acknowledged instanceof Set ? [...acknowledged].map((key) => ({ key })) : acknowledged
   return conflicts.filter((c) => {
+    if (c.blocking === false) return false
     if (isAcknowledgedConflict(c, rows)) return false
     const chs = conflictChapters(c)
     if (chs.length === 0) return true

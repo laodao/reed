@@ -234,12 +234,40 @@
       <GraphView :project-id="projectId" />
     </el-dialog>
 
-    <el-drawer v-model="conflictDrawer" title="⚔ 连续性检查疑点" size="42%" :append-to-body="true">
+    <el-drawer v-model="conflictDrawer" title="⚔ 连续性检查疑点" size="42%" :append-to-body="true" @open="onConflictDrawerOpen">
       <div class="conflict-drawer-list">
-        <div v-for="(c, i) in store.conflicts.value" :key="i" class="conflict-item-wrap">
+        <!-- §3b 批量处置工具条：规则筛选 + 复选 + 批量知情保留 -->
+        <div class="conflict-toolbar">
+          <div class="ct-chips">
+            <span
+              v-for="r in conflictRuleChips"
+              :key="r"
+              class="ct-chip"
+              :class="{ on: conflictRuleFilter === r }"
+              @click="conflictRuleFilter = conflictRuleFilter === r ? '' : r"
+            >{{ r === '' ? '全部' : r }}</span>
+          </div>
+          <div class="ct-actions">
+            <el-button size="small" text @click="selectAllFiltered">全选当前筛选</el-button>
+            <el-button size="small" type="warning" plain :disabled="!selectedKeys.size" @click="batchKeepSelected">
+              批量知情保留（{{ selectedKeys.size }}）
+            </el-button>
+          </div>
+        </div>
+        <div v-for="(c, i) in filteredConflicts" :key="i" class="conflict-item-wrap">
           <div class="conflict-item">
+            <el-checkbox
+              class="conflict-check"
+              :model-value="selectedKeys.has(conflictKeyOf(c))"
+              @change="toggleSelect(conflictKeyOf(c))"
+            />
             <span class="conflict-rule">{{ ruleLabel(c.rule) }}</span>
             <span class="conflict-msg">{{ c.description || c.message }}</span>
+            <el-button
+              v-if="c.rule === 'R9' && c.entityName"
+              size="small"
+              @click="whitelistName(c.entityName)"
+            >白名单</el-button>
             <el-button size="small" @click="askAgentFix(i)">交主编修正</el-button>
             <el-button size="small" type="primary" plain class="conflict-solve" :loading="plans[i]?.loading" @click="solveConflict(i)">
               {{ plans[i]?.loading ? '解题中…' : 'AI 解题' }}
@@ -275,7 +303,7 @@
             </template>
           </div>
         </div>
-        <div v-if="!store.conflicts.value.length" class="conflict-empty">当前没有待处理疑点。</div>
+        <div v-if="!filteredConflicts.length" class="conflict-empty">当前没有待处理疑点。</div>
 
         <!-- 已保留分区：保留不再只进不出，误保留可撤销；折叠避免淹没待处理项 -->
         <details v-if="store.keptConflicts.value.length" class="conflict-kept">
@@ -287,6 +315,18 @@
               <el-button size="small" class="conflict-solve" @click="unkeepConflict(i)">撤销保留</el-button>
             </div>
             <div v-if="c.note" class="conflict-kept-note">保留备注：{{ c.note }}</div>
+          </div>
+        </details>
+
+        <!-- §3a R9 名册白名单：一次性人名不再反复上报 -->
+        <details v-if="store.rosterWhitelist.value.length" class="conflict-kept">
+          <summary class="conflict-kept-summary">名册白名单（{{ store.rosterWhitelist.value.length }}）· R9 不再上报</summary>
+          <div v-for="w in store.rosterWhitelist.value" :key="w.name" class="conflict-item-wrap">
+            <div class="conflict-item kept">
+              <span class="conflict-rule">白名单</span>
+              <span class="conflict-msg">{{ w.name }}<template v-if="w.note">（{{ w.note }}）</template></span>
+              <el-button size="small" class="conflict-solve" @click="store.removeRosterWhitelist(w.name)">移除</el-button>
+            </div>
           </div>
         </details>
       </div>
@@ -597,6 +637,72 @@ async function unkeepConflict(i: number): Promise<void> {
   const msg = (res.data && res.data.message) || res.error || (res.success ? '已撤销保留' : '撤销失败')
   ElMessage[res.success ? 'success' : 'warning'](msg)
   if (res.success) await store.loadConflictsIfWriting()
+}
+
+// ==================== §3 疑点批量处置 + R9 名册白名单 ====================
+
+const conflictRuleFilter = ref('')
+const selectedKeys = ref(new Set<string>())
+
+/** 规则筛选 chips：全部 + 当前疑点中出现过的规则 */
+const conflictRuleChips = computed(() => ['', ...new Set(store.conflicts.value.map((c) => c.rule || ''))])
+/** 应用筛选后的待处理疑点 */
+const filteredConflicts = computed(() => {
+  const f = conflictRuleFilter.value
+  return f ? store.conflicts.value.filter((c) => c.rule === f) : store.conflicts.value
+})
+
+function conflictKeyOf(c: { key?: string }): string {
+  // 扫描回执自带 annotateConflicts 回填的稳定 key；缺 key 的条目不可选中（无法精确登记）
+  return c.key || ''
+}
+
+function toggleSelect(key: string): void {
+  if (!key) return
+  const next = new Set(selectedKeys.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  selectedKeys.value = next
+}
+
+function selectAllFiltered(): void {
+  const next = new Set(selectedKeys.value)
+  for (const c of filteredConflicts.value) {
+    const k = conflictKeyOf(c)
+    if (k) next.add(k)
+  }
+  selectedKeys.value = next
+}
+
+async function batchKeepSelected(): Promise<void> {
+  const keys = [...selectedKeys.value]
+  if (!keys.length) return
+  const n = await store.batchAcknowledge(keys, `批量知情保留（${conflictRuleFilter.value || '全部'}）`)
+  if (n > 0) selectedKeys.value = new Set()
+}
+
+async function whitelistName(name: string): Promise<void> {
+  try {
+    const res = await ElMessageBox.prompt(
+      `将「${name}」加入 R9 名册白名单？加入后连续性扫描不再上报该人名。`,
+      '加入白名单',
+      {
+        confirmButtonText: '加入',
+        cancelButtonText: '取消',
+        inputPlaceholder: '备注（可选）：如「单元案死者，无需入册」',
+      },
+    )
+    const note = (res as unknown as { value?: string }).value
+    await store.addRosterWhitelist(name, note?.trim() || undefined)
+  } catch {
+    /* 取消 */
+  }
+}
+
+function onConflictDrawerOpen(): void {
+  selectedKeys.value = new Set()
+  conflictRuleFilter.value = ''
+  void store.loadConflictsIfWriting()
 }
 
 async function execOption(i: number, oi: number, opt: PlanOption): Promise<void> {
@@ -1709,6 +1815,15 @@ body.side-resizing { cursor: col-resize; user-select: none; }
 }
 
 .conflict-drawer-list { display: flex; flex-direction: column; gap: 10px; }
+.conflict-toolbar { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; }
+.ct-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ct-chip {
+  font-size: 11.5px; padding: 2px 10px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--el-border-color-lighter); color: var(--el-text-color-secondary);
+}
+.ct-chip.on { color: var(--el-color-primary); border-color: var(--el-color-primary-light-5); background: var(--el-color-primary-light-9); }
+.ct-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.conflict-check { flex: none; margin-right: 2px; }
 .conflict-item {
   display: flex;
   gap: 8px;
