@@ -2,16 +2,26 @@
  * 故事性检查单测（用户要求 2026-09-20：每章除一致性检查外增加故事性检查）
  * parseStoryQualityCheck 纯函数直测：正常 JSON / markdown 包裹 / 截断 / 字段缺失 / 脏字段过滤。
  */
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('@core/database/database-manager.interface', () => ({ getCoreDatabaseManager: () => ({}) }))
+const h = vi.hoisted(() => ({
+  db: {} as any,
+  resolveModelCalls: [] as unknown[],
+}))
+
+vi.mock('@core/database/database-manager.interface', () => ({ getCoreDatabaseManager: () => h.db }))
 vi.mock('@core/utils/logger', () => ({ createLogger: () => ({ info: () => {}, warn: () => {}, error: () => {} }) }))
-vi.mock('ai', () => ({ generateText: vi.fn() }))
+vi.mock('ai', () => ({ generateText: vi.fn(async () => ({ text: '' })) }))
 vi.mock('@core/platform/services/longwriting-ai.service', () => ({ LongWritingAIService: { getInstance: () => ({}) } }))
 vi.mock('@core/packs/longwriting/story-room/room-state', () => ({ getRoomState: vi.fn(async () => ({ ledger: [] })) }))
 vi.mock('@core/packs/longwriting/story-room/room-ledger', () => ({ ledgerSnapshotText: () => '' }))
 vi.mock('@core/platform/workflow/nodes/agent-loop-node', () => ({
-  getAgentLoopHarness: () => ({ resolveModel: async () => ({}) }),
+  getAgentLoopHarness: () => ({
+    resolveModel: async (o: unknown) => {
+      h.resolveModelCalls.push(o)
+      return { __resolved: o }
+    },
+  }),
 }))
 vi.mock('@core/platform/services/longwriting/graph/consistency.service', () => ({
   ConsistencyService: { getInstance: () => ({ scanContradictions: async () => [] }) },
@@ -22,7 +32,47 @@ vi.mock('@core/platform/services/longwriting/conflict-gate', () => ({
   listResolutions: vi.fn(async () => []),
 }))
 
-import { parseStoryQualityCheck } from '@core/packs/longwriting/services/chapter-writing-executor'
+import { parseStoryQualityCheck, runStoryQualityCheck } from '@core/packs/longwriting/services/chapter-writing-executor'
+import { generateText } from 'ai'
+
+const OK_VERDICT = JSON.stringify({
+  attractive: true,
+  verdict: 'ok',
+  hooks: [],
+  highlights: [],
+  reasons: [],
+  suggestions: [],
+})
+
+beforeEach(() => {
+  h.db = {}
+  h.resolveModelCalls.length = 0
+  ;(generateText as unknown as ReturnType<typeof vi.fn>).mockClear()
+  ;(generateText as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ text: OK_VERDICT })
+})
+
+describe('runStoryQualityCheck（§1 审读模型口径统一）', () => {
+  it('审读调用携带项目 chapters stage 模型（resolveModel 入参与 generateText 的 model 一致）', async () => {
+    h.db = {
+      lwProjectModelConfigs: {
+        getByProjectAndStage: async () => ({ providerConfigId: 'pc_ds', modelId: 'deepseek-v4.1-flash' }),
+      },
+      lwOutlines: { getByProjectId: async () => [{ id: 'o1', summary: '概要' }] },
+    }
+    const r = await runStoryQualityCheck('p1', 'o1', '正文内容')
+    expect(r.ran).toBe(true)
+    expect(h.resolveModelCalls[0]).toEqual({ providerConfigId: 'pc_ds', modelId: 'deepseek-v4.1-flash' })
+    const firstCall = (generateText as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as { model: unknown }
+    expect(firstCall.model).toEqual({ __resolved: { providerConfigId: 'pc_ds', modelId: 'deepseek-v4.1-flash' } })
+  })
+
+  it('stage 未配置时回退应用默认（resolveModel 入参为空对象）', async () => {
+    h.db = { lwOutlines: { getByProjectId: async () => [{ id: 'o1', summary: '概要' }] } }
+    const r = await runStoryQualityCheck('p1', 'o1', '正文内容')
+    expect(r.ran).toBe(true)
+    expect(h.resolveModelCalls[0]).toEqual({})
+  })
+})
 
 describe('parseStoryQualityCheck', () => {
   it('解析完整结论：钩子/爽点/吸引度/依据/建议', () => {

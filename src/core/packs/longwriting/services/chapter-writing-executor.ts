@@ -101,13 +101,17 @@ export interface ChapterWritingMethodOptions {
   signal?: AbortSignal
 }
 
-/** LLM 章节审读调用：走 harness 的模型解析（与研讨室同模型源） */
+/** LLM 章节审读调用：走项目「章节写作」stage 模型（§1 口径统一，2026-09-20）——
+ * 此前空参 resolveModel 静默落到应用默认提供商，切了 stage 配置后审读仍走旧模型。
+ * stage 未配置时回退应用默认（与正文同口径）。审读与正文同源也便于问题归因。 */
 async function generateChapterReviewText(
+  projectId: string,
   purpose: string,
   req: { system: string; user: string; maxTokens?: number },
   signal?: AbortSignal,
 ): Promise<string> {
-  const model = await getAgentLoopHarness().resolveModel({})
+  const stageOpts = await resolveStageModelOpts(projectId)
+  const model = await getAgentLoopHarness().resolveModel(stageOpts)
   const r = await generateText({
     model: model as never,
     system: req.system,
@@ -179,6 +183,7 @@ export async function runStoryQualityCheck(
     const outlines = (await getCoreDatabaseManager().lwOutlines?.getByProjectId(projectId)) || []
     const summary = outlines.find((o) => o.id === outlineId)?.summary || ''
     const raw = await generateChapterReviewText(
+      projectId,
       'story-quality-check',
       {
         system: '你是长篇网文的故事性审读员，站在目标读者角度评估「这一章好不好看」。只输出 JSON，不要任何其他文字。',
@@ -234,6 +239,7 @@ async function verifyUnlandedBeatsWithAI(
   if (beats.length === 0) return null
 
   const raw = await generateChapterReviewText(
+    projectId,
     'r10-landing-verify',
     {
       system:
@@ -394,7 +400,8 @@ export async function runChapterWritingMethod(opts: ChapterWritingMethodOptions)
         logger.warn('[chapter-writing] 跨章事实表构建失败（审查退化为本章内检查）:', e?.message)
       }
     }
-    const reviewRaw = await generateChapterReviewText(
+    const raw = await generateChapterReviewText(
+      projectId,
       'chapter-consistency-review',
       {
         system:
@@ -418,7 +425,7 @@ ${content}
       },
       opts.signal,
     )
-    const parsed = safeParseIssues(reviewRaw)
+    const parsed = safeParseIssues(raw)
     if (parsed.length > 0) {
       reportLines.push(`【LLM 章节审读】发现 ${parsed.length} 处疑点：\n${parsed.map((p: any, i: number) => `${i + 1}. ${p.item}（证据：${p.evidence}；原因：${p.why}）`).join('\n')}`)
     }
