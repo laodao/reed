@@ -1,6 +1,6 @@
 <template>
   <div class="brain-panel">
-    <!-- 顶部状态条：标题 + 启用开关 + 统计 + 设置入口 -->
+    <!-- 顶部状态条：标题 + 启用开关 + 可点击统计 + 设置入口 -->
     <header class="bp-header">
       <div class="bp-title">
         <span class="bp-name">知识大脑</span>
@@ -10,26 +10,26 @@
         </el-tag>
       </div>
       <div class="bp-stats">
-        <div class="bp-stat">
+        <button type="button" class="bp-stat" :class="{ active: statActive === 'total' }" @click="showAtoms('all')">
           <b>{{ stats?.atoms?.total ?? '—' }}</b>
           <span>论断</span>
-        </div>
-        <div class="bp-stat">
+        </button>
+        <button type="button" class="bp-stat" :class="{ active: statActive === 'human' }" @click="showAtoms('human')">
           <b>{{ stats?.atoms?.humanOrigin ?? '—' }}</b>
           <span>我的观感</span>
-        </div>
-        <div class="bp-stat">
+        </button>
+        <button type="button" class="bp-stat" :class="{ active: statActive === 'cards' }" @click="showCards()">
           <b>{{ stats?.notes?.published ?? '—' }}</b>
           <span>经验卡</span>
-        </div>
-        <div class="bp-stat">
+        </button>
+        <button type="button" class="bp-stat" :class="{ active: statActive === 'proposals' }" @click="showProposals()">
           <b>{{ proposalTotal }}</b>
           <span>待审提议</span>
-        </div>
-        <div class="bp-stat">
+        </button>
+        <button type="button" class="bp-stat" :class="{ active: statActive === 'open' }" @click="showAtoms('open-question')">
           <b>{{ stats?.openQuestions ?? '—' }}</b>
           <span>悬而未决</span>
-        </div>
+        </button>
       </div>
       <el-button size="small" @click="openConfig">
         <el-icon><Setting /></el-icon>
@@ -37,60 +37,136 @@
       </el-button>
     </header>
 
-    <!-- 主体双栏：左=论断库主表，右=提炼目标/待审提议/待提取文档 -->
+    <!-- 主体双栏：左=主内容区（视图切换），右=提炼目标/待审提议/待提取文档 -->
     <div class="bp-body">
       <div class="bp-main">
-        <div class="atoms-table-region">
-          <el-table
-            :data="atoms"
-            height="100%"
-            :empty-text="enabled ? '尚未消化出论断（上传文档后自动进行）' : '大脑未启用，打开顶部开关后上传文档自动消化'"
-            style="width: 100%"
-          >
-            <el-table-column type="index" label="序号" width="60" align="center" :index="atomIndex" />
-            <el-table-column prop="statement" label="论断" min-width="280">
-              <template #default="{ row }">
-                <el-tooltip v-if="row.sourceQuote" :content="row.sourceQuote" placement="top" :show-after="200">
-                  <span class="stmt">{{ row.statement }}</span>
-                </el-tooltip>
-                <span v-else class="stmt">{{ row.statement }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="type" label="类型" width="90">
-              <template #default="{ row }">
-                <el-tag size="small" effect="plain">{{ row.type }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="status" label="状态" width="100">
-              <template #default="{ row }">
-                <el-tag :type="statusTagType(row.status)" size="small">{{ row.status }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="视角" width="70">
-              <template #default="{ row }">
-                {{ row.lensNoteId ? '视角' : row.origin === 'human' ? '我' : '—' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="来源" width="110">
-              <template #default="{ row }">
-                <span class="muted">{{ (row.sourceChapterHash || '').slice(0, 8) || '—' }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="useCount" label="被用" width="60" align="center" />
-          </el-table>
-        </div>
-        <div v-if="atomTotal > 0" class="atoms-pagination-bar">
-          <el-pagination
-            :current-page="atomPage"
-            :page-size="atomPageSize"
-            :page-sizes="[20, 50, 100]"
-            :total="atomTotal"
-            layout="total, sizes, prev, pager, next"
-            background
-            @current-change="handleAtomPageChange"
-            @size-change="handleAtomPageSizeChange"
-          />
-        </div>
+        <!-- 论断视图 -->
+        <template v-if="activeView === 'atoms'">
+          <div class="bp-main-toolbar">
+            <el-radio-group v-model="atomFilter" size="small" @change="onAtomFilterChange">
+              <el-radio-button value="all">全部论断</el-radio-button>
+              <el-radio-button value="human">我的观感</el-radio-button>
+              <el-radio-button value="open-question">悬而未决</el-radio-button>
+            </el-radio-group>
+          </div>
+          <div class="atoms-table-region">
+            <el-table
+              :data="atoms"
+              height="100%"
+              :empty-text="atomsEmptyText"
+              style="width: 100%"
+            >
+              <el-table-column type="index" label="序号" width="60" align="center" :index="atomIndex" />
+              <el-table-column prop="statement" label="论断" min-width="280">
+                <template #default="{ row }">
+                  <el-tooltip v-if="row.sourceQuote" :content="row.sourceQuote" placement="top" :show-after="200">
+                    <span class="stmt">{{ row.statement }}</span>
+                  </el-tooltip>
+                  <span v-else class="stmt">{{ row.statement }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="type" label="类型" width="90">
+                <template #default="{ row }">
+                  <el-tag size="small" effect="plain">{{ row.type }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="status" label="状态" width="100">
+                <template #default="{ row }">
+                  <el-tag :type="statusTagType(row.status)" size="small">{{ row.status }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="来源文档" width="130">
+                <template #default="{ row }">
+                  <el-tooltip v-if="row.documentName" :content="row.documentName" placement="top" :show-after="200">
+                    <span class="doc-src">{{ shortDocName(row.documentName) }}</span>
+                  </el-tooltip>
+                  <span v-else class="muted">—</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="useCount" label="被用" width="60" align="center" />
+            </el-table>
+          </div>
+          <div v-if="atomTotal > 0" class="atoms-pagination-bar">
+            <el-pagination
+              :current-page="atomPage"
+              :page-size="atomPageSize"
+              :page-sizes="[20, 50, 100]"
+              :total="atomTotal"
+              layout="total, sizes, prev, pager, next"
+              background
+              @current-change="handleAtomPageChange"
+              @size-change="handleAtomPageSizeChange"
+            />
+          </div>
+        </template>
+
+        <!-- 经验卡视图 -->
+        <template v-else-if="activeView === 'cards'">
+          <div class="bp-main-toolbar">
+            <span class="bp-main-title">经验卡</span>
+            <span class="bp-main-hint">已入库的提炼经验，写作链路可检索引用</span>
+          </div>
+          <div class="cards-region">
+            <div v-if="notes.length === 0" class="side-empty">
+              暂无经验卡——在右侧「提炼目标」中运行提炼，生成的卡经审批后入库
+            </div>
+            <div v-for="n in notes" :key="n.id" class="note-card">
+              <div class="n-head">
+                <span class="n-title">{{ n.title }}</span>
+                <el-tag size="small" effect="plain">{{ n.type }}</el-tag>
+              </div>
+              <div class="n-desc">{{ n.description }}</div>
+              <el-collapse v-if="n.body" class="n-body-collapse">
+                <el-collapse-item :title="`正文（${n.body.length} 字）`" :name="n.id">
+                  <pre class="n-body">{{ n.body }}</pre>
+                </el-collapse-item>
+              </el-collapse>
+            </div>
+          </div>
+          <div v-if="notesTotal > notesPageSize" class="atoms-pagination-bar">
+            <el-pagination
+              :current-page="notesPage"
+              :page-size="notesPageSize"
+              :total="notesTotal"
+              layout="total, prev, pager, next"
+              background
+              @current-change="handleNotesPageChange"
+            />
+          </div>
+        </template>
+
+        <!-- 待审提议视图 -->
+        <template v-else>
+          <div class="bp-main-toolbar">
+            <span class="bp-main-title">待审提议</span>
+            <span class="bp-main-hint">批准后经验卡正式入库，拒绝则归档留痕</span>
+          </div>
+          <div class="cards-region">
+            <div v-if="proposals.length === 0" class="side-empty">暂无待审提议</div>
+            <div v-for="p in proposals" :key="p.id" class="note-card">
+              <div class="n-head">
+                <span class="n-title">{{ p.title }}</span>
+                <el-tag size="small" type="warning" effect="light">待审</el-tag>
+              </div>
+              <div class="n-desc">{{ p.description }}</div>
+              <pre v-if="p.body" class="n-body preview">{{ p.body }}</pre>
+              <div class="p-actions">
+                <el-button size="small" @click="decide(p.id, 'reject')">拒绝</el-button>
+                <el-button size="small" type="primary" @click="decide(p.id, 'publish')">批准入库</el-button>
+              </div>
+            </div>
+          </div>
+          <div v-if="proposalTotal > inboxPageSize" class="atoms-pagination-bar">
+            <el-pagination
+              :current-page="inboxPage"
+              :page-size="inboxPageSize"
+              :total="proposalTotal"
+              layout="total, prev, pager, next"
+              background
+              @current-change="handleInboxPageChange"
+            />
+          </div>
+        </template>
       </div>
 
       <aside class="bp-side">
@@ -119,11 +195,14 @@
           </div>
         </section>
 
-        <!-- 待审提议 -->
+        <!-- 待审提议（快捷审批；完整分页在主区「待审提议」视图） -->
         <section class="side-card">
           <header class="side-head">
-            <span class="side-title">待审提议</span>
-            <span v-if="proposalTotal > 0" class="side-count">{{ proposalTotal }}</span>
+            <span class="side-title">
+              待审提议
+              <span v-if="proposalTotal > 0" class="side-count">{{ proposalTotal }}</span>
+            </span>
+            <el-button link type="primary" size="small" @click="showProposals()">查看全部</el-button>
           </header>
           <div v-if="proposals.length === 0" class="side-empty">暂无待审提议</div>
           <div v-for="p in proposals" :key="p.id" class="proposal">
@@ -294,6 +373,8 @@ interface BrainAtom {
   lensNoteId: string | null
   origin: string
   useCount: number
+  sourceDocumentId: string | null
+  documentName: string | null
   sourceChapterHash: string | null
   sourceQuote: string
 }
@@ -301,6 +382,9 @@ interface BrainNote {
   id: string
   title: string
   description: string
+  body: string
+  type: string
+  status: string
 }
 interface BrainGoal {
   id: string
@@ -319,13 +403,31 @@ interface BrainConfig {
 const modelOptions = ref<Array<{ label: string; value: string }>>([])
 
 const stats = ref<Record<string, any> | null>(null)
+
+// ===== 主区视图：论断 / 经验卡 / 待审提议 =====
+type MainView = 'atoms' | 'cards' | 'proposals'
+type AtomFilter = 'all' | 'human' | 'open-question'
+const activeView = ref<MainView>('atoms')
+const atomFilter = ref<AtomFilter>('all')
+
 const atoms = ref<BrainAtom[]>([])
 const atomPage = ref(1)
 const atomPageSize = ref(50)
 const atomTotal = ref(0)
 let atomsGen = 0 // 论断列表独立代际：翻页请求与刷新竞态时丢弃过期响应
+
+const notes = ref<BrainNote[]>([])
+const notesPage = ref(1)
+const notesPageSize = 10
+const notesTotal = ref(0)
+let notesGen = 0 // 经验卡列表代际守卫：切库/快速翻页竞态时丢弃过期响应
+
 const proposals = ref<BrainNote[]>([])
 const proposalTotal = ref(0)
+const inboxPage = ref(1)
+const inboxPageSize = 20
+let inboxGen = 0 // 待审提议列表代际守卫（同上）
+
 const config = ref<BrainConfig | null>(null)
 const configDraft = ref<BrainConfig>({
   enabled: false,
@@ -354,6 +456,54 @@ const enabledGoals = computed(() => (config.value?.goals ?? []).filter((g) => g.
 const runningGoalIds = ref<string[]>([])
 const lastGoalResults = ref<Record<string, { ok: boolean; error?: string; proposed?: boolean; skippedDuplicate?: boolean; cardTitle?: string | null; fragments?: number }>>({})
 let goalPollTimer: ReturnType<typeof setInterval> | null = null
+
+// 顶部统计块的高亮态：与主区视图联动
+const statActive = computed(() => {
+  if (activeView.value === 'cards') return 'cards'
+  if (activeView.value === 'proposals') return 'proposals'
+  if (atomFilter.value === 'human') return 'human'
+  if (atomFilter.value === 'open-question') return 'open'
+  return 'total'
+})
+
+const atomsEmptyText = computed(() => {
+  if (!enabled.value) return '大脑未启用，打开顶部开关后上传文档自动消化'
+  if (atomFilter.value === 'human') return '暂无我的观感（用户手动记录的论断会出现在这里）'
+  if (atomFilter.value === 'open-question') return '暂无悬而未决的问题'
+  return '尚未消化出论断（上传文档后自动进行）'
+})
+
+/** 文档名展示缩短：去扩展名与括注噪音，全名在 tooltip */
+function shortDocName(name: string): string {
+  const s = name.replace(/\.[a-z0-9]+$/i, '').replace(/[（(【[][^）)】\]]*[）)】\]]/g, '').trim()
+  return s || name
+}
+
+function showAtoms(filter: AtomFilter): void {
+  activeView.value = 'atoms'
+  if (atomFilter.value !== filter) {
+    atomFilter.value = filter
+    atomPage.value = 1
+    void fetchAtoms()
+  }
+}
+
+function showCards(): void {
+  activeView.value = 'cards'
+  notesPage.value = 1
+  void fetchNotes()
+}
+
+function showProposals(): void {
+  activeView.value = 'proposals'
+  inboxPage.value = 1
+  void fetchProposals()
+}
+
+function onAtomFilterChange(): void {
+  atomPage.value = 1
+  void fetchAtoms()
+}
 
 function addGoalFromPreset(val: string): void {
   const [group, name] = val.split('|')
@@ -457,12 +607,19 @@ async function fetchAtoms(): Promise<void> {
   const gen = ++atomsGen
   const client = (window as any).electronAPI.knowledgeBase.brain
   try {
-    const res = await client.listAtoms({ kbId: props.kbId, page: atomPage.value, pageSize: atomPageSize.value })
+    const res = await client.listAtoms({
+      kbId: props.kbId,
+      page: atomPage.value,
+      pageSize: atomPageSize.value,
+      origin: atomFilter.value === 'human' ? 'human' : undefined,
+      type: atomFilter.value === 'open-question' ? 'open-question' : undefined,
+    })
     if (gen !== atomsGen) return // 过期响应丢弃
     if (res.success && res.data) {
       atoms.value = res.data.rows as BrainAtom[]
       atomTotal.value = res.data.total
-      emit('stats', res.data.total)
+      // 父组件页签徽标语义是库内论断总数——过滤视图（我的观感/悬而未决）不上报子集数
+      if (atomFilter.value === 'all') emit('stats', res.data.total)
       // 数据收缩后当前页可能越界（重消化/清理后论断变少）：回退到有效末页重取
       const maxPage = Math.max(1, Math.ceil(atomTotal.value / atomPageSize.value))
       if (atomPage.value > maxPage) {
@@ -472,6 +629,44 @@ async function fetchAtoms(): Promise<void> {
     }
   } catch (e) {
     console.warn('[BrainPanel] 论断列表加载失败', e)
+  }
+}
+
+async function fetchNotes(): Promise<void> {
+  if (!props.kbId) return
+  const gen = ++notesGen
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  try {
+    const res = await client.listNotes({ kbId: props.kbId, status: 'published', page: notesPage.value, pageSize: notesPageSize })
+    if (gen !== notesGen) return // 过期响应丢弃
+    if (res.success && res.data) {
+      notes.value = res.data.rows as BrainNote[]
+      notesTotal.value = res.data.total
+    }
+  } catch (e) {
+    console.warn('[BrainPanel] 经验卡加载失败', e)
+  }
+}
+
+async function fetchProposals(): Promise<void> {
+  if (!props.kbId) return
+  const gen = ++inboxGen
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  try {
+    const res = await client.proposalInbox({ kbId: props.kbId, page: inboxPage.value, pageSize: inboxPageSize })
+    if (gen !== inboxGen) return // 过期响应丢弃
+    if (res.success && res.data) {
+      proposals.value = res.data.rows as BrainNote[]
+      proposalTotal.value = res.data.total
+      // 审批掉末页最后一条后页码越界：回退重取
+      const maxPage = Math.max(1, Math.ceil(proposalTotal.value / inboxPageSize))
+      if (inboxPage.value > maxPage) {
+        inboxPage.value = maxPage
+        void fetchProposals()
+      }
+    }
+  } catch (e) {
+    console.warn('[BrainPanel] 待审提议加载失败', e)
   }
 }
 
@@ -486,16 +681,26 @@ async function handleAtomPageSizeChange(size: number): Promise<void> {
   await fetchAtoms()
 }
 
+async function handleNotesPageChange(page: number): Promise<void> {
+  notesPage.value = page
+  await fetchNotes()
+}
+
+async function handleInboxPageChange(page: number): Promise<void> {
+  inboxPage.value = page
+  await fetchProposals()
+}
+
 async function refresh(): Promise<void> {
   if (!props.kbId) return
   const gen = ++requestGen
   const client = (window as any).electronAPI.knowledgeBase.brain
   try {
-    const [cfgRes, statsRes, , inboxRes, docRes] = await Promise.all([
+    const [cfgRes, statsRes, , , docRes] = await Promise.all([
       client.getConfig(props.kbId),
       client.stats(props.kbId),
       fetchAtoms(),
-      client.proposalInbox({ kbId: props.kbId, pageSize: 50 }),
+      fetchProposals(),
       client.docStatus(props.kbId),
     ])
     if (gen !== requestGen) return // 过期响应丢弃
@@ -508,10 +713,6 @@ async function refresh(): Promise<void> {
       }
     }
     if (statsRes.success) stats.value = statsRes.data
-    if (inboxRes.success && inboxRes.data) {
-      proposals.value = inboxRes.data.rows as BrainNote[]
-      proposalTotal.value = inboxRes.data.total
-    }
     // 待提取文档：已处理完成但大脑未消化的（开脑前上传的存量）
     if (docRes.success && docRes.data) {
       pendingDigestDocs.value = (docRes.data as Array<{ id: string; name: string; brainStatus: string | null }>)
@@ -610,6 +811,8 @@ async function saveConfig(): Promise<void> {
 async function decide(noteId: string, action: 'publish' | 'reject'): Promise<void> {
   await (window as any).electronAPI.knowledgeBase.brain.decideProposal({ noteId, action })
   await refresh()
+  // 审批的是当前浏览的经验卡列表之外的数据时，卡片视图也跟着刷新
+  if (activeView.value === 'cards') void fetchNotes()
 }
 
 async function digestOne(d: DigestDoc): Promise<void> {
@@ -654,6 +857,17 @@ watch(
   () => props.kbId,
   () => {
     atomPage.value = 1 // 换库回到第一页
+    atomFilter.value = 'all'
+    activeView.value = 'atoms'
+    inboxPage.value = 1
+    notesPage.value = 1
+    // 清掉上一库的行，避免切库瞬间闪现旧数据
+    atoms.value = []
+    atomTotal.value = 0
+    notes.value = []
+    notesTotal.value = 0
+    proposals.value = []
+    proposalTotal.value = 0
     void refresh()
   },
   { immediate: true },
@@ -693,12 +907,16 @@ defineExpose({ refresh })
   margin-left: auto;
 }
 .bp-stat {
+  appearance: none;
+  border: none;
+  background: transparent;
+  cursor: pointer;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   min-width: 68px;
-  padding: 0 12px;
+  padding: 2px 12px;
   border-left: 1px solid var(--el-border-color-lighter);
   line-height: 1.3;
 }
@@ -714,6 +932,14 @@ defineExpose({ refresh })
 .bp-stat span {
   font-size: 11px;
   color: var(--el-text-color-secondary);
+}
+.bp-stat:hover b,
+.bp-stat:hover span {
+  color: var(--el-color-primary);
+}
+.bp-stat.active b,
+.bp-stat.active span {
+  color: var(--el-color-primary);
 }
 
 /* ===== 主体双栏 ===== */
@@ -740,6 +966,22 @@ defineExpose({ refresh })
   padding-bottom: 4px;
 }
 
+.bp-main-toolbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.bp-main-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.bp-main-hint {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
 /* 论断三段式：表格区弹性伸展内部滚动，分页栏固定底部 */
 .atoms-table-region {
   flex: 1;
@@ -762,8 +1004,85 @@ defineExpose({ refresh })
   white-space: nowrap;
   vertical-align: bottom;
 }
+.doc-src {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
 .muted {
   opacity: 0.5;
+}
+
+/* ===== 卡片视图（经验卡 / 待审提议） ===== */
+.cards-region {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 2px;
+}
+.note-card {
+  flex: none;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-bg-color);
+  padding: 12px;
+}
+.n-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.n-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+.n-desc {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.55;
+  margin-top: 4px;
+}
+.n-body {
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  color: var(--el-text-color-primary);
+}
+.n-body.preview {
+  max-height: 130px;
+  overflow: hidden;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--el-border-color-lighter);
+}
+.n-body-collapse {
+  border-top: 1px dashed var(--el-border-color-lighter);
+  margin-top: 8px;
+}
+.n-body-collapse :deep(.el-collapse-item__header) {
+  font-size: 12px;
+  height: 32px;
+  line-height: 32px;
+  border-bottom: none;
+}
+.n-body-collapse :deep(.el-collapse-item__wrap) {
+  border-bottom: none;
+}
+.n-body-collapse :deep(.el-collapse-item__content) {
+  padding-bottom: 4px;
 }
 
 /* ===== 右侧行动栏 ===== */
@@ -784,6 +1103,9 @@ defineExpose({ refresh })
 .side-title {
   font-size: 13px;
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .side-count {
   font-size: 11px;

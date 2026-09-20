@@ -146,19 +146,21 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
     return this.toDtoList(rows)
   }
 
-  /** 按库查（面板论断列表；可选 status/type 过滤，创建时间倒序） */
+  /** 按库查（面板论断列表；可选 status/type/origin 过滤，创建时间倒序） */
   async findByKb(
     kbId: string,
-    opts?: { status?: KbAtomStatus[]; type?: string; limit?: number },
+    opts?: { status?: KbAtomStatus[]; type?: string; origin?: string; limit?: number },
   ): Promise<KbAtomRecord[]> {
     const where: Record<string, unknown> = { knowledgeBaseId: kbId }
     if (opts?.status?.length) where.status = In(opts.status)
+    if (opts?.origin) where.origin = opts.origin
+    if (opts?.type) where.type = opts.type // SQL 层过滤：type 独立于 take 截断（悬而未决视图不受 5000 上限漏数据）
     const rows = await this.scoped.find({
       where: where as FindOptionsWhere<KbAtomEntity>,
       order: { createdAt: 'DESC' } as never,
       take: opts?.limit ?? 200,
     })
-    return this.toDtoList(rows).filter((r) => !opts?.type || r.type === opts.type)
+    return this.toDtoList(rows).filter((r) => (!opts?.type || r.type === opts.type) && (!opts?.origin || r.origin === opts.origin))
   }
 
   async findByDocument(

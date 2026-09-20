@@ -52,6 +52,7 @@ export class KbBrainPanelService {
     pageSize?: number
     status?: string
     type?: string
+    origin?: string
   }): Promise<{ success: boolean; data?: { rows: unknown[]; total: number }; error?: string }> {
     const db = getCoreDatabaseManager()
     if (!db.kbAtoms) return { success: false, error: '知识大脑未启用（旧库）' }
@@ -65,13 +66,30 @@ export class KbBrainPanelService {
       : await db.kbAtoms.findByKb(input.kbId, {
           status: input.status ? [input.status as never] : undefined,
           type: input.type,
+          origin: input.origin,
           // 内存分页的截断上限：翻页序号/总数以此为界（type 过滤在仓储层内存做，SQL 分页不适用）
           limit: 5000,
         })
     const start = (page - 1) * pageSize
+    const rows = all.slice(start, start + pageSize)
+    // 来源文档名（批量解析，仅当前页涉及的文档；解析不出保留 null 由前端回退）
+    const docNames = new Map<string, string>()
+    if (db.kbDocuments) {
+      for (const id of [...new Set(rows.map((r) => (r as { sourceDocumentId?: string }).sourceDocumentId ?? ''))]) {
+        if (!id) continue
+        const doc = await db.kbDocuments.findById(id)
+        if (doc) docNames.set(id, doc.name)
+      }
+    }
     return {
       success: true,
-      data: { rows: all.slice(start, start + pageSize), total: all.length },
+      data: {
+        rows: rows.map((r) => {
+          const rid = (r as { sourceDocumentId?: string }).sourceDocumentId ?? ''
+          return { ...r, documentName: rid ? (docNames.get(rid) ?? null) : null }
+        }),
+        total: all.length,
+      },
     }
   }
 

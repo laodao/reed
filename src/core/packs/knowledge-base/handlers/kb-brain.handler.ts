@@ -45,7 +45,7 @@ export function registerKbBrainHandlers(): void {
     return { success: true, data: docs }
   })
 
-  ipcBridge.handle('kb:brain:list-atoms', (_e, p: { kbId: string; documentId?: string; page?: number; pageSize?: number; status?: string; type?: string }) =>
+  ipcBridge.handle('kb:brain:list-atoms', (_e, p: { kbId: string; documentId?: string; page?: number; pageSize?: number; status?: string; type?: string; origin?: string }) =>
     panel.listAtoms(p),
   )
 

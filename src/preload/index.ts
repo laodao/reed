@@ -1248,7 +1248,7 @@ const electronAPI = {
       getConfig: (kbId: string) => ipcRenderer.invoke('kb:brain:get-config', { kbId }),
       updateConfig: (p: { kbId: string; patch: Record<string, unknown> }) => ipcRenderer.invoke('kb:brain:update-config', p),
       docStatus: (kbId: string) => ipcRenderer.invoke('kb:brain:doc-status', { kbId }),
-      listAtoms: (p: { kbId: string; documentId?: string; page?: number; pageSize?: number; status?: string; type?: string }) =>
+      listAtoms: (p: { kbId: string; documentId?: string; page?: number; pageSize?: number; status?: string; type?: string; origin?: string }) =>
         ipcRenderer.invoke('kb:brain:list-atoms', p),
       getAtom: (atomId: string) => ipcRenderer.invoke('kb:brain:get-atom', { atomId }),
       listNotes: (p: { kbId: string; status?: string; type?: string; page?: number; pageSize?: number }) => ipcRenderer.invoke('kb:brain:list-notes', p),
