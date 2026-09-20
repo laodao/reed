@@ -32,6 +32,7 @@ import { generateRoomText } from './room-llm'
 import { emitRoomEvent } from './room-events'
 import { getRoomState, patchRoomState, tryGetRoomState } from './room-state'
 import { registerLwRoomTools, lwRoomToolNames } from './room-agent-tools'
+import { AUDIT_CHALLENGE, AUDIT_NOTE, auditCompletionClaims, FALLBACK_WRITE_TOOLS } from './turn-audit'
 import { CHAPTER_WRITING_AGENT_INSTRUCTION } from '../skills/chapter-writing'
 import { ledgerSnapshotText, silentExtractLedger } from './room-ledger'
 import { buildStrategySection, getPhaseDef, loadQuestionBank } from './room-phases'
@@ -315,6 +316,23 @@ export class StoryRoomSessionService {
     const bindings = [...lwRoomToolNames(), ...systemToolNames].map((tool) => ({ tool }))
     const toolMap = harness.registry.buildToolDefs(bindings)
 
+    // §2 完成宣称审计（2026-09-20）：包裹 execute 记录本轮写工具执行——
+    // 实测主编会在零工具调用时编造「正文已保存」，回复宣称与工具回执必须对账
+    const turnWriteLog: string[] = []
+    const wrappedToolMap: typeof toolMap = {}
+    for (const [name, def] of Object.entries(toolMap)) {
+      const inner = def.execute.bind(def)
+      wrappedToolMap[name] = {
+        ...def,
+        execute: async (input, ctx) => {
+          if (def.dangerLevel === 'write' || FALLBACK_WRITE_TOOLS.has(name)) {
+            if (!turnWriteLog.includes(name)) turnWriteLog.push(name)
+          }
+          return inner(input, ctx)
+        },
+      }
+    }
+
     // 设计轮判定锚点：本轮期间新建的 draft 设计包（轮开始时间戳比对）
     const turnStartTs = Date.now()
 
@@ -326,7 +344,7 @@ export class StoryRoomSessionService {
       {
         definitionId: ROOM_EDITOR_DEFINITION_ID,
         scopeKey: () => scopeId,
-        tools: () => toolMap,
+        tools: () => wrappedToolMap,
         resolveModel: (o) => harness.resolveModel({ providerConfigId: o?.providerConfigId, modelId: o?.modelId }),
         systemPrompt: () => systemPrompt,
         snapshot: () => snapshot,
@@ -369,6 +387,29 @@ export class StoryRoomSessionService {
     try {
       const result = await kit.runTurn({ input: message }, { signal: controller.signal })
 
+      // §2 完成宣称审计：宣称完成但本轮零写工具 → 自动纠问一轮（纠问的流式回复
+      // 经同一 onStream 进本条气泡）。纠问后若仍无凭据宣称，终态分流后追加系统尾注
+      const preAudit = auditCompletionClaims({
+        content: allText || String(result.output ?? ''),
+        writeToolsUsed: turnWriteLog,
+      })
+      if (preAudit.violation) {
+        logger.warn(
+          `[story-room] 完成宣称审计违规 project=${projectId} turn=${turnNo} claims=${preAudit.claims.join('/')}，自动纠问`,
+        )
+        emitRoomEvent(projectId, {
+          type: 'task:progress',
+          message: '系统审计：回复含完成宣称但本轮无写工具调用记录，自动纠问',
+          tool: 'turn-audit',
+          status: 'error',
+        })
+        try {
+          await kit.runTurn({ input: AUDIT_CHALLENGE }, { signal: controller.signal })
+        } catch (e: any) {
+          logger.warn('[story-room] 审计纠问轮失败（按原文放行）:', e?.message)
+        }
+      }
+
       // 终态分流（对齐 LW 宿主：max_steps/stagnant/aborted/error 加尾注）
       let content = allText || (result.output ?? '')
       if (result.stopReason === 'max_steps' || result.stopReason === 'stagnant') {
@@ -377,6 +418,10 @@ export class StoryRoomSessionService {
         content = (content ? content : '') + formatStopNote('aborted')
       } else if (result.stopReason === 'error') {
         content = content || formatStopNote('error', result.error)
+      }
+      // 纠问后仍无凭据宣称 → 挂系统尾注（每轮最多纠问 1 次，此处不再递归）
+      if (auditCompletionClaims({ content, writeToolsUsed: turnWriteLog }).violation) {
+        content += AUDIT_NOTE
       }
 
       // 8. 模式回填：本轮产生了新 draft 设计包 → design（长程任务），否则 chat（问答）
