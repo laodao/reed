@@ -140,6 +140,11 @@ function createEdgesDDL(isPg: boolean): string {
  * - 源表内部重复行（同 character+related+relation）先按身份三元组 GROUP BY
  *   去重——确定性拼接 id 会撞主键使整个迁移失败
  * - project_id 从 lw_story_characters 反查
+ *
+ * 幂等守卫必须按 id 判存在（实测 2026-09-20）：边行的 relation_type/description
+ * 会被研讨室运行期改写（如「师兄弟」→「同门」），而 id 后缀仍是迁移当时的类型——
+ * 按（源,目标,类型）判存在会误判"未迁移"，重复插入同一 id 直接撞主键，
+ * 整库初始化失败、应用无法启动。INSERT 再加 OR IGNORE/ON CONFLICT 兜底。
  */
 async function migrateCharacterRelations(ds: DataSource, isPg: boolean): Promise<void> {
   const tableExists = await checkTableExists(ds, 'lw_character_relations', isPg)
@@ -177,13 +182,13 @@ async function migrateCharacterRelations(ds: DataSource, isPg: boolean): Promise
       ) g
       WHERE NOT EXISTS (
         SELECT 1 FROM lw_graph_edges ge
-        WHERE ge.source_id = g.character_id AND ge.target_id = g.related_character_id
-          AND ge.relation_type = COALESCE(g.relation_type, 'related')
+        WHERE ge.id = 'edge_migrated_' || g.character_id || '_' || g.related_character_id || '_' || g.rel
       )
+      ON CONFLICT (id) DO NOTHING
     `)
   } else {
     await ds.query(`
-      INSERT INTO lw_graph_edges
+      INSERT OR IGNORE INTO lw_graph_edges
         (id, user_id, project_id, source_type, source_id, target_type, target_id,
          relation_type, label, valid_from_chapter, valid_until_chapter, description,
          created_at, updated_at)
@@ -212,8 +217,7 @@ async function migrateCharacterRelations(ds: DataSource, isPg: boolean): Promise
       ) g
       WHERE NOT EXISTS (
         SELECT 1 FROM lw_graph_edges ge
-        WHERE ge.source_id = g.character_id AND ge.target_id = g.related_character_id
-          AND ge.relation_type = COALESCE(g.relation_type, 'related')
+        WHERE ge.id = 'edge_migrated_' || g.character_id || '_' || g.related_character_id || '_' || g.rel
       )
     `)
   }
