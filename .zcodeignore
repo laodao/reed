@@ -1,0 +1,87 @@
+node_modules/
+out/
+dist/
+data/
+data-web/
+data-web-mt/
+test-results/
+playwright-report/
+playwright-report-web/
+.playwright-mcp/
+.tsbuildinfo
+*.tsbuildinfo
+electron.vite.config.d.ts
+electron.vite.config.js
+.gitignore.local
+.run/
+.staging-data/
+.claude/scheduled_tasks.lock
+
+# 数据库备份目录（不进版本库；本地恢复用）
+.backups/
+
+# 随包分发的种子数据库（本地数据，不进版本库；由 scripts/prepare-seed-db.js 生成）
+resources/seed/*.db
+resources/seed/*.db-*
+tests/reports/*
+# Claude Code 本地文件：只忽略个人/临时产物，保留 commands/skills 等团队共享文件
+.claude/settings.local.json
+.claude/worktrees/
+# 测试覆盖率报告
+coverage/
+
+# 运行日志（含 playwright console 日志）——不得入库
+*.log
+
+# 本地密钥/环境文件与编辑器产物（review P2：git add -A 曾扫入）
+.env
+.env.*
+.history/
+C:/
+report.*.json
+
+# 验证截图/界面截图：本地留证即可，不进版本库
+scripts/.settings-shots/
+*.screenshot.png
+
+# Agent harness 的大输出落盘文件（命令输出，不是工程产物）
+.dsh-*.txt
+
+# 会话进度产物只留本地，不入库（诊断脚本/验证截图/过程文档）
+progress/
+
+# ZCode 会话本地目录
+.zcode/
+
+# 剧集渲染等会话产物不入库（体积大、可再生；本地保留）
+outputs/*.mp4
+outputs/*.mkv
+outputs/*.webm
+
+# ===== ↑ 以上同步自 .gitignore（「从 .gitignore 同步」只重写以上部分）=====
+.git/
+.hg/
+.svn/
+bower_components/
+jspm_packages/
+__pycache__/
+site-packages/
+venv/
+htmlcov/
+lcov-report/
+cmakefiles/
+cmake-build-*/
+bazel-*/
+pods/
+deriveddata/
+storybook-static/
+allure-results/
+allure-report/
+cdk.out/
+*.egg-info/
+*.dist-info/
+eggs/
+pip-wheel-metadata/
+wheels/
+# ----- ↑ 以上为 ZCode 默认排除规则（自定义规则请写在本行下方，不会被同步/恢复改动）-----
+# 自定义规则写在下方（本行提示可删除）
