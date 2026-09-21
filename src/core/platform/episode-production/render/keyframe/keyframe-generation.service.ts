@@ -118,7 +118,14 @@ function buildBoardPromptNote(members: ReferenceBoardMember[]): string {
   const list = members.map((m) => `${m.slot}号=${m.name}（${kindLabel[m.kind]}）`).join('、')
   return (
     `[编号参考板] 参考图是一张编号参考板，从左到右依次是：${list}。` +
-    `画面中出现的对应人物/场景/物品必须与对应编号图的形象严格一致`
+    `画面中出现的对应人物/场景/物品必须与对应编号图的形象严格一致。` +
+    // R1（2026-09-21 v3 实锤）：编辑模型会直接把板当输出（白底分栏+编号徽章进成片），
+    // 必须显式禁止复刻板结构
+    `参考图仅用于核对人物/场景形象。严禁输出参考图本身的分栏布局、白色底、编号标记；` +
+    `输出必须是单一完整的电影场景画面` +
+    `（the reference is only for identity check: strictly do NOT reproduce the board itself — ` +
+    `no panel grid layout, no white background, no number badges; ` +
+    `output must be one single complete cinematic scene）`
   )
 }
 
@@ -1117,10 +1124,11 @@ export class KeyframeGenerationService {
         modelId: effectiveImageModel?.modelId,
       })
 
-      // 机器校验：照抄/空图硬检测（基准 = 原始成员参考图，不是拼板）
+      // 机器校验：照抄/空图硬检测（基准 = 原始成员参考图；拼板模式 R2 追加与板本身对比）
       machineCheck = await runKeyframeMachineChecks(
         generated.imagePath,
         refImages.map((r) => r.imagePath),
+        { boardPath: board?.path ?? null },
       )
 
       // VLM 审核：仅多模态审核模型；机器校验未过不再浪费 VLM 调用

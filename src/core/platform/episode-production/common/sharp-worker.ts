@@ -208,6 +208,43 @@ const RUNNER_SOURCE = [
   '  return { written: written }',
   '}',
   '',
+  '// R2 板复刻检测：红徽章统计（色相红 r>150 且 r-g>70 且 r-b>70；徽章 #c0392b 含抗锯齿边缘）',
+  '// 返回 redRatio（占比）+ redConcentration（红点最密的两个 1/16 格子占全部红点比例，',
+  '// 编号徽章是"集中于小圆点"，灯笼/红衣等真实红色元素是散开的）',
+  'async function redBadgeStats(p) {',
+  '  const r = await sharp(p).raw().toBuffer({ resolveWithObject: true })',
+  '  const data = r.data, ch = r.info.channels, W = r.info.width, H = r.info.height',
+  '  const gw = 16, gh = 16',
+  '  const cellRed = new Array(gw * gh).fill(0)',
+  '  let red = 0',
+  '  for (let y = 0; y < H; y++) {',
+  '    for (let x = 0; x < W; x++) {',
+  '      const i = (y * W + x) * ch',
+  '      const rr = data[i], gg = data[i + 1], bb = data[i + 2]',
+  '      if (rr > 150 && rr - gg > 70 && rr - bb > 70) {',
+  '        red++',
+  '        const c = Math.min(gh - 1, Math.floor(y / H * gh)) * gw + Math.min(gw - 1, Math.floor(x / W * gw))',
+  '        cellRed[c]++',
+  '      }',
+  '    }',
+  '  }',
+  '  const total = W * H',
+  '  let m1 = 0, m2 = 0',
+  '  for (const c of cellRed) { if (c > m1) { m2 = m1; m1 = c } else if (c > m2) { m2 = c } }',
+  '  return { redRatio: total ? red / total : 0, redConcentration: red ? (m1 + m2) / red : 0 }',
+  '}',
+  '',
+  '// R2：关键帧 vs 参考板（aHash 距离 + 红徽章统计），任一文件不可读 → null',
+  'async function boardCopyCheck(args) {',
+  '  if (!fs.existsSync(args.keyframePath) || !fs.existsSync(args.boardPath)) return null',
+  '  try {',
+  '    const ha = await aHashHex(args.keyframePath)',
+  '    const hb = await aHashHex(args.boardPath)',
+  '    const stats = await redBadgeStats(args.keyframePath)',
+  '    return { dist: hammingHex(ha, hb), redRatio: stats.redRatio, redConcentration: stats.redConcentration }',
+  '  } catch (e) { return null }',
+  '}',
+  '',
   'async function handle(msg) {',
   '  const op = msg.op, args = msg.args || {}',
   '  try {',
@@ -237,6 +274,8 @@ const RUNNER_SOURCE = [
   '      result = await compositeGrid(args)',
   '    } else if (op === "extractRegions") {',
   '      result = await extractRegions(args)',
+  '    } else if (op === "boardCopyCheck") {',
+  '      result = await boardCopyCheck(args)',
   '    } else {',
   '      throw new Error("unknown op: " + op)',
   '    }',
@@ -504,4 +543,27 @@ export async function workerExtractRegions(args: {
   quality?: number
 }): Promise<{ written: string[] }> {
   return getSharpWorker().call<{ written: string[] }>('extractRegions', { ...args })
+}
+
+export interface WorkerBoardCopyCheck {
+  /** 关键帧 vs 参考板的 aHash 汉明距离 */
+  dist: number
+  /** 色相红像素占比（编号徽章红） */
+  redRatio: number
+  /** 红点最密两个 1/16 格子占全部红点比例（小圆点集中度） */
+  redConcentration: number
+}
+
+/**
+ * R2 板复刻检测信号：关键帧 vs 参考板的 aHash 距离 + 红徽章统计。
+ * 任一文件不可读 / sharp 失败 → null（调用方按"无法判定"放行）。
+ */
+export async function workerBoardCopyCheck(
+  keyframePath: string,
+  boardPath: string,
+): Promise<WorkerBoardCopyCheck | null> {
+  return getSharpWorker().call<WorkerBoardCopyCheck | null>('boardCopyCheck', {
+    keyframePath,
+    boardPath,
+  })
 }

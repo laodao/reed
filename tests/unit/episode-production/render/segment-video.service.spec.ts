@@ -28,6 +28,48 @@ import type {
   VideoProviderCapabilities,
 } from '@core/platform/episode-production/render/video/video-provider-adapter'
 
+/*
+ * R4：end 帧缺失时 SegmentVideoService 会先自动补生成（KeyframeGenerationService）。
+ * 这里 mock 掉生成服务（真实生成要打图 provider），用 mockKFBehavior 控制成败：
+ *   - 'fail'：补生成抛错 → 降级 i2v
+ *   - 'success'：给 end 行挂图（模拟补生成成功落库）→ 走 keyframes2video
+ */
+let mockKFBehavior: 'success' | 'fail' = 'fail'
+vi.mock(
+  '@core/platform/episode-production/render/keyframe/keyframe-generation.service',
+  () => ({
+    KeyframeGenerationService: class {
+      constructor(private ds: DataSource) {}
+      async regenerateKeyframe(input: { keyframeId: string }) {
+        if (mockKFBehavior === 'fail') throw new Error('mock 补生成失败')
+        const ia = await new ImageAssetRepository(this.ds).create({
+          projectId: 'es1', type: 'generated', prompt: 'p',
+          imagePath: '/tmp/kf_end_filled.png', width: 1024, height: 1024,
+        })
+        await this.ds
+          .getRepository(StoryboardKeyframeEntity)
+          .update({ id: input.keyframeId }, { imageAssetId: ia.id })
+        return { id: input.keyframeId }
+      }
+      async generateKeyframeAtIndex(input: { storyboardId: string; frameIndex: number }) {
+        if (mockKFBehavior === 'fail') throw new Error('mock 补生成失败')
+        const ia = await new ImageAssetRepository(this.ds).create({
+          projectId: 'es1', type: 'generated', prompt: 'p',
+          imagePath: '/tmp/kf_end_filled.png', width: 1024, height: 1024,
+        })
+        const kf = await new StoryboardKeyframeRepository(this.ds).create({
+          storyboardId: input.storyboardId,
+          frameIndex: input.frameIndex,
+          timePercent: 1,
+          frameRole: 'end',
+          imageAssetId: ia.id,
+        })
+        return kf
+      }
+    },
+  }),
+)
+
 const CAPS: VideoProviderCapabilities = {
   text: true,
   image: true,
@@ -175,6 +217,7 @@ describe('SegmentVideoService', () => {
 
   beforeEach(async () => {
     ds = await buildDb()
+    mockKFBehavior = 'fail'
   })
 
   afterEach(async () => {
@@ -260,7 +303,8 @@ describe('SegmentVideoService', () => {
     expect(seg?.videoPath).toBe('/tmp/seg_kf2v.mp4')
   })
 
-  it('end 帧无图 → 退 image2video 仅用首帧（O1 降级）', async () => {
+  it('R4：end 帧无图 → 先自动补生成，补失败才降级 image2video 仅用首帧', async () => {
+    mockKFBehavior = 'fail'
     const segId = await seedSegment(ds)
     const iaRepo = new ImageAssetRepository(ds)
     const kfRepo = new StoryboardKeyframeRepository(ds)
@@ -279,6 +323,54 @@ describe('SegmentVideoService', () => {
     expect(adapter.imageToVideo).toHaveBeenCalledTimes(1)
     expect(adapter.imageToVideo.mock.calls[0][0].imagePath).toBe('/tmp/kf_first.png')
     expect(result.keyframesUsed).toHaveLength(1)
+  })
+
+  it('R4：end 帧无图 → 自动补生成成功 → 走 keyframes2video 首尾双锚', async () => {
+    mockKFBehavior = 'success'
+    const segId = await seedSegment(ds)
+    const iaRepo = new ImageAssetRepository(ds)
+    const kfRepo = new StoryboardKeyframeRepository(ds)
+    const ia1 = await iaRepo.create({
+      projectId: 'es1', type: 'generated', prompt: 'p',
+      imagePath: '/tmp/kf_first.png', width: 1024, height: 1024,
+    })
+    await kfRepo.create({ storyboardId: 'sb1', frameIndex: 0, frameRole: 'start', imageAssetId: ia1.id })
+    await kfRepo.create({ storyboardId: 'sb1', frameIndex: 1, frameRole: 'end', imageAssetId: null })
+
+    const adapter = makeAdapter({ capabilities: CAPS_KF })
+    const svc = new SegmentVideoService(ds, adapter)
+    const result = await svc.generateForSegment({ segmentId: segId })
+
+    // 补生成成功 → end 帧挂图 → 首尾两帧进 kf2v
+    expect(result.match.mode).toBe('keyframes2video')
+    expect(adapter.keyframesToVideo).toHaveBeenCalledTimes(1)
+    expect(result.keyframesUsed.map((k) => k.imagePath)).toEqual([
+      '/tmp/kf_first.png',
+      '/tmp/kf_end_filled.png',
+    ])
+  })
+
+  it('R4：end 帧行不存在 → generateKeyframeAtIndex 补建行 → 走 keyframes2video', async () => {
+    mockKFBehavior = 'success'
+    const segId = await seedSegment(ds)
+    const iaRepo = new ImageAssetRepository(ds)
+    const kfRepo = new StoryboardKeyframeRepository(ds)
+    const ia1 = await iaRepo.create({
+      projectId: 'es1', type: 'generated', prompt: 'p',
+      imagePath: '/tmp/kf_first.png', width: 1024, height: 1024,
+    })
+    // 只有 start 帧行，没有 end 行
+    await kfRepo.create({ storyboardId: 'sb1', frameIndex: 0, frameRole: 'start', imageAssetId: ia1.id })
+
+    const adapter = makeAdapter({ capabilities: CAPS_KF })
+    const svc = new SegmentVideoService(ds, adapter)
+    const result = await svc.generateForSegment({ segmentId: segId })
+
+    expect(result.match.mode).toBe('keyframes2video')
+    expect(result.keyframesUsed.map((k) => k.imagePath)).toEqual([
+      '/tmp/kf_first.png',
+      '/tmp/kf_end_filled.png',
+    ])
   })
 
   it('provider 失败 → segment status=error + error 信息，shots 不置 completed', async () => {

@@ -40,6 +40,8 @@ import type {
 import { buildSegmentPrompt } from './segment-planner'
 import { resolveVideoParamsForEpisode } from './project-video-params'
 import { assertKeyframeGate, evaluateKeyframeGate } from './keyframe-gate'
+import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
+import { KeyframeGenerationService } from '../keyframe/keyframe-generation.service'
 import { advanceEpisodeStatusForStoryboard } from '../../workflow/episode-status-advance'
 
 const DEFAULT_WIDTH = 1920
@@ -97,6 +99,16 @@ export class SegmentVideoService {
     const shots = await this.storyboardRepo.getBySegmentId(seg.id)
     if (shots.length === 0) {
       throw new Error(`视频片段 ${input.segmentId} 内没有分镜`)
+    }
+
+    /*
+     * R4（2026-09-21 v3 实测）：end 帧缺失/无图会静默降级 image2video，
+     * H3 类单锚中段漂移（seg5 秦越变棕发实锤）。降级前先自动补生成 end 帧
+     * （走完整生成 + 机器校验 + 重拍闭环），补不上才降级。
+     * text2video / provider 不支持 keyframes2video 时补了也用不上，跳过。
+     */
+    if (input.forceMode !== 'text2video' && this.adapter.capabilities.keyframes) {
+      await this.tryEnsureEndKeyframe(shots[0].id)
     }
 
     /*
@@ -190,6 +202,42 @@ export class SegmentVideoService {
   }
 
   // ─── 内部 ──────────────────────────────────────────────
+
+  /**
+   * R4：首镜头 end 帧缺失/无图时自动补生成（完整生成+机器校验+重拍闭环在
+   * KeyframeGenerationService 内部）。补生成失败仅 warn——invokeGeneration 会按
+   * 既有逻辑降级 image2video（单锚，有中段漂移风险）。
+   */
+  private async tryEnsureEndKeyframe(storyboardId: string): Promise<void> {
+    try {
+      const kfs = await this.keyframeRepo.listByStoryboard(storyboardId)
+      const endKf = kfs.find((k) => k.frameRole === 'end')
+      if (endKf && (await this.resolveKeyframeImagePath(endKf))) return // end 有图，不用补
+
+      const sb = await this.ds
+        .getRepository(StoryboardEntity)
+        .findOne({ where: { id: storyboardId } })
+      const keyframeCount = Math.max(1, sb?.keyframeCount ?? 3)
+      if (keyframeCount < 2) return // 单帧分镜没有 end 概念
+
+      const kfSvc = new KeyframeGenerationService(this.ds)
+      if (endKf) {
+        // 有空行（ensureEmptyKeyframes 建的占位）：走重生成复用该行
+        await kfSvc.regenerateKeyframe({ keyframeId: endKf.id })
+      } else {
+        await kfSvc.generateKeyframeAtIndex({
+          storyboardId,
+          frameIndex: keyframeCount - 1,
+        })
+      }
+      console.log(`[segment-video] R4: 首镜头 end 帧自动补生成成功（storyboard=${storyboardId}）`)
+    } catch (e) {
+      console.warn(
+        `[segment-video] R4: end 帧补生成失败，降级 i2v（单锚漂移风险，storyboard=${storyboardId}）:`,
+        e,
+      )
+    }
+  }
 
   private async invokeGeneration(
     seg: EpVideoSegment,

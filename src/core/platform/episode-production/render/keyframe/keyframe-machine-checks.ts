@@ -20,10 +20,10 @@ import {
   hamming64,
   toAbsImagePath,
 } from '@core/platform/episode-production/common/image-hash'
-import { workerImageStats } from '@core/platform/episode-production/common/sharp-worker'
+import { workerImageStats, workerBoardCopyCheck } from '@core/platform/episode-production/common/sharp-worker'
 
 export interface MachineCheckFailure {
-  code: 'flat_or_blank' | 'reference_copy' | 'reference_copy_whitebg'
+  code: 'flat_or_blank' | 'reference_copy' | 'reference_copy_whitebg' | 'board_copy'
   detail: string
 }
 
@@ -42,6 +42,16 @@ const FLAT_STDEV_THRESHOLD = 10
 /** 边缘纯白判定：边缘带灰度均值 >245 且方差 <50 */
 const EDGE_WHITE_MEAN = 245
 const EDGE_WHITE_VAR = 50
+/*
+ * R2 板复刻阈值（v3 实锤图回测标定，见 tests/.../keyframe-machine-checks-board-copy.spec）：
+ *   - aHash 距离 ≤12：板复刻（实测板复刻 dist 6~10，正常帧 vs 板 ≥19）
+ *   - 色相红占比 ≥0.25% 且集中于小圆点（最密 2 格占 ≥40%）：编号徽章被抄进画面
+ *     （实测板复刻 0.28%~0.36%，含徽章的正常帧 0.22%；真实红色元素如灯笼/红衣
+ *     占比可能更高但不集中，靠集中度挡误杀）
+ */
+const BOARD_COPY_AHASH_THRESHOLD = 12
+const BOARD_BADGE_RED_RATIO = 0.0025
+const BOARD_BADGE_CONCENTRATION = 0.4
 
 /** 路径解析：委托 common/image-hash（相对路径按 dataPath 拼） */
 const toAbs = toAbsImagePath
@@ -55,6 +65,8 @@ const toAbs = toAbsImagePath
 export async function runKeyframeMachineChecks(
   imagePath: string,
   referenceImagePaths: string[],
+  /** R2：拼板模式传参考板路径，追加"板复刻"检测（编辑模型会直接输出板本身） */
+  opts?: { boardPath?: string | null },
 ): Promise<MachineCheckResult> {
   const checkedAt = new Date().toISOString()
   const abs = toAbs(imagePath)
@@ -107,6 +119,34 @@ export async function runKeyframeMachineChecks(
           `白底立绘疑似照抄参考图 ${path.basename(refPath)}` +
           `（边缘纯白 mean=${edge.mean.toFixed(1)} var=${edge.variance.toFixed(1)}，aHash 距离 ${dist}）`,
       })
+    }
+  }
+
+  /*
+   * R2 板复刻检测（2026-09-21 v3 逐帧复核实锤）：拼板模式下 flux-kontext 类编辑模型
+   * 高概率把编号参考板本身当输出（白底分栏 + 红编号徽章原样进成片）。此前机器校验
+   * 只对比成员参考图，从不对比板本身 → 全放行。两个信号任一命中即 fail。
+   */
+  const boardAbs = opts?.boardPath ? toAbs(opts.boardPath) : null
+  if (boardAbs && fs.existsSync(boardAbs)) {
+    const bc = await workerBoardCopyCheck(abs, boardAbs)
+    if (bc) {
+      if (bc.dist <= BOARD_COPY_AHASH_THRESHOLD) {
+        failures.push({
+          code: 'board_copy',
+          detail: `疑似原样输出编号参考板（关键帧 vs 参考板 aHash 距离 ${bc.dist} ≤ ${BOARD_COPY_AHASH_THRESHOLD}）`,
+        })
+      } else if (
+        bc.redRatio >= BOARD_BADGE_RED_RATIO &&
+        bc.redConcentration >= BOARD_BADGE_CONCENTRATION
+      ) {
+        failures.push({
+          code: 'board_copy',
+          detail:
+            `画面含参考板编号徽章（色相红占比 ${(bc.redRatio * 100).toFixed(2)}% ≥ 0.25%，` +
+            `集中度 ${(bc.redConcentration * 100).toFixed(0)}%，疑似把参考板当输出）`,
+        })
+      }
     }
   }
 

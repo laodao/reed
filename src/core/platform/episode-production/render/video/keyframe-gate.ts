@@ -107,7 +107,11 @@ export async function evaluateKeyframeGate(
           .getMany()
         refPaths = rows.map((r) => r.imagePath).filter((p): p is string => !!p)
       }
-      const live = await runKeyframeMachineChecks(ia.imagePath, refPaths)
+      const live = await runKeyframeMachineChecks(ia.imagePath, refPaths, {
+        // R2：拼板模式的老数据现场校验同样要过板复刻检测
+        boardPath:
+          (meta.referenceBoard as { path?: string } | undefined)?.path ?? null,
+      })
       mc = { pass: live.pass, failures: live.failures }
     }
     if (mc.pass === false) {

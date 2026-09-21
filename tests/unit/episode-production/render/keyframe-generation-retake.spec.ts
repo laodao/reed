@@ -351,10 +351,12 @@ describe('KeyframeGenerationService 重拍闭环 + 参考板', () => {
     expect(call.referenceImagePaths[0]).toMatch(/board_.+\.png$/)
     // 拼板产物真实存在（注入的临时 dataPath 下）
     expect(fs.existsSync(path.join(tmpDir, call.referenceImagePaths[0]))).toBe(true)
-    // prompt 前置编号对照说明
+    // prompt 前置编号对照说明 + R1 板复刻禁令
     expect(call.prompt).toContain('编号参考板')
     expect(call.prompt).toContain('1号=张三（角色）')
     expect(call.prompt).toContain('2号=茶馆（场景）')
+    expect(call.prompt).toContain('严禁输出参考图本身的分栏布局')
+    expect(call.prompt).toContain('single complete cinematic scene')
 
     const ia = await new ImageAssetRepository(ds).getById(result[0].imageAssetId!)
     const meta = ia?.metadata as any
