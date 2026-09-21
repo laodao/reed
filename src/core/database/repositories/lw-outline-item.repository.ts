@@ -65,8 +65,17 @@ export class LwOutlineItemRepository extends BaseRepository<
 
   async batchAdd(outlineId: string, itemIds: string[]): Promise<void> {
     if (itemIds.length === 0) return
-    await this.dataSource.transaction(async () => {
-      for (const iid of itemIds) await this.add(outlineId, iid)
+    // 串行门正确姿势（E2E 实测）：回调必须用事务 manager，禁止走全局 scoped 仓库——
+    // 旧写法在 SQLite 串行门下 100% 抛"事务回调内禁止调用全局 manager"，导致
+    // createOutline 带 involved* 时关联全部丢失且章号级联被跳过
+    await this.dataSource.transaction(async manager => {
+      const repo = manager.getRepository(LwOutlineItemEntity)
+      const now = Date.now()
+      for (const iid of itemIds) {
+        const existing = await repo.findOne({ where: { outlineId, itemId: iid } as any })
+        if (existing) continue
+        await repo.save(repo.create({ id: this.generateId(), outlineId, itemId: iid, createdAt: now }))
+      }
     })
   }
 

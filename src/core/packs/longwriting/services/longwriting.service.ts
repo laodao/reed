@@ -898,8 +898,19 @@ export class LongWritingService {
     // 伴生数据（事件/快照/伏笔/边有效期/预写卡头）必须跟着搬，否则按章号
     // 键挂的检查从此系统性错位。变更前后各取一次文档序做 diff。
     const before = await this.docOrderSnapshot(data.projectId)
-    const created = await this.db.lwOutlines.create(data)
-    if (before) await this.cascadeChapterNumbers(before.projectId, before.order)
+    let created: StoryOutline
+    try {
+      created = await this.db.lwOutlines.create(data)
+    } catch (e) {
+      // 级联不背锅前先区分：建节点本身的失败原样抛
+      throw e
+    }
+    // 级联失败不回滚建节点（节点已落库），但必须留全栈日志——章号错位是沉默毒药
+    try {
+      if (before) await this.cascadeChapterNumbers(before.projectId, before.order)
+    } catch (e: any) {
+      console.error('[LongWritingService] createOutline 章号级联失败:', e && (e.stack || e.message || e))
+    }
     return created
   }
 
@@ -997,8 +1008,24 @@ export class LongWritingService {
       }
     })
 
-    // 删除后级联：剩余章节章号前移，事件/快照/伏笔/边/卡头同步搬移（映射为空时 no-op）
+    // 删除后级联（顺序关键）：先清被删章节的伴生数据（事件/切片/伏笔/向量——无 FK、
+    // 按旧章号键挂），再搬移剩余章节的章号。若先级联，被删章的残留行会占住目标章号
+    // 撞快照表 UNIQUE(project,entity,chapter)（2026-09-21 E2E 实测）。handler 侧的
+    // purge 调用保留为幂等兜底。
     const afterAll = (await this.db.lwOutlines.getByProjectId(node.projectId)) || []
+    try {
+      if (chapterRows.length > 0) {
+        const { LwPurgeService } = await import('@core/platform/services/longwriting/purge.service')
+        const purge = new LwPurgeService(this.db)
+        for (const row of chapterRows) {
+          if (row.chapterNo > 0) {
+            await purge.purgeChapterDerivedData(node.projectId, row.chapterNo)
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[LongWritingService] 删除章节伴生数据清理失败（后续级联可能受影响）:', e)
+    }
     try {
       const { cascadeChapterNumberChange } = await import('@core/platform/services/longwriting/chapter-number-sync')
       await cascadeChapterNumberChange(this.db, node.projectId, docOrderBefore, buildOutlineDocOrder(afterAll as never), afterAll as never)

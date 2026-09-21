@@ -86,7 +86,13 @@ export class LwOutlineRepository extends BaseRepository<
     const id = this.generateId()
     const now = new Date()
     const level = data.parentId ? await this.calculateLevel(data.parentId) : 1
-    const orderIndex = await this.getNextOrderIndex(data.projectId, data.parentId ?? null)
+    // 尊重调用方显式 orderIndex（UI/脚本插入指定位次的语义；负数=插到最前）——
+    // 旧实现一律 MAX+1 追加，"插入章节"永远落到末尾，后续章号却按文档序整体
+    // 后移（天下捕快实跑事故入口之一）。未传时保持追加语义不变。
+    const appendIndex = await this.getNextOrderIndex(data.projectId, data.parentId ?? null)
+    const orderIndex = Number.isFinite(data.orderIndex as number)
+      ? (data.orderIndex as number)
+      : appendIndex
 
     const entity = this.repo.create({
       id,

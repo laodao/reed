@@ -566,6 +566,9 @@ export class ChapterGraphProcessor {
       const m = this.manager()
       const trimmed = name.trim()
       if (!m?.lwCustomEntities || !trimmed) return
+      // 家庭指称（万家/林家）不是人名——入队只会制造 R9 误报阻断（E2E 实测）
+      const { isFamilyReferenceName } = await import('./consistency.service')
+      if (isFamilyReferenceName(trimmed)) return
       const existing = await m.lwCustomEntities.getByProjectAndKind(projectId, UNREGISTERED_CHARACTER_KIND)
       const dup = existing.find(e => e.name === trimmed)
       if (dup) return
