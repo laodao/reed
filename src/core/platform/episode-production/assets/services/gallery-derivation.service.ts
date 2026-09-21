@@ -42,6 +42,9 @@ import {
 import {
   buildAssetIdentityPrompt,
   prependIdentity,
+  appendAssetSettingAnchors,
+  appendAncientEraConstraint,
+  mergeAncientEraNegative,
   type StoryBackground,
 } from '@core/platform/episode-production/assets/prompts/asset-identity-prompt'
 import { viewHintForLabel } from '@core/platform/episode-production/assets/prompts/character-view-hints'
@@ -293,7 +296,13 @@ export class GalleryDerivationService {
         input.storyBackground ?? null,
       )
       prompt = prependIdentity(identity, prompt)
+      // F1（2026-09-21 资产图守设定）：设定锚点缺失补全——identity 已含的锚点
+      // 由关键词存在性检查跳过，只补 viewHint 固定模板等路径丢失的设定关键词。
+      prompt = appendAssetSettingAnchors(input.assetType, eff, prompt)
     }
+    // F2 古风硬约束：派生图同样严禁现代元素（era 来自调用方 episode 上下文）
+    prompt = appendAncientEraConstraint(prompt, input.storyBackground?.era)
+    negativePrompt = mergeAncientEraNegative(negativePrompt, input.storyBackground?.era)
 
     // 角色资产硬约束：纯色背景 / 光照均匀无阴影（帽子、首饰不约束，交用户控制）；
     // framing 按 slot 语义（半身 → upperBody；全身 → fullBody），不再按 category 一刀切。

@@ -163,6 +163,8 @@ async function handleGenerateVideoSegment(
     /** 用户在 UI 选择的 provider（providerConfigId） */
     providerConfigId?: string
     modelId?: string
+    /** E3：人工强制跳过关键帧闸门 */
+    force?: boolean
   },
 ): Promise<IpcResponse> {
   try {
@@ -191,9 +193,14 @@ async function handleGenerateVideoSegment(
       forceMode: opts?.forceMode,
       providerId: opts?.providerConfigId,
       modelId: opts?.modelId,
+      force: opts?.force,
     } satisfies GenerateVideoSegmentInput)
     return { success: true, data }
   } catch (e: any) {
+    // E3：闸门拦截返回结构化错误（code + 逐帧 failures），UI 可展示并引导重生/强制
+    if (e?.code === 'KEYFRAME_GATE_BLOCKED') {
+      return { success: false, error: e.message, code: e.code, frames: e.frames } as IpcResponse
+    }
     return { success: false, error: e?.message || '生成视频片段失败' }
   }
 }

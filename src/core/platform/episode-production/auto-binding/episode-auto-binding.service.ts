@@ -5,6 +5,11 @@
  */
 
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import {
+  findCharacterBindingByName,
+  findLocationBindingByName,
+  findItemBindingByName,
+} from '@core/platform/episode-production/assets/services/binding-name-utils'
 
 /**
  * 自动绑定结果
@@ -142,6 +147,14 @@ export class EpisodeAutoBindingService {
             continue
           }
 
+          // 去重归一兜底（2026-09-21）：同项目已有同名 standalone binding
+          // （先上传识别、后关联长文的场景）→ 复用已有 binding，不再建 linked 副本
+          const dupChar = await findCharacterBindingByName(db.dataSource, videoProjectId, character.name)
+          if (dupChar && dupChar.sourceType === 'standalone') {
+            console.warn(`[EpisodeAutoBindingService] 角色 "${character.name}" 已有 standalone binding（${dupChar.id}），复用，跳过 linked_lw 创建`)
+            continue
+          }
+
           // 创建角色绑定（绑定到视频项目）
           console.log(`[EpisodeAutoBindingService] 创建角色绑定: videoProjectId=${videoProjectId}, characterId=${characterId}`)
           const createdBinding = await db.characterBindings?.create({
@@ -192,6 +205,13 @@ export class EpisodeAutoBindingService {
             continue
           }
 
+          // 去重归一兜底（2026-09-21）：同项目已有同名 standalone binding → 复用
+          const dupLoc = await findLocationBindingByName(db.dataSource, videoProjectId, location.name)
+          if (dupLoc && dupLoc.sourceType === 'standalone') {
+            console.warn(`[EpisodeAutoBindingService] 地点 "${location.name}" 已有 standalone binding（${dupLoc.id}），复用，跳过 linked_lw 创建`)
+            continue
+          }
+
           // 创建地点绑定（绑定到视频项目）
           console.log(`[EpisodeAutoBindingService] 创建地点绑定: videoProjectId=${videoProjectId}, locationId=${locationId}`)
           const createdBinding = await db.locationBindings?.create({
@@ -231,6 +251,13 @@ export class EpisodeAutoBindingService {
             continue
           }
           console.log(`[EpisodeAutoBindingService] 找到物品: ${item.name}`)
+
+          // 去重归一兜底（2026-09-21）：同项目已有同名 standalone binding → 复用
+          const dupItem = await findItemBindingByName(db.dataSource, videoProjectId, item.name)
+          if (dupItem && dupItem.sourceType === 'standalone') {
+            console.warn(`[EpisodeAutoBindingService] 物品 "${item.name}" 已有 standalone binding（${dupItem.id}），复用，跳过 linked_lw 创建`)
+            continue
+          }
 
           // 创建物品绑定（绑定到视频项目）
           console.log(`[EpisodeAutoBindingService] 创建物品绑定: videoProjectId=${videoProjectId}, itemId=${itemId}`)

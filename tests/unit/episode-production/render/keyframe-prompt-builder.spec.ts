@@ -228,3 +228,39 @@ describe('buildKeyframePrompt', () => {
     }
   })
 })
+
+/*
+ * 古风硬约束（2026-09-21 雪麓山庄 v2 复盘 F 项）：
+ * storyEra 命中古/武侠/朝代词 → prompt 末尾追加"严禁现代元素"，
+ * negative 追加现代物词；现代/未设置 → 不追加。
+ */
+describe('古风硬约束（storyEra）', () => {
+  it('storyEra=古代武侠 → 追加禁令 + negative 现代物词', async () => {
+    const { ANCIENT_ERA_PROMPT_SUFFIX, ANCIENT_ERA_NEGATIVE_SUFFIX } = await import(
+      '@core/platform/episode-production/render/keyframe/keyframe-prompt-builder'
+    )
+    const out = buildKeyframePrompt(baseInput({ storyEra: '古代武侠' }))
+    expect(out.prompt).toContain(ANCIENT_ERA_PROMPT_SUFFIX)
+    expect(out.prompt).toContain('严禁现代建筑')
+    expect(out.negativePrompt).toContain(ANCIENT_ERA_NEGATIVE_SUFFIX)
+    expect(out.negativePrompt).toContain('modern buildings')
+  })
+
+  it('朝代词命中：北宋 / 大明 / 仙侠', async () => {
+    const { isAncientEra } = await import(
+      '@core/platform/episode-production/render/keyframe/keyframe-prompt-builder'
+    )
+    expect(isAncientEra('北宋')).toBe(true)
+    expect(isAncientEra('大明')).toBe(true)
+    expect(isAncientEra('仙侠')).toBe(true)
+    expect(isAncientEra('架空古装')).toBe(true)
+  })
+
+  it('现代 / 未设置 → 不追加', () => {
+    const modern = buildKeyframePrompt(baseInput({ storyEra: '现代都市' }))
+    expect(modern.prompt).not.toContain('严禁现代建筑')
+    expect(modern.negativePrompt).not.toContain('modern buildings')
+    const omitted = buildKeyframePrompt(baseInput())
+    expect(omitted.prompt).not.toContain('严禁现代建筑')
+  })
+})

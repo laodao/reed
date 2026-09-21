@@ -117,6 +117,11 @@
                   <div v-else class="thumb-empty"><el-icon :size="14"><Picture /></el-icon></div>
                   <span class="kf-role">{{ kfRoleLabel(kf.frameRole) }}</span>
                   <span
+                    v-if="kf.machineCheck && !kf.machineCheck.pass"
+                    class="kf-mc-badge"
+                    :title="`机器校验未过：${(kf.machineCheck.failures ?? []).map(f => f.detail).join('；')}`"
+                  >机器校验未过</span>
+                  <span
                     v-if="kf.review"
                     class="kf-review-badge"
                     :class="`review-${kf.review.status}`"
@@ -610,11 +615,17 @@ async function reloadShots(): Promise<void> {
 
 // ── S-02 关键帧画廊（2026-09-16）：当前镜头首尾关键帧 + 重新生成 / 换参考图 ──
 interface KeyframeReviewInfo {
-  status: 'pass' | 'issues' | 'error'
+  status: 'pass' | 'issues' | 'error' | 'skipped'
   issues: string[]
   summary: string
   model: string
   reviewedAt: string
+}
+
+/** E2：机器校验结果（image_assets.metadata.machineCheck；未校验 → null） */
+interface KeyframeMachineCheckInfo {
+  pass: boolean
+  failures?: Array<{ code: string; detail: string }>
 }
 
 interface KeyframeRow {
@@ -634,6 +645,8 @@ interface KeyframeRow {
   }>
   /** 一致性校验结果（image_assets.metadata.review；未校验 → null） */
   review?: KeyframeReviewInfo | null
+  /** 机器校验结果（image_assets.metadata.machineCheck；老数据 → null） */
+  machineCheck?: KeyframeMachineCheckInfo | null
   /** 用户挑图覆盖（keyframe.referenceOverrides） */
   referenceOverrides?: Array<{ kind: 'character' | 'location' | 'item'; bindingId: string; imageId: string }>
 }
@@ -670,7 +683,13 @@ function kfIneffectiveRefs(kf: KeyframeRow): string[] {
 
 function kfReviewLabel(kf: KeyframeRow): string {
   const s = kf.review?.status
-  return s === 'pass' ? '✓ 一致' : s === 'issues' ? '⚠ 存疑' : '校验失败'
+  return s === 'pass'
+    ? '✓ 一致'
+    : s === 'issues'
+      ? '⚠ 存疑'
+      : s === 'skipped'
+        ? '－ 未审核'
+        : '校验失败'
 }
 
 function kfReviewTitle(kf: KeyframeRow): string {
@@ -698,6 +717,7 @@ async function onReviewKeyframe(kf: KeyframeRow): Promise<void> {
     const review = r.data as KeyframeReviewInfo
     if (review.status === 'pass') ElMessage.success('校验通过：与参考图/提示词一致')
     else if (review.status === 'issues') ElMessage.warning(`发现 ${review.issues.length} 处不一致，详见徽章悬浮提示`)
+    else if (review.status === 'skipped') ElMessage.info(review.summary || '审核模型非多模态，已跳过（仅机器校验）')
     else ElMessage.error('校验调用失败（详见徽章悬浮提示）')
     await loadKeyframesForShot(kf.storyboardId)
   } catch (e: any) {
@@ -1141,6 +1161,12 @@ async function loadMentionEntities(): Promise<void> {
       &.review-pass { background: rgba(34, 139, 34, .75); }
       &.review-issues { background: rgba(204, 132, 0, .85); }
       &.review-error { background: rgba(178, 34, 34, .8); }
+      &.review-skipped { background: rgba(90, 90, 90, .7); }
+    }
+    .kf-mc-badge {
+      position: absolute; left: 4px; bottom: 4px;
+      font-size: 10px; padding: 1px 6px; border-radius: 8px;
+      background: rgba(178, 34, 34, .85); color: #fff; cursor: default;
     }
   }
   .kf-ref-warn {

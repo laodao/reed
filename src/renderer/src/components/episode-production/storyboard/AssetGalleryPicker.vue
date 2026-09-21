@@ -102,7 +102,7 @@ function toUrl(path?: string): string {
 }
 
 function categoryLabel(cat: string): string {
-  const map: Record<string, string> = { main: '主图', view: '造型', expression: '表情', outfit: '服装', pose: '姿势', variant: '变体' }
+  const map: Record<string, string> = { main: '主图', view: '造型', expression: '表情', outfit: '服装', pose: '姿势', variant: '变体', floor_plan: '平面图' }
   return map[cat] || cat
 }
 

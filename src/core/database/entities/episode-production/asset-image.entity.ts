@@ -10,6 +10,9 @@ export type AssetType = 'character' | 'location' | 'item'
  * **未迁移**的老数据；spec 2026-05-09 之后的 location 域新写入只用 'main' 或 'variant'。
  * 迁移脚本 add-asset-image-variant-category-and-migrate 会把存量 location 的旧三类
  * UPDATE 成 'variant'，跑完后这三个值在 location 域不再出现。character / item 域仍正常使用。
+ *
+ * floor_plan（2026-09-21 平面布局图先行）：根地点主图生成前先出的俯视平面布局图，
+ * 作为主图生成的参考图；不参与关键帧参考图评分（selector 显式排除）。
  */
 export type AssetImageCategory =
   | 'main'
@@ -24,6 +27,7 @@ export type AssetImageCategory =
   | 'context'
   | 'panorama_360'
   | 'panorama_snapshot'
+  | 'floor_plan'
 
 /**
  * asset_image 表实体（spec §3.8）

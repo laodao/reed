@@ -129,11 +129,13 @@ export async function pickReferenceImage(
    * spec 2026-05-09 location 多主图模型：
    *   - 主图（category='main'）也带 metadata，参与评分；带 angle / time 等命中维度的主图可以被
    *     直接选中，省一次派生（"正面外景"主图直接命中外景分镜）
+   *   - floor_plan（2026-09-21 平面布局图）是主图生成的布局参考，不是场景真实视角图，
+   *     不进候选池，避免平面图被选中当场景参考
    * character / item 仍走旧逻辑（只有非主图变体参评，主图兜底）。
    */
   const candidates =
     input.kind === 'location'
-      ? pool // 所有图（含主图）参评
+      ? pool.filter((img) => img.category !== 'floor_plan') // 所有图（含主图）参评，排除平面图
       : pool.filter((img) => img.isMain !== 1) // 老逻辑：仅非主图
 
   let best: { image: AssetImageEntity; score: number; matchedFields: string[] } | null = null

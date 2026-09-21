@@ -22,6 +22,7 @@ import { CharacterAssetService } from '@core/platform/episode-production/assets/
 import { LocationAssetService } from '@core/platform/episode-production/assets/services/location-asset.service'
 import { ItemAssetService } from '@core/platform/episode-production/assets/services/item-asset.service'
 import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
+import { normalizeBindingName } from '@core/platform/episode-production/assets/services/binding-name-utils'
 
 /**
  * 上传模式实体服务
@@ -62,12 +63,15 @@ export class UploadedEntityService {
     const locSvc = new LocationAssetService(ds, imageSvc)
     const itemSvc = new ItemAssetService(ds)
 
-    // 跨集去重：取项目已有的 binding 名字集合，避免逐集识别产生同名重复资产。
+    // 跨集去重：取项目已有的 binding 名字集合（归一化 key），避免逐集识别产生同名重复资产。
     // 资产是 project 级（binding 无 episodeId），同项目同名只应保留一份。
     // 2026-09-21 修复：DTO 没有 name 字段（名字在 standaloneName / overrideName），
     // 此前 `c.name` 恒 undefined → 去重集合恒空 → 每次识别都整套重复建 binding。
+    // 2026-09-21 去重归一：集合 key 走 normalizeBindingName（全角空格/书名号/大小写差异
+    // 不再绕过）；service.createStandalone 内部还有 find-or-create 兜底（含角色 alias、
+    // 地点前缀归一），集合漏掉的命名变体也不会重复落库。
     const nameOf = (b: { name?: string | null; standaloneName?: string | null; overrideName?: string | null }): string | undefined =>
-      (b.standaloneName ?? b.overrideName ?? b.name ?? undefined)?.trim() || undefined
+      normalizeBindingName(b.standaloneName ?? b.overrideName ?? b.name) || undefined
     const [existingChars, existingLocs, existingItems] = await Promise.all([
       db.characterBindings?.getByProjectId(projectId) ?? [],
       db.locationBindings?.getByProjectId(projectId) ?? [],
@@ -80,41 +84,44 @@ export class UploadedEntityService {
     // 创建 standalone 角色 binding（不再 INSERT lw_story_characters）
     for (const char of characters) {
       const name = char.name?.trim()
-      if (!name || charNames.has(name)) continue // 去重：项目内已存在同名则跳过
+      const key = normalizeBindingName(name)
+      if (!key || charNames.has(key)) continue // 去重：项目内已存在同名则跳过
       await charSvc.createStandalone({
         projectId,
-        name,
+        name: name!,
         description: char.description || undefined,
         // 2026-05-27：AI 识别时推断的年龄/性别/人种
         age: char.age,
         gender: char.gender,
         race: char.race,
       })
-      charNames.add(name) // 本批次内也去重
+      charNames.add(key) // 本批次内也去重
     }
 
     // 创建 standalone 地点 binding
     for (const loc of locations) {
       const name = loc.name?.trim()
-      if (!name || locNames.has(name)) continue
+      const key = normalizeBindingName(name)
+      if (!key || locNames.has(key)) continue
       await locSvc.createStandalone({
         projectId,
-        name,
+        name: name!,
         description: loc.description || undefined,
       })
-      locNames.add(name)
+      locNames.add(key)
     }
 
     // 创建 standalone 物品 binding
     for (const item of items) {
       const name = item.name?.trim()
-      if (!name || itemNames.has(name)) continue
+      const key = normalizeBindingName(name)
+      if (!key || itemNames.has(key)) continue
       await itemSvc.createStandalone({
         projectId,
-        name,
+        name: name!,
         description: item.description || undefined,
       })
-      itemNames.add(name)
+      itemNames.add(key)
     }
 
     console.log('[UploadedEntityService] 实体创建完成（standalone 模式，binding.sourceType=standalone）')

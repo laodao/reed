@@ -39,6 +39,7 @@ import type {
 } from './video-provider-adapter'
 import { buildSegmentPrompt } from './segment-planner'
 import { resolveVideoParamsForEpisode } from './project-video-params'
+import { assertKeyframeGate, evaluateKeyframeGate } from './keyframe-gate'
 import { advanceEpisodeStatusForStoryboard } from '../../workflow/episode-status-advance'
 
 const DEFAULT_WIDTH = 1920
@@ -55,6 +56,8 @@ export interface GenerateSegmentVideoInput {
   /** 实际调用的 provider/model（仅记录到 segment 上，adapter 由调用方创建） */
   providerId?: string
   modelId?: string
+  /** E3：人工强制跳过关键帧闸门（闸门拦截时 UI 让用户确认后重试传 true） */
+  force?: boolean
 }
 
 export interface SegmentVideoResult {
@@ -94,6 +97,25 @@ export class SegmentVideoService {
     const shots = await this.storyboardRepo.getBySegmentId(seg.id)
     if (shots.length === 0) {
       throw new Error(`视频片段 ${input.segmentId} 内没有分镜`)
+    }
+
+    /*
+     * E3 关键帧闸门（2026-09-21 雪麓山庄 v2 复盘）：参考图模式实际消费首镜头
+     * 首尾关键帧，生成前强制校验 machineCheck.pass + review.status ∈ pass/skipped。
+     * force=true 人工强制跳过；text2video 无关键帧输入不走闸门。
+     */
+    if (input.forceMode !== 'text2video' && !input.force) {
+      const firstShotKfs = await this.keyframeRepo.listByStoryboard(shots[0].id)
+      const gatedKfs: StoryboardKeyframe[] = []
+      for (const kf of pickStartEndKeyframes(firstShotKfs)) {
+        if (await this.resolveKeyframeImagePath(kf)) gatedKfs.push(kf)
+      }
+      if (gatedKfs.length > 0) {
+        assertKeyframeGate(
+          await evaluateKeyframeGate(this.ds, gatedKfs),
+          `片段 #${seg.seq}（首镜 ${shots[0].shotNumber ?? shots[0].id}）`,
+        )
+      }
     }
 
     const width = input.width ?? DEFAULT_WIDTH

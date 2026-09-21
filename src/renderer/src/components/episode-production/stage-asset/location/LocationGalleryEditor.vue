@@ -108,6 +108,50 @@
         </div>
       </el-card>
 
+      <!-- 平面布局图（2026-09-21 平面图先行：根地点主图生成前自动出的布局参考图） -->
+      <el-card v-if="floorPlanImages.length > 0" class="category-card" shadow="never">
+        <template #header>
+          <div class="section-header">
+            <span class="section-title">
+              平面布局图
+              <span class="progress-meta">{{ floorPlanImages.length }} 张</span>
+            </span>
+            <span class="header-actions">
+              <el-tooltip
+                content="主图生成前自动生成的俯视布局参考图；主图以其为参考还原建筑布局。删除后下次生成主图会重新生成"
+                placement="top"
+              >
+                <el-icon class="hint-icon"><InfoFilled /></el-icon>
+              </el-tooltip>
+            </span>
+          </div>
+        </template>
+        <div class="thumb-grid">
+          <div v-for="img in floorPlanImages" :key="img.id" class="thumb-cell">
+            <div class="thumb-frame main-thumb">
+              <img
+                :src="toImageUrl(img.thumbnailPath || img.imagePath)"
+                :alt="img.label || '平面布局图'"
+                @dblclick="openPreview(floorPlanImages, floorPlanImages.indexOf(img))"
+              />
+              <div class="thumb-tools" @click.stop>
+                <el-tooltip content="下载" placement="top">
+                  <el-icon class="thumb-tool-icon" :size="14" @click="downloadImage(img)">
+                    <Download />
+                  </el-icon>
+                </el-tooltip>
+                <el-tooltip content="删除" placement="top">
+                  <el-icon class="thumb-tool-icon danger" :size="14" @click="onDeleteImage(img)">
+                    <Delete />
+                  </el-icon>
+                </el-tooltip>
+              </div>
+            </div>
+            <div class="thumb-label">{{ img.label || '平面布局图' }}</div>
+          </div>
+        </div>
+      </el-card>
+
       <!-- 变体图列表（合并的 'variant' category） -->
       <el-card class="category-card" shadow="never">
         <template #header>
@@ -434,6 +478,11 @@ const mainImages = computed<AssetImageRow[]>(() => {
 /** 变体列表（category='variant'，新模型） */
 const variantImages = computed<AssetImageRow[]>(() =>
   allImages.value.filter((i) => i.category === 'variant'),
+)
+
+/** 平面布局图（category='floor_plan'，2026-09-21 平面图先行） */
+const floorPlanImages = computed<AssetImageRow[]>(() =>
+  allImages.value.filter((i) => i.category === 'floor_plan'),
 )
 
 function getApi() {

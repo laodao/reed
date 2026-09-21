@@ -108,6 +108,14 @@ export class LocationBindingEntity {
   @Column({ name: 'reference_image_path', type: 'text', nullable: true })
   referenceImagePath!: string | null
 
+  /**
+   * 父级地点 binding id（2026-09-21 地点层级）：
+   * 同一场所的不同区域（"雪麓山庄闺房" → 父 "雪麓山庄"）挂到父级下，
+   * 子区域主图生成时引用父级主图保建筑风格一致。根地点为 null。
+   */
+  @Column({ name: 'parent_id', type: 'text', nullable: true })
+  parentId!: string | null
+
   /** 形象组（spec 2026-05-09 ep-redesign §3.2 D1）；详见 character-binding.entity 注释 */
   @Column({ name: 'reference_set_image_ids', type: 'text', nullable: true })
   referenceSetImageIds!: string | null

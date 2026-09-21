@@ -27,6 +27,9 @@ import {
   mergeLocationNoHumanNegative,
   appendLocationBaseComposition,
   mergeLocationBaseCompositionNegative,
+  appendLocationFloorPlanReference,
+  appendLocationParentReference,
+  LOCATION_FLOOR_PLAN_SUFFIX,
 } from '../prompts/location-constraints'
 import {
   appendCharacterIdentityPreservation,
@@ -37,6 +40,15 @@ import {
   appendItemConstraints,
   mergeItemNegative,
 } from '../prompts/item-constraints'
+import {
+  appendAssetSettingAnchors,
+  appendAncientEraConstraint,
+  mergeAncientEraNegative,
+  type EffectiveAssetForPrompt,
+} from '../prompts/asset-identity-prompt'
+import { CharacterAssetService } from './character-asset.service'
+import { LocationAssetService } from './location-asset.service'
+import { ItemAssetService } from './item-asset.service'
 
 export interface GenerateMainInput {
   assetType: AssetType
@@ -94,12 +106,13 @@ export class MainImageGeneratorService {
    * - 三字段全空 / 资产无 projectId（全局 preset）/ 解析失败 → 返回 ''（不拼）。
    * - 幂等：renderer 主入口（main-image-generator.ts）已在 prompt 尾部拼过
    *   「故事年代/地域/背景」段，已包含同值的段不再重复拼。
+   * - 同时返回 storyEra 原文（2026-09-21 F2 古风硬约束据此判定）。
    */
   private async buildStoryAnchorPrefix(
     assetType: AssetType,
     assetId: string,
     prompt: string,
-  ): Promise<string> {
+  ): Promise<{ anchor: string; era: string }> {
     try {
       const bindingRepo =
         assetType === 'character'
@@ -109,7 +122,7 @@ export class MainImageGeneratorService {
             : this.ds.getRepository(ItemBindingEntity)
       const binding = await bindingRepo.findOne({ where: { id: assetId } as any })
       const projectId = (binding as any)?.projectId as string | null | undefined
-      if (!projectId) return ''
+      if (!projectId) return { anchor: '', era: '' }
 
       const episodes = await this.ds.getRepository(VideoEpisodeEntity).find({
         where: { projectId },
@@ -121,7 +134,7 @@ export class MainImageGeneratorService {
           (e.storyRegion ?? '').trim() ||
           (e.storyBackgroundExtra ?? '').trim(),
       )
-      if (!ep) return ''
+      if (!ep) return { anchor: '', era: '' }
 
       const era = (ep.storyEra ?? '').trim()
       const region = (ep.storyRegion ?? '').trim()
@@ -136,10 +149,37 @@ export class MainImageGeneratorService {
         .findOne({ where: { id: projectId } })
       const style = ((project?.config as { stylePrompt?: string } | null | undefined)?.stylePrompt ?? '').trim()
       if (style && !prompt.includes(style)) segments.push(`风格：${style}`)
-      return segments.length > 0 ? `${segments.join('；')}。` : ''
+      return { anchor: segments.length > 0 ? `${segments.join('；')}。` : '', era }
     } catch (e) {
       console.warn('[MainImageGeneratorService] 故事背景锚点解析失败（跳过拼接）:', e)
-      return ''
+      return { anchor: '', era: '' }
+    }
+  }
+
+  /**
+   * 加载资产 effective 数据（2026-09-21 F1 设定锚点缺失补全用）。
+   * 解析失败 / 资产不存在 → null（不阻塞生成）。
+   */
+  private async loadEffective(
+    assetType: AssetType,
+    assetId: string,
+  ): Promise<EffectiveAssetForPrompt | null> {
+    try {
+      if (assetType === 'character') {
+        return (await new CharacterAssetService(this.ds).getEffectiveData(
+          assetId,
+        )) as unknown as EffectiveAssetForPrompt
+      }
+      if (assetType === 'location') {
+        return (await new LocationAssetService(this.ds, this._imageSvc).getEffectiveData(
+          assetId,
+        )) as unknown as EffectiveAssetForPrompt
+      }
+      return (await new ItemAssetService(this.ds).getEffectiveData(
+        assetId,
+      )) as unknown as EffectiveAssetForPrompt
+    } catch {
+      return null
     }
   }
 
@@ -185,6 +225,121 @@ export class MainImageGeneratorService {
   }
 
   /**
+   * 父级地点的确认主图（2026-09-21 B3）：优先 confirmed=1 的 is_main 主图，
+   * 没有 confirmed 则放宽到任意 is_main=1（兼容未定妆数据）。
+   */
+  private async findParentMainImage(parentId: string): Promise<AssetImageEntity | null> {
+    const confirmed = await this.imageRepo.findOne({
+      where: { assetType: 'location', assetId: parentId, isMain: 1, confirmed: 1 },
+    })
+    if (confirmed?.imagePath) return confirmed
+    const main = await this.imageRepo.findOne({
+      where: { assetType: 'location', assetId: parentId, isMain: 1 },
+    })
+    return main?.imagePath ? main : null
+  }
+
+  /**
+   * 根地点平面布局图先行（2026-09-21 C2）：T2I 生成俯视平面图（无参考图），
+   * 落库 category='floor_plan' label='layout' isMain=0。失败抛错由调用方兜底。
+   */
+  private async generateFloorPlan(
+    input: GenerateMainInput,
+    anchor: string,
+    era: string,
+  ): Promise<AssetImageEntity> {
+    const projectImageModel =
+      input.providerConfigId && input.modelId
+        ? { providerConfigId: input.providerConfigId, modelId: input.modelId }
+        : await this.resolveProjectImageModel(input.assetType, input.assetId)
+    let floorPrompt = `${anchor}${input.prompt}`
+    floorPrompt = appendAssetSettingAnchors(
+      'location',
+      await this.loadEffective(input.assetType, input.assetId),
+      floorPrompt,
+    )
+    floorPrompt = `${floorPrompt}，${LOCATION_FLOOR_PLAN_SUFFIX}`
+    floorPrompt = appendAncientEraConstraint(floorPrompt, era)
+    const floorNegative = mergeAncientEraNegative(
+      mergeLocationNoHumanNegative(input.negativePrompt),
+      era,
+    )
+    const result = await this.imageGen.generate({
+      referenceImagePaths: [],
+      prompt: floorPrompt,
+      negativePrompt: floorNegative,
+      label: 'layout',
+      providerConfigId: projectImageModel?.providerConfigId,
+      modelId: projectImageModel?.modelId,
+    })
+    const entity = this.imageRepo.create({
+      id: this.generateId(),
+      userId: input.userId ?? null,
+      assetType: input.assetType,
+      assetId: input.assetId,
+      category: 'floor_plan',
+      label: 'layout',
+      imagePath: result.imagePath,
+      thumbnailPath: result.thumbnailPath ?? null,
+      isMain: 0,
+      sortOrder: 0,
+      derivedFromImageId: null,
+      prompt: floorPrompt,
+      negativePrompt: floorNegative ?? null,
+      width: null,
+      height: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Partial<AssetImageEntity>)
+    return await this.imageRepo.save(entity)
+  }
+
+  /**
+   * 地点主图自动参考图注入（2026-09-21 B3/C2，仅当调用方未显式传参考图时调用）：
+   *   - 子区域（binding.parentId 有值）：引用父级确认主图，prompt 追加同一建筑群约束；
+   *   - 根地点：平面布局图先行——无 floor_plan 则先生成（失败不阻断主图），
+   *     主图以平面图作参考，prompt 追加布局还原约束。
+   * 返回 null 表示无可用参考（回退原纯文生图流程）。
+   */
+  private async prepareLocationReference(
+    input: GenerateMainInput,
+    anchor: string,
+    era: string,
+  ): Promise<{ refPath: string; kind: 'parent' | 'floor_plan' } | null> {
+    try {
+      const binding = await this.ds
+        .getRepository(LocationBindingEntity)
+        .findOne({ where: { id: input.assetId } })
+      if (!binding) return null
+
+      if (binding.parentId) {
+        const parentMain = await this.findParentMainImage(binding.parentId)
+        if (!parentMain) return null
+        return { refPath: parentMain.imagePath, kind: 'parent' }
+      }
+
+      const existing = await this.imageRepo.findOne({
+        where: { assetType: 'location', assetId: input.assetId, category: 'floor_plan' },
+        order: { createdAt: 'DESC' },
+      })
+      if (existing?.imagePath) {
+        return { refPath: existing.imagePath, kind: 'floor_plan' }
+      }
+      try {
+        const floorPlan = await this.generateFloorPlan(input, anchor, era)
+        return { refPath: floorPlan.imagePath, kind: 'floor_plan' }
+      } catch (e) {
+        // 平面图生成失败不阻断主图：warn 后回退无参考图原逻辑
+        console.warn('[MainImageGeneratorService] 平面布局图生成失败，主图回退无参考图流程:', e)
+        return null
+      }
+    } catch (e) {
+      console.warn('[MainImageGeneratorService] 地点参考图注入失败，回退无参考图流程:', e)
+      return null
+    }
+  }
+
+  /**
    * 流程：
    * 1. 调 imageGen.generate（无 referenceImagePaths：主图本身没有上游图）
    * 2. 把当前 (assetType, assetId) 已有的所有 isMain=1 行改 isMain=0
@@ -199,9 +354,15 @@ export class MainImageGeneratorService {
 
     // 类资产硬约束（service 层收口；renderer 不重复加）：
     //   location → 全域无人；item → 居中干净背景；character 在 renderer 层已加 framing 约束
-    const anchor = await this.buildStoryAnchorPrefix(input.assetType, input.assetId, input.prompt)
+    const { anchor, era } = await this.buildStoryAnchorPrefix(input.assetType, input.assetId, input.prompt)
     let effectivePrompt = anchor ? `${anchor}${input.prompt}` : input.prompt
     let effectiveNegative = input.negativePrompt
+    // F1（2026-09-21 资产图守设定）：设定锚点缺失补全（年龄/性别/外貌/服饰；地点规模/类型/氛围）
+    effectivePrompt = appendAssetSettingAnchors(
+      input.assetType,
+      await this.loadEffective(input.assetType, input.assetId),
+      effectivePrompt,
+    )
     if (input.assetType === 'location') {
       effectivePrompt = appendLocationNoHumanConstraint(effectivePrompt)
       // 主图作为派生基准：补稳定全景构图锚点
@@ -213,17 +374,39 @@ export class MainImageGeneratorService {
       effectivePrompt = appendItemConstraints(effectivePrompt)
       effectiveNegative = mergeItemNegative(input.negativePrompt)
     }
+    // F2（2026-09-21）：古风项目硬约束——严禁现代元素（prompt 末尾 + negative）
+    effectivePrompt = appendAncientEraConstraint(effectivePrompt, era)
+    effectiveNegative = mergeAncientEraNegative(effectiveNegative, era)
 
     const refPaths: string[] = []
     if (input.referenceImagePath && input.referenceImagePath.trim()) {
       refPaths.push(input.referenceImagePath.trim())
     }
 
+    // B3/C2（2026-09-21 地点层级 + 平面图先行）：调用方未显式传参考图时，
+    // 子区域引用父级主图 / 根地点以平面布局图作参考（平面图缺失则先生成）
+    let locationRefInjected = false
+    if (input.assetType === 'location' && refPaths.length === 0) {
+      const injected = await this.prepareLocationReference(input, anchor, era)
+      if (injected) {
+        refPaths.push(injected.refPath)
+        effectivePrompt =
+          injected.kind === 'parent'
+            ? appendLocationParentReference(effectivePrompt)
+            : appendLocationFloorPlanReference(effectivePrompt)
+        locationRefInjected = true
+      }
+    }
+
     // 模型解析序：调用方显式指定 > 项目设置「画面生成」模型 > pickImageModel 自动
-    const projectImageModel =
+    // 注入了参考图时走 F1b 回退（钉住的模型 maxReferenceImages=0 → 同 provider I2I 模型）
+    let projectImageModel =
       input.providerConfigId && input.modelId
         ? null
         : await this.resolveProjectImageModel(input.assetType, input.assetId)
+    if (locationRefInjected) {
+      projectImageModel = await fallbackToReferenceCapableModel(projectImageModel)
+    }
 
     const result = await this.imageGen.generate({
       referenceImagePaths: refPaths,
@@ -325,9 +508,15 @@ export class MainImageGeneratorService {
       throw new Error('多主图必须提供 label（区分用途）')
     }
 
-    const anchor = await this.buildStoryAnchorPrefix(input.assetType, input.assetId, input.prompt)
+    const { anchor, era } = await this.buildStoryAnchorPrefix(input.assetType, input.assetId, input.prompt)
     let effectivePrompt = anchor ? `${anchor}${input.prompt}` : input.prompt
     let effectiveNegative = input.negativePrompt
+    // F1 设定锚点缺失补全（与 generateMain 同源）
+    effectivePrompt = appendAssetSettingAnchors(
+      input.assetType,
+      await this.loadEffective(input.assetType, input.assetId),
+      effectivePrompt,
+    )
     if (input.assetType === 'location') {
       effectivePrompt = appendLocationNoHumanConstraint(effectivePrompt)
       // 主图作为派生基准：补稳定全景构图锚点
@@ -335,6 +524,9 @@ export class MainImageGeneratorService {
       effectiveNegative = mergeLocationNoHumanNegative(input.negativePrompt)
       effectiveNegative = mergeLocationBaseCompositionNegative(effectiveNegative)
     }
+    // F2 古风项目硬约束
+    effectivePrompt = appendAncientEraConstraint(effectivePrompt, era)
+    effectiveNegative = mergeAncientEraNegative(effectiveNegative, era)
 
     const refPaths: string[] = []
     // 多参考图优先（换装：第一张主图基准 + 用户上传图）；无则回退单 referenceImagePath
@@ -451,6 +643,17 @@ export class MainImageGeneratorService {
 
     const refPaths = [baseImage.imagePath]
 
+    // F1（2026-09-21 资产图守设定）：设定锚点缺失补全——用户手工编辑的 prompt
+    // 可能丢了年龄 / 性别等设定（实测掌门"50岁"画成 40 岁），service 层兜底。
+    let basePrompt = appendAssetSettingAnchors(
+      input.assetType,
+      await this.loadEffective(input.assetType, input.assetId),
+      input.prompt.trim(),
+    )
+    // F2 古风硬约束：三视图同样严禁现代服饰 / 物品
+    const { era } = await this.buildStoryAnchorPrefix(input.assetType, input.assetId, basePrompt)
+    basePrompt = appendAncientEraConstraint(basePrompt, era)
+
     // F1：三视图钉项目「画面生成」模型（与主图 generateMain 同一解析序），
     // 避免自动挑到与主图不同源的模型导致 Q版主图 vs 写实视图的风格分叉。
     // 解析不到（全局 preset / 未配置）→ 传 undefined 走 imageGen 自动挑（既有行为）。
@@ -469,8 +672,8 @@ export class MainImageGeneratorService {
     // 3. 串行调 imageGen 3 次（不并发：避免触发 rate limit + 简化 mock 计数）
     const results: AssetImageEntity[] = []
     for (const v of views) {
-      let viewPrompt = `${input.prompt.trim()}，${v.promptHint}`
-      let viewNegative = input.negativePrompt
+      let viewPrompt = `${basePrompt}，${v.promptHint}`
+      let viewNegative = mergeAncientEraNegative(input.negativePrompt, era)
       // F2：角色三视图注入身份保持约束（与派生图路径 gallery-derivation.deriveSingle 同源），
       // 此前只有文字描述+视角提示，模型容易偏离 base 主图的人物身份/画风
       if (input.assetType === 'character') {

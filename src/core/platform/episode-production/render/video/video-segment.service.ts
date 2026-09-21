@@ -33,6 +33,7 @@ import {
 } from './provider-capability-matcher'
 import { buildSegmentPrompt } from './segment-planner'
 import { resolveVideoParamsForStoryboard } from './project-video-params'
+import { assertKeyframeGate, evaluateKeyframeGate } from './keyframe-gate'
 import type {
   VideoProviderAdapter,
   VideoMode,
@@ -55,6 +56,8 @@ export interface GenerateVideoSegmentInput {
   /** 实际调用的 providerConfigId / modelId（提交时记录到 storyboard，H5 崩溃恢复用） */
   providerId?: string
   modelId?: string
+  /** E3：人工强制跳过关键帧闸门（闸门拦截时 UI 让用户确认后重试传 true） */
+  force?: boolean
 }
 
 export interface VideoSegmentResult {
@@ -101,11 +104,26 @@ export class VideoSegmentService {
     // 加载首尾关键帧（O1：start + end 各一张，end 缺 → 仅首帧退 image2video）+ 取每帧 image asset 路径
     const keyframes = await this.keyframeRepo.listByStoryboard(sb.id)
     const candidateKfs: KeyframeInput[] = []
+    const gatedKfs: StoryboardKeyframe[] = []
     for (const kf of pickStartEndKeyframes(keyframes)) {
       const imagePath = await this.resolveKeyframeImagePath(kf)
       if (imagePath) {
         candidateKfs.push({ imagePath, timePercent: kf.timePercent })
+        gatedKfs.push(kf)
       }
+    }
+
+    /*
+     * E3 关键帧闸门（2026-09-21 雪麓山庄 v2 复盘）：参考图模式生成前强制校验
+     * 实际消费的首尾帧（machineCheck.pass + review.status ∈ pass/skipped）。
+     * 不满足 → KeyframeGateBlockedError（IPC 透出 code+frames 给 UI）；
+     * force=true 人工强制跳过；text2video 模式无关键帧输入，不走闸门。
+     */
+    if (input.forceMode !== 'text2video' && !input.force && gatedKfs.length > 0) {
+      assertKeyframeGate(
+        await evaluateKeyframeGate(this.ds, gatedKfs),
+        `分镜 #${sb.shotNumber}`,
+      )
     }
 
     // 选 mode

@@ -203,4 +203,13 @@ describe('ItemAssetService', () => {
       [standalone.id, linked.id].sort(),
     )
   })
+
+  it('createStandalone: 同名（归一化差异）已存在 → 复用已有 binding，不新建（2026-09-21 去重归一）', async () => {
+    const first = await svc.createStandalone({ projectId: 'p1', name: '青龙剑' })
+    const second = await svc.createStandalone({ projectId: 'p1', name: '《青龙剑》 ' })
+    expect(second.id).toBe(first.id)
+
+    const all = await svc.listByProject('p1')
+    expect(all).toHaveLength(1)
+  })
 })

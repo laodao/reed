@@ -38,8 +38,11 @@ import {
 
 /** 单帧校验结果（落 image_assets.metadata.review 的形状） */
 export interface KeyframeReview {
-  /** pass=一致；issues=发现不一致；error=校验本身失败（模型不可用/解析失败） */
-  status: 'pass' | 'issues' | 'error'
+  /**
+   * pass=一致；issues=发现不一致；error=校验本身失败（模型不可用/解析失败）；
+   * skipped=审核模型非多模态/疑似纯文本模型无法识图，未执行 VLM 审核（只有机器校验结果）
+   */
+  status: 'pass' | 'issues' | 'error' | 'skipped'
   /** 发现的问题列表（人话描述，UI 直接展示） */
   issues: string[]
   /** 一句话总结 */
@@ -48,6 +51,24 @@ export interface KeyframeReview {
   model: string
   reviewedAt: string
 }
+
+/**
+ * 审核模型是否具备视觉能力（2026-09-21 E2：雪麓山庄 v2 复盘）。
+ *
+ * 背景：项目「分镜生成」模型可配成纯文本模型（实测 qwen3.8-27b），VLM 审核
+ * 只能返回"无法读取图像内容"却照样记 issues 放行。纯文本模型必须跳过审核。
+ *
+ * 判定：模型名关键词匹配（vl / vision / 4o / gemini / claude）；未给出模型名
+ * （走 callVLM 默认兜底）时返回 false —— 生成闭环里只对有明确视觉标记的模型
+ * 启用 VLM 审核，默认兜底模型是否多模态无法确证，宁可跳过也不假装审过。
+ */
+export function isVisionCapable(modelId: string | null | undefined): boolean {
+  if (!modelId) return false
+  return /vl|vision|4o|gemini|claude/i.test(modelId)
+}
+
+/** 纯文本模型审核结论的特征词：命中则视同 skipped（模型自认读不了图，结论不可信） */
+const VLM_UNREADABLE_RE = /无法读取|不可识别|无法核验|无法确认/
 
 /** 参考图上界：关键帧本体 1 张 + 至多 4 张参考图（VLM 上下文与成本约束） */
 const MAX_REVIEW_IMAGES = 5
@@ -119,9 +140,6 @@ export class KeyframeReviewService {
     const ia = await this.imageAssetRepo.getById(kf.imageAssetId)
     if (!ia?.imagePath) throw new Error('关键帧图片资产缺失，无法校验')
 
-    const kfImageUrl = readImageAsDataUrl(ia.imagePath)
-    if (!kfImageUrl) throw new Error(`关键帧图片文件不可读：${ia.imagePath}`)
-
     // 实际生效参考图优先（能力截断后的真实输入）；老数据没有该字段时回退全量选图
     const meta = (ia.metadata ?? {}) as Record<string, unknown>
     const refIds =
@@ -131,6 +149,64 @@ export class KeyframeReviewService {
           ? meta.referenceImageIds
           : []) as string[]
 
+    const review = await this.reviewGeneratedImage({
+      imagePath: ia.imagePath,
+      prompt: kf.prompt,
+      referenceImageIds: refIds,
+      storyboardId: kf.storyboardId,
+      providerConfigId: opts?.providerConfigId,
+      modelId: opts?.modelId,
+    })
+
+    await this.imageAssetRepo.update(ia.id, {
+      metadata: { ...meta, review } as any,
+    })
+    return review
+  }
+
+  /**
+   * 审核一张已生成图（不落库）。
+   *
+   * 供生成闭环（keyframe-generation 重拍循环）内嵌调用——彼时 image_assets / keyframe
+   * 行尚未落库，只能按图片 + prompt + 生效参考图审核。reviewKeyframe 是本方法的
+   * DB 装配 + 落库包装。
+   *
+   * E2（2026-09-21）：解析出的审核模型非多模态（isVisionCapable=false）时直接返回
+   * skipped，不发 VLM 调用——纯文本模型的"审核结论"不可信（雪麓山庄 v2 根因）。
+   * 未解析到模型（走 callVLM 默认兜底）时保持旧行为照常调用。
+   */
+  async reviewGeneratedImage(input: {
+    imagePath: string
+    prompt: string | null
+    referenceImageIds: string[]
+    /** 传了则按项目「分镜生成」模型解析审核模型（opts 显式指定优先） */
+    storyboardId?: string
+    providerConfigId?: string
+    modelId?: string
+  }): Promise<KeyframeReview> {
+    // 模型解析序：调用方显式指定 > 项目「分镜生成」模型（常为 VL 模型）> callVLM 默认兜底
+    const projectModel = input.modelId
+      ? null
+      : input.storyboardId
+        ? await this.resolveProjectStoryboardModel(input.storyboardId)
+        : null
+    const providerConfigId = input.providerConfigId ?? projectModel?.providerConfigId
+    const modelId = input.modelId ?? projectModel?.modelId
+
+    if (modelId && !isVisionCapable(modelId)) {
+      return {
+        status: 'skipped',
+        issues: [],
+        summary: `审核模型 ${modelId} 非多模态，仅机器校验`,
+        model: modelId,
+        reviewedAt: new Date().toISOString(),
+      }
+    }
+
+    const kfImageUrl = readImageAsDataUrl(input.imagePath)
+    if (!kfImageUrl) throw new Error(`关键帧图片文件不可读：${input.imagePath}`)
+
+    const refIds = input.referenceImageIds
     const imageUrls: string[] = [kfImageUrl]
     if (refIds.length > 0) {
       const rows = await this.ds
@@ -146,36 +222,27 @@ export class KeyframeReviewService {
     }
 
     const userPrompt =
-      `【该帧生成提示词】\n${kf.prompt ?? '(无记录)'}\n\n` +
+      `【该帧生成提示词】\n${input.prompt ?? '(无记录)'}\n\n` +
       `【图片说明】第 1 张 = 待审核关键帧；其余 ${imageUrls.length - 1} 张 = 生成时实际使用的参考图` +
       `${refIds.length > 0 && imageUrls.length - 1 < refIds.length ? `（注意：${refIds.length - (imageUrls.length - 1)} 张参考图读取失败未附上）` : ''}。\n` +
       `请按 system 要求输出 JSON。`
-
-    // 模型解析序：调用方显式指定 > 项目「分镜生成」模型（常为 VL 模型）> callVLM 默认兜底
-    const projectModel = opts?.modelId ? null : await this.resolveProjectStoryboardModel(kf.storyboardId)
-    const providerConfigId = opts?.providerConfigId ?? projectModel?.providerConfigId
-    const modelId = opts?.modelId ?? projectModel?.modelId
 
     let review: KeyframeReview
     try {
       const raw = await callVLMMulti(userPrompt, imageUrls, SYSTEM_PROMPT, 2048, providerConfigId, modelId, {
         temperature: 0.1,
       })
-      review = this.parseReview(raw, modelId ?? projectModel?.modelId ?? 'default')
+      review = this.parseReview(raw, modelId ?? 'default')
     } catch (e: any) {
       // 校验失败不阻断制作流程：落 error 状态让 UI 显示"校验失败"，用户可重试
       review = {
         status: 'error',
         issues: [e?.message ?? String(e)],
         summary: '校验调用失败',
-        model: modelId ?? projectModel?.modelId ?? 'default',
+        model: modelId ?? 'default',
         reviewedAt: new Date().toISOString(),
       }
     }
-
-    await this.imageAssetRepo.update(ia.id, {
-      metadata: { ...meta, review } as any,
-    })
     return review
   }
 
@@ -222,14 +289,33 @@ export class KeyframeReviewService {
     const issues = Array.isArray(parsed?.issues)
       ? parsed.issues.filter((x: unknown): x is string => typeof x === 'string' && !!x.trim())
       : []
+    const summary = typeof parsed?.summary === 'string' ? parsed.summary : ''
+    // E2：审核结论自认"无法读取图像/无法核验"（纯文本模型典型输出）→ 视同 skipped，
+    // 不能拿不可信的结论去拦/放关键帧（雪麓山庄 v2：text 模型全发 issues 仍放行）
+    if (VLM_UNREADABLE_RE.test(`${summary} ${issues.join(' ')}`)) {
+      return {
+        status: 'skipped',
+        issues: [],
+        summary: `审核模型疑似无法识图，按跳过处理：${summary}`.slice(0, 300),
+        model,
+        reviewedAt: new Date().toISOString(),
+      }
+    }
     const consistent = parsed?.consistent === true
     return {
       status: consistent && issues.length === 0 ? 'pass' : 'issues',
       issues,
-      summary: typeof parsed?.summary === 'string' ? parsed.summary : '',
+      summary,
       model,
       reviewedAt: new Date().toISOString(),
     }
+  }
+
+  /** 项目「分镜生成」模型解析（生成闭环判断是否启用 VLM 审核用） */
+  async resolveReviewModelForStoryboard(
+    storyboardId: string,
+  ): Promise<{ providerConfigId: string; modelId: string } | null> {
+    return this.resolveProjectStoryboardModel(storyboardId)
   }
 
   /** keyframe → storyboard → scene → episode → project，取 config.storyboardModel */

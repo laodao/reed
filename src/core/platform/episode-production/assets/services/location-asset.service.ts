@@ -28,6 +28,7 @@ import { AssetImageEntity } from '@core/database/entities/episode-production/ass
 import type { AssetImageService } from './asset-image.service'
 import type { EffectiveLocationData } from '@shared/types/episode-production/domain.types'
 import { getProjectStyleAnchorsAsJson } from './project-style.helper'
+import { findLocationBindingByName, inferLocationParentBinding } from './binding-name-utils'
 
 /** 新建 standalone 地点入参 */
 export interface CreateStandaloneLocationInput {
@@ -35,6 +36,12 @@ export interface CreateStandaloneLocationInput {
   name: string
   description?: string
   userId?: string | null
+  /**
+   * 父级地点 binding id（2026-09-21 地点层级）。
+   * 显式传入（含 null）优先；不传（undefined）时按名字前缀自动推断
+   * （"雪麓山庄闺房" → 父 "雪麓山庄"，见 binding-name-utils.inferLocationParentBinding）。
+   */
+  parentId?: string | null
 }
 
 /** 新建 linked_lw 地点入参 */
@@ -48,6 +55,8 @@ export interface CreateLinkedLwLocationInput {
     description?: string
   }
   userId?: string | null
+  /** 父级地点 binding id；不传时按名字前缀自动推断（同 createStandalone） */
+  parentId?: string | null
 }
 
 /** updateOverride 接受的 patch（null 表示清空 override） */
@@ -71,6 +80,8 @@ export type LocationExtraPatch = Partial<{
   styleAnchors: string[] | null
   timeOfDay: string | null
   weather: string | null
+  /** 父级地点 binding id（2026-09-21 地点层级；null 解除挂载） */
+  parentId: string | null
 }>
 
 /** pickBestVariant 输入：场景维度（任意子集） */
@@ -148,6 +159,12 @@ export class LocationAssetService {
     // 投影 styleAnchors（spec 2026-05-09 review）：修补之前 main-image-generator 用 eff as any
     // 兜底取该字段的类型契约漏洞 — 现 effective 显式投影出来，调用方按 type 拿。
     const styleAnchors = parseLocationStyleAnchors(b.styleAnchors)
+    // 设定锚点字段（2026-09-21 F：资产图守设定——规模/类型/氛围进 prompt 缺失补全）
+    const settingFields = {
+      locationType: b.locationType ?? null,
+      scale: b.scale ?? null,
+      moodTags: parseLocationStyleAnchors(b.moodTags),
+    }
 
     if (b.sourceType === 'standalone') {
       return {
@@ -156,6 +173,7 @@ export class LocationAssetService {
         source: 'standalone',
         styleAnchors,
         referenceImagePath,
+        ...settingFields,
       }
     }
 
@@ -170,6 +188,7 @@ export class LocationAssetService {
       source: 'linked_lw',
       styleAnchors,
       referenceImagePath,
+      ...settingFields,
     }
   }
 
@@ -238,11 +257,42 @@ export class LocationAssetService {
     }
   }
 
-  /** 新建 standalone 地点（独立地点，不绑定 lw_location） */
+  /** 按名归一化查找项目内地点 binding（standalone/override/location_name + 前缀归一） */
+  async findByName(
+    projectId: string,
+    name: string,
+  ): Promise<LocationBindingEntity | null> {
+    return await findLocationBindingByName(this.ds, projectId, name)
+  }
+
+  /**
+   * 解析父级地点 id（2026-09-21 地点层级）：
+   * 显式入参（含 null）优先；未传时按名字前缀自动推断；都找不到 → null（根地点）。
+   */
+  private async resolveParentId(
+    projectId: string,
+    name: string,
+    explicit?: string | null,
+  ): Promise<string | null> {
+    if (explicit !== undefined) return explicit
+    const parent = await inferLocationParentBinding(this.ds, projectId, name)
+    return parent?.id ?? null
+  }
+
+  /** 新建 standalone 地点（独立地点，不绑定 lw_location）。同名（归一化/前缀归一）已存在则复用。 */
   async createStandalone(
     input: CreateStandaloneLocationInput,
   ): Promise<LocationBindingEntity> {
+    // 去重归一（2026-09-21）：多入口命名口径不一导致同名重复 binding，统一在 service 层兜底
+    const existing = await this.findByName(input.projectId, input.name)
+    if (existing) {
+      console.warn(
+        `[LocationAssetService] 项目 ${input.projectId} 已存在同名地点 "${input.name}"（${existing.id}），复用已有 binding`,
+      )
+      return existing
+    }
     const styleAnchors = await getProjectStyleAnchorsAsJson(this.ds, input.projectId)
+    const parentId = await this.resolveParentId(input.projectId, input.name, input.parentId)
     const entity = this.bindingRepo.create({
       id: this.generateId(),
       userId: input.userId ?? null,
@@ -254,6 +304,7 @@ export class LocationAssetService {
       standaloneName: input.name,
       standaloneDescription: input.description ?? null,
       styleAnchors,
+      parentId,
       generateImages: 0,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -267,6 +318,7 @@ export class LocationAssetService {
   ): Promise<LocationBindingEntity> {
     const ov = input.initialOverride ?? {}
     const styleAnchors = await getProjectStyleAnchorsAsJson(this.ds, input.projectId)
+    const parentId = await this.resolveParentId(input.projectId, input.name, input.parentId)
     const entity = this.bindingRepo.create({
       id: this.generateId(),
       userId: input.userId ?? null,
@@ -277,6 +329,7 @@ export class LocationAssetService {
       overrideName: ov.name ?? null,
       overrideDescription: ov.description ?? null,
       styleAnchors,
+      parentId,
       generateImages: 0,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -336,7 +389,36 @@ export class LocationAssetService {
     }
     if ('timeOfDay' in patch) update.timeOfDay = patch.timeOfDay ?? null
     if ('weather' in patch) update.weather = patch.weather ?? null
+    if ('parentId' in patch) {
+      update.parentId = await this.validateParentId(bindingId, patch.parentId ?? null)
+    }
     await this.bindingRepo.update(bindingId, update)
+  }
+
+  /**
+   * 父级挂载校验（2026-09-21 地点层级）：禁止挂到自己 / 挂成环
+   * （沿候选父级的 parent 链向上走，撞到自身即环）。
+   */
+  private async validateParentId(
+    bindingId: string,
+    parentId: string | null,
+  ): Promise<string | null> {
+    if (!parentId) return null
+    if (parentId === bindingId) {
+      throw new Error('地点不能挂载到自己名下')
+    }
+    const parent = await this.bindingRepo.findOne({ where: { id: parentId } })
+    if (!parent) throw new Error(`父级地点不存在：${parentId}`)
+    let cursor: LocationBindingEntity | null = parent
+    const seen = new Set<string>([bindingId])
+    while (cursor?.parentId) {
+      if (seen.has(cursor.parentId)) {
+        throw new Error('父级挂载会形成层级环，已拒绝')
+      }
+      seen.add(cursor.parentId)
+      cursor = await this.bindingRepo.findOne({ where: { id: cursor.parentId } })
+    }
+    return parentId
   }
 }
 

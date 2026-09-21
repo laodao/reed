@@ -197,4 +197,22 @@ describe('LocationAssetService', () => {
       [standalone.id, linked.id].sort(),
     )
   })
+
+  it('createStandalone: 前缀归一复用（"雪麓山庄书房" 命中已有 "书房"），防误并 "白鹿城门口"（2026-09-21 去重归一）', async () => {
+    const manor = await svc.createStandalone({ projectId: 'p1', name: '雪麓山庄' })
+    const study = await svc.createStandalone({ projectId: 'p1', name: '书房' })
+
+    // "雪麓山庄书房" 剥前缀命中 "书房" → 复用
+    const dup = await svc.createStandalone({ projectId: 'p1', name: '雪麓山庄书房' })
+    expect(dup.id).toBe(study.id)
+
+    // "白鹿城门口" 剥 "白鹿城" 剩 "门口"（不是已有地点）→ 正常新建
+    const city = await svc.createStandalone({ projectId: 'p1', name: '白鹿城' })
+    const gate = await svc.createStandalone({ projectId: 'p1', name: '白鹿城门口' })
+    expect(gate.id).not.toBe(city.id)
+
+    const list = await svc.listByProject('p1')
+    expect(list).toHaveLength(4)
+    expect(manor.id).not.toBe(study.id)
+  })
 })

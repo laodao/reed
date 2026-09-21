@@ -280,6 +280,31 @@ export interface BuildKeyframePromptInput {
    * 避免写实电影风格词把非写实（如 Q 版）角色参考图写实化；false / 缺省维持原前缀。
    */
   hasCharacterReference?: boolean
+  /**
+   * 剧集故事年代（episode.storyEra；2026-09-21 古风硬约束，雪麓山庄 v2 复盘 F 项）。
+   * 命中古/武侠/朝代词时 prompt 末尾追加"严禁现代元素"硬约束 + negative 追加现代物词，
+   * 防止古风剧本关键帧出现现代建筑/服饰（实测尾帧崩成现代公园照片）。
+   */
+  storyEra?: string | null
+  /** 剧集故事地域（保留参数位；当前硬约束只看 storyEra） */
+  storyRegion?: string | null
+}
+
+/**
+ * 古风判定（2026-09-21）：storyEra 命中古/武侠/朝代词。
+ * 词表与 main-image-generator 的年代约束语境保持一致（古/武侠/仙侠/历朝历代）。
+ */
+const ANCIENT_ERA_RE =
+  /古|武侠|仙侠|修真|朝代|历史|唐|宋|元|明|清|汉|秦|隋|晋|三国|春秋|战国|五代|架空/
+
+/** 古风硬约束词段（正向 + 负向） */
+export const ANCIENT_ERA_PROMPT_SUFFIX =
+  '严格古代中国风场景，严禁现代建筑、现代服饰、现代物品、现代交通工具、电线杆、玻璃幕墙'
+export const ANCIENT_ERA_NEGATIVE_SUFFIX =
+  'modern buildings, modern clothing, cars, power lines, glass'
+
+export function isAncientEra(storyEra: string | null | undefined): boolean {
+  return !!storyEra && ANCIENT_ERA_RE.test(storyEra)
 }
 
 /** 多帧 prompt 输出：正向 + 负向 */
@@ -397,9 +422,15 @@ export function buildKeyframePrompt(
   // 12. 质量后缀
   parts.push(input.styleConfig.qualitySuffix)
 
+  // 13. 古风硬约束（2026-09-21 F 项）：古风剧本严禁现代元素入镜
+  const ancient = isAncientEra(input.storyEra)
+  if (ancient) parts.push(ANCIENT_ERA_PROMPT_SUFFIX)
+
   return {
     prompt: parts.filter(Boolean).join(', '),
-    negativePrompt: input.styleConfig.negativePrompt,
+    negativePrompt: ancient
+      ? `${input.styleConfig.negativePrompt}, ${ANCIENT_ERA_NEGATIVE_SUFFIX}`
+      : input.styleConfig.negativePrompt,
   }
 }
 

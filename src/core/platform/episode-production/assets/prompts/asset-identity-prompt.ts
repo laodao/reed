@@ -238,3 +238,150 @@ export function stripSystemConstraints(prompt: string): string {
     .replace(/\s{2,}/g, ' ')
     .trim()
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+ * 2026-09-21 F：资产图守设定（prompt 侧强制，无多模态验收）
+ *
+ * 背景事故（vp_1789922608027_am0itsdzp）：掌门资产主图没遵守"50岁"设定画成 40 岁；
+ * 古风项目"演武场"生成成荒漠。renderer 传入的 prompt 通常已含
+ * buildAssetIdentityPrompt 的身份段，但用户手工编辑 override / 派生 viewHint 路径
+ * 会丢设定关键词。以下两个能力在 service 层做"缺失补全"（关键词存在性检查，
+ * 已含不重复追加）：
+ *   1. appendAssetSettingAnchors — 人物身份锚点（年龄/性别/外貌/服饰）或
+ *      地点规模/类型/氛围锚点缺失时补一段「设定锚点：…」；
+ *   2. appendAncientEraConstraint / mergeAncientEraNegative — storyEra 含古风
+ *      关键词时追加"严禁现代元素"硬约束。
+ * ══════════════════════════════════════════════════════════════════════ */
+
+/** 性别词存在性检查（中英） */
+const GENDER_WORD_PATTERN = /男|女|男性|女性|male|female|boy|girl|man|woman/i
+/** 年龄存在性检查（"50岁" / "年过半百" / "age 50" 等） */
+const AGE_WORD_PATTERN = /岁|年龄|年纪|age\b|aged/i
+
+function normalizeGenderText(gender: string): string {
+  const g = gender.trim()
+  switch (g.toLowerCase()) {
+    case 'male':
+      return '男'
+    case 'female':
+      return '女'
+    default:
+      return g
+  }
+}
+
+/**
+ * 资产设定锚点缺失补全：从 effective 数据提取身份/场景锚点，
+ * prompt 未包含对应关键词时追加一段「设定锚点：…」。幂等（已含锚点段或各关键词
+ * 已在 prompt 中时不重复）。
+ *
+ * - character：性别 / 年龄 / 人种 / 外貌 / 服装 / 备选服装 →「人物设定锚点」
+ * - location：类型 / 规模 / 氛围 →「地点设定锚点」
+ * - item：身份段已由 name+description 覆盖，不补（返回原 prompt）
+ */
+export function appendAssetSettingAnchors(
+  assetType: AssetType,
+  eff: EffectiveAssetForPrompt | null | undefined,
+  prompt: string,
+): string {
+  const t = (prompt ?? '').trim()
+  if (!eff) return t
+
+  if (assetType === 'character') {
+    if (t.includes('人物设定锚点')) return t
+    const segments: string[] = []
+    const gender = eff.gender ? normalizeGenderText(String(eff.gender)) : ''
+    if (gender && !GENDER_WORD_PATTERN.test(t)) segments.push(`性别：${gender}`)
+    if (eff.age != null) {
+      const ageText = String(eff.age)
+      if (!t.includes(ageText) && !AGE_WORD_PATTERN.test(t)) {
+        segments.push(`年龄：${ageText}岁`)
+      }
+    }
+    if (eff.race) {
+      const raceText = describeCharacterRace(String(eff.race))
+      // 中文标签（"东亚"）/ 完整描述 / 原始枚举值 任一出现即视为已含
+      const raceLabel = raceText.split('（')[0].trim()
+      const raceCovered =
+        (raceLabel && t.includes(raceLabel)) ||
+        (raceText && t.includes(raceText)) ||
+        t.includes(String(eff.race).trim())
+      if (raceText && !raceCovered) {
+        segments.push(`人种：${raceText}`)
+      }
+    }
+    const appearance = (eff.appearance ?? '').toString().trim()
+    if (appearance && !t.includes(appearance)) segments.push(`外貌：${appearance}`)
+    const outfit = (eff.outfit ?? '').toString().trim()
+    if (outfit && !t.includes(outfit)) segments.push(`服装：${outfit}`)
+    if (Array.isArray(eff.outfitsExtra) && eff.outfitsExtra.length > 0) {
+      const missing = eff.outfitsExtra.filter((o) => !t.includes(String(o).trim()))
+      if (missing.length > 0) segments.push(`备选服装：${missing.join(' / ')}`)
+    }
+    if (segments.length === 0) return t
+    const suffix = `人物设定锚点：${segments.join('，')}`
+    return t ? `${t}，${suffix}` : suffix
+  }
+
+  if (assetType === 'location') {
+    if (t.includes('地点设定锚点')) return t
+    const segments: string[] = []
+    const locationType = (eff.locationType ?? '').toString().trim()
+    if (locationType && !t.includes(locationType)) segments.push(`类型：${locationType}`)
+    const scale = (eff.scale ?? '').toString().trim()
+    if (scale && !t.includes(scale)) segments.push(`规模：${scale}`)
+    if (Array.isArray(eff.moodTags) && eff.moodTags.length > 0) {
+      const missing = eff.moodTags.filter((m) => !t.includes(String(m).trim()))
+      if (missing.length > 0) segments.push(`氛围：${missing.join(' / ')}`)
+    }
+    if (segments.length === 0) return t
+    const suffix = `地点设定锚点：${segments.join('，')}`
+    return t ? `${t}，${suffix}` : suffix
+  }
+
+  return t
+}
+
+/** 古风时代关键词（storyEra 命中任一即判定为古风项目） */
+const ANCIENT_ERA_PATTERN = /古|武侠|仙侠|玄幻|宋|唐|汉|明|清|朝代|古装/
+
+/** 古风硬约束 prompt 后缀（中英双写） */
+export const ANCIENT_ERA_CONSTRAINT_SUFFIX =
+  '严格古代中国风，严禁出现任何现代建筑、现代服饰、现代物品、现代交通工具' +
+  '（strictly ancient Chinese style, absolutely no modern buildings, no modern clothing, no modern objects, no modern vehicles）'
+
+/** 古风硬约束 negative */
+export const ANCIENT_ERA_NEGATIVE = [
+  'modern buildings',
+  'modern clothing',
+  'cars',
+  'electricity',
+  'glass curtain wall',
+].join(', ')
+
+/** storyEra 是否命中古风关键词 */
+export function isAncientEra(era?: string | null): boolean {
+  return ANCIENT_ERA_PATTERN.test((era ?? '').trim())
+}
+
+/**
+ * 古风时代硬约束：storyEra 命中古风关键词时把"严禁现代元素"追加到 prompt 末尾。
+ * 幂等；非古风 / 无年代信息时原样返回。
+ */
+export function appendAncientEraConstraint(prompt: string, era?: string | null): string {
+  const t = (prompt ?? '').trim()
+  if (!isAncientEra(era)) return t
+  if (t.includes(ANCIENT_ERA_CONSTRAINT_SUFFIX)) return t
+  return t ? `${t}，${ANCIENT_ERA_CONSTRAINT_SUFFIX}` : ANCIENT_ERA_CONSTRAINT_SUFFIX
+}
+
+/** 古风时代硬约束 negative 合并（幂等；非古风原样返回） */
+export function mergeAncientEraNegative(
+  negative: string | null | undefined,
+  era?: string | null,
+): string | undefined {
+  if (!isAncientEra(era)) return negative ?? undefined
+  const u = (negative ?? '').trim()
+  if (u.includes(ANCIENT_ERA_NEGATIVE)) return negative ?? undefined
+  return u ? `${u}, ${ANCIENT_ERA_NEGATIVE}` : ANCIENT_ERA_NEGATIVE
+}

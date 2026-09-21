@@ -19,6 +19,7 @@ import { randomBytes } from 'crypto'
 import type { DataSource, Repository } from 'typeorm'
 import { CharacterBindingEntity } from '@core/database/entities/episode-production/character-binding.entity'
 import { getProjectStyleAnchorsAsJson } from './project-style.helper'
+import { findCharacterBindingByName } from './binding-name-utils'
 import { AssetImageService } from './asset-image.service'
 import { LwCharacterEntity } from '@core/database/entities/lw-character.entity'
 import type { EffectiveCharacterData } from '@shared/types/episode-production/domain.types'
@@ -279,10 +280,26 @@ export class CharacterAssetService {
     return paths
   }
 
-  /** 新建 standalone 角色（独立角色，不绑定 lw） */
+  /** 按名归一化查找项目内角色 binding（standalone/override/alias；多命中取最早创建） */
+  async findByName(
+    projectId: string,
+    name: string,
+  ): Promise<CharacterBindingEntity | null> {
+    return await findCharacterBindingByName(this.ds, projectId, name)
+  }
+
+  /** 新建 standalone 角色（独立角色，不绑定 lw）。同名（归一化后）已存在则复用，不再新建。 */
   async createStandalone(
     input: CreateStandaloneInput,
   ): Promise<CharacterBindingEntity> {
+    // 去重归一（2026-09-21）：多入口命名口径不一导致同名重复 binding，统一在 service 层兜底
+    const existing = await this.findByName(input.projectId, input.name)
+    if (existing) {
+      console.warn(
+        `[CharacterAssetService] 项目 ${input.projectId} 已存在同名角色 "${input.name}"（${existing.id}），复用已有 binding`,
+      )
+      return existing
+    }
     const styleAnchors = await getProjectStyleAnchorsAsJson(this.ds, input.projectId)
     const entity = this.bindingRepo.create({
       id: this.generateId(),

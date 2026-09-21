@@ -22,6 +22,7 @@ import { ItemBindingEntity } from '@core/database/entities/episode-production/it
 import { LwItemEntity } from '@core/database/entities/lw-item.entity'
 import type { EffectiveItemData } from '@shared/types/episode-production/domain.types'
 import { getProjectStyleAnchorsAsJson } from './project-style.helper'
+import { findItemBindingByName } from './binding-name-utils'
 import { AssetImageService } from './asset-image.service'
 
 /** 新建 standalone 物品入参 */
@@ -167,10 +168,26 @@ export class ItemAssetService {
     await this.bindingRepo.update(bindingId, update)
   }
 
-  /** 新建 standalone 物品（独立物品，不绑定 lw_item） */
+  /** 按名归一化查找项目内物品 binding（standalone/override/item_name；多命中取最早创建） */
+  async findByName(
+    projectId: string,
+    name: string,
+  ): Promise<ItemBindingEntity | null> {
+    return await findItemBindingByName(this.ds, projectId, name)
+  }
+
+  /** 新建 standalone 物品（独立物品，不绑定 lw_item）。同名（归一化后）已存在则复用，不再新建。 */
   async createStandalone(
     input: CreateStandaloneItemInput,
   ): Promise<ItemBindingEntity> {
+    // 去重归一（2026-09-21）：多入口命名口径不一导致同名重复 binding，统一在 service 层兜底
+    const existing = await this.findByName(input.projectId, input.name)
+    if (existing) {
+      console.warn(
+        `[ItemAssetService] 项目 ${input.projectId} 已存在同名物品 "${input.name}"（${existing.id}），复用已有 binding`,
+      )
+      return existing
+    }
     const styleAnchors = await getProjectStyleAnchorsAsJson(this.ds, input.projectId)
     const entity = this.bindingRepo.create({
       id: this.generateId(),

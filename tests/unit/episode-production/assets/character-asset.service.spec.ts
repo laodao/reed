@@ -219,4 +219,25 @@ describe('CharacterAssetService', () => {
     expect(eff.outfit).toBe('黑袍')
     expect(eff.source).toBe('linked_lw')
   })
+
+  it('createStandalone: 同名（归一化差异）已存在 → 复用已有 binding，不新建（2026-09-21 去重归一）', async () => {
+    const first = await svc.createStandalone({
+      projectId: 'p1',
+      name: '沈云萝',
+      description: '最早的设定',
+    })
+    // 全角空格 + 书名号差异 → 归一化后同名，应复用
+    const second = await svc.createStandalone({
+      projectId: 'p1',
+      name: '《沈　云萝》',
+      description: '重复入口的描述',
+    })
+    expect(second.id).toBe(first.id)
+
+    const all = await svc.listByProject('p1')
+    expect(all).toHaveLength(1)
+    // 跨项目不受影响
+    const other = await svc.createStandalone({ projectId: 'p2', name: '沈云萝' })
+    expect(other.id).not.toBe(first.id)
+  })
 })

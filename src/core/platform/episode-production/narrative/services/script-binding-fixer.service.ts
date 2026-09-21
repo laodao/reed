@@ -23,6 +23,12 @@ import { EpisodeScriptEntity } from '@core/database/entities/episode-production/
 import { VideoEpisodeEntity } from '@core/database/entities/episode-production/video-episode.entity'
 import { CharacterBindingEntity } from '@core/database/entities/episode-production/character-binding.entity'
 import { getCurrentUserId } from '@core/context/user-context'
+import { CharacterAssetService } from '@core/platform/episode-production/assets/services/character-asset.service'
+import {
+  normalizeBindingName,
+  characterBindingNames,
+  buildBindingNameIndex,
+} from '@core/platform/episode-production/assets/services/binding-name-utils'
 
 interface UnboundCharRef {
   /** 出现在哪个 scene */
@@ -122,13 +128,27 @@ export class ScriptBindingFixerService {
   }
 
   /**
-   * 按 characterName 匹配现有 character_bindings（standaloneName 或
-   * overrideName），命中则把 binding_id 填回 scene.characters JSON。
+   * 按 characterName 匹配现有 character_bindings（standaloneName / overrideName /
+   * alias，归一化比较），命中则把 binding_id 填回 scene.characters JSON。
    */
   async fixByNameMatch(episodeScriptId: string): Promise<FixResult> {
     const scan = await this.scanUnbound(episodeScriptId)
+    // 归一化名字索引（含 alias 候选；同名多命中取最早创建）
     const nameToId = new Map<string, string>()
-    for (const c of scan.candidates) nameToId.set(c.name, c.id)
+    const projectId = await this.resolveProjectId(episodeScriptId)
+    if (projectId) {
+      const bindings = await this.ds.getRepository(CharacterBindingEntity).find({
+        where: { projectId },
+        order: { createdAt: 'ASC' },
+      })
+      const index = buildBindingNameIndex(bindings, characterBindingNames)
+      for (const [key, b] of index) nameToId.set(key, b.id)
+    }
+    // 兼容：扫描候选里的原始名也进索引（不动 UI 候选展示语义）
+    for (const c of scan.candidates) {
+      const key = normalizeBindingName(c.name)
+      if (key && !nameToId.has(key)) nameToId.set(key, c.id)
+    }
 
     let matched = 0
     const stillUnbound = new Set<string>()
@@ -141,7 +161,7 @@ export class ScriptBindingFixerService {
 
       const chars = ((scene.characters as any[] | null) ?? []).map((c: any) => {
         if (!c?.characterBindingId && c?.characterName) {
-          const id = nameToId.get(c.characterName)
+          const id = nameToId.get(normalizeBindingName(c.characterName))
           if (id) {
             modified = true
             matched += 1
@@ -156,7 +176,7 @@ export class ScriptBindingFixerService {
       const dlgs = (((scene as any).dialogues as any[] | null) ?? []).map(
         (d: any) => {
           if (!d?.characterBindingId && d?.characterName) {
-            const id = nameToId.get(d.characterName)
+            const id = nameToId.get(normalizeBindingName(d.characterName))
             if (id) {
               modified = true
               matched += 1
@@ -172,7 +192,7 @@ export class ScriptBindingFixerService {
       const acts = (((scene as any).actions as any[] | null) ?? []).map(
         (a: any) => {
           if (!a?.characterBindingId && a?.characterName) {
-            const id = nameToId.get(a.characterName)
+            const id = nameToId.get(normalizeBindingName(a.characterName))
             if (id) {
               modified = true
               matched += 1
@@ -227,14 +247,17 @@ export class ScriptBindingFixerService {
     }
 
     const scan = await this.scanUnbound(episodeScriptId)
-    // 已有候选 name set
-    const existingNames = new Set(scan.candidates.map((c) => c.name))
+    // 已有候选 name set（归一化 key；同名不同写法的不再重复建）
+    const existingNames = new Set(
+      scan.candidates.map((c) => normalizeBindingName(c.name)).filter(Boolean),
+    )
 
-    // 收集还没 binding 的 characterName（去重）
-    const missingNames = new Set<string>()
+    // 收集还没 binding 的 characterName（按归一化 key 去重）
+    const missingNames = new Map<string, string>()
     for (const ref of scan.unbound) {
-      if (!existingNames.has(ref.characterName)) {
-        missingNames.add(ref.characterName)
+      const key = normalizeBindingName(ref.characterName)
+      if (key && !existingNames.has(key) && !missingNames.has(key)) {
+        missingNames.set(key, ref.characterName)
       }
     }
 
@@ -242,28 +265,15 @@ export class ScriptBindingFixerService {
       return { created: [], filled: 0 }
     }
 
-    // 创建 standalone binding。
-    // 注：用裸 manager.getRepository 时不会自动注入 user_id，需手动取
-    // getCurrentUserId() 注入（同 P5-T34 修复模式）。
-    const bindingRepo = this.ds.getRepository(CharacterBindingEntity)
+    // 走 CharacterAssetService.createStandalone（2026-09-21 去重归一）：
+    // 内部 find-or-create（含 alias 匹配，命中即复用不再新建），且新建时携带
+    // styleAnchors 项目风格快照等完整字段——替代原先绕过 service 的裸 repo 直插。
+    const charSvc = new CharacterAssetService(this.ds)
     const userId = getCurrentUserId()
     const created: Array<{ id: string; name: string }> = []
-    const now = new Date()
-    for (const name of missingNames) {
-      const id = `cb_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
-      const entity = bindingRepo.create({
-        id,
-        projectId,
-        sourceType: 'standalone',
-        standaloneName: name,
-        userId,
-        // 必填字段兜底（NOT NULL 约束；entity 没用 @CreateDateColumn）
-        voiceConfig: {},
-        createdAt: now,
-        updatedAt: now,
-      } as any)
-      await bindingRepo.save(entity)
-      created.push({ id, name })
+    for (const name of missingNames.values()) {
+      const binding = await charSvc.createStandalone({ projectId, name, userId })
+      created.push({ id: binding.id, name })
     }
 
     // 再跑一遍 fix 填回

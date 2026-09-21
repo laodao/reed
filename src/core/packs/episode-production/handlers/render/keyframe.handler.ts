@@ -431,8 +431,10 @@ async function handleReviewKeyframes(
 /**
  * 生成单个分镜的全部关键帧（spec §4.3 链式：start → end → middle）
  *
- * 2026-09-19：生成成功后自动对每帧做一致性校验（VLM），失败不阻断生成结果——
- * 校验结果随 listKeyframes 的 review 字段上界面，由用户决定是否重生。
+ * 2026-09-21（E2 审核门成真门）：机器校验 + VLM 审核 + 重拍闭环已内嵌进
+ * KeyframeGenerationService.generateOneKeyframe（生成 → 机器校验 → 多模态审核 →
+ * 重拍 ≤2 次），结果落 image_assets.metadata.machineCheck/review，随 listKeyframes
+ * 透出。handler 不再做生成后的二次自动审核（避免 VLM 重复调用）。
  */
 async function handleGenerateKeyframes(
   _event: any,
@@ -452,13 +454,6 @@ async function handleGenerateKeyframes(
       keyframeCountOverride,
       userPrompt,
     })
-    // 自动一致性校验（复盘整改：错图不能再静默进视频）。串行逐帧，单帧失败只记日志。
-    try {
-      const reviewSvc = new KeyframeReviewService(db.dataSource)
-      await reviewSvc.reviewStoryboardKeyframes(storyboardId)
-    } catch (reviewErr) {
-      console.warn('[handleGenerateKeyframes] 自动一致性校验失败（不影响生成结果）:', reviewErr)
-    }
     return { success: true, data }
   } catch (e: any) {
     return { success: false, error: e?.message || '生成关键帧失败' }
@@ -485,7 +480,7 @@ async function handleEnsureKeyframes(
   }
 }
 
-/** 重生成单帧（不级联；级联由 UI 拿 plan-keyframe-regen 决定）。重生后自动校验该帧 */
+/** 重生成单帧（不级联；级联由 UI 拿 plan-keyframe-regen 决定）。机器校验/审核/重拍已内嵌在生成闭环里 */
 async function handleRegenerateKeyframe(
   _event: any,
   keyframeId: string,
@@ -502,13 +497,6 @@ async function handleRegenerateKeyframe(
       styleName: styleName as any,
       userPrompt,
     })
-    // 与整批生成一致：重生后自动校验（失败不阻断）
-    try {
-      const reviewSvc = new KeyframeReviewService(db.dataSource)
-      await reviewSvc.reviewKeyframe(data.id)
-    } catch (reviewErr) {
-      console.warn('[handleRegenerateKeyframe] 自动一致性校验失败（不影响生成结果）:', reviewErr)
-    }
     return { success: true, data }
   } catch (e: any) {
     return { success: false, error: e?.message || '重生成关键帧失败' }
@@ -542,10 +530,13 @@ async function handleListKeyframes(
         let imagePath: string | null = null
         let references: KeyframeReferenceRef[] = []
         let review: unknown = null
+        let machineCheck: unknown = null
         if (kf.imageAssetId) {
           const ia = await db.imageAssets!.getById(kf.imageAssetId)
           imagePath = ia?.imagePath ?? null
           review = extractMetadataField(ia?.metadata, 'review')
+          // E2/E3（2026-09-21）：机器校验结果透出（UI 红色徽章 + 视频闸门同源证据）
+          machineCheck = extractMetadataField(ia?.metadata, 'machineCheck')
 
           const refIds = extractReferenceImageIds(ia?.metadata)
           // 生效参考图（2026-09-19）：模型能力截断后实际消费的图；
@@ -598,7 +589,7 @@ async function handleListKeyframes(
             }))
           }
         }
-        return { ...kf, imagePath, references, review }
+        return { ...kf, imagePath, references, review, machineCheck }
       }),
     )
     return { success: true, data: enriched }

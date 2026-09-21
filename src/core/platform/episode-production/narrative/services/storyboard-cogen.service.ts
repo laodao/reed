@@ -42,6 +42,13 @@ import { generateCogenForScene } from '../ai/storyboard-cogen'
 import type { CogenExistingAsset, CogenOutput } from '../ai/storyboard-cogen'
 import { normalizeShotNumbers } from './storyboard.service'
 import { cleanupStoryboards } from '../storyboard-cleanup.service'
+import {
+  normalizeBindingName,
+  characterBindingNames,
+  locationBindingNames,
+  itemBindingNames,
+  matchNameIndexWithPrefix,
+} from '@core/platform/episode-production/assets/services/binding-name-utils'
 
 /** 单场景联合生成结果 */
 export interface CogenSceneResult {
@@ -273,7 +280,7 @@ export class StoryboardCogenService {
     }
   }
 
-  /** 项目现有 binding 快照（按名索引；随建随更新，跨场景去重）+ 资产 service 组 */
+  /** 项目现有 binding 快照（按归一化名字索引；随建随更新，跨场景去重）+ 资产 service 组 */
   private async buildBindingState(projectId: string): Promise<{
     projectId: string
     userId: string | null
@@ -295,50 +302,60 @@ export class StoryboardCogenService {
     const locIndex = new Map<string, BindingSnapshot>()
     const itemIndex = new Map<string, BindingSnapshot>()
 
-    for (const b of await charSvc.listByProject(projectId)) {
-      const name = b.standaloneName ?? b.overrideName
-      if (name) {
-        // 2026-09-21：同名重复 binding（历史上识别去重失效产物）取最早创建的——
-        // 定妆图/资产图都挂在最早的 binding 上，Map 直接 set 会被后来的空 binding 覆盖，
-        // 分镜绑到无图副本 → 关键帧拿不到角色参考图（雪麓山庄实测根因）。
-        if (charIndex.has(name)) {
-          console.warn(`[StoryboardCogenService] 角色 "${name}" 存在重复 binding，沿用最早创建的 ${charIndex.get(name)!.id}（忽略 ${b.id}）`)
+    // 2026-09-21 去重归一：索引 key 统一走 normalizeBindingName（trim/全角空格/书名号），
+    // 角色含 alias 候选、地点/物品含 location_name/item_name 双轨列；同名重复 binding
+    // （历史上识别去重失效产物）取最早创建的——定妆图/资产图都挂在最早的 binding 上，
+    // Map 直接 set 会被后来的空 binding 覆盖，分镜绑到无图副本 → 关键帧拿不到角色参考图
+    // （雪麓山庄实测根因）。
+    const kindLabel = { character: '角色', location: '地点', item: '物品' } as const
+    const addToIndex = (
+      index: Map<string, BindingSnapshot>,
+      kind: keyof typeof kindLabel,
+      names: Array<string | null | undefined>,
+      snap: BindingSnapshot,
+    ): void => {
+      for (const raw of names) {
+        const key = normalizeBindingName(raw)
+        if (!key) continue
+        const existing = index.get(key)
+        if (existing) {
+          if (existing.id !== snap.id) {
+            console.warn(
+              `[StoryboardCogenService] ${kindLabel[kind]} "${raw}" 存在重复 binding，沿用最早创建的 ${existing.id}（忽略 ${snap.id}）`,
+            )
+          }
         } else {
-          charIndex.set(name, {
-            id: b.id,
-            name,
-            description: b.standaloneDescription ?? b.overrideDescription ?? null,
-          })
+          index.set(key, snap)
         }
       }
+    }
+
+    for (const b of await charSvc.listByProject(projectId)) {
+      const primary = b.standaloneName ?? b.overrideName
+      if (!primary) continue
+      addToIndex(charIndex, 'character', characterBindingNames(b), {
+        id: b.id,
+        name: primary,
+        description: b.standaloneDescription ?? b.overrideDescription ?? null,
+      })
     }
     for (const b of await locSvc.listByProject(projectId)) {
-      const name = b.standaloneName ?? b.overrideName
-      if (name) {
-        if (locIndex.has(name)) {
-          console.warn(`[StoryboardCogenService] 地点 "${name}" 存在重复 binding，沿用最早创建的 ${locIndex.get(name)!.id}（忽略 ${b.id}）`)
-        } else {
-          locIndex.set(name, {
-            id: b.id,
-            name,
-            description: b.standaloneDescription ?? b.overrideDescription ?? null,
-          })
-        }
-      }
+      const primary = b.standaloneName ?? b.overrideName ?? b.locationName
+      if (!primary) continue
+      addToIndex(locIndex, 'location', locationBindingNames(b), {
+        id: b.id,
+        name: primary,
+        description: b.standaloneDescription ?? b.overrideDescription ?? null,
+      })
     }
     for (const b of await itemSvc.listByProject(projectId)) {
-      const name = b.standaloneName ?? b.overrideName
-      if (name) {
-        if (itemIndex.has(name)) {
-          console.warn(`[StoryboardCogenService] 物品 "${name}" 存在重复 binding，沿用最早创建的 ${itemIndex.get(name)!.id}（忽略 ${b.id}）`)
-        } else {
-          itemIndex.set(name, {
-            id: b.id,
-            name,
-            description: b.standaloneDescription ?? b.overrideDescription ?? null,
-          })
-        }
-      }
+      const primary = b.standaloneName ?? b.overrideName ?? b.itemName
+      if (!primary) continue
+      addToIndex(itemIndex, 'item', itemBindingNames(b), {
+        id: b.id,
+        name: primary,
+        description: b.standaloneDescription ?? b.overrideDescription ?? null,
+      })
     }
 
     return {
@@ -540,8 +557,9 @@ export class StoryboardCogenService {
   // ==================== D2 绑定构造 ====================
 
   /**
-   * 角色：按名匹配现有 binding（standaloneName/overrideName）→ 命中复用；
-   * 未命中 createStandalone（描述来自资产卡，含服饰；性别/年龄写入身份块）。
+   * 角色：按归一化名字匹配现有 binding → 命中复用；索引未命中再用
+   * svc.findByName 兜底一次（含 alias 候选）；仍未命中 createStandalone
+   * （service 内含 find-or-create；描述来自资产卡，含服饰；性别/年龄写入身份块）。
    */
   private async resolveCharacterBindings(
     output: CogenOutput,
@@ -554,7 +572,20 @@ export class StoryboardCogenService {
   ): Promise<Map<string, BindingSnapshot>> {
     const resolved = new Map<string, BindingSnapshot>()
     for (const c of output.assets.characters) {
-      let snap = index.get(c.name)
+      const key = normalizeBindingName(c.name)
+      let snap = index.get(key)
+      if (!snap) {
+        // 兜底：索引按构建时快照，可能漏掉别名/双轨列以外的历史命名，再查一次库
+        const found = await svc.findByName(projectId, c.name)
+        if (found) {
+          snap = {
+            id: found.id,
+            name: c.name,
+            description: found.standaloneDescription ?? found.overrideDescription ?? null,
+          }
+          index.set(key, snap)
+        }
+      }
       // 描述用资产卡：外貌/服饰描述并入 standaloneDescription，定妆图与分镜共用（消除 F12 漂移）
       const description = c.outfit ? `${c.description}\n服饰：${c.outfit}` : c.description
       if (snap) {
@@ -571,7 +602,7 @@ export class StoryboardCogenService {
           userId,
         })
         snap = { id: created.id, name: c.name, description }
-        index.set(c.name, snap)
+        index.set(key, snap)
         result.createdBindings.push({ kind: 'character', id: snap.id, name: c.name })
       }
       resolved.set(c.name, snap)
@@ -579,7 +610,7 @@ export class StoryboardCogenService {
     return resolved
   }
 
-  /** 地点：同角色逻辑（恰好一个） */
+  /** 地点：同角色逻辑（恰好一个），额外支持前缀归一（"雪麓山庄书房" 命中已有 "书房"） */
   private async resolveLocationBinding(
     output: CogenOutput,
     index: Map<string, BindingSnapshot>,
@@ -590,7 +621,19 @@ export class StoryboardCogenService {
     enriched: CogenEpisodeResult['enrichedBindings'],
   ): Promise<BindingSnapshot> {
     const loc = output.assets.location
-    let snap = index.get(loc.name)
+    const key = normalizeBindingName(loc.name)
+    let snap = matchNameIndexWithPrefix(index, key)
+    if (!snap) {
+      const found = await svc.findByName(projectId, loc.name)
+      if (found) {
+        snap = {
+          id: found.id,
+          name: loc.name,
+          description: found.standaloneDescription ?? found.overrideDescription ?? null,
+        }
+        index.set(key, snap)
+      }
+    }
     if (snap) {
       result.reusedBindings.push({ kind: 'location', id: snap.id, name: loc.name })
       await this.enrichBindingIfThin(svc, 'location', snap, loc.description, enriched)
@@ -602,7 +645,7 @@ export class StoryboardCogenService {
         userId,
       })
       snap = { id: created.id, name: loc.name, description: loc.description }
-      index.set(loc.name, snap)
+      index.set(key, snap)
       result.createdBindings.push({ kind: 'location', id: snap.id, name: loc.name })
     }
     return snap
@@ -620,7 +663,19 @@ export class StoryboardCogenService {
   ): Promise<Map<string, BindingSnapshot>> {
     const resolved = new Map<string, BindingSnapshot>()
     for (const it of output.assets.items) {
-      let snap = index.get(it.name)
+      const key = normalizeBindingName(it.name)
+      let snap = index.get(key)
+      if (!snap) {
+        const found = await svc.findByName(projectId, it.name)
+        if (found) {
+          snap = {
+            id: found.id,
+            name: it.name,
+            description: found.standaloneDescription ?? found.overrideDescription ?? null,
+          }
+          index.set(key, snap)
+        }
+      }
       if (snap) {
         result.reusedBindings.push({ kind: 'item', id: snap.id, name: it.name })
         await this.enrichBindingIfThin(svc, 'item', snap, it.description, enriched)
@@ -632,7 +687,7 @@ export class StoryboardCogenService {
           userId,
         })
         snap = { id: created.id, name: it.name, description: it.description }
-        index.set(it.name, snap)
+        index.set(key, snap)
         result.createdBindings.push({ kind: 'item', id: snap.id, name: it.name })
       }
       resolved.set(it.name, snap)

@@ -700,6 +700,16 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/normalize-storyboard-character-ids'
     )
     await normalizeStoryboardCharacterIds(this.dataSource)
+    // 2026-09-21 去重归一：合并同名重复资产 binding（角色/地点/物品），重指向引用后删多余行
+    const { mergeDuplicateBindings } = await import(
+      '@core/database/migrations/merge-duplicate-bindings'
+    )
+    await mergeDuplicateBindings(this.dataSource)
+    // 2026-09-21 地点层级：location_bindings.parent_id（子区域挂父级，幂等）
+    const { addLocationParentId } = await import(
+      '@core/database/migrations/add-location-parent-id'
+    )
+    await addLocationParentId(this.dataSource)
     // 步骤0：长文向量索引记录表（lw_vector_indices）—— 向量本体在 LanceDB，本表存 chunkId↔实体映射
     const { createLwVectorIndices } = await import(
       '@core/database/migrations/create-lw-vector-indices'

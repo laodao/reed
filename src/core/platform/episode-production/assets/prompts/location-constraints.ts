@@ -126,6 +126,46 @@ export function mergeLocationBaseCompositionNegative(userNegative?: string | nul
   return `${u}, ${LOCATION_BASE_COMPOSITION_NEGATIVE}`
 }
 
+/*
+ * 2026-09-21 地点层级 + 平面布局图先行（B/C）：
+ *   - 根地点主图生成前先出俯视平面布局图（category='floor_plan'），主图以它作参考图
+ *     还原布局，避免同一地点多张图方位/建筑互相矛盾；
+ *   - 子区域（binding.parentId 有值）主图以父级主图作参考图，保同一建筑群风格一致。
+ */
+
+/** 平面布局图 prompt 后缀（T2I，不走参考图） */
+export const LOCATION_FLOOR_PLAN_SUFFIX =
+  '俯视正交平面布局图（top-down orthographic floor plan / site plan），' +
+  '标注主要建筑与区域相对位置，无人物，示意风格，简洁线条与色块'
+
+/** 主图以平面布局图为参考时的 prompt 后缀 */
+export const LOCATION_FLOOR_PLAN_REFERENCE_SUFFIX =
+  '场景是参考平面图所示布局的真实视角还原，保持建筑相对位置、方位、风格一致' +
+  '（the scene is a realistic perspective rendering of the layout in the reference floor plan, ' +
+  'keep relative positions, orientation and architectural style consistent）'
+
+/** 子区域主图以父级主图为参考时的 prompt 后缀 */
+export const LOCATION_PARENT_REFERENCE_SUFFIX =
+  '与参考图为同一建筑群/同一地点的不同区域，保持建筑风格、材质、色调一致' +
+  '（a different area of the same building complex / location as the reference image, ' +
+  'keep architectural style, materials and color tone consistent）'
+
+/** 幂等追加通用 helper（已含 suffix 则不重复） */
+function appendSuffixOnce(prompt: string, suffix: string): string {
+  const trimmed = (prompt ?? '').trim()
+  if (!trimmed) return suffix
+  if (trimmed.includes(suffix)) return trimmed
+  return `${trimmed}，${suffix}`
+}
+
+export function appendLocationFloorPlanReference(prompt: string): string {
+  return appendSuffixOnce(prompt, LOCATION_FLOOR_PLAN_REFERENCE_SUFFIX)
+}
+
+export function appendLocationParentReference(prompt: string): string {
+  return appendSuffixOnce(prompt, LOCATION_PARENT_REFERENCE_SUFFIX)
+}
+
 /**
  * spec 2026-05-09 review：变体维度锁（'variant' 新派生路径专用）
  *

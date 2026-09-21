@@ -309,6 +309,12 @@ export interface EffectiveLocationData {
   styleAnchors?: string[]
   /** 用户上传的参考图相对路径（spec 2026-05-09） */
   referenceImagePath?: string | null
+  /** 场景类型（interior / exterior / ...；2026-09-21 设定锚点投影） */
+  locationType?: string | null
+  /** 规模（小 / 中 / 大 / 巨大，自由文本） */
+  scale?: string | null
+  /** 氛围 tags */
+  moodTags?: string[]
 }
 
 export interface EffectiveItemData {

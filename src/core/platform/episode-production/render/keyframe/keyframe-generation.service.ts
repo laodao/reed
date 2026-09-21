@@ -57,12 +57,35 @@ import { pickReferenceImage } from './reference-image-selector'
 import { deleteKeyframeWithAsset } from './keyframe-cleanup'
 import { resolveCharacterViewLabel } from './keyframe-view-mapping'
 import { parseAssetRefOverrides, toRefCandidates } from './parse-asset-refs'
+import { ReferenceBoardService, type ReferenceBoardResult, type ReferenceBoardMember } from './reference-board.service'
+import { runKeyframeMachineChecks, type MachineCheckResult } from './keyframe-machine-checks'
+import { KeyframeReviewService, isVisionCapable, type KeyframeReview } from './keyframe-review.service'
+import { getModelCapabilities } from '@core/platform/providers/image/model-capabilities'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { getPathProvider } from '@core/interfaces/path.interface'
+import * as fs from 'fs'
+import * as path from 'path'
 import type { ImageGenerator } from '@core/platform/episode-production/assets/services/gallery-derivation.service'
 import { createGalleryImageGenerator, fallbackToReferenceCapableModel } from '@core/platform/episode-production/assets/services/image-provider-adapter'
 import type { SceneCharacter } from '@shared/types/episode-production'
 
 const DEFAULT_KEYFRAME_WIDTH = 1024
 const DEFAULT_KEYFRAME_HEIGHT = 1024
+
+/**
+ * E2（2026-09-21 审核门成真门）：单帧最多拍 3 张（首拍 + 2 次重拍）。
+ * 机器校验 / VLM 审核任一不通过 → 问题摘要追加进 prompt 重拍；3 张全失败 →
+ * 该帧 metadata.machineCheck/review 落失败证据，视频生成闸门据此拦截，不再静默通过。
+ */
+const MAX_KEYFRAME_ATTEMPTS = 3
+
+/** collectReferenceImages 选出的参考图（带资产名/类别，拼参考板 + 落库用） */
+interface CollectedRefImage {
+  id: string
+  imagePath: string
+  kind: 'character' | 'location' | 'item'
+  name: string
+}
 
 /**
  * 关键帧画幅跟随项目（tasks/2026-09-16-storyboard-asset-cogen D5，消除 F9 的
@@ -80,6 +103,23 @@ function keyframeDimensionsForAspectRatio(
     default:
       return { width: DEFAULT_KEYFRAME_WIDTH, height: DEFAULT_KEYFRAME_HEIGHT }
   }
+}
+
+/**
+ * D：编号参考板的 prompt 说明段（拼板模式时前置到 prompt）。
+ * 名单来自拼板输入（顺序即图上编号色块顺序）。
+ */
+function buildBoardPromptNote(members: ReferenceBoardMember[]): string {
+  const kindLabel: Record<ReferenceBoardMember['kind'], string> = {
+    character: '角色',
+    location: '场景',
+    item: '物品',
+  }
+  const list = members.map((m) => `${m.slot}号=${m.name}（${kindLabel[m.kind]}）`).join('、')
+  return (
+    `[编号参考板] 参考图是一张编号参考板，从左到右依次是：${list}。` +
+    `画面中出现的对应人物/场景/物品必须与对应编号图的形象严格一致`
+  )
 }
 
 /**
@@ -170,10 +210,13 @@ export class KeyframeGenerationService {
   private readonly resolver: ReferenceResolver
   private readonly imageSvc: AssetImageService
   private readonly imageGenerator: ImageGenerator
+  private readonly boardService: ReferenceBoardService
+  private readonly reviewService: KeyframeReviewService
 
   constructor(
     private readonly ds: DataSource,
     imageGenerator?: ImageGenerator,
+    deps?: { boardService?: ReferenceBoardService; reviewService?: KeyframeReviewService },
   ) {
     this.keyframeRepo = new StoryboardKeyframeRepository(ds)
     this.sbCharRepo = new StoryboardCharacterRepository(ds)
@@ -181,6 +224,8 @@ export class KeyframeGenerationService {
     this.resolver = new ReferenceResolver(ds)
     this.imageSvc = new AssetImageService(ds)
     this.imageGenerator = imageGenerator ?? createGalleryImageGenerator()
+    this.boardService = deps?.boardService ?? new ReferenceBoardService()
+    this.reviewService = deps?.reviewService ?? new KeyframeReviewService(ds)
   }
 
   private get sbRepo(): Repository<StoryboardEntity> {
@@ -696,6 +741,65 @@ export class KeyframeGenerationService {
   }
 
   /**
+   * 解析有效画面模型的 maxReferenceImages（D 拼板判定用；查能力表，不硬编码模型名）。
+   * 未钉项目模型 / provider 配置缺失 / 模型未登记能力 → null（不拼板，保持原截断逻辑）。
+   */
+  private async resolveMaxReferenceImages(
+    model: { providerConfigId: string; modelId: string } | null,
+  ): Promise<number | null> {
+    if (!model) return null
+    try {
+      const db = getCoreDatabaseManager()
+      if (!db.providerConfigs) return null
+      const enabled = await db.providerConfigs.getEnabled()
+      const cfg = enabled.find((c) => c.id === model.providerConfigId)
+      if (!cfg) return null
+      const providerType = String(cfg.templateId ?? '').replace('image-', '')
+      const cur = ((cfg.models ?? []) as Array<{ id?: string; name?: string }>).find(
+        (m) => m.id === model.modelId,
+      )
+      return getModelCapabilities(providerType, model.modelId, cur?.name).maxReferenceImages
+    } catch {
+      return null
+    }
+  }
+
+  /** 古风硬约束上下文：scene → episode_script → episode 取 storyEra/storyRegion；缺失 → null（不阻塞生成） */
+  private async resolveEpisodeEraContext(
+    scene: SceneScriptEntity,
+  ): Promise<{ storyEra: string | null; storyRegion: string | null }> {
+    try {
+      const epScript = await this.ds
+        .getRepository(EpisodeScriptEntity)
+        .findOne({ where: { id: scene.episodeScriptId } })
+      if (!epScript) return { storyEra: null, storyRegion: null }
+      const ep = await this.ds
+        .getRepository(VideoEpisodeEntity)
+        .findOne({ where: { id: (epScript as any).episodeId } })
+      return {
+        storyEra: (ep as any)?.storyEra ?? null,
+        storyRegion: (ep as any)?.storyRegion ?? null,
+      }
+    } catch {
+      return { storyEra: null, storyRegion: null }
+    }
+  }
+
+  /** 重拍废图回收（best-effort）：只删 dataPath 内的生成图，失败静默 */
+  private discardGeneratedImage(imagePath: string): void {
+    try {
+      const dataPath = getPathProvider().getDataPath()
+      const abs = path.isAbsolute(imagePath) ? imagePath : path.join(dataPath, imagePath)
+      const normalized = path.normalize(abs)
+      const prefix = dataPath.endsWith(path.sep) ? dataPath : dataPath + path.sep
+      if (!normalized.startsWith(prefix)) return
+      if (fs.existsSync(normalized)) fs.unlinkSync(normalized)
+    } catch {
+      // 回收容错
+    }
+  }
+
+  /**
    * 项目「画面生成」模型（config.imageModel）→ 关键帧生成的 provider/model 覆盖。
    * 与 main-image-generator.resolveProjectImageModel 同源（那边按资产反查 projectId，
    * 这里 generateOneKeyframe 已持有 projectId，直接查项目）。未配置/异常 → null（自动挑）。
@@ -885,7 +989,7 @@ export class KeyframeGenerationService {
     return { characters, location, items }
   }
 
-  /** 生成一帧并落库 */
+  /** 生成一帧并落库（E2：生成 → 机器校验 → VLM 审核 → 不通过重拍，最多 3 张） */
   private async generateOneKeyframe(args: {
     storyboard: StoryboardEntity
     scene: SceneScriptEntity
@@ -914,6 +1018,9 @@ export class KeyframeGenerationService {
       storyboard.shotType,
     )
 
+    // 古风硬约束（F 项）：episode.storyEra 命中古/武侠/朝代词 → prompt/negative 追加禁令
+    const eraCtx = await this.resolveEpisodeEraContext(scene)
+
     // 拼提示词
     const promptOut = buildKeyframePrompt({
       shotType: storyboard.shotType,
@@ -935,12 +1042,14 @@ export class KeyframeGenerationService {
       hasCharacterReference,
       // spec 2026-05-09 ep-redesign §3.2 B5 镜头扩展（焦距 / 光圈 / 相机风格 / 打光预设）
       cameraMetadata: (storyboard as any).metadata ?? null,
+      storyEra: eraCtx.storyEra,
+      storyRegion: eraCtx.storyRegion,
     })
 
     // 调 image generator 生成图（label 用 frame 角色 + frameIndex 便于追踪）
     // 项目设置的 stylePrompt 追加到关键帧提示词尾部（不覆盖既有结构）
     const projectStyle = await this.resolveProjectStylePrompt(scene)
-    const finalPrompt = projectStyle ? `${promptOut.prompt}，${projectStyle}` : promptOut.prompt
+    const basePrompt = projectStyle ? `${promptOut.prompt}，${projectStyle}` : promptOut.prompt
     // 2026-09-19：关键帧生成接线项目「画面生成」模型（config.imageModel）。
     // 此前不传 provider/model → pickImageModel 自动乱挑（场次2根因：挑中只吃 1 张
     // 参考图的 bailian wan2.7-image，多角色视觉锚丢失）。与资产主图生成
@@ -953,21 +1062,125 @@ export class KeyframeGenerationService {
     const effectiveImageModel = refImages.length > 0
       ? await fallbackToReferenceCapableModel(projectImageModel)
       : projectImageModel
-    const generated = await this.imageGenerator.generate({
-      referenceImagePaths: refImages.map((r) => r.imagePath),
-      prompt: finalPrompt,
-      negativePrompt: promptOut.negativePrompt,
-      label: `keyframe_${plan.frameRole}_${plan.frameIndex}`,
-      width: dimensions.width,
-      height: dimensions.height,
-      providerConfigId: effectiveImageModel?.providerConfigId,
-      modelId: effectiveImageModel?.modelId,
-    })
+
+    /*
+     * D（2026-09-21 多角色锚定）：有效参考图 >1 张但模型 maxReferenceImages==1
+     * （comfyui 网关只吃 1 张，改网关协议不现实）→ 把全部参考图拼成一张带编号的
+     * 参考板作为唯一参考图，prompt 前追加编号对照说明。链式衔接说明：当前
+     * chain-strategy 的参考链只在 prompt 层（时刻语言），帧间不互喂图片，
+     * 参考板只是身份锚，不影响链式逻辑。
+     * 拼板失败（sharp 异常 / 成员图不可读）warn 后退回原截断逻辑。
+     */
+    let board: ReferenceBoardResult | null = null
+    const maxRefs = await this.resolveMaxReferenceImages(effectiveImageModel)
+    if (refImages.length > 1 && maxRefs === 1) {
+      try {
+        board = await this.boardService.build(
+          refImages.map((r) => ({
+            imagePath: r.imagePath,
+            name: r.name,
+            kind: r.kind,
+            assetImageId: r.id,
+          })),
+        )
+      } catch (e) {
+        console.warn('[keyframe-generation] 参考板拼接失败，退回原截断逻辑:', e)
+        board = null
+      }
+    }
+    const referencePaths = board ? [board.path] : refImages.map((r) => r.imagePath)
+    const boardNote = board ? buildBoardPromptNote(board.members) : ''
+
+    // E2：VLM 审核仅在项目配置了多模态审核模型时启用；纯文本/未配置 → skipped
+    const reviewModel = await this.reviewService
+      .resolveReviewModelForStoryboard(storyboard.id)
+      .catch(() => null)
+    const visionReview = !!(reviewModel && isVisionCapable(reviewModel.modelId))
+
+    let generated: Awaited<ReturnType<ImageGenerator['generate']>> | null = null
+    let machineCheck: MachineCheckResult | null = null
+    let review: KeyframeReview | null = null
+    let retryNote = ''
+    for (let attempt = 1; attempt <= MAX_KEYFRAME_ATTEMPTS; attempt++) {
+      const attemptPrompt =
+        (boardNote ? `${boardNote}\n` : '') +
+        basePrompt +
+        (retryNote ? `\n[上一张图的问题] ${retryNote}，必须修正` : '')
+      generated = await this.imageGenerator.generate({
+        referenceImagePaths: referencePaths,
+        prompt: attemptPrompt,
+        negativePrompt: promptOut.negativePrompt,
+        label: `keyframe_${plan.frameRole}_${plan.frameIndex}`,
+        width: dimensions.width,
+        height: dimensions.height,
+        providerConfigId: effectiveImageModel?.providerConfigId,
+        modelId: effectiveImageModel?.modelId,
+      })
+
+      // 机器校验：照抄/空图硬检测（基准 = 原始成员参考图，不是拼板）
+      machineCheck = await runKeyframeMachineChecks(
+        generated.imagePath,
+        refImages.map((r) => r.imagePath),
+      )
+
+      // VLM 审核：仅多模态审核模型；机器校验未过不再浪费 VLM 调用
+      review = null
+      if (machineCheck.pass && visionReview) {
+        try {
+          review = await this.reviewService.reviewGeneratedImage({
+            imagePath: generated.imagePath,
+            prompt: promptOut.prompt,
+            referenceImageIds: refImages.map((r) => r.id),
+            storyboardId: storyboard.id,
+            providerConfigId: reviewModel!.providerConfigId,
+            modelId: reviewModel!.modelId,
+          })
+        } catch (e: any) {
+          review = {
+            status: 'error',
+            issues: [e?.message ?? String(e)],
+            summary: '校验调用失败',
+            model: reviewModel!.modelId,
+            reviewedAt: new Date().toISOString(),
+          }
+        }
+      }
+
+      // review 'error' = 审核基础设施失败，重拍无意义，接受本帧（门禁按 error 另行拦截）
+      const reviewBlocking = review?.status === 'issues'
+      if (machineCheck.pass && !reviewBlocking) break
+      if (attempt < MAX_KEYFRAME_ATTEMPTS) {
+        const problems = [
+          ...machineCheck.failures.map((f) => f.detail),
+          ...(reviewBlocking ? review!.issues : []),
+        ]
+        retryNote = problems.join('；').slice(0, 500)
+        console.warn(
+          `[keyframe-generation] 帧 ${plan.frameIndex} 第 ${attempt} 张未过校验，重拍：${retryNote}`,
+        )
+        this.discardGeneratedImage(generated.imagePath)
+      }
+    }
+    if (!review) {
+      review = {
+        status: 'skipped',
+        issues: [],
+        summary: machineCheck?.pass
+          ? '审核模型非多模态或未配置，仅机器校验'
+          : '机器校验未过，未进入 VLM 审核',
+        model: reviewModel?.modelId ?? '',
+        reviewedAt: new Date().toISOString(),
+      }
+    }
+    if (!generated || !machineCheck) {
+      throw new Error('关键帧生成循环异常退出（无产出）')
+    }
 
     // 生效参考图：adapter 按模型能力截断后返回实际生效路径；缺省=全部生效。
     // 截断差异（选中但未生效）必须落库让 UI 可见——这是"多角色参考图被静默丢弃"的根因面。
+    // 拼板模式下参考板就是唯一输入，成员图全部经板生效，仍记原始成员 ids。
     let effectiveReferenceImageIds = refImages.map((r) => r.id)
-    if (generated.effectiveReferencePaths) {
+    if (!board && generated.effectiveReferencePaths) {
       const effectiveSet = new Set(generated.effectiveReferencePaths)
       effectiveReferenceImageIds = refImages
         .filter((r) => effectiveSet.has(r.imagePath))
@@ -992,6 +1205,13 @@ export class KeyframeGenerationService {
         referenceImageIds: refImages.map((r) => r.id),
         referenceImageIdsEffective: effectiveReferenceImageIds,
         resolvedModel: generated.resolvedModel ?? null,
+        // D：编号参考板（拼板模式才落）
+        ...(board
+          ? { referenceBoard: { path: board.path, members: board.members } }
+          : {}),
+        // E：机器校验 + VLM 审核结果（视频生成闸门据此拦截）
+        machineCheck,
+        review,
       },
     })
 
@@ -1029,8 +1249,8 @@ export class KeyframeGenerationService {
     scene: SceneScriptEntity,
     overrides: KeyframeReferenceOverride[] | null = null,
     shotType?: string | null,
-  ): Promise<{ refs: Array<{ id: string; imagePath: string }>; hasCharacterReference: boolean }> {
-    const refs: Array<{ id: string; imagePath: string }> = []
+  ): Promise<{ refs: CollectedRefImage[]; hasCharacterReference: boolean }> {
+    const refs: CollectedRefImage[] = []
     let hasCharacterReference = false
     const overrideMap = new Map<string, string>()
     for (const o of overrides ?? []) {
@@ -1041,17 +1261,19 @@ export class KeyframeGenerationService {
     const tryOverride = async (
       kind: 'character' | 'location' | 'item',
       bindingId: string,
-    ): Promise<{ id: string; imagePath: string } | null> => {
+      name: string,
+    ): Promise<CollectedRefImage | null> => {
       const imageId = overrideMap.get(`${kind}:${bindingId}`)
       if (!imageId) return null
       const list = await this.imageSvc.listByAsset(kind, bindingId)
       const hit = list.find((img) => img.id === imageId)
       if (!hit) return null
-      return { id: hit.id, imagePath: hit.imagePath }
+      return { id: hit.id, imagePath: hit.imagePath, kind, name }
     }
 
     for (const c of assets.characters) {
-      const ov = await tryOverride('character', c.bindingId)
+      const charName = c.effective.name ?? ''
+      const ov = await tryOverride('character', c.bindingId, charName)
       if (ov) {
         refs.push(ov)
         hasCharacterReference = true
@@ -1073,7 +1295,7 @@ export class KeyframeGenerationService {
         },
       })
       if (r.image) {
-        refs.push({ id: r.image.id, imagePath: r.image.imagePath })
+        refs.push({ id: r.image.id, imagePath: r.image.imagePath, kind: 'character', name: charName })
         hasCharacterReference = true
       }
 
@@ -1089,7 +1311,7 @@ export class KeyframeGenerationService {
             const img = list.find((i) => i.id === id)
             // S-05：形象组补充图同样只收 confirmed=1（定妆确认闸门）
             if (img?.imagePath && img.confirmed === 1) {
-              refs.push({ id: img.id, imagePath: img.imagePath })
+              refs.push({ id: img.id, imagePath: img.imagePath, kind: 'character', name: charName })
               hasCharacterReference = true
             }
           }
@@ -1099,7 +1321,8 @@ export class KeyframeGenerationService {
       }
     }
     for (const it of assets.items) {
-      const ov = await tryOverride('item', it.bindingId)
+      const itemName = it.effective.name ?? ''
+      const ov = await tryOverride('item', it.bindingId, itemName)
       if (ov) {
         refs.push(ov)
         continue
@@ -1109,11 +1332,12 @@ export class KeyframeGenerationService {
         bindingId: it.bindingId,
         dims: {},
       })
-      if (r.image) refs.push({ id: r.image.id, imagePath: r.image.imagePath })
+      if (r.image) refs.push({ id: r.image.id, imagePath: r.image.imagePath, kind: 'item', name: itemName })
     }
     // 地点最后：单图参考的网关（Kontext 单图模式）只取第一张时，优先保住角色/物品身份
     if (assets.location) {
-      const ov = await tryOverride('location', assets.location.bindingId)
+      const locName = assets.location.effective.name ?? ''
+      const ov = await tryOverride('location', assets.location.bindingId, locName)
       if (ov) {
         refs.push(ov)
       } else {
@@ -1122,7 +1346,7 @@ export class KeyframeGenerationService {
           bindingId: assets.location.bindingId,
           dims: { time: scene.timeOfDay, weather: scene.weather ?? undefined },
         })
-        if (r.image) refs.push({ id: r.image.id, imagePath: r.image.imagePath })
+        if (r.image) refs.push({ id: r.image.id, imagePath: r.image.imagePath, kind: 'location', name: locName })
       }
     }
     return { refs, hasCharacterReference }

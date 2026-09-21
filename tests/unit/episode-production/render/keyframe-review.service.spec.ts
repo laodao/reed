@@ -313,4 +313,63 @@ describe('KeyframeReviewService', () => {
   it('关键帧不存在 → 抛错', async () => {
     await expect(svc.reviewKeyframe('kf_ghost')).rejects.toThrow(/Keyframe not found/)
   })
+
+  // ─── E2（2026-09-21）：审核模型多模态判定 + 纯文本模型跳过 ───
+
+  it('E2：显式指定纯文本审核模型 → 跳过 VLM，落 skipped', async () => {
+    const { kfId, iaId } = await seed(ds)
+    const review = await svc.reviewKeyframe(kfId, { modelId: 'qwen3.8-27b' })
+    expect(review.status).toBe('skipped')
+    expect(review.summary).toContain('非多模态')
+    // 纯文本模型不发 VLM 调用
+    expect(callVLMMultiMock).not.toHaveBeenCalled()
+    const ia = await new ImageAssetRepository(ds).getById(iaId)
+    expect((ia?.metadata as any)?.review?.status).toBe('skipped')
+  })
+
+  it('E2：显式指定多模态模型（qwen-vl-max）→ 正常调 VLM', async () => {
+    const { kfId } = await seed(ds)
+    callVLMMultiMock.mockResolvedValue(JSON.stringify({ consistent: true, issues: [], summary: 'ok' }))
+    const review = await svc.reviewKeyframe(kfId, { modelId: 'qwen-vl-max' })
+    expect(review.status).toBe('pass')
+    expect(callVLMMultiMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('E2：VLM 返回"无法读取图像"类结论 → 视同 skipped（纯文本模型无效结论）', async () => {
+    const { kfId } = await seed(ds)
+    callVLMMultiMock.mockResolvedValue(JSON.stringify({
+      consistent: false,
+      issues: ['无法读取图像内容，无法核验人物一致性'],
+      summary: '无法读取图像',
+    }))
+    const review = await svc.reviewKeyframe(kfId)
+    expect(review.status).toBe('skipped')
+    expect(review.summary).toContain('按跳过处理')
+  })
+})
+
+describe('isVisionCapable（E2 审核模型多模态判定）', () => {
+  it('多模态关键词命中', async () => {
+    const { isVisionCapable } = await import(
+      '@core/platform/episode-production/render/keyframe/keyframe-review.service'
+    )
+    expect(isVisionCapable('qwen-vl-max')).toBe(true)
+    expect(isVisionCapable('qwen2.5-vl-72b')).toBe(true)
+    expect(isVisionCapable('gpt-4o')).toBe(true)
+    expect(isVisionCapable('gemini-2.5-pro')).toBe(true)
+    expect(isVisionCapable('claude-sonnet-4')).toBe(true)
+    expect(isVisionCapable('llava-vision-v1')).toBe(true)
+  })
+
+  it('纯文本/未指定 → false', async () => {
+    const { isVisionCapable } = await import(
+      '@core/platform/episode-production/render/keyframe/keyframe-review.service'
+    )
+    expect(isVisionCapable('qwen3.8-27b')).toBe(false)
+    expect(isVisionCapable('deepseek-v3')).toBe(false)
+    expect(isVisionCapable('gpt-3.5-turbo')).toBe(false)
+    expect(isVisionCapable('')).toBe(false)
+    expect(isVisionCapable(null)).toBe(false)
+    expect(isVisionCapable(undefined)).toBe(false)
+  })
 })

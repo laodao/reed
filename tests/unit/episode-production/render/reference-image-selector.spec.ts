@@ -327,4 +327,36 @@ describe('pickReferenceImage', () => {
     })
     expect(r.image).toBeNull()
   })
+
+  /*
+   * floor_plan（2026-09-21 平面布局图先行）：平面图是主图生成的布局参考，
+   * 不是场景真实视角图，不进 location 候选池——即使 metadata 命中维度也不得选中。
+   */
+  it('floor_plan 不进 location 候选池（维度命中也跳过）', async () => {
+    const floorPlan = makeImg({ id: 'fp', meta: { angle: 'wide', time: 'morning' } })
+    ;(floorPlan as any).category = 'floor_plan'
+    const variant = makeImg({ id: 'var', meta: { angle: 'wide' } })
+    const main = makeImg({ id: 'main', isMain: 1, meta: {} })
+    const r = await pickReferenceImage(fakeImageSvc([floorPlan, variant, main]), {
+      kind: 'location',
+      bindingId: 'lb1',
+      dims: { angle: 'wide', time: 'morning' },
+    })
+    // 平面图 6 分但被排除；选中 4 分变体
+    expect(r.image?.id).toBe('var')
+    expect(r.score).toBe(4)
+  })
+
+  it('floor_plan 是池内唯一非主图 → 兜底主图（不选平面图）', async () => {
+    const floorPlan = makeImg({ id: 'fp', meta: { angle: 'wide' } })
+    ;(floorPlan as any).category = 'floor_plan'
+    const main = makeImg({ id: 'main', isMain: 1, meta: {} })
+    const r = await pickReferenceImage(fakeImageSvc([floorPlan, main]), {
+      kind: 'location',
+      bindingId: 'lb1',
+      dims: { angle: 'wide' },
+    })
+    expect(r.image?.id).toBe('main')
+    expect(r.fellBackToMain).toBe(true)
+  })
 })
