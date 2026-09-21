@@ -81,8 +81,11 @@ function remapChapterNoJsonArray(text: string | null | undefined, mapping: Chapt
 }
 
 /**
- * 把伴生数据的章号整体搬到映射后的新号上（事务内逐行按主键更新）。
- * 这些表在章号列上均无唯一约束，逐行更新不会瞬时不一致。
+ * 把伴生数据的章号整体搬到映射后的新号上（事务内两阶段更新）。
+ * lw_entity_state_snapshots 上有 UNIQUE(project, entity_type, entity_id, chapter_number)
+ * （实测踩中）：交换式移动（5↔6）或顺序不当的逐行更新会撞即时唯一约束。
+ * 两阶段：先把所有待搬行置为负目标值（负数域恒空闲且互异），再把全部目标位
+ * 腾空后一次性归位。映射的像集只含被腾空/新增的章号，第二阶段无碰撞。
  */
 export async function syncCompanionChapterNumbers(
   db: any,
@@ -98,62 +101,77 @@ export async function syncCompanionChapterNumbers(
   const { LwGraphEdgeEntity } = await import('@core/database/entities/lw-graph-edge.entity')
   const { LwChapterStateSummaryEntity } = await import('@core/database/entities/lw-chapter-state-summary.entity')
 
+  /** 单行章号字段的负数化补丁（仅列变化的字段；目标值相同视为无变化） */
+  const negate = (current: number | null | undefined): number | null | undefined => {
+    const next = remapChapterNo(current, mapping)
+    if (next === current) return current
+    return next === null || next === undefined ? next : -Math.abs(next)
+  }
+
   await db.dataSource.transaction(async (em: any) => {
+    // ---- 阶段1：全部待搬行负数化；阶段2：归位 ----
     const events = await em.getRepository(LwEventEntity).find({ where: { projectId } })
-    for (const row of events) {
-      const next = remapChapterNo(row.chapterNumber, mapping)
-      if (next !== row.chapterNumber) {
-        await em.update(LwEventEntity, { id: row.id }, { chapterNumber: next })
-        report.events++
-      }
+    const moveEvents = events.filter((r: any) => remapChapterNo(r.chapterNumber, mapping) !== r.chapterNumber)
+    for (const r of moveEvents) await em.update(LwEventEntity, { id: r.id }, { chapterNumber: negate(r.chapterNumber) })
+    for (const r of moveEvents) {
+      await em.update(LwEventEntity, { id: r.id }, { chapterNumber: remapChapterNo(r.chapterNumber, mapping) })
+      report.events++
     }
 
     const states = await em.getRepository(LwEntityStateEntity).find({ where: { projectId } })
-    for (const row of states) {
-      const next = remapChapterNo(row.chapterNumber, mapping)
-      if (next !== row.chapterNumber) {
-        await em.update(LwEntityStateEntity, { id: row.id }, { chapterNumber: next })
-        report.entityStates++
-      }
+    const moveStates = states.filter((r: any) => remapChapterNo(r.chapterNumber, mapping) !== r.chapterNumber)
+    for (const r of moveStates) await em.update(LwEntityStateEntity, { id: r.id }, { chapterNumber: negate(r.chapterNumber) })
+    for (const r of moveStates) {
+      await em.update(LwEntityStateEntity, { id: r.id }, { chapterNumber: remapChapterNo(r.chapterNumber, mapping) })
+      report.entityStates++
     }
 
     const foreshadows = await em.getRepository(LwForeshadowEntity).find({ where: { projectId } })
-    for (const row of foreshadows) {
+    const foreshadowPatch = (r: any, sign: 1 | -1): Record<string, unknown> | null => {
       const patch: Record<string, unknown> = {}
-      const planted = remapChapterNo(row.plantedChapter, mapping)
-      const payoff = remapChapterNo(row.payoffChapter, mapping)
-      const rolledTo = remapChapterNo(row.rolledTo, mapping)
-      const develop = remapChapterNoJsonArray(row.developChapters, mapping)
-      if (planted !== row.plantedChapter) patch.plantedChapter = planted
-      if (payoff !== row.payoffChapter) patch.payoffChapter = payoff
-      if (rolledTo !== row.rolledTo) patch.rolledTo = rolledTo
-      if (develop !== row.developChapters) patch.developChapters = develop
-      if (Object.keys(patch).length > 0) {
-        await em.update(LwForeshadowEntity, { id: row.id }, patch)
-        report.foreshadows++
+      const planted = remapChapterNo(r.plantedChapter, mapping)
+      const payoff = remapChapterNo(r.payoffChapter, mapping)
+      const rolledTo = remapChapterNo(r.rolledTo, mapping)
+      const developRaw = remapChapterNoJsonArray(r.developChapters, mapping)
+      if (planted !== r.plantedChapter) patch.plantedChapter = sign === -1 ? -Math.abs(planted as number) : planted
+      if (payoff !== r.payoffChapter) patch.payoffChapter = sign === -1 && payoff != null ? -Math.abs(payoff) : payoff
+      if (rolledTo !== r.rolledTo) patch.rolledTo = sign === -1 && rolledTo != null ? -Math.abs(rolledTo) : rolledTo
+      if (developRaw !== r.developChapters) {
+        patch.developChapters = sign === -1
+          ? String(developRaw ?? '').replace(/\d+/g, (d) => `-${d}`)
+          : developRaw
       }
+      return Object.keys(patch).length > 0 ? patch : null
+    }
+    const moveForeshadows = foreshadows.filter((r: any) => foreshadowPatch(r, -1) !== null)
+    for (const r of moveForeshadows) await em.update(LwForeshadowEntity, { id: r.id }, foreshadowPatch(r, -1)!)
+    for (const r of moveForeshadows) {
+      await em.update(LwForeshadowEntity, { id: r.id }, foreshadowPatch(r, 1)!)
+      report.foreshadows++
     }
 
     const edges = await em.getRepository(LwGraphEdgeEntity).find({ where: { projectId } })
-    for (const row of edges) {
+    const edgePatch = (r: any, sign: 1 | -1): Record<string, unknown> | null => {
       const patch: Record<string, unknown> = {}
-      const from = remapChapterNo(row.validFromChapter, mapping)
-      const until = remapChapterNo(row.validUntilChapter, mapping)
-      if (from !== row.validFromChapter) patch.validFromChapter = from
-      if (until !== row.validUntilChapter) patch.validUntilChapter = until
-      if (Object.keys(patch).length > 0) {
-        await em.update(LwGraphEdgeEntity, { id: row.id }, patch)
-        report.graphEdges++
-      }
+      const from = remapChapterNo(r.validFromChapter, mapping)
+      const until = remapChapterNo(r.validUntilChapter, mapping)
+      if (from !== r.validFromChapter) patch.validFromChapter = sign === -1 && from != null ? -Math.abs(from) : from
+      if (until !== r.validUntilChapter) patch.validUntilChapter = sign === -1 && until != null ? -Math.abs(until) : until
+      return Object.keys(patch).length > 0 ? patch : null
+    }
+    const moveEdges = edges.filter((r: any) => edgePatch(r, -1) !== null)
+    for (const r of moveEdges) await em.update(LwGraphEdgeEntity, { id: r.id }, edgePatch(r, -1)!)
+    for (const r of moveEdges) {
+      await em.update(LwGraphEdgeEntity, { id: r.id }, edgePatch(r, 1)!)
+      report.graphEdges++
     }
 
     const summaries = await em.getRepository(LwChapterStateSummaryEntity).find({ where: { projectId } })
-    for (const row of summaries) {
-      const next = remapChapterNo(row.chapterNumber, mapping)
-      if (next !== row.chapterNumber) {
-        await em.update(LwChapterStateSummaryEntity, { id: row.id }, { chapterNumber: next })
-        report.stateSummaries++
-      }
+    const moveSummaries = summaries.filter((r: any) => remapChapterNo(r.chapterNumber, mapping) !== r.chapterNumber)
+    for (const r of moveSummaries) await em.update(LwChapterStateSummaryEntity, { id: r.id }, { chapterNumber: negate(r.chapterNumber) })
+    for (const r of moveSummaries) {
+      await em.update(LwChapterStateSummaryEntity, { id: r.id }, { chapterNumber: remapChapterNo(r.chapterNumber, mapping) })
+      report.stateSummaries++
     }
   })
 
