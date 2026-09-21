@@ -15,12 +15,12 @@
 
 import * as fs from 'fs'
 import * as path from 'path'
-import sharp from 'sharp'
 import {
   aHash64,
   hamming64,
   toAbsImagePath,
 } from '@core/platform/episode-production/common/image-hash'
+import { workerImageStats } from '@core/platform/episode-production/common/sharp-worker'
 
 export interface MachineCheckFailure {
   code: 'flat_or_blank' | 'reference_copy' | 'reference_copy_whitebg'
@@ -46,35 +46,6 @@ const EDGE_WHITE_VAR = 50
 /** 路径解析：委托 common/image-hash（相对路径按 dataPath 拼） */
 const toAbs = toAbsImagePath
 
-/** 整图通道标准差均值（空图/纯色检测） */
-async function overallStdev(absPath: string): Promise<number> {
-  const stats = await sharp(absPath).stats()
-  const stdevs = stats.channels.map((c) => c.stdev ?? 0)
-  return stdevs.length ? stdevs.reduce((a, b) => a + b, 0) / stdevs.length : 0
-}
-
-/** 边缘一圈（约 10%）灰度均值/方差：32x32 缩略图取外圈 3px 环 */
-async function edgeBandStats(absPath: string): Promise<{ mean: number; variance: number }> {
-  const size = 32
-  const ring = 3
-  const { data } = await sharp(absPath)
-    .resize(size, size, { fit: 'fill' })
-    .greyscale()
-    .raw()
-    .toBuffer({ resolveWithObject: true })
-  const vals: number[] = []
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      if (x < ring || x >= size - ring || y < ring || y >= size - ring) {
-        vals.push(data[y * size + x])
-      }
-    }
-  }
-  const mean = vals.reduce((a, b) => a + b, 0) / vals.length
-  const variance = vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length
-  return { mean, variance }
-}
-
 /**
  * 跑关键帧机器校验。
  *
@@ -92,19 +63,15 @@ export async function runKeyframeMachineChecks(
     return { pass: true, failures: [], checkedAt }
   }
 
-  let hash: bigint
-  let stdev: number
-  let edge: { mean: number; variance: number }
-  try {
-    ;[hash, stdev, edge] = await Promise.all([
-      aHash64(abs),
-      overallStdev(abs),
-      edgeBandStats(abs),
-    ])
-  } catch (e) {
-    console.warn('[keyframe-machine-checks] sharp 读取失败，机器校验降级放行:', imagePath, e)
+  // aHash + 标准差 + 边缘白度一个 RPC 取回（sharp 在 worker 子进程）
+  const stats = await workerImageStats(abs)
+  if (!stats) {
+    console.warn('[keyframe-machine-checks] sharp 读取失败，机器校验降级放行:', imagePath)
     return { pass: true, failures: [], checkedAt }
   }
+  const hash = BigInt(`0x${stats.aHash}`)
+  const stdev = stats.stdev
+  const edge = { mean: stats.edgeMean, variance: stats.edgeVar }
 
   const failures: MachineCheckFailure[] = []
 

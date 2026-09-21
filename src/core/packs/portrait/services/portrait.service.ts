@@ -44,7 +44,7 @@ import {
   portraitParams,
 } from '@shared/utils/portrait-params'
 import type { PortraitFraming, PromptTemplateCategory, PortraitGenerationScene } from '@shared/types/portrait.types'
-import sharp from 'sharp'
+import { workerCompositeGrid } from '@core/platform/episode-production/common/sharp-worker'
 import archiver from 'archiver'
 
 /**
@@ -1609,78 +1609,14 @@ export class PortraitService {
           return { success: false, error: '没有有效的图片文件' }
         }
 
-        // 加载所有图片
-        const images = await Promise.all(
-          localPaths.map(async (item) => ({
-            buffer: await sharp(item.path).png().toBuffer(),
-            metadata: await sharp(item.path).metadata(),
-            angle: item.angle
-          }))
-        )
-
-        // 计算拼接后的尺寸
+        // 宫格拼接走 sharp worker 子进程（libvips 崩 Electron 主进程修复）
         const gridLayout = request.gridLayout || 'horizontal'
-        let outputWidth = 0
-        let outputHeight = 0
-
-        if (gridLayout === 'horizontal') {
-          outputWidth = images.reduce((sum, img) => sum + (img.metadata.width || 0), 0)
-          outputHeight = Math.max(...images.map(img => img.metadata.height || 0))
-        } else if (gridLayout === 'vertical') {
-          outputWidth = Math.max(...images.map(img => img.metadata.width || 0))
-          outputHeight = images.reduce((sum, img) => sum + (img.metadata.height || 0), 0)
-        } else {
-          // 2x2 网格
-          const cols = 2
-          const rows = Math.ceil(images.length / cols)
-          const maxWidth = Math.max(...images.map(img => img.metadata.width || 0))
-          const maxHeight = Math.max(...images.map(img => img.metadata.height || 0))
-          outputWidth = maxWidth * cols
-          outputHeight = maxHeight * rows
-        }
-
-        // 创建拼接图
-        const compositeOps = []
-        let x = 0
-        let y = 0
-        let col = 0
-
-        for (const img of images) {
-          compositeOps.push({
-            input: img.buffer,
-            left: x,
-            top: y
-          })
-
-          if (gridLayout === 'horizontal') {
-            x += img.metadata.width || 0
-          } else if (gridLayout === 'vertical') {
-            y += img.metadata.height || 0
-          } else {
-            // 2x2 网格
-            col++
-            if (col >= 2) {
-              col = 0
-              x = 0
-              y += img.metadata.height || 0
-            } else {
-              x += img.metadata.width || 0
-            }
-          }
-        }
-
         const outputPath = path.join(exportDir, `portrait_grid_${timestamp}.png`)
-        await sharp({
-          create: {
-            width: outputWidth,
-            height: outputHeight,
-            channels: 4,
-            background: { r: 255, g: 255, b: 255, alpha: 1 }
-          }
+        await workerCompositeGrid({
+          paths: localPaths.map((p) => p.path),
+          layout: gridLayout,
+          outPath: outputPath,
         })
-          .composite(compositeOps)
-          .png()
-          .toFile(outputPath)
 
         return { success: true, filePath: outputPath }
       } else {

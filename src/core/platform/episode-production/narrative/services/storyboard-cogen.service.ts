@@ -49,6 +49,10 @@ import {
   itemBindingNames,
   matchNameIndexWithPrefix,
 } from '@core/platform/episode-production/assets/services/binding-name-utils'
+import {
+  isMacroScaleLocationName,
+  containsInteriorScaleWord,
+} from '@core/platform/episode-production/assets/prompts/location-constraints'
 
 /** 单场景联合生成结果 */
 export interface CogenSceneResult {
@@ -539,6 +543,24 @@ export class StoryboardCogenService {
   ): Promise<void> {
     if (!this.isDescriptionThin(snap.description)) return
     if (!newDescription || newDescription === snap.description) return
+    /*
+     * O3 富化污染守卫（2026-09-21 v3 实测）：宏观尺度地点（山庄/城/派/门/宫…）
+     * 不能被室内尺度的子场景描述回填——实测"掌门书房内景"的描述被回填进根地点
+     * 「雪麓山庄」（因其描述过薄），导致平面图 prompt 用了室内尺度。
+     * 名字本身含室内词（如"掌门书房"）时守卫不拦——它本来就是室内地点。
+     */
+    if (
+      kind === 'location' &&
+      isMacroScaleLocationName(snap.name) &&
+      !containsInteriorScaleWord(snap.name) &&
+      containsInteriorScaleWord(newDescription)
+    ) {
+      console.warn(
+        `[StoryboardCogenService] 富化回填跳过：宏观尺度地点 "${snap.name}" 的新描述含室内尺度词，` +
+          `疑似子场景描述污染（${snap.id}），保持原描述`,
+      )
+      return
+    }
     try {
       await svc.updateStandalone(snap.id, { description: newDescription })
       snap.description = newDescription

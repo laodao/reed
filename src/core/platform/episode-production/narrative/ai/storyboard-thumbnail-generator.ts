@@ -7,10 +7,10 @@
  *   1. 加载 episodeScript（含 scenes / 角色 / 地点 effective）
  *   2. 拼 prompt（全剧故事概要 + 风格 + 9 段叙事节奏）
  *   3. 调 imageGen.generate（一次出一张大图，3×3 grid 布局）
- *   4. sharp 切片：1 张大图按 3×3 等分得 9 张独立图
+ *   4. sharp 切片（common/sharp-worker 子进程执行）：1 张大图按 3×3 等分得 9 张独立图
  *   5. 落地到 temp/thumbnails/{episodeScriptId}-{ts}/frame-N.jpg
  *
- * 进程归属：sharp 是 Node native，**只能主进程**（Electron 主 / Web server）。
+ * 进程归属：图像合成走 sharp worker 子进程，本 service 只编排（Electron 主 / Web server 双端）。
  * 渲染端通过 IPC 拿到 ThumbnailFrame[] 路径直接消费。
  *
  * 双母语：
@@ -18,9 +18,9 @@
  *   专业用户：thumbnail storyboard，电影前期标准做法
  */
 
-import sharp from 'sharp'
 import { promises as fs } from 'fs'
 import path from 'path'
+import { workerExtractRegions } from '@core/platform/episode-production/common/sharp-worker'
 import type { ImageGenerator } from '../../assets/services/gallery-derivation.service'
 
 export interface GenerateThumbnailsInput {
@@ -105,22 +105,21 @@ export class StoryboardThumbnailGeneratorService {
     )
     await fs.mkdir(sessionDir, { recursive: true })
 
-    // 4. sharp 切片
+    // 4. sharp 切片（worker 子进程：libvips 崩 Electron 主进程修复）
     const frames: ThumbnailFrame[] = []
+    const regions: Array<{ left: number; top: number; width: number; height: number; outPath: string }> = []
     let frameIdx = 0
     for (let row = 0; row < grid; row++) {
       for (let col = 0; col < grid; col++) {
         frameIdx++
         const out = path.join(sessionDir, `frame-${frameIdx}.jpg`)
-        await sharp(big.imagePath)
-          .extract({
-            left: col * cellSize,
-            top: row * cellSize,
-            width: cellSize,
-            height: cellSize,
-          })
-          .jpeg({ quality: 88 })
-          .toFile(out)
+        regions.push({
+          left: col * cellSize,
+          top: row * cellSize,
+          width: cellSize,
+          height: cellSize,
+          outPath: out,
+        })
         frames.push({
           frameIndex: frameIdx,
           imagePath: out,
@@ -129,6 +128,12 @@ export class StoryboardThumbnailGeneratorService {
         })
       }
     }
+    await workerExtractRegions({
+      imagePath: big.imagePath,
+      regions,
+      format: 'jpeg',
+      quality: 88,
+    })
 
     return { frames, sessionDir }
   }

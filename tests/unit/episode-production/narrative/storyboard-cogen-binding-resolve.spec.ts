@@ -128,3 +128,67 @@ describe('StoryboardCogenService D2 绑定构造（归一化）', () => {
     expect(result.reusedBindings).toEqual([{ kind: 'item', id: 'ib_found', name: '青龙剑' }])
   })
 })
+
+/**
+ * O3 富化回填污染守卫（2026-09-21 v3 实测）：
+ * 宏观尺度地点（雪麓山庄）描述过薄时，cogen 把子场景"掌门书房内景"的
+ * 室内尺度描述回填进去，导致平面图 prompt 用室内尺度。
+ * 守卫：宏观地点名 + 新描述含室内词 → 跳过回填。
+ */
+describe('StoryboardCogenService O3 富化回填污染守卫', () => {
+  const svc = new StoryboardCogenService({} as any)
+
+  /** 过薄的原描述（触发富化路径） */
+  const THIN = '雪麓山庄'
+  /** 室内尺度的污染描述（书房/内景） */
+  const POLLUTED =
+    '掌门书房内景，正中一张紫檀书案，案上堆叠账本与烛台，四壁书架直达房梁，室内陈设雅致'
+  /** 正常宏观描述（无室内词） */
+  const MACRO_DESC =
+    '雪麓山庄依山而建，整座建筑群错落分布于山腰，山门巍峨，院落层叠，远处雪峰环抱'
+
+  function callEnrich(name: string, newDescription: string) {
+    const mock = buildSvc()
+    const enriched: any[] = []
+    const snap = { id: 'lb_root', name, description: THIN }
+    return (svc as any)
+      .enrichBindingIfThin(mock, 'location', snap, newDescription, enriched)
+      .then(() => ({ mock, enriched, snap }))
+  }
+
+  it('宏观地点 + 室内尺度描述 → 跳过回填（updateStandalone 不调）', async () => {
+    const { mock, enriched, snap } = await callEnrich('雪麓山庄', POLLUTED)
+    expect(mock.updateStandalone).not.toHaveBeenCalled()
+    expect(enriched).toEqual([])
+    expect(snap.description).toBe(THIN)
+  })
+
+  it('宏观地点 + 宏观尺度描述 → 正常回填', async () => {
+    const { mock, enriched, snap } = await callEnrich('雪麓山庄', MACRO_DESC)
+    expect(mock.updateStandalone).toHaveBeenCalledWith('lb_root', { description: MACRO_DESC })
+    expect(enriched).toEqual([{ kind: 'location', id: 'lb_root', name: '雪麓山庄' }])
+    expect(snap.description).toBe(MACRO_DESC)
+  })
+
+  it('名称本身含室内词（掌门书房）+ 室内描述 → 正常回填（守卫不误伤）', async () => {
+    const { mock, enriched } = await callEnrich('掌门书房', POLLUTED)
+    expect(mock.updateStandalone).toHaveBeenCalled()
+    expect(enriched).toHaveLength(1)
+  })
+})
+
+describe('location-constraints 尺度判定导出（O3 守卫共用）', () => {
+  it('isMacroScaleLocationName / containsInteriorScaleWord', async () => {
+    const { isMacroScaleLocationName, containsInteriorScaleWord } = await import(
+      '@core/platform/episode-production/assets/prompts/location-constraints'
+    )
+    expect(isMacroScaleLocationName('雪麓山庄')).toBe(true)
+    // "掌门书房"的"门"命中宏观词表，但"房"是室内词——守卫以室内词优先（见上组用例）
+    expect(isMacroScaleLocationName('掌门书房')).toBe(true)
+    expect(containsInteriorScaleWord('掌门书房')).toBe(true)
+    expect(isMacroScaleLocationName(null)).toBe(false)
+    expect(containsInteriorScaleWord('掌门书房内景，室内陈设雅致')).toBe(true)
+    expect(containsInteriorScaleWord('依山而建的建筑群，院落层叠')).toBe(false)
+    expect(containsInteriorScaleWord('')).toBe(false)
+  })
+})

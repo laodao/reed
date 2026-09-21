@@ -117,6 +117,18 @@
               <span class="progress-meta">{{ floorPlanImages.length }} 张</span>
             </span>
             <span class="header-actions">
+              <el-button
+                type="warning"
+                plain
+                size="small"
+                :disabled="busy"
+                :loading="busyKey === 'floor-plan-regen'"
+                title="删除现有平面布局图并重新生成主图（generateMain 会先自动补平面图再出主图）"
+                @click="onRegenerateFloorPlan"
+              >
+                <el-icon><Refresh /></el-icon>
+                重新生成
+              </el-button>
               <el-tooltip
                 content="主图生成前自动生成的俯视布局参考图；主图以其为参考还原建筑布局。删除后下次生成主图会重新生成"
                 placement="top"
@@ -411,7 +423,7 @@
  * metadata 维度评分，让带 metadata 的主图被对应分镜直接命中，省一次派生。
  */
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UploadFile } from 'element-plus'
 import {
   ArrowLeft,
@@ -432,6 +444,7 @@ import DeriveVariantDialog from './DeriveVariantDialog.vue'
 import GenerationDetailDialog from '../shared/GenerationDetailDialog.vue'
 import { uploadPanoramaFile } from '@/api/panorama-upload'
 import { toImageUrl } from '@/utils/asset-url'
+import { generateMainFor } from '@/api/main-image-generator'
 
 const props = defineProps<{
   bindingId: string
@@ -464,6 +477,7 @@ const allImages = ref<AssetImageRow[]>([])
  *   - 'panorama'        AI 生成全景
  *   - 'panorama-upload' 上传现成全景
  *   - 'switch-main:<id>'  切换默认主图中
+ *   - 'floor-plan-regen'  平面图删除+重生中
  */
 const busyKey = ref<string | null>(null)
 const busy = computed(() => busyKey.value !== null)
@@ -790,6 +804,45 @@ const { downloadImage, onDeleteImage } = useAssetImageActions({
   itemDeleteConfirm: (img) =>
     `确认删除「${(img as any).label || (img.category === 'main' ? '默认主图' : '变体')}」？`,
 })
+
+/**
+ * 平面图重新生成（2026-09-21 实测修复）：删掉全部 floor_plan 图后调 generateMain
+ * ——后端主图生成流程会先自动补平面图再出主图（location-constraints 平面图先行）。
+ */
+async function onRegenerateFloorPlan(): Promise<void> {
+  if (busy.value || props.assetType !== 'location') return
+  try {
+    await ElMessageBox.confirm(
+      '将删除现有平面布局图，并重新生成主图（会先自动补一张新平面图再出主图）。是否继续？',
+      '重新生成平面布局图',
+      { type: 'warning', confirmButtonText: '重新生成', cancelButtonText: '取消' },
+    )
+  } catch {
+    return // 用户取消
+  }
+  busyKey.value = 'floor-plan-regen'
+  try {
+    const api = getApi()
+    if (!api?.image?.delete) {
+      ElMessage.error('image.delete IPC 未暴露')
+      return
+    }
+    for (const img of floorPlanImages.value) {
+      const resp = await api.image.delete(img.id)
+      if (!resp?.success) {
+        ElMessage.error(resp?.error || '删除旧平面图失败')
+        return
+      }
+    }
+    await generateMainFor('location', props.bindingId)
+    ElMessage.success('平面布局图与主图已重新生成')
+    await reload()
+  } catch (e: any) {
+    ElMessage.error(e?.message || '重新生成失败')
+  } finally {
+    busyKey.value = null
+  }
+}
 
 // ===== 生成详情透明度面板（spec 2026-05-09 ep-redesign §3.2 A1） =====
 const detailDialog = ref<{ open: boolean; image: AssetImageRow | null }>({

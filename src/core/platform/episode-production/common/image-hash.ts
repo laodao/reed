@@ -8,12 +8,15 @@
  *
  * 中立层：不依赖 render / assets 任何一侧，避免 assets → render 反向依赖。
  * 降级原则：图读不出来（sharp 异常 / 文件不存在）返回 null，由调用方决定放行策略。
+ *
+ * 2026-09-21：sharp 计算全部经 common/sharp-worker 子进程执行（libvips 高频调用
+ * 崩 Electron 主进程实测）；本模块只剩路径解析 + 纯 bigint 位运算 + RPC 装配。
  */
 
 import * as fs from 'fs'
 import * as path from 'path'
-import sharp from 'sharp'
 import { getPathProvider } from '@core/interfaces/path.interface'
+import { workerAHash, workerHashDistance } from './sharp-worker'
 
 /** 路径解析：绝对路径直接用；相对路径按 dataPath 拼（PathProvider 未初始化则原样返回） */
 export function toAbsImagePath(p: string): string {
@@ -25,24 +28,14 @@ export function toAbsImagePath(p: string): string {
   }
 }
 
-/** 64-bit aHash：resize 8x8 灰度 → 按均值取bit */
+/** 64-bit aHash（worker 子进程计算）；图不可读 / sharp 失败 → 抛错（调用方 catch 降级） */
 export async function aHash64(absPath: string): Promise<bigint> {
-  const { data } = await sharp(absPath)
-    .resize(8, 8, { fit: 'fill' })
-    .greyscale()
-    .raw()
-    .toBuffer({ resolveWithObject: true })
-  let sum = 0
-  for (const v of data) sum += v
-  const mean = sum / 64
-  let bits = 0n
-  for (let i = 0; i < 64; i++) {
-    if (data[i] >= mean) bits |= 1n << BigInt(i)
-  }
-  return bits
+  const hex = await workerAHash(absPath)
+  if (!hex) throw new Error(`aHash 计算失败（图不可读）：${absPath}`)
+  return BigInt(`0x${hex}`)
 }
 
-/** 64-bit 哈希汉明距离 */
+/** 64-bit 哈希汉明距离（纯位运算，主进程本地） */
 export function hamming64(a: bigint, b: bigint): number {
   let x = a ^ b
   let n = 0
@@ -64,10 +57,5 @@ export async function aHashDistance(
   const absA = toAbsImagePath(imagePath)
   const absB = toAbsImagePath(referencePath)
   if (!fs.existsSync(absA) || !fs.existsSync(absB)) return null
-  try {
-    const [ha, hb] = await Promise.all([aHash64(absA), aHash64(absB)])
-    return hamming64(ha, hb)
-  } catch {
-    return null
-  }
+  return workerHashDistance(absA, absB)
 }

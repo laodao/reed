@@ -161,11 +161,25 @@ const FLOOR_PLAN_MACRO_KEYWORDS = [
 ]
 /** 室内尺度关键词（命中 → 室内平面） */
 const FLOOR_PLAN_INTERIOR_KEYWORDS = [
-  '房', '屋', '室', '阁', '斋', '堂', '厅', 'interior', '室内',
+  '房', '屋', '室', '阁', '斋', '堂', '厅', 'interior', '室内', '内景',
 ]
 
 function containsAny(text: string, keywords: string[]): boolean {
   return keywords.some((k) => text.includes(k))
+}
+
+/**
+ * 宏观尺度地点名判定（山庄/城/派/门/宫/观/寨/镇/村/谷等）。
+ * 共用方：平面图尺度分档（本文件）+ storyboard-cogen O3 富化回填守卫
+ * （宏观地点不能被室内尺度的子场景描述污染）。
+ */
+export function isMacroScaleLocationName(name: string | null | undefined): boolean {
+  return !!name && containsAny(name, FLOOR_PLAN_MACRO_KEYWORDS)
+}
+
+/** 文本是否含室内尺度词（书房/房间/内景/卧室/室/阁/斋/堂/厅等，经上方关键词表覆盖） */
+export function containsInteriorScaleWord(text: string | null | undefined): boolean {
+  return !!text && containsAny(text, FLOOR_PLAN_INTERIOR_KEYWORDS)
 }
 
 /**

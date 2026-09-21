@@ -9,14 +9,15 @@
  *   - Web：multer 解析 multipart/form-data
  *   - PC（Electron）：通过 IPC 把 base64 字节传过来
  *
- * 仅依赖 sharp（探测图像 metadata）+ Node fs + IPathProvider；不引 multer / express，
+ * 图像 metadata 探测经 common/sharp-worker 子进程（sharp/libvips 崩 Electron 主进程修复）；
+ * 其余仅依赖 Node fs + IPathProvider；不引 multer / express，
  * 也不引 IPC，保持 core 纯净，PC + Web 双端可调用。
  */
 
 import { randomBytes } from 'crypto'
 import * as fs from 'fs/promises'
 import * as path from 'path'
-import sharp from 'sharp'
+import { workerProbe } from '@core/platform/episode-production/common/sharp-worker'
 import type { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 import type { IPathProvider } from '@core/interfaces/path.interface'
 import type { PanoramaGeneratorService } from './panorama-generator.service'
@@ -89,12 +90,11 @@ export class PanoramaUploadService {
       )
     }
 
-    let metadata: sharp.Metadata
-    try {
-      metadata = await sharp(input.buffer).metadata()
-    } catch (e) {
+    // sharp 探测走 worker 子进程；null = 无法解析（损坏或格式不支持）
+    const metadata = await workerProbe({ bufferBase64: input.buffer.toString('base64') })
+    if (!metadata) {
       throw new PanoramaUploadValidationError(
-        `无法解析图像（损坏或格式不支持）：${(e as Error).message}`,
+        '无法解析图像（损坏或格式不支持）',
         'BAD_FORMAT',
       )
     }
