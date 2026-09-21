@@ -999,6 +999,8 @@ async function loadMentionEntities(): Promise<void> {
       const withImages = await Promise.all(base.map(async (e) => {
         try {
           const imgResp = await root.image.listByAsset(e.kind, e.id)
+          // 注意：不过滤 floor_plan——后端 parse-asset-refs 按未过滤 listByAsset 解析
+          // @[名字@索引]，两侧列表必须逐张对齐，否则索引错位引错图
           const imgs = (imgResp?.success ? imgResp.data : []) || []
           return { ...e, images: imgs.map((im: any) => ({ id: im.id, path: im.imagePath || im.url || '' })) }
         } catch {

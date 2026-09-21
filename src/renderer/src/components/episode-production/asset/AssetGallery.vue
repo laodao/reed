@@ -45,9 +45,19 @@
           </div>
           <div class="nav-info">
             <div class="nav-name">{{ item.title }}</div>
+            <!-- 平面图槽位：布局参考图不参与定妆/关键帧选图，状态只分有图/待生成 -->
+            <div
+              v-if="item.category === 'floor_plan'"
+              class="nav-status"
+              :class="imageByLabel(item.label)?.imagePath ? 'done' : 'pending'"
+              title="平面布局图仅作主图生成的布局参考，不参与关键帧选图"
+            >
+              {{ imageByLabel(item.label)?.imagePath ? '布局参考' : '待生成' }}
+            </div>
             <!-- 2026-09-19 修正：有图≠已定妆。confirmed=0 的派生图不会被关键帧选用，
                  此前显示「已定妆」是误导（场次2 阿蘅派生图全部 confirmed=0 永不参选，UI 却显示已定妆） -->
             <div
+              v-else
               class="nav-status"
               :class="!imageByLabel(item.label)?.imagePath ? 'pending' : imageByLabel(item.label)?.confirmed === 1 ? 'done' : 'unconfirmed'"
               :title="imageByLabel(item.label)?.imagePath && imageByLabel(item.label)?.confirmed !== 1 ? '已生成但未确认定妆，关键帧不会选用；选中后点「确认定妆」' : ''"
@@ -129,7 +139,7 @@
           />
           <div v-if="selectedImage?.imagePath && selectedImage?.confirmed === 1" class="confirmed-chip">✓ 已确认定妆</div>
           <el-button
-            v-if="selectedImage?.imagePath"
+            v-if="selectedImage?.imagePath && selectedItem?.category !== 'floor_plan'"
             class="preview-confirm"
             :type="selectedImage?.confirmed === 1 ? 'success' : 'primary'"
             :plain="selectedImage?.confirmed === 1"
@@ -271,7 +281,7 @@ const localPrompt = ref('')
 /** 最近一次从 DB 加载/保存的输入框内容快照（onActivated 防覆盖未保存编辑用） */
 let loadedPrompt = ''
 
-// 图集导航项（角色/地点/物品通用模板）
+// 图集导航项（角色/地点/物品模板）
 const navItems = computed(() => {
   if (props.kind === 'character') {
     return [
@@ -281,6 +291,16 @@ const navItems = computed(() => {
       { label: 'right_3q', title: '右侧半身', category: 'view' },
       { label: 'full_left', title: '全景左侧', category: 'view' },
       { label: 'full_right', title: '全景右侧', category: 'view' },
+    ]
+  }
+  if (props.kind === 'location') {
+    // 2026-09-21 平面图先行：location 增加平面图槽位（与后端落库一致：category='floor_plan' label='layout'）
+    return [
+      { label: 'main', title: '主图', category: 'main' },
+      { label: 'layout', title: '平面图', category: 'floor_plan' },
+      { label: 'variant_1', title: '变体 A', category: 'variant' },
+      { label: 'variant_2', title: '变体 B', category: 'variant' },
+      { label: 'variant_3', title: '变体 C', category: 'variant' },
     ]
   }
   return [
@@ -374,10 +394,10 @@ function currentModelSelection(): { providerConfigId?: string; modelId?: string 
   return { providerConfigId: v.slice(0, sep), modelId: v.slice(sep + 1) }
 }
 
-/** 待生成的衍生 slot（无图），供一键生成对话框勾选 */
+/** 待生成的衍生 slot（无图），供一键生成对话框勾选；平面图槽位不走派生，排除 */
 const pendingDeriveItems = computed(() =>
   navItems.value
-    .filter(i => i.label !== 'main' && !imageByLabel(i.label)?.imagePath)
+    .filter(i => i.label !== 'main' && i.category !== 'floor_plan' && !imageByLabel(i.label)?.imagePath)
     .map(i => ({ label: i.label, title: i.title, category: i.category })),
 )
 
@@ -446,12 +466,27 @@ async function onGenerate(item: { label: string; category: string }): Promise<vo
     // 保证生成时使用用户最新编辑的提示词，且生成后输入框内容不丢。
     await onSavePrompt()
     if (item.label === 'main') {
-      // 已有主图 → 弹出"新增正面全身（换装）"对话框（输入提示词/上传参考图）；
+      // 已有主图 → 角色/物品弹出"新增正面全身（换装）"对话框（输入提示词/上传参考图，保持现状）；
+      // 地点不走换装对话框（v3 实测：该对话框对地点显示角色文案、不传参考图也不补平面图），
+      // 确认后直接 generateMainFor 重生主图——后端会复用/自动生成平面图作参考；
       // 无主图 → 生成第一张基准主图（自定义提示词优先）。
-      if (hasMain.value) {
+      if (hasMain.value && props.kind !== 'location') {
         generating.value = false
         showAddOutfit.value = true
         return
+      }
+      if (hasMain.value && props.kind === 'location') {
+        try {
+          await ElMessageBox.confirm(
+            '已有主图。重新生成将出一张新主图并设为默认（旧主图保留为非默认）；' +
+              '若该地点暂无平面图，会先自动生成平面布局图作为参考。确认继续？',
+            '重新生成主图',
+            { type: 'warning', confirmButtonText: '重新生成', cancelButtonText: '取消' },
+          )
+        } catch {
+          generating.value = false
+          return // 用户取消
+        }
       }
       const override = localPrompt.value.trim() ? localPrompt.value : undefined
       const img = await generateMainFor(
@@ -460,7 +495,35 @@ async function onGenerate(item: { label: string; category: string }): Promise<vo
         { ...(override ? { promptOverride: override } : {}), ...currentModelSelection() },
       )
       void img
-      ElMessage.success('主图已生成')
+      ElMessage.success(
+        props.kind === 'location' ? '主图已生成（地点按平面图先行流程生成）' : '主图已生成',
+      )
+    } else if (item.category === 'floor_plan' && props.kind === 'location') {
+      // 平面图槽位（2026-09-21 平面图先行）：后端 generateMain 会先补平面图再以它为参考
+      // 出主图——即点一次会连主图一起重生，确认文案说清楚；有主图时先删旧 floor_plan
+      // （否则后端复用旧平面图），再 generateMainFor。
+      try {
+        await ElMessageBox.confirm(
+          hasMain.value
+            ? '生成平面图将同时重新生成主图（先删旧平面图 → 生成新平面图 → 以它为参考出新主图并设为默认，旧主图保留为非默认）。确认继续？'
+            : '将先生成平面布局图，再以它为参考生成主图。确认继续？',
+          '生成平面图',
+          { type: 'warning', confirmButtonText: '生成', cancelButtonText: '取消' },
+        )
+      } catch {
+        generating.value = false
+        return // 用户取消
+      }
+      const root = (window as any).electronAPI?.episodeProduction?.asset
+      const oldPlans = images.value.filter(i => i.category === 'floor_plan' && i.id)
+      for (const p of oldPlans) {
+        await root.image.delete(p.id).catch(() => null)
+      }
+      await generateMainFor('location', props.assetId, { ...currentModelSelection() })
+      ElMessage.success('平面图与主图已生成')
+      await load()
+      generating.value = false
+      return
     } else {
       const root = (window as any).electronAPI?.episodeProduction?.asset
       const main = imageByLabel('main')

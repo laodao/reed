@@ -24,7 +24,9 @@
             v-for="img in images"
             :key="img.id"
             class="asset-img"
-            draggable="true"
+            :class="{ 'no-ref': img.category === 'floor_plan' }"
+            :draggable="img.category !== 'floor_plan'"
+            :title="img.category === 'floor_plan' ? '平面布局图仅作主图生成的布局参考，不可用作关键帧参考图' : ''"
             @dragstart="onDragStart(img, $event)"
           >
             <el-image
@@ -94,6 +96,8 @@ async function loadImages(): Promise<void> {
   if (!selected.value.id) { images.value = []; return }
   const root = (window as any).electronAPI?.episodeProduction?.asset
   const r = await root.image.listByAsset(selected.value.kind, selected.value.id)
+  // 注意：不过滤 floor_plan——后端 parse-asset-refs 按未过滤 listByAsset 解析
+  // @[名字@索引]，本列表顺序必须与后端逐张对齐；floor_plan 在模板层禁拖拽（不作参考图）
   images.value = r?.success ? r.data : []
 }
 
@@ -108,6 +112,11 @@ function categoryLabel(cat: string): string {
 
 /** 拖拽开始：写入资产引用（含图索引；提示词框 drop 时按 @[名字@索引] 精确引用） */
 function onDragStart(img: any, e: DragEvent): void {
+  // floor_plan 防御：模板层已禁拖拽，这里兜底拒掉（不作关键帧参考图）
+  if (img?.category === 'floor_plan') {
+    e.preventDefault()
+    return
+  }
   const idx = images.value.findIndex(im => im.id === img.id)
   const ref = { id: selected.value.id, name: selected.value.name, index: idx >= 0 ? idx + 1 : null }
   e.dataTransfer?.setData('text/asset-ref', JSON.stringify(ref))
@@ -159,6 +168,12 @@ onMounted(() => void load())
   cursor: grab;
   &:hover { border-color: var(--color-primary); }
   &:active { cursor: grabbing; }
+  // floor_plan：不作关键帧参考图，禁拖拽 + 降透明度提示
+  &.no-ref {
+    cursor: not-allowed;
+    opacity: 0.55;
+    &:hover { border-color: var(--border-color-lighter); }
+  }
   .asset-img-el { width: 100%; height: 100%; object-fit: cover; }
   .asset-img-tag {
     position: absolute; left: 4px; bottom: 4px;
