@@ -23,7 +23,7 @@
  */
 
 import { getCoreDatabaseManager, type ICoreDatabaseManager } from '@core/database/database-manager.interface'
-import { listResolutions, filterBlockingConflicts } from '../conflict-gate'
+import { listResolutions, filterBlockingConflicts, formatReviewConflictMessage } from '../conflict-gate'
 import { buildOutlineDocOrder, outlineChapterNumber, type OutlineDocOrder } from '../outline-order'
 import type { ConflictLoc, GraphEntityType } from '@shared/types/longwriting.types'
 import { locateAll } from '@shared/utils/text-locate'
@@ -360,6 +360,8 @@ export class ConsistencyService {
     conflicts.push(...await this.scanR8ForeshadowLedger(projectId))
     conflicts.push(...await this.scanR9UnregisteredNames(projectId))
     conflicts.push(...await this.scanR10OutlineBeats(projectId))
+    conflicts.push(...await this.scanR11UnregisteredProps(projectId))
+    conflicts.push(...await this.scanStoredReviewConflicts(projectId))
     // 定位回填：章号→内容一次建索引（R1-R9 提及级 + R9 exact；R10 结构性无正文位置）
     try {
       const outlines = (await m.lwOutlines?.getByProjectId(projectId)) || []
@@ -599,8 +601,86 @@ export class ConsistencyService {
     return conflicts
   }
 
-  // ==================== R7：钩子节拍（script 分集项目） ====================
+  // ==================== R11：名册外"黑户"道具 ====================
 
+  /**
+   * R11（天下捕快实跑修复）：状态切片里被判为 item、却不在物品册的"黑户道具"。
+   * 实测痛点：告密信连续多章处于状态追踪中，物品册却查无此物——写前上下文拿不到
+   * 它的口径（来源/持有人/内容），相邻两章把它分别写成"遗言信"与"伪造告密信"。
+   * 每个黑户道具出一条 warning，提示入册（入册后写前注入与 R3/R6 即全覆盖）。
+   */
+  private async scanR11UnregisteredProps(projectId: string): Promise<ConflictItem[]> {
+    const m = this.manager()
+    if (!m) return []
+    const snapshots = (await m.lwEntityStates?.getByProjectId(projectId)) || []
+    const rosterItems = (await m.lwItems?.getByProjectId(projectId)) || []
+    const core = (v: string): string => String(v || '').trim().replace(/[（(][^）)]*[）)]/g, '')
+    const rosterNames = new Set<string>()
+    for (const it of rosterItems) {
+      rosterNames.add(String(it.name || '').trim())
+      rosterNames.add(core(String(it.name || '')))
+    }
+    const firstSeen = new Map<string, number>()
+    // 已知名判定与 graph.service findByName 同口径：exact/去括号核心 + 双向子串
+    // （≥2 字）——状态切片常用简写（"半枚玄铁令" vs 名册"半枚玄铁令·沈家半枚"），
+    // 口径不一致会对在册道具误报。
+    const isKnown = (name: string): boolean => {
+      if (rosterNames.has(name) || rosterNames.has(core(name))) return true
+      const n = core(name)
+      if (n.length < 2) return true
+      for (const k of rosterNames) {
+        if (k.length < 2) continue
+        if (k.includes(n) || n.includes(k)) return true
+      }
+      return false
+    }
+    for (const s of snapshots) {
+      if (s.entityType !== 'item') continue
+      const name = String(s.entityName || '').trim()
+      if (!name || isKnown(name)) continue
+      const prev = firstSeen.get(name)
+      if (prev === undefined || (s.chapterNumber > 0 && s.chapterNumber < prev)) {
+        firstSeen.set(name, s.chapterNumber > 0 ? s.chapterNumber : prev ?? 0)
+      }
+    }
+    return [...firstSeen.entries()].map(([name, chapterNumber]) => ({
+      rule: 'R11',
+      severity: 'warning' as const,
+      message: `关键道具「${name}」已进入状态追踪（最早见于第 ${chapterNumber || '?'} 章），但未登记进物品册——道具口径无法在写前注入，后续章节极易把它写出另一个版本`,
+      entityType: 'item' as const,
+      entityName: name,
+      chapterNumber,
+    }))
+  }
+
+  // ==================== RV：写后审读登记的疑点 ====================
+
+  /**
+   * RV（天下捕快实跑修复）：LLM 写后审读发现的跨章矛盾。旧实现只写进汇报文本，
+   * 下一章的写前门禁根本看不到——检查"做了"但从未"闭环"。审读疑点由
+   * chapter-writing-executor 登记进 wizard_state.reviewConflicts，此处读出为
+   * 疑点项；「AI 解题/知情保留」走 conflictKey 既有通道即可销案。
+   */
+  private async scanStoredReviewConflicts(projectId: string): Promise<ConflictItem[]> {
+    const m = this.manager()
+    if (!m) return []
+    let rows: Array<{ key?: string; message?: string; evidence?: string; why?: string; chapterNumber?: number }> = []
+    try {
+      const project = await m.lwProjects?.getById(projectId)
+      const ws = (project?.wizardState || {}) as Record<string, unknown>
+      if (Array.isArray(ws.reviewConflicts)) rows = ws.reviewConflicts as typeof rows
+    } catch { /* 向导状态读取失败不阻断 */ }
+    return rows
+      .filter((r) => r.message?.trim())
+      .map((r) => ({
+        rule: 'RV',
+        severity: 'error' as const,
+        message: formatReviewConflictMessage(r),
+        chapterNumber: r.chapterNumber ?? 0,
+      }))
+  }
+
+  // ==================== R7：钩子节拍（script 分集项目） ====================
   /**
    * R7 钩子节拍（49 号，仅对 script 分集项目生效——大纲 summary 带【集尾卡点】标记的过半判定）：
    * - 某集缺【集尾卡点】标注

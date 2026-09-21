@@ -71,9 +71,25 @@ export function filterBlockingConflicts<T extends ConflictLike>(
   })
 }
 
+/**
+ * RV 审读疑点的展示文案（天下捕快实跑修复）：登记侧（chapter-writing-executor）
+ * 与扫描侧（ConsistencyService.scanStoredReviewConflicts）必须用同一函数生成
+ * message——conflictKey 对 message 做哈希，两侧不同源则"知情保留/AI 解题"永远
+ * 对不上号，闭环断裂。
+ */
+export function formatReviewConflictMessage(e: {
+  message?: string
+  evidence?: string
+  why?: string
+  chapterNumber?: number
+}): string {
+  return `写后审读疑点（第 ${e.chapterNumber ?? '?'} 章）：${e.message ?? ''}${
+    e.evidence ? `｜证据：${String(e.evidence).slice(0, 60)}` : ''
+  }${e.why ? `｜原因：${String(e.why).slice(0, 60)}` : ''}`
+}
+
 /** 门禁报错文案：列出疑点 + 解除指引 */
-export function buildConflictGateError(chapterNumber: number, blocking: ConflictLike[]): string | null {
-  if (blocking.length === 0) return null
+export function buildConflictGateError(chapterNumber: number, blocking: ConflictLike[]): string | null {  if (blocking.length === 0) return null
   const list = blocking
     .slice(0, 5)
     .map((c) => `· [${c.rule || '?'}] ${String(c.message || '').slice(0, 60)}`)

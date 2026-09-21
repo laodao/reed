@@ -9,6 +9,13 @@ import * as path from 'path'
 import { getCoreDatabaseManager, type ICoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { toRelativeAssetPath, resolveAssetPath } from '@core/utils/asset-path'
+import type { OutlineDocOrder, OutlineNodeLike } from '@core/platform/services/longwriting/outline-order'
+
+/** 文档序快照辅助（章号级联用）：与 outline-order 唯一权威保持单一来源 */
+async function buildDocOrder(nodes: OutlineNodeLike[]): Promise<OutlineDocOrder> {
+  const { buildOutlineDocOrder } = await import('@core/platform/services/longwriting/outline-order')
+  return buildOutlineDocOrder(nodes)
+}
 import type { SetCoverSource } from '@shared/types/longwriting.types'
 import {
   LongWritingProject,
@@ -887,7 +894,13 @@ export class LongWritingService {
     if (!this.db.lwOutlines) {
       throw new Error('数据库未初始化')
     }
-    return await this.db.lwOutlines.create(data)
+    // 章号级联（天下捕快实跑修复）：插入节点会使后续章节号整体后移，
+    // 伴生数据（事件/快照/伏笔/边有效期/预写卡头）必须跟着搬，否则按章号
+    // 键挂的检查从此系统性错位。变更前后各取一次文档序做 diff。
+    const before = await this.docOrderSnapshot(data.projectId)
+    const created = await this.db.lwOutlines.create(data)
+    if (before) await this.cascadeChapterNumbers(before.projectId, before.order)
+    return created
   }
 
   /**
@@ -897,7 +910,12 @@ export class LongWritingService {
     if (!this.db.lwOutlines) {
       throw new Error('数据库未初始化')
     }
-    return await this.db.lwOutlines.update(id, data)
+    // 仅结构字段（父节点/兄弟序/节点类型）会影响文档序章号；纯改名/改概要跳过级联
+    const structureChanged = data.parentId !== undefined || data.orderIndex !== undefined || data.nodeType !== undefined
+    const before = structureChanged ? await this.docOrderSnapshot((await this.db.lwOutlines.getById(id))?.projectId) : null
+    const updated = await this.db.lwOutlines.update(id, data)
+    if (before) await this.cascadeChapterNumbers((updated as any)?.projectId ?? (await this.db.lwOutlines.getById(id))?.projectId, before)
+    return updated
   }
 
   /**
@@ -936,6 +954,8 @@ export class LongWritingService {
     const chapterNodes = all.filter((o) => ids.includes(o.id) && o.nodeType === 'chapter')
     const { buildOutlineDocOrder, outlineChapterNumber } = await import('@core/platform/services/longwriting/outline-order')
     const docOrder = buildOutlineDocOrder(all as never)
+    // 章号级联的 before 快照：删除后剩余章节号会前移，伴生数据必须跟着搬
+    const docOrderBefore = buildOutlineDocOrder(all as never)
 
     // 正文检查：有正文的章节列出，未 force 不删
     const withContent: string[] = []
@@ -977,6 +997,15 @@ export class LongWritingService {
       }
     })
 
+    // 删除后级联：剩余章节章号前移，事件/快照/伏笔/边/卡头同步搬移（映射为空时 no-op）
+    const afterAll = (await this.db.lwOutlines.getByProjectId(node.projectId)) || []
+    try {
+      const { cascadeChapterNumberChange } = await import('@core/platform/services/longwriting/chapter-number-sync')
+      await cascadeChapterNumberChange(this.db, node.projectId, docOrderBefore, buildOutlineDocOrder(afterAll as never), afterAll as never)
+    } catch (e) {
+      console.warn('[LongWritingService] 删除后章号级联失败（不影响删除本身）:', e)
+    }
+
     return {
       deleted: true,
       needsConfirm: false,
@@ -993,7 +1022,28 @@ export class LongWritingService {
     if (!this.db.lwOutlines) {
       throw new Error('数据库未初始化')
     }
-    return await this.db.lwOutlines.moveTo(id, newParentId)
+    const before = await this.docOrderSnapshot((await this.db.lwOutlines.getById(id))?.projectId)
+    const ok = await this.db.lwOutlines.moveTo(id, newParentId)
+    if (ok && before) await this.cascadeChapterNumbers(before.projectId, before.order)
+    return ok
+  }
+
+  // ==================== 章号级联（chapter-number-sync） ====================
+
+  /** 取项目当前文档序快照（级联 diff 的 before 侧） */
+  private async docOrderSnapshot(projectId?: string | null): Promise<{ projectId: string; order: Awaited<ReturnType<typeof buildDocOrder>> } | null> {
+    if (!projectId || !this.db.lwOutlines) return null
+    const all = (await this.db.lwOutlines.getByProjectId(projectId)) || []
+    return { projectId, order: await buildDocOrder(all as never) }
+  }
+
+  /** 对比变更前后文档序并把伴生数据章号整体搬移（映射为空时是 no-op） */
+  private async cascadeChapterNumbers(projectId: string | null | undefined, before: Awaited<ReturnType<typeof buildDocOrder>>): Promise<void> {
+    if (!projectId || !this.db.lwOutlines) return
+    const all = (await this.db.lwOutlines.getByProjectId(projectId)) || []
+    const after = await buildDocOrder(all as never)
+    const { cascadeChapterNumberChange } = await import('@core/platform/services/longwriting/chapter-number-sync')
+    await cascadeChapterNumberChange(this.db, projectId, before, after, all as never)
   }
 
   // ==================== 章节管理 ====================
@@ -1035,6 +1085,15 @@ export class LongWritingService {
 
     // 创建版本记录
     await this.db.lwChapters.createVersion(chapter.id, content, 'manual')
+
+    // 进度状态同步（天下捕快实跑修复）：写完正文的章节大纲仍停在 pending，
+    // 进度视图永远"0 章已写"。pending → progressing（用户手标的 completed 不降级）。
+    try {
+      const outline = await this.db.lwOutlines?.getById(outlineId)
+      if (outline?.status === 'pending') {
+        await this.db.lwOutlines.update(outlineId, { status: 'progressing' })
+      }
+    } catch { /* 状态同步失败不影响正文保存 */ }
 
     return chapter
   }

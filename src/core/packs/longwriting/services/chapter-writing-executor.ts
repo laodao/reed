@@ -330,7 +330,7 @@ export async function runChapterWritingMethod(opts: ChapterWritingMethodOptions)
   await svc.confirmPrewrite(outlineId)
   void applied
 
-  onProgress?.({ step: 'gate', message: '一致性门禁检查（R1-R10 未处理疑点会拒绝生成）' })
+  onProgress?.({ step: 'gate', message: '一致性门禁检查（R1-R11+RV 未处理疑点会拒绝生成）' })
 
   onProgress?.({ step: 'write', message: '生成正文（设计卡+全书概要+前情事实注入）' })
   const writeResult = await ai.generateChapter(
@@ -435,6 +435,46 @@ ${content}
     const parsed = safeParseIssues(raw)
     if (parsed.length > 0) {
       reportLines.push(`【LLM 章节审读】发现 ${parsed.length} 处疑点：\n${parsed.map((p: any, i: number) => `${i + 1}. ${p.item}（证据：${p.evidence}；原因：${p.why}）`).join('\n')}`)
+      // 闭环（天下捕快实跑修复）：审读疑点不再只是"汇报"——登记进
+      // wizard_state.reviewConflicts，此后写前门禁（scanBlockingConflicts→RV）
+      // 把它们当阻断项，直到 AI 解题或知情保留；本章重写时旧登记先清再记。
+      try {
+        const { mutateWizardState } = await import('@core/platform/services/longwriting/wizard-state-rmw')
+        const { conflictKey, formatReviewConflictMessage } = await import('@core/platform/services/longwriting/conflict-gate')
+        await mutateWizardState(getCoreDatabaseManager(), projectId, (wizard) => {
+          const rows: Array<Record<string, unknown>> = Array.isArray((wizard as any).reviewConflicts)
+            ? [...(wizard as any).reviewConflicts]
+            : []
+          const kept = rows.filter((r) => r.chapterNumber !== chapterNo)
+          for (const p of parsed) {
+            const message = String(p?.item || '').trim()
+            if (!message) continue
+            const entry = { message, evidence: String(p?.evidence || ''), why: String(p?.why || ''), chapterNumber: chapterNo }
+            kept.push({
+              // 与扫描侧同源：key 必须基于 formatReviewConflictMessage 生成的同一文案
+              key: conflictKey({ rule: 'RV', message: formatReviewConflictMessage(entry), chapterNumber: chapterNo }),
+              ...entry,
+              at: Date.now(),
+            })
+          }
+          return { next: { ...(wizard as any), reviewConflicts: kept }, result: undefined }
+        })
+      } catch (e: any) {
+        logger.warn('[chapter-writing] 审读疑点登记失败（不影响本章交付）:', e?.message)
+      }
+    } else if (chapterNo > 0) {
+      // 本章审读通过：清掉本章历史 RV 登记（重写修复后自动销案）
+      try {
+        const { mutateWizardState } = await import('@core/platform/services/longwriting/wizard-state-rmw')
+        await mutateWizardState(getCoreDatabaseManager(), projectId, (wizard) => {
+          const rows: Array<Record<string, unknown>> = Array.isArray((wizard as any).reviewConflicts)
+            ? [...(wizard as any).reviewConflicts]
+            : []
+          const kept = rows.filter((r) => r.chapterNumber !== chapterNo)
+          if (kept.length === rows.length) return { next: wizard, result: undefined }
+          return { next: { ...(wizard as any), reviewConflicts: kept }, result: undefined }
+        })
+      } catch { /* 清理失败不阻断 */ }
     }
   } catch (e: any) {
     logger.warn('[chapter-writing] LLM 章节审读失败（不阻断）:', e?.message)

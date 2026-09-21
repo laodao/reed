@@ -1569,9 +1569,19 @@ ${plotInfo || '暂无相关情节'}
     const prevHookType = parseCardHookType(prevPrewrite?.content)
     const prevState = await dbManager.lwChapterStateSummaries?.getLatestBeforeChapter(projectId, chapterNo)
 
-    const relevantPlots = plots.filter(p =>
-      p.title?.includes(outline.name) || outline.summary?.includes(p.title)
-    )
+    // 故事线匹配（天下捕快实跑修复）：旧实现要求"大纲概要包含故事线标题全名"，
+    // 而标题带"（第X—Y章）"区间后缀——几乎恒为假，【相关故事线】长期是"暂无"，
+    // 设计卡拿不到单元案 canon。改为优先按标题区间与本章号求交，退回名字包含。
+    const parsePlotRange = (title: string): { from: number; to: number } | null => {
+      const m = title.match(/第\s*(\d+)\s*[—–\-~至]\s*(\d+)\s*(?:＋|\+)?\s*章/)
+      return m ? { from: Number(m[1]), to: Number(m[2]) } : null
+    }
+    const relevantPlots = plots.filter(p => {
+      if (!p?.title) return false
+      const range = parsePlotRange(p.title)
+      if (range) return chapterNo >= range.from && chapterNo <= range.to
+      return p.title.includes(outline.name) || !!outline.summary?.includes(p.title)
+    })
     const castNames = (outline.involvedCharacters || [])
       .map(id => characters.find(c => c.id === id)?.name)
       .filter(Boolean)
@@ -1918,6 +1928,7 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
 - **禁止**：已获得的物品再次"首次获得"
 - **禁止**：忽略已建立的人物关系
 - **禁止**：与前情事实表冲突——已交付的信物/凭证/授权不得再次"首次"交付，人物身份、称谓与来历不得另起说法
+- **禁止**：复刻已被正文推翻的旧设定——当【本章大纲】【相关故事线】与【前情事实表】【关键道具口径】冲突时，一律以前情与道具口径为准。事实仲裁序：作者共识 > 已写正文确立的事实（前情事实表/道具口径/实体状态） > 本章大纲与故事线 > 自由发挥
 - **禁止**：与世界观设定冲突的内容
 
 ### 6. 输出要求
@@ -2093,6 +2104,36 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
           }
         } catch { /* 单实体状态读取失败不阻断 */ }
         if (stateLines.length >= 8) break
+      }
+
+      // 2.5b 关键道具口径（天下捕快实跑修复）：道具的来源/持有人/内容是跨章
+      // 同一性最高的事实——告密信曾在相邻两章被写成「遗言信」与「伪造告密信」，
+      // 根因是道具口径从未进入写前上下文，模型只能按设计卡自由发挥。此处显式注入：
+      // (a) 本章涉及道具的物品册描述；(b) 道具最新状态切片（近几章，名册外也算——
+      // 状态切片里有而名册没有的，恰恰是最容易翻转的"黑户道具"）。
+      const propLines: string[] = []
+      try {
+        const rosterItems = (await dbManager.lwItems?.getByProjectId(projectId)) || []
+        const involvedItemIds = new Set((outline.involvedItems || []) as string[])
+        for (const it of rosterItems) {
+          if (!involvedItemIds.has(it.id) && it.importance !== 'main') continue
+          const ownerName = it.ownerId ? await nameOf('character', it.ownerId) : null
+          propLines.push(`- ${it.name}：${String((it as any).description || '').slice(0, 120)}${ownerName ? `（当前持有人：${ownerName}）` : ''}`)
+          if (propLines.length >= 8) break
+        }
+        const itemStates = ((await dbManager.lwEntityStates?.getByProjectId(projectId)) || [])
+          .filter((s: any) => s.entityType === 'item' && s.chapterNumber > 0 && s.chapterNumber < chapterNumber)
+          .sort((a: any, b: any) => b.chapterNumber - a.chapterNumber)
+        const seenProps = new Set<string>()
+        for (const s of itemStates) {
+          if (seenProps.has(s.entityName)) continue
+          seenProps.add(s.entityName)
+          propLines.push(`- ${s.entityName}（截至第 ${s.chapterNumber} 章的状态）：${String(s.stateSummary || '').slice(0, 120)}`)
+          if (seenProps.size >= 8) break
+        }
+      } catch { /* 道具口径读取失败不阻断 */ }
+      if (propLines.length > 0) {
+        parts.push(`【关键道具口径（已确立事实——来源/持有人/内容/外观不得另起说法或翻转）】\n${propLines.join('\n')}`)
       }
 
       // 2.6 待回收伏笔（open 状态，防忘记回收/重复埋设）

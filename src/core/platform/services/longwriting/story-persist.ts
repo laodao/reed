@@ -877,6 +877,13 @@ export async function persistChapter(
     await db?.lwChapters?.createVersion(chapter.id, content, 'manual')
   }
 
+  // 进度状态同步（与 saveChapter 同口径）：写完正文的章节大纲 pending → progressing
+  try {
+    if (outline?.status === 'pending') {
+      await db?.lwOutlines?.update(outlineId, { status: 'progressing' })
+    }
+  } catch { /* 状态同步失败不影响正文保存 */ }
+
   if (ai) {
     try {
       const { ChapterGraphProcessor } = await import('./graph/chapter-graph.processor')
