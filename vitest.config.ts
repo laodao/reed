@@ -5,7 +5,7 @@ import vue from '@vitejs/plugin-vue'
 export default defineConfig({
   plugins: [vue()],
   test: {
-    include: ['tests/unit/**/*.spec.ts'],
+    include: ['tests/unit/**/*.spec.ts', 'tests/integration/**/*.spec.ts'],
     environment: 'node',
     testTimeout: 30_000,
     hookTimeout: 30_000,
