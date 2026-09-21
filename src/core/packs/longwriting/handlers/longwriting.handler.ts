@@ -319,6 +319,7 @@ const CHANNELS = {
   ROSTER_WHITELIST_ADD: 'longwriting:roster:whitelist:add',
   ROSTER_WHITELIST_REMOVE: 'longwriting:roster:whitelist:remove',
   CONFLICT_BATCH_ACKNOWLEDGE: 'longwriting:conflict:batchAcknowledge',
+  FORESHADOW_SET_STATUS: 'longwriting:foreshadow:setStatus',
   GRAPH_EXTRACT_CHAPTER: 'longwriting:graph:extractChapterGraph',
 
   // 阶段2：事件节点
@@ -3330,6 +3331,36 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       return { success: false, error: error.message }
     }
   })
+
+  // §D 伏笔回收/弃置：payoffChapter 省略且标记回收时，后端取当前已写最大章号
+  ipcBridge.handle(
+    CHANNELS.FORESHADOW_SET_STATUS,
+    async (_event, projectId: string, id: string, status: 'open' | 'paid' | 'dropped', payoffChapter?: number) => {
+      try {
+        let resolvedPayoff = payoffChapter
+        if (status === 'paid' && (resolvedPayoff === undefined || resolvedPayoff === null)) {
+          const { buildOutlineDocOrder, outlineChapterNumber } = await import('@core/platform/services/longwriting/outline-order')
+          const db = getCoreDatabaseManager()
+          const outlines = (await db.lwOutlines?.getByProjectId(projectId)) || []
+          const docOrder = buildOutlineDocOrder(outlines)
+          let writtenMax = 0
+          for (const o of outlines) {
+            if (o.nodeType !== 'chapter') continue
+            const no = outlineChapterNumber(docOrder, o.id)
+            if (!no) continue
+            const ch = await db.lwChapters?.getByOutlineId(o.id)
+            if (ch?.content && ch.content.trim().length > 0) writtenMax = Math.max(writtenMax, no)
+          }
+          resolvedPayoff = writtenMax
+        }
+        const updated = await getCoreDatabaseManager().lwForeshadows?.setStatus(id, status, resolvedPayoff ?? null)
+        if (!updated) return { success: false, error: '伏笔不存在或已被删除' }
+        return { success: true, data: updated }
+      } catch (error: any) {
+        return { success: false, error: error.message }
+      }
+    },
+  )
 
   // 章节确认流水线（事件/状态/建边/摘要 一键执行）
   ipcBridge.handle(CHANNELS.GRAPH_EXTRACT_CHAPTER, async (

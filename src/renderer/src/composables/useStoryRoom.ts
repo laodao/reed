@@ -40,6 +40,8 @@ export interface ConflictView {
   outlineId?: string
   locs?: ConflictLoc[]
   note?: string
+  /** §D 伏笔台账 id（R8 专属）：供「已回收/弃置」直接定位台账行 */
+  foreshadowId?: string
 }
 
 export interface RoomStreamMessage {
@@ -299,6 +301,21 @@ export function useStoryRoom(projectId: string, hooks?: StoryRoomHooks) {
     return okCount
   }
 
+  /** §D 伏笔回收/弃置：payoffChapter 省略且标记回收时后端取已写最大章号 */
+  async function setForeshadowStatus(
+    id: string,
+    status: 'paid' | 'dropped',
+    payoffChapter?: number,
+  ): Promise<boolean> {
+    const res = await api().foreshadowSetStatus(projectId, id, status, payoffChapter)
+    if (!res.success) {
+      ElMessage.error(res.error || '伏笔状态更新失败')
+      return false
+    }
+    await loadConflictsIfWriting()
+    return true
+  }
+
   function cancel(): void {
     api().roomCancel(projectId)
   }
@@ -448,6 +465,7 @@ export function useStoryRoom(projectId: string, hooks?: StoryRoomHooks) {
     addRosterWhitelist,
     removeRosterWhitelist,
     batchAcknowledge,
+    setForeshadowStatus,
   }
 }
 

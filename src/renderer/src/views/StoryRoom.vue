@@ -264,6 +264,20 @@
             <span class="conflict-rule">{{ ruleLabel(c.rule) }}</span>
             <span class="conflict-msg">{{ c.description || c.message }}</span>
             <el-button
+              v-if="c.rule === 'R8' && c.foreshadowId"
+              size="small"
+              type="success"
+              plain
+              @click="payForeshadow(c.foreshadowId)"
+            >已回收</el-button>
+            <el-button
+              v-if="c.rule === 'R8' && c.foreshadowId"
+              size="small"
+              type="danger"
+              text
+              @click="dropForeshadow(c.foreshadowId)"
+            >弃置</el-button>
+            <el-button
               v-if="c.rule === 'R9' && c.entityName"
               size="small"
               @click="whitelistName(c.entityName)"
@@ -703,6 +717,46 @@ function onConflictDrawerOpen(): void {
   selectedKeys.value = new Set()
   conflictRuleFilter.value = ''
   void store.loadConflictsIfWriting()
+}
+
+/** §D 伏笔回收：标记 paid（章号可留空=后端取已写最大章号） */
+async function payForeshadow(foreshadowId: string): Promise<void> {
+  try {
+    const res = await ElMessageBox.prompt(
+      '在第几章回收这条伏笔？留空 = 按当前已写最大章号。',
+      '标记伏笔回收',
+      {
+        confirmButtonText: '已回收',
+        cancelButtonText: '取消',
+        inputPlaceholder: '章号（可留空）',
+        inputPattern: /^\d*$/,
+        inputErrorMessage: '章号需为数字',
+      },
+    )
+    const value = (res as unknown as { value?: string }).value
+    const chapter = value && value.trim() ? Number(value.trim()) : undefined
+    if (await store.setForeshadowStatus(foreshadowId, 'paid', chapter)) {
+      ElMessage.success('伏笔已标记回收')
+    }
+  } catch {
+    /* 取消 */
+  }
+}
+
+/** §D 伏笔弃置：标记 dropped（该伏笔不再参与 R8 超期提醒） */
+async function dropForeshadow(foreshadowId: string): Promise<void> {
+  try {
+    await ElMessageBox.confirm('确认弃置这条伏笔？弃置后不再参与超期提醒，且可在台账中回看。', '弃置伏笔', {
+      confirmButtonText: '弃置',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch {
+    return
+  }
+  if (await store.setForeshadowStatus(foreshadowId, 'dropped')) {
+    ElMessage.success('伏笔已弃置')
+  }
 }
 
 async function execOption(i: number, oi: number, opt: PlanOption): Promise<void> {

@@ -2248,6 +2248,8 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:room:conflict:execute', projectId, action, payload),
     conflictBatchAcknowledge: (projectId: string, keys: string[], note?: string) =>
       ipcRenderer.invoke('longwriting:conflict:batchAcknowledge', projectId, keys, note),
+    foreshadowSetStatus: (projectId: string, id: string, status: 'open' | 'paid' | 'dropped', payoffChapter?: number) =>
+      ipcRenderer.invoke('longwriting:foreshadow:setStatus', projectId, id, status, payoffChapter),
     rosterWhitelistList: (projectId: string) =>
       ipcRenderer.invoke('longwriting:roster:whitelist:list', projectId),
     rosterWhitelistAdd: (projectId: string, name: string, note?: string) =>

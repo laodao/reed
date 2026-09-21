@@ -47,6 +47,8 @@ export interface ConflictItem {
   locs?: ConflictLoc[]
   /** §3c 写前门禁豁免标记：false=仅提醒不阻断（R8 超期）；未标记=维持现状拦截 */
   blocking?: boolean
+  /** §D 伏笔台账 id（R8 专属）：供抽屉「已回收/弃置」直接定位台账行 */
+  foreshadowId?: string
 }
 
 /** 死亡语义关键词（状态切片文本命中即视为"已死亡"） */
@@ -827,6 +829,8 @@ export class ConsistencyService {
           severity: 'warning',
           // §3c：超期未回收是节奏提醒而非一致性错误——不阻断写前门禁（台账/看板管理）
           blocking: false,
+          // §D：附带台账 id，抽屉「已回收/弃置」直接定位
+          foreshadowId: f.id,
           message: `伏笔「${label}…」第 ${f.plantedChapter} 章埋下，已写至第 ${writtenMax} 章仍未回收——考虑安排回收或标记弃置`,
           chapterNumber: f.plantedChapter,
         })
