@@ -1211,30 +1211,28 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcBridge.handle(CHANNELS.DELETE_OUTLINE, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.DELETE_OUTLINE, async (_event, id: string, force?: boolean) => {
     try {
       const dbManager = getCoreDatabaseManager()
-      // 章号在删除前计算（删除会引发后续章重排）；chapter/section 节点才挂章节伴生数据
-      const outline = await dbManager.lwOutlines?.getById(id)
-      const isWritableNode = outline?.nodeType === 'chapter' || outline?.nodeType === 'section'
-      const chapterNo = isWritableNode && outline
-        ? await (await import('@core/platform/services/longwriting/graph/consistency.service'))
-            .ConsistencyService.getInstance()
-            .chapterNumberOf(outline.projectId, id)
-        : 0
-      const result = await service.deleteOutline(id)
-      // 复核修复：章节伴生数据（事件/演变边/切片/提取伏笔/向量）按章号键挂载且无 FK，
-      // 删章不清理会污染顶替该章号的新内容
-      if (result && isWritableNode && chapterNo > 0) {
+      // §B（2026-09-20）：级联删除——子树内章节的正文/版本/预写/摘要/关联一并清理；
+      // 有正文且未 force 时返回 needsConfirm 交 UI 二次确认（不删）
+      const cascade = await service.deleteOutline(id, force === true)
+      if (cascade.needsConfirm) {
+        return { success: true, data: { needsConfirm: true, chapters: cascade.chapters } }
+      }
+      // 图谱派生数据（事件/演变边/切片/提取伏笔/向量）按章号键挂载且无 FK，逐章清理
+      if (cascade.deleted && cascade.chapterNos.length > 0 && cascade.projectId) {
         try {
           const { LwPurgeService } = await import('@core/platform/services/longwriting/purge.service')
           const purge = new LwPurgeService(dbManager)
-          purge.logResults(`deleteOutline:${id}`, await purge.purgeChapterDerivedData(outline.projectId, chapterNo))
+          for (const chapterNo of cascade.chapterNos) {
+            purge.logResults(`deleteOutline:${id}`, await purge.purgeChapterDerivedData(cascade.projectId, chapterNo))
+          }
         } catch (e) {
           console.error('[LongWritingHandler] 章节伴生数据清理失败（不影响删除）:', e)
         }
       }
-      return { success: result }
+      return { success: cascade.deleted, data: { needsConfirm: false, deleted: cascade.deleted } }
     } catch (error: any) {
       return { success: false, error: error.message }
     }

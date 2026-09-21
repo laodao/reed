@@ -280,11 +280,14 @@ async function clearExistingOutlines(nodes: any[]): Promise<void> {
     byParent.get(key)!.push(n)
   }
   const roots = byParent.get(null) || []
-  const deleteNode = async (id: string): Promise<void> => {
+  const deleteNode = async (id: string, force = false): Promise<void> => {
     for (const child of byParent.get(id) || []) {
       await deleteNode(child.id)
     }
-    await window.electronAPI.longwriting.deleteOutline(id)
+    const res = await window.electronAPI.longwriting.deleteOutline(id, force)
+    if (res.success && res.data?.needsConfirm) {
+      await window.electronAPI.longwriting.deleteOutline(id, true)
+    }
   }
   for (const root of roots) {
     await deleteNode(root.id)

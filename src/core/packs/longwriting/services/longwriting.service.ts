@@ -903,11 +903,87 @@ export class LongWritingService {
   /**
    * 删除大纲节点
    */
-  async deleteOutline(id: string): Promise<boolean> {
-    if (!this.db.lwOutlines) {
+  /**
+   * 删除大纲节点（§B 级联版，2026-09-20）：删除节点及其全部后代，并级联清理
+   * 章节正文/版本/预写/状态摘要/大纲关联（角色/条目/地点）。
+   * 任一后代章节有正文且未 force → needsConfirm=true（不删，交 UI 二次确认）。
+   * 实测背景：裸删除曾让残留行令后续章法写作炸 FK（3 次原始 SqliteError）。
+   */
+  async deleteOutline(
+    id: string,
+    force = false,
+  ): Promise<{ deleted: boolean; needsConfirm: boolean; chapters: string[]; projectId: string | null; chapterNos: number[] }> {
+    if (!this.db.lwOutlines || !this.db.dataSource) {
       throw new Error('数据库未初始化')
     }
-    return await this.db.lwOutlines.delete(id)
+    const empty = { deleted: false, needsConfirm: false, chapters: [], projectId: null, chapterNos: [] as number[] }
+    const node = await this.db.lwOutlines.getById(id)
+    if (!node) return { ...empty, deleted: false }
+    const all = (await this.db.lwOutlines.getByProjectId(node.projectId)) || []
+
+    // 收集子树（节点自身 + 全部后代）
+    const ids: string[] = [id]
+    const collect = (parentId: string): void => {
+      for (const o of all) {
+        if (o.parentId === parentId && !ids.includes(o.id)) {
+          ids.push(o.id)
+          collect(o.id)
+        }
+      }
+    }
+    collect(id)
+
+    const chapterNodes = all.filter((o) => ids.includes(o.id) && o.nodeType === 'chapter')
+    const { buildOutlineDocOrder, outlineChapterNumber } = await import('@core/platform/services/longwriting/outline-order')
+    const docOrder = buildOutlineDocOrder(all as never)
+
+    // 正文检查：有正文的章节列出，未 force 不删
+    const withContent: string[] = []
+    const chapterRows: Array<{ outlineId: string; chapterId: string; chapterNo: number }> = []
+    for (const cn of chapterNodes) {
+      const ch = await this.db.lwChapters?.getByOutlineId(cn.id)
+      const no = outlineChapterNumber(docOrder, cn.id) ?? 0
+      if (ch) {
+        chapterRows.push({ outlineId: cn.id, chapterId: ch.id, chapterNo: no })
+        if (ch.content?.trim()) withContent.push(cn.name)
+      }
+    }
+    if (withContent.length > 0 && !force) {
+      return { deleted: false, needsConfirm: true, chapters: withContent, projectId: node.projectId, chapterNos: [] }
+    }
+
+    // 事务级联：版本 → 正文 → 预写 → 状态摘要 → 大纲关联 → 大纲节点
+    const { LwChapterVersionEntity } = await import('@core/database/entities/lw-chapter-version.entity')
+    const { LwChapterEntity } = await import('@core/database/entities/lw-chapter.entity')
+    const { LwOutlineCharacterEntity } = await import('@core/database/entities/lw-outline-character.entity')
+    const { LwOutlineItemEntity } = await import('@core/database/entities/lw-outline-item.entity')
+    const { LwOutlineLocationEntity } = await import('@core/database/entities/lw-outline-location.entity')
+    const { LwChapterStateSummaryEntity } = await import('@core/database/entities/lw-chapter-state-summary.entity')
+    const { LwOutlineEntity } = await import('@core/database/entities/lw-outline.entity')
+
+    await this.db.dataSource.transaction(async (em) => {
+      for (const row of chapterRows) {
+        await em.delete(LwChapterVersionEntity, { chapterId: row.chapterId })
+        await em.delete(LwChapterEntity, { id: row.chapterId })
+      }
+      for (const oid of ids) {
+        await em.delete(LwOutlineCharacterEntity, { outlineId: oid })
+        await em.delete(LwOutlineItemEntity, { outlineId: oid })
+        await em.delete(LwOutlineLocationEntity, { outlineId: oid })
+        await em.delete(LwChapterStateSummaryEntity, { outlineId: oid })
+      }
+      for (const oid of ids) {
+        await em.delete(LwOutlineEntity, { id: oid })
+      }
+    })
+
+    return {
+      deleted: true,
+      needsConfirm: false,
+      chapters: withContent,
+      projectId: node.projectId,
+      chapterNos: chapterRows.map((r) => r.chapterNo).filter((n) => n > 0),
+    }
   }
 
   /**

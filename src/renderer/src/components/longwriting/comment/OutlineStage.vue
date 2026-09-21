@@ -155,7 +155,15 @@ async function deleteSection(index: number) {
     })
 
     const section = outlineSections.value[index]
-    const result = await window.electronAPI.longwriting.deleteOutline(section.id)
+    let result = await window.electronAPI.longwriting.deleteOutline(section.id)
+    if (result.success && result.data?.needsConfirm) {
+      await ElMessageBox.confirm(
+        `该段落包含已写正文（${(result.data.chapters || []).join('、')}），删除将连带清除正文，确定继续吗？`,
+        '删除含正文的段落',
+        { confirmButtonText: '删除并清理正文', cancelButtonText: '取消', type: 'warning' }
+      )
+      result = await window.electronAPI.longwriting.deleteOutline(section.id, true)
+    }
     if (result.success) {
       outlineSections.value.splice(index, 1)
       ElMessage.success('段落已删除')
@@ -263,7 +271,10 @@ async function parseOutlineResult(content: string) {
 
       // 清除现有大纲
       for (const section of outlineSections.value) {
-        await window.electronAPI.longwriting.deleteOutline(section.id)
+        const r1 = await window.electronAPI.longwriting.deleteOutline(section.id)
+        if (r1.success && r1.data?.needsConfirm) {
+          await window.electronAPI.longwriting.deleteOutline(section.id, true)
+        }
       }
 
       // 创建新大纲

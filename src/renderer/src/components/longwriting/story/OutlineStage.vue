@@ -447,11 +447,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, inject, toRaw } from 'vue'
+import { ref, computed, onMounted, watch, inject } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, MagicStick, ArrowRight, ArrowDown, Close, Document, Refresh, InfoFilled, Loading } from '@element-plus/icons-vue'
-import type { StoryOutline, OutlineNodeType, OutlineStatus, StoryCharacter, ChapterPrewrite, StoryMemory, ExtractedMemoryData } from '../../../../shared/types/longwriting.types'
-import type { ComputedRef } from 'vue'
+import type { StoryOutline, OutlineNodeType, OutlineStatus, StoryCharacter, ChapterPrewrite, ExtractedMemoryData } from '../../../../shared/types/longwriting.types'
 
 const props = defineProps<{
   projectId: string
@@ -657,7 +656,7 @@ async function deleteNode(id: string) {
 
     // 递归删除所有子节点
     const toDelete = [id]
-    function collectChildren(parentId: string) {
+    const collectChildren = (parentId: string): void => {
       outlineNodes.value.forEach(n => {
         if (n.parentId === parentId && !toDelete.includes(n.id)) {
           toDelete.push(n.id)
@@ -667,9 +666,20 @@ async function deleteNode(id: string) {
     }
     collectChildren(id)
 
-    // 依次删除（从叶子节点开始）
+    // 依次删除（从叶子节点开始）；含正文的节点会触发 needsConfirm，统一二次确认后强制删除
+    let forceCascade = false
     for (const deleteId of toDelete.reverse()) {
-      await window.electronAPI.longwriting.deleteOutline(deleteId)
+      const res = await window.electronAPI.longwriting.deleteOutline(deleteId)
+      if (res.success && res.data?.needsConfirm && !forceCascade) {
+        const names = (res.data.chapters || []).join('、')
+        await ElMessageBox.confirm(
+          `该分支包含已写正文的章节（${names}），删除将连带清除正文与版本，确定继续吗？`,
+          '删除含正文的章节',
+          { confirmButtonText: '删除并清理正文', cancelButtonText: '取消', type: 'warning' }
+        )
+        forceCascade = true
+        await window.electronAPI.longwriting.deleteOutline(deleteId, true)
+      }
     }
 
     await loadOutlineTree()

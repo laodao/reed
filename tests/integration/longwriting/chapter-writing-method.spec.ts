@@ -95,7 +95,10 @@ function fakeDb(): void {
     lwProjectModelConfigs: {
       getByProjectAndStage: async () => ({ providerConfigId: 'pc_ds', modelId: 'deepseek-v4.1-flash' }),
     },
-    lwOutlines: { getByProjectId: async () => OUTLINES, getById: async (id: string) => OUTLINES.find((o) => o.id === id) ?? null },
+    lwOutlines: {
+      getByProjectId: async () => OUTLINES,
+      getById: async (id: string) => OUTLINES.find((o) => o.id === id) ?? null,
+    },
     lwCharacters: { getByProjectId: async () => [{ name: '沈云萝' }] },
     lwChapters: { getByOutlineId: async () => null },
   }
@@ -152,6 +155,14 @@ describe('章法全流程回归（§5）', () => {
     const outcome = await runChapterWritingMethod({ projectId: 'p1', outlineId: 'o1' })
     expect(outcome.ok).toBe(false)
     expect(outcome.error).toContain('已有正文')
+    expect(h.resolveModelCalls).toHaveLength(0)
+  })
+
+  it('§B 反向：大纲节点不存在 → 人话错误且不发 LLM 调用', async () => {
+    h.db.lwOutlines.getById = async () => null
+    const outcome = await runChapterWritingMethod({ projectId: 'p1', outlineId: 'o1' })
+    expect(outcome.ok).toBe(false)
+    expect(outcome.error).toContain('已被删除')
     expect(h.resolveModelCalls).toHaveLength(0)
   })
 

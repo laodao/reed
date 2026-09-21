@@ -278,6 +278,13 @@ export async function runChapterWritingMethod(opts: ChapterWritingMethodOptions)
   const ai = LongWritingAIService.getInstance()
   const svc = (await import('./longwriting.service')).LongWritingService.getInstance()
 
+  // §B（2026-09-20）：大纲节点已被删除时直接给人话错误——实测曾炸裸 FK
+  // （SqliteError: FOREIGN KEY constraint failed），用户无法理解
+  const outlineNode = await getCoreDatabaseManager().lwOutlines?.getById?.(outlineId)
+  if (!outlineNode) {
+    return { ok: false, error: '该章节大纲已被删除，请刷新大纲后重试。' }
+  }
+
   // 已有正文保护（与写作台/旧工具同规则）
   const existing = await svc.getChapter(outlineId)
   if (existing?.content?.trim() && !overwrite) {

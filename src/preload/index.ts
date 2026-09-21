@@ -1874,7 +1874,7 @@ const electronAPI = {
     createOutline: (data: any) => ipcRenderer.invoke('longwriting:createOutline', data),
     updateOutline: (id: string, data: any) =>
       ipcRenderer.invoke('longwriting:updateOutline', id, data),
-    deleteOutline: (id: string) => ipcRenderer.invoke('longwriting:deleteOutline', id),
+    deleteOutline: (id: string, force?: boolean) => ipcRenderer.invoke('longwriting:deleteOutline', id, force),
     moveOutline: (id: string, newParentId: string | null) =>
       ipcRenderer.invoke('longwriting:moveOutline', id, newParentId),
 

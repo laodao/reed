@@ -60,14 +60,23 @@ const chapterWritingNode: WorkflowNodeHandler = {
       '@core/packs/longwriting/services/chapter-writing-executor'
     )
 
-    const outcome = await runChapterWritingMethod({
-      projectId,
-      outlineId,
-      overwrite,
-      targetWords: cfg.targetWords,
-      signal: ctx.signal,
-      onProgress: (p) => ctx.emitProgress(-1, `${p.step}：${p.message}`),
-    })
+    let outcome
+    try {
+      outcome = await runChapterWritingMethod({
+        projectId,
+        outlineId,
+        overwrite,
+        targetWords: cfg.targetWords,
+        signal: ctx.signal,
+        onProgress: (p) => ctx.emitProgress(-1, `${p.step}：${p.message}`),
+      })
+    } catch (e: any) {
+      // §B（2026-09-20）：大纲/关联数据被删后残留 FK 以裸 SqliteError 冒出——翻译成人话
+      if (String(e?.message || '').includes('FOREIGN KEY')) {
+        return { status: 'failed', error: '该章节的大纲或关联数据已被删除，请刷新大纲后重试', retryable: false }
+      }
+      throw e
+    }
 
     if (!outcome.ok) {
       const parts = [outcome.error || '章法执行失败']
