@@ -477,6 +477,12 @@ async function initDatabase(): Promise<void> {
     '@core/database/migrations/add-workflow-template-version'
   )
   await addWorkflowTemplateVersion(ds)
+
+  // §G（2026-09-20）：历史项目 wizard_state NULL → '{}'（与 Electron 端同构）
+  const { initNullWizardState } = await import(
+    '@core/database/migrations/init-null-wizard-state'
+  )
+  await initNullWizardState(ds)
   const { createWorkflowDefinitionVersionsTable } = await import(
     '@core/database/migrations/create-workflow-definition-versions'
   )

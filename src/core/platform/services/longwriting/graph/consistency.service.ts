@@ -72,6 +72,10 @@ const NAME_SCAN_STOPWORDS = new Set([
   '白色', '黑色', '红色', '黄色', '周围', '向自己', '怎么知', '我知', '你知', '她知', '他知', '一抹', '自家',
   '大人', '老爷', '小子', '老人', '少年', '女子', '男子', '众人', '左右', '下方', '上方', '背后', '面前',
   '早已', '已然', '忽然', '突然', '低声', '厉声', '沉声', '缓缓', '轻轻', '微微', '冷冷',
+  // §3c 噪音治理（2026-09-20 天下捕快实测）：职务/泛称/身份统称——不是名字，是新角色应入册而非上报
+  '校尉', '刺客', '捕快', '老捕快', '差役', '更夫', '官兵', '侍卫', '掌柜', '老者', '乞丐', '和尚', '道人',
+  '婢女', '小厮', '黑衣人', '神秘黑衣人', '神秘黑影', '黑衣劫匪', '押车哑巴', '路人', '老头', '汉子', '壮汉',
+  '马夫', '车夫', '伙计', '店小二', '衙役', '护卫', '门房', '账房', '绣娘', '猎户',
 ])
 
 export function scanNameCandidates(
@@ -687,10 +691,23 @@ export class ConsistencyService {
     const m = this.manager()
     if (!m?.lwCustomEntities) return []
     const conflicts: ConflictItem[] = []
-    // §3a 名册白名单（wizardState.rosterWhitelist）：单元案死者/路人等一次性人名，
-    // 用户确认「提取误报/无需入册」后不再反复上报
+    // §3a 名册白名单 + §3c 排除集（停用词/地点名册）：单元案死者（周员外）、
+    // 泛称（校尉/刺客/黑衣人）、地名（白鹿城/金堤城）等一次性词不再反复上报。
+    // 两条路径共用同一排除集——路径 1 是图谱提取队列（校尉/黑衣人类泛称来自这里，
+    // 文本扫描的姓氏正则根本抓不到它们）；路径 2 是文本姓氏扫描。
     const whitelist = await this.rosterWhitelistOf(projectId)
-    const inWhitelist = (name: string) => whitelist.some((w) => name === w || name.includes(w) || w.includes(name))
+    const locationNames: string[] = []
+    try {
+      const locs = (await m.lwLocations?.getByProjectId(projectId)) || []
+      locationNames.push(...locs.map((l: any) => String(l.name || '')))
+    } catch { /* 地点读取失败不阻断 */ }
+    const isExcluded = (name: string): boolean => {
+      if (!name) return true
+      if (whitelist.some((w) => name === w || name.includes(w) || w.includes(name))) return true
+      if (NAME_SCAN_STOPWORDS.has(name)) return true
+      if (locationNames.some((l) => l && (name === l || name.includes(l)))) return true
+      return false
+    }
     // 1) 提取队列：解析失败的人名（52 号主实现）
     let rows: Array<{ id: string; name: string; fields?: Record<string, unknown> | null }> = []
     try {
@@ -699,7 +716,7 @@ export class ConsistencyService {
       rows = []
     }
     for (const r of rows) {
-      if (inWhitelist(r.name)) continue
+      if (isExcluded(r.name)) continue
       const ch = (r.fields as any)?.firstChapter
       conflicts.push({
         rule: 'R9',
@@ -721,7 +738,8 @@ export class ConsistencyService {
           const c = await m.lwChapters.getByOutlineId(o.id)
           if (c?.content) chapters.push({ name: o.name, content: c.content })
         }
-        const known = chars.map((c: any) => c.name).concat(whitelist)
+        // §3c 排除集：名册 + 地点名册 + 白名单 + 停用词（函数内已查 STOPWORDS）
+        const known = chars.map((c: any) => c.name).concat(locationNames).concat(whitelist)
         for (const cand of scanNameCandidates(chapters, known, 3)) {
           conflicts.push({
             rule: 'R9',

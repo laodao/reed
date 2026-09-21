@@ -113,6 +113,13 @@ export class LongWritingService {
     // 创建项目
     const project = await this.db.lwProjects.create(data)
 
+    // §G（2026-09-20）：初始化 wizard_state——读方虽容错 NULL，但写方
+    // （mutateWizardState 等）依赖已存在行；历史项目曾因此为 NULL
+    if (!project.wizardState) {
+      await this.db.lwProjects.update(project.id, { wizardState: {} })
+      project.wizardState = {}
+    }
+
     // 如果是故事类，创建对应的概要记录
     if (data.type === 'story' && this.db.lwStoryOverviews) {
       await this.db.lwStoryOverviews.create(project.id)

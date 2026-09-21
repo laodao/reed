@@ -834,6 +834,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
     )
     await addWorkflowRunMutexScope(this.dataSource)
 
+    // §G（2026-09-20）：历史项目 wizard_state NULL → '{}'（写方依赖行存在）
+    const { initNullWizardState } = await import(
+      '@core/database/migrations/init-null-wizard-state'
+    )
+    await initNullWizardState(this.dataSource)
+
     // 工作流内部定义标记：definitions 加 internal 列（业务包运行载体，列表默认过滤）
     const { addWorkflowDefinitionInternal } = await import(
       '@core/database/migrations/add-workflow-definition-internal'
