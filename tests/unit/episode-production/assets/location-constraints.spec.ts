@@ -68,3 +68,66 @@ describe('location-constraints · 无人约束', () => {
     }
   })
 })
+
+describe('location-constraints · 平面图尺度分档与禁文字（2026-09-21 v3 实测修复）', () => {
+  it('scale/locationType 宏观关键词 → 建筑群总平面', async () => {
+    const { buildLocationFloorPlanSuffix } = await import(
+      '@core/platform/episode-production/assets/prompts/location-constraints'
+    )
+    for (const input of [
+      { scale: '巨大' },
+      { scale: '大' },
+      { locationType: '门派' },
+      { locationType: '建筑群' },
+      { scale: '中', locationType: '山庄' },
+    ]) {
+      const s = buildLocationFloorPlanSuffix(input)
+      expect(s).toContain('建筑群总平面布局图')
+      expect(s).toContain('不得出现任何文字')
+    }
+  })
+
+  it('scale/locationType 室内尺度 → 室内平面', async () => {
+    const { buildLocationFloorPlanSuffix } = await import(
+      '@core/platform/episode-production/assets/prompts/location-constraints'
+    )
+    for (const input of [
+      { scale: '小' },
+      { locationType: 'interior' },
+      { locationType: '室内' },
+    ]) {
+      expect(buildLocationFloorPlanSuffix(input)).toContain('室内平面布局图')
+    }
+  })
+
+  it('scale 为空按名字猜：山庄/城/派/宫/寨 → 宏观；房/室/阁/斋/堂 → 室内', async () => {
+    const { buildLocationFloorPlanSuffix } = await import(
+      '@core/platform/episode-production/assets/prompts/location-constraints'
+    )
+    for (const name of ['雪麓山庄', '白鹿城', '青云派', '大明宫', '清风寨', '临水镇']) {
+      expect(buildLocationFloorPlanSuffix({ name })).toContain('建筑群总平面布局图')
+    }
+    for (const name of ['书房', '闺房', '卧室', '藏剑阁', '松风斋', '正堂']) {
+      expect(buildLocationFloorPlanSuffix({ name })).toContain('室内平面布局图')
+    }
+  })
+
+  it('名字与 meta 都不命中 → 默认宏观（site）', async () => {
+    const { buildLocationFloorPlanSuffix } = await import(
+      '@core/platform/episode-production/assets/prompts/location-constraints'
+    )
+    expect(buildLocationFloorPlanSuffix({ name: '演武场' })).toContain('建筑群总平面布局图')
+    expect(buildLocationFloorPlanSuffix({})).toContain('建筑群总平面布局图')
+  })
+
+  it('两档都带禁文字约束，且不再要求"标注"文字', async () => {
+    const { buildLocationFloorPlanSuffix } = await import(
+      '@core/platform/episode-production/assets/prompts/location-constraints'
+    )
+    for (const input of [{ name: '雪麓山庄' }, { name: '书房' }, {}]) {
+      const s = buildLocationFloorPlanSuffix(input)
+      expect(s).toContain('图上不得出现任何文字')
+      expect(s).not.toContain('标注主要建筑')
+    }
+  })
+})

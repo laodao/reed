@@ -29,7 +29,7 @@ import {
   mergeLocationBaseCompositionNegative,
   appendLocationFloorPlanReference,
   appendLocationParentReference,
-  LOCATION_FLOOR_PLAN_SUFFIX,
+  buildLocationFloorPlanSuffix,
 } from '../prompts/location-constraints'
 import {
   appendCharacterIdentityPreservation,
@@ -46,6 +46,7 @@ import {
   mergeAncientEraNegative,
   type EffectiveAssetForPrompt,
 } from '../prompts/asset-identity-prompt'
+import { aHashDistance } from '@core/platform/episode-production/common/image-hash'
 import { CharacterAssetService } from './character-asset.service'
 import { LocationAssetService } from './location-asset.service'
 import { ItemAssetService } from './item-asset.service'
@@ -75,8 +76,14 @@ export interface GenerateMainInput {
   modelId?: string | null
 }
 
-export class MainImageGeneratorService {
-  /**
+/**
+ * 地点主图 vs 参考图（平面图 / 父级主图）aHash 汉明距离照抄阈值（2026-09-21 v3 实测）。
+ * 比关键帧机器校验的 6 宽松一档：主图与参考图本就要求布局一致，正常生成也会拉近
+ * 距离，10 以内才是"基本复刻"（实测照抄的平面图复刻距离在 4 以内）。
+ */
+const LOCATION_REF_COPY_THRESHOLD = 10
+
+export class MainImageGeneratorService {  /**
    * imageSvc 当前未直接调用（落表走 Repository.save），但保留构造参数以保持
    * 与 GalleryDerivationService / PanoramaGeneratorService 一致的注入签名，
    * 方便后续如果增加 main 图衍生 / 缩略图生成等需要 imageSvc 的能力。
@@ -242,6 +249,7 @@ export class MainImageGeneratorService {
   /**
    * 根地点平面布局图先行（2026-09-21 C2）：T2I 生成俯视平面图（无参考图），
    * 落库 category='floor_plan' label='layout' isMain=0。失败抛错由调用方兜底。
+   * v3 实测修复：按 scale/类型/名字分档（建筑群总平面 vs 室内平面）+ 严禁图上文字。
    */
   private async generateFloorPlan(
     input: GenerateMainInput,
@@ -252,13 +260,14 @@ export class MainImageGeneratorService {
       input.providerConfigId && input.modelId
         ? { providerConfigId: input.providerConfigId, modelId: input.modelId }
         : await this.resolveProjectImageModel(input.assetType, input.assetId)
+    const eff = await this.loadEffective(input.assetType, input.assetId)
     let floorPrompt = `${anchor}${input.prompt}`
-    floorPrompt = appendAssetSettingAnchors(
-      'location',
-      await this.loadEffective(input.assetType, input.assetId),
-      floorPrompt,
-    )
-    floorPrompt = `${floorPrompt}，${LOCATION_FLOOR_PLAN_SUFFIX}`
+    floorPrompt = appendAssetSettingAnchors('location', eff, floorPrompt)
+    floorPrompt = `${floorPrompt}，${buildLocationFloorPlanSuffix({
+      scale: (eff?.scale as string | null | undefined) ?? null,
+      locationType: (eff?.locationType as string | null | undefined) ?? null,
+      name: (eff?.name as string | null | undefined) ?? null,
+    })}`
     floorPrompt = appendAncientEraConstraint(floorPrompt, era)
     const floorNegative = mergeAncientEraNegative(
       mergeLocationNoHumanNegative(input.negativePrompt),
@@ -408,7 +417,7 @@ export class MainImageGeneratorService {
       projectImageModel = await fallbackToReferenceCapableModel(projectImageModel)
     }
 
-    const result = await this.imageGen.generate({
+    let result = await this.imageGen.generate({
       referenceImagePaths: refPaths,
       prompt: effectivePrompt,
       negativePrompt: effectiveNegative,
@@ -416,6 +425,28 @@ export class MainImageGeneratorService {
       providerConfigId: input.providerConfigId ?? projectImageModel?.providerConfigId,
       modelId: input.modelId ?? projectImageModel?.modelId,
     })
+
+    // 照抄检测重拍（2026-09-21 v3 实测）：flux-kontext 类编辑模型给单参考图会照抄
+    // （主图复刻平面图 / 子区域复刻父级示意图风格）。aHash 汉明距离 ≤10 判照抄 →
+    // 放弃该图，无参考 T2I 重拍一次（prompt 保留布局描述文本），重拍结果为最终主图。
+    // 图读不出来（aHashDistance 返回 null）放行——内容检测器不是 IO 闸门。
+    if (locationRefInjected && refPaths[0]) {
+      const dist = await aHashDistance(result.imagePath, refPaths[0])
+      if (dist !== null && dist <= LOCATION_REF_COPY_THRESHOLD) {
+        console.warn(
+          `[MainImageGeneratorService] 主图疑似照抄参考图（aHash 距离 ${dist} ≤ ${LOCATION_REF_COPY_THRESHOLD}），` +
+            '放弃该图，改为无参考 T2I 重拍一次',
+        )
+        result = await this.imageGen.generate({
+          referenceImagePaths: [],
+          prompt: effectivePrompt,
+          negativePrompt: effectiveNegative,
+          label: 'main',
+          providerConfigId: input.providerConfigId ?? projectImageModel?.providerConfigId,
+          modelId: input.modelId ?? projectImageModel?.modelId,
+        })
+      }
+    }
 
     // 旧主图降级
     await this.imageRepo

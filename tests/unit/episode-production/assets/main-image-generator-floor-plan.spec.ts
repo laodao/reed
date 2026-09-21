@@ -13,6 +13,10 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import * as fs from 'fs'
+import * as os from 'os'
+import * as path from 'path'
+import sharp from 'sharp'
 import { DataSource } from 'typeorm'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 import { LocationBindingEntity } from '@core/database/entities/episode-production/location-binding.entity'
@@ -25,7 +29,6 @@ import { AssetImageService } from '@core/platform/episode-production/assets/serv
 import { MainImageGeneratorService } from '@core/platform/episode-production/assets/services/main-image-generator.service'
 import type { ImageGenerator } from '@core/platform/episode-production/assets/services/gallery-derivation.service'
 import {
-  LOCATION_FLOOR_PLAN_SUFFIX,
   LOCATION_FLOOR_PLAN_REFERENCE_SUFFIX,
   LOCATION_PARENT_REFERENCE_SUFFIX,
 } from '@core/platform/episode-production/assets/prompts/location-constraints'
@@ -42,6 +45,8 @@ class MockGen implements ImageGenerator {
   calls: Call[] = []
   /** 设为 true 时第一次调用抛错（模拟平面图生成失败） */
   failFirst = false
+  /** 非空时按顺序返回真实图片路径（照抄检测测试用）；空则返回 /mock 假路径 */
+  pathsQueue: string[] = []
   private counter = 0
   async generate(opts: Call): Promise<{ imagePath: string; thumbnailPath: string | null }> {
     if (this.failFirst && this.calls.length === 0) {
@@ -50,7 +55,10 @@ class MockGen implements ImageGenerator {
     }
     this.counter += 1
     this.calls.push(opts)
-    return { imagePath: `/mock/${opts.label}-${this.counter}.png`, thumbnailPath: null }
+    const imagePath = this.pathsQueue.length > 0
+      ? this.pathsQueue.shift()!
+      : `/mock/${opts.label}-${this.counter}.png`
+    return { imagePath, thumbnailPath: null }
   }
 }
 
@@ -135,13 +143,14 @@ describe('MainImageGeneratorService · 平面图先行 / 父级引用 / 守设�
     })
 
     expect(gen.calls).toHaveLength(2)
-    // 第一次：平面图，T2I 无参考图
+    // 第一次：平面图，T2I 无参考图（v3 修复：宏观尺度建筑群总平面 + 严禁图上文字）
     const plan = gen.calls[0]
     expect(plan.label).toBe('layout')
     expect(plan.referenceImagePaths).toEqual([])
-    expect(plan.prompt).toContain('俯视正交平面布局图')
+    expect(plan.prompt).toContain('建筑群总平面布局图')
+    expect(plan.prompt).toContain('不得出现任何文字')
     expect(plan.prompt).toContain('雪麓山庄')
-    // 第二次：主图，以平面图作参考 + 布局还原约束
+    // 第二次：主图，以平面图作参考 + 变换式指令（俯视示意图 → 地面人视写实场景）
     const mainCall = gen.calls[1]
     expect(mainCall.label).toBe('main')
     expect(mainCall.referenceImagePaths).toEqual(['/mock/layout-1.png'])
@@ -155,7 +164,7 @@ describe('MainImageGeneratorService · 平面图先行 / 父级引用 / 守设�
     expect(floorPlan).toBeTruthy()
     expect(floorPlan!.label).toBe('layout')
     expect(floorPlan!.isMain).toBe(0)
-    expect(floorPlan!.prompt).toContain(LOCATION_FLOOR_PLAN_SUFFIX)
+    expect(floorPlan!.prompt).toContain('建筑群总平面布局图')
     expect(main.isMain).toBe(1)
     expect(main.category).toBe('main')
   })
@@ -360,5 +369,121 @@ describe('MainImageGeneratorService · 平面图先行 / 父级引用 / 守设�
       prompt: '演武场',
     })
     expect(gen.calls[0].prompt).not.toContain(ANCIENT_ERA_CONSTRAINT_SUFFIX)
+  })
+})
+
+/** 照抄检测测试用的真实图片 fixture（aHash 需要读真实文件） */
+const FIXTURE_SIZE = 64
+
+async function makeFixture(
+  file: string,
+  pixel: (x: number, y: number) => number,
+): Promise<void> {
+  const data = Buffer.alloc(FIXTURE_SIZE * FIXTURE_SIZE * 3)
+  for (let y = 0; y < FIXTURE_SIZE; y++) {
+    for (let x = 0; x < FIXTURE_SIZE; x++) {
+      const v = pixel(x, y)
+      const i = (y * FIXTURE_SIZE + x) * 3
+      data[i] = v
+      data[i + 1] = v
+      data[i + 2] = v
+    }
+  }
+  await sharp(data, { raw: { width: FIXTURE_SIZE, height: FIXTURE_SIZE, channels: 3 } })
+    .png()
+    .toFile(file)
+}
+
+describe('MainImageGeneratorService · 照抄检测重拍（2026-09-21 v3 实测修复）', () => {
+  let ds: DataSource
+  let gen: MockGen
+  let svc: MainImageGeneratorService
+  let dir: string
+  /** 平面图 fixture：左亮右暗 */
+  let planPath: string
+  /** 照抄 fixture：同构图亮度微差（aHash 距离 ~0 ≤10） */
+  let copyPath: string
+  /** 正常生成 fixture：上亮下暗（构图不同，距离 ~32 > 10） */
+  let distinctPath: string
+
+  beforeEach(async () => {
+    ds = await buildDb()
+    gen = new MockGen()
+    svc = new MainImageGeneratorService(new AssetImageService(ds), gen, ds)
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'main-copy-check-'))
+    planPath = path.join(dir, 'plan.png')
+    copyPath = path.join(dir, 'copy.png')
+    distinctPath = path.join(dir, 'distinct.png')
+    await makeFixture(planPath, (x) => (x < FIXTURE_SIZE / 2 ? 240 : 30))
+    await makeFixture(copyPath, (x) => (x < FIXTURE_SIZE / 2 ? 230 : 40))
+    await makeFixture(distinctPath, (_x, y) => (y < FIXTURE_SIZE / 2 ? 240 : 30))
+  })
+
+  afterEach(async () => {
+    if (ds.isInitialized) await ds.destroy()
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('主图与平面图 aHash 距离 ≤10 → 放弃首图，无参考 T2I 重拍一次为最终主图', async () => {
+    await seedLocation(ds, 'lb_root')
+    // 平面图 → 照抄图 → 重拍图
+    gen.pathsQueue = [planPath, copyPath, distinctPath]
+    const main = await svc.generateMain({
+      assetType: 'location',
+      assetId: 'lb_root',
+      prompt: '雪麓山庄，依山而建的建筑群',
+    })
+
+    expect(gen.calls).toHaveLength(3)
+    // 第二次：以平面图作参考的首版主图（被判照抄放弃）
+    expect(gen.calls[1].referenceImagePaths).toEqual([planPath])
+    // 第三次：无参考 T2I 重拍，prompt 保留布局描述文本（变换式指令仍在）
+    expect(gen.calls[2].referenceImagePaths).toEqual([])
+    expect(gen.calls[2].label).toBe('main')
+    expect(gen.calls[2].prompt).toContain(LOCATION_FLOOR_PLAN_REFERENCE_SUFFIX)
+    // 最终主图 = 重拍结果
+    expect(main.imagePath).toBe(distinctPath)
+    expect(main.isMain).toBe(1)
+    // 落库主图路径同样是重拍结果（占位/新行回填的是最终图）
+    const mainRow = await ds.getRepository(AssetImageEntity).findOne({
+      where: { assetType: 'location', assetId: 'lb_root', isMain: 1 },
+    })
+    expect(mainRow?.imagePath).toBe(distinctPath)
+  })
+
+  it('主图与平面图距离 >10 → 直接用首图，不重拍', async () => {
+    await seedLocation(ds, 'lb_root')
+    gen.pathsQueue = [planPath, distinctPath]
+    const main = await svc.generateMain({
+      assetType: 'location',
+      assetId: 'lb_root',
+      prompt: '雪麓山庄',
+    })
+    expect(gen.calls).toHaveLength(2)
+    expect(main.imagePath).toBe(distinctPath)
+  })
+
+  it('子区域照抄父级主图 → 同样无参考 T2I 重拍一次', async () => {
+    await seedLocation(ds, 'lb_parent')
+    await seedLocation(ds, 'lb_child', { parentId: 'lb_parent' })
+    // 父级 confirmed 主图是真实文件（平面图风格的示意图）
+    await seedImage(ds, {
+      id: 'ai_pmain',
+      assetId: 'lb_parent',
+      isMain: 1,
+      confirmed: 1,
+      imagePath: planPath,
+    })
+    gen.pathsQueue = [copyPath, distinctPath]
+    const main = await svc.generateMain({
+      assetType: 'location',
+      assetId: 'lb_child',
+      prompt: '雪麓山庄山门',
+    })
+    expect(gen.calls).toHaveLength(2)
+    expect(gen.calls[0].referenceImagePaths).toEqual([planPath])
+    expect(gen.calls[1].referenceImagePaths).toEqual([])
+    expect(gen.calls[1].prompt).toContain(LOCATION_PARENT_REFERENCE_SUFFIX)
+    expect(main.imagePath).toBe(distinctPath)
   })
 })

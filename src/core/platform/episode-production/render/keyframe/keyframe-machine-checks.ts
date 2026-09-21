@@ -16,7 +16,11 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import sharp from 'sharp'
-import { getPathProvider } from '@core/interfaces/path.interface'
+import {
+  aHash64,
+  hamming64,
+  toAbsImagePath,
+} from '@core/platform/episode-production/common/image-hash'
 
 export interface MachineCheckFailure {
   code: 'flat_or_blank' | 'reference_copy' | 'reference_copy_whitebg'
@@ -39,42 +43,8 @@ const FLAT_STDEV_THRESHOLD = 10
 const EDGE_WHITE_MEAN = 245
 const EDGE_WHITE_VAR = 50
 
-/** 路径解析：绝对路径直接用；相对路径按 dataPath 拼（PathProvider 未初始化则原样返回） */
-function toAbs(p: string): string {
-  if (path.isAbsolute(p)) return p
-  try {
-    return path.join(getPathProvider().getDataPath(), p)
-  } catch {
-    return p
-  }
-}
-
-/** 64-bit aHash：resize 8x8 灰度 → 按均值取bit */
-async function aHash64(absPath: string): Promise<bigint> {
-  const { data } = await sharp(absPath)
-    .resize(8, 8, { fit: 'fill' })
-    .greyscale()
-    .raw()
-    .toBuffer({ resolveWithObject: true })
-  let sum = 0
-  for (const v of data) sum += v
-  const mean = sum / 64
-  let bits = 0n
-  for (let i = 0; i < 64; i++) {
-    if (data[i] >= mean) bits |= 1n << BigInt(i)
-  }
-  return bits
-}
-
-function hamming64(a: bigint, b: bigint): number {
-  let x = a ^ b
-  let n = 0
-  while (x) {
-    n += Number(x & 1n)
-    x >>= 1n
-  }
-  return n
-}
+/** 路径解析：委托 common/image-hash（相对路径按 dataPath 拼） */
+const toAbs = toAbsImagePath
 
 /** 整图通道标准差均值（空图/纯色检测） */
 async function overallStdev(absPath: string): Promise<number> {

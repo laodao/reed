@@ -131,18 +131,88 @@ export function mergeLocationBaseCompositionNegative(userNegative?: string | nul
  *   - 根地点主图生成前先出俯视平面布局图（category='floor_plan'），主图以它作参考图
  *     还原布局，避免同一地点多张图方位/建筑互相矛盾；
  *   - 子区域（binding.parentId 有值）主图以父级主图作参考图，保同一建筑群风格一致。
+ *
+ * v3 实测修复（2026-09-21）：
+ *   - 平面图按地点尺度分档（建筑群总平面 vs 室内平面），"雪麓山庄"整座门派
+ *     曾被画成单个房间；
+ *   - 平面图严禁文字（本地模型渲染文字必乱码），删掉"标注主要建筑"类要求；
+ *   - 主图以平面图为参考时用变换式指令（俯视示意图 → 地面人视写实场景），
+ *     否则 flux-kontext 类编辑模型会照抄平面图风格。
  */
 
-/** 平面布局图 prompt 后缀（T2I，不走参考图） */
-export const LOCATION_FLOOR_PLAN_SUFFIX =
-  '俯视正交平面布局图（top-down orthographic floor plan / site plan），' +
-  '标注主要建筑与区域相对位置，无人物，示意风格，简洁线条与色块'
+/** 平面图禁文字约束（中英双写；本地模型渲染文字必乱码，v3 实测） */
+export const LOCATION_FLOOR_PLAN_NO_TEXT =
+  '图上不得出现任何文字、标注、字母、数字、符号、图例' +
+  '（no text, no labels, no letters, no numbers, no symbols, no legend on the image）'
 
-/** 主图以平面布局图为参考时的 prompt 后缀 */
+/** 宏观尺度（门派/山庄/城池）：建筑群总平面 */
+export const LOCATION_FLOOR_PLAN_SITE_SUFFIX =
+  '建筑群总平面布局图（aerial site plan, bird\'s-eye view of the entire building complex），' +
+  '鸟瞰整座建筑群，展现主要院落、殿堂、道路、山门的相对位置，无人物，示意风格，简洁线条与色块'
+
+/** 室内尺度（房间/厅堂）：室内平面 */
+export const LOCATION_FLOOR_PLAN_INTERIOR_SUFFIX =
+  '室内平面布局图（top-down orthographic floor plan of the interior space），' +
+  '展现家具与功能区域的相对位置，无人物，示意风格，简洁线条与色块'
+
+/** 宏观尺度关键词（scale/locationType/名字命中 → 建筑群总平面） */
+const FLOOR_PLAN_MACRO_KEYWORDS = [
+  '门派', '山庄', '建筑群', '城池', '城', '镇', '村', '寨', '宫', '观', '派', '门', '谷', '府邸', '庄园',
+]
+/** 室内尺度关键词（命中 → 室内平面） */
+const FLOOR_PLAN_INTERIOR_KEYWORDS = [
+  '房', '屋', '室', '阁', '斋', '堂', '厅', 'interior', '室内',
+]
+
+function containsAny(text: string, keywords: string[]): boolean {
+  return keywords.some((k) => text.includes(k))
+}
+
+/**
+ * 平面图尺度分档 + 禁文字：返回完整平面图 prompt 后缀。
+ *
+ * 分档规则：
+ *   1. scale / locationType 优先：含宏观关键词或"大/巨" → site；含室内关键词或"小" → interior；
+ *   2. 否则按名字猜：室内关键词 → interior；宏观关键词 → site；
+ *   3. 都不命中 → site（地点默认按宏观场景处理，室内是少数）。
+ */
+export function buildLocationFloorPlanSuffix(input: {
+  scale?: string | null
+  locationType?: string | null
+  name?: string | null
+}): string {
+  const meta = `${input.scale ?? ''} ${input.locationType ?? ''}`
+  const name = input.name ?? ''
+  let tier: 'site' | 'interior'
+  if (
+    containsAny(meta, FLOOR_PLAN_MACRO_KEYWORDS) ||
+    meta.includes('巨大') ||
+    /(^|[^小])大/.test(meta)
+  ) {
+    tier = 'site'
+  } else if (containsAny(meta, FLOOR_PLAN_INTERIOR_KEYWORDS) || meta.includes('小')) {
+    tier = 'interior'
+  } else if (containsAny(name, FLOOR_PLAN_INTERIOR_KEYWORDS)) {
+    tier = 'interior'
+  } else {
+    // 名字命中宏观 / 都不命中 → site（默认宏观）
+    tier = 'site'
+  }
+  const tierSuffix =
+    tier === 'site' ? LOCATION_FLOOR_PLAN_SITE_SUFFIX : LOCATION_FLOOR_PLAN_INTERIOR_SUFFIX
+  return `${tierSuffix}，${LOCATION_FLOOR_PLAN_NO_TEXT}`
+}
+
+/**
+ * 主图以平面布局图为参考时的变换式指令（v3 实测：flux-kontext 类编辑模型
+ * 给单参考图会照抄，"保持布局一致"压不住；必须显式要求视角/质感变换）。
+ */
 export const LOCATION_FLOOR_PLAN_REFERENCE_SUFFIX =
-  '场景是参考平面图所示布局的真实视角还原，保持建筑相对位置、方位、风格一致' +
-  '（the scene is a realistic perspective rendering of the layout in the reference floor plan, ' +
-  'keep relative positions, orientation and architectural style consistent）'
+  '将参考的俯视平面布局图转换为地面人视角度的写实电影质感场景画面，' +
+  '保持布局结构与建筑相对位置一致，严禁输出俯视视角、示意图、线稿、平面图风格' +
+  '（transform the reference top-down floor plan into a realistic cinematic scene from ' +
+  'ground-level human perspective, keep layout structure and relative positions of buildings, ' +
+  'strictly no top-down view, no schematic, no line-art, no floor-plan style）'
 
 /** 子区域主图以父级主图为参考时的 prompt 后缀 */
 export const LOCATION_PARENT_REFERENCE_SUFFIX =
