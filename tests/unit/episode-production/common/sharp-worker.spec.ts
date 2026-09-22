@@ -20,6 +20,7 @@ import {
   disposeSharpWorker,
   getSharpWorker,
   workerAHash,
+  workerCompositeOntoScene,
   workerHashDistance,
   workerImageStats,
   workerMakeBoard,
@@ -163,5 +164,71 @@ describe('sharp-worker op roundtrip（真实子进程）', () => {
     await expect(
       getSharpWorker().call('no_such_op', {}),
     ).rejects.toThrow(/unknown op/)
+  })
+
+  it('compositeOntoScene：白底抠图贴入场景草稿，尺寸=草稿，白边被抠', async () => {
+    // 场景草稿：纯绿 200x100
+    const draft = path.join(tmpDir, 'draft.png')
+    await sharp({ create: { width: 200, height: 100, channels: 3, background: '#00aa00' } })
+      .png()
+      .toFile(draft)
+    // 角色主图：白底 40x80 + 中央深色矩形（模拟白底全身像）
+    const figure = path.join(tmpDir, 'figure.png')
+    await sharp({ create: { width: 40, height: 80, channels: 3, background: '#ffffff' } })
+      .composite([
+        {
+          input: await sharp({
+            create: { width: 24, height: 60, channels: 3, background: '#222222' },
+          })
+            .png()
+            .toBuffer(),
+          left: 8,
+          top: 10,
+        },
+      ])
+      .png()
+      .toFile(figure)
+    const outPath = path.join(tmpDir, 'composite.png')
+
+    const out = await workerCompositeOntoScene({
+      scenePath: draft,
+      members: [{ imagePath: figure, assetImageId: 'ai_c1', name: '张三' }],
+      outPath,
+    })
+
+    // 输出尺寸 = 草稿尺寸；成员 1 个
+    expect(out.width).toBe(200)
+    expect(out.height).toBe(100)
+    expect(out.members).toEqual([{ assetImageId: 'ai_c1', name: '张三', slot: 1 }])
+    const meta = await sharp(outPath).metadata()
+    expect(meta.width).toBe(200)
+    expect(meta.height).toBe(100)
+
+    // 人物目标高 55 → 缩后约 28x55；居中 x≈(200-28)/2=86，基线对齐底部 8%（top≈100-8-55=37）
+    const { data, info } = await sharp(outPath).raw().toBuffer({ resolveWithObject: true })
+    const px = (x: number, y: number) => {
+      const i = (y * info.width + x) * info.channels
+      return [data[i], data[i + 1], data[i + 2]]
+    }
+    // 人物中心区（x≈100, y≈70）应为深色（贴入了）
+    const center = px(100, 70)
+    expect(center[0]).toBeLessThan(80)
+    // 人物贴图的白边区（x=88, y=39，贴图内左上角原白底）应被抠掉 → 露出草稿绿色
+    const edge = px(88, 39)
+    expect(edge[1]).toBeGreaterThan(120)
+    expect(edge[0]).toBeLessThan(80)
+    // 草稿远离人物区（左上角）保持绿色不变
+    const corner = px(5, 5)
+    expect(corner[1]).toBeGreaterThan(120)
+  })
+
+  it('compositeOntoScene：草稿不可读 → reject（调用方退化截断）', async () => {
+    await expect(
+      workerCompositeOntoScene({
+        scenePath: path.join(tmpDir, 'ghost.png'),
+        members: [{ imagePath: path.join(tmpDir, 'f.png'), assetImageId: 'x', name: 'x' }],
+        outPath: path.join(tmpDir, 'out.png'),
+      }),
+    ).rejects.toThrow(/不可读/)
   })
 })

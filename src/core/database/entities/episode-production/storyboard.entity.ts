@@ -150,7 +150,7 @@ export class StoryboardEntity {
 
   /** 视频生成模式：text2video / image2video / keyframes2video */
   @Column({ name: 'video_mode', type: 'varchar', nullable: true })
-  videoMode!: 'text2video' | 'image2video' | 'keyframes2video' | null
+  videoMode!: 'text2video' | 'image2video' | 'keyframes2video' | 'assetRef2video' | null
 
   // ─── 视频片段制（tasks/2026-09-04-ep-video-segment-redesign §4）──────────────
 

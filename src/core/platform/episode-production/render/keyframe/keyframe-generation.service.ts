@@ -48,6 +48,7 @@ import {
 import {
   buildKeyframePrompt,
   PRESET_STYLES,
+  REFERENCE_MATCH_STYLE_PREFIX,
   type ResolvedCharacterRef,
   type ResolvedLocationRef,
   type ResolvedItemRef,
@@ -60,6 +61,8 @@ import { parseAssetRefOverrides, toRefCandidates } from './parse-asset-refs'
 import { ReferenceBoardService, type ReferenceBoardResult, type ReferenceBoardMember } from './reference-board.service'
 import { runKeyframeMachineChecks, type MachineCheckResult } from './keyframe-machine-checks'
 import { KeyframeReviewService, isVisionCapable, type KeyframeReview } from './keyframe-review.service'
+import { workerCompositeOntoScene } from '@core/platform/episode-production/common/sharp-worker'
+import { toAbsImagePath } from '@core/platform/episode-production/common/image-hash'
 import { getModelCapabilities } from '@core/platform/providers/image/model-capabilities'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getPathProvider } from '@core/interfaces/path.interface'
@@ -85,6 +88,30 @@ interface CollectedRefImage {
   imagePath: string
   kind: 'character' | 'location' | 'item'
   name: string
+}
+
+/**
+ * 合成锚定融合指令（2026-09-21 设计转向）：kontext 融合步的 prompt 前缀。
+ * 替代 REFERENCE_MATCH_STYLE_PREFIX——参考图是"草稿+贴入人物"的合成图，
+ * 要的是融合（统一光影/去贴纸感），不是"与参考图一致"。
+ */
+const COMPOSITE_FUSION_PREFIX =
+  '[合成锚定融合] 将拼贴入画面的人物自然融入场景：统一光影、透视与写实风格，去除贴纸感与白边；' +
+  '每个人物的面容、发型、服装必须与贴入形象严格一致；场景布局与背景保持草稿不变；' +
+  '画面中不得出现多余人物' +
+  '（blend the pasted characters into the scene naturally: unified lighting, perspective and ' +
+  'realistic style, no sticker look or white fringes; each character must keep the exact face, ' +
+  'hairstyle and outfit of the pasted figure; keep the draft scene layout and background unchanged; ' +
+  'no extra people in frame）'
+
+/** 剥掉 prompt 开头的风格前缀（合成锚定的融合步不用"与参考图一致"前缀） */
+function stripStylePrefix(prompt: string): string {
+  for (const prefix of [REFERENCE_MATCH_STYLE_PREFIX]) {
+    if (prompt.startsWith(prefix)) {
+      return prompt.slice(prefix.length).replace(/^[,，\s]+/, '')
+    }
+  }
+  return prompt
 }
 
 /**
@@ -223,7 +250,12 @@ export class KeyframeGenerationService {
   constructor(
     private readonly ds: DataSource,
     imageGenerator?: ImageGenerator,
-    deps?: { boardService?: ReferenceBoardService; reviewService?: KeyframeReviewService },
+    deps?: {
+      boardService?: ReferenceBoardService
+      reviewService?: KeyframeReviewService
+      /** 合成锚定产物落盘的数据目录（可注入，单测用临时目录；缺省走 PathProvider） */
+      compositeDataPath?: () => string
+    },
   ) {
     this.keyframeRepo = new StoryboardKeyframeRepository(ds)
     this.sbCharRepo = new StoryboardCharacterRepository(ds)
@@ -233,7 +265,10 @@ export class KeyframeGenerationService {
     this.imageGenerator = imageGenerator ?? createGalleryImageGenerator()
     this.boardService = deps?.boardService ?? new ReferenceBoardService()
     this.reviewService = deps?.reviewService ?? new KeyframeReviewService(ds)
+    this.compositeDataPath = deps?.compositeDataPath ?? null
   }
+
+  private readonly compositeDataPath: (() => string) | null
 
   private get sbRepo(): Repository<StoryboardEntity> {
     return this.ds.getRepository(StoryboardEntity)
@@ -771,6 +806,109 @@ export class KeyframeGenerationService {
     }
   }
 
+  /**
+   * 合成锚定第 1 步的 T2I 草稿模型：同 provider 下找 textToImage 模型
+   * （models[].features.textToImage===true 优先；能力表 maxReferenceImages===0 兜底）。
+   * 找不到 → null（调用方 warn 退化为单参考图截断）。
+   */
+  private async resolveDraftT2IModel(
+    editModel: { providerConfigId: string; modelId: string } | null,
+  ): Promise<{ providerConfigId: string; modelId: string } | null> {
+    if (!editModel) return null
+    try {
+      const db = getCoreDatabaseManager()
+      if (!db.providerConfigs) return null
+      const enabled = await db.providerConfigs.getEnabled()
+      const cfg = enabled.find((c) => c.id === editModel.providerConfigId)
+      if (!cfg) return null
+      const providerType = String(cfg.templateId ?? '').replace('image-', '')
+      const models = (cfg.models ?? []) as Array<{
+        id?: string
+        name?: string
+        type?: string
+        features?: { textToImage?: boolean }
+      }>
+      for (const m of models) {
+        if (!m.id || m.id === editModel.modelId) continue
+        if (m.type !== 'image' && m.type !== 'multimodal') continue
+        if (m.features?.textToImage === true) {
+          return { providerConfigId: editModel.providerConfigId, modelId: m.id }
+        }
+        try {
+          if (getModelCapabilities(providerType, m.id, m.name).maxReferenceImages === 0) {
+            return { providerConfigId: editModel.providerConfigId, modelId: m.id }
+          }
+        } catch {
+          // 未登记能力 → 跳过
+        }
+      }
+      return null
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * 合成锚定前两步：T2I 场景草稿（无参考图）→ sharp 抠图贴入合成。
+   * 返回相对 dataPath 的 draft/composite 路径 + 贴入成员。失败抛错（调用方退化截断）。
+   */
+  private async buildCompositeAnchor(args: {
+    scene: SceneScriptEntity
+    basePrompt: string
+    negativePrompt: string
+    plan: KeyframePlan
+    dimensions: { width: number; height: number }
+    t2iModel: { providerConfigId: string; modelId: string }
+    charRefs: CollectedRefImage[]
+  }): Promise<{
+    draftPath: string
+    compositePath: string
+    members: Array<{ assetImageId: string; name: string; slot: number }>
+  }> {
+    // 1. T2I 场景草稿：原关键帧 prompt（含人物文字描述/构图/景别），不带参考图
+    const draft = await this.imageGenerator.generate({
+      referenceImagePaths: [],
+      prompt: args.basePrompt,
+      negativePrompt: args.negativePrompt,
+      label: `keyframe_${args.plan.frameRole}_${args.plan.frameIndex}_draft`,
+      width: args.dimensions.width,
+      height: args.dimensions.height,
+      providerConfigId: args.t2iModel.providerConfigId,
+      modelId: args.t2iModel.modelId,
+    })
+
+    // 2. 角色主图白底抠图贴入合成（worker 子进程；只贴角色，不贴地点/物品图）
+    const dataPath = this.compositeDataPath?.() ?? getPathProvider().getDataPath()
+    const now = new Date()
+    const relDir = path.join(
+      'images',
+      String(now.getFullYear()),
+      String(now.getMonth() + 1).padStart(2, '0'),
+      String(now.getDate()).padStart(2, '0'),
+    )
+    const absDir = path.join(dataPath, relDir)
+    fs.mkdirSync(absDir, { recursive: true })
+    const fileName = `composite_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.png`
+    const absOut = path.join(absDir, fileName)
+    const draftAbs = toAbsImagePath(draft.imagePath)
+
+    const out = await workerCompositeOntoScene({
+      scenePath: draftAbs,
+      members: args.charRefs.map((r) => ({
+        imagePath: toAbsImagePath(r.imagePath),
+        assetImageId: r.id,
+        name: r.name,
+      })),
+      outPath: absOut,
+    })
+
+    return {
+      draftPath: draft.imagePath,
+      compositePath: path.join(relDir, fileName).replace(/\\/g, '/'),
+      members: out.members,
+    }
+  }
+
   /** 古风硬约束上下文：scene → episode_script → episode 取 storyEra/storyRegion；缺失 → null（不阻塞生成） */
   private async resolveEpisodeEraContext(
     scene: SceneScriptEntity,
@@ -1071,16 +1209,55 @@ export class KeyframeGenerationService {
       : projectImageModel
 
     /*
-     * D（2026-09-21 多角色锚定）：有效参考图 >1 张但模型 maxReferenceImages==1
-     * （comfyui 网关只吃 1 张，改网关协议不现实）→ 把全部参考图拼成一张带编号的
-     * 参考板作为唯一参考图，prompt 前追加编号对照说明。链式衔接说明：当前
-     * chain-strategy 的参考链只在 prompt 层（时刻语言），帧间不互喂图片，
-     * 参考板只是身份锚，不影响链式逻辑。
-     * 拼板失败（sharp 异常 / 成员图不可读）warn 后退回原截断逻辑。
+     * 多角色锚定（2026-09-21 设计转向：废弃拼板喂 kontext，改场景优先合成锚定）：
+     *   - maxRefs==1 且有角色参考图 → 三步链：T2I 场景草稿（同 provider 的
+     *     textToImage 模型，无参考图）→ sharp 白底抠图贴入合成（worker
+     *     compositeOntoScene）→ kontext 融合（合成图为唯一参考图 + 融合指令）。
+     *     利用编辑模型"保持输入"的天性：输入合成图，输出融合后的完整场景。
+     *   - maxRefs==1 但无角色参考图 / 同 provider 无 T2I 模型 / 合成失败 →
+     *     warn 退化为原单参考图截断逻辑（adapter 截到第一张）。
+     *   - maxRefs>1 且 refs 超出上限 → 保留拼板路径（当前无此配置，留待多参考平台）。
+     * 链式衔接：chain-strategy 参考链只在 prompt 层（时刻语言），帧间不互喂图片，不冲突。
      */
     let board: ReferenceBoardResult | null = null
+    let compositeAnchor: {
+      draftPath: string
+      compositePath: string
+      members: Array<{ assetImageId: string; name: string; slot: number }>
+    } | null = null
+    let fusionModel: { providerConfigId: string; modelId: string } | null = null
     const maxRefs = await this.resolveMaxReferenceImages(effectiveImageModel)
-    if (refImages.length > 1 && maxRefs === 1) {
+    const charRefs = refImages.filter((r) => r.kind === 'character')
+    if (refImages.length > 0 && maxRefs === 1 && charRefs.length > 0) {
+      const t2iModel = await this.resolveDraftT2IModel(effectiveImageModel)
+      if (!t2iModel) {
+        console.warn(
+          '[keyframe-generation] 同 provider 无 T2I 草稿模型，合成锚定不可用，退化为单参考图截断',
+        )
+      } else {
+        try {
+          compositeAnchor = await this.buildCompositeAnchor({
+            scene,
+            basePrompt,
+            negativePrompt: promptOut.negativePrompt,
+            plan,
+            dimensions,
+            t2iModel,
+            charRefs,
+          })
+          fusionModel = effectiveImageModel
+        } catch (e) {
+          console.warn('[keyframe-generation] 合成锚定失败，退化为单参考图截断:', e)
+          compositeAnchor = null
+        }
+      }
+    } else if (
+      refImages.length > 1 &&
+      maxRefs !== null &&
+      maxRefs > 1 &&
+      refImages.length > maxRefs
+    ) {
+      // 拼板遗留路径：仅多参考平台（maxRefs>1）且 refs 超上限时启用
       try {
         board = await this.boardService.build(
           refImages.map((r) => ({
@@ -1095,8 +1272,18 @@ export class KeyframeGenerationService {
         board = null
       }
     }
-    const referencePaths = board ? [board.path] : refImages.map((r) => r.imagePath)
+    const referencePaths = compositeAnchor
+      ? [compositeAnchor.compositePath]
+      : board
+        ? [board.path]
+        : refImages.map((r) => r.imagePath)
     const boardNote = board ? buildBoardPromptNote(board.members) : ''
+    // 合成锚定：融合指令 + 原 prompt 的场景/动作/氛围（剥掉"与参考图一致"风格前缀——
+    // 参考图是合成贴图，风格由融合指令定义）
+    const fusionBasePrompt = compositeAnchor
+      ? `${COMPOSITE_FUSION_PREFIX}\n${stripStylePrefix(basePrompt)}`
+      : ''
+    const generateModel = compositeAnchor ? fusionModel : effectiveImageModel
 
     // E2：VLM 审核仅在项目配置了多模态审核模型时启用；纯文本/未配置 → skipped
     const reviewModel = await this.reviewService
@@ -1110,8 +1297,7 @@ export class KeyframeGenerationService {
     let retryNote = ''
     for (let attempt = 1; attempt <= MAX_KEYFRAME_ATTEMPTS; attempt++) {
       const attemptPrompt =
-        (boardNote ? `${boardNote}\n` : '') +
-        basePrompt +
+        (compositeAnchor ? fusionBasePrompt : (boardNote ? `${boardNote}\n` : '') + basePrompt) +
         (retryNote ? `\n[上一张图的问题] ${retryNote}，必须修正` : '')
       generated = await this.imageGenerator.generate({
         referenceImagePaths: referencePaths,
@@ -1120,15 +1306,16 @@ export class KeyframeGenerationService {
         label: `keyframe_${plan.frameRole}_${plan.frameIndex}`,
         width: dimensions.width,
         height: dimensions.height,
-        providerConfigId: effectiveImageModel?.providerConfigId,
-        modelId: effectiveImageModel?.modelId,
+        providerConfigId: generateModel?.providerConfigId,
+        modelId: generateModel?.modelId,
       })
 
-      // 机器校验：照抄/空图硬检测（基准 = 原始成员参考图；拼板模式 R2 追加与板本身对比）
+      // 机器校验：照抄/空图硬检测（基准 = 原始成员参考图；拼板 R2 追加板复刻；
+      // 合成锚定追加 composite_copy 未融合检测）
       machineCheck = await runKeyframeMachineChecks(
         generated.imagePath,
         refImages.map((r) => r.imagePath),
-        { boardPath: board?.path ?? null },
+        { boardPath: board?.path ?? null, compositePath: compositeAnchor?.compositePath ?? null },
       )
 
       // VLM 审核：仅多模态审核模型；机器校验未过不再浪费 VLM 调用
@@ -1186,9 +1373,9 @@ export class KeyframeGenerationService {
 
     // 生效参考图：adapter 按模型能力截断后返回实际生效路径；缺省=全部生效。
     // 截断差异（选中但未生效）必须落库让 UI 可见——这是"多角色参考图被静默丢弃"的根因面。
-    // 拼板模式下参考板就是唯一输入，成员图全部经板生效，仍记原始成员 ids。
+    // 拼板/合成锚定模式下参考图全部经板/合成图生效，仍记原始成员 ids。
     let effectiveReferenceImageIds = refImages.map((r) => r.id)
-    if (!board && generated.effectiveReferencePaths) {
+    if (!board && !compositeAnchor && generated.effectiveReferencePaths) {
       const effectiveSet = new Set(generated.effectiveReferencePaths)
       effectiveReferenceImageIds = refImages
         .filter((r) => effectiveSet.has(r.imagePath))
@@ -1213,10 +1400,12 @@ export class KeyframeGenerationService {
         referenceImageIds: refImages.map((r) => r.id),
         referenceImageIdsEffective: effectiveReferenceImageIds,
         resolvedModel: generated.resolvedModel ?? null,
-        // D：编号参考板（拼板模式才落）
+        // D：编号参考板（拼板模式才落，遗留路径：仅多参考平台 refs 超上限时启用）
         ...(board
           ? { referenceBoard: { path: board.path, members: board.members } }
           : {}),
+        // 合成锚定（场景优先三步链才落）：草稿 + 合成图 + 贴入成员
+        ...(compositeAnchor ? { compositeAnchor } : {}),
         // E：机器校验 + VLM 审核结果（视频生成闸门据此拦截）
         machineCheck,
         review,

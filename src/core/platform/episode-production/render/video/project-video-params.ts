@@ -21,6 +21,13 @@ export interface ProjectVideoParams {
   steps?: number
   /** 项目风格词（config.stylePrompt），拼进视频提示词约束 */
   stylePrompt?: string
+  /**
+   * 视频生成路径（2026-09-21 一致性修复 v2，缺省按 'assetRef'）：
+   *   'assetRef' — 提示词引用资产：@资产/结构化字段 → 资产主图作外观参考（唯一开通路径）；
+   *   'keyframe' — 旧关键帧路径（keyframes2video/image2video），已暂停，仅作回切换。
+   * 缺省 assetRef 的原因：关键帧 11/11 废帧（照抄参考板）后，关键帧依赖型路径全部失锚。
+   */
+  renderPath?: 'assetRef' | 'keyframe'
 }
 
 /** 从 video_projects.config 读视频画质参数；项目不存在/未配置 → {}（provider 默认） */
@@ -43,6 +50,8 @@ export async function getProjectVideoParams(
   if (typeof (cfg as any).stylePrompt === 'string' && (cfg as any).stylePrompt.trim()) {
     params.stylePrompt = (cfg as any).stylePrompt.trim()
   }
+  // 一致性修复 v2：renderPath 缺省 = 'assetRef'（关键帧/图生视频路径已暂停）
+  params.renderPath = (cfg as any).renderPath === 'keyframe' ? 'keyframe' : 'assetRef'
   return params
 }
 

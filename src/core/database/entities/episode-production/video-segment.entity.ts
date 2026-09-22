@@ -54,7 +54,7 @@ export class EpVideoSegmentEntity {
 
   /** text2video / image2video / keyframes2video */
   @Column({ name: 'video_mode', type: 'varchar', nullable: true })
-  videoMode!: 'text2video' | 'image2video' | 'keyframes2video' | null
+  videoMode!: 'text2video' | 'image2video' | 'keyframes2video' | 'assetRef2video' | null
 
   /** 实际视频时长（秒） */
   @Column({ name: 'duration', type: 'real', nullable: true })

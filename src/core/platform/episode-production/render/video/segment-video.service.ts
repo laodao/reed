@@ -43,6 +43,12 @@ import { assertKeyframeGate, evaluateKeyframeGate } from './keyframe-gate'
 import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
 import { KeyframeGenerationService } from '../keyframe/keyframe-generation.service'
 import { advanceEpisodeStatusForStoryboard } from '../../workflow/episode-status-advance'
+import {
+  collectSegmentAssetRefs,
+  buildAssetRefPrompt,
+  type SegmentAssetRef,
+} from './asset-ref-resolver'
+import { ReferenceBoardService } from '../keyframe/reference-board.service'
 
 const DEFAULT_WIDTH = 1920
 const DEFAULT_HEIGHT = 1080
@@ -71,6 +77,8 @@ export interface SegmentVideoResult {
   keyframesUsed: KeyframeInput[]
   /** 联动置 completed 的分镜 ID */
   completedStoryboardIds: string[]
+  /** assetRef2video：本段解析出的资产引用（声明段与 refs 来源，审计用） */
+  assetRefs?: SegmentAssetRef[]
 }
 
 export class SegmentVideoService {
@@ -99,6 +107,16 @@ export class SegmentVideoService {
     const shots = await this.storyboardRepo.getBySegmentId(seg.id)
     if (shots.length === 0) {
       throw new Error(`视频片段 ${input.segmentId} 内没有分镜`)
+    }
+
+    /*
+     * 一致性修复 v2（2026-09-21）：renderPath 默认 'assetRef' —— 提示词引用资产路径。
+     * 关键帧（keyframes2video/image2video 的图源）已在雪麓山庄 v3 复盘中证实 11/11
+     * 废帧（照抄参考板），故缺省改走资产主图参考；'keyframe' 仅作回切换。
+     */
+    const videoParamsEarly = await resolveVideoParamsForEpisode(this.ds, seg.episodeId)
+    if ((videoParamsEarly.renderPath ?? 'assetRef') === 'assetRef' && input.forceMode !== 'keyframes2video') {
+      return this.generateViaAssetRef(input, seg, shots, videoParamsEarly)
     }
 
     /*
@@ -202,6 +220,149 @@ export class SegmentVideoService {
   }
 
   // ─── 内部 ──────────────────────────────────────────────
+
+  /**
+   * assetRef2video · 提示词引用资产路径（2026-09-21 一致性修复 v2，缺省唯一开通路径）。
+   *
+   * 1. collectSegmentAssetRefs：从分镜结构化字段解析本段资产主图（地点→角色→道具）
+   * 2. ≥2 资产 → 编号参考板；1 资产 → 原图直传；0 资产 → 报错（纯文生不可用）
+   * 3. prompt = 三段式声明段（主体外观来源，不锁构图）+ buildSegmentPrompt 正文
+   * 4. adapter.imageToVideo：refs 语义 = 主体外观参考（H3 网关 1-ref 协议），非首帧锁定
+   */
+  private async generateViaAssetRef(
+    input: GenerateSegmentVideoInput,
+    seg: EpVideoSegment,
+    shots: any[],
+    videoParams: { quality?: 'high' | 'low'; steps?: number; stylePrompt?: string },
+  ): Promise<SegmentVideoResult> {
+    if (!this.adapter.imageToVideo) {
+      throw new Error('当前 provider 未实现 imageToVideo（assetRef2video 依赖单图参考通道）')
+    }
+
+    const width = input.width ?? DEFAULT_WIDTH
+    const height = input.height ?? DEFAULT_HEIGHT
+    const durationSec = Math.max(
+      1,
+      Math.round(input.durationSec ?? seg.estDuration ?? shots.reduce((n, s) => n + ((s as any).duration || 3), 0)),
+    )
+
+    const basePrompt = buildSegmentPrompt(
+      shots.map((s) => ({
+        frameDescription: (s as any).frameDescription,
+        duration: (s as any).duration,
+        shotType: (s as any).shotType,
+        cameraAngle: (s as any).cameraAngle,
+        cameraMovement: (s as any).cameraMovement,
+      })),
+      { width, height, stylePrompt: videoParams.stylePrompt },
+    )
+
+    const refs = await collectSegmentAssetRefs(this.ds, shots as any)
+    if (refs.length === 0) {
+      throw new Error(
+        `提示词引用资产模式：片段 #${seg.seq} 未解析到任何资产参考` +
+          `（检查分镜的角色/地点/道具绑定，以及对应资产是否已有主图）`,
+      )
+    }
+
+    // 兑现：≥2 资产 → 编号参考板；1 资产 → 原图直传
+    let refPath: string
+    let useBoard = false
+    if (refs.length >= 2) {
+      const board = await new ReferenceBoardService().build(
+        refs.map((r) => ({
+          imagePath: r.imagePath,
+          name: r.name,
+          kind: r.kind,
+          assetImageId: r.assetImageId,
+        })),
+      )
+      refPath = board.path
+      useBoard = true
+      console.log(
+        `[segment-video] assetRef: 片段 #${seg.seq} 使用 ${refs.length} 资产参考板 ${board.path}` +
+          `（${refs.map((r) => r.name).join('/')}）`,
+      )
+    } else {
+      refPath = refs[0].imagePath
+      console.log(`[segment-video] assetRef: 片段 #${seg.seq} 单资产参考 ${refs[0].name} ${refPath}`)
+    }
+
+    const prompt = buildAssetRefPrompt(basePrompt, refs, useBoard)
+
+    // generating + prompt 快照先落库（崩溃可追）
+    await this.segmentRepo.update(seg.id, {
+      status: 'generating',
+      prompt,
+      error: null,
+      providerId: input.providerId ?? seg.providerId,
+      modelId: input.modelId ?? seg.modelId,
+    })
+
+    const { createLogger } = await import('@core/utils/logger')
+    const aiLogger = createLogger('ai-call')
+    const t0 = Date.now()
+    const onTaskId = async (taskId: string) => {
+      await this.segmentRepo.update(seg.id, { providerTaskId: taskId })
+    }
+
+    try {
+      const output = await this.adapter.imageToVideo({
+        imagePath: refPath,
+        prompt,
+        durationSec,
+        width,
+        height,
+        quality: videoParams.quality,
+        steps: videoParams.steps,
+        onTaskId,
+      })
+      await this.segmentRepo.update(seg.id, {
+        status: 'completed',
+        videoPath: output.videoPath,
+        videoMode: 'assetRef2video',
+        duration: output.durationSec,
+        error: null,
+      })
+      for (const shot of shots) {
+        await this.storyboardRepo.setStatus(shot.id, 'completed')
+      }
+      await advanceEpisodeStatusForStoryboard(this.ds, shots[0].id, 'producing').catch(() => {})
+      aiLogger.info('video 调用完成（assetRef 片段级）', {
+        callType: 'video' as const,
+        mode: 'assetRef2video',
+        segmentId: seg.id,
+        userPrompt: prompt,
+        referenceImages: [refPath],
+        assetRefs: refs.map((r) => `${r.kind}:${r.name}`),
+        durationMs: Date.now() - t0,
+      })
+      return {
+        segmentId: seg.id,
+        match: { mode: 'assetRef2video', degraded: false, trace: ['assetRef2video'] },
+        output,
+        prompt,
+        keyframesUsed: [],
+        completedStoryboardIds: shots.map((s) => s.id),
+        assetRefs: refs,
+      }
+    } catch (e: any) {
+      aiLogger.error('video 调用失败（assetRef 片段级）', {
+        callType: 'video' as const,
+        mode: 'assetRef2video',
+        segmentId: seg.id,
+        userPrompt: prompt,
+        referenceImages: [refPath],
+        durationMs: Date.now() - t0,
+        error: e?.message ?? String(e),
+      })
+      await this.segmentRepo.update(seg.id, {
+        status: 'error',
+        error: e?.message ?? String(e),
+      })
+      throw e
+    }
+  }
 
   /**
    * R4：首镜头 end 帧缺失/无图时自动补生成（完整生成+机器校验+重拍闭环在

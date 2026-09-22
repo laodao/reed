@@ -76,9 +76,16 @@ export class SubtitleService {
       }
 
       // 对话：每个 storyboard 关联的 dialogues
-      for (const shot of scene.shots) {
+      for (let si = 0; si < scene.shots.length; si++) {
+        const shot = scene.shots[si]
         const dialogues = await this.loadDialoguesForShot(shot, sceneEntity)
-        cues.push(...this.distributeShotDialogues(shot, dialogues))
+        // 一致性修复 v2：旁白占场景首镜前 NARRATION_LEAD_SEC 秒，首镜对白整体后移，
+        // 消除"旁白+对白"两行叠显（雪麓山庄 v3 review 问题6）。
+        const startOffsetSec =
+          si === 0 && firstShot && sceneEntity.narration?.trim()
+            ? Math.min(NARRATION_LEAD_SEC, firstShot.durationSec)
+            : 0
+        cues.push(...this.distributeShotDialogues(shot, dialogues, startOffsetSec))
       }
     }
     // 按起始时间排序（避免 narration 与 dialogue 顺序错乱）
@@ -140,6 +147,28 @@ export class SubtitleService {
             characterName: (typeof d.characterName === 'string' && d.characterName.trim()) || UNKNOWN_SPEAKER,
           }))
 
+    // 一致性修复 v2（2026-09-21）：优先读 storyboard_dialogue_links（镜头级精确分配，
+    // cogen/预填脚本落库）；无链接才退回"均分"降级策略。
+    try {
+      const linkedRows = (await this.ds.query(
+        `SELECT d.id AS id, d.text AS text, d.character_name AS characterName
+           FROM storyboard_dialogue_links l
+           JOIN scene_dialogues d ON d.id = l.dialogue_id
+          WHERE l.storyboard_id = ?
+          ORDER BY l.sort_order ASC`,
+        [shot.storyboardId],
+      )) as Array<{ id: string; text: string; characterName: string }>
+      if (linkedRows.length > 0) {
+        return linkedRows.map((d) => ({
+          id: d.id,
+          text: d.text ?? '',
+          characterName: (d.characterName ?? '').trim() || UNKNOWN_SPEAKER,
+        }))
+      }
+    } catch {
+      // links 表查询失败 → 走既有均分兜底
+    }
+
     // 这里的简化：平均分给场景内的 shots
     // 算 shot 在场景内的位置，按比例切分对话
     const sceneShots = await this.countShotsInScene(sceneEntity.id)
@@ -177,14 +206,16 @@ export class SubtitleService {
   private distributeShotDialogues(
     shot: TimelineShot,
     dialogues: Array<{ id: string; text: string; characterName: string }>,
+    startOffsetSec = 0,
   ): SubtitleCue[] {
     if (dialogues.length === 0) return []
-    const slot = shot.durationSec / dialogues.length
+    const available = Math.max(MIN_CUE_DURATION_SEC, shot.durationSec - startOffsetSec)
+    const slot = available / dialogues.length
     const cues: SubtitleCue[] = []
     for (let i = 0; i < dialogues.length; i++) {
       const d = dialogues[i]
       if (!d.text.trim()) continue
-      const startSec = shot.startSec + i * slot
+      const startSec = shot.startSec + startOffsetSec + i * slot
       const span = Math.max(MIN_CUE_DURATION_SEC, slot)
       const endSec = Math.min(shot.startSec + (i + 1) * slot, startSec + span)
       cues.push({

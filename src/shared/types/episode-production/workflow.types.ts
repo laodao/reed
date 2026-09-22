@@ -138,6 +138,12 @@ export interface VideoProjectConfig {
    * 视频生成步数（默认 20，turbo 工作流用 4）。透传到视频 provider 的 steps 入参。
    */
   videoSteps?: number
+  /**
+   * 视频生成路径（2026-09-21 一致性修复 v2，缺省 'assetRef'）：
+   *   'assetRef' — 提示词引用资产：分镜的 @资产/结构化绑定解析出资产主图作外观参考；
+   *   'keyframe' — 旧关键帧路径（keyframes2video/image2video），已暂停，仅作回切换。
+   */
+  renderPath?: 'assetRef' | 'keyframe'
 
   // 图像设置
   imageProviderId: string // 图像生成提供商

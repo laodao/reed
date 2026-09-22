@@ -170,4 +170,14 @@ export interface VideoProviderAdapter {
 }
 
 /** 视频生成模式 */
-export type VideoMode = 'text2video' | 'image2video' | 'keyframes2video'
+/**
+ * 视频生成模式。
+ * 2026-09-21 一致性修复 v2 新增 'assetRef2video'：提示词引用资产（资产主图/参考板
+ * 作为主体外观参考 refs[0]，非首帧构图锁定）。'text2video'/'keyframes2video' 在
+ * assetRef 缺省路径下不再被调度（keyframe 路径回切换时恢复）。
+ */
+export type VideoMode =
+  | 'text2video'
+  | 'image2video'
+  | 'keyframes2video'
+  | 'assetRef2video'

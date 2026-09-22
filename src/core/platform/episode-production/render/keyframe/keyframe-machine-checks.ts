@@ -20,10 +20,14 @@ import {
   hamming64,
   toAbsImagePath,
 } from '@core/platform/episode-production/common/image-hash'
-import { workerImageStats, workerBoardCopyCheck } from '@core/platform/episode-production/common/sharp-worker'
+import {
+  workerImageStats,
+  workerBoardCopyCheck,
+  workerHashDistance,
+} from '@core/platform/episode-production/common/sharp-worker'
 
 export interface MachineCheckFailure {
-  code: 'flat_or_blank' | 'reference_copy' | 'reference_copy_whitebg' | 'board_copy'
+  code: 'flat_or_blank' | 'reference_copy' | 'reference_copy_whitebg' | 'board_copy' | 'composite_copy'
   detail: string
 }
 
@@ -52,6 +56,11 @@ const EDGE_WHITE_VAR = 50
 const BOARD_COPY_AHASH_THRESHOLD = 12
 const BOARD_BADGE_RED_RATIO = 0.0025
 const BOARD_BADGE_CONCENTRATION = 0.4
+/*
+ * 合成锚定复刻阈值：kontext 若照抄合成图（贴纸白边还在），关键帧 vs 合成图
+ * aHash 距离会极小。融合成功的帧与合成图差异显著（光影/背景重绘）。≤6 判未融合。
+ */
+const COMPOSITE_COPY_AHASH_THRESHOLD = 6
 
 /** 路径解析：委托 common/image-hash（相对路径按 dataPath 拼） */
 const toAbs = toAbsImagePath
@@ -66,7 +75,7 @@ export async function runKeyframeMachineChecks(
   imagePath: string,
   referenceImagePaths: string[],
   /** R2：拼板模式传参考板路径，追加"板复刻"检测（编辑模型会直接输出板本身） */
-  opts?: { boardPath?: string | null },
+  opts?: { boardPath?: string | null; compositePath?: string | null },
 ): Promise<MachineCheckResult> {
   const checkedAt = new Date().toISOString()
   const abs = toAbs(imagePath)
@@ -147,6 +156,21 @@ export async function runKeyframeMachineChecks(
             `集中度 ${(bc.redConcentration * 100).toFixed(0)}%，疑似把参考板当输出）`,
         })
       }
+    }
+  }
+
+  /*
+   * 合成锚定复刻检测（2026-09-21 设计转向）：场景优先合成锚定模式下，kontext 若
+   * 照抄合成图，贴纸白边/生硬拼贴还在，必须打回重拍。关键帧 vs 合成图 aHash ≤6 判未融合。
+   */
+  const compositeAbs = opts?.compositePath ? toAbs(opts.compositePath) : null
+  if (compositeAbs && fs.existsSync(compositeAbs)) {
+    const dist = await workerHashDistance(abs, compositeAbs)
+    if (dist !== null && dist <= COMPOSITE_COPY_AHASH_THRESHOLD) {
+      failures.push({
+        code: 'composite_copy',
+        detail: `合成贴图疑似原样未融合（关键帧 vs 合成图 aHash 距离 ${dist} ≤ ${COMPOSITE_COPY_AHASH_THRESHOLD}，贴纸感/白边未消除）`,
+      })
     }
   }
 

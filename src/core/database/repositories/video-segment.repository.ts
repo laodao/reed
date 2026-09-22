@@ -27,7 +27,7 @@ export interface EpVideoSegment {
   estDuration: number | null
   prompt: string | null
   videoPath: string | null
-  videoMode: 'text2video' | 'image2video' | 'keyframes2video' | null
+  videoMode: 'text2video' | 'image2video' | 'keyframes2video' | 'assetRef2video' | null
   duration: number | null
   providerId: string | null
   modelId: string | null
@@ -53,7 +53,7 @@ export interface UpdateVideoSegmentRequest {
   seq?: number
   prompt?: string | null
   videoPath?: string | null
-  videoMode?: 'text2video' | 'image2video' | 'keyframes2video' | null
+  videoMode?: 'text2video' | 'image2video' | 'keyframes2video' | 'assetRef2video' | null
   duration?: number | null
   providerId?: string | null
   modelId?: string | null

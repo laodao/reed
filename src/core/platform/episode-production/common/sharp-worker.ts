@@ -245,6 +245,70 @@ const RUNNER_SOURCE = [
   '  } catch (e) { return null }',
   '}',
   '',
+  '// 场景优先合成锚定（2026-09-21 设计转向：废弃拼板喂 kontext——编辑模型输入即画布，',
+  '// 拼板→输出板。改为 T2I 场景草稿 + 白底角色抠图贴入 + kontext 融合）',
+  '// 白底抠图：near-white（默认 r/g/b 全 >240）透明化 + alpha 通道 blur 羽化去白边',
+  'async function cutoutWhiteBg(imagePath, whiteThreshold) {',
+  '  const th = whiteThreshold || 240',
+  '  const r = await sharp(imagePath).ensureAlpha().raw().toBuffer({ resolveWithObject: true })',
+  '  const data = Buffer.from(r.data) // 拷贝，不动原 buffer',
+  '  const W = r.info.width, H = r.info.height',
+  '  for (let i = 0; i < data.length; i += 4) {',
+  '    if (data[i] > th && data[i + 1] > th && data[i + 2] > th) data[i + 3] = 0',
+  '  }',
+  '  // 羽化：alpha 单独取出 blur ~1.5px 再贴回（边缘白环柔化，kontext 融合再处理残余）',
+  '  const alpha = await sharp(data, { raw: { width: W, height: H, channels: 4 } })',
+  '    .extractChannel(3).blur(1.5).toBuffer()',
+  '  const rgb = await sharp(data, { raw: { width: W, height: H, channels: 4 } }).removeAlpha().toBuffer()',
+  '  return sharp(rgb, { raw: { width: W, height: H, channels: 3 } })',
+  '    .joinChannel(alpha, { raw: { width: W, height: H, channels: 1 } })',
+  '}',
+  '',
+  'async function compositeOntoScene(args) {',
+  '  if (!fs.existsSync(args.scenePath)) throw new Error("场景草稿不可读: " + args.scenePath)',
+  '  const sceneMeta = await sharp(args.scenePath).metadata()',
+  '  const W = sceneMeta.width, H = sceneMeta.height',
+  '  if (!W || !H) throw new Error("场景草稿尺寸不可读")',
+  '  const heightRatio = args.heightRatio || 0.55',
+  '  const bottomMargin = Math.round(H * (args.bottomMarginRatio || 0.08))',
+  '  const targetH = Math.round(H * heightRatio)',
+  '  const overlays = []',
+  '  const outMembers = []',
+  '  for (const m of args.members) {',
+  '    if (!fs.existsSync(m.imagePath)) continue',
+  '    try {',
+  '      let buf = await (await cutoutWhiteBg(m.imagePath, args.whiteThreshold)).resize({ height: targetH }).png().toBuffer()',
+  '      const mMeta = await sharp(buf).metadata()',
+  '      overlays.push({ input: buf, width: mMeta.width || targetH, height: mMeta.height || targetH, member: m })',
+  '    } catch (e) { /* 单张抠图失败跳过 */ }',
+  '  }',
+  '  if (overlays.length === 0) throw new Error("合成锚定成员全部不可读")',
+  '  // 总宽超画面 92% → 整体再缩一档',
+  '  let sumW = overlays.reduce(function (s, o) { return s + o.width }, 0)',
+  '  if (sumW > W * 0.92) {',
+  '    const shrink = (W * 0.92) / sumW',
+  '    for (const o of overlays) {',
+  '      const nh = Math.max(1, Math.round(o.height * shrink))',
+  '      o.input = await sharp(o.input).resize({ height: nh }).png().toBuffer()',
+  '      const m2 = await sharp(o.input).metadata()',
+  '      o.width = m2.width || nh',
+  '      o.height = m2.height || nh',
+  '    }',
+  '    sumW = overlays.reduce(function (s, o) { return s + o.width }, 0)',
+  '  }',
+  '  // 从左到右按成员顺序均布，间距均分；基线对齐画面底部 8% 处',
+  '  const gap = (W - sumW) / (overlays.length + 1)',
+  '  let x = gap',
+  '  const compositeOps = []',
+  '  overlays.forEach(function (o, i) {',
+  '    compositeOps.push({ input: o.input, left: Math.round(x), top: H - bottomMargin - o.height })',
+  '    x += o.width + gap',
+  '    outMembers.push({ assetImageId: o.member.assetImageId, name: o.member.name, slot: i + 1 })',
+  '  })',
+  '  await sharp(args.scenePath).composite(compositeOps).png().toFile(args.outPath)',
+  '  return { path: args.outPath, width: W, height: H, members: outMembers }',
+  '}',
+  '',
   'async function handle(msg) {',
   '  const op = msg.op, args = msg.args || {}',
   '  try {',
@@ -276,6 +340,8 @@ const RUNNER_SOURCE = [
   '      result = await extractRegions(args)',
   '    } else if (op === "boardCopyCheck") {',
   '      result = await boardCopyCheck(args)',
+  '    } else if (op === "compositeOntoScene") {',
+  '      result = await compositeOntoScene(args)',
   '    } else {',
   '      throw new Error("unknown op: " + op)',
   '    }',
@@ -566,4 +632,38 @@ export async function workerBoardCopyCheck(
     keyframePath,
     boardPath,
   })
+}
+
+export interface WorkerCompositeMemberInput {
+  /** 角色主图绝对路径（白底全身像） */
+  imagePath: string
+  assetImageId: string
+  name: string
+}
+
+export interface WorkerCompositeResult {
+  path: string
+  width: number
+  height: number
+  /** 实际贴入成员（跳过不可读的），slot 从左到右 1-based */
+  members: Array<{ assetImageId: string; name: string; slot: number }>
+}
+
+/**
+ * 场景优先合成锚定：把白底角色主图抠图（near-white 透明 + alpha 羽化）后
+ * 等比缩放到画面高度 55%，从左到右均布在画面下半部（基线对齐底部 8%），
+ * 合成到 T2I 场景草稿上。场景草稿不可读 / 成员全部不可读 → reject（调用方退化）。
+ */
+export async function workerCompositeOntoScene(args: {
+  scenePath: string
+  members: WorkerCompositeMemberInput[]
+  outPath: string
+  /** near-white 抠图阈值（默认 240） */
+  whiteThreshold?: number
+  /** 人物目标高度占画面比（默认 0.55） */
+  heightRatio?: number
+  /** 基线距画面底部占比（默认 0.08） */
+  bottomMarginRatio?: number
+}): Promise<WorkerCompositeResult> {
+  return getSharpWorker().call<WorkerCompositeResult>('compositeOntoScene', { ...args })
 }
