@@ -158,4 +158,30 @@ describe('createLwGraphTables 迁移', () => {
     expect(rows[0].source_id).toBe('c9')
     await ds.destroy()
   })
+
+  it('0922 实跑修复：跨迁移轮 id 相撞不再炸迁移（上轮迁入 NULL 关系边，本轮源表新增字面量 rel）', async () => {
+    const ds = await buildDs(true)
+    await ds.query(`INSERT INTO lw_story_characters (id, user_id, project_id, name) VALUES ('cA', NULL, 'p1', '甲'), ('cB', NULL, 'p1', '乙')`)
+
+    // 轮1：源表只有 NULL 关系 → 迁入 id=edge_migrated_cA_cB_rel、relation_type='related'
+    await ds.query(`INSERT INTO lw_character_relations (id, character_id, related_character_id, relation_type, relation_description) VALUES ('r-null', 'cA', 'cB', NULL, '旧空关系')`)
+    await createLwGraphTables(ds)
+    let rows = await ds.query(`SELECT id, relation_type FROM lw_graph_edges`)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ id: 'edge_migrated_cA_cB_rel', relation_type: 'related' })
+
+    // 轮2：源表新增字面量 'rel' 关系——守卫按 relation_type='rel' 查不到（库里是 'related'），
+    // 生成的 id 与轮1 相同 → 修复前此处抛 UNIQUE constraint failed: lw_graph_edges.id
+    await ds.query(`INSERT INTO lw_character_relations (id, character_id, related_character_id, relation_type, relation_description) VALUES ('r-rel', 'cA', 'cB', 'rel', '旧通用关系')`)
+    await createLwGraphTables(ds)
+
+    rows = await ds.query(`SELECT COUNT(*) as c FROM lw_graph_edges`)
+    expect(Number(rows[0].c)).toBe(1)
+
+    // 幂等重跑不增不减
+    await createLwGraphTables(ds)
+    const again = await ds.query(`SELECT COUNT(*) as c FROM lw_graph_edges`)
+    expect(Number(again[0].c)).toBe(1)
+    await ds.destroy()
+  })
 })

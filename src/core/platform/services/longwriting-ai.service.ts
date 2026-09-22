@@ -26,6 +26,8 @@ import {
 } from './writing-methodology'
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import { createProvider } from '@core/platform/providers/llm'
+import { callAIStreamWithBrain, type BrainGenerationDeps } from './longwriting/brain-generation'
+import type { ProviderAdapter } from '@core/platform/agent-runtime/provider/provider-adapter'
 import { PROVIDER_TEMPLATES, isApiKeyOptional } from '@core/platform/services/provider-template.service'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import type { ProviderTemplate, UserProviderConfig, ChatContext } from '@shared/types'
@@ -69,7 +71,7 @@ export interface GenerateResponse {
  * 流式生成事件
  */
 export interface GenerationStreamEvent {
-  type: 'start' | 'content' | 'done' | 'error'
+  type: 'start' | 'content' | 'done' | 'error' | 'progress'
   content?: string
   data?: any
   error?: string
@@ -369,6 +371,53 @@ export class LongWritingAIService {
     }
 
     return fullContent
+  }
+
+  // ==================== 大脑工具位生成（拉取式，见 brain-generation） ====================
+
+  /** ProviderAdapter 惰性单例（与工作流 agent 同源模型解析；动态 import 延迟绑定） */
+  private brainAdapterLoader: Promise<ProviderAdapter> | null = null
+
+  /** 大脑工具位生成依赖：回退=callAIStream 原链路；事件走同一 emitter 通道 */
+  private getBrainGenerationDeps(): BrainGenerationDeps {
+    return {
+      resolveModel: async (opts) => {
+        this.brainAdapterLoader ??= import('@core/platform/agent-runtime/provider/provider-adapter').then(
+          (m) => new m.ProviderAdapter(),
+        )
+        return (await this.brainAdapterLoader).resolveModel(opts)
+      },
+      fallback: (eventId, prompt, systemPrompt, maxTokens, providerConfigId, modelId) =>
+        this.callAIStream(eventId, prompt, systemPrompt, maxTokens, providerConfigId, modelId),
+      emit: (eventId, ev) => getEventEmitter().emit(`longwriting:generate:${eventId}`, ev),
+    }
+  }
+
+  /** 章法创作调用（设计卡/正文）统一入口：模型可自主检索大脑，失败回退原链路 */
+  private async generateWithBrainTool(
+    eventId: string,
+    prompt: string,
+    systemPrompt?: string,
+    maxTokens?: number,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<string> {
+    const controller = new AbortController()
+    this.abortControllers.set(eventId, controller)
+    try {
+      return await callAIStreamWithBrain(
+        eventId,
+        prompt,
+        systemPrompt,
+        maxTokens,
+        providerConfigId,
+        modelId,
+        this.getBrainGenerationDeps(),
+        controller.signal
+      )
+    } finally {
+      this.abortControllers.delete(eventId)
+    }
   }
 
   // ==================== 故事概要生成 ====================
@@ -1613,7 +1662,7 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
 请生成本章设计卡（JSON）。`
 
     try {
-      const raw = await this.callAIStream(eventId, prompt, systemPrompt, 2500, providerConfigId, modelId)
+      const raw = await this.generateWithBrainTool(eventId, prompt, systemPrompt, 2500, providerConfigId, modelId)
       const jsonMatch = raw.match(/\{[\s\S]*\}/)
       if (!jsonMatch) return { success: false, error: '设计卡返回格式错误，请重试' }
       const card = JSON.parse(jsonMatch[0]) as ChapterCardData
@@ -1682,7 +1731,7 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
     const asm = await this.assembleChapterGeneration(projectId, outlineId, { targetWords, style, extraPrompt })
     if ('error' in asm) return { success: false, error: asm.error }
     try {
-      const result = await this.callAIStream(
+      const result = await this.generateWithBrainTool(
         eventId,
         asm.prompt,
         asm.systemPrompt,
@@ -1766,7 +1815,7 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
     const enabled = new Set(params.enabledItemIds ?? asm.items.map((i) => i.id))
     const prompt = composeChapterPrompt(asm.parts, (id) => enabled.has(id), asm.composeOpts)
     try {
-      const result = await this.callAIStream(
+      const result = await this.generateWithBrainTool(
         eventId,
         prompt,
         asm.systemPrompt,
