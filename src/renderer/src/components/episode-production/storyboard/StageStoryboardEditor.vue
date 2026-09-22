@@ -271,6 +271,8 @@ const mentionEntities = ref<MentionEntity[]>([])
  *    image2video / keyframes2video。
  */
 const videoGenMode = ref<'t2v' | 'ref'>('t2v')
+// 一致性修复 v2（2026-09-21）：项目视频路径，缺省 assetRef（提示词引用资产；关键帧已暂停）
+const videoRenderPath = ref<'assetRef' | 'keyframe'>('assetRef')
 // 视频 provider / model（生成视频用）
 const videoProviders = ref<Array<{ providerConfigId: string; name: string; type?: string; ready: boolean; models: Array<{ id: string; name: string }> }>>([])
 const videoProviderId = ref('')
@@ -497,8 +499,9 @@ async function onGenerate(): Promise<void> {
       providerConfigId: videoProviderId.value,
       modelId: videoModelId.value,
     }
-    if (videoGenMode.value === 'ref') {
-      // 参考图模式：片段级取首镜头首尾关键帧（O1：start+end 两帧 refs → keyframes2video）。
+    if (videoGenMode.value === 'ref' && videoRenderPath.value !== 'assetRef') {
+      // 旧关键帧路径（renderPath='keyframe' 回切换时才走）：片段级取首镜头首尾关键帧。
+      // assetRef 路径（缺省）不走这里——参考图由后端从资产绑定解析，无需生成关键帧。
       // generateKeyframes 一次调用即产出 start+end（含 middle），故此处只需确保首镜头有带图关键帧；
       // 之后不传 forceMode，由后端 pickVideoMode 按 refs 数自动选 keyframes2video / image2video / text2video。
       const firstShotId = seg.storyboardIds[0]
@@ -521,8 +524,8 @@ async function onGenerate(): Promise<void> {
           }
         }
       }
-    } else {
-      // 文生视频（默认）：片段级默认走 text2video
+    } else if (videoRenderPath.value === 'keyframe') {
+      // 旧路径回切时的纯文生入口；assetRef 缺省路径不传 forceMode（后端自动走资产参考）
       opts.forceMode = 'text2video'
     }
     const r = await (window.electronAPI.episodeProduction as any).generateSegmentVideo(
@@ -836,6 +839,7 @@ async function loadProjectConfig(): Promise<void> {
   if (!props.projectId) return
   const r = await window.electronAPI.episodeProduction.getProject(props.projectId)
   if (!r?.success || !r.data) return
+  videoRenderPath.value = r.data.config?.renderPath === 'keyframe' ? 'keyframe' : 'assetRef'
   const vm = r.data.config?.videoModel
   if (vm?.providerConfigId && videoProviders.value.some(p => p.providerConfigId === vm.providerConfigId)) {
     videoProviderId.value = vm.providerConfigId

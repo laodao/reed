@@ -75,7 +75,9 @@ export class ComfyUIVideoProvider extends BaseVideoProvider {
         providerId: this.id,
         providerName: this.name,
         features: {
-          textToVideo: true,
+          // 2026-09-21 修正：H3 网关 refs 为空直接报错（"H3 为参考图生视频"），
+          // 纯文生视频实际不可用，声明 false 避免 capability 匹配把无参考片段引向必败路径。
+          textToVideo: false,
           imageToVideo: true,
           videoToVideo: false,
           keyframesToVideo: true, // O1：H3 网关 refs 支持首尾两帧
@@ -162,7 +164,7 @@ export class ComfyUIVideoProvider extends BaseVideoProvider {
     }
     return [
       'subject_definitions:',
-      'Picture 1 作为 Subject 1（画面主体）外观来源，需保持其画面主体、构图与整体视觉风格；Subject 1 在视频中按画面描述自然运动，不做剧烈形变，画面不含任何文字。',
+      'Picture 1 作为 Subject 1（画面主体）外观来源（若 Picture 1 为多个编号分块的资产参考板，仅取各分块主体的外观，不保留其拼贴构图），需保持其画面主体外观与整体视觉风格；Subject 1 在视频中按画面描述自然运动，不做剧烈形变，画面不含任何文字。',
       '',
       'summary:',
       `[reference generation + audio reference] ${p}。镜头语言简洁，动作单一自然，画面保持与 Picture 1 一致、无文字。`,
