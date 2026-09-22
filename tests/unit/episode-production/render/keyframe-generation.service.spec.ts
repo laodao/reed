@@ -15,6 +15,9 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DataSource } from 'typeorm'
+import * as fs from 'fs'
+import * as os from 'os'
+import * as path from 'path'
 import { CharacterBindingEntity } from '@core/database/entities/episode-production/character-binding.entity'
 import { LocationBindingEntity } from '@core/database/entities/episode-production/location-binding.entity'
 import { ItemBindingEntity } from '@core/database/entities/episode-production/item-binding.entity'
@@ -34,6 +37,22 @@ import { KeyframeGenerationService } from '@core/platform/episode-production/ren
 import { ImageAssetRepository } from '@core/database/repositories/image-asset.repository'
 import { StoryboardKeyframeRepository } from '@core/database/repositories/storyboard-keyframe.repository'
 import * as dbModule from '@core/database/database-manager.interface'
+
+/*
+ * 合成锚定（2026-09-21 设计转向）：多角色锚定走 T2I 草稿 → sharp 贴人 → kontext 融合。
+ * 单测不起真实 sharp 子进程，mock 掉贴图步；合成产物不落盘（机器校验对缺失文件降级放行）。
+ */
+vi.mock('@core/platform/episode-production/common/sharp-worker', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@core/platform/episode-production/common/sharp-worker')>()
+  return {
+    ...actual,
+    workerCompositeOntoScene: vi.fn(
+      async (args: { members: Array<{ assetImageId: string; name: string }> }) => ({
+        members: args.members.map((m, i) => ({ assetImageId: m.assetImageId, name: m.name, slot: i + 1 })),
+      }),
+    ),
+  }
+})
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({
@@ -320,9 +339,11 @@ describe('KeyframeGenerationService', () => {
 
   /*
    * F1b（2026-09-21）：关键帧带参考图时，钉住的模型不支持参考图
-   * （comfyui/krea2 maxReferenceImages=0）→ 回退同 provider 的 flux-kontext
+   * （comfyui/krea2 maxReferenceImages=0）→ 回退同 provider 的 flux-kontext。
+   * 合成锚定设计转向后：草稿步用同 provider 的 T2I（krea2），融合步用回退后的
+   * flux-kontext（唯一参考图 = 合成图）——每帧 2 次生成，3 帧共 6 次。
    */
-  it('F1b：关键帧钉住 krea2（不支持参考图）→ 回退 flux-kontext', async () => {
+  it('F1b：关键帧钉住 krea2（不支持参考图）→ 草稿 krea2 + 融合回退 flux-kontext', async () => {
     const { sbId } = await seedScene(ds)
     await ds.getRepository(VideoProjectEntity).save({
       id: 'proj1',
@@ -347,14 +368,27 @@ describe('KeyframeGenerationService', () => {
         }]),
       },
     } as any)
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kf-f1b-'))
+    svc = new KeyframeGenerationService(ds, imageGen as any, { compositeDataPath: () => tmpDir })
 
     await svc.generateKeyframesForStoryboard({ storyboardId: sbId })
 
-    expect(imageGen.generate).toHaveBeenCalledTimes(3)
-    for (const call of imageGen.generate.mock.calls) {
-      const opts = call[0] as { providerConfigId?: string; modelId?: string }
-      expect(opts.providerConfigId).toBe('pc_comfy')
-      expect(opts.modelId).toBe('flux-kontext')
+    // 每帧：草稿（krea2，无参考图）→ 融合（flux-kontext，唯一参考图=合成图）
+    expect(imageGen.generate).toHaveBeenCalledTimes(6)
+    const calls = imageGen.generate.mock.calls.map(
+      (c) => c[0] as { providerConfigId?: string; modelId?: string; referenceImagePaths: string[]; prompt: string },
+    )
+    for (let i = 0; i < calls.length; i += 2) {
+      const draft = calls[i]
+      const fusion = calls[i + 1]
+      expect(draft.providerConfigId).toBe('pc_comfy')
+      expect(draft.modelId).toBe('krea2')
+      expect(draft.referenceImagePaths).toHaveLength(0)
+      expect(fusion.providerConfigId).toBe('pc_comfy')
+      expect(fusion.modelId).toBe('flux-kontext')
+      expect(fusion.referenceImagePaths).toHaveLength(1)
+      expect(fusion.referenceImagePaths[0]).toMatch(/composite_.+\.png$/)
+      expect(fusion.prompt).toContain('合成锚定融合')
     }
   })
 

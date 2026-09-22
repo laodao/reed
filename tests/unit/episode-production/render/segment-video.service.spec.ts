@@ -70,6 +70,22 @@ vi.mock(
   }),
 )
 
+/*
+ * 一致性修复 v2（2026-09-21）：renderPath 缺省 assetRef，本 spec 全部用例验证的是
+ * 旧关键帧/文生路径行为（回切档），故 mock 项目视频参数固定 renderPath='keyframe'。
+ * assetRef 路径的 prompt 组装见 asset-ref-resolver.spec.ts，链路经雪麓山庄 v3 实跑验证。
+ */
+vi.mock(
+  '@core/platform/episode-production/render/video/project-video-params',
+  async (importOriginal) => {
+    const mod = await importOriginal<typeof import('@core/platform/episode-production/render/video/project-video-params')>()
+    return {
+      ...mod,
+      resolveVideoParamsForEpisode: async () => ({ renderPath: 'keyframe' as const }),
+    }
+  },
+)
+
 const CAPS: VideoProviderCapabilities = {
   text: true,
   image: true,

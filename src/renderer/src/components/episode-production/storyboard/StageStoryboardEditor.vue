@@ -107,8 +107,16 @@
             <span v-if="previewIsSegmentVideo" class="seg-video-badge">片段视频 · {{ selectedShotSegment?.shotCount ?? '?' }} 镜一段</span>
           </div>
 
-          <!-- S-02 关键帧画廊（2026-09-19 恢复展示 + 一致性校验徽章 + 生效参考图提示） -->
-          <div class="kf-gallery">
+          <!-- S-02 关键帧画廊（一致性修复 v2：assetRef 缺省路径下停用，仅 keyframe 回切时显示） -->
+          <div class="kf-gallery" v-if="videoRenderPath === 'keyframe'">
+            <span class="kf-title">关键帧</span>
+            <span class="kf-empty">关键帧已暂停</span>
+          </div>
+          <div class="kf-gallery" v-else>
+            <span class="kf-title">关键帧</span>
+            <span class="kf-empty" title="提示词引用资产模式：资产主图经参考板直达视频模型，关键帧链路已暂停">已停用（提示词引用资产模式）</span>
+          </div>
+          <div class="kf-gallery" v-if="false">
             <span class="kf-title">关键帧</span>
             <template v-if="kfGalleryHasImage">
               <div v-for="kf in kfGalleryRows" :key="kf.id" class="kf-card">

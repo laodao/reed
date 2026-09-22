@@ -38,6 +38,22 @@ import { ReferenceBoardService } from '@core/platform/episode-production/render/
 import { ImageAssetRepository } from '@core/database/repositories/image-asset.repository'
 import * as dbModule from '@core/database/database-manager.interface'
 
+/*
+ * 合成锚定（2026-09-21 设计转向）取代拼板喂 kontext：T2I 草稿 → sharp 贴人 → 融合。
+ * 单测不起真实 sharp 子进程，mock 掉贴图步；合成产物不落盘（机器校验对缺失文件降级放行）。
+ */
+vi.mock('@core/platform/episode-production/common/sharp-worker', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@core/platform/episode-production/common/sharp-worker')>()
+  return {
+    ...actual,
+    workerCompositeOntoScene: vi.fn(
+      async (args: { members: Array<{ assetImageId: string; name: string }> }) => ({
+        members: args.members.map((m, i) => ({ assetImageId: m.assetImageId, name: m.name, slot: i + 1 })),
+      }),
+    ),
+  }
+})
+
 let tmpDir: string
 
 async function buildDb(): Promise<DataSource> {
@@ -305,7 +321,7 @@ describe('KeyframeGenerationService 重拍闭环 + 参考板', () => {
     expect(meta?.review?.status).toBe('skipped')
   })
 
-  it('D：钉住单图模型（comfyui/flux-kontext）+ 2 张参考图 → 拼编号参考板', async () => {
+  it('D：钉住单图模型（comfyui/flux-kontext）+ 2 张参考图 → 合成锚定（草稿+贴人+融合）', async () => {
     const { sbId } = await seedScene(ds)
     await ds.getRepository(VideoProjectEntity).save({
       id: 'proj1',
@@ -338,34 +354,34 @@ describe('KeyframeGenerationService 重拍闭环 + 参考板', () => {
 
     const svc = new KeyframeGenerationService(ds, imageGen as any, {
       boardService: new ReferenceBoardService(() => tmpDir),
+      compositeDataPath: () => tmpDir,
     })
     const result = await svc.generateKeyframesForStoryboard({
       storyboardId: sbId,
       keyframeCountOverride: 1,
     })
 
-    expect(imageGen.generate).toHaveBeenCalledTimes(1)
-    const call = imageGen.generate.mock.calls[0][0] as any
-    // 唯一参考图 = 拼板
+    // 三步链：草稿（krea2，无参考图）→（mock 贴人）→ 融合（flux-kontext，唯一参考图=合成图）
+    expect(imageGen.generate).toHaveBeenCalledTimes(2)
+    const draftCall = imageGen.generate.mock.calls[0][0] as any
+    expect(draftCall.modelId).toBe('krea2')
+    expect(draftCall.referenceImagePaths).toHaveLength(0)
+    const call = imageGen.generate.mock.calls[1][0] as any
+    expect(call.modelId).toBe('flux-kontext')
     expect(call.referenceImagePaths).toHaveLength(1)
-    expect(call.referenceImagePaths[0]).toMatch(/board_.+\.png$/)
-    // 拼板产物真实存在（注入的临时 dataPath 下）
-    expect(fs.existsSync(path.join(tmpDir, call.referenceImagePaths[0]))).toBe(true)
-    // prompt 前置编号对照说明 + R1 板复刻禁令
-    expect(call.prompt).toContain('编号参考板')
-    expect(call.prompt).toContain('1号=张三（角色）')
-    expect(call.prompt).toContain('2号=茶馆（场景）')
-    expect(call.prompt).toContain('严禁输出参考图本身的分栏布局')
-    expect(call.prompt).toContain('single complete cinematic scene')
+    expect(call.referenceImagePaths[0]).toMatch(/composite_.+\.png$/)
+    // 融合指令前缀，且不再是拼板编号说明
+    expect(call.prompt).toContain('合成锚定融合')
+    expect(call.prompt).not.toContain('编号参考板')
 
     const ia = await new ImageAssetRepository(ds).getById(result[0].imageAssetId!)
     const meta = ia?.metadata as any
-    // referenceBoard 落库：members 顺序/编号
-    expect(meta?.referenceBoard?.members).toEqual([
-      { assetImageId: 'ai_char', name: '张三', kind: 'character', slot: 1 },
-      { assetImageId: 'ai_loc', name: '茶馆', kind: 'location', slot: 2 },
+    // 合成锚定落库：只贴角色成员（地点图不贴入）
+    expect(meta?.compositeAnchor?.members).toEqual([
+      { assetImageId: 'ai_char', name: '张三', slot: 1 },
     ])
-    // effective ids 仍记原始成员（不是拼板）
+    expect(meta?.referenceBoard).toBeUndefined()
+    // effective ids 仍记原始成员（不是合成图）
     expect(meta?.referenceImageIdsEffective).toEqual(['ai_char', 'ai_loc'])
   })
 

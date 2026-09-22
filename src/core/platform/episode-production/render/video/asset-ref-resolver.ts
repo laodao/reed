@@ -153,6 +153,31 @@ export async function collectSegmentAssetRefs(
 }
 
 /**
+ * 在镜头正文里把每个资产名的首次出现标注为可见的参考板编号引用，
+ * 如「沈云萝（参考板第2号）」——让"提示词引用资产"在 prompt 文本层面可见、可审计。
+ * 已有 `@[...]` 标记会被 buildSegmentPrompt 先剥成纯名，此处再统一加编号。
+ *
+ * 实现要点：全部名字做一次正则交替匹配（长名排在前面，保证同一位置最长名优先），
+ * 避免嵌套名误标——refs 同时含「雪麓山庄书房」与「雪麓山庄」时，短名不得标进长名前缀。
+ * 每个名字只标首次出现；同名资产（去重迁移的漏网）共享第一个名字的编号。
+ */
+export function annotateRefsWithSlots(basePrompt: string, refs: SegmentAssetRef[]): string {
+  if (refs.length === 0) return basePrompt
+  const slotByName = new Map<string, number>()
+  for (let i = 0; i < refs.length; i++) {
+    if (!slotByName.has(refs[i].name)) slotByName.set(refs[i].name, i + 1)
+  }
+  const names = [...slotByName.keys()].sort((a, b) => b.length - a.length)
+  const pattern = new RegExp(names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g')
+  const seen = new Set<string>()
+  return basePrompt.replace(pattern, (m) => {
+    if (seen.has(m)) return m
+    seen.add(m)
+    return `${m}（参考板第${slotByName.get(m)}号）`
+  })
+}
+
+/**
  * 组装"提示词引用资产"的三段式 prompt（H3 网关检测到
  * subject_definitions/summary/retention_analysis 三段时原样透传）。
  *

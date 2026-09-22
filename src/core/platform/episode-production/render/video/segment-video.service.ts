@@ -46,6 +46,7 @@ import { advanceEpisodeStatusForStoryboard } from '../../workflow/episode-status
 import {
   collectSegmentAssetRefs,
   buildAssetRefPrompt,
+  annotateRefsWithSlots,
   type SegmentAssetRef,
 } from './asset-ref-resolver'
 import { ReferenceBoardService } from '../keyframe/reference-board.service'
@@ -288,7 +289,9 @@ export class SegmentVideoService {
       console.log(`[segment-video] assetRef: 片段 #${seg.seq} 单资产参考 ${refs[0].name} ${refPath}`)
     }
 
-    const prompt = buildAssetRefPrompt(basePrompt, refs, useBoard)
+    // 提示词引用资产（可见化）：镜头正文中每个资产名标注参考板编号，如「沈云萝（参考板第2号）」
+    const annotatedPrompt = annotateRefsWithSlots(basePrompt, refs)
+    const prompt = buildAssetRefPrompt(annotatedPrompt, refs, useBoard)
 
     // generating + prompt 快照先落库（崩溃可追）
     await this.segmentRepo.update(seg.id, {
