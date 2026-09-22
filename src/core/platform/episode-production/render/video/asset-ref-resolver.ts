@@ -144,6 +144,8 @@ export async function collectSegmentAssetRefs(
       kind: 'item',
       bindingId,
       name: binding.standaloneName ?? bindingId,
+      // 物品外观+归属约束（如"仅沈云萝背负"）进声明段，压制参考板道具串位
+      appearance: truncate(binding.standaloneDescription, 80),
       assetImageId: picked.id,
       imagePath: picked.imagePath,
     })
@@ -210,6 +212,7 @@ export function buildAssetRefPrompt(
     `${picDesc}，仅作为画面主体外观来源：${list}。`,
     '要求：人物长相、发型、服装、配饰必须与对应编号资产完全一致；场景风格与地点资产一致；' +
     '画面中每个人物只出现一次，不得出现重复的人物、分身或残影；' +
+    '物品道具仅出现在其归属人物身上（见编号清单的归属约束），不得套用到其他人物；' +
     '不要求保留 Picture 1 的拼贴构图，画面按 summary 描述的机位、场景与动作自然呈现。',
     '',
     'summary:',

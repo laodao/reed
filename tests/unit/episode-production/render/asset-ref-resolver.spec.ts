@@ -70,6 +70,7 @@ describe('buildAssetRefPrompt', () => {
     expect(out).toContain('2号=沈云萝（角色：米色短打）')
     expect(out).toContain('不要求保留 Picture 1 的拼贴构图')
     expect(out).toContain('不得出现重复的人物')
+    expect(out).toContain('物品道具仅出现在其归属人物身上')
     expect(out).toContain('沈云萝（参考板第2号）开口。')
   })
 
