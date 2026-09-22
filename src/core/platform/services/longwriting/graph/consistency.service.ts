@@ -80,6 +80,12 @@ const NAME_SCAN_STOPWORDS = new Set([
   '马夫', '车夫', '伙计', '店小二', '衙役', '护卫', '门房', '账房', '绣娘', '猎户',
 ])
 
+/** 家庭指称（万家/林家/陈家）——宗族统称不是人名；登记队列与 R9 扫描两侧共用
+ *  （E2E 实测：正文"万家"被当名册外人名上报，阻断下一章写作） */
+export function isFamilyReferenceName(name: string): boolean {
+  return /^[\u4e00-\u9fa5]家$/.test(String(name || '').trim())
+}
+
 export function scanNameCandidates(
   chapters: Array<{ name: string; content: string }>,
   knownNames: string[],
@@ -779,15 +785,23 @@ export class ConsistencyService {
     // 文本扫描的姓氏正则根本抓不到它们）；路径 2 是文本姓氏扫描。
     const whitelist = await this.rosterWhitelistOf(projectId)
     const locationNames: string[] = []
+    const itemNames: string[] = []
     try {
       const locs = (await m.lwLocations?.getByProjectId(projectId)) || []
       locationNames.push(...locs.map((l: any) => String(l.name || '')))
     } catch { /* 地点读取失败不阻断 */ }
+    try {
+      const items = (await m.lwItems?.getByProjectId(projectId)) || []
+      itemNames.push(...items.map((i: any) => String(i.name || '')))
+    } catch { /* 物品读取失败不阻断 */ }
     const isExcluded = (name: string): boolean => {
       if (!name) return true
+      if (isFamilyReferenceName(name)) return true
       if (whitelist.some((w) => name === w || name.includes(w) || w.includes(name))) return true
       if (NAME_SCAN_STOPWORDS.has(name)) return true
       if (locationNames.some((l) => l && (name === l || name.includes(l)))) return true
+      // 人名是某件名册物品名的子串（"黄铜"⊂"黄铜哨子"）→ 物件指称不是人名
+      if (itemNames.some((it) => it && name.length >= 2 && (it.includes(name) || name.includes(it)))) return true
       return false
     }
     // 1) 提取队列：解析失败的人名（52 号主实现）
@@ -797,8 +811,20 @@ export class ConsistencyService {
     } catch {
       rows = []
     }
+    // 队列名已入名册（含模糊同口径）→ 不再告警：用户按指引"补入人物圣经"后
+    // 告警必须消失，否则闭环走不通（E2E 实测：createCharacter 后 R9 仍拦）
+    let rosterNames: string[] = []
+    try {
+      rosterNames = ((await m.lwCharacters?.getByProjectId(projectId)) || []).map((c: any) => String(c.name || ''))
+    } catch { /* 名册读取失败按无名册处理 */ }
+    const isRosterKnown = (name: string): boolean => {
+      const s = String(name || '').trim()
+      if (rosterNames.some((k) => k === s)) return true
+      return rosterNames.some((k) => k.length >= 2 && s.length >= 2 && (k.includes(s) || s.includes(k)))
+    }
     for (const r of rows) {
       if (isExcluded(r.name)) continue
+      if (isRosterKnown(r.name)) continue
       const ch = (r.fields as any)?.firstChapter
       conflicts.push({
         rule: 'R9',
@@ -820,8 +846,8 @@ export class ConsistencyService {
           const c = await m.lwChapters.getByOutlineId(o.id)
           if (c?.content) chapters.push({ name: o.name, content: c.content })
         }
-        // §3c 排除集：名册 + 地点名册 + 白名单 + 停用词（函数内已查 STOPWORDS）
-        const known = chars.map((c: any) => c.name).concat(locationNames).concat(whitelist)
+        // §3c 排除集：名册 + 地点名册 + 物品名册 + 白名单 + 停用词（函数内已查 STOPWORDS）
+        const known = chars.map((c: any) => c.name).concat(locationNames).concat(itemNames).concat(whitelist)
         for (const cand of scanNameCandidates(chapters, known, 3)) {
           conflicts.push({
             rule: 'R9',
