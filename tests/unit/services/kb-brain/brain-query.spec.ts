@@ -28,7 +28,6 @@ describe('BrainQueryService', () => {
   let chunks: KbChunkRepository
   let inverted: KbInvertedIndexRepository
   let fakeSimilarHits: Array<{ chunkId: string; score: number }>
-  let embedCalls: number
   let svc: BrainQueryService
 
   const KB = 'kbq'
@@ -37,7 +36,6 @@ describe('BrainQueryService', () => {
     const docs = new KbDocumentRepository(ds)
     return {
       embed: async () => {
-        embedCalls++
         return [[1, 0, 0]]
       },
       searchSimilar: async () => fakeSimilarHits,
@@ -77,19 +75,12 @@ describe('BrainQueryService', () => {
     chunks = new KbChunkRepository(ds)
     inverted = new KbInvertedIndexRepository(ds)
     fakeSimilarHits = []
-    embedCalls = 0
     svc = new BrainQueryService(makeDeps())
   })
 
   afterAll(async () => {
     await ds?.destroy()
   })
-
-  async function plantFixture(): Promise<{ atomId: string; chunkId: string; noteId: string }> {
-    // chunk
-    await chunks.createBatch?.({} as never) // 占位避免 TS 收窄警告（实际用直接插入）
-    return { atomId: '', chunkId: '', noteId: '' }
-  }
 
   it('atom 命中：provenance 载荷 + superseded/stale 跳过 + include 过滤', async () => {
     const [a1] = await atoms.createBatch([

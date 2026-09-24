@@ -4,7 +4,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { DataSource } from 'typeorm'
 import * as entities from '@core/database/entities'
-import { createKbBrainTestTables, insertTestKb, insertTestDoc } from '../../helpers/kb-brain-test-db'
+import { createKbBrainTestTables, insertTestKb } from '../../helpers/kb-brain-test-db'
 import { KbNoteRepository } from '@core/database/repositories/kb-note.repository'
 import { KbNoteReviewRepository } from '@core/database/repositories/kb-note-review.repository'
 import { KbBrainFsrsService } from '@core/platform/services/kb-brain/fsrs.service'

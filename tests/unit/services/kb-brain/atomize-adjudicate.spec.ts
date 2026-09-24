@@ -15,7 +15,7 @@ import {
 import { defaultBrainLlm, brainModelOverride, parseModelRef, stitchContinuation } from '@core/platform/services/kb-brain/llm'
 import { isJsonTruncated } from '@core/platform/services/ai-call'
 import type { BrainLlmFn } from '@core/platform/services/kb-brain/llm'
-import { validateAtomizeOutput, normalizeAtomizeRaw, validateAdjudicateOutput, normalizeAdjudicateRaw } from '@core/platform/services/kb-brain/schemas'
+import { validateAtomizeOutput, validateAdjudicateOutput } from '@core/platform/services/kb-brain/schemas'
 
 const CONTENT = '程野推开舱门。他失去了左臂。苏晚早已等候多时。'
 
