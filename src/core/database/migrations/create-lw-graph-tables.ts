@@ -139,6 +139,12 @@ function createEdgesDDL(isPg: boolean): string {
  *   桌面/租户用户看不到迁移数据；老关系表虽无 user_id，但角色行有归属）
  * - 源表内部重复行（同 character+related+relation）先按身份三元组 GROUP BY
  *   去重——确定性拼接 id 会撞主键使整个迁移失败
+ * - id 拼接用 COALESCE(rel,'rel') 而存储/守卫用 COALESCE(rel,'related')：
+ *   同一对角色的 NULL 关系与字面量 'rel' 关系在源表内会被 GROUP BY 收敛为
+ *   同组（无撞键风险），但「上轮迁入的 NULL 关系边」与「本轮新增的字面量
+ *   'rel' 关系」会生成相同 id 且守卫（按 relation_type 查重）放行——跨迁移轮
+ *   二次 INSERT 撞主键，炸掉整个 DB 初始化（实跑 0922 启动实证）
+ *   ——插入按幂等忽略处理（SQLite OR IGNORE / PG ON CONFLICT DO NOTHING）
  * - project_id 从 lw_story_characters 反查
  *
  * 幂等守卫必须按 id 判存在（实测 2026-09-20）：边行的 relation_type/description

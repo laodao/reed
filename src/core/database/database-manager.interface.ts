@@ -34,6 +34,12 @@ import type { KbInvertedIndexRepository } from './repositories/kb-inverted-index
 import type { KbVectorRepository } from './repositories/kb-vector.repository'
 import type { KbQaPairRepository } from './repositories/kb-qa-pair.repository'
 import type { KbFolderRepository } from './repositories/kb-folder.repository'
+import type { KbAtomRepository } from './repositories/kb-atom.repository'
+import type { KbEntityRepository } from './repositories/kb-entity.repository'
+import type { KbKnowledgeEdgeRepository } from './repositories/kb-knowledge-edge.repository'
+import type { KbNoteRepository } from './repositories/kb-note.repository'
+import type { KbDigestPassRepository } from './repositories/kb-digest-pass.repository'
+import type { KbNoteReviewRepository } from './repositories/kb-note-review.repository'
 import type { AppRepository } from './repositories/app.repository'
 import type { AppSessionRepository } from './repositories/app-session.repository'
 import type { AppSessionMessageRepository } from './repositories/app-session-message.repository'
@@ -159,6 +165,13 @@ export interface ICoreDatabaseManager {
   kbQaPairs: KbQaPairRepository | null
   /** 知识库目录（分组/分类，如 it 行业、能源行业） */
   kbFolders: KbFolderRepository | null
+  /** 知识大脑：论断/实体/语义边/卡片/消化台账/复习日志（旧库未装配时为 null，渐进启用） */
+  kbAtoms?: KbAtomRepository | null
+  kbBrainEntities?: KbEntityRepository | null
+  kbKnowledgeEdges?: KbKnowledgeEdgeRepository | null
+  kbNotes?: KbNoteRepository | null
+  kbDigestPasses?: KbDigestPassRepository | null
+  kbNoteReviews?: KbNoteReviewRepository | null
   appDefinitions: AppRepository | null
   appSessions: AppSessionRepository | null
   /** 应用会话消息（独立表，隔离 AI 对话表） */

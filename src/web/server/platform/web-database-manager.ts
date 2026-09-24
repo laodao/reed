@@ -27,6 +27,12 @@ import { KbChunkRepository } from '@core/database/repositories/kb-chunk.reposito
 import { KbChapterRepository } from '@core/database/repositories/kb-chapter.repository'
 import { KbVectorRepository } from '@core/database/repositories/kb-vector.repository'
 import { KbQaPairRepository } from '@core/database/repositories/kb-qa-pair.repository'
+import { KbAtomRepository } from '@core/database/repositories/kb-atom.repository'
+import { KbEntityRepository } from '@core/database/repositories/kb-entity.repository'
+import { KbKnowledgeEdgeRepository } from '@core/database/repositories/kb-knowledge-edge.repository'
+import { KbNoteRepository } from '@core/database/repositories/kb-note.repository'
+import { KbDigestPassRepository } from '@core/database/repositories/kb-digest-pass.repository'
+import { KbNoteReviewRepository } from '@core/database/repositories/kb-note-review.repository'
 import { KbFolderRepository } from '@core/database/repositories/kb-folder.repository'
 import { AppRepository } from '@core/database/repositories/app.repository'
 import { AppSessionRepository } from '@core/database/repositories/app-session.repository'
@@ -156,6 +162,13 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   kbInvertedIndex: KbInvertedIndexRepository | null
   kbVectors: KbVectorRepository | null
   kbQaPairs: KbQaPairRepository | null
+  /** 知识大脑（旧库渐进装配，可选） */
+  kbAtoms: KbAtomRepository | null
+  kbBrainEntities: KbEntityRepository | null
+  kbKnowledgeEdges: KbKnowledgeEdgeRepository | null
+  kbNotes: KbNoteRepository | null
+  kbDigestPasses: KbDigestPassRepository | null
+  kbNoteReviews: KbNoteReviewRepository | null
   appDefinitions: AppRepository | null
   appSessions: AppSessionRepository | null
   appSessionMessages: AppSessionMessageRepository | null
@@ -291,6 +304,12 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.kbInvertedIndex = new KbInvertedIndexRepository(ds)
     this.kbVectors = new KbVectorRepository()
     this.kbQaPairs = new KbQaPairRepository(ds)
+    this.kbAtoms = new KbAtomRepository(ds)
+    this.kbBrainEntities = new KbEntityRepository(ds)
+    this.kbKnowledgeEdges = new KbKnowledgeEdgeRepository(ds)
+    this.kbNotes = new KbNoteRepository(ds)
+    this.kbDigestPasses = new KbDigestPassRepository(ds)
+    this.kbNoteReviews = new KbNoteReviewRepository(ds)
     this.appDefinitions = new AppRepository(ds)
     this.appSessions = new AppSessionRepository(ds)
     this.appSessionMessages = new AppSessionMessageRepository(ds)

@@ -121,6 +121,7 @@
     "tesseract.js": "^7.0.0",
     "three": "^0.179.1",
     "three-spritetext": "^1.10.0",
+    "ts-fsrs": "^5.4.2",
     "turndown": "^7.2.4",
     "typeorm": "^0.3.28",
     "vue": "^3.4.19",

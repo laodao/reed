@@ -159,14 +159,15 @@ export class KbInvertedIndexRepository extends BaseRepository<
 
   async getDocumentFrequencies(
     knowledgeBaseId: string,
+    opts?: { excludeChunkIdPrefixes?: string[] },
   ): Promise<Map<string, number>> {
-    const rows = await this.repo
+    const qb = this.repo
       .createQueryBuilder('i')
       .select('i.term', 'term')
       .addSelect('COUNT(DISTINCT i.chunk_id)', 'df')
       .where('i.knowledge_base_id = :kbId', { kbId: knowledgeBaseId })
-      .groupBy('i.term')
-      .getRawMany()
+    applyNamespaceExcludes(qb, opts?.excludeChunkIdPrefixes)
+    const rows = await qb.groupBy('i.term').getRawMany()
 
     const result = new Map<string, number>()
     for (const row of rows) {
@@ -175,23 +176,45 @@ export class KbInvertedIndexRepository extends BaseRepository<
     return result
   }
 
-  async getChunkCount(knowledgeBaseId: string): Promise<number> {
-    const row = await this.repo
+  async getChunkCount(
+    knowledgeBaseId: string,
+    opts?: { excludeChunkIdPrefixes?: string[] },
+  ): Promise<number> {
+    const qb = this.repo
       .createQueryBuilder('i')
       .select('COUNT(DISTINCT i.chunk_id)', 'count')
       .where('i.knowledge_base_id = :kbId', { kbId: knowledgeBaseId })
-      .getRawOne()
+    applyNamespaceExcludes(qb, opts?.excludeChunkIdPrefixes)
+    const row = await qb.getRawOne()
     return Number(row?.count) || 0
   }
 
-  async getAverageChunkLength(knowledgeBaseId: string): Promise<number> {
-    const row = await this.repo
+  async getAverageChunkLength(
+    knowledgeBaseId: string,
+    opts?: { excludeChunkIdPrefixes?: string[] },
+  ): Promise<number> {
+    const qb = this.repo
       .createQueryBuilder('i')
       .select('SUM(i.term_frequency)', 'total_terms')
       .addSelect('COUNT(DISTINCT i.chunk_id)', 'chunk_count')
       .where('i.knowledge_base_id = :kbId', { kbId: knowledgeBaseId })
-      .getRawOne()
+    applyNamespaceExcludes(qb, opts?.excludeChunkIdPrefixes)
+    const row = await qb.getRawOne()
     if (!row || Number(row.chunk_count) === 0) return 0
     return Number(row.total_terms) / Number(row.chunk_count)
   }
+}
+
+/**
+ * 命名空间前缀排除（知识大脑：atom:/note: 倒排与切片同表——不排除会污染
+ * 存量 chunk 检索的 BM25 统计；缺省不过滤=存量行为不变）。
+ */
+function applyNamespaceExcludes(
+  qb: ReturnType<import('typeorm').Repository<KbInvertedIndexEntity>['createQueryBuilder']>,
+  prefixes?: string[],
+): void {
+  if (!prefixes?.length) return
+  prefixes.forEach((p, idx) => {
+    qb.andWhere(`i.chunk_id NOT LIKE :nsp${idx}`, { [`nsp${idx}`]: `${p}%` })
+  })
 }
