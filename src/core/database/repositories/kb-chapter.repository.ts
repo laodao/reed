@@ -152,6 +152,12 @@ export class KbChapterRepository extends BaseRepository<KbChapterEntity, KbChapt
     await this.scoped.delete({ knowledgeBaseId } as FindOptionsWhere<KbChapterEntity>)
   }
 
+  /** 单章读取（精读等按 id 取正文的消费方） */
+  async findById(id: string): Promise<KbChapterRecord | null> {
+    const row = await this.scoped.findOne({ id } as FindOptionsWhere<KbChapterEntity>)
+    return row ? this.toDto(row) : null
+  }
+
   async findByDocument(documentId: string): Promise<KbChapterRecord[]> {
     const rows = await this.scoped.find({
       where: { documentId } as FindOptionsWhere<KbChapterEntity>,

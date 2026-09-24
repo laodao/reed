@@ -28,6 +28,12 @@ import { KbChunkRepository } from '@core/database/repositories/kb-chunk.reposito
 import { KbChapterRepository } from '@core/database/repositories/kb-chapter.repository'
 import { KbVectorRepository } from '@core/database/repositories/kb-vector.repository'
 import { KbQaPairRepository } from '@core/database/repositories/kb-qa-pair.repository'
+import { KbAtomRepository } from '@core/database/repositories/kb-atom.repository'
+import { KbEntityRepository } from '@core/database/repositories/kb-entity.repository'
+import { KbKnowledgeEdgeRepository } from '@core/database/repositories/kb-knowledge-edge.repository'
+import { KbNoteRepository } from '@core/database/repositories/kb-note.repository'
+import { KbDigestPassRepository } from '@core/database/repositories/kb-digest-pass.repository'
+import { KbNoteReviewRepository } from '@core/database/repositories/kb-note-review.repository'
 import { AppRepository } from '@core/database/repositories/app.repository'
 import { AppSessionRepository } from '@core/database/repositories/app-session.repository'
 import { AppSessionMessageRepository } from '@core/database/repositories/app-session-message.repository'
@@ -886,6 +892,16 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-kb-chapters'
     )
     await createKbChapters(this.dataSource)
+    // 知识大脑：kb_atoms/kb_entities/kb_knowledge_edges/kb_notes/kb_digest_passes/kb_note_reviews（幂等双语种）
+    const { createKbBrainTables } = await import(
+      '@core/database/migrations/create-kb-brain-tables'
+    )
+    await createKbBrainTables(this.dataSource)
+    // 统一知识池：kb_inverted_index 去过期 FK（伪 chunkId atom:/qa:/note: 入池被旧外键拒绝——真机根因）
+    const { fixKbInvertedIndexFk } = await import(
+      '@core/database/migrations/fix-kb-inverted-index-fk'
+    )
+    await fixKbInvertedIndexFk(this.dataSource)
     // 应用模块：apps / app_sessions 表（幂等，双语种；消息复用 messages 无需建表）
     const { createAppsTables } = await import(
       '@core/database/migrations/create-apps-tables'
@@ -4514,6 +4530,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
     // KbVectorRepository 使用 LanceDB，不再需要 SQLite 连接
     this.kbVectors = new KbVectorRepository()
     this.kbQaPairs = new KbQaPairRepository(this.dataSource)
+    this.kbAtoms = new KbAtomRepository(this.dataSource)
+    this.kbBrainEntities = new KbEntityRepository(this.dataSource)
+    this.kbKnowledgeEdges = new KbKnowledgeEdgeRepository(this.dataSource)
+    this.kbNotes = new KbNoteRepository(this.dataSource)
+    this.kbDigestPasses = new KbDigestPassRepository(this.dataSource)
+    this.kbNoteReviews = new KbNoteReviewRepository(this.dataSource)
     this.appDefinitions = new AppRepository(this.dataSource)
     this.appSessions = new AppSessionRepository(this.dataSource)
     this.appSessionMessages = new AppSessionMessageRepository(this.dataSource)

@@ -46,6 +46,10 @@ export interface KnowledgeBase {
   embeddingConfig?: string
   /** D2 重排序配置 JSON 字符串（{ providerConfigId, modelId }）；null/空 = 未启用 */
   rerankConfig?: string | null
+  /** 知识大脑配置 JSON（KbBrainConfig）；null/空 = 大脑关闭 */
+  brainConfig?: string | null
+  /** 知识大脑运行态 JSON（KbBrainState） */
+  brainState?: string | null
   /** 所属目录 id（kb_folders；null = 未分类） */
   folderId?: string | null
   /** 切分策略 */
@@ -92,6 +96,8 @@ export interface UpdateKnowledgeBaseRequest {
   description?: string
   /** D2 重排序配置 JSON（null = 关闭 rerank） */
   rerankConfig?: string | null
+  /** 知识大脑配置 JSON（null = 关闭大脑）；写前须过 stringifyBrainConfig 校验 */
+  brainConfig?: string | null
   /** 所属目录 id（null = 移到未分类） */
   folderId?: string | null
 }
@@ -156,6 +162,11 @@ export interface KbDocument {
   chunkCount: number
   /** 错误信息 */
   errorMessage?: string
+  /** 知识大脑消化状态（pending|digesting|digested|failed|skipped；undefined=未开始） */
+  brainStatus?: 'pending' | 'digesting' | 'digested' | 'failed' | 'skipped'
+  /** 消化进度 0-100 */
+  brainProgress?: number
+  brainError?: string
   /** 元数据（JSON） */
   metadata?: DocumentMetadata
   /** 文档来源（DTO 由 sourceType/sourceId 还原） */
@@ -341,6 +352,16 @@ export interface SearchRequest {
    * 默认 true；显式传 vectorWeight 或 fusion 时该开关不生效。
    */
   autoRoute?: boolean
+  /**
+   * 知识大脑（详细设计 §5.1）：进池的知识层。缺省/['chunk'] = 现行为零变化；
+   * 含 'atom'/'note' 时走 BrainQueryService（论断/卡片与原文统一池检索）。
+   */
+  include?: Array<'chunk' | 'atom' | 'note'>
+  /** 视角过滤："取面不取书"——只返回该视角下的观感论断 */
+  lensNoteId?: string
+  /** 检索模式：lookup（事实型，缺省）| synthesize（综合型——chunk 在融合中降权）。
+   *  缺省时按查询关键词自动判定（比较/异同/方法论/规律/总结等 → synthesize） */
+  intent?: 'lookup' | 'synthesize'
   /** 限定检索的文档 ID 列表（缺省=整库；用于「在这篇文档里找」） */
   documentIds?: string[]
   /** 相似度阈值 */
@@ -353,6 +374,27 @@ export interface SearchRequest {
  * 检索结果
  */
 export interface SearchResult {
+  /** 命中类型（知识大脑扩展；缺省 'chunk' = 原文切片） */
+  kind?: 'chunk' | 'atom' | 'note'
+  /** score 的量纲标注（余弦 0-1 vs BM25 无界 vs PPR 概率，跨 kind 不可直接比较） */
+  scoreKind?: 'cosine' | 'bm25' | 'ppr'
+  /** kind='atom' 时：与其同源的 chunk 内容降级为上下文（设计 §5.1，不丢弃原文） */
+  context?: string
+  /** kind='atom' 时的论断载荷（provenance 回链） */
+  atom?: {
+    id: string
+    type: string
+    status: string
+    quote: string
+    jumpTo: { chapterId: string; startOffset: number }
+  }
+  /** kind='note' 时的卡片载荷 */
+  note?: {
+    id: string
+    title: string
+    type: string
+    evidenceCount: number
+  }
   /** 切片 ID */
   chunkId: string
   /** 文档 ID */

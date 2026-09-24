@@ -13,6 +13,7 @@
 import { createLogger } from '@core/utils/logger'
 import type { LanguageModel } from 'ai'
 import type { ProviderInfo } from '@core/platform/services/ai-call'
+import { isChatModel } from '@shared/utils/model-predicates'
 
 const logger = createLogger('AgentProviderAdapter')
 
@@ -45,10 +46,7 @@ function pickFirstChatModelId(
 ): string | undefined {
   if (!Array.isArray(models) || models.length === 0) return undefined
   return (
-    models.find(
-      (m) =>
-        m?.id && (m.type === 'text' || !m.type) && Array.isArray(m.features) && m.features.includes('chat'),
-    )?.id ??
+    models.find((m) => isChatModel(m))?.id ??
     models.find((m) => m?.id && (m.type === 'text' || !m.type))?.id ??
     models.find((m) => !!m?.id)?.id
   )
