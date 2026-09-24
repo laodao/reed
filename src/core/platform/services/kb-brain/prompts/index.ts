@@ -130,6 +130,8 @@ export const LENS_PASS_SYSTEM = `你是「{lensTitle}」视角的评论家。对
 3. 只做视角性观察，不做事实裁决。
 4. 宁缺毋滥：没有可观察的内容就输出空数组。
 5. mentions 按基础遍同规则输出（含类型）。
+6. 涉及全局的判断（如"本章在全书中的功能"）只能基于本章文本特征可推断的范围下结论，
+   evidence 引句必须给出判断依据；推断不了的一律不产出。
 
 只输出 JSON，与基础遍相同的 schema（atoms/events/mentions）。`
 
@@ -166,6 +168,51 @@ export function buildSettingPatternUser(input: { entityName: string; statements:
   return `设定体系：${input.entityName}\n\n跨书规则论断：\n${input.statements
     .map((s) => `- （${s.source}）${s.statement}`)
     .join('\n')}`
+}
+
+/* ==================== P-7 CHARACTER-PATTERN（人物原型卡归纳，跨书聚类） ==================== */
+
+export const CHARACTER_PATTERN_SYSTEM = `你是叙事人物研究员。给定跨书中被归为一簇的人物论断（已编号，括号内是来源标识），归纳一张人物原型卡。
+
+产出 JSON：
+- title：该原型的完整论断式标题（如"木讷坚韧型底层主角的缺陷社会化形态决定其关键抉择走向"）
+- description：第三人称"何时用我"≤200字（设计新书的这类角色时使用）
+- body：markdown 正文：五维骨架（欲望/缺陷/能力来路/关系位/弧线终点）、参数槽（可变维度与常见取值）、对照注记（同骨架异参数的书写差异）
+- skeleton：五维骨架定义（JSON 数组，如 [{dim:"缺陷的社会化形态", values:["道德纯度型木讷","生存理性型多疑"]}]）
+- instances：每本书的取值与变形（JSON 数组 [{label, values, note}]；label 用论断中提到的角色名/书名/来源标识）
+
+规则：
+1. 只基于给定论断归纳，不编造；实例不足 2 本时如实标注"单例，待验证"。
+2. 簇内论断相互矛盾且无法参数化解释时，放弃出卡：输出 {"skip":true,"reason":"一句话"}。
+只输出 JSON。`
+
+export function buildCharacterPatternUser(input: { statements: Array<{ statement: string; source: string }> }): string {
+  return `跨书人物论断簇：\n${input.statements.map((s) => `- （${s.source}）${s.statement}`).join('\n')}`
+}
+
+/* ==================== P-8 FORESHADOW（伏笔扫描：埋设-回收边提案） ==================== */
+
+export const FORESHADOW_SYSTEM = `你是叙事结构研究员。SETUPS 是已编号的悬念/未交代问题（伏笔候选），PAYOFFS 是同一本书后文的知识论断（已编号）。找出「埋设-回收」对：某条悬念在后文被兑现、解答或揭底。
+
+判据（全部满足才算一对）：
+- 回收与埋设指向同一具体对象（同一异物/同一事件/同一身份疑问），不是泛泛的主题相关；
+- payoff 明确解答或兑现了悬念的内容（揭示来历/揭晓身份/兑现威胁）——仅复述或延伸悬念本身不算。
+
+判例：
+- setup「古剑的来历未交代」 + payoff「古剑为上古魔物残魂所铸」 → 构成回收
+- setup「某角色投敌动机不明」 + payoff「该角色实力冠绝同辈」 → 不构成（未解答动机）
+- setup「神秘铁牌的用途」 + payoff「铁牌是开启秘境的信物」 → 构成回收
+
+输出 JSON：{ "links": [{ "setup": 编号, "payoff": 编号, "evidence": "为什么构成回收（一句话）" }] }
+没有可确认的回收输出空数组。只输出 JSON。`
+
+export function buildForeshadowUser(input: {
+  setups: Array<{ idx: number; statement: string }>
+  payoffs: Array<{ idx: number; statement: string }>
+}): string {
+  const fmt = (rows: Array<{ idx: number; statement: string }>): string =>
+    rows.map((r) => `[${r.idx}] ${r.statement}`).join('\n')
+  return `SETUPS（悬念）:\n${fmt(input.setups)}\n\nPAYOFFS（后文论断）:\n${fmt(input.payoffs)}`
 }
 
 /* ==================== 论断归纳整理（consolidate，细碎合并） ==================== */

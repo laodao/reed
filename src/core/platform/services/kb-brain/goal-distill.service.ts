@@ -64,6 +64,9 @@ interface MapFragment {
   chapter: string
   info: string
   note: string
+  /** 溯源（evidence 程序化跳转的前置；map 阶段标签对回取材清单时透传） */
+  documentId?: string
+  chapterId?: string
 }
 
 /** 摘要初筛提名：值得读全文的章（场面/设定密集处） */
@@ -138,7 +141,13 @@ export class KbGoalDistillService {
         const parsed = extractJsonFromResponse(raw) as Partial<{ fragments: MapFragment[] }> | null
         for (const f of parsed?.fragments ?? []) {
           if (typeof f?.info !== 'string' || !f.info.trim()) continue
-          fragments.push({ chapter: `【精读】${n.label}`, info: f.info, note: typeof f.note === 'string' ? f.note : '' })
+          fragments.push({
+            chapter: `【精读】${n.label}`,
+            info: f.info,
+            note: typeof f.note === 'string' ? f.note : '',
+            documentId: n.documentId,
+            chapterId: n.chapterId,
+          })
           fragmentDocIds.push(n.documentId)
         }
         done++
@@ -199,7 +208,13 @@ export class KbGoalDistillService {
             (typeof f.chapter === 'string' && f.chapter.includes(u.label.slice(1, 20))) ||
             (typeof f.chapter === 'string' && u.label.includes(f.chapter.trim())),
         )
-        fragments.push({ chapter: matched?.label ?? slice[0].label, info: f.info, note: typeof f.note === 'string' ? f.note : '' })
+        fragments.push({
+          chapter: matched?.label ?? slice[0].label,
+          info: f.info,
+          note: typeof f.note === 'string' ? f.note : '',
+          documentId: matched?.documentId ?? slice[0].documentId,
+          chapterId: matched?.chapterId,
+        })
         fragmentDocIds.push(matched?.documentId ?? slice[0].documentId)
       }
       // 提名收集：值得读全文的章（score 1-5，标签对不回取材清单则丢弃）
@@ -289,9 +304,9 @@ export class KbGoalDistillService {
     for (const theme of themes) {
       const themedFrags = theme.idx.map((i) => fragments[i]!).filter(Boolean)
       if (themedFrags.length < 2) continue
-      // 卡级证据：只挂本主题素材（前 30 条），人审可溯源到该卡依据
+      // 卡级证据：只挂本主题素材（前 30 条），quote=章节标签（人读）+ documentId/chapterId（程序跳转）
       const cardEvidence = JSON.stringify(
-        themedFrags.slice(0, 30).map((f) => ({ quote: f.chapter, note: f.note })),
+        themedFrags.slice(0, 30).map((f) => ({ quote: f.chapter, note: f.note, documentId: f.documentId, chapterId: f.chapterId })),
       )
       let card: ReduceCard | null = null
       let cardError = ''

@@ -1250,12 +1250,14 @@ const electronAPI = {
       getConfig: (kbId: string) => ipcRenderer.invoke('kb:brain:get-config', { kbId }),
       updateConfig: (p: { kbId: string; patch: Record<string, unknown> }) => ipcRenderer.invoke('kb:brain:update-config', p),
       docStatus: (kbId: string) => ipcRenderer.invoke('kb:brain:doc-status', { kbId }),
-      listAtoms: (p: { kbId: string; documentId?: string; page?: number; pageSize?: number; status?: string; type?: string; types?: string[]; origin?: string }) =>
+      listAtoms: (p: { kbId: string; documentId?: string; page?: number; pageSize?: number; status?: string; type?: string; types?: string[]; origin?: string; foreshadow?: string }) =>
         ipcRenderer.invoke('kb:brain:list-atoms', p),
       consolidateRun: (kbId: string) => ipcRenderer.invoke('kb:brain:consolidate-run', { kbId }),
       consolidateStatus: (kbId: string) => ipcRenderer.invoke('kb:brain:consolidate-status', { kbId }),
       cleanupRun: (kbId: string) => ipcRenderer.invoke('kb:brain:cleanup-run', { kbId }),
       cleanupStatus: (kbId: string) => ipcRenderer.invoke('kb:brain:cleanup-status', { kbId }),
+      foreshadowRun: (kbId: string) => ipcRenderer.invoke('kb:brain:foreshadow-run', { kbId }),
+      foreshadowStatus: (kbId: string) => ipcRenderer.invoke('kb:brain:foreshadow-status', { kbId }),
       getAtom: (atomId: string) => ipcRenderer.invoke('kb:brain:get-atom', { atomId }),
       listNotes: (p: { kbId: string; status?: string; type?: string; page?: number; pageSize?: number }) => ipcRenderer.invoke('kb:brain:list-notes', p),
       proposalInbox: (p: { kbId: string; page?: number; pageSize?: number }) => ipcRenderer.invoke('kb:brain:proposal-inbox', p),
@@ -1271,7 +1273,6 @@ const electronAPI = {
         ipcRenderer.invoke('kb:brain:search', p),
       distill: (p: { kbId: string; documentIds?: string[] }) => ipcRenderer.invoke('kb:brain:distill', p),
       digestDocument: (documentId: string) => ipcRenderer.invoke('kb:brain:digest-document', { documentId }),
-      docStatus: (kbId: string) => ipcRenderer.invoke('kb:brain:doc-status', { kbId }),
       conflicts: (kbId: string) => ipcRenderer.invoke('kb:brain:conflicts', { kbId }),
       resolveConflict: (p: { atomId: string; verdict: 'supported' | 'superseded'; supersededByAtomId?: string }) =>
         ipcRenderer.invoke('kb:brain:resolve-conflict', p),

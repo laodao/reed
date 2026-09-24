@@ -15,8 +15,8 @@ export interface KbBrainConfig {
   digestion: { enabled: boolean; scopeDocumentIds?: string[] }
   /** 视角遍：启用的视角卡 + 观感捕捉开关（多视角是乘法级成本，按需启用） */
   lenses: { enabledLensNoteIds: string[]; readingCapture: boolean }
-  /** 模式提炼：设定卡（低风险）与情节卡（高风险）分开关 */
-  patterns: { settingEnabled: boolean; plotEnabled: boolean }
+  /** 模式提炼：设定卡（低风险）、情节卡（高风险）与人物原型卡（跨书聚类）分开关 */
+  patterns: { settingEnabled: boolean; plotEnabled: boolean; characterEnabled: boolean }
   /** 高于阈值自动入池，低于进提议队列 */
   autoApproveThreshold: number
   /** 跨文档提炼（重要性账户阈值） */
@@ -81,6 +81,7 @@ const BRAIN_CONFIG_SCHEMA = {
       properties: {
         settingEnabled: { type: 'boolean' },
         plotEnabled: { type: 'boolean' },
+        characterEnabled: { type: 'boolean' },
       },
       required: ['settingEnabled', 'plotEnabled'],
       additionalProperties: false,
@@ -147,7 +148,7 @@ export function defaultBrainConfig(enabled = true): KbBrainConfig {
     enabled,
     digestion: { enabled: true },
     lenses: { enabledLensNoteIds: [], readingCapture: true },
-    patterns: { settingEnabled: true, plotEnabled: false },
+    patterns: { settingEnabled: true, plotEnabled: false, characterEnabled: false },
     autoApproveThreshold: 0.8,
     distillation: { enabled: true, importanceThreshold: 50 },
     learning: { enabled: false, desiredRetention: 0.9 },

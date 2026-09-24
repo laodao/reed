@@ -11,7 +11,14 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import type { KbAtomRepository, KbAtomRecord } from '@core/database/repositories/kb-atom.repository'
 import type { KbNoteRepository } from '@core/database/repositories/kb-note.repository'
 import { extractJsonFromResponse } from '@core/platform/services/ai-call'
-import { DISTILL_SYSTEM, buildDistillUser, SETTING_PATTERN_SYSTEM, buildSettingPatternUser } from './prompts'
+import {
+  DISTILL_SYSTEM,
+  buildDistillUser,
+  SETTING_PATTERN_SYSTEM,
+  buildSettingPatternUser,
+  CHARACTER_PATTERN_SYSTEM,
+  buildCharacterPatternUser,
+} from './prompts'
 import type { KbEntityRepository } from '@core/database/repositories/kb-entity.repository'
 import { defaultBrainLlm, type BrainLlmFn } from './llm'
 
@@ -29,6 +36,8 @@ export interface DistillDeps {
   repos?: () => { atoms: KbAtomRepository; notes: KbNoteRepository; entities: KbEntityRepository } | null
   /** 设定模式卡开关（brainConfig.patterns.settingEnabled；缺省开） */
   settingPatternEnabled?: boolean
+  /** 人物原型卡开关（brainConfig.patterns.characterEnabled；缺省关） */
+  characterPatternEnabled?: boolean
 }
 
 export interface DistillOutcome {
@@ -44,9 +53,11 @@ export class KbDistillService {
   private readonly reposFn: NonNullable<DistillDeps['repos']>
 
   private readonly settingPatternEnabled: boolean
+  private readonly characterPatternEnabled: boolean
 
   constructor(deps: DistillDeps = {}) {
     this.settingPatternEnabled = deps.settingPatternEnabled ?? true
+    this.characterPatternEnabled = deps.characterPatternEnabled ?? false
     this.llm = deps.llm ?? defaultBrainLlm('kb-brain-adjudicate', deps.modelOverride) // 高档：提炼走裁决档
     this.embedFn = deps.embed ?? (async () => null)
     this.reposFn =
@@ -74,7 +85,7 @@ export class KbDistillService {
       const allow = new Set(scope.documentIds)
       candidates = candidates.filter((a) => allow.has(a.sourceDocumentId))
     }
-    if (candidates.length < CLUSTER_MIN && !this.settingPatternEnabled) return outcome
+    if (candidates.length < CLUSTER_MIN && !this.settingPatternEnabled && !this.characterPatternEnabled) return outcome
     if (candidates.length >= CLUSTER_MIN) outcome.atomsConsumed = candidates.length
 
     // 2. 嵌入聚类（贪心种子聚类：阈值内归簇；嵌入失败 → 按 type 分组降级）
@@ -119,6 +130,16 @@ export class KbDistillService {
       }
     }
 
+    // G4 人物原型卡（P-7）：人物论断跨书嵌入聚类归纳
+    if (this.characterPatternEnabled) {
+      try {
+        const characterCards = await this.distillCharacterPatterns(kbId, embeddingConfig)
+        outcome.cardsProposed += characterCards
+      } catch (e) {
+        logger.warn(`[kb-distill] 人物原型卡归纳失败（不阻塞）: ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+
     logger.info(
       `[kb-distill] kb=${kbId} 簇=${outcome.clustersFormed} 提议=${outcome.cardsProposed} 同题跳过=${outcome.duplicatesSkipped}`,
     )
@@ -157,6 +178,97 @@ export class KbDistillService {
       proposed++
     }
     return proposed
+  }
+
+  /**
+   * G4 人物原型卡（P-7）：人物论断跨书嵌入聚类 → 原型卡（proposed）。
+   * 与设定卡的关键差异：实体名跨书不相同（张小凡≠韩立），按实体分组只能出
+   * 单书角色卡——必须跨书按功能结构聚类，且簇内覆盖 ≥2 本书才成卡
+   * （单书簇是角色分析不是原型，直接跳过）。
+   */
+  private async distillCharacterPatterns(kbId: string, embeddingConfig: string | null): Promise<number> {
+    const repos = this.reposFn()
+    if (!repos) return 0
+    // 人物实体：excludeTypes 是仓储唯一过滤口，用「已知类型全集 - character」反向圈定
+    const chars = await repos.entities.listActiveWithAliases(kbId, 40, {
+      excludeTypes: ['location', 'organization', 'item', 'concept', 'plot-motif', 'setting-system'],
+      orderByUpdated: true,
+    })
+    if (chars.length === 0) return 0
+    const atoms = await repos.atoms.findByEntities(kbId, chars.map((c) => c.id), {
+      lensNoteId: null,
+      statuses: ['supported'],
+    })
+    const pool = atoms.filter((a) => ['fact', 'claim'].includes(a.type)).slice(0, 400)
+    if (pool.length < CLUSTER_MIN) return 0
+    const vectors = await this.embedFn(pool.map((a) => a.statement), { id: kbId, embeddingConfig })
+    const clusters: KbAtomRecord[][] =
+      vectors && vectors.length === pool.length ? clusterByEmbedding(pool, vectors) : clusterByType(pool)
+    let proposed = 0
+    for (const cluster of clusters) {
+      if (cluster.length < CLUSTER_MIN) continue
+      if (new Set(cluster.map((a) => a.sourceDocumentId)).size < 2) continue // 单书簇不出原型卡
+      const card = await this.reflectCharacterPattern(cluster)
+      if (!card) continue
+      const similar = await repos.notes.findSimilarTitle(kbId, card.title)
+      if (similar.some((s) => s.title === card.title && s.status !== 'archived')) continue
+      await repos.notes.propose(kbId, {
+        title: card.title,
+        description: card.description,
+        body: card.body,
+        type: 'character-pattern',
+        evidence: JSON.stringify(cluster.slice(0, 12).map((a) => ({ atomId: a.id, statement: a.statement }))),
+        origin: 'ai-distill',
+        patternSkeleton: card.skeleton,
+        patternInstances: card.instances,
+      })
+      proposed++
+    }
+    return proposed
+  }
+
+  /** P-7 反思（校验失败重试 1 次；模型可主动 skip——簇内矛盾无法参数化时放弃出卡） */
+  private async reflectCharacterPattern(
+    cluster: KbAtomRecord[],
+  ): Promise<{ title: string; description: string; body: string; skeleton: string; instances: string } | null> {
+    let lastError = ''
+    const items = cluster.map((a) => ({ statement: a.statement, source: a.sourceDocumentId.slice(0, 8) }))
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const user =
+        attempt === 0
+          ? buildCharacterPatternUser({ statements: items })
+          : `${buildCharacterPatternUser({ statements: items })}\n\n【上次输出不合法】\n${lastError}\n请重新输出完整合法的 JSON。`
+      try {
+        const raw = await this.llm({ system: CHARACTER_PATTERN_SYSTEM, user, maxTokens: 3000 })
+        const parsed = extractJsonFromResponse(raw) as Partial<{
+          title: string
+          description: string
+          body: string
+          skeleton: unknown
+          instances: unknown
+          skip: boolean
+          reason: string
+        }>
+        if (parsed.skip) {
+          logger.info(`[kb-distill] 人物原型簇主动跳过：${String(parsed.reason ?? '').slice(0, 80)}`)
+          return null
+        }
+        const title = String(parsed.title ?? '').trim()
+        if (!title || title.length < 8) throw new Error('title 缺失或过短')
+        const description = String(parsed.description ?? '').trim()
+        if (!description) throw new Error('description 缺失')
+        return {
+          title,
+          description,
+          body: String(parsed.body ?? '').trim(),
+          skeleton: JSON.stringify(parsed.skeleton ?? []),
+          instances: JSON.stringify(parsed.instances ?? []),
+        }
+      } catch (e) {
+        lastError = e instanceof Error ? e.message : String(e)
+      }
+    }
+    return null
   }
 
   /** P-5 反思（校验失败重试 1 次） */

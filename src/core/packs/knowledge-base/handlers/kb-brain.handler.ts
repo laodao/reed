@@ -17,6 +17,7 @@ import { getKbConsolidateService } from '@core/platform/services/kb-brain/consol
 import { getKbCleanupService } from '@core/platform/services/kb-brain/cleanup.service'
 import { parseModelRef } from '@core/platform/services/kb-brain/llm'
 import { parseBrainConfig } from '@core/platform/services/kb-brain/brain-config'
+import { getKbForeshadowScanService } from '@core/platform/services/kb-brain/foreshadow-scan.service'
 import type { SearchResult } from '@shared/types/knowledge-base.types'
 
 let kbService: KnowledgeBaseService | null = null
@@ -47,7 +48,7 @@ export function registerKbBrainHandlers(): void {
     return { success: true, data: docs }
   })
 
-  ipcBridge.handle('kb:brain:list-atoms', (_e, p: { kbId: string; documentId?: string; page?: number; pageSize?: number; status?: string; type?: string; types?: string[]; origin?: string }) =>
+  ipcBridge.handle('kb:brain:list-atoms', (_e, p: { kbId: string; documentId?: string; page?: number; pageSize?: number; status?: string; type?: string; types?: string[]; origin?: string; foreshadow?: 'dangling' }) =>
     panel.listAtoms(p),
   )
 
@@ -87,6 +88,7 @@ export function registerKbBrainHandlers(): void {
       const svc2 = new KbDistillService({
         embed: (texts, kb) => svc().getEmbeddingVectors(texts, kb.embeddingConfig ? JSON.parse(kb.embeddingConfig) : {}),
         settingPatternEnabled: cfg?.patterns.settingEnabled ?? true,
+        characterPatternEnabled: cfg?.patterns.characterEnabled ?? false,
         modelOverride: () => (cfg?.models.adjudicate ? parseModelRef(cfg.models.adjudicate) : {}),
       })
       const embCfg = kbRow?.embeddingConfig ?? null
@@ -208,6 +210,24 @@ export function registerKbBrainHandlers(): void {
   })
   ipcBridge.handle('kb:brain:cleanup-status', (_e, p: { kbId: string }) => {
     return { success: true, data: cleanup.status(p.kbId) }
+  })
+
+  // G3 伏笔扫描（sets-up 边候选生成器；fire-and-forget + 状态轮询；仅手动触发——自动扫描需独立成本闸门）
+  const foreshadow = getKbForeshadowScanService()
+  ipcBridge.handle('kb:brain:foreshadow-run', (_e, p: { kbId: string }) => {
+    if (foreshadow.isRunning(p.kbId)) return { success: false, error: '伏笔扫描进行中' }
+    foreshadow
+      .run(p.kbId)
+      .then((st) =>
+        console.info(
+          `[kb-brain] 伏笔扫描完成 kb=${p.kbId} 文档=${st.scannedDocs} 悬念=${st.setups} 提案=${st.linksProposed} 新增=${st.created} 重复=${st.deduped}`,
+        ),
+      )
+      .catch((e) => console.warn(`[kb-brain] 伏笔扫描失败 kb=${p.kbId}: ${e instanceof Error ? e.message : String(e)}`))
+    return { success: true, data: { queued: true } }
+  })
+  ipcBridge.handle('kb:brain:foreshadow-status', (_e, p: { kbId: string }) => {
+    return { success: true, data: foreshadow.status(p.kbId) }
   })
 
   // T18 FSRS 复习：到期队列 / 评分

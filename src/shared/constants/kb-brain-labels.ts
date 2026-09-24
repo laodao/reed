@@ -35,6 +35,7 @@ export const KB_NOTE_TYPE_LABELS: Record<string, string> = {
   synthesis: '综合经验',
   'plot-pattern': '情节模式',
   'setting-pattern': '设定模式',
+  'character-pattern': '人物原型',
   lens: '观察视角',
   'skill-seed': '技能种子',
 }

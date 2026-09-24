@@ -15,6 +15,7 @@ export type KbNoteType =
   | 'synthesis'
   | 'plot-pattern'
   | 'setting-pattern'
+  | 'character-pattern'
   | 'lens'
   | 'skill-seed'
 

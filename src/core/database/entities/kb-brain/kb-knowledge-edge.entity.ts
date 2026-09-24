@@ -22,6 +22,8 @@ export type KbEdgeRelation =
   | 'leads-to'
   /** 论断 ↔ 模式卡（该论断是某情节/设定模式的一个实例证据） */
   | 'instance-of'
+  /** 伏笔线：source=埋设（承诺），target=回收（兑现）——跨距的作者技法层呼应，与 leads-to 的情节内因果区分 */
+  | 'sets-up'
 
 @Entity({ name: 'kb_knowledge_edges' })
 @Unique('uq_kb_edges_unique', ['sourceKind', 'sourceId', 'relation', 'targetKind', 'targetId'])

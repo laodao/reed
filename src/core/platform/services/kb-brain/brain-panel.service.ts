@@ -54,6 +54,8 @@ export class KbBrainPanelService {
     type?: string
     types?: string[]
     origin?: string
+    /** G3 伏笔视图：dangling=未回收伏笔（open-question 且无出边 sets-up） */
+    foreshadow?: 'dangling'
   }): Promise<{ success: boolean; data?: { rows: unknown[]; total: number }; error?: string }> {
     const db = getCoreDatabaseManager()
     if (!db.kbAtoms) return { success: false, error: '知识大脑未启用（旧库）' }
@@ -64,15 +66,33 @@ export class KbBrainPanelService {
     const workingSet = ['supported', 'suspected', 'stale'] as const
     const statusFilter = input.status ? [input.status as never] : [...workingSet]
     // 统一走 findByKb：documentId 与 type/types/origin/status 过滤可自由组合
-    const all = await db.kbAtoms.findByKb(input.kbId, {
-      status: statusFilter,
-      type: input.type,
-      types: input.types,
-      origin: input.origin,
-      documentId: input.documentId,
-      // 内存分页的截断上限：翻页序号/总数以此为界（type 过滤已下推 SQL，此处是兜底上限）
-      limit: 5000,
-    })
+    let all: Array<{ sourceDocumentId?: string }>
+    if (input.foreshadow === 'dangling') {
+      // 未回收伏笔 = 悬念论断中无出边 sets-up 的集合（埋设-回收方向：source=埋设）
+      if (!db.kbKnowledgeEdges) return { success: false, error: '语义边仓储未装配（旧库）' }
+      const suspense = await db.kbAtoms.findByKb(input.kbId, {
+        status: statusFilter,
+        type: 'open-question',
+        origin: input.origin,
+        documentId: input.documentId,
+        limit: 5000,
+      })
+      const neighbors = await db.kbKnowledgeEdges.neighborsOf(input.kbId, suspense.map((a) => a.id))
+      const linked = new Set(
+        neighbors.filter((e) => e.relation === 'sets-up' && e.sourceKind === 'atom').map((e) => e.sourceId),
+      )
+      all = suspense.filter((a) => !linked.has(a.id))
+    } else {
+      all = await db.kbAtoms.findByKb(input.kbId, {
+        status: statusFilter,
+        type: input.type,
+        types: input.types,
+        origin: input.origin,
+        documentId: input.documentId,
+        // 内存分页的截断上限：翻页序号/总数以此为界（type 过滤已下推 SQL，此处是兜底上限）
+        limit: 5000,
+      })
+    }
     const start = (page - 1) * pageSize
     const rows = all.slice(start, start + pageSize)
     // 来源文档名（批量解析，仅当前页涉及的文档；解析不出保留 null 由前端回退）

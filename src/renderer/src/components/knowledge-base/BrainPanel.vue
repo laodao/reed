@@ -48,6 +48,7 @@
               <el-radio-button value="human">我的观感</el-radio-button>
               <el-radio-button value="opinions">AI观点</el-radio-button>
               <el-radio-button value="open-question">悬而未决</el-radio-button>
+              <el-radio-button value="foreshadow">未回收伏笔</el-radio-button>
             </el-radio-group>
             <el-select
               v-model="atomDocFilter"
@@ -281,7 +282,7 @@
               type="warning"
               plain
               style="flex: 1"
-              :disabled="cleanupRunning"
+              :disabled="cleanupRunning || foreshadowRunning"
               @click="startConsolidate"
             >
               归纳整理
@@ -292,10 +293,23 @@
               type="danger"
               plain
               style="flex: 1"
-              :disabled="consolidateRunning"
+              :disabled="consolidateRunning || foreshadowRunning"
               @click="startCleanup"
             >
               垃圾清理
+            </el-button>
+          </div>
+          <div style="margin-top: 8px">
+            <el-button
+              v-if="!foreshadowRunning"
+              size="small"
+              type="success"
+              plain
+              style="width: 100%"
+              :disabled="consolidateRunning || cleanupRunning"
+              @click="startForeshadow"
+            >
+              伏笔扫描
             </el-button>
           </div>
           <template v-if="consolidateRunning">
@@ -317,6 +331,13 @@
           </div>
           <div v-if="cleanupSummary && !cleanupRunning" class="side-tip">
             上次清理：归档 {{ cleanupSummary }} 条垃圾论断
+          </div>
+          <template v-if="foreshadowRunning">
+            <el-progress :percentage="100" indeterminate :stroke-width="6" />
+            <div class="side-tip">扫描中… 逐书判读悬念与后文论断的「埋设-回收」关系</div>
+          </template>
+          <div v-if="foreshadowSummary && !foreshadowRunning" class="side-tip">
+            上次扫描：提案 {{ foreshadowSummary.linksProposed }} 条伏笔边，新增 {{ foreshadowSummary.created }} 条（可在「未回收伏笔」查看悬空项）
           </div>
         </section>
 
@@ -363,6 +384,13 @@
               <span class="cfg-desc">实验性，成本较高</span>
             </label>
             <el-switch v-model="configDraft.patterns.plotEnabled" />
+          </div>
+          <div class="cfg-row">
+            <label class="cfg-label">
+              人物原型卡归纳
+              <span class="cfg-desc">跨书聚类归纳人物原型（同骨架异参数），提炼时运行</span>
+            </label>
+            <el-switch v-model="configDraft.patterns.characterEnabled" />
           </div>
           <div class="cfg-row">
             <label class="cfg-label">
@@ -450,6 +478,36 @@
           </div>
           <div v-if="configDraft.goals.length === 0" class="side-empty">暂无目标——从模板添加或新建</div>
         </section>
+
+        <section class="cfg-section">
+          <h4>视角遍</h4>
+          <div class="cfg-desc" style="margin-bottom: 8px">
+            启用的视角卡会在消化时重读章节，产出该视角的观感论断（与事实层分域，互不影响）；
+            对已消化的书，启用并保存后点侧栏「提取」补跑
+          </div>
+          <div v-for="lens in lensList" :key="lens.id" class="goal-edit-head">
+            <el-checkbox
+              :model-value="configDraft.lenses.enabledLensNoteIds.includes(lens.id)"
+              size="small"
+              @change="onLensToggle(lens, $event)"
+            />
+            <span style="flex: 1" :title="lens.description">{{ lens.title }}</span>
+            <el-button size="small" text @click="openLensEditor(lens)">编辑</el-button>
+          </div>
+          <div v-if="lensList.length === 0" class="side-empty">暂无视角卡——从模板添加或新建</div>
+          <div class="cfg-goals-actions" style="margin-top: 8px">
+            <el-select
+              v-model="lensPresetPick"
+              placeholder="从模板添加…"
+              size="small"
+              style="width: 220px"
+              @change="addLensFromPreset"
+            >
+              <el-option v-for="p in LENS_PRESETS" :key="p.title" :label="p.title" :value="p.title" />
+            </el-select>
+            <el-button size="small" @click="openLensEditor(null)">新建</el-button>
+          </div>
+        </section>
       </div>
       <template #footer>
         <div class="cfg-actions">
@@ -458,6 +516,28 @@
         </div>
       </template>
     </el-drawer>
+
+    <!-- 视角卡编辑（G1：新建/编辑后勾选启用并保存，随消化生效） -->
+    <el-dialog v-model="lensEditorOpen" :title="lensForm.id ? '编辑视角卡' : '新建视角卡'" width="520px" :close-on-click-modal="false">
+      <el-form label-width="72px" size="small">
+        <el-form-item label="名称">
+          <el-input v-model="lensForm.title" maxlength="30" placeholder="如：章节功能与叙事结构视角" />
+        </el-form-item>
+        <el-form-item label="说明">
+          <el-input v-model="lensForm.description" type="textarea" :rows="2" placeholder="何时用这个视角（第三人称，≤200字）" />
+        </el-form-item>
+        <el-form-item label="看什么">
+          <el-input v-model="lensForm.attendTo" type="textarea" :rows="4" placeholder="每行一条注意力点" />
+        </el-form-item>
+        <el-form-item label="问什么">
+          <el-input v-model="lensForm.questions" type="textarea" :rows="4" placeholder="每行一个提问" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="lensEditorOpen = false">取消</el-button>
+        <el-button type="primary" :loading="lensEditorBusy" @click="saveLens">保存</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 记观感（human origin 论断录入） -->
     <el-dialog v-model="remarkOpen" title="记观感" width="480px" :close-on-click-modal="false">
@@ -577,7 +657,8 @@ interface BrainGoal {
 interface BrainConfig {
   enabled: boolean
   digestion: { enabled: boolean }
-  patterns: { plotEnabled: boolean }
+  patterns: { plotEnabled: boolean; characterEnabled: boolean }
+  lenses: { enabledLensNoteIds: string[] }
   autoApproveThreshold: number
   models: { atomize: string; adjudicate: string }
   goals: BrainGoal[]
@@ -588,7 +669,7 @@ const stats = ref<Record<string, any> | null>(null)
 
 // ===== 主区视图：论断 / 经验卡 / 待审提议 =====
 type MainView = 'atoms' | 'cards' | 'proposals'
-type AtomFilter = 'all' | 'human' | 'opinions' | 'open-question'
+type AtomFilter = 'all' | 'human' | 'opinions' | 'open-question' | 'foreshadow'
 const activeView = ref<MainView>('atoms')
 const atomFilter = ref<AtomFilter>('all')
 
@@ -614,7 +695,8 @@ const config = ref<BrainConfig | null>(null)
 const configDraft = ref<BrainConfig>({
   enabled: false,
   digestion: { enabled: true },
-  patterns: { plotEnabled: false },
+  patterns: { plotEnabled: false, characterEnabled: false },
+  lenses: { enabledLensNoteIds: [] },
   autoApproveThreshold: 0.8,
   models: { atomize: '', adjudicate: '' },
   goals: [],
@@ -758,6 +840,219 @@ async function startCleanup(): Promise<void> {
   }
 }
 
+// ===== 视角遍（lens 卡管理与启用；G1 结构视角） =====
+interface LensRow {
+  id: string
+  title: string
+  description: string
+  status: string
+  version: number
+  lensAttention: string | null
+}
+/** 预设视角卡（纯数据，保存后才入库；勾选启用并保存设置后随消化生效） */
+const LENS_PRESETS = [
+  {
+    title: '章节功能与叙事结构视角',
+    description: '看全书结构如何由章节功能搭建、节奏如何起伏、线索如何交织时使用。',
+    attendTo: [
+      '章末钩子（悬念句/断点及其指向）',
+      '场景与视角切换（换线/换 POV 的位置与频率）',
+      '铺垫与回收（本章埋设或兑现了什么）',
+      '节奏节拍（压抑-释放的循环位置）',
+      '本章功能位（开局钩子/铺垫/推进/转折/高潮/过渡）',
+    ],
+    questions: [
+      '这一章在全书结构中承担什么功能？依据是本章哪些文本特征？',
+      '章末是否留钩、钩向哪里（事件/悬念/情绪）？',
+      '本章是否切换叙事线或视角？切换点在哪？',
+      '本章埋设或回收了哪些前文/后文的呼应？',
+    ],
+  },
+  {
+    title: '伏笔与回收视角',
+    description: '看承诺与兑现：哪些异物/异常/悬置被埋设、在哪里兑现、哪些从未兑现。',
+    attendTo: ['反复出现却未解释的异物', '人物的微异常行为', '提前出场的高规格威胁', '章末悬置句'],
+    questions: ['这个承诺在第几章兑现？', '埋设与回收的间隔拉出了多大张力？', '哪些承诺从未兑现（悬空伏笔）？'],
+  },
+]
+const lensList = ref<LensRow[]>([])
+const lensPresetPick = ref('')
+const lensEditorOpen = ref(false)
+const lensEditorBusy = ref(false)
+const lensForm = ref<{ id?: string; title: string; description: string; attendTo: string; questions: string }>({
+  title: '',
+  description: '',
+  attendTo: '',
+  questions: '',
+})
+
+async function fetchLenses(): Promise<void> {
+  if (!props.kbId) return
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  try {
+    const res = await client.listLens(props.kbId)
+    if (res.success && res.data) lensList.value = res.data as LensRow[]
+  } catch (e) {
+    console.warn('[BrainPanel] 视角卡加载失败', e)
+  }
+}
+
+/** 启停只改草稿，随「保存」统一生效（与提取目标同动线） */
+function onLensToggle(lens: LensRow, checked: unknown): void {
+  const id = lens.id
+  const arr = configDraft.value.lenses.enabledLensNoteIds
+  const i = arr.indexOf(id)
+  if (checked && i < 0) arr.push(id)
+  if (!checked && i >= 0) arr.splice(i, 1)
+}
+
+function openLensEditor(lens: LensRow | null): void {
+  if (lens) {
+    let att: { attendTo?: string[]; questions?: string[] } = {}
+    try {
+      att = JSON.parse(lens.lensAttention ?? '{}')
+    } catch {
+      /* 旧数据缺字段按空处理 */
+    }
+    lensForm.value = {
+      id: lens.id,
+      title: lens.title,
+      description: lens.description,
+      attendTo: (att.attendTo ?? []).join('\n'),
+      questions: (att.questions ?? []).join('\n'),
+    }
+  } else {
+    lensForm.value = { title: '', description: '', attendTo: '', questions: '' }
+  }
+  lensEditorOpen.value = true
+}
+
+function addLensFromPreset(title: string): void {
+  const preset = LENS_PRESETS.find((p) => p.title === title)
+  if (!preset) return
+  lensForm.value = {
+    title: preset.title,
+    description: preset.description,
+    attendTo: preset.attendTo.join('\n'),
+    questions: preset.questions.join('\n'),
+  }
+  lensPresetPick.value = ''
+  lensEditorOpen.value = true
+}
+
+async function saveLens(): Promise<void> {
+  if (!lensForm.value.title.trim()) {
+    ElMessage.warning('请填写视角名称')
+    return
+  }
+  lensEditorBusy.value = true
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  try {
+    const res = await client.upsertLens({
+      kbId: props.kbId,
+      id: lensForm.value.id,
+      title: lensForm.value.title.trim(),
+      description: lensForm.value.description.trim(),
+      attendTo: lensForm.value.attendTo.split('\n').map((s) => s.trim()).filter(Boolean),
+      questions: lensForm.value.questions.split('\n').map((s) => s.trim()).filter(Boolean),
+    })
+    if (res.success && res.data) {
+      const row = res.data as LensRow
+      // 新建视角默认勾选启用（草稿态，随设置保存生效）
+      if (!lensForm.value.id && !configDraft.value.lenses.enabledLensNoteIds.includes(row.id)) {
+        configDraft.value.lenses.enabledLensNoteIds.push(row.id)
+      }
+      lensEditorOpen.value = false
+      ElMessage.success('视角卡已保存；勾选启用并保存设置后随消化生效')
+      await fetchLenses()
+    } else {
+      ElMessage.error(res.error || '保存失败')
+    }
+  } catch (e) {
+    ElMessage.error(`保存失败: ${(e as Error).message}`)
+  } finally {
+    lensEditorBusy.value = false
+  }
+}
+
+// ===== 伏笔扫描（G3：sets-up 边候选生成器，verified=0 待人审） =====
+interface ForeshadowProgress {
+  running: boolean
+  last?: {
+    ok: boolean
+    error?: string
+    scannedDocs: number
+    linksProposed: number
+    created: number
+    deduped: number
+    finishedAt: string
+  }
+}
+const foreshadowRunning = ref(false)
+const foreshadowProgress = ref<ForeshadowProgress | null>(null)
+const foreshadowSummary = ref<{ linksProposed: number; created: number } | null>(null)
+let foreshadowPollTimer: ReturnType<typeof setInterval> | null = null
+
+function startForeshadowPoll(): void {
+  if (foreshadowPollTimer) return
+  foreshadowPollTimer = setInterval(pollForeshadow, 5000)
+  void pollForeshadow()
+}
+
+async function pollForeshadow(): Promise<void> {
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  const kbAtCall = props.kbId // 代际守卫：切库后丢弃过期响应
+  try {
+    const res = await client.foreshadowStatus(props.kbId)
+    if (kbAtCall !== props.kbId) return
+    if (res.success && res.data) {
+      const wasRunning = foreshadowRunning.value
+      foreshadowProgress.value = res.data
+      foreshadowRunning.value = !!res.data.running
+      if (wasRunning && !foreshadowRunning.value) {
+        const last = res.data.last
+        if (last?.ok) {
+          foreshadowSummary.value = { linksProposed: last.linksProposed, created: last.created }
+          ElMessage.success(`伏笔扫描完成：提案 ${last.linksProposed} 条，新增 ${last.created} 条伏笔边（待人工确认）`)
+        } else {
+          ElMessage.error(`伏笔扫描失败: ${last?.error || '未知错误'}`)
+        }
+        await refresh()
+      }
+    }
+  } catch {
+    /* 轮询失败静默，下轮再试 */
+  }
+  if (!foreshadowRunning.value && foreshadowPollTimer) {
+    clearInterval(foreshadowPollTimer)
+    foreshadowPollTimer = null
+  }
+}
+
+async function startForeshadow(): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      '将用 AI 逐书判读「悬而未决」论断与同书后文论断的埋设-回收关系，生成伏笔边候选（待人工确认，不自动生效）。会产生 LLM 调用费用。',
+      '伏笔扫描',
+      { type: 'info', confirmButtonText: '开始扫描', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  try {
+    const res = await client.foreshadowRun(props.kbId)
+    if (!res.success) {
+      ElMessage.error(res.error || '扫描启动失败')
+      return
+    }
+    foreshadowRunning.value = true
+    startForeshadowPoll()
+  } catch (e) {
+    ElMessage.error(`扫描启动失败: ${(e as Error).message}`)
+  }
+}
+
 // ===== 论断归纳整理 =====
 interface ConsolidateProgress {
   running: boolean
@@ -800,6 +1095,7 @@ const atomsEmptyText = computed(() => {
   if (atomFilter.value === 'human') return '暂无我的观感——点击右上角「记观感」写下你自己的判断'
   if (atomFilter.value === 'opinions') return '暂无 AI 观点类论断（claim/insight 随消化产出）'
   if (atomFilter.value === 'open-question') return '暂无悬而未决的问题'
+  if (atomFilter.value === 'foreshadow') return '没有未回收的伏笔——先在「论断整理」跑伏笔扫描，或悬念都已回收'
   return '尚未消化出论断（上传文档后自动进行）'
 })
 
@@ -914,6 +1210,8 @@ onBeforeUnmount(() => {
   consolidatePollTimer = null
   if (cleanupPollTimer) clearInterval(cleanupPollTimer)
   cleanupPollTimer = null
+  if (foreshadowPollTimer) clearInterval(foreshadowPollTimer)
+  foreshadowPollTimer = null
 })
 
 function statusTagType(status: string): 'success' | 'warning' | 'info' | 'danger' {
@@ -949,6 +1247,7 @@ async function fetchAtoms(): Promise<void> {
       origin: atomFilter.value === 'human' ? 'human' : undefined,
       type: atomFilter.value === 'open-question' ? 'open-question' : undefined,
       types: atomFilter.value === 'opinions' ? ['claim', 'insight'] : undefined,
+      foreshadow: atomFilter.value === 'foreshadow' ? 'dangling' : undefined,
       documentId: atomDocFilter.value || undefined,
     })
     if (gen !== atomsGen) return // 过期响应丢弃
@@ -1140,6 +1439,27 @@ async function refresh(): Promise<void> {
       consolidateSummary.value = csRes.data.mergedGroups > 0 ? { mergedGroups: csRes.data.mergedGroups, supersededAtoms: csRes.data.supersededAtoms } : null
       consolidateRunning.value = !!csRes.data.running
       if (consolidateRunning.value) startConsolidatePoll()
+    }
+  } catch {
+    /* 旧宿主无此通道：忽略 */
+  }
+  // 视角卡列表（G1；通道缺失不拖垮面板主数据）
+  try {
+    await fetchLenses()
+  } catch {
+    /* 旧宿主无此通道：忽略 */
+  }
+  // 伏笔扫描进行中状态同步（G3）
+  try {
+    const fsRes = await client.foreshadowStatus(props.kbId)
+    if (fsRes.success && fsRes.data) {
+      foreshadowProgress.value = fsRes.data
+      const fsLast = fsRes.data.last
+      if (!fsRes.data.running && fsLast?.ok && fsLast.created > 0) {
+        foreshadowSummary.value = { linksProposed: fsLast.linksProposed, created: fsLast.created }
+      }
+      foreshadowRunning.value = !!fsRes.data.running
+      if (foreshadowRunning.value) startForeshadowPoll()
     }
   } catch {
     /* 旧宿主无此通道：忽略 */
