@@ -115,7 +115,8 @@ hint 约定「找什么 + 怎么组织」，结构卡的三段式直接写进 hi
 |---|---|
 | `kb-knowledge-edge.entity.ts` | `KbEdgeRelation` 增 `'sets-up'`（源=伏笔论断/承诺，目标=回收论断/兑现）；唯一键复用 `(sourceKind,sourceId,relation,targetKind,targetId)`，零 DDL 变更 |
 | 候选池 | P1 已产出的 `open-question` 论断（schema 现支持该 type）——前置过滤：仅「具备承诺形态」（具体异物/异常行为/未解事件）者进候选 |
-| 扫描器 | 新增 `foreshadow-scan.service.ts`（独立于 distill，避免 P-4 聚类职责膨胀）：输入=该书悬念论断（时序）+ 候选回收论断，P-8 单次调用输出 sets-up 边提案（带 evidence） |
+| 扫描器 | 新增 `foreshadow-scan.service.ts`（独立于 distill，避免 P-4 聚类职责膨胀）：输入=该书悬念论断（时序）+ 候选回收论断，P-8 单次调用输出 sets-up 边提案（带 evidence）；**章号随候选进 prompt，程序侧强制「payoff 章序严格晚于 setup」**（缺章锚一律不连——方向正确性的最终防线，实现评审修复） |
+| 增量语义 | **已有出边 sets-up 的悬念视为已回收，不再进扫描**——与「未回收伏笔」视图同一判定，扫描后悬空集合单调收缩（实现评审修复） |
 | prompt | `prompts/index.ts` 增 `FORESHADOW_SYSTEM`：判例写死「因果相邻=leads-to（已有边，不重复产）；呼应不相邻=sets-up」 |
 | 触发与台账 | **仅手动触发**（`kb:brain:foreshadow-run` + `foreshadow-status`，照 consolidate/cleanup 的 fire-and-forget 动线）。review 修正：原设计「metabolize 周期顺带」取消——cron 自动跑 LLM 扫描需要独立的成本核算与闸门，后置 |
 | 治理 | confidence 压低、`verified=0` 进人审；批准置 1。**按候选生成器验收，不按自动连线正确率验收** |

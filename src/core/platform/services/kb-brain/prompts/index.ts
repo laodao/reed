@@ -192,26 +192,27 @@ export function buildCharacterPatternUser(input: { statements: Array<{ statement
 
 /* ==================== P-8 FORESHADOW（伏笔扫描：埋设-回收边提案） ==================== */
 
-export const FORESHADOW_SYSTEM = `你是叙事结构研究员。SETUPS 是已编号的悬念/未交代问题（伏笔候选），PAYOFFS 是同一本书后文的知识论断（已编号）。找出「埋设-回收」对：某条悬念在后文被兑现、解答或揭底。
+export const FORESHADOW_SYSTEM = `你是叙事结构研究员。SETUPS 是已编号的悬念/未交代问题（伏笔候选，括号内是其所在章号），PAYOFFS 是同一本书的知识论断（已编号，括号内是章号）。找出「埋设-回收」对：某条悬念在其后章节被兑现、解答或揭底。
 
 判据（全部满足才算一对）：
 - 回收与埋设指向同一具体对象（同一异物/同一事件/同一身份疑问），不是泛泛的主题相关；
-- payoff 明确解答或兑现了悬念的内容（揭示来历/揭晓身份/兑现威胁）——仅复述或延伸悬念本身不算。
+- payoff 明确解答或兑现了悬念的内容（揭示来历/揭晓身份/兑现威胁）——仅复述或延伸悬念本身不算；
+- 方向必须成立：payoff 的章号必须大于 setup 的章号（同章或更早不构成伏笔——程序会复核，不必报）。
 
 判例：
-- setup「古剑的来历未交代」 + payoff「古剑为上古魔物残魂所铸」 → 构成回收
-- setup「某角色投敌动机不明」 + payoff「该角色实力冠绝同辈」 → 不构成（未解答动机）
-- setup「神秘铁牌的用途」 + payoff「铁牌是开启秘境的信物」 → 构成回收
+- setup「古剑的来历未交代（第1章）」 + payoff「古剑为上古魔物残魂所铸（第12章）」 → 构成回收
+- setup「某角色投敌动机不明（第5章）」 + payoff「该角色实力冠绝同辈（第9章）」 → 不构成（未解答动机）
+- setup「神秘铁牌的用途（第3章）」 + payoff「铁牌是开启秘境的信物（第2章）」 → 不构成（方向反了）
 
 输出 JSON：{ "links": [{ "setup": 编号, "payoff": 编号, "evidence": "为什么构成回收（一句话）" }] }
 没有可确认的回收输出空数组。只输出 JSON。`
 
 export function buildForeshadowUser(input: {
-  setups: Array<{ idx: number; statement: string }>
-  payoffs: Array<{ idx: number; statement: string }>
+  setups: Array<{ idx: number; statement: string; chapterNo: number }>
+  payoffs: Array<{ idx: number; statement: string; chapterNo: number }>
 }): string {
-  const fmt = (rows: Array<{ idx: number; statement: string }>): string =>
-    rows.map((r) => `[${r.idx}] ${r.statement}`).join('\n')
+  const fmt = (rows: Array<{ idx: number; statement: string; chapterNo: number }>): string =>
+    rows.map((r) => `[${r.idx}]（第${r.chapterNo}章）${r.statement}`).join('\n')
   return `SETUPS（悬念）:\n${fmt(input.setups)}\n\nPAYOFFS（后文论断）:\n${fmt(input.payoffs)}`
 }
 
