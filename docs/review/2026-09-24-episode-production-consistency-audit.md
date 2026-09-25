@@ -183,3 +183,19 @@
 顺带修复：M4（重复 dialogueIds 键，typecheck 红）；adapter-factory capabilities 改 merge 语义；修复在途 A3 工作遗留的 5 个测试 fixture。
 
 未修（第二/三批，按优先级排期）：S3（dlg_ id 撞主键）、M1（cogen 删插同事务）、M2（旧单场景路径删旧）、M3（String(undefined) 致 cogen 必败——建议第二批最优先）、E1、V3、D1-D3、X1-X4。终审 deferred minor 分诊见 .superpowers/sdd/plan/progress.md 与终审报告。
+
+## 七、第二批复修状态（2026-09-25 更新）
+
+第二批问题已按 `tasks/2026-09-25-ep-consistency-fixes-batch2/plan.md` 全部修复（6 个任务，每个均经独立评审，终审「可合并」）：
+
+| 问题 | 修复内容 | 状态 |
+|---|---|---|
+| M3 无 id 老对白致 cogen 必败 | cogen 生成前 backfillDialogueIds 回填真实对白 id（JSON+桥接行同事务）；dialogueDisplayId 纯防御；expected hoist | ✅ |
+| S3 dlg_/act_ id 撞主键 | 新增公共 ref-id-reassign.ts，写库前整批重发，JSON 列与桥接表同源 | ✅ |
+| M1 cogen 删插不同事务 | replaceSceneStoryboards 单事务（cleanup+插分镜+links），失败整体回滚 | ✅ |
+| M2 旧单场景路径不删旧分镜 | 删旧建新事务化 + 空数组守卫（单场景报错保留/批量 skippedScenes） | ✅ |
+| S4 剧本行更新在事务外 | 新增 script-scene-rebuild.service.ts：剧本 upsert+级联+删建单事务 | ✅ |
+| S5 agent 路径丢防线 | agent generate_script/split_scenes 与 handler 共用同一 service；状态收敛 advance+regress | ✅ |
+| E1 事务内删磁盘文件 | keyframe-cleanup ALS 待删收集器，7 个调用点接线，提交后删除，漏接 warn 自检 | ✅ |
+
+未修（第三批，建议排期）：rewriteSceneWithBindings 撞号残留（S3 同型，S-06 路径）、批量路径删插事务化 + insertStoryboardIn 公共 helper、旧路径对白桥接行补齐与失败语义统一、D1-D3（字幕时间轴）、V3（agent 批量视频走 assetRef）、X1-X4 等。

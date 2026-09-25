@@ -24,6 +24,7 @@ vi.mock('@core/packs/episode-production/services/story-to-video-ai.service', () 
 
 let ds: DataSource
 let storyboards: StoryboardRepository
+let mockScenes: Array<{ id: string; episodeScriptId: string; characters: unknown[] }>
 
 vi.mock('@core/database/database-manager.interface', () => ({
   getCoreDatabaseManager: () => ({
@@ -35,9 +36,7 @@ vi.mock('@core/database/database-manager.interface', () => ({
     },
     get sceneScripts() {
       return {
-        getByEpisodeScriptId: async () => [
-          { id: 'scene1', episodeScriptId: 'script1', characters: [] },
-        ],
+        getByEpisodeScriptId: async () => mockScenes,
       }
     },
     get episodeScripts() {
@@ -148,6 +147,7 @@ describe('storyboard_dialogue_links 维护闭环', () => {
     ds = await buildDb()
     storyboards = new StoryboardRepository(ds)
     generateStoryboardsMock.mockReset()
+    mockScenes = [{ id: 'scene1', episodeScriptId: 'script1', characters: [] }]
     registerStoryboardHandlers()
   })
 
@@ -175,6 +175,46 @@ describe('storyboard_dialogue_links 维护闭环', () => {
     expect(links1.map((l) => l.sort_order)).toEqual([0, 1])
     const links2 = await linksOf(created[1].id)
     expect(links2.map((l) => l.dialogue_id)).toEqual(['d3'])
+  })
+
+  it('M2 修复轮：批量路径单场景空结果 → 跳过删建保留旧分镜并标注 skippedScenes，其余场景正常', async () => {
+    await seedDialogues(['d1', 'd2', 'd3'])
+    // scene1 预置旧分镜 + 旧 links（AI 将返回空结果，应完整保留）
+    await seedStoryboard('sb_old_1', ['d1'])
+    await rebuildStoryboardDialogueLinks(ds, { id: 'sb_old_1', dialogueIds: ['d1'] })
+    mockScenes = [
+      { id: 'scene1', episodeScriptId: 'script1', characters: [] },
+      { id: 'scene2', episodeScriptId: 'script1', characters: [] },
+    ]
+    generateStoryboardsMock.mockResolvedValue(
+      new Map([
+        ['scene1', { storyboards: [] }],
+        ['scene2', { storyboards: [aiShot(['d2', 'd3'])] }],
+      ]),
+    )
+
+    const res = (await invokeIpc('ep:generate-storyboards', ['script1'])) as Resp<{
+      storyboards: Array<{ id: string; sceneScriptId: string }>
+      skippedScenes: string[]
+    }>
+    // 单场景空结果不让整批失败
+    expect(res.success).toBe(true)
+    expect(res.data!.skippedScenes).toEqual(['scene1'])
+    // 只有 scene2 的新分镜入结果
+    expect(res.data!.storyboards).toHaveLength(1)
+    expect(res.data!.storyboards[0].sceneScriptId).toBe('scene2')
+
+    // scene1 旧分镜与旧 links 完整保留（未删建）
+    const scene1Boards = await ds.getRepository(StoryboardEntity).find({
+      where: { sceneScriptId: 'scene1' },
+    })
+    expect(scene1Boards).toHaveLength(1)
+    expect(scene1Boards[0].id).toBe('sb_old_1')
+    expect((await linksOf('sb_old_1')).map((l) => l.dialogue_id)).toEqual(['d1'])
+
+    // scene2 新分镜 links 正常落库
+    const scene2Links = await linksOf(res.data!.storyboards[0].id)
+    expect(scene2Links.map((l) => l.dialogue_id)).toEqual(['d2', 'd3'])
   })
 
   it('C2：update-storyboard 改 dialogueIds 后 links 同步', async () => {

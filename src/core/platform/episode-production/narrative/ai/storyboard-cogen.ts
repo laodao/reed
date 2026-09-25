@@ -87,6 +87,21 @@ const COGEN_SYSTEM_PROMPT =
   '你是一位专业的影视导演、分镜师兼美术设定师。请严格按照 JSON 格式输出，不要添加任何额外的文字说明。'
 
 /**
+ * 对白在 prompt / 校验中的展示 id（一致性修复 M3）：
+ * 有真实 id 用真实 id；无 id 老对白合成稳定 id `dlg_noid_${index}`（index 为场景内下标），
+ * 前缀与真实 id（dlg_<时间戳>_<序号> / AI 给的 dlg_<n>）不会冲突。
+ * prompt 渲染与 expectedDialogueIds 必须经本函数取同一口径，否则全覆盖校验会误报。
+ * 注：合成 id 只是防御兜底——StoryboardCogenService.backfillDialogueIds 会在生成前
+ * 为无 id 对白回填真实 id 并落库，正常路径不会走到 `dlg_noid_` 分支
+ * （合成 id 没有 scene_dialogues 行，若真落 storyboard_dialogue_links 会触发 FK 失败）。
+ */
+export function dialogueDisplayId(dialogue: { id?: unknown }, index: number): string {
+  return typeof dialogue.id === 'string' && dialogue.id.length > 0
+    ? dialogue.id
+    : `dlg_noid_${index}`
+}
+
+/**
  * 联合生成提示词（按场景）。
  *
  * 结构：
@@ -124,7 +139,7 @@ export function buildCogenPrompt(
 旁白: ${scene.narration || '无'}
 
 对话:
-${(scene.dialogues ?? []).map((d) => `- ${d.id} · ${d.characterName}: "${d.text}" (${d.emotion || '普通'})`).join('\n') || '（无）'}
+${(scene.dialogues ?? []).map((d, i) => `- ${dialogueDisplayId(d, i)} · ${d.characterName}: "${d.text}" (${d.emotion || '普通'})`).join('\n') || '（无）'}
 
 动作:
 ${(scene.actions ?? []).map((a) => `- ${a.description}`).join('\n') || '（无）'}
@@ -582,6 +597,8 @@ export async function generateCogenForScene(
   modelId: string,
 ): Promise<CogenOutput> {
   const prompt = buildCogenPrompt(scene, existingAssets)
+  // 对白 id 口径（M3）：prompt 渲染与本数组共用 dialogueDisplayId，初次校验与纠错重试复用同一数组
+  const expectedDialogueIds = (scene.dialogues ?? []).map((d, i) => dialogueDisplayId(d, i))
 
   let response = await callAI(prompt, COGEN_SYSTEM_PROMPT, 16000, providerConfigId, modelId)
   if (isJsonTruncated(response)) {
@@ -596,7 +613,7 @@ export async function generateCogenForScene(
   }
 
   let parsed = tryParse(response)
-  let errors = parsed === null ? ['无法解析 AI 响应为 JSON 格式'] : validateCogenOutput(parsed, existingAssets, (scene.dialogues ?? []).map((d: any) => String(d.id)).filter(Boolean))
+  let errors = parsed === null ? ['无法解析 AI 响应为 JSON 格式'] : validateCogenOutput(parsed, existingAssets, expectedDialogueIds)
 
   // D4-1：纠错重试最多 2 次（约束 9 服饰校验落地后，弱模型一次纠正常常改不干净；
   // 每次把最新错误清单喂回，仍失败才抛错——旧分镜保留，宁缺毋滥）
@@ -614,7 +631,7 @@ export async function generateCogenForScene(
       modelId,
     )
     parsed = tryParse(response)
-    errors = parsed === null ? ['无法解析 AI 响应为 JSON 格式'] : validateCogenOutput(parsed, existingAssets, (scene.dialogues ?? []).map((d: any) => String(d.id)).filter(Boolean))
+    errors = parsed === null ? ['无法解析 AI 响应为 JSON 格式'] : validateCogenOutput(parsed, existingAssets, expectedDialogueIds)
   }
 
   if (errors.length > 0 || parsed === null) {

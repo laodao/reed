@@ -25,6 +25,7 @@ import { CharacterBindingEntity } from '@core/database/entities/episode-producti
 import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
 import { getCurrentUserId } from '@core/context/user-context'
 import { rebuildStoryboardDialogueLinks } from './storyboard-dialogue-links'
+import { reassignRefIds } from './ref-id-reassign'
 
 /**
  * 场景绑定写入器
@@ -69,6 +70,11 @@ export class SceneBindingWriter {
   ): Promise<SceneScript[]> {
     if (scenes.length === 0) return []
 
+    // S3 修复：写库前对本批次全部场景的 dlg_/act_ id 统一重发 —— AI 每场从
+    // dlg_1 编号、兜底生成又是每场独立计数，信任之必然跨场景撞主键，save 变
+    // upsert 静默覆盖前一场。JSON 列与桥接表写入同一份重发后的对象，天然一致。
+    const scenesToWrite = reassignRefIds(scenes)
+
     const userId = getCurrentUserId()
     const userScope = userId ? { userId } : {}
     // 读/改路径的租户条件：与写入侧 userScope 同语义（Web 按当前用户，
@@ -82,7 +88,7 @@ export class SceneBindingWriter {
       const result: SceneScript[] = []
       const now = new Date()
 
-      for (const scene of scenes) {
+      for (const scene of scenesToWrite) {
         // 1. 创建 scene_scripts 记录
         const sceneId = this.generateSceneId()
         const sceneEntity = sceneRepo.create({
@@ -164,7 +170,7 @@ export class SceneBindingWriter {
       }
 
       // 5-6. 地点 baseDescription / 角色 overrideOutfit 兜底回填
-      await this.syncBindingSideEffects(manager, scenes, readScope, now)
+      await this.syncBindingSideEffects(manager, scenesToWrite, readScope, now)
 
       return result
     }

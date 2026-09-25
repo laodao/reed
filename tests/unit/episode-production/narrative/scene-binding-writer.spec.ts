@@ -166,3 +166,90 @@ describe('SceneBindingWriter.rewriteSceneWithBindings links 重建', () => {
     expect(links.map((l) => l.id)).not.toContain('old_link_2')
   })
 })
+
+/**
+ * S3（2026-09-24 审计）：createScenesWithBindings 写库前对整批场景统一重发
+ * dlg_/act_ id —— AI 每场从 dlg_1 编号，信任之必然跨场景撞主键，save 变
+ * upsert 静默覆盖前一场；JSON 列与桥接表必须写入同一份重发后的 id。
+ */
+describe('SceneBindingWriter.createScenesWithBindings dlg_/act_ id 重发', () => {
+  beforeEach(async () => {
+    ds = await buildDb()
+  })
+
+  afterEach(async () => {
+    if (ds.isInitialized) await ds.destroy()
+  })
+
+  function makeScene(sceneNumber: number, name: string): GeneratedScene {
+    return {
+      sceneNumber,
+      location: '茶馆',
+      locationBindingId: null,
+      locationType: 'interior',
+      timeOfDay: 'morning',
+      sceneDescription: `第 ${sceneNumber} 场`,
+      mood: '安静',
+      characters: [],
+      originalText: '',
+      narration: '',
+      dialogues: [
+        { id: 'dlg_1', characterBindingId: null, characterId: 'c1', characterName: name, text: `${name}台词一` },
+        { id: 'dlg_2', characterBindingId: null, characterId: 'c1', characterName: name, text: `${name}台词二` },
+      ],
+      actions: [
+        { id: 'act_1', characterBindingId: null, characterId: 'c1', description: `${name}动作`, timing: 'during' },
+      ],
+    }
+  }
+
+  it('多场景 AI 重号输入：桥接表行数完整（无覆盖丢失）、id 全局唯一', async () => {
+    await SceneBindingWriter.createScenesWithBindings(ds, 'es1', [
+      makeScene(1, '张三'),
+      makeScene(2, '李四'),
+      makeScene(3, '王五'),
+    ])
+
+    const dialogues = await ds.getRepository(SceneDialogueEntity).find()
+    const actions = await ds.getRepository(SceneActionEntity).find()
+
+    // 3 场 × 2 对白 / 1 动作，若撞主键 upsert 会静默丢行
+    expect(dialogues).toHaveLength(6)
+    expect(actions).toHaveLength(3)
+    expect(new Set(dialogues.map((d) => d.id)).size).toBe(6)
+    expect(new Set(actions.map((a) => a.id)).size).toBe(3)
+    // 每场两行对白都还在（被覆盖时只剩最后一场的文本）
+    expect(dialogues.map((d) => d.text).sort()).toEqual(
+      ['张三台词一', '张三台词二', '李四台词一', '李四台词二', '王五台词一', '王五台词二'].sort(),
+    )
+  })
+
+  it('scene_scripts JSON 列 id 与桥接表 id 一致', async () => {
+    const created = await SceneBindingWriter.createScenesWithBindings(ds, 'es1', [
+      makeScene(1, '张三'),
+      makeScene(2, '李四'),
+    ])
+
+    for (const scene of created) {
+      const bridgeDialogues = await ds.getRepository(SceneDialogueEntity).find({
+        where: { sceneScriptId: scene.id },
+        order: { sortOrder: 'ASC' },
+      })
+      const bridgeActions = await ds.getRepository(SceneActionEntity).find({
+        where: { sceneScriptId: scene.id },
+        order: { sortOrder: 'ASC' },
+      })
+      const row = await ds.getRepository(SceneScriptEntity).findOne({
+        where: { id: scene.id },
+      })
+      const jsonDialogues = (row?.dialogues ?? []) as Array<{ id: string }>
+      const jsonActions = (row?.actions ?? []) as Array<{ id: string }>
+
+      expect(jsonDialogues.map((d) => d.id)).toEqual(bridgeDialogues.map((d) => d.id))
+      expect(jsonActions.map((a) => a.id)).toEqual(bridgeActions.map((a) => a.id))
+      // 返回 DTO 的 id 也与落库 id 一致
+      expect(scene.dialogues.map((d) => d.id)).toEqual(bridgeDialogues.map((d) => d.id))
+      expect(scene.actions.map((a) => a.id)).toEqual(bridgeActions.map((a) => a.id))
+    }
+  })
+})

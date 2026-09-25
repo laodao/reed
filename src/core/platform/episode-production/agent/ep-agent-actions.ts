@@ -15,7 +15,10 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import { getCurrentUserId } from '@core/context/user-context'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { buildAssetRosterForProject } from '@core/platform/episode-production/narrative/asset-roster-builder'
-import { SceneBindingWriter } from '@core/platform/episode-production/narrative/scene-binding-writer'
+import {
+  rebuildScenesForScript,
+  upsertScriptAndRebuildScenes,
+} from '@core/platform/episode-production/narrative/services/script-scene-rebuild.service'
 import { EpisodeScriptGenerator } from '@core/platform/episode-production/narrative/ai/script-generator'
 import { StoryboardCogenService } from '@core/platform/episode-production/narrative/services/storyboard-cogen.service'
 import { CharacterAssetService } from '@core/platform/episode-production/assets/services/character-asset.service'
@@ -249,41 +252,15 @@ async function executeGenerateScript(
     modelId,
   )
 
-  // ④ 剧本 upsert
-  const existingScript = await m.episodeScripts?.getByEpisodeId(episode.id)
-  let script: any
-  if (existingScript) {
-    script = await m.episodeScripts?.update(existingScript.id, {
-      synopsis: result.synopsis,
-      scriptContent: result.scriptContent,
-      scriptFormat: 'standard',
-      status: 'reviewing',
-    })
-  } else {
-    script = await m.episodeScripts?.create({
-      projectId: episode.projectId,
-      episodeId: episode.id,
-      outlineId: episode.outlineId,
-      synopsis: result.synopsis,
-      scriptContent: result.scriptContent,
-      scriptFormat: 'standard',
-    })
-    script = await m.episodeScripts?.update(script.id, { status: 'reviewing' })
-    await m.videoEpisodes?.update(episode.id, { scriptId: script.id })
-  }
-
-  // ⑤ 删旧场景 → ⑥ 写新场景+桥接表
-  if (existingScript) await m.sceneScripts?.deleteByEpisodeScriptId(existingScript.id)
-  await SceneBindingWriter.createScenesWithBindings(
+  // ④–⑦ S5（2026-09-25 一致性修复第二批）：剧本 upsert + 级联删旧分镜 +
+  // 删旧场景建新场景 + 状态收敛 scripting，与 handler 同公共 service 单事务——
+  // 原实现 deleteByEpisodeScriptId 裸删（旧分镜/关键帧成孤儿）、删建非事务、
+  // 状态晚于 scripting 不回退
+  const { scriptId } = await upsertScriptAndRebuildScenes(
     m.dataSource,
-    script.id,
-    result.scenes,
+    { id: episode.id, projectId: episode.projectId, outlineId: episode.outlineId },
+    { synopsis: result.synopsis, scriptContent: result.scriptContent, scenes: result.scenes },
   )
-
-  // ⑦ 阶段推进
-  if (episode.status === 'pending' || episode.status === 'asset_prep') {
-    await m.videoEpisodes?.update(episode.id, { status: 'scripting' })
-  }
 
   const changed: EpAgentPanelSection[] = ['script', 'scenes']
   return {
@@ -292,7 +269,7 @@ async function executeGenerateScript(
     message: `已生成剧本：梗概 ${result.synopsis.length} 字、正文 ${result.scriptContent.length} 字、场景 ${result.scenes.length} 场`,
     changed,
     data: {
-      scriptId: script.id,
+      scriptId,
       synopsis: result.synopsis,
       scenesCount: result.scenes.length,
     },
@@ -349,9 +326,10 @@ async function executeSplitScenes(ctx: EpAgentExecutionContext): Promise<EpAgent
     modelId,
   )
 
-  await m.sceneScripts?.deleteByEpisodeScriptId(scriptId)
-  const sceneRecords = await SceneBindingWriter.createScenesWithBindings(
+  // S5：删旧场景（级联清旧分镜）+ 建新场景单事务 + 状态回退，与 handler 同公共 service
+  const sceneRecords = await rebuildScenesForScript(
     m.dataSource,
+    episode.id,
     scriptId,
     generatedScenes,
   )

@@ -15,6 +15,11 @@
  *
  * dbOrTx 传 DataSource 时整体包一层事务（与 script.handler 删场景重建同事务
  * 先例一致）；传事务内 EntityManager 时并入 caller 事务。
+ *
+ * 一致性修复第二批 E1（2026-09-25）：磁盘文件在事务提交成功后删除——
+ * DataSource 分支自带 withPendingKeyframeFileDeletions 收集器；EntityManager
+ * 分支要求 caller 在自己的事务外包同一收集器（已接线：replaceSceneStoryboards /
+ * handleGenerateStoryboard / script-scene-rebuild），回滚时待删清单整批丢弃。
  */
 
 import { DataSource, In, type EntityManager } from 'typeorm'
@@ -24,7 +29,9 @@ import { StoryboardKeyframeEntity } from '@core/database/entities/episode-produc
 import { EpVideoSegmentEntity } from '@core/database/entities/episode-production/video-segment.entity'
 import {
   deleteKeyframeWithAsset,
+  hasPendingKeyframeFileDeletionScope,
   userScopeWhere,
+  withPendingKeyframeFileDeletions,
 } from '@core/platform/episode-production/render/keyframe/keyframe-cleanup'
 
 export interface StoryboardCleanupSummary {
@@ -45,7 +52,20 @@ export async function cleanupStoryboards(
   const ids = [...new Set(storyboardIds)].filter(Boolean)
   if (ids.length === 0) return emptySummary()
   if (dbOrTx instanceof DataSource) {
-    return dbOrTx.transaction(manager => execCleanup(manager, ids))
+    // E1：收集器包住自包事务——提交成功后统一删文件，回滚则文件随 DB 行一并保留
+    return withPendingKeyframeFileDeletions(() =>
+      dbOrTx.transaction(manager => execCleanup(manager, ids)),
+    )
+  }
+  if (!hasPendingKeyframeFileDeletionScope()) {
+    // E1 自检：EntityManager 模式但调用方未包收集器——磁盘文件将退回立即删除
+    // （事务回滚会留悬空 imagePath）。新调用方请在事务外包
+    // withPendingKeyframeFileDeletions。warn 不阻断，兜底行为与修复前一致。
+    console.warn(
+      '[storyboard-cleanup] EntityManager 模式但无活跃文件删除收集器：' +
+        '关键帧磁盘文件将立即删除，事务回滚会留下悬空 imagePath。' +
+        '请在调用方事务外包 withPendingKeyframeFileDeletions（keyframe-cleanup.ts）',
+    )
   }
   return execCleanup(dbOrTx, ids)
 }
