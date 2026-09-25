@@ -539,6 +539,40 @@ export function isJsonTruncated(response: string): boolean {
 }
 
 /**
+ * 拼接续写响应（callAIWithContinue 用，导出供单测）：
+ * - 续写响应从 `{` 起（可带空白/代码围栏前缀）且包含已输出内容的开头 → 模型在从头
+ *   完整重输出，以续写全量为准，不再追加（旧实现此处把完整重输出又拼一份，
+ *   产出两份 JSON 必解析失败）
+ * - 续写开头重复了已输出内容的结尾 → 按最大重叠截断后拼接
+ * - 无重叠 → 原样直接拼接（截断点可落在任意字符——续写内容可能以字符串中段开头，
+ *   不能按首个 `{` 裁剪前缀，也不能插入额外空白）
+ */
+export function mergeContinuationResponse(fullResponse: string, continueResponse: string): string {
+  const prev = fullResponse.trimEnd()
+  const prevStart = prev.indexOf('{')
+  const jsonSoFar = prevStart !== -1 ? prev.substring(prevStart) : prev
+
+  const restartMatch = continueResponse.match(/^\s*(?:```(?:json)?\s*)?(\{[\s\S]*)$/)
+  if (restartMatch) {
+    const restartJson = restartMatch[1].replace(/```\s*$/, '')
+    const compact = (s: string) => s.replace(/\s+/g, '')
+    const headProbe = compact(jsonSoFar).substring(0, 50)
+    if (headProbe && compact(restartJson).startsWith(headProbe)) {
+      return (prevStart !== -1 ? prev.substring(0, prevStart) : '') + restartJson
+    }
+  }
+
+  const maxOverlap = Math.min(jsonSoFar.length, continueResponse.length, 1000)
+  for (let k = maxOverlap; k > 0; k--) {
+    if (jsonSoFar.endsWith(continueResponse.substring(0, k))) {
+      return prev + continueResponse.substring(k)
+    }
+  }
+
+  return prev + continueResponse
+}
+
+/**
  * 调用 AI 并支持续写（当输出被截断时自动继续）
  * @param prompt 用户提示词
  * @param systemPrompt 系统提示词
@@ -546,6 +580,7 @@ export function isJsonTruncated(response: string): boolean {
  * @param providerConfigId 提供商配置 ID
  * @param modelId 模型 ID
  * @param maxContinues 最大续写次数（默认 2）
+ * @param opts 透传 callAI（temperature 等）
  * @returns AI 响应内容（可能经过拼接）
  */
 export async function callAIWithContinue(
@@ -554,9 +589,10 @@ export async function callAIWithContinue(
   maxTokens: number = 8192,
   providerConfigId?: string,
   modelId?: string,
-  maxContinues: number = 2
+  maxContinues: number = 2,
+  opts?: { temperature?: number; projectId?: string }
 ): Promise<string> {
-  let fullResponse = await callAI(prompt, systemPrompt, maxTokens, providerConfigId, modelId)
+  let fullResponse = await callAI(prompt, systemPrompt, maxTokens, providerConfigId, modelId, opts)
 
   let continueCount = 0
   while (continueCount < maxContinues && isJsonTruncated(fullResponse)) {
@@ -574,24 +610,9 @@ ${jsonSoFar}
 
 请直接继续输出剩余的 JSON 内容，不要重复已经输出的部分，不要添加任何解释说明。`
 
-    const continueResponse = await callAI(continuePrompt, systemPrompt, maxTokens, providerConfigId, modelId)
+    const continueResponse = await callAI(continuePrompt, systemPrompt, maxTokens, providerConfigId, modelId, opts)
 
-    // 拼接：去掉可能的重复开头
-    const continueStart = continueResponse.indexOf('{')
-    if (continueStart !== -1) {
-      // 检查续写内容是否重复了开头
-      const continueJson = continueResponse.substring(continueStart)
-      // 如果续写内容开头和已输出内容开头重复，尝试智能拼接
-      if (jsonSoFar.startsWith(continueJson.substring(0, 50))) {
-        // 重复了，只取续写的新部分
-        fullResponse = fullResponse.trimEnd() + '\n' + continueJson
-      } else {
-        // 没重复，直接拼接
-        fullResponse = fullResponse.trimEnd() + continueJson
-      }
-    } else {
-      fullResponse = fullResponse.trimEnd() + continueResponse
-    }
+    fullResponse = mergeContinuationResponse(fullResponse, continueResponse)
 
     continueCount++
   }

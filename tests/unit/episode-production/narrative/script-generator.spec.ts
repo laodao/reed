@@ -51,6 +51,19 @@ describe('script-generator __test helpers', () => {
     expect(__test.lookupBindingByName(ROSTER.items, undefined)).toBeNull()
   })
 
+  it('lookupBindingByName: 归一化口径与 binding-name-utils 统一（书名号/全角空格/大小写命中）', () => {
+    const entries = [
+      { bindingId: 'lb_manor', name: '雪麓山庄' },
+      { bindingId: 'cb_shen', name: '沈　云萝' },
+      { bindingId: 'cb_sword', name: 'QingYan' },
+    ]
+    expect(__test.lookupBindingByName(entries, '《雪麓山庄》')).toBe('lb_manor')
+    expect(__test.lookupBindingByName(entries, '雪麓　山庄')).toBe('lb_manor')
+    expect(__test.lookupBindingByName(entries, '沈云萝')).toBe('cb_shen')
+    expect(__test.lookupBindingByName(entries, '沈 云萝')).toBe('cb_shen')
+    expect(__test.lookupBindingByName(entries, 'qingyan')).toBe('cb_sword')
+  })
+
   it('resolveBindingId: AI 给的 ID 命中 roster → 用 AI 的', () => {
     expect(
       __test.resolveBindingId(ROSTER.characters, 'cb_zhangsan', '张三'),

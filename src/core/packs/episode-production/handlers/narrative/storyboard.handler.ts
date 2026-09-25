@@ -14,6 +14,7 @@ import { StoryToVideoAIService } from '@core/packs/episode-production/services/s
 import { StoryboardService, normalizeShotNumbers, collectUnboundCharacters } from '@core/platform/episode-production/narrative/services/storyboard.service'
 import { StoryboardCogenService } from '@core/platform/episode-production/narrative/services/storyboard-cogen.service'
 import { cleanupStoryboards } from '@core/platform/episode-production/narrative/storyboard-cleanup.service'
+import { rebuildStoryboardDialogueLinks } from '@core/platform/episode-production/narrative/storyboard-dialogue-links'
 
 export function registerStoryboardHandlers(): void {
   // ==================== 分镜管理 ====================
@@ -205,9 +206,23 @@ async function handleUpdateStoryboard(
       return { success: false, error: '数据库未初始化' }
     }
 
+    // C2：仅当本次保存动了 dialogueIds 时才需要同步 links（先取旧值比对，未变不重建）
+    const dialogueIdsTouched = data.dialogueIds !== undefined
+    const before = dialogueIdsTouched ? await db.storyboards.getById(storyboardId) : null
+
     const storyboard = await db.storyboards.update(storyboardId, data)
     if (!storyboard) {
       return { success: false, error: '分镜不存在' }
+    }
+
+    if (
+      dialogueIdsTouched &&
+      db.dataSource &&
+      JSON.stringify(before?.dialogueIds ?? []) !== JSON.stringify(storyboard.dialogueIds ?? [])
+    ) {
+      await rebuildStoryboardDialogueLinks(db.dataSource, storyboard).catch((e) => {
+        console.error('[handleUpdateStoryboard] 重建对白承接 links 失败:', e)
+      })
     }
 
     return { success: true, data: storyboard }
@@ -282,6 +297,14 @@ async function handleGenerateStoryboard(
         transition: sb.transition
       })
       storyboardRecords.push(storyboard)
+
+      // 一致性修复 v3（A3）：对白承接落库 links（字幕镜头级分配数据源）
+      if (db.dataSource) {
+        await rebuildStoryboardDialogueLinks(db.dataSource, {
+          id: storyboard.id,
+          dialogueIds: sb.dialogueIds,
+        }).catch(() => {})
+      }
     }
 
     // P1-13：单场景分镜生成也推进 episode → storyboarding（与批量路径 :369 一致）
@@ -370,6 +393,12 @@ async function handleGenerateStoryboards(
           transition: sb.transition
         })
         allStoryboards.push(storyboard)
+
+        // 一致性修复 C1：批量路径同样落库对白承接 links（与单场景路径同口径）
+        await rebuildStoryboardDialogueLinks(db.dataSource!, {
+          id: storyboard.id,
+          dialogueIds: sb.dialogueIds,
+        }).catch(() => {})
       }
     }
 

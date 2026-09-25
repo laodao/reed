@@ -5,9 +5,9 @@
  * 编排（按场景串行）：
  *   1. generateCogenForScene：一次 LLM 调用产出「资产清单 + 分镜」（D1），
  *      schema 校验 + 纠错重试 1 次（D4-1）；
- *   2. D2 绑定构造（代码侧，不让模型回填 ID）：按名（standaloneName/overrideName）
- *      匹配项目现有 binding，命中复用；未命中调既有 createStandalone 建绑定
- *      （描述来自响应资产卡）；
+ *   2. D2 绑定构造（代码侧，不让模型回填 ID）：按名归一化匹配项目现有 binding
+ *      （候选名 = getEffectiveData 投影名 + standalone/override/alias/双轨列），
+ *      命中复用；未命中调既有 createStandalone 建绑定（描述来自响应资产卡）；
  *   3. 替换式写分镜：先删该场景旧分镜再插入（与旧「批量生成分镜」一致），
  *      characters[].characterId = binding.id，locationBindingIds/itemBindingIds 填上；
  *   4. 回填 scene.characters[].characterBindingId、scene_characters.character_binding_id、
@@ -88,7 +88,7 @@ export interface CogenProgressEvent {
   error?: string
 }
 
-/** binding 名 → 快照（按 standaloneName/overrideName 索引，跨场景去重的依据） */
+/** binding 名 → 快照（按归一化名字索引，候选名 = getEffectiveData 投影名 + 实体侧 standalone/override/alias/双轨列；跨场景去重的依据） */
 interface BindingSnapshot {
   id: string
   name: string
@@ -334,32 +334,54 @@ export class StoryboardCogenService {
       }
     }
 
+    // 2026-09-24 一致性修复（A2/A4）：名字/描述统一走 getEffectiveData 投影
+    // （linked_lw 的 standaloneName/overrideName 均为 null，旧逻辑直接 continue 跳过，
+    // 导致已有角色被重复 createStandalone）；口径与 asset-roster-builder 一致，
+    // 单条投影失败跳过 + warn，不阻断。索引仍保留实体侧候选名（alias/双轨列）。
     for (const b of await charSvc.listByProject(projectId)) {
-      const primary = b.standaloneName ?? b.overrideName
-      if (!primary) continue
-      addToIndex(charIndex, 'character', characterBindingNames(b), {
-        id: b.id,
-        name: primary,
-        description: b.standaloneDescription ?? b.overrideDescription ?? null,
-      })
+      try {
+        const eff = await charSvc.getEffectiveData(b.id)
+        addToIndex(charIndex, 'character', [eff.name, ...characterBindingNames(b)], {
+          id: b.id,
+          name: eff.name,
+          description: [eff.description, eff.appearance].filter(Boolean).join(' / ') || null,
+        })
+      } catch (e) {
+        console.warn(
+          `[StoryboardCogenService] 角色 binding ${b.id} 投影失败，跳过：`,
+          (e as Error).message,
+        )
+      }
     }
     for (const b of await locSvc.listByProject(projectId)) {
-      const primary = b.standaloneName ?? b.overrideName ?? b.locationName
-      if (!primary) continue
-      addToIndex(locIndex, 'location', locationBindingNames(b), {
-        id: b.id,
-        name: primary,
-        description: b.standaloneDescription ?? b.overrideDescription ?? null,
-      })
+      try {
+        const eff = await locSvc.getEffectiveData(b.id)
+        addToIndex(locIndex, 'location', [eff.name, ...locationBindingNames(b)], {
+          id: b.id,
+          name: eff.name,
+          description: eff.description || null,
+        })
+      } catch (e) {
+        console.warn(
+          `[StoryboardCogenService] 地点 binding ${b.id} 投影失败，跳过：`,
+          (e as Error).message,
+        )
+      }
     }
     for (const b of await itemSvc.listByProject(projectId)) {
-      const primary = b.standaloneName ?? b.overrideName ?? b.itemName
-      if (!primary) continue
-      addToIndex(itemIndex, 'item', itemBindingNames(b), {
-        id: b.id,
-        name: primary,
-        description: b.standaloneDescription ?? b.overrideDescription ?? null,
-      })
+      try {
+        const eff = await itemSvc.getEffectiveData(b.id)
+        addToIndex(itemIndex, 'item', [eff.name, ...itemBindingNames(b)], {
+          id: b.id,
+          name: eff.name,
+          description: eff.description || null,
+        })
+      } catch (e) {
+        console.warn(
+          `[StoryboardCogenService] 物品 binding ${b.id} 投影失败，跳过：`,
+          (e as Error).message,
+        )
+      }
     }
 
     return {
@@ -371,26 +393,37 @@ export class StoryboardCogenService {
       charIndex,
       locIndex,
       itemIndex,
-      buildExistingAssets: () => [
-        ...[...charIndex.values()].map((b) => ({
-          kind: 'character' as const,
-          id: b.id,
-          name: b.name,
-          description: b.description,
-        })),
-        ...[...locIndex.values()].map((b) => ({
-          kind: 'location' as const,
-          id: b.id,
-          name: b.name,
-          description: b.description,
-        })),
-        ...[...itemIndex.values()].map((b) => ({
-          kind: 'item' as const,
-          id: b.id,
-          name: b.name,
-          description: b.description,
-        })),
-      ],
+      buildExistingAssets: () => {
+        // 同一 binding 在索引里挂着多个候选名（alias/双轨列），values() 会重复，按 id 去重
+        const unique = (index: Map<string, BindingSnapshot>): BindingSnapshot[] => {
+          const seen = new Set<string>()
+          return [...index.values()].filter((b) => {
+            if (seen.has(b.id)) return false
+            seen.add(b.id)
+            return true
+          })
+        }
+        return [
+          ...unique(charIndex).map((b) => ({
+            kind: 'character' as const,
+            id: b.id,
+            name: b.name,
+            description: b.description,
+          })),
+          ...unique(locIndex).map((b) => ({
+            kind: 'location' as const,
+            id: b.id,
+            name: b.name,
+            description: b.description,
+          })),
+          ...unique(itemIndex).map((b) => ({
+            kind: 'item' as const,
+            id: b.id,
+            name: b.name,
+            description: b.description,
+          })),
+        ]
+      },
     }
   }
 
@@ -767,7 +800,7 @@ export class StoryboardCogenService {
         subject: shot.subject,
         composition: shot.composition,
         characters,
-        dialogueIds: [],
+        dialogueIds: Array.isArray(shot.dialogueIds) ? shot.dialogueIds.filter(Boolean) : [],
         actionIds: [],
         duration: shot.duration,
         transition: { type: 'cut', duration: 500 },
@@ -778,6 +811,16 @@ export class StoryboardCogenService {
         locationBindingIds: [locationBindingId],
         itemBindingIds,
       })
+
+      // 一致性修复 v3（A3）：对白承接落库 storyboard_dialogue_links（字幕镜头级分配的数据源）
+      for (let i = 0; i < (shot.dialogueIds ?? []).length; i++) {
+        const dlgId = shot.dialogueIds[i]
+        if (!dlgId) continue
+        await this.ds.query(
+          `INSERT OR REPLACE INTO storyboard_dialogue_links (id, storyboard_id, dialogue_id, sort_order) VALUES (?, ?, ?, ?)`,
+          [`sdl_${Math.random().toString(36).slice(2, 12)}`, created.id, String(dlgId), i],
+        )
+      }
     }
   }
 

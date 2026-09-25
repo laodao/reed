@@ -22,7 +22,9 @@ import { SceneActionEntity } from '@core/database/entities/episode-production/sc
 import { ScenePropEntity } from '@core/database/entities/episode-production/scene-prop.entity'
 import { LocationBindingEntity } from '@core/database/entities/episode-production/location-binding.entity'
 import { CharacterBindingEntity } from '@core/database/entities/episode-production/character-binding.entity'
+import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
 import { getCurrentUserId } from '@core/context/user-context'
+import { rebuildStoryboardDialogueLinks } from './storyboard-dialogue-links'
 
 /**
  * 场景绑定写入器
@@ -230,6 +232,17 @@ export class SceneBindingWriter {
       // 3. 按新数据重建 bridge 行 + binding 兜底回填（与批量创建同规则）
       await this.writeSceneChildrenIn(manager, sceneId, userScope, scene)
       await this.syncBindingSideEffects(manager, [scene], readScope, now)
+
+      // C3：删建 scene_dialogues 时 FK CASCADE 已把该场景全部分镜的 links 静默删掉，
+      // 按各分镜 dialogueIds JSON 重建（单分镜失败不阻断整场景重写）
+      const sceneStoryboards = await manager.getRepository(StoryboardEntity).find({
+        where: { sceneScriptId: sceneId, ...readScope } as any,
+      })
+      for (const sb of sceneStoryboards) {
+        await rebuildStoryboardDialogueLinks(manager, sb).catch((e) => {
+          console.warn('[SceneBindingWriter] 重建分镜对白 links 失败:', e)
+        })
+      }
     })
   }
 

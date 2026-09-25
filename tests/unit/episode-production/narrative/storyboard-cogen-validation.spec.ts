@@ -47,6 +47,7 @@ function validOutput(frameDescription: string) {
           { name: '陈舟', position: 'right' },
         ],
         itemNames: [],
+        dialogueIds: [],
       },
       {
         shotType: 'close',
@@ -56,6 +57,7 @@ function validOutput(frameDescription: string) {
         frameDescription: '【场景】船舱。【人物】无人物出镜。【动作】名册页角颤动。【氛围】冷青。',
         characters: [],
         itemNames: [],
+        dialogueIds: [],
       },
     ],
   }
