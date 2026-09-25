@@ -40,6 +40,8 @@ import {
 import { StoryboardCharacterRepository } from '@core/database/repositories/storyboard-character.repository'
 import { ImageAssetRepository } from '@core/database/repositories/image-asset.repository'
 import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
+import { CharacterAssetService } from '@core/platform/episode-production/assets/services/character-asset.service'
+import { normalizeBindingName } from '@core/platform/episode-production/assets/services/binding-name-utils'
 import { ReferenceResolver } from '@core/platform/episode-production/narrative/reference-resolver'
 import {
   planKeyframes,
@@ -1036,14 +1038,15 @@ export class KeyframeGenerationService {
        *
        *   解析每条 entry：
        *     - characterId 优先当 binding.id 直接 resolve
-       *     - resolve 不到时按 standaloneName 反查（兼容 AI 拆分镜直接用名字
-       *       不是 binding.id 的常见情况）
+       *     - resolve 不到时按生效名归一化反查（兼容 AI 拆分镜直接用名字
+       *       不是 binding.id 的常见情况；standalone / linked_lw 双源投影后匹配）
        *     - 都不到 / characterId 空 → 跳过该条（不回退整场）
        *
        *   即使所有 entry 都跳过（characterId 全空），也保持"本分镜无可识别角色"
        *   的事实，不污染 prompt。
        */
       const projectId = await this.resolveProjectIdForScene(scene)
+      let charNameIndex: Map<string, string> | null = null
       for (const raw of sb!.characters as Array<Record<string, unknown>>) {
         const characterId =
           typeof raw?.characterId === 'string' ? raw.characterId : ''
@@ -1051,8 +1054,9 @@ export class KeyframeGenerationService {
 
         let resolved = await this.resolver.resolveCharacter(characterId)
         if (!resolved) {
-          // 按 standaloneName 反查（项目级）
-          const found = await this.findBindingByName(projectId, characterId)
+          // 按生效名归一化反查（项目级；索引惰性建一次，本分镜内复用）
+          if (!charNameIndex) charNameIndex = await this.buildCharacterNameIndex(projectId)
+          const found = await this.findBindingByName(projectId, characterId, charNameIndex)
           if (found) resolved = await this.resolver.resolveCharacter(found)
         }
         if (!resolved) continue
@@ -1550,26 +1554,49 @@ export class KeyframeGenerationService {
   }
 
   /**
-   * Bug B 配套：按 standaloneName 反查 character_binding.id（项目级唯一性弱约束 —
-   * 若同名多条则取第一条）。spec 2026-05-09 ep-redesign · e2e report-shot-1.2.md。
+   * Bug B 配套：按生效名归一化反查 character_binding.id（项目级唯一性弱约束 —
+   * 若同名多条则取最早创建者）。spec 2026-05-09 ep-redesign · e2e report-shot-1.2.md；
+   * 2026-09-24 一致性修复 A3：不再直查 standaloneName 列（linked_lw 该列为 null
+   * 永远反查不到），改为项目 binding 列表经 getEffectiveData 投影生效名后匹配。
    *
    * 调用场景：AI 拆分镜时 storyboard.characters JSON 的 characterId 经常填角色名
    * （如"李墨"/"su_bai"）而非真实 binding.id（cb_xxx）；resolveCharacter 直接传
-   * 名字会找不到，按 standaloneName 反查兜底。
+   * 名字会找不到，按生效名归一化反查兜底。
    */
   private async findBindingByName(
     projectId: string,
     name: string,
+    nameIndex?: Map<string, string>,
   ): Promise<string | null> {
     if (!projectId || !name) return null
-    const { CharacterBindingEntity } = await import(
-      '@core/database/entities/episode-production/character-binding.entity'
-    )
-    const repo = this.ds.getRepository(CharacterBindingEntity)
-    const hit = await repo.findOne({
-      where: { projectId, standaloneName: name } as any,
-    })
-    return hit?.id ?? null
+    const key = normalizeBindingName(name)
+    if (!key) return null
+    const index = nameIndex ?? (await this.buildCharacterNameIndex(projectId))
+    return index.get(key) ?? null
+  }
+
+  /**
+   * 项目内角色"归一化生效名 → bindingId"索引（A3）。
+   * 每条 binding 经 CharacterAssetService.getEffectiveData 取生效名
+   * （standalone 读 standalone_*；linked_lw 走 override → lw 投影），
+   * normalizeBindingName 归一化后建索引；同名多命中取最早创建者
+   * （listByProject 按 created_at 升序，先进入者赢）。
+   */
+  private async buildCharacterNameIndex(projectId: string): Promise<Map<string, string>> {
+    const svc = new CharacterAssetService(this.ds)
+    const bindings = await svc.listByProject(projectId)
+    const index = new Map<string, string>()
+    for (const b of bindings) {
+      let name: string | null = null
+      try {
+        name = (await svc.getEffectiveData(b.id)).name
+      } catch {
+        continue
+      }
+      const key = normalizeBindingName(name)
+      if (key && !index.has(key)) index.set(key, b.id)
+    }
+    return index
   }
 
   /**

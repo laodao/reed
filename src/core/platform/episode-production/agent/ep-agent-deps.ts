@@ -10,6 +10,11 @@ import { CharacterAssetService } from '@core/platform/episode-production/assets/
 import { LocationAssetService } from '@core/platform/episode-production/assets/services/location-asset.service'
 import { ItemAssetService } from '@core/platform/episode-production/assets/services/item-asset.service'
 import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
+import {
+  loadSegmentVideoMap,
+  storyboardHasVideo,
+  type SegmentVideoMap,
+} from '@core/platform/episode-production/services/shot-video-readiness'
 import type { EpAgentActionType, EpAgentProductionState } from './ep-agent.types'
 
 // ==================== 状态计算 ====================
@@ -94,6 +99,12 @@ export async function computeEpProductionState(
   }
 
   // 3. storyboards（跨所有场景聚合）
+  let segMap: SegmentVideoMap | undefined
+  if (ds) {
+    try {
+      segMap = await loadSegmentVideoMap(ds, episodeId)
+    } catch { /* 片段状态读取失败时退化为只看分镜自身 videoPath */ }
+  }
   try {
     if (cachedScenes) {
       const scenes = cachedScenes
@@ -106,7 +117,7 @@ export async function computeEpProductionState(
         const sbs = (await db.storyboards?.getBySceneScriptId?.(scene.id)) || []
         if (sbs.length > 0) covered.add(scene.id)
         total += sbs.length
-        withVideo += sbs.filter((sb: any) => !!sb.videoPath).length
+        withVideo += sbs.filter((sb: any) => storyboardHasVideo(sb, segMap)).length
         for (const sb of sbs) {
           try {
             const kfs = (await db.storyboardKeyframes?.listByStoryboard?.(sb.id)) || []

@@ -9,13 +9,13 @@
  *   ② 资产        → 至少创建 1 个 binding（用户进入过 ②）；主图齐备改为 ⑤ 前硬卡（FU5-L1）
  *   ③ 剧本        → 用户点"剧本定稿"（status >= scripting 且通过 P4 完整性校验）
  *   ④ 分镜        → 每场 ≥1 个 Storyboard
- *   ⑤ 制作        → 所有分镜 videoPath 非空
+ *   ⑤ 制作        → 所有分镜有视频（自身 videoPath 或所属片段 completed+videoPath）
  *   ⑥ 合成        → 导出 MP4（status='completed'）
  *
  * 提供 canEnterStage(currentStatus, targetStatus) 决策 + 缺失项详情，便于 UI 渲染
  *   "前置未完成"提示 + "仍要进入" / "回到 ② 资产"两路。
  *
- * 末端硬锁（spec §2.3）：⑥ 合成 → completed 必须满足"所有分镜 videoPath 非空"；
+ * 末端硬锁（spec §2.3）：⑥ 合成 → completed 必须满足"所有分镜有视频"（双口径）；
  * 前面阶段允许"软" 跳过。
  *
  * FU5-A9-L1（user 5/6 决策）：
@@ -36,6 +36,10 @@ import { CharacterBindingEntity } from '@core/database/entities/episode-producti
 import { LocationBindingEntity } from '@core/database/entities/episode-production/location-binding.entity'
 import { ItemBindingEntity } from '@core/database/entities/episode-production/item-binding.entity'
 import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
+import {
+  loadSegmentVideoMap,
+  storyboardHasVideo,
+} from '@core/platform/episode-production/services/shot-video-readiness'
 import { classifyTransition } from './episode-status.machine'
 
 /** 缺失项详情（UI 渲染用） */
@@ -76,7 +80,7 @@ export class StageGateService {
    * - 同状态 / 回退：直接 allowed=true
    * - 前向跳转：检查目标状态前一阶段的完成条件
    * - producing（FU5-L1）：除前置 storyboarding 完成外，叠加"涉及到的 binding 主图齐备"硬校验
-   * - completed（末端硬锁）：必须 ⑤ 制作完成（所有分镜有 videoPath）
+   * - completed（末端硬锁）：必须 ⑤ 制作完成（所有分镜有视频，双口径）
    */
   async canEnterStage(
     episodeId: string,
@@ -369,7 +373,10 @@ export class StageGateService {
     }
   }
 
-  /** ⑤ 制作：所有 storyboard 都有 videoPath */
+  /**
+   * ⑤ 制作：所有 storyboard 都有视频（双口径：自身 videoPath 非空，
+   * 或所属非 superseded 片段 completed 且 videoPath 非空——片段制出片不回写 storyboards.video_path）
+   */
   private async checkProducingComplete(
     episodeId: string,
   ): Promise<StageCompletionStatus> {
@@ -386,13 +393,14 @@ export class StageGateService {
     const scenes = await this.ds
       .getRepository(SceneScriptEntity)
       .find({ where: { episodeScriptId: script.id } })
+    const segMap = await loadSegmentVideoMap(this.ds, episodeId)
     const gaps: StageGap[] = []
     for (const scene of scenes) {
       const sbs = await this.ds
         .getRepository(StoryboardEntity)
         .find({ where: { sceneScriptId: scene.id } })
       for (const sb of sbs) {
-        if (!sb.videoPath) {
+        if (!storyboardHasVideo(sb, segMap)) {
           gaps.push({
             code: 'SHOT_VIDEO_MISSING',
             message: `场景 ${scene.sceneNumber} 镜头 ${sb.shotNumber} 还没生成视频`,

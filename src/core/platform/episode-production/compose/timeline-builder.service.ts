@@ -24,6 +24,7 @@ import type { DataSource } from 'typeorm'
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
 import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
 import { EpVideoSegmentEntity } from '@core/database/entities/episode-production/video-segment.entity'
+import { segmentProvidesVideo } from '@core/platform/episode-production/services/shot-video-readiness'
 import type {
   TransitionConfig,
   TransitionType,
@@ -102,14 +103,15 @@ export class TimelineBuilderService {
     const missingVideoIds: string[] = []
     let cursorSec = 0
 
-    // 视频片段制：分镜自身无视频但所属片段已出片时不算缺失（导出用的是片段视频）
+    // 视频片段制：分镜自身无视频但所属片段已出片时不算缺失（导出用的是片段视频）；
+    // 口径与导出器对齐——superseded 片段不参与导出，不计入"已出片"
     const segVideoCache = new Map<string, boolean>()
     const segHasVideo = async (segmentId: string | null | undefined): Promise<boolean> => {
       if (!segmentId) return false
       const cached = segVideoCache.get(segmentId)
       if (cached !== undefined) return cached
       const seg = await segRepo.findOne({ where: { id: segmentId } as any })
-      const has = !!seg?.videoPath
+      const has = segmentProvidesVideo(seg)
       segVideoCache.set(segmentId, has)
       return has
     }

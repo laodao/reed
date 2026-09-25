@@ -327,6 +327,19 @@ export class MainImageGeneratorService {  /**
         return { refPath: parentMain.imagePath, kind: 'parent' }
       }
 
+      // 一致性修复 v3（A4，2026-09-22）：室内单间场景跳过平面图链路——
+      // 平面图→主图的"俯视转人视"变换对室内单间压不住（沈云萝房间两次产出俯视娃屋），
+      // 且室内单间本就没有"建筑群布局"可锚定。命中室内特征 → 不生成/不使用平面图，走纯文生图。
+      // A5（2026-09-24）：判定改用 getEffectiveData 投影的生效 name/description——
+      // linked_lw 地点 standalone_* 两列为 null，直读会漏判。
+      const eff = await this.loadEffective('location', input.assetId)
+      const indoorHit = /房间|卧室|寝房|闺房|内室|厨房|柴房|浴室/.test(eff?.name ?? '') ||
+        /室内|内景/.test(eff?.description ?? '')
+      if (indoorHit) {
+        console.log(`[MainImageGeneratorService] 室内单间「${eff?.name ?? ''}」跳过平面图链路（纯文生图）`)
+        return null
+      }
+
       const existing = await this.imageRepo.findOne({
         where: { assetType: 'location', assetId: input.assetId, category: 'floor_plan' },
         order: { createdAt: 'DESC' },
@@ -570,10 +583,15 @@ export class MainImageGeneratorService {  /**
       refPaths.push(input.referenceImagePath.trim())
     }
 
-    const projectImageModel =
+    // 带参考图（换装 / 多主图基准）时走 F1b 回退：钉住的模型 maxReferenceImages=0
+    // → 同 provider I2I 模型，否则参考图被能力截断静默丢弃（换装后判若两人）
+    let projectImageModel =
       input.providerConfigId && input.modelId
         ? null
         : await this.resolveProjectImageModel(input.assetType, input.assetId)
+    if (refPaths.length > 0) {
+      projectImageModel = await fallbackToReferenceCapableModel(projectImageModel)
+    }
 
     const result = await this.imageGen.generate({
       referenceImagePaths: refPaths,

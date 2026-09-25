@@ -43,6 +43,10 @@ import { SegmentVideoService } from '@core/platform/episode-production/render/vi
 import { createAdapterForProviderWithReason } from '@core/platform/episode-production/render/video/adapter-factory'
 import { SceneAudioOrchestratorService } from '@core/platform/episode-production/render/audio/scene-audio-orchestrator.service'
 import { EpVideoSegmentEntity } from '@core/database/entities/episode-production/video-segment.entity'
+import {
+  loadSegmentVideoMap,
+  storyboardHasVideo,
+} from '@core/platform/episode-production/services/shot-video-readiness'
 import type {
   EpAgentAction,
   EpAgentActionSummary,
@@ -1330,10 +1334,11 @@ async function executeGenerateSegmentVideo(
   const scriptId = await resolveScriptId(m, ctx.episodeId)
   if (!scriptId) throw new Error('剧本不存在，无法生成分镜视频')
   const scenes = (await m.sceneScripts?.getByEpisodeScriptId?.(scriptId)) || []
+  const segMap = await loadSegmentVideoMap(m.dataSource, ctx.episodeId)
   const targets: any[] = []
   for (const scene of scenes) {
     const sbs = (await m.storyboards?.getBySceneScriptId?.(scene.id)) || []
-    targets.push(...sbs.filter((sb: any) => !sb.videoPath && sb.status !== 'generating' && !inFlightVideoTargets.has(sb.id)))
+    targets.push(...sbs.filter((sb: any) => !storyboardHasVideo(sb, segMap) && sb.status !== 'generating' && !inFlightVideoTargets.has(sb.id)))
   }
   if (targets.length === 0) {
     return { type: 'generate_segment_video', status: 'ok', message: '所有分镜都已有视频或正在生成中，无需启动' }

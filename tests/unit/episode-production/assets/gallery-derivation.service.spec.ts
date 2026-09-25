@@ -17,6 +17,7 @@ import { DataSource } from 'typeorm'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 import { CharacterBindingEntity } from '@core/database/entities/episode-production/character-binding.entity'
 import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
+import { VideoEpisodeEntity } from '@core/database/entities/episode-production/video-episode.entity'
 import * as dbModule from '@core/database/database-manager.interface'
 import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
 import {
@@ -28,7 +29,7 @@ async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({
     type: 'better-sqlite3',
     database: ':memory:',
-    entities: [VideoProjectEntity, AssetImageEntity, CharacterBindingEntity],
+    entities: [VideoProjectEntity, VideoEpisodeEntity, AssetImageEntity, CharacterBindingEntity],
     synchronize: true,
   })
   await ds.initialize()
@@ -299,5 +300,105 @@ describe('GalleryDerivationService', () => {
 
     expect(mockGen.calls).toHaveLength(1)
     expect(mockGen.calls[0].modelId).toBe('doubao-seedream-4-5')
+  })
+
+  /*
+   * G2（2026-09-25）：调用方不传 storyBackground 时 service 自行解析
+   * （binding → projectId → 项目最新一集 episodeNumber DESC 且故事背景非空），
+   * 古风项目的派生图必须带「严禁现代」硬约束与年代身份段；显式传入优先。
+   */
+  async function seedProjectWithAncientEra() {
+    await ds.getRepository(VideoProjectEntity).save({
+      id: 'vp1',
+      name: '测试项目',
+      status: 'draft',
+      config: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Partial<VideoProjectEntity>)
+    await ds.getRepository(CharacterBindingEntity).save({
+      id: 'cb1',
+      projectId: 'vp1',
+      voiceConfig: {},
+      sourceType: 'standalone',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Partial<CharacterBindingEntity>)
+    const epRepo = ds.getRepository(VideoEpisodeEntity)
+    await epRepo.save({
+      id: 'ep1',
+      projectId: 'vp1',
+      episodeNumber: 1,
+      title: '第一集',
+      status: 'pending',
+      storyEra: '北宋年间',
+      storyRegion: '江南水乡',
+      storyBackgroundExtra: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Partial<VideoEpisodeEntity>)
+    // 最新一集（episodeNumber 更大）无故事背景 → 应跳过它回退到 ep1
+    await epRepo.save({
+      id: 'ep2',
+      projectId: 'vp1',
+      episodeNumber: 2,
+      title: '第二集',
+      status: 'pending',
+      storyEra: null,
+      storyRegion: null,
+      storyBackgroundExtra: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Partial<VideoEpisodeEntity>)
+  }
+
+  it('G2：不传 storyBackground → 自行解析项目最新一集的古风年代，追加「严禁现代」硬约束', async () => {
+    await seedProjectWithAncientEra()
+    const svcWithDs = new GalleryDerivationService(imageSvc, mockGen, ds)
+
+    await svcWithDs.deriveSingle({
+      assetType: 'character',
+      assetId: 'cb1',
+      category: 'outfit',
+      label: '青衫',
+      additionalPrompt: '换上青色长衫',
+    })
+
+    expect(mockGen.calls).toHaveLength(1)
+    expect(mockGen.calls[0].prompt).toContain('严禁')
+    expect(mockGen.calls[0].prompt).toContain('北宋年间')
+    expect(mockGen.calls[0].prompt).toContain('江南水乡')
+    expect(mockGen.calls[0].negativePrompt).toContain('modern clothing')
+  })
+
+  it('G2：显式传入 storyBackground 优先于 service 自行解析', async () => {
+    await seedProjectWithAncientEra()
+    const svcWithDs = new GalleryDerivationService(imageSvc, mockGen, ds)
+
+    await svcWithDs.deriveSingle({
+      assetType: 'character',
+      assetId: 'cb1',
+      category: 'outfit',
+      label: '风衣',
+      additionalPrompt: '换上风衣',
+      storyBackground: { era: '现代都市', region: '上海' },
+    })
+
+    expect(mockGen.calls).toHaveLength(1)
+    expect(mockGen.calls[0].prompt).not.toContain('严禁')
+    expect(mockGen.calls[0].prompt).toContain('现代都市')
+    expect(mockGen.calls[0].prompt).not.toContain('北宋年间')
+  })
+
+  it('G2：无 ds 时不解析、不阻塞（既有行为）', async () => {
+    await derivSvc.deriveSingle({
+      assetType: 'character',
+      assetId: 'cb1',
+      category: 'outfit',
+      label: '青衫',
+    })
+
+    expect(mockGen.calls).toHaveLength(1)
+    expect(mockGen.calls[0].prompt).not.toContain('严禁')
   })
 })

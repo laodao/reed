@@ -223,6 +223,29 @@ describe('TimelineBuilderService', () => {
     expect(tl.missingVideoStoryboardIds).toEqual(['sb3'])
   })
 
+  it('视频片段制：所属片段 superseded 后分镜回退为缺失（与导出器口径对齐）', async () => {
+    await seedScenesAndShots(ds, [
+      {
+        sceneId: 's1',
+        sceneNumber: 1,
+        shots: [
+          { id: 'sb1', shotNumber: 1, duration: 5, videoPath: null, segmentId: 'seg1' },
+          { id: 'sb2', shotNumber: 2, duration: 7, videoPath: null, segmentId: 'seg2' },
+        ],
+      },
+    ])
+    const segRepo = ds.getRepository(EpVideoSegmentEntity)
+    const now = new Date()
+    await segRepo.save([
+      // superseded 片段即使有 videoPath 也不算出片（导出会跳过）
+      { id: 'seg1', episodeId: 've1', sceneId: 's1', seq: 1, status: 'superseded', shotCount: 1, videoPath: 'video-segments/seg1.mp4', createdAt: now, updatedAt: now },
+      { id: 'seg2', episodeId: 've1', sceneId: 's1', seq: 2, status: 'completed', shotCount: 1, videoPath: 'video-segments/seg2.mp4', createdAt: now, updatedAt: now },
+    ] as any)
+
+    const tl = await svc.buildEpisodeTimeline('es1')
+    expect(tl.missingVideoStoryboardIds).toEqual(['sb1'])
+  })
+
   it('自定义 transition_type + duration 被正确读出', async () => {
     await seedScenesAndShots(ds, [
       {

@@ -288,6 +288,76 @@ describe('MainImageGeneratorService · 平面图先行 / 父级引用 / 守设�
     expect(plans).toHaveLength(0)
   })
 
+  it('A5 standalone 室内单间：standaloneName 含「房间」→ 跳过平面图链路（回归）', async () => {
+    await seedLocation(ds, 'lb_room', { standaloneName: '沈云萝房间' })
+    await svc.generateMain({
+      assetType: 'location',
+      assetId: 'lb_room',
+      prompt: '沈云萝房间，温馨精致',
+    })
+    expect(gen.calls).toHaveLength(1)
+    expect(gen.calls[0].label).toBe('main')
+    expect(gen.calls[0].referenceImagePaths).toEqual([])
+    const plans = await ds.getRepository(AssetImageEntity).find({
+      where: { assetType: 'location', assetId: 'lb_room', category: 'floor_plan' },
+    })
+    expect(plans).toHaveLength(0)
+  })
+
+  it('A5 linked_lw 室内地点：standalone_* 为空、生效名（lw 投影）含「房间」→ 跳过平面图链路', async () => {
+    await ds.getRepository(LwLocationEntity).save({
+      id: 'lwl1',
+      projectId: 'p1',
+      name: '沈云萝房间',
+      description: '布置温馨的内室',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as any)
+    await seedLocation(ds, 'lb_room_lw', {
+      sourceType: 'linked_lw',
+      longWritingLocationId: 'lwl1',
+      standaloneName: null,
+      standaloneDescription: null,
+    })
+    await svc.generateMain({
+      assetType: 'location',
+      assetId: 'lb_room_lw',
+      prompt: '沈云萝房间，温馨精致',
+    })
+    expect(gen.calls).toHaveLength(1)
+    expect(gen.calls[0].label).toBe('main')
+    expect(gen.calls[0].referenceImagePaths).toEqual([])
+    const plans = await ds.getRepository(AssetImageEntity).find({
+      where: { assetType: 'location', assetId: 'lb_room_lw', category: 'floor_plan' },
+    })
+    expect(plans).toHaveLength(0)
+  })
+
+  it('A5 linked_lw 室外地点：生效名/描述无室内特征 → 仍走平面图先行', async () => {
+    await ds.getRepository(LwLocationEntity).save({
+      id: 'lwl2',
+      projectId: 'p1',
+      name: '白鹿城',
+      description: '依山而建的城池',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as any)
+    await seedLocation(ds, 'lb_city_lw', {
+      sourceType: 'linked_lw',
+      longWritingLocationId: 'lwl2',
+      standaloneName: null,
+      standaloneDescription: null,
+    })
+    await svc.generateMain({
+      assetType: 'location',
+      assetId: 'lb_city_lw',
+      prompt: '白鹿城，依山而建的城池',
+    })
+    expect(gen.calls).toHaveLength(2)
+    expect(gen.calls[0].label).toBe('layout')
+    expect(gen.calls[1].referenceImagePaths).toEqual(['/mock/layout-1.png'])
+  })
+
   it('F1 character：prompt 缺失年龄/性别时追加人物设定锚点；已含不重复', async () => {
     await ds.getRepository(CharacterBindingEntity).save({
       id: 'cb1',

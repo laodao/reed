@@ -18,16 +18,16 @@
 
 import type { DataSource } from 'typeorm'
 import { AssetImageService } from '../../assets/services/asset-image.service'
-import { CharacterBindingEntity } from '@core/database/entities/episode-production/character-binding.entity'
-import { LocationBindingEntity } from '@core/database/entities/episode-production/location-binding.entity'
-import { ItemBindingEntity } from '@core/database/entities/episode-production/item-binding.entity'
+import { CharacterAssetService } from '../../assets/services/character-asset.service'
+import { LocationAssetService } from '../../assets/services/location-asset.service'
+import { ItemAssetService } from '../../assets/services/item-asset.service'
 
 /** 单条资产引用（解析结果，落 metadata + prompt 声明段） */
 export interface SegmentAssetRef {
   kind: 'character' | 'location' | 'item'
   bindingId: string
   name: string
-  /** canonical 外观摘要（角色 standalone_description 截断），声明段用 */
+  /** 生效外观摘要（getEffectiveData 投影后截断），声明段用 */
   appearance?: string
   assetImageId: string
   imagePath: string
@@ -40,17 +40,28 @@ export interface SegmentRefShotInput {
   itemBindingIds?: unknown[] | null
 }
 
-/** asset_image 行里挑参考图：主图优先 → 已确认 → 第一张有图的 */
-function pickRefImage(
+/**
+ * asset_image 行里挑参考图（与 keyframe/reference-image-selector 的 S-05 confirmed 闸门同口径）：
+ * confirmed=1 池强制（池内 is_main 主图优先）；池空回退 is_main 主图并 warn（老数据兼容兜底）；
+ * 池空且无主图 → null（资产跳过）。
+ */
+export function pickRefImage(
   images: Array<{ isMain?: number | null; confirmed?: number | null; imagePath?: string | null; id: string }>,
+  label: string,
 ): { id: string; imagePath: string } | null {
   const withImage = images.filter((i) => !!i.imagePath)
   if (withImage.length === 0) return null
-  const main = withImage.find((i) => i.isMain === 1)
-  if (main) return { id: main.id, imagePath: main.imagePath as string }
-  const confirmed = withImage.find((i) => i.confirmed === 1)
-  if (confirmed) return { id: confirmed.id, imagePath: confirmed.imagePath as string }
-  return { id: withImage[0].id, imagePath: withImage[0].imagePath as string }
+  const confirmedPool = withImage.filter((i) => i.confirmed === 1)
+  if (confirmedPool.length > 0) {
+    const picked = confirmedPool.find((i) => i.isMain === 1) ?? confirmedPool[0]
+    return { id: picked.id, imagePath: picked.imagePath as string }
+  }
+  const legacyMain = withImage.find((i) => i.isMain === 1)
+  if (legacyMain) {
+    console.warn(`[asset-ref] ${label} 无 confirmed 定妆图，回退 is_main 主图（老数据兼容兜底）`)
+    return { id: legacyMain.id, imagePath: legacyMain.imagePath as string }
+  }
+  return null
 }
 
 function truncate(s: string | null | undefined, n: number): string {
@@ -61,6 +72,8 @@ function truncate(s: string | null | undefined, n: number): string {
 /**
  * 收集一个片段内全部镜头引用的资产（去重、稳定顺序：地点 → 角色 → 道具）。
  * 角色取 shots[].characters[].characterId；地点/道具取对应 bindingIds 数组。
+ * name/description 经 *AssetService.getEffectiveData 双源投影（linked_lw 不再落空为裸 bindingId）；
+ * 投影失败的 binding 跳过并 console.warn（不阻断）。
  * 任一 binding 无图 → 跳过并 console.warn（不阻断；prompt 侧由文字描述兜底）。
  */
 export async function collectSegmentAssetRefs(
@@ -68,6 +81,9 @@ export async function collectSegmentAssetRefs(
   shots: SegmentRefShotInput[],
 ): Promise<SegmentAssetRef[]> {
   const imageSvc = new AssetImageService(ds)
+  const charSvc = new CharacterAssetService(ds)
+  const locSvc = new LocationAssetService(ds, imageSvc)
+  const itemSvc = new ItemAssetService(ds)
 
   const locationIds: string[] = []
   const characterIds: string[] = []
@@ -88,64 +104,82 @@ export async function collectSegmentAssetRefs(
   const refs: SegmentAssetRef[] = []
 
   for (const bindingId of locationIds) {
-    const binding = await ds
-      .getRepository(LocationBindingEntity)
-      .findOne({ where: { id: bindingId } })
-    if (!binding) continue
+    let name: string
+    let appearance: string
+    try {
+      const eff = await locSvc.getEffectiveData(bindingId)
+      name = eff.name
+      appearance = truncate(eff.description, 80)
+    } catch (e) {
+      console.warn(`[asset-ref] 地点绑定 ${bindingId} 投影失败，跳过：`, (e as Error).message)
+      continue
+    }
     const images = await imageSvc.listByAsset('location', bindingId)
-    const picked = pickRefImage(images)
+    const picked = pickRefImage(images, `地点「${name}」`)
     if (!picked) {
-      console.warn(`[asset-ref] 地点「${binding.standaloneName ?? bindingId}」无可用主图，跳过`)
+      console.warn(`[asset-ref] 地点「${name}」无可用主图，跳过`)
       continue
     }
     refs.push({
       kind: 'location',
       bindingId,
-      name: binding.standaloneName ?? bindingId,
-      appearance: truncate(binding.standaloneDescription, 80),
+      name,
+      appearance,
       assetImageId: picked.id,
       imagePath: picked.imagePath,
     })
   }
 
   for (const bindingId of characterIds) {
-    const binding = await ds
-      .getRepository(CharacterBindingEntity)
-      .findOne({ where: { id: bindingId } })
-    if (!binding) continue
+    let name: string
+    let appearance: string
+    try {
+      const eff = await charSvc.getEffectiveData(bindingId)
+      name = eff.name
+      appearance = truncate([eff.description, eff.appearance].filter(Boolean).join(' / '), 80)
+    } catch (e) {
+      console.warn(`[asset-ref] 角色绑定 ${bindingId} 投影失败，跳过：`, (e as Error).message)
+      continue
+    }
     const images = await imageSvc.listByAsset('character', bindingId)
-    const picked = pickRefImage(images)
+    const picked = pickRefImage(images, `角色「${name}」`)
     if (!picked) {
-      console.warn(`[asset-ref] 角色「${binding.standaloneName ?? bindingId}」无可用主图，跳过`)
+      console.warn(`[asset-ref] 角色「${name}」无可用主图，跳过`)
       continue
     }
     refs.push({
       kind: 'character',
       bindingId,
-      name: binding.standaloneName ?? bindingId,
-      appearance: truncate(binding.standaloneDescription, 80),
+      name,
+      appearance,
       assetImageId: picked.id,
       imagePath: picked.imagePath,
     })
   }
 
   for (const bindingId of itemIds) {
-    const binding = await ds
-      .getRepository(ItemBindingEntity)
-      .findOne({ where: { id: bindingId } })
-    if (!binding) continue
+    let name: string
+    let appearance: string
+    try {
+      const eff = await itemSvc.getEffectiveData(bindingId)
+      name = eff.name
+      // 物品外观+归属约束（如"仅沈云萝背负"）进声明段，压制参考板道具串位
+      appearance = truncate(eff.description, 80)
+    } catch (e) {
+      console.warn(`[asset-ref] 物品绑定 ${bindingId} 投影失败，跳过：`, (e as Error).message)
+      continue
+    }
     const images = await imageSvc.listByAsset('item', bindingId)
-    const picked = pickRefImage(images)
+    const picked = pickRefImage(images, `物品「${name}」`)
     if (!picked) {
-      console.warn(`[asset-ref] 物品「${binding.standaloneName ?? bindingId}」无可用主图，跳过`)
+      console.warn(`[asset-ref] 物品「${name}」无可用主图，跳过`)
       continue
     }
     refs.push({
       kind: 'item',
       bindingId,
-      name: binding.standaloneName ?? bindingId,
-      // 物品外观+归属约束（如"仅沈云萝背负"）进声明段，压制参考板道具串位
-      appearance: truncate(binding.standaloneDescription, 80),
+      name,
+      appearance,
       assetImageId: picked.id,
       imagePath: picked.imagePath,
     })
