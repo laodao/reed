@@ -14,6 +14,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DataSource } from 'typeorm'
+import * as path from 'path'
 import { CharacterBindingEntity } from '@core/database/entities/episode-production/character-binding.entity'
 import { LocationBindingEntity } from '@core/database/entities/episode-production/location-binding.entity'
 import { ItemBindingEntity } from '@core/database/entities/episode-production/item-binding.entity'
@@ -25,6 +26,7 @@ import { SceneScriptEntity } from '@core/database/entities/episode-production/sc
 import { SceneAudioOrchestratorService } from '@core/platform/episode-production/render/audio/scene-audio-orchestrator.service'
 import { NarrationSynthesisService } from '@core/platform/episode-production/render/audio/narration-synthesis.service'
 import { VoiceService } from '@core/platform/services/voice.service'
+import { registerPathProvider, type IPathProvider } from '@core/interfaces/path.interface'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({
@@ -270,5 +272,79 @@ describe('SceneAudioOrchestratorService', () => {
         outputDir: '/tmp',
       }),
     ).rejects.toThrow(/Scene not found/)
+  })
+})
+
+describe('SceneAudioOrchestratorService.persistToScene 落库路径（X4）', () => {
+  const dataPath = '/tmp/ep-audio-x4-datapath'
+
+  /** 最小 path provider stub（user-rel 换算要取 dataPath） */
+  class StubPathProvider implements IPathProvider {
+    getUserDataPath(): string { return dataPath }
+    getAppDataPath(): string { return dataPath }
+    getTempPath(): string { return dataPath }
+    getDataPath(): string { return dataPath }
+    getSubDirectories(): never { throw new Error('not used') }
+    getSubDirectoryPath(): never { throw new Error('not used') }
+    toAssetUrl(rel: string): string { return `/assets/${rel}` }
+  }
+
+  let ds: DataSource
+  let svc: SceneAudioOrchestratorService
+
+  beforeEach(async () => {
+    ds = await buildDb()
+    svc = new SceneAudioOrchestratorService(ds)
+    registerPathProvider(() => new StubPathProvider())
+  })
+
+  afterEach(async () => {
+    if (ds.isInitialized) await ds.destroy()
+  })
+
+  it('旁白 + 对白产物落库为 user-rel 相对路径（非绝对路径）', async () => {
+    await seedScene(ds, {
+      narration: '清晨茶馆',
+      dialogues: [{ id: 'd1', text: '老板，来碗茶' }],
+    })
+
+    await svc.persistToScene('s1', {
+      narrationPath: path.join(dataPath, 'episode-production/audio/s1/narration_1.wav'),
+      dialoguePaths: new Map([
+        ['d1', path.join(dataPath, 'episode-production/audio/s1/dialogue_1.wav')],
+      ]),
+      fallbackDialogueCount: 0,
+      narrationFailed: false,
+      dialogueFailCount: 0,
+    })
+
+    const scene = await ds
+      .getRepository(SceneScriptEntity)
+      .findOne({ where: { id: 's1' } as any })
+    const narrationAudioPath = (scene as any).narrationAudioPath as string
+    expect(narrationAudioPath).toBe('episode-production/audio/s1/narration_1.wav')
+    expect(path.isAbsolute(narrationAudioPath)).toBe(false)
+
+    const dialogues = (scene as any).dialogues as Array<{ audioAsset?: { audioPath?: string } }>
+    const dlgPath = dialogues[0].audioAsset?.audioPath ?? ''
+    expect(dlgPath).toBe('episode-production/audio/s1/dialogue_1.wav')
+    expect(path.isAbsolute(dlgPath)).toBe(false)
+  })
+
+  it('dataPath 之外的产物路径保留绝对形式（兜底不丢信息）', async () => {
+    await seedScene(ds, { narration: '旁白', dialogues: [] })
+
+    await svc.persistToScene('s1', {
+      narrationPath: '/elsewhere/audio/narration_1.wav',
+      dialoguePaths: new Map(),
+      fallbackDialogueCount: 0,
+      narrationFailed: false,
+      dialogueFailCount: 0,
+    })
+
+    const scene = await ds
+      .getRepository(SceneScriptEntity)
+      .findOne({ where: { id: 's1' } as any })
+    expect((scene as any).narrationAudioPath).toBe('/elsewhere/audio/narration_1.wav')
   })
 })

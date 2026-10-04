@@ -65,6 +65,8 @@ export class SceneScriptEntity {
   /**
    * 场景旁白 TTS 产物路径（SceneAudioOrchestratorService V3 生成后落库；
    * 导出时混入成片音轨。2026-09-16 review P0-CM1）。
+   * user-rel 相对路径（相对 dataPath，X4 修复）；存量数据可能是绝对路径，
+   * 读取侧统一走 resolveAssetPath 兼容。
    */
   @Column({ name: 'narration_audio_path', type: 'text', nullable: true })
   narrationAudioPath!: string | null

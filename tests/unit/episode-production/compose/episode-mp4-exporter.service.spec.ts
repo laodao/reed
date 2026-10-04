@@ -449,6 +449,89 @@ describe('EpisodeMp4ExporterService', () => {
     }
   })
 
+  // ==================== X4：配音落库 user-rel 路径的读取兼容 ====================
+
+  it('X4：user-rel 配音路径按 dataPath 拼回；存量绝对路径原样兼容', async () => {
+    await seedHappyTimeline(ds)
+    await seedEpisodeChain('producing')
+    const dataPath = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'ep-x4-data-'))
+    const legacyAbs = nodePath.join(os.tmpdir(), `ep-x4-legacy-${Date.now()}.wav`)
+    const relNarr = 'episode-production/audio/s1/narration.wav'
+    const relDlg = 'episode-production/audio/s1/d1.wav'
+    try {
+      fs.mkdirSync(nodePath.join(dataPath, 'episode-production/audio/s1'), { recursive: true })
+      fs.writeFileSync(nodePath.join(dataPath, relNarr), 'fake')
+      fs.writeFileSync(nodePath.join(dataPath, relDlg), 'fake')
+      fs.writeFileSync(legacyAbs, 'fake')
+
+      await ds.getRepository(SceneScriptEntity).update({ id: 's1' } as any, {
+        // 新数据：user-rel 相对路径
+        narrationAudioPath: relNarr,
+        dialogues: [
+          { id: 'd1', text: '老板，来碗茶', characterName: '张三', audioAsset: { audioPath: relDlg } },
+          // 存量数据：绝对路径
+          { id: 'd2', text: '好嘞', characterName: '李四', audioAsset: { audioPath: legacyAbs } },
+        ],
+      } as any)
+      await ds.getRepository(StoryboardEntity).update({ id: 'sb1' }, { dialogueIds: ['d1', 'd2'] } as any)
+      registerPathProvider(() => new StubPathProvider(dataPath))
+
+      const runner = makeMockRunner()
+      const svc = new EpisodeMp4ExporterService(ds, runner, makeMockFileWriter())
+      await svc.exportEpisodeToMp4({ episodeScriptId: 'es1', outputPath: '/tmp/out.mp4' })
+
+      const inputs = runner.run.mock.calls[0][0].inputs
+      // user-rel 拼回 dataPath 成绝对路径；存量绝对路径原样进入输入
+      expect(inputs).toEqual([
+        '/tmp/v1.mp4',
+        '/tmp/v2.mp4',
+        nodePath.join(dataPath, relNarr),
+        nodePath.join(dataPath, relDlg),
+        legacyAbs,
+      ])
+    } finally {
+      fs.rmSync(dataPath, { recursive: true, force: true })
+      fs.rmSync(legacyAbs, { force: true })
+    }
+  })
+
+  it('X4：数据目录迁移后（换 dataPath）同一 user-rel 配音记录解析到新数据根', async () => {
+    await seedHappyTimeline(ds)
+    await seedEpisodeChain('producing')
+    const relNarr = 'episode-production/audio/s1/narration.wav'
+    const dirA = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'ep-x4-mig-a-'))
+    const dirB = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'ep-x4-mig-b-'))
+    try {
+      // 模拟迁移：同一相对路径的产物文件随数据目录从 A 搬到 B
+      for (const dir of [dirA, dirB]) {
+        fs.mkdirSync(nodePath.join(dir, 'episode-production/audio/s1'), { recursive: true })
+        fs.writeFileSync(nodePath.join(dir, relNarr), 'fake')
+      }
+      await ds.getRepository(SceneScriptEntity).update({ id: 's1' } as any, {
+        narrationAudioPath: relNarr,
+      } as any)
+
+      // 迁移前：dataPath = dirA
+      registerPathProvider(() => new StubPathProvider(dirA))
+      const runnerA = makeMockRunner()
+      await new EpisodeMp4ExporterService(ds, runnerA, makeMockFileWriter())
+        .exportEpisodeToMp4({ episodeScriptId: 'es1', outputPath: '/tmp/out.mp4' })
+      expect(runnerA.run.mock.calls[0][0].inputs).toContain(nodePath.join(dirA, relNarr))
+
+      // 迁移后：dataPath = dirB，同一 user-rel 记录解析到新根（绝对路径落库时此处会被剔除 → 无声）
+      registerPathProvider(() => new StubPathProvider(dirB))
+      const runnerB = makeMockRunner()
+      await new EpisodeMp4ExporterService(ds, runnerB, makeMockFileWriter())
+        .exportEpisodeToMp4({ episodeScriptId: 'es1', outputPath: '/tmp/out.mp4' })
+      const inputsB = runnerB.run.mock.calls[0][0].inputs
+      expect(inputsB).toContain(nodePath.join(dirB, relNarr))
+      expect(inputsB).not.toContain(nodePath.join(dirA, relNarr))
+    } finally {
+      fs.rmSync(dirA, { recursive: true, force: true })
+      fs.rmSync(dirB, { recursive: true, force: true })
+    }
+  })
+
   // ==================== D1：烧录字幕时间轴与成片对齐 ====================
 
   it('D1：有转场时字幕 cue 按扣减后的成片时间轴（dissolve 0.5s → 第 2 镜对白 3.5s 起，修复前漂移 0.5s）', async () => {

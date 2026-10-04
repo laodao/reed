@@ -74,7 +74,7 @@ export interface AudioAsset {
   type: AudioType
   text?: string // 文本内容（TTS用）
   voiceId?: string // 声音ID
-  audioPath: string // 音频路径
+  audioPath: string // 音频路径（user-rel 相对路径，相对 dataPath；存量数据可能是绝对路径，读取走 resolveAssetPath 兼容）
   duration: number // 时长（毫秒）
   volume: number // 音量 0-100
   fadeIn?: number // 淡入（毫秒）

@@ -21,10 +21,9 @@
  * 在 ffmpeg-assembler.service.ts（已存在）或 follow-up 新建的 native runner 中。
  */
 
-import * as path from 'path'
 import type { DataSource } from 'typeorm'
 import { In } from 'typeorm'
-import { getPathProvider } from '@core/interfaces/path.interface'
+import { resolveAssetPath, toRelativeAssetPath } from '@core/utils/asset-path'
 import { EpVideoSegmentEntity } from '@core/database/entities/episode-production/video-segment.entity'
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
 import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
@@ -44,16 +43,11 @@ import {
 } from './transition-translator'
 
 /**
- * 解析 user-rel 相对路径为绝对路径：业务层（image_assets / storyboard.videoPath）
- * 持久化的是相对 user 数据根的路径，ffmpeg 等 native 工具需要绝对路径。
- * 与 base-video-provider-bridge.resolveImagePath 同义；这里就近实现避免跨模块依赖。
+ * 落库路径解析统一走 @core/utils/asset-path 的 resolveAssetPath：user-rel 相对路径
+ * 拼 dataPath，URL/盘符/存量绝对路径原样（与 base-video-provider-bridge.resolveImagePath
+ * 同义）。业务层（image_assets / storyboard.videoPath / scene 配音产物）持久化的是
+ * 相对 user 数据根的路径，ffmpeg 等 native 工具需要绝对路径。
  */
-function resolveUserRelPath(p: string): string {
-  if (!p) return p
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(p)) return p  // http(s)://、file://、local-image://、data:
-  if (path.isAbsolute(p)) return p
-  return path.join(getPathProvider().getDataPath(), p)
-}
 
 /** ffmpeg 命令的执行抽象（依赖注入，便于双端 + mock 单测） */
 export interface FfmpegRunner {
@@ -206,8 +200,8 @@ export class EpisodeMp4ExporterService {
     },
   ): Promise<ExportEpisodeMp4Result> {
     const { timeline, exportShots, unitShotIds, episodeId, width, height } = ctx
-    // 把 user-rel 相对路径解析为绝对路径再交给 ffmpeg
-    const fileInputs = exportShots.map((s) => resolveUserRelPath(s.videoPath!))
+    // 把 user-rel 相对路径解析为绝对路径再交给 ffmpeg（存量绝对路径原样兼容）
+    const fileInputs = exportShots.map((s) => resolveAssetPath(s.videoPath!))
 
     // 配音混入（2026-09-16 P0-CM1）：收集每单元的 TTS 音频（对白按 storyboard.dialogueIds
     // → dialogues[].audioAsset；旁白挂到各场景首个入选单元），作为附加文件输入混入该单元音轨
@@ -217,7 +211,7 @@ export class EpisodeMp4ExporterService {
     // 输入会让"以前无配音能导出"的场景变成全盘失败）
     await this.filterBrokenExtraAudio(extraAudioFiles)
     for (const files of extraAudioFiles) {
-      for (const f of files) fileInputs.push(resolveUserRelPath(f))
+      for (const f of files) fileInputs.push(resolveAssetPath(f))
     }
 
     // 音轨探测（runner 支持时）：任一输入无音轨 → 该路用 anullsrc 静音占位
@@ -279,13 +273,10 @@ export class EpisodeMp4ExporterService {
     // 导出成功 → 写 composedVideoPath（user-rel 优先）+ completed 终态（P0-CM2）
     if (episodeId) {
       try {
-        const dataPath = getPathProvider().getDataPath()
-        const rel = path.relative(dataPath, input.outputPath)
-        const relPath = rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel : input.outputPath
         const repo = this.ds.getRepository(VideoEpisodeEntity)
         await repo.update(
           { id: episodeId } as any,
-          { composedVideoPath: relPath, status: 'completed', updatedAt: new Date() },
+          { composedVideoPath: toRelativeAssetPath(input.outputPath), status: 'completed', updatedAt: new Date() },
         )
       } catch {
         /* 状态回写失败不影响导出产物 */
@@ -322,8 +313,9 @@ export class EpisodeMp4ExporterService {
 
   /**
    * 逐单元剔除不存在/无音轨的 TTS 产物（就地修改）。
-   * 存在性检查始终做；runner 支持时叠加 ffprobe 探测（无音轨的残留文件同样会让
-   * filter 图的 `[i:a]` 报错）。坏文件只 warn 不阻断。
+   * 路径解析统一走 resolveAssetPath：新数据是 user-rel 相对路径（拼 dataPath），
+   * 存量绝对路径原样兼容。存在性检查始终做；runner 支持时叠加 ffprobe 探测
+   * （无音轨的残留文件同样会让 filter 图的 `[i:a]` 报错）。坏文件只 warn 不阻断。
    */
   private async filterBrokenExtraAudio(extraAudioFiles: string[][]): Promise<void> {
     const fs = await import('fs')
@@ -334,7 +326,7 @@ export class EpisodeMp4ExporterService {
       const files = extraAudioFiles[i]
       const kept: string[] = []
       for (const f of files) {
-        const abs = resolveUserRelPath(f)
+        const abs = resolveAssetPath(f)
         let ok = fs.existsSync(abs)
         if (ok && probe) {
           try {

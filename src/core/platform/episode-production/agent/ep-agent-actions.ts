@@ -1423,7 +1423,9 @@ async function executeGenerateSceneAudio(
   }
 
   const svc = new SceneAudioOrchestratorService(m.dataSource)
-  const userDataPath = getPathProvider().getUserDataPath()
+  // getDataPath（非 getUserDataPath）：自定义数据目录时产物落在数据根下，
+  // 落库的 user-rel 路径迁移后才仍可解析（X4）
+  const dataPath = getPathProvider().getDataPath()
   let done = 0
   let fallbackCount = 0
   let interrupted = false
@@ -1442,7 +1444,7 @@ async function executeGenerateSceneAudio(
     try {
       const result = await svc.orchestrateScene({
         sceneScriptId: scene.id,
-        outputDir: path.join(userDataPath, 'episode-production', 'audio', scene.id),
+        outputDir: path.join(dataPath, 'episode-production', 'audio', scene.id),
       })
       await svc.persistToScene(scene.id, result)
       fallbackCount += result.fallbackDialogueCount
