@@ -35,6 +35,7 @@ import { WorkflowTriggerScheduler } from './trigger/workflow-trigger-scheduler.s
 import { WorkflowRunLogger } from './workflow-run-logger'
 import { truncateTranscriptContent } from '@core/platform/agent-runtime/memory/transcript-store'
 import { createLogger } from '@core/utils/logger'
+import { createBootTrace } from '@core/utils/boot-trace'
 
 const logger = createLogger('WorkflowBoot')
 
@@ -97,6 +98,9 @@ export interface WorkflowBootOptions {
 export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Promise<WorkflowSubsystem> {
   if (subsystem) return subsystem
 
+  // 分段计时：工作流子系统是启动关键路径上最重的一段（引擎/节点/服务/恢复）
+  const trace = createBootTrace('WorkflowBoot.init')
+
   const db = getCoreDatabaseManager()
   if (!db.workflowDefinitions || !db.workflowRuns || !db.workflowNodeRuns) {
     throw new Error('工作流数据仓库未初始化（数据库管理器缺少 workflow_* 仓库）')
@@ -115,6 +119,7 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
   } catch (e) {
     logger.error('[workflow-boot] 平台事件总线启动失败（继续启动）', e)
   }
+  trace.mark('eventBus')
 
   // 0.1 事件通道挂接（§5.4，紧随总线启动之后）：总线不可用/通道异常不致命——
   //     producer 适配器会回退存量直推路径，前端推送不断（§9 契约）。
@@ -157,6 +162,7 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
   // 1. 节点注册表 + 一致性自检（目录↔handler 漂移拒绝启动）
   const registry = createFullNodeRegistry()
   assertNodeRegistryConsistent(registry)
+  trace.mark('nodeRegistry')
 
   // 2. 引擎与服务装配（journal 注入：Run Journal 恢复事实源，11 号 E1；
   //    数据源缺失时 journal=null——引擎照跑但无跨重启恢复能力，warn 留痕）
@@ -190,6 +196,7 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
     makeEngineDeps(db.workflowRuns, db.workflowNodeRuns, journal),
     registry
   )
+  trace.mark('engine')
   // settings 表 wf:defaults 全局执行设置（配置链：默认值 → 全局层 → definition 覆盖；键名走注册表）。
   // 2026-09-13「参数设置」改造：不再 boot 读一次存快照，而是传**读取器**下去 ——
   // 设置页保存后**下一次运行**即生效（引擎侧本来就是每 run 解析一次，这里补上服务层）。
@@ -372,6 +379,7 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
   } catch (e) {
     logger.error('[workflow-boot] boot 恢复失败（继续启动）', e)
   }
+  trace.mark('recoverOnBoot')
 
   // 4. 触发调度器（cron tick + 事件订阅）
   const scheduler = new WorkflowTriggerScheduler({
@@ -379,6 +387,9 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
     runService,
   })
   await scheduler.start()
+  trace.mark('schedulerStart')
+  // 以下四个服务构造是"启动期大头"的主要嫌疑：逐个打点（见 progress/2026-09-16-*）
+  trace.mark('appServicesStart')
   // 发布/触发器变更 → 刷新调度状态与事件索引（否则 cron 发布后永不触发）
   definitionService.setTriggerScheduler(scheduler)
 
@@ -419,6 +430,7 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
   } catch (e) {
     logger.error('[workflow-boot] 应用会话 boot 恢复失败（继续启动）', e)
   }
+  trace.mark('appServices')
 
   // 7. P0 工具：第三方 API 工具服务（凭据加密 + 自定义工具 + 预设工具 + 执行），注册全局取用
   try {
@@ -436,14 +448,17 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
   } catch (e) {
     logger.error('[workflow-boot] 技能服务装配失败（继续启动）', e)
   }
+  trace.mark('toolAndSkillServices')
   // 7.2 agent-loop 节点 harness（22 号 §8 焊点）：AgentToolRegistry + ProviderAdapter。
   //     装配失败不阻断工作流子系统（其余节点不受影响）；agent-loop 节点执行时
   //     getter fail-fast（getAgentLoopHarness 抛错 → 节点失败，留痕可排障）
   try {
-    const { AgentToolRegistry } = await import('@core/platform/agent-runtime/tools/registry')
-    const { ProviderAdapter } = await import('@core/platform/agent-runtime/provider/provider-adapter')
-    const { registerBuiltinAgentTools } = await import('./tools/agent-builtin-tools')
-    const { registerAgentLoopHarness } = await import('./nodes/agent-loop-node')
+    const t = createBootTrace('WorkflowBoot.agentHarness')
+    const m = <T>(label: string, p: Promise<T>): Promise<T> => p.then((v) => { t.mark(label); return v })
+    const { AgentToolRegistry } = await m('import:toolRegistry', import('@core/platform/agent-runtime/tools/registry'))
+    const { ProviderAdapter } = await m('import:providerAdapter', import('@core/platform/agent-runtime/provider/provider-adapter'))
+    const { registerBuiltinAgentTools } = await m('import:agentBuiltinTools', import('./tools/agent-builtin-tools'))
+    const { registerAgentLoopHarness } = await m('import:agentLoopNode', import('./nodes/agent-loop-node'))
     // 工具调用审计落库（25 号 M2 批1 / 14 号 §4.1）：registry 审计面 → DB sink
     //（fire-and-forget；数据源缺失/写失败只 warn，不影响工具调用）
     const auditRepo = db.dataSource
@@ -495,10 +510,12 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
     })
 
     registerBuiltinAgentTools(agentToolRegistry)
+    t.mark('registerBuiltinAgentTools')
     // 本地能力工具（44 号：fs/shell 五件，桌面端限定，围栏未配置时结构化报错）
-    const { registerLocalCapabilityTools } = await import('./tools/local-capability-tools')
+    const { registerLocalCapabilityTools } = await m('import:localCapabilityTools', import('./tools/local-capability-tools'))
     registerLocalCapabilityTools(agentToolRegistry)
     providerAdapter = new ProviderAdapter()
+    t.mark('providerAdapter')
     // 核心 harness 先注册（review C8：可选扩展桥的失败不得降级核心功能——
     // 此前 registerCustomAgentTools 抛错会跳过 registerAgentLoopHarness，
     // agent-loop 节点整体不可用）
@@ -522,9 +539,12 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
     } catch (e) {
       logger.warn('[workflow-boot] 自定义工具桥装配失败（核心工具面不受影响）', e)
     }
+    t.mark('nodeAndCustomToolBridges')
+    t.report(undefined, 20)
   } catch (e) {
     logger.error('[workflow-boot] agent-loop harness 装配失败（agent-loop 节点将不可用）', e)
   }
+  trace.mark('agentHarness')
 
   // 7.5 参数重注入登记（2026-09-13「参数设置」第二轮）：settings 保存后立刻生效，不必重启。
   // 覆盖两类"进程级、启动时装配"的参数：
@@ -589,24 +609,24 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
   }
   // 9. P0 变量与数据表：持久化服务注册（variable/data-table 节点取用）
   try {
-    const { VariableDataService, registerVariableDataService } = await import('./variables/variable-data.service')
+    const t = createBootTrace('WorkflowBoot.dataSourceAssembly')
+    const m = <T>(label: string, p: Promise<T>): Promise<T> => p.then((v) => { t.mark(label); return v })
+    const { VariableDataService, registerVariableDataService } = await m('import:variableData', import('./variables/variable-data.service'))
     registerVariableDataService(new VariableDataService(db.variables, db.dataTableDefs, db.dataTableRows))
-  } catch (e) {
-    logger.error('[workflow-boot] 变量/数据表服务装配失败（继续启动）', e)
-  }
-  // 9.1 数据源：外部数据库连接服务 + 驱动注册（data-table 节点外部模式取用）
-  try {
-    const { DataSourceService, registerDataSourceService } = await import('./datasource/datasource.service')
-    const { registerDataSourceDriver } = await import('./datasource/datasource-executor.service')
-    const { PostgresDriverAdapter } = await import('./datasource/drivers/postgresql-driver')
-    const { MySqlDriverAdapter } = await import('./datasource/drivers/mysql-driver')
-    const { SqlServerDriverAdapter } = await import('./datasource/drivers/sqlserver-driver')
-    const { ClickHouseDriverAdapter } = await import('./datasource/drivers/clickhouse-driver')
+    // 9.1 数据源：外部数据库连接服务 + 驱动注册（data-table 节点外部模式取用）
+    const { DataSourceService, registerDataSourceService } = await m('import:datasourceService', import('./datasource/datasource.service'))
+    const { registerDataSourceDriver } = await m('import:datasourceExecutor', import('./datasource/datasource-executor.service'))
+    const { PostgresDriverAdapter } = await m('import:pgDriver', import('./datasource/drivers/postgresql-driver'))
+    const { MySqlDriverAdapter } = await m('import:mysqlDriver', import('./datasource/drivers/mysql-driver'))
+    const { SqlServerDriverAdapter } = await m('import:mssqlDriver', import('./datasource/drivers/sqlserver-driver'))
+    const { ClickHouseDriverAdapter } = await m('import:clickhouseDriver', import('./datasource/drivers/clickhouse-driver'))
     registerDataSourceDriver(new PostgresDriverAdapter())
     registerDataSourceDriver(new MySqlDriverAdapter())
     registerDataSourceDriver(new SqlServerDriverAdapter())
     registerDataSourceDriver(new ClickHouseDriverAdapter())
     registerDataSourceService(new DataSourceService(db.dataSources!))
+    t.mark('registerDrivers')
+    t.report(undefined, 20)
   } catch (e: any) {
     logger.error(
       `[workflow-boot] 数据源服务/驱动装配失败（继续启动）: ${e?.message || e} | stack: ${e?.stack || ''}`,
@@ -617,9 +637,11 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
     throw new Error('资产仓库未初始化（数据库管理器缺少 assets 仓库）')
   }
   try {
-    const { AssetService, AssetStorageService, registerAssetService } = await import('../assets')
-    const { WebCollectService, registerWebCollectService } = await import('../assets')
-    const { createAssetSourceLinkResolver } = await import('../assets/asset-source-link')
+    const t = createBootTrace('WorkflowBoot.assetAssembly')
+    const m = <T>(label: string, p: Promise<T>): Promise<T> => p.then((v) => { t.mark(label); return v })
+    const { AssetService, AssetStorageService, registerAssetService } = await m('import:assets', import('../assets'))
+    const { WebCollectService, registerWebCollectService } = await m('import:webCollect', import('../assets'))
+    const { createAssetSourceLinkResolver } = await m('import:sourceLink', import('../assets/asset-source-link'))
     const assetService = new AssetService(
       new AssetStorageService(),
       db.assets,
@@ -627,9 +649,13 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
       db.assetGroups ?? undefined,
       createAssetSourceLinkResolver({ runs: db.workflowRuns!, apps: db.appDefinitions! }),
     )
+    t.mark('construct')
     registerAssetService(assetService)
     // 网页收藏服务（collect-webpage 节点 / 运行页一键收藏）：依赖资产服务
     registerWebCollectService(new WebCollectService({ assetService }))
+    t.mark('register')
+    t.report(undefined, 20)
+    trace.mark('assetService')
   } catch (e) {
     logger.error('[workflow-boot] 资产服务装配失败（继续启动）', e)
   }
@@ -997,6 +1023,7 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
   } catch (e) {
     logger.warn('[workflow-boot] M3 任务树子系统装配失败（继续启动）', e)
   }
+  trace.mark('m3AgentRuntime')
 
   // 10.5 M5.5 运行可见性（29 号批1/批3）：崩溃对账 + 运行注册表广播接线
   try {
@@ -1063,9 +1090,11 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
   } catch (e) {
     logger.warn('[workflow-boot] M5 系统 agent 工具集注册失败（继续启动）', e)
   }
+  trace.mark('systemAgentTools')
 
   subsystem = { engine, runService, definitionService, scheduler, appDefinitionService, appSessionService, runLogger, agentTasks, memoryFlywheel, agentSessions: agentSessionRepo, agentTrajectories: trajectoryRepo, draftService }
   logger.info('[workflow-boot] 工作流子系统已启动')
+  trace.report(undefined, 30)
   return subsystem
 }
 

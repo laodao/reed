@@ -1,7 +1,7 @@
 /**
  * Agent 对话右栏验证（37 号实测反馈三项）：
  *   1) 任务树数据会话隔离（切换会话不串台）
- *   2) 知识飞轮/任务树链接就地弹出抽屉（不跳页，仅当前会话内容）
+ *   2) 任务树链接就地弹出抽屉（不跳页，仅当前会话内容）
  *   3) 会话上下文「查看」→ 抽屉显示系统提示词快照 + 模型消息历史
  * 前置：electron-vite dev --remote-debugging-port=9222
  */
@@ -104,20 +104,7 @@ async function main() {
     await page.keyboard.press('Escape')
     await sleep(400)
 
-    // 3b. 知识飞轮抽屉
-    await page.evaluate(() => {
-      const links = [...document.querySelectorAll('.inspector-pane .insp-link')]
-      links.find((el) => (el.textContent ?? '').trim() === '知识飞轮')?.click()
-    })
-    await sleep(600)
-    d = await drawerState()
-    check('知识飞轮链接弹出抽屉且不跳页', d.visible && (await snapshot()).url.includes('agent-console'), d.title)
-    console.log(`  记忆分组: ${JSON.stringify(d.memGroups)} 条目数: ${d.memItems.length}`)
-    check('知识飞轮抽屉展示记忆分组或空态说明', d.memGroups.length > 0 || d.empty.length > 0, `${d.memGroups.length} 组`)
-    await page.keyboard.press('Escape')
-    await sleep(400)
-
-    // 3c. 上下文抽屉
+    // 3b. 上下文抽屉
     await page.evaluate(() => {
       const links = [...document.querySelectorAll('.inspector-pane .insp-link')]
       links.find((el) => (el.textContent ?? '').trim() === '查看')?.click()
@@ -129,7 +116,7 @@ async function main() {
     check('上下文抽屉有系统提示词区', d.hint.some((h) => h.includes('系统提示词')), d.sysPrompt.slice(0, 40))
     console.log('  系统提示词预览:', d.sysPrompt)
   } else {
-    console.log('（所有会话都无任务树，抽屉树分支跳过——仍验证上下文/记忆抽屉）')
+    console.log('（所有会话都无任务树，抽屉树分支跳过——仍验证上下文抽屉）')
     await page.evaluate(() => {
       const links = [...document.querySelectorAll('.inspector-pane .insp-link')]
       links.find((el) => (el.textContent ?? '').trim() === '查看')?.click()

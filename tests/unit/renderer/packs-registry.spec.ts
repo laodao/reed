@@ -190,13 +190,17 @@ describe('installBuiltinPackages（内置包装配）', () => {
       expect(router.resolve(path).matched.length, `路由 ${path} 应已注册`).toBeGreaterThan(0)
     }
     // 菜单顺序与原静态菜单一致（二期 4 个原壳位包先注册，锚点语义不变；
-    // 领域学习包插在知识库前（agent-harness 合并后：Agent 对话 = /agent-console）
+    // 领域学习包插在知识库前（agent-harness 合并后：Agent 对话 = /agent-console）；
+    // 知识飞轮菜单已随功能停用移除（2026-09-16）
     const paths = flattenMenuItems(mainMenuItems).map(i => i.path)
     expect(paths).toEqual([
       '/', '/chat', '/portrait', '/longwriting', '/episode-production',
-      '/domain-learning', '/knowledge-base', '/agent-todos', '/agent-console', '/agent-memory', '/workflow',
+      '/domain-learning', '/knowledge-base', '/agent-todos', '/agent-console', '/workflow',
       '/apps', '/diary', '/assets', '/skills',
     ])
+    // 知识飞轮路由与菜单入口一并移除（停用功能不留死入口）
+    expect(router.resolve('/agent-memory').matched).toHaveLength(0)
+    expect(paths).not.toContain('/agent-memory')
   })
 
   it('后端启用态生效：voice-design 禁用 → episode-production 级联不注册', async () => {

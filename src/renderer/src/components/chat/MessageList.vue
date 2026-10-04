@@ -1,21 +1,27 @@
 <template>
   <div class="message-list" ref="listRef" @scroll="handleScroll">
     <div class="messages-container">
+      <!-- 折叠的历史：首开只挂载最近若干条，避免长会话把主线程压满 -->
+      <div v-if="windowState.canExpand.value" class="history-more" @click="loadMoreHistory">
+        展开更早的 {{ Math.min(windowState.hiddenCount.value, HISTORY_CHUNK) }} 条（还有 {{ windowState.hiddenCount.value }} 条更早消息）
+      </div>
+
       <MessageItem
-        v-for="(message, index) in displayMessages"
-        :key="message.id"
-        :ref="el => setMessageRef(el, message.id)"
-        :message="message"
+        v-for="row in visibleMessages"
+        :key="row.message.id"
+        :data-message-id="row.message.id"
+        :ref="el => setMessageRef(el, row.message.id)"
+        :message="row.message"
         :available-models="availableModels"
         :dialog-title="dialogTitle"
-        :answer-index="getAnswerIndex(index)"
-        :has-prev-answer="hasPrevAnswer(index)"
-        :has-next-answer="hasNextAnswer(index)"
+        :answer-index="row.answerIndex"
+        :has-prev-answer="row.hasPrevAnswer"
+        :has-next-answer="row.hasNextAnswer"
         @edit="handleEdit"
         @copy="handleCopy"
         @delete="handleDelete"
         @regenerate="handleRegenerate"
-        @navigate-answer="handleNavigateAnswer(index, $event)"
+        @navigate-answer="handleNavigateAnswer(row.index, $event)"
       />
 
       <!-- 流式消息占位 -->
@@ -39,7 +45,16 @@ import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import MessageItem from './MessageItem.vue'
 import { extractCodeBlocks, restoreCodeBlocks, escapeHtmlKeepPlaceholders } from './code-block'
+import { createRenderCache } from '@/utils/chat-render-cache'
+import { useMessageWindow, expandHistoryKeepingScroll } from '@/composables/useMessageWindow'
 import type { Message, StreamState } from '../../../shared/types'
+
+/** 首开挂载的最近消息条数（长会话不再一次性全挂） */
+const INITIAL_WINDOW = 30
+/** 每次向上补齐的条数 */
+const HISTORY_CHUNK = 30
+/** 滚动到距顶部多少像素内即自动补齐历史 */
+const HISTORY_EXPAND_THRESHOLD = 120
 
 // 模型选项接口
 interface ModelOption {
@@ -81,6 +96,57 @@ const displayMessages = computed(() => {
   return props.messages
 })
 
+/**
+ * 窗口化：只挂载最近 INITIAL_WINDOW 条，向上滚动再补齐。
+ * 长会话说 (数百条) 一次性挂载 = 数百个组件 + 数百次 markdown 渲染 + 事件绑定，
+ * 首开主线程因此出现长任务。
+ */
+const totalCount = computed(() => displayMessages.value.length)
+const windowState = useMessageWindow(totalCount, { initialSize: INITIAL_WINDOW, chunkSize: HISTORY_CHUNK })
+
+/**
+ * 单遍预计算每条的序号/前后回答标记。
+ * 旧实现把 getAnswerIndex/hasPrevAnswer/hasNextAnswer 直接写在模板里，每条消息各扫
+ * 一遍数组（O(n²)），且每次重渲染都重算；这里一次遍历算完并随窗口切片复用。
+ */
+const displayMeta = computed(() => {
+  const list = displayMessages.value
+  const lastAssistant = list.map((m) => m.role === 'assistant').lastIndexOf(true)
+  const rows: Array<{
+    message: Message
+    index: number
+    answerIndex?: number
+    hasPrevAnswer: boolean
+    hasNextAnswer: boolean
+  }> = []
+  let answers = 0
+  for (let i = 0; i < list.length; i++) {
+    const isAssistant = list[i].role === 'assistant'
+    if (isAssistant) answers++
+    rows.push({
+      message: list[i],
+      index: i,
+      answerIndex: isAssistant ? answers : undefined,
+      // 前面已出现过助手消息 / 后面还有助手消息
+      hasPrevAnswer: answers > (isAssistant ? 1 : 0),
+      hasNextAnswer: isAssistant ? i < lastAssistant : lastAssistant > i,
+    })
+  }
+  return rows
+})
+
+/** 当前窗口内的消息（带预计算元数据） */
+const visibleMessages = computed(() => displayMeta.value.slice(windowState.startIndex.value))
+
+/** 向上补齐历史，并保住滚动位置 */
+async function loadMoreHistory(): Promise<void> {
+  await expandHistoryKeepingScroll(
+    listRef.value,
+    '[data-message-id]',
+    () => windowState.expandHistory(),
+  )
+}
+
 // 消息组件引用存储
 const messageRefs = new Map<string, any>()
 
@@ -90,45 +156,7 @@ function setMessageRef(el: any, messageId: string) {
   }
 }
 
-// 计算 AI 回答的序号（第几次回答）
-function getAnswerIndex(messageIndex: number): number | undefined {
-  const message = displayMessages.value[messageIndex]
-  // 只有 AI 回答才计算序号
-  if (message?.role !== 'assistant') return undefined
-
-  // 计算这是第几个 assistant 消息
-  let count = 0
-  for (let i = 0; i <= messageIndex; i++) {
-    if (displayMessages.value[i]?.role === 'assistant') {
-      count++
-    }
-  }
-  return count
-}
-
-// 判断是否有上一个 AI 回答
-function hasPrevAnswer(messageIndex: number): boolean {
-  // 向前查找 assistant 消息
-  for (let i = messageIndex - 1; i >= 0; i--) {
-    if (displayMessages.value[i]?.role === 'assistant') {
-      return true
-    }
-  }
-  return false
-}
-
-// 判断是否有下一个 AI 回答
-function hasNextAnswer(messageIndex: number): boolean {
-  // 向后查找 assistant 消息
-  for (let i = messageIndex + 1; i < displayMessages.value.length; i++) {
-    if (displayMessages.value[i]?.role === 'assistant') {
-      return true
-    }
-  }
-  return false
-}
-
-// 处理导航到上一个/下一个回答
+// 处理导航到上一个/下一个回答（基于完整消息列表的索引，非窗口内索引）
 function handleNavigateAnswer(currentIndex: number, direction: 'prev' | 'next'): void {
   const targetIndex = direction === 'prev'
     ? findPrevAnswerIndex(currentIndex)
@@ -164,7 +192,14 @@ function findNextAnswerIndex(currentIndex: number): number {
 }
 
 // 格式化流式内容（带代码块）
+// 缓存：流式 delta 每秒可触发数十次重渲染，同一份内容不该反复重跑占位符提取与转义
+const streamRenderCache = createRenderCache((text: string) => renderStreamContent(text))
+
 function formatStreamContent(content: string): string {
+  return streamRenderCache.get('stream', content)
+}
+
+function renderStreamContent(content: string): string {
   if (!content) return ''
 
   // 提取代码块为占位符（含流式输出中的未闭合块）
@@ -237,6 +272,11 @@ function handleScroll(): void {
   }
 
   lastScrollTop.value = scrollTop
+
+  // 接近顶部时自动补齐历史（窗口化：长会话不一次性挂载）
+  if (scrollTop < HISTORY_EXPAND_THRESHOLD && windowState.canExpand.value) {
+    void loadMoreHistory()
+  }
 }
 
 // 滚动到底部
@@ -357,6 +397,24 @@ defineExpose({
 .messages-container {
   // 自适应宽度，不再限制最大宽度
   width: 100%;
+}
+
+/* 折叠历史的展开入口（窗口化：长会话首开只挂最近若干条） */
+.history-more {
+  margin: 0 auto 14px;
+  width: fit-content;
+  padding: 5px 14px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color);
+  border-radius: 999px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.history-more:hover {
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
 }
 
 .message-item.assistant {

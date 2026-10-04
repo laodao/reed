@@ -57,15 +57,26 @@ export function registerAgentConsoleHandlers(): void {
       const runningScopes = new Set(getAgentRunRegistry().listRunning(userId).map((r) => r.scopeKey))
       // 展示名：聊天=对话标题；任务=叶子任务标题（rootId 经任务行反查——叶子 id
       // 不能直接当 root 跳转，29 号 review P2-1）
+      // 标题一次批量取（旧实现逐会话 getById → N+1，会话多时首屏 >15s）
       const db = getCoreDatabaseManager()
+      const parsed = rows.map((row) => ({ row, ...parseConversation(row.conversationId) }))
+      const chatDialogIds = parsed
+        .filter((p) => p.kind === 'chat' && p.refId)
+        .map((p) => p.refId!)
+      let chatTitles = new Map<string, string>()
+      if (chatDialogIds.length > 0 && db.dialogs) {
+        try {
+          chatTitles = await db.dialogs.getTitlesByIds(chatDialogIds)
+        } catch { /* 标题查询失败退回 scopeKey */ }
+      }
+
       const out: AgentConsoleSession[] = []
-      for (const row of rows) {
-        const { kind, scopeKey, refId } = parseConversation(row.conversationId)
+      for (const { row, kind, scopeKey, refId } of parsed) {
         let label = scopeKey
         let rootId: string | null = null
         try {
-          if (kind === 'chat' && db.dialogs) {
-            label = (await db.dialogs.getById(refId!))?.title ?? label
+          if (kind === 'chat' && refId) {
+            label = chatTitles.get(refId) ?? label
           } else if (kind === 'task' && s.agentTasks) {
             const task = await s.agentTasks.getById(refId!)
             if (task) {

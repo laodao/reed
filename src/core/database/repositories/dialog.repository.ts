@@ -6,6 +6,7 @@
  */
 
 import type { DataSource } from 'typeorm'
+import { In } from 'typeorm'
 import type {
   Dialog,
   ContextConfig,
@@ -76,6 +77,22 @@ export class DialogRepository extends BaseRepository<DialogEntity, Dialog> {
   async getById(id: string): Promise<Dialog | null> {
     const e = await this.scoped.findOne({ id } as any)
     return e ? this.toDto(e) : null
+  }
+
+  /**
+   * 批量取对话标题（一次查询）。
+   * 用于列表类场景替换逐个 getById 的 N+1（如 Agent 工作台会话列表：
+   * 会话多时逐个查询会把首屏拖到十几秒）。
+   * @returns id → title；查不到的 id 不在 Map 中（调用方自行兜底）
+   */
+  async getTitlesByIds(ids: string[]): Promise<Map<string, string>> {
+    const unique = [...new Set(ids.filter(Boolean))]
+    if (unique.length === 0) return new Map()
+    const rows = await this.scoped.find({
+      where: { id: In(unique) },
+      select: { id: true, title: true },
+    } as never)
+    return new Map(rows.map((r) => [r.id, r.title]))
   }
 
   async create(

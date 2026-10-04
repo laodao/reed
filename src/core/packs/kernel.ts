@@ -16,6 +16,7 @@
 
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { createLogger } from '@core/utils/logger'
+import { createBootTrace } from '@core/utils/boot-trace'
 import { PackRegistry, type PackDefinition } from './registry'
 import { PackService } from './pack.service'
 import { bindPackGuardResolver } from './ipc-guard'
@@ -38,6 +39,9 @@ let subsystem: PackSubsystem | null = null
 export async function initPackSubsystem(builtinPacks: PackDefinition[] = []): Promise<PackSubsystem> {
   if (subsystem) return subsystem
 
+  // 分段计时：包内核装配是启动关键路径上的同步工作，需知道每个包与每个阶段各占多久
+  const trace = createBootTrace('PackKernel.init')
+
   const db = getCoreDatabaseManager()
   if (!db.packs || !db.packBindings) {
     throw new Error('业务包数据仓库未初始化（数据库管理器缺少 packs/packBindings 仓库）')
@@ -47,6 +51,7 @@ export async function initPackSubsystem(builtinPacks: PackDefinition[] = []): Pr
   const registry = new PackRegistry()
   for (const def of builtinPacks) {
     await registry.registerPack(def)
+    trace.mark(`register:${def.manifest.id}`)
   }
 
   // 2. 物化快照（business_packs 幂等 UPSERT by manifest_hash）
@@ -56,6 +61,7 @@ export async function initPackSubsystem(builtinPacks: PackDefinition[] = []): Pr
   } catch (e) {
     logger.error('[pack-kernel] 内置包快照物化失败（继续启动，启用解析将退化为 manifest 默认）', e)
   }
+  trace.mark('materializeSnapshot')
 
   // 3. 恢复启用态：全局解析链（binding 全局行 ?? record.enabled ?? manifest.defaultEnabled ?? true）
   for (const def of registry.listDefinitions()) {
@@ -65,6 +71,7 @@ export async function initPackSubsystem(builtinPacks: PackDefinition[] = []): Pr
     } catch (e) {
       logger.error(`[pack-kernel] 包 "${def.manifest.id}" 启用态恢复失败（保持 manifest 默认）`, e)
     }
+    trace.mark(`resolveEnabled:${def.manifest.id}`)
   }
 
   // 4. 接 IPC 守卫：channel 前缀归属 + 启用态裁决（bridge-adapter 注册点已包 guardIpcHandler）
@@ -73,9 +80,11 @@ export async function initPackSubsystem(builtinPacks: PackDefinition[] = []): Pr
     if (!owner) return null // 归属未知 → 放行
     return { packId: owner, state: registry.getPackState(owner) }
   })
+  trace.mark('bindGuard')
 
   subsystem = { registry, service }
   logger.info(`[pack-kernel] 业务包子系统已启动（${builtinPacks.length} 个内置包）`)
+  trace.report(undefined, 30)
   return subsystem
 }
 

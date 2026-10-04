@@ -99,6 +99,7 @@ import { DataPathService } from './services/data-path.service'
 import { cspForRequest } from './platform/app-csp'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { getDatabaseManager } from './database'
+import { createBootTrace } from '@core/utils/boot-trace'
 import { ElectronPathProvider } from './services/electron-path.provider'
 import { ElectronBroadcastEventEmitter } from './services/electron-event-emitter'
 import { SecureStorageService } from './services/secure-storage.service'
@@ -385,33 +386,46 @@ function createWindow(): void {
  * 初始化 IPC 处理器
  */
 function initIpcHandlers(): void {
-  registerSettingsHandlers()
-  registerApiKeyHandlers()
-  registerProviderConfigHandlers()
-  registerImageHandlers()
-  registerFileHandlers()
-  registerTranslationHandlers()
-  registerDataPathHandlers()
-  registerExportHandlers()
+  // 逐个计时：注册本身只是 ipcBridge.handle 登记，耗时主要在**模块求值**（各 handler
+  // 顶层 import 的服务/原生依赖），必须知道是哪一个，才能判断能不能推迟或拆开
+  const t = createBootTrace('main.initIpcHandlers')
+  const step = <T>(label: string, fn: () => T): T => {
+    const r = fn()
+    t.mark(label)
+    return r
+  }
+  step('settings', registerSettingsHandlers)
+  step('apiKey', registerApiKeyHandlers)
+  step('providerConfig', registerProviderConfigHandlers)
+  step('image', registerImageHandlers)
+  step('file', registerFileHandlers)
+  step('translation', registerTranslationHandlers)
+  step('dataPath', registerDataPathHandlers)
+  step('export', registerExportHandlers)
   // skills/diary/portrait/chat/voice-design/longwriting/episode-production/
   // workflow/app/knowledge-base/asset-center 十一个业务的 handler 已迁移为内置业务包
   // （core/packs/builtin-packs），由包内核激活时注册，不再在此平铺（避免重复注册）
-  registerSearchEngineHandlers()
-  registerToolHandlers()
-  registerEmailHandlers()
-  registerInfoSourceHandlers()
-  registerFaviconHandlers()
-  registerOSSHandlers()
-  registerDataSourceHandlers()
-  registerPackHandlers()
+  step('searchEngine', registerSearchEngineHandlers)
+  step('tool', registerToolHandlers)
+  step('email', registerEmailHandlers)
+  step('infoSource', registerInfoSourceHandlers)
+  step('favicon', registerFaviconHandlers)
+  step('oss', registerOSSHandlers)
+  step('dataSource', registerDataSourceHandlers)
+  step('pack', registerPackHandlers)
   // 事件系统管理面（10-event-system §5.3/§8）：DLQ 收口 + 消费者水位
-  registerEventAdminHandlers()
+  step('eventAdmin', registerEventAdminHandlers)
   // 通知中心（顶栏铃铛 + 历史列表 + 点击跳转）：平台事件翻译 + 已读独立落表
-  registerNotificationHandlers()
+  step('notification', registerNotificationHandlers)
+  t.report(undefined, 20)
 }
 
 // 应用就绪
 app.whenReady().then(async () => {
+  // 启动分段计时：这条链路全部串行，决定了"窗口出现 → 界面可用"的等待时长。
+  // 分段数据写入日志（boot-trace），便于定位回归（见 progress/2026-09-16-*）。
+  const bootTrace = createBootTrace('main.boot')
+
   // 设置应用用户模型 ID（Windows）
   electronApp.setAppUserModelId('com.daoge.the_bot')
 
@@ -433,11 +447,13 @@ app.whenReady().then(async () => {
   ElectronPathProvider.getInstance()
   ElectronBroadcastEventEmitter.getInstance()
   SecureStorageService.getInstance()
+  bootTrace.mark('platformServices')
 
   // 初始化数据库
   try {
     const dbManager = getDatabaseManager()
     await dbManager.initialize()
+    bootTrace.mark('database')
     console.log('数据库初始化成功')
   } catch (error: any) {
     // 数据库初始化失败会导致所有依赖数据库的功能（对话/图像/角色等）报"数据库未初始化"。
@@ -458,7 +474,10 @@ app.whenReady().then(async () => {
   }
 
   // 注册 IPC 处理器
+  bootTrace.mark('beforeIpcHandlers')
   initIpcHandlers()
+  bootTrace.mark('afterIpcHandlers')
+  bootTrace.mark('initIpcHandlers')
 
   // 启动声音复刻轮询调度器（boot resume + 持续轮询 training 任务）
   // 设计文档：docs/superpowers/specs/2026-05-07-voice-cloning-design.md §5.5
@@ -466,21 +485,26 @@ app.whenReady().then(async () => {
     const { VoiceCloneJobScheduler } = await import(
       '../core/platform/services/voice-clone-job-scheduler'
     )
+    bootTrace.mark('import:voiceCloneScheduler')
     VoiceCloneJobScheduler.getInstance().start()
     console.log('[boot] VoiceCloneJobScheduler 已启动')
   } catch (e: any) {
     console.warn('[boot] VoiceCloneJobScheduler 启动失败（不致命）:', e?.message ?? e)
   }
+  bootTrace.mark('voiceCloneScheduler')
 
   // 业务包子系统（第一期：包内核——注册表/快照物化/启用态恢复/IPC 守卫；失败不致命）。
   // 不依赖 workflow，放在工作流子系统初始化之前（P4 起业务包的 activate 会复用 workflow 等设施）。
   try {
     const { initPackSubsystem } = await import('@core/packs/kernel')
+    bootTrace.mark('import:packKernel')
     const { builtinPacks } = await import('@core/packs/builtin-packs')
+    bootTrace.mark('import:builtinPacks')
     await initPackSubsystem(builtinPacks)
   } catch (e: any) {
     console.warn('[boot] 业务包子系统启动失败（不致命）', e)
   }
+  bootTrace.mark('packSubsystem')
 
   // 工作流子系统：引擎装配 + boot 恢复 + 触发调度器（失败不致命）
   try {
@@ -488,18 +512,23 @@ app.whenReady().then(async () => {
     const { registerDocumentTools, DocumentToolsService } = await import('@core/platform/services/document-tools/document-tools')
     const { ElectronDocumentRenderer } = await import('./platform/electron-document-renderer')
     registerDocumentTools(new DocumentToolsService(new ElectronDocumentRenderer()))
+    bootTrace.mark('documentTools')
 
     const { initWorkflowSubsystem } = await import('@core/platform/workflow/workflow-boot')
+    bootTrace.mark('import:workflowBoot')
     const { IpcEventChannel } = await import('@core/platform/services/event-system/channels/ipc.channel')
     // ipc 通道（10-event-system §5.4）：平台事件 workflow.run.* → wf:run-event 推渲染进程
     await initWorkflowSubsystem({ eventChannels: [new IpcEventChannel()] })
   } catch (e: any) {
     console.warn('[boot] 工作流子系统启动失败（不致命）', e)
   }
+  bootTrace.mark('workflowSubsystem')
 
   // 创建窗口 + 托盘（托盘先建：close 拦截以 tray 就位为前提；托盘失败=关窗直接退出的旧行为）
   createTray()
   createWindow()
+  bootTrace.mark('createWindow')
+  bootTrace.report(undefined, 100)
 
   // macOS 激活应用：无窗重建，有窗（被隐藏）恢复显示
   app.on('activate', () => {

@@ -7,10 +7,15 @@
  *              连接池经 pool-cache 按 (driver+参数指纹) 复用（评审 #25）：
  *              此前每次查询 createPool→end，批量执行每行一次 TCP+TLS 握手；
  *              现在池常驻（5 分钟空闲回收），查询失败驱逐坏池下次重建。
+ *
+ * ⚠️ 驱动按需加载（2026-09-16 启动性能实测）：`pg` 模块求值 32ms（mysql2 133ms、
+ * mssql→tedious 378ms）。原来在 boot 装配时静态 import，四个驱动合计 ~544ms 压
+ * 在启动关键路径上。现在首次连接/查询时才动态 import。
  */
 
-import { Pool } from 'pg'
+import type { Pool } from 'pg'
 import { acquirePooled, evictPooled, isConnectionClassError } from './pool-cache'
+import { lazyModule } from './lazy-module'
 import type {
   DataSourceConnectionParams,
   DataSourceDriverAdapter,
@@ -18,8 +23,12 @@ import type {
   DataSourceTestResult,
 } from '@shared/types/datasource.types'
 
-function createPool(params: DataSourceConnectionParams): Pool {
-  return new Pool({
+/** pg 单例加载器（首次连接才真正求值） */
+const loadPg = lazyModule(() => import('pg'), (m: { Pool: typeof Pool }) => ({ Pool: m.Pool }))
+
+async function createPool(params: DataSourceConnectionParams): Promise<Pool> {
+  const { Pool: PgPool } = await loadPg()
+  return new PgPool({
     host: params.host,
     port: params.port,
     database: params.database,

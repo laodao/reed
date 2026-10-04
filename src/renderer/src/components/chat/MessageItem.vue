@@ -18,40 +18,37 @@
           </span>
           <span class="message-time">{{ formatTime(message.createdAt) }}</span>
         </div>
-        <!-- AI回答：右侧操作按钮 -->
+        <!-- AI回答：右侧操作按钮（首开性能：tooltip 用原生 title，避免每条消息多挂 3 个浮层组件） -->
         <div v-if="message.role === 'assistant'" class="header-right">
-          <el-tooltip content="上一个回答" placement="top">
-            <el-button
-              size="small"
-              text
-              class="nav-btn"
-              :disabled="!hasPrevAnswer"
-              @click="$emit('navigateAnswer', 'prev')"
-            >
-              <el-icon><ArrowUp /></el-icon>
-            </el-button>
-          </el-tooltip>
-          <el-tooltip content="下一个回答" placement="top">
-            <el-button
-              size="small"
-              text
-              class="nav-btn"
-              :disabled="!hasNextAnswer"
-              @click="$emit('navigateAnswer', 'next')"
-            >
-              <el-icon><ArrowDown /></el-icon>
-            </el-button>
-          </el-tooltip>
-          <el-tooltip :content="isRenderMode ? '切换到源码模式' : '切换到阅读模式'" placement="top">
-            <el-button
-              size="small"
-              text
-              class="view-mode-toggle"
-              @click="isRenderMode = !isRenderMode"
-            >
-              <el-icon><component :is="isRenderMode ? 'Tickets' : 'View'" /></el-icon>
-            </el-button>
-          </el-tooltip>
+          <el-button
+            size="small"
+            text
+            class="nav-btn"
+            title="上一个回答"
+            :disabled="!hasPrevAnswer"
+            @click="$emit('navigateAnswer', 'prev')"
+          >
+            <el-icon><ArrowUp /></el-icon>
+          </el-button>
+          <el-button
+            size="small"
+            text
+            class="nav-btn"
+            title="下一个回答"
+            :disabled="!hasNextAnswer"
+            @click="$emit('navigateAnswer', 'next')"
+          >
+            <el-icon><ArrowDown /></el-icon>
+          </el-button>
+          <el-button
+            size="small"
+            text
+            class="view-mode-toggle"
+            :title="isRenderMode ? '切换到源码模式' : '切换到阅读模式'"
+            @click="isRenderMode = !isRenderMode"
+          >
+            <el-icon><component :is="isRenderMode ? 'Tickets' : 'View'" /></el-icon>
+          </el-button>
         </div>
       </div>
 
@@ -83,25 +80,20 @@
         <div v-else class="message-text" ref="messageContentRef" @click="handleContentClick">
           <!-- Agent 工具调用 chips（28 号 M5；内容上方，呼应执行顺序） -->
           <div v-if="message.metadata?.agent?.toolCalls?.length" class="agent-tool-calls">
-            <el-tooltip
+            <el-tag
               v-for="call in collapsedToolCalls"
               :key="call.key"
-              :content="call.argsDigest || call.name"
-              placement="top"
-              :disabled="!call.argsDigest"
+              size="small"
+              effect="plain"
+              :type="call.ok === false ? 'danger' : call.ok === true ? 'success' : 'info'"
+              class="tool-chip"
+              :title="call.argsDigest || call.name"
             >
-              <el-tag
-                size="small"
-                effect="plain"
-                :type="call.ok === false ? 'danger' : call.ok === true ? 'success' : 'info'"
-                class="tool-chip"
-              >
-                <el-icon v-if="call.ok === false"><CircleCloseFilled /></el-icon>
-                <el-icon v-else-if="call.ok === true"><CircleCheckFilled /></el-icon>
-                <el-icon v-else class="is-loading"><Loading /></el-icon>
-                <span class="tool-chip-name">{{ agentToolLabel(call.name) }}<template v-if="call.count > 1"> ×{{ call.count }}</template></span>
-              </el-tag>
-            </el-tooltip>
+              <el-icon v-if="call.ok === false"><CircleCloseFilled /></el-icon>
+              <el-icon v-else-if="call.ok === true"><CircleCheckFilled /></el-icon>
+              <el-icon v-else class="is-loading"><Loading /></el-icon>
+              <span class="tool-chip-name">{{ agentToolLabel(call.name) }}<template v-if="call.count > 1"> ×{{ call.count }}</template></span>
+            </el-tag>
           </div>
           <!-- AI 回答：根据模式切换显示 -->
           <template v-if="message.role === 'assistant'">
@@ -223,48 +215,41 @@
           <span class="token-placeholder"></span>
 
           <!-- AI回答：回到顶部按钮 -->
-          <el-tooltip v-if="message.role === 'assistant'" content="回到顶部" placement="top">
-            <el-button size="small" text class="back-to-top-btn" :class="{ visible: showActions }" @click="scrollToTop">
-              <el-icon><Top /></el-icon>
-            </el-button>
-          </el-tooltip>
+          <el-button v-if="message.role === 'assistant'" size="small" text class="back-to-top-btn" :class="{ visible: showActions }" title="回到顶部" @click="scrollToTop">
+            <el-icon><Top /></el-icon>
+          </el-button>
 
-          <!-- 消息操作工具栏 -->
-          <div v-if="!isEditing" class="message-actions" :class="{ visible: showActions }">
+          <!--
+            消息操作工具栏。两个约束：
+            ① tooltip 用原生 title（本来就不需要浮层组件，每条消息少挂 5~8 个实例）；
+            ② 只在真正 hover（showActions）后才渲染——里面的 el-dropdown 会各建一个
+               popper 实例，首开一次性挂载整屏消息时是主要开销之一。
+          -->
+          <div v-if="!isEditing && showActions" class="message-actions visible">
             <!-- 用户消息操作 -->
             <template v-if="message.role === 'user'">
-              <el-tooltip content="编辑" placement="top">
-                <el-button size="small" text @click="startEdit">
-                  <el-icon><Edit /></el-icon>
-                </el-button>
-              </el-tooltip>
-              <el-tooltip content="复制" placement="top">
-                <el-button size="small" text @click="copyMessage">
-                  <el-icon><CopyDocument /></el-icon>
-                </el-button>
-              </el-tooltip>
-              <el-tooltip content="删除" placement="top">
-                <el-button size="small" text @click="deleteMessage">
-                  <el-icon><Delete /></el-icon>
-                </el-button>
-              </el-tooltip>
+              <el-button size="small" text title="编辑" @click="startEdit">
+                <el-icon><Edit /></el-icon>
+              </el-button>
+              <el-button size="small" text title="复制" @click="copyMessage">
+                <el-icon><CopyDocument /></el-icon>
+              </el-button>
+              <el-button size="small" text title="删除" @click="deleteMessage">
+                <el-icon><Delete /></el-icon>
+              </el-button>
             </template>
 
             <!-- AI 回答操作 -->
             <template v-else>
-              <el-tooltip content="重新回答" placement="top">
-                <el-button size="small" text @click="regenerate">
-                  <el-icon><Refresh /></el-icon>
-                </el-button>
-              </el-tooltip>
-              <el-tooltip content="换模型重答" placement="top">
-                <el-button size="small" text @click="openModelSelectDialog">
-                  <el-icon><Switch /></el-icon>
-                </el-button>
-              </el-tooltip>
+              <el-button size="small" text title="重新回答" @click="regenerate">
+                <el-icon><Refresh /></el-icon>
+              </el-button>
+              <el-button size="small" text title="换模型重答" @click="openModelSelectDialog">
+                <el-icon><Switch /></el-icon>
+              </el-button>
               <!-- 复制菜单 -->
               <el-dropdown trigger="click" placement="top">
-                <el-button size="small" text>
+                <el-button size="small" text title="复制">
                   <el-icon><CopyDocument /></el-icon>
                 </el-button>
                 <template #dropdown>
@@ -278,15 +263,13 @@
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
-              <el-tooltip content="删除" placement="top">
-                <el-button size="small" text @click="deleteMessage">
-                  <el-icon><Delete /></el-icon>
-                </el-button>
-              </el-tooltip>
+              <el-button size="small" text title="删除" @click="deleteMessage">
+                <el-icon><Delete /></el-icon>
+              </el-button>
 
               <!-- 更多操作菜单 -->
               <el-dropdown trigger="click" placement="top-end">
-                <el-button size="small" text>
+                <el-button size="small" text title="更多操作">
                   <el-icon><More /></el-icon>
                 </el-button>
                 <template #dropdown>
@@ -443,19 +426,27 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, watch, onMounted } from 'vue'
+import { ref, computed, nextTick, watch, onMounted, defineAsyncComponent } from 'vue'
 import { useRouter } from 'vue-router'
 import { Document, Edit, CopyDocument, Delete, Refresh, Switch, Collection, More, Picture, Notebook, ArrowRight, Folder, ArrowUp, ArrowDown, Top, CircleCheckFilled, CircleCloseFilled, Loading, Link, View } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElImageViewer } from 'element-plus'
 import { marked } from 'marked'
 import type { Message, Attachment } from '../../../shared/types'
-import ModelSelectDialog from './ModelSelectDialog.vue'
-import ExportToObsidianDialog from './ExportToObsidianDialog.vue'
 import { saveBlobAs } from '@/utils/file-saver'
 import { agentToolLabel } from '@/utils/agent-tool-labels'
 import { extractCodeBlocks, restoreCodeBlocks, escapeHtmlKeepPlaceholders } from './code-block'
-// 重型库（html2canvas/mermaid）按需加载：避免阻塞聊天页首次打开（模块求值耗时大）
-import { loadHtml2Canvas, loadMermaid } from '@/utils/lazy-libs'
+// 重型库按需加载：避免阻塞聊天页首次打开（模块求值耗时大）
+import { loadHtml2Canvas, loadMermaid, scheduleIdleLoad } from '@/utils/lazy-libs'
+// 渲染缓存 + mermaid 门控（首开性能）：同一份内容只解析一次；
+// 只有真含 mermaid 代码块的消息才去尝试渲染图表
+import { createRenderCache, containsMermaidBlock, hashText } from '@/utils/chat-render-cache'
+// 重型渲染的可见性门控（mermaid 图表只在消息进入视口后才渲染）
+import { useVisibleOnce } from '@/composables/useVisibleOnce'
+
+// 模型选择 / 导出到 Obsidian 只在助手消息的操作菜单里用到：
+// 异步组件让它们（及其依赖）不进入聊天页首开的 chunk 求值路径
+const ModelSelectDialog = defineAsyncComponent(() => import('./ModelSelectDialog.vue'))
+const ExportToObsidianDialog = defineAsyncComponent(() => import('./ExportToObsidianDialog.vue'))
 
 // ==================== Agent 工具 chips / 引用卡片（28 号 M5） ====================
 
@@ -659,6 +650,8 @@ async function handleExportToDiary() {
 
 // 图片预览缓存
 const imagePreviewUrls = ref<Map<string, string>>(new Map())
+/** 加载失败的附件 id：避免模板里 getImageUrl 每次重渲染都再发起一次读取（曾造成渲染循环） */
+const imagePreviewFailed = new Set<string>()
 
 // 图片导出相关
 const imageExportContainer = ref<HTMLElement | null>(null)
@@ -671,6 +664,9 @@ const currentKbRef = ref<{ documentId: string; documentName: string; score: numb
 // 消息内容容器引用
 const messageContentRef = ref<HTMLElement | null>(null)
 
+// 重型渲染（mermaid）的可见性门控：进入视口后才开始图表渲染
+const heavyRenderVisible = useVisibleOnce(messageItemRef)
+
 // 渲染 Mermaid 图表（按需加载 mermaid：仅当消息确实包含 mermaid 代码块时）
 async function renderMermaidCharts(): Promise<void> {
   if (!messageContentRef.value) return
@@ -679,6 +675,7 @@ async function renderMermaidCharts(): Promise<void> {
   if (!isRenderMode.value) return
 
   const mermaidWrappers = messageContentRef.value.querySelectorAll('.mermaid-wrapper')
+  // 先查 DOM 再加载库：不含图表的消息永远不会触发 mermaid 求值（首开性能关键）
   if (mermaidWrappers.length === 0) return
 
   // 惰性加载 mermaid（首次使用才 import + initialize，之后复用单例）
@@ -725,29 +722,37 @@ async function renderMermaidCharts(): Promise<void> {
   }
 }
 
-// 使用 requestAnimationFrame 确保在浏览器渲染后执行
+/**
+ * 内容指纹：只有内容里出现过 mermaid 围栏的消息才值得调度图表渲染。
+ * 直接对全文做正则代价随长度线性增长（流式大回答每条消息、每次增量都跑一遍），
+ * 因此先比较 FNV 指纹——未变化直接复用上次判定结果。
+ */
+let mermaidProbeHash = -1
+let mermaidProbeResult = false
+function mayContainMermaid(content: string): boolean {
+  const h = hashText(content)
+  if (h !== mermaidProbeHash) {
+    mermaidProbeHash = h
+    mermaidProbeResult = containsMermaidBlock(content)
+  }
+  return mermaidProbeResult
+}
+
+/**
+ * 调度图表渲染：三段门控——① 内容里出现过 mermaid 围栏；② 该消息已进入过视口；
+ * ③ 推进到首帧绘制之后的空闲时段。mermaid 的模块求值 + HTML 标签量算
+ * （getBoundingClientRect）在首开会造成 ~600ms 主线程长任务，必须等消息列表
+ * 先画出来再做。
+ */
 function scheduleMermaidRender(): void {
+  if (!mayContainMermaid(props.message.content)) return
+  if (!heavyRenderVisible.value) return
   requestAnimationFrame(() => {
-    nextTick(() => {
-      renderMermaidCharts()
-    })
+    scheduleIdleLoad(() => { void renderMermaidCharts() }, 400)
   })
 }
 
-// 强制重新渲染所有 Mermaid 图表
-function forceRerenderMermaid(): void {
-  if (!messageContentRef.value) return
-
-  // 重置所有 mermaid-wrapper 的状态
-  const mermaidWrappers = messageContentRef.value.querySelectorAll('.mermaid-wrapper')
-  mermaidWrappers.forEach(wrapper => {
-    wrapper.removeAttribute('data-render-status')
-  })
-
-  scheduleMermaidRender()
-}
-
-// 监听内容变化，渲染 mermaid 图表
+// 监听内容变化，渲染 mermaid 图表（renderMode 变化也需要重渲染，见下方 watch）
 watch(
   () => props.message.content,
   () => {
@@ -761,13 +766,17 @@ watch(isRenderMode, () => {
   scheduleMermaidRender()
 })
 
-// 组件挂载后渲染 Mermaid 图表
+// 元素进入视口后才开始图表渲染（首开只渲染用户真正看得到的图）
+watch(heavyRenderVisible, (v) => {
+  if (v) scheduleMermaidRender()
+})
+
+// 组件挂载后渲染 Mermaid 图表。
+// 旧实现额外排了 50ms/200ms/500ms 三个定时器 + 一次 forceRerender，
+// 每条消息 4 次重跑整段管线，是首开与流式期间的固定浪费；
+// 现在统一依赖上面的 scheduleIdleLoad 重试队列。
 onMounted(() => {
-  // 多次尝试渲染，确保复杂内容也能正确渲染
   scheduleMermaidRender()
-  setTimeout(scheduleMermaidRender, 50)
-  setTimeout(scheduleMermaidRender, 200)
-  setTimeout(forceRerenderMermaid, 500)
 })
 
 // 处理复制按钮点击（事件委托）
@@ -809,27 +818,30 @@ async function copyCode(code: string, button: HTMLElement): Promise<void> {
 // 获取图片 URL（用于显示）
 function getImageUrl(attachment: Attachment): string {
   // 如果已经有缓存，直接返回
-  if (imagePreviewUrls.value.has(attachment.id)) {
-    return imagePreviewUrls.value.get(attachment.id)!
-  }
+  const cached = imagePreviewUrls.value.get(attachment.id)
+  if (cached) return cached
 
-  // 否则异步加载并返回占位符
-  loadImagePreview(attachment)
+  // 加载失败的不再重试（否则每次重渲染都会重新发起读取）
+  if (!imagePreviewFailed.has(attachment.id)) loadImagePreview(attachment)
   return ''
 }
 
 // 异步加载图片预览
 async function loadImagePreview(attachment: Attachment): Promise<void> {
   if (attachment.type !== 'image') return
+  if (imagePreviewFailed.has(attachment.id) || imagePreviewUrls.value.has(attachment.id)) return
 
   try {
     const response = await window.electronAPI.file.readAsBase64(attachment.filePath)
-    if (response.success) {
+    if (response.success && response.base64) {
       imagePreviewUrls.value.set(attachment.id, response.base64)
       // 触发重新渲染
       imagePreviewUrls.value = new Map(imagePreviewUrls.value)
+    } else {
+      imagePreviewFailed.add(attachment.id)
     }
   } catch (error) {
+    imagePreviewFailed.add(attachment.id)
     console.error('加载图片预览失败:', error)
   }
 }
@@ -890,8 +902,17 @@ const modelName = computed(() => {
   return props.message.modelId || 'AI'
 })
 
-// 格式化内容 - 阅读模式，使用 marked 解析 markdown
-function formatContent(content: string): string {
+// ==================== 渲染缓存（首开性能） ====================
+// 模板里同步调用 formatContent / formatSourceContent；组件每次重渲染都会重跑整条
+// markdown 管线（marked 解析 + DOMParser 消毒 + 逐行转义）。这里按 (消息 id, 内容)
+// 缓存结果，同一份内容只解析一次——流式期间每秒几十次重渲染不再重复付这份成本。
+// 缓存只存纯计算结果，不依赖 DOM，可安全跨组件生命周期复用。
+
+const renderModeCache = createRenderCache((text: string) => renderMarkdownToHtml(text))
+const sourceModeCache = createRenderCache((text: string) => renderSourceToHtml(text))
+
+/** 阅读模式：markdown → HTML（含代码块占位符与 mermaid 包装） */
+function renderMarkdownToHtml(content: string): string {
   if (!content) return ''
 
   try {
@@ -929,8 +950,13 @@ function formatContent(content: string): string {
   }
 }
 
-// 格式化源码 - 源码模式，保留 markdown 源码但做基本格式化
-function formatSourceContent(content: string): string {
+/** 阅读模式入口（带缓存） */
+function formatContent(content: string): string {
+  return renderModeCache.get(props.message.id, content)
+}
+
+/** 源码模式：保留 markdown 源码但做基本格式化 */
+function renderSourceToHtml(content: string): string {
   if (!content) return ''
 
   // 提取代码块为占位符（兼容 CRLF / c++ 等语言名 / 未闭合流式代码块）
@@ -950,6 +976,17 @@ function formatSourceContent(content: string): string {
     renderSourceCodeBlock(block.language, block.code, !block.closed)
   )
 }
+
+/** 源码模式入口（带缓存） */
+function formatSourceContent(content: string): string {
+  return sourceModeCache.get(props.message.id, content)
+}
+
+/** 渲染模式切换时清掉缓存：两种模式的产物不可混用 */
+watch(isRenderMode, () => {
+  renderModeCache.reset()
+  sourceModeCache.reset()
+})
 
 // 渲染源码模式的代码块（mermaid不渲染，显示为普通代码）
 function renderSourceCodeBlock(language: string, code: string, isOpen: boolean = false): string {
