@@ -228,6 +228,85 @@ describe('executeGenerateSegmentVideo · 批量按片段生成', () => {
   })
 })
 
+describe('executeGenerateSegmentVideo · 孤儿分镜触发 recompute', () => {
+  let ds: DataSource
+
+  beforeEach(async () => {
+    ds = await buildSegDb()
+    segmentSvcMock.generateForSegment.mockReset()
+    segmentSvcMock.generateForSegment.mockResolvedValue(SEGMENT_RESULT)
+    segmentationMock.preview.mockReset()
+    segmentationMock.recompute.mockReset()
+  })
+
+  afterEach(async () => {
+    if (ds.isInitialized) await ds.destroy()
+  })
+
+  it('有活段但存在孤儿分镜（重生分镜后旧段 superseded）→ recompute 收编并生成新段', async () => {
+    // 场景 A 有活段 seg1；场景 B 新分镜 sb2 不属于任何 live 片段（孤儿）
+    segmentationMock.preview.mockResolvedValue(previewOf([
+      segItem('seg1', { storyboardIds: ['sb1'] }),
+    ]))
+    segmentationMock.recompute.mockResolvedValue(previewOf([
+      segItem('seg1', { storyboardIds: ['sb1'] }),
+      segItem('segNew', { seq: 2, storyboardIds: ['sb2'] }),
+    ]))
+    const ctx = buildCtx(ds, [
+      { id: 'sb1', shotNumber: 1, status: 'pending', videoPath: null },
+      { id: 'sb2', shotNumber: 2, status: 'pending', videoPath: null },
+    ])
+
+    const [summary] = await executeEpActions(ctx, [BATCH_ACTION], STATE_WITH_STORYBOARDS)
+    expect(summary.status).toBe('ok')
+    expect(summary.data?.started).toBe(true)
+    await flush()
+
+    expect(segmentationMock.recompute).toHaveBeenCalledTimes(1)
+    expect(segmentationMock.recompute).toHaveBeenCalledWith('ve1')
+    const calledIds = segmentSvcMock.generateForSegment.mock.calls.map((c: any[]) => c[0].segmentId)
+    expect(calledIds).toEqual(['seg1', 'segNew'])
+  })
+
+  it('所有分镜都有 live 归属 → 不触发 recompute，直接按现有片段生成', async () => {
+    segmentationMock.preview.mockResolvedValue(previewOf([
+      segItem('segP', { storyboardIds: ['sb1'] }),
+    ]))
+    const ctx = buildCtx(ds, [{ id: 'sb1', shotNumber: 1, status: 'pending', videoPath: null }])
+
+    const [summary] = await executeEpActions(ctx, [BATCH_ACTION], STATE_WITH_STORYBOARDS)
+    expect(summary.status).toBe('ok')
+    expect(summary.data?.started).toBe(true)
+    await flush()
+
+    expect(segmentationMock.recompute).not.toHaveBeenCalled()
+    expect(segmentSvcMock.generateForSegment).toHaveBeenCalledTimes(1)
+    expect(segmentSvcMock.generateForSegment.mock.calls[0][0])
+      .toEqual({ segmentId: 'segP', providerId: 'pc1', modelId: 'm1' })
+  })
+
+  it('generating 段的分镜计入 live 归属 → 不误判孤儿触发 recompute', async () => {
+    segmentationMock.preview.mockResolvedValue(previewOf([
+      segItem('segG', { status: 'generating', storyboardIds: ['sbG'] }),
+      segItem('segP', { seq: 2, storyboardIds: ['sb1'] }),
+    ]))
+    const ctx = buildCtx(ds, [
+      { id: 'sbG', shotNumber: 1, status: 'generating', videoPath: null },
+      { id: 'sb1', shotNumber: 2, status: 'pending', videoPath: null },
+    ])
+
+    const [summary] = await executeEpActions(ctx, [BATCH_ACTION], STATE_WITH_STORYBOARDS)
+    expect(summary.status).toBe('ok')
+    expect(summary.data?.started).toBe(true)
+    await flush()
+
+    expect(segmentationMock.recompute).not.toHaveBeenCalled()
+    expect(segmentSvcMock.generateForSegment).toHaveBeenCalledTimes(1)
+    expect(segmentSvcMock.generateForSegment.mock.calls[0][0])
+      .toEqual({ segmentId: 'segP', providerId: 'pc1', modelId: 'm1' })
+  })
+})
+
 describe('executeGenerateSegmentVideo · 批量分页与 started 语义', () => {
   let ds: DataSource
 

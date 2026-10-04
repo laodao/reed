@@ -1324,9 +1324,15 @@ async function executeGenerateSegmentVideo(
     for (const sb of sbs as any[]) sbHasOwnVideo.set(sb.id, !!sb.videoPath)
   }
   const segSvc = new EpSegmentationService(m.dataSource)
-  // 无片段时先 recompute 分段（幂等：completed 段保留，其余按当前分镜重切）
+  // 无 live 片段、或存在不属于任何 live 片段的孤儿分镜（重生分镜后旧段 superseded）
+  // 时先 recompute 分段（幂等：completed/generating 段保留，其余按当前分镜重切——
+  // V6 守卫保证 generating 段不被删，其分镜计入 live 归属、不会误判孤儿；
+  // 口径与前端 StageStoryboardView.autoEnsureSegments 一致，preview 默认排除 superseded）
   let preview = await segSvc.preview(ctx.episodeId)
-  if (preview.segments.length === 0) {
+  const segmentedIds = new Set<string>()
+  for (const seg of preview.segments) for (const id of seg.storyboardIds) segmentedIds.add(id)
+  const hasOrphanShots = [...sbHasOwnVideo.keys()].some((id) => !segmentedIds.has(id))
+  if (preview.segments.length === 0 || hasOrphanShots) {
     preview = await segSvc.recompute(ctx.episodeId)
   }
   const targets = preview.segments.filter((seg) =>

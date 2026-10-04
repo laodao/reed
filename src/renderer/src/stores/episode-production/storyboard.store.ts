@@ -7,6 +7,7 @@
 
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import type { Storyboard } from '../../../../shared/types/story-to-video.types'
 import { useEpWorkbenchStore } from './workbench.store'
 
@@ -163,8 +164,26 @@ export const useEpStoryboardStore = defineStore('ep-storyboard', () => {
         // H10：handler 返回 { storyboards, unboundCharacters, unboundCount }（旧版直接返回数组，做兼容）
         const payload = response.data as
           | Storyboard[]
-          | { storyboards?: Storyboard[]; unboundCharacters?: string[]; unboundCount?: number }
+          | {
+              storyboards?: Storyboard[]
+              unboundCharacters?: string[]
+              unboundCount?: number
+              // 第三批：写库失败已回滚 / AI 空结果跳过保留原分镜的场景（此前 renderer 零消费）
+              failedScenes?: Array<{ sceneId: string; error: string }>
+              skippedScenes?: string[]
+            }
         const result = Array.isArray(payload) ? payload : (payload?.storyboards ?? [])
+        // 部分失败/跳过时提示用户（全灭时后端 success:false，走下方既有错误路径，不重复提示）
+        if (!Array.isArray(payload)) {
+          const failedScenes = payload?.failedScenes ?? []
+          const skippedScenes = payload?.skippedScenes ?? []
+          if (failedScenes.length > 0) {
+            ElMessage.warning(`${failedScenes.length} 个场景生成失败：${failedScenes[0].error}`)
+          }
+          if (skippedScenes.length > 0) {
+            ElMessage.info(`${skippedScenes.length} 个场景 AI 未返回有效分镜，已保留原分镜`)
+          }
+        }
         // 更新当前场景的分镜（依赖 script store 的 currentScene）
         // 注意：此处通过动态 import 避免循环依赖
         const { useEpScriptStore } = await import('./script.store')
