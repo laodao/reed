@@ -2375,6 +2375,10 @@ const electronAPI = {
         ipcRenderer.invoke('longwriting:library:world:delete', id),
       worldSeedTemplate: (worldId: string, templateId: string) =>
         ipcRenderer.invoke('longwriting:library:world:seedTemplate', worldId, templateId),
+      worldExport: (worldId: string) =>
+        ipcRenderer.invoke('longwriting:library:world:export', worldId),
+      worldImport: (payload: Record<string, unknown>, opts?: { rename?: string }) =>
+        ipcRenderer.invoke('longwriting:library:world:import', payload, opts),
       worldKindList: (worldId: string) =>
         ipcRenderer.invoke('longwriting:library:worldKind:list', worldId),
       worldKindCreate: (data: { worldId: string; key: string; label: string; icon?: string | null; sortOrder?: number; fieldsSchema?: unknown[] | null; promptHint?: string | null }) =>
@@ -2441,6 +2445,8 @@ const electronAPI = {
         ipcRenderer.invoke('longwriting:library:world:generate', req),
       ipGenerate: (req: { eventId: string; seedIdea: string; worldId?: string | null; requirements?: string; providerConfigId?: string; modelId?: string }) =>
         ipcRenderer.invoke('longwriting:library:ip:generate', req),
+      ipGenerateLayer: (req: { eventId: string; step: number; seedIdea: string; worldId?: string | null; confirmed: Record<string, unknown>; requirements?: string; variation?: boolean; providerConfigId?: string; modelId?: string }) =>
+        ipcRenderer.invoke('longwriting:library:ip:generateLayer', req),
       promoteToIp: (projectId: string, characterId: string) =>
         ipcRenderer.invoke('longwriting:library:promoteToIp', projectId, characterId),
       promoteToLibrary: (req: { worldId: string; entityType: string; entityId: string; kindKey?: string }) =>

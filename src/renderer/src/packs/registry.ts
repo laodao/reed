@@ -23,7 +23,7 @@ import {
   type PackInfo,
   type PackManifest,
 } from '@shared/types/pack.types'
-import { registerMenuItems, type MenuItem } from '@/config/menu'
+import { registerMenuItems, registerMenuSubmenus, type MenuItem } from '@/config/menu'
 
 /**
  * 前端包定义：声明式清单 + 代码形态贡献（路由/菜单）。
@@ -35,6 +35,11 @@ export interface RendererPackDefinition {
   menuItems?: MenuItem[]
   /** 主菜单插入锚点：合入到该 path 菜单项之前（缺省追加到末尾），保持历史菜单顺序 */
   menuInsertBefore?: string
+  /**
+   * 二级菜单（key = 父项 path）：注册进独立的 menuSubmenus 注册表，
+   * 仅侧边栏悬停浮层消费——数据不进 mainMenuItems，子项不可能被渲染成顶级菜单。
+   */
+  menuSubmenus?: Record<string, MenuItem[]>
 }
 
 /**
@@ -126,6 +131,11 @@ export function applyPacks(router: Router): void {
     }
     if (pack.menuItems?.length) {
       registerMenuItems(pack.menuItems, { before: pack.menuInsertBefore })
+    }
+    if (pack.menuSubmenus) {
+      for (const [parentPath, items] of Object.entries(pack.menuSubmenus)) {
+        registerMenuSubmenus(parentPath, items)
+      }
     }
   }
 }

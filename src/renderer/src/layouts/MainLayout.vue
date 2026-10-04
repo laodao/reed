@@ -20,16 +20,16 @@
         </div>
       </div>
 
-      <!-- 导航菜单（平铺：父项 + 子项都是独立图标项；含 children 的项悬停弹二级浮层） -->
+      <!-- 导航菜单（纯图标顶级项；含二级菜单的项悬停弹浮层——子项数据在 menuSubmenus，不进顶级） -->
       <nav class="sidebar-nav">
         <div class="nav-section">
           <ul class="nav-list">
             <li
-              v-for="item in flatMenuItems"
+              v-for="item in topMenuItems"
               :key="item.path"
               class="nav-item"
               :class="{ active: isActiveMenuItem(item) }"
-              @click="navigateTo(item.path)"
+              @click="navigateTo(submenuOf(item)[0]?.path ?? item.path)"
               @mouseenter="openSubmenuFlyout(item, $event)"
               @mouseleave="scheduleCloseSubmenu()"
             >
@@ -37,7 +37,7 @@
                 :content="item.label"
                 placement="right"
                 :show-after="300"
-                :disabled="!!item.children?.length"
+                :disabled="submenuOf(item).length > 0"
               >
                 <div class="nav-item-content">
                   <div class="nav-icon-wrapper">
@@ -65,7 +65,7 @@
         >
           <div class="nav-submenu-title">{{ submenuFlyout.item.label }}</div>
           <div
-            v-for="child in submenuFlyout.item.children"
+            v-for="child in submenuFlyout.children"
             :key="child.path"
             class="nav-submenu-item"
             :class="{ active: currentRoute === child.path }"
@@ -137,7 +137,8 @@ import TabBar from '@/components/common/TabBar.vue'
 import {
   mainMenuItems,
   footerMenuItems,
-  flattenMenuItems,
+  visibleMenuItems,
+  getMenuSubmenu,
   type MenuItem
 } from '@/config/menu'
 
@@ -177,22 +178,26 @@ const currentRoute = computed(() => route.path)
  * 父项 + 子项都作为独立图标项渲染，hidden/hideSelf 过滤规则见该模块。
  * 侧边栏为纯图标模式（无展开功能），子菜单若不平铺将不可达。
  */
-const flatMenuItems = computed<MenuItem[]>(() => flattenMenuItems(mainMenuItems))
+const topMenuItems = computed<MenuItem[]>(() => visibleMenuItems(mainMenuItems))
+
+/** 某顶级项的二级菜单（数据在 menuSubmenus 注册表，不在菜单项上） */
+const submenuOf = (item: MenuItem): MenuItem[] => getMenuSubmenu(item.path)
 
 /**
  * 二级菜单悬停浮层（hover flyout）：菜单项含 children 时，悬停在其右侧弹出子菜单。
  * 关闭走 180ms 延迟——鼠标跨过图标与浮层之间的间隙不闪断；浮层自身 mouseenter 续命。
  */
-const submenuFlyout = ref<{ item: MenuItem; top: number; left: number } | null>(null)
+const submenuFlyout = ref<{ item: MenuItem; children: MenuItem[]; top: number; left: number } | null>(null)
 let submenuCloseTimer: ReturnType<typeof setTimeout> | null = null
 
 const isActiveMenuItem = (item: MenuItem): boolean => {
   if (currentRoute.value === item.path) return true
-  return !!item.children?.some(c => c.path === currentRoute.value)
+  return submenuOf(item).some(c => c.path === currentRoute.value)
 }
 
 const openSubmenuFlyout = (item: MenuItem, evt: MouseEvent) => {
-  if (!item.children?.length) {
+  const children = submenuOf(item)
+  if (children.length === 0) {
     closeSubmenuNow()
     return
   }
@@ -201,7 +206,10 @@ const openSubmenuFlyout = (item: MenuItem, evt: MouseEvent) => {
     submenuCloseTimer = null
   }
   const rect = (evt.currentTarget as HTMLElement).getBoundingClientRect()
-  submenuFlyout.value = { item, top: rect.top, left: rect.right + 8 }
+  // 估算浮层高度（标题 + 子项 + 内边距），贴近视口底部时上移防溢出
+  const estimatedHeight = 38 + children.length * 37 + 12
+  const top = Math.max(8, Math.min(rect.top, window.innerHeight - estimatedHeight - 8))
+  submenuFlyout.value = { item, children, top, left: rect.right + 8 }
 }
 
 const scheduleCloseSubmenu = () => {
@@ -384,16 +392,19 @@ watch(
   }
 }
 
+// 复盘（2026-09-25）：浮层 teleport 到 body 后脱离 .main-layout 的 [data-theme] 作用域，
+// 而 data-skin 在 documentElement 上仍会把 --sidebar-item-active-bg 覆盖成半透明渐变
+// ——半透明底 + 白字 = "白底白字"白屏。故浮层颜色全部硬编码（图标栏恒为深色，视觉一致，
+// 与主题/皮肤彻底解耦），不再引用任何 CSS 变量。
 .nav-submenu-flyout {
   position: fixed;
   z-index: 3000;
   min-width: 168px;
   padding: 6px;
-  background: var(--sidebar-item-active-bg, #2a2a35);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: var(--radius-md, 8px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(8px);
+  background: #20242e;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
 .nav-submenu-title {
@@ -407,19 +418,19 @@ watch(
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border-radius: var(--radius-sm, 6px);
-  color: rgba(255, 255, 255, 0.85);
+  border-radius: 6px;
+  color: #e8eaf0;
   font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
-  transition: background var(--transition-fast, 0.15s);
+  transition: background 0.15s;
 
   &:hover {
-    background: var(--sidebar-item-hover-bg, rgba(255, 255, 255, 0.08));
+    background: rgba(255, 255, 255, 0.09);
   }
 
   &.active {
-    background: var(--sidebar-item-active-bg, rgba(255, 255, 255, 0.14));
+    background: rgba(76, 118, 255, 0.32);
     color: #fff;
   }
 }

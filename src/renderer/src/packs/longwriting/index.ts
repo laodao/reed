@@ -75,15 +75,18 @@ export const longwritingPack: RendererPackDefinition = {
       path: '/longwriting',
       label: '长文写作',
       description: 'AI 辅助长篇小说创作',
-      icon: markRaw(EditPen),
-      // 侧边栏 hover 二级菜单（MainLayout 悬停浮层渲染；设计 2026-09-24 §5.3）
-      children: [
-        { path: '/longwriting', label: '项目', icon: markRaw(Notebook) },
-        { path: '/longwriting/worlds', label: '世界观库', icon: markRaw(Collection) },
-        { path: '/longwriting/ip', label: '角色 IP 库', icon: markRaw(UserFilled) }
-      ]
+      icon: markRaw(EditPen)
     }
   ],
+  // 二级菜单（2026-09-25 结构性修订）：独立注册表，仅侧边栏悬停浮层消费；
+  // 数据不进 mainMenuItems——子项不可能被渲染成顶级菜单（两次回归的根修）。
+  menuSubmenus: {
+    '/longwriting': [
+      { path: '/longwriting', label: '项目', icon: markRaw(Notebook) },
+      { path: '/longwriting/worlds', label: '世界观库', icon: markRaw(Collection) },
+      { path: '/longwriting/ip', label: '角色 IP 库', icon: markRaw(UserFilled) }
+    ]
+  },
   // 保持历史菜单顺序：知识库之前
   menuInsertBefore: '/knowledge-base'
 }

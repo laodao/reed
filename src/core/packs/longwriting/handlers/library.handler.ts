@@ -34,6 +34,8 @@ const CHANNELS = {
   WORLD_UPDATE: 'longwriting:library:world:update',
   WORLD_DELETE: 'longwriting:library:world:delete',
   WORLD_SEED_TEMPLATE: 'longwriting:library:world:seedTemplate',
+  WORLD_EXPORT: 'longwriting:library:world:export',
+  WORLD_IMPORT: 'longwriting:library:world:import',
 
   // 世界观分类
   WORLD_KIND_LIST: 'longwriting:library:worldKind:list',
@@ -80,6 +82,7 @@ const CHANNELS = {
   // ---- P1（2026-09-25）：AI 生成 / 反向沉淀 / 同步 diff ----
   WORLD_GENERATE: 'longwriting:library:world:generate',
   IP_GENERATE: 'longwriting:library:ip:generate',
+  IP_GENERATE_LAYER: 'longwriting:library:ip:generateLayer',
   PROMOTE_TO_IP: 'longwriting:library:promoteToIp',
   PROMOTE_TO_LIBRARY: 'longwriting:library:promoteToLibrary',
   SYNC_PREVIEW: 'longwriting:library:syncPreview',
@@ -118,6 +121,20 @@ export function registerLibraryHandlers(): void {
   ipcBridge.handle(CHANNELS.WORLD_SEED_TEMPLATE, async (_e, worldId: string, templateId: string) => {
     const seeded = await worldService.seedFromTemplate(worldId, templateId)
     return { ok: seeded > 0, seededKinds: seeded }
+  })
+
+  ipcBridge.handle(CHANNELS.WORLD_EXPORT, async (_e, worldId: string) => {
+    const pkg = await worldService.exportWorld(worldId)
+    return pkg ?? { error: '世界观不存在' }
+  })
+
+  ipcBridge.handle(CHANNELS.WORLD_IMPORT, async (_e, payload: Record<string, unknown>, opts?: { rename?: string }) => {
+    try {
+      const world = await worldService.importWorld(payload as never, opts)
+      return { success: true, world }
+    } catch (e: any) {
+      return { success: false, error: e?.message || '导入失败' }
+    }
   })
 
   // ---------- 世界观分类 ----------
@@ -308,6 +325,27 @@ export function registerLibraryHandlers(): void {
       },
     ) => {
       return libraryAiService.generateIpCharacter(req)
+    },
+  )
+
+  // 交互式创建：按层提案（AI 引导，用户逐步确认；P1 修订）
+  ipcBridge.handle(
+    CHANNELS.IP_GENERATE_LAYER,
+    async (
+      _e,
+      req: {
+        eventId: string
+        step: 1 | 2 | 3 | 4
+        seedIdea: string
+        worldId?: string | null
+        confirmed: Record<string, unknown>
+        requirements?: string
+        variation?: boolean
+        providerConfigId?: string
+        modelId?: string
+      },
+    ) => {
+      return libraryAiService.generateIpCharacterLayer(req)
     },
   )
 

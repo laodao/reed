@@ -252,3 +252,84 @@ export interface ImportIpCharacterRequest {
   /** 导入时建议定位（protagonist/supporting/antagonist/minor），可后改 */
   rolePosition?: string
 }
+
+// ==================== 交互式创建角色：四层引导步骤（AI 提案、用户逐步确认） ====================
+// 定义在 shared：后端 prompt 组装与前端向导渲染共用同一份字段/文案，杜绝两处漂移。
+
+export interface IpWizardField {
+  key: string
+  label: string
+  /** text=单行；textarea=多行；tags=可增删标签（数组）；select=options 单选 */
+  type?: 'text' | 'textarea' | 'tags' | 'select'
+  options?: string[]
+  required?: boolean
+  /** 给用户看的一句话解释（解决"不知道这字段什么意思"） */
+  hint: string
+}
+
+export interface IpWizardStep {
+  step: 1 | 2 | 3 | 4
+  key: string
+  title: string
+  /** 引导问句（向导每步的标题） */
+  question: string
+  fields: IpWizardField[]
+}
+
+export const IP_WIZARD_STEPS: IpWizardStep[] = [
+  {
+    step: 1, key: 'identity', title: '辨识资讯', question: '第一步：他/她是谁？——先有个名字和第一印象',
+    fields: [
+      { key: 'name', label: '姓名', required: true, hint: '角色的名字，AI 会贴合题材起名' },
+      { key: 'aliases', label: '别名称呼', type: 'tags', hint: '别人怎么叫他：外号、尊称、昵称（写对话时保持一致）' },
+      { key: 'gender', label: '性别', type: 'select', options: ['male', 'female', 'other'], hint: '男 / 女 / 其他' },
+      { key: 'age', label: '年龄', hint: '写大致档位即可，如 17、三十许、不详' },
+      { key: 'occupation', label: '身份职业', hint: '他在世界里靠什么身份活动：散修、捕快、大学生……' },
+      { key: 'appearance', label: '外貌', type: 'textarea', hint: '两三句即可，最好带一个辨识点（疤痕、眼神、口头小动作）' },
+    ],
+  },
+  {
+    step: 2, key: 'drive', title: '内在驱动', question: '第二步：他最想要什么？又在怕什么？——欲望与软肋是人物的引擎',
+    fields: [
+      { key: 'personality', label: '性格', type: 'textarea', hint: '要有内在张力，如"仗义但对背叛睚眦必报"，避免单薄标签' },
+      { key: 'motivation', label: '核心欲望', type: 'textarea', hint: '他最想得到/改变什么——一切行动的发动机' },
+      { key: 'flaw', label: '软肋缺陷', type: 'textarea', hint: '欲望的反差面：他最怕失去什么、哪里容易被拿捏' },
+      { key: 'background', label: '背景故事', type: 'textarea', hint: '出身、经历、秘密；150 字左右，含说话习惯（AI 会替你写足）' },
+      { key: 'valuesNotes', label: '底线', type: 'textarea', hint: '他绝不做什么（可选）' },
+    ],
+  },
+  {
+    step: 3, key: 'capability', title: '能力定位', question: '第三步：他能做什么？靠什么立足？',
+    fields: [
+      { key: 'talents', label: '天赋资质', type: 'textarea', hint: '灵根/体质/血脉等先天条件（须在所属世界的体系内）' },
+      { key: 'abilities', label: '技能功法', type: 'textarea', hint: '会什么、擅长什么' },
+      { key: 'signatureItems', label: '标志性物品', hint: '随身的关键道具/武器（可选）' },
+    ],
+  },
+  {
+    step: 4, key: 'arc', title: '成长弧光', question: '最后一步：他会变成什么样？——弧光让人物活到最后',
+    fields: [
+      { key: 'characterArc', label: '人物弧光', type: 'textarea', hint: '故事里他的信念将发生什么不可逆转变' },
+      { key: 'catchphrases', label: '口头禅', type: 'tags', hint: '标志性用语，让对话"开口像他"' },
+      { key: 'tags', label: '标签', type: 'tags', hint: '方便你在库里检索的关键词（可选）' },
+    ],
+  },
+]
+
+/** 单步产出校验：step1 必须有姓名；数组字段规整为 string[]；其余字符串裁边 */
+export function validateIpStepData(step: IpWizardStep, data: Record<string, unknown>): { ok: boolean; data: Record<string, unknown>; error?: string } {
+  const out: Record<string, unknown> = {}
+  for (const field of step.fields) {
+    const raw = data[field.key]
+    if (field.type === 'tags') {
+      out[field.key] = Array.isArray(raw) ? raw.map(String).filter(v => v.trim()) : []
+      continue
+    }
+    const str = typeof raw === 'string' ? raw.trim() : raw == null ? '' : String(raw)
+    if (field.required && !str) {
+      return { ok: false, data: {}, error: `「${field.label}」不能为空` }
+    }
+    out[field.key] = str
+  }
+  return { ok: true, data: out }
+}

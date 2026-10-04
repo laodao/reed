@@ -4,13 +4,13 @@
       <h1>角色 IP 库</h1>
       <div class="header-desc">独立于故事的人物资产：一次设计，多个故事复用</div>
       <div class="header-actions">
-        <el-button type="success" @click="openAiDialog">
+        <el-button type="primary" @click="showWizard = true">
           <el-icon><MagicStick /></el-icon>
-          AI 生成角色
+          AI 引导创建
         </el-button>
-        <el-button type="primary" @click="openEditor()">
+        <el-button @click="openEditor()">
           <el-icon><Plus /></el-icon>
-          新建角色
+          手动新建
         </el-button>
       </div>
     </div>
@@ -46,7 +46,7 @@
       </div>
       <div v-else class="empty-state">
         <el-empty description="还没有 IP 角色">
-          <el-button type="primary" @click="openEditor()">创建第一个角色</el-button>
+          <el-button type="primary" @click="showWizard = true">AI 引导创建第一个角色</el-button>
         </el-empty>
       </div>
     </div>
@@ -129,31 +129,13 @@
       </template>
     </el-dialog>
 
-    <!-- AI 生成角色（P1：四层人设卡一次生成，流式进度） -->
-    <el-dialog v-model="showAiDialog" title="AI 生成角色" width="560px" :close-on-click-modal="false">
-      <el-form label-width="90px">
-        <el-form-item label="灵感" required>
-          <el-input v-model="aiSeed" type="textarea" :rows="2" placeholder="一句话即可，如：木讷农村少年，靠剑走偏锋进入名门" />
-        </el-form-item>
-        <el-form-item label="所属世界">
-          <el-select v-model="aiWorldId" clearable placeholder="可选——挂世界后天赋须在其体系内" style="width: 100%">
-            <el-option v-for="w in store.worlds" :key="w.id" :label="w.name" :value="w.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="补充要求">
-          <el-input v-model="aiRequirements" type="textarea" :rows="2" placeholder="可选：定位（主角/反派）、性别、与已有角色的关系等" />
-        </el-form-item>
-        <el-form-item v-if="aiStreaming" label="生成中">
-          <div class="stream-preview">{{ aiPreviewText.slice(-400) || '连接模型中…' }}</div>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button :disabled="aiStreaming" @click="showAiDialog = false">关闭</el-button>
-        <el-button type="primary" :loading="aiStreaming" :disabled="!aiSeed.trim()" @click="runAiGenerate">
-          {{ aiStreaming ? '生成中…' : '开始生成' }}
-        </el-button>
-      </template>
-    </el-dialog>
+    <!-- 交互式创建向导（2026-09-25：AI 每层提案、用户逐步确认，替代一次性复杂表单） -->
+    <IpCreateWizard
+      :visible="showWizard"
+      :worlds="store.worlds"
+      @close="showWizard = false"
+      @created="onWizardCreated"
+    />
 
     <!-- 详情抽屉 -->
     <el-drawer v-model="showDetail" :title="detail?.name || '角色详情'" size="46%">
@@ -200,6 +182,7 @@ import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Delete, UserFilled, MagicStick } from '@element-plus/icons-vue'
 import { useLwLibraryStore } from '@/stores/lw-library'
+import IpCreateWizard from '@/components/longwriting/library/IpCreateWizard.vue'
 import type { IpBinding, IpCharacter } from '@shared/types/lw-library.types'
 
 const GENDER_LABELS: Record<string, string> = { male: '男', female: '女', other: '其他' }
@@ -226,51 +209,6 @@ const projectUsages = ref<Array<IpBinding & { projectName?: string }>>([])
 onMounted(async () => {
   await Promise.all([store.fetchIps(true), store.fetchWorlds(true)])
 })
-
-// ==================== AI 生成角色（P1） ====================
-const showAiDialog = ref(false)
-const aiSeed = ref('')
-const aiWorldId = ref('')
-const aiRequirements = ref('')
-const aiStreaming = ref(false)
-const aiPreviewText = ref('')
-
-const openAiDialog = () => {
-  aiSeed.value = ''
-  aiWorldId.value = ''
-  aiRequirements.value = ''
-  aiPreviewText.value = ''
-  showAiDialog.value = true
-}
-
-const runAiGenerate = async () => {
-  const eventId = `library-ip-${Date.now()}`
-  aiStreaming.value = true
-  aiPreviewText.value = ''
-  const unsubscribe = window.electronAPI.longwriting.onGenerateEvent(eventId, (ev: any) => {
-    if (ev?.type === 'content') aiPreviewText.value += ev.content || ''
-  })
-  try {
-    const result = await lib().ipGenerate({
-      eventId,
-      seedIdea: aiSeed.value,
-      worldId: aiWorldId.value || null,
-      requirements: aiRequirements.value || undefined,
-    })
-    if (result.success) {
-      ElMessage.success(`已生成角色「${result.character.name}」`)
-      showAiDialog.value = false
-      await store.fetchIps(true)
-    } else {
-      ElMessage.error(result.error || '生成失败')
-    }
-  } catch (e: any) {
-    ElMessage.error(e?.message || '生成失败')
-  } finally {
-    unsubscribe()
-    aiStreaming.value = false
-  }
-}
 
 const worldNameOf = (worldId: string | null) =>
   store.worlds.find(w => w.id === worldId)?.name ?? ''
@@ -330,6 +268,13 @@ const confirmDelete = (ip: IpCharacter) => {
     ElMessage.success('已删除')
     await store.fetchIps(true)
   }).catch(() => {})
+}
+
+// ==================== 交互式创建向导 ====================
+const showWizard = ref(false)
+
+const onWizardCreated = async () => {
+  await store.fetchIps(true)
 }
 
 const openDetail = async (id: string) => {

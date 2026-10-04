@@ -14,7 +14,7 @@
 2. **总设计原则一句话：库存「世界常量」，项目存「故事变量」**。世界观与人物 IP 的静态设定（境界体系、门派沿革、人物背景/灵根/性格）放库（user 作用域，跨项目复用）；一切随故事变化的东西（人物受伤/死亡、关系演变、事件、伏笔）仍留在项目内既有机制（`lw_entity_state_snapshots`/`lw_graph_edges`/`lw_events`），零迁移。
 3. **引用模式分层**：结构化实体条目（门派/地点/物品/功法/**人物**）走「导入即实例化 + 血缘（lineage）」——落成项目内既有表的一行，带 `source_type='library'` + 库 id 血缘列，现有名册解析/R9/状态切片/向量序列化全部无感；体系与规则类文本（力量体系、境界、规则禁忌）走「活引用直注入」——写作时从库直接读进 prompt，不落项目表。人物必须实例化（状态机需要项目内 id），体系必须活引用（永不产生故事内状态）。
 4. **对标结论**：头部网文的世界观=「力量体系+地理+势力+种族+物品体系+功法体系+历史+规则禁忌+经济+日常」十维度闭环，且体系必须自带叙事功能（诡秘之主「选途径=选阵营=选敌人」）；AI 工具侧 NovelAI Lorebook / SillyTavern World Info 的「关键词触发+注入预算+优先级」是设定注入的事实标准，Novelcrafter 的 series 级共享正是本项目要补的库概念（对标矩阵见 §2）。
-5. **模块定位（2026-09-25 定案）**：长文写作**子模块**，零新包。侧边栏「长文写作」挂 **hover 二级菜单**（主入口：项目 / 世界观库 / 角色 IP 库三项，鼠标悬停父项弹出浮层）；`/longwriting` 页内保留页签做页内导航；另有两处内嵌入口（新建项目对话框「选世界观/选主角」；研讨室/写作台内的导入与沉淀按钮）。后端 handler 并入 longwriting 包（`longwriting:library:*` 通道族，沿用既有 ipcChannelPrefixes，web channel-map 按既有 232 条 `longwriting.*` 惯例追加）；领域服务独立成 `platform/services/longwriting/library/` 目录，不塞进 4000 行的 `longwriting-ai.service.ts`。数据层不变：8 张新表（6 库表 + 2 绑定表）+ 2 组血缘列 + 1 个新 prompt 分区。
+5. **模块定位（2026-09-25 定案）**：长文写作**子模块**，零新包。侧边栏「长文写作」挂 **hover 二级菜单**（主入口：项目 / 世界观库 / 角色 IP 库三项，鼠标悬停父项弹出浮层；**子项只存在于浮层，绝不进顶级菜单**——首版误用 flattenMenuItems 把三个子项拍平成顶级图标已修正：`config/menu.ts` 列表函数改为 `visibleMenuItems` 仅返回顶级项，侧边栏/首页共用；**浮层白屏复盘**：teleport 到 body 脱离 `.main-layout` 的 `[data-theme]` 作用域，而 `data-skin` 在 documentElement 上仍把 `--sidebar-item-active-bg` 覆盖成半透明渐变，半透明底+白字=白屏，浮层颜色已全部硬编码深色并对视口底部防溢出夹取）；`/longwriting` 页内保留页签做页内导航；另有两处内嵌入口（新建项目对话框「选世界观/选主角」；研讨室/写作台内的导入与沉淀按钮）。后端 handler 并入 longwriting 包（`longwriting:library:*` 通道族，沿用既有 ipcChannelPrefixes，web channel-map 按既有 232 条 `longwriting.*` 惯例追加）；领域服务独立成 `platform/services/longwriting/library/` 目录，不塞进 4000 行的 `longwriting-ai.service.ts`。数据层不变：8 张新表（6 库表 + 2 绑定表）+ 2 组血缘列 + 1 个新 prompt 分区。
 6. **二级菜单的实现依据**：菜单注册表本就有 `children`/`hideSelf` 字段（`config/menu.ts:33,41`），当初子项被拍平纯粹因为侧边栏是自绘纯图标栏且无展开功能（`MainLayout.vue:150-152` 注释「子菜单若不平铺将不可达」）。悬停浮层（hover flyout）**不需要引入 el-menu 重构**：在现有 `li` 渲染上为含 `children` 的项加 mouseenter/mouseleave 浮层即可，改动收敛在 `MainLayout.vue` 的 nav 段 + 少量 CSS；`flattenMenuItems` 保留不动（Home.vue 首页卡片继续消费拍平列表）。
 
 ---
@@ -439,3 +439,35 @@ longwriting:library:promoteToLibrary|promoteToIp                         // 反�
 **测试**：`tests/unit/longwriting/lw-library-p1.spec.ts` 7 项（JSON 提取三形态/命中器与封顶/角色沉淀与拒绝/地点沉淀映射与版本自增/同步 diff 检出与 apply 覆写/悬空 orphaned）——连同 P0 共 17 项全过。
 
 **遗留到 P2**（§7 原计划不变）：模板导入导出分享、知识大脑设定卡/人物原型卡回灌、库级向量检索、BiblePanel 库分组段与 ProjectSettingsDialog 绑定管理 tab、`lw_predicate_registry` 库 scope、世界级一致性 AI 扫描（结构校验已随 previewSync 顺带覆盖悬空检测）。
+
+---
+
+## 11. 修订记录（2026-09-25 晚）
+
+**① 二级菜单两次回归的根修（结构性）**：此前把子菜单挂在 `MenuItem.children` 上，先后两次被消费方拍平渲染成顶级图标（第二次发生在修复已验证落盘并测试通过之后——工作区文件被外部还原，此现象已与用户说明）。本轮改为**结构级杜绝**：
+- `config/menu.ts`：`MenuItem` **删除 `children` 字段**；新增 `menuSubmenus` 独立响应式注册表（`registerMenuSubmenus` / `getMenuSubmenu`，key=父项 path）；删除拍平函数，改为 `visibleMenuItems`（仅过滤 hidden）；重置函数同步清子菜单表。
+- `packs/registry.ts`：`RendererPackDefinition` 新增 `menuSubmenus` 贡献项，applyPacks 装配时注册。
+- `packs/longwriting/index.ts`：长文包 menuItems 只剩顶级项；三个子项（项目/世界观库/角色 IP 库）声明在 `menuSubmenus`。
+- `MainLayout.vue`：顶级 v-for 消费 `visibleMenuItems`；浮层数据源 `getMenuSubmenu(item.path)`；父项点击进默认子项。
+- `Home.vue`：消费 `visibleMenuItems`（顶级项卡片）。
+- **隔离测试**（packs-registry.spec.ts）：断言顶级列表不含子项 path、子菜单只存在于注册表、MenuItem 上无 children——子项进顶级菜单从此在数据结构上不可能。
+
+**② 交互式创建角色（替代一次性复杂表单）**：
+- 步骤定义 `IP_WIZARD_STEPS`（4 层：辨识资讯/内在驱动/能力定位/成长弧光）+ `validateIpStepData` 移至 `shared/types/lw-library.types.ts`——**字段、label、给用户看的一句话解释（hint）与后端 prompt 同源**，杜绝两处漂移；每个字段都有"这是什么意思"的白话提示。
+- 后端 `LibraryAIService.generateIpCharacterLayer(step, seedIdea, worldId, confirmed, requirements, variation)`：每层出提案（注入已确认前层保证连贯；挂世界时注入 pinned 约束资质；variation 明确要求换明显不同的方案）；新通道 `longwriting:library:ip:generateLayer`（handler/preload/channel-map 同步）。
+- 前端 `IpCreateWizard.vue`：el-steps 四步引导，每步 AI 提案渲染为**可编辑小表单**（字段下方即白话 hint），「换一批」重出方案、「上一步」回退、逐步确认后入库；灵感输入步支持「没有想法，让 AI 自由发挥」与「懒得一步步来，AI 一次成卡」（复用一次成卡后跳第 4 步总览微调）。
+- `IpLibrary.vue`：主入口改为「AI 引导创建」（向导），「手动新建」保留原表单供熟练用户；一次性 AI 对话框移除（其能力并入向导）。
+- 测试：`validateIpStepData` 校验与四步定义完整性并入 lw-library-p1.spec.ts（全套 4 文件 31 项全过）。
+
+---
+
+## 12. P2 实施记录（2026-09-25 深夜批次）
+
+| 块 | 文件 | 说明 |
+|---|---|---|
+| 绑定管理 tab | `components/longwriting/library/WorldBindingPanel.vue` + ProjectSettingsDialog 挂「世界观」tab | 项目设定的世界观绑定管理：添加/解绑引用、设主世界（悬空绑定标「来源已删」）；**同步 diff UI**（P1 previewSync/applySync 通道的界面）：检查更新→逐条勾选→库值单向覆盖，diff 行内对比「项目：旧值 ← 库：新值」，悬空条目标红不再同步 |
+| BiblePanel 库分组段 | `room/BiblePanel.vue` | 分类视图尾部新增「世界观库」分组：绑定世界的 pinned 条目只读展示（🌏 标记、主世界 badge、来源=库）；面板底部提示改库入口——研讨室内可见「本章正文会注入哪些世界设定」 |
+| 世界包导入导出 | `world-library.service.ts` export/import + 通道 ×3（handler/preload/channel-map） + WorldLibrary 页 | 导出 `{format:'lw-world-package', version:1, world/kinds/entries/edges}` JSON（浏览器下载 `*.lw-world.json`）；层级以 **parentName** 引用、边以名称对重建（跨库 id 无意义）；导入全部落新 id，同名世界自动加「（导入）」后缀；条目 origin='imported' |
+| 测试 | lw-library-p1.spec.ts +2 | 导出→导入回路（kinds/条目/pinned/边名称重建/同名后缀）与非法包报错；全套 20 项全过 |
+
+**P2 剩余**（后续批次）：知识大脑设定卡/人物原型卡回灌（等 M0 落地）、库级向量检索（`'__lw__'` namespace 复用方案）、`lw_predicate_registry` 库 scope、世界级一致性 AI 扫描。

@@ -134,6 +134,26 @@ describe('AI 输出 JSON 提取（纯函数）', () => {
   })
 })
 
+describe('交互式创建·步骤校验（纯函数）', () => {
+  it('step1 缺姓名报错；tags 规整为数组；字符串裁边', async () => {
+    const { IP_WIZARD_STEPS, validateIpStepData } = await import('@shared/types/lw-library.types')
+    const step1 = IP_WIZARD_STEPS.find(s => s.step === 1)!
+    const bad = validateIpStepData(step1, { aliases: ['外号'] })
+    expect(bad.ok).toBe(false)
+    const good = validateIpStepData(step1, { name: ' 林晓 ', aliases: ['晓哥', ' ', 3], gender: 'male', age: '17', occupation: '散修', appearance: '普通' })
+    expect(good.ok).toBe(true)
+    expect(good.data.name).toBe('林晓')
+    expect(good.data.aliases).toEqual(['晓哥', '3'])
+    // 四步定义完整且字段 key 无重复
+    expect(IP_WIZARD_STEPS).toHaveLength(4)
+    for (const st of IP_WIZARD_STEPS) {
+      const keys = st.fields.map(f => f.key)
+      expect(new Set(keys).size).toBe(keys.length)
+      expect(st.fields.every(f => f.hint.length > 0)).toBe(true)
+    }
+  })
+})
+
 describe('2c 触发式命中器（纯函数）', () => {
   const entries = [
     { id: '1', name: '青云门', aliases: ['青门'], summary: '', aliases2: undefined },
@@ -216,6 +236,42 @@ describe('反向沉淀', () => {
     await locRepo.applyLibraryLineage(loc.id, { libraryEntryId: entry.id, libraryWorldId: world.id, libraryVersion: 1 })
     const again = await svc.promoteEntityToLibrary(world.id, 'location', loc.id)
     expect(again.ok).toBe(false)
+  })
+})
+
+describe('世界包导出/导入（P2）', () => {
+  it('导出→导入回路：条目/常驻标记/关系边按名称重建；同名世界自动加后缀', async () => {
+    const worldSvc = new WorldLibraryService()
+    const world = await worldSvc.createWorld({ name: '回路世界', genre: 'xiuzhen', fromTemplate: 'xiuzhen' })
+    // 追加两个条目 + 一条边
+    const sect1 = await worldSvc.createEntry({ worldId: world.id, kindKey: 'sect', name: '青云门', summary: '正道领袖', pinned: true })
+    const region1 = await worldSvc.createEntry({ worldId: world.id, kindKey: 'region', name: '青云山', summary: '青云门驻地' })
+    await worldSvc.createEdge({ worldId: world.id, sourceId: sect1.id, targetId: region1.id, relationType: '驻于' })
+
+    const pkg = await worldSvc.exportWorld(world.id)
+    expect(pkg).not.toBeNull()
+    expect((pkg as any).format).toBe('lw-world-package')
+    expect((pkg as any).world.name).toBe('回路世界')
+    expect((pkg as any).kinds.length).toBeGreaterThanOrEqual(15)
+    const names = (pkg as any).entries.map((e: any) => e.name)
+    expect(names).toContain('青云门')
+    expect(names).toContain('修真体系')
+
+    // 导入（同名 → 自动后缀）
+    const imported = await worldSvc.importWorld(pkg as never)
+    expect(imported.name).toMatch(/^回路世界（导入）$/)
+    const detail = await worldSvc.getWorld(imported.id)
+    expect(detail!.entries.length).toBe((pkg as any).entries.length)
+    const importedSect = detail!.entries.find(e => e.name === '青云门')!
+    expect(importedSect.pinned).toBe(true)
+    // 关系边按名称重建
+    expect(detail!.edges.length).toBeGreaterThanOrEqual(1)
+    expect(detail!.edges.some(e => e.relationType === '驻于')).toBe(true)
+  })
+
+  it('导入缺 world.name 报错', async () => {
+    const worldSvc = new WorldLibraryService()
+    await expect(worldSvc.importWorld({ format: 'lw-world-package' } as never)).rejects.toThrow('格式')
   })
 })
 

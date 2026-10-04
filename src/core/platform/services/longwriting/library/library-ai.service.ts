@@ -16,6 +16,7 @@ import { getSecureStorage } from '@core/interfaces/storage.interface'
 import type { ProviderTemplate, UserProviderConfig, ChatContext } from '@shared/types'
 import type { GenerationStreamEvent } from '@core/platform/services/longwriting-ai.service'
 import type { WorldEntry, IpCharacter, LibraryFieldSchemaItem } from '@shared/types/lw-library.types'
+import { IP_WIZARD_STEPS, validateIpStepData } from '@shared/types/lw-library.types'
 
 export interface GenerateWorldEntriesRequest {
   eventId: string
@@ -311,5 +312,77 @@ export class LibraryAIService {
     })
     await db.lwIpCharacters!.markOrigin(character.id, { type: 'ai' })
     return { success: true, character }
+  }
+
+  // ==================== 交互式创建：按层提案（AI 引导，用户逐步确认） ====================
+
+  async generateIpCharacterLayer(req: {
+    eventId: string
+    step: 1 | 2 | 3 | 4
+    seedIdea: string
+    worldId?: string | null
+    /** 前面各层已确认字段的合并（引导下一层的依据） */
+    confirmed: Record<string, unknown>
+    /** 本步的修改意见/补充要求（"换一批"时也会带上） */
+    requirements?: string
+    /** 换一批：明确要求与上一版明显不同 */
+    variation?: boolean
+    providerConfigId?: string
+    modelId?: string
+  }): Promise<{ success: boolean; data: Record<string, unknown>; error?: string }> {
+    const stepDef = IP_WIZARD_STEPS.find(s => s.step === req.step)
+    if (!stepDef) return { success: false, data: {}, error: `未知步骤：${req.step}` }
+
+    const db = getCoreDatabaseManager()
+    let worldBlock = ''
+    if (req.worldId) {
+      const world = await db.lwWorlds!.getById(req.worldId)
+      if (world) {
+        const pinned = await db.lwWorldEntries!.listPinnedByWorldId(world.id)
+        worldBlock = `\n\n角色所属世界：「${world.name}」${world.tagline ? `（${world.tagline}）` : ''}\n该世界核心设定（提案必须落在体系内）：\n${pinned.slice(0, 8).map(p => `- 【${p.name}】${p.summary}`).join('\n')}`
+      }
+    }
+
+    const confirmedText = Object.keys(req.confirmed || {}).length
+      ? `\n\n已确认的前几层设定（提案必须与这些内容连贯）：\n${JSON.stringify(req.confirmed, null, 0)}`
+      : ''
+
+    const goalText: Record<number, string> = {
+      1: '给出人物的辨识资讯：一个贴合题材的名字、称呼、性别年龄身份与带辨识点的外貌。',
+      2: '设计人物的内在驱动：有张力的性格、核心欲望（行动引擎）、软肋（欲望的反差面）、150 字左右覆盖出身/欲望/障碍/秘密/说话习惯的背景故事。',
+      3: '设计人物的能力与立足点：天赋资质（若给了世界设定必须落在其体系内）、技能功法、标志性物品。',
+      4: '收束人物的成长弧光：信念将发生的不可逆转变、口头禅与检索标签。',
+    }
+
+    const systemPrompt = '你是资深网文人物架构师，正在一步步引导一位作者把角色立起来。你的提案要具体、可写进正文，避免脸谱化：性格要有内在张力，欲望与软肋互为反差，反派要有作恶动机链。只输出一个 JSON 对象，不要输出任何其他文字。'
+
+    const lines: string[] = []
+    lines.push(`我们正在共同创建一个角色。`)
+    if (req.seedIdea?.trim()) lines.push(`作者的初始灵感：${req.seedIdea.trim()}`)
+    lines.push(`当前是第 ${req.step} 步「${stepDef.title}」：${goalText[req.step]}`)
+    lines.push(worldBlock)
+    lines.push(confirmedText)
+    if (req.variation) {
+      lines.push(`\n（用户对上一版不满意，请换一批**明显不同**的方案，保持与已确认内容连贯。）`)
+    }
+    if (req.requirements?.trim()) {
+      lines.push(`\n用户对本步的要求：${req.requirements.trim()}`)
+    }
+    lines.push(`\n只输出本步字段的 JSON 对象：`)
+    for (const f of stepDef.fields) {
+      const typeNote = f.type === 'tags' ? '（string 数组）' : f.type === 'select' ? `（必须是：${(f.options ?? []).join(' / ')}）` : '（string）'
+      lines.push(`- "${f.key}"${typeNote}：${f.label}——${f.hint}`)
+    }
+
+    const result = await this.callStream(req.eventId, lines.join('\n'), systemPrompt, 4096, req.providerConfigId, req.modelId)
+    const obj = extractJsonObject(result)
+    if (!obj) {
+      return { success: false, data: {}, error: 'AI 返回内容无法解析为 JSON' }
+    }
+    const validated = validateIpStepData(stepDef, obj)
+    if (!validated.ok) {
+      return { success: false, data: {}, error: validated.error }
+    }
+    return { success: true, data: validated.data }
   }
 }

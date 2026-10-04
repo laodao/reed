@@ -4,6 +4,11 @@
       <h1>世界观库</h1>
       <div class="header-desc">先设计世界，再写故事——世界观可被多个长文项目引用</div>
       <div class="header-actions">
+        <input ref="importFileInput" type="file" accept=".json,application/json" style="display: none" @change="onImportFile" />
+        <el-button @click="importFileInput?.click()">
+          <el-icon><Upload /></el-icon>
+          导入世界包
+        </el-button>
         <el-button type="primary" @click="showCreate = true">
           <el-icon><Plus /></el-icon>
           新建世界观
@@ -30,6 +35,11 @@
             <div class="world-tagline">{{ world.tagline || '暂无一句话简介' }}</div>
           </div>
           <div class="world-actions">
+            <el-tooltip content="导出为 JSON 世界包（分享/备份）" placement="top">
+              <el-button text @click.stop="exportWorld(world)">
+                <el-icon><Download /></el-icon>
+              </el-button>
+            </el-tooltip>
             <el-button text type="danger" @click.stop="confirmDelete(world)">
               <el-icon><Delete /></el-icon>
             </el-button>
@@ -178,7 +188,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Delete, Collection, MagicStick } from '@element-plus/icons-vue'
+import { Plus, Delete, Collection, MagicStick, Download, Upload } from '@element-plus/icons-vue'
 import { useLwLibraryStore } from '@/stores/lw-library'
 import FieldsSchemaForm from '@/components/longwriting/library/FieldsSchemaForm.vue'
 import type { World, WorldEntry, WorldKind } from '@shared/types/lw-library.types'
@@ -265,6 +275,45 @@ const runGenerate = async () => {
 
 const entriesOfKind = (kindKey: string) =>
   detail.value?.entries.filter(e => e.kindKey === kindKey) ?? []
+
+// ==================== 导入导出（P2：JSON 世界包） ====================
+const importFileInput = ref<HTMLInputElement | null>(null)
+
+const exportWorld = async (world: World) => {
+  const pkg = await lib().worldExport(world.id)
+  if (!pkg || (pkg as { error?: string }).error) {
+    ElMessage.error((pkg as { error?: string })?.error || '导出失败')
+    return
+  }
+  const blob = new Blob([JSON.stringify(pkg, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${world.name}.lw-world.json`
+  a.click()
+  URL.revokeObjectURL(url)
+  ElMessage.success(`已导出「${world.name}」世界包`)
+}
+
+const onImportFile = async (evt: Event) => {
+  const input = evt.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  try {
+    const text = await file.text()
+    const payload = JSON.parse(text)
+    const result = await lib().worldImport(payload)
+    if (result.success) {
+      ElMessage.success(`已导入世界「${result.world.name}」`)
+      await store.fetchWorlds(true)
+    } else {
+      ElMessage.error(result.error || '导入失败')
+    }
+  } catch (e: any) {
+    ElMessage.error(`无法解析世界包：${e?.message || e}`)
+  }
+}
 
 const createWorld = async () => {
   const world = await lib().worldCreate({
