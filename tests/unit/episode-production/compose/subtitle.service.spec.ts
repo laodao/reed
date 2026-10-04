@@ -28,6 +28,16 @@ async function buildDb(): Promise<DataSource> {
     synchronize: true,
   })
   await ds.initialize()
+  await ds.query(`
+    CREATE TABLE IF NOT EXISTS storyboard_dialogue_links (
+      id TEXT PRIMARY KEY,
+      storyboard_id TEXT NOT NULL,
+      dialogue_id TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      FOREIGN KEY (storyboard_id) REFERENCES storyboards(id) ON DELETE CASCADE,
+      FOREIGN KEY (dialogue_id) REFERENCES scene_dialogues(id) ON DELETE CASCADE
+    )
+  `)
   return ds
 }
 
@@ -221,6 +231,100 @@ describe('SubtitleService', () => {
     expect(srt).toContain('旁白：清晨的茶馆')
     expect(srt).toContain('张三（表）：老板，来一壶碧螺春')
     expect(srt).toContain('未知角色：好嘞，您稍等')
+  })
+
+  it('C4：混合状态下均分回退不重复分配已被 links 承接的对白', async () => {
+    // 场景 4 句对白；sb2 有 links 承接 sd2，sb1 无 links 走均分回退
+    await ds.getRepository(SceneScriptEntity).save({
+      id: 's1',
+      episodeScriptId: 'es1',
+      sceneNumber: 1,
+      location: '茶馆',
+      locationBindingId: null,
+      locationType: 'interior',
+      timeOfDay: 'morning',
+      weather: null,
+      sceneDescription: '',
+      mood: null,
+      lighting: null,
+      characters: null,
+      originalText: '',
+      narration: null,
+      dialogues: [],
+      actions: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as any)
+    await ds.getRepository(SceneDialogueEntity).save(
+      ['sd1', 'sd2', 'sd3', 'sd4'].map((id, i) => ({
+        id,
+        sceneScriptId: 's1',
+        characterId: 'c1',
+        characterBindingId: null,
+        characterName: '张三',
+        text: `台词${i + 1}`,
+        emotion: null,
+        volume: 'normal',
+        pace: 'normal',
+        pause: 0,
+        voiceId: null,
+        audioAssetId: null,
+        sortOrder: i,
+      })) as any,
+    )
+    await ds.getRepository(StoryboardEntity).save([
+      {
+        id: 'sb1',
+        sceneScriptId: 's1',
+        shotNumber: 1,
+        shotType: 'medium',
+        cameraAngle: 'eye_level',
+        cameraMovement: 'static',
+        frameDescription: '',
+        dialogueIds: [],
+        actionIds: [],
+        videoPath: '/v1.mp4',
+        duration: 6,
+        transition: '{}',
+        status: 'pending',
+        keyframeCount: 2,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'sb2',
+        sceneScriptId: 's1',
+        shotNumber: 2,
+        shotType: 'close',
+        cameraAngle: 'eye_level',
+        cameraMovement: 'static',
+        frameDescription: '',
+        dialogueIds: ['sd2'],
+        actionIds: [],
+        videoPath: '/v2.mp4',
+        duration: 6,
+        transition: '{}',
+        status: 'pending',
+        keyframeCount: 2,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ] as any)
+    await ds.query(
+      `INSERT INTO storyboard_dialogue_links (id, storyboard_id, dialogue_id, sort_order)
+        VALUES ('l1', 'sb2', 'sd2', 0)`,
+    )
+
+    const tl = await timelineSvc.buildEpisodeTimeline('es1')
+    const cues = await svc.buildCues(tl)
+    const dialogueCues = cues.filter((c) => c.source === 'dialogue')
+
+    // sd2 只出现在 sb2；sb1 均分池剔除 sd2 后拿到 sd1/sd3/sd4；无重复分配
+    expect(dialogueCues.map((c) => c.dialogueId).sort()).toEqual(['sd1', 'sd2', 'sd3', 'sd4'])
+    expect(dialogueCues.find((c) => c.dialogueId === 'sd2')?.storyboardId).toBe('sb2')
+    expect(
+      dialogueCues.filter((c) => c.storyboardId === 'sb1').map((c) => c.dialogueId),
+    ).toEqual(['sd1', 'sd3', 'sd4'])
   })
 
   it('D2：旁白占短首镜前 2s + 首镜 2 条对白 → 不再产生结束早于开始的非法 cue', async () => {

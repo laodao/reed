@@ -199,3 +199,21 @@
 | E1 事务内删磁盘文件 | keyframe-cleanup ALS 待删收集器，7 个调用点接线，提交后删除，漏接 warn 自检 | ✅ |
 
 未修（第三批，建议排期）：rewriteSceneWithBindings 撞号残留（S3 同型，S-06 路径）、批量路径删插事务化 + insertStoryboardIn 公共 helper、旧路径对白桥接行补齐与失败语义统一、D1-D3（字幕时间轴）、V3（agent 批量视频走 assetRef）、X1-X4 等。
+
+## 八、第三批复修状态（2026-10-04 更新）
+
+第三批问题已按 `tasks/2026-10-04-ep-consistency-fixes-batch3/plan.md` 全部修复（4 个任务 + 终审修复轮，终审「可合并」）：
+
+| 问题 | 修复内容 | 状态 |
+|---|---|---|
+| S-06 重写 id 撞号残留 | 重写路径 id 三级对齐（保留旧 id→文本匹配→发新 id）+ 撞号防线 + 分镜引用 remap；links 悬空 id 过滤 | ✅ |
+| 批量分镜删插非事务 | per-scene 单事务；insertStoryboardIn 公共 helper 三处共用；failedScenes 可见；全灭 success:false 不推进 | ✅ |
+| D1 字幕时间轴漂移 | 烧录字幕基于入选单元+实际时长+转场扣减重建（与 xfade offset 同源） | ✅ |
+| D2 非法字幕 cue | 首镜对白 endSec 补 startOffsetSec | ✅ |
+| D3 旁白音画顺序相反 | 配音旁白移到单元内对白之前（与字幕一致） | ✅ |
+| V3 agent 批量视频绕开 assetRef | 批量改走片段级 generateForSegment；缺视频片段筛选；无片段先 recompute | ✅ |
+| V6 recompute 删在途段（顺带） | recompute 跳过 generating 段（保留 providerTaskId） | ✅ |
+
+环境事件备注：第三批实施期间工作树发生并发 merge，Task1/2 未提交修改一度被覆盖，从 stash 完整抢救恢复（安全补丁在 tasks/2026-10-04-ep-consistency-fixes-batch3/）；终审发现并修复了恢复过程中丢失的 C4 块。
+
+剩余未修（后续批）：X1-X4（口径统一/手动编辑作废下游/音频绝对路径）、K1-K6（关键帧细节）、G3-G8、M5-M11、S6-S10 等中低优先级项，清单见上文各节。

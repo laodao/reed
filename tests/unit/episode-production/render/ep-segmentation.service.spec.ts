@@ -254,6 +254,46 @@ describe('EpSegmentationService', () => {
     expect(sb4?.segmentId).toBe(rebuilt[0].segmentId)
   })
 
+  it('generating 段跳过不删（V6）：行与 providerTaskId 保留、其分镜不重新分段、其余段照删重排、seq 避让', async () => {
+    await seedEpisode(ds, [[5, 5, 5, 5]])
+    const svc = new EpSegmentationService(ds)
+    const first = await svc.recompute('ep1') // 段1(3镜15s) 段2(1镜5s)
+    const generatingSegId = first.segments[0].segmentId
+
+    // 段1 标记 generating（模拟在途 provider 任务）
+    const segRepo = new EpVideoSegmentRepository(ds)
+    await segRepo.update(generatingSegId, {
+      status: 'generating',
+      providerTaskId: 'task-abc',
+    })
+
+    // 改预算重算：段1 不动，剩余 1 镜按新预算重排
+    const second = await svc.recompute('ep1', { budgetSec: 5 })
+    const segs = second.segments
+    const kept = segs.find(s => s.segmentId === generatingSegId)
+    expect(kept).toBeTruthy()
+    expect(kept!.status).toBe('generating')
+    expect(kept!.shotCount).toBe(3)
+    expect(kept!.storyboardIds).toEqual(['sb_sc1_1', 'sb_sc1_2', 'sb_sc1_3'])
+
+    // 行与 providerTaskId 原样保留（在途任务终态回写有着落）
+    const row = await segRepo.getById(generatingSegId)
+    expect(row?.providerTaskId).toBe('task-abc')
+
+    // 其分镜不重新分段（segmentId 回填不动）
+    const sbRepo = new StoryboardRepository(ds)
+    for (const id of ['sb_sc1_1', 'sb_sc1_2', 'sb_sc1_3']) {
+      const sb = await sbRepo.getById(id)
+      expect(sb?.segmentId).toBe(generatingSegId)
+    }
+
+    // pending 段2 照删重建（新 id），seq 避让：续排在删除前 max(seq)=2 之后
+    const rebuilt = segs.filter(s => s.segmentId !== generatingSegId)
+    expect(rebuilt).toHaveLength(1)
+    expect(rebuilt[0].storyboardIds).toEqual(['sb_sc1_4'])
+    expect(rebuilt[0].seq).toBe(3)
+  })
+
   it('preview 不重算，只读当前分段', async () => {
     await seedEpisode(ds, [[5, 5]])
     const svc = new EpSegmentationService(ds)

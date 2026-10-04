@@ -6,8 +6,9 @@
  *   1. 剧集 → 剧本 → 场景（scene_number 升序）→ 分镜（shot_number 升序）
  *   2. 场景边界必切；场景内按镜头 duration 累加、超预算（默认 15s，项目级可配）切分；
  *      单镜超预算独成段（规则实现见 segment-planner.ts 纯函数）
- *   3. 幂等：先删该 episode 未完成的 segment（pending/generating/error）并清除其
- *      分镜回填关系；已 completed 的 segment 做有效性校验——其关联分镜
+ *   3. 幂等：先删该 episode 未完成的 segment（pending/error）并清除其
+ *      分镜回填关系；generating 段跳过不删（V6 守卫，保留行与 providerTaskId，
+ *      其分镜不重新分段）；已 completed 的 segment 做有效性校验——其关联分镜
  *      （storyboards.segment_id 回填）若已全部不存在（cogen/重拆替换），
  *      标记 status='superseded'（保留行与 video_path 可追溯，不参与合成/导出）；
  *      其余 completed 段及其分镜不动，剩余分镜重新分段，seq 从现有 max(seq) 续排
@@ -126,10 +127,17 @@ export class EpSegmentationService {
     const { scenes, budgetSec: ctxBudget } = await this.loadContext(episodeId)
     const budgetSec = clampBudgetSec(opts?.budgetSec ?? ctxBudget)
 
-    // 1. 清掉未完成的 segment + 其分镜回填；completed 的先做有效性校验
+    // 1. 清掉未完成（pending/error）的 segment + 其分镜回填；completed 的先做有效性校验。
+    //    generating 段跳过不删（V6 2026-10-04，与 merge/split/move 的 generating 守卫同型）：
+    //    保留行与 providerTaskId——在途 provider 任务的终态回写仍有着落；其覆盖分镜
+    //    进入 keptIds、不参与重新分段。seq 续排基于删除前的 existing max，天然避让保留段。
     const existing = await this.segmentRepo.listByEpisode(episodeId)
     const kept: EpVideoSegment[] = []
     for (const seg of existing) {
+      if (seg.status === 'generating') {
+        kept.push(seg)
+        continue
+      }
       if (seg.status !== 'completed') {
         await this.storyboardRepo.clearSegment(seg.id)
         await this.segmentRepo.delete(seg.id)
