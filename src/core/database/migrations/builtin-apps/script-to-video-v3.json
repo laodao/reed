@@ -2,7 +2,7 @@
   "kind": "the-bot-workflow",
   "formatVersion": 1,
   "name": "[内置] 短视频脚本生成视频V3（通用视觉策略）",
-  "description": "脚本/主题+多知识库 → 视频类型预设与视觉策略装配（imagery 意象化空镜 / asset 素材驱动，按类型自动）→ 大纲生成与审核 → 分镜拆解（concept/意象 或 素材引用 assetIdx）→ 逐镜素材生产（imagery=意象文生图；asset=用户素材直用，缺素材即拦截）→ 图文素材板整体审核 → 逐片段视频生成（逐镜确认，ComfyUI H3）→ 配音+烧字幕+合成 → 大纲/素材板/成片存档。",
+  "description": "脚本/主题+多知识库 → 视频类型预设与视觉策略装配（imagery/asset）→ 大纲生成与审核 → 分镜拆解（真实场景导演：subject/setting/英文检索词）→ 逐镜画面生产（真实视频素材 → 真实图片素材 → AI 生成兜底，均过视觉相关性闸）→ 图文素材板整体审核 → 片段规划（真实视频直用 / 图片缓慢运镜 / 可选 H3 图生视频）→ 配音+烧字幕+合成（默认 1080×1920 竖屏）→ 大纲/素材板/成片存档。",
   "category": "视频制作",
   "graph": {
     "version": 1,
@@ -141,6 +141,72 @@
               "help": "auto=按 videoType 预设默认：财经/资讯/知识/文旅→意象化空镜；电商/品牌→素材驱动(需提供素材图)。可手动强制。"
             },
             {
+              "key": "stockProvider",
+              "label": "真实素材库",
+              "type": "select",
+              "required": false,
+              "defaultValue": "pexels",
+              "options": [
+                {
+                  "label": "Pexels（实测可用）",
+                  "value": "pexels"
+                },
+                {
+                  "label": "Pixabay",
+                  "value": "pixabay"
+                }
+              ],
+              "help": "真实版权素材库（免费商用、无需署名）；需先在「设置 → 工具 → 凭据」保存 API Key。"
+            },
+            {
+              "key": "stockCredentialId",
+              "label": "素材库凭据（API Key）",
+              "type": "select-dynamic",
+              "source": "credentials",
+              "required": false,
+              "help": "留空=不使用真实素材（仅 AI 生成）。选中的凭据 key 只在主进程解密使用，不会进入运行记录。"
+            },
+            {
+              "key": "stockKind",
+              "label": "素材种类偏好",
+              "type": "select",
+              "required": false,
+              "defaultValue": "auto",
+              "options": [
+                {
+                  "label": "自动（真实视频优先，其次真实图片）",
+                  "value": "auto"
+                },
+                {
+                  "label": "只用真实视频",
+                  "value": "video"
+                },
+                {
+                  "label": "只用真实图片",
+                  "value": "image"
+                }
+              ],
+              "help": "真实视频直接作为该镜片段；真实图片做缓慢运镜（Ken Burns）成片段。"
+            },
+            {
+              "key": "clipSource",
+              "label": "片段来源",
+              "type": "select",
+              "required": false,
+              "defaultValue": "auto",
+              "options": [
+                {
+                  "label": "自动（真实素材/图片运镜，不跑 AI 视频）",
+                  "value": "auto"
+                },
+                {
+                  "label": "全部用 H3 图生视频（慢，AI 动态）",
+                  "value": "h3"
+                }
+              ],
+              "help": "auto=真实素材优先、图片用缓慢运镜合成，速度快且画面真实；h3=逐镜跑 ComfyUI H3 图生视频（单镜 50s~15min）。"
+            },
+            {
               "key": "writerSkill",
               "label": "脚本文体技能",
               "type": "select",
@@ -218,13 +284,13 @@
               "key": "width",
               "label": "视频宽度",
               "type": "number",
-              "defaultValue": 704
+              "defaultValue": 1080
             },
             {
               "key": "height",
               "label": "视频高度",
               "type": "number",
-              "defaultValue": 1248
+              "defaultValue": 1920
             },
             {
               "key": "voiceId",
@@ -245,14 +311,16 @@
               "label": "视频 Provider",
               "type": "select-dynamic",
               "source": "providerConfigs",
-              "required": true
+              "required": false,
+              "help": "仅在「片段来源=全部用 H3 图生视频」时需要（如 ComfyUI 生成网关配置）；auto 模式不用填。"
             },
             {
               "key": "videoModelId",
               "label": "视频模型 ID",
               "type": "string",
               "required": true,
-              "defaultValue": "h3"
+              "defaultValue": "h3",
+              "help": "仅 H3 模式使用（如 h3）；auto 模式不用填。"
             },
             {
               "key": "videoQuality",
@@ -291,7 +359,8 @@
               "label": "文生图模型 ID",
               "type": "string",
               "required": true,
-              "defaultValue": "krea2"
+              "defaultValue": "krea2",
+              "help": "生成兜底用的图像模型（推荐云端高质量模型，如火山 Seedream 4.5 / 百炼 qwen-image；本地 krea2 质量较弱）"
             },
             {
               "key": "bgmPath",
@@ -308,6 +377,13 @@
                 "text"
               ],
               "required": true
+            },
+            {
+              "key": "visionModel",
+              "label": "视觉质检模型（可选）",
+              "type": "model",
+              "required": false,
+              "help": "用于判断\"配图是否与脚本相符、画面是否出现文字\"；留空=跳过质检（会在素材板如实标注）。需选支持图片输入的模型。"
             }
           ]
         }
@@ -489,8 +565,8 @@
           "y": 560
         },
         "config": {
-          "systemPrompt": "你是资深视频分镜师。依据用户确认的大纲把视频拆为 1~20 个镜头。\n【视频类型/风格规范】\n{{preset.promptBlock}}\n【视觉策略（当前模式 {{strategy.result.mode}}）】\n{{strategy.result.policyText}}\n【素材池（asset 模式引用；imagery 模式可参考）】（名称/描述/索引）\n{{baseList.result.text}}\n【大纲全文（用户已审核）】\n{{outlineReview.md}}\n【画面硬性要求】visual 只描述可实拍物理场景（主体/动作/环境/光线/色调/构图景别/情绪/镜头运动），禁止任何文字/UI/图形/图表/水印/贴片字幕（所有文字一律走 caption 字幕层）；每镜 1~3 句并给出运镜。\n【镜头规则】字幕 caption 为画面要传达的文字（烧录为字幕）；duration 整数秒 4~16；每镜给出 concept（该镜语义主题）。\n【模式化镜头输出】依据上方“视觉策略”里的模式：\n - imagery 模式：每镜另给 imagery（意象对象：按意象表命中 + concept 细化的代表性意象画面，可拍无文字）与 visual（=该意象的可执行画面描述）。\n - asset 模式：每镜必须给 assetIdx（引用素材池索引，取值 0..{{strategy.result.baseCount}}-1）与 visual（描述该镜展示素材的角度/景别/运镜/氛围，主体来自素材，不新增文字）。\n只输出一个 JSON 对象（顶层是对象，禁止包数组）：{\"narration\":\"全片口播（原样保留可用 | 分句）\",\"shots\":[{\"concept\":\"语义主题\",\"visual\":\"画面描述\",\"caption\":\"字幕短句\",\"duration\":秒,\"imagery\":\"意象对象(仅 imagery)\",\"assetIdx\":素材索引(仅 asset)}]}。镜头总数 1~20。\n【分镜原子纪律】以“口播的 | 分句/大纲段落”为镜头原子：同一镜只承载一个事件、一个地点、一个语义点；一句口播含多个事件或地点时必须拆成多个镜头，禁止把多个场景塞进同一镜的 visual。",
-          "prompt": "请基于大纲与视觉策略输出镜头 JSON（concept/imagery 或 assetIdx 依模式填写）。",
+"systemPrompt": "你是资深短视频分镜师兼画面导演。依据用户确认的大纲把视频拆为 1~20 个镜头，并为每镜设计**真实世界里拍得到的画面**。\n【视频类型/风格规范】\n{{preset.promptBlock}}\n【视觉策略（当前模式 {{strategy.result.mode}}）】\n{{strategy.result.policyText}}\n【镜头真实场景词典（抽象主题 → 可拍场景 + 素材库英文检索词）】\n{{preset.sceneText}}\n【素材池（asset 模式引用；imagery 模式可参考）】（名称/描述/索引）\n{{baseList.result.text}}\n【大纲全文（用户已审核）】\n{{outlineReview.md}}\n【画面硬性要求】\n1) 每镜画面必须是\"真实世界可拍摄的具体场景\"：点名主体实体 + 场所环境 + 光线氛围 + 景别 + 运镜；\n   禁止把抽象概念（指数/趋势/信心/生态/赋能/风险/格局）单独成画；禁止任何文字/图表/UI/水印/海报/贴片（所有文字一律走 caption 字幕层）。\n2) 先用上面的场景词典把该镜语义归到某个主题簇，再落成该簇的可拍场景；词典未覆盖时自选一个真实存在、能拍到的场景。\n3) searchQuery 是给真实素材库用的**英文检索词**（2~4 个单词，只写画面里真实存在的实物与场所，如 container port terminal / factory production line / stock exchange trading floor）。\n【镜头规则】caption 为该镜字幕短句（≤18 字，不是口播原文）；duration 整数秒 4~16；一镜一场景一事件，一句口播含多地点/多事件时必须拆镜。\n【模式化镜头输出】依据上方\"视觉策略\"里的模式：\n - imagery 模式：每镜另给 subject（画面主体实体）/ setting（场所环境）/ visual（可执行画面描述）/ imagery（意象对象）/ searchQuery（英文检索词）/ altQueries（1~2 个备选英文检索词）/ shotSize（景别）/ cameraMove（运镜）。\n - asset 模式：每镜必须给 assetIdx（引用素材池索引，取值 0..{{strategy.result.baseCount}}-1）与 visual（描述该镜展示素材的角度/景别/运镜/氛围，主体来自素材）。\n输出 JSON 结构：{\"narration\":\"全片口播（原样保留可用 | 分句）\",\"shots\":[{\"concept\":\"语义主题\",\"subject\":\"画面主体实体\",\"setting\":\"场所环境\",\"visual\":\"画面描述（含光线/景别/运镜）\",\"imagery\":\"意象对象(仅 imagery)\",\"searchQuery\":\"英文检索词\",\"altQueries\":[\"备选1\",\"备选2\"],\"shotSize\":\"景别\",\"cameraMove\":\"运镜\",\"caption\":\"字幕短句\",\"duration\":秒,\"assetIdx\":素材索引(仅 asset)}]}。镜头总数 1~20。",
+          "prompt": "请基于大纲与视觉策略输出镜头 JSON（每镜必须落到真实可拍场景，并给出英文 searchQuery）。",
           "jsonMode": true,
           "providerConfigId": "{{start.model.providerConfigId}}",
           "modelId": "{{start.model.modelId}}"
@@ -536,41 +612,6 @@
         }
       },
       {
-        "id": "shotPack",
-        "type": "llm-chat",
-        "name": "片段提示词包",
-        "position": {
-          "x": 2800,
-          "y": 420
-        },
-        "config": {
-          "systemPrompt": "为单个镜头产出可执行素材包（JSON）：{\"concept\":\"语义主题\",\"visual\":\"画面描述（服从大纲/风格；仅实拍物理场景、无文字、含运镜）\",\"imagery\":\"意象对象（imagery 模式：依意象表命中细化为可执行画面；asset 模式填空）\",\"caption\":\"字幕短句\",\"duration\":秒,\"prompt\":\"给文生图的完整画面提示词（已含风格与参考图说明；asset 模式此字段可空）\"}\n【预设规范】\n{{preset.promptBlock}}\n【视觉策略】\n{{strategy.result.policyText}}\n【参考图提示】画面风格与主体须贴合参考图（若有）；意象化空镜禁止出现文字。\n【单场景纪律】visual 与 imagery 只描述“一个主体 + 一处环境”的单一可拍场景；严禁“先…随后…/接着切到…/再出现…”这类多场景转场拼接；对比性修辞句只取一个代表性意象。",
-          "prompt": "大纲段落：{{loopMat.item.sectionIdx}}\n语义主题：{{loopMat.item.concept}}\n画面要点：{{loopMat.item.visual}}\n意象对象：{{loopMat.item.imagery}}\n字幕：{{loopMat.item.caption}}\n时长：{{loopMat.item.duration}}秒\n\n输出该镜头素材包 JSON。",
-          "jsonMode": true,
-          "providerConfigId": "{{start.model.providerConfigId}}",
-          "modelId": "{{start.model.modelId}}"
-        }
-      },
-      {
-        "id": "imgShot",
-        "type": "image-gen",
-        "name": "文生图(镜头画面)",
-        "position": {
-          "x": 3000,
-          "y": 560
-        },
-        "config": {
-          "prompt": "{{shotPack.parsed.prompt}}（竖版构图；写实、干净、无任何文字）",
-          "negativePrompt": "文字、字体、logo、水印、UI 元素、图标、按钮、弹窗、乱码、涂鸦、图形、表格、图表、标注、贴片字幕、卡通",
-          "providerConfigId": "{{start.imageProviderConfigId}}",
-          "modelId": "{{start.imageModelId}}",
-          "width": "{{start.width}}",
-          "height": "{{start.height}}",
-          "referenceImages": "{{refPick.result.first}}",
-          "promptExtend": false
-        }
-      },
-      {
         "id": "matItem",
         "type": "code",
         "name": "素材项（生成图）",
@@ -579,19 +620,15 @@
           "y": 560
         },
         "config": {
-          "code": "const list = Array.isArray(inputs.img) ? inputs.img : ((inputs.img && inputs.img.images) || []);\nconst img = (list && list[0]) || {};\nconst pack = inputs.pack || {};\nconst it = inputs.item || {};\nreturn { _origIndex: it._origIndex, mode: 'imagery', source: 'generated',\n  concept: pack.concept || it.concept || '', imagery: pack.imagery || it.imagery || '',\n  visual: pack.visual || it.visual, caption: pack.caption || it.caption,\n  duration: Number(pack.duration) > 0 ? pack.duration : it.duration,\n  prompt: pack.prompt || '', baseImagePath: '', imagePath: img.path || '', imageUrl: img.localUrl || img.url || '', imageAssetId: '' };",
+          "code": "const it = inputs.item || {};\nconst v = (inputs.visual && inputs.visual.result) ? inputs.visual.result : (inputs.visual || {});\nconst dur = Number(it.duration) > 0 ? it.duration : 5;\nreturn {\n  _origIndex: it._origIndex,\n  mode: 'imagery',\n  source: v.source || 'generated',\n  concept: it.concept || '', subject: it.subject || '', setting: it.setting || '',\n  imagery: it.imagery || '', visual: it.visual || '',\n  caption: it.caption || '', duration: dur,\n  imagePath: v.imagePath || '', imageUrl: v.imageUrl || '',\n  clipPath: v.clipPath || '', clipUrl: v.clipUrl || '',\n  relevance: typeof v.relevance === 'number' ? v.relevance : -1,\n  attempts: Number(v.attempts) || 0,\n  provider: v.provider || '', stockId: v.stockId || '', pageUrl: v.pageUrl || '',\n  author: v.author || '', license: v.license || '',\n  searchQuery: v.searchQuery || '', prompt: v.prompt || '', note: v.note || '',\n  baseImagePath: '', imageAssetId: ''\n};",
           "inputs": [
             {
               "key": "item",
               "value": "{{loopMat.item}}"
             },
             {
-              "key": "pack",
-              "value": "{{shotPack.parsed}}"
-            },
-            {
-              "key": "img",
-              "value": "{{imgShot.images}}"
+              "key": "visual",
+              "value": "{{visualShot}}"
             }
           ]
         }
@@ -636,7 +673,7 @@
           "y": 560
         },
         "config": {
-          "code": "const unwrap = (r) => (r && typeof r === 'object' && r.result && typeof r.result === 'object' && !('visual' in r)) ? r.result : r;\nconst a = (Array.isArray(inputs.a) ? inputs.a : []).map(unwrap);\nconst b = (Array.isArray(inputs.b) ? inputs.b : []).map(unwrap);\nconst all = a.concat(b).sort(function (x, y) { return (x._origIndex || 0) - (y._origIndex || 0); }).map(function (it, i) {\n  const c = Object.assign({}, it, { cardIndex: i });\n  delete c._origIndex;\n  return c;\n});\nconst summary = all.map(function (c, i) {\n  const src = c.source === 'asset' ? (c.imageAssetName ? '（素材:' + String(c.imageAssetName) + '）' : '（素材）') : (c.source === 'generated' ? '（意象生成）' : '');\n  return '镜头' + (i + 1) + '：' + String(c.caption || '') + '｜' + String(c.duration || '') + 's' + src;\n}).join('\\n');\nreturn { cards: all, summary: summary, mode: String(inputs.mode || '') };",
+          "code": "const unwrap = (r) => (r && typeof r === 'object' && r.result && typeof r.result === 'object' && !('visual' in r)) ? r.result : r;\nconst a = (Array.isArray(inputs.a) ? inputs.a : []).map(unwrap);\nconst b = (Array.isArray(inputs.b) ? inputs.b : []).map(unwrap);\nconst all = a.concat(b).sort(function (x, y) { return (x._origIndex || 0) - (y._origIndex || 0); }).map(function (it, i) {\n  const c = Object.assign({}, it, { cardIndex: i });\n  delete c._origIndex;\n  return c;\n});\nfunction srcLabel(s) {\n  if (s === 'stock-video') return '真实视频';\n  if (s === 'stock-image') return '真实图片';\n  if (s === 'generated') return 'AI生成';\n  if (typeof s === 'string' && s.indexOf('asset:') === 0) return '自有素材';\n  return String(s || '未知');\n}\nconst summary = all.map(function (c, i) {\n  const rel = Number(c.relevance) >= 0 ? '｜相关性 ' + c.relevance : '｜未质检';\n  const org = c.pageUrl ? '｜出处 ' + c.pageUrl : '';\n  const au = c.author ? '（' + c.author + '）' : '';\n  const st = c.stockId ? '#' + c.stockId + au : '';\n  const q = c.searchQuery ? '｜检索词 ' + c.searchQuery : '';\n  const fb = c.note ? '｜供给说明 ' + c.note : '';\n  return '镜头' + (i + 1) + '：' + String(c.caption || '') + '｜' + String(c.duration || '') + 's｜来源：' + srcLabel(c.source) + st + rel + org + q + fb;\n}).join('\\n');\nreturn { cards: all, summary: summary, mode: String(inputs.mode || '') };",
           "inputs": [
             {
               "key": "a",
@@ -683,13 +720,13 @@
       {
         "id": "loopVideo",
         "type": "loop",
-        "name": "逐片段视频循环",
+        "name": "H3 逐片段视频循环（仅 clipSource=h3 时执行）",
         "position": {
           "x": 3820,
           "y": 560
         },
         "config": {
-          "listExpression": "{{boardReview.cards}}",
+          "listExpression": "{{segPlan.result.h3List}}",
           "emptyPolicy": "skip"
         }
       },
@@ -775,15 +812,19 @@
           "y": 760
         },
         "config": {
-          "code": "const cards = Array.isArray(inputs.cards) ? inputs.cards : [];\nconst res = Array.isArray(inputs.results) ? inputs.results : [];\nconst segs = [];\nfor (let i = 0; i < cards.length; i++) {\n  const r = res[i] || {};\n  const c = cards[i] || {};\n  const vid = r.videoPath || '';\n  if (vid) segs.push({ source: vid, kind: 'video', duration: Number(c.duration) || 3, caption: String(c.caption || '') });\n}\nreturn { segments: segs };",
+          "code": "const segs = Array.isArray(inputs.segments) ? inputs.segments : [];\nconst results = Array.isArray(inputs.results) ? inputs.results : [];\nconst h3List = Array.isArray(inputs.h3List) ? inputs.h3List : [];\nif (segs.length === 0) throw new Error('片段规划结果为空：请检查素材板与片段来源设置');\nconst h3ByCard = {};\nh3List.forEach(function (c, i) {\n  const r = inputs.results ? (results[i] || {}) : {};\n  const inner = (r && r.result && typeof r.result === 'object') ? r.result : r;\n  const p = (inner && (inner.videoPath || inner.videoUrl)) || '';\n  if (p) h3ByCard[String(c.cardIndex)] = inner.videoPath || '';\n});\nconst out = [];\nsegs.forEach(function (s) {\n  const src = s.pending ? (h3ByCard[String(s.cardIndex)] || '') : s.source;\n  if (!src) return;\n  out.push({ source: src, kind: s.kind, duration: s.duration, caption: s.caption, motion: s.motion || 'none' });\n});\nif (out.length === 0) throw new Error('没有任何可合成的片段（检查素材板与片段来源设置）');\nif (out.length !== segs.length) {\n  throw new Error('片段素材缺失：规划 ' + segs.length + ' 段，实际可合成 ' + out.length + ' 段（H3 生成结果可能未回填）');\n}\nreturn { segments: out, count: out.length };",
           "inputs": [
             {
-              "key": "cards",
-              "value": "{{boardReview.cards}}"
+              "key": "segments",
+              "value": "{{segPlan.result.segments}}"
             },
             {
               "key": "results",
               "value": "{{loopVideo.results}}"
+            },
+            {
+              "key": "h3List",
+              "value": "{{segPlan.result.h3List}}"
             }
           ]
         }
@@ -987,27 +1028,75 @@
           ],
           "code": "const raw = String(inputs.content || '');\nconst cleaned = raw.replace(/^```[a-zA-Z]*\\n?/, '').replace(/```$/, '').trim();\nif (!cleaned) throw new Error('写作技能输出为空，请重试或更换技能');\nreturn { md: cleaned };"
         }
+      },
+      {
+        "id": "visualShot",
+        "type": "shot-visual",
+        "name": "镜头画面生产（真实素材优先）",
+        "position": {
+          "x": 2860,
+          "y": 560
+        },
+        "config": {
+          "concept": "{{loopMat.item.concept}}",
+          "subject": "{{loopMat.item.subject}}",
+          "setting": "{{loopMat.item.setting}}",
+          "searchQuery": "{{loopMat.item.searchQuery}}",
+          "altQueries": "{{loopMat.item.altQueries}}",
+          "visual": "{{loopMat.item.visual}}",
+          "shotSize": "{{loopMat.item.shotSize}}",
+          "cameraMove": "{{loopMat.item.cameraMove}}",
+          "styleText": "{{preset.styleText}}",
+          "stockMode": "auto",
+          "stockProvider": "{{start.stockProvider}}",
+          "stockCredentialId": "{{start.stockCredentialId}}",
+          "stockKind": "{{start.stockKind}}",
+          "stockPerPage": 8,
+          "stockMaxCandidates": 3,
+          "stockMinWidth": 720,
+          "stockMinDurationSec": 3,
+          "stockMinScore": 60,
+          "generateFallback": true,
+          "imageProviderConfigId": "{{start.imageProviderConfigId}}",
+          "imageModelId": "{{start.imageModelId}}",
+          "maxAttempts": 2,
+          "negativePrompt": "文字,字体,字幕,水印,logo,标志,UI元素,界面,图表,表格,数据图,柱状图,折线图,海报字,贴纸,图标,按钮,二维码,边框,画中画,畸变,多手指",
+          "qaProviderConfigId": "{{start.visionModel.providerConfigId}}",
+          "qaModelId": "{{start.visionModel.modelId}}",
+          "minScore": 60,
+          "width": "{{start.width}}",
+          "height": "{{start.height}}",
+          "referenceImages": "{{refPick.result.first}}"
+        }
+      },
+      {
+        "id": "segPlan",
+        "type": "code",
+        "name": "片段来源规划",
+        "position": {
+          "x": 3780,
+          "y": 560
+        },
+        "config": {
+          "code": "const cards = Array.isArray(inputs.cards) ? inputs.cards : [];\nif (cards.length === 0) throw new Error('素材板为空：没有可合成的镜头');\nconst clipSource = String(inputs.clipSource || 'auto');\nconst hasVideoProvider = !!String(inputs.videoProviderConfigId || '').trim();\nconst motions = ['zoom-in', 'pan-right', 'zoom-out', 'pan-left'];\nconst h3List = [];\nconst segments = [];\ncards.forEach(function (c, i) {\n  const dur = Number(c.duration) > 0 ? c.duration : 5;\n  const caption = String(c.caption || '');\n  const cardIndex = Number.isInteger(c.cardIndex) ? c.cardIndex : i;\n  const clip = String(c.clipPath || '').trim();\n  const img = String(c.imagePath || '').trim();\n  if (clip) {\n    segments.push({ cardIndex: cardIndex, kind: 'video', source: clip, duration: dur, caption: caption, origin: c.source || 'stock-video' });\n    return;\n  }\n  if (clipSource === 'h3' && img) {\n    if (!hasVideoProvider) {\n      throw new Error('镜头 ' + (i + 1) + ' 需要跑 H3 图生视频，但未配置「视频 Provider」：请补充视频 Provider（如 ComfyUI 生成网关）或改为 auto（真实素材/图片运镜）');\n    }\n    h3List.push(Object.assign({}, c, { cardIndex: cardIndex }));\n    segments.push({ cardIndex: cardIndex, kind: 'video', source: '', duration: dur, caption: caption, pending: true, origin: 'h3' });\n    return;\n  }\n  if (img) {\n    segments.push({ cardIndex: cardIndex, kind: 'image', source: img, duration: dur, caption: caption, motion: motions[i % motions.length], origin: c.source || 'generated' });\n    return;\n  }\n  throw new Error('镜头 ' + (i + 1) + ' 没有任何画面素材（真实素材未命中且未生成图片）：请检查素材板该镜卡片');\n});\nreturn { h3List: h3List, segments: segments, count: segments.length, h3Count: h3List.length };",
+          "inputs": [
+            {
+              "key": "cards",
+              "value": "{{boardReview.cards}}"
+            },
+            {
+              "key": "clipSource",
+              "value": "{{start.clipSource}}"
+            },
+            {
+              "key": "videoProviderConfigId",
+              "value": "{{start.videoProviderConfigId}}"
+            }
+          ]
+        }
       }
     ],
     "edges": [
-      {
-        "id": "e1",
-        "sourceNodeId": "loopMat",
-        "targetNodeId": "shotPack",
-        "kind": "loop-body"
-      },
-      {
-        "id": "e2",
-        "sourceNodeId": "shotPack",
-        "targetNodeId": "imgShot",
-        "kind": "normal"
-      },
-      {
-        "id": "e3",
-        "sourceNodeId": "imgShot",
-        "targetNodeId": "matItem",
-        "kind": "normal"
-      },
       {
         "id": "e4",
         "sourceNodeId": "matItem",
@@ -1147,12 +1236,6 @@
         "kind": "normal"
       },
       {
-        "id": "e29",
-        "sourceNodeId": "boardReview",
-        "targetNodeId": "loopVideo",
-        "kind": "approve"
-      },
-      {
         "id": "e30",
         "sourceNodeId": "boardReview",
         "targetNodeId": "end",
@@ -1228,6 +1311,30 @@
         "id": "w2",
         "sourceNodeId": "writerCall",
         "targetNodeId": "writerMd",
+        "kind": "normal"
+      },
+      {
+        "id": "evspweqx1z",
+        "sourceNodeId": "loopMat",
+        "targetNodeId": "visualShot",
+        "kind": "loop-body"
+      },
+      {
+        "id": "evlsulqqbq",
+        "sourceNodeId": "visualShot",
+        "targetNodeId": "matItem",
+        "kind": "normal"
+      },
+      {
+        "id": "eve1m3b7bi",
+        "sourceNodeId": "boardReview",
+        "targetNodeId": "segPlan",
+        "kind": "approve"
+      },
+      {
+        "id": "evk8kb9815",
+        "sourceNodeId": "segPlan",
+        "targetNodeId": "loopVideo",
         "kind": "normal"
       }
     ]

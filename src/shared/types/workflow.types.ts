@@ -67,6 +67,7 @@ export type WorkflowNodeType =
   | 'web-search'
   | 'translate'
   | 'image-gen'
+  | 'shot-visual'
   | 'tts'
   | 'stt'
   | 'voice-clone'
@@ -147,6 +148,7 @@ export interface WorkflowStartInput {
     | 'newsSources'
     | 'knowledgeBases'
     | 'assetCategories'
+    | 'credentials'
   /**
    * 声明式联动（通用机制，工作流数据声明驱动，表单引擎不感知业务字段）：
    * 监听 watch 字段的值 X，本字段的候选选项收窄为"选项元数据[matchBy] === X"，
@@ -384,6 +386,61 @@ export interface WorkflowNodeConfigMap {
     /** 图像服务 Provider 配置（缺省=图像服务默认） */
     providerConfigId?: string
     modelId?: string
+  }
+
+  /**
+   * 镜头画面生产（V3 短视频配图核心节点）：
+   * 真实视频素材 → 真实图片素材 → AI 生成（带视觉质检重试）三层回退，每层过相关性闸。
+   */
+  'shot-visual': {
+    /** 语义主题（相关性判定锚点） */
+    concept?: string
+    /** 画面主体实体 */
+    subject?: string
+    /** 场所环境 */
+    setting?: string
+    /** 素材库检索词（英文；缺省由 scene lexicon 按 concept/subject/setting 解析） */
+    searchQuery?: string
+    /** 备选检索词（数组或逗号/换行分隔） */
+    altQueries?: unknown
+    /** 可执行画面描述（光线/色调/构图/运镜） */
+    visual?: string
+    /** 景别 */
+    shotSize?: string
+    /** 运镜 */
+    cameraMove?: string
+    /** 预设画面风格文本（并入生成提示词） */
+    styleText?: string
+    /** auto=有凭据即检索真实素材；off=只走生成 */
+    stockMode?: string
+    /** 素材库：pexels / pixabay */
+    stockProvider?: string
+    /** 素材库凭据 id（设置 → 工具 → 凭据） */
+    stockCredentialId?: string
+    stockPerPage?: number
+    stockMinWidth?: number
+    stockMinDurationSec?: number
+    /** 真实素材相关性闸阈值（0-100） */
+    stockMinScore?: number
+    /** auto=视频优先 / video / image */
+    stockKind?: string
+    /** 相关性选优下载候选条数 */
+    stockMaxCandidates?: number
+    /** 是否允许 AI 生成兜底（默认允许） */
+    generateFallback?: boolean
+    imageProviderConfigId?: string
+    imageModelId?: string
+    width?: number
+    height?: number
+    negativePrompt?: string
+    referenceImages?: unknown
+    /** 生成层最多尝试次数（含首次；上限 4） */
+    maxAttempts?: number
+    /** 视觉质检模型（缺省=不做质检，按要求留痕） */
+    qaProviderConfigId?: string
+    qaModelId?: string
+    /** 生成图相关性闸阈值（0-100） */
+    minScore?: number
   }
 
   tts: {
@@ -1023,6 +1080,7 @@ export const WORKFLOW_NODE_TYPES = {
   'web-search': 'web-search',
   translate: 'translate',
   'image-gen': 'image-gen',
+  'shot-visual': 'shot-visual',
   tts: 'tts',
   stt: 'stt',
   'voice-clone': 'voice-clone',

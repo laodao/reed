@@ -8,8 +8,9 @@
  */
 import { markRaw } from 'vue'
 // 图标区分（33 号实测反馈）：待办=工单（注意 Tickets 与 Notebook 同形，须用单数 Ticket）、
-// Agent 对话=派活、知识飞轮=循环沉淀；工作流保留 Connection
-import { Connection, Promotion, RefreshRight, Ticket } from '@element-plus/icons-vue'
+// Agent 对话=派活；工作流保留 Connection
+// （知识飞轮菜单入口已于 2026-09 随该功能停用移除，见 progress/2026-09-16-*）
+import { Connection, Promotion, Ticket } from '@element-plus/icons-vue'
 import type { RendererPackDefinition } from '../registry'
 
 export const workflowPack: RendererPackDefinition = {
@@ -19,7 +20,7 @@ export const workflowPack: RendererPackDefinition = {
     version: '1.0.0',
     description: '可视化流程编排与自动化执行——定义/版本/触发器/运行/分享',
     contributions: {
-      routePaths: ['/workflow', '/workflow/editor/:id', '/workflow-run/:token', '/workflow/runs/:definitionId', '/workflow/run/:runId', '/workflow/review/:runId', '/agent-tasks', '/agent-memory', '/agent-todos', '/agent-console'],
+      routePaths: ['/workflow', '/workflow/editor/:id', '/workflow-run/:token', '/workflow/runs/:definitionId', '/workflow/run/:runId', '/workflow/review/:runId', '/agent-tasks', '/agent-todos', '/agent-console'],
     },
   },
   routes: [
@@ -60,12 +61,6 @@ export const workflowPack: RendererPackDefinition = {
       meta: { title: 'Agent 任务树' },
     },
     {
-      path: '/agent-memory',
-      name: 'AgentMemory',
-      component: () => import('@/views/workflow/AgentMemoryView.vue'),
-      meta: { title: '知识飞轮' },
-    },
-    {
       path: '/agent-todos',
       name: 'AgentTodos',
       component: () => import('@/views/workflow/AgentTodosView.vue'),
@@ -88,7 +83,7 @@ export const workflowPack: RendererPackDefinition = {
     {
       path: '/agent-todos',
       label: '待办中心',
-      description: '审批/任务裁决/记忆审批集中处理',
+      description: '工作流审批与任务裁决集中处理',
       icon: markRaw(Ticket),
     },
     {
@@ -96,14 +91,6 @@ export const workflowPack: RendererPackDefinition = {
       label: 'Agent 对话',
       description: '独立的 Agent 会话——直接派活，过程时间线全程可见',
       icon: markRaw(Promotion),
-    },
-    {
-      // 任务树不占独立菜单：入口在 Agent 对话页右上角「任务树」按钮（33 号实测反馈）；
-      // 路由保留（gotoTasks/批准流跳转仍需）
-      path: '/agent-memory',
-      label: '知识飞轮',
-      description: '任务经验的沉淀与审批',
-      icon: markRaw(RefreshRight),
     },
     {
       path: '/workflow',

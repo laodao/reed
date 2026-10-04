@@ -99,6 +99,14 @@ export interface GeneratedImage {
   width?: number
   height?: number
   format?: string
+  /**
+   * 落盘后的本地路径：`local-image://<相对 dataPath 的相对路径>`（见
+   * ImageService.saveImagesWithoutHistory 的 localPathToUrl 归一）。
+   * 异步任务轮询完成后由 image.service 回填，故可能是空串/undefined；
+   * 消费方（image-gen / shot-visual 节点）据此产出本地绝对路径与 localUrl，
+   * 用于「生成后质检」等需要直接读取落盘文件的场景。
+   */
+  filePath?: string
 }
 
 /**

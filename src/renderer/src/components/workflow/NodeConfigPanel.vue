@@ -136,6 +136,16 @@ async function loadDynamicOptions() {
       }
     } catch { /* 列表失败时退化为手填 */ }
   }
+  // 第三方工具凭据（如真实素材库 Pexels/Pixabay 的 API Key 条目）：值=凭据 id
+  if (sources.has('credentials')) {
+    try {
+      const resp = await api.tools.listCredentials()
+      const list: any[] = resp.success ? (resp.data ?? []) : []
+      dynamicOptions.value.credentials = list
+        .map((c: any) => ({ label: c.name || c.id, value: c.id }))
+        .filter((o: any) => o.value)
+    } catch { /* 列表失败时退化为手填 */ }
+  }
   // 信息来源（来源类别 → 分组 → 来源）：三个下拉共用一次加载，标签带「类别 · 分组」前缀
   if (
     sources.has('infoSourceCategories') ||

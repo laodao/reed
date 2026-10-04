@@ -130,6 +130,7 @@ import { checkSchemaDrift } from '@core/database/schema-drift'
 
 import type { ICoreDatabaseManager } from '@core/database/database-manager.interface'
 import { registerCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { createBootTrace } from '@core/utils/boot-trace'
 
 /**
  * 数据库管理器
@@ -309,9 +310,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
    * 初始化数据库
    */
   async initialize(): Promise<void> {
+    // 启动分段计时：初始化含大量同步工作，是"窗口出现 → 界面可用"之间耗时的主要来源
+    const trace = createBootTrace('DatabaseManager.initialize')
     // 先初始化 DataPathService，获取自定义数据路径
     const dataPathService = DataPathService.getInstance()
     await dataPathService.initialize()
+    trace.mark('dataPathService')
 
     // 使用 DataPathService 获取数据路径
     const dataPath = dataPathService.getDataPath()
@@ -335,14 +339,17 @@ export class DatabaseManager implements ICoreDatabaseManager {
 
     // 启用 WAL 模式以获得更好的并发性能
     this.db.pragma('journal_mode = WAL')
+    trace.mark('openDatabase')
 
     // 初始化表结构
     this.initTables()
+    trace.mark('initTables')
 
     // === Phase 1: 建立 TypeORM DataSource（与 better-sqlite3 并存）===
     // 内部已包含多租户预迁移（ensureUsersTable + ensureUserIdColumns）+
     // schema drift 检查 + 备份保护
     await this.initTypeOrmDataSource()
+    trace.mark('initTypeOrmDataSource')
 
     // 关键：在 initRepositories 之前注入 ALS 默认 userId。
     // initRepositories 内部会调用 LwTempXxx.initializeDefaultData，这些初始化
@@ -361,6 +368,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
 
     // 初始化仓库（内部可能跑 initializeDefaultData，依赖上面已 set 的 userId）
     await this.initRepositories()
+    trace.mark('initRepositories')
 
     // 人像内置提示词模板 seeder（幂等）：新版人像设计（spec 2026-07-24）。
     // 依赖 portraitPromptTemplates 仓库，必须在 initRepositories 之后。
@@ -368,6 +376,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/platform/services/portrait-template-seeder.service'
     )
     await PortraitTemplateSeederService.seed()
+    trace.mark('portraitTemplateSeed')
 
     // 写入本地默认用户记录到 users 表（依赖 this.users，必须在 initRepositories 之后）
     if (this.users) {
@@ -391,15 +400,19 @@ export class DatabaseManager implements ICoreDatabaseManager {
 
     // 初始化 LanceDB 向量数据库
     await this.initializeLanceDB(dataPath)
+    trace.mark('initializeLanceDB')
 
     // 初始化内置角色
     await this.initBuiltinRoles()
+    trace.mark('initBuiltinRoles')
 
     // 初始化长文写作全局设置
     this.initGlobalSettings()
+    trace.mark('initGlobalSettings')
 
     // 初始化长文写字典
     await this.initDictionary()
+    trace.mark('initDictionary')
 
     // 资源路径迁移：DB 中的绝对路径 → 相对 dataPath 路径（幂等）
     try {
@@ -414,8 +427,10 @@ export class DatabaseManager implements ICoreDatabaseManager {
     } catch (e) {
       console.warn('[DatabaseManager] 资源路径迁移失败（不致命）:', e)
     }
+    trace.mark('migrateAssetPathsToRelative')
 
     console.log('[DatabaseManager] 数据库初始化完成:', this.dbPath)
+    trace.report()
   }
 
   /**
@@ -471,6 +486,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
    *    Phase 1 收尾批次（删除 raw DDL）时再切换到 synchronize 接管。
    */
   private async initTypeOrmDataSource(): Promise<void> {
+    const trace = createBootTrace('DatabaseManager.initTypeOrmDataSource')
     const cfg: DbConfig = loadDbConfigFromEnv() ?? {
       type: 'sqlite' as const,
       database: this.dbPath,
@@ -478,13 +494,16 @@ export class DatabaseManager implements ICoreDatabaseManager {
     }
 
     this.dataSource = await createDataSource({ config: cfg })
+    trace.mark('createDataSource')
 
     // 多租户预迁移：保障 users 表存在 + 业务表补 user_id 列 + 旧数据回填。
     // 必须早于 drift 检查执行。
     await this.runMultiTenantMigrations()
+    trace.mark('runMultiTenantMigrations')
 
     if (cfg.type === 'sqlite' && fs.existsSync(cfg.database)) {
       const report = await checkSchemaDrift(this.dataSource)
+      trace.mark('checkSchemaDrift')
       if (!report.ok) {
         const backupPath = `${cfg.database}.bak.${Date.now()}`
         try {
@@ -502,6 +521,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     }
 
     console.log('[DatabaseManager] TypeORM DataSource 初始化完成')
+    trace.report()
   }
 
   /**
@@ -520,6 +540,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
    */
   private async runMultiTenantMigrations(): Promise<void> {
     if (!this.dataSource) return
+    const trace = createBootTrace('DatabaseManager.runMultiTenantMigrations')
     const { ensureUsersTable } = await import(
       '@core/database/migrations/ensure-users-table'
     )
@@ -528,11 +549,14 @@ export class DatabaseManager implements ICoreDatabaseManager {
     )
     const { LOCAL_DEFAULT_USER_ID } = await import('@core/context/user-context')
     await ensureUsersTable(this.dataSource)
+    trace.mark('ensureUsersTable')
     await ensureUserIdColumns(this.dataSource, LOCAL_DEFAULT_USER_ID)
+    trace.mark('ensureUserIdColumns')
     const { ensureAssetBindingSourceType } = await import(
       '@core/database/migrations/ensure-asset-binding-source-type'
     )
     await ensureAssetBindingSourceType(this.dataSource)
+    trace.mark('ensureAssetBindingSourceType')
     const { createAssetImage } = await import(
       '@core/database/migrations/create-asset-image'
     )
@@ -983,8 +1007,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-domain-learning-tables'
     )
     await createDomainLearningTables(this.dataSource)
-
-    // H5 视频任务崩溃恢复（2026-09-16 ep-hardening）：storyboards / ep_video_segments
+// H5 视频任务崩溃恢复（2026-09-16 ep-hardening）：storyboards / ep_video_segments
     // 加 provider_task_id（幂等，双语种；Web 端 initDatabase 有同构调用，两处必须同步）
     const { addVideoProviderTaskId } = await import(
       '@core/database/migrations/add-video-provider-task-id'
@@ -1003,6 +1026,8 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-lw-project-cover-path'
     )
     await addLwProjectCoverPath(this.dataSource)
+
+    trace.report(undefined, 100)
   }
 
   /**

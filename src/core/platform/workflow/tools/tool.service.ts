@@ -109,6 +109,17 @@ export class ToolService {
     await this.credentials.delete(id)
   }
 
+  /**
+   * 取凭据明文（服务端执行时注入第三方 API 用；**绝不下发渲染层**）。
+   * 供素材库检索（Pexels/Pixabay Key）等"非 HTTP 头注入"场景取用——
+   * 与 execute 内部走同一 decryptKey 路径，不另起解密实现。
+   */
+  async resolveCredentialKey(credentialId: string): Promise<string> {
+    const cred = await this.credentials.findById(credentialId)
+    if (!cred) throw new Error(`凭据不存在：${credentialId}（请到「设置 → 工具 → 凭据」重新添加）`)
+    return this.decryptKey(cred)
+  }
+
   /** 解密凭据 key（执行时注入请求头用） */
   private decryptKey(cred: ToolCredential): string {
     try {

@@ -15,12 +15,10 @@ import { KnowledgeBaseService } from '../../services/knowledge-base.service'
 import { augmentWithDialogFiles, mergeRetrievalResults, effectiveTopK } from './dialog-file-retriever'
 import { getSearchEngineService } from '../../services/search-engine.service'
 import { TranslationService } from '../../services/translation.service'
-import { ImageService } from '../../services/image.service'
 import { VoiceService } from '../../services/voice.service'
 import { getVideoMetadata, extractAudioSegment } from '../../episode-production/reference-video/ffmpeg-helpers'
-import { dirname, basename, join, isAbsolute } from 'path'
-import { existsSync, readFileSync, rmSync } from 'fs'
-import { getPathProvider } from '@core/interfaces/path.interface'
+import { dirname, basename, join } from 'path'
+import { rmSync } from 'fs'
 import type { WorkflowNodeContext } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
@@ -28,7 +26,7 @@ import { WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_EVENT_TYPES } from '@shared/ty
 import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 import { knowledgeParams } from '@shared/utils/knowledge-params'
 import { pollUntil } from '../engine/async-utils'
-import { submitWithTransientRetry } from './retry-submit'
+import { generateImages } from './image-generate'
 import { getEventEmitter } from '@core/interfaces/event.interface'
 
 /** 长任务节点'提交即返回'的输出状态值（三处共用唯一写法） */
@@ -429,97 +427,34 @@ const imageGenNode: WorkflowNodeHandler = {
       /** 随机种子（一致性：同 prompt+seed 生成同构图；重生成/同主体多场景用） */
       seed?: number
     }
-    // 参考图：路径 → base64 data URL（电商海报等场景保留商品主体）
-    let referenceImages: string[] | undefined
-    const rawRefs = cfg.referenceImages
-    if (rawRefs !== undefined && rawRefs !== null) {
-      const list = Array.isArray(rawRefs) ? rawRefs : [rawRefs]
-      const resolved: string[] = []
-      for (const item of list) {
-        const p = stringifyValue(item).trim()
-        if (!p) continue
-        if (!existsSync(p)) {
-          return { status: 'failed', error: `参考图文件不存在: ${p}` }
-        }
-        resolved.push(`data:image/png;base64,${readFileSync(p).toString('base64')}`)
-      }
-      if (resolved.length > 0) referenceImages = resolved
-    }
-    const actualPrompt = stringifyValue(cfg.prompt)
-    const request = {
-      model: cfg.modelId,
-      prompt: actualPrompt,
-      ...(cfg.negativePrompt ? { negativePrompt: cfg.negativePrompt } : {}),
-      width: cfg.width,
-      height: cfg.height,
-      ...(cfg.count ? { count: cfg.count } : {}),
-      ...(cfg.providerConfigId ? { providerConfigId: cfg.providerConfigId } : {}),
-      ...(cfg.promptExtend !== undefined ? { promptExtend: cfg.promptExtend } : {}),
-      ...(cfg.seed !== undefined && cfg.seed >= 0 ? { seed: cfg.seed } : {}),
-      ...(referenceImages ? { referenceImages } : {}),
-    } as never
-    // 评审 #105（图像侧）：提交阶段的瞬时网络失败（fetch/连接/网关 5xx/超时）
-    // 内部重试一次，避免偶发抖动直接让整场工作流失败（与 video-gen 共用 retry-submit）
-    const resp = await submitWithTransientRetry(() => ImageService.generateImage(request), {
-      label: '图像',
-      logger: ctx.logger,
-    })
-    if (!resp.success) {
-      return { status: 'failed', error: `图像生成失败: ${resp.error ?? '未知错误'}` }
-    }
-    // 同步 Provider 直接返回图；异步 Provider 返回 taskId 需轮询
-    let images = resp.images ?? []
-    let taskId = resp.taskId ?? ''
-    if (images.length === 0 && taskId) {
-      const task = await pollUntil(
-        async () => {
-          const st = await ImageService.getTaskStatus(taskId)
-          ctx.emitProgress(st.progress ?? -1)
-          if (st.status === 'completed') return st
-          if (st.status === 'failed') throw new Error(st.error ?? '图像生成失败')
-          return undefined
-        },
+    // 实现统一收敛到 image-generate（与 shot-visual 共用，避免两处漂移）
+    try {
+      const out = await generateImages(
         {
-          intervalMs: workflowRuntimeParams().polling.imageIntervalMs,
-          timeoutMs: workflowRuntimeParams().polling.imageWaitTimeoutMs,
-          signal: ctx.signal,
-        }
+          prompt: stringifyValue(cfg.prompt),
+          ...(cfg.negativePrompt ? { negativePrompt: cfg.negativePrompt } : {}),
+          width: cfg.width,
+          height: cfg.height,
+          ...(cfg.count ? { count: cfg.count } : {}),
+          ...(cfg.providerConfigId ? { providerConfigId: cfg.providerConfigId } : {}),
+          modelId: cfg.modelId,
+          referenceImages: cfg.referenceImages,
+          ...(cfg.promptExtend !== undefined ? { promptExtend: cfg.promptExtend } : {}),
+          ...(cfg.seed !== undefined && cfg.seed >= 0 ? { seed: cfg.seed } : {}),
+        },
+        ctx,
       )
-      images = task.images ?? []
-      ctx.emitProgress(100)
-    }
-    if (images.length === 0) {
-      return { status: 'failed', error: '图像服务未返回图片' }
-    }
-    // 输出统一形态：url=远程/可访问链接（若有）、path=本地绝对路径（filePath 相对路径解析）、
-    // localUrl=local-*:// 协议链接（前端可直接加载）
-    const pathProvider = getPathProvider()
-    const dataRoot = pathProvider.getDataPath()
-    return {
-      status: 'succeeded',
-      output: {
-        ...(taskId ? { taskId } : {}),
-        // 回传实际使用的 prompt（下游确认/重生成环节引用；与 seed 配套）
-        prompt: actualPrompt,
-        ...(cfg.seed !== undefined && cfg.seed >= 0 ? { seed: cfg.seed } : {}),
-        images: images.map(im => {
-          const out: Record<string, unknown> = {
-            width: im.width,
-            height: im.height,
-          }
-          if (im.url) out.url = im.url
-          if (im.base64) out.hasBase64 = true
-          // filePath：兼容「纯相对路径」与「local-*:// 协议 URL」两种上游形态 → 本地绝对路径 + local 协议 URL
-          const rawPath = im.filePath
-          if (rawPath) {
-            const stripped = String(rawPath).replace(/^local-[a-z]+:\/\//i, '')
-            const abs = isAbsolute(stripped) ? stripped : join(dataRoot, stripped.replace(/^\/+/, ''))
-            out.path = abs
-            out.localUrl = pathProvider.toAssetUrl(stripped, 'image')
-          }
-          return out
-        }),
-      },
+      return {
+        status: 'succeeded',
+        output: {
+          ...(out.taskId ? { taskId: out.taskId } : {}),
+          prompt: out.prompt,
+          ...(out.seed !== undefined ? { seed: out.seed } : {}),
+          images: out.images,
+        },
+      }
+    } catch (e) {
+      return { status: 'failed', error: e instanceof Error ? e.message : String(e) }
     }
   },
 }

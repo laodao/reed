@@ -784,7 +784,12 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
       if (result.success && result.images?.length) {
         // saveImagesWithoutHistory 已经返回相对路径，直接落库
-        await service.updateMapImage(mapId, result.images[0].filePath)
+        const filePath = result.images[0].filePath
+        if (!filePath) {
+          // 未落盘（无 filePath）时不能把空路径写进地图记录，否则前端拿到坏图
+          return { success: false, error: '图像已生成但未落盘（缺少 filePath）' }
+        }
+        await service.updateMapImage(mapId, filePath)
       }
 
       return { success: result.success, error: result.error }

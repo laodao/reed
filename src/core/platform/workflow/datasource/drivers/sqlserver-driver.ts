@@ -4,17 +4,26 @@
  * @description 使用 mssql (tedious) 连接外部 SQL Server 数据库。
  *              - testConnection：SELECT 1 + 版本探测
  *              - query：统一 $1,$2 占位符 → 翻译为 @p1,@p2 并按编号 input 绑定，输出统一 QueryResult
+ *
+ * ⚠️ 驱动按需加载（2026-09-16 启动性能实测）：`mssql` 会拖入 3.9MB 的 `tedious`，
+ * 模块求值单次 **378ms**（mysql2 133ms / pg 32ms）。原来在 boot 装配时静态 import，
+ * 四个驱动合计 ~544ms 全压在启动关键路径上，而只有用户真的连外部库才用得到。
+ * 现在改为首次使用（testConnection/query）时才动态 import。
  */
 
-import sql from 'mssql'
+import type sql from 'mssql'
 import { replaceDollarPlaceholders } from '../placeholder-utils'
 import { acquirePooled, evictPooled, isConnectionClassError } from './pool-cache'
+import { lazyModule } from './lazy-module'
 import type {
   DataSourceConnectionParams,
   DataSourceDriverAdapter,
   DataSourceQueryResult,
   DataSourceTestResult,
 } from '@shared/types/datasource.types'
+
+/** mssql 单例加载器（首次连接才真正求值；CJS/ESM 双形态归一） */
+const loadMssql = lazyModule(() => import('mssql'), (m) => m.default ?? m)
 
 function buildConfig(params: DataSourceConnectionParams): sql.config {
   return {
@@ -40,9 +49,10 @@ export class SqlServerDriverAdapter implements DataSourceDriverAdapter {
   async testConnection(params: DataSourceConnectionParams): Promise<DataSourceTestResult> {
     const started = Date.now()
     try {
+      const sqlMod = await loadMssql()
       const pool = await acquirePooled<sql.ConnectionPool>(
         'sqlserver', params,
-        () => new sql.ConnectionPool(buildConfig(params)).connect(),
+        () => new sqlMod.ConnectionPool(buildConfig(params)).connect(),
         p => p.close()
       )
       const res = await pool.request().query('SELECT @@VERSION AS v')
@@ -70,9 +80,10 @@ export class SqlServerDriverAdapter implements DataSourceDriverAdapter {
   ): Promise<DataSourceQueryResult> {
     const started = Date.now()
     try {
+      const sqlMod = await loadMssql()
       const pool = await acquirePooled<sql.ConnectionPool>(
         'sqlserver', params,
-        () => new sql.ConnectionPool(buildConfig(params)).connect(),
+        () => new sqlMod.ConnectionPool(buildConfig(params)).connect(),
         p => p.close()
       )
       const request = pool.request()

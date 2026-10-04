@@ -76,6 +76,7 @@ export interface CatalogFormField {
     | 'searchEngineConfigs'
     | 'skills'
     | 'agentTools'
+    | 'credentials'
   help?: string
   /** 字段值支持 {{}} 模板的提示标记（表单角标） */
   templateHint?: boolean
@@ -293,6 +294,69 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     T('targetLang', '目标语言', { group: '语言', placeholder: 'en / zh / ja ...' }),
     { key: 'providerConfigId', label: '模型', type: 'model-pair', group: '模型', help: '留空 = 按默认 Provider 自动回退选择' },
   ],
+  'shot-visual': [
+    T('concept', '语义主题', { help: '相关性判定锚点，如「进出口外贸」' }),
+    T('subject', '画面主体', { help: '可拍实体，如「龙门吊与集装箱」' }),
+    T('setting', '场所环境', { help: '如「集装箱码头堆场」' }),
+    T('searchQuery', '素材检索词（英文）', { help: '留空=按主题/主体/场所查场景词典自动解析' }),
+    T('altQueries', '备选检索词', { type: 'textarea', help: '首选无结果时依次尝试（逗号/换行分隔）' }),
+    T('visual', '画面描述', { type: 'textarea', templateHint: true, help: '光线/色调/构图/运镜' }),
+    T('styleText', '画面风格', { type: 'textarea', templateHint: true, help: '一般接 {{preset.styleText}}' }),
+    {
+      key: 'stockMode',
+      label: '真实素材',
+      type: 'select',
+      group: '真实素材层',
+      options: [
+        { label: '自动（有凭据即检索）', value: 'auto' },
+        { label: '关闭（只走 AI 生成）', value: 'off' },
+      ],
+    },
+    {
+      key: 'stockProvider',
+      label: '素材库',
+      type: 'select',
+      group: '真实素材层',
+      options: [
+        { label: 'Pexels', value: 'pexels' },
+        { label: 'Pixabay', value: 'pixabay' },
+      ],
+    },
+    {
+      key: 'stockCredentialId',
+      label: '素材库凭据',
+      type: 'select-dynamic',
+      source: 'credentials',
+      group: '真实素材层',
+      help: '设置 → 工具 → 凭据 中保存的 API Key 条目（Pexels/Pixabay）',
+    },
+    {
+      key: 'stockKind',
+      label: '素材种类偏好',
+      type: 'select',
+      group: '真实素材层',
+      options: [
+        { label: '自动（视频优先，图片次之）', value: 'auto' },
+        { label: '只用视频', value: 'video' },
+        { label: '只用图片', value: 'image' },
+      ],
+    },
+    { key: 'stockPerPage', label: '检索条数', type: 'number', group: '真实素材层' },
+    { key: 'stockMaxCandidates', label: '候选下载条数', type: 'number', group: '真实素材层', help: '相关性选优的池子大小' },
+    { key: 'stockMinWidth', label: '素材最小宽度', type: 'number', group: '真实素材层' },
+    { key: 'stockMinDurationSec', label: '视频最短时长（秒）', type: 'number', group: '真实素材层' },
+    { key: 'stockMinScore', label: '素材相关性阈值', type: 'number', group: '真实素材层', help: '0-100；低于阈值不采用' },
+    { key: 'generateFallback', label: '允许 AI 生成兜底', type: 'switch', group: '生成层' },
+    T('imageProviderConfigId', '图像 Provider', { group: '生成层' }),
+    T('imageModelId', '图像模型 ID', { group: '生成层', help: '必填（生成兜底用）' }),
+    { key: 'maxAttempts', label: '生成尝试次数', type: 'number', min: 1, max: 4, group: '生成层' },
+    T('negativePrompt', '负面提示词', { group: '生成层' }),
+    { key: 'width', label: '宽度', type: 'number', group: '生成层' },
+    { key: 'height', label: '高度', type: 'number', group: '生成层' },
+    T('qaProviderConfigId', '质检 Provider', { group: '视觉质检', help: '留空=跳过质检（会如实记录）' }),
+    T('qaModelId', '质检模型 ID', { group: '视觉质检', help: '需支持图片输入的视觉模型' }),
+    { key: 'minScore', label: '生成图相关性阈值', type: 'number', group: '视觉质检' },
+  ],
   'image-gen': [
     T('prompt', '提示词', { type: 'textarea', templateHint: true }),
     T('negativePrompt', '负面提示词', { group: '参数' }),
@@ -314,7 +378,7 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
   'video-compose': [
     T('segments', '片段列表', {
       type: 'textarea', templateHint: true,
-      placeholder: '{{code1.result.segments}}', help: '[{ source, kind, duration, caption }]',
+      placeholder: '{{code1.result.segments}}', help: '[{ source, kind, duration, caption, motion }]；motion 仅图片段生效：none/zoom-in/zoom-out/pan-left/pan-right',
     }),
     T('audioPath', '配音音频（可选）', { templateHint: true, placeholder: '{{tts1.audioPath}}' }),
     T('bgmPath', '背景音乐（可选）', { templateHint: true, placeholder: '本地 mp3 路径' }),

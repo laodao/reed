@@ -76,7 +76,6 @@
                     </div>
                   </template>
                   <div v-else-if="block.type === 'notice'" class="notice-block">{{ block.text }}</div>
-                  <div v-else-if="block.type === 'memory'" class="memory-line">已装配 {{ block.count }} 条相关经验（来自知识飞轮）</div>
                 </div>
                 <div v-if="isLiveTurn(item)" class="live-line"><span class="running-dot" /> 执行中…</div>
               </div>
@@ -151,7 +150,7 @@
         <div v-else class="empty-tip stream-pane-empty">从左侧选择会话，或新建一个 Agent 会话</div>
       </section>
 
-      <!-- 右栏：会话上下文检查器（上下文 / 记忆 / 子任务规划 / 工作流 / 技能） -->
+      <!-- 右栏：会话上下文检查器（上下文 / 子任务规划 / 工作流 / 技能） -->
       <aside class="inspector-pane">
         <div class="insp-scroll">
           <div class="insp-sec">
@@ -165,17 +164,6 @@
               <span class="kv-k">执行步骤</span><span class="kv-v">{{ contextInfo.steps }}</span>
               <span class="kv-k">Tokens</span><span class="kv-v">{{ contextInfo.tokens }}</span>
             </div>
-          </div>
-
-          <div class="insp-sec">
-            <div class="insp-title">
-              记忆
-              <a class="insp-link" @click="openDrawer('memory')">知识飞轮</a>
-            </div>
-            <div v-if="memoryLines.length > 0" class="insp-list">
-              <div v-for="(line, i) in memoryLines" :key="i" class="insp-item">{{ line }}</div>
-            </div>
-            <div v-else class="insp-empty">本会话暂未装配记忆</div>
           </div>
 
           <div class="insp-sec">
@@ -219,7 +207,7 @@
       </aside>
     </div>
 
-    <!-- 会话详情抽屉（37 号实测反馈：知识飞轮/任务树/上下文就地弹出，不跳页，只看当前会话） -->
+    <!-- 会话详情抽屉（37 号实测反馈：任务树/上下文就地弹出，不跳页，只看当前会话） -->
     <el-drawer v-model="drawerVisible" :title="drawerTitle" direction="rtl" size="460px">
       <!-- 任务树（当前会话创建的规划树，层级完整渲染） -->
       <template v-if="drawerMode === 'tree'">
@@ -237,24 +225,10 @@
         </div>
       </template>
 
-      <!-- 知识飞轮（本会话各轮装配的记忆引用） -->
-      <template v-else-if="drawerMode === 'memory'">
-        <template v-if="memoryGroups.length > 0">
-          <div v-for="g in memoryGroups" :key="g.key" class="drawer-mem-group">
-            <div class="drawer-sec-hint">{{ g.label }}</div>
-            <div v-for="(line, i) in g.refs" :key="i" class="insp-item">{{ line }}</div>
-          </div>
-        </template>
-        <div v-else class="insp-empty">本会话暂未装配记忆——Agent 执行任务时会自动从知识飞轮召回相关经验</div>
-        <div class="drawer-foot">
-          <a class="insp-link" @click="router.push('/agent-memory')">打开知识飞轮管理页 →</a>
-        </div>
-      </template>
-
       <!-- 会话上下文（模型实际看到的消息历史） -->
       <template v-else>
         <div v-loading="contextLoading">
-          <div class="drawer-sec-hint">系统提示词（最近一轮动态装配，含知识飞轮记忆）</div>
+          <div class="drawer-sec-hint">系统提示词（最近一轮动态装配）</div>
           <template v-if="contextSystemPrompt">
             <pre class="drawer-pre" :class="{ 'drawer-pre-clamped': !sysExpanded }">{{ contextSystemPrompt }}</pre>
             <a class="text-toggle" @click="sysExpanded = !sysExpanded">{{ sysExpanded ? '收起' : '展开全文' }}</a>
@@ -333,7 +307,6 @@ type Block =
   | { type: 'text'; key: string; text: string }
   | { type: 'tool'; key: string; name: string; argsDigest: string; args: unknown; result?: unknown; ok?: boolean; durationMs?: number; pending: boolean }
   | { type: 'notice'; key: string; text: string }
-  | { type: 'memory'; key: string; count: number }
 
 interface TimelineItem {
   key: string
@@ -418,11 +391,10 @@ function buildBlocks(entriesIn: Entry[]): Block[] {
   for (const e of entriesIn) {
     const suffix = String(e.seq ?? e.key)
     if (e.name === 'turn_start') continue
-    // 记忆装配留痕（36 号 kit 与任务执行器统一 name 判定——旧任务轨迹 kind=decision
-    // 也按 name 兼容；必须先于 decision 分支，否则永远不可达且误计步数）
+    // 记忆装配留痕行（历史轨迹里可能存在，知识飞轮已停用）：不作为叙述块展示，
+    // 也不能落进 decision 分支误计步数
     if (e.kind === 'memory_assembly' || e.name === 'memory_assembly') {
-      const refs = e.payload?.memoryRefs
-      if (Array.isArray(refs) && refs.length > 0) blocks.push({ type: 'memory', key: `mem-${suffix}`, count: refs.length })
+      continue
     } else if (e.kind === 'decision') {
       pushText(`txt-${suffix}`, thoughtOf(e))
     } else if (e.kind === 'tool_call') {
@@ -513,17 +485,6 @@ const allRefs = computed<RefItem[]>(() => {
     for (const r of m.metadata?.agent?.refs ?? []) out.set(`${r.kind}:${r.id}`, r)
   }
   return [...out.values()]
-})
-
-const memoryLines = computed(() => {
-  const out = new Set<string>()
-  for (const e of entries.value) {
-    // name 双兼容：36 号 kit=kind memory_assembly；旧任务轨迹行 kind=decision
-    if (e.kind !== 'memory_assembly' && e.name !== 'memory_assembly') continue
-    const refs = e.payload?.memoryRefs
-    if (Array.isArray(refs)) refs.forEach((r) => out.add(String(r)))
-  }
-  return [...out]
 })
 
 const skillLabels = computed(() => allRefs.value.filter((r) => r.kind === 'skill').map((r) => r.label))
@@ -772,14 +733,14 @@ function gotoTaskTree(): void {
 
 // ============ 会话详情抽屉（37 号实测反馈：就地弹出，仅当前会话内容） ============
 
-type DrawerMode = 'tree' | 'memory' | 'context'
+type DrawerMode = 'tree' | 'context'
 const drawerVisible = ref(false)
 const drawerMode = ref<DrawerMode>('tree')
 const sysExpanded = ref(false)
 
 const drawerTitle = computed(() => {
   const base = selected.value?.label ?? ''
-  return drawerMode.value === 'tree' ? `任务树 · ${base}` : drawerMode.value === 'memory' ? `知识飞轮 · ${base}` : `会话上下文 · ${base}`
+  return drawerMode.value === 'tree' ? `任务树 · ${base}` : `会话上下文 · ${base}`
 })
 
 function openDrawer(mode: DrawerMode): void {
@@ -824,20 +785,6 @@ const TASK_STATUS_LABELS: Record<string, string> = {
 function taskStatusLabel(status: string): string {
   return TASK_STATUS_LABELS[status] ?? status
 }
-
-/** 知识飞轮抽屉：按轮分组的记忆装配记录（最新一轮在前） */
-const memoryGroups = computed(() => {
-  const groups: Array<{ key: string; label: string; refs: string[] }> = []
-  let turn = 0
-  for (const e of [...entries.value].sort((a, b) => a.ts - b.ts)) {
-    if (e.name === 'turn_start') turn++
-    // name 双兼容（36 号 kit 与旧任务轨迹行）
-    if (e.kind !== 'memory_assembly' && e.name !== 'memory_assembly') continue
-    const refs = Array.isArray(e.payload?.memoryRefs) ? (e.payload!.memoryRefs as unknown[]).map(String) : []
-    if (refs.length > 0) groups.push({ key: e.key, label: `第 ${turn} 轮装配 · ${refs.length} 条`, refs })
-  }
-  return groups.reverse()
-})
 
 // ---- 上下文抽屉 ----
 

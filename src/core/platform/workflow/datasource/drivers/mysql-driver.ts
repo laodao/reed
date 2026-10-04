@@ -5,11 +5,16 @@
  *              - testConnection：SELECT 1 + 版本探测
  *              - query：统一 $1,$2 占位符 → 翻译为 mysql2 的 ?（按占位符出现顺序收集参数值）
  *              输出统一 QueryResult。
+ *
+ * ⚠️ 驱动按需加载（2026-09-16 启动性能实测）：`mysql2` 模块求值 133ms（pg 32ms、
+ * mssql→tedious 378ms）。原来在 boot 装配时静态 import，四个驱动合计 ~544ms 压在
+ * 启动关键路径上。现在首次连接/查询时才动态 import。
  */
 
-import { createPool } from 'mysql2/promise'
+import type { Pool } from 'mysql2/promise'
 import { acquirePooled, evictPooled, isConnectionClassError } from './pool-cache'
 import { replaceDollarPlaceholders } from '../placeholder-utils'
+import { lazyModule } from './lazy-module'
 import type {
   DataSourceConnectionParams,
   DataSourceDriverAdapter,
@@ -17,7 +22,11 @@ import type {
   DataSourceTestResult,
 } from '@shared/types/datasource.types'
 
-function createMysqlPool(params: DataSourceConnectionParams) {
+/** mysql2 单例加载器（首次连接才真正求值） */
+const loadMysql = lazyModule(() => import('mysql2/promise'), (m: { createPool: typeof import('mysql2/promise').createPool }) => ({ createPool: m.createPool }))
+
+async function createMysqlPool(params: DataSourceConnectionParams) {
+  const { createPool } = await loadMysql()
   return createPool({
     host: params.host,
     port: params.port,
@@ -37,7 +46,7 @@ export class MySqlDriverAdapter implements DataSourceDriverAdapter {
   async testConnection(params: DataSourceConnectionParams): Promise<DataSourceTestResult> {
     const started = Date.now()
     try {
-      const pool = await acquirePooled('mysql', params, () => createMysqlPool(params), p => p.end())
+      const pool = await acquirePooled<Pool>('mysql', params, () => createMysqlPool(params), p => p.end())
       const conn = await pool.getConnection()
       try {
         const [rows] = await conn.query('SELECT VERSION() AS v, DATABASE() AS db')
@@ -69,7 +78,7 @@ export class MySqlDriverAdapter implements DataSourceDriverAdapter {
   ): Promise<DataSourceQueryResult> {
     const started = Date.now()
     try {
-      const pool = await acquirePooled('mysql', params, () => createMysqlPool(params), p => p.end())
+      const pool = await acquirePooled<Pool>('mysql', params, () => createMysqlPool(params), p => p.end())
       const conn = await pool.getConnection()
       try {
         // 统一 $n → mysql2 的 ?；参数值按占位符出现顺序收集（支持乱序 $2,$1）
