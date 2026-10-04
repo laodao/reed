@@ -189,6 +189,7 @@ function viewWithCard(): DlSpaceView {
     tagline: '',
     profile: null,
     prerequisites: [],
+    bookSuggestions: [],
     coverage: null,
     status: 'active',
     concepts: [

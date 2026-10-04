@@ -68,6 +68,25 @@
       </el-tooltip>
     </div>
 
+    <!-- 书籍内容提示（2026-10-04：知识体系规划后的书籍建议；获取后上传绑定知识库供研究引用） -->
+    <div v-if="bookSuggestions.length" class="space-books">
+      <span class="space-books-label">书籍建议</span>
+      <el-tooltip
+        v-for="b in bookSuggestions"
+        :key="b.title"
+        :content="bookTip(b)"
+        placement="bottom"
+        :show-after="200"
+      >
+        <span class="space-books-chip" :class="b.priority ?? 'recommended'">
+          {{ b.title }}
+          <span v-if="b.author" class="chip-author">{{ b.author }}</span>
+          <span class="chip-flag">{{ bookPriorityLabel(b.priority) }}</span>
+        </span>
+      </el-tooltip>
+      <el-button link type="primary" size="small" @click="goKbUpload">去知识库上传</el-button>
+    </div>
+
     <!-- 手工追加知识点（2026-09-12：用户补全知识体系；前置直连为已确认边） -->
     <el-dialog v-model="createConceptVisible" title="追加知识点" width="520px" append-to-body>
       <div class="cc-form">
@@ -799,6 +818,7 @@ import AgentActivityStrip from './AgentActivityStrip.vue'
 import PlanConfirmDialog from './PlanConfirmDialog.vue'
 import LessonPlanDialog from './LessonPlanDialog.vue'
 import type {
+  DlBookSuggestion,
   DlCardSection,
   DlChatTurn,
   DlConceptView,
@@ -1134,6 +1154,27 @@ const spacePrereqs = computed<DlSpacePrereq[]>(() => view.value?.prerequisites ?
 function prereqTip(p: DlSpacePrereq): string {
   const bits = [p.why, p.level].filter((x): x is string => !!x)
   return bits.length ? bits.join(' · ') : p.name
+}
+
+// ---------- 书籍建议（2026-10-04：知识体系规划后的书籍内容提示） ----------
+const bookSuggestions = computed<DlBookSuggestion[]>(() => view.value?.bookSuggestions ?? [])
+
+/** 优先级徽标文案 */
+function bookPriorityLabel(priority?: DlBookSuggestion['priority']): string {
+  if (priority === 'essential') return '强烈建议'
+  if (priority === 'reference') return '参考查阅'
+  return '推荐'
+}
+
+/** 书籍 chip 的悬停说明（为什么读 + 优先级） */
+function bookTip(b: DlBookSuggestion): string {
+  const bits = [b.why, `优先级：${bookPriorityLabel(b.priority)}`].filter((x): x is string => !!x)
+  return bits.join('\n')
+}
+
+/** 去知识库上传：把建议的书籍资料传进空间绑定的知识库，后续研究轮 wf_kb_retrieve 可直接引用 */
+function goKbUpload(): void {
+  void router.push('/knowledge-base')
 }
 
 /** 当前概念"已声明但未建关系边"的前置（顺序声明可见，关系待补） */
@@ -2528,6 +2569,56 @@ watch(rightPane, (pane) => {
   .space-prereq-note {
     color: var(--el-text-color-placeholder);
     font-size: 11px;
+  }
+}
+
+// 书籍建议条（2026-10-04：知识体系规划后的书籍内容提示）
+.space-books {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-lighter);
+  font-size: 12px;
+
+  .space-books-label {
+    color: var(--el-text-color-secondary);
+    font-weight: 600;
+  }
+
+  .space-books-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 9px;
+    border-radius: 10px;
+    color: var(--el-text-color-regular);
+    background: var(--el-fill-color);
+    cursor: default;
+
+    // 体系主干依赖 → 强调色
+    &.essential {
+      color: var(--el-color-danger);
+      background: var(--el-color-danger-light-9);
+    }
+
+    // 推荐加深理解 → 主色弱化
+    &.recommended {
+      color: var(--el-color-primary);
+      background: var(--el-color-primary-light-9);
+    }
+
+    .chip-author {
+      font-size: 10px;
+      color: var(--el-text-color-placeholder);
+    }
+
+    .chip-flag {
+      font-size: 10px;
+      color: var(--el-text-color-placeholder);
+    }
   }
 }
 

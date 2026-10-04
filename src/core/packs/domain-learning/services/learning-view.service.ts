@@ -162,6 +162,8 @@ export class LearningViewService {
       // 主题学习前置要求（2026-09-12 用户需求：整个领域的学习门槛，进空间即见）
       // 读侧信任仓储已解析结果（写入时已规范化并物化 inSpace）
       prerequisites: project.prerequisites ?? [],
+      // 书籍建议（2026-10-04 用户需求：知识体系规划后的书籍内容提示；用户上传绑定知识库后可被研究引用）
+      bookSuggestions: project.bookSuggestions ?? [],
       // 地图完整度诊断（2026-09-12 用户反馈"知识体系不够完善"）：结构性缺口可见 + 供 AI 补全起步
       coverage: assessMapCoverage({
         spaceName: project.name,

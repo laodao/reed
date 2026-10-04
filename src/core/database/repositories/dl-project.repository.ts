@@ -9,7 +9,7 @@
 import { type DataSource } from 'typeorm'
 import { DlProjectEntity } from '../entities/domain-learning/dl-project.entity'
 import { BaseRepository } from '../base-repository'
-import type { DlPaceSettings, DlReviewSettings, DlSpacePrereq } from '@shared/types/domain-learning.types'
+import type { DlBookSuggestion, DlPaceSettings, DlReviewSettings, DlSpacePrereq } from '@shared/types/domain-learning.types'
 
 /** dl_project 行 DTO（JSON 列已解析） */
 export interface DlProjectRow {
@@ -31,6 +31,8 @@ export interface DlProjectRow {
   review: DlReviewSettings | null
   /** 主题学习前置要求（2026-09-12；空数组 = 尚未声明） */
   prerequisites: DlSpacePrereq[]
+  /** 书籍建议（2026-10-04；空数组 = 暂无） */
+  bookSuggestions: DlBookSuggestion[]
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -47,6 +49,7 @@ export type DlProjectPatch = Partial<{
   pace: DlPaceSettings | null
   review: DlReviewSettings | null
   prerequisites: DlSpacePrereq[]
+  bookSuggestions: DlBookSuggestion[]
 }>
 
 function safeParse(json: string | null): Record<string, unknown> | null {
@@ -99,6 +102,26 @@ function parsePrerequisites(json: string | null): DlSpacePrereq[] {
   }
 }
 
+/** 书籍建议列解析（脏数据/非数组一律回落空数组；规范化在动作层，title 非空才算一条） */
+function parseBookSuggestions(json: string | null): DlBookSuggestion[] {
+  if (!json) return []
+  try {
+    const raw = JSON.parse(json) as unknown
+    if (!Array.isArray(raw)) return []
+    return raw
+      .map((item) => item as Partial<DlBookSuggestion>)
+      .filter((item) => typeof item?.title === 'string' && item.title.trim().length > 0)
+      .map((item) => ({
+        title: String(item.title),
+        ...(item.author ? { author: String(item.author) } : {}),
+        ...(item.why ? { why: String(item.why) } : {}),
+        ...(item.priority ? { priority: item.priority } : {}),
+      }))
+  } catch {
+    return []
+  }
+}
+
 export class DlProjectRepository extends BaseRepository<DlProjectEntity, DlProjectRow> {
   constructor(dataSource: DataSource) {
     super(dataSource, DlProjectEntity)
@@ -118,6 +141,8 @@ export class DlProjectRepository extends BaseRepository<DlProjectEntity, DlProje
     review?: DlReviewSettings | null
     /** 主题学习前置要求（2026-09-12；建空间即可带） */
     prerequisites?: DlSpacePrereq[]
+    /** 书籍建议（2026-10-04；建空间即可带） */
+    bookSuggestions?: DlBookSuggestion[]
   }): Promise<DlProjectRow> {
     const now = new Date()
     const e = new DlProjectEntity()
@@ -134,6 +159,7 @@ export class DlProjectRepository extends BaseRepository<DlProjectEntity, DlProje
     e.paceSettings = input.pace ? JSON.stringify(input.pace) : null
     e.reviewSettings = input.review ? JSON.stringify(input.review) : null
     e.prerequisites = JSON.stringify(input.prerequisites ?? [])
+    e.bookSuggestions = JSON.stringify(input.bookSuggestions ?? [])
     e.createdAt = now
     e.updatedAt = now
     await this.scoped.insert(e)
@@ -170,6 +196,8 @@ export class DlProjectRepository extends BaseRepository<DlProjectEntity, DlProje
     if (patch.review !== undefined)
       partial.reviewSettings = patch.review ? JSON.stringify(patch.review) : null
     if (patch.prerequisites !== undefined) partial.prerequisites = JSON.stringify(patch.prerequisites ?? [])
+    if (patch.bookSuggestions !== undefined)
+      partial.bookSuggestions = JSON.stringify(patch.bookSuggestions ?? [])
     await this.scoped.update({ id }, partial)
   }
 
@@ -192,6 +220,7 @@ export class DlProjectRepository extends BaseRepository<DlProjectEntity, DlProje
       pace: parsePace(e.paceSettings),
       review: parseReview(e.reviewSettings),
       prerequisites: parsePrerequisites(e.prerequisites),
+      bookSuggestions: parseBookSuggestions(e.bookSuggestions),
       createdAt: e.createdAt,
       updatedAt: e.updatedAt,
     }

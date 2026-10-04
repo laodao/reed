@@ -64,6 +64,7 @@ function viewOf(concepts: Array<Record<string, unknown>>): DlSpaceView {
     tagline: '',
     profile: null,
     prerequisites: [],
+    bookSuggestions: [],
     coverage: null,
     status: 'active',
     stats: { total: 0, mastered: 0, learning: 0 },

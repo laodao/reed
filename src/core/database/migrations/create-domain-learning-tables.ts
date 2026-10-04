@@ -56,6 +56,15 @@ export async function createDomainLearningTables(ds: DataSource): Promise<void> 
     'prerequisites',
     isPg ? 'prerequisites text' : 'prerequisites TEXT',
   )
+  // 2026-10-04：dl_project.book_suggestions 列（书籍建议 JSON 数组，用户需求：
+  // 知识体系规划后给书籍内容提示，用户获取书籍上传绑定知识库）
+  await ensureColumn(
+    ds,
+    isPg,
+    'dl_project',
+    'book_suggestions',
+    isPg ? 'book_suggestions text' : 'book_suggestions TEXT',
+  )
   // 2026-09-15 版本管理 P0-3/P1-1：dl_card 唯一约束 + 修订说明落库
   // 唯一约束防并发/重试产生同版本行；修订字段让"改了什么/为什么/依据"可追溯
   await ensureIndex(

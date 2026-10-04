@@ -2,7 +2,8 @@
  * create-info-sources 迁移执行测试（信息来源库：类别 / 分组 / 来源三层）
  * @module tests/unit/migrations/create-info-sources
  * @description 真实 sqlite：
- *  - 新装：建三表 → 预置内置类别「新闻来源」+ 5 分组 × 15 源（共 75）→ 幂等重跑不重复
+ *  - 新装：建三表 → 预置内置类别「新闻来源」（5 分组 × 15 源 = 75）与「权威知识源」（6 分组 × 34 源）
+ *    → 幂等重跑不重复
  *  - 存量升级：旧 news_topics / news_sources（含用户自建数据）整体改名搬迁，分组补 category_id
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
@@ -15,7 +16,17 @@ import { checkSchemaDrift } from '@core/database/schema-drift'
 import { createDataSource } from '@core/database/data-source'
 import * as entities from '@core/database/entities'
 import { NEWS_TOPICS } from '@shared/types/news-topics'
-import { INFO_SOURCE_NEWS_CATEGORY_ID } from '@shared/types/info-source.types'
+import { INFO_SOURCE_AUTHORITY_CATEGORY_ID, INFO_SOURCE_NEWS_CATEGORY_ID } from '@shared/types/info-source.types'
+
+/** 权威知识源各分组的预置来源数（百科 6 / 技术文档 6 / 教材 4 / 政府统计 8 / 医学 5 / 标准 5） */
+const AUTHORITY_TOPIC_SIZES: Record<string, number> = {
+  'auth-encyc': 6,
+  'auth-techdocs': 6,
+  'auth-course': 4,
+  'auth-gov': 8,
+  'auth-med': 5,
+  'auth-standard': 5,
+}
 
 let ds: DataSource
 
@@ -44,38 +55,54 @@ afterAll(async () => {
 })
 
 describe('create-info-sources 迁移执行（新装）', () => {
-  it('预置 1 个内置类别「新闻来源」', async () => {
-    const rows = await ds.query(`SELECT id, name, is_builtin, user_id FROM info_source_categories`)
-    expect(rows.length).toBe(1)
+  it('预置 2 个内置类别：新闻来源 + 权威知识源', async () => {
+    const rows = await ds.query(`SELECT id, name, is_builtin, user_id FROM info_source_categories ORDER BY sort_order`)
+    expect(rows.length).toBe(2)
     expect(rows[0].id).toBe(INFO_SOURCE_NEWS_CATEGORY_ID)
     expect(rows[0].name).toBe('新闻来源')
-    expect(rows[0].is_builtin).toBe(1)
-    expect(rows[0].user_id).toBeNull()
-  })
-
-  it('预置 5 个内置分组，全部归属内置新闻来源类别', async () => {
-    const rows = await ds.query(`SELECT id, category_id, is_builtin FROM info_source_topics WHERE is_builtin = 1`)
-    expect(rows.length).toBe(5)
+    expect(rows[1].id).toBe(INFO_SOURCE_AUTHORITY_CATEGORY_ID)
+    expect(rows[1].name).toBe('权威知识源')
     for (const r of rows) {
-      expect(r.category_id).toBe(INFO_SOURCE_NEWS_CATEGORY_ID)
       expect(r.is_builtin).toBe(1)
+      expect(r.user_id).toBeNull()
     }
-    expect(rows.map((r: any) => r.id).sort()).toEqual(['ai', 'energy', 'finance', 'tech', 'world'])
   })
 
-  it('预置 75 个内置来源（5 分组 × 15）', async () => {
-    const rows = await ds.query(`SELECT topic_id, count(*) c FROM info_sources WHERE is_builtin = 1 GROUP BY topic_id`)
-    expect(rows.length).toBe(5)
+  it('预置 11 个内置分组：新闻 5 + 权威知识源 6，归属各自类别', async () => {
+    const rows = await ds.query(`SELECT id, category_id, is_builtin FROM info_source_topics WHERE is_builtin = 1`)
+    expect(rows.length).toBe(11)
+    const newsIds = rows.filter((r: any) => r.category_id === INFO_SOURCE_NEWS_CATEGORY_ID).map((r: any) => r.id).sort()
+    const authIds = rows.filter((r: any) => r.category_id === INFO_SOURCE_AUTHORITY_CATEGORY_ID).map((r: any) => r.id).sort()
+    expect(newsIds).toEqual(['ai', 'energy', 'finance', 'tech', 'world'])
+    expect(authIds).toEqual(Object.keys(AUTHORITY_TOPIC_SIZES).sort())
+    for (const r of rows) expect(r.is_builtin).toBe(1)
+  })
+
+  it('预置 109 个内置来源：新闻 5×15 + 权威知识源 6 分组 × 各自数量', async () => {
+    const rows = await ds.query(
+      `SELECT t.category_id cat, s.topic_id topic, count(*) c FROM info_sources s
+       JOIN info_source_topics t ON t.id = s.topic_id WHERE s.is_builtin = 1 GROUP BY s.topic_id`,
+    )
     let total = 0
+    let newsTopics = 0
     for (const r of rows) {
-      expect(r.c).toBe(15)
+      if (r.cat === INFO_SOURCE_NEWS_CATEGORY_ID) {
+        expect(r.c).toBe(15)
+        newsTopics++
+      } else {
+        expect(r.c, `${r.topic} 权威源数量`).toBe(AUTHORITY_TOPIC_SIZES[r.topic])
+      }
       total += r.c
     }
-    expect(total).toBe(75)
+    expect(newsTopics).toBe(5)
+    expect(total).toBe(75 + 34)
   })
 
-  it('每分组国外 10 + 国内 5（id 序号 01-10 国外、11-15 国内）', async () => {
-    const rows = await ds.query(`SELECT id, topic_id FROM info_sources WHERE is_builtin = 1`)
+  it('新闻分组每分组国外 10 + 国内 5（id 序号 01-10 国外、11-15 国内）', async () => {
+    const rows = await ds.query(
+      `SELECT s.id, s.topic_id FROM info_sources s JOIN info_source_topics t ON t.id = s.topic_id
+       WHERE s.is_builtin = 1 AND t.category_id = '${INFO_SOURCE_NEWS_CATEGORY_ID}'`,
+    )
     const byTopic = new Map<string, string[]>()
     for (const r of rows) {
       const list = byTopic.get(r.topic_id) ?? []
@@ -89,6 +116,18 @@ describe('create-info-sources 迁移执行（新装）', () => {
       const domestic = ids.filter(id => Number(id.slice(-2)) >= 11)
       expect(foreign.length, `${topic} 国外`).toBe(10)
       expect(domestic.length, `${topic} 国内`).toBe(5)
+    }
+  })
+
+  it('权威知识源 id 以 ak_ 前缀 + 两位序号结尾（sort_order 由尾号解析）', async () => {
+    const rows = await ds.query(
+      `SELECT s.id FROM info_sources s JOIN info_source_topics t ON t.id = s.topic_id
+       WHERE s.is_builtin = 1 AND t.category_id = '${INFO_SOURCE_AUTHORITY_CATEGORY_ID}'`,
+    )
+    expect(rows.length).toBe(34)
+    for (const r of rows) {
+      expect(r.id).toMatch(/^ak_[a-z]+_\d{2}$/)
+      expect(Number.isFinite(Number(r.id.slice(-2)))).toBe(true)
     }
   })
 
@@ -118,9 +157,9 @@ describe('create-info-sources 迁移执行（新装）', () => {
     const sources = (await ds.query(`SELECT count(*) c FROM info_sources WHERE is_builtin = 1`))[0].c
     const topics = (await ds.query(`SELECT count(*) c FROM info_source_topics`))[0].c
     const categories = (await ds.query(`SELECT count(*) c FROM info_source_categories`))[0].c
-    expect(sources).toBe(75)
-    expect(topics).toBe(5)
-    expect(categories).toBe(1)
+    expect(sources).toBe(109)
+    expect(topics).toBe(11)
+    expect(categories).toBe(2)
   })
 
   it('与 NEWS_TOPICS 常量一致（每分组 15 源）', () => {
@@ -169,9 +208,9 @@ describe('create-info-sources 迁移执行（存量 news_* 升级）', () => {
         await legacy.query(`SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_news%'`)
       ).map((r: any) => r.name)
       expect(staleIndexes).toEqual([])
-      // 预置种子同时补齐
-      expect((await legacy.query(`SELECT count(*) c FROM info_source_topics WHERE is_builtin = 1`))[0].c).toBe(5)
-      expect((await legacy.query(`SELECT count(*) c FROM info_sources WHERE is_builtin = 1`))[0].c).toBe(75)
+      // 预置种子同时补齐（新闻 5 + 权威知识源 6）
+      expect((await legacy.query(`SELECT count(*) c FROM info_source_topics WHERE is_builtin = 1`))[0].c).toBe(11)
+      expect((await legacy.query(`SELECT count(*) c FROM info_sources WHERE is_builtin = 1`))[0].c).toBe(109)
     } finally {
       await legacy.destroy()
     }

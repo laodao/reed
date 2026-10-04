@@ -44,7 +44,7 @@ import {
 import { checkLessonSpecAgreement } from '@shared/utils/lesson-spec'
 import type { DlCardEvidenceDto, DlCardSectionDto, DlCardWorkDto } from '@core/database/repositories/dl-card.repository'
 import type { DlAgentActionSummary, DlAgentExecutionContext } from './dl-agent.types'
-import type { DlEssenceType } from '@shared/types/domain-learning.types'
+import type { DlBookSuggestion, DlEssenceType } from '@shared/types/domain-learning.types'
 
 /** 动作类型（与工具名一致，便于频控与审计） */
 export type DlAgentActionType =
@@ -52,6 +52,7 @@ export type DlAgentActionType =
   | 'dl_save_relation'
   | 'dl_save_card'
   | 'dl_save_space_prereqs'
+  | 'dl_save_book_suggestions'
   | 'dl_answer_question'
   | 'dl_propose_understanding'
   | 'dl_propose_syllabus'
@@ -75,6 +76,12 @@ export interface DlAgentActionParams {
   spacePrereqs?: {
     items?: unknown[]
     /** 可选说明（如"以下为学本领域前的门槛，空间内会教其中两项"） */
+    note?: string
+  }
+  /** save_book_suggestions：书籍建议（知识体系规划后的书籍内容提示；2026-10-04） */
+  books?: {
+    items?: unknown[]
+    /** 可选说明（如"前两本是体系主干，建议先读"） */
     note?: string
   }
   /** save_relation：关系边建议（前置依赖须 source→target） */
@@ -147,6 +154,8 @@ export async function executeDlAction(
       return saveCard(db, spaceId, params, ctx.conceptId ?? null)
     case 'dl_save_space_prereqs':
       return saveSpacePrereqs(db, spaceId, params)
+    case 'dl_save_book_suggestions':
+      return saveBookSuggestions(db, spaceId, params)
     case 'dl_answer_question':
       return answerQuestion(db, spaceId, params)
     case 'dl_propose_understanding': {
@@ -392,6 +401,78 @@ async function saveSpacePrereqs(
         `主题学习前置要求已更新${detail}` +
         `${externalNames.length ? '；需自备的能力会展示给学习者，建议在讲第一张讲义时提醒从哪补' : ''}`,
       data: { items, inSpace: inSpaceNames, external: externalNames, note: p.note ?? null },
+    },
+  }
+}
+
+// ==================== save_book_suggestions（书籍建议；2026-10-04） ====================
+
+/** 书籍建议条数上限（体系化领域经典著作有限，超过说明在堆砌） */
+const BOOK_SUGGESTIONS_MAX = 10
+const BOOK_PRIORITIES = ['essential', 'recommended', 'reference'] as const
+
+/**
+ * 落库「书籍建议」——知识体系规划后给用户的书籍内容提示（用户据此获取书籍上传绑定知识库）。
+ * 全量替换语义（与主题前置同款）：模型每次给出完整清单；空数组 = 明确"本领域无需书籍"。
+ * 校验口径：title 必填去重；priority 只收三档枚举（模型乱写按缺省处理，不拒绝）；条数封顶。
+ */
+async function saveBookSuggestions(
+  db: ReturnType<typeof getCoreDatabaseManager>,
+  spaceId: string,
+  raw: Record<string, unknown>,
+): Promise<{ summary: DlAgentActionSummary }> {
+  const p = (raw.books ?? {}) as NonNullable<DlAgentActionParams['books']>
+  if (!Array.isArray(p.items)) {
+    throw new Error(
+      'dl_save_book_suggestions：items 必填且必须是数组（每条 {title, author?, why?, priority?}；' +
+        '确无值得推荐的书籍就传空数组显式说明）',
+    )
+  }
+  const project = await db.dlProjects!.getById(spaceId)
+  if (!project) throw new Error(`dl_save_book_suggestions：学习空间不存在（${spaceId}）`)
+
+  const seen = new Set<string>()
+  const items: DlBookSuggestion[] = []
+  let dropped = 0
+  for (const rawItem of p.items) {
+    const item = (rawItem ?? {}) as Record<string, unknown>
+    const title = typeof item.title === 'string' ? item.title.replace(/\s+/g, ' ').trim().slice(0, 200) : ''
+    if (!title) {
+      dropped++
+      continue
+    }
+    const key = title.toLowerCase()
+    if (seen.has(key)) {
+      dropped++
+      continue
+    }
+    seen.add(key)
+    const priority = BOOK_PRIORITIES.find((x) => x === item.priority) as DlBookSuggestion['priority'] | undefined
+    items.push({
+      title,
+      ...(typeof item.author === 'string' && item.author.trim()
+        ? { author: item.author.replace(/\s+/g, ' ').trim().slice(0, 120) }
+        : {}),
+      ...(typeof item.why === 'string' && item.why.trim() ? { why: item.why.trim().slice(0, 400) } : {}),
+      ...(priority ? { priority } : {}),
+    })
+    if (items.length >= BOOK_SUGGESTIONS_MAX) break
+  }
+  await db.dlProjects!.patch(spaceId, { bookSuggestions: items })
+
+  const byPriority = (x: DlBookSuggestion['priority']): number => items.filter((b) => b.priority === x).length
+  const detail = items.length
+    ? `（共 ${items.length} 本：essential ${byPriority('essential')} / recommended ${byPriority('recommended')} / reference ${byPriority('reference')}${dropped ? `；丢弃无效/重复 ${dropped} 条` : ''}）`
+    : '（已清空：明确本领域无需书籍，官方文档/在线资料已足够）'
+  return {
+    summary: {
+      tool: 'dl_save_book_suggestions',
+      status: 'ok',
+      message:
+        `书籍建议已更新${detail}` +
+        `${items.length && project.kbId ? '；用户会把书籍上传到绑定知识库，后续研究可直接 wf_kb_retrieve 引用' : ''}` +
+        `${items.length && !project.kbId ? '；本空间尚未绑定知识库，建议提醒用户先绑定再上传' : ''}`,
+      data: { items, count: items.length, note: p.note ?? null },
     },
   }
 }

@@ -416,6 +416,24 @@ export interface DlSpacePrereq {
 }
 
 /**
+ * 书籍建议（2026-10-04 用户需求：知识体系规划完毕后给书籍内容提示）。
+ * 若本领域存在公认经典教材/权威著作（如数学/物理/金融/法律等体系化领域），由模型经
+ * dl_save_book_suggestions 落库（全量替换，dl_project.book_suggestions）；用户据此获取
+ * 书籍并上传到空间绑定的知识库，后续研究轮经 wf_kb_retrieve 直接引用。
+ * 纯技能操作类领域（官方文档/在线资料已足够覆盖）不产生建议。
+ */
+export interface DlBookSuggestion {
+  /** 书名（去重键） */
+  title: string
+  /** 作者/译者 */
+  author?: string
+  /** 为什么读它（与本空间知识体系的关系，一句话） */
+  why?: string
+  /** 优先级：essential=强烈建议（体系主干依赖） / recommended=推荐（加深理解） / reference=参考查阅 */
+  priority?: 'essential' | 'recommended' | 'reference'
+}
+
+/**
  * 知识地图完整度诊断（2026-09-12；后端 assessMapCoverage 产出，UI 展示 + 供 AI 补全起步）。
  * 只暴露展示与指令所需的字段（完整诊断在 core rules 内）。
  */
@@ -450,6 +468,8 @@ export interface DlSpaceView {
   profile: DlProfileView | null
   /** 主题学习前置要求（整个领域的学习门槛；可空=尚未声明） */
   prerequisites: DlSpacePrereq[]
+  /** 书籍建议（2026-10-04：知识体系规划后的书籍内容提示；空=暂无） */
+  bookSuggestions: DlBookSuggestion[]
   /** 地图完整度诊断（结构性缺口清单；2026-09-12） */
   coverage: DlMapCoverage
   status: DlProjectStatus

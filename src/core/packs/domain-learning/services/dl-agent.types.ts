@@ -48,6 +48,7 @@ const DL_TOOL_NAMES_FOR_BUDGET = [
   'dl_save_concept',
   'dl_save_relation',
   'dl_save_space_prereqs',
+  'dl_save_book_suggestions',
   'dl_save_card',
   'dl_answer_question',
   'dl_propose_understanding',

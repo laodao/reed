@@ -18,6 +18,13 @@
 /** 内置「新闻来源」类别 id（工作流兼容：老工作流未选类别时默认取它） */
 export const INFO_SOURCE_NEWS_CATEGORY_ID = 'news'
 
+/**
+ * 内置「权威知识源」类别 id（2026-10-04）。
+ * 与新闻来源（时效性媒体）相对：这里收权威参考资料——百科词典 / 技术官方文档 / 开放教材课程 /
+ * 政府统计与法规 / 医学权威手册 / 标准规范组织。领域学习等知识生成场景优先引用。
+ */
+export const INFO_SOURCE_AUTHORITY_CATEGORY_ID = 'authority'
+
 /** 默认分组显示名（未指定分组的来源统一落在这里） */
 export const INFO_SOURCE_DEFAULT_TOPIC_NAME = '未分组'
 

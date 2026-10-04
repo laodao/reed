@@ -65,6 +65,13 @@ export class DlProjectEntity {
   @Column({ name: 'prerequisites', type: 'text', nullable: true })
   prerequisites!: string | null
 
+  /**
+   * 书籍建议 JSON（DlBookSuggestion[]；2026-10-04 用户需求）
+   * 知识体系规划后由模型给出的书籍内容提示，用户据此获取书籍上传绑定知识库。
+   */
+  @Column({ name: 'book_suggestions', type: 'text', nullable: true })
+  bookSuggestions!: string | null
+
   @Column({ name: 'created_at', type: 'datetime', nullable: true })
   createdAt!: Date | null
 

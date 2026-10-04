@@ -157,6 +157,8 @@ export const AGENT_BUDGET_DEFAULTS: ResolvedAgentBudget = {
       dl_save_concept: 12,
       dl_save_relation: 14,
       dl_save_space_prereqs: 2,
+      // 书籍建议（2026-10-04）：规划轮最多提交/重发一次清单
+      dl_save_book_suggestions: 2,
       dl_save_card: 4,
       dl_answer_question: 1,
       dl_propose_understanding: 3,

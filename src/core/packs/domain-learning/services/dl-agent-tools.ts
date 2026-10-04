@@ -113,8 +113,27 @@ const saveSpacePrereqsSchema = z.object({
   }),
 })
 
-/** 关系保存 schema（建议态；人审确认走 confirmRelation） */
-const saveRelationSchema = z.object({
+/** 书籍建议 schema（知识体系规划后的书籍内容提示；2026-10-04） */
+const saveBookSuggestionsSchema = z.object({
+  books: z.object({
+    items: z
+      .array(
+        z.object({
+          title: z.string().min(1).describe('书名（准确全称，用户按它找书）'),
+          author: z.string().optional().describe('作者/译者'),
+          why: z.string().optional().describe('为什么读它：与本空间知识体系哪块对应（一句话）'),
+          priority: z
+            .enum(['essential', 'recommended', 'reference'])
+            .optional()
+            .describe('essential=强烈建议（体系主干依赖）/ recommended=推荐（加深理解）/ reference=参考查阅，缺省 recommended'),
+        }),
+      )
+      .describe('完整书籍清单（全量替换；确无值得推荐的书籍传空数组显式说明）'),
+    note: z.string().optional().describe('补充说明（如"前两本是体系主干，建议先读"）'),
+  }),
+})
+
+/** 关系保存 schema（建议态；人审确认走 confirmRelation） */const saveRelationSchema = z.object({
   relation: z.object({
     sourceId: z.string().min(1).describe('起点概念 id'),
     targetId: z.string().min(1).describe('终点概念 id'),
@@ -300,6 +319,13 @@ export function buildDlAgentToolDefs(): AgentToolDef[] {
       'dl_save_space_prereqs',
       '落库「主题学习前置要求」：学整个领域之前需要具备什么（含领域外需自备能力，如 Python 基础 / 线性代数基础），每条给"为什么需要"与"掌握到什么程度即可"。全量替换；确无需前置传空数组。',
       saveSpacePrereqsSchema,
+    ),
+    dlActionTool(
+      'dl_save_book_suggestions',
+      '落库「书籍建议」（知识体系规划后的书籍内容提示）：本领域存在公认经典教材/权威著作时（如数学/物理/金融/法律/医学等体系化领域），给 3~8 本 {title/author/why/priority}，' +
+        '用户会据此获取书籍上传到绑定知识库供后续研究引用。**只推荐你确信真实存在的书**（书名+作者准确，不编造）；' +
+        '官方文档/在线资料已足够覆盖的领域（如纯软件操作）不要调用，或传空数组显式说明。全量替换。',
+      saveBookSuggestionsSchema,
     ),
     dlActionTool(
       'dl_save_card',

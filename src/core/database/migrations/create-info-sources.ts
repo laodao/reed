@@ -5,7 +5,8 @@
  *  - info_source_categories 表：来源类别（设置界面一个类别 = 一个 tab）。内置「新闻来源」(news)
  *  - info_source_topics 表：类别内分组（原 news_topics）+ category_id + is_default（未分组）
  *  - info_sources 表：来源（原 news_sources，列结构不变）
- *  - 预置：内置类别 1 个 + 5 个新闻分组 × 15 源（国外 top10 + 国内 top5，user_id=NULL + is_builtin=1）
+ *  - 预置：内置类别 2 个（新闻来源 + 权威知识源）；新闻 5 分组 × 15 源（国外 top10 + 国内 top5）；
+ *    权威知识源 6 分组 × 34 源（百科/技术文档/教材/政府统计/医学/标准，user_id=NULL + is_builtin=1）
  *  - 存量升级：news_topics / news_sources 整体 RENAME 为 info_* 表（用户自有数据一并保留），
  *    分组表补 category_id（回填 'news'）与 is_default 列；无需二次搬迁
  *  - 幂等：建表/补列/改名均先探测；预置按固定 id 查重；双端（Electron/Web）注册
@@ -13,7 +14,7 @@
  */
 
 import type { DataSource } from 'typeorm'
-import { INFO_SOURCE_NEWS_CATEGORY_ID } from '@shared/types/info-source.types'
+import { INFO_SOURCE_AUTHORITY_CATEGORY_ID, INFO_SOURCE_NEWS_CATEGORY_ID } from '@shared/types/info-source.types'
 
 /** 预置新闻源（每分组 15 个：国外 10 + 国内 5；id 序号 = 排序权重） */
 const BUILTIN_SOURCES: Array<{ id: string; topicId: string; name: string; url: string }> = [
@@ -106,16 +107,79 @@ const BUILTIN_SOURCES: Array<{ id: string; topicId: string; name: string; url: s
 /** 预置来源类别（内置类别全局共享；用户可在设置界面新增任意类别） */
 const BUILTIN_CATEGORIES: Array<{ id: string; name: string; sortOrder: number }> = [
   { id: INFO_SOURCE_NEWS_CATEGORY_ID, name: '新闻来源', sortOrder: 0 },
+  { id: INFO_SOURCE_AUTHORITY_CATEGORY_ID, name: '权威知识源', sortOrder: 1 },
 ]
 
-/** 预置分组（内置类别「新闻来源」下的 5 个新闻分组） */
+/** 预置分组（新闻来源 5 个 + 权威知识源 6 个；权威源按知识类型分组） */
 const BUILTIN_TOPICS: Array<{ id: string; categoryId: string; name: string }> = [
   { id: 'ai', categoryId: INFO_SOURCE_NEWS_CATEGORY_ID, name: '人工智能' },
   { id: 'finance', categoryId: INFO_SOURCE_NEWS_CATEGORY_ID, name: '全球财经' },
   { id: 'energy', categoryId: INFO_SOURCE_NEWS_CATEGORY_ID, name: '新能源' },
   { id: 'tech', categoryId: INFO_SOURCE_NEWS_CATEGORY_ID, name: '科技产业' },
   { id: 'world', categoryId: INFO_SOURCE_NEWS_CATEGORY_ID, name: '国际时政' },
+  { id: 'auth-encyc', categoryId: INFO_SOURCE_AUTHORITY_CATEGORY_ID, name: '百科词典' },
+  { id: 'auth-techdocs', categoryId: INFO_SOURCE_AUTHORITY_CATEGORY_ID, name: '技术文档' },
+  { id: 'auth-course', categoryId: INFO_SOURCE_AUTHORITY_CATEGORY_ID, name: '教材课程' },
+  { id: 'auth-gov', categoryId: INFO_SOURCE_AUTHORITY_CATEGORY_ID, name: '政府统计' },
+  { id: 'auth-med', categoryId: INFO_SOURCE_AUTHORITY_CATEGORY_ID, name: '医学健康' },
+  { id: 'auth-standard', categoryId: INFO_SOURCE_AUTHORITY_CATEGORY_ID, name: '标准规范' },
 ]
+
+/**
+ * 预置「权威知识源」（2026-10-04）：基础知识不需要论文，权威参考资料按知识类型分六组。
+ * 与新闻源（时效媒体）相对，这些站点内容稳定、可追溯、适合知识生成场景引用。
+ * 注意：来源 id 必须以两位序号结尾（sort_order 由 id 尾号解析）。
+ */
+const AUTHORITY_SOURCES: Array<{ id: string; topicId: string; name: string; url: string }> = [
+  // ===== 百科词典（概念定义） =====
+  { id: 'ak_en_01', topicId: 'auth-encyc', name: 'Wikipedia (English)', url: 'https://en.wikipedia.org/' },
+  { id: 'ak_en_02', topicId: 'auth-encyc', name: '维基百科（中文）', url: 'https://zh.wikipedia.org/' },
+  { id: 'ak_en_03', topicId: 'auth-encyc', name: 'Encyclopedia of Mathematics', url: 'https://encyclopediaofmath.org/' },
+  { id: 'ak_en_04', topicId: 'auth-encyc', name: 'Wolfram MathWorld', url: 'https://mathworld.wolfram.com/' },
+  { id: 'ak_en_05', topicId: 'auth-encyc', name: 'Stanford Encyclopedia of Philosophy', url: 'https://plato.stanford.edu/' },
+  { id: 'ak_en_06', topicId: 'auth-encyc', name: 'Encyclopaedia Britannica', url: 'https://www.britannica.com/' },
+
+  // ===== 技术文档（官方一手） =====
+  { id: 'ak_td_01', topicId: 'auth-techdocs', name: 'MDN Web Docs', url: 'https://developer.mozilla.org/' },
+  { id: 'ak_td_02', topicId: 'auth-techdocs', name: 'Python 官方文档', url: 'https://docs.python.org/3/' },
+  { id: 'ak_td_03', topicId: 'auth-techdocs', name: 'Microsoft Learn', url: 'https://learn.microsoft.com/' },
+  { id: 'ak_td_04', topicId: 'auth-techdocs', name: 'Google Developers', url: 'https://developers.google.com/' },
+  { id: 'ak_td_05', topicId: 'auth-techdocs', name: 'The Rust Book', url: 'https://doc.rust-lang.org/book/' },
+  { id: 'ak_td_06', topicId: 'auth-techdocs', name: 'Node.js 官方文档', url: 'https://nodejs.org/docs/latest/api/' },
+
+  // ===== 教材课程（系统学习） =====
+  { id: 'ak_co_01', topicId: 'auth-course', name: 'OpenStax 免费教材', url: 'https://openstax.org/' },
+  { id: 'ak_co_02', topicId: 'auth-course', name: 'MIT OpenCourseWare', url: 'https://ocw.mit.edu/' },
+  { id: 'ak_co_03', topicId: 'auth-course', name: 'Khan Academy', url: 'https://www.khanacademy.org/' },
+  { id: 'ak_co_04', topicId: 'auth-course', name: '国家高等教育智慧教育平台', url: 'https://higher.smartedu.cn/' },
+
+  // ===== 政府统计（官方一手数据与法规） =====
+  { id: 'ak_gv_01', topicId: 'auth-gov', name: '国家统计局', url: 'https://www.stats.gov.cn/' },
+  { id: 'ak_gv_02', topicId: 'auth-gov', name: '中国人民银行', url: 'http://www.pbc.gov.cn/' },
+  { id: 'ak_gv_03', topicId: 'auth-gov', name: '中国证监会', url: 'http://www.csrc.gov.cn/' },
+  { id: 'ak_gv_04', topicId: 'auth-gov', name: '国家法律法规数据库', url: 'https://flk.npc.gov.cn/' },
+  { id: 'ak_gv_05', topicId: 'auth-gov', name: 'FRED 经济数据库', url: 'https://fred.stlouisfed.org/' },
+  { id: 'ak_gv_06', topicId: 'auth-gov', name: '世界银行公开数据', url: 'https://data.worldbank.org/' },
+  { id: 'ak_gv_07', topicId: 'auth-gov', name: 'IMF Data', url: 'https://www.imf.org/en/Data' },
+  { id: 'ak_gv_08', topicId: 'auth-gov', name: 'OECD Data', url: 'https://www.oecd.org/en/data.html' },
+
+  // ===== 医学健康（权威手册） =====
+  { id: 'ak_md_01', topicId: 'auth-med', name: '默沙东诊疗手册（专业版）', url: 'https://www.msdmanuals.cn/professional' },
+  { id: 'ak_md_02', topicId: 'auth-med', name: '默沙东诊疗手册（大众版）', url: 'https://www.msdmanuals.cn/' },
+  { id: 'ak_md_03', topicId: 'auth-med', name: 'Mayo Clinic', url: 'https://www.mayoclinic.org/' },
+  { id: 'ak_md_04', topicId: 'auth-med', name: '世界卫生组织 (WHO)', url: 'https://www.who.int/' },
+  { id: 'ak_md_05', topicId: 'auth-med', name: 'Cochrane Library', url: 'https://www.cochranelibrary.com/' },
+
+  // ===== 标准规范（原文出处） =====
+  { id: 'ak_st_01', topicId: 'auth-standard', name: 'W3C', url: 'https://www.w3.org/' },
+  { id: 'ak_st_02', topicId: 'auth-standard', name: 'IETF RFC', url: 'https://www.rfc-editor.org/' },
+  { id: 'ak_st_03', topicId: 'auth-standard', name: 'ISO', url: 'https://www.iso.org/' },
+  { id: 'ak_st_04', topicId: 'auth-standard', name: 'ECMA International', url: 'https://ecma-international.org/' },
+  { id: 'ak_st_05', topicId: 'auth-standard', name: 'NIST', url: 'https://www.nist.gov/' },
+]
+
+/** 全部预置来源（新闻 75 + 权威知识源 34；预置循环统一遍历） */
+const ALL_BUILTIN_SOURCES = [...BUILTIN_SOURCES, ...AUTHORITY_SOURCES]
 
 export async function createInfoSources(ds: DataSource): Promise<void> {
   const isPg = ds.options.type === 'postgres'
@@ -264,10 +328,10 @@ export async function createInfoSources(ds: DataSource): Promise<void> {
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_info_sources_user ON info_sources (user_id)`)
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_info_sources_topic ON info_sources (topic_id)`)
 
-  // 预置 5 分组 × 15 源（幂等：按固定 id 查重，缺失的补插；已存在则同步名称/URL）
+  // 预置（新闻 5 分组 × 15 源 + 权威知识源 6 分组 × 34 源；幂等：按固定 id 查重，缺失的补插；已存在则同步名称/URL）
   let inserted = 0
   let updated = 0
-  for (const s of BUILTIN_SOURCES) {
+  for (const s of ALL_BUILTIN_SOURCES) {
     const existing = await ds.query(
       isPg ? `SELECT name, url FROM info_sources WHERE id = $1 LIMIT 1` : `SELECT name, url FROM info_sources WHERE id = ? LIMIT 1`,
       [s.id],
@@ -291,7 +355,7 @@ export async function createInfoSources(ds: DataSource): Promise<void> {
       }
     }
   }
-  console.log(`[create-info-sources] 预置完成：新增 ${inserted} 个、同步 ${updated} 个内置信息来源（共 ${BUILTIN_SOURCES.length}）`)
+  console.log(`[create-info-sources] 预置完成：新增 ${inserted} 个、同步 ${updated} 个内置信息来源（共 ${ALL_BUILTIN_SOURCES.length}）`)
 }
 
 /** 新表缺失的存量分组行数（幂等搬运前的计数） */
