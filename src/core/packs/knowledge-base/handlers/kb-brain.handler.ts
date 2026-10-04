@@ -48,7 +48,7 @@ export function registerKbBrainHandlers(): void {
     return { success: true, data: docs }
   })
 
-  ipcBridge.handle('kb:brain:list-atoms', (_e, p: { kbId: string; documentId?: string; page?: number; pageSize?: number; status?: string; type?: string; types?: string[]; origin?: string }) =>
+  ipcBridge.handle('kb:brain:list-atoms', (_e, p: { kbId: string; documentId?: string; page?: number; pageSize?: number; status?: string; type?: string; types?: string[]; origin?: string; layer?: string }) =>
     panel.listAtoms(p),
   )
 
@@ -156,6 +156,8 @@ export function registerKbBrainHandlers(): void {
     if (!goal) return { success: false, error: '提取目标不存在或已删除' }
     if (!goal.enabled) return { success: false, error: '目标未启用' }
     if (goalDistill.isRunning(p.kbId, goal.id)) return { success: false, error: '该目标提炼进行中' }
+    // 每库模型（brainConfig.models.adjudicate）——提炼与裁决同档位
+    goalDistill.setModelOverride(() => (cfg?.models.adjudicate ? parseModelRef(cfg.models.adjudicate) : {}))
     goalDistill
       .runGoal(p.kbId, goal)
       .then((out) => {
@@ -198,8 +200,12 @@ export function registerKbBrainHandlers(): void {
 
   // 存量垃圾论断清理（LLM 分诊归档；fire-and-forget + 进度轮询）
   const cleanup = getKbCleanupService()
-  ipcBridge.handle('kb:brain:cleanup-run', (_e, p: { kbId: string }) => {
+  ipcBridge.handle('kb:brain:cleanup-run', async (_e, p: { kbId: string }) => {
     if (cleanup.isRunning(p.kbId)) return { success: false, error: '垃圾清理进行中' }
+    // 每库模型（brainConfig.models.adjudicate）——分诊与裁决同档位
+    const kbRow = await svc().getKnowledgeBase(p.kbId).then((r) => r.data)
+    const cleanupCfg = kbRow?.brainConfig ? parseBrainConfig(kbRow.brainConfig) : null
+    cleanup.setModelOverride(() => (cleanupCfg?.models.adjudicate ? parseModelRef(cleanupCfg.models.adjudicate) : {}))
     cleanup
       .run(p.kbId)
       .then((st) =>

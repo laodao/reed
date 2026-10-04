@@ -44,10 +44,17 @@ export class KbCleanupService {
   private readonly atomsFn: NonNullable<CleanupDeps['atoms']> | undefined
   private readonly running = new Set<string>()
   private readonly progress = new Map<string, CleanupProgress>()
+  /** 每库模型动态解析（handler 在 run 前注入 brainConfig.models.adjudicate） */
+  private modelOverrideFn: () => { providerConfigId?: string; modelId?: string } = () => ({})
 
   constructor(deps: CleanupDeps = {}) {
-    this.llm = deps.llm ?? defaultBrainLlm('kb-brain-adjudicate', deps.modelOverride)
+    this.llm = deps.llm ?? defaultBrainLlm('kb-brain-adjudicate', deps.modelOverride ?? (() => this.modelOverrideFn()))
     this.atomsFn = deps.atoms
+  }
+
+  /** 注入每库模型解析（run 前调用；llm 为注入型时无效） */
+  setModelOverride(fn: () => { providerConfigId?: string; modelId?: string }): void {
+    this.modelOverrideFn = fn
   }
 
   isRunning(kbId: string): boolean {

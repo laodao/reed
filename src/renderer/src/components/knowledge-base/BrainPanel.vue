@@ -54,10 +54,23 @@
               clearable
               placeholder="全部文档"
               size="small"
-              style="width: 160px; margin-left: auto"
+              style="width: 150px; margin-left: auto"
               @change="onDocFilterChange"
             >
               <el-option v-for="d in allDocs" :key="d.id" :label="d.name" :value="d.id" />
+            </el-select>
+            <el-select
+              v-model="atomLayerFilter"
+              clearable
+              placeholder="全部分层"
+              size="small"
+              style="width: 110px"
+              @change="onDocFilterChange"
+            >
+              <el-option label="概要层" value="outline" />
+              <el-option label="设定层" value="setting" />
+              <el-option label="描写层" value="describe" />
+              <el-option label="细节层" value="detail" />
             </el-select>
             <el-button size="small" type="primary" plain @click="openRemark">
               <el-icon><Edit /></el-icon>
@@ -613,7 +626,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { KB_BRAIN_GOAL_PRESETS } from '@shared/constants/kb-brain-goal-presets'
 import { kbAtomLayerLabel, kbAtomOriginLabel, kbAtomStatusLabel, kbAtomTypeLabel, kbNoteStatusLabel, kbNoteTypeLabel } from '@shared/constants/kb-brain-labels'
 
@@ -712,6 +725,7 @@ const allDocs = ref<Array<{ id: string; name: string }>>([])
 
 // ===== 文档过滤 + 论断详情 =====
 const atomDocFilter = ref('')
+const atomLayerFilter = ref('')
 interface AtomDetail extends BrainAtom {
   certainty: number
   extractionPass: string
@@ -1035,9 +1049,29 @@ function reportGoalDone(goalId: string): void {
   const rec = lastGoalResults.value[goalId]
   const name = config.value?.goals.find((g) => g.id === goalId)?.name ?? goalId
   if (!rec) return
-  if (!rec.ok) ElMessage.error(`「${name}」提炼失败: ${rec.error || '未知错误'}`)
-  else if (rec.skippedDuplicate) ElMessage.info(`「${name}」已有同题经验卡，未重复生成`)
-  else if (rec.proposed) ElMessage.success(`「${name}」生成 ${rec.cards ?? 1} 张经验卡（素材 ${rec.fragments ?? 0} 条），待审提议中`)
+  const openProposals = (): void => showProposals()
+  if (!rec.ok) {
+    ElMessage.error(`「${name}」提炼失败: ${rec.error || '未知错误'}`)
+  } else if (rec.skippedDuplicate) {
+    ElNotification({ title: `「${name}」已有同题经验卡`, message: '未重复生成，可在「经验卡」视图查看已有卡', type: 'info', duration: 0 })
+  } else if (rec.proposed) {
+    // 常驻通知（自动关闭会被忽略导致"找不到产物"——真机反馈），点击直达待审提议
+    ElNotification({
+      title: `「${name}」提炼完成`,
+      message: `生成 ${rec.cards ?? 1} 张经验卡（素材 ${rec.fragments ?? 0} 条），已放入「待审提议」——点击查看并批准入库`,
+      type: 'success',
+      duration: 0,
+      onClick: openProposals,
+    })
+    openProposals()
+  } else {
+    ElNotification({
+      title: `「${name}」提炼完成但没有产出`,
+      message: `收集到素材 ${rec.fragments ?? 0} 条，未达到成卡条件（素材不足或质量不够）——可先「提取知识」积累论断后再试`,
+      type: 'warning',
+      duration: 0,
+    })
+  }
   void refresh()
 }
 
@@ -1084,6 +1118,7 @@ async function fetchAtoms(): Promise<void> {
       type: atomFilter.value === 'open-question' ? 'open-question' : undefined,
       types: atomFilter.value === 'opinions' ? ['claim', 'insight'] : undefined,
       documentId: atomDocFilter.value || undefined,
+      layer: atomLayerFilter.value || undefined,
     })
     if (gen !== atomsGen) return // 过期响应丢弃
     if (res.success && res.data) {

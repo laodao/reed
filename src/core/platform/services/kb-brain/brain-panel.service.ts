@@ -54,6 +54,7 @@ export class KbBrainPanelService {
     type?: string
     types?: string[]
     origin?: string
+    layer?: string
   }): Promise<{ success: boolean; data?: { rows: unknown[]; total: number }; error?: string }> {
     const db = getCoreDatabaseManager()
     if (!db.kbAtoms) return { success: false, error: '知识大脑未启用（旧库）' }
@@ -70,6 +71,7 @@ export class KbBrainPanelService {
       types: input.types,
       origin: input.origin,
       documentId: input.documentId,
+      layers: input.layer ? [input.layer as never] : undefined,
       // 内存分页的截断上限：翻页序号/总数以此为界（type 过滤已下推 SQL，此处是兜底上限）
       limit: 5000,
     })
