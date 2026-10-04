@@ -12,8 +12,14 @@
 import type { DataSource, EntityManager, Repository } from 'typeorm'
 import { In, IsNull } from 'typeorm'
 import type {
+  ActionDescription,
+  Dialogue,
   GeneratedScene,
+  LocationType,
+  SceneCharacter,
   SceneScript,
+  TimeOfDay,
+  WeatherType,
 } from '@shared/types/episode-production'
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
 import { SceneCharacterEntity } from '@core/database/entities/episode-production/scene-character.entity'
@@ -26,6 +32,27 @@ import { StoryboardEntity } from '@core/database/entities/episode-production/sto
 import { getCurrentUserId } from '@core/context/user-context'
 import { rebuildStoryboardDialogueLinks } from './storyboard-dialogue-links'
 import { nextRefId, reassignRefIds } from './ref-id-reassign'
+
+/**
+ * ep:update-scene 手动编辑补丁（字段集与 UpdateSceneScriptRequest 一致，
+ * 只含可编辑列；未出现的字段不动）。
+ */
+export interface SceneManualEditPatch {
+  location?: string
+  locationBindingId?: string | null
+  locationType?: LocationType
+  timeOfDay?: TimeOfDay
+  weather?: WeatherType
+  sceneDescription?: string
+  mood?: string
+  lighting?: string
+  characters?: SceneCharacter[]
+  originalText?: string
+  narration?: string
+  narrationAudioPath?: string | null
+  dialogues?: Dialogue[]
+  actions?: ActionDescription[]
+}
 
 /**
  * 场景绑定写入器
@@ -246,22 +273,253 @@ export class SceneBindingWriter {
 
       // C3：删建 scene_dialogues 时 FK CASCADE 已把该场景全部分镜的 links 静默删掉，
       // 按各分镜 dialogueIds JSON 重建（单分镜失败不阻断整场景重写）
-      const sceneStoryboards = await manager.getRepository(StoryboardEntity).find({
-        where: { sceneScriptId: sceneId, ...readScope } as any,
+      await this.rebuildSceneStoryboardLinksIn(
+        manager, sceneId, readScope, aligned.dialogueIdRemap, aligned.actionIdRemap,
+      )
+    })
+  }
+
+  /**
+   * X2（2026-09-24 审计）手动编辑场景落库（ep:update-scene）：
+   * 就地更新 scene_scripts 字段；触到 characters/dialogues/actions 时在同一
+   * 事务内同步重建对应 bridge 表（修复前只写 JSON 列，bridge 静默脱钩），
+   * 对白/动作 id 对齐优先保留旧 id（分镜 dialogueIds/actionIds 引用不断，
+   * 规则同 alignRewriteRefIds）。音频产物口径：
+   *   - 对白归一化文本未变的 → 保留 JSON 列 audioAsset 与 bridge
+   *     audio_asset_id；文本变化/新增的 → 一并清掉（字幕≠配音，旧配音不再
+   *     混入导出）；
+   *   - narration 变化且本次未显式传 narrationAudioPath → 清
+   *     narration_audio_path（旧旁白 TTS 不再混入导出）。
+   * 仅改 location/mood 等标量字段时不动 bridge 表。
+   */
+  static async updateSceneWithBindings(
+    ds: DataSource,
+    sceneId: string,
+    patch: SceneManualEditPatch,
+  ): Promise<void> {
+    await ds.transaction(async manager => {
+      const userId = getCurrentUserId()
+      const userScope = userId ? { userId } : {}
+      const readScope = userId ? { userId } : { userId: IsNull() }
+      const now = new Date()
+
+      const sceneRepo = manager.getRepository(SceneScriptEntity)
+      const existing = await sceneRepo.findOne({
+        where: { id: sceneId, ...readScope } as any,
       })
-      const storyboardRepo = manager.getRepository(StoryboardEntity)
-      for (const sb of sceneStoryboards) {
-        // 防线重发过的 id 先同步改写分镜引用，再按新引用重建 links
-        if (aligned.dialogueIdRemap.size > 0 || aligned.actionIdRemap.size > 0) {
-          sb.dialogueIds = this.remapRefIds(sb.dialogueIds, aligned.dialogueIdRemap)
-          sb.actionIds = this.remapRefIds(sb.actionIds, aligned.actionIdRemap)
-          await storyboardRepo.save(sb)
-        }
-        await rebuildStoryboardDialogueLinks(manager, sb).catch((e) => {
-          console.warn('[SceneBindingWriter] 重建分镜对白 links 失败:', e)
+      if (!existing) throw new Error(`场景不存在：${sceneId}`)
+
+      // 1. scene_scripts 标量/JSON 列更新（只写触到的字段）
+      const columnUpdate: Record<string, unknown> = { updatedAt: now }
+      if (patch.location !== undefined) columnUpdate.location = patch.location
+      if (patch.locationBindingId !== undefined) {
+        columnUpdate.locationBindingId = patch.locationBindingId ?? null
+      }
+      if (patch.locationType !== undefined) columnUpdate.locationType = patch.locationType
+      if (patch.timeOfDay !== undefined) columnUpdate.timeOfDay = patch.timeOfDay
+      if (patch.weather !== undefined) columnUpdate.weather = patch.weather ?? null
+      if (patch.sceneDescription !== undefined) {
+        columnUpdate.sceneDescription = patch.sceneDescription
+      }
+      if (patch.mood !== undefined) columnUpdate.mood = patch.mood
+      if (patch.lighting !== undefined) columnUpdate.lighting = patch.lighting ?? null
+      if (patch.originalText !== undefined) columnUpdate.originalText = patch.originalText
+      if (patch.narration !== undefined) columnUpdate.narration = patch.narration
+      if (patch.narrationAudioPath !== undefined) {
+        columnUpdate.narrationAudioPath = patch.narrationAudioPath ?? null
+      } else if (
+        patch.narration !== undefined &&
+        (patch.narration ?? '') !== (existing.narration ?? '')
+      ) {
+        columnUpdate.narrationAudioPath = null
+      }
+
+      let dialogueIdRemap = new Map<string, string>()
+      let actionIdRemap = new Map<string, string>()
+
+      // 2. 触到的集合各自对齐 id + 重建 bridge 行
+      if (patch.dialogues !== undefined) {
+        const dialogueRepo = manager.getRepository(SceneDialogueEntity)
+        const oldDialogues = await dialogueRepo.find({
+          where: { sceneScriptId: sceneId, ...readScope } as any,
+          order: { sortOrder: 'ASC' },
         })
+        const aligned = this.alignRefIds(
+          patch.dialogues,
+          oldDialogues.map(d => ({ id: d.id, text: d.text })),
+          'dlg',
+          d => d.text,
+        )
+        dialogueIdRemap = await this.reassignCollidingRefIds(
+          sceneId, dialogueRepo, aligned, 'dlg',
+        )
+
+        // 音频保留判定（按归一化文本）：JSON audioAsset 以旧 JSON 列文本为准，
+        // bridge audio_asset_id 以旧 bridge 行文本为准；对不上的一律作废
+        const oldJsonTextById = new Map(
+          ((existing.dialogues as Array<{ id?: string; text?: string }> | null) ?? [])
+            .filter(d => d?.id)
+            .map(d => [String(d.id), this.normalizeRefText(d.text)]),
+        )
+        const oldBridgeById = new Map(oldDialogues.map(d => [d.id, d]))
+        const bridgeAudioById = new Map<string, string | null>()
+        const dialogues = aligned.map(d => {
+          const textKey = this.normalizeRefText(d.text)
+          const oldBridge = oldBridgeById.get(String(d.id))
+          bridgeAudioById.set(
+            String(d.id),
+            oldBridge && this.normalizeRefText(oldBridge.text) === textKey
+              ? oldBridge.audioAssetId
+              : null,
+          )
+          if (oldJsonTextById.get(String(d.id)) === textKey) return d
+          const next = { ...d }
+          delete next.audioAsset
+          return next
+        })
+        columnUpdate.dialogues = dialogues as unknown[]
+
+        await dialogueRepo.delete({ sceneScriptId: sceneId, ...readScope } as any)
+        for (let i = 0; i < dialogues.length; i++) {
+          const dlg = dialogues[i]
+          await dialogueRepo.save(
+            dialogueRepo.create({
+              id: dlg.id || this.generateDialogueId(),
+              ...userScope,
+              sceneScriptId: sceneId,
+              characterId: dlg.characterId || '',
+              characterName: dlg.characterName,
+              characterBindingId: dlg.characterBindingId ?? null,
+              text: dlg.text,
+              emotion: dlg.emotion ?? null,
+              volume: dlg.volume || 'normal',
+              pace: dlg.pace || 'normal',
+              pause: dlg.pause || 0,
+              voiceId: dlg.voiceId ?? null,
+              audioAssetId: bridgeAudioById.get(String(dlg.id)) ?? null,
+              sortOrder: i,
+            }),
+          )
+        }
+      }
+
+      if (patch.actions !== undefined) {
+        const actionRepo = manager.getRepository(SceneActionEntity)
+        const oldActions = await actionRepo.find({
+          where: { sceneScriptId: sceneId, ...readScope } as any,
+          order: { sortOrder: 'ASC' },
+        })
+        const actions = this.alignRefIds(
+          patch.actions,
+          oldActions.map(a => ({ id: a.id, text: a.description })),
+          'act',
+          a => a.description,
+        )
+        actionIdRemap = await this.reassignCollidingRefIds(
+          sceneId, actionRepo, actions, 'act',
+        )
+        columnUpdate.actions = actions as unknown[]
+
+        await actionRepo.delete({ sceneScriptId: sceneId, ...readScope } as any)
+        for (let i = 0; i < actions.length; i++) {
+          const act = actions[i]
+          await actionRepo.save(
+            actionRepo.create({
+              id: act.id || this.generateActionId(),
+              ...userScope,
+              sceneScriptId: sceneId,
+              characterId: act.characterId ?? null,
+              characterBindingId: act.characterBindingId ?? null,
+              description: act.description,
+              timing: act.timing || 'during',
+              duration: act.duration ?? null,
+              sortOrder: i,
+            }),
+          )
+        }
+      }
+
+      if (patch.characters !== undefined) {
+        columnUpdate.characters = patch.characters as unknown[]
+        const charRepo = manager.getRepository(SceneCharacterEntity)
+        const propRepo = manager.getRepository(ScenePropEntity)
+        const oldChars = await charRepo.find({
+          where: { sceneScriptId: sceneId, ...readScope } as any,
+        })
+        for (const c of oldChars) {
+          await propRepo.delete({ sceneCharacterId: c.id, ...readScope } as any)
+        }
+        await charRepo.delete({ sceneScriptId: sceneId, ...readScope } as any)
+        for (let i = 0; i < patch.characters.length; i++) {
+          const char = patch.characters[i]
+          const charId = this.generateCharId()
+          await charRepo.save(
+            charRepo.create({
+              id: charId,
+              ...userScope,
+              sceneScriptId: sceneId,
+              characterId: char.characterId || '',
+              characterName: char.characterName,
+              characterBindingId: char.characterBindingId ?? null,
+              position: char.position || 'center',
+              expression: char.expression ?? null,
+              action: char.action ?? null,
+              outfit: char.outfit ?? null,
+              sortOrder: i,
+            }),
+          )
+          for (const prop of char.props ?? []) {
+            await propRepo.save(
+              propRepo.create({
+                id: this.generatePropId(),
+                ...userScope,
+                sceneCharacterId: charId,
+                propName: typeof prop === 'string' ? prop : prop.name,
+              }),
+            )
+          }
+        }
+      }
+
+      await sceneRepo.update({ id: sceneId, ...readScope } as any, columnUpdate as any)
+
+      // 3. 对白/动作删建后 FK CASCADE 已清该场景分镜 links——按各分镜
+      //    dialogueIds/actionIds JSON 重建（撞号重发的先同步改写分镜引用）
+      if (patch.dialogues !== undefined || patch.actions !== undefined) {
+        await this.rebuildSceneStoryboardLinksIn(
+          manager, sceneId, readScope, dialogueIdRemap, actionIdRemap,
+        )
       }
     })
+  }
+
+  /**
+   * 重建某场景全部分镜的对白承接 links（rewriteSceneWithBindings 的 C3 与
+   * updateSceneWithBindings 共用）：删建 scene_dialogues 时 FK CASCADE 把
+   * links 静默删掉，按各分镜 dialogueIds JSON 重建；落库前撞号重发过的 id
+   * 先同步改写分镜引用。单分镜失败不阻断整体。
+   */
+  private static async rebuildSceneStoryboardLinksIn(
+    manager: EntityManager,
+    sceneId: string,
+    readScope: Record<string, unknown>,
+    dialogueIdRemap: Map<string, string>,
+    actionIdRemap: Map<string, string>,
+  ): Promise<void> {
+    const storyboardRepo = manager.getRepository(StoryboardEntity)
+    const sceneStoryboards = await storyboardRepo.find({
+      where: { sceneScriptId: sceneId, ...readScope } as any,
+    })
+    for (const sb of sceneStoryboards) {
+      if (dialogueIdRemap.size > 0 || actionIdRemap.size > 0) {
+        sb.dialogueIds = this.remapRefIds(sb.dialogueIds, dialogueIdRemap)
+        sb.actionIds = this.remapRefIds(sb.actionIds, actionIdRemap)
+        await storyboardRepo.save(sb)
+      }
+      await rebuildStoryboardDialogueLinks(manager, sb).catch((e) => {
+        console.warn('[SceneBindingWriter] 重建分镜对白 links 失败:', e)
+      })
+    }
   }
 
   /**

@@ -45,6 +45,69 @@ export interface StoryboardCleanupSummary {
 
 const emptySummary = (): StoryboardCleanupSummary => ({ storyboards: 0, keyframes: 0, supersededSegments: [] })
 
+export interface StoryboardVisualInvalidationSummary {
+  /** 作废的关键帧行数（其 image_assets 行与磁盘文件由 deleteKeyframeWithAsset 回收） */
+  keyframes: number
+  /** 被置 superseded 的片段 id */
+  supersededSegments: string[]
+}
+
+/**
+ * X3（2026-09-24 审计）：分镜画面内容被手动编辑后作废旧画面产物——
+ * 不删分镜本身，只收：
+ *   1. storyboard_keyframe 行 + 对应 image_assets 行 + 磁盘文件
+ *      （复用 render/keyframe/keyframe-cleanup 的 deleteKeyframeWithAsset）
+ *   2. 分镜自身 videoPath 清空、status 回退 pending（否则 readiness/gate
+ *      仍按「有视频」放行旧画面）
+ *   3. 所属未 superseded 的 ep_video_segments 置 superseded（语义同
+ *      execCleanup：保留行与 video_path 可追溯）
+ * 只能在事务内调用（EntityManager 入参）；调用方负责在事务外包
+ * withPendingKeyframeFileDeletions（同 cleanupStoryboards EntityManager 分支惯例）。
+ */
+export async function invalidateStoryboardVisuals(
+  manager: EntityManager,
+  storyboardId: string,
+): Promise<StoryboardVisualInvalidationSummary> {
+  const scope = userScopeWhere()
+  const sbRepo = manager.getRepository(StoryboardEntity)
+  const kfRepo = manager.getRepository(StoryboardKeyframeEntity)
+  const segRepo = manager.getRepository(EpVideoSegmentEntity)
+
+  const sb = await sbRepo.findOne({ where: { id: storyboardId, ...scope } as any })
+  if (!sb) return { keyframes: 0, supersededSegments: [] }
+
+  // 1. 关键帧 + image_assets + 磁盘文件
+  const kfRows = await kfRepo.find({
+    where: { storyboardId, ...scope } as any,
+    select: ['id'] as any,
+  })
+  for (const kf of kfRows) {
+    await deleteKeyframeWithAsset(manager, kf.id)
+  }
+
+  // 2. 所属未 superseded 片段 → superseded
+  const supersededSegments: string[] = []
+  if (sb.segmentId) {
+    const segment = await segRepo.findOne({ where: { id: sb.segmentId, ...scope } as any })
+    if (segment && segment.status !== 'superseded') {
+      await segRepo.update(
+        { id: segment.id, ...scope } as any,
+        { status: 'superseded', updatedAt: new Date() } as any,
+      )
+      supersededSegments.push(segment.id)
+    }
+  }
+
+  // 3. 分镜自身视频产物作废 + 状态回退
+  await sbRepo.update({ id: storyboardId, ...scope } as any, {
+    videoPath: null,
+    status: 'pending',
+    updatedAt: new Date(),
+  } as any)
+
+  return { keyframes: kfRows.length, supersededSegments }
+}
+
 export async function cleanupStoryboards(
   dbOrTx: DataSource | EntityManager,
   storyboardIds: string[],

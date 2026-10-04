@@ -13,7 +13,7 @@ import type { Storyboard } from '@shared/types/story-to-video.types'
 import { StoryToVideoAIService } from '@core/packs/episode-production/services/story-to-video-ai.service'
 import { StoryboardService, normalizeShotNumbers, collectUnboundCharacters } from '@core/platform/episode-production/narrative/services/storyboard.service'
 import { StoryboardCogenService } from '@core/platform/episode-production/narrative/services/storyboard-cogen.service'
-import { cleanupStoryboards } from '@core/platform/episode-production/narrative/storyboard-cleanup.service'
+import { cleanupStoryboards, invalidateStoryboardVisuals } from '@core/platform/episode-production/narrative/storyboard-cleanup.service'
 import { insertStoryboardIn } from '@core/platform/episode-production/narrative/storyboard-insert'
 import { withPendingKeyframeFileDeletions } from '@core/platform/episode-production/render/keyframe/keyframe-cleanup'
 import { rebuildStoryboardDialogueLinks } from '@core/platform/episode-production/narrative/storyboard-dialogue-links'
@@ -197,6 +197,28 @@ async function handleDeleteStoryboard(
   }
 }
 
+/*
+ * X3（2026-09-24 审计）画面内容字段白名单：这些字段进关键帧/视频生成的
+ * prompt 或选图逻辑，改动后旧画面产物（关键帧 + 视频）即过期，需级联作废。
+ * 不收录的：dialogueIds（只重建 links，不动画面）、duration/transition/
+ * shotType/cameraAngle/cameraMovement 等镜头元信息（时长/转场不影响已生成
+ * 画面；镜头参数按任务口径与 shotType 同列，避免微调参数即作废全部产物）。
+ */
+function visualContentChanged(before: Storyboard, patch: Partial<Storyboard>): boolean {
+  const str = (v: unknown) => (v === null || v === undefined ? '' : String(v))
+  const arr = (v: unknown) => JSON.stringify(Array.isArray(v) ? v : [])
+  const obj = (v: unknown) => JSON.stringify(v ?? null)
+
+  if (patch.frameDescription !== undefined && str(patch.frameDescription) !== str(before.frameDescription)) return true
+  if (patch.subject !== undefined && str(patch.subject) !== str(before.subject)) return true
+  if (patch.composition !== undefined && str(patch.composition) !== str(before.composition)) return true
+  if (patch.characters !== undefined && arr(patch.characters) !== arr(before.characters)) return true
+  if (patch.locationBindingIds !== undefined && arr(patch.locationBindingIds) !== arr(before.locationBindingIds)) return true
+  if (patch.itemBindingIds !== undefined && arr(patch.itemBindingIds) !== arr(before.itemBindingIds)) return true
+  if (patch.referenceImageIds !== undefined && obj(patch.referenceImageIds) !== obj(before.referenceImageIds)) return true
+  return false
+}
+
 async function handleUpdateStoryboard(
   _event: any,
   storyboardId: string,
@@ -208,19 +230,38 @@ async function handleUpdateStoryboard(
       return { success: false, error: '数据库未初始化' }
     }
 
-    // C2：仅当本次保存动了 dialogueIds 时才需要同步 links（先取旧值比对，未变不重建）
+    // 先取旧值：C2 links 同步（dialogueIds 比对）与 X3 画面内容变更判定共用
+    const before = await db.storyboards.getById(storyboardId)
+    if (!before) {
+      return { success: false, error: '分镜不存在' }
+    }
     const dialogueIdsTouched = data.dialogueIds !== undefined
-    const before = dialogueIdsTouched ? await db.storyboards.getById(storyboardId) : null
+    const visualsChanged = visualContentChanged(before, data)
+
+    /*
+     * X3：画面内容变更 → 先作废旧画面产物（关键帧行/图/磁盘文件、自身
+     * videoPath+status、所属未 superseded 片段），再落新内容。顺序保证失败
+     * 方向安全：作废失败则整体不动可直接重试；落库失败也不会有「新内容+
+     * 旧画面」的脱钩状态。磁盘文件走收集器，事务提交成功后统一删。
+     */
+    if (visualsChanged && db.dataSource) {
+      await withPendingKeyframeFileDeletions(() =>
+        db.dataSource!.transaction((manager) =>
+          invalidateStoryboardVisuals(manager, storyboardId),
+        ),
+      )
+    }
 
     const storyboard = await db.storyboards.update(storyboardId, data)
     if (!storyboard) {
       return { success: false, error: '分镜不存在' }
     }
 
+    // C2：仅当本次保存动了 dialogueIds 且值确实变化时才同步 links（未变不重建）
     if (
       dialogueIdsTouched &&
       db.dataSource &&
-      JSON.stringify(before?.dialogueIds ?? []) !== JSON.stringify(storyboard.dialogueIds ?? [])
+      JSON.stringify(before.dialogueIds ?? []) !== JSON.stringify(storyboard.dialogueIds ?? [])
     ) {
       await rebuildStoryboardDialogueLinks(db.dataSource, storyboard).catch((e) => {
         console.error('[handleUpdateStoryboard] 重建对白承接 links 失败:', e)
@@ -573,7 +614,7 @@ async function handleCogenSceneStoryboards(
  */
 async function handleFillStoryboard(
   _event: any,
-  storyboardId: string,
+  _storyboardId: string,
   fillInput: {
     shotNumber: number
     sceneContext: string

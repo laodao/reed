@@ -158,6 +158,34 @@ async function handleUpdateScene(
       return { success: false, error: '数据库未初始化' }
     }
 
+    /*
+     * X2（2026-09-24 审计）：触到结构化内容（characters/dialogues/actions/
+     * narration）时走事务级联落库——同步重建 bridge 表、清过期音频产物
+     * （改对白文本清该对白 audioAsset、改 narration 清 narrationAudioPath）；
+     * 仅改 location/mood 等标量字段时走原轻量路径。
+     */
+    const touchesStructured =
+      data.characters !== undefined ||
+      data.dialogues !== undefined ||
+      data.actions !== undefined ||
+      data.narration !== undefined
+
+    if (touchesStructured) {
+      if (!db.dataSource) {
+        return { success: false, error: '数据库未初始化' }
+      }
+      try {
+        await SceneBindingWriter.updateSceneWithBindings(db.dataSource, sceneId, data)
+      } catch (e: any) {
+        if (typeof e?.message === 'string' && e.message.startsWith('场景不存在')) {
+          return { success: false, error: '场景不存在' }
+        }
+        throw e
+      }
+      const scene = await db.sceneScripts.getById(sceneId)
+      return { success: true, data: scene }
+    }
+
     const scene = await db.sceneScripts.update(sceneId, data)
     if (!scene) {
       return { success: false, error: '场景不存在' }
