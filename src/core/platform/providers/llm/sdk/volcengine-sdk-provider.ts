@@ -16,6 +16,35 @@ import type {
 } from '@shared/types'
 
 /**
+ * 多模态内容块 → 火山方舟（Ark）OpenAI 兼容格式。
+ *
+ * Ark 的 `messages[].content[]` 只接受 `type: 'text'` / `'image_url'`（以及 video_url/input_audio 等），
+ * 而调用方（callVLM / 视觉节点）传入的是内部块格式 `{ type: 'image', image_url: { url } }`。
+ * 原样透传会被 Ark 直接 400 拒绝（`messages.content.type ... invalid value: image`），
+ * 表现为"火山 provider 上视觉能力不可用"。
+ *
+ * 导出为纯函数以便单测覆盖（不构造 provider / 不发网络请求）。
+ */
+export function mapVolcengineContentBlocks(
+  content: unknown,
+): Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> {
+  if (!Array.isArray(content)) return []
+  const out: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = []
+  for (const raw of content) {
+    const block = raw as { type?: string; text?: string; image_url?: { url?: string } } | null
+    if (!block) continue
+    if (block.type === 'text') {
+      out.push({ type: 'text', text: block.text || '' })
+      continue
+    }
+    if ((block.type === 'image' || block.type === 'image_url') && block.image_url?.url) {
+      out.push({ type: 'image_url', image_url: { url: block.image_url.url } })
+    }
+  }
+  return out
+}
+
+/**
  * 火山引擎 API 签名配置
  */
 interface VolcEngineSignatureConfig {
@@ -307,6 +336,17 @@ export class VolcEngineSdkProvider extends BaseProvider {
     }
 
     for (const msg of context.messages) {
+      // 多模态内容归一：火山方舟（Ark）的 content 块要求 type 为 'text' / 'image_url'，
+      // 而调用方（callVLM / 视觉节点）传入的是内部块格式 { type: 'image', image_url: { url } }。
+      // 此前原样透传 → Ark 直接 400（messages.content.type invalid value: image），
+      // 表现为"火山 provider 上视觉能力不可用"（本地/其它 provider 正常，极难定位）。
+      if (Array.isArray(msg.content)) {
+        messages.push({
+          role: msg.role as 'user' | 'assistant' | 'system',
+          content: mapVolcengineContentBlocks(msg.content) as unknown as string
+        })
+        continue
+      }
       messages.push({
         role: msg.role as 'user' | 'assistant' | 'system',
         content: msg.content

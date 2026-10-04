@@ -20,6 +20,7 @@ import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
 import { submitWithTransientRetry } from './retry-submit'
 import { getVideoPreset, assembleVideoPresetPrompt, VIDEO_TYPE_PRESETS, CUSTOM_FALLBACK_POLICY } from '@shared/types/video-presets'
+import { renderSceneLexiconText } from '@shared/types/video-scene-lexicon'
 import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 
 /** 主进程 ffmpeg 可执行路径（@ffmpeg-installer 缓存了与平台匹配的二进制） */
@@ -51,6 +52,33 @@ function runFfmpeg(args: string[], cwd?: string): Promise<string> {
 /** 图片可分辨率的类似宽高比目标：按 scale/crop 到目标尺寸 */
 function coverFilter(outW: number, outH: number): string {
   return `scale=${outW}:${outH}:force_original_aspect_ratio=increase,crop=${outW}:${outH}`
+}
+
+/**
+ * 静态图片段运镜（Ken Burns）：缓慢推近/拉远/横移，让"图片素材"看起来是拍的而不是贴的。
+ *
+ * 做法：先把图放大到 2 倍目标尺寸（避免 zoompan 采样抖动），再 zoompan 到目标尺寸；
+ * `-loop 1 -framerate <fps> -t <时长>` 决定输入帧数，`d=1` 使输出帧数=输入帧数（时长不变），
+ * `zoom` 表达式逐帧累积（放大）或递减（拉远）。
+ */
+export type SegmentMotion = 'none' | 'zoom-in' | 'zoom-out' | 'pan-left' | 'pan-right'
+export const SEGMENT_MOTIONS: SegmentMotion[] = ['none', 'zoom-in', 'zoom-out', 'pan-left', 'pan-right']
+
+export function segmentMotionFilter(motion: string, w: number, h: number, fps: number): string {
+  const pre = `scale=${w * 2}:${h * 2}:force_original_aspect_ratio=increase,crop=${w * 2}:${h * 2}`
+  const center = `x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'`
+  const shape = `d=1:s=${w}x${h}:fps=${fps}`
+  switch (motion) {
+    case 'zoom-out':
+      return `${pre},zoompan=z='if(eq(on,1),1.18,max(zoom-0.0009,1.0))':${center}:${shape}`
+    case 'pan-right':
+      return `${pre},zoompan=z='1.12':x='(iw-iw/zoom)*min(on/300,1)':y='ih/2-(ih/zoom/2)':${shape}`
+    case 'pan-left':
+      return `${pre},zoompan=z='1.12':x='(iw-iw/zoom)*(1-min(on/300,1))':y='ih/2-(ih/zoom/2)':${shape}`
+    case 'zoom-in':
+    default:
+      return `${pre},zoompan=z='min(zoom+0.0009,1.18)':${center}:${shape}`
+  }
 }
 
 /** 解析 ffmpeg -i 输出，探测视频参数（分辨率/帧率/时长） */
@@ -220,7 +248,7 @@ const videoComposeNode: WorkflowNodeHandler = {
   },
   async execute(ctx: WorkflowNodeContext) {
     const cfg = ctx.config as {
-      segments: Array<{ source: string; kind: 'image' | 'video'; duration: number; caption?: string }>
+      segments: Array<{ source: string; kind: 'image' | 'video'; duration: number; caption?: string; motion?: string }>
       audioPath?: string
       bgmPath?: string
       width?: number
@@ -233,6 +261,7 @@ const videoComposeNode: WorkflowNodeHandler = {
       kind: (stringifyValue(s.kind) === 'video' ? 'video' : 'image') as 'image' | 'video',
       duration: Number(s.duration) > 0 ? Number(s.duration) : 3,
       caption: stringifyValue(s.caption),
+      motion: stringifyValue(s.motion) || 'none',
     }))
     // 无镜头段时直接报错，避免 ffmpeg 读空 concat 列表给出难懂的配置信息
     if (segs.length === 0) {
@@ -244,12 +273,14 @@ const videoComposeNode: WorkflowNodeHandler = {
     const bgmPath = resolveMediaPath(cfg.bgmPath ? stringifyValue(cfg.bgmPath) : '')
     if (bgmPath && !existsSync(bgmPath)) return { status: 'failed', error: `BGM 文件不存在: ${bgmPath}` }
 
-    // 输出规格：默认跟随第一个镜头段的实际分辨率与帧率（同源生成的各段一致），
-    // 避免把源分辨率二次降采样/重采样导致画质劣化；探测失败再退回配置值
+    // 输出规格：**显式配置优先**（成片投放规格由工作流决定：如 1080×1920），
+// 未显式配置时跟随第一个镜头段的实际分辨率与帧率（同源生成的各段一致），
+// 探测失败再退回默认值。注意：真实素材段的原生分辨率可能低于目标，
+// 由 coverFilter 等比放大裁切——宁可统一到投放规格，也不让成片忽高忽低。
     const bin = ffmpegBin()
-    const probed = segs[0] ? await probeVideoInfo(bin, segs[0].source) : null
-    const width = probed?.width || (cfg.width && cfg.width > 0 ? cfg.width : 1080)
-    const height = probed?.height || (cfg.height && cfg.height > 0 ? cfg.height : 1920)
+    const probed = segs[0] && segs[0].kind === 'video' ? await probeVideoInfo(bin, segs[0].source) : null
+    const width = cfg.width && cfg.width > 0 ? cfg.width : probed?.width || 1080
+    const height = cfg.height && cfg.height > 0 ? cfg.height : probed?.height || 1920
     const fps = probed?.fps || 30
     const dataPath = getPathProvider().getDataPath()
     const outDir = join(dataPath, 'videos')
@@ -266,10 +297,17 @@ const videoComposeNode: WorkflowNodeHandler = {
         const s = segs[i]
         const part = join(tmpDir, `seg_${String(i).padStart(3, '0')}.mp4`)
         const dur = Math.max(0.2, s.duration)
-        const vf = `${coverFilter(width, height)},fps=${fps}`
+        // 图片段：静态图用 Ken Burns 运镜（真实图片素材不再是静止帧）；视频段：不足时长则循环补足
+        const useMotion = s.kind === 'image' && s.motion !== 'none'
+        const vf = useMotion
+          ? segmentMotionFilter(s.motion, width, height, fps)
+          : `${coverFilter(width, height)},fps=${fps}`
+        const inputArgs = s.kind === 'image'
+          ? ['-loop', '1', '-framerate', String(fps), '-i', s.source]
+          : ['-stream_loop', '-1', '-i', s.source]
         await runFfmpeg([
           '-y',
-          ...(s.kind === 'image' ? ['-loop', '1', '-i', s.source] : ['-i', s.source]),
+          ...inputArgs,
           '-t', String(dur),
           '-vf', vf,
           '-c:v', 'libx264', '-crf', '18', '-preset', 'medium', '-pix_fmt', 'yuv420p',
@@ -369,6 +407,7 @@ const videoPresetNode: WorkflowNodeHandler = {
     { key: 'promptBlock', type: 'string', desc: '完整规范 markdown（大纲/素材 LLM 用）' },
     { key: 'preset', type: 'json', desc: '原始预设 JSON（无预设=null）' },
     { key: 'policy', type: 'json', desc: 'V3 视觉策略 JSON（visualPolicy；自定义兜底；两者皆无=null）' },
+    { key: 'sceneText', type: 'string', desc: '镜头真实场景词典文本（抽象主题→可拍场景+素材检索词，拆镜与配图用）' },
   ],
   validateConfig(config) {
     const cfg = config as { videoType?: string; freeStyle?: string }
@@ -402,6 +441,9 @@ const videoPresetNode: WorkflowNodeHandler = {
         promptBlock: assembleVideoPresetPrompt(type, freeStyle),
         preset: preset ?? null,
         policy,
+        // 镜头真实场景词典（配图相关性数据资产）：与视频类型无关，全量注入拆镜提示词，
+        // 保证「产业指数→厂房产线 / 进出口→港口码头」这类映射对任何类型都生效
+        sceneText: renderSceneLexiconText(),
       },
     }
   },

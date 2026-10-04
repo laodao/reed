@@ -397,6 +397,21 @@ async function loadDynamicOptions(keys: WorkflowStartInput[]): Promise<void> {
       } finally {
         dynamicBusy[src] = false
       }
+    } else if (src === 'credentials') {
+      // 第三方工具凭据（值=凭据 id；如真实素材库 Pexels/Pixabay 的 API Key 条目）
+      dynamicBusy[src] = true
+      try {
+        const api = (window as never as { electronAPI: { tools: { listCredentials: () => Promise<{ success: boolean; data?: Array<{ id: string; name: string }> }> } } }).electronAPI.tools
+        const resp = await api.listCredentials()
+        dynamicCache[src] = (resp.success ? resp.data ?? [] : []).map(c => ({
+          label: String(c.name ?? c.id ?? ''),
+          value: String(c.id ?? ''),
+        })).filter(o => o.value)
+      } catch {
+        dynamicCache[src] = []
+      } finally {
+        dynamicBusy[src] = false
+      }
     } else if (INFO_SOURCE_SOURCES.has(src)) {
       dynamicBusy[src] = true
       try {

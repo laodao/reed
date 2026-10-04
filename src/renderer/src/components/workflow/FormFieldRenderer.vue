@@ -125,6 +125,7 @@
             <el-option label="知识库" value="knowledgeBases" />
             <el-option label="搜索引擎（已配置）" value="searchEngineConfigs" />
             <el-option label="技能库" value="skills" />
+            <el-option label="工具凭据（API Key）" value="credentials" />
           </el-select>
           <el-checkbox v-model="item.multi" size="small" @change="syncInputs" title="多选（提交值为数组）">多选</el-checkbox>
           <span class="model-types-hint">{{ dynamicRefHint(item) }}</span>
@@ -153,6 +154,7 @@
             <el-option label="知识库" value="knowledgeBases" />
             <el-option label="搜索引擎（已配置）" value="searchEngineConfigs" />
             <el-option label="技能库" value="skills" />
+            <el-option label="工具凭据（API Key）" value="credentials" />
           </el-select>
           <span class="model-types-hint">选数据源后选项由系统加载（可与级联组合）；留空=手写下方选项</span>
         </div>

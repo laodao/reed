@@ -75,7 +75,7 @@ describe('内置应用模板库（随包 JSON 自动发现）', () => {
   it('使用 select-dynamic 的 start 输入 source 合法', () => {
     // 运行时（RunInputForm.loadDynamicOptions）支持 assets:<大类> 前缀（资产中心按大类列表）+
     // 若干具名数据源；这里以白名单 + 前缀规则断言，避免与运行时能力脱节
-    const NON_ASSET_SOURCES = ['infoSourceCategories', 'infoSourceTopics', 'infoSources', 'newsTopics', 'newsSources', 'knowledgeBases', 'assetCategories', 'searchEngineConfigs', 'providerConfigs']
+    const NON_ASSET_SOURCES = ['infoSourceCategories', 'infoSourceTopics', 'infoSources', 'newsTopics', 'newsSources', 'knowledgeBases', 'assetCategories', 'searchEngineConfigs', 'providerConfigs', 'credentials']
     const isAllowed = (source?: string): boolean =>
       !!source && (source.startsWith('assets:') || NON_ASSET_SOURCES.includes(source))
     for (const t of templates) {

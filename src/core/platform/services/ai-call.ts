@@ -16,6 +16,7 @@
  */
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { createProvider } from '@core/platform/providers/llm'
+import { resolveCapabilities } from '@core/platform/providers/llm/model-capability'
 import { PROVIDER_TEMPLATES } from '@core/platform/services/provider-template.service'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { createLogger } from '@core/utils/logger'
@@ -225,6 +226,21 @@ export async function callVLM(
   const effectiveModelId = modelId || fromConfigDefault || fromUserModels || fromTemplateModels
   if (!effectiveModelId) {
     throw new Error('未指定模型 — 请选择 vision 模型（如 qwen-vl-max / gpt-4o）')
+  }
+
+  // 视觉调用前置校验：所配模型必须声明支持图片输入（ModelDefinition.type='multimodal'）。
+  // 否则底层 provider 会**静默丢弃图片块**（supportsVision=false 时按文本发送），
+  // 模型看不到图却照常作答 → 表现为"质检/识图结果莫名其妙"，极难排查。
+  const modelDefs = [
+    ...((config.models as Array<{ id: string }> | undefined) ?? []),
+    ...(((template as unknown as { models?: Array<{ id: string }> }).models) ?? []),
+  ] as Array<Parameters<typeof resolveCapabilities>[1]> & Array<{ id: string }>
+  const matchedDef = modelDefs.find(m => m?.id === effectiveModelId)
+  if (matchedDef && !resolveCapabilities(effectiveModelId, matchedDef).supportsVision) {
+    throw new Error(
+      `模型「${effectiveModelId}」未声明支持图片输入（模型类型需为「多模态」）：` +
+        '请在「设置 → AI 服务」把该模型类型改为多模态，或改选视觉模型',
+    )
   }
 
   const provider = createProvider(
