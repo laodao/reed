@@ -14,6 +14,7 @@ import type { IpcResponse } from '@shared/types/ipc.types'
 import type { CharacterBinding } from '@shared/types/story-to-video.types'
 import { StoryToVideoResourceService } from '@core/packs/episode-production/services/story-to-video-resource.service'
 import { SceneAudioOrchestratorService } from '@core/platform/episode-production/render/audio/scene-audio-orchestrator.service'
+import { resolveStoryToVideoAudioDir } from './scene-audio-dir'
 
 export function registerAudioHandlers(): void {
   // ==================== 资源生成（音频） ====================
@@ -147,9 +148,8 @@ async function handleGenerateAudio(
       }
     }
 
-    // 获取项目资源目录（getDataPath：自定义数据目录时产物落在数据根下，见 X4）
-    const dataPath = getPathProvider().getDataPath()
-    const outputDir = path.join(dataPath, 'story-to-video', projectId, 'audio')
+    // 获取项目资源目录（与 video.handler 扫描侧共用同一基准：resolveStoryToVideoAudioDir）
+    const outputDir = resolveStoryToVideoAudioDir(projectId)
 
     // 调用资源生成服务
     const resourceService = StoryToVideoResourceService.getInstance()
