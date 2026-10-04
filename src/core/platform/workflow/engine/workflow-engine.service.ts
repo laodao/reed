@@ -962,6 +962,18 @@ export class WorkflowEngineService {
     } else {
       output = payload
     }
+    // input 交互直接批准：output_result 缺失时从 payload 回填（2026-10-05 日记复盘流修复）。
+    // 会话/运行详情的「批准」按钮不带 editedValues，此前 {{review.output_result}} 解析为空，
+    // 下游（save-diary/report 模板）静默落空产物。回填源=payload.content（llm-chat 的字符串
+    // payload 被 human-review 包成 { content }）。用户改过则不覆盖（filteredEdits 优先）。
+    if (
+      !isFormCollect && !isReject &&
+      interaction === 'input' &&
+      output.output_result === undefined &&
+      typeof payload.content === 'string'
+    ) {
+      output = { ...output, output_result: payload.content }
+    }
     output = truncateOutput({ ...output, decision: review.decision }, exec.settings.maxOutputChars)
     // choose 交互：用户所选选项决定路由（复用 branch 边机制，key=branchId）。
     // reject 决策优先处理（choose 模式驳回走 reject 边，无 reject 边则运行失败——

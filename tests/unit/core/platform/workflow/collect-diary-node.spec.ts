@@ -82,18 +82,16 @@ describe('collect-diary 节点', () => {
     expect((result as { output: { content: string } }).output.content).toContain('该时段没有日记')
   })
 
-  it('execute：显式日期优先，endDate 含当天全天', async () => {
+  it('execute：显式日期按本地时区解析，endDate 含当天全天', async () => {
     mockDiary.getEntriesByDateRange.mockResolvedValue({ success: true, data: [] })
     await collectNode.execute(makeCtx({ startDate: '2026-09-01', endDate: '2026-09-07' }))
 
     const call = mockDiary.getEntriesByDateRange.mock.calls[0]
     const from = new Date(call[0] as string)
     const to = new Date(call[1] as string)
-    // from 落在 9-1 当天本地时间；to 晚于 9-8 00:00（含 9-7 全天）
-    expect(from.getFullYear()).toBe(2026)
-    expect(from.getMonth()).toBe(8)
-    expect(from.getDate()).toBe(1)
-    expect(to.getTime()).toBeGreaterThan(new Date('2026-09-08T00:00:00').getTime())
+    // 本地时区语义（H7 修复）：from=9-1 本地零点；to=9-7 本地全天末（次日零点-1ms）
+    expect(from.getTime()).toBe(new Date(2026, 8, 1).getTime())
+    expect(to.getTime()).toBe(new Date(2026, 8, 8).getTime() - 1)
   })
 
   it('execute：聚合 markdown 含日期标题与标签，素材头带篇数', async () => {

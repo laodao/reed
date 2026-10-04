@@ -171,7 +171,7 @@ export class DiaryInspirationService {
     query: string
   ): Promise<InspirationRelatedEntry[]> {
     try {
-      const diaryKb = await getDiaryBrainSyncService().ensureDiaryKnowledgeBase()
+      const diaryKb = await getDiaryBrainSyncService().findDiaryKnowledgeBase()
       if (!diaryKb) return []
 
       const db = getCoreDatabaseManager()

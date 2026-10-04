@@ -292,6 +292,8 @@ const title = ref(props.entry.title)
 const content = ref(props.entry.content || '')
 const lastSavedTime = ref(new Date().toLocaleTimeString())
 const saveTimeout = ref<number | null>(null)
+/** 自动保存失败提示限频（成功一次后重置） */
+let saveFailedNotified = false
 
 // 标签（编辑后随防抖一并保存）
 const localTags = ref<string[]>([...(props.entry.tags || [])])
@@ -351,10 +353,19 @@ async function saveEntry() {
     })
     if (result.success) {
       lastSavedTime.value = new Date().toLocaleTimeString()
+      saveFailedNotified = false
       emit('updated')
+    } else if (!saveFailedNotified) {
+      // 自动保存静默失败会让用户以为已保存——首次失败即提示（限频防骚扰）
+      saveFailedNotified = true
+      ElMessage.error('自动保存失败，请检查后手动保存（本页稍内不再重复提示）')
     }
   } catch (error) {
     console.error('保存失败:', error)
+    if (!saveFailedNotified) {
+      saveFailedNotified = true
+      ElMessage.error('自动保存失败，请检查后手动保存')
+    }
   }
 }
 
@@ -492,21 +503,22 @@ function readAsBase64(file: File): Promise<string> {
   })
 }
 
-/** 在光标处插入文本（编辑器未就绪时追加文末） */
+/**
+ * 在光标处插入文本。bytemd 内嵌 CodeMirror 5：getCursor + replaceRange；
+ * v-model 不会自动跟随 CM5 的程序化修改，需手动把全文回写 content
+ * （否则下一次防抖保存会把插入的内容吞掉）。编辑器未就绪时降级：追加文末。
+ */
 function insertTextAtCursor(text: string) {
   const cm = editorRef.value?.getCodemirror?.()
-  if (cm?.state && cm?.dispatch) {
-    const pos = cm.state.selection.main.head
-    cm.dispatch({
-      changes: { from: pos, insert: text },
-      selection: { anchor: pos + text.length }
-    })
+  if (cm && typeof cm.replaceRange === 'function') {
+    const pos = cm.getCursor('head')
+    cm.replaceRange(text, pos)
+    content.value = cm.getValue()
     cm.focus()
   } else {
     content.value = `${content.value}\n${text}`
   }
 }
-
 async function loadInspiration() {
   isLoadingInspiration.value = true
   // 写作引子独立加载（可能触发 VLM 调用，失败静默、不阻塞主体）
@@ -642,8 +654,10 @@ async function handleExport(format: string) {
 }
 
 onUnmounted(() => {
+  // 卸载前 flush：待触发的防抖保存直接执行（仅 clearTimeout 会丢最后一次编辑）
   if (saveTimeout.value) {
     clearTimeout(saveTimeout.value)
+    void saveEntry()
   }
 })
 </script>

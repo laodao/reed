@@ -128,19 +128,20 @@ const collectDiaryNode: WorkflowNodeHandler = {
     let from: Date
     let to: Date
     if (startRaw) {
-      from = new Date(startRaw)
-      if (Number.isNaN(from.getTime())) {
+      from = parseLocalDate(startRaw)
+      if (!from) {
         return { status: 'failed', error: `startDate 无法解析：${startRaw}` }
       }
     } else {
       from = new Date(now.getTime() - days * 24 * 60 * 60 * 1000)
     }
     if (endRaw) {
-      to = new Date(endRaw)
-      if (Number.isNaN(to.getTime())) {
+      const endDay = parseLocalDate(endRaw)
+      if (!endDay) {
         return { status: 'failed', error: `endDate 无法解析：${endRaw}` }
       }
-      to = new Date(to.getTime() + 24 * 60 * 60 * 1000 - 1) // 含当天全天
+      // 含当天全天：本地次日零点 - 1ms（日记场景高频在午夜后书写，时区口径必须本地）
+      to = new Date(endDay.getTime() + 24 * 60 * 60 * 1000 - 1)
     } else {
       to = now
     }
@@ -184,6 +185,17 @@ const collectDiaryNode: WorkflowNodeHandler = {
       },
     }
   },
+}
+
+/**
+ * 'YYYY-MM-DD' 按本地时区解析为零点（new Date('YYYY-MM-DD') 会按 UTC——东八区下
+ * 窗口整体偏移 8 小时，凌晨写的日记被算错天）。非该格式返回 null。
+ */
+export function parseLocalDate(raw: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw.trim())
+  if (!m) return null
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  return Number.isNaN(d.getTime()) ? null : d
 }
 
 /**

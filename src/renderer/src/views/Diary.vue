@@ -213,6 +213,7 @@
       <!-- 已选择日记 - 编辑器 -->
       <template v-else>
         <DiaryEditor
+          :key="currentEntry.id"
           :entry="currentEntry"
           @back="currentEntry = null"
           @updated="handleEntryUpdated"
@@ -280,7 +281,7 @@
 
 // 组件名与路由 name 对齐，供 <keep-alive :include> 匹配（缺失会导致缓存失效、切换重新挂载）
 defineOptions({ name: 'Diary' })
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Plus, FolderOpened, Document, Loading, Delete, Tickets, Calendar, ArrowLeft, ArrowRight, Clock, Close
@@ -299,6 +300,7 @@ const expandedFolders = ref<Set<string>>(new Set())
 
 // 日记相关
 const entries = ref<DiaryEntryListItem[]>([])
+let loadEntriesSeq = 0
 const currentEntry = ref<DiaryEntry | null>(null)
 const isLoadingEntries = ref(false)
 const searchKeyword = ref('')
@@ -396,10 +398,12 @@ function openDayEntries(cell: CalendarCell) {
     void selectEntry(list[0])
     return
   }
-  // 多篇：切回列表视图并按当天过滤
+  // 多篇：切回列表视图并按当天过滤（清掉搜索词与标签，保持过滤状态自洽）
   dateFilterDay.value = cell.date
   viewMode.value = 'list'
   searchResults.value = null
+  searchKeyword.value = ''
+  tagFilter.value = ''
 }
 
 const dateFilterLabel = computed(() => {
@@ -410,6 +414,13 @@ const dateFilterLabel = computed(() => {
 function clearDateFilter() {
   dateFilterDay.value = null
 }
+
+// 切到日历视图时加载当月数据（此前圆点要等切月/重选目录才出现）
+watch(viewMode, mode => {
+  if (mode === 'calendar' && currentFolder.value) {
+    void loadCalendarMonth()
+  }
+})
 
 // 展示列表 = 目录列表或搜索结果 → 应用日期过滤 → 应用标签过滤
 const displayEntries = computed(() => {
@@ -497,16 +508,25 @@ async function selectFolder(folder: DiaryFolder) {
 // 加载日记列表
 async function loadEntries() {
   if (!currentFolder.value) return
+  const folderId = currentFolder.value.id
+  const seq = ++loadEntriesSeq
   isLoadingEntries.value = true
   try {
-    const result = await window.electronAPI.diary.listEntries(currentFolder.value.id)
+    const result = await window.electronAPI.diary.listEntries(folderId)
+    // 序号守卫：慢的旧响应不覆盖新目录的数据
+    if (seq !== loadEntriesSeq || currentFolder.value?.id !== folderId) return
     if (result.success) {
       entries.value = result.data || []
+    } else {
+      ElMessage.error(result.error || '加载日记列表失败')
     }
   } catch (error) {
     console.error('加载日记列表失败:', error)
+    ElMessage.error('加载日记列表失败')
   } finally {
-    isLoadingEntries.value = false
+    if (seq === loadEntriesSeq) {
+      isLoadingEntries.value = false
+    }
   }
 }
 
@@ -561,6 +581,8 @@ async function openEntryById(id: string) {
   const full = await fetchEntry(id)
   if (full) {
     currentEntry.value = full
+  } else {
+    ElMessage.error('获取日记详情失败')
   }
 }
 
@@ -594,8 +616,19 @@ async function handleCreateFolder() {
   }
 }
 
-// 目录操作
+// 目录操作（cancel 静默；后端失败给提示——此前 rename/delete 失败完全无反馈）
 async function handleFolderAction(command: string, folder: DiaryFolder) {
+  try {
+    await doFolderAction(command, folder)
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('目录操作失败:', error)
+      ElMessage.error('操作失败')
+    }
+  }
+}
+
+async function doFolderAction(command: string, folder: DiaryFolder) {
   switch (command) {
     case 'rename': {
       const { value } = await ElMessageBox.prompt('请输入新名称', '重命名', {
@@ -606,6 +639,8 @@ async function handleFolderAction(command: string, folder: DiaryFolder) {
         if (result.success) {
           await loadFolders()
           ElMessage.success('重命名成功')
+        } else {
+          ElMessage.error(result.error || '重命名失败')
         }
       }
       break
@@ -620,9 +655,12 @@ async function handleFolderAction(command: string, folder: DiaryFolder) {
       if (result.success) {
         if (currentFolder.value?.id === folder.id) {
           currentFolder.value = null
+          currentEntry.value = null // 该目录下正打开的日记一并关闭（防孤儿写入）
         }
         await loadFolders()
         ElMessage.success('删除成功')
+      } else {
+        ElMessage.error(result.error || '删除失败')
       }
       break
     }
@@ -645,6 +683,13 @@ async function handleFolderAction(command: string, folder: DiaryFolder) {
       if (brainResult.success) {
         await loadFolders()
         ElMessage.success(enabling ? '已纳入知识大脑，存量日记回填中' : '已退出知识大脑并清理已同步内容')
+      } else if ((brainResult as { needSetup?: boolean }).needSetup) {
+        ElMessageBox.alert(
+          '日记消化需要一个带 Embedding 配置的「日记」知识库（文档入库与检索依赖向量）。<br/><br/>' +
+          '请到「知识库」页面创建名为 <b>日记</b> 的知识库并配置 Embedding 模型，或为已有的「日记」库补配 Embedding，然后回来重新开启本开关。',
+          '先完成知识库准备',
+          { dangerouslyUseHTMLString: true, confirmButtonText: '知道了' }
+        )
       } else {
         ElMessage.error(brainResult.error || '操作失败')
       }
@@ -737,7 +782,11 @@ async function handleRestoreEntry(entry: DiaryEntryListItem) {
     deletedEntries.value = deletedEntries.value.filter(e => e.id !== entry.id)
     if (currentFolder.value?.id === entry.folderId) {
       await loadEntries()
+      if (viewMode.value === 'calendar') await loadCalendarMonth()
     }
+    // 恢复往年日记会改变「那年今日」；目录计数也需刷新
+    await loadOnThisDay()
+    await loadFolders()
     ElMessage.success('已恢复')
   } else {
     ElMessage.error(result.error || '恢复失败')

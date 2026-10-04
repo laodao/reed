@@ -144,11 +144,16 @@ describe('syncEntryNow（守卫链）', () => {
   it('happy path：opt-in 目录的合格条目 upsert 到「日记」库，source=diary+entryId', async () => {
     mockDiary.getEntry.mockResolvedValue({ success: true, data: makeEntry() })
     mockDb.diaryFolders.findById.mockResolvedValue({ id: 'folder-1', brainOptIn: true })
+    // 「日记」库已存在（方案 a：由用户显式创建，sync 只查找不创建）
+    mockDb.knowledgeBases.findAll.mockResolvedValue([
+      { id: 'kb-diary', name: '日记', description: '', brainConfig: null },
+    ])
 
     const svc = new DiaryBrainSyncService()
     const result = await svc.syncEntryNow('entry-1')
     expect(result.synced).toBe(true)
-    expect(mockKbService.createKnowledgeBase).toHaveBeenCalledTimes(1)
+    // 命中已存在库 → 绝不创建，但补写提议制红线配置
+    expect(mockKbService.createKnowledgeBase).not.toHaveBeenCalled()
     expect(mockKbService.updateKnowledgeBase).toHaveBeenCalledTimes(1)
 
     const cfgArg = mockKbService.updateKnowledgeBase.mock.calls[0][1].brainConfig as string
@@ -164,9 +169,42 @@ describe('syncEntryNow（守卫链）', () => {
     }))
   })
 
+  it('软删除条目不同步（隐私红线 H3）', async () => {
+    mockDiary.getEntry.mockResolvedValue({
+      success: true,
+      data: makeEntry({ id: 'entry-del' }),
+    })
+    mockDb.diaryFolders.findById.mockResolvedValue({ id: 'folder-1', brainOptIn: true })
+    const entry = mockDiary.getEntry.mock.calls
+    void entry
+    // deletedAt 守卫：findById 返回带 deletedAt 的条目
+    mockDiary.getEntry.mockReset()
+    mockDiary.getEntry.mockResolvedValue({
+      success: true,
+      data: { ...makeEntry(), deletedAt: new Date() },
+    })
+    const svc = new DiaryBrainSyncService()
+    const result = await svc.syncEntryNow('entry-del')
+    expect(result.reason).toBe('deleted')
+    expect(mockKbService.addDocument).not.toHaveBeenCalled()
+  })
+
+  it('取消待同步定时器并清内容记忆（删除即退出队列）', async () => {
+    mockDiary.getEntry.mockResolvedValue({ success: true, data: makeEntry() })
+    mockDb.diaryFolders.findById.mockResolvedValue({ id: 'folder-1', brainOptIn: true })
+    const svc = new DiaryBrainSyncService()
+    svc.scheduleEntrySync('entry-1')
+    svc.cancelScheduledSync('entry-1')
+    await new Promise(r => setTimeout(r, 20))
+    expect(mockKbService.addDocument).not.toHaveBeenCalled()
+  })
+
   it('内容未变跳过（会话内幂等）', async () => {
     mockDiary.getEntry.mockResolvedValue({ success: true, data: makeEntry() })
     mockDb.diaryFolders.findById.mockResolvedValue({ id: 'folder-1', brainOptIn: true })
+    mockDb.knowledgeBases.findAll.mockResolvedValue([
+      { id: 'kb-diary', name: '日记', description: '', brainConfig: null },
+    ])
 
     const svc = new DiaryBrainSyncService()
     await svc.syncEntryNow('entry-1')
@@ -176,13 +214,13 @@ describe('syncEntryNow（守卫链）', () => {
   })
 })
 
-describe('ensureDiaryKnowledgeBase（「日记」库单例）', () => {
+describe('findDiaryKnowledgeBase（只读查找，绝不创建）', () => {
   it('已存在同名库 → 复用不重建', async () => {
     mockDb.knowledgeBases.findAll.mockResolvedValue([
-      { id: 'kb-existing', name: '日记', description: '' },
+      { id: 'kb-existing', name: '日记', description: '', brainConfig: null },
     ])
     const svc = new DiaryBrainSyncService()
-    const kb = await svc.ensureDiaryKnowledgeBase()
+    const kb = await svc.findDiaryKnowledgeBase()
     expect(kb?.id).toBe('kb-existing')
     expect(mockKbService.createKnowledgeBase).not.toHaveBeenCalled()
   })
@@ -192,7 +230,7 @@ describe('ensureDiaryKnowledgeBase（「日记」库单例）', () => {
       { id: 'kb-renamed', name: '我的日记本', description: '...[diary-brain-sync]' },
     ])
     const svc = new DiaryBrainSyncService()
-    const kb = await svc.ensureDiaryKnowledgeBase()
+    const kb = await svc.findDiaryKnowledgeBase()
     expect(kb?.id).toBe('kb-renamed')
   })
 })
@@ -223,16 +261,31 @@ describe('setFolderBrainOptIn（开关编排）', () => {
     expect(purged.sort()).toEqual(['doc-e1', 'doc-e2', 'doc-e3'])
   })
 
-  it('开启：置位 + 回填', async () => {
+  it('开启：库未就绪 → needSetup 且不置位；库就绪 → 置位 + 回填', async () => {
+    const svc = new DiaryBrainSyncService()
+
+    // 无「日记」库 → needSetup，不回填不置位
+    mockDb.knowledgeBases.findAll.mockResolvedValue([])
+    const blocked = await svc.setFolderBrainOptIn('folder-1', true)
+    expect((blocked as { needSetup?: boolean }).needSetup).toBe(true)
+    expect(mockDiary.updateFolder).not.toHaveBeenCalled()
+    expect(mockKbService.addDocument).not.toHaveBeenCalled()
+
+    // 库就绪（含 embedding 配置）→ 正常置位回填
+    mockDb.knowledgeBases.findAll.mockResolvedValue([
+      {
+        id: 'kb-diary', name: '日记', description: '', brainConfig: null,
+        embeddingConfig: JSON.stringify({ modelId: 'text-embed', provider: 'local' }),
+      },
+    ])
     mockDiary.getEntries.mockResolvedValue({ success: true, data: [{ id: 'e1' }] })
     mockDb.diaryEntries.findByFolder.mockResolvedValue([{ id: 'e1' }])
     mockDiary.getDeletedEntries.mockResolvedValue({ success: true, data: [] })
     mockDiary.getEntry.mockResolvedValue({ success: true, data: makeEntry({ id: 'e1' }) })
     mockDb.diaryFolders.findById.mockResolvedValue({ id: 'folder-1', brainOptIn: true })
 
-    const svc = new DiaryBrainSyncService()
-    const result = await svc.setFolderBrainOptIn('folder-1', true)
-    expect(result.success).toBe(true)
+    const ok = await svc.setFolderBrainOptIn('folder-1', true)
+    expect(ok.success).toBe(true)
     expect(mockDiary.updateFolder).toHaveBeenCalledWith('folder-1', { brainOptIn: true })
     expect(mockKbService.addDocument).toHaveBeenCalledTimes(1)
   })

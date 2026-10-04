@@ -43,19 +43,25 @@ export class DiaryBrainSyncService {
   private memoizedKbId: string | null = null
   private timers = new Map<string, ReturnType<typeof setTimeout>>()
   private lastSyncedContent = new Map<string, string>()
+  /** 目录开关互斥（防快速关→开时 purge 与 backfill 交错） */
+  private toggleInFlight = false
 
   /**
-   * 取（或创建）「日记」知识库。按名称或描述 marker 匹配；创建时开启大脑消化。
-   * 失败返回 null（调用方降级为不同步，绝不上抛打断写日记）。
+   * 只读查找「日记」知识库（按名称或描述 marker）。不创建——防两个副作用：
+   * ①灵感条/清理路径在用户无感知时建库；②建库缺 embedding 配置必被
+   * createKnowledgeBase 拦截（文档管线第 5 步向量化必炸，BM25 都跑不到）。
    */
-  async ensureDiaryKnowledgeBase(): Promise<KnowledgeBase | null> {
+  async findDiaryKnowledgeBase(): Promise<KnowledgeBase | null> {
     try {
       const db = getCoreDatabaseManager()
       if (!db.knowledgeBases) return null
 
       if (this.memoizedKbId) {
         const cached = await db.knowledgeBases.findById(this.memoizedKbId)
-        if (cached) return cached
+        if (cached) {
+          this.ensureDiaryBrainConfig(cached)
+          return cached
+        }
         this.memoizedKbId = null
       }
 
@@ -63,38 +69,63 @@ export class DiaryBrainSyncService {
       const found = all.find(
         kb => kb.name === DIARY_KB_NAME || (kb.description ?? '').includes(DIARY_KB_MARKER)
       )
-      if (found) {
-        this.memoizedKbId = found.id
-        return found
-      }
-
-      const created = await this.kbService.createKnowledgeBase({
-        name: DIARY_KB_NAME,
-        description: `日记自动入库（开启「纳入知识大脑」的目录自动同步至此）。[${DIARY_KB_MARKER}]`,
-        // embedding 留空：先跑 BM25 词法召回 + 论断层；补配 embedding 后自动获得语义召回
-        embeddingModel: '',
-        embeddingDimension: 0,
-      })
-      if (!created.success || !created.data) {
-        console.warn('[DiaryBrainSync] 创建「日记」知识库失败:', created.error)
-        return null
-      }
-
-      // 提议制：消化开，但阈值不可达 → 全部论断进提议箱人批；学习/蒸馏对日记库无意义，关
-      const config = normalizeBrainConfig(defaultBrainConfig(true))
-      config.digestion.enabled = true
-      config.autoApproveThreshold = PROPOSE_ONLY_THRESHOLD
-      config.learning.enabled = false
-      config.distillation.enabled = false
-      await this.kbService.updateKnowledgeBase(created.data.id, {
-        brainConfig: stringifyBrainConfig(config),
-      })
-
-      this.memoizedKbId = created.data.id
-      return created.data
+      if (!found) return null
+      this.memoizedKbId = found.id
+      // 命中即校验/补写红线 brainConfig（防用户自建同名库绕过提议制，见评审 H4）
+      await this.ensureDiaryBrainConfig(found)
+      return found
     } catch (error) {
-      console.warn('[DiaryBrainSync] ensureDiaryKnowledgeBase 失败:', error)
+      console.warn('[DiaryBrainSync] findDiaryKnowledgeBase 失败:', error)
       return null
+    }
+  }
+
+  /** 「日记」库是否存在且已配 embedding（前端 opt-in 引导判断用） */
+  async getDiaryKbStatus(): Promise<{
+    exists: boolean
+    hasEmbedding: boolean
+    kbId?: string
+  }> {
+    const kb = await this.findDiaryKnowledgeBase()
+    if (!kb) return { exists: false, hasEmbedding: false }
+    const cfg = kb.embeddingConfig ? safeParseEmbedding(kb.embeddingConfig) : null
+    return { exists: true, hasEmbedding: !!cfg?.modelId && (cfg.provider === 'local' || !!cfg.providerConfigId), kbId: kb.id }
+  }
+
+  /** 提议制 brainConfig：消化开、阈值取上界（全部人批）、学习/蒸馏关 */
+  private async applyDiaryBrainConfig(kbId: string): Promise<void> {
+    const config = normalizeBrainConfig(defaultBrainConfig(true))
+    config.digestion.enabled = true
+    config.autoApproveThreshold = PROPOSE_ONLY_THRESHOLD
+    config.learning.enabled = false
+    config.distillation.enabled = false
+    await this.kbService.updateKnowledgeBase(kbId, {
+      brainConfig: stringifyBrainConfig(config),
+    })
+  }
+
+  /** 命中已有库时校验红线配置：非提议制/学习误开则纠正（幂等，改错不告知） */
+  private async ensureDiaryBrainConfig(kb: KnowledgeBase): Promise<void> {
+    try {
+      if (!kb.brainConfig) {
+        await this.applyDiaryBrainConfig(kb.id)
+        return
+      }
+      const cfg = safeParseBrain(kb.brainConfig)
+      if (!cfg) {
+        await this.applyDiaryBrainConfig(kb.id)
+        return
+      }
+      if (
+        cfg.autoApproveThreshold !== PROPOSE_ONLY_THRESHOLD ||
+        cfg.learning.enabled ||
+        cfg.distillation.enabled ||
+        !cfg.digestion.enabled
+      ) {
+        await this.applyDiaryBrainConfig(kb.id)
+      }
+    } catch (error) {
+      console.warn('[DiaryBrainSync] ensureDiaryBrainConfig 失败:', error)
     }
   }
 
@@ -114,6 +145,16 @@ export class DiaryBrainSyncService {
     this.timers.set(entryId, timer)
   }
 
+  /** 取消条目的待同步定时器（软删除/彻底删除时调用——隐私红线：删除即退出消化队列） */
+  cancelScheduledSync(entryId: string): void {
+    const t = this.timers.get(entryId)
+    if (t) {
+      clearTimeout(t)
+      this.timers.delete(entryId)
+    }
+    this.lastSyncedContent.delete(entryId)
+  }
+
   /**
    * 立即同步单条（守卫齐备才入库）。返回是否实际同步与未同步原因。
    */
@@ -128,6 +169,7 @@ export class DiaryBrainSyncService {
       const entry = entryResp.data
       const content = entry.content || ''
 
+      if (entry.deletedAt) return { synced: false, reason: 'deleted' }
       if (isEntryExcluded(entry)) return { synced: false, reason: 'excluded' }
       if (content.length < MIN_SYNC_CONTENT_CHARS) return { synced: false, reason: 'too-short' }
 
@@ -138,7 +180,7 @@ export class DiaryBrainSyncService {
         return { synced: false, reason: 'unchanged' }
       }
 
-      const kb = await this.ensureDiaryKnowledgeBase()
+      const kb = await this.findDiaryKnowledgeBase()
       if (!kb) return { synced: false, reason: 'no-diary-kb' }
 
       const resp = await this.kbService.addDocument(kb.id, {
@@ -161,10 +203,27 @@ export class DiaryBrainSyncService {
   }
 
   /**
-   * 目录开关（IPC 入口）。开启：置位 + 回填存量；关闭：出库清理（幂等，容错）。
+   * 目录开关（IPC 入口）。开启：要求「日记」库已存在且已配 embedding（否则返回
+   * needSetup 引导前端建库），置位 + 回填存量；关闭：置位 + 出库清理（幂等，容错）。
+   * 互斥：同一时刻只允许一个开关操作在途（防快速关→开的 purge/backfill 交错）。
    */
-  async setFolderBrainOptIn(folderId: string, enabled: boolean): Promise<DiaryIpcResponse<void>> {
+  async setFolderBrainOptIn(
+    folderId: string,
+    enabled: boolean
+  ): Promise<DiaryIpcResponse<void> & { needSetup?: boolean }> {
+    if (this.toggleInFlight) {
+      return { success: false, error: '另一个目录开关操作正在进行中，请稍后' }
+    }
+    this.toggleInFlight = true
     try {
+      if (enabled) {
+        const status = await this.getDiaryKbStatus()
+        if (!status.exists || !status.hasEmbedding) {
+          // 不置位、不同步——前端据 needSetup 弹引导（创建「日记」库 + 配 embedding）
+          return { success: false, needSetup: true, error: '「日记」知识库未就绪（需创建并配置 Embedding）' }
+        }
+      }
+
       const service = new DiaryService()
 
       // 先置位（保证开关即时生效，后续清理/回填失败不倒挂状态）
@@ -182,6 +241,8 @@ export class DiaryBrainSyncService {
     } catch (error) {
       console.error('[DiaryBrainSync] setFolderBrainOptIn error:', error)
       return { success: false, error: String(error) }
+    } finally {
+      this.toggleInFlight = false
     }
   }
 
@@ -214,7 +275,7 @@ export class DiaryBrainSyncService {
   async purgeEntryIds(entryIds: string[]): Promise<void> {
     try {
       const db = getCoreDatabaseManager()
-      const kb = await this.ensureDiaryKnowledgeBase()
+      const kb = await this.findDiaryKnowledgeBase()
       if (!kb) return
       for (const entryId of entryIds) {
         try {
@@ -230,6 +291,22 @@ export class DiaryBrainSyncService {
     } catch (error) {
       console.warn('[DiaryBrainSync] purgeEntryIds 失败:', error)
     }
+  }
+}
+
+function safeParseEmbedding(raw: string): { modelId?: string; provider?: string; providerConfigId?: string } | null {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+function safeParseBrain(raw: string): ReturnType<typeof normalizeBrainConfig> | null {
+  try {
+    return normalizeBrainConfig(JSON.parse(raw) as never)
+  } catch {
+    return null
   }
 }
 

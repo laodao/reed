@@ -20,6 +20,27 @@ import type { DiaryIpcResponse } from '@shared/types/diary.types'
 const ENHANCE = { math: true, mermaid: true } as const
 
 /**
+ * outputPath 白名单校验（评审 H6）：Web 多租户下 renderer 传来的任意路径
+ * 直接 writeFileSync = 服务器任意写。仅桌面端信任调用方路径；Web 端一律
+ * 走 getDefaultExportPath（服务端 exports 目录），忽略传入值。
+ */
+function resolveExportPath(outputPath: string | undefined, title: string, ext: string): string {
+  const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
+  if (outputPath && isElectron) {
+    return outputPath
+  }
+  // 与实例方法 getDefaultExportPath 同逻辑的模块级实现（Web=exports 目录 / 桌面=Downloads）
+  const safeName = title.replace(/[<>:"/\\|?*]/g, '_')
+  if (isElectron) {
+    return path.join(os.homedir(), 'Downloads', `${safeName}.${ext}`)
+  }
+  const dataPath = getPathProvider().getDataPath()
+  const exportsDir = path.join(dataPath, 'exports')
+  if (!fs.existsSync(exportsDir)) fs.mkdirSync(exportsDir, { recursive: true })
+  return path.join(exportsDir, `${safeName}.${ext}`)
+}
+
+/**
  * 把排版 HTML 中指向本地附件的 <img>（dataPath 相对路径）替换为 data URI。
  * 安全：resolveAssetPath 解析后必须在 dataPath 内（防 markdown 注入越权读取）。
  * 单图失败跳过（导出仍成功，图位留占位）。
@@ -102,7 +123,7 @@ export class DiaryExportService {
       // 导出文件离线自包含（P3-1 资源嵌入）
       const embedded = embedLocalImages(html)
 
-      const filePath = outputPath || this.getDefaultExportPath(entry.title, 'html')
+      const filePath = resolveExportPath(outputPath, entry.title, 'html')
       fs.writeFileSync(filePath, embedded, 'utf-8')
 
       return { success: true, data: filePath }
@@ -134,7 +155,7 @@ export class DiaryExportService {
         return { success: false, error: '当前环境无 PDF 渲染器，PDF 导出仅桌面端可用' }
       }
 
-      const filePath = outputPath || this.getDefaultExportPath(entry.title, 'pdf')
+      const filePath = resolveExportPath(outputPath, entry.title, 'pdf')
       fs.writeFileSync(filePath, rendered.buffer)
 
       return { success: true, data: filePath }
@@ -160,7 +181,7 @@ export class DiaryExportService {
         title: entry.title
       })
 
-      const filePath = outputPath || this.getDefaultExportPath(entry.title, 'docx')
+      const filePath = resolveExportPath(outputPath, entry.title, 'docx')
       fs.writeFileSync(filePath, rendered.buffer)
 
       return { success: true, data: filePath }
@@ -179,22 +200,4 @@ export class DiaryExportService {
     return result.data
   }
 
-  /**
-   * 获取默认导出路径
-   */
-  private getDefaultExportPath(title: string, ext: string): string {
-    const safeName = title.replace(/[<>:"/\\|?*]/g, '_')
-    const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
-    if (isElectron) {
-      // Electron 端：Downloads 目录，用户能直接看到
-      const downloadsPath = path.join(os.homedir(), 'Downloads')
-      return path.join(downloadsPath, `${safeName}.${ext}`)
-    }
-    // Web 端：用户数据目录的 exports 子文件夹（前端通过 /assets/exports/... 下载）
-    // 这里依赖 IPathProvider 已注册（web-server bootstrap 已完成）
-    const dataPath = getPathProvider().getDataPath()
-    const exportsDir = path.join(dataPath, 'exports')
-    if (!fs.existsSync(exportsDir)) fs.mkdirSync(exportsDir, { recursive: true })
-    return path.join(exportsDir, `${safeName}.${ext}`)
-  }
 }

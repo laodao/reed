@@ -324,6 +324,9 @@ export class DiaryService {
       if (!entry) {
         return { success: false, error: '日记不存在' }
       }
+      if (entry.deletedAt) {
+        return { success: false, error: '日记在回收站中，请先恢复再编辑' }
+      }
 
       // 更新文件内容
       if (request.content !== undefined) {
@@ -381,6 +384,11 @@ export class DiaryService {
       }
 
       await db.diaryEntries!.softDelete(id)
+
+      // 隐私红线：删除即退出消化队列（取消挂起的防抖同步并清内容记忆）
+      void import('./diary-brain-sync.service').then(({ getDiaryBrainSyncService }) =>
+        getDiaryBrainSyncService().cancelScheduledSync(id)
+      )
       return { success: true }
     } catch (error) {
       console.error('[DiaryService] deleteEntry error:', error)
@@ -429,6 +437,9 @@ export class DiaryService {
       if (!entry) {
         return { success: false, error: '日记不存在' }
       }
+      if (!entry.deletedAt) {
+        return { success: false, error: '仅回收站中的日记可彻底删除' }
+      }
 
       const filePath = path.join(this.diaryRootPath, entry.filePath)
       if (fs.existsSync(filePath)) {
@@ -436,6 +447,8 @@ export class DiaryService {
       }
 
       await db.diaryEntries!.delete(id)
+      // 附件记录随行清理（文件由目录 .assets 或 rmSync 连带；行级清理防孤儿记录）
+      await db.diaryAttachments?.deleteByEntry(id)
 
       // 彻底删除 → 「日记」库文档同步出库（best-effort）
       void import('./diary-brain-sync.service').then(({ getDiaryBrainSyncService }) =>
