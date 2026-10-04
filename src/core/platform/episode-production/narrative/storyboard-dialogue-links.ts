@@ -36,8 +36,10 @@ async function ensureTable(qr: EntityManager): Promise<void> {
   let pending = ensuredTables.get(ds)
   if (!pending) {
     pending = (async () => {
+      // 必须走 qr（事务 manager）而非 ds：本函数只在事务回调内被调，Electron
+      // 端 DataSource 装了 SQLite 串行门，全局 ds.query 会被门拒绝。
       if (isPg(qr)) {
-        await ds.query(`
+        await qr.query(`
           CREATE TABLE IF NOT EXISTS storyboard_dialogue_links (
             id VARCHAR PRIMARY KEY,
             storyboard_id VARCHAR NOT NULL,
@@ -47,11 +49,11 @@ async function ensureTable(qr: EntityManager): Promise<void> {
             FOREIGN KEY (dialogue_id) REFERENCES scene_dialogues(id) ON DELETE CASCADE
           )
         `)
-        await ds.query(
+        await qr.query(
           `CREATE INDEX IF NOT EXISTS idx_storyboard_dialogue_links_storyboard_id ON storyboard_dialogue_links(storyboard_id)`,
         )
       } else {
-        await ds.query(`
+        await qr.query(`
           CREATE TABLE IF NOT EXISTS storyboard_dialogue_links (
             id TEXT PRIMARY KEY,
             storyboard_id TEXT NOT NULL,
@@ -61,7 +63,7 @@ async function ensureTable(qr: EntityManager): Promise<void> {
             FOREIGN KEY (dialogue_id) REFERENCES scene_dialogues(id) ON DELETE CASCADE
           )
         `)
-        await ds.query(
+        await qr.query(
           `CREATE INDEX IF NOT EXISTS idx_storyboard_dialogue_links_storyboard_id ON storyboard_dialogue_links(storyboard_id)`,
         )
       }

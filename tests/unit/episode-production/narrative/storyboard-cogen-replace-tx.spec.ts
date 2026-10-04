@@ -178,9 +178,10 @@ describe('replaceSceneStoryboards 事务化（M1：删旧插新同事务）', ()
     if (ds.isInitialized) await ds.destroy()
   })
 
-  it('M1-a：插入中途失败（trigger 模拟抛错）→ 整体回滚，旧分镜与旧 links 完整保留、无新分镜残留', async () => {
-    // links 重建已过滤悬空 id（storyboard-dialogue-links 修复后悬空不再 FK 抛错），
-    // 改用 trigger 在第二条 link 插入时抛错，模拟「插入中途失败」
+  it('M1-a：links 插入中途失败（trigger 模拟抛错）→ 降级语义：分镜照常生成、失败 warn 可见、links 缺失', async () => {
+    // 语义说明：191a6f38（多租户安全修复）起，cogen 的 links 重建失败被 .catch
+    // 降级为 warn（「跳过，不影响分镜生成」），不再触发整体回滚。本用例钉住该语义：
+    // 第二镜的 link 插入被 trigger 抛错 → 被吞并 warn，分镜生成与第一镜 links 不受影响。
     await ds.query(`
       CREATE TRIGGER fail_link_dlg_b BEFORE INSERT ON storyboard_dialogue_links
       WHEN NEW.dialogue_id = 'dlg_b'
@@ -188,30 +189,32 @@ describe('replaceSceneStoryboards 事务化（M1：删旧插新同事务）', ()
     `)
     const output = cogenOutput([
       { dialogueIds: ['dlg_a'] },
-      // 第二镜的 link 插入触发 trigger 抛错，模拟「插入中途抛错」
       { dialogueIds: ['dlg_b'] },
     ])
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-    await expect(
-      (svc as any).replaceSceneStoryboards('scene1', output, CHAR_BINDINGS, 'lb_1', ITEM_BINDINGS),
-    ).rejects.toThrow()
+    await (svc as any).replaceSceneStoryboards('scene1', output, CHAR_BINDINGS, 'lb_1', ITEM_BINDINGS)
 
-    // 旧分镜完整保留（删旧已回滚）
+    // 降级路径：替换式写库照常提交——旧分镜被清理，新分镜全量落库
     const storyboards = await ds.getRepository(StoryboardEntity).find({
       where: { sceneScriptId: 'scene1' },
+      order: { shotNumber: 'ASC' },
     })
-    expect(storyboards).toHaveLength(1)
-    expect(storyboards[0]).toMatchObject({
-      id: 'sb_old_1',
-      frameDescription: '旧分镜（应完整保留）',
-      status: 'completed',
-      dialogueIds: ['dlg_a'],
-    })
+    expect(storyboards).toHaveLength(2)
+    expect(storyboards.every(sb => sb.id !== 'sb_old_1')).toBe(true)
 
-    // 旧 links 保留；无任何新 links 残留（第一镜的插入已随事务回滚）
+    // 失败 warn 可见（不静默）
+    expect(
+      warnSpy.mock.calls.some(c => String(c[0]).includes('storyboard_dialogue_links 重建失败')),
+    ).toBe(true)
+
+    // 第一镜 links 正常；第二镜 links 缺失（字幕对该镜退化为均分兜底）
     const links = await ds.query(`SELECT * FROM storyboard_dialogue_links`)
+    const newIds = storyboards.map(sb => sb.id)
     expect(links).toHaveLength(1)
-    expect(links[0]).toMatchObject({ id: 'sdl_old_1', storyboard_id: 'sb_old_1', dialogue_id: 'dlg_a' })
+    expect(links[0].dialogue_id).toBe('dlg_a')
+    expect(newIds).toContain(links[0].storyboard_id)
+    warnSpy.mockRestore()
   })
 
   it('M1-b：正常路径删旧插新同一事务提交，新分镜字段与 links 口径不变', async () => {
