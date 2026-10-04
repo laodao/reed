@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { detectLayerBoost, layerWeightOf, LAYER_BOOST_MATCHED, LAYER_BOOST_UNMATCHED } from '@core/platform/services/kb-brain/layer-intent'
-import { buildAtomizeSystem, ATOMIZE_SYSTEM, ATOMIZE_SYSTEM_KNOWLEDGE, ATOMIZE_SYSTEM_HISTORY } from '@core/platform/services/kb-brain/prompts'
+import { buildAtomizeSystem, ATOMIZE_SYSTEM, ATOMIZE_SYSTEM_KNOWLEDGE, ATOMIZE_SYSTEM_HISTORY, CLEANUP_SYSTEM } from '@core/platform/services/kb-brain/prompts'
 import { validateAtomizeOutput } from '@core/platform/services/kb-brain/schemas'
 
 describe('detectLayerBoost 查询意图选层', () => {
@@ -106,5 +106,24 @@ describe('layer null 穿透回归（review P2）', () => {
     })
     expect(out.atoms[0].layer).toBeUndefined()
     expect(out.atoms).toHaveLength(1)
+  })
+})
+
+describe('剧情复述禁令（用户反馈回归）', () => {
+  it('小说变体含剧情梗概最高禁令与产出前自检', () => {
+    expect(ATOMIZE_SYSTEM).toContain('剧情梗概/事件链复述')
+    expect(ATOMIZE_SYSTEM).toContain('【产出前自检')
+    expect(ATOMIZE_SYSTEM).toContain('剧情是章节摘要的职责')
+    // 旧"故事结构"放行条已删——它正是事件链复述的口子
+    expect(ATOMIZE_SYSTEM).not.toContain('✓ 故事结构：伏笔埋设与回收')
+  })
+
+  it('存量清理提示词把剧情梗概列为第 4 类垃圾', () => {
+    expect(CLEANUP_SYSTEM).toContain('4. 剧情梗概/事件链复述')
+  })
+
+  it('知识/文史变体不受影响（无剧情判例需求，仍保留各自禁令）', () => {
+    expect(ATOMIZE_SYSTEM_KNOWLEDGE).not.toContain('剧情复述判例')
+    expect(ATOMIZE_SYSTEM_HISTORY).toContain('不要：逐段复述')
   })
 })
