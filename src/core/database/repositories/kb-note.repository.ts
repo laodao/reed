@@ -196,6 +196,22 @@ export class KbNoteRepository extends BaseRepository<KbNoteEntity, KbNoteRecord>
     return this.toDtoList(rows)
   }
 
+  /**
+   * 书级卡内容演进（review P2）：同题 proposed 卡被重汇总刷新——只更 body/description
+   * 并 version+1（批准过的卡绝不覆盖：published/archived 由调用方 skip）。
+   * 卡不存在或已不处于 proposed 时返回 null（调用方按 skip 处理）。
+   */
+  async updateProposedBody(id: string, patch: { body: string; description?: string }): Promise<KbNoteRecord | null> {
+    const row = await this.scoped.findOne({ id, status: 'proposed' } as FindOptionsWhere<KbNoteEntity>)
+    if (!row) return null
+    row.body = patch.body
+    if (patch.description) row.description = patch.description
+    row.version += 1
+    row.updatedAt = new Date()
+    await this.scoped.save(row)
+    return this.toDto(row)
+  }
+
   /** 创建/更新视角卡（视角卡是配置性卡片：直接 published，不走提议队列） */
   async upsertLens(
     kbId: string,

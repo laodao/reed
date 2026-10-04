@@ -15,6 +15,7 @@ import { enqueueDigestForExisting } from '@core/platform/services/kb-brain/diges
 import { KbGoalDistillService } from '@core/platform/services/kb-brain/goal-distill.service'
 import { getKbConsolidateService } from '@core/platform/services/kb-brain/consolidate.service'
 import { getKbCleanupService } from '@core/platform/services/kb-brain/cleanup.service'
+import { KbBrainHealthService } from '@core/platform/services/kb-brain/health.service'
 import { parseModelRef } from '@core/platform/services/kb-brain/llm'
 import { parseBrainConfig } from '@core/platform/services/kb-brain/brain-config'
 import type { SearchResult } from '@shared/types/knowledge-base.types'
@@ -74,6 +75,9 @@ export function registerKbBrainHandlers(): void {
   )
 
   ipcBridge.handle('kb:brain:stats', (_e, p: { kbId: string }) => panel.stats(p.kbId))
+
+  // 大脑体检（§检查机制）：只读覆盖率/构成/建议报告，面板手动触发
+  ipcBridge.handle('kb:brain:health-check', (_e, p: { kbId: string }) => new KbBrainHealthService().check(p.kbId))
 
   // T14 手动提炼（任务边界闸门）
   let distillBusy = false

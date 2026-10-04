@@ -10,7 +10,11 @@ import { Column, Entity, Index, PrimaryColumn, Unique } from 'typeorm'
  * 仓储 ensurePass 应用层判重（复核修正 F7）。
  */
 
-export type KbDigestPassType = 'base' | 'lens' | 'distill' | 'metabolize'
+/**
+ * 消化遍类型：base=章级基础遍；lens=视角遍；book=书级汇总遍（chapterId=null，
+ * passKey='book:<name>'，hash=章节集合指纹）；distill=重要性提炼；metabolize=代谢整固
+ */
+export type KbDigestPassType = 'base' | 'lens' | 'book' | 'distill' | 'metabolize'
 
 export type KbDigestPassStatus = 'pending' | 'running' | 'done' | 'failed' | 'skipped'
 
@@ -31,14 +35,14 @@ export class KbDigestPassEntity {
   @Column({ name: 'document_id', type: 'varchar' })
   documentId!: string
 
-  /** null=文档级任务（distill/metabolize）；章级任务=章节 id */
+  /** null=文档级任务（book/distill/metabolize）；章级任务=章节 id */
   @Column({ name: 'chapter_id', type: 'varchar', nullable: true })
   chapterId!: string | null
 
   @Column({ name: 'pass_type', type: 'varchar' })
   passType!: KbDigestPassType
 
-  /** 'base' | 'lens:<noteId>' | 'distill:<batchId>' | 'metabolize:<period>' */
+  /** 'base' | 'lens:<noteId>' | 'book:<name>' | 'distill:<batchId>' | 'metabolize:<period>' */
   @Column({ name: 'pass_key', type: 'varchar' })
   passKey!: string
 

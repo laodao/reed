@@ -1265,6 +1265,7 @@ const electronAPI = {
       captureReading: (p: { kbId: string; documentId: string; chapterId?: string; chapterHash?: string; quote: string; remark: string; startOffset?: number; endOffset?: number; lensNoteId?: string }) =>
         ipcRenderer.invoke('kb:brain:capture-reading', p),
       stats: (kbId: string) => ipcRenderer.invoke('kb:brain:stats', { kbId }),
+      healthCheck: (kbId: string) => ipcRenderer.invoke('kb:brain:health-check', { kbId }),
       search: (p: { knowledgeBaseId: string; query: string; topK?: number; include?: string[]; lensNoteId?: string; intent?: string }) =>
         ipcRenderer.invoke('kb:brain:search', p),
       distill: (p: { kbId: string; documentIds?: string[] }) => ipcRenderer.invoke('kb:brain:distill', p),

@@ -125,7 +125,8 @@ describe('mergeBrainConfig（updateConfig 段级深合并）', () => {
   it('判别回归：digestion 半段 patch → scopeDocumentIds 保留（旧实现静默抹掉）', () => {
     const base = { ...defaultBrainConfig(true), digestion: { enabled: true, scopeDocumentIds: ['doc-1'] } }
     const merged = mergeBrainConfig(base, { digestion: { enabled: false } })
-    expect(merged.digestion).toEqual({ enabled: false, scopeDocumentIds: ['doc-1'] })
+    // bookPasses 是书级汇总遍开关（缺省 true）——半段 patch 不得抹掉 base 子键，也不得丢缺省键
+    expect(merged.digestion).toEqual({ enabled: false, scopeDocumentIds: ['doc-1'], bookPasses: true })
   })
 
   it('crag 半段 patch（单键即满足 schema required）→ stringify 不炸', () => {

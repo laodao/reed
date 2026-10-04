@@ -11,6 +11,8 @@ import Ajv from 'ajv'
 export interface RawAtom {
   statement: string
   type: string
+  /** 知识分层（outline/setting/describe/detail；可选，缺省 detail） */
+  layer?: string
   certainty?: number
   quote: string
   validFrom?: string
@@ -46,6 +48,7 @@ const ATOMIZE_SCHEMA = {
         properties: {
           statement: { type: 'string', minLength: 1 },
           type: { enum: ['fact', 'claim', 'concept', 'method', 'insight', 'open-question'] },
+          layer: { enum: ['outline', 'setting', 'describe', 'detail'] },
           certainty: { type: 'number', minimum: 0, maximum: 1 },
           quote: { type: 'string', minLength: 1 },
           validFrom: { type: 'string' },
@@ -166,6 +169,16 @@ export function normalizeAtomizeRaw(data: unknown): unknown {
         if (obj) item.statement = `${item.subject}${pred}${obj}`
       }
       if (item.certainty === undefined && typeof item.confidence !== 'undefined') item.certainty = item.confidence
+      // layer 非法值/null 剥离（分层是辅助维度——坏值不毁论断，落库缺省 detail；
+      // null 也是模型常见输出，穿透到 ajv enum 会炸整章重试）
+      if (item.layer !== undefined && !['outline', 'setting', 'describe', 'detail'].includes(item.layer as string)) {
+        delete item.layer
+      }
+      // type 非法值归 'fact'（真机实证：本地模型产出枚举外类型炸整章重试耗尽——
+      // 落库端本就按 isValidType 兜底 'fact'，归一层先行对齐，坏类型不毁整章）
+      if (typeof item.type !== 'string' || !['fact', 'claim', 'concept', 'method', 'insight', 'open-question'].includes(item.type)) {
+        item.type = 'fact'
+      }
       return item
     })
   }
