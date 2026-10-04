@@ -1,29 +1,22 @@
 /**
  * 日记导出服务
  * @module core/packs/diary/services/diary-export.service
+ * @description 已迁移到平台统一文档输出层 document-tools（2026-09-24 日记增强 P0-6）：
+ *              排版/模板/公式（KaTeX）与 mermaid 增强统一走 DocumentToolsService，
+ *              PDF 用平台注入的 IHtmlRenderer（Electron 隐藏窗口），Web 端自动降级报错。
+ *              严禁再在本服务内自建 marked 排版或 printToPDF 实现。
  */
 
-import type { BrowserWindow } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import { DiaryService } from '@core/platform/services/diary.service'
-import { markdownToDocx } from '@core/utils/markdown-to-docx'
+import { getDocumentTools } from '@core/platform/services/document-tools/document-tools'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import type { DiaryIpcResponse } from '@shared/types/diary.types'
 
-// 缓存 marked 模块
-let markedModule: typeof import('marked') | null = null
-
-/**
- * 动态加载 marked 模块
- */
-async function getMarked(): Promise<typeof import('marked')> {
-  if (!markedModule) {
-    markedModule = await import('marked')
-  }
-  return markedModule
-}
+/** 日记导出启用公式与 mermaid 渲染 */
+const ENHANCE = { math: true, mermaid: true } as const
 
 export class DiaryExportService {
   private diaryService: DiaryService
@@ -37,18 +30,20 @@ export class DiaryExportService {
    */
   async exportToHtml(entryId: string, outputPath?: string): Promise<DiaryIpcResponse<string>> {
     try {
-      const result = await this.diaryService.getEntry(entryId)
-      if (!result.success || !result.data) {
-        return { success: false, error: result.error || '日记不存在' }
+      const entry = await this.requireEntry(entryId)
+      if (typeof entry === 'string') {
+        return { success: false, error: entry }
       }
 
-      const entry = result.data
-      const marked = await getMarked()
-      const htmlContent = await marked.marked(entry.content || '')
-      const fullHtml = this.wrapHtml(entry.title, htmlContent)
+      const tools = getDocumentTools()
+      const html = await tools.renderHtml({
+        markdown: entry.content || '',
+        title: entry.title,
+        enhance: ENHANCE
+      })
 
       const filePath = outputPath || this.getDefaultExportPath(entry.title, 'html')
-      fs.writeFileSync(filePath, fullHtml, 'utf-8')
+      fs.writeFileSync(filePath, html, 'utf-8')
 
       return { success: true, data: filePath }
     } catch (error) {
@@ -58,70 +53,31 @@ export class DiaryExportService {
   }
 
   /**
-   * 导出为 PDF
+   * 导出为 PDF（依赖平台渲染器，仅桌面端；Web 端由 handler 预先拦截）
    */
   async exportToPdf(entryId: string, outputPath?: string): Promise<DiaryIpcResponse<string>> {
-    let pdfWindow: BrowserWindow | null = null
     try {
-      const result = await this.diaryService.getEntry(entryId)
-      if (!result.success || !result.data) {
-        return { success: false, error: result.error || '日记不存在' }
+      const entry = await this.requireEntry(entryId)
+      if (typeof entry === 'string') {
+        return { success: false, error: entry }
       }
 
-      const entry = result.data
-      const marked = await getMarked()
-      const htmlContent = await marked.marked(entry.content || '')
-      const fullHtml = this.wrapHtml(entry.title, htmlContent, true)
-
-      // 创建临时 HTML 文件
-      const tempPath = path.join(this.diaryService.getRootPath(), '.temp-export.html')
-      fs.writeFileSync(tempPath, fullHtml, 'utf-8')
-
-      // 创建隐藏窗口用于生成 PDF（运行期 require electron，避免 Web 端无 electron 时模块加载失败）
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const electron = require('electron') as typeof import('electron')
-      pdfWindow = new electron.BrowserWindow({
-        width: 800,
-        height: 600,
-        show: false,
-        webPreferences: {
-          nodeIntegration: false,
-          contextIsolation: true
-        }
+      const tools = getDocumentTools()
+      const rendered = await tools.renderPdf({
+        markdown: entry.content || '',
+        title: entry.title,
+        enhance: ENHANCE
       })
+      if (rendered.format !== 'pdf') {
+        return { success: false, error: '当前环境无 PDF 渲染器，PDF 导出仅桌面端可用' }
+      }
 
-      // 加载 HTML 并生成 PDF
-      await pdfWindow.loadFile(tempPath)
-
-      const pdfData = await pdfWindow.webContents.printToPDF({
-        pageSize: 'A4',
-        printBackground: true,
-        margins: {
-          top: 1,
-          bottom: 1,
-          left: 1,
-          right: 1
-        }
-      })
-
-      // 关闭隐藏窗口
-      pdfWindow.close()
-      pdfWindow = null
-
-      // 清理临时文件
-      fs.unlinkSync(tempPath)
-
-      // 保存 PDF
       const filePath = outputPath || this.getDefaultExportPath(entry.title, 'pdf')
-      fs.writeFileSync(filePath, pdfData)
+      fs.writeFileSync(filePath, rendered.buffer)
 
       return { success: true, data: filePath }
     } catch (error) {
       console.error('[DiaryExportService] exportToPdf error:', error)
-      // 确保窗口被关闭
-      if (pdfWindow) {
-        pdfWindow.close()
-      }
       return { success: false, error: String(error) }
     }
   }
@@ -131,18 +87,19 @@ export class DiaryExportService {
    */
   async exportToDocx(entryId: string, outputPath?: string): Promise<DiaryIpcResponse<string>> {
     try {
-      const result = await this.diaryService.getEntry(entryId)
-      if (!result.success || !result.data) {
-        return { success: false, error: result.error || '日记不存在' }
+      const entry = await this.requireEntry(entryId)
+      if (typeof entry === 'string') {
+        return { success: false, error: entry }
       }
 
-      const entry = result.data
-      const buffer = await markdownToDocx(entry.content || '', {
+      const tools = getDocumentTools()
+      const rendered = await tools.renderDocx({
+        markdown: entry.content || '',
         title: entry.title
       })
 
       const filePath = outputPath || this.getDefaultExportPath(entry.title, 'docx')
-      fs.writeFileSync(filePath, buffer)
+      fs.writeFileSync(filePath, rendered.buffer)
 
       return { success: true, data: filePath }
     } catch (error) {
@@ -151,58 +108,13 @@ export class DiaryExportService {
     }
   }
 
-  /**
-   * 包装 HTML 内容
-   */
-  private wrapHtml(title: string, content: string, forPrint: boolean = false): string {
-    return `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title}</title>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      max-width: 800px;
-      margin: 0 auto;
-      padding: 20px;
-      line-height: 1.8;
-      color: #333;
+  /** 取日记详情；失败时返回错误消息 */
+  private async requireEntry(entryId: string) {
+    const result = await this.diaryService.getEntry(entryId)
+    if (!result.success || !result.data) {
+      return result.error || '日记不存在'
     }
-    h1, h2, h3, h4, h5, h6 {
-      margin-top: 24px;
-      margin-bottom: 16px;
-    }
-    h1:first-child {
-      margin-top: 0;
-    }
-    pre {
-      background: #f6f8fa;
-      padding: 16px;
-      border-radius: 6px;
-      overflow-x: auto;
-    }
-    code {
-      background: #f6f8fa;
-      padding: 0.2em 0.4em;
-      border-radius: 3px;
-    }
-    blockquote {
-      border-left: 4px solid #ddd;
-      padding-left: 16px;
-      color: #666;
-    }
-    img {
-      max-width: 100%;
-    }
-    ${forPrint ? '@media print { body { padding: 0; } }' : ''}
-  </style>
-</head>
-<body>
-  ${content}
-</body>
-</html>`
+    return result.data
   }
 
   /**

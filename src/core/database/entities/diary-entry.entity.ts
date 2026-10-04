@@ -40,6 +40,10 @@ export class DiaryEntryEntity {
   @Column({ name: 'frontmatter', type: 'text', nullable: true })
   frontmatter!: string | null
 
+  /** 软删除时间（NULL=未删除）。回收站依赖此列，30 天后由 purgeExpired 物理清理 */
+  @Column({ name: 'deleted_at', type: Date, nullable: true })
+  deletedAt!: Date | null
+
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 

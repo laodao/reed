@@ -178,11 +178,18 @@ describe('replaceSceneStoryboards 事务化（M1：删旧插新同事务）', ()
     if (ds.isInitialized) await ds.destroy()
   })
 
-  it('M1-a：插入中途失败（links FK 抛错）→ 整体回滚，旧分镜与旧 links 完整保留、无新分镜残留', async () => {
+  it('M1-a：插入中途失败（trigger 模拟抛错）→ 整体回滚，旧分镜与旧 links 完整保留、无新分镜残留', async () => {
+    // links 重建已过滤悬空 id（storyboard-dialogue-links 修复后悬空不再 FK 抛错），
+    // 改用 trigger 在第二条 link 插入时抛错，模拟「插入中途失败」
+    await ds.query(`
+      CREATE TRIGGER fail_link_dlg_b BEFORE INSERT ON storyboard_dialogue_links
+      WHEN NEW.dialogue_id = 'dlg_b'
+      BEGIN SELECT RAISE(FAIL, 'simulated mid-insert failure'); END
+    `)
     const output = cogenOutput([
       { dialogueIds: ['dlg_a'] },
-      // 第二镜承接悬空对白 id：links 插入触发 FK 失败，模拟「插入中途抛错」
-      { dialogueIds: ['dlg_missing'] },
+      // 第二镜的 link 插入触发 trigger 抛错，模拟「插入中途抛错」
+      { dialogueIds: ['dlg_b'] },
     ])
 
     await expect(

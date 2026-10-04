@@ -32,7 +32,6 @@ import { EpisodeScriptEntity } from '@core/database/entities/episode-production/
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
 import { SceneCharacterEntity } from '@core/database/entities/episode-production/scene-character.entity'
 import { SceneDialogueEntity } from '@core/database/entities/episode-production/scene-dialogue.entity'
-import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
 import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
 import { StoryboardRepository } from '@core/database/repositories/storyboard.repository'
 import { getCurrentUserId } from '@core/context/user-context'
@@ -45,6 +44,7 @@ import { generateCogenForScene } from '../ai/storyboard-cogen'
 import type { CogenExistingAsset, CogenOutput } from '../ai/storyboard-cogen'
 import { normalizeShotNumbers } from './storyboard.service'
 import { cleanupStoryboards } from '../storyboard-cleanup.service'
+import { insertStoryboardIn } from '../storyboard-insert'
 import { withPendingKeyframeFileDeletions } from '@core/platform/episode-production/render/keyframe/keyframe-cleanup'
 import { rebuildStoryboardDialogueLinks } from '../storyboard-dialogue-links'
 import {
@@ -860,8 +860,6 @@ export class StoryboardCogenService {
     // E1：收集器包住事务——关键帧磁盘文件在提交成功后统一删，回滚则随旧分镜一并保留
     await withPendingKeyframeFileDeletions(() => this.ds.transaction(async (manager) => {
       await cleanupStoryboards(manager, oldIds)
-      const sbRepo = manager.getRepository(StoryboardEntity)
-      const userId = getCurrentUserId()
 
       // shotNumber 按数组顺序强制重排为 1..N（与旧批量生成一致，防跳号）
       for (const shot of normalizeShotNumbers(
@@ -887,42 +885,26 @@ export class StoryboardCogenService {
           .filter((id): id is string => !!id)
 
         const dialogueIds = Array.isArray(shot.dialogueIds) ? shot.dialogueIds.filter(Boolean) : []
-        const now = new Date()
-        // 字段口径同 StoryboardRepository.create；binding 覆盖列并入首次插入（省一次 update）
-        const created = await sbRepo.save(
-          sbRepo.create({
-            id: `sb_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
-            userId,
-            sceneScriptId: sceneId,
-            shotNumber: shot.shotNumber,
-            shotType: shot.shotType,
-            cameraAngle: shot.cameraAngle,
-            cameraMovement: shot.cameraMovement,
-            movementDuration: null,
-            frameDescription: shot.frameDescription,
-            subject: shot.subject ?? null,
-            composition: shot.composition ?? null,
-            characters: characters as unknown[],
-            locationBindingIds: [locationBindingId],
-            itemBindingIds,
-            narrationId: null,
-            dialogueIds,
-            actionIds: [],
-            frameImage: null,
-            frameImageId: null,
-            videoPath: null,
-            duration: shot.duration,
-            transition: JSON.stringify({ type: 'cut', duration: 500 }),
-            transitionType: null,
-            transitionDurationMs: null,
-            transitionDirection: null,
-            transitionEasing: null,
-            transitionColor: null,
-            status: 'pending',
-            createdAt: now,
-            updatedAt: now,
-          }),
-        )
+        // binding 覆盖列并入首次插入（省一次 update）
+        const created = await insertStoryboardIn(manager, {
+          sceneScriptId: sceneId,
+          shotNumber: shot.shotNumber,
+          shotType: shot.shotType,
+          cameraAngle: shot.cameraAngle,
+          cameraMovement: shot.cameraMovement,
+          movementDuration: null,
+          frameDescription: shot.frameDescription,
+          subject: shot.subject,
+          composition: shot.composition,
+          characters: characters as unknown[],
+          locationBindingIds: [locationBindingId],
+          itemBindingIds,
+          narrationId: null,
+          dialogueIds,
+          actionIds: [],
+          duration: shot.duration,
+          transition: { type: 'cut', duration: 500 },
+        })
 
         // 一致性修复 v3（A3）：对白承接落库 storyboard_dialogue_links（字幕镜头级分配的数据源）
         await rebuildStoryboardDialogueLinks(manager, { id: created.id, dialogueIds })

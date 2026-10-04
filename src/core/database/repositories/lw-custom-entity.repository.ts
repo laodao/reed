@@ -15,7 +15,7 @@ export interface CustomEntityDto {
   name: string
   parentId: string | null
   fields: Record<string, unknown> | null
-  origin: { type: 'discussion' | 'manual' | 'extract'; cardId?: string; turns?: number[] } | null
+  origin: { type: 'discussion' | 'manual' | 'extract'; cardId?: string; turns?: number[]; libraryWorldId?: string; libraryEntryId?: string; libraryVersion?: number } | null
   createdAt: number
   updatedAt: number
 }
@@ -46,6 +46,20 @@ export class LwCustomEntityRepository extends BaseRepository<LwCustomEntityEntit
       createdAt: e.createdAt,
       updatedAt: e.updatedAt,
     }
+  }
+
+  async getById(id: string): Promise<CustomEntityDto | null> {
+    const row = await this.scoped.findOne({ id } as any)
+    return row ? this.toDto(row) : null
+  }
+
+  async getByProjectId(projectId: string): Promise<CustomEntityDto[]> {
+    const rows = await this.repo
+      .createQueryBuilder('e')
+      .where('e.project_id = :pid', { pid: projectId })
+      .orderBy('e.created_at', 'ASC')
+      .getMany()
+    return this.toDtoList(rows)
   }
 
   async getByProjectAndKind(projectId: string, kindKey: string): Promise<CustomEntityDto[]> {

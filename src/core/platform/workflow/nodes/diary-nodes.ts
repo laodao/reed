@@ -82,5 +82,105 @@ const saveDiaryNode: WorkflowNodeHandler = {
   },
 }
 
+/**
+ * collect-diary（聚合日记素材）：按时间范围拉取日记条目，聚合成 markdown 素材
+ * （标题/日期/预览），供下游 llm-chat 做周报/月报复盘。周报复盘内置流的数据面。
+ *
+ * 设计（spec 2026-09-24 日记增强 §5.1）：日期二选一——显式 startDate/endDate，
+ * 或 days=最近 N 天（缺省 7）。folderId 可选（留空 = 全部目录跨库复盘）。
+ * v1 只聚合日记正文；大脑论断/卡片段落待 P2 日记消化落地后追加。
+ */
+const collectDiaryNode: WorkflowNodeHandler = {
+  type: 'collect-diary',
+  controlKind: 'task',
+  cancellable: false,
+  outputSchema: [
+    { key: 'content', type: 'string', desc: '聚合后的 markdown 素材' },
+    { key: 'count', type: 'number', desc: '纳入的日记篇数' },
+    { key: 'from', type: 'string', desc: '实际起始时间（ISO）' },
+    { key: 'to', type: 'string', desc: '实际结束时间（ISO）' },
+  ],
+  validateConfig(config) {
+    const cfg = config as { startDate?: string; endDate?: string; days?: string }
+    const errors: string[] = []
+    const hasExplicitRange = stringifyValue(cfg.startDate).trim() !== '' || stringifyValue(cfg.endDate).trim() !== ''
+    const days = Number(stringifyValue(cfg.days))
+    if (!hasExplicitRange && (cfg.days !== undefined && (!Number.isFinite(days) || days <= 0))) {
+      errors.push('days 必须为正数（或留空用默认 7 天）')
+    }
+    return errors
+  },
+  async execute(ctx: WorkflowNodeContext) {
+    const cfg = ctx.config as {
+      startDate?: string
+      endDate?: string
+      days?: string
+      folderId?: string
+    }
+
+    // 时间窗：显式日期优先，否则最近 N 天（缺省 7）
+    const now = new Date()
+    const daysRaw = Number(stringifyValue(cfg.days).trim())
+    const days = Number.isFinite(daysRaw) && daysRaw > 0 ? daysRaw : 7
+    const startRaw = stringifyValue(cfg.startDate).trim()
+    const endRaw = stringifyValue(cfg.endDate).trim()
+
+    let from: Date
+    let to: Date
+    if (startRaw) {
+      from = new Date(startRaw)
+      if (Number.isNaN(from.getTime())) {
+        return { status: 'failed', error: `startDate 无法解析：${startRaw}` }
+      }
+    } else {
+      from = new Date(now.getTime() - days * 24 * 60 * 60 * 1000)
+    }
+    if (endRaw) {
+      to = new Date(endRaw)
+      if (Number.isNaN(to.getTime())) {
+        return { status: 'failed', error: `endDate 无法解析：${endRaw}` }
+      }
+      to = new Date(to.getTime() + 24 * 60 * 60 * 1000 - 1) // 含当天全天
+    } else {
+      to = now
+    }
+
+    const service = new DiaryService()
+    const folderId = stringifyValue(cfg.folderId).trim() || undefined
+    const resp = await service.getEntriesByDateRange(from.toISOString(), to.toISOString(), folderId)
+    if (!resp.success) {
+      return { status: 'failed', error: resp.error ?? '拉取日记失败' }
+    }
+
+    const entries = resp.data ?? []
+    // 防爆量：最多 200 篇 / 素材总长 30000 字符（预览已截 200 字，正常远小于上限）
+    const selected = entries.slice(0, 200)
+    const sections: string[] = []
+    let totalChars = 0
+    for (const e of selected) {
+      const date = new Date(e.createdAt)
+      const dateLabel = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+      const tags = (e.tags ?? []).length > 0 ? `（标签：${(e.tags ?? []).join('、')}）` : ''
+      const section = `### ${dateLabel} ${e.title}${tags}\n${(e.preview || '').trim() || '（无正文）'}`
+      if (totalChars + section.length > 30000) break
+      sections.push(section)
+      totalChars += section.length
+    }
+
+    const header = `# 复盘素材（${new Date(from)} ~ ${new Date(to)}，共 ${entries.length} 篇）`
+    const content = sections.length > 0 ? `${header}\n\n${sections.join('\n\n')}\n` : `${header}\n\n（该时段没有日记）\n`
+
+    return {
+      status: 'succeeded',
+      output: {
+        content,
+        count: sections.length,
+        from: from.toISOString(),
+        to: to.toISOString(),
+      },
+    }
+  },
+}
+
 /** 日记节点集合 */
-export const DIARY_NODE_HANDLERS: WorkflowNodeHandler[] = [saveDiaryNode]
+export const DIARY_NODE_HANDLERS: WorkflowNodeHandler[] = [saveDiaryNode, collectDiaryNode]

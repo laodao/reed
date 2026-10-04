@@ -30,6 +30,7 @@ export class DiaryFolderRepository extends BaseRepository<
       parentId: e.parentId || undefined,
       path: e.path,
       sortOrder: e.sortOrder,
+      brainOptIn: !!e.brainOptIn,
       childCount: 0,
       entryCount: 0,
       createdAt: e.createdAt instanceof Date ? e.createdAt : new Date(e.createdAt),
@@ -181,6 +182,7 @@ export class DiaryFolderRepository extends BaseRepository<
       parentId: request.parentId ?? null,
       path: fullPath,
       sortOrder: 0,
+      brainOptIn: false,
       createdAt: now,
       updatedAt: now,
     })
@@ -207,6 +209,10 @@ export class DiaryFolderRepository extends BaseRepository<
     }
     if (request.sortOrder !== undefined) {
       existing.sortOrder = request.sortOrder
+      changed = true
+    }
+    if (request.brainOptIn !== undefined) {
+      existing.brainOptIn = request.brainOptIn
       changed = true
     }
     if (newPath !== undefined) {

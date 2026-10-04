@@ -1890,6 +1890,17 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
     // 新增：构建背景设定上下文
     const backgroundContext = this.buildBackgroundContext(background)
 
+    // 设定资产库（2026-09-24 P0）：体系/规则类设定活引用直注入（预算 longwriting.worldContextMaxTokens）
+    let worldLibraryContext = ''
+    try {
+      const { buildWorldLibraryContext } = await import('@core/platform/services/longwriting/library/library-context')
+      // 2c 触发式注入扫描窗口：本章大纲 + 设计卡 + 上一章结尾（命中条目名/别名才注入，命中清单随文本可见）
+      const scanText = [outline.summary, prewrite?.content, previousChapterEnding].filter(Boolean).join('\n')
+      worldLibraryContext = await buildWorldLibraryContext(projectId, scanText)
+    } catch (e: any) {
+      console.warn('[longwriting] 世界观库上下文构建失败（不影响生成）:', e?.message || e)
+    }
+
     // 新增：计算故事进度阶段
     const totalChapters = overview?.estimatedChapters || 30
     const progressStage = this.calculateStoryProgressStage(chapterNumber, totalChapters)
@@ -2037,6 +2048,7 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
     const items: ChapterContextItem[] = [
       { id: 'overview', sectionKey: 'overview', title: '故事宏观背景', text: overviewText, tokens: estimateContextTokens(overviewText), defaultChecked: true },
       { id: 'background', sectionKey: 'background', title: '世界观设定', text: backgroundContext || '', tokens: estimateContextTokens(backgroundContext || ''), defaultChecked: !!backgroundContext },
+      ...(worldLibraryContext ? [{ id: 'worldLibrary' as const, sectionKey: 'background' as const, title: '世界观库', text: worldLibraryContext, tokens: estimateContextTokens(worldLibraryContext), defaultChecked: true }] : []),
       ...characterItems,
       ...locationItems,
       { id: 'prevEnding', sectionKey: 'prevChapters', title: '上一章结尾', text: prevEndingText, tokens: estimateContextTokens(prevEndingText), defaultChecked: true },

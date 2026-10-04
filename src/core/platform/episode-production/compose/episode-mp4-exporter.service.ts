@@ -231,7 +231,12 @@ export class EpisodeMp4ExporterService {
     // 字幕（可选烧入）
     let srtPath: string | undefined
     if (input.burnSubtitles) {
-      const srt = await this.subtitleSvc.buildSrt(timeline)
+      // D1 修复：烧录字幕的时间基准必须与成片时间轴一致——基于导出单元
+      // （入选合成单元 + segment 实际时长）按 xfade 重叠扣减重建时间轴，
+      // 与 buildFilterComplex 的 offset 计算同源；全量展示时间线只给 UI 预览用
+      const srt = await this.subtitleSvc.buildSrt(
+        buildExportSubtitleTimeline({ units: exportShots, unitShotIds, timeline }),
+      )
       if (srt.trim()) {
         const tmp =
           this.fileWriter.getTempPath?.(`.srt`) ??
@@ -372,8 +377,9 @@ export class EpisodeMp4ExporterService {
 
   /**
    * 收集每个导出单元的配音音频文件（2026-09-16 P0-CM1）：
+   *   - 旁白：scene.narrationAudioPath 挂到该场景的**首个**入选单元，
+   *     且排在单元内对白之前（D3：与字幕侧"旁白显示在首镜最前"顺序一致）
    *   - 对白：单元内各分镜 dialogueIds ∩ scene.dialogues[].audioAsset.audioPath
-   *   - 旁白：scene.narrationAudioPath 挂到该场景的**首个**入选单元
    * 无任何配音的单元返回空数组（该单元只保留视频自带音轨/静音占位）。
    */
   private async collectUnitAudioFiles(
@@ -402,18 +408,18 @@ export class EpisodeMp4ExporterService {
         const dialogues = ((scene?.dialogues ?? []) as Array<{ id?: string; audioAsset?: { audioPath?: string } }>)
         const files: string[] = []
 
+        // 旁白挂场景首个入选单元（D3 修复：排在单元内对白**之前**——字幕侧旁白
+        // 显示在首镜最前 NARRATION_LEAD_SEC 秒，音频顺序与字幕保持一致）
+        if (scene && (scene as any).narrationAudioPath && !narrationAttached.has(scene.id)) {
+          narrationAttached.add(scene.id)
+          files.push(String((scene as any).narrationAudioPath))
+        }
+
         for (const sid of shotIds) {
           for (const did of dialogueIdsBySb.get(sid) ?? []) {
             const d = dialogues.find((x) => x?.id === did)
             if (d?.audioAsset?.audioPath) files.push(d.audioAsset.audioPath)
           }
-        }
-
-        // 旁白挂场景首个入选单元（顺序播语义 0916 review：排在单元内对白**之后**——
-        // 数据无时间戳，唯一可保证的下界是"不重叠"：对白（dialogueIds 顺序）→ 旁白）
-        if (scene && (scene as any).narrationAudioPath && !narrationAttached.has(scene.id)) {
-          narrationAttached.add(scene.id)
-          files.push(String((scene as any).narrationAudioPath))
         }
 
         result[i] = files
@@ -495,6 +501,104 @@ export class EpisodeMp4ExporterService {
 }
 
 // ─── pure helpers（导出供单测）─────────────────────────────
+
+/**
+ * 逐导出单元计算其在**成片时间轴**上的区间（D1 修复）。
+ * 与 buildFilterComplex 的 xfade offset 计算同源：单元 i 的起点 =
+ * max(0, cumulativeDur(i-1) - transition.duration(i))，cumulativeDur 按
+ * 「+ 单元时长 − 转场时长」递推；cut/无转场时扣减为 0。
+ */
+export function computeExportUnitTimes(
+  shots: TimelineShot[],
+): Array<{ startSec: number; endSec: number }> {
+  const times: Array<{ startSec: number; endSec: number }> = []
+  let cumulativeDur = 0
+  for (let i = 0; i < shots.length; i++) {
+    if (i === 0) {
+      times.push({ startSec: 0, endSec: shots[0].durationSec })
+      cumulativeDur = shots[0].durationSec
+      continue
+    }
+    const transition = shots[i].transition
+    const plan: FfmpegTransitionPlan | null = transition
+      ? toFfmpegTransition(transition)
+      : null
+    const dur = plan?.durationSec ?? 0
+    const startSec = Math.max(0, cumulativeDur - dur)
+    times.push({ startSec, endSec: startSec + shots[i].durationSec })
+    cumulativeDur = cumulativeDur + shots[i].durationSec - dur // xfade 重叠
+  }
+  return times
+}
+
+/**
+ * 以导出单元为骨架重建字幕用 Timeline（D1 修复）：
+ *   - 只保留进入导出单元的分镜（未入选 / superseded 片段的分镜剔除——其字幕不进 SRT）；
+ *   - 每个分镜的时间区间换成成片时间轴（computeExportUnitTimes，含转场重叠扣减）；
+ *   - 多镜合并的 segment 单元按成员分镜原始 durationSec 比例切分单元区间
+ *     （段内画面连续，按比例近似各镜子区间，使 links/均分分配逻辑原样生效）；
+ *   - 场景边界由剩余 shots 重算，场景首镜 = 首个入选分镜（与音频侧"旁白挂场景
+ *     首个入选单元"对齐）；totalDurationSec = 末单元终点。
+ * TimelineBuilder 的展示时间线本身不动（UI 预览仍用它）。
+ */
+export function buildExportSubtitleTimeline(args: {
+  units: TimelineShot[]
+  unitShotIds: string[][] | null
+  timeline: Timeline
+}): Timeline {
+  const { units, unitShotIds, timeline } = args
+  const times = computeExportUnitTimes(units)
+
+  // 原始分镜时长表（合并单元内比例切分用）
+  const origShotById = new Map<string, TimelineShot>()
+  for (const scene of timeline.scenes) {
+    for (const shot of scene.shots) origShotById.set(shot.storyboardId, shot)
+  }
+
+  const shotTimeMap = new Map<string, { startSec: number; endSec: number; durationSec: number }>()
+  for (let i = 0; i < units.length; i++) {
+    const memberIds = unitShotIds ? unitShotIds[i] : [units[i].storyboardId]
+    const unitTime = times[i]
+    if (!unitTime || memberIds.length === 0) continue
+    if (memberIds.length === 1) {
+      shotTimeMap.set(memberIds[0], { ...unitTime, durationSec: units[i].durationSec })
+      continue
+    }
+    const origDurs = memberIds.map((id) => origShotById.get(id)?.durationSec ?? 0)
+    const totalOrig = origDurs.reduce((a, b) => a + b, 0)
+    let cursor = unitTime.startSec
+    for (let j = 0; j < memberIds.length; j++) {
+      const share =
+        totalOrig > 0
+          ? (origDurs[j] / totalOrig) * units[i].durationSec
+          : units[i].durationSec / memberIds.length
+      shotTimeMap.set(memberIds[j], {
+        startSec: cursor,
+        endSec: cursor + share,
+        durationSec: share,
+      })
+      cursor += share
+    }
+  }
+
+  const scenes = timeline.scenes
+    .map((scene) => {
+      const shots = scene.shots
+        .filter((s) => shotTimeMap.has(s.storyboardId))
+        .map((s) => ({ ...s, ...shotTimeMap.get(s.storyboardId)! }))
+      if (shots.length === 0) return null
+      const startSec = shots[0].startSec
+      const endSec = shots[shots.length - 1].endSec
+      return { ...scene, shots, startSec, endSec, durationSec: endSec - startSec }
+    })
+    .filter((s): s is NonNullable<typeof s> => s !== null)
+
+  return {
+    ...timeline,
+    scenes,
+    totalDurationSec: times.length > 0 ? times[times.length - 1].endSec : 0,
+  }
+}
 
 /**
  * 构造 ffmpeg filter_complex：
@@ -582,7 +686,7 @@ export function buildFilterComplex(args: {
   //      写死 44.1k，与真实 48k 音轨进同一 concat 滤镜图必败（混合 provider 场景必现）；
   //    - 每单元混音后 apad+atrim 到「时长 − 与下一段的重叠」，与 xfade 视频时间轴严格对齐
   //      （旧实现音频全长 concat，视频逐转场扣减，每个 0.5s 转场累积 0.5s 音画漂移）；
-  //    - 单元内多路人声（对白×N + 旁白）**先按顺序 concat 成一条人声轨**再与视频音轨
+  //    - 单元内多路人声（旁白 + 对白×N，顺序与字幕显示一致）**先按顺序 concat 成一条人声轨**再与视频音轨
   //      amix（旧实现全部从 t=0 同时 amix——多条 TTS 人声叠音、旁白与对白互相压）；
   //      数据无对话时间戳，顺序播是可保证的下界：超出单元时长的部分仍被 atrim 截断。
   //    - P-D 响度归一防爆音：每路音源 aresample 后追加 loudnorm（I=-16/TP=-1.5/LRA=11，

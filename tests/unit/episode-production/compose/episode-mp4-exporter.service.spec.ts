@@ -28,10 +28,12 @@ import {
   buildFilterComplex,
   buildSilentInputSpecs,
   buildOutputArgs,
+  computeExportUnitTimes,
+  buildExportSubtitleTimeline,
   type FfmpegRunner,
   type FileWriter,
 } from '@core/platform/episode-production/compose/episode-mp4-exporter.service'
-import type { TimelineShot } from '@core/platform/episode-production/compose/timeline-builder.service'
+import type { Timeline, TimelineShot } from '@core/platform/episode-production/compose/timeline-builder.service'
 import { registerPathProvider, type IPathProvider } from '@core/interfaces/path.interface'
 
 /** 最小 path provider stub（成功回写要算 user-rel 路径） */
@@ -179,6 +181,77 @@ function makeMockFileWriter(): FileWriter & {
     delete: vi.fn(async () => undefined),
     getTempPath: (suffix: string) => `/tmp/test_subtitle${suffix}`,
   } as any
+}
+
+/**
+ * D1/D3 用播种：单场景 2 镜各 4s（sb2 dissolve 500ms），场景 2 条对白
+ * （无 links 表 → 字幕走均分：sb1←d1，sb2←d2），无旁白文本。
+ */
+async function seedTwoShotDialogue(ds: DataSource): Promise<void> {
+  await ds.getRepository(SceneScriptEntity).save({
+    id: 's1',
+    episodeScriptId: 'es1',
+    sceneNumber: 1,
+    location: '茶馆',
+    locationBindingId: null,
+    locationType: 'interior',
+    timeOfDay: 'morning',
+    weather: null,
+    sceneDescription: '',
+    mood: null,
+    lighting: null,
+    characters: null,
+    originalText: '',
+    narration: null,
+    dialogues: [
+      { id: 'd1', text: '第一句台词', characterName: '张三' },
+      { id: 'd2', text: '第二句台词', characterName: '李四' },
+    ],
+    actions: [],
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  } as any)
+  const shot = (id: string, shotNumber: number, extra: Record<string, unknown> = {}) => ({
+    id,
+    sceneScriptId: 's1',
+    shotNumber,
+    shotType: 'medium',
+    cameraAngle: 'eye_level',
+    cameraMovement: 'static',
+    movementDuration: null,
+    frameDescription: '',
+    subject: null,
+    composition: null,
+    characters: null,
+    narrationId: null,
+    dialogueIds: [],
+    actionIds: [],
+    frameImage: null,
+    frameImageId: null,
+    videoPath: `/tmp/${id}.mp4`,
+    duration: 4,
+    transition: '{}',
+    transitionType: null,
+    transitionDurationMs: null,
+    transitionDirection: null,
+    transitionEasing: null,
+    transitionColor: null,
+    status: 'pending',
+    keyframeCount: 2,
+    videoProviderId: null,
+    videoModelId: null,
+    videoMode: null,
+    use3dStaging: 0,
+    stagingLayoutId: null,
+    backgroundRefImageId: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...extra,
+  })
+  await ds.getRepository(StoryboardEntity).save([
+    shot('sb1', 1),
+    shot('sb2', 2, { transitionType: 'dissolve', transitionDurationMs: 500 }),
+  ] as any)
 }
 
 describe('EpisodeMp4ExporterService', () => {
@@ -375,6 +448,85 @@ describe('EpisodeMp4ExporterService', () => {
       fs.unlinkSync(realWav)
     }
   })
+
+  // ==================== D1：烧录字幕时间轴与成片对齐 ====================
+
+  it('D1：有转场时字幕 cue 按扣减后的成片时间轴（dissolve 0.5s → 第 2 镜对白 3.5s 起，修复前漂移 0.5s）', async () => {
+    await seedTwoShotDialogue(ds)
+    const runner = makeMockRunner()
+    const writer = makeMockFileWriter()
+    const svc = new EpisodeMp4ExporterService(ds, runner, writer)
+
+    await svc.exportEpisodeToMp4({
+      episodeScriptId: 'es1',
+      outputPath: '/tmp/out.mp4',
+      burnSubtitles: true,
+    })
+
+    const srt = writer.writeText.mock.calls[0][1] as string
+    // sb2（4s 起）前有 dissolve 0.5s → 成片时间轴上 3.5s 起、7.5s 止；
+    // 修复前基于全量展示时间线是 00:00:04,000 --> 00:00:08,000（每转场漂 ~0.5s）
+    expect(srt).toContain('00:00:03,500 --> 00:00:07,500\n李四：第二句台词')
+    expect(srt).not.toContain('00:00:04,000 --> 00:00:08,000')
+    // 第 1 镜对白不受影响
+    expect(srt).toContain('00:00:00,000 --> 00:00:04,000\n张三：第一句台词')
+  })
+
+  it('D1：未入选镜头（includeInFinal=0）的字幕不进 SRT', async () => {
+    await seedTwoShotDialogue(ds)
+    await ds.getRepository(StoryboardEntity).update({ id: 'sb2' }, { includeInFinal: 0 } as any)
+    const runner = makeMockRunner()
+    const writer = makeMockFileWriter()
+    const svc = new EpisodeMp4ExporterService(ds, runner, writer)
+
+    await svc.exportEpisodeToMp4({
+      episodeScriptId: 'es1',
+      outputPath: '/tmp/out.mp4',
+      burnSubtitles: true,
+    })
+
+    const srt = writer.writeText.mock.calls[0][1] as string
+    expect(srt).toContain('张三：第一句台词')
+    expect(srt).not.toContain('第二句台词')
+    // 成片只有 sb1 一路输入
+    expect(runner.run.mock.calls[0][0].inputs).toEqual(['/tmp/sb1.mp4'])
+  })
+
+  // ==================== D3：旁白音频排在单元内对白之前 ====================
+
+  it('D3：旁白音频排在单元内对白之前（与字幕侧"旁白显示在最前"一致）', async () => {
+    await seedTwoShotDialogue(ds)
+    const narrationWav = nodePath.join(os.tmpdir(), `ep-export-narr-${Date.now()}.wav`)
+    const dialogueWav = nodePath.join(os.tmpdir(), `ep-export-dlg-${Date.now()}.wav`)
+    fs.writeFileSync(narrationWav, 'fake')
+    fs.writeFileSync(dialogueWav, 'fake')
+    try {
+      await ds.getRepository(SceneScriptEntity).update({ id: 's1' } as any, {
+        narrationAudioPath: narrationWav,
+        dialogues: [
+          { id: 'd1', text: '第一句台词', characterName: '张三', audioAsset: { audioPath: dialogueWav } },
+          { id: 'd2', text: '第二句台词', characterName: '李四' },
+        ],
+      } as any)
+      await ds.getRepository(StoryboardEntity).update({ id: 'sb1' }, { dialogueIds: ['d1'] } as any)
+
+      const runner = makeMockRunner()
+      const svc = new EpisodeMp4ExporterService(ds, runner, makeMockFileWriter())
+      await svc.exportEpisodeToMp4({ episodeScriptId: 'es1', outputPath: '/tmp/out.mp4' })
+
+      // 物理输入顺序：视频(0,1) → 旁白(2) → 对白(3)；修复前旁白排在对白之后
+      const inputs = runner.run.mock.calls[0][0].inputs
+      expect(inputs).toEqual(['/tmp/sb1.mp4', '/tmp/sb2.mp4', narrationWav, dialogueWav])
+      // 人声 concat 顺序：旁白是单元 0 的第 1 路人声（[2:a]→[vs0_0]），对白是第 2 路
+      const fc = runner.run.mock.calls[0][0].filterComplex as string
+      expect(fc).toContain('[2:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000,loudnorm=I=-16:TP=-1.5:LRA=11[vs0_0]')
+      expect(fc).toContain('[3:a]aformat=sample_fmts=fltp:channel_layouts=stereo,aresample=48000,loudnorm=I=-16:TP=-1.5:LRA=11[vs0_1]')
+      expect(fc).toContain('[vs0_0][vs0_1]concat=n=2:v=0:a=1[vn0]')
+    } finally {
+      fs.unlinkSync(narrationWav)
+      fs.unlinkSync(dialogueWav)
+    }
+  })
 })
 
 describe('buildFilterComplex (pure)', () => {
@@ -555,5 +707,86 @@ describe('buildOutputArgs', () => {
     expect(args.includes('aac')).toBe(true)
     expect(args.includes('yuv420p')).toBe(true)
     expect(args.some((a) => a.includes('faststart'))).toBe(true)
+  })
+})
+
+describe('computeExportUnitTimes / buildExportSubtitleTimeline (D1 pure)', () => {
+  function makeShot(overrides: Partial<TimelineShot> = {}): TimelineShot {
+    return {
+      storyboardId: 'sb',
+      sceneId: 's1',
+      shotNumber: 1,
+      startSec: 0,
+      endSec: 3,
+      durationSec: 3,
+      videoPath: '/v.mp4',
+      transition: null,
+      includeInFinal: true,
+      segmentId: null,
+      ...overrides,
+    }
+  }
+
+  it('无转场 / cut：单元紧挨排列，不扣减', () => {
+    const times = computeExportUnitTimes([
+      makeShot({ storyboardId: 'sb1', durationSec: 4 }),
+      makeShot({ storyboardId: 'sb2', durationSec: 4, transition: { type: 'cut', duration: 0 } }),
+    ])
+    expect(times).toEqual([
+      { startSec: 0, endSec: 4 },
+      { startSec: 4, endSec: 8 },
+    ])
+  })
+
+  it('非 cut 转场链：offset = cumulativeDur - transition.duration（与 buildFilterComplex 同源）', () => {
+    const times = computeExportUnitTimes([
+      makeShot({ storyboardId: 'sb1', durationSec: 4 }),
+      makeShot({ storyboardId: 'sb2', durationSec: 4, transition: { type: 'dissolve', duration: 500 } }),
+      makeShot({ storyboardId: 'sb3', durationSec: 4, transition: { type: 'fade', duration: 1000 } }),
+    ])
+    // buildFilterComplex 对应 xfade offset=3.5 / offset=6.5
+    expect(times).toEqual([
+      { startSec: 0, endSec: 4 },
+      { startSec: 3.5, endSec: 7.5 },
+      { startSec: 6.5, endSec: 10.5 },
+    ])
+  })
+
+  it('segment 合并单元：单元区间按成员原始时长比例切分；未进单元的分镜被剔除', () => {
+    const sb1 = makeShot({ storyboardId: 'sb1', shotNumber: 1, startSec: 0, endSec: 3, segmentId: 'seg1' })
+    const sb2 = makeShot({ storyboardId: 'sb2', shotNumber: 2, startSec: 3, endSec: 6, segmentId: 'seg1' })
+    const sb3 = makeShot({
+      storyboardId: 'sb3', shotNumber: 3, startSec: 6, endSec: 9,
+      transition: { type: 'dissolve', duration: 500 },
+    })
+    const sb4 = makeShot({ storyboardId: 'sb4', shotNumber: 4, startSec: 9, endSec: 12, includeInFinal: false })
+    const timeline: Timeline = {
+      episodeScriptId: 'es1',
+      totalDurationSec: 12,
+      missingVideoStoryboardIds: [],
+      scenes: [{
+        sceneId: 's1', sceneNumber: 1, startSec: 0, endSec: 12, durationSec: 12,
+        shots: [sb1, sb2, sb3, sb4],
+      }],
+    }
+    // 导出单元：seg1（sb1+sb2 合并，segment.duration=8）+ sb3 单镜
+    const units: TimelineShot[] = [
+      { ...sb1, storyboardId: 'seg1', durationSec: 8, endSec: 8 },
+      { ...sb3 },
+    ]
+    const sub = buildExportSubtitleTimeline({ units, unitShotIds: [['sb1', 'sb2'], ['sb3']], timeline })
+
+    expect(sub.scenes).toHaveLength(1)
+    const shots = sub.scenes[0].shots
+    // sb4 未入选 → 剔除
+    expect(shots.map((s) => s.storyboardId)).toEqual(['sb1', 'sb2', 'sb3'])
+    // seg1 单元 [0,8] 按 3:3 比例切分
+    expect(shots[0]).toMatchObject({ startSec: 0, endSec: 4, durationSec: 4 })
+    expect(shots[1]).toMatchObject({ startSec: 4, endSec: 8, durationSec: 4 })
+    // sb3 扣转场 0.5s 后 7.5s 起
+    expect(shots[2]).toMatchObject({ startSec: 7.5, endSec: 10.5, durationSec: 3 })
+    // 场景边界与总时长按成片时间轴重算
+    expect(sub.scenes[0]).toMatchObject({ startSec: 0, endSec: 10.5, durationSec: 10.5 })
+    expect(sub.totalDurationSec).toBe(10.5)
   })
 })

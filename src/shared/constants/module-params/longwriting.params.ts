@@ -105,6 +105,17 @@ export const LONGWRITING_PARAMS: ModuleParamDefinition = {
           ceiling: L.writing.minorMemoryLimit,
           step: 5,
         },
+
+        {
+          kind: 'number',
+          path: 'worldContextMaxTokens',
+          label: '世界观库注入预算',
+          hint: '绑定了世界观库时，体系/规则类常驻设定注入正文的 token 预算；0 为关闭库注入',
+          unit: 'Tokens',
+          default: D.writing.worldContextMaxTokens,
+          ceiling: L.writing.worldContextMaxTokens,
+          step: 500,
+        },
       ],
     },
     {

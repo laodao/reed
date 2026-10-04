@@ -66,6 +66,8 @@ import { createPortraitPromptTemplates } from '@core/database/migrations/create-
 import { PortraitTemplateSeederService } from '@core/platform/services/portrait-template-seeder.service'
 import { addStoryboardKeyframeCount } from '@core/database/migrations/add-storyboard-keyframe-count'
 import { addKbDocumentSource } from '@core/database/migrations/add-kb-document-source'
+import { addDiaryDeletedAt } from '@core/database/migrations/add-diary-deleted-at'
+import { addDiaryFolderBrainOptIn } from '@core/database/migrations/add-diary-folder-brain-opt-in'
 import { addKeyframeReferenceOverrides } from '@core/database/migrations/add-keyframe-reference-overrides'
 import { addStoryboardUseKeyframes } from '@core/database/migrations/add-storyboard-use-keyframes'
 import { addStoryboardIncludeInFinal } from '@core/database/migrations/add-storyboard-include-in-final'
@@ -317,6 +319,10 @@ async function initDatabase(): Promise<void> {
   await addStoryboardKeyframeCount(ds)
   // 知识库文档来源字段
   await addKbDocumentSource(ds)
+  // 日记软删除列（spec 2026-09-24 日记增强 P0-1）：回收站依赖
+  await addDiaryDeletedAt(ds)
+  // 日记目录 brain_opt_in（spec 2026-09-24 日记增强 P2-1）：日记消化 opt-in 红线
+  await addDiaryFolderBrainOptIn(ds)
   // 关键帧 reference_overrides：用户精细挑图覆盖
   await addKeyframeReferenceOverrides(ds)
   // 分镜 use_keyframes：是否走关键帧流程（false → 直接用剧本描述 + 资产生成视频）
@@ -403,6 +409,12 @@ async function initDatabase(): Promise<void> {
   // 设定集动态分组两表 + 人物别名列（P0-2026-09-09）
   const { createBibleTables } = await import('@core/database/migrations/create-bible-tables')
   await createBibleTables(ds)
+
+  // 设定资产库：世界观库 + 角色 IP 库 8 表 + 既有实体血缘列（2026-09-24 P0；与 Electron 端同构）
+  const { createLwLibraryTables } = await import(
+    '@core/database/migrations/create-lw-library-tables'
+  )
+  await createLwLibraryTables(ds)
 
   // Run Journal（11 号 §4.1 E1）：运行事件日志（与 Electron 端同构）
   const { createWorkflowRunEvents } = await import(

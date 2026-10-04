@@ -1,0 +1,1262 @@
+diff --git a/src/core/packs/episode-production/handlers/narrative/storyboard.handler.ts b/src/core/packs/episode-production/handlers/narrative/storyboard.handler.ts
+index 943fac92..c99ad93f 100644
+--- a/src/core/packs/episode-production/handlers/narrative/storyboard.handler.ts
++++ b/src/core/packs/episode-production/handlers/narrative/storyboard.handler.ts
+@@ -8,14 +8,13 @@
+ import { ipcBridge } from '@core/ipc/bridge-adapter'
+ import { getBrowserWindowFromEvent } from '@electron/ipc/handlers/_platform'
+ import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+-import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
+-import { getCurrentUserId } from '@core/context/user-context'
+ import type { IpcResponse } from '@shared/types/ipc.types'
+ import type { Storyboard } from '@shared/types/story-to-video.types'
+ import { StoryToVideoAIService } from '@core/packs/episode-production/services/story-to-video-ai.service'
+ import { StoryboardService, normalizeShotNumbers, collectUnboundCharacters } from '@core/platform/episode-production/narrative/services/storyboard.service'
+ import { StoryboardCogenService } from '@core/platform/episode-production/narrative/services/storyboard-cogen.service'
+ import { cleanupStoryboards } from '@core/platform/episode-production/narrative/storyboard-cleanup.service'
++import { insertStoryboardIn } from '@core/platform/episode-production/narrative/storyboard-insert'
+ import { withPendingKeyframeFileDeletions } from '@core/platform/episode-production/render/keyframe/keyframe-cleanup'
+ import { rebuildStoryboardDialogueLinks } from '@core/platform/episode-production/narrative/storyboard-dialogue-links'
+ 
+@@ -299,47 +298,28 @@ async function handleGenerateStoryboard(
+     const oldStoryboards = await db.storyboards.getBySceneScriptId(sceneId)
+     await withPendingKeyframeFileDeletions(() => db.dataSource!.transaction(async (manager) => {
+       await cleanupStoryboards(manager, oldStoryboards.map((sb) => sb.id))
+-      const sbRepo = manager.getRepository(StoryboardEntity)
+-      const userId = getCurrentUserId()
+ 
+       for (const sb of shots) {
+         // 调试日志
+         console.log(`[Handler] 分镜 ${sb.shotNumber} dialogueIds:`, sb.dialogueIds)
+ 
+-        const now = new Date()
+-        // 字段口径同 StoryboardRepository.create
+-        const storyboard = await sbRepo.save(
+-          sbRepo.create({
+-            id: `sb_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+-            userId,
+-            sceneScriptId: sceneId,
+-            shotNumber: sb.shotNumber,
+-            shotType: sb.shotType,
+-            cameraAngle: sb.cameraAngle,
+-            cameraMovement: sb.cameraMovement,
+-            movementDuration: sb.movementDuration ?? null,
+-            frameDescription: sb.frameDescription,
+-            subject: sb.subject ?? null,
+-            composition: sb.composition ?? null,
+-            characters: sb.characters as unknown[],
+-            narrationId: sb.narrationId ?? null,
+-            dialogueIds: sb.dialogueIds,
+-            actionIds: sb.actionIds,
+-            frameImage: null,
+-            frameImageId: null,
+-            videoPath: null,
+-            duration: sb.duration,
+-            transition: JSON.stringify(sb.transition),
+-            transitionType: null,
+-            transitionDurationMs: null,
+-            transitionDirection: null,
+-            transitionEasing: null,
+-            transitionColor: null,
+-            status: 'pending',
+-            createdAt: now,
+-            updatedAt: now,
+-          }),
+-        )
++        const storyboard = await insertStoryboardIn(manager, {
++          sceneScriptId: sceneId,
++          shotNumber: sb.shotNumber,
++          shotType: sb.shotType,
++          cameraAngle: sb.cameraAngle,
++          cameraMovement: sb.cameraMovement,
++          movementDuration: sb.movementDuration,
++          frameDescription: sb.frameDescription,
++          subject: sb.subject,
++          composition: sb.composition,
++          characters: sb.characters as unknown[],
++          narrationId: sb.narrationId,
++          dialogueIds: sb.dialogueIds,
++          actionIds: sb.actionIds,
++          duration: sb.duration,
++          transition: sb.transition,
++        })
+ 
+         // 一致性修复 v3（A3）：对白承接落库 links（字幕镜头级分配数据源）
+         await rebuildStoryboardDialogueLinks(manager, {
+@@ -415,6 +395,14 @@ async function handleGenerateStoryboards(
+     const allStoryboards: Storyboard[] = []
+     // S1 同型缺陷守卫：AI 空结果的场景跳过删建、保留旧分镜（单场景空结果不让整批失败）
+     const skippedScenes: string[] = []
++    /*
++     * 一致性修复第三批 Task 2：与单场景路径同构——per-scene 单事务（删旧 + 插新
++     * + links），中途失败该场景整体回滚（旧分镜完整保留）、计入 failedScenes，
++     * 不影响其他场景；不再静默吞 links 错误（旧 .catch(() => {})）。失败语义：
++     * B3-Task1 后 rebuild 已过滤悬空 id（不再因悬空 id FK 抛错），真正失败源是
++     * DB 错误/触发器等，出现即表面化。
++     */
++    const failedScenes: Array<{ sceneId: string; error: string }> = []
+     for (const [sceneId, result] of results) {
+       const shots = normalizeShotNumbers(result.storyboards)
+       if (shots.length === 0) {
+@@ -423,36 +411,62 @@ async function handleGenerateStoryboards(
+         continue
+       }
+ 
+-      // 删除该场景的旧分镜（P2-14：级联清关键帧/图，受影响片段置 superseded）
++      // 旧分镜 id 列表只读，在事务外读取（串行门不拦）
++      // E1：收集器包住事务——旧分镜关键帧磁盘文件在提交成功后统一删，回滚则随旧分镜一并保留
+       const oldStoryboards = await db.storyboards.getBySceneScriptId(sceneId)
+-      await cleanupStoryboards(db.dataSource!, oldStoryboards.map(sb => sb.id))
++      try {
++        await withPendingKeyframeFileDeletions(() => db.dataSource!.transaction(async (manager) => {
++          await cleanupStoryboards(manager, oldStoryboards.map((sb) => sb.id))
++
++          // 创建新分镜（shotNumber 按 AI 返回顺序强制重排为 1..N，AI 返回可能跳号）
++          for (const sb of shots) {
++            const storyboard = await insertStoryboardIn(manager, {
++              sceneScriptId: sceneId,
++              shotNumber: sb.shotNumber,
++              shotType: sb.shotType,
++              cameraAngle: sb.cameraAngle,
++              cameraMovement: sb.cameraMovement,
++              movementDuration: sb.movementDuration,
++              frameDescription: sb.frameDescription,
++              subject: sb.subject,
++              composition: sb.composition,
++              characters: sb.characters as unknown[],
++              narrationId: sb.narrationId,
++              dialogueIds: sb.dialogueIds,
++              actionIds: sb.actionIds,
++              duration: sb.duration,
++              transition: sb.transition,
++            })
++
++            // 一致性修复 C1：批量路径同样落库对白承接 links（与单场景路径同口径，
++            // 失败即抛 → 本场景整体回滚并计入 failedScenes，不静默吞）
++            await rebuildStoryboardDialogueLinks(manager, {
++              id: storyboard.id,
++              dialogueIds: sb.dialogueIds,
++            })
++          }
++        }))
++      } catch (e: any) {
++        console.error(`[handleGenerateStoryboards] 场景 ${sceneId} 写库失败，已回滚保留旧分镜:`, e)
++        failedScenes.push({ sceneId, error: e?.message ?? '写库失败（未知异常）' })
++        continue
++      }
+ 
+-      // 创建新分镜（shotNumber 按 AI 返回顺序强制重排为 1..N，AI 返回可能跳号）
+-      for (const sb of shots) {
+-        const storyboard = await db.storyboards.create({
+-          sceneScriptId: sceneId,
+-          shotNumber: sb.shotNumber,
+-          shotType: sb.shotType,
+-          cameraAngle: sb.cameraAngle,
+-          cameraMovement: sb.cameraMovement,
+-          movementDuration: sb.movementDuration,
+-          frameDescription: sb.frameDescription,
+-          subject: sb.subject,
+-          composition: sb.composition,
+-          characters: sb.characters,
+-          narrationId: sb.narrationId,
+-          dialogueIds: sb.dialogueIds,
+-          actionIds: sb.actionIds,
+-          duration: sb.duration,
+-          transition: sb.transition
+-        })
+-        allStoryboards.push(storyboard)
++      // 事务提交后复读（DTO 口径同单场景路径：transition 解析、时间戳 epoch 化）
++      allStoryboards.push(...(await db.storyboards.getBySceneScriptId(sceneId)))
++    }
+ 
+-        // 一致性修复 C1：批量路径同样落库对白承接 links（与单场景路径同口径）
+-        await rebuildStoryboardDialogueLinks(db.dataSource!, {
+-          id: storyboard.id,
+-          dialogueIds: sb.dialogueIds,
+-        }).catch(() => {})
++    /*
++     * 全灭守卫（第三批 Task 2 评审 Important）：全部场景写库失败（无任何成功场景）
++     * 时 success:false + error 汇总——否则 success:true + storyboards:[] + 状态推进，
++     * 用户侧无任何失败信号。skippedScenes 的空结果跳过不算失败（部分成功/部分跳过
++     * 仍 success:true 并推进状态）。
++     */
++    if (allStoryboards.length === 0 && failedScenes.length > 0) {
++      const detail = failedScenes.map((f) => `${f.sceneId}: ${f.error}`).join('；')
++      return {
++        success: false,
++        error: `批量生成分镜失败：${failedScenes.length} 个场景写库失败（已回滚保留旧分镜）——${detail}`,
+       }
+     }
+ 
+@@ -482,6 +496,8 @@ async function handleGenerateStoryboards(
+         unboundCount: unbound.count,
+         // AI 空结果而跳过删建、保留旧分镜的场景（供 renderer 提示用户重生）
+         skippedScenes,
++        // 写库失败已整体回滚（旧分镜完整保留）的场景（第三批 Task 2：不再静默吞错）
++        failedScenes,
+       },
+     }
+   } catch (error: any) {
+diff --git a/src/core/platform/episode-production/compose/episode-mp4-exporter.service.ts b/src/core/platform/episode-production/compose/episode-mp4-exporter.service.ts
+index 935a970e..fe217ee5 100644
+--- a/src/core/platform/episode-production/compose/episode-mp4-exporter.service.ts
++++ b/src/core/platform/episode-production/compose/episode-mp4-exporter.service.ts
+@@ -231,7 +231,12 @@ export class EpisodeMp4ExporterService {
+     // 字幕（可选烧入）
+     let srtPath: string | undefined
+     if (input.burnSubtitles) {
+-      const srt = await this.subtitleSvc.buildSrt(timeline)
++      // D1 修复：烧录字幕的时间基准必须与成片时间轴一致——基于导出单元
++      // （入选合成单元 + segment 实际时长）按 xfade 重叠扣减重建时间轴，
++      // 与 buildFilterComplex 的 offset 计算同源；全量展示时间线只给 UI 预览用
++      const srt = await this.subtitleSvc.buildSrt(
++        buildExportSubtitleTimeline({ units: exportShots, unitShotIds, timeline }),
++      )
+       if (srt.trim()) {
+         const tmp =
+           this.fileWriter.getTempPath?.(`.srt`) ??
+@@ -372,8 +377,9 @@ export class EpisodeMp4ExporterService {
+ 
+   /**
+    * 收集每个导出单元的配音音频文件（2026-09-16 P0-CM1）：
++   *   - 旁白：scene.narrationAudioPath 挂到该场景的**首个**入选单元，
++   *     且排在单元内对白之前（D3：与字幕侧"旁白显示在首镜最前"顺序一致）
+    *   - 对白：单元内各分镜 dialogueIds ∩ scene.dialogues[].audioAsset.audioPath
+-   *   - 旁白：scene.narrationAudioPath 挂到该场景的**首个**入选单元
+    * 无任何配音的单元返回空数组（该单元只保留视频自带音轨/静音占位）。
+    */
+   private async collectUnitAudioFiles(
+@@ -402,6 +408,13 @@ export class EpisodeMp4ExporterService {
+         const dialogues = ((scene?.dialogues ?? []) as Array<{ id?: string; audioAsset?: { audioPath?: string } }>)
+         const files: string[] = []
+ 
++        // 旁白挂场景首个入选单元（D3 修复：排在单元内对白**之前**——字幕侧旁白
++        // 显示在首镜最前 NARRATION_LEAD_SEC 秒，音频顺序与字幕保持一致）
++        if (scene && (scene as any).narrationAudioPath && !narrationAttached.has(scene.id)) {
++          narrationAttached.add(scene.id)
++          files.push(String((scene as any).narrationAudioPath))
++        }
++
+         for (const sid of shotIds) {
+           for (const did of dialogueIdsBySb.get(sid) ?? []) {
+             const d = dialogues.find((x) => x?.id === did)
+@@ -409,13 +422,6 @@ export class EpisodeMp4ExporterService {
+           }
+         }
+ 
+-        // 旁白挂场景首个入选单元（顺序播语义 0916 review：排在单元内对白**之后**——
+-        // 数据无时间戳，唯一可保证的下界是"不重叠"：对白（dialogueIds 顺序）→ 旁白）
+-        if (scene && (scene as any).narrationAudioPath && !narrationAttached.has(scene.id)) {
+-          narrationAttached.add(scene.id)
+-          files.push(String((scene as any).narrationAudioPath))
+-        }
+-
+         result[i] = files
+       }
+     } catch {
+@@ -496,6 +502,104 @@ export class EpisodeMp4ExporterService {
+ 
+ // ─── pure helpers（导出供单测）─────────────────────────────
+ 
++/**
++ * 逐导出单元计算其在**成片时间轴**上的区间（D1 修复）。
++ * 与 buildFilterComplex 的 xfade offset 计算同源：单元 i 的起点 =
++ * max(0, cumulativeDur(i-1) - transition.duration(i))，cumulativeDur 按
++ * 「+ 单元时长 − 转场时长」递推；cut/无转场时扣减为 0。
++ */
++export function computeExportUnitTimes(
++  shots: TimelineShot[],
++): Array<{ startSec: number; endSec: number }> {
++  const times: Array<{ startSec: number; endSec: number }> = []
++  let cumulativeDur = 0
++  for (let i = 0; i < shots.length; i++) {
++    if (i === 0) {
++      times.push({ startSec: 0, endSec: shots[0].durationSec })
++      cumulativeDur = shots[0].durationSec
++      continue
++    }
++    const transition = shots[i].transition
++    const plan: FfmpegTransitionPlan | null = transition
++      ? toFfmpegTransition(transition)
++      : null
++    const dur = plan?.durationSec ?? 0
++    const startSec = Math.max(0, cumulativeDur - dur)
++    times.push({ startSec, endSec: startSec + shots[i].durationSec })
++    cumulativeDur = cumulativeDur + shots[i].durationSec - dur // xfade 重叠
++  }
++  return times
++}
++
++/**
++ * 以导出单元为骨架重建字幕用 Timeline（D1 修复）：
++ *   - 只保留进入导出单元的分镜（未入选 / superseded 片段的分镜剔除——其字幕不进 SRT）；
++ *   - 每个分镜的时间区间换成成片时间轴（computeExportUnitTimes，含转场重叠扣减）；
++ *   - 多镜合并的 segment 单元按成员分镜原始 durationSec 比例切分单元区间
++ *     （段内画面连续，按比例近似各镜子区间，使 links/均分分配逻辑原样生效）；
++ *   - 场景边界由剩余 shots 重算，场景首镜 = 首个入选分镜（与音频侧"旁白挂场景
++ *     首个入选单元"对齐）；totalDurationSec = 末单元终点。
++ * TimelineBuilder 的展示时间线本身不动（UI 预览仍用它）。
++ */
++export function buildExportSubtitleTimeline(args: {
++  units: TimelineShot[]
++  unitShotIds: string[][] | null
++  timeline: Timeline
++}): Timeline {
++  const { units, unitShotIds, timeline } = args
++  const times = computeExportUnitTimes(units)
++
++  // 原始分镜时长表（合并单元内比例切分用）
++  const origShotById = new Map<string, TimelineShot>()
++  for (const scene of timeline.scenes) {
++    for (const shot of scene.shots) origShotById.set(shot.storyboardId, shot)
++  }
++
++  const shotTimeMap = new Map<string, { startSec: number; endSec: number; durationSec: number }>()
++  for (let i = 0; i < units.length; i++) {
++    const memberIds = unitShotIds ? unitShotIds[i] : [units[i].storyboardId]
++    const unitTime = times[i]
++    if (!unitTime || memberIds.length === 0) continue
++    if (memberIds.length === 1) {
++      shotTimeMap.set(memberIds[0], { ...unitTime, durationSec: units[i].durationSec })
++      continue
++    }
++    const origDurs = memberIds.map((id) => origShotById.get(id)?.durationSec ?? 0)
++    const totalOrig = origDurs.reduce((a, b) => a + b, 0)
++    let cursor = unitTime.startSec
++    for (let j = 0; j < memberIds.length; j++) {
++      const share =
++        totalOrig > 0
++          ? (origDurs[j] / totalOrig) * units[i].durationSec
++          : units[i].durationSec / memberIds.length
++      shotTimeMap.set(memberIds[j], {
++        startSec: cursor,
++        endSec: cursor + share,
++        durationSec: share,
++      })
++      cursor += share
++    }
++  }
++
++  const scenes = timeline.scenes
++    .map((scene) => {
++      const shots = scene.shots
++        .filter((s) => shotTimeMap.has(s.storyboardId))
++        .map((s) => ({ ...s, ...shotTimeMap.get(s.storyboardId)! }))
++      if (shots.length === 0) return null
++      const startSec = shots[0].startSec
++      const endSec = shots[shots.length - 1].endSec
++      return { ...scene, shots, startSec, endSec, durationSec: endSec - startSec }
++    })
++    .filter((s): s is NonNullable<typeof s> => s !== null)
++
++  return {
++    ...timeline,
++    scenes,
++    totalDurationSec: times.length > 0 ? times[times.length - 1].endSec : 0,
++  }
++}
++
+ /**
+  * 构造 ffmpeg filter_complex：
+  *   - scale 每个输入到统一尺寸
+@@ -582,7 +686,7 @@ export function buildFilterComplex(args: {
+   //      写死 44.1k，与真实 48k 音轨进同一 concat 滤镜图必败（混合 provider 场景必现）；
+   //    - 每单元混音后 apad+atrim 到「时长 − 与下一段的重叠」，与 xfade 视频时间轴严格对齐
+   //      （旧实现音频全长 concat，视频逐转场扣减，每个 0.5s 转场累积 0.5s 音画漂移）；
+-  //    - 单元内多路人声（对白×N + 旁白）**先按顺序 concat 成一条人声轨**再与视频音轨
++  //    - 单元内多路人声（旁白 + 对白×N，顺序与字幕显示一致）**先按顺序 concat 成一条人声轨**再与视频音轨
+   //      amix（旧实现全部从 t=0 同时 amix——多条 TTS 人声叠音、旁白与对白互相压）；
+   //      数据无对话时间戳，顺序播是可保证的下界：超出单元时长的部分仍被 atrim 截断。
+   //    - P-D 响度归一防爆音：每路音源 aresample 后追加 loudnorm（I=-16/TP=-1.5/LRA=11，
+diff --git a/src/core/platform/episode-production/compose/subtitle.service.ts b/src/core/platform/episode-production/compose/subtitle.service.ts
+index 6119aeb4..be75272e 100644
+--- a/src/core/platform/episode-production/compose/subtitle.service.ts
++++ b/src/core/platform/episode-production/compose/subtitle.service.ts
+@@ -253,7 +253,9 @@ export class SubtitleService {
+       if (!d.text.trim()) continue
+       const startSec = shot.startSec + startOffsetSec + i * slot
+       const span = Math.max(MIN_CUE_DURATION_SEC, slot)
+-      const endSec = Math.min(shot.startSec + (i + 1) * slot, startSec + span)
++      // D2 修复：endSec 基准同样要加 startOffsetSec——旁白占首镜前 N 秒时，
++      // 漏加会让 endSec 早于 startSec（短首镜 + 多条对白产出非法 cue）
++      const endSec = Math.min(shot.startSec + startOffsetSec + (i + 1) * slot, startSec + span)
+       cues.push({
+         startSec,
+         endSec: Math.min(endSec, shot.endSec),
+diff --git a/src/core/platform/episode-production/narrative/scene-binding-writer.ts b/src/core/platform/episode-production/narrative/scene-binding-writer.ts
+index de65fd98..d35a5ef7 100644
+--- a/src/core/platform/episode-production/narrative/scene-binding-writer.ts
++++ b/src/core/platform/episode-production/narrative/scene-binding-writer.ts
+@@ -9,8 +9,8 @@
+  * - bridge tables 包含 characterBindingId FK 引用
+  */
+ 
+-import type { DataSource, EntityManager } from 'typeorm'
+-import { IsNull } from 'typeorm'
++import type { DataSource, EntityManager, Repository } from 'typeorm'
++import { In, IsNull } from 'typeorm'
+ import type {
+   GeneratedScene,
+   SceneScript,
+@@ -25,7 +25,7 @@ import { CharacterBindingEntity } from '@core/database/entities/episode-producti
+ import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
+ import { getCurrentUserId } from '@core/context/user-context'
+ import { rebuildStoryboardDialogueLinks } from './storyboard-dialogue-links'
+-import { reassignRefIds } from './ref-id-reassign'
++import { nextRefId, reassignRefIds } from './ref-id-reassign'
+ 
+ /**
+  * 场景绑定写入器
+@@ -199,22 +199,27 @@ export class SceneBindingWriter {
+       })
+       if (!existing) throw new Error(`场景不存在：${sceneId}`)
+ 
++      // S3 同型收尾（第三批）：删旧行前先把 AI 给的 dlg_/act_ id 对齐回旧 id。
++      // 不能像批量创建那样整批重发——分镜 dialogueIds/actionIds 引用旧 id，
++      // 全换会让 C3 重建的 links 全部悬空。
++      const aligned = await this.alignRewriteRefIds(manager, sceneId, readScope, scene)
++
+       // 1. 就地更新 scene_scripts 字段（id / sceneNumber / 归属不动）
+       await sceneRepo.update({ id: sceneId, ...readScope } as any, {
+-        location: scene.location,
+-        locationBindingId: scene.locationBindingId,
+-        locationType: scene.locationType,
+-        timeOfDay: scene.timeOfDay,
+-        weather: scene.weather ?? null,
+-        sceneDescription: scene.sceneDescription,
+-        mood: scene.mood,
+-        lighting: scene.lighting ?? null,
++        location: aligned.scene.location,
++        locationBindingId: aligned.scene.locationBindingId,
++        locationType: aligned.scene.locationType,
++        timeOfDay: aligned.scene.timeOfDay,
++        weather: aligned.scene.weather ?? null,
++        sceneDescription: aligned.scene.sceneDescription,
++        mood: aligned.scene.mood,
++        lighting: aligned.scene.lighting ?? null,
+         // 向后兼容：保留 JSON 字段
+-        characters: scene.characters as unknown[],
+-        originalText: scene.originalText,
+-        narration: scene.narration,
+-        dialogues: scene.dialogues as unknown[],
+-        actions: scene.actions as unknown[],
++        characters: aligned.scene.characters as unknown[],
++        originalText: aligned.scene.originalText,
++        narration: aligned.scene.narration,
++        dialogues: aligned.scene.dialogues as unknown[],
++        actions: aligned.scene.actions as unknown[],
+         updatedAt: now,
+       } as any)
+ 
+@@ -236,15 +241,22 @@ export class SceneBindingWriter {
+         .delete({ sceneScriptId: sceneId, ...readScope } as any)
+ 
+       // 3. 按新数据重建 bridge 行 + binding 兜底回填（与批量创建同规则）
+-      await this.writeSceneChildrenIn(manager, sceneId, userScope, scene)
+-      await this.syncBindingSideEffects(manager, [scene], readScope, now)
++      await this.writeSceneChildrenIn(manager, sceneId, userScope, aligned.scene)
++      await this.syncBindingSideEffects(manager, [aligned.scene], readScope, now)
+ 
+       // C3：删建 scene_dialogues 时 FK CASCADE 已把该场景全部分镜的 links 静默删掉，
+       // 按各分镜 dialogueIds JSON 重建（单分镜失败不阻断整场景重写）
+       const sceneStoryboards = await manager.getRepository(StoryboardEntity).find({
+         where: { sceneScriptId: sceneId, ...readScope } as any,
+       })
++      const storyboardRepo = manager.getRepository(StoryboardEntity)
+       for (const sb of sceneStoryboards) {
++        // 防线重发过的 id 先同步改写分镜引用，再按新引用重建 links
++        if (aligned.dialogueIdRemap.size > 0 || aligned.actionIdRemap.size > 0) {
++          sb.dialogueIds = this.remapRefIds(sb.dialogueIds, aligned.dialogueIdRemap)
++          sb.actionIds = this.remapRefIds(sb.actionIds, aligned.actionIdRemap)
++          await storyboardRepo.save(sb)
++        }
+         await rebuildStoryboardDialogueLinks(manager, sb).catch((e) => {
+           console.warn('[SceneBindingWriter] 重建分镜对白 links 失败:', e)
+         })
+@@ -252,6 +264,138 @@ export class SceneBindingWriter {
+     })
+   }
+ 
++  /**
++   * 单场景重写路径的 dlg_/act_ id 对齐（S3 同型收尾，第三批）。
++   *
++   * 与批量创建不同，这里不能整批重发 id——存活分镜的 dialogueIds/actionIds 引用
++   * 旧 id，全换会让 C3 重建的 links 悬空。对齐规则（对齐回旧 id 的优先级）：
++   *   1. AI 保留了旧 id（在旧集合里且未被占）→ 沿用，常规路径行为不变；
++   *   2. AI 重排了 id（dlg_1 重号）→ 按归一化文本（去空白）匹配未消耗的旧行，
++   *      旧行按 sortOrder 顺序消耗，重复文本不抢同一个旧 id；
++   *      不按下标对齐——AI 可能调换顺序，下标对齐会把旧 id 贴到别的文本上，
++   *      分镜引用反而指错对白；文本对不上宁可发新 id（引用悬空 > 指错）；
++   *   3. 都对不上 → 新增条目，发 nextRefId 新 id。
++   * 对齐结果结构上只含「本场景旧 id」或「新生成 id」，不会与他场景桥接行撞号；
++   * 落库前仍显式排查一遍（历史脏数据防线），撞号的重发并记录 remap，由调用方
++   * 同步改写分镜引用——选重发而非拒绝：撞号源于历史数据而非本次输入，拒绝会
++   * 让正常重写被旧账卡死，重发后分镜引用同步改写即可自愈。
++   */
++  private static async alignRewriteRefIds(
++    manager: EntityManager,
++    sceneId: string,
++    readScope: Record<string, unknown>,
++    scene: GeneratedScene,
++  ): Promise<{
++    scene: GeneratedScene
++    dialogueIdRemap: Map<string, string>
++    actionIdRemap: Map<string, string>
++  }> {
++    const dialogueRepo = manager.getRepository(SceneDialogueEntity)
++    const actionRepo = manager.getRepository(SceneActionEntity)
++    const oldDialogues = await dialogueRepo.find({
++      where: { sceneScriptId: sceneId, ...readScope } as any,
++      order: { sortOrder: 'ASC' },
++    })
++    const oldActions = await actionRepo.find({
++      where: { sceneScriptId: sceneId, ...readScope } as any,
++      order: { sortOrder: 'ASC' },
++    })
++
++    const dialogues = this.alignRefIds(
++      scene.dialogues ?? [],
++      oldDialogues.map(d => ({ id: d.id, text: d.text })),
++      'dlg',
++      d => d.text,
++    )
++    const actions = this.alignRefIds(
++      scene.actions ?? [],
++      oldActions.map(a => ({ id: a.id, text: a.description })),
++      'act',
++      a => a.description,
++    )
++
++    const dialogueIdRemap = await this.reassignCollidingRefIds(
++      sceneId, dialogueRepo, dialogues, 'dlg',
++    )
++    const actionIdRemap = await this.reassignCollidingRefIds(
++      sceneId, actionRepo, actions, 'act',
++    )
++
++    return { scene: { ...scene, dialogues, actions }, dialogueIdRemap, actionIdRemap }
++  }
++
++  /** 按上述优先级为一批对白/动作分配最终 id（返回新数组，不改入参） */
++  private static alignRefIds<T extends { id?: string }>(
++    items: T[],
++    olds: Array<{ id: string; text: string }>,
++    prefix: 'dlg' | 'act',
++    textOf: (item: T) => string | undefined,
++  ): T[] {
++    const oldIds = new Set(olds.map(o => o.id))
++    const usedIds = new Set<string>()
++    const idsByText = new Map<string, string[]>()
++    for (const o of olds) {
++      const key = this.normalizeRefText(o.text)
++      const list = idsByText.get(key)
++      if (list) list.push(o.id)
++      else idsByText.set(key, [o.id])
++    }
++    return items.map(item => {
++      let id: string | undefined
++      if (item.id && oldIds.has(item.id) && !usedIds.has(item.id)) {
++        id = item.id
++      } else {
++        const candidates = idsByText.get(this.normalizeRefText(textOf(item)))
++        id = candidates?.find(cid => !usedIds.has(cid))
++      }
++      if (!id) id = nextRefId(prefix)
++      usedIds.add(id)
++      return { ...item, id }
++    })
++  }
++
++  /** 文本归一化：去全部空白（中文对白无空格，空白差异不影响对齐） */
++  private static normalizeRefText(text: string | undefined): string {
++    return String(text ?? '').replace(/\s+/g, '')
++  }
++
++  /**
++   * 撞号防线：排查对齐后的 id 是否与他场景桥接行撞主键（不带租户条件——
++   * 主键全局唯一，撞号与租户无关），撞号的重发新 id。返回 旧id→新id 的 remap。
++   */
++  private static async reassignCollidingRefIds<T extends { id: string }>(
++    sceneId: string,
++    repo: Repository<SceneDialogueEntity> | Repository<SceneActionEntity>,
++    items: T[],
++    prefix: 'dlg' | 'act',
++  ): Promise<Map<string, string>> {
++    const remap = new Map<string, string>()
++    if (items.length === 0) return remap
++    const rows = await repo.find({ where: { id: In(items.map(i => i.id)) } })
++    const colliding = new Set(
++      rows.filter(r => r.sceneScriptId !== sceneId).map(r => r.id),
++    )
++    if (colliding.size === 0) return remap
++    console.warn(
++      `[SceneBindingWriter] 重写的 ${prefix}_ id 与他场景桥接行撞号，重发:`,
++      [...colliding].join(', '),
++    )
++    for (const item of items) {
++      if (colliding.has(item.id)) {
++        const fresh = nextRefId(prefix)
++        remap.set(item.id, fresh)
++        item.id = fresh
++      }
++    }
++    return remap
++  }
++
++  /** 按 remap 改写分镜的 dialogueIds/actionIds JSON（未命中 remap 的引用原样保留） */
++  private static remapRefIds(ids: string[] | null, remap: Map<string, string>): string[] | null {
++    if (!Array.isArray(ids)) return ids
++    return ids.map(x => remap.get(String(x)) ?? x)
++  }
++
+   /**
+    * 写一个场景的子表记录（scene_characters + props / scene_dialogues /
+    * scene_actions）。批量创建与单场景重写共用。
+diff --git a/src/core/platform/episode-production/narrative/services/storyboard-cogen.service.ts b/src/core/platform/episode-production/narrative/services/storyboard-cogen.service.ts
+index ff4a258c..b729afcd 100644
+--- a/src/core/platform/episode-production/narrative/services/storyboard-cogen.service.ts
++++ b/src/core/platform/episode-production/narrative/services/storyboard-cogen.service.ts
+@@ -32,7 +32,6 @@ import { EpisodeScriptEntity } from '@core/database/entities/episode-production/
+ import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
+ import { SceneCharacterEntity } from '@core/database/entities/episode-production/scene-character.entity'
+ import { SceneDialogueEntity } from '@core/database/entities/episode-production/scene-dialogue.entity'
+-import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
+ import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
+ import { StoryboardRepository } from '@core/database/repositories/storyboard.repository'
+ import { getCurrentUserId } from '@core/context/user-context'
+@@ -45,6 +44,7 @@ import { generateCogenForScene } from '../ai/storyboard-cogen'
+ import type { CogenExistingAsset, CogenOutput } from '../ai/storyboard-cogen'
+ import { normalizeShotNumbers } from './storyboard.service'
+ import { cleanupStoryboards } from '../storyboard-cleanup.service'
++import { insertStoryboardIn } from '../storyboard-insert'
+ import { withPendingKeyframeFileDeletions } from '@core/platform/episode-production/render/keyframe/keyframe-cleanup'
+ import { rebuildStoryboardDialogueLinks } from '../storyboard-dialogue-links'
+ import {
+@@ -860,8 +860,6 @@ export class StoryboardCogenService {
+     // E1：收集器包住事务——关键帧磁盘文件在提交成功后统一删，回滚则随旧分镜一并保留
+     await withPendingKeyframeFileDeletions(() => this.ds.transaction(async (manager) => {
+       await cleanupStoryboards(manager, oldIds)
+-      const sbRepo = manager.getRepository(StoryboardEntity)
+-      const userId = getCurrentUserId()
+ 
+       // shotNumber 按数组顺序强制重排为 1..N（与旧批量生成一致，防跳号）
+       for (const shot of normalizeShotNumbers(
+@@ -887,42 +885,26 @@ export class StoryboardCogenService {
+           .filter((id): id is string => !!id)
+ 
+         const dialogueIds = Array.isArray(shot.dialogueIds) ? shot.dialogueIds.filter(Boolean) : []
+-        const now = new Date()
+-        // 字段口径同 StoryboardRepository.create；binding 覆盖列并入首次插入（省一次 update）
+-        const created = await sbRepo.save(
+-          sbRepo.create({
+-            id: `sb_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+-            userId,
+-            sceneScriptId: sceneId,
+-            shotNumber: shot.shotNumber,
+-            shotType: shot.shotType,
+-            cameraAngle: shot.cameraAngle,
+-            cameraMovement: shot.cameraMovement,
+-            movementDuration: null,
+-            frameDescription: shot.frameDescription,
+-            subject: shot.subject ?? null,
+-            composition: shot.composition ?? null,
+-            characters: characters as unknown[],
+-            locationBindingIds: [locationBindingId],
+-            itemBindingIds,
+-            narrationId: null,
+-            dialogueIds,
+-            actionIds: [],
+-            frameImage: null,
+-            frameImageId: null,
+-            videoPath: null,
+-            duration: shot.duration,
+-            transition: JSON.stringify({ type: 'cut', duration: 500 }),
+-            transitionType: null,
+-            transitionDurationMs: null,
+-            transitionDirection: null,
+-            transitionEasing: null,
+-            transitionColor: null,
+-            status: 'pending',
+-            createdAt: now,
+-            updatedAt: now,
+-          }),
+-        )
++        // binding 覆盖列并入首次插入（省一次 update）
++        const created = await insertStoryboardIn(manager, {
++          sceneScriptId: sceneId,
++          shotNumber: shot.shotNumber,
++          shotType: shot.shotType,
++          cameraAngle: shot.cameraAngle,
++          cameraMovement: shot.cameraMovement,
++          movementDuration: null,
++          frameDescription: shot.frameDescription,
++          subject: shot.subject,
++          composition: shot.composition,
++          characters: characters as unknown[],
++          locationBindingIds: [locationBindingId],
++          itemBindingIds,
++          narrationId: null,
++          dialogueIds,
++          actionIds: [],
++          duration: shot.duration,
++          transition: { type: 'cut', duration: 500 },
++        })
+ 
+         // 一致性修复 v3（A3）：对白承接落库 storyboard_dialogue_links（字幕镜头级分配的数据源）
+         await rebuildStoryboardDialogueLinks(manager, { id: created.id, dialogueIds })
+diff --git a/src/core/platform/episode-production/narrative/storyboard-dialogue-links.ts b/src/core/platform/episode-production/narrative/storyboard-dialogue-links.ts
+index 7239b94e..259df7a5 100644
+--- a/src/core/platform/episode-production/narrative/storyboard-dialogue-links.ts
++++ b/src/core/platform/episode-production/narrative/storyboard-dialogue-links.ts
+@@ -4,8 +4,11 @@
+  * @description links 表是字幕镜头级分配的数据源，与 storyboards.dialogue_ids JSON 列
+  *              互为投影。所有写入路径（生成 / 更新 / 场景重写）在 dialogueIds 落库后
+  *              统一走这里先删后插重建该分镜的 links 行，避免两数据源脱钩。
+- *              dbOrTx 传 DataSource 时内部包一层事务（DELETE+INSERT 原子）；传事务内
+- *              EntityManager 时并入调用方事务。与 cleanupStoryboards 的 dbOrTx 惯例一致。
++ *              插入前按 scene_dialogues 实有 id 过滤——悬空 id 直接 INSERT 会 FK
++ *              失败中断逐条插入，留下「已插前缀残留 + 后续有效 id 全丢」的部分状态；
++ *              过滤后只插有效项，悬空 id 记 warn。dbOrTx 传 DataSource 时内部包一层
++ *              事务（DELETE+INSERT 原子）；传事务内 EntityManager 时并入调用方事务。
++ *              与 cleanupStoryboards 的 dbOrTx 惯例一致。
+  */
+ 
+ import { DataSource, type EntityManager } from 'typeorm'
+@@ -29,12 +32,35 @@ async function execRebuild(
+     [storyboard.id],
+   )
+   const dialogueIds = Array.isArray(storyboard.dialogueIds) ? storyboard.dialogueIds : []
+-  for (let i = 0; i < dialogueIds.length; i++) {
+-    const dialogueId = dialogueIds[i]
+-    if (!dialogueId) continue
++  const ids = dialogueIds.filter(Boolean).map(String)
++  if (ids.length === 0) return
++
++  // 悬空 id 过滤：直接 INSERT 会 FK 失败中断逐条插入，留下部分 links（已插
++  // 前缀残留、后续有效 id 全丢）。查一次实有 id 集合，只插有效项，sort_order
++  // 按过滤后数组下标紧凑重排。
++  const placeholders = ids.map(() => '?').join(',')
++  const rows = (await qr.query(
++    `SELECT id FROM scene_dialogues WHERE id IN (${placeholders})`,
++    ids,
++  )) as Array<{ id: string }>
++  const validIds = new Set(rows.map(r => String(r.id)))
++  const effective: string[] = []
++  const dangling: string[] = []
++  for (const id of ids) {
++    if (validIds.has(id)) effective.push(id)
++    else dangling.push(id)
++  }
++  if (dangling.length > 0) {
++    console.warn(
++      `[storyboard-dialogue-links] 分镜 ${storyboard.id} 的 dialogueIds 含悬空 id，已跳过:`,
++      dangling.join(', '),
++    )
++  }
++
++  for (let i = 0; i < effective.length; i++) {
+     await qr.query(
+       `INSERT OR REPLACE INTO storyboard_dialogue_links (id, storyboard_id, dialogue_id, sort_order) VALUES (?, ?, ?, ?)`,
+-      [`sdl_${Math.random().toString(36).slice(2, 12)}`, storyboard.id, String(dialogueId), i],
++      [`sdl_${Math.random().toString(36).slice(2, 12)}`, storyboard.id, effective[i], i],
+     )
+   }
+ }
+diff --git a/tests/unit/episode-production/compose/episode-mp4-exporter.service.spec.ts b/tests/unit/episode-production/compose/episode-mp4-exporter.service.spec.ts
+index 711511b9..5ccbe3bb 100644
+--- a/tests/unit/episode-production/compose/episode-mp4-exporter.service.spec.ts
++++ b/tests/unit/episode-production/compose/episode-mp4-exporter.service.spec.ts
+@@ -28,10 +28,12 @@ import {
+   buildFilterComplex,
+   buildSilentInputSpecs,
+   buildOutputArgs,
++  computeExportUnitTimes,
++  buildExportSubtitleTimeline,
+   type FfmpegRunner,
+   type FileWriter,
+ } from '@core/platform/episode-production/compose/episode-mp4-exporter.service'
+-import type { TimelineShot } from '@core/platform/episode-production/compose/timeline-builder.service'
++import type { Timeline, TimelineShot } from '@core/platform/episode-production/compose/timeline-builder.service'
+ import { registerPathProvider, type IPathProvider } from '@core/interfaces/path.interface'
+ 
+ /** 最小 path provider stub（成功回写要算 user-rel 路径） */
+@@ -181,6 +183,77 @@ function makeMockFileWriter(): FileWriter & {
+   } as any
+ }
+ 
++/**
++ * D1/D3 用播种：单场景 2 镜各 4s（sb2 dissolve 500ms），场景 2 条对白
++ * （无 links 表 → 字幕走均分：sb1←d1，sb2←d2），无旁白文本。
++ */
++async function seedTwoShotDialogue(ds: DataSource): Promise<void> {
++  await ds.getRepository(SceneScriptEntity).save({
++    id: 's1',
++    episodeScriptId: 'es1',
++    sceneNumber: 1,
++    location: '茶馆',
++    locationBindingId: null,
++    locationType: 'interior',
++    timeOfDay: 'morning',
++    weather: null,
++    sceneDescription: '',
++    mood: null,
++    lighting: null,
++    characters: null,
++    originalText: '',
++    narration: null,
++    dialogues: [
++      { id: 'd1', text: '第一句台词', characterName: '张三' },
++      { id: 'd2', text: '第二句台词', characterName: '李四' },
++    ],
++    actions: [],
++    createdAt: new Date(),
++    updatedAt: new Date(),
++  } as any)
++  const shot = (id: string, shotNumber: number, extra: Record<string, unknown> = {}) => ({
++    id,
++    sceneScriptId: 's1',
++    shotNumber,
++    shotType: 'medium',
++    cameraAngle: 'eye_level',
++    cameraMovement: 'static',
++    movementDuration: null,
++    frameDescription: '',
++    subject: null,
++    composition: null,
++    characters: null,
++    narrationId: null,
++    dialogueIds: [],
++    actionIds: [],
++    frameImage: null,
++    frameImageId: null,
++    videoPath: `/tmp/${id}.mp4`,
++    duration: 4,
++    transition: '{}',
++    transitionType: null,
++    transitionDurationMs: null,
++    transitionDirection: null,
++    transitionEasing: null,
++    transitionColor: null,
++    status: 'pending',
++    keyframeCount: 2,
++    videoProviderId: null,
++    videoModelId: null,
++    videoMode: null,
++    use3dStaging: 0,
++    stagingLayoutId: null,
++    backgroundRefImageId: null,
++    createdAt: new Date(),
++    updatedAt: new Date(),
++    ...extra,
++  })
++  await ds.getRepository(StoryboardEntity).save([
++    shot('sb1', 1),
++    shot('sb2', 2, { transitionType: 'dissolve', transitionDurationMs: 500 }),
++  ] as any)
++}
++
+ describe('EpisodeMp4ExporterService', () => {
+   let ds: DataSource
+ 
+diff --git a/tests/unit/episode-production/compose/subtitle.service.spec.ts b/tests/unit/episode-production/compose/subtitle.service.spec.ts
+index d4108572..14825a4a 100644
+--- a/tests/unit/episode-production/compose/subtitle.service.spec.ts
++++ b/tests/unit/episode-production/compose/subtitle.service.spec.ts
+@@ -327,6 +327,85 @@ describe('SubtitleService', () => {
+     ).toEqual(['sd1', 'sd3', 'sd4'])
+   })
+ 
++  it('D2：旁白占短首镜前 2s + 首镜 2 条对白 → 不再产生结束早于开始的非法 cue', async () => {
++    // 首镜 3s、旁白占前 2s、2 条对白 links 到首镜：slot=(3-2)/2=0.5
++    // 修复前 endSec 漏加 startOffsetSec → 第 1 条对白 start=2.0 / end=0.5（倒置）
++    await ds.getRepository(SceneScriptEntity).save({
++      id: 's1',
++      episodeScriptId: 'es1',
++      sceneNumber: 1,
++      location: '茶馆',
++      locationBindingId: null,
++      locationType: 'interior',
++      timeOfDay: 'morning',
++      weather: null,
++      sceneDescription: '',
++      mood: null,
++      lighting: null,
++      characters: null,
++      originalText: '',
++      narration: '开场旁白',
++      dialogues: [],
++      actions: [],
++      createdAt: new Date(),
++      updatedAt: new Date(),
++    } as any)
++    await ds.getRepository(SceneDialogueEntity).save(
++      ['sd1', 'sd2'].map((id, i) => ({
++        id,
++        sceneScriptId: 's1',
++        characterId: 'c1',
++        characterBindingId: null,
++        characterName: '张三',
++        text: `台词${i + 1}`,
++        emotion: null,
++        volume: 'normal',
++        pace: 'normal',
++        pause: 0,
++        voiceId: null,
++        audioAssetId: null,
++        sortOrder: i,
++      })) as any,
++    )
++    await ds.getRepository(StoryboardEntity).save({
++      id: 'sb1',
++      sceneScriptId: 's1',
++      shotNumber: 1,
++      shotType: 'medium',
++      cameraAngle: 'eye_level',
++      cameraMovement: 'static',
++      frameDescription: '',
++      dialogueIds: ['sd1', 'sd2'],
++      actionIds: [],
++      videoPath: '/v1.mp4',
++      duration: 3,
++      transition: '{}',
++      status: 'pending',
++      keyframeCount: 2,
++      createdAt: new Date(),
++      updatedAt: new Date(),
++    } as any)
++    await ds.query(
++      `INSERT INTO storyboard_dialogue_links (id, storyboard_id, dialogue_id, sort_order)
++        VALUES ('l1', 'sb1', 'sd1', 0), ('l2', 'sb1', 'sd2', 1)`,
++    )
++
++    const tl = await timelineSvc.buildEpisodeTimeline('es1')
++    const cues = await svc.buildCues(tl)
++
++    // 所有 cue 必须 endSec > startSec（修复前第 1 条对白 end=0.5 < start=2.0）
++    for (const c of cues) {
++      expect(c.endSec).toBeGreaterThan(c.startSec)
++    }
++    const dialogueCues = cues.filter((c) => c.source === 'dialogue')
++    expect(dialogueCues).toHaveLength(2)
++    // 对白整体后移到旁白之后：第 1 条 [2, 2.5]，第 2 条 [2.5, 3]
++    expect(dialogueCues[0].startSec).toBeCloseTo(2)
++    expect(dialogueCues[0].endSec).toBeCloseTo(2.5)
++    expect(dialogueCues[1].startSec).toBeCloseTo(2.5)
++    expect(dialogueCues[1].endSec).toBeCloseTo(3)
++  })
++
+   it('无对话 / 无旁白：返回空 cues 不报错', async () => {
+     await ds.getRepository(SceneScriptEntity).save({
+       id: 's1',
+diff --git a/tests/unit/episode-production/narrative/scene-binding-writer.spec.ts b/tests/unit/episode-production/narrative/scene-binding-writer.spec.ts
+index 43582506..4cbcafbf 100644
+--- a/tests/unit/episode-production/narrative/scene-binding-writer.spec.ts
++++ b/tests/unit/episode-production/narrative/scene-binding-writer.spec.ts
+@@ -253,3 +253,200 @@ describe('SceneBindingWriter.createScenesWithBindings dlg_/act_ id 重发', () =
+     }
+   })
+ })
++
++
++/**
++ * S3 同型收尾（第三批）：rewriteSceneWithBindings 的 dlg_/act_ id 对齐。
++ *
++ * 单场景重写不能整批重发 id（分镜 dialogueIds/actionIds 引用旧 id），
++ * 对齐规则：AI 保留旧 id 沿用 → 归一化文本匹配旧行 → 新增发新 id；
++ * 且不得与他场景桥接行撞主键（save 变 upsert 覆盖他场景行）。
++ */
++describe('SceneBindingWriter.rewriteSceneWithBindings dlg_/act_ id 对齐', () => {
++  beforeEach(async () => {
++    ds = await buildDb()
++    // 本场景：dlg1/dlg2 + act1，分镜 sb1 引用 dlg1/dlg2/act1
++    await seed()
++    await ds.getRepository(SceneActionEntity).save({
++      id: 'act1',
++      sceneScriptId: 's1',
++      characterId: 'c1',
++      characterBindingId: null,
++      description: '旧动作',
++      timing: 'during',
++      duration: null,
++      sortOrder: 0,
++    } as any)
++    await ds.getRepository(StoryboardEntity).update({ id: 'sb1' } as any, {
++      actionIds: ['act1'],
++    } as any)
++    // 他场景：占用了 AI 风格的 dlg_1（S3 时代 / 批量路径重发前的常见形态）
++    await ds.getRepository(SceneScriptEntity).save({
++      id: 's2',
++      episodeScriptId: 'es1',
++      sceneNumber: 2,
++      location: '客栈',
++      locationBindingId: null,
++      locationType: 'interior',
++      timeOfDay: 'night',
++      weather: null,
++      sceneDescription: '他场景',
++      mood: '喧闹',
++      lighting: null,
++      characters: [],
++      originalText: '',
++      narration: '',
++      dialogues: [],
++      actions: [],
++      createdAt: new Date(),
++      updatedAt: new Date(),
++    } as any)
++    await ds.getRepository(SceneDialogueEntity).save({
++      ...dialogueRow('dlg_1', '他场景台词', 0),
++      sceneScriptId: 's2',
++    } as any)
++  })
++
++  afterEach(async () => {
++    if (ds.isInitialized) await ds.destroy()
++  })
++
++  function makeGenerated(dialogues: GeneratedScene['dialogues']): GeneratedScene {
++    return {
++      sceneNumber: 1,
++      location: '茶馆',
++      locationBindingId: null,
++      locationType: 'interior',
++      timeOfDay: 'morning',
++      sceneDescription: '新描述',
++      mood: '安静',
++      characters: [],
++      originalText: '',
++      narration: '',
++      dialogues,
++      actions: [
++        { id: 'act_1', characterBindingId: null, characterId: 'c1', description: '旧动作', timing: 'during' },
++      ],
++    }
++  }
++
++  async function sceneDialogues(sceneScriptId: string) {
++    return ds.getRepository(SceneDialogueEntity).find({
++      where: { sceneScriptId } as any,
++      order: { sortOrder: 'ASC' },
++    })
++  }
++
++  async function sb1Links() {
++    return (await ds.query(
++      `SELECT dialogue_id FROM storyboard_dialogue_links
++        WHERE storyboard_id = 'sb1' ORDER BY sort_order ASC`,
++    )) as Array<{ dialogue_id: string }>
++  }
++
++  it('(a) AI 重排 id（dlg_1 重号）且顺序打乱：按文本对齐回旧 id，links 不悬空', async () => {
++    await SceneBindingWriter.rewriteSceneWithBindings(ds, 's1', makeGenerated([
++      { id: 'dlg_1', characterBindingId: null, characterId: 'c1', characterName: '张三', text: '旧台词二' },
++      { id: 'dlg_2', characterBindingId: null, characterId: 'c1', characterName: '张三', text: '旧台词一' },
++    ]))
++
++    // 文本对齐：第一条对到 dlg2（旧台词二）、第二条对到 dlg1（旧台词一）
++    const dialogues = await sceneDialogues('s1')
++    expect(dialogues.map((d) => [d.id, d.text])).toEqual([
++      ['dlg2', '旧台词二'],
++      ['dlg1', '旧台词一'],
++    ])
++    // 动作同样按描述对齐回 act1
++    const actions = await ds.getRepository(SceneActionEntity).find({ where: { sceneScriptId: 's1' } as any })
++    expect(actions.map((a) => a.id)).toEqual(['act1'])
++
++    // 分镜 dialogueIds 引用的旧 id 仍指向正确对白：links 重建且不悬空
++    expect((await sb1Links()).map((l) => l.dialogue_id)).toEqual(['dlg1', 'dlg2'])
++    const dlg1 = dialogues.find((d) => d.id === 'dlg1')
++    expect(dlg1?.text).toBe('旧台词一')
++
++    // JSON 列与桥接表同源
++    const row = await ds.getRepository(SceneScriptEntity).findOne({ where: { id: 's1' } as any })
++    expect(((row?.dialogues ?? []) as Array<{ id: string }>).map((d) => d.id)).toEqual(['dlg2', 'dlg1'])
++    expect(((row?.actions ?? []) as Array<{ id: string }>).map((a) => a.id)).toEqual(['act1'])
++  })
++
++  it('(b) 他场景已占 dlg_1：本场景新对白重发新 id，他场景行不被覆盖', async () => {
++    // 旧对白整体被替换，分镜引用一并清空（S-06 调用方本就先删分镜；
++    // 这里保留空引用的分镜只为验证 links 重建不报错）
++    await ds.getRepository(StoryboardEntity).update({ id: 'sb1' } as any, {
++      dialogueIds: [],
++      actionIds: [],
++    } as any)
++
++    await SceneBindingWriter.rewriteSceneWithBindings(ds, 's1', makeGenerated([
++      { id: 'dlg_1', characterBindingId: null, characterId: 'c1', characterName: '张三', text: '全新台词一' },
++      { id: 'dlg_2', characterBindingId: null, characterId: 'c1', characterName: '张三', text: '全新台词二' },
++    ]))
++
++    // 他场景行原样保留（撞号 upsert 时会变成 '全新台词一'）
++    const other = await sceneDialogues('s2')
++    expect(other).toHaveLength(1)
++    expect(other[0].id).toBe('dlg_1')
++    expect(other[0].text).toBe('他场景台词')
++
++    // 本场景新对白拿了重发的新 id（不能是他场景在用的 dlg_1，也不是旧 dlg1/dlg2）
++    const mine = await sceneDialogues('s1')
++    expect(mine).toHaveLength(2)
++    for (const d of mine) {
++      expect(d.id).toMatch(/^dlg_/)
++      expect(['dlg_1', 'dlg_2', 'dlg1', 'dlg2']).not.toContain(d.id)
++    }
++    expect(new Set(mine.map((d) => d.id)).size).toBe(2)
++
++    // JSON 列与桥接表同源
++    const row = await ds.getRepository(SceneScriptEntity).findOne({ where: { id: 's1' } as any })
++    expect(((row?.dialogues ?? []) as Array<{ id: string }>).map((d) => d.id))
++      .toEqual(mine.map((d) => d.id))
++
++    // 空引用分镜的 links 重建为空
++    expect(await sb1Links()).toEqual([])
++  })
++
++  it('(c) 部分保留 + 新增对白：保留的对齐回旧 id，新增的获得新 id 且 JSON/桥接一致', async () => {
++    // 分镜只引用保留的那条，避免被删对白 id 的 links 重建 FK 失败干扰断言
++    await ds.getRepository(StoryboardEntity).update({ id: 'sb1' } as any, {
++      dialogueIds: ['dlg1'],
++    } as any)
++
++    await SceneBindingWriter.rewriteSceneWithBindings(ds, 's1', makeGenerated([
++      { id: 'dlg_9', characterBindingId: null, characterId: 'c1', characterName: '张三', text: '旧台词一' },
++      { id: 'dlg_10', characterBindingId: null, characterId: 'c1', characterName: '张三', text: '全新台词' },
++    ]))
++
++    const mine = await sceneDialogues('s1')
++    expect(mine).toHaveLength(2)
++    // 文本命中旧行：沿用 dlg1
++    expect(mine[0].id).toBe('dlg1')
++    // 新增对白：发新 id（既不沿用 AI 的 dlg_10，也不复用被删的 dlg2）
++    expect(mine[1].id).toMatch(/^dlg_/)
++    expect(['dlg_10', 'dlg1', 'dlg2', 'dlg_1']).not.toContain(mine[1].id)
++
++    // JSON 列与桥接表同源
++    const row = await ds.getRepository(SceneScriptEntity).findOne({ where: { id: 's1' } as any })
++    expect(((row?.dialogues ?? []) as Array<{ id: string }>).map((d) => d.id))
++      .toEqual(mine.map((d) => d.id))
++
++    // 分镜引用的 dlg1 仍在，links 重建不悬空
++    expect((await sb1Links()).map((l) => l.dialogue_id)).toEqual(['dlg1'])
++  })
++
++  it('(d) AI 保留旧 id 的常规路径：id 原样沿用，行为与修复前一致', async () => {
++    await SceneBindingWriter.rewriteSceneWithBindings(ds, 's1', makeGenerated([
++      { id: 'dlg1', characterBindingId: null, characterId: 'c1', characterName: '张三', text: '改过的台词一' },
++      { id: 'dlg2', characterBindingId: null, characterId: 'c1', characterName: '张三', text: '改过的台词二' },
++    ]))
++
++    const mine = await sceneDialogues('s1')
++    expect(mine.map((d) => [d.id, d.text])).toEqual([
++      ['dlg1', '改过的台词一'],
++      ['dlg2', '改过的台词二'],
++    ])
++    expect((await sb1Links()).map((l) => l.dialogue_id)).toEqual(['dlg1', 'dlg2'])
++  })
++})
+diff --git a/tests/unit/episode-production/narrative/storyboard-cogen-replace-tx.spec.ts b/tests/unit/episode-production/narrative/storyboard-cogen-replace-tx.spec.ts
+index 60430c7d..dacc6658 100644
+--- a/tests/unit/episode-production/narrative/storyboard-cogen-replace-tx.spec.ts
++++ b/tests/unit/episode-production/narrative/storyboard-cogen-replace-tx.spec.ts
+@@ -178,11 +178,18 @@ describe('replaceSceneStoryboards 事务化（M1：删旧插新同事务）', ()
+     if (ds.isInitialized) await ds.destroy()
+   })
+ 
+-  it('M1-a：插入中途失败（links FK 抛错）→ 整体回滚，旧分镜与旧 links 完整保留、无新分镜残留', async () => {
++  it('M1-a：插入中途失败（trigger 模拟抛错）→ 整体回滚，旧分镜与旧 links 完整保留、无新分镜残留', async () => {
++    // links 重建已过滤悬空 id（storyboard-dialogue-links 修复后悬空不再 FK 抛错），
++    // 改用 trigger 在第二条 link 插入时抛错，模拟「插入中途失败」
++    await ds.query(`
++      CREATE TRIGGER fail_link_dlg_b BEFORE INSERT ON storyboard_dialogue_links
++      WHEN NEW.dialogue_id = 'dlg_b'
++      BEGIN SELECT RAISE(FAIL, 'simulated mid-insert failure'); END
++    `)
+     const output = cogenOutput([
+       { dialogueIds: ['dlg_a'] },
+-      // 第二镜承接悬空对白 id：links 插入触发 FK 失败，模拟「插入中途抛错」
+-      { dialogueIds: ['dlg_missing'] },
++      // 第二镜的 link 插入触发 trigger 抛错，模拟「插入中途抛错」
++      { dialogueIds: ['dlg_b'] },
+     ])
+ 
+     await expect(
+diff --git a/tests/unit/episode-production/narrative/storyboard-dialogue-links.spec.ts b/tests/unit/episode-production/narrative/storyboard-dialogue-links.spec.ts
+index 4404fa4f..0185ed1b 100644
+--- a/tests/unit/episode-production/narrative/storyboard-dialogue-links.spec.ts
++++ b/tests/unit/episode-production/narrative/storyboard-dialogue-links.spec.ts
+@@ -4,7 +4,8 @@
+  * 覆盖：
+  * - (a) 批量生成路径 ep:generate-storyboards 生成后 links 正确落库（C1）
+  * - (b) ep:update-storyboard 改 dialogueIds 后 links 同步；未变更不重建（C2）
+- * - rebuildStoryboardDialogueLinks：先删后插、空 dialogueIds 清空 links
++ * - rebuildStoryboardDialogueLinks：先删后插、空 dialogueIds 清空 links；
++ *   悬空 id 过滤（只插有效项、sort_order 紧凑、记 warn）
+  */
+ 
+ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+@@ -268,19 +269,29 @@ describe('storyboard_dialogue_links 维护闭环', () => {
+     expect(await linksOf('sb1')).toEqual([])
+   })
+ 
+-  it('DataSource 模式包事务：INSERT 失败时 DELETE 一并回滚，旧 links 不丢', async () => {
+-    // 打开 FK 让悬空 dialogue_id 的 INSERT 真实失败（与生产库 PRAGMA 一致）
++  it('dialogueIds 含悬空 id（有效/悬空/有效）：只插有效 links，sort_order 紧凑，记 warn', async () => {
++    // 打开 FK 验证过滤后不再触发 FK 中断（与生产库 PRAGMA 一致）
+     await ds.query('PRAGMA foreign_keys = ON')
+-    await seedDialogues(['d1'])
++    await seedDialogues(['d1', 'd3'])
+     await seedStoryboard('sb1', ['d1'])
+     await rebuildStoryboardDialogueLinks(ds, { id: 'sb1', dialogueIds: ['d1'] })
+-    const before = await linksOf('sb1')
+-    expect(before.map((l) => l.dialogue_id)).toEqual(['d1'])
+ 
+-    await expect(
+-      rebuildStoryboardDialogueLinks(ds, { id: 'sb1', dialogueIds: ['d1', 'dangling'] }),
+-    ).rejects.toThrow()
+-    expect(await linksOf('sb1')).toEqual(before)
++    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
++    try {
++      // 不过滤时：d1 插入后 ghost FK 失败中断，d3 的 link 丢失（部分状态）
++      await rebuildStoryboardDialogueLinks(ds, { id: 'sb1', dialogueIds: ['d1', 'ghost', 'd3'] })
++
++      const links = await linksOf('sb1')
++      expect(links.map((l) => l.dialogue_id)).toEqual(['d1', 'd3'])
++      expect(links.map((l) => l.sort_order)).toEqual([0, 1])
++      // warn 含 storyboardId 与被滤掉的悬空 id
++      expect(warnSpy).toHaveBeenCalledTimes(1)
++      const warnText = warnSpy.mock.calls[0].map(String).join(' ')
++      expect(warnText).toContain('sb1')
++      expect(warnText).toContain('ghost')
++    } finally {
++      warnSpy.mockRestore()
++    }
+   })
+ 
+   it('EntityManager 模式并入调用方事务，不另起事务', async () => {
+diff --git a/tests/unit/episode-production/narrative/storyboard-generate-single-cleanup.spec.ts b/tests/unit/episode-production/narrative/storyboard-generate-single-cleanup.spec.ts
+index df66c843..aa314cb2 100644
+--- a/tests/unit/episode-production/narrative/storyboard-generate-single-cleanup.spec.ts
++++ b/tests/unit/episode-production/narrative/storyboard-generate-single-cleanup.spec.ts
+@@ -320,13 +320,20 @@ describe('handleGenerateStoryboard 删旧建新事务化（M2）', () => {
+     expect(chars).toHaveLength(1)
+   })
+ 
+-  it('M2-d：插入中途失败（links FK 抛错）→ 整体回滚，旧分镜与旧 links 完整保留、无新残留', async () => {
++  it('M2-d：插入中途失败（trigger 模拟抛错）→ 整体回滚，旧分镜与旧 links 完整保留、无新残留', async () => {
+     await seedOldStoryboard()
++    // links 重建已过滤悬空 id（storyboard-dialogue-links 修复后悬空不再 FK 抛错），
++    // 改用 trigger 在第二条 link 插入时抛错，模拟「插入中途失败」
++    await ds.query(`
++      CREATE TRIGGER fail_link_dlg_b BEFORE INSERT ON storyboard_dialogue_links
++      WHEN NEW.dialogue_id = 'dlg_b'
++      BEGIN SELECT RAISE(FAIL, 'simulated mid-insert failure'); END
++    `)
+     generateStoryboardsIncrementalMock.mockResolvedValue({
+       storyboards: [
+         aiShot(['dlg_a']),
+-        // 第二镜承接悬空对白 id：links 插入触发 FK 失败，模拟「插入中途抛错」
+-        aiShot(['dlg_missing']),
++        // 第二镜的 link 插入触发 trigger 抛错，模拟「插入中途抛错」
++        aiShot(['dlg_b']),
+       ],
+     })
+ 

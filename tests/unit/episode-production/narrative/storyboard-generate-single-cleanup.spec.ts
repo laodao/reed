@@ -320,13 +320,20 @@ describe('handleGenerateStoryboard 删旧建新事务化（M2）', () => {
     expect(chars).toHaveLength(1)
   })
 
-  it('M2-d：插入中途失败（links FK 抛错）→ 整体回滚，旧分镜与旧 links 完整保留、无新残留', async () => {
+  it('M2-d：插入中途失败（trigger 模拟抛错）→ 整体回滚，旧分镜与旧 links 完整保留、无新残留', async () => {
     await seedOldStoryboard()
+    // links 重建已过滤悬空 id（storyboard-dialogue-links 修复后悬空不再 FK 抛错），
+    // 改用 trigger 在第二条 link 插入时抛错，模拟「插入中途失败」
+    await ds.query(`
+      CREATE TRIGGER fail_link_dlg_b BEFORE INSERT ON storyboard_dialogue_links
+      WHEN NEW.dialogue_id = 'dlg_b'
+      BEGIN SELECT RAISE(FAIL, 'simulated mid-insert failure'); END
+    `)
     generateStoryboardsIncrementalMock.mockResolvedValue({
       storyboards: [
         aiShot(['dlg_a']),
-        // 第二镜承接悬空对白 id：links 插入触发 FK 失败，模拟「插入中途抛错」
-        aiShot(['dlg_missing']),
+        // 第二镜的 link 插入触发 trigger 抛错，模拟「插入中途抛错」
+        aiShot(['dlg_b']),
       ],
     })
 

@@ -98,6 +98,14 @@ import { LwOutlineLocationRepository } from '@core/database/repositories/lw-outl
 import { LwOutlineItemRepository } from '@core/database/repositories/lw-outline-item.repository'
 import { LwSkillCharacterRepository } from '@core/database/repositories/lw-skill-character.repository'
 import { LwDesignMessageRepository } from '@core/database/repositories/lw-design-message.repository'
+import { LwWorldRepository } from '@core/database/repositories/lw-world.repository'
+import { LwWorldKindRepository } from '@core/database/repositories/lw-world-kind.repository'
+import { LwWorldEntryRepository } from '@core/database/repositories/lw-world-entry.repository'
+import { LwWorldEdgeRepository } from '@core/database/repositories/lw-world-edge.repository'
+import { LwIpCharacterRepository } from '@core/database/repositories/lw-ip-character.repository'
+import { LwIpEdgeRepository } from '@core/database/repositories/lw-ip-edge.repository'
+import { LwWorldBindingRepository } from '@core/database/repositories/lw-world-binding.repository'
+import { LwIpBindingRepository } from '@core/database/repositories/lw-ip-binding.repository'
 import { LwMemoryEntityRepository } from '@core/database/repositories/lw-memory-entity.repository'
 import { LwTempCharacterTemplateRepository } from '@core/database/repositories/lw-temp-character-template.repository'
 import { LwTempLocationTemplateRepository } from '@core/database/repositories/lw-temp-location-template.repository'
@@ -220,6 +228,14 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   lwGraphEdges: LwGraphEdgeRepository | null
   lwPredicateRegistry: LwPredicateRegistryRepository | null
   lwDesignDocuments: LwDesignDocumentRepository | null
+  lwWorlds: LwWorldRepository | null
+  lwWorldKinds: LwWorldKindRepository | null
+  lwWorldEntries: LwWorldEntryRepository | null
+  lwWorldEdges: LwWorldEdgeRepository | null
+  lwIpCharacters: LwIpCharacterRepository | null
+  lwIpEdges: LwIpEdgeRepository | null
+  lwWorldBindings: LwWorldBindingRepository | null
+  lwIpBindings: LwIpBindingRepository | null
   // 工作流引擎（三表）
   workflowDefinitions: WorkflowDefinitionRepository | null
   workflowRuns: WorkflowRunRepository | null
@@ -361,6 +377,15 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.lwGraphEdges = new LwGraphEdgeRepository(ds)
     this.lwPredicateRegistry = new LwPredicateRegistryRepository(ds)
     this.lwDesignDocuments = new LwDesignDocumentRepository(ds)
+    // 设定资产库（世界观库 + 角色 IP 库，2026-09-24 P0）
+    this.lwWorlds = new LwWorldRepository(ds)
+    this.lwWorldKinds = new LwWorldKindRepository(ds)
+    this.lwWorldEntries = new LwWorldEntryRepository(ds)
+    this.lwWorldEdges = new LwWorldEdgeRepository(ds)
+    this.lwIpCharacters = new LwIpCharacterRepository(ds)
+    this.lwIpEdges = new LwIpEdgeRepository(ds)
+    this.lwWorldBindings = new LwWorldBindingRepository(ds)
+    this.lwIpBindings = new LwIpBindingRepository(ds)
     this.workflowDefinitions = new WorkflowDefinitionRepository(ds)
     this.workflowRuns = new WorkflowRunRepository(ds)
     this.workflowNodeRuns = new WorkflowNodeRunRepository(ds)

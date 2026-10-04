@@ -104,6 +104,8 @@ export type WorkflowNodeType =
   | 'collect-webpage'
   // 日记（知识提炼存日记等场景：成果落日记库，/diary 阅读）
   | 'save-diary'
+  // 日记聚合（按时间范围拉日记成 markdown 素材，周报/月报复盘的数据面）
+  | 'collect-diary'
   // 信息采集（信息来源库多源抓取：来源多选/来源分组/自定义 URL → 链接清单）
   | 'crawl-news'
   // 批量抓取页面提取链接（两级采集：专栏页 → 新闻链接）
@@ -636,6 +638,17 @@ export interface WorkflowNodeConfigMap {
     content: string
   }
 
+  'collect-diary': {
+    /** 起始日期（YYYY-MM-DD；与 endDate 至少配合使用，优先于 days） */
+    startDate?: string
+    /** 结束日期（YYYY-MM-DD，含当天全天） */
+    endDate?: string
+    /** 最近 N 天（startDate 留空时生效，缺省 7） */
+    days?: string
+    /** 只聚合该目录（留空 = 全部目录） */
+    folderId?: string
+  }
+
   'crawl-news': {
     /** 信息来源分组 id（设置 → 信息来源 中任意类别的分组；与 customUrls 可都填合并） */
     topicId?: string
@@ -1048,6 +1061,7 @@ export const WORKFLOW_NODE_TYPES = {
   'read-assets': 'read-assets',
   'collect-webpage': 'collect-webpage',
   'save-diary': 'save-diary',
+  'collect-diary': 'collect-diary',
   'crawl-news': 'crawl-news',
   'crawl-links': 'crawl-links',
   'chapter-writing': 'chapter-writing',

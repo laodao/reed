@@ -20,7 +20,7 @@
         </div>
       </div>
 
-      <!-- 导航菜单（平铺：父项 + 子项都是独立图标项） -->
+      <!-- 导航菜单（平铺：父项 + 子项都是独立图标项；含 children 的项悬停弹二级浮层） -->
       <nav class="sidebar-nav">
         <div class="nav-section">
           <ul class="nav-list">
@@ -28,21 +28,24 @@
               v-for="item in flatMenuItems"
               :key="item.path"
               class="nav-item"
-              :class="{ active: currentRoute === item.path }"
+              :class="{ active: isActiveMenuItem(item) }"
               @click="navigateTo(item.path)"
+              @mouseenter="openSubmenuFlyout(item, $event)"
+              @mouseleave="scheduleCloseSubmenu()"
             >
               <el-tooltip
                 :content="item.label"
                 placement="right"
                 :show-after="300"
+                :disabled="!!item.children?.length"
               >
                 <div class="nav-item-content">
                   <div class="nav-icon-wrapper">
                     <component :is="item.icon" class="nav-icon" />
-                    <div v-if="currentRoute === item.path" class="nav-glow"></div>
+                    <div v-if="isActiveMenuItem(item)" class="nav-glow"></div>
                   </div>
                   <transition name="indicator">
-                    <div v-if="currentRoute === item.path" class="nav-indicator"></div>
+                    <div v-if="isActiveMenuItem(item)" class="nav-indicator"></div>
                   </transition>
                 </div>
               </el-tooltip>
@@ -50,6 +53,29 @@
           </ul>
         </div>
       </nav>
+
+      <!-- 二级菜单悬停浮层（teleport 到 body 防侧边栏裁切；2026-09-24 设定资产库入口） -->
+      <teleport to="body">
+        <div
+          v-if="submenuFlyout"
+          class="nav-submenu-flyout"
+          :style="{ top: `${submenuFlyout.top}px`, left: `${submenuFlyout.left}px` }"
+          @mouseenter="keepSubmenuAlive()"
+          @mouseleave="scheduleCloseSubmenu()"
+        >
+          <div class="nav-submenu-title">{{ submenuFlyout.item.label }}</div>
+          <div
+            v-for="child in submenuFlyout.item.children"
+            :key="child.path"
+            class="nav-submenu-item"
+            :class="{ active: currentRoute === child.path }"
+            @click="navigateTo(child.path); closeSubmenuNow()"
+          >
+            <component :is="child.icon" class="nav-submenu-icon" />
+            <span>{{ child.label }}</span>
+          </div>
+        </div>
+      </teleport>
 
       <!-- 底部菜单 -->
       <div class="sidebar-footer">
@@ -101,7 +127,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from '@/composables/useTheme'
 import { useSkin } from '@/composables/useSkin'
@@ -152,6 +178,54 @@ const currentRoute = computed(() => route.path)
  * 侧边栏为纯图标模式（无展开功能），子菜单若不平铺将不可达。
  */
 const flatMenuItems = computed<MenuItem[]>(() => flattenMenuItems(mainMenuItems))
+
+/**
+ * 二级菜单悬停浮层（hover flyout）：菜单项含 children 时，悬停在其右侧弹出子菜单。
+ * 关闭走 180ms 延迟——鼠标跨过图标与浮层之间的间隙不闪断；浮层自身 mouseenter 续命。
+ */
+const submenuFlyout = ref<{ item: MenuItem; top: number; left: number } | null>(null)
+let submenuCloseTimer: ReturnType<typeof setTimeout> | null = null
+
+const isActiveMenuItem = (item: MenuItem): boolean => {
+  if (currentRoute.value === item.path) return true
+  return !!item.children?.some(c => c.path === currentRoute.value)
+}
+
+const openSubmenuFlyout = (item: MenuItem, evt: MouseEvent) => {
+  if (!item.children?.length) {
+    closeSubmenuNow()
+    return
+  }
+  if (submenuCloseTimer) {
+    clearTimeout(submenuCloseTimer)
+    submenuCloseTimer = null
+  }
+  const rect = (evt.currentTarget as HTMLElement).getBoundingClientRect()
+  submenuFlyout.value = { item, top: rect.top, left: rect.right + 8 }
+}
+
+const scheduleCloseSubmenu = () => {
+  if (submenuCloseTimer) clearTimeout(submenuCloseTimer)
+  submenuCloseTimer = setTimeout(() => {
+    submenuFlyout.value = null
+    submenuCloseTimer = null
+  }, 180)
+}
+
+const keepSubmenuAlive = () => {
+  if (submenuCloseTimer) {
+    clearTimeout(submenuCloseTimer)
+    submenuCloseTimer = null
+  }
+}
+
+const closeSubmenuNow = () => {
+  if (submenuCloseTimer) {
+    clearTimeout(submenuCloseTimer)
+    submenuCloseTimer = null
+  }
+  submenuFlyout.value = null
+}
 
 const navigateTo = (path: string) => {
   router.push(path)
@@ -308,6 +382,51 @@ watch(
       color: rgba(255, 255, 255, 0.9);
     }
   }
+}
+
+.nav-submenu-flyout {
+  position: fixed;
+  z-index: 3000;
+  min-width: 168px;
+  padding: 6px;
+  background: var(--sidebar-item-active-bg, #2a2a35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(8px);
+}
+
+.nav-submenu-title {
+  padding: 6px 10px 4px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.nav-submenu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm, 6px);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-fast, 0.15s);
+
+  &:hover {
+    background: var(--sidebar-item-hover-bg, rgba(255, 255, 255, 0.08));
+  }
+
+  &.active {
+    background: var(--sidebar-item-active-bg, rgba(255, 255, 255, 0.14));
+    color: #fff;
+  }
+}
+
+.nav-submenu-icon {
+  width: 15px;
+  height: 15px;
 }
 
 .nav-item-content {

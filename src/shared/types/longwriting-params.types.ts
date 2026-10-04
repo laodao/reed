@@ -33,6 +33,8 @@ export interface LongwritingWritingParams {
   normalMemoryLimit: number
   /** 次要记忆注入条数 */
   minorMemoryLimit: number
+  /** 世界观库常驻注入预算（token；0=关闭库注入。设定资产库 2026-09-24） */
+  worldContextMaxTokens: number
 }
 
 /** 故事研讨室 */
@@ -74,6 +76,7 @@ export const LONGWRITING_DEFAULTS: LongwritingRuntimeParams = {
     sectionTargetWords: 500, // generateSection 的 `targetWords || outline.estimatedWords || 500`
     previousChapterEndingChars: 550, // extractEndingContentByParagraph 的 `targetChars = 550`
     normalMemoryLimit: 10, // getMemoryContext 的 `normalMemories.slice(0, 10)`
+    worldContextMaxTokens: 2_000, // 世界观库 pinned 条目直注入预算（0=关闭）
     minorMemoryLimit: 5, // 同函数 `minorMemories.slice(-5)`
   },
   storyRoom: {
@@ -100,6 +103,7 @@ export const LONGWRITING_LIMITS: LongwritingRuntimeParams = {
     previousChapterEndingChars: 5_000,
     normalMemoryLimit: 50,
     minorMemoryLimit: 30,
+    worldContextMaxTokens: 12_000,
   },
   storyRoom: {
     historyLimit: 120,

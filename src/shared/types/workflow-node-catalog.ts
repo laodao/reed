@@ -1040,6 +1040,24 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
       { key: 'folderId', type: 'string', desc: '所属目录 ID' },
     ],
   },
+  {
+    type: 'collect-diary',
+    label: '聚合日记素材',
+    description: '按时间范围拉取日记聚合成 markdown 素材（周报/月报复盘的数据面，供下游 LLM 复盘）',
+    category: 'general',
+    icon: 'Collection',
+    controlKind: 'task',
+    cancellable: false,
+    ports: [{ kind: 'normal', label: '出', max: 1 }, { kind: 'fail', label: '失败' }],
+    requiredConfigKeys: [],
+    defaultConfig: { startDate: '', endDate: '', days: '7', folderId: '' },
+    outputSchema: [
+      { key: 'content', type: 'string', desc: '聚合后的 markdown 素材' },
+      { key: 'count', type: 'number', desc: '纳入的日记篇数' },
+      { key: 'from', type: 'string', desc: '实际起始时间（ISO）' },
+      { key: 'to', type: 'string', desc: '实际结束时间（ISO）' },
+    ],
+  },
 
 ]
 

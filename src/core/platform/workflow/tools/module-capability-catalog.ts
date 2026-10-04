@@ -171,10 +171,17 @@ export const MODULE_CAPABILITY_CARDS: ModuleCapability[] = [
   {
     moduleId: 'diary',
     name: '日记',
-    tagline: '日记记录，save-diary 工作流节点可把工作流产出自动物化成日记',
-    intents: ['把今天的总结写进日记'],
-    capabilities: ['save-diary 节点：流程产物落日记'],
-    invocation: [{ via: 'workflow', how: 'save-diary 节点' }, { via: 'ui', how: '/diary' }],
+    tagline: '日记记录，save-diary 落库 / collect-diary 聚合，周报复盘内置流可把一段日记复盘成新日记',
+    intents: ['把今天的总结写进日记', '复盘最近一周的日记'],
+    capabilities: [
+      'save-diary 节点：流程产物落日记',
+      'collect-diary 节点：按时间范围聚合日记为 markdown 素材（周报/月报复盘数据面）',
+      '内置流「日记周报复盘」：聚合 → AI 三段式复盘 → 人工确认 → 存回日记',
+    ],
+    invocation: [
+      { via: 'workflow', how: 'save-diary / collect-diary 节点；内置流「日记周报复盘」' },
+      { via: 'ui', how: '/diary' },
+    ],
   },
   {
     moduleId: 'portrait',

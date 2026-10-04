@@ -4,7 +4,8 @@
  * 覆盖：
  * - (a) 批量生成路径 ep:generate-storyboards 生成后 links 正确落库（C1）
  * - (b) ep:update-storyboard 改 dialogueIds 后 links 同步；未变更不重建（C2）
- * - rebuildStoryboardDialogueLinks：先删后插、空 dialogueIds 清空 links
+ * - rebuildStoryboardDialogueLinks：先删后插、空 dialogueIds 清空 links；
+ *   悬空 id 过滤（只插有效项、sort_order 紧凑、记 warn）
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -268,19 +269,29 @@ describe('storyboard_dialogue_links 维护闭环', () => {
     expect(await linksOf('sb1')).toEqual([])
   })
 
-  it('DataSource 模式包事务：INSERT 失败时 DELETE 一并回滚，旧 links 不丢', async () => {
-    // 打开 FK 让悬空 dialogue_id 的 INSERT 真实失败（与生产库 PRAGMA 一致）
+  it('dialogueIds 含悬空 id（有效/悬空/有效）：只插有效 links，sort_order 紧凑，记 warn', async () => {
+    // 打开 FK 验证过滤后不再触发 FK 中断（与生产库 PRAGMA 一致）
     await ds.query('PRAGMA foreign_keys = ON')
-    await seedDialogues(['d1'])
+    await seedDialogues(['d1', 'd3'])
     await seedStoryboard('sb1', ['d1'])
     await rebuildStoryboardDialogueLinks(ds, { id: 'sb1', dialogueIds: ['d1'] })
-    const before = await linksOf('sb1')
-    expect(before.map((l) => l.dialogue_id)).toEqual(['d1'])
 
-    await expect(
-      rebuildStoryboardDialogueLinks(ds, { id: 'sb1', dialogueIds: ['d1', 'dangling'] }),
-    ).rejects.toThrow()
-    expect(await linksOf('sb1')).toEqual(before)
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      // 不过滤时：d1 插入后 ghost FK 失败中断，d3 的 link 丢失（部分状态）
+      await rebuildStoryboardDialogueLinks(ds, { id: 'sb1', dialogueIds: ['d1', 'ghost', 'd3'] })
+
+      const links = await linksOf('sb1')
+      expect(links.map((l) => l.dialogue_id)).toEqual(['d1', 'd3'])
+      expect(links.map((l) => l.sort_order)).toEqual([0, 1])
+      // warn 含 storyboardId 与被滤掉的悬空 id
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+      const warnText = warnSpy.mock.calls[0].map(String).join(' ')
+      expect(warnText).toContain('sb1')
+      expect(warnText).toContain('ghost')
+    } finally {
+      warnSpy.mockRestore()
+    }
   })
 
   it('EntityManager 模式并入调用方事务，不另起事务', async () => {

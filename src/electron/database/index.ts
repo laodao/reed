@@ -77,6 +77,14 @@ import { LwEventRepository } from '@core/database/repositories/lw-event.reposito
 import { LwBibleKindRepository } from '@core/database/repositories/lw-bible-kind.repository'
 import { LwCustomEntityRepository } from '@core/database/repositories/lw-custom-entity.repository'
 import { LwForeshadowRepository } from '@core/database/repositories/lw-foreshadow.repository'
+import { LwWorldRepository } from '@core/database/repositories/lw-world.repository'
+import { LwWorldKindRepository } from '@core/database/repositories/lw-world-kind.repository'
+import { LwWorldEntryRepository } from '@core/database/repositories/lw-world-entry.repository'
+import { LwWorldEdgeRepository } from '@core/database/repositories/lw-world-edge.repository'
+import { LwIpCharacterRepository } from '@core/database/repositories/lw-ip-character.repository'
+import { LwIpEdgeRepository } from '@core/database/repositories/lw-ip-edge.repository'
+import { LwWorldBindingRepository } from '@core/database/repositories/lw-world-binding.repository'
+import { LwIpBindingRepository } from '@core/database/repositories/lw-ip-binding.repository'
 import { LwGraphEdgeRepository } from '@core/database/repositories/lw-graph-edge.repository'
 import { LwPredicateRegistryRepository } from '@core/database/repositories/lw-predicate-registry.repository'
 import { LwDesignDocumentRepository } from '@core/database/repositories/lw-design-document.repository'
@@ -214,6 +222,14 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public lwBibleKinds: LwBibleKindRepository | null = null
   public lwCustomEntities: LwCustomEntityRepository | null = null
   public lwForeshadows: LwForeshadowRepository | null = null
+  public lwWorlds: LwWorldRepository | null = null
+  public lwWorldKinds: LwWorldKindRepository | null = null
+  public lwWorldEntries: LwWorldEntryRepository | null = null
+  public lwWorldEdges: LwWorldEdgeRepository | null = null
+  public lwIpCharacters: LwIpCharacterRepository | null = null
+  public lwIpEdges: LwIpEdgeRepository | null = null
+  public lwWorldBindings: LwWorldBindingRepository | null = null
+  public lwIpBindings: LwIpBindingRepository | null = null
   public lwGraphEdges: LwGraphEdgeRepository | null = null
   public lwPredicateRegistry: LwPredicateRegistryRepository | null = null
   public lwDesignDocuments: LwDesignDocumentRepository | null = null
@@ -635,6 +651,16 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-kb-document-source'
     )
     await addKbDocumentSource(this.dataSource)
+    // 日记软删除列（spec 2026-09-24 日记增强 P0-1）：回收站依赖
+    const { addDiaryDeletedAt } = await import(
+      '@core/database/migrations/add-diary-deleted-at'
+    )
+    await addDiaryDeletedAt(this.dataSource)
+    // 日记目录 brain_opt_in（spec 2026-09-24 日记增强 P2-1）：日记消化 opt-in 红线
+    const { addDiaryFolderBrainOptIn } = await import(
+      '@core/database/migrations/add-diary-folder-brain-opt-in'
+    )
+    await addDiaryFolderBrainOptIn(this.dataSource)
     // 关键帧 reference_overrides：用户精细挑图覆盖
     const { addKeyframeReferenceOverrides } = await import(
       '@core/database/migrations/add-keyframe-reference-overrides'
@@ -742,6 +768,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
     // 设定集动态分组两表 + 人物别名列（P0-2026-09-09）
     const { createBibleTables } = await import('@core/database/migrations/create-bible-tables')
     await createBibleTables(this.dataSource)
+
+    // 设定资产库：世界观库 + 角色 IP 库 8 表 + 既有实体血缘列（2026-09-24 P0）
+    const { createLwLibraryTables } = await import(
+      '@core/database/migrations/create-lw-library-tables'
+    )
+    await createLwLibraryTables(this.dataSource)
 
     // 谓词受控词表 + 存量关系归一（2026-09-16 结构化设定方案 M0）
     const { createLwPredicateRegistry } = await import(
@@ -4586,6 +4618,15 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.lwGraphEdges = new LwGraphEdgeRepository(this.dataSource)
     this.lwPredicateRegistry = new LwPredicateRegistryRepository(this.dataSource)
     this.lwDesignDocuments = new LwDesignDocumentRepository(this.dataSource)
+    // 设定资产库（世界观库 + 角色 IP 库，2026-09-24 P0）
+    this.lwWorlds = new LwWorldRepository(this.dataSource)
+    this.lwWorldKinds = new LwWorldKindRepository(this.dataSource)
+    this.lwWorldEntries = new LwWorldEntryRepository(this.dataSource)
+    this.lwWorldEdges = new LwWorldEdgeRepository(this.dataSource)
+    this.lwIpCharacters = new LwIpCharacterRepository(this.dataSource)
+    this.lwIpEdges = new LwIpEdgeRepository(this.dataSource)
+    this.lwWorldBindings = new LwWorldBindingRepository(this.dataSource)
+    this.lwIpBindings = new LwIpBindingRepository(this.dataSource)
     this.workflowDefinitions = new WorkflowDefinitionRepository(this.dataSource)
     this.workflowRuns = new WorkflowRunRepository(this.dataSource)
     this.workflowNodeRuns = new WorkflowNodeRunRepository(this.dataSource)

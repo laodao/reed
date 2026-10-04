@@ -81,6 +81,28 @@ export class LwCharacterEntity {
   @Column({ name: 'source_episode_id', type: 'text', nullable: true })
   sourceEpisodeId!: string | null
 
+  // ---- 设定资产库血缘 + 四层人设（2026-09-24 P0，迁移 create-lw-library-tables 加列）----
+  @Column({ name: 'library_ip_id', type: 'varchar', nullable: true })
+  libraryIpId!: string | null
+
+  @Column({ name: 'library_world_id', type: 'varchar', nullable: true })
+  libraryWorldId!: string | null
+
+  @Column({ name: 'library_entry_id', type: 'varchar', nullable: true })
+  libraryEntryId!: string | null
+
+  @Column({ name: 'library_version', type: 'integer', nullable: true })
+  libraryVersion!: number | null
+
+  @Column({ name: 'motivation', type: 'text', nullable: true })
+  motivation!: string | null
+
+  @Column({ name: 'flaw', type: 'text', nullable: true })
+  flaw!: string | null
+
+  @Column({ name: 'character_arc', type: 'text', nullable: true })
+  characterArc!: string | null
+
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 

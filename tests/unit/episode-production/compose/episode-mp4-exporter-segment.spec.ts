@@ -219,4 +219,34 @@ describe('EpisodeMp4ExporterService · 视频片段制', () => {
 
     expect(runner.run.mock.calls[0][0].inputs).toEqual(['/tmp/seg1.mp4', '/tmp/v3.mp4'])
   })
+
+  it('D1：烧录字幕基于合成单元 + segment 实际时长 + 转场扣减（不再用展示时间线）', async () => {
+    await seedSegmented(ds)
+    // 3 条对白均分：sb1←d1、sb2←d2、sb3←d3
+    await ds.getRepository(SceneScriptEntity).update({ id: 's1' } as any, {
+      dialogues: [
+        { id: 'd1', text: '台词一', characterName: '甲' },
+        { id: 'd2', text: '台词二', characterName: '乙' },
+        { id: 'd3', text: '台词三', characterName: '丙' },
+      ],
+    } as any)
+    const runner = makeMockRunner()
+    const writer = makeMockFileWriter()
+    const svc = new EpisodeMp4ExporterService(ds, runner, writer)
+
+    await svc.exportEpisodeToMp4({
+      episodeScriptId: 'es1',
+      outputPath: '/tmp/out.mp4',
+      burnSubtitles: true,
+    })
+
+    const srt = (writer.writeText as ReturnType<typeof vi.fn>).mock.calls[0][1] as string
+    // 成片时间轴：seg1 单元 [0,8]（segment.duration=8，sb1/sb2 各半）→ d2 [4,8]；
+    // seg2 单元扣 dissolve 0.5s 后 [7.5,10.5] → d3 [7.5,10.5]
+    expect(srt).toContain('00:00:04,000 --> 00:00:08,000\n乙：台词二')
+    expect(srt).toContain('00:00:07,500 --> 00:00:10,500\n丙：台词三')
+    // 修复前（展示时间线）：d2 从 3.0s 起、d3 从 6.0s 起
+    expect(srt).not.toContain('00:00:03,000 --> 00:00:06,000')
+    expect(srt).not.toContain('00:00:06,000 --> 00:00:09,000')
+  })
 })

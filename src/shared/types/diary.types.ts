@@ -19,6 +19,8 @@ export interface DiaryFolder {
   path: string
   /** 排序 */
   sortOrder: number
+  /** 日记消化 opt-in（开启后条目自动同步「日记」知识库进消化管线，默认 false） */
+  brainOptIn?: boolean
   /** 子目录数量 */
   childCount?: number
   /** 日记数量 */
@@ -43,6 +45,8 @@ export interface CreateDiaryFolderRequest {
 export interface UpdateDiaryFolderRequest {
   name?: string
   sortOrder?: number
+  /** 日记消化开关（spec 2026-09-24 P2；开关与出库清理配套走 diary:set-folder-brain-opt-in） */
+  brainOptIn?: boolean
 }
 
 // ==================== 日记条目 ====================
@@ -67,6 +71,8 @@ export interface DiaryEntry {
   tags?: string[]
   /** YAML frontmatter */
   frontmatter?: string
+  /** 软删除时间（NULL 表示未删除；回收站 = 该字段非空） */
+  deletedAt?: Date | string | null
   /** 创建时间 */
   createdAt: Date | string
   /** 更新时间 */
@@ -101,6 +107,8 @@ export interface DiaryEntryListItem {
   preview?: string
   wordCount: number
   tags?: string[]
+  /** 软删除时间（回收站列表项非空） */
+  deletedAt?: Date | string | null
   createdAt: Date | string
   updatedAt: Date | string
 }

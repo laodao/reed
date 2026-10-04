@@ -696,4 +696,14 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
       placeholder: '留空自动',
     }),
   ],
+  'collect-diary': [
+    T('startDate', '起始日期（YYYY-MM-DD，优先于天数）', { templateHint: true, placeholder: '{{start.startDate}} / 留空按最近 N 天' }),
+    T('endDate', '结束日期（YYYY-MM-DD，含当天）', { templateHint: true, placeholder: '{{start.endDate}}' }),
+    T('days', '最近 N 天（起始日期留空时生效）', { templateHint: true, placeholder: '7' }),
+    T('folderId', '只聚合该目录 ID', {
+      templateHint: true,
+      help: '留空 = 跨全部目录复盘',
+      placeholder: '留空=全部目录',
+    }),
+  ],
 }

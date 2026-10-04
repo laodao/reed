@@ -107,6 +107,15 @@ const IPC_CHANNELS = {
   DIARY_MOVE_ENTRY: 'diary:move-entry',
   DIARY_SEARCH: 'diary:search',
   DIARY_GET_BACKLINKS: 'diary:get-backlinks',
+  DIARY_LIST_DELETED: 'diary:list-deleted',
+  DIARY_RESTORE_ENTRY: 'diary:restore-entry',
+  DIARY_PURGE_ENTRY: 'diary:purge-entry',
+  DIARY_EMPTY_TRASH: 'diary:empty-trash',
+  DIARY_LIST_BY_DATE_RANGE: 'diary:list-by-date-range',
+  DIARY_LIST_ALL_ENTRIES: 'diary:list-all-entries',
+  DIARY_GET_ON_THIS_DAY: 'diary:get-on-this-day',
+  DIARY_GET_INSPIRATION: 'diary:get-inspiration',
+  DIARY_SET_FOLDER_BRAIN_OPT_IN: 'diary:set-folder-brain-opt-in',
   DIARY_EXPORT_HTML: 'diary:export-html',
   DIARY_EXPORT_PDF: 'diary:export-pdf',
   DIARY_EXPORT_DOCX: 'diary:export-docx',
@@ -2347,6 +2356,95 @@ const electronAPI = {
       return () => ipcRenderer.removeListener(channel, listener)
     }
   },
+    // ==================== 设定资产库（世界观库 + 角色 IP 库，2026-09-24 P0） ====================
+    library: {
+      worldList: (includeArchived?: boolean) =>
+        ipcRenderer.invoke('longwriting:library:world:list', includeArchived),
+      worldGet: (id: string) =>
+        ipcRenderer.invoke('longwriting:library:world:get', id),
+      worldCreate: (req: { name: string; genre: string; tagline?: string; description?: string; tags?: string[]; fromTemplate?: string }) =>
+        ipcRenderer.invoke('longwriting:library:world:create', req),
+      worldUpdate: (id: string, req: Record<string, unknown>) =>
+        ipcRenderer.invoke('longwriting:library:world:update', id, req),
+      worldDelete: (id: string) =>
+        ipcRenderer.invoke('longwriting:library:world:delete', id),
+      worldSeedTemplate: (worldId: string, templateId: string) =>
+        ipcRenderer.invoke('longwriting:library:world:seedTemplate', worldId, templateId),
+      worldKindList: (worldId: string) =>
+        ipcRenderer.invoke('longwriting:library:worldKind:list', worldId),
+      worldKindCreate: (data: { worldId: string; key: string; label: string; icon?: string | null; sortOrder?: number; fieldsSchema?: unknown[] | null; promptHint?: string | null }) =>
+        ipcRenderer.invoke('longwriting:library:worldKind:create', data),
+      worldKindDelete: (id: string, worldId: string) =>
+        ipcRenderer.invoke('longwriting:library:worldKind:delete', id, worldId),
+      worldEntryList: (worldId: string, kindKey?: string) =>
+        ipcRenderer.invoke('longwriting:library:worldEntry:list', worldId, kindKey),
+      worldEntryGet: (id: string) =>
+        ipcRenderer.invoke('longwriting:library:worldEntry:get', id),
+      worldEntryCreate: (req: Record<string, unknown>) =>
+        ipcRenderer.invoke('longwriting:library:worldEntry:create', req),
+      worldEntryUpdate: (id: string, req: Record<string, unknown>) =>
+        ipcRenderer.invoke('longwriting:library:worldEntry:update', id, req),
+      worldEntryDelete: (id: string) =>
+        ipcRenderer.invoke('longwriting:library:worldEntry:delete', id),
+      worldEntryReorder: (orderList: { id: string; order: number }[]) =>
+        ipcRenderer.invoke('longwriting:library:worldEntry:reorder', orderList),
+      worldEdgeList: (worldId: string) =>
+        ipcRenderer.invoke('longwriting:library:worldEdge:list', worldId),
+      worldEdgeCreate: (data: { worldId: string; sourceId: string; targetId: string; relationType: string; label?: string | null }) =>
+        ipcRenderer.invoke('longwriting:library:worldEdge:create', data),
+      worldEdgeDelete: (id: string) =>
+        ipcRenderer.invoke('longwriting:library:worldEdge:delete', id),
+      ipList: (includeArchived?: boolean) =>
+        ipcRenderer.invoke('longwriting:library:ip:list', includeArchived),
+      ipGet: (id: string) =>
+        ipcRenderer.invoke('longwriting:library:ip:get', id),
+      ipCreate: (req: Record<string, unknown>) =>
+        ipcRenderer.invoke('longwriting:library:ip:create', req),
+      ipUpdate: (id: string, req: Record<string, unknown>) =>
+        ipcRenderer.invoke('longwriting:library:ip:update', id, req),
+      ipDelete: (id: string) =>
+        ipcRenderer.invoke('longwriting:library:ip:delete', id),
+      ipEdgeList: (characterId: string) =>
+        ipcRenderer.invoke('longwriting:library:ipEdge:list', characterId),
+      ipEdgeCreate: (req: { sourceId: string; targetId: string; relationType: string; label?: string | null; description?: string | null }) =>
+        ipcRenderer.invoke('longwriting:library:ipEdge:create', req),
+      ipEdgeDelete: (id: string) =>
+        ipcRenderer.invoke('longwriting:library:ipEdge:delete', id),
+      listWorldBindings: (projectId: string) =>
+        ipcRenderer.invoke('longwriting:library:listWorldBindings', projectId),
+      bindWorld: (req: { projectId: string; worldId: string; isPrimary?: boolean; config?: Record<string, unknown> | null }) =>
+        ipcRenderer.invoke('longwriting:library:bindWorld', req),
+      unbindWorld: (projectId: string, worldId: string) =>
+        ipcRenderer.invoke('longwriting:library:unbindWorld', projectId, worldId),
+      setPrimaryWorld: (projectId: string, bindingId: string) =>
+        ipcRenderer.invoke('longwriting:library:setPrimaryWorld', projectId, bindingId),
+      updateWorldBindingConfig: (id: string, config: Record<string, unknown> | null) =>
+        ipcRenderer.invoke('longwriting:library:updateWorldBindingConfig', id, config),
+      importWorldEntry: (projectId: string, entryId: string) =>
+        ipcRenderer.invoke('longwriting:library:importWorldEntry', projectId, entryId),
+      listIpBindings: (projectId: string) =>
+        ipcRenderer.invoke('longwriting:library:listIpBindings', projectId),
+      listIpProjects: (ipCharacterId: string) =>
+        ipcRenderer.invoke('longwriting:library:listIpProjects', ipCharacterId),
+      importIpCharacter: (req: { projectId: string; ipCharacterId: string; rolePosition?: string }) =>
+        ipcRenderer.invoke('longwriting:library:importIpCharacter', req),
+      unbindIpCharacter: (projectId: string, ipCharacterId: string, deleteProjectCharacter?: boolean) =>
+        ipcRenderer.invoke('longwriting:library:unbindIpCharacter', projectId, ipCharacterId, deleteProjectCharacter),
+
+      // ---- P1（2026-09-25）：AI 生成 / 反向沉淀 / 同步 diff ----
+      worldGenerate: (req: { eventId: string; worldId: string; kindKey: string; count?: number; requirements?: string; providerConfigId?: string; modelId?: string }) =>
+        ipcRenderer.invoke('longwriting:library:world:generate', req),
+      ipGenerate: (req: { eventId: string; seedIdea: string; worldId?: string | null; requirements?: string; providerConfigId?: string; modelId?: string }) =>
+        ipcRenderer.invoke('longwriting:library:ip:generate', req),
+      promoteToIp: (projectId: string, characterId: string) =>
+        ipcRenderer.invoke('longwriting:library:promoteToIp', projectId, characterId),
+      promoteToLibrary: (req: { worldId: string; entityType: string; entityId: string; kindKey?: string }) =>
+        ipcRenderer.invoke('longwriting:library:promoteToLibrary', req),
+      syncPreview: (projectId: string) =>
+        ipcRenderer.invoke('longwriting:library:syncPreview', projectId),
+      syncApply: (projectId: string, targets: Array<{ entityType: string; projectEntityId: string }>) =>
+        ipcRenderer.invoke('longwriting:library:syncApply', projectId, targets),
+    },
 
   // 步骤0：向量索引（步骤6 前端面板消费）
   vectorIndex: {
@@ -2404,6 +2502,25 @@ const electronAPI = {
 
     getBacklinks: (entryId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.DIARY_GET_BACKLINKS, entryId),
+
+    listDeleted: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_LIST_DELETED),
+    restoreEntry: (id: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_RESTORE_ENTRY, id),
+    purgeEntry: (id: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_PURGE_ENTRY, id),
+    emptyTrash: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_EMPTY_TRASH),
+    listByDateRange: (from: string, to: string, folderId?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_LIST_BY_DATE_RANGE, { from, to, folderId }),
+    listAllEntries: (limit?: number) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_LIST_ALL_ENTRIES, limit),
+    getOnThisDay: (limit?: number) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_GET_ON_THIS_DAY, limit),
+    getInspiration: (entryId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_GET_INSPIRATION, entryId),
+    setFolderBrainOptIn: (folderId: string, enabled: boolean) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_SET_FOLDER_BRAIN_OPT_IN, { folderId, enabled }),
 
     exportHtml: (entryId: string, outputPath?: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.DIARY_EXPORT_HTML, { entryId, outputPath }),

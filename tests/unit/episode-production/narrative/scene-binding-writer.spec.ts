@@ -253,3 +253,200 @@ describe('SceneBindingWriter.createScenesWithBindings dlg_/act_ id 重发', () =
     }
   })
 })
+
+
+/**
+ * S3 同型收尾（第三批）：rewriteSceneWithBindings 的 dlg_/act_ id 对齐。
+ *
+ * 单场景重写不能整批重发 id（分镜 dialogueIds/actionIds 引用旧 id），
+ * 对齐规则：AI 保留旧 id 沿用 → 归一化文本匹配旧行 → 新增发新 id；
+ * 且不得与他场景桥接行撞主键（save 变 upsert 覆盖他场景行）。
+ */
+describe('SceneBindingWriter.rewriteSceneWithBindings dlg_/act_ id 对齐', () => {
+  beforeEach(async () => {
+    ds = await buildDb()
+    // 本场景：dlg1/dlg2 + act1，分镜 sb1 引用 dlg1/dlg2/act1
+    await seed()
+    await ds.getRepository(SceneActionEntity).save({
+      id: 'act1',
+      sceneScriptId: 's1',
+      characterId: 'c1',
+      characterBindingId: null,
+      description: '旧动作',
+      timing: 'during',
+      duration: null,
+      sortOrder: 0,
+    } as any)
+    await ds.getRepository(StoryboardEntity).update({ id: 'sb1' } as any, {
+      actionIds: ['act1'],
+    } as any)
+    // 他场景：占用了 AI 风格的 dlg_1（S3 时代 / 批量路径重发前的常见形态）
+    await ds.getRepository(SceneScriptEntity).save({
+      id: 's2',
+      episodeScriptId: 'es1',
+      sceneNumber: 2,
+      location: '客栈',
+      locationBindingId: null,
+      locationType: 'interior',
+      timeOfDay: 'night',
+      weather: null,
+      sceneDescription: '他场景',
+      mood: '喧闹',
+      lighting: null,
+      characters: [],
+      originalText: '',
+      narration: '',
+      dialogues: [],
+      actions: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as any)
+    await ds.getRepository(SceneDialogueEntity).save({
+      ...dialogueRow('dlg_1', '他场景台词', 0),
+      sceneScriptId: 's2',
+    } as any)
+  })
+
+  afterEach(async () => {
+    if (ds.isInitialized) await ds.destroy()
+  })
+
+  function makeGenerated(dialogues: GeneratedScene['dialogues']): GeneratedScene {
+    return {
+      sceneNumber: 1,
+      location: '茶馆',
+      locationBindingId: null,
+      locationType: 'interior',
+      timeOfDay: 'morning',
+      sceneDescription: '新描述',
+      mood: '安静',
+      characters: [],
+      originalText: '',
+      narration: '',
+      dialogues,
+      actions: [
+        { id: 'act_1', characterBindingId: null, characterId: 'c1', description: '旧动作', timing: 'during' },
+      ],
+    }
+  }
+
+  async function sceneDialogues(sceneScriptId: string) {
+    return ds.getRepository(SceneDialogueEntity).find({
+      where: { sceneScriptId } as any,
+      order: { sortOrder: 'ASC' },
+    })
+  }
+
+  async function sb1Links() {
+    return (await ds.query(
+      `SELECT dialogue_id FROM storyboard_dialogue_links
+        WHERE storyboard_id = 'sb1' ORDER BY sort_order ASC`,
+    )) as Array<{ dialogue_id: string }>
+  }
+
+  it('(a) AI 重排 id（dlg_1 重号）且顺序打乱：按文本对齐回旧 id，links 不悬空', async () => {
+    await SceneBindingWriter.rewriteSceneWithBindings(ds, 's1', makeGenerated([
+      { id: 'dlg_1', characterBindingId: null, characterId: 'c1', characterName: '张三', text: '旧台词二' },
+      { id: 'dlg_2', characterBindingId: null, characterId: 'c1', characterName: '张三', text: '旧台词一' },
+    ]))
+
+    // 文本对齐：第一条对到 dlg2（旧台词二）、第二条对到 dlg1（旧台词一）
+    const dialogues = await sceneDialogues('s1')
+    expect(dialogues.map((d) => [d.id, d.text])).toEqual([
+      ['dlg2', '旧台词二'],
+      ['dlg1', '旧台词一'],
+    ])
+    // 动作同样按描述对齐回 act1
+    const actions = await ds.getRepository(SceneActionEntity).find({ where: { sceneScriptId: 's1' } as any })
+    expect(actions.map((a) => a.id)).toEqual(['act1'])
+
+    // 分镜 dialogueIds 引用的旧 id 仍指向正确对白：links 重建且不悬空
+    expect((await sb1Links()).map((l) => l.dialogue_id)).toEqual(['dlg1', 'dlg2'])
+    const dlg1 = dialogues.find((d) => d.id === 'dlg1')
+    expect(dlg1?.text).toBe('旧台词一')
+
+    // JSON 列与桥接表同源
+    const row = await ds.getRepository(SceneScriptEntity).findOne({ where: { id: 's1' } as any })
+    expect(((row?.dialogues ?? []) as Array<{ id: string }>).map((d) => d.id)).toEqual(['dlg2', 'dlg1'])
+    expect(((row?.actions ?? []) as Array<{ id: string }>).map((a) => a.id)).toEqual(['act1'])
+  })
+
+  it('(b) 他场景已占 dlg_1：本场景新对白重发新 id，他场景行不被覆盖', async () => {
+    // 旧对白整体被替换，分镜引用一并清空（S-06 调用方本就先删分镜；
+    // 这里保留空引用的分镜只为验证 links 重建不报错）
+    await ds.getRepository(StoryboardEntity).update({ id: 'sb1' } as any, {
+      dialogueIds: [],
+      actionIds: [],
+    } as any)
+
+    await SceneBindingWriter.rewriteSceneWithBindings(ds, 's1', makeGenerated([
+      { id: 'dlg_1', characterBindingId: null, characterId: 'c1', characterName: '张三', text: '全新台词一' },
+      { id: 'dlg_2', characterBindingId: null, characterId: 'c1', characterName: '张三', text: '全新台词二' },
+    ]))
+
+    // 他场景行原样保留（撞号 upsert 时会变成 '全新台词一'）
+    const other = await sceneDialogues('s2')
+    expect(other).toHaveLength(1)
+    expect(other[0].id).toBe('dlg_1')
+    expect(other[0].text).toBe('他场景台词')
+
+    // 本场景新对白拿了重发的新 id（不能是他场景在用的 dlg_1，也不是旧 dlg1/dlg2）
+    const mine = await sceneDialogues('s1')
+    expect(mine).toHaveLength(2)
+    for (const d of mine) {
+      expect(d.id).toMatch(/^dlg_/)
+      expect(['dlg_1', 'dlg_2', 'dlg1', 'dlg2']).not.toContain(d.id)
+    }
+    expect(new Set(mine.map((d) => d.id)).size).toBe(2)
+
+    // JSON 列与桥接表同源
+    const row = await ds.getRepository(SceneScriptEntity).findOne({ where: { id: 's1' } as any })
+    expect(((row?.dialogues ?? []) as Array<{ id: string }>).map((d) => d.id))
+      .toEqual(mine.map((d) => d.id))
+
+    // 空引用分镜的 links 重建为空
+    expect(await sb1Links()).toEqual([])
+  })
+
+  it('(c) 部分保留 + 新增对白：保留的对齐回旧 id，新增的获得新 id 且 JSON/桥接一致', async () => {
+    // 分镜只引用保留的那条，避免被删对白 id 的 links 重建 FK 失败干扰断言
+    await ds.getRepository(StoryboardEntity).update({ id: 'sb1' } as any, {
+      dialogueIds: ['dlg1'],
+    } as any)
+
+    await SceneBindingWriter.rewriteSceneWithBindings(ds, 's1', makeGenerated([
+      { id: 'dlg_9', characterBindingId: null, characterId: 'c1', characterName: '张三', text: '旧台词一' },
+      { id: 'dlg_10', characterBindingId: null, characterId: 'c1', characterName: '张三', text: '全新台词' },
+    ]))
+
+    const mine = await sceneDialogues('s1')
+    expect(mine).toHaveLength(2)
+    // 文本命中旧行：沿用 dlg1
+    expect(mine[0].id).toBe('dlg1')
+    // 新增对白：发新 id（既不沿用 AI 的 dlg_10，也不复用被删的 dlg2）
+    expect(mine[1].id).toMatch(/^dlg_/)
+    expect(['dlg_10', 'dlg1', 'dlg2', 'dlg_1']).not.toContain(mine[1].id)
+
+    // JSON 列与桥接表同源
+    const row = await ds.getRepository(SceneScriptEntity).findOne({ where: { id: 's1' } as any })
+    expect(((row?.dialogues ?? []) as Array<{ id: string }>).map((d) => d.id))
+      .toEqual(mine.map((d) => d.id))
+
+    // 分镜引用的 dlg1 仍在，links 重建不悬空
+    expect((await sb1Links()).map((l) => l.dialogue_id)).toEqual(['dlg1'])
+  })
+
+  it('(d) AI 保留旧 id 的常规路径：id 原样沿用，行为与修复前一致', async () => {
+    await SceneBindingWriter.rewriteSceneWithBindings(ds, 's1', makeGenerated([
+      { id: 'dlg1', characterBindingId: null, characterId: 'c1', characterName: '张三', text: '改过的台词一' },
+      { id: 'dlg2', characterBindingId: null, characterId: 'c1', characterName: '张三', text: '改过的台词二' },
+    ]))
+
+    const mine = await sceneDialogues('s1')
+    expect(mine.map((d) => [d.id, d.text])).toEqual([
+      ['dlg1', '改过的台词一'],
+      ['dlg2', '改过的台词二'],
+    ])
+    expect((await sb1Links()).map((l) => l.dialogue_id)).toEqual(['dlg1', 'dlg2'])
+  })
+})
