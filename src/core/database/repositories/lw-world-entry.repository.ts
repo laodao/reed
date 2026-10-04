@@ -7,6 +7,7 @@ import type { DataSource } from 'typeorm'
 import { randomUUID } from 'crypto'
 import { LwWorldEntryEntity } from '../entities/lw-world-entry.entity'
 import { BaseRepository } from '../base-repository'
+import { getCurrentUserId } from '@core/context/user-context'
 import type {
   WorldEntry,
   CreateWorldEntryRequest,
@@ -133,14 +134,28 @@ export class LwWorldEntryRepository extends BaseRepository<LwWorldEntryEntity, W
   }
 
   async updateOrigin(id: string, origin: Record<string, unknown>): Promise<void> {
-    await this.repo.update({ id } as any, { origin: JSON.stringify(origin), updatedAt: Date.now() })
+    // 租户收口：内部调用方传入的 id 均来自当次创建/scoped 读，改走 scoped 消除纪律依赖
+    await this.scoped.update({ id } as any, {
+      origin: JSON.stringify(origin),
+      updatedAt: Date.now(),
+    } as any)
   }
 
   async reorder(orderList: { id: string; order: number }[]): Promise<void> {
+    // 租户收口：orderList 的 id 由客户端直达，裸逐行 update 可改他人排序
     await this.dataSource.transaction(async manager => {
       const repo = manager.getRepository(LwWorldEntryEntity)
+      const userId = getCurrentUserId()
       for (const item of orderList) {
-        await repo.update({ id: item.id } as any, { sortOrder: item.order, updatedAt: Date.now() })
+        await repo
+          .createQueryBuilder()
+          .update(LwWorldEntryEntity)
+          .set({ sortOrder: item.order, updatedAt: Date.now() })
+          .where(
+            userId ? 'id = :id AND user_id = :uid' : 'id = :id AND user_id IS NULL',
+            userId ? { id: item.id, uid: userId } : { id: item.id },
+          )
+          .execute()
       }
     })
   }

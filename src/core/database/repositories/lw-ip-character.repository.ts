@@ -168,7 +168,7 @@ export class LwIpCharacterRepository extends BaseRepository<LwIpCharacterEntity,
 
   /** 标记来源（AI 生成 / 项目沉淀）——create 默认 manual，这里覆写 */
   async markOrigin(id: string, origin: Record<string, unknown>): Promise<void> {
-    await this.repo.update({ id } as any, { origin: JSON.stringify(origin), updatedAt: Date.now() })
+    await this.scoped.update({ id } as any, { origin: JSON.stringify(origin), updatedAt: Date.now() } as any)
   }
 
   async deleteRow(id: string): Promise<boolean> {

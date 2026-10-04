@@ -362,7 +362,8 @@ export class LibrarySyncService {
           libraryWorldId: entry.worldId,
           libraryVersion: (await this.currentLineage(entry)).libraryVersion,
         }
-        await db.dataSource!.query(`UPDATE lw_custom_entities SET origin = ? WHERE id = ?`, [JSON.stringify(newOrigin), row.id])
+        // 修复（多租户复核）：裸 SQL `?` 占位在 Web(PG) 抛错且绕过 scope，改走 scoped 仓库
+        await db.lwCustomEntities!.updateOrigin(row.id, newOrigin)
         applied++
       }
     }

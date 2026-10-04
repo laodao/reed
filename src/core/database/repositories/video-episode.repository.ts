@@ -109,9 +109,11 @@ export class VideoEpisodeRepository extends BaseRepository<
   }
 
   async getById(id: string): Promise<VideoEpisode | null> {
-    const entity = await this.repo.findOne({
-      where: { id, deletedAt: IsNull() } as any,
-    })
+    // 租户收口：裸 findOne 会跨租户读 + 被后续 scoped.save "收养"；改走 scoped
+    const entity = await this.scoped.findOne({
+      id,
+      deletedAt: IsNull(),
+    } as any)
     return entity ? this.toDto(entity) : null
   }
 
@@ -119,9 +121,11 @@ export class VideoEpisodeRepository extends BaseRepository<
     projectId: string,
     outlineId: string,
   ): Promise<VideoEpisode | null> {
-    const entity = await this.repo.findOne({
-      where: { projectId, outlineId, deletedAt: IsNull() } as any,
-    })
+    const entity = await this.scoped.findOne({
+      projectId,
+      outlineId,
+      deletedAt: IsNull(),
+    } as any)
     return entity ? this.toDto(entity) : null
   }
 
@@ -153,7 +157,6 @@ export class VideoEpisodeRepository extends BaseRepository<
     const saved = await this.scoped.save(entity)
     return this.toDto(saved)
   }
-
   async createMany(
     episodes: CreateVideoEpisodeRequest[],
   ): Promise<VideoEpisode[]> {
@@ -198,9 +201,11 @@ export class VideoEpisodeRepository extends BaseRepository<
     id: string,
     data: UpdateVideoEpisodeRequest,
   ): Promise<VideoEpisode | null> {
-    const existing = await this.repo.findOne({
-      where: { id, deletedAt: IsNull() } as any,
-    })
+    // 租户收口：scoped 读出后原地改再 scoped.save，杜绝"裸读他人行 + 收养写"
+    const existing = await this.scoped.findOne({
+      id,
+      deletedAt: IsNull(),
+    } as any)
     if (!existing) return null
 
     let changed = false

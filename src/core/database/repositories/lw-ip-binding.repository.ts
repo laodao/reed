@@ -69,11 +69,11 @@ export class LwIpBindingRepository extends BaseRepository<LwIpBindingEntity, IpB
   }
 
   async fillProjectCharacterId(id: string, projectCharacterId: string): Promise<void> {
-    await this.repo.update({ id } as any, { projectCharacterId })
+    await this.scoped.update({ id } as any, { projectCharacterId })
   }
 
   async setRolePosition(id: string, rolePosition: string | null): Promise<void> {
-    await this.repo.update({ id } as any, { rolePosition })
+    await this.scoped.update({ id } as any, { rolePosition })
   }
 
   async deleteRow(id: string): Promise<boolean> {

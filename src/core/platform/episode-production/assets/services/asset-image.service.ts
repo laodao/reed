@@ -15,6 +15,7 @@
 import * as fs from 'fs'
 import { randomBytes } from 'crypto'
 import type { DataSource, Repository } from 'typeorm'
+import { IsNull } from 'typeorm'
 import { getCurrentUserId } from '@core/context/user-context'
 import { resolveAssetPath, isAbsoluteAssetPath } from '@core/utils/asset-path'
 import {
@@ -72,14 +73,34 @@ export class AssetImageService {
   }
 
   /**
+   * 租户可见性（对齐 app/asset/role 仓库的 "me OR builtin" 手工作用域模式）：
+   * 读 = 自己的行 OR user_id IS NULL（预置/历史共享行）；NULL 行保持共享可写，
+   * 但他人行（user_id=别的用户）一律不可见、不可改。
+   */
+  private visibilityWhere(base: Record<string, unknown>): Array<Record<string, unknown>> {
+    const uid = getCurrentUserId()
+    if (!uid) return [{ ...base, userId: IsNull() }]
+    return [{ ...base, userId: uid }, { ...base, userId: IsNull() }]
+  }
+
+  /** 跨租户防御的 qb where 片段：限定同 asset 时仅触及自己/共享行 */
+  private static visibilitySql(alias = ''): { sql: string; params: Record<string, string | null> } {
+    const uid = getCurrentUserId()
+    const prefix = alias ? `${alias}.` : ''
+    if (!uid) return { sql: `${prefix}user_id IS NULL`, params: {} }
+    return { sql: `(${prefix}user_id = :__uid OR ${prefix}user_id IS NULL)`, params: { __uid: uid } }
+  }
+
+  /**
    * 新增一张图。
    * - 自动生成 `ai_<16hex>` 格式 ID
    * - isMain=true 时只置 1，调用方负责保证同 asset 唯一性（如需切换请用 setAsMain）
+   * - 未显式传 userId 时按当前登录用户归属（防跨租户写 NULL/冒名行）
    */
   async addImage(input: AddImageInput): Promise<AssetImageEntity> {
     const entity = this.repo.create({
       id: this.generateId(),
-      userId: input.userId ?? null,
+      userId: input.userId !== undefined ? input.userId : (getCurrentUserId() ?? null),
       assetType: input.assetType,
       assetId: input.assetId,
       category: input.category,
@@ -110,7 +131,7 @@ export class AssetImageService {
     assetId: string,
   ): Promise<AssetImageEntity[]> {
     return await this.repo.find({
-      where: { assetType, assetId },
+      where: this.visibilityWhere({ assetType, assetId }) as any,
       order: { sortOrder: 'ASC', createdAt: 'ASC' },
     })
   }
@@ -122,7 +143,7 @@ export class AssetImageService {
     category: AssetImageCategory,
   ): Promise<AssetImageEntity[]> {
     return await this.repo.find({
-      where: { assetType, assetId, category },
+      where: this.visibilityWhere({ assetType, assetId, category }) as any,
       order: { sortOrder: 'ASC', createdAt: 'ASC' },
     })
   }
@@ -133,7 +154,7 @@ export class AssetImageService {
     assetId: string,
   ): Promise<AssetImageEntity | null> {
     return await this.repo.findOne({
-      where: { assetType, assetId, isMain: 1 },
+      where: this.visibilityWhere({ assetType, assetId, isMain: 1 }) as any,
     })
   }
 
@@ -145,23 +166,25 @@ export class AssetImageService {
    * 不在事务里跑（SQLite/PG 不支持嵌套事务的兼容性问题），调用方需要事务隔离时自行包裹。
    */
   async setAsMain(imageId: string): Promise<void> {
-    const target = await this.repo.findOne({ where: { id: imageId } })
+    const target = await this.repo.findOne({ where: this.visibilityWhere({ id: imageId }) as any })
     if (!target) {
       throw new Error(`AssetImage 不存在: ${imageId}`)
     }
 
-    // 1. 把同 asset 之前的 main 全部降级为 view
+    // 1. 把同 asset 之前的 main 全部降级为 view（租户条件：自己/共享行）
+    const vis = AssetImageService.visibilitySql()
     await this.repo
       .createQueryBuilder()
       .update(AssetImageEntity)
       .set({ isMain: 0, category: 'view' })
       .where(
-        'asset_type = :assetType AND asset_id = :assetId AND is_main = :one AND id <> :targetId',
+        `asset_type = :assetType AND asset_id = :assetId AND is_main = :one AND id <> :targetId AND ${vis.sql}`,
         {
           assetType: target.assetType,
           assetId: target.assetId,
           one: 1,
           targetId: imageId,
+          ...vis.params,
         },
       )
       .execute()
@@ -175,7 +198,7 @@ export class AssetImageService {
 
   /** 按 ID 取单张图（spec 2026-05-09 派生时按 baseImageId 反查基图） */
   async getById(imageId: string): Promise<AssetImageEntity | null> {
-    return await this.repo.findOne({ where: { id: imageId } })
+    return await this.repo.findOne({ where: this.visibilityWhere({ id: imageId }) as any })
   }
 
   /**
@@ -183,22 +206,22 @@ export class AssetImageService {
    * 关键帧参考图选择器（reference-image-selector）只选用 confirmed=1 的图。
    */
   async setConfirmed(imageId: string, confirmed: boolean): Promise<void> {
-    const result = await this.repo.update(
-      { id: imageId },
-      { confirmed: confirmed ? 1 : 0, updatedAt: new Date() },
-    )
-    if (result && result.affected === 0) {
+    const target = await this.repo.findOne({ where: this.visibilityWhere({ id: imageId }) as any })
+    if (!target) {
       throw new Error(`AssetImage 不存在: ${imageId}`)
     }
+    await this.repo.update(
+      { id: target.id },
+      { confirmed: confirmed ? 1 : 0, updatedAt: new Date() },
+    )
   }
 
-  /** 删除单张图（方案A：连同落盘的图片文件与缩略图一并清理） */
+  /** 删除单张图（方案A：连同落盘的图片文件与缩略图一并清理；仅自己/共享行可删） */
   async deleteImage(imageId: string): Promise<void> {
-    const target = await this.repo.findOne({ where: { id: imageId } })
-    if (target) {
-      deleteImageFiles(target.imagePath, target.thumbnailPath)
-    }
-    await this.repo.delete({ id: imageId })
+    const target = await this.repo.findOne({ where: this.visibilityWhere({ id: imageId }) as any })
+    if (!target) return
+    deleteImageFiles(target.imagePath, target.thumbnailPath)
+    await this.repo.delete({ id: target.id })
   }
 
   /**
@@ -211,23 +234,25 @@ export class AssetImageService {
    * 旧的 setAsMain 兼容老 character / item 单主图模型继续保留。
    */
   async switchDefaultMain(imageId: string): Promise<void> {
-    const target = await this.repo.findOne({ where: { id: imageId } })
+    const target = await this.repo.findOne({ where: this.visibilityWhere({ id: imageId }) as any })
     if (!target) {
       throw new Error(`AssetImage 不存在: ${imageId}`)
     }
 
-    // 1. 把同 asset 已有的 isMain=1（除目标外）全部降为 0
+    // 1. 把同 asset 已有的 isMain=1（除目标外）全部降为 0（租户条件：自己/共享行）
+    const vis = AssetImageService.visibilitySql()
     await this.repo
       .createQueryBuilder()
       .update(AssetImageEntity)
       .set({ isMain: 0 })
       .where(
-        'asset_type = :assetType AND asset_id = :assetId AND is_main = :one AND id <> :targetId',
+        `asset_type = :assetType AND asset_id = :assetId AND is_main = :one AND id <> :targetId AND ${vis.sql}`,
         {
           assetType: target.assetType,
           assetId: target.assetId,
           one: 1,
           targetId: imageId,
+          ...vis.params,
         },
       )
       .execute()
@@ -249,8 +274,10 @@ export class AssetImageService {
     imageId: string,
     metadata: Record<string, unknown> | null,
   ): Promise<void> {
+    const target = await this.repo.findOne({ where: this.visibilityWhere({ id: imageId }) as any, select: ['id'] })
+    if (!target) throw new Error(`AssetImage 不存在: ${imageId}`)
     await this.repo.update(
-      { id: imageId },
+      { id: target.id },
       {
         metadata: metadata ? JSON.stringify(metadata) : null,
         updatedAt: new Date(),
@@ -280,13 +307,14 @@ export class AssetImageService {
     >,
   ): Promise<void> {
     if (Object.keys(patch).length === 0) return
-    const result = await this.repo.update(
-      { id: imageId },
-      { ...patch, updatedAt: new Date() },
-    )
-    if (result && result.affected === 0) {
+    const target = await this.repo.findOne({ where: this.visibilityWhere({ id: imageId }) as any, select: ['id'] })
+    if (!target) {
       throw new Error(`AssetImage 不存在: ${imageId}`)
     }
+    await this.repo.update(
+      { id: target.id },
+      { ...patch, updatedAt: new Date() },
+    )
   }
 
   /**
@@ -311,11 +339,11 @@ export class AssetImageService {
     // ── 非 main slot：只按 label 精确匹配 ──
     if (slotLabel) {
       const target = await this.repo.findOne({
-        where: {
+        where: this.visibilityWhere({
           assetType: input.assetType,
           assetId: input.assetId,
           label: slotLabel,
-        },
+        }) as any,
       })
       if (target) {
         await this.repo.update(
@@ -329,11 +357,11 @@ export class AssetImageService {
 
     // ── main slot：默认主图 → 最早 main 行 → 占位行 ──
     let target = await this.repo.findOne({
-      where: { assetType: input.assetType, assetId: input.assetId, isMain: 1 },
+      where: this.visibilityWhere({ assetType: input.assetType, assetId: input.assetId, isMain: 1 }) as any,
     })
     if (!target) {
       target = await this.repo.findOne({
-        where: { assetType: input.assetType, assetId: input.assetId, category: 'main' },
+        where: this.visibilityWhere({ assetType: input.assetType, assetId: input.assetId, category: 'main' }) as any,
         order: { createdAt: 'ASC' },
       })
     }

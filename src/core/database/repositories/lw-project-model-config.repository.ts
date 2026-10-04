@@ -52,9 +52,11 @@ export class LwProjectModelConfigRepository extends BaseRepository<
   ): Promise<StageModelConfig> {
     const now = Date.now()
     const id = `modelconfig_${projectId}_${stage}`
-    const existing = await this.repo.findOne({
-      where: { projectId, stage } as any,
-    })
+    // 多租户复核修复：裸 findOne 会跨租户读出他人行再被 scoped.save "收养"；改 scoped
+    const existing = await this.scoped.findOne({
+      projectId,
+      stage,
+    } as any)
     if (existing) {
       existing.providerConfigId = providerConfigId
       existing.modelId = modelId

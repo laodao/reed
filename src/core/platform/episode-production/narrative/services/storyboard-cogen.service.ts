@@ -907,7 +907,11 @@ export class StoryboardCogenService {
         })
 
         // 一致性修复 v3（A3）：对白承接落库 storyboard_dialogue_links（字幕镜头级分配的数据源）
-        await rebuildStoryboardDialogueLinks(manager, { id: created.id, dialogueIds })
+        // 降级保护（多租户复核修复）：links 投影失败不应让整个 cogen 主事务回滚
+        // （与其他调用点 scene-binding-writer / storyboard.handler 的 .catch 降级纪律一致）
+        await rebuildStoryboardDialogueLinks(manager, { id: created.id, dialogueIds }).catch(e => {
+          console.warn('[storyboard-cogen] storyboard_dialogue_links 重建失败（跳过，不影响分镜生成）:', e)
+        })
       }
     }))
   }

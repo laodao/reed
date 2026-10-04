@@ -23,6 +23,8 @@ function getSecret(): string {
 export interface TokenPayload {
   userId: string
   email: string
+  /** 角色快照（login/register 时刻）；管理面权限以 attachUser 的 DB 回查为准 */
+  role?: string
 }
 
 export function signToken(payload: TokenPayload): string {
@@ -33,7 +35,7 @@ export function verifyToken(token: string): TokenPayload | null {
   try {
     const decoded = jwt.verify(token, getSecret()) as any
     if (decoded && typeof decoded.userId === 'string') {
-      return { userId: decoded.userId, email: decoded.email ?? '' }
+      return { userId: decoded.userId, email: decoded.email ?? '', role: decoded.role }
     }
     return null
   } catch {

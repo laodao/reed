@@ -55,7 +55,17 @@ function makeScopedApiForRepo<E extends object>(
   }
   function scopeEntity<T extends Partial<E>>(entity: T): T {
     if (!shouldScope()) return entity
-    return { ...entity, userId: getCurrentUserId() } as T
+    const uid = getCurrentUserId()
+    // 多租户复核加固：无用户上下文的写入会静默落 user_id=NULL 孤儿行（所有租户
+    // 都不可见），历史上极难发现。这里打告警暴露调用链（Electron 有进程默认值
+    // 不会触发；Web 端任何触发都是漏包 runWithUser 的信号）。
+    if (!uid) {
+      console.warn(
+        '[BaseRepository] 写入时无用户上下文，user_id 将落 NULL（检查是否漏包 runWithUser / setDefaultUser）:',
+        new Error('stack').stack?.split('\n').slice(2, 5).join(' <- '),
+      )
+    }
+    return { ...entity, userId: uid } as T
   }
   function stripUserId<T extends object>(partial: T): T {
     if (!shouldScope()) return partial
@@ -252,32 +262,9 @@ export abstract class BaseRepository<TEntity extends object, TDto> {
   }
 
   // ==================== Scope 实现 ====================
-
-  private scopeWhere(
-    where: FindOptionsWhere<TEntity> | FindOptionsWhere<TEntity>[] = {},
-  ): FindOptionsWhere<TEntity> | FindOptionsWhere<TEntity>[] {
-    if (!this.scopedToUser) return where
-    const userId = getCurrentUserId()
-    const scope = { userId } as unknown as FindOptionsWhere<TEntity>
-    if (Array.isArray(where)) return where.map(w => ({ ...w, ...scope }))
-    return { ...where, ...scope }
-  }
-
-  private scopeEntity<T extends Partial<TEntity>>(entity: T): T {
-    if (!this.scopedToUser) return entity
-    const userId = getCurrentUserId()
-    return { ...entity, userId } as T
-  }
-
-  private stripUserIdFromUpdate<T extends object>(partial: T): T {
-    if (!this.scopedToUser) return partial
-    if (partial && typeof partial === 'object' && 'userId' in partial) {
-      const { userId: _omit, ...rest } = partial as any
-      void _omit
-      return rest as T
-    }
-    return partial
-  }
+  // （历史遗留的类内旧 scope 实现已删除——makeScopedApi 实际走模块级
+  // makeScopedApiForRepo，旧版私有的 scopeWhere/scopeEntity 缺少 IsNull
+  // null 处理，是语义陷阱；见多租户复核 P2-19。）
 
   private makeScopedApi(): ScopedRepoApi<TEntity> {
     return makeScopedApiForRepo<TEntity>(this.repo, () => this.scopedToUser)

@@ -106,6 +106,18 @@ export class WorkflowDefinitionService {
     return this.repo.getById(id)
   }
 
+  /**
+   * 内置模板写门禁（评审 #70/#71 + 多租户复核）：内置模板是多租户共享行
+   * （user_id=NULL），Web 端任何写入口都必须拒绝——不止 update/updateTriggers，
+   * saveDraft / publish / restoreVersion / import-overwrite 同样会持久接管共享模板。
+   * 桌面单用户维持可编辑。
+   */
+  private assertBuiltinWriteAllowed(def: { isBuiltin?: boolean } | null): void {
+    if (def?.isBuiltin && !isDesktopEnv()) {
+      throw new Error('内置工作流模板不可修改（多租户共享），请复制为自定义工作流后再编辑')
+    }
+  }
+
   list(params: {
     keyword?: string
     page: number
@@ -120,6 +132,9 @@ export class WorkflowDefinitionService {
 
   /** 保存草稿（graph 变更只落 draft_graph） */
   async saveDraft(id: string, graph: WorkflowGraph): Promise<WorkflowDefinitionRecord | null> {
+    const def = await this.repo.getById(id)
+    if (!def) throw new Error('工作流不存在')
+    this.assertBuiltinWriteAllowed(def)
     return this.repo.update(id, { draftGraph: graph })
   }
 
@@ -127,9 +142,7 @@ export class WorkflowDefinitionService {
     // 评审 #70/#71：内置模板是多租户共享行（Web 端一处编辑即污染所有租户）——
     // Web 端禁止改内容；桌面单用户维持可编辑。updateTriggers 同门禁。
     const def = await this.repo.getById(id)
-    if (def?.isBuiltin && !isDesktopEnv()) {
-      throw new Error('内置工作流模板不可修改（多租户共享），请复制为自定义工作流后再编辑')
-    }
+    this.assertBuiltinWriteAllowed(def)
     const updated = await this.repo.update(id, patch)
     // 触发器或发布图变更会影响调度——刷新
     if (patch.triggers !== undefined || patch.publishedGraph !== undefined) {
@@ -260,6 +273,11 @@ export class WorkflowDefinitionService {
   ): Promise<{ success: boolean; error?: string; definition?: WorkflowDefinitionRecord }> {
     const def = await this.repo.getById(id)
     if (!def) return { success: false, error: '工作流不存在' }
+    try {
+      this.assertBuiltinWriteAllowed(def)
+    } catch (e: any) {
+      return { success: false, error: e?.message ?? '内置模板不可发布修改' }
+    }
     const graph = def.draftGraph
     if (!graph) return { success: false, error: '草稿图为空' }
     const result = this.validate(graph)
@@ -319,6 +337,11 @@ export class WorkflowDefinitionService {
   ): Promise<{ success: boolean; error?: string; definition?: WorkflowDefinitionRecord }> {
     const def = await this.repo.getById(definitionId)
     if (!def) return { success: false, error: '工作流不存在' }
+    try {
+      this.assertBuiltinWriteAllowed(def)
+    } catch (e: any) {
+      return { success: false, error: e?.message ?? '内置模板不可恢复修改' }
+    }
     const version = await this.repo.getVersion(versionId)
     if (!version || version.definitionId !== definitionId) {
       return { success: false, error: '版本不存在' }
@@ -391,6 +414,11 @@ export class WorkflowDefinitionService {
       const existing = await this.repo.list({ keyword: parsed.name, page: 1, pageSize: 50, includeInternal: true })
       const match = existing.items.find(d => d.name === parsed.name && !d.internal)
       if (match) {
+        try {
+          this.assertBuiltinWriteAllowed(match)
+        } catch (e: any) {
+          return { success: false, error: e?.message ?? '内置模板不可导入覆盖' }
+        }
         const updated = await this.repo.update(match.id, {
           name: parsed.name,
           description: parsed.description,

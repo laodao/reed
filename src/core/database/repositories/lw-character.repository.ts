@@ -93,7 +93,7 @@ export class LwCharacterRepository extends BaseRepository<
     if (data.motivation !== undefined) patch.motivation = data.motivation
     if (data.flaw !== undefined) patch.flaw = data.flaw
     if (data.characterArc !== undefined) patch.characterArc = data.characterArc
-    await this.repo.update({ id } as any, patch as any)
+    await this.scoped.update({ id } as any, patch as any)
   }
 
   async getByProjectId(projectId: string): Promise<StoryCharacter[]> {

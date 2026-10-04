@@ -152,7 +152,7 @@ export class LwFactionRepository extends BaseRepository<
     if (data.libraryWorldId !== undefined) patch.libraryWorldId = data.libraryWorldId
     if (data.libraryEntryId !== undefined) patch.libraryEntryId = data.libraryEntryId
     if (data.libraryVersion !== undefined) patch.libraryVersion = data.libraryVersion
-    await this.repo.update({ id } as any, patch as any)
+    await this.scoped.update({ id } as any, patch as any)
   }
 
 }

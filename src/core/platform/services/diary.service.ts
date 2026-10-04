@@ -44,6 +44,29 @@ export class DiaryService {
   // ==================== 目录管理 ====================
 
   /**
+   * 目录名合法性（多租户复核修复：路径穿越封堵）：
+   * name 直接拼进 diaryRootPath 且 mkdir/rename，含分隔符或 '..' 即可越出
+   * 用户数据目录（Web 端 users/<uid>），在服务器任意位置建目录/改名。
+   */
+  private assertSafeFolderName(name: string): void {
+    const trimmed = (name ?? '').trim()
+    if (!trimmed) throw new Error('目录名不能为空')
+    if (trimmed !== name) throw new Error('目录名不能包含首尾空白')
+    if (trimmed === '.' || trimmed === '..') throw new Error('目录名非法')
+    if (/[/\\]/.test(trimmed)) throw new Error('目录名不能包含路径分隔符')
+    if (Array.from(trimmed).some(ch => ch.charCodeAt(0) < 32)) throw new Error('目录名包含非法字符')
+  }
+
+  /** 双保险：最终落盘路径必须仍在日记根目录内 */
+  private ensureWithinDiaryRoot(fullPath: string): void {
+    const resolvedRoot = path.resolve(this.diaryRootPath)
+    const resolved = path.resolve(fullPath)
+    if (resolved !== resolvedRoot && !resolved.startsWith(resolvedRoot + path.sep)) {
+      throw new Error('目录路径越界（已拒绝）')
+    }
+  }
+
+  /**
    * 获取目录树
    */
   async getFolders(parentId?: string): Promise<DiaryIpcResponse<DiaryFolder[]>> {
@@ -80,6 +103,8 @@ export class DiaryService {
     try {
       const db = getCoreDatabaseManager()
 
+      this.assertSafeFolderName(request.name)
+
       // 检查同名目录是否存在
       if (await db.diaryFolders!.existsByName(request.name, request.parentId)) {
         return { success: false, error: '同名目录已存在' }
@@ -96,6 +121,7 @@ export class DiaryService {
       } else {
         fullPath = path.join(this.diaryRootPath, request.name)
       }
+      this.ensureWithinDiaryRoot(fullPath)
 
       // 创建文件系统目录
       fs.mkdirSync(fullPath, { recursive: true })
@@ -132,14 +158,17 @@ export class DiaryService {
 
       // 检查新名称是否冲突
       if (request.name && request.name !== folder.name) {
+        this.assertSafeFolderName(request.name)
         if (await db.diaryFolders!.existsByName(request.name, folder.parentId)) {
           return { success: false, error: '同名目录已存在' }
         }
 
-        // 重命名文件系统目录
+        // 重命名文件系统目录（越界双保险：old/new 路径都必须在日记根内）
         const oldPath = path.join(this.diaryRootPath, folder.path)
+        this.ensureWithinDiaryRoot(oldPath)
         const parentPath = path.dirname(oldPath)
         const newPath = path.join(parentPath, request.name)
+        this.ensureWithinDiaryRoot(newPath)
 
         fs.renameSync(oldPath, newPath)
 

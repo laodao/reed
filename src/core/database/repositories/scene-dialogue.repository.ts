@@ -8,6 +8,7 @@ import type { DataSource } from 'typeorm'
 import { Dialogue } from '@shared/types/story-to-video.types'
 import { SceneDialogueEntity } from '../entities/episode-production/scene-dialogue.entity'
 import { BaseRepository } from '../base-repository'
+import { getCurrentUserId } from '@core/context/user-context'
 
 export interface CreateSceneDialogueRequest {
   sceneScriptId: string
@@ -99,6 +100,8 @@ export class SceneDialogueRepository extends BaseRepository<
     dialogues: CreateSceneDialogueRequest[],
   ): Promise<Dialogue[]> {
     if (dialogues.length === 0) return []
+    // 多租户复核修复：事务内裸 repo.save 不走 scoped，必须显式注入 userId
+    const userId = getCurrentUserId() ?? null
     return this.dataSource.transaction(async manager => {
       const repo = manager.getRepository(SceneDialogueEntity)
       const result: Dialogue[] = []
@@ -107,6 +110,7 @@ export class SceneDialogueRepository extends BaseRepository<
         const saved = await repo.save(
           repo.create({
             id,
+            userId,
             sceneScriptId: data.sceneScriptId,
             characterId: data.characterId,
             characterName: data.characterName,

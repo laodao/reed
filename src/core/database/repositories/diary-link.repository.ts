@@ -13,6 +13,7 @@ import type {
 import { DiaryLinkEntity } from '../entities/diary-link.entity'
 import { DiaryEntryEntity } from '../entities/diary-entry.entity'
 import { BaseRepository } from '../base-repository'
+import { getCurrentUserId } from '@core/context/user-context'
 
 export class DiaryLinkRepository extends BaseRepository<
   DiaryLinkEntity,
@@ -111,12 +112,15 @@ export class DiaryLinkRepository extends BaseRepository<
   ): Promise<void> {
     if (links.length === 0) return
     const now = new Date()
+    // 多租户复核修复：事务内裸 repo.save 不走 scoped，必须显式注入 userId
+    const userId = getCurrentUserId() ?? null
     await this.dataSource.transaction(async manager => {
       const repo = manager.getRepository(DiaryLinkEntity)
       for (const link of links) {
         await repo.save(
           repo.create({
             id: randomUUID(),
+            userId,
             sourceEntryId: link.sourceEntryId,
             targetEntryId: link.targetEntryId ?? null,
             targetTitle: link.targetTitle,

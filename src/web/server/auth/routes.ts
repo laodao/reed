@@ -8,14 +8,19 @@ import bcrypt from 'bcryptjs'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { JWT_COOKIE_NAME, JWT_TTL_SECONDS, signToken } from './jwt'
 import { requireAuth } from './middleware'
+import { rateLimit } from './rate-limit'
 
 const router = Router()
+
+// 多租户复核修复（P1-15）：注册/登录此前完全无限流，匿名可批量开户 / 撞库
+const registerLimiter = rateLimit({ windowMs: 60 * 60_000, max: 10, message: '注册请求过于频繁' })
+const loginLimiter = rateLimit({ windowMs: 15 * 60_000, max: 20, message: '登录尝试过于频繁' })
 
 /**
  * 注册
  * POST /api/auth/register { email, password, displayName? }
  */
-router.post('/register', async (req: Request, res: Response) => {
+router.post('/register', registerLimiter, async (req: Request, res: Response) => {
   try {
     const { email, password, displayName } = req.body ?? {}
     if (!email || !password || typeof email !== 'string' || typeof password !== 'string') {
@@ -43,9 +48,9 @@ router.post('/register', async (req: Request, res: Response) => {
       passwordHash,
       role: 'user',
     })
-    const token = signToken({ userId: user.id, email: user.email })
+    const token = signToken({ userId: user.id, email: user.email, role: user.role })
     setSessionCookie(res, token)
-    res.json({ ok: true, data: { id: user.id, email: user.email, displayName: user.displayName } })
+    res.json({ ok: true, data: { id: user.id, email: user.email, displayName: user.displayName, role: user.role } })
   } catch (e: any) {
     res.status(500).json({ ok: false, error: e.message })
   }
@@ -55,7 +60,7 @@ router.post('/register', async (req: Request, res: Response) => {
  * 登录
  * POST /api/auth/login { email, password }
  */
-router.post('/login', async (req: Request, res: Response) => {
+router.post('/login', loginLimiter, async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body ?? {}
     if (!email || !password) {
@@ -82,7 +87,7 @@ router.post('/login', async (req: Request, res: Response) => {
       return
     }
     await db.users.updateLastLogin(user.id)
-    const token = signToken({ userId: user.id, email: user.email })
+    const token = signToken({ userId: user.id, email: user.email, role: user.role })
     setSessionCookie(res, token)
     res.json({
       ok: true,

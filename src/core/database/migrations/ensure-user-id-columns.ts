@@ -40,6 +40,18 @@ export async function ensureUserIdColumns(
       console.log(`[ensure-user-id-columns] ${tableName}: 加 user_id 列`)
     }
 
+    // 补 user_id 索引（多租户复核修复）：此前三套建表路径（migration / Web
+    // synchronize / PC initTables）都没人负责 user_id 索引，按租户过滤退化为全表扫描。
+    // IF NOT EXISTS 幂等，PG 9.5+/SQLite 均支持。
+    try {
+      await ds.query(
+        `CREATE INDEX IF NOT EXISTS "idx_${tableName}_user_id" ON "${tableName}" (user_id)`,
+      )
+    } catch (e) {
+      // 索引名超长（PG 上限 63 字符）等场景不阻塞启动
+      console.warn(`[ensure-user-id-columns] ${tableName}: 建 user_id 索引失败（忽略）:`, e)
+    }
+
     // 回填旧数据
     if (defaultUserId) {
       const placeholder = isPg ? '$1' : '?'

@@ -103,12 +103,15 @@ export class SceneCharacterRepository extends BaseRepository<
 
   async create(data: CreateSceneCharacterRequest): Promise<SceneCharacter> {
     const id = this.generateId()
+    // 多租户复核修复：事务内裸 repo.save 不走 scoped，必须显式注入 userId
+    const userId = getCurrentUserId() ?? null
     return this.dataSource.transaction(async manager => {
       const charRepo = manager.getRepository(SceneCharacterEntity)
       const propRepo = manager.getRepository(ScenePropEntity)
       await charRepo.save(
         charRepo.create({
           id,
+          userId,
           sceneScriptId: data.sceneScriptId,
           characterId: data.characterId,
           characterName: data.characterName,
@@ -125,6 +128,7 @@ export class SceneCharacterRepository extends BaseRepository<
           await propRepo.save(
             propRepo.create({
               id: `sp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+              userId,
               sceneCharacterId: id,
               propName: prop,
             }),
@@ -167,6 +171,8 @@ export class SceneCharacterRepository extends BaseRepository<
     return this.dataSource.transaction(async manager => {
       const charRepo = manager.getRepository(SceneCharacterEntity)
       const propRepo = manager.getRepository(ScenePropEntity)
+      const userId = getCurrentUserId()
+      const userScope = userId ? { userId } : {}
 
       let changed = false
       if (data.characterId !== undefined) { existing.characterId = data.characterId; changed = true }
@@ -181,11 +187,12 @@ export class SceneCharacterRepository extends BaseRepository<
       if (changed) await charRepo.save(existing)
 
       if (data.props !== undefined) {
-        await propRepo.delete({ sceneCharacterId: id } as any)
+        await propRepo.delete({ sceneCharacterId: id, ...userScope } as any)
         for (const prop of data.props) {
           await propRepo.save(
             propRepo.create({
               id: `sp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+              userId: userId ?? null,
               sceneCharacterId: id,
               propName: prop,
             }),

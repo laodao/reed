@@ -6,6 +6,7 @@ import type { DataSource } from 'typeorm'
 import { randomUUID } from 'crypto'
 import { LwWorldBindingEntity } from '../entities/lw-world-binding.entity'
 import { BaseRepository } from '../base-repository'
+import { getCurrentUserId } from '@core/context/user-context'
 import type { WorldBinding, WorldBindingConfig, BindWorldRequest } from '@shared/types/lw-library.types'
 
 export class LwWorldBindingRepository extends BaseRepository<LwWorldBindingEntity, WorldBinding> {
@@ -75,16 +76,24 @@ export class LwWorldBindingRepository extends BaseRepository<LwWorldBindingEntit
   }
 
   async setPrimary(projectId: string, id: string): Promise<void> {
+    // 租户收口：project_id 是普通列非唯一，此前裸事务可清空/翻转其他租户项目的主绑定
+    const userId = getCurrentUserId()
+    if (!userId) throw new Error('[LwWorldBinding] 未获取到当前用户，拒绝 setPrimary')
     await this.dataSource.transaction(async manager => {
       const repo = manager.getRepository(LwWorldBindingEntity)
-      // 先清该项目全部主标记，再置目标行（raw update：跨行事务，不走 scoped）
+      // 先清该项目（限当前用户）全部主标记，再置目标行（限当前用户）
       await repo
         .createQueryBuilder()
         .update(LwWorldBindingEntity)
         .set({ isPrimary: 0 })
-        .where('project_id = :pid', { pid: projectId })
+        .where('project_id = :pid AND user_id = :uid', { pid: projectId, uid: userId })
         .execute()
-      await repo.update({ id } as any, { isPrimary: 1 })
+      await repo
+        .createQueryBuilder()
+        .update(LwWorldBindingEntity)
+        .set({ isPrimary: 1 })
+        .where('id = :id AND user_id = :uid', { id, uid: userId })
+        .execute()
     })
   }
 

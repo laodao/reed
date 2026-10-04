@@ -4,11 +4,12 @@
  * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import { In, type DataSource } from 'typeorm'
+import { In, IsNull, type DataSource } from 'typeorm'
 import { LwOutlineCharacterEntity } from '../entities/lw-outline-character.entity'
 import { LwOutlineEntity } from '../entities/lw-outline.entity'
 import { LwCharacterEntity } from '../entities/lw-character.entity'
 import { BaseRepository } from '../base-repository'
+import { getCurrentUserId } from '@core/context/user-context'
 
 export interface OutlineCharacterRelation {
   id: string
@@ -68,24 +69,28 @@ export class LwOutlineCharacterRepository extends BaseRepository<
     // 串行门正确姿势（E2E 实测）：回调必须用事务 manager，禁止走全局 scoped 仓库——
     // 旧写法在 SQLite 串行门下 100% 抛"事务回调内禁止调用全局 manager"，导致
     // createOutline 带 involved* 时关联全部丢失且章号级联被跳过
+    // 多租户复核修复：事务内裸 repo.save 不走 scoped，必须显式注入 userId
+    const userId = getCurrentUserId() ?? null
     await this.dataSource.transaction(async manager => {
       const repo = manager.getRepository(LwOutlineCharacterEntity)
       const now = Date.now()
       for (const cid of characterIds) {
         const existing = await repo.findOne({ where: { outlineId, characterId: cid } as any })
         if (existing) continue
-        await repo.save(repo.create({ id: this.generateId(), outlineId, characterId: cid, createdAt: now }))
+        await repo.save(repo.create({ id: this.generateId(), userId, outlineId, characterId: cid, createdAt: now }))
       }
     })
   }
 
   async replaceAll(outlineId: string, characterIds: string[]): Promise<void> {
+    const userId = getCurrentUserId() ?? null
     await this.dataSource.transaction(async manager => {
       const repo = manager.getRepository(LwOutlineCharacterEntity)
-      await repo.delete({ outlineId } as any)
+      // 租户条件：只清当前用户（或无主历史行）的关联，防跨租户删除
+      await repo.delete({ outlineId, userId: userId ?? IsNull() } as any)
       const now = Date.now()
       for (const cid of characterIds) {
-        await repo.save(repo.create({ id: this.generateId(), outlineId, characterId: cid, createdAt: now }))
+        await repo.save(repo.create({ id: this.generateId(), userId, outlineId, characterId: cid, createdAt: now }))
       }
     })
   }
@@ -112,6 +117,7 @@ export class LwOutlineCharacterRepository extends BaseRepository<
     for (const c of characters) nameToId.set(c.name, c.id)
 
     let migrated = 0
+    const userId = getCurrentUserId() ?? null
     await this.dataSource.transaction(async manager => {
       const repo = manager.getRepository(LwOutlineCharacterEntity)
       const now = Date.now()
@@ -122,7 +128,7 @@ export class LwOutlineCharacterRepository extends BaseRepository<
           if (!cid) continue
           const existing = await repo.findOne({ where: { outlineId: outline.id, characterId: cid } as any })
           if (!existing) {
-            await repo.save(repo.create({ id: this.generateId(), outlineId: outline.id, characterId: cid, createdAt: now }))
+            await repo.save(repo.create({ id: this.generateId(), userId, outlineId: outline.id, characterId: cid, createdAt: now }))
             migrated++
           }
         }
