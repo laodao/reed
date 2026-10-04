@@ -116,6 +116,11 @@ const IPC_CHANNELS = {
   DIARY_GET_ON_THIS_DAY: 'diary:get-on-this-day',
   DIARY_GET_INSPIRATION: 'diary:get-inspiration',
   DIARY_SET_FOLDER_BRAIN_OPT_IN: 'diary:set-folder-brain-opt-in',
+  DIARY_UPLOAD_ATTACHMENT: 'diary:upload-attachment',
+  DIARY_DELETE_ATTACHMENT: 'diary:delete-attachment',
+  DIARY_DESCRIBE_ATTACHMENT: 'diary:describe-attachment',
+  DIARY_GET_WRITING_PROMPT: 'diary:get-writing-prompt',
+  DIARY_CREATE_REFLECTION: 'diary:create-reflection',
   DIARY_EXPORT_HTML: 'diary:export-html',
   DIARY_EXPORT_PDF: 'diary:export-pdf',
   DIARY_EXPORT_DOCX: 'diary:export-docx',
@@ -2490,7 +2495,7 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.DIARY_GET_ENTRY, id),
     createEntry: (data: { folderId: string; title?: string; content?: string }) =>
       ipcRenderer.invoke(IPC_CHANNELS.DIARY_CREATE_ENTRY, data),
-    updateEntry: (id: string, data: { title?: string; content?: string; tags?: string[] }) =>
+    updateEntry: (id: string, data: { title?: string; content?: string; tags?: string[]; frontmatter?: string }) =>
       ipcRenderer.invoke(IPC_CHANNELS.DIARY_UPDATE_ENTRY, { id, request: data }),
     deleteEntry: (id: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.DIARY_DELETE_ENTRY, id),
@@ -2521,6 +2526,16 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.DIARY_GET_INSPIRATION, entryId),
     setFolderBrainOptIn: (folderId: string, enabled: boolean) =>
       ipcRenderer.invoke(IPC_CHANNELS.DIARY_SET_FOLDER_BRAIN_OPT_IN, { folderId, enabled }),
+    uploadAttachment: (data: { entryId: string; fileName: string; base64: string; mimeType?: string }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_UPLOAD_ATTACHMENT, data),
+    deleteAttachment: (attachmentId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_DELETE_ATTACHMENT, attachmentId),
+    describeAttachment: (attachmentId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_DESCRIBE_ATTACHMENT, attachmentId),
+    getWritingPrompt: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_GET_WRITING_PROMPT),
+    createReflection: (data: { cardTitle: string; reflectionText: string; kbName?: string }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_CREATE_REFLECTION, data),
 
     exportHtml: (entryId: string, outputPath?: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.DIARY_EXPORT_HTML, { entryId, outputPath }),

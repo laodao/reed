@@ -269,4 +269,26 @@ describe.each(getTestDialects())('Diary Repositories [%s]', dialect => {
     await attachments.deleteByEntry(e.id)
     expect(await attachments.count(e.id)).toBe(0)
   })
+
+  it('Attachment: description 往返 + findRecentImages 过滤图片与时间窗', async () => {
+    const f = await folders.create({ name: 'r2' } as any, 'r2')
+    const e = await entries.create({ folderId: f.id, title: 'A' } as any, 'r2/a.md')
+
+    const img = await attachments.create(e.id, 'a.png', 'diary/r2/.assets/a.png', 1024, 'image/png')
+    await attachments.create(e.id, 'note.pdf', 'diary/r2/.assets/note.pdf', 2048, 'application/pdf')
+
+    expect(await attachments.updateDescription(img.id, '一张截图')).toBe(true)
+    expect((await attachments.findById(img.id))!.description).toBe('一张截图')
+
+    // 只回图片
+    const recent = await attachments.findRecentImages(new Date(Date.now() - 86400000), 10)
+    expect(recent.length).toBe(1)
+    expect(recent[0].fileName).toBe('a.png')
+
+    // 时间窗外的图片不回
+    const old = await attachments.create(e.id, 'old.png', 'diary/r2/.assets/old.png', 512, 'image/png')
+    void old
+    const future = await attachments.findRecentImages(new Date(Date.now() + 3600000), 10)
+    expect(future.length).toBe(0)
+  })
 })

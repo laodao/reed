@@ -8,6 +8,7 @@ import { DiaryService } from '@core/platform/services/diary.service'
 import { DiaryExportService } from '../services/diary-export.service'
 import { DiaryInspirationService } from '../services/diary-inspiration.service'
 import { getDiaryBrainSyncService } from '@core/platform/services/diary-brain-sync.service'
+import { DiaryAttachmentService } from '../services/diary-attachment.service'
 import type {
   CreateDiaryFolderRequest,
   UpdateDiaryFolderRequest,
@@ -18,6 +19,7 @@ import type {
 let diaryService: DiaryService | null = null
 let diaryExportService: DiaryExportService | null = null
 let diaryInspirationService: DiaryInspirationService | null = null
+let diaryAttachmentService: DiaryAttachmentService | null = null
 
 function getDiaryService(): DiaryService {
   if (!diaryService) {
@@ -38,6 +40,13 @@ function getDiaryInspirationService(): DiaryInspirationService {
     diaryInspirationService = new DiaryInspirationService()
   }
   return diaryInspirationService
+}
+
+function getDiaryAttachmentService(): DiaryAttachmentService {
+  if (!diaryAttachmentService) {
+    diaryAttachmentService = new DiaryAttachmentService()
+  }
+  return diaryAttachmentService
 }
 
 export function registerDiaryHandlers(): void {
@@ -78,6 +87,15 @@ export function registerDiaryHandlers(): void {
 
   // 日记消化开关（P2：opt-in 红线——开启回填存量，关闭出库清理）
   ipcBridge.handle('diary:set-folder-brain-opt-in', handleSetFolderBrainOptIn)
+
+  // 附件（P3：内嵌贴图 + 写作引子）
+  ipcBridge.handle('diary:upload-attachment', handleUploadAttachment)
+  ipcBridge.handle('diary:delete-attachment', handleDeleteAttachment)
+  ipcBridge.handle('diary:describe-attachment', handleDescribeAttachment)
+  ipcBridge.handle('diary:get-writing-prompt', handleGetWritingPrompt)
+
+  // F2 反思流（复习面板接线用）
+  ipcBridge.handle('diary:create-reflection', handleCreateReflection)
 
   // 导出
   ipcBridge.handle('diary:export-html', handleExportHtml)
@@ -205,6 +223,37 @@ async function handleSetFolderBrainOptIn(
   data: { folderId: string; enabled: boolean }
 ) {
   return await getDiaryBrainSyncService().setFolderBrainOptIn(data.folderId, data.enabled)
+}
+
+async function handleUploadAttachment(
+  _event: any,
+  data: { entryId: string; fileName: string; base64: string; mimeType?: string }
+) {
+  return await getDiaryAttachmentService().uploadAttachment(
+    data.entryId,
+    data.fileName,
+    data.base64,
+    data.mimeType
+  )
+}
+
+async function handleDeleteAttachment(_event: any, attachmentId: string) {
+  return await getDiaryAttachmentService().deleteAttachment(attachmentId)
+}
+
+async function handleDescribeAttachment(_event: any, attachmentId: string) {
+  return await getDiaryAttachmentService().describeAttachment(attachmentId)
+}
+
+async function handleGetWritingPrompt(_event: any) {
+  return await getDiaryAttachmentService().getWritingPrompt()
+}
+
+async function handleCreateReflection(
+  _event: any,
+  data: { cardTitle: string; reflectionText: string; kbName?: string }
+) {
+  return await getDiaryService().createReflectionEntry(data.cardTitle, data.reflectionText, data.kbName)
 }
 
 // ==================== 导出 ====================

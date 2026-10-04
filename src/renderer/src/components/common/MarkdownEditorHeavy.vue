@@ -24,6 +24,8 @@
  */
 import { ref, onMounted, nextTick, watch } from 'vue'
 import { Editor } from '@bytemd/vue-next'
+import type { BytemdPlugin } from 'bytemd'
+import { toImageUrl } from '@/utils/asset-url'
 import gfm from '@bytemd/plugin-gfm'
 import highlight from '@bytemd/plugin-highlight'
 import frontmatter from '@bytemd/plugin-frontmatter'
@@ -48,8 +50,24 @@ const wrapperRef = ref<HTMLElement | null>(null)
 const editorRef = ref<any>(null)
 
 // 插件配置
-const plugins = [
+/**
+ * 预览图片 src 转换：markdown 里相对路径的本地图片（如日记附件 diary/...）
+ * 按当前端协议重写（Electron local-image:// / Web /assets/）。
+ * 已是 http(s)、data、blob、local-* 协议或 /assets/ 开头的 src 原样保留（toImageUrl 规则）。
+ */
+const imageSrcPlugin: BytemdPlugin = {
+  viewerEffect({ markdownBody }: { markdownBody: HTMLElement }) {
+    markdownBody.querySelectorAll('img').forEach((img) => {
+      const raw = img.getAttribute('src') || ''
+      const converted = toImageUrl(raw)
+      if (converted && converted !== raw) img.setAttribute('src', converted)
+    })
+  },
+}
+
+const plugins: BytemdPlugin[] = [
   gfm(),
+  imageSrcPlugin,
   highlight(),
   frontmatter(),
   math(),

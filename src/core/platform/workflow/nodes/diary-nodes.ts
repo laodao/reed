@@ -160,8 +160,12 @@ const collectDiaryNode: WorkflowNodeHandler = {
     for (const e of selected) {
       const date = new Date(e.createdAt)
       const dateLabel = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-      const tags = (e.tags ?? []).length > 0 ? `（标签：${(e.tags ?? []).join('、')}）` : ''
-      const section = `### ${dateLabel} ${e.title}${tags}\n${(e.preview || '').trim() || '（无正文）'}`
+      const meta: string[] = []
+      if ((e.tags ?? []).length > 0) meta.push(`标签：${(e.tags ?? []).join('、')}`)
+      const mood = extractMood(e.frontmatter)
+      if (mood != null) meta.push(`心情：${mood}/5`)
+      const metaLabel = meta.length > 0 ? `（${meta.join('；')}）` : ''
+      const section = `### ${dateLabel} ${e.title}${metaLabel}\n${(e.preview || '').trim() || '（无正文）'}`
       if (totalChars + section.length > 30000) break
       sections.push(section)
       totalChars += section.length
@@ -180,6 +184,16 @@ const collectDiaryNode: WorkflowNodeHandler = {
       },
     }
   },
+}
+
+/**
+ * 从 frontmatter 提取 mood（1-5 整数）；未设置/非法返回 null。
+ * 心情只服务复盘相关性（spec §9：不做打点，做情绪与产出的相关性）。
+ */
+export function extractMood(frontmatter: string | null | undefined): number | null {
+  if (!frontmatter) return null
+  const m = /(^|\n)\s*mood\s*:\s*([1-5])\s*($|\n)/.exec(frontmatter)
+  return m ? Number(m[2]) : null
 }
 
 /** 日记节点集合 */

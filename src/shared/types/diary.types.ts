@@ -95,6 +95,8 @@ export interface UpdateDiaryEntryRequest {
   title?: string
   content?: string
   tags?: string[]
+  /** YAML frontmatter（含 mood/brain 等结构化字段） */
+  frontmatter?: string
 }
 
 /**
@@ -107,6 +109,8 @@ export interface DiaryEntryListItem {
   preview?: string
   wordCount: number
   tags?: string[]
+  /** YAML frontmatter（周报聚合读 mood 等结构化字段用） */
+  frontmatter?: string
   /** 软删除时间（回收站列表项非空） */
   deletedAt?: Date | string | null
   createdAt: Date | string
@@ -167,17 +171,19 @@ export interface DiaryAttachment {
   fileSize: number
   /** MIME 类型 */
   mimeType?: string
+  /** 视觉模型生成的中文描述（best-effort） */
+  description?: string
   /** 创建时间 */
   createdAt: Date | string
 }
 
 /**
- * 上传附件请求
+ * 上传附件请求（base64 口径：渲染端读 File → base64，不经路径传输）
  */
 export interface UploadAttachmentRequest {
   entryId: string
   fileName: string
-  fileData: ArrayBuffer
+  base64: string
   mimeType?: string
 }
 

@@ -540,6 +540,45 @@ export class DiaryService {
   }
 
   /**
+   * F2 精细化加工反思流（spec 2026-09-24 §7）：复习卡揭示后写"联想到什么"，
+   * 落为「学习反思」目录下的日记条目。复习面板接线用（FSRS 复习 UI 待建）。
+   */
+  async createReflectionEntry(
+    cardTitle: string,
+    reflectionText: string,
+    kbName?: string
+  ): Promise<DiaryIpcResponse<DiaryEntry>> {
+    try {
+      // 确保「学习反思」根目录（复用 save-diary 节点的按需创建模式）
+      const foldersResp = await this.getAllFolders()
+      const folders = foldersResp.success ? foldersResp.data ?? [] : []
+      let folder = folders.find(f => f.name === '学习反思' && !f.parentId)
+      if (!folder) {
+        const created = await this.createFolder({ name: '学习反思' })
+        if (!created.success || !created.data) {
+          return { success: false, error: created.error ?? '创建学习反思目录失败' }
+        }
+        folder = created.data
+      }
+
+      const title = `反思：${cardTitle.slice(0, 50)}`
+      const content = [
+        `> 复习卡片：${cardTitle}${kbName ? `（${kbName}）` : ''}`,
+        '',
+        reflectionText.trim() || '（未填写联想内容）',
+        '',
+        '---',
+        '_本文由复习后的精细化加工反思生成（spec 2026-09-24 F2）_',
+      ].join('\n')
+
+      return await this.createEntry({ folderId: folder.id, title, content })
+    } catch (error) {
+      console.error('[DiaryService] createReflectionEntry error:', error)
+      return { success: false, error: String(error) }
+    }
+  }
+
+  /**
    * 那年今日：历史同月同日的日记（不含今年），最多 limit 篇
    */
   async getOnThisDay(limit = 3): Promise<DiaryIpcResponse<DiaryEntryListItem[]>> {

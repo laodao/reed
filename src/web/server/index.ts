@@ -68,6 +68,7 @@ import { addStoryboardKeyframeCount } from '@core/database/migrations/add-storyb
 import { addKbDocumentSource } from '@core/database/migrations/add-kb-document-source'
 import { addDiaryDeletedAt } from '@core/database/migrations/add-diary-deleted-at'
 import { addDiaryFolderBrainOptIn } from '@core/database/migrations/add-diary-folder-brain-opt-in'
+import { addDiaryAttachmentDescription } from '@core/database/migrations/add-diary-attachment-description'
 import { addKeyframeReferenceOverrides } from '@core/database/migrations/add-keyframe-reference-overrides'
 import { addStoryboardUseKeyframes } from '@core/database/migrations/add-storyboard-use-keyframes'
 import { addStoryboardIncludeInFinal } from '@core/database/migrations/add-storyboard-include-in-final'
@@ -323,6 +324,8 @@ async function initDatabase(): Promise<void> {
   await addDiaryDeletedAt(ds)
   // 日记目录 brain_opt_in（spec 2026-09-24 日记增强 P2-1）：日记消化 opt-in 红线
   await addDiaryFolderBrainOptIn(ds)
+  // 日记附件描述列（spec 2026-09-24 日记增强 P3-1）：贴图检索上下文
+  await addDiaryAttachmentDescription(ds)
   // 关键帧 reference_overrides：用户精细挑图覆盖
   await addKeyframeReferenceOverrides(ds)
   // 分镜 use_keyframes：是否走关键帧流程（false → 直接用剧本描述 + 资产生成视频）

@@ -69,19 +69,38 @@
       />
     </div>
 
-    <!-- 编辑器内容 -->
-    <div class="editor-content">
+    <!-- 编辑器内容（粘贴/拖拽图片即贴图） -->
+    <div
+      class="editor-content"
+      @paste="handlePaste"
+      @dragover.prevent
+      @drop.prevent="handleDrop"
+    >
       <MarkdownEditor
         ref="editorRef"
         v-model="content"
-        placeholder="开始写日记..."
+        placeholder="开始写日记...（可直接粘贴/拖入图片）"
         @change="handleContentChange"
       />
+      <div v-if="uploadingImage" class="upload-banner">
+        <el-icon class="is-loading"><Loading /></el-icon>
+        正在上传图片...
+      </div>
     </div>
 
     <!-- 底部信息栏 -->
     <div class="editor-footer">
-      <span class="word-count">{{ wordCount }} 字</span>
+      <div class="footer-left">
+        <span class="word-count">{{ wordCount }} 字</span>
+        <el-rate
+          :model-value="mood ?? 0"
+          :max="5"
+          clearable
+          size="small"
+          @update:model-value="handleMoodChange"
+        />
+        <span class="mood-hint">{{ mood ? `心情 ${mood}/5` : '记录心情' }}</span>
+      </div>
       <span class="last-saved">最后保存: {{ lastSavedTime }}</span>
     </div>
 
@@ -165,6 +184,11 @@
             <div class="related-entry-title">{{ item.title }}</div>
             <div class="related-entry-snippet">{{ item.snippet }}</div>
           </div>
+        </div>
+        <div v-if="writingPrompt" class="inspiration-section">
+          <div class="section-title">图片写作引子（来自最近的照片）</div>
+          <div class="writing-prompt">{{ writingPrompt.prompt }}</div>
+          <el-button size="small" type="primary" text @click="insertWritingPrompt">插入到日记</el-button>
         </div>
       </template>
     </el-drawer>
@@ -272,6 +296,9 @@ const saveTimeout = ref<number | null>(null)
 // 标签（编辑后随防抖一并保存）
 const localTags = ref<string[]>([...(props.entry.tags || [])])
 
+// 心情（frontmatter mood 字段，1-5；服务周报复盘相关性）
+const mood = ref<number | null>(parseMood(props.entry.frontmatter))
+
 // 反向链接
 const showBacklinks = ref(false)
 const backlinks = ref<BacklinkInfo[]>([])
@@ -282,6 +309,10 @@ const isLoadingInspiration = ref(false)
 const dueCards = ref<InspirationDueCard[]>([])
 const relatedItems = ref<InspirationRelatedItem[]>([])
 const relatedEntries = ref<InspirationRelatedEntry[]>([])
+const writingPrompt = ref<{ attachmentId: string; fileName: string; prompt: string } | null>(null)
+
+// 贴图上传
+const uploadingImage = ref(false)
 
 // 插入链接对话框
 const showLinkDialog = ref(false)
@@ -315,7 +346,8 @@ async function saveEntry() {
     const result = await window.electronAPI.diary.updateEntry(props.entry.id, {
       title: title.value,
       content: content.value,
-      tags: localTags.value
+      tags: localTags.value,
+      frontmatter: upsertMood(props.entry.frontmatter, mood.value)
     })
     if (result.success) {
       lastSavedTime.value = new Date().toLocaleTimeString()
@@ -334,6 +366,33 @@ async function handleTitleChange() {
 
 function handleContentChange() {
   // 内容变化由 watch 处理
+}
+
+// ==================== 心情（frontmatter mood） ====================
+
+function parseMood(frontmatter: string | undefined | null): number | null {
+  if (!frontmatter) return null
+  const m = /(^|\n)\s*mood\s*:\s*([1-5])\s*($|\n)/.exec(frontmatter)
+  return m ? Number(m[2]) : null
+}
+
+/** 替换或追加 mood 行；清空心情则删除该行 */
+function upsertMood(frontmatter: string | undefined | null, value: number | null): string | undefined {
+  const source = frontmatter ?? ''
+  const cleaned = source
+    .split('\n')
+    .filter(line => !/^\s*mood\s*:/.test(line))
+    .join('\n')
+  if (value == null) return cleaned || undefined
+  return cleaned ? `${cleaned.replace(/\n+$/, '')}\nmood: ${value}\n` : `mood: ${value}\n`
+}
+
+function handleMoodChange(value: number) {
+  mood.value = value > 0 ? value : null
+  if (saveTimeout.value) clearTimeout(saveTimeout.value)
+  saveTimeout.value = window.setTimeout(() => {
+    void saveEntry()
+  }, 600)
 }
 
 // ==================== 反向链接 ====================
@@ -375,8 +434,85 @@ function handleOpenRelatedEntry(entryId: string) {
   emit('open-entry', entryId)
 }
 
+function insertWritingPrompt() {
+  if (!writingPrompt.value) return
+  insertTextAtCursor(writingPrompt.value.prompt + '\n\n')
+  showInspiration.value = false
+}
+
+// ==================== 贴图（粘贴/拖拽） ====================
+
+function handlePaste(e: ClipboardEvent) {
+  const file = Array.from(e.clipboardData?.files || []).find(f => f.type.startsWith('image/'))
+  if (!file) return
+  e.preventDefault()
+  void uploadImageFile(file)
+}
+
+function handleDrop(e: DragEvent) {
+  const file = Array.from(e.dataTransfer?.files || []).find(f => f.type.startsWith('image/'))
+  if (!file) return
+  void uploadImageFile(file)
+}
+
+async function uploadImageFile(file: File) {
+  if (uploadingImage.value) return
+  uploadingImage.value = true
+  try {
+    const base64 = await readAsBase64(file)
+    const result = await window.electronAPI.diary.uploadAttachment({
+      entryId: props.entry.id,
+      fileName: file.name || 'image.png',
+      base64,
+      mimeType: file.type
+    })
+    if (result.success && result.data) {
+      insertTextAtCursor(`\n${result.data.markdown}\n`)
+      ElMessage.success('图片已插入')
+    } else {
+      ElMessage.error(result.error || '图片上传失败')
+    }
+  } catch (error) {
+    console.error('图片上传失败:', error)
+    ElMessage.error('图片上传失败')
+  } finally {
+    uploadingImage.value = false
+  }
+}
+
+function readAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '')
+      resolve(dataUrl.slice(dataUrl.indexOf(',') + 1))
+    }
+    reader.onerror = () => reject(new Error('读取图片失败'))
+    reader.readAsDataURL(file)
+  })
+}
+
+/** 在光标处插入文本（编辑器未就绪时追加文末） */
+function insertTextAtCursor(text: string) {
+  const cm = editorRef.value?.getCodemirror?.()
+  if (cm?.state && cm?.dispatch) {
+    const pos = cm.state.selection.main.head
+    cm.dispatch({
+      changes: { from: pos, insert: text },
+      selection: { anchor: pos + text.length }
+    })
+    cm.focus()
+  } else {
+    content.value = `${content.value}\n${text}`
+  }
+}
+
 async function loadInspiration() {
   isLoadingInspiration.value = true
+  // 写作引子独立加载（可能触发 VLM 调用，失败静默、不阻塞主体）
+  void window.electronAPI.diary.getWritingPrompt().then((r: { success: boolean; data: typeof writingPrompt.value }) => {
+    writingPrompt.value = r?.success ? r.data : null
+  })
   try {
     const result = await window.electronAPI.diary.getInspiration(props.entry.id)
     if (result.success && result.data) {
@@ -423,19 +559,7 @@ const linkCandidates = computed(() => {
 })
 
 function insertLink(candidate: DiaryEntryListItem) {
-  const text = `[[${candidate.title}]]`
-  const cm = editorRef.value?.getCodemirror?.()
-  if (cm?.state && cm?.dispatch) {
-    const pos = cm.state.selection.main.head
-    cm.dispatch({
-      changes: { from: pos, insert: text },
-      selection: { anchor: pos + text.length }
-    })
-    cm.focus()
-  } else {
-    // 编辑器未就绪时降级：追加到文末
-    content.value = `${content.value}\n${text}`
-  }
+  insertTextAtCursor(`[[${candidate.title}]]`)
   showLinkDialog.value = false
 }
 
@@ -575,15 +699,28 @@ onUnmounted(() => {
   padding: 0 24px;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 .editor-footer {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   padding: 8px 24px;
   font-size: 12px;
   color: var(--text-color-secondary);
   border-top: 1px solid var(--border-color-lighter);
+
+  .footer-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+
+    .mood-hint {
+      font-size: 11px;
+      color: var(--text-color-placeholder);
+    }
+  }
 }
 
 // 反链面板
@@ -716,6 +853,31 @@ onUnmounted(() => {
     color: var(--text-color-secondary);
     margin-top: 4px;
   }
+}
+
+.upload-banner {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color-lighter);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-color-secondary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.writing-prompt {
+  font-size: 13px;
+  line-height: 1.7;
+  padding: 10px 12px;
+  background: var(--bg-color-page);
+  border-radius: 8px;
+  margin-bottom: 8px;
 }
 
 .related-entry {

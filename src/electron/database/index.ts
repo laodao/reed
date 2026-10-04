@@ -661,6 +661,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-diary-folder-brain-opt-in'
     )
     await addDiaryFolderBrainOptIn(this.dataSource)
+    // 日记附件描述列（spec 2026-09-24 日记增强 P3-1）：贴图检索上下文
+    const { addDiaryAttachmentDescription } = await import(
+      '@core/database/migrations/add-diary-attachment-description'
+    )
+    await addDiaryAttachmentDescription(this.dataSource)
     // 关键帧 reference_overrides：用户精细挑图覆盖
     const { addKeyframeReferenceOverrides } = await import(
       '@core/database/migrations/add-keyframe-reference-overrides'

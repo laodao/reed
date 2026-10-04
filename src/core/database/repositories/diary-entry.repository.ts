@@ -48,6 +48,7 @@ export class DiaryEntryRepository extends BaseRepository<
       preview: content.slice(0, 200),
       wordCount: e.wordCount ?? 0,
       tags: (e.tags as string[] | null) ?? undefined,
+      frontmatter: e.frontmatter || undefined,
       deletedAt: e.deletedAt ?? null,
       createdAt: e.createdAt instanceof Date ? e.createdAt : new Date(e.createdAt),
       updatedAt: e.updatedAt instanceof Date ? e.updatedAt : new Date(e.updatedAt),
@@ -212,6 +213,10 @@ export class DiaryEntryRepository extends BaseRepository<
     }
     if (request.tags !== undefined) {
       existing.tags = request.tags
+      changed = true
+    }
+    if (request.frontmatter !== undefined) {
+      existing.frontmatter = request.frontmatter
       changed = true
     }
 

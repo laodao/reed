@@ -13,10 +13,67 @@ import * as os from 'os'
 import { DiaryService } from '@core/platform/services/diary.service'
 import { getDocumentTools } from '@core/platform/services/document-tools/document-tools'
 import { getPathProvider } from '@core/interfaces/path.interface'
+import { resolveAssetPath } from '@core/utils/asset-path'
 import type { DiaryIpcResponse } from '@shared/types/diary.types'
 
 /** 日记导出启用公式与 mermaid 渲染 */
 const ENHANCE = { math: true, mermaid: true } as const
+
+/**
+ * 把排版 HTML 中指向本地附件的 <img>（dataPath 相对路径）替换为 data URI。
+ * 安全：resolveAssetPath 解析后必须在 dataPath 内（防 markdown 注入越权读取）。
+ * 单图失败跳过（导出仍成功，图位留占位）。
+ */
+function embedLocalImages(html: string): string {
+  const dataPath = path.resolve(getPathProvider().getDataPath())
+  const imgPattern = /<img\b[^>]*src="([^"]+)"[^>]*>/gi
+  const matches = [...html.matchAll(imgPattern)]
+  let out = html
+  for (const m of matches) {
+    const src = m[1]
+    if (!src || /^(https?:|data:|blob:)/i.test(src)) continue
+    try {
+      const abs = path.resolve(resolveAssetPath(src))
+      if (!abs.startsWith(dataPath + path.sep)) continue
+      const mime = guessMime(src)
+      const buf = fs.readFileSync(abs)
+      out = out.replace(m[0], m[0].replace(`src="${src}"`, `src="data:${mime};base64,${buf.toString('base64')}"`))
+    } catch {
+      // 图片缺失/越权：保留原 src，不阻断导出
+    }
+  }
+  return out
+}
+
+/** markdown 层内嵌（PDF 渲染前）：![alt](rel) → ![alt](dataURI) */
+function inlineLocalImagesToDataUri(markdown: string): string {
+  const dataPath = path.resolve(getPathProvider().getDataPath())
+  const mdPattern = /(!\[[^\]]*\]\()([^)]+)(\))/g
+  let out = markdown
+  for (const m of [...markdown.matchAll(mdPattern)]) {
+    const src = m[2].trim().replace(/^<|>$/g, '')
+    if (!src || /^(https?:|data:|blob:)/i.test(src)) continue
+    try {
+      const abs = path.resolve(resolveAssetPath(src))
+      if (!abs.startsWith(dataPath + path.sep)) continue
+      const mime = guessMime(src)
+      const buf = fs.readFileSync(abs)
+      out = out.replace(m[0], `${m[1]}data:${mime};base64,${buf.toString('base64')}${m[3]}`)
+    } catch {
+      // 同上：失败保留原样
+    }
+  }
+  return out
+}
+
+function guessMime(p: string): string {
+  const ext = path.extname(p).toLowerCase()
+  return ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg'
+    : ext === '.gif' ? 'image/gif'
+    : ext === '.webp' ? 'image/webp'
+    : ext === '.svg' ? 'image/svg+xml'
+    : 'image/png'
+}
 
 export class DiaryExportService {
   private diaryService: DiaryService
@@ -41,9 +98,12 @@ export class DiaryExportService {
         title: entry.title,
         enhance: ENHANCE
       })
+      // 贴图内嵌：markdown 里的本地图片（dataPath 相对路径）转 data URI，
+      // 导出文件离线自包含（P3-1 资源嵌入）
+      const embedded = embedLocalImages(html)
 
       const filePath = outputPath || this.getDefaultExportPath(entry.title, 'html')
-      fs.writeFileSync(filePath, html, 'utf-8')
+      fs.writeFileSync(filePath, embedded, 'utf-8')
 
       return { success: true, data: filePath }
     } catch (error) {
@@ -63,8 +123,10 @@ export class DiaryExportService {
       }
 
       const tools = getDocumentTools()
+      // PDF 渲染前把本地图片 src 换成 data URI（渲染窗口 file:// 加载拦截相对资源）
+      const markdown = inlineLocalImagesToDataUri(entry.content || '')
       const rendered = await tools.renderPdf({
-        markdown: entry.content || '',
+        markdown,
         title: entry.title,
         enhance: ENHANCE
       })
