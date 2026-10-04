@@ -10,7 +10,7 @@
     "predev": "node scripts/clean-stale-vite-config.js",
     "dev": "set LANG=en_US.UTF-8 && set PYTHONIOENCODING=utf-8 && electron-vite dev",
     "dev:debug": "NO_AT_BRIDGE=1 electron-vite dev -- --remote-debugging-port=9222",
-    "rebuild:electron": "electron-builder install-app-deps",
+    "rebuild:electron": "npx @electron/rebuild -f -o better-sqlite3,canvas,nodejieba",
     "rebuild:node": "npm rebuild better-sqlite3 canvas nodejieba",
     "prepc:dev": "node scripts/clean-stale-vite-config.js",
     "pc:dev": "electron-vite dev -- --no-sandbox",
@@ -180,7 +180,8 @@
     "typescript": "^5.3.3",
     "vite": "^5.1.4",
     "vitest": "^1.3.1",
-    "vue-tsc": "^3.2.7"
+    "vue-tsc": "^3.2.7",
+    "@electron/rebuild": "^4.0.0"
   },
   "build": {
     "appId": "com.daoge.the_bot",
