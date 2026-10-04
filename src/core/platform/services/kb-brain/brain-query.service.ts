@@ -323,7 +323,8 @@ export class BrainQueryService {
     if (entry.ns === 'atom') {
       const atom = await this.deps.atoms.findById(entry.id)
       if (!atom) return null
-      if (atom.status === 'superseded' || atom.status === 'stale') return null
+      // archived 也跳过（清理服务只改状态不清池——归档论断不得再从检索池召回）
+      if (atom.status === 'superseded' || atom.status === 'stale' || atom.status === 'archived') return null
       if (req.lensNoteId && atom.lensNoteId !== req.lensNoteId) return null
       return {
         kind: 'atom',

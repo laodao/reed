@@ -28,7 +28,6 @@ describe('BrainQueryService', () => {
   let chunks: KbChunkRepository
   let inverted: KbInvertedIndexRepository
   let fakeSimilarHits: Array<{ chunkId: string; score: number }>
-  let embedCalls: number
   let svc: BrainQueryService
 
   const KB = 'kbq'
@@ -36,10 +35,7 @@ describe('BrainQueryService', () => {
   function makeDeps(): BrainQueryDeps {
     const docs = new KbDocumentRepository(ds)
     return {
-      embed: async () => {
-        embedCalls++
-        return [[1, 0, 0]]
-      },
+      embed: async () => [[1, 0, 0]],
       searchSimilar: async () => fakeSimilarHits,
       inverted: {
         findByTerms: (kbId, terms) => inverted.findByTerms(kbId, terms),
@@ -77,19 +73,12 @@ describe('BrainQueryService', () => {
     chunks = new KbChunkRepository(ds)
     inverted = new KbInvertedIndexRepository(ds)
     fakeSimilarHits = []
-    embedCalls = 0
     svc = new BrainQueryService(makeDeps())
   })
 
   afterAll(async () => {
     await ds?.destroy()
   })
-
-  async function plantFixture(): Promise<{ atomId: string; chunkId: string; noteId: string }> {
-    // chunk
-    await chunks.createBatch?.({} as never) // 占位避免 TS 收窄警告（实际用直接插入）
-    return { atomId: '', chunkId: '', noteId: '' }
-  }
 
   it('atom 命中：provenance 载荷 + superseded/stale 跳过 + include 过滤', async () => {
     const [a1] = await atoms.createBatch([
@@ -115,10 +104,21 @@ describe('BrainQueryService', () => {
       },
     ])
     await atoms.updateStatus(aOld.id, { status: 'superseded', supersededByAtomId: a1.id })
+    const [aArchived] = await atoms.createBatch([
+      {
+        knowledgeBaseId: KB,
+        statement: '程野失去右手（已归档垃圾）',
+        type: 'fact',
+        sourceDocumentId: 'docq',
+        sourceQuote: 'q-archived',
+      },
+    ])
+    await atoms.updateStatus(aArchived.id, { status: 'archived' })
 
     fakeSimilarHits = [
       { chunkId: `atom:${a1.id}`, score: 0.92 },
       { chunkId: `atom:${aOld.id}`, score: 0.88 },
+      { chunkId: `atom:${aArchived.id}`, score: 0.86 }, // 归档（清理产物）必须被剔除——清理只改状态不清池
       { chunkId: 'qa:pair1:0', score: 0.99 }, // QA 命名空间必须被剔除
     ]
     const out = await svc.search({ knowledgeBaseId: KB, query: '程野 失去 左臂', include: ['chunk', 'atom'], embeddingConfig: null })

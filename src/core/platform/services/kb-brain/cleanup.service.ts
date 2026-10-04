@@ -98,7 +98,10 @@ export class KbCleanupService {
     const raw = await this.llm({
       system: CLEANUP_SYSTEM,
       user: buildTriageUser(batch),
-      maxTokens: 2000,
+      // 8000：推理型模型（deepseek-v4.1 等）思考内容计入输出预算，2000 会被
+      // reasoning 耗尽返回空文本（真机实证 19/20 批 chars=0）——正文 JSON 很小，
+      // 余量全给思考
+      maxTokens: 8000,
     })
     const junkIdx = this.parseJunkIdx(raw, batch.length)
     if (junkIdx.length === 0) return 0
