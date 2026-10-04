@@ -59,7 +59,7 @@ import {
 import { pickReferenceImage } from './reference-image-selector'
 import { deleteKeyframeWithAsset } from './keyframe-cleanup'
 import { resolveCharacterViewLabel } from './keyframe-view-mapping'
-import { parseAssetRefOverrides, toRefCandidates } from './parse-asset-refs'
+import { parseAssetRefOverrides, replaceAssetRefMarkers, toRefCandidates } from './parse-asset-refs'
 import { ReferenceBoardService, type ReferenceBoardResult, type ReferenceBoardMember } from './reference-board.service'
 import { runKeyframeMachineChecks, type MachineCheckResult } from './keyframe-machine-checks'
 import { KeyframeReviewService, isVisionCapable, type KeyframeReview } from './keyframe-review.service'
@@ -349,7 +349,7 @@ export class KeyframeGenerationService {
     const sceneAssets = await this.resolveSceneAssets(scene, sb.id)
 
     // D4-3 空绑定守卫：场景名单有角色但一个绑定都解析不出来 → 拒绝生成
-    this.assertCharactersBound(scene, sceneAssets)
+    await this.assertCharactersBound(scene, sb, sceneAssets)
 
     // D5：关键帧画幅跟随项目 config.aspectRatio（入口取一次，逐帧复用）
     const dimensions = await this.resolveKeyframeDimensions(scene)
@@ -443,7 +443,7 @@ export class KeyframeGenerationService {
     const sceneAssets = await this.resolveSceneAssets(scene, sb.id)
 
     // D4-3 空绑定守卫（同 generateKeyframesForStoryboard）：无绑定不进入图像生成
-    this.assertCharactersBound(scene, sceneAssets)
+    await this.assertCharactersBound(scene, sb, sceneAssets)
 
     // D5：关键帧画幅跟随项目 config.aspectRatio
     const dimensions = await this.resolveKeyframeDimensions(scene)
@@ -639,7 +639,7 @@ export class KeyframeGenerationService {
     const sceneAssets = await this.resolveSceneAssets(scene, sb.id)
     // D4-3 守卫补挂（0916 晚 review：insertExtraKeyframe/generateKeyframeAtIndex 两入口
     // 此前漏挂——「插入中间帧/按索引补帧」仍会空参考纯文生图静默降级）
-    this.assertCharactersBound(scene, sceneAssets)
+    await this.assertCharactersBound(scene, sb, sceneAssets)
     const dimensions = await this.resolveKeyframeDimensions(scene)
     return await this.generateOneKeyframe({
       storyboard: sb,
@@ -703,7 +703,7 @@ export class KeyframeGenerationService {
     const styleConfig = this.pickStyle(input.styleName)
     const sceneAssets = await this.resolveSceneAssets(scene, sb.id)
     // D4-3 守卫补挂（同 insertExtraKeyframe——按索引补帧也不能静默降级）
-    this.assertCharactersBound(scene, sceneAssets)
+    await this.assertCharactersBound(scene, sb, sceneAssets)
     const dimensions = await this.resolveKeyframeDimensions(scene)
     // 复用 storyboard 级资产参考图覆盖
     const sbLevelOverrides = parseSbReferenceImageIds((sb as any).referenceImageIds)
@@ -731,20 +731,34 @@ export class KeyframeGenerationService {
   }
 
   /**
-   * D4-3 空绑定守卫（tasks/2026-09-16-storyboard-asset-cogen）：
-   * 场景级角色名单（scene.characters）非空、但 resolveSceneAssets 连一个角色绑定
-   * 都解析不出来时直接报错 —— 继续生成只会 referenceImages:[] 纯文生图静默降级
-   * （F6 的 else-if 死路 / F8 实测），成片角色必然漂移。场景本身无角色不拦截。
+   * D4-3 空绑定守卫（tasks/2026-09-16-storyboard-asset-cogen；2026-09-24 一致性修复 K5 扩展）：
+   * 三级角色来源（storyboard_characters 表 / storyboard.characters JSON / scene.characters）
+   * 任一声明了角色、但 resolveSceneAssets 连一个角色绑定都解析不出来时直接报错 ——
+   * 继续生成只会 referenceImages:[] 纯文生图静默降级（F6 的 else-if 死路 / F8 实测），
+   * 成片角色必然漂移。三级来源均无角色（分镜本就无角色）不拦截。
    */
-  private assertCharactersBound(
+  private async assertCharactersBound(
     scene: SceneScriptEntity,
+    storyboard: StoryboardEntity,
     sceneAssets: { characters: ResolvedCharacterRef[] },
-  ): void {
-    const sceneChars = (scene.characters as SceneCharacter[] | null) ?? []
-    if (sceneChars.length === 0) return
+  ): Promise<void> {
     if (sceneAssets.characters.length > 0) return
+    const sbTableChars = await this.sbCharRepo.getByStoryboardId(storyboard.id)
+    const sbJsonChars = (
+      ((storyboard as any).characters as Array<Record<string, unknown>> | null) ?? []
+    ).filter((raw) => {
+      const id = typeof raw?.characterId === 'string' ? raw.characterId.trim() : ''
+      const name = typeof raw?.characterName === 'string' ? raw.characterName.trim() : ''
+      return id.length > 0 || name.length > 0
+    })
+    const sceneChars = (scene.characters as SceneCharacter[] | null) ?? []
+    if (sbTableChars.length + sbJsonChars.length + sceneChars.length === 0) return
+    const sources: string[] = []
+    if (sbTableChars.length > 0) sources.push(`storyboard_characters 表 ${sbTableChars.length} 条`)
+    if (sbJsonChars.length > 0) sources.push(`storyboard.characters JSON ${sbJsonChars.length} 条`)
+    if (sceneChars.length > 0) sources.push(`scene.characters ${sceneChars.length} 条`)
     throw new Error(
-      `场景 ${scene.sceneNumber} 名单中有 ${sceneChars.length} 个角色，但角色未绑定资产` +
+      `场景 ${scene.sceneNumber} 声明了角色（${sources.join('、')}），但角色未绑定资产` +
         `（characterBindingId 全部缺失或失效），拒绝生成关键帧。` +
         `请先运行联合分镜生成或绑定修复（ScriptBindingFixer）后再生成。`,
     )
@@ -1159,8 +1173,7 @@ export class KeyframeGenerationService {
     const { storyboard, scene, plan, sceneAssets, styleConfig, dimensions, userPrompt } = args
 
     // 选 ref 图：先看用户 override，再走自动评分兜底
-    // F4：选图在拼 prompt 之前，hasCharacterReference 决定风格前缀是否让位给参考图
-    const { refs: refImages, hasCharacterReference } = await this.collectReferenceImages(
+    const { refs: refImages } = await this.collectReferenceImages(
       sceneAssets,
       scene,
       args.referenceOverrides ?? null,
@@ -1170,35 +1183,8 @@ export class KeyframeGenerationService {
     // 古风硬约束（F 项）：episode.storyEra 命中古/武侠/朝代词 → prompt/negative 追加禁令
     const eraCtx = await this.resolveEpisodeEraContext(scene)
 
-    // 拼提示词
-    const promptOut = buildKeyframePrompt({
-      shotType: storyboard.shotType,
-      cameraAngle: storyboard.cameraAngle,
-      frameDescription: storyboard.frameDescription,
-      composition: storyboard.composition,
-      subject: storyboard.subject,
-      sceneDescription: scene.sceneDescription,
-      mood: scene.mood,
-      timeOfDay: scene.timeOfDay,
-      weather: scene.weather,
-      characters: sceneAssets.characters,
-      location: sceneAssets.location,
-      items: sceneAssets.items,
-      frameRole: plan.frameRole,
-      timePercent: plan.timePercent,
-      styleConfig,
-      userPrompt,
-      hasCharacterReference,
-      // spec 2026-05-09 ep-redesign §3.2 B5 镜头扩展（焦距 / 光圈 / 相机风格 / 打光预设）
-      cameraMetadata: (storyboard as any).metadata ?? null,
-      storyEra: eraCtx.storyEra,
-      storyRegion: eraCtx.storyRegion,
-    })
-
-    // 调 image generator 生成图（label 用 frame 角色 + frameIndex 便于追踪）
     // 项目设置的 stylePrompt 追加到关键帧提示词尾部（不覆盖既有结构）
     const projectStyle = await this.resolveProjectStylePrompt(scene)
-    const basePrompt = projectStyle ? `${promptOut.prompt}，${projectStyle}` : promptOut.prompt
     // 2026-09-19：关键帧生成接线项目「画面生成」模型（config.imageModel）。
     // 此前不传 provider/model → pickImageModel 自动乱挑（场次2根因：挑中只吃 1 张
     // 参考图的 bailian wan2.7-image，多角色视觉锚丢失）。与资产主图生成
@@ -1222,7 +1208,63 @@ export class KeyframeGenerationService {
      *     warn 退化为原单参考图截断逻辑（adapter 截到第一张）。
      *   - maxRefs>1 且 refs 超出上限 → 保留拼板路径（当前无此配置，留待多参考平台）。
      * 链式衔接：chain-strategy 参考链只在 prompt 层（时刻语言），帧间不互喂图片，不冲突。
+     *
+     * K2（2026-09-24 一致性修复）：路径预判在拼 prompt 之前完成，风格前缀让位与
+     * 实际发送共用同一预算口径——hasCharacterReference 按最终选定模型的
+     * maxReferenceImages 预算截断后的存活集判定（截断后无角色参考图存活则不让位，
+     * 避免视觉锚 + 风格锚双失）。合成锚定候选路径下全部角色参考图经合成图生效；
+     * 运行时若退化（无 T2I 草稿模型 / 合成失败）为单参考图截断，角色参考图排在
+     * 首位（collectReferenceImages 角色 → 物品 → 地点），slice(0,1) 仍保住角色，
+     * 判定结果不变。
      */
+    const maxRefs = await this.resolveMaxReferenceImages(effectiveImageModel)
+    const charRefs = refImages.filter((r) => r.kind === 'character')
+    const planComposite = refImages.length > 0 && maxRefs === 1 && charRefs.length > 0
+    const planBoard =
+      !planComposite &&
+      refImages.length > 1 &&
+      maxRefs !== null &&
+      maxRefs > 1 &&
+      refImages.length > maxRefs
+    const budgetedRefs =
+      planComposite || planBoard || maxRefs === null
+        ? refImages
+        : maxRefs <= 0
+          ? []
+          : refImages.slice(0, maxRefs)
+    // F4：截断后仍有角色参考图存活才让位风格前缀（K2）
+    const hasCharacterReference = budgetedRefs.some((r) => r.kind === 'character')
+
+    // 拼提示词
+    // K1（2026-09-24 一致性修复）：frameDescription 先剥 @[名字@索引@实体id] 标记为
+    // 纯名（与视频链路口径一致）——图像模型不认识 @[..] 引用语法，原样传入只会变噪声
+    const promptOut = buildKeyframePrompt({
+      shotType: storyboard.shotType,
+      cameraAngle: storyboard.cameraAngle,
+      frameDescription: replaceAssetRefMarkers(storyboard.frameDescription),
+      composition: storyboard.composition,
+      subject: storyboard.subject,
+      sceneDescription: scene.sceneDescription,
+      mood: scene.mood,
+      timeOfDay: scene.timeOfDay,
+      weather: scene.weather,
+      characters: sceneAssets.characters,
+      location: sceneAssets.location,
+      items: sceneAssets.items,
+      frameRole: plan.frameRole,
+      timePercent: plan.timePercent,
+      styleConfig,
+      userPrompt,
+      hasCharacterReference,
+      // spec 2026-05-09 ep-redesign §3.2 B5 镜头扩展（焦距 / 光圈 / 相机风格 / 打光预设）
+      cameraMetadata: (storyboard as any).metadata ?? null,
+      storyEra: eraCtx.storyEra,
+      storyRegion: eraCtx.storyRegion,
+    })
+
+    // 调 image generator 生成图（label 用 frame 角色 + frameIndex 便于追踪）
+    const basePrompt = projectStyle ? `${promptOut.prompt}，${projectStyle}` : promptOut.prompt
+
     let board: ReferenceBoardResult | null = null
     let compositeAnchor: {
       draftPath: string
@@ -1230,9 +1272,7 @@ export class KeyframeGenerationService {
       members: Array<{ assetImageId: string; name: string; slot: number }>
     } | null = null
     let fusionModel: { providerConfigId: string; modelId: string } | null = null
-    const maxRefs = await this.resolveMaxReferenceImages(effectiveImageModel)
-    const charRefs = refImages.filter((r) => r.kind === 'character')
-    if (refImages.length > 0 && maxRefs === 1 && charRefs.length > 0) {
+    if (planComposite) {
       const t2iModel = await this.resolveDraftT2IModel(effectiveImageModel)
       if (!t2iModel) {
         console.warn(
@@ -1255,12 +1295,7 @@ export class KeyframeGenerationService {
           compositeAnchor = null
         }
       }
-    } else if (
-      refImages.length > 1 &&
-      maxRefs !== null &&
-      maxRefs > 1 &&
-      refImages.length > maxRefs
-    ) {
+    } else if (planBoard) {
       // 拼板遗留路径：仅多参考平台（maxRefs>1）且 refs 超上限时启用
       try {
         board = await this.boardService.build(
@@ -1299,6 +1334,14 @@ export class KeyframeGenerationService {
     let machineCheck: MachineCheckResult | null = null
     let review: KeyframeReview | null = null
     let retryNote = ''
+    // K3（2026-09-24 一致性修复）：生效参考图 id 集在循环内每次生成后按
+    // effectiveReferencePaths 重算，VLM 审核基准 = 截断后实际生效集（与事后审核
+    // keyframe-review 的 referenceImageIdsEffective 优先口径一致）
+    let effectiveReferenceImageIds = refImages.map((r) => r.id)
+    // K6：实际发送的完整 prompt（含 stylePrompt 尾缀 / boardNote / 融合指令 / retryNote，
+    // 以及 adapter 拼的 `, variant: {label}` 尾——实现方回传 sentPrompt 时优先）落库，
+    // 事后可还原「当时到底发了什么」
+    let actualPrompt = ''
     for (let attempt = 1; attempt <= MAX_KEYFRAME_ATTEMPTS; attempt++) {
       const attemptPrompt =
         (compositeAnchor ? fusionBasePrompt : (boardNote ? `${boardNote}\n` : '') + basePrompt) +
@@ -1313,6 +1356,18 @@ export class KeyframeGenerationService {
         providerConfigId: generateModel?.providerConfigId,
         modelId: generateModel?.modelId,
       })
+      actualPrompt = generated.sentPrompt ?? attemptPrompt
+
+      // 生效参考图：adapter 按模型能力截断后返回实际生效路径；缺省=全部生效。
+      // 截断差异（选中但未生效）必须落库让 UI 可见——这是"多角色参考图被静默丢弃"的根因面。
+      // 拼板/合成锚定模式下参考图全部经板/合成图生效，仍记原始成员 ids。
+      effectiveReferenceImageIds = refImages.map((r) => r.id)
+      if (!board && !compositeAnchor && generated.effectiveReferencePaths) {
+        const effectiveSet = new Set(generated.effectiveReferencePaths)
+        effectiveReferenceImageIds = refImages
+          .filter((r) => effectiveSet.has(r.imagePath))
+          .map((r) => r.id)
+      }
 
       // 机器校验：照抄/空图硬检测（基准 = 原始成员参考图；拼板 R2 追加板复刻；
       // 合成锚定追加 composite_copy 未融合检测）
@@ -1329,7 +1384,7 @@ export class KeyframeGenerationService {
           review = await this.reviewService.reviewGeneratedImage({
             imagePath: generated.imagePath,
             prompt: promptOut.prompt,
-            referenceImageIds: refImages.map((r) => r.id),
+            referenceImageIds: effectiveReferenceImageIds,
             storyboardId: storyboard.id,
             providerConfigId: reviewModel!.providerConfigId,
             modelId: reviewModel!.modelId,
@@ -1375,17 +1430,6 @@ export class KeyframeGenerationService {
       throw new Error('关键帧生成循环异常退出（无产出）')
     }
 
-    // 生效参考图：adapter 按模型能力截断后返回实际生效路径；缺省=全部生效。
-    // 截断差异（选中但未生效）必须落库让 UI 可见——这是"多角色参考图被静默丢弃"的根因面。
-    // 拼板/合成锚定模式下参考图全部经板/合成图生效，仍记原始成员 ids。
-    let effectiveReferenceImageIds = refImages.map((r) => r.id)
-    if (!board && !compositeAnchor && generated.effectiveReferencePaths) {
-      const effectiveSet = new Set(generated.effectiveReferencePaths)
-      effectiveReferenceImageIds = refImages
-        .filter((r) => effectiveSet.has(r.imagePath))
-        .map((r) => r.id)
-    }
-
     // 写 image_assets 记录（type='generated'，子类型放 metadata.subType）
     const ia = await this.imageAssetRepo.create({
       projectId,
@@ -1404,6 +1448,9 @@ export class KeyframeGenerationService {
         referenceImageIds: refImages.map((r) => r.id),
         referenceImageIdsEffective: effectiveReferenceImageIds,
         resolvedModel: generated.resolvedModel ?? null,
+        // K6：实际发送的完整 prompt（末次 attempt；含 stylePrompt/boardNote/融合指令/
+        // retryNote 及 adapter 的 variant 尾），事后可还原「当时到底发了什么」
+        actualPrompt,
         // D：编号参考板（拼板模式才落，遗留路径：仅多参考平台 refs 超上限时启用）
         ...(board
           ? { referenceBoard: { path: board.path, members: board.members } }
@@ -1438,8 +1485,8 @@ export class KeyframeGenerationService {
    *                  查图（找不到 imageId 则回退到自动评分）。
    * @param shotType 分镜景别（P-A：与角色 facing 一起映射 view 维度，
    *                 让近景镜优先命中半身派生图、远景镜命中全身/主图）
-   * @returns refs + hasCharacterReference（F4：是否有角色参考图生效，决定关键帧
-   *          prompt 风格前缀是否让位给参考图）
+   * @returns refs + hasCharacterReference（选图阶段的原始判定；调用方在 K2 预算
+   *          截断后按存活集重算，才决定关键帧 prompt 风格前缀是否让位给参考图）
    */
   private async collectReferenceImages(
     assets: {

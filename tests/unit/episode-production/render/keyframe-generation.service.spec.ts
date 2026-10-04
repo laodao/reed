@@ -34,6 +34,7 @@ import { StoryboardKeyframeEntity } from '@core/database/entities/episode-produc
 import { StoryboardCharacterEntity } from '@core/database/entities/episode-production/storyboard-character.entity'
 import { ImageAssetEntity } from '@core/database/entities/image-asset.entity'
 import { KeyframeGenerationService } from '@core/platform/episode-production/render/keyframe/keyframe-generation.service'
+import { KeyframeReviewService } from '@core/platform/episode-production/render/keyframe/keyframe-review.service'
 import { ImageAssetRepository } from '@core/database/repositories/image-asset.repository'
 import { StoryboardKeyframeRepository } from '@core/database/repositories/storyboard-keyframe.repository'
 import * as dbModule from '@core/database/database-manager.interface'
@@ -792,5 +793,184 @@ describe('KeyframeGenerationService', () => {
     // 列表仍是 3 帧；成功的两帧 id 已换新
     const list = await svc.listKeyframes(sbId)
     expect(list).toHaveLength(3)
+  })
+
+  /**
+   * K1（2026-09-24 一致性修复 Task 6）：frameDescription 里的 @[名字@索引@实体id]
+   * 资产引用标记在拼 prompt 前剥成纯名（与视频链路 replaceAssetRefMarkers 口径一致），
+   * 图像模型不再收到 @[..] 噪声。
+   */
+  it('K1：frameDescription 的 @[名字@索引@实体id] 标记剥成纯名进 prompt', async () => {
+    const { sbId } = await seedScene(ds)
+    await ds.getRepository(StoryboardEntity).update(
+      { id: sbId },
+      { frameDescription: '@[张三@1@cb1] 推门进入茶馆' } as any,
+    )
+
+    await svc.generateKeyframesForStoryboard({ storyboardId: sbId, keyframeCountOverride: 1 })
+
+    const opts = imageGen.generate.mock.calls[0][0] as { prompt: string }
+    expect(opts.prompt).toContain('张三 推门进入茶馆')
+    expect(opts.prompt).not.toContain('@[')
+  })
+
+  /**
+   * K2：hasCharacterReference 移到能力截断之后——钉住 maxReferenceImages=0 的 krea2
+   * 且同 provider 无可回退的参考图模型时，选中的角色参考图会被能力截断全部丢弃，
+   * 风格前缀不让位（避免视觉锚 + 风格锚双失）。
+   */
+  it('K2：截断后无角色参考图存活 → 风格前缀不让位', async () => {
+    const { sbId } = await seedScene(ds)
+    await ds.getRepository(VideoProjectEntity).save({
+      id: 'proj1',
+      name: 'p',
+      status: 'draft',
+      config: { imageModel: { providerConfigId: 'pc_comfy', modelId: 'krea2' } },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      deletedAt: null,
+    } as any)
+    vi.spyOn(dbModule, 'getCoreDatabaseManager').mockReturnValue({
+      providerConfigs: {
+        getEnabled: vi.fn(async () => [{
+          id: 'pc_comfy',
+          templateId: 'comfyui',
+          isEnabled: true,
+          models: [{ id: 'krea2', name: 'Krea2 文生图', type: 'image' }],
+        }]),
+      },
+    } as any)
+
+    await svc.generateKeyframesForStoryboard({ storyboardId: sbId, keyframeCountOverride: 1 })
+
+    const opts = imageGen.generate.mock.calls[0][0] as { prompt: string }
+    // 选中集含角色参考图（旧逻辑会让位），但截断后存活集为空 → 保持 cinematic 风格前缀
+    expect(opts.prompt).not.toContain('与参考图保持一致')
+    expect(opts.prompt).toContain('cinematic')
+  })
+
+  /**
+   * K3：生成闭环内 VLM 审核的参考图基准从「选中」改为「实际生效」——
+   * adapter 截断后只剩角色图生效时，审核只收到生效集（与事后审核
+   * referenceImageIdsEffective 优先口径一致）。
+   */
+  it('K3：闭环 VLM 审核基准为截断后生效参考图集', async () => {
+    const { sbId } = await seedScene(ds)
+    imageGen.generate.mockImplementation(async () => ({
+      imagePath: '/tmp/generated_k3.png',
+      thumbnailPath: null,
+      effectiveReferencePaths: ['/tmp/cb1.png'], // 地点图被能力截断
+    }))
+    const reviewSpy = vi
+      .spyOn(KeyframeReviewService.prototype, 'reviewGeneratedImage')
+      .mockResolvedValue({
+        status: 'pass',
+        issues: [],
+        summary: '',
+        model: 'qwen-vl-max',
+        reviewedAt: new Date().toISOString(),
+      } as any)
+    vi.spyOn(KeyframeReviewService.prototype, 'resolveReviewModelForStoryboard')
+      .mockResolvedValue({ providerConfigId: 'pc_vl', modelId: 'qwen-vl-max' } as any)
+
+    await svc.generateKeyframesForStoryboard({ storyboardId: sbId, keyframeCountOverride: 1 })
+
+    expect(reviewSpy).toHaveBeenCalled()
+    // 选中 2 张（角色 + 地点），生效只有角色 1 张 → 审核基准 = ['ai_char']
+    expect(reviewSpy.mock.calls[0][0].referenceImageIds).toEqual(['ai_char'])
+  })
+
+  /**
+   * K5：D4-3 空绑定守卫扩展到三级来源——storyboard_characters 表声明了角色
+   * （characterId 指向失效绑定）但解析结果为空时，即使 scene.characters 为空也拦截。
+   */
+  it('K5：storyboard_characters 表声明角色但解析为空（scene 无角色）→ 拒绝生成', async () => {
+    const { sbId, sceneId } = await seedScene(ds)
+    await ds.getRepository(SceneScriptEntity).update({ id: sceneId }, { characters: [] as any })
+    await ds.getRepository(StoryboardCharacterEntity).save({
+      id: 'sbc_ghost',
+      storyboardId: sbId,
+      characterId: 'cb_ghost',
+      positionX: 50,
+      positionY: 50,
+      positionScale: 1.0,
+      expression: '凝重',
+      action: '推门',
+      facing: 'front',
+      sortOrder: 0,
+    })
+
+    await expect(
+      svc.generateKeyframesForStoryboard({ storyboardId: sbId, keyframeCountOverride: 1 }),
+    ).rejects.toThrow(/角色未绑定资产/)
+  })
+
+  it('K5：storyboard.characters JSON 声明角色但解析为空（scene 无角色）→ 拒绝生成', async () => {
+    const { sbId, sceneId } = await seedScene(ds)
+    await ds.getRepository(SceneScriptEntity).update({ id: sceneId }, { characters: [] as any })
+    await ds.getRepository(StoryboardEntity).update(
+      { id: sbId },
+      { characters: [{ characterId: 'cb_ghost', expression: '冷笑' }] as any },
+    )
+
+    await expect(
+      svc.generateKeyframesForStoryboard({ storyboardId: sbId, keyframeCountOverride: 1 }),
+    ).rejects.toThrow(/角色未绑定资产/)
+  })
+
+  it('K5：三级来源均无角色（分镜本就无角色）→ 不拦截，正常生成', async () => {
+    const { sbId, sceneId } = await seedScene(ds)
+    await ds.getRepository(SceneScriptEntity).update({ id: sceneId }, { characters: [] as any })
+
+    const result = await svc.generateKeyframesForStoryboard({
+      storyboardId: sbId,
+      keyframeCountOverride: 1,
+    })
+    expect(result).toHaveLength(1)
+  })
+
+  /**
+   * K6：落库 metadata.actualPrompt = 实际发送的完整 prompt（含项目 stylePrompt 尾缀；
+   * 生成器回传 sentPrompt 时以之为准），事后可还原「当时到底发了什么」。
+   */
+  it('K6：metadata.actualPrompt 与实际发送串一致（含 stylePrompt 尾缀）', async () => {
+    const { sbId } = await seedScene(ds)
+    await ds.getRepository(VideoProjectEntity).save({
+      id: 'proj1',
+      name: 'p',
+      status: 'draft',
+      config: { stylePrompt: '大师级光影' },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      deletedAt: null,
+    } as any)
+
+    const result = await svc.generateKeyframesForStoryboard({
+      storyboardId: sbId,
+      keyframeCountOverride: 1,
+    })
+
+    const sentPrompt = (imageGen.generate.mock.calls[0][0] as { prompt: string }).prompt
+    expect(sentPrompt).toContain('大师级光影')
+    const ia = await new ImageAssetRepository(ds).getById(result[0].imageAssetId!)
+    expect((ia?.metadata as any)?.actualPrompt).toBe(sentPrompt)
+  })
+
+  it('K6：生成器回传 sentPrompt（含 variant 尾）时 actualPrompt 以回传为准', async () => {
+    const { sbId } = await seedScene(ds)
+    imageGen.generate.mockImplementation(async (opts: any) => ({
+      imagePath: '/tmp/generated_k6.png',
+      thumbnailPath: null,
+      sentPrompt: `${opts.prompt}, variant: ${opts.label}`,
+    }))
+
+    const result = await svc.generateKeyframesForStoryboard({
+      storyboardId: sbId,
+      keyframeCountOverride: 1,
+    })
+
+    const ia = await new ImageAssetRepository(ds).getById(result[0].imageAssetId!)
+    const actual = (ia?.metadata as any)?.actualPrompt as string
+    expect(actual).toContain(', variant: keyframe_start_0')
   })
 })

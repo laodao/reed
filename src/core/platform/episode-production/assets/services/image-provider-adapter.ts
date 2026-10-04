@@ -294,6 +294,9 @@ export function createGalleryImageGenerator(): ImageGenerator {
         thumbnailPath: null,
         resolvedModel: { providerConfigId, modelId: model },
         effectiveReferencePaths: effectiveRefPaths,
+        // K6（2026-09-24 一致性修复）：variant 尾仍拼进 prompt（provider 需要区分变体），
+        // 但把拼尾后的最终串回传，调用方落库 actualPrompt 可还原实际发送内容
+        sentPrompt: fullPrompt,
       }
     },
   }

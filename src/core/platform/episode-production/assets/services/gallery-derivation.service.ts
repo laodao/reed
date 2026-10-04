@@ -88,6 +88,12 @@ export interface ImageGenerator {
      * 缺省/与传入相同表示全部生效；被截断时调用方应把差异暴露给用户（生效参考图标记）。
      */
     effectiveReferencePaths?: string[]
+    /**
+     * 实际发送给 provider 的完整 prompt（含实现方自行拼的尾缀，如 `, variant: {label}`）。
+     * 缺省表示与传入 opts.prompt 一致。调用方落库 metadata.actualPrompt 用
+     * （2026-09-24 一致性修复 K6：事后可还原「当时到底发了什么」）。
+     */
+    sentPrompt?: string
   }>
 }
 
