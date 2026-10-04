@@ -17,6 +17,7 @@ import type {
   UpdateWorldRequest,
   CreateWorldEntryRequest,
   UpdateWorldEntryRequest,
+  LibraryFieldSchemaItem,
 } from '@shared/types/lw-library.types'
 import { WORLD_TEMPLATES } from './world-templates'
 
@@ -244,7 +245,7 @@ export class WorldLibraryService {
         label: kind.label,
         icon: kind.icon ?? undefined,
         sortOrder: kind.sortOrder ?? 100,
-        fieldsSchema: (kind.fieldsSchema as never) ?? null,
+        fieldsSchema: (kind.fieldsSchema as LibraryFieldSchemaItem[] | null | undefined) ?? null,
         promptHint: kind.promptHint ?? null,
       })
     }

@@ -177,14 +177,23 @@ export class LibraryBindingService {
       return { ipBinding: existing, projectCharacterId: existing.projectCharacterId }
     }
     const world = ip.worldId ? await db.lwWorlds!.getById(ip.worldId) : null
+    // M3 修复：IP 的 age 是 string（'十七'/'三十许'/'不详'）——能解析则取数值，
+    // 解析不了并入外貌（"看上去约十七岁"），不再静默丢成默认 25；
+    // gender 无值时落 'other'（未知），不再默认男
+    const ageDigits = ip.age ? parseInt(String(ip.age).replace(/[^0-9]/g, ''), 10) : NaN
+    const ageNum = Number.isFinite(ageDigits) && ageDigits > 0 && ageDigits < 1000 ? ageDigits : undefined
+    const appearanceWithAge = ageNum === undefined && ip.age
+      ? [ip.appearance, `看上去约${ip.age}`].filter(Boolean).join('；')
+      : ip.appearance ?? ''
+    const gender = ip.gender === 'male' || ip.gender === 'female' ? ip.gender : 'other'
     const character = await db.lwCharacters!.create({
       projectId: req.projectId,
       name: ip.name,
-      gender: (ip.gender as any) || 'male',
-      age: undefined as any,
+      gender: gender as any,
+      age: ageNum as any,
       race: (ip.race as any) ?? undefined,
       occupation: ip.occupation ?? undefined,
-      appearance: ip.appearance ?? '',
+      appearance: appearanceWithAge,
       background: ip.background ?? '',
       personality: ip.personality ?? '',
       abilities: [ip.talents, ip.abilities].filter(Boolean).join('；'),

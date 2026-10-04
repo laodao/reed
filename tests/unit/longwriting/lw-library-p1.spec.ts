@@ -15,6 +15,7 @@ import {
 } from '@core/platform/services/longwriting/library/library-ai.service'
 import { matchEntriesInText } from '@core/platform/services/longwriting/library/library-context'
 import { LibrarySyncService } from '@core/platform/services/longwriting/library/library-sync.service'
+import { LibraryBindingService } from '@core/platform/services/longwriting/library/binding.service'
 import { WorldLibraryService } from '@core/platform/services/longwriting/library/world-library.service'
 import { LwWorldRepository } from '@core/database/repositories/lw-world.repository'
 import { LwWorldKindRepository } from '@core/database/repositories/lw-world-kind.repository'
@@ -236,6 +237,43 @@ describe('反向沉淀', () => {
     await locRepo.applyLibraryLineage(loc.id, { libraryEntryId: entry.id, libraryWorldId: world.id, libraryVersion: 1 })
     const again = await svc.promoteEntityToLibrary(world.id, 'location', loc.id)
     expect(again.ok).toBe(false)
+  })
+})
+
+describe('compose 集成：世界观库上下文真实进入生成 prompt（H1 修复的回归锁）', () => {
+  it('buildWorldLibraryContext → composeChapterPrompt 闭环：启用含库条目文本，禁用回占位', async () => {
+    const { composeChapterPrompt } = await import('@core/platform/services/longwriting/chapter-context')
+    const { buildWorldLibraryContext } = await import('@core/platform/services/longwriting/library/library-context')
+
+    const worldSvc = new WorldLibraryService()
+    const world = await worldSvc.createWorld({ name: '闭环世界', genre: 'xiuzhen' })
+    await worldSvc.createEntry({ worldId: world.id, kindKey: 'power_system', name: '九转玄功', summary: '天下第一体修功法', pinned: true })
+    await worldSvc.createEntry({ worldId: world.id, kindKey: 'realm', name: '炼气', summary: '引气入体', pinned: true })
+
+    const projectId = `proj_h1_${Date.now()}`
+    await ds.query(
+      `INSERT INTO lw_projects (id, name, type, created_at, updated_at) VALUES ('${projectId}', 'H1', 'story', datetime('now'), datetime('now'))`,
+    )
+    await new LibraryBindingService().bindWorld({ projectId, worldId: world.id })
+
+    const worldText = await buildWorldLibraryContext(projectId)
+    expect(worldText).toContain('九转玄功')
+    expect(worldText).toContain('炼气')
+
+    const parts = {
+      overviewText: '概要', backgroundText: '本书背景', worldLibraryText: worldText,
+      taskText: '任务', characterItems: [], locationItems: [],
+      prevEndingText: '', constraintsText: '', prewriteContent: '',
+      graphSection: '', recallSection: '', styleText: '', extraText: '',
+    } as any
+    const enabled = composeChapterPrompt(parts, () => true, { targetWords: 2000 })
+    expect(enabled).toContain('九转玄功')
+    expect(enabled).toContain('天下第一体修功法')
+    expect(enabled).toContain('世界观库（设定资产库·常驻体系与规则）')
+
+    const disabled = composeChapterPrompt(parts, id => id !== 'worldLibrary', { targetWords: 2000 })
+    expect(disabled).not.toContain('九转玄功')
+    expect(disabled).toContain('（无绑定世界观或世界观库已禁用）')
   })
 })
 

@@ -30,6 +30,8 @@ export interface ChapterPromptParts {
   overviewText: string
   /** 世界观设定（独立受控段——42号 review 修复：曾内嵌 overviewText 致 'background' 勾选失效） */
   backgroundText: string
+  /** 世界观库·常驻/命中条目（设定资产库；受控项 id='worldLibrary'——H1 修复：预览与生成都走本字段） */
+  worldLibraryText: string
   taskText: string
   characterItems: ChapterContextItem[]
   locationItems: ChapterContextItem[]
@@ -90,6 +92,10 @@ ${isEnabled('overview') ? parts.overviewText : '（故事宏观背景已由用�
 ### 世界观设定
 
 ${isEnabled('background') ? (parts.backgroundText || '暂无世界观设定') : '（世界观设定已由用户禁用——按通识写作）'}
+
+### 世界观库（设定资产库·常驻体系与规则）
+
+${parts.worldLibraryText && isEnabled('worldLibrary') ? parts.worldLibraryText : '（无绑定世界观或世界观库已禁用）'}
 
 ---
 

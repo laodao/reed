@@ -2061,6 +2061,7 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
     const parts: ChapterPromptParts = {
       overviewText,
       backgroundText: backgroundContext || '',
+      worldLibraryText: worldLibraryContext || '',
       taskText,
       characterItems,
       locationItems,
@@ -2172,6 +2173,7 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
       // 根因是道具口径从未进入写前上下文，模型只能按设计卡自由发挥。此处显式注入：
       // (a) 本章涉及道具的物品册描述；(b) 道具最新状态切片（近几章，名册外也算——
       // 状态切片里有而名册没有的，恰恰是最容易翻转的"黑户道具"）。
+      const parts: string[] = []  // H2 修复：声明上移——下方道具口径段在旧声明位置之前使用（TDZ 崩溃，blame 111f8384）
       const propLines: string[] = []
       try {
         const rosterItems = (await dbManager.lwItems?.getByProjectId(projectId)) || []
@@ -2229,7 +2231,6 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
         }
       } catch { /* 前情事实读取失败不阻断 */ }
 
-      const parts: string[] = []
       if (edgeLines.length > 0) {
         parts.push(`【生效关系（第 ${chapterNumber} 章时间点）】\n${edgeLines.join('\n')}`)
       }
@@ -2376,6 +2377,10 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
     if (character.personality) info += `- 性格特点：${character.personality}\n`
     if (character.background) info += `- 背景故事：${character.background}\n`
     if (character.abilities) info += `- 能力特长：${character.abilities}\n`
+    // 四层人设（设定资产库 P0 列 / IP 库导入随行；M2 修复：此前只存不注入）
+    if (character.motivation) info += `- 核心欲望：${character.motivation}（其行动的内在引擎，剧情选择应与之自洽）\n`
+    if (character.flaw) info += `- 软肋：${character.flaw}（欲望的反差面——诱惑/威胁面前最容易失守之处）\n`
+    if (character.characterArc) info += `- 人物弧光：${character.characterArc}（成长终点方向，非既成事实——按当前进度逐步演进，勿一步到位）\n`
 
     info += `- 角色定位：${rolePositionMap[character.rolePosition] || '未指定'}\n`
 

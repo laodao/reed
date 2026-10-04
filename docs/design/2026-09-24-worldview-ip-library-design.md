@@ -119,7 +119,7 @@
       └── 故事变量：状态切片/图谱边/事件/伏笔                    ← 完全不变
 ```
 
-写作时的信息流：`assembleChapterGeneration` 读绑定 → 库体系段直注入；项目内实体（含导入行）走原路径。人物导入行同时把 IP 卡的动机/软肋/弧光带进新列（§4.3），`buildCharacterFullInfo` 输出 them——**让 AI 写作时不仅知道人物「是什么」，还知道人物「要什么、怕什么、会变成什么」**（对标人设卡四层结构：辨识资讯→内在驱动→世界观定位→成长弧光）。
+写作时的信息流：`assembleChapterGeneration` 读绑定 → 库体系段直注入；项目内实体（含导入行）走原路径。人物导入行同时把 IP 卡的动机/软肋/弧光带进新列（§4.3）——**（2026-09-26 审计修正：四层字段当时只落库未注入 buildCharacterFullInfo，即 M2，已于审计批补齐三行输出）**（对标人设卡四层结构：辨识资讯→内在驱动→世界观定位→成长弧光）。
 
 ---
 
@@ -411,7 +411,7 @@ longwriting:library:promoteToLibrary|promoteToIp                         // 反�
 | 血缘 | `lw_story_characters` 加 library_ip_id/motivation/flaw/character_arc；locations/factions/skills/items/custom_entities 加三列血缘（custom 走 origin JSON）；`EntitySourceType` 扩 `'library'` |
 | 修真模板 | `platform/services/longwriting/library/world-templates.ts`（15 kinds + 示范条目，境界/灵根/规则/经济 pinned） |
 | 服务 | 同目录 `world-library.service` / `ip-library.service` / `binding.service` / `library-context.ts` |
-| prompt 注入 | `assembleChapterGeneration` 新增 worldLibrary 上下文分区（勾选项「世界观库」，预算参数 `writing.worldContextMaxTokens` 默认 2000，0=关闭；悬空绑定安全跳过） |
+| prompt 注入 | ~~assembleChapterGeneration 新增 worldLibrary 上下文分区~~ **（2026-09-26 审计修正：当时只接了 items 预览数组，未进 composeChapterPrompt 的 parts——正文实际收不到库设定，即 H1，已于审计批修复并补集成测试）** |
 | IPC | `packs/longwriting/handlers/library.handler.ts` 36 通道（`longwriting:library:*`），pack activate 注册；preload `longwriting.library` 子命名空间；Web channel-map 36 条映射 |
 | 前端 | 路由 `/longwriting/worlds`、`/longwriting/ip`；侧边栏「长文写作」hover 二级浮层（MainLayout 唯一通用改动）；`views/WorldLibrary.vue`、`views/IpLibrary.vue`（四层人设卡编辑）、`FieldsSchemaForm.vue` 动态表单、`stores/lw-library.ts`；LongWriting 页头入口按钮；CharacterStage「从 IP 库导入」（多选 + 定位 + 已导入去重 + IP库徽标） |
 
@@ -471,3 +471,26 @@ longwriting:library:promoteToLibrary|promoteToIp                         // 反�
 | 测试 | lw-library-p1.spec.ts +2 | 导出→导入回路（kinds/条目/pinned/边名称重建/同名后缀）与非法包报错；全套 20 项全过 |
 
 **P2 剩余**（后续批次）：知识大脑设定卡/人物原型卡回灌（等 M0 落地）、库级向量检索（`'__lw__'` namespace 复用方案）、`lw_predicate_registry` 库 scope、世界级一致性 AI 扫描。
+
+
+---
+
+## 13. 深度审计与修复记录（2026-09-26）
+
+**审计方法**：逐文件核验盘面（防回退）+ 追运行时链路（不止 typecheck）+ 重点复查 items/parts 双轨、oneShot 副作用、类型转换点、他人增量改动。
+
+**发现与处置**（按修复序）：
+
+| 级别 | 问题 | 处置 |
+|---|---|---|
+| H1 我方·核心链路断裂 | worldLibrary 上下文只进 items（预览 UI）未进 parts——正文收不到库设定，正是本设计 §5.2 立的"预览=实际"红线 | `ChapterPromptParts` 增 `worldLibraryText`，compose 在「世界观设定」下渲染受控段（id='worldLibrary'，禁用回占位文案）；**新增集成测试**：真实仓储建世界+条目+绑定 → buildWorldLibraryContext → composeChapterPrompt，断言启用含条目文本/禁用回占位 |
+| M1 我方·数据重复 | 向导"一次成卡"：ipGenerate 已建库行，最终步再 ipCreate → 同角色两条 | oneShot 记录 createdId，最终步 `ipUpdate`（分层路径仍 ipCreate） |
+| M2 我方·文档夸大 | motivation/flaw/characterArc 只落库未注入 prompt | buildCharacterFullInfo 增三行（弧光标注"成长方向，非既成事实——勿一步到位"） |
+| M3 我方·数据丢失 | IP 导入 age（string）静默丢成 25、gender 默认男 | 数字解析可解析则用；不可解析并入外貌"看上去约十七岁"；gender 非 male/female 落 'other' |
+| H2 存量（他人 111f8384）·运行时崩溃 | buildGraphContextSection 道具口径段在 `const parts` 声明前 push（TDZ）——有物品状态切片的项目章节生成直接 ReferenceError；TS2448/2454 长期在场被当噪音 | parts 声明上移至道具口径段之前；typecheck 两错误消失 |
+| 低危 | `disabled as Set` 无意义强转；预算截断腰斩行；`fieldsSchema as never` 绕过类型 | 强转删除；截断退到最近行边界/句读；类型改 `LibraryFieldSchemaItem[] | null` |
+| 意外收获（他人未提交改动） | lw-world.repository.bumpVersion 被改为 `scoped.qb('w').update()`——SQLite UPDATE 不支持别名，实测 `no such column: w.id`，测试 4 项炸 | 改 scoped 读出行后自增回存（租户收口意图保留 + 方言安全）；该改动同时是在收口审计低危项"raw repo 无租户过滤"，方向正确 |
+
+**测试**：全套 4 文件 **34 项全过**（新增 compose 集成 1 项）；typecheck：修复文件零错误，TS2448/TS2454 消失。
+
+**流程教训**：① "预览=实际"红线必须配集成测试——本次 H1 正是从"测了 builder 纯函数、没测组装→compose 闭环"的盲区漏过；② 文档验收声明须与代码同批落，§9 两处夸大即"文档先于代码"；③ 并行会话的工作区里，typecheck 噪音中藏着真炸弹（H2），基线错误也值得定期清。

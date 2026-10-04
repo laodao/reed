@@ -131,7 +131,7 @@ export async function buildWorldLibraryContext(projectId: string, scanText?: str
     }
     // 2c 触发式注入：本章扫描窗口命中的非 pinned 条目（命中清单即「可观测」——预览面板可见）
     if (scanText) {
-      const disabledSet = disabled as Set<string>
+      const disabledSet = disabled
       const allEntries = await db.lwWorldEntries!.listByWorldId(binding.worldId)
       const pool = allEntries.filter(e => !e.pinned && !disabledSet.has(e.id) && !candidates.some(c => c.id === e.id))
       const hits = matchEntriesInText(pool, scanText)
@@ -146,10 +146,12 @@ export async function buildWorldLibraryContext(projectId: string, scanText?: str
   if (sections.length === 0) return ''
   let text = `【世界观体系（设定资产库·常驻）】\n${sections.join('\n\n')}\n（以上为本书世界观底层设定，正文描写不得与之冲突）`
 
-  // 预算裁剪：按行保留头部，尾部标注
+  // 预算裁剪（行边界截断，避免腰斩半行）：tokens×2 字符粗口径
   const budgetChars = budgetTokens * 2
   if (text.length > budgetChars) {
-    text = `${text.slice(0, budgetChars)}\n（……世界观设定过长已截断，完整版见设定资产库）`
+    const cut = text.slice(0, budgetChars)
+    const lastBreak = Math.max(cut.lastIndexOf('\n'), cut.lastIndexOf('。'), cut.lastIndexOf('；'))
+    text = `${lastBreak > budgetChars / 2 ? cut.slice(0, lastBreak) : cut}\n（……世界观设定过长已截断，完整版见设定资产库）`
   }
   return text
 }

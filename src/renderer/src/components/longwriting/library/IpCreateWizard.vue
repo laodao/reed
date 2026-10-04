@@ -138,6 +138,8 @@ const loading = ref(false)
 const error = ref('')
 const lastAction = ref<'next' | 'variation'>('next')
 const oneShotUsed = ref(false)
+/** M1 修复：一次成卡在后端已建库行——记下 id，最终步走 update 而非重复 create */
+const oneShotCreatedId = ref<string | null>(null)
 
 const lib = () => window.electronAPI.longwriting.library
 
@@ -164,6 +166,7 @@ watch(() => props.visible, v => {
     requirements.value = ''
     error.value = ''
     oneShotUsed.value = false
+    oneShotCreatedId.value = null
   }
 })
 
@@ -239,6 +242,7 @@ const oneShot = async () => {
     })
     if (result.success) {
       const c = result.character
+      oneShotCreatedId.value = c.id
       confirmed.value = {
         name: c.name, aliases: [...c.aliases], gender: c.gender ?? '', age: c.age ?? '',
         race: c.race ?? '', occupation: c.occupation ?? '', appearance: c.appearance ?? '',
@@ -263,7 +267,7 @@ const oneShot = async () => {
 
 const saveToLibrary = async () => {
   const c = confirmed.value
-  const ip = await lib().ipCreate({
+  const payload = {
     name: String(c.name || ''),
     aliases: (c.aliases as string[]) || [],
     worldId: worldId.value || null,
@@ -283,7 +287,15 @@ const saveToLibrary = async () => {
     characterArc: (c.characterArc as string) || null,
     catchphrases: (c.catchphrases as string[]) || [],
     tags: (c.tags as string[]) || [],
-  })
+  }
+  // M1：oneShot 路径后端已建行，此处更新；分层路径才新建
+  const ip = oneShotCreatedId.value
+    ? await lib().ipUpdate(oneShotCreatedId.value, payload)
+    : await lib().ipCreate(payload)
+  if (!ip) {
+    ElMessage.error('入库失败：角色已不存在')
+    return
+  }
   ElMessage.success(`角色「${ip.name}」已入库`)
   emit('created', ip)
   emit('close')

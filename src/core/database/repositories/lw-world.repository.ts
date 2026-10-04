@@ -106,11 +106,12 @@ export class LwWorldRepository extends BaseRepository<LwWorldEntity, World> {
 
   /** 条目/同步变更后 bump 版本（血缘比对依据） */
   async bumpVersion(id: string): Promise<void> {
-    await this.repo
-      .createQueryBuilder()
-      .update(LwWorldEntity)
-      .set({ version: () => 'version + 1', updatedAt: Date.now() })
-      .where('id = :id', { id })
-      .execute()
+    // 租户收口 + 方言安全：scoped.qb().update() 带 别名在 SQLite 上非法（UPDATE 不支持别名，
+    // 实测 no such column: w.id）；改为 scoped 读出行（自带 user_id 过滤）后自增回存。
+    const row = await this.scoped.findOne({ id } as any)
+    if (!row) return
+    row.version = (row.version ?? 1) + 1
+    row.updatedAt = Date.now()
+    await this.scoped.save(row)
   }
 }
