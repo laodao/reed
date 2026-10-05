@@ -119,7 +119,7 @@ describe('normalizePlanSyllabus', () => {
     expect(r.changes.some((c) => c.includes('股票'))).toBe(true)
   })
 
-  it('根层知识点与分支并列；layer 非法值归 0', () => {
+  it('根层知识点与分支并列；layer 非法值归 0（2026-09-25 D4：并记入 changes 不再静默）', () => {
     const r = normalizePlanSyllabus({
       ...SYLLABUS,
       rootConcepts: [{ name: '金融体系总览', layer: -3 }],
@@ -128,6 +128,45 @@ describe('normalizePlanSyllabus', () => {
     if (!r.ok) return
     expect(planConceptNames(r.value)).toContain('金融体系总览')
     expect(r.value.rootConcepts?.[0].layer).toBe(0)
+    expect(r.changes.some((c) => c.includes('金融体系总览') && c.includes('layer'))).toBe(true)
+  })
+
+  it('悬空前置（方案里没有落点）→ 记入 changes 提醒，不阻断（2026-09-25 D1）', () => {
+    const r = normalizePlanSyllabus({
+      branches: [
+        {
+          name: 'A',
+          concepts: [
+            { name: 'X', layer: 1, prerequisites: ['不存在的概念'] },
+            { name: 'Y', layer: 0 },
+          ],
+        },
+      ],
+    })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.changes.some((c) => c.includes('「X」的前置「不存在的概念」') && c.includes('没有落点'))).toBe(true)
+  })
+
+  it('前置指向分支名 → 仍算悬空（分支只是目录）；前置有同名概念 → 不报', () => {
+    const r = normalizePlanSyllabus({
+      branches: [{ name: '数学', concepts: [{ name: 'X', layer: 1, prerequisites: ['数学', 'Y'] }, { name: 'Y', layer: 0 }] }],
+    })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.changes.some((c) => c.includes('「X」的前置「数学」'))).toBe(true)
+    expect(r.changes.some((c) => c.includes('「Y」'))).toBe(false)
+  })
+
+  it('分支名与概念名重名 → 各自保留（2026-09-25 P2-11：此前共用 seen 会把概念静默吞掉）', () => {
+    const r = normalizePlanSyllabus({
+      branches: [{ name: '概率', concepts: [{ name: '概率', layer: 0 }, { name: '贝叶斯', layer: 1, prerequisites: ['概率'] }] }],
+    })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.value.branches[0].concepts.map((c) => c.name)).toEqual(['概率', '贝叶斯'])
+    // 概念「概率」有自己的落点 → 贝叶斯的前置不悬空
+    expect(r.changes.some((c) => c.includes('没有落点'))).toBe(false)
   })
 })
 

@@ -635,25 +635,26 @@ inputs:
     label: 综述/资料全文
     type: textarea
     help: 可选：已有综述或知识库资料全文，从中提炼分类
-output_desc: 输出 JSON 对象，含 branches 数组（name/desc）、spacePrerequisites 数组（name/why/level —— 学整个领域的前置要求，含领域外能力）、concepts 数组（name/kind/why_important/level/parent_branch/layer/prerequisites）、openQuestions 字符串数组
+output_desc: 输出 JSON 对象：branches[].concepts（name/nodeType/definitionShort/layer/prerequisites，与 dl_propose_syllabus 提交工具的字段一致）+ rootConcepts + notes（取材说明：资料出处 vs 先验待查证）；另有 spacePrerequisites 与 openQuestions 两个字段**不进方案提交**，分别用 dl_save_space_prereqs / dl_answer_question 单独落库
 ---
 你是领域图谱师。为「{{param.topic}}」（目标：{{param.goal}}）生成学习骨架草稿，供用户在「领域共学空间」中审阅增删后再开始逐概念学习。
 
-**第一原则：顺序必须循序渐进。** 知识点不是一堆并列词条，而是一条从零基础到目标的路径——先给门槛（主题前置），再给路径（逐层概念 + 每个概念的前置），最后才是分支与前沿。前置不齐不许硬排：宁可多列一个基础概念，也不要把两个隔着台阶的概念直接连起来。
+**第一原则：顺序必须循序渐进。** 知识点不是一堆并列词条，而是一条从零基础到目标的路径——先给门槛（主题前置），再给路径（逐层概念 + 每个概念的前置），最后才是分支与前沿。前置不齐不许硬排。两条取舍规则冲突时按这个优先级：**宁可少列无关概念，但前置链条上的基础概念必须列齐**——不能为了少列而跳步，前置缺失时永远先补基础概念。
 
 **取材顺序（2026-09-12 用户口径）：先采集，再规划，资料与模型知识必须区分。**
 - 本技能被调用时，若上面已给出 material（资料全文/摘录），直接以它为主；
 - material 为空而你会话里有读工具时，**先去采集再规划**：知识库优先（wf_kb_retrieve 检索"目录/知识体系/大纲/综述/学习路径"），再联网（web_search 搜「<领域> 知识体系 / 学习路线 / 综述」；网页正文用 wf_web_extract；论文用 http_get 取 arXiv）；读工具合计 3-6 次够用即停；
-- 规划时把两类来源分开标：资料里有的写进 why_important 的出处；资料没覆盖、属于公认主干的用模型先验补，但 why_important 必须注明「先验待查证」；**不编造文献标题与链接**；
-- 两处都取不到资料也照常产出骨架，但要在结果里说明"本轮无外部资料，骨架来自模型先验"。
+- 来源二分写进 notes（不要塞进概念字段）：资料里有的注明出处（标题/URL/文档 id）；资料没覆盖、属于公认主干而用模型先验补的，在 notes 里逐条点名「先验待查证」；**不编造文献标题与链接**；
+- 两处都取不到资料也照常产出骨架，但 notes 必须写明"本轮无外部资料，骨架来自模型先验"。
 
 > 本技能用于**从零规划**一个领域的骨架（新建空间、或整体重排）。若空间里**已有知识点**、只是体系不完整（缺台阶/前置没落点/跨度过大/粒度太粗），改用技能 learning-map-completion（先采集后规划、只补结构、不产讲义）。
+> 在走「固定三阶段流程」的空间里，本技能产出的骨架是 **dl_propose_syllabus 的输入**（提交成方案、等用户在弹窗里确认后才允许落库）——不要绕过 dl_propose_* 直接 dl_save_concept 建点。
 
 方法：
 0. **先定主题前置要求**（spacePrerequisites）：学「{{param.topic}}」之前需要具备什么？逐条给 name（如「Python 基础」「线性代数基础」「概率统计基础」）、why（为什么这个领域需要它）、level（掌握到什么程度即可，如"能用 NumPy 索引与广播即可"）。领域外、不打算在本空间教的能力也要列出来（它们会成为学习者的自备门槛）。
 1. 骨架先行：先给出该领域的分类（分支）树，2~5 个主分支，每个分支一句话说明学什么、解决什么问题；
-2. 术语即入口：每个分支下列出核心概念/术语，标注 kind（concept/theory/method/paper/regulation/case/person/controversy 等）与 level（必学/可选/前沿）；为「{{param.goal}}」目标调整：入门偏必学主干，前沿多列前沿概念与论文；
-3. 每条概念给 why_important（为什么值得学，一句话）；
+2. 术语即入口：每个分支下列出核心概念/术语，标注 nodeType（concept / theory / method / paper / regulation / case / person / controversy 八选一，不自造）；为「{{param.goal}}」目标调整：入门偏必学主干，前沿多列前沿概念与论文；
+3. 每条概念给 definitionShort（一句话：是什么 + 为什么值得学）；
 4. **循序渐进（硬要求）**：
    - 每个概念必须给 prerequisites（学它之前必须先掌握的概念名数组，可为空数组）与 layer（学习层次，0=零基础可直接学，1=其前置全在 layer 0，以此类推）；
    - **不跳级**：任一条 prerequisites 里的概念必须出现在本次 concepts 清单里，或出现在 spacePrerequisites 里；领域外的前置（线性代数基础/概率论基础/Python 基础）优先作为独立基础概念放进清单（layer 0）——只有确实不需要在本空间教时才放进 spacePrerequisites；
@@ -662,12 +663,18 @@ output_desc: 输出 JSON 对象，含 branches 数组（name/desc）、spacePrer
    - **顺序即路径**：按 layer 从小到大排一遍，检查"每一步只需要前面已出现的知识"——做不到就在缺口处补概念，别硬排顺序；相邻 layer 之间的跨度不要超过一步（如 张量 → 自动微分 之间必须补「导数与链式法则」这类前置）。
 5. 开放问题：列出该领域当前未决/争议的问题（有则给）。
 
-{{param.material}} 为非空时，优先基于资料里的分类与术语提炼，不要另造结构；资料未提及而你又确信属于该领域的内容可补入，但要在 why_important 里写明来源或标注「先验待查证」。
+**规模参照**：入门 12~25 条知识点、工作应用 20~40、前沿 30~60；整个领域不足 5 条时允许单分支，不做名词拆分灌水；超出 50 条会被方案提交工具拒绝（拆成两批：先主干后分支）。
 
-纪律：不编造引用；宁可少列概念，不把不相关的内容塞进来；但**不能为了少列而跳步**——前置缺失时优先补基础概念。
+{{param.material}} 为非空时，优先基于资料里的分类与术语提炼，不要另造结构；资料未提及而你又确信属于该领域的内容可补入，但要在 notes 里标注「先验待查证」。
+
+**提交前自检（逐条核对再输出）**：
+① 每条 prerequisites 都能在本方案的 concepts（或 rootConcepts）里找到同名条目，或属于 spacePrerequisites；
+② layer 与前置一致：layer n 的概念，其前置最深为 layer n-1；
+③ 相邻 layer 直连跨度 ≤1。
 
 输出严格为 JSON（不要 markdown 代码块，不要多余解释）：
-{"branches":[{"name":"分支名","desc":"学什么"}],"spacePrerequisites":[{"name":"Python 基础","why":"要写训练脚本","level":"能用 NumPy 索引即可"}],"concepts":[{"name":"概念","kind":"concept","why_important":"原因","level":"必学","parent_branch":"所属分支名","layer":0,"prerequisites":["前置概念名"]}],"openQuestions":["问题1"]}
+{"branches":[{"name":"分支名","definitionShort":"学什么、解决什么问题","concepts":[{"name":"概念名","nodeType":"concept","definitionShort":"一句话定义+为什么值得学","layer":0,"prerequisites":["前置概念名"]}]}],"rootConcepts":[{"name":"根层概念","nodeType":"concept","definitionShort":"…","layer":0,"prerequisites":[]}],"spacePrerequisites":[{"name":"Python 基础","why":"要写训练脚本","level":"能用 NumPy 索引即可"}],"openQuestions":["问题1"],"notes":"取材说明：哪些分支/概念来自资料（出处标题/URL），哪些是先验待查证"}
+其中 branches/rootConcepts/notes 即 dl_propose_syllabus 的提交内容；spacePrerequisites 提交方案后用 dl_save_space_prereqs 落库；openQuestions 用 dl_answer_question（unresolved=true）逐条登记。
 `,
   },
   {
@@ -1224,6 +1231,7 @@ output_desc: 有工具的会话里：dl_save_concept 逐个落库缺口概念（
 
 **执行顺序固定为四阶段，不许跳过 S1**：先采集资料 → 再规划体系（资料事实 + 模型先验，二者必须区分）→ 再落库 → 最后自检。
 （本技能是过程型技能：宿主会把正文注入**带工具**的会话，由你真正调用工具落库；若你这次是**无工具的单次生成**，就只产出 S1~S4 结构的规划草案，明确说明"未落库"，并提示调用方在带工具的会话里执行。）
+（开始 S3 前先确认：本空间是否已有**已确认的知识体系**。若没有——本轮先按宿主注入的固定流程指令，用 dl_propose_understanding / dl_propose_syllabus 把补全清单提交成方案，等用户在弹窗里确认后再落库；未确认就强行 S3 会被落库门禁直接拒绝。）
 
 S1 采集（先做，别急着建概念）
 - 知识库优先：先用 wf_kb_retrieve 检索领域主干类资料（检索词如"目录 / 知识体系 / 大纲 / 综述 / 学习路径 / 入门顺序"），读回的内容是本轮第一手依据；

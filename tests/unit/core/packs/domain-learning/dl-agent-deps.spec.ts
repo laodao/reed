@@ -71,12 +71,13 @@ describe('dl-agent-deps（M2-B）', () => {
 
   it('研究提示词含前置要求纪律：主题级（dl_save_space_prereqs）+ 知识点级（prerequisites）', () => {
     const p = dlResearchSystemPrompt()
-    expect(p).toContain('前置要求')
-    expect(p).toContain('整个主题的前置')
+    // 2026-09-25 C4：第 13-15 条合并为口径引用（清单细节以快照动态块为准），语义钉子不变
+    expect(p).toContain('主题门槛')
     expect(p).toContain('dl_save_space_prereqs')
-    expect(p).toContain('每个知识点的前置')
-    expect(p).toContain('顺序即路径')
-    expect(p).toContain('相邻层级跨度不得超过一步')
+    expect(p).toContain('prerequisites')
+    expect(p).toContain('dl_save_relation')
+    expect(p).toContain('相邻层级跨度不超过一步')
+    expect(p).toContain('欠账')
   })
 
   it('任务提示词含「补全知识地图」作业口径（2026-09-12：用户建点 + AI 完善）', () => {
@@ -278,23 +279,22 @@ describe('dl-agent-deps（M2-B）', () => {
     }
   })
 
-  it('研究提示词含"补齐知识体系"纪律（每轮顺手补 1-3 个缺口，有界）', () => {
+  it('研究提示词含"顺手补缺口"纪律（每轮 1-3 个，有界；清单以快照【地图完整度】为准）', () => {
     const p = dlResearchSystemPrompt()
-    expect(p).toContain('补齐知识体系')
-    expect(p).toContain('地图完整度')
+    expect(p).toContain('【地图完整度】')
     expect(p).toContain('1-3 个结构性缺口')
-    expect(p).toContain('为了拉高分数而堆无意义概念')
+    expect(p).toContain('只补确属主干且读者必经的概念')
+    expect(p).toContain('地图完整度前后变化')
   })
 
   // ===== 2026-09-13 用户反馈「金融理财主题生成的知识点与期望差别较大」复盘 =====
 
-  it('研究提示词：以用户诉求为准（不得凭空间名猜主题）+ 被拒条目必须写进总结', () => {
+  it('研究提示词：诉求最高优先级（不得凭空间名猜主题）+ 被拒条目必须写进总结', () => {
     const p = dlResearchSystemPrompt()
-    expect(p).toContain('以用户诉求为准')
-    expect(p).toContain('不得凭名字猜主题')
-    expect(p).toContain('金融理财')
+    expect(p).toContain('诉求最高优先级')
+    expect(p).toContain('不得凭空间名猜主题')
     expect(p).toContain('被额度或门禁拒绝的条目必须写进总结')
-    expect(p).toContain('只报成功数')
+    expect(p).toContain('无声消失')
   })
 
   it('快照头注入学习主题诉求（用户原话）与空间档案', async () => {

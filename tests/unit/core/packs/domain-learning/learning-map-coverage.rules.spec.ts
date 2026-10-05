@@ -11,6 +11,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   assessMapCoverage,
+  detectPrereqCycles,
   levelsOf,
   mapCoverageBriefing,
   reachableFrom,
@@ -296,5 +297,39 @@ describe('assessMapCoverage：完整地图得分高（回归防误报）', () =>
     expect(r.score).toBeGreaterThanOrEqual(90)
     expect(r.gaps.map((g) => g.kind)).not.toContain('no-lesson')
     expect(r.gaps.map((g) => g.kind)).not.toContain('flat-branches')
+  })
+})
+
+describe('detectPrereqCycles / cycle 缺口（2026-09-25 P0-1 配套：存量环诊断）', () => {
+  it('无环图 → 空列表', () => {
+    const { relations } = deepLearningSpace()
+    const ids = relations.flatMap((r) => [r.source, r.target])
+    expect(detectPrereqCycles([...new Set(ids)], relations)).toEqual([])
+  })
+
+  it('二成员环 A→B→A → 两个成员都被点名', () => {
+    const ids = ['a', 'b']
+    const edges = [e('a', 'b'), e('b', 'a')]
+    expect(detectPrereqCycles(ids, edges).sort()).toEqual(['a', 'b'])
+  })
+
+  it('三成员环 + 环外节点 → 只点环上三个', () => {
+    const ids = ['a', 'b', 'c', 'd']
+    const edges = [e('a', 'b'), e('b', 'c'), e('c', 'a'), e('c', 'd')]
+    expect(detectPrereqCycles(ids, edges).sort()).toEqual(['a', 'b', 'c'])
+  })
+
+  it('assessMapCoverage：成环 → cycle 缺口（high，重扣分），简报点名成员与修复入口', () => {
+    const concepts = [c('a', '极限'), c('b', '导数'), c('d', '微分方程')]
+    const relations = [e('a', 'b'), e('b', 'd'), e('d', 'a')]
+    const r = assessMapCoverage({ concepts, relations, spacePrereqs: [{ name: '四则运算' }] })
+    const gap = r.gaps.find((g) => g.kind === 'cycle')
+    expect(gap).toBeTruthy()
+    expect(gap?.severity).toBe('high')
+    expect(gap?.message).toContain('极限')
+    expect(gap?.message).toContain('删除')
+    const lines = mapCoverageBriefing(r).join('\n')
+    expect(lines).toContain('[high]')
+    expect(lines).toContain('成环')
   })
 })

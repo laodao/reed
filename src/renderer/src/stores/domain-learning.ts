@@ -116,6 +116,8 @@ interface DomainLearningApi {
   saveConcept(p: DlCreateConceptInput): Promise<IpcLike<DlCreateConceptResult>>
   /** 关系人审确认（未确认边 → verified） */
   confirmRelation(p: { id: string; sourceId: string; targetId: string; relationType: string; evidence?: string }): Promise<IpcLike<{ ok: boolean }>>
+  /** 删除关系边（2026-09-25：错边/成环边的修复入口） */
+  removeRelation(p: { id: string; relationId: string }): Promise<IpcLike<{ ok: boolean }>>
   ackMastered(id: string, conceptId: string): Promise<IpcLike<{ ok: boolean }>>
   ackConfused(id: string, conceptId: string, sectionKey?: string): Promise<IpcLike<DlAckConfusedResultUi>>
   agentSend(p: {
@@ -564,6 +566,29 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     } catch (e: any) {
       error.value = e?.message ?? '确认关系失败'
       console.error('[domain-learning] 确认关系失败:', e)
+      return false
+    }
+  }
+
+  /**
+   * 删除关系边（dl:remove-relation；2026-09-25）：错边/成环边的人审修复入口。
+   * 成功后刷新空间视图与节点档案（关系列表随之更新）。
+   */
+  async function removeRelationOf(p: { id: string; relationId: string; nodeId?: string }): Promise<boolean> {
+    const a = api()
+    if (!a) return false
+    try {
+      const r = await a.removeRelation({ id: p.id, relationId: p.relationId })
+      if (!r?.success) {
+        error.value = r?.error ?? '删除关系失败'
+        return false
+      }
+      await fetchSpaceView(p.id)
+      if (p.nodeId) await fetchNodeProfile(p.id, p.nodeId)
+      return true
+    } catch (e: any) {
+      error.value = e?.message ?? '删除关系失败'
+      console.error('[domain-learning] 删除关系失败:', e)
       return false
     }
   }
@@ -1093,6 +1118,7 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     saveSpacePrereqsOf,
     createConceptOf,
     confirmRelationOf,
+    removeRelationOf,
     // 间隔复习
     reviewDue,
     reviewSettingsOf,

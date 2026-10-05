@@ -186,6 +186,8 @@ export interface DlCreateConceptResult {
   linkedPrereqs: Array<{ name: string; conceptId: string }>
   /** 空间里找不到落点的前置名（UI 提示"可让 AI 补全"） */
   missingPrereqs: string[]
+  /** 会构成前置环而被跳过的前置名（2026-09-25：错边不该挡住建点，但要显式带回 UI） */
+  cycleSkippedPrereqs?: string[]
 }
 
 /** 讲义视图（一概念当前版） */
@@ -541,6 +543,8 @@ export interface DlNodeProfile {
     sourceId?: string
     targetId?: string
     evidence?: string | null
+    /** 边行 id（2026-09-25：档案里「删除关系」的人审修复入口） */
+    relationId?: string
   }[]
   /** 关联内容（论文/法规/案例…按 nodeType 聚合） */
   relatedContent: DlWorkRef[]

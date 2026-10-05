@@ -14,7 +14,7 @@ import {
   shouldSuggestSplit,
 } from '../rules/learning-sequence.rules'
 import { pickReviewCandidates } from '../rules/learning-review.rules'
-import { normalizeConceptPrereqs } from '../rules/learning-prerequisites.rules'
+import { normalizeConceptPrereqs, wouldCreatePrereqCycle } from '../rules/learning-prerequisites.rules'
 import { buildConceptTree, conceptStats } from '../rules/learning-aggregation.rules'
 import { createLogger } from '@core/utils/logger'
 import type { DlConceptRepository, DlConceptRow } from '@core/database/repositories/dl-concept.repository'
@@ -174,11 +174,27 @@ export class LearningGraphService {
 
   // ==================== 排程 ====================
 
-  /** 下一个待学概念 id（依赖门控 + 树序；null = 全部掌握） */
+  /**
+   * 下一个待学概念 id（依赖门控 + 树序；null = 全部掌握）。
+   * rules 层"全不可学时回退第一个未掌握（插队）"在这里显影：回退意味着图上有环或断链，
+   * 记 warn 日志——门控被绕过这件事本身不允许无声发生（2026-09-25 A3）。
+   */
   async pickNextToLearn(projectId: string): Promise<string | null> {
     const all = await this.concepts.listByProject(projectId)
     const rels = await this.relations.listByProject(projectId)
-    return pickNextToLearn(toConceptViews(all), toRelViews(rels))
+    const conceptViews = toConceptViews(all)
+    const relViews = toRelViews(rels)
+    const id = pickNextToLearn(conceptViews, relViews)
+    if (id) {
+      const hit = conceptViews.find((c) => c.id === id)
+      const masteredIds = new Set(conceptViews.filter((c) => c.mastery === 'mastered').map((c) => c.id))
+      if (hit && !prereqsReady(id, relViews, masteredIds)) {
+        logger.warn(
+          `[graph] pickNextToLearn 走了插队回退：没有"前置全掌握"的可学概念（图上存在环或断链），推荐了未就绪概念 ${id}`,
+        )
+      }
+    }
+    return id
   }
 
   // ==================== 树/统计 ====================
@@ -274,19 +290,34 @@ export class LearningGraphService {
     return { conceptId: id, created: true, ...link }
   }
 
-  /** 把前置名落成已确认的 prerequisite 边（找不到落点的名字回给调用方） */
+  /**
+   * 把前置名落成已确认的 prerequisite 边（找不到落点的名字回给调用方）。
+   * 环防护（2026-09-25 P0-1）：单条前置会成环时跳过该边并把原因带回 UI（概念照建，
+   * 不让一条错边挡住整个建点操作）；本次调用里刚建的边也计入判定，防止同轮连出环。
+   */
   private async linkPrerequisites(
     projectId: string,
     targetId: string,
     names: string[],
     all: DlConceptRow[],
-  ): Promise<Pick<CreateConceptResult, 'linkedPrereqs' | 'missingPrereqs'>> {
+  ): Promise<Pick<CreateConceptResult, 'linkedPrereqs' | 'missingPrereqs' | 'cycleSkippedPrereqs'>> {
     const linkedPrereqs: Array<{ name: string; conceptId: string }> = []
     const missingPrereqs: string[] = []
+    const cycleSkippedPrereqs: string[] = []
+    const existing = (await this.relations.listByProject(projectId)).map((r) => ({
+      source: r.sourceId,
+      target: r.targetId,
+      type: r.relationType,
+    }))
+    const edges = [...existing]
     for (const n of names) {
       const hit = all.find((c) => c.id !== targetId && c.nodeType !== 'group' && c.name === n)
       if (!hit) {
         missingPrereqs.push(n)
+        continue
+      }
+      if (wouldCreatePrereqCycle(edges, hit.id, targetId)) {
+        cycleSkippedPrereqs.push(n)
         continue
       }
       await this.relations.create({
@@ -298,14 +329,24 @@ export class LearningGraphService {
         evidence: '用户手工建立',
         verified: true,
       })
+      edges.push({ source: hit.id, target: targetId, type: 'prerequisite' })
       linkedPrereqs.push({ name: hit.name, conceptId: hit.id })
     }
-    return { linkedPrereqs, missingPrereqs }
+    if (cycleSkippedPrereqs.length) {
+      logger.warn(
+        `[graph] linkPrerequisites 跳过会成环的前置 space=${projectId} target=${targetId} prereqs=[${cycleSkippedPrereqs.join('、')}]`,
+      )
+    }
+    return { linkedPrereqs, missingPrereqs, cycleSkippedPrereqs }
   }
 
   // ==================== 关系 ====================
 
-  /** 人审确认边（地图人审/关系确认：draft → verified；同边 upsert 走仓储幂等） */
+  /**
+   * 人审确认边（地图人审/关系确认：draft → verified；同边 upsert 走仓储幂等）。
+   * 环防护（2026-09-25 P0-1）：确认前置边前检查会不会成环——此前只有 agent 建边拦自环，
+   * 人审通道建的 A→B、B→A 同样会把学习路径锁死。
+   */
   async confirmRelation(
     projectId: string,
     sourceId: string,
@@ -313,6 +354,17 @@ export class LearningGraphService {
     relationType: string,
     evidence?: string | null,
   ): Promise<void> {
+    if (sourceId === targetId) throw new Error('不能建立自环（概念不能是自己的前置）')
+    if (relationType === 'prerequisite') {
+      const existing = (await this.relations.listByProject(projectId)).map((r) => ({
+        source: r.sourceId,
+        target: r.targetId,
+        type: r.relationType,
+      }))
+      if (wouldCreatePrereqCycle(existing, sourceId, targetId)) {
+        throw new Error('这条前置关系会构成循环依赖（A→B→…→A）——环上所有概念都无法标记掌握，学习路径会死锁。请删除其中一条边或检查方向。')
+      }
+    }
     await this.relations.create({
       id: randomUUID(),
       projectId,
@@ -322,6 +374,18 @@ export class LearningGraphService {
       evidence: evidence ?? null,
       verified: true,
     })
+  }
+
+  /**
+   * 删除关系边（2026-09-25 P0-1 配套：错边/成环边的修复入口）。
+   * 此前 DlRelationRepository.deleteById 存在但无任何运行时入口——错边只能改库。
+   * 删除是人审动作：agent 工具面不提供。
+   */
+  async removeRelation(projectId: string, relationId: string): Promise<void> {
+    const rel = await this.relations.getById(relationId)
+    if (!rel || rel.projectId !== projectId) throw new Error('关系不存在于该空间')
+    await this.relations.deleteById(relationId)
+    logger.info(`[graph] removeRelation space=${projectId} relation=${relationId} ${rel.sourceId}→${rel.targetId} (${rel.relationType})`)
   }
 
   /** 直接邻居（related 区/Atlas 档案用）：出边+入边，含方向标注 */

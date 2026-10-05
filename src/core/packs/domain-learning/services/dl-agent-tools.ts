@@ -92,6 +92,10 @@ const saveConceptSchema = z.object({
       .array(z.string())
       .optional()
       .describe('学本知识点前必须先掌握的概念名数组（可空数组）。生成知识点时必须填：顺序要循序渐进；填了之后请用 dl_save_relation 落成前置关系边'),
+    layer: z
+      .number()
+      .optional()
+      .describe('学习层级（0=零基础可直接学；来自已确认方案时原样传入，写入 attrs.layer 供展示——图上的层级仍由前置边计算）'),
     attrs: z.record(z.string(), z.unknown()).optional().describe('扩展字段'),
   }),
 })

@@ -444,6 +444,8 @@ export class LearningViewService {
         sourceId: r.sourceId,
         targetId: r.targetId,
         evidence: r.evidence,
+        // 2026-09-25：带边 id，档案里可直接「删除」（错边/成环边的修复入口）
+        relationId: r.id,
       }
     })
 

@@ -83,7 +83,7 @@ async function seedProject(d: DataSource, id: string): Promise<void> {
 }
 
 describe('dl-agent-actions', () => {
-  it('save_concept：新建概念草稿（source=ai_verified）；同父同名幂等更新', async () => {
+  it('save_concept：新建概念草稿（source=material，2026-09-25 语义修正：ai_verified 留给核验流水线）；同父同名幂等更新', async () => {
     ds = await buildDs()
     await seedProject(ds, 'sp1')
     const db = buildDb(ds)
@@ -94,7 +94,7 @@ describe('dl-agent-actions', () => {
       expect(r1.summary.status).toBe('ok')
       const saved = await db.dlConcepts!.listByProject('sp1')
       expect(saved).toHaveLength(1)
-      expect(saved[0]).toMatchObject({ name: '注意力', source: 'ai_verified', researchState: 'extracted' })
+      expect(saved[0]).toMatchObject({ name: '注意力', source: 'material', researchState: 'extracted' })
 
       // 幂等：同父同名再存 → 更新描述不新建
       await executeDlAction(ctx, { type: 'dl_save_concept', params: { concept: { name: '注意力', definitionShort: '更新版描述' } } })

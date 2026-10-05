@@ -19,6 +19,7 @@ import {
   matchPrereqName,
   normalizeConceptPrereqs,
   normalizeSpacePrereqs,
+  wouldCreatePrereqCycle,
 } from '../rules/learning-prerequisites.rules'
 import {
   getConfirmedLessonSpec,
@@ -70,6 +71,8 @@ export interface DlAgentActionParams {
     attrs?: Record<string, unknown>
     /** 学习本知识点前必须先掌握的概念名（2026-09-12：生成知识点时即声明前置） */
     prerequisites?: string[]
+    /** 学习层级（2026-09-25 D4：来自已确认方案时传入，写 attrs.layer） */
+    layer?: number
   }
   /** save_space_prereqs：主题学习前置要求（整个领域的学习门槛） */
   spacePrereqs?: {
@@ -217,6 +220,9 @@ async function assertPlanConfirmedForSave(
   )
 }
 
+/** researchState 合法流转白名单（types DlResearchState；防模型任意改写） */
+const DL_RESEARCH_STATES = new Set(['unresearched', 'researching', 'extracted', 'needs_verification', 'disputed'])
+
 async function saveConcept(
   db: ReturnType<typeof getCoreDatabaseManager>,
   spaceId: string,
@@ -232,7 +238,13 @@ async function saveConcept(
   // 学习前置声明（2026-09-12 用户需求）：显式 prerequisites 参数优先，兼容 attrs.prerequisites；
   // 一律规范化后写回 attrs.prerequisites（去空/去重/去自己/限条数）
   const declared = normalizeConceptPrereqs(c.prerequisites ?? c.attrs?.prerequisites, c.name)
-  const extraAttrs = declared.length ? { ...(c.attrs ?? {}), prerequisites: declared } : c.attrs
+  // layer 持久化（2026-09-25 D4）：方案里的学习层级随概念落 attrs.layer（图层级仍由前置边计算，
+  // attrs.layer 仅作展示参考，防止方案声明与图漂移时无从比对）
+  const layerNum =
+    typeof c.layer === 'number' && Number.isFinite(c.layer) && c.layer >= 0 ? Math.floor(c.layer) : null
+  const extraAttrs: Record<string, unknown> = { ...(c.attrs ?? {}) }
+  if (declared.length) extraAttrs.prerequisites = declared
+  if (layerNum != null) extraAttrs.layer = layerNum
 
   // 归属校验（2026-09-09 复盘）：parentId 必须存在且属于本空间（不落跨空间/孤儿父）
   if (c.parentId) {
@@ -245,11 +257,17 @@ async function saveConcept(
   const rows = await db.dlConcepts!.listByProject(spaceId)
   const existing = rows.find((r) => r.name === c.name.trim() && r.parentId === (c.parentId ?? null))
   if (existing) {
-    // 幂等：已存在（同父同名）→ 补 definitionShort/研究态/前置声明
+    // 幂等：已存在（同父同名）→ 补 definitionShort/研究态/前置声明。
+    // attrs 走合并（2026-09-25 P1-6 复盘：整体覆盖会把旧 prerequisites/confusedCount/
+    // confusedSections 一次清零——用户的"没懂"历史不能被一次重存抹掉；同文件 saveCard 早已是合并写法）
     await db.dlConcepts!.patch(existing.id, {
       definitionShort: c.definitionShort ?? existing.definitionShort,
-      researchState: (c.researchState as string) ?? existing.researchState,
-      attrs: extraAttrs ?? existing.attrs,
+      // 白名单（2026-09-25 P2-9）：模型给的非法 researchState 一律忽略，保持原值
+      researchState:
+        typeof c.researchState === 'string' && DL_RESEARCH_STATES.has(c.researchState)
+          ? c.researchState
+          : existing.researchState,
+      attrs: { ...(existing.attrs ?? {}), ...extraAttrs },
     })
     return {
       summary: {
@@ -284,9 +302,12 @@ async function saveConcept(
     en: c.en ?? null,
     parentId: c.parentId ?? null,
     definitionShort: c.definitionShort ?? null,
-    researchState: c.researchState ?? 'extracted',
-    source: 'ai_verified',
-    attrs: extraAttrs ?? null,
+    researchState:
+      typeof c.researchState === 'string' && DL_RESEARCH_STATES.has(c.researchState) ? c.researchState : 'extracted',
+    // source 语义修正（2026-09-25 P2-5）：agent 建点默认"资料提炼"；ai_verified（先验经确认）
+    // 留给 verify 流水线核验通过后升级，不在建点时自封
+    source: 'material',
+    attrs: Object.keys(extraAttrs).length ? extraAttrs : null,
   })
 
   // 前置声明落库后的跟进建议：哪个前置已在图上可建关系、哪个还没落点需要补
@@ -414,6 +435,24 @@ async function saveRelation(
   if (!tgt || tgt.projectId !== spaceId) throw new Error(`dl_save_relation：targetId 不存在或不属于本空间（${r.targetId}）`)
 
   const relationType = r.relationType ?? PREREQUISITE_TYPE
+  // 环防护（2026-09-25 P0-1）：前置环会让环上所有概念永远无法标记掌握（ackMastered 死锁），
+  // 建议态边确认后同样成环，故建议态就拦
+  if (relationType === PREREQUISITE_TYPE) {
+    const existing = await db.dlRelations!.listByProject(spaceId)
+    if (
+      wouldCreatePrereqCycle(
+        existing.map((e) => ({ source: e.sourceId, target: e.targetId, type: e.relationType })),
+        r.sourceId,
+        r.targetId,
+      )
+    ) {
+      throw new Error(
+        `dl_save_relation：这条边会构成前置环（${tgt.name} →…→ ${src.name} → ${tgt.name}）——学习路径不允许循环依赖。` +
+          `请检查方向是否写反（source 应是更基础的一方）；若两个概念实际互为前置，说明其中一个该拆细或合并，` +
+          `不要硬连。已存在的那条链上的边可用地图人审里的「删除关系」移除。`,
+      )
+    }
+  }
   const row = await db.dlRelations!.create({
     id: randomUUID(),
     projectId: spaceId,

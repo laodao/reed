@@ -324,6 +324,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'domainLearning.ackMastered': { channel: 'dl:ack-mastered', wrap: (id, conceptId) => [{ id, conceptId }] },
   'domainLearning.ackConfused': { channel: 'dl:ack-confused', wrap: (id, conceptId, sectionKey) => [{ id, conceptId, sectionKey }] },
   'domainLearning.confirmRelation': { channel: 'dl:confirm-relation' },
+  'domainLearning.removeRelation': { channel: 'dl:remove-relation' },
   'domainLearning.listQuestions': { channel: 'dl:list-questions', wrap: (id) => [{ id }] },
   'domainLearning.agentSend': { channel: 'dl:agent-send' },
   'domainLearning.agentCancel': { channel: 'dl:agent-cancel' },

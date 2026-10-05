@@ -251,3 +251,46 @@ export function coveredBySpacePrereqs(
   const tokens = [skillLabel, ...skillKeywords].map((t) => cleanText(t, 60)).filter(Boolean)
   return spacePrereqs.some((p) => tokens.some((t) => p.name.includes(t) || t.includes(p.name)))
 }
+
+/**
+ * 判定 candidateId 是否是 conceptId 的前置祖先（沿 prerequisite 边反向可达，允许任意深度）。
+ * 原实现住在 learning-progression.rules（讲义门禁用）；2026-09-25 起迁到本模块作为
+ * 全模块唯一的"前置可达性"实现——建边防环（dl-agent-actions / learning-graph）与
+ * 讲义循序渐进门禁共用同一套遍历，避免两处口径漂移。
+ */
+export function isPrerequisiteAncestor(
+  relations: PrereqRelation[],
+  conceptId: string,
+  candidateId: string,
+): boolean {
+  if (!conceptId || conceptId === candidateId) return false
+  const edges = relations.filter((r) => r.type === 'prerequisite')
+  const seen = new Set<string>()
+  const queue = [conceptId]
+  while (queue.length) {
+    const current = queue.shift()!
+    for (const e of edges) {
+      if (e.target !== current) continue
+      if (e.source === candidateId) return true
+      if (!seen.has(e.source)) {
+        seen.add(e.source)
+        queue.push(e.source)
+      }
+    }
+  }
+  return false
+}
+
+/**
+ * 新增前置边 source→target 是否会构成环（2026-09-25 P0-1 修复）。
+ * 语义：target 已经是 source 的前置祖先 ⟺ 加上这条边后 source⇝target⇝source 成环——
+ * 环上每个概念的前置都互相未掌握，`ackMastered` 永远拒绝，学习路径死锁。
+ * 三个建边入口（saveRelation / confirmRelation / 手工连边）落边前都必须过这道检查。
+ */
+export function wouldCreatePrereqCycle(
+  relations: PrereqRelation[],
+  sourceId: string,
+  targetId: string,
+): boolean {
+  return isPrerequisiteAncestor(relations, sourceId, targetId)
+}

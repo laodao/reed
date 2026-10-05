@@ -1452,6 +1452,9 @@ const electronAPI = {
     // 人工确认关系（→ { ok }）
     confirmRelation: (p: { id: string; sourceId: string; targetId: string; relationType: string; evidence?: string }) =>
       ipcRenderer.invoke('dl:confirm-relation', p),
+    // 删除关系边（2026-09-25：错边/成环边修复入口 → { ok }）
+    removeRelation: (p: { id: string; relationId: string }) =>
+      ipcRenderer.invoke('dl:remove-relation', p),
     // 未解问题队列（→ DlQuestionView[]，DTO 化剔 userId/Date）
     listQuestions: (id: string) => ipcRenderer.invoke('dl:list-questions', { id }),
     // Agent 发送（research=研究概念/未解问题产出讲义草稿；tutor=追问答疑 → DlAgentSendResult）
