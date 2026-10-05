@@ -61,6 +61,12 @@ const ADMIN_CHANNELS = new Set([
   'longwriting:updateDictionaryItem',
   'longwriting:deleteDictionaryItem',
   'longwriting:reorderDictionary',
+  // Obsidian 导出：handler 内部已有 isElectron 守卫（Web 端返回仅桌面端可用），
+  // 这里再加一层路由门禁兜底，防止未来守卫被移除后 vaultPath 任意写复发（review H1）
+  'export:to-obsidian',
+  'export:get-vault-directories',
+  'export:get-vault-files',
+  'export:get-obsidian-vaults'
 ])
 
 function isAdminChannel(channel: string): boolean {
