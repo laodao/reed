@@ -608,12 +608,21 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
     logger.error('[workflow-boot] runService 访问注册失败（继续启动）', e)
   }
   // 9. P0 变量与数据表：持久化服务注册（variable/data-table 节点取用）
+  //    独立 try/catch：本步失败只降级变量/数据表节点，不连带跳过 9.1 的数据源装配
   try {
-    const t = createBootTrace('WorkflowBoot.dataSourceAssembly')
+    const t = createBootTrace('WorkflowBoot.variableDataAssembly')
     const m = <T>(label: string, p: Promise<T>): Promise<T> => p.then((v) => { t.mark(label); return v })
     const { VariableDataService, registerVariableDataService } = await m('import:variableData', import('./variables/variable-data.service'))
     registerVariableDataService(new VariableDataService(db.variables, db.dataTableDefs, db.dataTableRows))
-    // 9.1 数据源：外部数据库连接服务 + 驱动注册（data-table 节点外部模式取用）
+    t.mark('register')
+    t.report(undefined, 20)
+  } catch (e) {
+    logger.error('[workflow-boot] 变量/数据表服务装配失败（继续启动）', e)
+  }
+  // 9.1 数据源：外部数据库连接服务 + 驱动注册（data-table 节点外部模式取用）
+  try {
+    const t = createBootTrace('WorkflowBoot.dataSourceAssembly')
+    const m = <T>(label: string, p: Promise<T>): Promise<T> => p.then((v) => { t.mark(label); return v })
     const { DataSourceService, registerDataSourceService } = await m('import:datasourceService', import('./datasource/datasource.service'))
     const { registerDataSourceDriver } = await m('import:datasourceExecutor', import('./datasource/datasource-executor.service'))
     const { PostgresDriverAdapter } = await m('import:pgDriver', import('./datasource/drivers/postgresql-driver'))

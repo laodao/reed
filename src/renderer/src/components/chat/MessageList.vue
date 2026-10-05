@@ -81,7 +81,8 @@ const emit = defineEmits<{
 
 const listRef = ref<HTMLElement | null>(null)
 
-// 用户是否正在手动滚动
+// 用户是否正在手动滚动（保留语义占位：滚动检测接线在 MessageList 滚动容器上）
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const isUserScrolling = ref(false)
 // 上一次滚动位置
 const lastScrollTop = ref(0)
@@ -153,21 +154,31 @@ const messageRefs = new Map<string, any>()
 function setMessageRef(el: any, messageId: string) {
   if (el) {
     messageRefs.set(messageId, el)
+  } else {
+    // Vue 卸载组件时 ref 回调收到 null：同步清理，避免窗口折叠/消息删除后残留失效引用
+    messageRefs.delete(messageId)
   }
 }
 
 // 处理导航到上一个/下一个回答（基于完整消息列表的索引，非窗口内索引）
-function handleNavigateAnswer(currentIndex: number, direction: 'prev' | 'next'): void {
+// 目标消息可能被虚拟窗口折叠（未挂载），直接取 ref 会因可选链静默吞掉：
+// 先把窗口扩到覆盖目标，等 DOM 挂上后再取元素滚动
+async function handleNavigateAnswer(currentIndex: number, direction: 'prev' | 'next'): Promise<void> {
   const targetIndex = direction === 'prev'
     ? findPrevAnswerIndex(currentIndex)
     : findNextAnswerIndex(currentIndex)
 
-  if (targetIndex !== -1) {
-    const targetMessage = displayMessages.value[targetIndex]
-    const targetEl = messageRefs.get(targetMessage.id)
-    if (targetEl?.$el) {
-      targetEl.$el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
+  if (targetIndex === -1) return
+  // 窗口是"尾部窗口"（startIndex 到列表尾全部挂载），只有目标落在窗口之前才需扩窗；
+  // 直接前移 startIndex（与 expandHistory 同机制，留一个 chunk 余量供导航后向上续载）
+  if (targetIndex < windowState.startIndex.value) {
+    windowState.startIndex.value = Math.max(0, targetIndex - HISTORY_CHUNK)
+    await nextTick()
+  }
+  const targetMessage = displayMessages.value[targetIndex]
+  const targetEl = messageRefs.get(targetMessage.id)
+  if (targetEl?.$el) {
+    targetEl.$el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 }
 
@@ -296,7 +307,7 @@ function handleEdit(messageId: string, newContent: string): void {
 }
 
 // 处理消息复制
-function handleCopy(content: string): void {
+function handleCopy(_content: string): void {
   // 复制已在 MessageItem 中处理
 }
 
