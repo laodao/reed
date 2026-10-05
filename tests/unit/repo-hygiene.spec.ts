@@ -14,8 +14,14 @@ const ROOT = path.resolve(process.cwd(), 'src')
 function* walk(dir: string): Generator<string> {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, entry.name)
-    if (entry.isDirectory()) yield* walk(p)
-    else if (/\.(vue|ts|tsx|js|jsx)$/.test(entry.name)) yield p
+    if (entry.isDirectory()) {
+      // 跳过内嵌包的 node_modules（src/web/admin-viven 等自带依赖树，非本仓源码）
+      if (entry.name === 'node_modules') continue
+      yield* walk(p)
+    }
+    // isFile() 而非按扩展名：src/ 内存在指向目录的符号链接（lstat 不是 dir），
+    // 按扩展名匹配会把它当文件读（EISDIR）
+    else if (entry.isFile() && /\.(vue|ts|tsx|js|jsx)$/.test(entry.name)) yield p
   }
 }
 
