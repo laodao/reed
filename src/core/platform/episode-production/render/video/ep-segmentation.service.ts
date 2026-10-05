@@ -36,6 +36,7 @@ import {
   buildSegmentPrompt,
   DEFAULT_SEGMENT_BUDGET_SEC,
 } from './segment-planner'
+import { loadShotDialogues } from './shot-dialogue-loader'
 
 /** 分段预览条目（供 UI"N 个场景 → M 个片段 / 共 K 镜"展示） */
 export interface SegmentPreviewItem {
@@ -70,7 +71,7 @@ export class EpSegmentationService {
   private readonly projectRepo: VideoProjectRepository
   private readonly segmentRepo: EpVideoSegmentRepository
 
-  constructor(ds: DataSource) {
+  constructor(private readonly ds: DataSource) {
     this.scriptRepo = new EpisodeScriptRepository(ds)
     this.sceneRepo = new SceneScriptRepository(ds)
     this.storyboardRepo = new StoryboardRepository(ds)
@@ -228,11 +229,16 @@ export class EpSegmentationService {
     for (let i = 0; i < merged.length; i++) {
       await this.storyboardRepo.assignSegment(merged[i].id, first.id, i + 1)
     }
+    const mergedDialogues = await loadShotDialogues(this.ds, merged as any)
     await this.segmentRepo.update(first.id, {
       shotCount: merged.length,
       estDuration: estA + estB,
       prompt: buildSegmentPrompt(
-        merged.map(s => ({ frameDescription: s.frameDescription ?? '', duration: s.duration })),
+        merged.map(s => ({
+          frameDescription: s.frameDescription ?? '',
+          duration: s.duration,
+          dialogues: mergedDialogues.get(s.id),
+        })),
       ),
       status: 'pending',
       videoPath: null,
@@ -275,6 +281,7 @@ export class EpSegmentationService {
       if (s.id === seg.id) order.push('__new__')
     }
 
+    const splitDialogues = await loadShotDialogues(this.ds, shots as any)
     const newSeg = await this.segmentRepo.create({
       episodeId: seg.episodeId,
       sceneId: seg.sceneId,
@@ -282,7 +289,11 @@ export class EpSegmentationService {
       shotCount: tail.length,
       estDuration: tailDuration,
       prompt: buildSegmentPrompt(
-        tail.map(s => ({ frameDescription: s.frameDescription ?? '', duration: s.duration })),
+        tail.map(s => ({
+          frameDescription: s.frameDescription ?? '',
+          duration: s.duration,
+          dialogues: splitDialogues.get(s.id),
+        })),
       ),
     })
     for (let i = 0; i < tail.length; i++) {
@@ -292,7 +303,11 @@ export class EpSegmentationService {
       shotCount: head.length,
       estDuration: headDuration,
       prompt: buildSegmentPrompt(
-        head.map(s => ({ frameDescription: s.frameDescription ?? '', duration: s.duration })),
+        head.map(s => ({
+          frameDescription: s.frameDescription ?? '',
+          duration: s.duration,
+          dialogues: splitDialogues.get(s.id),
+        })),
       ),
       status: 'pending',
       videoPath: null,

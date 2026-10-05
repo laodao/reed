@@ -21,6 +21,7 @@ import {
   splitShotsIntoSegments,
   buildSegmentPrompt,
   clampBudgetSec,
+  stripDialogueQuotes,
   DEFAULT_SEGMENT_BUDGET_SEC,
 } from '@core/platform/episode-production/render/video/segment-planner'
 
@@ -165,5 +166,54 @@ describe('buildSegmentPrompt', () => {
     expect(withStyle).toContain('画面风格：冷青色调，电影质感')
     const without = buildSegmentPrompt([{ frameDescription: 'x', duration: 3 }])
     expect(without).not.toContain('画面风格')
+  })
+})
+
+describe('stripDialogueQuotes + 台词段（2026-10-05 台词乱码修复）', () => {
+  it('剥离「言语动词+引号」台词引文，保留动词', () => {
+    expect(stripDialogueQuotes('沈云萝歪着头，说道：“那不正好？嘴皮子一流，破案靠嘴！”，手指轻点下巴'))
+      .toBe('沈云萝歪着头，说道，手指轻点下巴')
+    expect(stripDialogueQuotes('秦越上前一步，认真地对掌门说：“师傅，要不我送她下山。”'))
+      .toBe('秦越上前一步，认真地对掌门说')
+    expect(stripDialogueQuotes('他怒道："放肆！"')).toBe('他怒道')
+  })
+
+  it('非言语语境的引号保留（匾额/书名等）', () => {
+    expect(stripDialogueQuotes('匾额写着“雪麓山庄”，门前石阶蜿蜒')).toBe('匾额写着“雪麓山庄”，门前石阶蜿蜒')
+  })
+
+  it('空/无引文输入原样返回', () => {
+    expect(stripDialogueQuotes('')).toBe('')
+    expect(stripDialogueQuotes('苏晚伏案修书')).toBe('苏晚伏案修书')
+  })
+
+  it('prompt：台词引文被剥离，台词段以 {} 协议附在镜头时段后', () => {
+    const p = buildSegmentPrompt([
+      {
+        frameDescription: '【场景】书房。【人物】沈云萝。【动作】沈云萝歪头，说道：“那不正好？”，手指轻点下巴。【氛围】暖光',
+        duration: 2,
+        dialogues: [{ speaker: '沈云萝', text: '那不正好？嘴皮子一流，破案靠嘴！' }],
+      },
+    ])
+    expect(p).not.toContain('“那不正好？”')
+    expect(p).toContain('台词：{沈云萝：那不正好？嘴皮子一流，破案靠嘴！}')
+    expect(p).toContain('台词由对应人物以自然语速清晰说出')
+  })
+
+  it('prompt：无台词镜头显式禁人声（防幻觉配音）', () => {
+    const p = buildSegmentPrompt([{ frameDescription: '空镜山门', duration: 4 }])
+    expect(p).toContain('无人物对白语音')
+    expect(p).not.toContain('台词：')
+  })
+
+  it('prompt：多镜头台词各自挂在所属镜头', () => {
+    const p = buildSegmentPrompt([
+      { frameDescription: 'a', duration: 2, dialogues: [{ speaker: '甲', text: '第一句' }] },
+      { frameDescription: 'b', duration: 2 },
+      { frameDescription: 'c', duration: 2, dialogues: [{ speaker: '乙', text: '第二句' }, { speaker: '甲', text: '第三句' }] },
+    ])
+    expect(p).toContain('镜头1（约2s）：a；台词：{甲：第一句}')
+    expect(p).toContain('镜头2（约2s）：b；镜头3')
+    expect(p).toContain('镜头3（约2s）：c；台词：{乙：第二句}，{甲：第三句}')
   })
 })

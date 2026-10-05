@@ -38,6 +38,7 @@ import type {
   KeyframeInput,
 } from './video-provider-adapter'
 import { buildSegmentPrompt } from './segment-planner'
+import { loadShotDialogues } from './shot-dialogue-loader'
 import { resolveVideoParamsForEpisode } from './project-video-params'
 import { assertKeyframeGate, evaluateKeyframeGate } from './keyframe-gate'
 import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
@@ -157,6 +158,8 @@ export class SegmentVideoService {
     )
     // D6：项目 config.videoQuality/videoSteps/stylePrompt 透传（未配置 → provider 默认）
     const videoParams = await resolveVideoParamsForEpisode(this.ds, seg.episodeId)
+    // 台词段（2026-10-05）：links 表/JSON 列加载各镜头台词，结构化提交给音视频模型
+    const dialogueMap = await loadShotDialogues(this.ds, shots)
     const prompt = buildSegmentPrompt(
       shots.map(s => ({
         frameDescription: s.frameDescription,
@@ -164,6 +167,7 @@ export class SegmentVideoService {
         shotType: s.shotType,
         cameraAngle: s.cameraAngle,
         cameraMovement: s.cameraMovement,
+        dialogues: dialogueMap.get(s.id),
       })),
       { width, height, stylePrompt: videoParams.stylePrompt },
     )
@@ -255,6 +259,7 @@ export class SegmentVideoService {
       Math.round(input.durationSec ?? seg.estDuration ?? shots.reduce((n, s) => n + ((s as any).duration || 3), 0)),
     )
 
+    const dialogueMap = await loadShotDialogues(this.ds, shots as any)
     const basePrompt = buildSegmentPrompt(
       shots.map((s) => ({
         frameDescription: (s as any).frameDescription,
@@ -262,6 +267,7 @@ export class SegmentVideoService {
         shotType: (s as any).shotType,
         cameraAngle: (s as any).cameraAngle,
         cameraMovement: (s as any).cameraMovement,
+        dialogues: dialogueMap.get((s as any).id),
       })),
       { width, height, stylePrompt: videoParams.stylePrompt },
     )

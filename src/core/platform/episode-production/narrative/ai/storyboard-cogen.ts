@@ -226,8 +226,8 @@ ${sceneSection}
 10. 命名纪律延伸：frameDescription 正文中角色/道具全程使用名册登记名（与资产名单一字不差），禁止"他/那个男人/少年"等代词或别称；禁止"三个人""众人""反派们"等群体量词概括，多角色出场须逐个写出登记名。
 10a. 资产引用标记（2026-09-21 一致性修复）：frameDescription 中每个出场角色、地点、关键道具首次出现处，登记名必须写成资产引用标记 「@[登记名]」（如「@[沈云萝] 坐在床榻边」）；需要指定该资产的某张图时写 「@[登记名@图序号]」（如「@[秦越@2]」，图序号对应资产图集槽位）。标记会被系统解析为参考图并替换为纯名文本，不影响可读性；漏写标记会被 L2 校验警告。
 11. 情绪具象外化：禁止"很悲伤""非常愤怒"等抽象情绪词，必须写具体身体细节（悲伤=低头/肩膀微颤/眼眶泛红/攥紧衣角；喜悦=嘴角上扬/眉眼舒展/脚步轻快；紧张=频繁看表/手指敲桌/呼吸急促；愤怒=双拳紧握/下颔线紧绷/胸口起伏；释然=长舒一口气/肩膀放松/淡淡微笑）。
-12. 台词长度适配镜头时长：3 秒以内的镜头只能容纳一两句短语。
-13. 每条对白/旁白都必须有镜头承接：上方「场景剧本」对话列表里的每一句台词，都要落在某个镜头的 frameDescription 中体现（说话角色 + 说话动作/神态 + 听者反应），不得出现"有台词无镜头"的断档；连续多句对话可用对切镜头分别承接。
+12. 台词长度适配镜头时长：3 秒以内的镜头只能容纳一两句短语。校验会按 4.5 字/秒硬核算——镜头承接台词的语音时长超过镜头时长会被直接拒绝；台词多就拆对切镜头或加长 duration，不要让镜头装不下它承接的台词。
+13. 每条对白/旁白都必须有镜头承接：上方「场景剧本」对话列表里的每一句台词，都要落在某个镜头（说话角色 + 说话动作/神态 + 听者反应），不得出现"有台词无镜头"的断档；连续多句对话可用对切镜头分别承接。**frameDescription 只写"谁在说话、怎么个说法、听者什么反应"，不得引用台词原文、不得出现引号包裹的台词**——台词与镜头的对应关系只由 dialogueIds 表达，视频提示词由系统按 dialogueIds 自动拼装结构化台词段。
 13a. shots[].dialogueIds 必须逐镜填写：该镜头承接的对白 id（对话列表每行开头的 id，如 dlg_5）按播出顺序列入数组；所有对白 id 必须恰好被一个镜头引用一次——遗漏、重复、引用不存在的 id 都会被拒绝。对白特别密集时优先拆分对切镜头，确实无法全部容纳时才允许一个镜头承接多条同场连续对白。
 14. 地点命名纪律：assets.location.name 若指的是某个大场所内的局部区域（房间 / 院落 / 山门 / 某条街），必须带上所属大地名前缀，格式为「大地名+区域名」，如"雪麓山庄书房""雪麓山庄山门""白鹿城城门"；不要只写"书房""山门"这种裸名。只有当本场景指的就是整座大场所本身（全景/外景建立镜头）时，才直接写大地名（如"雪麓山庄"）。已有资产名单里出现的名字直接照抄引用（existing=true），不受本条限制。`
 }
@@ -280,13 +280,23 @@ function includesNormalized(haystack: string, needle: string): boolean {
 }
 
 /**
+ * 中文台词语音时长估算（字/秒）：短剧对白正常语速约 4~5 字/秒，取 4.5。
+ * 用于台词时长硬校验（2026-10-05 台词乱码修复）：镜头承接台词的语音时长
+ * 超过镜头时长时，音视频模型只能加速糊念——必须在分镜阶段打回。
+ */
+export const SPEECH_CHARS_PER_SEC = 4.5
+
+/**
  * 校验联合生成输出（schema + name⊆ 约束）。
+ * @param dialogueTextById 对白 id → 台词原文（与 prompt 渲染同口径 dialogueDisplayId）；
+ *                         传入则启用台词时长硬校验（强约束 12 落地）
  * @returns 错误清单；空数组 = 合法
  */
 export function validateCogenOutput(
   raw: any,
   existingAssets: CogenExistingAsset[],
   expectedDialogueIds: string[] = [],
+  dialogueTextById?: ReadonlyMap<string, string>,
 ): string[] {
   const errors: string[] = []
   const existing: ExistingNameSets = {
@@ -473,6 +483,28 @@ export function validateCogenOutput(
         const unknown = s.dialogueIds.filter((d: any) => !expectedDialogueIds.includes(String(d)))
         if (unknown.length) errors.push(`${tag}.dialogueIds 引用了不存在的对白 id：${unknown.join('、')}`)
       }
+      // 台词时长硬校验（2026-10-05 台词乱码修复，强约束 12 落地）：
+      // 台词语音时长 > 镜头时长 = 物理念不完，任何音视频模型都只能加速糊念
+      if (
+        dialogueTextById &&
+        s.dialogueIds.length > 0 &&
+        typeof s.duration === 'number' &&
+        s.duration > 0
+      ) {
+        let chars = 0
+        for (const d of s.dialogueIds.map(String)) {
+          const t = dialogueTextById.get(d)
+          if (t) chars += t.length
+        }
+        const speechSec = chars / SPEECH_CHARS_PER_SEC
+        if (speechSec > s.duration) {
+          errors.push(
+            `${tag} 承接台词共 ${chars} 字（按 ${SPEECH_CHARS_PER_SEC} 字/秒约需 ${speechSec.toFixed(1)}s），` +
+              `超过镜头时长 ${s.duration}s，台词念不完（强约束 12）：` +
+              `请拆出对切镜头分摊台词，或把该镜头 duration 加长到能从容说完（关键台词镜头可用 2.5-4s）`,
+          )
+        }
+      }
     }
     if (s.itemNames !== undefined) {
       if (!Array.isArray(s.itemNames)) {
@@ -599,6 +631,10 @@ export async function generateCogenForScene(
   const prompt = buildCogenPrompt(scene, existingAssets)
   // 对白 id 口径（M3）：prompt 渲染与本数组共用 dialogueDisplayId，初次校验与纠错重试复用同一数组
   const expectedDialogueIds = (scene.dialogues ?? []).map((d, i) => dialogueDisplayId(d, i))
+  // 台词时长硬校验素材（2026-10-05）：id → 台词原文
+  const dialogueTextById = new Map<string, string>(
+    (scene.dialogues ?? []).map((d, i) => [dialogueDisplayId(d, i), d.text ?? '']),
+  )
 
   let response = await callAI(prompt, COGEN_SYSTEM_PROMPT, 16000, providerConfigId, modelId)
   if (isJsonTruncated(response)) {
@@ -613,7 +649,7 @@ export async function generateCogenForScene(
   }
 
   let parsed = tryParse(response)
-  let errors = parsed === null ? ['无法解析 AI 响应为 JSON 格式'] : validateCogenOutput(parsed, existingAssets, expectedDialogueIds)
+  let errors = parsed === null ? ['无法解析 AI 响应为 JSON 格式'] : validateCogenOutput(parsed, existingAssets, expectedDialogueIds, dialogueTextById)
 
   // D4-1：纠错重试最多 2 次（约束 9 服饰校验落地后，弱模型一次纠正常常改不干净；
   // 每次把最新错误清单喂回，仍失败才抛错——旧分镜保留，宁缺毋滥）
@@ -631,7 +667,7 @@ export async function generateCogenForScene(
       modelId,
     )
     parsed = tryParse(response)
-    errors = parsed === null ? ['无法解析 AI 响应为 JSON 格式'] : validateCogenOutput(parsed, existingAssets, expectedDialogueIds)
+    errors = parsed === null ? ['无法解析 AI 响应为 JSON 格式'] : validateCogenOutput(parsed, existingAssets, expectedDialogueIds, dialogueTextById)
   }
 
   if (errors.length > 0 || parsed === null) {

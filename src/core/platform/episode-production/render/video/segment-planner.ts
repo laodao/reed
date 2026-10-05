@@ -84,6 +84,34 @@ export interface SegmentPromptShot {
   cameraAngle?: string
   /** 镜头运动（cameraMovement 枚举值） */
   cameraMovement?: string
+  /**
+   * 该镜头承接的台词（说话人 + 原文；来自 storyboard_dialogue_links / dialogue_ids）。
+   * 音视频联合模型需要「镜头时段 → 说话人 → 台词」的结构化输入才能正确发声；
+   * 埋在画面描述散文里的台词会被念成乱码（2026-10-05 seq3 实锤）。
+   */
+  dialogues?: SegmentDialogue[]
+}
+
+/** 一条镜头台词（视频 prompt 台词段用） */
+export interface SegmentDialogue {
+  speaker: string
+  text: string
+}
+
+/**
+ * 剥离画面描述中的台词引文（2026-10-05 台词乱码修复）。
+ *
+ * 台词统一由 shots[].dialogues 台词段承载（说话人+原文+镜头时段三段对应），
+ * frameDescription 里的 `说道："…"` 引文若一并提交，模型会看到两份台词且散文版
+ * 没有结构——只剥「言语动词 + 引号」结构（说道："…" → 说道）；非言语语境的
+ * 引号（匾额写着"雪麓山庄"）保留。DB 中的分镜原文不动，仅在拼 prompt 时剥离。
+ */
+const SPEECH_QUOTE_RE =
+  /(说道|说|问道|问|答道|答|回答道|回答|喊道|喊|叫道|叫|嚷道|嚷|喝道|怒道|笑道|叹道|嘀咕|嘟囔|念叨|沉声|轻声|低声|回应|开口)[：:]?\s*[“"「][^"”」]*["”」]/g
+
+export function stripDialogueQuotes(text: string): string {
+  if (!text) return text
+  return text.replace(SPEECH_QUOTE_RE, '$1')
 }
 
 export interface SegmentPromptOptions {
@@ -149,13 +177,15 @@ function shotHeaderMeta(s: SegmentPromptShot): string[] {
 
 /**
  * 拼接片段级多镜头提示词（§5，2026-09-18 补全数据面）：
- *   镜头1（约5s，全景，推镜）：<frameDescription>；镜头2（约4s，近景）：<frameDescription>。
+ *   镜头1（约5s，全景，推镜）：<frameDescription>；台词：{沈云萝：…}；镜头2（约4s，近景）：<frameDescription>。
  *   总时长约 9 秒，画面比例 16:9（1920x1080）。多个镜头之间保持人物、场景、
  *   光影与风格一致，镜头切换自然连贯。画面风格：<stylePrompt>。
  *   画面中不得出现字幕、文字、水印、LOGO（默认负向尾巴，allowOnScreenText 可豁免）。
  *
  * 数据面原则：界面上已选的景别/角度/运镜、项目风格词必须到达视频模型；
- * @[资产@索引] 标记替换为资产名纯文本（模型不认识引用语法）。
+ * @[资产@索引] 标记替换为资产名纯文本（模型不认识引用语法）；
+ * frameDescription 中 `说道："…"` 形式的台词引文被剥离（stripDialogueQuotes），
+ * 台词改由 shots[].dialogues 台词段结构化承载（2026-10-05 台词乱码修复）。
  */
 export function buildSegmentPrompt(
   shots: SegmentPromptShot[],
@@ -168,12 +198,18 @@ export function buildSegmentPrompt(
         : DEFAULT_SHOT_DURATION_SEC
     const meta = shotHeaderMeta(s)
     const header = `镜头${i + 1}（约${formatSec(dur)}${meta.length ? '，' + meta.join('，') : ''}）`
-    return `${header}：${replaceAssetRefMarkers(s.frameDescription ?? '')}`
+    let body = `${header}：${replaceAssetRefMarkers(stripDialogueQuotes(s.frameDescription ?? ''))}`
+    // 台词段（声音符号协议 {}）：紧跟镜头时段头，音视频模型据此对口型发声
+    if (s.dialogues && s.dialogues.length > 0) {
+      body += `；台词：${s.dialogues.map((d) => `{${d.speaker}：${d.text}}`).join('，')}`
+    }
+    return body
   })
   const total = shots.reduce((sum, s) => {
     const d = Number.isFinite(s.duration) && s.duration > 0 ? s.duration : DEFAULT_SHOT_DURATION_SEC
     return sum + d
   }, 0)
+  const hasDialogue = shots.some((s) => (s.dialogues?.length ?? 0) > 0)
 
   const constraints: string[] = [`总时长约${formatSec(total)}`]
   if (opts.width && opts.height) {
@@ -182,6 +218,12 @@ export function buildSegmentPrompt(
   if (shots.length > 1) {
     constraints.push('多个镜头之间保持人物、场景、光影与风格一致，镜头切换自然连贯')
   }
+  // 音频口径：有台词 → 结构化台词段是唯一台词来源；无台词 → 显式禁人声防幻觉配音
+  constraints.push(
+    hasDialogue
+      ? '台词由对应人物以自然语速清晰说出，语音与各镜头时长匹配，不得加速、不得含糊、不得念错字'
+      : '画面中人物不说话，无人物对白语音，仅环境音',
+  )
   if (opts.stylePrompt?.trim()) {
     constraints.push(`画面风格：${opts.stylePrompt.trim()}`)
   }

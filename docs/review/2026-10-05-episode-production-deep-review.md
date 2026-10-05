@@ -129,3 +129,23 @@ Electron 44 升级后 node_modules 的 better-sqlite3 被重建为 NODE_MODULE_V
 - 全量 diff：506830ac..HEAD（81 文件，+9733/−670），源码部分逐块通读，测试部分按 spec 清单核对覆盖面。
 - 实测：`npx vitest run tests/unit/episode-production tests/unit/core/platform/episode-production` → 71/125 spec 失败（全部 better-sqlite3 NODE_MODULE_VERSION 149 vs 137 ABI 错）；纯逻辑 spec 单独跑 9/9、30/30 绿。
 - 工作区状态：ep 相关路径无未提交改动；仅 outputs/ 下若干无关未跟踪文件；stash@{0} 含第三批环境事件的抢救副本（用户 pop 时可能与已提交内容冲突，台账已留痕）。
+
+---
+
+## 七、补记：台词乱码事故与修复（2026-10-05 第五批，真机验证发现）
+
+**现象**：第四批 ComfyUI 真机验证的 3 个片段（画面一致性全达标）播放时人物台词完全是乱码人声。
+
+**根因（四层叠加，均与具体模型无关）**：
+1. **台词时长物理不可行（分镜层）**：seq3 为 6s/3 镜，每镜 2s 各带一句台词；按中文对白正常语速 4.5 字/秒核算，三句分别需 3.6/2.4/2.0s——合计约 8s 语音塞进 6s 视频，两句超限。shot-pacing 的「3 秒内镜头只能容纳一两句短语」只是软提示，cogen 校验器只查对白覆盖与 id 合法性，从不核算台词时长 vs 镜头时长。
+2. **台词未结构化提交（提示词层，主因）**：cogen 强约束 13 要求台词「落在 frameDescription 中体现」，LLM 实现为把台词原文以 `说道："…"` 散文引文写进画面描述；音视频联合模型需要从 prompt 解析「镜头时段→说话人→台词」的对应，埋在数百字外观描述里的引文无法承担。
+3. **结构化数据断链（数据层）**：台词↔镜头对应关系已在 `storyboard_dialogue_links`（字幕系统在用），但视频 prompt 构建从未读它；`storyboards.dialogue_ids` JSON 列全库 117 条分镜仅 1 条非空。
+4. **音频指令粗糙**：`[reference generation + audio reference]` 只说「要出声」，未给台词任何结构。
+
+**修复（模型无关）**：
+- `segment-planner.ts`：`stripDialogueQuotes` 剥离 frameDescription 中「言语动词+引号」台词引文（匾额类引号保留，DB 原文不动）；`SegmentPromptShot.dialogues` 新增，台词以 `{说话人：原文}` 符号协议挂在所属镜头时段后；音频约束按有无台词切换（有→「自然语速清晰说出/不得加速/不得念错字」，无→「人物不说话，仅环境音」防幻觉配音）。
+- `shot-dialogue-loader.ts`（新）：links 表优先、JSON 列兜底，不做字幕式池均分猜测；接入 segment-video 双路径、video-segment 单镜路径、ep-segmentation 合并/拆分快照重算共 5 处。
+- `storyboard-cogen.ts`：强约束 13 改为「frameDescription 不得引用台词原文」；强约束 12 落地为硬校验——镜头承接台词语音时长（字数÷4.5）超镜头时长即阻断进纠错重试（`SPEECH_CHARS_PER_SEC=4.5`）。
+- 老数据修复：seq3 三个镜头 duration 2/2/2 → 4/3/2.5s（台词物理说完所需），segment est_duration → 9.5s。
+
+**验证**：新增 3 个 spec（planner 台词段/剥引文 6 例、loader 6 例、时长校验 5 例），ep 域 121 文件 1002 用例全绿；真机重新生成 seq3（3 句台词）+ seq5（无台词）验证发声正确性与禁人声约束，prompt 快照核对台词段结构符合设计。

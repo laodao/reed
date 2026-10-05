@@ -32,6 +32,7 @@ import {
   type VideoModeMatch,
 } from './provider-capability-matcher'
 import { buildSegmentPrompt } from './segment-planner'
+import { loadShotDialogues } from './shot-dialogue-loader'
 import { resolveVideoParamsForStoryboard } from './project-video-params'
 import { assertKeyframeGate, evaluateKeyframeGate } from './keyframe-gate'
 import type {
@@ -147,7 +148,9 @@ export class VideoSegmentService {
 
     // D6：项目 config.videoQuality/videoSteps/stylePrompt 透传（未配置 → provider 默认 high/20）
     const videoParams = await resolveVideoParamsForStoryboard(this.ds, sb.id)
-    // 与片段级共用同一拼接器：景别/角度/运镜 + 风格词进 prompt，@[资产] 标记换成纯文本
+    // 与片段级共用同一拼接器：景别/角度/运镜 + 风格词进 prompt，@[资产] 标记换成纯文本；
+    // 台词（2026-10-05）：links/JSON 列加载，结构化台词段提交给音视频模型
+    const dialogueMap = await loadShotDialogues(this.ds, [sb as any])
     const promptForVideo = buildSegmentPrompt(
       [
         {
@@ -156,6 +159,7 @@ export class VideoSegmentService {
           shotType: sb.shotType,
           cameraAngle: sb.cameraAngle,
           cameraMovement: sb.cameraMovement,
+          dialogues: dialogueMap.get(sb.id),
         },
       ],
       { width, height, stylePrompt: videoParams.stylePrompt },
