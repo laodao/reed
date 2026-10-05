@@ -311,6 +311,13 @@ export interface Storyboard {
   dialogueIds: string[] // 关联对话ID列表
   actionIds: string[] // 关联动作ID列表
 
+  /**
+   * 该镜头承接的台词（说话人 + 原文），由 listStoryboards 服务端按
+   * storyboard_dialogue_links / dialogue_ids 解析后附带（与视频 prompt 注入同源，
+   * 见 render/video/shot-dialogue-loader）。仅读取展示用，不随 update 写回。
+   */
+  dialogues?: Array<{ speaker: string; text: string }>
+
   // 画面资产
   frameImage?: ImageAsset // 帧画面图片
 

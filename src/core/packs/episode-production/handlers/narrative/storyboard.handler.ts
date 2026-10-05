@@ -88,6 +88,31 @@ async function handleListStoryboards(
     }
 
     const storyboards = await db.storyboards.getBySceneScriptId(sceneScriptId)
+
+    /*
+     * 台词可见性（2026-10-05）：附带每个镜头承接的台词（说话人+原文），
+     * 与视频 prompt 注入共用 loadShotDialogues 同一数据口径（links 表优先、
+     * dialogue_ids JSON 兜底），前端分镜编辑器逐行只读展示，便于核对台词归属。
+     * 台词解析失败不阻断分镜列表（降级为无台词展示）。
+     */
+    if (db.dataSource && storyboards.length > 0) {
+      try {
+        const { loadShotDialogues } = await import(
+          '@core/platform/episode-production/render/video/shot-dialogue-loader'
+        )
+        const byShot = await loadShotDialogues(
+          db.dataSource,
+          storyboards.map((sb) => ({ id: sb.id, dialogueIds: sb.dialogueIds })),
+        )
+        for (const sb of storyboards) {
+          const list = byShot.get(sb.id)
+          if (list?.length) (sb as Storyboard).dialogues = list
+        }
+      } catch (e) {
+        console.warn('[handleListStoryboards] 台词附带失败（降级为不展示台词）:', e)
+      }
+    }
+
     return { success: true, data: storyboards }
   } catch (error: any) {
     return { success: false, error: error.message || '获取分镜列表失败' }

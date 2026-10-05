@@ -181,6 +181,7 @@
             v-model="promptText"
             :entities="mentionEntities"
             :style-options="styleOptions"
+            :dialogues-by-shot="dialoguesByShot"
             @update:model-value="dirty = true"
           />
 
@@ -483,6 +484,20 @@ function selectShot(shot: any): void {
 function syncPrompt(): void {
   promptText.value = buildPromptText(shots.value, styleName.value)
 }
+
+/**
+ * 逐镜头台词（shotNumber → 台词列表）：来自 listStoryboards 服务端附带
+ * （与视频 prompt 注入同源，links 表优先）。只读展示在分镜提示词行末，
+ * 不进提示词字符串、不随保存写回 frameDescription。
+ */
+const dialoguesByShot = computed<Record<number, Array<{ speaker: string; text: string }>>>(() => {
+  const map: Record<number, Array<{ speaker: string; text: string }>> = {}
+  for (const sb of shots.value) {
+    const list = Array.isArray(sb.dialogues) ? sb.dialogues.filter((d: any) => d?.text) : []
+    if (list.length > 0 && sb.shotNumber != null) map[sb.shotNumber] = list
+  }
+  return map
+})
 
 /**
  * 默认生成入口：片段级生成（视频片段制 §5——一次视频调用产出多镜一段）。

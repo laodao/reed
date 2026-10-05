@@ -3,7 +3,7 @@
     <!-- 顶部小提示条 -->
     <div class="p-toolbar">
       <span class="p-label">提示词</span>
-      <span class="p-hint">当前场次 · 输入 @ 引用资产 · 点击蓝色参数可切换 · 拖资产图到框内引用</span>
+      <span class="p-hint">当前场次 · 输入 @ 引用资产 · 点击蓝色参数可切换 · 拖资产图到框内引用 · 橙色为该镜头台词（只读）</span>
     </div>
 
     <!-- 一个整体富文本框（contenteditable）：一行 = 一个镜头（分镜） -->
@@ -121,7 +121,13 @@ export interface MentionEntity {
   /** 该资产的图集（用于 @[名字@索引] 精确引用；可为空则只引资产本体） */
   images?: MentionEntityImage[]
 }
+/** 镜头承接的台词（只读展示；与视频 prompt 注入同源的 speaker+text） */
+export interface ShotDialogue { speaker: string; text: string }
 export interface ParamOption { value: string; label: string }
+
+/** 台词语音速率（字/秒），与 core storyboard-cogen.SPEECH_CHARS_PER_SEC 同值；
+ *  renderer 不引 core，此处独立维护，用于「台词说得完吗」的超长提示。 */
+const SPEECH_CHARS_PER_SEC = 4.5
 
 /** 参数 key 的顺序（渲染顺序 + 序列化顺序） */
 const PARAM_KEYS = ['景别', '运镜', '时长', '风格'] as const
@@ -143,6 +149,11 @@ const props = defineProps<{
   entities?: MentionEntity[]
   /** 风格下拉选项（页面级 preset styles） */
   styleOptions?: ParamOption[]
+  /**
+   * 逐镜头台词（shotNumber → 台词列表），只读展示为镜头行末尾的 chip。
+   * 不写回提示词字符串（渲染在 .pk-desc 之外、无 data-key，序列化天然跳过）。
+   */
+  dialoguesByShot?: Record<number, ShotDialogue[]>
 }>()
 const emit = defineEmits<{ 'update:modelValue': [string] }>()
 
@@ -204,6 +215,25 @@ function buildDescHtml(description: string): string {
   })
 }
 
+/** 镜头行末尾的只读台词 chip（在 .pk-desc 之外、无 data-key → 序列化天然跳过） */
+function buildDialoguesHtml(line: PromptLine): string {
+  const list = props.dialoguesByShot?.[line.shotNumber] ?? []
+  if (list.length === 0) return ''
+  const dur = Number(line.params['时长']) || 0
+  const chips = list
+    .filter((d) => d?.text)
+    .map((d) => {
+      const secs = d.text.length / SPEECH_CHARS_PER_SEC
+      const over = dur > 0 && secs > dur
+      const tip = over
+        ? `台词约 ${secs.toFixed(1)}s，超过镜头时长 ${dur}s，视频里可能说不完——请加长镜头时长或精简台词`
+        : '该镜头台词（生成视频时由后端注入最终提示词，模型按原文发声）'
+      return `<span class="pk-dlg${over ? ' over' : ''}" title="${esc(tip)}"><span class="pk-dlg-tag">台词</span>${esc(d.speaker)}：${esc(d.text)}</span>`
+    })
+    .join('')
+  return chips ? `<span class="pk-dialogues" contenteditable="false">${chips}</span>` : ''
+}
+
 function buildLineHtml(line: PromptLine): string {
   const toksHtml = PARAM_KEYS.filter((k) => line.params[k] !== undefined)
     .map((k) => {
@@ -218,6 +248,7 @@ function buildLineHtml(line: PromptLine): string {
   return (
     `<div class="pk-line" data-no="${line.shotNumber}">` + shotRow +
     `<span class="pk-desc">${buildDescHtml(line.description)}</span>` +
+    buildDialoguesHtml(line) +
     `</div>`
   )
 }
@@ -723,6 +754,9 @@ watch(
   { deep: true },
 )
 
+// 台词数据不进提示词字符串，上面的「序列化相等则跳过」守卫对它无效，需单独监听重渲
+watch(() => props.dialoguesByShot, () => { if (!composing) renderHtml() }, { deep: true })
+
 onMounted(() => {
   renderHtml()
   document.addEventListener('mousedown', onDocMouse)
@@ -762,6 +796,21 @@ function onDocMouse(e: MouseEvent): void {
     &.entity { color: var(--color-success); background: var(--color-success-light-9); border-color: var(--color-success-light-5); }
     .ent-thumb-wrap { display: inline-block; vertical-align: middle; margin-right: 4px; }
     .ent-thumb { display: inline-block; width: 20px; height: 20px; border-radius: 3px; object-fit: cover; vertical-align: middle; }
+  }
+
+  /* 只读台词 chip：镜头行末尾独立一行，橙色以区别于参数(蓝)/资产(绿) token；
+     超长（语音时长 > 镜头时长）加重警示色 */
+  :deep(.pk-dialogues) { display: block; margin: 1px 0 4px 24px; }
+  :deep(.pk-dlg) {
+    display: inline-block; margin: 0 6px 2px 0; padding: 0 8px; border-radius: 4px;
+    font-size: 12px; line-height: 1.8; cursor: default; user-select: none;
+    color: var(--color-warning); background: var(--color-warning-light-9); border: 1px solid var(--color-warning-light-7);
+    .pk-dlg-tag {
+      display: inline-block; margin-right: 4px; padding: 0 4px; border-radius: 3px;
+      font-size: 10px; line-height: 1.6; vertical-align: 1px;
+      color: #fff; background: var(--color-warning);
+    }
+    &.over { color: var(--color-danger); background: var(--color-danger-light-9); border-color: var(--color-danger-light-5); font-weight: 600; }
   }
 }
 
