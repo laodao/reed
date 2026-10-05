@@ -25,6 +25,8 @@ export function registerStoryboardHandlers(): void {
   ipcBridge.handle('ep:update-storyboard', handleUpdateStoryboard)
   ipcBridge.handle('ep:reorder-storyboards', handleReorderStoryboards)
   ipcBridge.handle('ep:delete-storyboard', handleDeleteStoryboard)
+  // 台词编辑（2026-10-05）：分镜编辑器台词 chip 写回 scene_dialogues（字幕/视频 prompt 共同数据源）
+  ipcBridge.handle('ep:update-scene-dialogue', handleUpdateSceneDialogue)
 
   // ==================== AI 生成（分镜） ====================
   ipcBridge.handle('ep:generate-storyboard', handleGenerateStoryboard)
@@ -76,6 +78,32 @@ async function handleGetBackgroundRef(
 }
 
 // ==================== 分镜管理处理器 ====================
+
+/**
+ * 台词编辑写回（2026-10-05 台词可编辑）：更新 scene_dialogues.text。
+ * scene_dialogues 是字幕与视频 prompt 注入的共同数据源（经 links 读取），
+ * 改这一处即全链路一致；写回后前端本地同步 shots[].dialogues，无需整表重载。
+ */
+async function handleUpdateSceneDialogue(
+  _event: any,
+  dialogueId: string,
+  text: string,
+): Promise<IpcResponse> {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) {
+      return { success: false, error: '数据库未初始化' }
+    }
+    const { updateSceneDialogueText } = await import(
+      '@core/platform/episode-production/narrative/scene-dialogues'
+    )
+    const updated = await updateSceneDialogueText(db.dataSource, dialogueId, text)
+    if (!updated) return { success: false, error: '台词不存在（可能已被重新生成）' }
+    return { success: true, data: { dialogueId, text: (text ?? '').trim() } }
+  } catch (error: any) {
+    return { success: false, error: error.message || '更新台词失败' }
+  }
+}
 
 async function handleListStoryboards(
   _event: any,

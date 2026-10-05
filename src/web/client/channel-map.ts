@@ -262,6 +262,10 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'knowledgeBase.brain.consolidateStatus': { channel: 'kb:brain:consolidate-status', wrap: (kbId: unknown) => [{ kbId: kbId as string }] },
   'knowledgeBase.brain.cleanupRun': { channel: 'kb:brain:cleanup-run', wrap: (kbId: unknown) => [{ kbId: kbId as string }] },
   'knowledgeBase.brain.cleanupStatus': { channel: 'kb:brain:cleanup-status', wrap: (kbId: unknown) => [{ kbId: kbId as string }] },
+  'knowledgeBase.brain.layerRelabelRun': { channel: 'kb:brain:layer-relabel-run', wrap: (kbId: unknown) => [{ kbId: kbId as string }] },
+  'knowledgeBase.brain.layerRelabelStatus': { channel: 'kb:brain:layer-relabel-status', wrap: (kbId: unknown) => [{ kbId: kbId as string }] },
+  'knowledgeBase.brain.bookPassesRun': { channel: 'kb:brain:book-passes-run', wrap: (kbId: unknown) => [{ kbId: kbId as string }] },
+  'knowledgeBase.brain.bookPassesStatus': { channel: 'kb:brain:book-passes-status', wrap: (kbId: unknown) => [{ kbId: kbId as string }] },
   'knowledgeBase.brain.foreshadowRun': { channel: 'kb:brain:foreshadow-run', wrap: (kbId: unknown) => [{ kbId: kbId as string }] },
   'knowledgeBase.brain.foreshadowStatus': { channel: 'kb:brain:foreshadow-status', wrap: (kbId: unknown) => [{ kbId: kbId as string }] },
   'knowledgeBase.brain.getAtom': { channel: 'kb:brain:get-atom', wrap: (atomId: string) => [{ atomId }] },
@@ -782,6 +786,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.updateScene': { channel: 'ep:update-scene' },
   'episodeProduction.deleteScene': { channel: 'ep:delete-scene' },
   'episodeProduction.listStoryboards': { channel: 'ep:list-storyboards' },
+  'episodeProduction.updateSceneDialogue': { channel: 'ep:update-scene-dialogue' },
   // 9 帧故事板预览（spec 2026-05-09 ep-redesign §3.2 B7）
   'episodeProduction.generateStoryboardThumbnails': { channel: 'ep:storyboard:generate-thumbnails' },
   'episodeProduction.cleanupStoryboardThumbnails': { channel: 'ep:storyboard:cleanup-thumbnails' },

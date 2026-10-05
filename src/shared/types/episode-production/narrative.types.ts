@@ -316,7 +316,7 @@ export interface Storyboard {
    * storyboard_dialogue_links / dialogue_ids 解析后附带（与视频 prompt 注入同源，
    * 见 render/video/shot-dialogue-loader）。仅读取展示用，不随 update 写回。
    */
-  dialogues?: Array<{ speaker: string; text: string }>
+  dialogues?: Array<{ speaker: string; text: string; id?: string }>
 
   // 画面资产
   frameImage?: ImageAsset // 帧画面图片

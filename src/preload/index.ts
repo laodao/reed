@@ -170,6 +170,7 @@ const IPC_CHANNELS = {
   EP_DELETE_SCENE: 'ep:delete-scene',
 
   EP_LIST_STORYBOARDS: 'ep:list-storyboards',
+  EP_UPDATE_SCENE_DIALOGUE: 'ep:update-scene-dialogue',
   EP_STORYBOARD_SET_BACKGROUND_REF: 'ep:storyboard:set-background-ref',
   EP_STORYBOARD_GET_BACKGROUND_REF: 'ep:storyboard:get-background-ref',
   EP_GET_STORYBOARD: 'ep:get-storyboard',
@@ -1270,6 +1271,10 @@ const electronAPI = {
       consolidateStatus: (kbId: string) => ipcRenderer.invoke('kb:brain:consolidate-status', { kbId }),
       cleanupRun: (kbId: string) => ipcRenderer.invoke('kb:brain:cleanup-run', { kbId }),
       cleanupStatus: (kbId: string) => ipcRenderer.invoke('kb:brain:cleanup-status', { kbId }),
+      layerRelabelRun: (kbId: string) => ipcRenderer.invoke('kb:brain:layer-relabel-run', { kbId }),
+      layerRelabelStatus: (kbId: string) => ipcRenderer.invoke('kb:brain:layer-relabel-status', { kbId }),
+      bookPassesRun: (kbId: string) => ipcRenderer.invoke('kb:brain:book-passes-run', { kbId }),
+      bookPassesStatus: (kbId: string) => ipcRenderer.invoke('kb:brain:book-passes-status', { kbId }),
       foreshadowRun: (kbId: string) => ipcRenderer.invoke('kb:brain:foreshadow-run', { kbId }),
       foreshadowStatus: (kbId: string) => ipcRenderer.invoke('kb:brain:foreshadow-status', { kbId }),
       getAtom: (atomId: string) => ipcRenderer.invoke('kb:brain:get-atom', { atomId }),
@@ -2658,6 +2663,9 @@ const electronAPI = {
     // 分镜管理
     listStoryboards: (sceneScriptId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_LIST_STORYBOARDS, sceneScriptId),
+    // 台词编辑写回（分镜编辑器台词 chip → scene_dialogues）
+    updateSceneDialogue: (dialogueId: string, text: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_UPDATE_SCENE_DIALOGUE, dialogueId, text),
     getStoryboard: (storyboardId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_GET_STORYBOARD, storyboardId),
     updateStoryboard: (storyboardId: string, data: any) =>

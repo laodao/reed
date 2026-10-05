@@ -3,7 +3,7 @@
     <!-- 顶部小提示条 -->
     <div class="p-toolbar">
       <span class="p-label">提示词</span>
-      <span class="p-hint">当前场次 · 输入 @ 引用资产 · 点击蓝色参数可切换 · 拖资产图到框内引用 · 橙色为该镜头台词（只读）</span>
+      <span class="p-hint">当前场次 · 输入 @ 引用资产 · 点击蓝色参数可切换 · 拖资产图到框内引用 · 橙色为该镜头台词（点击可改）</span>
     </div>
 
     <!-- 一个整体富文本框（contenteditable）：一行 = 一个镜头（分镜） -->
@@ -84,6 +84,30 @@
         </div>
       </div>
     </div>
+
+    <!-- 台词编辑弹层（点台词 chip 打开；保存写回 scene_dialogues，字幕/视频 prompt 同源） -->
+    <div v-if="dlgEditOpen" ref="dlgEditRef" class="rich-popup dlg-popup" :style="dlgEditStyle">
+      <div class="popup-title">编辑台词 · {{ dlgEditSpeaker }}</div>
+      <div class="dlg-edit-body">
+        <textarea
+          ref="dlgEditInput"
+          v-model="dlgEditText"
+          class="dlg-textarea"
+          rows="3"
+          placeholder="台词内容（不能为空）"
+          @keydown="onDlgEditKey"
+        />
+        <div class="dlg-meta" :class="{ over: dlgEditOver }">
+          {{ dlgEditText.trim().length }} 字 · 语音约 {{ dlgEditSecs.toFixed(1) }}s<template v-if="dlgEditDuration > 0"> / 镜头 {{ dlgEditDuration }}s</template>
+          <span v-if="dlgEditOver" class="dlg-over-tip">超时，可能说不完</span>
+          <span v-else class="dlg-key-tip">Ctrl+Enter 保存</span>
+        </div>
+        <div class="dlg-actions">
+          <button class="dlg-btn" @click="closeDlgEdit">取消</button>
+          <button class="dlg-btn primary" :disabled="!dlgEditText.trim()" @click="saveDlgEdit">保存</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -121,8 +145,8 @@ export interface MentionEntity {
   /** 该资产的图集（用于 @[名字@索引] 精确引用；可为空则只引资产本体） */
   images?: MentionEntityImage[]
 }
-/** 镜头承接的台词（只读展示；与视频 prompt 注入同源的 speaker+text） */
-export interface ShotDialogue { speaker: string; text: string }
+/** 镜头承接的台词（与视频 prompt 注入同源；id 为 scene_dialogues.id，编辑回写用） */
+export interface ShotDialogue { speaker: string; text: string; id?: string }
 export interface ParamOption { value: string; label: string }
 
 /** 台词语音速率（字/秒），与 core storyboard-cogen.SPEECH_CHARS_PER_SEC 同值；
@@ -155,7 +179,11 @@ const props = defineProps<{
    */
   dialoguesByShot?: Record<number, ShotDialogue[]>
 }>()
-const emit = defineEmits<{ 'update:modelValue': [string] }>()
+const emit = defineEmits<{
+  'update:modelValue': [string]
+  /** 台词 chip 编辑保存（写回 scene_dialogues，由父组件调 IPC 并同步本地数据） */
+  'update-dialogue': [{ id: string; shotNumber: number; text: string }]
+}>()
 
 const editorRef = ref<HTMLElement | null>(null)
 const mentionRef = ref<HTMLElement | null>(null)
@@ -215,7 +243,8 @@ function buildDescHtml(description: string): string {
   })
 }
 
-/** 镜头行末尾的只读台词 chip（在 .pk-desc 之外、无 data-key → 序列化天然跳过） */
+/** 镜头行末尾的台词 chip（在 .pk-desc 之外、无 data-key → 序列化天然跳过）。
+ *  点击 chip 打开编辑弹层（写回 scene_dialogues，字幕/视频 prompt 同源）。 */
 function buildDialoguesHtml(line: PromptLine): string {
   const list = props.dialoguesByShot?.[line.shotNumber] ?? []
   if (list.length === 0) return ''
@@ -226,9 +255,9 @@ function buildDialoguesHtml(line: PromptLine): string {
       const secs = d.text.length / SPEECH_CHARS_PER_SEC
       const over = dur > 0 && secs > dur
       const tip = over
-        ? `台词约 ${secs.toFixed(1)}s，超过镜头时长 ${dur}s，视频里可能说不完——请加长镜头时长或精简台词`
-        : '该镜头台词（生成视频时由后端注入最终提示词，模型按原文发声）'
-      return `<span class="pk-dlg${over ? ' over' : ''}" title="${esc(tip)}"><span class="pk-dlg-tag">台词</span>${esc(d.speaker)}：${esc(d.text)}</span>`
+        ? `台词约 ${secs.toFixed(1)}s，超过镜头时长 ${dur}s，视频里可能说不完——请加长镜头时长或精简台词（点击编辑）`
+        : '该镜头台词（生成视频时由后端注入最终提示词，模型按原文发声），点击编辑'
+      return `<span class="pk-dlg${over ? ' over' : ''}" data-dlg-id="${esc(d.id ?? '')}" title="${esc(tip)}"><span class="pk-dlg-tag">台词</span>${esc(d.speaker)}：${esc(d.text)}</span>`
     })
     .join('')
   return chips ? `<span class="pk-dialogues" contenteditable="false">${chips}</span>` : ''
@@ -629,11 +658,67 @@ function onClick(e: MouseEvent): void {
     void nextTick(() => nextTick(() => refinePopup(t, mentionRef.value, mentionPos)))
     return
   }
+  // 点击台词 chip → 打开台词编辑弹层（chip 及其内部 tag 都命中）
+  const dlgChip = t.closest?.('.pk-dlg') as HTMLElement | null
+  if (dlgChip) {
+    closeMention()
+    openDlgEdit(dlgChip)
+    return
+  }
   detectMention()
 }
 /** 按名字查实体（用于点击已引用 token 时定位回弹层） */
 function findEntityByName(name: string): MentionEntity | null {
   return (props.entities ?? []).find((e) => e.name === name) ?? null
+}
+
+// ==================== 台词编辑弹层 ====================
+const dlgEditRef = ref<HTMLElement | null>(null)
+const dlgEditInput = ref<HTMLTextAreaElement | null>(null)
+const dlgEditOpen = ref(false)
+const dlgEditId = ref('')
+const dlgEditShotNo = ref(0)
+const dlgEditSpeaker = ref('')
+const dlgEditText = ref('')
+/** 镜头时长（秒），从被点 chip 所在行的「时长」参数 token 读取，用于实时超长提示 */
+const dlgEditDuration = ref(0)
+const dlgEditPos = ref<{ left: number; top: number }>({ left: 12, top: 40 })
+const dlgEditStyle = computed<Record<string, string>>(() => ({
+  left: `${dlgEditPos.value.left}px`,
+  top: `${dlgEditPos.value.top}px`,
+}))
+const dlgEditSecs = computed(() => dlgEditText.value.trim().length / SPEECH_CHARS_PER_SEC)
+const dlgEditOver = computed(() => dlgEditDuration.value > 0 && dlgEditSecs.value > dlgEditDuration.value)
+
+function openDlgEdit(chip: HTMLElement): void {
+  const id = chip.getAttribute('data-dlg-id') || ''
+  const lineEl = chip.closest('.pk-line') as HTMLElement | null
+  const shotNo = Number(lineEl?.getAttribute('data-no')) || 0
+  const dlg = (props.dialoguesByShot?.[shotNo] ?? []).find((d) => d.id === id)
+  if (!id || !dlg) return // 无 id（不该发生：links/JSON 两路都带 id）→ 无法定位回写，不打开
+  dlgEditId.value = id
+  dlgEditShotNo.value = shotNo
+  dlgEditSpeaker.value = dlg.speaker
+  dlgEditText.value = dlg.text
+  const durTok = lineEl?.querySelector('.pk-token[data-key="时长"]')
+  dlgEditDuration.value = Number(durTok?.getAttribute('data-val')) || 0
+  dlgEditPos.value = anchorToRoot(chip)
+  dlgEditOpen.value = true
+  void nextTick(() => nextTick(() => {
+    refinePopup(chip, dlgEditRef.value, dlgEditPos)
+    dlgEditInput.value?.focus()
+  }))
+}
+function closeDlgEdit(): void { dlgEditOpen.value = false }
+function saveDlgEdit(): void {
+  const text = dlgEditText.value.trim()
+  if (!text) return
+  emit('update-dialogue', { id: dlgEditId.value, shotNumber: dlgEditShotNo.value, text })
+  closeDlgEdit()
+}
+function onDlgEditKey(e: KeyboardEvent): void {
+  if (e.key === 'Escape') { e.preventDefault(); closeDlgEdit() }
+  else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveDlgEdit() }
 }
 function pickParam(opt: ParamOption): void {
   const el = editorRef.value
@@ -767,6 +852,7 @@ function onDocMouse(e: MouseEvent): void {
   const hit = (refEl: HTMLElement | null) => refEl && refEl.contains(e.target as Node)
   if (!hit(mentionRef.value) && !hit(editorRef.value)) closeMention()
   if (!hit(paramRef.value) && !(e.target as HTMLElement).classList?.contains('pk-token')) paramOpen.value = false
+  if (!hit(dlgEditRef.value) && !(e.target as HTMLElement).closest?.('.pk-dlg')) dlgEditOpen.value = false
 }
 </script>
 
@@ -803,8 +889,9 @@ function onDocMouse(e: MouseEvent): void {
   :deep(.pk-dialogues) { display: block; margin: 1px 0 4px 24px; }
   :deep(.pk-dlg) {
     display: inline-block; margin: 0 6px 2px 0; padding: 0 8px; border-radius: 4px;
-    font-size: 12px; line-height: 1.8; cursor: default; user-select: none;
+    font-size: 12px; line-height: 1.8; cursor: pointer; user-select: none;
     color: var(--color-warning); background: var(--color-warning-light-9); border: 1px solid var(--color-warning-light-7);
+    &:hover { background: var(--color-warning-light-8); }
     .pk-dlg-tag {
       display: inline-block; margin-right: 4px; padding: 0 4px; border-radius: 3px;
       font-size: 10px; line-height: 1.6; vertical-align: 1px;
@@ -845,4 +932,30 @@ function onDocMouse(e: MouseEvent): void {
   .check { font-size: 12px; flex-shrink: 0; }
 }
 .popup-empty { padding: 16px; text-align: center; font-size: 12px; color: var(--text-color-placeholder); }
+
+/* 台词编辑弹层 */
+.dlg-popup { width: 320px; max-width: 360px; }
+.dlg-edit-body { padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.dlg-textarea {
+  width: 100%; resize: vertical; min-height: 56px; padding: 6px 8px;
+  font-size: 13px; line-height: 1.7; font-family: inherit;
+  border: 1px solid var(--border-color); border-radius: var(--radius-md);
+  background: var(--bg-color); color: var(--text-color-primary); outline: none;
+  &:focus { border-color: var(--color-primary); }
+}
+.dlg-meta {
+  font-size: 11px; color: var(--text-color-placeholder);
+  &.over { color: var(--color-danger); }
+  .dlg-over-tip { margin-left: 6px; font-weight: 600; }
+  .dlg-key-tip { float: right; }
+}
+.dlg-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.dlg-btn {
+  padding: 3px 14px; border-radius: 4px; border: 1px solid var(--border-color);
+  background: var(--bg-color); color: var(--text-color-primary); font-size: 12px; cursor: pointer;
+  &.primary {
+    background: var(--color-primary); border-color: var(--color-primary); color: #fff;
+    &:disabled { opacity: .5; cursor: not-allowed; }
+  }
+}
 </style>

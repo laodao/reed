@@ -95,8 +95,8 @@ describe('loadShotDialogues', () => {
     await link('sb1', 'd1', 0)
     const map = await loadShotDialogues(ds, [{ id: 'sb1', dialogueIds: [] }])
     expect(map.get('sb1')).toEqual([
-      { speaker: '沈云萝', text: '第一句' },
-      { speaker: '秦越', text: '第二句' },
+      { speaker: '沈云萝', text: '第一句', id: 'd1' },
+      { speaker: '秦越', text: '第二句', id: 'd2' },
     ])
   })
 
@@ -104,7 +104,7 @@ describe('loadShotDialogues', () => {
     await seedDialogue('d1', '沈云萝', '第一句', 0)
     await seedStoryboard('sb1', ['d1'])
     const map = await loadShotDialogues(ds, [{ id: 'sb1', dialogueIds: ['d1'] }])
-    expect(map.get('sb1')).toEqual([{ speaker: '沈云萝', text: '第一句' }])
+    expect(map.get('sb1')).toEqual([{ speaker: '沈云萝', text: '第一句', id: 'd1' }])
   })
 
   it('有 links 的分镜不再叠加 JSON 列（links 优先）', async () => {
@@ -113,7 +113,7 @@ describe('loadShotDialogues', () => {
     await seedStoryboard('sb1', ['d2'])
     await link('sb1', 'd1', 0)
     const map = await loadShotDialogues(ds, [{ id: 'sb1', dialogueIds: ['d2'] }])
-    expect(map.get('sb1')).toEqual([{ speaker: '沈云萝', text: 'links版' }])
+    expect(map.get('sb1')).toEqual([{ speaker: '沈云萝', text: 'links版', id: 'd1' }])
   })
 
   it('links 表不存在 → 静默回退 JSON 列', async () => {
@@ -122,7 +122,7 @@ describe('loadShotDialogues', () => {
     await seedDialogue('d1', '沈云萝', '第一句', 0)
     await seedStoryboard('sb1', ['d1'])
     const map = await loadShotDialogues(ds, [{ id: 'sb1', dialogueIds: ['d1'] }])
-    expect(map.get('sb1')).toEqual([{ speaker: '沈云萝', text: '第一句' }])
+    expect(map.get('sb1')).toEqual([{ speaker: '沈云萝', text: '第一句', id: 'd1' }])
   })
 
   it('两路皆空 → 该镜头无台词（不进 map）', async () => {

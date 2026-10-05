@@ -56,17 +56,17 @@ export async function loadShotDialogues(
   try {
     const ph = shots.map((_, i) => (isPg(ds) ? `$${i + 1}` : '?')).join(',')
     const rows = (await ds.query(
-      `SELECT l.storyboard_id AS sid, d.character_name AS speaker, d.text AS text
+      `SELECT l.storyboard_id AS sid, l.dialogue_id AS did, d.character_name AS speaker, d.text AS text
          FROM storyboard_dialogue_links l
          JOIN scene_dialogues d ON d.id = l.dialogue_id
         WHERE l.storyboard_id IN (${ph})
         ORDER BY l.storyboard_id, l.sort_order`,
       shots.map((s) => s.id),
-    )) as Array<{ sid: string; speaker: string; text: string }>
+    )) as Array<{ sid: string; did: string; speaker: string; text: string }>
     for (const r of rows) {
       if (!r?.text) continue
       const list = result.get(r.sid) ?? []
-      list.push({ speaker: r.speaker ?? '', text: r.text })
+      list.push({ speaker: r.speaker ?? '', text: r.text, id: String(r.did) })
       result.set(r.sid, list)
       linkedIds.add(r.sid)
     }
@@ -89,7 +89,7 @@ export async function loadShotDialogues(
       const list = ids
         .map((id) => byId.get(id))
         .filter((d): d is DialogueRow => !!d)
-        .map((d) => ({ speaker: d.speaker, text: d.text }))
+        .map((d) => ({ speaker: d.speaker, text: d.text, id: d.id }))
       if (list.length > 0) result.set(s.id, list)
     }
   }

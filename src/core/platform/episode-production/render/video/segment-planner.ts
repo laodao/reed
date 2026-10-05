@@ -96,6 +96,8 @@ export interface SegmentPromptShot {
 export interface SegmentDialogue {
   speaker: string
   text: string
+  /** scene_dialogues.id（前端编辑回写用；prompt 组装忽略此字段） */
+  id?: string
 }
 
 /**

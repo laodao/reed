@@ -87,3 +87,78 @@ describe('ShotPromptEditor 台词 chip', () => {
     w.unmount()
   })
 })
+
+describe('ShotPromptEditor 台词编辑', () => {
+  const DLG = { 1: [{ id: 'dlg_1', speaker: '沈云萝', text: '我饿了。' }] }
+
+  it('chip 携带 data-dlg-id（编辑回写定位用）', async () => {
+    const w = mountEditor(DLG)
+    await nextTick()
+    expect(w.find('.pk-dlg').attributes('data-dlg-id')).toBe('dlg_1')
+    w.unmount()
+  })
+
+  it('点击 chip → 打开编辑弹层（标题带说话人，textarea 含原文）', async () => {
+    const w = mountEditor(DLG)
+    await nextTick()
+    w.find('.pk-dlg').element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await nextTick()
+    const popup = w.find('.dlg-popup')
+    expect(popup.exists()).toBe(true)
+    expect(popup.find('.popup-title').text()).toContain('沈云萝')
+    expect((popup.find('.dlg-textarea').element as HTMLTextAreaElement).value).toBe('我饿了。')
+    w.unmount()
+  })
+
+  it('修改后保存 → emit update-dialogue（id + 镜头号 + 新文本），弹层关闭', async () => {
+    const w = mountEditor(DLG)
+    await nextTick()
+    w.find('.pk-dlg').element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await nextTick()
+    const ta = w.find('.dlg-textarea')
+    ;(ta.element as HTMLTextAreaElement).value = '  师兄，我饿了。  '
+    await ta.trigger('input')
+    await w.find('.dlg-btn.primary').trigger('click')
+    const emitted = w.emitted('update-dialogue')
+    expect(emitted).toBeTruthy()
+    expect(emitted![0][0]).toEqual({ id: 'dlg_1', shotNumber: 1, text: '师兄，我饿了。' })
+    expect(w.find('.dlg-popup').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('空白文本 → 保存按钮禁用，不允许空台词', async () => {
+    const w = mountEditor(DLG)
+    await nextTick()
+    w.find('.pk-dlg').element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await nextTick()
+    const ta = w.find('.dlg-textarea')
+    ;(ta.element as HTMLTextAreaElement).value = '   '
+    await ta.trigger('input')
+    expect((w.find('.dlg-btn.primary').element as HTMLButtonElement).disabled).toBe(true)
+    w.unmount()
+  })
+
+  it('Esc → 关闭弹层且不 emit', async () => {
+    const w = mountEditor(DLG)
+    await nextTick()
+    w.find('.pk-dlg').element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await nextTick()
+    await w.find('.dlg-textarea').trigger('keydown', { key: 'Escape' })
+    expect(w.find('.dlg-popup').exists()).toBe(false)
+    expect(w.emitted('update-dialogue')).toBeFalsy()
+    w.unmount()
+  })
+
+  it('编辑中实时显示超长提示（镜头 2s，文本超长 → meta 变 over）', async () => {
+    const w = mountEditor({ 1: [{ id: 'dlg_1', speaker: '沈云萝', text: '短。' }] })
+    await nextTick()
+    w.find('.pk-dlg').element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await nextTick()
+    const ta = w.find('.dlg-textarea')
+    ;(ta.element as HTMLTextAreaElement).value = '这是一段远远超过两秒镜头能说完的长台词'
+    await ta.trigger('input')
+    expect(w.find('.dlg-meta').classes()).toContain('over')
+    expect(w.find('.dlg-over-tip').exists()).toBe(true)
+    w.unmount()
+  })
+})

@@ -107,15 +107,8 @@
             <span v-if="previewIsSegmentVideo" class="seg-video-badge">片段视频 · {{ selectedShotSegment?.shotCount ?? '?' }} 镜一段</span>
           </div>
 
-          <!-- S-02 关键帧画廊（一致性修复 v2：assetRef 缺省路径下停用，仅 keyframe 回切时显示） -->
-          <div class="kf-gallery" v-if="videoRenderPath === 'keyframe'">
-            <span class="kf-title">关键帧</span>
-            <span class="kf-empty">关键帧已暂停</span>
-          </div>
-          <div class="kf-gallery" v-else>
-            <span class="kf-title">关键帧</span>
-            <span class="kf-empty" title="提示词引用资产模式：资产主图经参考板直达视频模型，关键帧链路已暂停">已停用（提示词引用资产模式）</span>
-          </div>
+          <!-- S-02 关键帧画廊：关键帧链路暂时下线（提示词引用资产模式直达视频模型），
+               占位提示一并隐藏；下方 v-if="false" 的原画廊代码保留供将来回切。 -->
           <div class="kf-gallery" v-if="false">
             <span class="kf-title">关键帧</span>
             <template v-if="kfGalleryHasImage">
@@ -183,6 +176,7 @@
             :style-options="styleOptions"
             :dialogues-by-shot="dialoguesByShot"
             @update:model-value="dirty = true"
+            @update-dialogue="onUpdateDialogue"
           />
 
           <!-- 操作 -->
@@ -490,14 +484,38 @@ function syncPrompt(): void {
  * （与视频 prompt 注入同源，links 表优先）。只读展示在分镜提示词行末，
  * 不进提示词字符串、不随保存写回 frameDescription。
  */
-const dialoguesByShot = computed<Record<number, Array<{ speaker: string; text: string }>>>(() => {
-  const map: Record<number, Array<{ speaker: string; text: string }>> = {}
+const dialoguesByShot = computed<Record<number, Array<{ speaker: string; text: string; id?: string }>>>(() => {
+  const map: Record<number, Array<{ speaker: string; text: string; id?: string }>> = {}
   for (const sb of shots.value) {
     const list = Array.isArray(sb.dialogues) ? sb.dialogues.filter((d: any) => d?.text) : []
     if (list.length > 0 && sb.shotNumber != null) map[sb.shotNumber] = list
   }
   return map
 })
+
+/**
+ * 台词 chip 编辑保存（2026-10-05）：写回 scene_dialogues——字幕与视频 prompt
+ * 注入的共同数据源，改一处全链路一致。成功后本地同步 shots[].dialogues
+ * （dialoguesByShot 计算属性随之更新、chip 重渲），无需整表重载。
+ */
+async function onUpdateDialogue(payload: { id: string; shotNumber: number; text: string }): Promise<void> {
+  try {
+    const r = await (window.electronAPI.episodeProduction as any).updateSceneDialogue(payload.id, payload.text)
+    if (!r?.success) {
+      ElMessage.error(r?.error || '台词保存失败')
+      return
+    }
+    outer: for (const sb of shots.value) {
+      if (!Array.isArray(sb.dialogues)) continue
+      for (const dlg of sb.dialogues) {
+        if (dlg?.id === payload.id) { dlg.text = payload.text; break outer }
+      }
+    }
+    ElMessage.success('台词已保存')
+  } catch (e: any) {
+    ElMessage.error(e?.message || '台词保存失败')
+  }
+}
 
 /**
  * 默认生成入口：片段级生成（视频片段制 §5——一次视频调用产出多镜一段）。
