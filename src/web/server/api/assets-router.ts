@@ -17,6 +17,32 @@ import { requireAuth } from '../auth/middleware'
 
 const router = Router()
 
+/**
+ * 可内联渲染的扩展名 → Content-Type 白名单（review M4 防御纵深）。
+ * 白名单外的扩展一律 application/octet-stream：遗留数据里可能仍有任意扩展名的
+ * 附件（上传侧白名单上线前的存量），sendFile 默认按扩展名推断 Content-Type，
+ * .html 会以 text/html 同源伺服构成存储型 XSS。svg 故意不在名单（可内嵌脚本）。
+ */
+const SAFE_INLINE_MIME: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  bmp: 'image/bmp',
+  ico: 'image/x-icon',
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  mov: 'video/quicktime',
+  mkv: 'video/x-matroska',
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+  m4a: 'audio/mp4',
+  aac: 'audio/aac',
+  ogg: 'audio/ogg',
+  txt: 'text/plain'
+}
+
 router.get('/*splat', requireAuth, async (req: Request, res: Response) => {
   const splat = (req.params as any).splat
   const relRaw = Array.isArray(splat) ? splat.join('/') : (splat ?? '')
@@ -39,7 +65,16 @@ router.get('/*splat', requireAuth, async (req: Request, res: Response) => {
       res.status(404).json({ ok: false, error: 'not found' })
       return
     }
-    res.sendFile(abs)
+    const ext = path.extname(abs).slice(1).toLowerCase()
+    res.sendFile(abs, {
+      // nosniff：禁止浏览器对 octet-stream 等响应做 MIME 嗅探升级
+      headers: { 'X-Content-Type-Options': 'nosniff' },
+      setHeaders: r => {
+        const mime = SAFE_INLINE_MIME[ext]
+        // 白名单内固定已知安全类型；白名单外强制下载（octet-stream），不猜 Content-Type
+        r.set('Content-Type', mime ?? 'application/octet-stream')
+      }
+    })
   })
 })
 
