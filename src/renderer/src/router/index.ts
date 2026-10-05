@@ -13,6 +13,7 @@
  */
 
 import { createRouter, createWebHashHistory, RouteRecordRaw } from 'vue-router'
+import { ElMessage } from 'element-plus'
 
 /**
  * 壳路由配置（业务包路由见 src/renderer/src/packs/）
@@ -64,6 +65,32 @@ router.beforeEach((to, _from, next) => {
     document.title = `${title} - The Bot`
   }
   next()
+})
+
+/**
+ * 懒加载失败兜底（2026-10-05）：视图 chunk 拉取失败时 vue-router 会静默中止导航，
+ * 用户看到的现象是"点菜单没有任何反应"。典型诱因：依赖/工具链升级（如 vite 大版本
+ * 跳跃）后 node_modules/.vite 里的陈旧缓存，或依赖安装不完整。
+ * 处置：首次失败 → 记下目标路由后整页 reload（清空浏览器模块缓存重试）；
+ * 10s 内重复失败 → 不再 reload（防死循环），只给出可操作提示。
+ */
+const DYNAMIC_IMPORT_FAIL_RE =
+  /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module/i
+const CHUNK_RETRY_KEY = 'router:chunk-reload-at'
+
+router.onError((error, to) => {
+  if (!DYNAMIC_IMPORT_FAIL_RE.test(error.message)) return
+  console.error('[router] 页面模块加载失败:', error.message)
+  const last = Number(sessionStorage.getItem(CHUNK_RETRY_KEY) || 0)
+  const now = Date.now()
+  if (now - last > 10_000) {
+    sessionStorage.setItem(CHUNK_RETRY_KEY, String(now))
+    // 先把 hash 指到目标路由再 reload：重启后直接落在用户想去的页面
+    if (to) window.location.hash = to.fullPath
+    window.location.reload()
+  } else {
+    void ElMessage.error('页面资源加载失败——请完全退出应用重新打开；仍失败则删除 node_modules/.vite 后重新 npm install')
+  }
 })
 
 export default router
