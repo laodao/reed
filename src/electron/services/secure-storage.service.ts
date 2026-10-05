@@ -38,21 +38,23 @@ export class SecureStorageService implements ISecureStorage {
 
   /**
    * 初始化安全存储
+   *
+   * 主密钥「有文件就加载」——即使 safeStorage 可用也要加载：库里可能同时存在
+   * 旧环境（无密钥环）写入的自定义 AES 密文，回退解密依赖它。
+   * 只有「safeStorage 不可用且无密钥文件」才新生成主密钥。
    */
   async initialize(): Promise<void> {
     if (this.initialized) {
       return
     }
 
-    // 使用 Electron 的 safeStorage 或回退到 crypto
-    if (safeStorage.isEncryptionAvailable()) {
-      this.initialized = true
-    } else {
+    this.masterKey = this.loadMasterKeyFromFile()
+    if (!this.masterKey && !safeStorage.isEncryptionAvailable()) {
       // 回退方案：持久化主密钥（load-or-generate）。
       // 早期版本每次启动随机生成，重启后所有已加密数据（如 API Key）永久无法解密。
-      this.masterKey = this.loadOrGenerateMasterKey()
-      this.initialized = true
+      this.masterKey = this.generateAndPersistMasterKey()
     }
+    this.initialized = true
   }
 
   /**
@@ -84,28 +86,40 @@ export class SecureStorageService implements ISecureStorage {
    * 解密数据
    * @param encryptedData - 加密的Base64字符串
    * @returns string - 解密后的明文
+   *
+   * 回退链：库里可能同时存在两种密文——safeStorage 密文（有密钥环环境写入）
+   * 与自定义 AES 密文（无密钥环环境写入）。加密后端随运行环境切换（换机器/
+   * 桌面会话/Electron 升级都会变），只试当前激活方式会让另一环境的存量密文
+   * 永久报「Invalid encrypted data format」。先试当前方式，失败再试另一条，
+   * 全部失败才抛错（错误里带上每种尝试的原始原因）。
    */
   decrypt(encryptedData: string): string {
     if (!this.initialized) {
       throw new Error('SecureStorage not initialized')
     }
 
-    try {
-      if (safeStorage.isEncryptionAvailable()) {
-        // 使用 Electron 的 safeStorage
-        const buffer = Buffer.from(encryptedData, 'base64')
-        return safeStorage.decryptString(buffer)
-      } else {
-        // 使用自定义解密
-        return this.decryptWithKey(encryptedData)
+    const attempts: string[] = []
+
+    if (safeStorage.isEncryptionAvailable()) {
+      try {
+        return safeStorage.decryptString(Buffer.from(encryptedData, 'base64'))
+      } catch (error) {
+        attempts.push(`safeStorage: ${error instanceof Error ? error.message : String(error)}`)
       }
-    } catch (error) {
-      console.error('解密失败:', error)
-      const rawMessage = error instanceof Error ? error.message : String(error)
-      throw new Error(
-        `API 密钥无法解密（可能更换了运行环境），请到 设置→AI 模型配置 重新编辑该提供商并重新输入密钥（原始错误：${rawMessage}）`,
-      )
     }
+
+    if (this.masterKey) {
+      try {
+        return this.decryptWithKey(encryptedData)
+      } catch (error) {
+        attempts.push(`master-key: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+
+    console.error('[SecureStorage] 解密失败，已尝试:', attempts.join(' | '))
+    throw new Error(
+      `API 密钥无法解密（密文可能来自缺少对应密钥的另一运行环境），请到 设置→AI 模型配置 重新编辑该提供商并重新输入密钥（已尝试：${attempts.length > 0 ? attempts.join('；') : '无可用解密方式'}）`,
+    )
   }
 
   /**
@@ -122,30 +136,33 @@ export class SecureStorageService implements ISecureStorage {
     return safeStorage.isEncryptionAvailable() || this.masterKey !== null
   }
 
-  /**
-   * 加载或生成持久化主密钥（回退方案用）
-   *
-   * 密钥以 base64 存于 userData/secure-key（权限 0600），重启后仍可解密旧数据。
-   * 文件缺失或内容损坏（解出非 32 字节）时重新生成并覆盖。
-   * @returns Buffer - 32字节的主密钥
-   */
-  private loadOrGenerateMasterKey(): Buffer {
-    const keyPath = path.join(app.getPath('userData'), 'secure-key')
+  /** userData 下的主密钥文件路径 */
+  private get keyPath(): string {
+    return path.join(app.getPath('userData'), 'secure-key')
+  }
 
+  /**
+   * 从文件加载主密钥（只读，绝不生成）。
+   * 文件缺失 → null（safeStorage 不可用时由调用方决定是否生成）；
+   * 内容损坏（解出非 32 字节）→ null 并记日志，不覆盖旧文件。
+   */
+  private loadMasterKeyFromFile(): Buffer | null {
     try {
-      const key = Buffer.from(fs.readFileSync(keyPath, 'utf8').trim(), 'base64')
+      const key = Buffer.from(fs.readFileSync(this.keyPath, 'utf8').trim(), 'base64')
       if (key.length === 32) {
         return key
       }
-      console.error('[SecureStorage] secure-key 内容损坏（非 32 字节），重新生成；旧加密数据将无法解密')
-    } catch (error: any) {
-      if (error?.code !== 'ENOENT') {
-        console.error('[SecureStorage] 读取 secure-key 失败，重新生成:', error)
-      }
+      console.error('[SecureStorage] secure-key 内容损坏（非 32 字节），忽略（旧自定义加密数据将无法回退解密）')
+    } catch {
+      /* ENOENT：首次运行无密钥文件，正常 */
     }
+    return null
+  }
 
+  /** 生成新主密钥并持久化到 userData/secure-key（权限 0600） */
+  private generateAndPersistMasterKey(): Buffer {
     const key = crypto.randomBytes(32)
-    fs.writeFileSync(keyPath, key.toString('base64'), { encoding: 'utf8', mode: 0o600 })
+    fs.writeFileSync(this.keyPath, key.toString('base64'), { encoding: 'utf8', mode: 0o600 })
     return key
   }
 
