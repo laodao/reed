@@ -11,6 +11,7 @@
     "dev": "set LANG=en_US.UTF-8 && set PYTHONIOENCODING=utf-8 && electron-vite dev",
     "dev:debug": "NO_AT_BRIDGE=1 electron-vite dev -- --remote-debugging-port=9222",
     "rebuild:electron": "npx @electron/rebuild -f -o better-sqlite3,canvas,nodejieba",
+    "diagnose": "node scripts/diagnose-env.cjs",
     "rebuild:node": "npm rebuild better-sqlite3 canvas nodejieba",
     "prepc:dev": "node scripts/clean-stale-vite-config.js",
     "pc:dev": "electron-vite dev -- --no-sandbox",
