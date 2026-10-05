@@ -13,7 +13,13 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import type { KbAtomRepository, KbAtomRecord } from '@core/database/repositories/kb-atom.repository'
 import type { KbAtomLayer } from '@core/database/entities/kb-brain/kb-atom.entity'
 import { extractJsonFromResponse } from '@core/platform/services/ai-call'
-import { defaultBrainLlm, type BrainLlmFn } from './llm'
+import {
+  createKbScopedLlm,
+  BRAIN_LLM_MAX_TOKENS,
+  type BrainLlmFn,
+  type BrainModelRef,
+  type KbScopedLlm
+} from './llm'
 import { LAYER_RELABEL_SYSTEM, buildLayerRelabelUser } from './prompts'
 
 /** 单批论断数：与 cleanup/consolidate 同量级 */
@@ -41,25 +47,31 @@ const EMPTY_PROGRESS: LayerRelabelProgress = {
   totalBatches: 0,
   processedBatches: 0,
   relabeledCount: 0,
-  failedBatches: 0,
+  failedBatches: 0
 }
 
 export class KbLayerRelabelService {
-  private readonly llm: BrainLlmFn
+  private readonly scoped: KbScopedLlm
   private readonly atomsFn: NonNullable<LayerRelabelDeps['atoms']> | undefined
   private readonly running = new Set<string>()
   private readonly progress = new Map<string, LayerRelabelProgress>()
-  /** 每库模型动态解析（handler 在 run 前注入 brainConfig.models.adjudicate） */
-  private modelOverrideFn: () => { providerConfigId?: string; modelId?: string } = () => ({})
 
   constructor(deps: LayerRelabelDeps = {}) {
-    this.llm = deps.llm ?? defaultBrainLlm('kb-brain-adjudicate', deps.modelOverride ?? (() => this.modelOverrideFn()))
+    // 模型解析按 kbId 隔离（review M7：单例并发跑多库不互踩）
+    this.scoped = createKbScopedLlm('kb-brain-adjudicate', {
+      injected: deps.llm,
+      fallback: deps.modelOverride
+    })
     this.atomsFn = deps.atoms
   }
 
-  /** 注入每库模型解析（run 前调用；llm 为注入型时无效） */
-  setModelOverride(fn: () => { providerConfigId?: string; modelId?: string }): void {
-    this.modelOverrideFn = fn
+  /** 注入每库模型解析（run 前按 kbId 调用；llm 为注入型时无效） */
+  setModelOverride(kbId: string, fn: () => BrainModelRef): void {
+    this.scoped.setOverride(kbId, fn)
+  }
+
+  private llmFor(kbId: string): BrainLlmFn {
+    return this.scoped.llmFor(kbId)
   }
 
   isRunning(kbId: string): boolean {
@@ -78,16 +90,17 @@ export class KbLayerRelabelService {
     const progress: LayerRelabelProgress = { ...EMPTY_PROGRESS, running: true }
     this.progress.set(kbId, progress)
     try {
-      const all = await atoms.findByKb(kbId, { status: ['supported', 'suspected', 'stale'], limit: 5000 })
-      const base = all.filter(
-        (a) => a.layer === 'detail' && !a.lensNoteId && a.origin !== 'human',
-      )
+      const all = await atoms.findByKb(kbId, {
+        status: ['supported', 'suspected', 'stale'],
+        limit: 5000
+      })
+      const base = all.filter(a => a.layer === 'detail' && !a.lensNoteId && a.origin !== 'human')
       const batches: KbAtomRecord[][] = []
       for (let i = 0; i < base.length; i += BATCH_SIZE) batches.push(base.slice(i, i + BATCH_SIZE))
       progress.totalBatches = batches.length
       for (const batch of batches) {
         try {
-          progress.relabeledCount += await this.runBatch(atoms, batch)
+          progress.relabeledCount += await this.runBatch(kbId, atoms, batch)
         } catch (e) {
           progress.failedBatches += 1
           progress.lastError = e instanceof Error ? e.message : String(e)
@@ -105,18 +118,24 @@ export class KbLayerRelabelService {
   }
 
   /** 单批：LLM 分层 → 按层分组改写。改写前按 id 重查（并发守卫），已不在库的跳过 */
-  private async runBatch(atoms: KbAtomRepository, batch: KbAtomRecord[]): Promise<number> {
-    const raw = await this.llm({
+  private async runBatch(
+    kbId: string,
+    atoms: KbAtomRepository,
+    batch: KbAtomRecord[]
+  ): Promise<number> {
+    const raw = await this.llmFor(kbId)({
       system: LAYER_RELABEL_SYSTEM,
-      user: buildLayerRelabelUser({ items: batch.map((a, i) => ({ idx: i, type: a.type, statement: a.statement })) }),
+      user: buildLayerRelabelUser({
+        items: batch.map((a, i) => ({ idx: i, type: a.type, statement: a.statement }))
+      }),
       // 8000：推理型模型思考计入输出预算（cleanup 同款真机实证），输出本身很小
-      maxTokens: 8000,
+      maxTokens: BRAIN_LLM_MAX_TOKENS
     })
     const pairs = parseRelabelOutput(raw, batch)
     if (pairs.length === 0) return 0
     // 并发守卫：分层是快照，改写前重查——已被归档/替代的跳过
-    const fresh = await atoms.findByIds(pairs.map((p) => p.id))
-    const freshOk = new Set(fresh.map((f) => f.id))
+    const fresh = await atoms.findByIds(pairs.map(p => p.id))
+    const freshOk = new Set(fresh.map(f => f.id))
     const byLayer = new Map<KbAtomLayer, string[]>()
     for (const p of pairs) {
       if (!freshOk.has(p.id)) continue
@@ -130,7 +149,10 @@ export class KbLayerRelabelService {
 }
 
 /** 解析分层输出：{layers:[{idx,layer}]}——编号收编/去重/越界与非法层过滤；解析失败抛错交单批 catch */
-export function parseRelabelOutput(raw: string, batch: Array<{ id: string }>): Array<{ id: string; layer: KbAtomLayer }> {
+export function parseRelabelOutput(
+  raw: string,
+  batch: Array<{ id: string }>
+): Array<{ id: string; layer: KbAtomLayer }> {
   const parsed = extractJsonFromResponse(raw) as Partial<{ layers: unknown }> | null
   const arr = Array.isArray(parsed?.layers) ? (parsed!.layers as unknown[]) : []
   const seen = new Set<number>()

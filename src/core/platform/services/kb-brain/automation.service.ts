@@ -25,9 +25,13 @@ import {
   parseBrainState,
   stringifyBrainState,
   type KbBrainConfig,
-  type KbBrainState,
+  type KbBrainState
 } from './brain-config'
-import { enqueueDigestForExisting, reviveExhaustedFor } from './digest-orchestrator.service'
+import {
+  enqueueDigestForExisting,
+  reviveExhaustedFor,
+  backfillScenesForKb
+} from './digest-orchestrator.service'
 import { getKbLayerRelabelService, KbLayerRelabelService } from './layer-relabel.service'
 import { getKbBookPassesService, KbBookPassesService } from './book-passes.service'
 import { getKbGoalDistillService, KbGoalDistillService } from './goal-distill.service'
@@ -38,7 +42,7 @@ import { parseModelRef } from './llm'
 
 const logger = createLogger('KbBrainAutomation')
 
-/** 各动作冷却（ms）：补标/书级/目标/归纳 24h，清理/伏笔 7d，耗尽章复活 24h */
+/** 各动作冷却（ms）：补标/书级/目标/归纳 24h，清理/伏笔 7d，耗尽章复活 24h，场面补采 6h（一轮 200 章） */
 const COOLDOWN = {
   relabel: 24 * 3600_000,
   bookPasses: 24 * 3600_000,
@@ -47,6 +51,7 @@ const COOLDOWN = {
   cleanup: 7 * 24 * 3600_000,
   foreshadow: 7 * 24 * 3600_000,
   reviveExhausted: 24 * 3600_000,
+  sceneBackfill: 6 * 3600_000
 } as const
 
 /** 目标重跑的论断增长门槛：工作集论断较上次自动运行增长 ≥10% 且至少 +1 条 */
@@ -62,6 +67,8 @@ export interface KbBrainAutomationDeps {
     enqueue(documentId: string): Promise<boolean> | boolean
     reviveExhausted(documentId: string): Promise<number>
   }
+  /** 存量场面补采（v2 P0 故事轨回填；缺省走 digest-orchestrator 的 activeService） */
+  sceneBackfill?: (kbId: string, batch?: number) => Promise<{ processed: number; scenes: number }>
   relabel?: Pick<KbLayerRelabelService, 'isRunning' | 'run' | 'setModelOverride'>
   bookPasses?: Pick<KbBookPassesService, 'isRunningKb' | 'runForKnowledgeBase' | 'setModelOverride'>
   goals?: Pick<KbGoalDistillService, 'isRunning' | 'runGoal' | 'setModelOverride'>
@@ -112,12 +119,20 @@ export class KbBrainAutomationService {
       kbs: db.knowledgeBases,
       docs: db.kbDocuments,
       atoms: db.kbAtoms,
-      passes: db.kbDigestPasses,
+      passes: db.kbDigestPasses
     }
   }
 
   private get digest(): NonNullable<KbBrainAutomationDeps['digest']> {
-    return this.depsDeps.digest ?? { enqueue: (id) => enqueueDigestForExisting(id, { revive: false }), reviveExhausted: reviveExhaustedFor }
+    return (
+      this.depsDeps.digest ?? {
+        enqueue: id => enqueueDigestForExisting(id, { revive: false }),
+        reviveExhausted: reviveExhaustedFor
+      }
+    )
+  }
+  private get sceneBackfillFn(): NonNullable<KbBrainAutomationDeps['sceneBackfill']> {
+    return this.depsDeps.sceneBackfill ?? ((kbId, batch) => backfillScenesForKb(kbId, batch))
   }
   private get relabel(): NonNullable<KbBrainAutomationDeps['relabel']> {
     return this.depsDeps.relabel ?? getKbLayerRelabelService()
@@ -150,7 +165,9 @@ export class KbBrainAutomationService {
     this.timer = setInterval(() => {
       void this.runAll()
     }, this.intervalMs)
-    logger.info(`[kb-brain-auto] 后台自动化已启动（开机 ${Math.round(this.initialDelayMs / 1000)}s 后首跑，之后每 ${Math.round(this.intervalMs / 60000)}min 巡检；各动作按冷却记账执行）`)
+    logger.info(
+      `[kb-brain-auto] 后台自动化已启动（开机 ${Math.round(this.initialDelayMs / 1000)}s 后首跑，之后每 ${Math.round(this.intervalMs / 60000)}min 巡检；各动作按冷却记账执行）`
+    )
   }
 
   stop(): void {
@@ -170,7 +187,7 @@ export class KbBrainAutomationService {
     if (!repos) return []
     let kbIds: string[] = []
     try {
-      kbIds = (await repos.kbs.findAll()).map((k) => k.id)
+      kbIds = (await repos.kbs.findAll()).map(k => k.id)
     } catch (e) {
       logger.warn(`[kb-brain-auto] 列库失败: ${e instanceof Error ? e.message : String(e)}`)
       return []
@@ -184,8 +201,8 @@ export class KbBrainAutomationService {
           (e): AutomationCycleResult => ({
             kbId,
             ran: [],
-            errors: [{ action: 'cycle', error: e instanceof Error ? e.message : String(e) }],
-          }),
+            errors: [{ action: 'cycle', error: e instanceof Error ? e.message : String(e) }]
+          })
         )
         .finally(() => this.cycleRunning.delete(kbId))
       results.push(cycle)
@@ -204,7 +221,9 @@ export class KbBrainAutomationService {
     try {
       cfg = parseBrainConfig(kb.brainConfig)
     } catch (e) {
-      logger.warn(`[kb-brain-auto] kb=${kbId} 配置损坏跳过: ${e instanceof Error ? e.message : String(e)}`)
+      logger.warn(
+        `[kb-brain-auto] kb=${kbId} 配置损坏跳过: ${e instanceof Error ? e.message : String(e)}`
+      )
       return { kbId, ran: [], skipped: 'disabled' }
     }
     if (!cfg?.enabled || !cfg.automation.enabled) return { kbId, ran: [], skipped: 'disabled' }
@@ -230,8 +249,8 @@ export class KbBrainAutomationService {
     //    （管线让位：消化完成的下一轮再跑下游提炼）
     if (auto.digest) {
       const docs = await repos.docs.findByKnowledgeBaseId(kbId)
-      const digesting = docs.some((d) => d.brainStatus === 'digesting')
-      const pending = docs.filter((d) => {
+      const digesting = docs.some(d => d.brainStatus === 'digesting')
+      const pending = docs.filter(d => {
         const s = d.brainStatus ?? ''
         return s !== 'digested' && s !== 'digesting' && s !== 'skipped'
       })
@@ -243,24 +262,47 @@ export class KbBrainAutomationService {
           await this.saveState(kbId, repos.kbs, state)
         }
         for (const d of pending) await this.digest.enqueue(d.id)
-        logger.info(`[kb-brain-auto] kb=${kbId} 续消化 ${pending.length} 篇（耗尽章按冷却复活），下游提炼等消化完成`)
+        logger.info(
+          `[kb-brain-auto] kb=${kbId} 续消化 ${pending.length} 篇（耗尽章按冷却复活），下游提炼等消化完成`
+        )
         return { kbId, ran: ['digest'] }
       }
     }
 
+    // 1.5 存量场面补采（v2 P0 故事轨）：已消化文档的 events-only 回填，每轮 ≤200 章、
+    //     6h 冷却 + 成本熔断（digest-orchestrator 内部同口径判定），台账幂等推进
+    if (auto.sceneBackfill && this.cool(state, 'lastSceneBackfillAt', COOLDOWN.sceneBackfill)) {
+      await step('scene-backfill', async () => {
+        const out = await this.sceneBackfillFn(kbId)
+        // 一轮跑满 200 章说明存量还没采完——冷却照记（熔断/日限才是真正的节流阀），
+        // processed=0 且台账全 done 时后续轮次自然空转零成本
+        this.mark(state, 'lastSceneBackfillAt')
+        await this.saveState(kbId, repos.kbs, state)
+        if (out.processed > 0)
+          logger.info(
+            `[kb-brain-auto] kb=${kbId} 场面补采 ${out.processed} 章 / ${out.scenes} 场面`
+          )
+      })
+    }
+
     // 2. 分层补标：仅「工作集全 detail」且论断池较上次补标有增长时触发
     const stats = await repos.atoms.statsByKb(kbId)
-    const workingTotal = (stats.byStatus.supported ?? 0) + (stats.byStatus.suspected ?? 0) + (stats.byStatus.stale ?? 0)
+    const workingTotal =
+      (stats.byStatus.supported ?? 0) +
+      (stats.byStatus.suspected ?? 0) +
+      (stats.byStatus.stale ?? 0)
     if (auto.layerRelabel && !this.relabel.isRunning(kbId)) {
       const allDetail =
         workingTotal > 0 &&
         (stats.byLayer.outline ?? 0) === 0 &&
         (stats.byLayer.setting ?? 0) === 0 &&
         (stats.byLayer.describe ?? 0) === 0
-      const grew = !state.automation?.relabelAtoms || workingTotal >= Math.ceil(state.automation.relabelAtoms * GOAL_RERUN_GROWTH) + 1
+      const grew =
+        !state.automation?.relabelAtoms ||
+        workingTotal >= Math.ceil(state.automation.relabelAtoms * GOAL_RERUN_GROWTH) + 1
       if (allDetail && grew && this.cool(state, 'lastLayerRelabelAt', COOLDOWN.relabel)) {
         await step('layer-relabel', async () => {
-          this.relabel.setModelOverride?.(this.modelOverride(cfg))
+          this.relabel.setModelOverride?.(kbId, this.modelOverride(cfg))
           await this.relabel.run(kbId)
           this.mark(state, 'lastLayerRelabelAt')
           state.automation = { ...state.automation, relabelAtoms: workingTotal }
@@ -270,11 +312,19 @@ export class KbBrainAutomationService {
     }
 
     // 3. 书级汇总：台账幂等（指纹未变的关自动跳过），冷却防空转
-    if (auto.bookPasses && !this.bookPasses.isRunningKb(kbId) && this.cool(state, 'lastBookPassesAt', COOLDOWN.bookPasses)) {
+    if (
+      auto.bookPasses &&
+      !this.bookPasses.isRunningKb(kbId) &&
+      this.cool(state, 'lastBookPassesAt', COOLDOWN.bookPasses)
+    ) {
       await step('book-passes', async () => {
-        this.bookPasses.setModelOverride(this.modelOverride(cfg))
+        this.bookPasses.setModelOverride(kbId, this.modelOverride(cfg))
         const docs = await repos.docs.findByKnowledgeBaseId(kbId)
-        await this.bookPasses.runForKnowledgeBase(kbId, cfg.profile?.contentType ?? '', docs.map((d) => d.id))
+        await this.bookPasses.runForKnowledgeBase(
+          kbId,
+          cfg.profile?.contentType ?? '',
+          docs.map(d => d.id)
+        )
         this.mark(state, 'lastBookPassesAt')
         await this.saveState(kbId, repos.kbs, state)
       })
@@ -282,18 +332,21 @@ export class KbBrainAutomationService {
 
     // 4. 目标提炼：首跑必跑；重跑需「冷却 + 论断池较上次增长」——素材没变不出近似卡
     if (auto.goalDistill) {
-      for (const goal of cfg.goals.filter((g) => g.enabled)) {
+      for (const goal of cfg.goals.filter(g => g.enabled)) {
         if (this.goals.isRunning(kbId, goal.id)) continue
         const last = state.automation?.goalRuns?.[goal.id]
         const cooled = !last?.at || this.nowFn() - Date.parse(last.at) >= COOLDOWN.goal
         const grew = !last || workingTotal >= Math.ceil(last.atoms * GOAL_RERUN_GROWTH) + 1
         if (!cooled || !grew) continue
         await step(`goal:${goal.name}`, async () => {
-          this.goals.setModelOverride(this.modelOverride(cfg))
+          this.goals.setModelOverride(kbId, this.modelOverride(cfg))
           await this.goals.runGoal(kbId, goal)
           state.automation = {
             ...state.automation,
-            goalRuns: { ...(state.automation?.goalRuns ?? {}), [goal.id]: { at: new Date(this.nowFn()).toISOString(), atoms: workingTotal } },
+            goalRuns: {
+              ...(state.automation?.goalRuns ?? {}),
+              [goal.id]: { at: new Date(this.nowFn()).toISOString(), atoms: workingTotal }
+            }
           }
           await this.saveState(kbId, repos.kbs, state)
         })
@@ -301,21 +354,33 @@ export class KbBrainAutomationService {
     }
 
     // 5-7. 池子整理（归纳/清理/伏笔）：冷却 + 单飞让位
-    if (auto.consolidate && !this.consolidate.isRunning(kbId) && this.cool(state, 'lastConsolidateAt', COOLDOWN.consolidate)) {
+    if (
+      auto.consolidate &&
+      !this.consolidate.isRunning(kbId) &&
+      this.cool(state, 'lastConsolidateAt', COOLDOWN.consolidate)
+    ) {
       await step('consolidate', async () => {
         await this.consolidate.run(kbId)
         this.mark(state, 'lastConsolidateAt')
         await this.saveState(kbId, repos.kbs, state)
       })
     }
-    if (auto.cleanup && !this.cleanup.isRunning(kbId) && this.cool(state, 'lastCleanupAt', COOLDOWN.cleanup)) {
+    if (
+      auto.cleanup &&
+      !this.cleanup.isRunning(kbId) &&
+      this.cool(state, 'lastCleanupAt', COOLDOWN.cleanup)
+    ) {
       await step('cleanup', async () => {
         await this.cleanup.run(kbId)
         this.mark(state, 'lastCleanupAt')
         await this.saveState(kbId, repos.kbs, state)
       })
     }
-    if (auto.foreshadow && !this.foreshadow.isRunning(kbId) && this.cool(state, 'lastForeshadowAt', COOLDOWN.foreshadow)) {
+    if (
+      auto.foreshadow &&
+      !this.foreshadow.isRunning(kbId) &&
+      this.cool(state, 'lastForeshadowAt', COOLDOWN.foreshadow)
+    ) {
       await step('foreshadow', async () => {
         await this.foreshadow.run(kbId)
         this.mark(state, 'lastForeshadowAt')
@@ -334,7 +399,10 @@ export class KbBrainAutomationService {
   }
 
   /** KB_BRAIN_DAILY_COST_LIMIT 熔断（与消化链路同口径：当日 calls 超限 → 本轮不做 LLM 动作） */
-  private async costExceeded(kbId: string, passes: Pick<KbDigestPassRepository, 'costByKb'>): Promise<boolean> {
+  private async costExceeded(
+    kbId: string,
+    passes: Pick<KbDigestPassRepository, 'costByKb'>
+  ): Promise<boolean> {
     const rawLimit = process.env.KB_BRAIN_DAILY_COST_LIMIT
     const limit = Number(rawLimit ?? '')
     if (!rawLimit || !Number.isFinite(limit) || limit <= 0) return false
@@ -342,13 +410,19 @@ export class KbBrainAutomationService {
     since.setHours(0, 0, 0, 0)
     const today = await passes.costByKb(kbId, since)
     if (today.calls > limit) {
-      logger.warn(`[kb-brain-auto] kb=${kbId} 成本熔断: 今日 ${today.calls} 次 > 限额 ${limit}，本轮跳过`)
+      logger.warn(
+        `[kb-brain-auto] kb=${kbId} 成本熔断: 今日 ${today.calls} 次 > 限额 ${limit}，本轮跳过`
+      )
       return true
     }
     return false
   }
 
-  private cool(state: KbBrainState, key: keyof NonNullable<KbBrainState['automation']>, cooldownMs: number): boolean {
+  private cool(
+    state: KbBrainState,
+    key: keyof NonNullable<KbBrainState['automation']>,
+    cooldownMs: number
+  ): boolean {
     const raw = state.automation?.[key]
     if (typeof raw !== 'string') return true
     const t = Date.parse(raw)
@@ -362,12 +436,14 @@ export class KbBrainAutomationService {
   private async saveState(
     kbId: string,
     kbs: Pick<KnowledgeBaseRepository, 'updateBrainState'>,
-    state: KbBrainState,
+    state: KbBrainState
   ): Promise<void> {
     try {
       await kbs.updateBrainState(kbId, stringifyBrainState(state))
     } catch (e) {
-      logger.warn(`[kb-brain-auto] kb=${kbId} 记账写回失败（不影响动作）: ${e instanceof Error ? e.message : String(e)}`)
+      logger.warn(
+        `[kb-brain-auto] kb=${kbId} 记账写回失败（不影响动作）: ${e instanceof Error ? e.message : String(e)}`
+      )
     }
   }
 }

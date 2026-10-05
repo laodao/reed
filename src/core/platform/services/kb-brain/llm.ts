@@ -40,7 +40,10 @@ export function parseModelRef(raw: string): { providerConfigId?: string; modelId
 }
 
 /** 环境变量模型覆盖（缺省回落宿主模型链） */
-export function brainModelOverride(kind: 'atomize' | 'adjudicate'): { providerConfigId?: string; modelId?: string } {
+export function brainModelOverride(kind: 'atomize' | 'adjudicate'): {
+  providerConfigId?: string
+  modelId?: string
+} {
   const raw = kind === 'atomize' ? process.env.KB_ATOMIZE_MODEL : process.env.KB_ADJUDICATE_MODEL
   if (!raw) return {}
   return parseModelRef(raw)
@@ -80,19 +83,79 @@ export function stitchContinuation(previous: string, continuation: string): stri
  */
 export function defaultBrainLlm(
   purpose: 'kb-brain-atomize' | 'kb-brain-adjudicate',
-  dynamicOverride?: () => { providerConfigId?: string; modelId?: string },
+  dynamicOverride?: () => { providerConfigId?: string; modelId?: string }
 ): BrainLlmFn {
   const once = (req: BrainLlmRequest): Promise<string> => {
-    const opts = dynamicOverride?.() ?? brainModelOverride(purpose === 'kb-brain-atomize' ? 'atomize' : 'adjudicate')
-    return generateCompletionText(purpose, { system: req.system, user: req.user, maxTokens: req.maxTokens }, opts)
+    const opts =
+      dynamicOverride?.() ??
+      brainModelOverride(purpose === 'kb-brain-atomize' ? 'atomize' : 'adjudicate')
+    return generateCompletionText(
+      purpose,
+      { system: req.system, user: req.user, maxTokens: req.maxTokens },
+      opts
+    )
   }
-  return async (req) => {
+  return async req => {
     let full = await once(req)
     let continues = 0
     while (continues < 2 && full && isJsonTruncated(full)) {
-      full = stitchContinuation(full, await once({ system: req.system, user: buildContinuePrompt(full), maxTokens: req.maxTokens }))
+      full = stitchContinuation(
+        full,
+        await once({
+          system: req.system,
+          user: buildContinuePrompt(full),
+          maxTokens: req.maxTokens
+        })
+      )
       continues++
     }
     return full
+  }
+}
+
+export type BrainModelRef = { providerConfigId?: string; modelId?: string }
+
+/**
+ * 每库（kbId）隔离的模型解析 + LLM 工厂（review M7）。
+ *
+ * 背景：goal-distill/cleanup/layer-relabel/book-passes 是模块级单例，handler 每次
+ * 请求用 setModelOverride 覆盖同一个共享解析函数——KB-A 提炼进行中（分钟级
+ * fire-and-forget）用户切到 KB-B 触发同类动作时，A 的后续 LLM 调用解析到 B 的
+ * 模型。改为按 kbId 存解析函数、调用时以当前 run 的 kbId 取（llm 实例按 kbId
+ * 缓存，dynamicOverride 闭包求值时查本 kb 的覆盖）。
+ *
+ * 优先级：kbId 覆盖 > 构造时 fallback（digest-orchestrator 等按库构造的场景）> env。
+ * injected（测试注入的 llm）存在时覆盖整体失效——与旧语义一致。
+ */
+export interface KbScopedLlm {
+  llmFor(kbId: string): BrainLlmFn
+  setOverride(kbId: string, fn: () => BrainModelRef): void
+}
+
+export function createKbScopedLlm(
+  purpose: 'kb-brain-atomize' | 'kb-brain-adjudicate',
+  opts: { injected?: BrainLlmFn; fallback?: () => BrainModelRef } = {}
+): KbScopedLlm {
+  const overrides = new Map<string, () => BrainModelRef>()
+  const cache = new Map<string, BrainLlmFn>()
+  return {
+    setOverride(kbId, fn) {
+      overrides.set(kbId, fn)
+    },
+    llmFor(kbId) {
+      if (opts.injected) return opts.injected
+      let llm = cache.get(kbId)
+      if (!llm) {
+        // kb 覆盖 > 构造 fallback > env——链到 env 而非空对象，否则会吞掉 env 覆盖
+        llm = defaultBrainLlm(purpose, () => {
+          const ref = overrides.get(kbId)?.() ?? opts.fallback?.()
+          return (
+            ref ?? brainModelOverride(purpose === 'kb-brain-atomize' ? 'atomize' : 'adjudicate')
+          )
+        })
+        cache.set(kbId, llm)
+      }
+      return llm
+    }
   }
 }

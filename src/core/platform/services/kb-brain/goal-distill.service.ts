@@ -17,7 +17,13 @@ import type { KbChapterRepository } from '@core/database/repositories/kb-chapter
 import type { KbNoteRepository } from '@core/database/repositories/kb-note.repository'
 import type { KbDocumentRepository } from '@core/database/repositories/kb-document.repository'
 import { extractJsonFromResponse } from '@core/platform/services/ai-call'
-import { defaultBrainLlm, BRAIN_LLM_MAX_TOKENS, type BrainLlmFn } from './llm'
+import {
+  createKbScopedLlm,
+  BRAIN_LLM_MAX_TOKENS,
+  type BrainLlmFn,
+  type BrainModelRef,
+  type KbScopedLlm
+} from './llm'
 import type { KbBrainGoal } from './brain-config'
 
 const logger = createLogger('KbBrainGoalDistill')
@@ -36,7 +42,11 @@ const CLOSE_READ_CHARS = 12000
 export interface GoalDistillDeps {
   llm?: BrainLlmFn
   modelOverride?: () => { providerConfigId?: string; modelId?: string }
-  repos?: () => { docs: KbDocumentRepository; chapters: KbChapterRepository; notes: KbNoteRepository } | null
+  repos?: () => {
+    docs: KbDocumentRepository
+    chapters: KbChapterRepository
+    notes: KbNoteRepository
+  } | null
 }
 
 export interface GoalDistillOutcome {
@@ -79,17 +89,18 @@ interface Nomination {
 }
 
 export class KbGoalDistillService {
-  private readonly llm: BrainLlmFn
+  private readonly scoped: KbScopedLlm
   private readonly reposFn: NonNullable<GoalDistillDeps['repos']>
   /** 进行中的 (kbId:goalId)——单飞防重复点击 */
   private readonly running = new Set<string>()
-  /** 每库模型动态解析（handler 在 runGoal 前注入 brainConfig.models.adjudicate；
-   *  单例保持 running 锁，override 按请求读取——真机反馈：写死宿主默认模型会让
-   *  每库配置形同虚设） */
-  private modelOverrideFn: () => { providerConfigId?: string; modelId?: string } = () => ({})
 
   constructor(deps: GoalDistillDeps = {}) {
-    this.llm = deps.llm ?? defaultBrainLlm('kb-brain-adjudicate', deps.modelOverride ?? (() => this.modelOverrideFn())) // 经验提炼走高档
+    // 经验提炼走高档。模型解析按 kbId 隔离（review M7）：单例并发跑多库时，
+    // 共享 override 会让 A 库进行中的调用解析到 B 库的模型
+    this.scoped = createKbScopedLlm('kb-brain-adjudicate', {
+      injected: deps.llm,
+      fallback: deps.modelOverride
+    })
     this.reposFn =
       deps.repos ??
       (() => {
@@ -99,19 +110,23 @@ export class KbGoalDistillService {
       })
   }
 
+  private llmFor(kbId: string): BrainLlmFn {
+    return this.scoped.llmFor(kbId)
+  }
+
   isRunning(kbId: string, goalId: string): boolean {
     return this.running.has(`${kbId}:${goalId}`)
   }
 
-  /** 注入每库模型解析（runGoal 前调用；llm 为注入型时无效） */
-  setModelOverride(fn: () => { providerConfigId?: string; modelId?: string }): void {
-    this.modelOverrideFn = fn
+  /** 注入每库模型解析（runGoal 前按 kbId 调用；llm 为注入型时无效） */
+  setModelOverride(kbId: string, fn: () => BrainModelRef): void {
+    this.scoped.setOverride(kbId, fn)
   }
 
   /** 某库当前在提炼中的 goalId 列表（前端轮询状态用） */
   runningGoals(kbId: string): string[] {
     const prefix = `${kbId}:`
-    return [...this.running].filter((k) => k.startsWith(prefix)).map((k) => k.slice(prefix.length))
+    return [...this.running].filter(k => k.startsWith(prefix)).map(k => k.slice(prefix.length))
   }
 
   async runGoal(kbId: string, goal: KbBrainGoal): Promise<GoalDistillOutcome> {
@@ -135,7 +150,7 @@ export class KbGoalDistillService {
     repos: { chapters: KbChapterRepository },
     nominations: Nomination[],
     fragments: MapFragment[],
-    fragmentDocIds: string[],
+    fragmentDocIds: string[]
   ): Promise<number> {
     if (nominations.length === 0) return 0
     const top = [...nominations].sort((a, b) => b.score - a.score).slice(0, MAX_CLOSE_READ)
@@ -147,7 +162,11 @@ export class KbGoalDistillService {
         if (!content) continue
         const user = buildCloseReadUser(goal, n, content.slice(0, CLOSE_READ_CHARS))
         // 6000：推理型模型思考计入输出预算，2500 会被耗尽返回空文本（deepseek 真机实证）
-        const raw = await this.llm({ system: MAP_SYSTEM, user, maxTokens: BRAIN_LLM_MAX_TOKENS })
+        const raw = await this.llmFor(kbId)({
+          system: MAP_SYSTEM,
+          user,
+          maxTokens: BRAIN_LLM_MAX_TOKENS
+        })
         const parsed = extractJsonFromResponse(raw) as Partial<{ fragments: MapFragment[] }> | null
         for (const f of parsed?.fragments ?? []) {
           if (typeof f?.info !== 'string' || !f.info.trim()) continue
@@ -156,13 +175,15 @@ export class KbGoalDistillService {
             info: f.info,
             note: typeof f.note === 'string' ? f.note : '',
             documentId: n.documentId,
-            chapterId: n.chapterId,
+            chapterId: n.chapterId
           })
           fragmentDocIds.push(n.documentId)
         }
         done++
       } catch (e) {
-        logger.warn(`[kb-brain-goal] kb=${kbId} goal=${goal.name} 精读 ${n.label} 失败跳过: ${e instanceof Error ? e.message : String(e)}`)
+        logger.warn(
+          `[kb-brain-goal] kb=${kbId} goal=${goal.name} 精读 ${n.label} 失败跳过: ${e instanceof Error ? e.message : String(e)}`
+        )
       }
     }
     logger.info(`[kb-brain-goal] kb=${kbId} goal=${goal.name} 精读完成 ${done}/${top.length} 章`)
@@ -187,7 +208,7 @@ export class KbGoalDistillService {
           label: `《${book}》#${i + 1} ${c.title}`,
           text: text.slice(0, SUMMARY_CHARS),
           documentId: doc.id,
-          chapterId: c.id,
+          chapterId: c.id
         })
       })
     }
@@ -206,13 +227,22 @@ export class KbGoalDistillService {
     for (let b = 0; b < batches; b++) {
       const slice = sampled.slice(b * CHAPTERS_PER_BATCH, (b + 1) * CHAPTERS_PER_BATCH)
       const user = buildMapUser(goal, slice)
-      let parsed: Partial<{ fragments: MapFragment[]; nominations: Array<{ chapter: string; reason: string; score: number }> }> | null
+      let parsed: Partial<{
+        fragments: MapFragment[]
+        nominations: Array<{ chapter: string; reason: string; score: number }>
+      }> | null
       try {
         // 6000：推理型模型思考计入输出预算，2500 会被耗尽返回空文本（deepseek 真机实证）
-        const raw = await this.llm({ system: MAP_SYSTEM, user, maxTokens: BRAIN_LLM_MAX_TOKENS })
+        const raw = await this.llmFor(kbId)({
+          system: MAP_SYSTEM,
+          user,
+          maxTokens: BRAIN_LLM_MAX_TOKENS
+        })
         parsed = extractJsonFromResponse(raw) as typeof parsed
       } catch (e) {
-        logger.warn(`[kb-brain-goal] kb=${kbId} goal=${goal.name} 第 ${b + 1}/${batches} 批提取失败，跳过: ${e instanceof Error ? e.message : String(e)}`)
+        logger.warn(
+          `[kb-brain-goal] kb=${kbId} goal=${goal.name} 第 ${b + 1}/${batches} 批提取失败，跳过: ${e instanceof Error ? e.message : String(e)}`
+        )
         continue
       }
       for (const f of parsed?.fragments ?? []) {
@@ -220,16 +250,16 @@ export class KbGoalDistillService {
         // 章节标签双向对回取材清单（防幻觉编章）：模型可能回完整标签、只回 #N 标题、或编造——
         // 对不上的强制用本批首个标签：素材必来自本批，编造的出处比「近似但可能不准」的标注更糟
         const matched = slice.find(
-          (u) =>
+          u =>
             (typeof f.chapter === 'string' && f.chapter.includes(u.label.slice(1, 20))) ||
-            (typeof f.chapter === 'string' && u.label.includes(f.chapter.trim())),
+            (typeof f.chapter === 'string' && u.label.includes(f.chapter.trim()))
         )
         fragments.push({
           chapter: matched?.label ?? slice[0].label,
           info: f.info,
           note: typeof f.note === 'string' ? f.note : '',
           documentId: matched?.documentId ?? slice[0].documentId,
-          chapterId: matched?.chapterId,
+          chapterId: matched?.chapterId
         })
         fragmentDocIds.push(matched?.documentId ?? slice[0].documentId)
       }
@@ -237,7 +267,7 @@ export class KbGoalDistillService {
       for (const n of parsed?.nominations ?? []) {
         if (typeof n?.chapter !== 'string') continue
         const matched = slice.find(
-          (u) => u.label.includes(n.chapter.trim()) || n.chapter.includes(u.label.slice(1, 20)),
+          u => u.label.includes(n.chapter.trim()) || n.chapter.includes(u.label.slice(1, 20))
         )
         if (!matched) continue
         nominations.push({
@@ -245,26 +275,49 @@ export class KbGoalDistillService {
           chapterId: matched.chapterId,
           documentId: matched.documentId,
           score: Number(n.score) || 3,
-          reason: typeof n.reason === 'string' ? n.reason : '',
+          reason: typeof n.reason === 'string' ? n.reason : ''
         })
       }
     }
     if (batches >= MAX_BATCHES && sampled.length > MAX_BATCHES * CHAPTERS_PER_BATCH) {
-      logger.warn(`[kb-brain-goal] kb=${kbId} goal=${goal.name} 章节 ${units.length} 超出单次上限，均匀采样 ${sampled.length} 章覆盖全书`)
+      logger.warn(
+        `[kb-brain-goal] kb=${kbId} goal=${goal.name} 章节 ${units.length} 超出单次上限，均匀采样 ${sampled.length} 章覆盖全书`
+      )
     }
 
     // 2.5 精读：提名章读全文（摘要只能指出"哪里可能有货"，写法层面的经验必须读原文）
-    const closeReadN = await this.closeReadStage(kbId, goal, repos, nominations, fragments, fragmentDocIds)
+    const closeReadN = await this.closeReadStage(
+      kbId,
+      goal,
+      repos,
+      nominations,
+      fragments,
+      fragmentDocIds
+    )
     void closeReadN
     if (fragments.length === 0) {
-      return { batches, fragments: 0, proposed: false, skippedDuplicate: false, cardTitle: null, cards: 0 }
+      return {
+        batches,
+        fragments: 0,
+        proposed: false,
+        skippedDuplicate: false,
+        cardTitle: null,
+        cards: 0
+      }
     }
 
     // 3. reduce 两段式：先按素材分主题，再逐主题各出一张卡——
     //    每次调用只写一张卡，篇幅不被单次输出上限挤压；主题数由素材驱动，审批走批量动线
     if (fragments.length < 2) {
       // 单条素材凑不成主题组（每组需 ≥2 条）——安静返回，不报错不硬出卡
-      return { batches, fragments: fragments.length, proposed: false, skippedDuplicate: false, cardTitle: null, cards: 0 }
+      return {
+        batches,
+        fragments: fragments.length,
+        proposed: false,
+        skippedDuplicate: false,
+        cardTitle: null,
+        cards: 0
+      }
     }
     // 3a. 主题分组（失败重试 1 次）
     interface ReduceCard {
@@ -279,19 +332,28 @@ export class KbGoalDistillService {
     let themes: ThemeGroup[] = []
     let lastError = ''
     for (let attempt = 0; attempt < 2; attempt++) {
-      const user = buildThemesUser(goal, fragments) + (lastError ? `\n\n【上次输出不合法】\n${lastError}\n请重新输出完整合法的 JSON。` : '')
+      const user =
+        buildThemesUser(goal, fragments) +
+        (lastError ? `\n\n【上次输出不合法】\n${lastError}\n请重新输出完整合法的 JSON。` : '')
       try {
-        const raw = await this.llm({ system: REDUCE_SYSTEM, user, maxTokens: BRAIN_LLM_MAX_TOKENS })
+        const raw = await this.llmFor(kbId)({
+          system: REDUCE_SYSTEM,
+          user,
+          maxTokens: BRAIN_LLM_MAX_TOKENS
+        })
         const parsed = extractJsonFromResponse(raw) as Partial<{ themes: unknown }> | null
-        const inBounds = (i: unknown): i is number => Number.isInteger(i) && (i as number) >= 0 && (i as number) < fragments.length
-        const cleaned: ThemeGroup[] = (Array.isArray(parsed?.themes) ? (parsed!.themes as unknown[]) : [])
-          .map((t) => t as Partial<ThemeGroup>)
-          .filter((t) => typeof t?.name === 'string' && t.name.trim() && Array.isArray(t.idx))
-          .map((t) => ({
+        const inBounds = (i: unknown): i is number =>
+          Number.isInteger(i) && (i as number) >= 0 && (i as number) < fragments.length
+        const cleaned: ThemeGroup[] = (
+          Array.isArray(parsed?.themes) ? (parsed!.themes as unknown[]) : []
+        )
+          .map(t => t as Partial<ThemeGroup>)
+          .filter(t => typeof t?.name === 'string' && t.name.trim() && Array.isArray(t.idx))
+          .map(t => ({
             name: (t as { name: string }).name.trim(),
-            idx: [...new Set((t as { idx: unknown[] }).idx.filter(inBounds))],
+            idx: [...new Set((t as { idx: unknown[] }).idx.filter(inBounds))]
           }))
-          .filter((t) => t.idx.length >= 2) // 单条素材不成卡
+          .filter(t => t.idx.length >= 2) // 单条素材不成卡
         if (cleaned.length === 0) throw new Error('themes 为空或全部非法')
         // 重名主题加序号后缀：防止 fallback 标题碰撞后被同题去重静默吞卡
         const seenName = new Set<string>()
@@ -304,7 +366,9 @@ export class KbGoalDistillService {
           seenName.add(t.name)
         }
         if (cleaned.length > MAX_THEMES_PER_GOAL) {
-          logger.warn(`[kb-brain-goal] 主题数 ${cleaned.length} 超上限，裁到 ${MAX_THEMES_PER_GOAL}`)
+          logger.warn(
+            `[kb-brain-goal] 主题数 ${cleaned.length} 超上限，裁到 ${MAX_THEMES_PER_GOAL}`
+          )
         }
         themes = cleaned.slice(0, MAX_THEMES_PER_GOAL)
         break
@@ -318,11 +382,18 @@ export class KbGoalDistillService {
     const cards: ReduceCard[] = []
     const evidences: string[] = []
     for (const theme of themes) {
-      const themedFrags = theme.idx.map((i) => fragments[i]!).filter(Boolean)
+      const themedFrags = theme.idx.map(i => fragments[i]!).filter(Boolean)
       if (themedFrags.length < 2) continue
       // 卡级证据：只挂本主题素材（前 30 条），quote=章节标签（人读）+ documentId/chapterId（程序跳转）
       const cardEvidence = JSON.stringify(
-        themedFrags.slice(0, 30).map((f) => ({ quote: f.chapter, note: f.note, documentId: f.documentId, chapterId: f.chapterId })),
+        themedFrags
+          .slice(0, 30)
+          .map(f => ({
+            quote: f.chapter,
+            note: f.note,
+            documentId: f.documentId,
+            chapterId: f.chapterId
+          }))
       )
       let card: ReduceCard | null = null
       let cardError = ''
@@ -331,16 +402,23 @@ export class KbGoalDistillService {
           buildThemeCardUser(goal, theme.name, themedFrags) +
           (cardError ? `\n\n【上次输出不合法】\n${cardError}\n请重新输出完整合法的 JSON。` : '')
         try {
-          const raw = await this.llm({ system: REDUCE_SYSTEM, user, maxTokens: BRAIN_LLM_MAX_TOKENS })
+          const raw = await this.llmFor(kbId)({
+            system: REDUCE_SYSTEM,
+            user,
+            maxTokens: BRAIN_LLM_MAX_TOKENS
+          })
           const parsed = extractJsonFromResponse(raw) as Partial<ReduceCard> | null
           if (!parsed?.body || typeof parsed.body !== 'string' || !parsed.body.trim()) {
             throw new Error('缺少 body')
           }
           card = {
-            title: (typeof parsed.title === 'string' && parsed.title.trim()) || `经验：${goal.name}·${theme.name}`,
+            title:
+              (typeof parsed.title === 'string' && parsed.title.trim()) ||
+              `经验：${goal.name}·${theme.name}`,
             description:
-              (typeof parsed.description === 'string' && parsed.description.trim()) || `从本书提炼的「${goal.name}」经验`,
-            body: parsed.body,
+              (typeof parsed.description === 'string' && parsed.description.trim()) ||
+              `从本书提炼的「${goal.name}」经验`,
+            body: parsed.body
           }
           break
         } catch (e) {
@@ -361,7 +439,7 @@ export class KbGoalDistillService {
     let skippedDup = false
     for (const card of cards) {
       const similar = await repos.notes.findSimilarTitle(kbId, card.title)
-      if (similar.some((s) => s.title === card.title && s.status !== 'archived')) {
+      if (similar.some(s => s.title === card.title && s.status !== 'archived')) {
         skippedDup = true
         continue
       }
@@ -374,7 +452,7 @@ export class KbGoalDistillService {
         origin: 'ai-distill',
         // 目标标记：卡是哪个提炼目标产的——待审箱/经验卡按此显示「来源目标」，
         // 用户不再面对一堆不知类型的 synthesis 碎片卡
-        tags: JSON.stringify([`goal:${goal.id}`, `goal-name:${goal.name}`]),
+        tags: JSON.stringify([`goal:${goal.id}`, `goal-name:${goal.name}`])
       })
       proposedCount++
     }
@@ -384,7 +462,7 @@ export class KbGoalDistillService {
       proposed: proposedCount > 0,
       skippedDuplicate: skippedDup && proposedCount === 0,
       cardTitle: cards[0]!.title,
-      cards: proposedCount,
+      cards: proposedCount
     }
   }
 }
@@ -401,9 +479,10 @@ export function getKbGoalDistillService(): KbGoalDistillService {
 export function shortBookName(fileName: string): string {
   const noExt = fileName.replace(/\.(epub|mobi|azw3|txt|pdf|docx?)\s*$/i, '')
   const noParens = noExt.replace(/[（(【[].*$/, '').trim()
-  const noDash = noParens.includes('-') && noParens.indexOf('-') <= 6
-    ? noParens.slice(noParens.indexOf('-') + 1).trim()
-    : noParens
+  const noDash =
+    noParens.includes('-') && noParens.indexOf('-') <= 6
+      ? noParens.slice(noParens.indexOf('-') + 1).trim()
+      : noParens
   return noDash || fileName
 }
 
@@ -411,7 +490,10 @@ export function shortBookName(fileName: string): string {
  * 取材均匀采样：总章数超出单次容量时，按文档篇幅比例分配名额、文档内等距抽取
  * （保每本书的开头-中段-结局都进素材；截头会让多书库只提炼到第一本的开头）。
  */
-export function sampleUnitsEvenly<T extends { documentId: string }>(units: T[], capacity: number): T[] {
+export function sampleUnitsEvenly<T extends { documentId: string }>(
+  units: T[],
+  capacity: number
+): T[] {
   if (units.length <= capacity) return units
   const byDoc = new Map<string, T[]>()
   for (const u of units) {
@@ -424,7 +506,10 @@ export function sampleUnitsEvenly<T extends { documentId: string }>(units: T[], 
   let remaining = capacity
   docs.forEach((docUnits, di) => {
     // 按篇幅比例分配（最后一档吃余量，避免取整误差丢名额）
-    const quota = di === docs.length - 1 ? remaining : Math.max(1, Math.round((docUnits.length / units.length) * capacity))
+    const quota =
+      di === docs.length - 1
+        ? remaining
+        : Math.max(1, Math.round((docUnits.length / units.length) * capacity))
     const take = Math.min(quota, remaining, docUnits.length)
     remaining -= take
     const step = docUnits.length / take
@@ -434,7 +519,7 @@ export function sampleUnitsEvenly<T extends { documentId: string }>(units: T[], 
 }
 
 function buildMapUser(goal: KbBrainGoal, slice: Array<{ label: string; text: string }>): string {
-  const lines = slice.map((u) => `【${u.label}】\n${u.text}`)
+  const lines = slice.map(u => `【${u.label}】\n${u.text}`)
   return [
     `【提炼目标】${goal.name}`,
     goal.hint,
@@ -449,7 +534,7 @@ function buildMapUser(goal: KbBrainGoal, slice: Array<{ label: string; text: str
     '没有相关内容就输出 {"fragments":[],"nominations":[]}。禁止编造摘要中没有的信息。',
     '',
     '【章节摘要】',
-    ...lines,
+    ...lines
   ].join('\n')
 }
 
@@ -460,17 +545,21 @@ function buildCloseReadUser(goal: KbBrainGoal, n: Nomination, content: string): 
     '',
     `下面是提名章的全文（${n.label}，提名理由：${n.reason || '与目标相关'}）。`,
     '细读原文，提取与提炼目标直接相关的素材——写法层面（怎么写的）与设定层面（写了什么）并重，输出 JSON：',
-    '{"fragments":[{"chapter":"' + n.label + '","info":"具体信息，引用/概括原文关键句","note":"一句话说明它对目标的价值"}]}',
+    '{"fragments":[{"chapter":"' +
+      n.label +
+      '","info":"具体信息，引用/概括原文关键句","note":"一句话说明它对目标的价值"}]}',
     '没有相关内容就输出 {"fragments":[]}。禁止编造原文没有的信息。',
     '',
     '【章全文】',
-    content,
+    content
   ].join('\n')
 }
 
 /** 主题分组（reduce 第一段）：只分组不写卡——组数由素材主题数决定，每次调用不受多卡篇幅挤压 */
 function buildThemesUser(goal: KbBrainGoal, fragments: MapFragment[]): string {
-  const lines = fragments.map((f, i) => `[${i}] [${f.chapter}] ${f.info}${f.note ? `（${f.note}）` : ''}`)
+  const lines = fragments.map(
+    (f, i) => `[${i}] [${f.chapter}] ${f.info}${f.note ? `（${f.note}）` : ''}`
+  )
   return [
     '【主题分组】',
     `【提炼目标】${goal.name}`,
@@ -485,13 +574,17 @@ function buildThemesUser(goal: KbBrainGoal, fragments: MapFragment[]): string {
     '要求：每个 idx 至少 2 条；同一素材确实与多个主题都相关时可重复出现；禁止编造编号。',
     '',
     '【素材】',
-    ...lines,
+    ...lines
   ].join('\n')
 }
 
 /** 逐主题出卡（reduce 第二段）：一次调用只写一张卡，正文预算完整 */
-function buildThemeCardUser(goal: KbBrainGoal, themeName: string, fragments: MapFragment[]): string {
-  const lines = fragments.map((f) => `- [${f.chapter}] ${f.info}${f.note ? `（${f.note}）` : ''}`)
+function buildThemeCardUser(
+  goal: KbBrainGoal,
+  themeName: string,
+  fragments: MapFragment[]
+): string {
+  const lines = fragments.map(f => `- [${f.chapter}] ${f.info}${f.note ? `（${f.note}）` : ''}`)
   return [
     `【提炼目标】${goal.name}`,
     goal.hint,
@@ -506,6 +599,6 @@ function buildThemeCardUser(goal: KbBrainGoal, themeName: string, fragments: Map
     '4) 素材不足的部分明确写「素材不足，待补充」，禁止编造。',
     '',
     '【素材】',
-    ...lines,
+    ...lines
   ].join('\n')
 }
