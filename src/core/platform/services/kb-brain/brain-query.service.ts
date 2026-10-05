@@ -18,6 +18,7 @@ import type { KbKnowledgeEdgeRepository } from '@core/database/repositories/kb-k
 import type { SearchResult } from '@shared/types/knowledge-base.types'
 import { CRAG_SYSTEM } from './prompts'
 import { parseVectorNamespace } from './vector-namespace'
+import { detectLayerBoost, layerWeightOf } from './layer-intent'
 import { tokenizeForIndex } from '@core/platform/services/kb-tokenize'
 import { personalizedPageRank } from '@core/platform/services/graph/ppr'
 
@@ -212,10 +213,12 @@ export class BrainQueryService {
       const atomIdList = [...new Set(parsed.filter((p) => p.result.kind === 'atom').map((p) => (p.result.atom as { id: string }).id))]
       const atomCreatedAt = new Map<string, Date>()
       const atomUseCount = new Map<string, number>()
+      const atomLayer = new Map<string, string>()
       if (atomIdList.length > 0 && this.deps.atoms) {
         for (const a of await this.deps.atoms.findByIds(atomIdList)) {
           atomCreatedAt.set(a.id, a.createdAt ?? new Date())
           atomUseCount.set(a.id, a.useCount)
+          atomLayer.set(a.id, a.layer)
         }
       }
       const deduped = parsed
@@ -232,13 +235,16 @@ export class BrainQueryService {
         })
       // M4 软衰减（呈现层，§6.3）：排序键 = fused × boost；boost = 1/(1+ageDays/180) × (1+ln(1+useCount))——
       // 细节随时间衰减、常用论断增强。注意：180 天参数在 RRF 分数尺度下可越位多名（非"微降"），需实测调优
+      // 分层选层（§分层知识消费）：查询信号命中层加权（×1.4），非命中层轻降（×0.85）——乘法不硬过滤
+      const layerBoost = detectLayerBoost(req.query)
       if (atomIdList.length >= 2) {
         const boostOf = (item: (typeof parsed)[number]): number => {
           if (item.result.kind !== 'atom' || !item.result.atom) return 1
           const created = atomCreatedAt.get(item.result.atom.id)
           const ageDays = created ? Math.max(0, (Date.now() - created.getTime()) / 86400000) : 0
           const useBoost = 1 + Math.log(1 + (atomUseCount.get(item.result.atom.id) ?? 0))
-          return (1 / (1 + ageDays / 180)) * useBoost
+          const layerW = layerWeightOf(layerBoost, (atomLayer.get(item.result.atom.id) ?? 'detail') as never)
+          return (1 / (1 + ageDays / 180)) * useBoost * layerW
         }
         deduped.sort((x, y) => y.sortKey * boostOf(y) - x.sortKey * boostOf(x))
       }
@@ -317,7 +323,8 @@ export class BrainQueryService {
     if (entry.ns === 'atom') {
       const atom = await this.deps.atoms.findById(entry.id)
       if (!atom) return null
-      if (atom.status === 'superseded' || atom.status === 'stale') return null
+      // archived 也跳过（清理服务只改状态不清池——归档论断不得再从检索池召回）
+      if (atom.status === 'superseded' || atom.status === 'stale' || atom.status === 'archived') return null
       if (req.lensNoteId && atom.lensNoteId !== req.lensNoteId) return null
       return {
         kind: 'atom',
@@ -332,6 +339,7 @@ export class BrainQueryService {
           atom: {
             id: atom.id,
             type: atom.type,
+            layer: atom.layer,
             status: atom.status,
             quote: atom.sourceQuote,
             jumpTo: { chapterId: atom.sourceChapterId ?? '', startOffset: atom.startOffset ?? 0 },
@@ -475,6 +483,7 @@ export class BrainQueryService {
       atom: {
         id: a.id,
         type: a.type,
+        layer: a.layer,
         status: a.status,
         quote: a.sourceQuote,
         jumpTo: { chapterId: a.sourceChapterId ?? '', startOffset: a.startOffset ?? 0 },

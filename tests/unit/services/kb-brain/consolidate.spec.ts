@@ -20,6 +20,7 @@ interface AtomRow {
   lensNoteId: string | null
   origin: string
   supersededByAtomId: string | null
+  layer?: string
 }
 
 function makeAtom(partial: Partial<AtomRow>): AtomRow {
@@ -36,6 +37,7 @@ function makeAtom(partial: Partial<AtomRow>): AtomRow {
     lensNoteId: null,
     origin: 'ai',
     supersededByAtomId: null,
+    layer: 'detail',
     ...partial,
   }
 }
@@ -101,6 +103,22 @@ describe('KbConsolidateService', () => {
     // 未入组的 a4 不动
     expect(repo.rows.find((r) => r.id === 'a4')?.status).toBe('supported')
     expect(svc.status('kb1').running).toBe(false)
+  })
+
+  it('layer 继承（review P2）：合并产物取成员最高层，不落 detail', async () => {
+    const repo = makeAtomsRepo([
+      makeAtom({ id: 'm1', statement: '九境第一段规则', layer: 'setting' }),
+      makeAtom({ id: 'm2', statement: '九境第二段规则', layer: 'setting' }),
+      makeAtom({ id: 'm3', statement: '相关细节一条', layer: 'detail' }),
+    ])
+    const svc = new KbConsolidateService({
+      llm: (async () => JSON.stringify({ groups: [{ idx: [0, 1, 2], statement: '九境体系分段规则的综合论断', type: 'fact' }] })) as BrainLlmFn,
+      atoms: repo as never,
+    })
+    const out = await svc.run('kb1')
+    expect(out.mergedGroups).toBe(1)
+    const merged = repo.rows.find((r) => r.id.startsWith('merged'))
+    expect(merged?.layer).toBe('setting')
   })
 
   it('保守不合并：模型输出空 groups → 池子无变化', async () => {

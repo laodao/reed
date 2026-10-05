@@ -15,6 +15,7 @@ import { enqueueDigestForExisting } from '@core/platform/services/kb-brain/diges
 import { KbGoalDistillService } from '@core/platform/services/kb-brain/goal-distill.service'
 import { getKbConsolidateService } from '@core/platform/services/kb-brain/consolidate.service'
 import { getKbCleanupService } from '@core/platform/services/kb-brain/cleanup.service'
+import { KbBrainHealthService } from '@core/platform/services/kb-brain/health.service'
 import { parseModelRef } from '@core/platform/services/kb-brain/llm'
 import { parseBrainConfig } from '@core/platform/services/kb-brain/brain-config'
 import { getKbForeshadowScanService } from '@core/platform/services/kb-brain/foreshadow-scan.service'
@@ -48,7 +49,7 @@ export function registerKbBrainHandlers(): void {
     return { success: true, data: docs }
   })
 
-  ipcBridge.handle('kb:brain:list-atoms', (_e, p: { kbId: string; documentId?: string; page?: number; pageSize?: number; status?: string; type?: string; types?: string[]; origin?: string; foreshadow?: 'dangling' }) =>
+  ipcBridge.handle('kb:brain:list-atoms', (_e, p: { kbId: string; documentId?: string; page?: number; pageSize?: number; status?: string; type?: string; types?: string[]; origin?: string; layer?: string; foreshadow?: 'dangling' }) =>
     panel.listAtoms(p),
   )
 
@@ -75,6 +76,9 @@ export function registerKbBrainHandlers(): void {
   )
 
   ipcBridge.handle('kb:brain:stats', (_e, p: { kbId: string }) => panel.stats(p.kbId))
+
+  // 大脑体检（§检查机制）：只读覆盖率/构成/建议报告，面板手动触发
+  ipcBridge.handle('kb:brain:health-check', (_e, p: { kbId: string }) => new KbBrainHealthService().check(p.kbId))
 
   // T14 手动提炼（任务边界闸门）
   let distillBusy = false
@@ -154,6 +158,8 @@ export function registerKbBrainHandlers(): void {
     if (!goal) return { success: false, error: '提取目标不存在或已删除' }
     if (!goal.enabled) return { success: false, error: '目标未启用' }
     if (goalDistill.isRunning(p.kbId, goal.id)) return { success: false, error: '该目标提炼进行中' }
+    // 每库模型（brainConfig.models.adjudicate）——提炼与裁决同档位
+    goalDistill.setModelOverride(() => (cfg?.models.adjudicate ? parseModelRef(cfg.models.adjudicate) : {}))
     goalDistill
       .runGoal(p.kbId, goal)
       .then((out) => {
@@ -196,8 +202,12 @@ export function registerKbBrainHandlers(): void {
 
   // 存量垃圾论断清理（LLM 分诊归档；fire-and-forget + 进度轮询）
   const cleanup = getKbCleanupService()
-  ipcBridge.handle('kb:brain:cleanup-run', (_e, p: { kbId: string }) => {
+  ipcBridge.handle('kb:brain:cleanup-run', async (_e, p: { kbId: string }) => {
     if (cleanup.isRunning(p.kbId)) return { success: false, error: '垃圾清理进行中' }
+    // 每库模型（brainConfig.models.adjudicate）——分诊与裁决同档位
+    const kbRow = await svc().getKnowledgeBase(p.kbId).then((r) => r.data)
+    const cleanupCfg = kbRow?.brainConfig ? parseBrainConfig(kbRow.brainConfig) : null
+    cleanup.setModelOverride(() => (cleanupCfg?.models.adjudicate ? parseModelRef(cleanupCfg.models.adjudicate) : {}))
     cleanup
       .run(p.kbId)
       .then((st) =>

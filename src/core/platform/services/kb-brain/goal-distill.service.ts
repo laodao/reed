@@ -83,9 +83,13 @@ export class KbGoalDistillService {
   private readonly reposFn: NonNullable<GoalDistillDeps['repos']>
   /** 进行中的 (kbId:goalId)——单飞防重复点击 */
   private readonly running = new Set<string>()
+  /** 每库模型动态解析（handler 在 runGoal 前注入 brainConfig.models.adjudicate；
+   *  单例保持 running 锁，override 按请求读取——真机反馈：写死宿主默认模型会让
+   *  每库配置形同虚设） */
+  private modelOverrideFn: () => { providerConfigId?: string; modelId?: string } = () => ({})
 
   constructor(deps: GoalDistillDeps = {}) {
-    this.llm = deps.llm ?? defaultBrainLlm('kb-brain-adjudicate', deps.modelOverride) // 经验提炼走高档
+    this.llm = deps.llm ?? defaultBrainLlm('kb-brain-adjudicate', deps.modelOverride ?? (() => this.modelOverrideFn())) // 经验提炼走高档
     this.reposFn =
       deps.repos ??
       (() => {
@@ -97,6 +101,11 @@ export class KbGoalDistillService {
 
   isRunning(kbId: string, goalId: string): boolean {
     return this.running.has(`${kbId}:${goalId}`)
+  }
+
+  /** 注入每库模型解析（runGoal 前调用；llm 为注入型时无效） */
+  setModelOverride(fn: () => { providerConfigId?: string; modelId?: string }): void {
+    this.modelOverrideFn = fn
   }
 
   /** 某库当前在提炼中的 goalId 列表（前端轮询状态用） */
@@ -137,7 +146,8 @@ export class KbGoalDistillService {
         const content = chapter?.content?.trim()
         if (!content) continue
         const user = buildCloseReadUser(goal, n, content.slice(0, CLOSE_READ_CHARS))
-        const raw = await this.llm({ system: MAP_SYSTEM, user, maxTokens: 2500 })
+        // 6000：推理型模型思考计入输出预算，2500 会被耗尽返回空文本（deepseek 真机实证）
+        const raw = await this.llm({ system: MAP_SYSTEM, user, maxTokens: 6000 })
         const parsed = extractJsonFromResponse(raw) as Partial<{ fragments: MapFragment[] }> | null
         for (const f of parsed?.fragments ?? []) {
           if (typeof f?.info !== 'string' || !f.info.trim()) continue
@@ -193,7 +203,8 @@ export class KbGoalDistillService {
       const user = buildMapUser(goal, slice)
       let parsed: Partial<{ fragments: MapFragment[]; nominations: Array<{ chapter: string; reason: string; score: number }> }> | null
       try {
-        const raw = await this.llm({ system: MAP_SYSTEM, user, maxTokens: 2500 })
+        // 6000：推理型模型思考计入输出预算，2500 会被耗尽返回空文本（deepseek 真机实证）
+        const raw = await this.llm({ system: MAP_SYSTEM, user, maxTokens: 6000 })
         parsed = extractJsonFromResponse(raw) as typeof parsed
       } catch (e) {
         logger.warn(`[kb-brain-goal] kb=${kbId} goal=${goal.name} 第 ${b + 1}/${batches} 批提取失败，跳过: ${e instanceof Error ? e.message : String(e)}`)
@@ -265,7 +276,7 @@ export class KbGoalDistillService {
     for (let attempt = 0; attempt < 2; attempt++) {
       const user = buildThemesUser(goal, fragments) + (lastError ? `\n\n【上次输出不合法】\n${lastError}\n请重新输出完整合法的 JSON。` : '')
       try {
-        const raw = await this.llm({ system: REDUCE_SYSTEM, user, maxTokens: 4000 })
+        const raw = await this.llm({ system: REDUCE_SYSTEM, user, maxTokens: 8000 })
         const parsed = extractJsonFromResponse(raw) as Partial<{ themes: unknown }> | null
         const inBounds = (i: unknown): i is number => Number.isInteger(i) && (i as number) >= 0 && (i as number) < fragments.length
         const cleaned: ThemeGroup[] = (Array.isArray(parsed?.themes) ? (parsed!.themes as unknown[]) : [])
@@ -315,7 +326,7 @@ export class KbGoalDistillService {
           buildThemeCardUser(goal, theme.name, themedFrags) +
           (cardError ? `\n\n【上次输出不合法】\n${cardError}\n请重新输出完整合法的 JSON。` : '')
         try {
-          const raw = await this.llm({ system: REDUCE_SYSTEM, user, maxTokens: 4500 })
+          const raw = await this.llm({ system: REDUCE_SYSTEM, user, maxTokens: 8000 })
           const parsed = extractJsonFromResponse(raw) as Partial<ReduceCard> | null
           if (!parsed?.body || typeof parsed.body !== 'string' || !parsed.body.trim()) {
             throw new Error('缺少 body')

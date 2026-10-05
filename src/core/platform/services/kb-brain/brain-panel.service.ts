@@ -56,6 +56,8 @@ export class KbBrainPanelService {
     origin?: string
     /** G3 伏笔视图：dangling=未回收伏笔（open-question 且无出边 sets-up） */
     foreshadow?: 'dangling'
+    /** 知识分层过滤（概要/设定/描写/细节；与文档/伏笔视图可叠加） */
+    layer?: string
   }): Promise<{ success: boolean; data?: { rows: unknown[]; total: number }; error?: string }> {
     const db = getCoreDatabaseManager()
     if (!db.kbAtoms) return { success: false, error: '知识大脑未启用（旧库）' }
@@ -66,6 +68,7 @@ export class KbBrainPanelService {
     const workingSet = ['supported', 'suspected', 'stale'] as const
     const statusFilter = input.status ? [input.status as never] : [...workingSet]
     // 统一走 findByKb：documentId 与 type/types/origin/status 过滤可自由组合
+    const layers = input.layer ? [input.layer as never] : undefined
     let all: Array<{ sourceDocumentId?: string }>
     if (input.foreshadow === 'dangling') {
       // 未回收伏笔 = 悬念论断中无出边 sets-up 的集合（埋设-回收方向：source=埋设）
@@ -75,6 +78,7 @@ export class KbBrainPanelService {
         type: 'open-question',
         origin: input.origin,
         documentId: input.documentId,
+        layers,
         limit: 5000,
       })
       const neighbors = await db.kbKnowledgeEdges.neighborsOf(input.kbId, suspense.map((a) => a.id))
@@ -89,6 +93,7 @@ export class KbBrainPanelService {
         types: input.types,
         origin: input.origin,
         documentId: input.documentId,
+        layers,
         // 内存分页的截断上限：翻页序号/总数以此为界（type 过滤已下推 SQL，此处是兜底上限）
         limit: 5000,
       })

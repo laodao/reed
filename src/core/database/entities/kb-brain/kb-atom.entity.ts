@@ -19,6 +19,11 @@ export type KbAtomType =
   | 'insight'
   | 'open-question'
 
+/** 知识分层：这条论断处于哪一层抽象（查询按意图选层加权；书级汇总按层取材） */
+export type KbAtomLayer = 'outline' | 'setting' | 'describe' | 'detail'
+
+export const KB_ATOM_LAYERS: KbAtomLayer[] = ['outline', 'setting', 'describe', 'detail']
+
 /** 命题状态：五态（supported/suspected/contradicted/superseded + stale=失去出处）+ archived=垃圾清理归档 */
 export type KbAtomStatus =
   | 'supported'
@@ -55,6 +60,10 @@ export class KbAtomEntity {
 
   @Column({ name: 'type', type: 'varchar', default: 'fact' })
   type!: KbAtomType
+
+  /** 知识分层（缺省 detail=细节层；提取时由模型标注，非法值落库前归 detail） */
+  @Column({ name: 'layer', type: 'varchar', default: 'detail' })
+  layer!: KbAtomLayer
 
   @Column({ name: 'status', type: 'varchar', default: 'supported' })
   status!: KbAtomStatus

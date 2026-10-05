@@ -43,6 +43,7 @@ export async function createKbBrainTables(ds: DataSource): Promise<void> {
         knowledge_base_id    ${vc} NOT NULL,
         statement            ${vc} NOT NULL,
         type                 ${vc} NOT NULL DEFAULT 'fact',
+        layer                ${vc} NOT NULL DEFAULT 'detail',
         status               ${vc} NOT NULL DEFAULT 'supported',
         certainty            ${rl} NOT NULL DEFAULT 0.8,
         valid_from           ${vc},
@@ -78,6 +79,12 @@ export async function createKbBrainTables(ds: DataSource): Promise<void> {
   await ds.query(
     'CREATE INDEX IF NOT EXISTS idx_kb_atoms_pass ON kb_atoms (source_document_id, extraction_pass)',
   )
+  // 知识分层列（outline/setting/describe/detail）：存量库补列 + 检索/书级汇总按层过滤的索引
+  if (!(await checkColumnExists(ds, 'kb_atoms', 'layer', isPg))) {
+    await ds.query(`ALTER TABLE kb_atoms ADD COLUMN layer ${vc} NOT NULL DEFAULT 'detail'`)
+    console.log('[create-kb-brain-tables] kb_atoms 加列 layer')
+  }
+  await ds.query('CREATE INDEX IF NOT EXISTS idx_kb_atoms_layer ON kb_atoms (knowledge_base_id, layer)')
 
   // ---------- kb_entities（实体，§1.2） ----------
   if (!(await checkTableExists(ds, 'kb_entities', isPg))) {

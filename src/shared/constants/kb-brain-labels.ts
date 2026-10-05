@@ -15,6 +15,13 @@ export const KB_ATOM_TYPE_LABELS: Record<string, string> = {
   'open-question': '悬置问题',
 }
 
+export const KB_ATOM_LAYER_LABELS: Record<string, string> = {
+  outline: '概要层',
+  setting: '设定层',
+  describe: '描写层',
+  detail: '细节层',
+}
+
 export const KB_ATOM_STATUS_LABELS: Record<string, string> = {
   supported: '已采纳',
   suspected: '存疑',
@@ -38,6 +45,11 @@ export const KB_NOTE_TYPE_LABELS: Record<string, string> = {
   'character-pattern': '人物原型',
   lens: '观察视角',
   'skill-seed': '技能种子',
+  'book-outline': '全书概要',
+  'setting-index': '设定索引',
+  'character-roster': '人物册',
+  'foreshadow-ledger': '伏笔台账',
+  'knowledge-map': '知识体系图',
 }
 
 export const KB_NOTE_STATUS_LABELS: Record<string, string> = {
@@ -52,6 +64,7 @@ function makeLabeler(map: Record<string, string>): (v: string | null | undefined
 }
 
 export const kbAtomTypeLabel = makeLabeler(KB_ATOM_TYPE_LABELS)
+export const kbAtomLayerLabel = makeLabeler(KB_ATOM_LAYER_LABELS)
 export const kbAtomStatusLabel = makeLabeler(KB_ATOM_STATUS_LABELS)
 export const kbNoteTypeLabel = makeLabeler(KB_NOTE_TYPE_LABELS)
 export const kbAtomOriginLabel = makeLabeler(KB_ATOM_ORIGIN_LABELS)

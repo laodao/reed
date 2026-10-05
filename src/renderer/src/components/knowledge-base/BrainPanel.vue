@@ -55,10 +55,23 @@
               clearable
               placeholder="全部文档"
               size="small"
-              style="width: 160px; margin-left: auto"
+              style="width: 150px; margin-left: auto"
               @change="onDocFilterChange"
             >
               <el-option v-for="d in allDocs" :key="d.id" :label="d.name" :value="d.id" />
+            </el-select>
+            <el-select
+              v-model="atomLayerFilter"
+              clearable
+              placeholder="全部分层"
+              size="small"
+              style="width: 110px"
+              @change="onDocFilterChange"
+            >
+              <el-option label="概要层" value="outline" />
+              <el-option label="设定层" value="setting" />
+              <el-option label="描写层" value="describe" />
+              <el-option label="细节层" value="detail" />
             </el-select>
             <el-button size="small" type="primary" plain @click="openRemark">
               <el-icon><Edit /></el-icon>
@@ -84,6 +97,11 @@
               <el-table-column prop="type" label="类型" width="90">
                 <template #default="{ row }">
                   <el-tag size="small" effect="plain">{{ kbAtomTypeLabel(row.type) }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="layer" label="分层" width="80">
+                <template #default="{ row }">
+                  <el-tag size="small" effect="plain" type="info">{{ kbAtomLayerLabel(row.layer) }}</el-tag>
                 </template>
               </el-table-column>
               <el-table-column prop="status" label="状态" width="100">
@@ -270,6 +288,7 @@
         <section class="side-card">
           <header class="side-head">
             <span class="side-title">论断整理</span>
+            <el-button size="small" plain @click="runHealthCheck">大脑体检</el-button>
           </header>
           <div class="side-tip" style="margin: 0 0 8px">
             AI 分批审读论断池，把同主题的细碎碎片合并为综合论断（如「主要法宝」逐条罗列→一条）；
@@ -377,6 +396,26 @@
               <span class="cfg-desc">上传文档后自动原子化 + 裁决</span>
             </label>
             <el-switch v-model="configDraft.digestion.enabled" />
+          </div>
+          <div class="cfg-row">
+            <label class="cfg-label">
+              内容类型
+              <span class="cfg-desc">决定提取侧重与书级汇总关卡；「自动」=首次提取时由 AI 识别</span>
+            </label>
+            <el-select v-model="configDraft.profile.contentType" size="small" style="width: 160px">
+              <el-option label="自动识别" value="" />
+              <el-option label="小说 / 叙事" value="novel" />
+              <el-option label="知识类" value="knowledge" />
+              <el-option label="文史哲" value="history" />
+              <el-option label="其他" value="other" />
+            </el-select>
+          </div>
+          <div class="cfg-row">
+            <label class="cfg-label">
+              书级汇总遍
+              <span class="cfg-desc">按章提取完成后自动汇总全书概要/设定索引/人物册/伏笔台账卡（待审箱确认）</span>
+            </label>
+            <el-switch v-model="configDraft.digestion.bookPasses" />
           </div>
           <div class="cfg-row">
             <label class="cfg-label">
@@ -539,6 +578,55 @@
       </template>
     </el-dialog>
 
+    <!-- 大脑体检（只读报告：覆盖率/知识构成/建议） -->
+    <el-dialog v-model="healthOpen" title="大脑体检" width="680px">
+      <div v-loading="healthLoading" style="min-height: 160px">
+        <template v-if="healthReport">
+          <div class="hz-section">
+            <h5>提取覆盖</h5>
+            <div class="hz-grid">
+              <span>文档 {{ healthReport.coverage.documents }} 篇（待提取 {{ healthReport.coverage.documentsPending }}，失败 {{ healthReport.coverage.documentsFailed }}）</span>
+              <span>章节 {{ healthReport.coverage.chaptersTotal }} 章，已消化 {{ healthReport.coverage.chaptersDigested }} 章</span>
+              <span>零产出章 {{ healthReport.coverage.chaptersNoAtoms }}（重试耗尽 {{ healthReport.coverage.chaptersExhausted }}）</span>
+              <span v-if="healthReport.coverage.noAtomChapterSample.length">
+                无知识章样例：{{ healthReport.coverage.noAtomChapterSample.join('、') }}
+              </span>
+            </div>
+          </div>
+          <div class="hz-section">
+            <h5>知识构成（工作集 {{ healthReport.knowledge.atomsWorking }} 条）</h5>
+            <div class="hz-grid">
+              <span>分层：概要 {{ healthReport.knowledge.byLayer.outline ?? 0 }} · 设定 {{ healthReport.knowledge.byLayer.setting ?? 0 }} · 描写 {{ healthReport.knowledge.byLayer.describe ?? 0 }} · 细节 {{ healthReport.knowledge.byLayer.detail ?? 0 }}</span>
+              <span>悬置问题 {{ healthReport.knowledge.openQuestions }} · 存疑 {{ healthReport.knowledge.byStatus.suspected ?? 0 }} · 已过期 {{ healthReport.knowledge.byStatus.stale ?? 0 }}</span>
+              <span>实体 {{ healthReport.knowledge.entitiesActive }}（缺摘要 {{ healthReport.knowledge.entitiesPendingSummary }}） · 经验卡已入库 {{ healthReport.knowledge.notesPublished }}（待审 {{ healthReport.knowledge.notesProposed }}）</span>
+            </div>
+          </div>
+          <div v-if="healthReport.bookPasses.length" class="hz-section">
+            <h5>书级汇总</h5>
+            <div class="hz-grid">
+              <span v-for="(p, i) in healthReport.bookPasses" :key="i">
+                {{ p.documentName }} · {{ bookPassLabel(p.passKey) }}：{{ p.status }}{{ p.error ? `（${p.error}）` : '' }}
+              </span>
+            </div>
+          </div>
+          <div class="hz-section">
+            <h5>建议（{{ healthReport.suggestions.length }}）</h5>
+            <div v-if="healthReport.suggestions.length === 0" class="side-empty">一切正常，没有需要处理的事项。</div>
+            <ul class="hz-suggestions">
+              <li v-for="s in healthReport.suggestions" :key="s.code">{{ s.message }}</li>
+            </ul>
+          </div>
+        </template>
+      </div>
+      <template #footer>
+        <div class="cfg-actions">
+          <el-button @click="healthOpen = false">关闭</el-button>
+          <el-button type="primary" :loading="healthLoading" @click="runHealthCheck">重新体检</el-button>
+        </div>
+>>>>>>> feat/kb-brain
+      </template>
+    </el-dialog>
+
     <!-- 记观感（human origin 论断录入） -->
     <el-dialog v-model="remarkOpen" title="记观感" width="480px" :close-on-click-modal="false">
       <div class="rf-body">
@@ -619,9 +707,9 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { KB_BRAIN_GOAL_PRESETS } from '@shared/constants/kb-brain-goal-presets'
-import { kbAtomOriginLabel, kbAtomStatusLabel, kbAtomTypeLabel, kbNoteStatusLabel, kbNoteTypeLabel } from '@shared/constants/kb-brain-labels'
+import { kbAtomLayerLabel, kbAtomOriginLabel, kbAtomStatusLabel, kbAtomTypeLabel, kbNoteStatusLabel, kbNoteTypeLabel } from '@shared/constants/kb-brain-labels'
 
 const props = defineProps<{ kbId: string }>()
 const emit = defineEmits<{ (e: 'stats', count: number): void }>()
@@ -631,6 +719,7 @@ interface BrainAtom {
   id: string
   statement: string
   type: string
+  layer?: string
   status: string
   lensNoteId: string | null
   origin: string
@@ -656,7 +745,8 @@ interface BrainGoal {
 }
 interface BrainConfig {
   enabled: boolean
-  digestion: { enabled: boolean }
+  digestion: { enabled: boolean; bookPasses?: boolean }
+  profile: { contentType: string; genre?: string }
   patterns: { plotEnabled: boolean; characterEnabled: boolean }
   lenses: { enabledLensNoteIds: string[] }
   autoApproveThreshold: number
@@ -694,7 +784,8 @@ let inboxGen = 0 // 待审提议列表代际守卫（同上）
 const config = ref<BrainConfig | null>(null)
 const configDraft = ref<BrainConfig>({
   enabled: false,
-  digestion: { enabled: true },
+  digestion: { enabled: true, bookPasses: true },
+  profile: { contentType: '' },
   patterns: { plotEnabled: false, characterEnabled: false },
   lenses: { enabledLensNoteIds: [] },
   autoApproveThreshold: 0.8,
@@ -717,6 +808,7 @@ const allDocs = ref<Array<{ id: string; name: string }>>([])
 
 // ===== 文档过滤 + 论断详情 =====
 const atomDocFilter = ref('')
+const atomLayerFilter = ref('')
 interface AtomDetail extends BrainAtom {
   certainty: number
   extractionPass: string
@@ -726,6 +818,63 @@ interface AtomDetail extends BrainAtom {
 const atomDetailOpen = ref(false)
 const atomDetailLoading = ref(false)
 const atomDetail = ref<AtomDetail | null>(null)
+
+// ===== 大脑体检（只读报告） =====
+interface HealthReport {
+  profile: { contentType: string; detected: boolean }
+  coverage: {
+    documents: number
+    documentsPending: number
+    documentsFailed: number
+    chaptersTotal: number
+    chaptersDigested: number
+    chaptersExhausted: number
+    chaptersNoAtoms: number
+    noAtomChapterSample: string[]
+  }
+  knowledge: {
+    atomsWorking: number
+    byStatus: Record<string, number>
+    byLayer: Record<string, number>
+    byType: Record<string, number>
+    openQuestions: number
+    notesProposed: number
+    notesPublished: number
+    entitiesActive: number
+    entitiesPendingSummary: number
+  }
+  bookPasses: Array<{ documentName: string; passKey: string; status: string; error: string | null }>
+  suggestions: Array<{ code: string; message: string }>
+}
+const healthOpen = ref(false)
+const healthLoading = ref(false)
+const healthReport = ref<HealthReport | null>(null)
+
+async function runHealthCheck(): Promise<void> {
+  if (!props.kbId) return
+  healthOpen.value = true
+  healthLoading.value = true
+  try {
+    const res = await (window as any).electronAPI.knowledgeBase.brain.healthCheck(props.kbId)
+    if (res.success) healthReport.value = res.data
+    else ElMessage.error(`体检失败: ${res.error || '未知错误'}`)
+  } catch (e) {
+    ElMessage.error(`体检失败: ${(e as Error).message}`)
+  } finally {
+    healthLoading.value = false
+  }
+}
+
+const BOOK_PASS_LABELS: Record<string, string> = {
+  outline: '全书概要',
+  'setting-index': '设定索引',
+  'character-roster': '人物册',
+  'foreshadow-ledger': '伏笔台账',
+  'knowledge-map': '知识体系图',
+}
+function bookPassLabel(passKey: string): string {
+  return BOOK_PASS_LABELS[passKey.replace('book:', '')] ?? passKey.replace('book:', '')
+}
 
 function onDocFilterChange(): void {
   atomPage.value = 1
@@ -1197,9 +1346,29 @@ function reportGoalDone(goalId: string): void {
   const rec = lastGoalResults.value[goalId]
   const name = config.value?.goals.find((g) => g.id === goalId)?.name ?? goalId
   if (!rec) return
-  if (!rec.ok) ElMessage.error(`「${name}」提炼失败: ${rec.error || '未知错误'}`)
-  else if (rec.skippedDuplicate) ElMessage.info(`「${name}」已有同题经验卡，未重复生成`)
-  else if (rec.proposed) ElMessage.success(`「${name}」生成 ${rec.cards ?? 1} 张经验卡（素材 ${rec.fragments ?? 0} 条），待审提议中`)
+  const openProposals = (): void => showProposals()
+  if (!rec.ok) {
+    ElMessage.error(`「${name}」提炼失败: ${rec.error || '未知错误'}`)
+  } else if (rec.skippedDuplicate) {
+    ElNotification({ title: `「${name}」已有同题经验卡`, message: '未重复生成，可在「经验卡」视图查看已有卡', type: 'info', duration: 0 })
+  } else if (rec.proposed) {
+    // 常驻通知（自动关闭会被忽略导致"找不到产物"——真机反馈），点击直达待审提议
+    ElNotification({
+      title: `「${name}」提炼完成`,
+      message: `生成 ${rec.cards ?? 1} 张经验卡（素材 ${rec.fragments ?? 0} 条），已放入「待审提议」——点击查看并批准入库`,
+      type: 'success',
+      duration: 0,
+      onClick: openProposals,
+    })
+    openProposals()
+  } else {
+    ElNotification({
+      title: `「${name}」提炼完成但没有产出`,
+      message: `收集到素材 ${rec.fragments ?? 0} 条，未达到成卡条件（素材不足或质量不够）——可先「提取知识」积累论断后再试`,
+      type: 'warning',
+      duration: 0,
+    })
+  }
   void refresh()
 }
 
@@ -1249,6 +1418,7 @@ async function fetchAtoms(): Promise<void> {
       types: atomFilter.value === 'opinions' ? ['claim', 'insight'] : undefined,
       foreshadow: atomFilter.value === 'foreshadow' ? 'dangling' : undefined,
       documentId: atomDocFilter.value || undefined,
+      layer: atomLayerFilter.value || undefined,
     })
     if (gen !== atomsGen) return // 过期响应丢弃
     if (res.success && res.data) {
@@ -1468,6 +1638,9 @@ async function refresh(): Promise<void> {
 
 function openConfig(): void {
   if (config.value) configDraft.value = JSON.parse(JSON.stringify(config.value))
+  // 旧配置无 profile/digestion.bookPasses 段时补缺省（v-model 需要可写路径）
+  if (!configDraft.value.profile) configDraft.value.profile = { contentType: '' }
+  if (!configDraft.value.digestion) configDraft.value.digestion = { enabled: true, bookPasses: true }
   configOpen.value = true
 }
 
@@ -2149,5 +2322,28 @@ defineExpose({ refresh })
 }
 .rf-req {
   color: var(--el-color-danger);
+}
+
+/* ===== 大脑体检对话框 ===== */
+.hz-section {
+  margin-bottom: 14px;
+}
+.hz-section h5 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+.hz-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.hz-suggestions {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.8;
 }
 </style>
