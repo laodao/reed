@@ -6,6 +6,9 @@
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { DiaryService } from '@core/platform/services/diary.service'
 import { DiaryExportService } from '../services/diary-export.service'
+import { DiaryInspirationService } from '../services/diary-inspiration.service'
+import { getDiaryBrainSyncService } from '@core/platform/services/diary-brain-sync.service'
+import { DiaryAttachmentService } from '../services/diary-attachment.service'
 import type {
   CreateDiaryFolderRequest,
   UpdateDiaryFolderRequest,
@@ -15,6 +18,8 @@ import type {
 
 let diaryService: DiaryService | null = null
 let diaryExportService: DiaryExportService | null = null
+let diaryInspirationService: DiaryInspirationService | null = null
+let diaryAttachmentService: DiaryAttachmentService | null = null
 
 function getDiaryService(): DiaryService {
   if (!diaryService) {
@@ -28,6 +33,20 @@ function getDiaryExportService(): DiaryExportService {
     diaryExportService = new DiaryExportService(getDiaryService())
   }
   return diaryExportService
+}
+
+function getDiaryInspirationService(): DiaryInspirationService {
+  if (!diaryInspirationService) {
+    diaryInspirationService = new DiaryInspirationService()
+  }
+  return diaryInspirationService
+}
+
+function getDiaryAttachmentService(): DiaryAttachmentService {
+  if (!diaryAttachmentService) {
+    diaryAttachmentService = new DiaryAttachmentService()
+  }
+  return diaryAttachmentService
 }
 
 export function registerDiaryHandlers(): void {
@@ -52,10 +71,39 @@ export function registerDiaryHandlers(): void {
   // 链接
   ipcBridge.handle('diary:get-backlinks', handleGetBacklinks)
 
+  // 回收站（软删除）
+  ipcBridge.handle('diary:list-deleted', handleListDeleted)
+  ipcBridge.handle('diary:restore-entry', handleRestoreEntry)
+  ipcBridge.handle('diary:purge-entry', handlePurgeEntry)
+  ipcBridge.handle('diary:empty-trash', handleEmptyTrash)
+
+  // 日期范围 / 全部条目（日历视图、链接插入）
+  ipcBridge.handle('diary:list-by-date-range', handleListByDateRange)
+  ipcBridge.handle('diary:list-all-entries', handleListAllEntries)
+
+  // 那年今日 / 灵感条（P1：复盘与重现）
+  ipcBridge.handle('diary:get-on-this-day', handleGetOnThisDay)
+  ipcBridge.handle('diary:get-inspiration', handleGetInspiration)
+
+  // 日记消化开关（P2：opt-in 红线——开启回填存量，关闭出库清理）
+  ipcBridge.handle('diary:set-folder-brain-opt-in', handleSetFolderBrainOptIn)
+
+  // 附件（P3：内嵌贴图 + 写作引子）
+  ipcBridge.handle('diary:upload-attachment', handleUploadAttachment)
+  ipcBridge.handle('diary:delete-attachment', handleDeleteAttachment)
+  ipcBridge.handle('diary:describe-attachment', handleDescribeAttachment)
+  ipcBridge.handle('diary:get-writing-prompt', handleGetWritingPrompt)
+
+  // F2 反思流（复习面板接线用）
+  ipcBridge.handle('diary:create-reflection', handleCreateReflection)
+
   // 导出
   ipcBridge.handle('diary:export-html', handleExportHtml)
   ipcBridge.handle('diary:export-pdf', handleExportPdf)
   ipcBridge.handle('diary:export-docx', handleExportDocx)
+
+  // 启动清理：物理删除回收站中超期（30 天）的条目
+  void getDiaryService().purgeExpired()
 
   console.log('[DiaryHandlers] 日记 IPC 处理器已注册')
 }
@@ -127,6 +175,85 @@ async function handleSearch(_event: any, data: { keyword: string; folderId?: str
 
 async function handleGetBacklinks(_event: any, entryId: string) {
   return await getDiaryService().getBacklinks(entryId)
+}
+
+// ==================== 回收站 ====================
+
+async function handleListDeleted(_event: any) {
+  return await getDiaryService().getDeletedEntries()
+}
+
+async function handleRestoreEntry(_event: any, id: string) {
+  return await getDiaryService().restoreEntry(id)
+}
+
+async function handlePurgeEntry(_event: any, id: string) {
+  return await getDiaryService().purgeEntry(id)
+}
+
+async function handleEmptyTrash(_event: any) {
+  return await getDiaryService().emptyTrash()
+}
+
+// ==================== 日期范围 / 全部条目 ====================
+
+async function handleListByDateRange(
+  _event: any,
+  data: { from: string; to: string; folderId?: string }
+) {
+  return await getDiaryService().getEntriesByDateRange(data.from, data.to, data.folderId)
+}
+
+async function handleListAllEntries(_event: any, limit?: number) {
+  return await getDiaryService().listAllEntries(limit)
+}
+
+// ==================== 那年今日 / 灵感条 ====================
+
+async function handleGetOnThisDay(_event: any, limit?: number) {
+  return await getDiaryService().getOnThisDay(limit)
+}
+
+async function handleGetInspiration(_event: any, entryId: string) {
+  return await getDiaryInspirationService().getInspiration(entryId)
+}
+
+async function handleSetFolderBrainOptIn(
+  _event: any,
+  data: { folderId: string; enabled: boolean }
+) {
+  return await getDiaryBrainSyncService().setFolderBrainOptIn(data.folderId, data.enabled)
+}
+
+async function handleUploadAttachment(
+  _event: any,
+  data: { entryId: string; fileName: string; base64: string; mimeType?: string }
+) {
+  return await getDiaryAttachmentService().uploadAttachment(
+    data.entryId,
+    data.fileName,
+    data.base64,
+    data.mimeType
+  )
+}
+
+async function handleDeleteAttachment(_event: any, attachmentId: string) {
+  return await getDiaryAttachmentService().deleteAttachment(attachmentId)
+}
+
+async function handleDescribeAttachment(_event: any, attachmentId: string) {
+  return await getDiaryAttachmentService().describeAttachment(attachmentId)
+}
+
+async function handleGetWritingPrompt(_event: any) {
+  return await getDiaryAttachmentService().getWritingPrompt()
+}
+
+async function handleCreateReflection(
+  _event: any,
+  data: { cardTitle: string; reflectionText: string; kbName?: string }
+) {
+  return await getDiaryService().createReflectionEntry(data.cardTitle, data.reflectionText, data.kbName)
 }
 
 // ==================== 导出 ====================

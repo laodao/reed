@@ -44,10 +44,17 @@ export class KbCleanupService {
   private readonly atomsFn: NonNullable<CleanupDeps['atoms']> | undefined
   private readonly running = new Set<string>()
   private readonly progress = new Map<string, CleanupProgress>()
+  /** 每库模型动态解析（handler 在 run 前注入 brainConfig.models.adjudicate） */
+  private modelOverrideFn: () => { providerConfigId?: string; modelId?: string } = () => ({})
 
   constructor(deps: CleanupDeps = {}) {
-    this.llm = deps.llm ?? defaultBrainLlm('kb-brain-adjudicate', deps.modelOverride)
+    this.llm = deps.llm ?? defaultBrainLlm('kb-brain-adjudicate', deps.modelOverride ?? (() => this.modelOverrideFn()))
     this.atomsFn = deps.atoms
+  }
+
+  /** 注入每库模型解析（run 前调用；llm 为注入型时无效） */
+  setModelOverride(fn: () => { providerConfigId?: string; modelId?: string }): void {
+    this.modelOverrideFn = fn
   }
 
   isRunning(kbId: string): boolean {
@@ -98,7 +105,10 @@ export class KbCleanupService {
     const raw = await this.llm({
       system: CLEANUP_SYSTEM,
       user: buildTriageUser(batch),
-      maxTokens: 2000,
+      // 8000：推理型模型（deepseek-v4.1 等）思考内容计入输出预算，2000 会被
+      // reasoning 耗尽返回空文本（真机实证 19/20 批 chars=0）——正文 JSON 很小，
+      // 余量全给思考
+      maxTokens: 8000,
     })
     const junkIdx = this.parseJunkIdx(raw, batch.length)
     if (junkIdx.length === 0) return 0

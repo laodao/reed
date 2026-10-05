@@ -57,9 +57,43 @@ export class LwCharacterRepository extends BaseRepository<
       majorEvents: e.majorEvents ?? '',
       sourceType: (e.sourceType as EntitySourceType) || 'longwriting',
       sourceEpisodeId: e.sourceEpisodeId ?? undefined,
+      libraryIpId: e.libraryIpId ?? undefined,
+      libraryWorldId: e.libraryWorldId ?? undefined,
+      libraryEntryId: e.libraryEntryId ?? undefined,
+      libraryVersion: e.libraryVersion ?? undefined,
+      motivation: e.motivation ?? undefined,
+      flaw: e.flaw ?? undefined,
+      characterArc: e.characterArc ?? undefined,
       createdAt: this.toEpochMs(e.createdAt),
       updatedAt: this.toEpochMs(e.updatedAt),
     } as StoryCharacter
+  }
+
+  /**
+   * 设定资产库导入回填（2026-09-24 P0）：血缘列 + 四层人设一次写入。
+   * 导入行先经 create(CreateCharacterRequest) 落库，再调本方法。
+   */
+  async applyLibraryLineage(
+    id: string,
+    data: {
+      libraryIpId?: string
+      libraryWorldId?: string
+      libraryEntryId?: string
+      libraryVersion?: number
+      motivation?: string | null
+      flaw?: string | null
+      characterArc?: string | null
+    },
+  ): Promise<void> {
+    const patch: Record<string, unknown> = { updatedAt: new Date() }
+    if (data.libraryIpId !== undefined) patch.libraryIpId = data.libraryIpId
+    if (data.libraryWorldId !== undefined) patch.libraryWorldId = data.libraryWorldId
+    if (data.libraryEntryId !== undefined) patch.libraryEntryId = data.libraryEntryId
+    if (data.libraryVersion !== undefined) patch.libraryVersion = data.libraryVersion
+    if (data.motivation !== undefined) patch.motivation = data.motivation
+    if (data.flaw !== undefined) patch.flaw = data.flaw
+    if (data.characterArc !== undefined) patch.characterArc = data.characterArc
+    await this.scoped.update({ id } as any, patch as any)
   }
 
   async getByProjectId(projectId: string): Promise<StoryCharacter[]> {

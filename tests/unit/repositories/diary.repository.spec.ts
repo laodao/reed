@@ -8,6 +8,7 @@ import { DiaryFolderRepository } from '@core/database/repositories/diary-folder.
 import { DiaryEntryRepository } from '@core/database/repositories/diary-entry.repository'
 import { DiaryLinkRepository } from '@core/database/repositories/diary-link.repository'
 import { DiaryAttachmentRepository } from '@core/database/repositories/diary-attachment.repository'
+import { DiaryEntryEntity } from '@core/database/entities/diary-entry.entity'
 
 describe.each(getTestDialects())('Diary Repositories [%s]', dialect => {
   let tds: TestDataSource
@@ -70,6 +71,18 @@ describe.each(getTestDialects())('Diary Repositories [%s]', dialect => {
     expect(got!.entryCount).toBe(1)
   })
 
+  it('Folder: brainOptIn 默认关 + update 置位往返', async () => {
+    const f = await folders.create({ name: 'brain-test' } as any, 'brain-test')
+    expect(f.brainOptIn).toBe(false)
+
+    await folders.update(f.id, { brainOptIn: true } as any)
+    const got = await folders.findById(f.id)
+    expect(got!.brainOptIn).toBe(true)
+
+    await folders.update(f.id, { brainOptIn: false } as any)
+    expect((await folders.findById(f.id))!.brainOptIn).toBe(false)
+  })
+
   it('Folder: existsByName 区分 parent', async () => {
     await folders.create({ name: 'a' } as any, 'a')
     expect(await folders.existsByName('a')).toBe(true)
@@ -126,6 +139,55 @@ describe.each(getTestDialects())('Diary Repositories [%s]', dialect => {
     expect(list).toHaveLength(2)
   })
 
+  it('Entry: 软删除后列表/搜索/findAll 不再可见，findDeleted 可见，可恢复', async () => {
+    const f = await folders.create({ name: 'root' } as any, 'root')
+    const a = await entries.create({ folderId: f.id, title: 'A', content: 'alpha' } as any, 'root/a.md')
+    await entries.create({ folderId: f.id, title: 'B', content: 'beta' } as any, 'root/b.md')
+
+    expect(await entries.softDelete(a.id)).toBe(true)
+    expect((await entries.findByFolder(f.id)).map(e => e.title)).toEqual(['B'])
+    expect((await entries.findAll()).map(e => e.title)).toEqual(['B'])
+    expect((await entries.search('alpha')).length).toBe(0)
+    expect((await entries.search('beta')).length).toBe(1)
+
+    const deleted = await entries.findDeleted()
+    expect(deleted).toHaveLength(1)
+    expect(deleted[0].title).toBe('A')
+    expect(deleted[0].deletedAt).toBeTruthy()
+
+    // findById 不受软删除影响（回收站恢复/彻底删除依赖）
+    expect((await entries.findById(a.id))!.title).toBe('A')
+
+    expect(await entries.restore(a.id)).toBe(true)
+    expect((await entries.findByFolder(f.id)).length).toBe(2)
+    expect((await entries.findDeleted()).length).toBe(0)
+  })
+
+  it('Entry: findByDateRange 左闭右开区间 + 排除软删除', async () => {
+    const f = await folders.create({ name: 'root' } as any, 'root')
+    const e1 = await entries.create({ folderId: f.id, title: 'today' } as any, 'root/t.md')
+    const e2 = await entries.create({ folderId: f.id, title: 'old' } as any, 'root/o.md')
+
+    // e2 挪到 2020-01-15（远离区间边界，避免时区歧义）
+    await tds.ds.getRepository(DiaryEntryEntity).update(e2.id, {
+      createdAt: new Date('2020-01-15T10:00:00Z'),
+    })
+
+    const jan = await entries.findByDateRange(
+      new Date('2020-01-01T00:00:00Z'),
+      new Date('2020-02-01T00:00:00Z'),
+      f.id,
+    )
+    expect(jan.map(e => e.title)).toEqual(['old'])
+
+    // 软删除的条目即使落在区间内也不出现
+    await entries.softDelete(e1.id)
+    const today = new Date()
+    const dayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+    const dayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)
+    expect((await entries.findByDateRange(dayStart, dayEnd, f.id)).length).toBe(0)
+  })
+
   it('Entry: move 切换 folder', async () => {
     const f1 = await folders.create({ name: 'a' } as any, 'a')
     const f2 = await folders.create({ name: 'b' } as any, 'b')
@@ -171,6 +233,26 @@ describe.each(getTestDialects())('Diary Repositories [%s]', dialect => {
     expect((await links.findOutgoingLinks(e1.id)).length).toBe(0)
   })
 
+  it('Link: findIncomingLinks 带 context + updateTitleReferences 同步显示快照', async () => {
+    const f = await folders.create({ name: 'r' } as any, 'r')
+    const src = await entries.create(
+      { folderId: f.id, title: 'A', content: '今天聊到 [[B]] 这个话题，值得展开写一写。' } as any,
+      'r/a.md',
+    )
+    const dst = await entries.create({ folderId: f.id, title: 'B' } as any, 'r/b.md')
+    await links.create(src.id, 'B', { targetEntryId: dst.id })
+
+    const incoming = await links.findIncomingLinks(dst.id)
+    expect(incoming).toHaveLength(1)
+    expect(incoming[0].sourceEntryTitle).toBe('A')
+    expect(incoming[0].context).toContain('[[B]]')
+
+    // 目标改名 B → B2：反链显示快照同步
+    await links.updateTitleReferences(dst.id, 'B', 'B2')
+    const outgoing = await links.findOutgoingLinks(src.id)
+    expect(outgoing[0].targetTitle).toBe('B2')
+  })
+
   // ============ DiaryAttachment ============
 
   it('Attachment: create + findByEntry + count + delete', async () => {
@@ -186,5 +268,27 @@ describe.each(getTestDialects())('Diary Repositories [%s]', dialect => {
 
     await attachments.deleteByEntry(e.id)
     expect(await attachments.count(e.id)).toBe(0)
+  })
+
+  it('Attachment: description 往返 + findRecentImages 过滤图片与时间窗', async () => {
+    const f = await folders.create({ name: 'r2' } as any, 'r2')
+    const e = await entries.create({ folderId: f.id, title: 'A' } as any, 'r2/a.md')
+
+    const img = await attachments.create(e.id, 'a.png', 'diary/r2/.assets/a.png', 1024, 'image/png')
+    await attachments.create(e.id, 'note.pdf', 'diary/r2/.assets/note.pdf', 2048, 'application/pdf')
+
+    expect(await attachments.updateDescription(img.id, '一张截图')).toBe(true)
+    expect((await attachments.findById(img.id))!.description).toBe('一张截图')
+
+    // 只回图片
+    const recent = await attachments.findRecentImages(new Date(Date.now() - 86400000), 10)
+    expect(recent.length).toBe(1)
+    expect(recent[0].fileName).toBe('a.png')
+
+    // 时间窗外的图片不回
+    const old = await attachments.create(e.id, 'old.png', 'diary/r2/.assets/old.png', 512, 'image/png')
+    void old
+    const future = await attachments.findRecentImages(new Date(Date.now() + 3600000), 10)
+    expect(future.length).toBe(0)
   })
 })

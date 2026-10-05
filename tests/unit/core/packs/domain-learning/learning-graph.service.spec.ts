@@ -390,8 +390,32 @@ describe('LearningGraphService 间隔复习（M3-B）', () => {
         expect(r2.created).toBe(false)
         expect(r2.conceptId).toBe('c-attn')
         expect((await svc.concepts.getById('c-attn'))?.definitionShort).toBe('关注重要部分的机制')
-        // 前置边照样补上（已有概念也能补前置）
-        const edges = await svc.relations.listPrerequisites(pid, 'c-attn')
+        // 种子里已有 c-attn → c-tf（学 Transformer 前须掌握注意力）；给注意力补前置 Transformer
+        // 会构成二成员环 → 概念照常更新，但这条边被跳过并显式带回（2026-09-25：错边不该挡住建点）
+        expect(r2.cycleSkippedPrereqs).toEqual(['Transformer'])
+        expect(await svc.relations.listPrerequisites(pid, 'c-attn')).toHaveLength(0)
+        // 环防护不误伤合法方向：既有边 c-attn → c-tf 完好
+        const tfEdges = await svc.relations.listPrerequisites(pid, 'c-tf')
+        expect(tfEdges.map((e) => e.sourceId)).toEqual(['c-attn'])
+      })
+    })
+
+    it('已有概念幂等更新补前置（非环方向）→ 正常连边', async () => {
+      ds = await buildDs()
+      const pid = await seedSpace('u1', ds)
+      const svc = makeServices(ds)
+      const graph = makeGraph(svc)
+      await runWithUserAsync('u1', async () => {
+        const r1 = await graph.createConcept(pid, { name: '大模型训练', parentId: 'g-branch' })
+        expect(r1.created).toBe(true)
+        const r2 = await graph.createConcept(pid, {
+          name: '大模型训练',
+          parentId: 'g-branch',
+          prerequisites: ['Transformer'],
+        })
+        expect(r2.created).toBe(false)
+        expect(r2.linkedPrereqs.map((l) => l.name)).toEqual(['Transformer'])
+        const edges = await svc.relations.listPrerequisites(pid, r2.conceptId)
         expect(edges.map((e) => e.sourceId)).toEqual(['c-tf'])
       })
     })

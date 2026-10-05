@@ -28,6 +28,7 @@ import { NarrationSynthesisService } from './narration-synthesis.service'
 import { DialogueSynthesisService } from './dialogue-synthesis.service'
 import { ReferenceResolver } from '@core/platform/episode-production/narrative/reference-resolver'
 import { VoiceService } from '@core/platform/services/voice.service'
+import { toRelativeAssetPath } from '@core/utils/asset-path'
 
 export interface OrchestrateAudioInput {
   sceneScriptId: string
@@ -156,6 +157,10 @@ export class SceneAudioOrchestratorService {
    * 产物落库（2026-09-16 P0-CM1）：此前 V3 结果只经 IPC 返回不持久化，导出器无从
    * 读取，成片永远无声。对白写 dialogues[].audioAsset（与 V2 路径同构），旁白写
    * scene_scripts.narration_audio_path。UI handler 与 agent 工具共用本方法。
+   *
+   * 落库一律转 user-rel 相对路径（相对 dataPath，与 image_assets / segment.videoPath
+   * 同约定）：绝对路径落库后数据目录一迁移就成死路径，会被导出器当坏文件静默剔除
+   * （X4：成片无声）。读取侧统一走 resolveAssetPath 兼容存量绝对路径。
    */
   async persistToScene(sceneScriptId: string, result: OrchestrateAudioResult): Promise<void> {
     if (result.dialoguePaths.size === 0 && !result.narrationPath) return
@@ -173,7 +178,7 @@ export class SceneAudioOrchestratorService {
               id: `audio_${dialogueId}_${Date.now()}`,
               type: 'dialogue',
               text: dialogues[idx].text,
-              audioPath,
+              audioPath: toRelativeAssetPath(audioPath),
             }
           }
         }
@@ -181,7 +186,7 @@ export class SceneAudioOrchestratorService {
       }
       if (result.narrationPath) {
         await repo.update({ id: sceneScriptId } as any, {
-          narrationAudioPath: result.narrationPath,
+          narrationAudioPath: toRelativeAssetPath(result.narrationPath),
         } as any)
       }
     })

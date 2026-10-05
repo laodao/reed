@@ -31,6 +31,7 @@ import {
 } from '@core/platform/episode-production/narrative/ai/script-generator'
 import { SceneBindingWriter } from '@core/platform/episode-production/narrative/scene-binding-writer'
 import { buildAssetRosterForProject } from '@core/platform/episode-production/narrative/asset-roster-builder'
+import { reassignRefIds } from '@core/platform/episode-production/narrative/ref-id-reassign'
 import type { UpdateEpisodeScriptRequest } from '@core/database/repositories/episode-script.repository'
 import type {
   AppendScriptResult,
@@ -87,17 +88,6 @@ export interface AppendScriptOptions {
    * 但"边做边加"的用户可置 true，避免 ④ 分镜 stage 被门控提示打断。
    */
   keepApproved?: boolean
-}
-
-/** 场次内引用 id 的批次序号（保证同一批次内不重复） */
-let refIdSeq = 0
-
-/** 生成新的引用 id（对话 / 动作），与 SceneBindingWriter 内部风格保持一致 */
-function nextRefId(prefix: 'dlg' | 'act'): string {
-  refIdSeq += 1
-  return `${prefix}_${Date.now().toString(36)}_${refIdSeq.toString(36)}${Math.random()
-    .toString(36)
-    .slice(2, 8)}`
 }
 
 /** 内景 / 外景标签 */
@@ -229,19 +219,10 @@ export class ScriptAppendService {
    * SceneBindingWriter 用 AI 给的 id 作为主键（`dlg.id || 生成`），而 AI 习惯从
    * `dlg_1` / `act_1` 开始编号 —— 追加时旧的 scene_dialogues / scene_actions 行还在库
    * 里，直接写必然主键冲突。所以追加路径统一重发 id。返回新对象数组，不修改入参。
+   * （实现已抽到 narrative/ref-id-reassign，与 SceneBindingWriter 写库侧共用）
    */
   static reassignRefIds(scenes: GeneratedScene[]): GeneratedScene[] {
-    return scenes.map((scene) => ({
-      ...scene,
-      dialogues: (scene.dialogues ?? []).map((dialogue) => ({
-        ...dialogue,
-        id: nextRefId('dlg'),
-      })),
-      actions: (scene.actions ?? []).map((action) => ({
-        ...action,
-        id: nextRefId('act'),
-      })),
-    }))
+    return reassignRefIds(scenes)
   }
 
   // ==================== 编排 ====================

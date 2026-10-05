@@ -279,6 +279,12 @@ export function registerDomainLearningHandlers(): void {
       await services().graph.confirmRelation(p.id, p.sourceId, p.targetId, p.relationType, p.evidence)
       return { ok: true }
     }))
+  // 删除关系边（2026-09-25：错边/成环边的修复入口；删数据是人审动作，agent 工具面不提供）
+  ipcBridge.handle('dl:remove-relation', (_e, p: { id: string; relationId: string }) =>
+    wrap(async () => {
+      await services().graph.removeRelation(p.id, p.relationId)
+      return { ok: true }
+    }))
 
   // ---- 未解问题队列 ----
   ipcBridge.handle('dl:list-questions', (_e, p: { id: string }) =>

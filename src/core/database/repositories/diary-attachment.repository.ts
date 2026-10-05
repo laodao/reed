@@ -27,6 +27,7 @@ export class DiaryAttachmentRepository extends BaseRepository<
       filePath: e.filePath,
       fileSize: e.fileSize ?? 0,
       mimeType: e.mimeType || undefined,
+      description: e.description || undefined,
       createdAt: e.createdAt instanceof Date ? e.createdAt : new Date(e.createdAt),
     }
   }
@@ -45,6 +46,7 @@ export class DiaryAttachmentRepository extends BaseRepository<
     filePath: string,
     fileSize: number,
     mimeType?: string,
+    description?: string,
   ): Promise<DiaryAttachment> {
     const id = randomUUID()
     const entity = this.repo.create({
@@ -54,10 +56,29 @@ export class DiaryAttachmentRepository extends BaseRepository<
       filePath,
       fileSize,
       mimeType: mimeType ?? null,
+      description: description ?? null,
       createdAt: new Date(),
     })
     const saved = await this.scoped.save(entity)
     return this.toDto(saved)
+  }
+
+  async updateDescription(id: string, description: string): Promise<boolean> {
+    const existing = await this.scoped.findOne({ id } as any)
+    if (!existing) return false
+    existing.description = description
+    await this.scoped.save(existing)
+    return true
+  }
+
+  /** 最近 N 天的图片附件（写作引子素材；按创建时间降序） */
+  async findRecentImages(since: Date, limit = 5): Promise<DiaryAttachment[]> {
+    const qb = this.scoped.qb('a')
+    qb.where('a.created_at >= :since', { since })
+    qb.andWhere("a.mime_type LIKE 'image/%'")
+    qb.orderBy('a.created_at', 'DESC')
+    qb.take(limit)
+    return (await qb.getMany()).map(e => this.toDto(e))
   }
 
   async delete(id: string): Promise<boolean> {

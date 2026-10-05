@@ -3,6 +3,15 @@
     <div class="page-header">
       <h1>长文写作</h1>
       <div class="header-actions">
+        <!-- 设定资产库入口（2026-09-24 P0）：与侧边栏二级菜单同路由 -->
+        <el-button @click="router.push('/longwriting/worlds')">
+          <el-icon><Collection /></el-icon>
+          世界观库
+        </el-button>
+        <el-button @click="router.push('/longwriting/ip')">
+          <el-icon><UserFilled /></el-icon>
+          角色 IP 库
+        </el-button>
         <el-button @click="showSettingsDialog = true">
           <el-icon><Setting /></el-icon>
           设置
@@ -196,7 +205,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Edit, Delete, Reading, Document, Setting, Picture } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, Reading, Document, Setting, Picture, Collection, UserFilled } from '@element-plus/icons-vue'
 import DictionaryEditor from '../components/longwriting/DictionaryEditor.vue'
 import CoverSettingsDialog from '../components/longwriting/CoverSettingsDialog.vue'
 import { toImageUrl } from '../utils/asset-url'

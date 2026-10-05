@@ -16,9 +16,10 @@ import {
   checkLessonProgression,
   detectRequiredSkills,
   hasPrerequisiteDeclaration,
-  isPrerequisiteAncestor,
   type ProgressionGateInput,
 } from '@core/packs/domain-learning/rules/learning-progression.rules'
+// 前置祖先判定 2026-09-25 迁至 learning-prerequisites.rules（全模块唯一实现，建边防环与讲义门禁共用）
+import { isPrerequisiteAncestor } from '@core/packs/domain-learning/rules/learning-prerequisites.rules'
 
 /** 最小合法 meta 区（含前置声明；只声明"已掌握张量"，其他前置能力留给正文触发） */
 const META = {

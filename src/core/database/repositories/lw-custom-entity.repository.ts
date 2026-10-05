@@ -15,7 +15,7 @@ export interface CustomEntityDto {
   name: string
   parentId: string | null
   fields: Record<string, unknown> | null
-  origin: { type: 'discussion' | 'manual' | 'extract'; cardId?: string; turns?: number[] } | null
+  origin: { type: 'discussion' | 'manual' | 'extract'; cardId?: string; turns?: number[]; libraryWorldId?: string; libraryEntryId?: string; libraryVersion?: number } | null
   createdAt: number
   updatedAt: number
 }
@@ -46,6 +46,20 @@ export class LwCustomEntityRepository extends BaseRepository<LwCustomEntityEntit
       createdAt: e.createdAt,
       updatedAt: e.updatedAt,
     }
+  }
+
+  async getById(id: string): Promise<CustomEntityDto | null> {
+    const row = await this.scoped.findOne({ id } as any)
+    return row ? this.toDto(row) : null
+  }
+
+  async getByProjectId(projectId: string): Promise<CustomEntityDto[]> {
+    const rows = await this.scoped
+      .qb('e')
+      .where('e.project_id = :pid', { pid: projectId })
+      .orderBy('e.created_at', 'ASC')
+      .getMany()
+    return this.toDtoList(rows)
   }
 
   async getByProjectAndKind(projectId: string, kindKey: string): Promise<CustomEntityDto[]> {
@@ -88,6 +102,17 @@ export class LwCustomEntityRepository extends BaseRepository<LwCustomEntityEntit
     row.updatedAt = Date.now()
     await this.scoped.save(row)
     return this.toDto(row)
+  }
+
+  /** 更新血缘 origin（库同步用；scoped 防越界 + 方言中立，替代裸 SQL UPDATE） */
+  async updateOrigin(id: string, origin: Record<string, unknown>): Promise<boolean> {
+    const row = await this.scoped.findOne({ id } as any)
+    if (!row) return false
+    await this.scoped.update({ id } as any, {
+      origin: JSON.stringify(origin),
+      updatedAt: Date.now(),
+    } as any)
+    return true
   }
 
   async deleteRow(id: string): Promise<boolean> {

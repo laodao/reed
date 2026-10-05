@@ -8,7 +8,7 @@
  */
 import { In, IsNull, MoreThanOrEqual, Not, type DataSource, type FindOptionsWhere } from 'typeorm'
 import { randomUUID } from 'crypto'
-import { KbAtomEntity, type KbAtomStatus, type KbAtomType } from '../entities/kb-brain/kb-atom.entity'
+import { KbAtomEntity, KB_ATOM_LAYERS, type KbAtomLayer, type KbAtomStatus, type KbAtomType } from '../entities/kb-brain/kb-atom.entity'
 import { BaseRepository } from '../base-repository'
 import { getCurrentUserId } from '@core/context/user-context'
 
@@ -19,6 +19,7 @@ export interface KbAtomRecord {
   knowledgeBaseId: string
   statement: string
   type: KbAtomType
+  layer: KbAtomLayer
   status: KbAtomStatus
   certainty: number
   validFrom: string | null
@@ -43,7 +44,7 @@ export interface KbAtomRecord {
 }
 
 /** 批量插入入参（id 可选，缺省生成） */
-export type KbAtomInput = Partial<Pick<KbAtomRecord, 'id' | 'validFrom' | 'validUntil' | 'sourceChapterId' | 'sourceChapterHash' | 'sourceChunkId' | 'startOffset' | 'endOffset' | 'subjectEntityId' | 'objectEntityId' | 'lensNoteId' | 'supersededByAtomId'>> & {
+export type KbAtomInput = Partial<Pick<KbAtomRecord, 'id' | 'validFrom' | 'validUntil' | 'sourceChapterId' | 'sourceChapterHash' | 'sourceChunkId' | 'startOffset' | 'endOffset' | 'subjectEntityId' | 'objectEntityId' | 'lensNoteId' | 'supersededByAtomId' | 'layer'>> & {
   knowledgeBaseId: string
   statement: string
   sourceDocumentId: string
@@ -66,6 +67,7 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
       knowledgeBaseId: e.knowledgeBaseId,
       statement: e.statement,
       type: e.type,
+      layer: KB_ATOM_LAYERS.includes(e.layer as KbAtomLayer) ? (e.layer as KbAtomLayer) : 'detail',
       status: e.status,
       certainty: e.certainty,
       validFrom: e.validFrom ?? null,
@@ -101,6 +103,7 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
       e.knowledgeBaseId = r.knowledgeBaseId
       e.statement = r.statement
       e.type = r.type
+      e.layer = KB_ATOM_LAYERS.includes(r.layer as KbAtomLayer) ? (r.layer as KbAtomLayer) : 'detail'
       e.status = 'supported'
       e.certainty = r.certainty ?? 0.8
       e.validFrom = r.validFrom ?? null
@@ -146,10 +149,10 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
     return this.toDtoList(rows)
   }
 
-  /** 按库查（面板论断列表；可选 status/type/types/origin 过滤，创建时间倒序） */
+  /** 按库查（面板论断列表；可选 status/type/types/origin/layers 过滤，创建时间倒序） */
   async findByKb(
     kbId: string,
-    opts?: { status?: KbAtomStatus[]; type?: string; types?: string[]; origin?: string; documentId?: string; limit?: number },
+    opts?: { status?: KbAtomStatus[]; type?: string; types?: string[]; origin?: string; documentId?: string; layers?: KbAtomLayer[]; limit?: number },
   ): Promise<KbAtomRecord[]> {
     const where: Record<string, unknown> = { knowledgeBaseId: kbId }
     if (opts?.documentId) where.sourceDocumentId = opts.documentId
@@ -157,16 +160,19 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
     if (opts?.origin) where.origin = opts.origin
     if (opts?.type) where.type = opts.type // SQL 层过滤：type 独立于 take 截断（悬而未决视图不受 5000 上限漏数据）
     if (opts?.types?.length) where.type = In(opts.types)
+    if (opts?.layers?.length) where.layer = In(opts.layers)
     const rows = await this.scoped.find({
       where: where as FindOptionsWhere<KbAtomEntity>,
       order: { createdAt: 'DESC' } as never,
       take: opts?.limit ?? 200,
     })
     const typeSet = opts?.types?.length ? new Set(opts.types) : null
+    const layerSet = opts?.layers?.length ? new Set(opts.layers) : null
     return this.toDtoList(rows).filter(
       (r) =>
         (!opts?.type || r.type === opts.type) &&
         (!typeSet || typeSet.has(r.type)) &&
+        (!layerSet || layerSet.has(r.layer)) &&
         (!opts?.origin || r.origin === opts.origin),
     )
   }
@@ -314,6 +320,7 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
     total: number
     byStatus: Record<string, number>
     byType: Record<string, number>
+    byLayer: Record<string, number>
     humanOrigin: number
     cited: number
     openQuestions: number
@@ -323,6 +330,7 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
     })
     const byStatus: Record<string, number> = {}
     const byType: Record<string, number> = {}
+    const byLayer: Record<string, number> = {}
     let humanOrigin = 0
     let cited = 0
     let openQuestions = 0
@@ -331,11 +339,12 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
     for (const r0 of rows) {
       byStatus[r0.status] = (byStatus[r0.status] ?? 0) + 1
       byType[r0.type] = (byType[r0.type] ?? 0) + 1
+      byLayer[r0.layer] = (byLayer[r0.layer] ?? 0) + 1
       if (!working.has(r0.status)) continue
       if (r0.origin === 'human') humanOrigin++
       if (r0.useCount > 0) cited++
       if (r0.type === 'open-question') openQuestions++
     }
-    return { total: rows.length, byStatus, byType, humanOrigin, cited, openQuestions }
+    return { total: rows.length, byStatus, byType, byLayer, humanOrigin, cited, openQuestions }
   }
 }

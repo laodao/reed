@@ -43,6 +43,9 @@
                   <el-icon><Edit /></el-icon>
                   重命名
                 </el-dropdown-item>
+                <el-dropdown-item command="toggle-brain">
+                  {{ folder.brainOptIn ? '退出知识大脑' : '纳入知识大脑' }}
+                </el-dropdown-item>
                 <el-dropdown-item command="delete" divided>
                   <el-icon><Delete /></el-icon>
                   删除

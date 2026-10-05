@@ -13,7 +13,10 @@ import type { Storyboard } from '@shared/types/story-to-video.types'
 import { StoryToVideoAIService } from '@core/packs/episode-production/services/story-to-video-ai.service'
 import { StoryboardService, normalizeShotNumbers, collectUnboundCharacters } from '@core/platform/episode-production/narrative/services/storyboard.service'
 import { StoryboardCogenService } from '@core/platform/episode-production/narrative/services/storyboard-cogen.service'
-import { cleanupStoryboards } from '@core/platform/episode-production/narrative/storyboard-cleanup.service'
+import { cleanupStoryboards, invalidateStoryboardVisuals } from '@core/platform/episode-production/narrative/storyboard-cleanup.service'
+import { insertStoryboardIn } from '@core/platform/episode-production/narrative/storyboard-insert'
+import { withPendingKeyframeFileDeletions } from '@core/platform/episode-production/render/keyframe/keyframe-cleanup'
+import { rebuildStoryboardDialogueLinks } from '@core/platform/episode-production/narrative/storyboard-dialogue-links'
 
 export function registerStoryboardHandlers(): void {
   // ==================== 分镜管理 ====================
@@ -194,6 +197,28 @@ async function handleDeleteStoryboard(
   }
 }
 
+/*
+ * X3（2026-09-24 审计）画面内容字段白名单：这些字段进关键帧/视频生成的
+ * prompt 或选图逻辑，改动后旧画面产物（关键帧 + 视频）即过期，需级联作废。
+ * 不收录的：dialogueIds（只重建 links，不动画面）、duration/transition/
+ * shotType/cameraAngle/cameraMovement 等镜头元信息（时长/转场不影响已生成
+ * 画面；镜头参数按任务口径与 shotType 同列，避免微调参数即作废全部产物）。
+ */
+function visualContentChanged(before: Storyboard, patch: Partial<Storyboard>): boolean {
+  const str = (v: unknown) => (v === null || v === undefined ? '' : String(v))
+  const arr = (v: unknown) => JSON.stringify(Array.isArray(v) ? v : [])
+  const obj = (v: unknown) => JSON.stringify(v ?? null)
+
+  if (patch.frameDescription !== undefined && str(patch.frameDescription) !== str(before.frameDescription)) return true
+  if (patch.subject !== undefined && str(patch.subject) !== str(before.subject)) return true
+  if (patch.composition !== undefined && str(patch.composition) !== str(before.composition)) return true
+  if (patch.characters !== undefined && arr(patch.characters) !== arr(before.characters)) return true
+  if (patch.locationBindingIds !== undefined && arr(patch.locationBindingIds) !== arr(before.locationBindingIds)) return true
+  if (patch.itemBindingIds !== undefined && arr(patch.itemBindingIds) !== arr(before.itemBindingIds)) return true
+  if (patch.referenceImageIds !== undefined && obj(patch.referenceImageIds) !== obj(before.referenceImageIds)) return true
+  return false
+}
+
 async function handleUpdateStoryboard(
   _event: any,
   storyboardId: string,
@@ -205,9 +230,42 @@ async function handleUpdateStoryboard(
       return { success: false, error: '数据库未初始化' }
     }
 
+    // 先取旧值：C2 links 同步（dialogueIds 比对）与 X3 画面内容变更判定共用
+    const before = await db.storyboards.getById(storyboardId)
+    if (!before) {
+      return { success: false, error: '分镜不存在' }
+    }
+    const dialogueIdsTouched = data.dialogueIds !== undefined
+    const visualsChanged = visualContentChanged(before, data)
+
+    /*
+     * X3：画面内容变更 → 先作废旧画面产物（关键帧行/图/磁盘文件、自身
+     * videoPath+status、所属未 superseded 片段），再落新内容。顺序保证失败
+     * 方向安全：作废失败则整体不动可直接重试；落库失败也不会有「新内容+
+     * 旧画面」的脱钩状态。磁盘文件走收集器，事务提交成功后统一删。
+     */
+    if (visualsChanged && db.dataSource) {
+      await withPendingKeyframeFileDeletions(() =>
+        db.dataSource!.transaction((manager) =>
+          invalidateStoryboardVisuals(manager, storyboardId),
+        ),
+      )
+    }
+
     const storyboard = await db.storyboards.update(storyboardId, data)
     if (!storyboard) {
       return { success: false, error: '分镜不存在' }
+    }
+
+    // C2：仅当本次保存动了 dialogueIds 且值确实变化时才同步 links（未变不重建）
+    if (
+      dialogueIdsTouched &&
+      db.dataSource &&
+      JSON.stringify(before.dialogueIds ?? []) !== JSON.stringify(storyboard.dialogueIds ?? [])
+    ) {
+      await rebuildStoryboardDialogueLinks(db.dataSource, storyboard).catch((e) => {
+        console.error('[handleUpdateStoryboard] 重建对白承接 links 失败:', e)
+      })
     }
 
     return { success: true, data: storyboard }
@@ -226,7 +284,7 @@ async function handleGenerateStoryboard(
 ): Promise<IpcResponse> {
   try {
     const db = getCoreDatabaseManager()
-    if (!db.sceneScripts || !db.storyboards) {
+    if (!db.sceneScripts || !db.storyboards || !db.dataSource) {
       return { success: false, error: '数据库未初始化' }
     }
 
@@ -258,31 +316,62 @@ async function handleGenerateStoryboard(
       }
     )
 
-    // 创建分镜记录（shotNumber 按 AI 返回顺序强制重排为 1..N，AI 返回可能跳号）
-    const storyboardRecords: Storyboard[] = []
-    for (const sb of normalizeShotNumbers(result.storyboards)) {
-      // 调试日志
-      console.log(`[Handler] 分镜 ${sb.shotNumber} dialogueIds:`, sb.dialogueIds)
-
-      const storyboard = await db.storyboards.create({
-        sceneScriptId: sceneId,
-        shotNumber: sb.shotNumber,
-        shotType: sb.shotType,
-        cameraAngle: sb.cameraAngle,
-        cameraMovement: sb.cameraMovement,
-        movementDuration: sb.movementDuration,
-        frameDescription: sb.frameDescription,
-        subject: sb.subject,
-        composition: sb.composition,
-        characters: sb.characters,
-        narrationId: sb.narrationId,
-        dialogueIds: sb.dialogueIds,
-        actionIds: sb.actionIds,
-        duration: sb.duration,
-        transition: sb.transition
-      })
-      storyboardRecords.push(storyboard)
+    /*
+     * 创建分镜记录（shotNumber 按 AI 返回顺序强制重排为 1..N，AI 返回可能跳号）。
+     * 一致性修复 M2（第二批）：先删该场景旧分镜（cleanupStoryboards 级联清
+     * 关键帧/图、characters、受影响片段置 superseded），删旧 + 插新 + links
+     * 包进同一个事务——重复生成不再残留双份分镜/双份 links，中途失败整体回滚
+     * （旧分镜完整保留，同 B2-Task3 replaceSceneStoryboards 口径）。
+     * SQLite 串行门约束：事务回调内禁止全局 manager/仓库方法（db.storyboards
+     * 走 DataSource 全局 manager 会被门拒），一律走事务 manager 的
+     * getRepository；裸 manager 不注入 user_id（复核修复 P0-3），userId 手工
+     * 注入（同 scoped 语义）。
+     *
+     * S1 同型缺陷守卫：AI 空结果不进删建事务，保留原分镜（空结果≠用户要清空）。
+     */
+    const shots = normalizeShotNumbers(result.storyboards)
+    if (shots.length === 0) {
+      return { success: false, error: 'AI 未返回有效分镜，已保留原分镜' }
     }
+
+    // 旧分镜 id 列表只读，在事务外读取（串行门不拦）
+    // E1：收集器包住事务——旧分镜关键帧磁盘文件在提交成功后统一删，回滚则随旧分镜一并保留
+    const oldStoryboards = await db.storyboards.getBySceneScriptId(sceneId)
+    await withPendingKeyframeFileDeletions(() => db.dataSource!.transaction(async (manager) => {
+      await cleanupStoryboards(manager, oldStoryboards.map((sb) => sb.id))
+
+      for (const sb of shots) {
+        // 调试日志
+        console.log(`[Handler] 分镜 ${sb.shotNumber} dialogueIds:`, sb.dialogueIds)
+
+        const storyboard = await insertStoryboardIn(manager, {
+          sceneScriptId: sceneId,
+          shotNumber: sb.shotNumber,
+          shotType: sb.shotType,
+          cameraAngle: sb.cameraAngle,
+          cameraMovement: sb.cameraMovement,
+          movementDuration: sb.movementDuration,
+          frameDescription: sb.frameDescription,
+          subject: sb.subject,
+          composition: sb.composition,
+          characters: sb.characters as unknown[],
+          narrationId: sb.narrationId,
+          dialogueIds: sb.dialogueIds,
+          actionIds: sb.actionIds,
+          duration: sb.duration,
+          transition: sb.transition,
+        })
+
+        // 一致性修复 v3（A3）：对白承接落库 links（字幕镜头级分配数据源）
+        await rebuildStoryboardDialogueLinks(manager, {
+          id: storyboard.id,
+          dialogueIds: sb.dialogueIds,
+        })
+      }
+    }))
+
+    // 事务提交后复读（DTO 口径同原 create 返回值：transition 解析、时间戳 epoch 化）
+    const storyboardRecords: Storyboard[] = await db.storyboards.getBySceneScriptId(sceneId)
 
     // P1-13：单场景分镜生成也推进 episode → storyboarding（与批量路径 :369 一致）
     try {
@@ -345,31 +434,80 @@ async function handleGenerateStoryboards(
 
     // 创建分镜记录
     const allStoryboards: Storyboard[] = []
+    // S1 同型缺陷守卫：AI 空结果的场景跳过删建、保留旧分镜（单场景空结果不让整批失败）
+    const skippedScenes: string[] = []
+    /*
+     * 一致性修复第三批 Task 2：与单场景路径同构——per-scene 单事务（删旧 + 插新
+     * + links），中途失败该场景整体回滚（旧分镜完整保留）、计入 failedScenes，
+     * 不影响其他场景；不再静默吞 links 错误（旧 .catch(() => {})）。失败语义：
+     * B3-Task1 后 rebuild 已过滤悬空 id（不再因悬空 id FK 抛错），真正失败源是
+     * DB 错误/触发器等，出现即表面化。
+     */
+    const failedScenes: Array<{ sceneId: string; error: string }> = []
     for (const [sceneId, result] of results) {
-      // 删除该场景的旧分镜（P2-14：级联清关键帧/图，受影响片段置 superseded）
-      const oldStoryboards = await db.storyboards.getBySceneScriptId(sceneId)
-      await cleanupStoryboards(db.dataSource!, oldStoryboards.map(sb => sb.id))
+      const shots = normalizeShotNumbers(result.storyboards)
+      if (shots.length === 0) {
+        console.warn(`[handleGenerateStoryboards] 场景 ${sceneId} AI 未返回有效分镜，跳过删建、保留旧分镜`)
+        skippedScenes.push(sceneId)
+        continue
+      }
 
-      // 创建新分镜（shotNumber 按 AI 返回顺序强制重排为 1..N，AI 返回可能跳号）
-      for (const sb of normalizeShotNumbers(result.storyboards)) {
-        const storyboard = await db.storyboards.create({
-          sceneScriptId: sceneId,
-          shotNumber: sb.shotNumber,
-          shotType: sb.shotType,
-          cameraAngle: sb.cameraAngle,
-          cameraMovement: sb.cameraMovement,
-          movementDuration: sb.movementDuration,
-          frameDescription: sb.frameDescription,
-          subject: sb.subject,
-          composition: sb.composition,
-          characters: sb.characters,
-          narrationId: sb.narrationId,
-          dialogueIds: sb.dialogueIds,
-          actionIds: sb.actionIds,
-          duration: sb.duration,
-          transition: sb.transition
-        })
-        allStoryboards.push(storyboard)
+      // 旧分镜 id 列表只读，在事务外读取（串行门不拦）
+      // E1：收集器包住事务——旧分镜关键帧磁盘文件在提交成功后统一删，回滚则随旧分镜一并保留
+      const oldStoryboards = await db.storyboards.getBySceneScriptId(sceneId)
+      try {
+        await withPendingKeyframeFileDeletions(() => db.dataSource!.transaction(async (manager) => {
+          await cleanupStoryboards(manager, oldStoryboards.map((sb) => sb.id))
+
+          // 创建新分镜（shotNumber 按 AI 返回顺序强制重排为 1..N，AI 返回可能跳号）
+          for (const sb of shots) {
+            const storyboard = await insertStoryboardIn(manager, {
+              sceneScriptId: sceneId,
+              shotNumber: sb.shotNumber,
+              shotType: sb.shotType,
+              cameraAngle: sb.cameraAngle,
+              cameraMovement: sb.cameraMovement,
+              movementDuration: sb.movementDuration,
+              frameDescription: sb.frameDescription,
+              subject: sb.subject,
+              composition: sb.composition,
+              characters: sb.characters as unknown[],
+              narrationId: sb.narrationId,
+              dialogueIds: sb.dialogueIds,
+              actionIds: sb.actionIds,
+              duration: sb.duration,
+              transition: sb.transition,
+            })
+
+            // 一致性修复 C1：批量路径同样落库对白承接 links（与单场景路径同口径，
+            // 失败即抛 → 本场景整体回滚并计入 failedScenes，不静默吞）
+            await rebuildStoryboardDialogueLinks(manager, {
+              id: storyboard.id,
+              dialogueIds: sb.dialogueIds,
+            })
+          }
+        }))
+      } catch (e: any) {
+        console.error(`[handleGenerateStoryboards] 场景 ${sceneId} 写库失败，已回滚保留旧分镜:`, e)
+        failedScenes.push({ sceneId, error: e?.message ?? '写库失败（未知异常）' })
+        continue
+      }
+
+      // 事务提交后复读（DTO 口径同单场景路径：transition 解析、时间戳 epoch 化）
+      allStoryboards.push(...(await db.storyboards.getBySceneScriptId(sceneId)))
+    }
+
+    /*
+     * 全灭守卫（第三批 Task 2 评审 Important）：全部场景写库失败（无任何成功场景）
+     * 时 success:false + error 汇总——否则 success:true + storyboards:[] + 状态推进，
+     * 用户侧无任何失败信号。skippedScenes 的空结果跳过不算失败（部分成功/部分跳过
+     * 仍 success:true 并推进状态）。
+     */
+    if (allStoryboards.length === 0 && failedScenes.length > 0) {
+      const detail = failedScenes.map((f) => `${f.sceneId}: ${f.error}`).join('；')
+      return {
+        success: false,
+        error: `批量生成分镜失败：${failedScenes.length} 个场景写库失败（已回滚保留旧分镜）——${detail}`,
       }
     }
 
@@ -397,6 +535,10 @@ async function handleGenerateStoryboards(
         storyboards: allStoryboards,
         unboundCharacters: unbound.names,
         unboundCount: unbound.count,
+        // AI 空结果而跳过删建、保留旧分镜的场景（供 renderer 提示用户重生）
+        skippedScenes,
+        // 写库失败已整体回滚（旧分镜完整保留）的场景（第三批 Task 2：不再静默吞错）
+        failedScenes,
       },
     }
   } catch (error: any) {
@@ -472,7 +614,7 @@ async function handleCogenSceneStoryboards(
  */
 async function handleFillStoryboard(
   _event: any,
-  storyboardId: string,
+  _storyboardId: string,
   fillInput: {
     shotNumber: number
     sceneContext: string

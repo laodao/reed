@@ -42,7 +42,7 @@ export type EnsurePassDecision =
   | { action: 'run'; pass: KbDigestPassRecord }
   | { action: 'skip'; reason: 'done-same-hash' | 'running' | 'exhausted'; pass: KbDigestPassRecord }
 
-const MAX_ATTEMPTS = 3
+export const MAX_ATTEMPTS = 3
 
 export class KbDigestPassRepository extends BaseRepository<KbDigestPassEntity, KbDigestPassRecord> {
   constructor(dataSource: DataSource) {

@@ -41,7 +41,7 @@ import type {
   Subscription,
   SubscriptionFilter,
 } from '@shared/types/event.types'
-import { getCurrentUserId, runWithUser, runWithoutUser } from '@core/context/user-context'
+import { getCurrentUserId, runWithUser, runWithUserAsync, runWithoutUser } from '@core/context/user-context'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { PlatformEventRepository } from '@core/database/repositories/platform-event.repository'
 import type { PlatformEventEntity } from '@core/database/entities/platform-event.entities'
@@ -666,7 +666,18 @@ export class PlatformEventBus implements EventBus {
   ): Promise<'acked' | 'retrying' | 'dead'> {
     const { name, userScope } = consumer
     try {
-      await consumer.handler(event)
+      // 租户重包（多租户复核修复）：handler 内的写库走 ALS（scoped.save 注入"当前用户"），
+      // 而 pump 可能由其他用户的请求或兜底定时器（无 ALS）踢动——若不按事件属主重建
+      // 上下文，A 触发的 pump 批次会把 B 的事件数据写到 A 名下 / 写成 NULL 孤儿行，
+      // 且 B 的会话终态更新因 WHERE user_id 不匹配 0 行命中而卡死。系统事件
+      // （userId=null）保持原样投递。
+      if (event.userId) {
+        await runWithUserAsync(event.userId, async () => {
+          await consumer.handler(event)
+        })
+      } else {
+        await consumer.handler(event)
+      }
       await this.repo.ackAdvance(name, userScope, event.seq)
       this.firstFailureAt.delete(`${consumer.key}|${event.seq}`)
       this.decrementInFlight(consumer)

@@ -149,12 +149,12 @@ export class KbEntityRepository extends BaseRepository<KbEntityEntity, KbEntityR
     )
   }
 
-  /** 全部 active 实体（id+规范名+别名+类型；PPR 种子/挂点提示/设定卡归纳用） */
+  /** 全部 active 实体（id+规范名+别名+类型+摘要；PPR 种子/挂点提示/设定卡归纳/人物册用） */
   async listActiveWithAliases(
     kbId: string,
     limit: number,
     opts?: { excludeTypes?: string[]; orderByUpdated?: boolean },
-  ): Promise<Array<{ id: string; name: string; aliases: string[]; entityType: string }>> {
+  ): Promise<Array<{ id: string; name: string; aliases: string[]; entityType: string; summary: string | null }>> {
     const where: Record<string, unknown> = { knowledgeBaseId: kbId, status: 'active' }
     if (opts?.excludeTypes?.length) where.entityType = Not(In(opts.excludeTypes))
     const rows = await this.scoped.find({
@@ -163,7 +163,7 @@ export class KbEntityRepository extends BaseRepository<KbEntityEntity, KbEntityR
       order: (opts?.orderByUpdated ? { updatedAt: 'DESC' } : { createdAt: 'ASC' }) as never,
       take: limit,
     })
-    return rows.map((r) => ({ id: r.id, name: r.name, aliases: safeParseArray(r.aliases), entityType: r.entityType }))
+    return rows.map((r) => ({ id: r.id, name: r.name, aliases: safeParseArray(r.aliases), entityType: r.entityType, summary: r.summary ?? null }))
   }
 
   /** 全部 active 实体规范名（原子化的挂点提示词表；按创建时间稳定排序） */
@@ -184,6 +184,16 @@ export class KbEntityRepository extends BaseRepository<KbEntityEntity, KbEntityR
       take: limit,
     })
     return this.toDtoList(rows)
+  }
+
+  /** 体检：active 实体总数 */
+  async countActive(kbId: string): Promise<number> {
+    return this.scoped.count({ knowledgeBaseId: kbId, status: 'active' } as FindOptionsWhere<KbEntityEntity>)
+  }
+
+  /** 体检：缺演化摘要的 pending 实体数 */
+  async countPendingSummaries(kbId: string): Promise<number> {
+    return this.scoped.count({ knowledgeBaseId: kbId, summaryStatus: 'pending', status: 'active' } as FindOptionsWhere<KbEntityEntity>)
   }
 
   async deleteByKnowledgeBaseId(knowledgeBaseId: string): Promise<void> {

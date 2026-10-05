@@ -65,10 +65,18 @@ export async function createAdapterForProviderWithReason(
     }
   }
 
-  // 用户可在 customParams.videoCapabilities 进一步覆盖（启用 keyframes 等高级特性）
-  const capabilitiesOverride: VideoProviderCapabilities | undefined =
-    ((cfg.customParams as any)?.videoCapabilities as VideoProviderCapabilities | undefined) ??
-    deriveCapabilitiesFromModel(selectedModel, providerType)
+  /*
+   * 用户可在 customParams.videoCapabilities 覆盖部分字段（启用 keyframes 等高级特性）。
+   * merge 而非整对象替换（2026-09-25 评审修复）：comfyui 用户只覆盖 maxDurationSec 等
+   * 字段时，推导出的 subjectReference/keyframes 必须保留，否则 assetRef 守卫误拦截。
+   */
+  const userCapsOverride = (cfg.customParams as any)?.videoCapabilities as
+    | Partial<VideoProviderCapabilities>
+    | undefined
+  const capabilitiesOverride: VideoProviderCapabilities = {
+    ...deriveCapabilitiesFromModel(selectedModel, providerType),
+    ...userCapsOverride,
+  }
 
   const baseProvider = createVideoProvider(providerType, {
     id: providerConfigId,
@@ -123,6 +131,8 @@ export function deriveCapabilitiesFromModel(
       maxDurationSec: typeof f.maxDuration === 'number' && f.maxDuration > 0 ? f.maxDuration : 5,
       subjectSupport,
       maxSubjects,
+      // V1（2026-09-25）：仅 ComfyUI H3 网关 refs 语义=主体外观，其余 provider image 语义=首帧
+      subjectReference: type === 'comfyui',
     }
     return withBuiltinKeyframesOverride(caps, type)
   }
@@ -149,6 +159,7 @@ export function deriveCapabilitiesFromModel(
     maxDurationSec: 5,
     subjectSupport,
     maxSubjects,
+    subjectReference: type === 'comfyui',
   }, type)
 }
 

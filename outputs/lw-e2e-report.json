@@ -1,0 +1,229 @@
+{
+  "steps": [
+    {
+      "label": "步骤0 提供商可用",
+      "ok": true,
+      "detail": "阿里百炼平台 (pc_mteg31dt_0uh5wd62p)"
+    },
+    {
+      "label": "步骤1 清理旧E2E项目",
+      "ok": true,
+      "detail": "lw_1790019565418_s79hazx0f"
+    },
+    {
+      "label": "步骤1 项目就绪",
+      "ok": true,
+      "detail": "lw_1790020248613_kwyfmkk7g"
+    },
+    {
+      "label": "步骤1 stage模型",
+      "ok": true,
+      "detail": "deepseek-v4.1-flash"
+    },
+    {
+      "label": "步骤2 概要",
+      "ok": true,
+      "detail": "概要 112 字 | 冲突: 林小满想要两件事：找到父亲林远航的下落，守住他留下的灯塔和那只哨子。阻碍是一整套"
+    },
+    {
+      "label": "步骤3 人物册",
+      "ok": true,
+      "detail": "林小满(protagonist)、陈屿(supporting)、万金镛(antagonist)"
+    },
+    {
+      "label": "步骤3 地点册",
+      "ok": true,
+      "detail": "老灯塔、雾岛"
+    },
+    {
+      "label": "步骤3 物品册（关键道具）",
+      "ok": true,
+      "detail": "走私账册、黄铜哨子"
+    },
+    {
+      "label": "步骤3 故事线",
+      "ok": true,
+      "detail": "灯塔失踪案（第1—4章）"
+    },
+    {
+      "label": "步骤4 大纲4章",
+      "ok": true,
+      "detail": "第1章·雾夜接灯 → 第2章·断灯之夜 → 第3章·礁洞疑踪 → 第4章·雾散灯明"
+    },
+    {
+      "label": "第1章 正文长度",
+      "ok": true,
+      "detail": "2455 字（249s）"
+    },
+    {
+      "label": "第1章 图谱管线完成",
+      "ok": true,
+      "detail": "状态摘要已生成"
+    },
+    {
+      "label": "第1章 设计卡章号",
+      "ok": true,
+      "detail": "## 本章设计卡（第1章 第1章·雾夜接灯）"
+    },
+    {
+      "label": "第1章 摘要章号",
+      "ok": true,
+      "detail": "chapter_number=1"
+    },
+    {
+      "label": "第1章 R9自动入册",
+      "ok": true,
+      "detail": "处理 1 项"
+    },
+    {
+      "label": "第1章 一致性扫描",
+      "ok": true,
+      "detail": "无阻断疑点"
+    },
+    {
+      "label": "第1章 事件章号键挂",
+      "ok": true,
+      "detail": "events 章号集 [1]（本章 1 必须在内）"
+    },
+    {
+      "label": "第2章 正文长度",
+      "ok": true,
+      "detail": "2785 字（540s）"
+    },
+    {
+      "label": "第2章 图谱管线完成",
+      "ok": true,
+      "detail": "状态摘要已生成"
+    },
+    {
+      "label": "第2章 设计卡章号",
+      "ok": true,
+      "detail": "## 本章设计卡（第2章 第2章·断灯之夜）"
+    },
+    {
+      "label": "第2章 摘要章号",
+      "ok": true,
+      "detail": "chapter_number=2"
+    },
+    {
+      "label": "第2章 R9自动入册",
+      "ok": true,
+      "detail": "处理 1 项"
+    },
+    {
+      "label": "第2章 一致性扫描",
+      "ok": true,
+      "detail": "无阻断疑点"
+    },
+    {
+      "label": "第2章 事件章号键挂",
+      "ok": true,
+      "detail": "events 章号集 [1,2]（本章 2 必须在内）"
+    },
+    {
+      "label": "第3章 正文长度",
+      "ok": true,
+      "detail": "3393 字（456s）"
+    },
+    {
+      "label": "第3章 图谱管线完成",
+      "ok": true,
+      "detail": "状态摘要已生成"
+    },
+    {
+      "label": "第3章 设计卡章号",
+      "ok": true,
+      "detail": "## 本章设计卡（第3章 第3章·礁洞疑踪）"
+    },
+    {
+      "label": "第3章 摘要章号",
+      "ok": true,
+      "detail": "chapter_number=3"
+    },
+    {
+      "label": "第3章 R9自动入册",
+      "ok": true,
+      "detail": "处理 1 项"
+    },
+    {
+      "label": "第3章 一致性扫描",
+      "ok": true,
+      "detail": "无阻断疑点"
+    },
+    {
+      "label": "第3章 事件章号键挂",
+      "ok": true,
+      "detail": "events 章号集 [1,2,3]（本章 3 必须在内）"
+    },
+    {
+      "label": "第4章 正文长度",
+      "ok": true,
+      "detail": "3871 字（366s）"
+    },
+    {
+      "label": "第4章 图谱管线完成",
+      "ok": true,
+      "detail": "状态摘要已生成"
+    },
+    {
+      "label": "第4章 设计卡章号",
+      "ok": true,
+      "detail": "## 本章设计卡（第4章 第4章·雾散灯明）"
+    },
+    {
+      "label": "第4章 摘要章号",
+      "ok": true,
+      "detail": "chapter_number=4"
+    },
+    {
+      "label": "第4章 R9自动入册",
+      "ok": true,
+      "detail": "处理 6 项"
+    },
+    {
+      "label": "第4章 一致性扫描",
+      "ok": true,
+      "detail": "无阻断疑点"
+    },
+    {
+      "label": "第4章 事件章号键挂",
+      "ok": true,
+      "detail": "events 章号集 [1,2,3,4]（本章 4 必须在内）"
+    },
+    {
+      "label": "步骤6 插入序章后文档序",
+      "ok": true,
+      "detail": "序章·风灯 → 第1章·雾夜接灯 → 第2章·断灯之夜 → 第3章·礁洞疑踪 → 第4章·雾散灯明"
+    },
+    {
+      "label": "步骤6 事件章号整体+1",
+      "ok": true,
+      "detail": "before [1,2,3,4] → after [2,3,4,5]"
+    },
+    {
+      "label": "步骤6 摘要章号级联",
+      "ok": true,
+      "detail": "原第1章摘要 chapter_number=2（期望2）"
+    },
+    {
+      "label": "步骤6 预写卡头级联",
+      "ok": true,
+      "detail": "第1章·雾夜:（第2章 第1章·雾夜接灯） | 第2章·断灯:（第3章 第2章·断灯之夜） | 第3章·礁洞:（第4章 第3章·礁洞疑踪） | 第4章·雾散:（第5章 第4章·雾散灯明）"
+    },
+    {
+      "label": "步骤6 删除序章",
+      "ok": true,
+      "detail": "{\"success\":true,\"data\":{\"needsConfirm\":false,\"deleted\":true}}"
+    },
+    {
+      "label": "步骤6 删除后章号还原",
+      "ok": true,
+      "detail": "[1,2,3,4]"
+    }
+  ],
+  "startedAt": "2026-09-21T19:50:48.576Z",
+  "projectId": "lw_1790020248613_kwyfmkk7g",
+  "finishedAt": "2026-09-21T20:21:02.487Z",
+  "failures": 0,
+  "conflictsSeen": []
+}

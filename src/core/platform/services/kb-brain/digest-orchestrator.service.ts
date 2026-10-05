@@ -27,6 +27,9 @@ import type { KbChapterRepository } from '@core/database/repositories/kb-chapter
 import type { KbChunkRepository } from '@core/database/repositories/kb-chunk.repository'
 import type { KnowledgeBaseRepository } from '@core/database/repositories/knowledge-base.repository'
 import { AtomizeService, AdjudicateService } from './atomize.service'
+import { buildAtomizeSystem } from './prompts'
+import { KbBrainProfileService } from './profile.service'
+import { KbBookPassesService } from './book-passes.service'
 import { parseBrainConfig, parseBrainState, stringifyBrainState, type KbBrainConfig } from './brain-config'
 import { tokenizeForIndex } from '@core/platform/services/kb-tokenize'
 import { buildLensPassSystem } from './prompts'
@@ -202,6 +205,17 @@ export class KbBrainDigestService {
       return
     }
 
+    // 内容画像（§类型化提取）：非空画像直接用；未识别→采样自动检测并写回 brainConfig.profile。
+    // fail-soft：检测失败回落「未识别」，走缺省提取提示词，绝不阻塞消化。
+    let workingCfg = cfg
+    try {
+      const profiler = new KbBrainProfileService({ llm: this.adjudicateLlm, repos: () => ({ chapters: repos.chapters, kbs: repos.kbs }) })
+      const profile = await profiler.ensureProfile(kbId, documentId, cfg)
+      if (profile.contentType) workingCfg = { ...cfg, profile }
+    } catch (e) {
+      logger.warn(`[kb-brain] 画像检测失败（不阻塞）: ${e instanceof Error ? e.message : String(e)}`)
+    }
+
     // 成本熔断（§12）：KB_BRAIN_DAILY_COST_LIMIT=单库当日 LLM 调用次数上限（calls 口径近似成本；
     // token/金额口径待 provider usage 回填后升级）。缺省/非法 = 不限。
     const rawLimit = process.env.KB_BRAIN_DAILY_COST_LIMIT
@@ -231,7 +245,7 @@ export class KbBrainDigestService {
       const insertedThisRun: KbAtomInput[] = []
       let busyChapters = 0
       for (const chapter of chapterRows) {
-        const { outcome, inserted } = await this.digestChapter(kbId, documentId, chapter.id, chapter.title, chapter.content ?? '', chapter.contentHash, cfg)
+        const { outcome, inserted } = await this.digestChapter(kbId, documentId, chapter.id, chapter.title, chapter.content ?? '', chapter.contentHash, workingCfg)
         insertedThisRun.push(...inserted)
         if (outcome === 'exhausted') exhaustedChapters.push(chapter.id)
         else if (outcome === 'skipped-same') skippedSameChapters.push({ id: chapter.id, hash: chapter.contentHash })
@@ -280,7 +294,20 @@ export class KbBrainDigestService {
       await this.accrueImportance(kbId, repos, insertedThisRun)
 
       // T15 视角遍：runLensPasses 内 ensurePass 幂等入队+执行（schedule 独立遍是冗余双查，已删）
-      await this.runLensPasses(kbId, documentId, repos, cfg)
+      await this.runLensPasses(kbId, documentId, repos, workingCfg)
+
+      // 书级汇总遍（§流程化提取）：画像驱动关卡（概要/设定索引/人物册/伏笔台账/知识体系图），
+      // 台账幂等（章节指纹），单遍 fail-soft。默认开（digestion.bookPasses），失败不挡 digested 终态。
+      if (workingCfg.digestion.bookPasses !== false) {
+        await docs.updateBrainStatus(documentId, { status: 'digesting', progress: 97 })
+        this.emitProgress(documentId, 'book', 97)
+        try {
+          const bookPasses = new KbBookPassesService({ llm: this.adjudicateLlm, repos: () => repos })
+          await bookPasses.runForDocument(kbId, documentId, workingCfg.profile?.contentType ?? '')
+        } catch (e) {
+          logger.warn(`[kb-brain] 书级汇总遍失败（不阻塞）: ${e instanceof Error ? e.message : String(e)}`)
+        }
+      }
 
       await docs.updateBrainStatus(documentId, { status: 'digested', progress: 100, error: null })
       this.emitStatus(documentId, 'digested')
@@ -331,10 +358,11 @@ export class KbBrainDigestService {
         return { outcome: 'digested', inserted: [] }
       }
 
-      // 1. 原子化（低档；已知实体名作为挂点规范名提示）
+      // 1. 原子化（低档；已知实体名作为挂点规范名提示；按内容画像选提取提示词变体）
       const existingNames = await this.knownEntityNames(kbId, entities)
       const atomizer = new AtomizeService({
         llm: this.llm,
+        systemOverride: buildAtomizeSystem(cfg.profile?.contentType),
         modelOverride: () => (cfg.models.atomize ? parseModelRef(cfg.models.atomize) : {}),
       })
       const result = await atomizer.atomizeChapter({
@@ -369,6 +397,7 @@ export class KbBrainDigestService {
           // 长度护栏：语句放开篇幅后防跑飞——嵌入模型输入普遍 ~512 token，超长被静默截断稀释检索
           statement: a.statement.slice(0, 600),
           type: (isValidType(a.type) ? a.type : 'fact'),
+          layer: (isValidLayer(a.layer) ? a.layer : 'detail'),
           certainty: a.certainty,
           sourceDocumentId: documentId,
           sourceChapterId: chapterId,
@@ -844,4 +873,8 @@ function safeParseConfig(raw: string | null | undefined): KbBrainConfig | null {
 
 function isValidType(t: string): t is KbAtomInput['type'] {
   return ['fact', 'claim', 'concept', 'method', 'insight', 'open-question'].includes(t)
+}
+
+function isValidLayer(t: string | undefined): t is KbAtomInput['layer'] {
+  return !!t && ['outline', 'setting', 'describe', 'detail'].includes(t)
 }

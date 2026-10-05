@@ -37,7 +37,7 @@ import {
   buildDlSuggestions,
   buildFocusQuestionLines,
   computeDlSpaceSnapshot,
-  dlBootstrapSkillBody,
+  dlBootstrapS4Body,
   dlEmptySpaceMission,
   dlResearchSystemPrompt,
   dlSkillBody,
@@ -224,6 +224,9 @@ export class DlAgentHarnessService {
         // 补图流程的第 2/3 轮文案不含"补全"动词，靠 isPlanPhaseMessage 兜住（否则会掉出规划轮）
         wantsMapCompletion:
           mode === 'task' && (shouldInjectMapCompletionSkill(message) || isPlanPhaseMessage(message)),
+        // research 落库轮重试兜底（2026-09-25 P1-7）：已落部分概念后重发【已确认知识体系】时
+        // isEmptySpace 已翻转，靠标记保持规划轮语义（阶段指令 + 额度）
+        syllabusConfirmed: message.includes(PLAN_SYLLABUS_CONFIRMED_MARKER),
       })
       // 额度：有已确认方案时按方案条目数放宽（用户要求），否则用规划额度兜底
       // （无确认方案时 dl_save_concept 会被门禁拒绝，额度只是兜底不报错）
@@ -270,10 +273,17 @@ export class DlAgentHarnessService {
       }
       // 知识体系补全（2026-09-12）：任务消息带「补全知识地图」标记时，注入 learning-map-completion 技能正文
       // （与 bootstrap 同构：过程型技能由宿主注入 + 外层带工具模型真执行，不走 invoke_skill 的无工具内层）
-      if (mode === 'task' && shouldInjectMapCompletionSkill(message)) {
+      // 2026-09-25 C2 互斥：本空间还没有「已确认知识体系」时不注入技能正文——其 S3 会被落库门禁
+      // 直接拒绝，且与下方固定流程第 1 步指令（"本轮不要 dl_save_concept"）同轮矛盾；这种空间
+      // 先走固定流程把补全清单提交成方案，确认后的下一轮再注入技能正文落库。
+      let mapCompletionInjected = false
+      if (mode === 'task' && shouldInjectMapCompletionSkill(message) && confirmedSyllabus) {
         const body = dlSkillBody(DL_MAP_COMPLETION_SKILL_ID)
         if (body) {
-          snapshotText += `\n\n【learning-map-completion 技能正文（宿主注入，直接按其四阶段执行）】\n${body}`
+          mapCompletionInjected = true
+          snapshotText +=
+            `\n\n【learning-map-completion 技能正文（宿主注入；本空间已有已确认知识体系，` +
+            `直接执行 S2 对照缺口规划 → S3 落库 → S4 自检，不必重新提交方案）】\n${body}`
         }
       }
 
@@ -295,10 +305,13 @@ export class DlAgentHarnessService {
                   conceptCount: planConceptNames(syllabus).length,
                 })
               : '【固定流程·第 3 步】已确认知识体系，但系统读不到方案内容——请让用户在弹窗里重新确认一次，或先重发方案。')
-          // 落库轮才需要 bootstrap 技能正文（S4 讲义产出规范在这里用得上）
-          const bootBody = mode === 'research' ? dlBootstrapSkillBody() : null
+          // 落库轮才需要 bootstrap 技能正文——但只注入 S4（讲义产出规范）。
+          // 2026-09-25 C1：此前注入全文，其 S2「规划并落库 3-8 个最核心的知识点…先定领域前置」
+          // 与本阶段指令「不要重新规划、方案里的知识点要全部落库」同轮矛盾——已确认 20-40 条的
+          // 方案会被 3-8 的口径带偏成少落库。S4 截取失败时兜底全文，靠阶段指令里的对冲句压住。
+          const bootBody = mode === 'research' ? dlBootstrapS4Body() : null
           if (bootBody) {
-            snapshotText += `\n\n【learning-space-bootstrap 技能正文（宿主注入，落库轮按 S4 出讲义）】\n${bootBody}`
+            snapshotText += `\n\n【learning-space-bootstrap 技能正文·仅 S4 讲义规范（宿主注入；其 S1-S3 口径本轮不适用）】\n${bootBody}`
           }
         } else if (message.includes(PLAN_UNDERSTANDING_CONFIRMED_MARKER)) {
           const understanding = (await m.dlPlans?.getConfirmed(spaceId, 'understanding')) ?? null
@@ -313,7 +326,9 @@ export class DlAgentHarnessService {
                   understandingSummary: formatUnderstandingSummary(parsed),
                 })
               : '【固定流程·第 2 步】诉求理解已确认，但系统读不到内容——请让用户在弹窗里重新确认一次。')
-        } else {
+        } else if (!mapCompletionInjected) {
+          // 已注入 map-completion（有确认方案）的轮次不再叠加"第 1 步"指令——两段指令对
+          // "本轮能不能 dl_save_concept" 给出相反答案，弱模型会按错误的硬闯门禁（2026-09-25 C2）
           snapshotText += `\n${planUnderstandingPhaseInstruction(snapshot.spaceName ?? spaceId)}`
         }
       }

@@ -11,7 +11,7 @@
  *         （asset_image is_main=1 且 image_path 非空）；缺谁列谁。
  *         出场集合 = 场景 characters[].characterBindingId + 场景 locationBindingId
  *                  + 分镜 characters[].characterId + 分镜 locationBindingIds；
- *   分镜：storyboards 非空，且每个镜的 characters[].characterId 全非空
+ *   分镜：每场景 ≥1 个 storyboard，且每个镜的 characters[].characterId 全非空
  *         （characters 为空数组的镜算合格）；
  *   合成：逐镜判定——分镜自身有 video_path，或其所属非 superseded 片段
  *         completed 且有 video_path（与 timeline-builder 同口径）；未入段的
@@ -19,11 +19,12 @@
  *
  * 与 workflow/stage-gate.service.ts 的区别：stage-gate 面向 6 段状态机流转
  * （含 approved 定稿、 composedVideoPath 等），本 service 面向 Studio 四 tab 的
- * "这一步还差什么"提示，规则更贴 tab 语义。
+ * "这一步还差什么"提示，规则更贴 tab 语义。出场集合 / 主图就绪判定两边共用
+ * services/appearing-assets（审计 X1），不要各自重写。
  */
 
 import type { DataSource } from 'typeorm'
-import type { SceneCharacter, StoryboardCharacter } from '@shared/types/story-to-video.types'
+import type { StoryboardCharacter } from '@shared/types/story-to-video.types'
 import { VideoEpisodeRepository } from '@core/database/repositories/video-episode.repository'
 import { EpisodeScriptRepository } from '@core/database/repositories/episode-script.repository'
 import { SceneScriptRepository } from '@core/database/repositories/scene-script.repository'
@@ -33,6 +34,10 @@ import { LocationBindingRepository } from '@core/database/repositories/location-
 import { ItemBindingRepository } from '@core/database/repositories/item-binding.repository'
 import { AssetImageRepository } from '@core/database/repositories/asset-image.repository'
 import { EpVideoSegmentRepository } from '@core/database/repositories/video-segment.repository'
+import {
+  collectAppearingAssetIds,
+  mainImageReady,
+} from '@core/platform/episode-production/services/appearing-assets'
 
 /** 单阶段就绪状态：ready + 缺失项人类可读列表（UI 提示条直接渲染） */
 export interface EpisodeStageReadiness {
@@ -118,36 +123,22 @@ export class EpisodeReadinessService {
       return { ready: false, missing }
     }
 
-    // 出场角色 binding 集合：场景 characters[].characterBindingId + 分镜 characters[].characterId
+    // 出场集合：场景 characters[].characterBindingId + 分镜 characters[].characterId 等
+    // （与 stage-gate 共用 services/appearing-assets，审计 X1）
     const charNameById = new Map(
       chars.map(b => [b.id, b.overrideName ?? b.standaloneName ?? b.id] as const),
     )
     const locNameById = new Map(
       locs.map(b => [b.id, b.overrideName ?? b.standaloneName ?? b.locationName ?? b.id] as const),
     )
-    const appearingCharIds = new Set<string>()
-    const appearingLocIds = new Set<string>()
-    for (const scene of scenes) {
-      for (const c of (scene.characters ?? []) as SceneCharacter[]) {
-        if (c.characterBindingId) appearingCharIds.add(c.characterBindingId)
-      }
-      if (scene.locationBindingId) appearingLocIds.add(scene.locationBindingId)
-    }
-    for (const sb of storyboards) {
-      for (const c of (sb.characters ?? []) as StoryboardCharacter[]) {
-        if (c.characterId) appearingCharIds.add(c.characterId)
-      }
-      for (const id of sb.locationBindingIds ?? []) {
-        if (id) appearingLocIds.add(id)
-      }
-    }
+    const appearing = collectAppearingAssetIds(scenes, storyboards)
 
-    for (const id of appearingCharIds) {
+    for (const id of appearing.charIds) {
       if (!(await this.hasMainImage('character', id))) {
         missing.push(`角色「${charNameById.get(id) ?? id}」还没有主图`)
       }
     }
-    for (const id of appearingLocIds) {
+    for (const id of appearing.locIds) {
       if (!(await this.hasMainImage('location', id))) {
         missing.push(`地点「${locNameById.get(id) ?? id}」还没有主图`)
       }
@@ -155,16 +146,15 @@ export class EpisodeReadinessService {
     return { ready: missing.length === 0, missing }
   }
 
-  /** 主图就绪 = asset_image 存在 is_main=1 且 image_path 非空的行 */
+  /** 主图就绪 = asset_image 存在 is_main=1 且 image_path 非空的行（占位行不算） */
   private async hasMainImage(
     assetType: 'character' | 'location',
     assetId: string,
   ): Promise<boolean> {
-    const main = await this.assetImageRepo.getMainImage(assetType, assetId)
-    return !!main?.imagePath
+    return mainImageReady(await this.assetImageRepo.getMainImage(assetType, assetId))
   }
 
-  /** 分镜：storyboards 非空，且每镜 characters[].characterId 全非空（空 characters 数组合格） */
+  /** 分镜：每场景 ≥1 个 storyboard，且每镜 characters[].characterId 全非空（空 characters 数组合格） */
   private evalStoryboard(
     scenes: Awaited<ReturnType<SceneScriptRepository['getByEpisodeScriptId']>>,
     storyboards: Awaited<ReturnType<StoryboardRepository['getBySceneScriptId']>>,
@@ -175,6 +165,12 @@ export class EpisodeReadinessService {
       return { ready: false, missing }
     }
     const sceneNoById = new Map(scenes.map(s => [s.id, s.sceneNumber] as const))
+    const sceneIdsWithSb = new Set(storyboards.map(sb => sb.sceneScriptId))
+    for (const scene of scenes) {
+      if (!sceneIdsWithSb.has(scene.id)) {
+        missing.push(`场景 ${scene.sceneNumber} 尚未生成分镜`)
+      }
+    }
     for (const sb of storyboards) {
       const chars = (sb.characters ?? []) as StoryboardCharacter[]
       const unbound = chars.filter(c => !c.characterId).length

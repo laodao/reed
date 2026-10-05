@@ -5,10 +5,11 @@
  *              UNIQUE(skill_id, character_id) + INSERT OR IGNORE 模拟。
  */
 
-import { In, type DataSource } from 'typeorm'
+import { In, IsNull, type DataSource } from 'typeorm'
 import { LwSkillCharacterEntity } from '../entities/lw-skill-character.entity'
 import { LwSkillEntity } from '../entities/lw-skill.entity'
 import { BaseRepository } from '../base-repository'
+import { getCurrentUserId } from '@core/context/user-context'
 
 export interface SkillCharacterRelation {
   id: string
@@ -97,14 +98,17 @@ export class LwSkillCharacterRepository extends BaseRepository<
   }
 
   async replaceAll(skillId: string, characterIds: string[]): Promise<void> {
+    // 多租户复核修复：事务内裸 repo.save/delete 不走 scoped，显式注入/限定 userId
+    const userId = getCurrentUserId() ?? null
     await this.dataSource.transaction(async manager => {
       const repo = manager.getRepository(LwSkillCharacterEntity)
-      await repo.delete({ skillId } as any)
+      await repo.delete({ skillId, userId: userId ?? IsNull() } as any)
       const now = Date.now()
       for (const cid of characterIds) {
         await repo.save(
           repo.create({
             id: this.generateId(),
+            userId,
             skillId,
             characterId: cid,
             createdAt: now,
@@ -136,6 +140,7 @@ export class LwSkillCharacterRepository extends BaseRepository<
     })
 
     let migrated = 0
+    const userId = getCurrentUserId() ?? null
     await this.dataSource.transaction(async manager => {
       const repo = manager.getRepository(LwSkillCharacterEntity)
       const now = Date.now()
@@ -149,6 +154,7 @@ export class LwSkillCharacterRepository extends BaseRepository<
             await repo.save(
               repo.create({
                 id: this.generateId(),
+                userId,
                 skillId: skill.id,
                 characterId: cid,
                 createdAt: now,

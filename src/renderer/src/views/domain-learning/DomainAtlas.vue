@@ -188,7 +188,14 @@
                     @click.stop="confirmRel(rel)"
                   >确认</el-button>
                 </template>
-                <el-icon v-else-if="rel.verified" class="rel-verified" title="已确认"><CircleCheckFilled /></el-icon>
+                <el-button
+                  link
+                  size="small"
+                  type="danger"
+                  :loading="removingKey === relKey(rel)"
+                  @click.stop="removeRel(rel)"
+                >删除</el-button>
+                <el-icon v-if="rel.verified" class="rel-verified" title="已确认"><CircleCheckFilled /></el-icon>
               </div>
               <div v-if="nodeProfile.relations.length === 0" class="p-empty">暂无直接关系</div>
             </div>
@@ -446,6 +453,27 @@ async function confirmRel(rel: {
   if (!ok) return
   const keepId = nodeProfile.value?.node.id ?? null
   // 确认后刷新档案（关系 confirmed）与图谱（边样式/图例随 verified 变化）
+  await selectNode(keepId)
+  graph.value = await store.fetchAtlasGraph(spaceId.value)
+}
+
+/** 正在删除的边（loading 态键） */
+const removingKey = ref('')
+
+/** 删除一条关系边（2026-09-25：错边/成环边的人审修复入口；prerequisite 边删除会影响学习门控） */
+async function removeRel(rel: { relationId?: string; rel: DlRelationType; name: string }): Promise<void> {
+  if (!rel.relationId) return
+  const isPrereq = rel.rel === 'prerequisite'
+  const tip = isPrereq
+    ? `删除前置关系「${rel.name}」会影响学习顺序门控（之后学相关概念不再要求先掌握它），确定删除？`
+    : `删除关系「${rel.name}」，确定？`
+  // 已确认的边影响门控/图结构，二次确认；未确认的建议边直接删
+  if (isPrereq && !window.confirm(tip)) return
+  removingKey.value = relKey(rel)
+  const ok = await store.removeRelationOf({ id: spaceId.value, relationId: rel.relationId })
+  removingKey.value = ''
+  if (!ok) return
+  const keepId = nodeProfile.value?.node.id ?? null
   await selectNode(keepId)
   graph.value = await store.fetchAtlasGraph(spaceId.value)
 }

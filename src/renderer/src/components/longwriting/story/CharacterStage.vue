@@ -28,6 +28,9 @@
           <div class="character-info">
             <h4>{{ character.name }}</h4>
             <div class="character-meta">
+              <el-tooltip v-if="character.libraryIpId" content="自角色 IP 库导入" placement="top">
+                <span class="role-tag ip-tag">IP库</span>
+              </el-tooltip>
               <span class="role-tag">{{ getRoleLabel(character.rolePosition) }}</span>
               <span class="gender-tag">{{ getGenderLabel(character.gender) }}</span>
               <span class="age-tag">{{ character.age }}岁</span>
@@ -39,6 +42,12 @@
               <el-icon><Edit /></el-icon>
               编辑
             </el-button>
+            <el-tooltip v-if="!character.libraryIpId" content="把该角色沉淀为 IP 库角色（背景/欲望/软肋/弧光随行）" placement="top">
+              <el-button text type="success" @click="promoteToIpLibrary(character)">
+                <el-icon><Upload /></el-icon>
+                沉淀
+              </el-button>
+            </el-tooltip>
             <el-button text @click="regenerateCharacter(character)">
               <el-icon><Refresh /></el-icon>
               重新生成
@@ -58,6 +67,12 @@
         <el-button type="primary" plain class="add-character-btn" @click="showCharacterDialog = true">
           <el-icon><Plus /></el-icon>
           添加角色
+        </el-button>
+
+        <!-- 从 IP 库导入（设定资产库 2026-09-24 P0） -->
+        <el-button plain class="add-character-btn" @click="openIpImportDialog">
+          <el-icon><Download /></el-icon>
+          从 IP 库导入
         </el-button>
       </div>
 
@@ -520,13 +535,52 @@
       </div>
     </el-dialog>
   </div>
+
+      <!-- 从 IP 库导入对话框 -->
+      <el-dialog v-model="showIpImport" title="从角色 IP 库导入" width="560px" append-to-body>
+        <div v-loading="ipImportLoading" class="ip-import-body">
+          <div v-if="importableIps.length === 0" class="ip-import-empty">
+            <el-empty description="IP 库为空——先去「角色 IP 库」创建角色" />
+            <el-button type="primary" plain @click="goIpLibrary">去角色 IP 库</el-button>
+          </div>
+          <template v-else>
+            <el-checkbox-group v-model="ipImportSelection">
+              <div v-for="ip in importableIps" :key="ip.id" class="ip-import-row">
+                <el-checkbox :value="ip.id" :disabled="importedIpIds.has(ip.id)">
+                  <span class="ip-import-name">{{ ip.name }}</span>
+                  <span class="ip-import-desc">{{ ip.occupation || '' }} {{ ip.motivation ? `· ${ip.motivation}` : '' }}</span>
+                  <el-tag v-if="importedIpIds.has(ip.id)" size="small" type="info">已导入</el-tag>
+                </el-checkbox>
+              </div>
+            </el-checkbox-group>
+            <el-form label-width="90px" style="margin-top: 12px">
+              <el-form-item label="导入定位">
+                <el-select v-model="ipImportRole" style="width: 100%">
+                  <el-option label="主角" value="protagonist" />
+                  <el-option label="重要配角" value="supporting" />
+                  <el-option label="反派" value="antagonist" />
+                  <el-option label="龙套" value="minor" />
+                </el-select>
+                <div class="form-tip">导入后是本项目的独立角色：故事内的变化（状态/关系）不会写回 IP 库</div>
+              </el-form-item>
+            </el-form>
+          </template>
+        </div>
+        <template #footer>
+          <el-button @click="showIpImport = false">取消</el-button>
+          <el-button type="primary" :disabled="ipImportSelection.length === 0" :loading="ipImporting" @click="confirmIpImport">
+            导入（{{ ipImportSelection.length }}）
+          </el-button>
+        </template>
+      </el-dialog>
+
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, inject, toRaw } from 'vue'
+import { ref, computed, onMounted, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Edit, Delete, User, Connection, MagicStick, Picture, Close, Refresh } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, User, Connection, MagicStick, Picture, Close, Refresh, Download, Upload } from '@element-plus/icons-vue'
 import type { StoryCharacter, CharacterRelation, CharacterRolePosition, StoryCharacterRace } from '../../../../shared/types/longwriting.types'
 import CreateCharacterDialog from '../../portrait/CreateCharacterDialog.vue'
 
@@ -548,7 +602,6 @@ const characters = ref<StoryCharacter[]>([])
 
 // 人像项目列表和角色列表（从人像设计模块获取）
 const portraitProjects = ref<Array<{ id: string; name: string }>>([])
-const portraitCharacters = ref<Array<{ id: string; name: string; preview?: string; projectId: string }>>([])
 const selectedPortraitProjectId = ref<string>('')
 
 // 角色关系
@@ -1028,6 +1081,7 @@ async function parseAndHandleSuggestions(content: string) {
 
     // 清理 JSON 字符串中的控制字符
     let cleanJson = jsonMatch[0]
+      // eslint-disable-next-line no-control-regex -- 此处就是要清洗控制字符
       .replace(/[\x00-\x1F\x7F]/g, '') // 移除控制字符
       .replace(/\n/g, ' ') // 将换行替换为空格
 
@@ -1225,11 +1279,6 @@ function handleCreateCharacterSuccess(characterId: string) {
   selectedPortraitId.value = characterId
 }
 
-// 跳转到人像设计页面
-function goToPortraitPage() {
-  router.push('/portrait')
-}
-
 // 更新进度
 function updateProgress() {
   const progress = Math.min(55, 30 + characters.value.length * 5)
@@ -1364,6 +1413,78 @@ async function loadProjectCharacters() {
     console.log('[CharacterStage] 项目人物形象:', projectCharacters.value)
   } catch (error) {
     console.error('加载项目人物形象失败:', error)
+  }
+}
+
+// ==================== 从 IP 库导入（设定资产库 2026-09-24 P0） ====================
+const showIpImport = ref(false)
+const ipImportLoading = ref(false)
+const ipImporting = ref(false)
+const importableIps = ref<Array<{ id: string; name: string; occupation: string | null; motivation: string | null }>>([])
+const ipImportSelection = ref<string[]>([])
+const ipImportRole = ref('supporting')
+const importedIpIds = computed(() => {
+  const ids = new Set<string>()
+  for (const c of characters.value) {
+    if ((c as any).libraryIpId) ids.add((c as any).libraryIpId as string)
+  }
+  return ids
+})
+
+const openIpImportDialog = async () => {
+  showIpImport.value = true
+  ipImportLoading.value = true
+  try {
+    importableIps.value = await window.electronAPI.longwriting.library.ipList()
+    ipImportSelection.value = []
+  } finally {
+    ipImportLoading.value = false
+  }
+}
+
+const confirmIpImport = async () => {
+  ipImporting.value = true
+  try {
+    for (const ipId of ipImportSelection.value) {
+      await window.electronAPI.longwriting.library.importIpCharacter({
+        projectId: props.projectId,
+        ipCharacterId: ipId,
+        rolePosition: ipImportRole.value,
+      })
+    }
+    ElMessage.success(`已导入 ${ipImportSelection.value.length} 个角色`)
+    showIpImport.value = false
+    await loadCharacters()
+  } finally {
+    ipImporting.value = false
+  }
+}
+
+const goIpLibrary = () => {
+  showIpImport.value = false
+  void router.push('/longwriting/ip').catch(() => {})
+}
+
+// 沉淀到 IP 库（P1 反向沉淀：项目角色 → IP 库角色）
+const promoteToIpLibrary = async (character: StoryCharacter) => {
+  try {
+    await ElMessageBox.confirm(
+      `把「${character.name}」沉淀为 IP 库角色？其背景、欲望、软肋、弧光将随行入库，可被其他项目引用。`,
+      '沉淀到 IP 库',
+      { confirmButtonText: '沉淀', cancelButtonText: '取消', type: 'info' },
+    )
+  } catch {
+    return
+  }
+  try {
+    const result = await window.electronAPI.longwriting.library.promoteToIp(props.projectId, character.id)
+    if (result.ok) {
+      ElMessage.success(result.message)
+    } else {
+      ElMessage.warning(result.message)
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || '沉淀失败')
   }
 }
 
@@ -1860,5 +1981,38 @@ onMounted(() => {
   max-height: calc(90vh - 120px);  /* 减去 header 和 footer 高度 */
   overflow-y: auto;
   padding: 20px;
+}
+</style>
+<style scoped>
+.character-card .ip-tag {
+  color: var(--color-primary, #409eff);
+  border-color: currentColor;
+}
+.ip-import-body {
+  min-height: 120px;
+}
+.ip-import-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.ip-import-row {
+  padding: 4px 0;
+}
+.ip-import-name {
+  font-weight: 500;
+  margin-right: 8px;
+}
+.ip-import-desc {
+  color: var(--text-secondary, #999);
+  font-size: 12px;
+  margin-right: 8px;
+}
+.form-tip {
+  color: var(--text-secondary, #999);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 4px;
 }
 </style>

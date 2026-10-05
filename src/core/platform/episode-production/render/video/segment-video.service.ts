@@ -239,6 +239,14 @@ export class SegmentVideoService {
     if (!this.adapter.imageToVideo) {
       throw new Error('当前 provider 未实现 imageToVideo（assetRef2video 依赖单图参考通道）')
     }
+    // V1 provider 守卫（2026-09-25 一致性修复）：assetRef 路径的 refs 语义=主体外观；
+    // image 语义=首帧的 provider（火山/百炼等）会把编号参考板当首帧烙进成片，必须显式拦截
+    if (!this.adapter.capabilities.subjectReference) {
+      throw new Error(
+        '提示词引用资产模式要求视频 provider 支持「参考图=主体外观」语义（当前仅 ComfyUI H3 网关）：' +
+          '请把视频模型切换为 ComfyUI 网关模型，或在项目视频设置中把渲染路径回切为关键帧（renderPath=keyframe）',
+      )
+    }
 
     const width = input.width ?? DEFAULT_WIDTH
     const height = input.height ?? DEFAULT_HEIGHT

@@ -3,12 +3,13 @@
  * @module packs/domain-learning/services/dl-agent-bindings
  *
  * 宿主每轮 sendMessage 的 bindings 由本模块按「模式 + 可用工具」组装：
- * - 动作工具 dl_*（两种模式都带）+ 系统透出 discover/invoke_skill（都带）；
- * - research 模式额外带「读工具」（采集，全部免人工审批的读侧）：
+ * - 系统透出 discover/invoke_skill（四种模式都带）；
+ * - research 模式：动作工具 dl_* + 「读工具」（采集，全部免人工审批的读侧）：
  *   wf_kb_retrieve（知识库检索）/ wf_web_extract（网页正文）/ http_get（API/原文，
  *   如 arXiv export.arxiv.org）常备；web_search 仅在配置了默认联网搜索源时 bind
  *   （无默认源绑了也会被模型当成可搜索，宁可显式不给）。
- * - tutor 模式不带读工具（答疑引证 = 快照注入的讲义/图，防工具滥用，M1 口径不变）；
+ * - tutor 模式：**只绑 dl_answer_question**（2026-09-25 收窄：答疑会话不改知识图；
+ *   引证 = 快照注入的讲义/图，M1 口径不变）；
  * - task 模式与 research 同级（任务执行：读工具采集 + dl 动作落库 + 系统透出）。
  * 读工具均在 workflow-boot 注册为裸名（source=builtin/node），宿主 registry 缺失的
  * 名字会在此被过滤（buildToolDefs 对未注册引用仅 warn 跳过——这里显式交集更可控）。
@@ -80,8 +81,14 @@ export function isPlanningSaveRound(input: {
   message?: string | null
   /** 是否命中"补全知识地图"意图（由调用方注入判定，避免本模块依赖消息文案实现） */
   wantsMapCompletion?: boolean
+  /**
+   * 消息是否带【已确认知识体系】标记（2026-09-25 P1-7：research 落库轮中途失败后重试时，
+   * 空间已非空 → isEmptySpace=false，此前会掉出规划轮——阶段指令与额度全部不注入，
+   * 重试以默认小额度裸奔。task 模式当年用 isPlanPhaseMessage 兜过同构的坑，research 补齐）
+   */
+  syllabusConfirmed?: boolean
 }): boolean {
-  if (input.mode === 'research') return input.isEmptySpace
+  if (input.mode === 'research') return input.isEmptySpace || !!input.syllabusConfirmed
   if (input.mode === 'task') return !!input.wantsMapCompletion
   return false
 }
@@ -123,10 +130,13 @@ export function buildDlBindings(o: DlBindingOptions): AgentToolBinding[] {
     // 内部核验：只读(读工具+系统透出),不带任何 dl 写动作
     return [...readBindings, ...systemBindings]
   }
-  // task 模式与 research 同级：动作 + 读工具 + 系统透出（按指令执行可读资料/落库）
-  if (o.mode !== 'research' && o.mode !== 'task') {
-    return [...actionBindings, ...systemBindings]
+  // tutor：答疑会话只绑答疑存档（2026-09-25 P1-1 复盘：此前落入"非 research/task"兜底分支，
+  // 绑定了全部 dl_* 写动作——一次追问就能改知识图，且 tutor 轮 planningRound=false 绕过规划门禁。
+  // 答疑引证走快照注入的讲义/图，M1 口径不变）
+  if (o.mode === 'tutor') {
+    const answer = actionBase.find((b) => b.tool === 'dl_answer_question')
+    return [...(answer ? [answer] : []), ...systemBindings]
   }
-
+  // task 模式与 research 同级：动作 + 读工具 + 系统透出（按指令执行可读资料/落库）
   return [...actionBindings, ...readBindings, ...systemBindings]
 }

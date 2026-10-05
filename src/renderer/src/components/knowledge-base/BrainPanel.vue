@@ -48,16 +48,30 @@
               <el-radio-button value="human">我的观感</el-radio-button>
               <el-radio-button value="opinions">AI观点</el-radio-button>
               <el-radio-button value="open-question">悬而未决</el-radio-button>
+              <el-radio-button value="foreshadow">未回收伏笔</el-radio-button>
             </el-radio-group>
             <el-select
               v-model="atomDocFilter"
               clearable
               placeholder="全部文档"
               size="small"
-              style="width: 160px; margin-left: auto"
+              style="width: 150px; margin-left: auto"
               @change="onDocFilterChange"
             >
               <el-option v-for="d in allDocs" :key="d.id" :label="d.name" :value="d.id" />
+            </el-select>
+            <el-select
+              v-model="atomLayerFilter"
+              clearable
+              placeholder="全部分层"
+              size="small"
+              style="width: 110px"
+              @change="onDocFilterChange"
+            >
+              <el-option label="概要层" value="outline" />
+              <el-option label="设定层" value="setting" />
+              <el-option label="描写层" value="describe" />
+              <el-option label="细节层" value="detail" />
             </el-select>
             <el-button size="small" type="primary" plain @click="openRemark">
               <el-icon><Edit /></el-icon>
@@ -83,6 +97,11 @@
               <el-table-column prop="type" label="类型" width="90">
                 <template #default="{ row }">
                   <el-tag size="small" effect="plain">{{ kbAtomTypeLabel(row.type) }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="layer" label="分层" width="80">
+                <template #default="{ row }">
+                  <el-tag size="small" effect="plain" type="info">{{ kbAtomLayerLabel(row.layer) }}</el-tag>
                 </template>
               </el-table-column>
               <el-table-column prop="status" label="状态" width="100">
@@ -269,6 +288,7 @@
         <section class="side-card">
           <header class="side-head">
             <span class="side-title">论断整理</span>
+            <el-button size="small" plain @click="runHealthCheck">大脑体检</el-button>
           </header>
           <div class="side-tip" style="margin: 0 0 8px">
             AI 分批审读论断池，把同主题的细碎碎片合并为综合论断（如「主要法宝」逐条罗列→一条）；
@@ -281,7 +301,7 @@
               type="warning"
               plain
               style="flex: 1"
-              :disabled="cleanupRunning"
+              :disabled="cleanupRunning || foreshadowRunning"
               @click="startConsolidate"
             >
               归纳整理
@@ -292,10 +312,23 @@
               type="danger"
               plain
               style="flex: 1"
-              :disabled="consolidateRunning"
+              :disabled="consolidateRunning || foreshadowRunning"
               @click="startCleanup"
             >
               垃圾清理
+            </el-button>
+          </div>
+          <div style="margin-top: 8px">
+            <el-button
+              v-if="!foreshadowRunning"
+              size="small"
+              type="success"
+              plain
+              style="width: 100%"
+              :disabled="consolidateRunning || cleanupRunning"
+              @click="startForeshadow"
+            >
+              伏笔扫描
             </el-button>
           </div>
           <template v-if="consolidateRunning">
@@ -317,6 +350,13 @@
           </div>
           <div v-if="cleanupSummary && !cleanupRunning" class="side-tip">
             上次清理：归档 {{ cleanupSummary }} 条垃圾论断
+          </div>
+          <template v-if="foreshadowRunning">
+            <el-progress :percentage="100" indeterminate :stroke-width="6" />
+            <div class="side-tip">扫描中… 逐书判读悬念与后文论断的「埋设-回收」关系</div>
+          </template>
+          <div v-if="foreshadowSummary && !foreshadowRunning" class="side-tip">
+            上次扫描：提案 {{ foreshadowSummary.linksProposed }} 条伏笔边，新增 {{ foreshadowSummary.created }} 条（可在「未回收伏笔」查看悬空项）
           </div>
         </section>
 
@@ -359,10 +399,37 @@
           </div>
           <div class="cfg-row">
             <label class="cfg-label">
+              内容类型
+              <span class="cfg-desc">决定提取侧重与书级汇总关卡；「自动」=首次提取时由 AI 识别</span>
+            </label>
+            <el-select v-model="configDraft.profile.contentType" size="small" style="width: 160px">
+              <el-option label="自动识别" value="" />
+              <el-option label="小说 / 叙事" value="novel" />
+              <el-option label="知识类" value="knowledge" />
+              <el-option label="文史哲" value="history" />
+              <el-option label="其他" value="other" />
+            </el-select>
+          </div>
+          <div class="cfg-row">
+            <label class="cfg-label">
+              书级汇总遍
+              <span class="cfg-desc">按章提取完成后自动汇总全书概要/设定索引/人物册/伏笔台账卡（待审箱确认）</span>
+            </label>
+            <el-switch v-model="configDraft.digestion.bookPasses" />
+          </div>
+          <div class="cfg-row">
+            <label class="cfg-label">
               情节模式卡归纳
               <span class="cfg-desc">实验性，成本较高</span>
             </label>
             <el-switch v-model="configDraft.patterns.plotEnabled" />
+          </div>
+          <div class="cfg-row">
+            <label class="cfg-label">
+              人物原型卡归纳
+              <span class="cfg-desc">跨书聚类归纳人物原型（同骨架异参数），提炼时运行</span>
+            </label>
+            <el-switch v-model="configDraft.patterns.characterEnabled" />
           </div>
           <div class="cfg-row">
             <label class="cfg-label">
@@ -450,6 +517,36 @@
           </div>
           <div v-if="configDraft.goals.length === 0" class="side-empty">暂无目标——从模板添加或新建</div>
         </section>
+
+        <section class="cfg-section">
+          <h4>视角遍</h4>
+          <div class="cfg-desc" style="margin-bottom: 8px">
+            启用的视角卡会在消化时重读章节，产出该视角的观感论断（与事实层分域，互不影响）；
+            对已消化的书，启用并保存后点侧栏「提取」补跑
+          </div>
+          <div v-for="lens in lensList" :key="lens.id" class="goal-edit-head">
+            <el-checkbox
+              :model-value="configDraft.lenses.enabledLensNoteIds.includes(lens.id)"
+              size="small"
+              @change="onLensToggle(lens, $event)"
+            />
+            <span style="flex: 1" :title="lens.description">{{ lens.title }}</span>
+            <el-button size="small" text @click="openLensEditor(lens)">编辑</el-button>
+          </div>
+          <div v-if="lensList.length === 0" class="side-empty">暂无视角卡——从模板添加或新建</div>
+          <div class="cfg-goals-actions" style="margin-top: 8px">
+            <el-select
+              v-model="lensPresetPick"
+              placeholder="从模板添加…"
+              size="small"
+              style="width: 220px"
+              @change="addLensFromPreset"
+            >
+              <el-option v-for="p in LENS_PRESETS" :key="p.title" :label="p.title" :value="p.title" />
+            </el-select>
+            <el-button size="small" @click="openLensEditor(null)">新建</el-button>
+          </div>
+        </section>
       </div>
       <template #footer>
         <div class="cfg-actions">
@@ -458,6 +555,77 @@
         </div>
       </template>
     </el-drawer>
+
+    <!-- 视角卡编辑（G1：新建/编辑后勾选启用并保存，随消化生效） -->
+    <el-dialog v-model="lensEditorOpen" :title="lensForm.id ? '编辑视角卡' : '新建视角卡'" width="520px" :close-on-click-modal="false">
+      <el-form label-width="72px" size="small">
+        <el-form-item label="名称">
+          <el-input v-model="lensForm.title" maxlength="30" placeholder="如：章节功能与叙事结构视角" />
+        </el-form-item>
+        <el-form-item label="说明">
+          <el-input v-model="lensForm.description" type="textarea" :rows="2" placeholder="何时用这个视角（第三人称，≤200字）" />
+        </el-form-item>
+        <el-form-item label="看什么">
+          <el-input v-model="lensForm.attendTo" type="textarea" :rows="4" placeholder="每行一条注意力点" />
+        </el-form-item>
+        <el-form-item label="问什么">
+          <el-input v-model="lensForm.questions" type="textarea" :rows="4" placeholder="每行一个提问" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="lensEditorOpen = false">取消</el-button>
+        <el-button type="primary" :loading="lensEditorBusy" @click="saveLens">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 大脑体检（只读报告：覆盖率/知识构成/建议） -->
+    <el-dialog v-model="healthOpen" title="大脑体检" width="680px">
+      <div v-loading="healthLoading" style="min-height: 160px">
+        <template v-if="healthReport">
+          <div class="hz-section">
+            <h5>提取覆盖</h5>
+            <div class="hz-grid">
+              <span>文档 {{ healthReport.coverage.documents }} 篇（待提取 {{ healthReport.coverage.documentsPending }}，失败 {{ healthReport.coverage.documentsFailed }}）</span>
+              <span>章节 {{ healthReport.coverage.chaptersTotal }} 章，已消化 {{ healthReport.coverage.chaptersDigested }} 章</span>
+              <span>零产出章 {{ healthReport.coverage.chaptersNoAtoms }}（重试耗尽 {{ healthReport.coverage.chaptersExhausted }}）</span>
+              <span v-if="healthReport.coverage.noAtomChapterSample.length">
+                无知识章样例：{{ healthReport.coverage.noAtomChapterSample.join('、') }}
+              </span>
+            </div>
+          </div>
+          <div class="hz-section">
+            <h5>知识构成（工作集 {{ healthReport.knowledge.atomsWorking }} 条）</h5>
+            <div class="hz-grid">
+              <span>分层：概要 {{ healthReport.knowledge.byLayer.outline ?? 0 }} · 设定 {{ healthReport.knowledge.byLayer.setting ?? 0 }} · 描写 {{ healthReport.knowledge.byLayer.describe ?? 0 }} · 细节 {{ healthReport.knowledge.byLayer.detail ?? 0 }}</span>
+              <span>悬置问题 {{ healthReport.knowledge.openQuestions }} · 存疑 {{ healthReport.knowledge.byStatus.suspected ?? 0 }} · 已过期 {{ healthReport.knowledge.byStatus.stale ?? 0 }}</span>
+              <span>实体 {{ healthReport.knowledge.entitiesActive }}（缺摘要 {{ healthReport.knowledge.entitiesPendingSummary }}） · 经验卡已入库 {{ healthReport.knowledge.notesPublished }}（待审 {{ healthReport.knowledge.notesProposed }}）</span>
+            </div>
+          </div>
+          <div v-if="healthReport.bookPasses.length" class="hz-section">
+            <h5>书级汇总</h5>
+            <div class="hz-grid">
+              <span v-for="(p, i) in healthReport.bookPasses" :key="i">
+                {{ p.documentName }} · {{ bookPassLabel(p.passKey) }}：{{ p.status }}{{ p.error ? `（${p.error}）` : '' }}
+              </span>
+            </div>
+          </div>
+          <div class="hz-section">
+            <h5>建议（{{ healthReport.suggestions.length }}）</h5>
+            <div v-if="healthReport.suggestions.length === 0" class="side-empty">一切正常，没有需要处理的事项。</div>
+            <ul class="hz-suggestions">
+              <li v-for="s in healthReport.suggestions" :key="s.code">{{ s.message }}</li>
+            </ul>
+          </div>
+        </template>
+      </div>
+      <template #footer>
+        <div class="cfg-actions">
+          <el-button @click="healthOpen = false">关闭</el-button>
+          <el-button type="primary" :loading="healthLoading" @click="runHealthCheck">重新体检</el-button>
+        </div>
+>>>>>>> feat/kb-brain
+      </template>
+    </el-dialog>
 
     <!-- 记观感（human origin 论断录入） -->
     <el-dialog v-model="remarkOpen" title="记观感" width="480px" :close-on-click-modal="false">
@@ -539,9 +707,9 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { KB_BRAIN_GOAL_PRESETS } from '@shared/constants/kb-brain-goal-presets'
-import { kbAtomOriginLabel, kbAtomStatusLabel, kbAtomTypeLabel, kbNoteStatusLabel, kbNoteTypeLabel } from '@shared/constants/kb-brain-labels'
+import { kbAtomLayerLabel, kbAtomOriginLabel, kbAtomStatusLabel, kbAtomTypeLabel, kbNoteStatusLabel, kbNoteTypeLabel } from '@shared/constants/kb-brain-labels'
 
 const props = defineProps<{ kbId: string }>()
 const emit = defineEmits<{ (e: 'stats', count: number): void }>()
@@ -551,6 +719,7 @@ interface BrainAtom {
   id: string
   statement: string
   type: string
+  layer?: string
   status: string
   lensNoteId: string | null
   origin: string
@@ -576,8 +745,10 @@ interface BrainGoal {
 }
 interface BrainConfig {
   enabled: boolean
-  digestion: { enabled: boolean }
-  patterns: { plotEnabled: boolean }
+  digestion: { enabled: boolean; bookPasses?: boolean }
+  profile: { contentType: string; genre?: string }
+  patterns: { plotEnabled: boolean; characterEnabled: boolean }
+  lenses: { enabledLensNoteIds: string[] }
   autoApproveThreshold: number
   models: { atomize: string; adjudicate: string }
   goals: BrainGoal[]
@@ -588,7 +759,7 @@ const stats = ref<Record<string, any> | null>(null)
 
 // ===== 主区视图：论断 / 经验卡 / 待审提议 =====
 type MainView = 'atoms' | 'cards' | 'proposals'
-type AtomFilter = 'all' | 'human' | 'opinions' | 'open-question'
+type AtomFilter = 'all' | 'human' | 'opinions' | 'open-question' | 'foreshadow'
 const activeView = ref<MainView>('atoms')
 const atomFilter = ref<AtomFilter>('all')
 
@@ -613,8 +784,10 @@ let inboxGen = 0 // 待审提议列表代际守卫（同上）
 const config = ref<BrainConfig | null>(null)
 const configDraft = ref<BrainConfig>({
   enabled: false,
-  digestion: { enabled: true },
-  patterns: { plotEnabled: false },
+  digestion: { enabled: true, bookPasses: true },
+  profile: { contentType: '' },
+  patterns: { plotEnabled: false, characterEnabled: false },
+  lenses: { enabledLensNoteIds: [] },
   autoApproveThreshold: 0.8,
   models: { atomize: '', adjudicate: '' },
   goals: [],
@@ -635,6 +808,7 @@ const allDocs = ref<Array<{ id: string; name: string }>>([])
 
 // ===== 文档过滤 + 论断详情 =====
 const atomDocFilter = ref('')
+const atomLayerFilter = ref('')
 interface AtomDetail extends BrainAtom {
   certainty: number
   extractionPass: string
@@ -644,6 +818,63 @@ interface AtomDetail extends BrainAtom {
 const atomDetailOpen = ref(false)
 const atomDetailLoading = ref(false)
 const atomDetail = ref<AtomDetail | null>(null)
+
+// ===== 大脑体检（只读报告） =====
+interface HealthReport {
+  profile: { contentType: string; detected: boolean }
+  coverage: {
+    documents: number
+    documentsPending: number
+    documentsFailed: number
+    chaptersTotal: number
+    chaptersDigested: number
+    chaptersExhausted: number
+    chaptersNoAtoms: number
+    noAtomChapterSample: string[]
+  }
+  knowledge: {
+    atomsWorking: number
+    byStatus: Record<string, number>
+    byLayer: Record<string, number>
+    byType: Record<string, number>
+    openQuestions: number
+    notesProposed: number
+    notesPublished: number
+    entitiesActive: number
+    entitiesPendingSummary: number
+  }
+  bookPasses: Array<{ documentName: string; passKey: string; status: string; error: string | null }>
+  suggestions: Array<{ code: string; message: string }>
+}
+const healthOpen = ref(false)
+const healthLoading = ref(false)
+const healthReport = ref<HealthReport | null>(null)
+
+async function runHealthCheck(): Promise<void> {
+  if (!props.kbId) return
+  healthOpen.value = true
+  healthLoading.value = true
+  try {
+    const res = await (window as any).electronAPI.knowledgeBase.brain.healthCheck(props.kbId)
+    if (res.success) healthReport.value = res.data
+    else ElMessage.error(`体检失败: ${res.error || '未知错误'}`)
+  } catch (e) {
+    ElMessage.error(`体检失败: ${(e as Error).message}`)
+  } finally {
+    healthLoading.value = false
+  }
+}
+
+const BOOK_PASS_LABELS: Record<string, string> = {
+  outline: '全书概要',
+  'setting-index': '设定索引',
+  'character-roster': '人物册',
+  'foreshadow-ledger': '伏笔台账',
+  'knowledge-map': '知识体系图',
+}
+function bookPassLabel(passKey: string): string {
+  return BOOK_PASS_LABELS[passKey.replace('book:', '')] ?? passKey.replace('book:', '')
+}
 
 function onDocFilterChange(): void {
   atomPage.value = 1
@@ -758,6 +989,219 @@ async function startCleanup(): Promise<void> {
   }
 }
 
+// ===== 视角遍（lens 卡管理与启用；G1 结构视角） =====
+interface LensRow {
+  id: string
+  title: string
+  description: string
+  status: string
+  version: number
+  lensAttention: string | null
+}
+/** 预设视角卡（纯数据，保存后才入库；勾选启用并保存设置后随消化生效） */
+const LENS_PRESETS = [
+  {
+    title: '章节功能与叙事结构视角',
+    description: '看全书结构如何由章节功能搭建、节奏如何起伏、线索如何交织时使用。',
+    attendTo: [
+      '章末钩子（悬念句/断点及其指向）',
+      '场景与视角切换（换线/换 POV 的位置与频率）',
+      '铺垫与回收（本章埋设或兑现了什么）',
+      '节奏节拍（压抑-释放的循环位置）',
+      '本章功能位（开局钩子/铺垫/推进/转折/高潮/过渡）',
+    ],
+    questions: [
+      '这一章在全书结构中承担什么功能？依据是本章哪些文本特征？',
+      '章末是否留钩、钩向哪里（事件/悬念/情绪）？',
+      '本章是否切换叙事线或视角？切换点在哪？',
+      '本章埋设或回收了哪些前文/后文的呼应？',
+    ],
+  },
+  {
+    title: '伏笔与回收视角',
+    description: '看承诺与兑现：哪些异物/异常/悬置被埋设、在哪里兑现、哪些从未兑现。',
+    attendTo: ['反复出现却未解释的异物', '人物的微异常行为', '提前出场的高规格威胁', '章末悬置句'],
+    questions: ['这个承诺在第几章兑现？', '埋设与回收的间隔拉出了多大张力？', '哪些承诺从未兑现（悬空伏笔）？'],
+  },
+]
+const lensList = ref<LensRow[]>([])
+const lensPresetPick = ref('')
+const lensEditorOpen = ref(false)
+const lensEditorBusy = ref(false)
+const lensForm = ref<{ id?: string; title: string; description: string; attendTo: string; questions: string }>({
+  title: '',
+  description: '',
+  attendTo: '',
+  questions: '',
+})
+
+async function fetchLenses(): Promise<void> {
+  if (!props.kbId) return
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  try {
+    const res = await client.listLens(props.kbId)
+    if (res.success && res.data) lensList.value = res.data as LensRow[]
+  } catch (e) {
+    console.warn('[BrainPanel] 视角卡加载失败', e)
+  }
+}
+
+/** 启停只改草稿，随「保存」统一生效（与提取目标同动线） */
+function onLensToggle(lens: LensRow, checked: unknown): void {
+  const id = lens.id
+  const arr = configDraft.value.lenses.enabledLensNoteIds
+  const i = arr.indexOf(id)
+  if (checked && i < 0) arr.push(id)
+  if (!checked && i >= 0) arr.splice(i, 1)
+}
+
+function openLensEditor(lens: LensRow | null): void {
+  if (lens) {
+    let att: { attendTo?: string[]; questions?: string[] } = {}
+    try {
+      att = JSON.parse(lens.lensAttention ?? '{}')
+    } catch {
+      /* 旧数据缺字段按空处理 */
+    }
+    lensForm.value = {
+      id: lens.id,
+      title: lens.title,
+      description: lens.description,
+      attendTo: (att.attendTo ?? []).join('\n'),
+      questions: (att.questions ?? []).join('\n'),
+    }
+  } else {
+    lensForm.value = { title: '', description: '', attendTo: '', questions: '' }
+  }
+  lensEditorOpen.value = true
+}
+
+function addLensFromPreset(title: string): void {
+  const preset = LENS_PRESETS.find((p) => p.title === title)
+  if (!preset) return
+  lensForm.value = {
+    title: preset.title,
+    description: preset.description,
+    attendTo: preset.attendTo.join('\n'),
+    questions: preset.questions.join('\n'),
+  }
+  lensPresetPick.value = ''
+  lensEditorOpen.value = true
+}
+
+async function saveLens(): Promise<void> {
+  if (!lensForm.value.title.trim()) {
+    ElMessage.warning('请填写视角名称')
+    return
+  }
+  lensEditorBusy.value = true
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  try {
+    const res = await client.upsertLens({
+      kbId: props.kbId,
+      id: lensForm.value.id,
+      title: lensForm.value.title.trim(),
+      description: lensForm.value.description.trim(),
+      attendTo: lensForm.value.attendTo.split('\n').map((s) => s.trim()).filter(Boolean),
+      questions: lensForm.value.questions.split('\n').map((s) => s.trim()).filter(Boolean),
+    })
+    if (res.success && res.data) {
+      const row = res.data as LensRow
+      // 新建视角默认勾选启用（草稿态，随设置保存生效）
+      if (!lensForm.value.id && !configDraft.value.lenses.enabledLensNoteIds.includes(row.id)) {
+        configDraft.value.lenses.enabledLensNoteIds.push(row.id)
+      }
+      lensEditorOpen.value = false
+      ElMessage.success('视角卡已保存；勾选启用并保存设置后随消化生效')
+      await fetchLenses()
+    } else {
+      ElMessage.error(res.error || '保存失败')
+    }
+  } catch (e) {
+    ElMessage.error(`保存失败: ${(e as Error).message}`)
+  } finally {
+    lensEditorBusy.value = false
+  }
+}
+
+// ===== 伏笔扫描（G3：sets-up 边候选生成器，verified=0 待人审） =====
+interface ForeshadowProgress {
+  running: boolean
+  last?: {
+    ok: boolean
+    error?: string
+    scannedDocs: number
+    linksProposed: number
+    created: number
+    deduped: number
+    finishedAt: string
+  }
+}
+const foreshadowRunning = ref(false)
+const foreshadowProgress = ref<ForeshadowProgress | null>(null)
+const foreshadowSummary = ref<{ linksProposed: number; created: number } | null>(null)
+let foreshadowPollTimer: ReturnType<typeof setInterval> | null = null
+
+function startForeshadowPoll(): void {
+  if (foreshadowPollTimer) return
+  foreshadowPollTimer = setInterval(pollForeshadow, 5000)
+  void pollForeshadow()
+}
+
+async function pollForeshadow(): Promise<void> {
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  const kbAtCall = props.kbId // 代际守卫：切库后丢弃过期响应
+  try {
+    const res = await client.foreshadowStatus(props.kbId)
+    if (kbAtCall !== props.kbId) return
+    if (res.success && res.data) {
+      const wasRunning = foreshadowRunning.value
+      foreshadowProgress.value = res.data
+      foreshadowRunning.value = !!res.data.running
+      if (wasRunning && !foreshadowRunning.value) {
+        const last = res.data.last
+        if (last?.ok) {
+          foreshadowSummary.value = { linksProposed: last.linksProposed, created: last.created }
+          ElMessage.success(`伏笔扫描完成：提案 ${last.linksProposed} 条，新增 ${last.created} 条伏笔边（待人工确认）`)
+        } else {
+          ElMessage.error(`伏笔扫描失败: ${last?.error || '未知错误'}`)
+        }
+        await refresh()
+      }
+    }
+  } catch {
+    /* 轮询失败静默，下轮再试 */
+  }
+  if (!foreshadowRunning.value && foreshadowPollTimer) {
+    clearInterval(foreshadowPollTimer)
+    foreshadowPollTimer = null
+  }
+}
+
+async function startForeshadow(): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      '将用 AI 逐书判读「悬而未决」论断与同书后文论断的埋设-回收关系，生成伏笔边候选（待人工确认，不自动生效）。会产生 LLM 调用费用。',
+      '伏笔扫描',
+      { type: 'info', confirmButtonText: '开始扫描', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  try {
+    const res = await client.foreshadowRun(props.kbId)
+    if (!res.success) {
+      ElMessage.error(res.error || '扫描启动失败')
+      return
+    }
+    foreshadowRunning.value = true
+    startForeshadowPoll()
+  } catch (e) {
+    ElMessage.error(`扫描启动失败: ${(e as Error).message}`)
+  }
+}
+
 // ===== 论断归纳整理 =====
 interface ConsolidateProgress {
   running: boolean
@@ -800,6 +1244,7 @@ const atomsEmptyText = computed(() => {
   if (atomFilter.value === 'human') return '暂无我的观感——点击右上角「记观感」写下你自己的判断'
   if (atomFilter.value === 'opinions') return '暂无 AI 观点类论断（claim/insight 随消化产出）'
   if (atomFilter.value === 'open-question') return '暂无悬而未决的问题'
+  if (atomFilter.value === 'foreshadow') return '没有未回收的伏笔——先在「论断整理」跑伏笔扫描，或悬念都已回收'
   return '尚未消化出论断（上传文档后自动进行）'
 })
 
@@ -901,9 +1346,29 @@ function reportGoalDone(goalId: string): void {
   const rec = lastGoalResults.value[goalId]
   const name = config.value?.goals.find((g) => g.id === goalId)?.name ?? goalId
   if (!rec) return
-  if (!rec.ok) ElMessage.error(`「${name}」提炼失败: ${rec.error || '未知错误'}`)
-  else if (rec.skippedDuplicate) ElMessage.info(`「${name}」已有同题经验卡，未重复生成`)
-  else if (rec.proposed) ElMessage.success(`「${name}」生成 ${rec.cards ?? 1} 张经验卡（素材 ${rec.fragments ?? 0} 条），待审提议中`)
+  const openProposals = (): void => showProposals()
+  if (!rec.ok) {
+    ElMessage.error(`「${name}」提炼失败: ${rec.error || '未知错误'}`)
+  } else if (rec.skippedDuplicate) {
+    ElNotification({ title: `「${name}」已有同题经验卡`, message: '未重复生成，可在「经验卡」视图查看已有卡', type: 'info', duration: 0 })
+  } else if (rec.proposed) {
+    // 常驻通知（自动关闭会被忽略导致"找不到产物"——真机反馈），点击直达待审提议
+    ElNotification({
+      title: `「${name}」提炼完成`,
+      message: `生成 ${rec.cards ?? 1} 张经验卡（素材 ${rec.fragments ?? 0} 条），已放入「待审提议」——点击查看并批准入库`,
+      type: 'success',
+      duration: 0,
+      onClick: openProposals,
+    })
+    openProposals()
+  } else {
+    ElNotification({
+      title: `「${name}」提炼完成但没有产出`,
+      message: `收集到素材 ${rec.fragments ?? 0} 条，未达到成卡条件（素材不足或质量不够）——可先「提取知识」积累论断后再试`,
+      type: 'warning',
+      duration: 0,
+    })
+  }
   void refresh()
 }
 
@@ -914,6 +1379,8 @@ onBeforeUnmount(() => {
   consolidatePollTimer = null
   if (cleanupPollTimer) clearInterval(cleanupPollTimer)
   cleanupPollTimer = null
+  if (foreshadowPollTimer) clearInterval(foreshadowPollTimer)
+  foreshadowPollTimer = null
 })
 
 function statusTagType(status: string): 'success' | 'warning' | 'info' | 'danger' {
@@ -949,7 +1416,9 @@ async function fetchAtoms(): Promise<void> {
       origin: atomFilter.value === 'human' ? 'human' : undefined,
       type: atomFilter.value === 'open-question' ? 'open-question' : undefined,
       types: atomFilter.value === 'opinions' ? ['claim', 'insight'] : undefined,
+      foreshadow: atomFilter.value === 'foreshadow' ? 'dangling' : undefined,
       documentId: atomDocFilter.value || undefined,
+      layer: atomLayerFilter.value || undefined,
     })
     if (gen !== atomsGen) return // 过期响应丢弃
     if (res.success && res.data) {
@@ -1144,10 +1613,34 @@ async function refresh(): Promise<void> {
   } catch {
     /* 旧宿主无此通道：忽略 */
   }
+  // 视角卡列表（G1；通道缺失不拖垮面板主数据）
+  try {
+    await fetchLenses()
+  } catch {
+    /* 旧宿主无此通道：忽略 */
+  }
+  // 伏笔扫描进行中状态同步（G3）
+  try {
+    const fsRes = await client.foreshadowStatus(props.kbId)
+    if (fsRes.success && fsRes.data) {
+      foreshadowProgress.value = fsRes.data
+      const fsLast = fsRes.data.last
+      if (!fsRes.data.running && fsLast?.ok && fsLast.created > 0) {
+        foreshadowSummary.value = { linksProposed: fsLast.linksProposed, created: fsLast.created }
+      }
+      foreshadowRunning.value = !!fsRes.data.running
+      if (foreshadowRunning.value) startForeshadowPoll()
+    }
+  } catch {
+    /* 旧宿主无此通道：忽略 */
+  }
 }
 
 function openConfig(): void {
   if (config.value) configDraft.value = JSON.parse(JSON.stringify(config.value))
+  // 旧配置无 profile/digestion.bookPasses 段时补缺省（v-model 需要可写路径）
+  if (!configDraft.value.profile) configDraft.value.profile = { contentType: '' }
+  if (!configDraft.value.digestion) configDraft.value.digestion = { enabled: true, bookPasses: true }
   configOpen.value = true
 }
 
@@ -1829,5 +2322,28 @@ defineExpose({ refresh })
 }
 .rf-req {
   color: var(--el-color-danger);
+}
+
+/* ===== 大脑体检对话框 ===== */
+.hz-section {
+  margin-bottom: 14px;
+}
+.hz-section h5 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+.hz-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.hz-suggestions {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.8;
 }
 </style>

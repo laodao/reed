@@ -5,10 +5,11 @@
  * 编排（按场景串行）：
  *   1. generateCogenForScene：一次 LLM 调用产出「资产清单 + 分镜」（D1），
  *      schema 校验 + 纠错重试 1 次（D4-1）；
- *   2. D2 绑定构造（代码侧，不让模型回填 ID）：按名（standaloneName/overrideName）
- *      匹配项目现有 binding，命中复用；未命中调既有 createStandalone 建绑定
- *      （描述来自响应资产卡）；
+ *   2. D2 绑定构造（代码侧，不让模型回填 ID）：按名归一化匹配项目现有 binding
+ *      （候选名 = getEffectiveData 投影名 + standalone/override/alias/双轨列），
+ *      命中复用；未命中调既有 createStandalone 建绑定（描述来自响应资产卡）；
  *   3. 替换式写分镜：先删该场景旧分镜再插入（与旧「批量生成分镜」一致），
+ *      删旧 + 插新 + links 同一事务（M1：中途失败整体回滚，旧分镜完整保留），
  *      characters[].characterId = binding.id，locationBindingIds/itemBindingIds 填上；
  *   4. 回填 scene.characters[].characterBindingId、scene_characters.character_binding_id、
  *      scene.location_binding_id；
@@ -30,6 +31,7 @@ import { VideoEpisodeEntity } from '@core/database/entities/episode-production/v
 import { EpisodeScriptEntity } from '@core/database/entities/episode-production/episode-script.entity'
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
 import { SceneCharacterEntity } from '@core/database/entities/episode-production/scene-character.entity'
+import { SceneDialogueEntity } from '@core/database/entities/episode-production/scene-dialogue.entity'
 import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
 import { StoryboardRepository } from '@core/database/repositories/storyboard.repository'
 import { getCurrentUserId } from '@core/context/user-context'
@@ -42,6 +44,9 @@ import { generateCogenForScene } from '../ai/storyboard-cogen'
 import type { CogenExistingAsset, CogenOutput } from '../ai/storyboard-cogen'
 import { normalizeShotNumbers } from './storyboard.service'
 import { cleanupStoryboards } from '../storyboard-cleanup.service'
+import { insertStoryboardIn } from '../storyboard-insert'
+import { withPendingKeyframeFileDeletions } from '@core/platform/episode-production/render/keyframe/keyframe-cleanup'
+import { rebuildStoryboardDialogueLinks } from '../storyboard-dialogue-links'
 import {
   normalizeBindingName,
   characterBindingNames,
@@ -88,7 +93,7 @@ export interface CogenProgressEvent {
   error?: string
 }
 
-/** binding 名 → 快照（按 standaloneName/overrideName 索引，跨场景去重的依据） */
+/** binding 名 → 快照（按归一化名字索引，候选名 = getEffectiveData 投影名 + 实体侧 standalone/override/alias/双轨列；跨场景去重的依据） */
 interface BindingSnapshot {
   id: string
   name: string
@@ -334,32 +339,54 @@ export class StoryboardCogenService {
       }
     }
 
+    // 2026-09-24 一致性修复（A2/A4）：名字/描述统一走 getEffectiveData 投影
+    // （linked_lw 的 standaloneName/overrideName 均为 null，旧逻辑直接 continue 跳过，
+    // 导致已有角色被重复 createStandalone）；口径与 asset-roster-builder 一致，
+    // 单条投影失败跳过 + warn，不阻断。索引仍保留实体侧候选名（alias/双轨列）。
     for (const b of await charSvc.listByProject(projectId)) {
-      const primary = b.standaloneName ?? b.overrideName
-      if (!primary) continue
-      addToIndex(charIndex, 'character', characterBindingNames(b), {
-        id: b.id,
-        name: primary,
-        description: b.standaloneDescription ?? b.overrideDescription ?? null,
-      })
+      try {
+        const eff = await charSvc.getEffectiveData(b.id)
+        addToIndex(charIndex, 'character', [eff.name, ...characterBindingNames(b)], {
+          id: b.id,
+          name: eff.name,
+          description: [eff.description, eff.appearance].filter(Boolean).join(' / ') || null,
+        })
+      } catch (e) {
+        console.warn(
+          `[StoryboardCogenService] 角色 binding ${b.id} 投影失败，跳过：`,
+          (e as Error).message,
+        )
+      }
     }
     for (const b of await locSvc.listByProject(projectId)) {
-      const primary = b.standaloneName ?? b.overrideName ?? b.locationName
-      if (!primary) continue
-      addToIndex(locIndex, 'location', locationBindingNames(b), {
-        id: b.id,
-        name: primary,
-        description: b.standaloneDescription ?? b.overrideDescription ?? null,
-      })
+      try {
+        const eff = await locSvc.getEffectiveData(b.id)
+        addToIndex(locIndex, 'location', [eff.name, ...locationBindingNames(b)], {
+          id: b.id,
+          name: eff.name,
+          description: eff.description || null,
+        })
+      } catch (e) {
+        console.warn(
+          `[StoryboardCogenService] 地点 binding ${b.id} 投影失败，跳过：`,
+          (e as Error).message,
+        )
+      }
     }
     for (const b of await itemSvc.listByProject(projectId)) {
-      const primary = b.standaloneName ?? b.overrideName ?? b.itemName
-      if (!primary) continue
-      addToIndex(itemIndex, 'item', itemBindingNames(b), {
-        id: b.id,
-        name: primary,
-        description: b.standaloneDescription ?? b.overrideDescription ?? null,
-      })
+      try {
+        const eff = await itemSvc.getEffectiveData(b.id)
+        addToIndex(itemIndex, 'item', [eff.name, ...itemBindingNames(b)], {
+          id: b.id,
+          name: eff.name,
+          description: eff.description || null,
+        })
+      } catch (e) {
+        console.warn(
+          `[StoryboardCogenService] 物品 binding ${b.id} 投影失败，跳过：`,
+          (e as Error).message,
+        )
+      }
     }
 
     return {
@@ -371,26 +398,37 @@ export class StoryboardCogenService {
       charIndex,
       locIndex,
       itemIndex,
-      buildExistingAssets: () => [
-        ...[...charIndex.values()].map((b) => ({
-          kind: 'character' as const,
-          id: b.id,
-          name: b.name,
-          description: b.description,
-        })),
-        ...[...locIndex.values()].map((b) => ({
-          kind: 'location' as const,
-          id: b.id,
-          name: b.name,
-          description: b.description,
-        })),
-        ...[...itemIndex.values()].map((b) => ({
-          kind: 'item' as const,
-          id: b.id,
-          name: b.name,
-          description: b.description,
-        })),
-      ],
+      buildExistingAssets: () => {
+        // 同一 binding 在索引里挂着多个候选名（alias/双轨列），values() 会重复，按 id 去重
+        const unique = (index: Map<string, BindingSnapshot>): BindingSnapshot[] => {
+          const seen = new Set<string>()
+          return [...index.values()].filter((b) => {
+            if (seen.has(b.id)) return false
+            seen.add(b.id)
+            return true
+          })
+        }
+        return [
+          ...unique(charIndex).map((b) => ({
+            kind: 'character' as const,
+            id: b.id,
+            name: b.name,
+            description: b.description,
+          })),
+          ...unique(locIndex).map((b) => ({
+            kind: 'location' as const,
+            id: b.id,
+            name: b.name,
+            description: b.description,
+          })),
+          ...unique(itemIndex).map((b) => ({
+            kind: 'item' as const,
+            id: b.id,
+            name: b.name,
+            description: b.description,
+          })),
+        ]
+      },
     }
   }
 
@@ -405,6 +443,10 @@ export class StoryboardCogenService {
     result: CogenSceneResult,
     enrichedBindings: CogenEpisodeResult['enrichedBindings'],
   ): Promise<void> {
+    // 0) 一致性修复 M3（第二批）：无 id 老对白先回填真实 id（JSON 回写 + 桥接行补插同事务，
+    //    生成前提交）。否则 links 落库时 dialogue_id 命中不了 scene_dialogues，FK 必失败（评审 C1）
+    await this.backfillDialogueIds(scene)
+
     // 1) LLM 联合生成（含校验 + 纠错重试 1 次；失败抛错，本场景不写库）
     //    O2：超时类错误 sleep 60s 后原样重试恰好 1 次
     const output = await this.generateWithTimeoutRetry(
@@ -720,9 +762,90 @@ export class StoryboardCogenService {
   // ==================== 写库 ====================
 
   /**
+   * 一致性修复 M3（第二批）：生成前为无 id 老对白回填真实 id，并补齐桥接行。
+   *
+   * 历史数据 scene.dialogues JSON 里存在缺 id 的对白（写桥接行时生成的 id 没回写
+   * JSON），也存在 JSON 有 id 但 scene_dialogues 桥接行缺失的对白。两者都会让
+   * storyboard_dialogue_links 落库时 FK（REFERENCES scene_dialogues(id)）必失败；
+   * 前者还会让 prompt/expectedDialogueIds 只能依赖合成 id。
+   *
+   * 口径：JSON 缺 id 的对白优先复用桥接行（按 sortOrder=JSON 下标对齐）的 id 写回，
+   * 没有则用 scene-dialogue.repository 同款生成器补 id；凡 JSON id 在桥接表里
+   * 没有对应行的，一律补插桥接行（只插不改：既有行 id 可能被旧 links/字幕引用，
+   * 绝不动既有行 PK）。JSON 回写与桥接行补插同事务，且在 LLM 生成前提交——之后
+   * 全链路（prompt / expectedDialogueIds / links / storyboards.dialogue_ids /
+   * 字幕 / 配音）只见真实 id，storyboard-cogen.ts 的 dialogueDisplayId 合成 id
+   * 路径退化为纯防御。
+   */
+  private async backfillDialogueIds(scene: SceneScriptEntity): Promise<void> {
+    const dialogues = (scene.dialogues as any[] | null) ?? []
+    if (dialogues.length === 0) return
+
+    let filled = 0
+    let inserted = 0
+    await this.ds.transaction(async (manager) => {
+      const dlgRepo = manager.getRepository(SceneDialogueEntity)
+      const rows = await dlgRepo.find({ where: { sceneScriptId: scene.id } })
+      const rowByOrder = new Map(rows.map((r) => [r.sortOrder, r]))
+      const rowIds = new Set(rows.map((r) => r.id))
+      const userId = getCurrentUserId()
+      let jsonChanged = false
+      for (let i = 0; i < dialogues.length; i++) {
+        const d = dialogues[i]
+        if (!d || typeof d !== 'object') continue
+        if (!(typeof d.id === 'string' && d.id.length > 0)) {
+          d.id = rowByOrder.get(i)?.id || `dlg_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
+          jsonChanged = true
+          filled++
+        }
+        if (!rowIds.has(d.id)) {
+          await dlgRepo.save(
+            dlgRepo.create({
+              id: d.id,
+              userId,
+              sceneScriptId: scene.id,
+              characterId: d.characterId || '',
+              characterName: d.characterName ?? '',
+              characterBindingId: d.characterBindingId ?? null,
+              text: d.text ?? '',
+              emotion: d.emotion ?? null,
+              volume: d.volume || 'normal',
+              pace: d.pace || 'normal',
+              pause: d.pause || 0,
+              voiceId: d.voiceId ?? null,
+              audioAssetId: d.audioAssetId ?? null,
+              sortOrder: i,
+            }),
+          )
+          rowIds.add(d.id)
+          inserted++
+        }
+      }
+      if (jsonChanged) {
+        scene.dialogues = dialogues
+        scene.updatedAt = new Date()
+        await manager.getRepository(SceneScriptEntity).save(scene)
+      }
+    })
+    if (filled > 0 || inserted > 0) {
+      console.log(
+        `[StoryboardCogenService] 场景 ${scene.sceneNumber} 对白 id 回填（M3）：补 id ${filled} 条，补桥接行 ${inserted} 条`,
+      )
+    }
+  }
+
+  /**
    * 替换式写分镜：先删该场景旧分镜（cleanupStoryboards 级联清关键帧/图，
    * 受影响片段置 superseded），再按 cogen 输出插入新分镜。
    * characters[].characterId = binding.id（代码构造，D2）；shotNumber 强制 1..N。
+   *
+   * 一致性修复 M1（第二批）：删旧 + 插新 + links 包进同一个事务——中途失败
+   * 整体回滚，旧分镜完整保留、无新分镜残留（「失败保留旧分镜」承诺成立）。
+   * E1（第二批）：事务外包 withPendingKeyframeFileDeletions——旧分镜关键帧
+   * 磁盘文件在提交成功后统一删，回滚时随旧分镜一并保留。
+   * SQLite 串行门约束：事务回调内禁止全局 manager/仓库方法（this.storyboardRepo
+   * 走 DataSource 全局 manager 会被门拒），一律走事务 manager 的 getRepository；
+   * 裸 manager 不注入 user_id（复核修复 P0-3），userId 手工注入（同 scoped 语义）。
    */
   private async replaceSceneStoryboards(
     sceneId: string,
@@ -732,53 +855,65 @@ export class StoryboardCogenService {
     itemBindings: Map<string, BindingSnapshot>,
   ): Promise<void> {
     const oldStoryboards = await this.storyboardRepo.getBySceneScriptId(sceneId)
-    await cleanupStoryboards(this.ds, oldStoryboards.map(sb => sb.id))
+    const oldIds = oldStoryboards.map(sb => sb.id)
 
-    // shotNumber 按数组顺序强制重排为 1..N（与旧批量生成一致，防跳号）
-    for (const shot of normalizeShotNumbers(
-      output.shots.map((s) => ({ ...s, shotNumber: 0 })),
-    )) {
-      const characters: StoryboardCharacter[] = shot.characters.map((c) => {
-        const binding = charBindings.get(c.name)
-        if (!binding) {
-          // 校验已保证 name ⊆ 资产清单；这里是代码侧兜底，绝不写空 ID
-          throw new Error(`分镜角色 "${c.name}" 未解析到 binding（不应发生，校验已拦截）`)
-        }
-        return {
-          characterId: binding.id,
-          position: POSITION_MAP[c.position ?? 'center'] ?? POSITION_MAP.center,
-          expression: c.expression,
-          action: c.action,
-          facing: (c.facing ?? 'front') as StoryboardCharacter['facing'],
-        }
-      })
+    // E1：收集器包住事务——关键帧磁盘文件在提交成功后统一删，回滚则随旧分镜一并保留
+    await withPendingKeyframeFileDeletions(() => this.ds.transaction(async (manager) => {
+      await cleanupStoryboards(manager, oldIds)
 
-      const itemBindingIds = shot.itemNames
-        .map((n) => itemBindings.get(n)?.id)
-        .filter((id): id is string => !!id)
+      // shotNumber 按数组顺序强制重排为 1..N（与旧批量生成一致，防跳号）
+      for (const shot of normalizeShotNumbers(
+        output.shots.map((s) => ({ ...s, shotNumber: 0 })),
+      )) {
+        const characters: StoryboardCharacter[] = shot.characters.map((c) => {
+          const binding = charBindings.get(c.name)
+          if (!binding) {
+            // 校验已保证 name ⊆ 资产清单；这里是代码侧兜底，绝不写空 ID
+            throw new Error(`分镜角色 "${c.name}" 未解析到 binding（不应发生，校验已拦截）`)
+          }
+          return {
+            characterId: binding.id,
+            position: POSITION_MAP[c.position ?? 'center'] ?? POSITION_MAP.center,
+            expression: c.expression,
+            action: c.action,
+            facing: (c.facing ?? 'front') as StoryboardCharacter['facing'],
+          }
+        })
 
-      const created = await this.storyboardRepo.create({
-        sceneScriptId: sceneId,
-        shotNumber: shot.shotNumber,
-        shotType: shot.shotType as any,
-        cameraAngle: shot.cameraAngle as any,
-        cameraMovement: shot.cameraMovement as any,
-        frameDescription: shot.frameDescription,
-        subject: shot.subject,
-        composition: shot.composition,
-        characters,
-        dialogueIds: [],
-        actionIds: [],
-        duration: shot.duration,
-        transition: { type: 'cut', duration: 500 },
-      })
+        const itemBindingIds = shot.itemNames
+          .map((n) => itemBindings.get(n)?.id)
+          .filter((id): id is string => !!id)
 
-      // create 入参不含 binding 覆盖字段（沿用旧 repo 签名），创建后补写
-      await this.storyboardRepo.update(created.id, {
-        locationBindingIds: [locationBindingId],
-        itemBindingIds,
-      })
-    }
+        const dialogueIds = Array.isArray(shot.dialogueIds) ? shot.dialogueIds.filter(Boolean) : []
+        // binding 覆盖列并入首次插入（省一次 update）
+        const created = await insertStoryboardIn(manager, {
+          sceneScriptId: sceneId,
+          shotNumber: shot.shotNumber,
+          shotType: shot.shotType,
+          cameraAngle: shot.cameraAngle,
+          cameraMovement: shot.cameraMovement,
+          movementDuration: null,
+          frameDescription: shot.frameDescription,
+          subject: shot.subject,
+          composition: shot.composition,
+          characters: characters as unknown[],
+          locationBindingIds: [locationBindingId],
+          itemBindingIds,
+          narrationId: null,
+          dialogueIds,
+          actionIds: [],
+          duration: shot.duration,
+          transition: { type: 'cut', duration: 500 },
+        })
+
+        // 一致性修复 v3（A3）：对白承接落库 storyboard_dialogue_links（字幕镜头级分配的数据源）
+        // 降级保护（多租户复核修复）：links 投影失败不应让整个 cogen 主事务回滚
+        // （与其他调用点 scene-binding-writer / storyboard.handler 的 .catch 降级纪律一致）
+        await rebuildStoryboardDialogueLinks(manager, { id: created.id, dialogueIds }).catch(e => {
+          console.warn('[storyboard-cogen] storyboard_dialogue_links 重建失败（跳过，不影响分镜生成）:', e)
+        })
+      }
+    }))
   }
 
   /**

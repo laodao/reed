@@ -12,9 +12,15 @@
  * 装配时经 registerMenuItems() 合入。mainMenuItems 为响应式数组，
  * MainLayout/Home 的 computed 消费方无需改动即可自动刷新。
  *
+ * 二级菜单（2026-09-25 结构性修订，复盘两次回归）：
+ * 子菜单数据**不放进** MenuItem/主菜单注册表——mainMenuItems 里只有顶级项，
+ * 子项走独立的 menuSubmenus 注册表（registerMenuSubmenus / getMenuSubmenu），
+ * 仅侧边栏悬停浮层（MainLayout hover flyout）消费。
+ * 此前两版把 children 挂在 MenuItem 上，先后被拍平渲染成顶级图标两次，
+ * 属结构性缺陷；现在顶级数据里根本不存在子项，任何消费方都无法再拍平。
+ *
  * 字段说明：
- * - hidden：整项（含子项）不显示（功能开发中暂不暴露入口；路由仍可访问）
- * - hideSelf：仅父项自身不显示，子项照常列出（纯分组父项）
+ * - hidden：整项不显示（功能开发中暂不暴露入口；路由仍可访问）
  * - description：首页功能卡片的一句描述（侧边栏不用）
  */
 
@@ -30,11 +36,8 @@ export interface MenuItem {
   icon: any
   /** 首页功能卡片描述 */
   description?: string
-  children?: MenuItem[]
-  /** 整项隐藏（含子项），路由仍可访问 */
+  /** 整项隐藏，路由仍可访问 */
   hidden?: boolean
-  /** 仅隐藏自身，子项照常显示（纯分组父项） */
-  hideSelf?: boolean
 }
 
 /** registerMenuItems 的定位选项 */
@@ -61,9 +64,25 @@ const shellMainMenuItems: MenuItem[] = [
 /**
  * 主菜单（侧边栏 + 首页共用，响应式注册表）：
  * 初始为壳条目；业务包条目在 installBuiltinPackages() 时装配合入。
- * 消费方（MainLayout/Home）经 computed + flattenMenuItems 使用，自动响应合入。
+ * 只有顶级项——子菜单在 menuSubmenus，不在这里。
  */
 export const mainMenuItems: MenuItem[] = reactive([...shellMainMenuItems])
+
+/**
+ * 二级菜单注册表（key = 父项 path）。仅 MainLayout 悬停浮层消费；
+ * 数据不进 mainMenuItems，杜绝子项被任何消费方渲染成顶级菜单。
+ */
+const menuSubmenus = reactive<Record<string, MenuItem[]>>({})
+
+/** 注册某父项的二级菜单（业务包装配时调用；同 key 重复注册以最后一次为准） */
+export function registerMenuSubmenus(parentPath: string, items: MenuItem[]): void {
+  menuSubmenus[parentPath] = items
+}
+
+/** 读某父项的二级菜单（无则返回空数组） */
+export function getMenuSubmenu(parentPath: string): MenuItem[] {
+  return menuSubmenus[parentPath] ?? []
+}
 
 /**
  * 注册菜单项（业务包装配时调用）。
@@ -90,25 +109,17 @@ export const footerMenuItems: MenuItem[] = [
 ]
 
 /**
- * 展开菜单为平铺列表（侧边栏纯图标模式 / 首页功能卡片共用）：
- * - hidden：整项（含子项）过滤
- * - hideSelf：父项自身过滤，子项保留
+ * 可见菜单列表（侧边栏纯图标模式 / 首页功能卡片共用）：
+ * 只过滤 hidden。返回的必然是顶级项——子菜单不在数据源里，无需（也无法）拍平。
  */
-export function flattenMenuItems(items: MenuItem[]): MenuItem[] {
-  const flat: MenuItem[] = []
-  for (const item of items) {
-    if (item.hidden) continue
-    if (!item.hideSelf) {
-      flat.push(item)
-    }
-    if (item.children) {
-      flat.push(...item.children.filter(c => !c.hidden))
-    }
-  }
-  return flat
+export function visibleMenuItems(items: MenuItem[]): MenuItem[] {
+  return items.filter(item => !item.hidden)
 }
 
-/** 测试专用：恢复为仅壳条目（清空各测试用例合入的包菜单） */
+/** 测试专用：恢复为仅壳条目（清空各测试用例合入的包菜单与子菜单） */
 export function __resetMainMenuForTests(): void {
   mainMenuItems.splice(0, mainMenuItems.length, ...shellMainMenuItems)
+  for (const key of Object.keys(menuSubmenus)) {
+    delete menuSubmenus[key]
+  }
 }

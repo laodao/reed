@@ -86,12 +86,17 @@ describe('dl-agent-bindings', () => {
     }
   })
 
-  it('tutor：只带动作工具 + 系统透出，绝无读工具', () => {
+  it('tutor：只带 dl_answer_question + 系统透出，绝无读工具与其余写动作（2026-09-25 收窄：答疑会话不改知识图）', () => {
     const bindings = buildDlBindings({ mode: 'tutor', availableToolNames: ALL_TOOLS, webSearchAvailable: true })
     const names = namesOf(bindings)
-    for (const t of dlAgentToolNames()) expect(names).toContain(t)
+    expect(names).toContain('dl_answer_question')
     for (const t of DL_SYSTEM_PASSTHROUGH) expect(names).toContain(t)
     for (const t of [...DL_READ_TOOL_NAMES, DL_WEB_SEARCH_TOOL]) {
+      expect(names).not.toContain(t)
+    }
+    // 写动作全部下架：save_concept/save_relation/save_card/save_space_prereqs/propose_* 一个都不给
+    for (const t of dlAgentToolNames()) {
+      if (t === 'dl_answer_question') continue
       expect(names).not.toContain(t)
     }
   })
@@ -180,6 +185,9 @@ describe('dl-agent-bindings', () => {
     // 答疑/核验永远不是规划轮
     expect(isPlanningSaveRound({ mode: 'tutor', isEmptySpace: true })).toBe(false)
     expect(isPlanningSaveRound({ mode: 'verify', isEmptySpace: true })).toBe(false)
+    // 2026-09-25 P1-7：research 落库轮中途失败后重试（已落部分概念 → isEmptySpace 翻转），
+    // 消息带【已确认知识体系】标记时仍是规划轮（阶段指令与额度照常注入）
+    expect(isPlanningSaveRound({ mode: 'research', isEmptySpace: false, syllabusConfirmed: true })).toBe(true)
   })
 
   // ===== 2026-09-13 参数配置化：settings 读到的预算必须真的落到 bindings（宿主路径） =====

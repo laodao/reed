@@ -44,6 +44,17 @@ export interface VideoProviderCapabilities {
   subjectSupport?: boolean
   /** 同时可注入的 subject 数（subjectSupport=true 时有效；DALL-E/MJ 通常 1 个，Seedance 多个） */
   maxSubjects?: number
+  /**
+   * 「参考图=主体外观」语义（2026-09-25 一致性修复 V1 · assetRef2video 守卫）。
+   *
+   * true：imageToVideo 的参考图被 provider 当作主体外观来源（ComfyUI H3 网关 refs 语义），
+   *        assetRef 路径可把编号参考板/资产主图直接发出。
+   * false/undefined：imageToVideo 的 image 语义是首帧（火山/百炼等），
+   *        assetRef 路径必须拦截——否则参考板被当首帧烙进成片。
+   * 缺省视为不支持；adapter-factory 按 provider 类型置位（当前仅 comfyui），
+   * 用户可在 customParams.videoCapabilities 显式覆盖。
+   */
+  subjectReference?: boolean
 }
 
 /**

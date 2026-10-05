@@ -16,6 +16,7 @@ import type {
   DlPlanUnderstanding,
   DlSyllabusConcept,
 } from '@shared/types/domain-learning.types'
+import { findDanglingPrereqs } from '@shared/utils/domain-learning-plan-draft'
 import { DL_PLANNING_SAVE_BUDGET, DL_SAVE_BUDGET_MAX } from '../services/dl-agent.types'
 
 /** 规范化结果（失败给可执行的拒绝原因，直接回给模型） */
@@ -97,24 +98,32 @@ export function normalizePlanSyllabus(input: unknown): PlanNormalizeResult<DlPla
     return { ok: false, reason: '知识体系方案缺少 branches（至少一个分支目录 + 其知识点）' }
   }
   const changes: string[] = []
-  const seen = new Set<string>()
+  // 分支名/概念名各自去重（2026-09-25 P2-11：此前共用一个 seen 集合，分支「概率」会把
+  // 概念「概率」静默吞掉且 changes 文案写成"知识点重复"）
+  const branchNames = new Set<string>()
+  const conceptNames = new Set<string>()
   const branches: DlPlanSyllabus['branches'] = []
 
   const normalizeConcept = (c: unknown): DlSyllabusConcept | null => {
     const obj = (c ?? {}) as Record<string, unknown>
     const name = cleanText(obj.name, 120)
     if (!name) return null
-    if (seen.has(name)) {
+    if (conceptNames.has(name)) {
       changes.push(`知识点「${name}」在方案里重复出现，已去重（保留首次出现的位置）`)
       return null
     }
-    seen.add(name)
+    conceptNames.add(name)
     const layer = Number(obj.layer)
+    const layerOk = Number.isFinite(layer) && layer >= 0
+    if ('layer' in obj && !layerOk) {
+      // 2026-09-25 D4：非法 layer 不再静默归 0——记入 changes 让模型/用户看见
+      changes.push(`知识点「${name}」的 layer 非法（${String(obj.layer)}），已按 0 处理`)
+    }
     return {
       name,
       definitionShort: cleanText(obj.definitionShort, 300) || null,
       prerequisites: cleanList(obj.prerequisites, 12),
-      layer: Number.isFinite(layer) && layer >= 0 ? Math.floor(layer) : 0,
+      layer: layerOk ? Math.floor(layer) : 0,
       nodeType: cleanText(obj.nodeType, 20) || 'concept',
     }
   }
@@ -125,11 +134,11 @@ export function normalizePlanSyllabus(input: unknown): PlanNormalizeResult<DlPla
     if (!name) {
       return { ok: false, reason: '知识体系方案里有一个分支没有 name——每个分支都要有名字（如「金融产品」「风险与收益」）' }
     }
-    if (seen.has(name)) {
+    if (branchNames.has(name)) {
       changes.push(`分支「${name}」重复出现，已去重`)
       continue
     }
-    seen.add(name)
+    branchNames.add(name)
     const conceptsRaw = Array.isArray(obj.concepts) ? obj.concepts : []
     const concepts: DlSyllabusConcept[] = []
     for (const c of conceptsRaw) {
@@ -161,6 +170,17 @@ export function normalizePlanSyllabus(input: unknown): PlanNormalizeResult<DlPla
   if (total === 0) {
     return { ok: false, reason: '知识体系方案里没有任何知识点（分支下都是空的）' }
   }
+
+  // 前置闭合性（2026-09-25 D1）：悬空前置只提醒不阻断——changes 透传给模型与确认弹窗，
+  // 用户拍板前就该看到"方案里声明了但没有落点的前置"（此前要等落库后的 ⚠️ 欠账清单才浮现）。
+  // 实现住在 shared/utils/domain-learning-plan-draft（前端弹窗共用来算 ⚠️ 提示）
+  const dangling = findDanglingPrereqs({ branches, rootConcepts })
+  if (dangling.length) {
+    changes.push(
+      `以下前置在方案里没有落点（请补上该概念，或确认它属领域外能力、落库时列入主题前置要求）：${dangling.join('、')}`,
+    )
+  }
+
   return {
     ok: true,
     changes,

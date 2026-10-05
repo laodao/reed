@@ -32,6 +32,10 @@ export class DiaryAttachmentEntity {
   @Column({ name: 'mime_type', type: 'text', nullable: true })
   mimeType!: string | null
 
+  /** 视觉模型生成的中文描述（best-effort，可为 NULL）；写进 markdown alt text 作检索上下文 */
+  @Column({ name: 'description', type: 'text', nullable: true })
+  description!: string | null
+
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 }

@@ -22,6 +22,9 @@ import {
   NodeFileWriter,
 } from './compose/episode-mp4-exporter.runner'
 import { getPathProvider } from '@core/interfaces/path.interface'
+import { getCurrentUserId } from '@core/context/user-context'
+import type { DataSource } from 'typeorm'
+import { EpisodeScriptEntity } from '@core/database/entities/episode-production/episode-script.entity'
 import * as path from 'path'
 import * as fs from 'fs'
 
@@ -32,6 +35,23 @@ export function registerComposeHandlers(): void {
   ipcBridge.handle('ep:open-export-folder', handleOpenExportFolder)
   // S-07 导出版本留档：合成页「导出记录」读最近 5 条
   ipcBridge.handle('ep:list-export-history', handleListExportHistory)
+}
+
+/**
+ * 剧集脚本归属校验：Web 多租户下 episodeScriptId 由客户端直达，
+ * 必须确认属于当前用户，否则拒绝（跨租户读/导出他人剧集）。
+ */
+async function assertEpisodeScriptOwnership(
+  ds: DataSource,
+  episodeScriptId: string,
+): Promise<void> {
+  const userId = getCurrentUserId()
+  if (!userId) throw new Error('未获取到当前用户身份，拒绝访问剧集数据')
+  const owned = await ds.getRepository(EpisodeScriptEntity).findOne({
+    where: { id: episodeScriptId, userId } as any,
+    select: ['id'],
+  })
+  if (!owned) throw new Error('剧集不存在或无权访问')
 }
 
 /** S-07：导出留档列表（最近 5 条；表不存在等异常返回空列表而非报错，页面可正常渲染） */
@@ -45,6 +65,8 @@ async function handleListExportHistory(
     if (!db.dataSource) return { success: false, error: '数据库未初始化' }
     const ds = db.dataSource
     const isPg = ds.options.type === 'postgres'
+    const userId = getCurrentUserId()
+    if (!userId) return { success: false, error: '未获取到当前用户身份' }
     const rows: Array<{
       id: string
       episode_id: string
@@ -54,10 +76,10 @@ async function handleListExportHistory(
     }> = await ds.query(
       `SELECT id, episode_id, output_path, duration_sec, created_at
        FROM ep_export_history
-       WHERE episode_id = ${isPg ? '$1' : '?'}
+       WHERE episode_id = ${isPg ? '$1' : '?'} AND user_id = ${isPg ? '$2' : '?'}
        ORDER BY created_at DESC
        LIMIT 5`,
-      [episodeId],
+      [episodeId, userId],
     )
     return {
       success: true,
@@ -102,6 +124,7 @@ async function handleBuildTimeline(
   try {
     const db = getCoreDatabaseManager()
     if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+    await assertEpisodeScriptOwnership(db.dataSource, episodeScriptId)
     const svc = new TimelineBuilderService(db.dataSource)
     const data = await svc.buildEpisodeTimeline(episodeScriptId)
     return { success: true, data }
@@ -118,6 +141,7 @@ async function handlePreviewSubtitle(
   try {
     const db = getCoreDatabaseManager()
     if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+    await assertEpisodeScriptOwnership(db.dataSource, episodeScriptId)
     const tlSvc = new TimelineBuilderService(db.dataSource)
     const subSvc = new SubtitleService(db.dataSource)
     const timeline = await tlSvc.buildEpisodeTimeline(episodeScriptId)
@@ -143,6 +167,7 @@ async function handleExportMp4(
   try {
     const db = getCoreDatabaseManager()
     if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+    await assertEpisodeScriptOwnership(db.dataSource, episodeScriptId)
 
     // P7-T3 修复：outputPath 为空 / 含 ~ / 不是绝对路径时，回落到 user data 默认输出目录
     const resolvedOutputPath = resolveOutputPath(outputPath, episodeScriptId)
@@ -172,31 +197,37 @@ async function handleExportMp4(
 }
 
 /**
- * 把用户传的 outputPath 规范成可用的绝对路径：
- * - 空 / undefined → 默认：$userData/episode-production/exports/<epScriptId>-<timestamp>.mp4
- * - 以 ~ 开头 → 替换为 home dir
- * - 相对路径 → 相对于 user data path
+ * 把用户传的 outputPath 规范成可用的绝对路径（安全收口，对齐 ep-agent-actions 0916 review）：
+ * 导出固定写入 $userData/episode-production/exports/，只接受文件名；
+ * 绝对路径 / ~ / 目录穿越一律拒绝——此前任意绝对路径可在服务器任意位置写 MP4。
+ * - 空 / undefined → 自动生成 <epScriptId>-<timestamp>.mp4
  * - 父目录不存在 → 自动创建
  */
 function resolveOutputPath(outputPath: string, episodeScriptId: string): string {
   const userDataPath = getPathProvider().getUserDataPath()
   const defaultDir = path.join(userDataPath, 'episode-production', 'exports')
 
-  let resolved: string
+  let fileName: string
   if (!outputPath || !outputPath.trim()) {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-    resolved = path.join(defaultDir, `${episodeScriptId}-${stamp}.mp4`)
-  } else if (outputPath.startsWith('~/')) {
-    const home = process.env.HOME || process.env.USERPROFILE || userDataPath
-    resolved = path.join(home, outputPath.slice(2))
-  } else if (path.isAbsolute(outputPath)) {
-    resolved = outputPath
+    fileName = `${episodeScriptId}-${stamp}.mp4`
   } else {
-    resolved = path.resolve(defaultDir, outputPath)
+    const trimmed = outputPath.trim()
+    if (path.isAbsolute(trimmed) || trimmed.startsWith('~')) {
+      throw new Error(`outputPath 只接受文件名（导出固定写入 ${defaultDir}），不要传绝对路径`)
+    }
+    if (trimmed.split(/[\\/]/).some(seg => seg === '..')) {
+      throw new Error('outputPath 不允许包含 ..（导出固定写入应用导出目录）')
+    }
+    fileName = trimmed
   }
 
-  // 确保父目录存在
-  const dir = path.dirname(resolved)
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+  const resolved = path.join(defaultDir, fileName)
+  // 双保险：最终路径必须仍在导出目录内
+  const resolvedDir = path.dirname(resolved)
+  if (!resolvedDir.startsWith(defaultDir + path.sep)) {
+    throw new Error('outputPath 越界（导出固定写入应用导出目录）')
+  }
+  if (!fs.existsSync(resolvedDir)) fs.mkdirSync(resolvedDir, { recursive: true })
   return resolved
 }

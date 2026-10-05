@@ -6,6 +6,8 @@
  */
 
 import type { DataSource, Repository } from 'typeorm'
+import { IsNull } from 'typeorm'
+import { getCurrentUserId } from '@core/context/user-context'
 import type {
   ProjectSkillTypeConfig,
   ProjectItemTypeConfig,
@@ -136,6 +138,28 @@ export const DEFAULT_ITEM_LEVELS: Record<
   ],
 }
 
+/**
+ * 租户可见性辅助（多租户复核修复）：本仓库未走 BaseRepository，直连 ORM，
+ * 但四张配置表均有 user_id 列。历史缺陷写出的 NULL 行按共享行兼容（避免
+ * 存量配置不可见），他人行一律不可见、不可改；新写入注入当前用户。
+ */
+function tenantWhereSql(alias: string): { sql: string; params: Record<string, string> } {
+  const col = alias ? `${alias}.user_id` : 'user_id'
+  const uid = getCurrentUserId()
+  if (!uid) return { sql: `${col} IS NULL`, params: {} }
+  return { sql: `(${col} = :__uid OR ${col} IS NULL)`, params: { __uid: uid } }
+}
+
+/** findOne 用的 OR 形态租户条件（own OR NULL） */
+function tenantFindWhere<T extends object>(base: T): Array<T & { userId: string | null }> {
+  const uid = getCurrentUserId()
+  if (!uid) return [{ ...base, userId: IsNull() } as T & { userId: string | null }]
+  return [
+    { ...base, userId: uid } as T & { userId: string | null },
+    { ...base, userId: IsNull() } as T & { userId: string | null },
+  ]
+}
+
 export class LwTypeConfigRepository {
   private skillTypeRepo: Repository<LwProjectSkillTypeEntity>
   private itemTypeRepo: Repository<LwProjectItemTypeEntity>
@@ -152,16 +176,18 @@ export class LwTypeConfigRepository {
   // ==================== 技能类型配置 ====================
 
   async getSkillTypeConfigs(projectId: string): Promise<ProjectSkillTypeConfig[]> {
+    const vis = tenantWhereSql('s')
     const rows = await this.skillTypeRepo
       .createQueryBuilder('s')
       .where('s.project_id = :pid', { pid: projectId })
+      .andWhere(vis.sql, vis.params)
       .orderBy('s.sort_order', 'ASC')
       .getMany()
     return rows.map(r => this.toSkillType(r))
   }
 
   async getSkillTypeConfig(id: string): Promise<ProjectSkillTypeConfig | null> {
-    const row = await this.skillTypeRepo.findOne({ where: { id } as any })
+    const row = await this.skillTypeRepo.findOne({ where: tenantFindWhere({ id }) as any })
     return row ? this.toSkillType(row) : null
   }
 
@@ -170,7 +196,7 @@ export class LwTypeConfigRepository {
     code: string,
   ): Promise<ProjectSkillTypeConfig | null> {
     const row = await this.skillTypeRepo.findOne({
-      where: { projectId, code } as any,
+      where: tenantFindWhere({ projectId, code }) as any,
     })
     return row ? this.toSkillType(row) : null
   }
@@ -186,6 +212,7 @@ export class LwTypeConfigRepository {
     await this.skillTypeRepo.save(
       this.skillTypeRepo.create({
         id,
+        userId: getCurrentUserId() ?? null,
         projectId: data.projectId,
         code: data.code,
         name: data.name,
@@ -212,7 +239,7 @@ export class LwTypeConfigRepository {
     id: string,
     data: UpdateSkillTypeConfigRequest,
   ): Promise<ProjectSkillTypeConfig | null> {
-    const row = await this.skillTypeRepo.findOne({ where: { id } as any })
+    const row = await this.skillTypeRepo.findOne({ where: tenantFindWhere({ id }) as any })
     if (!row) return null
     let changed = false
     if (data.name !== undefined) {
@@ -232,13 +259,25 @@ export class LwTypeConfigRepository {
   async deleteSkillTypeConfig(id: string): Promise<boolean> {
     const config = await this.getSkillTypeConfig(id)
     if (!config) return false
+    const vis = tenantWhereSql('')
     return this.dataSource.transaction(async manager => {
       await manager
         .getRepository(LwProjectSkillLevelEntity)
-        .delete({ projectId: config.projectId, skillTypeCode: config.code } as any)
+        .createQueryBuilder()
+        .delete()
+        .where('project_id = :pid AND skill_type_code = :code', {
+          pid: config.projectId,
+          code: config.code,
+        })
+        .andWhere(vis.sql, vis.params)
+        .execute()
       const result = await manager
         .getRepository(LwProjectSkillTypeEntity)
-        .delete({ id } as any)
+        .createQueryBuilder()
+        .delete()
+        .where('id = :id', { id })
+        .andWhere(vis.sql, vis.params)
+        .execute()
       return (result.affected ?? 0) > 0
     })
   }
@@ -270,16 +309,18 @@ export class LwTypeConfigRepository {
   // ==================== 物品类型配置 ====================
 
   async getItemTypeConfigs(projectId: string): Promise<ProjectItemTypeConfig[]> {
+    const vis = tenantWhereSql('i')
     const rows = await this.itemTypeRepo
       .createQueryBuilder('i')
       .where('i.project_id = :pid', { pid: projectId })
+      .andWhere(vis.sql, vis.params)
       .orderBy('i.sort_order', 'ASC')
       .getMany()
     return rows.map(r => this.toItemType(r))
   }
 
   async getItemTypeConfig(id: string): Promise<ProjectItemTypeConfig | null> {
-    const row = await this.itemTypeRepo.findOne({ where: { id } as any })
+    const row = await this.itemTypeRepo.findOne({ where: tenantFindWhere({ id }) as any })
     return row ? this.toItemType(row) : null
   }
 
@@ -287,7 +328,9 @@ export class LwTypeConfigRepository {
     projectId: string,
     code: string,
   ): Promise<ProjectItemTypeConfig | null> {
-    const row = await this.itemTypeRepo.findOne({ where: { projectId, code } as any })
+    const row = await this.itemTypeRepo.findOne({
+      where: tenantFindWhere({ projectId, code }) as any,
+    })
     return row ? this.toItemType(row) : null
   }
 
@@ -302,6 +345,7 @@ export class LwTypeConfigRepository {
     await this.itemTypeRepo.save(
       this.itemTypeRepo.create({
         id,
+        userId: getCurrentUserId() ?? null,
         projectId: data.projectId,
         code: data.code,
         name: data.name,
@@ -328,7 +372,7 @@ export class LwTypeConfigRepository {
     id: string,
     data: UpdateItemTypeConfigRequest,
   ): Promise<ProjectItemTypeConfig | null> {
-    const row = await this.itemTypeRepo.findOne({ where: { id } as any })
+    const row = await this.itemTypeRepo.findOne({ where: tenantFindWhere({ id }) as any })
     if (!row) return null
     let changed = false
     if (data.name !== undefined) {
@@ -348,13 +392,25 @@ export class LwTypeConfigRepository {
   async deleteItemTypeConfig(id: string): Promise<boolean> {
     const config = await this.getItemTypeConfig(id)
     if (!config) return false
+    const vis = tenantWhereSql('')
     return this.dataSource.transaction(async manager => {
       await manager
         .getRepository(LwProjectItemLevelEntity)
-        .delete({ projectId: config.projectId, itemTypeCode: config.code } as any)
+        .createQueryBuilder()
+        .delete()
+        .where('project_id = :pid AND item_type_code = :code', {
+          pid: config.projectId,
+          code: config.code,
+        })
+        .andWhere(vis.sql, vis.params)
+        .execute()
       const result = await manager
         .getRepository(LwProjectItemTypeEntity)
-        .delete({ id } as any)
+        .createQueryBuilder()
+        .delete()
+        .where('id = :id', { id })
+        .andWhere(vis.sql, vis.params)
+        .execute()
       return (result.affected ?? 0) > 0
     })
   }
@@ -389,17 +445,19 @@ export class LwTypeConfigRepository {
     projectId: string,
     skillTypeCode: string,
   ): Promise<SkillLevelConfig[]> {
+    const vis = tenantWhereSql('l')
     const rows = await this.skillLevelRepo
       .createQueryBuilder('l')
       .where('l.project_id = :pid', { pid: projectId })
       .andWhere('l.skill_type_code = :code', { code: skillTypeCode })
+      .andWhere(vis.sql, vis.params)
       .orderBy('l.sort_order', 'ASC')
       .getMany()
     return rows.map(r => this.toSkillLevel(r))
   }
 
   async getSkillLevel(id: string): Promise<SkillLevelConfig | null> {
-    const row = await this.skillLevelRepo.findOne({ where: { id } as any })
+    const row = await this.skillLevelRepo.findOne({ where: tenantFindWhere({ id }) as any })
     return row ? this.toSkillLevel(row) : null
   }
 
@@ -412,6 +470,7 @@ export class LwTypeConfigRepository {
     await this.skillLevelRepo.save(
       this.skillLevelRepo.create({
         id,
+        userId: getCurrentUserId() ?? null,
         projectId: data.projectId,
         skillTypeCode: data.skillTypeCode,
         code: data.code,
@@ -440,7 +499,7 @@ export class LwTypeConfigRepository {
     id: string,
     data: UpdateSkillLevelRequest,
   ): Promise<SkillLevelConfig | null> {
-    const row = await this.skillLevelRepo.findOne({ where: { id } as any })
+    const row = await this.skillLevelRepo.findOne({ where: tenantFindWhere({ id }) as any })
     if (!row) return null
     let changed = false
     if (data.name !== undefined) {
@@ -458,7 +517,13 @@ export class LwTypeConfigRepository {
   }
 
   async deleteSkillLevel(id: string): Promise<boolean> {
-    const result = await this.skillLevelRepo.delete({ id } as any)
+    const vis = tenantWhereSql('')
+    const result = await this.skillLevelRepo
+      .createQueryBuilder()
+      .delete()
+      .where('id = :id', { id })
+      .andWhere(vis.sql, vis.params)
+      .execute()
     return (result.affected ?? 0) > 0
   }
 
@@ -469,13 +534,17 @@ export class LwTypeConfigRepository {
   ): Promise<void> {
     if (orderedIds.length === 0) return
     const now = Date.now()
+    const vis = tenantWhereSql('')
     await this.dataSource.transaction(async manager => {
-      const repo = manager.getRepository(LwProjectSkillLevelEntity)
       for (let i = 0; i < orderedIds.length; i++) {
-        await repo.update({ id: orderedIds[i] } as any, {
-          sortOrder: i,
-          updatedAt: now,
-        })
+        await manager
+          .getRepository(LwProjectSkillLevelEntity)
+          .createQueryBuilder()
+          .update(LwProjectSkillLevelEntity)
+          .set({ sortOrder: i, updatedAt: now })
+          .where('id = :id', { id: orderedIds[i] })
+          .andWhere(vis.sql, vis.params)
+          .execute()
       }
     })
   }
@@ -486,17 +555,19 @@ export class LwTypeConfigRepository {
     projectId: string,
     itemTypeCode: string,
   ): Promise<ItemLevelConfig[]> {
+    const vis = tenantWhereSql('l')
     const rows = await this.itemLevelRepo
       .createQueryBuilder('l')
       .where('l.project_id = :pid', { pid: projectId })
       .andWhere('l.item_type_code = :code', { code: itemTypeCode })
+      .andWhere(vis.sql, vis.params)
       .orderBy('l.sort_order', 'ASC')
       .getMany()
     return rows.map(r => this.toItemLevel(r))
   }
 
   async getItemLevel(id: string): Promise<ItemLevelConfig | null> {
-    const row = await this.itemLevelRepo.findOne({ where: { id } as any })
+    const row = await this.itemLevelRepo.findOne({ where: tenantFindWhere({ id }) as any })
     return row ? this.toItemLevel(row) : null
   }
 
@@ -509,6 +580,7 @@ export class LwTypeConfigRepository {
     await this.itemLevelRepo.save(
       this.itemLevelRepo.create({
         id,
+        userId: getCurrentUserId() ?? null,
         projectId: data.projectId,
         itemTypeCode: data.itemTypeCode,
         code: data.code,
@@ -537,7 +609,7 @@ export class LwTypeConfigRepository {
     id: string,
     data: UpdateItemLevelRequest,
   ): Promise<ItemLevelConfig | null> {
-    const row = await this.itemLevelRepo.findOne({ where: { id } as any })
+    const row = await this.itemLevelRepo.findOne({ where: tenantFindWhere({ id }) as any })
     if (!row) return null
     let changed = false
     if (data.name !== undefined) {
@@ -555,7 +627,13 @@ export class LwTypeConfigRepository {
   }
 
   async deleteItemLevel(id: string): Promise<boolean> {
-    const result = await this.itemLevelRepo.delete({ id } as any)
+    const vis = tenantWhereSql('')
+    const result = await this.itemLevelRepo
+      .createQueryBuilder()
+      .delete()
+      .where('id = :id', { id })
+      .andWhere(vis.sql, vis.params)
+      .execute()
     return (result.affected ?? 0) > 0
   }
 
@@ -566,13 +644,17 @@ export class LwTypeConfigRepository {
   ): Promise<void> {
     if (orderedIds.length === 0) return
     const now = Date.now()
+    const vis = tenantWhereSql('')
     await this.dataSource.transaction(async manager => {
-      const repo = manager.getRepository(LwProjectItemLevelEntity)
       for (let i = 0; i < orderedIds.length; i++) {
-        await repo.update({ id: orderedIds[i] } as any, {
-          sortOrder: i,
-          updatedAt: now,
-        })
+        await manager
+          .getRepository(LwProjectItemLevelEntity)
+          .createQueryBuilder()
+          .update(LwProjectItemLevelEntity)
+          .set({ sortOrder: i, updatedAt: now })
+          .where('id = :id', { id: orderedIds[i] })
+          .andWhere(vis.sql, vis.params)
+          .execute()
       }
     })
   }

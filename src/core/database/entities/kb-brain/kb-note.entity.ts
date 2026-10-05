@@ -15,8 +15,15 @@ export type KbNoteType =
   | 'synthesis'
   | 'plot-pattern'
   | 'setting-pattern'
+  | 'character-pattern'
   | 'lens'
   | 'skill-seed'
+  // 书级汇总遍产物（book passes；画像驱动，proposed 入审批箱）
+  | 'book-outline'
+  | 'setting-index'
+  | 'character-roster'
+  | 'foreshadow-ledger'
+  | 'knowledge-map'
 
 export type KbNoteStatus = 'proposed' | 'draft' | 'published' | 'archived'
 

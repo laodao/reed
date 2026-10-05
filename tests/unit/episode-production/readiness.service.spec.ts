@@ -1,5 +1,5 @@
 /**
- * EpisodeReadinessService 单测（2026-09-19 批1 · evalCompose 双源口径）
+ * EpisodeReadinessService 单测（2026-09-19 批1 · evalCompose 双源口径；2026-09-24 审计 X1）
  *
  * 覆盖 compose 阶段与 timeline-builder 同口径的判定：
  * - 分镜自身 videoPath 即算有视频（未入段老数据）
@@ -7,6 +7,11 @@
  * - 所属片段 pending / completed 缺 videoPath → 报缺失（同片段多镜只报一次）
  * - 无分镜无片段 → 尚无分镜/片段
  * - 未入段 / 片段 superseded → 只看分镜自身 videoPath
+ *
+ * 审计 X1（readiness / stage-gate 口径统一）：
+ * - 占位行（is_main=1 空 imagePath）不算主图就绪
+ * - 未出场资产缺主图不阻塞 assets tab
+ * - 场景无分镜 → storyboard tab 判缺（与 gate 同口径）
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -189,5 +194,92 @@ describe('EpisodeReadinessService · compose 双源口径', () => {
     await seedSegment(ds, { id: 'seg1', seq: 1, status: 'completed', videoPath: 'video-segments/seg1.mp4' })
     const r = await svc.evaluateEpisode('ve1')
     expect(r.compose.ready).toBe(true)
+  })
+})
+
+/** 让场景 s1 出场指定角色 binding（characters[].characterBindingId） */
+async function seedSceneCharacter(ds: DataSource, characterBindingId: string): Promise<void> {
+  await ds.getRepository(SceneScriptEntity).save({
+    id: 's1',
+    characters: [{ characterBindingId, characterId: `lw-${characterBindingId}`, characterName: '阿甲' }],
+  } as any)
+}
+
+async function seedCharBinding(
+  ds: DataSource,
+  b: { id: string; name?: string },
+): Promise<void> {
+  const now = new Date()
+  await ds.getRepository(CharacterBindingEntity).save({
+    id: b.id, projectId: 'p1', standaloneName: b.name ?? b.id, voiceConfig: {},
+    createdAt: now, updatedAt: now,
+  } as any)
+}
+
+async function seedScene2(ds: DataSource): Promise<void> {
+  const now = new Date()
+  await ds.getRepository(SceneScriptEntity).save({
+    id: 's2', episodeScriptId: 'es1', sceneNumber: 2, location: '街头',
+    locationBindingId: null, locationType: 'exterior', timeOfDay: 'dusk',
+    weather: null, sceneDescription: '', mood: null, lighting: null,
+    characters: null, originalText: null, narration: null, dialogues: null, actions: null,
+    createdAt: now, updatedAt: now,
+  } as any)
+}
+
+/** 写 asset_image 行（is_main=1；imagePath='' 即占位行） */
+async function seedMainImage(
+  ds: DataSource,
+  img: { assetType: string; assetId: string; imagePath: string },
+): Promise<void> {
+  await ds.getRepository(AssetImageEntity).save({
+    id: `img-${img.assetId}`, assetType: img.assetType, assetId: img.assetId,
+    category: 'main', imagePath: img.imagePath, isMain: 1, createdAt: new Date(),
+  } as any)
+}
+
+describe('EpisodeReadinessService · assets/storyboard 口径（审计 X1）', () => {
+  let ds: DataSource
+  let svc: EpisodeReadinessService
+
+  beforeEach(async () => {
+    ds = await buildDb()
+    svc = new EpisodeReadinessService(ds)
+    await seedBase(ds)
+  })
+
+  afterEach(async () => {
+    if (ds.isInitialized) await ds.destroy()
+  })
+
+  it('占位行（is_main=1 空 imagePath）→ 出场角色判缺主图', async () => {
+    await seedCharBinding(ds, { id: 'cb1', name: '阿甲' })
+    await seedSceneCharacter(ds, 'cb1')
+    await seedMainImage(ds, { assetType: 'character', assetId: 'cb1', imagePath: '' })
+
+    const r = await svc.evaluateEpisode('ve1')
+    expect(r.assets.ready).toBe(false)
+    expect(r.assets.missing).toEqual(['角色「阿甲」还没有主图'])
+  })
+
+  it('未出场资产缺主图不阻塞；出场资产有主图 → assets 就绪', async () => {
+    await seedCharBinding(ds, { id: 'cb1', name: '阿甲' })
+    await seedSceneCharacter(ds, 'cb1')
+    await seedMainImage(ds, { assetType: 'character', assetId: 'cb1', imagePath: 'assets/cb1.png' })
+    // 未出场角色 cb2 没有主图
+    await seedCharBinding(ds, { id: 'cb2', name: '路人' })
+
+    const r = await svc.evaluateEpisode('ve1')
+    expect(r.assets.ready).toBe(true)
+    expect(r.assets.missing).toEqual([])
+  })
+
+  it('某场景无分镜 → storyboard 判缺（与 gate 同口径）', async () => {
+    await seedScene2(ds)
+    await seedShot(ds, { id: 'sb1', shotNumber: 1, videoPath: '/v1.mp4' })
+
+    const r = await svc.evaluateEpisode('ve1')
+    expect(r.storyboard.ready).toBe(false)
+    expect(r.storyboard.missing).toEqual(['场景 2 尚未生成分镜'])
   })
 })

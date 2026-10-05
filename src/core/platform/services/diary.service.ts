@@ -44,6 +44,29 @@ export class DiaryService {
   // ==================== 目录管理 ====================
 
   /**
+   * 目录名合法性（多租户复核修复：路径穿越封堵）：
+   * name 直接拼进 diaryRootPath 且 mkdir/rename，含分隔符或 '..' 即可越出
+   * 用户数据目录（Web 端 users/<uid>），在服务器任意位置建目录/改名。
+   */
+  private assertSafeFolderName(name: string): void {
+    const trimmed = (name ?? '').trim()
+    if (!trimmed) throw new Error('目录名不能为空')
+    if (trimmed !== name) throw new Error('目录名不能包含首尾空白')
+    if (trimmed === '.' || trimmed === '..') throw new Error('目录名非法')
+    if (/[/\\]/.test(trimmed)) throw new Error('目录名不能包含路径分隔符')
+    if (Array.from(trimmed).some(ch => ch.charCodeAt(0) < 32)) throw new Error('目录名包含非法字符')
+  }
+
+  /** 双保险：最终落盘路径必须仍在日记根目录内 */
+  private ensureWithinDiaryRoot(fullPath: string): void {
+    const resolvedRoot = path.resolve(this.diaryRootPath)
+    const resolved = path.resolve(fullPath)
+    if (resolved !== resolvedRoot && !resolved.startsWith(resolvedRoot + path.sep)) {
+      throw new Error('目录路径越界（已拒绝）')
+    }
+  }
+
+  /**
    * 获取目录树
    */
   async getFolders(parentId?: string): Promise<DiaryIpcResponse<DiaryFolder[]>> {
@@ -80,6 +103,8 @@ export class DiaryService {
     try {
       const db = getCoreDatabaseManager()
 
+      this.assertSafeFolderName(request.name)
+
       // 检查同名目录是否存在
       if (await db.diaryFolders!.existsByName(request.name, request.parentId)) {
         return { success: false, error: '同名目录已存在' }
@@ -96,6 +121,7 @@ export class DiaryService {
       } else {
         fullPath = path.join(this.diaryRootPath, request.name)
       }
+      this.ensureWithinDiaryRoot(fullPath)
 
       // 创建文件系统目录
       fs.mkdirSync(fullPath, { recursive: true })
@@ -132,14 +158,17 @@ export class DiaryService {
 
       // 检查新名称是否冲突
       if (request.name && request.name !== folder.name) {
+        this.assertSafeFolderName(request.name)
         if (await db.diaryFolders!.existsByName(request.name, folder.parentId)) {
           return { success: false, error: '同名目录已存在' }
         }
 
-        // 重命名文件系统目录
+        // 重命名文件系统目录（越界双保险：old/new 路径都必须在日记根内）
         const oldPath = path.join(this.diaryRootPath, folder.path)
+        this.ensureWithinDiaryRoot(oldPath)
         const parentPath = path.dirname(oldPath)
         const newPath = path.join(parentPath, request.name)
+        this.ensureWithinDiaryRoot(newPath)
 
         fs.renameSync(oldPath, newPath)
 
@@ -167,6 +196,17 @@ export class DiaryService {
       if (!folder) {
         return { success: false, error: '目录不存在' }
       }
+
+      // 级联前收集条目 id：出库清理「日记」库文档（目录删除=彻底删除，不留 KB 残留）
+      const entryIds = (
+        await db.diaryEntries!.findByFolder(id).catch(() => [] as never[])
+      ).map(e => e.id)
+      const deletedEntries = ((await this.getDeletedEntries().catch(() => ({ data: [] }))).data ?? [])
+        .filter(e => e.folderId === id)
+        .map(e => e.id)
+      await import('./diary-brain-sync.service').then(({ getDiaryBrainSyncService }) =>
+        getDiaryBrainSyncService().purgeEntryIds([...entryIds, ...deletedEntries])
+      )
 
       // 删除文件系统目录
       const fullPath = path.join(this.diaryRootPath, folder.path)
@@ -259,6 +299,14 @@ export class DiaryService {
         await this.parseAndStoreLinks(entry.id, content)
       }
 
+      // 延迟解析回填：本条目标题可能正好命中历史日记里的未解析 [[链接]]
+      await db.diaryLinks!.updateTarget(title, entry.id)
+
+      // 日记消化（P2）：opt-in 目录的新条目进入防抖同步队列（守卫在到期时校验）
+      void import('./diary-brain-sync.service').then(({ getDiaryBrainSyncService }) =>
+        getDiaryBrainSyncService().scheduleEntrySync(entry.id)
+      )
+
       return { success: true, data: entry }
     } catch (error) {
       console.error('[DiaryService] createEntry error:', error)
@@ -276,6 +324,9 @@ export class DiaryService {
       if (!entry) {
         return { success: false, error: '日记不存在' }
       }
+      if (entry.deletedAt) {
+        return { success: false, error: '日记在回收站中，请先恢复再编辑' }
+      }
 
       // 更新文件内容
       if (request.content !== undefined) {
@@ -285,6 +336,11 @@ export class DiaryService {
         // 更新链接
         await db.diaryLinks!.deleteBySource(id)
         await this.parseAndStoreLinks(id, request.content)
+
+        // 日记消化（P2）：内容变更重置 5 分钟防抖（连续自动保存只同步最后一次）
+        void import('./diary-brain-sync.service').then(({ getDiaryBrainSyncService }) =>
+          getDiaryBrainSyncService().scheduleEntrySync(id)
+        )
       }
 
       // 更新标题时重命名文件
@@ -301,6 +357,10 @@ export class DiaryService {
         const newRelativePath = path.relative(this.diaryRootPath, newPath)
         await db.diaryEntries!.update(id, { ...request, content: undefined })
         await db.diaryEntries!.move(id, entry.folderId, newRelativePath)
+
+        // 反链显示快照同步 + 命中新标题的未解析链接回填
+        await db.diaryLinks!.updateTitleReferences(id, entry.title, request.title)
+        await db.diaryLinks!.updateTarget(request.title, id)
       } else {
         await db.diaryEntries!.update(id, request)
       }
@@ -313,7 +373,7 @@ export class DiaryService {
   }
 
   /**
-   * 删除日记
+   * 删除日记（软删除：置 deleted_at 进回收站，文件保留原位，可恢复）
    */
   async deleteEntry(id: string): Promise<DiaryIpcResponse<void>> {
     try {
@@ -323,19 +383,118 @@ export class DiaryService {
         return { success: false, error: '日记不存在' }
       }
 
-      // 删除文件
+      await db.diaryEntries!.softDelete(id)
+
+      // 隐私红线：删除即退出消化队列（取消挂起的防抖同步并清内容记忆）
+      void import('./diary-brain-sync.service').then(({ getDiaryBrainSyncService }) =>
+        getDiaryBrainSyncService().cancelScheduledSync(id)
+      )
+      return { success: true }
+    } catch (error) {
+      console.error('[DiaryService] deleteEntry error:', error)
+      return { success: false, error: String(error) }
+    }
+  }
+
+  /**
+   * 回收站列表
+   */
+  async getDeletedEntries(): Promise<DiaryIpcResponse<DiaryEntryListItem[]>> {
+    try {
+      const db = getCoreDatabaseManager()
+      const entries = await db.diaryEntries!.findDeleted()
+      return { success: true, data: entries }
+    } catch (error) {
+      console.error('[DiaryService] getDeletedEntries error:', error)
+      return { success: false, error: String(error) }
+    }
+  }
+
+  /**
+   * 从回收站恢复
+   */
+  async restoreEntry(id: string): Promise<DiaryIpcResponse<void>> {
+    try {
+      const db = getCoreDatabaseManager()
+      const ok = await db.diaryEntries!.restore(id)
+      if (!ok) {
+        return { success: false, error: '日记不存在' }
+      }
+      return { success: true }
+    } catch (error) {
+      console.error('[DiaryService] restoreEntry error:', error)
+      return { success: false, error: String(error) }
+    }
+  }
+
+  /**
+   * 彻底删除（物理删除文件与记录，不可恢复）
+   */
+  async purgeEntry(id: string): Promise<DiaryIpcResponse<void>> {
+    try {
+      const db = getCoreDatabaseManager()
+      const entry = await db.diaryEntries!.findById(id)
+      if (!entry) {
+        return { success: false, error: '日记不存在' }
+      }
+      if (!entry.deletedAt) {
+        return { success: false, error: '仅回收站中的日记可彻底删除' }
+      }
+
       const filePath = path.join(this.diaryRootPath, entry.filePath)
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath)
       }
 
-      // 删除数据库记录（级联删除链接和附件记录）
       await db.diaryEntries!.delete(id)
+      // 附件记录随行清理（文件由目录 .assets 或 rmSync 连带；行级清理防孤儿记录）
+      await db.diaryAttachments?.deleteByEntry(id)
+
+      // 彻底删除 → 「日记」库文档同步出库（best-effort）
+      void import('./diary-brain-sync.service').then(({ getDiaryBrainSyncService }) =>
+        getDiaryBrainSyncService().purgeEntryIds([id])
+      )
 
       return { success: true }
     } catch (error) {
-      console.error('[DiaryService] deleteEntry error:', error)
+      console.error('[DiaryService] purgeEntry error:', error)
       return { success: false, error: String(error) }
+    }
+  }
+
+  /**
+   * 清空回收站
+   */
+  async emptyTrash(): Promise<DiaryIpcResponse<void>> {
+    try {
+      const db = getCoreDatabaseManager()
+      const deleted = await db.diaryEntries!.findDeleted()
+      for (const item of deleted) {
+        await this.purgeEntry(item.id)
+      }
+      return { success: true }
+    } catch (error) {
+      console.error('[DiaryService] emptyTrash error:', error)
+      return { success: false, error: String(error) }
+    }
+  }
+
+  /**
+   * 物理清理过期软删除条目（默认 30 天）。应用启动时调用，积压量小，逐条处理即可。
+   */
+  async purgeExpired(retentionDays = 30): Promise<void> {
+    try {
+      const db = getCoreDatabaseManager()
+      const deleted = await db.diaryEntries!.findDeleted()
+      const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000
+      for (const item of deleted) {
+        const deletedAt = new Date(item.deletedAt as unknown as string).getTime()
+        if (!Number.isNaN(deletedAt) && deletedAt < cutoff) {
+          await this.purgeEntry(item.id)
+        }
+      }
+    } catch (error) {
+      console.error('[DiaryService] purgeExpired error:', error)
     }
   }
 
@@ -377,7 +536,7 @@ export class DiaryService {
   // ==================== 搜索 ====================
 
   /**
-   * 搜索日记
+   * 搜索日记（排除已删除）
    */
   async search(keyword: string, folderId?: string): Promise<DiaryIpcResponse<DiaryEntryListItem[]>> {
     try {
@@ -386,6 +545,92 @@ export class DiaryService {
       return { success: true, data: entries }
     } catch (error) {
       console.error('[DiaryService] search error:', error)
+      return { success: false, error: String(error) }
+    }
+  }
+
+  /**
+   * 按创建时间范围查询（日历视图 / 那年今日）
+   */
+  async getEntriesByDateRange(
+    from: string,
+    to: string,
+    folderId?: string
+  ): Promise<DiaryIpcResponse<DiaryEntryListItem[]>> {
+    try {
+      const db = getCoreDatabaseManager()
+      const entries = await db.diaryEntries!.findByDateRange(new Date(from), new Date(to), folderId)
+      return { success: true, data: entries }
+    } catch (error) {
+      console.error('[DiaryService] getEntriesByDateRange error:', error)
+      return { success: false, error: String(error) }
+    }
+  }
+
+  /**
+   * 全部日记（跨目录，供链接插入对话框选择目标）
+   */
+  async listAllEntries(limit?: number): Promise<DiaryIpcResponse<DiaryEntryListItem[]>> {
+    try {
+      const db = getCoreDatabaseManager()
+      const entries = await db.diaryEntries!.findAll(limit)
+      return { success: true, data: entries }
+    } catch (error) {
+      console.error('[DiaryService] listAllEntries error:', error)
+      return { success: false, error: String(error) }
+    }
+  }
+
+  /**
+   * F2 精细化加工反思流（spec 2026-09-24 §7）：复习卡揭示后写"联想到什么"，
+   * 落为「学习反思」目录下的日记条目。复习面板接线用（FSRS 复习 UI 待建）。
+   */
+  async createReflectionEntry(
+    cardTitle: string,
+    reflectionText: string,
+    kbName?: string
+  ): Promise<DiaryIpcResponse<DiaryEntry>> {
+    try {
+      // 确保「学习反思」根目录（复用 save-diary 节点的按需创建模式）
+      const foldersResp = await this.getAllFolders()
+      const folders = foldersResp.success ? foldersResp.data ?? [] : []
+      let folder = folders.find(f => f.name === '学习反思' && !f.parentId)
+      if (!folder) {
+        const created = await this.createFolder({ name: '学习反思' })
+        if (!created.success || !created.data) {
+          return { success: false, error: created.error ?? '创建学习反思目录失败' }
+        }
+        folder = created.data
+      }
+
+      const title = `反思：${cardTitle.slice(0, 50)}`
+      const content = [
+        `> 复习卡片：${cardTitle}${kbName ? `（${kbName}）` : ''}`,
+        '',
+        reflectionText.trim() || '（未填写联想内容）',
+        '',
+        '---',
+        '_本文由复习后的精细化加工反思生成（spec 2026-09-24 F2）_',
+      ].join('\n')
+
+      return await this.createEntry({ folderId: folder.id, title, content })
+    } catch (error) {
+      console.error('[DiaryService] createReflectionEntry error:', error)
+      return { success: false, error: String(error) }
+    }
+  }
+
+  /**
+   * 那年今日：历史同月同日的日记（不含今年），最多 limit 篇
+   */
+  async getOnThisDay(limit = 3): Promise<DiaryIpcResponse<DiaryEntryListItem[]>> {
+    try {
+      const db = getCoreDatabaseManager()
+      const now = new Date()
+      const entries = await db.diaryEntries!.findOnThisDay(now.getMonth() + 1, now.getDate(), now.getFullYear(), limit)
+      return { success: true, data: entries }
+    } catch (error) {
+      console.error('[DiaryService] getOnThisDay error:', error)
       return { success: false, error: String(error) }
     }
   }

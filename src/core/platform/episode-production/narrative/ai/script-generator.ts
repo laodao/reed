@@ -22,9 +22,10 @@ import type {
   SceneScript,
 } from '@shared/types/episode-production'
 import type { ScriptGenerationResult } from './types'
-import { callAI, extractJsonFromResponse, parseJsonString } from './_helpers'
+import { callAI, callAIWithContinue, extractJsonFromResponse, parseJsonString } from './_helpers'
 import { validateScriptCoverage, coverageWarnings } from './script-coverage'
 import { buildScriptGenerationDiscipline } from '@core/platform/services/writing-methodology'
+import { normalizeBindingName } from '@core/platform/episode-production/assets/services/binding-name-utils'
 
 // ==================== 提示词共享片段 ====================
 //
@@ -473,16 +474,16 @@ function formatRosterList(entries: AssetRosterEntry[]): string {
 
 /**
  * 按 name 在 roster 中查 binding ID（AI 给错 ID 或没给时的兜底）。
- * 大小写不敏感 + 全字符串完全匹配。
+ * 归一化口径与 binding-name-utils 一致（书名号/全角空格/大小写差异都能命中）。
  */
 function lookupBindingByName(
   entries: AssetRosterEntry[],
   name: string | undefined | null,
 ): string | null {
   if (!name) return null
-  const norm = name.trim().toLowerCase()
+  const norm = normalizeBindingName(name)
   if (!norm) return null
-  const match = entries.find((e) => e.name.trim().toLowerCase() === norm)
+  const match = entries.find((e) => normalizeBindingName(e.name) === norm)
   return match ? match.bindingId : null
 }
 
@@ -930,7 +931,7 @@ export class EpisodeScriptGenerator {
 
     console.log('[EpisodeScriptGenerator] 调用 AI，提示词长度:', prompt.length)
 
-    const response = await callAI(prompt, systemPrompt, 16000, providerConfigId, modelId, { temperature: 0.3 })
+    const response = await callAIWithContinue(prompt, systemPrompt, 16000, providerConfigId, modelId, 2, { temperature: 0.3 })
 
     // 49 号：正文被截断时续写一次（fail-soft——续写失败保留原样，走既有解析兜底）
     let fullResponse = response
@@ -996,9 +997,10 @@ export class EpisodeScriptGenerator {
     if (!result.scriptContent) {
       throw new Error('生成的剧本缺少剧本正文，请检查 AI 模型是否支持长文本输出')
     }
+    // S1：空场景与缺正文同等待遇——handler 拿到结果会进「删旧场景+建新场景」事务，
+    // 这里放行等于删光旧场景后新场景为 0，必须抛错阻断
     if (result.scenes.length === 0) {
-      console.warn('[EpisodeScriptGenerator] 生成的剧本缺少结构化场景数据')
-      console.warn('[EpisodeScriptGenerator] 这可能是因为 DeepSeek 模型没有正确输出场景 JSON 格式')
+      throw new Error('生成的剧本缺少结构化场景数据，请重试或检查 AI 模型是否支持长文本输出')
     }
 
     console.log('[EpisodeScriptGenerator] 解析结果:', {
@@ -1072,12 +1074,13 @@ export class EpisodeScriptGenerator {
       '所有引用必须使用提供的 binding ID，不要瞎编 ID。' +
       '必须输出【场景数据开始】【场景数据结束】标记的 JSON 场景数据，且只输出本次新增的场景。'
 
-    const response = await callAI(
+    const response = await callAIWithContinue(
       prompt,
       systemPrompt,
       16000,
       input.providerConfigId,
       input.modelId,
+      2,
       { temperature: 0.3 },
     )
     const result = this.extractFullScriptFromResponse(response, input.roster)
@@ -1115,12 +1118,13 @@ export class EpisodeScriptGenerator {
       '你是一位专业的影视编剧。请把给定的剧本正文拆成结构化场景数据，' +
       '严格按照要求格式输出，不要添加任何开场白或结束语，所有引用使用提供的 binding ID。'
 
-    const response = await callAI(
+    const response = await callAIWithContinue(
       prompt,
       systemPrompt,
       16000,
       input.providerConfigId,
       input.modelId,
+      2,
       { temperature: 0.3 },
     )
     const result = this.extractFullScriptFromResponse(response, input.roster)

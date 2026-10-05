@@ -1,0 +1,122 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 日记周报复盘",
+  "description": "按时间范围聚合日记（可跨目录）→ AI 三段式复盘（发生了什么/学到了什么/下周关注什么）→ 人工确认 → 存为日记条目",
+  "category": "learning",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 40, "y": 200 },
+        "config": {
+          "inputs": [
+            {
+              "key": "days",
+              "label": "复盘最近 N 天（显式日期留空时生效）",
+              "type": "string",
+              "defaultValue": "7"
+            },
+            {
+              "key": "startDate",
+              "label": "起始日期 YYYY-MM-DD（可选，优先于天数）",
+              "type": "string"
+            },
+            {
+              "key": "endDate",
+              "label": "结束日期 YYYY-MM-DD（可选，含当天）",
+              "type": "string"
+            },
+            {
+              "key": "sourceFolderId",
+              "label": "只复盘该日记目录 ID（留空=全部目录）",
+              "type": "string"
+            },
+            {
+              "key": "title",
+              "label": "复盘日记标题（留空自动生成）",
+              "type": "string"
+            },
+            {
+              "key": "folderId",
+              "label": "复盘结果存入的日记目录 ID（留空自动建「AI 提炼」）",
+              "type": "string"
+            },
+            {
+              "key": "model",
+              "label": "模型",
+              "type": "model",
+              "modelTypes": ["text", "multimodal"]
+            }
+          ]
+        }
+      },
+      {
+        "id": "collect1",
+        "type": "collect-diary",
+        "name": "聚合日记素材",
+        "position": { "x": 340, "y": 200 },
+        "config": {
+          "startDate": "{{start.startDate}}",
+          "endDate": "{{start.endDate}}",
+          "days": "{{start.days}}",
+          "folderId": "{{start.sourceFolderId}}"
+        }
+      },
+      {
+        "id": "llm1",
+        "type": "llm-chat",
+        "name": "AI 复盘",
+        "position": { "x": 640, "y": 200 },
+        "config": {
+          "systemPrompt": "你是个人复盘助手。基于用户一段时间内的日记素材，撰写一篇第一人称复盘日记。结构固定为三段：\n\n## 发生了什么\n按时间或主题梳理本周期记录的主要事件与状态，忠实于素材，不虚构未记录的事。\n\n## 学到了什么\n从记录中提炼出现的想法、情绪模式、有效/无效的做法、重复出现的主题；素材里已有的判断直接引用，不要替用户下结论。\n\n## 下周关注什么\n给出 2-4 条具体、可执行的关注点（来自记录中未完成的事、想尝试的事、需要注意的状态），不写空话。\n\n文风：自然、像自己写的日记，不用客套总结腔。素材不足的段落如实写「本周期记录较少」，不要硬凑。只输出复盘正文。",
+          "prompt": "复盘时段：{{collect1.from}} ~ {{collect1.to}}（共 {{collect1.count}} 篇日记）\n\n日记素材：\n{{collect1.content}}\n\n请撰写本周复盘。",
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "review1",
+        "type": "human-review",
+        "name": "人工确认",
+        "position": { "x": 940, "y": 200 },
+        "config": {
+          "payload": "{{llm1.content}}",
+          "interaction": "input",
+          "editableFields": [
+            { "key": "output_result", "label": "复盘全文（可修改后存入日记）", "type": "string" }
+          ]
+        }
+      },
+      {
+        "id": "diary1",
+        "type": "save-diary",
+        "name": "存入日记",
+        "position": { "x": 1240, "y": 200 },
+        "config": {
+          "folderId": "{{start.folderId}}",
+          "title": "{{start.title}}",
+          "content": "{{review1.output_result}}"
+        }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 1540, "y": 200 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "collect1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "collect1", "targetNodeId": "llm1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "llm1", "targetNodeId": "review1", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "review1", "targetNodeId": "diary1", "kind": "approve" },
+      { "id": "e5", "sourceNodeId": "review1", "targetNodeId": "end", "kind": "reject" },
+      { "id": "e6", "sourceNodeId": "diary1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  }
+}

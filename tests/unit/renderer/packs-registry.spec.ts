@@ -17,7 +17,7 @@ import {
   __resetPackRegistryForTests,
   type RendererPackDefinition,
 } from '@/packs/registry'
-import { mainMenuItems, flattenMenuItems, __resetMainMenuForTests } from '@/config/menu'
+import { mainMenuItems, visibleMenuItems, getMenuSubmenu, __resetMainMenuForTests } from '@/config/menu'
 
 /** 造一个最小可用包定义（组件用空 stub，不触发视图加载） */
 function makePack(id: string, overrides: {
@@ -25,6 +25,7 @@ function makePack(id: string, overrides: {
   routes?: RendererPackDefinition['routes']
   menuItems?: RendererPackDefinition['menuItems']
   menuInsertBefore?: string
+  menuSubmenus?: RendererPackDefinition['menuSubmenus']
 } = {}): RendererPackDefinition {
   return {
     manifest: { id, name: id, version: '1.0.0', ...overrides.manifest },
@@ -33,6 +34,7 @@ function makePack(id: string, overrides: {
     ],
     menuItems: overrides.menuItems,
     menuInsertBefore: overrides.menuInsertBefore,
+    menuSubmenus: overrides.menuSubmenus,
   }
 }
 
@@ -147,7 +149,7 @@ describe('applyPacks（路由动态注册 + 菜单锚点合入）', () => {
       menuItems: [{ path: '/pack-c', label: 'C', icon: null }],
     }))
     applyPacks(makeRouter())
-    const paths = flattenMenuItems(mainMenuItems).map(i => i.path)
+    const paths = visibleMenuItems(mainMenuItems).map(i => i.path)
     // 壳首位保持，锚点相同的包按注册序插入，无锚点追加末尾
     expect(paths).toEqual(['/', '/pack-a', '/pack-b', '/knowledge-base', '/pack-c'])
   })
@@ -158,7 +160,7 @@ describe('applyPacks（路由动态注册 + 菜单锚点合入）', () => {
     applyPacks(router)
     applyPacks(router)
     expect(router.getRoutes().filter(r => r.name === 'pack-a')).toHaveLength(1)
-    expect(flattenMenuItems(mainMenuItems).filter(i => i.path === '/pack-a')).toHaveLength(1)
+    expect(visibleMenuItems(mainMenuItems).filter(i => i.path === '/pack-a')).toHaveLength(1)
   })
 })
 
@@ -192,7 +194,7 @@ describe('installBuiltinPackages（内置包装配）', () => {
     // 菜单顺序与原静态菜单一致（二期 4 个原壳位包先注册，锚点语义不变；
     // 领域学习包插在知识库前（agent-harness 合并后：Agent 对话 = /agent-console）；
     // 知识飞轮菜单已随功能停用移除（2026-09-16）
-    const paths = flattenMenuItems(mainMenuItems).map(i => i.path)
+    const paths = visibleMenuItems(mainMenuItems).map(i => i.path)
     expect(paths).toEqual([
       '/', '/chat', '/portrait', '/longwriting', '/episode-production',
       '/domain-learning', '/knowledge-base', '/agent-todos', '/agent-console', '/workflow',
@@ -216,6 +218,33 @@ describe('installBuiltinPackages（内置包装配）', () => {
     expect(router.resolve('/episode-production').matched).toHaveLength(0)
     // 其余包不受影响
     expect(router.resolve('/diary').name).toBe('Diary')
-    expect(flattenMenuItems(mainMenuItems).map(i => i.path)).not.toContain('/episode-production')
+    expect(visibleMenuItems(mainMenuItems).map(i => i.path)).not.toContain('/episode-production')
+  })
+
+  it('二级菜单隔离：menuSubmenus 注册的子项绝不进主菜单列表（两次回归的根锁）', () => {
+    registerPack(makePack('menu-sub-pack', {
+      routes: [
+        { path: '/sub-parent', name: 'SubParent', component: { template: '<div/>' } },
+        { path: '/sub-parent/child-a', name: 'ChildA', component: { template: '<div/>' } },
+      ],
+      menuItems: [{ path: '/sub-parent', label: '父项', icon: {} }],
+      menuSubmenus: {
+        '/sub-parent': [
+          { path: '/sub-parent', label: '子项A', icon: {} },
+          { path: '/sub-parent/child-a', label: '子项B', icon: {} },
+        ],
+      },
+    }))
+    applyPacks(makeRouter())
+
+    // 顶级列表只有父项；子项 path 不在任何顶级条目里
+    const topPaths = visibleMenuItems(mainMenuItems).map(i => i.path)
+    expect(topPaths).toContain('/sub-parent')
+    expect(topPaths).not.toContain('/sub-parent/child-a')
+    // 子菜单数据只在独立注册表，供悬停浮层消费
+    const sub = getMenuSubmenu('/sub-parent')
+    expect(sub.map(i => i.path)).toEqual(['/sub-parent', '/sub-parent/child-a'])
+    // MenuItem 结构上无 children 字段（类型层杜绝拍平）
+    expect(visibleMenuItems(mainMenuItems).every(i => !('children' in i))).toBe(true)
   })
 })

@@ -7,7 +7,7 @@
  * 给当前讲义全文摘要 + 相关概念定义 + 图关系（引证基础）。
  */
 
-import { pickNextToLearn } from '../rules/learning-sequence.rules'
+import { pickNextToLearn, prereqsReady } from '../rules/learning-sequence.rules'
 import { buildPrerequisiteBriefing } from '../rules/learning-prerequisites.rules'
 import { assessMapCoverage, mapCoverageBriefing, type MapCoverageResult } from '../rules/learning-map-coverage.rules'
 import type { ICoreDatabaseManager } from '@core/database/database-manager.interface'
@@ -168,6 +168,8 @@ export function planSavePhaseInstruction(input: {
 已确认方案（${input.conceptCount} 个知识点）：
 ${input.syllabusLines}
 
+注意：本轮若还注入了 learning-space-bootstrap 技能正文，其中 S1~S3 的「3-8 个核心知识点」「先定领域前置」等口径**全部不适用**（那是空空间起步的旧流程），仅其 S4（讲义产出规范）有效。
+
 本轮执行顺序（**不要重新规划**，方案就是用户已确认的版本）：
 1. 先落分支目录：dl_save_concept（nodeType=group，parentId=领域根），拿到各 group 的 id；
 2. 再落知识点：dl_save_concept（parentId=所属分支 group id，definitionShort + prerequisites 必填）；
@@ -302,6 +304,22 @@ export function dlBootstrapSkillBody(): string | null {
   return dlSkillBody(DL_BOOTSTRAP_SKILL_ID)
 }
 
+/**
+ * 只取 bootstrap 技能正文的 S4 段（讲义产出规范；2026-09-25 C1）。
+ * 落库轮注入全文曾引发同轮指令矛盾：其 S2 写着「规划并落库 3-8 个最核心的知识点」
+ * 「先 dl_save_space_prereqs」，与固定流程第 3 步的「不要重新规划、方案全部落库」冲突。
+ * 找不到 S4/S5 标题时兜底返回全文（由阶段指令里的对冲句压住旧口径）。
+ */
+export function dlBootstrapS4Body(): string | null {
+  const full = dlBootstrapSkillBody()
+  if (!full) return null
+  const s4 = full.search(/^S4[ \uFF1A:]/m)
+  if (s4 < 0) return full
+  const s5 = full.search(/^S5[ \uFF1A:]/m)
+  const slice = s5 > s4 ? full.slice(s4, s5) : full.slice(s4)
+  return slice.trim()
+}
+
 /** 用户自然语言里同类意图的识别（用户在任务框直接说"补全知识体系"时也注入技能正文） */const MAP_COMPLETION_INTENT =
   /(补全|补齐|完善|追加|添加|新增|补充).{0,12}(知识体系|知识地图|知识点|知识骨架|体系|骨架|地图|概念)/
 /** 语序颠倒的说法（"把缺的知识点补上"）：名词在前、动作在后 */
@@ -411,10 +429,20 @@ export async function computeDlSpaceSnapshot(
 
   const leafCount = concepts.filter((c) => c.nodeType !== 'group').length
   const masteredCount = concepts.filter((c) => c.mastery === 'mastered').length
+  const relViews = relations.map((r) => ({ source: r.sourceId, target: r.targetId, type: r.relationType }))
   const ready = pickNextToLearn(
     concepts.map((c) => ({ id: c.id, mastery: c.mastery, nodeType: c.nodeType })),
-    relations.map((r) => ({ source: r.sourceId, target: r.targetId, type: r.relationType })),
+    relViews,
   )
+  // 插队回退可见化（2026-09-25 A3）：rules 的"全不可学→推荐第一个未掌握"回退被触发时，
+  // 说明图上有环或断链——推荐行必须带 ⚠️，不许把门控失效藏起来
+  let readyWarn = ''
+  if (ready) {
+    const masteredIds = new Set(concepts.filter((c) => c.mastery === 'mastered').map((c) => c.id))
+    if (!prereqsReady(ready, relViews, masteredIds)) {
+      readyWarn = '（⚠️ 插队回退：当前没有"前置全部已掌握"的可学概念——图上存在环或断链，见下方缺口清单，需要人工修复）'
+    }
+  }
 
   // 目录分组（研究侧引导归属用：dl_save_concept 的 parentId 可填目录 id；M3-A）
   const rootGroups = concepts.filter((c) => c.nodeType === 'group' && !c.parentId)
@@ -485,7 +513,7 @@ export async function computeDlSpaceSnapshot(
     ...needLines,
     ...profileLines,
     `掌握度：${masteredCount}/${leafCount} 个知识概念已理解`,
-    ready ? `推荐下一个待学概念：${concepts.find((c) => c.id === ready)?.name ?? ready}` : '（全部已理解）',
+    ready ? `推荐下一个待学概念：${concepts.find((c) => c.id === ready)?.name ?? ready}${readyWarn}` : '（全部已理解）',
   ]
 
   return {
@@ -511,7 +539,8 @@ export function dlResearchSystemPrompt(): string {
   return `你是「领域共学空间」的研究助手：对某个领域的知识点做研究，并产出可供用户学习的结构化讲义。
 
 你的工作纪律：
-1. 需要研究概念时，先调用 discover_capabilities 查看可用技能，再用 invoke_skill 调用学习技能：learning-domain-map（建骨架）/ learning-lesson-designer（**讲义方案规划：先规划规格与区级计划，再动笔**）/ learning-concept-explainer（单概念讲义逐区精写）/ learning-source-collector（采集前先规划资料路由）/ learning-question-generator（多视角补盲提问）/ learning-relation-miner（从材料提取关系与建议）/ learning-lesson-updater（已有讲义做增量修订，别整篇重写）/ learning-practice-builder（出分层练习与自测）；
+1. 需要研究概念时，先调用 discover_capabilities 查看可用技能，再用 invoke_skill 调用学习技能：learning-lesson-designer（**讲义方案规划：先规划规格与区级计划，再动笔**）/ learning-concept-explainer（单概念讲义逐区精写）/ learning-source-collector（采集前先规划资料路由）/ learning-question-generator（多视角补盲提问）/ learning-relation-miner（从材料提取关系与建议）/ learning-lesson-updater（已有讲义做增量修订，别整篇重写）/ learning-practice-builder（出分层练习与自测）；
+   空间/体系的规划不走 invoke_skill——严格按快照下方宿主注入的【固定流程】阶段指令执行（先提交诉求理解与知识体系方案、用户确认后才落库），不要自行调建骨架类技能绕过确认；
 2. 研究产出经 dl_save_concept / dl_save_relation 把概念与关系建议落为草稿（用户会在地图人审中确认），经 dl_save_card 把讲义卡片落为草稿；
    - **讲义区集契约（2026-09-13 起 dl_save_card 硬校验，违反会被拒绝）**：区名只能用下表中的在册区名，并按该知识本质类型给定的顺序排（用不到的区可以跳过，但不能乱序、不能自造区名）：
 ${DL_ESSENCE_TYPES.map((t) => `     · ${t}：${lessonTemplateHint(t)}`).join('\n')}
@@ -533,21 +562,14 @@ ${lessonSectionBriefMenuHint().split('\n').map((line) => `     ${line}`).join('\
    - 讲义正文用到的前置能力，必须二选一：图上已有对应前置概念并排在前面，或在 meta 的「记号热身」里给读法与最小例子；都没有 → dl_save_card 会被循序渐进门禁拒绝（拒绝信息里会写明该补哪些概念/关系/讲义）；
    - 被门禁拒绝时不要原样重发，按拒绝信息先补前置概念与关系，再回来发本卡。
 12. 数值自检：讲义里写出的算式要自己回算并写清中间量（如 0.99×0.01=0.0099、0.05×0.99=0.0495、0.0099/0.0594≈0.167）；落库时会自动回算，发现自相矛盾会提示你重发修订版。
-13. 前置要求（2026-09-12 起，生成知识点阶段就要做，别等到出讲义）：
-   - **整个主题的前置**：进入一个空间后先看快照的【主题前置要求】。若尚未声明，用 dl_save_space_prereqs 落库"学这个领域之前需要具备什么"（name + why + level，含领域外需自备的能力，如 Python 基础 / 概率统计基础；inSpace 由系统反推，不用自己判断）；确无需前置就传空数组显式说明；
-   - **每个知识点的前置**：dl_save_concept 时必须填 prerequisites（学它之前必须先掌握的概念名数组）——这是"顺序"的声明；随后用 dl_save_relation 把每条前置落成边（source=前置 → target=本概念），顺序才真正生效；快照里带 ⚠️ 的条目就是"只有声明没建边/没落点"的欠账，优先补齐；
-   - **顺序即路径**：按 layer 从小到大检查"每一步只需要前面已出现的知识"；相邻层级跨度不得超过一步——例如「张量」到「自动微分与反向传播」之间必须先有「导数与链式法则」这类前置概念；前置在图上没有落点就先 dl_save_concept 建它，确实属领域外能力才放进主题前置要求。
-14. 补齐知识体系（2026-09-12 起，研究模式也要做；用户反馈"知识体系不够完善"）：
-   - 快照里有【地图完整度】与缺口清单；**每轮研究除了给当前概念产出讲义，还要顺手补 1-3 个结构性缺口**（本轮上限 3 个新概念，别把一轮做成大工程）：优先 high 缺口（无入口/不可达/平铺一层）→ 再补 medium（缺中间台阶的 funnel、声明未落边、粒度太粗）；
-   - 具体做法：dl_save_concept（给 definitionShort + prerequisites）→ dl_save_relation 落前置边（source=前置 → target=本概念）；补的缺口概念要保持"学完能做一件具体小事"的粒度，并按分支目录归类（有合适 group 就挂上去）；
-   - **不要**为了拉高分数而堆无意义概念：只补你确知属于该领域主干、且读者必经的概念；拿不准就不建，在总结里说明"想建但需要资料/确认"；
-   - 一轮结束时用一句话说明：地图完整度从多少变成多少（快照给了当前值）、本轮补了哪些概念与边。
-15. 以用户诉求为准（2026-09-13 用户反馈「金融理财主题生成的知识点与期望差别较大」）：
-   - 快照里的【学习主题诉求（用户原话）】是规划知识体系与写讲义的**最高优先级依据**；空间名只是一个标签，**不得凭名字猜主题**——例如名字叫「金融理财」而诉求写的是"听懂股票/债券/期货/做空做多/MBS/美元、能读财报与行情"时，要按证券与金融产品的知识搭骨架，而不是做成记账、保险、资产配置这类"个人理财规划"；
-   - 骨架要**覆盖诉求点名的对象与场景**（点到的产品、市场、数据、动作各自有落点），不要只搭一层抽象框架；
-   - **被额度或门禁拒绝的条目必须写进总结**：写明是哪些知识点/关系没建成、原因是什么（额度用尽 / 门禁拒绝）、用户下一步点哪个入口能补上（如「补全知识地图」）——只报成功数、让缺口无声消失是不可接受的。
-16. 失败与额度纪律：同一工具在本轮额度用尽后不要反复重试（会白烧额度），把未完成的条目按第 15 条写进总结；额度只在本轮有效，下一轮会重置。
-17. 讲义生成走「先规划、再精写」（2026-09-14 讲义流水线）：
+13. 前置与体系补全以**快照为准**（口径统一引用，不在提示词里复述清单——以快照【主题前置要求】【各知识点前置】【地图完整度】当轮给出的为准）：
+   - 主题门槛：快照显示【主题前置要求】尚未声明时，用 dl_save_space_prereqs 落库（name + why + level，含领域外自备能力；inSpace 系统反推不用自己判断；确无需前置传空数组显式说明）；
+   - 知识点前置：dl_save_concept 必填 prerequisites，随后逐条 dl_save_relation 落成边（source=前置 → target=本概念）；快照带 ⚠️ 的欠账（只有声明没建边/没落点）优先补齐；顺序循序渐进——相邻层级跨度不超过一步，前置没落点就先建概念，确属领域外能力才放主题前置；
+   - 顺手补缺口：每轮研究除当前概念讲义外，按【地图完整度】缺口清单补 1-3 个结构性缺口（优先 high；只补确属主干且读者必经的概念，拿不准就不建并在总结说明）；一轮收尾用一句话报地图完整度前后变化；
+   - 诉求最高优先级：快照【学习主题诉求（用户原话）】是规划与讲义的最高依据，**不得凭空间名猜主题**；诉求点名的对象与场景各自要有落点；
+   - **被额度或门禁拒绝的条目必须写进总结**：哪些没建成、为什么、用户从哪个入口补上——只报成功数、让缺口无声消失是不可接受的。
+14. 失败与额度纪律：同一工具在本轮额度用尽后不要反复重试（会白烧额度），把未完成的条目按第 13 条写进总结；额度只在本轮有效，下一轮会重置。
+15. 讲义生成走「先规划、再精写」（2026-09-14 讲义流水线）：
    - 给某个概念出讲义时，默认**先调 dl_propose_lesson_plan 提交讲义方案**（读者画像 / 学完能做到 / 深度篇幅 / 术语表 / 记号表 /
      示例参数表 / **区级计划 roster**：每区版式设备 + 读者动作 + 载体 + 一句话结论 / 视觉计划），等用户在弹窗里确认后再写正文；
      宿主会在确认后的那一轮注入**规格锁**（逐区照它写，每 3 区回读一次）与逐区精写指令；

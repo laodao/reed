@@ -15,7 +15,10 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import { getCurrentUserId } from '@core/context/user-context'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { buildAssetRosterForProject } from '@core/platform/episode-production/narrative/asset-roster-builder'
-import { SceneBindingWriter } from '@core/platform/episode-production/narrative/scene-binding-writer'
+import {
+  rebuildScenesForScript,
+  upsertScriptAndRebuildScenes,
+} from '@core/platform/episode-production/narrative/services/script-scene-rebuild.service'
 import { EpisodeScriptGenerator } from '@core/platform/episode-production/narrative/ai/script-generator'
 import { StoryboardCogenService } from '@core/platform/episode-production/narrative/services/storyboard-cogen.service'
 import { CharacterAssetService } from '@core/platform/episode-production/assets/services/character-asset.service'
@@ -40,9 +43,11 @@ import {
 import { KeyframeGenerationService } from '@core/platform/episode-production/render/keyframe/keyframe-generation.service'
 import { VideoSegmentService } from '@core/platform/episode-production/render/video/video-segment.service'
 import { SegmentVideoService } from '@core/platform/episode-production/render/video/segment-video.service'
+import { EpSegmentationService } from '@core/platform/episode-production/render/video/ep-segmentation.service'
 import { createAdapterForProviderWithReason } from '@core/platform/episode-production/render/video/adapter-factory'
 import { SceneAudioOrchestratorService } from '@core/platform/episode-production/render/audio/scene-audio-orchestrator.service'
 import { EpVideoSegmentEntity } from '@core/database/entities/episode-production/video-segment.entity'
+import { segmentProvidesVideo } from '@core/platform/episode-production/services/shot-video-readiness'
 import type {
   EpAgentAction,
   EpAgentActionSummary,
@@ -245,41 +250,15 @@ async function executeGenerateScript(
     modelId,
   )
 
-  // ④ 剧本 upsert
-  const existingScript = await m.episodeScripts?.getByEpisodeId(episode.id)
-  let script: any
-  if (existingScript) {
-    script = await m.episodeScripts?.update(existingScript.id, {
-      synopsis: result.synopsis,
-      scriptContent: result.scriptContent,
-      scriptFormat: 'standard',
-      status: 'reviewing',
-    })
-  } else {
-    script = await m.episodeScripts?.create({
-      projectId: episode.projectId,
-      episodeId: episode.id,
-      outlineId: episode.outlineId,
-      synopsis: result.synopsis,
-      scriptContent: result.scriptContent,
-      scriptFormat: 'standard',
-    })
-    script = await m.episodeScripts?.update(script.id, { status: 'reviewing' })
-    await m.videoEpisodes?.update(episode.id, { scriptId: script.id })
-  }
-
-  // ⑤ 删旧场景 → ⑥ 写新场景+桥接表
-  if (existingScript) await m.sceneScripts?.deleteByEpisodeScriptId(existingScript.id)
-  await SceneBindingWriter.createScenesWithBindings(
+  // ④–⑦ S5（2026-09-25 一致性修复第二批）：剧本 upsert + 级联删旧分镜 +
+  // 删旧场景建新场景 + 状态收敛 scripting，与 handler 同公共 service 单事务——
+  // 原实现 deleteByEpisodeScriptId 裸删（旧分镜/关键帧成孤儿）、删建非事务、
+  // 状态晚于 scripting 不回退
+  const { scriptId } = await upsertScriptAndRebuildScenes(
     m.dataSource,
-    script.id,
-    result.scenes,
+    { id: episode.id, projectId: episode.projectId, outlineId: episode.outlineId },
+    { synopsis: result.synopsis, scriptContent: result.scriptContent, scenes: result.scenes },
   )
-
-  // ⑦ 阶段推进
-  if (episode.status === 'pending' || episode.status === 'asset_prep') {
-    await m.videoEpisodes?.update(episode.id, { status: 'scripting' })
-  }
 
   const changed: EpAgentPanelSection[] = ['script', 'scenes']
   return {
@@ -288,7 +267,7 @@ async function executeGenerateScript(
     message: `已生成剧本：梗概 ${result.synopsis.length} 字、正文 ${result.scriptContent.length} 字、场景 ${result.scenes.length} 场`,
     changed,
     data: {
-      scriptId: script.id,
+      scriptId,
       synopsis: result.synopsis,
       scenesCount: result.scenes.length,
     },
@@ -345,9 +324,10 @@ async function executeSplitScenes(ctx: EpAgentExecutionContext): Promise<EpAgent
     modelId,
   )
 
-  await m.sceneScripts?.deleteByEpisodeScriptId(scriptId)
-  const sceneRecords = await SceneBindingWriter.createScenesWithBindings(
+  // S5：删旧场景（级联清旧分镜）+ 建新场景单事务 + 状态回退，与 handler 同公共 service
+  const sceneRecords = await rebuildScenesForScript(
     m.dataSource,
+    episode.id,
     scriptId,
     generatedScenes,
   )
@@ -1140,7 +1120,7 @@ async function executeGenerateKeyframes(
 /**
  * 生成分镜/片段视频（generate_segment_video）。
  * params: { segmentId? / storyboardId? / providerConfigId? / modelId? }
- * 都不传 → 为本集全部缺视频的分镜逐个后台生成。
+ * 都不传 → 为本集全部缺视频的片段逐个后台生成（无片段时先自动分段）。
  *
  * 模型解析序（2026-09-16 S-04）：显式参数 > 项目设置 config.videoModel > 自动挑第一个
  * 启用的视频模型；全落空 → 引导错误。quality/steps 由服务层读项目 config.videoQuality/
@@ -1148,6 +1128,11 @@ async function executeGenerateKeyframes(
  *
  * started 语义：generateForSegment 同步等产物落地（分钟级），动作只"启动+确认已启动"——
  * grace 窗口内前置校验失败同步报错；越过窗口返回"已启动，需数分钟"，终态补发 action:done。
+ *
+ * 批量主路径（2026-10-04 一致性修复第三批 V3）：批量默认走片段级
+ * SegmentVideoService.generateForSegment（尊重项目 renderPath=assetRef 缺省 + provider 守卫），
+ * 逐分镜的旧单镜路径只在显式指定 storyboardId 时使用——旧批量路径无关键帧时
+ * text2video 打 ComfyUI H3（textToVideo:false）必败。
  */
 async function executeGenerateSegmentVideo(
   ctx: EpAgentExecutionContext,
@@ -1326,57 +1311,85 @@ async function executeGenerateSegmentVideo(
     }
   }
 
-  // 批量：本集全部缺视频分镜——后台逐段执行，动作立即返回"已启动"
+  // 批量（V3）：本集全部缺视频片段——片段级 generateForSegment 后台逐段执行，
+  // 动作立即返回"已启动"。片段按 episodeId 查询，天然满足本集归属校验。
   const scriptId = await resolveScriptId(m, ctx.episodeId)
   if (!scriptId) throw new Error('剧本不存在，无法生成分镜视频')
   const scenes = (await m.sceneScripts?.getByEpisodeScriptId?.(scriptId)) || []
-  const targets: any[] = []
+  // 双口径（与第一批 Task4 同一思想）：片段本身无成片，但片内分镜均已有单镜视频
+  // （旧单镜路径产物，导出时间线双口径可用）→ 不再重烧整段
+  const sbHasOwnVideo = new Map<string, boolean>()
   for (const scene of scenes) {
     const sbs = (await m.storyboards?.getBySceneScriptId?.(scene.id)) || []
-    targets.push(...sbs.filter((sb: any) => !sb.videoPath && sb.status !== 'generating' && !inFlightVideoTargets.has(sb.id)))
+    for (const sb of sbs as any[]) sbHasOwnVideo.set(sb.id, !!sb.videoPath)
   }
+  const segSvc = new EpSegmentationService(m.dataSource)
+  // 无 live 片段、或存在不属于任何 live 片段的孤儿分镜（重生分镜后旧段 superseded）
+  // 时先 recompute 分段（幂等：completed/generating 段保留，其余按当前分镜重切——
+  // V6 守卫保证 generating 段不被删，其分镜计入 live 归属、不会误判孤儿；
+  // 口径与前端 StageStoryboardView.autoEnsureSegments 一致，preview 默认排除 superseded）
+  let preview = await segSvc.preview(ctx.episodeId)
+  const segmentedIds = new Set<string>()
+  for (const seg of preview.segments) for (const id of seg.storyboardIds) segmentedIds.add(id)
+  const hasOrphanShots = [...sbHasOwnVideo.keys()].some((id) => !segmentedIds.has(id))
+  if (preview.segments.length === 0 || hasOrphanShots) {
+    preview = await segSvc.recompute(ctx.episodeId)
+  }
+  const targets = preview.segments.filter((seg) =>
+    seg.status !== 'generating'
+    && !segmentProvidesVideo(seg)
+    && seg.storyboardIds.some((id) => !sbHasOwnVideo.get(id))
+    && !inFlightVideoTargets.has(seg.segmentId))
   if (targets.length === 0) {
-    return { type: 'generate_segment_video', status: 'ok', message: '所有分镜都已有视频或正在生成中，无需启动' }
+    return { type: 'generate_segment_video', status: 'ok', message: '所有片段都已有视频或正在生成中，无需启动' }
   }
-  const svc = new VideoSegmentService(m.dataSource, adapter)
+  const svc = new SegmentVideoService(m.dataSource, adapter)
   const batch = targets.slice(0, VIDEO_BATCH_LIMIT)
-  for (const sb of batch) inFlightVideoTargets.add(sb.id)
+  for (const seg of batch) inFlightVideoTargets.add(seg.segmentId)
   const totalTargets = targets.length
   void (async () => {
     let done = 0
+    let interrupted = false
     const failed: string[] = []
-    for (const sb of batch) {
+    for (let i = 0; i < batch.length; i++) {
+      const seg = batch[i]
+      if (batchAborted(ctx)) {
+        interrupted = true
+        // 未开始的项同步解除在途登记，避免残留假 guard 挡住后续调用
+        for (let j = i; j < batch.length; j++) inFlightVideoTargets.delete(batch[j].segmentId)
+        break
+      }
       ctx.emit({
         type: 'action:start',
         actionType: 'generate_segment_video',
-        label: `生成分镜视频 ${done + 1}/${batch.length}`,
+        label: `生成片段视频 ${done + 1}/${batch.length}`,
       })
       try {
-        await svc.generateForStoryboard({ storyboardId: sb.id, providerId: providerConfigId, modelId })
+        await svc.generateForSegment({ segmentId: seg.segmentId, providerId: providerConfigId, modelId })
         done++
       } catch (e: any) {
-        failed.push(`分镜${sb.shotNumber}:${e?.message || '未知错误'}`)
+        failed.push(`片段#${seg.seq}:${e?.message || '未知错误'}`)
       } finally {
-        inFlightVideoTargets.delete(sb.id)
+        inFlightVideoTargets.delete(seg.segmentId)
       }
     }
     const suffix = failed.length > 0 ? `；失败 ${failed.length} 个（${failed.slice(0, 3).join('、')}）` : ''
     emitBackgroundDone(ctx, {
       type: 'generate_segment_video',
       status: done > 0 ? 'ok' : 'error',
-      message: `后台分镜视频批次完成：成功 ${done}/${batch.length}${suffix}`,
-      changed: ['storyboards'],
+      message: `后台片段视频批次完成：成功 ${done}/${batch.length}${suffix}${batchAbortNote(interrupted)}`,
+      changed: ['storyboards', 'compose'],
       data: { generated: done, batch: batch.length, total: totalTargets },
-      nav: { tab: 'storyboard' },
+      nav: { tab: 'compose' },
     })
   })().catch(() => { /* 循环体内已逐项捕获；兜底防未处理拒绝 */ })
   return {
     type: 'generate_segment_video',
     status: 'ok',
-    message: `已启动 ${batch.length}/${totalTargets} 个分镜视频的后台生成（逐段执行，每段需数分钟，完成后状态自动更新，不要重复调用或等待）${batchCapNote(totalTargets - batch.length, VIDEO_BATCH_LIMIT)}。视频模型：${modelId}`,
-    changed: ['storyboards'],
+    message: `已启动 ${batch.length}/${totalTargets} 个片段视频的后台生成（逐段执行，每段需数分钟，完成后状态自动更新，不要重复调用或等待）${batchCapNote(totalTargets - batch.length, VIDEO_BATCH_LIMIT)}。视频模型：${modelId}`,
+    changed: ['storyboards', 'compose'],
     data: { started: true, batch: batch.length, total: totalTargets, providerConfigId, modelId },
-    nav: { tab: 'storyboard' },
+    nav: { tab: 'compose' },
   }
 }
 
@@ -1410,7 +1423,9 @@ async function executeGenerateSceneAudio(
   }
 
   const svc = new SceneAudioOrchestratorService(m.dataSource)
-  const userDataPath = getPathProvider().getUserDataPath()
+  // getDataPath（非 getUserDataPath）：自定义数据目录时产物落在数据根下，
+  // 落库的 user-rel 路径迁移后才仍可解析（X4）
+  const dataPath = getPathProvider().getDataPath()
   let done = 0
   let fallbackCount = 0
   let interrupted = false
@@ -1429,7 +1444,7 @@ async function executeGenerateSceneAudio(
     try {
       const result = await svc.orchestrateScene({
         sceneScriptId: scene.id,
-        outputDir: path.join(userDataPath, 'episode-production', 'audio', scene.id),
+        outputDir: path.join(dataPath, 'episode-production', 'audio', scene.id),
       })
       await svc.persistToScene(scene.id, result)
       fallbackCount += result.fallbackDialogueCount

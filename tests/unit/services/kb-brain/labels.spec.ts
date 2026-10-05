@@ -26,7 +26,7 @@ describe('kb-brain 中文标签', () => {
   })
 
   it('卡片类型/状态枚举全覆盖', () => {
-    for (const t of ['methodology', 'insight', 'synthesis', 'plot-pattern', 'setting-pattern', 'lens', 'skill-seed']) {
+    for (const t of ['methodology', 'insight', 'synthesis', 'plot-pattern', 'setting-pattern', 'character-pattern', 'lens', 'skill-seed']) {
       expect(KB_NOTE_TYPE_LABELS[t], `缺卡片类型标签: ${t}`).toBeTruthy()
     }
     for (const st of ['proposed', 'draft', 'published', 'archived']) {
@@ -40,6 +40,7 @@ describe('kb-brain 中文标签', () => {
     expect(kbAtomStatusLabel('supported')).toBe('已采纳')
     expect(kbAtomStatusLabel(null)).toBe('—')
     expect(kbNoteTypeLabel('setting-pattern')).toBe('设定模式')
+    expect(kbNoteTypeLabel('character-pattern')).toBe('人物原型')
     expect(kbNoteStatusLabel('proposed')).toBe('待审')
     expect(kbNoteStatusLabel('')).toBe('—')
   })

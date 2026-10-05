@@ -150,11 +150,11 @@ export class LwMaterialRepository extends BaseRepository<LwMaterialEntity, Story
   }
 
   async incrementRetryCount(id: string): Promise<number> {
-    await this.repo
-      .createQueryBuilder()
+    await this.scoped
+      .qb('m')
       .update()
       .set({ retryCount: () => 'retry_count + 1' })
-      .where('id = :id', { id })
+      .where('m.id = :id', { id })
       .execute()
     const row = await this.scoped.findOne({ id } as any)
     return row?.retryCount ?? 0

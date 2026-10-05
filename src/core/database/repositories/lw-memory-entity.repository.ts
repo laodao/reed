@@ -4,11 +4,12 @@
  * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import { In, type DataSource } from 'typeorm'
+import { In, IsNull, type DataSource } from 'typeorm'
 import { MemoryEntity } from '@shared/types/longwriting.types'
 import { LwMemoryEntityEntity } from '../entities/lw-memory-entity.entity'
 import { LwMemoryEntity } from '../entities/lw-memory.entity'
 import { BaseRepository } from '../base-repository'
+import { getCurrentUserId } from '@core/context/user-context'
 
 export class LwMemoryEntityRepository extends BaseRepository<
   LwMemoryEntityEntity,
@@ -85,14 +86,17 @@ export class LwMemoryEntityRepository extends BaseRepository<
   }
 
   async replaceAll(memoryId: string, entities: MemoryEntity[]): Promise<void> {
+    // 多租户复核修复：事务内裸 repo.save/delete 不走 scoped，显式注入/限定 userId
+    const userId = getCurrentUserId() ?? null
     await this.dataSource.transaction(async manager => {
       const repo = manager.getRepository(LwMemoryEntityEntity)
-      await repo.delete({ memoryId } as any)
+      await repo.delete({ memoryId, userId: userId ?? IsNull() } as any)
       const now = Date.now()
       for (const entity of entities) {
         await repo.save(
           repo.create({
             id: this.generateId(),
+            userId,
             memoryId,
             entityType: entity.type,
             entityId: entity.id,

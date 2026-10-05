@@ -80,7 +80,38 @@
           <span class="cat-cnt" :class="{ zero: g.entries.length === 0 }">{{ g.entries.length }}</span>
           <span class="cat-arrow">›</span>
         </div>
+
+        <!-- 世界观库分组（P2：绑定世界的常驻条目只读展示；点击进库分组视图） -->
+        <div v-if="worldGroups.length > 0" class="lib-divider">世界观库</div>
+        <div v-for="wg in worldGroups" :key="`lib-${wg.worldId}`" class="cat lib-cat" @click="activeLibWorldId = wg.worldId">
+          <span class="cat-ico">🌏</span>
+          <span class="cat-label">{{ wg.worldName }}</span>
+          <span v-if="wg.isPrimary" class="lib-primary">主世界</span>
+          <span class="cat-cnt">{{ wg.entries.length }}</span>
+          <span class="cat-arrow">›</span>
+        </div>
       </template>
+      <!-- ①b 世界观库分组视图：pinned 条目只读（来源=设定资产库，活引用注入正文） -->
+      <template v-else-if="activeLibWorld">
+        <div class="crumb">
+          <span class="crumb-back" @click="activeLibWorldId = null">← 返回分类</span>
+          <span class="crumb-title">🌏 {{ activeLibWorld.worldName }} · 常驻注入 {{ activeLibWorld.entries.length }} 条</span>
+        </div>
+        <div
+          v-for="e in activeLibWorld.entries"
+          :key="e.id"
+          class="entry"
+          :title="e.summary"
+        >
+          <span class="eico">🌏</span>
+          <span class="ename">{{ e.name }}</span>
+          <span class="esub">{{ e.summary }}</span>
+          <span class="src">库</span>
+        </div>
+        <div v-if="activeLibWorld.entries.length === 0" class="empty">该世界暂无常驻条目——到世界观库里给体系/规则条目开启「常驻注入」</div>
+        <div class="lib-foot-tip">这些设定在章节生成时自动注入正文；修改请到「长文写作 → 世界观库」。</div>
+      </template>
+
       <!-- ② 搜索视图：跨分类平铺命中项 -->
       <template v-else-if="keyword.trim()">
         <div class="crumb">
@@ -417,6 +448,50 @@ async function load(): Promise<void> {
   } catch {
     groups.value = []
   }
+  void loadWorldLibrary()
+}
+
+/** 世界观库分组（P2）：绑定世界的 pinned 条目（活引用，只读展示） */
+interface LibWorldGroup {
+  worldId: string
+  worldName: string
+  isPrimary: boolean
+  entries: Array<{ id: string; name: string; summary: string }>
+}
+const worldGroups = ref<LibWorldGroup[]>([])
+const activeLibWorldId = ref<string | null>(null)
+const activeLibWorld = computed(() => worldGroups.value.find(w => w.worldId === activeLibWorldId.value) ?? null)
+
+async function loadWorldLibrary(): Promise<void> {
+  try {
+    const lib = window.electronAPI.longwriting.library
+    const bindings = await lib.listWorldBindings(props.projectId)
+    const result: LibWorldGroup[] = []
+    for (const b of bindings) {
+      let world = null
+      try {
+        world = await lib.worldGet(b.worldId)
+      } catch {
+        world = null
+      }
+      if (!world) continue  // 悬空绑定（库已删）不展示
+      const pinned = (world.entries || []).filter((e: { pinned: boolean }) => e.pinned)
+      result.push({
+        worldId: b.worldId,
+        worldName: world.name || b.worldName,
+        isPrimary: !!b.isPrimary,
+        entries: pinned.map((e: { id: string; name: string; summary: string }) => ({ id: e.id, name: e.name, summary: e.summary || '' })),
+      })
+    }
+    // 主世界在前
+    result.sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary))
+    worldGroups.value = result
+    if (activeLibWorldId.value && !result.some(w => w.worldId === activeLibWorldId.value)) {
+      activeLibWorldId.value = null
+    }
+  } catch {
+    worldGroups.value = []
+  }
 }
 
 watch(() => props.refreshKey, () => { void load() })
@@ -424,6 +499,25 @@ onMounted(() => { void load() })
 </script>
 
 <style scoped>
+.lib-divider {
+  margin: 12px 10px 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary, #999);
+  border-top: 1px dashed var(--el-border-color, #eee);
+  padding-top: 10px;
+}
+.lib-cat .lib-primary {
+  font-size: 11px;
+  color: var(--el-color-primary, #409eff);
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.lib-foot-tip {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary, #aaa);
+}
 .panel { display: flex; flex-direction: column; min-height: 0; flex: 1; background: var(--el-bg-color); }
 
 /* 讨论成果（折叠区） */

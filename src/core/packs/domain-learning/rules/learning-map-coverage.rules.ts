@@ -36,6 +36,7 @@ export interface CoverageRelation {
 /** 缺口类型（确定性可判定） */
 export type MapGapKind =
   | 'no-entry'
+  | 'cycle'
   | 'unreachable'
   | 'flat-trunk'
   | 'funnel'
@@ -166,9 +167,43 @@ export function reachableFrom(
 }
 
 /**
+ * 检测前置图中的环（2026-09-25 P0-1 配套）：返回"在某条环上"的节点 id。
+ * 判定＝从节点出发沿前置边能回到自身（个人规模图 O(V·(V+E)) 足够；建边入口已有
+ * wouldCreatePrereqCycle 前置拦截，这里是对存量数据的诊断兜底）。
+ */
+export function detectPrereqCycles(
+  ids: string[],
+  edges: Array<{ source: string; target: string }>,
+): string[] {
+  const known = new Set(ids)
+  const outgoing = new Map<string, string[]>()
+  for (const id of ids) outgoing.set(id, [])
+  for (const e of edges) {
+    if (known.has(e.source) && known.has(e.target)) outgoing.get(e.source)!.push(e.target)
+  }
+  const onCycle: string[] = []
+  for (const start of ids) {
+    const visited = new Set<string>()
+    const stack = [...(outgoing.get(start) ?? [])]
+    while (stack.length) {
+      const cur = stack.pop()!
+      if (cur === start) {
+        onCycle.push(start)
+        break
+      }
+      if (visited.has(cur)) continue
+      visited.add(cur)
+      stack.push(...(outgoing.get(cur) ?? []))
+    }
+  }
+  return onCycle
+}
+
+/**
  * 地图完整度诊断。
  * 评分口径（可解释、可回归）：基础 100 分，按下述缺口扣分并夹在 0-100：
  * - 无入口 -25（high）
+ * - 前置环 -25（high；2026-09-25：环死锁是结构上最重的缺口）
  * - 不可达节点 -12 × 批次数（最多 -24，high）
  * - 平铺一层（层数 < 3 且叶 ≥ 5）-15（high）
  * - 多入口汇入同一概念（缺中间台阶）-6 × 处（最多 -12，medium）
@@ -235,6 +270,22 @@ export function assessMapCoverage(input: {
       kind: 'no-entry',
       severity: 'high',
       message: '没有任何"无前置"的起点概念——学习路径没有入口（要么漏建基础概念，要么前置边指反了）',
+    })
+    score -= 25
+  }
+
+  // ①b 前置环（2026-09-25 P0-1 配套）：环上概念互相等对方先掌握，永远无法标记"懂了"，
+  // 掌握门控与排程整体失效——必须人工删边修复（Atlas 节点档案「直接关系」→ 删除）
+  const cycleIds = detectPrereqCycles(ids, edges)
+  if (cycleIds.length) {
+    const cycleNames = cycleIds.map((id) => nameOf.get(id) ?? id)
+    gaps.push({
+      kind: 'cycle',
+      severity: 'high',
+      message:
+        `前置关系成环（${cycleNames.slice(0, 6).join('、')}${cycleNames.length > 6 ? ' 等' : ''}）——` +
+        '环上的知识点互相等对方先掌握，学习路径死锁：请在知识全景图的节点档案「直接关系」里删除环上任意一条边',
+      conceptNames: cycleNames.slice(0, 6),
     })
     score -= 25
   }

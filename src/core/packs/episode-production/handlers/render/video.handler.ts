@@ -11,13 +11,13 @@ import * as fs from 'fs'
 import { getBrowserWindowFromEvent } from '@electron/ipc/handlers/_platform'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { toAssetUrl } from '@core/utils/asset-path'
-import { getPathProvider } from '@core/interfaces/path.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type { VideoProjectConfig } from '@shared/types/story-to-video.types'
 import { VideoSynthesisService, PRESET_VIDEO_CONFIGS } from '@core/packs/episode-production/services/video-synthesis.service'
 import { VideoService } from '@core/packs/episode-production/services/video.service'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { createVideoProvider } from '@core/platform/providers/video'
+import { resolveStoryToVideoAudioDir } from './scene-audio-dir'
 
 /**
  * 将本地路径转换为渲染端可加载的图像 URL（双端协议自适配）
@@ -111,9 +111,9 @@ async function handleSynthesizeSceneVideo(
       return { success: false, error: '无法获取项目信息' }
     }
 
-    // 获取音频资产
-    const userDataPath = getPathProvider().getUserDataPath()
-    const audioDir = path.join(userDataPath, 'story-to-video', projectId, 'audio')
+    // 获取音频资产（与 audio.handler 生成侧共用同一基准：resolveStoryToVideoAudioDir，
+    // 自定义数据目录时扫描 dataPath 而非 userData，避免写读分裂 → 场景视频无声）
+    const audioDir = resolveStoryToVideoAudioDir(projectId)
     const audioAssets = new Map<string, string>()
 
     // 收集音频文件

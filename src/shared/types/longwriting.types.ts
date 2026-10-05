@@ -323,8 +323,11 @@ export interface StoryLocation {
   templateType?: TemporaryLocationTemplateType  // 临时实体模板类型
   // generatedImageId 已移至 asset_image 表（P2 Task 6）
   mapId?: string            // 关联地图 ID
-  sourceType?: EntitySourceType  // 来源类型：longwriting 或 uploaded
+  sourceType?: EntitySourceType  // 来源类型：longwriting / uploaded / library
   sourceEpisodeId?: string      // 来源剧集ID（uploaded模式时使用）
+  libraryWorldId?: string       // 设定资产库血缘（设计 2026-09-24 §4.3）
+  libraryEntryId?: string
+  libraryVersion?: number
   createdAt: number
   updatedAt: number
 }
@@ -356,6 +359,9 @@ export interface StoryFaction {
   locationId?: string          // 所在地（关联地点ID）
   description: string          // 主要特点
   sortOrder: number            // 排序顺序
+  libraryWorldId?: string      // 设定资产库血缘（设计 2026-09-24 §4.3）
+  libraryEntryId?: string
+  libraryVersion?: number
   createdAt: number
   updatedAt: number
 }
@@ -499,7 +505,7 @@ export interface GenerateFactionsRequest {
  * 实体来源类型
  * 用于区分实体来源于长文项目还是上传的剧本
  */
-export type EntitySourceType = 'longwriting' | 'uploaded'
+export type EntitySourceType = 'longwriting' | 'uploaded' | 'library'
 
 /**
  * 实体重要性分类
@@ -727,8 +733,16 @@ export interface StoryCharacter {
   templateType?: TemporaryCharacterTemplateType  // 临时实体模板类型
   // generatedImageId 已移至 asset_image 表（P2 Task 6）
   majorEvents: string        // 主要事件
-  sourceType?: EntitySourceType  // 来源类型：longwriting 或 uploaded
+  sourceType?: EntitySourceType  // 来源类型：longwriting / uploaded / library（IP库导入）
   sourceEpisodeId?: string      // 来源剧集ID（uploaded模式时使用）
+  // 设定资产库血缘（sourceType='library' 时有值；设计 2026-09-24 §4.3）
+  libraryIpId?: string         // 来源 IP 库角色 id
+  libraryWorldId?: string      // 来源世界观库 id
+  libraryEntryId?: string      // 来源库条目 id
+  libraryVersion?: number      // 导入时的库版本（同步 diff 依据）
+  motivation?: string          // 核心欲望（四层人设第二层）
+  flaw?: string                // 软肋/缺陷
+  characterArc?: string        // 成长弧光
   createdAt: number
   updatedAt: number
 }
@@ -769,6 +783,9 @@ export interface StorySkill {
   description: string
   system: string             // 所属门派/体系
   characterIds: string[]     // 掌握此技能的角色
+  libraryWorldId?: string      // 设定资产库血缘（设计 2026-09-24 §4.3）
+  libraryEntryId?: string
+  libraryVersion?: number
   createdAt: number
   updatedAt: number
 }
@@ -797,6 +814,9 @@ export interface StoryItem {
   ownerId?: string           // 持有者角色 ID
   sourceType?: EntitySourceType  // 来源类型：longwriting 或 uploaded
   sourceEpisodeId?: string      // 来源剧集ID（uploaded模式时使用）
+  libraryWorldId?: string      // 设定资产库血缘（设计 2026-09-24 §4.3）
+  libraryEntryId?: string
+  libraryVersion?: number
   createdAt: number
   updatedAt: number
 }

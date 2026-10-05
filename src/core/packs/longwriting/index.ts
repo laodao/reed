@@ -24,6 +24,7 @@
  */
 
 import { registerLongWritingHandlers } from './handlers/longwriting.handler'
+import { registerLibraryHandlers } from './handlers/library.handler'
 import { registerStoryRoomHandlers } from './story-room/room.handler'
 import { LONGWRITING_WORKFLOW_NODE_HANDLERS } from './workflow-nodes'
 import { registerPackNodeHandlers } from '@core/platform/workflow/nodes'
@@ -42,6 +43,8 @@ export const longwritingPack: PackDefinition = {
   },
   activate() {
     registerLongWritingHandlers()
+    // 设定资产库（世界观库 + 角色 IP 库）：library:* 二级前缀，仍落在 longwriting: 之下
+    registerLibraryHandlers()
     // 故事研讨室（v2.1）：room:* 二级前缀，仍落在 longwriting: 之下
     registerStoryRoomHandlers()
     // 业务专用工作流节点（chapter-writing / volume-design）：经平台扩展点注册，

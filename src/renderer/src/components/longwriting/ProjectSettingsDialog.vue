@@ -207,6 +207,11 @@
         </div>
       </el-tab-pane>
 
+      <!-- 世界观绑定（P2：设定资产库——绑定/主世界/同步 diff） -->
+      <el-tab-pane label="世界观" name="worlds">
+        <WorldBindingPanel :project-id="projectId" />
+      </el-tab-pane>
+
       <!-- 模型设定 -->
       <el-tab-pane label="模型设定" name="models">
         <div class="model-config-container">
@@ -375,6 +380,7 @@ import { Plus, Delete } from '@element-plus/icons-vue'
 import type { ProjectSkillTypeConfig, ProjectItemTypeConfig, SkillLevelConfig, ItemLevelConfig, LongWritingProject } from '../../../../shared/types/longwriting.types'
 import type { UserProviderConfig, ProviderTemplate } from '../../../shared/types'
 import CoverSettingPanel from './CoverSettingPanel.vue'
+import WorldBindingPanel from './library/WorldBindingPanel.vue'
 
 const props = defineProps<{
   visible: boolean

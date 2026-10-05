@@ -35,6 +35,9 @@ export class LwSkillRepository extends BaseRepository<LwSkillEntity, StorySkill>
       description: e.description ?? '',
       system: e.system ?? '',
       characterIds: ((e.characterIds as string[] | null) ?? []) as string[],
+      libraryWorldId: e.libraryWorldId ?? undefined,
+      libraryEntryId: e.libraryEntryId ?? undefined,
+      libraryVersion: e.libraryVersion ?? undefined,
       createdAt: this.toEpochMs(e.createdAt),
       updatedAt: this.toEpochMs(e.updatedAt),
     }
@@ -160,4 +163,16 @@ export class LwSkillRepository extends BaseRepository<LwSkillEntity, StorySkill>
   private generateId(): string {
     return `skill_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }
+  /** 设定资产库导入回填血缘列（2026-09-24 P0）：库条目导入为项目行后记来源 */
+  async applyLibraryLineage(
+    id: string,
+    data: { libraryWorldId?: string; libraryEntryId?: string; libraryVersion?: number },
+  ): Promise<void> {
+    const patch: Record<string, unknown> = { updatedAt: new Date() }
+    if (data.libraryWorldId !== undefined) patch.libraryWorldId = data.libraryWorldId
+    if (data.libraryEntryId !== undefined) patch.libraryEntryId = data.libraryEntryId
+    if (data.libraryVersion !== undefined) patch.libraryVersion = data.libraryVersion
+    await this.scoped.update({ id } as any, patch as any)
+  }
+
 }

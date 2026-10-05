@@ -1890,6 +1890,17 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
     // 新增：构建背景设定上下文
     const backgroundContext = this.buildBackgroundContext(background)
 
+    // 设定资产库（2026-09-24 P0）：体系/规则类设定活引用直注入（预算 longwriting.worldContextMaxTokens）
+    let worldLibraryContext = ''
+    try {
+      const { buildWorldLibraryContext } = await import('@core/platform/services/longwriting/library/library-context')
+      // 2c 触发式注入扫描窗口：本章大纲 + 设计卡 + 上一章结尾（命中条目名/别名才注入，命中清单随文本可见）
+      const scanText = [outline.summary, prewrite?.content, previousChapterEnding].filter(Boolean).join('\n')
+      worldLibraryContext = await buildWorldLibraryContext(projectId, scanText)
+    } catch (e: any) {
+      console.warn('[longwriting] 世界观库上下文构建失败（不影响生成）:', e?.message || e)
+    }
+
     // 新增：计算故事进度阶段
     const totalChapters = overview?.estimatedChapters || 30
     const progressStage = this.calculateStoryProgressStage(chapterNumber, totalChapters)
@@ -2037,6 +2048,7 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
     const items: ChapterContextItem[] = [
       { id: 'overview', sectionKey: 'overview', title: '故事宏观背景', text: overviewText, tokens: estimateContextTokens(overviewText), defaultChecked: true },
       { id: 'background', sectionKey: 'background', title: '世界观设定', text: backgroundContext || '', tokens: estimateContextTokens(backgroundContext || ''), defaultChecked: !!backgroundContext },
+      ...(worldLibraryContext ? [{ id: 'worldLibrary' as const, sectionKey: 'background' as const, title: '世界观库', text: worldLibraryContext, tokens: estimateContextTokens(worldLibraryContext), defaultChecked: true }] : []),
       ...characterItems,
       ...locationItems,
       { id: 'prevEnding', sectionKey: 'prevChapters', title: '上一章结尾', text: prevEndingText, tokens: estimateContextTokens(prevEndingText), defaultChecked: true },
@@ -2049,6 +2061,7 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
     const parts: ChapterPromptParts = {
       overviewText,
       backgroundText: backgroundContext || '',
+      worldLibraryText: worldLibraryContext || '',
       taskText,
       characterItems,
       locationItems,
@@ -2160,6 +2173,7 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
       // 根因是道具口径从未进入写前上下文，模型只能按设计卡自由发挥。此处显式注入：
       // (a) 本章涉及道具的物品册描述；(b) 道具最新状态切片（近几章，名册外也算——
       // 状态切片里有而名册没有的，恰恰是最容易翻转的"黑户道具"）。
+      const parts: string[] = []  // H2 修复：声明上移——下方道具口径段在旧声明位置之前使用（TDZ 崩溃，blame 111f8384）
       const propLines: string[] = []
       try {
         const rosterItems = (await dbManager.lwItems?.getByProjectId(projectId)) || []
@@ -2217,7 +2231,6 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
         }
       } catch { /* 前情事实读取失败不阻断 */ }
 
-      const parts: string[] = []
       if (edgeLines.length > 0) {
         parts.push(`【生效关系（第 ${chapterNumber} 章时间点）】\n${edgeLines.join('\n')}`)
       }
@@ -2364,6 +2377,10 @@ ${prevState ? `时间：${prevState.storyTime || '未知'}；位置：${prevStat
     if (character.personality) info += `- 性格特点：${character.personality}\n`
     if (character.background) info += `- 背景故事：${character.background}\n`
     if (character.abilities) info += `- 能力特长：${character.abilities}\n`
+    // 四层人设（设定资产库 P0 列 / IP 库导入随行；M2 修复：此前只存不注入）
+    if (character.motivation) info += `- 核心欲望：${character.motivation}（其行动的内在引擎，剧情选择应与之自洽）\n`
+    if (character.flaw) info += `- 软肋：${character.flaw}（欲望的反差面——诱惑/威胁面前最容易失守之处）\n`
+    if (character.characterArc) info += `- 人物弧光：${character.characterArc}（成长终点方向，非既成事实——按当前进度逐步演进，勿一步到位）\n`
 
     info += `- 角色定位：${rolePositionMap[character.rolePosition] || '未指定'}\n`
 

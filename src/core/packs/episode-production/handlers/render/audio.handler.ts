@@ -9,10 +9,12 @@ import * as path from 'path'
 import { getBrowserWindowFromEvent } from '@electron/ipc/handlers/_platform'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getPathProvider } from '@core/interfaces/path.interface'
+import { toRelativeAssetPath } from '@core/utils/asset-path'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type { CharacterBinding } from '@shared/types/story-to-video.types'
 import { StoryToVideoResourceService } from '@core/packs/episode-production/services/story-to-video-resource.service'
 import { SceneAudioOrchestratorService } from '@core/platform/episode-production/render/audio/scene-audio-orchestrator.service'
+import { resolveStoryToVideoAudioDir } from './scene-audio-dir'
 
 export function registerAudioHandlers(): void {
   // ==================== 资源生成（音频） ====================
@@ -34,12 +36,14 @@ async function handleGenerateSceneAudioV3(
     const db = getCoreDatabaseManager()
     if (!db.dataSource) return { success: false, error: '数据库未初始化' }
 
-    // 解析 outputDir：未传则走 path provider 默认
+    // 解析 outputDir：未传则走 path provider 默认。
+    // 用 getDataPath()（而非 getUserDataPath()）：自定义数据目录时产物必须落在数据
+    // 根下，落库的 user-rel 路径在数据目录迁移后才仍可解析（X4）。
     let outputDir = opts?.outputDir
     if (!outputDir) {
-      const userDataPath = getPathProvider().getUserDataPath()
+      const dataPath = getPathProvider().getDataPath()
       outputDir = path.join(
-        userDataPath,
+        dataPath,
         'episode-production',
         'audio',
         sceneScriptId,
@@ -144,9 +148,8 @@ async function handleGenerateAudio(
       }
     }
 
-    // 获取项目资源目录
-    const userDataPath = getPathProvider().getUserDataPath()
-    const outputDir = path.join(userDataPath, 'story-to-video', projectId, 'audio')
+    // 获取项目资源目录（与 video.handler 扫描侧共用同一基准：resolveStoryToVideoAudioDir）
+    const outputDir = resolveStoryToVideoAudioDir(projectId)
 
     // 调用资源生成服务
     const resourceService = StoryToVideoResourceService.getInstance()
@@ -170,7 +173,8 @@ async function handleGenerateAudio(
       // 深拷贝 dialogues 避免修改原对象
       const updatedDialogues = JSON.parse(JSON.stringify(scene.dialogues))
 
-      // 更新每个对话的 audioAsset
+      // 更新每个对话的 audioAsset（落库转 user-rel 相对路径，与 V3 编排同约定；
+      // 绝对路径落库在数据目录迁移后会成死路径被导出器静默剔除——X4）
       for (const [dialogueId, audioPath] of result.dialoguePaths) {
         const dialogueIndex = updatedDialogues.findIndex((d: any) => d.id === dialogueId)
         if (dialogueIndex !== -1) {
@@ -178,7 +182,7 @@ async function handleGenerateAudio(
             id: `audio_${dialogueId}_${Date.now()}`,
             type: 'dialogue',
             text: updatedDialogues[dialogueIndex].text,
-            audioPath: audioPath
+            audioPath: toRelativeAssetPath(audioPath)
           }
         }
       }

@@ -384,6 +384,8 @@ export interface SearchResult {
   atom?: {
     id: string
     type: string
+    /** 知识分层（outline=概要/setting=设定/describe=描写/detail=细节；旧数据恒 detail） */
+    layer?: string
     status: string
     quote: string
     jumpTo: { chapterId: string; startOffset: number }

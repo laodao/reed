@@ -15,6 +15,7 @@ import { KeyframeGenerationService } from '@core/platform/episode-production/ren
 import { KeyframeReviewService } from '@core/platform/episode-production/render/keyframe/keyframe-review.service'
 import { planRegenPropagation } from '@core/platform/episode-production/render/keyframe/keyframe-chain-strategy'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
+import { getCurrentUserId } from '@core/context/user-context'
 
 export function registerKeyframeHandlers(): void {
   // ==================== 资源生成（图像） ====================
@@ -115,6 +116,8 @@ async function handleListAssetImages(
   try {
     const db = getCoreDatabaseManager()
     if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+    // 租户可见性：自己/共享(NULL)行；他人行不可见（Web 多租户挑图防越权）
+    const uid = getCurrentUserId()
     const rows = await db.dataSource
       .getRepository(AssetImageEntity)
       .createQueryBuilder('ai')
@@ -122,6 +125,7 @@ async function handleListAssetImages(
         assetType,
         assetId,
       })
+      .andWhere(uid ? '(ai.userId = :uid OR ai.userId IS NULL)' : 'ai.userId IS NULL', uid ? { uid } : {})
       .orderBy('ai.isMain', 'DESC')
       .addOrderBy('ai.sortOrder', 'ASC')
       .addOrderBy('ai.createdAt', 'ASC')
@@ -544,9 +548,14 @@ async function handleListKeyframes(
           const effectiveIds = extractMetadataField(ia?.metadata, 'referenceImageIdsEffective')
           const effectiveSet = Array.isArray(effectiveIds) ? new Set(effectiveIds as string[]) : null
           if (refIds.length > 0) {
+            const refVisUid = getCurrentUserId()
             const refRows = await assetImageRepo
               .createQueryBuilder('ai')
               .where('ai.id IN (:...ids)', { ids: refIds })
+              .andWhere(
+                refVisUid ? '(ai.userId = :refUid OR ai.userId IS NULL)' : 'ai.userId IS NULL',
+                refVisUid ? { refUid: refVisUid } : {},
+              )
               .getMany()
 
             // 按 assetType 分组、批量查 binding 拿名字

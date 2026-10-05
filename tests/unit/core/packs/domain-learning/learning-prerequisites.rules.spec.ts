@@ -23,6 +23,7 @@ import {
   normalizeConceptPrereqs,
   normalizeSpacePrereqs,
   prerequisiteNamesOf,
+  wouldCreatePrereqCycle,
   type PrereqConcept,
   type PrereqRelation,
 } from '@core/packs/domain-learning/rules/learning-prerequisites.rules'
@@ -186,5 +187,33 @@ describe('coveredBySpacePrereqs（门禁用：主题前置已明示门槛）', (
     expect(coveredBySpacePrereqs('导数与链式法则', ['导数', '链式法则'], space)).toBe(true)
     expect(coveredBySpacePrereqs('积分', ['积分'], space)).toBe(false)
     expect(coveredBySpacePrereqs('积分', ['积分'], [])).toBe(false)
+  })
+})
+
+describe('wouldCreatePrereqCycle（2026-09-25 P0-1：建边防环）', () => {
+  it('空图/无环图上加边 → 不拦', () => {
+    expect(wouldCreatePrereqCycle([], 'a', 'b')).toBe(false)
+    const chain = [edge('a', 'b'), edge('b', 'c')]
+    expect(wouldCreatePrereqCycle(chain, 'a', 'c')).toBe(false)
+  })
+
+  it('直接互指 A→B 已存在，再建 B→A → 拦', () => {
+    const rels = [edge('a', 'b')]
+    expect(wouldCreatePrereqCycle(rels, 'b', 'a')).toBe(true)
+  })
+
+  it('三层链闭合 A→B→C 已存在，再建 C→A → 拦（环可经任意长度传导）', () => {
+    const rels = [edge('a', 'b'), edge('b', 'c')]
+    expect(wouldCreatePrereqCycle(rels, 'c', 'a')).toBe(true)
+  })
+
+  it('同链非闭合方向（A→C，A 是 C 的祖先方向）→ 放行', () => {
+    const rels = [edge('a', 'b'), edge('b', 'c')]
+    expect(wouldCreatePrereqCycle(rels, 'a', 'c')).toBe(false)
+  })
+
+  it('非 prerequisite 类型的边不参与判定', () => {
+    const rels = [edge('a', 'b', 'related')]
+    expect(wouldCreatePrereqCycle(rels, 'b', 'a')).toBe(false)
   })
 })

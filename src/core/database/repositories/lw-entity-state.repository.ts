@@ -39,8 +39,8 @@ export class LwEntityStateRepository extends BaseRepository<
   }
 
   async getByProjectId(projectId: string): Promise<EntityStateSnapshot[]> {
-    const rows = await this.repo
-      .createQueryBuilder('s')
+    const rows = await this.scoped
+      .qb('s')
       .where('s.project_id = :pid', { pid: projectId })
       .orderBy('s.chapter_number', 'ASC')
       .addOrderBy('s.entity_type', 'ASC')
@@ -55,8 +55,8 @@ export class LwEntityStateRepository extends BaseRepository<
     entityId: string,
     chapterNumber: number,
   ): Promise<EntityStateSnapshot | null> {
-    const row = await this.repo
-      .createQueryBuilder('s')
+    const row = await this.scoped
+      .qb('s')
       .where('s.project_id = :pid', { pid: projectId })
       .andWhere('s.entity_type = :et', { et: entityType })
       .andWhere('s.entity_id = :eid', { eid: entityId })
@@ -89,8 +89,8 @@ export class LwEntityStateRepository extends BaseRepository<
     projectId: string,
     chapterNumber: number,
   ): Promise<EntityStateSnapshot[]> {
-    const rows = await this.repo
-      .createQueryBuilder('s')
+    const rows = await this.scoped
+      .qb('s')
       .where('s.project_id = :pid', { pid: projectId })
       .andWhere('s.chapter_number = :cn', { cn: chapterNumber })
       .orderBy('s.entity_type', 'ASC')
@@ -108,8 +108,8 @@ export class LwEntityStateRepository extends BaseRepository<
     entityType: EntityType,
     entityId: string,
   ): Promise<EntityStateSnapshot | null> {
-    const row = await this.repo
-      .createQueryBuilder('s')
+    const row = await this.scoped
+      .qb('s')
       .where('s.project_id = :pid', { pid: projectId })
       .andWhere('s.entity_type = :et', { et: entityType })
       .andWhere('s.entity_id = :eid', { eid: entityId })
@@ -228,14 +228,12 @@ export class LwEntityStateRepository extends BaseRepository<
   }
 
   async upsert(data: CreateEntityStateSnapshotRequest): Promise<EntityStateSnapshot> {
-    const existing = await this.repo.findOne({
-      where: {
-        projectId: data.projectId,
-        entityType: data.entityType,
-        entityId: data.entityId,
-        chapterNumber: data.chapterNumber,
-      } as any,
-    })
+    const existing = await this.scoped.findOne({
+      projectId: data.projectId,
+      entityType: data.entityType,
+      entityId: data.entityId,
+      chapterNumber: data.chapterNumber,
+    } as any)
 
     if (existing) {
       existing.stateSummary = data.stateSummary

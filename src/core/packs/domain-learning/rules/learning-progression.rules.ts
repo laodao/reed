@@ -21,7 +21,7 @@
  */
 
 import { hasNotationTeaching } from './learning-difficulty.rules'
-import { coveredBySpacePrereqs } from './learning-prerequisites.rules'
+import { coveredBySpacePrereqs, isPrerequisiteAncestor } from './learning-prerequisites.rules'
 import type { DlSpacePrereq } from '@shared/types/domain-learning.types'
 
 /** 前置能力：正文命中信号 + 领域图里算作"已具备该能力"的概念名关键词 */
@@ -149,29 +149,6 @@ export interface ProgressionGateResult {
   reason: string
 }
 
-/** 判定该概念是否是 conceptId 的前置祖先（沿 prerequisite 边反向可达，允许任意深度） */
-export function isPrerequisiteAncestor(
-  relations: ProgressionRelation[],
-  conceptId: string,
-  candidateId: string,
-): boolean {
-  if (!conceptId || conceptId === candidateId) return false
-  const edges = relations.filter((r) => r.type === 'prerequisite')
-  const seen = new Set<string>()
-  const queue = [conceptId]
-  while (queue.length) {
-    const current = queue.shift()!
-    for (const e of edges) {
-      if (e.target !== current) continue
-      if (e.source === candidateId) return true
-      if (!seen.has(e.source)) {
-        seen.add(e.source)
-        queue.push(e.source)
-      }
-    }
-  }
-  return false
-}
 
 /** 前置声明是否已交代（meta 区文本） */
 export function hasPrerequisiteDeclaration(text: string): boolean {

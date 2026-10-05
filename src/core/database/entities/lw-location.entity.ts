@@ -48,6 +48,16 @@ export class LwLocationEntity {
   @Column({ name: 'source_episode_id', type: 'text', nullable: true })
   sourceEpisodeId!: string | null
 
+  // ---- 设定资产库血缘（2026-09-24 P0，迁移 create-lw-library-tables 加列）----
+  @Column({ name: 'library_world_id', type: 'varchar', nullable: true })
+  libraryWorldId!: string | null
+
+  @Column({ name: 'library_entry_id', type: 'varchar', nullable: true })
+  libraryEntryId!: string | null
+
+  @Column({ name: 'library_version', type: 'integer', nullable: true })
+  libraryVersion!: number | null
+
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 

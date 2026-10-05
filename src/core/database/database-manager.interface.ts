@@ -92,6 +92,14 @@ import type { LwTempCharacterTemplateRepository } from './repositories/lw-temp-c
 import type { LwTempLocationTemplateRepository } from './repositories/lw-temp-location-template.repository'
 import type { LwTypeConfigRepository } from './repositories/lw-type-config.repository'
 import type { LwVectorIndexRepository } from './repositories/lw-vector-index.repository'
+import type { LwWorldRepository } from './repositories/lw-world.repository'
+import type { LwWorldKindRepository } from './repositories/lw-world-kind.repository'
+import type { LwWorldEntryRepository } from './repositories/lw-world-entry.repository'
+import type { LwWorldEdgeRepository } from './repositories/lw-world-edge.repository'
+import type { LwIpCharacterRepository } from './repositories/lw-ip-character.repository'
+import type { LwIpEdgeRepository } from './repositories/lw-ip-edge.repository'
+import type { LwWorldBindingRepository } from './repositories/lw-world-binding.repository'
+import type { LwIpBindingRepository } from './repositories/lw-ip-binding.repository'
 import type { WorkflowDefinitionRepository } from './repositories/workflow-definition.repository'
 import type { PackBindingRepository, PackRepository } from './repositories/business-pack.repositories'
 import type { WorkflowRunRepository } from './repositories/workflow-run.repository'
@@ -238,6 +246,15 @@ export interface ICoreDatabaseManager {
   lwPredicateRegistry: LwPredicateRegistryRepository | null
   /** 设计文档存档（2026-09-16 结构化设定方案 M1：spine/卷设计 JSON 契约草稿与版本） */
   lwDesignDocuments: LwDesignDocumentRepository | null
+  // ---- 设定资产库（世界观库 + 角色 IP 库，2026-09-24 P0）----
+  lwWorlds: LwWorldRepository | null
+  lwWorldKinds: LwWorldKindRepository | null
+  lwWorldEntries: LwWorldEntryRepository | null
+  lwWorldEdges: LwWorldEdgeRepository | null
+  lwIpCharacters: LwIpCharacterRepository | null
+  lwIpEdges: LwIpEdgeRepository | null
+  lwWorldBindings: LwWorldBindingRepository | null
+  lwIpBindings: LwIpBindingRepository | null
 
   // ---- 工作流引擎（三表） ----
   /** 工作流定义（草稿/发布双图 + 触发器 + cron 调度状态） */

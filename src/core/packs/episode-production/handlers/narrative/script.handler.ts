@@ -7,11 +7,7 @@
  */
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
-import { In, IsNull } from 'typeorm'
-import { getCurrentUserId } from '@core/context/user-context'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
-import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
-import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type { SceneScript } from '@shared/types/story-to-video.types'
 import type {
@@ -28,6 +24,10 @@ import {
   ScriptAppendService,
   type AppendScriptOptions,
 } from '@core/platform/episode-production/narrative/services/script-append.service'
+import {
+  rebuildScenesForScript,
+  upsertScriptAndRebuildScenes,
+} from '@core/platform/episode-production/narrative/services/script-scene-rebuild.service'
 import { analyzeScriptToEpisodes } from '@core/platform/episode-production/narrative/services/script-splitter.service'
 import { cleanupStoryboards } from '@core/platform/episode-production/narrative/storyboard-cleanup.service'
 import { regressEpisodeStatus } from '@core/platform/episode-production/workflow/episode-status-advance'
@@ -156,6 +156,34 @@ async function handleUpdateScene(
     const db = getCoreDatabaseManager()
     if (!db.sceneScripts) {
       return { success: false, error: '数据库未初始化' }
+    }
+
+    /*
+     * X2（2026-09-24 审计）：触到结构化内容（characters/dialogues/actions/
+     * narration）时走事务级联落库——同步重建 bridge 表、清过期音频产物
+     * （改对白文本清该对白 audioAsset、改 narration 清 narrationAudioPath）；
+     * 仅改 location/mood 等标量字段时走原轻量路径。
+     */
+    const touchesStructured =
+      data.characters !== undefined ||
+      data.dialogues !== undefined ||
+      data.actions !== undefined ||
+      data.narration !== undefined
+
+    if (touchesStructured) {
+      if (!db.dataSource) {
+        return { success: false, error: '数据库未初始化' }
+      }
+      try {
+        await SceneBindingWriter.updateSceneWithBindings(db.dataSource, sceneId, data)
+      } catch (e: any) {
+        if (typeof e?.message === 'string' && e.message.startsWith('场景不存在')) {
+          return { success: false, error: '场景不存在' }
+        }
+        throw e
+      }
+      const scene = await db.sceneScripts.getById(sceneId)
+      return { success: true, data: scene }
     }
 
     const scene = await db.sceneScripts.update(sceneId, data)
@@ -526,62 +554,16 @@ async function handleGenerateScript(
       modelId
     )
 
-    // 创建或更新剧本
-    const existingScript = await db.episodeScripts.getByEpisodeId(episode.id)
-
-    let script: any
-    if (existingScript) {
-      // 更新现有剧本
-      script = await db.episodeScripts.update(existingScript.id, {
-        synopsis: result.synopsis,
-        scriptContent: result.scriptContent,
-        scriptFormat: 'standard',
-        status: 'reviewing'
-      })
-    } else {
-      // 创建新剧本
-      script = await db.episodeScripts.create({
-        projectId: episode.projectId,
-        episodeId: episode.id,
-        outlineId: episode.outlineId,
-        synopsis: result.synopsis,
-        scriptContent: result.scriptContent,
-        scriptFormat: 'standard'
-      })
-
-      // 更新剧本状态
-      script = await db.episodeScripts.update(script.id, { status: 'reviewing' })
-
-      // 更新剧集的 scriptId
-      await db.videoEpisodes.update(episode.id, { scriptId: script.id })
-    }
-
-    // 复核修复 P1-6：删旧场景与建新场景并入同一事务——原实现先物理删光旧场景
-    // 再另起事务重建，建新中途失败（LLM 脏数据等）旧场景不可恢复
-    // P2-14：级联清全部旧分镜（关键帧/图/片段 supersede）也在同一事务内
-    const userId = getCurrentUserId()
-    const delScope = userId ? { userId } : { userId: IsNull() }
-    const sceneRecords = await db.dataSource.transaction(async manager => {
-      if (existingScript) {
-        const oldScenes = await manager
-          .getRepository(SceneScriptEntity)
-          .find({ where: { episodeScriptId: existingScript.id, ...delScope } as any })
-        if (oldScenes.length > 0) {
-          const oldStoryboards = await manager
-            .getRepository(StoryboardEntity)
-            .find({ where: { sceneScriptId: In(oldScenes.map(sc => sc.id)), ...delScope } as any })
-          await cleanupStoryboards(manager, oldStoryboards.map(sb => sb.id))
-        }
-        await manager
-          .getRepository(SceneScriptEntity)
-          .delete({ episodeScriptId: existingScript.id, ...delScope } as any)
-      }
-      return SceneBindingWriter.createScenesWithBindingsIn(manager, script.id, result.scenes)
-    })
-
-    // P1-12：生成/重新生成剧本后总是置 scripting——重生成连带重建场景、作废下游
-    // 分镜/片段，即便此前已推进到 storyboarding+（含 completed）也应回到剧本阶段
-    await db.videoEpisodes.update(episode.id, { status: 'scripting' })
+    // S4（2026-09-25 一致性修复第二批）：剧本行 upsert + 级联删旧分镜 +
+    // 删旧场景建新场景 + 状态收敛 scripting，统一走公共 service 单事务
+    // （agent generate_script 同用）——原实现 upsert 在场景事务外，失败留
+    // 「新正文+旧场景」；:584 直写状态改走 advance/regress 原语（与 :407/:671 对齐）
+    const { scriptId, scenes: sceneRecords } = await upsertScriptAndRebuildScenes(
+      db.dataSource,
+      { id: episode.id, projectId: episode.projectId, outlineId: episode.outlineId },
+      { synopsis: result.synopsis, scriptContent: result.scriptContent, scenes: result.scenes },
+    )
+    const script = await db.episodeScripts.getById(scriptId)
 
     return {
       success: true,
@@ -645,31 +627,14 @@ async function handleGenerateScenes(
       { source: useContent ? 'scriptContent' : 'synopsis' }
     )
 
-    // 5+6. 复核修复 P1-6：删旧场景与建新场景并入同一事务（同 generate-script）
-    // P2-14：级联清全部旧分镜（关键帧/图/片段 supersede）也在同一事务内
-    const userId = getCurrentUserId()
-    const delScope = userId ? { userId } : { userId: IsNull() }
-    const sceneRecords = await db.dataSource.transaction(async manager => {
-      const oldScenes = await manager
-        .getRepository(SceneScriptEntity)
-        .find({ where: { episodeScriptId: scriptId, ...delScope } as any })
-      if (oldScenes.length > 0) {
-        const oldStoryboards = await manager
-          .getRepository(StoryboardEntity)
-          .find({ where: { sceneScriptId: In(oldScenes.map(sc => sc.id)), ...delScope } as any })
-        await cleanupStoryboards(manager, oldStoryboards.map(sb => sb.id))
-      }
-      await manager
-        .getRepository(SceneScriptEntity)
-        .delete({ episodeScriptId: scriptId, ...delScope } as any)
-      return SceneBindingWriter.createScenesWithBindingsIn(manager, scriptId, generatedScenes)
-    })
-
-    // P1-12：下游分镜已清空，状态晚于 scripting 时回退（completed 也回退——
-    // 旧成片路径留在 composed_video_path 字段里可追溯）
-    try {
-      await regressEpisodeStatus(db.dataSource, episode.id, 'scripting')
-    } catch { /* 状态回退失败不阻断重拆结果 */ }
+    // 5+6. S4：删旧场景（级联清旧分镜）与建新场景单事务 + 状态回退，
+    // 统一走公共 service（agent split_scenes 同用）
+    const sceneRecords = await rebuildScenesForScript(
+      db.dataSource,
+      episode.id,
+      scriptId,
+      generatedScenes,
+    )
 
     return { success: true, data: sceneRecords }
   } catch (error: any) {

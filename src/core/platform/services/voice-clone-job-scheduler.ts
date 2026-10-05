@@ -28,6 +28,7 @@
 import { VoiceCloneService } from './voice-clone.service'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getEventEmitter } from '@core/interfaces/event.interface'
+import { getCurrentUserId, runWithUserAsync } from '@core/context/user-context'
 
 export interface VoiceCloneJobSchedulerOptions {
   /** 轮询间隔（毫秒）。默认 10 秒 */
@@ -56,9 +57,15 @@ const defaultTimerSource: SchedulerTimerSource = {
   now: () => Date.now(),
 }
 
-/** 单条任务追踪条目（per-task 起始时间） */
+/** 单条任务追踪条目（per-task 起始时间 + 属主租户） */
 interface JobEntry {
   startedAtMs: number
+  /**
+   * 任务属主（多租户复核修复）：Web 端调度器运行在无 ALS 的 boot/定时器上下文，
+   * 后续 scoped 读写与事件广播必须按属主重建租户上下文，否则查询退化
+   * user_id IS NULL（功能 100% 失效）、事件被推送层丢弃。
+   */
+  userId: string | null
 }
 
 /**
@@ -153,10 +160,13 @@ export class VoiceCloneJobScheduler {
    *
    * 不立即触发 tick — 调用方如果需要"立即查"应直接调 refreshClonedVoiceStatus。
    */
-  scheduleOne(id: string): void {
+  scheduleOne(id: string, userId?: string | null): void {
     if (!id) return
     if (!this.jobs.has(id)) {
-      this.jobs.set(id, { startedAtMs: this.timer.now() })
+      this.jobs.set(id, {
+        startedAtMs: this.timer.now(),
+        userId: userId !== undefined ? userId : getCurrentUserId(),
+      })
     }
   }
 
@@ -173,10 +183,12 @@ export class VoiceCloneJobScheduler {
     try {
       const dbm = getCoreDatabaseManager()
       if (!dbm.clonedVoices) return
-      const rows = await dbm.clonedVoices.getByStatus('training')
+      // 多租户复核修复：跨租户系统扫描（声明式例外）——此前 getByStatus 走 scoped，
+      // Web 端无 ALS 时退化为 user_id IS NULL，永远扫不到任何用户的训练任务
+      const rows = await dbm.clonedVoices.listTrainingJobsAllUsers()
       for (const r of rows) {
         if (!this.jobs.has(r.id)) {
-          this.jobs.set(r.id, { startedAtMs: this.timer.now() })
+          this.jobs.set(r.id, { startedAtMs: this.timer.now(), userId: r.userId })
         }
       }
       if (rows.length > 0) {
@@ -213,28 +225,35 @@ export class VoiceCloneJobScheduler {
       if (!entry) continue
 
       try {
-        // 超时检查：超过 maxDuration 直接降级 failed
-        const elapsed = this.timer.now() - entry.startedAtMs
-        if (elapsed > this.maxDurationMs) {
-          await this.markTimeoutFailed(id)
-          this.jobs.delete(id)
-          continue
-        }
+        const runJob = async (): Promise<void> => {
+          // 超时检查：超过 maxDuration 直接降级 failed
+          const elapsed = this.timer.now() - entry.startedAtMs
+          if (elapsed > this.maxDurationMs) {
+            await this.markTimeoutFailed(id)
+            this.jobs.delete(id)
+            return
+          }
 
-        // 调 service 刷新
-        const r = await VoiceCloneService.refreshClonedVoiceStatus(id)
-        if (!r.success || !r.data) {
-          // refresh 内部错误 — 不删 job，下次再试
-          continue
+          // 调 service 刷新
+          const r = await VoiceCloneService.refreshClonedVoiceStatus(id)
+          if (!r.success || !r.data) {
+            // refresh 内部错误 — 不删 job，下次再试
+            return
+          }
+          if (r.data.status === 'ready') {
+            this.emitCompleted(r.data.id, r.data.voiceId)
+            this.jobs.delete(id)
+          } else if (r.data.status === 'failed') {
+            this.emitFailed(r.data.id, r.data.errorMessage)
+            this.jobs.delete(id)
+          }
+          // 仍 training：保留
         }
-        if (r.data.status === 'ready') {
-          this.emitCompleted(r.data.id, r.data.voiceId)
-          this.jobs.delete(id)
-        } else if (r.data.status === 'failed') {
-          this.emitFailed(r.data.id, r.data.errorMessage)
-          this.jobs.delete(id)
-        }
-        // 仍 training：保留
+        // 租户重包：按任务属主重建 ALS，scoped 读写与事件广播才能命中正确的租户；
+        // 无属主（历史 NULL 行/测试环境）保持原样执行
+        const owner = entry.userId ?? getCurrentUserId()
+        if (owner) await runWithUserAsync(owner, runJob)
+        else await runJob()
       } catch (e: any) {
         console.warn(
           `[VoiceCloneJobScheduler.tick] id=${id} 刷新失败（保留下次重试）:`,

@@ -9,14 +9,40 @@
  */
 import Ajv from 'ajv'
 
+/** 内容类型（提取提示词与书级流程按此路由）；'' = 未识别（消化时自动检测） */
+export type KbBrainContentType = 'novel' | 'knowledge' | 'history' | 'other'
+
+/** 内容画像：库级内容类型（首次消化自动检测写入，用户可在面板改写覆盖） */
+export interface KbBrainProfile {
+  contentType: KbBrainContentType | ''
+  /** 体裁细标（如 修真/玄幻、科普/编程；检测原样保留，作为提取上下文） */
+  genre?: string
+  detectedAt?: string
+  sourceDocumentId?: string
+}
+
+/** 归一：缺省字段补齐 + 非法 contentType 归 ''（画像错值不致命，回落自动检测） */
+export function normalizeProfile(p?: Partial<KbBrainProfile>): KbBrainProfile {
+  const ct = p?.contentType
+  const contentType = ct === 'novel' || ct === 'knowledge' || ct === 'history' || ct === 'other' ? ct : ''
+  return {
+    contentType,
+    ...(p?.genre ? { genre: p.genre } : {}),
+    ...(p?.detectedAt ? { detectedAt: p.detectedAt } : {}),
+    ...(p?.sourceDocumentId ? { sourceDocumentId: p.sourceDocumentId } : {}),
+  }
+}
+
 export interface KbBrainConfig {
   enabled: boolean
-  /** 原子化消化：范围（scopeDocumentIds 缺省=全库） */
-  digestion: { enabled: boolean; scopeDocumentIds?: string[] }
+  /** 原子化消化：范围（scopeDocumentIds 缺省=全库）；bookPasses=书级汇总遍开关 */
+  digestion: { enabled: boolean; scopeDocumentIds?: string[]; bookPasses?: boolean }
+  /** 内容画像（§类型化提取：缺省/未识别时首次消化自动检测并写回） */
+  profile: KbBrainProfile
   /** 视角遍：启用的视角卡 + 观感捕捉开关（多视角是乘法级成本，按需启用） */
   lenses: { enabledLensNoteIds: string[]; readingCapture: boolean }
-  /** 模式提炼：设定卡（低风险）与情节卡（高风险）分开关 */
-  patterns: { settingEnabled: boolean; plotEnabled: boolean }
+  /** 模式提炼：设定卡（低风险）、情节卡（高风险）与人物原型卡（跨书聚类）分开关 */
+  patterns: { settingEnabled: boolean; plotEnabled: boolean; characterEnabled: boolean }
   /** 高于阈值自动入池，低于进提议队列 */
   autoApproveThreshold: number
   /** 跨文档提炼（重要性账户阈值） */
@@ -63,8 +89,20 @@ const BRAIN_CONFIG_SCHEMA = {
       properties: {
         enabled: { type: 'boolean' },
         scopeDocumentIds: { type: 'array', items: { type: 'string' } },
+        bookPasses: { type: 'boolean' },
       },
       required: ['enabled'],
+      additionalProperties: false,
+    },
+    profile: {
+      type: 'object',
+      properties: {
+        contentType: { enum: ['novel', 'knowledge', 'history', 'other', ''] },
+        genre: { type: 'string' },
+        detectedAt: { type: 'string' },
+        sourceDocumentId: { type: 'string' },
+      },
+      required: ['contentType'],
       additionalProperties: false,
     },
     lenses: {
@@ -81,6 +119,7 @@ const BRAIN_CONFIG_SCHEMA = {
       properties: {
         settingEnabled: { type: 'boolean' },
         plotEnabled: { type: 'boolean' },
+        characterEnabled: { type: 'boolean' },
       },
       required: ['settingEnabled', 'plotEnabled'],
       additionalProperties: false,
@@ -145,9 +184,10 @@ const validate = ajv.compile(BRAIN_CONFIG_SCHEMA)
 export function defaultBrainConfig(enabled = true): KbBrainConfig {
   return {
     enabled,
-    digestion: { enabled: true },
+    digestion: { enabled: true, bookPasses: true },
+    profile: { contentType: '' },
     lenses: { enabledLensNoteIds: [], readingCapture: true },
-    patterns: { settingEnabled: true, plotEnabled: false },
+    patterns: { settingEnabled: true, plotEnabled: false, characterEnabled: false },
     autoApproveThreshold: 0.8,
     distillation: { enabled: true, importanceThreshold: 50 },
     learning: { enabled: false, desiredRetention: 0.9 },
@@ -181,6 +221,7 @@ export function normalizeBrainConfig(partial: Partial<KbBrainConfig>): KbBrainCo
   return {
     enabled: partial.enabled ?? def.enabled,
     digestion: { ...def.digestion, ...partial.digestion },
+    profile: normalizeProfile(partial.profile),
     lenses: { ...def.lenses, ...partial.lenses },
     patterns: { ...def.patterns, ...partial.patterns },
     autoApproveThreshold: partial.autoApproveThreshold ?? def.autoApproveThreshold,
@@ -213,6 +254,7 @@ export function mergeBrainConfig(base: KbBrainConfig, patch: Partial<KbBrainConf
   return normalizeBrainConfig({
     ...mergeSeg(base, patch),
     digestion: mergeSeg(base.digestion, patch.digestion),
+    profile: normalizeProfile({ ...base.profile, ...patch.profile }),
     lenses: mergeSeg(base.lenses, patch.lenses),
     patterns: mergeSeg(base.patterns, patch.patterns),
     distillation: mergeSeg(base.distillation, patch.distillation),

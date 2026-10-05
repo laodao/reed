@@ -127,8 +127,8 @@ export class SubtitleService {
     //   1. 归一化 scene_dialogues 表（character_name 为权威角色名，V3 路径）
     //   2. scene_scripts.dialogues JSON 列（V2 兼容回退）
     //   3. 都解析不到 → "未知角色"
-    // 对话到分镜的分配保持原有简化策略：按 shot 在场景内的位置均分
-    // （真正的精细分配需要 storyboard_dialogue_links 表，留 follow-up）
+    // 对话到分镜的分配：优先 storyboard_dialogue_links 精确分配；无 links 的镜头
+    // 退回按 shot 在场景内的位置均分（C4：只均分未被任何 links 承接的对白）
     const dialoguesTable = await this.ds
       .getRepository(SceneDialogueEntity)
       .find({ where: { sceneScriptId: sceneEntity.id }, order: { sortOrder: 'ASC' } })
@@ -171,13 +171,49 @@ export class SubtitleService {
 
     // 这里的简化：平均分给场景内的 shots
     // 算 shot 在场景内的位置，按比例切分对话
-    const sceneShots = await this.countShotsInScene(sceneEntity.id)
+    // C4：混合状态（场景内部分镜头有 links）下，均分池要剔除已被其他镜头
+    // links 承接的对白，且均分位置只在「无 links 镜头」序列里算——否则同一句
+    // 台词会在无 links 镜头重复出现，且池切分会因有 links 镜头占位而错位
+    let pool = allDialogues
+    let sceneShots = await this.countShotsInScene(sceneEntity.id)
+    let idxInScene = await this.indexOfShotInScene(shot, sceneEntity.id)
+    try {
+      const shotRows = (await this.ds.query(
+        `SELECT sb.id AS storyboardId, l.dialogue_id AS dialogueId
+           FROM storyboards sb
+           LEFT JOIN storyboard_dialogue_links l ON l.storyboard_id = sb.id
+          WHERE sb.scene_script_id = ?
+          ORDER BY sb.shot_number ASC, l.sort_order ASC`,
+        [sceneEntity.id],
+      )) as Array<{ storyboardId: string; dialogueId: string | null }>
+      if (shotRows.length > 0) {
+        const claimedIds = new Set(
+          shotRows.filter((r) => r.dialogueId != null).map((r) => String(r.dialogueId)),
+        )
+        const linkedShotIds = new Set(
+          shotRows.filter((r) => r.dialogueId != null).map((r) => r.storyboardId),
+        )
+        const fallbackShotIds = shotRows
+          .filter((r) => !linkedShotIds.has(r.storyboardId))
+          .map((r) => r.storyboardId)
+        if (claimedIds.size > 0) {
+          pool = allDialogues.filter((d) => !claimedIds.has(d.id))
+          const idx = fallbackShotIds.indexOf(shot.storyboardId)
+          if (idx >= 0) {
+            sceneShots = fallbackShotIds.length
+            idxInScene = idx
+          }
+        }
+      }
+    } catch {
+      // links 表查询失败 → 退回全量均分
+    }
+
     if (sceneShots === 0) return []
-    const idxInScene = await this.indexOfShotInScene(shot, sceneEntity.id)
-    const dialoguesPerShot = Math.ceil(allDialogues.length / sceneShots)
+    const dialoguesPerShot = Math.ceil(pool.length / sceneShots)
     const start = idxInScene * dialoguesPerShot
-    const end = Math.min(start + dialoguesPerShot, allDialogues.length)
-    return allDialogues.slice(start, end)
+    const end = Math.min(start + dialoguesPerShot, pool.length)
+    return pool.slice(start, end)
   }
 
   private async countShotsInScene(sceneId: string): Promise<number> {
@@ -217,7 +253,9 @@ export class SubtitleService {
       if (!d.text.trim()) continue
       const startSec = shot.startSec + startOffsetSec + i * slot
       const span = Math.max(MIN_CUE_DURATION_SEC, slot)
-      const endSec = Math.min(shot.startSec + (i + 1) * slot, startSec + span)
+      // D2 修复：endSec 基准同样要加 startOffsetSec——旁白占首镜前 N 秒时，
+      // 漏加会让 endSec 早于 startSec（短首镜 + 多条对白产出非法 cue）
+      const endSec = Math.min(shot.startSec + startOffsetSec + (i + 1) * slot, startSec + span)
       cues.push({
         startSec,
         endSec: Math.min(endSec, shot.endSec),

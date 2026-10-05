@@ -126,11 +126,14 @@ export class KbConsolidateService {
         continue
       }
       // 合并句长度护栏：模型跑偏时兜底截断（完整性靠成员归档兜底）
+      // layer 继承（review P2）：取成员中最高层——「同一体系的分段规则」类合并恰是
+      // 设定层重灾区，落 detail 会侵蚀设定索引取材与检索选层
       const [created] = await atoms.createBatch([
         {
           knowledgeBaseId: kbId,
           statement: g.statement.slice(0, 400),
           type: g.type,
+          layer: highestLayer(members.map((m) => m.layer)),
           certainty: 0.85,
           sourceDocumentId: head.sourceDocumentId,
           sourceQuote: (head.sourceQuote ?? '').slice(0, 200),
@@ -148,6 +151,12 @@ export class KbConsolidateService {
 }
 
 let singleton: KbConsolidateService | null = null
+
+/** 成员最高层继承（outline>setting>describe>detail；空/未知成员按 detail 兜底） */
+function highestLayer(layers: string[]): 'outline' | 'setting' | 'describe' | 'detail' {
+  const rank: Record<string, number> = { outline: 3, setting: 2, describe: 1, detail: 0 }
+  return [...layers].sort((a, b) => (rank[b] ?? 0) - (rank[a] ?? 0))[0] as 'outline' | 'setting' | 'describe' | 'detail'
+}
 
 export function getKbConsolidateService(): KbConsolidateService {
   if (!singleton) singleton = new KbConsolidateService()

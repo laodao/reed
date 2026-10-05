@@ -18,6 +18,7 @@ import { CharacterBindingEntity } from '@core/database/entities/episode-producti
 import { LocationBindingEntity } from '@core/database/entities/episode-production/location-binding.entity'
 import { ItemBindingEntity } from '@core/database/entities/episode-production/item-binding.entity'
 import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
+import { VideoEpisodeEntity } from '@core/database/entities/episode-production/video-episode.entity'
 import {
   appendCharacterConstraints,
   framingForCategory,
@@ -87,6 +88,12 @@ export interface ImageGenerator {
      * 缺省/与传入相同表示全部生效；被截断时调用方应把差异暴露给用户（生效参考图标记）。
      */
     effectiveReferencePaths?: string[]
+    /**
+     * 实际发送给 provider 的完整 prompt（含实现方自行拼的尾缀，如 `, variant: {label}`）。
+     * 缺省表示与传入 opts.prompt 一致。调用方落库 metadata.actualPrompt 用
+     * （2026-09-24 一致性修复 K6：事后可还原「当时到底发了什么」）。
+     */
+    sentPrompt?: string
   }>
 }
 
@@ -120,7 +127,8 @@ export interface DeriveSingleInput {
   /**
    * 故事背景（可选 · 来自调用方当前 episode 上下文）。
    * 派生时附加到 identity prompt 末尾，让派生图也带年代 / 地域信息。
-   * service 内部加载 effective 但 storyBackground 在 binding 之外（episode 级），所以需上游传入。
+   * 显式传入优先；不传时 service 按 binding→project→项目最新一集自行解析
+   * （resolveStoryBackground），ds 未注入时退化为无故事背景（既有行为）。
    */
   storyBackground?: StoryBackground | null
 }
@@ -132,6 +140,11 @@ export interface DeriveBatchInput {
   category: AssetImageCategory
   /** 待派生 label 列表；已存在的 label 会被自动跳过 */
   labels: string[]
+  /**
+   * 故事背景（可选 · 同 DeriveSingleInput.storyBackground）。
+   * 显式传入优先；不传时由 deriveSingle 按 binding→project→最新一集自行解析。
+   */
+  storyBackground?: StoryBackground | null
 }
 
 /**
@@ -223,6 +236,51 @@ export class GalleryDerivationService {
   }
 
   /**
+   * G2（2026-09-25）：调用方未传 storyBackground 时 service 自行解析——
+   * 资产 binding → projectId → 项目最新一集（episodeNumber DESC 且
+   * storyEra/storyRegion/storyBackgroundExtra 任一非空）的三字段。
+   * 与 MainImageGeneratorService.buildStoryAnchorPrefix 的查询口径一致；
+   * 缺失会让古风硬约束（appendAncientEraConstraint）与年代身份段在派生图丢失。
+   * ds 未注入 / 资产无 projectId（全局 preset）/ 无可用集 → null；解析异常 → warn 后回退 null。
+   */
+  private async resolveStoryBackground(
+    assetType: AssetType,
+    assetId: string,
+  ): Promise<StoryBackground | null> {
+    if (!this.ds) return null
+    try {
+      const bindingRepo =
+        assetType === 'character'
+          ? this.ds.getRepository(CharacterBindingEntity)
+          : assetType === 'location'
+            ? this.ds.getRepository(LocationBindingEntity)
+            : this.ds.getRepository(ItemBindingEntity)
+      const binding = await bindingRepo.findOne({ where: { id: assetId } as any })
+      const projectId = (binding as any)?.projectId as string | null | undefined
+      if (!projectId) return null
+      const episodes = await this.ds.getRepository(VideoEpisodeEntity).find({
+        where: { projectId },
+        order: { episodeNumber: 'DESC' },
+      })
+      const ep = episodes.find(
+        (e) =>
+          (e.storyEra ?? '').trim() ||
+          (e.storyRegion ?? '').trim() ||
+          (e.storyBackgroundExtra ?? '').trim(),
+      )
+      if (!ep) return null
+      return {
+        era: (ep.storyEra ?? '').trim() || null,
+        region: (ep.storyRegion ?? '').trim() || null,
+        extra: (ep.storyBackgroundExtra ?? '').trim() || null,
+      }
+    } catch (e) {
+      console.warn('[GalleryDerivationService] 故事背景解析失败，跳过故事背景注入:', e)
+      return null
+    }
+  }
+
+  /**
    * 派生单张图：
    * 1. 取基图（spec 2026-05-09：input.baseImageId 优先；不传时回退到默认主图）
    * 2. 调 imageGen 生成新图（参考基图）
@@ -288,21 +346,26 @@ export class GalleryDerivationService {
      * 派生 prompt 自动带 name / description / styleAnchors / 故事背景。
      * 让派生图不再仅靠 reference image 维持身份，而是文本侧也有强 anchor。
      */
+    // G2：调用方显式传入优先；未传时按 binding→project→最新一集自行解析，
+    // 保证古风硬约束 / 年代身份段在派生图不丢失
+    const storyBackground =
+      input.storyBackground ??
+      (await this.resolveStoryBackground(input.assetType, input.assetId))
     const eff = await this.loadEffective(input.assetType, input.assetId)
     if (eff) {
       const identity = buildAssetIdentityPrompt(
         input.assetType,
         eff,
-        input.storyBackground ?? null,
+        storyBackground,
       )
       prompt = prependIdentity(identity, prompt)
       // F1（2026-09-21 资产图守设定）：设定锚点缺失补全——identity 已含的锚点
       // 由关键词存在性检查跳过，只补 viewHint 固定模板等路径丢失的设定关键词。
       prompt = appendAssetSettingAnchors(input.assetType, eff, prompt)
     }
-    // F2 古风硬约束：派生图同样严禁现代元素（era 来自调用方 episode 上下文）
-    prompt = appendAncientEraConstraint(prompt, input.storyBackground?.era)
-    negativePrompt = mergeAncientEraNegative(negativePrompt, input.storyBackground?.era)
+    // F2 古风硬约束：派生图同样严禁现代元素
+    prompt = appendAncientEraConstraint(prompt, storyBackground?.era)
+    negativePrompt = mergeAncientEraNegative(negativePrompt, storyBackground?.era)
 
     // 角色资产硬约束：纯色背景 / 光照均匀无阴影（帽子、首饰不约束，交用户控制）；
     // framing 按 slot 语义（半身 → upperBody；全身 → fullBody），不再按 category 一刀切。
@@ -430,6 +493,7 @@ export class GalleryDerivationService {
         assetId: input.assetId,
         category: input.category,
         label,
+        storyBackground: input.storyBackground ?? null,
       })
     }
   }

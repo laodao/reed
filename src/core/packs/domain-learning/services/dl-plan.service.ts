@@ -26,12 +26,14 @@ import type {
   DlPlanView,
 } from '@shared/types/domain-learning.types'
 import {
+  countPlanNodes,
   normalizePlanSyllabus,
   normalizePlanUnderstanding,
   planConceptNames,
   summarizePlanSyllabus,
 } from '../rules/learning-plan.rules'
 import { normalizeLessonPlanPayload, summarizeLessonSpec } from '@shared/utils/lesson-spec'
+import { DL_SAVE_BUDGET_MAX } from './dl-agent.types'
 
 /** 取仓储（缺省 = 库未初始化，明确报错而不是静默降级） */
 function plansOf(db: ICoreDatabaseManager): DlPlanRepository {
@@ -91,6 +93,16 @@ export async function proposeDlSyllabus(
   }
   const normalized = normalizePlanSyllabus(raw)
   if (!normalized.ok) throw new Error(`dl_propose_syllabus：${normalized.reason}`)
+  // 规模上限（2026-09-25 D5）：此前 planSaveBudget 会把超额部分静默夹到硬顶，落库轮后半程
+  // 逐条 LIMIT 拒绝、只产出半个体系——与其静默缩水，提交时就把超限打回去让模型拆批
+  const maxNodes = Math.max(1, DL_SAVE_BUDGET_MAX - 6)
+  const nodeCount = countPlanNodes(normalized.value)
+  if (nodeCount > maxNodes) {
+    throw new Error(
+      `dl_propose_syllabus：方案共 ${nodeCount} 个节点（分支+知识点），超出单轮落库上限 ${maxNodes}——` +
+        `请拆成两批提交（先主干后分支，或先核心后扩展），或精简到 ${maxNodes} 个以内再提交。`,
+    )
+  }
   const latest = await repo.getLatest(spaceId, 'syllabus')
   const revision = (latest?.revision ?? 0) + 1
   await repo.supersedeDrafts(spaceId, 'syllabus')

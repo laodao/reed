@@ -46,6 +46,21 @@ export class ClonedVoiceRepository extends BaseRepository<
     return this.findManyByWhere({ status } as any, { createdAt: 'DESC' })
   }
 
+  /**
+   * 系统级扫描（声明式跨租户例外，纪律同 platform-event §4.4）：
+   * 仅供 VoiceCloneJobScheduler 轮询**所有用户**的 training 任务——调度器
+   * 运行在 boot/定时器上下文，无请求 ALS，scoped 查询会退化为 user_id IS NULL
+   * 而永远扫不到任何用户的任务。调用方必须对每行以 runWithUserAsync(row.userId)
+   * 重建租户上下文后再做 scoped 读写/事件广播。
+   */
+  async listTrainingJobsAllUsers(): Promise<Array<{ id: string; userId: string | null }>> {
+    const rows = await this.repo.find({
+      where: { status: 'training' } as any,
+      select: { id: true, userId: true } as any,
+    })
+    return rows.map(r => ({ id: r.id, userId: r.userId ?? null }))
+  }
+
   async getById(id: string): Promise<ClonedVoice | null> {
     return this.findOneByWhere({ id } as any)
   }

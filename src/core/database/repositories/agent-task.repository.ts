@@ -9,6 +9,7 @@
 import { type DataSource, type FindOptionsWhere } from 'typeorm'
 import { AgentTaskEntity } from '../entities/agent-task.entity'
 import { BaseRepository } from '../base-repository'
+import { getCurrentUserId } from '@core/context/user-context'
 
 export interface AgentTaskRow {
   id: string
@@ -125,11 +126,15 @@ export class AgentTaskRepository extends BaseRepository<AgentTaskEntity, AgentTa
     if (patch.error !== undefined) partial.error = patch.error
     if (patch.budget !== undefined) partial.budgetJson = JSON.stringify(patch.budget)
     if (patch.spec !== undefined) partial.specJson = JSON.stringify(patch.spec)
+    // 纵深防御：id 均来自 scoped 读，仍追加租户条件消除纪律依赖（ALS 为空时
+    // runWithoutUser 场景走 IS NULL，与 scoped 写入语义一致）
+    const uid = getCurrentUserId()
     const result = await this.repo
       .createQueryBuilder()
       .update()
       .set(partial)
       .where('id = :id AND status IN (:...statuses)', { id, statuses: fromStatuses })
+      .andWhere(uid ? 'user_id = :__uid' : 'user_id IS NULL', uid ? { __uid: uid } : {})
       .execute()
     return (result.affected ?? 0) > 0
   }

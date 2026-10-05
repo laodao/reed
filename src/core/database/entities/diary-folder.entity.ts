@@ -34,6 +34,13 @@ export class DiaryFolderEntity {
   @Column({ name: 'sort_order', type: 'integer', default: 0 })
   sortOrder!: number
 
+  /**
+   * 日记消化 opt-in（spec 2026-09-24 P2 红线：默认关闭）。
+   * 开启后目录内条目自动同步到「日记」知识库并进消化管线（human 论断 → 提议箱）。
+   */
+  @Column({ name: 'brain_opt_in', type: 'boolean', default: false })
+  brainOptIn!: boolean
+
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 

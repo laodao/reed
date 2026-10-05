@@ -2,9 +2,12 @@
  * MainImageGeneratorService 单测（P3c follow-up #64 主图生成入口）
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DataSource } from 'typeorm'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
+import { CharacterBindingEntity } from '@core/database/entities/episode-production/character-binding.entity'
+import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
+import * as dbModule from '@core/database/database-manager.interface'
 import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
 import { MainImageGeneratorService } from '@core/platform/episode-production/assets/services/main-image-generator.service'
 import type { ImageGenerator } from '@core/platform/episode-production/assets/services/gallery-derivation.service'
@@ -14,6 +17,8 @@ interface ImageGenCall {
   negativePrompt?: string
   label: string
   refs: string[]
+  providerConfigId?: string
+  modelId?: string
 }
 
 class MockGen implements ImageGenerator {
@@ -26,6 +31,8 @@ class MockGen implements ImageGenerator {
       negativePrompt: opts.negativePrompt,
       label: opts.label,
       refs: opts.referenceImagePaths,
+      providerConfigId: opts.providerConfigId,
+      modelId: opts.modelId,
     })
     return { imagePath: `/mock/main-${this.counter}.jpg`, thumbnailPath: null }
   }
@@ -35,7 +42,7 @@ async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({
     type: 'better-sqlite3',
     database: ':memory:',
-    entities: [AssetImageEntity],
+    entities: [AssetImageEntity, CharacterBindingEntity, VideoProjectEntity],
     synchronize: true,
   })
   await ds.initialize()
@@ -56,6 +63,7 @@ describe('MainImageGeneratorService', () => {
   })
 
   afterEach(async () => {
+    vi.restoreAllMocks()
     if (ds.isInitialized) await ds.destroy()
   })
 
@@ -157,5 +165,100 @@ describe('MainImageGeneratorService', () => {
 
     const all = await imageSvc.listByAsset('character', 'cb1')
     expect(all).toHaveLength(1)
+  })
+
+  /*
+   * G1（2026-09-25）：addAdditionalMain 带参考图且钉住的项目画面模型不支持参考图
+   * （comfyui/krea2 maxReferenceImages=0）→ 回退同 provider 的 I2I 模型（flux-kontext），
+   * 否则换装参考图被能力截断静默丢弃（换装后判若两人）。
+   */
+  it('addAdditionalMain: 带参考图 + 钉住 krea2（不支持参考图）→ 回退 flux-kontext', async () => {
+    await ds.getRepository(VideoProjectEntity).save({
+      id: 'vp1',
+      name: '测试项目',
+      status: 'draft',
+      config: { imageModel: { providerConfigId: 'pc-comfy', modelId: 'krea2' } },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Partial<VideoProjectEntity>)
+    await ds.getRepository(CharacterBindingEntity).save({
+      id: 'cb1',
+      projectId: 'vp1',
+      voiceConfig: {},
+      sourceType: 'standalone',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Partial<CharacterBindingEntity>)
+    vi.spyOn(dbModule, 'getCoreDatabaseManager').mockReturnValue({
+      providerConfigs: {
+        getEnabled: vi.fn(async () => [{
+          id: 'pc-comfy',
+          templateId: 'comfyui',
+          isEnabled: true,
+          models: [
+            { id: 'krea2', name: 'Krea2 文生图', type: 'image' },
+            { id: 'flux-kontext', name: 'Flux Kontext 参考图生图', type: 'image' },
+          ],
+        }]),
+      },
+    } as any)
+
+    const result = await svc.addAdditionalMain({
+      assetType: 'character',
+      assetId: 'cb1',
+      prompt: '林清，换上青色长衫',
+      label: '换装-青衫',
+      referenceImagePaths: ['/mock/base-main.jpg', '/mock/outfit-ref.jpg'],
+    })
+
+    expect(gen.calls).toHaveLength(1)
+    expect(gen.calls[0].refs).toEqual(['/mock/base-main.jpg', '/mock/outfit-ref.jpg'])
+    expect(gen.calls[0].providerConfigId).toBe('pc-comfy')
+    expect(gen.calls[0].modelId).toBe('flux-kontext')
+    expect(result.label).toBe('换装-青衫')
+    expect(result.isMain).toBe(0)
+  })
+
+  it('addAdditionalMain: 无参考图时钉住的纯 T2I 模型保持不动（不回退）', async () => {
+    await ds.getRepository(VideoProjectEntity).save({
+      id: 'vp1',
+      name: '测试项目',
+      status: 'draft',
+      config: { imageModel: { providerConfigId: 'pc-comfy', modelId: 'krea2' } },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Partial<VideoProjectEntity>)
+    await ds.getRepository(CharacterBindingEntity).save({
+      id: 'cb1',
+      projectId: 'vp1',
+      voiceConfig: {},
+      sourceType: 'standalone',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Partial<CharacterBindingEntity>)
+    vi.spyOn(dbModule, 'getCoreDatabaseManager').mockReturnValue({
+      providerConfigs: {
+        getEnabled: vi.fn(async () => [{
+          id: 'pc-comfy',
+          templateId: 'comfyui',
+          isEnabled: true,
+          models: [
+            { id: 'krea2', name: 'Krea2 文生图', type: 'image' },
+            { id: 'flux-kontext', name: 'Flux Kontext 参考图生图', type: 'image' },
+          ],
+        }]),
+      },
+    } as any)
+
+    await svc.addAdditionalMain({
+      assetType: 'character',
+      assetId: 'cb1',
+      prompt: '林清，正面定妆',
+      label: '定妆',
+    })
+
+    expect(gen.calls).toHaveLength(1)
+    expect(gen.calls[0].refs).toEqual([])
+    expect(gen.calls[0].modelId).toBe('krea2')
   })
 })

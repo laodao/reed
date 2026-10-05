@@ -7,6 +7,7 @@ import type { DataSource } from 'typeorm'
 import { randomUUID } from 'crypto'
 import { LwDesignDocumentEntity } from '../entities/lw-design-document.entity'
 import { BaseRepository } from '../base-repository'
+import { getCurrentUserId } from '@core/context/user-context'
 
 export type DesignDocKind = 'spine' | 'volume'
 export type DesignDocStatus = 'draft' | 'confirmed' | 'discarded'
@@ -80,9 +81,11 @@ export class LwDesignDocumentRepository extends BaseRepository<LwDesignDocumentE
     doc: unknown
   }): Promise<DesignDocumentDto> {
     const now = Date.now()
+    // 多租户复核修复：此前显式 userId:null + 裸 save，登录用户读不到自己刚建的文档；
+    // 改为 scoped 读写按当前用户归属
     const entity = this.repo.create({
       id: `dd_${randomUUID().slice(0, 12)}`,
-      userId: null,
+      userId: getCurrentUserId() ?? null,
       projectId: input.projectId,
       kind: input.kind,
       volumeId: input.volumeId ?? null,
@@ -94,7 +97,7 @@ export class LwDesignDocumentRepository extends BaseRepository<LwDesignDocumentE
       createdAt: now,
       updatedAt: now,
     } as Partial<LwDesignDocumentEntity>)
-    const saved = await this.repo.save(entity as LwDesignDocumentEntity)
+    const saved = await this.scoped.save(entity as LwDesignDocumentEntity)
     return this.toDto(saved)
   }
 

@@ -21,10 +21,9 @@
  * 在 ffmpeg-assembler.service.ts（已存在）或 follow-up 新建的 native runner 中。
  */
 
-import * as path from 'path'
 import type { DataSource } from 'typeorm'
 import { In } from 'typeorm'
-import { getPathProvider } from '@core/interfaces/path.interface'
+import { resolveAssetPath, toRelativeAssetPath } from '@core/utils/asset-path'
 import { EpVideoSegmentEntity } from '@core/database/entities/episode-production/video-segment.entity'
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
 import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
@@ -44,16 +43,11 @@ import {
 } from './transition-translator'
 
 /**
- * 解析 user-rel 相对路径为绝对路径：业务层（image_assets / storyboard.videoPath）
- * 持久化的是相对 user 数据根的路径，ffmpeg 等 native 工具需要绝对路径。
- * 与 base-video-provider-bridge.resolveImagePath 同义；这里就近实现避免跨模块依赖。
+ * 落库路径解析统一走 @core/utils/asset-path 的 resolveAssetPath：user-rel 相对路径
+ * 拼 dataPath，URL/盘符/存量绝对路径原样（与 base-video-provider-bridge.resolveImagePath
+ * 同义）。业务层（image_assets / storyboard.videoPath / scene 配音产物）持久化的是
+ * 相对 user 数据根的路径，ffmpeg 等 native 工具需要绝对路径。
  */
-function resolveUserRelPath(p: string): string {
-  if (!p) return p
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(p)) return p  // http(s)://、file://、local-image://、data:
-  if (path.isAbsolute(p)) return p
-  return path.join(getPathProvider().getDataPath(), p)
-}
 
 /** ffmpeg 命令的执行抽象（依赖注入，便于双端 + mock 单测） */
 export interface FfmpegRunner {
@@ -206,8 +200,8 @@ export class EpisodeMp4ExporterService {
     },
   ): Promise<ExportEpisodeMp4Result> {
     const { timeline, exportShots, unitShotIds, episodeId, width, height } = ctx
-    // 把 user-rel 相对路径解析为绝对路径再交给 ffmpeg
-    const fileInputs = exportShots.map((s) => resolveUserRelPath(s.videoPath!))
+    // 把 user-rel 相对路径解析为绝对路径再交给 ffmpeg（存量绝对路径原样兼容）
+    const fileInputs = exportShots.map((s) => resolveAssetPath(s.videoPath!))
 
     // 配音混入（2026-09-16 P0-CM1）：收集每单元的 TTS 音频（对白按 storyboard.dialogueIds
     // → dialogues[].audioAsset；旁白挂到各场景首个入选单元），作为附加文件输入混入该单元音轨
@@ -217,7 +211,7 @@ export class EpisodeMp4ExporterService {
     // 输入会让"以前无配音能导出"的场景变成全盘失败）
     await this.filterBrokenExtraAudio(extraAudioFiles)
     for (const files of extraAudioFiles) {
-      for (const f of files) fileInputs.push(resolveUserRelPath(f))
+      for (const f of files) fileInputs.push(resolveAssetPath(f))
     }
 
     // 音轨探测（runner 支持时）：任一输入无音轨 → 该路用 anullsrc 静音占位
@@ -231,7 +225,12 @@ export class EpisodeMp4ExporterService {
     // 字幕（可选烧入）
     let srtPath: string | undefined
     if (input.burnSubtitles) {
-      const srt = await this.subtitleSvc.buildSrt(timeline)
+      // D1 修复：烧录字幕的时间基准必须与成片时间轴一致——基于导出单元
+      // （入选合成单元 + segment 实际时长）按 xfade 重叠扣减重建时间轴，
+      // 与 buildFilterComplex 的 offset 计算同源；全量展示时间线只给 UI 预览用
+      const srt = await this.subtitleSvc.buildSrt(
+        buildExportSubtitleTimeline({ units: exportShots, unitShotIds, timeline }),
+      )
       if (srt.trim()) {
         const tmp =
           this.fileWriter.getTempPath?.(`.srt`) ??
@@ -274,13 +273,10 @@ export class EpisodeMp4ExporterService {
     // 导出成功 → 写 composedVideoPath（user-rel 优先）+ completed 终态（P0-CM2）
     if (episodeId) {
       try {
-        const dataPath = getPathProvider().getDataPath()
-        const rel = path.relative(dataPath, input.outputPath)
-        const relPath = rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel : input.outputPath
         const repo = this.ds.getRepository(VideoEpisodeEntity)
         await repo.update(
           { id: episodeId } as any,
-          { composedVideoPath: relPath, status: 'completed', updatedAt: new Date() },
+          { composedVideoPath: toRelativeAssetPath(input.outputPath), status: 'completed', updatedAt: new Date() },
         )
       } catch {
         /* 状态回写失败不影响导出产物 */
@@ -317,8 +313,9 @@ export class EpisodeMp4ExporterService {
 
   /**
    * 逐单元剔除不存在/无音轨的 TTS 产物（就地修改）。
-   * 存在性检查始终做；runner 支持时叠加 ffprobe 探测（无音轨的残留文件同样会让
-   * filter 图的 `[i:a]` 报错）。坏文件只 warn 不阻断。
+   * 路径解析统一走 resolveAssetPath：新数据是 user-rel 相对路径（拼 dataPath），
+   * 存量绝对路径原样兼容。存在性检查始终做；runner 支持时叠加 ffprobe 探测
+   * （无音轨的残留文件同样会让 filter 图的 `[i:a]` 报错）。坏文件只 warn 不阻断。
    */
   private async filterBrokenExtraAudio(extraAudioFiles: string[][]): Promise<void> {
     const fs = await import('fs')
@@ -329,7 +326,7 @@ export class EpisodeMp4ExporterService {
       const files = extraAudioFiles[i]
       const kept: string[] = []
       for (const f of files) {
-        const abs = resolveUserRelPath(f)
+        const abs = resolveAssetPath(f)
         let ok = fs.existsSync(abs)
         if (ok && probe) {
           try {
@@ -372,8 +369,9 @@ export class EpisodeMp4ExporterService {
 
   /**
    * 收集每个导出单元的配音音频文件（2026-09-16 P0-CM1）：
+   *   - 旁白：scene.narrationAudioPath 挂到该场景的**首个**入选单元，
+   *     且排在单元内对白之前（D3：与字幕侧"旁白显示在首镜最前"顺序一致）
    *   - 对白：单元内各分镜 dialogueIds ∩ scene.dialogues[].audioAsset.audioPath
-   *   - 旁白：scene.narrationAudioPath 挂到该场景的**首个**入选单元
    * 无任何配音的单元返回空数组（该单元只保留视频自带音轨/静音占位）。
    */
   private async collectUnitAudioFiles(
@@ -402,18 +400,18 @@ export class EpisodeMp4ExporterService {
         const dialogues = ((scene?.dialogues ?? []) as Array<{ id?: string; audioAsset?: { audioPath?: string } }>)
         const files: string[] = []
 
+        // 旁白挂场景首个入选单元（D3 修复：排在单元内对白**之前**——字幕侧旁白
+        // 显示在首镜最前 NARRATION_LEAD_SEC 秒，音频顺序与字幕保持一致）
+        if (scene && (scene as any).narrationAudioPath && !narrationAttached.has(scene.id)) {
+          narrationAttached.add(scene.id)
+          files.push(String((scene as any).narrationAudioPath))
+        }
+
         for (const sid of shotIds) {
           for (const did of dialogueIdsBySb.get(sid) ?? []) {
             const d = dialogues.find((x) => x?.id === did)
             if (d?.audioAsset?.audioPath) files.push(d.audioAsset.audioPath)
           }
-        }
-
-        // 旁白挂场景首个入选单元（顺序播语义 0916 review：排在单元内对白**之后**——
-        // 数据无时间戳，唯一可保证的下界是"不重叠"：对白（dialogueIds 顺序）→ 旁白）
-        if (scene && (scene as any).narrationAudioPath && !narrationAttached.has(scene.id)) {
-          narrationAttached.add(scene.id)
-          files.push(String((scene as any).narrationAudioPath))
         }
 
         result[i] = files
@@ -495,6 +493,104 @@ export class EpisodeMp4ExporterService {
 }
 
 // ─── pure helpers（导出供单测）─────────────────────────────
+
+/**
+ * 逐导出单元计算其在**成片时间轴**上的区间（D1 修复）。
+ * 与 buildFilterComplex 的 xfade offset 计算同源：单元 i 的起点 =
+ * max(0, cumulativeDur(i-1) - transition.duration(i))，cumulativeDur 按
+ * 「+ 单元时长 − 转场时长」递推；cut/无转场时扣减为 0。
+ */
+export function computeExportUnitTimes(
+  shots: TimelineShot[],
+): Array<{ startSec: number; endSec: number }> {
+  const times: Array<{ startSec: number; endSec: number }> = []
+  let cumulativeDur = 0
+  for (let i = 0; i < shots.length; i++) {
+    if (i === 0) {
+      times.push({ startSec: 0, endSec: shots[0].durationSec })
+      cumulativeDur = shots[0].durationSec
+      continue
+    }
+    const transition = shots[i].transition
+    const plan: FfmpegTransitionPlan | null = transition
+      ? toFfmpegTransition(transition)
+      : null
+    const dur = plan?.durationSec ?? 0
+    const startSec = Math.max(0, cumulativeDur - dur)
+    times.push({ startSec, endSec: startSec + shots[i].durationSec })
+    cumulativeDur = cumulativeDur + shots[i].durationSec - dur // xfade 重叠
+  }
+  return times
+}
+
+/**
+ * 以导出单元为骨架重建字幕用 Timeline（D1 修复）：
+ *   - 只保留进入导出单元的分镜（未入选 / superseded 片段的分镜剔除——其字幕不进 SRT）；
+ *   - 每个分镜的时间区间换成成片时间轴（computeExportUnitTimes，含转场重叠扣减）；
+ *   - 多镜合并的 segment 单元按成员分镜原始 durationSec 比例切分单元区间
+ *     （段内画面连续，按比例近似各镜子区间，使 links/均分分配逻辑原样生效）；
+ *   - 场景边界由剩余 shots 重算，场景首镜 = 首个入选分镜（与音频侧"旁白挂场景
+ *     首个入选单元"对齐）；totalDurationSec = 末单元终点。
+ * TimelineBuilder 的展示时间线本身不动（UI 预览仍用它）。
+ */
+export function buildExportSubtitleTimeline(args: {
+  units: TimelineShot[]
+  unitShotIds: string[][] | null
+  timeline: Timeline
+}): Timeline {
+  const { units, unitShotIds, timeline } = args
+  const times = computeExportUnitTimes(units)
+
+  // 原始分镜时长表（合并单元内比例切分用）
+  const origShotById = new Map<string, TimelineShot>()
+  for (const scene of timeline.scenes) {
+    for (const shot of scene.shots) origShotById.set(shot.storyboardId, shot)
+  }
+
+  const shotTimeMap = new Map<string, { startSec: number; endSec: number; durationSec: number }>()
+  for (let i = 0; i < units.length; i++) {
+    const memberIds = unitShotIds ? unitShotIds[i] : [units[i].storyboardId]
+    const unitTime = times[i]
+    if (!unitTime || memberIds.length === 0) continue
+    if (memberIds.length === 1) {
+      shotTimeMap.set(memberIds[0], { ...unitTime, durationSec: units[i].durationSec })
+      continue
+    }
+    const origDurs = memberIds.map((id) => origShotById.get(id)?.durationSec ?? 0)
+    const totalOrig = origDurs.reduce((a, b) => a + b, 0)
+    let cursor = unitTime.startSec
+    for (let j = 0; j < memberIds.length; j++) {
+      const share =
+        totalOrig > 0
+          ? (origDurs[j] / totalOrig) * units[i].durationSec
+          : units[i].durationSec / memberIds.length
+      shotTimeMap.set(memberIds[j], {
+        startSec: cursor,
+        endSec: cursor + share,
+        durationSec: share,
+      })
+      cursor += share
+    }
+  }
+
+  const scenes = timeline.scenes
+    .map((scene) => {
+      const shots = scene.shots
+        .filter((s) => shotTimeMap.has(s.storyboardId))
+        .map((s) => ({ ...s, ...shotTimeMap.get(s.storyboardId)! }))
+      if (shots.length === 0) return null
+      const startSec = shots[0].startSec
+      const endSec = shots[shots.length - 1].endSec
+      return { ...scene, shots, startSec, endSec, durationSec: endSec - startSec }
+    })
+    .filter((s): s is NonNullable<typeof s> => s !== null)
+
+  return {
+    ...timeline,
+    scenes,
+    totalDurationSec: times.length > 0 ? times[times.length - 1].endSec : 0,
+  }
+}
 
 /**
  * 构造 ffmpeg filter_complex：
@@ -582,7 +678,7 @@ export function buildFilterComplex(args: {
   //      写死 44.1k，与真实 48k 音轨进同一 concat 滤镜图必败（混合 provider 场景必现）；
   //    - 每单元混音后 apad+atrim 到「时长 − 与下一段的重叠」，与 xfade 视频时间轴严格对齐
   //      （旧实现音频全长 concat，视频逐转场扣减，每个 0.5s 转场累积 0.5s 音画漂移）；
-  //    - 单元内多路人声（对白×N + 旁白）**先按顺序 concat 成一条人声轨**再与视频音轨
+  //    - 单元内多路人声（旁白 + 对白×N，顺序与字幕显示一致）**先按顺序 concat 成一条人声轨**再与视频音轨
   //      amix（旧实现全部从 t=0 同时 amix——多条 TTS 人声叠音、旁白与对白互相压）；
   //      数据无对话时间戳，顺序播是可保证的下界：超出单元时长的部分仍被 atrim 截断。
   //    - P-D 响度归一防爆音：每路音源 aresample 后追加 loudnorm（I=-16/TP=-1.5/LRA=11，
