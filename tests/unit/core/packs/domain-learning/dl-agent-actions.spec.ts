@@ -181,6 +181,56 @@ describe('dl-agent-actions', () => {
     })
   })
 
+  it('save_card：先验产出（零证据 + needsVerification=true）可落库，attrs 标 evidenceLevel；两者都不给仍拒绝', async () => {
+    ds = await buildDs()
+    await seedProject(ds, 'sp1')
+    const db = buildDb(ds)
+    await runWithUserAsync('u1', async () => {
+      await db.dlConcepts!.create({ id: 'c-prior', projectId: 'sp1', nodeType: 'concept', name: '交换律' })
+    })
+    const ctx = execCtx(db, 'sp1')
+
+    await runWithUserAsync('u1', async () => {
+      // 零证据但显式声明先验 → 允许落库（2026-10-06 用户口径：是否检索由模型判断）
+      const r = await executeDlAction(ctx, {
+        type: 'dl_save_card',
+        params: {
+          card: {
+            conceptId: 'c-prior',
+            essenceType: 'K-concept',
+            sections: [META, { key: 'definition', title: '定义', md: '交换律：运算次序不影响结果。' }],
+            evidenceSources: [],
+            needsVerification: true,
+          },
+        },
+      })
+      expect(r.summary.status).toBe('ok')
+
+      const saved = await db.dlCards!.getCurrentByConcept('sp1', 'c-prior')
+      expect(saved).not.toBeNull()
+      expect(saved?.evidenceSources).toHaveLength(0)
+      expect((await db.dlConcepts!.getById('c-prior'))?.attrs).toMatchObject({
+        needsVerification: true,
+        evidenceLevel: 'prior_needs_verification',
+      })
+
+      // 零证据且未声明 → 仍拒绝（防"不检索又不声明"的偷懒产出）
+      await expect(
+        executeDlAction(ctx, {
+          type: 'dl_save_card',
+          params: {
+            card: {
+              conceptId: 'c-prior',
+              essenceType: 'K-concept',
+              sections: [{ key: 'definition', md: '无声明版' }],
+              evidenceSources: [],
+            },
+          },
+        }),
+      ).rejects.toThrow(/needsVerification/)
+    })
+  })
+
   it('answer_question：有据存档（answered+source）；答不上登记未解（保持 open）', async () => {
     ds = await buildDs()
     await seedProject(ds, 'sp1')

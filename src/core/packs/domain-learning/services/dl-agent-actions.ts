@@ -561,9 +561,16 @@ async function saveCard(
   if (!card.conceptId) throw new Error('dl_save_card：conceptId 必填')
   if (!card.essenceType) throw new Error('dl_save_card：essenceType 必填（K-concept/K-oper/K-stmt/K-inst/K-agent/K-open）')
   if (!Array.isArray(card.sections) || card.sections.length === 0) throw new Error('dl_save_card：sections 至少一个区')
-  // 硬校验（design-v3 §13）：讲义必须带证据来源，否则不落库（宁缺毋滥）
-  if (!Array.isArray(card.evidenceSources) || card.evidenceSources.length === 0) {
-    throw new Error('dl_save_card：evidenceSources 为空——讲义无出处不落库；请先研究获取资料再产讲义')
+  // 证据口径（design-v3 §13；2026-10-06 用户口径修订：是否检索/联网由模型按知识点判断，
+  // 简单稳定的概念可直接用先验产出）：
+  // - 有真实来源 → evidenceSources 必须给（照旧，不得编造）；
+  // - 纯先验产出 → 必须显式 needsVerification=true（落 attrs，自动核验会交叉补证、界面可见"待核验"），
+  //   两者都不给则拒绝——防止"偷懒不检索又不声明"，把先验伪装成有据内容。
+  const hasEvidence = Array.isArray(card.evidenceSources) && card.evidenceSources.length > 0
+  if (!hasEvidence && !card.needsVerification) {
+    throw new Error(
+      'dl_save_card：evidenceSources 为空且未声明 needsVerification——二选一：补充真实来源（检索/联网后引用），或显式传 needsVerification=true 声明本卡为模型先验产出（将标注待核验）。不得编造来源。',
+    )
   }
 
   // 归属校验（2026-09-09 复盘）：conceptId 必须存在且属于本空间；
@@ -699,6 +706,8 @@ async function saveCard(
   const cardId = randomUUID()
   const attrs: Record<string, unknown> = {}
   if (card.needsVerification) attrs.needsVerification = true
+  // 证据级别标注（与补图任务同口径）：零证据的先验卡显式标记，界面/核验可识别
+  if (!hasEvidence) attrs.evidenceLevel = 'prior_needs_verification'
 
   await db.dlCards!.create({
     id: cardId,

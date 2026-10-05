@@ -101,7 +101,7 @@ ${input.specLock}
    不写大段散文），遵守规格锁里"非重点区 ≤N 字"的参考；每区给 takeaway（一句话结论）；
 4. **配图（每个概念至少一个）**：结构/形状用 shape|matrix|network，趋势/对比用 plot|bar，
    并列关系用对比表，公式用 $$ 块级公式，能跑的东西用 \`\`\`js；图要服务理解，不要为配图而配图；
-5. 写完后 **dl_save_card** 落库（sections 带 key/layout/takeaway/md；evidenceSources 非空）：
+5. 写完后 **dl_save_card** 落库（sections 带 key/layout/takeaway/md；有外部来源给 evidenceSources，纯先验产出则标 needsVerification=true）：
    落库会按已确认区级计划校验（区集/区序/载体），并按视觉质检拦"文字墙/通篇无图/声明与正文不符"；
 6. 收尾用一段话告诉用户：这一讲讲清了什么、配了什么图、哪个区是重点。`
 }
@@ -109,11 +109,13 @@ ${input.specLock}
 /** 快速模式说明（跳过方案确认，但质量照样管） */
 export function lessonQuickModeHint(): string {
   return `【直接产出讲义】（快速模式：本轮不必先提交讲义方案）
-要求不变：先采证（知识库优先 → 联网，3-6 次即停），再按该本质类型的模板区集**逐区精写**：
+要求不变：先按知识点判断是否需要外部资料（教科书级、稳定无争议的概念直接用先验写，标 needsVerification；
+私有资料/时效性/具体数据/没把握的细节再采证：知识库 → 联网，3-6 次即停），再按该本质类型的模板区集**逐区精写**：
 - 每区选一个合适版式（要点卡/对比表/步骤条/图解/算例/公式/数据看点/引文/时间线/误区/清单/代码/自测/结论条），
   正文必须与该版式形状一致；一区长段信息要归纳，不要写成一堵文字墙；
 - 每区给 takeaway；**整篇至少一个"看得见"的载体**（figure 图 / 对比表 / 公式 / 可运行代码）；
-- 落库前自检：区集与区序符合模板、自测答案拆到独立 answers 区、每条论断有证据来源。
+- 落库前自检：区集与区序符合模板、自测答案拆到独立 answers 区、有外部来源的论断带真实出处
+  （纯先验产出必须标 needsVerification=true，不得编造来源）。
 落库时视觉质检会拦"文字墙 / 通篇无图 / 声明版式与正文不符"——过了才落库。`
 }
 
@@ -527,14 +529,18 @@ ${DL_ESSENCE_TYPES.map((t) => `     · ${t}：${lessonTemplateHint(t)}`).join('\
      自测的**题目与答案必须分开**：题面放 selfcheck，答案放独立 answers 区；或所有题目写完后用**独占一行**的「答案」/「参考答案」小标题引出（系统会自动拆成独立区）。答案写在题目行里（\`**答案 1**：…\`、\`（答：…）\`）会被拒绝——渲染层据此把答案默认折叠，读者先做再对；
    - **重点分配与区序（2026-09-15 用户口径：章节还是太细碎，核心骨架＝定义 → 详解（含规则和逻辑）→ 案例 → 自测，有些领域还有具体的操作）**：一个知识点的重点就是**定义、详解、案例**这三节（写详细），其余章节按原有分量写、不扩写；自测收尾。区序是「**定义 → 详解 → 案例 →（实操）→ 辨析与易错 → 自测**」，案例紧跟详解之后。合并去向（内容不删，只是不再单列成章）：**为什么学它 → 学习前必读**（动机写成该区里的 \`### 为什么学它\`）；**机制/构成与结构/规则/公式/性质/依据/适用与局限 → 详解**（篇幅最大的重点区：主线 + 逐项/逐类同维度展开 + 横向对比表 + 判定与计算规则）；**步骤/落到代码 → 实操**（只有本知识点确实有"能照着做一遍"的操作时才写，没有就整区不出现，不要硬凑）；**反例/边界 → 案例**；**辨析/常见坑/补充与注意 → 辨析与易错**。**按文档写**（段落 + 小标题 + 表格），不要做成要点卡堆砌。标了 [重点] 的区有参考字数下限，写不到会在落库后被点名提醒（不拒绝落库，但要按提醒补写后再发一版）。每个区要写什么，见下表：
 ${lessonSectionBriefMenuHint().split('\n').map((line) => `     ${line}`).join('\n')}
-3. 讲义必须带 evidence：dl_save_card 的 evidenceSources 至少一条，否则工具会拒绝——宁可少产出一条，也不落无出处的断言；evidence 必须来自你实际读到的资料（标题/URL/文档 id + 引文），不得编造；
-4. 采集纪律（会话提供读工具时）：资料不足先用 learning-source-collector 规划，再按需取——知识库优先（wf_kb_retrieve）；网页正文提取用 wf_web_extract；API/原文用 http_get（arXiv 论文用 http_get 请求 export.arxiv.org/api/query，如 search_query=all:关键词 或 id_list=编号）；模型先验与资料要区分：先验内容在卡片 attrs 或注释里标 needs_verification；
+3. 讲义必须可溯源：读了外部资料 → evidenceSources 给真实出处（标题/URL/文档 id + 引文），不得编造；
+   模型先验已足够覆盖的概念（判断口径见第 4 条）可以**不检索直接产出**，但必须给卡片标 needsVerification=true（attrs.evidenceLevel=prior_needs_verification），交自动核验补证——不得把先验伪装成有出处的内容；
+4. 采集按需判断（2026-10-06 用户口径：不是所有知识点都需要联网搜索/检索知识库——简单的交给模型先验）：
+   动用读工具前先自问「模型自身知识能否高质量覆盖这个知识点」——教科书级、稳定、无争议的概念（定义、性质、经典方法、通用原理）通常可以，直接产出并标 needsVerification；
+   **需要检索/联网的情形**：私有资料可能覆盖（空间绑定了知识库且主题相关 → wf_kb_retrieve）、时效性强或易变事实（版本号/价格/近期进展 → web_search / wf_web_extract / http_get）、具体数据与统计、专业细节没有把握、用户诉求点名要引用其资料；
+   拿不准就检索一次再写；资料面杂先用 learning-source-collector 规划路由再取；网页正文提取用 wf_web_extract；API/原文用 http_get（arXiv 论文用 http_get 请求 export.arxiv.org/api/query，如 search_query=all:关键词 或 id_list=编号）；模型先验与资料要区分：先验内容标 needs_verification；
 5. 联网搜索只在提供了 web_search 工具时使用；没有 web_search 时不得假装搜索，改用知识库 / 给定 URL / arXiv；
 6. 不要重复执行刚成功的同一动作；动作失败可换参数重试一次；
 7. 若本轮是研究一个未解问题（快照含【待研究问题】）：找到有据答案时务必调用 dl_answer_question 把「问题+答案+来源」存档（answerSource 用 ai_verified 或 新研究），并把支撑沉淀为概念/讲义草稿；仍无据则保持 open，并在总结里说明缺什么资料、下一步该去哪找；
 8. 全部完成后用一段话总结：研究了什么、读了哪些资料、产出哪些草稿、下一步建议（等用户人审/继续学习）；
 9. 归属（M3-A）：快照「目录分组」里若存在契合的目录，dl_save_concept 的 parentId 填其目录 id；不确定就保持 null（根层），地图人审会再归类；
-10. 知识库优先（M4-B）：快照含「本空间绑定知识库 id」时，需用私有资料先以该 id 调 wf_kb_retrieve 检索（命中即据此提炼，讲义 evidence 可回链 kbDocId），再考虑联网与模型先验；无绑定则跳过 KB 检索；
+10. 知识库是**资料源之一，不是必经步骤**（M4-B；2026-10-06 用户口径）：快照含「本空间绑定知识库 id」时，仅当判断本知识点可能被私有资料覆盖（用户上传过相关教材/资料/笔记）才以该 id 调 wf_kb_retrieve 检索（命中即据此提炼，讲义 evidence 可回链 kbDocId）；简单通用概念不要为检索而检索；无绑定则跳过 KB；
 11. 循序渐进与前置门禁（2026-09-12 起对**所有目标**生效，不再只拦「入门」）：
    - 领域图必须自底向上成链——每个概念的前置都要用 dl_save_relation 落成 prerequisite 边，不能只在文字里说顺序；主干里出现需要进阶记号的概念（积分 ∫、偏导 ∂、极限、期望/方差、iid、分布族、矩阵/向量运算、导数/链式法则等）时，先把对应基础概念（如「线性代数基础」「导数与链式法则」「概率与随机变量」「期望与方差」）建成概念、建成前置边，并为其中最基础的那个先出讲义；
    - 讲义首区必须是 meta 且必须写「前置」小节（已掌握哪些概念；确无前置就写"无需前置"）；
@@ -570,11 +576,12 @@ ${lessonSectionBriefMenuHint().split('\n').map((line) => `     ${line}`).join('\
    priority：essential=体系主干依赖 / recommended=加深理解 / reference=参考查阅），并在总结里说明
    给了哪几本；纯软件操作等官方文档与在线资料已足够覆盖的领域不给（总结提一句"无需书籍"）。`
 }
-/** 研究模式采集可用性提示（追加进快照；web_search 是否有默认搜索源决定 bind） */
+/** 研究模式采集可用性提示（追加进快照；web_search 是否有默认搜索源决定 bind）
+ *  2026-10-06 用户口径：是否动用读工具由模型按知识点判断——简单稳定的概念用先验直接产出。 */
 export function researchSourceHint(webSearchAvailable: boolean): string {
   return webSearchAvailable
-    ? '采集提示：本会话已启用 web_search（联网搜索），可先检索知识库（wf_kb_retrieve）再按需联网搜索。'
-    : '采集提示：当前未配置默认联网搜索源，web_search 不可用——采集以知识库（wf_kb_retrieve）、给定 URL 网页正文（wf_web_extract/http_get）与 arXiv（http_get 请求 export.arxiv.org）为主，不要假装执行了搜索。'
+    ? '采集提示：本会话可用知识库（wf_kb_retrieve）与 web_search（联网搜索）——是否调用由你按知识点判断：教科书级、稳定无争议的概念直接用先验产出（标 needsVerification），私有资料/时效性/具体数据/没把握的细节再检索或联网。'
+    : '采集提示：当前未配置默认联网搜索源，web_search 不可用——需要外部资料时用知识库（wf_kb_retrieve）、给定 URL 网页正文（wf_web_extract/http_get）与 arXiv（http_get 请求 export.arxiv.org）；教科书级、稳定无争议的概念可直接用先验产出（标 needsVerification），不要假装执行了搜索。'
 }
 
 /** 未解问题研究聚焦块（追加进快照；引导 agent 用问题 id 回填答案） */
@@ -608,7 +615,8 @@ export function dlTaskSystemPrompt(): string {
 2. 资料任务：检索绑定知识库（wf_kb_retrieve 的 knowledgeBaseId 填快照里的本空间绑定库 id）/ 联网
    （wf_web_extract / http_get / arXiv；web_search 仅在会话提供该工具时使用，没有就明说未联网核验）收集内容；
 3. 整理/规划/生成：整理概念与笔记、归纳总结、制定学习顺序与计划、生成讲义/提纲等——需要落库时走
-   dl_save_concept / dl_save_relation / dl_save_card（讲义每条论断须有真实证据来源，无证据不落卡）；
+   dl_save_concept / dl_save_relation / dl_save_card（讲义可溯源：有外部来源的论断给真实出处；
+   模型先验已足够覆盖的简单概念可不检索直接写，但必须标 needsVerification=true——不得把先验伪装成有出处）；
    其中「**补全知识地图**」类指令（"追加/补充知识点""补全知识体系""AI 补全地图"）按下面的口径做
    （**完整作业规范见技能 learning-map-completion**：宿主在该任务的会话里会注入其正文，按它的四阶段执行）：
    - **顺序固定：先采集 → 再规划 → 再落库 → 最后自检**（2026-09-12 用户口径：先查知识库/联网，结合获取到的内容与模型自身知识规划整体体系，二者必须区分；不许跳过采集直接凭先验建图）；

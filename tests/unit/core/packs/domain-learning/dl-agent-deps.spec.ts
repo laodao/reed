@@ -50,8 +50,8 @@ describe('dl-agent-deps（M2-B）', () => {
     ]) {
       expect(p).toContain(token)
     }
-    // 采集纪律是有条件启用（会话提供读工具时），仍是研究模式的默认口径
-    expect(p).toContain('采集纪律')
+    // 采集按需判断（2026-10-06 用户口径：不是所有知识点都要检索/联网）
+    expect(p).toContain('采集按需判断')
     // M3-A：归属纪律引导 agent 使用快照目录分组
     expect(p).toContain('目录分组')
     expect(p).toContain('parentId')
@@ -118,7 +118,20 @@ describe('dl-agent-deps（M2-B）', () => {
     expect(off).toContain('web_search 不可用')
     expect(off).toContain('wf_kb_retrieve')
     const on = researchSourceHint(true)
-    expect(on).toContain('已启用 web_search')
+    // 2026-10-06 用户口径：是否调用由模型按知识点判断，不再"先检索后联网"的固定顺序
+    expect(on).toContain('web_search')
+    expect(on).toContain('由你按知识点判断')
+    expect(on).toContain('needsVerification')
+  })
+
+  it('研究提示词：采集按需判断（先验直出须标 needsVerification；检索留给私有/时效/数据类内容）', () => {
+    const p = dlResearchSystemPrompt()
+    expect(p).toContain('采集按需判断')
+    expect(p).toContain('needsVerification=true')
+    expect(p).toContain('prior_needs_verification')
+    // 知识库降级为"资料源之一"，不再强制先检索
+    expect(p).toContain('不是必经步骤')
+    expect(p).toContain('wf_kb_retrieve')
   })
 
   it('buildFocusQuestionLines：携带问题原文/id 并引导用问题 id 回填答案', () => {
