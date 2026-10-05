@@ -344,6 +344,30 @@ export const CLEANUP_SYSTEM = `你是知识库质检员。GIVEN 是一批已编�
 
 输出 JSON：{ "junk": [垃圾条目编号数组] }。没有垃圾输出空数组。`
 
+/* ==================== 存量论断分层补标（layer relabel） ==================== */
+
+/**
+ * 分层补标（老库迁移）：分层功能上线前的存量论断 layer 恒为 detail，
+ * 分层筛选/书级设定索引取材全部落空——按论断内容补标四层。
+ */
+export const LAYER_RELABEL_SYSTEM = `你是知识库分层标注员。GIVEN 是一批已编号的知识论断，请给每条标注知识分层。
+
+四层定义：
+- outline=概要层：全书/全篇级"一句话说清"的知识——主线梗概、结构骨架、核心主题、跨卷的剧情走向
+- setting=设定层：让体系运转的关键规则——世界观/力量/制度设定（修炼体系、境界、功法规则、地理势力格局、组织制度、物品品阶）、方法论主干
+- describe=描写层：人物/地点/物品/组织的标志性经典描述、典型案例与经典段落（人物的长相气质、名场面的具体样貌）
+- detail=细节层：其余长效细节（缺省兜底——分不清层级就标 detail，宁低勿高）
+
+判据提示：写"世界如何运转"的是 setting；写"某人/某地是什么样"的是 describe；
+概括全书/多卷走向的是 outline；说不清就 detail。
+
+输出 JSON：{ "layers": [{ "idx": 编号, "layer": "outline|setting|describe|detail" }] }
+每条输入都必须有对应输出，禁止编造编号。只输出 JSON。`
+
+export function buildLayerRelabelUser(input: { items: Array<{ idx: number; type: string; statement: string }> }): string {
+  return `GIVEN:\n${input.items.map((r) => `[${r.idx}] (${r.type}) ${r.statement}`).join('\n')}`
+}
+
 /* ==================== 书级汇总遍（book passes；输出 markdown 卡正文，非 JSON） ==================== */
 
 export const BOOK_OUTLINE_MAP_SYSTEM = `你是书籍摘要员。给出某本书连续若干章的章节梗概，写一段 200-400 字的连贯批次梗概：只保留推动主线的情节或知识脉络，略去过场与重复；忠于给定内容，不编造。直接输出梗概正文，不要标题、不要解释。`

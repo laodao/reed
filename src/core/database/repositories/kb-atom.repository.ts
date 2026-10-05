@@ -240,6 +240,20 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
     )
   }
 
+  /** 分层补标：按目标层分组批量改写（补标是幂等维护动作，只动 layer 不碰状态机） */
+  async updateLayers(groups: Array<{ layer: KbAtomLayer; ids: string[] }>): Promise<number> {
+    let n = 0
+    for (const g of groups) {
+      if (!KB_ATOM_LAYERS.includes(g.layer) || g.ids.length === 0) continue
+      await this.scoped.update(
+        { id: In(g.ids) } as never,
+        { layer: g.layer, updatedAt: new Date() } as never,
+      )
+      n += g.ids.length
+    }
+    return n
+  }
+
   /** 使用即再巩固：检索命中/创作引用时计数（§5.3 机制 2） */
   async incUse(ids: string[]): Promise<void> {
     if (ids.length === 0) return

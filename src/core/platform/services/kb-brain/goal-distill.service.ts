@@ -24,10 +24,10 @@ const logger = createLogger('KbBrainGoalDistill')
 
 /** 每批章节摘要数（一次调用处理的章数） */
 const CHAPTERS_PER_BATCH = 12
-/** 单次目标提炼的 map 调用上限（≈480 章；超出说明库太大，应缩小范围/分文档） */
+/** 单次目标提炼的 map 调用上限（≈480 章；超出按均匀采样覆盖全书，不做截头） */
 const MAX_BATCHES = 40
-/** 单章摘要截断长度（摘要本身短，兜底防超长） */
-const SUMMARY_CHARS = 500
+/** 单章取材文本上限（摘要优先；无摘要回退正文前段——过短只剩场景铺垫，素材贫乏直接拉低成卡质量） */
+const SUMMARY_CHARS = 1500
 /** 精读章数上限（摘要初筛提名后，取分最高的前 N 章读全文） */
 const MAX_CLOSE_READ = 20
 /** 单章精读正文截断 */
@@ -193,13 +193,18 @@ export class KbGoalDistillService {
     }
     if (units.length === 0) throw new Error('知识库没有可取材的章节（文档未处理完成或为空）')
 
+    // 1.5 超出单次容量时按文档配额均匀采样（截头 = 大库只见第一本书的开头，
+    // 其余书永远不进素材——「提炼了但看不到产出」的主因之一）
+    const capacity = MAX_BATCHES * CHAPTERS_PER_BATCH
+    const sampled = sampleUnitsEvenly(units, capacity)
+
     // 2. map：分批提取素材片段（单批失败跳过不废全场——素材收集是尽力而为，还有后续批次和 reduce）
     const fragments: MapFragment[] = []
     const fragmentDocIds: string[] = []
     const nominations: Nomination[] = []
-    const batches = Math.min(Math.ceil(units.length / CHAPTERS_PER_BATCH), MAX_BATCHES)
+    const batches = Math.min(Math.ceil(sampled.length / CHAPTERS_PER_BATCH), MAX_BATCHES)
     for (let b = 0; b < batches; b++) {
-      const slice = units.slice(b * CHAPTERS_PER_BATCH, (b + 1) * CHAPTERS_PER_BATCH)
+      const slice = sampled.slice(b * CHAPTERS_PER_BATCH, (b + 1) * CHAPTERS_PER_BATCH)
       const user = buildMapUser(goal, slice)
       let parsed: Partial<{ fragments: MapFragment[]; nominations: Array<{ chapter: string; reason: string; score: number }> }> | null
       try {
@@ -244,8 +249,8 @@ export class KbGoalDistillService {
         })
       }
     }
-    if (batches >= MAX_BATCHES && units.length > MAX_BATCHES * CHAPTERS_PER_BATCH) {
-      logger.warn(`[kb-brain-goal] kb=${kbId} 章节 ${units.length} 超出单次上限，只取前 ${MAX_BATCHES * CHAPTERS_PER_BATCH} 章`)
+    if (batches >= MAX_BATCHES && sampled.length > MAX_BATCHES * CHAPTERS_PER_BATCH) {
+      logger.warn(`[kb-brain-goal] kb=${kbId} goal=${goal.name} 章节 ${units.length} 超出单次上限，均匀采样 ${sampled.length} 章覆盖全书`)
     }
 
     // 2.5 精读：提名章读全文（摘要只能指出"哪里可能有货"，写法层面的经验必须读原文）
@@ -367,6 +372,9 @@ export class KbGoalDistillService {
         type: 'synthesis',
         evidence: evidences[proposedCount] ?? '[]',
         origin: 'ai-distill',
+        // 目标标记：卡是哪个提炼目标产的——待审箱/经验卡按此显示「来源目标」，
+        // 用户不再面对一堆不知类型的 synthesis 碎片卡
+        tags: JSON.stringify([`goal:${goal.id}`, `goal-name:${goal.name}`]),
       })
       proposedCount++
     }
@@ -381,6 +389,14 @@ export class KbGoalDistillService {
   }
 }
 
+let singleton: KbGoalDistillService | null = null
+
+/** 共享单例：面板手动提炼与后台自动化共用（running 单飞锁全局一致，互斥不重跑） */
+export function getKbGoalDistillService(): KbGoalDistillService {
+  if (!singleton) singleton = new KbGoalDistillService()
+  return singleton
+}
+
 /** 文件名 → 短书名：去扩展名、去括注（校对版/来源站等）、去「作者-」前缀——出处标签可读 */
 export function shortBookName(fileName: string): string {
   const noExt = fileName.replace(/\.(epub|mobi|azw3|txt|pdf|docx?)\s*$/i, '')
@@ -389,6 +405,32 @@ export function shortBookName(fileName: string): string {
     ? noParens.slice(noParens.indexOf('-') + 1).trim()
     : noParens
   return noDash || fileName
+}
+
+/**
+ * 取材均匀采样：总章数超出单次容量时，按文档篇幅比例分配名额、文档内等距抽取
+ * （保每本书的开头-中段-结局都进素材；截头会让多书库只提炼到第一本的开头）。
+ */
+export function sampleUnitsEvenly<T extends { documentId: string }>(units: T[], capacity: number): T[] {
+  if (units.length <= capacity) return units
+  const byDoc = new Map<string, T[]>()
+  for (const u of units) {
+    const arr = byDoc.get(u.documentId) ?? []
+    arr.push(u)
+    byDoc.set(u.documentId, arr)
+  }
+  const docs = [...byDoc.values()]
+  const out: T[] = []
+  let remaining = capacity
+  docs.forEach((docUnits, di) => {
+    // 按篇幅比例分配（最后一档吃余量，避免取整误差丢名额）
+    const quota = di === docs.length - 1 ? remaining : Math.max(1, Math.round((docUnits.length / units.length) * capacity))
+    const take = Math.min(quota, remaining, docUnits.length)
+    remaining -= take
+    const step = docUnits.length / take
+    for (let i = 0; i < take; i++) out.push(docUnits[Math.floor(i * step)]!)
+  })
+  return out
 }
 
 function buildMapUser(goal: KbBrainGoal, slice: Array<{ label: string; text: string }>): string {

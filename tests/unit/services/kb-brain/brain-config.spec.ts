@@ -106,6 +106,46 @@ describe('parseBrainState', () => {
     expect(s.importance).toBe(12)
     expect(s.lastDistillAt).toBe('2026-09-16T00:00:00Z')
   })
+  it('automation 记账段保留（判别回归：旧实现丢弃导致自动化每轮重跑）', () => {
+    const raw = JSON.stringify({
+      importance: 3,
+      lastDistillAt: null,
+      automation: { lastLayerRelabelAt: '2026-10-05T00:00:00Z', relabelAtoms: 800, goalRuns: { g1: { at: '2026-10-05T01:00:00Z', atoms: 800 } } },
+    })
+    const s = parseBrainState(raw)
+    expect(s.automation?.lastLayerRelabelAt).toBe('2026-10-05T00:00:00Z')
+    expect(s.automation?.relabelAtoms).toBe(800)
+    expect(s.automation?.goalRuns?.g1?.atoms).toBe(800)
+  })
+})
+
+describe('automation 段（后台自动化）', () => {
+  it('缺省全开（老配置无该段 → normalize 补齐）', () => {
+    const cfg = parseBrainConfig('{"enabled":true}')!
+    expect(cfg.automation.enabled).toBe(true)
+    expect(cfg.automation.digest).toBe(true)
+    expect(cfg.automation.goalDistill).toBe(true)
+    expect(cfg.automation.foreshadow).toBe(true)
+  })
+  it('半段配置：只关 goalDistill，其余保持缺省', () => {
+    const cfg = parseBrainConfig(JSON.stringify({ enabled: true, automation: { enabled: true, goalDistill: false } }))!
+    expect(cfg.automation.goalDistill).toBe(false)
+    expect(cfg.automation.bookPasses).toBe(true)
+  })
+  it('merge 半段 patch → base 子键保留', () => {
+    const base = parseBrainConfig('{"enabled":true}')!
+    const merged = mergeBrainConfig(base, { automation: { enabled: true, cleanup: false } })
+    expect(merged.automation.enabled).toBe(true)
+    expect(merged.automation.cleanup).toBe(false)
+    expect(merged.automation.foreshadow).toBe(true)
+    expect(() => stringifyBrainConfig(merged)).not.toThrow()
+  })
+  it('roundtrip 保留 automation', () => {
+    const raw = JSON.stringify({ enabled: true, automation: { enabled: true, digest: false } })
+    const parsed = parseBrainConfig(raw)!
+    const again = parseBrainConfig(stringifyBrainConfig(parsed))!
+    expect(again.automation).toEqual(parsed.automation)
+  })
 })
 
 describe('mergeBrainConfig（updateConfig 段级深合并）', () => {

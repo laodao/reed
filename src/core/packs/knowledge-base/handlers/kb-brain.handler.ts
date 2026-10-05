@@ -12,9 +12,11 @@ import { KbDistillService } from '@core/platform/services/kb-brain/distill.servi
 import { KbBrainFsrsService } from '@core/platform/services/kb-brain/fsrs.service'
 import { KbResearchService } from '@core/platform/services/kb-brain/research.service'
 import { enqueueDigestForExisting } from '@core/platform/services/kb-brain/digest-orchestrator.service'
-import { KbGoalDistillService } from '@core/platform/services/kb-brain/goal-distill.service'
+import { getKbGoalDistillService } from '@core/platform/services/kb-brain/goal-distill.service'
 import { getKbConsolidateService } from '@core/platform/services/kb-brain/consolidate.service'
 import { getKbCleanupService } from '@core/platform/services/kb-brain/cleanup.service'
+import { getKbLayerRelabelService } from '@core/platform/services/kb-brain/layer-relabel.service'
+import { getKbBookPassesService } from '@core/platform/services/kb-brain/book-passes.service'
 import { KbBrainHealthService } from '@core/platform/services/kb-brain/health.service'
 import { parseModelRef } from '@core/platform/services/kb-brain/llm'
 import { parseBrainConfig } from '@core/platform/services/kb-brain/brain-config'
@@ -140,7 +142,8 @@ export function registerKbBrainHandlers(): void {
   })
 
   // 提取目标提炼（经验维度 map-reduce；分钟级多次 LLM → 立即入队返回，前端轮询状态）
-  const goalDistill = new KbGoalDistillService()
+  // 共享单例：与后台自动化共用 running 单飞锁，手动/自动互斥不重跑
+  const goalDistill = getKbGoalDistillService()
   interface GoalRunRecord {
     ok: boolean
     error?: string
@@ -220,6 +223,50 @@ export function registerKbBrainHandlers(): void {
   })
   ipcBridge.handle('kb:brain:cleanup-status', (_e, p: { kbId: string }) => {
     return { success: true, data: cleanup.status(p.kbId) }
+  })
+
+  // 存量论断分层补标（老库迁移：layer 恒 detail → LLM 批量重标四层；fire-and-forget + 进度轮询）
+  const layerRelabel = getKbLayerRelabelService()
+  ipcBridge.handle('kb:brain:layer-relabel-run', async (_e, p: { kbId: string }) => {
+    if (layerRelabel.isRunning(p.kbId)) return { success: false, error: '分层补标进行中' }
+    const kbRow = await svc().getKnowledgeBase(p.kbId).then((r) => r.data)
+    const relabelCfg = kbRow?.brainConfig ? parseBrainConfig(kbRow.brainConfig) : null
+    layerRelabel.setModelOverride(() => (relabelCfg?.models.adjudicate ? parseModelRef(relabelCfg.models.adjudicate) : {}))
+    layerRelabel
+      .run(p.kbId)
+      .then((st) =>
+        console.info(
+          `[kb-brain] 分层补标完成 kb=${p.kbId} 批次=${st.processedBatches}/${st.totalBatches} 重标=${st.relabeledCount} 失败批=${st.failedBatches}`,
+        ),
+      )
+      .catch((e) => console.warn(`[kb-brain] 分层补标失败 kb=${p.kbId}: ${e instanceof Error ? e.message : String(e)}`))
+    return { success: true, data: { queued: true } }
+  })
+  ipcBridge.handle('kb:brain:layer-relabel-status', (_e, p: { kbId: string }) => {
+    return { success: true, data: layerRelabel.status(p.kbId) }
+  })
+
+  // 书级汇总补跑（老库文档消化完成于书级遍上线前、不会再发 completed 事件——
+  // 台账幂等，重复点击安全；fire-and-forget + 进度轮询）
+  const bookPasses = getKbBookPassesService()
+  ipcBridge.handle('kb:brain:book-passes-run', async (_e, p: { kbId: string }) => {
+    if (bookPasses.isRunningKb(p.kbId)) return { success: false, error: '书级汇总进行中' }
+    const kbRow = await svc().getKnowledgeBase(p.kbId).then((r) => r.data)
+    if (!kbRow) return { success: false, error: '知识库不存在' }
+    const bpCfg = kbRow.brainConfig ? parseBrainConfig(kbRow.brainConfig) : null
+    bookPasses.setModelOverride(() => (bpCfg?.models.adjudicate ? parseModelRef(bpCfg.models.adjudicate) : {}))
+    const docs = await svc().getDocuments(p.kbId).then((r) => (r.success && r.data ? r.data.map((d) => d.id) : []))
+    if (docs.length === 0) return { success: false, error: '知识库没有文档' }
+    bookPasses
+      .runForKnowledgeBase(p.kbId, bpCfg?.profile?.contentType ?? '', docs)
+      .then((st) =>
+        console.info(`[kb-brain] 书级汇总补跑完成 kb=${p.kbId} 文档=${st.processedDocs}/${st.totalDocs}`),
+      )
+      .catch((e) => console.warn(`[kb-brain] 书级汇总补跑失败 kb=${p.kbId}: ${e instanceof Error ? e.message : String(e)}`))
+    return { success: true, data: { queued: true } }
+  })
+  ipcBridge.handle('kb:brain:book-passes-status', (_e, p: { kbId: string }) => {
+    return { success: true, data: bookPasses.kbStatus(p.kbId) }
   })
 
   // G3 伏笔扫描（sets-up 边候选生成器；fire-and-forget + 状态轮询；仅手动触发——自动扫描需独立成本闸门）

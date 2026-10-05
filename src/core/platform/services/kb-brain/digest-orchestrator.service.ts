@@ -833,6 +833,10 @@ export function installKbBrainDigest(
     import('./metabolize.service')
       .then(({ KbBrainMetabolizeService }) => new KbBrainMetabolizeService().start())
       .catch((e) => logger.warn(`[kb-brain] 代谢服务启动失败: ${e instanceof Error ? e.message : String(e)}`))
+    // 后台自动化（提炼动作免手点）：开机延时 + 定时巡检，产物进待审提议人审
+    import('./automation.service')
+      .then(({ getKbBrainAutomationService }) => getKbBrainAutomationService().start())
+      .catch((e) => logger.warn(`[kb-brain] 后台自动化启动失败: ${e instanceof Error ? e.message : String(e)}`))
   }
   logger.info('[kb-brain] 消化流水线已装配（kb:document-completed 订阅 + 台账恢复）')
 }
@@ -849,15 +853,27 @@ let activeService: KbBrainDigestService | null = null
  * 补消化入口（面板「提取知识」按钮）：对已上传（章节树已存在）的文档直接触发
  * 消化——开脑之前完成的文档不会再发 completed 事件，这是它们的补上车通道。
  * 未装配（旧库）/未启用时返回 false。
+ * @param opts.revive 复活耗尽章（默认 true=手动重试语义；后台自动化按冷却自行控制传 false）
  */
-export async function enqueueDigestForExisting(documentId: string): Promise<boolean> {
+export async function enqueueDigestForExisting(
+  documentId: string,
+  opts?: { revive?: boolean },
+): Promise<boolean> {
   if (!activeService) return false
   const uid = getCurrentUserId()
   // 手动重试语义：耗尽章（attempts>=上限）复活，否则「提取知识」永远重不动失败章
-  const revived = await activeService.reviveExhaustedChapters(documentId)
-  if (revived > 0) logger.info(`[kb-brain] 手动重试复活耗尽章: doc=${documentId} count=${revived}`)
+  if (opts?.revive !== false) {
+    const revived = await activeService.reviveExhaustedChapters(documentId)
+    if (revived > 0) logger.info(`[kb-brain] 手动重试复活耗尽章: doc=${documentId} count=${revived}`)
+  }
   activeService.enqueueDocument(documentId, uid)
   return true
+}
+
+/** 后台自动化用：冷却复活耗尽章（服务未装配返回 0） */
+export async function reviveExhaustedFor(documentId: string): Promise<number> {
+  if (!activeService) return 0
+  return activeService.reviveExhaustedChapters(documentId)
 }
 
 /* ==================== 内部工具 ==================== */

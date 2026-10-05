@@ -19,6 +19,7 @@ interface NoteRow {
   body: string
   status: string
   evidence?: string
+  tags?: string
 }
 
 function makeDeps(
@@ -55,7 +56,7 @@ function makeDeps(
       chapters: chaptersRepo as never,
       notes: {
         findSimilarTitle: async (_kbId: string, title: string) => notes.filter((n) => n.title === title),
-        propose: async (_kbId: string, input: { title: string; description: string; body: string; evidence: string }) => {
+        propose: async (_kbId: string, input: { title: string; description: string; body: string; evidence: string; tags?: string }) => {
           const row: NoteRow = {
             id: `n${notes.length + 1}`,
             kbId: _kbId,
@@ -63,6 +64,7 @@ function makeDeps(
             body: input.body,
             status: 'proposed',
             evidence: input.evidence,
+            tags: input.tags,
           }
           notes.push(row)
           return row as never
@@ -414,6 +416,25 @@ describe('KbGoalDistillService', () => {
     const evidence = JSON.parse(deps.notes[0].evidence ?? '[]') as Array<{ quote: string }>
     expect(evidence[0].quote).toBe('《诛仙》#1 第一章')
   })
+
+  it('出卡带目标标记：tags 记 goal:id 与 goal-name:名（待审箱显示来源目标）', async () => {
+    const llm = routeLlm({
+      summary: {
+        fragments: [
+          { chapter: '第一章', info: 'x', note: '' },
+          { chapter: '第二章', info: 'y', note: '' },
+        ],
+      },
+      themes: { themes: [{ name: '甲', idx: [0, 1] }] },
+    })
+    const deps = makeDeps(llm)
+    const svc = new KbGoalDistillService(deps)
+    await svc.runGoal('kb1', goal)
+    expect(deps.notes).toHaveLength(1)
+    const tags = JSON.parse(deps.notes[0].tags ?? '[]') as string[]
+    expect(tags).toContain('goal:g1')
+    expect(tags).toContain('goal-name:修炼体系')
+  })
 })
 
 describe('shortBookName', () => {
@@ -424,6 +445,32 @@ describe('shortBookName', () => {
     expect(shortBookName('诛仙 (萧鼎) (z-library.sk, 1lib.sk, z-lib.sk).epub')).toBe('诛仙')
     expect(shortBookName('斗破苍穹.epub')).toBe('斗破苍穹')
     expect(shortBookName('无扩展名文档')).toBe('无扩展名文档')
+  })
+})
+
+describe('sampleUnitsEvenly（超容量按文档配额均匀采样）', () => {
+  it('不超容量原样返回；超容量按篇幅比例分配、文档内等距抽取', async () => {
+    const { sampleUnitsEvenly } = await import('@core/platform/services/kb-brain/goal-distill.service')
+    const mk = (docId: string, n: number) => Array.from({ length: n }, (_, i) => ({ documentId: docId, i }))
+    // 不超容量：原样
+    const small = [...mk('d1', 3), ...mk('d2', 2)]
+    expect(sampleUnitsEvenly(small, 10)).toBe(small)
+    // 超容量：600 章(两书 1:2) → 容量 60 → 20+40，各书首尾跨度覆盖
+    const big = [...mk('d1', 200), ...mk('d2', 400)]
+    const out = sampleUnitsEvenly(big, 60)
+    expect(out).toHaveLength(60)
+    const d1 = out.filter((u) => u.documentId === 'd1')
+    const d2 = out.filter((u) => u.documentId === 'd2')
+    expect(d1.length).toBe(20)
+    expect(d2.length).toBe(40)
+    expect(d1[0]!.i).toBe(0) // 从头开始
+    expect(d1[d1.length - 1]!.i).toBeGreaterThanOrEqual(190) // 覆盖到结尾附近
+    expect(d2[d2.length - 1]!.i).toBeGreaterThanOrEqual(390)
+    // 采样保持文档内顺序
+    for (const arr of [d1, d2]) {
+      const seq = arr.map((u) => u.i)
+      expect([...seq].sort((a, b) => a - b)).toEqual(seq)
+    }
   })
 })
 

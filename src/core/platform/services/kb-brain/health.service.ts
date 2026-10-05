@@ -114,11 +114,11 @@ export class KbBrainHealthService {
     if (chaptersExhausted > 0) suggestions.push({ code: 'chapters-exhausted', message: `${chaptersExhausted} 章重试耗尽——在「待提取文档」对该文档点「提取」复活重跑。` })
     if (atomStats.byStatus.suspected > 0) suggestions.push({ code: 'conflicts-pending', message: `${atomStats.byStatus.suspected} 条论断存疑（矛盾冲突/低置信）——建议人工复核后再入库。` })
     if (entitiesPending > 0) suggestions.push({ code: 'entities-pending-summary', message: `${entitiesPending} 个实体缺演化摘要——下次消化时自动补齐，无需手动处理。` })
-    if (contentType === 'novel' && (atomStats.byLayer.setting ?? 0) === 0 && workingTotal > 0) {
-      suggestions.push({ code: 'no-setting-layer', message: '设定层论断为 0——存量知识是旧版未分层提取的。对文档重新「提取知识」即可获得分层知识（未变章节按台账幂等，只会补跑受影响的遍）。' })
+    if ((atomStats.byLayer.setting ?? 0) === 0 && (atomStats.byLayer.outline ?? 0) === 0 && (atomStats.byLayer.describe ?? 0) === 0 && workingTotal > 0) {
+      suggestions.push({ code: 'no-setting-layer', message: '分层统计全为「细节」——存量论断是旧版未分层提取的。点「论断整理 → 分层补标」用 AI 批量重标四层（比重跑提取便宜得多）。' })
     }
     if ((atomStats.openQuestions ?? 0) > 0 && contentType === 'novel' && !bookPasses.some((p) => p.passKey === 'book:foreshadow-ledger' && p.status === 'done')) {
-      suggestions.push({ code: 'foreshadow-open', message: `${atomStats.openQuestions} 个悬置点（伏笔/暗线）未登记台账——重新提取该书可生成「伏笔台账」卡。` })
+      suggestions.push({ code: 'foreshadow-open', message: `${atomStats.openQuestions} 个悬置点（伏笔/暗线）未登记台账——点「论断整理 → 书级汇总」可补跑生成「伏笔台账」卡。` })
     }
     if (proposed.total > 0) suggestions.push({ code: 'proposals-pending', message: `${proposed.total} 张经验卡待审批——「待审提议」批准后才会进入检索池。` })
     // 书级遍的预期关卡未建（画像已识别但台账无记录）——通常是旧消化产物
@@ -127,7 +127,7 @@ export class KbBrainHealthService {
       const doneOrRunning = new Set(bookPasses.filter((p) => p.status === 'done' || p.status === 'running').map((p) => p.passKey))
       const missing = [...expected].filter((k) => !doneOrRunning.has(k))
       if (missing.length > 0 && documentsPending === 0) {
-        suggestions.push({ code: 'book-passes-missing', message: `书级汇总遍未齐（缺 ${missing.length} 项）——重新「提取知识」触发补跑。` })
+        suggestions.push({ code: 'book-passes-missing', message: `书级汇总遍未齐（缺 ${missing.length} 项）——点「论断整理 → 书级汇总」手动补跑（台账幂等，重复点击安全）。` })
       }
     }
 

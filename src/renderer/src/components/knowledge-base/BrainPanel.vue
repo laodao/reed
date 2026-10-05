@@ -152,6 +152,7 @@
             <div v-for="n in notes" :key="n.id" class="note-card">
               <div class="n-head">
                 <span class="n-title">{{ n.title }}</span>
+                <el-tag v-if="goalNameOf(n)" size="small" effect="plain" color="#ecf5ff">{{ goalNameOf(n) }}</el-tag>
                 <el-tag size="small" effect="plain">{{ kbNoteTypeLabel(n.type) }}</el-tag>
               </div>
               <div class="n-desc">{{ n.description }}</div>
@@ -214,10 +215,20 @@
               <div class="n-head">
                 <el-checkbox :value="p.id" class="p-check" />
                 <span class="n-title">{{ p.title }}</span>
+                <el-tag v-if="goalNameOf(p)" size="small" effect="plain" color="#ecf5ff">{{ goalNameOf(p) }}</el-tag>
+                <el-tag size="small" effect="plain">{{ kbNoteTypeLabel(p.type) }}</el-tag>
                 <el-tag size="small" type="warning" effect="light">{{ kbNoteStatusLabel(p.status) }}</el-tag>
               </div>
               <div class="n-desc">{{ p.description }}</div>
-              <pre v-if="p.body" class="n-body preview">{{ p.body }}</pre>
+              <pre
+                v-if="p.body"
+                class="n-body preview"
+                :class="{ expanded: expandedProposals.has(p.id) }"
+                @click="toggleProposalExpand(p.id)"
+              >{{ p.body }}</pre>
+              <div v-if="p.body" class="p-expand-hint" @click="toggleProposalExpand(p.id)">
+                {{ expandedProposals.has(p.id) ? '收起正文' : `展开全文（${p.body.length} 字）` }}
+              </div>
               <div class="p-actions">
                 <el-button size="small" :disabled="batchBusy" @click="decide(p.id, 'reject')">拒绝</el-button>
                 <el-button size="small" type="primary" :disabled="batchBusy" @click="decide(p.id, 'publish')">批准入库</el-button>
@@ -260,7 +271,7 @@
             </el-button>
           </div>
           <div v-if="enabledGoals.length > 0" class="side-tip">
-            基于全书章节摘要提炼，约需一至十几分钟；完成后经验卡出现在「待审提议」。
+            基于全书章节摘要提炼，约需一至十几分钟；开启「自动后台提炼」后随消化自动运行（各目标按冷却与素材增长重跑），也可手动点「提炼」立即执行。
           </div>
         </section>
 
@@ -276,6 +287,10 @@
           <div v-if="proposals.length === 0" class="side-empty">暂无待审提议</div>
           <div v-for="p in proposals" :key="p.id" class="proposal">
             <div class="p-title">{{ p.title }}</div>
+            <div class="p-meta">
+              <el-tag v-if="goalNameOf(p)" size="small" effect="plain" color="#ecf5ff">{{ goalNameOf(p) }}</el-tag>
+              <el-tag size="small" effect="plain">{{ kbNoteTypeLabel(p.type) }}</el-tag>
+            </div>
             <div class="p-desc">{{ p.description }}</div>
             <div class="p-actions">
               <el-button size="small" @click="decide(p.id, 'reject')">拒绝</el-button>
@@ -301,7 +316,7 @@
               type="warning"
               plain
               style="flex: 1"
-              :disabled="cleanupRunning || foreshadowRunning"
+              :disabled="cleanupRunning || foreshadowRunning || relabelRunning || bookPassesRunning"
               @click="startConsolidate"
             >
               归纳整理
@@ -312,7 +327,7 @@
               type="danger"
               plain
               style="flex: 1"
-              :disabled="consolidateRunning || foreshadowRunning"
+              :disabled="consolidateRunning || foreshadowRunning || relabelRunning || bookPassesRunning"
               @click="startCleanup"
             >
               垃圾清理
@@ -325,11 +340,55 @@
               type="success"
               plain
               style="width: 100%"
-              :disabled="consolidateRunning || cleanupRunning"
+              :disabled="consolidateRunning || cleanupRunning || relabelRunning || bookPassesRunning"
               @click="startForeshadow"
             >
               伏笔扫描
             </el-button>
+          </div>
+          <div style="margin-top: 8px; display: flex; gap: 8px">
+            <el-tooltip content="分层功能上线前的存量论断分层全为「细节」——用 AI 批量重标概要/设定/描写/细节四层，分层筛选与书级设定索引取材依赖它" placement="top">
+              <el-button
+                size="small"
+                plain
+                style="flex: 1"
+                :disabled="consolidateRunning || cleanupRunning || foreshadowRunning || bookPassesRunning"
+                @click="startRelabel"
+              >
+                分层补标
+              </el-button>
+            </el-tooltip>
+            <el-tooltip content="对已消化完成的老文档补跑书级汇总：全书概要/设定索引/人物册/伏笔台账卡进「待审提议」；设定索引取材依赖分层，建议先跑「分层补标」" placement="top">
+              <el-button
+                size="small"
+                type="primary"
+                plain
+                style="flex: 1"
+                :disabled="consolidateRunning || cleanupRunning || foreshadowRunning || relabelRunning"
+                @click="startBookPasses"
+              >
+                书级汇总
+              </el-button>
+            </el-tooltip>
+          </div>
+          <template v-if="relabelRunning">
+            <el-progress :percentage="relabelPct" :stroke-width="6" />
+            <div class="side-tip">
+              分层补标中… 批次 {{ relabelProgress?.processedBatches ?? 0 }}/{{ relabelProgress?.totalBatches ?? 0 }}，已重标
+              {{ relabelProgress?.relabeledCount ?? 0 }} 条
+            </div>
+          </template>
+          <div v-if="relabelSummary !== null && !relabelRunning" class="side-tip">
+            上次补标：重标 {{ relabelSummary }} 条论断的知识分层
+          </div>
+          <template v-if="bookPassesRunning">
+            <el-progress :percentage="100" indeterminate :stroke-width="6" />
+            <div class="side-tip">
+              书级汇总中… 文档 {{ bookPassesProgress?.processedDocs ?? 0 }}/{{ bookPassesProgress?.totalDocs ?? 0 }}，产出的卡进「待审提议」
+            </div>
+          </template>
+          <div v-if="bookPassesSummary !== null && !bookPassesRunning" class="side-tip">
+            上次书级汇总：处理 {{ bookPassesSummary }} 份文档{{ bookPassesLastError ? `（部分失败：${bookPassesLastError}）` : '' }}
           </div>
           <template v-if="consolidateRunning">
             <el-progress :percentage="consolidatePct" :stroke-width="6" />
@@ -416,6 +475,16 @@
               <span class="cfg-desc">按章提取完成后自动汇总全书概要/设定索引/人物册/伏笔台账卡（待审箱确认）</span>
             </label>
             <el-switch v-model="configDraft.digestion.bookPasses" />
+          </div>
+          <div class="cfg-row">
+            <label class="cfg-label">
+              自动后台提炼
+              <span class="cfg-desc">
+                免手点流水线：开机与挂机定时自动续消化 → 分层补标 → 书级汇总 → 目标提炼 → 归纳/清理/伏笔扫描；
+                各动作按冷却记账执行，产物进「待审提议」人审。关闭后仅随消化自动触发书级汇总，其余需手动点按钮
+              </span>
+            </label>
+            <el-switch v-model="configDraft.automation.enabled" />
           </div>
           <div class="cfg-row">
             <label class="cfg-label">
@@ -736,6 +805,8 @@ interface BrainNote {
   body: string
   type: string
   status: string
+  /** 标签 JSON 数组；`goal-name:<目标名>` 标记经验卡来自哪个提炼目标 */
+  tags?: string
 }
 interface BrainGoal {
   id: string
@@ -752,6 +823,8 @@ interface BrainConfig {
   autoApproveThreshold: number
   models: { atomize: string; adjudicate: string }
   goals: BrainGoal[]
+  /** 后台自动化（免手点流水线；产物进待审提议人审） */
+  automation: { enabled: boolean }
 }
 const modelOptions = ref<Array<{ label: string; value: string }>>([])
 
@@ -791,6 +864,7 @@ const configDraft = ref<BrainConfig>({
   autoApproveThreshold: 0.8,
   models: { atomize: '', adjudicate: '' },
   goals: [],
+  automation: { enabled: true },
 })
 const configOpen = ref(false)
 const saving = ref(false)
@@ -986,6 +1060,160 @@ async function startCleanup(): Promise<void> {
     startCleanupPoll()
   } catch (e) {
     ElMessage.error(`清理启动失败: ${(e as Error).message}`)
+  }
+}
+
+// ===== 分层补标（老库迁移：存量论断 layer 全 detail → LLM 重标四层） =====
+interface RelabelProgress {
+  running: boolean
+  totalBatches: number
+  processedBatches: number
+  relabeledCount: number
+  failedBatches: number
+  lastError?: string
+}
+const relabelRunning = ref(false)
+const relabelProgress = ref<RelabelProgress | null>(null)
+const relabelSummary = ref<number | null>(null)
+let relabelPollTimer: ReturnType<typeof setInterval> | null = null
+const relabelPct = computed(() => {
+  const p = relabelProgress.value
+  if (!p || p.totalBatches === 0) return 0
+  return Math.min(100, Math.round((p.processedBatches / p.totalBatches) * 100))
+})
+
+function startRelabelPoll(): void {
+  if (relabelPollTimer) return
+  relabelPollTimer = setInterval(pollRelabel, 5000)
+  void pollRelabel()
+}
+
+async function pollRelabel(): Promise<void> {
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  const kbAtCall = props.kbId // 代际守卫：切库后丢弃过期响应
+  try {
+    const res = await client.layerRelabelStatus(props.kbId)
+    if (kbAtCall !== props.kbId) return
+    if (res.success && res.data) {
+      const wasRunning = relabelRunning.value
+      relabelProgress.value = res.data
+      relabelRunning.value = !!res.data.running
+      if (wasRunning && !relabelRunning.value) {
+        if (res.data.lastError && res.data.relabeledCount === 0) {
+          ElMessage.error(`分层补标失败: ${res.data.lastError}`)
+        } else if (res.data.failedBatches > 0) {
+          ElMessage.warning(`分层补标完成，但 ${res.data.failedBatches} 批失败：${res.data.lastError || '未知错误'}`)
+          relabelSummary.value = res.data.relabeledCount
+        } else {
+          ElMessage.success(`分层补标完成：重标 ${res.data.relabeledCount} 条论断`)
+          relabelSummary.value = res.data.relabeledCount
+        }
+        await refresh()
+      }
+    }
+  } catch {
+    /* 轮询失败静默，下轮再试 */
+  }
+  if (!relabelRunning.value && relabelPollTimer) {
+    clearInterval(relabelPollTimer)
+    relabelPollTimer = null
+  }
+}
+
+async function startRelabel(): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      '将用 AI 分批给存量论断重标知识分层（概要/设定/描写/细节）——分层筛选、体检分层统计与书级「设定索引」取材都依赖它。会产生 LLM 调用费用。',
+      '分层补标',
+      { type: 'info', confirmButtonText: '开始补标', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  try {
+    const res = await client.layerRelabelRun(props.kbId)
+    if (!res.success) {
+      ElMessage.error(res.error || '分层补标启动失败')
+      return
+    }
+    relabelRunning.value = true
+    startRelabelPoll()
+  } catch (e) {
+    ElMessage.error(`分层补标启动失败: ${(e as Error).message}`)
+  }
+}
+
+// ===== 书级汇总补跑（老库文档不会再发 completed 事件 → 手动补跑书级卡） =====
+interface BookPassesProgress {
+  running: boolean
+  totalDocs: number
+  processedDocs: number
+  lastError?: string
+}
+const bookPassesRunning = ref(false)
+const bookPassesProgress = ref<BookPassesProgress | null>(null)
+const bookPassesSummary = ref<number | null>(null)
+const bookPassesLastError = ref('')
+let bookPassesPollTimer: ReturnType<typeof setInterval> | null = null
+
+function startBookPassesPoll(): void {
+  if (bookPassesPollTimer) return
+  bookPassesPollTimer = setInterval(pollBookPasses, 5000)
+  void pollBookPasses()
+}
+
+async function pollBookPasses(): Promise<void> {
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  const kbAtCall = props.kbId // 代际守卫：切库后丢弃过期响应
+  try {
+    const res = await client.bookPassesStatus(props.kbId)
+    if (kbAtCall !== props.kbId) return
+    if (res.success && res.data) {
+      const wasRunning = bookPassesRunning.value
+      bookPassesProgress.value = res.data
+      bookPassesRunning.value = !!res.data.running
+      if (wasRunning && !bookPassesRunning.value) {
+        bookPassesSummary.value = res.data.processedDocs
+        bookPassesLastError.value = res.data.lastError ?? ''
+        if (res.data.lastError) {
+          ElMessage.warning(`书级汇总完成，但部分文档失败：${res.data.lastError}`)
+        } else {
+          ElMessage.success('书级汇总完成，产出的卡在「待审提议」等待确认')
+        }
+        await refresh()
+      }
+    }
+  } catch {
+    /* 轮询失败静默，下轮再试 */
+  }
+  if (!bookPassesRunning.value && bookPassesPollTimer) {
+    clearInterval(bookPassesPollTimer)
+    bookPassesPollTimer = null
+  }
+}
+
+async function startBookPasses(): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      '将对库内已消化的文档补跑书级汇总（全书概要/设定索引/人物册/伏笔台账），产出的卡进「待审提议」。已跑过的文档自动跳过；大书的「全书概要」需要多次 AI 调用，建议先跑「分层补标」让设定索引有材可取。',
+      '书级汇总',
+      { type: 'info', confirmButtonText: '开始汇总', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  try {
+    const res = await client.bookPassesRun(props.kbId)
+    if (!res.success) {
+      ElMessage.error(res.error || '书级汇总启动失败')
+      return
+    }
+    bookPassesRunning.value = true
+    startBookPassesPoll()
+  } catch (e) {
+    ElMessage.error(`书级汇总启动失败: ${(e as Error).message}`)
   }
 }
 
@@ -1381,7 +1609,23 @@ onBeforeUnmount(() => {
   cleanupPollTimer = null
   if (foreshadowPollTimer) clearInterval(foreshadowPollTimer)
   foreshadowPollTimer = null
+  if (relabelPollTimer) clearInterval(relabelPollTimer)
+  relabelPollTimer = null
+  if (bookPassesPollTimer) clearInterval(bookPassesPollTimer)
+  bookPassesPollTimer = null
 })
+
+/** 卡片来源目标名：tags 里的 `goal-name:<名>` 标记（老卡无标记回退空，显示类型标签兜底） */
+function goalNameOf(n: BrainNote): string {
+  if (!n.tags) return ''
+  try {
+    const arr = JSON.parse(n.tags) as unknown[]
+    const t = arr.find((x) => typeof x === 'string' && x.startsWith('goal-name:')) as string | undefined
+    return t ? t.slice('goal-name:'.length) : ''
+  } catch {
+    return ''
+  }
+}
 
 function statusTagType(status: string): 'success' | 'warning' | 'info' | 'danger' {
   switch (status) {
@@ -1500,6 +1744,15 @@ async function handleInboxPageChange(page: number): Promise<void> {
 
 // ===== 批量审批 =====
 const selectedProposalIds = ref<string[]>([])
+/** 待审卡正文展开态：预览默认钳在 130px——2500 字的卡只看得见开头，审批时需要展开读全文 */
+const expandedProposals = ref<Set<string>>(new Set())
+
+function toggleProposalExpand(id: string): void {
+  const next = new Set(expandedProposals.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  expandedProposals.value = next
+}
 const batchBusy = ref(false)
 const allProposalsSelected = computed(
   () => proposals.value.length > 0 && selectedProposalIds.value.length === proposals.value.length,
@@ -1613,6 +1866,30 @@ async function refresh(): Promise<void> {
   } catch {
     /* 旧宿主无此通道：忽略 */
   }
+  // 分层补标进行中状态同步（面板重开后恢复进度条）
+  try {
+    const rlRes = await client.layerRelabelStatus(props.kbId)
+    if (rlRes.success && rlRes.data) {
+      relabelProgress.value = rlRes.data
+      if (rlRes.data.relabeledCount > 0) relabelSummary.value = rlRes.data.relabeledCount
+      relabelRunning.value = !!rlRes.data.running
+      if (relabelRunning.value) startRelabelPoll()
+    }
+  } catch {
+    /* 旧宿主无此通道：忽略 */
+  }
+  // 书级汇总进行中状态同步（面板重开后恢复进度条）
+  try {
+    const bpRes = await client.bookPassesStatus(props.kbId)
+    if (bpRes.success && bpRes.data) {
+      bookPassesProgress.value = bpRes.data
+      if (bpRes.data.processedDocs > 0) bookPassesSummary.value = bpRes.data.processedDocs
+      bookPassesRunning.value = !!bpRes.data.running
+      if (bookPassesRunning.value) startBookPassesPoll()
+    }
+  } catch {
+    /* 旧宿主无此通道：忽略 */
+  }
   // 视角卡列表（G1；通道缺失不拖垮面板主数据）
   try {
     await fetchLenses()
@@ -1638,9 +1915,10 @@ async function refresh(): Promise<void> {
 
 function openConfig(): void {
   if (config.value) configDraft.value = JSON.parse(JSON.stringify(config.value))
-  // 旧配置无 profile/digestion.bookPasses 段时补缺省（v-model 需要可写路径）
+  // 旧配置无 profile/digestion.bookPasses/automation 段时补缺省（v-model 需要可写路径）
   if (!configDraft.value.profile) configDraft.value.profile = { contentType: '' }
   if (!configDraft.value.digestion) configDraft.value.digestion = { enabled: true, bookPasses: true }
+  if (!configDraft.value.automation) configDraft.value.automation = { enabled: true }
   configOpen.value = true
 }
 
@@ -2081,6 +2359,17 @@ defineExpose({ refresh })
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px dashed var(--el-border-color-lighter);
+  cursor: pointer;
+}
+.n-body.preview.expanded {
+  max-height: none;
+}
+.p-expand-hint {
+  font-size: 12px;
+  color: var(--el-color-primary);
+  cursor: pointer;
+  margin-top: 4px;
+  user-select: none;
 }
 .n-body-collapse {
   border-top: 1px dashed var(--el-border-color-lighter);
@@ -2185,6 +2474,11 @@ defineExpose({ refresh })
   font-size: 13px;
   font-weight: 600;
   line-height: 1.4;
+}
+.p-meta {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
 }
 .p-desc {
   font-size: 12px;

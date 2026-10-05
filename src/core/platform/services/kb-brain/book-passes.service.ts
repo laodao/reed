@@ -31,6 +31,9 @@ const logger = createLogger('KbBrainBookPasses')
 
 /** 章纲 map 批大小（约 25 章梗概/调用，控单次输入体积） */
 const OUTLINE_MAP_BATCH = 25
+/** 全书概要取材章数上限（老库补跑入口面对数千章的大书——map 调用数 =
+ *  上限/批大小；超出按均匀步长采样，保全书跨度而非只看开头） */
+const OUTLINE_MAX_SEGS = 600
 /** 设定索引/知识体系图取材论断上限 */
 const MATERIAL_ATOM_CAP = 200
 /** 人物册人物数与每人代表论断上限 */
@@ -67,6 +70,8 @@ export interface BookPassRepos {
 
 export interface KbBookPassesDeps {
   llm?: BrainLlmFn
+  /** 每库模型动态解析（handler 在 run 前注入 brainConfig.models.adjudicate） */
+  modelOverride?: () => { providerConfigId?: string; modelId?: string }
   repos?: () => BookPassRepos | null
 }
 
@@ -93,10 +98,12 @@ export function passesForProfile(contentType: string): Array<{ key: string; name
 export class KbBookPassesService {
   private readonly llm: BrainLlmFn
   private readonly reposFn: () => BookPassRepos | null
+  /** 每库模型动态解析（handler 在 run 前注入；llm 为注入型时无效） */
+  private modelOverrideFn: () => { providerConfigId?: string; modelId?: string } = () => ({})
 
   constructor(deps: KbBookPassesDeps = {}) {
     // 书级汇总走裁决档位（归纳质量优先于速度）
-    this.llm = deps.llm ?? defaultBrainLlm('kb-brain-adjudicate')
+    this.llm = deps.llm ?? defaultBrainLlm('kb-brain-adjudicate', deps.modelOverride ?? (() => this.modelOverrideFn()))
     this.reposFn =
       deps.repos ??
       ((): BookPassRepos | null => {
@@ -111,6 +118,11 @@ export class KbBookPassesService {
           passes: db.kbDigestPasses,
         }
       })
+  }
+
+  /** 注入每库模型解析（run 前调用；llm 为注入型时无效） */
+  setModelOverride(fn: () => { providerConfigId?: string; modelId?: string }): void {
+    this.modelOverrideFn = fn
   }
 
   /** 跑完该画像的全部书级关卡（单遍 fail-soft；章节为空或仓储不齐直接返回——
@@ -187,7 +199,7 @@ export class KbBookPassesService {
     }
   }
 
-  /** 全书概要：章纲 map（>25 章分批）→ reduce 出卡 */
+  /** 全书概要：章纲 map（>25 章分批；超大书均匀采样封顶）→ reduce 出卡 */
   private async passOutline(
     ctx: { chapters: Array<{ title: string; content: string | null; summary: string | null }>; repos: BookPassRepos; documentId: string; kbId: string },
     docName: string,
@@ -201,15 +213,16 @@ export class KbBookPassesService {
       })
       .filter(Boolean)
     if (segs.length === 0) return // 全空章：无材可汇总，零产出是合法终态
+    const sampled = sampleEvenly(segs, OUTLINE_MAX_SEGS)
     let material: string
-    if (segs.length <= OUTLINE_MAP_BATCH) {
-      material = segs.join('\n')
+    if (sampled.length <= OUTLINE_MAP_BATCH) {
+      material = sampled.join('\n')
     } else {
       const batchSynopses: string[] = []
-      for (let i = 0; i < segs.length; i += OUTLINE_MAP_BATCH) {
+      for (let i = 0; i < sampled.length; i += OUTLINE_MAP_BATCH) {
         const out = await this.llm({
           system: BOOK_OUTLINE_MAP_SYSTEM,
-          user: segs.slice(i, i + OUTLINE_MAP_BATCH).join('\n'),
+          user: sampled.slice(i, i + OUTLINE_MAP_BATCH).join('\n'),
           maxTokens: 1500,
         })
         batchSynopses.push(out.trim())
@@ -395,5 +408,71 @@ export class KbBookPassesService {
     })
     stats.cards += 1
   }
+
+  /* ==================== 库级补跑（面板手动入口） ==================== */
+
+  /** 库级书级汇总进行中标记（单飞）与进度（前端轮询） */
+  private readonly runningKb = new Set<string>()
+  private readonly kbProgress = new Map<string, BookPassesProgress>()
+
+  isRunningKb(kbId: string): boolean {
+    return this.runningKb.has(kbId)
+  }
+
+  kbStatus(kbId: string): BookPassesProgress {
+    return this.kbProgress.get(kbId) ?? { running: false, totalDocs: 0, processedDocs: 0, lastError: undefined }
+  }
+
+  /**
+   * 老库补跑入口：文档在书级遍功能上线前消化完成（brainStatus=digested），
+   * 不会再发 completed 事件——书级卡（全书概要/设定索引/人物册/伏笔台账）永远是空。
+   * 本方法按库逐文档补跑（台账幂等：跑过的指纹直接 skip，重复点击安全）。
+   */
+  async runForKnowledgeBase(kbId: string, contentType: string, documentIds: string[]): Promise<BookPassesProgress> {
+    if (this.runningKb.has(kbId)) throw new Error('书级汇总进行中，请稍候')
+    const progress: BookPassesProgress = { running: true, totalDocs: documentIds.length, processedDocs: 0, lastError: undefined }
+    this.kbProgress.set(kbId, progress)
+    this.runningKb.add(kbId)
+    try {
+      for (const documentId of documentIds) {
+        try {
+          await this.runForDocument(kbId, documentId, contentType)
+        } catch (e) {
+          progress.lastError = e instanceof Error ? e.message : String(e)
+          logger.warn(`[kb-brain] 书级汇总补跑失败 doc=${documentId}: ${progress.lastError}`)
+        }
+        progress.processedDocs += 1
+      }
+      return progress
+    } finally {
+      progress.running = false
+      this.runningKb.delete(kbId)
+    }
+  }
+}
+
+/** 书级汇总库级进度（面板轮询用） */
+export interface BookPassesProgress {
+  running: boolean
+  totalDocs: number
+  processedDocs: number
+  lastError?: string
+}
+
+/** 均匀采样：超过 cap 时按等距步长抽 cap 条（保序列跨度，不截头） */
+export function sampleEvenly<T>(items: T[], cap: number): T[] {
+  if (items.length <= cap || cap <= 0) return items
+  const out: T[] = []
+  const step = items.length / cap
+  for (let i = 0; i < cap; i++) out.push(items[Math.floor(i * step)]!)
+  return out
+}
+
+let singleton: KbBookPassesService | null = null
+
+/** 面板手动补跑用单例（进度/单飞锁挂在实例上；消化链路自建实例不受影响） */
+export function getKbBookPassesService(): KbBookPassesService {
+  if (!singleton) singleton = new KbBookPassesService()
+  return singleton
 }
 

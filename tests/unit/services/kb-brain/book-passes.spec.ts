@@ -208,4 +208,44 @@ describe('KbBookPassesService', () => {
     const passes = new KbDigestPassRepository(ds)
     expect((await passes.listByDocument('doc-b5')).find((r) => r.passKey === 'book:outline')?.status).toBe('done')
   })
+
+  it('库级补跑 runForKnowledgeBase：多文档逐个跑、进度可查、单飞锁、台账幂等不重复出卡', async () => {
+    await plantNovel('doc-b6')
+    await plantNovel('doc-b7')
+    const svc = makeSvc(makeRepos())
+    expect(svc.isRunningKb('kb-b')).toBe(false)
+    const running = svc.runForKnowledgeBase('kb-b', '', ['doc-b6', 'doc-b7'])
+    expect(svc.isRunningKb('kb-b')).toBe(true)
+    await expect(svc.runForKnowledgeBase('kb-b', '', ['doc-b6'])).rejects.toThrow(/进行中/)
+    const done = await running
+    expect(done.processedDocs).toBe(2)
+    expect(done.totalDocs).toBe(2)
+    expect(done.running).toBe(false)
+    expect(svc.isRunningKb('kb-b')).toBe(false)
+    expect(svc.kbStatus('kb-b').running).toBe(false)
+    // 每个文档各 1 遍（'' 画像只有 outline）台账 done
+    const passes = new KbDigestPassRepository(ds)
+    for (const docId of ['doc-b6', 'doc-b7']) {
+      expect((await passes.listByDocument(docId)).filter((r) => r.passType === 'book' && r.status === 'done')).toHaveLength(1)
+    }
+    // 幂等：重跑零新卡（测试库跨用例共享——只统计本次两书的卡）
+    const notes = new KbNoteRepository(ds)
+    const countMine = async (): Promise<number> =>
+      (await notes.listByStatus('kb-b', 'proposed', 1, 50)).rows.filter((r: { title: string }) =>
+        r.title.includes('doc-b6') || r.title.includes('doc-b7'),
+      ).length
+    const before = await countMine()
+    expect(before).toBe(2)
+    await svc.runForKnowledgeBase('kb-b', '', ['doc-b6', 'doc-b7'])
+    expect(await countMine()).toBe(before)
+  }, 30000)
+
+  it('sampleEvenly：不超上限原样；超上限等距抽样保跨度', async () => {
+    const { sampleEvenly } = await import('@core/platform/services/kb-brain/book-passes.service')
+    const arr = Array.from({ length: 10 }, (_, i) => i)
+    expect(sampleEvenly(arr, 20)).toBe(arr)
+    const out = sampleEvenly(arr, 4)
+    expect(out).toEqual([0, 2, 5, 7]) // step=2.5 → floor 取样，首元素必中
+    expect(sampleEvenly([], 5)).toEqual([])
+  })
 })

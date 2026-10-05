@@ -33,6 +33,23 @@ export function normalizeProfile(p?: Partial<KbBrainProfile>): KbBrainProfile {
   }
 }
 
+/**
+ * 后台自动化（提炼动作免手点）：开机 + 挂机定时跑流程化管线
+ * （续消化 → 分层补标 → 书级汇总 → 目标提炼 → 归纳/清理/伏笔扫描），
+ * 各动作带冷却（brain_state.automation 记账）防重复烧调用。
+ */
+export interface KbBrainAutomationConfig {
+  enabled: boolean
+  /** 续消化：failed/pending 文档复活重跑（耗尽章冷却复活） */
+  digest: boolean
+  layerRelabel: boolean
+  bookPasses: boolean
+  goalDistill: boolean
+  consolidate: boolean
+  cleanup: boolean
+  foreshadow: boolean
+}
+
 export interface KbBrainConfig {
   enabled: boolean
   /** 原子化消化：范围（scopeDocumentIds 缺省=全库）；bookPasses=书级汇总遍开关 */
@@ -62,6 +79,8 @@ export interface KbBrainConfig {
    * hint 即提炼指引（找什么、怎么组织），由 goal-distill 消费。
    */
   goals: KbBrainGoal[]
+  /** 后台自动化（缺省全开：产物进待审提议人审，自动的是生产不是入库） */
+  automation: KbBrainAutomationConfig
 }
 
 /** 单个提取目标（经验提炼维度） */
@@ -78,6 +97,34 @@ export interface KbBrainState {
   importance: number
   lastDistillAt: string | null
   taste?: { lensWeights: Record<string, number> }
+  /** 后台自动化记账（各动作冷却/目标重跑门槛；ISO 时间戳） */
+  automation?: {
+    lastLayerRelabelAt?: string
+    /** 补标时的工作集论断数（论断明显增长才再触发，防「全是 detail」状态反复补标） */
+    relabelAtoms?: number
+    lastBookPassesAt?: string
+    /** 每目标上次自动运行：时间 + 当时工作集论断数（论断增长才重跑，防日日重复出近似卡） */
+    goalRuns?: Record<string, { at: string; atoms: number }>
+    lastConsolidateAt?: string
+    lastCleanupAt?: string
+    lastForeshadowAt?: string
+    /** 耗尽章自动复活（失败章重试烧钱，24h 一次） */
+    lastExhaustedReviveAt?: string
+  }
+}
+
+/** 自动化段缺省值（用户未配置/半段配置时补齐；全开——产物走待审提议人审） */
+export function defaultAutomationConfig(): KbBrainAutomationConfig {
+  return {
+    enabled: true,
+    digest: true,
+    layerRelabel: true,
+    bookPasses: true,
+    goalDistill: true,
+    consolidate: true,
+    cleanup: true,
+    foreshadow: true,
+  }
 }
 
 const BRAIN_CONFIG_SCHEMA = {
@@ -172,6 +219,21 @@ const BRAIN_CONFIG_SCHEMA = {
         additionalProperties: false,
       },
     },
+    automation: {
+      type: 'object',
+      properties: {
+        enabled: { type: 'boolean' },
+        digest: { type: 'boolean' },
+        layerRelabel: { type: 'boolean' },
+        bookPasses: { type: 'boolean' },
+        goalDistill: { type: 'boolean' },
+        consolidate: { type: 'boolean' },
+        cleanup: { type: 'boolean' },
+        foreshadow: { type: 'boolean' },
+      },
+      required: ['enabled'],
+      additionalProperties: false,
+    },
   },
   required: ['enabled'],
   additionalProperties: false,
@@ -194,6 +256,7 @@ export function defaultBrainConfig(enabled = true): KbBrainConfig {
     crag: { enabled: false },
     models: { atomize: '', adjudicate: '' },
     goals: [],
+    automation: defaultAutomationConfig(),
   }
 }
 
@@ -230,6 +293,7 @@ export function normalizeBrainConfig(partial: Partial<KbBrainConfig>): KbBrainCo
     crag: { ...def.crag, ...partial.crag },
     models: { ...def.models, ...partial.models },
     goals: Array.isArray(partial.goals) ? partial.goals : def.goals,
+    automation: { ...def.automation, ...partial.automation },
   }
 }
 
@@ -262,6 +326,7 @@ export function mergeBrainConfig(base: KbBrainConfig, patch: Partial<KbBrainConf
     crag: mergeSeg(base.crag, patch.crag),
     models: mergeSeg(base.models, patch.models),
     goals: patch.goals ?? base.goals,
+    automation: mergeSeg(base.automation, patch.automation),
   })
 }
 
@@ -287,6 +352,7 @@ export function parseBrainState(raw: string | null | undefined): KbBrainState {
       importance: typeof v.importance === 'number' ? v.importance : 0,
       lastDistillAt: typeof v.lastDistillAt === 'string' ? v.lastDistillAt : null,
       taste: v.taste,
+      automation: v.automation,
     }
   } catch {
     return { importance: 0, lastDistillAt: null }
