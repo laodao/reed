@@ -122,7 +122,10 @@ async function handleAddImage(
   input: AddImageInput,
 ): Promise<IpcResponse> {
   try {
-    const data = await buildService().addImage(input)
+    // 安全边界（review M3）：userId 字段客户端可控——显式传他人 ID 会写入他人
+    // 租户、传 null 会写入全租户共享行。HTTP 通道入口一律剥离，由服务侧回退到
+    // 当前登录用户上下文（getCurrentUserId）；预置 seed 等内部调用方不走本通道。
+    const data = await buildService().addImage({ ...input, userId: undefined })
     return { success: true, data }
   } catch (err: any) {
     return { success: false, error: err?.message ?? String(err) }
