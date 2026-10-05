@@ -40,7 +40,12 @@ export function rateLimit(opts: RateLimitOptions) {
     }
 
     const ip = req.ip ?? req.socket?.remoteAddress ?? 'unknown'
-    const key = `${ip}:${req.path}`
+    // 桶 key 用路由模板（req.route.path，如 '/login'）而非原始 req.path：
+    // Express 默认大小写不敏感 + 非严格路由，/login、/login/、/Login 命中同一路由
+    // 却各自成桶——每个变体一套配额等于限流可被路径变体击穿（review M1）。
+    const route = (req as Request & { route?: { path?: string } }).route
+    const pathPart = typeof route?.path === 'string' && route.path ? route.path : req.path
+    const key = `${ip}:${pathPart}`
     const bucket = buckets.get(key)
 
     if (!bucket || bucket.resetAt <= now) {
