@@ -14,6 +14,9 @@
 
 import * as fs from 'fs'
 import * as path from 'path'
+import { Readable } from 'stream'
+import { pipeline } from 'stream/promises'
+import type { ReadableStream as NodeWebReadableStream } from 'stream/web'
 import type {
   StockMediaDownload,
   StockMediaItem,
@@ -24,6 +27,7 @@ import type {
 } from '@shared/types/stock-media.types'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { createStockProvider } from '@core/platform/providers/stock'
+import { validateOutboundUrl } from '@core/utils/outbound-url'
 
 /** 素材缓存子目录（相对 dataPath） */
 export const STOCK_MEDIA_CACHE_SUBDIR = 'stock-media'
@@ -84,6 +88,32 @@ export function stockRelDir(provider: StockMediaProviderId, kind: StockMediaKind
   return `${STOCK_MEDIA_CACHE_SUBDIR}/${provider}/${kind}`
 }
 
+/**
+ * 查找已缓存的素材文件（幂等复用）。
+ * 文件扩展名由下载时的 Content-Type 决定，重跑时可能不同于 URL 后缀推断，
+ * 故按 `provider_kind_id.` 前缀匹配目录内已有文件；存在且 size>0 视为有效缓存。
+ */
+function findCachedFile(absDir: string, item: StockMediaItem): string | null {
+  let entries: string[]
+  try {
+    entries = fs.readdirSync(absDir)
+  } catch {
+    return null // 目录不存在（首跑）等 IO 异常按未缓存处理
+  }
+  const safeId = String(item.id || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '')
+  const prefix = `${item.provider}_${item.kind}_${safeId}.`
+  for (const name of entries) {
+    if (!name.startsWith(prefix) || name.endsWith('.part')) continue
+    try {
+      const st = fs.statSync(path.join(absDir, name))
+      if (st.isFile() && st.size > 0) return path.join(absDir, name)
+    } catch {
+      /* 拿到目录项后文件被删（竞态）：继续找下一个 */
+    }
+  }
+  return null
+}
+
 /** 真实素材服务 */
 export class StockMediaService {
   /**
@@ -125,7 +155,7 @@ export class StockMediaService {
   }
 
   /**
-   * 下载单条素材到本地缓存目录（已存在则直接复用）。
+   * 下载单条素材到本地缓存目录（已存在且非空则直接复用，不重复下载）。
    * 落盘相对路径入库、绝对路径给下游 ffmpeg/图生视频使用。
    */
   static async download(
@@ -137,22 +167,50 @@ export class StockMediaService {
     const absDir = path.join(dataPath, relDir)
     fs.mkdirSync(absDir, { recursive: true })
 
+    // 幂等缓存：同 provider+id 的素材已落盘（size>0）直接复用，同一次脚本重跑/多次重试不重复下载
+    const cachedAbsPath = findCachedFile(absDir, item)
+    if (cachedAbsPath) {
+      return {
+        item,
+        relPath: `${relDir}/${path.basename(cachedAbsPath)}`,
+        absPath: cachedAbsPath,
+        bytes: fs.statSync(cachedAbsPath).size,
+        cached: true,
+      }
+    }
+
+    // SSRF 防护：downloadUrl 来自外部素材库响应，与 ai-call.toImageDataUrl 同款出向校验
+    // （只允许 http/https，拒绝内网/环回/保留地址）
+    const guard = validateOutboundUrl(item.downloadUrl)
+    if (!guard.ok) throw new Error(`素材下载 URL 校验失败：${guard.reason}`)
+
+    // 视频文件可达上百 MB，超时给 60s（比图片拉取的 30s 宽）
     const fetchImpl = options?.fetchImpl ?? fetch
-    const resp = await fetchImpl(item.downloadUrl, { method: 'GET' })
+    const resp = await fetchImpl(item.downloadUrl, { method: 'GET', signal: AbortSignal.timeout(60_000) })
     if (!resp.ok) throw new Error(`素材下载失败（HTTP ${resp.status}）：${item.downloadUrl}`)
-    const buffer = Buffer.from(await resp.arrayBuffer())
-    if (buffer.length === 0) throw new Error(`素材下载为空：${item.downloadUrl}`)
+    if (!resp.body) throw new Error(`素材下载无响应体：${item.downloadUrl}`)
 
     const ext = guessMediaExt(resp.headers.get('content-type') || '', item.downloadUrl, item.kind)
     const fileName = stockFileName(item, ext)
     const absPath = path.join(absDir, fileName)
-    fs.writeFileSync(absPath, buffer)
-    return {
-      item,
-      relPath: `${relDir}/${fileName}`,
-      absPath,
-      bytes: buffer.length,
-      cached: false,
+    const partPath = `${absPath}.part`
+    try {
+      // 流式写盘：不整段读内存，先写 .part 临时文件，完成后原子改名成最终文件
+      await pipeline(Readable.fromWeb(resp.body as unknown as NodeWebReadableStream), fs.createWriteStream(partPath))
+      const st = await fs.promises.stat(partPath)
+      if (!st.isFile() || st.size === 0) throw new Error(`素材下载为空：${item.downloadUrl}`)
+      await fs.promises.rename(partPath, absPath)
+      return {
+        item,
+        relPath: `${relDir}/${fileName}`,
+        absPath,
+        bytes: st.size,
+        cached: false,
+      }
+    } catch (e) {
+      // 失败/超时清理半成品临时文件（残留 .part 会占用磁盘且不会被缓存命中复用）
+      await fs.promises.rm(partPath, { force: true }).catch(() => {})
+      throw e
     }
   }
 

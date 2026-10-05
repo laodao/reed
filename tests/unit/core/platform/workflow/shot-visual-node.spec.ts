@@ -3,7 +3,8 @@
  * @module tests/unit/core/platform/workflow/shot-visual-node
  * @description 配图相关性的核心节点：三层供给 + 相关性闸 + 生成质检重试。
  *              这里把三类 IO（素材服务 / 文生图 / 视觉质检）全部 mock，穷举分支：
- *              - 真实视频素材过闸 → 直接采用（source=stock-video，带出处与相关性）
+ *              - 真实视频素材：先按 previewUrl 逐条质检、只下载过闸的那一条（不整包下载）
+ *              - 真实图片素材：先下载候选再质检（previewUrl 缺失时用本地文件）
  *              - 真实素材全部不过闸 → 回落生成
  *              - 素材层异常（网络/Key 失效） → 不阻断，回落生成并如实记录 note
  *              - 未配凭据 / 未配质检模型 → 各自留痕而不是静默
@@ -13,14 +14,18 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+const mockSearch = vi.fn()
 const mockFetchCandidates = vi.fn()
+const mockDownload = vi.fn()
 const mockResolveCredentialKey = vi.fn()
 const mockCallVLM = vi.fn()
 const mockGenerateImages = vi.fn()
 
 vi.mock('@core/platform/services/stock-media.service', () => ({
   StockMediaService: {
+    search: (...a: unknown[]) => mockSearch(...a),
     fetchCandidates: (...a: unknown[]) => mockFetchCandidates(...a),
+    download: (...a: unknown[]) => mockDownload(...a),
   },
 }))
 vi.mock('@core/platform/services/ai-call', () => ({
@@ -112,6 +117,13 @@ const download = (over: Record<string, unknown> = {}, itemOver: Record<string, u
 const qaReply = (score: number, hasText = false, reason = '') =>
   JSON.stringify({ score, hasText, reason })
 
+/** 视频候选条目（StockMediaService.search 的返回形态） */
+const stockItem = (itemOver: Record<string, unknown> = {}) => download({}, itemOver).item
+
+/** 视频层检索结果（节点只对 kind=video 走 search+质检+单条下载） */
+const videoSearch = (items: unknown[]) =>
+  mockSearch.mockResolvedValue({ items, queryUsed: 'q', queriesTried: ['q'] })
+
 const genOk = (path = 'C:/data/images/a.png') => ({
   prompt: 'p',
   images: [{ path, localUrl: `local-image://${path.split('/').pop()}` }],
@@ -125,10 +137,12 @@ beforeEach(() => {
 })
 
 /** 按素材种类给不同候选（精确控制"视频层有/图片层无"等分支） */
-const byKind = (byVideo: unknown, byImage: unknown) =>
+const byKind = (byVideo: unknown, byImage: unknown) => {
+  mockSearch.mockImplementation(async (opts: { request: { kind: string } }) =>
+    opts.request.kind === 'video' ? byVideo : { items: [], queryUsed: 'q', queriesTried: ['q'] })
   mockFetchCandidates.mockImplementation(async (opts: { request: { kind: string } }) =>
-    opts.request.kind === 'video' ? byVideo : byImage,
-  )
+    opts.request.kind === 'image' ? byImage : { downloads: [], queryUsed: 'q', queriesTried: ['q'], failed: 0 })
+}
 
 describe('validateConfig', () => {
   it('无镜头语义报错；关闭生成兜底又无凭据报错；无图像模型报错', () => {
@@ -144,8 +158,9 @@ describe('validateConfig', () => {
 })
 
 describe('第一层：真实素材命中', () => {
-  it('真实视频素材过闸即采用（带出处/作者/授权/相关性）', async () => {
-    mockFetchCandidates.mockResolvedValueOnce({ downloads: [download()], queryUsed: 'container port terminal', queriesTried: ['container port terminal'], failed: 0 })
+  it('真实视频素材过闸即采用（带出处/作者/授权/相关性），且只下载这一条', async () => {
+    mockSearch.mockResolvedValueOnce({ items: [stockItem()], queryUsed: 'container port terminal', queriesTried: ['container port terminal'] })
+    mockDownload.mockResolvedValueOnce(download())
     mockCallVLM.mockResolvedValueOnce(qaReply(88, false, '码头场景贴题'))
     const res = await handler.execute(ctx({ ...BASE_CONFIG }))
     expect(res.status).toBe('succeeded')
@@ -160,12 +175,34 @@ describe('第一层：真实素材命中', () => {
     expect(out.license).toBe('pexels')
     expect(out.searchQuery).toBe('container port terminal')
     expect(mockGenerateImages).not.toHaveBeenCalled()
+    // 质检前置：只下载过闸的那一条，不走整包候选下载
+    expect(mockDownload).toHaveBeenCalledTimes(1)
+    expect(mockFetchCandidates).not.toHaveBeenCalled()
+  })
+
+  it('视频多候选：逐条按 previewUrl 质检，只下载过闸的那一条（未过闸候选不再白下）', async () => {
+    videoSearch([
+      stockItem({ id: '111', previewUrl: 'https://images.pexels.com/111.jpg' }),
+      stockItem({ id: '222', previewUrl: 'https://images.pexels.com/222.jpg' }),
+    ])
+    mockCallVLM
+      .mockResolvedValueOnce(qaReply(30, false, '跑题')) // 候选 111：不过闸，继续看下一条
+      .mockResolvedValueOnce(qaReply(88, false, '码头贴题')) // 候选 222：过闸
+    mockDownload.mockImplementation(async (item: { id: string }) => download({}, { id: item.id }))
+    const res = await handler.execute(ctx({ ...BASE_CONFIG }))
+    expect(res.status).toBe('succeeded')
+    const out = (res as { output: Record<string, unknown> }).output
+    expect(out.stockId).toBe('222')
+    expect(out.relevance).toBe(88)
+    expect(mockCallVLM).toHaveBeenCalledTimes(2)
+    expect(mockDownload).toHaveBeenCalledTimes(1)
+    expect((mockDownload.mock.calls[0][0] as { id: string }).id).toBe('222')
   })
 
   it('真实图片素材采用时给首帧图与 URL，且不产出片段', async () => {
-    // 视频层未命中 → 图片层次之命中
+    // 视频层未命中 → 图片层次之命中（图片保持先下载候选再质检）
     byKind(
-      { downloads: [], queryUsed: 'container port terminal', queriesTried: ['container port terminal'], failed: 0 },
+      { items: [], queryUsed: 'container port terminal', queriesTried: ['container port terminal'] },
       {
         downloads: [download({ relPath: 'stock-media/pexels/image/x.jpg', absPath: 'C:/data/stock-media/pexels/image/x.jpg' }, { kind: 'image', durationSec: undefined })],
         queryUsed: 'container port terminal',
@@ -180,14 +217,16 @@ describe('第一层：真实素材命中', () => {
     expect(out.clipPath).toBe('')
     expect(out.imagePath).toContain('x.jpg')
     expect(mockGenerateImages).not.toHaveBeenCalled()
-    // 视频层先试、图片层次之
-    expect(mockFetchCandidates.mock.calls.map(c => (c[0] as { request: { kind: string } }).request.kind)).toEqual(['video', 'image'])
+    // 视频层走 search（质检前置）、图片层走 fetchCandidates（先下载再质检）
+    expect(mockSearch.mock.calls.map(c => (c[0] as { request: { kind: string } }).request.kind)).toEqual(['video'])
+    expect(mockFetchCandidates.mock.calls.map(c => (c[0] as { request: { kind: string } }).request.kind)).toEqual(['image'])
   })
 
   it('候选不过闸 → 回落生成（并留下未过闸说明）', async () => {
-    const hit = { downloads: [download()], queryUsed: 'q', queriesTried: ['q'], failed: 0 }
-    const miss = { downloads: [], queryUsed: 'q', queriesTried: ['q'], failed: 0 }
-    byKind(hit, miss)
+    byKind(
+      { items: [stockItem()], queryUsed: 'q', queriesTried: ['q'] },
+      { downloads: [], queryUsed: 'q', queriesTried: ['q'], failed: 0 },
+    )
     mockCallVLM.mockResolvedValueOnce(qaReply(20, false, '跑题')) // 素材质检
     mockCallVLM.mockResolvedValueOnce(qaReply(85, false, '产线贴题')) // 生成质检
     mockGenerateImages.mockResolvedValueOnce(genOk())
@@ -197,20 +236,40 @@ describe('第一层：真实素材命中', () => {
     expect(out.relevance).toBe(85)
     expect(String(out.note)).toContain('未过相关性闸')
     expect(mockGenerateImages).toHaveBeenCalledTimes(1)
+    // 视频候选未过闸：不应下载任何视频
+    expect(mockDownload).not.toHaveBeenCalled()
   })
 
   it('质检判定"画面有文字"时也不采用（阈值内也拦）', async () => {
-    const hit = { downloads: [download()], queryUsed: 'q', queriesTried: ['q'], failed: 0 }
-    const miss = { downloads: [], queryUsed: 'q', queriesTried: ['q'], failed: 0 }
-    byKind(hit, miss)
+    byKind(
+      { items: [stockItem()], queryUsed: 'q', queriesTried: ['q'] },
+      { downloads: [], queryUsed: 'q', queriesTried: ['q'], failed: 0 },
+    )
     mockCallVLM.mockResolvedValue(qaReply(80, true, '有字幕条'))
     mockGenerateImages.mockResolvedValue(genOk())
     const res = await handler.execute(ctx({ ...BASE_CONFIG }))
     expect((res as { output: Record<string, unknown> }).output.source).toBe('generated')
   })
 
+  it('视频质检过闸但下载失败：如实留痕并回落生成（不静默）', async () => {
+    byKind(
+      { items: [stockItem()], queryUsed: 'q', queriesTried: ['q'] },
+      { downloads: [], queryUsed: 'q', queriesTried: ['q'], failed: 0 },
+    )
+    mockCallVLM
+      .mockResolvedValueOnce(qaReply(88, false, '码头贴题')) // 视频质检过闸
+      .mockResolvedValueOnce(qaReply(85, false, '产线贴题')) // 生成质检
+    mockDownload.mockRejectedValueOnce(new Error('素材下载失败（HTTP 503）'))
+    mockGenerateImages.mockResolvedValueOnce(genOk())
+    const res = await handler.execute(ctx({ ...BASE_CONFIG }))
+    const out = (res as { output: Record<string, unknown> }).output
+    expect(out.source).toBe('generated')
+    expect(String(out.note)).toContain('真实视频素材下载失败')
+    expect(String(out.note)).toContain('HTTP 503')
+  })
+
   it('素材层异常不阻断流程（回落生成并记录原因）', async () => {
-    mockFetchCandidates.mockRejectedValueOnce(new Error('Pexels 接口返回 HTTP 401'))
+    mockSearch.mockRejectedValueOnce(new Error('Pexels 接口返回 HTTP 401'))
     mockCallVLM.mockResolvedValue(qaReply(80))
     mockGenerateImages.mockResolvedValueOnce(genOk())
     const res = await handler.execute(ctx({ ...BASE_CONFIG }))
@@ -227,6 +286,7 @@ describe('第一层：真实素材命中', () => {
     expect(out.source).toBe('generated')
     expect(String(out.note)).toContain('未提供素材库凭据')
     expect(mockFetchCandidates).not.toHaveBeenCalled()
+    expect(mockSearch).not.toHaveBeenCalled()
   })
 
   it('该镜无检索词 → 跳过素材层（不瞎搜）', async () => {
@@ -236,16 +296,19 @@ describe('第一层：真实素材命中', () => {
     const out = (res as { output: Record<string, unknown> }).output
     expect(String(out.note)).toContain('未解析出素材检索词')
     expect(mockFetchCandidates).not.toHaveBeenCalled()
+    expect(mockSearch).not.toHaveBeenCalled()
   })
 
-  it('无质检模型时真实素材按检索词命中直接采用（留痕）', async () => {
-    mockFetchCandidates.mockResolvedValueOnce({ downloads: [download()], queryUsed: 'q', queriesTried: ['q'], failed: 0 })
+  it('无质检模型时真实素材按检索词命中直接采用（留痕，只下首条）', async () => {
+    mockSearch.mockResolvedValueOnce({ items: [stockItem()], queryUsed: 'q', queriesTried: ['q'] })
+    mockDownload.mockResolvedValueOnce(download())
     const res = await handler.execute(ctx({ ...BASE_CONFIG, qaProviderConfigId: '' }))
     const out = (res as { output: Record<string, unknown> }).output
     expect(out.source).toBe('stock-video')
     expect(out.relevance).toBe(-1)
     expect(String(out.note)).toContain('视觉质检模型不可用')
     expect(mockCallVLM).not.toHaveBeenCalled()
+    expect(mockDownload).toHaveBeenCalledTimes(1)
   })
 })
 

@@ -35,7 +35,7 @@ import {
   type VisualQaResult,
   type VisualShotSpec,
 } from '../visual/visual-plan'
-import type { StockMediaDownload, StockMediaKind, StockMediaProviderId } from '@shared/types/stock-media.types'
+import type { StockMediaDownload, StockMediaItem, StockMediaKind, StockMediaProviderId, StockMediaSearchRequest } from '@shared/types/stock-media.types'
 import type { WorkflowNodeContext, WorkflowNodeHandler } from '../engine/node-handler'
 
 /** 节点配置 */
@@ -214,91 +214,151 @@ const shotVisualNode: WorkflowNodeHandler = {
           // 质检能力只探一次：失败后续候选不再重复调用（避免每个候选都撞同一个错）
           let qaUsable = !!cfg.qaProviderConfigId
           let qaError = ''
+          /** 采纳真实素材（视频=片段 / 图片=首帧图）：统一组装成功输出（出处/授权/检索词留痕） */
+          const adoptStock = (
+            d: StockMediaDownload,
+            qa: VisualQaResult | null,
+            queryUsed: string,
+          ): { status: 'succeeded'; output: Record<string, unknown> } => {
+            const item = d.item
+            const isVideo = item.kind === 'video'
+            notes.push(
+              `真实${isVideo ? '视频' : '图片'}素材采用：${item.provider}#${item.id}（${item.width}×${item.height}` +
+                `${isVideo ? `，${item.durationSec}s` : ''}）｜检索词「${queryUsed}」｜授权：${item.license}` +
+                `${qa ? `｜相关性 ${qa.score}` : '｜未质检'}`,
+            )
+            ctx.emitProgress(100, notes[notes.length - 1])
+            return {
+              status: 'succeeded',
+              output: {
+                source: isVideo ? 'stock-video' : 'stock-image',
+                imagePath: isVideo ? '' : d.absPath,
+                imageUrl: isVideo ? '' : finalUrl(d.relPath),
+                clipPath: isVideo ? d.absPath : '',
+                clipUrl: isVideo ? finalUrl(d.relPath) : '',
+                relevance: qa ? qa.score : -1,
+                attempts: 0,
+                provider: item.provider,
+                stockId: item.id,
+                pageUrl: item.pageUrl,
+                author: item.author || '',
+                license: item.license,
+                searchQuery: queryUsed,
+                prompt: '',
+                note: notes.join('；'),
+              },
+            }
+          }
+          const maxCand = Number(cfg.stockMaxCandidates) > 0 ? Number(cfg.stockMaxCandidates) : 3
           for (const kind of stockKindsToTry(cfg.stockKind)) {
             if (!qaUsable && kind === 'video') {
               // 无质检时仍可用真实素材（检索词本身即强约束），但必须留痕
               notes.push('视觉质检模型不可用：真实素材按检索词命中直接采用')
             }
-            const res = await StockMediaService.fetchCandidates({
-              provider,
-              apiKey,
-              request: {
-                query: primary,
-                kind,
-                perPage: Number(cfg.stockPerPage) > 0 ? Number(cfg.stockPerPage) : 8,
-                orientation: 'portrait',
-                minWidth: Number(cfg.stockMinWidth) > 0 ? Number(cfg.stockMinWidth) : 720,
-                minDurationSec: kind === 'video'
-                  ? (Number(cfg.stockMinDurationSec) > 0 ? Number(cfg.stockMinDurationSec) : 3)
-                  : undefined,
-              },
-              altQueries: alts,
-              maxDownloads: Number(cfg.stockMaxCandidates) > 0 ? Number(cfg.stockMaxCandidates) : 3,
-            })
-            if (res.downloads.length === 0) {
-              notes.push(`真实${kind === 'video' ? '视频' : '图片'}素材未命中（检索词：${res.queriesTried.join(' / ')}）`)
-              continue
+            const request: StockMediaSearchRequest = {
+              query: primary,
+              kind,
+              perPage: Number(cfg.stockPerPage) > 0 ? Number(cfg.stockPerPage) : 8,
+              orientation: 'portrait',
+              minWidth: Number(cfg.stockMinWidth) > 0 ? Number(cfg.stockMinWidth) : 720,
+              minDurationSec: kind === 'video'
+                ? (Number(cfg.stockMinDurationSec) > 0 ? Number(cfg.stockMinDurationSec) : 3)
+                : undefined,
             }
-            // 相关性选优：逐条质检，取第一条过闸的；全部不过则记最优分
-            let best: { d: StockMediaDownload; qa: VisualQaResult | null } | null = null
-            for (const d of res.downloads) {
-              const qaSource = d.item.previewUrl || (d.item.kind === 'image' ? d.absPath : '')
-              let qa: VisualQaResult | null = null
-              if (qaUsable && qaSource) {
-                const qaRes = await runQa(cfg, spec, qaSource)
-                if (qaRes.error) {
-                  qaUsable = false
-                  qaError = qaRes.error
-                } else {
-                  qa = qaRes.qa
+            if (kind === 'video') {
+              // 视频候选先按 previewUrl 质检、只下载过闸的那一条：视频体积大（可达上百 MB），
+              // 且视频质检只用 previewUrl 封面图（不依赖下载产物），整包下载再质检会让未过闸候选全部白下。
+              const searched = await StockMediaService.search({ provider, apiKey, request, altQueries: alts })
+              if (searched.items.length === 0) {
+                notes.push(`真实视频素材未命中（检索词：${searched.queriesTried.join(' / ')}）`)
+                continue
+              }
+              // 相关性选优：逐条按封面图质检，取第一条过闸的；全部不过则记最优分
+              const candidates = searched.items.slice(0, maxCand)
+              let best: { item: StockMediaItem; qa: VisualQaResult | null } | null = null
+              for (const item of candidates) {
+                let qa: VisualQaResult | null = null
+                if (qaUsable && item.previewUrl) {
+                  const qaRes = await runQa(cfg, spec, item.previewUrl)
+                  if (qaRes.error) {
+                    qaUsable = false
+                    qaError = qaRes.error
+                  } else {
+                    qa = qaRes.qa
+                  }
+                }
+                if (!best || (qa?.score ?? 0) > (best.qa?.score ?? 0)) best = { item, qa }
+                if (!qaUsable) break // 质检不可用：采用首条（检索词命中即用）
+                if (qa && !(qa.hasText && qa.score < 90) && qa.score >= stockMinScore) break
+              }
+              // 质检中途失效时必须在此留痕：下面若采用候选会直接 return，走不到循环外的统一留痕
+              if (qaError) notes.push(`视觉质检不可用（按检索词命中直接采用）：${qaError}`)
+              const chosen = best
+              const usable = chosen && (!qaUsable || !chosen.qa || (!(chosen.qa.hasText && chosen.qa.score < 90) && chosen.qa.score >= stockMinScore))
+              if (chosen && usable && qaUsable && !chosen.qa) {
+                notes.push('候选素材无封面图可质检（视频未返回缩略图）：按检索词命中直接采用')
+              }
+              if (chosen && usable) {
+                try {
+                  return adoptStock(await StockMediaService.download(chosen.item), chosen.qa, searched.queryUsed)
+                } catch (e) {
+                  // 质检已过但下载失败：如实留痕并继续回退（下一种类 / 生成兜底），不静默
+                  notes.push(`真实视频素材下载失败（跳过该候选）：${e instanceof Error ? e.message : String(e)}`)
+                  continue
                 }
               }
-              if (!best || (qa?.score ?? 0) > (best.qa?.score ?? 0)) best = { d, qa }
-              if (!qaUsable) break // 质检不可用：采用首条（检索词命中即用）
-              if (qa && !(qa.hasText && qa.score < 90) && qa.score >= stockMinScore) break
-            }
-            // 质检中途失效时必须在此留痕：下面若采用候选会直接 return，走不到循环外的统一留痕
-            if (qaError) notes.push(`视觉质检不可用（按检索词命中直接采用）：${qaError}`)
-            const chosen = best
-            const usable = chosen && (!qaUsable || !chosen.qa || (!(chosen.qa.hasText && chosen.qa.score < 90) && chosen.qa.score >= stockMinScore))
-            if (chosen && usable && qaUsable && !chosen.qa) {
-              notes.push('候选素材无封面图可质检（视频未返回缩略图）：按检索词命中直接采用')
-            }
-            if (chosen && usable) {
-              const item = chosen.d.item
-              const isVideo = item.kind === 'video'
+              const bestScore = chosen?.qa ? chosen.qa.score : -1
               notes.push(
-                `真实${isVideo ? '视频' : '图片'}素材采用：${item.provider}#${item.id}（${item.width}×${item.height}` +
-                  `${isVideo ? `，${item.durationSec}s` : ''}）｜检索词「${res.queryUsed}」｜授权：${item.license}` +
-                  `${chosen.qa ? `｜相关性 ${chosen.qa.score}` : '｜未质检'}`,
+                `真实视频候选 ${candidates.length} 条均未过相关性闸` +
+                  `（最优 ${bestScore < 0 ? '未质检' : bestScore} < 阈值 ${stockMinScore}）`,
               )
-              ctx.emitProgress(100, notes[notes.length - 1])
-              return {
-                status: 'succeeded',
-                output: {
-                  source: isVideo ? 'stock-video' : 'stock-image',
-                  imagePath: isVideo ? '' : chosen.d.absPath,
-                  imageUrl: isVideo ? '' : finalUrl(chosen.d.relPath),
-                  clipPath: isVideo ? chosen.d.absPath : '',
-                  clipUrl: isVideo ? finalUrl(chosen.d.relPath) : '',
-                  relevance: chosen.qa ? chosen.qa.score : -1,
-                  attempts: 0,
-                  provider: item.provider,
-                  stockId: item.id,
-                  pageUrl: item.pageUrl,
-                  author: item.author || '',
-                  license: item.license,
-                  searchQuery: res.queryUsed,
-                  prompt: '',
-                  note: notes.join('；'),
-                },
+            } else {
+              // 图片保持"先下载再质检"：previewUrl 缺失时质检要用本地落盘文件（absPath）
+              const res = await StockMediaService.fetchCandidates({
+                provider,
+                apiKey,
+                request,
+                altQueries: alts,
+                maxDownloads: maxCand,
+              })
+              if (res.downloads.length === 0) {
+                notes.push(`真实图片素材未命中（检索词：${res.queriesTried.join(' / ')}）`)
+                continue
               }
+              // 相关性选优：逐条质检，取第一条过闸的；全部不过则记最优分
+              let best: { d: StockMediaDownload; qa: VisualQaResult | null } | null = null
+              for (const d of res.downloads) {
+                const qaSource = d.item.previewUrl || (d.item.kind === 'image' ? d.absPath : '')
+                let qa: VisualQaResult | null = null
+                if (qaUsable && qaSource) {
+                  const qaRes = await runQa(cfg, spec, qaSource)
+                  if (qaRes.error) {
+                    qaUsable = false
+                    qaError = qaRes.error
+                  } else {
+                    qa = qaRes.qa
+                  }
+                }
+                if (!best || (qa?.score ?? 0) > (best.qa?.score ?? 0)) best = { d, qa }
+                if (!qaUsable) break // 质检不可用：采用首条（检索词命中即用）
+                if (qa && !(qa.hasText && qa.score < 90) && qa.score >= stockMinScore) break
+              }
+              // 质检中途失效时必须在此留痕：下面若采用候选会直接 return，走不到循环外的统一留痕
+              if (qaError) notes.push(`视觉质检不可用（按检索词命中直接采用）：${qaError}`)
+              const chosen = best
+              const usable = chosen && (!qaUsable || !chosen.qa || (!(chosen.qa.hasText && chosen.qa.score < 90) && chosen.qa.score >= stockMinScore))
+              if (chosen && usable && qaUsable && !chosen.qa) {
+                notes.push('候选素材无封面图可质检（视频未返回缩略图）：按检索词命中直接采用')
+              }
+              if (chosen && usable) {
+                return adoptStock(chosen.d, chosen.qa, res.queryUsed)
+              }
+              const bestScore = chosen?.qa ? chosen.qa.score : -1
+              notes.push(
+                `真实图片候选 ${res.downloads.length} 条均未过相关性闸` +
+                  `（最优 ${bestScore < 0 ? '未质检' : bestScore} < 阈值 ${stockMinScore}）`,
+              )
             }
-            const bestScore = chosen?.qa ? chosen.qa.score : -1
-            notes.push(
-              `真实${kind === 'video' ? '视频' : '图片'}候选 ${res.downloads.length} 条均未过相关性闸` +
-                `（最优 ${bestScore < 0 ? '未质检' : bestScore} < 阈值 ${stockMinScore}）`,
-            )
           }
           if (qaError) notes.push(`视觉质检调用失败：${qaError}`)
         } catch (e) {
