@@ -132,28 +132,17 @@ async function handleGetConfig(
  * 处理创建配置请求
  */
 /**
- * baseUrl 规范校验（标准化决策：版本段必须在 baseUrl，如 http://host:8000/v1）。
- * 不带版本段的地址直接拒绝——避免静默拼错 URL 后以 404 等晦涩错误暴露，用户无所适从。
- *
- * 例外：等于模板缺省端点时放行。Anthropic 协议根地址天然不带版本段
- * （SDK 自行拼 /v1/messages），如 https://api.anthropic.com、
- * 阿里百炼 Token Plan 的 https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic；
- * 用户照官方文档把地址粘进输入框不应被误拒。
+ * baseUrl 基本校验：只要求是 http(s) 地址，不强制版本段结尾。
+ * DeepSeek 等官方 BaseURL 本就不带 /v1（https://api.deepseek.com），
+ * 强制版本段会把官方文档地址误拒；缺版本段导致的路径 404 交给「测试连接」暴露。
  *
  * @param baseUrl - 用户填写的 BaseURL（留空表示使用模板默认值）
- * @param template - 所选模板（用于放行其缺省端点）
  * @returns 错误信息；null 表示通过
  */
-export function validateBaseUrl(
-  baseUrl: string | undefined,
-  template?: { apiConfig?: { baseUrl?: string } }
-): string | null {
-  if (!baseUrl || !baseUrl.trim()) return null // 留空则用模板默认值（模板 baseUrl 均已含版本段）
-  const trimmed = baseUrl.trim().replace(/\/+$/, '')
-  const templateDefault = template?.apiConfig?.baseUrl?.trim().replace(/\/+$/, '')
-  if (templateDefault && trimmed === templateDefault) return null
-  if (!/^https?:\/\/.+\/v\d+[a-z]*$/i.test(trimmed)) {
-    return `BaseURL 必须以版本段结尾（如 http://host:8000/v1、https://api.xx.com/v4）——当前：${baseUrl}`
+export function validateBaseUrl(baseUrl: string | undefined): string | null {
+  if (!baseUrl || !baseUrl.trim()) return null // 留空则用模板默认值
+  if (!/^https?:\/\/.+/i.test(baseUrl.trim())) {
+    return `BaseURL 必须以 http:// 或 https:// 开头——当前：${baseUrl}`
   }
   return null
 }
@@ -174,7 +163,7 @@ async function handleCreateConfig(
       return { success: false, error: '模板不存在' }
     }
 
-    const baseUrlError = validateBaseUrl(request.baseUrl, template)
+    const baseUrlError = validateBaseUrl(request.baseUrl)
     if (baseUrlError) return { success: false, error: baseUrlError }
 
     // 加密 API 密钥
@@ -273,9 +262,7 @@ async function handleUpdateConfig(
     if (data.name !== undefined) updates.name = data.name
     if (data.shortId !== undefined) updates.shortId = data.shortId
     if (data.baseUrl !== undefined) {
-      // 编辑时模板可能未随请求传入 → 从既有配置反查，保证缺省端点同样放行
-      const template = providerTemplateService.getTemplateById(existing.templateId)
-      const baseUrlError = validateBaseUrl(data.baseUrl, template)
+      const baseUrlError = validateBaseUrl(data.baseUrl)
       if (baseUrlError) return { success: false, error: baseUrlError }
       updates.baseUrl = data.baseUrl
     }

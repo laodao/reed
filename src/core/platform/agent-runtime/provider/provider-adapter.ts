@@ -262,7 +262,7 @@ const GOOGLE_OFFICIAL_ROOTS = new Set([
   'https://generativelanguage.googleapis.com/',
 ])
 
-/** 版本段（与本应用 BaseURL 约定一致：自定义地址须以 /v1 这类版本段结尾） */
+/** 版本段——baseUrl 允许带或不带版本段（如 DeepSeek 官方根地址），缺失时下方补 /v1 */
 const VERSION_SEGMENT_RE = /\/v\d+[a-z]*$/i
 
 /**

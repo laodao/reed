@@ -609,7 +609,7 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     isOfficial: false,
     apiConfig: {
       // llama-server 默认监听 127.0.0.1:8080，OpenAI 兼容端点挂在 /v1 下；
-      // baseUrl 含版本段与 validateBaseUrl 的约定一致，joinUrl 会去重双侧 /v1
+      // 模板 baseUrl 带版本段，joinUrl 会去重双侧 /v1
       baseUrl: 'http://127.0.0.1:8080/v1',
       authType: 'bearer',
       authHeader: 'Authorization',
