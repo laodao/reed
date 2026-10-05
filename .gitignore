@@ -57,6 +57,10 @@ progress/
 outputs/*.mp4
 outputs/*.mkv
 outputs/*.webm
+# 数据库备份/产物绝不入库（含用户数据，体积大；备份放仓库外目录）
+outputs/*.db
+outputs/*.db-shm
+outputs/*.db-wal
 
 # ===== 创作资产（本地保留，不入库）=====
 # 天下捕快设定集/旧稿与 skill 包原始归档（docs/other/，约 12MB 二进制）

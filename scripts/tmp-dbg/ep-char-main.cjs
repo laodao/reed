@@ -1,5 +1,0 @@
-const db = require('better-sqlite3')(process.env.HOME + '/.config/the_bot/the_bot.db', {readonly: true})
-const rows = db.prepare("SELECT a.id, a.asset_id, b.standalone_name, a.image_path FROM asset_image a JOIN character_bindings b ON b.id=a.asset_id WHERE a.asset_type='character' AND a.is_main=1 AND a.confirmed=1 AND b.project_id='vp_1789956405010_2jf82v0ni'").all()
-console.log(JSON.stringify(rows, null, 1))
-const locs = db.prepare("SELECT a.asset_id, b.standalone_name, a.image_path FROM asset_image a JOIN location_bindings b ON b.id=a.asset_id WHERE a.is_main=1 AND b.project_id='vp_1789956405010_2jf82v0ni'").all()
-console.log(JSON.stringify(locs, null, 1))
