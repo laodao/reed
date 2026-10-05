@@ -20,7 +20,11 @@ import { createLogger } from '@core/utils/logger'
 import type { DlConceptRepository, DlConceptRow } from '@core/database/repositories/dl-concept.repository'
 import type { DlRelationRepository, DlRelationRow } from '@core/database/repositories/dl-relation.repository'
 import type { DlMasteryLogRepository } from '@core/database/repositories/dl-mastery-log.repository'
-import type { DlReviewDueItem, DlCreateConceptInput, DlCreateConceptResult } from '@shared/types/domain-learning.types'
+import type { DlCardRepository } from '@core/database/repositories/dl-card.repository'
+import type { DlNoteRepository } from '@core/database/repositories/dl-note.repository'
+import type { DlQuestionRepository } from '@core/database/repositories/dl-question.repository'
+import type { DlConceptLogRepository } from '@core/database/repositories/dl-concept-log.repository'
+import type { DlReviewDueItem, DlCreateConceptInput, DlCreateConceptResult, DlDeleteConceptResult, DlSplitConceptInput, DlSplitConceptResult } from '@shared/types/domain-learning.types'
 
 const logger = createLogger('DlGraph')
 
@@ -44,11 +48,18 @@ export type CreateConceptInput = Omit<DlCreateConceptInput, 'id'>
 /** 手工建点结果 */
 export type CreateConceptResult = DlCreateConceptResult
 
+/** 拆分入参（空间 id 与目标知识点由方法参数给） */
+export type SplitConceptInput = Pick<DlSplitConceptInput, 'branchName' | 'children'>
+
 export class LearningGraphService {
   constructor(
     private readonly concepts: DlConceptRepository,
     private readonly relations: DlRelationRepository,
     private readonly masteryLogs: DlMasteryLogRepository,
+    private readonly cards: DlCardRepository,
+    private readonly notes: DlNoteRepository,
+    private readonly questions: DlQuestionRepository,
+    private readonly conceptLogs: DlConceptLogRepository,
   ) {}
 
   // ==================== 掌握度推进（用户驱动） ====================
@@ -338,6 +349,161 @@ export class LearningGraphService {
       )
     }
     return { linkedPrereqs, missingPrereqs, cycleSkippedPrereqs }
+  }
+
+  /**
+   * 删除知识点（2026-10-05 用户需求）：删概念行并**级联清掉它的从属数据**——
+   * 关系边（出+入）、讲义（含全部历史版本）、笔记、问答（追问+回答，view.turns 由本表派生）、
+   * 掌握度日志、概念变更日志。目录节点（group）不在此删。各表删除量回给 UI 反馈。
+   */
+  async deleteConcept(projectId: string, conceptId: string): Promise<DlDeleteConceptResult> {
+    const c = await this.mustConcept(projectId, conceptId)
+    if (c.nodeType === 'group') {
+      throw new Error('目录节点不支持在此删除（目录承载知识分类层级）')
+    }
+
+    // 先删从属数据、最后删概念行（中途失败留下的是"没有讲义/笔记的空概念"，仍可见可再删）
+    const relations = await this.relations.deleteByConcept(projectId, conceptId)
+    const cards = await this.cards.deleteByConcept(projectId, conceptId)
+    const notes = await this.notes.deleteByConcept(projectId, conceptId)
+    const questions = await this.questions.deleteByConcept(projectId, conceptId)
+    await this.masteryLogs.deleteByConcept(projectId, conceptId)
+    await this.conceptLogs.deleteByConcept(projectId, conceptId)
+    await this.concepts.deleteById(conceptId)
+
+    logger.info(
+      `[graph] deleteConcept space=${projectId} concept=${conceptId} name=${c.name} ` +
+        `边=${relations} 讲义=${cards} 笔记=${notes} 问答=${questions}`,
+    )
+    return { conceptId, relations, cards, notes, questions }
+  }
+
+  // ==================== 拆分（知识点 → 一层分支 + 子知识点；2026-10-05 用户需求） ====================
+
+  /**
+   * 把一个知识点拆细一层：原知识点**就地转成分支目录**（树位置不变，group 不再承载
+   * 讲义/掌握度），录入的子知识点落在该分支下、各自独立研究讲义。
+   *
+   * 数据处理口径（确认框已向用户写明）：
+   * - 前置边（X → 原知识点）：**自动继承**——为每个子知识点建一条已确认前置边，原边删除；
+   *   原声明的 attrs.prerequisites 名单同步复制给每个子知识点；
+   * - 其他关系边（related、原知识点作为前置的出边等）：语义随拆分失效，删除并计数回传
+   *   （UI 提示可回知识全景复核补建）；
+   * - 总览讲义（含版本）/笔记/问答/掌握度与变更日志：退役删除并计数（拆分正是要替换
+   *   那份大而全的讲义；确认框提示，删除量进结果回传）。
+   */
+  async splitConceptIntoBranch(projectId: string, conceptId: string, input: SplitConceptInput): Promise<DlSplitConceptResult> {
+    const c = await this.mustConcept(projectId, conceptId)
+    if (c.nodeType === 'group') throw new Error('目录节点不能再拆分（它已经是分类层级）')
+
+    const branchName = String(input.branchName ?? '').trim() || c.name
+    const children = (Array.isArray(input.children) ? input.children : [])
+      .map((x) => ({
+        name: String((x as { name?: unknown })?.name ?? '').trim(),
+        definitionShort: String((x as { definitionShort?: unknown })?.definitionShort ?? '').trim() || null,
+      }))
+      .filter((x) => x.name)
+    if (!children.length) throw new Error('至少要拆出一个子知识点')
+    const seen = new Set<string>()
+    for (const x of children) {
+      if (seen.has(x.name)) throw new Error(`子知识点名称重复：${x.name}`)
+      seen.add(x.name)
+    }
+
+    const all = await this.concepts.listByProject(projectId)
+    const edges = await this.relations.listByProject(projectId)
+    // 原知识点的前置（入向 prerequisite 边）与其余触边
+    const incomingPrereq = edges.filter((e) => e.targetId === conceptId && e.relationType === 'prerequisite')
+    const otherEdges = edges.filter(
+      (e) =>
+        (e.sourceId === conceptId || e.targetId === conceptId) &&
+        !(e.targetId === conceptId && e.relationType === 'prerequisite'),
+    )
+    const inheritedNames = [
+      ...new Set(
+        incomingPrereq
+          .map((e) => all.find((x) => x.id === e.sourceId))
+          .filter((x): x is DlConceptRow => !!x && x.nodeType !== 'group')
+          .map((x) => x.name),
+      ),
+    ]
+
+    // 1) 先建子知识点（此时父还是知识点行，落库不受影响；分支转换放最后，失败可恢复）
+    const created: Array<{ conceptId: string; name: string }> = []
+    const childIds: string[] = []
+    for (const child of children) {
+      const id = randomUUID()
+      await this.concepts.create({
+        id,
+        projectId,
+        nodeType: 'concept',
+        name: child.name,
+        parentId: conceptId,
+        definitionShort: child.definitionShort,
+        researchState: 'unresearched',
+        mastery: 'untouched',
+        source: 'manual',
+        attrs: inheritedNames.length ? { prerequisites: inheritedNames } : null,
+      })
+      created.push({ conceptId: id, name: child.name })
+      childIds.push(id)
+    }
+
+    // 2) 前置边继承：原前置 → 每个子知识点（用户此前已确认过这些前置，直接落已确认边）
+    for (const e of incomingPrereq) {
+      for (const cid of childIds) {
+        await this.relations.create({
+          id: randomUUID(),
+          projectId,
+          sourceId: e.sourceId,
+          targetId: cid,
+          relationType: 'prerequisite',
+          evidence: `拆分「${c.name}」时自动继承`,
+          verified: true,
+        })
+      }
+    }
+
+    // 3) 清掉原知识点的全部触边（前置原边已被继承替代；其余边语义失效）
+    await this.relations.deleteByConcept(projectId, conceptId)
+
+    // 4) 从属数据退役（总览讲义/笔记/问答/日志——group 不再承载，留着即不可达死数据）
+    const removedCards = await this.cards.deleteByConcept(projectId, conceptId)
+    const removedNotes = await this.notes.deleteByConcept(projectId, conceptId)
+    const removedQuestions = await this.questions.deleteByConcept(projectId, conceptId)
+    await this.masteryLogs.deleteByConcept(projectId, conceptId)
+    await this.conceptLogs.deleteByConcept(projectId, conceptId)
+
+    // 5) 原知识点就地转成分支目录（树位置/名称保留；掌握度与讲义指针一并清掉）
+    const attrs: Record<string, unknown> = { ...(c.attrs ?? {}) }
+    delete attrs.prerequisites
+    delete attrs.confusedCount
+    delete attrs.confusedSections
+    await this.concepts.patch(conceptId, {
+      nodeType: 'group',
+      name: branchName,
+      attrs,
+      researchState: 'unresearched',
+      mastery: 'untouched',
+      cardId: null,
+    })
+
+    logger.info(
+      `[graph] splitConcept space=${projectId} concept=${conceptId} name=${c.name} → 分支「${branchName}」 ` +
+        `子知识点=${created.length} 继承前置=${inheritedNames.length} 清边=${otherEdges.length} ` +
+        `讲义=${removedCards} 笔记=${removedNotes} 问答=${removedQuestions}`,
+    )
+    return {
+      branchId: conceptId,
+      branchName,
+      children: created,
+      removed: { cards: removedCards, notes: removedNotes, questions: removedQuestions },
+      inheritedPrereqs: incomingPrereq
+        .map((e) => all.find((x) => x.id === e.sourceId))
+        .filter((x): x is DlConceptRow => !!x && x.nodeType !== 'group')
+        .map((x) => ({ name: x.name, conceptId: x.id })),
+      droppedRelations: otherEdges.length,
+    }
   }
 
   // ==================== 关系 ====================

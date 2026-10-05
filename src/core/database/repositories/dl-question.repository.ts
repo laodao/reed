@@ -87,6 +87,11 @@ export class DlQuestionRepository extends BaseRepository<DlQuestionEntity, DlQue
     return this.scoped.count({ projectId, status: 'open' } as QuestionWhere)
   }
 
+  /** 删某概念的全部问答（追问+回答；删除知识点时级联用——view.turns 即由本表派生） */
+  async deleteByConcept(projectId: string, conceptId: string): Promise<number> {
+    return this.scoped.delete({ projectId, conceptId } as QuestionWhere)
+  }
+
   async patch(id: string, patch: DlQuestionPatch): Promise<void> {
     const partial: Partial<DlQuestionEntity> = {}
     if (patch.conceptId !== undefined) partial.conceptId = patch.conceptId

@@ -168,6 +168,117 @@
       </template>
     </el-dialog>
 
+    <!-- 前置知识点手动创建（2026-10-05 用户口径：系统没有该前置且**用户想系统学它**时才创建，
+         主题/分类必须由用户显式选择，系统不代做决定；已会的前置不用创建，chip 悬浮「＋」仅是入口）。 -->
+    <el-dialog v-model="prereqCreateVisible" title="创建前置知识点" width="520px" append-to-body>
+      <div class="cc-form">
+        <div class="cc-row">
+          <span class="cc-label">名称</span>
+          <el-input v-model="prereqCreateDraft.name" size="small" placeholder="前置知识点名称" maxlength="60" />
+        </div>
+        <div class="cc-row">
+          <span class="cc-label">主题</span>
+          <el-select
+            v-model="prereqCreateDraft.spaceId"
+            size="small"
+            filterable
+            placeholder="必选：建到哪个主题下"
+            style="width: 260px"
+            @change="onPrereqSpaceChange"
+          >
+            <el-option v-for="s in spaceOptions" :key="s.id" :label="s.name" :value="s.id" />
+          </el-select>
+        </div>
+        <div class="cc-row">
+          <span class="cc-label">知识分类</span>
+          <el-select
+            v-model="prereqCreateDraft.parentId"
+            size="small"
+            :loading="loadingForeignGroups"
+            placeholder="必选：归到该主题的哪个分类下"
+            style="width: 260px"
+          >
+            <el-option v-for="g in prereqGroupOptions" :key="g.id" :label="g.label" :value="g.id" />
+          </el-select>
+        </div>
+        <div class="cc-row">
+          <span class="cc-label">一句话定义</span>
+          <el-input
+            v-model="prereqCreateDraft.definitionShort"
+            type="textarea"
+            :rows="2"
+            size="small"
+            placeholder="选填"
+            maxlength="200"
+          />
+        </div>
+        <div class="cc-hint">
+          只在你想把这个前置补进系统、跟着学一遍时才创建：主题与分类都要自己选定（分类必选，不会默认落到根层）。
+          选当前主题会同时把它连为「{{ currentConcept?.name ?? '当前知识点' }}」的前置；选其他主题只在该主题下落点、不建跨主题边。
+          已经会了这个前置？直接关闭即可，不创建任何东西。
+        </div>
+      </div>
+      <template #footer>
+        <el-button size="small" @click="prereqCreateVisible = false">不用创建，关闭</el-button>
+        <el-button size="small" type="primary" :loading="prereqCreating" @click="submitPrereqCreate">
+          创建
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 拆细知识点（2026-10-05 用户需求：庞杂的知识点拆成一层的子知识点）。
+         原知识点就地转为分支目录（树位置不变）；前置边自动继承给每个子知识点；
+         总览讲义/笔记/问答随拆分退役（数量在结果反馈里报告）。 -->
+    <el-dialog v-model="splitVisible" title="拆细知识点" width="600px" append-to-body>
+      <div class="cc-form">
+        <div class="cc-row">
+          <span class="cc-label">分支名称</span>
+          <el-input v-model="splitDraft.branchName" size="small" maxlength="60" placeholder="原知识点将转为这个分支目录" />
+        </div>
+        <div class="cc-row">
+          <span class="cc-label">子知识点</span>
+          <div class="split-rows">
+            <div v-for="(row, i) in splitDraft.rows" :key="i" class="split-row">
+              <el-input
+                v-model="row.name"
+                size="small"
+                maxlength="60"
+                class="split-row-name"
+                placeholder="子知识点名称"
+              />
+              <el-input
+                v-model="row.definitionShort"
+                size="small"
+                maxlength="200"
+                class="split-row-def"
+                placeholder="一句话定义（选填）"
+              />
+              <el-button
+                link
+                type="danger"
+                size="small"
+                :disabled="splitDraft.rows.length <= 1"
+                @click="removeSplitRow(i)"
+              >删除</el-button>
+            </div>
+            <el-button link type="primary" size="small" :icon="Plus" @click="addSplitRow">加一个子知识点</el-button>
+          </div>
+        </div>
+        <div class="cc-hint">
+          拆分后「{{ currentConcept?.name ?? '' }}」就地转为分支目录，上面每个子知识点各是一张讲义（点进去「研究此概念」逐个生成，互不混讲）。
+          <template v-if="splitInheritedPrereqNames.length">它们会自动继承本知识点的前置（{{ splitInheritedPrereqNames.join('、') }}）。</template>
+          <template v-if="currentConcept?.card"> ⚠️ 本知识点现有的讲义会随拆分删除（子讲义会各自覆盖其内容）。</template>
+          笔记与问答记录也会一并清掉，不可恢复。
+        </div>
+      </div>
+      <template #footer>
+        <el-button size="small" @click="splitVisible = false">取消</el-button>
+        <el-button size="small" type="primary" :loading="splitting" @click="submitSplitConcept">
+          拆分
+        </el-button>
+      </template>
+    </el-dialog>
+
     <div class="space-body">
       <!-- 左栏：知识地图（大纲树，可折叠/搜索/掌握度过滤/父级聚合） -->
       <aside class="pane pane-map">
@@ -259,7 +370,7 @@
                 {{ row.stats.mastered }}/{{ row.stats.total }}
               </span>
             </div>
-            <!-- 概念叶行 -->
+            <!-- 概念叶行（悬浮浮现删除图标；2026-10-05 用户需求：知识点可删除） -->
             <div
               v-else
               class="tree-leaf"
@@ -270,6 +381,12 @@
               <i class="dot" :class="masteryDotClass(leafMastery(row))" />
               <span class="leaf-name">{{ leafName(row) }}</span>
               <el-icon v-if="isMasteredRow(row)" class="leaf-check"><CircleCheckFilled /></el-icon>
+              <el-icon
+                class="leaf-del"
+                :class="{ busy: deletingConceptId === row.concept?.id }"
+                title="删除知识点"
+                @click.stop="askDeleteConcept(row.concept)"
+              ><Delete /></el-icon>
             </div>
           </template>
           <div v-if="!store.loadingView && mapRows.length === 0" class="tree-empty">
@@ -325,6 +442,19 @@
                     :disabled="!prereqReady || acking"
                     :icon="QuestionFilled"
                     @click="markConfused"
+                  />
+                </el-tooltip>
+                <!-- 拆细知识点（2026-10-05 用户需求）：内容太庞杂的知识点拆成一层的子知识点，
+                     各自独立研究聚焦讲义；原知识点就地转为分支目录。有卡没卡都可用。 -->
+                <el-tooltip content="拆细：把这个知识点拆成一层的子知识点（各讲各的，原知识点转为分支目录）" placement="bottom" :show-after="300">
+                  <el-button
+                    circle
+                    size="small"
+                    plain
+                    aria-label="拆细知识点"
+                    :disabled="splitting"
+                    :icon="Scissor"
+                    @click="openSplitConcept"
                   />
                 </el-tooltip>
                 <el-tooltip v-if="currentConcept.card" content="讲义生成演示（在线浏览）" placement="bottom" :show-after="300">
@@ -402,34 +532,74 @@
                     />
                   </el-tooltip>
                 </template>
-                <span v-if="lastFeedback" class="feedback-toast" :class="{ warn: lastFeedbackIsWarn }">{{ lastFeedback }}</span>
+                <!-- 2026-10-05：标题栏右侧只保留成功类短提示；warn（研究报错等）可能是
+                     长文本，截断在 240px 的 toast 里看不全——挪到标题行下方全宽横幅 -->
+                <span v-if="lastFeedback && !lastFeedbackIsWarn" class="feedback-toast">{{ lastFeedback }}</span>
               </div>
             </div>
-            <!-- 前置依赖就绪条（依赖拓扑门控：先学完前置再学本概念） -->
+            <!-- 警告/错误反馈横幅（全宽可换行，完整展示研究失败原因等长文本；点击关闭） -->
+            <div v-if="lastFeedback && lastFeedbackIsWarn" class="lesson-feedback-bar" role="alert" @click="dismissFeedback">
+              <el-icon><WarningFilled /></el-icon>
+              <span class="lfb-text">{{ lastFeedback }}</span>
+              <el-icon class="lfb-close"><Close /></el-icon>
+            </div>
+            <!-- 前置依赖就绪条（依赖拓扑门控：先学完前置再学本概念）。
+                 2026-10-05 用户需求：chip 即跳转链接（系统已有该知识点 → 点击跳过去先学）；
+                 系统还没有的（已声明未落点）悬停浮现「＋」，点击弹窗选主题/分类创建。 -->
             <div v-if="prereqs.length || declaredOnlyPrereqs.length" class="lesson-prereq">
               <span class="prereq-label">前置：</span>
-              <template v-for="p in prereqs" :key="p.id">
-                <span class="prereq-chip" :class="p.ready ? 'ready' : 'pending'">
-                  {{ p.name }}
-                  <el-icon v-if="p.ready"><CircleCheckFilled /></el-icon>
-                  <el-icon v-else><Lock /></el-icon>
-                </span>
-              </template>
-              <!-- 声明了但尚未建关系边的前置（2026-09-12：生成知识点时声明的顺序） -->
               <el-tooltip
-                v-for="d in declaredOnlyPrereqs"
-                :key="`declared-${d.name}`"
-                :content="d.conceptId ? '已声明的前置（尚未建立关系边，暂未门控）；点击跳转' : '已声明的前置：空间里还没有对应知识点，先补它再学本概念'"
+                v-for="p in prereqs"
+                :key="p.id"
+                :content="p.ready ? `已掌握 · 点击跳到「${p.name}」` : `未掌握 · 点击跳到「${p.name}」先学它`"
                 placement="top"
                 :show-after="200"
               >
                 <span
+                  class="prereq-chip clickable"
+                  :class="p.ready ? 'ready' : 'pending'"
+                  role="link"
+                  tabindex="0"
+                  @click="gotoRelatedConcept(p.id)"
+                  @keydown.enter="gotoRelatedConcept(p.id)"
+                >
+                  {{ p.name }}
+                  <el-icon v-if="p.ready"><CircleCheckFilled /></el-icon>
+                  <el-icon v-else><Lock /></el-icon>
+                </span>
+              </el-tooltip>
+              <!-- 声明了但尚未建关系边的前置（2026-09-12：生成知识点时声明的顺序）。
+                   判定优先级：本空间已有 → 跳转；其他主题有同名 → 跨主题跳转；都没有 → 悬停＋创建 -->
+              <el-tooltip
+                v-for="d in declaredOnlyPrereqs"
+                :key="`declared-${d.name}`"
+                placement="top"
+                :show-after="200"
+              >
+                <template #content>
+                  <div class="prereq-tip-block">
+                    <template v-if="d.conceptId">已声明的前置（尚未建立关系边，暂未门控）；点击跳转</template>
+                    <template v-else-if="remoteHitOf(d.name)">
+                      <div>系统已有该知识点（主题「{{ remoteHitOf(d.name)!.spaceName }}」{{ remoteHitsOf(d.name).length > 1 ? `等 ${remoteHitsOf(d.name).length} 处` : '' }}）</div>
+                      <div>点击跳转过去先学它</div>
+                    </template>
+                    <template v-else-if="remoteHitKnown(d.name)">
+                      <div>系统还没有该知识点——已经会了就不用管</div>
+                      <div>想系统学它，再点右侧 ＋ 选主题与分类手动创建</div>
+                    </template>
+                    <template v-else>正在检索系统是否已有该知识点…</template>
+                  </div>
+                </template>
+                <span
                   class="prereq-chip declared"
-                  :class="{ clickable: !!d.conceptId }"
-                  @click="d.conceptId && gotoRelatedConcept(d.conceptId)"
+                  :class="{ clickable: !!d.conceptId || !!remoteHitOf(d.name) }"
+                  @click="onDeclaredPrereqClick(d)"
                 >
                   {{ d.name }}
-                  <el-icon><InfoFilled /></el-icon>
+                  <el-icon v-if="d.conceptId"><InfoFilled /></el-icon>
+                  <el-icon v-else-if="remoteHitOf(d.name)" class="prereq-jump-icon"><Link /></el-icon>
+                  <el-icon v-else-if="remoteHitKnown(d.name)" class="prereq-add-icon" title="创建该知识点" @click.stop="openPrereqCreate(d.name)"><Plus /></el-icon>
+                  <el-icon v-else class="is-loading"><Loading /></el-icon>
                 </span>
               </el-tooltip>
               <span v-if="!prereqReady" class="prereq-tip">先掌握带锁的前置概念再来学它</span>
@@ -469,8 +639,14 @@
               </el-button>
             </el-empty>
             <!-- 研究此概念 的 agent 执行过程（滚动小字）：贴着触发按钮下方居中显示，表示 agent 正在工作；
-                 不再跑到页面顶部（顶部那只在普通讲义态显示） -->
-            <AgentActivityStrip v-if="spaceId" :space-id="spaceId" class="research-activity" />
+                 不再跑到页面顶部（顶部那只在普通讲义态显示）。行尾图标可弹窗看完整输出（2026-10-05） -->
+            <AgentActivityStrip
+              v-if="spaceId"
+              :space-id="spaceId"
+              class="research-activity"
+              detail-title="研究输出详情"
+              :result-text="researchResultText"
+            />
           </div>
         </template>
         <template v-else>
@@ -486,8 +662,16 @@
               <el-button type="primary" size="large" :icon="Promotion" :loading="researching" @click="bootResearch">
                 {{ researching ? '正在研究领域…' : '生成首批知识' }}
               </el-button>
-              <!-- 起步研究的 agent 执行过程（滚动小字）：贴着触发按钮显示，不再跑到页面顶部 -->
-              <AgentActivityStrip v-if="spaceId" :space-id="spaceId" class="boot-activity" />
+              <!-- 起步研究的 agent 执行过程（滚动小字）：贴着触发按钮显示，不再跑到页面顶部；
+                   轮次结束不自动清空（persist），留「查看完整输出」图标可回看（2026-10-05） -->
+              <AgentActivityStrip
+                v-if="spaceId"
+                :space-id="spaceId"
+                class="boot-activity"
+                detail-title="起步研究输出详情"
+                :result-text="researchResultText"
+                persist-on-done
+              />
               <div v-if="bootMessage" class="boot-message" :class="{ warn: bootWarn }">{{ bootMessage }}</div>
             </div>
           </div>
@@ -806,6 +990,14 @@ import {
   // 标题旁信息图标（2026-10-05）：学习前置 / 推荐书籍，悬停出内容
   Guide,
   Reading,
+  // 警告横幅关闭按钮（2026-10-05：报错类反馈全宽横幅化）
+  Close,
+  // 前置 chip 跨主题跳转图标（2026-10-05：系统已有该知识点 → 跳转链接）
+  Link,
+  // 左栏叶行悬浮删除图标（2026-10-05：知识点可删除）
+  Delete,
+  // 拆细知识点（2026-10-05：庞杂知识点拆成一层的子知识点，原知识点转分支）
+  Scissor,
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { saveBlobAs, base64ToBlob } from '@/utils/file-saver'
@@ -823,6 +1015,7 @@ import {
   masteryTagType,
   nodeTypeMeta,
   relLabel,
+  tabTitleOf,
 } from './domain-learning-ui'
 import SectionLesson from './SectionLesson.vue'
 import LessonSlides from './LessonSlides.vue'
@@ -835,6 +1028,7 @@ import type {
   DlBookSuggestion,
   DlCardSection,
   DlChatTurn,
+  DlConceptHit,
   DlConceptView,
   DlLessonExportFormat,
   DlMapCoverage,
@@ -876,6 +1070,11 @@ const spaceName = computed(() => view.value?.name ?? '学习空间')
 const currentConceptId = ref<string | null>(null)
 const lastFeedback = ref('')
 const lastFeedbackIsWarn = ref(false)
+/** 手动关闭警告横幅（2026-10-05：报错类反馈改全宽横幅后补关闭入口） */
+function dismissFeedback(): void {
+  lastFeedback.value = ''
+  lastFeedbackIsWarn.value = false
+}
 const acking = ref(false)
 const pickingNext = ref(false)
 
@@ -896,6 +1095,7 @@ async function loadSpace(): Promise<void> {
   lastFeedback.value = ''
   lastFeedbackIsWarn.value = false
   liveTurns.value = []
+  researchResultText.value = ''
   viewError.value = ''
   taskLog.value = []
   taskLogOpen.value = false
@@ -927,6 +1127,16 @@ watch(
     // 仅当路由落在本实例自己的路径上才重载（keep-alive 下 deactivated 实例不串写共享 store）
     if (route.path === ownPath) void loadSpace()
   }
+)
+// tab 标题跟主题名走（超 6 字截断，口径见 tabTitleOf）：覆盖深链/会话恢复等未经
+// preloadTab 的入口，空间设置里改名后当前 tab 也即时同步。
+// 写的是本实例自己的 tab（ownPath），deactivated 实例触发也不串写别人的标签。
+watch(
+  () => view.value?.name,
+  (n) => {
+    if (n) tabsStore.updateTabTitle(ownPath, tabTitleOf(n))
+  },
+  { immediate: true }
 )
 // keep-alive 下从 Atlas「去学它」回到本实例（path 未变、仅 query 变化）时在此消费
 watch(
@@ -1194,10 +1404,222 @@ const declaredOnlyPrereqs = computed<Array<{ name: string; conceptId: string | n
   return declared
     .filter(name => !linkedNames.has(name))
     .map(name => {
-      const hit = concepts.value.find(c => c.name === name)
+      // 只认知识节点：拆分/规划产生的分支目录（group）不是可学的前置，不能被同名命中
+      const hit = concepts.value.find(c => c.name === name && c.nodeType !== 'group')
       return { name, conceptId: hit?.id ?? null }
     })
 })
+
+// ---------- 前置知识点：系统已有判定 + 跳转/创建（2026-10-05 用户需求） ----------
+// 口径：本空间已有同名 → chip 直连跳转（declaredOnlyPrereqs.conceptId）；
+//       其他主题有同名 → 跨主题跳转（dl:search-concepts）；都没有 → 悬停＋弹窗创建。
+
+/** 跨空间同名命中缓存（名 → 命中列表；undefined=尚未查过。不含本空间命中——那走 conceptId 直连） */
+const prereqRemoteHits = ref<Record<string, DlConceptHit[] | undefined>>({})
+
+/** 该名是否已查过（区分"查过没有"与"还在查"） */
+function remoteHitKnown(name: string): boolean {
+  return prereqRemoteHits.value[name] !== undefined
+}
+
+/** 该名的首个跨主题命中（无 → null） */
+function remoteHitOf(name: string): DlConceptHit | null {
+  return prereqRemoteHits.value[name]?.[0] ?? null
+}
+
+/** 该名的全部跨主题命中（tooltip 提示"等 N 处"用） */
+function remoteHitsOf(name: string): DlConceptHit[] {
+  return prereqRemoteHits.value[name] ?? []
+}
+
+/** 需要跨空间判定的前置名（本空间没有同名落点的） */
+const pendingLookupNames = computed(
+  () => declaredOnlyPrereqs.value.filter(d => !d.conceptId).map(d => d.name)
+)
+
+watch(pendingLookupNames, (names) => {
+  const missing = names.filter(n => prereqRemoteHits.value[n] === undefined)
+  if (missing.length) void lookupPrereqNames(missing)
+}, { immediate: true })
+
+async function lookupPrereqNames(names: string[]): Promise<void> {
+  // 查前先占位（防并发重复查；失败按"系统没有"处理，可走创建）
+  const placeholder: Record<string, DlConceptHit[] | undefined> = {}
+  for (const n of names) placeholder[n] = []
+  prereqRemoteHits.value = { ...prereqRemoteHits.value, ...placeholder }
+  const hits = await store.searchConceptsAcrossSpaces(names)
+  const byName: Record<string, DlConceptHit[]> = {}
+  for (const n of names) byName[n] = []
+  for (const h of hits) {
+    // 本空间命中无意义（有同名概念时 conceptId 已直连）；防御剔除防自我跳转
+    if (h.spaceId === spaceId.value) continue
+    ;(byName[h.name] ??= []).push(h)
+  }
+  prereqRemoteHits.value = { ...prereqRemoteHits.value, ...byName }
+}
+
+/** 声明前置 chip 点击：本空间直连 / 跨主题跳转；系统没有 → 只提示，绝不代用户创建 */
+function onDeclaredPrereqClick(d: { name: string; conceptId: string | null }): void {
+  if (d.conceptId) {
+    gotoRelatedConcept(d.conceptId)
+    return
+  }
+  const hit = remoteHitOf(d.name)
+  if (hit) {
+    jumpToSpaceConcept(hit)
+    return
+  }
+  if (remoteHitKnown(d.name)) {
+    ElMessage.info(`「${d.name}」系统里还没有——已会可忽略；想系统学它，点 chip 上的 ＋ 手动创建`)
+  }
+}
+
+/** 跳到其他主题的知识点（Atlas「去学它」同款深链：目标空间页自动展开并选中） */
+function jumpToSpaceConcept(hit: DlConceptHit): void {
+  tabsStore.preloadTab(`/domain-learning/${hit.spaceId}`, tabTitleOf(hit.spaceName))
+  void router.push({ path: `/domain-learning/${hit.spaceId}`, query: { concept: hit.conceptId } })
+}
+
+// ----- 前置快捷创建对话框（选主题 → 拉该主题分类树 → 落点建点） -----
+const prereqCreateVisible = ref(false)
+const prereqCreating = ref(false)
+const prereqCreateDraft = reactive({
+  name: '',
+  spaceId: '',
+  parentId: null as string | null,
+  definitionShort: '',
+})
+/** 主题选项（store.spaces；进对话框时懒拉一次。??[] 兜底：测试假 store 无该字段也不炸渲染） */
+const spaceOptions = computed(() => ((store.spaces ?? []) as Array<{ id: string; name: string }>).map(s => ({ id: s.id, name: s.name })))
+/** 所选主题下的分类树（带层级缩进；当前主题直接复用已加载视图） */
+const prereqGroupOptions = ref<Array<{ id: string; label: string }>>([])
+const loadingForeignGroups = ref(false)
+
+async function openPrereqCreate(name: string): Promise<void> {
+  prereqCreateDraft.name = name
+  prereqCreateDraft.spaceId = spaceId.value
+  prereqCreateDraft.parentId = null
+  prereqCreateDraft.definitionShort = ''
+  prereqCreateVisible.value = true
+  // 主题列表兜底（本空间通常已含；空间列表缺失时补拉一次）
+  if (!(store.spaces ?? []).length) void store.fetchSpaces()
+  await loadPrereqGroups(spaceId.value)
+}
+
+/** 切主题 → 重拉该主题的分类树（清掉上个主题的落点选择） */
+async function onPrereqSpaceChange(): Promise<void> {
+  prereqCreateDraft.parentId = null
+  await loadPrereqGroups(prereqCreateDraft.spaceId)
+}
+
+async function loadPrereqGroups(sid: string): Promise<void> {
+  if (!sid) {
+    prereqGroupOptions.value = []
+    return
+  }
+  loadingForeignGroups.value = true
+  try {
+    if (sid === spaceId.value) {
+      prereqGroupOptions.value = groupOptions.value
+      return
+    }
+    // 其他主题：detached 拉视图（不写 currentSpaceView，防串掉当前页数据）
+    const v = await store.fetchSpaceViewDetached(sid)
+    prereqGroupOptions.value = groupOptionsOfView(v)
+  } finally {
+    loadingForeignGroups.value = false
+  }
+}
+
+/** 从空间视图抽分类树（只取 group 目录，带层级缩进；供跨主题建点选落点） */
+function groupOptionsOfView(v: DlSpaceView | null): Array<{ id: string; label: string }> {
+  if (!v) return []
+  const out: Array<{ id: string; label: string }> = []
+  const walk = (nodes: DlTreeNode[], depth: number): void => {
+    for (const n of nodes) {
+      if (n.conceptId) continue
+      out.push({ id: n.id, label: `${'　'.repeat(depth)}${n.name}` })
+      if (n.children?.length) walk(n.children, depth + 1)
+    }
+  }
+  walk(v.tree ?? [], 0)
+  return out
+}
+
+async function submitPrereqCreate(): Promise<void> {
+  const name = prereqCreateDraft.name.trim()
+  const cur = currentConcept.value
+  if (!name) {
+    ElMessage.warning('请先填知识点名称')
+    return
+  }
+  if (!prereqCreateDraft.spaceId) {
+    ElMessage.warning('请先选择要建到哪个主题')
+    return
+  }
+  // 分类必选（2026-10-05 用户口径）：不允许"不选=落到主题根层"的隐式默认，
+  // 知识点归到哪个分类必须由用户显式挑定
+  if (!prereqCreateDraft.parentId) {
+    ElMessage.warning('请先选择所属知识分类（必选）')
+    return
+  }
+  const targetSpaceId = prereqCreateDraft.spaceId
+  const sameSpace = targetSpaceId === spaceId.value
+  const spaceName = spaceOptions.value.find(s => s.id === targetSpaceId)?.name ?? ''
+  prereqCreating.value = true
+  try {
+    const input = {
+      id: targetSpaceId,
+      name,
+      nodeType: 'concept',
+      parentId: prereqCreateDraft.parentId,
+      definitionShort: prereqCreateDraft.definitionShort.trim() || null,
+    }
+    // 当前主题走带刷新版（顺带把新概念刷进地图）；跨主题用 detached（不串当前视图）
+    const r = sameSpace
+      ? await store.createConceptOf(input)
+      : await store.createConceptDetached(input)
+    if (!r) {
+      ElMessage.error(store.error ?? '创建失败，请重试')
+      return
+    }
+    // 当前主题：把它连为当前知识点的前置（已确认边，门控立即生效）
+    if (sameSpace && cur) {
+      const linked = await store.confirmRelationOf({
+        id: spaceId.value,
+        sourceId: r.conceptId,
+        targetId: cur.id,
+        relationType: PREREQ_TYPE,
+        evidence: '用户在前置提示中快捷创建并连边',
+      })
+      if (!linked) ElMessage.warning(`知识点已创建，但连前置边失败：${store.error ?? '请手动在地图里连边'}`)
+    }
+    prereqCreateVisible.value = false
+    if (sameSpace) {
+      lastFeedbackIsWarn.value = false
+      lastFeedback.value = `已创建前置知识点「${name}」${cur ? '，并连为当前知识点的前置' : ''}`
+    } else {
+      ElMessage.success(`已在主题「${spaceName}」下创建「${name}」——跨主题不建关系边，学完再回来继续`)
+    }
+    // 跨主题落点回写缓存：chip 从"可创建"转为"可跳转"
+    if (!sameSpace) {
+      prereqRemoteHits.value = {
+        ...prereqRemoteHits.value,
+        [name]: [{
+          name,
+          conceptId: r.conceptId,
+          spaceId: targetSpaceId,
+          spaceName,
+          nodeType: 'concept',
+          mastery: 'untouched',
+          hasCard: false,
+        }],
+      }
+    }
+  } finally {
+    prereqCreating.value = false
+  }
+}
 
 // ---------- 手工追加知识点（2026-09-12 用户需求：用户建点 + AI 完善） ----------
 
@@ -1298,6 +1720,152 @@ async function submitCreateConcept(): Promise<void> {
   }
   // 选中新建的概念（左栏高亮 + 中栏显示"讲义生成中/研究此概念"）
   gotoRelatedConcept(r.conceptId)
+}
+
+// ---------- 删除知识点（2026-10-05 用户需求：左栏叶行悬浮删除图标） ----------
+
+const deletingConceptId = ref<string | null>(null)
+
+/** 删除确认 → 级联落库（关系边/讲义含历史版本/笔记/问答连带删，后端收口）→ 视图刷新与选中兜底 */
+async function askDeleteConcept(c?: DlConceptView): Promise<void> {
+  if (!c || deletingConceptId.value) return
+  // 研究进行中不删：本轮产物（讲义草稿/关系边）落库时会找不到概念
+  if (researching.value && currentConceptId.value === c.id) {
+    ElMessage.warning('该知识点正在研究中——等这轮结束再删')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `删除知识点「${c.name}」？将连带删除它的前置/相关关系边、讲义（含全部历史版本）、笔记与问答记录，删除后不可恢复。`,
+      '删除知识点',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return // 用户取消
+  }
+  deletingConceptId.value = c.id
+  try {
+    const r = await store.deleteConceptOf({ id: spaceId.value, conceptId: c.id })
+    if (!r) {
+      ElMessage.error(store.error ?? '删除失败，请重试')
+      return
+    }
+    const bits = [
+      r.relations ? `${r.relations} 条关系边` : '',
+      r.cards ? `${r.cards} 篇讲义` : '',
+      r.notes ? `${r.notes} 条笔记` : '',
+      r.questions ? `${r.questions} 条问答` : '',
+    ].filter(Boolean)
+    lastFeedbackIsWarn.value = false
+    lastFeedback.value = `已删除「${c.name}」${bits.length ? `（连带 ${bits.join('、')}）` : ''}`
+    // 删的是当前选中概念：清选中并兜底选下一个（左栏高亮/中栏讲义不能悬在已删概念上）
+    if (currentConceptId.value === c.id) {
+      currentConceptId.value = null
+      const next = firstUnmasteredLeaf() ?? firstLeaf()
+      if (next) {
+        expandPathTo(next.id)
+        selectConcept(next)
+      }
+    }
+  } finally {
+    deletingConceptId.value = null
+  }
+}
+
+// ---------- 拆细知识点（2026-10-05 用户需求：庞杂知识点 → 一层分支 + 子知识点） ----------
+
+const splitVisible = ref(false)
+const splitting = ref(false)
+const splitDraft = reactive({
+  branchName: '',
+  rows: [{ name: '', definitionShort: '' }] as Array<{ name: string; definitionShort: string }>,
+})
+
+/** 原知识点的前置名（拆分对话框里说明"会自动继承给每个子知识点"） */
+const splitInheritedPrereqNames = computed<string[]>(() => {
+  const id = currentConceptId.value
+  if (!id) return []
+  const names: string[] = []
+  for (const e of relations.value) {
+    if (e.target === id && e.type === PREREQ_TYPE) {
+      const n = concepts.value.find(x => x.id === e.source)?.name
+      if (n) names.push(n)
+    }
+  }
+  return names
+})
+
+function openSplitConcept(): void {
+  const c = currentConcept.value
+  if (!c || splitting.value) return
+  // 研究进行中不拆：本轮讲义/关系落库会找不到概念
+  if (researching.value && currentConceptId.value === c.id) {
+    ElMessage.warning('该知识点正在研究中——等这轮结束再拆')
+    return
+  }
+  splitDraft.branchName = c.name
+  splitDraft.rows = [{ name: '', definitionShort: '' }]
+  splitVisible.value = true
+}
+
+function addSplitRow(): void {
+  splitDraft.rows.push({ name: '', definitionShort: '' })
+}
+
+function removeSplitRow(i: number): void {
+  if (splitDraft.rows.length <= 1) return
+  splitDraft.rows.splice(i, 1)
+}
+
+async function submitSplitConcept(): Promise<void> {
+  const c = currentConcept.value
+  if (!c || splitting.value) return
+  const branchName = splitDraft.branchName.trim() || c.name
+  const rows = splitDraft.rows
+    .map(r => ({ name: r.name.trim(), definitionShort: r.definitionShort.trim() || null }))
+    .filter(r => r.name)
+  if (!rows.length) {
+    ElMessage.warning('至少填一个子知识点名称')
+    return
+  }
+  const names = rows.map(r => r.name)
+  if (new Set(names).size !== names.length) {
+    ElMessage.warning('子知识点名称不能重复')
+    return
+  }
+  splitting.value = true
+  try {
+    const r = await store.splitConceptOf({
+      id: spaceId.value,
+      conceptId: c.id,
+      branchName,
+      children: rows,
+    })
+    if (!r) {
+      ElMessage.error(store.error ?? '拆分失败，请重试')
+      return
+    }
+    splitVisible.value = false
+    const bits = [
+      r.removed.cards ? `${r.removed.cards} 篇总览讲义` : '',
+      r.removed.notes ? `${r.removed.notes} 条笔记` : '',
+      r.removed.questions ? `${r.removed.questions} 条问答` : '',
+    ].filter(Boolean)
+    lastFeedbackIsWarn.value = false
+    lastFeedback.value =
+      `已拆出 ${r.children.length} 个子知识点（${r.children.map(x => x.name).join('、')}）` +
+      (r.inheritedPrereqs.length ? `，前置已继承：${r.inheritedPrereqs.map(x => x.name).join('、')}` : '') +
+      (bits.length ? `；退役：${bits.join('、')}` : '') +
+      (r.droppedRelations ? `；${r.droppedRelations} 条其他关系边已清理（可回知识全景复核）` : '')
+    // 定位到分支下第一个子知识点，直接可见"拆好了"
+    const first = concepts.value.find(x => x.id === r.children[0]?.conceptId)
+    if (first) {
+      expandPathTo(first.id)
+      selectConcept(first)
+    }
+  } finally {
+    splitting.value = false
+  }
 }
 
 /** 一键让研究助手补全地图（走 task 会话；指令见 shared/utils/domain-learning-mission） */
@@ -1463,6 +2031,8 @@ const progressText = computed(() => {
 
 /** 当前概念讲义/研究状态文案（左栏底部） */
 const researching = ref(false)
+/** 最近一轮研究的回复正文（2026-10-05：完整输出弹窗的「本轮回复」节；随轮次/概念切换重置） */
+const researchResultText = ref('')
 const conceptResearchText = computed(() => {
   const c = currentConcept.value
   if (!c) return ''
@@ -1525,6 +2095,10 @@ function selectConcept(c: DlConceptView): void {
   liveTurns.value = []
   taskLog.value = []
   taskLogOpen.value = false
+  // 研究输出弹窗的「本轮回复」跟概念走，切概念即失效（strip 的滚动/历史随实例重建）
+  researchResultText.value = ''
+  // 前置跨主题命中缓存跟概念走：清掉防串（下个概念的前置按需重查）
+  prereqRemoteHits.value = {}
   void store.fetchNotesOf(spaceId.value, c.id)
   // 讲义方案提示条按当前概念判定（2026-09-14）：切概念时把该概念的方案读回来（失败静默，不阻塞选课）
   void store.fetchPlan(spaceId.value, c.id)
@@ -1858,6 +2432,7 @@ async function bootResearch(): Promise<void> {
   lastResearchScope.value = { conceptId: null }
   bootMessage.value = ''
   bootWarn.value = false
+  researchResultText.value = ''
   planDriveMode.value = 'research'
   // 空间级事件通道 dl:agent:<spaceId>（conceptId 为空）
   const unsub = store.subscribeAgentEvent(spaceId.value, null, (ev) => {
@@ -1876,6 +2451,8 @@ async function bootResearch(): Promise<void> {
       // 固定流程第 1 步：先对齐诉求（宿主会注入阶段指令；这一轮不会直接建点）
       message: `这是新主题「${spaceName.value}」的首次研究——请先复述你对我的诉求的理解，提交诉求理解草案让我确认。`,
     })
+    // 完整输出弹窗的「本轮回复」（2026-10-05：滚动行只留 3 条，正文进弹窗可回看）
+    researchResultText.value = result?.content ?? ''
     await refreshView()
     // 模型应已提交「诉求理解」草案 → 拉方案并弹窗让用户确认（固定流程的起点）
     const pending = await openPlanIfPending()
@@ -1958,6 +2535,7 @@ async function researchConcept(): Promise<void> {
   }
   researching.value = true
   lastResearchScope.value = { conceptId: c.id }
+  researchResultText.value = ''
   // 订阅动作事件：error 直接提示；完成/阶段用于状态行（重拉在 finally）
   const unsub = store.subscribeAgentEvent(spaceId.value, c.id, ev => {
     // 只收本概念 research 轮事件（防与其他模式/空间级研究并发混流）
@@ -1979,6 +2557,8 @@ async function researchConcept(): Promise<void> {
       lastFeedbackIsWarn.value = true
       lastFeedback.value = store.error || '研究未能启动（上一轮可能仍在进行，稍后再试）'
     }
+    // 完整输出弹窗的「本轮回复」（2026-10-05：滚动行只留 3 条，正文进弹窗可回看）
+    researchResultText.value = result?.content ?? ''
     // 研究完成后重拉视图：卡片草稿/新关系/掌握度一并刷新
     await refreshView()
     // 讲义流水线（2026-09-14）：本轮若提交了「讲义方案」草案 → 自动弹窗请用户确认，
@@ -2527,6 +3107,30 @@ watch(rightPane, (pane) => {
     line-height: 1.6;
     color: var(--el-text-color-placeholder);
   }
+
+  // 拆细知识点：子知识点行编辑器（2026-10-05）
+  .split-rows {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .split-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    .split-row-name {
+      flex: 0 0 220px;
+    }
+
+    .split-row-def {
+      flex: 1;
+      min-width: 0;
+    }
+  }
 }
 
 // 体系完整度悬停卡（缺口清单；2026-09-12）
@@ -2554,6 +3158,17 @@ watch(rightPane, (pane) => {
 
   .coverage-tip-ok {
     color: var(--el-color-success);
+  }
+}
+
+// 前置 chip 悬停说明（跨主题命中/创建引导；2026-10-05）
+.prereq-tip-block {
+  max-width: 300px;
+  font-size: 12px;
+  line-height: 1.7;
+
+  b {
+    color: var(--el-color-primary-light-3);
   }
 }
 
@@ -2880,6 +3495,36 @@ watch(rightPane, (pane) => {
     font-size: 13px;
     flex-shrink: 0;
   }
+  // 删除入口（2026-10-05）：悬浮叶行才浮现；未悬浮不可点，防误触确认框
+  .leaf-del {
+    flex-shrink: 0;
+    font-size: 13px;
+    color: var(--el-text-color-placeholder);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+
+    &:hover {
+      color: var(--el-color-danger);
+    }
+
+    &.busy {
+      color: var(--el-text-color-placeholder);
+      pointer-events: none;
+    }
+  }
+
+  // 只管显隐与可点性；颜色由 .leaf-del 自身（含 hover 态）控制，避免选择器打架
+  &:hover .leaf-del,
+  .leaf-del:focus-visible,
+  .leaf-del.busy {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  &:hover .leaf-del.busy {
+    pointer-events: none;
+  }
 }
 
 .tree-empty {
@@ -2993,11 +3638,39 @@ watch(rightPane, (pane) => {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-
-        &.warn {
-          color: var(--el-color-warning);
-        }
       }
+    }
+  }
+
+  // 警告/错误反馈横幅（2026-10-05：研究报错等长文本不再挤 240px 截断 toast——
+  // 标题行下方全宽展示，可换行看全文，点击整条关闭）
+  .lesson-feedback-bar {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--el-color-warning);
+    background: var(--el-color-warning-light-9);
+    cursor: pointer;
+
+    .lfb-text {
+      flex: 1;
+      min-width: 0;
+      word-break: break-all;
+      white-space: pre-wrap;
+      // 极端长报错（含堆栈）限高可滚动，不把中栏撑穿
+      max-height: 120px;
+      overflow-y: auto;
+    }
+
+    .lfb-close {
+      flex-shrink: 0;
+      margin-top: 3px;
+      color: var(--el-color-warning);
     }
   }
 
@@ -3018,6 +3691,19 @@ watch(rightPane, (pane) => {
       gap: 3px;
       padding: 1px 8px;
       border-radius: 9px;
+
+      // 关系边前置 chip（2026-10-05）：chip 即跳转链接，悬浮浮出主色
+      &.clickable {
+        cursor: pointer;
+        transition: filter 0.15s;
+
+        &:hover,
+        &:focus-visible {
+          filter: brightness(0.96);
+          outline: none;
+          color: var(--el-color-primary);
+        }
+      }
 
       &.ready {
         color: var(--el-color-success);
@@ -3041,6 +3727,32 @@ watch(rightPane, (pane) => {
             color: var(--el-color-primary);
             border-color: var(--el-color-primary-light-5);
           }
+        }
+
+        // 跨主题跳转图标（系统已有该知识点）：弱主色，暗示可点
+        .prereq-jump-icon {
+          color: var(--el-color-primary-light-3);
+        }
+
+        // 创建入口（系统还没有）：悬浮浮现「＋」（2026-10-05 用户需求：鼠标放上去显示创建 icon）。
+        // 未悬浮时 pointer-events 一并关掉——否则隐藏态仍占位可点，点 chip 附近会"莫名"弹出创建框
+        .prereq-add-icon {
+          color: var(--el-color-primary);
+          opacity: 0;
+          width: 12px;
+          pointer-events: none;
+          cursor: pointer;
+          transition: opacity 0.15s;
+
+          &:hover {
+            color: var(--el-color-primary-light-3);
+          }
+        }
+
+        &:hover .prereq-add-icon,
+        .prereq-add-icon:focus-visible {
+          opacity: 1;
+          pointer-events: auto;
         }
       }
       .el-icon {

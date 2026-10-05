@@ -8,7 +8,7 @@
  * mastery/research_state 状态机由 learning-graph/learning-loop 服务收口。
  */
 
-import { type DataSource, type FindOptionsWhere } from 'typeorm'
+import { type DataSource, type FindOptionsWhere, In } from 'typeorm'
 import { DlConceptEntity } from '../entities/domain-learning/dl-concept.entity'
 import { BaseRepository } from '../base-repository'
 
@@ -107,6 +107,17 @@ export class DlConceptRepository extends BaseRepository<DlConceptEntity, DlConce
   async listByProject(projectId: string): Promise<DlConceptRow[]> {
     const rows = await this.scoped.find({
       where: { projectId } as ConceptWhere,
+      order: { createdAt: 'ASC' },
+    })
+    return this.toDtoList(rows)
+  }
+
+  /** 跨项目按名取概念（In 单查询；2026-10-05 前置 chip「系统已有该知识点」判定用） */
+  async listByNames(names: string[]): Promise<DlConceptRow[]> {
+    const cleaned = [...new Set(names.map((n) => String(n).trim()).filter(Boolean))]
+    if (!cleaned.length) return []
+    const rows = await this.scoped.find({
+      where: { name: In(cleaned) } as ConceptWhere,
       order: { createdAt: 'ASC' },
     })
     return this.toDtoList(rows)

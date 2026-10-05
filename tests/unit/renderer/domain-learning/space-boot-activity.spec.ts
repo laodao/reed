@@ -53,7 +53,7 @@ vi.mock('@/stores/domain-learning', () => ({
   useDomainLearningStore: () => fakeStore,
 }))
 vi.mock('@/stores/tabs', () => ({
-  useTabsStore: () => ({ preloadTab: vi.fn() }),
+  useTabsStore: () => ({ preloadTab: vi.fn(), updateTabTitle: vi.fn() }),
 }))
 
 /** 最小可用空间视图（空主题：只有领域根目录） */

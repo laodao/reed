@@ -103,6 +103,20 @@ export function masteryDotClass(m: DlMastery): string {
   return m === 'mastered' ? 'dot-mastered' : m === 'learning' ? 'dot-learning' : 'dot-todo'
 }
 
+// ==================== 学习空间 tab 标题（2026-10-05 用户需求） ====================
+
+/**
+ * 学习空间 tab 标题：显示主题名而非统一的「领域学习空间」；
+ * 超 6 字截断加省略号（tab 宽度有限，主题名往往很长）。
+ * 空名兜底回 meta.title 的默认值。Home / Atlas / 跨主题跳转的 preloadTab 与
+ * 空间页自身的 updateTabTitle 共用这一份截断口径。
+ */
+export function tabTitleOf(name: string | null | undefined): string {
+  const n = (name ?? '').trim()
+  if (!n) return '领域学习空间'
+  return n.length > 6 ? `${n.slice(0, 6)}...` : n
+}
+
 // ==================== 系统知识库选项（建空间 / 空间设置下拉共用） ====================
 
 /** 系统知识库列表项（knowledge-base:list 返回；只取下拉所需字段） */

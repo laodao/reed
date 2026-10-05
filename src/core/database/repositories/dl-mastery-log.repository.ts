@@ -74,6 +74,11 @@ export class DlMasteryLogRepository extends BaseRepository<DlMasteryLogEntity, D
     return this.scoped.count({ projectId, conceptId } as LogWhere)
   }
 
+  /** 删某概念的全部掌握度日志（删除知识点时级联用） */
+  async deleteByConcept(projectId: string, conceptId: string): Promise<number> {
+    return this.scoped.delete({ projectId, conceptId } as LogWhere)
+  }
+
   protected toDto(e: DlMasteryLogEntity): DlMasteryLogRow {
     return {
       id: e.id,

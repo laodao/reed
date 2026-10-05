@@ -67,6 +67,11 @@ export class DlConceptLogRepository extends BaseRepository<DlConceptLogEntity, D
     return this.toDtoList(rows)
   }
 
+  /** 删某概念的全部变更日志（删除知识点时级联用） */
+  async deleteByConcept(projectId: string, conceptId: string): Promise<number> {
+    return this.scoped.delete({ projectId, conceptId } as LogWhere)
+  }
+
   protected toDto(e: DlConceptLogEntity): DlConceptLogRow {
     return {
       id: e.id,

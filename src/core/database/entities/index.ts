@@ -171,3 +171,6 @@ export { LwIpCharacterEntity } from './lw-ip-character.entity'
 export { LwIpEdgeEntity } from './lw-ip-edge.entity'
 export { LwWorldBindingEntity } from './lw-world-binding.entity'
 export { LwIpBindingEntity } from './lw-ip-binding.entity'
+
+// 概念字段变更审计（删除/拆分知识点时级联清理；2026-10-05 注册进主数据源）
+export { DlConceptLogEntity } from './domain-learning/dl-concept-log.entity'

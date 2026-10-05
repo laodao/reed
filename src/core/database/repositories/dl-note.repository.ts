@@ -108,6 +108,11 @@ export class DlNoteRepository extends BaseRepository<DlNoteEntity, DlNoteRow> {
     return this.scoped.delete({ id })
   }
 
+  /** 删某概念的全部笔记（删除知识点时级联用） */
+  async deleteByConcept(projectId: string, conceptId: string): Promise<number> {
+    return this.scoped.delete({ projectId, conceptId } as NoteWhere)
+  }
+
   async patch(id: string, patch: DlNotePatch): Promise<void> {
     const partial: Partial<DlNoteEntity> = {}
     if (patch.conceptId !== undefined) partial.conceptId = patch.conceptId

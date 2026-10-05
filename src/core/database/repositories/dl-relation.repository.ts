@@ -134,6 +134,13 @@ export class DlRelationRepository extends BaseRepository<DlRelationEntity, DlRel
     return this.scoped.delete({ id })
   }
 
+  /** 删某节点的全部关系边（出边+入边；删除知识点时级联清边用） */
+  async deleteByConcept(projectId: string, conceptId: string): Promise<number> {
+    const out = await this.scoped.delete({ projectId, sourceId: conceptId } as RelationWhere)
+    const inn = await this.scoped.delete({ projectId, targetId: conceptId } as RelationWhere)
+    return (out ?? 0) + (inn ?? 0)
+  }
+
   protected toDto(e: DlRelationEntity): DlRelationRow {
     return {
       id: e.id,

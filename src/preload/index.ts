@@ -1429,6 +1429,8 @@ const electronAPI = {
       ipcRenderer.invoke('dl:set-space-status', { id, status }),
     // 三栏空间聚合视图（Space 页主数据源 → DlSpaceView | null）
     getSpaceView: (id: string) => ipcRenderer.invoke('dl:get-space-view', { id }),
+    // 跨空间按名查知识点（2026-10-05 前置 chip「系统已有→跳转 / 没有→创建」判定 → DlConceptHit[]）
+    searchConcepts: (p: { names: string[] }) => ipcRenderer.invoke('dl:search-concepts', p),
     // Atlas 知识全景图（→ DlAtlasGraph | null）
     getAtlasGraph: (id: string) => ipcRenderer.invoke('dl:get-atlas-graph', { id }),
     // Atlas 节点档案（右栏 → DlNodeProfile | null）
@@ -1445,6 +1447,11 @@ const electronAPI = {
       en?: string | null
       prerequisites?: string[]
     }) => ipcRenderer.invoke('dl:save-concept', p),
+    // 删除知识点（2026-10-05：级联清关系边/讲义含历史版本/笔记/问答 → DlDeleteConceptResult）
+    deleteConcept: (p: { id: string; conceptId: string }) => ipcRenderer.invoke('dl:delete-concept', p),
+    // 拆分知识点（2026-10-05：就地转分支 + 子知识点，前置边继承 → DlSplitConceptResult）
+    splitConcept: (p: { id: string; conceptId: string; branchName?: string | null; children: Array<{ name: string; definitionShort?: string | null }> }) =>
+      ipcRenderer.invoke('dl:split-concept', p),
     // 标记「懂了」（前置全就绪才放行 → { ok }）
     ackMastered: (id: string, conceptId: string) => ipcRenderer.invoke('dl:ack-mastered', { id, conceptId }),
     // 标记「没懂」（sectionKey 定位到讲义区 → { confusedCount, splitSuggested }）

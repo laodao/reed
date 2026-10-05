@@ -14,6 +14,9 @@ import { DlConceptRepository } from '@core/database/repositories/dl-concept.repo
 import { DlRelationRepository, PREREQUISITE_TYPE } from '@core/database/repositories/dl-relation.repository'
 import { DlMasteryLogRepository } from '@core/database/repositories/dl-mastery-log.repository'
 import { DlCardRepository } from '@core/database/repositories/dl-card.repository'
+import { DlNoteRepository } from '@core/database/repositories/dl-note.repository'
+import { DlQuestionRepository } from '@core/database/repositories/dl-question.repository'
+import { DlConceptLogRepository } from '@core/database/repositories/dl-concept-log.repository'
 import { LearningGraphService } from '@core/packs/domain-learning/services/learning-graph.service'
 import { LearningProjectService } from '@core/packs/domain-learning/services/learning-project.service'
 
@@ -27,6 +30,8 @@ const ENTITY_IMPORTS = [
   () => import('@core/database/entities/domain-learning/dl-card.entity'),
   () => import('@core/database/entities/domain-learning/dl-doc.entity'),
   () => import('@core/database/entities/domain-learning/dl-question.entity'),
+  () => import('@core/database/entities/domain-learning/dl-note.entity'),
+  () => import('@core/database/entities/domain-learning/dl-concept-log.entity'),
 ]
 
 async function buildDs(): Promise<DataSource> {
@@ -48,11 +53,22 @@ function makeServices(d: DataSource) {
     relations: new DlRelationRepository(d),
     masteryLogs: new DlMasteryLogRepository(d),
     cards: new DlCardRepository(d),
+    notes: new DlNoteRepository(d),
+    questions: new DlQuestionRepository(d),
+    conceptLogs: new DlConceptLogRepository(d),
   }
 }
 
 function makeGraph(svc: ReturnType<typeof makeServices>): LearningGraphService {
-  return new LearningGraphService(svc.concepts, svc.relations, svc.masteryLogs)
+  return new LearningGraphService(
+    svc.concepts,
+    svc.relations,
+    svc.masteryLogs,
+    svc.cards,
+    svc.notes,
+    svc.questions,
+    svc.conceptLogs,
+  )
 }
 
 async function seedSpace(u: string, d: DataSource): Promise<string> {
@@ -437,6 +453,130 @@ describe('LearningGraphService 间隔复习（M3-B）', () => {
         await s2.projects.create({ id: 'sp2', name: '另一个空间', goal: '入门' })
         const g2 = makeGraph(s2)
         await expect(g2.createConcept('sp2', { name: 'Y', parentId: 'g-branch' })).rejects.toThrow(/不存在/)
+      })
+    })
+  })
+
+  // ===== 2026-10-05 用户需求：删除知识点（级联清从属数据） =====
+
+  describe('deleteConcept（删除知识点）', () => {
+    it('级联删除：概念 + 出入关系边 + 讲义全部版本 + 笔记 + 问答 + 日志，回传各表删除量', async () => {
+      ds = await buildDs()
+      const pid = await seedSpace('u1', ds)
+      const svc = makeServices(ds)
+      const graph = makeGraph(svc)
+      await runWithUserAsync('u1', async () => {
+        // 造从属数据：入边已有 e1（注意力→Transformer 前置），补出边；2 版讲义；1 条笔记；1 问答；日志
+        await svc.relations.create({ id: 'e2', projectId: pid, sourceId: 'c-attn', targetId: 'c-tf', relationType: 'related' })
+        await svc.cards.create({ id: 'card-v1', projectId: pid, conceptId: 'c-attn', essenceType: 'K-concept', sections: [], version: 1 })
+        await svc.cards.create({ id: 'card-v2', projectId: pid, conceptId: 'c-attn', essenceType: 'K-concept', sections: [], version: 2 })
+        await svc.notes.create({ id: 'n1', projectId: pid, conceptId: 'c-attn', source: 'selection', contentMd: '重点' })
+        await svc.questions.create({ id: 'q1', projectId: pid, conceptId: 'c-attn', question: '注意力是什么？' })
+        await svc.conceptLogs.create({ id: 'cl1', projectId: pid, conceptId: 'c-attn', field: 'name', fromValue: 'x', toValue: '注意力', trigger: 'manual' })
+
+        const r = await graph.deleteConcept(pid, 'c-attn')
+        expect(r).toMatchObject({ conceptId: 'c-attn', relations: 2, cards: 2, notes: 1, questions: 1 })
+
+        // 全部级联清空
+        expect(await svc.concepts.getById('c-attn')).toBeNull()
+        expect(await svc.relations.listByProject(pid)).toHaveLength(0)
+        expect(await svc.cards.listVersionsByConcept(pid, 'c-attn')).toHaveLength(0)
+        expect(await svc.notes.listByConcept(pid, 'c-attn')).toHaveLength(0)
+        expect((await svc.questions.listByProject(pid)).filter((q) => q.conceptId === 'c-attn')).toHaveLength(0)
+        expect(await svc.masteryLogs.listByConcept(pid, 'c-attn')).toHaveLength(0)
+        expect(await svc.conceptLogs.listByConcept(pid, 'c-attn')).toHaveLength(0)
+        // 其他概念不受影响
+        expect(await svc.concepts.getById('c-tf')).not.toBeNull()
+      })
+      // 跨租户删不掉
+      await runWithUserAsync('u2', async () => {
+        const g2 = makeGraph(makeServices(ds!))
+        await expect(g2.deleteConcept(pid, 'c-tf')).rejects.toThrow(/不存在/)
+      })
+    })
+
+    it('目录节点拒绝删除；前置被删后，后继概念的门控自动解除', async () => {
+      ds = await buildDs()
+      const pid = await seedSpace('u1', ds)
+      const svc = makeServices(ds)
+      const graph = makeGraph(svc)
+      await runWithUserAsync('u1', async () => {
+        await expect(graph.deleteConcept(pid, 'g-branch')).rejects.toThrow(/目录/)
+        // Transformer 的前置（注意力）被删 → pickNextToLearn 不再被它卡住
+        await graph.deleteConcept(pid, 'c-attn')
+        expect(await graph.pickNextToLearn(pid)).toBe('c-tf')
+      })
+    })
+  })
+
+  // ===== 2026-10-05 用户需求：拆细知识点（庞杂知识点 → 一层分支 + 子知识点） =====
+
+  describe('splitConceptIntoBranch（拆分知识点）', () => {
+    it('就地转分支 + 子知识点落位；前置边继承给每个子知识点；原边/总览讲义退役', async () => {
+      ds = await buildDs()
+      const pid = await seedSpace('u1', ds)
+      const svc = makeServices(ds)
+      const graph = makeGraph(svc)
+      await runWithUserAsync('u1', async () => {
+        // 原知识点带总览讲义与一条 related 出边（拆分应退役/清理）
+        await svc.cards.create({ id: 'card-umbrella', projectId: pid, conceptId: 'c-tf', essenceType: 'K-concept', sections: [], version: 1 })
+        await svc.relations.create({ id: 'e-out', projectId: pid, sourceId: 'c-tf', targetId: 'c-attn', relationType: 'related' })
+
+        const r = await graph.splitConceptIntoBranch(pid, 'c-tf', {
+          branchName: 'Transformer 体系',
+          children: [{ name: '编码器' }, { name: '解码器', definitionShort: '生成侧' }],
+        })
+
+        // 原知识点就地转成分支（树位置不变），讲义指针清空
+        const branch = await svc.concepts.getById('c-tf')
+        expect(branch).toMatchObject({ nodeType: 'group', name: 'Transformer 体系', parentId: 'g-branch', cardId: null })
+        expect(r.branchId).toBe('c-tf')
+        expect(r.children.map((x) => x.name)).toEqual(['编码器', '解码器'])
+
+        // 子知识点落在分支下：待研究、manual，且声明/边都继承了原前置（注意力）
+        // （sort 按 UTF-16 码位：编 U+7F16 < 解 U+89E3）
+        const kids = (await svc.concepts.listByProject(pid)).filter((x) => x.parentId === 'c-tf')
+        expect(kids.map((x) => x.name).sort()).toEqual(['编码器', '解码器'])
+        for (const k of kids) {
+          expect(k).toMatchObject({ nodeType: 'concept', source: 'manual', researchState: 'unresearched', mastery: 'untouched' })
+          expect((k.attrs as { prerequisites?: string[] }).prerequisites).toEqual(['注意力'])
+          const edges = await svc.relations.listPrerequisites(pid, k.id)
+          expect(edges).toHaveLength(1)
+          expect(edges[0]).toMatchObject({ sourceId: 'c-attn', verified: true })
+        }
+
+        // 原触边全清；项目里只剩 2 条继承边（注意力 → 两个子知识点，均已是确认前置）
+        const remaining = await svc.relations.listByProject(pid)
+        expect(remaining).toHaveLength(2)
+        for (const e of remaining) {
+          expect(e).toMatchObject({ sourceId: 'c-attn', relationType: PREREQUISITE_TYPE, verified: true })
+          expect(['编码器', '解码器']).toContain(kids.find((k) => k.id === e.targetId)?.name)
+        }
+        expect(await svc.cards.listVersionsByConcept(pid, 'c-tf')).toHaveLength(0)
+        expect(r.removed).toMatchObject({ cards: 1, notes: 0, questions: 0 })
+        expect(r.inheritedPrereqs).toEqual([{ name: '注意力', conceptId: 'c-attn' }])
+        expect(r.droppedRelations).toBe(1)
+
+        // 树渲染：分支下挂两个子知识点；门控：注意力未掌握 → 子知识点不可越级（pickNext 仍是注意力）
+        const tree = await graph.buildTree(pid)
+        // g-root → g-branch → [c-attn, 新分支]；新分支下挂两个子知识点（sort 按码位：编 < 解）
+        const branchNode = tree[0].children?.[0]?.children?.find((x) => x.id === 'c-tf')
+        expect(branchNode?.children?.map((x) => x.name).sort()).toEqual(['编码器', '解码器'])
+        expect(await graph.pickNextToLearn(pid)).toBe('c-attn')
+      })
+    })
+
+    it('校验：目录不能再拆 / 至少一个子知识点 / 子名称重复', async () => {
+      ds = await buildDs()
+      const pid = await seedSpace('u1', ds)
+      const svc = makeServices(ds)
+      const graph = makeGraph(svc)
+      await runWithUserAsync('u1', async () => {
+        await expect(graph.splitConceptIntoBranch(pid, 'g-branch', { children: [{ name: 'X' }] })).rejects.toThrow(/目录/)
+        await expect(graph.splitConceptIntoBranch(pid, 'c-attn', { children: [] })).rejects.toThrow(/至少/)
+        await expect(
+          graph.splitConceptIntoBranch(pid, 'c-attn', { children: [{ name: 'A' }, { name: 'A' }] }),
+        ).rejects.toThrow(/重复/)
       })
     })
   })

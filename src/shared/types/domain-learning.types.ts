@@ -190,6 +190,59 @@ export interface DlCreateConceptResult {
   cycleSkippedPrereqs?: string[]
 }
 
+/** 跨空间知识点命中（2026-10-05 前置 chip「系统已有→跳转 / 没有→创建」判定；dl:search-concepts） */
+export interface DlConceptHit {
+  name: string
+  conceptId: string
+  /** 命中所在空间（主题） */
+  spaceId: string
+  spaceName: string
+  nodeType: string
+  mastery: string
+  /** 是否已有讲义 */
+  hasCard: boolean
+}
+
+/** 删除知识点结果（级联删除量；dl:delete-concept，供 UI 反馈删了什么） */
+export interface DlDeleteConceptResult {
+  conceptId: string
+  /** 连带删除的关系边（前置/相关等）数 */
+  relations: number
+  /** 连带删除的讲义（含全部历史版本）数 */
+  cards: number
+  /** 连带删除的笔记数 */
+  notes: number
+  /** 连带删除的问答（追问+回答，即 view.turns 里该概念的记录）数 */
+  questions: number
+}
+
+/** 知识点拆分入参（拆成一层分支+子知识点；dl:split-concept） */
+export interface DlSplitConceptInput {
+  /** 目标空间 id */
+  id: string
+  /** 要拆的知识点 */
+  conceptId: string
+  /** 分支目录名（缺省=原知识点名；原知识点就地转成分支，树位置不变） */
+  branchName?: string | null
+  /** 子知识点清单（至少一条；名称必填） */
+  children: Array<{ name: string; definitionShort?: string | null }>
+}
+
+/** 知识点拆分结果（各迁移/清理量供 UI 反馈） */
+export interface DlSplitConceptResult {
+  /** 分支目录 id（即原知识点 id，就地转换） */
+  branchId: string
+  branchName: string
+  /** 新建的子知识点（与入参同序） */
+  children: Array<{ conceptId: string; name: string }>
+  /** 拆分时退役的从属数据量（原知识点不再承载讲义/笔记/问答） */
+  removed: { cards: number; notes: number; questions: number }
+  /** 自动继承给每个子知识点的前置（原知识点的前置边） */
+  inheritedPrereqs: Array<{ name: string; conceptId: string }>
+  /** 无法继承而清理的其他关系边数（related 等；可回知识全景复核补建） */
+  droppedRelations: number
+}
+
 /** 讲义视图（一概念当前版） */
 export interface DlCardView {
   id: string

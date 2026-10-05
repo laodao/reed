@@ -28,10 +28,12 @@ const SFC_PATH = resolve(
 )
 const sfc = readFileSync(SFC_PATH, 'utf8')
 
-/** 截取中栏讲义标题栏右侧的动作行（`<div class="lesson-actions">` → 末条反馈提示之前） */
+/** 截取中栏讲义标题栏右侧的动作行（`<div class="lesson-actions">` → 末条反馈提示之前）。
+ *  收尾标记不带闭合引号：2026-10-05 反馈横幅化后该行变成 `v-if="lastFeedback && !lastFeedbackIsWarn"`，
+ *  前缀匹配对横幅化前后两种写法都成立。 */
 function actionsBlock(src: string): string {
   const start = src.indexOf('<div class="lesson-actions">')
-  const end = src.indexOf('<span v-if="lastFeedback"', start)
+  const end = src.indexOf('<span v-if="lastFeedback', start)
   expect(start, '未找到 .lesson-actions 动作行').toBeGreaterThan(-1)
   expect(end, '未找到动作行收尾标记').toBeGreaterThan(start)
   return src.slice(start, end)
@@ -154,7 +156,7 @@ vi.mock('@/stores/domain-learning', () => ({
   useDomainLearningStore: () => fakeStore
 }))
 vi.mock('@/stores/tabs', () => ({
-  useTabsStore: () => ({ preloadTab: vi.fn() })
+  useTabsStore: () => ({ preloadTab: vi.fn(), updateTabTitle: vi.fn() })
 }))
 
 /** 最小可用空间视图：根目录 + 一个「待复核 3 条」的草稿讲义概念 */

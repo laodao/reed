@@ -187,6 +187,11 @@ export class DlCardRepository extends BaseRepository<DlCardEntity, DlCardRow> {
     return this.toDtoList(rows)
   }
 
+  /** 删某概念的全部讲义（含全部历史版本；删除知识点时级联用） */
+  async deleteByConcept(projectId: string, conceptId: string): Promise<number> {
+    return this.scoped.delete({ projectId, conceptId } as CardWhere)
+  }
+
   async patch(id: string, patch: DlCardPatch): Promise<void> {
     const partial: Partial<DlCardEntity> = { updatedAt: new Date() }
     if (patch.essenceType !== undefined) partial.essenceType = patch.essenceType

@@ -16,7 +16,7 @@
         v-for="s in store.spaces"
         :key="s.id"
         class="topic-card"
-        @click="enter(s.id)"
+        @click="enter(s.id, s.name)"
       >
         <div class="card-top">
           <div class="topic-name">
@@ -43,7 +43,7 @@
         </div>
 
         <div class="card-actions">
-          <el-button type="primary" size="small" :icon="ArrowRight" @click.stop="enter(s.id)">
+          <el-button type="primary" size="small" :icon="ArrowRight" @click.stop="enter(s.id, s.name)">
             继续学习 →
           </el-button>
         </div>
@@ -140,12 +140,14 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Reading, Plus, ArrowRight, Refresh } from '@element-plus/icons-vue'
 import { useDomainLearningStore } from '@/stores/domain-learning'
+import { useTabsStore } from '@/stores/tabs'
 import type { DlProjectStatus } from '@shared/types/domain-learning.types'
 import { DL_PROFILE_PRESETS, DL_VIEW_KIND_LABELS, DL_VIEW_KIND_ORDER } from '@shared/types/domain-learning.types'
-import { listKnowledgeBases, type DlKbOption } from './domain-learning-ui'
+import { listKnowledgeBases, tabTitleOf, type DlKbOption } from './domain-learning-ui'
 
 const router = useRouter()
 const store = useDomainLearningStore()
+const tabsStore = useTabsStore()
 
 /** 学习目标档位（dl_goal 枚举：入门 / 工作应用 / 前沿） */
 const GOAL_OPTIONS = ['入门', '工作应用', '前沿'] as const
@@ -238,7 +240,7 @@ async function submitCreate(): Promise<void> {
     })
     if (id) {
       createVisible.value = false
-      enter(id)
+      enter(id, name)
     } else if (store.error) {
       console.error('[domain-learning] 新建失败:', store.error)
     }
@@ -248,7 +250,9 @@ async function submitCreate(): Promise<void> {
 }
 
 // ---------- 进入空间 ----------
-function enter(id: string): void {
+/** 进空间前用主题名预置 tab 标题（截断口径见 tabTitleOf）；不然 tab 会落回 meta.title「领域学习空间」 */
+function enter(id: string, name?: string): void {
+  if (name) tabsStore.preloadTab(`/domain-learning/${id}`, tabTitleOf(name))
   router.push(`/domain-learning/${id}`)
 }
 

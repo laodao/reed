@@ -16,8 +16,11 @@ import type {
   DlAtlasGraph,
   DlAtlasViews,
   DlCardView,
+  DlConceptHit,
   DlCreateConceptInput,
   DlCreateConceptResult,
+  DlDeleteConceptResult,
+  DlSplitConceptResult,
   DlLessonDigest,
   DlLessonExportFormat,
   DlLessonExportResult,
@@ -109,11 +112,17 @@ interface DomainLearningApi {
   getSpacePrereqs(id: string): Promise<IpcLike<DlSpacePrereq[]>>
   setSpacePrereqs(p: { id: string; prerequisites: DlSpacePrereq[] }): Promise<IpcLike<{ prerequisites: DlSpacePrereq[] }>>
   getSpaceView(id: string): Promise<IpcLike<DlSpaceView | null>>
+  /** 跨空间按名查知识点（前置 chip「系统已有→跳转 / 没有→创建」判定） */
+  searchConcepts(p: { names: string[] }): Promise<IpcLike<DlConceptHit[]>>
   getAtlasGraph(id: string): Promise<IpcLike<DlAtlasGraph | null>>
   getNodeProfile(id: string, nodeId: string): Promise<IpcLike<DlNodeProfile | null>>
   pickNext(id: string): Promise<IpcLike<string | null>>
   /** 手工追加知识点（2026-09-12：用户建点 + 前置直连） */
   saveConcept(p: DlCreateConceptInput): Promise<IpcLike<DlCreateConceptResult>>
+  /** 删除知识点（2026-10-05：级联清关系边/讲义/笔记/问答 → 各表删除量） */
+  deleteConcept(p: { id: string; conceptId: string }): Promise<IpcLike<DlDeleteConceptResult>>
+  /** 拆分知识点（2026-10-05：就地转分支 + 子知识点，前置边继承） */
+  splitConcept(p: { id: string; conceptId: string; branchName?: string | null; children: Array<{ name: string; definitionShort?: string | null }> }): Promise<IpcLike<DlSplitConceptResult>>
   /** 关系人审确认（未确认边 → verified） */
   confirmRelation(p: { id: string; sourceId: string; targetId: string; relationType: string; evidence?: string }): Promise<IpcLike<{ ok: boolean }>>
   /** 删除关系边（2026-09-25：错边/成环边的修复入口） */
@@ -202,6 +211,27 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
   /** Agent 事件订阅注册表（subscribeAgentEvent/subscribeStream 登记；unsubscribeAll 统一清理） */
   const unsubscribers: Array<() => void> = []
 
+  /**
+   * 守卫取**新增**的 API 方法：preload 是窗口创建时注入的外壳，渲染进程热更新不会刷新它——
+   * 正在运行的旧壳上调用新方法会抛裸的「xxx is not a function」。
+   * 默认转成可操作的中文提示（重启应用即恢复）；silent=true 用于静默降级路径（不置 error）。
+   */
+  function apiMethod<K extends keyof DomainLearningApi>(
+    name: K,
+    opts: { silent?: boolean } = {},
+  ): DomainLearningApi[K] | null {
+    const a = api() as unknown as Record<string, unknown> | null
+    if (!a) return null
+    const fn = a[name as string]
+    if (typeof fn !== 'function') {
+      if (!opts.silent) {
+        error.value = '该能力需要最新版应用外壳：请完全退出并重启应用后再试（开发模式重新运行 npm run dev）'
+      }
+      return null
+    }
+    return fn as DomainLearningApi[K]
+  }
+
   // ==================== 空间列表 ====================
 
   /** 拉取空间列表（Home 页 onMounted；IPC 缺失 → 空列表，不抛错） */
@@ -252,9 +282,39 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     }
   }
 
-  /** 新建空间；返回新空间 id（失败 → null） */
-  async function createSpace(input: DlCreateSpaceInput): Promise<string | null> {
+  /**
+   * 拉取**其他空间**的聚合视图（不写 currentSpaceView——那是当前页的主数据源，
+   * 串写会把学习空间页顶掉；2026-10-05 建前置知识点对话框选「主题下分类」用）。
+   */
+  async function fetchSpaceViewDetached(id: string): Promise<DlSpaceView | null> {
     const a = api()
+    if (!a) return null
+    try {
+      const r = await a.getSpaceView(id)
+      return r?.success && r.data ? r.data : null
+    } catch (e: any) {
+      console.error('[domain-learning] 拉取其他空间视图失败:', e)
+      return null
+    }
+  }
+
+  /** 跨空间按名查知识点（dl:search-concepts；失败/缺失降级为空数组——按"系统没有"处理） */
+  async function searchConceptsAcrossSpaces(names: string[]): Promise<DlConceptHit[]> {
+    // 静默降级：旧外壳缺方法时按"系统没有"处理，不惊扰用户
+    const fn = apiMethod('searchConcepts', { silent: true })
+    if (!fn || !names.length) return []
+    try {
+      const r = await fn({ names: [...names] })
+      if (r?.success && Array.isArray(r.data)) return r.data
+      return []
+    } catch (e: any) {
+      console.error('[domain-learning] 跨空间查知识点失败:', e)
+      return []
+    }
+  }
+
+  /** 新建空间；返回新空间 id（失败 → null） */
+  async function createSpace(input: DlCreateSpaceInput): Promise<string | null> {    const a = api()
     if (!a) return null
     error.value = null
     try {
@@ -590,6 +650,75 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
       error.value = e?.message ?? '删除关系失败'
       console.error('[domain-learning] 删除关系失败:', e)
       return false
+    }
+  }
+
+  /** 删除知识点（dl:delete-concept；2026-10-05 用户需求）。
+   * 后端级联清关系边/讲义（含历史版本）/笔记/问答/日志；成功后刷新当前空间视图。 */
+  async function deleteConceptOf(p: { id: string; conceptId: string }): Promise<DlDeleteConceptResult | null> {
+    const fn = apiMethod('deleteConcept')
+    if (!fn) return null
+    try {
+      const r = await fn(toPlainData(p))
+      if (!r?.success || !r.data) {
+        error.value = r?.error ?? '删除知识点失败'
+        return null
+      }
+      // 删的可能不是当前空间（理论上 UI 只在当前空间入口发起，防御一下）
+      if (currentSpaceView.value?.id === p.id) await fetchSpaceView(p.id)
+      return r.data
+    } catch (e: any) {
+      error.value = e?.message ?? '删除知识点失败'
+      console.error('[domain-learning] 删除知识点失败:', e)
+      return null
+    }
+  }
+
+  /**
+   * 拆分知识点（dl:split-concept；2026-10-05 用户需求）：原知识点就地转分支 + 子知识点，
+   * 前置边自动继承。成功后刷新当前空间视图，返回迁移/清理量供 UI 反馈。
+   */
+  async function splitConceptOf(p: {
+    id: string
+    conceptId: string
+    branchName?: string | null
+    children: Array<{ name: string; definitionShort?: string | null }>
+  }): Promise<DlSplitConceptResult | null> {
+    const fn = apiMethod('splitConcept')
+    if (!fn) return null
+    try {
+      const r = await fn(toPlainData(p))
+      if (!r?.success || !r.data) {
+        error.value = r?.error ?? '拆分知识点失败'
+        return null
+      }
+      if (currentSpaceView.value?.id === p.id) await fetchSpaceView(p.id)
+      return r.data
+    } catch (e: any) {
+      error.value = e?.message ?? '拆分知识点失败'
+      console.error('[domain-learning] 拆分知识点失败:', e)
+      return null
+    }
+  }
+
+  /**
+   * 建点到**其他空间**（不刷新视图——createConceptOf 的 fetchSpaceView 会把
+   * currentSpaceView 顶成别的空间；2026-10-05 前置快捷创建跨主题落点用）。
+   */
+  async function createConceptDetached(p: DlCreateConceptInput): Promise<DlCreateConceptResult | null> {
+    const a = api()
+    if (!a) return null
+    try {
+      const r = await a.saveConcept(toPlainData(p))
+      if (!r?.success || !r.data) {
+        error.value = r?.error ?? '新建知识点失败'
+        return null
+      }
+      return r.data
+    } catch (e: any) {
+      error.value = e?.message ?? '新建知识点失败'
+      console.error('[domain-learning] 新建知识点失败:', e)
+      return null
     }
   }
 
@@ -1114,6 +1243,8 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     fetchSpaces,
     // 空间视图
     fetchSpaceView,
+    fetchSpaceViewDetached,
+    searchConceptsAcrossSpaces,
     createSpace,
     pickNext,
     // 方案确认流程（2026-09-13）
@@ -1136,6 +1267,9 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     fetchSpacePrereqs,
     saveSpacePrereqsOf,
     createConceptOf,
+    createConceptDetached,
+    deleteConceptOf,
+    splitConceptOf,
     confirmRelationOf,
     removeRelationOf,
     // 间隔复习

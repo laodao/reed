@@ -9,7 +9,7 @@
 
 import type { DlProjectRepository, DlProjectRow } from '@core/database/repositories/dl-project.repository'
 import type { DlConceptRepository } from '@core/database/repositories/dl-concept.repository'
-import type { DlPaceSettings, DlReviewSettings, DlSpacePrereq } from '@shared/types/domain-learning.types'
+import type { DlConceptHit, DlPaceSettings, DlReviewSettings, DlSpacePrereq } from '@shared/types/domain-learning.types'
 import { normalizeDlReviewSettings } from '../rules/learning-review.rules'
 import { normalizeSpacePrereqs } from '../rules/learning-prerequisites.rules'
 import { normalizePaceSettings } from './dl-pace-scheduler.service'
@@ -188,6 +188,30 @@ export class LearningProjectService {
       })
     }
     return out
+  }
+
+  /**
+   * 跨空间按名查知识点（2026-10-05 用户需求：前置 chip 判定「系统已有→跳转 / 没有→创建」）。
+   * 名单精确匹配（与空间内 declaredPrereqs 连边同语义），剔 group 目录；上限 50 个名防滥用。
+   */
+  async findConceptsAcrossSpaces(names: string[]): Promise<DlConceptHit[]> {
+    const cleaned = [...new Set((Array.isArray(names) ? names : []).map((n) => String(n).trim()).filter(Boolean))].slice(0, 50)
+    if (!cleaned.length) return []
+    const rows = await this.concepts.listByNames(cleaned)
+    if (!rows.length) return []
+    const projects = await this.projects.listAll()
+    const spaceNameOf = new Map(projects.map((p) => [p.id, p.name] as const))
+    return rows
+      .filter((c) => c.nodeType !== 'group')
+      .map((c) => ({
+        name: c.name,
+        conceptId: c.id,
+        spaceId: c.projectId,
+        spaceName: spaceNameOf.get(c.projectId) ?? '',
+        nodeType: c.nodeType,
+        mastery: c.mastery,
+        hasCard: !!c.cardId,
+      }))
   }
 
   async setStatus(id: string, status: 'active' | 'paused' | 'archived'): Promise<void> {

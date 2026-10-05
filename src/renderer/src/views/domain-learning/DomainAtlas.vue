@@ -251,7 +251,7 @@ import {
 } from '@element-plus/icons-vue'
 import { useTabsStore } from '@/stores/tabs'
 import { useDomainLearningStore } from '@/stores/domain-learning'
-import { nodeTypeMeta, relLabel } from './domain-learning-ui'
+import { nodeTypeMeta, relLabel, tabTitleOf } from './domain-learning-ui'
 import AtlasGraph from './AtlasGraph.vue'
 import AtlasEnhancedViews from './AtlasEnhancedViews.vue'
 import SpaceStatsPopover from './SpaceStatsPopover.vue'
@@ -533,12 +533,12 @@ const attrRows = computed(() => {
 // ==================== 跳转 ====================
 
 function goBackToSpace(): void {
-  tabsStore.preloadTab(`/domain-learning/${spaceId.value}`, spaceView.value?.name ?? '领域学习')
+  tabsStore.preloadTab(`/domain-learning/${spaceId.value}`, tabTitleOf(spaceView.value?.name))
   router.push(`/domain-learning/${spaceId.value}`)
 }
 
 function goLearn(node: DlAtlasNode): void {
-  tabsStore.preloadTab(`/domain-learning/${spaceId.value}`, spaceView.value?.name ?? '领域学习')
+  tabsStore.preloadTab(`/domain-learning/${spaceId.value}`, tabTitleOf(spaceView.value?.name))
   router.push({ path: `/domain-learning/${spaceId.value}`, query: { concept: node.id } })
 }
 
@@ -553,7 +553,7 @@ const atlasPlanPending = ref(false)
 
 /** 去空间页确认方案（空间页 onMounted 会自动拉方案并弹窗） */
 function goSpaceForPlan(): void {
-  tabsStore.preloadTab(`/domain-learning/${spaceId.value}`, spaceView.value?.name ?? '领域学习')
+  tabsStore.preloadTab(`/domain-learning/${spaceId.value}`, tabTitleOf(spaceView.value?.name))
   router.push(`/domain-learning/${spaceId.value}`)
 }
 

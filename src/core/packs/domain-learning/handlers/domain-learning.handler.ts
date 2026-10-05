@@ -15,6 +15,10 @@ import { DlProjectRepository } from '@core/database/repositories/dl-project.repo
 import { DlConceptRepository } from '@core/database/repositories/dl-concept.repository'
 import { DlRelationRepository } from '@core/database/repositories/dl-relation.repository'
 import { DlMasteryLogRepository } from '@core/database/repositories/dl-mastery-log.repository'
+import { DlCardRepository } from '@core/database/repositories/dl-card.repository'
+import { DlNoteRepository } from '@core/database/repositories/dl-note.repository'
+import { DlQuestionRepository } from '@core/database/repositories/dl-question.repository'
+import { DlConceptLogRepository } from '@core/database/repositories/dl-concept-log.repository'
 import { toDlNote } from '@core/database/repositories/dl-note.repository'
 import { toDlQuestionView } from '@core/database/repositories/dl-question.repository'
 import { LearningProjectService } from '../services/learning-project.service'
@@ -112,7 +116,15 @@ function services(): DlServiceBundle {
     if (isDesktopRuntime()) scheduler.start()
     bundle = {
       projects: new LearningProjectService(projects, concepts),
-      graph: new LearningGraphService(concepts, relations, masteryLogs),
+      graph: new LearningGraphService(
+        concepts,
+        relations,
+        masteryLogs,
+        new DlCardRepository(db.dataSource),
+        new DlNoteRepository(db.dataSource),
+        new DlQuestionRepository(db.dataSource),
+        new DlConceptLogRepository(db.dataSource),
+      ),
       view: new LearningViewService(db),
       agent,
       scheduler,
@@ -171,6 +183,9 @@ export function registerDomainLearningHandlers(): void {
 
   // ---- 空间聚合视图（Home 卡片/Space 三栏/Atlas 图与档案） ----
   ipcBridge.handle('dl:get-space-view', (_e, p: { id: string }) => wrap(() => services().view.buildSpaceView(p.id)))
+  // 跨空间按名查知识点（2026-10-05 前置 chip「系统已有→跳转 / 没有→创建」判定）
+  ipcBridge.handle('dl:search-concepts', (_e, p: { names: string[] }) =>
+    wrap(() => services().projects.findConceptsAcrossSpaces(Array.isArray(p?.names) ? p.names : [])))
   ipcBridge.handle('dl:get-atlas-graph', (_e, p: { id: string }) => wrap(() => services().view.buildAtlasGraph(p.id)))
   ipcBridge.handle('dl:get-atlas-views', (_e, p: { id: string }) => wrap(() => services().view.buildAtlasViews(p.id)))
   ipcBridge.handle('dl:get-node-profile', (_e, p: { id: string; nodeId: string }) =>
@@ -266,6 +281,18 @@ export function registerDomainLearningHandlers(): void {
     wrap(async () => {
       const { id, ...input } = p
       return services().graph.createConcept(id, input)
+    }))
+  // 删除知识点（2026-10-05：级联清关系边/讲义含历史版本/笔记/问答/掌握度与变更日志；目录不可删）
+  ipcBridge.handle('dl:delete-concept', (_e, p: { id: string; conceptId: string }) =>
+    wrap(async () => {
+      await services().projects.ensureOwned(p.id)
+      return services().graph.deleteConcept(p.id, p.conceptId)
+    }))
+  // 拆分知识点（2026-10-05：就地转分支 + 子知识点；前置边继承，总览讲义/笔记/问答退役）
+  ipcBridge.handle('dl:split-concept', (_e, p: { id: string; conceptId: string; branchName?: string | null; children: Array<{ name: string; definitionShort?: string | null }> }) =>
+    wrap(async () => {
+      await services().projects.ensureOwned(p.id)
+      return services().graph.splitConceptIntoBranch(p.id, p.conceptId, { branchName: p.branchName ?? null, children: p.children })
     }))
   ipcBridge.handle('dl:ack-mastered', (_e, p: { id: string; conceptId: string }) =>
     wrap(async () => {
