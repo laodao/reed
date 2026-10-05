@@ -25,7 +25,7 @@ import {
   BOOK_FORESHADOW_SYSTEM,
   BOOK_KNOWLEDGE_MAP_SYSTEM,
 } from './prompts'
-import { defaultBrainLlm, type BrainLlmFn } from './llm'
+import { defaultBrainLlm, BRAIN_LLM_MAX_TOKENS, type BrainLlmFn } from './llm'
 
 const logger = createLogger('KbBrainBookPasses')
 
@@ -223,14 +223,14 @@ export class KbBookPassesService {
         const out = await this.llm({
           system: BOOK_OUTLINE_MAP_SYSTEM,
           user: sampled.slice(i, i + OUTLINE_MAP_BATCH).join('\n'),
-          maxTokens: 1500,
+          maxTokens: BRAIN_LLM_MAX_TOKENS,
         })
         batchSynopses.push(out.trim())
         stats.calls += 1
       }
       material = batchSynopses.filter(Boolean).join('\n\n')
     }
-    const body = await this.llm({ system: BOOK_OUTLINE_REDUCE_SYSTEM, user: material, maxTokens: 3000 })
+    const body = await this.llm({ system: BOOK_OUTLINE_REDUCE_SYSTEM, user: material, maxTokens: BRAIN_LLM_MAX_TOKENS })
     stats.calls += 1
     await this.proposeCard(ctx.repos, ctx.kbId, ctx.documentId, {
       type: 'book-outline',
@@ -258,7 +258,7 @@ export class KbBookPassesService {
     ]
       .filter(Boolean)
       .join('\n\n')
-    const body = await this.llm({ system: BOOK_SETTING_INDEX_SYSTEM, user, maxTokens: 3500 })
+    const body = await this.llm({ system: BOOK_SETTING_INDEX_SYSTEM, user, maxTokens: BRAIN_LLM_MAX_TOKENS })
     stats.calls += 1
     await this.proposeCard(ctx.repos, ctx.kbId, ctx.documentId, {
       type: 'setting-index',
@@ -301,7 +301,7 @@ export class KbBookPassesService {
       ]
       sections.push(lines.join('\n'))
     }
-    const body = await this.llm({ system: BOOK_ROSTER_SYSTEM, user: sections.join('\n\n'), maxTokens: 3500 })
+    const body = await this.llm({ system: BOOK_ROSTER_SYSTEM, user: sections.join('\n\n'), maxTokens: BRAIN_LLM_MAX_TOKENS })
     stats.calls += 1
     await this.proposeCard(ctx.repos, ctx.kbId, ctx.documentId, {
       type: 'character-roster',
@@ -327,7 +327,7 @@ export class KbBookPassesService {
     const body = await this.llm({
       system: BOOK_FORESHADOW_SYSTEM,
       user: `悬置点论断：\n${atoms.map((a) => `- ${a.statement}`).join('\n')}`,
-      maxTokens: 2500,
+      maxTokens: BRAIN_LLM_MAX_TOKENS,
     })
     stats.calls += 1
     await this.proposeCard(ctx.repos, ctx.kbId, ctx.documentId, {
@@ -360,7 +360,7 @@ export class KbBookPassesService {
     ]
       .filter(Boolean)
       .join('\n\n')
-    const body = await this.llm({ system: BOOK_KNOWLEDGE_MAP_SYSTEM, user, maxTokens: 3500 })
+    const body = await this.llm({ system: BOOK_KNOWLEDGE_MAP_SYSTEM, user, maxTokens: BRAIN_LLM_MAX_TOKENS })
     stats.calls += 1
     await this.proposeCard(ctx.repos, ctx.kbId, ctx.documentId, {
       type: 'knowledge-map',

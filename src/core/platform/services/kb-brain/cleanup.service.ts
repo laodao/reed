@@ -10,7 +10,7 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import type { KbAtomRepository } from '@core/database/repositories/kb-atom.repository'
 import type { KbAtomRecord } from '@core/database/repositories/kb-atom.repository'
 import { extractJsonFromResponse } from '@core/platform/services/ai-call'
-import { defaultBrainLlm, type BrainLlmFn } from './llm'
+import { defaultBrainLlm, BRAIN_LLM_MAX_TOKENS, type BrainLlmFn } from './llm'
 import { CLEANUP_SYSTEM } from './prompts'
 
 /** 单批论断数：与 consolidate 同量级（变长论断 ~150 字均值） */
@@ -108,7 +108,7 @@ export class KbCleanupService {
       // 8000：推理型模型（deepseek-v4.1 等）思考内容计入输出预算，2000 会被
       // reasoning 耗尽返回空文本（真机实证 19/20 批 chars=0）——正文 JSON 很小，
       // 余量全给思考
-      maxTokens: 8000,
+      maxTokens: BRAIN_LLM_MAX_TOKENS,
     })
     const junkIdx = this.parseJunkIdx(raw, batch.length)
     if (junkIdx.length === 0) return 0

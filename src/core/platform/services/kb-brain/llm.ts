@@ -20,6 +20,16 @@ export interface BrainLlmRequest {
   maxTokens?: number
 }
 
+/**
+ * 知识大脑 LLM 输出预算统一上限（review M5）。
+ * 推理型模型的思考（reasoning）计入输出 token 预算：77245113 实证 2000 都会被
+ * 思考耗尽成空文本，随后 cleanup 提到 8000、goal-distill 提到 6000/8000——但
+ * profile/book-passes 走同一 adjudicate 档位模型，仍留 400~3500 的低预算，
+ * 推理型配置下几乎必空文本。此处统一为 8000（maxTokens 是上限不是目标，按实际
+ * 输出计费，抬高不增加正常路径成本）。
+ */
+export const BRAIN_LLM_MAX_TOKENS = 8000
+
 export type BrainLlmFn = (req: BrainLlmRequest) => Promise<string>
 
 /** 模型引用解析："modelId" 或 "providerConfigId:modelId" */

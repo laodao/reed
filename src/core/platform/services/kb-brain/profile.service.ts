@@ -10,15 +10,19 @@
  */
 import { extractJsonFromResponse } from '@core/platform/services/ai-call'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { createLogger } from '@core/utils/logger'
 import { PROFILE_SYSTEM, buildProfileUser } from './prompts'
-import { defaultBrainLlm, type BrainLlmFn } from './llm'
+import { defaultBrainLlm, type BrainLlmFn, BRAIN_LLM_MAX_TOKENS } from './llm'
 import {
   mergeBrainConfig,
   normalizeProfile,
+  parseBrainConfig,
   stringifyBrainConfig,
   type KbBrainConfig,
   type KbBrainProfile,
 } from './brain-config'
+
+const logger = createLogger('KbBrainProfile')
 
 /** 采样章数上限（均匀铺开取中间，兼顾开头定调与中后段展开） */
 const PROFILE_SAMPLE_MAX = 12
@@ -81,11 +85,18 @@ export class KbBrainProfileService {
       const next: KbBrainProfile = { ...detected, detectedAt: new Date().toISOString(), sourceDocumentId: documentId }
       const repos = this.reposFn()
       if (repos) {
-        const merged = mergeBrainConfig(cfg, { profile: next })
+        // 写回前重读库内最新配置再 merge（review M8）：入参 cfg 是消化开始时的快照，
+        // detect() 的 LLM 调用窗口（分钟级）内用户在面板保存的其他段改动会被旧基线
+        // 整体覆盖丢失。读不到最新行时退回快照 cfg（fail-soft）。
+        const latestRow = await repos.kbs.findById(kbId).catch(() => null)
+        const base = latestRow?.brainConfig ? (parseBrainConfig(latestRow.brainConfig) ?? cfg) : cfg
+        const merged = mergeBrainConfig(base, { profile: next })
         await repos.kbs.update(kbId, { brainConfig: stringifyBrainConfig(merged) })
       }
       return next
-    } catch {
+    } catch (e) {
+      // 此前完全静默：画像反复失败无从诊断（外层 warn 因本方法永不 throw 永不触发）
+      logger.warn('[kb-brain] 画像检测失败（不阻塞消化）:', e instanceof Error ? e.message : String(e))
       return cfg.profile ?? { contentType: '' }
     }
   }
@@ -97,7 +108,9 @@ export class KbBrainProfileService {
     const chapters = await repos.chapters.findByDocument(documentId)
     const samples = this.sampleChapters(chapters)
     if (samples.length === 0) return null
-    const raw = await this.llm({ system: PROFILE_SYSTEM, user: buildProfileUser(samples), maxTokens: 400 })
+    // BRAIN_LLM_MAX_TOKENS（review M5）：推理型模型的思考计入输出预算，400 会直接
+    // 耗尽成空文本 → 画像永不识别、每次消化白烧一次探测
+    const raw = await this.llm({ system: PROFILE_SYSTEM, user: buildProfileUser(samples), maxTokens: BRAIN_LLM_MAX_TOKENS })
     const parsed = extractJsonFromResponse(raw) as { contentType?: string; genre?: string }
     const profile = normalizeProfile({
       contentType: parsed.contentType as KbBrainProfile['contentType'],

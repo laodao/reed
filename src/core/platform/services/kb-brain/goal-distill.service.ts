@@ -17,7 +17,7 @@ import type { KbChapterRepository } from '@core/database/repositories/kb-chapter
 import type { KbNoteRepository } from '@core/database/repositories/kb-note.repository'
 import type { KbDocumentRepository } from '@core/database/repositories/kb-document.repository'
 import { extractJsonFromResponse } from '@core/platform/services/ai-call'
-import { defaultBrainLlm, type BrainLlmFn } from './llm'
+import { defaultBrainLlm, BRAIN_LLM_MAX_TOKENS, type BrainLlmFn } from './llm'
 import type { KbBrainGoal } from './brain-config'
 
 const logger = createLogger('KbBrainGoalDistill')
@@ -147,7 +147,7 @@ export class KbGoalDistillService {
         if (!content) continue
         const user = buildCloseReadUser(goal, n, content.slice(0, CLOSE_READ_CHARS))
         // 6000：推理型模型思考计入输出预算，2500 会被耗尽返回空文本（deepseek 真机实证）
-        const raw = await this.llm({ system: MAP_SYSTEM, user, maxTokens: 6000 })
+        const raw = await this.llm({ system: MAP_SYSTEM, user, maxTokens: BRAIN_LLM_MAX_TOKENS })
         const parsed = extractJsonFromResponse(raw) as Partial<{ fragments: MapFragment[] }> | null
         for (const f of parsed?.fragments ?? []) {
           if (typeof f?.info !== 'string' || !f.info.trim()) continue
@@ -209,7 +209,7 @@ export class KbGoalDistillService {
       let parsed: Partial<{ fragments: MapFragment[]; nominations: Array<{ chapter: string; reason: string; score: number }> }> | null
       try {
         // 6000：推理型模型思考计入输出预算，2500 会被耗尽返回空文本（deepseek 真机实证）
-        const raw = await this.llm({ system: MAP_SYSTEM, user, maxTokens: 6000 })
+        const raw = await this.llm({ system: MAP_SYSTEM, user, maxTokens: BRAIN_LLM_MAX_TOKENS })
         parsed = extractJsonFromResponse(raw) as typeof parsed
       } catch (e) {
         logger.warn(`[kb-brain-goal] kb=${kbId} goal=${goal.name} 第 ${b + 1}/${batches} 批提取失败，跳过: ${e instanceof Error ? e.message : String(e)}`)
@@ -281,7 +281,7 @@ export class KbGoalDistillService {
     for (let attempt = 0; attempt < 2; attempt++) {
       const user = buildThemesUser(goal, fragments) + (lastError ? `\n\n【上次输出不合法】\n${lastError}\n请重新输出完整合法的 JSON。` : '')
       try {
-        const raw = await this.llm({ system: REDUCE_SYSTEM, user, maxTokens: 8000 })
+        const raw = await this.llm({ system: REDUCE_SYSTEM, user, maxTokens: BRAIN_LLM_MAX_TOKENS })
         const parsed = extractJsonFromResponse(raw) as Partial<{ themes: unknown }> | null
         const inBounds = (i: unknown): i is number => Number.isInteger(i) && (i as number) >= 0 && (i as number) < fragments.length
         const cleaned: ThemeGroup[] = (Array.isArray(parsed?.themes) ? (parsed!.themes as unknown[]) : [])
@@ -331,7 +331,7 @@ export class KbGoalDistillService {
           buildThemeCardUser(goal, theme.name, themedFrags) +
           (cardError ? `\n\n【上次输出不合法】\n${cardError}\n请重新输出完整合法的 JSON。` : '')
         try {
-          const raw = await this.llm({ system: REDUCE_SYSTEM, user, maxTokens: 8000 })
+          const raw = await this.llm({ system: REDUCE_SYSTEM, user, maxTokens: BRAIN_LLM_MAX_TOKENS })
           const parsed = extractJsonFromResponse(raw) as Partial<ReduceCard> | null
           if (!parsed?.body || typeof parsed.body !== 'string' || !parsed.body.trim()) {
             throw new Error('缺少 body')
