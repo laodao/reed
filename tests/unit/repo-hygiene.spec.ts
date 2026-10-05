@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
 
-const ROOT = path.resolve(__dirname, '../../../src')
+const ROOT = path.resolve(process.cwd(), 'src')
 
 function* walk(dir: string): Generator<string> {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
