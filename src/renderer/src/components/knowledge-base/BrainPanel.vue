@@ -692,7 +692,6 @@
           <el-button @click="healthOpen = false">关闭</el-button>
           <el-button type="primary" :loading="healthLoading" @click="runHealthCheck">重新体检</el-button>
         </div>
->>>>>>> feat/kb-brain
       </template>
     </el-dialog>
 
