@@ -15,8 +15,9 @@ import { resolve } from 'node:path'
 
 const SCSS_PATH = resolve(__dirname, '../../../../src/renderer/src/views/domain-learning/lesson-markdown.scss')
 const SFC_PATH = resolve(__dirname, '../../../../src/renderer/src/views/domain-learning/MarkdownViewer.vue')
-const scss = readFileSync(SCSS_PATH, 'utf8')
-const sfc = readFileSync(SFC_PATH, 'utf8')
+// 读入即归一换行（Windows 检出是 CRLF，下面的选择器断言按 \n 匹配）
+const scss = readFileSync(SCSS_PATH, 'utf8').replace(/\r\n/g, '\n')
+const sfc = readFileSync(SFC_PATH, 'utf8').replace(/\r\n/g, '\n')
 
 /** 取某个选择器块的原文（从选择器起匹配到下一个同级 `}`；够用的浅层提取） */
 function blockOf(selectorText: string): string {

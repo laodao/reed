@@ -276,8 +276,9 @@ describe('dl_save_card 视觉质检门禁（堆砌文字必须被拦下）', () 
       })
       expect(r.summary.status).toBe('ok')
       expect(r.summary.message).toContain('呈现提醒')
-      // v7：mechanism 并入「详解」并保留「### 机制」小标题 → 不再判"文字墙"，但仍要点名"太长/通篇无图"
-      expect(r.summary.message).toContain('超过 420 字建议值')
+      // v7：mechanism 并入「详解」并保留「### 机制」小标题 → 不再判"文字墙"；
+      // 2026-10-05：详解是重点区（core），长区提醒豁免（该详写）——但仍要点名"缺 takeaway/通篇无图"
+      expect(r.summary.message).toContain('takeaway')
       expect(r.summary.message).toContain('没有任何图')
       expect(await db.dlCards!.getCurrentByConcept('sp1', 'c-x')).not.toBeNull()
     })

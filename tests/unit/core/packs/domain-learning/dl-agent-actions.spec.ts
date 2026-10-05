@@ -930,9 +930,21 @@ describe('dl-agent-actions', () => {
       ).rejects.toThrow(/已确认的知识体系方案/)
 
       await confirmDlPlan(db, 'sp1', 'syllabus')
-      const saved = await executeDlAction(ctx, { type: 'dl_save_concept', params: { concept: { name: '股票' } } })
+      // 2026-10-05：确认时骨架已由系统确定性落库（领域根 + 分支目录 + 全部知识点）
+      const afterConfirm = (await db.dlConcepts!.listByProject('sp1')).map((c) => c.name).sort()
+      expect(afterConfirm).toEqual(
+        ['市场与价格', '债券', '汇率与美元', '金融产品', '测试域·领域根', '股票'].sort(),
+      )
+      // agent 落库轮再落同名点（同父）→ 幂等更新（不重复建）；门禁已放行不再拒绝
+      const rows = await db.dlConcepts!.listByProject('sp1')
+      const stockParent = rows.find((c) => c.name === '股票')!.parentId
+      const saved = await executeDlAction(ctx, {
+        type: 'dl_save_concept',
+        params: { concept: { name: '股票', definitionShort: '公司所有权凭证', parentId: stockParent } },
+      })
       expect(saved.summary.status).toBe('ok')
-      expect((await db.dlConcepts!.listByProject('sp1')).map((c) => c.name)).toEqual(['股票'])
+      expect(saved.summary.message).toContain('已存在')
+      expect((await db.dlConcepts!.listByProject('sp1')).filter((c) => c.name === '股票')).toHaveLength(1)
     })
   })
 })

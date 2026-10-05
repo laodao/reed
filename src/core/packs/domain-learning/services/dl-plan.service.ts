@@ -24,6 +24,7 @@ import type {
   DlPlanSyllabus,
   DlPlanUnderstanding,
   DlPlanView,
+  DlSyllabusConcept,
 } from '@shared/types/domain-learning.types'
 import {
   countPlanNodes,
@@ -32,6 +33,7 @@ import {
   planConceptNames,
   summarizePlanSyllabus,
 } from '../rules/learning-plan.rules'
+import { normalizeConceptPrereqs } from '../rules/learning-prerequisites.rules'
 import { normalizeLessonPlanPayload, summarizeLessonSpec } from '@shared/utils/lesson-spec'
 import { DL_SAVE_BUDGET_MAX } from './dl-agent.types'
 
@@ -255,15 +257,153 @@ export async function confirmDlPlan(
     feedback: feedback ?? latest.feedback ?? null,
   })
 
+  // 知识体系确认后：骨架（分支目录 + 知识点）由系统确定性落库，不再依赖 agent 落库轮的步数预算
+  let backfillNote = ''
+  if (step === 'syllabus') {
+    try {
+      const r = await backfillConfirmedSyllabus(db, spaceId, nextPayload as DlPlanSyllabus)
+      backfillNote =
+        `；骨架已直接落库（分支目录 ${r.groupsCreated} 个、知识点 ${r.conceptsCreated} 个` +
+        `${r.skipped ? `，${r.skipped} 个已存在跳过` : ''}）`
+    } catch (e) {
+      backfillNote = `；骨架自动落库失败（${e instanceof Error ? e.message : String(e)}）——落库轮会按方案补齐`
+    }
+  }
+
   return {
     message:
       step === 'understanding'
         ? `已确认诉求理解${note}——下一步将据此规划知识体系`
         : step === 'syllabus'
-          ? `已确认知识体系${note}——现在可以落库知识点与前置关系了`
+          ? `已确认知识体系${note}${backfillNote}——接下来补前置关系、出首份讲义`
           : `已确认讲义方案${note}——现在请按区级计划逐区精写正文（每 3 区回读一次规格锁），完成后 dl_save_card 落库`,
   }
 }
+
+/**
+ * 把**已确认**的知识体系骨架（分支目录 + 知识点 + 前置声明）确定性写进 dl_concept。
+ *
+ * 2026-10-05 复盘（科幻空间事故）：此前骨架完全靠确认后的 agent 落库轮逐条
+ * dl_save_concept，该轮以 research 档步数（12）运行、前几步又被网络调研占掉，
+ * 13 分支只落了前 6 个的 37/80 个知识点就被 max_steps 掐断，后半分支永久空置。
+ * 骨架是纯数据搬运（方案里已有名字/定义/层级/前置），不该依赖模型步数预算——
+ * 确认时由系统一次写完；agent 落库轮只负责富化（前置边、讲义、书籍建议）。
+ *
+ * 幂等（可重跑，用于修复被掐断的存量空间）：同父同名已存在 → 只补缺失的
+ * definitionShort / attrs.prerequisites，不重复建；分支目录挂领域根 group
+ *（缺失则按建空间命名约定补建），rootConcepts 落根层（parentId=null）。
+ * 空间内其他位置的同名概念不劫持也不重建（与 dl_save_concept 的 skipped 语义一致）。
+ */
+export async function backfillConfirmedSyllabus(
+  db: ICoreDatabaseManager,
+  spaceId: string,
+  syllabus: DlPlanSyllabus,
+): Promise<{ groupsCreated: number; conceptsCreated: number; skipped: number }> {
+  if (!db.dlConcepts) throw new Error('概念仓储未初始化（dlConcepts 为空）')
+  const concepts = db.dlConcepts
+
+  let rows = await concepts.listByProject(spaceId)
+  // 领域根 group（建空间时创建；测试/异常空间缺失则按同样约定补建）
+  let root = rows.find((r) => r.nodeType === 'group' && !r.parentId)
+  if (!root) {
+    const space = await db.dlProjects?.getById(spaceId)
+    root = await concepts.create({
+      id: randomUUID(),
+      projectId: spaceId,
+      nodeType: 'group',
+      name: `${space?.name ?? spaceId}·领域根`,
+      parentId: null,
+      definitionShort: space?.goal ?? null,
+      source: 'ai_verified',
+    })
+    rows = [...rows, root]
+  }
+
+  let groupsCreated = 0
+  let conceptsCreated = 0
+  let skipped = 0
+
+  /** 落一个知识点：同父同名幂等（只补缺），异父同名跳过不重建 */
+  const upsertConcept = async (
+    c: DlSyllabusConcept,
+    parentId: string | null,
+  ): Promise<void> => {
+    const name = c.name.trim()
+    if (!name) return
+    const existing = rows.find((r) => r.name === name && r.parentId === parentId)
+    if (existing) {
+      const declared = normalizeConceptPrereqs(c.prerequisites, name)
+      const patch: {
+        definitionShort?: string
+        attrs?: Record<string, unknown>
+      } = {}
+      if (!existing.definitionShort && c.definitionShort) patch.definitionShort = c.definitionShort
+      const attrs = { ...(existing.attrs ?? {}) }
+      if (declared.length && !Array.isArray(attrs.prerequisites)) {
+        attrs.prerequisites = declared
+        patch.attrs = attrs
+      }
+      if (Object.keys(patch).length) await concepts.patch(existing.id, patch)
+      skipped++
+      return
+    }
+    const sameNameElsewhere = rows.find((r) => r.name === name)
+    if (sameNameElsewhere) {
+      skipped++
+      return
+    }
+    const declared = normalizeConceptPrereqs(c.prerequisites, name)
+    const attrs: Record<string, unknown> = {}
+    if (c.layer != null) attrs.layer = c.layer
+    if (declared.length) attrs.prerequisites = declared
+    const created = await concepts.create({
+      id: randomUUID(),
+      projectId: spaceId,
+      nodeType: c.nodeType === 'group' ? 'group' : (c.nodeType ?? 'concept'),
+      name,
+      parentId,
+      definitionShort: c.definitionShort ?? null,
+      researchState: 'extracted',
+      source: 'ai_verified',
+      attrs: Object.keys(attrs).length ? attrs : null,
+    })
+    rows = [...rows, created]
+    conceptsCreated++
+  }
+
+  for (const branch of syllabus.branches ?? []) {
+    const branchName = branch.name?.trim()
+    if (!branchName) continue
+    let group = rows.find((r) => r.name === branchName && r.parentId === root!.id)
+    if (!group) {
+      const sameName = rows.find((r) => r.name === branchName)
+      if (sameName) {
+        skipped++
+      } else {
+        group = await concepts.create({
+          id: randomUUID(),
+          projectId: spaceId,
+          nodeType: 'group',
+          name: branchName,
+          parentId: root!.id,
+          definitionShort: branch.definitionShort ?? null,
+          source: 'ai_verified',
+        })
+        rows = [...rows, group]
+        groupsCreated++
+      }
+    }
+    if (!group) continue
+    if (!group.definitionShort && branch.definitionShort) {
+      await concepts.patch(group.id, { definitionShort: branch.definitionShort })
+    }
+    for (const c of branch.concepts ?? []) await upsertConcept(c, group.id)
+  }
+  for (const c of syllabus.rootConcepts ?? []) await upsertConcept(c, null)
+
+  return { groupsCreated, conceptsCreated, skipped }
+}
+
 
 /** lesson 步定位用的概念 id：显式传入优先，其次载荷里带的 conceptId */
 function resolveLessonConceptId(payload: unknown, explicit?: string | null): string | null {

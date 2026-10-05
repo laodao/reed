@@ -63,12 +63,7 @@
         </div>
 
         <template v-if="syllabus">
-          <div v-if="danglingPrereqs.length" class="pc-dangling">
-            <div class="pc-dangling-title">⚠️ 方案里有声明了、但没有落点的前置（确认后会成为"欠账"，建议先处理）：</div>
-            <div v-for="d in danglingPrereqs" :key="d" class="pc-dangling-item">{{ d }}</div>
-            <div class="pc-dangling-hint">处理方式：让模型补上该概念（在下方输入调整指令），或确认它属领域外能力（落库时会列入主题前置要求）。</div>
-          </div>
-          <div v-for="(b, bi) in draft.branches" :key="b.key" class="pc-branch">
+          <div v-for="(b, bi) in draftBranches" :key="b.key" class="pc-branch">
             <div class="pc-branch-head">
               <el-checkbox v-model="b.checked" :disabled="view.syllabusConfirmed">{{ b.name }}</el-checkbox>
               <span v-if="b.definitionShort" class="pc-branch-desc">{{ b.definitionShort }}</span>
@@ -77,7 +72,7 @@
                 <el-button
                   link
                   size="small"
-                  :disabled="bi === draft.branches.length - 1 || view.syllabusConfirmed"
+                  :disabled="bi === draftBranches.length - 1 || view.syllabusConfirmed"
                   @click="moveBranch(bi, 1)"
                 >下移</el-button>
               </span>
@@ -99,29 +94,7 @@
               </div>
             </div>
           </div>
-          <!-- 根层知识点（2026-09-25：此前模型提交的根层条目在弹窗里不可见、确认后被静默丢弃） -->
-          <div v-if="draft.rootConcepts.length" class="pc-branch">
-            <div class="pc-branch-head">
-              <span class="pc-root-title">根层知识点（不属于任何分支）</span>
-            </div>
-            <div class="pc-concepts">
-              <div v-for="(c, ci) in draft.rootConcepts" :key="c.name" class="pc-concept" :class="{ off: !c.checked }">
-                <el-checkbox v-model="c.checked" :disabled="view.syllabusConfirmed">{{ c.name }}</el-checkbox>
-                <span v-if="c.definitionShort" class="pc-concept-desc">{{ c.definitionShort }}</span>
-                <span v-if="c.prerequisites?.length" class="pc-concept-pre">前置：{{ c.prerequisites.join('、') }}</span>
-                <span class="pc-concept-ops">
-                  <el-button link size="small" :disabled="ci === 0 || view.syllabusConfirmed" @click="moveRoot(ci, -1)">↑</el-button>
-                  <el-button
-                    link
-                    size="small"
-                    :disabled="ci === draft.rootConcepts.length - 1 || view.syllabusConfirmed"
-                    @click="moveRoot(ci, 1)"
-                  >↓</el-button>
-                </span>
-              </div>
-            </div>
-          </div>
-          <div v-if="draft.notes" class="pc-line pc-notes"><span class="pc-label">方案说明</span>{{ draft.notes }}</div>
+          <div v-if="syllabus.notes" class="pc-line pc-notes"><span class="pc-label">方案说明</span>{{ syllabus.notes }}</div>
         </template>
         <div v-else class="pc-hint">
           {{ view.understandingConfirmed ? '模型正在规划知识体系…' : '先确认第 ① 步的诉求理解，模型才会规划知识体系（固定流程，顺序不可跳）' }}
@@ -168,11 +141,9 @@ import { ElMessage } from 'element-plus'
 import { useDomainLearningStore } from '@/stores/domain-learning'
 import {
   countCheckedConcepts,
-  findDanglingPrereqs,
   moveItem,
   toSyllabusDraft,
   toSyllabusPayload,
-  type SyllabusDraft,
   type SyllabusDraftBranch,
 } from '@shared/utils/domain-learning-plan-draft'
 import type { DlPlanSyllabus } from '@shared/types/domain-learning.types'
@@ -218,11 +189,11 @@ const understanding = computed(() => (view.value?.understanding?.payload ?? null
 /** 知识体系方案（最新草案或已确认版） */
 const syllabus = computed(() => (view.value?.syllabus?.payload ?? null) as DlPlanSyllabus | null)
 
-/** 可编辑草稿（勾选态 + 顺序，含根层知识点与说明）；每次方案变化时重建。纯逻辑在 shared/utils/domain-learning-plan-draft（已单测） */
-const draft = ref<SyllabusDraft>(toSyllabusDraft(null))
+/** 可编辑草稿（勾选态 + 顺序）；每次方案变化时重建。纯逻辑在 shared/utils/domain-learning-plan-draft（已单测） */
+const draftBranches = ref<SyllabusDraftBranch[]>([])
 
 function rebuildDraft(syllabus: DlPlanSyllabus | null): void {
-  draft.value = toSyllabusDraft(syllabus)
+  draftBranches.value = toSyllabusDraft(syllabus)
 }
 
 watch(
@@ -238,13 +209,7 @@ watch(
   { immediate: true },
 )
 
-const selectedCount = computed(() => countCheckedConcepts(draft.value))
-
-/** 悬空前置（2026-09-25 D1）：按用户当前勾选态实时计算"声明了但没有落点"的前置，确认前显式提醒 */
-const danglingPrereqs = computed(() => {
-  if (!syllabus.value || view.value?.syllabusConfirmed) return []
-  return findDanglingPrereqs(toSyllabusPayload(draft.value))
-})
+const selectedCount = computed(() => countCheckedConcepts(draftBranches.value))
 
 const adjustPlaceholder = computed(() => {
   if (!view.value?.understandingConfirmed) return '对诉求理解有偏差？写一句（例：「我不要个人记账，要能看懂股票行情和财报」）'
@@ -252,15 +217,11 @@ const adjustPlaceholder = computed(() => {
 })
 
 function moveBranch(i: number, delta: number): void {
-  draft.value.branches = moveItem(draft.value.branches, i, delta)
+  draftBranches.value = moveItem(draftBranches.value, i, delta)
 }
 
 function moveConcept(branch: SyllabusDraftBranch, i: number, delta: number): void {
   branch.concepts = moveItem(branch.concepts, i, delta)
-}
-
-function moveRoot(i: number, delta: number): void {
-  draft.value.rootConcepts = moveItem(draft.value.rootConcepts, i, delta)
 }
 
 /** 确认诉求理解 → 驱动第 2 步（规划知识体系） */
@@ -282,9 +243,9 @@ async function confirmUnderstanding(): Promise<void> {
 
 /** 确认知识体系（带用户勾选/排序结果）→ 驱动第 3 步（按方案落库） */
 async function confirmSyllabus(): Promise<void> {
-  const payload = toSyllabusPayload(draft.value)
-  if (payload.branches.length === 0 && (payload.rootConcepts?.length ?? 0) === 0) {
-    ElMessage.warning('至少要保留一个分支及其知识点，或一个根层知识点')
+  const payload = toSyllabusPayload(draftBranches.value, syllabus.value?.rootConcepts ?? null)
+  if (payload.branches.length === 0) {
+    ElMessage.warning('至少要保留一个分支及其知识点')
     return
   }
   busy.value = true
@@ -295,7 +256,7 @@ async function confirmSyllabus(): Promise<void> {
       return
     }
     ElMessage.success(`${r.message}（${selectedCount.value} 个知识点）`)
-    await driveNext('【已确认知识体系】请按已确认的方案落库知识点与前置关系，并为其中最基础的一个先出讲义。')
+    await driveNext('【已确认知识体系】骨架（分支目录与知识点）已由系统直接落库；请核对地图与方案一致、补齐遗漏，逐条落前置关系，并为其中最基础的一个先出讲义。')
     emit('done')
   } finally {
     busy.value = false
@@ -399,34 +360,6 @@ async function driveNext(message: string): Promise<void> {
   border-left: 3px solid var(--el-color-primary-light-5);
   padding-left: 10px;
   margin-bottom: 10px;
-}
-.pc-root-title {
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--el-text-color-regular);
-}
-.pc-dangling {
-  border: 1px solid var(--el-color-warning-light-5);
-  background: var(--el-color-warning-light-9);
-  border-radius: 6px;
-  padding: 8px 10px;
-  margin-bottom: 10px;
-}
-.pc-dangling-title {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--el-color-warning);
-  margin-bottom: 4px;
-}
-.pc-dangling-item {
-  font-size: 12.5px;
-  color: var(--el-text-color-regular);
-  padding-left: 10px;
-}
-.pc-dangling-hint {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  margin-top: 4px;
 }
 .pc-branch-head {
   display: flex;

@@ -3,13 +3,12 @@
  * @module packs/domain-learning/services/dl-agent-bindings
  *
  * 宿主每轮 sendMessage 的 bindings 由本模块按「模式 + 可用工具」组装：
- * - 系统透出 discover/invoke_skill（四种模式都带）；
- * - research 模式：动作工具 dl_* + 「读工具」（采集，全部免人工审批的读侧）：
+ * - 动作工具 dl_*（两种模式都带）+ 系统透出 discover/invoke_skill（都带）；
+ * - research 模式额外带「读工具」（采集，全部免人工审批的读侧）：
  *   wf_kb_retrieve（知识库检索）/ wf_web_extract（网页正文）/ http_get（API/原文，
  *   如 arXiv export.arxiv.org）常备；web_search 仅在配置了默认联网搜索源时 bind
  *   （无默认源绑了也会被模型当成可搜索，宁可显式不给）。
- * - tutor 模式：**只绑 dl_answer_question**（2026-09-25 收窄：答疑会话不改知识图；
- *   引证 = 快照注入的讲义/图，M1 口径不变）；
+ * - tutor 模式不带读工具（答疑引证 = 快照注入的讲义/图，防工具滥用，M1 口径不变）；
  * - task 模式与 research 同级（任务执行：读工具采集 + dl 动作落库 + 系统透出）。
  * 读工具均在 workflow-boot 注册为裸名（source=builtin/node），宿主 registry 缺失的
  * 名字会在此被过滤（buildToolDefs 对未注册引用仅 warn 跳过——这里显式交集更可控）。
@@ -69,10 +68,13 @@ function clampBudget(n: number, max: number): number {
 
 /**
  * 本轮是不是「规划落库轮」——要在一轮里批量建"分支目录 + 知识点 + 前置边"。
- * 两类入口（2026-09-13）：
+ * 入口（2026-09-13 起）：
  * 1. **起步研究**：空空间的 research 轮（首次生成首批知识）；
- * 2. **补全知识地图**：task 轮带补图标记/同义意图（用户点按钮或直接说"补全知识体系"）。
- * 这两类都远超默认 12 次概念额度，故使用规划额度。
+ * 2. **补全知识地图**：task 轮带补图标记/同义意图（用户点按钮或直接说"补全知识体系"）；
+ * 3. **固定流程确认轮**（2026-10-05 补）：research/task 轮消息带【已确认诉求理解】/
+ *   【已确认知识体系】标记。第 3 步轮次此前靠"确认时空间还是空的"误打误撞命中
+ *   isEmptySpace——现在骨架在确认时已由系统确定性落库，快照不再为空，必须显式认标记，
+ *   否则阶段指令不注入、落库门禁对不上。
  */
 export function isPlanningSaveRound(input: {
   mode: DlAgentMode
@@ -81,14 +83,8 @@ export function isPlanningSaveRound(input: {
   message?: string | null
   /** 是否命中"补全知识地图"意图（由调用方注入判定，避免本模块依赖消息文案实现） */
   wantsMapCompletion?: boolean
-  /**
-   * 消息是否带【已确认知识体系】标记（2026-09-25 P1-7：research 落库轮中途失败后重试时，
-   * 空间已非空 → isEmptySpace=false，此前会掉出规划轮——阶段指令与额度全部不注入，
-   * 重试以默认小额度裸奔。task 模式当年用 isPlanPhaseMessage 兜过同构的坑，research 补齐）
-   */
-  syllabusConfirmed?: boolean
 }): boolean {
-  if (input.mode === 'research') return input.isEmptySpace || !!input.syllabusConfirmed
+  if (input.mode === 'research') return input.isEmptySpace || !!input.wantsMapCompletion
   if (input.mode === 'task') return !!input.wantsMapCompletion
   return false
 }
@@ -130,13 +126,10 @@ export function buildDlBindings(o: DlBindingOptions): AgentToolBinding[] {
     // 内部核验：只读(读工具+系统透出),不带任何 dl 写动作
     return [...readBindings, ...systemBindings]
   }
-  // tutor：答疑会话只绑答疑存档（2026-09-25 P1-1 复盘：此前落入"非 research/task"兜底分支，
-  // 绑定了全部 dl_* 写动作——一次追问就能改知识图，且 tutor 轮 planningRound=false 绕过规划门禁。
-  // 答疑引证走快照注入的讲义/图，M1 口径不变）
-  if (o.mode === 'tutor') {
-    const answer = actionBase.find((b) => b.tool === 'dl_answer_question')
-    return [...(answer ? [answer] : []), ...systemBindings]
-  }
   // task 模式与 research 同级：动作 + 读工具 + 系统透出（按指令执行可读资料/落库）
+  if (o.mode !== 'research' && o.mode !== 'task') {
+    return [...actionBindings, ...systemBindings]
+  }
+
   return [...actionBindings, ...readBindings, ...systemBindings]
 }

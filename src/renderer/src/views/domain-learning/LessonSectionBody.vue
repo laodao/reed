@@ -1,7 +1,21 @@
 <template>
   <div class="ld-body" :class="`ld-${layout}`">
-    <!-- 要点卡 / 误区卡 / 自测题卡：条目卡片 + 残余正文（不丢任何内容） -->
-    <template v-if="cardItems.length">
+    <!-- 自测题：普通题目列表（2026-10-05 用户口径「自测题不要做成卡片」——
+         题干是拿来做的，不是拿来看的素材块，卡片底色反而干扰阅读） -->
+    <template v-if="layout === 'qa' && qaItems.length">
+      <ol class="ld-qa-list">
+        <li v-for="(p, i) in qaItems" :key="i" class="ld-qa-item">
+          <span class="ld-qa-no">{{ i + 1 }}</span>
+          <div class="ld-qa-text">
+            <span class="ld-qa-title">{{ p.title }}</span>
+            <span v-if="p.desc" class="ld-qa-desc">{{ p.desc }}</span>
+          </div>
+        </li>
+      </ol>
+    </template>
+
+    <!-- 要点卡 / 误区卡：条目卡片 + 残余正文（不丢任何内容） -->
+    <template v-else-if="cardItems.length">
       <div class="ld-cards">
         <div v-for="(p, i) in cardItems" :key="i" class="ld-card">
           <span class="ld-card-no">{{ i + 1 }}</span>
@@ -73,7 +87,8 @@
  * 背景（2026-09-14 用户反馈：「纯粹的堆砌文字，没有对文字做精炼归纳，没有配图，布局单调简陋」）：
  * 此前每区正文都是一整段 markdown，读者看到的是"一堵字"。现在按区的**版式设备**
  * （`shared/utils/lesson-layout` 的设备目录）分发渲染：
- * - 要点卡 / 误区卡 / 自测题卡 → 卡片网格（标题 + 一句话）；
+ * - 要点卡 / 误区卡 → 卡片网格（标题 + 一句话）；
+ * - 自测题 → 普通题目列表（2026-10-05 用户口径「自测题不要做成卡片」）；
  * - 步骤条 → 带序号的竖向步骤；
  * - 数据看点 → 大字数值 + 说明；
  * - 上手清单 → 勾选框列表；
@@ -105,10 +120,12 @@ const props = defineProps<{
 
 const layout = computed<DlLessonLayout>(() => canonicalLessonLayout(props.layout) || 'prose')
 
-/** 卡片类设备（要点卡 / 误区警示 / 自测题卡）共用条目解析 */
+/** 卡片类设备（要点卡 / 误区警示）共用条目解析；自测题单独走题目列表（不做卡片） */
 const cardItems = computed(() =>
-  ['keypoints', 'pitfall', 'qa'].includes(layout.value) ? parseLessonPoints(props.body) : [],
+  ['keypoints', 'pitfall'].includes(layout.value) ? parseLessonPoints(props.body) : [],
 )
+/** 自测题条目（题目列表渲染） */
+const qaItems = computed(() => (layout.value === 'qa' ? parseLessonPoints(props.body) : []))
 const stepItems = computed(() => (layout.value === 'steps' ? parseLessonSteps(props.body) : []))
 const statItems = computed(() => (layout.value === 'stats' ? parseLessonStats(props.body) : []))
 const checkItems = computed(() => (layout.value === 'checklist' ? parseLessonChecklist(props.body) : []))
@@ -188,12 +205,52 @@ const residual = computed(() => splitLessonDeviceMd(props.body, layout.value).re
   }
 }
 
-// 题卡：审阅色，题干更醒目
-.ld-qa .ld-card {
-  border-color: var(--el-color-primary-light-7);
-  background: var(--el-color-primary-light-9);
-  .ld-card-title {
-    font-weight: 500;
+// ---------- 自测题：普通题目列表（不做卡片） ----------
+// 2026-10-05 用户口径「自测题不要做成卡片」：题干按文档式排版（序号 + 题目 + 补充），
+// 无底色、无边框、无圆角；题与题之间只用一条淡虚线分隔，答案折叠入口在区尾（SectionLesson）。
+.ld-qa-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+}
+
+.ld-qa-item {
+  display: flex;
+  gap: 8px;
+  padding: 6px 0;
+
+  & + & {
+    border-top: 1px dashed var(--el-border-color-lighter);
+  }
+
+  .ld-qa-no {
+    flex-shrink: 0;
+    color: var(--el-color-primary);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.8;
+    font-variant-numeric: tabular-nums;
+
+    &::after {
+      content: '.';
+    }
+  }
+
+  .ld-qa-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .ld-qa-title {
+    color: var(--el-text-color-primary);
+    line-height: 1.8;
+  }
+
+  .ld-qa-desc {
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
   }
 }
 

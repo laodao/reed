@@ -380,12 +380,12 @@ describe('dl-agent-deps（M2-B）', () => {
 
     const p = planSavePhaseInstruction({ spaceName: '金融理财', syllabusLines: lines, conceptCount: 3 })
     expect(p).toContain('第 3 步：按已确认的知识体系落库')
-    expect(p).toContain('落库门禁已放行')
+    expect(p).toContain('骨架已由系统直接写入知识地图')
     expect(p).toContain('3 个知识点')
-    expect(p).toContain('nodeType=group')
+    expect(p).toContain('不要重复 dl_save_concept 重建骨架')
     expect(p).toContain('dl_save_relation')
     expect(p).toContain('dl_save_card')
-    expect(p).toContain('方案里的知识点要全部落库')
+    expect(p).toContain('核对骨架')
     expect(p).toContain('不要重新规划')
   })
 

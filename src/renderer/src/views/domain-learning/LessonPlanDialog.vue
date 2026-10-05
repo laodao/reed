@@ -33,7 +33,7 @@
         </div>
         <div class="lp-line">
           <span class="lp-label">深度/篇幅</span>
-          <span>{{ spec.depth }} · 目标 {{ spec.budget.sections }} 区 · 每区 ≤{{ spec.budget.charsPerSection }} 字</span>
+          <span>{{ spec.depth }} · 目标 {{ spec.budget.sections }} 区 · 非重点区 ≤{{ spec.budget.charsPerSection }} 字 · 重点区详写</span>
         </div>
         <div v-if="spec.tone" class="lp-line"><span class="lp-label">语气</span><span>{{ spec.tone }}</span></div>
       </section>

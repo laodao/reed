@@ -182,6 +182,10 @@ describe('dl-agent-bindings', () => {
     expect(isPlanningSaveRound({ mode: 'research', isEmptySpace: false })).toBe(false)
     expect(isPlanningSaveRound({ mode: 'task', isEmptySpace: false, wantsMapCompletion: true })).toBe(true)
     expect(isPlanningSaveRound({ mode: 'task', isEmptySpace: false, wantsMapCompletion: false })).toBe(false)
+    // 固定流程确认轮（2026-10-05）：骨架确认时已由系统落库、空间不再为空，
+    // research 轮必须显式认计划阶段标记，否则阶段指令不注入、落库门禁对不上
+    expect(isPlanningSaveRound({ mode: 'research', isEmptySpace: false, wantsMapCompletion: true })).toBe(true)
+    expect(isPlanningSaveRound({ mode: 'research', isEmptySpace: true, wantsMapCompletion: false })).toBe(true)
     // 答疑/核验永远不是规划轮
     expect(isPlanningSaveRound({ mode: 'tutor', isEmptySpace: true })).toBe(false)
     expect(isPlanningSaveRound({ mode: 'verify', isEmptySpace: true })).toBe(false)

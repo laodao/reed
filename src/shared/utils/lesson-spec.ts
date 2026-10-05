@@ -41,12 +41,17 @@ import type {
   DlLessonSpec,
 } from '../types/domain-learning.types'
 
-/** 篇幅预算的合法区间（畸形值收到边界，不静默接受） */
+/**
+ * 篇幅预算的合法区间（畸形值收到边界，不静默接受）。
+ * charsPerSection 语义（2026-10-05 用户口径「不应有每区字数上限，主次分明、关键区详细讲」）：
+ * 它是**非重点区**的精炼参考上限；重点区（定义/详解/案例/实操）不受此限，按需写透。
+ * 上限只防荒谬值（如 99999），不再兼作"讲义不能长"的规模控制。
+ */
 export const LESSON_SPEC_BUDGET_LIMITS = {
   minSections: 3,
   maxSections: 20,
   minCharsPerSection: 120,
-  maxCharsPerSection: 1200,
+  maxCharsPerSection: 4000,
 } as const
 
 /** 默认篇幅（模型没写时） */
@@ -171,7 +176,7 @@ export function normalizeLessonSpec(raw: unknown, essenceType: DlEssenceType): L
   ) {
     changes.push(
       `篇幅预算收到合法区间：区数 ${sectionsCount}（${LESSON_SPEC_BUDGET_LIMITS.minSections}~${LESSON_SPEC_BUDGET_LIMITS.maxSections}）、` +
-        `每区 ≤${charsPerSection} 字（${LESSON_SPEC_BUDGET_LIMITS.minCharsPerSection}~${LESSON_SPEC_BUDGET_LIMITS.maxCharsPerSection}）`,
+        `非重点区每区 ≤${charsPerSection} 字（${LESSON_SPEC_BUDGET_LIMITS.minCharsPerSection}~${LESSON_SPEC_BUDGET_LIMITS.maxCharsPerSection}；重点区不受此限）`,
     )
   }
 
@@ -400,7 +405,7 @@ export function checkLessonSpecAgreement(input: {
 export function summarizeLessonSpec(spec: DlLessonSpec): string {
   const devices = spec.roster.map((r) => canonicalLessonLayout(r.layout) || r.layout)
   return (
-    `${spec.budget.sections} 区 · 每区 ≤${spec.budget.charsPerSection} 字 · ${spec.depth} · ` +
+    `${spec.budget.sections} 区 · 非重点区 ≤${spec.budget.charsPerSection} 字（重点区详写） · ${spec.depth} · ` +
     `术语 ${spec.glossary.length} / 记号 ${spec.notation.length} / 示例参数 ${spec.exampleParams.length} · ` +
     `版式：${devices.join('→')}`
   )
@@ -418,7 +423,8 @@ export function lessonSpecLock(spec: DlLessonSpec, essenceType: DlEssenceType): 
     lines.push(`学完能做到：${spec.outcomes.map((o, i) => `${i + 1}) ${o}`).join('；')}`)
   }
   lines.push(
-    `深度/篇幅：${spec.depth} · 目标 ${spec.budget.sections} 区 · 每区正文 ≤${spec.budget.charsPerSection} 字`,
+    `深度/篇幅：${spec.depth} · 目标 ${spec.budget.sections} 区 · 非重点区每区正文 ≤${spec.budget.charsPerSection} 字；` +
+      `重点区（定义/详解/案例/实操）不受字数限制，主次分明、按需写透`,
   )
   if (spec.tone) lines.push(`语气：${spec.tone}`)
   if (spec.glossary.length) {

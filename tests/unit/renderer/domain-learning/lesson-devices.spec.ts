@@ -88,6 +88,25 @@ describe('讲义版式设备渲染', () => {
     expect(w.findAll('.md-stub').map((n) => n.text()).join('|')).toContain('先说结论')
   })
 
+  it('自测题：渲染成普通题目列表，不做卡片（2026-10-05 用户口径）', () => {
+    const w = mountLesson([
+      {
+        key: 'selfcheck',
+        layout: 'qa',
+        md: '- **广播的形状**：(4,1)+(1,3) 相加后 shape 是什么？\n- **什么时候报错**：两个维度都无法对齐时会怎样？',
+      },
+    ])
+    const items = w.findAll('.ld-qa-item')
+    expect(items).toHaveLength(2)
+    expect(items[0].find('.ld-qa-no').text()).toBe('1')
+    expect(items[0].text()).toContain('广播的形状')
+    expect(items[1].text()).toContain('什么时候报错')
+    // 不再出卡片（无底色卡片块）
+    expect(w.findAll('.ld-card')).toHaveLength(0)
+    // 已解析成条目的列表行不出现在残余 markdown 里
+    expect(w.findAll('.md-stub')).toHaveLength(0)
+  })
+
   it('步骤条：有序列表渲染成带序号的步骤（含竖向连接）', () => {
     const w = mountLesson([
       { key: 'procedure', layout: 'steps', md: '1. **取形状**：读出两个 shape\n2. **看广播**：逐轴比对' },
@@ -172,7 +191,8 @@ describe('讲义规格条与区导航', () => {
     expect(bar.exists()).toBe(true)
     expect(bar.text()).toContain('会 Python、没学过线性代数的后端工程师')
     expect(bar.text()).toContain('入门')
-    expect(bar.text()).toContain('每区 ≤400 字')
+    expect(bar.text()).toContain('非重点区 ≤400 字')
+    expect(bar.text()).toContain('重点区详写')
     const nav = w.findAll('.lsb-nav-chip')
     expect(nav).toHaveLength(2)
     expect(nav[0].text()).toContain('学习前必读')

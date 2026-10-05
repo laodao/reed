@@ -151,7 +151,8 @@ describe('dl-plan.service（方案确认流程）', () => {
       expect(await getConfirmedSyllabus(db, 'sp1')).toBeNull()
 
       const confirmed = await confirmDlPlan(db, 'sp1', 'syllabus')
-      expect(confirmed.message).toContain('可以落库知识点')
+      expect(confirmed.message).toContain('已确认知识体系')
+      expect(confirmed.message).toContain('骨架已直接落库')
       const syllabus = await getConfirmedSyllabus(db, 'sp1')
       expect(syllabus).not.toBeNull()
       expect(syllabus!.branches).toHaveLength(2)
@@ -216,6 +217,126 @@ describe('dl-plan.service（方案确认流程）', () => {
       await expect(
         confirmDlPlan(db, 'sp1', 'syllabus', { branches: [{ name: '空分支', concepts: [] }] }),
       ).rejects.toThrow(/空分支/)
+    })
+  })
+})
+
+describe('确认知识体系 → 骨架确定性落库（2026-10-05 复盘：科幻空间落库轮被 max_steps 掐断，后半分支空置）', () => {
+  it('确认即写入：分支目录挂领域根、知识点挂分支、rootConcepts 落根层、前置进 attrs', async () => {
+    ds = await buildDs()
+    const db = await seed(ds)
+    await runWithUserAsync('u1', async () => {
+      await proposeDlUnderstanding(db, 'sp1', UNDERSTANDING)
+      await confirmDlPlan(db, 'sp1', 'understanding')
+      await proposeDlSyllabus(db, 'sp1', {
+        ...SYLLABUS,
+        rootConcepts: [{ name: '金融体系总览', definitionShort: '一张图看懂参与者' }],
+      })
+      const r = await confirmDlPlan(db, 'sp1', 'syllabus')
+      expect(r.message).toContain('分支目录 2 个、知识点 4 个')
+
+      const rows = await db.dlConcepts!.listByProject('sp1')
+      // 领域根（seed 未建，backfill 按建空间约定补建）
+      const root = rows.find((x) => x.nodeType === 'group' && !x.parentId)
+      expect(root?.name).toBe('金融理财·领域根')
+      const groups = rows.filter((x) => x.nodeType === 'group' && x.parentId === root!.id)
+      expect(groups.map((g) => g.name).sort()).toEqual(['市场与价格', '金融产品'])
+
+      const stock = rows.find((x) => x.name === '股票')
+      expect(stock?.nodeType).toBe('concept')
+      expect(stock?.parentId).toBe(groups.find((g) => g.name === '金融产品')!.id)
+      expect(stock?.source).toBe('ai_verified')
+
+      const fx = rows.find((x) => x.name === '汇率与美元')
+      expect(fx?.attrs?.prerequisites).toEqual(['股票'])
+
+      const overview = rows.find((x) => x.name === '金融体系总览')
+      expect(overview?.parentId).toBeNull()
+      expect(overview?.definitionShort).toBe('一张图看懂参与者')
+    })
+  })
+
+  it('幂等可重跑：同父同名只补缺不重建；异父同名跳过；再确认新版本只增量补', async () => {
+    ds = await buildDs()
+    const db = await seed(ds)
+    await runWithUserAsync('u1', async () => {
+      await proposeDlUnderstanding(db, 'sp1', UNDERSTANDING)
+      await confirmDlPlan(db, 'sp1', 'understanding')
+      await proposeDlSyllabus(db, 'sp1', SYLLABUS)
+      await confirmDlPlan(db, 'sp1', 'syllabus')
+      let rows = await db.dlConcepts!.listByProject('sp1')
+      expect(rows.filter((x) => x.nodeType === 'concept')).toHaveLength(3)
+
+      // 重跑（模拟修复存量空间）：不翻倍、不报错
+      const { backfillConfirmedSyllabus } = await import(
+        '@core/packs/domain-learning/services/dl-plan.service'
+      )
+      const again = await backfillConfirmedSyllabus(db, 'sp1', SYLLABUS)
+      expect(again.conceptsCreated).toBe(0)
+      expect(again.skipped).toBeGreaterThanOrEqual(3)
+      rows = await db.dlConcepts!.listByProject('sp1')
+      expect(rows.filter((x) => x.nodeType === 'concept')).toHaveLength(3)
+
+      // 异父同名（根层已有「股票」）→ 方案里再出现不重建
+      await db.dlConcepts!.create({ id: 'dup', projectId: 'sp1', nodeType: 'concept', name: '新独有', parentId: null })
+      const next = await backfillConfirmedSyllabus(db, 'sp1', {
+        branches: [
+          ...SYLLABUS.branches,
+          { name: '新分支', concepts: [{ name: '新独有' }, { name: '黄金', definitionShort: '避险资产' }] },
+        ],
+      })
+      expect(next.conceptsCreated).toBe(1) // 只建了「黄金」
+      expect(next.groupsCreated).toBe(1)
+      rows = await db.dlConcepts!.listByProject('sp1')
+      expect(rows.filter((x) => x.name === '新独有')).toHaveLength(1)
+      // 确认后的版本再走 confirm 也不重复
+      await proposeDlSyllabus(db, 'sp1', {
+        branches: [...SYLLABUS.branches, { name: '新分支', concepts: [{ name: '新独有' }, { name: '黄金' }] }],
+      })
+      const r2 = await confirmDlPlan(db, 'sp1', 'syllabus')
+      expect(r2.message).toContain('已存在跳过')
+      rows = await db.dlConcepts!.listByProject('sp1')
+      expect(rows.filter((x) => x.name === '黄金')).toHaveLength(1)
+    })
+  })
+
+  it('已存在节点只补缺失字段：definitionShort 不覆盖已有值', async () => {
+    ds = await buildDs()
+    const db = await seed(ds)
+    await runWithUserAsync('u1', async () => {
+      // 模拟被掐断的存量空间：agent 已落了分支目录与部分知识点（带富化过的定义）
+      await db.dlConcepts!.create({ id: 'root', projectId: 'sp1', nodeType: 'group', name: '金融理财·领域根' })
+      await db.dlConcepts!.create({
+        id: 'g1', projectId: 'sp1', nodeType: 'group', name: '金融产品', parentId: 'root',
+        definitionShort: '旧定义（agent 富化过）',
+      })
+      await db.dlConcepts!.create({ id: 'k1', projectId: 'sp1', nodeType: 'concept', name: '股票', parentId: 'g1' })
+
+      const { backfillConfirmedSyllabus } = await import(
+        '@core/packs/domain-learning/services/dl-plan.service'
+      )
+      const r = await backfillConfirmedSyllabus(db, 'sp1', {
+        branches: [
+          {
+            name: '金融产品',
+            definitionShort: '方案里的定义',
+            concepts: [
+              { name: '股票', definitionShort: '新定义' },
+              { name: '债券', definitionShort: '固收凭证', layer: 1 },
+            ],
+          },
+        ],
+      })
+      expect(r.groupsCreated).toBe(0) // 目录已存在
+      expect(r.conceptsCreated).toBe(1) // 只补了「债券」
+      const rows = await db.dlConcepts!.listByProject('sp1')
+      const g1 = rows.find((x) => x.id === 'g1')!
+      expect(g1.definitionShort).toBe('旧定义（agent 富化过）') // 不覆盖
+      const stock = rows.find((x) => x.name === '股票')!
+      expect(stock.definitionShort).toBe('新定义') // 已存在但缺定义 → 补上（不重建）
+      const bond = rows.find((x) => x.name === '债券')!
+      expect(bond.definitionShort).toBe('固收凭证')
+      expect(bond.attrs?.layer).toBe(1)
     })
   })
 })

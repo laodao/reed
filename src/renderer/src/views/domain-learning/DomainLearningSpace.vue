@@ -5,6 +5,53 @@
       <el-button text :icon="ArrowLeft" @click="goBack">主题列表</el-button>
       <div class="space-title">
         <h2>{{ spaceName }}</h2>
+        <!-- 学习前置 / 推荐书籍收进标题旁图标（2026-10-05 用户口径：不再占整条横幅，悬停看内容） -->
+        <el-tooltip
+          v-if="spacePrereqs.length"
+          placement="bottom"
+          :show-after="200"
+          popper-class="dl-title-tip"
+        >
+          <template #content>
+            <div class="dl-tip-block">
+              <div class="dl-tip-title">学习前置（进这个领域前需要会什么）</div>
+              <div v-for="p in spacePrereqs" :key="p.name" class="dl-tip-line">
+                <div class="dl-tip-head">
+                  <span class="dl-tip-name">{{ p.name }}</span>
+                  <span class="dl-tip-flag" :class="{ external: !p.inSpace }">
+                    {{ p.inSpace ? '空间内会教' : '需自备' }}
+                  </span>
+                </div>
+                <div v-if="prereqTip(p)" class="dl-tip-desc">{{ prereqTip(p) }}</div>
+              </div>
+            </div>
+          </template>
+          <el-icon class="title-tip-icon"><Guide /></el-icon>
+        </el-tooltip>
+        <el-tooltip
+          v-if="bookSuggestions.length"
+          placement="bottom"
+          :show-after="200"
+          popper-class="dl-title-tip"
+        >
+          <template #content>
+            <div class="dl-tip-block">
+              <div class="dl-tip-title">推荐书籍（获取后上传绑定知识库，研究可直接引用）</div>
+              <div v-for="b in bookSuggestions" :key="b.title" class="dl-tip-line">
+                <div class="dl-tip-head">
+                  <span class="dl-tip-name">{{ b.title }}</span>
+                  <span v-if="b.author" class="dl-tip-flag">{{ b.author }}</span>
+                  <span class="dl-tip-flag" :class="b.priority ?? 'recommended'">
+                    {{ bookPriorityLabel(b.priority) }}
+                  </span>
+                </div>
+                <div v-if="b.why" class="dl-tip-desc">{{ b.why }}</div>
+              </div>
+              <div class="dl-tip-hint">点击图标 → 去知识库上传书籍资料</div>
+            </div>
+          </template>
+          <el-icon class="title-tip-icon clickable" @click="goKbUpload"><Reading /></el-icon>
+        </el-tooltip>
       </div>
       <div class="space-progress">
         <span class="progress-text">{{ progressText }}</span>
@@ -50,42 +97,6 @@
       mode="research"
       @done="onLessonPlanDriven"
     />
-
-    <!-- 主题学习前置要求（2026-09-12：整个领域的学习门槛；有则显示） -->
-    <div v-if="spacePrereqs.length" class="space-prereq">
-      <span class="space-prereq-label">学习前置</span>
-      <el-tooltip
-        v-for="p in spacePrereqs"
-        :key="p.name"
-        :content="prereqTip(p)"
-        placement="bottom"
-        :show-after="200"
-      >
-        <span class="space-prereq-chip" :class="{ external: !p.inSpace }">
-          {{ p.name }}
-          <span class="chip-flag">{{ p.inSpace ? '空间内会教' : '需自备' }}</span>
-        </span>
-      </el-tooltip>
-    </div>
-
-    <!-- 书籍内容提示（2026-10-04：知识体系规划后的书籍建议；获取后上传绑定知识库供研究引用） -->
-    <div v-if="bookSuggestions.length" class="space-books">
-      <span class="space-books-label">书籍建议</span>
-      <el-tooltip
-        v-for="b in bookSuggestions"
-        :key="b.title"
-        :content="bookTip(b)"
-        placement="bottom"
-        :show-after="200"
-      >
-        <span class="space-books-chip" :class="b.priority ?? 'recommended'">
-          {{ b.title }}
-          <span v-if="b.author" class="chip-author">{{ b.author }}</span>
-          <span class="chip-flag">{{ bookPriorityLabel(b.priority) }}</span>
-        </span>
-      </el-tooltip>
-      <el-button link type="primary" size="small" @click="goKbUpload">去知识库上传</el-button>
-    </div>
 
     <!-- 手工追加知识点（2026-09-12：用户补全知识体系；前置直连为已确认边） -->
     <el-dialog v-model="createConceptVisible" title="追加知识点" width="520px" append-to-body>
@@ -792,6 +803,9 @@ import {
   Download,
   Clock,
   Stamp,
+  // 标题旁信息图标（2026-10-05）：学习前置 / 推荐书籍，悬停出内容
+  Guide,
+  Reading,
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { saveBlobAs, base64ToBlob } from '@/utils/file-saver'
@@ -939,13 +953,13 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  // 页面卸载：清理全部事件订阅；若仍有在途轮次则通知后端取消（tutor/task → ask；research → 概念/空间级）
+  // 页面卸载：清理全部事件订阅；答疑/任务轮是对话式回复，跟着页面取消。
+  // 研究轮（研究此概念/讲义精写/体系落库）2026-10-05 起后台化：主进程继续跑完并落库，
+  // 不再随页面关闭取消——回页时由 reattachRunningResearch 重挂状态与事件流。
   store.unsubscribeAll()
   const sid = mountedSpaceId || spaceId.value
   if (tutorStreaming.value) {
     void store.cancelAgent(lastAskMode.value, sid, currentConceptId.value)
-  } else if (researching.value) {
-    void store.cancelAgent('research', sid, lastResearchScope.value?.conceptId ?? null)
   }
 })
 
@@ -1164,12 +1178,6 @@ function bookPriorityLabel(priority?: DlBookSuggestion['priority']): string {
   if (priority === 'essential') return '强烈建议'
   if (priority === 'reference') return '参考查阅'
   return '推荐'
-}
-
-/** 书籍 chip 的悬停说明（为什么读 + 优先级） */
-function bookTip(b: DlBookSuggestion): string {
-  const bits = [b.why, `优先级：${bookPriorityLabel(b.priority)}`].filter((x): x is string => !!x)
-  return bits.join('\n')
 }
 
 /** 去知识库上传：把建议的书籍资料传进空间绑定的知识库，后续研究轮 wf_kb_retrieve 可直接引用 */
@@ -1893,6 +1901,52 @@ async function bootResearch(): Promise<void> {
 }
 
 // ---------- 交互：研究无讲义概念（dl:agent-send mode='research'） ----------
+
+/**
+ * 回页重挂在途研究轮（2026-10-05 后台化改造）。
+ * 研究轮不再随页面关闭取消：主进程继续跑完并落库。这里在进入空间/切换概念时查
+ * busy——若该概念还有在途轮，恢复「研究中」状态并重挂事件流（错误提示 + 完成后刷新视图、
+ * 弹待确认的讲义方案），用户看到的和没离开过一样。错过过程文本属预期：结果以落库为准。
+ */
+let reattachUnsub: (() => void) | null = null
+async function reattachRunningResearch(): Promise<void> {
+  if (researching.value) return
+  const sid = spaceId.value
+  const cid = currentConceptId.value
+  if (!sid || !cid) return
+  // busy 查询失败/桥未就绪都按"不在途"处理——重挂是增强体验，不构成新的崩溃面
+  let busy = false
+  try {
+    busy = await store.agentBusy('research', sid, cid)
+  } catch {
+    return
+  }
+  if (!busy) return
+  // await 期间可能已切换概念/空间：快照不一致就不挂
+  if (researching.value || spaceId.value !== sid || currentConceptId.value !== cid) return
+  researching.value = true
+  lastResearchScope.value = { conceptId: cid }
+  const c = currentConcept.value
+  reattachUnsub?.()
+  reattachUnsub = store.subscribeAgentEvent(sid, cid, ev => {
+    if (ev.mode && ev.mode !== 'research') return
+    if (ev.type === 'error') {
+      lastFeedbackIsWarn.value = true
+      lastFeedback.value = `研究「${c?.name ?? cid}」出错：${ev.error ?? '未知错误'}`
+    } else if (ev.type === 'reply:done') {
+      reattachUnsub?.()
+      reattachUnsub = null
+      researching.value = false
+      void refreshView().then(() => void openLessonPlanIfPending())
+    }
+  })
+}
+
+// 载入/切换概念时尝试重挂在途研究轮（该概念没有在途轮就静默跳过，一次 IPC 查询）
+watch(currentConceptId, () => {
+  void reattachRunningResearch()
+})
+
 async function researchConcept(): Promise<void> {
   const c = currentConcept.value
   if (!c || researching.value) return
@@ -2399,10 +2453,37 @@ watch(rightPane, (pane) => {
   padding: 12px 16px;
   border-bottom: 1px solid var(--el-border-color-lighter);
 
-  .space-title h2 {
-    margin: 0;
-    font-size: 17px;
-    color: var(--el-text-color-primary);
+  .space-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+
+    h2 {
+      margin: 0;
+      font-size: 17px;
+      color: var(--el-text-color-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    // 标题旁信息图标：默认弱化，悬停主色（2026-10-05：学习前置/推荐书籍收进这里）
+    .title-tip-icon {
+      flex-shrink: 0;
+      font-size: 16px;
+      color: var(--el-text-color-placeholder);
+      cursor: default;
+      transition: color 0.15s;
+
+      &:hover {
+        color: var(--el-color-primary);
+      }
+
+      &.clickable {
+        cursor: pointer;
+      }
+    }
   }
   .space-progress {
     margin-left: auto;
@@ -2525,100 +2606,6 @@ watch(rightPane, (pane) => {
 
   .lpb-text {
     flex: 1 1 auto;
-  }
-}
-
-// 主题学习前置要求条（2026-09-12：整个领域的学习门槛，进空间即见）
-.space-prereq {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  background: var(--el-fill-color-lighter);
-  font-size: 12px;
-
-  .space-prereq-label {
-    color: var(--el-text-color-secondary);
-    font-weight: 600;
-  }
-
-  .space-prereq-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 2px 9px;
-    border-radius: 10px;
-    color: var(--el-color-primary);
-    background: var(--el-color-primary-light-9);
-    cursor: default;
-
-    // 需自备（空间内不教）→ 弱化 + 明确标记，避免读者误以为这里会讲
-    &.external {
-      color: var(--el-text-color-regular);
-      background: var(--el-fill-color);
-    }
-
-    .chip-flag {
-      font-size: 10px;
-      color: var(--el-text-color-placeholder);
-    }
-  }
-
-  .space-prereq-note {
-    color: var(--el-text-color-placeholder);
-    font-size: 11px;
-  }
-}
-
-// 书籍建议条（2026-10-04：知识体系规划后的书籍内容提示）
-.space-books {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  background: var(--el-fill-color-lighter);
-  font-size: 12px;
-
-  .space-books-label {
-    color: var(--el-text-color-secondary);
-    font-weight: 600;
-  }
-
-  .space-books-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 2px 9px;
-    border-radius: 10px;
-    color: var(--el-text-color-regular);
-    background: var(--el-fill-color);
-    cursor: default;
-
-    // 体系主干依赖 → 强调色
-    &.essential {
-      color: var(--el-color-danger);
-      background: var(--el-color-danger-light-9);
-    }
-
-    // 推荐加深理解 → 主色弱化
-    &.recommended {
-      color: var(--el-color-primary);
-      background: var(--el-color-primary-light-9);
-    }
-
-    .chip-author {
-      font-size: 10px;
-      color: var(--el-text-color-placeholder);
-    }
-
-    .chip-flag {
-      font-size: 10px;
-      color: var(--el-text-color-placeholder);
-    }
   }
 }
 
@@ -3537,5 +3524,80 @@ watch(rightPane, (pane) => {
   display: flex;
   gap: 4px;
   margin-top: 6px;
+}
+</style>
+
+<!-- 标题旁信息图标的 tooltip 弹层（传送至 body，需非 scoped 样式） -->
+<style lang="scss">
+.dl-title-tip {
+  max-width: 380px;
+
+  .dl-tip-block {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .dl-tip-title {
+    font-weight: 600;
+    font-size: 12.5px;
+    color: var(--el-text-color-primary);
+  }
+
+  .dl-tip-line {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-bottom: 5px;
+    border-bottom: 1px dashed var(--el-border-color-lighter);
+
+    &:last-of-type {
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+
+    .dl-tip-head {
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .dl-tip-name {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--el-text-color-primary);
+    }
+
+    // 徽标：默认主色弱化；需自备 / 主干依赖用强调色区分
+    .dl-tip-flag {
+      font-size: 10.5px;
+      padding: 0 6px;
+      border-radius: 8px;
+      background: var(--el-color-primary-light-9);
+      color: var(--el-color-primary);
+
+      &.external {
+        background: var(--el-fill-color);
+        color: var(--el-text-color-secondary);
+      }
+
+      &.essential {
+        background: var(--el-color-danger-light-9);
+        color: var(--el-color-danger);
+      }
+    }
+
+    .dl-tip-desc {
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--el-text-color-secondary);
+    }
+  }
+
+  .dl-tip-hint {
+    font-size: 11px;
+    color: var(--el-text-color-placeholder);
+  }
 }
 </style>

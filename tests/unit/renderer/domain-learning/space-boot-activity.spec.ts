@@ -38,6 +38,7 @@ const { fakeStore } = vi.hoisted(() => ({
     unsubscribeAll: () => {},
     sendAgent: async () => null,
     cancelAgent: async () => {},
+    agentBusy: async () => false,
     ackMastered: async () => {},
     ackConfused: async () => {},
     createConceptOf: async () => {},

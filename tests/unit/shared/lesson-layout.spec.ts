@@ -291,16 +291,20 @@ describe('视觉质检：阻断项（堆砌文字必须被拦下）', () => {
 })
 
 describe('视觉质检：警告项（可修但不必拦）', () => {
-  it('长区未归纳（超过长区上限但结构化）→ 警告', () => {
+  it('长区未归纳（超过长区上限但结构化）→ 警告（重点区豁免：core/case 该详写，不因字数被建议拆薄）', () => {
     const md = '### 小标题\n' + '巴拉'.repeat(300)
-    const r = checkLessonVisualQuality({
-      essenceType: 'K-concept',
-      sections: [
-        { key: 'mechanism', md, layout: 'prose' },
-        { key: 'examples', md: '```figure\n{"type":"bar","items":[{"label":"a","value":1}]}\n```', layout: 'figure' },
-      ],
-    })
+    const mk = (key: string) => [
+      { key, md, layout: 'prose' },
+      { key: 'examples', md: '```figure\n{"type":"bar","items":[{"label":"a","value":1}]}\n```', layout: 'figure' },
+    ]
+    // 非重点区（辨析与易错 = support）长而结构化 → 仍提醒归纳
+    const r = checkLessonVisualQuality({ essenceType: 'K-concept', sections: mk('pitfalls') })
     expect(r.warnings.map((i) => i.code)).toContain('long-section')
+    // 重点区（详解 = core；含 mechanism 这类已合并别名）→ 不再出长区警告
+    for (const key of ['detail', 'definition', 'examples' /* 自身 */, 'mechanism']) {
+      const rk = checkLessonVisualQuality({ essenceType: 'K-concept', sections: mk(key) })
+      expect(rk.warnings.map((i) => i.code), `key=${key}`).not.toContain('long-section')
+    }
   })
 
   it('连续 ≥3 个纯文字区 → 警告（布局单调）', () => {

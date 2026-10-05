@@ -269,7 +269,7 @@ const proposeLessonPlanSchema = z.object({
       budget: z
         .object({ sections: z.number().optional(), charsPerSection: z.number().optional() })
         .optional()
-        .describe('篇幅预算：目标区数（3~20）与每区正文字数上限（120~1200）'),
+        .describe('篇幅预算：目标区数（3~20）与非重点区每区正文字数参考上限（120~4000；重点区=定义/详解/案例/实操不受此限，按需写透）'),
       tone: z.string().optional().describe('语气/风格（如"生活类比先行、不堆术语"）'),
       glossary: z
         .array(z.object({ term: z.string(), plain: z.string() }))

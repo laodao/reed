@@ -23,7 +23,7 @@
  * 绝不静默吞掉模型写的内容。质检的阻断项都必须给出**可执行的修复**（哪一区、补什么、怎么写）。
  */
 
-import { canonicalSectionKey, lessonBodyChars } from './lesson-template'
+import { canonicalSectionKey, lessonBodyChars, sectionSpecOf } from './lesson-template'
 
 // ==================== 设备目录 ====================
 
@@ -643,7 +643,12 @@ export function checkLessonVisualQuality(input: {
       }
       if (strict) blocking.push(issue)
       else warnings.push(issue)
-    } else if (st.chars > LESSON_LAYOUT_RHYTHM.longSectionChars) {
+    } else if (
+      st.chars > LESSON_LAYOUT_RHYTHM.longSectionChars &&
+      // 重点区（core/case）按 2026-10-05 用户口径该详写，不因字数被建议拆薄；
+      // 结构仍由上面的文字墙判据把守（无小标题/表格/图的长纯文本照样拦）
+      !['core', 'case'].includes(sectionSpecOf(sec.key)?.role ?? '')
+    ) {
       warnings.push({
         code: 'long-section',
         level: 'warning',

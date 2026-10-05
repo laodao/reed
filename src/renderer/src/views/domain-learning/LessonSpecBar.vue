@@ -4,7 +4,7 @@
     <div class="lsb-head">
       <span class="lsb-badge">讲义规格</span>
       <span class="lsb-audience" :title="spec.audience">{{ spec.audience }}</span>
-      <span class="lsb-meta">{{ spec.depth }} · 目标 {{ spec.budget.sections }} 区 · 每区 ≤{{ spec.budget.charsPerSection }} 字</span>
+      <span class="lsb-meta">{{ spec.depth }} · 目标 {{ spec.budget.sections }} 区 · 非重点区 ≤{{ spec.budget.charsPerSection }} 字 · 重点区详写</span>
       <span class="lsb-toggle" @click="open = !open">{{ open ? '收起' : '展开' }}</span>
     </div>
 

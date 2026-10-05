@@ -1030,6 +1030,25 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     } catch { /* 静默：取消无副作用 */ }
   }
 
+  /**
+   * 查询某 scope 是否有在途轮次（后台化改造 2026-10-05：研究轮不再随页面关闭取消，
+   * 回页时据此重挂"研究中"状态与事件流；失败按不在途处理，不影响主流程）
+   */
+  async function agentBusy(
+    mode: 'research' | 'tutor' | 'task',
+    spaceId: string,
+    conceptId?: string | null,
+  ): Promise<boolean> {
+    const a = api()
+    if (!a) return false
+    try {
+      const r = await a.agentBusy({ mode, spaceId, conceptId })
+      return !!r?.success && !!r?.data
+    } catch {
+      return false
+    }
+  }
+
   // ==================== 事件订阅生命周期 ====================
 
   /**
@@ -1148,6 +1167,7 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
     // Agent
     sendAgent,
     cancelAgent,
+    agentBusy,
     subscribeAgentEvent,
     subscribeStream,
     unsubscribeAll,
