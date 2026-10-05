@@ -245,11 +245,10 @@ function buildDescHtml(description: string): string {
 
 /** 镜头行末尾的台词 chip（在 .pk-desc 之外、无 data-key → 序列化天然跳过）。
  *  点击 chip 打开编辑弹层（写回 scene_dialogues，字幕/视频 prompt 同源）。 */
-function buildDialoguesHtml(line: PromptLine): string {
-  const list = props.dialoguesByShot?.[line.shotNumber] ?? []
-  if (list.length === 0) return ''
-  const dur = Number(line.params['时长']) || 0
-  const chips = list
+function buildDialogueChipsHtml(shotNumber: number, durationSec: number): string {
+  const list = props.dialoguesByShot?.[shotNumber] ?? []
+  const dur = durationSec
+  return list
     .filter((d) => d?.text)
     .map((d) => {
       const secs = d.text.length / SPEECH_CHARS_PER_SEC
@@ -260,6 +259,10 @@ function buildDialoguesHtml(line: PromptLine): string {
       return `<span class="pk-dlg${over ? ' over' : ''}" data-dlg-id="${esc(d.id ?? '')}" title="${esc(tip)}"><span class="pk-dlg-tag">台词</span>${esc(d.speaker)}：${esc(d.text)}</span>`
     })
     .join('')
+}
+
+function buildDialoguesHtml(line: PromptLine): string {
+  const chips = buildDialogueChipsHtml(line.shotNumber, Number(line.params['时长']) || 0)
   return chips ? `<span class="pk-dialogues" contenteditable="false">${chips}</span>` : ''
 }
 
@@ -290,6 +293,27 @@ function renderHtml(): void {
   el.innerHTML = lines.map(buildLineHtml).join('')
   void nextTick(() => {
     rendering = false
+  })
+}
+
+/** 只刷新各行台词 chip 容器（编辑器持有焦点时替代整体 renderHtml——innerHTML 整体
+ *  重建会销毁光标所在的描述文本节点，输入中途丢光标/选区）。chip 容器 .pk-dialogues
+ *  在 .pk-desc 之外且 contenteditable=false，替换其内容不触碰任何可持光标的节点。
+ *  镜头号/时长直接读行内 DOM（焦点中 DOM 是权威，modelValue 可能尚未回传）。 */
+function refreshDialogueChips(): void {
+  const el = editorRef.value
+  if (!el) return
+  el.querySelectorAll<HTMLElement>('.pk-line').forEach((lineEl) => {
+    const shotNo = Number(lineEl.getAttribute('data-no')) || 0
+    const durTok = lineEl.querySelector('.pk-token[data-key="时长"]')
+    const chips = buildDialogueChipsHtml(shotNo, Number(durTok?.getAttribute('data-val')) || 0)
+    const holder = lineEl.querySelector('.pk-dialogues') as HTMLElement | null
+    if (holder) {
+      if (chips) holder.innerHTML = chips
+      else holder.remove()
+    } else if (chips) {
+      lineEl.insertAdjacentHTML('beforeend', `<span class="pk-dialogues" contenteditable="false">${chips}</span>`)
+    }
   })
 }
 
@@ -839,8 +863,20 @@ watch(
   { deep: true },
 )
 
-// 台词数据不进提示词字符串，上面的「序列化相等则跳过」守卫对它无效，需单独监听重渲
-watch(() => props.dialoguesByShot, () => { if (!composing) renderHtml() }, { deep: true })
+// 台词数据不进提示词字符串，上面的「序列化相等则跳过」守卫对它无效，需单独监听。
+// 编辑器持有焦点时整体重建 innerHTML 会丢光标/选区（用户正在输入中，非 IME 状态
+// composing 也拦不住）→ 只刷新各行台词 chip 容器；失焦时仍走完整 renderHtml
+// （外部整体替换数据时的最终一致兜底）。
+watch(
+  () => props.dialoguesByShot,
+  () => {
+    if (composing) return
+    const el = editorRef.value
+    if (el && el.contains(document.activeElement)) refreshDialogueChips()
+    else renderHtml()
+  },
+  { deep: true },
+)
 
 onMounted(() => {
   renderHtml()

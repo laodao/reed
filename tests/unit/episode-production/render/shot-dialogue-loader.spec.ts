@@ -2,14 +2,20 @@
  * shot-dialogue-loader 单测（2026-10-05 台词乱码修复）
  *
  * 口径：storyboard_dialogue_links 优先；无 links 的分镜回退 dialogue_ids JSON 列；
- * links 表不存在时静默回退；两路皆空 → 该镜头无台词。
+ * links 表不存在时静默回退；其余 links 查询错误 warn 留痕后回退（M9）；
+ * 两路皆空 → 该镜头无台词。
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DataSource } from 'typeorm'
 import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
 import { SceneDialogueEntity } from '@core/database/entities/episode-production/scene-dialogue.entity'
 import { loadShotDialogues } from '@core/platform/episode-production/render/video/shot-dialogue-loader'
+
+const { warnSpy } = vi.hoisted(() => ({ warnSpy: vi.fn() }))
+vi.mock('@core/utils/logger', () => ({
+  createLogger: () => ({ info: () => {}, warn: warnSpy, error: () => {} }),
+}))
 
 let ds: DataSource
 
@@ -79,6 +85,7 @@ async function link(storyboardId: string, dialogueId: string, sortOrder: number)
 }
 
 beforeEach(async () => {
+  warnSpy.mockClear()
   ds = await buildDb()
 })
 
@@ -122,6 +129,45 @@ describe('loadShotDialogues', () => {
     await seedDialogue('d1', '沈云萝', '第一句', 0)
     await seedStoryboard('sb1', ['d1'])
     const map = await loadShotDialogues(ds, [{ id: 'sb1', dialogueIds: ['d1'] }])
+    expect(map.get('sb1')).toEqual([{ speaker: '沈云萝', text: '第一句', id: 'd1' }])
+  })
+
+  it('M9：表不存在（SQLite/PG 两种措辞）→ 静默回退，不打 warn', async () => {
+    // SQLite 措辞（真实库，缺 links 表）
+    await ds.destroy()
+    ds = await buildDb(false)
+    await seedDialogue('d1', '沈云萝', '第一句', 0)
+    await seedStoryboard('sb1', ['d1'])
+    const map = await loadShotDialogues(ds, [{ id: 'sb1', dialogueIds: ['d1'] }])
+    expect(map.get('sb1')).toEqual([{ speaker: '沈云萝', text: '第一句', id: 'd1' }])
+    expect(warnSpy).not.toHaveBeenCalled()
+
+    // PG 措辞（`does not exist`，桩掉 query 直接抛错）
+    warnSpy.mockClear()
+    const pgDs = {
+      options: { type: 'postgres' },
+      query: vi.fn().mockRejectedValue(new Error('relation "storyboard_dialogue_links" does not exist')),
+    } as unknown as DataSource
+    const map2 = await loadShotDialogues(pgDs, [{ id: 'sb1', dialogueIds: [] }])
+    expect(map2.size).toBe(0)
+    expect(warnSpy).not.toHaveBeenCalled()
+  })
+
+  it('M9：links 查询其他错误（非表不存在）→ warn 留痕后仍回退 JSON 列', async () => {
+    // 重建为缺 sort_order 列的 links 表：查询以 `no such column` 失败（非「表不存在」措辞）
+    await ds.query('DROP TABLE storyboard_dialogue_links')
+    await ds.query(`
+      CREATE TABLE storyboard_dialogue_links (
+        id TEXT PRIMARY KEY,
+        storyboard_id TEXT NOT NULL,
+        dialogue_id TEXT NOT NULL
+      )
+    `)
+    await seedDialogue('d1', '沈云萝', '第一句', 0)
+    await seedStoryboard('sb1', ['d1'])
+    const map = await loadShotDialogues(ds, [{ id: 'sb1', dialogueIds: ['d1'] }])
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+    expect(String(warnSpy.mock.calls[0][1])).toContain('no such column')
     expect(map.get('sb1')).toEqual([{ speaker: '沈云萝', text: '第一句', id: 'd1' }])
   })
 

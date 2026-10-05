@@ -6,11 +6,18 @@
  *   1. storyboard_dialogue_links（归一化权威表，镜头级精确分配）优先；
  *   2. 该镜头无 links 行时回退 storyboards.dialogue_ids JSON 列（老数据/单镜路径）。
  * 不做字幕那样的"池均分猜测"——台词进音视频模型必须精确归属，猜错比没有更糟。
- * links 表不存在（Web 老库）时静默回退 JSON 列；两路皆空 → 该镜头无台词。
+ * links 表不存在（Web 老库）时静默回退 JSON 列；其余查询错误 warn 留痕后再回退；
+ * 两路皆空 → 该镜头无台词。
  */
 
 import type { DataSource } from 'typeorm'
 import type { SegmentDialogue } from './segment-planner'
+import { createLogger } from '@core/utils/logger'
+
+const logger = createLogger('ShotDialogueLoader')
+
+/** 「表不存在」错误特征：SQLite `no such table` / PG `... does not exist`（大小写不敏感） */
+const TABLE_MISSING_RE = /no such table|does not exist/i
 
 interface DialogueRow {
   id: string
@@ -51,7 +58,7 @@ export async function loadShotDialogues(
   const result = new Map<string, SegmentDialogue[]>()
   if (shots.length === 0) return result
 
-  // 第一路：links 表（表不存在时静默回退，不发生在新装库之外的场景）
+  // 第一路：links 表（表不存在 → 静默回退，不发生在新装库之外的场景；其余错误留痕后再回退）
   const linkedIds = new Set<string>()
   try {
     const ph = shots.map((_, i) => (isPg(ds) ? `$${i + 1}` : '?')).join(',')
@@ -70,8 +77,12 @@ export async function loadShotDialogues(
       result.set(r.sid, list)
       linkedIds.add(r.sid)
     }
-  } catch {
-    /* links 表缺失/查询失败 → 走 JSON 列兜底 */
+  } catch (e) {
+    // 表不存在（Web 老库，SQLite `no such table` / PG `does not exist`）→ 静默回退 JSON 列；
+    // 其余错误（连接断开/权限等）不再无声吞掉——warn 留痕后仍走兜底，保证渲染不中断
+    if (!TABLE_MISSING_RE.test(String((e as { message?: unknown })?.message ?? e))) {
+      logger.warn('[ShotDialogueLoader] links 查询失败，回退 dialogue_ids JSON 列兜底', e)
+    }
   }
 
   // 第二路：无 links 的镜头回退 dialogue_ids JSON 列

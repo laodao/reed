@@ -86,6 +86,69 @@ describe('ShotPromptEditor 台词 chip', () => {
     expect(w.findAll('.pk-dlg')).toHaveLength(2)
     w.unmount()
   })
+
+  it('M11：编辑器持有焦点时台词变化 → 只刷 chip，描述节点原样（光标不丢）', async () => {
+    const w = mountEditor({ 1: [{ id: 'd1', speaker: '沈云萝', text: '我饿了。' }] })
+    await nextTick()
+    const editor = w.find('.rich-box').element as HTMLElement
+    editor.focus()
+    expect(document.activeElement).toBe(editor)
+    // 光标丢失的根因是整体重建 innerHTML：断言描述文本节点身份在更新前后不变
+    const descBefore = editor.querySelector('.pk-desc')
+    const textNodeBefore = descBefore?.firstChild
+    await w.setProps({
+      dialoguesByShot: { 1: [{ id: 'd1', speaker: '沈云萝', text: '师兄，我饿了。' }, { id: 'd2', speaker: '秦越', text: '下山吧。' }] },
+    })
+    await nextTick()
+    const chips = w.findAll('.pk-dlg')
+    expect(chips).toHaveLength(2)
+    expect(chips[0].text()).toContain('师兄，我饿了。')
+    expect(chips[1].text()).toContain('秦越：下山吧。')
+    const descAfter = editor.querySelector('.pk-desc')
+    expect(descAfter).toBe(descBefore)
+    expect(descAfter?.firstChild).toBe(textNodeBefore)
+    w.unmount()
+  })
+
+  it('M11：焦点不在编辑器内 → 仍整体重渲（节点重建，最终一致）', async () => {
+    const w = mountEditor({ 1: [{ id: 'd1', speaker: '沈云萝', text: '我饿了。' }] })
+    await nextTick()
+    const editor = w.find('.rich-box').element as HTMLElement
+    expect(document.activeElement).not.toBe(editor)
+    const descBefore = editor.querySelector('.pk-desc')
+    await w.setProps({ dialoguesByShot: { 1: [{ id: 'd1', speaker: '沈云萝', text: '师兄，我饿了。' }] } })
+    await nextTick()
+    expect(w.findAll('.pk-dlg')).toHaveLength(1)
+    expect(w.find('.pk-dlg').text()).toContain('师兄，我饿了。')
+    expect(editor.querySelector('.pk-desc')).not.toBe(descBefore)
+    w.unmount()
+  })
+
+  it('M11：焦点中台词清空 → chip 容器移除', async () => {
+    const w = mountEditor({ 1: [{ id: 'd1', speaker: '沈云萝', text: '我饿了。' }] })
+    await nextTick()
+    const editor = w.find('.rich-box').element as HTMLElement
+    editor.focus()
+    await w.setProps({ dialoguesByShot: { 1: [] } })
+    await nextTick()
+    expect(w.findAll('.pk-dlg')).toHaveLength(0)
+    expect(editor.querySelector('.pk-dialogues')).toBe(null)
+    w.unmount()
+  })
+
+  it('M11：焦点中原无 chip 的镜头新增台词 → 容器补挂到行尾，描述不动', async () => {
+    const w = mountEditor(undefined)
+    await nextTick()
+    const editor = w.find('.rich-box').element as HTMLElement
+    editor.focus()
+    const descBefore = editor.querySelector('.pk-line[data-no="1"] .pk-desc')
+    await w.setProps({ dialoguesByShot: { 1: [{ id: 'd1', speaker: '沈云萝', text: '我饿了。' }] } })
+    await nextTick()
+    expect(w.findAll('.pk-dlg')).toHaveLength(1)
+    expect(editor.querySelector('.pk-line[data-no="1"] .pk-desc')).toBe(descBefore)
+    expect(editor.querySelector('.pk-line[data-no="1"] .pk-dialogues')).toBeTruthy()
+    w.unmount()
+  })
 })
 
 describe('ShotPromptEditor 台词编辑', () => {

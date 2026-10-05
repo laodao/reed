@@ -182,6 +182,24 @@ describe('stripDialogueQuotes + 台词段（2026-10-05 台词乱码修复）', (
     expect(stripDialogueQuotes('匾额写着“雪麓山庄”，门前石阶蜿蜒')).toBe('匾额写着“雪麓山庄”，门前石阶蜿蜒')
   })
 
+  it('M10：单引号引文（直/弯）也剥离', () => {
+    expect(stripDialogueQuotes('他说：\'我们走\'，转身离开。')).toBe('他说，转身离开。')
+    expect(stripDialogueQuotes('他说：‘我们走’，转身离开。')).toBe('他说，转身离开。')
+  })
+
+  it('M10：嵌套弯双引号 → 外层整段剥掉，不产生残缺文本', () => {
+    // 旧正则开/闭类混合，外层配对失败后在内层动词处错位匹配，剥出「她说：“我说就走了”。」残缺文本
+    expect(stripDialogueQuotes('她说：“我说：“好”就走了”。')).toBe('她说。')
+  })
+
+  it('M10：直双引号正常剥离（回归）', () => {
+    expect(stripDialogueQuotes('他说："我们走"')).toBe('他说')
+  })
+
+  it('M10：非言语引号且无说话动词前缀 → 保留（回归）', () => {
+    expect(stripDialogueQuotes('匾额上刻着"雪麓山庄"四个字')).toBe('匾额上刻着"雪麓山庄"四个字')
+  })
+
   it('空/无引文输入原样返回', () => {
     expect(stripDialogueQuotes('')).toBe('')
     expect(stripDialogueQuotes('苏晚伏案修书')).toBe('苏晚伏案修书')
