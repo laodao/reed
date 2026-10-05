@@ -109,6 +109,7 @@ import {
   labelOf,
 } from '../shared/param-options'
 import { parsePrompt, serializePrompt, type PromptLine } from './storyboard-prompt-format'
+import { mentionQueryAtCaret } from './shot-prompt-mention'
 import { splitEntityRef, serializeEntityToken } from '@/utils/shot-prompt-token'
 import { toImageUrl } from '@/utils/asset-url'
 
@@ -400,30 +401,33 @@ function onPickAsset(e: MentionEntity): void {
 function detectMention(): void {
   const el = editorRef.value
   if (!el) return
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0) { closeMention(); return }
+  const range = sel.getRangeAt(0)
+  if (!el.contains(range.endContainer)) { closeMention(); return }
+  // 只认「光标在真实文本节点、且前方文本以 @query 结尾」的正在输入场景。
+  // 资产 token 是 contenteditable=false 元素，其可见文字 @名字 不参与匹配——
+  // 旧实现用整体 textContent 匹配，DOM 文本里没有序列化格式的 [ ] 边界，
+  // 导致点击 token 之后任意描述文字都误弹资产搜索框（见 shot-prompt-mention.ts）。
+  const query = mentionQueryAtCaret(range.endContainer, range.endOffset)
+  if (query == null) { closeMention(); return }
   const offset = caretOffset(el)
   if (offset == null) { closeMention(); return }
-  const text = (el.textContent ?? '').replace(/\u00a0/g, ' ')
-  const before = text.slice(0, offset)
-  // 只在「真正正在输入 @」时弹：@ 后紧跟的必须是普通字符（不含 [ ] @ 与空白）。
-  // 这样已生成的 @[名字@索引] token（后面有 [）不会被当作正在输入，光标在其后点/输入不再误弹。
-  const m = before.match(/@([^[\]@\s]*)$/)
-  if (m) {
-    // 正常输入新 @ 引用（非改引用）——清空替换目标
-    replacingToken = null
-    mentionStart.value = offset - m[0].length; mentionQuery.value = m[1]; activeIdx.value = 0
-    mentionStage.value = 'asset'; mentionAsset.value = null
-    // 捕获光标所在的 .pk-desc 及其内部 offset，选中项时插入到该处（而非最后一行）
-    mentionDescEl.value = descUnderCaret()
-    mentionDescOffset.value = mentionDescEl.value ? (caretOffsetInDesc(mentionDescEl.value) ?? 0) : 0
-    const caretRect = caretRectOf()
-    mentionPos.value = caretRect ? popupPosition(caretRect, POPUP_MAX_W, 120) : caretPopupPos()
-    openMention()
-    // 渲染后用真实尺寸校正定位（双 nextTick 确保 DOM 已布局）
-    if (caretRect) void nextTick(() => nextTick(() => {
-      const popup = mentionRef.value
-      if (popup) mentionPos.value = popupPosition(caretRect, popup.offsetWidth || POPUP_MAX_W, popup.offsetHeight || POPUP_MAX_H)
-    }))
-  } else closeMention()
+  // 正常输入新 @ 引用（非改引用）——清空替换目标
+  replacingToken = null
+  mentionStart.value = offset - query.length - 1; mentionQuery.value = query; activeIdx.value = 0
+  mentionStage.value = 'asset'; mentionAsset.value = null
+  // 捕获光标所在的 .pk-desc 及其内部 offset，选中项时插入到该处（而非最后一行）
+  mentionDescEl.value = descUnderCaret()
+  mentionDescOffset.value = mentionDescEl.value ? (caretOffsetInDesc(mentionDescEl.value) ?? 0) : 0
+  const caretRect = caretRectOf()
+  mentionPos.value = caretRect ? popupPosition(caretRect, POPUP_MAX_W, 120) : caretPopupPos()
+  openMention()
+  // 渲染后用真实尺寸校正定位（双 nextTick 确保 DOM 已布局）
+  if (caretRect) void nextTick(() => nextTick(() => {
+    const popup = mentionRef.value
+    if (popup) mentionPos.value = popupPosition(caretRect, popup.offsetWidth || POPUP_MAX_W, popup.offsetHeight || POPUP_MAX_H)
+  }))
 }
 /** 光标所在的 .pk-desc 元素（无则 null） */
 function descUnderCaret(): HTMLElement | null {
