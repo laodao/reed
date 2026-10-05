@@ -154,6 +154,24 @@ describe('世界观库服务', () => {
     expect((await svc.getWorld(world.id))!.version).toBeGreaterThan(afterCreate)
   })
 
+  it('bumpVersion 两次 → version 精确 +2 且刷新 updatedAt（review M15：原子自增语义）', async () => {
+    const worldRepo = new LwWorldRepository(ds)
+    const created = await worldRepo.create({ id: 'wld_bump', name: '版本自增世界', genre: 'custom' })
+    expect(created.version).toBe(1)
+
+    await worldRepo.bumpVersion(created.id)
+    await worldRepo.bumpVersion(created.id)
+
+    const after = await worldRepo.getById(created.id)
+    // 读-改-存实现在并发下会丢自增；单条 UPDATE version = version + 1 语义下
+    // 串行两次必为 3
+    expect(after!.version).toBe(3)
+    expect(after!.updatedAt).toBeGreaterThanOrEqual(created.updatedAt)
+
+    // 不存在的 id：静默 no-op（与旧实现 findOne 未命中返回一致）
+    await expect(worldRepo.bumpVersion('no-such-world')).resolves.toBeUndefined()
+  })
+
   it('serializeWorldEntry 产出紧凑 prompt 行（名称/别名/品阶/摘要/字段）', () => {
     const line = serializeWorldEntry({
       id: 'we_x', worldId: 'wld_x', kindKey: 'pill', name: '筑基丹',

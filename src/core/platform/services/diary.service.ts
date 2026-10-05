@@ -385,10 +385,13 @@ export class DiaryService {
 
       await db.diaryEntries!.softDelete(id)
 
-      // 隐私红线：删除即退出消化队列（取消挂起的防抖同步并清内容记忆）
-      void import('./diary-brain-sync.service').then(({ getDiaryBrainSyncService }) =>
+      // 隐私红线：删除即退出消化队列（取消挂起的防抖同步并清内容记忆），
+      // 且已同步进「日记」库的全文一并下架（与 purgeEntry 同款清理）——
+      // 软删除期间全文不得继续可被检索；恢复时重新同步（幂等）
+      void import('./diary-brain-sync.service').then(({ getDiaryBrainSyncService }) => {
         getDiaryBrainSyncService().cancelScheduledSync(id)
-      )
+        return getDiaryBrainSyncService().purgeEntryIds([id])
+      })
       return { success: true }
     } catch (error) {
       console.error('[DiaryService] deleteEntry error:', error)
@@ -420,6 +423,11 @@ export class DiaryService {
       if (!ok) {
         return { success: false, error: '日记不存在' }
       }
+      // 软删除时已把「日记」库文档下架（purgeEntryIds）；恢复后重新同步（幂等
+      // upsert，守卫齐备才入库：opt-in / 字数 / 条目级排除 / 未删除）
+      void import('./diary-brain-sync.service').then(({ getDiaryBrainSyncService }) =>
+        getDiaryBrainSyncService().syncEntryNow(id)
+      )
       return { success: true }
     } catch (error) {
       console.error('[DiaryService] restoreEntry error:', error)

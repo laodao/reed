@@ -20,7 +20,7 @@ vi.mock('@core/platform/services/diary.service', () => ({
   },
 }))
 
-import { DIARY_NODE_HANDLERS } from '@core/platform/workflow/nodes/diary-nodes'
+import { DIARY_NODE_HANDLERS, parseLocalDate } from '@core/platform/workflow/nodes/diary-nodes'
 import type { WorkflowNodeContext, WorkflowNodeHandler } from '@core/platform/workflow/engine/node-handler'
 
 const collectNode = DIARY_NODE_HANDLERS.find(n => n.type === 'collect-diary') as WorkflowNodeHandler
@@ -132,9 +132,57 @@ describe('collect-diary 节点', () => {
     expect(result.status).toBe('failed')
   })
 
+  it('execute：越界滚动日期（2026-02-31）报 failed 而非滚动到 3 月（review M16）', async () => {
+    mockDiary.getEntriesByDateRange.mockResolvedValue({ success: true, data: [] })
+    const result = (await collectNode.execute(makeCtx({ startDate: '2026-02-31', endDate: '2026-03-31' }))) as {
+      status: string
+      error?: string
+    }
+    expect(result.status).toBe('failed')
+    expect(result.error).toContain('startDate')
+    expect(mockDiary.getEntriesByDateRange).not.toHaveBeenCalled()
+  })
+
   it('execute：服务层失败透传', async () => {
     mockDiary.getEntriesByDateRange.mockResolvedValue({ success: false, error: 'db down' })
     const result = await collectNode.execute(makeCtx({}))
     expect(result.status).toBe('failed')
+  })
+})
+
+describe('parseLocalDate（本地零点解析 + 越界静默滚动拒绝，review M16）', () => {
+  it('正常日期 → 本地时区零点', () => {
+    const d = parseLocalDate('2026-10-06')!
+    expect(d).not.toBeNull()
+    expect(d.getTime()).toBe(new Date(2026, 9, 6).getTime())
+    expect(d.getFullYear()).toBe(2026)
+    expect(d.getMonth()).toBe(9)
+    expect(d.getDate()).toBe(6)
+  })
+
+  it('2026-02-31（Date 会静默滚动到 03-03）→ null', () => {
+    // 回归锚点：修复前 new Date(2026,1,31) 滚到 3 月 3 日且 getTime() 非 NaN
+    expect(new Date(2026, 1, 31).getDate()).toBe(3)
+    expect(parseLocalDate('2026-02-31')).toBeNull()
+  })
+
+  it('2026-13-01（月越界滚动到次年 1 月）→ null', () => {
+    expect(parseLocalDate('2026-13-01')).toBeNull()
+  })
+
+  it('2026-02-29（非闰年）→ null；2024-02-29（闰年）→ 有效', () => {
+    expect(parseLocalDate('2026-02-29')).toBeNull()
+    expect(parseLocalDate('2024-02-29')!.getDate()).toBe(29)
+  })
+
+  it('非 YYYY-MM-DD 格式 → null（既有行为不变）', () => {
+    expect(parseLocalDate('2026/10/06')).toBeNull()
+    expect(parseLocalDate('2026-1-6')).toBeNull()
+    expect(parseLocalDate('2026-10-6x')).toBeNull()
+    expect(parseLocalDate('')).toBeNull()
+  })
+
+  it('首尾空白 → trim 后仍可解析（既有行为不变）', () => {
+    expect(parseLocalDate(' 2026-10-06 ')!.getDate()).toBe(6)
   })
 })

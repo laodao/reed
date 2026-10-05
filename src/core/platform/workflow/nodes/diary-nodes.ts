@@ -128,10 +128,11 @@ const collectDiaryNode: WorkflowNodeHandler = {
     let from: Date
     let to: Date
     if (startRaw) {
-      from = parseLocalDate(startRaw)
-      if (!from) {
+      const startDay = parseLocalDate(startRaw)
+      if (!startDay) {
         return { status: 'failed', error: `startDate 无法解析：${startRaw}` }
       }
+      from = startDay
     } else {
       from = new Date(now.getTime() - days * 24 * 60 * 60 * 1000)
     }
@@ -194,8 +195,16 @@ const collectDiaryNode: WorkflowNodeHandler = {
 export function parseLocalDate(raw: string): Date | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw.trim())
   if (!m) return null
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
-  return Number.isNaN(d.getTime()) ? null : d
+  const y = Number(m[1])
+  const mo = Number(m[2]) - 1
+  const day = Number(m[3])
+  const d = new Date(y, mo, day)
+  if (Number.isNaN(d.getTime())) return null
+  // JS Date 对越界分量静默滚动（2026-02-31 → 03-03、2026-13-01 → 次年 01-01），
+  // Number.isNaN 抓不住——回读三元组比对，不一致按无效日期处理（返回 null，
+  // 走调用方既有的 failed 报错路径）
+  if (d.getFullYear() !== y || d.getMonth() !== mo || d.getDate() !== day) return null
+  return d
 }
 
 /**
