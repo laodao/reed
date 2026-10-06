@@ -177,6 +177,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'workflow.listRuns': { channel: 'wf:list-runs' },
   'workflow.deleteRun': { channel: 'wf:delete-run' },
   'workflow.getPendingReviews': { channel: 'wf:get-pending-reviews' },
+  'workflow.listReviewed': { channel: 'wf:list-reviewed' },
   'workflow.getNodeTrajectories': { channel: 'wf:get-node-trajectories' },
   'workflow.createPlan': { channel: 'at:create-plan' },
   'workflow.approvePlan': { channel: 'at:approve-plan', wrap: (...args: unknown[]) => [{ rootId: args[0] }] },

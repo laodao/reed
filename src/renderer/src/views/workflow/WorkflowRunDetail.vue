@@ -25,18 +25,26 @@
 
     <el-alert v-if="run?.error" :title="run.error" type="error" :closable="false" style="margin-bottom: 12px" />
 
-    <!-- 有 human-review 待审：引导进入独立审批页 -->
-    <el-alert
-      v-if="run?.status === 'waiting_review' && pendingReviewCount > 0"
-      type="warning"
-      :closable="false"
-      style="margin-bottom: 12px"
-    >
-      <template #title>
-        {{ pendingReviewCount }} 个环节等待审核确认
-        <el-button size="small" type="primary" style="margin-left: 10px" @click="goReview">去审核确认 →</el-button>
-      </template>
-    </el-alert>
+    <!-- human-review 待审：页首内嵌审批卡片（通知/历史/分享链进来无需找入口，直接审） -->
+    <div v-if="pendingReviewRows.length" class="review-inline">
+      <div v-for="row in pendingReviewRows" :key="row.id ?? row.nodeId" class="review-card">
+        <div class="review-card-head">
+          <el-tag type="warning" size="small" effect="dark">待审核</el-tag>
+          <b class="review-node">{{ row.nodeName || row.nodeId }}</b>
+          <span v-if="row.iterationIndex" class="review-meta">迭代 #{{ row.iterationIndex }}</span>
+          <div class="review-actions">
+            <el-button size="small" type="danger" plain @click="doReview(row, 'reject')">驳回</el-button>
+            <el-button size="small" type="warning" @click="doReviewEdit(row)">修改后批准</el-button>
+            <el-button size="small" type="primary" @click="doReview(row, 'approve')">批准</el-button>
+            <el-button size="small" text @click="goReview">完整审批台 →</el-button>
+          </div>
+        </div>
+        <details class="review-payload">
+          <summary>送审内容预览（点开查看）</summary>
+          <pre>{{ reviewPayloadText(row) }}</pre>
+        </details>
+      </div>
+    </div>
 
     <!-- 工作流执行图（只读：可点击节点看详情，不可编辑） -->
     <div class="run-graph-section">
@@ -303,10 +311,20 @@ const runId = computed(() => route.params.runId as string)
 const canCancel = computed(() => ['pending', 'running', 'waiting_review'].includes(run.value?.status))
 const canResume = computed(() => ['failed', 'cancelled', 'interrupted', 'timed_out', 'waiting_review'].includes(run.value?.status))
 
-/** human-review 待审数量（不含 form-collect 表单行）；>0 时显示去审批页入口 */
-const pendingReviewCount = computed(() =>
-  nodeRuns.value.filter(n => n.status === 'waiting_review' && n.nodeType === 'human-review').length
+/** human-review 待审行（不含 form-collect 表单行）：页首内嵌审批卡片的数据源 */
+const pendingReviewRows = computed(() =>
+  nodeRuns.value.filter(n => n.status === 'waiting_review' && n.nodeType === 'human-review')
 )
+/** 送审内容预览文本（挂起 payload 优先，回退 output；截断防超长报告拖垮渲染） */
+function reviewPayloadText(row: any): string {
+  const p = row.input?.payload ?? row.output ?? {}
+  try {
+    const text = JSON.stringify(p, null, 2)
+    return text.length > 4000 ? text.slice(0, 4000) + '\n…（已截断，完整内容见「完整审批台」）' : text
+  } catch {
+    return String(p)
+  }
+}
 function goReview(): void {
   void router.push(`/workflow/review/${runId.value}`)
 }
@@ -721,4 +739,19 @@ h4 { margin: 12px 0 8px; }
 .board-caption { font-weight: 500; }
 .board-extra { color: var(--el-text-color-secondary); }
 .board-visual { color: var(--el-text-color-regular); margin-top: 2px; }
+
+/* human-review 待审：页首内嵌审批卡片 */
+.review-inline { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.review-card { border: 1px solid var(--el-color-warning-light-5); border-left: 3px solid var(--el-color-warning); border-radius: 8px; padding: 10px 12px; background: var(--el-color-warning-light-9); }
+.review-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.review-node { font-size: 14px; }
+.review-meta { color: var(--el-text-color-secondary); font-size: 12px; }
+.review-actions { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+.review-payload { margin-top: 8px; }
+.review-payload summary { font-size: 12px; color: var(--el-text-color-secondary); cursor: pointer; user-select: none; }
+.review-payload pre {
+  margin: 6px 0 0; max-height: 260px; overflow: auto; padding: 8px 10px;
+  background: var(--el-fill-color-light); border-radius: 6px; font-size: 12px; line-height: 1.6;
+  white-space: pre-wrap; word-break: break-word; color: var(--el-text-color-regular);
+}
 </style>

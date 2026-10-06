@@ -4,7 +4,14 @@
       <el-button text @click="router.push('/workflow')">
         <el-icon><ArrowLeft /></el-icon>
       </el-button>
-      <span class="title">运行历史{{ defName ? `：${defName}` : '' }}</span>
+      <span class="title">{{ isGlobal ? '运行实例（全部工作流）' : `运行历史${defName ? `：${defName}` : ''}` }}</span>
+      <el-select v-model="statusFilter" size="small" style="width: 130px" @change="onFilterChange">
+        <el-option label="全部状态" value="" />
+        <el-option v-for="(label, s) in STATUS_LABEL" :key="s" :label="label" :value="s" />
+      </el-select>
+      <el-button v-if="!isGlobal" size="small" text type="primary" @click="router.push('/workflow/runs')">
+        全部运行 →
+      </el-button>
       <div class="spacer" />
       <el-button size="small" :loading="loading" @click="load">刷新</el-button>
     </div>
@@ -14,6 +21,14 @@
         <template #default="{ $index }">{{ (page - 1) * pageSize + $index + 1 }}</template>
       </el-table-column>
       <el-table-column prop="id" label="运行 ID" min-width="220" show-overflow-tooltip />
+      <el-table-column v-if="isGlobal" label="工作流" min-width="150" show-overflow-tooltip>
+        <template #default="{ row }">
+          <el-link v-if="row.definitionId" type="primary" :underline="false" @click="router.push(`/workflow/runs/${row.definitionId}`)">
+            {{ defNameMap[row.definitionId] ?? row.definitionId }}
+          </el-link>
+          <span v-else>—</span>
+        </template>
+      </el-table-column>
       <el-table-column label="状态" width="130">
         <template #default="{ row }">
           <el-tag :type="STATUS_TONE[row.status] ?? 'info'" size="small">{{ STATUS_LABEL[row.status] ?? row.status }}</el-tag>
@@ -76,8 +91,9 @@
 <script setup lang="ts">
 /**
  * 工作流运行历史列表（修复：handleHistory 跳转 /workflow/runs/:definitionId 原本无路由——空白页）
+ * 全局模式（/workflow/runs，无定义参数）：全部工作流的运行实例列表，附工作流列与状态筛选。
  */
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, View, Delete, RefreshRight, FolderOpened } from '@element-plus/icons-vue'
@@ -104,6 +120,18 @@ const page = ref(1)
 const pageSize = 20
 const loading = ref(false)
 const defName = ref('')
+const statusFilter = ref('')
+const defNameMap = ref<Record<string, string>>({})
+
+// 无定义参数 = 全局实例列表（全部工作流）
+const isGlobal = computed(() => !route.params.definitionId)
+const defId = computed(() => (route.params.definitionId as string) || '')
+
+/** 状态筛选变化 → 回第一页重查 */
+function onFilterChange(): void {
+  page.value = 1
+  void load()
+}
 
 // 查看产物抽屉
 const artifactsOpen = ref(false)
@@ -112,7 +140,12 @@ const artifactsRunId = ref('')
 async function load(): Promise<void> {
   loading.value = true
   try {
-    const resp = await api().listRuns({ definitionId: String(route.params.definitionId), page: page.value, pageSize })
+    const resp = await api().listRuns({
+      definitionId: defId.value || undefined,
+      status: statusFilter.value || undefined,
+      page: page.value,
+      pageSize,
+    })
     if (resp.success) {
       runs.value = resp.data.items ?? []
       total.value = resp.data.total ?? 0
@@ -182,8 +215,18 @@ function formatDuration(stats: any, row: any): string {
 
 onMounted(async () => {
   await load()
-  const d = await api().getDefinition(String(route.params.definitionId))
-  if (d.success && d.data) defName.value = d.data.name
+  // 全局模式：一次拉全量定义做 id→名称映射（工作流列展示 + 点击进单工作流历史）
+  if (isGlobal.value) {
+    const d = await api().listDefinitions({ page: 1, pageSize: 500 })
+    if (d.success) {
+      const map: Record<string, string> = {}
+      for (const item of (d.data?.items ?? []) as Array<{ id: string; name: string }>) map[item.id] = item.name
+      defNameMap.value = map
+    }
+  } else {
+    const d = await api().getDefinition(defId.value)
+    if (d.success && d.data) defName.value = d.data.name
+  }
 })
 </script>
 

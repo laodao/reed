@@ -5,6 +5,7 @@
       <div class="actions">
         <el-input v-model="search" placeholder="按名称搜索…" clearable size="small" style="width: 200px"
           @keyup.enter="onSearch" @clear="onSearch" />
+        <el-button @click="router.push('/workflow/runs')">运行实例</el-button>
         <el-button @click="showImport = true">导入</el-button>
         <el-button @click="showTemplates = true">从模板创建</el-button>
         <el-button type="success" plain @click="showDraftNl = true">从描述创建</el-button>

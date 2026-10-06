@@ -77,6 +77,47 @@
         </div>
       </el-tab-pane>
 
+      <el-tab-pane :label="`审批历史 (${historyTotal})`" name="history">
+        <div class="list-wrap">
+          <el-table :data="historyRows" v-loading="historyLoading" size="small" empty-text="暂无审批记录" height="100%">
+            <el-table-column type="index" label="#" width="52" :index="historyRowIndex" />
+            <el-table-column label="审批时间" width="160">
+              <template #default="{ row }">{{ formatTime(row.review?.decidedAt ?? row.finishedAt) }}</template>
+            </el-table-column>
+            <el-table-column label="决策" width="110">
+              <template #default="{ row }">
+                <el-tag size="small" :type="DECISION_TONE[row.review?.decision] ?? 'info'" disable-transitions>
+                  {{ DECISION_LABEL[row.review?.decision] ?? row.review?.decision ?? '—' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="nodeName" label="节点" min-width="120" show-overflow-tooltip />
+            <el-table-column label="工作流" min-width="140" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.definitionName ?? '—' }}</template>
+            </el-table-column>
+            <el-table-column label="意见" min-width="160" show-overflow-tooltip>
+              <template #default="{ row }"><span class="content">{{ row.review?.comment || '—' }}</span></template>
+            </el-table-column>
+            <el-table-column label="操作" width="90" fixed="right">
+              <template #default="{ row }">
+                <el-button text type="primary" size="small" @click="gotoRun(row)">详情</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="pager">
+            <el-pagination
+              small
+              background
+              layout="total, prev, pager, next"
+              :total="historyTotal"
+              v-model:current-page="historyPage"
+              :page-size="historyPageSize"
+              @current-change="loadHistory"
+            />
+          </div>
+        </div>
+      </el-tab-pane>
+
       </el-tabs>
   </div>
 </template>
@@ -98,6 +139,30 @@ interface ReviewRow {
   /** 送审时间（节点创建时间，后端 WorkflowNodeRunRecord.createdAt） */
   createdAt: string | null
 }
+/** 审批历史行（后端 listReviewed：review 留痕 + 运行状态/定义名富化） */
+interface HistoryRow extends ReviewRow {
+  definitionId: string | null
+  definitionName: string | null
+  runStatus: string | null
+  review: { decision: string; comment?: string; decidedAt: string } | null
+  finishedAt: string | null
+}
+
+/** 决策 → 展示文案 / 标签色（含超时自动决策留痕） */
+const DECISION_LABEL: Record<string, string> = {
+  approve: '批准',
+  approve_with_changes: '修改后批准',
+  reject: '驳回',
+  timeout_approve: '超时自动通过',
+  timeout_reject: '超时自动驳回',
+}
+const DECISION_TONE: Record<string, string> = {
+  approve: 'success',
+  approve_with_changes: 'warning',
+  reject: 'danger',
+  timeout_approve: 'info',
+  timeout_reject: 'danger',
+}
 interface TaskTodo { id: string; title: string; status: string; rootId: string; rootTitle: string; createdAt: string | null }
 
 type WfResp = { success: boolean; data?: unknown; error?: string }
@@ -105,7 +170,7 @@ type WfApi = Record<string, (payload?: unknown) => Promise<WfResp>>
 const router = useRouter()
 const api = () => (window as never as { electronAPI: { workflow: WfApi } }).electronAPI.workflow
 
-const tab = ref<'reviews' | 'tasks'>('reviews')
+const tab = ref<'reviews' | 'tasks' | 'history'>('reviews')
 const reviews = ref<ReviewRow[]>([])
 const taskTodos = ref<TaskTodo[]>([])
 
@@ -139,6 +204,30 @@ watch(taskTodos, (list) => { taskPage.value = clampPage(taskPage.value, list.len
 
 /** 单调请求序号（review M8：切 tab 交错覆盖曾让计数闪变） */
 let loadSeq = 0
+
+// ==================== 审批历史（服务端分页；切到页签才加载，挂载不发请求） ====================
+const historyRows = ref<HistoryRow[]>([])
+const historyTotal = ref(0)
+const historyPage = ref(1)
+const historyPageSize = ref(pageSizeDefault)
+const historyLoading = ref(false)
+const historyRowIndex = computed(() => rowIndex(historyPage.value, historyPageSize.value))
+
+async function loadHistory(): Promise<void> {
+  const seq = ++loadSeq
+  historyLoading.value = true
+  try {
+    const r = await api().listReviewed({ page: historyPage.value, pageSize: historyPageSize.value })
+    if (seq !== loadSeq) return
+    if (r.success) {
+      const data = r.data as { items?: HistoryRow[]; total?: number } | undefined
+      historyRows.value = data?.items ?? []
+      historyTotal.value = data?.total ?? 0
+    } else ElMessage.error(r.error ?? '审批历史加载失败')
+  } finally {
+    if (seq === loadSeq) historyLoading.value = false
+  }
+}
 
 async function load(): Promise<void> {
   const seq = ++loadSeq
@@ -216,7 +305,8 @@ function gotoTasks(rootId: string): void {
 }
 
 onMounted(() => { void load() })
-watch(tab, () => { void load() })
+// 历史页签懒加载（挂载只发待办两查询）；其余页签复用原聚合加载
+watch(tab, () => { if (tab.value === 'history') void loadHistory(); else void load() })
 </script>
 
 <style scoped>

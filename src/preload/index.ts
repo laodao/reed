@@ -783,6 +783,7 @@ const electronAPI = {
       ipcRenderer.invoke('wf:list-runs', p),
     deleteRun: (runId: string) => ipcRenderer.invoke('wf:delete-run', { runId }),
     getPendingReviews: () => ipcRenderer.invoke('wf:get-pending-reviews'),
+    listReviewed: (p: { page?: number; pageSize?: number }) => ipcRenderer.invoke('wf:list-reviewed', p),
     getNodeTrajectories: (p: { runId: string; nodeId: string; iterationIndex?: number }) =>
       ipcRenderer.invoke('wf:get-node-trajectories', p),
     // ==================== M3 任务树/知识飞轮 ====================
