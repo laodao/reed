@@ -97,6 +97,14 @@ interface ServerConfig {
   rootDataPath: string
   jwtSecret: string
   rendererDir: string | null
+  /**
+   * Express trust proxy 设置（review M2）：反代部署（nginx 等）不设置时 req.ip
+   * 恒为代理地址——全体用户共享限流桶，单 IP 即可打满登录/注册限流（自我 DoS）。
+   * WEB_TRUST_PROXY：'true'/'1' 信任所有代理头（仅当流量入口就是本服务）、
+   * 'loopback' 仅信任本机反代、'uniquelocal' 私网反代、数字 = 信任的代理跳数；
+   * 缺省 false（直连部署，行为不变）。多实例部署的限流需换 Redis（内存桶不共享）。
+   */
+  trustProxy: boolean | number | string
 }
 
 function readConfig(): ServerConfig {
@@ -108,7 +116,15 @@ function readConfig(): ServerConfig {
     rootDataPath: path.resolve(process.env.DATA_ROOT ?? './data'),
     jwtSecret: process.env.JWT_SECRET ?? defaultDevSecret(),
     rendererDir: resolveRendererDir(),
+    trustProxy: parseTrustProxy(process.env.WEB_TRUST_PROXY),
   }
+}
+
+function parseTrustProxy(raw: string | undefined): boolean | number | string {
+  if (raw === undefined || raw === '') return false
+  if (/^(true|1)$/i.test(raw)) return true
+  if (/^[0-9]+$/.test(raw)) return Number(raw)
+  return raw // 'loopback' | 'uniquelocal' | 具体 IP/CIDR
 }
 
 function defaultDevSecret(): string {
@@ -165,6 +181,12 @@ async function bootstrap(): Promise<void> {
 
   // 5. Express
   const app = express()
+  if (cfg.trustProxy !== false) {
+    app.set('trust proxy', cfg.trustProxy)
+    console.log(
+      `[web] trust proxy = ${String(cfg.trustProxy)}（WEB_TRUST_PROXY；限流/日志按 X-Forwarded-For 取真实来源）`
+    )
+  }
   app.use(express.json({ limit: '50mb' }))
   app.use(cookieParser())
   app.use(attachUser)
