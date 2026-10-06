@@ -19,12 +19,21 @@ import { LocationBindingEntity } from '@core/database/entities/episode-productio
 import { ItemBindingEntity } from '@core/database/entities/episode-production/item-binding.entity'
 import { EpisodeScriptEntity } from '@core/database/entities/episode-production/episode-script.entity'
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
+import { VideoEpisodeEntity } from '@core/database/entities/episode-production/video-episode.entity'
+import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
+import {
+  createDefaultPromptContext,
+  type PromptContext,
+} from '../../prompts/prompt-context'
+import { promptContextFromEpisodeAndProject } from '../../prompts/episode-prompt-context.service'
 import {
   buildSettingEnrichmentSystemPrompt,
   buildSettingEnrichmentUserPrompt,
   type EnrichmentKind,
   type EnrichmentTodo,
   type EnrichmentContext,
+  RACE_VALUES,
+  type RaceValue,
 } from '../prompts/setting-enrichment-prompt'
 
 export type CallAIFn = (
@@ -61,22 +70,15 @@ interface AIResult {
  */
 
 /**
- * race 枚举值（与 setting-enrichment-prompt.ts 保持一致）。
+ * race 枚举值（§3.6 单一事实源：从 setting-enrichment-prompt 导入，不再本文件手写）。
  *
  * BUG-3 修复（v2.3）：两个功能（enrich / extractFields）写入同一字段
  * CharacterBindingEntity.race，必须使用相同枚举格式，避免数据不一致。
+ * 2026-10-06：枚举字面量迁到提示词模块导出，消除"两侧各写一份、改动不同步"的漂移面。
  */
-const VALID_RACE_VALUES = [
-  'east_asian',
-  'south_asian',
-  'southeast_asian',
-  'central_asian',
-  'european',
-  'african',
-  'south_american',
-] as const
+const VALID_RACE_VALUES = RACE_VALUES
 
-type RaceEnum = (typeof VALID_RACE_VALUES)[number]
+type RaceEnum = RaceValue
 
 export interface ExtractFieldsInput {
   assetType: 'character' | 'location' | 'item'
@@ -120,6 +122,9 @@ export class AssetSettingEnrichmentService {
     }
 
     const originalText = await this.loadOriginalText(input.projectId)
+    // §3.6：装配故事背景上下文——优化前设定反推无年代/地域，
+    // 第一批资产（无同类参考时）反推人种/服装完全无时代锚
+    const promptCtx = await this.loadPromptContext(input.projectId)
     const kinds: EnrichmentKind[] = ['character', 'location', 'item']
     for (const kind of kinds) {
       try {
@@ -127,7 +132,7 @@ export class AssetSettingEnrichmentService {
         if (todo.length === 0) {
           continue
         }
-        const sys = buildSettingEnrichmentSystemPrompt(kind)
+        const sys = buildSettingEnrichmentSystemPrompt(kind, promptCtx)
         const user = buildSettingEnrichmentUserPrompt({
           kind,
           originalText,
@@ -171,6 +176,29 @@ export class AssetSettingEnrichmentService {
       }
     }
     return texts.filter(Boolean).join('\n\n')
+  }
+
+  /**
+   * §3.6：装配设定反推用的 PromptContext。
+   *
+   * 资产是项目级的，故事背景挂在剧集上——取该项目第一个剧集的背景
+   * （资产反推通常发生在项目建立初期，各集背景一致）。
+   */
+  private async loadPromptContext(projectId: string): Promise<PromptContext> {
+    try {
+      const episode = await this.ds
+        .getRepository(VideoEpisodeEntity)
+        .findOne({ where: { projectId } as any, order: { episodeNumber: 'ASC' } as any })
+      const project = await this.ds
+        .getRepository(VideoProjectEntity)
+        .findOne({ where: { id: projectId } })
+      return promptContextFromEpisodeAndProject(episode, project)
+    } catch (err) {
+      console.warn(
+        `[asset-setting-enrichment] 装配上下文失败（回落缺省）：${err instanceof Error ? err.message : String(err)}`,
+      )
+      return createDefaultPromptContext()
+    }
   }
 
   private async collectKind(
