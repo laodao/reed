@@ -35,6 +35,7 @@ import { KbKnowledgeEdgeRepository } from '@core/database/repositories/kb-knowle
 import { KbDigestPassRepository } from '@core/database/repositories/kb-digest-pass.repository'
 import { KbDocumentRepository } from '@core/database/repositories/kb-document.repository'
 import { KbChapterRepository } from '@core/database/repositories/kb-chapter.repository'
+import { KbEventRepository } from '@core/database/repositories/kb-event.repository'
 import { KbChunkRepository } from '@core/database/repositories/kb-chunk.repository'
 import { KnowledgeBaseRepository } from '@core/database/repositories/knowledge-base.repository'
 import { KbInvertedIndexRepository } from '@core/database/repositories/kb-inverted-index.repository'
@@ -74,10 +75,12 @@ describe('KbBrainDigestService 全链路', () => {
   let llmCalls: Array<{ system: string; user: string }>
   let embedCalls: string[][]
   let atomRepo: KbAtomRepository
+  let eventRepo: KbEventRepository
 
   const makeDeps = (): KbBrainDigestDeps => {
     const atoms = new KbAtomRepository(ds)
     atomRepo = atoms
+    eventRepo = new KbEventRepository(ds)
     let embedded: KbEntityRepository | null = null
     return {
       llm: (async req => {
@@ -112,7 +115,8 @@ describe('KbBrainDigestService 全链路', () => {
           vectors: {
             createBatch: async () => {} // 假向量存储：记录由 embedCalls 断言
           },
-          inverted: new KbInvertedIndexRepository(ds)
+          inverted: new KbInvertedIndexRepository(ds),
+          events: eventRepo
         }
       }
     }

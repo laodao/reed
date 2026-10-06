@@ -21,6 +21,7 @@ import { KbBrainHealthService } from '@core/platform/services/kb-brain/health.se
 import { parseModelRef } from '@core/platform/services/kb-brain/llm'
 import { parseBrainConfig } from '@core/platform/services/kb-brain/brain-config'
 import { getKbForeshadowScanService } from '@core/platform/services/kb-brain/foreshadow-scan.service'
+import { getKbAutomationLogService } from '@core/platform/services/kb-brain/automation-log.service'
 import type { SearchResult } from '@shared/types/knowledge-base.types'
 
 let kbService: KnowledgeBaseService | null = null
@@ -463,5 +464,15 @@ export function registerKbBrainHandlers(): void {
       }
     ) =>
       (await svc().search({ ...p })) as { success: boolean; data?: SearchResult[]; error?: string }
+  )
+
+  // v2 P4：自动化动作日志（面板时间线）+ 撤销
+  ipcBridge.handle(
+    'kb:brain:auto-log-list',
+    (_e, p: { kbId: string; limit?: number }) => getKbAutomationLogService().listRecent(p.kbId, p.limit ?? 10),
+  )
+  ipcBridge.handle(
+    'kb:brain:auto-log-undo',
+    (_e, p: { logId: string }) => getKbAutomationLogService().undo(p.logId),
   )
 }

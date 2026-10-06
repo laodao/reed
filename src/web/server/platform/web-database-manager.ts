@@ -34,6 +34,8 @@ import { KbNoteRepository } from '@core/database/repositories/kb-note.repository
 import { KbDigestPassRepository } from '@core/database/repositories/kb-digest-pass.repository'
 import { KbNoteReviewRepository } from '@core/database/repositories/kb-note-review.repository'
 import { KbEventRepository } from '@core/database/repositories/kb-event.repository'
+import { KbQaLogRepository } from '@core/database/repositories/kb-qa-log.repository'
+import { KbAutomationLogRepository } from '@core/database/repositories/kb-automation-log.repository'
 import { KbFolderRepository } from '@core/database/repositories/kb-folder.repository'
 import { AppRepository } from '@core/database/repositories/app.repository'
 import { AppSessionRepository } from '@core/database/repositories/app-session.repository'
@@ -180,6 +182,9 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   kbNoteReviews: KbNoteReviewRepository | null
   /** 知识大脑 v2：场面事件原料（故事轨） */
   kbEvents: KbEventRepository | null
+  /** 知识大脑 v2 P4：质检与自动化日志 */
+  kbQaLogs: KbQaLogRepository | null
+  kbAutomationLogs: KbAutomationLogRepository | null
   appDefinitions: AppRepository | null
   appSessions: AppSessionRepository | null
   appSessionMessages: AppSessionMessageRepository | null
@@ -330,6 +335,8 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.kbDigestPasses = new KbDigestPassRepository(ds)
     this.kbNoteReviews = new KbNoteReviewRepository(ds)
     this.kbEvents = new KbEventRepository(ds)
+    this.kbQaLogs = new KbQaLogRepository(ds)
+    this.kbAutomationLogs = new KbAutomationLogRepository(ds)
     this.appDefinitions = new AppRepository(ds)
     this.appSessions = new AppSessionRepository(ds)
     this.appSessionMessages = new AppSessionMessageRepository(ds)

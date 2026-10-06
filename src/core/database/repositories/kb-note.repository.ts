@@ -144,6 +144,27 @@ export class KbNoteRepository extends BaseRepository<KbNoteEntity, KbNoteRecord>
     return this.toDto(row)
   }
 
+  /**
+   * 冶炼卡演进（v2 P1）：同题卡随原料增长重归纳——body/骨架/实例整体刷新，
+   * version+1 留演进痕迹（与 publish 的「人审改写」语义区分；实例由调用方合并去重）。
+   */
+  async evolveCard(
+    id: string,
+    patch: { body?: string; description?: string; patternSkeleton?: string | null; patternInstances?: string | null; evidence?: string },
+  ): Promise<KbNoteRecord | null> {
+    const row = await this.scoped.findOne({ id } as FindOptionsWhere<KbNoteEntity>)
+    if (!row) return null
+    if (patch.body !== undefined) row.body = patch.body
+    if (patch.description !== undefined) row.description = patch.description
+    if (patch.patternSkeleton !== undefined) row.patternSkeleton = patch.patternSkeleton
+    if (patch.patternInstances !== undefined) row.patternInstances = patch.patternInstances
+    if (patch.evidence !== undefined) row.evidence = patch.evidence
+    row.version += 1
+    row.updatedAt = new Date()
+    await this.scoped.save(row)
+    return this.toDto(row)
+  }
+
   /** 拒绝：archived 留档（不物理删） */
   async reject(id: string): Promise<KbNoteRecord | null> {
     const row = await this.scoped.findOne({ id } as FindOptionsWhere<KbNoteEntity>)
@@ -258,18 +279,23 @@ export class KbNoteRepository extends BaseRepository<KbNoteEntity, KbNoteRecord>
     const rows = await this.scoped.find({
       where: {
         knowledgeBaseId: kbId,
-        type: In(['setting-pattern', 'plot-pattern', 'insight', 'methodology', 'synthesis']),
+        type: In(['setting-pattern', 'plot-pattern', 'insight', 'methodology', 'synthesis', 'principle', 'craft-case', 'genre-insight', 'anti-pattern']),
       } as FindOptionsWhere<KbNoteEntity>,
     })
     let n = 0
     for (const note of rows) {
       let instanceCount = 0
+      let docCount = 0
       try {
-        instanceCount = note.patternInstances ? (JSON.parse(note.patternInstances) as unknown[]).length : 0
+        const arr = JSON.parse(note.patternInstances ?? '[]') as Array<{ documentId?: string }>
+        instanceCount = arr.length
+        // 跨书频率（v2 P3）：实例覆盖的书数是经典性的主信号——被 20 本书用的
+        // 套路自动成为经典，单书高频替代不了跨书共识
+        docCount = new Set(arr.map((i) => i.documentId).filter(Boolean)).size
       } catch {
         instanceCount = 0
       }
-      const score = Math.log(1 + note.citedCount) * (1 + Math.log(1 + instanceCount))
+      const score = Math.log(1 + note.citedCount) * (1 + Math.log(1 + instanceCount)) * (1 + Math.log(1 + docCount))
       if (Math.abs(score - note.classicScore) > 1e-6) {
         await this.scoped.update({ id: note.id } as FindOptionsWhere<KbNoteEntity>, { classicScore: score, updatedAt: new Date() } as never)
         n++

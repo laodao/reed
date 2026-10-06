@@ -9,6 +9,8 @@ import { setDefaultUser, LOCAL_DEFAULT_USER_ID } from '@core/context/user-contex
 import { createKbBrainTables } from '@core/database/migrations/create-kb-brain-tables'
 import { createKbChapters } from '@core/database/migrations/create-kb-chapters'
 import { createKbBrainEvents } from '@core/database/migrations/create-kb-brain-events'
+import { addKbEntityScope } from '@core/database/migrations/add-kb-entity-scope'
+import { createKbBrainP4Tables } from '@core/database/migrations/create-kb-brain-p4-tables'
 
 export async function createKbBrainTestTables(ds: DataSource): Promise<void> {
   // 生产语义：ALS 默认用户（Electron 启动即注入）——scoped 写入/查询都按此用户
@@ -32,6 +34,8 @@ export async function createKbBrainTestTables(ds: DataSource): Promise<void> {
   )`)
   await createKbBrainTables(ds)
   await createKbBrainEvents(ds)
+  await addKbEntityScope(ds)
+  await createKbBrainP4Tables(ds)
   await createKbChapters(ds)
   // 存量表：切片（大脑检索的 docLen/结果解析需要）
   await ds.query(`CREATE TABLE IF NOT EXISTS kb_chunks (

@@ -46,6 +46,8 @@ export interface WritingBrainToolDeps {
     error?: string
   }>
   listEnabledKbs?: () => Promise<Array<{ id: string }>>
+  /** v2 P2 知识包装配主路（缺省 brain-pack 单例：意图路由+类型化取材+预算打包） */
+  pack?: (req: { task: string; topK?: number }) => Promise<{ ok: boolean; pack: string; mode?: string; sceneType?: string; error?: string }>
 }
 
 /** 生产检索（与 kb_brain_query agent 工具同通道：brain 池 synthesize 查询） */
@@ -118,6 +120,23 @@ export function buildWritingBrainTool(deps?: WritingBrainToolDeps) {
       try {
         const kbs = await listEnabledBrainKbs(deps)
         if (kbs.length === 0) return '（当前没有启用的大脑，跳过检索。）'
+
+        // v2 P2 主路：知识包装配（意图路由 + sceneType 推断 + 类型化取材）——
+        // query 即写作任务描述（模型通常带场面/情节上下文），由服务端推断场面类型
+        const packFn =
+          deps?.pack ??
+          (async (req: { task: string; topK?: number }) => {
+            const { getKbBrainPackService } = await import('./brain-pack.service')
+            return getKbBrainPackService().buildPack(req)
+          })
+        try {
+          const packed = await packFn({ task: query, topK })
+          if (packed.ok && packed.pack.trim()) return packed.pack.slice(0, RESULT_CHARS + 600)
+        } catch {
+          /* 主路失败走平铺回退 */
+        }
+
+        // 回退：平铺检索（新库无冶炼产物时仍有论断/经验卡/原文可查）
         const lines: string[] = []
         let failedKbs = 0
         let failReason = ''

@@ -24,6 +24,11 @@ export type KbNoteType =
   | 'character-roster'
   | 'foreshadow-ledger'
   | 'knowledge-map'
+  // 冶炼层产物（v2 P1：默认 published——带实例/频率验证门槛，A3 决策）
+  | 'principle'
+  | 'craft-case'
+  | 'genre-insight'
+  | 'anti-pattern'
 
 export type KbNoteStatus = 'proposed' | 'draft' | 'published' | 'archived'
 

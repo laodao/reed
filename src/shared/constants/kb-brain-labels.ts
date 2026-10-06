@@ -50,6 +50,11 @@ export const KB_NOTE_TYPE_LABELS: Record<string, string> = {
   'character-roster': '人物册',
   'foreshadow-ledger': '伏笔台账',
   'knowledge-map': '知识体系图',
+  // 冶炼层产物（v2 P1）
+  principle: '写作原理',
+  'craft-case': '案例拆解',
+  'genre-insight': '品类认知',
+  'anti-pattern': '反面模式',
 }
 
 export const KB_NOTE_STATUS_LABELS: Record<string, string> = {

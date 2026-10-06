@@ -13,9 +13,11 @@ import { Column, Entity, Index, PrimaryColumn, Unique } from 'typeorm'
 /**
  * 消化遍类型：base=章级基础遍；lens=视角遍；book=书级汇总遍（chapterId=null，
  * passKey='book:<name>'，hash=章节集合指纹）；distill=重要性提炼；metabolize=代谢整固；
- * events=场面事件轨（v2 P0：新章节随 base 双轨产出成本记 base；存量章独立补采）
+ * events=场面事件轨（v2 P0：新章节随 base 双轨产出成本记 base；存量章独立补采）；
+ * smelt=冶炼层（v2 P1：pattern-induct/case-study/principle/genre-insight 的成本记账行，
+ * passKey 含阶段与运行时戳——冶炼幂等靠卡层同题去重/实例合并，台账行只管成本可见）
  */
-export type KbDigestPassType = 'base' | 'lens' | 'book' | 'distill' | 'metabolize' | 'events'
+export type KbDigestPassType = 'base' | 'lens' | 'book' | 'distill' | 'metabolize' | 'events' | 'smelt'
 
 export type KbDigestPassStatus = 'pending' | 'running' | 'done' | 'failed' | 'skipped'
 

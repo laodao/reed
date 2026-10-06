@@ -19,6 +19,8 @@ export interface KbEntityRecord {
   summaryStatus: 'pending' | 'done' | 'failed'
   status: 'active' | 'merged'
   targetEntityId: string | null
+  /** 作用域（v2 P3；旧行缺省 book） */
+  scope: 'book' | 'corpus'
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -46,6 +48,7 @@ export class KbEntityRepository extends BaseRepository<KbEntityEntity, KbEntityR
       summaryStatus: e.summaryStatus,
       status: e.status,
       targetEntityId: e.targetEntityId ?? null,
+      scope: e.scope === 'corpus' ? 'corpus' : 'book',
       createdAt: e.createdAt ?? null,
       updatedAt: e.updatedAt ?? null,
     }
@@ -84,10 +87,18 @@ export class KbEntityRepository extends BaseRepository<KbEntityEntity, KbEntityR
    */
   async upsertMention(kbId: string, mention: KbEntityMentionInput): Promise<KbEntityRecord> {
     const name = mention.name.trim()
-    const existing = await this.scoped.findOne({ knowledgeBaseId: kbId, name } as FindOptionsWhere<KbEntityEntity>)
+    let existing = await this.scoped.findOne({ knowledgeBaseId: kbId, name } as FindOptionsWhere<KbEntityEntity>)
+    // 合并过的实体：mention 必须落到规范实体（沿 target 链；防新挂点指向 dead 节点——
+    // v2 P3 corpus-merge 之后必然出现 merged 行，此处不解析则图谱持续引用已并实体）
+    let hops = 0
+    while (existing?.status === 'merged' && existing.targetEntityId && hops++ < 5) {
+      const next = await this.scoped.findOne({ id: existing.targetEntityId } as FindOptionsWhere<KbEntityEntity>)
+      if (!next) break
+      existing = next
+    }
     const now = new Date()
     if (existing) {
-      const merged = mergeAliases(existing.aliases, mention.aliases ?? [])
+      const merged = mergeAliases(existing.aliases, [name, ...(mention.aliases ?? [])])
       const typeChanged = existing.entityType !== mention.type && existing.entityType === 'concept'
       if (merged !== existing.aliases || typeChanged) {
         existing.aliases = merged
@@ -184,6 +195,37 @@ export class KbEntityRepository extends BaseRepository<KbEntityEntity, KbEntityR
       take: limit,
     })
     return this.toDtoList(rows)
+  }
+
+  /** 批量标注作用域（v2 P3 corpus-merge：挂点论断跨 ≥2 书的实体标 corpus） */
+  async markScope(ids: string[], scope: 'book' | 'corpus'): Promise<number> {
+    if (ids.length === 0) return 0
+    await this.scoped.update(
+      { id: In(ids) } as FindOptionsWhere<KbEntityEntity>,
+      { scope, updatedAt: new Date() } as never,
+    )
+    return ids.length
+  }
+
+  /** 候选实体清单（v2 P3：归并候选与变体矩阵取材——includeTypes 白名单圈定） */
+  async listActiveByTypes(
+    kbId: string,
+    includeTypes: string[],
+    limit: number,
+  ): Promise<Array<{ id: string; name: string; aliases: string[]; entityType: string; scope: 'book' | 'corpus' }>> {
+    if (includeTypes.length === 0) return []
+    const rows = await this.scoped.find({
+      where: { knowledgeBaseId: kbId, status: 'active', entityType: In(includeTypes) } as FindOptionsWhere<KbEntityEntity>,
+      order: { createdAt: 'ASC' } as never,
+      take: limit,
+    })
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      aliases: safeParseArray(r.aliases),
+      entityType: r.entityType,
+      scope: r.scope === 'corpus' ? 'corpus' : 'book',
+    }))
   }
 
   /** 体检：active 实体总数 */

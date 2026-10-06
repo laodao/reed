@@ -19,6 +19,7 @@ import type { SearchResult } from '@shared/types/knowledge-base.types'
 import { CRAG_SYSTEM } from './prompts'
 import { parseVectorNamespace } from './vector-namespace'
 import { detectLayerBoost, layerWeightOf } from './layer-intent'
+import { SMELT_CARD_NOTE_TYPES } from './smelt-common'
 import { tokenizeForIndex } from '@core/platform/services/kb-tokenize'
 import { personalizedPageRank } from '@core/platform/services/graph/ppr'
 
@@ -236,9 +237,15 @@ export class BrainQueryService {
       // M4 软衰减（呈现层，§6.3）：排序键 = fused × boost；boost = 1/(1+ageDays/180) × (1+ln(1+useCount))——
       // 细节随时间衰减、常用论断增强。注意：180 天参数在 RRF 分数尺度下可越位多名（非"微降"），需实测调优
       // 分层选层（§分层知识消费）：查询信号命中层加权（×1.4），非命中层轻降（×0.85）——乘法不硬过滤
+      // v2 P2：冶炼成品卡（套路/原理/案例/品类/设定模式）×1.3——成品知识优先于裸论断碎片
       const layerBoost = detectLayerBoost(req.query)
+      const cardTypeBoostOf = (item: (typeof parsed)[number]): number => {
+        const type = item.result.note?.type
+        return type && (SMELT_CARD_NOTE_TYPES as readonly string[]).includes(type) ? 1.3 : 1
+      }
       if (atomIdList.length >= 2) {
         const boostOf = (item: (typeof parsed)[number]): number => {
+          if (item.result.kind === 'note') return cardTypeBoostOf(item)
           if (item.result.kind !== 'atom' || !item.result.atom) return 1
           const created = atomCreatedAt.get(item.result.atom.id)
           const ageDays = created ? Math.max(0, (Date.now() - created.getTime()) / 86400000) : 0
@@ -247,6 +254,9 @@ export class BrainQueryService {
           return (1 / (1 + ageDays / 180)) * useBoost * layerW
         }
         deduped.sort((x, y) => y.sortKey * boostOf(y) - x.sortKey * boostOf(x))
+      } else {
+        // 结果里没有论断（纯卡/纯原文）时也应用成品卡加权
+        deduped.sort((x, y) => y.sortKey * cardTypeBoostOf(y) - x.sortKey * cardTypeBoostOf(x))
       }
       const finalRows = deduped.slice(0, topK).map((p) => p.result)
 

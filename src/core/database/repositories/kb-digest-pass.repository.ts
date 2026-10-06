@@ -281,6 +281,43 @@ export class KbDigestPassRepository extends BaseRepository<KbDigestPassEntity, K
     await this.scoped.delete({ documentId } as FindOptionsWhere<KbDigestPassEntity>)
   }
 
+  /**
+   * 冶炼层成本记账（v2 P1，A5）：一次性写入的 done 行——不经 ensurePass 的
+   * 重试/幂等语义（冶炼幂等在卡层：同题去重+实例合并），台账行只为成本熔断
+   * （costByKb 聚合）与仪表提供可见性。documentId 用 kbId 占位（KB 级任务
+   * 无属主文档；recover 兜底对非法文档 id 是 no-op）。
+   */
+  async recordCompletedPass(input: {
+    knowledgeBaseId: string
+    documentId: string
+    passType: KbDigestPassType
+    passKey: string
+    stats: Record<string, number>
+    cost: Record<string, number>
+  }): Promise<void> {
+    const now = new Date()
+    const e = new KbDigestPassEntity()
+    e.id = randomUUID()
+    e.userId = getCurrentUserId()
+    e.knowledgeBaseId = input.knowledgeBaseId
+    e.documentId = input.documentId
+    e.chapterId = null
+    e.passType = input.passType
+    e.passKey = input.passKey
+    e.chapterHash = null
+    e.status = 'done'
+    e.statsJson = JSON.stringify(input.stats)
+    e.costJson = JSON.stringify(input.cost)
+    e.attempts = 1
+    e.createdAt = now
+    e.updatedAt = now
+    try {
+      await this.scoped.save(e)
+    } catch {
+      // 记账失败不影响冶炼产物（成本可见性尽力而为）
+    }
+  }
+
   async deleteByKnowledgeBaseId(knowledgeBaseId: string): Promise<void> {
     await this.scoped.delete({ knowledgeBaseId } as FindOptionsWhere<KbDigestPassEntity>)
   }

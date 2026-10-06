@@ -264,6 +264,11 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'knowledgeBase.brain.cleanupStatus': { channel: 'kb:brain:cleanup-status', wrap: (kbId: unknown) => [{ kbId: kbId as string }] },
   'knowledgeBase.brain.layerRelabelRun': { channel: 'kb:brain:layer-relabel-run', wrap: (kbId: unknown) => [{ kbId: kbId as string }] },
   'knowledgeBase.brain.layerRelabelStatus': { channel: 'kb:brain:layer-relabel-status', wrap: (kbId: unknown) => [{ kbId: kbId as string }] },
+  'knowledgeBase.brain.autoLogList': {
+    channel: 'kb:brain:auto-log-list',
+    wrap: (kbId: unknown, limit?: unknown) => [{ kbId: kbId as string, limit: limit as number | undefined }],
+  },
+  'knowledgeBase.brain.autoLogUndo': { channel: 'kb:brain:auto-log-undo', wrap: (logId: unknown) => [{ logId: logId as string }] },
   'knowledgeBase.brain.bookPassesRun': { channel: 'kb:brain:book-passes-run', wrap: (kbId: unknown) => [{ kbId: kbId as string }] },
   'knowledgeBase.brain.bookPassesStatus': { channel: 'kb:brain:book-passes-status', wrap: (kbId: unknown) => [{ kbId: kbId as string }] },
   'knowledgeBase.brain.foreshadowRun': { channel: 'kb:brain:foreshadow-run', wrap: (kbId: unknown) => [{ kbId: kbId as string }] },

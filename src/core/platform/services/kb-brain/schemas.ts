@@ -375,6 +375,187 @@ export function validateSceneBackfillOutput(data: unknown): SceneBackfillOutput 
   return normalized as SceneBackfillOutput
 }
 
+/* ==================== 冶炼层输出（v2 P1：套路/原理/案例/品类认知） ==================== */
+
+/** 宽松字符串清洗：非字符串/空白 → null */
+function cleanStr(v: unknown): string | null {
+  return typeof v === 'string' && v.trim() ? v.trim() : null
+}
+
+/** 字符串数组清洗：非字符串剔除、去空、去重 */
+function cleanStrArr(v: unknown): string[] {
+  if (!Array.isArray(v)) return []
+  return [...new Set(v.filter((x): x is string => typeof x === 'string' && !!x.trim()).map((x) => x.trim()))]
+}
+
+export interface InducePatternDraft {
+  title: string
+  whenToUse: string
+  steps: string[]
+  variants: string[]
+  why: string
+  boundary: string
+  confidence: number
+}
+
+/** 套路归纳输出：skip → {skip:true}；否则缺关键字段抛错（回喂重试用） */
+export function parseInducePatternOutput(data: unknown): { skip: true; reason?: string } | InducePatternDraft {
+  const d = (typeof data === 'object' && data !== null ? data : {}) as Record<string, unknown>
+  if (d.skip) return { skip: true, reason: cleanStr(d.reason) ?? '' }
+  const title = cleanStr(d.title)
+  const why = cleanStr(d.why)
+  if (!title || title.length < 6) throw new Error('套路卡 title 缺失或过短')
+  if (!why) throw new Error('套路卡缺 why（为什么有效）')
+  const steps = cleanStrArr(d.steps)
+  if (steps.length < 2) throw new Error('套路卡骨架 steps 至少 2 阶段')
+  const conf = typeof d.confidence === 'number' ? Math.min(1, Math.max(0, d.confidence)) : 0.7
+  return {
+    title,
+    whenToUse: cleanStr(d.whenToUse) ?? '（模型未给使用场景）',
+    steps,
+    variants: cleanStrArr(d.variants),
+    why,
+    boundary: cleanStr(d.boundary) ?? '（模型未给边界）',
+    confidence: conf,
+  }
+}
+
+export interface CaseStudyDraft {
+  title: string
+  whatWorks: string
+  learn: string
+  quoteFocus: string
+  quality: number
+}
+
+export function parseCaseStudyOutput(data: unknown): { skip: true; reason?: string } | CaseStudyDraft {
+  const d = (typeof data === 'object' && data !== null ? data : {}) as Record<string, unknown>
+  if (d.skip) return { skip: true, reason: cleanStr(d.reason) ?? '' }
+  const title = cleanStr(d.title)
+  const whatWorks = cleanStr(d.whatWorks)
+  if (!title || title.length < 6) throw new Error('案例卡 title 缺失或过短')
+  if (!whatWorks) throw new Error('案例卡缺 whatWorks')
+  return {
+    title,
+    whatWorks,
+    learn: cleanStr(d.learn) ?? '（模型未给 learn）',
+    quoteFocus: cleanStr(d.quoteFocus) ?? '',
+    quality: typeof d.quality === 'number' ? Math.min(1, Math.max(0, d.quality)) : 0.6,
+  }
+}
+
+export interface PrincipleDraft {
+  title: string
+  principle: string
+  mechanism: string
+  whenFails: string
+  evidenceIdx: number[]
+  confidence: number
+}
+
+/** 原理输出：evidenceIdx 收编整数+越界过滤（bounds=套路数），<2 支撑的原理不成立 */
+export function parsePrincipleOutput(data: unknown, bounds: { count: number }): { skip: true; reason?: string } | PrincipleDraft {
+  const d = (typeof data === 'object' && data !== null ? data : {}) as Record<string, unknown>
+  if (d.skip) return { skip: true, reason: cleanStr(d.reason) ?? '' }
+  const title = cleanStr(d.title)
+  const principle = cleanStr(d.principle)
+  if (!title || title.length < 6) throw new Error('原理卡 title 缺失或过短')
+  if (!principle) throw new Error('原理卡缺 principle 陈述')
+  const idx = Array.isArray(d.evidenceIdx)
+    ? [...new Set(d.evidenceIdx.map(toIdx).filter((n) => Number.isInteger(n) && n >= 0 && n < bounds.count))]
+    : []
+  if (idx.length < 2) throw new Error('原理至少需链回 2 个套路（evidenceIdx 不足）')
+  return {
+    title,
+    principle,
+    mechanism: cleanStr(d.mechanism) ?? '（模型未给机制）',
+    whenFails: cleanStr(d.whenFails) ?? '（模型未给失效边界）',
+    evidenceIdx: idx,
+    confidence: typeof d.confidence === 'number' ? Math.min(1, Math.max(0, d.confidence)) : 0.7,
+  }
+}
+
+export interface GenreInsightDraft {
+  title: string
+  expectations: string[]
+  payoffs: string[]
+  pitfalls: string[]
+  confidence: number
+}
+
+export function parseGenreInsightOutput(data: unknown): GenreInsightDraft {
+  const d = (typeof data === 'object' && data !== null ? data : {}) as Record<string, unknown>
+  const title = cleanStr(d.title) ?? '品类认知总览'
+  const expectations = cleanStrArr(d.expectations)
+  const payoffs = cleanStrArr(d.payoffs)
+  const pitfalls = cleanStrArr(d.pitfalls)
+  if (expectations.length === 0 && payoffs.length === 0 && pitfalls.length === 0) {
+    throw new Error('品类认知三段全空')
+  }
+  return {
+    title,
+    expectations,
+    payoffs,
+    pitfalls,
+    confidence: typeof d.confidence === 'number' ? Math.min(1, Math.max(0, d.confidence)) : 0.6,
+  }
+}
+
+/** 实体归并组解析：groups 收编为整数二维数组，越界/单成员组剔除（v2 P3） */
+export function parseEntityMergeGroups(data: unknown, bounds: { count: number }): number[][] {
+  const d = (typeof data === 'object' && data !== null ? data : {}) as Record<string, unknown>
+  const groups = Array.isArray(d.groups) ? d.groups : []
+  const out: number[][] = []
+  const used = new Set<number>()
+  for (const g of groups) {
+    if (!Array.isArray(g)) continue
+    const idx = [...new Set(g.map(toIdx).filter((n) => Number.isInteger(n) && n >= 0 && n < bounds.count && !used.has(n)))]
+    if (idx.length < 2) continue // 单成员组无合并意义
+    idx.forEach((i) => used.add(i))
+    out.push(idx)
+  }
+  return out
+}
+
+export interface SettingMatrixDraft {
+  title: string
+  skeleton: string[]
+  variants: Array<{ doc: string; variant: string }>
+  designHint: string
+  confidence: number
+}
+
+export function parseSettingMatrixOutput(data: unknown): SettingMatrixDraft {
+  const d = (typeof data === 'object' && data !== null ? data : {}) as Record<string, unknown>
+  const title = cleanStr(d.title)
+  const skeleton = cleanStrArr(d.skeleton)
+  if (!title || title.length < 6) throw new Error('变体矩阵 title 缺失或过短')
+  if (skeleton.length < 2) throw new Error('通用骨架 skeleton 至少 2 条')
+  const variants = (Array.isArray(d.variants) ? d.variants : []).flatMap((v) => {
+    if (typeof v !== 'object' || v === null) return []
+    const e = v as Record<string, unknown>
+    const doc = cleanStr(e.doc)
+    const variant = cleanStr(e.variant)
+    return doc && variant ? [{ doc, variant }] : []
+  })
+  if (variants.length < 2) throw new Error('各书变体至少 2 条（跨书矩阵的前提）')
+  return {
+    title,
+    skeleton,
+    variants,
+    designHint: cleanStr(d.designHint) ?? '',
+    confidence: typeof d.confidence === 'number' ? Math.min(1, Math.max(0, d.confidence)) : 0.7,
+  }
+}
+
+/** 质检评分解析（v2 P4）：score 收编 0-2，非法抛错 */
+export function parseQaJudgeOutput(data: unknown): { score: 0 | 1 | 2; reason: string } {
+  const d = (typeof data === 'object' && data !== null ? data : {}) as Record<string, unknown>
+  const rawScore = toIdx(d.score)
+  if (rawScore !== 0 && rawScore !== 1 && rawScore !== 2) throw new Error('质检 score 必须是 0/1/2')
+  return { score: rawScore as 0 | 1 | 2, reason: cleanStr(d.reason) ?? '' }
+}
+
 /* ==================== 论断归纳（consolidate） ==================== */
 
 const CONSOLIDATE_SCHEMA = {

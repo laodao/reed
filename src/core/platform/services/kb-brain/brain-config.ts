@@ -44,6 +44,10 @@ export interface KbBrainAutomationConfig {
   digest: boolean
   /** 存量场面补采（v2 P0 故事轨回填：已消化章的 events-only 提取，分批推进） */
   sceneBackfill: boolean
+  /** 冶炼层（v2 P1：套路归纳/案例拆解/原理/品类认知，事件增长门控） */
+  smelt: boolean
+  /** 品类库归并（v2 P3：跨书实体归并 + 设定变体矩阵） */
+  corpusMerge: boolean
   layerRelabel: boolean
   bookPasses: boolean
   goalDistill: boolean
@@ -114,6 +118,11 @@ export interface KbBrainState {
     lastExhaustedReviveAt?: string
     /** 存量场面补采（分批推进的冷却；一轮 200 章，6h 一轮） */
     lastSceneBackfillAt?: string
+    /** 冶炼层（v2 P1）：上次运行时间 + 当时事件量（原料明显增长才重跑，防近似卡反复产） */
+    lastSmeltAt?: string
+    smeltEvents?: number
+    /** 品类归并（v2 P3，7d 冷却——归并低频重活） */
+    lastCorpusMergeAt?: string
   }
 }
 
@@ -123,6 +132,8 @@ export function defaultAutomationConfig(): KbBrainAutomationConfig {
     enabled: true,
     digest: true,
     sceneBackfill: true,
+    smelt: true,
+    corpusMerge: true,
     layerRelabel: true,
     bookPasses: true,
     goalDistill: true,
@@ -230,6 +241,8 @@ const BRAIN_CONFIG_SCHEMA = {
         enabled: { type: 'boolean' },
         digest: { type: 'boolean' },
         sceneBackfill: { type: 'boolean' },
+        smelt: { type: 'boolean' },
+        corpusMerge: { type: 'boolean' },
         layerRelabel: { type: 'boolean' },
         bookPasses: { type: 'boolean' },
         goalDistill: { type: 'boolean' },

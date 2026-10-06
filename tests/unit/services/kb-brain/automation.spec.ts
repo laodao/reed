@@ -45,18 +45,22 @@ function makeDeps(overrides: Partial<KbBrainAutomationDeps> = {}) {
     openQuestions: 0,
   }
   const savedStates: Array<Record<string, unknown>> = []
+  /** 冶炼增长门的事件量（测试可改） */
+  let eventsCount = 100
   const deps: KbBrainAutomationDeps & {
     calls: string[]
     kbs: KbRow[]
     docs: DocRow[]
     stats: typeof stats
     savedStates: Array<Record<string, unknown>>
+    setEventsCount(n: number): void
   } = {
     calls,
     kbs,
     docs,
     stats,
     savedStates,
+    setEventsCount: (n: number) => (eventsCount = n),
     now: () => Date.now(),
     repos: () => ({
       kbs: {
@@ -72,6 +76,7 @@ function makeDeps(overrides: Partial<KbBrainAutomationDeps> = {}) {
       docs: { findByKnowledgeBaseId: async () => docs },
       atoms: { statsByKb: async () => stats },
       passes: { costByKb: async () => ({ calls: 0 }) },
+      events: { countByKb: async () => eventsCount },
     }),
     digest: {
       enqueue: async (docId: string) => {
@@ -86,6 +91,25 @@ function makeDeps(overrides: Partial<KbBrainAutomationDeps> = {}) {
     sceneBackfill: async (kbId: string, batch?: number) => {
       calls.push(`scene-backfill:${kbId}:${batch ?? 'default'}`)
       return { processed: 0, scenes: 0 }
+    },
+    smelt: {
+      isRunning: () => false,
+      runAll: async (kbId: string, modelRef?: string) => {
+        calls.push(`smelt:${kbId}:${modelRef ?? 'default'}`)
+        return { stages: [], llmCalls: 0, noteIds: ['n1', 'n2'], gate: 'publish' }
+      },
+    },
+    corpus: {
+      isRunning: () => false,
+      run: async (kbId: string, modelRef?: string) => {
+        calls.push(`corpus:${kbId}:${modelRef ?? 'default'}`)
+        return { merged: 2, corpusMarked: 3, matrixNoteIds: ['n3'] }
+      },
+    },
+    autoLog: {
+      record: async (kbId: string, action: string, detail: Record<string, unknown>) => {
+        calls.push(`autolog:${action}:${(detail.noteIds as string[]).length}`)
+      },
     },
     relabel: {
       isRunning: () => false,
@@ -149,6 +173,10 @@ describe('KbBrainAutomationService', () => {
     expect(result.skipped).toBeUndefined()
     expect(deps.calls).toEqual([
       'scene-backfill:kb1:default',
+      'smelt:kb1:prov:adj-model',
+      'autolog:smelt:2',
+      'corpus:kb1:prov:adj-model',
+      'autolog:corpus:1',
       'relabel:model',
       'relabel:kb1',
       'bookpass:model',
@@ -159,8 +187,8 @@ describe('KbBrainAutomationService', () => {
       'cleanup',
       'foreshadow',
     ])
-    expect(result.ran).toEqual(['scene-backfill', 'layer-relabel', 'book-passes', 'goal:世界观设定集', 'consolidate', 'cleanup', 'foreshadow'])
-    // 记账：目标运行时间 + 论断基线、补标基线、场面补采冷却
+    expect(result.ran).toEqual(['scene-backfill', 'smelt', 'corpus-merge', 'layer-relabel', 'book-passes', 'goal:世界观设定集', 'consolidate', 'cleanup', 'foreshadow'])
+    // 记账：目标运行时间 + 论断基线、补标基线、场面补采冷却、冶炼基线
     const auto = deps.savedStates.at(-1)?.automation as Record<string, unknown>
     const goalRuns = auto.goalRuns as Record<string, { at: string; atoms: number }>
     expect(goalRuns.g1.atoms).toBe(100)
@@ -168,6 +196,47 @@ describe('KbBrainAutomationService', () => {
     expect(auto.relabelAtoms).toBe(100)
     expect(auto.lastLayerRelabelAt).toBeTruthy()
     expect(auto.lastSceneBackfillAt).toBeTruthy()
+    expect(auto.lastSmeltAt).toBeTruthy()
+    expect(auto.smeltEvents).toBe(100)
+  })
+
+  it('冶炼增长门：冷却已过但事件量没长 → 不重跑；事件明显增长 → 重跑', async () => {
+    const { svc, deps } = makeDeps()
+    await svc.runCycle('kb1')
+    deps.calls.length = 0
+    // 冷却改 25h 前（已过）但事件量不变 → 不跑
+    const kb = deps.kbs[0]!
+    const st = JSON.parse(kb.brainState!) as { automation: Record<string, unknown> }
+    ;(st.automation.lastSmeltAt as string) = new Date(Date.now() - 25 * 3600_000).toISOString()
+    kb.brainState = JSON.stringify(st)
+    const r2 = await svc.runCycle('kb1')
+    expect(r2.ran).not.toContain('smelt')
+    expect(deps.calls).not.toContain('smelt:kb1:prov:adj-model')
+    // 事件 +30% → 重跑
+    deps.setEventsCount(130)
+    const r3 = await svc.runCycle('kb1')
+    expect(r3.ran).toContain('smelt')
+  })
+
+  it('冶炼开关关（automation.smelt=false）→ 步骤跳过', async () => {
+    const { svc, deps } = makeDeps()
+    deps.kbs[0]!.brainConfig = JSON.stringify({
+      enabled: true,
+      profile: { contentType: 'novel' },
+      models: { atomize: '', adjudicate: '' },
+      goals: [],
+      automation: { enabled: true, smelt: false },
+    })
+    const result = await svc.runCycle('kb1')
+    expect(result.ran).not.toContain('smelt')
+    expect(deps.calls.filter((c) => c.startsWith('smelt:'))).toHaveLength(0)
+  })
+
+  it('事件不足（<16）→ 冶炼不触发', async () => {
+    const { svc, deps } = makeDeps()
+    deps.setEventsCount(10)
+    const result = await svc.runCycle('kb1')
+    expect(result.ran).not.toContain('smelt')
   })
 
   it('场面补采开关关（automation.sceneBackfill=false）→ 步骤跳过', async () => {

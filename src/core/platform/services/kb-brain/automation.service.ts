@@ -38,11 +38,17 @@ import { getKbGoalDistillService, KbGoalDistillService } from './goal-distill.se
 import { getKbConsolidateService } from './consolidate.service'
 import { getKbCleanupService } from './cleanup.service'
 import { getKbForeshadowScanService } from './foreshadow-scan.service'
+import { getKbSmeltPipelineService } from './smelt-pipeline.service'
+import { MIN_EVENTS_FOR_SMELT } from './pattern-induct.service'
+import { KbCorpusMergeService } from './corpus-merge.service'
+import { KbCorpusPassesService } from './corpus-passes.service'
+import { getKbQaSamplerService } from './qa-sampler.service'
+import { getKbAutomationLogService } from './automation-log.service'
 import { parseModelRef } from './llm'
 
 const logger = createLogger('KbBrainAutomation')
 
-/** 各动作冷却（ms）：补标/书级/目标/归纳 24h，清理/伏笔 7d，耗尽章复活 24h，场面补采 6h（一轮 200 章） */
+/** 各动作冷却（ms）：补标/书级/目标/归纳/冶炼 24h，清理/伏笔 7d，耗尽章复活 24h，场面补采 6h（一轮 200 章） */
 const COOLDOWN = {
   relabel: 24 * 3600_000,
   bookPasses: 24 * 3600_000,
@@ -51,7 +57,9 @@ const COOLDOWN = {
   cleanup: 7 * 24 * 3600_000,
   foreshadow: 7 * 24 * 3600_000,
   reviveExhausted: 24 * 3600_000,
-  sceneBackfill: 6 * 3600_000
+  sceneBackfill: 6 * 3600_000,
+  smelt: 24 * 3600_000,
+  corpusMerge: 7 * 24 * 3600_000
 } as const
 
 /** 目标重跑的论断增长门槛：工作集论断较上次自动运行增长 ≥10% 且至少 +1 条 */
@@ -69,6 +77,15 @@ export interface KbBrainAutomationDeps {
   }
   /** 存量场面补采（v2 P0 故事轨回填；缺省走 digest-orchestrator 的 activeService） */
   sceneBackfill?: (kbId: string, batch?: number) => Promise<{ processed: number; scenes: number }>
+  /** 冶炼管线（v2 P1；缺省走 smelt-pipeline——每库按 brainConfig.models 现构造服务，模型按库隔离） */
+  smelt?: { isRunning(kbId: string): boolean; runAll(kbId: string, modelRef?: string): Promise<unknown> }
+  /** 品类归并（v2 P3：跨书实体归并 + 变体矩阵；缺省合并 corpus-merge 与 corpus-passes） */
+  corpus?: {
+    isRunning(kbId: string): boolean
+    run(kbId: string, modelRef?: string): Promise<{ merged: number; corpusMarked: number; matrixNoteIds: string[] }>
+  }
+  /** 动作日志（v2 P4 undo 依据；缺省 automation-log 单例） */
+  autoLog?: { record(kbId: string, action: string, detail: Record<string, unknown>): Promise<unknown> }
   relabel?: Pick<KbLayerRelabelService, 'isRunning' | 'run' | 'setModelOverride'>
   bookPasses?: Pick<KbBookPassesService, 'isRunningKb' | 'runForKnowledgeBase' | 'setModelOverride'>
   goals?: Pick<KbGoalDistillService, 'isRunning' | 'runGoal' | 'setModelOverride'>
@@ -82,6 +99,8 @@ export interface AutomationRepos {
   docs: Pick<KbDocumentRepository, 'findByKnowledgeBaseId'>
   atoms: Pick<KbAtomRepository, 'statsByKb'>
   passes: Pick<KbDigestPassRepository, 'costByKb'>
+  /** 场面事件量（v2 P1 冶炼增长门的数据源；旧库未装配时为 null——冶炼步骤跳过） */
+  events?: { countByKb(kbId: string): Promise<number> } | null
 }
 
 export interface AutomationCycleResult {
@@ -119,7 +138,8 @@ export class KbBrainAutomationService {
       kbs: db.knowledgeBases,
       docs: db.kbDocuments,
       atoms: db.kbAtoms,
-      passes: db.kbDigestPasses
+      passes: db.kbDigestPasses,
+      events: db.kbEvents ?? null
     }
   }
 
@@ -133,6 +153,32 @@ export class KbBrainAutomationService {
   }
   private get sceneBackfillFn(): NonNullable<KbBrainAutomationDeps['sceneBackfill']> {
     return this.depsDeps.sceneBackfill ?? ((kbId, batch) => backfillScenesForKb(kbId, batch))
+  }
+  private get smelt(): NonNullable<KbBrainAutomationDeps['smelt']> {
+    return this.depsDeps.smelt ?? getKbSmeltPipelineService()
+  }
+  private get corpus(): NonNullable<KbBrainAutomationDeps['corpus']> {
+    return (
+      this.depsDeps.corpus ?? {
+        isRunning: (kbId: string) => new KbCorpusMergeService().isRunning(kbId),
+        run: async (kbId: string, modelRef?: string) => {
+          const override = () => (modelRef ? parseModelRef(modelRef) : {})
+          const merged = await new KbCorpusMergeService({ modelOverride: override }).run(kbId, null)
+          // 矩阵吃 merge 的 scope 标注；质量门与冶炼同源（低分期矩阵也走待审）
+          const gate = await getKbQaSamplerService().gateOf(kbId).catch(() => 'publish' as const)
+          const matrix = await new KbCorpusPassesService({ modelOverride: override }).runSettingMatrix(kbId, { review: gate === 'review' })
+          return { merged: merged.merged, corpusMarked: merged.corpusMarked, matrixNoteIds: matrix.createdNoteIds }
+        },
+      }
+    )
+  }
+  private get autoLog(): NonNullable<KbBrainAutomationDeps['autoLog']> {
+    return (
+      this.depsDeps.autoLog ?? {
+        record: (kbId: string, action: string, detail: Record<string, unknown>) =>
+          getKbAutomationLogService().record(kbId, action, detail),
+      }
+    )
   }
   private get relabel(): NonNullable<KbBrainAutomationDeps['relabel']> {
     return this.depsDeps.relabel ?? getKbLayerRelabelService()
@@ -282,6 +328,43 @@ export class KbBrainAutomationService {
           logger.info(
             `[kb-brain-auto] kb=${kbId} 场面补采 ${out.processed} 章 / ${out.scenes} 场面`
           )
+      })
+    }
+
+    // 1.6 冶炼层（v2 P1）：事件原料够量（首跑 ≥16）且较上次明显增长（≥10%+1）才跑——
+    //     阶段序（套路→案例→原理→品类认知）与 fail-soft 在 smelt-pipeline 内部；成本入台账对熔断可见
+    if (auto.smelt && repos.events && !this.smelt.isRunning(kbId)) {
+      const eventsNow = await repos.events.countByKb(kbId)
+      const baseline = state.automation?.smeltEvents
+      const enough = eventsNow >= MIN_EVENTS_FOR_SMELT
+      const grew = baseline === undefined || eventsNow >= Math.ceil(baseline * GOAL_RERUN_GROWTH) + 1
+      if (enough && grew && this.cool(state, 'lastSmeltAt', COOLDOWN.smelt)) {
+        await step('smelt', async () => {
+          const out = (await this.smelt.runAll(kbId, cfg.models.adjudicate || undefined)) as {
+            noteIds?: string[]
+            gate?: string
+          }
+          // v2 P4 动作日志：产物 noteIds 落台账（面板时间线 + 撤销依据）；无产物不记
+          if (out?.noteIds?.length) {
+            await this.autoLog.record(kbId, 'smelt', { noteIds: out.noteIds, gate: out.gate ?? 'publish' })
+          }
+          this.mark(state, 'lastSmeltAt')
+          state.automation = { ...state.automation, smeltEvents: eventsNow }
+          await this.saveState(kbId, repos.kbs, state)
+        })
+      }
+    }
+
+    // 1.7 品类归并（v2 P3）：跨书实体归并 + 设定变体矩阵，7d 冷却（低频重活）；
+    //     依赖冶炼先跑出套路卡/事件分布——紧跟 smelt 之后
+    if (auto.corpusMerge && !this.corpus.isRunning(kbId) && this.cool(state, 'lastCorpusMergeAt', COOLDOWN.corpusMerge)) {
+      await step('corpus-merge', async () => {
+        const out = await this.corpus.run(kbId, cfg.models.adjudicate || undefined)
+        if (out.matrixNoteIds.length > 0) {
+          await this.autoLog.record(kbId, 'corpus', { noteIds: out.matrixNoteIds, merged: out.merged, corpusMarked: out.corpusMarked })
+        }
+        this.mark(state, 'lastCorpusMergeAt')
+        await this.saveState(kbId, repos.kbs, state)
       })
     }
 

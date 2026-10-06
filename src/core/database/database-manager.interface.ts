@@ -41,6 +41,8 @@ import type { KbNoteRepository } from './repositories/kb-note.repository'
 import type { KbDigestPassRepository } from './repositories/kb-digest-pass.repository'
 import type { KbNoteReviewRepository } from './repositories/kb-note-review.repository'
 import type { KbEventRepository } from './repositories/kb-event.repository'
+import type { KbQaLogRepository } from './repositories/kb-qa-log.repository'
+import type { KbAutomationLogRepository } from './repositories/kb-automation-log.repository'
 import type { AppRepository } from './repositories/app.repository'
 import type { AppSessionRepository } from './repositories/app-session.repository'
 import type { AppSessionMessageRepository } from './repositories/app-session-message.repository'
@@ -183,6 +185,9 @@ export interface ICoreDatabaseManager {
   kbNoteReviews?: KbNoteReviewRepository | null
   /** 知识大脑 v2：场面事件原料（故事轨；旧库未装配时为 null） */
   kbEvents?: KbEventRepository | null
+  /** 知识大脑 v2 P4：质检日志与自动化动作日志（撤销依据） */
+  kbQaLogs?: KbQaLogRepository | null
+  kbAutomationLogs?: KbAutomationLogRepository | null
   appDefinitions: AppRepository | null
   appSessions: AppSessionRepository | null
   /** 应用会话消息（独立表，隔离 AI 对话表） */

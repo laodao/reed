@@ -2,7 +2,7 @@
 
 - 日期：2026-10-05
 - 版本：**v0.2**（同日深审修订：对 v0.1 做了逐节代码级核查，落实 19 项问题——修订对照见 §11）
-- 状态：方案已对齐（三轮诉求对齐 + SOTA 调研 + 深审修订），待开工
+- 状态：**P0-P4 已全部落地（2026-10-06）**——原料层/冶炼层/服务层/品类归并/质量闭环，256 项单测全过；深审发现的 3 个跨阶段 bug（合并实体 mention 解析、质量门恢复路径、events 仓储缺失守卫）已随落地修复。未做项（按 §8 声明的可选项）：GEPA prompt 自进化、MCP 对外暴露、Wilson 分桶审批（简化为滚动均门控）。
 - 前置文档：[2026-09-16-knowledge-brain-design.md](./2026-09-16-knowledge-brain-design.md)、[2026-09-16-knowledge-brain-detailed-design.md](./2026-09-16-knowledge-brain-detailed-design.md)、[2026-09-18-kb-brain-review-findings.md](./2026-09-18-kb-brain-review-findings.md)
 
 ---

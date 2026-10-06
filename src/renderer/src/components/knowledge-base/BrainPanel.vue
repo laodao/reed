@@ -419,6 +419,22 @@
           </div>
         </section>
 
+        <!-- 自动化日志（v2 P4：后台动作时间线 + 撤销） -->
+        <section v-if="autoLogs.length > 0" class="side-card">
+          <header class="side-head">
+            <span class="side-title">自动化日志</span>
+          </header>
+          <div v-for="log in autoLogs" :key="log.id" class="doc-run">
+            <span class="doc-run-name" :title="log.action">
+              {{ autoLogLabel(log) }}
+            </span>
+            <el-button v-if="log.undoable" size="small" :loading="autoUndoBusy === log.id" @click="undoAutoLog(log.id)">
+              撤销
+            </el-button>
+            <span v-else-if="log.undone" class="side-empty">已撤销</span>
+          </div>
+        </section>
+
         <!-- 待提取文档（开脑前上传的存量，有才显示） -->
         <section v-if="pendingDigestDocs.length > 0" class="side-card">
           <header class="side-head">
@@ -1119,6 +1135,56 @@ async function pollRelabel(): Promise<void> {
   }
 }
 
+// ===== 自动化日志（v2 P4：后台动作时间线 + 撤销） =====
+interface AutoLogRow {
+  id: string
+  action: string
+  undone: boolean
+  noteCount: number
+  undoable: boolean
+  createdAt: string | null
+}
+const autoLogs = ref<AutoLogRow[]>([])
+const autoUndoBusy = ref<string | null>(null)
+
+function autoLogLabel(log: AutoLogRow): string {
+  const t = log.createdAt ? new Date(log.createdAt) : null
+  const time = t
+    ? `${t.getMonth() + 1}/${t.getDate()} ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`
+    : ''
+  const name = log.action === 'smelt' ? '冶炼' : log.action === 'corpus' ? '品类归并' : log.action
+  return `${time} ${name}（${log.noteCount} 卡）`
+}
+
+async function fetchAutoLogs(): Promise<void> {
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  try {
+    const res = await client.autoLogList(props.kbId, 8)
+    if (res && Array.isArray(res)) autoLogs.value = res
+  } catch {
+    /* 静默：日志失败不拖垮面板 */
+  }
+}
+
+async function undoAutoLog(logId: string): Promise<void> {
+  const client = (window as any).electronAPI.knowledgeBase.brain
+  autoUndoBusy.value = logId
+  try {
+    const res = await client.autoLogUndo(logId)
+    if (res?.ok) {
+      ElMessage.success(`已撤销：归档 ${res.archived} 张卡`)
+      await fetchAutoLogs()
+      await refresh()
+    } else {
+      ElMessage.error(res?.error ?? '撤销失败')
+    }
+  } catch {
+    ElMessage.error('撤销失败')
+  } finally {
+    autoUndoBusy.value = null
+  }
+}
+
 async function startRelabel(): Promise<void> {
   try {
     await ElMessageBox.confirm(
@@ -1813,6 +1879,8 @@ async function refresh(): Promise<void> {
       }
     }
     if (statsRes.success) stats.value = statsRes.data
+    // 自动化日志（v2 P4：时间线 + 撤销；失败静默）
+    void fetchAutoLogs()
     // 待提取文档：已处理完成但大脑未消化的（开脑前上传的存量）
     if (docRes.success && docRes.data) {
       allDocs.value = (docRes.data as Array<{ id: string; name: string }>).map((d) => ({ id: d.id, name: d.name }))

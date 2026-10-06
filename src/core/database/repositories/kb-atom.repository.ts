@@ -279,6 +279,19 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
     )
   }
 
+  /** 实体合并的挂点改指（v2 P3 corpus-merge）：subject/object 指向 from 的论断全部改指 to */
+  async redirectEntityRefs(fromEntityId: string, toEntityId: string): Promise<void> {
+    const now = new Date()
+    await this.scoped.update(
+      { subjectEntityId: fromEntityId } as FindOptionsWhere<KbAtomEntity>,
+      { subjectEntityId: toEntityId, updatedAt: now } as never,
+    )
+    await this.scoped.update(
+      { objectEntityId: fromEntityId } as FindOptionsWhere<KbAtomEntity>,
+      { objectEntityId: toEntityId, updatedAt: now } as never,
+    )
+  }
+
   /** 视角遍生命周期：同章「非当前遍次前缀」的旧观感置 stale（hash 或 version 变更都覆盖） */
   async staleLensAtoms(documentId: string, lensNoteId: string, chapterId: string, currentHash: string | null, currentPassPrefix: string): Promise<number> {
     const rows = await this.scoped.find({

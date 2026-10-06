@@ -713,7 +713,8 @@ export class KbBrainDigestService {
 
       // 7. 场面轨（v2 P0）：同一调用的 scenes 产出落库；台账记 events 遍但成本记 base（不双计）。
       //    fail-soft：场面失败只记 events 遍 failed，不拖垮本章 base 遍。
-      if (sceneTrackEnabled(cfg)) {
+      //    events 仓储未装配（极端旧库）时整段跳过——不记 done 行，装配后由补采回填。
+      if (sceneTrackEnabled(cfg) && repos.events) {
         try {
           const evDecision = await passes.ensurePass({
             knowledgeBaseId: kbId,

@@ -208,6 +208,182 @@ export function buildSceneBackfillUser(input: {
   return `章节标题：${input.chapterTitle}\n${known}\n文本：\n${input.windowText}`
 }
 
+/* ==================== 冶炼层（v2 P1：套路归纳/原理/案例拆解/品类认知） ==================== */
+
+/**
+ * 套路归纳：同一 sceneType 的同型场面簇 → 可复用套路卡。
+ * 输入是场面实例清单（带跨书分布），输出带骨架/变体/边界/为什么有效的完整卡体。
+ * 模型可主动 skip（簇内异质无法参数化）。
+ */
+export const INDUCE_PATTERN_SYSTEM = `你是写作套路研究员。给定一组同类型的小说场面实例（来自多本书、按内容相似聚类），归纳出一个可复用的「场面套路」。
+
+要求：
+- 骨架（steps）：把这类场面拆成 3-6 个可复制的阶段，每阶段一句话（做什么、起什么作用）；
+- variants：常见变体至少 2 个（每种一句话点出与主形态的差异）；
+- why：为什么有效（读者心理/叙事机制，1-2 句，要讲机制不要复述情节）；
+- boundary：什么情况下不该用（1-2 句）；
+- whenToUse：写作者在什么场景需要这个套路（第三人称 ≤120 字，含触发场景与边界——供 agent 路由）；
+- confidence：0-1，对「这些实例确实共享同一套路」的把握。
+- 簇内实例其实不同质、无法归纳成一个套路时：输出 {"skip":true,"reason":"…"}，不要硬编。
+
+输出 JSON：
+{"title":"「师长核查弟子隐瞒」场面套路","whenToUse":"…","steps":["…","…"],"variants":["…","…"],"why":"…","boundary":"…","confidence":0.85}
+
+只输出 JSON，不要任何解释。`
+
+export function buildInducePatternUser(input: {
+  sceneType: string
+  scenes: Array<{ summary: string; participants?: string[]; cause?: string | null; outcome?: string | null; doc: string }>
+}): string {
+  const lines = input.scenes.map(
+    (s, i) =>
+      `[${i}] ${s.summary}${s.participants?.length ? `（${s.participants.join('、')}）` : ''}${s.cause ? `｜前因：${s.cause}` : ''}${s.outcome ? `｜结果：${s.outcome}` : ''}｜出自:${s.doc}`,
+  )
+  return `场面类型：${input.sceneType}\n同类场面实例（${input.scenes.length} 个，跨书聚类）：\n${lines.join('\n')}\n\n请归纳套路。`
+}
+
+/** 案例拆解：单个经典场面 → 拆解卡（好在哪/学什么/原文） */
+export const CASE_STUDY_SYSTEM = `你是写作教练。给定一个小说场面（概括+原文片段），做「案例拆解」：这个场面为什么成立、用了什么技巧、写作者能学走什么。
+
+要求：拆的是可迁移的写法（结构/节奏/信息控制/情感铺垫），不是读后感；引用原文时直接指出是哪个技巧的例证。
+- 如果这个场面平庸、无可拆解之处：输出 {"skip":true,"reason":"…"}。
+
+输出 JSON：
+{"title":"案例：试探场面的信息差控制——李长老把脉核查","whatWorks":"…（2-3 点，每点讲机制）","learn":"…（写作者具体能复用的 1-2 条）","quoteFocus":"…（最值得细读的一句原文）","quality":0.8}
+
+只输出 JSON，不要任何解释。`
+
+export function buildCaseStudyUser(input: {
+  sceneType: string
+  summary: string
+  cause?: string | null
+  outcome?: string | null
+  quote: string
+  doc: string
+}): string {
+  return `场面类型：${input.sceneType}\n场面概括：${input.summary}\n前因：${input.cause ?? '—'}\n结果：${input.outcome ?? '—'}\n原文片段：${input.quote}\n出自：${input.doc}\n\n请拆解。`
+}
+
+/** 原理归纳：一组同域套路卡 → 跨套路的写作原理（为什么有效/何时失效） */
+export const INDUCE_PRINCIPLE_SYSTEM = `你是叙事理论研究员。给定一组已归纳的写作套路卡（同属场面/情节域），从中提炼更高一层的「写作原理」：这些套路共同指向什么叙事机制？
+
+要求：
+- principle：一句话陈述原理（可跨品类迁移的因果规律，不是某套路的描述）；
+- mechanism：原理背后的机制（读者心理/信息结构，2-3 句）；
+- whenFails：原理何时失效（边界条件，1-2 句）；
+- 每条原理必须能链回至少 2 个给定套路（evidenceIdx 列出支撑套路的编号）；
+- 套路间没有共同机制时：输出 {"skip":true,"reason":"…"}，不要硬编。
+
+输出 JSON：
+{"title":"期待感=间隔×代价——升级体系的节流阀","principle":"…","mechanism":"…","whenFails":"…","evidenceIdx":[0,2],"confidence":0.8}
+
+只输出 JSON，不要任何解释。`
+
+export function buildInducePrincipleUser(input: {
+  patterns: Array<{ title: string; description: string; sceneType?: string }>
+}): string {
+  const lines = input.patterns.map(
+    (p, i) => `[${i}] ${p.title}${p.sceneType ? `（${p.sceneType}）` : ''}\n    何时用：${p.description}`,
+  )
+  return `已有套路卡（${input.patterns.length} 张）：\n${lines.join('\n')}\n\n请提炼跨套路的写作原理。`
+}
+
+/** 品类认知：场面分布 + 套路清单 → 品类级读者期待/爽点/雷点（不依赖跨书实体对齐） */
+export const GENRE_INSIGHT_SYSTEM = `你是网文品类研究者。给定一个书籍库的场面类型分布与已归纳套路清单，写出「品类认知」：写这个品类的书之前必须知道的读者心理。
+
+要求输出三段（各 2-4 条，每条一句话+机制）：
+- expectations：读者默认期待什么（不满足会弃书的契约）；
+- payoffs：爽点机制怎么起效（心理来源）；
+- pitfalls：常见雷点（写崩方式）。
+基于给定数据归纳，不要编造数据里没有的品类结论；数据不足时明确说依据有限。
+
+输出 JSON：
+{"title":"品类认知：<据数据起名>","expectations":["…"],"payoffs":["…"],"pitfalls":["…"],"confidence":0.7}
+
+只输出 JSON，不要任何解释。`
+
+export function buildGenreInsightUser(input: {
+  sceneDistribution: Array<{ sceneType: string; count: number; docCount: number }>
+  topPatterns: Array<{ title: string; instances: number; docCount: number }>
+  totalDocs: number
+}): string {
+  const dist = [...input.sceneDistribution]
+    .sort((a, b) => b.count - a.count)
+    .map((d) => `${d.sceneType}×${d.count}（覆盖 ${d.docCount} 本书）`)
+    .join('、')
+  const pats = input.topPatterns.map((p) => `- ${p.title}（${p.instances} 实例 / ${p.docCount} 本书）`).join('\n')
+  return `库内共 ${input.totalDocs} 本书。\n场面类型分布：${dist}\n\n已归纳套路（按实例数）：\n${pats}\n\n请归纳品类认知。`
+}
+
+/* ==================== 品类库归并与变体矩阵（v2 P3） ==================== */
+
+/**
+ * 跨书实体归并裁决：同一类型桶内按名称/别名相似聚出的候选组，判「是否同一个
+ * 品类级概念」。保守协议：拿不准就不并（过度合并已被证明损伤质量——宁重复勿错并）。
+ */
+export const ENTITY_MERGE_SYSTEM = `你是知识库实体消歧员。给定一组同类型的候选实体（名称/别名/类型/覆盖书数），判断哪些是同一个品类级概念的不同写法。
+
+规则：
+- 只把「确定无疑是同一概念」的归为一组（如「金丹期」与「金丹境界」）；
+- 拿不准、可能是相关但不同概念的一律不并；
+- 人物/地点类不在此列（本输入已过滤为概念/设定体系类）；
+- 没有可并的输出 {"groups":[]}。
+
+输出 JSON：
+{"groups":[[0,2],[5,7]]}
+
+只输出 JSON，不要任何解释。`
+
+export function buildEntityMergeUser(input: {
+  entityType: string
+  candidates: Array<{ name: string; aliases: string[]; docCount: number }>
+}): string {
+  const lines = input.candidates.map(
+    (c, i) => `[${i}] ${c.name}${c.aliases.length ? `（别名：${c.aliases.slice(0, 5).join('、')}）` : ''}｜类型:${input.entityType}｜覆盖 ${c.docCount} 本书`,
+  )
+  return `候选实体（${input.candidates.length} 个，同类型已按相似聚类）：\n${lines.join('\n')}\n\n请给出可合并组。`
+}
+
+/** 设定变体矩阵：品类级概念在各书的表述 → 通用骨架 vs 各书变体（供设计自己的体系） */
+export const SETTING_MATRIX_SYSTEM = `你是设定体系研究员。给定一个跨多本书共用的概念在各书的表述论断，产出「通用骨架 vs 各书变体」矩阵：写作者参考它设计自己的体系，不是抄任何一本书。
+
+要求：
+- skeleton：各书表述中共同的核心骨架（2-5 条，每条一句）；
+- variants：各书的差异表述（每书一条：书代号 + 它的独特之处一句话）；
+- designHint：写作者自建体系时的取舍建议（1-2 句）；
+- 各书表述互相矛盾时如实登记差异，不要强行统一。
+
+输出 JSON：
+{"title":"设定体系：金丹期—通用骨架与各书变体","skeleton":["…"],"variants":[{"doc":"book-a","variant":"…"}],"designHint":"…","confidence":0.8}
+
+只输出 JSON，不要任何解释。`
+
+export function buildSettingMatrixUser(input: {
+  concept: string
+  perDoc: Array<{ doc: string; statements: string[] }>
+}): string {
+  const blocks = input.perDoc.map((d) => `【${d.doc}】\n${d.statements.map((s) => `- ${s}`).join('\n')}`)
+  return `概念：${input.concept}\n各书表述：\n\n${blocks.join('\n\n')}\n\n请产出通用骨架 vs 变体矩阵。`
+}
+
+/* ==================== 抽样质检（v2 P4：judge 评分 → 质量门） ==================== */
+
+/** 冶炼产物质检员：0-2 分制（2=可用/1=勉强/0=不合格），只判可用性不判文笔 */
+export const QA_JUDGE_SYSTEM = `你是知识库质检员。给定一张 AI 归纳的写作知识卡（标题/说明/正文），按以下标准打分：
+
+2 分：结构完整（有明确的骨架或要点）、内容自洽、有可用信息量——写作者拿到能用；
+1 分：结构在但内容空泛/部分重复/信息量薄——勉强可用；
+0 分：空洞、自相矛盾、明显幻觉（编造的频率/出处）、或纯粹复述没有归纳。
+
+只依据卡片本身判可用性，不判文笔优劣、不要求完美。
+输出 JSON：{"score":0,"reason":"一句话依据"}
+
+只输出 JSON，不要任何解释。`
+
+export function buildQaJudgeUser(input: { title: string; description: string; bodyExcerpt: string }): string {
+  return `标题：${input.title}\n说明：${input.description}\n正文（节选）：\n${input.bodyExcerpt}`
+}
+
 /* ==================== P-3 ADJUDICATE（Graphiti dedupe 协议） ==================== */
 
 export const ADJUDICATE_SYSTEM = `你是知识库裁决员。NEW FACTS 是刚提炼的论断，EXISTING FACTS 是库中已存在的论断，都已编号。
