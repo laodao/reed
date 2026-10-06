@@ -529,6 +529,11 @@ async function initDatabase(): Promise<void> {
     '@core/database/migrations/create-kb-brain-tables'
   )
   await createKbBrainTables(ds)
+  // 知识大脑 v2 P0：场面事件原料表（故事轨，与 Electron 端同构）
+  const { createKbBrainEvents } = await import(
+    '@core/database/migrations/create-kb-brain-events'
+  )
+  await createKbBrainEvents(ds)
   // 统一知识池：kb_inverted_index 去过期 FK（与 Electron 端同构）
   const { fixKbInvertedIndexFk } = await import(
     '@core/database/migrations/fix-kb-inverted-index-fk'

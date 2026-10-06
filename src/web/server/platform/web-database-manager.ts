@@ -33,6 +33,7 @@ import { KbKnowledgeEdgeRepository } from '@core/database/repositories/kb-knowle
 import { KbNoteRepository } from '@core/database/repositories/kb-note.repository'
 import { KbDigestPassRepository } from '@core/database/repositories/kb-digest-pass.repository'
 import { KbNoteReviewRepository } from '@core/database/repositories/kb-note-review.repository'
+import { KbEventRepository } from '@core/database/repositories/kb-event.repository'
 import { KbFolderRepository } from '@core/database/repositories/kb-folder.repository'
 import { AppRepository } from '@core/database/repositories/app.repository'
 import { AppSessionRepository } from '@core/database/repositories/app-session.repository'
@@ -177,6 +178,8 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   kbNotes: KbNoteRepository | null
   kbDigestPasses: KbDigestPassRepository | null
   kbNoteReviews: KbNoteReviewRepository | null
+  /** 知识大脑 v2：场面事件原料（故事轨） */
+  kbEvents: KbEventRepository | null
   appDefinitions: AppRepository | null
   appSessions: AppSessionRepository | null
   appSessionMessages: AppSessionMessageRepository | null
@@ -326,6 +329,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.kbNotes = new KbNoteRepository(ds)
     this.kbDigestPasses = new KbDigestPassRepository(ds)
     this.kbNoteReviews = new KbNoteReviewRepository(ds)
+    this.kbEvents = new KbEventRepository(ds)
     this.appDefinitions = new AppRepository(ds)
     this.appSessions = new AppSessionRepository(ds)
     this.appSessionMessages = new AppSessionMessageRepository(ds)

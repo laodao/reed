@@ -83,6 +83,10 @@ function makeDeps(overrides: Partial<KbBrainAutomationDeps> = {}) {
         return 3
       },
     },
+    sceneBackfill: async (kbId: string, batch?: number) => {
+      calls.push(`scene-backfill:${kbId}:${batch ?? 'default'}`)
+      return { processed: 0, scenes: 0 }
+    },
     relabel: {
       isRunning: () => false,
       setModelOverride: () => calls.push('relabel:model'),
@@ -139,11 +143,12 @@ describe('KbBrainAutomationService', () => {
     delete process.env.KB_BRAIN_DAILY_COST_LIMIT
   })
 
-  it('全消化完成的老库：一轮跑完 补标→书级→目标(仅启用的)→归纳→清理→伏笔，记账落 brain_state', async () => {
+  it('全消化完成的老库：一轮跑完 场面补采→补标→书级→目标(仅启用的)→归纳→清理→伏笔，记账落 brain_state', async () => {
     const { svc, deps } = makeDeps()
     const result = await svc.runCycle('kb1')
     expect(result.skipped).toBeUndefined()
     expect(deps.calls).toEqual([
+      'scene-backfill:kb1:default',
       'relabel:model',
       'relabel:kb1',
       'bookpass:model',
@@ -154,14 +159,29 @@ describe('KbBrainAutomationService', () => {
       'cleanup',
       'foreshadow',
     ])
-    expect(result.ran).toEqual(['layer-relabel', 'book-passes', 'goal:世界观设定集', 'consolidate', 'cleanup', 'foreshadow'])
-    // 记账：目标运行时间 + 论断基线、补标基线
+    expect(result.ran).toEqual(['scene-backfill', 'layer-relabel', 'book-passes', 'goal:世界观设定集', 'consolidate', 'cleanup', 'foreshadow'])
+    // 记账：目标运行时间 + 论断基线、补标基线、场面补采冷却
     const auto = deps.savedStates.at(-1)?.automation as Record<string, unknown>
     const goalRuns = auto.goalRuns as Record<string, { at: string; atoms: number }>
     expect(goalRuns.g1.atoms).toBe(100)
     expect(goalRuns.g2).toBeUndefined() // 未启用的目标不跑不记
     expect(auto.relabelAtoms).toBe(100)
     expect(auto.lastLayerRelabelAt).toBeTruthy()
+    expect(auto.lastSceneBackfillAt).toBeTruthy()
+  })
+
+  it('场面补采开关关（automation.sceneBackfill=false）→ 步骤跳过', async () => {
+    const { svc, deps } = makeDeps()
+    deps.kbs[0]!.brainConfig = JSON.stringify({
+      enabled: true,
+      profile: { contentType: 'novel' },
+      models: { atomize: '', adjudicate: '' },
+      goals: [],
+      automation: { enabled: true, sceneBackfill: false },
+    })
+    const result = await svc.runCycle('kb1')
+    expect(result.ran).not.toContain('scene-backfill')
+    expect(deps.calls).not.toContain('scene-backfill:kb1:default')
   })
 
   it('有 failed/pending 文档 → 只做续消化（冷却复活 + 入队），下游提炼让位', async () => {

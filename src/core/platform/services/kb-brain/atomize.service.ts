@@ -8,12 +8,29 @@
  * start/endOffset（窗口起点已知），未命中 → offsets=null（溯源退化章节级）。
  */
 import { extractJsonFromResponse } from '@core/platform/services/ai-call'
-import { ATOMIZE_SYSTEM, buildAtomizeUser, ADJUDICATE_SYSTEM, buildAdjudicateUser } from './prompts'
-import { validateAtomizeOutput, validateAdjudicateOutput, type RawAtom, type AdjudicateOutput } from './schemas'
+import {
+  ATOMIZE_SYSTEM,
+  buildAtomizeUser,
+  ADJUDICATE_SYSTEM,
+  buildAdjudicateUser,
+  SCENE_BACKFILL_SYSTEM,
+  buildSceneBackfillUser,
+} from './prompts'
+import {
+  validateAtomizeOutput,
+  validateAdjudicateOutput,
+  validateSceneBackfillOutput,
+  type RawAtom,
+  type RawScene,
+  type AdjudicateOutput,
+} from './schemas'
 import { defaultBrainLlm, type BrainLlmFn } from './llm'
 
 /** 单窗口字符上限（章内分窗；与章节摘要 maxChars 同量级） */
 const MAX_WINDOW_CHARS = 6000
+
+/** 章级场面数上限（护栏：防跑飞；正常章 0-12） */
+const MAX_SCENES_PER_CHAPTER = 24
 
 /** 定位后的论断（窗口坐标已换算为章节坐标） */
 export type LocatedAtom = RawAtom & {
@@ -28,9 +45,18 @@ export interface LocatedEvent {
   evidence: string
 }
 
+/** 定位后的场面事件（故事轨原料；quote 未命中 → offsets=null 溯源退化章节级） */
+export interface LocatedScene extends RawScene {
+  startOffset: number | null
+  endOffset: number | null
+  windowIndex: number
+}
+
 export interface AtomizeResult {
   atoms: LocatedAtom[]
   events: LocatedEvent[]
+  /** 故事轨场面事件（v2 P0：仅小说变体 prompt 产出） */
+  scenes: LocatedScene[]
   /** P-2 语义并入：实体规范名词表（含类型），供实体解析 upsert */
   mentions: Array<{ name: string; type: string }>
 }
@@ -62,6 +88,7 @@ export class AtomizeService {
     const windows = splitWindows(input.chapterContent, MAX_WINDOW_CHARS)
     const atoms: LocatedAtom[] = []
     const events: LocatedEvent[] = []
+    const scenes: LocatedScene[] = []
     const mentions = new Map<string, string>()
     for (let i = 0; i < windows.length; i++) {
       const out = await this.atomizeWindow({
@@ -73,9 +100,57 @@ export class AtomizeService {
       })
       atoms.push(...out.atoms)
       events.push(...(out.events ?? []))
+      scenes.push(...(out.scenes ?? []))
       for (const m of out.mentions) mentions.set(m.name, m.type)
     }
-    return { atoms, events, mentions: [...mentions.entries()].map(([name, type]) => ({ name, type })) }
+    return {
+      atoms,
+      events,
+      scenes: dedupeScenes(scenes),
+      mentions: [...mentions.entries()].map(([name, type]) => ({ name, type })),
+    }
+  }
+
+  /**
+   * 存量章场面补采（v2 P0）：events-only——不带 atoms 指令（论断已入库且成本已付），
+   * 只产出场面原料 + mentions。返回 windowCalls 供台账记成本（每窗一次调用）。
+   */
+  async captureScenes(input: {
+    chapterTitle: string
+    chapterContent: string
+    knownEntityNames?: string[]
+  }): Promise<{ scenes: LocatedScene[]; mentions: Array<{ name: string; type: string }>; windowCalls: number }> {
+    const windows = splitWindows(input.chapterContent, MAX_WINDOW_CHARS)
+    const scenes: LocatedScene[] = []
+    const mentions = new Map<string, string>()
+    for (let i = 0; i < windows.length; i++) {
+      const out = await this.callWithRetry(
+        SCENE_BACKFILL_SYSTEM,
+        buildSceneBackfillUser({
+          chapterTitle: input.chapterTitle,
+          windowText: windows[i].windowText,
+          knownEntityNames: input.knownEntityNames,
+        }),
+        validateSceneBackfillOutput,
+      )
+      const locator = createQuoteLocator(windows[i].windowText)
+      for (const s of out.scenes) {
+        const pos = locator(s.quote)
+        scenes.push({
+          ...s,
+          participants: s.participants ?? [],
+          startOffset: pos === null ? null : windows[i].startOffset + pos,
+          endOffset: pos === null ? null : windows[i].startOffset + pos + s.quote.length,
+          windowIndex: i,
+        })
+      }
+      for (const m of out.mentions ?? []) mentions.set(m.name, m.type)
+    }
+    return {
+      scenes: dedupeScenes(scenes),
+      mentions: [...mentions.entries()].map(([name, type]) => ({ name, type })),
+      windowCalls: windows.length,
+    }
   }
 
   /**
@@ -88,7 +163,7 @@ export class AtomizeService {
     windowStartOffset: number
     windowIndex: number
     knownEntityNames?: string[]
-  }): Promise<{ atoms: LocatedAtom[]; events: LocatedEvent[]; mentions: Array<{ name: string; type: string }> }> {
+  }): Promise<{ atoms: LocatedAtom[]; events: LocatedEvent[]; scenes: LocatedScene[]; mentions: Array<{ name: string; type: string }> }> {
     const out = await this.callWithRetry(
       this.system,
       buildAtomizeUser({
@@ -133,7 +208,20 @@ export class AtomizeService {
       }))
       .filter((ev) => ev.fromStatement !== null && ev.toStatement !== null && ev.fromStatement !== ev.toStatement)
 
-    return { atoms, events, mentions: out.mentions ?? [] }
+    // scenes（故事轨，v2 P0）：quote 定位（同 quote 多次出现按次序命中——同 atoms 定位器）
+    const sceneLocator = createQuoteLocator(input.windowText)
+    const scenes: LocatedScene[] = (out.scenes ?? []).map((s) => {
+      const pos = sceneLocator(s.quote)
+      return {
+        ...s,
+        participants: s.participants ?? [],
+        startOffset: pos === null ? null : input.windowStartOffset + pos,
+        endOffset: pos === null ? null : input.windowStartOffset + pos + s.quote.length,
+        windowIndex: input.windowIndex,
+      }
+    })
+
+    return { atoms, events, scenes, mentions: out.mentions ?? [] }
   }
 
   /**
@@ -202,6 +290,20 @@ export class AdjudicateService {
 }
 
 /* ==================== 纯函数：窗口切分与 quote 定位 ==================== */
+
+/** 章级场面收敛：summary 去重 + 章级上限（窗口间近重复场面取首见） */
+export function dedupeScenes(scenes: LocatedScene[]): LocatedScene[] {
+  const seen = new Set<string>()
+  const out: LocatedScene[] = []
+  for (const s of scenes) {
+    const key = s.summary.trim()
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    out.push(s)
+    if (out.length >= MAX_SCENES_PER_CHAPTER) break
+  }
+  return out
+}
 
 /** 章内分窗（段落边界优先，无段落则硬切） */
 export function splitWindows(

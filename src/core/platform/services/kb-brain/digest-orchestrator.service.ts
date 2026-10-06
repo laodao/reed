@@ -22,11 +22,12 @@ import type { KbEntityRepository } from '@core/database/repositories/kb-entity.r
 import type { KbKnowledgeEdgeRepository } from '@core/database/repositories/kb-knowledge-edge.repository'
 import type { KbNoteRepository } from '@core/database/repositories/kb-note.repository'
 import type { KbDigestPassRepository } from '@core/database/repositories/kb-digest-pass.repository'
+import type { KbEventRepository, KbEventInput, KbEventParticipant } from '@core/database/repositories/kb-event.repository'
 import type { KbDocumentRepository } from '@core/database/repositories/kb-document.repository'
 import type { KbChapterRepository } from '@core/database/repositories/kb-chapter.repository'
 import type { KbChunkRepository } from '@core/database/repositories/kb-chunk.repository'
 import type { KnowledgeBaseRepository } from '@core/database/repositories/knowledge-base.repository'
-import { AtomizeService, AdjudicateService } from './atomize.service'
+import { AtomizeService, AdjudicateService, type LocatedScene } from './atomize.service'
 import { buildAtomizeSystem } from './prompts'
 import { KbBrainProfileService } from './profile.service'
 import { KbBookPassesService } from './book-passes.service'
@@ -46,6 +47,12 @@ export const BRAIN_EVENTS = {
 /** 章级候选裁决上限（超过截断——防止单次调用膨胀） */
 const ADJUDICATE_CANDIDATE_CAP = 60
 
+/** 场面轨台账键（v2 P0）：与 base 同一次调用产出时成本记 base（此处 calls=0），存量补采独立计成本 */
+export const SCENE_PASS_KEY = 'events#1'
+
+/** 存量场面补采单轮上限（试点门量级：每轮 ≤200 章，熔断/冷却另行约束） */
+const SCENE_BACKFILL_BATCH = 200
+
 /** 实体负面清单（服务端硬过滤一道；prompt 内已有软约束） */
 const MENTION_BLOCKLIST = new Set([
   '他', '她', '它', '他们', '她们', '它们', '我', '你', '我们', '你们',
@@ -62,6 +69,7 @@ interface PassStats {
   suspected: number
   entities: number
   edges: number
+  scenes: number
   vectorsFailed: number
   costCalls: number
 }
@@ -80,6 +88,8 @@ export interface KbBrainRepos {
   chunks: KbChunkRepository | null
   vectors: { createBatch(rows: Array<{ chunkId: string; knowledgeBaseId: string; vector: number[] }>): Promise<void> } | null
   inverted: { insertBatch(rows: Array<{ term: string; chunkId: string; knowledgeBaseId: string; termFrequency: number }>): Promise<void> } | null
+  /** 场面事件原料（v2 P0 故事轨；未装配时场面轨跳过） */
+  events: KbEventRepository | null
 }
 
 export interface KbBrainDigestDeps {
@@ -124,6 +134,7 @@ export class KbBrainDigestService {
           chunks: db.kbChunks,
           vectors: db.kbVectors,
           inverted: db.kbInvertedIndex,
+          events: db.kbEvents ?? null,
         }
       })
   }
@@ -350,7 +361,7 @@ export class KbBrainDigestService {
     const pass = decision.pass
     await passes.setRunning(pass.id)
 
-    const stats: PassStats = { atoms: 0, merged: 0, superseded: 0, suspected: 0, entities: 0, edges: 0, vectorsFailed: 0, costCalls: 0 }
+    const stats: PassStats = { atoms: 0, merged: 0, superseded: 0, suspected: 0, entities: 0, edges: 0, scenes: 0, vectorsFailed: 0, costCalls: 0 }
     try {
       if (!content.trim()) {
         // 零产出是合法终态（纯过场章）——台账 done 防重复跑
@@ -554,6 +565,31 @@ export class KbBrainDigestService {
         stats.edges = r.created
       }
 
+      // 7. 场面轨（v2 P0）：同一调用的 scenes 产出落库；台账记 events 遍但成本记 base（不双计）。
+      //    fail-soft：场面失败只记 events 遍 failed，不拖垮本章 base 遍。
+      if (sceneTrackEnabled(cfg)) {
+        try {
+          const evDecision = await passes.ensurePass({
+            knowledgeBaseId: kbId,
+            documentId,
+            chapterId,
+            passType: 'events',
+            passKey: SCENE_PASS_KEY,
+            chapterHash,
+          })
+          if (evDecision.action === 'run') {
+            await passes.setRunning(evDecision.pass.id)
+            const scenesInserted = await this.persistScenes(
+              repos, kbId, documentId, chapterId, chapterHash, result.scenes, resolveEntity,
+            )
+            stats.scenes = scenesInserted
+            await passes.setDone(evDecision.pass.id, { scenes: scenesInserted }, { calls: 0, tokensIn: 0, tokensOut: 0 })
+          }
+        } catch (e) {
+          logger.warn(`[kb-brain] 场面轨落库失败（不阻塞 base 遍）: ${e instanceof Error ? e.message : String(e)}`)
+        }
+      }
+
       await passes.setDone(pass.id, stats, { calls: stats.costCalls, tokensIn: 0, tokensOut: 0 })
       return { outcome: 'digested', inserted: keptInputs }
     } catch (e) {
@@ -562,9 +598,154 @@ export class KbBrainDigestService {
     }
   }
 
-  /** mention → 实体 id（负面清单+类型+缓存；基础遍与视角遍共用） */
-  private async resolveEntityId(
+  /** 场面轨落库（v2 P0）：替换式重建 + 参与者实体解析 + event: 向量入池（失败不阻塞） */
+  private async persistScenes(
+    repos: KbBrainRepos,
     kbId: string,
+    documentId: string,
+    chapterId: string,
+    chapterHash: string | null,
+    scenes: LocatedScene[],
+    resolveEntity: (mention: string | undefined) => Promise<string | null>,
+  ): Promise<number> {
+    if (!repos.events) return 0
+    await repos.events.deleteByChapter(chapterId)
+    if (scenes.length === 0) return 0
+    // 参与者先解析实体 id 再落库（名与 id 同存——P1 聚类按实体对齐跨书同型场面）
+    const inputs: KbEventInput[] = []
+    for (const s of scenes) {
+      const participants: KbEventParticipant[] = []
+      for (const p of s.participants.slice(0, 8)) {
+        const entityId = await resolveEntity(p)
+        participants.push(entityId ? { name: p, entityId } : { name: p })
+      }
+      inputs.push({
+        knowledgeBaseId: kbId,
+        sourceDocumentId: documentId,
+        sourceChapterId: chapterId,
+        sourceChapterHash: chapterHash,
+        sceneType: s.sceneType,
+        summary: s.summary.slice(0, 300),
+        participants,
+        cause: s.cause ?? null,
+        outcome: s.outcome ?? null,
+        sourceQuote: s.quote.slice(0, 200),
+        startOffset: s.startOffset ?? null,
+        endOffset: s.endOffset ?? null,
+      })
+    }
+    const inserted = await repos.events.createBatch(inputs)
+    if (inserted.length > 0 && repos.vectors) {
+      try {
+        const vectors = await this.embedFn(
+          inserted.map((r) => `${r.summary}（${r.sceneType}）`),
+          { id: kbId, embeddingConfig: await this.kbEmbeddingConfig(kbId) },
+        )
+        if (vectors && vectors.length === inserted.length) {
+          await repos.vectors.createBatch(
+            vectors.map((vector, i) => ({ chunkId: `event:${inserted[i].id}`, knowledgeBaseId: kbId, vector })),
+          )
+        }
+      } catch {
+        /* 向量失败不阻塞（P1 聚类前可补建） */
+      }
+    }
+    return inserted.length
+  }
+
+  /**
+   * 存量场面补采（v2 P0）：对已消化（digested）文档的章节跑 events-only 提取。
+   * 台账幂等（passKey=events#1）——已随 base 双轨产出的章自动跳过；每轮 ≤batch 章
+   * （试点门量级），成本熔断与消化同口径。空内容章记零产出 done（防每轮重扫）。
+   */
+  async backfillScenes(
+    kbId: string,
+    opts?: { batch?: number },
+  ): Promise<{ processed: number; scenes: number }> {
+    const repos = this.reposFn()
+    if (!repos || !repos.events) return { processed: 0, scenes: 0 }
+    const kb = await repos.kbs.findById(kbId)
+    if (!kb) return { processed: 0, scenes: 0 }
+    const cfg = safeParseConfig(kb.brainConfig)
+    if (!cfg?.enabled || !cfg.digestion.enabled || !sceneTrackEnabled(cfg)) return { processed: 0, scenes: 0 }
+    if (await this.costBreakerTripped(kbId, repos.passes)) return { processed: 0, scenes: 0 }
+
+    const batch = opts?.batch ?? SCENE_BACKFILL_BATCH
+    const docs = (await repos.docs.findByKnowledgeBaseId(kbId)).filter((d) => d.brainStatus === 'digested')
+    const knownNames = await this.knownEntityNames(kbId, repos.entities)
+    const mentionCache = new Map<string, string | null>()
+    let processed = 0
+    let sceneCount = 0
+    outer: for (const doc of docs) {
+      const chapterRows = await repos.chapters.findByDocument(doc.id)
+      for (const chapter of chapterRows) {
+        if (processed >= batch) break outer
+        const decision = await repos.passes.ensurePass({
+          knowledgeBaseId: kbId,
+          documentId: doc.id,
+          chapterId: chapter.id,
+          passType: 'events',
+          passKey: SCENE_PASS_KEY,
+          chapterHash: chapter.contentHash,
+        })
+        if (decision.action === 'skip') continue
+        const pass = decision.pass
+        await repos.passes.setRunning(pass.id)
+        processed += 1
+        try {
+          const content = chapter.content ?? ''
+          if (!content.trim()) {
+            await repos.passes.setDone(pass.id, { scenes: 0 }, { calls: 0, tokensIn: 0, tokensOut: 0 })
+            continue
+          }
+          const atomizer = new AtomizeService({
+            llm: this.llm,
+            modelOverride: () => (cfg.models.atomize ? parseModelRef(cfg.models.atomize) : {}),
+          })
+          const known = knownNames.length > 0 ? knownNames : undefined
+          const r = await atomizer.captureScenes({ chapterTitle: chapter.title, chapterContent: content, knownEntityNames: known })
+          // 参与者实体解析（负面清单/缓存与 base 遍同款；类型缺省 character——场面参与者以人物为主）
+          const resolveEntity = async (mention: string | undefined): Promise<string | null> => {
+            if (!mention) return null
+            const name = mention.trim()
+            if (!name || name.length < 2 || MENTION_BLOCKLIST.has(name)) return null
+            if (mentionCache.has(name)) return mentionCache.get(name)!
+            const ent = await repos.entities.upsertMention(kbId, { name, type: 'character' })
+            mentionCache.set(name, ent.id)
+            return ent.id
+          }
+          const scenesInserted = await this.persistScenes(
+            repos, kbId, doc.id, chapter.id, chapter.contentHash, r.scenes, resolveEntity,
+          )
+          sceneCount += scenesInserted
+          await repos.passes.setDone(pass.id, { scenes: scenesInserted }, { calls: r.windowCalls, tokensIn: 0, tokensOut: 0 })
+        } catch (e) {
+          await repos.passes.setFailed(pass.id, e instanceof Error ? e.message : String(e))
+          logger.warn(`[kb-brain] 场面补采失败 ch=${chapter.id}（跳过续跑）: ${e instanceof Error ? e.message : String(e)}`)
+        }
+      }
+    }
+    if (processed > 0) logger.info(`[kb-brain] 场面补采: kb=${kbId} 本轮 ${processed} 章 / ${sceneCount} 场面`)
+    return { processed, scenes: sceneCount }
+  }
+
+  /** KB_BRAIN_DAILY_COST_LIMIT 熔断判定（digestDocument 与场面补采共用口径） */
+  private async costBreakerTripped(kbId: string, passes: KbDigestPassRepository): Promise<boolean> {
+    const rawLimit = process.env.KB_BRAIN_DAILY_COST_LIMIT
+    const costLimit = Number(rawLimit ?? '')
+    if (!rawLimit || !Number.isFinite(costLimit) || costLimit <= 0) return false
+    const since = new Date()
+    since.setHours(0, 0, 0, 0)
+    const today = await passes.costByKb(kbId, since)
+    if (today.calls > costLimit) {
+      logger.warn(`[kb-brain] 成本熔断: kb=${kbId} 今日 ${today.calls} 次 > 限额 ${costLimit}`)
+      return true
+    }
+    return false
+  }
+
+  /** mention → 实体 id（负面清单+类型+缓存；基础遍与视角遍共用） */
+  private async resolveEntityId(    kbId: string,
     mention: string | undefined,
     repos: KbBrainRepos,
     typeByName: Map<string, string>,
@@ -678,7 +859,7 @@ export class KbBrainDigestService {
         await repos.atoms.staleLensAtoms(documentId, lensId, chapter.id, chapter.contentHash, `lens:${lensId}:v${lens.version}`)
         const pass = decision.pass
         await repos.passes.setRunning(pass.id)
-        const stats: PassStats = { atoms: 0, merged: 0, superseded: 0, suspected: 0, entities: 0, edges: 0, vectorsFailed: 0, costCalls: 1 }
+        const stats: PassStats = { atoms: 0, merged: 0, superseded: 0, suspected: 0, entities: 0, edges: 0, scenes: 0, vectorsFailed: 0, costCalls: 1 }
         try {
           const content = chapter.content ?? ''
           if (!content.trim()) {
@@ -876,6 +1057,15 @@ export async function reviveExhaustedFor(documentId: string): Promise<number> {
   return activeService.reviveExhaustedChapters(documentId)
 }
 
+/** 后台自动化用：存量场面补采（服务未装配/未启用返回 0 进度） */
+export async function backfillScenesForKb(
+  kbId: string,
+  batch?: number,
+): Promise<{ processed: number; scenes: number }> {
+  if (!activeService) return { processed: 0, scenes: 0 }
+  return activeService.backfillScenes(kbId, { batch })
+}
+
 /* ==================== 内部工具 ==================== */
 
 function safeParseConfig(raw: string | null | undefined): KbBrainConfig | null {
@@ -889,6 +1079,12 @@ function safeParseConfig(raw: string | null | undefined): KbBrainConfig | null {
 
 function isValidType(t: string): t is KbAtomInput['type'] {
   return ['fact', 'claim', 'concept', 'method', 'insight', 'open-question'].includes(t)
+}
+
+/** 场面轨启用条件（v2 P0 范围声明）：仅小说类语料（'' 未识别=小说兜底，与 buildAtomizeSystem 同口径） */
+function sceneTrackEnabled(cfg: KbBrainConfig): boolean {
+  const ct = cfg.profile?.contentType ?? ''
+  return ct === '' || ct === 'novel'
 }
 
 function isValidLayer(t: string | undefined): t is KbAtomInput['layer'] {

@@ -14,6 +14,8 @@ export const KB_VECTOR_NS = {
   note: 'note:',
   /** 实体演化摘要（T13a 入池） */
   ent: 'ent:',
+  /** 场面事件原料（v2 P0 故事轨：仅供 P1 聚类，不进检索主池） */
+  event: 'event:',
 } as const
 
 export type KbVectorNamespace = keyof typeof KB_VECTOR_NS
@@ -23,8 +25,10 @@ export function parseVectorNamespace(chunkId: string): { ns: KbVectorNamespace; 
   if (chunkId.startsWith(KB_VECTOR_NS.qa)) return { ns: 'qa', id: chunkId.slice(KB_VECTOR_NS.qa.length) }
   if (chunkId.startsWith(KB_VECTOR_NS.atom)) return { ns: 'atom', id: chunkId.slice(KB_VECTOR_NS.atom.length) }
   if (chunkId.startsWith(KB_VECTOR_NS.note)) return { ns: 'note', id: chunkId.slice(KB_VECTOR_NS.note.length) }
+  if (chunkId.startsWith(KB_VECTOR_NS.ent)) return { ns: 'ent', id: chunkId.slice(KB_VECTOR_NS.ent.length) }
+  if (chunkId.startsWith(KB_VECTOR_NS.event)) return { ns: 'event', id: chunkId.slice(KB_VECTOR_NS.event.length) }
   return { ns: 'chunk', id: chunkId }
 }
 
 /** 文档检索须剔除的向量命名空间（qa 存量先例；brain 行由 include 决定，不走此表） */
-export const DOC_SEARCH_EXCLUDED_NS: KbVectorNamespace[] = ['qa']
+export const DOC_SEARCH_EXCLUDED_NS: KbVectorNamespace[] = ['qa', 'event']

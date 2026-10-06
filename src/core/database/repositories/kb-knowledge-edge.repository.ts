@@ -191,4 +191,13 @@ export class KbKnowledgeEdgeRepository extends BaseRepository<KbKnowledgeEdgeEnt
       sourceId: In(ids),
     } as FindOptionsWhere<KbKnowledgeEdgeEntity>)
   }
+
+  /** 端点作为 target 的边删除（删文档级联：atom 既可能是 source 也可能是 target） */
+  async deleteByTargetIds(targetKind: KbEdgeNodeKind, ids: string[]): Promise<void> {
+    if (ids.length === 0) return
+    await this.scoped.delete({
+      targetKind,
+      targetId: In(ids),
+    } as FindOptionsWhere<KbKnowledgeEdgeEntity>)
+  }
 }

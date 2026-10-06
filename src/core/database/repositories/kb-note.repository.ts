@@ -330,4 +330,46 @@ export class KbNoteRepository extends BaseRepository<KbNoteEntity, KbNoteRecord>
     const rows = await this.scoped.find({ where: { id: In(ids) } as FindOptionsWhere<KbNoteEntity> })
     return this.toDtoList(rows)
   }
+
+  /**
+   * 删文档级联（v2 P0）：卡片是跨文档产物不随删——但 evidence 锚点与
+   * pattern_instances 实例登记里指向该文档的引用必须剔除，否则卡片挂着
+   * 幽灵出处、套路频率统计虚高。返回被修改的卡片数。
+   */
+  async pruneDocumentReferences(kbId: string, documentId: string): Promise<number> {
+    const rows = await this.scoped.find({ where: { knowledgeBaseId: kbId } as FindOptionsWhere<KbNoteEntity> })
+    let changed = 0
+    const now = new Date()
+    for (const row of rows) {
+      let touched = false
+      try {
+        const evidence = JSON.parse(row.evidence ?? '[]') as Array<Record<string, unknown>>
+        const keptEvidence = evidence.filter((e) => e.documentId !== documentId)
+        if (keptEvidence.length !== evidence.length) {
+          row.evidence = JSON.stringify(keptEvidence)
+          touched = true
+        }
+      } catch {
+        /* evidence 损坏不动 */
+      }
+      if (row.patternInstances) {
+        try {
+          const instances = JSON.parse(row.patternInstances) as Array<Record<string, unknown>>
+          const kept = instances.filter((i) => i.documentId !== documentId)
+          if (kept.length !== instances.length) {
+            row.patternInstances = JSON.stringify(kept)
+            touched = true
+          }
+        } catch {
+          /* patternInstances 损坏不动 */
+        }
+      }
+      if (touched) {
+        row.updatedAt = now
+        await this.scoped.save(row)
+        changed += 1
+      }
+    }
+    return changed
+  }
 }

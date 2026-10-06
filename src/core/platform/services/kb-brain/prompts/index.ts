@@ -90,6 +90,16 @@ ${ATOMIZE_RULES}
 ✗ {"statement":"韩姓弟子隐瞒突破至第四层的实情，谎称进度无变化，其师不满并强行扣脉检查","type":"fact"}（场景互动复述——谁说了什么谁反应了什么）
 ✓ {"statement":"以把脉探查弟子真实修炼进度是宗门师长的常用核查手段","type":"fact"}（机制单点——剥离情节仍有效；若无长期意义则直接不产出）
 
+【故事轨·场面事件（scenes）——剧情不进论断，但场面另行登记】
+上述禁令只针对 atoms。同一文本里"发生了什么"是归纳写作套路的原料，走 scenes 轨登记（与 atoms/events 并列的顶层键）：
+✓ 每个独立场面一条：summary=一句话场面概括（谁在什么局面下做了什么）；
+  sceneType 枚举：conflict=冲突对峙 battle=打斗战斗 breakthrough=突破晋级 deal=交易交换
+  probe=试探博弈 emotion=情感关系 chase=追逃奔行 scheme=谋划布局 reveal=揭秘反转 daily=日常过渡，判不准用 other；
+  participants=参与者名字数组（优先用 mentions 里的规范名）；cause=前因一句话、outcome=结果一句话（无则省略）；
+  quote=场面中最有代表性的一句原文（连续片段，禁止改写拼接）。
+✓ 一章 0-12 个场面正常，纯过场章输出空数组；优先登记冲突/试探/突破/反转类场面。
+✗ 不登记：无参与者的环境描写、重复性动作流水账、跨章的长篇情节串联（场面=章内单一时空的互动单元）。
+
 只输出 JSON，不要任何解释。`
 
 /** 知识类变体（科学/技术/教程/百科/商业） */
@@ -154,6 +164,46 @@ export function buildAtomizeUser(input: {
 }): string {
   const known = input.knownEntityNames?.length
     ? `\n已知名词表（论断的 subject/object 优先使用这些规范名）：${input.knownEntityNames.join('、')}`
+    : ''
+  return `章节标题：${input.chapterTitle}\n${known}\n文本：\n${input.windowText}`
+}
+
+/* ==================== 场面事件补采（v2 P0 存量回填：events-only） ==================== */
+
+/**
+ * 存量章补采专用（不带 atoms 指令——那批章的论断已入库且成本已付，只补场面原料）。
+ * 输出与 ATOMIZE 的 scenes 轨同构；mentions 供参与者实体解析。
+ */
+export const SCENE_BACKFILL_SYSTEM = `你是小说场面记录员。把给定章节文本拆解为「场面事件」清单——供后续归纳写作套路使用的原料，不是给人读的章节摘要。
+
+【场面怎么切】
+✓ 一个场面=同一时空内、围绕一个目的或冲突的一整段互动（试探、谈判、打斗、突破、揭秘……）；
+  按互动单元切，不按段落切、不按对话轮切。
+✓ 每个场面一条：
+  summary=一句话概括（谁在什么局面下做了什么）；
+  sceneType 枚举：conflict=冲突对峙 battle=打斗战斗 breakthrough=突破晋级 deal=交易交换
+  probe=试探博弈 emotion=情感关系 chase=追逃奔行 scheme=谋划布局 reveal=揭秘反转 daily=日常过渡，判不准 other；
+  participants=参与者名字数组（优先使用已知名词表里的规范名）；
+  cause=前因一句话；outcome=结果一句话（无则省略）；
+  quote=场面中最有代表性的一句原文（连续片段，禁止改写拼接）。
+
+【纪律】
+- 一章 0-12 个场面正常，纯过场章输出空数组。
+- 概括用白描，不评价文笔，不复述对话全文。
+- 宁可粗粒度也不要碎片化：几句话的小摩擦并入它所属的大场面。
+
+输出 JSON（scenes 与 mentions 两个顶层键）：
+{"scenes":[{"summary":"李长老借把脉当众核查弟子隐瞒的修为","sceneType":"probe","participants":["李长老","韩某"],"cause":"韩某谎报修炼进度","outcome":"真实进度暴露，师徒生隙","quote":"李长老扣住他的手腕，眉头渐渐锁紧"}],"mentions":[{"name":"李长老","type":"character"},{"name":"韩某","type":"character"}]}
+
+只输出 JSON，不要任何解释。`
+
+export function buildSceneBackfillUser(input: {
+  chapterTitle: string
+  windowText: string
+  knownEntityNames?: string[]
+}): string {
+  const known = input.knownEntityNames?.length
+    ? `\n已知名词表（participants 优先使用这些规范名）：${input.knownEntityNames.join('、')}`
     : ''
   return `章节标题：${input.chapterTitle}\n${known}\n文本：\n${input.windowText}`
 }

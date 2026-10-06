@@ -96,7 +96,7 @@ export class BrainQueryService {
         const raw = await this.deps.searchSimilar(kbId, vectors[0], fetchK)
         for (const r of raw) {
           const { ns, id } = parseVectorNamespace(r.chunkId)
-          if (ns === 'qa' || ns === 'ent') continue // qa 存量语义；ent=实体摘要（只供图路邻域，不进主池）
+          if (ns === 'qa' || ns === 'ent' || ns === 'event') continue // qa 存量语义；ent=实体摘要（只供图路邻域）；event=场面原料（v2 P0 不进检索主池，仅供聚类）
           if (!includeSet.has(ns)) continue
           if (req.threshold != null && req.threshold > 0 && r.score < req.threshold) continue
           vecHits.push({ ns, id, score: r.score })
@@ -122,7 +122,7 @@ export class BrainQueryService {
           for (const [term, items] of postings) {
             for (const item of items) {
               const { ns, id } = parseVectorNamespace(item.chunkId)
-              if (ns === 'qa' || ns === 'ent' || !includeSet.has(ns)) continue
+              if (ns === 'qa' || ns === 'ent' || ns === 'event' || !includeSet.has(ns)) continue
               const key = item.chunkId
               let c = candidates.get(key)
               if (!c) {

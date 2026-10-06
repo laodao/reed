@@ -485,6 +485,21 @@ export class KnowledgeBaseService {
       await db.kbChunks.deleteByDocumentId(docId)
       // 章节表冗余存全文，必须随文档一起清理（否则删除后正文仍留在库里）
       if (db.kbChapters) await db.kbChapters.deleteByDocument(docId)
+      // 大脑产物级联（v2 P0 深审 B5）：论断/场面/台账随删，卡片剔引用；各阶段 fail-soft 不阻塞删文档
+      try {
+        const { cleanupBrainArtifactsForDocument } = await import('@core/platform/services/kb-brain/artifact-cleanup')
+        await cleanupBrainArtifactsForDocument(kbId, docId, {
+          atoms: db.kbAtoms ?? null,
+          events: db.kbEvents ?? null,
+          edges: db.kbKnowledgeEdges ?? null,
+          passes: db.kbDigestPasses ?? null,
+          notes: db.kbNotes ?? null,
+          vectors: db.kbVectors ?? null,
+        })
+      } catch (e) {
+        // 大脑清理失败不阻塞删文档主链路（残留可由后续代谢整固收敛）
+        console.warn('[KnowledgeBaseService] 大脑产物级联清理失败（不阻塞）:', e instanceof Error ? e.message : String(e))
+      }
       await db.kbDocuments.delete(docId)
 
       // 使用文档的 chunkCount 字段计算向量数（只有处理完成时才设置）
@@ -574,6 +589,24 @@ export class KnowledgeBaseService {
 
   // ==================== 文档处理 ====================
 
+  /**
+   * 阶段边界存活性检查：processDocument 是 fire-and-forget（调用方仅 .catch 兜底），
+   * 管线执行中文档可能已被 deleteDocument / purgeEntryIds 删除——继续跑会在
+   * chunks / vectors / inverted-index / chapters 留下指向不存在文档的孤儿行。
+   * 各关键阶段边界回读文档行确认仍在，已删则记 info 日志并返回 false 中止。
+   * 不抛错：调用方只有 .catch 兜底，抛错只会制造 unhandled rejection 噪音。
+   */
+  private async assertDocAlive(docId: string, stage: string): Promise<boolean> {
+    const db = getCoreDatabaseManager()
+    if (!db.kbDocuments) return false
+    const row = await db.kbDocuments.findById(docId).catch(() => null)
+    if (!row) {
+      console.info(`[KB] 文档已被删除，中止后续处理（${stage}）: ${docId}`)
+      return false
+    }
+    return true
+  }
+
   private async processDocument(doc: KbDocument, kb: KnowledgeBase): Promise<void> {
     const db = getCoreDatabaseManager()
     if (!db.kbDocuments || !db.kbChunks || !db.kbVectors || !db.kbInvertedIndex || !db.knowledgeBases) {
@@ -611,6 +644,7 @@ export class KnowledgeBaseService {
 
       // 1.5 章节树落库（与切片同源的结构检测；供检索上下文注入/章节摘要消费）
       // 失败不影响切片与向量主流程（章节是增强能力，见 syncChapters 内部 fail-soft）
+      if (!(await this.assertDocAlive(doc.id, 'syncChapters 前'))) return
       await this.syncChapters(doc.id, kb.id, doc.name, content)
 
       // 2. 切分配置
@@ -628,6 +662,7 @@ export class KnowledgeBaseService {
 
       const splitChunks: SplitChunk[] = []
       try {
+        if (!(await this.assertDocAlive(doc.id, 'split 前'))) return
         splitChunks.push(...await hybridSplitter.split(content, splitConfig))
         console.log(`[KB] 切分完成, 数量: ${splitChunks.length}, 策略: ${splitConfig.strategy}`)
       } catch (splitError: any) {
@@ -661,6 +696,7 @@ export class KnowledgeBaseService {
         }
       })
 
+      if (!(await this.assertDocAlive(doc.id, 'chunks 写入前'))) return
       const chunkRecords = await db.kbChunks.createBatch(chunkRequests)
 
       // 构建真实 ID 映射
@@ -683,6 +719,8 @@ export class KnowledgeBaseService {
 
       let batchIndex = 0
       for (let i = 0; i < chunkRecords.length; i += batchSize) {
+        // 向量写入前逐批检查（embedding 网络调用是管线最慢一段，删除最可能发生在其间）
+        if (!(await this.assertDocAlive(doc.id, 'vectors 写入前'))) return
         const batch = chunkRecords.slice(i, i + batchSize)
         const texts = batch.map(c => c.content)
 
@@ -711,6 +749,7 @@ export class KnowledgeBaseService {
       // 6. 索引
       await db.kbDocuments.updateProgress(doc.id, 90)
       this.emitProgress(doc.id, 90, 3)
+      if (!(await this.assertDocAlive(doc.id, 'buildIndex/markCompleted 前'))) return
       await this.buildIndex(chunkRecords, kb.id)
 
       // 完成

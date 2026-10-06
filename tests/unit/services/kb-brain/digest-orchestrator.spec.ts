@@ -158,10 +158,11 @@ describe('KbBrainDigestService 全链路', () => {
     const edges = await new KbKnowledgeEdgeRepository(ds).neighborsOf('kb-t', [first.id])
     expect(edges.some((e) => e.relation === 'leads-to')).toBe(true)
 
-    // 台账：两章 done
+    // 台账：两章 done（base 遍；场面轨 events#1 另记零产出行——无 scenes 也记 done 防每轮重扫）
     const passRepo = new KbDigestPassRepository(ds)
     const passRows = await passRepo.listByDocument('doc-t')
-    expect(passRows.filter((p) => p.status === 'done')).toHaveLength(2)
+    expect(passRows.filter((p) => p.status === 'done' && p.passType === 'base')).toHaveLength(2)
+    expect(passRows.filter((p) => p.status === 'done' && p.passType === 'events')).toHaveLength(2)
     expect(passRows.every((p) => p.attempts === 1)).toBe(true)
 
     // 文档状态 digested

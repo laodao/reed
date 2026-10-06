@@ -106,6 +106,12 @@ export class KbVectorRepository {
     await getVectorStore().deleteByChunkId(chunkId)
   }
 
+  /** 按伪 chunkId 批量删除（atom:/event:/note: 等命名空间行；删文档级联用） */
+  async deleteByChunkIds(chunkIds: string[]): Promise<void> {
+    if (chunkIds.length === 0) return
+    await getVectorStore().deleteByChunkIds(chunkIds)
+  }
+
   /** 根据文档 ID 删除向量（通过关联切片） */
   async deleteByDocumentId(documentId: string): Promise<void> {
     const dbManager = getCoreDatabaseManager()

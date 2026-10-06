@@ -8,6 +8,7 @@ import type { DataSource } from 'typeorm'
 import { setDefaultUser, LOCAL_DEFAULT_USER_ID } from '@core/context/user-context'
 import { createKbBrainTables } from '@core/database/migrations/create-kb-brain-tables'
 import { createKbChapters } from '@core/database/migrations/create-kb-chapters'
+import { createKbBrainEvents } from '@core/database/migrations/create-kb-brain-events'
 
 export async function createKbBrainTestTables(ds: DataSource): Promise<void> {
   // 生产语义：ALS 默认用户（Electron 启动即注入）——scoped 写入/查询都按此用户
@@ -30,6 +31,7 @@ export async function createKbBrainTestTables(ds: DataSource): Promise<void> {
     created_at datetime, updated_at datetime
   )`)
   await createKbBrainTables(ds)
+  await createKbBrainEvents(ds)
   await createKbChapters(ds)
   // 存量表：切片（大脑检索的 docLen/结果解析需要）
   await ds.query(`CREATE TABLE IF NOT EXISTS kb_chunks (

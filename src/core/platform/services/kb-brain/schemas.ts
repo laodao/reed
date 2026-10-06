@@ -32,9 +32,21 @@ export interface RawMention {
   type: string
 }
 
+/** 场面事件（v2 P0 故事轨；sceneType 临时手定枚举——P1 schema induction 后修订） */
+export interface RawScene {
+  summary: string
+  sceneType: string
+  participants: string[]
+  cause?: string
+  outcome?: string
+  quote: string
+}
+
 export interface AtomizeOutput {
   atoms: RawAtom[]
   events: RawEvent[]
+  /** 故事轨场面事件（可选：仅小说变体的 prompt 要求产出） */
+  scenes?: RawScene[]
   mentions?: RawMention[]
 }
 
@@ -82,6 +94,22 @@ const ATOMIZE_SCHEMA = {
           type: { type: 'string', minLength: 1 },
         },
         required: ['name', 'type'],
+        additionalProperties: false,
+      },
+    },
+    scenes: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          summary: { type: 'string', minLength: 1 },
+          sceneType: { enum: ['conflict', 'battle', 'breakthrough', 'deal', 'probe', 'emotion', 'chase', 'scheme', 'reveal', 'daily', 'other'] },
+          participants: { type: 'array', items: { type: 'string', minLength: 1 } },
+          cause: { type: 'string' },
+          outcome: { type: 'string' },
+          quote: { type: 'string', minLength: 1 },
+        },
+        required: ['summary', 'sceneType', 'quote'],
         additionalProperties: false,
       },
     },
@@ -202,6 +230,31 @@ export function normalizeAtomizeRaw(data: unknown): unknown {
   if (out.events !== undefined && out.events !== null && !Array.isArray(out.events)) {
     delete out.events
   }
+  // scenes 非数组 → 剥离；条目级清洗（participants 非字符串剔除、sceneType 非法归 other、
+  // 缺 summary/quote 剔除——与 atoms 坏条目剔除同一「不毁整章」策略）
+  if (out.scenes !== undefined && out.scenes !== null && !Array.isArray(out.scenes)) {
+    delete out.scenes
+  } else if (Array.isArray(out.scenes)) {
+    out.scenes = (out.scenes as Array<unknown>).flatMap((s) => {
+      if (typeof s !== 'object' || s === null) return []
+      const e = s as Record<string, unknown>
+      const summary = typeof e.summary === 'string' ? e.summary.trim() : ''
+      const quote = typeof e.quote === 'string' ? e.quote.trim() : ''
+      if (!summary || !quote) return []
+      const sceneType =
+        typeof e.sceneType === 'string' &&
+        ['conflict', 'battle', 'breakthrough', 'deal', 'probe', 'emotion', 'chase', 'scheme', 'reveal', 'daily'].includes(e.sceneType)
+          ? e.sceneType
+          : 'other'
+      const participants = Array.isArray(e.participants)
+        ? (e.participants as unknown[]).filter((p): p is string => typeof p === 'string' && p.trim().length >= 2)
+        : []
+      const clean: Record<string, unknown> = { summary, sceneType, participants, quote }
+      if (typeof e.cause === 'string' && e.cause.trim()) clean.cause = e.cause.trim()
+      if (typeof e.outcome === 'string' && e.outcome.trim()) clean.outcome = e.outcome.trim()
+      return [clean]
+    })
+  }
   return out
 }
 
@@ -282,6 +335,44 @@ export function validateAdjudicateOutput(
     contradictions: out.contradictions.filter((c) => inNew(c.newIdx) && inOld(c.oldIdx)),
     novel: out.novel.filter((i) => inNew(i)),
   }
+}
+
+/* ==================== 场面事件补采（v2 P0 存量回填） ==================== */
+
+export interface SceneBackfillOutput {
+  scenes: RawScene[]
+  mentions: RawMention[]
+}
+
+const SCENE_BACKFILL_SCHEMA = {
+  type: 'object',
+  properties: {
+    scenes: ATOMIZE_SCHEMA.properties.scenes,
+    mentions: ATOMIZE_SCHEMA.properties.mentions,
+  },
+  required: ['scenes'],
+  additionalProperties: false,
+} as const
+
+const validateSceneBackfill = ajv.compile(SCENE_BACKFILL_SCHEMA)
+
+/** 补采输出归一：复用 atomize 的 scenes/mentions 清洗；缺 scenes 键补空（纯过场章合法） */
+export function normalizeSceneBackfillRaw(data: unknown): unknown {
+  if (typeof data !== 'object' || data === null) return data
+  const atomized = normalizeAtomizeRaw({
+    atoms: [],
+    scenes: (data as Record<string, unknown>).scenes,
+    mentions: (data as Record<string, unknown>).mentions,
+  }) as { scenes?: unknown[]; mentions?: unknown[] }
+  return { scenes: atomized.scenes ?? [], mentions: atomized.mentions ?? [] }
+}
+
+export function validateSceneBackfillOutput(data: unknown): SceneBackfillOutput {
+  const normalized = normalizeSceneBackfillRaw(data)
+  if (!validateSceneBackfill(normalized)) {
+    throw new Error(`scene-backfill 输出校验失败: ${ajv.errorsText(validateSceneBackfill.errors)}`)
+  }
+  return normalized as SceneBackfillOutput
 }
 
 /* ==================== 论断归纳（consolidate） ==================== */

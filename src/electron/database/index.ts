@@ -34,6 +34,7 @@ import { KbKnowledgeEdgeRepository } from '@core/database/repositories/kb-knowle
 import { KbNoteRepository } from '@core/database/repositories/kb-note.repository'
 import { KbDigestPassRepository } from '@core/database/repositories/kb-digest-pass.repository'
 import { KbNoteReviewRepository } from '@core/database/repositories/kb-note-review.repository'
+import { KbEventRepository } from '@core/database/repositories/kb-event.repository'
 import { AppRepository } from '@core/database/repositories/app.repository'
 import { AppSessionRepository } from '@core/database/repositories/app-session.repository'
 import { AppSessionMessageRepository } from '@core/database/repositories/app-session-message.repository'
@@ -174,6 +175,14 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public kbChapters: KbChapterRepository | null = null
   public kbVectors: KbVectorRepository | null = null
   public kbQaPairs: KbQaPairRepository | null = null
+  // 知识大脑（接口侧为可选属性；类侧声明补齐——此前仅赋值未声明，TS2339 存量错）
+  public kbAtoms: KbAtomRepository | null = null
+  public kbBrainEntities: KbEntityRepository | null = null
+  public kbKnowledgeEdges: KbKnowledgeEdgeRepository | null = null
+  public kbNotes: KbNoteRepository | null = null
+  public kbDigestPasses: KbDigestPassRepository | null = null
+  public kbNoteReviews: KbNoteReviewRepository | null = null
+  public kbEvents: KbEventRepository | null = null
   public appDefinitions: AppRepository | null = null
   public appSessions: AppSessionRepository | null = null
   public appSessionMessages: AppSessionMessageRepository | null = null
@@ -958,6 +967,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-kb-brain-tables'
     )
     await createKbBrainTables(this.dataSource)
+    // 知识大脑 v2 P0：场面事件原料表（故事轨，幂等双语种）
+    const { createKbBrainEvents } = await import(
+      '@core/database/migrations/create-kb-brain-events'
+    )
+    await createKbBrainEvents(this.dataSource)
     // 统一知识池：kb_inverted_index 去过期 FK（伪 chunkId atom:/qa:/note: 入池被旧外键拒绝——真机根因）
     const { fixKbInvertedIndexFk } = await import(
       '@core/database/migrations/fix-kb-inverted-index-fk'
@@ -4598,6 +4612,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.kbNotes = new KbNoteRepository(this.dataSource)
     this.kbDigestPasses = new KbDigestPassRepository(this.dataSource)
     this.kbNoteReviews = new KbNoteReviewRepository(this.dataSource)
+    this.kbEvents = new KbEventRepository(this.dataSource)
     this.appDefinitions = new AppRepository(this.dataSource)
     this.appSessions = new AppSessionRepository(this.dataSource)
     this.appSessionMessages = new AppSessionMessageRepository(this.dataSource)

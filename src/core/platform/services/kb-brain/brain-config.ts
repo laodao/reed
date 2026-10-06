@@ -42,6 +42,8 @@ export interface KbBrainAutomationConfig {
   enabled: boolean
   /** 续消化：failed/pending 文档复活重跑（耗尽章冷却复活） */
   digest: boolean
+  /** 存量场面补采（v2 P0 故事轨回填：已消化章的 events-only 提取，分批推进） */
+  sceneBackfill: boolean
   layerRelabel: boolean
   bookPasses: boolean
   goalDistill: boolean
@@ -110,6 +112,8 @@ export interface KbBrainState {
     lastForeshadowAt?: string
     /** 耗尽章自动复活（失败章重试烧钱，24h 一次） */
     lastExhaustedReviveAt?: string
+    /** 存量场面补采（分批推进的冷却；一轮 200 章，6h 一轮） */
+    lastSceneBackfillAt?: string
   }
 }
 
@@ -118,6 +122,7 @@ export function defaultAutomationConfig(): KbBrainAutomationConfig {
   return {
     enabled: true,
     digest: true,
+    sceneBackfill: true,
     layerRelabel: true,
     bookPasses: true,
     goalDistill: true,
@@ -224,6 +229,7 @@ const BRAIN_CONFIG_SCHEMA = {
       properties: {
         enabled: { type: 'boolean' },
         digest: { type: 'boolean' },
+        sceneBackfill: { type: 'boolean' },
         layerRelabel: { type: 'boolean' },
         bookPasses: { type: 'boolean' },
         goalDistill: { type: 'boolean' },
