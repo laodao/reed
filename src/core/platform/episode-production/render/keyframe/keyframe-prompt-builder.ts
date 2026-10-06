@@ -37,6 +37,8 @@ import {
   type KeyframeRole,
 } from './keyframe-chain-strategy'
 import { renderEraAnchor, resolveEraProfile } from '../../prompts/era-profiles'
+import { resolveStyle } from '../../prompts/style-resolver'
+import type { PromptContext } from '../../prompts/prompt-context'
 import { describeCharacterRace } from '../../assets/prompts/asset-identity-prompt'
 
 /**
@@ -50,12 +52,11 @@ export interface StyleConfig {
 
 /**
  * F4 / C6（2026-09-20，人物一致性修复）：当该帧带角色参考图时使用的风格前缀。
- * PRESET_STYLES.cinematic 的写实电影词（"professional photography, movie scene"）
- * 会把 Q 版等非写实角色参考图写实化——风格词压过参考图。有角色参考图时改用
- * "与参考图保持一致"前缀，把风格决定权交给参考图；无参考图时仍用 styleConfig.stylePrefix。
+ *
+ * @deprecated 2026-10-06（§4.4 风格单一来源）：常量迁到 `prompts/style-resolver.ts`，
+ * 这里 re-export 仅为兼容既有引用；新代码请用 `resolveStyle()`。
  */
-export const REFERENCE_MATCH_STYLE_PREFIX =
-  '画面风格、人物外观与参考图保持一致（match the reference images exactly: same character face, hairstyle, outfit and art style）'
+export { REFERENCE_MATCH_STYLE_PREFIX } from '../../prompts/style-resolver'
 
 /**
  * 预设风格配置
@@ -295,6 +296,11 @@ export interface BuildKeyframePromptInput {
    * `near_future`/`period_drama`，不再依赖 storyEra 正则猜测。
    */
   eraProfileKey?: string | null
+  /**
+   * 统一提示词上下文（§4.4）：提供 project stylePrompt（单一注入点，只在末尾追加一次）
+   * 与时代档案 negative。缺省时行为等价优化前（不追加项目风格词）。
+   */
+  promptContext?: PromptContext
 }
 
 /**
@@ -354,12 +360,23 @@ export function buildKeyframePrompt(
 ): KeyframePromptOutput {
   const parts: string[] = []
 
-  // 1. 风格前缀（F4：有角色参考图时改用"与参考图一致"前缀，风格决定权交给参考图）
-  parts.push(
-    input.hasCharacterReference
-      ? REFERENCE_MATCH_STYLE_PREFIX
-      : input.styleConfig.stylePrefix,
-  )
+  // §4.4 风格单一来源：前缀/后缀/项目风格词/负面词统一由 resolveStyle 解析。
+  // 优化前项目 stylePrompt 有 5 个注入点且互不对账（身份段风格项、锚点前缀、
+  // 第 1 段、第 12 段、调用方尾部追加），这里收敛为"prefix 管主体、
+  // suffix 管整体质感、projectStyle 只追加一次"。
+  //
+  // 时代 negative 显式传入：调用方可能只给 storyEra 而没有完整 promptContext，
+  // 从 eraProfileFor(input) 派生可保证时代约束不因缺 ctx 而静默丢失。
+  const eraProfileForStyle = eraProfileFor(input)
+  const resolvedStyle = resolveStyle({
+    styleConfig: input.styleConfig,
+    hasCharacterReference: input.hasCharacterReference,
+    ctx: input.promptContext,
+    eraNegativeExtra: eraProfileForStyle.negativeExtra,
+  })
+
+  // 1. 风格前缀（有角色参考图时让位给"与参考图一致"前缀，防写实词把 Q 版写实化）
+  parts.push(resolvedStyle.prefix)
 
   // 2. 场景描述
   if (input.sceneDescription) parts.push(input.sceneDescription)
@@ -462,18 +479,19 @@ export function buildKeyframePrompt(
     parts.push(`[user direction] ${input.userPrompt.trim()}`)
   }
 
-  // 12. 质量后缀
-  parts.push(input.styleConfig.qualitySuffix)
+  // 12. 质量后缀 + 13. 时代约束（§4.4：后缀与项目风格词统一在此成型）
+  parts.push(resolvedStyle.suffix)
 
-  // 13. 时代约束（§2.5/§3.12）：由时代档案驱动——古风给硬约束，其他时代加时代锚
   const eraProfile = eraProfileFor(input)
   if (eraProfile.constraintSuffix) parts.push(eraProfile.constraintSuffix)
 
+  // 项目风格词：**只追加一次**（优化前 builder 内不加、调用方 :1266 再加，
+  // 与身份段/锚点前缀的风格项重复；现在统一在 builder 内末尾追加）
+  if (resolvedStyle.projectStyle) parts.push(resolvedStyle.projectStyle)
+
   return {
     prompt: parts.filter(Boolean).join(', '),
-    negativePrompt: eraProfile.negativeExtra
-      ? `${input.styleConfig.negativePrompt}, ${eraProfile.negativeExtra}`
-      : input.styleConfig.negativePrompt,
+    negativePrompt: resolvedStyle.negative,
   }
 }
 
