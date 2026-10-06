@@ -57,6 +57,11 @@ import type {
 } from './ep-agent.types'
 import { checkEpActionDependency, computeEpProductionState } from './ep-agent-deps'
 import { promptContextFromEpisodeAndProject } from '@core/platform/episode-production/prompts/episode-prompt-context.service'
+import { EpisodeScriptEntity } from '@core/database/entities/episode-production/episode-script.entity'
+import {
+  coverageSummaryLine,
+  type CoverageReport,
+} from '@core/platform/episode-production/narrative/ai/script-coverage'
 
 // ==================== JSON 容错解析（复用长文 agent 实现） ====================
 
@@ -265,19 +270,59 @@ async function executeGenerateScript(
     { synopsis: result.synopsis, scriptContent: result.scriptContent, scenes: result.scenes },
   )
 
+  // §4.5 保真校验可见性：覆盖度报告落 script.metadata.coverageReport，
+  // 让"丢对白"从只打日志的事故变为 UI 可查的指标；并在总结里附覆盖率数字
+  const coverageReport = EpisodeScriptGenerator.getInstance().getLastCoverageReport()
+  if (coverageReport) {
+    try {
+      await persistCoverageReport(m.dataSource, scriptId, coverageReport)
+    } catch (e) {
+      console.warn(
+        `[ep-agent] 覆盖度报告落库失败（不阻断）：${e instanceof Error ? e.message : String(e)}`,
+      )
+    }
+  }
+
   const changed: EpAgentPanelSection[] = ['script', 'scenes']
+  const coverageLine = coverageReport ? `；${coverageSummaryLine(coverageReport)}` : ''
   return {
     type: 'generate_script',
     status: 'ok',
-    message: `已生成剧本：梗概 ${result.synopsis.length} 字、正文 ${result.scriptContent.length} 字、场景 ${result.scenes.length} 场`,
+    message: `已生成剧本：梗概 ${result.synopsis.length} 字、正文 ${result.scriptContent.length} 字、场景 ${result.scenes.length} 场${coverageLine}`,
     changed,
     data: {
       scriptId,
       synopsis: result.synopsis,
       scenesCount: result.scenes.length,
+      coverageReport,
     },
     nav: { tab: 'script' },
   }
+}
+
+/**
+ * §4.5：把覆盖度报告写入 `episode_scripts.metadata.coverageReport`（保留既有 metadata 字段）。
+ */
+async function persistCoverageReport(
+  ds: any,
+  scriptId: string,
+  report: CoverageReport,
+): Promise<void> {
+  const repo = ds.getRepository(EpisodeScriptEntity)
+  const row = await repo.findOne({ where: { id: scriptId } })
+  if (!row) return
+  let metadata: Record<string, unknown> = {}
+  const raw = (row as { metadata?: unknown }).metadata
+  if (raw && typeof raw === 'object') metadata = { ...(raw as Record<string, unknown>) }
+  else if (typeof raw === 'string' && raw.trim()) {
+    try {
+      metadata = JSON.parse(raw) as Record<string, unknown>
+    } catch {
+      metadata = {}
+    }
+  }
+  metadata.coverageReport = report
+  await repo.update({ id: scriptId }, { metadata } as never)
 }
 
 /** 解析剧集要生成的章节内容：uploaded 原文 或 关联长文章节拼接 */

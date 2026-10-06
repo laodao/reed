@@ -713,6 +713,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-storyboard-use-keyframes'
     )
     await addStoryboardUseKeyframes(this.dataSource)
+    // 剧本 metadata 列（提示词优化方案 §4.5）：保真覆盖度报告落库，UI 可见
+    const { addEpisodeScriptMetadata } = await import(
+      '@core/database/migrations/add-episode-script-metadata'
+    )
+    await addEpisodeScriptMetadata(this.dataSource)
     // 分镜 include_in_final：⑥ 合成是否入最终成片
     const { addStoryboardIncludeInFinal } = await import(
       '@core/database/migrations/add-storyboard-include-in-final'

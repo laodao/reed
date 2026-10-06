@@ -23,7 +23,15 @@ import type {
 } from '@shared/types/episode-production'
 import type { ScriptGenerationResult } from './types'
 import { callAI, callAIWithContinue, extractJsonFromResponse, parseJsonString } from './_helpers'
-import { validateScriptCoverage, coverageWarnings } from './script-coverage'
+import {
+  validateScriptCoverage,
+  coverageWarnings,
+  checkDialogueConsistency,
+  dialogueConsistencyWarnings,
+  buildCoverageReport,
+  coverageSummaryLine,
+  type CoverageReport,
+} from './script-coverage'
 import { buildScriptGenerationDiscipline } from '@core/platform/services/writing-methodology'
 import { normalizeBindingName } from '@core/platform/episode-production/assets/services/binding-name-utils'
 
@@ -1010,18 +1018,47 @@ export class EpisodeScriptGenerator {
 
     // 2026-09-21：原文覆盖度校验（仿 shot-pacing；只警告不阻断）——
     // 雪麓山庄实测丢过整段对白与伏笔，这里把缺失对白打到主进程日志。
-    for (const w of coverageWarnings(validateScriptCoverage(
+    //
+    // §4.1（2026-10-06）：haystack **剔除剧本正文**——正文是展示视图，
+    // dialogues[].text 才是唯一事实源。此前正文命中即算覆盖，导致
+    // "正文写了、dialogues 里是改写版"被判为已覆盖。
+    const coverage = validateScriptCoverage(
       chapterContent,
       [
         ...result.scenes.flatMap(s => (s.dialogues ?? []).map(d => d.text)),
         ...result.scenes.map(s => s.narration ?? ''),
-        result.scriptContent,
       ],
-    ))) {
+    )
+    for (const w of coverageWarnings(coverage)) {
       console.warn(`[script-coverage] ${w}`)
     }
 
+    // §4.1：正文 ↔ dialogues 双向一致性（正文写了但 dialogues 缺 / 两处文本分叉）
+    const consistency = checkDialogueConsistency(
+      result.scriptContent,
+      result.scenes.flatMap(s => (s.dialogues ?? []).map(d => d.text)),
+    )
+    for (const w of dialogueConsistencyWarnings(consistency)) {
+      console.warn(`[script-consistency] ${w}`)
+    }
+
+    // §4.5：保真校验可见性——报告随结果返回，由调用方落 script.metadata 并显示在 UI
+    this.lastCoverageReport = buildCoverageReport(coverage, consistency)
+    console.log(`[script-coverage] ${coverageSummaryLine(this.lastCoverageReport)}`)
+
     return result
+  }
+
+  /**
+   * 最近一次生成/拆分的覆盖度报告（§4.5）。
+   *
+   * 调用方（agent 动作 / handler）读它落 `script.metadata.coverageReport` 并在
+   * 剧集页显示覆盖率徽章——让"丢对白"从事故变为可见指标。
+   */
+  private lastCoverageReport: CoverageReport | null = null
+
+  getLastCoverageReport(): CoverageReport | null {
+    return this.lastCoverageReport
   }
 
   /**

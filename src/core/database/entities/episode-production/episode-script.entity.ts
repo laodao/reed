@@ -56,7 +56,18 @@ export class EpisodeScriptEntity {
   @Column({ name: 'character_appearances', type: 'simple-json', nullable: true })
   characterAppearances!: string[] | null
 
-  @Column({ name: 'created_at', type: Date })
+  /**
+ * 剧本 metadata（JSON）：§4.5 保真校验可见性。
+ *
+ * 存放 `coverageReport`（原文对白覆盖度 + 正文↔dialogues 不一致条数），
+ * 让"丢对白"从只打日志的事故变为剧集页可查的指标。
+ * 用 simple-json（与 scenes 同风格），非新增关系表——这是脚本的附属观测数据，
+ * 不参与查询/关联，落 JSON 列符合第三范式（无重复组、无部分依赖）。
+ */
+@Column({ name: 'metadata', type: 'simple-json', nullable: true })
+metadata!: Record<string, unknown> | null
+
+@Column({ name: 'created_at', type: Date })
   createdAt!: Date
 
   @Column({ name: 'updated_at', type: Date })
