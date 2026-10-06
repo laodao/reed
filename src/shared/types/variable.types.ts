@@ -3,12 +3,21 @@
  * @module shared/types/variable.types
  */
 
-/** 变量作用域：global=全局 / user=当前用户 */
+/** 变量作用域：global=全局 / user=当前用户 / run=运行实例（落库存为 run:<runId>，随实例生灭） */
 export const VARIABLE_SCOPES = {
   global: 'global',
   user: 'user',
+  run: 'run',
 } as const
 export type VariableScope = (typeof VARIABLE_SCOPES)[keyof typeof VARIABLE_SCOPES]
+
+/**
+ * 运行实例作用域的实际存储键：run:<runId>（复合进 scope 列，零迁移；
+ * 同一工作流并行实例各自独享，删除运行级联清理，断点续跑复制到新 run）。
+ */
+export function runVariableScope(runId: string): string {
+  return `run:${runId}`
+}
 
 /** 键值变量（wf_variables 表字段同名直出） */
 export interface WorkflowVariable {

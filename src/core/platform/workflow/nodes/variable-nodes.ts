@@ -11,7 +11,7 @@ import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
 import { getVariableDataService } from '../variables/variable-data.service'
 import { getDataSourceService } from '../datasource/datasource.service'
-import { VARIABLE_SCOPES, type VariableScope } from '@shared/types/variable.types'
+import { VARIABLE_SCOPES, runVariableScope } from '@shared/types/variable.types'
 
 // ==================== 变量 ====================
 
@@ -27,14 +27,15 @@ const variableNode: WorkflowNodeHandler = {
     const cfg = config as { op?: string; scope?: string; key?: string }
     const errors: string[] = []
     if (!cfg.op || !['get', 'set'].includes(cfg.op)) errors.push('op 必须是 get 或 set')
-    if (cfg.scope && !VARIABLE_SCOPES[cfg.scope as VariableScope]) errors.push('scope 必须是 global 或 user')
+    if (cfg.scope && !(cfg.scope in VARIABLE_SCOPES)) errors.push('scope 必须是 global、user 或 run')
     if (!cfg.key || !stringifyValue(cfg.key).trim()) errors.push('变量键不能为空')
     return errors
   },
   async execute(ctx: WorkflowNodeContext) {
-    const cfg = ctx.config as { op: 'get' | 'set'; scope?: VariableScope; key: string; value?: string; defaultValue?: string }
+    const cfg = ctx.config as { op: 'get' | 'set'; scope?: string; key: string; value?: string; defaultValue?: string }
     const svc = getVariableDataService()
-    const scope: VariableScope = cfg.scope ?? VARIABLE_SCOPES.global
+    // run 作用域 = 本运行实例独享（存 run:<runId>，并行实例互不可见，随运行删除清理）
+    const scope = cfg.scope === VARIABLE_SCOPES.run ? runVariableScope(ctx.runId) : (cfg.scope ?? VARIABLE_SCOPES.global)
     const key = stringifyValue(cfg.key)
     if (cfg.op === 'set') {
       const value = cfg.value ?? ''

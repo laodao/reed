@@ -44,6 +44,7 @@ class MemVars {
     return row
   }
   async list() { return this.rows }
+  async deleteByScope(scope: string) { const n = this.rows.filter(r => r.scope === scope).length; this.rows = this.rows.filter(r => r.scope !== scope); return n }
   async delete() { return 1 }
 }
 class MemDefs {
@@ -94,6 +95,22 @@ describe('variable 节点', () => {
   it('validateConfig：缺 op/key 报错', () => {
     expect(variableNode.validateConfig({ op: 'get' } as never)).toEqual(expect.arrayContaining([expect.stringContaining('键')]))
     expect(variableNode.validateConfig({ op: 'x', key: 'k' } as never)).toEqual(expect.arrayContaining([expect.stringContaining('op')]))
+  })
+
+  it('run 作用域：落库为 run:<runId>，跨实例不可见（并行实例隔离）', async () => {
+    const { vars } = setupSvc()
+    // 实例 A（runId=run_1）写入 run 作用域
+    const w = await variableNode.execute(baseCtx({ op: 'set', scope: 'run', key: 'topic', value: '缅北' }))
+    expect(w.status).toBe('succeeded')
+    expect(vars.rows[0]).toMatchObject({ scope: 'run:run_1', key: 'topic' })
+    // 实例 B（runId=run_2）读同一键 → 无值（互不可见）
+    const ctxB = baseCtx({ op: 'get', scope: 'run', key: 'topic' }) as Record<string, unknown>
+    ctxB.runId = 'run_2'
+    const rB = await variableNode.execute(ctxB as never)
+    if (rB.status === 'succeeded') expect(rB.output.value).toBeNull()
+    // 实例 A 自己读得到
+    const rA = await variableNode.execute(baseCtx({ op: 'get', scope: 'run', key: 'topic' }))
+    if (rA.status === 'succeeded') expect(rA.output.value).toBe('缅北')
   })
 })
 

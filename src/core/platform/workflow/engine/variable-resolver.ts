@@ -26,6 +26,8 @@ export interface VariableResolverContext {
   variables: Map<string, Record<string, unknown>>
   /** 开始节点输入 */
   startInputs: Record<string, unknown>
+  /** 所属运行实例 id（{{sys.runId}} 数据源；并行实例命名空间用） */
+  runId?: string
 }
 
 /** 系统变量根（保留，不可被节点 id 遮蔽——校验器同源限制） */
@@ -37,8 +39,9 @@ const SYS_VAR_ROOT = 'sys'
  * - today：本地 yyyy-MM-dd
  * - week：周次标签（YYYY年第N周，与报告模板页眉同源口径）
  * - ts：epoch 毫秒
+ * - runId：所属运行实例 id（并行实例互不影响命名空间的锚点）
  */
-function sysVarsSnapshot(): Record<string, unknown> {
+function sysVarsSnapshot(runId?: string): Record<string, unknown> {
   const d = new Date()
   const pad = (n: number) => String(n).padStart(2, '0')
   // ISO 周计数（周报等场景的周次口径）
@@ -49,6 +52,7 @@ function sysVarsSnapshot(): Record<string, unknown> {
     today: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
     week: `${d.getFullYear()}年第${week}周`,
     ts: d.getTime(),
+    runId: runId ?? '',
   }
 }
 
@@ -92,7 +96,7 @@ export class VariableResolver {
 
     let source: unknown
     if (root === SYS_VAR_ROOT) {
-      source = sysVarsSnapshot()
+      source = sysVarsSnapshot(this.ctx.runId)
     } else if (root === 'start') {
       source = this.ctx.startInputs
     } else {

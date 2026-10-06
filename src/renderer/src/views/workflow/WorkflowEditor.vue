@@ -21,6 +21,14 @@
       <el-button size="small" @click="doValidate">校验</el-button>
       <el-button size="small" type="warning" plain @click="showDebug = true">试运行</el-button>
       <el-button size="small" @click="openVersions">历史版本</el-button>
+      <el-tooltip
+        content="允许同一工作流同时运行多个实例。注意：variable 节点请改用「运行实例」作用域；共享表/产物命名可用 {{sys.runId}} 区分实例。"
+        placement="bottom"
+      >
+        <el-button size="small" :type="parallelOn ? 'success' : 'info'" plain :loading="parallelToggling" @click="toggleParallel">
+          并行实例 {{ parallelOn ? '开' : '关' }}
+        </el-button>
+      </el-tooltip>
       <el-button size="small" type="primary" @click="doPublish">发布</el-button>
       <el-button size="small" type="success" plain @click="openAppPublish">发布为应用</el-button>
       <el-button size="small" type="info" plain @click="openShare">分享</el-button>
@@ -610,6 +618,41 @@ async function doPublish() {
   const resp = await api().publishDefinition({ id: definition.value.id })
   if (resp.success) { ElMessage.success('已发布'); definition.value.publishedVersion = (definition.value.publishedVersion ?? 0) + 1 }
   else ElMessage.error(resp.error)
+}
+
+// ── 并行实例开关（definition.settings.allowParallelInstances） ──
+const parallelOn = computed(() => definition.value?.settings?.allowParallelInstances === true)
+const parallelToggling = ref(false)
+async function toggleParallel() {
+  if (!definition.value) return
+  const next = !parallelOn.value
+  // 开启前盘点共享面：global/user 作用域的变量节点在并行实例间会互相覆盖同一份值
+  let sharedVars = 0
+  for (const n of nodes.value) {
+    if (n.type === 'variable') {
+      const cfg = (n.data as { config?: { scope?: string } } | undefined)?.config
+      if ((cfg?.scope ?? 'global') !== 'run') sharedVars++
+    }
+  }
+  if (next && sharedVars > 0) {
+    // 取消（reject）即中止——与 doPublish/handleDelete 同款确认模式
+    await ElMessageBox.confirm(
+      `图中有 ${sharedVars} 个全局/用户作用域的变量节点——并行实例会互相覆盖同一份值。` +
+      '建议先把这些节点的作用域改为「运行实例」（本实例独享），共享表/产物命名可用 {{sys.runId}} 区分实例。',
+      '开启并行实例',
+      { confirmButtonText: '仍要开启', cancelButtonText: '先不改', type: 'warning' },
+    )
+  }
+  parallelToggling.value = true
+  try {
+    const resp = await api().updateDefinition(definition.value.id, {
+      settings: { ...(definition.value.settings ?? {}), allowParallelInstances: next },
+    })
+    if (resp.success) definition.value = { ...definition.value, settings: { ...(definition.value.settings ?? {}), allowParallelInstances: next } }
+    else ElMessage.error(resp.error ?? '设置失败')
+  } finally {
+    parallelToggling.value = false
+  }
 }
 
 // ── 版本历史（发布快照 + 恢复到草稿） ──
