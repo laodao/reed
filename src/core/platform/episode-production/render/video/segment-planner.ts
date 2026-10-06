@@ -12,6 +12,11 @@
  */
 
 import { replaceAssetRefMarkers } from '../keyframe/parse-asset-refs'
+import {
+  cameraAngleLabel,
+  movementLabel,
+  shotTypeLabel,
+} from '../../prompts/cinematic-registry'
 
 /** 拆分输入的最小镜头形状 */
 export interface SegmentShotInput {
@@ -134,52 +139,43 @@ export interface SegmentPromptOptions {
   allowOnScreenText?: boolean
 }
 
-/** 景别/角度/运动枚举 → 中文标签（取值域与 storyboard-cogen 镜头语言说明一致） */
-const SHOT_TYPE_LABELS: Record<string, string> = {
-  extreme_long: '大远景',
-  long: '远景',
-  full: '全景',
-  medium: '中景',
-  medium_close: '中近景',
-  close: '近景',
-  extreme_close: '特写',
-  detail: '大特写',
-}
-const CAMERA_ANGLE_LABELS: Record<string, string> = {
-  eye_level: '平视',
-  high: '俯拍',
-  low: '仰拍',
-  dutch: '荷兰角',
-  birds_eye: '鸟瞰',
-  worms_eye: '虫视',
-}
-const CAMERA_MOVEMENT_LABELS: Record<string, string> = {
-  static: '固定镜头',
-  pan_left: '左摇',
-  pan_right: '右摇',
-  tilt_up: '上仰',
-  tilt_down: '下俯',
-  dolly_in: '推镜',
-  dolly_out: '拉镜',
-  zoom_in: '变焦推近',
-  zoom_out: '变焦拉远',
-  crane_up: '升镜头',
-  crane_down: '降镜头',
-  tracking_left: '左移',
-  tracking_right: '右移',
-  handheld: '手持',
-  steadicam: '稳定器跟随',
-}
+/**
+ * 镜头头里的景别/角度/运动标签（提示词优化方案 §3.14：标签一律从镜头语言注册表取，
+ * 25 个运镜预设全部可达视频模型）。
+ *
+ * 优化前这里手写 15 项 cogen 词表，与 UI 真值（camera-movements.ts 的 25 预设）不同源——
+ * 除 static/pan_left/pan_right/crane_up/crane_down 外，其余 19 个真实预设与历史值
+ * 全部被静默省略（"界面所见即模型所得"对这部分运镜不成立）。
+ * 现在未命中注册表（含 legacyValues/aliases 解析）才省略，并记 warn 留痕。
+ *
+ * @param onUnmapped 未映射值的回调（默认记 warn），仅对"非空且不认识"的值触发
+ */
+export function shotHeaderMeta(
+  s: SegmentPromptShot,
+  onUnmapped?: (field: string, value: string) => void,
+): string[] {
+  const notify = (field: string, value: string) => {
+    if (onUnmapped) onUnmapped(field, value)
+    else console.warn(`[segment-planner] 镜头 ${field} 取值 "${value}" 不在镜头语言注册表内，已省略该标签`)
+  }
 
-/** 镜头头里的景别/角度/运动标签（只放认识的枚举值，未知值静默省略） */
-function shotHeaderMeta(s: SegmentPromptShot): string[] {
   const meta: string[] = []
-  const st = s.shotType && SHOT_TYPE_LABELS[s.shotType]
-  if (st) meta.push(st)
-  const ca = s.cameraAngle && CAMERA_ANGLE_LABELS[s.cameraAngle]
-  if (ca) meta.push(ca)
-  const cm = s.cameraMovement && CAMERA_MOVEMENT_LABELS[s.cameraMovement]
-  if (cm) meta.push(cm)
+
+  if (s.shotType) {
+    const label = shotTypeLabel(s.shotType)
+    if (label) meta.push(label)
+    else notify('shotType', s.shotType)
+  }
+  if (s.cameraAngle) {
+    const label = cameraAngleLabel(s.cameraAngle)
+    if (label) meta.push(label)
+    else notify('cameraAngle', s.cameraAngle)
+  }
+  if (s.cameraMovement) {
+    const label = movementLabel(s.cameraMovement)
+    if (label) meta.push(label)
+    else notify('cameraMovement', s.cameraMovement)
+  }
   return meta
 }
 

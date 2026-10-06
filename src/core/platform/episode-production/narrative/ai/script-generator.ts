@@ -154,7 +154,7 @@ const FIELD_QUALITY_SPEC = `## ⭐ 字段输出质量要求（必须严格遵守
 
 ### dialogues（对话列表）
 每条对话**必须**带 characterName（从本场景 characters 名单里选择，逐字一致），并在能确定时同时给 characterBindingId。
-- 剧本原文里对白前有说话人名的（如"阿蘅：……"或单独成行的角色名），必须保留该说话人，不得丢失；
+- 剧本原文里对白前有说话人名的（如"角色甲：……"或单独成行的角色名），必须保留该说话人，不得丢失；
 - 拿不准说话人时优先按上下文推断，仍无法确定才允许省略 characterName。
 
 示例：{ "id": "dlg_1", "characterBindingId": "cb_xxxxx", "characterName": "张三", "text": "请来一壶碧螺春" }`

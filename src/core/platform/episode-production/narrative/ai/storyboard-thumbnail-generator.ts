@@ -22,6 +22,7 @@ import { promises as fs } from 'fs'
 import path from 'path'
 import { workerExtractRegions } from '@core/platform/episode-production/common/sharp-worker'
 import type { ImageGenerator } from '../../assets/services/gallery-derivation.service'
+import { renderNarrativePacing } from './thumbnail-pacing'
 
 export interface GenerateThumbnailsInput {
   episodeScriptId: string
@@ -31,6 +32,18 @@ export interface GenerateThumbnailsInput {
   storySynopsis: string
   /** 风格锚点（如 ['国风工笔']） */
   styleAnchors?: string[]
+  /**
+   * 画幅（项目 config.aspectRatio，如 '16:9' / '9:16'）。
+   * 传入则按该比例计算 cell 尺寸（§3.11：16:9 剧集用 480×270 cell），
+   * 缺省保持历史行为（512×512 正方形）。
+   */
+  aspectRatio?: string
+  /**
+   * 已确认角色主图路径（§3.11 一致性）：
+   * 传入后作为参考图注入，"同一角色每帧脸型一致"才具备可兑现的输入；
+   * 缺省/空数组 → 不注入参考图（保持历史行为）。
+   */
+  referenceImagePaths?: string[]
 }
 
 export interface ThumbnailFrame {
@@ -49,6 +62,36 @@ export interface GenerateThumbnailsResult {
   frames: ThumbnailFrame[]
   /** 临时目录（用户挑选完成后由调用方清理） */
   sessionDir: string
+}
+
+/** 默认单格基准（历史行为：512×512 正方形） */
+const DEFAULT_CELL_BASE = 512
+
+/**
+ * 按项目画幅计算单格尺寸（§3.11）。
+ *
+ * 以 512 为长边基准保持总像素量与历史一致：
+ *   - '16:9'  → 512×288
+ *   - '9:16'  → 288×512
+ *   - '1:1' / 缺省 / 非法 → 512×512
+ * 返回整数像素（向下取整到偶数，避免 sharp 切片出现半像素）。
+ */
+export function resolveCellSize(aspectRatio?: string): { width: number; height: number } {
+  const even = (n: number) => Math.max(2, Math.floor(n / 2) * 2)
+  const m = /^\s*(\d+)\s*:\s*(\d+)\s*$/.exec(aspectRatio ?? '')
+  if (!m) return { width: DEFAULT_CELL_BASE, height: DEFAULT_CELL_BASE }
+
+  const rw = Number(m[1])
+  const rh = Number(m[2])
+  if (!Number.isFinite(rw) || !Number.isFinite(rh) || rw <= 0 || rh <= 0) {
+    return { width: DEFAULT_CELL_BASE, height: DEFAULT_CELL_BASE }
+  }
+  if (rw === rh) return { width: DEFAULT_CELL_BASE, height: DEFAULT_CELL_BASE }
+
+  if (rw > rh) {
+    return { width: DEFAULT_CELL_BASE, height: even((DEFAULT_CELL_BASE * rh) / rw) }
+  }
+  return { width: even((DEFAULT_CELL_BASE * rw) / rh), height: DEFAULT_CELL_BASE }
 }
 
 /**
@@ -83,18 +126,19 @@ export class StoryboardThumbnailGeneratorService {
       synopsis: input.storySynopsis,
       styleAnchors: input.styleAnchors,
       count,
+      aspectRatio: input.aspectRatio,
     })
 
-    // 2. 调 imageGen 出一张大图（grid×grid 布局；分辨率每帧 512×512 → 大图 1536/2048/2560）
-    const cellSize = 512
-    const totalSize = cellSize * grid
+    // 2. 调 imageGen 出一张大图（grid×grid 布局）
+    //    §3.11：cell 尺寸按项目画幅计算（16:9 → 480×270），缺省仍为 512×512 正方形。
+    const cell = resolveCellSize(input.aspectRatio)
     const big = await this.imageGen.generate({
-      referenceImagePaths: [],
+      referenceImagePaths: input.referenceImagePaths ?? [],
       prompt,
       negativePrompt: 'low quality, blurry, watermark, text, numbers',
       label: `thumbnails_${input.episodeScriptId}`,
-      width: totalSize,
-      height: totalSize,
+      width: cell.width * grid,
+      height: cell.height * grid,
     } as any)
 
     // 3. 准备 session 目录
@@ -114,10 +158,10 @@ export class StoryboardThumbnailGeneratorService {
         frameIdx++
         const out = path.join(sessionDir, `frame-${frameIdx}.jpg`)
         regions.push({
-          left: col * cellSize,
-          top: row * cellSize,
-          width: cellSize,
-          height: cellSize,
+          left: col * cell.width,
+          top: row * cell.height,
+          width: cell.width,
+          height: cell.height,
           outPath: out,
         })
         frames.push({
@@ -139,33 +183,38 @@ export class StoryboardThumbnailGeneratorService {
   }
 
   /**
-   * 拼 thumbnail 生成 prompt — 9 段叙事节奏 + 3×3 grid 布局指令。
+   * 拼 thumbnail 生成 prompt — 叙事节奏 + grid 布局指令。
    *
    * 关键点：
-   *   - 强调"3×3 网格 / 横向并排"让 AI 输出可切片
+   *   - 强调"grid×grid 网格 / 横向并排"让 AI 输出可切片
    *   - 强调"无序号 / 无水印 / 纯背景间隔"
-   *   - 9 段叙事节奏对应电影"setup / development / conflict / resolution"
+   *   - 叙事节奏**按 count 动态展开**（提示词优化方案 §3.11）：
+   *     优化前固定 6 条 9 拍指令，count=16/25 时仍写"第 9 帧：尾声"，
+   *     第 10-25 格内容无约束且指令自相矛盾（要求输出 25 帧却只讲 9 格）。
+   *   - 画幅感知（§3.11）：cell 按 aspectRatio 计算，布局指令写明横竖比
    */
   private buildThumbnailPrompt(input: {
     synopsis: string
     styleAnchors?: string[]
     count: number
+    aspectRatio?: string
   }): string {
     const grid = Math.sqrt(input.count)
     const styleLine = input.styleAnchors?.length
       ? `\n风格：${input.styleAnchors.join(' / ')}`
       : ''
+    const ratio = input.aspectRatio?.trim()
+    const ratioLine = ratio
+      ? `\n画幅：${ratio}（每格按该比例构图，不要画成正方形）`
+      : ''
+    const pacing = renderNarrativePacing(input.count, grid)
+
     return `基于以下剧本生成 ${input.count} 帧连贯故事板（thumbnail storyboard），${grid}×${grid} 网格布局：
 
-剧本概要：${input.synopsis}${styleLine}
+剧本概要：${input.synopsis}${styleLine}${ratioLine}
 
 要求：
-1. 第 1 帧：开场（建立场景 + 主角）
-2. 第 2-3 帧：情节展开
-3. 第 4-5 帧：冲突 / 转折点
-4. 第 6-7 帧：高潮 / 关键动作
-5. 第 8 帧：结果
-6. 第 9 帧：尾声 / 情绪定格
+${pacing}
 
 输出 ${input.count} 帧并排（${grid}×${grid} 网格）。
 图像间无文字、无序号、纯背景间隔。
