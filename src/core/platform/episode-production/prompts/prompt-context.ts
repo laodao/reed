@@ -19,17 +19,18 @@ import type { GenreKey } from './genre-profiles'
 import { DEFAULT_GENRE, getGenreProfile, type GenreProfile } from './genre-profiles'
 import type { EraProfile } from './era-profiles'
 import { DEFAULT_ERA_PROFILE, resolveEraProfile } from './era-profiles'
+import {
+  DEFAULT_SPEECH_CHARS_PER_SEC as SHARED_SPEECH_CHARS_PER_SEC,
+  DEFAULT_PROMPT_LANGUAGE as SHARED_DEFAULT_LANGUAGE,
+  resolveSpeechCharsPerSec as sharedResolveSpeechCharsPerSec,
+} from '@shared/types/episode-production/workflow.types'
 
-/** 缺省语速表（字/秒）：按语言给默认值，项目配置可覆写 */
-export const DEFAULT_SPEECH_CHARS_PER_SEC: Record<string, number> = {
-  zh: 4.5,
-  en: 15,
-  ja: 7,
-  ko: 6,
-}
+/** 缺省语速表（字/秒）：按语言给默认值，项目配置可覆写。
+ *  §3.8 单一事实源：与 renderer 共用 `shared/types` 的定义，避免三处各写一份 4.5。 */
+export const DEFAULT_SPEECH_CHARS_PER_SEC = SHARED_SPEECH_CHARS_PER_SEC
 
 /** 未指定语言时的兜底语言 */
-export const DEFAULT_LANGUAGE = 'zh'
+export const DEFAULT_LANGUAGE = SHARED_DEFAULT_LANGUAGE
 
 /** 目标集长缺省推算系数：字数 ≈ 目标秒数 × 该系数（用于故事原文长度区间） */
 export const STORY_CHARS_PER_TARGET_SEC = 4
@@ -88,8 +89,7 @@ export function resolveSpeechCharsPerSec(
   explicit: number | null | undefined,
   language: string,
 ): number {
-  if (typeof explicit === 'number' && Number.isFinite(explicit) && explicit > 0) return explicit
-  return DEFAULT_SPEECH_CHARS_PER_SEC[language] ?? DEFAULT_SPEECH_CHARS_PER_SEC[DEFAULT_LANGUAGE]
+  return sharedResolveSpeechCharsPerSec(explicit, language)
 }
 
 /**

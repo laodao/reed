@@ -202,6 +202,34 @@ export interface VideoProjectConfig {
 }
 
 /**
+ * 语速默认值（字/秒，按语言）。
+ *
+ * 单一事实源：core 的 `prompts/prompt-context.ts` 与 renderer 的台词超长提示
+ * 都从这里取，避免"提示词/校验/前端三处各写一份 4.5"的漂移（§3.8）。
+ */
+export const DEFAULT_SPEECH_CHARS_PER_SEC: Record<string, number> = {
+  zh: 4.5,
+  en: 15,
+  ja: 7,
+  ko: 6,
+}
+
+/** 缺省语言 */
+export const DEFAULT_PROMPT_LANGUAGE = 'zh'
+
+/** 解析语速：显式配置优先，否则按语言查表，最后兜底 zh 的值 */
+export function resolveSpeechCharsPerSec(
+  explicit: number | null | undefined,
+  language?: string | null,
+): number {
+  if (typeof explicit === 'number' && Number.isFinite(explicit) && explicit > 0) return explicit
+  const lang = (language ?? '').trim() || DEFAULT_PROMPT_LANGUAGE
+  return (
+    DEFAULT_SPEECH_CHARS_PER_SEC[lang] ?? DEFAULT_SPEECH_CHARS_PER_SEC[DEFAULT_PROMPT_LANGUAGE]
+  )
+}
+
+/**
  * 剧集项目
  */
 export interface VideoProject {

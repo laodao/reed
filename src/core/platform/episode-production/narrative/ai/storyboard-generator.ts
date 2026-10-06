@@ -1,4 +1,4 @@
-﻿/**
+/**
  * narrative/ai/storyboard-generator
  * @module platform/episode-production/narrative/ai/storyboard-generator
  * @description 分镜生成器（批量模式 / 逐个模式）。
@@ -482,10 +482,27 @@ ${sceneDescription}
   }
 
   // ==================== 公开方法 ====================
+  //
+  // ⚠️ 退役中（提示词优化方案 §3.9 / §5 Phase 4，2026-10-06）：
+  // 本类的分镜生成三件套（generateStoryboard / generateSingleStoryboard /
+  // generateStoryboardsIncremental）已被 **StoryboardCogenService** 取代，
+  // 不再有任何生产调用点：
+  //   - UI 单场景「生成分镜」→ cogenStoryboardsForScene（§3.9 已切换）
+  //   - UI 批量 / agent generate_storyboards → cogenStoryboardsForEpisode
+  // 旧路径的固有缺陷（cogen 已解决）：
+  //   - 无 binding 能力 → 需 normalizeAiCharacters 反查 + 按镜数均分对白兜底；
+  //   - 校验弱：无服饰逐字校验、无台词时长硬校验、无对白/旁白全覆盖；
+  //   - 批量模式输入不带 id 却要求回填 dialogueIds（§3.9 P0）。
+  //
+  // 保留原因：`fillStoryboardFields`（UI「一键填充」）**仍在用**，且三件套有既有
+  // 单测覆盖；按 §5 策略先冻结观察一个版本周期，确认无依赖后再整体删除。
+  // **不要在新代码中调用以下三个方法**，也不要再为它们做提示词优化。
 
   /**
    * 生成分镜（批量模式）
-   * @deprecated 建议使用 generateStoryboardsIncremental 方法
+   *
+   * @deprecated 2026-10-06（§3.9）：已被 StoryboardCogenService 取代，无生产调用点。
+   *             请用 `cogenStoryboardsForEpisode`（整集）或 `cogenStoryboardsForScene`（单场景）。
    */
   async generateStoryboard(
     sceneScript: SceneScript,
@@ -539,6 +556,8 @@ ${sceneScript.actions.map((a, i) => `- ${actionDisplayId(a, i)} · ${a.descripti
 
   /**
    * 生成单个分镜
+   *
+   * @deprecated 2026-10-06（§3.9）：已被 StoryboardCogenService 取代，无生产调用点。
    */
   async generateSingleStoryboard(
     sceneScript: SceneScript,
@@ -644,8 +663,11 @@ ${sceneScript.actions.map(a => `- ID: ${a.id}, 描述: ${a.description}`).join('
   }
 
   /**
-   * 逐个生成分镜（推荐使用此方法）
+   * 逐个生成分镜
    * 每个分镜单独生成，任务更小更稳定，可以提供更好的进度反馈
+   *
+   * @deprecated 2026-10-06（§3.9）：已被 StoryboardCogenService 取代，无生产调用点。
+   *             请用 `cogenStoryboardsForEpisode` / `cogenStoryboardsForScene`。
    */
   async generateStoryboardsIncremental(
     sceneScript: SceneScript,

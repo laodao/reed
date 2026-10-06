@@ -6,6 +6,19 @@
  * 总结调用：决策 reply + 动作执行摘要 + 更新后生产状态 + 用户消息 → 流式自然语言回复。
  *
  * AI 底层复用 LongWritingAIService.agentDecide / agentSummarize（通用系统+用户提示词调用）。
+ *
+ * ⚠️ **本模块整体退役中**（提示词优化方案 §3.2 / §5 Phase 4，2026-10-06）：
+ * 仅在 `EP_AGENT_HARNESS='0'` 时启用（旧三段式回退路径）。主路径是
+ * `ep-agent-harness.service.ts` 的 LoopRunner 多轮工具循环。
+ *
+ * 不再维护的原因（源码级复核，见 outputs/episode-production-prompt-actual-vs-gap.md A2）：
+ *   - 本文件的 DECISION_SYSTEM_PROMPT 动作清单**只覆盖到分镜**
+ *     （无关键帧/视频/配音/导出）——回退路径下 agent 无法生成视频；
+ *   - 与主路径是两套系统提示词 + 两套快照格式器（本模块用 epStateToSummary、
+ *     主路径用 epStateToSnapshot）+ 两套确认协议，内容已分叉；
+ *   - 示例里还带具体项目名（"杜十娘""金融库"）。
+ *
+ * **不要为旧路径做任何提示词优化**——优化它是负资产。确认线上无依赖后整体删除。
  */
 
 import type { EpAgentActionSummary, EpAgentProductionState } from './ep-agent.types'
