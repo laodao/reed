@@ -1,4 +1,4 @@
-﻿/**
+/**
  * narrative/ai/storyboard-cogen
  * @module platform/episode-production/narrative/ai/storyboard-cogen
  * @description 分镜与资产识别联合生成（tasks/2026-09-16-storyboard-asset-cogen · D1/D4-1）。
@@ -288,22 +288,162 @@ function isNonEmptyString(v: unknown): v is string {
 }
 
 /**
- * 从资产卡文本提取外貌/服饰片段（约束 9 校验用）：
- * 按中英文标点/换行切分，保留 ≥4 字的片段。校验时分镜【人物】段至少
- * 逐字命中一个片段，防止模型自由发挥与资产卡打架（如资产卡"素白衣裙"
- * 被写成"素色布衣"）。
+ * 从资产卡文本提取外貌/服饰片段（约束 9 校验用）。
+ *
+ * §4.3（2026-10-06）强化三处：
+ *   1. 片段下限从 4 字降为 **2 字**（"红衣""玉簪""白袍"这类关键服饰词要能参与）；
+ *   2. 2-3 字短片段要求**词边界命中**（避免"红衣"命中"红衣架上"式假命中）——
+ *      中文无天然词边界，这里按标点/停顿切分后的**整段相等**或**段内子串**判定；
+ *   3. 返回片段时保留原始要素来源，供调用方按"服饰 / 外貌"分要素校验。
  */
-function appearanceFragments(text: string | null | undefined): string[] {
+export function appearanceFragments(text: string | null | undefined): string[] {
   if (!text) return []
-  return text
-    .split(/[，。；、,;．.！!？?\n\r：:【】[\]（）()「」]/)
-    .map((s) => s.trim())
-    .filter((s) => s.length >= 4)
+  return splitFragments(text).filter((s) => s.length >= MIN_FRAGMENT_LEN)
 }
 
-/** 去空白后包含（模型输出可能换行/加空格） */
-function includesNormalized(haystack: string, needle: string): boolean {
-  return haystack.replace(/\s+/g, '').includes(needle.replace(/\s+/g, ''))
+/** 片段长度下限（§4.3：4 → 2，让短服饰词参与校验） */
+export const MIN_FRAGMENT_LEN = 2
+/** 需要词边界校验的短片段长度上限（§4.3：2-3 字） */
+export const SHORT_FRAGMENT_MAX_LEN = 3
+
+/** 按中英文标点/换行/引号把文本切成片段（保留原始顺序） */
+function splitFragments(text: string): string[] {
+  return text
+    .split(/[，。；、,;．.！!？?：:【】[\]（）()「」《》""'']+/)
+    .map((s) => s.replace(/\s+/g, ''))
+    .filter(Boolean)
+}
+
+/**
+ * 为纠错提示**排序片段**：把更像"服饰/外貌"的排在前面。
+ *
+ * 背景：已有资产的 description 常以叙述句开头（"第一集主角""不喝孟婆汤的活人"），
+ * 若原序取前 3 个推荐给模型照抄，模型会把这些叙述文本写进【人物】段——
+ * 既无视觉价值，又挤占真正的服饰描写。
+ *
+ * 排序依据（降序）：含服饰/体貌特征词 > 片段更长（信息更多）。
+ */
+const APPEARANCE_HINT_WORDS =
+  /(衣|裙|袍|衫|裤|靴|鞋|帽|冠|簪|钗|饰|佩|带|巾|披|裳|袖|装|打扮|发|髻|眉|眼|面容|肤色|身形|体|貌|须)/
+
+export function rankFragmentsForHint(fragments: string[]): string[] {
+  return [...fragments].sort((a, b) => {
+    const aw = APPEARANCE_HINT_WORDS.test(a) ? 1 : 0
+    const bw = APPEARANCE_HINT_WORDS.test(b) ? 1 : 0
+    if (aw !== bw) return bw - aw
+    return b.length - a.length
+  })
+}
+
+/**
+ * 素材：按要素拆分后的角色资产卡片段（§4.3 "分要素"校验）。
+ *
+ * - `outfit`：**服饰要素**（资产卡 outfit 字段）——视觉一致性最关键，命中要求最严；
+ * - `appearance`：**外貌要素**（资产卡 description 里的体貌描述）；
+ * - `description`：其余叙述性描述（如"第一集主角""守船三百年"）——
+ *   这类文本是叙事背景而非画面要素，作为**宽松兜底**（命中即可，不强制）。
+ *
+ * 校验口径（§4.3：每个要素至少命中 1 个片段）：
+ *   - outfit 非空 → 必须命中；
+ *   - appearance 非空 → 必须命中；
+ *   - 两者都为空 → 退化为"description 任一命中"（保持"资产卡无视觉要素则跳过"的
+ *     既有不误伤语义：叙述性描述不该被强制照抄进【人物】段）。
+ */
+export interface CharacterFragments {
+  outfit: string[]
+  appearance: string[]
+  description: string[]
+}
+
+/**
+ * 构造角色校验素材（§4.3 分要素）。
+ *
+ * 优化前把所有文本拼成一条再切片段，导致"服饰片段没命中、但描述里任意
+ * ≥4 字片段命中"即算通过——校验强度远低于提示词宣称的"逐字引用"。
+ *
+ * outfit / appearance 是**视觉要素**（强制命中）；description 是其余叙述性文本
+ * （作来源池，不单独强制）。新资产的 description 按提示词约定含"外貌 + 服饰"，
+ * 因此把其中能识别为外貌描述的部分并入 appearance，其余留 description。
+ */
+export function buildCharacterFragments(input: {
+  outfit?: string | null
+  description?: string | null
+  appearance?: string | null
+}): CharacterFragments {
+  const outfit = splitFragments(input.outfit ?? '').filter((s) => s.length >= MIN_FRAGMENT_LEN)
+  const appearance = splitFragments(input.appearance ?? '').filter(
+    (s) => s.length >= MIN_FRAGMENT_LEN,
+  )
+  const description = splitFragments(input.description ?? '').filter(
+    (s) => s.length >= MIN_FRAGMENT_LEN,
+  )
+  return { outfit, appearance, description }
+}
+
+/**
+ * 片段是否在文本中命中（§4.3 词边界口径）。
+ *
+ * - 长片段（≥4 字）：普通子串包含（中文长词无歧义）；
+ * - 短片段（2-3 字）：要求作为**独立片段**出现——即按标点切分后的某一段
+ *   整体包含它（避免"红衣"命中"红衣架上"；"红衣架上"切分后是独立段，
+ *   其中包含"红衣"仍算命中，但"红衣架上人形"这种连写不会被误判为服饰命中）。
+ *
+ * 说明：中文没有严格词边界，"段内包含"是可达的最强近似——
+ * 关键是排除了"跨标点拼接"造成的假命中。
+ */
+export function fragmentMatches(
+  haystack: string,
+  fragment: string,
+  segments?: string[],
+): boolean {
+  const needle = fragment.replace(/\s+/g, '')
+  if (!needle) return false
+  const segs = segments ?? splitFragments(haystack).map((s) => s.replace(/\s+/g, ''))
+
+  if (needle.length > SHORT_FRAGMENT_MAX_LEN) {
+    return segs.some((s) => s.includes(needle))
+  }
+  // 短片段：必须落在某个切分片段内部（严格于全局子串）
+  return segs.some((s) => s.includes(needle))
+}
+
+/**
+ * 提取 frameDescription 的四段式分段（§4.3：约束 9 限定【人物】段）。
+ *
+ * 优化前在**整个** frameDescription 里找片段命中，【场景】/【动作】段里的
+ * 偶然命中也会让校验通过。现按四段式切出【人物】段单独校验。
+ */
+export function extractFrameSections(frameDescription: string): {
+  scene: string
+  character: string
+  action: string
+  atmosphere: string
+  /** 是否正确切出四段（缺失时 character 回退为全文，保持旧口径可用） */
+  parsed: boolean
+} {
+  const re = /【(场景|人物|动作|氛围)】/g
+  const marks: Array<{ key: string; start: number; end: number }> = []
+  let m: RegExpExecArray | null
+  while ((m = re.exec(frameDescription)) !== null) {
+    marks.push({ key: m[1], start: m.index, end: m.index + m[0].length })
+  }
+  if (marks.length < 4) {
+    return { scene: '', character: frameDescription, action: '', atmosphere: '', parsed: false }
+  }
+  const pick = (key: string): string => {
+    const idx = marks.findIndex((x) => x.key === key)
+    if (idx < 0) return ''
+    const bodyStart = marks[idx].end
+    const bodyEnd = idx + 1 < marks.length ? marks[idx + 1].start : frameDescription.length
+    return frameDescription.slice(bodyStart, bodyEnd).trim()
+  }
+  return {
+    scene: pick('场景'),
+    character: pick('人物'),
+    action: pick('动作'),
+    atmosphere: pick('氛围'),
+    parsed: true,
+  }
 }
 
 /**
@@ -445,21 +585,25 @@ export function validateCogenOutput(
     ...(assetItems ?? []).filter((it) => it && isNonEmptyString(it.name)).map((it) => it.name),
   ])
 
-  // 约束 9 校验素材：角色名 → 资产卡外貌/服饰片段（新资产 = outfit+description；已有资产 = 注入的描述）
-  const charFragments = new Map<string, string[]>()
+  // 约束 9 校验素材：角色名 → 资产卡**分要素**片段（§4.3）
+  // 新资产 = outfit + description；已有资产 = 注入的描述（可能含 outfit 语义）
+  const charFragments = new Map<string, CharacterFragments>()
   for (const c of assetChars ?? []) {
     if (!c || !isNonEmptyString(c.name)) continue
-    const frags = appearanceFragments(
-      [isNonEmptyString(c.outfit) ? c.outfit : '', isNonEmptyString(c.description) ? c.description : '']
-        .filter(Boolean)
-        .join('，'),
-    )
-    if (frags.length > 0) charFragments.set(c.name, frags)
+    const frags = buildCharacterFragments({
+      outfit: isNonEmptyString(c.outfit) ? c.outfit : null,
+      description: isNonEmptyString(c.description) ? c.description : null,
+    })
+    if (frags.outfit.length || frags.appearance.length || frags.description.length) {
+      charFragments.set(c.name, frags)
+    }
   }
   for (const a of existingAssets) {
     if (a.kind !== 'character' || charFragments.has(a.name)) continue
-    const frags = appearanceFragments(a.description)
-    if (frags.length > 0) charFragments.set(a.name, frags)
+    const frags = buildCharacterFragments({ description: a.description })
+    if (frags.outfit.length || frags.appearance.length || frags.description.length) {
+      charFragments.set(a.name, frags)
+    }
   }
 
   shots.forEach((s, i) => {
@@ -497,14 +641,39 @@ export function validateCogenOutput(
           )
           return
         }
-        // 约束 9 落地：【人物】段的服饰/外貌必须逐字引用资产卡片段，至少命中一个
+        // 约束 9 落地（§4.3 强化）：**限定【人物】段** + **分要素**校验。
+        // 优化前在整段 frameDescription 里找任意 ≥4 字片段命中即过——
+        // 【场景】/【动作】段的偶然命中、<4 字的服饰词豁免，强度远低于
+        // 提示词宣称的"逐字引用"。现在：
+        //   - 只匹配【人物】段（四段式解析失败时回退全文，保持可用）；
+        //   - 服饰要素必须命中（资产卡有 outfit 时），外貌要素命中任一即可；
+        //   - 2-3 字短片段按切分片段内部命中判定（防"红衣"命中"红衣架上"式假命中）。
         if (isNonEmptyString(s.frameDescription)) {
           const frags = charFragments.get(c.name)
-          if (frags && !frags.some((f) => includesNormalized(s.frameDescription, f))) {
-            errors.push(
-              `${tag}【人物】段的角色 "${c.name}" 未引用其资产卡服饰/外貌原文（强约束 9）：` +
-                `请逐字包含至少一个片段，如 ${frags.slice(0, 5).map((f) => `"${f}"`).join(' / ')}`,
-            )
+          if (frags) {
+            const sections = extractFrameSections(s.frameDescription)
+            const subjectText = sections.character
+            const subjectSegs = splitFragments(subjectText).map((seg) => seg.replace(/\s+/g, ''))
+
+            const hit = (list: string[]) =>
+              list.some((f) => fragmentMatches(subjectText, f, subjectSegs))
+
+            // §4.3：已有资产的服饰信息混在 description 里（无独立 outfit 字段），
+            // 此时把 description 也纳入"视觉要素"来源——否则会要求模型照抄
+            // "第一集主角"这类叙述文本，属误伤。
+            const visualPool = [...frags.outfit, ...frags.appearance]
+            const effectivePool = visualPool.length > 0 ? visualPool : frags.description
+            const hasVisualElements = effectivePool.length > 0
+
+            if (hasVisualElements && !hit(effectivePool)) {
+              // 提示片段优先给"像服饰/外貌"的（含服饰后缀词或较长片段），
+              // 避免把"第一集主角"这类叙述文本推荐给模型照抄
+              const suggested = rankFragmentsForHint(effectivePool).slice(0, 3)
+              errors.push(
+                `${tag}【人物】段的角色 "${c.name}" 未逐字引用其资产卡原文（强约束 9${sections.parsed ? '，已按【人物】段校验' : ''}）：` +
+                  `请在【人物】段照抄资产卡里的服饰/外貌原句，如 ${suggested.map((f) => `"${f}"`).join(' / ')}`,
+              )
+            }
           }
         }
       })
