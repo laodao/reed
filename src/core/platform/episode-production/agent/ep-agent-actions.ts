@@ -56,6 +56,7 @@ import type {
   EpAgentProductionState,
 } from './ep-agent.types'
 import { checkEpActionDependency, computeEpProductionState } from './ep-agent-deps'
+import { promptContextFromEpisodeAndProject } from '@core/platform/episode-production/prompts/episode-prompt-context.service'
 
 // ==================== JSON 容错解析（复用长文 agent 实现） ====================
 
@@ -243,11 +244,15 @@ async function executeGenerateScript(
   const roster = await buildAssetRosterForProject(m.dataSource, episode.projectId)
 
   // ③ AI 生成完整剧本
+  // §3.4：注入 PromptContext（故事背景 + 体裁纪律 + 篇幅目标）。
+  // 优化前剧本生成完全不注入故事背景，而下游润色器却有——决定基调的生成环节反而没有。
+  const promptCtx = promptContextFromEpisodeAndProject(episode, project)
   const result = await EpisodeScriptGenerator.getInstance().generateFullScript(
     chapterContent,
     roster,
     providerConfigId,
     modelId,
+    promptCtx,
   )
 
   // ④–⑦ S5（2026-09-25 一致性修复第二批）：剧本 upsert + 级联删旧分镜 +

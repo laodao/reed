@@ -1,4 +1,4 @@
-/**
+﻿/**
  * narrative/ai/storyboard-cogen
  * @module platform/episode-production/narrative/ai/storyboard-cogen
  * @description 分镜与资产识别联合生成（tasks/2026-09-16-storyboard-asset-cogen · D1/D4-1）。
@@ -20,6 +20,12 @@ import {
   narrationDisplayId,
   DEFAULT_NARRATION_ID,
 } from '../../prompts/scene-id'
+import {
+  createDefaultPromptContext,
+  renderStoryStyleBlock,
+  type PromptContext,
+} from '../../prompts/prompt-context'
+import { pacingDensitySpec } from '../../prompts/specs'
 
 // ==================== 类型定义（对齐 design.md D1 输出 schema） ====================
 
@@ -118,6 +124,7 @@ export { dialogueDisplayId, actionDisplayId, narrationDisplayId, DEFAULT_NARRATI
 export function buildCogenPrompt(
   scene: SceneScript,
   existingAssets: CogenExistingAsset[],
+  ctx: PromptContext = createDefaultPromptContext(),
 ): string {
   const existingSection =
     existingAssets.length > 0
@@ -131,6 +138,14 @@ export function buildCogenPrompt(
       : '（项目暂无已有资产，本场景所需资产全部按新资产产出）'
 
   const narrationId = narrationDisplayId(scene.narration)
+  // §3.8：故事背景/风格/画幅/目标时长注入（优化前 cogen 一个都没有——
+  // 约束 6 要求"15s 片段 8-12 镜"却没给场景目标秒数，节奏规则无法执行）
+  const storyStyleBlock = renderStoryStyleBlock(ctx)
+  // §3.8/§2.4：节奏密度改由体裁档案渲染（不再内联重写 shot-pacing 的副本，
+  // 两份文本此前已分叉——片段含"duration 之和=目标总时长"硬规则，内联副本没有）
+  const pacingSpec = pacingDensitySpec(ctx)
+  // §3.8：语速从上下文取（提示词、校验、前端三处口径统一）
+  const speechRate = ctx.speechCharsPerSec
   const sceneSection = `
 场景 ${scene.sceneNumber}: ${scene.location}
 地点类型: ${scene.locationType}
@@ -155,6 +170,8 @@ ${(scene.actions ?? []).map((a, i) => `- ${actionDisplayId(a, i)} · ${a.descrip
   return `请为下面的场景同时完成两件事（一次输出）：
 1) 识别本场景需要的视觉资产（角色 / 地点 / 物品），产出资产卡；
 2) 基于这些资产设计本场景的全部分镜（2~8 个镜头）。
+
+${storyStyleBlock}
 
 ## 项目已有资产（直接引用，禁止改名、禁止重复创建）
 
@@ -226,7 +243,9 @@ ${sceneSection}
 3. 引用已有资产时：existing 填 true，name 必须与已有资产名单完全一致（不得改名），description 照抄已有描述（可补充细节，但不得与已有描述矛盾）。
 4. 新资产（existing=false）：name 不得与任何已有资产重名；description 必须完整（角色必须含外貌 + 服饰），这份描述就是定妆图与后续所有分镜文本的唯一依据。
 5. frameDescription 必须按四段式填写：【场景】地点 + 空间布局 + 关键物件；【人物】角色 + 位置 + 表情 + 服饰外观 + 姿态；【动作】正在发生什么 + 细节；【氛围】光线 + 色调 + 情绪基调。其中【人物】段的服饰/外貌必须与对应资产卡完全一致，跨镜头不得漂移。
-6. duration 为镜头时长（秒，1~10 的数字），按下方密度分档选择：钩子开场/冲突爆发/打脸/身份揭示/高潮清算 → 1-1.5s（15s 片段 8-12 镜）；对话交锋/情绪递进/常规叙事 → 1.5-2.5s（15s 片段 6-9 镜）；关键台词特写/反转停顿/蓄势 → 2.5-4s；情感沉淀/静态凝视/空镜（呼吸镜头）→ 3-8s，仅用于情感节点、整片少量使用。常规叙事段镜头平均时长不得超过 2.5s（每 2 秒 1 镜是短剧留存底线），情感沉淀段除外。
+6. duration 为镜头时长（秒，1~10 的数字），按下方「镜头节奏密度分档」选择档位与时长——该分档按本项目的体裁与片段预算生成，同一场景内可混合档位，且**各镜头 duration 之和应接近本场景目标总时长**（场景目标见上方「故事背景与风格」，未给出时按剧情内容判断）。
+
+${pacingSpec}
 7. assets.location 恰好一个（本场景主地点）；assets.items 只列会在画面中出现、需要视觉一致性的关键物品，没有则给空数组 []。
 8. 剧本细节必须照抄原文：药理名/药名、对白、数字、称谓、专有名词等细节必须与上方「场景剧本」逐字一致，禁止同义转述、替换或自由发挥（例如剧本写"赤芍"，就不得改写成"白芍"）。
 9. shots[].frameDescription 的【人物】段中，角色的服饰/外貌描述必须逐字引用对应资产卡的 description / outfit 原文（已有资产 = 上方「项目已有资产」里注入的描述；新资产 = 本响应 assets.characters 中你给出的 description / outfit），不得改写、概括或同义替换；【人物】段的其余部分（位置/表情/动作/姿态）按镜头需要描写。
@@ -234,7 +253,7 @@ ${sceneSection}
 10. 命名纪律延伸：frameDescription 正文中角色/道具全程使用名册登记名（与资产名单一字不差），禁止"他/那个男人/少年"等代词或别称；禁止"三个人""众人""反派们"等群体量词概括，多角色出场须逐个写出登记名。
 10a. 资产引用标记（2026-09-21 一致性修复）：frameDescription 中每个出场角色、地点、关键道具首次出现处，登记名必须写成资产引用标记 「@[登记名]」（如「@[角色甲] 坐在床榻边」）；需要指定该资产的某张图时写 「@[登记名@图序号]」（如「@[角色乙@2]」，图序号对应资产图集槽位）。标记会被系统解析为参考图并替换为纯名文本，不影响可读性；漏写标记会被 L2 校验警告。
 11. 情绪具象外化：禁止"很悲伤""非常愤怒"等抽象情绪词，必须写具体身体细节（悲伤=低头/肩膀微颤/眼眶泛红/攥紧衣角；喜悦=嘴角上扬/眉眼舒展/脚步轻快；紧张=频繁看表/手指敲桌/呼吸急促；愤怒=双拳紧握/下颔线紧绷/胸口起伏；释然=长舒一口气/肩膀放松/淡淡微笑）。
-12. 台词长度适配镜头时长：3 秒以内的镜头只能容纳一两句短语。校验会按 4.5 字/秒硬核算——镜头承接台词的语音时长超过镜头时长会被直接拒绝；台词多就拆对切镜头或加长 duration，不要让镜头装不下它承接的台词。
+12. 台词长度适配镜头时长：3 秒以内的镜头只能容纳一两句短语。校验会按 ${speechRate} 字/秒硬核算——镜头承接台词的语音时长超过镜头时长会被直接拒绝；台词多就拆对切镜头或加长 duration，不要让镜头装不下它承接的台词。
 13. 每条对白/旁白都必须有镜头承接：上方「场景剧本」对话列表里的每一句台词，都要落在某个镜头（说话角色 + 说话动作/神态 + 听者反应），不得出现"有台词无镜头"的断档；连续多句对话可用对切镜头分别承接。**场景有旁白时，必须恰好有一个镜头回填 narrationId 为旁白 id**（承担旁白画面的那个镜头）。**frameDescription 只写"谁在说话、怎么个说法、听者什么反应"，不得引用台词原文、不得出现引号包裹的台词**——台词与镜头的对应关系只由 dialogueIds 表达，视频提示词由系统按 dialogueIds 自动拼装结构化台词段。
 13a. shots[].dialogueIds 必须逐镜填写：该镜头承接的对白 id（对话列表每行开头的 id，如 dlg_5）按播出顺序列入数组；所有对白 id 必须恰好被一个镜头引用一次——遗漏、重复、引用不存在的 id 都会被拒绝。对白特别密集时优先拆分对切镜头，确实无法全部容纳时才允许一个镜头承接多条同场连续对白。
 14. 地点命名纪律：assets.location.name 若指的是某个大场所内的局部区域（房间 / 院落 / 山门 / 某条街），必须带上所属大地名前缀，格式为「大地名+区域名」，如"某山庄书房""某山庄山门""某城城门"；不要只写"书房""山门"这种裸名。只有当本场景指的就是整座大场所本身（全景/外景建立镜头）时，才直接写大地名（如"某山庄"）。已有资产名单里出现的名字直接照抄引用（existing=true），不受本条限制。`
@@ -288,9 +307,10 @@ function includesNormalized(haystack: string, needle: string): boolean {
 }
 
 /**
- * 中文台词语音时长估算（字/秒）：短剧对白正常语速约 4~5 字/秒，取 4.5。
- * 用于台词时长硬校验（2026-10-05 台词乱码修复）：镜头承接台词的语音时长
- * 超过镜头时长时，音视频模型只能加速糊念——必须在分镜阶段打回。
+ * 中文台词语音时长估算默认值（字/秒）：短剧对白正常语速约 4~5 字/秒，取 4.5。
+ *
+ * @deprecated 2026-10-06（§3.8）：语速改为按项目配置（`ctx.speechCharsPerSec`）传入，
+ * 本常量仅作未传 context 时的兜底默认值，供既有引用兼容。
  */
 export const SPEECH_CHARS_PER_SEC = 4.5
 
@@ -299,6 +319,7 @@ export const SPEECH_CHARS_PER_SEC = 4.5
  * @param dialogueTextById 对白 id → 台词原文（与 prompt 渲染同口径 dialogueDisplayId）；
  *                         传入则启用台词时长硬校验（强约束 12 落地）
  * @param expectedNarrationId 本场景旁白 id（有旁白时传入）；传入则启用旁白承接校验（§4.2）
+ * @param speechCharsPerSec 语速（字/秒，§3.8 按项目配置）；缺省用 4.5
  * @returns 错误清单；空数组 = 合法
  */
 export function validateCogenOutput(
@@ -307,7 +328,12 @@ export function validateCogenOutput(
   expectedDialogueIds: string[] = [],
   dialogueTextById?: ReadonlyMap<string, string>,
   expectedNarrationId?: string | null,
+  speechCharsPerSec?: number,
 ): string[] {
+  const rate =
+    typeof speechCharsPerSec === 'number' && Number.isFinite(speechCharsPerSec) && speechCharsPerSec > 0
+      ? speechCharsPerSec
+      : SPEECH_CHARS_PER_SEC
   const errors: string[] = []
   const existing: ExistingNameSets = {
     characters: new Set(existingAssets.filter((a) => a.kind === 'character').map((a) => a.name)),
@@ -506,10 +532,10 @@ export function validateCogenOutput(
           const t = dialogueTextById.get(d)
           if (t) chars += t.length
         }
-        const speechSec = chars / SPEECH_CHARS_PER_SEC
+        const speechSec = chars / rate
         if (speechSec > s.duration) {
           errors.push(
-            `${tag} 承接台词共 ${chars} 字（按 ${SPEECH_CHARS_PER_SEC} 字/秒约需 ${speechSec.toFixed(1)}s），` +
+            `${tag} 承接台词共 ${chars} 字（按 ${rate} 字/秒约需 ${speechSec.toFixed(1)}s），` +
               `超过镜头时长 ${s.duration}s，台词念不完（强约束 12）：` +
               `请拆出对切镜头分摊台词，或把该镜头 duration 加长到能从容说完（关键台词镜头可用 2.5-4s）`,
           )
@@ -661,8 +687,9 @@ export async function generateCogenForScene(
   existingAssets: CogenExistingAsset[],
   providerConfigId: string,
   modelId: string,
+  ctx: PromptContext = createDefaultPromptContext(),
 ): Promise<CogenOutput> {
-  const prompt = buildCogenPrompt(scene, existingAssets)
+  const prompt = buildCogenPrompt(scene, existingAssets, ctx)
   // 对白 id 口径（M3）：prompt 渲染与本数组共用 dialogueDisplayId，初次校验与纠错重试复用同一数组
   const expectedDialogueIds = (scene.dialogues ?? []).map((d, i) => dialogueDisplayId(d, i))
   // 台词时长硬校验素材（2026-10-05）：id → 台词原文
@@ -685,7 +712,7 @@ export async function generateCogenForScene(
   }
 
   let parsed = tryParse(response)
-  let errors = parsed === null ? ['无法解析 AI 响应为 JSON 格式'] : validateCogenOutput(parsed, existingAssets, expectedDialogueIds, dialogueTextById, expectedNarrationId)
+  let errors = parsed === null ? ['无法解析 AI 响应为 JSON 格式'] : validateCogenOutput(parsed, existingAssets, expectedDialogueIds, dialogueTextById, expectedNarrationId, ctx.speechCharsPerSec)
 
   // D4-1：纠错重试最多 2 次（约束 9 服饰校验落地后，弱模型一次纠正常常改不干净；
   // 每次把最新错误清单喂回，仍失败才抛错——旧分镜保留，宁缺毋滥）
@@ -703,7 +730,7 @@ export async function generateCogenForScene(
       modelId,
     )
     parsed = tryParse(response)
-    errors = parsed === null ? ['无法解析 AI 响应为 JSON 格式'] : validateCogenOutput(parsed, existingAssets, expectedDialogueIds, dialogueTextById, expectedNarrationId)
+    errors = parsed === null ? ['无法解析 AI 响应为 JSON 格式'] : validateCogenOutput(parsed, existingAssets, expectedDialogueIds, dialogueTextById, expectedNarrationId, ctx.speechCharsPerSec)
   }
 
   if (errors.length > 0 || parsed === null) {
