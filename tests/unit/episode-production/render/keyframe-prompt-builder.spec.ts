@@ -230,9 +230,9 @@ describe('buildKeyframePrompt', () => {
 })
 
 /*
- * 古风硬约束（2026-09-21 雪麓山庄 v2 复盘 F 项）：
+ * 时代硬约束（2026-09-21 雪麓山庄 v2 复盘 F 项 → 2026-10-06 §2.5 收敛到时代档案）：
  * storyEra 命中古/武侠/朝代词 → prompt 末尾追加"严禁现代元素"，
- * negative 追加现代物词；现代/未设置 → 不追加。
+ * negative 追加现代物词；其他时代按各自档案加约束（generic 不加）。
  */
 describe('古风硬约束（storyEra）', () => {
   it('storyEra=古代武侠 → 追加禁令 + negative 现代物词', async () => {
@@ -241,7 +241,8 @@ describe('古风硬约束（storyEra）', () => {
     )
     const out = buildKeyframePrompt(baseInput({ storyEra: '古代武侠' }))
     expect(out.prompt).toContain(ANCIENT_ERA_PROMPT_SUFFIX)
-    expect(out.prompt).toContain('严禁现代建筑')
+    // §2.5 收敛后文案为并集版："严禁出现任何现代建筑…"
+    expect(out.prompt).toContain('严禁出现任何现代建筑')
     expect(out.negativePrompt).toContain(ANCIENT_ERA_NEGATIVE_SUFFIX)
     expect(out.negativePrompt).toContain('modern buildings')
   })
@@ -256,11 +257,53 @@ describe('古风硬约束（storyEra）', () => {
     expect(isAncientEra('架空古装')).toBe(true)
   })
 
-  it('现代 / 未设置 → 不追加', () => {
-    const modern = buildKeyframePrompt(baseInput({ storyEra: '现代都市' }))
-    expect(modern.prompt).not.toContain('严禁现代建筑')
-    expect(modern.negativePrompt).not.toContain('modern buildings')
+  it('非古风时代不再被误判（历史正则 "汉" 命中"武汉"的缺陷）', async () => {
+    const { isAncientEra } = await import(
+      '@core/platform/episode-production/render/keyframe/keyframe-prompt-builder'
+    )
+    expect(isAncientEra('武汉')).toBe(false)
+    expect(isAncientEra('现代都市')).toBe(false)
+    expect(isAncientEra('元素周期')).toBe(false)
+    expect(isAncientEra('明天')).toBe(false)
+  })
+
+  it('古风约束文案与资产侧同源（§2.5 消除双实现漂移）', async () => {
+    const kf = await import(
+      '@core/platform/episode-production/render/keyframe/keyframe-prompt-builder'
+    )
+    const asset = await import(
+      '@core/platform/episode-production/assets/prompts/asset-identity-prompt'
+    )
+    expect(kf.ANCIENT_ERA_PROMPT_SUFFIX).toBe(asset.ANCIENT_ERA_CONSTRAINT_SUFFIX)
+    expect(kf.ANCIENT_ERA_NEGATIVE_SUFFIX).toBe(asset.ANCIENT_ERA_NEGATIVE)
+  })
+
+  it('generic 时代（无年代信息）→ 不加任何时代约束', () => {
     const omitted = buildKeyframePrompt(baseInput())
-    expect(omitted.prompt).not.toContain('严禁现代建筑')
+    expect(omitted.prompt).not.toContain('严禁出现任何现代建筑')
+    expect(omitted.negativePrompt).not.toContain('power lines')
+  })
+
+  it('显式 eraProfileKey 优先于 storyEra 文本推断（§2.5）', async () => {
+    const { resolveEraProfile } = await import(
+      '@core/platform/episode-production/prompts/era-profiles'
+    )
+    expect(resolveEraProfile('modern', '古代武侠').key).toBe('modern')
+
+    // 现代项目：拿到现代约束，而非古风禁令
+    const modern = buildKeyframePrompt(
+      baseInput({ storyEra: '古代武侠', eraProfileKey: 'modern' } as never),
+    )
+    expect(modern.prompt).not.toContain('严禁出现任何现代建筑')
+    expect(modern.prompt).toContain('现代都市写实风格')
+  })
+
+  it('时代锚无条件注入（§3.12：不再只有古风才有时代约束）', () => {
+    const out = buildKeyframePrompt(
+      baseInput({ storyEra: '1980 年代', storyRegion: '南方小城' }),
+    )
+    expect(out.prompt).toContain('[时代背景]')
+    expect(out.prompt).toContain('1980 年代')
+    expect(out.prompt).toContain('南方小城')
   })
 })
