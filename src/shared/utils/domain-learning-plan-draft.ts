@@ -91,3 +91,35 @@ export function moveItem<T>(list: T[], from: number, delta: number): T[] {
 export function countCheckedConcepts(draft: SyllabusDraftBranch[]): number {
   return draft.filter((b) => b.checked).reduce((n, b) => n + b.concepts.filter((c) => c.checked).length, 0)
 }
+
+/**
+ * 悬空前置检查（2026-09-25 D1）：方案里声明了、但方案内**没有同名知识落点**的前置。
+ * 分支名不算落点（分支只是目录）；根层知识点可作落点；名字 trim 后精确匹配（不做子串包含）。
+ * 同一缺失名只报一次；输出形如「X」的前置「Y」（确认弹窗与 normalizePlanSyllabus 共用）。
+ */
+export function findDanglingPrereqs(syllabus: Pick<DlPlanSyllabus, 'branches' | 'rootConcepts'>): string[] {
+  const conceptNames = new Set<string>()
+  const collect = (c: DlSyllabusConcept): void => {
+    const name = String(c.name ?? '').trim()
+    if (name) conceptNames.add(name)
+  }
+  for (const b of syllabus?.branches ?? []) for (const c of b.concepts ?? []) collect(c)
+  for (const c of syllabus?.rootConcepts ?? []) collect(c)
+
+  const seen = new Set<string>()
+  const out: string[] = []
+  const check = (c: DlSyllabusConcept): void => {
+    for (const raw of c.prerequisites ?? []) {
+      const p = String(raw ?? '').trim()
+      if (!p || conceptNames.has(p)) continue
+      const label = `「${String(c.name ?? '').trim()}」的前置「${p}」`
+      if (!seen.has(label)) {
+        seen.add(label)
+        out.push(label)
+      }
+    }
+  }
+  for (const b of syllabus?.branches ?? []) for (const c of b.concepts ?? []) check(c)
+  for (const c of syllabus?.rootConcepts ?? []) check(c)
+  return out
+}
