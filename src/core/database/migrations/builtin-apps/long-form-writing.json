@@ -657,6 +657,7 @@
   "triggers": [],
   "settings": {
     "multiTurn": true,
-    "maxOutputChars": 1000000
+    "maxOutputChars": 1000000,
+    "maxDurationMs": 7200000
   }
 }
