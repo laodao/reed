@@ -41,6 +41,8 @@ import { KnowledgeBaseRepository } from '@core/database/repositories/knowledge-b
 import { KbInvertedIndexRepository } from '@core/database/repositories/kb-inverted-index.repository'
 import {
   KbBrainDigestService,
+  isNonNarrativeChapter,
+  isModerationRejection,
   type KbBrainDigestDeps
 } from '@core/platform/services/kb-brain/digest-orchestrator.service'
 import type { BrainLlmFn } from '@core/platform/services/kb-brain/llm'
@@ -460,5 +462,55 @@ describe('KbBrainDigestService 生产路径每库模型（M6 回归）', () => {
       expect((c[2] as { providerConfigId?: string; modelId?: string }).modelId).toBe('model-adj')
       expect((c[2] as { providerConfigId?: string }).providerConfigId).toBe('prov-adj')
     }
+  })
+})
+
+describe('isNonNarrativeChapter（非叙事章节门）', () => {
+  it('epub 前置页/编辑附录 → true（含装饰符与父标题「简介 主要XX」子页）', () => {
+    expect(isNonNarrativeChapter('版权信息')).toBe(true)
+    expect(isNonNarrativeChapter('内容简介')).toBe(true)
+    expect(isNonNarrativeChapter('作者简介')).toBe(true)
+    expect(isNonNarrativeChapter('作品评价')).toBe(true)
+    expect(isNonNarrativeChapter('作品赏析')).toBe(true)
+    expect(isNonNarrativeChapter('**人物简介：**')).toBe(true)
+    expect(isNonNarrativeChapter('**人物评析：**')).toBe(true)
+    expect(isNonNarrativeChapter('**人物剧照：**')).toBe(true)
+    expect(isNonNarrativeChapter('cove')).toBe(true)
+    // 子页：标题是人物/门派名，靠父标题识别
+    expect(isNonNarrativeChapter('张小凡', '简介 主要人物')).toBe(true)
+    expect(isNonNarrativeChapter('青云门', '简介 主要门派')).toBe(true)
+    expect(isNonNarrativeChapter('天琊剑', '简介 主要法宝')).toBe(true)
+  })
+
+  it('正文与真实叙事结构 → false（序章/尾声/各卷正文章节不误伤）', () => {
+    expect(isNonNarrativeChapter('序章')).toBe(false)
+    expect(isNonNarrativeChapter('尾声')).toBe(false)
+    expect(isNonNarrativeChapter('第一章 青云', '诛仙')).toBe(false)
+    expect(isNonNarrativeChapter('第三十八章 古剑诛仙')).toBe(false)
+    expect(isNonNarrativeChapter('青云门', '第二卷')).toBe(false)
+    expect(isNonNarrativeChapter(null, null)).toBe(false)
+  })
+})
+
+describe('isNonNarrativeChapter（父标题容器防误伤）', () => {
+  it('全书挂在封面容器下时不误杀正文（诛仙 epub 实例）', () => {
+    expect(isNonNarrativeChapter('序章', 'cove')).toBe(false)
+    expect(isNonNarrativeChapter('第一章 青云', 'cove')).toBe(false)
+    expect(isNonNarrativeChapter('第四十三章 天书', 'cove')).toBe(false)
+    expect(isNonNarrativeChapter('尾声', 'cove')).toBe(false)
+    // 但封面自身作为标题仍命中
+    expect(isNonNarrativeChapter('cove', null)).toBe(true)
+  })
+})
+
+describe('isModerationRejection（云审核拦截归一）', () => {
+  it('阿里 data_inspection_failed / 措辞变体 / 中文审核 → true', () => {
+    expect(isModerationRejection('{"error":{"code":"data_inspection_failed","message":"Input text data may contain inappropriate content."}}')).toBe(true)
+    expect(isModerationRejection('content_filter: prompt blocked')).toBe(true)
+    expect(isModerationRejection('输入内容未通过内容审核')).toBe(true)
+  })
+  it('普通错误 → false', () => {
+    expect(isModerationRejection('HTTP 429 rate limited')).toBe(false)
+    expect(isModerationRejection('无法解析 AI 响应为 JSON 格式')).toBe(false)
   })
 })

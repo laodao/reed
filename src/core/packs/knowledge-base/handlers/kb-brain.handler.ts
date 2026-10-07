@@ -17,6 +17,7 @@ import { getKbConsolidateService } from '@core/platform/services/kb-brain/consol
 import { getKbCleanupService } from '@core/platform/services/kb-brain/cleanup.service'
 import { getKbLayerRelabelService } from '@core/platform/services/kb-brain/layer-relabel.service'
 import { getKbBookPassesService } from '@core/platform/services/kb-brain/book-passes.service'
+import { getKbBookReadingService } from '@core/platform/services/kb-brain/book-reading.service'
 import { KbBrainHealthService } from '@core/platform/services/kb-brain/health.service'
 import { parseModelRef } from '@core/platform/services/kb-brain/llm'
 import { parseBrainConfig } from '@core/platform/services/kb-brain/brain-config'
@@ -380,6 +381,48 @@ export function registerKbBrainHandlers(): void {
   })
   ipcBridge.handle('kb:brain:book-passes-status', (_e, p: { kbId: string }) => {
     return { success: true, data: bookPasses.kbStatus(p.kbId) }
+  })
+
+  // P1 滚动阅读（全书工作记忆）：单文档 fire-and-forget + 状态轮询；断点在章级台账
+  const bookReading = getKbBookReadingService()
+  ipcBridge.handle('kb:brain:reading-run', async (_e, p: { kbId: string; documentId?: string }) => {
+    if (bookReading.isRunningKb(p.kbId)) return { success: false, error: '全书精读进行中' }
+    const kbRow = await svc()
+      .getKnowledgeBase(p.kbId)
+      .then(r => r.data)
+    const cfg = kbRow?.brainConfig ? parseBrainConfig(kbRow.brainConfig) : null
+    bookReading.setModelOverride(p.kbId, () =>
+      cfg?.models.adjudicate ? parseModelRef(cfg.models.adjudicate) : {}
+    )
+    const runDoc = async (documentId: string): Promise<void> => {
+      const st = await bookReading.run(p.kbId, documentId)
+      console.info(
+        `[kb-brain] 全书精读完成 kb=${p.kbId} doc=${documentId} 批=${st.batches}/${st.batchesTotal} 记忆=${st.memoryChars}字`
+      )
+    }
+    void (async () => {
+      try {
+        if (p.documentId) {
+          await runDoc(p.documentId)
+        } else {
+          const docs = await svc()
+            .getDocuments(p.kbId)
+            .then(r => (r.success && r.data ? r.data.map(d => d.id) : []))
+          for (const documentId of docs) {
+            if (!bookReading.isRunningKb(p.kbId)) break
+            await runDoc(documentId)
+          }
+        }
+      } catch (e) {
+        console.warn(
+          `[kb-brain] 全书精读失败 kb=${p.kbId}: ${e instanceof Error ? e.message : String(e)}`
+        )
+      }
+    })()
+    return { success: true, data: { queued: true } }
+  })
+  ipcBridge.handle('kb:brain:reading-status', (_e, p: { kbId: string }) => {
+    return { success: true, data: bookReading.kbStatus(p.kbId) }
   })
 
   // G3 伏笔扫描（sets-up 边候选生成器；fire-and-forget + 状态轮询；仅手动触发——自动扫描需独立成本闸门）

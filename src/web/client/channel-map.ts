@@ -270,6 +270,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   },
   'knowledgeBase.brain.autoLogUndo': { channel: 'kb:brain:auto-log-undo', wrap: (logId: unknown) => [{ logId: logId as string }] },
   'knowledgeBase.brain.bookPassesRun': { channel: 'kb:brain:book-passes-run', wrap: (kbId: unknown) => [{ kbId: kbId as string }] },
+  'knowledgeBase.brain.readingRun': { channel: 'kb:brain:reading-run', wrap: (kbId: unknown, documentId?: unknown) => [{ kbId: kbId as string, documentId: documentId as string | undefined }] },
+  'knowledgeBase.brain.readingStatus': { channel: 'kb:brain:reading-status', wrap: (kbId: unknown) => [{ kbId: kbId as string }] },
   'knowledgeBase.brain.bookPassesStatus': { channel: 'kb:brain:book-passes-status', wrap: (kbId: unknown) => [{ kbId: kbId as string }] },
   'knowledgeBase.brain.foreshadowRun': { channel: 'kb:brain:foreshadow-run', wrap: (kbId: unknown) => [{ kbId: kbId as string }] },
   'knowledgeBase.brain.foreshadowStatus': { channel: 'kb:brain:foreshadow-status', wrap: (kbId: unknown) => [{ kbId: kbId as string }] },

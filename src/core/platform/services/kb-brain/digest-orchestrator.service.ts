@@ -151,6 +151,46 @@ export interface KbBrainDigestDeps {
   repos?: () => KbBrainRepos | null
 }
 
+/**
+ * 非叙事章节（epub 前置页与编辑附录）：版权/内容简介/作者简介/作品评价/赏析/
+ * 人物简介·评析·剧照/「简介 主要XX」人物·门派·法宝介绍页等。这些是出版方与
+ * 编译者的文字，不是小说正文——对它们的提取只会产出书评摘录式垃圾论断
+ * （「被誉为可媲美还珠楼主《蜀山剑侠传》」），污染概要层与实体池。
+ * 注意：序章/尾声/正文各卷不受影响；匹配对标题做空白与装饰符清洗。
+ */
+export function isNonNarrativeChapter(title: string | null, parentTitle?: string | null): boolean {
+  const clean = (s: string | null | undefined): string => (s ?? '').replace(/[\s*：:－—-]/g, '')
+  const t = clean(title)
+  const p = clean(parentTitle)
+  if (!t && !p) return false
+  const front: RegExp[] = [
+    /^版权(信息|页)?$/,
+    /^(内容简介|内容梗概|内容提要)$/,
+    /^(作者|译者)简介$/,
+    /^出版(说明|絮语)$/,
+    /^(作品|本书)(评价|赏析|介绍|相关)$/,
+    /^人物(剧照|简介|评析|介绍|赏析)$/,
+    /^主要(人物|门派|法宝|地点|势力)$/,
+    /^(封面|扉页|目录|插图)$/,
+    /^cove(r)?$/i
+  ]
+  // 父标题只认明确的附录容器——封面类容器（如本书 epub 把全书章节都挂在 cove 下）
+  // 不能作为父级判据，否则会误杀全部正文
+  const parentFront: RegExp[] = [
+    /^版权(信息|页)?$/,
+    /^(内容简介|内容梗概|内容提要)$/,
+    /^(作者|译者)简介$/,
+    /^(作品|本书)(评价|赏析|介绍|相关)$/,
+    /^人物(剧照|简介|评析|介绍|赏析)$/,
+    /^主要(人物|门派|法宝|地点|势力)$/,
+    /^简介(主要(人物|门派|法宝|地点|势力))?$/
+  ]
+  const hit = (s: string, pats: RegExp[]): boolean => pats.some(re => re.test(s))
+  if (t && hit(t, front)) return true
+  if (p && hit(p, parentFront)) return true
+  return false
+}
+
 export class KbBrainDigestService {
   private readonly injectedLlm: BrainLlmFn | undefined
   private readonly embedFn: NonNullable<KbBrainDigestDeps['embed']>
@@ -246,6 +286,10 @@ export class KbBrainDigestService {
     }
     for (const [uid, docIds] of byUser) {
       for (const docId of docIds) {
+        // 只恢复真中断（digesting）：skipped/failed/pending 交给自动化巡检按状态与
+        // 冷却入队——否则被手动跳过/失败的文档每次开机都会被僵尸台账复活重跑
+        const doc = await repos.docs.findById(docId)
+        if (!doc || doc.brainStatus !== 'digesting') continue
         logger.info(`[kb-brain] 恢复消化: doc=${docId} user=${uid}`)
         this.enqueueDocument(docId, uid).catch(e =>
           logger.warn(
@@ -329,11 +373,17 @@ export class KbBrainDigestService {
       const chapterRows = await chapters.findByDocument(documentId)
       let done = 0
       const exhaustedChapters: string[] = []
+      const moderationSkipped: string[] = []
       const skippedSameChapters: Array<{ id: string; hash: string | null }> = []
       const insertedThisRun: KbAtomInput[] = []
       let busyChapters = 0
       for (const chapter of chapterRows) {
-        const { outcome, inserted } = await this.digestChapter(
+        // 非叙事章节（版权/简介/评析/剧照等前置页）不产论断与场面——计入进度直接跳过
+        if (isNonNarrativeChapter(chapter.title, chapter.parentTitle)) {
+          done++
+          continue
+        }
+        const { outcome, inserted, moderation } = await this.digestChapter(
           kbId,
           documentId,
           chapter.id,
@@ -344,6 +394,7 @@ export class KbBrainDigestService {
         )
         insertedThisRun.push(...inserted)
         if (outcome === 'exhausted') exhaustedChapters.push(chapter.id)
+        if (moderation) moderationSkipped.push(chapter.id)
         else if (outcome === 'skipped-same')
           skippedSameChapters.push({ id: chapter.id, hash: chapter.contentHash })
         else if (outcome === 'busy') busyChapters++
@@ -361,6 +412,12 @@ export class KbBrainDigestService {
         })
         this.emitStatus(documentId, 'failed', '章节重试耗尽')
         return
+      }
+      // 审核拦截章：不计入失败终态——pass 留 failed 痕迹可人工重试，整书继续走完
+      if (moderationSkipped.length > 0) {
+        logger.warn(
+          `[kb-brain] doc=${documentId} ${moderationSkipped.length} 章被云内容审核拦截，跳过（可换模型/供应商后人工重试）`
+        )
       }
       if (busyChapters > 0) {
         logger.warn(`[kb-brain] doc=${documentId} 有 ${busyChapters} 章在并发运行中被跳过（瞬态）`)
@@ -448,6 +505,8 @@ export class KbBrainDigestService {
     cfg: KbBrainConfig
   ): Promise<{
     outcome: 'digested' | 'skipped-same' | 'busy' | 'exhausted'
+    /** 云审核拦截章：pass 留 failed 痕迹，但整书按跳过继续（moderationSkipped 汇总） */
+    moderation?: boolean
     inserted: KbAtomInput[]
   }> {
     const repos = this.reposFn()
@@ -752,7 +811,13 @@ export class KbBrainDigestService {
       await passes.setDone(pass.id, stats, { calls: stats.costCalls, tokensIn: 0, tokensOut: 0 })
       return { outcome: 'digested', inserted: keptInputs }
     } catch (e) {
-      await passes.setFailed(pass.id, e instanceof Error ? e.message : String(e))
+      const msg = e instanceof Error ? e.message : String(e)
+      await passes.setFailed(pass.id, msg)
+      // 云端内容审核拦截（阿里 data_inspection_failed 等）：重试无意义——本章放弃，
+      // 不上抛拖死整书（主流云模型都有审核，按模型无关纪律优雅降级）
+      if (isModerationRejection(msg)) {
+        return { outcome: 'exhausted', inserted: [], moderation: true }
+      }
       throw e
     }
   }
@@ -846,6 +911,8 @@ export class KbBrainDigestService {
       const chapterRows = await repos.chapters.findByDocument(doc.id)
       for (const chapter of chapterRows) {
         if (processed >= batch) break outer
+        // 非叙事章节（前置页）不采场面
+        if (isNonNarrativeChapter(chapter.title, chapter.parentTitle)) continue
         const decision = await repos.passes.ensurePass({
           knowledgeBaseId: kbId,
           documentId: doc.id,
@@ -1055,6 +1122,8 @@ export class KbBrainDigestService {
         modelOverride: () => (cfg.models.atomize ? parseModelRef(cfg.models.atomize) : {})
       })
       for (const chapter of chapterRows) {
+        // 非叙事章节（前置页）不跑视角遍
+        if (isNonNarrativeChapter(chapter.title, chapter.parentTitle)) continue
         const decision = await repos.passes.ensurePass({
           knowledgeBaseId: kbId,
           documentId,
@@ -1354,6 +1423,11 @@ export async function backfillScenesForKb(
 }
 
 /* ==================== 内部工具 ==================== */
+
+/** 云内容审核拦截（阿里 data_inspection_failed 等；各云厂商措辞归一）——重试无意义 */
+export function isModerationRejection(message: string): boolean {
+  return /data_inspection_failed|inappropriate content|content[_ ]?filter|内容审核|涉黄涉政/i.test(message)
+}
 
 function safeParseConfig(raw: string | null | undefined): KbBrainConfig | null {
   try {

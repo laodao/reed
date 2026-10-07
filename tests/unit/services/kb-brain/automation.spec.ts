@@ -45,6 +45,8 @@ function makeDeps(overrides: Partial<KbBrainAutomationDeps> = {}) {
     openQuestions: 0,
   }
   const savedStates: Array<Record<string, unknown>> = []
+  /** 僵死看护数据源：文档 → 台账行（缺省空 = 无在跑台账） */
+  const passesByDocument: Record<string, Array<{ status: string; updatedAt: Date | null }>> = {}
   /** 冶炼增长门的事件量（测试可改） */
   let eventsCount = 100
   const deps: KbBrainAutomationDeps & {
@@ -53,6 +55,7 @@ function makeDeps(overrides: Partial<KbBrainAutomationDeps> = {}) {
     docs: DocRow[]
     stats: typeof stats
     savedStates: Array<Record<string, unknown>>
+    passesByDocument: Record<string, Array<{ status: string; updatedAt: Date | null }>>
     setEventsCount(n: number): void
   } = {
     calls,
@@ -60,6 +63,7 @@ function makeDeps(overrides: Partial<KbBrainAutomationDeps> = {}) {
     docs,
     stats,
     savedStates,
+    passesByDocument,
     setEventsCount: (n: number) => (eventsCount = n),
     now: () => Date.now(),
     repos: () => ({
@@ -73,9 +77,24 @@ function makeDeps(overrides: Partial<KbBrainAutomationDeps> = {}) {
           return true
         },
       },
-      docs: { findByKnowledgeBaseId: async () => docs },
+      docs: {
+        findByKnowledgeBaseId: async () => docs,
+        updateBrainStatus: async (docId: string, patch: { status?: string }) => {
+          const doc = docs.find((d) => d.id === docId)
+          if (doc && patch.status) doc.brainStatus = patch.status
+          calls.push(`docs-update-status:${docId}:${patch.status ?? ''}`)
+          return true
+        },
+      },
       atoms: { statsByKb: async () => stats },
-      passes: { costByKb: async () => ({ calls: 0 }) },
+      passes: {
+        costByKb: async () => ({ calls: 0 }),
+        listByDocument: async (docId: string) => passesByDocument[docId] ?? [],
+        resetToPending: async () => {
+          calls.push('passes-reset-to-pending')
+          return true
+        },
+      },
       events: { countByKb: async () => eventsCount },
     }),
     digest: {
@@ -263,12 +282,39 @@ describe('KbBrainAutomationService', () => {
     expect(result.ran).not.toContain('book-passes')
   })
 
-  it('消化中 → 本轮整轮让位（不跑任何 LLM 动作）', async () => {
+  it('消化中（台账有新鲜 running 章）→ 本轮整轮让位（不跑任何 LLM 动作）', async () => {
     const { svc, deps } = makeDeps()
     deps.docs[0]!.brainStatus = 'digesting'
+    deps.passesByDocument['doc1'] = [{ status: 'running', updatedAt: new Date() }]
     const result = await svc.runCycle('kb1')
     expect(result.skipped).toBe('digesting')
     expect(deps.calls).toEqual([])
+  })
+
+  it('僵死消化（digesting 但只有陈旧 running 台账）→ 复位台账与文档并入队', async () => {
+    const { svc, deps } = makeDeps()
+    deps.docs[0]!.brainStatus = 'digesting'
+    deps.passesByDocument['doc1'] = [
+      { status: 'running', updatedAt: new Date(Date.now() - 30 * 60_000) },
+    ]
+    const result = await svc.runCycle('kb1')
+    expect(deps.calls).toContain('docs-update-status:doc1:pending')
+    expect(deps.calls).toContain('digest-enqueue:doc1')
+    expect(result.ran).toEqual(['digest'])
+  })
+
+  it('digesting 但台账全部陈旧（running+pending 混合）→ 复位并入队（pending 不算存活证据）', async () => {
+    const { svc, deps } = makeDeps()
+    deps.docs[0]!.brainStatus = 'digesting'
+    deps.passesByDocument['doc1'] = [
+      { status: 'running', updatedAt: new Date(Date.now() - 30 * 60_000) },
+      { status: 'pending', updatedAt: new Date(Date.now() - 30 * 60_000) },
+    ]
+    const result = await svc.runCycle('kb1')
+    expect(deps.calls).toContain('passes-reset-to-pending')
+    expect(deps.calls).toContain('docs-update-status:doc1:pending')
+    expect(deps.calls).toContain('digest-enqueue:doc1')
+    expect(result.ran).toEqual(['digest'])
   })
 
   it('冷却记账：紧接的第二轮什么都不重复跑', async () => {
@@ -331,9 +377,15 @@ describe('KbBrainAutomationService', () => {
           findById: async (id: string) => deps.kbs.find((k) => k.id === id) ?? null,
           updateBrainState: async () => true,
         },
-        docs: { findByKnowledgeBaseId: async () => deps.docs },
+        docs: {
+          findByKnowledgeBaseId: async () => deps.docs,
+          updateBrainStatus: async () => true,
+        },
         atoms: { statsByKb: async () => deps.stats },
-        passes: { costByKb: async () => ({ calls: 200 }) },
+        passes: {
+          costByKb: async () => ({ calls: 200 }),
+          listByDocument: async () => [],
+        },
       }),
     })
     const result = await svc2.runCycle('kb1')

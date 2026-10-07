@@ -22,13 +22,23 @@ export interface BrainLlmRequest {
 
 /**
  * 知识大脑 LLM 输出预算统一上限（review M5）。
- * 推理型模型的思考（reasoning）计入输出 token 预算：77245113 实证 2000 都会被
- * 思考耗尽成空文本，随后 cleanup 提到 8000、goal-distill 提到 6000/8000——但
- * profile/book-passes 走同一 adjudicate 档位模型，仍留 400~3500 的低预算，
- * 推理型配置下几乎必空文本。此处统一为 8000（maxTokens 是上限不是目标，按实际
- * 输出计费，抬高不增加正常路径成本）。
+ * 推理型模型的思考（reasoning）计入输出 token 预算：2000 都会被思考耗尽成空文本。
+ * 基线 16000，思考型模型输出为空时 defaultBrainLlm 自动翻倍重试（封顶 64000）——
+ * 所有主流模型都要能跑：基线只是常态值，预算按模型行为自适应，不按模型挑提示。
  */
-export const BRAIN_LLM_MAX_TOKENS = 8000
+export const BRAIN_LLM_MAX_TOKENS = 16000
+export const BRAIN_LLM_MAX_TOKENS_CEILING = 64000
+
+/**
+ * 剥离思考标签：部分网关/模型把思考内联在正文里（<think>…</think> 或未闭合的
+ * <think>…），混进 JSON 会污染解析与续写判断。
+ */
+export function stripThinkBlocks(text: string): string {
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<think>[\s\S]*$/i, '')
+    .trim()
+}
 
 export type BrainLlmFn = (req: BrainLlmRequest) => Promise<string>
 
@@ -83,29 +93,43 @@ export function stitchContinuation(previous: string, continuation: string): stri
  */
 export function defaultBrainLlm(
   purpose: 'kb-brain-atomize' | 'kb-brain-adjudicate',
-  dynamicOverride?: () => { providerConfigId?: string; modelId?: string }
+  dynamicOverride?: () => { providerConfigId?: string; modelId?: string },
+  opts?: { transport?: (req: BrainLlmRequest) => Promise<string> }
 ): BrainLlmFn {
-  const once = (req: BrainLlmRequest): Promise<string> => {
-    const opts =
+  const once = (req: BrainLlmRequest, budget: number): Promise<string> => {
+    if (opts?.transport) return opts.transport({ ...req, maxTokens: budget })
+    const modelOpts =
       dynamicOverride?.() ??
       brainModelOverride(purpose === 'kb-brain-atomize' ? 'atomize' : 'adjudicate')
     return generateCompletionText(
       purpose,
-      { system: req.system, user: req.user, maxTokens: req.maxTokens },
-      opts
+      { system: req.system, user: req.user, maxTokens: budget },
+      modelOpts
     )
   }
   return async req => {
-    let full = await once(req)
+    let budget = req.maxTokens ?? BRAIN_LLM_MAX_TOKENS
+    let full = await once(req, budget)
+    // 思考型模型自适应（所有主流模型都要能跑，不按模型挑提示）：输出为空多半是
+    // 思考耗尽了预算 → 预算翻倍重试（≤2 次，封顶 ceiling）。按响应行为适配而非
+    // 按模型名分支——换任何模型都不需要改这里。
+    for (let i = 0; i < 2 && !stripThinkBlocks(full ?? '').trim() && budget < BRAIN_LLM_MAX_TOKENS_CEILING; i++) {
+      budget = Math.min(budget * 2, BRAIN_LLM_MAX_TOKENS_CEILING)
+      full = await once(req, budget)
+    }
+    // 截断续写（≤2 次，续写沿用升级后的预算）
     let continues = 0
-    while (continues < 2 && full && isJsonTruncated(full)) {
+    while (continues < 2 && full && isJsonTruncated(stripThinkBlocks(full))) {
       full = stitchContinuation(
         full,
-        await once({
-          system: req.system,
-          user: buildContinuePrompt(full),
-          maxTokens: req.maxTokens
-        })
+        await once(
+          {
+            system: req.system,
+            user: buildContinuePrompt(full),
+            maxTokens: budget
+          },
+          budget
+        )
       )
       continues++
     }

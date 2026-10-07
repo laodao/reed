@@ -28,6 +28,8 @@ export type KbNoteType =
   | 'principle'
   | 'craft-case'
   | 'genre-insight'
+  // 滚动阅读产线（P1：全书工作记忆，按文档一份，随批次演进）
+  | 'reading-memory'
   | 'anti-pattern'
 
 export type KbNoteStatus = 'proposed' | 'draft' | 'published' | 'archived'

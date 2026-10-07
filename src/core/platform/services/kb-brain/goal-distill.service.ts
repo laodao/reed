@@ -25,6 +25,7 @@ import {
   type KbScopedLlm
 } from './llm'
 import type { KbBrainGoal } from './brain-config'
+import { isNonNarrativeChapter } from './digest-orchestrator.service'
 
 const logger = createLogger('KbBrainGoalDistill')
 
@@ -201,6 +202,8 @@ export class KbGoalDistillService {
       const book = shortBookName(doc.name)
       const chapters = await repos.chapters.findByDocument(doc.id)
       chapters.forEach((c, i) => {
+        // 非叙事章节（版权/简介/评析/剧照等前置页）不进取材——书评摘录会污染经验卡
+        if (isNonNarrativeChapter(c.title, c.parentTitle)) return
         const summary = c.summary?.trim()
         const text = summary || c.content?.slice(0, SUMMARY_CHARS) || ''
         if (!text) return

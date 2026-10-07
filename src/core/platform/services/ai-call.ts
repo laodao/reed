@@ -685,11 +685,53 @@ export function extractJsonFromResponse(response: string): any {
       }
     }
 
+    // 括号平衡扫描：取第一个「完整」的 JSON 对象。模型偶发把答案输出两遍
+    // （{A}{B} 拼接，deepseek-v4.1 实证）或在 JSON 后追加散文——首{到尾}截取
+    // 会把两段拼在一起必炸；平衡扫描在深度归零处截断，只取第一段。
+    if (start !== -1) {
+      const first = parseFirstBalancedJsonObject(cleanedResponse.slice(start))
+      if (first) {
+        try {
+          console.log('[EpisodeProductionAI] 平衡扫描截取首个 JSON 对象，长度:', first.length)
+          return parseJsonString(first)
+        } catch (e3) {
+          console.error('[EpisodeProductionAI] 平衡扫描结果仍解析失败:', e3)
+        }
+      }
+    }
+
     // 输出更详细的错误信息
     console.error('[EpisodeProductionAI] 无法解析 AI 响应为 JSON 格式')
     console.error('[EpisodeProductionAI] 响应内容（前2000字符）:', cleanedResponse.substring(0, 2000))
     throw new Error('无法解析 AI 响应为 JSON 格式，请检查 AI 模型是否支持 JSON 输出')
   }
+}
+
+/**
+ * 从文本开头扫描第一个括号平衡的 `{...}` 对象（字符串字面量内的引号与转义不参与深度）。
+ * 找不到完整闭合返回 null。输入应从 '{' 开始（调用方负责定位）。
+ */
+export function parseFirstBalancedJsonObject(text: string): string | null {
+  if (text[0] !== '{') return null
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') inString = true
+    else if (ch === '{') depth++
+    else if (ch === '}') {
+      depth--
+      if (depth === 0) return text.slice(0, i + 1)
+    }
+  }
+  return null
 }
 
 

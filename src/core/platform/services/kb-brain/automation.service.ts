@@ -96,9 +96,9 @@ export interface KbBrainAutomationDeps {
 
 export interface AutomationRepos {
   kbs: Pick<KnowledgeBaseRepository, 'findAll' | 'findById' | 'updateBrainState'>
-  docs: Pick<KbDocumentRepository, 'findByKnowledgeBaseId'>
+  docs: Pick<KbDocumentRepository, 'findByKnowledgeBaseId' | 'updateBrainStatus'>
   atoms: Pick<KbAtomRepository, 'statsByKb'>
-  passes: Pick<KbDigestPassRepository, 'costByKb'>
+  passes: Pick<KbDigestPassRepository, 'costByKb' | 'listByDocument'>
   /** 场面事件量（v2 P1 冶炼增长门的数据源；旧库未装配时为 null——冶炼步骤跳过） */
   events?: { countByKb(kbId: string): Promise<number> } | null
 }
@@ -234,6 +234,7 @@ export class KbBrainAutomationService {
     let kbIds: string[] = []
     try {
       kbIds = (await repos.kbs.findAll()).map(k => k.id)
+      logger.info(`[kb-brain-auto] 巡检开始：${kbIds.length} 个库`)
     } catch (e) {
       logger.warn(`[kb-brain-auto] 列库失败: ${e instanceof Error ? e.message : String(e)}`)
       return []
@@ -295,6 +296,25 @@ export class KbBrainAutomationService {
     //    （管线让位：消化完成的下一轮再跑下游提炼）
     if (auto.digest) {
       const docs = await repos.docs.findByKnowledgeBaseId(kbId)
+      // 僵死看护：'digesting' 但台账 15min 内无任何更新 → 上一进程死亡残留（崩溃/被杀时
+      // status 停在 digesting、章级 pass 停在 running/pending，续消化会永久让位）。
+      // 存活的消化循环必然持续触碰台账（每章 done/running 都写 updated_at，章间空窗亚秒级）；
+      // 把陈旧 running 复位回 pending，文档复位 pending 交本轮入队。
+      const STALE_MS = 15 * 60_000
+      for (const d of docs) {
+        if (d.brainStatus !== 'digesting') continue
+        const rows = await repos.passes.listByDocument(d.id)
+        const now = this.nowFn()
+        const freshActivity = rows.some(r => now - (r.updatedAt?.getTime() ?? 0) <= STALE_MS)
+        if (freshActivity) continue
+        const staleRunning = rows.filter(r => r.status === 'running')
+        for (const r of staleRunning) await repos.passes.resetToPending(r.id)
+        await repos.docs.updateBrainStatus(d.id, { status: 'pending' })
+        d.brainStatus = 'pending'
+        logger.info(
+          `[kb-brain-auto] 僵死消化复位: doc=${d.id}（复位 ${staleRunning.length} 张陈旧 running 台账，台账 ${Math.round((now - Math.max(...rows.map(r => r.updatedAt?.getTime() ?? 0))) / 60_000)}min 无活动）`
+        )
+      }
       const digesting = docs.some(d => d.brainStatus === 'digesting')
       const pending = docs.filter(d => {
         const s = d.brainStatus ?? ''

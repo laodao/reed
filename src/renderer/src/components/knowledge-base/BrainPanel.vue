@@ -299,124 +299,34 @@
           </div>
         </section>
 
-        <!-- 论断整理 -->
+        <!-- 维护工具（收纳深度整理动作；平时由自动后台提炼按冷却执行，这里供手动立即运行） -->
         <section class="side-card">
           <header class="side-head">
-            <span class="side-title">论断整理</span>
+            <span class="side-title">维护工具</span>
             <el-button size="small" plain @click="runHealthCheck">大脑体检</el-button>
           </header>
-          <div class="side-tip" style="margin: 0 0 8px">
-            AI 分批审读论断池，把同主题的细碎碎片合并为综合论断（如「主要法宝」逐条罗列→一条）；
-            被合并的原论断归档可查回。
-          </div>
-          <div style="display: flex; gap: 8px">
-            <el-button
-              v-if="!consolidateRunning"
-              size="small"
-              type="warning"
-              plain
-              style="flex: 1"
-              :disabled="cleanupRunning || foreshadowRunning || relabelRunning || bookPassesRunning"
-              @click="startConsolidate"
-            >
-              归纳整理
+          <el-dropdown style="width: 100%" :disabled="maintBusy" @command="onMaintCommand">
+            <el-button size="small" type="primary" plain style="width: 100%" :loading="maintBusy">
+              {{ activeMaint ? `${activeMaint.name}中…` : '运行整理工具' }}
             </el-button>
-            <el-button
-              v-if="!cleanupRunning"
-              size="small"
-              type="danger"
-              plain
-              style="flex: 1"
-              :disabled="consolidateRunning || foreshadowRunning || relabelRunning || bookPassesRunning"
-              @click="startCleanup"
-            >
-              垃圾清理
-            </el-button>
-          </div>
-          <div style="margin-top: 8px">
-            <el-button
-              v-if="!foreshadowRunning"
-              size="small"
-              type="success"
-              plain
-              style="width: 100%"
-              :disabled="consolidateRunning || cleanupRunning || relabelRunning || bookPassesRunning"
-              @click="startForeshadow"
-            >
-              伏笔扫描
-            </el-button>
-          </div>
-          <div style="margin-top: 8px; display: flex; gap: 8px">
-            <el-tooltip content="分层功能上线前的存量论断分层全为「细节」——用 AI 批量重标概要/设定/描写/细节四层，分层筛选与书级设定索引取材依赖它" placement="top">
-              <el-button
-                size="small"
-                plain
-                style="flex: 1"
-                :disabled="consolidateRunning || cleanupRunning || foreshadowRunning || bookPassesRunning"
-                @click="startRelabel"
-              >
-                分层补标
-              </el-button>
-            </el-tooltip>
-            <el-tooltip content="对已消化完成的老文档补跑书级汇总：全书概要/设定索引/人物册/伏笔台账卡进「待审提议」；设定索引取材依赖分层，建议先跑「分层补标」" placement="top">
-              <el-button
-                size="small"
-                type="primary"
-                plain
-                style="flex: 1"
-                :disabled="consolidateRunning || cleanupRunning || foreshadowRunning || relabelRunning"
-                @click="startBookPasses"
-              >
-                书级汇总
-              </el-button>
-            </el-tooltip>
-          </div>
-          <template v-if="relabelRunning">
-            <el-progress :percentage="relabelPct" :stroke-width="6" />
-            <div class="side-tip">
-              分层补标中… 批次 {{ relabelProgress?.processedBatches ?? 0 }}/{{ relabelProgress?.totalBatches ?? 0 }}，已重标
-              {{ relabelProgress?.relabeledCount ?? 0 }} 条
-            </div>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="reading">全书精读——滚动工作记忆（设定/人物/情节/伏笔）</el-dropdown-item>
+                <el-dropdown-item command="consolidate">归纳整理——同主题碎片合并成综合论断</el-dropdown-item>
+                <el-dropdown-item command="cleanup">垃圾清理——归档确定无疑的垃圾论断</el-dropdown-item>
+                <el-dropdown-item command="foreshadow">伏笔扫描——埋设-回收关系判读</el-dropdown-item>
+                <el-dropdown-item command="relabel">分层补标——存量论断重标概要/设定/描写/细节</el-dropdown-item>
+                <el-dropdown-item command="bookPasses" divided>书级汇总——全书概要/设定索引/人物册</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <template v-if="activeMaint">
+            <el-progress :percentage="activeMaint.pct" :stroke-width="6" style="margin-top: 8px" />
+            <div class="side-tip">{{ activeMaint.text }}</div>
           </template>
-          <div v-if="relabelSummary !== null && !relabelRunning" class="side-tip">
-            上次补标：重标 {{ relabelSummary }} 条论断的知识分层
-          </div>
-          <template v-if="bookPassesRunning">
-            <el-progress :percentage="100" indeterminate :stroke-width="6" />
-            <div class="side-tip">
-              书级汇总中… 文档 {{ bookPassesProgress?.processedDocs ?? 0 }}/{{ bookPassesProgress?.totalDocs ?? 0 }}，产出的卡进「待审提议」
-            </div>
+          <template v-else>
+            <div v-for="s in maintSummaries" :key="s" class="side-tip" style="margin-top: 6px">{{ s }}</div>
           </template>
-          <div v-if="bookPassesSummary !== null && !bookPassesRunning" class="side-tip">
-            上次书级汇总：处理 {{ bookPassesSummary }} 份文档{{ bookPassesLastError ? `（部分失败：${bookPassesLastError}）` : '' }}
-          </div>
-          <template v-if="consolidateRunning">
-            <el-progress :percentage="consolidatePct" :stroke-width="6" />
-            <div class="side-tip">
-              归纳中… 批次 {{ consolidateProgress?.processedBatches ?? 0 }}/{{ consolidateProgress?.totalBatches ?? 0 }}，已合并
-              {{ consolidateProgress?.mergedGroups ?? 0 }} 组
-            </div>
-          </template>
-          <template v-if="cleanupRunning">
-            <el-progress :percentage="cleanupPct" :stroke-width="6" />
-            <div class="side-tip">
-              清理中… 批次 {{ cleanupProgress?.processedBatches ?? 0 }}/{{ cleanupProgress?.totalBatches ?? 0 }}，已归档
-              {{ cleanupProgress?.archivedCount ?? 0 }} 条
-            </div>
-          </template>
-          <div v-if="consolidateSummary && !consolidateRunning" class="side-tip">
-            上次归纳：合并 {{ consolidateSummary.mergedGroups }} 组，归档 {{ consolidateSummary.supersededAtoms }} 条
-          </div>
-          <div v-if="cleanupSummary && !cleanupRunning" class="side-tip">
-            上次清理：归档 {{ cleanupSummary }} 条垃圾论断
-          </div>
-          <template v-if="foreshadowRunning">
-            <el-progress :percentage="100" indeterminate :stroke-width="6" />
-            <div class="side-tip">扫描中… 逐书判读悬念与后文论断的「埋设-回收」关系</div>
-          </template>
-          <div v-if="foreshadowSummary && !foreshadowRunning" class="side-tip">
-            上次扫描：提案 {{ foreshadowSummary.linksProposed }} 条伏笔边，新增 {{ foreshadowSummary.created }} 条（可在「未回收伏笔」查看悬空项）
-          </div>
         </section>
 
         <!-- 自动化日志（v2 P4：后台动作时间线 + 撤销） -->
@@ -456,6 +366,8 @@
     <!-- 设置抽屉 -->
     <el-drawer v-model="configOpen" title="大脑设置" size="600px" :close-on-click-modal="false">
       <div class="cfg-body">
+        <el-tabs v-model="cfgTab">
+        <el-tab-pane label="基础" name="basic">
         <section class="cfg-section">
           <h4>基础</h4>
           <div class="cfg-row">
@@ -502,35 +414,41 @@
             </label>
             <el-switch v-model="configDraft.automation.enabled" />
           </div>
-          <div class="cfg-row">
-            <label class="cfg-label">
-              情节模式卡归纳
-              <span class="cfg-desc">实验性，成本较高</span>
-            </label>
-            <el-switch v-model="configDraft.patterns.plotEnabled" />
-          </div>
-          <div class="cfg-row">
-            <label class="cfg-label">
-              人物原型卡归纳
-              <span class="cfg-desc">跨书聚类归纳人物原型（同骨架异参数），提炼时运行</span>
-            </label>
-            <el-switch v-model="configDraft.patterns.characterEnabled" />
-          </div>
-          <div class="cfg-row">
-            <label class="cfg-label">
-              自动入库阈值
-              <span class="cfg-desc">论断置信度不低于该值直接入库，否则进待审提议</span>
-            </label>
-            <el-input-number
-              v-model="configDraft.autoApproveThreshold"
-              :min="0"
-              :max="1"
-              :step="0.05"
-              size="small"
-            />
-          </div>
+          <el-collapse class="cfg-advanced">
+            <el-collapse-item title="高级选项" name="adv">
+              <div class="cfg-row">
+                <label class="cfg-label">
+                  情节模式卡归纳
+                  <span class="cfg-desc">实验性，成本较高</span>
+                </label>
+                <el-switch v-model="configDraft.patterns.plotEnabled" />
+              </div>
+              <div class="cfg-row">
+                <label class="cfg-label">
+                  人物原型卡归纳
+                  <span class="cfg-desc">跨书聚类归纳人物原型（同骨架异参数），提炼时运行</span>
+                </label>
+                <el-switch v-model="configDraft.patterns.characterEnabled" />
+              </div>
+              <div class="cfg-row">
+                <label class="cfg-label">
+                  自动入库阈值
+                  <span class="cfg-desc">论断置信度不低于该值直接入库，否则进待审提议</span>
+                </label>
+                <el-input-number
+                  v-model="configDraft.autoApproveThreshold"
+                  :min="0"
+                  :max="1"
+                  :step="0.05"
+                  size="small"
+                />
+              </div>
+            </el-collapse-item>
+          </el-collapse>
         </section>
+        </el-tab-pane>
 
+        <el-tab-pane label="模型" name="models">
         <section class="cfg-section">
           <h4>模型</h4>
           <div class="cfg-row">
@@ -566,7 +484,9 @@
             </el-select>
           </div>
         </section>
+        </el-tab-pane>
 
+        <el-tab-pane label="提取目标" name="goals">
         <section class="cfg-section">
           <h4>提取目标</h4>
           <div class="cfg-desc" style="margin-bottom: 8px">
@@ -602,7 +522,9 @@
           </div>
           <div v-if="configDraft.goals.length === 0" class="side-empty">暂无目标——从模板添加或新建</div>
         </section>
+        </el-tab-pane>
 
+        <el-tab-pane label="视角遍" name="lenses">
         <section class="cfg-section">
           <h4>视角遍</h4>
           <div class="cfg-desc" style="margin-bottom: 8px">
@@ -632,6 +554,8 @@
             <el-button size="small" @click="openLensEditor(null)">新建</el-button>
           </div>
         </section>
+        </el-tab-pane>
+        </el-tabs>
       </div>
       <template #footer>
         <div class="cfg-actions">
@@ -882,6 +806,7 @@ const configDraft = ref<BrainConfig>({
   automation: { enabled: true },
 })
 const configOpen = ref(false)
+const cfgTab = ref<'basic' | 'models' | 'goals' | 'lenses'>('basic')
 const saving = ref(false)
 const enabled = ref(false)
 const enabling = ref(false)
@@ -1515,6 +1440,127 @@ const consolidatePct = computed(() => {
   return Math.min(100, Math.round((p.processedBatches / p.totalBatches) * 100))
 })
 
+// ===== 维护工具收纳（五个深度整理动作共用一个下拉入口 + 统一进度/结果展示） =====
+interface ReadingProgress {
+  running: boolean
+  batchesDone: number
+  batchesTotal: number
+  memoryChars: number
+  docsTotal?: number
+  lastError?: string
+}
+const readingRunning = ref(false)
+const readingProgress = ref<ReadingProgress | null>(null)
+const readingSummary = ref<string>('')
+let readingPollTimer: ReturnType<typeof setInterval> | null = null
+
+async function pollReading(): Promise<void> {
+  const resp = await window.electronAPI.knowledgeBase.brain.readingStatus({ kbId: props.kbId })
+  const d = (resp?.data ?? resp) as ReadingProgress | undefined
+  readingProgress.value = d ?? null
+  readingRunning.value = !!d?.running
+  if (!d?.running) {
+    if (readingPollTimer) {
+      clearInterval(readingPollTimer)
+      readingPollTimer = null
+    }
+    if (d && d.batchesTotal > 0) {
+      readingSummary.value = `上次全书精读：${d.batchesDone}/${d.batchesTotal} 批，工作记忆 ${d.memoryChars} 字${d.lastError ? `（部分失败：${d.lastError}）` : ''}`
+    }
+  }
+}
+
+function startReadingPoll(): void {
+  if (readingPollTimer) return
+  readingPollTimer = setInterval(() => void pollReading(), 5000)
+}
+
+async function startReading(): Promise<void> {
+  const resp = await window.electronAPI.knowledgeBase.brain.readingRun({ kbId: props.kbId })
+  const payload = (resp?.data ?? resp) as { success?: boolean; error?: string; queued?: boolean } | undefined
+  if (payload && payload.success === false) {
+    ElMessage.warning(payload.error ?? '无法启动全书精读')
+    return
+  }
+  readingRunning.value = true
+  startReadingPoll()
+  void pollReading()
+}
+
+onBeforeUnmount(() => {
+  if (readingPollTimer) clearInterval(readingPollTimer)
+})
+
+const maintBusy = computed(
+  () =>
+    readingRunning.value ||
+    consolidateRunning.value ||
+    cleanupRunning.value ||
+    foreshadowRunning.value ||
+    relabelRunning.value ||
+    bookPassesRunning.value
+)
+const activeMaint = computed(() => {
+  if (readingRunning.value)
+    return {
+      name: '全书精读',
+      pct: readingProgress.value && readingProgress.value.batchesTotal > 0
+        ? Math.min(100, Math.round((readingProgress.value.batchesDone / readingProgress.value.batchesTotal) * 100))
+        : 5,
+      text: `精读中… 批次 ${readingProgress.value?.batchesDone ?? 0}/${readingProgress.value?.batchesTotal ?? 0}，工作记忆 ${readingProgress.value?.memoryChars ?? 0} 字`,
+    }
+  if (consolidateRunning.value)
+    return {
+      name: '归纳整理',
+      pct: consolidatePct.value,
+      text: `归纳中… 批次 ${consolidateProgress.value?.processedBatches ?? 0}/${consolidateProgress.value?.totalBatches ?? 0}，已合并 ${consolidateProgress.value?.mergedGroups ?? 0} 组`,
+    }
+  if (cleanupRunning.value)
+    return {
+      name: '垃圾清理',
+      pct: cleanupPct.value,
+      text: `清理中… 批次 ${cleanupProgress.value?.processedBatches ?? 0}/${cleanupProgress.value?.totalBatches ?? 0}，已归档 ${cleanupProgress.value?.archivedCount ?? 0} 条`,
+    }
+  if (relabelRunning.value)
+    return {
+      name: '分层补标',
+      pct: relabelPct.value,
+      text: `分层补标中… 批次 ${relabelProgress.value?.processedBatches ?? 0}/${relabelProgress.value?.totalBatches ?? 0}，已重标 ${relabelProgress.value?.relabeledCount ?? 0} 条`,
+    }
+  if (bookPassesRunning.value)
+    return {
+      name: '书级汇总',
+      pct: 100,
+      text: `书级汇总中… 文档 ${bookPassesProgress.value?.processedDocs ?? 0}/${bookPassesProgress.value?.totalDocs ?? 0}，产出的卡进「待审提议」`,
+    }
+  if (foreshadowRunning.value)
+    return { name: '伏笔扫描', pct: 100, text: '扫描中… 逐书判读悬念与后文论断的「埋设-回收」关系' }
+  return null
+})
+const maintSummaries = computed(() => {
+  const out: string[] = []
+  if (readingSummary.value) out.push(readingSummary.value)
+  if (relabelSummary.value !== null) out.push(`上次分层补标：重标 ${relabelSummary.value} 条论断的知识分层`)
+  if (bookPassesSummary.value !== null)
+    out.push(`上次书级汇总：处理 ${bookPassesSummary.value} 份文档${bookPassesLastError.value ? `（部分失败：${bookPassesLastError.value}）` : ''}`)
+  if (consolidateSummary.value)
+    out.push(`上次归纳：合并 ${consolidateSummary.value.mergedGroups} 组，归档 ${consolidateSummary.value.supersededAtoms} 条`)
+  if (cleanupSummary.value !== null) out.push(`上次清理：归档 ${cleanupSummary.value} 条垃圾论断`)
+  if (foreshadowSummary.value)
+    out.push(`上次伏笔扫描：提案 ${foreshadowSummary.value.linksProposed} 条伏笔边，新增 ${foreshadowSummary.value.created} 条`)
+  return out
+})
+
+function onMaintCommand(cmd: string | number | object): void {
+  const key = String(cmd)
+  if (key === 'reading') void startReading()
+  else if (key === 'consolidate') void startConsolidate()
+  else if (key === 'cleanup') void startCleanup()
+  else if (key === 'foreshadow') void startForeshadow()
+  else if (key === 'relabel') void startRelabel()
+  else if (key === 'bookPasses') void startBookPasses()
+}
+
 // ===== 提取目标 =====
 const presetGroups = KB_BRAIN_GOAL_PRESETS
 const presetPick = ref('')
@@ -1861,6 +1907,10 @@ async function refresh(): Promise<void> {
   if (!props.kbId) return
   const gen = ++requestGen
   const client = (window as any).electronAPI.knowledgeBase.brain
+  // 全书精读状态恢复（后台跑着的批次进度/上次结果）
+  void pollReading().then(() => {
+    if (readingRunning.value) startReadingPoll()
+  })
   try {
     const [cfgRes, statsRes, , , docRes] = await Promise.all([
       client.getConfig(props.kbId),
@@ -2587,6 +2637,16 @@ defineExpose({ refresh })
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+/* 设置抽屉标签页内取消 cfg-body 的大间距，改由 tab pane 分隔 */
+.cfg-body .el-tabs__content {
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+}
+.cfg-advanced {
+  margin-top: 4px;
+  border-top: 1px dashed var(--el-border-color-lighter);
+  border-bottom: none;
 }
 .cfg-section h4 {
   margin: 0 0 2px;

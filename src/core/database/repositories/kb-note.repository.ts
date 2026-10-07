@@ -217,6 +217,16 @@ export class KbNoteRepository extends BaseRepository<KbNoteEntity, KbNoteRecord>
     return this.toDtoList(rows)
   }
 
+  /** 滚动阅读工作记忆卡（P1）：每文档一份，tags 带 doc:<documentId> */
+  async findReadingMemory(kbId: string, documentId: string): Promise<KbNoteRecord | null> {
+    const rows = await this.scoped.find({
+      where: { knowledgeBaseId: kbId, type: 'reading-memory' } as FindOptionsWhere<KbNoteEntity>,
+      order: { createdAt: 'DESC' } as never,
+    })
+    const hit = rows.find(r => (r.tags ?? '').includes(`"doc:${documentId}"`))
+    return hit ? this.toDto(hit) : null
+  }
+
   /**
    * 书级卡内容演进（review P2）：同题 proposed 卡被重汇总刷新——只更 body/description
    * 并 version+1（批准过的卡绝不覆盖：published/archived 由调用方 skip）。
