@@ -12,7 +12,7 @@ import { buildPrerequisiteBriefing } from '../rules/learning-prerequisites.rules
 import { assessMapCoverage, mapCoverageBriefing, type MapCoverageResult } from '../rules/learning-map-coverage.rules'
 import type { ICoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { DlSpacePrereq } from '@shared/types/domain-learning.types'
-import { DL_ESSENCE_TYPES, lessonSectionBriefMenuHint, lessonTemplateHint } from '@shared/utils/lesson-template'
+import { DL_ESSENCE_TYPES, lessonSectionContractHint, lessonTemplateHint } from '@shared/utils/lesson-template'
 import { BUILTIN_SKILLS } from '@core/platform/workflow/skills/builtin-skills'
 import { splitSkillFrontmatter } from '@core/platform/workflow/skills/skill-parser'
 
@@ -66,17 +66,23 @@ export function lessonPlanProposeInstruction(input: {
 
 本轮的产出**不是正文**，而是一份「讲义方案」草案：
 1. 先采证：知识库优先（wf_kb_retrieve）→ 联网（wf_web_extract / http_get / arXiv），合计 3-6 次够用即停；边读边记要点与出处；
-2. 判定知识本质类型（K-concept/K-oper/K-stmt/K-inst/K-agent/K-open）——它决定模板区集与区序；
-3. 调用 **dl_propose_lesson_plan** 提交方案，必须写全：
+2. 判定知识本质类型（K-concept/K-oper/K-stmt/K-inst/K-agent/K-open）——用作章节规划的参考骨架与统计口径；
+3. **判断装不装得下**：章节规划逼近篇幅上限、或内容天然是多主题聚合（如一个开源项目=原理+架构+生态+使用）时，
+   改调 **dl_propose_concept_split** 提交拆分方案（branchName + children 各自一句话定义 + 兄弟前置），等用户确认拆分——
+   不要硬凑一篇巨型讲义；
+4. 调用 **dl_propose_lesson_plan** 提交方案，必须写全：
    - **读者画像**（从哪出发、不是什么水平）+ **学完能做到**（2~4 条可测动词句）；
    - **深度 / 篇幅预算**（区数；非重点区每区字数参考上限——重点区不受此限，按需写透）/ 语气；
    - **术语表**（首现要解释的词）与**记号表**（读法 + 最小例子）；
    - **示例参数表**（全讲复用同一套数字，防跨区漂移）；
-   - **区级计划 roster**：每区给 key（模板区集内、按模板顺序）、layout（版式设备）、job（这一区替读者做什么）、
-     carrier（用什么载体承载：figure/table/formula/code/points/stats/quote/checklist）、takeaway（一句话结论）；
+   - **区级计划 roster（章节由你规划）**：锚点区照规矩放（meta 首位、selfcheck 收尾、answers 紧随、notes 置底）；
+     正文区用规范区（definition/detail/examples/operation/confusions/controversy/statement）或自造章节
+     （英文 slug + title 章节名 + role 教学职责：lead/core/case/support/close）；每区给 layout（版式设备）、
+     job（这一区替读者做什么）、carrier（载体：figure/table/formula/code/points/stats/quote/checklist）、
+     takeaway（一句话结论）。**章节规模匹配知识点复杂度**——名词解释 3~4 区收工，复杂主题按需 8~16 区；
    - 视觉计划：本讲靠什么图/表把结构讲清楚（**每个概念至少一个"看得见"的载体**：图/表/公式/代码）。
-4. **本轮不要调用 dl_save_card**——用户会在弹窗里确认或改版式，确认后宿主驱动下一轮，你再逐区精写正文。
-5. 提交后停下，用一段话说明：本质类型、准备怎么讲、打算配什么图，等用户确认。`
+5. **本轮不要调用 dl_save_card**——用户会在弹窗里确认或调整章节规划，确认后宿主驱动下一轮，你再逐区精写正文。
+6. 提交后停下，用一段话说明：本质类型、准备分哪几章（哪几章是重点）、打算配什么图，等用户确认。`
 }
 
 /**
@@ -95,26 +101,29 @@ ${input.specLock}
    stats 就是「- 68% | 命中率 | 备注」；quote 就是「> 原文」；code 就是可运行的 \`\`\`js；
    pitfall 就是短句误区；checklist 就是「- [ ] 事项」；qa 就是题面（答案拆到独立 answers 区）；
    写不出对应形状就别硬套版式（但大纲声明的载体必须补上）；
-3. **主次分明（2026-10-05 用户口径：不应有统一的每区字数上限，关键区要详细讲）**：
-   重点区（定义/详解/案例，有实操加实操）是本讲的主体——按文档式写透（段落 + \`###\` 小标题 + 表格，
-   该展开的推理/算例/反例都要有），**不受每区字数限制**；其余区精炼收敛（归纳成要点/小标题/表格，
-   不写大段散文），遵守规格锁里"非重点区 ≤N 字"的参考；每区给 takeaway（一句话结论）；
+3. **主次分明（role 定篇幅）**：重点区（role=core/case：定义/详解/案例及自造的核心章节）是本讲的主体——
+   按文档式写透（段落 + \`###\` 小标题 + 表格，该展开的推理/算例/反例都要有），**不受每区字数限制**；
+   其余区精炼收敛（归纳成要点/小标题/表格，不写大段散文），遵守规格锁里"非重点区 ≤N 字"的参考；
+   每区给 takeaway（一句话结论）；
 4. **配图（每个概念至少一个）**：结构/形状用 shape|matrix|network，趋势/对比用 plot|bar，
    并列关系用对比表，公式用 $$ 块级公式，能跑的东西用 \`\`\`js；图要服务理解，不要为配图而配图；
-5. 写完后 **dl_save_card** 落库（sections 带 key/layout/takeaway/md；有外部来源给 evidenceSources，纯先验产出则标 needsVerification=true）：
-   落库会按已确认区级计划校验（区集/区序/载体），并按视觉质检拦"文字墙/通篇无图/声明与正文不符"；
-6. 收尾用一段话告诉用户：这一讲讲清了什么、配了什么图、哪个区是重点。`
+5. 写完后 **dl_save_card** 落库（sections 带 key/title/role/layout/takeaway/md；有外部来源给 evidenceSources，纯先验产出则标 needsVerification=true）：
+   落库会按已确认区级计划校验（区集/载体），并按视觉质检拦"文字墙/通篇无图/声明与正文不符"；
+6. 收尾用一段话告诉用户：这一讲讲清了什么、分了哪几章、配了什么图、哪几章是重点。`
 }
 
 /** 快速模式说明（跳过方案确认，但质量照样管） */
 export function lessonQuickModeHint(): string {
   return `【直接产出讲义】（快速模式：本轮不必先提交讲义方案）
 要求不变：先按知识点判断是否需要外部资料（教科书级、稳定无争议的概念直接用先验写，标 needsVerification；
-私有资料/时效性/具体数据/没把握的细节再采证：知识库 → 联网，3-6 次即停），再按该本质类型的模板区集**逐区精写**：
+私有资料/时效性/具体数据/没把握的细节再采证：知识库 → 联网，3-6 次即停），再**自行规划章节并逐区精写**：
+- 结构（v9）：meta 首位 → 正文区（规范区 definition/detail/examples/operation/confusions/controversy/statement，
+  或自造章节——英文 slug + title + role）→ selfcheck 收尾、answers 紧随、notes 置底；
+- 章节规模匹配知识点复杂度（名词解释 3~4 区收工）；发现装不下（逼近上限/多主题聚合）就先 dl_propose_concept_split 建议拆分；
 - 每区选一个合适版式（要点卡/对比表/步骤条/图解/算例/公式/数据看点/引文/时间线/误区/清单/代码/自测/结论条），
   正文必须与该版式形状一致；一区长段信息要归纳，不要写成一堵文字墙；
-- 每区给 takeaway；**整篇至少一个"看得见"的载体**（figure 图 / 对比表 / 公式 / 可运行代码）；
-- 落库前自检：区集与区序符合模板、自测答案拆到独立 answers 区、有外部来源的论断带真实出处
+- role=core/case 的区是重点（写透，不受字数限制）；每区给 takeaway；**整篇至少一个"看得见"的载体**（figure 图 / 对比表 / 公式 / 可运行代码）；
+- 落库前自检：锚点位置正确、自造区带 title+role、自测答案拆到独立 answers 区、有外部来源的论断带真实出处
   （纯先验产出必须标 needsVerification=true，不得编造来源）。
 落库时视觉质检会拦"文字墙 / 通篇无图 / 声明版式与正文不符"——过了才落库。`
 }
@@ -523,12 +532,16 @@ export function dlResearchSystemPrompt(): string {
 你的工作纪律：
 1. 需要研究概念时，先调用 discover_capabilities 查看可用技能，再用 invoke_skill 调用学习技能：learning-domain-map（建骨架）/ learning-lesson-designer（**讲义方案规划：先规划规格与区级计划，再动笔**）/ learning-concept-explainer（单概念讲义逐区精写）/ learning-source-collector（采集前先规划资料路由）/ learning-question-generator（多视角补盲提问）/ learning-relation-miner（从材料提取关系与建议）/ learning-lesson-updater（已有讲义做增量修订，别整篇重写）/ learning-practice-builder（出分层练习与自测）；
 2. 研究产出经 dl_save_concept / dl_save_relation 把概念与关系建议落为草稿（用户会在地图人审中确认），经 dl_save_card 把讲义卡片落为草稿；
-   - **讲义区集契约（2026-09-13 起 dl_save_card 硬校验，违反会被拒绝）**：区名只能用下表中的在册区名，并按该知识本质类型给定的顺序排（用不到的区可以跳过，但不能乱序、不能自造区名）：
+   - **讲义区集契约（v9：锚点区 + 开放区，2026-10-06 起落库校验，违反会被拒绝）**：
+     固定 key 的只有锚点区——meta（学习前必读）必须**首位**；selfcheck（自测）收尾；answers（参考答案）紧跟 selfcheck（不占章节编号、默认折叠）；notes（编写注记）置底。
+     正文区**自由规划**（规模匹配知识点复杂度）：规范区直接用（有默认标题/职责/字数），自造章节（介绍复杂开源项目/技术时按需起章：architecture/ecosystem/evolution/usage…）须自带 title（章节名）与 role（教学职责）。
+     role 五选一：lead 导学 / core 核心 / case 案例 / support 支撑 / close 收尾——core/case 是重点（core≥320 字、case≥260 字参考下限），重点合计应占全文大头；深度检查按 role 聚合，自造区同样受管。
+     区正文里的小标题一律用 \`###\`（区标题已占二级语义）；自测的**题目与答案必须分开**（题面放 selfcheck，答案放独立 answers 区，或所有题目写完后用**独占一行**的「答案」/「参考答案」小标题引出——系统会自动拆）；答案写在题目行里（\`**答案 1**：…\`、\`（答：…）\`）会被拒绝。
+     完整契约表：
+${lessonSectionContractHint().split('\n').map((line) => `     ${line}`).join('\n')}
+     常见知识形态的参考骨架（可裁剪、可增删、可自造——不是硬性区集）：
 ${DL_ESSENCE_TYPES.map((t) => `     · ${t}：${lessonTemplateHint(t)}`).join('\n')}
-     区标题由模板派生（**不要自己起大标题**，同一类型同一区的标题必须一致）；区正文里的小标题一律用 \`###\`（区标题已占二级语义），不要写 \`##\`；
-     自测的**题目与答案必须分开**：题面放 selfcheck，答案放独立 answers 区；或所有题目写完后用**独占一行**的「答案」/「参考答案」小标题引出（系统会自动拆成独立区）。答案写在题目行里（\`**答案 1**：…\`、\`（答：…）\`）会被拒绝——渲染层据此把答案默认折叠，读者先做再对；
-   - **重点分配与区序（2026-09-15 用户口径：章节还是太细碎，核心骨架＝定义 → 详解（含规则和逻辑）→ 案例 → 自测，有些领域还有具体的操作）**：一个知识点的重点就是**定义、详解、案例**这三节（写详细），其余章节按原有分量写、不扩写；自测收尾。区序是「**定义 → 详解 → 案例 →（实操）→ 辨析与易错 → 自测**」，案例紧跟详解之后。合并去向（内容不删，只是不再单列成章）：**为什么学它 → 学习前必读**（动机写成该区里的 \`### 为什么学它\`）；**机制/构成与结构/规则/公式/性质/依据/适用与局限 → 详解**（篇幅最大的重点区：主线 + 逐项/逐类同维度展开 + 横向对比表 + 判定与计算规则）；**步骤/落到代码 → 实操**（只有本知识点确实有"能照着做一遍"的操作时才写，没有就整区不出现，不要硬凑）；**反例/边界 → 案例**；**辨析/常见坑/补充与注意 → 辨析与易错**。**按文档写**（段落 + 小标题 + 表格），不要做成要点卡堆砌。标了 [重点] 的区有参考字数下限，写不到会在落库后被点名提醒（不拒绝落库，但要按提醒补写后再发一版）。每个区要写什么，见下表：
-${lessonSectionBriefMenuHint().split('\n').map((line) => `     ${line}`).join('\n')}
+   - **知识点粒度（2026-10-06）**：章节规划逼近篇幅上限、或知识点内容天然是多主题聚合（如一个开源项目=原理+架构+生态+使用）时，**先用 dl_propose_concept_split 提交拆分方案**（用户确认后系统就地把该知识点转成分支目录并建子知识点），再依次为子知识点出讲义——不要硬凑一篇巨型讲义，也不要把八个主题塞进一个「详解」区。
 3. 讲义必须可溯源：读了外部资料 → evidenceSources 给真实出处（标题/URL/文档 id + 引文），不得编造；
    模型先验已足够覆盖的概念（判断口径见第 4 条）可以**不检索直接产出**，但必须给卡片标 needsVerification=true（attrs.evidenceLevel=prior_needs_verification），交自动核验补证——不得把先验伪装成有出处的内容；
 4. 采集按需判断（2026-10-06 用户口径：不是所有知识点都需要联网搜索/检索知识库——简单的交给模型先验）：
@@ -564,7 +577,8 @@ ${lessonSectionBriefMenuHint().split('\n').map((line) => `     ${line}`).join('\
 16. 失败与额度纪律：同一工具在本轮额度用尽后不要反复重试（会白烧额度），把未完成的条目按第 15 条写进总结；额度只在本轮有效，下一轮会重置。
 17. 讲义生成走「先规划、再精写」（2026-09-14 讲义流水线）：
    - 给某个概念出讲义时，默认**先调 dl_propose_lesson_plan 提交讲义方案**（读者画像 / 学完能做到 / 深度篇幅 / 术语表 / 记号表 /
-     示例参数表 / **区级计划 roster**：每区版式设备 + 读者动作 + 载体 + 一句话结论 / 视觉计划），等用户在弹窗里确认后再写正文；
+     示例参数表 / **区级计划 roster——章节由你规划**：锚点区照规矩放，正文区用规范区或自造章节（slug+title+role），
+     每区版式设备 + 读者动作 + 载体 + 一句话结论 / 视觉计划），等用户在弹窗里确认后再写正文；
      宿主会在确认后的那一轮注入**规格锁**（逐区照它写，每 3 区回读一次）与逐区精写指令；
    - 若宿主明确标注【直接产出讲义】（快速模式），跳过方案确认直接逐区精写——但**视觉质检照样生效**；
    - 每区都必须给 \`layout\`（版式设备，见技能 learning-concept-explainer 的设备菜单）与 \`takeaway\`（一句话结论）：

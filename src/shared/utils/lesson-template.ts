@@ -49,6 +49,21 @@
  *   即用户说的"不同领域会有所不同，但核心结构类似"；
  * - 生效区从 13 降到 11（章节数 K-concept 10 → 8），重点是 definition/detail/examples 三区；
  * - 自测的「参考答案」不再占章节编号（渲染层按跟随区折叠在自测之后），见 `lesson-sections`。
+ *
+ * v9（2026-10-06 用户口径「模板太死板：简单概念不需要那么多章节，复杂主题（如 LangChain 这类
+ * 开源项目/技术）需要原理、架构、生态、使用等远超固定模板的维度——简化模板、把内容组成抽象
+ * 提炼，允许 agent 自行规划章节」）：
+ * - **封闭区集 → 锚点区 + 开放区**：只有锚点区（meta 首区 / selfcheck 自测 / answers 答案 /
+ *   notes 注记）保留固定 key——它们被门禁与渲染机制依赖（循序渐进、答案折叠、注记剥离）；
+ *   正文区完全放开：规范区（definition/detail/examples/operation/confusions/controversy/
+ *   statement）作为**推荐词汇表**保留（用它即享受目录兜底的标题/样式/职责/字数），自造区
+ *   （如 architecture/ecosystem/evolution）合法——须自备 title 与 role；
+ * - **顺序约束从固定区序降为锚点位置**：meta 首、selfcheck/answers/notes 收尾组
+ *   （selfcheck < answers < notes）；正文区之间顺序自由（教学法交给 Plan 阶段人审把关）；
+ * - **role 与区名解耦**：区教学职责（lead/core/case/support/close）从"挂在固定 key 上"
+ *   变为 agent 可声明的字段——深度检查（重点区占比/单区字数）按 role 聚合，自造区同样受管；
+ * - 每种本质类型的固定模板降级为**参考骨架**（`LESSON_TEMPLATES` 留档），不再是门禁依据；
+ *   超出单一讲义装不下的复杂主题，走知识点拆分提案（dl_propose_concept_split，用户确认）。
  */
 
 import { splitSelfCheckAnswers } from './lesson-selfcheck'
@@ -368,7 +383,7 @@ export const LESSON_SECTION_MERGE_MAP: Record<string, string> = Object.fromEntri
 )
 
 /**
- * 每种知识本质类型的**固定区序**（有序子序列校验的依据）。
+ * 每种知识本质类型的**参考骨架**（v9 起降级：不再是门禁依据，仅供规划参考）。
  *
  * v8 主干（2026-09-15 用户口径：**章节还是太细碎；核心骨架＝定义、详解（含规则和逻辑）、示例、自测，
  * 有些领域还有具体的操作**）——六类模板都长在这条主干上：
@@ -384,6 +399,10 @@ export const LESSON_SECTION_MERGE_MAP: Record<string, string> = Object.fromEntri
  *   步骤/落到代码 → 实操；反例与边界 → 案例；
  *   辨析/常见坑/补充与注意 → 辨析与易错。
  * 收尾仍按纪律：自测收尾、答案紧随自测、注记置底。
+ *
+ * v9：这些骨架只在提示词里作为**常见知识形态的章节参考**（简单概念按骨架裁剪、无需硬凑；
+ * 复杂主题按需增区/自造区，或建议拆分知识点）。门禁只校验锚点位置与自造区字段，
+ * 不再校验"区集是否在模板内、顺序是否符合模板"。
  */
 export const LESSON_TEMPLATES: Record<DlEssenceType, string[]> = {
   'K-concept': [
@@ -413,7 +432,7 @@ export const LESSON_TEMPLATES: Record<DlEssenceType, string[]> = {
 }
 
 /** 当前生效的模板版本（新生成按它走；老卡见 `LESSON_LEGACY_TEMPLATES`） */
-export const LESSON_TEMPLATE_VERSION_CURRENT = 'v8'
+export const LESSON_TEMPLATE_VERSION_CURRENT = 'v9'
 
 /**
  * **历史模板留档：v7**（2026-09-15 下午，同日第二轮）。
@@ -521,8 +540,12 @@ export const LESSON_TEMPLATES_V5: Record<DlEssenceType, string[]> = {
   ],
 }
 
-/** 历史模板清单（新→旧；门禁逐个尝试，命中任一即算区序合法，只读不改写） */
+/**
+ * 历史模板清单（新→旧；只读留档——v9 起区序不再门禁，正文区顺序自由，
+ * 历史 v5~v8 区序的卡天然合法；此表仅供查询与文档说明，不再用于放行判定）。
+ */
 export const LESSON_LEGACY_TEMPLATES: Array<{ version: string; templates: Record<DlEssenceType, string[]> }> = [
+  { version: 'v8', templates: LESSON_TEMPLATES },
   { version: 'v7', templates: LESSON_TEMPLATES_V7 },
   { version: 'v6', templates: LESSON_TEMPLATES_V6 },
   { version: 'v5', templates: LESSON_TEMPLATES_V5 },
@@ -530,6 +553,78 @@ export const LESSON_LEGACY_TEMPLATES: Array<{ version: string; templates: Record
 
 /** 全部知识本质类型（提示词渲染用） */
 export const DL_ESSENCE_TYPES: DlEssenceType[] = ['K-concept', 'K-oper', 'K-stmt', 'K-inst', 'K-agent', 'K-open']
+
+// ==================== v9：锚点区 + 开放区 ====================
+
+/**
+ * **锚点区**（v9）：保留固定 key 的仅有的四个区——它们被门禁与渲染**机制**依赖，不是内容死板：
+ * - `meta`：首区（循序渐进门禁查读者画像/前置声明/记号热身）；
+ * - `selfcheck`：自测收尾（题面），`answers`：参考答案（跟随 selfcheck、整区折叠、不占章节编号）；
+ * - `notes`：编写注记（渲染层剥离置底，学习者可跳过）。
+ */
+export const ANCHOR_SECTION_KEYS = ['meta', 'selfcheck', 'answers', 'notes'] as const
+
+/** 是否锚点区（按归一后的 key） */
+export function isAnchorSectionKey(key: string): boolean {
+  return (ANCHOR_SECTION_KEYS as readonly string[]).includes(key)
+}
+
+/**
+ * 正文规范区（推荐词汇表）：非锚点的生效区。用它们可享受目录兜底（标题/样式/职责/字数），
+ * 但**不再强制**——模型可按知识点复杂度自造章节（须自备 title 与 role）。
+ */
+export const LESSON_BODY_SECTION_KEYS: string[] = LESSON_SECTION_CATALOG.filter(
+  (s) => !isAnchorSectionKey(s.key),
+).map((s) => s.key)
+
+/**
+ * 自造区 key 的 slug 归一：小写、空格/下划线折成 `-`、去非 `[a-z0-9-]`、压缩连续 `-`、
+ * 长度封顶 32。中文等无法 slug 化的名字会被清空（返回空串 = 调用方判定非法）。
+ */
+export function normalizeCustomSectionKey(raw: string): string {
+  const slug = String(raw ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32)
+  return slug
+}
+
+/**
+ * 是否自造区（v9）：既不是锚点区、也不在规范目录（含别名与历史合并区归一）里的正文区。
+ * 自造区合法，但落库时必须自带 title 与 role（规范区可省——目录有兜底）。
+ */
+export function isCustomSectionKey(key: string): boolean {
+  const name = String(key ?? '').trim().toLowerCase()
+  if (!name) return false
+  if (isAnchorSectionKey(name)) return false
+  return !(name in CANONICAL_BY_NAME)
+}
+
+/** 区教学职责的合法值（提示词与门禁共用） */
+export const LESSON_SECTION_ROLES: LessonSectionRole[] = ['lead', 'core', 'case', 'support', 'close']
+
+/**
+ * 自造区的 role 级默认字数下限（规范区用各自目录里的 minChars，通常更具体）。
+ * 与 v8 重点区下限同量级：core=定义区下限 320，case=案例区下限 260。
+ */
+export const LESSON_ROLE_MIN_CHARS: Record<'core' | 'case', number> = { core: 320, case: 260 }
+
+/**
+ * 解析一个区的教学职责（v9：声明优先，目录兜底，未知按 support）。
+ * - 自造区：读声明（roster/sections 里的 role 字段），没有按 support（不算重点）；
+ * - 规范区/锚点区：目录条目的 role。
+ */
+export function resolveSectionRole(key: string, declaredRole?: string | null): LessonSectionRole {
+  const k = canonicalSectionKey(key)
+  const spec = SPEC_BY_KEY[k]
+  if (spec) return spec.role
+  const declared = String(declaredRole ?? '').trim().toLowerCase()
+  return (LESSON_SECTION_ROLES as string[]).includes(declared) ? (declared as LessonSectionRole) : 'support'
+}
 
 /** 别名 → 规范 key（由**全量**条目派生：生效区指向自身，已合并的历史区折到目标 key） */
 const CANONICAL_BY_NAME: Record<string, string> = (() => {
@@ -663,6 +758,8 @@ export function normalizeLessonHeadingLevels(md: string): string {
 export interface LessonSectionShape {
   key: string
   title?: string | null
+  /** 区教学职责（v9：自造区必填；规范区可省，由目录兜底） */
+  role?: string | null
   style?: DlSectionStyle | null
   /**
    * 版式设备（2026-09-14 讲义流水线）：key 见 `shared/utils/lesson-layout` 的设备目录。
@@ -685,15 +782,14 @@ export interface NormalizeLessonSectionsResult {
  * 可无损映射的归一化（不改语义、不丢内容）：
  * 1. 别名 / 已合并的区 → 规范 key（checks → selfcheck、worked → examples、
  *    cost/scope → detail、types → detail、edge-cases → pitfalls…）；
- * 2. **同 key 的多个区合并成一个**（v7 起）：内容按原出现顺序拼接、标题按目标区派生，
- *    内容一字不删（老卡的「组成/结构 + 规则 + 详解 + 适用与局限」重存后并成一个「详解」区，
- *    「辨析 + 常见坑」并成一个「辨析与易错」区）；
- * 3. 标题 / 样式按模板派生（同一类型同一区的标题完全一致）；
+ * 2. **同 key 的多个区合并成一个**：内容按原出现顺序拼接、标题按目标区派生，内容一字不删；
+ * 3. 标题 / 样式按目录派生（规范区）；自造区 key slug 归一、title/role 原样保留；
  * 4. 正文标题层级统一到 `###`；
- * 5. **按当前模板区序重排**（v8：定义 → 详解 → 案例 → 实操 → 辨析与易错）；
+ * 5. **锚点归位（v9，取代按模板区序重排）**：meta 置首；selfcheck/answers/notes 归入收尾组
+ *    并按 selfcheck < answers < notes 排序；正文区（规范 + 自造）之间**保持模型给的相对顺序**；
  * 6. 自测区里"独占一行答案标记"的答案拆成独立 `answers` 区（渲染层按整区折叠）；已有 answers 区时不重复拆。
  *
- * 未收录的 key **原样保留**（是否拒绝由 `checkLessonSectionsShape` 决定，避免静默吞掉内容）。
+ * 未收录的 key 不再拒绝（v9 起自造区合法）——字段完备性由 `checkLessonSectionsShape` 把关。
  */
 export function normalizeCardSections(input: {
   essenceType: DlEssenceType
@@ -727,6 +823,7 @@ export function normalizeCardSections(input: {
     const rawKey = String(sec.key ?? '').trim()
     const key = canonicalSectionKey(rawKey)
     const spec = SPEC_BY_KEY[key] ?? null
+    const custom = !spec && !isAnchorSectionKey(key)
     if (key !== rawKey && !SPEC_BY_KEY[rawKey]) {
       changes.push(`区 key「${rawKey}」按同义写法归一为「${key}」`)
     }
@@ -740,9 +837,12 @@ export function normalizeCardSections(input: {
     }
     const title = spec ? spec.title : (sec.title ?? null)
     const style: DlSectionStyle | null = spec ? spec.style : (sec.style ?? null)
+    // 自造区 slug 归一（如 Architecture → architecture）；slug 化失败（如纯中文）保留原 key 由形状校验拒绝
+    const finalKey = custom ? (normalizeCustomSectionKey(key) || key) : key
+    if (custom && finalKey !== key) changes.push(`自造区 key「${key}」slug 归一为「${finalKey}」`)
 
-    // 自测区：答案拆独立区（未收录 key 不拆——它本就不该作为自测区落库）
-    if (key === 'selfcheck' && !hasAnswersSection) {
+    // 自测区：答案拆独立区（锚点区/规范区的 selfcheck；自造区不拆——它本就不该作为自测区落库）
+    if (finalKey === 'selfcheck' && !hasAnswersSection) {
       const parts = splitSelfCheckAnswers(md)
       if (parts.hasAnswers) {
         pushOrMerge({ key: 'selfcheck', title, style, md: parts.questions, folded: sec.folded, layout: sec.layout ?? null, takeaway: sec.takeaway ?? null }, rawKey)
@@ -757,24 +857,24 @@ export function normalizeCardSections(input: {
         continue
       }
     }
-    pushOrMerge({ key, title, style, md, folded: sec.folded, layout: sec.layout ?? null, takeaway: sec.takeaway ?? null }, rawKey)
+    pushOrMerge({ key: finalKey, title, style, role: sec.role ?? null, md, folded: sec.folded, layout: sec.layout ?? null, takeaway: sec.takeaway ?? null }, rawKey)
   }
 
-  // 按当前模板区序重排（合并后的区落在目标区的位置；未收录 key 保序置底）
-  const template = lessonTemplateKeys(input.essenceType)
-  const orderOf = (key: string): number => {
-    const at = template.indexOf(key)
-    return at < 0 ? template.length : at
-  }
-  const beforeOrder = [...merged.keys()]
-  const sections = [...merged.values()]
+  // 锚点归位（v9）：meta 置首；正文区保持相对顺序；收尾组 selfcheck < answers < notes 置尾。
+  // 中间不再按模板区序重排——章节顺序是规划的一部分，交给 Plan 阶段人审把关。
+  const all = [...merged.values()]
+  const metaSec = all.find((s) => s.key === 'meta') ?? null
+  const bodySecs = all.filter((s) => s.key !== 'meta' && !isAnchorSectionKey(s.key))
+  const closeSecs = all.filter((s) => isAnchorSectionKey(s.key) && s.key !== 'meta')
+  const closeOrder: Record<string, number> = { selfcheck: 0, answers: 1, notes: 2 }
+  const sortedClose = closeSecs
     .map((sec, index) => ({ sec, index }))
-    .sort((a, b) => orderOf(a.sec.key) - orderOf(b.sec.key) || a.index - b.index)
+    .sort((a, b) => (closeOrder[a.sec.key] ?? 9) - (closeOrder[b.sec.key] ?? 9) || a.index - b.index)
     .map(({ sec }) => sec)
+  const sections = [...(metaSec ? [metaSec] : []), ...bodySecs, ...sortedClose]
+  const beforeOrder = (input.sections ?? []).map((s) => String(s.key ?? '').trim())
   if (sections.map((s) => s.key).join('>') !== beforeOrder.join('>')) {
-    changes.push(
-      '区序已按当前契约重排（学习前必读 → 定义 → 详解 → 案例 → 实操 → 辨析与易错 → 自测：重点在前、案例跟着详解）',
-    )
+    changes.push('区序已归位（meta 置首、自测/答案/注记收尾；正文区保持你规划的顺序）')
   }
 
   return { sections, changes }
@@ -809,55 +909,118 @@ export function hasInlineAnswers(md: string): boolean {
 }
 
 /**
- * 校验区集形状是否合规（在 `normalizeCardSections` 修复之后调用）：
- * - 未收录的 key → 拒绝，并列出该类型可用区名；
- * - 顺序不符 → 先看是否命中**历史模板**（老卡兼容：放行并在 note 里提示重排时机），
- *   都不是才拒绝，并给出该类型要求的区序；
+ * 校验区集形状是否合规（在 `normalizeCardSections` 修复之后调用；v9 规则）：
+ * - **自造区**（不在目录与锚点内的 key）：必须自带 title 与 role（lead/core/case/support/close），
+ *   key 须能 slug 化（英文小写-数字-连字符）——规范区可省这两项（目录有兜底）；
+ * - **锚点位置**：meta 只能出现在首位；selfcheck/answers/notes 只能出现在收尾组且顺序
+ *   selfcheck < answers < notes（answers 只跟在 selfcheck 之后，正文区不得插在其后）；
+ * - 正文区（规范 + 自造）之间顺序自由（v9：章节顺序由规划决定，人审把关）；
  * - 自测区里还留着行内答案 → 拒绝（答案必须拆到独立 answers 区，渲染层默认折叠）。
  */
 export function checkLessonSectionsShape(input: {
   essenceType: DlEssenceType
   sections: LessonSectionShape[]
 }): LessonShapeCheckResult {
-  const template = lessonTemplateKeys(input.essenceType)
   const keys = (input.sections ?? []).map((s) => canonicalSectionKey(s.key))
 
-  const unknown = keys.filter((k) => !template.includes(k))
-  if (unknown.length) {
-    return {
-      ok: false,
-      reason:
-        `区 key ${unknown.map((k) => `「${k}」`).join('、')} 不在 ${input.essenceType} 的模板区集内。` +
-        `本类型可用区名（固定顺序）：${template.join(' → ')}。` +
-        `同义写法会自动归一（checks→selfcheck、worked→examples 等），但自造区名（如 practice/cost）不行：` +
-        `请把内容并入上表中最贴近的区，再重发本卡。`,
-      note: null,
-    }
-  }
-
-  let note: string | null = null
-  if (!isSectionOrderOk(keys, template)) {
-    // 老卡兼容（2026-09-15）：历史模板时期落库的讲义区序仍然放行——
-    // 已有内容不删除、不自动重排；只附一句提示，等下次修订该卡时再对齐当前契约。
-    const legacy = legacyTemplateVersionFor(input.essenceType, keys)
-    if (!legacy) {
+  // 自造区字段完备性（v9：放开的代价——title/role 必须自带，否则渲染与深度检查无从下手）
+  for (const sec of input.sections ?? []) {
+    const key = canonicalSectionKey(sec.key)
+    if (!isCustomSectionKey(key)) continue
+    const slug = normalizeCustomSectionKey(key)
+    if (!slug) {
       return {
         ok: false,
         reason:
-          `区序不符合 ${input.essenceType} 模板（「${firstOrderOffender(keys, template)}」出现在它该在的位置之前）。` +
-          `要求顺序：${template.join(' → ')}（可跳过不用的区，但不能乱序）。` +
-          `请按该顺序重排各区的 md 内容（区与区之间的"承上启下"过渡句要跟着改），再重发本卡。`,
+          `自造区 key「${key}」无法用作章节标识（须为英文小写/数字/连字符的 slug，如 architecture / ecosystem）。` +
+          `要么改成 slug，要么用规范区（${LESSON_BODY_SECTION_KEYS.join(' / ')}）。`,
         note: null,
       }
     }
-    note =
-      `区序沿用历史模板 ${legacy}——内容保留不动、本次放行；` +
-      `当前契约（${LESSON_TEMPLATE_VERSION_CURRENT}）的顺序是「定义 → 详解 → 案例 → 实操 → 辨析与易错 → 自测」，` +
-      `下次修订这张卡时建议按它重排。`
+    if (!String(sec.title ?? '').trim()) {
+      return {
+        ok: false,
+        reason:
+          `自造区「${key}」缺 title（章节名）——自造章节的标题由你规划给出（规范区才有目录兜底标题）。` +
+          `补上 title 后重发，或改用规范区（${LESSON_BODY_SECTION_KEYS.join(' / ')}）。`,
+        note: null,
+      }
+    }
+    const role = String(sec.role ?? '').trim().toLowerCase()
+    if (!(LESSON_SECTION_ROLES as string[]).includes(role)) {
+      return {
+        ok: false,
+        reason:
+          `自造区「${key}」缺 role 或 role 不合法——五选一：lead 导学 / core 核心 / case 案例 / support 支撑 / close 收尾。` +
+          `它决定这一区该写多厚（core/case 是重点，参与深度检查）。`,
+        note: null,
+      }
+    }
+  }
+
+  // 锚点位置（v9 取代固定区序校验）
+  const metaIdx = keys.indexOf('meta')
+  if (metaIdx > 0) {
+    return {
+      ok: false,
+      reason:
+        `「meta（学习前必读）」必须放在**首位**——读者要先知道站在哪、假设已会什么。` +
+        `请把它挪到 sections 第一位后重发。`,
+      note: null,
+    }
+  }
+  const firstNonAnchorIdx = (input.sections ?? []).findIndex((s) => {
+    const key = canonicalSectionKey(s.key)
+    return key !== 'meta' && !isAnchorSectionKey(key)
+  })
+  if (firstNonAnchorIdx >= 0 && metaIdx > firstNonAnchorIdx) {
+    // normalizeCardSections 已把 meta 归位到首位，这里兜住"meta 在正文区之后"的异常输入
+    return {
+      ok: false,
+      reason: '「meta（学习前必读）」必须放在**首位**（当前排在正文区之后）——请调整后重发。',
+      note: null,
+    }
+  }
+  // 收尾组：找到第一个收尾锚区的位置，其后只允许收尾锚区，且顺序 selfcheck < answers < notes
+  const closeRank: Record<string, number> = { selfcheck: 0, answers: 1, notes: 2 }
+  const firstCloseIdx = keys.findIndex((k) => k !== 'meta' && isAnchorSectionKey(k))
+  if (firstCloseIdx >= 0) {
+    let lastRank = -1
+    for (let i = firstCloseIdx; i < keys.length; i++) {
+      const key = keys[i]
+      const rank = closeRank[key]
+      if (rank === undefined) {
+        return {
+          ok: false,
+          reason:
+            `收尾组（自测/答案/注记）之后不得再出现正文区——「${key}」出现在「${keys[firstCloseIdx]}」之后。` +
+            `正文区都在前面，自测收尾、答案紧随、注记置底。`,
+          note: null,
+        }
+      }
+      if (rank < lastRank) {
+        return {
+          ok: false,
+          reason:
+            `收尾区顺序不对：${key} 出现在它该在的位置之后。要求顺序 selfcheck（自测）→ answers（答案）→ notes（注记）。`,
+          note: null,
+        }
+      }
+      lastRank = rank
+    }
+    if (keys[firstCloseIdx] === 'answers') {
+      return {
+        ok: false,
+        reason:
+          '「answers（参考答案）」是「selfcheck（自测）」的跟随区——不能单独出现在没有自测区的位置。' +
+          '要么补上 selfcheck 区，要么删掉 answers（自测答案也可写在自测区里用独占一行「参考答案」小标题引出，系统会自动拆区）。',
+        note: null,
+      }
+    }
   }
 
   const leaking = (input.sections ?? []).find(
-    (s) => canonicalSectionKey(s.key) === 'selfcheck' && hasInlineAnswers(s.md)
+    (s) => canonicalSectionKey(s.key) === 'selfcheck' && hasInlineAnswers(s.md),
   )
   if (leaking) {
     return {
@@ -870,25 +1033,46 @@ export function checkLessonSectionsShape(input: {
     }
   }
 
-  return { ok: true, reason: null, note }
+  return { ok: true, reason: null, note: null }
 }
 
-/** 找出第一个乱序的区（拒绝信息里点名，便于模型定位） */
-function firstOrderOffender(keys: string[], template: string[]): string {
-  let cursor = -1
-  for (const key of keys) {
-    const at = template.indexOf(key)
-    if (at < cursor) return key
-    cursor = at
-  }
-  return keys[keys.length - 1] ?? ''
-}
-
-/** 提示词用：某类型的「key 标题」区序摘要（生成侧与门禁共用同一份契约，避免口径漂移） */
+/** 提示词用：某类型的「key 标题」参考骨架摘要（v9：章节可裁剪/自造，此表只是常见形态参考） */
 export function lessonTemplateHint(essenceType: DlEssenceType): string {
   return lessonTemplateKeys(essenceType)
     .map((key) => `${key}（${SPEC_BY_KEY[key].title}）`)
     .join(' → ')
+}
+
+/**
+ * 提示词用：**区集契约总说明（v9：锚点区 + 开放区 + role）**。
+ * 生成侧（系统提示词 / Plan 指令 / 快速模式）唯一一份口径——门禁规则与它同源：
+ * - 锚点区固定（meta 首位、selfcheck/answers/notes 收尾组）；
+ * - 正文区自由：规范区（推荐，有兜底标题/职责/字数）或自造区（须自备 title + role）；
+ * - role（lead/core/case/support/close）决定篇幅配比，重点在 core + case；
+ * - 章节规模匹配知识点复杂度：名词解释 3~4 区收工；装不下的复杂主题建议拆分知识点，不要硬写巨型讲义。
+ */
+export function lessonSectionContractHint(): string {
+  const bodyLines = LESSON_BODY_SECTION_KEYS.map((key) => {
+    const spec = SPEC_BY_KEY[key]
+    const mark = spec.role === 'core' || spec.role === 'case' ? '[重点]' : ''
+    const need = spec.minChars ? `至少 ${spec.minChars} 字；` : ''
+    return `  · ${key}（${spec.title}）${mark}：${need}${spec.brief}`
+  })
+  return [
+    '**锚点区（key 固定，位置有门禁）**：',
+    '  · meta（学习前必读）：首位。读者画像/前置声明/记号热身/学完能做到——读者先知道站在哪；',
+    '  · selfcheck（自测）：收尾。题面写这里，答案放 answers；',
+    '  · answers（参考答案）：紧跟 selfcheck，不占章节编号，默认折叠；',
+    '  · notes（编写注记）：置底。只给编写者看，学习者可跳过。',
+    '**正文区（章节自由规划，规模匹配知识点复杂度）**：',
+    '  常用规范区（直接用 key 即享受默认标题/职责/字数；可裁剪、可自造）：',
+    ...bodyLines,
+    '  自造区（介绍开源项目/技术等复杂主题时按需起章，如 architecture / ecosystem / evolution / usage）：',
+    '  · key 用英文小写 slug，**必须给 title（章节名）与 role**（lead 导学/core 核心/case 案例/support 支撑/close 收尾）；',
+    '  · role 决定篇幅：core/case 是重点（参考下限 core≥320 字、case≥260 字，非重点区从简），重点合计应占全文大头。',
+    '**结构纪律**：meta 首位、正文区顺序自定（按学习逻辑排）、selfcheck → answers → notes 收尾；',
+    '  一个知识点装不下（章节规划逼近上限、或内容是多主题聚合）时，先建议拆分知识点（dl_propose_concept_split），不要硬凑一篇巨型讲义。',
+  ].join('\n')
 }
 
 /** 区职责（未收录 key 按"支撑"对待，不影响老卡渲染） */
@@ -996,9 +1180,10 @@ export function lessonBodyChars(md: string): number {
 }
 
 /**
- * 重点深度检查（**非阻断**）：按 `LESSON_SECTION_CATALOG` 的 role/brief/minChars 判——
- * 1. 重点区（定义/详解/案例）字数低于 minChars → 这一区没讲透（附该区写作要求与参考下限）；
- * 2. 重点区占比低于 `LESSON_DEPTH.coreShareMin` → 非重点章节挤占了篇幅（v7/v8 合并后一般不会触发）。
+ * 重点深度检查（**非阻断**，v9 按 role 聚合）：
+ * 1. 重点区（role=core/case：定义/详解/案例 + 自造的核心/案例区）字数低于下限 → 这一区没讲透
+ *    （规范区用目录里的 minChars，自造区用 role 级默认 `LESSON_ROLE_MIN_CHARS`）；
+ * 2. 重点区占比低于 `LESSON_DEPTH.coreShareMin` → 非重点章节挤占了篇幅。
  *
  * 为什么不做硬门禁：区是可选的（宁缺毋滥），硬拦"字数不够"会诱导模型**删区**而不是**补写**，
  * 反而丢内容；因此提醒随 `dl_save_card` 结果一起回给模型，由模型自行重发修订版。
@@ -1010,34 +1195,42 @@ export function checkLessonDepth(input: {
 }): LessonDepthCheckResult {
   const sections = input.sections ?? []
   const issues: LessonDepthIssue[] = []
-  const charsByKey = new Map<string, number>()
+  const infoByKey = new Map<string, { chars: number; role: LessonSectionRole; label: string; minChars: number | null }>()
   let totalChars = 0
   let keyChars = 0
 
   for (const sec of sections) {
     const key = canonicalSectionKey(sec.key)
+    const role = resolveSectionRole(key, sec.role)
     const chars = lessonBodyChars(String(sec.md ?? ''))
+    const spec = SPEC_BY_KEY[key]
+    const minChars = spec?.minChars ?? LESSON_ROLE_MIN_CHARS[role as 'core' | 'case'] ?? null
+    const label = spec ? spec.title : (String(sec.title ?? '').trim() || key)
+    const prev = infoByKey.get(key)
     // 同一区重复出现时累加（合并前的老卡按各区之和算）
-    charsByKey.set(key, (charsByKey.get(key) ?? 0) + chars)
+    infoByKey.set(key, {
+      chars: (prev?.chars ?? 0) + chars,
+      role,
+      label: prev?.label ?? label,
+      minChars: prev ? Math.max(prev.minChars ?? 0, minChars ?? 0) : minChars,
+    })
   }
-  for (const [key, chars] of charsByKey) {
-    totalChars += chars
-    const role = SPEC_BY_KEY[key]?.role
-    if (role === 'core' || role === 'case') keyChars += chars
+  for (const info of infoByKey.values()) {
+    totalChars += info.chars
+    if (info.role === 'core' || info.role === 'case') keyChars += info.chars
   }
 
-  for (const [key, chars] of charsByKey) {
-    const spec = SPEC_BY_KEY[key]
-    if (!spec?.minChars) continue
-    if (chars >= spec.minChars) continue
-    const isCase = spec.role === 'case'
+  for (const [key, info] of infoByKey) {
+    if (!info.minChars) continue
+    if (info.chars >= info.minChars) continue
+    const isCase = info.role === 'case'
     issues.push({
       code: isCase ? 'thin-case' : 'thin-core',
       sectionKey: key,
       message:
-        `「${spec.title}」只有 ${chars} 字（参考下限 ${spec.minChars} 字）——` +
+        `「${info.label}」只有 ${info.chars} 字（参考下限 ${info.minChars} 字）——` +
         (isCase ? '这是案例区，读者看不到具体情形就学不会。' : '这是本讲重点，写这么短等于没讲透。'),
-      fix: `按这一区的写作要求补写（当前 ${chars} 字，参考下限 ${spec.minChars} 字）：${spec.brief}`,
+      fix: `把这一区按其教学职责（${LESSON_SECTION_ROLE_LABELS[info.role]}）补写透（当前 ${info.chars} 字，参考下限 ${info.minChars} 字）。`,
     })
   }
 
@@ -1047,11 +1240,11 @@ export function checkLessonDepth(input: {
       code: 'low-core-share',
       sectionKey: null,
       message:
-        `重点区（定义/详解/案例）只占全文 ${Math.round(coreShare * 100)}%（${keyChars}/${totalChars} 字）——` +
+        `重点区（role=core/case：定义/详解/案例及自造的核心/案例章节）只占全文 ${Math.round(coreShare * 100)}%（${keyChars}/${totalChars} 字）——` +
         '篇幅被非重点章节占了。',
       fix:
-        '把篇幅让给定义/详解/案例（这三节要写详细），其余章节按 v1 原有分量写、不要扩写，' +
-        '重点区按各自写作要求补到参考下限以上。',
+        '把篇幅让给核心与案例章节（这些要写详细），其余章节按原有分量写、不要扩写，' +
+        '重点章节各自补到参考下限以上。',
     })
   }
 

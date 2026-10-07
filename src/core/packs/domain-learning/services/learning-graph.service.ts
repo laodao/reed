@@ -49,7 +49,7 @@ export type CreateConceptInput = Omit<DlCreateConceptInput, 'id'>
 export type CreateConceptResult = DlCreateConceptResult
 
 /** 拆分入参（空间 id 与目标知识点由方法参数给） */
-export type SplitConceptInput = Pick<DlSplitConceptInput, 'branchName' | 'children'>
+export type SplitConceptInput = Pick<DlSplitConceptInput, 'branchName' | 'children' | 'source'>
 
 export class LearningGraphService {
   constructor(
@@ -401,6 +401,9 @@ export class LearningGraphService {
       .map((x) => ({
         name: String((x as { name?: unknown })?.name ?? '').trim(),
         definitionShort: String((x as { definitionShort?: unknown })?.definitionShort ?? '').trim() || null,
+        prerequisites: Array.isArray((x as { prerequisites?: unknown })?.prerequisites)
+          ? ((x as { prerequisites?: unknown[] }).prerequisites ?? []).map((p) => String(p ?? '').trim()).filter(Boolean)
+          : [],
       }))
       .filter((x) => x.name)
     if (!children.length) throw new Error('至少要拆出一个子知识点')
@@ -409,6 +412,39 @@ export class LearningGraphService {
       if (seen.has(x.name)) throw new Error(`子知识点名称重复：${x.name}`)
       seen.add(x.name)
     }
+    // 子知识点间前置（2026-10-06 agent 拆分提案）：只允许引用兄弟名——外部概念语义上
+    // 属"原知识点的前置"，已由外部前置继承机制处理；引用自身或未知名字直接拒绝（方案写错了）
+    const siblingNames = new Set(children.map((x) => x.name))
+    for (const x of children) {
+      for (const p of x.prerequisites) {
+        if (p === x.name) throw new Error(`子知识点「${x.name}」的前置不能是它自己`)
+        if (!siblingNames.has(p)) {
+          throw new Error(`子知识点「${x.name}」的前置「${p}」不在本次拆分的子知识点里——兄弟前置只能引用同批拆出的名字（外部前置会自动继承，不用在这里写）`)
+        }
+      }
+    }
+    // 兄弟前置若成环，学习路径会死锁（与既有环防护同口径，建边前先验）
+    {
+      const indeg = new Map<string, number>()
+      children.forEach((x) => indeg.set(x.name, x.prerequisites.length))
+      const queue = children.filter((x) => x.prerequisites.length === 0).map((x) => x.name)
+      let visited = 0
+      while (queue.length) {
+        const cur = queue.shift() as string
+        visited++
+        for (const x of children) {
+          if (x.prerequisites.includes(cur)) {
+            const next = (indeg.get(x.name) ?? 0) - 1
+            indeg.set(x.name, next)
+            if (next === 0) queue.push(x.name)
+          }
+        }
+      }
+      if (visited !== children.length) {
+        throw new Error('子知识点之间的前置关系构成环——学习路径不允许循环依赖，请检查拆分方案里的 prerequisites 方向')
+      }
+    }
+    const childSource = input.source === 'material' ? 'material' : 'manual'
 
     const all = await this.concepts.listByProject(projectId)
     const edges = await this.relations.listByProject(projectId)
@@ -431,8 +467,12 @@ export class LearningGraphService {
     // 1) 先建子知识点（此时父还是知识点行，落库不受影响；分支转换放最后，失败可恢复）
     const created: Array<{ conceptId: string; name: string }> = []
     const childIds: string[] = []
+    const idByName = new Map<string, string>()
     for (const child of children) {
       const id = randomUUID()
+      idByName.set(child.name, id)
+      // attrs 前置声明 = 外部继承前置 + 兄弟前置（图上的边在下面统一落）
+      const declared = [...inheritedNames, ...child.prerequisites.filter((p) => p !== child.name)]
       await this.concepts.create({
         id,
         projectId,
@@ -442,8 +482,8 @@ export class LearningGraphService {
         definitionShort: child.definitionShort,
         researchState: 'unresearched',
         mastery: 'untouched',
-        source: 'manual',
-        attrs: inheritedNames.length ? { prerequisites: inheritedNames } : null,
+        source: childSource,
+        attrs: declared.length ? { prerequisites: [...new Set(declared)] } : null,
       })
       created.push({ conceptId: id, name: child.name })
       childIds.push(id)
@@ -461,6 +501,26 @@ export class LearningGraphService {
           evidence: `拆分「${c.name}」时自动继承`,
           verified: true,
         })
+      }
+    }
+    // 2b) 兄弟前置边（2026-10-06 agent 拆分提案）：子知识点之间的学习顺序，
+    // 随方案经用户确认后落库，直接落已确认边
+    let siblingEdgesCreated = 0
+    for (const child of children) {
+      for (const p of child.prerequisites) {
+        const sourceId = idByName.get(p)
+        const targetId = idByName.get(child.name)
+        if (!sourceId || !targetId || sourceId === targetId) continue
+        await this.relations.create({
+          id: randomUUID(),
+          projectId,
+          sourceId,
+          targetId,
+          relationType: 'prerequisite',
+          evidence: `拆分「${c.name}」时按方案声明的子知识点顺序`,
+          verified: true,
+        })
+        siblingEdgesCreated++
       }
     }
 
@@ -490,7 +550,7 @@ export class LearningGraphService {
 
     logger.info(
       `[graph] splitConcept space=${projectId} concept=${conceptId} name=${c.name} → 分支「${branchName}」 ` +
-        `子知识点=${created.length} 继承前置=${inheritedNames.length} 清边=${otherEdges.length} ` +
+        `子知识点=${created.length} 继承前置=${inheritedNames.length} 兄弟前置=${siblingEdgesCreated} 清边=${otherEdges.length} ` +
         `讲义=${removedCards} 笔记=${removedNotes} 问答=${removedQuestions}`,
     )
     return {

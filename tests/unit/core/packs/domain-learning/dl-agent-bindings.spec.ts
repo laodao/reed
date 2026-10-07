@@ -221,14 +221,14 @@ describe('dl-agent-bindings', () => {
     )
   })
 
-  // ===== 2026-09-15 用户口径（重点 + 合并 + 不要卡片样式）：工具描述也必须带同一套口径 =====
-  it('dl_save_card 工具描述带"重点就是定义/详解/案例 + 区序 + 合并 + 不要卡片"（模型在工具层也看得到）', () => {
+  // ===== 2026-10-06 v9 区集契约（锚点区 + 开放区 + role）：工具描述也必须带同一套口径 =====
+  it('dl_save_card 工具描述带"锚点区 + 规范区/自造章节 + role 重点 + 不要卡片"（模型在工具层也看得到）', () => {
     const def = buildDlAgentToolDefs().find((d) => d.name === 'dl_save_card')
     expect(def, '缺 dl_save_card 工具定义').toBeTruthy()
-    expect(def!.description).toContain('重点就是定义、详解、案例')
-    expect(def!.description).toContain('区序是「定义 → 详解 → 案例 →（实操）→ 辨析与易错 → 自测」')
-    expect(def!.description).toContain('并进「详解」')
-    expect(def!.description).toContain('并进「实操」')
+    expect(def!.description).toContain('meta（学习前必读）首位')
+    expect(def!.description).toContain('自造章节')
+    expect(def!.description).toContain('role=core/case 的区是重点')
+    expect(def!.description).toContain('dl_propose_concept_split')
     expect(def!.description).toContain('不要做成要点卡堆砌')
   })
 })

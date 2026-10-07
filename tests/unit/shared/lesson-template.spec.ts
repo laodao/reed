@@ -403,17 +403,17 @@ describe('normalizeLessonHeadingLevels（区标题占二级语义，正文小标
 })
 
 describe('normalizeCardSections（v8：再合并 + 按主干重排，内容一字不删）', () => {
-  it('张量卡（v5 序）：为什么学它并进学习前必读、规则并进详解、代码并进实操、示例后置、自测答案拆独立区', () => {
+  it('张量卡（v5 序）：为什么学它并进学习前必读、规则并进详解、代码并进实操、自测答案拆独立区；v9 保持 v5 的正文相对顺序（先例后律）', () => {
     const { sections, changes } = normalizeCardSections({ essenceType: 'K-concept', sections: TENSOR_SECTIONS })
     expect(sections.map((s) => s.key)).toEqual([
-      'meta', 'definition', 'detail', 'examples', 'operation', 'confusions', 'selfcheck', 'answers', 'notes',
+      'meta', 'examples', 'definition', 'detail', 'operation', 'confusions', 'selfcheck', 'answers', 'notes',
     ])
     expect(sections[0].title).toBe('学习前必读')
     // 原「为什么学它」作为小标题留在导学区里
     expect(sections[0].md).toContain('### 为什么学它')
     expect(sections[0].md).toContain('你刚学完') // meta 原内容未丢
-    expect(sections[2].title).toBe('详解')
-    expect(sections[2].md).toContain('规则一：逐元素运算') // rules 的内容并入详解，未丢
+    expect(sections[3].title).toBe('详解')
+    expect(sections[3].md).toContain('规则一：逐元素运算') // rules 的内容并入详解，未丢
     expect(sections[4].key).toBe('operation')
     expect(sections[4].title).toBe('实操')
     expect(sections[4].md).toContain('### 落到代码') // 原区标题作为小标题保留
@@ -431,10 +431,11 @@ describe('normalizeCardSections（v8：再合并 + 按主干重排，内容一�
     expect(sections[4].md).toContain('# 注释')
   })
 
-  it('自动微分卡：worked→案例、cost/mechanism→详解（内容合并）、why→导学，自造区名 practice 保留', () => {
+  it('自动微分卡：worked→案例、cost/mechanism→详解（内容合并）、why→导学，自造区 practice 保留在正文位（v9 锚点归位）', () => {
     const { sections, changes } = normalizeCardSections({ essenceType: 'K-concept', sections: AUTODIFF_SECTIONS })
+    // v9：正文区保持模型给的相对顺序（practice 在 confusions 之前），收尾组 selfcheck 归位到尾
     expect(sections.map((s) => s.key)).toEqual([
-      'meta', 'detail', 'examples', 'confusions', 'selfcheck', 'practice',
+      'meta', 'detail', 'examples', 'practice', 'confusions', 'selfcheck',
     ])
     const detail = sections.find((s) => s.key === 'detail')!
     expect(detail.md).toContain('把前向计算记成一张图') // 原 mechanism
@@ -475,9 +476,9 @@ describe('checkLessonSectionsShape（归一后仍不合规 → 可执行的拒�
     expect(result.note).toBeNull()
   })
 
-  it('v5/v6/v7 模板作为历史版本留档（章节数逐版下降）', () => {
-    expect(LESSON_TEMPLATE_VERSION_CURRENT).toBe('v8')
-    expect(LESSON_LEGACY_TEMPLATES.map((l) => l.version)).toEqual(['v7', 'v6', 'v5'])
+  it('v5/v6/v7/v8 模板作为历史版本留档（章节数逐版下降）', () => {
+    expect(LESSON_TEMPLATE_VERSION_CURRENT).toBe('v9')
+    expect(LESSON_LEGACY_TEMPLATES.map((l) => l.version)).toEqual(['v8', 'v7', 'v6', 'v5'])
     for (const type of DL_ESSENCE_TYPES) {
       const v5 = LESSON_TEMPLATES_V5[type]
       const v6 = LESSON_TEMPLATES_V6[type]
@@ -495,15 +496,44 @@ describe('checkLessonSectionsShape（归一后仍不合规 → 可执行的拒�
     }
   })
 
-  it('自造区名 practice → 拒绝并列出当前模板区序', () => {
+  it('v9：自造区合法但字段必须自带——practice 有 title 缺 role → 拒绝并说明五选一', () => {
     const { sections } = normalizeCardSections({ essenceType: 'K-concept', sections: AUTODIFF_SECTIONS })
     const result = checkLessonSectionsShape({ essenceType: 'K-concept', sections })
     expect(result.ok).toBe(false)
     expect(result.reason).toContain('practice')
-    expect(result.reason).toContain('meta → definition → detail → examples → operation')
+    expect(result.reason).toContain('role')
   })
 
-  it('未归一的老卡（详解排在定义之前）→ 拒绝并说明要求顺序', () => {
+  it('v9：自造区带齐 title + role → 通过（复杂主题可自造章节）', () => {
+    const result = checkLessonSectionsShape({
+      essenceType: 'K-concept',
+      sections: [
+        { key: 'meta', md: 'a' },
+        { key: 'definition', md: 'b' },
+        { key: 'architecture', title: '整体架构', role: 'core', md: 'c' },
+        { key: 'ecosystem', title: '生态与周边', role: 'support', md: 'd' },
+        { key: 'selfcheck', md: '**Q1** 题' },
+      ],
+    })
+    expect(result.ok).toBe(true)
+    expect(result.note).toBeNull()
+  })
+
+  it('v9：自造区缺 title → 拒绝（章节名由规划给出）', () => {
+    const result = checkLessonSectionsShape({
+      essenceType: 'K-concept',
+      sections: [
+        { key: 'meta', md: 'a' },
+        { key: 'definition', md: 'b' },
+        { key: 'architecture', role: 'core', md: 'c' },
+        { key: 'selfcheck', md: '**Q1** 题' },
+      ],
+    })
+    expect(result.ok).toBe(false)
+    expect(result.reason).toContain('title')
+  })
+
+  it('v9：正文区顺序自由（详解排在定义之前不再拒绝——章节顺序由规划决定）', () => {
     const result = checkLessonSectionsShape({
       essenceType: 'K-concept',
       sections: [
@@ -514,11 +544,37 @@ describe('checkLessonSectionsShape（归一后仍不合规 → 可执行的拒�
         { key: 'selfcheck', md: '**Q1** 题' },
       ],
     })
-    expect(result.ok).toBe(false)
-    expect(result.reason).toContain('区序不符合')
+    expect(result.ok).toBe(true)
+    expect(result.note).toBeNull()
   })
 
-  it('未归一的 v5 老卡（案例排在详解之前）→ 按历史模板兼容放行并附重排提示（内容不动）', () => {
+  it('v9：锚点位置仍被把守——正文区出现在自测之后 → 拒绝', () => {
+    const result = checkLessonSectionsShape({
+      essenceType: 'K-concept',
+      sections: [
+        { key: 'meta', md: 'a' },
+        { key: 'selfcheck', md: '**Q1** 题' },
+        { key: 'definition', md: 'b' },
+      ],
+    })
+    expect(result.ok).toBe(false)
+    expect(result.reason).toContain('收尾')
+  })
+
+  it('v9：meta 不在首位 → 拒绝', () => {
+    const result = checkLessonSectionsShape({
+      essenceType: 'K-concept',
+      sections: [
+        { key: 'definition', md: 'b' },
+        { key: 'meta', md: 'a' },
+        { key: 'selfcheck', md: '**Q1** 题' },
+      ],
+    })
+    expect(result.ok).toBe(false)
+    expect(result.reason).toContain('首位')
+  })
+
+  it('未归一的 v5 老卡（案例排在详解之前）→ v9 放行（正文区顺序自由，无需历史模板兜底）', () => {
     const result = checkLessonSectionsShape({
       essenceType: 'K-concept',
       sections: [
@@ -530,7 +586,7 @@ describe('checkLessonSectionsShape（归一后仍不合规 → 可执行的拒�
       ],
     })
     expect(result.ok).toBe(true)
-    expect(result.note).toContain('v6')
+    expect(result.note).toBeNull()
   })
 
   it('自测区残留行内答案 → 拒绝并指向独立 answers 区', () => {

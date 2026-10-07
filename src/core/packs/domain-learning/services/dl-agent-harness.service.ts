@@ -348,8 +348,10 @@ export class DlAgentHarnessService {
           snapshotText += `\n\n${lessonQuickModeHint()}`
         } else {
           const essenceHint =
-            '该概念的本质类型一旦定下，区集与区序就按它走：' +
-            DL_ESSENCE_TYPES.map((t) => `${t}：${lessonTemplateHint(t)}`).join('；')
+            '规划讲义方案时：知识本质类型用作**章节规划的参考骨架**（不是硬性区集——可裁剪、可自造章节）：' +
+            DL_ESSENCE_TYPES.map((t) => `${t}：${lessonTemplateHint(t)}`).join('；') +
+            '；结构纪律只有锚点位置（meta 首位、selfcheck 收尾、answers 紧随、notes 置底）；' +
+            '若该知识点装不下一份讲义（章节逼近上限/多主题聚合），改调 dl_propose_concept_split 提交拆分方案'
           snapshotText += `\n\n${lessonPlanProposeInstruction({
             conceptName,
             spaceGoal: space?.goal ?? null,

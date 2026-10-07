@@ -1489,7 +1489,7 @@ const electronAPI = {
       ipcRenderer.invoke('dl:get-plan', { id, conceptId: conceptId ?? null }),
     confirmPlan: (p: {
       id: string
-      step: 'understanding' | 'syllabus' | 'lesson'
+      step: 'understanding' | 'syllabus' | 'lesson' | 'concept-split'
       /** 用户勾选增删/调序后的方案（syllabus/lesson 需要；缺省=用最新草案原样确认） */
       payload?: unknown
       feedback?: string | null

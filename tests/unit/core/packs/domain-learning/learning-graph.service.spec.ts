@@ -579,5 +579,70 @@ describe('LearningGraphService 间隔复习（M3-B）', () => {
         ).rejects.toThrow(/重复/)
       })
     })
+
+    // 2026-10-06 agent 拆分提案：children 声明兄弟前置（拆分内部学习顺序），确认执行时一并落边
+    it('children 兄弟前置：落已确认边 + attrs 声明外部与兄弟前置；source=material 标来源', async () => {
+      ds = await buildDs()
+      const pid = await seedSpace('u1', ds)
+      const svc = makeServices(ds)
+      const graph = makeGraph(svc)
+      await runWithUserAsync('u1', async () => {
+        const r = await graph.splitConceptIntoBranch(pid, 'c-tf', {
+          children: [
+            { name: '编码器' },
+            { name: '解码器', definitionShort: '生成侧', prerequisites: ['编码器'] },
+          ],
+          source: 'material',
+        })
+        expect(r.children.map((x) => x.name)).toEqual(['编码器', '解码器'])
+
+        const kids = (await svc.concepts.listByProject(pid)).filter((x) => x.parentId === 'c-tf')
+        // agent 拆分提案确认执行 → 子知识点 source=material（方案提炼，非手工）
+        for (const k of kids) expect(k.source).toBe('material')
+
+        const decoder = kids.find((x) => x.name === '解码器')!
+        const encoder = kids.find((x) => x.name === '编码器')!
+        // attrs.prerequisites = 外部继承（注意力）+ 兄弟前置（编码器）
+        expect((decoder.attrs as { prerequisites?: string[] }).prerequisites).toEqual(['注意力', '编码器'])
+        // 兄弟前置落成已确认边：编码器 → 解码器
+        const siblingEdge = (await svc.relations.listPrerequisites(pid, decoder.id)).find(
+          (e) => e.sourceId === encoder.id,
+        )
+        expect(siblingEdge).toMatchObject({ relationType: PREREQUISITE_TYPE, verified: true })
+      })
+    })
+
+    it('校验（agent 提案路径）：兄弟前置自指 / 引用未知名 / 成环 → 拒绝', async () => {
+      ds = await buildDs()
+      const pid = await seedSpace('u1', ds)
+      const svc = makeServices(ds)
+      const graph = makeGraph(svc)
+      await runWithUserAsync('u1', async () => {
+        await expect(
+          graph.splitConceptIntoBranch(pid, 'c-attn', {
+            children: [
+              { name: 'A', prerequisites: ['A'] },
+              { name: 'B' },
+            ],
+          }),
+        ).rejects.toThrow(/自己/)
+        await expect(
+          graph.splitConceptIntoBranch(pid, 'c-attn', {
+            children: [
+              { name: 'A', prerequisites: ['外部概念'] },
+              { name: 'B' },
+            ],
+          }),
+        ).rejects.toThrow(/不在本次拆分/)
+        await expect(
+          graph.splitConceptIntoBranch(pid, 'c-attn', {
+            children: [
+              { name: 'A', prerequisites: ['B'] },
+              { name: 'B', prerequisites: ['A'] },
+            ],
+          }),
+        ).rejects.toThrow(/环/)
+      })
+    })
   })
 })

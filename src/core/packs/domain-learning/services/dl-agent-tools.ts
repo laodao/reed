@@ -153,8 +153,19 @@ const saveCardSchema = z.object({
     essenceType: z.enum(['K-concept', 'K-oper', 'K-stmt', 'K-inst', 'K-agent', 'K-open']).describe('知识本质类型（决定模板区集）'),
     sections: z
       .array(z.object({
-        key: z.string().min(1).describe('区 key：只能用契约定在册的区名，并按该本质类型的固定区序（同义写法会被归一，自造区名会被拒绝）'),
-        title: z.string().optional(),
+        key: z.string().min(1).describe(
+          '区 key：锚点区（meta/selfcheck/answers/notes）或正文区。正文区可用规范区（definition/detail/examples/' +
+          'operation/confusions/controversy/statement，直接用即有默认标题与职责），也可自造章节（英文小写 slug，' +
+          '如 architecture/ecosystem/evolution——介绍复杂开源项目/技术时按需起章）。同义写法会自动归一。',
+        ),
+        title: z.string().optional().describe('区标题：自造区必填（章节名由你规划）；规范区可省（有默认标题）'),
+        role: z
+          .string()
+          .optional()
+          .describe(
+            '区教学职责（自造区必填，规范区可省）：lead 导学 / core 核心 / case 案例 / support 支撑 / close 收尾。' +
+            'core/case 是重点（参考下限 core≥320 字、case≥260 字），决定篇幅配比与深度检查。',
+          ),
         style: z.string().optional(),
         layout: z
           .string()
@@ -169,14 +180,14 @@ const saveCardSchema = z.object({
               '不一致会被落库质检拒绝（会告诉你哪一区差什么）。',
           ),
         takeaway: z.string().optional().describe('这一区的一句话结论（读者该记住什么；渲染成结论条）。较长的正文区建议给'),
-        md: z.string().min(1).describe('区内容 md（可含图/表/mermaid/KaTeX）；[重点] 的区（定义/详解/案例）是本讲重点，必须按该区写作要求写详细'),
+        md: z.string().min(1).describe('区内容 md（可含图/表/mermaid/KaTeX）；role=core/case 的区是本讲重点，要写透'),
         folded: z.boolean().optional(),
       }))
       .min(1)
       .describe(
-        '讲义区集（模板语义）。区序「学习前必读 →（陈述/条文）→ 定义 → 详解 → 案例 → 实操 → 辨析与易错 → 自测 → 参考答案」：' +
-          '机制/结构/规则/公式/性质/依据/适用与局限已并入「详解」，本质并入「定义」开头，为什么学它并入「学习前必读」，' +
-          '步骤/代码并入「实操」（只在本知识点确实有可照做的操作时才写），反例并入「案例」，辨析/常见坑并入「辨析与易错」；不要自造区名',
+        '讲义区集（v9 锚点 + 开放）：meta（学习前必读）必须首位；正文区（规范或自造）顺序自定、按学习逻辑排；' +
+        'selfcheck（自测）收尾、answers 紧随、notes 置底。章节规模匹配知识点复杂度——名词解释 3~4 区收工，' +
+        '不要硬凑；一个知识点装不下时先 dl_propose_concept_split 建议拆分，不要硬写巨型讲义。',
       ),
     works: z
       .array(z.object({ kind: z.string(), title: z.string(), authors: z.string().optional(), year: z.string().optional(), url: z.string().optional(), note: z.string().optional() }))
@@ -258,7 +269,7 @@ const proposeLessonPlanSchema = z.object({
     conceptId: z.string().optional().describe('给哪个知识点做讲义方案（缺省=本轮研究概念）'),
     essenceType: z
       .enum(['K-concept', 'K-oper', 'K-stmt', 'K-inst', 'K-agent', 'K-open'])
-      .describe('知识本质类型（决定模板区集与区序，落库时必须与之一致）'),
+      .describe('知识本质类型（统计口径与章节规划参考）'),
     spec: z.object({
       audience: z.string().min(1).describe('读者画像：从哪出发、不是什么水平（决定类比密度与记号教学到哪一步）'),
       outcomes: z
@@ -286,7 +297,16 @@ const proposeLessonPlanSchema = z.object({
       roster: z
         .array(
           z.object({
-            key: z.string().min(1).describe('区 key（必须是该本质类型模板区集里的区，且按模板顺序）'),
+            key: z.string().min(1).describe(
+              '区 key：锚点区（meta 首位 / selfcheck 收尾 / answers 紧随 / notes 置底）或正文区——' +
+              '规范区（definition/detail/examples/operation/confusions/controversy/statement）直接用，' +
+              '自造章节用英文小写 slug（如 architecture/ecosystem）',
+            ),
+            title: z.string().optional().describe('区标题：自造区必填（章节名）；规范区可省（有默认标题）'),
+            role: z
+              .string()
+              .optional()
+              .describe('区教学职责（自造区必填）：lead 导学 / core 核心 / case 案例 / support 支撑 / close 收尾'),
             layout: z
               .string()
               .min(1)
@@ -303,6 +323,32 @@ const proposeLessonPlanSchema = z.object({
         .describe('区级计划（roster）：与落库 sections 一一对应；用户会在弹窗里看到并可改版式'),
       visualPlan: z.string().optional().describe('视觉计划：本讲靠什么图/表把结构讲清楚（写给读者看的一句说明）'),
     }),
+  }),
+})
+
+/**
+ * 知识点拆分方案 schema（2026-10-06 用户需求「复杂知识点允许 agent 再拆分」）。
+ * agent 只产方案——用户在弹窗确认后由系统就地把原知识点转成分支目录并建子知识点
+ * （原讲义/笔记/问答退役、外部前置自动继承、兄弟前置落边）。
+ */
+const proposeConceptSplitSchema = z.object({
+  conceptSplit: z.object({
+    conceptId: z.string().optional().describe('要拆分的知识点 id（缺省=本轮研究概念）'),
+    branchName: z.string().optional().describe('拆成一层分支后的目录名（缺省沿用原知识点名）'),
+    children: z
+      .array(
+        z.object({
+          name: z.string().min(1).describe('子知识点名（粒度细到"学完能做一件具体小事"）'),
+          definitionShort: z.string().optional().describe('一句话定义'),
+          prerequisites: z
+            .array(z.string())
+            .optional()
+            .describe('兄弟子知识点名（拆分内部的学习顺序；原知识点的外部前置会自动继承，不用写）'),
+        }),
+      )
+      .min(2)
+      .describe('拆出的子知识点（至少 2 个——只拆 1 个没有意义，直接修订原讲义即可）'),
+    reason: z.string().optional().describe('为什么建议拆分（给用户看：粒度过大/多主题聚合/章节规划逼近上限…）'),
   }),
 })
 
@@ -334,8 +380,10 @@ export function buildDlAgentToolDefs(): AgentToolDef[] {
     dlActionTool(
       'dl_save_card',
       '落库概念讲义卡片（区集 sections+著作 works+证据 evidenceSources；无证据会被拒绝；首区必须是 meta 且写前置声明）。' +
-        '**重点就是定义、详解、案例这三节**——要写详细（标了 [重点] 的区有参考字数下限）；' +
-        '区序是「定义 → 详解 → 案例 →（实操）→ 辨析与易错 → 自测」；机制/结构/规则/公式/性质/依据/适用与局限一律并进「详解」，本质并进「定义」开头，为什么学它并进「学习前必读」，步骤/代码并进「实操」（本领域确有可照做的操作才写），反例并进「案例」，辨析/常见坑并成「辨析与易错」；' +
+        '结构（v9）：meta（学习前必读）首位 → 正文区（规范区 definition/detail/examples/operation/confusions/controversy/statement，' +
+        '或自造章节——key 用英文 slug 并带 title+role）→ selfcheck 自测收尾、answers 紧随、notes 置底。' +
+        'role=core/case 的区是重点（定义/详解/案例及自造的核心章节），要写透；章节规模匹配知识点复杂度，' +
+        '名词解释 3~4 区收工不硬凑；装不下时先用 dl_propose_concept_split 建议拆分。' +
         '按文档写（段落+小标题+表格），不要做成要点卡堆砌（写不到位会在落库后被点名提醒）。',
       saveCardSchema,
     ),
@@ -356,11 +404,21 @@ export function buildDlAgentToolDefs(): AgentToolDef[] {
       'dl_propose_lesson_plan',
       '提交「讲义方案」草案（讲义生成固定流程第 1 步：先规划、用户确认、再逐区精写）：' +
         '读者画像 / 学完能做到 / 深度 / 篇幅预算 / 语气 / 术语表 / 记号表 / 示例参数表 / **区级计划 roster**' +
-        '（每区：版式设备 + 这一区替读者做什么 + 用什么载体 + 一句话结论）。' +
-        '系统会弹窗让用户确认（可改每区版式或提调整意见）；**确认后再 dl_save_card 逐区精写**，' +
-        '落库时区集/区序/声明的载体必须与它一致。' +
+        '（每区：key 锚点区或规范区直接用、自造章节给英文 slug+title+role；版式设备 + 这一区替读者做什么 + 用什么载体 + 一句话结论）。' +
+        '章节结构由你按知识点复杂度规划——简单概念 3~4 区收工，复杂主题可自造多章；**用户会在弹窗里确认这份章节规划**。' +
+        '**确认后再 dl_save_card 逐区精写**，落库时区集/声明的载体必须与它一致。' +
         '没有走这一步也能落卡（快速模式），但视觉质检（文字墙/通篇无图/声明与正文不符）照样拦。',
       proposeLessonPlanSchema,
+    ),
+    dlActionTool(
+      'dl_propose_concept_split',
+      '提交「知识点拆分方案」草案（2026-10-06：复杂知识点允许再拆分）。触发口径：研究/规划讲义时发现' +
+        '**这个知识点装不进一份讲义**——章节规划逼近上限仍显拥挤，或内容天然是多主题聚合' +
+        '（如一个开源项目=原理+架构+生态+使用）。方案给 branchName + children（每个子知识点一句话定义，' +
+        '可声明兄弟前置=拆分内部学习顺序）。**用户确认后系统就地把该知识点转成分支目录**' +
+        '（原讲义/笔记/问答退役，外部前置自动继承给每个子知识点）。提交后就停下等确认，' +
+        '不要再为原知识点继续写讲义；拆分确认后依次为子知识点出讲义。',
+      proposeConceptSplitSchema,
     ),
   ]
 }

@@ -22,6 +22,7 @@ import {
   wouldCreatePrereqCycle,
 } from '../rules/learning-prerequisites.rules'
 import {
+  proposeDlConceptSplit,
   getConfirmedLessonSpec,
   getConfirmedSyllabus,
   proposeDlLessonPlan,
@@ -34,6 +35,8 @@ import {
   checkLessonSectionsShape,
   canonicalSectionKey,
   normalizeCardSections,
+  resolveSectionRole,
+  sectionTitleOf,
 } from '@shared/utils/lesson-template'
 import {
   canonicalLessonLayout,
@@ -58,6 +61,7 @@ export type DlAgentActionType =
   | 'dl_propose_understanding'
   | 'dl_propose_syllabus'
   | 'dl_propose_lesson_plan'
+  | 'dl_propose_concept_split'
 
 /** 动作参数（工具 schema 约束后透传） */
 export interface DlAgentActionParams {
@@ -123,6 +127,12 @@ export interface DlAgentActionParams {
    * 形状 `{ conceptId, essenceType, spec:{ audience, outcomes, roster… } }`。
    */
   lesson?: Record<string, unknown>
+  /**
+   * propose_concept_split：知识点拆分方案草案（2026-10-06；研究/规划发现知识点粒度过大）。
+   * 形状 `{ branchName, children:[{name, definitionShort, prerequisites}], reason }`
+   * （conceptId 由本轮研究概念兜底）。agent 只产方案——用户确认后系统执行拆分。
+   */
+  conceptSplit?: Record<string, unknown>
 }
 
 /**
@@ -199,6 +209,25 @@ export async function executeDlAction(
           status: 'ok',
           message: r.message,
           data: { planId: r.planId, revision: r.revision, conceptId },
+        },
+      }
+    }
+    case 'dl_propose_concept_split': {
+      // 拆分方案同样按概念写：本轮研究概念（runtimeContext）或载荷显式给出
+      const raw = (params.conceptSplit ?? {}) as Record<string, unknown>
+      const conceptId = String(raw.conceptId ?? ctx.conceptId ?? '').trim()
+      if (!conceptId) {
+        throw new Error(
+          'dl_propose_concept_split：缺 conceptId——要拆分的是哪个知识点（本轮研究概念会自动兜底，跨概念拆分请显式给 conceptId）。',
+        )
+      }
+      const r = await proposeDlConceptSplit(db, spaceId, conceptId, raw)
+      return {
+        summary: {
+          tool: 'dl_propose_concept_split',
+          status: 'ok',
+          message: r.message,
+          data: { planId: r.planId, revision: r.revision, conceptId, children: r.value.children.map((c) => c.name) },
         },
       }
     }
@@ -583,16 +612,18 @@ async function saveCard(
     throw new Error(`dl_save_card：目标概念（${card.conceptId}）与当前研究概念（${expectedConceptId}）不一致——请先切到该概念再研究它`)
   }
 
-  // 讲义区集契约（2026-09-13 用户反馈「同一主题下不同知识点的结构/标题/答案形态各不相同」）：
+  // 讲义区集契约（2026-10-06 v9：锚点区 + 开放区）：
   // 先把**能无损映射**的部分归一化——同义区名改规范名（checks→selfcheck、worked→examples…）、
-  // 区标题与样式按本质类型模板派生、区正文小标题层级统一到 ###、自测答案拆成独立 answers 区；
-  // 再校验区序（自造区名/乱序会被拒绝，拒绝信息里带上该类型的模板区序，模型据此重发）。
+  // 已合并的历史区并入目标区、区正文小标题层级统一到 ###、自测答案拆成独立 answers 区、
+  // 锚点归位（meta 置首、selfcheck/answers/notes 收尾）；再校验形状（自造区必须自带 title/role、
+  // 锚点位置正确——拒绝信息里写明怎么改，模型据此重发）。正文区顺序自由（v9 起不按模板校验）。
   // 归一化发生在下面的难度/渐进/数值门禁之前，好让后续门禁与落库看到同一份规范区集。
   const normalized = normalizeCardSections({
     essenceType: card.essenceType,
     sections: card.sections.map((s) => ({
       key: s.key,
       title: s.title ?? null,
+      role: s.role ?? null,
       style: s.style ?? null,
       md: s.md,
       folded: s.folded,
@@ -616,7 +647,7 @@ async function saveCard(
   if (lessonPlan && lessonPlan.essenceType !== card.essenceType) {
     throw new Error(
       `dl_save_card：本卡声明 essenceType=${card.essenceType}，而已确认的讲义方案是 ${lessonPlan.essenceType}——` +
-        '本质类型决定模板区集，改类型等于换大纲：请按方案的类型落卡，或先 dl_propose_lesson_plan 提交新方案并等用户确认。',
+        '本质类型是已确认方案的口径之一，改类型等于换大纲：请按方案的类型落卡，或先 dl_propose_lesson_plan 提交新方案并等用户确认。',
     )
   }
   const plannedByKey = new Map(
@@ -626,16 +657,20 @@ async function saveCard(
   // 版式设备（2026-09-14 用户反馈「纯文字堆砌、布局单调」）：
   // 模型给的 layout 优先（别名归一），其次大纲定的，最后按区 key 推导模板默认——
   // 保证**每一区都有确定的版式**，渲染层据此出要点卡/对比表/图解…而不是一律段落。
+  // v9：title/role 同样物化落库——role 优先级 = 大纲声明 > 模型声明 > 目录兜底
+  //（自造区无目录兜底，靠 shape 校验保证字段齐全）；title 规范区由目录派生，自造区用模型给的。
   const sections: DlCardSectionDto[] = normalized.sections.map((s) => {
     const planned = plannedByKey.get(canonicalSectionKey(s.key))
     const layout =
       canonicalLessonLayout(s.layout) ||
       canonicalLessonLayout(planned?.layout) ||
       defaultLayoutForSection(s.key)
+    const role = planned?.role || s.role || resolveSectionRole(s.key)
     return {
       key: s.key,
-      title: s.title ?? undefined,
+      title: s.title ?? planned?.title ?? (sectionTitleOf(s.key) || undefined),
       style: s.style ?? undefined,
+      role: role || undefined,
       md: s.md,
       folded: s.folded,
       layout,

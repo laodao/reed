@@ -20,11 +20,13 @@
 import {
   DL_ESSENCE_TYPES,
   LESSON_SECTION_ROLE_LABELS,
+  LESSON_SECTION_ROLES,
   canonicalSectionKey,
-  isSectionAllowed,
-  lessonTemplateKeys,
+  isAnchorSectionKey,
+  isCustomSectionKey,
+  normalizeCustomSectionKey,
+  resolveSectionRole,
   sectionBriefOf,
-  sectionRoleOf,
   sectionSpecOf,
 } from './lesson-template'
 import {
@@ -46,10 +48,11 @@ import type {
  * charsPerSection 语义（2026-10-05 用户口径「不应有每区字数上限，主次分明、关键区详细讲」）：
  * 它是**非重点区**的精炼参考上限；重点区（定义/详解/案例/实操）不受此限，按需写透。
  * 上限只防荒谬值（如 99999），不再兼作"讲义不能长"的规模控制。
+ * sections 上限 v9 放宽到 24（章节放开自造；逼近上限的复杂主题应建议拆分知识点而不是硬凑）。
  */
 export const LESSON_SPEC_BUDGET_LIMITS = {
   minSections: 3,
-  maxSections: 20,
+  maxSections: 24,
   minCharsPerSection: 120,
   maxCharsPerSection: 4000,
 } as const
@@ -121,9 +124,10 @@ function clamp(n: number, min: number, max: number): number {
 /**
  * 归一化讲义规格（宽松入参 → 规范规格）。
  * 能无损修的（别名版式、越界预算、缺读者动作）自动修并记入 changes；
- * 结构性缺失（没有读者画像/目标/区级计划、区名不在模板里、roster 乱序）直接拒绝并说明怎么改。
+ * 结构性缺失（没有读者画像/目标/区级计划、自造区缺 title/role、锚点位置不对）直接拒绝并说明怎么改。
+ * essenceType（v9 起只作统计与参考骨架，不再决定区集）保留入参兼容既有调用方。
  */
-export function normalizeLessonSpec(raw: unknown, essenceType: DlEssenceType): LessonSpecNormalizeResult {
+export function normalizeLessonSpec(raw: unknown, _essenceType: DlEssenceType): LessonSpecNormalizeResult {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return { ok: false, reason: '讲义规格必须是对象（含 audience/outcomes/roster 等字段）。' }
   }
@@ -193,43 +197,74 @@ export function normalizeLessonSpec(raw: unknown, essenceType: DlEssenceType): L
     return {
       ok: false,
       reason:
-        '讲义规格缺 roster（区级计划）——要逐区列出：key（模板区名）、layout（版式设备）、' +
+        '讲义规格缺 roster（区级计划）——要逐区列出：key（锚点区/规范区直接用，或自造英文 slug）、' +
+        'title（自造区必填）、role（自造区必填：lead/core/case/support/close）、layout（版式设备）、' +
         'job（这一区替读者做什么）、carrier（用什么载体承载：figure/table/formula/code/points/stats/quote/checklist）、' +
         'takeaway（一句话结论）。没有它就只能一次写一大段散文，正是要解决的问题。',
     }
   }
 
-  const template = lessonTemplateKeys(essenceType)
+  // v9 区集契约：锚点区（meta 首位、selfcheck/answers/notes 收尾组）+ 正文区自由
+  //（规范区推荐、自造区须自带 title/role）。顺序纪律只剩锚点位置，正文区按规划排。
   const roster: DlLessonPlanEntry[] = []
   const seenKeys = new Set<string>()
-  let cursor = -1
   for (const item of rosterRaw) {
     if (!item || typeof item !== 'object') continue
     const rec = item as Record<string, unknown>
     const rawKey = str(rec.key)
     if (!rawKey) return { ok: false, reason: 'roster 里有条目没写 key（区名）——每个区都要给 key。' }
-    const key = canonicalSectionKey(rawKey)
-    if (!isSectionAllowed(essenceType, key)) {
+    const normalized = canonicalSectionKey(rawKey)
+    const custom = isCustomSectionKey(normalized)
+    const key = custom ? (normalizeCustomSectionKey(normalized) || normalized) : normalized
+    if (custom && key === rawKey.toLowerCase() && normalizeCustomSectionKey(normalized) !== normalized) {
       return {
         ok: false,
-        reason:
-          `roster 里的区「${rawKey}」不在 ${essenceType} 的模板区集内。` +
-          `可用区名（固定顺序）：${template.join(' → ')}。请把内容并进最贴近的区，或删掉该区。`,
+        reason: `自造区 key「${rawKey}」无法用作章节标识（须为英文小写/数字/连字符的 slug，如 architecture）。`,
+      }
+    }
+    const title = str(rec.title)
+    const roleRaw = str(rec.role).toLowerCase()
+    if (custom) {
+      if (!title) {
+        return {
+          ok: false,
+          reason:
+            `自造区「${key}」缺 title（章节名）——自造章节的标题由规划给出（规范区才有目录兜底标题）。`,
+        }
+      }
+      if (!(LESSON_SECTION_ROLES as string[]).includes(roleRaw)) {
+        return {
+          ok: false,
+          reason:
+            `自造区「${key}」缺 role 或 role 不合法——五选一：lead 导学 / core 核心 / case 案例 / support 支撑 / close 收尾` +
+            `（它决定这一区该写多厚，core/case 是重点）。`,
+        }
       }
     }
     if (seenKeys.has(key)) return { ok: false, reason: `roster 里区「${key}」重复了——每个区只能出现一次。` }
-    const at = template.indexOf(key)
-    if (at < cursor) {
+    seenKeys.add(key)
+
+    // 锚点位置：meta 只能首位；收尾组之后不得再排正文区
+    const at = roster.length
+    if (key === 'meta' && at > 0) {
+      return { ok: false, reason: 'roster 里「meta（学习前必读）」必须排在第一位——读者先知道站在哪。' }
+    }
+    const prevKeys = roster.map((r) => r.key)
+    const firstCloseAt = prevKeys.findIndex((k) => k !== 'meta' && isAnchorSectionKey(k))
+    if (firstCloseAt >= 0 && !(key !== 'meta' && isAnchorSectionKey(key))) {
       return {
         ok: false,
         reason:
-          `roster 顺序不符合 ${essenceType} 模板（「${key}」出现在它该在的位置之前）。` +
-          `要求顺序：${template.join(' → ')}（可跳过不用的区，但不能乱序）。` +
-          '请按该顺序重排区级计划后重发（顺序本身就是教学法：先例后律、自测收尾）。',
+          `roster 里「${key}」排在了收尾区「${prevKeys[firstCloseAt]}」之后——正文区都在前面，` +
+          `自测（selfcheck）收尾、答案（answers）紧随、注记（notes）置底。`,
       }
     }
-    cursor = at
-    seenKeys.add(key)
+    if (key === 'answers' && !prevKeys.includes('selfcheck')) {
+      return {
+        ok: false,
+        reason: 'roster 里「answers（参考答案）」是 selfcheck 的跟随区——前面没有 selfcheck 就不该有 answers。',
+      }
+    }
 
     const rawLayout = str(rec.layout)
     const spec = lessonLayoutSpecOf(rawLayout)
@@ -239,18 +274,20 @@ export function normalizeLessonSpec(raw: unknown, essenceType: DlEssenceType): L
     }
     if (!spec && rawLayout) changes.push(`区「${key}」版式「${rawLayout}」未收录，按「${layout}」处理`)
     const job = str(rec.job)
-    if (!job) changes.push(`区「${key}」缺 job（读者动作），按区写作说明兜底`)
+    if (!job) changes.push(`区「${key}」缺 job（读者动作），按区职责兜底`)
     roster.push({
       key,
+      title: title || null,
+      role: custom ? roleRaw : (roleRaw || null),
       layout,
-      // 读者动作优先用大纲给的；缺省用区集契约（v6）里该区的写作说明——一份口径，两处消费
+      // 读者动作优先用大纲给的；缺省用区集契约里该区的写作说明——一份口径，两处消费
       job: job || sectionBriefOf(key) || lessonLayoutSpecOf(layout)?.purpose || '把这一区讲清楚',
       carrier: normalizeCarrier(rec.carrier),
       takeaway: str(rec.takeaway) || null,
     })
   }
 
-  if (roster.length === 0) return { ok: false, reason: 'roster 里的条目都不合法（缺 key 或区名不在模板内）。' }
+  if (roster.length === 0) return { ok: false, reason: 'roster 里的条目都不合法（缺 key 或字段不全）。' }
 
   const value: DlLessonSpec = {
     audience,
@@ -274,9 +311,8 @@ export type LessonPlanPayloadNormalizeResult =
   | { ok: false; reason: string }
 
 /**
- * 归一化「讲义方案」载荷：本质类型（决定模板区集）+ 设计规格。
- * essenceType 是这份规格的骨架来源——它决定 roster 能用哪些区、按什么顺序，
- * 因此**必须在规划阶段定死**，落库时按它校验（不许落库时换类型）。
+ * 归一化「讲义方案」载荷：本质类型（v9：统计口径与章节规划参考）+ 设计规格。
+ * essenceType 仍在规划阶段定死（落库时校验一致，不许落库时换类型）。
  */
 export function normalizeLessonPlanPayload(raw: unknown): LessonPlanPayloadNormalizeResult {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
@@ -288,7 +324,7 @@ export function normalizeLessonPlanPayload(raw: unknown): LessonPlanPayloadNorma
     return {
       ok: false,
       reason:
-        `讲义方案缺合法的 essenceType（知识本质类型）——它决定模板区集与区序，` +
+        `讲义方案缺合法的 essenceType（知识本质类型；用作章节规划的参考骨架与统计口径），` +
         `必须六选一：${DL_ESSENCE_TYPES.join(' / ')}。`,
     }
   }
@@ -442,28 +478,31 @@ export function lessonSpecLock(spec: DlLessonSpec, essenceType: DlEssenceType): 
         spec.exampleParams.map((p) => `${p.name}=${p.value}`).join('；'),
     )
   }
-  lines.push('区级计划（严格按此顺序与版式写，用不到的区已在规划时省掉，不要再加区）：')
+  lines.push('区级计划（严格按此顺序与版式写；章节结构已在规划时定下并由用户确认，不要再增删区）：')
   spec.roster.forEach((r, i) => {
     const specOfSection = sectionSpecOf(r.key)
-    const role = LESSON_SECTION_ROLE_LABELS[sectionRoleOf(r.key)]
+    const role = resolveSectionRole(r.key, r.role)
+    const sectionTitle = specOfSection?.title ?? (r.title ?? r.key)
     const need = specOfSection?.minChars ? `至少 ${specOfSection.minChars} 字；` : ''
     const parts = [
-      `  ${i + 1}. ${r.key}${specOfSection ? `（${specOfSection.title}）` : ''}[${role}]`,
+      `  ${i + 1}. ${r.key}（${sectionTitle}）[${LESSON_SECTION_ROLE_LABELS[role]}]`,
       `版式 ${r.layout}（${lessonLayoutSpecOf(r.layout)?.name ?? r.layout}）`,
       `读者动作：${r.job}`,
     ]
     if (r.carrier) parts.push(`载体：${r.carrier}`)
     if (r.takeaway) parts.push(`结论条：${r.takeaway}`)
     lines.push(parts.join('｜'))
-    // 写作要求与区集契约（v6 的 role/brief/minChars）同源：roster 的版式/载体要与它对齐
+    // 写作要求与区集契约同源：规范区带目录 brief；自造区只约束 role 级篇幅
     if (specOfSection) lines.push(`      写作要求：${need}${specOfSection.brief}`)
+    else if (role === 'core' || role === 'case') lines.push(`      写作要求：重点区（${LESSON_SECTION_ROLE_LABELS[role]}），按教学职责写透，不设字数上限`)
   })
-  lines.push(`区集契约仍以 ${essenceType} 模板为准（区名与顺序不得自造）。`)
+  lines.push(`结构纪律：meta 首位、自测收尾、答案紧随、注记置底（锚点区位置有门禁）；正文区顺序按本计划（${essenceType} 仅作知识形态参考）。`)
   if (spec.visualPlan) lines.push(`视觉计划：${spec.visualPlan}`)
   lines.push(
     '写作纪律：① 每区先按版式把内容做成"看得见"的形状（要点卡/对比表/步骤条/图解/数据看点…），' +
       '不要写成长段散文；② 每区长段信息要归纳成要点或小标题；③ 大纲声明要配图的区必须真给 ```figure 规格块；' +
-      '④ 重点在「核心 + 案例」区（定义/详解/案例）要写透，导学与自测从简，有可照做的操作才写「实操」（v8 区集契约）。',
+      '④ 重点在 role=core/case 的章节（定义/详解/案例及自造的核心章节）要写透，导学与自测从简，' +
+      '有可照做的操作才写实操类章节。',
   )
   return lines.join('\n')
 }
