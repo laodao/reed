@@ -286,6 +286,12 @@ export interface ICoreDatabaseManager {
   dlQuestions: import('./repositories/dl-question.repository').DlQuestionRepository | null
   dlNotes: import('./repositories/dl-note.repository').DlNoteRepository | null
   dlPlans: import('./repositories/dl-plan.repository').DlPlanRepository | null
+  // 信息搜集（docs/design/2026-10-07-info-collection-design.md：5 张 ic_* 表）
+  icProjects: import('./repositories/ic-project.repository').IcProjectRepository | null
+  icTasks: import('./repositories/ic-task.repository').IcTaskRepository | null
+  icTaskPasses: import('./repositories/ic-task-pass.repository').IcTaskPassRepository | null
+  icSources: import('./repositories/ic-source.repository').IcSourceRepository | null
+  icRows: import('./repositories/ic-row.repository').IcRowRepository | null
 
   // ---- 业务包内核（第一期） ----
   /** 内置包快照（business_packs：manifest UPSERT + 全局启用态兜底） */
