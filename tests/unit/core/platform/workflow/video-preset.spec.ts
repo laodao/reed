@@ -27,6 +27,23 @@ describe('视频类型预设数据', () => {
     }
   })
 
+  it('deep-investigate 深度调查预设：存在、imagery 策略、意象表无文字纪律', () => {
+    const p = getVideoPreset('deep-investigate')
+    expect(p).toBeTruthy()
+    expect(p!.label).toBe('深度调查')
+    expect(p!.visualPolicy.mode).toBe('imagery')
+    expect(p!.visualPolicy.assetDependency).toBe('none')
+    expect(p!.visualPolicy.imageryMap.length).toBeGreaterThanOrEqual(6)
+    // 意象描述不得要求画面出现文字（与既有纪律一致）
+    for (const rule of p!.visualPolicy.imageryMap) {
+      expect(rule.imagery).toBeTruthy()
+      expect(rule.match.length).toBeGreaterThan(0)
+    }
+    const block = assembleVideoPresetPrompt('deep-investigate')
+    expect(block).toContain('深度调查')
+    expect(block).toContain('疑点追问')
+  })
+
   it('assembleVideoPresetPrompt：预设产出规范块，自由风格叠加行并入', () => {
     const p = assembleVideoPresetPrompt('financial-deep', '鎏金暗调更浓')
     expect(p).toContain('【视频类型】财经深度')
