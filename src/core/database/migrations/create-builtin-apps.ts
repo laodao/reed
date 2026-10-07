@@ -89,8 +89,8 @@ const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; icon: str
   { file: 'long-form-writing.json', raw: longFormWriting, appId: `${BUILTIN_APP_PREFIX}long_form_writing`, icon: '✍️', name: '长文写作', description: '故事线 → 章节大纲 → 逐章写作（多轮对话承接前文）→ 合并完整长文入库', category: '内容创作', tags: ['长文', '写作', '小说'] },
   // 电商详情长图（2026-08-29 用户确认开工：先按卖点/规格规划张数，再逐张生成并配图文，排版成竖版详情长图）
   { file: 'ecommerce-detail-long-image.json', raw: ecommerceDetailLongImage, appId: `${BUILTIN_APP_PREFIX}ecommerce_detail_long_image`, icon: '🛍️', name: '电商详情长图', description: '商品图+卖点+规格 → 按卖点/规格规划 N 张介绍图 → 逐张生成（锁商品、图文对应）→ 排版成竖版详情长图', category: '电商', tags: ['电商', '详情', '长图'] },
-  // 主题深度研究（2026-09-09 v2 升级替换实操版：澄清→规划(已知地图/验收)→≤3轮研究执行体+另一模型独立评估→差距迭代→溯源成稿→人工确认）
-  { file: 'topic-research.json', raw: topicResearch, appId: `${BUILTIN_APP_PREFIX}topic_research`, icon: '🧭', name: '主题深度研究', description: '澄清研究契约 → 规划(已知地图/主题类型/步骤/验收标准) → 至多3轮「研究(联网+正文深读+私有知识库) + 另一模型独立评估」 → 不达标带差距再研究 → 溯源研究报告 → 人工确认存档', category: '调研', tags: ['主题研究', '深度研究'] },
+  // 主题深度研究（2026-10-06 v5：用途自适应 + 信源四级分级（官方机构/官方媒体/互联网媒体/互联网搜索，跨渠道取材不偏官方）+ 素材密度优先）
+  { file: 'topic-research.json', raw: topicResearch, appId: `${BUILTIN_APP_PREFIX}topic_research`, icon: '🧭', name: '主题深度研究', description: '澄清研究契约 → 规划(已知地图/主题类型/步骤/验收标准) → 多轮「研究(联网+正文深读+私有知识库,素材密度优先) + 另一模型独立评估」 → 不达标带差距再研究 → 按用途成稿(写作用途=高密度写作素材；信源四级分级，官方与媒体/网络渠道跨级取材) → 人工确认存档', category: '调研', tags: ['主题研究', '深度研究'] },
   // 日记周报复盘（2026-09-24 日记增强 P1）
   { file: 'diary-weekly-review.json', raw: diaryWeeklyReview, appId: `${BUILTIN_APP_PREFIX}diary_weekly_review`, icon: '🗓️', name: '日记周报复盘', description: '按时间范围聚合日记（可跨目录）→ AI 三段式复盘（发生了什么/学到了什么/下周关注什么）→ 人工确认 → 存回日记', category: '学习', tags: ['日记', '复盘', '周报'] },
 ]

@@ -95,9 +95,12 @@ describe('research-method（调研方法技能）', () => {
     expect(body).toContain('误区')
   })
 
-  it('数据来源经验：覆盖 8 类来源，且每类给出取不到时的降级路径', () => {
+  it('数据来源经验：四级分级 + 覆盖多类来源，且每类给出取不到时的降级路径', () => {
     for (const source of [
-      '官方一手',
+      '官方机构',
+      '官方媒体',
+      '互联网媒体',
+      '互联网搜索',
       '平台后台',
       '行业',
       '财报',
@@ -112,14 +115,28 @@ describe('research-method（调研方法技能）', () => {
     }
   })
 
+  it('来源四级分级：渠道跨级搭配、不得只从官方机构取材；网络信息可用但须标注；素材密度是硬验收', () => {
+    for (const rule of ['来源四级分级', '渠道必须跨级搭配', '不得只从官方机构渠道取材', '网络信息', '单一来源', '素材密度']) {
+      expect(body).toContain(rule)
+    }
+    // 层级低不丢弃：旧纪律「无来源的内容…删除」不得回流
+    expect(body).not.toContain('降级为待验证或删除')
+    // 事件/现象/人物类骨架（深度报道、专题资料研究方向）
+    expect(body).toContain('事件/现象/人物类主题')
+    expect(body).toContain('案例与细节素材库')
+    expect(body).toContain('各方说法与争议')
+    // 主题类型选项含事件与现象
+    expect(md).toContain('事件与现象')
+  })
+
   it('取证纪律：三态标注 / 禁止编造 / 矛盾并列 / 采集时间 / 反方观点 / 可点击来源', () => {
     for (const rule of ['未查到', '禁止编造', '矛盾', '采集时间', '反方', '可点击']) {
       expect(body).toContain(rule)
     }
   })
 
-  it('验收经验：must-answer 颗粒度 + 证据层级 + 非阻塞项口径（避免该停不停）', () => {
-    for (const item of ['must-answer', '证据层级', '非阻塞']) {
+  it('验收经验：must-answer 颗粒度 + 来源层级标注 + 非阻塞项口径（避免该停不停）', () => {
+    for (const item of ['must-answer', '来源层级', '非阻塞']) {
       expect(body).toContain(item)
     }
   })
