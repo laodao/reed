@@ -72,14 +72,23 @@ describe('多平台文案生成 工作流（v2 素材驱动分发器）', () => 
     expect(p).toContain('{{strategy1.parsed.claim}}')
   })
 
-  it('审核与产出链路：逐平台 loop → 人工审核 → 报告 → 存资产', () => {
+  it('审核与产出链路：逐平台 loop → 审核载荷组装 → 人工审核 → 报告 → 存资产', () => {
     const e = graph.edges
     expect(e.find(x => x.sourceNodeId === 'strategy1' && x.targetNodeId === 'loop1')).toBeTruthy()
     expect(e.find(x => x.sourceNodeId === 'loop1' && x.targetNodeId === 'gen1' && x.kind === 'loop-body')).toBeTruthy()
     expect(e.find(x => x.sourceNodeId === 'gen1' && x.targetNodeId === 'loop1' && x.kind === 'loop-back')).toBeTruthy()
-    expect(e.find(x => x.sourceNodeId === 'loop1' && x.targetNodeId === 'review1')).toBeTruthy()
+    // reviewPrep：把各平台文案预组装成含 output_result 的 payload——
+    // 「直接批准」原样直通（修复无编辑批准丢文案），「修改后批准」被 editedValues 覆盖
+    expect(e.find(x => x.sourceNodeId === 'loop1' && x.targetNodeId === 'reviewPrep' && x.kind === 'loop-done')).toBeTruthy()
+    expect(e.find(x => x.sourceNodeId === 'reviewPrep' && x.targetNodeId === 'review1')).toBeTruthy()
+    expect(String(configOf('review1').payload)).toBe('{{reviewPrep.result}}')
+    expect(String(configOf('review1').payload)).not.toContain('{{loop1.results}}')
+    const prep = configOf('reviewPrep')
+    expect(prep.language).toBe('js')
+    expect(String(prep.code)).toContain('output_result')
     expect(e.find(x => x.sourceNodeId === 'review1' && x.targetNodeId === 'report1')).toBeTruthy()
     expect(e.find(x => x.sourceNodeId === 'report1' && x.targetNodeId === 'save1')).toBeTruthy()
+    expect(String(configOf('report1').template)).toContain('{{review1.output_result}}')
   })
 
   it('领域无关：模板提示词不写死任何具体主题', () => {

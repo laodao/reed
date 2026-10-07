@@ -186,7 +186,7 @@
           "y": 460
         },
         "config": {
-          "payload": "{{loop1.results}}",
+          "payload": "{{reviewPrep.result}}",
           "interaction": "input",
           "editableFields": [
             {
@@ -237,6 +237,29 @@
           "y": 460
         },
         "config": {}
+      },
+      {
+        "id": "reviewPrep",
+        "type": "code",
+        "name": "审核载荷组装",
+        "position": {
+          "x": 1180,
+          "y": 320
+        },
+        "config": {
+          "language": "js",
+          "code": "const arr = Array.isArray(inputs.chapters) ? inputs.chapters : [];\nconst platforms = Array.isArray(inputs.platforms) ? inputs.platforms : [];\nconst text = arr.map(function (c, i) {\n  const content = c && c.content ? c.content : (typeof c === 'string' ? c : '');\n  const label = platforms[i] ? ('## 平台：' + platforms[i]) : ('## 文案 ' + (i + 1));\n  return (i > 0 ? '\n\n---\n\n' : '') + label + '\n\n' + content;\n}).join('');\n// output_result 直接挂进 payload：审核「直接批准」时原样直通（修复无编辑批准丢文案），\n// 「修改后批准」时被 editedValues.output_result 覆盖\nreturn { output_result: text, results: arr };",
+          "inputs": [
+            {
+              "key": "chapters",
+              "value": "{{loop1.results}}"
+            },
+            {
+              "key": "platforms",
+              "value": "{{start.platforms}}"
+            }
+          ]
+        }
       }
     ],
     "edges": [
@@ -267,8 +290,14 @@
       {
         "id": "e5",
         "sourceNodeId": "loop1",
-        "targetNodeId": "review1",
+        "targetNodeId": "reviewPrep",
         "kind": "loop-done"
+      },
+      {
+        "id": "e_rp",
+        "sourceNodeId": "reviewPrep",
+        "targetNodeId": "review1",
+        "kind": "normal"
       },
       {
         "id": "e6",
