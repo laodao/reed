@@ -29,8 +29,10 @@ export const infoCollectionPack: RendererPackDefinition = {
     {
       path: '/info-collection/:id',
       name: 'InfoCollectionProject',
+      // 不开 keepAlive：参数路由共用组件实例（切项目不重挂），且组件无 defineOptions 名，
+      // include 从未匹配上——缓存是假的；关掉后 onMounted/onBeforeUnmount 生命周期干净。
       component: () => import('@/views/info-collection/InfoCollectionProject.vue'),
-      meta: { title: '搜集项目', keepAlive: true },
+      meta: { title: '搜集项目' },
     },
   ],
   menuItems: [
