@@ -13,6 +13,7 @@ import type { IcBlueprint } from '@shared/types/info-collection.types'
 import { checkBlueprint } from '@shared/utils/info-collection-blueprint'
 import { draftBlueprint } from '../services/ic-blueprint.service'
 import { IcCollectionService } from '../services/ic-collection.service'
+import { IcSnapshotFileStore } from '../services/ic-snapshot-store'
 
 const logger = createLogger('IcHandlers')
 
@@ -39,7 +40,12 @@ let collection: IcCollectionService | null = null
 
 /** 服务惰性构造（首次调用时装配生产缺省；activate 早于 db boot） */
 function services(): IcCollectionService {
-  if (!collection) collection = new IcCollectionService() // 零注入 = 全部生产缺省（惰性 import）
+  if (!collection) {
+    collection = new IcCollectionService({
+      // 生产快照落盘（<dataPath>/info-collection/snapshots/；web 端无 dataPath 时自动降级跳过）
+      snapshotStore: new IcSnapshotFileStore(),
+    })
+  }
   return collection
 }
 

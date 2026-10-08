@@ -311,13 +311,19 @@ export class IcCollectionService {
             stats.sourcesFailed += 1
             continue
           }
-          if (this.snapshots) {
-            const path = await this.snapshots.write(projectId, source.id, doc.body, '')
-            if (path) await repos.sources.patch(source.id, { snapshotPath: path })
-          }
 
-          // 正文提取（过短 = 疑似动态页/反爬 → 转手动导入建议）
-          const markdown = this.extractText(doc.body, item.url).trim()
+          // 先提取正文（本地纯 CPU，不耗预算），让快照带上 markdown（提取失败快照仍存 HTML）
+          let markdown = ''
+          try {
+            markdown = this.extractText(doc.body, item.url).trim()
+          } catch {
+            markdown = ''
+          }
+          // 先保命：有 snapshotStore 时抓到即落快照（html + markdown 双段）
+          if (this.snapshots) {
+            const p = await this.snapshots.write(projectId, source.id, doc.body, markdown)
+            if (p) await repos.sources.patch(source.id, { snapshotPath: p })
+          }
           if (markdown.length < 300) {
             await repos.sources.patch(source.id, {
               fetchStatus: 'partial',
