@@ -18,11 +18,12 @@ class MemRuns {
   rows: Map<string, any> = new Map()
   seq = 0
   async create(i: any) {
-    // 模拟互斥部分唯一索引（评审#31/#40）：同 (userId, definitionId) 的活动行唯一
+    // 模拟互斥部分唯一索引（评审#31/#40 + mutex_scope 扩展）：同 (userId, definitionId, mutexScope) 的活动行唯一
     if (['pending', 'running', 'waiting_review'].includes(i.status)) {
       const uid = i.userId ?? 'u1'
       const dup = [...this.rows.values()].some(r =>
         r.definitionId === i.definitionId && r.userId === uid &&
+        (r.mutexScope ?? '') === (i.mutexScope ?? '') &&
         ['pending', 'running', 'waiting_review'].includes(r.status))
       if (dup) {
         throw Object.assign(new Error('UNIQUE constraint failed: workflow_runs.user_id, workflow_runs.definition_id'), { code: 'SQLITE_CONSTRAINT_UNIQUE' })
@@ -213,6 +214,32 @@ describe('WorkflowRunService', () => {
     const second = await runWithUser('u1', () => service.startRun({ definitionId: 'def1', triggerType: 'cron' }))
     expect(second.status).toBe('skipped')
     expect(second.skipReason).toContain('运行中')
+  })
+
+  it('allowParallelInstances：开启后同定义多实例并存（自动派生独立 scope）', async () => {
+    const { service, definitions } = setup()
+    const graph = g(
+      [n('start', 'start'), n('d', 'delay', { durationMs: 200 }), n('end', 'end')],
+      [['start', 'd'], ['d', 'end']]
+    )
+    const d1 = def('def1', graph)
+    d1.settings = { allowParallelInstances: true }
+    definitions.rows.set('def1', d1)
+    const a = await runWithUser('u1', () => service.startRun({ definitionId: 'def1', triggerType: 'manual' }))
+    const b = await runWithUser('u1', () => service.startRun({ definitionId: 'def1', triggerType: 'manual' }))
+    await wait(20)
+    expect(a.status).not.toBe('skipped')
+    expect(b.status).not.toBe('skipped')
+    // 每次启动自动派生唯一 scope（互斥检查与唯一索引按 scope 区分 → 互不妨碍）
+    expect(a.mutexScope).toBeTruthy()
+    expect(b.mutexScope).toBeTruthy()
+    expect(a.mutexScope).not.toBe(b.mutexScope)
+
+    // 显式 mutexScope 优先级更高：同 scope 二次启动仍被拦（章法语义不变）
+    const c = await runWithUser('u1', () => service.startRun({ definitionId: 'def1', triggerType: 'manual', mutexScope: 'chapter-1' }))
+    const d = await runWithUser('u1', () => service.startRun({ definitionId: 'def1', triggerType: 'manual', mutexScope: 'chapter-1' }))
+    expect(c.status).not.toBe('skipped')
+    expect(d.status).toBe('skipped')
   })
 
   it('并发 startRun 竞态：互斥唯一索引兜底转 skipped，绝不双跑（评审#31/#40）', async () => {

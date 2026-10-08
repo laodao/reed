@@ -93,6 +93,11 @@ import { DlDocRepository } from '@core/database/repositories/dl-doc.repository'
 import { DlQuestionRepository } from '@core/database/repositories/dl-question.repository'
 import { DlNoteRepository } from '@core/database/repositories/dl-note.repository'
 import { DlPlanRepository } from '@core/database/repositories/dl-plan.repository'
+import { IcProjectRepository } from '@core/database/repositories/ic-project.repository'
+import { IcTaskRepository } from '@core/database/repositories/ic-task.repository'
+import { IcTaskPassRepository } from '@core/database/repositories/ic-task-pass.repository'
+import { IcSourceRepository } from '@core/database/repositories/ic-source.repository'
+import { IcRowRepository } from '@core/database/repositories/ic-row.repository'
 import { PackBindingRepository, PackRepository } from '@core/database/repositories/business-pack.repositories'
 import { LwPlotCharacterRepository } from '@core/database/repositories/lw-plot-character.repository'
 import { LwPlotLocationRepository } from '@core/database/repositories/lw-plot-location.repository'
@@ -260,6 +265,12 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   dlQuestions: import('@core/database/repositories/dl-question.repository').DlQuestionRepository | null
   dlNotes: import('@core/database/repositories/dl-note.repository').DlNoteRepository | null
   dlPlans: import('@core/database/repositories/dl-plan.repository').DlPlanRepository | null
+  // 信息搜集（docs/design/2026-10-07-info-collection-design.md：5 张 ic_* 表）
+  icProjects: import('@core/database/repositories/ic-project.repository').IcProjectRepository | null
+  icTasks: import('@core/database/repositories/ic-task.repository').IcTaskRepository | null
+  icTaskPasses: import('@core/database/repositories/ic-task-pass.repository').IcTaskPassRepository | null
+  icSources: import('@core/database/repositories/ic-source.repository').IcSourceRepository | null
+  icRows: import('@core/database/repositories/ic-row.repository').IcRowRepository | null
   // 业务包内核（第一期）
   packs: PackRepository | null
   packBindings: PackBindingRepository | null
@@ -412,6 +423,12 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.dlQuestions = new DlQuestionRepository(ds)
     this.dlNotes = new DlNoteRepository(ds)
     this.dlPlans = new DlPlanRepository(ds)
+    // 信息搜集（docs/design/2026-10-07-info-collection-design.md）：5 仓储
+    this.icProjects = new IcProjectRepository(ds)
+    this.icTasks = new IcTaskRepository(ds)
+    this.icTaskPasses = new IcTaskPassRepository(ds)
+    this.icSources = new IcSourceRepository(ds)
+    this.icRows = new IcRowRepository(ds)
     // 业务包内核（第一期）：包快照 + 启用/配置覆写
     this.packs = new PackRepository(ds)
     this.packBindings = new PackBindingRepository(ds)

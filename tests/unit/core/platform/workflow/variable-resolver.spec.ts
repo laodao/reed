@@ -45,3 +45,18 @@ describe('resolveConfigDeep', () => {
     expect(resolveConfigDeep(cfg, resolve, undefined)).toEqual(cfg)
   })
 })
+
+describe('VariableResolver 系统变量 sys.runId', () => {
+  it('注入 runId 时 {{sys.runId}} 返回所属运行实例 id', async () => {
+    const { VariableResolver } = await import('@core/platform/workflow/engine/variable-resolver')
+    const r = new VariableResolver({ variables: new Map(), startInputs: {}, runId: 'wfrun_xyz' })
+    expect(r.resolve('{{sys.runId}}')).toBe('wfrun_xyz')
+    expect(r.resolve('前缀-{{sys.runId}}')).toBe('前缀-wfrun_xyz')
+  })
+
+  it('未注入 runId 时 {{sys.runId}} 渲染为空串（旧构造兼容）', async () => {
+    const { VariableResolver } = await import('@core/platform/workflow/engine/variable-resolver')
+    const r = new VariableResolver({ variables: new Map(), startInputs: {} })
+    expect(r.resolve('{{sys.runId}}')).toBe('')
+  })
+})

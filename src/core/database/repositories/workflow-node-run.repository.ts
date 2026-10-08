@@ -244,6 +244,18 @@ export class WorkflowNodeRunRepository extends BaseRepository<
     return this.toDtoList(rows)
   }
 
+  /** 已审批历史（review 留痕行，含超时自动决策；按决策完成时间新→旧分页） */
+  async findReviewed(params: { page: number; pageSize: number }): Promise<{ items: WorkflowNodeRunRecord[]; total: number }> {
+    const qb = this.scoped
+      .qb('n')
+      .where('n.review IS NOT NULL')
+      .orderBy('n.finished_at', 'DESC')
+      .skip((params.page - 1) * params.pageSize)
+      .take(params.pageSize)
+    const [rows, total] = await qb.getManyAndCount()
+    return { items: this.toDtoList(rows), total }
+  }
+
   /**
    * ticker 扫描：审核等待已超时的行（跨租户裸扫描）。
    * ⚠️ 结果按 userId 逐个 runWithUserAsync 后由引擎按超时策略处理。

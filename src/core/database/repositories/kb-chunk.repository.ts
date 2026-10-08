@@ -15,10 +15,48 @@ import { KbChunkEntity } from '../entities/kb-chunk.entity'
 import { BaseRepository } from '../base-repository'
 import { getCurrentUserId } from '@core/context/user-context'
 
+/**
+ * findByDocumentId 系列取列/分页选项
+ *
+ * content 是切片正文（冗余存储）。真实故障：单文档 6704 片、正文 7.09 MB，
+ * 全量拉取会让 SQLite 读溢出页时打不开临时文件 → SQLITE_CANTOPEN
+ * （文案误导：不是数据库打不开，是临时文件打不开）。**分页也救不了**——
+ * 实测分批读到大体量时同样失败，唯一可靠解法是"不读不需要的列"。
+ */
+export interface FindChunksOptions {
+  /** 是否返回切片正文 content。默认 false（仅元信息） */
+  includeContent?: boolean
+  /** 每页条数（不传=不分页） */
+  limit?: number
+  /** 偏移量（默认 0） */
+  offset?: number
+}
+
 export class KbChunkRepository extends BaseRepository<KbChunkEntity, KbChunk> {
   constructor(dataSource: DataSource) {
     super(dataSource, KbChunkEntity)
   }
+
+  /**
+   * 取列白名单（**实体属性名**，TypeORM 的 select 按属性解析）。
+   * 不含 content：向量补齐、删除级联、偏移匹配等消费方都只要元信息。
+   */
+  private static readonly META_COLUMNS = [
+    'userId',
+    'id',
+    'documentId',
+    'knowledgeBaseId',
+    'chunkIndex',
+    'startOffset',
+    'endOffset',
+    'title',
+    'level',
+    'parentChunkId',
+    'splitMethod',
+    'sectionPath',
+    'metadata',
+    'createdAt',
+  ] as const
 
   protected toDto(e: KbChunkEntity): KbChunk {
     return {
@@ -44,8 +82,22 @@ export class KbChunkRepository extends BaseRepository<KbChunkEntity, KbChunk> {
     return this.findOneByWhere({ id } as any)
   }
 
-  async findByDocumentId(documentId: string): Promise<KbChunk[]> {
-    return this.findManyByWhere({ documentId } as any, { chunkIndex: 'ASC' })
+  /**
+   * 按文档取全部切片（chunkIndex ASC）。
+   *
+   * **默认不返回正文 content**（见 FindChunksOptions 注释）。确实要正文的调用方
+   * （切片详情展示、展示型消费）显式传 includeContent:true。
+   */
+  async findByDocumentId(documentId: string, opts: FindChunksOptions = {}): Promise<KbChunk[]> {
+    const columns = opts.includeContent ? undefined : [...KbChunkRepository.META_COLUMNS]
+    const entities = await this.scoped.find({
+      where: { documentId } as any,
+      order: { chunkIndex: 'ASC' } as any,
+      ...(columns ? { select: columns as never } : {}),
+      ...(opts.limit != null ? { take: opts.limit } : {}),
+      ...(opts.offset != null ? { skip: opts.offset } : {}),
+    })
+    return this.toDtoList(entities)
   }
 
   /**
@@ -58,7 +110,11 @@ export class KbChunkRepository extends BaseRepository<KbChunkEntity, KbChunk> {
     offset: number,
     limit: number,
     chapterTitle?: string,
+    opts: FindChunksOptions = {},
   ): Promise<KbChunk[]> {
+    // 与 findByDocumentId 同纪律：默认不读正文（调用方 getDocumentChunksPaginated
+    // 本就丢弃 content，此前是"读完再扔"——白付大字段读取代价）
+    const columns = opts.includeContent ? undefined : [...KbChunkRepository.META_COLUMNS]
     if (chapterTitle && chapterTitle.trim()) {
       const qb = this.scoped
         .qb('c')
@@ -74,6 +130,7 @@ export class KbChunkRepository extends BaseRepository<KbChunkEntity, KbChunk> {
         .orderBy('c.chunk_index', 'ASC')
         .skip(offset)
         .take(limit)
+      if (columns) qb.select(columns.map(c => `c.${c}`))
       return this.toDtoList(await qb.getMany())
     }
     const entities = await this.scoped.find({
@@ -81,6 +138,7 @@ export class KbChunkRepository extends BaseRepository<KbChunkEntity, KbChunk> {
       order: { chunkIndex: 'ASC' } as any,
       skip: offset,
       take: limit,
+      ...(columns ? { select: columns as never } : {}),
     })
     return this.toDtoList(entities)
   }
@@ -179,10 +237,18 @@ export class KbChunkRepository extends BaseRepository<KbChunkEntity, KbChunk> {
     return this.scoped.count({ knowledgeBaseId } as any)
   }
 
-  async findByIds(ids: string[]): Promise<KbChunk[]> {
+  /**
+   * 按 id 批量取切片。
+   * 默认不返回正文（与 findByDocumentId 同纪律）；**要正文时按批传入 includeContent:true**——
+   * 这是"只读当前需要处理的切片"的取数入口（向量补齐逐批取正文）。
+   */
+  async findByIds(ids: string[], opts: FindChunksOptions = {}): Promise<KbChunk[]> {
     if (ids.length === 0) return []
+    const columns = opts.includeContent ? undefined : [...KbChunkRepository.META_COLUMNS]
     const entities = await this.scoped.find({
       where: { id: In(ids) } as any,
+      ...(columns ? { select: columns as never } : {}),
+      ...(opts.limit != null ? { take: opts.limit } : {}),
     })
     return this.toDtoList(entities)
   }

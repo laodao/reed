@@ -23,7 +23,7 @@
  * 绝不静默吞掉模型写的内容。质检的阻断项都必须给出**可执行的修复**（哪一区、补什么、怎么写）。
  */
 
-import { canonicalSectionKey, lessonBodyChars, sectionSpecOf } from './lesson-template'
+import { canonicalSectionKey, lessonBodyChars, resolveSectionRole } from './lesson-template'
 
 // ==================== 设备目录 ====================
 
@@ -466,6 +466,8 @@ export function analyzeLessonMd(md: string): LessonMdStats {
 export interface LessonLayoutSectionLike {
   key: string
   title?: string | null
+  /** 区教学职责（v9：自造区必填；质检判断重点区优先读它） */
+  role?: string | null
   md: string
   layout?: string | null
   takeaway?: string | null
@@ -646,8 +648,9 @@ export function checkLessonVisualQuality(input: {
     } else if (
       st.chars > LESSON_LAYOUT_RHYTHM.longSectionChars &&
       // 重点区（core/case）按 2026-10-05 用户口径该详写，不因字数被建议拆薄；
-      // 结构仍由上面的文字墙判据把守（无小标题/表格/图的长纯文本照样拦）
-      !['core', 'case'].includes(sectionSpecOf(sec.key)?.role ?? '')
+      // 结构仍由上面的文字墙判据把守（无小标题/表格/图的长纯文本照样拦）。
+      // v9：role 与区名解耦——自造区读声明，规范区读目录兜底
+      !['core', 'case'].includes(resolveSectionRole(sec.key, sec.role))
     ) {
       warnings.push({
         code: 'long-section',

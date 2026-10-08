@@ -13,6 +13,7 @@
 import type { WorkflowNodeType } from './workflow.types'
 import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from './workflow.types'
 import { VIDEO_TYPE_PRESETS } from './video-presets'
+import { SLIDE_THEME_OPTIONS } from './slide-themes'
 
 /** 表单字段声明 */
 export interface CatalogFormField {
@@ -403,6 +404,41 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
       help: '并入画面风格与提示词，可完全自定义',
     }),
   ],
+  'slide-render': [
+    T('slides', '幻灯片结构', {
+      type: 'textarea', templateHint: true,
+      placeholder: '{{deckGen.parsed.slides}}',
+      help: '[{ kind: cover|content|ending, title, bullets[], narration }]；bullets 是屏幕要点，narration 是口播词（不渲染）',
+    }),
+    T('deckTitle', '整期标题', { placeholder: '封面辅助行 + 页脚（可留空）' }),
+    {
+      key: 'theme',
+      label: '主题',
+      type: 'select',
+      options: SLIDE_THEME_OPTIONS,
+      help: '画面配色主题',
+    },
+    { key: 'width', label: '宽度', type: 'number', group: '画面' },
+    { key: 'height', label: '高度', type: 'number', group: '画面' },
+  ],
+  'podcast-compose': [
+    T('slideImages', '幻灯片图组', {
+      type: 'textarea', templateHint: true,
+      placeholder: '{{renderSlides.slidePaths}}',
+      help: '幻灯片 PNG 路径数组（按页序）',
+    }),
+    T('audioFiles', '逐页配音组', {
+      type: 'textarea', templateHint: true,
+      placeholder: '{{loopTts.results}}',
+      help: '与图组同序：字符串路径数组或 tts 节点输出数组（[{ audioPath }]）',
+    }),
+    { key: 'gapMs', label: '页间停顿（毫秒）', type: 'number', min: 0, max: 5000, group: '参数', help: '每页配音后的静默时长（末页也追加，成片结尾留白）' },
+    T('bgmPath', '背景音乐（可选）', { templateHint: true, group: '参数', placeholder: '本地音频路径' }),
+    { key: 'width', label: '宽度', type: 'number', group: '画面' },
+    { key: 'height', label: '高度', type: 'number', group: '画面' },
+    { key: 'fps', label: '帧率', type: 'number', group: '画面' },
+    T('outputName', '输出文件名', { group: '参数', help: '成片文件名（不含扩展名）' }),
+  ],
   tts: [
     T('text', '合成文本', { type: 'textarea', templateHint: true, placeholder: '{{llm1.content}}' }),
     T('voiceId', '音色 ID', { help: '语音页可查看音色列表' }),
@@ -467,7 +503,11 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
   ],
   'variable': [
     { key: 'op', label: '操作', type: 'select', options: [{ label: '读取 get', value: 'get' }, { label: '写入 set', value: 'set' }] },
-    { key: 'scope', label: '作用域', type: 'select', options: [{ label: '全局', value: 'global' }, { label: '当前用户', value: 'user' }] },
+    { key: 'scope', label: '作用域', type: 'select', options: [
+      { label: '运行实例（本实例独享，推荐并行实例用）', value: 'run' },
+      { label: '全局', value: 'global' },
+      { label: '当前用户', value: 'user' },
+    ], help: 'run 作用域仅本运行实例可见，随运行删除清理；global/user 为跨运行共享（并行实例会互相覆盖）' },
     T('key', '变量键', { templateHint: true }),
     { key: 'value', label: '写入值', type: 'textarea', templateHint: true, help: 'set 时写入（JSON 字符串或文本；模板可用）' },
     T('defaultValue', '兜底值', { help: 'get 无值时返回此值' }),
@@ -547,6 +587,10 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     { key: 'delayMsMin', label: '随机间隔下限（毫秒）', type: 'number', group: '爬取礼貌', help: '请求前随机等待（默认 800）' },
     { key: 'delayMsMax', label: '随机间隔上限（毫秒）', type: 'number', group: '爬取礼貌', help: '请求前随机等待（默认 2500）' },
     { key: 'hostConcurrency', label: '同站并发', type: 'number', group: '爬取礼貌', min: 1, max: 10, help: '同一网站最大并发（默认 1=单线程）' },
+  ],
+
+  'source-catalog': [
+    { key: 'sourceIds', label: '信息来源（多选）', type: 'select-dynamic', source: 'infoSources', multi: true, help: '从「设置 → 信息来源」多选；不选 = 目录内全部启用来源作为候选' },
   ],
 
   'chapter-writing': [

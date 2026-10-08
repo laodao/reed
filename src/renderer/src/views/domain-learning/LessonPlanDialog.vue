@@ -80,6 +80,8 @@
         <div v-for="(r, i) in draft" :key="r.key" class="lp-row">
           <span class="lp-no">{{ i + 1 }}</span>
           <span class="lp-key">{{ r.key }}</span>
+          <span v-if="rowTitle(r)" class="lp-row-title" :title="rowTitle(r)">{{ rowTitle(r) }}</span>
+          <span v-if="rowRole(r)" class="lp-role" :class="`is-${rowRole(r)}`">{{ rowRoleLabel(r) }}</span>
           <el-select
             v-model="r.layout"
             size="small"
@@ -129,6 +131,7 @@ import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useDomainLearningStore } from '@/stores/domain-learning'
 import { LESSON_LAYOUT_CATALOG } from '@shared/utils/lesson-layout'
+import { LESSON_SECTION_ROLE_LABELS, resolveSectionRole, sectionTitleOf } from '@shared/utils/lesson-template'
 import type { DlLessonPlanEntry, DlLessonSpec } from '@shared/types/domain-learning.types'
 
 const props = defineProps<{
@@ -193,6 +196,19 @@ watch(
 const hasVocabulary = computed(
   () => !!(spec.value?.glossary?.length || spec.value?.notation?.length || spec.value?.exampleParams?.length || spec.value?.visualPlan),
 )
+
+/** 区显示名：自造区用规划的章节名；规范区用目录默认标题（v9 章节开放） */
+function rowTitle(r: DlLessonPlanEntry): string {
+  return (r.title ?? '').trim() || sectionTitleOf(r.key) || ''
+}
+
+/** 区职责（v9：自造区读声明，规范区目录兜底；自造区在行内打职责标签） */
+function rowRole(r: DlLessonPlanEntry): string {
+  return resolveSectionRole(r.key, r.role)
+}
+function rowRoleLabel(r: DlLessonPlanEntry): string {
+  return LESSON_SECTION_ROLE_LABELS[rowRole(r) as keyof typeof LESSON_SECTION_ROLE_LABELS] ?? rowRole(r)
+}
 
 const title = computed(() => {
   const name = props.conceptName ? `「${props.conceptName}」` : ''
@@ -345,6 +361,30 @@ async function driveNext(message: string): Promise<void> {
   min-width: 84px;
   font-family: var(--el-font-family-mono, monospace);
   color: var(--el-text-color-primary);
+}
+.lp-row-title {
+  flex-shrink: 0;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.lp-role {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 10.5px;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-secondary);
+
+  &.is-core,
+  &.is-case {
+    background: var(--el-color-primary-light-9);
+    color: var(--el-color-primary);
+    font-weight: 600;
+  }
 }
 .lp-layout {
   flex-shrink: 0;

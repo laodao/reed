@@ -71,10 +71,15 @@ function parseStyleAnchors(raw: unknown): string[] {
   return []
 }
 
+import { resolveEraProfile } from '../../prompts/era-profiles'
+
 /**
  * 角色 race 描述：旧英文枚举（east_asian/european/...）双写中英文，自由文本原样输出。
+ *
+ * 2026-10-06（§3.12）：导出供关键帧角色段复用——优化前本函数私有，
+ * 关键帧链路的角色段拿不到性别/年龄/人种，资产阶段反推的身份字段在此断链。
  */
-function describeCharacterRace(race: string): string {
+export function describeCharacterRace(race: string): string {
   switch (race) {
     case 'east_asian':
       return '东亚（East Asian, Han Chinese / Japanese / Korean facial features）'
@@ -342,46 +347,64 @@ export function appendAssetSettingAnchors(
   return t
 }
 
-/** 古风时代关键词（storyEra 命中任一即判定为古风项目） */
-const ANCIENT_ERA_PATTERN = /古|武侠|仙侠|玄幻|宋|唐|汉|明|清|朝代|古装/
-
-/** 古风硬约束 prompt 后缀（中英双写） */
+/**
+ * 时代约束（2026-10-06 §2.5：与 keyframe-prompt-builder 的双实现在此收敛）。
+ *
+ * 历史问题：本文件用 10 词正则 + 中英双写后缀 + negative `…electricity, glass curtain wall`，
+ * 关键帧侧用 20 词正则 + 中文单语后缀 + negative `…power lines, glass`——词表互不包含
+ * （`玄幻/古装` 只在此处，`修真/架空/元/秦/隋/晋` 只在彼处），同一部剧两条链路约束不同。
+ *
+ * 现统一取 `prompts/era-profiles.ts` 的古风档案；导出名保持不变以免破坏既有引用。
+ */
 export const ANCIENT_ERA_CONSTRAINT_SUFFIX =
-  '严格古代中国风，严禁出现任何现代建筑、现代服饰、现代物品、现代交通工具' +
-  '（strictly ancient Chinese style, absolutely no modern buildings, no modern clothing, no modern objects, no modern vehicles）'
+  resolveEraProfile('ancient_chinese').constraintSuffix
 
-/** 古风硬约束 negative */
-export const ANCIENT_ERA_NEGATIVE = [
-  'modern buildings',
-  'modern clothing',
-  'cars',
-  'electricity',
-  'glass curtain wall',
-].join(', ')
+/** 古风硬约束 negative（取自古风档案，已含两侧历史词表并集） */
+export const ANCIENT_ERA_NEGATIVE = resolveEraProfile('ancient_chinese').negativeExtra
 
-/** storyEra 是否命中古风关键词 */
+/**
+ * storyEra 是否命中古风。
+ *
+ * @deprecated 2026-10-06（§2.5）：仅作兼容入口。新代码用
+ * `resolveEraProfile(eraProfileKey, era)`——支持显式配置与全部时代档案。
+ */
 export function isAncientEra(era?: string | null): boolean {
-  return ANCIENT_ERA_PATTERN.test((era ?? '').trim())
+  return resolveEraProfile(null, era).key === 'ancient_chinese'
 }
 
 /**
- * 古风时代硬约束：storyEra 命中古风关键词时把"严禁现代元素"追加到 prompt 末尾。
- * 幂等；非古风 / 无年代信息时原样返回。
+ * 时代硬约束：按时代档案把约束后缀追加到 prompt 末尾（幂等）。
+ *
+ * §2.5：不再只对古风生效——现代/近未来/年代戏都有各自的约束后缀；
+ * generic 档案后缀为空，行为与优化前一致（原样返回）。
+ *
+ * @param eraProfileKey 显式时代档案键（优先于 era 文本推断）
  */
-export function appendAncientEraConstraint(prompt: string, era?: string | null): string {
+export function appendAncientEraConstraint(
+  prompt: string,
+  era?: string | null,
+  eraProfileKey?: string | null,
+): string {
   const t = (prompt ?? '').trim()
-  if (!isAncientEra(era)) return t
-  if (t.includes(ANCIENT_ERA_CONSTRAINT_SUFFIX)) return t
-  return t ? `${t}，${ANCIENT_ERA_CONSTRAINT_SUFFIX}` : ANCIENT_ERA_CONSTRAINT_SUFFIX
+  const suffix = resolveEraProfile(eraProfileKey, era).constraintSuffix
+  if (!suffix) return t
+  if (t.includes(suffix)) return t
+  return t ? `${t}，${suffix}` : suffix
 }
 
-/** 古风时代硬约束 negative 合并（幂等；非古风原样返回） */
+/**
+ * 时代硬约束 negative 合并（幂等）。
+ *
+ * @param eraProfileKey 显式时代档案键（优先于 era 文本推断）
+ */
 export function mergeAncientEraNegative(
   negative: string | null | undefined,
   era?: string | null,
+  eraProfileKey?: string | null,
 ): string | undefined {
-  if (!isAncientEra(era)) return negative ?? undefined
+  const extra = resolveEraProfile(eraProfileKey, era).negativeExtra
+  if (!extra) return negative ?? undefined
   const u = (negative ?? '').trim()
-  if (u.includes(ANCIENT_ERA_NEGATIVE)) return negative ?? undefined
-  return u ? `${u}, ${ANCIENT_ERA_NEGATIVE}` : ANCIENT_ERA_NEGATIVE
+  if (u.includes(extra)) return negative ?? undefined
+  return u ? `${u}, ${extra}` : extra
 }

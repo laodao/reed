@@ -65,3 +65,11 @@ outputs/*.db-wal
 # ===== 创作资产（本地保留，不入库）=====
 # 天下捕快设定集/旧稿与 skill 包原始归档（docs/other/，约 12MB 二进制）
 docs/other/
+
+# ===== 本机会话产物（安全软件限制/应用数据迁移，绝不入库）=====
+# .local/ 含应用数据目录迁移副本(junction 目标,数 GB 用户数据)与本机启动脚本
+.local/
+# 临时构建/调试产物
+.tmp-build/
+outputs/.tmp/
+outputs/.tmp-*/

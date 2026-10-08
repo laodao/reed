@@ -33,13 +33,13 @@ export class VariableRepository extends BaseRepository<WorkflowVariableEntity, W
     return { id: e.id, scope: e.scope as VariableScope, key: e.key, valueJson: e.valueJson, createdAt: e.createdAt, updatedAt: e.updatedAt }
   }
 
-  /** 按 scope+key 查询（get/set 语义） */
-  async findByScopeAndKey(scope: VariableScope, key: string): Promise<WorkflowVariable | null> {
+  /** 按 scope+key 查询（get/set 语义；scope 含 run:<runId> 复合作用域） */
+  async findByScopeAndKey(scope: string, key: string): Promise<WorkflowVariable | null> {
     const e = await this.scoped.findOne({ scope, key } as FindOptionsWhere<WorkflowVariableEntity>)
     return e ? this.toDto(e) : null
   }
 
-  async upsert(scope: VariableScope, key: string, valueJson: string): Promise<WorkflowVariable> {
+  async upsert(scope: string, key: string, valueJson: string): Promise<WorkflowVariable> {
     const existing = await this.findByScopeAndKey(scope, key)
     const now = new Date()
     if (existing) {
@@ -53,11 +53,16 @@ export class VariableRepository extends BaseRepository<WorkflowVariableEntity, W
     return this.toDto(entity as WorkflowVariableEntity)
   }
 
-  async list(scope?: VariableScope): Promise<WorkflowVariable[]> {
+  async list(scope?: string): Promise<WorkflowVariable[]> {
     const qb = this.scoped.qb('v')
     if (scope) qb.andWhere('v.scope = :scope', { scope })
     const rows = await qb.orderBy('v.updated_at', 'DESC').getMany()
     return this.toDtoList(rows)
+  }
+
+  /** 按作用域整删（run:<runId> 随运行删除级联清理） */
+  async deleteByScope(scope: string): Promise<number> {
+    return this.scoped.delete({ scope } as FindOptionsWhere<WorkflowVariableEntity>)
   }
 
   async delete(id: string): Promise<number> {

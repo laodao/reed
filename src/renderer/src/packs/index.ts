@@ -21,6 +21,7 @@ import { voiceDesignPack } from './voice-design'
 import { diaryPack } from './diary'
 import { skillsPack } from './skills'
 import { domainLearningPack } from './domain-learning'
+import { infoCollectionPack } from './info-collection'
 
 /** pack IPC namespace 的最小契约（preload 暴露的 electronAPI.pack） */
 interface PackApi {
@@ -69,6 +70,7 @@ export async function installBuiltinPackages(router: Router): Promise<void> {
   registerPack(diaryPack)
   registerPack(skillsPack)
   registerPack(domainLearningPack)
+  registerPack(infoCollectionPack)
 
   setPackInfos(await fetchPackInfos())
   applyPacks(router)

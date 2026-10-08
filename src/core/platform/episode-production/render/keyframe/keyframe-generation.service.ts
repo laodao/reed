@@ -31,6 +31,11 @@ import { SceneScriptEntity } from '@core/database/entities/episode-production/sc
 import { EpisodeScriptEntity } from '@core/database/entities/episode-production/episode-script.entity'
 import { VideoEpisodeEntity } from '@core/database/entities/episode-production/video-episode.entity'
 import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
+import {
+  createDefaultPromptContext,
+  type PromptContext,
+} from '@core/platform/episode-production/prompts/prompt-context'
+import { promptContextFromEpisodeAndProject } from '@core/platform/episode-production/prompts/episode-prompt-context.service'
 import { StoryboardKeyframeEntity } from '@core/database/entities/episode-production/storyboard-keyframe.entity'
 import {
   StoryboardKeyframeRepository,
@@ -928,21 +933,34 @@ export class KeyframeGenerationService {
   /** 古风硬约束上下文：scene → episode_script → episode 取 storyEra/storyRegion；缺失 → null（不阻塞生成） */
   private async resolveEpisodeEraContext(
     scene: SceneScriptEntity,
-  ): Promise<{ storyEra: string | null; storyRegion: string | null }> {
+  ): Promise<{
+    storyEra: string | null
+    storyRegion: string | null
+    /** §4.4：统一上下文（提供 project stylePrompt 单一注入点与时代档案 negative） */
+    promptContext: PromptContext
+  }> {
     try {
       const epScript = await this.ds
         .getRepository(EpisodeScriptEntity)
         .findOne({ where: { id: scene.episodeScriptId } })
-      if (!epScript) return { storyEra: null, storyRegion: null }
+      if (!epScript) {
+        return { storyEra: null, storyRegion: null, promptContext: createDefaultPromptContext() }
+      }
       const ep = await this.ds
         .getRepository(VideoEpisodeEntity)
         .findOne({ where: { id: (epScript as any).episodeId } })
+      const project = (ep as any)?.projectId
+        ? await this.ds
+            .getRepository(VideoProjectEntity)
+            .findOne({ where: { id: (ep as any).projectId } })
+        : null
       return {
         storyEra: (ep as any)?.storyEra ?? null,
         storyRegion: (ep as any)?.storyRegion ?? null,
+        promptContext: promptContextFromEpisodeAndProject(ep, project),
       }
     } catch {
-      return { storyEra: null, storyRegion: null }
+      return { storyEra: null, storyRegion: null, promptContext: createDefaultPromptContext() }
     }
   }
 
@@ -1183,8 +1201,8 @@ export class KeyframeGenerationService {
     // 古风硬约束（F 项）：episode.storyEra 命中古/武侠/朝代词 → prompt/negative 追加禁令
     const eraCtx = await this.resolveEpisodeEraContext(scene)
 
-    // 项目设置的 stylePrompt 追加到关键帧提示词尾部（不覆盖既有结构）
-    const projectStyle = await this.resolveProjectStylePrompt(scene)
+    // §4.4：项目风格词改由 builder 内 resolveStyle 统一末尾追加（此前在此另拼一份），
+    // 这里不再单独解析——保留 resolveProjectStylePrompt 方法供其他调用点使用
     // 2026-09-19：关键帧生成接线项目「画面生成」模型（config.imageModel）。
     // 此前不传 provider/model → pickImageModel 自动乱挑（场次2根因：挑中只吃 1 张
     // 参考图的 bailian wan2.7-image，多角色视觉锚丢失）。与资产主图生成
@@ -1260,10 +1278,14 @@ export class KeyframeGenerationService {
       cameraMetadata: (storyboard as any).metadata ?? null,
       storyEra: eraCtx.storyEra,
       storyRegion: eraCtx.storyRegion,
+      // §4.4 风格单一来源：项目风格词由 builder 内的 resolveStyle 统一末尾追加，
+      // 不再在调用方另拼一份（优化前 builder 内不加、这里 `，${projectStyle}` 再加，
+      // 与资产身份段/锚点前缀的风格项构成 5 个互不对账的注入点）
+      promptContext: eraCtx.promptContext,
     })
 
     // 调 image generator 生成图（label 用 frame 角色 + frameIndex 便于追踪）
-    const basePrompt = projectStyle ? `${promptOut.prompt}，${projectStyle}` : promptOut.prompt
+    const basePrompt = promptOut.prompt
 
     let board: ReferenceBoardResult | null = null
     let compositeAnchor: {

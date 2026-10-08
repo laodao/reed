@@ -61,6 +61,13 @@ const QA_CHUNK_ID_PREFIX = 'qa:'
 const BM25_K1 = 1.2
 const BM25_B = 0.75
 
+/**
+ * 全量取切片（含正文）的条数上限。
+ * 大文档实测：6704 片 / 正文 7.09 MB 全量读会触发 SQLITE_CANTOPEN（临时文件打不开）。
+ * 需要浏览全部切片的调用方应改用分页接口。
+ */
+const FULL_CHUNK_FETCH_LIMIT = 2000
+
 // IPC 事件通道
 const KB_EVENTS = {
   DOCUMENT_PROGRESS: 'kb:document-progress',
@@ -82,15 +89,31 @@ class EmbeddingServiceAdapter implements EmbeddingService {
   }
 
   async getBatchEmbeddings(texts: string[]): Promise<number[][]> {
-    const vectors = await this.service.getEmbeddingVectors(texts, this.config)
-    if (!vectors) {
-      throw new Error('Embedding API 调用失败')
-    }
-    return vectors
+    // 失败原因由 getEmbeddingVectors 抛出（含接口原话），此处不再兜底成笼统文案
+    return await this.service.getEmbeddingVectors(texts, this.config)
   }
 }
 
 export class KnowledgeBaseService {
+  /**
+   * 在途后台处理任务（docId → Promise）。
+   *
+   * 用途：① 防重复触发（同一文档已在跑就不再起第二个）；② 让测试/调用方
+   * 可以确定性地等待后台任务收尾，不必轮询数据库。
+   */
+  private readonly inFlight = new Map<string, Promise<void>>()
+
+  /** 等待某文档的后台处理任务完成（无在途任务则立即返回）；供测试与内部编排使用 */
+  async waitForBackgroundTask(docId: string): Promise<void> {
+    const p = this.inFlight.get(docId)
+    if (p) await p.catch(() => undefined)
+  }
+
+  /** 当前是否有在途后台任务（供重复触发防护与测试断言） */
+  isProcessing(docId: string): boolean {
+    return this.inFlight.has(docId)
+  }
+
   private emitProgress(documentId: string, progress: number, estimatedSeconds?: number): void {
     getEventEmitter().emit(KB_EVENTS.DOCUMENT_PROGRESS, { documentId, progress, estimatedSeconds })
   }
@@ -520,6 +543,14 @@ export class KnowledgeBaseService {
     }
   }
 
+  /**
+   * 重新处理文档（从头跑完整管线）。
+   *
+   * **后台执行**（与 resumeDocument / 上传同模式）：完整管线要为全部切片重新
+   * 解析+切分+逐批 embedding，大文档耗时数分钟；同步 await 会让 IPC 长时间不返回、
+   * 前端 isLoading 挂住、文档列表被蒙层锁死。
+   * 返回值只表示**是否成功启动**，进度/终态走事件。
+   */
   async reprocessDocument(docId: string): Promise<{ success: boolean; error?: string }> {
     try {
       const db = getCoreDatabaseManager()
@@ -528,16 +559,196 @@ export class KnowledgeBaseService {
       const doc = await db.kbDocuments.findById(docId)
       if (!doc) return { success: false, error: '文档不存在' }
 
+      // 防重复触发（同 resumeDocument）：并发跑两条完整管线会互相清空产物
+      if (this.isProcessing(docId)) {
+        return { success: false, error: '该文档正在处理中，请等待当前任务结束' }
+      }
+
       const kb = await db.knowledgeBases.findById(doc.knowledgeBaseId)
       if (!kb) return { success: false, error: '知识库不存在' }
 
       await db.kbDocuments.updateProgress(docId, 0)
+      this.emitStatus(docId, 'processing')
       await this.clearDocumentArtifacts(docId)
-      await this.processDocument(doc, kb)
+      this.runInBackground(docId, doc.name, async () => {
+        await this.processDocument(doc, kb)
+      })
       return { success: true }
     } catch (e: any) {
       return { success: false, error: e.message }
     }
+  }
+
+  /**
+   * 继续处理（断点续跑）。
+   *
+   * 背景：processDocument 是纯内存 fire-and-forget——上传后 PC 重启，内存里的 Promise
+   * 直接蒸发，文档永久停在 processing，且 UI 的「重新处理」按钮不覆盖 processing 状态，
+   * 用户无路可走。
+   *
+   * 续跑点判定（管线顺序：解析 → 切片落库 → 逐批生成向量 → 建倒排索引 → 标记完成）：
+   *  - 无切片          → 解析/切片阶段就中断，无可复用产物，从头跑完整管线
+   *  - 有切片、向量不全 → 只为「没有向量的切片」补向量（已有向量绝不重算，省时省钱）
+   *  - 切片+向量齐全    → 只补建倒排索引并收口完成
+   *
+   * 幂等：已完成的文档再续跑不会重复生成任何向量。
+   *
+   * **后台执行**（与上传同模式，不用 await 等完）：
+   * 大文档续跑要为数千切片逐批调 embedding，耗时数分钟。此前同步 await 会让
+   * IPC 长时间不返回、前端 isLoading 全程挂住、整个文档列表被蒙层锁死。
+   * 现在立即返回「已受理」，进度/终态经 kb:document-progress / kb:document-status
+   * 事件推进；真实失败原因由失败事件与文档 errorMessage 呈现。
+   * 返回值只表示**是否成功启动**（前置校验 + 已置 processing）。
+   */
+  async resumeDocument(docId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const db = getCoreDatabaseManager()
+      if (!db.kbDocuments || !db.knowledgeBases || !db.kbChunks) {
+        return { success: false, error: '数据库未初始化' }
+      }
+
+      const doc = await db.kbDocuments.findById(docId)
+      if (!doc) return { success: false, error: '文档不存在' }
+
+      // 防重复触发：后台任务已在该文档上跑时直接拒绝，避免两条管线并发写同一份
+      // chunks/vectors（互相清空彼此产物，且白烧 embedding）
+      if (this.isProcessing(docId)) {
+        return { success: false, error: '该文档正在处理中，请等待当前任务结束' }
+      }
+
+      const kb = await db.knowledgeBases.findById(doc.knowledgeBaseId)
+      if (!kb) return { success: false, error: '知识库不存在' }
+
+      const existing = await db.kbChunks.findByDocumentId(docId)
+
+      // 先置为 processing：让界面立刻反映「已开始」，也避免重复点击触发两次
+      await db.kbDocuments.updateProgress(docId, existing.length === 0 ? 0 : 30)
+      this.emitStatus(docId, 'processing')
+
+      if (existing.length === 0) {
+        // 解析/切片阶段中断：没有可复用的切片与向量，等价于重新处理
+        console.info(`[KB] 继续处理：无已落切片，从头跑完整管线: ${doc.name}`)
+        await this.clearDocumentArtifacts(docId)
+        this.runInBackground(docId, doc.name, async () => {
+          await this.processDocument(doc, kb)
+        })
+        return { success: true }
+      }
+
+      console.info(`[KB] 继续处理：复用 ${existing.length} 条已落切片: ${doc.name}`)
+      this.runInBackground(docId, doc.name, async () => {
+        await this.completeDocumentVectors(doc, kb, existing)
+      })
+      return { success: true }
+    } catch (e: any) {
+      console.error('[KB] 继续处理启动失败:', e)
+      return { success: false, error: e.message }
+    }
+  }
+
+  /**
+   * 后台执行长任务：不阻塞调用方，异常落库 + 发失败事件（与上传的 fire-and-forget 同纪律）。
+   *
+   * 关键：**必须兜住异常**——后台 Promise 若 reject 且无人接，会变成 unhandled rejection，
+   * 且文档会永远停在 processing（用户看到"永远在处理中"却没有任何原因）。
+   */
+  private runInBackground(
+    docId: string,
+    docName: string,
+    task: () => Promise<void>,
+  ): void {
+    const running = task().catch(async (e: any) => {
+      const msg = e?.message || String(e)
+      console.error(`[KB] 后台处理失败: ${docName}`, e)
+      try {
+        const db = getCoreDatabaseManager()
+        await db.kbDocuments?.markFailed(docId, msg)
+      } catch (markErr) {
+        console.error('[KB] 写入失败状态时再次出错:', markErr)
+      }
+      this.emitStatus(docId, 'failed', undefined, msg)
+    })
+    this.inFlight.set(docId, running)
+    void running.finally(() => {
+      // 只清除自己那一次（避免后起的任务被前一个的 finally 误删）
+      if (this.inFlight.get(docId) === running) this.inFlight.delete(docId)
+    })
+  }
+
+  /**
+   * 补齐切片向量 → 建索引 → 收口完成（「继续处理」的补完阶段）。
+   *
+   * 断点续跑核心：先查出哪些切片已有向量，只对缺失的那部分调 embedding。
+   * 已有向量一律保留（不重算、不覆盖）——这是「继续处理」相对「重新处理」的价值所在。
+   *
+   * 取数纪律（真实故障修复）：**元信息与正文分开取**。
+   * 此前一次性把整篇文档的切片（含正文）读进内存——单文档 6704 片 / 正文 7.09 MB，
+   * SQLite 读溢出页时打不开临时文件，抛 SQLITE_CANTOPEN（"数据库打不开"是误导文案）。
+   * 现在：先只读元信息判定待补集合，再按 embedding 批大小逐批取对应正文。
+   *
+   * @param doc 目标文档
+   * @param kb  所属知识库
+   * @param chunkRecords 目标文档的**切片元信息**（不含正文，来自 findByDocumentId 默认列）
+   */
+  private async completeDocumentVectors(
+    doc: KbDocument,
+    kb: KnowledgeBase,
+    chunkRecords: KbChunk[],
+  ): Promise<void> {
+    const db = getCoreDatabaseManager()
+    if (!db.kbDocuments || !db.kbVectors || !db.kbChunks) return
+
+    const embeddingConfig: EmbeddingConfig = kb.embeddingConfig ? JSON.parse(kb.embeddingConfig) : {}
+
+    // 1. 找出已具备向量的切片，其余为待补（此步只用 id，不碰正文）
+    const existingVectors = await db.kbVectors.findByChunkIds(chunkRecords.map(c => c.id))
+    const pendingIds = chunkRecords.filter(c => !existingVectors.has(c.id)).map(c => c.id)
+    const done = chunkRecords.length - pendingIds.length
+    console.log(
+      `[KB] 向量补齐：共 ${chunkRecords.length} 条，已有 ${done} 条，待补 ${pendingIds.length} 条`,
+    )
+
+    // 2. 只为缺失的切片生成向量。正文**逐批按需取**（不用一次性持有全文）
+    const batchSize = knowledgeParams().ingest.embeddingBatchSize
+    for (let i = 0; i < pendingIds.length; i += batchSize) {
+      if (!(await this.assertDocAlive(doc.id, 'resume vectors 写入前'))) return
+      const idBatch = pendingIds.slice(i, i + batchSize)
+
+      // 仅取这一批的正文（按 id 精确取，读取量 = batchSize 条）
+      const withContent = await db.kbChunks.findByIds(idBatch, { includeContent: true })
+      const contentById = new Map(withContent.map(c => [c.id, c.content ?? '']))
+      const texts = idBatch.map(id => contentById.get(id) ?? '')
+
+      const vectors = await this.getEmbeddingVectors(texts, embeddingConfig)
+
+      await db.kbVectors.createBatch(
+        vectors.map((v, idx) => ({
+          chunkId: idBatch[idx],
+          knowledgeBaseId: kb.id,
+          vector: v,
+        })),
+      )
+
+      const progress = 30 + Math.floor(((done + i) / chunkRecords.length) * 50)
+      await db.kbDocuments.updateProgress(doc.id, progress)
+      this.emitProgress(doc.id, progress, undefined)
+    }
+
+    // 3. 倒排索引（幂等重建：先清该文档旧索引，避免续跑累积重复词条）
+    await db.kbDocuments.updateProgress(doc.id, 90)
+    this.emitProgress(doc.id, 90, 3)
+    if (!(await this.assertDocAlive(doc.id, 'resume buildIndex/markCompleted 前'))) return
+    if (db.kbInvertedIndex) await db.kbInvertedIndex.deleteByDocumentId(doc.id)
+    // 正文逐批取回分词（不一次性持有全文）
+    await this.buildIndexBatched(chunkRecords.map(c => c.id), kb.id)
+
+    // 4. 收口完成
+    await db.kbDocuments.markCompleted(doc.id, chunkRecords.length)
+    await db.knowledgeBases?.incrementVectorCount(kb.id, pendingIds.length)
+    this.emitProgress(doc.id, 100, 0)
+    this.emitStatus(doc.id, 'completed', chunkRecords.length)
+    this.emitKnowledgeBaseStats(kb.id)
+    console.log(`[KB] 继续处理完成: ${doc.name}（本次新生成向量 ${pendingIds.length} 条）`)
   }
 
   /**
@@ -725,7 +936,6 @@ export class KnowledgeBaseService {
         const texts = batch.map(c => c.content)
 
         const vectors = await this.getEmbeddingVectors(texts, embeddingConfig)
-        if (!vectors) throw new Error('向量生成失败')
 
         await db.kbVectors.createBatch(
           vectors.map((v, idx) => ({
@@ -929,55 +1139,81 @@ export class KnowledgeBaseService {
     }
   }
 
-  async getEmbeddingVectors(texts: string[], config: EmbeddingConfig, signal?: AbortSignal): Promise<number[][] | null> {
+  /**
+   * 生成 embedding 向量。
+   *
+   * 失败即抛错，**错误信息必须带出真实原因**（接口原话 / HTTP 状态 / 网络异常 / 配置缺失）——
+   * 此前是 `catch { return null }`，把 key 失效、余额不足、模型名错、网络不通等全部
+   * 压成调用方一句笼统的「向量生成失败」，用户完全无法定位（真实用户遭遇）。
+   *
+   * 调用方按各自场景转成用户可读信息；不要再退回「返回 null 表示失败」的旧契约。
+   */
+  async getEmbeddingVectors(texts: string[], config: EmbeddingConfig, signal?: AbortSignal): Promise<number[][]> {
+    if (!config.providerConfigId) throw new Error('未配置 Embedding 提供商')
+
+    const db = getCoreDatabaseManager()
+    const provider = await db.providerConfigs?.getById(config.providerConfigId)
+    if (!provider) throw new Error('Embedding 提供商配置不存在（可能已被删除，请在知识库设置中重新选择）')
+
+    const storage = getSecureStorage()
+    if (!storage.isInitialized()) await storage.initialize()
+    const apiKey = storage.decrypt(provider.apiKey || '')
+
+    const model = config.modelId || 'text-embedding-v3'
+    let url: string
+    let headers: Record<string, string>
+
+    switch (provider.templateId) {
+      case 'bailian':
+      case 'dashscope':
+        url = 'https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings'
+        headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
+        break
+      case 'zhipu':
+        url = 'https://open.bigmodel.cn/api/paas/v4/embeddings'
+        headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
+        break
+      default:
+        url = `${provider.baseUrl || 'https://api.openai.com/v1'}/embeddings`
+        headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
+    }
+
+    let res: Response
     try {
-      if (!config.providerConfigId) throw new Error('未配置 Embedding 提供商')
-
-      const db = getCoreDatabaseManager()
-      const provider = await db.providerConfigs?.getById(config.providerConfigId)
-      if (!provider) throw new Error('提供商配置不存在')
-
-      const storage = getSecureStorage()
-      if (!storage.isInitialized()) await storage.initialize()
-      const apiKey = storage.decrypt(provider.apiKey || '')
-
-      const model = config.modelId || 'text-embedding-v3'
-      let url: string
-      let headers: Record<string, string>
-
-      switch (provider.templateId) {
-        case 'bailian':
-        case 'dashscope':
-          url = 'https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings'
-          headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
-          break
-        case 'zhipu':
-          url = 'https://open.bigmodel.cn/api/paas/v4/embeddings'
-          headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
-          break
-        default:
-          url = `${provider.baseUrl || 'https://api.openai.com/v1'}/embeddings`
-          headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
-      }
-
-      const res = await fetch(url, {
+      res = await fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify({ model, input: texts }),
         ...(signal ? { signal } : {})
       })
-
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error?.message || err.message || 'API 调用失败')
-      }
-
-      const data = await res.json()
-      return data.data.sort((a: any, b: any) => a.index - b.index).map((d: any) => d.embedding)
-    } catch (e) {
-      console.error('[KB] Embedding 失败:', e)
-      return null
+    } catch (e: any) {
+      // 网络层失败：DNS / 连接 / TLS / 超时 / 主动取消——原因必须保留
+      if (e?.name === 'AbortError') throw new Error('Embedding 请求已取消')
+      throw new Error(`Embedding 请求失败：${e?.message || '网络不可达'}（${url}）`)
     }
+
+    if (!res.ok) {
+      // 错误体可能不是 JSON（网关 502/HTML 错误页），此时退回 HTTP 状态，绝不丢原因
+      let detail = ''
+      try {
+        const body: any = await res.json()
+        detail = body?.error?.message || body?.message || body?.error || ''
+        if (detail && typeof detail !== 'string') detail = JSON.stringify(detail)
+      } catch {
+        /* 非 JSON 错误体：用状态行兜底 */
+      }
+      throw new Error(
+        `Embedding 接口返回 ${res.status} ${res.statusText}${detail ? `：${detail}` : ''}`,
+      )
+    }
+
+    const data: any = await res.json().catch(() => null)
+    if (!data?.data?.length) {
+      throw new Error('Embedding 接口返回数据为空（请检查模型名是否支持 embeddings）')
+    }
+    return data.data
+      .sort((a: any, b: any) => a.index - b.index)
+      .map((d: any) => d.embedding)
   }
 
   private async buildIndex(chunks: any[], kbId: string): Promise<void> {
@@ -999,6 +1235,25 @@ export class KnowledgeBaseService {
     }
 
     await db.kbInvertedIndex.insertBatch(items)
+  }
+
+  /**
+   * 按批建倒排索引：正文不一次性持有，逐批取回分词后即时写入。
+   *
+   * 供「继续处理」等**只持有切片元信息**的路径使用——buildIndex 需要正文分词，
+   * 但整篇文档的正文（实测 7 MB+）不能一次读进内存（SQLITE_CANTOPEN）。
+   *
+   * @param chunkIds 目标文档全部切片 id（顺序即 chunkIndex ASC）
+   */
+  private async buildIndexBatched(chunkIds: string[], kbId: string, batchSize = 500): Promise<void> {
+    const db = getCoreDatabaseManager()
+    if (!db.kbInvertedIndex || !db.kbChunks) return
+
+    for (let i = 0; i < chunkIds.length; i += batchSize) {
+      const idBatch = chunkIds.slice(i, i + batchSize)
+      const withContent = await db.kbChunks.findByIds(idBatch, { includeContent: true })
+      await this.buildIndex(withContent, kbId)
+    }
   }
 
   // ==================== 检索 ====================
@@ -1061,8 +1316,8 @@ export class KnowledgeBaseService {
       // H4：QA 命名空间（qa: 前缀）不参与文档检索——多召回以补偿被剔除的名额。
       const vecScores = new Map<string, number>()
       if (vectorWeight > 0) {
+        // 失败即抛（含接口原话），由外层 catch 转成检索错误信息——不再吞成「生成查询向量失败」
         const vectors = await this.getEmbeddingVectors([req.query], config, req.signal)
-        if (!vectors) return { success: false, error: '生成查询向量失败' }
         // 混合时 3 倍召回（融合需要候选并集）+ QA 前缀剔除补偿
         const fetchK = (vectorWeight < 1 ? topK * 3 : topK) + knowledgeParams().retrieval.qaVectorFetchPadding
         const raw = await db.kbVectors.searchSimilar(req.knowledgeBaseId, vectors[0], fetchK)
@@ -1363,7 +1618,12 @@ export class KnowledgeBaseService {
       const doc = await db.kbDocuments.findById(documentId)
       if (!doc) return { success: false, error: '文档不存在' }
 
-      const chunks = await db.kbChunks.findByDocumentId(documentId)
+      // 全量取切片（含正文）在大文档上会压垮 SQLite 临时存储（SQLITE_CANTOPEN）——
+      // 明确设上限，超限引导调用方改用分页接口（getDocumentChunksPaginated）
+      const chunks = await db.kbChunks.findByDocumentId(documentId, {
+        includeContent: true,
+        limit: FULL_CHUNK_FETCH_LIMIT,
+      })
       return { success: true, data: chunks }
     } catch (e: any) {
       console.error('[KB] 获取文档分片失败:', e)
@@ -1720,7 +1980,6 @@ export class KnowledgeBaseService {
     const variants = [question, ...similarQuestions].map(t => t.trim()).filter(Boolean)
     if (variants.length === 0) throw new Error('问题不能为空')
     const vectors = await this.getEmbeddingVectors(variants, this.parseEmbeddingConfig(kb))
-    if (!vectors) throw new Error('生成 QA 向量失败')
     await db.kbVectors.createBatch(
       vectors.map((vector, i) => ({
         chunkId: KnowledgeBaseService.qaVectorChunkId(pairId, i),
@@ -1800,7 +2059,6 @@ export class KnowledgeBaseService {
         [question, ...similar].map(t => t.trim()).filter(Boolean),
         this.parseEmbeddingConfig(kb),
       )
-      if (!vectors) throw new Error('生成 QA 向量失败')
 
       // 快照旧变体向量（向量存储无跨库事务，用快照做补偿回滚）
       const oldChunkIds = Array.from({ length: this.qaVariantCount(old) }, (_, i) =>
@@ -1906,8 +2164,8 @@ export class KnowledgeBaseService {
       const kb = await db.knowledgeBases.findById(req.knowledgeBaseId)
       if (!kb) return { success: false, error: '知识库不存在' }
 
+      // 失败即抛（含接口原话），由外层 catch 转成 QA 检索错误信息
       const vectors = await this.getEmbeddingVectors([req.query], this.parseEmbeddingConfig(kb), req.signal)
-      if (!vectors) return { success: false, error: '生成查询向量失败' }
 
       const raw = await db.kbVectors.searchSimilar(
         req.knowledgeBaseId,
@@ -2021,6 +2279,7 @@ function getBrainQueryService(kbService: KnowledgeBaseService): BrainQueryServic
   if (brainQuerySingleton) return brainQuerySingleton
   const inv = (): typeof db.kbInvertedIndex => getCoreDatabaseManager().kbInvertedIndex
   const deps: BrainQueryDeps = {
+    // 失败抛错（含真实原因），由 BrainQueryService 捕获后降级为纯词法召回并留痕
     embed: (texts, kb) => kbService.getEmbeddingVectors(texts, kb.embeddingConfig ? JSON.parse(kb.embeddingConfig) : {}),
     searchSimilar: (kbId, vector, topK) => {
       const vectors = getCoreDatabaseManager().kbVectors

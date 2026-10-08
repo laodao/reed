@@ -266,6 +266,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public dlNotes: import('@core/database/repositories/dl-note.repository').DlNoteRepository | null = null
   /** 方案确认流程（dl_plan；2026-09-13） */
   public dlPlans: import('@core/database/repositories/dl-plan.repository').DlPlanRepository | null = null
+  /** 信息搜集（docs/design/2026-10-07-info-collection-design.md：5 张 ic_* 表） */
+  public icProjects: import('@core/database/repositories/ic-project.repository').IcProjectRepository | null = null
+  public icTasks: import('@core/database/repositories/ic-task.repository').IcTaskRepository | null = null
+  public icTaskPasses: import('@core/database/repositories/ic-task-pass.repository').IcTaskPassRepository | null = null
+  public icSources: import('@core/database/repositories/ic-source.repository').IcSourceRepository | null = null
+  public icRows: import('@core/database/repositories/ic-row.repository').IcRowRepository | null = null
 
   // 业务包内核（第一期）
   public packs: PackRepository | null = null
@@ -713,6 +719,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-storyboard-use-keyframes'
     )
     await addStoryboardUseKeyframes(this.dataSource)
+    // 剧本 metadata 列（提示词优化方案 §4.5）：保真覆盖度报告落库，UI 可见
+    const { addEpisodeScriptMetadata } = await import(
+      '@core/database/migrations/add-episode-script-metadata'
+    )
+    await addEpisodeScriptMetadata(this.dataSource)
     // 分镜 include_in_final：⑥ 合成是否入最终成片
     const { addStoryboardIncludeInFinal } = await import(
       '@core/database/migrations/add-storyboard-include-in-final'
@@ -1072,6 +1083,13 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-domain-learning-tables'
     )
     await createDomainLearningTables(this.dataSource)
+
+    // 信息搜集（docs/design/2026-10-07-info-collection-design.md §2.3）：5 张 ic_* 表
+    // （幂等，双语种；Web 端 initDatabase 有同构调用，两处必须同步）
+    const { createInfoCollectionTables } = await import(
+      '@core/database/migrations/create-info-collection-tables'
+    )
+    await createInfoCollectionTables(this.dataSource)
 // H5 视频任务崩溃恢复（2026-09-16 ep-hardening）：storyboards / ep_video_segments
     // 加 provider_task_id（幂等，双语种；Web 端 initDatabase 有同构调用，两处必须同步）
     const { addVideoProviderTaskId } = await import(
@@ -4703,6 +4721,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.dlQuestions = new (await import('@core/database/repositories/dl-question.repository')).DlQuestionRepository(this.dataSource)
     this.dlNotes = new (await import('@core/database/repositories/dl-note.repository')).DlNoteRepository(this.dataSource)
     this.dlPlans = new (await import('@core/database/repositories/dl-plan.repository')).DlPlanRepository(this.dataSource)
+    // 信息搜集（docs/design/2026-10-07-info-collection-design.md）：5 仓储
+    this.icProjects = new (await import('@core/database/repositories/ic-project.repository')).IcProjectRepository(this.dataSource)
+    this.icTasks = new (await import('@core/database/repositories/ic-task.repository')).IcTaskRepository(this.dataSource)
+    this.icTaskPasses = new (await import('@core/database/repositories/ic-task-pass.repository')).IcTaskPassRepository(this.dataSource)
+    this.icSources = new (await import('@core/database/repositories/ic-source.repository')).IcSourceRepository(this.dataSource)
+    this.icRows = new (await import('@core/database/repositories/ic-row.repository')).IcRowRepository(this.dataSource)
     // 业务包内核（第一期）：包快照 + 启用/配置覆写
     this.packs = new PackRepository(this.dataSource)
     this.packBindings = new PackBindingRepository(this.dataSource)

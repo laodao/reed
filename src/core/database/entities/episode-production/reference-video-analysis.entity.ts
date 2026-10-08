@@ -21,6 +21,11 @@ export interface ParsedShot {
   emotion: string
   representativeFramePath: string  // 切片到 temp 目录的代表帧
   detectedDialogue: string | null
+  /**
+   * VLM 输出中未命中映射表的字段原值（2026-10-06 §3.10）。
+   * 用于暴露模型漂移——旧实现静默回落默认值，问题不可见。
+   */
+  vlmUnmapped?: Record<string, string> | null
 }
 
 @Entity({ name: 'reference_video_analyses' })

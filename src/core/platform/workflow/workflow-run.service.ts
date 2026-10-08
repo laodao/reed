@@ -27,6 +27,8 @@ import type { WorkflowNodeRunRepository, WorkflowNodeRunRecord } from '../../dat
 import type { WorkflowDefinitionRepository } from '../../database/repositories/workflow-definition.repository'
 import { createLogger } from '@core/utils/logger'
 import { getNotificationService } from '@core/platform/services/notification.service'
+import { getVariableDataService } from './variables/variable-data.service'
+import { runVariableScope } from '@shared/types/variable.types'
 
 const logger = createLogger('WorkflowRunService')
 
@@ -162,12 +164,18 @@ export class WorkflowRunService {
     // 带 mutexScope 的运行只与「同 scope」的持有者互斥（不同项目/章节的章法 run
     // 可并行——忘川渡实跑：全局粒度让两个项目的章节写作互相 skip）；任一方
     // 无 scope 时保守回退为同定义互斥。
+    // allowParallelInstances：未显式声明 scope 时按定义设置给每次启动派生唯一
+    // scope——blocking 过滤与互斥唯一索引都按 scope 区分 → 同定义多实例互不妨碍
+    // （全局 maxConcurrentRuns 护栏仍生效；显式 mutexScope 优先级更高，语义不变）。
+    const parallelAllowed = (def.settings as { allowParallelInstances?: boolean } | null)?.allowParallelInstances === true
+    const effectiveMutexScope = input.mutexScope
+      ?? (parallelAllowed ? `auto:${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}` : undefined)
     const holders = await this.deps.runs.findMutexHolders(input.definitionId)
     const blocking = holders.filter((h) => {
-      if (!input.mutexScope) return true
+      if (!effectiveMutexScope) return true
       // 带作用域的启动只与「同作用域」持有者互斥；无作用域持有者（旧调用方）不拦截——
       // 作用域语义以调用方声明为准（DB 唯一索引按 (user,definition,scope) 兜底同章双跑）
-      return !!h.mutexScope && h.mutexScope === input.mutexScope
+      return !!h.mutexScope && h.mutexScope === effectiveMutexScope
     })
     if (blocking.length > 0) {
       return this.deps.runs.create({
@@ -176,7 +184,7 @@ export class WorkflowRunService {
         graphSnapshot: def.draftGraph ?? { version: 1, nodes: [], edges: [] },
         triggerType: input.triggerType,
         triggerInfo: input.triggerInfo,
-        mutexScope: input.mutexScope ?? '',
+        mutexScope: effectiveMutexScope ?? '',
         startInputs: input.inputs,
         status: WORKFLOW_RUN_STATUSES.skipped,
         skipReason: '同工作流已有运行中实例',
@@ -268,7 +276,7 @@ export class WorkflowRunService {
         graphSnapshot: graph,
         triggerType: input.triggerType,
         triggerInfo: input.triggerInfo,
-        mutexScope: input.mutexScope ?? '',
+        mutexScope: effectiveMutexScope ?? '',
         startInputs: mergedInputs,
         status: WORKFLOW_RUN_STATUSES.pending,
         timeoutAt: new Date(Date.now() + (def.settings?.maxDurationMs ?? WORKFLOW_DEFAULTS.maxDurationMs)),
@@ -281,7 +289,7 @@ export class WorkflowRunService {
           graphSnapshot: graph,
           triggerType: input.triggerType,
           triggerInfo: input.triggerInfo,
-          mutexScope: input.mutexScope ?? '',
+          mutexScope: effectiveMutexScope ?? '',
           startInputs: mergedInputs,
           status: WORKFLOW_RUN_STATUSES.skipped,
           skipReason: '同工作流已有运行中实例（并发启动被互斥约束拦截）',
@@ -502,6 +510,17 @@ export class WorkflowRunService {
       }
       throw e
     })
+    // 实例上下文跟随：源运行的 run 作用域变量复制到新 runId（checkpoint 语义一致——
+    // 续跑后的 variable 节点 get 到的是同一份实例数据）。变量服务未装配则跳过。
+    try {
+      const svc = getVariableDataService()
+      const carried = await svc.listVariables(runVariableScope(sourceRunId))
+      for (const v of carried) {
+        try { await svc.setVariable(runVariableScope(run.id), v.key, JSON.parse(v.valueJson)) } catch { /* 单键损坏不阻断续跑 */ }
+      }
+    } catch (e) {
+      logger.warn(`[WorkflowRunService] 实例变量复制跳过（变量服务未装配，run ${run.id}）`, e)
+    }
     await this.launch(
       run.id,
       run.userId ?? LOCAL_DEFAULT_USER_ID,
@@ -554,6 +573,36 @@ export class WorkflowRunService {
   }
 
   /**
+   * 已审批历史（待办中心「审批历史」页签）：review 留痕节点行分页，
+   * 附运行状态与定义名。运行/定义已删除的行降级为 null（历史行随 run 级联删除，
+   * 正常不会命中，防御式展示）。
+   */
+  async listReviewed(params: { page: number; pageSize: number }): Promise<{
+    items: Array<WorkflowNodeRunRecord & { definitionId: string | null; definitionName: string | null; runStatus: WorkflowRunStatus | null }>
+    total: number
+  }> {
+    const { items, total } = await this.deps.nodeRuns.findReviewed(params)
+    const runIds = [...new Set(items.map((r) => r.runId))]
+    const runs = await Promise.all(runIds.map((id) => this.deps.runs.getById(id)))
+    const runMap = new Map(runs.filter((r): r is WorkflowRunRecord => r !== null).map((r) => [r.id, r]))
+    const defIds = [...new Set([...runMap.values()].map((r) => r.definitionId))]
+    const defs = await Promise.all(defIds.map((id) => this.deps.definitions.getById(id)))
+    const defNames = new Map(defs.filter((d) => d !== null).map((d) => [d.id, d.name]))
+    return {
+      items: items.map((r) => {
+        const run = runMap.get(r.runId)
+        return {
+          ...r,
+          definitionId: run?.definitionId ?? null,
+          definitionName: run ? (defNames.get(run.definitionId) ?? run.definitionId) : null,
+          runStatus: run?.status ?? null,
+        }
+      }),
+      total,
+    }
+  }
+
+  /**
    * agent-loop 节点轨迹（轨迹视图数据源，25 号 M2 批2）。
    * 属主校验：getRun 走 scoped 读，非属主/不存在同 404 语义（抛错由 IPC 层扁平化）。
    */
@@ -572,6 +621,12 @@ export class WorkflowRunService {
     const run = await this.deps.runs.getById(runId)
     if (!run) throw new Error(`运行不存在或无权访问：${runId}`)
     await this.deps.nodeRuns.deleteByRun(runId)
+    // 实例上下文级联：run 作用域变量随运行删除（并行实例的独享 KV 不留孤儿）
+    try {
+      void getVariableDataService().deleteByScope(runVariableScope(runId)).catch(() => undefined)
+    } catch (e) {
+      logger.warn(`[WorkflowRunService] 实例变量清理跳过（变量服务未装配，run ${runId}）`, e)
+    }
     // journal 级联（11 号 §5.10：保留策略与 run 生命周期绑定——孤儿事件日志会永久累积）
     try {
       await this.deps.engine.deleteJournal(runId)

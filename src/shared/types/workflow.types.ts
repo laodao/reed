@@ -75,6 +75,9 @@ export type WorkflowNodeType =
   | 'video-gen'
   | 'video-compose'
   | 'video-preset'
+  // 播客视频（幻灯片承载核心要点 + 逐页口播配音讲解，音画天然对齐）
+  | 'slide-render'
+  | 'podcast-compose'
   // 技能（Skill 技能包调用）
   | 'skill-call'
   // Agent 循环（LLM 自主多轮工具调用；22 号 §8 工作流↔harness 焊点）
@@ -111,6 +114,8 @@ export type WorkflowNodeType =
   | 'crawl-news'
   // 批量抓取页面提取链接（两级采集：专栏页 → 新闻链接）
   | 'crawl-links'
+  // 信源目录（「信息来源」库 → 候选清单文本，供下游 LLM 按主题挑选后取证）
+  | 'source-catalog'
   // 长文写作（章节写作章法：设计卡→自检→出场实体→一致性门禁→写正文→写后检查）
   | 'chapter-writing'
   // 长文写作（卷设计章法：骨架→人物层→网格分批→整合，每 pass 过 L0 校验+修复回路）
@@ -725,6 +730,11 @@ export interface WorkflowNodeConfigMap {
     hostConcurrency?: number
   }
 
+  'source-catalog': {
+    /** 信息来源 ID 列表（多选；空 = 目录内全部启用来源） */
+    sourceIds?: string[] | string
+  }
+
   'crawl-links': {
     /** 待抓取页面 URL 列表（数组模板，如 {{pick1.parsed}}） */
     urls: unknown
@@ -773,6 +783,42 @@ export interface WorkflowNodeConfigMap {
     /** 模型路由（缺省走默认 provider） */
     providerConfigId?: string
     modelId?: string
+  }
+
+  /**
+   * 幻灯片渲染（播客视频画面）：幻灯片结构（标题/要点）→ PPT 风格 PNG 组。
+   * SVG 版式 + 多主题；渲染经 sharp-worker 子进程（libvips 不进主进程）。
+   */
+  'slide-render': {
+    /** 幻灯片结构（模板透传）：[{ kind: 'cover'|'content'|'ending', title, bullets[], narration? }] */
+    slides: unknown
+    /** 整期标题（封面辅助行 + 页脚） */
+    deckTitle?: string
+    /** 主题：light 简约白 / dark 深色科技 / warm 暖色杂志 / green 学术绿 */
+    theme?: string
+    /** 画布宽（默认 1920） */
+    width?: number
+    /** 画布高（默认 1080） */
+    height?: number
+  }
+
+  /**
+   * 播客合成：幻灯片图组 + 逐页配音 → 按配音时长对齐时间轴（页间停顿）→ 拼接混流成片。
+   */
+  'podcast-compose': {
+    /** 幻灯片 PNG 路径数组（模板透传，如 {{renderSlides.slidePaths}}） */
+    slideImages: unknown
+    /** 逐页配音数组（模板透传：字符串路径或 { audioPath } 对象，如 {{loopTts.results}}） */
+    audioFiles: unknown
+    /** 页间停顿毫秒（同时加在末页结尾；0-5000，缺省 600） */
+    gapMs?: number
+    /** 背景音乐路径（可选；混音时压低避人声） */
+    bgmPath?: string
+    width?: number
+    height?: number
+    /** 帧率（默认 30） */
+    fps?: number
+    outputName?: string
   }
 }
 
@@ -863,6 +909,14 @@ export interface WorkflowExecutionSettings {
    * 默认 false（节点间仅靠 {{变量}} 显式注入，保持无状态单轮）。
    */
   multiTurn?: boolean
+  /**
+   * 允许并行实例（同一工作流同时运行多个）。开启后 startRun 给每次启动自动派生
+   * 独立 mutexScope，绕过同定义互斥（互斥唯一索引含 scope，天然不冲突）。
+   * ⚠️ 实例间共享面：variable 节点的 global/user 作用域与内置 data-table——
+   * 并行时建议改用 variable 的 run 作用域（实例独享，随运行清理）、
+   * 表名/产物命名用 {{sys.runId}} 区分实例。
+   */
+  allowParallelInstances?: boolean
   /**
    * 全局并发运行数（同时最多跑几个工作流，超出的排队）。
    * **只在全局层（settings 表 `wf:defaults`）生效**：并发是平台级护栏，
@@ -1122,11 +1176,14 @@ export const WORKFLOW_NODE_TYPES = {
   'collect-diary': 'collect-diary',
   'crawl-news': 'crawl-news',
   'crawl-links': 'crawl-links',
+  'source-catalog': 'source-catalog',
   'chapter-writing': 'chapter-writing',
   'volume-design': 'volume-design',
   'video-gen': 'video-gen',
   'video-compose': 'video-compose',
   'video-preset': 'video-preset',
+  'slide-render': 'slide-render',
+  'podcast-compose': 'podcast-compose',
   'skill-call': 'skill-call',
   'agent-loop': 'agent-loop',
 } as const satisfies Record<WorkflowNodeType, WorkflowNodeType>

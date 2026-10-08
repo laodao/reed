@@ -15,7 +15,6 @@
 
 import type { FormFieldDef } from '../nodes/interaction-nodes'
 import { getCurrentUserId, runWithUserAsync } from '@core/context/user-context'
-import { runWithUserAsync } from '@core/context/user-context'
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import type {
   WorkflowEdge,
@@ -293,6 +292,7 @@ export class RunExecution {
     this.resolver = new VariableResolver({
       variables: this.variables,
       startInputs: input.startInputs,
+      runId: input.runId,
     })
     // 预计算全部循环节点的 body 信息（与校验器同一实现）
     for (const node of input.graph.nodes) {

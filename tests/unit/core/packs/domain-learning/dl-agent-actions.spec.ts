@@ -774,7 +774,7 @@ describe('dl-agent-actions', () => {
     })
   })
 
-  it('save_card：自造区名（practice）→ 拒绝并给出该类型的模板区序', async () => {
+  it('save_card：v9 自造区缺 role（practice）→ 拒绝并说明五选一（带齐 title+role 则合法）', async () => {
     ds = await buildDs()
     await seedProject(ds, 'sp1')
     const db = buildDb(ds)
@@ -791,7 +791,7 @@ describe('dl-agent-actions', () => {
             sections: [
               { key: 'meta', md: '### 前置\n无需前置。' },
               { key: 'examples', md: '正文' },
-              { key: 'practice', md: '落到代码' },
+              { key: 'practice', title: '上手练习', md: '落到代码' },
             ],
             evidenceSources: [{ kind: '教材', title: 'T', url: 'https://e.org/t' }],
           },
@@ -800,11 +800,39 @@ describe('dl-agent-actions', () => {
       expect(err).toBeInstanceOf(Error)
       const message = (err as Error).message
       expect(message).toContain('practice')
-      expect(message).toContain('meta → definition → detail → examples')
+      expect(message).toContain('role')
+    })
+
+    // v9：自造区带齐 title + role → 正常落库（复杂主题可自造章节）
+    const ok = await runWithUserAsync('u1', () =>
+      executeDlAction(execCtx(db, 'sp1'), {
+        type: 'dl_save_card',
+        params: {
+          card: {
+            conceptId: 'c-ad',
+            essenceType: 'K-concept',
+            sections: [
+              { key: 'meta', md: '### 前置\n无需前置。' },
+              { key: 'definition', md: '严格定义。' },
+              { key: 'architecture', title: '整体架构', role: 'core', md: '架构正文。' },
+              { key: 'practice', title: '上手练习', role: 'support', md: '落到代码' },
+              { key: 'selfcheck', md: '**Q1** 题' },
+            ],
+            evidenceSources: [{ kind: '教材', title: 'T', url: 'https://e.org/t' }],
+          },
+        },
+      }),
+    )
+    expect(ok.summary.status).toBe('ok')
+    await runWithUserAsync('u1', async () => {
+      const saved = await db.dlCards!.getCurrentByConcept('sp1', 'c-ad')
+      const arch = saved?.sections.find((s) => s.key === 'architecture')
+      expect(arch?.title).toBe('整体架构')
+      expect(arch?.role).toBe('core')
     })
   })
 
-  it('save_card：区序乱（案例写在定义之前）→ 落库时按当前契约自动重排，并在结果里说明', async () => {
+  it('save_card：v9 正文区顺序自由（案例写在定义之前不再重排），锚点仍归位（meta 首、selfcheck 尾）', async () => {
     ds = await buildDs()
     await seedProject(ds, 'sp1')
     const db = buildDb(ds)
@@ -819,8 +847,8 @@ describe('dl-agent-actions', () => {
             conceptId: 'c-x',
             essenceType: 'K-concept',
             sections: [
-              { key: 'meta', md: '### 前置\n无需前置。' },
               { key: 'examples', md: '案例正文' },
+              { key: 'meta', md: '### 前置\n无需前置。' },
               { key: 'definition', md: '定义正文' },
               { key: 'selfcheck', md: '**Q1** 题' },
             ],
@@ -830,16 +858,16 @@ describe('dl-agent-actions', () => {
       }),
     )
     expect(r.summary.status).toBe('ok')
-    expect(r.summary.message).toContain('区序已按当前契约重排')
+    expect(r.summary.message).toContain('区序已归位')
     await runWithUserAsync('u1', async () => {
       const saved = await db.dlCards!.getCurrentByConcept('sp1', 'c-x')
-      expect(saved?.sections.map((s) => s.key)).toEqual(['meta', 'definition', 'examples', 'selfcheck'])
+      // 正文区保持模型给的相对顺序（先例后律合法），meta 归位到首、selfcheck 收尾
+      expect(saved?.sections.map((s) => s.key)).toEqual(['meta', 'examples', 'definition', 'selfcheck'])
     })
   })
 
-  // 2026-09-15 用户口径「章节合并 + 案例放到详解之后」：老卡重存时**归一化合并并重排**
-  // （内容一字不删），新卡直接按当前契约区序落库。
-  it('save_card：v5 旧序老卡（示例在前、规则单列）→ 归一化合并进详解并重排，内容不丢', async () => {
+  // 2026-10-06 v9：老卡重存仍做无损合并（内容一字不删），但正文相对顺序保持原样（不再按模板重排）
+  it('save_card：v5 旧序老卡（示例在前、规则单列）→ 归一化合并进详解（内容不丢），相对顺序保持 v5 原序', async () => {
     ds = await buildDs()
     await seedProject(ds, 'sp1')
     const db = buildDb(ds)
@@ -870,8 +898,8 @@ describe('dl-agent-actions', () => {
     expect(r.summary.message).toContain('并入')
     await runWithUserAsync('u1', async () => {
       const saved = await db.dlCards!.getCurrentByConcept('sp1', 'c-legacy')
-      // v7/v8 区序：定义 → 详解 → 案例；本质并入定义、规则并入详解（内容保留）
-      expect(saved?.sections.map((s) => s.key)).toEqual(['meta', 'definition', 'detail', 'examples', 'selfcheck'])
+      // v9：essence 并入 definition、rules 并入 detail（内容保留）；正文相对顺序保持 v5 原序（示例在前）
+      expect(saved?.sections.map((s) => s.key)).toEqual(['meta', 'definition', 'examples', 'detail', 'selfcheck'])
       const definition = saved!.sections.find((s) => s.key === 'definition')!
       expect(definition.md).toContain('一句话直觉') // 原 essence 内容
       expect(definition.md).toContain('严格定义')

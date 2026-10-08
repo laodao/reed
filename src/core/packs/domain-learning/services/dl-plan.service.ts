@@ -20,10 +20,12 @@ import { randomUUID } from 'crypto'
 import type { ICoreDatabaseManager } from '@core/database/database-manager.interface'
 import { buildDlPlanView, type DlPlanRepository } from '@core/database/repositories/dl-plan.repository'
 import type {
+  DlConceptSplitPayload,
   DlLessonPlanPayload,
   DlPlanSyllabus,
   DlPlanUnderstanding,
   DlPlanView,
+  DlSplitConceptResult,
   DlSyllabusConcept,
 } from '@shared/types/domain-learning.types'
 import {
@@ -167,18 +169,157 @@ export async function proposeDlLessonPlan(
   }
 }
 
-/** 空间方案总览（确认弹窗数据源；带 conceptId 时一并返回该概念的讲义方案） */
+// ==================== 知识点拆分提案（2026-10-06：复杂知识点允许 agent 再拆分） ====================
+
+/**
+ * 归一化「知识点拆分方案」载荷（纯校验 + 规范化；不做任何落库动作）。
+ * agent 只产方案——用户确认后由系统调 graph 服务执行（`confirmDlPlan` 的 concept-split 分支）。
+ */
+export async function normalizeConceptSplitPayload(
+  db: ICoreDatabaseManager,
+  spaceId: string,
+  raw: unknown,
+): Promise<{ ok: true; value: DlConceptSplitPayload; changes: string[] } | { ok: false; reason: string }> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { ok: false, reason: '拆分方案必须是对象（含 conceptId / branchName / children）。' }
+  }
+  const input = raw as Record<string, unknown>
+  const conceptId = String(input.conceptId ?? '').trim()
+  if (!conceptId) return { ok: false, reason: '拆分方案缺 conceptId——要拆分的是哪个知识点。' }
+  const concept = await db.dlConcepts?.getById(conceptId)
+  if (!concept || concept.projectId !== spaceId) {
+    return { ok: false, reason: `拆分方案里的知识点不存在或不属于本空间（${conceptId}）。` }
+  }
+  if (concept.nodeType === 'group') {
+    return { ok: false, reason: `「${concept.name}」已是分支目录，不能再拆分（要细分请在它下面建知识点）。` }
+  }
+
+  const childrenRaw = Array.isArray(input.children) ? input.children : []
+  const children: Array<{ name: string; definitionShort: string | null; prerequisites: string[] }> = []
+  const seen = new Set<string>()
+  for (const item of childrenRaw) {
+    const rec = (item ?? {}) as Record<string, unknown>
+    const name = String(rec.name ?? '').trim()
+    if (!name) continue
+    if (seen.has(name)) return { ok: false, reason: `子知识点名称重复：「${name}」。` }
+    seen.add(name)
+    const prerequisites = Array.isArray(rec.prerequisites)
+      ? rec.prerequisites.map((p) => String(p ?? '').trim()).filter(Boolean)
+      : []
+    children.push({
+      name,
+      definitionShort: String(rec.definitionShort ?? '').trim() || null,
+      prerequisites,
+    })
+  }
+  if (children.length < 2) {
+    return { ok: false, reason: '拆分至少要拆出 2 个子知识点——只拆 1 个没有意义（直接修订原讲义即可）。' }
+  }
+
+  // 兄弟前置：只允许引用本批子知识点；不许自指；不许成环（学习路径不能循环依赖）
+  const names = new Set(children.map((c) => c.name))
+  for (const c of children) {
+    for (const p of c.prerequisites) {
+      if (p === c.name) return { ok: false, reason: `子知识点「${c.name}」的前置不能是它自己。` }
+      if (!names.has(p)) {
+        return {
+          ok: false,
+          reason:
+            `子知识点「${c.name}」的前置「${p}」不在本次拆分的子知识点里——兄弟前置只能引用同批拆出的名字` +
+            `（原知识点的外部前置会自动继承给每个子知识点，不用在这里写）。`,
+        }
+      }
+    }
+  }
+  const indeg = new Map(children.map((c) => [c.name, c.prerequisites.length]))
+  const queue = children.filter((c) => c.prerequisites.length === 0).map((c) => c.name)
+  let visited = 0
+  while (queue.length) {
+    const cur = queue.shift() as string
+    visited++
+    for (const c of children) {
+      if (!c.prerequisites.includes(cur)) continue
+      const next = (indeg.get(c.name) ?? 0) - 1
+      indeg.set(c.name, next)
+      if (next === 0) queue.push(c.name)
+    }
+  }
+  if (visited !== children.length) {
+    return { ok: false, reason: '子知识点之间的前置关系构成环——学习路径不允许循环依赖，请检查 prerequisites 方向。' }
+  }
+
+  return {
+    ok: true,
+    value: {
+      conceptId,
+      branchName: String(input.branchName ?? '').trim() || concept.name,
+      children,
+      reason: String(input.reason ?? '').trim() || null,
+    },
+    changes: [],
+  }
+}
+
+/**
+ * 提交「知识点拆分方案」草案（研究/规划中发现知识点粒度过大时的提案入口）。
+ * 与 lesson 同构：按概念存 plan；**确认时系统直接执行拆分**（确定性数据操作，不经 agent）。
+ */
+export async function proposeDlConceptSplit(
+  db: ICoreDatabaseManager,
+  spaceId: string,
+  conceptId: string,
+  raw: unknown,
+): Promise<{ planId: string; revision: number; value: DlConceptSplitPayload; message: string }> {
+  const repo = plansOf(db)
+  const concept = await db.dlConcepts?.getById(conceptId)
+  if (!concept || concept.projectId !== spaceId) {
+    throw new Error(`dl_propose_concept_split：概念不存在或不属于本空间（${conceptId}）`)
+  }
+  // 载荷里的 conceptId 与目标概念不一致 → 拒绝（拆的是哪个点必须唯一确定）
+  const rawConceptId = String((raw as { conceptId?: unknown } | undefined)?.conceptId ?? '').trim()
+  if (rawConceptId && rawConceptId !== conceptId) {
+    throw new Error(
+      `dl_propose_concept_split：载荷里的 conceptId（${rawConceptId}）与目标概念（${conceptId}）不一致——本轮研究的是「${concept.name}」，只能拆它。`,
+    )
+  }
+  const normalized = await normalizeConceptSplitPayload(db, spaceId, { ...(raw as object), conceptId })
+  if (!normalized.ok) throw new Error(`dl_propose_concept_split：${normalized.reason}`)
+
+  const latest = await repo.getLatest(spaceId, 'concept-split', conceptId)
+  const revision = (latest?.revision ?? 0) + 1
+  await repo.supersedeDrafts(spaceId, 'concept-split', conceptId)
+  const row = await repo.create({
+    id: randomUUID(),
+    projectId: spaceId,
+    conceptId,
+    step: 'concept-split',
+    payload: normalized.value,
+    revision,
+  })
+  return {
+    planId: row.id,
+    revision,
+    value: normalized.value,
+    message:
+      `已提交「${concept.name}」的拆分方案（第 ${revision} 版：拆成 ${normalized.value.children.length} 个子知识点），` +
+      '等待用户在弹窗里确认——**确认后系统会就地把该知识点转成分支目录**（原讲义/笔记/问答退役，' +
+      '外部前置自动继承给每个子知识点）。本轮不要继续为原知识点写讲义。',
+  }
+}
+
+/** 空间方案总览（确认弹窗数据源；带 conceptId 时一并返回该概念的讲义方案与拆分方案） */
 export async function getDlPlanView(
   db: ICoreDatabaseManager,
   spaceId: string,
   conceptId?: string | null,
 ): Promise<DlPlanView> {
   const repo = plansOf(db)
-  const [understanding, syllabus, confirmed, lesson] = await Promise.all([
+  const [understanding, syllabus, confirmed, lesson, conceptSplit] = await Promise.all([
     repo.getLatest(spaceId, 'understanding'),
     repo.getLatest(spaceId, 'syllabus'),
     repo.getConfirmed(spaceId, 'syllabus'),
     conceptId ? repo.getLatest(spaceId, 'lesson', conceptId) : Promise.resolve(null),
+    conceptId ? repo.getLatest(spaceId, 'concept-split', conceptId) : Promise.resolve(null),
   ])
   const parsed = confirmed ? normalizePlanSyllabus(confirmed.payload) : null
   return buildDlPlanView({
@@ -188,6 +329,7 @@ export async function getDlPlanView(
     confirmedConceptCount: parsed?.ok ? planConceptNames(parsed.value).length : 0,
     lesson,
     lessonConceptId: conceptId ?? null,
+    conceptSplit,
   })
 }
 
@@ -195,28 +337,46 @@ export async function getDlPlanView(
  * 用户确认某一步（可带**编辑后的**载荷：前端勾选增删/调序后的知识体系、改过版式的讲义大纲）。
  * - understanding：确认后才允许提交 syllabus；
  * - syllabus：确认后落库门禁放行（并作为落库额度依据）；
- * - lesson：确认后模型才按规格与区级计划逐区精写（落库时按它校验区集/载体）。
+ * - lesson：确认后模型才按规格与区级计划逐区精写（落库时按它校验区集/载体）；
+ * - concept-split：**确认即执行拆分**（调 graph 服务就地把原知识点转成分支目录 + 建子知识点；
+ *   确定性数据操作不经 agent——与 syllabus 确认即落骨架同一口径）。
  *
- * 讲义方案（lesson）是**概念级**：退位与确认都按该草案自身的 conceptId 隔离，
- * 不会影响同空间其它概念的讲义方案。
+ * 讲义方案（lesson）与拆分方案（concept-split）都是**概念级**：退位与确认都按该草案自身的
+ * conceptId 隔离，不会影响同空间其它概念的方案。
  */
 export async function confirmDlPlan(
   db: ICoreDatabaseManager,
   spaceId: string,
-  step: 'understanding' | 'syllabus' | 'lesson',
+  step: 'understanding' | 'syllabus' | 'lesson' | 'concept-split',
   payload?: unknown,
   feedback?: string | null,
   conceptId?: string | null,
+  deps?: { splitConcept?: (projectId: string, conceptId: string, input: unknown) => Promise<DlSplitConceptResult> },
 ): Promise<{ message: string }> {
   const repo = plansOf(db)
-  // lesson 步按概念存：确认时用显式 conceptId（或载荷里带的）定位
-  const lessonConceptId = step === 'lesson' ? resolveLessonConceptId(payload, conceptId) : null
-  if (step === 'lesson' && !lessonConceptId) {
+  // lesson / concept-split 步按概念存：确认时用显式 conceptId（或载荷里带的）定位
+  const scopedConceptId =
+    step === 'lesson'
+      ? resolveLessonConceptId(payload, conceptId)
+      : step === 'concept-split'
+        ? resolveConceptSplitConceptId(payload, conceptId)
+        : null
+  if (step === 'lesson' && !scopedConceptId) {
     throw new Error('确认讲义方案需要 conceptId（讲义是按概念写的）')
   }
-  const latest = await repo.getLatest(spaceId, step, lessonConceptId)
+  if (step === 'concept-split' && !scopedConceptId) {
+    throw new Error('确认拆分方案需要 conceptId（拆的是哪个知识点必须唯一确定）')
+  }
+  const latest = await repo.getLatest(spaceId, step, scopedConceptId)
   if (!latest) {
-    const label = step === 'understanding' ? '诉求理解' : step === 'syllabus' ? '知识体系' : '讲义方案'
+    const label =
+      step === 'understanding'
+        ? '诉求理解'
+        : step === 'syllabus'
+          ? '知识体系'
+          : step === 'lesson'
+            ? '讲义方案'
+            : '拆分方案'
     throw new Error(`还没有待确认的${label}草案`)
   }
   if (latest.status === 'confirmed' && payload === undefined) {
@@ -232,23 +392,30 @@ export async function confirmDlPlan(
   let nextPayload = latest.payload
   let note = ''
   if (payload !== undefined) {
-    const normalized =
-      step === 'understanding'
-        ? normalizePlanUnderstanding(payload)
-        : step === 'syllabus'
-          ? normalizePlanSyllabus(payload)
-          : normalizeLessonPlanPayload(unwrapLessonPayload(payload))
-    if (!normalized.ok) throw new Error(`确认失败：${normalized.reason}`)
-    nextPayload = normalized.value
-    note =
-      step === 'syllabus'
-        ? `（按你的勾选/排序，${summarizePlanSyllabus(normalized.value as DlPlanSyllabus)}）`
-        : step === 'lesson'
-          ? `（按你改后的区级计划，${summarizeLessonSpec((normalized.value as DlLessonPlanPayload).spec)}）`
-          : '（按你的修改）'
+    if (step === 'concept-split') {
+      const normalized = await normalizeConceptSplitPayload(db, spaceId, payload)
+      if (!normalized.ok) throw new Error(`确认失败：${normalized.reason}`)
+      nextPayload = normalized.value
+      note = `（按你的调整，拆成 ${normalized.value.children.length} 个子知识点）`
+    } else {
+      const normalized =
+        step === 'understanding'
+          ? normalizePlanUnderstanding(payload)
+          : step === 'syllabus'
+            ? normalizePlanSyllabus(payload)
+            : normalizeLessonPlanPayload(unwrapLessonPayload(payload))
+      if (!normalized.ok) throw new Error(`确认失败：${normalized.reason}`)
+      nextPayload = normalized.value
+      note =
+        step === 'syllabus'
+          ? `（按你的勾选/排序，${summarizePlanSyllabus(normalized.value as DlPlanSyllabus)}）`
+          : step === 'lesson'
+            ? `（按你改后的区级计划，${summarizeLessonSpec((normalized.value as DlLessonPlanPayload).spec)}）`
+            : '（按你的修改）'
+    }
   }
 
-  // 新版本生效：旧的 draft/confirmed 全部退位（历史留档，不双生效；lesson 按概念隔离）
+  // 新版本生效：旧的 draft/confirmed 全部退位（历史留档，不双生效；概念级步骤按概念隔离）
   await repo.supersedeDrafts(spaceId, step, latest.conceptId)
   await repo.supersedeConfirmed(spaceId, step, latest.conceptId)
   await repo.patch(latest.id, {
@@ -270,14 +437,77 @@ export async function confirmDlPlan(
     }
   }
 
+  // 拆分方案确认后：立即执行拆分（graph 服务；原知识点转分支、外部前置继承、兄弟前置落边）
+  if (step === 'concept-split') {
+    const splitPayload = nextPayload as DlConceptSplitPayload
+    const concept = await db.dlConcepts?.getById(splitPayload.conceptId)
+    const split = await (deps?.splitConcept
+      ? deps.splitConcept(spaceId, splitPayload.conceptId, {
+          branchName: splitPayload.branchName,
+          children: splitPayload.children,
+          source: 'material',
+        })
+      : executeConceptSplitFallback(db, spaceId, splitPayload))
+    const retired = split.removed
+    backfillNote =
+      `；已执行拆分：「${concept?.name ?? splitPayload.conceptId}」转成分支「${split.branchName}」，` +
+      `新建子知识点 ${split.children.length} 个（${split.children.map((c) => c.name).join('、')}）` +
+      `${retired.cards ? `，原讲义 ${retired.cards} 份退役` : ''}` +
+      `——请让 agent 依次为子知识点出讲义`
+  }
+
   return {
     message:
       step === 'understanding'
         ? `已确认诉求理解${note}——下一步将据此规划知识体系`
         : step === 'syllabus'
           ? `已确认知识体系${note}${backfillNote}——接下来补前置关系、出首份讲义`
-          : `已确认讲义方案${note}——现在请按区级计划逐区精写正文（每 3 区回读一次规格锁），完成后 dl_save_card 落库`,
+          : step === 'lesson'
+            ? `已确认讲义方案${note}——现在请按区级计划逐区精写正文（每 3 区回读一次规格锁），完成后 dl_save_card 落库`
+            : `已确认拆分方案${note}${backfillNote}`,
   }
+}
+
+/**
+ * 拆分执行兜底：调用方没注入 graph 服务时，用 db 的仓储临时构造一个
+ * LearningGraphService（无状态服务，构造廉价——plan 确认路径不需要 handler 的单例）。
+ */
+async function executeConceptSplitFallback(
+  db: ICoreDatabaseManager,
+  spaceId: string,
+  payload: DlConceptSplitPayload,
+): Promise<DlSplitConceptResult> {
+  if (!db.dataSource) throw new Error('数据库未就绪（dataSource 为空）——无法执行拆分')
+  const { DlConceptRepository } = await import('@core/database/repositories/dl-concept.repository')
+  const { DlRelationRepository } = await import('@core/database/repositories/dl-relation.repository')
+  const { DlMasteryLogRepository } = await import('@core/database/repositories/dl-mastery-log.repository')
+  const { DlCardRepository } = await import('@core/database/repositories/dl-card.repository')
+  const { DlNoteRepository } = await import('@core/database/repositories/dl-note.repository')
+  const { DlQuestionRepository } = await import('@core/database/repositories/dl-question.repository')
+  const { DlConceptLogRepository } = await import('@core/database/repositories/dl-concept-log.repository')
+  const { LearningGraphService } = await import('./learning-graph.service')
+  const graph = new LearningGraphService(
+    new DlConceptRepository(db.dataSource),
+    new DlRelationRepository(db.dataSource),
+    new DlMasteryLogRepository(db.dataSource),
+    new DlCardRepository(db.dataSource),
+    new DlNoteRepository(db.dataSource),
+    new DlQuestionRepository(db.dataSource),
+    new DlConceptLogRepository(db.dataSource),
+  )
+  return graph.splitConceptIntoBranch(spaceId, payload.conceptId, {
+    branchName: payload.branchName,
+    children: payload.children,
+    source: 'material',
+  })
+}
+
+/** concept-split 步定位用的概念 id：显式传入优先，其次载荷里带的 */
+function resolveConceptSplitConceptId(payload: unknown, explicit?: string | null): string | null {
+  const given = typeof explicit === 'string' ? explicit.trim() : ''
+  if (given) return given
+  const fromPayload = (payload as { conceptId?: unknown } | undefined)?.conceptId
+  return typeof fromPayload === 'string' && fromPayload.trim() ? fromPayload.trim() : null
 }
 
 /**

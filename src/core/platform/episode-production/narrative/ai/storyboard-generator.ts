@@ -11,8 +11,33 @@ import type { SceneCharacter, SceneScript } from '@shared/types/episode-producti
 import type { StoryboardGenerationResult, StoryboardResult } from './types'
 import { callAI, extractJsonFromResponse } from './_helpers'
 import { NAMING_EMOTION_PROMPT, PACING_DENSITY_PROMPT, validateShotPacing } from './shot-pacing'
+import {
+  FILL_FIELD_VALUE_SETS,
+  LENS_FOCAL_ENTRIES,
+  APERTURE_ENTRIES,
+  CAMERA_STYLE_ENTRIES,
+  LIGHTING_ENTRIES,
+  renderEntryList,
+  renderShotLanguageSpec,
+  renderTransitionSpec,
+} from '../../prompts/cinematic-registry'
 
 // ==================== 后处理 helpers ====================
+
+/**
+ * AI 填空需做枚举白名单校验的字段（提示词优化方案 §3.9）。
+ * 与 `FILL_FIELD_VALUE_SETS` 的键一致——顺序即校验顺序。
+ */
+const ENUM_FILL_FIELDS = [
+  'shotType',
+  'cameraAngle',
+  'cameraMovement',
+  'lensFocalMm',
+  'aperture',
+  'cameraStyle',
+  'lighting',
+  'transitionType',
+] as const satisfies readonly (keyof typeof FILL_FIELD_VALUE_SETS)[]
 
 /**
  * Bug C 修复（spec 2026-05-09 ep-redesign · e2e report-shot-1.2.md）：
@@ -168,8 +193,8 @@ frameDescription 必须按以下结构化格式填写，确保画面信息完整
 
 **示例**：
 \`\`\`
-【场景】杜十娘闺房，轻纱环绕四周，铜镜立于梳妆台东侧，晨光透过窗棂洒入
-【人物】杜十娘位于画面中央，面容清丽而决绝，眼神冰冷，红唇紧抿，身着素色衣裙，手持镶金百宝箱
+【场景】某女子闺房，轻纱环绕四周，铜镜立于梳妆台东侧，晨光透过窗棂洒入
+【人物】角色甲位于画面中央，面容清丽而决绝，眼神冰冷，红唇紧抿，身着素色衣裙，手持镶金木匣
 【动作】她缓缓转身面向铜镜，凝视镜中自己，手指轻抚镜面，表情由绝望转为坚定
 【氛围】晨光柔和偏暗，室内笼罩冷蓝色调，氛围凝重压抑，透出复仇前夕的决绝感
 \`\`\`
@@ -304,8 +329,8 @@ frameDescription 必须按以下结构化格式填写，确保画面信息完整
 
 **示例**：
 \`\`\`
-【场景】杜十娘闺房，轻纱环绕四周，铜镜立于梳妆台东侧，晨光透过窗棂洒入
-【人物】杜十娘位于画面中央，面容清丽而决绝，眼神冰冷，红唇紧抿，身着素色衣裙
+【场景】某女子闺房，轻纱环绕四周，铜镜立于梳妆台东侧，晨光透过窗棂洒入
+【人物】角色甲位于画面中央，面容清丽而决绝，眼神冰冷，红唇紧抿，身着素色衣裙
 【动作】她缓缓转身面向铜镜，凝视镜中自己，手指轻抚镜面
 【氛围】晨光柔和偏暗，室内笼罩冷蓝色调，氛围凝重压抑
 \`\`\`
@@ -457,10 +482,27 @@ ${sceneDescription}
   }
 
   // ==================== 公开方法 ====================
+  //
+  // ⚠️ 退役中（提示词优化方案 §3.9 / §5 Phase 4，2026-10-06）：
+  // 本类的分镜生成三件套（generateStoryboard / generateSingleStoryboard /
+  // generateStoryboardsIncremental）已被 **StoryboardCogenService** 取代，
+  // 不再有任何生产调用点：
+  //   - UI 单场景「生成分镜」→ cogenStoryboardsForScene（§3.9 已切换）
+  //   - UI 批量 / agent generate_storyboards → cogenStoryboardsForEpisode
+  // 旧路径的固有缺陷（cogen 已解决）：
+  //   - 无 binding 能力 → 需 normalizeAiCharacters 反查 + 按镜数均分对白兜底；
+  //   - 校验弱：无服饰逐字校验、无台词时长硬校验、无对白/旁白全覆盖；
+  //   - 批量模式输入不带 id 却要求回填 dialogueIds（§3.9 P0）。
+  //
+  // 保留原因：`fillStoryboardFields`（UI「一键填充」）**仍在用**，且三件套有既有
+  // 单测覆盖；按 §5 策略先冻结观察一个版本周期，确认无依赖后再整体删除。
+  // **不要在新代码中调用以下三个方法**，也不要再为它们做提示词优化。
 
   /**
    * 生成分镜（批量模式）
-   * @deprecated 建议使用 generateStoryboardsIncremental 方法
+   *
+   * @deprecated 2026-10-06（§3.9）：已被 StoryboardCogenService 取代，无生产调用点。
+   *             请用 `cogenStoryboardsForEpisode`（整集）或 `cogenStoryboardsForScene`（单场景）。
    */
   async generateStoryboard(
     sceneScript: SceneScript,
@@ -482,11 +524,11 @@ ${sceneScript.characters.map(c => `- ID: ${c.characterBindingId ?? c.characterId
 
 旁白: ${sceneScript.narration}
 
-对话:
-${sceneScript.dialogues.map(d => `- ${d.characterName}: "${d.text}" (${d.emotion || '普通'})`).join('\n')}
+对话（dialogueIds 必须用下方每行开头的 id 回填，禁止编造）:
+${sceneScript.dialogues.map((d, i) => `- ${dialogueDisplayId(d, i)} · ${d.characterName}: "${d.text}" (${d.emotion || '普通'})`).join('\n')}
 
-动作:
-${sceneScript.actions.map(a => `- ${a.description}`).join('\n')}
+动作（actionIds 必须用下方每行开头的 id 回填，禁止编造）:
+${sceneScript.actions.map((a, i) => `- ${actionDisplayId(a, i)} · ${a.description}`).join('\n')}
 `
 
     // 替换提示词中的变量
@@ -514,6 +556,8 @@ ${sceneScript.actions.map(a => `- ${a.description}`).join('\n')}
 
   /**
    * 生成单个分镜
+   *
+   * @deprecated 2026-10-06（§3.9）：已被 StoryboardCogenService 取代，无生产调用点。
    */
   async generateSingleStoryboard(
     sceneScript: SceneScript,
@@ -619,8 +663,11 @@ ${sceneScript.actions.map(a => `- ID: ${a.id}, 描述: ${a.description}`).join('
   }
 
   /**
-   * 逐个生成分镜（推荐使用此方法）
+   * 逐个生成分镜
    * 每个分镜单独生成，任务更小更稳定，可以提供更好的进度反馈
+   *
+   * @deprecated 2026-10-06（§3.9）：已被 StoryboardCogenService 取代，无生产调用点。
+   *             请用 `cogenStoryboardsForEpisode` / `cogenStoryboardsForScene`。
    */
   async generateStoryboardsIncremental(
     sceneScript: SceneScript,
@@ -802,9 +849,9 @@ ${input.sceneContext}
 - 氛围：${input.mood || '未知'}
 
 ## frameDescription 资产引用纪律（2026-09-21 一致性修复）
-- 若需填充 frameDescription：出场角色/地点/关键道具的登记名首次出现处必须写成资产引用标记「@[登记名]」（如「@[沈云萝] 坐在床榻边」）；标记会被系统解析为参考图后替换为纯名文本。
+- 若需填充 frameDescription：出场角色/地点/关键道具的登记名首次出现处必须写成资产引用标记「@[登记名]」（如「@[角色甲] 坐在床榻边」）；标记会被系统解析为参考图后替换为纯名文本。
 - 【人物】段的服饰/外貌必须逐字使用场景上下文中资产卡提供的服饰原文，不得改写、概括。
-- 场景地点必须使用完整登记名（如「雪麓山庄书房」），不得写裸名（"书房"）。
+- 场景地点必须使用完整登记名（如「某山庄书房」），不得写裸名（"书房"）。
 
 ## 已有字段（不需要填充）
 ${existingInfo || '（无）'}
@@ -814,71 +861,22 @@ ${fieldsToFill}
 
 ## 镜头语言说明
 
-### 景别（shotType）
-- extreme_long: 大远景 - 极远距离，展示宏大场景
-- long: 远景 - 展示完整场景，人物较小
-- full: 全景 - 人物全身，展示动作
-- medium: 中景 - 人物膝盖以上，展示互动
-- medium_close: 中近景 - 人物腰部以上，常用对话场景
-- close: 近景 - 人物胸部以上，展示表情
-- extreme_close: 特写 - 人物面部，展示情感
-- detail: 细节特写 - 物品或局部细节
-
-### 镜头角度（cameraAngle）
-- eye_level: 平视 - 客观中立
-- high: 俯拍 - 显渺小或弱势
-- low: 仰拍 - 显高大或强势
-- dutch: 斜角 - 不安或混乱
-- birds_eye: 鸟瞰 - 全局视角
-
-### 镜头运动（cameraMovement）- 使用 25 命名预设
-- basic 类：static（固定）、push_in（推近）、pull_out（拉远）、pan_left（左摇）、pan_right（右摇）、tilt_up（上仰）、tilt_down（下俯）
-- narrative 类：reveal_push（揭示推近）、reveal_pull（揭示拉远）、long_take_tracking（长镜头跟拍）、master_shot_push（大师推近）、spiral_up（螺旋上升）、pov（主观视角）、ots_left（OTS左过肩）、ots_right（OTS右过肩）
-- dynamic 类：whip_pan_left（甩镜左）、whip_pan_right（甩镜右）、crash_zoom（冲击变焦）、rack_focus（焦点切换）、dolly_zoom（移动变焦）
-- special 类：slow_motion_static（慢动作固定）、time_lapse_pan（延时摇镜）、freeze_frame（定格帧）、impact_zoom（冲击变焦）
+${renderShotLanguageSpec()}
 
 ### 焦距（lensFocalMm）- 字符串（必须带mm单位）
-- 24mm: 超广角 - 空间感强，适合场景
-- 35mm: 广角 - 自然视角，适合全景/中景
-- 50mm: 标准 - 最接近人眼视角
-- 85mm: 人像焦距 - 适合特写/近景
-- 125mm: 长焦 - 压缩空间，适合远距离特写
+${renderEntryList(LENS_FOCAL_ENTRIES)}
 
 ### 光圈（aperture）- 字符串
-- f/1.8: 极大光圈 - 极浅景深，梦幻效果
-- f/2.8: 大光圈 - 浅景深，突出主体
-- f/4: 中等光圈 - 平衡景深
-- f/8: 小光圈 - 较深景深，清晰细节
-- f/11: 极小光圈 - 深景深，全景清晰
+${renderEntryList(APERTURE_ENTRIES)}
 
 ### 相机风格（cameraStyle）- 字符串
-- cinematic: 电影感 - 电影级色彩+颗粒感
-- digital: 数码 - 清晰/锐利/现代
-- film_35mm: 胶片35mm - 柔和颗粒+复古色调
-- vintage: 复古 - 老照片质感
+${renderEntryList(CAMERA_STYLE_ENTRIES)}
 
 ### 打光（lighting）- 字符串（必须从以下预设中选择）
-- rembrandt: 伦勃朗光 - 45°主光+鼻影投到对侧脸颊
-- three_point: 三点照明 - 主光+辅光+轮廓光
-- butterfly: 蝴蝶光 - 正前方高位主光→鼻下蝴蝶状阴影
-- split: 分割光 - 90°侧光→半亮半暗
-- rim_backlight: 逆光轮廓 - 主光在背后→主体边缘发光
-- flat_softbox: 平铺柔光 - 正前方大柔光箱→无阴影
-- golden_hour: 黄金时刻 - 日出/日落柔和暖光
-- blue_hour: 蓝调时刻 - 日落后/日出前的冷蓝调
-- noir_hard: 黑色电影硬光 - 强烈对比+百叶窗投影
-- cyberpunk_neon: 赛博朋克霓虹 - 紫粉霓虹+反射+雨夜
-- cozy_candle: 温暖烛光 - 低色温+跳动光斑
-- cold_clinical: 冷峻医院 - 高色温日光灯+无影
+${renderEntryList(LIGHTING_ENTRIES)}
 
 ### 转场类型（transitionType）
-- cut: 硬切 - 快速切换
-- fade: 淡入淡出 - 缓慢过渡
-- dissolve: 叠化 - 柔和融合
-- wipe: 划像 - 方向性过渡
-- slide: 滑动 - 平移过渡
-- zoom: 缩放转场 - 空间压缩
-- whip: 甩镜 - 快速转场
+${renderTransitionSpec()}
 
 ### 转场时长（transitionDuration）- 数字（毫秒）
 - 硬切：0
@@ -945,33 +943,39 @@ ${NAMING_EMOTION_PROMPT}
     const output: any = {}
 
     // 镜头核心参数
-    if (result.shotType && typeof result.shotType === 'string') output.shotType = result.shotType
-    if (result.cameraAngle && typeof result.cameraAngle === 'string') output.cameraAngle = result.cameraAngle
-    if (result.cameraMovement && typeof result.cameraMovement === 'string') output.cameraMovement = result.cameraMovement
     if (result.duration && typeof result.duration === 'number') output.duration = result.duration
     if (result.frameDescription && typeof result.frameDescription === 'string') output.frameDescription = result.frameDescription
 
-    // metadata参数（焦距/光圈/相机风格/打光）- 焦距需要转换格式
-    if (result.lensFocalMm) {
-      // AI 可能返回数字或字符串，需要转换为预设格式（如 "24mm"）
+    // 焦距：AI 可能返回数字或字符串，先归一为预设格式（如 "24mm"）再走白名单
+    if (result.lensFocalMm !== undefined && result.lensFocalMm !== null && result.lensFocalMm !== '') {
       let lensValue = result.lensFocalMm
       if (typeof lensValue === 'number') {
         lensValue = `${lensValue}mm`
       } else if (typeof lensValue === 'string' && !lensValue.endsWith('mm')) {
         lensValue = `${lensValue}mm`
       }
-      // 验证是否为有效预设值
-      const validLensValues = ['24mm', '35mm', '50mm', '85mm', '125mm']
-      if (validLensValues.includes(lensValue)) {
-        output.lensFocalMm = lensValue
+      result.lensFocalMm = lensValue
+    }
+
+    // 枚举类字段白名单校验（提示词优化方案 §3.9）：
+    // 优化前只有 lensFocalMm 做白名单，cameraMovement/cameraAngle/lighting 等仅 typeof 检查，
+    // AI 输出的虚构运镜值（push_in / crash_zoom / reveal_push…）会直接落库，
+    // 下游 findCameraMovementPreset 查不到、segment-planner 标签表不认识 → 运镜信息静默丢失。
+    // 现在统一按注册表白名单校验，非法值拒绝落库并记 warn（上层据此可见拦截数）。
+    for (const field of ENUM_FILL_FIELDS) {
+      const raw = result[field]
+      if (typeof raw !== 'string' || raw === '') continue
+      const allowed = FILL_FIELD_VALUE_SETS[field]
+      if (allowed.has(raw)) {
+        output[field] = raw
+      } else {
+        console.warn(
+          `[EpisodeStoryboardGenerator] AI 填充字段 ${field} 返回非法枚举值 "${raw}"，已拒绝落库（不在镜头语言注册表白名单内）`,
+        )
       }
     }
-    if (result.aperture && typeof result.aperture === 'string') output.aperture = result.aperture
-    if (result.cameraStyle && typeof result.cameraStyle === 'string') output.cameraStyle = result.cameraStyle
-    if (result.lighting && typeof result.lighting === 'string') output.lighting = result.lighting
 
-    // 转场参数
-    if (result.transitionType && typeof result.transitionType === 'string') output.transitionType = result.transitionType
+    // 非枚举字段
     if (result.transitionDuration && typeof result.transitionDuration === 'number') output.transitionDuration = result.transitionDuration
     if (result.transitionDirection && typeof result.transitionDirection === 'string') output.transitionDirection = result.transitionDirection
 

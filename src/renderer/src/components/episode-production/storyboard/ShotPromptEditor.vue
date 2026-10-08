@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="prompt-rich">
     <!-- 顶部小提示条 -->
     <div class="p-toolbar">
@@ -136,6 +136,7 @@ import { parsePrompt, serializePrompt, type PromptLine } from './storyboard-prom
 import { mentionQueryAtCaret } from './shot-prompt-mention'
 import { splitEntityRef, serializeEntityToken } from '@/utils/shot-prompt-token'
 import { toImageUrl } from '@/utils/asset-url'
+import { DEFAULT_SPEECH_CHARS_PER_SEC } from '@shared/types/episode-production/workflow.types'
 
 export interface MentionEntityImage { id: string; path: string }
 export interface MentionEntity {
@@ -149,9 +150,15 @@ export interface MentionEntity {
 export interface ShotDialogue { speaker: string; text: string; id?: string }
 export interface ParamOption { value: string; label: string }
 
-/** 台词语音速率（字/秒），与 core storyboard-cogen.SPEECH_CHARS_PER_SEC 同值；
- *  renderer 不引 core，此处独立维护，用于「台词说得完吗」的超长提示。 */
-const SPEECH_CHARS_PER_SEC = 4.5
+/**
+ * 台词语音速率（字/秒）——§3.8 单一事实源。
+ *
+ * 优化前 renderer 自己写死 4.5、core 常量写死 4.5、提示词里写死 4.5（三处）；
+ * 现在统一取自 `shared/types`（core 的 prompt-context 也从那里取），
+ * 并按 props.speechCharsPerSec（项目 config 值）覆写，使前端提示与后端硬校验同口径。
+ * 计算属性定义在 defineProps 之后（下方 `effectiveSpeechRate`）。
+ */
+const DEFAULT_SPEECH_RATE = DEFAULT_SPEECH_CHARS_PER_SEC.zh
 
 /** 参数 key 的顺序（渲染顺序 + 序列化顺序） */
 const PARAM_KEYS = ['景别', '运镜', '时长', '风格'] as const
@@ -178,12 +185,23 @@ const props = defineProps<{
    * 不写回提示词字符串（渲染在 .pk-desc 之外、无 data-key，序列化天然跳过）。
    */
   dialoguesByShot?: Record<number, ShotDialogue[]>
+  /**
+   * 台词语速（字/秒，§3.8）：来自项目 config.speechCharsPerSec。
+   * 缺省用共享默认值（zh=4.5），使前端「台词说得完吗」提示与后端硬校验同口径。
+   */
+  speechCharsPerSec?: number
 }>()
 const emit = defineEmits<{
   'update:modelValue': [string]
   /** 台词 chip 编辑保存（写回 scene_dialogues，由父组件调 IPC 并同步本地数据） */
   'update-dialogue': [{ id: string; shotNumber: number; text: string }]
 }>()
+
+/** 生效语速：项目配置优先，缺省用共享默认值（§3.8 三处口径统一） */
+const effectiveSpeechRate = computed(() => {
+  const v = props.speechCharsPerSec
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : DEFAULT_SPEECH_RATE
+})
 
 const editorRef = ref<HTMLElement | null>(null)
 const mentionRef = ref<HTMLElement | null>(null)
@@ -251,7 +269,7 @@ function buildDialogueChipsHtml(shotNumber: number, durationSec: number): string
   return list
     .filter((d) => d?.text)
     .map((d) => {
-      const secs = d.text.length / SPEECH_CHARS_PER_SEC
+      const secs = d.text.length / effectiveSpeechRate.value
       const over = dur > 0 && secs > dur
       const tip = over
         ? `台词约 ${secs.toFixed(1)}s，超过镜头时长 ${dur}s，视频里可能说不完——请加长镜头时长或精简台词（点击编辑）`
@@ -711,7 +729,7 @@ const dlgEditStyle = computed<Record<string, string>>(() => ({
   left: `${dlgEditPos.value.left}px`,
   top: `${dlgEditPos.value.top}px`,
 }))
-const dlgEditSecs = computed(() => dlgEditText.value.trim().length / SPEECH_CHARS_PER_SEC)
+const dlgEditSecs = computed(() => dlgEditText.value.trim().length / effectiveSpeechRate.value)
 const dlgEditOver = computed(() => dlgEditDuration.value > 0 && dlgEditSecs.value > dlgEditDuration.value)
 
 function openDlgEdit(chip: HTMLElement): void {

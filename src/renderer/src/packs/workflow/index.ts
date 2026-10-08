@@ -20,7 +20,7 @@ export const workflowPack: RendererPackDefinition = {
     version: '1.0.0',
     description: '可视化流程编排与自动化执行——定义/版本/触发器/运行/分享',
     contributions: {
-      routePaths: ['/workflow', '/workflow/editor/:id', '/workflow-run/:token', '/workflow/runs/:definitionId', '/workflow/run/:runId', '/workflow/review/:runId', '/agent-tasks', '/agent-todos', '/agent-console'],
+      routePaths: ['/workflow', '/workflow/editor/:id', '/workflow-run/:token', '/workflow/runs', '/workflow/runs/:definitionId', '/workflow/run/:runId', '/workflow/review/:runId', '/agent-tasks', '/agent-todos', '/agent-console'],
     },
   },
   routes: [
@@ -43,7 +43,8 @@ export const workflowPack: RendererPackDefinition = {
       meta: { title: '工作流运行', guest: true },
     },
     {
-      path: '/workflow/runs/:definitionId',
+      // 带定义 id = 单工作流运行历史；不带 = 全部工作流的运行实例列表
+      path: '/workflow/runs/:definitionId?',
       name: 'WorkflowRunsHistory',
       component: () => import('@/views/workflow/WorkflowRunsHistory.vue'),
       meta: { title: '运行历史' },

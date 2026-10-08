@@ -9,6 +9,7 @@ import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { KnowledgeBaseService } from '@core/platform/services/knowledge-base.service'
 import { getKbBrainPanelService } from '@core/platform/services/kb-brain/brain-panel.service'
 import { KbDistillService } from '@core/platform/services/kb-brain/distill.service'
+import { safeBrainEmbed } from '@core/platform/services/kb-brain/smelt-common'
 import { KbBrainFsrsService } from '@core/platform/services/kb-brain/fsrs.service'
 import { KbResearchService } from '@core/platform/services/kb-brain/research.service'
 import { enqueueDigestForExisting } from '@core/platform/services/kb-brain/digest-orchestrator.service'
@@ -153,10 +154,13 @@ export function registerKbBrainHandlers(): void {
       const { parseBrainConfig } = await import('@core/platform/services/kb-brain/brain-config')
       const cfg = kbRow?.brainConfig ? parseBrainConfig(kbRow.brainConfig) : null
       const svc2 = new KbDistillService({
+        // 提炼是降级型消费（无向量也能按 type 分组），失败原因由 safeBrainEmbed 记日志
         embed: (texts, kb) =>
-          svc().getEmbeddingVectors(
+          safeBrainEmbed(
+            (t, k) => svc().getEmbeddingVectors(t, k.embeddingConfig ? JSON.parse(k.embeddingConfig) : {}),
             texts,
-            kb.embeddingConfig ? JSON.parse(kb.embeddingConfig) : {}
+            kb,
+            'kb:brain:distill',
           ),
         settingPatternEnabled: cfg?.patterns.settingEnabled ?? true,
         characterPatternEnabled: cfg?.patterns.characterEnabled ?? false,

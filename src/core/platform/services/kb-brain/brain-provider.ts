@@ -120,6 +120,7 @@ function providerBrainQuery(): BrainQueryService | null {
   if (!db.kbAtoms || !db.kbNotes || !db.kbChunks || !db.kbDocuments) return null
   const kbService = new KnowledgeBaseService()
   const deps: BrainQueryDeps = {
+    // 失败抛错（含真实原因），由 BrainQueryService 捕获后降级为纯词法召回并留痕
     embed: (texts, kb) => kbService.getEmbeddingVectors(texts, kb.embeddingConfig ? JSON.parse(kb.embeddingConfig) : {}),
     searchSimilar: (kbId, vector, topK) => {
       const vectors = getCoreDatabaseManager().kbVectors

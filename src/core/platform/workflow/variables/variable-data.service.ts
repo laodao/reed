@@ -5,7 +5,7 @@
  *              节点经注册器取用（同 tool-registry 模式）。
  */
 
-import type { DataTableDef, DataTableRow, WorkflowVariable, VariableScope } from '@shared/types/variable.types'
+import type { DataTableDef, DataTableRow, WorkflowVariable } from '@shared/types/variable.types'
 import type { VariableRepository, DataTableDefRepository, DataTableRowRepository } from '@core/database/repositories/variable.repositories'
 
 type DefRepoLike = {
@@ -23,9 +23,10 @@ type RowRepoLike = {
 }
 
 type VarRepoLike = {
-  findByScopeAndKey(scope: VariableScope, key: string): Promise<WorkflowVariable | null>
-  upsert(scope: VariableScope, key: string, valueJson: string): Promise<WorkflowVariable>
-  list(scope?: VariableScope): Promise<WorkflowVariable[]>
+  findByScopeAndKey(scope: string, key: string): Promise<WorkflowVariable | null>
+  upsert(scope: string, key: string, valueJson: string): Promise<WorkflowVariable>
+  list(scope?: string): Promise<WorkflowVariable[]>
+  deleteByScope(scope: string): Promise<number>
   delete(id: string): Promise<number>
 }
 
@@ -38,8 +39,8 @@ export class VariableDataService {
 
   // ==================== 变量 ====================
 
-  /** 读取变量（返回解析后的 JSON 值；无则 defaultValue 兜底） */
-  async getVariable(scope: VariableScope, key: string, defaultValue: unknown = null): Promise<unknown> {
+  /** 读取变量（返回解析后的 JSON 值；无则 defaultValue 兜底。scope 含 run:<runId> 复合作用域） */
+  async getVariable(scope: string, key: string, defaultValue: unknown = null): Promise<unknown> {
     const v = await this.variables.findByScopeAndKey(scope, key)
     if (!v) return defaultValue
     try {
@@ -49,12 +50,17 @@ export class VariableDataService {
     }
   }
 
-  async setVariable(scope: VariableScope, key: string, value: unknown): Promise<void> {
+  async setVariable(scope: string, key: string, value: unknown): Promise<void> {
     await this.variables.upsert(scope, key, JSON.stringify(value ?? null))
   }
 
-  async listVariables(scope?: VariableScope): Promise<WorkflowVariable[]> {
+  async listVariables(scope?: string): Promise<WorkflowVariable[]> {
     return this.variables.list(scope)
+  }
+
+  /** 按作用域整删（run:<runId> 随运行删除级联清理） */
+  async deleteByScope(scope: string): Promise<number> {
+    return this.variables.deleteByScope(scope)
   }
 
   async deleteVariable(id: string): Promise<void> {

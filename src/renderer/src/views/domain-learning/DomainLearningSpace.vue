@@ -98,6 +98,17 @@
       @done="onLessonPlanDriven"
     />
 
+    <!-- 知识点拆分方案确认弹窗（2026-10-06：复杂知识点 agent 提案拆分 → 确认即执行） -->
+    <ConceptSplitDialog
+      v-if="spaceId && currentConceptId"
+      v-model="conceptSplitVisible"
+      :space-id="spaceId"
+      :concept-id="currentConceptId"
+      :concept-name="currentConcept?.name"
+      mode="research"
+      @done="onConceptSplitDriven"
+    />
+
     <!-- 手工追加知识点（2026-09-12：用户补全知识体系；前置直连为已确认边） -->
     <el-dialog v-model="createConceptVisible" title="追加知识点" width="520px" append-to-body>
       <div class="cc-form">
@@ -608,6 +619,11 @@
 
           <!-- 已发布/草稿讲义（DlCardView） -->
           <div v-if="currentConcept.card" ref="lessonBodyRef" class="lesson-body block-body-pad" @mouseup="onLessonMouseUp">
+            <!-- 拆分方案（agent 判断装不下时提案）：待确认时高亮——确认即执行，比讲义方案优先展示 -->
+            <div v-if="conceptSplitHint?.pending" class="lesson-plan-bar pending">
+              <span class="lpb-text">{{ conceptSplitHint.text }}</span>
+              <el-button link type="primary" size="small" @click="openConceptSplit">查看拆分方案</el-button>
+            </div>
             <!-- 讲义方案（讲义流水线 Plan 阶段）：待确认时高亮，已确认也可回看规格 -->
             <div v-if="lessonPlanHint" class="lesson-plan-bar" :class="{ pending: lessonPlanHint.pending }">
               <span class="lpb-text">{{ lessonPlanHint.text }}</span>
@@ -623,6 +639,11 @@
           </div>
           <!-- 无讲义：提示 + 研究入口（dl:agent-send mode='research' 产出草稿卡片） -->
           <div v-else class="lesson-body empty-body">
+            <!-- 拆分方案（agent 判断装不下时提案）：待确认时高亮 -->
+            <div v-if="conceptSplitHint?.pending" class="lesson-plan-bar pending in-empty">
+              <span class="lpb-text">{{ conceptSplitHint.text }}</span>
+              <el-button link type="primary" size="small" @click="openConceptSplit">查看拆分方案</el-button>
+            </div>
             <!-- 已有讲义方案（正文还没写）：先确认方案，再逐区精写 -->
             <div v-if="lessonPlanHint" class="lesson-plan-bar pending in-empty">
               <span class="lpb-text">{{ lessonPlanHint.text }}</span>
@@ -1024,6 +1045,7 @@ import SpaceSettingsPanel from './SpaceSettingsPanel.vue'
 import AgentActivityStrip from './AgentActivityStrip.vue'
 import PlanConfirmDialog from './PlanConfirmDialog.vue'
 import LessonPlanDialog from './LessonPlanDialog.vue'
+import ConceptSplitDialog from './ConceptSplitDialog.vue'
 import type {
   DlBookSuggestion,
   DlCardSection,
@@ -1985,6 +2007,53 @@ async function onLessonPlanDriven(): Promise<void> {
   await refreshView()
 }
 
+// ==================== 知识点拆分方案（2026-10-06：复杂知识点 agent 提案拆分） ====================
+
+/** 拆分方案弹窗可见性 */
+const conceptSplitVisible = ref(false)
+
+/** 当前概念的拆分方案（只有属于当前概念时才认——拆分是按概念提案的） */
+const currentConceptSplit = computed(() => {
+  const p = store.plan
+  const id = currentConceptId.value
+  if (!p?.conceptSplit || !id) return null
+  if (p.conceptSplitConceptId && p.conceptSplitConceptId !== id) return null
+  return p.conceptSplit
+})
+
+/** 拆分方案提示条：待确认时高亮催办（确认即执行，执行后原概念转成分支、此条自然消失） */
+const conceptSplitHint = computed(() => {
+  const s = currentConceptSplit.value
+  if (!s) return null
+  if (store.plan?.conceptSplitConfirmed) {
+    return { pending: false, text: '拆分方案已确认执行——原知识点已转成分支目录，请依次为子知识点出讲义' }
+  }
+  return { pending: true, text: '助手建议把本知识点拆细：确认后会转成分支目录并新建子知识点（原讲义退役）' }
+})
+
+function openConceptSplit(): void {
+  conceptSplitVisible.value = true
+}
+
+/** 拉当前概念的拆分方案；有**待确认**方案时自动弹窗（与讲义方案弹窗同款体验） */
+async function openConceptSplitIfPending(): Promise<boolean> {
+  const id = currentConceptId.value
+  if (!id) return false
+  const p = await store.fetchPlan(spaceId.value, id)
+  if (!p?.conceptSplit) return false
+  if (p.conceptSplitConceptId && p.conceptSplitConceptId !== id) return false
+  if (!p.conceptSplitConfirmed) {
+    conceptSplitVisible.value = true
+    return true
+  }
+  return false
+}
+
+/** 拆分方案驱动过一轮（确认即执行 / 调整后重做方案）后的收尾 */
+async function onConceptSplitDriven(): Promise<void> {
+  await refreshView()
+}
+
 /**
  * 区级「重写此区」（2026-09-14）：只重做这一区，不整篇重来。
  * 把该区现状（key/版式/正文）交给研究助手，要求**只回这一区的新 md**，其余区逐字保留，
@@ -2514,7 +2583,11 @@ async function reattachRunningResearch(): Promise<void> {
       reattachUnsub?.()
       reattachUnsub = null
       researching.value = false
-      void refreshView().then(() => void openLessonPlanIfPending())
+      // 拆分提案优先于讲义方案弹出（agent 判断装不下时不催讲义）
+      void refreshView().then(async () => {
+        if (await openConceptSplitIfPending()) return
+        await openLessonPlanIfPending()
+      })
     }
   })
 }
@@ -2561,8 +2634,8 @@ async function researchConcept(): Promise<void> {
     researchResultText.value = result?.content ?? ''
     // 研究完成后重拉视图：卡片草稿/新关系/掌握度一并刷新
     await refreshView()
-    // 讲义流水线（2026-09-14）：本轮若提交了「讲义方案」草案 → 自动弹窗请用户确认，
-    // 确认后才驱动逐区精写（Plan → Do 分离，与知识体系方案同款体验）
+    // 拆分提案优先（agent 判断装不下时不催讲义）；否则按讲义流水线弹方案确认（Plan → Do 分离）
+    if (await openConceptSplitIfPending()) return
     await openLessonPlanIfPending()
   } finally {
     unsub()

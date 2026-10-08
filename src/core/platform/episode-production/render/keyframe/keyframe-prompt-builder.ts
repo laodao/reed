@@ -36,6 +36,10 @@ import {
   describeFrameMoment,
   type KeyframeRole,
 } from './keyframe-chain-strategy'
+import { renderEraAnchor, resolveEraProfile } from '../../prompts/era-profiles'
+import { resolveStyle } from '../../prompts/style-resolver'
+import type { PromptContext } from '../../prompts/prompt-context'
+import { describeCharacterRace } from '../../assets/prompts/asset-identity-prompt'
 
 /**
  * 图像风格配置
@@ -48,12 +52,11 @@ export interface StyleConfig {
 
 /**
  * F4 / C6（2026-09-20，人物一致性修复）：当该帧带角色参考图时使用的风格前缀。
- * PRESET_STYLES.cinematic 的写实电影词（"professional photography, movie scene"）
- * 会把 Q 版等非写实角色参考图写实化——风格词压过参考图。有角色参考图时改用
- * "与参考图保持一致"前缀，把风格决定权交给参考图；无参考图时仍用 styleConfig.stylePrefix。
+ *
+ * @deprecated 2026-10-06（§4.4 风格单一来源）：常量迁到 `prompts/style-resolver.ts`，
+ * 这里 re-export 仅为兼容既有引用；新代码请用 `resolveStyle()`。
  */
-export const REFERENCE_MATCH_STYLE_PREFIX =
-  '画面风格、人物外观与参考图保持一致（match the reference images exactly: same character face, hairstyle, outfit and art style）'
+export { REFERENCE_MATCH_STYLE_PREFIX } from '../../prompts/style-resolver'
 
 /**
  * 预设风格配置
@@ -286,25 +289,52 @@ export interface BuildKeyframePromptInput {
    * 防止古风剧本关键帧出现现代建筑/服饰（实测尾帧崩成现代公园照片）。
    */
   storyEra?: string | null
-  /** 剧集故事地域（保留参数位；当前硬约束只看 storyEra） */
+  /** 剧集故事地域（§3.12：与 storyEra 一起无条件注入时代锚） */
   storyRegion?: string | null
+  /**
+   * 时代档案键（§2.5 显式配置优先）：项目可直接指定 `ancient_chinese`/`modern`/
+   * `near_future`/`period_drama`，不再依赖 storyEra 正则猜测。
+   */
+  eraProfileKey?: string | null
+  /**
+   * 统一提示词上下文（§4.4）：提供 project stylePrompt（单一注入点，只在末尾追加一次）
+   * 与时代档案 negative。缺省时行为等价优化前（不追加项目风格词）。
+   */
+  promptContext?: PromptContext
 }
 
 /**
- * 古风判定（2026-09-21）：storyEra 命中古/武侠/朝代词。
- * 词表与 main-image-generator 的年代约束语境保持一致（古/武侠/仙侠/历朝历代）。
+ * 时代约束（2026-10-06 §2.5：删除本文件与 asset-identity-prompt 的双实现在此收敛）。
+ *
+ * 历史问题：本文件用 20 词正则 + 中文单语后缀 + negative `…power lines, glass`，
+ * 资产侧用 10 词正则 + 中英双写后缀 + negative `…electricity, glass curtain wall`——
+ * 同一部剧在关键帧与资产图两条链路上得到不同的时代约束（词表互不包含）。
+ *
+ * 现在统一由 `prompts/era-profiles.ts` 提供：`isAncientEra` 保留为兼容入口，
+ * 后缀/负向词改为从档案取（`resolveEraProfile` 支持显式 eraProfileKey 与文本推断）。
  */
-const ANCIENT_ERA_RE =
-  /古|武侠|仙侠|修真|朝代|历史|唐|宋|元|明|清|汉|秦|隋|晋|三国|春秋|战国|五代|架空/
+export { eraConstraintOf, resolveEraProfile } from '../../prompts/era-profiles'
 
-/** 古风硬约束词段（正向 + 负向） */
-export const ANCIENT_ERA_PROMPT_SUFFIX =
-  '严格古代中国风场景，严禁现代建筑、现代服饰、现代物品、现代交通工具、电线杆、玻璃幕墙'
-export const ANCIENT_ERA_NEGATIVE_SUFFIX =
-  'modern buildings, modern clothing, cars, power lines, glass'
+/** 古风硬约束词段（正向 + 负向）——取自古风档案，保持历史导出名兼容 */
+export const ANCIENT_ERA_PROMPT_SUFFIX = resolveEraProfile('ancient_chinese').constraintSuffix
+export const ANCIENT_ERA_NEGATIVE_SUFFIX = resolveEraProfile('ancient_chinese').negativeExtra
 
+/**
+ * 是否古风年代。
+ *
+ * @deprecated 2026-10-06（§2.5）：仅作兼容入口。新代码直接用
+ * `resolveEraProfile(eraProfileKey, storyEra)` 取档案——
+ * 它同时支持显式配置（不再依赖正则猜测）与全部时代（现代/近未来也有锚点）。
+ */
 export function isAncientEra(storyEra: string | null | undefined): boolean {
-  return !!storyEra && ANCIENT_ERA_RE.test(storyEra)
+  return resolveEraProfile(null, storyEra).key === 'ancient_chinese'
+}
+
+/**
+ * 解析本帧应使用的时代档案：显式 eraProfileKey 优先，否则按 storyEra 文本推断。
+ */
+function eraProfileFor(input: { storyEra?: string | null; eraProfileKey?: string | null }) {
+  return resolveEraProfile(input.eraProfileKey, input.storyEra)
 }
 
 /** 多帧 prompt 输出：正向 + 负向 */
@@ -330,12 +360,23 @@ export function buildKeyframePrompt(
 ): KeyframePromptOutput {
   const parts: string[] = []
 
-  // 1. 风格前缀（F4：有角色参考图时改用"与参考图一致"前缀，风格决定权交给参考图）
-  parts.push(
-    input.hasCharacterReference
-      ? REFERENCE_MATCH_STYLE_PREFIX
-      : input.styleConfig.stylePrefix,
-  )
+  // §4.4 风格单一来源：前缀/后缀/项目风格词/负面词统一由 resolveStyle 解析。
+  // 优化前项目 stylePrompt 有 5 个注入点且互不对账（身份段风格项、锚点前缀、
+  // 第 1 段、第 12 段、调用方尾部追加），这里收敛为"prefix 管主体、
+  // suffix 管整体质感、projectStyle 只追加一次"。
+  //
+  // 时代 negative 显式传入：调用方可能只给 storyEra 而没有完整 promptContext，
+  // 从 eraProfileFor(input) 派生可保证时代约束不因缺 ctx 而静默丢失。
+  const eraProfileForStyle = eraProfileFor(input)
+  const resolvedStyle = resolveStyle({
+    styleConfig: input.styleConfig,
+    hasCharacterReference: input.hasCharacterReference,
+    ctx: input.promptContext,
+    eraNegativeExtra: eraProfileForStyle.negativeExtra,
+  })
+
+  // 1. 风格前缀（有角色参考图时让位给"与参考图一致"前缀，防写实词把 Q 版写实化）
+  parts.push(resolvedStyle.prefix)
 
   // 2. 场景描述
   if (input.sceneDescription) parts.push(input.sceneDescription)
@@ -350,16 +391,35 @@ export function buildKeyframePrompt(
     if (loc.description) parts.push(loc.description)
   }
 
+  // 4b. 时代锚（§3.12）：无条件注入故事年代/地域。
+  // 优化前只有命中古风正则才有时代约束，"1980 年代""近未来"完全无锚——
+  // 资产阶段反推的时代设定到这里断链，模型只能自由发挥。
+  const eraAnchor = renderEraAnchor({
+    storyEra: input.storyEra ?? undefined,
+    storyRegion: input.storyRegion ?? undefined,
+    eraProfile: eraProfileFor(input),
+  })
+  if (eraAnchor) parts.push(`[时代背景] ${eraAnchor}`)
+
   // 5. 画面描述
   if (input.frameDescription) parts.push(input.frameDescription)
   if (input.subject) parts.push(`main subject: ${input.subject}`)
 
   // 6. 角色（effective + sceneRole 状态）
+  // §3.12：身份字段补全——优化前只有 name/appearance/outfit，资产阶段精心反推的
+  // 性别/年龄/人种在此断链（D2 身份段与 F1 角色段字段不对称）。
   for (const c of input.characters) {
-    const eff = c.effective
+    const eff = c.effective as typeof c.effective & {
+      gender?: string | null
+      age?: number | null
+      race?: string | null
+    }
     const sceneRole = c.sceneRole ?? {}
     const charDesc: string[] = []
     if (eff.name) charDesc.push(eff.name)
+    if (eff.gender) charDesc.push(`性别：${eff.gender}`)
+    if (typeof eff.age === 'number' && eff.age > 0) charDesc.push(`年龄：${eff.age}`)
+    if (eff.race) charDesc.push(`人种：${describeCharacterRace(eff.race)}`)
     if (eff.appearance) charDesc.push(eff.appearance)
     // outfit：sceneRole 优先（场景临时换装），fallback 到 effective.outfit
     const outfit = sceneRole.outfit ?? eff.outfit
@@ -419,18 +479,19 @@ export function buildKeyframePrompt(
     parts.push(`[user direction] ${input.userPrompt.trim()}`)
   }
 
-  // 12. 质量后缀
-  parts.push(input.styleConfig.qualitySuffix)
+  // 12. 质量后缀 + 13. 时代约束（§4.4：后缀与项目风格词统一在此成型）
+  parts.push(resolvedStyle.suffix)
 
-  // 13. 古风硬约束（2026-09-21 F 项）：古风剧本严禁现代元素入镜
-  const ancient = isAncientEra(input.storyEra)
-  if (ancient) parts.push(ANCIENT_ERA_PROMPT_SUFFIX)
+  const eraProfile = eraProfileFor(input)
+  if (eraProfile.constraintSuffix) parts.push(eraProfile.constraintSuffix)
+
+  // 项目风格词：**只追加一次**（优化前 builder 内不加、调用方 :1266 再加，
+  // 与身份段/锚点前缀的风格项重复；现在统一在 builder 内末尾追加）
+  if (resolvedStyle.projectStyle) parts.push(resolvedStyle.projectStyle)
 
   return {
     prompt: parts.filter(Boolean).join(', '),
-    negativePrompt: ancient
-      ? `${input.styleConfig.negativePrompt}, ${ANCIENT_ERA_NEGATIVE_SUFFIX}`
-      : input.styleConfig.negativePrompt,
+    negativePrompt: resolvedStyle.negative,
   }
 }
 

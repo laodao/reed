@@ -128,13 +128,43 @@ export function mergeInstanceEntries(existingJson: string | null, incoming: Arra
   return { merged, added }
 }
 
-/** 生产默认嵌入：宿主 KB 服务的嵌入调用（动态 import 防 import 环；失败返回 null 走降级） */
+/**
+ * 生产默认嵌入：宿主 KB 服务的嵌入调用（动态 import 防 import 环）。
+ *
+ * brain 侧是**降级型**消费（嵌入失败 → 按 type 分组 / 空向量中心度），因此这里保留
+ * 「返回 null 走降级」的契约；但真实原因必须打进日志——此前 `catch {}` 静默吞掉，
+ * 检索/聚类质量下降时完全无从排查（与 KB 文档处理「只报向量生成失败」同源）。
+ */
 export async function defaultBrainEmbed(texts: string[], kb: { id: string; embeddingConfig: string | null }): Promise<number[][] | null> {
   try {
     const { KnowledgeBaseService } = await import('@core/platform/services/knowledge-base.service')
     const svc = new KnowledgeBaseService()
     return await svc.getEmbeddingVectors(texts, kb.embeddingConfig ? (JSON.parse(kb.embeddingConfig) as Record<string, unknown>) : {})
-  } catch {
+  } catch (e: unknown) {
+    console.warn(
+      `[BrainEmbed] 嵌入失败，走降级路径: ${e instanceof Error ? e.message : String(e)}`,
+    )
+    return null
+  }
+}
+
+/**
+ * 降级型嵌入调用的安全包装：失败返回 null 并记录真实原因。
+ * 供 distill / entity-summary 等「无向量也能继续」的 brain 服务复用，
+ * 避免各处重复 `catch {}` 吞掉原因。
+ */
+export async function safeBrainEmbed(
+  embedFn: (texts: string[], kb: { id: string; embeddingConfig: string | null }) => Promise<number[][]>,
+  texts: string[],
+  kb: { id: string; embeddingConfig: string | null },
+  context: string,
+): Promise<number[][] | null> {
+  try {
+    return await embedFn(texts, kb)
+  } catch (e: unknown) {
+    console.warn(
+      `[BrainEmbed] ${context} 嵌入失败，走降级路径: ${e instanceof Error ? e.message : String(e)}`,
+    )
     return null
   }
 }

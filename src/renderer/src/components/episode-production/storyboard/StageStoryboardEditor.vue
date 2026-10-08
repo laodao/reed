@@ -175,6 +175,7 @@
             :entities="mentionEntities"
             :style-options="styleOptions"
             :dialogues-by-shot="dialoguesByShot"
+            :speech-chars-per-sec="speechCharsPerSec"
             @update:model-value="dirty = true"
             @update-dialogue="onUpdateDialogue"
           />
@@ -281,6 +282,8 @@ const videoProviders = ref<Array<{ providerConfigId: string; name: string; type?
 const videoProviderId = ref('')
 const videoModelId = ref('')
 const videoModels = computed(() => videoProviders.value.find(p => p.providerConfigId === videoProviderId.value)?.models ?? [])
+/** 台词语速（字/秒，§3.8）：项目 config.speechCharsPerSec；缺省由子组件用共享默认值 */
+const speechCharsPerSec = ref<number | undefined>(undefined)
 
 /** ComfyUI 网关的 H3 必须带参考图：文生视频必然失败（refs 为空直接报错），强制参考图模式 */
 const isComfyUIProvider = computed(
@@ -875,12 +878,21 @@ async function loadVideoProviders(): Promise<void> {
   }
 }
 
-/** 读项目 config.videoModel 作为默认视频模型（provider 未配置则保留第一个可用项） */
+/**
+ * 读项目 config：视频模型默认项 + 台词语速（§3.8）。
+ *
+ * 语速传入 ShotPromptEditor 后，「台词说得完吗」的前端提示与后端硬校验同口径——
+ * 优化前后端按 4.5 字/秒拒绝，前端却可能按另一个值提示（或反之）。
+ */
 async function loadProjectConfig(): Promise<void> {
   if (!props.projectId) return
   const r = await window.electronAPI.episodeProduction.getProject(props.projectId)
   if (!r?.success || !r.data) return
   videoRenderPath.value = r.data.config?.renderPath === 'keyframe' ? 'keyframe' : 'assetRef'
+  const rate = r.data.config?.speechCharsPerSec
+  if (typeof rate === 'number' && Number.isFinite(rate) && rate > 0) {
+    speechCharsPerSec.value = rate
+  }
   const vm = r.data.config?.videoModel
   if (vm?.providerConfigId && videoProviders.value.some(p => p.providerConfigId === vm.providerConfigId)) {
     videoProviderId.value = vm.providerConfigId

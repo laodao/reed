@@ -1,10 +1,11 @@
 /**
- * 内置「主题深度研究」模板图断言（topic-research.json v4：调研方法技能 + until 循环研究轮）
+ * 内置「主题深度研究」模板图断言（topic-research.json v5：用途自适应 + 信源四级分级 + 素材密度优先）
  * @module tests/unit/core/platform/workflow/topic-research-graph
- * @description 直接读 builtin-apps 下模板 JSON，断言 v4 结构：
- *              澄清契约 → 技能出《调研方法》方案(skill-call) → 契约编译(已知地图/逐条验收)
+ * @description 直接读 builtin-apps 下模板 JSON，断言 v5 结构：
+ *              澄清契约(领域无关问卷) → 技能出《调研方法》方案(skill-call) → 契约编译(已知地图/逐条验收/
+ *              信源四级分级=官方机构·官方媒体·互联网媒体·互联网搜索，跨渠道取材不偏官方)
  *              → until 循环{研究执行体→另一模型独立评估→打包}（评估通过即提前收尾；达 maxRounds
- *              上限必收尾）→ 按技能骨架溯源成稿 → 人工确认(可改全文) → 存档。
+ *              上限必收尾）→ 按用途成稿(写作用途=高密度写作素材) → 人工确认(可改全文) → 存档。
  *              并钉死分层边界：报告内容/分析维度/数据来源经验在技能里，模板提示词不得再内联
  *              领域特定硬要求（否则换个研究领域就跑偏）。
  */
@@ -18,7 +19,7 @@ const raw = JSON.parse(readFileSync(resolve(__dirname, '../../../../../src/core/
   kind?: string
   formatVersion?: number
   name?: string
-  settings?: { maxTotalToolCalls?: number } | null
+  settings?: { maxTotalToolCalls?: number; maxDurationMs?: number } | null
   graph?: {
     version?: number
     nodes: Array<{ id: string; type: string; name?: string; config?: Record<string, unknown> }>
@@ -43,15 +44,16 @@ function edgeTarget(source: string, kind: string): string | undefined {
   return hit?.targetNodeId
 }
 
-describe('内置「主题深度研究」模板（topic-research.json v4：调研方法技能 + until 循环研究轮）', () => {
+describe('内置「主题深度研究」模板（topic-research.json v5：用途自适应 + 信源四级分级 + 素材密度优先）', () => {
   it('导出格式与命名', () => {
     expect(raw.kind).toBe('the-bot-workflow')
     expect(raw.formatVersion).toBe(1)
     expect(raw.name).toContain('深度研究')
   })
 
-  it('运行级总预算已配置（settings.maxTotalToolCalls=120，跨轮共享不再每轮等额）', () => {
-    expect(raw.settings?.maxTotalToolCalls).toBe(120)
+  it('运行级预算已配置（maxTotalToolCalls=300 跨轮共享；maxDurationMs=2h 兜底多轮深研）', () => {
+    expect(raw.settings?.maxTotalToolCalls).toBe(300)
+    expect(raw.settings?.maxDurationMs).toBe(7_200_000)
   })
 
   it('节点集合与数量（13 节点 15 边：…→ method1(技能方案) → plan1 → round1(until) → …）', () => {
@@ -63,17 +65,21 @@ describe('内置「主题深度研究」模板（topic-research.json v4：调研
     expect(graph.edges.length).toBe(15)
   })
 
-  it('start 输入完整：主题/深度/轮数/知识库/双模型 + 用户产出规格与参照样本', () => {
+  it('start 输入完整：主题/用途/深度/轮数/知识库/双模型 + 用户产出规格与参照样本', () => {
     const keys = startInputs.map(i => i.key)
     expect(keys).toEqual(expect.arrayContaining([
-      'topic', 'focus', 'depth', 'maxRounds', 'kbs', 'researcherModel', 'evaluatorModel',
+      'topic', 'purpose', 'focus', 'depth', 'maxRounds', 'kbs', 'researcherModel', 'evaluatorModel',
       'outputSpecs', 'outputRequirements', 'referenceSample',
     ]))
+    // 研究用途决定成稿形态：写作用途=素材密度优先
+    const purpose = startInputs.find(i => i.key === 'purpose')!
+    expect(purpose.type).toBe('select')
+    expect(purpose.options?.map(o => o.value)).toContain('article-writing')
     const specs = startInputs.find(i => i.key === 'outputSpecs')!
     expect(specs.type).toBe('select')
     expect(specs.multi).toBe(true)
     expect((specs.options ?? []).map(o => o.value)).toEqual([
-      'quant-formula', 'market-matrix', 'timeline', 'risk', 'checklist', 'counterpoint', 'cited-links',
+      'timeline', 'key-data', 'actors', 'cases', 'quotes', 'matrix', 'quant-formula', 'counterpoint', 'risk', 'checklist', 'cited-links',
     ])
     expect(startInputs.find(i => i.key === 'outputRequirements')!.type).toBe('textarea')
     expect(startInputs.find(i => i.key === 'referenceSample')!.type).toBe('textarea')
@@ -96,21 +102,14 @@ describe('内置「主题深度研究」模板（topic-research.json v4：调研
     expect(em.required).toBe(true)
   })
 
-  it('clarify 为 form-collect 结构化问卷：主体/执照/目标市场/品类/内容能力/可承受亏损，approve→method1 / reject→end', () => {
+  it('clarify 为 form-collect 领域无关问卷：目标/读者/角度/必覆盖/范围/背景，approve→method1 / reject→end', () => {
     expect(nodeById.get('clarify')?.type).toBe('form-collect')
     const fields = (config('clarify').fields ?? []) as Array<{ key: string; type?: string; multi?: boolean; options?: Array<{ value: string }> }>
     expect(fields.map(f => f.key).sort()).toEqual([
-      'category', 'contentAbility', 'context', 'entityType', 'goal', 'licenseStatus', 'lossTolerance', 'targetMarkets',
+      'angle', 'audience', 'context', 'goal', 'mustCover', 'scope',
     ])
-    const byKey = Object.fromEntries(fields.map(f => [f.key, f]))
-    expect(byKey.entityType.type).toBe('select')
-    expect(byKey.entityType.options?.map(o => o.value)).toEqual(['cn-individual', 'cn-sole', 'cn-ltd', 'hk-ltd', 'overseas', 'other'])
-    expect(byKey.licenseStatus.type).toBe('select')
-    expect(byKey.targetMarkets.type).toBe('select')
-    expect(byKey.targetMarkets.multi).toBe(true)
-    expect(byKey.targetMarkets.options?.map(o => o.value)).toEqual(['MY', 'TH', 'PH', 'VN', 'SG', 'ID', 'US', 'EU', 'UK', 'JP', 'undecided'])
-    expect(byKey.contentAbility.type).toBe('select')
-    expect(byKey.lossTolerance.type).toBe('select')
+    // 领域无关：全部自由文本，不再有电商专用选项（主体/执照/目标市场/品类）
+    for (const f of fields) expect(f.type).toBe('string')
     expect(edgeTarget('start', 'normal')).toBe('clarify')
     expect(edgeTarget('clarify', 'approve')).toBe('method1')
     expect(edgeTarget('clarify', 'reject')).toBe('end')
@@ -132,8 +131,8 @@ describe('内置「主题深度研究」模板（topic-research.json v4：调研
     expect(byKey.topic).toContain('{{start.focus}}')
     expect(byKey.goal).toContain('{{clarify.values.goal}}')
     expect(byKey.depth).toContain('{{start.depth}}')
-    for (const kw of ['entityType', 'licenseStatus', 'targetMarkets', 'category', 'contentAbility', 'lossTolerance']) {
-      expect(byKey.constraints, kw).toContain(`clarify.values.${kw}`)
+    for (const kw of ['purpose', 'audience', 'angle', 'mustCover', 'scope', 'context']) {
+      expect(byKey.constraints, kw).toContain(kw === 'purpose' ? '{{start.purpose}}' : `clarify.values.${kw}`)
     }
     expect(byKey.requiredOutputs).toContain('{{start.outputSpecs}}')
     expect(byKey.requiredOutputs).toContain('{{start.outputRequirements}}')
@@ -149,15 +148,18 @@ describe('内置「主题深度研究」模板（topic-research.json v4：调研
     expect(config('plan1').jsonMode).toBe(true)
     const sp = str('plan1', 'systemPrompt')
     for (const kw of ['已知地图', '验收标准', '先验', 'outputSpecs', 'acceptance']) expect(sp).toContain(kw)
+    // 信源四级分级 + 跨渠道取材：编译器必须做渠道搭配，不得写死来源门槛
+    for (const kw of ['官方机构', '官方媒体', '互联网媒体', '互联网搜索', '跨渠道', '分级标注']) expect(sp).toContain(kw)
+    expect(sp).not.toContain('≥2 个独立来源')
     // 经验已移入技能：模板提示词不得再内联领域特定硬要求
     for (const kw of ['类型骨架', '贡献利润', '采购倒推', 'D1–D90']) expect(sp, kw).not.toContain(kw)
     const prompt = str('plan1', 'prompt')
     expect(prompt).toContain('{{start.topic}}')
+    expect(prompt).toContain('{{start.purpose}}')
     expect(prompt).toContain('{{start.maxRounds}}')
     expect(prompt).toContain('{{clarify.values.goal}}')
-    expect(prompt).toContain('{{clarify.values.entityType}}')
-    expect(prompt).toContain('{{clarify.values.targetMarkets}}')
-    expect(prompt).toContain('{{clarify.values.lossTolerance}}')
+    expect(prompt).toContain('{{clarify.values.mustCover}}')
+    expect(prompt).toContain('{{clarify.values.scope}}')
     // 契约编译器必须吃到技能产出的《调研方法》方案
     expect(prompt).toContain('{{method1.content}}')
     // 用户产出规格/要求/参照样本必须并入规划与验收
@@ -165,8 +167,8 @@ describe('内置「主题深度研究」模板（topic-research.json v4：调研
     expect(prompt).toContain('{{start.outputRequirements}}')
     expect(prompt).toContain('{{start.referenceSample}}')
     // 研究轮与成稿都吃到问卷约束
-    expect(str('r1', 'task')).toContain('{{clarify.values.targetMarkets}}')
-    expect(str('writer', 'prompt')).toContain('{{clarify.values.lossTolerance}}')
+    expect(str('r1', 'task')).toContain('{{clarify.values.mustCover}}')
+    expect(str('writer', 'prompt')).toContain('{{clarify.values.scope}}')
   })
 
   it('round1 为 until 循环：stopExpression/stopValue/maxIterations/errorPolicy=skip，边结构符合循环', () => {
@@ -190,24 +192,35 @@ describe('内置「主题深度研究」模板（topic-research.json v4：调研
     const whitelist = (config('r1').toolWhitelist ?? []) as string[]
     for (const t of ['web_search', 'wf_web_extract', 'wf_kb_retrieve', 'wf_kb_list']) expect(whitelist).toContain(t)
     expect(Number(config('r1').maxIterations)).toBeGreaterThan(0)
-    expect(Number(config('r1').maxToolCalls)).toBeGreaterThan(0)
+    // 素材密度需要检索量兜底：单轮工具调用预算不得低于 20
+    expect(Number(config('r1').maxToolCalls)).toBeGreaterThanOrEqual(20)
     expect(Number(config('r1').maxDurationMs)).toBeGreaterThan(0)
     expect(str('r1', 'providerConfigId')).toContain('{{start.researcherModel.providerConfigId}}')
     const task = str('r1', 'task')
     expect(task).toContain('{{round1.index}}')
     expect(task).toContain('{{round1.prev.result.notes}}')
     expect(task).toContain('{{round1.prev.result.gaps}}')
+    expect(task).toContain('{{start.purpose}}')
     const sp = str('r1', 'systemPrompt')
-    for (const kw of ['wf_kb_list', '禁止编造', '证据锚', '未查到', '以官方最新为准', '证据层级', '量级', '增量', '深度已足够成稿']) expect(sp).toContain(kw)
+    for (const kw of ['wf_kb_list', '禁止编造', '证据锚', '未查到', '以官方最新为准', '来源层级', '量级', '增量', '深度已足够成稿']) expect(sp).toContain(kw)
+    // 信源四级分级 + 跨渠道：层级低保留并标注，不得只从官方机构渠道取材
+    for (const kw of ['官方机构', '官方媒体', '互联网媒体', '互联网搜索', '网络信息', '单一来源', '不得只从官方机构渠道取材']) expect(sp).toContain(kw)
+    // 素材密度导向：具体事实是硬要求
+    expect(sp).toContain('素材密度')
+    expect(sp).toContain('引语')
   })
 
-  it('e1 独立评估：evaluatorModel、jsonMode、深度质量核对', () => {
+  it('e1 独立评估：evaluatorModel、jsonMode、素材密度与分级标注核对', () => {
     expect(nodeById.get('e1')?.type).toBe('llm-chat')
     expect(config('e1').jsonMode).toBe(true)
     expect(str('e1', 'providerConfigId')).toContain('{{start.evaluatorModel.providerConfigId}}')
     expect(str('e1', 'modelId')).toContain('{{start.evaluatorModel.modelId}}')
     const sp = str('e1', 'systemPrompt')
-    for (const kw of ['验收标准', 'pass', 'revise', '幻觉', '量级', '证据层级', '非阻塞', 'outputSpecs']) expect(sp).toContain(kw)
+    for (const kw of ['验收标准', 'pass', 'revise', '幻觉', '量级', '来源层级', '非阻塞', 'outputSpecs']) expect(sp).toContain(kw)
+    // 评估导向：素材密度不足可判 revise；「来源不够权威」与渠道单一本身不得成为 revise 理由
+    expect(sp).toContain('素材密度')
+    expect(sp).toContain('不要因为「信息不够权威」')
+    expect(sp).toContain('四级')
     const ePrompt = str('e1', 'prompt')
     expect(ePrompt).toContain('{{r1.answer}}')
     expect(ePrompt).toContain('{{start.outputSpecs}}')
@@ -233,13 +246,18 @@ describe('内置「主题深度研究」模板（topic-research.json v4：调研
     expect(prompt).toContain('{{round1.last.result.notes}}')
     expect(prompt).toContain('{{round1.last.result.verdict}}')
     expect(prompt).toContain('{{round1.iterations}}')
+    expect(prompt).toContain('{{start.purpose}}')
     expect(prompt).toContain('{{start.outputSpecs}}')
     expect(prompt).toContain('{{start.outputRequirements}}')
     expect(prompt).toContain('{{start.referenceSample}}')
     // 报告"该包含哪些内容"来自技能方案，不在模板里写死
     expect(prompt).toContain('{{method1.content}}')
     const sp = str('writer', 'systemPrompt')
-    for (const kw of ['execSummary', 'sourcesMd', 'actionPlan', 'limits', '官方一手', '[标题](URL)', '禁止照抄']) {
+    for (const kw of ['execSummary', 'sourcesMd', 'actionPlan', 'limits', '官方机构', '[标题](URL)', '禁止照抄']) {
+      expect(sp, kw).toContain(kw)
+    }
+    // 参考来源按四级分层；网络信息可用但标注；内容导向信息密度优先
+    for (const kw of ['官方媒体', '互联网媒体', '互联网搜索', '网络信息，未留链接', '信息密度']) {
       expect(sp, kw).toContain(kw)
     }
     for (const kw of ['采购倒推', 'D1–D90']) expect(sp, kw).not.toContain(kw)

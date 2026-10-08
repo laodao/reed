@@ -23,184 +23,61 @@ import type {
 } from '@shared/types/episode-production'
 import type { ScriptGenerationResult } from './types'
 import { callAI, callAIWithContinue, extractJsonFromResponse, parseJsonString } from './_helpers'
-import { validateScriptCoverage, coverageWarnings } from './script-coverage'
+import {
+  validateScriptCoverage,
+  coverageWarnings,
+  checkDialogueConsistency,
+  dialogueConsistencyWarnings,
+  buildCoverageReport,
+  coverageSummaryLine,
+  type CoverageReport,
+} from './script-coverage'
 import { buildScriptGenerationDiscipline } from '@core/platform/services/writing-methodology'
 import { normalizeBindingName } from '@core/platform/episode-production/assets/services/binding-name-utils'
 
-// ==================== 提示词共享片段 ====================
+// ==================== 提示词共享片段（2026-10-06 §2.4：迁到 prompts/specs 单一来源） ====================
 //
-// 剧本生成 / AI 续写 / 粘贴正文拆分 三类任务共用同一套输出契约（marker 标记、
-// 场景 JSON 结构、binding 强约束、字段质量要求）。这些片段抽成常量再由各提示词
-// 拼装，避免同一份 120 行规范在多个提示词里复制粘贴后各自漂移。
+// 剧本生成 / AI 续写 / 粘贴正文拆分 / 梗概→场景 / 单场景重拆 五类任务共用同一套输出契约
+// （marker 标记、场景 JSON 结构、binding 强约束、字段质量要求）。片段现集中定义在
+// `prompts/specs/index.ts`（单文件单导出），本文件只 import，不再各自抄写——
+// 历史上 `generateScenesFromSynopsis` 手抄片段①导致与片段①漂移。
+
+import {
+  BINDING_CONSTRAINT_SPEC,
+  SCENE_SPLIT_PRINCIPLES_SPEC,
+  SCENE_JSON_EXAMPLE_SPEC,
+  FIELD_QUALITY_SPEC,
+  ROSTER_LIST_SPEC,
+  SCRIPT_FIDELITY_SPEC,
+  DIALOGUE_SINGLE_SOURCE_SPEC,
+  NARRATION_QUALITY_SPEC,
+} from '../../prompts/specs'
+import {
+  renderStoryBackgroundBlock,
+  renderTargetDurationGuidance,
+  type PromptContext,
+} from '../../prompts/prompt-context'
+import { renderGenreDiscipline } from '../../prompts/genre-profiles'
+import { createDefaultPromptContext } from '../../prompts/prompt-context'
+
+export {
+  BINDING_CONSTRAINT_SPEC,
+  SCENE_SPLIT_PRINCIPLES_SPEC,
+  SCENE_JSON_EXAMPLE_SPEC,
+  FIELD_QUALITY_SPEC,
+  ROSTER_LIST_SPEC,
+  SCRIPT_FIDELITY_SPEC,
+}
 
 /**
- * 共享片段 ①：binding 引用强约束（spec §4.1）
- */
-const BINDING_CONSTRAINT_SPEC = `## ⭐ 强约束：所有引用必须使用 binding ID
-
-下面给出本项目可用的 **角色 / 地点 / 物品** 资产清单。每条都有一个 binding ID。
-你输出 JSON 时必须用 ID 引用：
-- locationBindingId（场景级）：从【可用地点列表】里选一项的 bindingId 填入
-- characterBindingId（出场角色 / 对话 / 动作）：从【可用角色列表】里选
-- itemBindingId（道具）：从【可用物品列表】里选
-
-如果场景中出现的对象在清单里**找不到对应项**，把对应 bindingId 字段填 null（不要瞎编 ID），
-并在 location/characterName/name 字段保留实际名字以便人工补全。`
-
-/**
- * 共享片段 ②：场景拆分原则
- */
-const SCENE_SPLIT_PRINCIPLES_SPEC = `## 场景拆分原则
-
-1. 地点变化应拆分为新场景
-2. 时间跳跃应拆分为新场景
-3. 主要角色组合变化可考虑拆分
-4. 情感氛围显著变化可拆分
-5. 每个场景应有明确的视觉焦点`
-
-/**
- * 共享片段 ③：JSON 场景数据格式示例
- */
-const SCENE_JSON_EXAMPLE_SPEC = `## JSON 场景数据格式示例
-
-{
-  "scenes": [
-    {
-      "sceneNumber": 1,
-      "location": "茶馆",
-      "locationBindingId": "lb_xxxxx",
-      "locationType": "interior",
-      "timeOfDay": "morning",
-      "weather": "sunny",
-      "sceneDescription": "茶馆呈长方形，东侧柜台摆放茶罐，南侧临街大门，西侧靠墙方桌数张，北侧雅座屏风隔断。木质横梁、青花瓷茶具、水墨挂画、红木桌椅",
-      "locationKeyObjects": ["柜台", "茶罐", "方桌", "屏风", "青花瓷茶具"],
-      "mood": "市井烟火",
-      "lighting": "晨光从南侧大门斜射入，明亮暖色调，室内微尘飘浮",
-      "characters": [
-        {
-          "characterBindingId": "cb_xxxxx",
-          "characterName": "张三",
-          "position": "center",
-          "expression": "凝重",
-          "action": "推门进入",
-          "outfit": "蓝色长衫（深蓝色，文人风格）",
-          "props": [
-            { "itemBindingId": "ib_xxxxx", "name": "茶壶" }
-          ]
-        }
-      ],
-      "originalText": "原文片段",
-      "narration": "旁白文本",
-      "dialogues": [
-        {
-          "id": "dlg_1",
-          "characterBindingId": "cb_xxxxx",
-          "characterName": "张三",
-          "text": "请来一壶碧螺春",
-          "emotion": "平静",
-          "volume": "normal",
-          "pace": "normal",
-          "pause": 0
-        }
-      ],
-      "actions": [
-        {
-          "id": "act_1",
-          "characterBindingId": "cb_xxxxx",
-          "description": "缓步走向角落座位",
-          "timing": "before",
-          "duration": 2
-        }
-      ]
-    }
-  ]
-}`
-
-/**
- * 共享片段 ④：字段输出质量要求
- */
-const FIELD_QUALITY_SPEC = `## ⭐ 字段输出质量要求（必须严格遵守）
-
-### sceneDescription（场景视觉描述）
-必须包含以下信息（按顺序拼接，用句号分隔）：
-1. **空间布局**：房间形状 + 各方位陈设位置（如"东侧梳妆台配铜镜，南侧临窗"）
-2. **陈设材质**：主要家具材质 + 装饰细节（如"木质横梁、雕花屏风、青花瓷茶具"）
-3. **关键物件**：本场景中会出现的道具（如"水墨画、香炉"）
-
-示例："闺房呈方形，东侧梳妆台配铜镜，南侧临窗透晨光，西侧纱幔床榻，北侧百宝箱。木质横梁、雕花屏风、青花瓷茶具、水墨画、香炉"
-
-### locationKeyObjects（地点关键物件列表）
-列出本场景中会出现的道具/物件名称（3-6个），用于地点绑定参考。
-如果场景物件少于3个，可以输出空数组 []。
-
-示例：["铜镜", "梳妆台", "窗棂", "百宝箱", "香炉"]
-
-### lighting（光线描述）
-必须包含以下信息（按顺序拼接）：
-1. **光源**：阳光/月光/室内灯光
-2. **方向**：从哪边照射
-3. **强度**：柔和/明亮/昏暗
-4. **色调**：冷色/暖色/特定色
-
-示例："晨光从南侧窗棂斜射入，柔和偏暗，冷蓝色调，室内笼罩阴影"
-
-### outfit（角色服装）
-格式要求：**服装名称（颜色，风格）**
-- 服装名称：具体服装类型（如"素色衣裙"、"红色嫁衣"）
-- 颜色：主色调（如"淡青色"、"深红色"）
-- 风格：服装风格（如"古典仕女风格"、"粗布短衣风格"）
-
-示例："素色衣裙（淡青色，古典仕女风格）"、"粗布短衣（灰褐色，市井平民风格）"
-
-### dialogues（对话列表）
-每条对话**必须**带 characterName（从本场景 characters 名单里选择，逐字一致），并在能确定时同时给 characterBindingId。
-- 剧本原文里对白前有说话人名的（如"阿蘅：……"或单独成行的角色名），必须保留该说话人，不得丢失；
-- 拿不准说话人时优先按上下文推断，仍无法确定才允许省略 characterName。
-
-示例：{ "id": "dlg_1", "characterBindingId": "cb_xxxxx", "characterName": "张三", "text": "请来一壶碧螺春" }`
-
-/**
- * 共享片段 ⑤：三类资产花名册清单（保留 {characters}/{locations}/{items} 占位符）。
+ * 剧作改编纪律片段（§3.4：改由体裁档案提供，标题只出现一次）。
  *
- * 生成提示词保留占位符由调用方 replace；续写 / 拆分提示词用 renderRosterSpec 直接渲染。
+ * 历史问题：本文件曾用 `SCRIPT_ADAPTATION_DISCIPLINE_SPEC` 包一层标题、
+ * `buildScriptGenerationDiscipline()` 又返回同一标题 —— 渲染后 H2 连续出现两次。
  */
-const ROSTER_LIST_SPEC = `## 可用角色列表
-
-{characters}
-
-## 可用地点列表
-
-{locations}
-
-## 可用物品列表
-
-{items}`
-
-/**
- * 共享片段 ⑥（49 号）：短剧剧本改编纪律（原著正文 → 竖屏短剧剧本）。
- *
- * 文本由写作方法论服务提供；「章节内容 → 剧本正文」类提示词（生成 / 正文救援）共用，
- * 续写 / 拆分类提示词的输入已是剧本或用户正文，不适用本纪律。
- */
-const SCRIPT_ADAPTATION_DISCIPLINE_SPEC = `## 短剧剧本改编纪律（原著正文 → 竖屏短剧剧本）
-
-${buildScriptGenerationDiscipline()}`
-
-/**
- * 共享片段 ⑥.5（2026-09-21）：原文保真纪律。
- *
- * 雪麓山庄实测：生成剧本丢了"约法三章+叫帮手"整段对白与"旧信"伏笔——
- * 改编纪律强调节奏/钩子，却没约束"原文内容不许丢"。此片段把保真提到与 JSON 输出同级。
- */
-const SCRIPT_FIDELITY_SPEC = `## ⭐ 原文保真纪律（与 JSON 场景数据同级重要）
-
-- **原文对白必须全保留**：原文中每一句带引号的对白（"……"）都必须出现在生成剧本的 dialogues 中，
-  说话人正确、台词可微调语气但不得整句删除，也不得把两句不同意思的对白合并成一句。
-- **关键节拍必须全保留**：约定/规则类对白（如"约法三章"）、伏笔物件（如信件、信物）、
-  反转、笑点/口头禅（如吃喝玩笑）、人物关系揭示（如身世问答）等节拍，必须各有场次与对白/动作承接，
-  不得因"篇幅精简"或"节奏快"丢弃。
-- 确需省略或合并时，必须在本章梗概末尾以「省略说明：…」逐条写明省略内容与理由；不写视为违规。
-- 自检标准：把原文逐句对照生成结果，任意一句原文对白找不到对应台词即不合格，必须补回。`
+function adaptationDisciplineSpec(ctx: PromptContext): string {
+  return renderGenreDiscipline(ctx.genre)
+}
 
 /**
  * 占位符填充：把 `{key}` 全部替换为 value。
@@ -221,13 +98,21 @@ function fillPromptTemplate(
 // ==================== 提示词模板 ====================
 
 /**
- * 剧本生成提示词（完整专业剧本格式 · spec §4.1 强引用）
- * 优化适配 DeepSeek 等国产大模型 - 强化 JSON 输出优先级
+ * 剧本生成提示词骨架（不含上下文段；由 `buildScriptGenerationPrompt` 拼装）。
  *
- * 由上方共享片段拼装（续写 / 拆分提示词复用同一批片段）；
- * 拼接后文本与原内联版本逐字节一致（重构时以 buildPrompt 输出哈希校验）。
+ * 结构（§3.4 目标结构）：
+ *   ① 角色定位 → ② 输出协议骨架（marker/schema，P1 代码单源）
+ *   → ③【故事背景】（新增，PromptContext 注入）
+ *   → ④ 体裁纪律片段（按 genre 从体裁档案注入，不再是写死的短剧纪律）
+ *   → ⑤ 保真纪律 + 台词单一来源声明
+ *   → ⑥ JSON 示例 + 字段质量 + 旁白规范
+ *   → ⑦ 花名册 + 篇幅目标 + 章节内容
+ *
+ * 优化前缺 ③④（无故事背景注入、短剧纪律写死），⑥缺旁白规范，⑤缺台词单一来源声明。
  */
-const SCRIPT_GENERATION_PROMPT = `你是一位拥有10年以上一线影视工业经验的职业编剧。
+const SCRIPT_GENERATION_SKELETON = `你是一位拥有10年以上一线影视工业经验的职业编剧。
+
+{STORY_BACKGROUND}
 
 ## ⚠️⚠️⚠️ 最重要：你必须输出结构化 JSON 场景数据！
 
@@ -271,33 +156,102 @@ const SCRIPT_GENERATION_PROMPT = `你是一位拥有10年以上一线影视工�
 
 ---
 
-${BINDING_CONSTRAINT_SPEC}
+{BINDING_CONSTRAINT_SPEC}
 
 ---
 
-${SCENE_SPLIT_PRINCIPLES_SPEC}
+{SCENE_SPLIT_PRINCIPLES_SPEC}
 
 ---
 
-${SCRIPT_ADAPTATION_DISCIPLINE_SPEC}
+{ADAPTATION_DISCIPLINE_SPEC}
 
 ---
 
-${SCRIPT_FIDELITY_SPEC}
+{SCRIPT_FIDELITY_SPEC}
 
 ---
 
-${SCENE_JSON_EXAMPLE_SPEC}
+{DIALOGUE_SINGLE_SOURCE_SPEC}
 
 ---
 
-${FIELD_QUALITY_SPEC}
+{SCENE_JSON_EXAMPLE_SPEC}
 
-${ROSTER_LIST_SPEC}
+---
+
+{FIELD_QUALITY_SPEC}
+
+---
+
+{NARRATION_QUALITY_SPEC}
+
+{ROSTER_LIST_SPEC}
+
+{TARGET_DURATION_GUIDANCE}
 
 ## 章节内容
 
 {chapterContent}`
+
+/**
+ * 构建整集剧本生成提示词（上下文注入版，§3.4）。
+ *
+ * 渲染顺序与片段全部来自注册表；`ctx` 决定故事背景与体裁纪律。
+ * 渲染后再由调用方用 `fillPromptTemplate` 注入花名册与章节内容
+ * （保留 `{characters}`/`{locations}`/`{items}`/`{chapterContent}` 占位符）。
+ *
+ * @param ctx PromptContext（缺省不注入业务变量，行为等价优化前）
+ */
+export function buildScriptGenerationPrompt(ctx: PromptContext = createDefaultPromptContext()): string {
+  return fillPromptTemplate(SCRIPT_GENERATION_SKELETON, {
+    STORY_BACKGROUND: renderStoryBackgroundBlock(ctx),
+    BINDING_CONSTRAINT_SPEC,
+    SCENE_SPLIT_PRINCIPLES_SPEC,
+    ADAPTATION_DISCIPLINE_SPEC: adaptationDisciplineSpec(ctx),
+    SCRIPT_FIDELITY_SPEC,
+    DIALOGUE_SINGLE_SOURCE_SPEC,
+    SCENE_JSON_EXAMPLE_SPEC,
+    FIELD_QUALITY_SPEC,
+    NARRATION_QUALITY_SPEC,
+    ROSTER_LIST_SPEC,
+    TARGET_DURATION_GUIDANCE: renderTargetDurationGuidance(ctx),
+  })
+    // 可选段（背景/体裁纪律/篇幅目标）为空时收拢多余空行——
+    // 优化前只拼固定片段不存在该问题，引入可选段后必须处理，否则提示词出现 3+ 连续空行
+    .replace(/\n{3,}/g, '\n\n')
+}
+
+/**
+ * 向后兼容的静态模板（= 无上下文版本的渲染结果，仍保留花名册/章节内容占位符）。
+ *
+ * 供既有调用方继续使用；新代码请用 `buildScriptGenerationPrompt(ctx)`。
+ */
+const SCRIPT_GENERATION_PROMPT = buildScriptGenerationPrompt()
+
+/**
+ * 渲染完整剧本生成提示词：上下文段 + 花名册 + 章节内容（§3.4）。
+ *
+ * 统一走 `fillPromptTemplate`（split/join 实现）——优化前三处调用点用的是
+ * `String.replace` 链，剧本正文里出现 `$&` / `$'` / `$1` 时会被当成特殊模式**静默改写**。
+ *
+ * @param chapterContent 章节内容
+ * @param roster         三类资产花名册
+ * @param ctx            PromptContext（缺省不注入业务变量）
+ */
+function renderScriptGenerationPrompt(
+  chapterContent: string,
+  roster: AssetRosterForScript,
+  ctx?: PromptContext,
+): string {
+  const template = ctx ? buildScriptGenerationPrompt(ctx) : SCRIPT_GENERATION_PROMPT
+  return fillPromptTemplate(template, {
+    characters: formatRosterList(roster.characters),
+    locations: formatRosterList(roster.locations),
+    items: formatRosterList(roster.items),
+    chapterContent,
+  })
+}
 
 /**
  * AI 续写提示词（已有剧本 → 往下继续增加内容）。
@@ -312,6 +266,8 @@ ${ROSTER_LIST_SPEC}
 const SCRIPT_CONTINUATION_PROMPT = `你是一位拥有10年以上一线影视工业经验的职业编剧。
 你正在为一部**已经开拍**的剧集续写剧本：此前只写完了前面一部分，现在需要往下继续增加内容。
 续写必须与已有剧情、人物性格、世界观、伏笔完全连贯。
+
+{STORY_BACKGROUND}
 
 ## ⚠️⚠️⚠️ 最重要：你必须输出结构化 JSON 场景数据！
 
@@ -372,6 +328,10 @@ ${SCENE_JSON_EXAMPLE_SPEC}
 
 ${FIELD_QUALITY_SPEC}
 
+---
+
+{SCRIPT_FIDELITY_SPEC}
+
 ## 已有剧情正文（只读上下文 · 不要重复输出）
 
 {existingScriptContent}
@@ -395,6 +355,8 @@ ${ROSTER_LIST_SPEC}`
 const SCENE_SPLIT_FROM_TEXT_PROMPT = `你是一位拥有10年以上一线影视工业经验的职业编剧。
 下面是一段**已经写好的剧本正文**（纯文本，可能是标准剧本格式，也可能是小说体叙述），
 请把它拆分成结构化的场景数据，供影视工业化制作使用。
+
+{STORY_BACKGROUND}
 
 ## ⚠️⚠️⚠️ 最重要：你必须输出结构化 JSON 场景数据！
 
@@ -436,16 +398,30 @@ ${ROSTER_LIST_SPEC}`
  * 49 号：正文救援提示词——场景 JSON 吃掉全部输出预算时（finish=length 截断在 JSON 内），
  * 用小输出预算单独补写剧本正文，不再让整次生成失败。
  */
+/**
+ * 正文救援提示词骨架（场景 JSON 吃光输出预算导致正文缺失时，小预算单独补写正文）。
+ *
+ * §3.4 修正三处与主路径的不一致：
+ *   1. 正文格式措辞缺"居中缩进"（主路径有）——救援正文与主路径正文会拼接进同一剧集，
+ *      格式必须一致；
+ *   2. 缺保真纪律（SCRIPT_FIDELITY_SPEC）——而它的产出恰恰要参与覆盖度比对；
+ *   3. 缺物品列表（主路径三类花名册齐全）。
+ */
 const SCRIPT_BODY_ONLY_PROMPT = `基于以下章节内容，直接撰写完整剧本正文。
 只输出剧本正文，不要输出 JSON 场景数据，不要输出梗概。
 
 格式要求：
 - 开头写：【剧本正文开始】
 - 结尾写：【剧本正文结束】
-- 中间是标准剧本格式（中文场景标题；动作描写现在时；角色对白）
+- 中间是标准剧本格式（中文场景标题；动作描写现在时；角色对白居中缩进）
 - 严禁使用 Markdown
+- 仅使用纯文本标准剧本缩进与换行
 
-${SCRIPT_ADAPTATION_DISCIPLINE_SPEC}
+{ADAPTATION_DISCIPLINE_SPEC}
+
+---
+
+{SCRIPT_FIDELITY_SPEC}
 
 ## 可用角色列表
 
@@ -455,9 +431,25 @@ ${SCRIPT_ADAPTATION_DISCIPLINE_SPEC}
 
 {locations}
 
+## 可用物品列表
+
+{items}
+
 ## 章节内容
 
 {chapterContent}`
+
+/**
+ * 构建正文救援提示词（上下文注入版）。
+ *
+ * @param ctx PromptContext（缺省不注入体裁纪律，行为等价优化前）
+ */
+export function buildScriptBodyOnlyPrompt(ctx: PromptContext = createDefaultPromptContext()): string {
+  return fillPromptTemplate(SCRIPT_BODY_ONLY_PROMPT, {
+    ADAPTATION_DISCIPLINE_SPEC: adaptationDisciplineSpec(ctx),
+    SCRIPT_FIDELITY_SPEC,
+  })
+}
 
 // ==================== 辅助函数 ====================
 
@@ -536,9 +528,19 @@ export interface SplitScriptTextInput {
   modelId?: string
 }
 
+/** 续写提示词骨架（不再由本文件内联维护，见 buildContinuationPrompt） */
+
 /** 按入参渲染续写提示词（导出给单测断言，AI 调用走 continueScript） */
-export function buildContinuationPrompt(input: ContinueScriptInput): string {
+export function buildContinuationPrompt(
+  input: ContinueScriptInput,
+  ctx: PromptContext = createDefaultPromptContext(),
+): string {
   return fillPromptTemplate(SCRIPT_CONTINUATION_PROMPT, {
+    STORY_BACKGROUND: renderStoryBackgroundBlock(ctx),
+    // §3.4 / C2：续写此前**有意不含保真纪律**（假设"输入已是剧本"），
+    // 但"按大纲续写新章节"场景下输入恰是原著正文，没有保真纪律就会丢对白。
+    // 现在按背景是否来自原文统一注入。
+    SCRIPT_FIDELITY_SPEC,
     startSceneNumber: String(input.startSceneNumber),
     existingScriptContent: input.existingScriptContent.trim() || '(暂无正文)',
     existingScenesSummary: input.existingScenesSummary.trim() || '(暂无场次)',
@@ -552,8 +554,10 @@ export function buildContinuationPrompt(input: ContinueScriptInput): string {
 /** 按入参渲染「正文拆场景」提示词（导出给单测断言） */
 export function buildSceneSplitFromTextPrompt(
   input: SplitScriptTextInput,
+  ctx: PromptContext = createDefaultPromptContext(),
 ): string {
   return fillPromptTemplate(SCENE_SPLIT_FROM_TEXT_PROMPT, {
+    STORY_BACKGROUND: renderStoryBackgroundBlock(ctx),
     startSceneNumber: String(input.startSceneNumber),
     existingScenesSummary: input.existingScenesSummary.trim() || '(暂无场次)',
     scriptText: input.scriptText.trim(),
@@ -907,12 +911,16 @@ export class EpisodeScriptGenerator {
 
   /**
    * 生成完整剧本（含正文 + 结构化数据 + binding 引用强约束）
+   *
+   * @param ctx PromptContext（§3.4：故事背景/体裁纪律/篇幅目标注入；
+   *            缺省不注入，行为等价优化前）
    */
   async generateFullScript(
     chapterContent: string,
     roster: AssetRosterForScript,
     providerConfigId?: string,
     modelId?: string,
+    ctx?: PromptContext,
   ): Promise<FullScriptGenerationResult> {
     console.log('[EpisodeScriptGenerator] 开始生成剧本...')
     console.log('[EpisodeScriptGenerator] 资产花名册:', {
@@ -921,10 +929,7 @@ export class EpisodeScriptGenerator {
       items: roster.items.length
     })
 
-    const prompt = SCRIPT_GENERATION_PROMPT.replace('{characters}', formatRosterList(roster.characters))
-      .replace('{locations}', formatRosterList(roster.locations))
-      .replace('{items}', formatRosterList(roster.items))
-      .replace('{chapterContent}', chapterContent)
+    const prompt = renderScriptGenerationPrompt(chapterContent, roster, ctx)
 
     const systemPrompt =
       '你是一位拥有10年以上一线影视工业经验的职业编剧。请严格按照要求的格式输出，不要添加任何额外的开场白或结束语。所有引用必须使用提供的 binding ID，不要瞎编 ID。必须输出【场景数据开始】【场景数据结束】标记的 JSON 场景数据！'
@@ -975,10 +980,12 @@ export class EpisodeScriptGenerator {
     if (!result.scriptContent) {
       // 49 号：场景 JSON 吃光输出预算（截断在 JSON 内）导致正文缺失——单独补写正文
       console.warn('[EpisodeScriptGenerator] 正文缺失，走正文单独补写救援路径')
-      const rescuePrompt = SCRIPT_BODY_ONLY_PROMPT
-        .replace('{characters}', formatRosterList(roster.characters))
-        .replace('{locations}', formatRosterList(roster.locations))
-        .replace('{chapterContent}', chapterContent)
+      const rescuePrompt = fillPromptTemplate(buildScriptBodyOnlyPrompt(ctx), {
+        characters: formatRosterList(roster.characters),
+        locations: formatRosterList(roster.locations),
+        items: formatRosterList(roster.items),
+        chapterContent,
+      })
       try {
         const bodyResp = await callAI(rescuePrompt, systemPrompt, 8000, providerConfigId, modelId, { temperature: 0.3 })
         const bodyMatch = bodyResp.match(/【剧本正文开始】\s*([\s\S]*?)\s*【剧本正文结束】/)
@@ -1011,18 +1018,47 @@ export class EpisodeScriptGenerator {
 
     // 2026-09-21：原文覆盖度校验（仿 shot-pacing；只警告不阻断）——
     // 雪麓山庄实测丢过整段对白与伏笔，这里把缺失对白打到主进程日志。
-    for (const w of coverageWarnings(validateScriptCoverage(
+    //
+    // §4.1（2026-10-06）：haystack **剔除剧本正文**——正文是展示视图，
+    // dialogues[].text 才是唯一事实源。此前正文命中即算覆盖，导致
+    // "正文写了、dialogues 里是改写版"被判为已覆盖。
+    const coverage = validateScriptCoverage(
       chapterContent,
       [
         ...result.scenes.flatMap(s => (s.dialogues ?? []).map(d => d.text)),
         ...result.scenes.map(s => s.narration ?? ''),
-        result.scriptContent,
       ],
-    ))) {
+    )
+    for (const w of coverageWarnings(coverage)) {
       console.warn(`[script-coverage] ${w}`)
     }
 
+    // §4.1：正文 ↔ dialogues 双向一致性（正文写了但 dialogues 缺 / 两处文本分叉）
+    const consistency = checkDialogueConsistency(
+      result.scriptContent,
+      result.scenes.flatMap(s => (s.dialogues ?? []).map(d => d.text)),
+    )
+    for (const w of dialogueConsistencyWarnings(consistency)) {
+      console.warn(`[script-consistency] ${w}`)
+    }
+
+    // §4.5：保真校验可见性——报告随结果返回，由调用方落 script.metadata 并显示在 UI
+    this.lastCoverageReport = buildCoverageReport(coverage, consistency)
+    console.log(`[script-coverage] ${coverageSummaryLine(this.lastCoverageReport)}`)
+
     return result
+  }
+
+  /**
+   * 最近一次生成/拆分的覆盖度报告（§4.5）。
+   *
+   * 调用方（agent 动作 / handler）读它落 `script.metadata.coverageReport` 并在
+   * 剧集页显示覆盖率徽章——让"丢对白"从事故变为可见指标。
+   */
+  private lastCoverageReport: CoverageReport | null = null
+
+  getLastCoverageReport(): CoverageReport | null {
+    return this.lastCoverageReport
   }
 
   /**
@@ -1034,10 +1070,7 @@ export class EpisodeScriptGenerator {
     providerConfigId?: string,
     modelId?: string,
   ): Promise<ScriptGenerationResult> {
-    const prompt = SCRIPT_GENERATION_PROMPT.replace('{characters}', formatRosterList(roster.characters))
-      .replace('{locations}', formatRosterList(roster.locations))
-      .replace('{items}', formatRosterList(roster.items))
-      .replace('{chapterContent}', chapterContent)
+    const prompt = renderScriptGenerationPrompt(chapterContent, roster)
 
     const systemPrompt =
       '你是一个专业的影视编剧，擅长将小说转换为视频剧本。请严格按照要求格式输出，所有引用使用提供的 binding ID。'
@@ -1365,10 +1398,7 @@ export const __test = {
   lookupBindingByName,
   resolveBindingId,
   buildPrompt: (roster: AssetRosterForScript, chapterContent: string): string =>
-    SCRIPT_GENERATION_PROMPT.replace('{characters}', formatRosterList(roster.characters))
-      .replace('{locations}', formatRosterList(roster.locations))
-      .replace('{items}', formatRosterList(roster.items))
-      .replace('{chapterContent}', chapterContent),
+    renderScriptGenerationPrompt(chapterContent, roster),
   /** 暴露 convertSceneDataToGeneratedScenes 供单测 */
   convertScenes: (sceneData: unknown[], roster: AssetRosterForScript): GeneratedScene[] => {
     const inst = EpisodeScriptGenerator.getInstance()

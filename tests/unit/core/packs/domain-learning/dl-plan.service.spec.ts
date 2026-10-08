@@ -18,6 +18,7 @@ import {
   getConfirmedLessonSpec,
   getConfirmedSyllabus,
   getDlPlanView,
+  proposeDlConceptSplit,
   proposeDlLessonPlan,
   proposeDlSyllabus,
   proposeDlUnderstanding,
@@ -433,6 +434,108 @@ describe('dl-plan.service（讲义方案 lesson 步：规格与区级计划）',
       // 不传概念时不给讲义方案（空间级视图不掺概念级数据）
       const spaceView = await getDlPlanView(db, 'sp1')
       expect(spaceView.lesson).toBeNull()
+    })
+  })
+})
+
+
+describe('dl-plan.service（知识点拆分 concept-split 步：agent 提案 → 确认即执行）', () => {
+  it('提交拆分方案：按概念落 draft、message 说明代价；目录节点不能拆', async () => {
+    ds = await buildDs()
+    const db = await seed(ds)
+    await runWithUserAsync('u1', async () => {
+      await seedConcept(db, 'k1', 'LangChain')
+      const r = await proposeDlConceptSplit(db, 'sp1', 'k1', {
+        branchName: 'LangChain 体系',
+        children: [
+          { name: '核心抽象与执行模型', definitionShort: 'Chain/Agent/Runtime 怎么组织' },
+          { name: '组件与集成生态', prerequisites: ['核心抽象与执行模型'] },
+          { name: '工程实践' },
+        ],
+        reason: '多主题聚合：原理+架构+生态+使用装不进一份讲义',
+      })
+      expect(r.revision).toBe(1)
+      expect(r.message).toContain('等待用户在弹窗里确认')
+      expect(r.message).toContain('退役')
+      expect(r.value.children).toHaveLength(3)
+
+      // 目录节点不能拆
+      await db.dlConcepts!.create({ id: 'g1', projectId: 'sp1', nodeType: 'group', name: '分支目录' })
+      await expect(
+        proposeDlConceptSplit(db, 'sp1', 'g1', { children: [{ name: 'A' }, { name: 'B' }] }),
+      ).rejects.toThrow(/已是分支目录/)
+    })
+  })
+
+  it('非法拆分方案直接拒绝：少于 2 个子知识点 / 兄弟前置引用外部 / 前置成环', async () => {
+    ds = await buildDs()
+    const db = await seed(ds)
+    await runWithUserAsync('u1', async () => {
+      await seedConcept(db)
+      await expect(
+        proposeDlConceptSplit(db, 'sp1', 'k1', { children: [{ name: '唯一' }] }),
+      ).rejects.toThrow(/至少要拆出 2 个/)
+      await expect(
+        proposeDlConceptSplit(db, 'sp1', 'k1', {
+          children: [{ name: 'A', prerequisites: ['外部概念'] }, { name: 'B' }],
+        }),
+      ).rejects.toThrow(/不在本次拆分/)
+      await expect(
+        proposeDlConceptSplit(db, 'sp1', 'k1', {
+          children: [{ name: 'A', prerequisites: ['B'] }, { name: 'B', prerequisites: ['A'] }],
+        }),
+      ).rejects.toThrow(/环/)
+    })
+  })
+
+  it('确认拆分方案 → 注入的 splitConcept 被调用（material 来源），方案置 confirmed', async () => {
+    ds = await buildDs()
+    const db = await seed(ds)
+    await runWithUserAsync('u1', async () => {
+      await seedConcept(db)
+      await proposeDlConceptSplit(db, 'sp1', 'k1', {
+        children: [{ name: 'A' }, { name: 'B', prerequisites: ['A'] }],
+      })
+      const calls: Array<Record<string, unknown>> = []
+      const r = await confirmDlPlan(db, 'sp1', 'concept-split', undefined, null, 'k1', {
+        splitConcept: async (projectId, conceptId, input) => {
+          calls.push({ projectId, conceptId, input })
+          return {
+            branchId: conceptId,
+            branchName: '金融资产的基本类型',
+            children: [
+              { conceptId: 'n1', name: 'A' },
+              { conceptId: 'n2', name: 'B' },
+            ],
+            removed: { cards: 0, notes: 0, questions: 0 },
+            inheritedPrereqs: [],
+            droppedRelations: 0,
+          }
+        },
+      })
+      expect(r.message).toContain('已确认拆分方案')
+      expect(r.message).toContain('已执行拆分')
+      expect(calls).toHaveLength(1)
+      expect(calls[0]).toMatchObject({ projectId: 'sp1', conceptId: 'k1' })
+      expect(calls[0].input).toMatchObject({ source: 'material' })
+
+      const view = await getDlPlanView(db, 'sp1', 'k1')
+      expect(view.conceptSplitConfirmed).toBe(true)
+      expect(view.conceptSplitConceptId).toBe('k1')
+    })
+  })
+
+  it('方案总览按概念返回拆分方案（空间级视图不掺概念级数据）', async () => {
+    ds = await buildDs()
+    const db = await seed(ds)
+    await runWithUserAsync('u1', async () => {
+      await seedConcept(db)
+      await proposeDlConceptSplit(db, 'sp1', 'k1', { children: [{ name: 'A' }, { name: 'B' }] })
+      const view = await getDlPlanView(db, 'sp1', 'k1')
+      expect(view.conceptSplit?.revision).toBe(1)
+      expect(view.conceptSplitConfirmed).toBe(false)
+      const spaceView = await getDlPlanView(db, 'sp1')
+      expect(spaceView.conceptSplit).toBeNull()
     })
   })
 })

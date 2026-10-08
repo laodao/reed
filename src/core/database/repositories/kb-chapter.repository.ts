@@ -61,10 +61,49 @@ export interface ChapterSummaryPatch {
   error?: string | null
 }
 
+/** findByDocument 取列/分页选项 */
+export interface FindChaptersOptions {
+  /**
+   * 是否返回章节正文 content。
+   * 默认 false —— content 是全文冗余存储（真实案例：单文档 2470 章合计 7.14 MB），
+   * 全量拉取会压垮 SQLite 的临时存储并抛 SQLITE_CANTOPEN。多数调用方（检索上下文
+   * 注入、章节树、进度统计、章序判定）只需要元信息，不应为它们付出这个代价。
+   */
+  includeContent?: boolean
+  /** 分页：每页条数（不传=不分页） */
+  limit?: number
+  /** 分页：偏移量（不传=0） */
+  offset?: number
+}
+
 export class KbChapterRepository extends BaseRepository<KbChapterEntity, KbChapterRecord> {
   constructor(dataSource: DataSource) {
     super(dataSource, KbChapterEntity)
   }
+
+  /**
+   * 取列白名单（**实体属性名**，不是 DB 列名——TypeORM 的 select 按属性解析）。
+   * 不含 content：多数消费方只要元信息，不该为全文付出全量读取的代价。
+   */
+  private static readonly META_COLUMNS = [
+    'userId',
+    'id',
+    'documentId',
+    'knowledgeBaseId',
+    'title',
+    'level',
+    'parentTitle',
+    'parentId',
+    'ordering',
+    'startOffset',
+    'endOffset',
+    'contentHash',
+    'summary',
+    'summaryStatus',
+    'summaryError',
+    'createdAt',
+    'updatedAt',
+  ] as const
 
   protected toDto(e: KbChapterEntity): KbChapterRecord {
     return {
@@ -158,10 +197,44 @@ export class KbChapterRepository extends BaseRepository<KbChapterEntity, KbChapt
     return row ? this.toDto(row) : null
   }
 
-  async findByDocument(documentId: string): Promise<KbChapterRecord[]> {
+  /**
+   * 按文档取章节（ordering ASC）。
+   *
+   * **默认不返回正文 content**（见 FindChaptersOptions 注释）：只有确实要消费章节
+   * 全文的调用方（消化/书级汇总/画像采样等）才显式传 includeContent:true。
+   */
+  async findByDocument(
+    documentId: string,
+    opts: FindChaptersOptions = {},
+  ): Promise<KbChapterRecord[]> {
+    return await this.queryChapters(documentId, opts)
+  }
+
+  /**
+   * 按文档分页取章节——**大批量消费正文时用这个**，逐页读取量有界，
+   * 避免一次性把整本文档的章节正文拉进内存（SQLITE_CANTOPEN 的真实成因）。
+   */
+  async findByDocumentPaged(
+    documentId: string,
+    opts: FindChaptersOptions & { limit: number; offset?: number },
+  ): Promise<KbChapterRecord[]> {
+    return await this.queryChapters(documentId, opts)
+  }
+
+  /** findByDocument / findByDocumentPaged 共用查询体（取列裁剪 + 可选分页） */
+  private async queryChapters(
+    documentId: string,
+    opts: FindChaptersOptions,
+  ): Promise<KbChapterRecord[]> {
+    const columns = opts.includeContent
+      ? undefined // 全列（含 content）
+      : [...KbChapterRepository.META_COLUMNS]
     const rows = await this.scoped.find({
       where: { documentId } as FindOptionsWhere<KbChapterEntity>,
       order: { ordering: 'ASC' } as never,
+      ...(columns ? { select: columns as never } : {}),
+      ...(opts.limit != null ? { take: opts.limit } : {}),
+      ...(opts.offset != null ? { skip: opts.offset } : {}),
     })
     return this.toDtoList(rows)
   }
@@ -205,11 +278,17 @@ export class KbChapterRepository extends BaseRepository<KbChapterEntity, KbChapt
     return row ? this.toDto(row) : null
   }
 
-  /** 待生成摘要的章节（文档维度扫描用） */
-  async findByStatuses(documentId: string, statuses: ChapterSummaryStatus[]): Promise<KbChapterRecord[]> {
+  /** 待生成摘要的章节（文档维度扫描用）。默认不返回正文，摘要调度按需 opt-in。 */
+  async findByStatuses(
+    documentId: string,
+    statuses: ChapterSummaryStatus[],
+    opts: { includeContent?: boolean } = {},
+  ): Promise<KbChapterRecord[]> {
+    const columns = opts.includeContent ? undefined : [...KbChapterRepository.META_COLUMNS]
     const rows = await this.scoped.find({
       where: { documentId, summaryStatus: In(statuses) } as FindOptionsWhere<KbChapterEntity>,
       order: { ordering: 'ASC' } as never,
+      ...(columns ? { select: columns as never } : {}),
     })
     return this.toDtoList(rows)
   }

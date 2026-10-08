@@ -40,6 +40,8 @@ import { computeEpProductionState, buildEpSuggestions } from './ep-agent-deps'
 import { emitEpAgentEvent, epAgentEventChannel } from './ep-agent-events'
 import { epAgentConversationId } from './ep-agent-workflow.service'
 import { EP_AGENT_PACK_ID, EP_TOOL_MAX_CALLS, registerEpAgentTools, EP_CONFIRM_CHOICE_TOOL } from './ep-agent-tools'
+import type { PromptContext } from '@core/platform/episode-production/prompts/prompt-context'
+import { buildPromptContextForEpisode } from '@core/platform/episode-production/prompts/episode-prompt-context.service'
 
 const logger = createLogger('EpAgentHarness')
 
@@ -47,10 +49,23 @@ const logger = createLogger('EpAgentHarness')
 const HISTORY_USER_MAX = 600
 const HISTORY_ASSISTANT_MAX = 4000
 
+/** 单类资产名单在快照里展示的条数（三类对齐，超出注"+M 个"） */
+const SNAPSHOT_ASSET_NAMES_LIMIT = 8
+
+/** 名单渲染：前 N 名 + 超出计数（§3.1：三类对齐，此前地点/物品只有计数没名字） */
+function renderNameList(names: string[] | undefined, limit = SNAPSHOT_ASSET_NAMES_LIMIT): string {
+  const list = (names ?? []).filter((n) => typeof n === 'string' && n.trim().length > 0)
+  if (list.length === 0) return ''
+  const shown = list.slice(0, limit).join('、')
+  const rest = list.length - limit
+  return rest > 0 ? `${shown} 等 ${list.length} 个（另有 ${rest} 个未列出）` : shown
+}
+
 /**
  * 系统提示词：角色 + 纪律（含规划判断纪律——能力透出，使用由 agent 按复杂度决定）。
- * 2026-09-16 review 升级：补后半程流水线认知、成本配额纪律、风格/跨集一致性、
- * 快照新鲜度声明——此前 7 条纪律 + 4 行计数快照不足以支撑「agent 视频制作」。
+ *
+ * §3.1：纪律里的**数字从常量渲染**（此前"资产生成每轮限 3 次"与 EP_TOOL_MAX_CALLS
+ * 是同一约束的两处硬编码，改常量即漂移）；新增破坏性操作确认与中断语义纪律。
  */
 export function epAgentSystemPrompt(): string {
   return `你是剧集制作项目的制作助理，可以直接调用工具替用户完成制作任务。你驱动的是一条完整生产流水线：
@@ -61,20 +76,32 @@ export function epAgentSystemPrompt(): string {
 1. 简单请求直接执行对应工具，不要拆解规划；只有跨集/多环节的复杂目标才考虑 create_task_plan 拆任务树（创建后需用户在「Agent 任务树」页批准才会执行）。
 2. 固定可复用的制作流水线才考虑 create_workflow_draft 沉淀为工作流草稿；一次性的需求不要沉淀。
 3. 依赖不满足（如未生成分镜就想生成关键帧）时工具会返回暂缓原因，请向用户解释缺什么前置，或先执行前置动作。
-4. 成本意识：生成关键帧/视频/资产图/配音都按次计费。资产生成类每轮限 3 次且按参数去重——用户要求"给多个角色出图"时，用不同 name 逐个调用（同参数重复调用会被拦截）；关键帧/视频类工具缺省只补缺失项，不要重复生成已有产物。
+4. 成本意识：生成关键帧/视频/资产图/配音都按次计费。资产生成类每轮限 ${EP_TOOL_MAX_CALLS.generate_char_asset} 次且按参数去重——用户要求"给多个角色出图"时，用不同 name 逐个调用（同参数重复调用会被拦截）；关键帧/视频类工具缺省只补缺失项，不要重复生成已有产物。
 5. name 必须用状态快照或工具结果里的真实资产名，不要编造；工具找不到该名字时会报错并列出现有名单，请从名单中选择。
-6. 资产是项目级共享：跨集制作优先复用既有资产，避免为同一角色/地点重复建卡；生成资产图时沿用项目风格锚点（项目设定里的画风描述），保持全片画风一致。
+6. 资产是项目级共享：跨集制作优先复用既有资产，避免为同一角色/地点重复建卡；生成资产图时沿用项目风格锚点（快照里的「风格」字段），保持全片画风一致。
 7. 不要重复调用刚刚成功过的同一工具；工具失败后可换参数重试一次，仍失败就如实告知。
 8. 所有动作完成后，用一段话向用户总结：本轮做了什么、结果如何、下一步建议（可参照快照中的生产进度给出缺口）。
 9. 用户意图或关键参数不明确时，先调用 ep_confirm_choice 发起选择卡或用一句话确认，不要编造参数。
-10. 状态快照是**轮初**快照：工具执行成功后的最新状态以工具返回结果为准。
-11. 生成视频/导出 MP4 是分钟级后台任务：工具返回「已启动」即代表成功开始，**不要**为等完成而重复调用同一目标（在途任务会被去重拦截）；回复用户时说明需数分钟、完成后状态会自动更新，可在分镜/合成页查看。`
+10. **破坏性操作必须先确认**：删除资产/场景/分镜、force 全量重写（会覆盖既有成果）前，先调用 ep_confirm_choice 说明将影响什么，得到用户确认再执行。
+11. 用户可随时中断本轮：若用户表示"停下/取消/先不做了"，立即停止发新工具调用，用一句话汇报当前进度与已完成的部分；用户再次要求继续时，先重算状态（快照是轮初的，可能已过期）再续作。
+12. 状态快照是**轮初**快照：工具执行成功后的最新状态以工具返回结果为准。
+13. 生成视频/导出 MP4 是分钟级后台任务：工具返回「已启动」即代表成功开始，**不要**为等完成而重复调用同一目标（在途任务会被去重拦截）；回复用户时说明需数分钟、完成后状态会自动更新，可在分镜/合成页查看。`
 }
 
-/** 生产状态 → 快照文本（initState 播种/任务 snapshot 用）。
+/**
+ * 生产状态 → 快照文本（initState 播种/任务 snapshot 用）。
  * 2026-09-16 S-04：注入项目名 + 四阶段就绪粗判 + 用户当前界面（renderer 随消息带的
- * contextHint）。readiness 专项服务（S-01）落地前用现有快照字段推导粗判，不引入新依赖。 */
-function epStateToSnapshot(state: EpAgentProductionState, contextHint?: string): string {
+ * contextHint）。readiness 专项服务（S-01）落地前用现有快照字段推导粗判，不引入新依赖。
+ *
+ * §3.1（2026-10-06）：补注入风格/画幅/目标集长（纪律 6 要求"沿用项目风格锚点"，
+ * 但快照此前不提供风格文本，该纪律空转）+ 三类资产**全名名单**（此前地点/物品
+ * 只有计数没名字，纪律 5 对它们不可满足）。
+ */
+export function epStateToSnapshot(
+  state: EpAgentProductionState,
+  contextHint?: string,
+  ctx?: PromptContext,
+): string {
   const ep = state.episode
   const prod = state.production
   const lines = [
@@ -94,9 +121,29 @@ function epStateToSnapshot(state: EpAgentProductionState, contextHint?: string):
     )
   }
   lines.push(`阶段就绪：${epReadinessLine(state)}`)
+
+  // §3.1：三类资产全名名单（对齐角色，此前地点/物品只有计数）
+  const charNames = renderNameList(state.assets.characters.names)
+  const locNames = renderNameList(state.assets.locations.names)
+  const itemNames = renderNameList(state.assets.items.names)
   lines.push(
-    `资产：角色 ${state.assets.characters.count}（${state.assets.characters.names.slice(0, 8).join('、')}）；地点 ${state.assets.locations.count}；物品 ${state.assets.items.count}`,
+    `资产：角色 ${state.assets.characters.count}${charNames ? `（${charNames}）` : ''}；` +
+      `地点 ${state.assets.locations.count}${locNames ? `（${locNames}）` : ''}；` +
+      `物品 ${state.assets.items.count}${itemNames ? `（${itemNames}）` : ''}`,
   )
+
+  // §3.1：项目制作参数（风格/画幅/体裁/目标集长/语速）——纪律 6 依赖风格文本
+  const settings: string[] = []
+  if (ctx?.storyEra) settings.push(`年代：${ctx.storyEra}`)
+  if (ctx?.storyRegion) settings.push(`地域：${ctx.storyRegion}`)
+  if (ctx?.stylePrompt) settings.push(`风格：${ctx.stylePrompt}`)
+  if (ctx?.aspectRatio) settings.push(`画幅：${ctx.aspectRatio}`)
+  if (ctx?.genre?.label) settings.push(`体裁：${ctx.genre.label}`)
+  if (ctx?.targetEpisodeDurationSec) settings.push(`目标集长：约 ${ctx.targetEpisodeDurationSec} 秒`)
+  if (settings.length > 0) {
+    lines.push(`制作参数：${settings.join('、')}`)
+  }
+
   if (state.dataSources && state.dataSources.length > 0) {
     lines.push(`候选数据源名单：${state.dataSources.join('、')}`)
   }
@@ -353,6 +400,10 @@ export class EpAgentHarnessService {
     newSummaryEvent()
     tapActionDone()
 
+    // 5b. §3.1：装配统一提示词上下文（风格/画幅/体裁/目标集长/语速）供快照注入——
+    //     纪律 6 要求"沿用项目风格锚点"，但优化前快照不提供风格文本，该纪律空转。
+    const promptCtx: PromptContext = await buildPromptContextForEpisode(db, episodeId)
+
     // 6. HostKit 装配（36 号）：脊柱（sink/turn_start/记忆装配/ContextManager/RunRegistry/
     //    abort 桥/AgentHost 骨架）内置；EP 只声明差异面。记忆 stub 在此补齐——
     //    scope 分层召回：L1 用户级恒含，EP 域/项目级记忆入列（蒸馏打标）后自动生效
@@ -363,7 +414,7 @@ export class EpAgentHarnessService {
         tools: () => toolMap,
         resolveModel: (o) => harness.resolveModel({ providerConfigId: o?.providerConfigId, modelId: o?.modelId }),
         systemPrompt: () => epAgentSystemPrompt(),
-        snapshot: () => epStateToSnapshot(state, opts.contextHint),
+        snapshot: () => epStateToSnapshot(state, opts.contextHint, promptCtx),
         seededHistory: () => seeded,
         maxSteps: budget.maxSteps.episode,
         // EP 剧本/分镜文本大，32K 起步（保留 EP 专属旋钮，缺省回落全局——评审 P2-3）

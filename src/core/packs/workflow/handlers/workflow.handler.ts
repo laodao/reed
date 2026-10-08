@@ -278,6 +278,15 @@ export function registerWorkflowHandlers(): void {
   ipcBridge.handle('wf:get-pending-reviews', () =>
     wrap(() => subsystem().runService.findWaitingReviews())
   )
+  // 已审批历史（待办中心「审批历史」页签：review 留痕行 + 运行状态/定义名富化）
+  ipcBridge.handle('wf:list-reviewed', (_e, p: { page?: number; pageSize?: number }) =>
+    wrap(() =>
+      subsystem().runService.listReviewed({
+        page: p?.page ?? 1,
+        pageSize: p?.pageSize ?? workflowRuntimeParams().ui.defaultPageSize,
+      })
+    )
+  )
   // agent-loop 节点轨迹（轨迹视图数据源，25 号 M2 批2）
   ipcBridge.handle(
     'wf:get-node-trajectories',

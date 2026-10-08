@@ -124,12 +124,15 @@ export class ReferenceVideoAnalysisService {
           frameDescription: '（待 VLM 反推）',
           emotion: '',
         }
+        let vlmUnmapped: Record<string, string> | null = null
 
         // VLM 推断（DI 注入时调用）
         if (input.vlmInfer) {
           try {
             const inferred = await input.vlmInfer(framePath, b.durationSec)
             inferredFields = { ...inferredFields, ...inferred }
+            // §3.10：未命中映射的字段原值落库，模型漂移可查（不再静默）
+            vlmUnmapped = (inferred as { vlmUnmapped?: Record<string, string> }).vlmUnmapped ?? null
           } catch (vlmErr: any) {
             console.warn(
               `[ReferenceVideoAnalysis] VLM 推断 shot ${i + 1} 失败：${vlmErr?.message ?? vlmErr}（沿用占位字段）`,
@@ -149,6 +152,7 @@ export class ReferenceVideoAnalysisService {
           emotion: inferredFields.emotion ?? '',
           representativeFramePath: framePath,
           detectedDialogue: inferredFields.detectedDialogue ?? null,
+          vlmUnmapped,
         })
       }
 

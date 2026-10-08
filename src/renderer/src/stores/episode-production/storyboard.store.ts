@@ -111,30 +111,41 @@ export const useEpStoryboardStore = defineStore('ep-storyboard', () => {
   // ==================== AI 生成 ====================
 
   /**
-   * 生成分镜
+   * 生成单场景分镜（§3.9：改走 cogen 联合生成）
+   *
+   * 优化前走旧逐镜生成器（`episodeProduction.generateStoryboard`）——旧路径无
+   * binding 能力、校验弱（无服饰逐字校验/台词时长/对白全覆盖），需要下游
+   * `normalizeAiCharacters` 反查与"按镜数均分对白"兜底。
+   * cogen 本就是单场景粒度且校验全面，现在两条链路统一。
+   *
+   * providerConfigId/modelId 参数保留以兼容调用方——实际模型解析走项目配置
+   * （分镜生成模型 → 回退剧本生成模型），与批量路径同源。
    */
   async function generateStoryboard(
     sceneId: string,
     providerConfigId?: string,
     modelId?: string
   ): Promise<Storyboard[] | null> {
+    void providerConfigId
+    void modelId
     const wb = useEpWorkbenchStore()
     wb.generating = true
     wb.error = null
     try {
-      const response = await window.electronAPI.episodeProduction.generateStoryboard(
-        sceneId,
-        providerConfigId,
-        modelId
-      )
-      if (response.success && response.data) {
-        const result = response.data as Storyboard[]
-        storyboards.value = result
-        return result
-      } else {
+      const response = await window.electronAPI.episodeProduction.cogenSceneStoryboards(sceneId)
+      if (!response.success) {
         wb.error = response.error || '生成分镜失败'
         return null
       }
+      // cogen 返回 CogenSceneResult；分镜列表重查（保持既有返回值形状）
+      const reRead = await window.electronAPI.episodeProduction.listStoryboards(sceneId)
+      if (reRead.success && reRead.data) {
+        const result = reRead.data as Storyboard[]
+        storyboards.value = result
+        return result
+      }
+      wb.error = '生成分镜后读取失败'
+      return null
     } catch (e: any) {
       wb.error = e.message || '生成分镜失败'
       return null

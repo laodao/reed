@@ -737,8 +737,16 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
           const model = embedCfg.modelId ?? 'text-embedding-v3'
           memoryVectorPort = {
             embedTexts: async (texts) => {
-              const vectors = await kbService.getEmbeddingVectors(texts, embedCfg)
-              return vectors ? { vectors, model } : null
+              try {
+                const vectors = await kbService.getEmbeddingVectors(texts, embedCfg)
+                return { vectors, model }
+              } catch (e: unknown) {
+                // 端口契约是「失败返回 null 由上层降级」；真实原因必须留痕（此前静默）
+                console.warn(
+                  `[workflow-boot] memoryVectorPort 嵌入失败: ${e instanceof Error ? e.message : String(e)}`,
+                )
+                return null
+              }
             },
             upsert: async (records) => {
               await getVectorStore().insertBatch(records.map((r) => ({

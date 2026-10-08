@@ -60,7 +60,7 @@ const BUILTIN_TEMPLATE_VERSION = 1
 const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; icon: string; name: string; description: string; category: string; tags: string[] }> = [
   { file: 'daily-news-brief.json', raw: dailyNewsBrief, appId: `${BUILTIN_APP_PREFIX}daily_news`, icon: '📰', name: '每日热点早报', description: '首页→AI 定位栏目→AI 筛选新闻→抓正文→早报长图，正文与报告可存知识库', category: '新闻资讯', tags: ['早报', '新闻'] },
   { file: 'industry-weekly.json', raw: industryWeekly, appId: `${BUILTIN_APP_PREFIX}industry_weekly`, icon: '📈', name: '行业动态周报', description: '行业趋势分析周报长图（模板可自定义）', category: '新闻资讯', tags: ['周报', '行业'] },
-  { file: 'multi-platform-copy.json', raw: multiPlatformCopy, appId: `${BUILTIN_APP_PREFIX}multi_platform`, icon: '✍️', name: '多平台文案生成', description: '公众号/小红书/微博/知乎/抖音 文案', category: '文案写作', tags: ['文案', '自媒体'] },
+  { file: 'multi-platform-copy.json', raw: multiPlatformCopy, appId: `${BUILTIN_APP_PREFIX}multi_platform`, icon: '✍️', name: '多平台文案生成', description: '素材驱动多平台分发器：公众号/今日头条/知乎/微博/小红书/抖音 文案（素材非空时事实锁定素材并保留出处口径，逐平台自检）', category: '文案写作', tags: ['文案', '自媒体'] },
   { file: 'webpage-summary.json', raw: webpageSummary, appId: `${BUILTIN_APP_PREFIX}webpage_summary`, icon: '📄', name: '网页摘要入库', description: '网页结构化摘要 → 知识库 + 资产库', category: '网页工具', tags: ['摘要'] },
   { file: 'article-polish.json', raw: articlePolish, appId: `${BUILTIN_APP_PREFIX}article_polish`, icon: '🪄', name: '文章润色改写', description: '诊断 + 润色 + 对比报告', category: '文案写作', tags: ['润色', '写作'] },
   { file: 'image-card.json', raw: imageCard, appId: `${BUILTIN_APP_PREFIX}image_card`, icon: '🖼️', name: '图文卡片生成', description: '内容规划 + AI 配图 + 长图卡片', category: '图文设计', tags: ['卡片', '配图'] },
@@ -86,11 +86,11 @@ const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; icon: str
   // 短视频脚本生成视频 V3 通用视觉策略（2026-09-06；与 V1/V2 并存）：imagery 意象空镜 / asset 素材驱动，按视频类型自动
   { file: 'script-to-video-v3.json', raw: scriptToVideoV3, appId: `${BUILTIN_APP_PREFIX}script_to_video_v3`, icon: '🎬', name: '脚本生成视频V3（通用视觉策略）', description: '脚本/主题+多知识库 → 视频类型预设与视觉策略（imagery 意象化空镜 / asset 素材驱动，缺素材即拦截）→ 大纲审核 → 分镜拆解(concept/意象 或 素材引用) → 素材板(生成意象或素材直用)整体审核 → 逐片段视频(逐镜确认) → 配音+烧字幕+合成 → 存档', category: '视频制作', tags: ['视频', '脚本', '创作', '视觉策略', '素材驱动'] },
   // 长文写作（2026-08-29 用户确认开工：分阶段写长文，多轮对话承接前文）
-  { file: 'long-form-writing.json', raw: longFormWriting, appId: `${BUILTIN_APP_PREFIX}long_form_writing`, icon: '✍️', name: '长文写作', description: '故事线 → 章节大纲 → 逐章写作（多轮对话承接前文）→ 合并完整长文入库', category: '内容创作', tags: ['长文', '写作', '小说'] },
+  { file: 'long-form-writing.json', raw: longFormWriting, appId: `${BUILTIN_APP_PREFIX}long_form_writing`, icon: '✍️', name: '长文写作', description: '通用长文引擎（虚构/非虚构双模式）：素材消化选材 → 开篇钩子比选 → 主线 → 章节大纲 → 逐章写作（多轮承接前文）→ 事实校验（纪实模式逐条对照素材）→ 编辑评审循环（独立模型五维评分带差距修订）→ 备选标题方案 → 入库；有素材=纪实长文（事实锁定素材），无素材=小说模式', category: '内容创作', tags: ['长文', '写作', '小说'] },
   // 电商详情长图（2026-08-29 用户确认开工：先按卖点/规格规划张数，再逐张生成并配图文，排版成竖版详情长图）
   { file: 'ecommerce-detail-long-image.json', raw: ecommerceDetailLongImage, appId: `${BUILTIN_APP_PREFIX}ecommerce_detail_long_image`, icon: '🛍️', name: '电商详情长图', description: '商品图+卖点+规格 → 按卖点/规格规划 N 张介绍图 → 逐张生成（锁商品、图文对应）→ 排版成竖版详情长图', category: '电商', tags: ['电商', '详情', '长图'] },
-  // 主题深度研究（2026-09-09 v2 升级替换实操版：澄清→规划(已知地图/验收)→≤3轮研究执行体+另一模型独立评估→差距迭代→溯源成稿→人工确认）
-  { file: 'topic-research.json', raw: topicResearch, appId: `${BUILTIN_APP_PREFIX}topic_research`, icon: '🧭', name: '主题深度研究', description: '澄清研究契约 → 规划(已知地图/主题类型/步骤/验收标准) → 至多3轮「研究(联网+正文深读+私有知识库) + 另一模型独立评估」 → 不达标带差距再研究 → 溯源研究报告 → 人工确认存档', category: '调研', tags: ['主题研究', '深度研究'] },
+  // 主题深度研究（2026-10-06 v5：用途自适应 + 信源四级分级（官方机构/官方媒体/互联网媒体/互联网搜索，跨渠道取材不偏官方）+ 素材密度优先）
+  { file: 'topic-research.json', raw: topicResearch, appId: `${BUILTIN_APP_PREFIX}topic_research`, icon: '🧭', name: '主题深度研究', description: '澄清研究契约 → 规划(已知地图/主题类型/步骤/验收标准) → 多轮「研究(联网+正文深读+私有知识库,素材密度优先) + 另一模型独立评估」 → 不达标带差距再研究 → 按用途成稿(写作用途=高密度写作素材；信源四级分级，官方与媒体/网络渠道跨级取材) → 人工确认存档', category: '调研', tags: ['主题研究', '深度研究'] },
   // 日记周报复盘（2026-09-24 日记增强 P1）
   { file: 'diary-weekly-review.json', raw: diaryWeeklyReview, appId: `${BUILTIN_APP_PREFIX}diary_weekly_review`, icon: '🗓️', name: '日记周报复盘', description: '按时间范围聚合日记（可跨目录）→ AI 三段式复盘（发生了什么/学到了什么/下周关注什么）→ 人工确认 → 存回日记', category: '学习', tags: ['日记', '复盘', '周报'] },
 ]

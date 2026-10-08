@@ -21,6 +21,7 @@ import type {
   DlPlanUnderstanding,
   DlPlanSyllabus,
   DlLessonPlanPayload,
+  DlConceptSplitPayload,
 } from '@shared/types/domain-learning.types'
 import { BaseRepository } from '../base-repository'
 
@@ -214,6 +215,8 @@ export function buildDlPlanView(input: {
   lesson?: DlPlanRow | null
   /** lesson 对应的概念 id（前端据此判断是否属于当前选中概念） */
   lessonConceptId?: string | null
+  /** 当前概念的知识点拆分方案（concept-split 步；2026-10-06 agent 拆分提案） */
+  conceptSplit?: DlPlanRow | null
 }): DlPlanView {
   return {
     spaceId: input.spaceId,
@@ -227,5 +230,8 @@ export function buildDlPlanView(input: {
     lesson: input.lesson ? toDlPlanRevisionView<DlLessonPlanPayload>(input.lesson) : null,
     lessonConceptId: input.lessonConceptId ?? input.lesson?.conceptId ?? null,
     lessonConfirmed: input.lesson?.status === 'confirmed',
+    conceptSplit: input.conceptSplit ? toDlPlanRevisionView<DlConceptSplitPayload>(input.conceptSplit) : null,
+    conceptSplitConceptId: input.conceptSplit?.conceptId ?? null,
+    conceptSplitConfirmed: input.conceptSplit?.status === 'confirmed',
   }
 }

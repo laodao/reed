@@ -11,6 +11,12 @@
 
 export type EnrichmentKind = 'character' | 'location' | 'item'
 
+import {
+  createDefaultPromptContext,
+  renderStoryBackgroundBlock,
+  type PromptContext,
+} from '../../prompts/prompt-context'
+
 export interface EnrichmentTodo {
   /** binding id */
   id: string
@@ -38,6 +44,25 @@ const KIND_LABEL: Record<EnrichmentKind, string> = {
 }
 
 /**
+ * 人种枚举（§3.6 单一事实源）：此前本文件与 `asset-setting-enrichment.service.ts`
+ * 各写一份 7 枚举字面量，两侧改动不同步即数据不一致。现由本模块导出，服务侧 import。
+ */
+export const RACE_VALUES = [
+  'east_asian',
+  'south_asian',
+  'southeast_asian',
+  'central_asian',
+  'european',
+  'african',
+  'south_american',
+] as const
+
+export type RaceValue = (typeof RACE_VALUES)[number]
+
+/** 人种枚举的提示词内联写法（从 RACE_VALUES 渲染，不再手写） */
+const RACE_HINT = RACE_VALUES.map((v) => `"${v}"`).join(' / ')
+
+/**
  * character 字段说明：description / appearance / outfit / role / gender / age / race
  *                    + styleAnchors（数组）/ outfitsExtra（数组）
  * location  字段说明：description（短语描述地点的氛围、时段、风格）
@@ -48,10 +73,10 @@ const SCHEMA_HINT: Record<EnrichmentKind, string> = {
 - description: 一句概括（中文）
 - appearance: 外貌（发型 / 体型 / 面部特征，中文）
 - outfit: 主要服装（中文）
-- role: 定位（"主角" / "配角" / "反派" / "旁白" 之一）
+- role: 定位（"主角" / "配角" / "反派" / "旁白" 之一）。**仅用于叙事参考，不影响图像生成**——它不进图像提示词，请如实填写以便后续叙事分析使用。
 - gender: 性别（"男" / "女" / "其他" / "未指定" 之一）
 - age: 整数年龄（不确定时给一个合理整数估值）
-- race: 人种（"east_asian" / "south_asian" / "southeast_asian" / "central_asian" / "european" / "african" / "south_american" 之一）
+- race: 人种（${RACE_HINT} 之一）
 - styleAnchors: 风格锚点字符串数组（如 ["工笔国风", "水墨"]）
 - outfitsExtra: 备选服装字符串数组`,
   location: `每个地点返回如下字段（不能确定时设 null 或空串）：
@@ -60,10 +85,27 @@ const SCHEMA_HINT: Record<EnrichmentKind, string> = {
 - description: 一段描述（材质 / 风格 / 形态，中文）`,
 }
 
-export function buildSettingEnrichmentSystemPrompt(kind: EnrichmentKind): string {
+/**
+ * 设定反推系统提示词。
+ *
+ * §3.6（2026-10-06）：新增【故事背景】注入——优化前 system/user 均无故事年代/地域，
+ * 第一批资产（没有同类参考时）反推人种/服装**完全无时代锚**，只能自由发挥。
+ *
+ * @param kind 资产类型
+ * @param ctx  PromptContext（缺省不注入背景，行为等价优化前）
+ */
+export function buildSettingEnrichmentSystemPrompt(
+  kind: EnrichmentKind,
+  ctx: PromptContext = createDefaultPromptContext(),
+): string {
   const label = KIND_LABEL[kind]
-  return `你是这部剧的${label}设计师。你将拿到一份原文片段和一些待设计的${label}名字清单。
+  const background = renderStoryBackgroundBlock(ctx)
+  const backgroundLine = background
+    ? `\n${background}\n\n新设计的字段必须与该故事背景的时代与地域相符（服饰/人种/物品形制等）。\n`
+    : ''
 
+  return `你是这部剧的${label}设计师。你将拿到一份原文片段和一些待设计的${label}名字清单。
+${backgroundLine}
 请为每个${label}推断出生成图所需的字段。
 
 强制规则：

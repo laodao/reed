@@ -329,6 +329,19 @@ async function handleUpdateStoryboard(
 
 // ==================== AI 生成处理器（分镜） ====================
 
+/**
+ * 单场景「生成分镜」——走 **cogen** 联合生成（§3.9 收敛，2026-10-06）。
+ *
+ * 背景：优化前此按钮走旧逐镜生成器（`generateStoryboardsIncremental`），
+ * 而 cogen 本就是单场景粒度、校验强度全面优于旧路径（14 条强约束 + 纠错重试 +
+ * 服饰逐字校验 + 台词时长硬校验 + 对白/旁白全覆盖），且**旧路径无 binding 能力**
+ * ——需要下游 `normalizeAiCharacters` 反查、`distributeDialoguesToStoryboards`
+ * 按镜数均分对白（与镜头内容无关）等一堆兜底。
+ *
+ * 现在单场景与批量走同一条 cogen 链路：语义=替换式重写（等价 force），
+ * 失败抛错且**旧分镜保留**（删旧发生在生成+校验成功之后，见 replaceSceneStoryboards）。
+ * 本函数不再自行维护"删旧 + 插新 + links 重建"的事务逻辑——那些已收口在 cogen service。
+ */
 async function handleGenerateStoryboard(
   event: any,
   sceneId: string,
@@ -341,104 +354,41 @@ async function handleGenerateStoryboard(
       return { success: false, error: '数据库未初始化' }
     }
 
-    // 获取场景
     const scene = await db.sceneScripts.getById(sceneId)
     if (!scene) {
       return { success: false, error: '场景不存在' }
     }
 
-    // 获取窗口用于发送进度事件
     const window = getBrowserWindowFromEvent(event)
 
-    // 调用 AI 生成分镜（使用逐个生成模式）
-    const aiService = StoryToVideoAIService.getInstance()
-    const result = await aiService.generateStoryboardsIncremental(
-      scene,
-      providerConfigId,
-      modelId,
-      (shotNumber, total, storyboard) => {
-        // 发送进度事件
-        if (window) {
-          window.webContents.send('ep:storyboard-progress', {
-            sceneId,
-            shotNumber,
-            total,
-            storyboard: storyboard || null
-          })
-        }
-      }
-    )
-
     /*
-     * 创建分镜记录（shotNumber 按 AI 返回顺序强制重排为 1..N，AI 返回可能跳号）。
-     * 一致性修复 M2（第二批）：先删该场景旧分镜（cleanupStoryboards 级联清
-     * 关键帧/图、characters、受影响片段置 superseded），删旧 + 插新 + links
-     * 包进同一个事务——重复生成不再残留双份分镜/双份 links，中途失败整体回滚
-     * （旧分镜完整保留，同 B2-Task3 replaceSceneStoryboards 口径）。
-     * SQLite 串行门约束：事务回调内禁止全局 manager/仓库方法（db.storyboards
-     * 走 DataSource 全局 manager 会被门拒），一律走事务 manager 的
-     * getRepository；裸 manager 不注入 user_id（复核修复 P0-3），userId 手工
-     * 注入（同 scoped 语义）。
-     *
-     * S1 同型缺陷守卫：AI 空结果不进删建事务，保留原分镜（空结果≠用户要清空）。
+     * §3.9：单场景走 cogen（联合生成「资产清单 + 分镜」，binding 建/复用与
+     * ID 回填全部由代码完成，不让模型回填 ID）。
+     * providerConfigId/modelId 参数保留在签名里以兼容既有 IPC 调用方——
+     * cogen 的模型解析走项目配置（分镜生成模型，回退剧本生成模型），
+     * 与批量生成同源，避免两条链路模型口径不一致。
      */
-    const shots = normalizeShotNumbers(result.storyboards)
-    if (shots.length === 0) {
+    void providerConfigId
+    void modelId
+
+    const svc = new StoryboardCogenService(db.dataSource)
+    const cogenResult = await svc.cogenStoryboardsForScene(sceneId)
+
+    if (window) {
+      window.webContents.send('ep:storyboard-progress', {
+        sceneId,
+        shotNumber: cogenResult.shotCount,
+        total: cogenResult.shotCount,
+        storyboard: null,
+      })
+    }
+
+    const storyboardRecords: Storyboard[] = await db.storyboards.getBySceneScriptId(sceneId)
+    if (storyboardRecords.length === 0) {
       return { success: false, error: 'AI 未返回有效分镜，已保留原分镜' }
     }
 
-    // 旧分镜 id 列表只读，在事务外读取（串行门不拦）
-    // E1：收集器包住事务——旧分镜关键帧磁盘文件在提交成功后统一删，回滚则随旧分镜一并保留
-    const oldStoryboards = await db.storyboards.getBySceneScriptId(sceneId)
-    await withPendingKeyframeFileDeletions(() => db.dataSource!.transaction(async (manager) => {
-      await cleanupStoryboards(manager, oldStoryboards.map((sb) => sb.id))
-
-      for (const sb of shots) {
-        // 调试日志
-        console.log(`[Handler] 分镜 ${sb.shotNumber} dialogueIds:`, sb.dialogueIds)
-
-        const storyboard = await insertStoryboardIn(manager, {
-          sceneScriptId: sceneId,
-          shotNumber: sb.shotNumber,
-          shotType: sb.shotType,
-          cameraAngle: sb.cameraAngle,
-          cameraMovement: sb.cameraMovement,
-          movementDuration: sb.movementDuration,
-          frameDescription: sb.frameDescription,
-          subject: sb.subject,
-          composition: sb.composition,
-          characters: sb.characters as unknown[],
-          narrationId: sb.narrationId,
-          dialogueIds: sb.dialogueIds,
-          actionIds: sb.actionIds,
-          duration: sb.duration,
-          transition: sb.transition,
-        })
-
-        // 一致性修复 v3（A3）：对白承接落库 links（字幕镜头级分配数据源）
-        await rebuildStoryboardDialogueLinks(manager, {
-          id: storyboard.id,
-          dialogueIds: sb.dialogueIds,
-        })
-      }
-    }))
-
-    // 事务提交后复读（DTO 口径同原 create 返回值：transition 解析、时间戳 epoch 化）
-    const storyboardRecords: Storyboard[] = await db.storyboards.getBySceneScriptId(sceneId)
-
-    // P1-13：单场景分镜生成也推进 episode → storyboarding（与批量路径 :369 一致）
-    try {
-      const { advanceEpisodeStatus } = await import(
-        '@core/platform/episode-production/workflow/episode-status-advance'
-      )
-      const script = await db.episodeScripts?.getById(scene.episodeScriptId)
-      if (script?.episodeId && db.dataSource) {
-        await advanceEpisodeStatus(db.dataSource, script.episodeId, 'storyboarding')
-      }
-    } catch {
-      /* 状态推进失败不阻断分镜结果 */
-    }
-
+    // 状态推进由 cogenStoryboardsForScene → advanceToStoryboarding 内部完成
     return { success: true, data: storyboardRecords }
   } catch (error: any) {
     return { success: false, error: error.message || '生成分镜失败' }

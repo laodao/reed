@@ -168,6 +168,65 @@ export interface VideoProjectConfig {
    * 同场景内连续镜头累加时长不超过该预算。缺失/非法 → 15s。
    */
   segmentDurationBudgetSec?: number
+
+  // ==================== 提示词上下文（2026-10-06 提示词优化方案 §2.2） ====================
+  // 以下字段是"业务变量全部注入"（原则 P2）的落点：体裁/语言/语速/目标集长
+  // 一律来自项目配置，代码零硬编码。
+
+  /**
+   * 体裁（决定注入哪套剧作纪律与节奏偏好）：
+   * `short_drama` 竖屏短剧 | `series` 剧集 | `film` 电影 | `animation` 动画 | `custom` 自定义。
+   * 缺失 → `short_drama`（历史行为）。
+   */
+  genre?: string
+  /** 台词语言（决定语速与语言纪律），默认 `zh` */
+  language?: string
+  /**
+   * 语速（字/秒），用于台词长度硬校验与提示词口径。
+   * 缺失 → 按语言表（zh=4.5、en=15…）。
+   */
+  speechCharsPerSec?: number
+  /**
+   * 目标集长（秒）。配置后：
+   *   - 剧本提示词注入目标场景数/时长指导区间；
+   *   - cogen 注入"本集目标时长"，使节奏密度规则可执行；
+   *   - 故事原文长度区间按目标集长推算。
+   * 缺失 → 不注入时长指导。
+   */
+  targetEpisodeDurationSec?: number
+  /**
+   * 时代档案键（`ancient_chinese` | `modern` | `near_future` | `period_drama` | `generic`）。
+   * 显式配置优先于 storyEra 文本推断（§2.5：替代朝代正则猜测）。
+   */
+  eraProfileKey?: string
+}
+
+/**
+ * 语速默认值（字/秒，按语言）。
+ *
+ * 单一事实源：core 的 `prompts/prompt-context.ts` 与 renderer 的台词超长提示
+ * 都从这里取，避免"提示词/校验/前端三处各写一份 4.5"的漂移（§3.8）。
+ */
+export const DEFAULT_SPEECH_CHARS_PER_SEC: Record<string, number> = {
+  zh: 4.5,
+  en: 15,
+  ja: 7,
+  ko: 6,
+}
+
+/** 缺省语言 */
+export const DEFAULT_PROMPT_LANGUAGE = 'zh'
+
+/** 解析语速：显式配置优先，否则按语言查表，最后兜底 zh 的值 */
+export function resolveSpeechCharsPerSec(
+  explicit: number | null | undefined,
+  language?: string | null,
+): number {
+  if (typeof explicit === 'number' && Number.isFinite(explicit) && explicit > 0) return explicit
+  const lang = (language ?? '').trim() || DEFAULT_PROMPT_LANGUAGE
+  return (
+    DEFAULT_SPEECH_CHARS_PER_SEC[lang] ?? DEFAULT_SPEECH_CHARS_PER_SEC[DEFAULT_PROMPT_LANGUAGE]
+  )
 }
 
 /**

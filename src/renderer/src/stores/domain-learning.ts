@@ -180,7 +180,7 @@ interface DomainLearningApi {
   getPlan(id: string, conceptId?: string | null): Promise<IpcLike<DlPlanView>>
   confirmPlan(p: {
     id: string
-    step: 'understanding' | 'syllabus' | 'lesson'
+    step: 'understanding' | 'syllabus' | 'lesson' | 'concept-split'
     payload?: unknown
     feedback?: string | null
     conceptId?: string | null
@@ -1058,7 +1058,7 @@ export const useDomainLearningStore = defineStore('domainLearning', () => {
    */
   async function confirmPlan(p: {
     id: string
-    step: 'understanding' | 'syllabus' | 'lesson'
+    step: 'understanding' | 'syllabus' | 'lesson' | 'concept-split'
     payload?: unknown
     feedback?: string | null
     conceptId?: string | null

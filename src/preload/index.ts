@@ -783,6 +783,7 @@ const electronAPI = {
       ipcRenderer.invoke('wf:list-runs', p),
     deleteRun: (runId: string) => ipcRenderer.invoke('wf:delete-run', { runId }),
     getPendingReviews: () => ipcRenderer.invoke('wf:get-pending-reviews'),
+    listReviewed: (p: { page?: number; pageSize?: number }) => ipcRenderer.invoke('wf:list-reviewed', p),
     getNodeTrajectories: (p: { runId: string; nodeId: string; iterationIndex?: number }) =>
       ipcRenderer.invoke('wf:get-node-trajectories', p),
     // ==================== M3 任务树/知识飞轮 ====================
@@ -1370,6 +1371,8 @@ const electronAPI = {
     deleteDocument: (documentId: string) => ipcRenderer.invoke('knowledge-base:delete-document', documentId),
     // 重新处理文档
     reprocessDocument: (documentId: string) => ipcRenderer.invoke('knowledge-base:reprocess-document', documentId),
+    // 继续处理（断点续跑：保留已有向量，只补未完成部分）
+    resumeDocument: (documentId: string) => ipcRenderer.invoke('knowledge-base:resume-document', documentId),
     // 获取文档分片
     getDocumentChunks: (documentId: string) => ipcRenderer.invoke('knowledge-base:get-document-chunks', documentId),
     // 分页获取文档分片（可选按章节过滤，M5 章节树定位）
@@ -1491,7 +1494,7 @@ const electronAPI = {
       ipcRenderer.invoke('dl:get-plan', { id, conceptId: conceptId ?? null }),
     confirmPlan: (p: {
       id: string
-      step: 'understanding' | 'syllabus' | 'lesson'
+      step: 'understanding' | 'syllabus' | 'lesson' | 'concept-split'
       /** 用户勾选增删/调序后的方案（syllabus/lesson 需要；缺省=用最新草案原样确认） */
       payload?: unknown
       feedback?: string | null
@@ -1566,6 +1569,39 @@ const electronAPI = {
       ipcRenderer.on(channel, handler)
       return () => ipcRenderer.removeListener(channel, handler)
     }
+  },
+
+  // 信息搜集（ic:* 全部由 info-collection 包 handler 提供，返回 { success, data?, error? }；
+  // 设计 docs/design/2026-10-07-info-collection-design.md）
+  infoCollection: {
+    // 创建项目（AI 起草蓝图；mode=quick 且自检通过自动确认）
+    createProject: (p: { name: string; goal: string; mode?: 'quick' | 'review' }) =>
+      ipcRenderer.invoke('ic:create-project', p),
+    // 仅起草蓝图（不入库；返回 { blueprint, check }）
+    draftBlueprint: (p: { goal: string }) => ipcRenderer.invoke('ic:draft-blueprint', p),
+    // 蓝图预检（前端确认页用）
+    checkBlueprint: (p: { blueprint: Record<string, unknown> }) => ipcRenderer.invoke('ic:check-blueprint', p),
+    // 确认蓝图（精调模式人审；快速模式自检通过已自动确认，无需调用）
+    confirmBlueprint: (p: { projectId: string }) => ipcRenderer.invoke('ic:confirm-blueprint', p),
+    listProjects: (p?: { status?: 'active' | 'archived' }) => ipcRenderer.invoke('ic:list-projects', p),
+    getProject: (p: { id: string }) => ipcRenderer.invoke('ic:get-project', p),
+    // 绑定/改绑项目知识库（内容唯一存储在 kb）
+    setProjectKb: (p: { id: string; kbId: string | null }) => ipcRenderer.invoke('ic:set-project-kb', p),
+    // 发起搜集任务（后台执行；返回 { taskId }，进度轮询 listTasks）
+    runTask: (p: { projectId: string }) => ipcRenderer.invoke('ic:run-task', p),
+    listTasks: (p: { projectId: string }) => ipcRenderer.invoke('ic:list-tasks', p),
+    // 手动触发裁决（转载簇/冲突归因/孤证标记；返回计数）
+    adjudicate: (p: { projectId: string }) => ipcRenderer.invoke('ic:adjudicate', p),
+    // 生成整理报告（要点卡反查校验/数据表/时间线/引用清单/质量报告 + 第二模型审；入项目 kb）
+    generateReport: (p: { projectId: string }) => ipcRenderer.invoke('ic:generate-report', p),
+    listSources: (p: { projectId: string; reviewStatus?: 'staged' | 'confirmed' | 'rejected' | 'merged' }) =>
+      ipcRenderer.invoke('ic:list-sources', p),
+    listRows: (p: { projectId: string; schemaId?: string; status?: 'draft' | 'confirmed' | 'superseded' | 'stale' }) =>
+      ipcRenderer.invoke('ic:list-rows', p),
+    // 人审批量确认（返回 { confirmed, skipped }；无分级依据的源会被闸门拦下）
+    confirmBatch: (p: { projectId: string; sourceIds: string[] }) => ipcRenderer.invoke('ic:confirm-batch', p),
+    rejectBatch: (p: { projectId: string; sourceIds: string[]; reason?: string }) =>
+      ipcRenderer.invoke('ic:reject-batch', p)
   },
 
   // 人像设计相关

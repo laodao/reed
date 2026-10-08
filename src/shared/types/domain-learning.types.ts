@@ -85,8 +85,14 @@ export type DlAnswerSource = 'kb' | 'lesson' | 'graph' | 'ai_verified' | 'new_re
 /** 讲义区（粗粒度，md 整段；related 区不落库由关系派生） */
 export interface DlCardSection {
   key: string
-  /** 区标题（模板语义；缺省用 key 映射默认标题） */
+  /** 区标题（规范区缺省用 key 映射默认标题；自造区必填——章节名由规划给出） */
   title?: string
+  /**
+   * 区教学职责（v9 区集契约放开后自造区必填）：lead 导学 / core 核心 / case 案例 /
+   * support 支撑 / close 收尾。决定篇幅配比（core/case 是重点，参与深度检查）。
+   * 规范区缺省由目录兜底（definition→core、examples→case…）。
+   */
+  role?: string
   style?: DlSectionStyle
   /**
    * 版式设备（2026-09-14 用户反馈「纯文字堆砌、布局单调」）：
@@ -224,8 +230,15 @@ export interface DlSplitConceptInput {
   conceptId: string
   /** 分支目录名（缺省=原知识点名；原知识点就地转成分支，树位置不变） */
   branchName?: string | null
-  /** 子知识点清单（至少一条；名称必填） */
-  children: Array<{ name: string; definitionShort?: string | null }>
+  /**
+   * 子知识点清单（至少一条；名称必填）。prerequisites 只允许引用**兄弟子知识点名**
+   * （拆分内部的学习顺序），执行时一并落已确认前置边（2026-10-06 agent 拆分提案）。
+   */
+  children: Array<{ name: string; definitionShort?: string | null; prerequisites?: string[] }>
+  /**
+   * 子知识点来源（缺省 manual=用户手工拆；agent 拆分提案确认执行时传 material=方案提炼）。
+   */
+  source?: 'manual' | 'material'
 }
 
 /** 知识点拆分结果（各迁移/清理量供 UI 反馈） */
@@ -291,8 +304,34 @@ export interface DlRelatedRef {
  * - `lesson`：**讲义设计规格与区级计划**（2026-09-14；参考 ppt-master 的 design_spec +
  *   §IX 页级 roster：确认后模型才逐区精写，落库门禁按它校验区集/版式/载体）。
  *   按概念维度存储（dl_plan.concept_id），同一空间不同概念各有一套。
+ * - `concept-split`：**知识点拆分方案**（2026-10-06；研究/规划时发现知识点粒度过大——
+ *   内容装不进一份讲义或天然是多主题聚合——agent 提交拆分提案，用户确认后系统就地把
+ *   原知识点转成分支目录并建子知识点）。按概念维度存储，与 lesson 同构。
  */
-export type DlPlanStep = 'understanding' | 'syllabus' | 'lesson'
+export type DlPlanStep = 'understanding' | 'syllabus' | 'lesson' | 'concept-split'
+
+/**
+ * 知识点拆分方案（`concept-split` 步载荷；2026-10-06 用户需求「复杂知识点允许 agent 再拆分」）。
+ * agent 只产方案不动图——用户确认后由系统调用既有 `splitConceptIntoBranch` 执行：
+ * 原知识点就地转分支目录、子知识点挂其下、原知识点的外部前置自动继承给每个子知识点、
+ * 旧总览讲义/笔记/问答退役（确认框写明代价）。children 的 prerequisites 只允许引用
+ * **兄弟子知识点名**（拆分内部的学习顺序），执行时一并落前置边。
+ */
+export interface DlConceptSplitPayload {
+  /** 要拆分的知识点 id */
+  conceptId: string
+  /** 拆成一层分支后的目录名（缺省沿用原知识点名） */
+  branchName?: string | null
+  /** 拆出的子知识点（至少 2 个——只拆 1 个没有意义） */
+  children: Array<{
+    name: string
+    definitionShort?: string | null
+    /** 兄弟子知识点名（拆分内部的学习顺序；不得引用自身/外部概念） */
+    prerequisites?: string[]
+  }>
+  /** 为什么建议拆分（给用户看的一句理由：粒度过大/多主题聚合…） */
+  reason?: string | null
+}
 
 /** 方案状态：draft=待用户确认 | confirmed=已确认（生效） | superseded=被新版本取代 */
 export type DlPlanStatus = 'draft' | 'confirmed' | 'superseded'
@@ -342,8 +381,16 @@ export interface DlPlanSyllabus {
 
 /** 讲义区级计划条目（大纲 roster；对应 ppt-master 的 §IX 页级 roster 的 page job） */
 export interface DlLessonPlanEntry {
-  /** 区 key（必须属于该本质类型的模板区集，见 shared/utils/lesson-template） */
+  /**
+   * 区 key：规范区（definition/detail/examples/operation/confusions/controversy/statement）
+   * 或锚点区（meta/selfcheck/answers/notes）直接用；其余为**自造区**（v9 起允许——
+   * 章节由规划决定，英文 slug，见 shared/utils/lesson-template）。
+   */
   key: string
+  /** 区标题：自造区必填（章节名由规划给出）；规范区缺省用目录默认标题 */
+  title?: string | null
+  /** 区教学职责（lead/core/case/support/close）：自造区必填；规范区缺省由目录兜底 */
+  role?: string | null
   /** 版式设备（key 见 shared/utils/lesson-layout 的设备目录；别名在归一化时改规范名） */
   layout: string
   /** 这一区替读者做什么（动词句；不是"讲一下 X"） */
@@ -423,6 +470,12 @@ export interface DlPlanView {
   lessonConceptId?: string | null
   /** 讲义方案是否已确认（= 允许按规格逐区精写；未确认时前端弹确认框） */
   lessonConfirmed: boolean
+  /** 当前概念的知识点拆分方案（最新版；2026-10-06 agent 拆分提案，确认即执行拆分） */
+  conceptSplit: DlPlanRevisionView<DlConceptSplitPayload> | null
+  /** concept-split 对应的概念 id */
+  conceptSplitConceptId?: string | null
+  /** 拆分方案是否已确认（确认即已执行；未确认时前端弹确认框） */
+  conceptSplitConfirmed: boolean
 }
 
 // ==================== 空间视图（列表页 / 三栏空间页） ====================

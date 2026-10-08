@@ -71,6 +71,7 @@ import { addDiaryFolderBrainOptIn } from '@core/database/migrations/add-diary-fo
 import { addDiaryAttachmentDescription } from '@core/database/migrations/add-diary-attachment-description'
 import { addKeyframeReferenceOverrides } from '@core/database/migrations/add-keyframe-reference-overrides'
 import { addStoryboardUseKeyframes } from '@core/database/migrations/add-storyboard-use-keyframes'
+import { addEpisodeScriptMetadata } from '@core/database/migrations/add-episode-script-metadata'
 import { addStoryboardIncludeInFinal } from '@core/database/migrations/add-storyboard-include-in-final'
 import { addEpComposeClosure } from '@core/database/migrations/add-ep-compose-closure'
 import { addStoryboardReferenceImageIds } from '@core/database/migrations/add-storyboard-reference-image-ids'
@@ -352,6 +353,8 @@ async function initDatabase(): Promise<void> {
   await addKeyframeReferenceOverrides(ds)
   // 分镜 use_keyframes：是否走关键帧流程（false → 直接用剧本描述 + 资产生成视频）
   await addStoryboardUseKeyframes(ds)
+  // 剧本 metadata 列（提示词优化方案 §4.5）：保真覆盖度报告落库，UI 可见
+  await addEpisodeScriptMetadata(ds)
   // 分镜 include_in_final：⑥ 合成时是否入最终成片（默认 1）
   await addStoryboardIncludeInFinal(ds)
   // 剧集状态闭环：video_episodes.composed_video_path + scene_scripts.narration_audio_path
@@ -663,6 +666,13 @@ async function initDatabase(): Promise<void> {
     '@core/database/migrations/create-domain-learning-tables'
   )
   await createDomainLearningTables(ds)
+
+  // 信息搜集（docs/design/2026-10-07-info-collection-design.md §2.3）：5 张 ic_* 表
+  // （幂等，双语种；与 Electron 端 runMultiTenantMigrations 同构登记）
+  const { createInfoCollectionTables } = await import(
+    '@core/database/migrations/create-info-collection-tables'
+  )
+  await createInfoCollectionTables(ds)
 
   // H5 视频任务崩溃恢复（2026-09-16 ep-hardening）：storyboards / ep_video_segments
   // 加 provider_task_id（幂等，双语种；与 Electron 端 runMultiTenantMigrations 同构登记）

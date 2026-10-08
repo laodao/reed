@@ -98,6 +98,9 @@ export function registerKnowledgeBaseHandlers(): void {
   // 重新处理文档
   ipcBridge.handle('knowledge-base:reprocess-document', handleReprocessDocument)
 
+  // 继续处理文档（断点续跑：复用已落切片与向量，只补未完成部分）
+  ipcBridge.handle('knowledge-base:resume-document', handleResumeDocument)
+
   // 获取文档分片
   ipcBridge.handle('knowledge-base:get-document-chunks', handleGetDocumentChunks)
 
@@ -292,6 +295,17 @@ async function handleReprocessDocument(
 ): Promise<IpcResponse<void>> {
   const service = getKnowledgeBaseService()
   return await service.reprocessDocument(documentId)
+}
+
+/**
+ * 处理继续处理文档（断点续跑）
+ */
+async function handleResumeDocument(
+  _event: any,
+  documentId: string
+): Promise<IpcResponse<void>> {
+  const service = getKnowledgeBaseService()
+  return await service.resumeDocument(documentId)
 }
 
 /**

@@ -200,7 +200,8 @@ export class KbGoalDistillService {
     const units: Array<{ label: string; text: string; documentId: string; chapterId: string }> = []
     for (const doc of docs) {
       const book = shortBookName(doc.name)
-      const chapters = await repos.chapters.findByDocument(doc.id)
+      // 摘要缺失时回退正文采样 → 需要 content（显式 opt-in）
+      const chapters = await repos.chapters.findByDocument(doc.id, { includeContent: true })
       chapters.forEach((c, i) => {
         // 非叙事章节（版权/简介/评析/剧照等前置页）不进取材——书评摘录会污染经验卡
         if (isNonNarrativeChapter(c.title, c.parentTitle)) return

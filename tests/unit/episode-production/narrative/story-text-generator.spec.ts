@@ -8,6 +8,10 @@
 
 import { describe, it, expect } from 'vitest'
 import { __test } from '@core/platform/episode-production/narrative/ai/story-text-generator'
+import {
+  buildPromptContext,
+  createDefaultPromptContext,
+} from '@core/platform/episode-production/prompts/prompt-context'
 
 describe('story-text-generator buildStoryTextUserPrompt', () => {
   it('只有 prompt 时：不含【故事背景】段，仅【创作要求】', () => {
@@ -82,5 +86,95 @@ describe('story-text-generator STORY_TEXT_SYSTEM_PROMPT', () => {
     // 800–3000 字区间
     expect(s).toContain('800')
     expect(s).toContain('3000')
+  })
+})
+
+// ==================== §3.3 注入专项（2026-10-06） ====================
+
+describe('§3.3 对白引号契约（下游保真校验的前提显式化）', () => {
+  it('声明"人物对白必须使用引号标出"', () => {
+    expect(__test.buildStoryTextSystemPrompt()).toContain('人物对白必须使用引号标出')
+  })
+
+  it('说明下游用途：改编为剧本、对白可被逐句提取与校验', () => {
+    const s = __test.buildStoryTextSystemPrompt()
+    expect(s).toContain('改编为剧本')
+    expect(s).toContain('逐句提取')
+    expect(s).toContain('保真校验')
+  })
+
+  it('向后兼容常量已含该契约', () => {
+    expect(__test.STORY_TEXT_SYSTEM_PROMPT).toContain('人物对白必须使用引号标出')
+  })
+})
+
+describe('§3.3 体裁叙事要求注入', () => {
+  it('短剧体裁注入短剧叙事要求', () => {
+    const s = __test.buildStoryTextSystemPrompt(
+      buildPromptContext({ genre: 'short_drama' }),
+    )
+    expect(s).toContain('体裁要求（竖屏短剧）')
+    expect(s).toContain('强冲突')
+  })
+
+  it('电影体裁注入自己的要求，不含短剧话术', () => {
+    const s = __test.buildStoryTextSystemPrompt(buildPromptContext({ genre: 'film' }))
+    expect(s).toContain('体裁要求（电影）')
+    expect(s).not.toContain('强冲突')
+    expect(s).not.toContain('短剧')
+  })
+
+  it('custom 体裁（无叙事要求）不注入体裁行', () => {
+    const s = __test.buildStoryTextSystemPrompt(buildPromptContext({ genre: 'custom' }))
+    expect(s).not.toContain('体裁要求（')
+  })
+
+  it('无上下文时沿用默认（短剧）体裁', () => {
+    const s = __test.buildStoryTextSystemPrompt(createDefaultPromptContext())
+    expect(s).toContain('体裁要求（竖屏短剧）')
+  })
+})
+
+describe('§3.3 篇幅按目标集长推算', () => {
+  it('未配置目标集长 → 历史区间 800–3000', () => {
+    expect(__test.resolveStoryCharsRange(undefined)).toEqual({ min: 800, max: 3000 })
+    expect(__test.buildStoryTextSystemPrompt(createDefaultPromptContext())).toContain('800–3000 字')
+  })
+
+  it('目标集长越大篇幅越大（单调不减，含极端值）', () => {
+    const seq = [60, 200, 400, 600, 3600].map((s) => __test.resolveStoryCharsRange(s))
+    for (let i = 1; i < seq.length; i++) {
+      expect(seq[i].min).toBeGreaterThanOrEqual(seq[i - 1].min)
+      expect(seq[i].max).toBeGreaterThanOrEqual(seq[i - 1].max)
+    }
+    // 长集不得给出比短集更短的篇幅建议（逐端 clamp 而非整段回退）
+    const short = __test.resolveStoryCharsRange(200)
+    const long = __test.resolveStoryCharsRange(3600)
+    expect(long.min).toBeGreaterThanOrEqual(short.min)
+    expect(long.max).toBeGreaterThanOrEqual(short.max)
+  })
+
+  it('结果恒收敛在硬上下限内且区间有效', () => {
+    for (const sec of [10, 30, 120, 300, 600, 3600]) {
+      const r = __test.resolveStoryCharsRange(sec)
+      expect(r.min).toBeGreaterThanOrEqual(800)
+      expect(r.max).toBeLessThanOrEqual(3000)
+      expect(r.min).toBeLessThan(r.max)
+    }
+  })
+
+  it('配置后提示词不再出现写死的 800–3000', () => {
+    const s = __test.buildStoryTextSystemPrompt(
+      buildPromptContext({ targetEpisodeDurationSec: 300 }),
+    )
+    expect(s).not.toContain('800–3000 字')
+    expect(s).toMatch(/\d+–\d+ 字/)
+  })
+
+  it('非法目标集长回落历史区间', () => {
+    for (const bad of [0, -5, NaN]) {
+      const r = __test.resolveStoryCharsRange(bad as number)
+      expect(r).toEqual({ min: 800, max: 3000 })
+    }
   })
 })

@@ -42,6 +42,11 @@ import { ItemAssetService } from '@core/platform/episode-production/assets/servi
 import { AssetImageService } from '@core/platform/episode-production/assets/services/asset-image.service'
 import { generateCogenForScene } from '../ai/storyboard-cogen'
 import type { CogenExistingAsset, CogenOutput } from '../ai/storyboard-cogen'
+import {
+  createDefaultPromptContext,
+  type PromptContext,
+} from '../../prompts/prompt-context'
+import { promptContextFromEpisodeAndProject } from '../../prompts/episode-prompt-context.service'
 import { normalizeShotNumbers } from './storyboard.service'
 import { cleanupStoryboards } from '../storyboard-cleanup.service'
 import { insertStoryboardIn } from '../storyboard-insert'
@@ -239,6 +244,8 @@ export class StoryboardCogenService {
     projectId: string
     providerConfigId: string
     modelId: string
+    /** §3.8：分镜生成用的统一提示词上下文（故事背景/体裁/风格/画幅/目标时长/语速） */
+    promptCtx: PromptContext
   }> {
     // ─── 加载链：episode → script → scenes；episode → project.config 分镜/剧本模型 ───
     const episode = await this.ds
@@ -286,6 +293,8 @@ export class StoryboardCogenService {
       projectId: project.id,
       providerConfigId: chosen.providerConfigId,
       modelId: chosen.modelId,
+      // §3.8：此处 episode 与 project 都已加载，就地装配统一上下文（不再各自查一遍）
+      promptCtx: promptContextFromEpisodeAndProject(episode, project),
     }
   }
 
@@ -454,6 +463,7 @@ export class StoryboardCogenService {
       state.buildExistingAssets(),
       ctx.providerConfigId,
       ctx.modelId,
+      ctx.promptCtx,
     )
 
     // 2) D2 绑定构造：按名复用 / createStandalone 新建（O3：复用命中但描述过薄时富化回填）
@@ -533,6 +543,7 @@ export class StoryboardCogenService {
     existingAssets: CogenExistingAsset[],
     providerConfigId: string,
     modelId: string,
+    ctx: PromptContext = createDefaultPromptContext(),
   ): Promise<CogenOutput> {
     try {
       return await generateCogenForScene(
@@ -540,6 +551,7 @@ export class StoryboardCogenService {
         existingAssets,
         providerConfigId,
         modelId,
+        ctx,
       )
     } catch (e: any) {
       const msg = e?.message ?? ''
@@ -553,6 +565,7 @@ export class StoryboardCogenService {
         existingAssets,
         providerConfigId,
         modelId,
+        ctx,
       )
     }
   }

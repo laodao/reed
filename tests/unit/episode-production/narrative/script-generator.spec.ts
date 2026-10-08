@@ -1,4 +1,4 @@
-/**
+﻿/**
  * EpisodeScriptGenerator binding 解析单测（P4-T4）
  * @module tests/unit/episode-production/narrative/script-generator
  *
@@ -240,11 +240,11 @@ describe('script-generator __test helpers', () => {
       '## ⭐ 强约束：所有引用必须使用 binding ID',
       '## 场景拆分原则',
       '## JSON 场景数据格式示例',
-      '## ⭐ 字段输出质量要求（必须严格遵守）',
+      '## 字段质量要求（必须遵守）',
       '### sceneDescription（场景视觉描述）',
-      '### locationKeyObjects（地点关键物件列表）',
-      '### lighting（光线描述）',
-      '### outfit（角色服装）',
+      '### locationKeyObjects（场景关键物件）',
+      '### lighting（光线）',
+      '### characters[].outfit（服装）',
       '## 可用角色列表',
       '## 可用地点列表',
       '## 可用物品列表',
@@ -277,7 +277,7 @@ describe('script-generator 续写 / 正文拆分提示词', () => {
     expect(prompt).toContain('【场景数据开始】')
     expect(prompt).toContain('【剧本正文开始】')
     expect(prompt).toContain('## ⭐ 强约束：所有引用必须使用 binding ID')
-    expect(prompt).toContain('## ⭐ 字段输出质量要求（必须严格遵守）')
+    expect(prompt).toContain('## 字段质量要求（必须遵守）')
     expect(prompt).toContain('## JSON 场景数据格式示例')
   })
 

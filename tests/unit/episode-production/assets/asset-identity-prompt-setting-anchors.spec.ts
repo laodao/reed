@@ -85,7 +85,11 @@ describe('古风硬约束（F2）', () => {
     const r = appendAncientEraConstraint('演武场', '宋朝')
     expect(r).toContain(ANCIENT_ERA_CONSTRAINT_SUFFIX)
     expect(appendAncientEraConstraint(r, '宋朝')).toBe(r)
-    expect(appendAncientEraConstraint('演武场', '现代')).toBe('演武场')
+    // 2026-10-06 §2.5：不再只对古风生效——现代项目拿到"现代"档案的约束；
+    // 只有无法推断时代的 generic 档案才不加约束
+    expect(appendAncientEraConstraint('演武场', '现代')).toContain('现代都市写实风格')
+    expect(appendAncientEraConstraint('演武场', '')).toBe('演武场')
+    expect(appendAncientEraConstraint('演武场', '不存在的时代')).toBe('演武场')
   })
 
   it('mergeAncientEraNegative：命中合并、幂等、非古风原样', () => {
@@ -93,6 +97,15 @@ describe('古风硬约束（F2）', () => {
     expect(r).toBe(`blurry, ${ANCIENT_ERA_NEGATIVE}`)
     expect(mergeAncientEraNegative(r, '宋朝')).toBe(r)
     expect(mergeAncientEraNegative(undefined, '宋朝')).toBe(ANCIENT_ERA_NEGATIVE)
-    expect(mergeAncientEraNegative('blurry', '现代')).toBe('blurry')
+    // 现代档案有自己的 negative；generic 才原样返回
+    expect(mergeAncientEraNegative('blurry', '现代')).toContain('ancient costume')
+    expect(mergeAncientEraNegative('blurry', '')).toBe('blurry')
+  })
+
+  it('显式 eraProfileKey 优先于文本推断（§2.5）', () => {
+    expect(appendAncientEraConstraint('演武场', '宋朝', 'modern')).toContain('现代都市写实风格')
+    expect(appendAncientEraConstraint('演武场', '现代', 'ancient_chinese')).toContain(
+      ANCIENT_ERA_CONSTRAINT_SUFFIX,
+    )
   })
 })

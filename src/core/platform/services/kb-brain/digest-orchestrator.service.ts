@@ -370,7 +370,8 @@ export class KbBrainDigestService {
     this.emitStatus(documentId, 'digesting')
 
     try {
-      const chapterRows = await chapters.findByDocument(documentId)
+      // 基础遍消费章节正文（digestChapter 的 content 入参）→ 显式 opt-in
+      const chapterRows = await chapters.findByDocument(documentId, { includeContent: true })
       let done = 0
       const exhaustedChapters: string[] = []
       const moderationSkipped: string[] = []
@@ -721,10 +722,10 @@ export class KbBrainDigestService {
       // 5. 入池：向量（失败不阻塞——可补建）+ 倒排
       if (inserted.length > 0) {
         const texts = inserted.map(r => r.statement)
-        const vectors = await this.embedFn(texts, {
+        const vectors = await this.safeEmbed(texts, {
           id: kbId,
           embeddingConfig: await this.kbEmbeddingConfig(kbId)
-        })
+        }, '论断向量')
         if (vectors && vectors.length === inserted.length && repos.vectors) {
           await repos.vectors.createBatch(
             vectors.map((vector, i) => ({
@@ -860,22 +861,19 @@ export class KbBrainDigestService {
     }
     const inserted = await repos.events.createBatch(inputs)
     if (inserted.length > 0 && repos.vectors) {
-      try {
-        const vectors = await this.embedFn(
-          inserted.map(r => `${r.summary}（${r.sceneType}）`),
-          { id: kbId, embeddingConfig: await this.kbEmbeddingConfig(kbId) }
+      const vectors = await this.safeEmbed(
+        inserted.map(r => `${r.summary}（${r.sceneType}）`),
+        { id: kbId, embeddingConfig: await this.kbEmbeddingConfig(kbId) },
+        '场面向量',
+      )
+      if (vectors && vectors.length === inserted.length) {
+        await repos.vectors.createBatch(
+          vectors.map((vector, i) => ({
+            chunkId: `event:${inserted[i].id}`,
+            knowledgeBaseId: kbId,
+            vector
+          }))
         )
-        if (vectors && vectors.length === inserted.length) {
-          await repos.vectors.createBatch(
-            vectors.map((vector, i) => ({
-              chunkId: `event:${inserted[i].id}`,
-              knowledgeBaseId: kbId,
-              vector
-            }))
-          )
-        }
-      } catch {
-        /* 向量失败不阻塞（P1 聚类前可补建） */
       }
     }
     return inserted.length
@@ -1111,7 +1109,8 @@ export class KbBrainDigestService {
       }
     }
     if (attentionByLens.size === 0) return
-    const chapterRows = await repos.chapters.findByDocument(documentId)
+    // 视角遍消费章节正文（lensAtomizer.atomizeChapter 的 content 入参）→ 显式 opt-in
+    const chapterRows = await repos.chapters.findByDocument(documentId, { includeContent: true })
     const mentionCache = new Map<string, string | null>()
     for (const lensId of cfg.lenses.enabledLensNoteIds) {
       const lens = attentionByLens.get(lensId)
@@ -1206,9 +1205,10 @@ export class KbBrainDigestService {
           }
           // 视角观感入池
           if (inserted.length > 0 && repos.vectors) {
-            const vectors = await this.embedFn(
+            const vectors = await this.safeEmbed(
               inserted.map(r => r.statement),
-              { id: kbId, embeddingConfig: await this.kbEmbeddingConfig(kbId) }
+              { id: kbId, embeddingConfig: await this.kbEmbeddingConfig(kbId) },
+              '视角观感向量',
             )
             if (vectors && vectors.length === inserted.length) {
               await repos.vectors.createBatch(
@@ -1291,6 +1291,27 @@ export class KbBrainDigestService {
     return entities.listActiveNames(kbId, 200)
   }
 
+  /**
+   * 嵌入调用（降级型）：失败返回 null 并记录**真实原因**。
+   *
+   * 消化流水线的既定语义是「向量失败不阻塞入池——可补建」，故不向上抛；
+   * 但原因必须留痕，否则向量缺失只能靠猜（此前 embedFn 直接抛错或静默，二者都不可查）。
+   */
+  private async safeEmbed(
+    texts: string[],
+    kb: { id: string; embeddingConfig: string | null },
+    context: string,
+  ): Promise<number[][] | null> {
+    try {
+      return await this.embedFn(texts, kb)
+    } catch (e: unknown) {
+      console.warn(
+        `[KbBrainDigest] ${context} 嵌入失败（不阻塞入池，可补建）: ${e instanceof Error ? e.message : String(e)}`,
+      )
+      return null
+    }
+  }
+
   private async kbEmbeddingConfig(kbId: string): Promise<string | null> {
     const repos = this.reposFn()
     if (!repos) return null
@@ -1323,10 +1344,11 @@ let installed = false
 export function installKbBrainDigest(
   deps?: KbBrainDigestDeps & {
     kbService?: {
+      /** 失败抛错（含真实原因）；digest 侧经 safeEmbed 捕获后降级并留痕 */
       getEmbeddingVectors(
         texts: string[],
         config: Record<string, unknown>
-      ): Promise<number[][] | null>
+      ): Promise<number[][]>
     }
   }
 ): void {

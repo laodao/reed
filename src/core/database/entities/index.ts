@@ -178,3 +178,9 @@ export { LwIpBindingEntity } from './lw-ip-binding.entity'
 
 // 概念字段变更审计（删除/拆分知识点时级联清理；2026-10-05 注册进主数据源）
 export { DlConceptLogEntity } from './domain-learning/dl-concept-log.entity'
+// 信息搜集（docs/design/2026-10-07-info-collection-design.md §2.3 + storage 专项：5 张 ic_* 表）
+export { IcProjectEntity } from './info-collection/ic-project.entity'
+export { IcTaskEntity } from './info-collection/ic-task.entity'
+export { IcTaskPassEntity } from './info-collection/ic-task-pass.entity'
+export { IcSourceEntity } from './info-collection/ic-source.entity'
+export { IcRowEntity } from './info-collection/ic-row.entity'

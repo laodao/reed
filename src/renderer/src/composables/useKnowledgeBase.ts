@@ -281,6 +281,13 @@ export function useKnowledgeBase() {
   }
 
   /**
+   * 继续处理文档（断点续跑：保留已有向量，只补未完成部分）
+   */
+  async function resumeDocument(documentId: string): Promise<boolean> {
+    return await store.resumeDocument(documentId)
+  }
+
+  /**
    * 获取文档分片
    */
   async function getDocumentChunks(documentId: string): Promise<KbChunk[]> {
@@ -418,6 +425,7 @@ export function useKnowledgeBase() {
     selectAndUploadFiles,
     deleteDocument,
     reprocessDocument,
+    resumeDocument,
     getDocumentChunks,
 
     // 检索服务

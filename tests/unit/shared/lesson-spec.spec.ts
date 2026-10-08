@@ -82,18 +82,30 @@ describe('讲义规格归一化', () => {
     expect(r.reason).toContain('roster')
   })
 
-  it('roster 用了该本质类型不允许的区 → 拒绝并列出可用区（与落库门禁同源）', () => {
-    const r = normalizeLessonSpec(
+  it('v9：自造区合法但缺 title/role → 拒绝；带齐字段 → 通过（章节由规划决定）', () => {
+    const missing = normalizeLessonSpec(
       draft({ roster: [{ key: 'practice', layout: 'qa', job: '随便练' }] }),
       'K-concept',
     )
-    expect(r.ok).toBe(false)
-    if (r.ok) return
-    expect(r.reason).toContain('practice')
-    expect(r.reason).toContain('meta')
+    expect(missing.ok).toBe(false)
+    if (missing.ok) return
+    expect(missing.reason).toContain('practice')
+    expect(missing.reason).toContain('title')
+
+    const full = normalizeLessonSpec(
+      draft({
+        roster: [
+          { key: 'meta', layout: 'prose', job: '导学' },
+          { key: 'practice', title: '上手练习', role: 'support', layout: 'steps', job: '跟做一遍' },
+          { key: 'selfcheck', layout: 'qa', job: '检验' },
+        ],
+      }),
+      'K-concept',
+    )
+    expect(full.ok).toBe(true)
   })
 
-  it('roster 顺序不符合模板区序 → 拒绝（先例后律、自测收尾）', () => {
+  it('roster 违反锚点位置（正文区排在 selfcheck 之后）→ 拒绝并说明收尾纪律', () => {
     const r = normalizeLessonSpec(
       draft({
         roster: [
@@ -105,7 +117,7 @@ describe('讲义规格归一化', () => {
     )
     expect(r.ok).toBe(false)
     if (r.ok) return
-    expect(r.reason).toContain('顺序')
+    expect(r.reason).toContain('selfcheck')
   })
 
   it('篇幅预算越界 → 收到合法区间并记变更（不静默接受畸形值）', () => {
