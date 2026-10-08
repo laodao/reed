@@ -11,6 +11,8 @@
  */
 
 import * as fs from 'fs'
+import * as http from 'http'
+import * as https from 'https'
 import type {
   ImageProviderConfig,
   ImageModel,
@@ -27,6 +29,54 @@ interface GatewayImageResponse {
   path?: string
   url?: string
   error?: string
+}
+
+/** 生成排队等待上限：ComfyUI 单队列被 H3 视频任务占用时，/api/image 需在队尾等数分钟起 */
+const IMAGE_REQUEST_TIMEOUT_MS = 15 * 60_000
+
+/**
+ * POST JSON（node:http 实现，**无 undici 响应头超时**）。
+ *
+ * 背景（2026-10-08 实跑踩坑）：全局 fetch 基于 undici，响应头默认 300 秒超时——
+ * ComfyUI 队列被 H3 视频任务占用时，同步接口 /api/image 在队尾等待会超过 5 分钟，
+ * undici 以 UND_ERR_HEADERS_TIMEOUT 掐断（报"fetch failed"），图像必败。
+ * node:http 无响应头超时，整体上限由 deadline 控制（默认 15 分钟）。
+ */
+export function postJsonOverHttp(
+  url: string,
+  payload: Record<string, unknown>,
+  timeoutMs = IMAGE_REQUEST_TIMEOUT_MS,
+): Promise<{ status: number; text: string }> {
+  return new Promise((resolve, reject) => {
+    const target = new URL(url)
+    const body = JSON.stringify(payload)
+    const reqModule = target.protocol === 'https:' ? https : http
+    const req = reqModule.request(
+      target,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      },
+      (res) => {
+        const chunks: Buffer[] = []
+        res.on('data', (c: Buffer) => chunks.push(c))
+        res.on('end', () => {
+          clearTimeout(timer)
+          resolve({ status: res.statusCode ?? 0, text: Buffer.concat(chunks).toString('utf-8') })
+        })
+        res.on('error', reject)
+      },
+    )
+    const timer = setTimeout(() => {
+      req.destroy(new Error(`网关响应超时（等待 ${(timeoutMs / 60_000).toFixed(0)} 分钟，ComfyUI 队列可能被视频任务长期占用）`))
+    }, timeoutMs)
+    req.on('error', (e) => {
+      clearTimeout(timer)
+      reject(e)
+    })
+    req.write(body)
+    req.end()
+  })
 }
 
 /** 宽高 → 网关 size 档位 */
@@ -121,14 +171,11 @@ export class ComfyUIImageProvider extends BaseImageProvider {
         if (b64Refs.length > 0) payload.refs = b64Refs
       }
 
-      const resp = await fetch(`${baseUrl}/api/image`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      const text = await resp.text()
-      if (!resp.ok) {
-        return { success: false, error: `网关返回 HTTP ${resp.status}: ${text.slice(0, 300)}` }
+      // node:http 实现：ComfyUI 队列被视频任务占用时 /api/image 排队可达数分钟，
+      // 全局 fetch（undici）的 300 秒响应头超时会将其掐断（见 postJsonOverHttp 注释）
+      const { status, text } = await postJsonOverHttp(`${baseUrl}/api/image`, payload)
+      if (status < 200 || status >= 300) {
+        return { success: false, error: `网关返回 HTTP ${status}: ${text.slice(0, 300)}` }
       }
       let data: GatewayImageResponse
       try {
