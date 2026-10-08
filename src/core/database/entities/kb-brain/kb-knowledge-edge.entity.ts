@@ -24,6 +24,16 @@ export type KbEdgeRelation =
   | 'instance-of'
   /** 伏笔线：source=埋设（承诺），target=回收（兑现）——跨距的作者技法层呼应，与 leads-to 的情节内因果区分 */
   | 'sets-up'
+  /** 实体世界关系（P2 图谱：滚动记忆抽取，source/target 均为 entity） */
+  | 'member-of'
+  | 'located-in'
+  | 'owns'
+  | 'wields'
+  | 'allied-with'
+  | 'enemy-of'
+  | 'kin-of'
+  | 'mentor-of'
+  | 'relates'
 
 @Entity({ name: 'kb_knowledge_edges' })
 @Unique('uq_kb_edges_unique', ['sourceKind', 'sourceId', 'relation', 'targetKind', 'targetId'])

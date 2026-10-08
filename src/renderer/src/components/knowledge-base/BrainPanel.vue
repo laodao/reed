@@ -312,6 +312,9 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="reading">全书精读——滚动工作记忆（设定/人物/情节/伏笔）</el-dropdown-item>
+                <el-dropdown-item command="viewGraph" divided>查看知识图谱——实体关系图</el-dropdown-item>
+                <el-dropdown-item command="review">终审复核——交叉核对知识库找问题</el-dropdown-item>
+                <el-dropdown-item command="summary">全书综述——生成完整分析文章</el-dropdown-item>
                 <el-dropdown-item command="consolidate">归纳整理——同主题碎片合并成综合论断</el-dropdown-item>
                 <el-dropdown-item command="cleanup">垃圾清理——归档确定无疑的垃圾论断</el-dropdown-item>
                 <el-dropdown-item command="foreshadow">伏笔扫描——埋设-回收关系判读</el-dropdown-item>
@@ -362,6 +365,21 @@
         </section>
       </aside>
     </div>
+
+    <!-- 知识图谱（P2：实体关系图） -->
+    <el-dialog v-model="graphOpen" title="知识图谱（实体关系）" width="90%" top="4vh" destroy-on-close>
+      <div v-loading="graphLoading" style="min-height: 480px">
+        <ForceGraph
+          v-if="graphNodes.length > 0"
+          :nodes="graphNodes"
+          :edges="graphEdges"
+          :width="1200"
+          :height="620"
+          style="width: 100%"
+        />
+        <div v-else class="side-empty">图谱为空——先运行「全书精读」，再用「维护工具」里的图谱构建抽取实体关系</div>
+      </div>
+    </el-dialog>
 
     <!-- 设置抽屉 -->
     <el-drawer v-model="configOpen" title="大脑设置" size="600px" :close-on-click-modal="false">
@@ -717,6 +735,8 @@
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { KB_BRAIN_GOAL_PRESETS } from '@shared/constants/kb-brain-goal-presets'
+import ForceGraph from '@/components/common/ForceGraph.vue'
+import type { ForceGraphNode, ForceGraphEdge } from '@/components/common/force-graph.model'
 import { kbAtomLayerLabel, kbAtomOriginLabel, kbAtomStatusLabel, kbAtomTypeLabel, kbNoteStatusLabel, kbNoteTypeLabel } from '@shared/constants/kb-brain-labels'
 
 const props = defineProps<{ kbId: string }>()
@@ -1551,9 +1571,132 @@ const maintSummaries = computed(() => {
   return out
 })
 
+// ===== P2/P3：知识图谱 + 终审复核 + 全书综述 =====
+interface GraphNodeVo {
+  id: string
+  name: string
+  entityType: string
+}
+interface GraphEdgeVo {
+  id: string
+  source: string
+  target: string
+  relation: string
+  label: string
+  evidence: string
+}
+const graphOpen = ref(false)
+const graphLoading = ref(false)
+const graphNodes = ref<ForceGraphNode[]>([])
+const graphEdges = ref<ForceGraphEdge[]>([])
+const graphBuildBusy = ref(false)
+const reviewBusy = ref(false)
+const summaryBusy = ref(false)
+const ENTITY_TYPE_COLORS: Record<string, string> = {
+  character: '#409eff',
+  organization: '#e6a23c',
+  location: '#67c23a',
+  item: '#f56c6c',
+  concept: '#909399',
+}
+
+async function openGraphView(): Promise<void> {
+  graphOpen.value = true
+  graphLoading.value = true
+  try {
+    const resp = await window.electronAPI.knowledgeBase.brain.graphData({ kbId: props.kbId })
+    const d = (resp?.data ?? resp) as { nodes: GraphNodeVo[]; edges: GraphEdgeVo[] } | undefined
+    const nodes = d?.nodes ?? []
+    const edges = d?.edges ?? []
+    graphNodes.value = nodes.map(n => ({
+      id: n.id,
+      name: n.name,
+      color: ENTITY_TYPE_COLORS[n.entityType] ?? '#909399',
+      radius: 6,
+    }))
+    graphEdges.value = edges.map(e => ({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      label: e.label,
+      title: e.label,
+    }))
+    if (nodes.length === 0) ElMessage.info('图谱为空——先运行「全书精读」')
+  } catch (e) {
+    ElMessage.error(`图谱加载失败: ${e instanceof Error ? e.message : String(e)}`)
+  } finally {
+    graphLoading.value = false
+  }
+}
+
+async function startGraphBuild(): Promise<void> {
+  const resp = await window.electronAPI.knowledgeBase.brain.graphBuildRun({ kbId: props.kbId, documentId: firstDocId() })
+  const payload = (resp?.data ?? resp) as { success?: boolean; error?: string } | undefined
+  if (payload && payload.success === false) {
+    ElMessage.warning(payload.error ?? '无法启动图谱构建')
+    return
+  }
+  graphBuildBusy.value = true
+  ElMessage.info('图谱构建中——从工作记忆抽取实体关系（约一分钟）')
+  setTimeout(async () => {
+    graphBuildBusy.value = false
+    await openGraphView()
+  }, 60000)
+}
+
+function firstDocId(): string {
+  return allDocs.value[0]?.id ?? ''
+}
+
+async function startReview(): Promise<void> {
+  const doc = allDocs.value[0]
+  if (!doc) {
+    ElMessage.warning('知识库没有文档')
+    return
+  }
+  reviewBusy.value = true
+  try {
+    const resp = await window.electronAPI.knowledgeBase.brain.reviewRun({
+      kbId: props.kbId,
+      documentId: doc.id,
+      docName: doc.name,
+    })
+    const payload = (resp?.data ?? resp) as { success?: boolean; error?: string } | undefined
+    if (payload && payload.success === false) ElMessage.warning(payload.error ?? '无法启动复核')
+    else ElMessage.success('终审复核已排队——完成后复核报告入库（约几分钟）')
+  } finally {
+    reviewBusy.value = false
+  }
+}
+
+async function startSummary(): Promise<void> {
+  const doc = allDocs.value[0]
+  if (!doc) {
+    ElMessage.warning('知识库没有文档')
+    return
+  }
+  summaryBusy.value = true
+  try {
+    const resp = await window.electronAPI.knowledgeBase.brain.summaryRun({
+      kbId: props.kbId,
+      documentId: doc.id,
+      docName: doc.name,
+    })
+    const payload = (resp?.data ?? resp) as { success?: boolean; error?: string } | undefined
+    if (payload && payload.success === false) ElMessage.warning(payload.error ?? '无法生成综述')
+    else ElMessage.success('综述已排队——完成后《全书综述》入库，在「经验卡」视图查看')
+  } finally {
+    summaryBusy.value = false
+  }
+}
+
 function onMaintCommand(cmd: string | number | object): void {
   const key = String(cmd)
   if (key === 'reading') void startReading()
+  else if (key === 'viewGraph') void openGraphView()
+  else if (key === 'graphBuild') void startGraphBuild()
+  else if (key === 'review') void startReview()
+  else if (key === 'summary') void startSummary()
   else if (key === 'consolidate') void startConsolidate()
   else if (key === 'cleanup') void startCleanup()
   else if (key === 'foreshadow') void startForeshadow()

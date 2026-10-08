@@ -217,14 +217,27 @@ export class KbNoteRepository extends BaseRepository<KbNoteEntity, KbNoteRecord>
     return this.toDtoList(rows)
   }
 
-  /** 滚动阅读工作记忆卡（P1）：每文档一份，tags 带 doc:<documentId> */
-  async findReadingMemory(kbId: string, documentId: string): Promise<KbNoteRecord | null> {
+  /** 滚动阅读产线的文档附属卡（P1/P3）：工作记忆/复核报告/综述文章，tags 带 doc:<documentId> */
+  async findReadingMemory(
+    kbId: string,
+    documentId: string,
+    type: 'reading-memory' | 'reading-review' | 'book-summary' = 'reading-memory',
+  ): Promise<KbNoteRecord | null> {
     const rows = await this.scoped.find({
-      where: { knowledgeBaseId: kbId, type: 'reading-memory' } as FindOptionsWhere<KbNoteEntity>,
+      where: { knowledgeBaseId: kbId, type } as FindOptionsWhere<KbNoteEntity>,
       order: { createdAt: 'DESC' } as never,
     })
     const hit = rows.find(r => (r.tags ?? '').includes(`"doc:${documentId}"`))
     return hit ? this.toDto(hit) : null
+  }
+
+  /** 书级汇总卡（概要/设定索引/人物册/伏笔台账）——标题内嵌文档名 */
+  async listBookCards(kbId: string, docName: string): Promise<KbNoteRecord[]> {
+    const rows = await this.scoped.find({
+      where: { knowledgeBaseId: kbId, type: In(['book-outline', 'setting-index', 'character-roster', 'foreshadow-ledger']) } as FindOptionsWhere<KbNoteEntity>,
+      order: { createdAt: 'DESC' } as never,
+    })
+    return this.toDtoList(rows.filter(r => (r.title ?? '').includes(docName)))
   }
 
   /**

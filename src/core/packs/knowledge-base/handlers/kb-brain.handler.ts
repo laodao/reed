@@ -9,7 +9,6 @@ import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { KnowledgeBaseService } from '@core/platform/services/knowledge-base.service'
 import { getKbBrainPanelService } from '@core/platform/services/kb-brain/brain-panel.service'
 import { KbDistillService } from '@core/platform/services/kb-brain/distill.service'
-import { safeBrainEmbed } from '@core/platform/services/kb-brain/smelt-common'
 import { KbBrainFsrsService } from '@core/platform/services/kb-brain/fsrs.service'
 import { KbResearchService } from '@core/platform/services/kb-brain/research.service'
 import { enqueueDigestForExisting } from '@core/platform/services/kb-brain/digest-orchestrator.service'
@@ -19,6 +18,8 @@ import { getKbCleanupService } from '@core/platform/services/kb-brain/cleanup.se
 import { getKbLayerRelabelService } from '@core/platform/services/kb-brain/layer-relabel.service'
 import { getKbBookPassesService } from '@core/platform/services/kb-brain/book-passes.service'
 import { getKbBookReadingService } from '@core/platform/services/kb-brain/book-reading.service'
+import { getKbGraphBuildService, GRAPH_RELATION_LABELS } from '@core/platform/services/kb-brain/graph-build.service'
+import { getKbBookReviewService } from '@core/platform/services/kb-brain/book-review.service'
 import { KbBrainHealthService } from '@core/platform/services/kb-brain/health.service'
 import { parseModelRef } from '@core/platform/services/kb-brain/llm'
 import { parseBrainConfig } from '@core/platform/services/kb-brain/brain-config'
@@ -154,13 +155,10 @@ export function registerKbBrainHandlers(): void {
       const { parseBrainConfig } = await import('@core/platform/services/kb-brain/brain-config')
       const cfg = kbRow?.brainConfig ? parseBrainConfig(kbRow.brainConfig) : null
       const svc2 = new KbDistillService({
-        // 提炼是降级型消费（无向量也能按 type 分组），失败原因由 safeBrainEmbed 记日志
         embed: (texts, kb) =>
-          safeBrainEmbed(
-            (t, k) => svc().getEmbeddingVectors(t, k.embeddingConfig ? JSON.parse(k.embeddingConfig) : {}),
+          svc().getEmbeddingVectors(
             texts,
-            kb,
-            'kb:brain:distill',
+            kb.embeddingConfig ? JSON.parse(kb.embeddingConfig) : {}
           ),
         settingPatternEnabled: cfg?.patterns.settingEnabled ?? true,
         characterPatternEnabled: cfg?.patterns.characterEnabled ?? false,
@@ -427,6 +425,98 @@ export function registerKbBrainHandlers(): void {
   })
   ipcBridge.handle('kb:brain:reading-status', (_e, p: { kbId: string }) => {
     return { success: true, data: bookReading.kbStatus(p.kbId) }
+  })
+
+  // P2 关系图谱构建（从工作记忆抽取实体关系 → entity↔entity 边）
+  const graphBuild = getKbGraphBuildService()
+  ipcBridge.handle('kb:brain:graph-build-run', async (_e, p: { kbId: string; documentId: string }) => {
+    if (graphBuild.isRunning(p.kbId)) return { success: false, error: '图谱构建进行中' }
+    const kbRow = await svc()
+      .getKnowledgeBase(p.kbId)
+      .then(r => r.data)
+    const cfg = kbRow?.brainConfig ? parseBrainConfig(kbRow.brainConfig) : null
+    graphBuild.setModelOverride(p.kbId, () =>
+      cfg?.models.adjudicate ? parseModelRef(cfg.models.adjudicate) : {}
+    )
+    graphBuild
+      .run(p.kbId, p.documentId)
+      .then(st =>
+        console.info(
+          `[kb-brain] 图谱构建完成 kb=${p.kbId} 抽取=${st.extracted} 落边=${st.created} 未匹配=${st.unmatched}`
+        )
+      )
+      .catch(e =>
+        console.warn(
+          `[kb-brain] 图谱构建失败 kb=${p.kbId}: ${e instanceof Error ? e.message : String(e)}`
+        )
+      )
+    return { success: true, data: { queued: true } }
+  })
+
+  // P2 图谱视图数据（实体↔实体边 + 实体名/类型）
+  ipcBridge.handle('kb:brain:graph-data', async (_e, p: { kbId: string }) => {
+    const db = await import('@core/database/database-manager.interface')
+    if (!db.getCoreDatabaseManager) return { success: false, error: '数据库未初始化' }
+    const mgr = db.getCoreDatabaseManager()
+    if (!mgr.kbBrainEntities || !mgr.kbKnowledgeEdges) return { success: false, error: '知识大脑未启用' }
+    const entities = await mgr.kbBrainEntities.listActiveWithAliases(p.kbId, 5000)
+    const edges = await mgr.kbKnowledgeEdges.listEntityEdges(p.kbId)
+    const byId = new Map(entities.map(e => [e.id, e]))
+    const used = new Set<string>()
+    for (const e of edges) {
+      used.add(e.sourceId)
+      used.add(e.targetId)
+    }
+    const nodes = [...used]
+      .map(id => byId.get(id))
+      .filter((e): e is NonNullable<typeof e> => !!e)
+      .map(e => ({ id: e.id, name: e.name, entityType: e.entityType }))
+    const relEdges = edges
+      .filter(e => byId.has(e.sourceId) && byId.has(e.targetId))
+      .map(e => ({
+        id: e.id,
+        source: e.sourceId,
+        target: e.targetId,
+        relation: e.relation,
+        label: GRAPH_RELATION_LABELS[e.relation] ?? e.relation,
+        evidence: e.evidence,
+      }))
+    return { success: true, data: { nodes, edges: relEdges } }
+  })
+
+  // P3 终审复核 + 全书综述（单文档 fire-and-forget）
+  const bookReview = getKbBookReviewService()
+  const loadDocCfg = async (kbId: string) => {
+    const kbRow = await svc()
+      .getKnowledgeBase(kbId)
+      .then(r => r.data)
+    const cfg = kbRow?.brainConfig ? parseBrainConfig(kbRow.brainConfig) : null
+    bookReview.setModelOverride(kbId, () =>
+      cfg?.models.adjudicate ? parseModelRef(cfg.models.adjudicate) : {}
+    )
+    return cfg
+  }
+  ipcBridge.handle('kb:brain:review-run', async (_e, p: { kbId: string; documentId: string; docName: string }) => {
+    if (bookReview.isRunning(p.kbId, p.documentId)) return { success: false, error: '复核进行中' }
+    await loadDocCfg(p.kbId)
+    bookReview
+      .runReview(p.kbId, p.documentId, p.docName)
+      .then(st => console.info(`[kb-brain] 终审复核完成 kb=${p.kbId} 问题=${st.issues}`))
+      .catch(e =>
+        console.warn(`[kb-brain] 终审复核失败 kb=${p.kbId}: ${e instanceof Error ? e.message : String(e)}`)
+      )
+    return { success: true, data: { queued: true } }
+  })
+  ipcBridge.handle('kb:brain:summary-run', async (_e, p: { kbId: string; documentId: string; docName: string }) => {
+    if (bookReview.isRunning(p.kbId, p.documentId)) return { success: false, error: '综述生成进行中' }
+    await loadDocCfg(p.kbId)
+    bookReview
+      .runSummary(p.kbId, p.documentId, p.docName)
+      .then(st => console.info(`[kb-brain] 全书综述完成 kb=${p.kbId} ${st.chars}字`))
+      .catch(e =>
+        console.warn(`[kb-brain] 全书综述失败 kb=${p.kbId}: ${e instanceof Error ? e.message : String(e)}`)
+      )
+    return { success: true, data: { queued: true } }
   })
 
   // G3 伏笔扫描（sets-up 边候选生成器；fire-and-forget + 状态轮询；仅手动触发——自动扫描需独立成本闸门）

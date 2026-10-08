@@ -57,6 +57,8 @@ export const KB_NOTE_TYPE_LABELS: Record<string, string> = {
   'anti-pattern': '反面模式',
   // 滚动阅读产线（P1）
   'reading-memory': '阅读记忆',
+  'reading-review': '终审复核',
+  'book-summary': '全书综述',
 }
 
 export const KB_NOTE_STATUS_LABELS: Record<string, string> = {

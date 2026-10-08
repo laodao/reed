@@ -180,6 +180,36 @@ export class KbKnowledgeEdgeRepository extends BaseRepository<KbKnowledgeEdgeEnt
     return affected
   }
 
+  /** 实体↔实体边删除（P2 图谱重建：重建前清掉上一轮抽取的关系边） */
+  async deleteEntityEntityEdges(kbId: string): Promise<void> {
+    await this.scoped.delete({
+      knowledgeBaseId: kbId,
+      sourceKind: 'entity',
+      targetKind: 'entity',
+    } as FindOptionsWhere<KbKnowledgeEdgeEntity>)
+  }
+
+  /** 实体↔实体边清单（P2 图谱视图数据源，带关系/证据/置信度） */
+  async listEntityEdges(
+    kbId: string,
+  ): Promise<Array<{ id: string; sourceId: string; relation: string; targetId: string; evidence: string; confidence: number }>> {
+    const rows = await this.scoped.find({
+      where: {
+        knowledgeBaseId: kbId,
+        sourceKind: 'entity',
+        targetKind: 'entity',
+      } as FindOptionsWhere<KbKnowledgeEdgeEntity>,
+    })
+    return rows.map(r => ({
+      id: r.id,
+      sourceId: r.sourceId,
+      relation: r.relation,
+      targetId: r.targetId,
+      evidence: r.evidence ?? '',
+      confidence: r.confidence,
+    }))
+  }
+
   async deleteByKnowledgeBaseId(knowledgeBaseId: string): Promise<void> {
     await this.scoped.delete({ knowledgeBaseId } as FindOptionsWhere<KbKnowledgeEdgeEntity>)
   }

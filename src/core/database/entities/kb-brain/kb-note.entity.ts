@@ -30,6 +30,9 @@ export type KbNoteType =
   | 'genre-insight'
   // 滚动阅读产线（P1：全书工作记忆，按文档一份，随批次演进）
   | 'reading-memory'
+  // P3：终审复核报告 / 全书综述文章（按文档一份）
+  | 'reading-review'
+  | 'book-summary'
   | 'anti-pattern'
 
 export type KbNoteStatus = 'proposed' | 'draft' | 'published' | 'archived'
