@@ -32,7 +32,7 @@ interface GatewayImageResponse {
 }
 
 /** 生成排队等待上限：ComfyUI 单队列被 H3 视频任务占用时，/api/image 需在队尾等数分钟起 */
-const IMAGE_REQUEST_TIMEOUT_MS = 15 * 60_000
+const IMAGE_REQUEST_TIMEOUT_MS = 30 * 60_000
 
 /**
  * POST JSON（node:http 实现，**无 undici 响应头超时**）。
@@ -40,7 +40,7 @@ const IMAGE_REQUEST_TIMEOUT_MS = 15 * 60_000
  * 背景（2026-10-08 实跑踩坑）：全局 fetch 基于 undici，响应头默认 300 秒超时——
  * ComfyUI 队列被 H3 视频任务占用时，同步接口 /api/image 在队尾等待会超过 5 分钟，
  * undici 以 UND_ERR_HEADERS_TIMEOUT 掐断（报"fetch failed"），图像必败。
- * node:http 无响应头超时，整体上限由 deadline 控制（默认 15 分钟）。
+ * node:http 无响应头超时，整体上限由 deadline 控制（默认 30 分钟）。
  */
 export function postJsonOverHttp(
   url: string,

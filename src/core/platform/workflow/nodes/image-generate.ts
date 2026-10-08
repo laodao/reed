@@ -97,9 +97,13 @@ export async function generateImages(
   } as never
 
   // 提交阶段的瞬时网络失败（fetch/连接/网关 5xx/超时）内部重试一次
+  // ComfyUI 单队列被 H3 视频任务占用时，图像提交会等待/断连数分钟——
+  // 瞬时重试放宽为 4 次 × 60s 间隔（普通云厂商首次即成功，不受影响）
   const resp = await submitWithTransientRetry(() => ImageService.generateImage(request), {
     label: '图像',
     logger: ctx.logger,
+    maxAttempts: 4,
+    retryDelayMs: 60_000,
   })
   if (!resp.success) {
     throw new Error(`图像生成失败: ${resp.error ?? '未知错误'}`)
