@@ -112,6 +112,14 @@ function icApi(): InfoCollectionApi | undefined {
   return w.electronAPI?.infoCollection
 }
 
+/** IPC 结构化克隆会把 Date 原样传回——统一规范成 ISO 字符串（运行时与 DTO 类型对齐） */
+function isoDate(v: unknown): string | null {
+  if (v === null || v === undefined) return null
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v.toISOString()
+  if (typeof v === 'string') return v
+  return String(v)
+}
+
 export const useInfoCollectionStore = defineStore('info-collection', () => {
   // ---- 列表态 ----
   const projects = ref<IcProjectDto[]>([])
@@ -133,7 +141,8 @@ export const useInfoCollectionStore = defineStore('info-collection', () => {
   async function loadProjects(): Promise<void> {
     loadingProjects.value = true
     try {
-      projects.value = await unwrap(await icApi()?.listProjects({ status: 'active' }), [])
+      const list = await unwrap(await icApi()?.listProjects({ status: 'active' }), [])
+      projects.value = list.map(p => ({ ...p, createdAt: isoDate(p.createdAt), updatedAt: isoDate(p.updatedAt) }))
     } finally {
       loadingProjects.value = false
     }
@@ -160,10 +169,17 @@ export const useInfoCollectionStore = defineStore('info-collection', () => {
     loadingDetail.value = true
     try {
       const api = icApi()
-      current.value = await unwrap(await api?.getProject({ id }), null)
-      tasks.value = await unwrap(await api?.listTasks({ projectId: id }), [])
-      stagedSources.value = await unwrap(await api?.listSources({ projectId: id, reviewStatus: 'staged' }), [])
-      confirmedSources.value = await unwrap(await api?.listSources({ projectId: id, reviewStatus: 'confirmed' }), [])
+      const project = await unwrap(await api?.getProject({ id }), null)
+      current.value = project ? { ...project, createdAt: isoDate(project.createdAt), updatedAt: isoDate(project.updatedAt) } : null
+      const taskList = await unwrap(await api?.listTasks({ projectId: id }), [])
+      tasks.value = taskList.map(t => ({ ...t, createdAt: isoDate(t.createdAt), finishedAt: isoDate(t.finishedAt) }))
+      const mapSource = (s: IcSourceDto): IcSourceDto => ({
+        ...s,
+        publishedAt: isoDate(s.publishedAt),
+        collectedAt: isoDate(s.collectedAt),
+      })
+      stagedSources.value = (await unwrap(await api?.listSources({ projectId: id, reviewStatus: 'staged' }), [])).map(mapSource)
+      confirmedSources.value = (await unwrap(await api?.listSources({ projectId: id, reviewStatus: 'confirmed' }), [])).map(mapSource)
       rows.value = await unwrap(await api?.listRows({ projectId: id }), [])
     } finally {
       loadingDetail.value = false

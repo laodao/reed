@@ -266,9 +266,10 @@ function dimsText(row: { measure: { dims: Record<string, unknown> | null } }): s
   const dims = row.measure.dims
   return dims && Object.keys(dims).length ? Object.entries(dims).map(([k, v]) => `${k}=${String(v)}`).join('，') : '—'
 }
-function shortTime(iso: string | null): string {
+function shortTime(iso: string | Date | null | undefined): string {
   if (!iso) return '—'
-  return iso.slice(0, 16).replace('T', ' ')
+  const s = typeof iso === 'string' ? iso : iso instanceof Date ? iso.toISOString() : String(iso)
+  return s.slice(0, 16).replace('T', ' ')
 }
 </script>
 

@@ -134,9 +134,10 @@ function enter(id: string): void {
   void router.push(`/info-collection/${id}`)
 }
 
-function shortTime(iso: string | null): string {
+function shortTime(iso: string | Date | null | undefined): string {
   if (!iso) return ''
-  return iso.slice(0, 16).replace('T', ' ')
+  const s = typeof iso === 'string' ? iso : iso instanceof Date ? iso.toISOString() : String(iso)
+  return s.slice(0, 16).replace('T', ' ')
 }
 </script>
 
