@@ -96,10 +96,10 @@ ic_source(治理记录,只加一列)
 
 ## 9. 分期与成本红线
 
-- **M1(document)**:搜索结果直链文档探测(扩展名/响应头嗅探,`filetype:` 算子来自蓝图提示词)→ executeHttpFetch file 模式下载原件 → extractTextFromFile(asMarkdown) 提内容化文本 → 抓取成功即建资产卡(kind=file + textContent,category='搜集资料',subCategory=项目名,sourceType='info-collection')→ ic_source.assetId 外链。**范围修订**:webpage 登记卡不做(与网页收藏收敛,后续);"快照正文清洗"从 M1 移出(通用网页去噪手段未定义,单独立项);ic_source 只加 asset_id 一列(双端 ensureColumn)。
-- **M2(image)**:图片搜索渠道 + 网页内主图抓取 → VLM 描述(模型须过 vision 探测,未配 vision 模型时资产只存原件、内容化标记"待补")→ 缩略图审阅。
-- **M3(video 字幕档)**:视频站字幕获取 → 文本管线;默认不下载视频原件。
-- **M4(ASR)**:音频转写服务接入(选型另议:云 API vs 本地 whisper;数据出境与成本需用户拍板)。
+- **M1(document)✅ 2026-10-08 落地并真机验收**:搜索结果直链文档探测(扩展名/响应头嗅探,`filetype:` 算子来自蓝图提示词)→ executeHttpFetch file 模式下载原件 → extractTextFromFile(asMarkdown) 提内容化文本 → 抓取成功即建资产卡(kind=file + textContent,category='搜集资料',subCategory=项目名,sourceType='info-collection')→ ic_source.assetId 外链。**范围修订**:webpage 登记卡不做(与网页收藏收敛,后续);"快照正文清洗"从 M1 移出(通用网页去噪手段未定义,单独立项);ic_source 只加 asset_id 一列(双端 ensureColumn)。
+- **M2(image)✅ 2026-10-09 落地**:图片直链(.jpg/.png/webp/gif/bmp)下载(8MB 上限)→ VLM 描述(宿主模型经 ai SDK image part,无 vision 时 fail-soft 存原件标"待补")→ 统一资产建卡(category=image)。单任务描述熔断 20 张(IC_MAX_IMAGE_DESCRIPTIONS)。图片搜索渠道暂无引擎能力,当前获取路径为结果中的图片直链;审阅台缩略图预览延后(徽标已显示类型)。
+- **M3(video 字幕档)✅ 2026-10-09 落地**:B站视频页(bilibili.com/video/BV、b23.tv)经公开 view API 取标题/简介/UP主/时长 + CC 字幕全文(可得时),组合为内容化文本,建纯文本资产卡(category=video,metadata.hasSubtitle);不下载视频原件。youtube/抖音如实 failed(站点不支持/风控)。语音内容转写留 M4。
+- **M4(ASR)**:**未实施**——音频转写服务接入(选型另议:云 API vs 本地 whisper;数据出境与成本需用户拍板),当前视频/音频的语音内容如实标注"待转写"。
 
 红线:M1-M3 全程不下载视频原件;VLM 描述受 `maxImageDescriptions` 熔断;单资产下载上限 `maxAssetBytes`(缺省 50MB)。
 

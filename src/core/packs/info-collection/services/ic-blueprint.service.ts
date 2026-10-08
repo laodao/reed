@@ -20,11 +20,12 @@ const BLUEPRINT_SYSTEM = `你是信息搜集规划师。把用户的主题变成
 纪律：
 1. 信息需求（requirements）原子化：一条只问一件事，每条必须可独立判定"满足/不满足"；id 用 R1/R2/…；必答项标 must，重要非必须 should，锦上添花 nice。
 2. 需求形态 form 取：data（数值/表格）| fact（事实要点）| document（文件/政策/报告）| opinion（观点）| case（案例）。data 类需求配 schema（jsonSchema + convention 映射）。
-3. convention.map 的字段名必须真实出现在 jsonSchema.properties 里（网页上抽不到的字段不许出现）。
+3. convention 只支持 type='measure'（数值投影 value/unit/period/metric/dims）；非数值的结构/清单/条款类 schema 不要写 convention，只给 jsonSchema。convention.map 的字段名必须真实出现在 jsonSchema.properties 里（抽不到的字段不许出现）。
 4. 种子查询（seedQueries）覆盖全部 must 级需求：同义扩展 + 中英双语 + 不同切入角度（机构视角/数据视角/事件视角）；primaryHint 列出该主题应优先直取的权威域名或出版物。
 5. 文件型资料：法规原文、统计年鉴、办事指南、白皮书、财报常以文档直链发布——主题涉及这类资料时，seedQueries 必须附加 filetype:pdf / filetype:docx 算子的查询（如「主题词 filetype:pdf」），系统会优先抓取文档原件并提取全文（比网页转述更权威）。
-6. 用户没有明说的口径（时间范围/地域/语言/单位）不要替用户决定——写进 assumptions。
-7. 只输出一个 JSON 对象，不要输出任何其他文字。`
+6. 图片资料（照片/图表/示意图）：图片以直链（.jpg/.png 等结尾）出现时会被抓取建档并生成视觉描述；图表数据类需求可在 seedQueries 附加「图表」「示意图」等词。
+7. 用户没有明说的口径（时间范围/地域/语言/单位）不要替用户决定——写进 assumptions。
+8. 只输出一个 JSON 对象，不要输出任何其他文字。`
 
 function asString(v: unknown): string | null {
   return typeof v === 'string' && v.trim() ? v.trim() : null
@@ -110,9 +111,13 @@ export function normalizeBlueprintDraft(raw: unknown): IcBlueprint {
     const jsonSchema = rec.jsonSchema
     if (!id || schemaIds.has(id) || !jsonSchema || typeof jsonSchema !== 'object') continue
     schemaIds.add(id)
+    // convention 只支持 measure（数值投影）；模型发明的其它类型（catalog/clause 等）丢弃
+    // convention 但保留 schema——非数值结构表仍可走纯 jsonSchema 抽取（2026-10-08 真机：
+    // 模型给"文本结构目录"发明了 catalog 导致整份蓝图自检判死，与宽进严出相悖）。
+    const rawConvention = rec.convention && typeof rec.convention === 'object' ? rec.convention : null
     const convention =
-      rec.convention && typeof rec.convention === 'object'
-        ? (rec.convention as IcBlueprint['schemas'][number]['convention'])
+      rawConvention && (rawConvention as { type?: unknown }).type === 'measure'
+        ? (rawConvention as IcBlueprint['schemas'][number]['convention'])
         : undefined
     const checks = Array.isArray(rec.checks) ? (rec.checks as IcBlueprint['schemas'][number]['checks']) : undefined
     schemas.push({
@@ -195,9 +200,16 @@ export async function draftBlueprint(
   "stopRules": { "coverageTarget": 0.8, "minIndependentSources": 2, "marginalRounds": 2, "budget": { "maxToolCalls": 300, "maxMinutes": 120 } },
   "organizationSpec": [{ "kind": "summary-cards" }, { "kind": "data-table" }, { "kind": "source-list" }]
 }`
-  const text = await llm({ system: BLUEPRINT_SYSTEM, user, maxTokens: 4000 })
+  const text = await llm({ system: BLUEPRINT_SYSTEM, user, maxTokens: 8000 })
   const parsed = parseJsonObject(text)
-  if (!parsed) throw new Error('蓝图起草失败：模型输出无法解析为 JSON，请重试')
+  if (!parsed) {
+    // 响亮失败：把模型原始输出头部记进日志（否则"输出无法解析"永远无法诊断）
+    const { createLogger } = await import('@core/utils/logger')
+    createLogger('IcBlueprint').warn(
+      `[blueprint] 模型输出无法解析为 JSON（len=${text?.length ?? 0}）：${String(text ?? '').slice(0, 600)}`,
+    )
+    throw new Error('蓝图起草失败：模型输出无法解析为 JSON，请重试')
+  }
   const blueprint = normalizeBlueprintDraft(parsed)
   if (blueprint.requirements.length === 0) {
     throw new Error('蓝图起草失败：模型未能拆解出任何信息需求，请换个说法重试')

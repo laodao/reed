@@ -25,7 +25,14 @@ import { parseJsonObject } from '@shared/utils/info-collection-json'
 import { clusterSources } from '@shared/utils/info-collection-cluster'
 import { detectValueConflicts, type IcValueConflictGroup } from '@shared/utils/info-collection-conflicts'
 import { isCandidateRelevant } from '@shared/utils/info-collection-relevance'
-import { detectDirectDocumentUrl, IC_DOCUMENT_MAX_BYTES } from '@shared/utils/info-collection-document'
+import {
+  detectDirectDocumentUrl,
+  detectImageUrl,
+  detectVideoPageUrl,
+  IC_DOCUMENT_MAX_BYTES,
+  IC_IMAGE_MAX_BYTES,
+  IC_MAX_IMAGE_DESCRIPTIONS,
+} from '@shared/utils/info-collection-document'
 import type {
   IcBlueprint,
   IcReviewStatus,
@@ -40,6 +47,7 @@ import type {
   IcRepos,
   IcSearchFn,
   IcAssetPort,
+  IcVideoMeta,
 } from './ic-deps'
 import type { IcProjectRow } from '@core/database/repositories/ic-project.repository'
 import type { IcTaskRow } from '@core/database/repositories/ic-task.repository'
@@ -82,6 +90,8 @@ export interface IcTaskStats {
   sourcesFailed: number
   /** 候选相关性软闸拦下的跑题源数（2026-10-08 验收：引擎可能返回门户噪音） */
   candidatesFiltered: number
+  /** VLM 图片描述次数（多模态 M2；按张计费的预算熔断计数） */
+  imageDescriptions: number
   rowsDraft: number
   rowsRejectedQuote: number
   rowsMerged: number
@@ -192,6 +202,199 @@ export class IcCollectionService {
     return port.remove(id)
   }
 
+  /** 视觉描述（多模态 M2；缺省宿主模型走平台多模态链路） */
+  private async describeImage(filePath: string, mimeType?: string): Promise<{ ok: boolean; text?: string; error?: string }> {
+    const fn = this.deps.vision ?? (await import('./ic-defaults')).defaultIcVision
+    return fn({
+      imagePath: filePath,
+      mimeType,
+      prompt:
+        '请客观描述这张图片的内容：主体是什么、可见文字逐字照录（OCR）、图表中的关键数值（若有，注明"读自图表，可能有读数误差"）、图像风格与用途。不要推测图片之外的信息。只输出描述正文。',
+    })
+  }
+
+  /**
+   * 图片直链分支（多模态 M2）：下载原件 → VLM 描述（单任务熔断）→ 统一资产建卡 → 源记录。
+   * 描述文本即内容化文本（进快照与 textContent）；描述失败时资产只存原件，源如实标注待补。
+   * 独立短流程：不跑引文抽取（描述文本通常短于抽取预算，且图片数值宜人工复核）。
+   */
+  private async collectImageSource(ctx: {
+    projectId: string
+    taskId: string
+    projectName: string
+    url: string
+    title: string
+    stats: IcTaskStats
+  }): Promise<void> {
+    const repos = this.repos()
+    ctx.stats.toolCalls += 1
+    const df = await this.fetchDocument(ctx.url)
+    const norm = normalizeUrl(ctx.url) ?? ctx.url
+    const failed = async (blocked: boolean, note: string, tempPath?: string): Promise<void> => {
+      const source = await repos.sources.create({
+        id: this.newId('src'),
+        projectId: ctx.projectId,
+        taskId: ctx.taskId,
+        url: ctx.url,
+        urlNormalized: norm,
+        fetchStatus: blocked ? 'blocked' : 'failed',
+      })
+      if (note) await repos.sources.patch(source.id, { tierRationale: note })
+      ctx.stats.sourcesFailed += 1
+      if (tempPath) void cleanupTempFile(tempPath)
+    }
+    if (!df.ok || !df.filePath) {
+      await failed(df.status === 403 || df.status === 429, '图片下载失败')
+      return
+    }
+    if (df.bytes && df.bytes > IC_IMAGE_MAX_BYTES) {
+      await failed(false, `图片超过单件上限（${Math.round(df.bytes / 1024 / 1024)}MB > 8MB）`, df.filePath)
+      return
+    }
+
+    // VLM 描述：按张计费——单任务 IC_MAX_IMAGE_DESCRIPTIONS 张封顶；模型无 vision 时 fail-soft
+    let description = ''
+    if (ctx.stats.imageDescriptions < IC_MAX_IMAGE_DESCRIPTIONS) {
+      ctx.stats.toolCalls += 1
+      ctx.stats.imageDescriptions += 1
+      const v = await this.describeImage(df.filePath, df.mimeType)
+      if (v.ok && v.text) description = v.text.trim()
+    }
+
+    const source = await repos.sources.create({
+      id: this.newId('src'),
+      projectId: ctx.projectId,
+      taskId: ctx.taskId,
+      url: ctx.url,
+      urlNormalized: norm,
+      fetchStatus: 'ok',
+    })
+    if (this.snapshots && description) {
+      const p = await this.snapshots.write(ctx.projectId, source.id, '', description)
+      if (p) await repos.sources.patch(source.id, { snapshotPath: p })
+    }
+    // 分级：直链图片无法程序化认证来源 → 保守 T3 + 依据写明（确认闸门要求 tier+rationale）
+    await repos.sources.patch(source.id, {
+      tier: 3,
+      tierRationale: description
+        ? '图片直链，未经官方认证按互联网媒体处理；已生成视觉描述'
+        : '图片直链，未经官方认证按互联网媒体处理；视觉描述生成失败（未配置视觉模型或模型不支持）——原件已存，内容化待补',
+      contentHash: contentHash(description || ctx.url),
+    })
+    try {
+      const card = await this.assetsCreate({
+        name: (ctx.title?.trim() || documentFileName(ctx.url)).slice(0, 80),
+        category: 'image',
+        subCategory: ctx.projectName,
+        tags: ['信息搜集', ctx.projectName],
+        filePath: df.filePath,
+        textContent: description || undefined,
+        url: ctx.url,
+        metadata: { mediaKind: 'image', ext: detectImageUrl(ctx.url)?.ext, sourceId: source.id, projectId: ctx.projectId, described: !!description },
+        sourceType: 'info-collection',
+        sourceRef: ctx.projectId,
+      })
+      await repos.sources.patch(source.id, { assetId: card.id })
+    } catch {
+      /* 登记失败不影响采集（fail-soft） */
+    }
+    void cleanupTempFile(df.filePath)
+    ctx.stats.sourcesNew += 1
+  }
+
+  /**
+   * 视频页分支（多模态 M3 元数据档）：标题/简介/UP主/时长 + CC 字幕全文（可得时）为内容化文本，
+   * 建纯文本资产卡。不下载视频原件（设计红线）。youtube/抖音等未支持站点如实 failed。
+   */
+  private async collectVideoSource(ctx: {
+    projectId: string
+    taskId: string
+    projectName: string
+    url: string
+    title: string
+    stats: IcTaskStats
+  }): Promise<void> {
+    const repos = this.repos()
+    const norm = normalizeUrl(ctx.url) ?? ctx.url
+    const failed = async (note: string): Promise<void> => {
+      const source = await repos.sources.create({
+        id: this.newId('src'),
+        projectId: ctx.projectId,
+        taskId: ctx.taskId,
+        url: ctx.url,
+        urlNormalized: norm,
+        fetchStatus: 'failed',
+      })
+      await repos.sources.patch(source.id, { tierRationale: note })
+      ctx.stats.sourcesFailed += 1
+    }
+    const platform = detectVideoPageUrl(ctx.url)?.platform
+    if (platform !== 'bilibili') {
+      await failed('该视频站点暂不支持（当前仅 B站）——可手动下载后本地导入')
+      return
+    }
+    ctx.stats.toolCalls += 1
+    const fn = this.deps.videoMeta ?? (await import('./ic-defaults')).defaultIcVideoMeta
+    const meta: IcVideoMeta = await fn(ctx.url)
+    if (!meta.ok) {
+      await failed(`视频元数据获取失败：${meta.error ?? '未知原因'}`)
+      return
+    }
+    // 内容化文本：标题/UP主/时长/简介 + 字幕全文（如有）
+    const dur = meta.durationSec ? `${Math.floor(meta.durationSec / 60)}分${meta.durationSec % 60}秒` : '未知'
+    const parts = [
+      `《${meta.title ?? ctx.title}》`,
+      `UP主：${meta.owner ?? '未知'}｜时长：${dur}｜平台：bilibili`,
+      meta.desc ? `简介：${meta.desc}` : null,
+      meta.subtitleText ? `【字幕全文】\n${meta.subtitleText}` : '【字幕】本视频无可匿名获取的CC字幕——语音内容待转写（M4）',
+    ].filter(Boolean) as string[]
+    const canonical = parts.join('\n\n')
+
+    const source = await repos.sources.create({
+      id: this.newId('src'),
+      projectId: ctx.projectId,
+      taskId: ctx.taskId,
+      url: ctx.url,
+      urlNormalized: norm,
+      fetchStatus: 'ok',
+    })
+    if (this.snapshots) {
+      const p = await this.snapshots.write(ctx.projectId, source.id, '', canonical)
+      if (p) await repos.sources.patch(source.id, { snapshotPath: p })
+    }
+    await repos.sources.patch(source.id, {
+      tier: 3,
+      tierRationale: meta.subtitleText
+        ? 'B站视频页（含CC字幕全文），按互联网媒体处理'
+        : 'B站视频页（仅元数据，字幕不可得），按互联网媒体处理',
+      contentHash: contentHash(canonical),
+    })
+    try {
+      const port = this.deps.assets ?? (await import('./ic-defaults')).defaultIcAssets
+      const card = await port.createText({
+        name: (meta.title ?? ctx.title).slice(0, 80),
+        category: 'video',
+        subCategory: ctx.projectName,
+        tags: ['信息搜集', ctx.projectName],
+        text: canonical,
+        url: ctx.url,
+        metadata: {
+          mediaKind: 'video',
+          platform: 'bilibili',
+          sourceId: source.id,
+          projectId: ctx.projectId,
+          hasSubtitle: !!meta.subtitleText,
+        },
+        sourceType: 'info-collection',
+        sourceRef: ctx.projectId,
+      })
+      await repos.sources.patch(source.id, { assetId: card.id })
+    } catch {
+      /* 登记失败不影响采集（fail-soft） */
+    }
+    ctx.stats.sourcesNew += 1
+  }
+
   private extractText(html: string, baseUrl: string): string {
     return this.deps.extract ? this.deps.extract(html, baseUrl) : html
   }
@@ -247,6 +450,11 @@ export class IcCollectionService {
       goal: input.goal,
       blueprint,
     })
+    // quick 模式自检通过 → 立即开跑。2026-10-08 真机发现：此前只置 autoConfirm 不跑，
+    // 与界面"蓝图已确认，任务已在后台开跑"的承诺不符（用户必须再手动点一次开始搜集）。
+    if (blueprint.autoConfirm) {
+      void this.runTask(project.id).catch(() => undefined)
+    }
     return { project, check: draft.check }
   }
 
@@ -288,6 +496,24 @@ export class IcCollectionService {
         reviewLlm: req => this.reviewLlm(req),
         kbAdd: (id, d) => this.kbAdd(id, d),
         newId: p => this.newId(p),
+        registerAsset: async input => {
+          try {
+            const port = this.deps.assets ?? (await import('./ic-defaults')).defaultIcAssets
+            return await port.createText({
+              name: input.name,
+              category: 'text',
+              subCategory: (await repos.projects.getById(projectId))?.name,
+              tags: ['信息搜集', '整理报告'],
+              text: input.text,
+              url: input.url,
+              metadata: input.metadata,
+              sourceType: 'info-collection',
+              sourceRef: input.sourceRef ?? projectId,
+            })
+          } catch {
+            return null // 资产服务未装配/失败：报告照常交付
+          }
+        },
       },
       projectId,
     )
@@ -335,6 +561,7 @@ export class IcCollectionService {
       sourcesNew: 0,
       sourcesFailed: 0,
       candidatesFiltered: 0,
+      imageDescriptions: 0,
       rowsDraft: 0,
       rowsRejectedQuote: 0,
       rowsMerged: 0,
@@ -381,6 +608,32 @@ export class IcCollectionService {
 
           // 抓取（先保命：有 snapshotStore 时抓到即落快照）
           stats.toolCalls += 1
+          // 视频页分支（多模态 M3 元数据档）：不下载视频，取标题/简介/CC字幕为内容化文本
+          if (detectVideoPageUrl(item.url)) {
+            await this.collectVideoSource({
+              projectId,
+              taskId,
+              projectName,
+              url: item.url,
+              title: item.title,
+              stats,
+            })
+            continue
+          }
+
+          // 图片直链分支（多模态 M2）：下载原件 → VLM 描述 → 建卡（独立短流程，不走网页管线）
+          if (detectImageUrl(item.url)) {
+            await this.collectImageSource({
+              projectId,
+              taskId,
+              projectName,
+              url: item.url,
+              title: item.title,
+              stats,
+            })
+            continue
+          }
+
           // 文档直链分支（多模态 M1）：.pdf/.docx/... 下载原件提文本，不走网页抓取
           const docProbe = detectDirectDocumentUrl(item.url)
           let docFile: { filePath: string; mimeType?: string; bytes?: number } | null = null

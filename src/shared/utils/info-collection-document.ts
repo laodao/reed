@@ -40,3 +40,54 @@ export function detectDirectDocumentUrl(url: string): IcDocumentProbe | null {
 
 /** 文档单件下载上限（字节；缺省 50MB，多模态设计 §9 红线） */
 export const IC_DOCUMENT_MAX_BYTES = 50 * 1024 * 1024
+
+/** 可探测的图片扩展名（常见栅格图；svg 矢量文本不进 VLM 描述） */
+export const IC_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'] as const
+
+export type IcImageExt = (typeof IC_IMAGE_EXTENSIONS)[number]
+
+/**
+ * 探测 URL 是否图片直链（多模态 M2）。与文档探测同规则：只看 pathname 结尾扩展名。
+ */
+export function detectImageUrl(url: string): { ext: IcImageExt } | null {
+  if (!url) return null
+  let pathname: string
+  try {
+    pathname = new URL(url).pathname
+  } catch {
+    return null
+  }
+  const last = pathname.split('/').pop() ?? ''
+  const dot = last.lastIndexOf('.')
+  if (dot <= 0) return null
+  const ext = last.slice(dot + 1).toLowerCase()
+  return (IC_IMAGE_EXTENSIONS as readonly string[]).includes(ext) ? { ext: ext as IcImageExt } : null
+}
+
+/** 图片单件下载上限（字节；8MB——照片足够，防超大图占盘） */
+export const IC_IMAGE_MAX_BYTES = 8 * 1024 * 1024
+
+/** 单任务 VLM 图片描述上限（多模态设计 §9 红线：按张计费必须熔断） */
+export const IC_MAX_IMAGE_DESCRIPTIONS = 20
+
+/** 可解析的视频页(M3 元数据+字幕档);youtube/抖音风控强,当前如实不支持 */
+export type IcVideoPlatform = 'bilibili'
+
+/**
+ * 探测 URL 是否已支持的视频页。bilibili: /video/BVxxx、b23.tv 短链。
+ */
+export function detectVideoPageUrl(url: string): { platform: IcVideoPlatform } | null {
+  if (!url) return null
+  let host = ''
+  let path = ''
+  try {
+    const u = new URL(url)
+    host = u.hostname.toLowerCase()
+    path = u.pathname
+  } catch {
+    return null
+  }
+  if (host === 'b23.tv') return { platform: 'bilibili' }
+  if (host.endsWith('bilibili.com') && /\/video\/(BV|av)/i.test(path)) return { platform: 'bilibili' }
+  return null
+}

@@ -1,6 +1,6 @@
 /** 文档直链探测纯函数测试（info-collection-document） */
 import { describe, it, expect } from 'vitest'
-import { detectDirectDocumentUrl, IC_DOCUMENT_MAX_BYTES } from '@shared/utils/info-collection-document'
+import { detectDirectDocumentUrl, detectImageUrl, detectVideoPageUrl, IC_DOCUMENT_MAX_BYTES } from '@shared/utils/info-collection-document'
 
 describe('detectDirectDocumentUrl', () => {
   it('常见文档扩展名命中', () => {
@@ -38,5 +38,29 @@ describe('detectDirectDocumentUrl', () => {
 
   it('下载红线常量 = 50MB', () => {
     expect(IC_DOCUMENT_MAX_BYTES).toBe(50 * 1024 * 1024)
+  })
+})
+
+describe('detectImageUrl（多模态 M2）', () => {
+  it('常见图片扩展名命中', () => {
+    expect(detectImageUrl('https://example.com/photos/cat.JPG')?.ext).toBe('jpg')
+    expect(detectImageUrl('https://example.com/chart.png?v=2')?.ext).toBe('png')
+    expect(detectImageUrl('https://example.com/a.webp')?.ext).toBe('webp')
+  })
+  it('svg/文档/网页不命中', () => {
+    expect(detectImageUrl('https://example.com/logo.svg')).toBeNull()
+    expect(detectImageUrl('https://example.com/doc.pdf')).toBeNull()
+    expect(detectImageUrl('https://example.com/page/1')).toBeNull()
+  })
+})
+
+describe('detectVideoPageUrl（多模态 M3）', () => {
+  it('B站视频页与短链命中', () => {
+    expect(detectVideoPageUrl('https://www.bilibili.com/video/BV1xx411c7mD')?.platform).toBe('bilibili')
+    expect(detectVideoPageUrl('https://b23.tv/abc123')?.platform).toBe('bilibili')
+  })
+  it('B站非视频页/其它站点不命中', () => {
+    expect(detectVideoPageUrl('https://www.bilibili.com/read/cv123')).toBeNull()
+    expect(detectVideoPageUrl('https://www.youtube.com/watch?v=x')).toBeNull()
   })
 })

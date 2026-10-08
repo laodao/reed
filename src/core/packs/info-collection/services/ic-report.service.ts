@@ -40,6 +40,14 @@ export interface IcReportDeps {
   reviewLlm: IcLlmFn
   kbAdd: IcKbPort['addDocument']
   newId: (prefix: string) => string
+  /** 整理结果登记为文本资产卡（统一登记层 §5；缺省不登记） */
+  registerAsset?: (input: {
+    name: string
+    text: string
+    url?: string
+    metadata?: Record<string, unknown>
+    sourceRef?: string
+  }) => Promise<{ id: string } | null>
 }
 
 export interface IcReportResult {
@@ -208,6 +216,26 @@ export async function generateProjectReport(deps: IcReportDeps, projectId: strin
     })
     imported = !!resp.documentId
     documentId = resp.documentId
+  }
+
+  // 整理结果登记为文本资产卡（统一登记层：处理结果可从资产中心检索；fail-soft 不影响交付）
+  if (deps.registerAsset) {
+    try {
+      await deps.registerAsset({
+        name: `【整理报告】${project.name}`.slice(0, 80),
+        text: finalMarkdown,
+        metadata: {
+          mediaKind: 'report',
+          projectId,
+          kbDocumentId: documentId,
+          strippedStatements,
+          reviewIssueCount: reviewIssues.length,
+        },
+        sourceRef: projectId,
+      })
+    } catch {
+      /* 登记失败不阻断报告交付 */
+    }
   }
 
   return { markdown: finalMarkdown, strippedStatements, reviewIssues, imported, documentId }

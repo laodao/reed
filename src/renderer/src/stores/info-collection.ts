@@ -48,6 +48,8 @@ export interface IcTaskDto {
 /** 任务统计（后端 IcTaskStats 镜像；质量报告数据源） */
 export interface IcTaskStats {
   searches: number
+  /** VLM 图片描述次数（多模态 M2；旧任务数据可能缺失） */
+  imageDescriptions?: number
   toolCalls: number
   budgetMax: number
   sourcesNew: number

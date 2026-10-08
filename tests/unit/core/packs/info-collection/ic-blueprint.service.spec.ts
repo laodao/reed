@@ -103,4 +103,28 @@ describe('normalizeBlueprintDraft', () => {
     })
     expect(bp.requirements.map(r => r.id)).toEqual(['R2'])
   })
+
+  it('非法 convention 类型丢弃但保留 schema（2026-10-08 真机：模型发明 catalog 判死整份蓝图）', () => {
+    const bp = normalizeBlueprintDraft({
+      goal: 'g',
+      requirements: [{ id: 'R1', question: '文本结构', form: 'data', priority: 'should', schemaId: 's2' }],
+      schemas: [
+        {
+          id: 's2',
+          title: '结构目录',
+          jsonSchema: { type: 'object', properties: { chapter: { type: 'string' }, title: { type: 'string' } } },
+          convention: { type: 'catalog' } as never, // 模型发明的类型
+        },
+        {
+          id: 's1',
+          title: '数值行',
+          jsonSchema: { type: 'object', properties: { v: { type: 'number' } } },
+          convention: { type: 'measure', map: { value: 'v' } },
+        },
+      ],
+    })
+    expect(bp.schemas).toHaveLength(2)
+    expect(bp.schemas.find(s => s.id === 's2')?.convention).toBeUndefined()
+    expect(bp.schemas.find(s => s.id === 's1')?.convention?.type).toBe('measure')
+  })
 })
