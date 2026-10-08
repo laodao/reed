@@ -2506,6 +2506,7 @@ export class WorkflowEngineService {
     }
     return {
       runId: exec.input.runId,
+      definitionId: exec.input.definitionId,
       runKey: scope.isRoot ? node.id : `${node.id}:${scope.iterationIndex}`,
       nodeId: node.id,
       nodeType: node.type,

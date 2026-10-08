@@ -78,7 +78,11 @@ export class DataTableDefRepository extends BaseRepository<DataTableDefEntity, D
   }
 
   protected toDto(e: DataTableDefEntity): DataTableDef {
-    return { id: e.id, name: e.name, columnsJson: e.columnsJson, createdAt: e.createdAt, updatedAt: e.updatedAt }
+    return {
+      id: e.id, name: e.name, columnsJson: e.columnsJson,
+      scope: (e.scope ?? 'workflow') as DataTableDef['scope'], ownerId: e.ownerId, dedupKeysJson: e.dedupKeysJson,
+      createdAt: e.createdAt, updatedAt: e.updatedAt,
+    }
   }
 
   async findById(id: string): Promise<DataTableDef | null> {
@@ -91,11 +95,28 @@ export class DataTableDefRepository extends BaseRepository<DataTableDefEntity, D
     return e ? this.toDto(e) : null
   }
 
-  async create(name: string, columnsJson: string): Promise<DataTableDef> {
+  /** 按作用域+属主+名查表（app 作用域隔离解析；workflow 作用域 ownerId=null） */
+  async findByScopeAndName(scope: string, ownerId: string | null, name: string): Promise<DataTableDef | null> {
+    const qb = this.scoped.qb('t').where('t.name = :name', { name })
+    if (scope === 'app') {
+      qb.andWhere('t.scope = :scope', { scope }).andWhere('t.owner_id = :ownerId', { ownerId })
+    } else {
+      qb.andWhere("(t.scope IS NULL OR t.scope = 'workflow')")
+    }
+    const rows = await qb.getMany()
+    return rows.length ? this.toDto(rows[0]) : null
+  }
+
+  async create(
+    name: string,
+    columnsJson: string,
+    extra?: { scope?: string; ownerId?: string | null; dedupKeysJson?: string | null },
+  ): Promise<DataTableDef> {
     const now = new Date()
     const entity = await this.scoped.save({
       id: `tbl_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
       name, columnsJson, createdAt: now, updatedAt: now,
+      scope: extra?.scope ?? 'workflow', ownerId: extra?.ownerId ?? null, dedupKeysJson: extra?.dedupKeysJson ?? null,
     } as Partial<DataTableDefEntity>)
     return this.toDto(entity as DataTableDefEntity)
   }
@@ -103,6 +124,23 @@ export class DataTableDefRepository extends BaseRepository<DataTableDefEntity, D
   async list(): Promise<DataTableDef[]> {
     const rows = await this.scoped.qb('t').orderBy('t.created_at', 'DESC').getMany()
     return this.toDtoList(rows)
+  }
+
+  /** 按作用域+属主列表（app 作用域数据页签用） */
+  async listByScopeOwner(scope: string, ownerId: string | null): Promise<DataTableDef[]> {
+    const qb = this.scoped.qb('t')
+    if (scope === 'app') {
+      qb.where('t.scope = :scope', { scope }).andWhere('t.owner_id = :ownerId', { ownerId })
+    } else {
+      qb.where("(t.scope IS NULL OR t.scope = 'workflow')")
+    }
+    const rows = await qb.orderBy('t.created_at', 'DESC').getMany()
+    return this.toDtoList(rows)
+  }
+
+  /** 属主（definition）名下 app 表计数（容量护栏） */
+  async countByOwner(ownerId: string): Promise<number> {
+    return this.scoped.qb('t').where('t.scope = :scope', { scope: 'app' }).andWhere('t.owner_id = :ownerId', { ownerId }).getCount()
   }
 
   async delete(id: string): Promise<number> {
@@ -116,14 +154,14 @@ export class DataTableRowRepository extends BaseRepository<DataTableRowEntity, D
   }
 
   protected toDto(e: DataTableRowEntity): DataTableRow {
-    return { id: e.id, tableId: e.tableId, rowJson: e.rowJson, createdAt: e.createdAt, updatedAt: e.updatedAt }
+    return { id: e.id, tableId: e.tableId, rowJson: e.rowJson, dedupHash: e.dedupHash, createdAt: e.createdAt, updatedAt: e.updatedAt }
   }
 
-  async insertRow(tableId: string, rowJson: string): Promise<DataTableRow> {
+  async insertRow(tableId: string, rowJson: string, dedupHash?: string | null): Promise<DataTableRow> {
     const now = new Date()
     const entity = await this.scoped.save({
       id: `row_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
-      tableId, rowJson, createdAt: now, updatedAt: now,
+      tableId, rowJson, dedupHash: dedupHash ?? null, createdAt: now, updatedAt: now,
     } as Partial<DataTableRowEntity>)
     return this.toDto(entity as DataTableRowEntity)
   }
@@ -131,6 +169,16 @@ export class DataTableRowRepository extends BaseRepository<DataTableRowEntity, D
   async listByTable(tableId: string): Promise<DataTableRow[]> {
     const rows = await this.scoped.qb('r').where('r.table_id = :tableId', { tableId }).orderBy('r.created_at', 'DESC').getMany()
     return this.toDtoList(rows)
+  }
+
+  /** 按去重哈希查行（upsert 判定） */
+  async findByTableAndHash(tableId: string, dedupHash: string): Promise<DataTableRow | null> {
+    const e = await this.scoped.findOne({ tableId, dedupHash } as FindOptionsWhere<DataTableRowEntity>)
+    return e ? this.toDto(e) : null
+  }
+
+  async countByTable(tableId: string): Promise<number> {
+    return this.scoped.qb('r').where('r.table_id = :tableId', { tableId }).getCount()
   }
 
   async updateRow(id: string, rowJson: string): Promise<DataTableRow | null> {
@@ -145,6 +193,10 @@ export class DataTableRowRepository extends BaseRepository<DataTableRowEntity, D
 
   async deleteRow(id: string): Promise<number> {
     return this.scoped.delete({ id } as FindOptionsWhere<DataTableRowEntity>)
+  }
+
+  async deleteByTable(tableId: string): Promise<number> {
+    return this.scoped.delete({ tableId } as FindOptionsWhere<DataTableRowEntity>)
   }
 }
 

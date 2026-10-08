@@ -26,6 +26,8 @@ import type { WorkflowOutputField } from '@shared/types/workflow-node-catalog'
 export interface WorkflowNodeContext<TConfig = Record<string, unknown>> {
   /** 所属运行 ID */
   runId: string
+  /** 所属工作流定义 ID（app 作用域数据表解析等；引擎从运行输入直填） */
+  readonly definitionId: string
   /** 引擎内部节点执行键（循环体内含迭代后缀，如 "nodeA:2"） */
   runKey: string
   /** 图内节点 ID（变量命名空间） */

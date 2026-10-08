@@ -494,8 +494,8 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     }),
   ],
   'code': [
-    T('code', '代码', { type: 'textarea', help: '输入在 inputs（键=下方参数键）；return 节点输出。V1 无 fs/网络，5s 超时' }),
-    { key: 'inputs', label: '输入参数', type: 'kv-list', keyPlaceholder: '参数键（inputs.键 引用）', valuePlaceholder: '值，支持 {{模板}}' },
+    T('code', '代码', { type: 'textarea', help: '输入在 inputs（键=下方参数键）；return 节点输出。可 await host.http / host.table.* / host.log（桌面端）；代码只做胶水，值得测试的逻辑应注册为节点' }),
+    { key: 'inputs', label: '输入参数', type: 'kv-list', keyPlaceholder: '参数键（inputs.键 引用）', valuePlaceholder: '值，支持 {{模板}}；声明 json 时按结构注入' },
   ],
   'sub-workflow': [
     T('definitionId', '子工作流 ID', { placeholder: '在子工作流详情/导出中查看（运行其发布图）', templateHint: true }),
@@ -514,17 +514,30 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
   ],
   'data-table': [
     { key: 'op', label: '操作', type: 'select', options: [
+      { label: '建表 createTable', value: 'createTable' },
       { label: '插入行 insert', value: 'insert' }, { label: '查询 query', value: 'query' },
+      { label: '增量写入 upsert（按去重键）', value: 'upsert' },
+      { label: '行数 count', value: 'count' },
       { label: '更新 update', value: 'update' }, { label: '删除 delete', value: 'delete' },
       { label: '执行 SQL execute', value: 'execute' },
     ] },
+    { key: 'scope', label: '作用域', type: 'select', options: [
+      { label: '应用数据（按应用隔离，推荐）', value: 'app' },
+      { label: '全局（历史语义，所有工作流共享）', value: 'workflow' },
+    ], help: 'app=按本工作流（应用）隔离，数据跨运行累积、发布新版本不丢；workflow=全局命名空间（历史语义）', group: '内置数据表' },
     { key: 'dataSourceId', label: '数据源', type: 'select-dynamic', source: 'dataSources', help: '选外部数据库=读写第三方库；留空=读写本应用内置数据表', group: '数据源' },
     { key: 'sql', label: 'SQL', type: 'textarea', noTemplate: true, help: '外部数据源模式用：SELECT/DML，参数统一用 $1,$2 占位（各库自动翻译），值取自下方 params。sql 不支持 {{}} 模板，防止上游变量被拼接进 SQL 文本', group: '外部数据库' },
     { key: 'params', label: '参数（JSON 数组）', type: 'textarea', help: '与 $1,$2 占位符一一对应，如 [123, "2024-01-01"]；留空=无参数', group: '外部数据库' },
-    { key: 'tableId', label: '表 ID', type: 'text', group: '内置数据表', help: 'insert 可留空按 tableName 自动建表；query/update/delete 必填其一' },
-    { key: 'tableName', label: '表名', type: 'text', group: '内置数据表', help: '表不存在时 insert 自动创建（列从 row 键推导）' },
-    { key: 'row', label: '行 JSON', type: 'textarea', templateHint: true, group: '内置数据表', help: 'insert/update 用，如 {"name":"{{start.name}}","qty":3}' },
+    { key: 'tableId', label: '表 ID', type: 'text', group: '内置数据表', help: '按 id 定位表（与表名二选一；编辑器/应用数据页签可查）' },
+    { key: 'tableName', label: '表名', type: 'text', group: '内置数据表', help: 'createTable 建表 / insert 自动建表（仅全局作用域）/ upsert / query 用' },
+    { key: 'columns', label: '列声明（JSON 数组）', type: 'textarea', templateHint: true, group: '内置数据表', help: 'createTable 用，如 [{"key":"url","type":"string"},{"key":"price","type":"number"}]；类型 string/number/boolean/json，只增不改' },
+    { key: 'dedupKeys', label: '去重键（逗号分隔）', type: 'text', group: '内置数据表', help: 'createTable 用，如 url——upsert 按这些列的值判重（建表后锁定）' },
+    { key: 'row', label: '行 JSON', type: 'textarea', templateHint: true, group: '内置数据表', help: 'insert/upsert/update 用，如 {"name":"{{start.name}}","qty":3}' },
     { key: 'rowId', label: '行 ID', group: '内置数据表', help: 'update/delete 用' },
+    { key: 'filterField', label: '过滤字段', type: 'text', group: '内置数据表', help: 'query 可选：按某列包含关键字过滤（留空=全行 JSON 匹配）' },
+    { key: 'filterContains', label: '过滤关键字', type: 'text', templateHint: true, group: '内置数据表', help: 'query 可选：大小写不敏感包含匹配；配了过滤/分页参数时输出 {rows,total}' },
+    { key: 'page', label: '页码', type: 'number', group: '内置数据表', help: 'query 可选：从 1 起' },
+    { key: 'pageSize', label: '每页条数', type: 'number', group: '内置数据表', help: 'query 可选：1-200，缺省 50' },
   ],
   'http-request': [
     T('method', '请求方法', {
