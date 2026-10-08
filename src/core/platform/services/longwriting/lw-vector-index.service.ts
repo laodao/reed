@@ -469,13 +469,26 @@ export class LwVectorIndexService {
     )
   }
 
-  /** 调 KB service 的 getEmbeddingVectors（复用 provider 路由 + 解密） */
+  /**
+   * 调 KB service 的 getEmbeddingVectors（复用 provider 路由 + 解密）。
+   *
+   * 本服务的既定契约是「失败不抛、按 indexed/reason 降级」（索引是增强能力，
+   * 不该打断写作流程），因此这里捕获并把**真实原因**留在日志里——
+   * 先前 `return null` 是静默的，索引不生效时无从排查。
+   */
   private async getEmbeddingVectors(
     texts: string[],
     config: EmbeddingConfig,
   ): Promise<number[][] | null> {
-    const kbService = new KnowledgeBaseService()
-    return kbService.getEmbeddingVectors(texts, config)
+    try {
+      const kbService = new KnowledgeBaseService()
+      return await kbService.getEmbeddingVectors(texts, config)
+    } catch (e: unknown) {
+      console.warn(
+        `[LwVectorIndex] 嵌入失败，跳过本次索引: ${e instanceof Error ? e.message : String(e)}`,
+      )
+      return null
+    }
   }
 
   /** 加载实体（按类型分发到对应 repo） */

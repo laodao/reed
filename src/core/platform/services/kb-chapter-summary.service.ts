@@ -85,7 +85,8 @@ export class KbChapterSummaryService {
       maxSummaries = summaryDefaults.maxSummaries,
     } = opts ?? {}
     const statuses: Array<'pending' | 'failed'> = retryFailed ? ['pending', 'failed'] : ['pending']
-    const all = await this.deps.repo.findByStatuses(documentId, statuses)
+    // 摘要生成必须读正文 → 显式 opt-in（仓库默认不返回 content，防大字段全量拉取）
+    const all = await this.deps.repo.findByStatuses(documentId, statuses, { includeContent: true })
     // 优先：层级最浅（顶层章更有概括价值）→ 内容较长（信息量大）
     const ordered = [...all].sort(
       (a, b) => a.level - b.level || (b.content?.length ?? 0) - (a.content?.length ?? 0),

@@ -411,17 +411,21 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
 
   /**
    * 重新处理文档
+   *
+   * 后端同为后台执行：只等"是否成功启动"，进度/终态走事件
+   * （此前全程挂 isLoading，大文档重处理会把文档列表锁死数分钟）。
    */
   async function reprocessDocument(documentId: string): Promise<boolean> {
-    isLoading.value = true
     error.value = null
 
     try {
       const response = await window.electronAPI.knowledgeBase.reprocessDocument(documentId)
       if (response.success) {
-        // 刷新文档列表
-        if (currentKnowledgeBase.value) {
-          await loadDocuments(currentKnowledgeBase.value.id)
+        const doc = documents.value.find(d => d.id === documentId)
+        if (doc) {
+          doc.status = 'processing'
+          doc.progress = 0
+          doc.errorMessage = undefined
         }
         return true
       } else {
@@ -431,8 +435,37 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
     } catch (err: any) {
       error.value = err.message || '重新处理文档失败'
       return false
-    } finally {
-      isLoading.value = false
+    }
+  }
+
+  /**
+   * 继续处理文档（断点续跑：复用已落切片与向量，只补未完成部分）
+   *
+   * 后端为后台执行：此调用只等"是否成功启动"（前置校验），不等整条管线跑完
+   * ——大文档要数分钟，全程挂 isLoading 会锁死整个文档列表。
+   * 进度与终态由 kb:document-progress / kb:document-status 事件推进。
+   */
+  async function resumeDocument(documentId: string): Promise<boolean> {
+    error.value = null
+
+    try {
+      const response = await window.electronAPI.knowledgeBase.resumeDocument(documentId)
+      if (response.success) {
+        // 立即把该行置为处理中（事件随后会持续刷新进度）
+        const doc = documents.value.find(d => d.id === documentId)
+        if (doc) {
+          doc.status = 'processing'
+          doc.progress = 0
+          doc.errorMessage = undefined
+        }
+        return true
+      } else {
+        error.value = response.error || '继续处理文档失败'
+        return false
+      }
+    } catch (err: any) {
+      error.value = err.message || '继续处理文档失败'
+      return false
     }
   }
 
@@ -597,6 +630,7 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
     uploadDocuments,
     deleteDocument,
     reprocessDocument,
+    resumeDocument,
     getDocumentChunks,
     // 检索服务
     search,

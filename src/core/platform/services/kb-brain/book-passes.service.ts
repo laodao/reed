@@ -98,7 +98,8 @@ export interface BookPassRepos {
   docs: { findById(id: string): Promise<{ name: string } | null> }
   chapters: {
     findByDocument(
-      documentId: string
+      documentId: string,
+      opts?: { includeContent?: boolean },
     ): Promise<
       Array<{
         id: string
@@ -200,7 +201,8 @@ export class KbBookPassesService {
   async runForDocument(kbId: string, documentId: string, contentType: string): Promise<void> {
     const repos = this.reposFn()
     if (!repos || !repos.notes) return
-    const chapters = await repos.chapters.findByDocument(documentId)
+    // 书级汇总要消费章节正文（runPass 内 c.content）→ 显式 opt-in
+    const chapters = await repos.chapters.findByDocument(documentId, { includeContent: true })
     if (chapters.length === 0) return
     // 章节集合指纹：任何一章 hash 变更（增删改）→ 指纹变 → 书级遍自动重汇总
     const fingerprint = createHash('sha1')

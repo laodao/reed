@@ -192,10 +192,23 @@ describe.each(getTestDialects())('KB 子系统 [%s]', dialect => {
       { documentId: d.id, knowledgeBaseId: kb.id, content: 'three', chunkIndex: 2 } as any,
     ])
     expect(list).toHaveLength(3)
-    expect((await chunks.findByDocumentId(d.id)).map(c => c.content)).toEqual(['one', 'two', 'three'])
+    // 默认不返回正文（防大字段全量拉取 → SQLITE_CANTOPEN）；要正文需显式 opt-in
+    expect((await chunks.findByDocumentId(d.id)).map(c => c.content)).toEqual([
+      undefined,
+      undefined,
+      undefined,
+    ])
+    expect((await chunks.findByDocumentId(d.id, { includeContent: true })).map(c => c.content)).toEqual([
+      'one',
+      'two',
+      'three',
+    ])
 
     const byIds = await chunks.findByIds([list[0].id, list[2].id])
     expect(byIds).toHaveLength(2)
+    expect(byIds.every(c => c.content === undefined)).toBe(true)
+    const byIdsFull = await chunks.findByIds([list[0].id, list[2].id], { includeContent: true })
+    expect(byIdsFull.map(c => c.content).sort()).toEqual(['one', 'three'])
   })
 
   it('Chunk: 分页 + 标题查询', async () => {

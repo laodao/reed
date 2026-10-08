@@ -39,7 +39,8 @@ interface InvertedItem {
 }
 
 export interface BrainQueryDeps {
-  embed: (texts: string[], kb: { id: string; embeddingConfig: string | null }) => Promise<number[][] | null>
+  /** 生成查询向量；失败抛错（含真实原因），调用方降级为纯词法召回并留痕 */
+  embed: (texts: string[], kb: { id: string; embeddingConfig: string | null }) => Promise<number[][]>
   searchSimilar: (kbId: string, vector: number[], topK: number) => Promise<Array<{ chunkId: string; score: number }>>
   inverted: {
     findByTerms(kbId: string, terms: string[]): Promise<Map<string, InvertedItem[]>>
@@ -91,7 +92,16 @@ export class BrainQueryService {
 
       /* ---------- 1. 向量召回 ---------- */
       const vecHits: Array<{ ns: 'chunk' | 'atom' | 'note'; id: string; score: number }> = []
-      const vectors = await this.deps.embed([req.query], { id: kbId, embeddingConfig: req.embeddingConfig })
+      // 嵌入失败降级为「纯 BM25 词法召回」（brain 池的既定容错），但真实原因必须留痕，
+      // 否则检索质量下降时完全无从排查（此前 embed 返回 null 是静默的）
+      let vectors: number[][] | null = null
+      try {
+        vectors = await this.deps.embed([req.query], { id: kbId, embeddingConfig: req.embeddingConfig })
+      } catch (e: unknown) {
+        console.warn(
+          `[BrainQuery] 查询向量生成失败，降级为纯词法召回: ${e instanceof Error ? e.message : String(e)}`,
+        )
+      }
       if (vectors && vectors.length > 0) {
         const fetchK = topK * FETCH_MULTIPLIER + FETCH_PADDING
         const raw = await this.deps.searchSimilar(kbId, vectors[0], fetchK)

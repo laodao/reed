@@ -199,7 +199,8 @@ export class KbGoalDistillService {
     const units: Array<{ label: string; text: string; documentId: string; chapterId: string }> = []
     for (const doc of docs) {
       const book = shortBookName(doc.name)
-      const chapters = await repos.chapters.findByDocument(doc.id)
+      // 摘要缺失时回退正文采样 → 需要 content（显式 opt-in）
+      const chapters = await repos.chapters.findByDocument(doc.id, { includeContent: true })
       chapters.forEach((c, i) => {
         const summary = c.summary?.trim()
         const text = summary || c.content?.slice(0, SUMMARY_CHARS) || ''

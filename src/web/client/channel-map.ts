@@ -305,6 +305,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'knowledgeBase.getDocuments': { channel: 'knowledge-base:get-documents' },
   'knowledgeBase.deleteDocument': { channel: 'knowledge-base:delete-document' },
   'knowledgeBase.reprocessDocument': { channel: 'knowledge-base:reprocess-document' },
+  'knowledgeBase.resumeDocument': { channel: 'knowledge-base:resume-document' },
   'knowledgeBase.getDocumentChunks': { channel: 'knowledge-base:get-document-chunks' },
   'knowledgeBase.getDocumentChunksPaginated': { channel: 'knowledge-base:get-document-chunks-paginated', wrap: (documentId, page, pageSize, chapterTitle) => [{ documentId, page, pageSize, chapterTitle }] },
   'knowledgeBase.getChunk': { channel: 'knowledge-base:get-chunk' },

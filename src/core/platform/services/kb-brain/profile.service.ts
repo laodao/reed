@@ -34,7 +34,8 @@ const SAMPLE_CONTENT_CHARS = 600
 export interface KbProfileRepos {
   chapters: {
     findByDocument(
-      documentId: string
+      documentId: string,
+      opts?: { includeContent?: boolean },
     ): Promise<Array<{ title: string; content: string | null; summary: string | null }>>
   }
   kbs: {
@@ -124,7 +125,8 @@ export class KbBrainProfileService {
   async detect(documentId: string): Promise<KbBrainProfile | null> {
     const repos = this.reposFn()
     if (!repos) return null
-    const chapters = await repos.chapters.findByDocument(documentId)
+    // 画像采样在无摘要时用正文开头补信号 → 需要 content（显式 opt-in）
+    const chapters = await repos.chapters.findByDocument(documentId, { includeContent: true })
     const samples = this.sampleChapters(chapters)
     if (samples.length === 0) return null
     // BRAIN_LLM_MAX_TOKENS（review M5）：推理型模型的思考计入输出预算，400 会直接

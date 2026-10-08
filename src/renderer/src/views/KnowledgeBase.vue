@@ -262,6 +262,17 @@
                   >
                     {{ row.status === 'failed' ? '重试' : (row.status === 'pending' ? '处理' : '重新处理') }}
                   </el-button>
+                  <!-- 继续处理：仅对中断卡住的 processing 文档开放（断点续跑，保留已有向量）。
+                       此前 processing 不在任何按钮条件里，重启后卡住的文档 UI 上无路可走。 -->
+                  <el-button
+                    v-if="row.status === 'processing'"
+                    text
+                    type="warning"
+                    size="small"
+                    @click="handleResumeDocument(row)"
+                  >
+                    继续处理
+                  </el-button>
                   <el-button
                     text
                     type="danger"
@@ -774,6 +785,7 @@ const {
   selectAndUploadFiles,
   deleteDocument,
   reprocessDocument,
+  resumeDocument,
   searchKnowledgeBase,
   clearSearchResults,
   selectEmbeddingModel,
@@ -1264,10 +1276,35 @@ async function handleViewChunks(doc: KbDocument): Promise<void> {
 async function handleReprocessDocument(documentId: string): Promise<void> {
   const ok = await reprocessDocument(documentId)
   if (ok) {
-    ElMessage.success('已开始处理文档')
+    // 后台执行：这里只表示"已开始"，完成与否由进度/状态事件反映
+    ElMessage.success('已开始处理文档，进度见列表状态')
   } else {
     // store 把失败原因写进 error，这里显式弹出（此前只写不显示，点击像"无效"）
     ElMessage.error(error.value || '处理文档失败')
+  }
+}
+
+/**
+ * 继续处理文档（断点续跑）。
+ * 场景：PC 重启导致处理中断，文档卡在 processing——复用已落切片与向量，只补未完成部分。
+ */
+async function handleResumeDocument(row: { id: string; name: string }): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      `继续处理「${row.name}」将复用已完成的切片与向量，只补齐剩余部分。\n处理在后台进行，可继续操作其他文档。`,
+      '继续处理',
+      { type: 'info', confirmButtonText: '继续处理', cancelButtonText: '取消' },
+    )
+  } catch {
+    return // 用户取消
+  }
+
+  const ok = await resumeDocument(row.id)
+  if (ok) {
+    // 后台执行：只表示"已开始受理"，实际进度与结果由列表状态实时反映
+    ElMessage.success('已开始继续处理，进度见列表状态')
+  } else {
+    ElMessage.error(error.value || '继续处理文档失败')
   }
 }
 
