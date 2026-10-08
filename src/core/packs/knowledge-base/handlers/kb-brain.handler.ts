@@ -228,9 +228,7 @@ export function registerKbBrainHandlers(): void {
   }
   const goalLastResult = new Map<string, GoalRunRecord>()
   ipcBridge.handle('kb:brain:goal-run', async (_e, p: { kbId: string; goalId: string }) => {
-    const kbRow = await svc()
-      .getKnowledgeBase(p.kbId)
-      .then(r => r.data)
+    const kbRow = await (await import('@core/database/database-manager.interface')).getCoreDatabaseManager().knowledgeBases.findByIdAny(p.kbId)
     const cfg = kbRow?.brainConfig ? parseBrainConfig(kbRow.brainConfig) : null
     const goal = cfg?.goals.find(g => g.id === p.goalId)
     if (!goal) return { success: false, error: '提取目标不存在或已删除' }
@@ -296,9 +294,7 @@ export function registerKbBrainHandlers(): void {
   ipcBridge.handle('kb:brain:cleanup-run', async (_e, p: { kbId: string }) => {
     if (cleanup.isRunning(p.kbId)) return { success: false, error: '垃圾清理进行中' }
     // 每库模型（brainConfig.models.adjudicate）——分诊与裁决同档位
-    const kbRow = await svc()
-      .getKnowledgeBase(p.kbId)
-      .then(r => r.data)
+    const kbRow = await (await import('@core/database/database-manager.interface')).getCoreDatabaseManager().knowledgeBases.findByIdAny(p.kbId)
     const cleanupCfg = kbRow?.brainConfig ? parseBrainConfig(kbRow.brainConfig) : null
     cleanup.setModelOverride(p.kbId, () =>
       cleanupCfg?.models.adjudicate ? parseModelRef(cleanupCfg.models.adjudicate) : {}
@@ -325,9 +321,7 @@ export function registerKbBrainHandlers(): void {
   const layerRelabel = getKbLayerRelabelService()
   ipcBridge.handle('kb:brain:layer-relabel-run', async (_e, p: { kbId: string }) => {
     if (layerRelabel.isRunning(p.kbId)) return { success: false, error: '分层补标进行中' }
-    const kbRow = await svc()
-      .getKnowledgeBase(p.kbId)
-      .then(r => r.data)
+    const kbRow = await (await import('@core/database/database-manager.interface')).getCoreDatabaseManager().knowledgeBases.findByIdAny(p.kbId)
     const relabelCfg = kbRow?.brainConfig ? parseBrainConfig(kbRow.brainConfig) : null
     layerRelabel.setModelOverride(p.kbId, () =>
       relabelCfg?.models.adjudicate ? parseModelRef(relabelCfg.models.adjudicate) : {}
@@ -355,9 +349,7 @@ export function registerKbBrainHandlers(): void {
   const bookPasses = getKbBookPassesService()
   ipcBridge.handle('kb:brain:book-passes-run', async (_e, p: { kbId: string }) => {
     if (bookPasses.isRunningKb(p.kbId)) return { success: false, error: '书级汇总进行中' }
-    const kbRow = await svc()
-      .getKnowledgeBase(p.kbId)
-      .then(r => r.data)
+    const kbRow = await (await import('@core/database/database-manager.interface')).getCoreDatabaseManager().knowledgeBases.findByIdAny(p.kbId)
     if (!kbRow) return { success: false, error: '知识库不存在' }
     const bpCfg = kbRow.brainConfig ? parseBrainConfig(kbRow.brainConfig) : null
     bookPasses.setModelOverride(p.kbId, () =>
@@ -388,11 +380,10 @@ export function registerKbBrainHandlers(): void {
   // P1 滚动阅读（全书工作记忆）：单文档 fire-and-forget + 状态轮询；断点在章级台账
   const bookReading = getKbBookReadingService()
   ipcBridge.handle('kb:brain:reading-run', async (_e, p: { kbId: string; documentId?: string }) => {
+    console.info(`[kb-reading-debug] reading-run 进入: kb=${p.kbId} doc=${p.documentId ?? '(全部)'}`)
     if (bookReading.isRunningKb(p.kbId)) return { success: false, error: '全书精读进行中' }
     // kbRow 判空（review M4）：与 book-passes-run 同防——无效 kbId 不应照常 fire-and-forget
-    const kbRow = await svc()
-      .getKnowledgeBase(p.kbId)
-      .then(r => r.data)
+    const kbRow = await (await import('@core/database/database-manager.interface')).getCoreDatabaseManager().knowledgeBases.findByIdAny(p.kbId)
     if (!kbRow) return { success: false, error: '知识库不存在' }
     const cfg = kbRow.brainConfig ? parseBrainConfig(kbRow.brainConfig) : null
     bookReading.setModelOverride(p.kbId, () =>
@@ -423,6 +414,7 @@ export function registerKbBrainHandlers(): void {
         )
       }
     })()
+    console.info(`[kb-reading-debug] reading-run 已入队`)
     return { success: true, data: { queued: true } }
   })
   ipcBridge.handle('kb:brain:reading-status', (_e, p: { kbId: string }) => {
@@ -433,9 +425,7 @@ export function registerKbBrainHandlers(): void {
   const graphBuild = getKbGraphBuildService()
   ipcBridge.handle('kb:brain:graph-build-run', async (_e, p: { kbId: string; documentId: string }) => {
     if (graphBuild.isRunning(p.kbId)) return { success: false, error: '图谱构建进行中' }
-    const kbRow = await svc()
-      .getKnowledgeBase(p.kbId)
-      .then(r => r.data)
+    const kbRow = await (await import('@core/database/database-manager.interface')).getCoreDatabaseManager().knowledgeBases.findByIdAny(p.kbId)
     const cfg = kbRow?.brainConfig ? parseBrainConfig(kbRow.brainConfig) : null
     graphBuild.setModelOverride(p.kbId, () =>
       cfg?.models.adjudicate ? parseModelRef(cfg.models.adjudicate) : {}
@@ -489,9 +479,7 @@ export function registerKbBrainHandlers(): void {
   // P3 终审复核 + 全书综述（单文档 fire-and-forget）
   const bookReview = getKbBookReviewService()
   const loadDocCfg = async (kbId: string) => {
-    const kbRow = await svc()
-      .getKnowledgeBase(kbId)
-      .then(r => r.data)
+    const kbRow = await (await import('@core/database/database-manager.interface')).getCoreDatabaseManager().knowledgeBases.findByIdAny(kbId)
     const cfg = kbRow?.brainConfig ? parseBrainConfig(kbRow.brainConfig) : null
     bookReview.setModelOverride(kbId, () =>
       cfg?.models.adjudicate ? parseModelRef(cfg.models.adjudicate) : {}

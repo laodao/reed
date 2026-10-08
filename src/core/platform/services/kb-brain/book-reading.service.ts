@@ -130,15 +130,25 @@ export function splitMemorySections(memory: string): MemorySection[] {
  * 增量合并（patch 模式核心，纯函数）：changed 的段整体替换/追加，未提及的段原样保留。
  * 段顺序：既有段保持原顺序（原位更新），新段按 canonicalOrder 插入到对应位置/末尾。
  */
+const CANONICAL_SECTIONS = ['卷册结构', '世界设定', '人物档案', '情节进展', '关键要素', '伏笔与悬念', '存疑与待澄清']
+
+/** 标题归一：剥 "##"/空白/括注后缀，前缀匹配到七个规范段之一（防 "人物档案（续）" 类变体分裂） */
+export function normalizeSectionTitle(rawTitle: string): string | null {
+  const t = rawTitle.replace(/^##+\s*/, '').replace(/\s*（[^）]*）\s*/g, '').replace(/\s*\([^)]*\)\s*/g, '').trim()
+  if (!t) return null
+  const hit = CANONICAL_SECTIONS.find(c => t === c || t.startsWith(c) || c.startsWith(t))
+  return hit ?? (t.length <= 12 ? t : null)
+}
+
 export function mergeMemorySections(
   base: string,
   changed: Record<string, string>,
-  canonicalOrder: string[] = ['卷册结构', '世界设定', '人物档案', '情节进展', '关键要素', '伏笔与悬念', '存疑与待澄清'],
+  canonicalOrder: string[] = CANONICAL_SECTIONS,
 ): string {
   const sections = splitMemorySections(base)
   const order: string[] = sections.map(x => x.title)
   for (const [rawTitle, body] of Object.entries(changed)) {
-    const title = rawTitle.replace(/^##\s*/, '').trim()
+    const title = normalizeSectionTitle(rawTitle)
     if (!title || typeof body !== 'string' || !body.trim()) continue
     const idx = order.indexOf(title)
     if (idx === -1) {
@@ -348,7 +358,7 @@ export class KbBookReadingService {
       // 归属校验（review M4）：跨库 documentId 会在本库产出指向他库文档的记忆卡
       if (doc.knowledgeBaseId !== kbId) throw new Error('文档不属于该知识库')
 
-      const chapterRows = await repos.chapters.findByDocument(documentId)
+      const chapterRows = await repos.chapters.findByDocument(documentId, { includeContent: true })
       const plans = planReadingBatches(chapterRows)
       if (plans.length === 0) throw new Error('没有可读的章节（正文为空或全部为前置页）')
       progress.batchesTotal = plans.length
@@ -407,8 +417,11 @@ export class KbBookReadingService {
             // 增量模式（patch）：只合并有变化的段，输出体量小、不撞输出上限
             memory = capMemory(mergeMemorySections(memory, parsed.changed))
           } else if (typeof parsed?.memory === 'string' && parsed.memory.trim()) {
-            // 兼容旧全量模式
-            memory = capMemory(parsed.memory.trim())
+            // 兼容全量模式：同样走段级合并——模型漏写的段保留基础版（永不丢段）
+            const sections = splitMemorySections(parsed.memory)
+            const changedMap: Record<string, string> = {}
+            for (const x of sections) changedMap[x.title] = x.body
+            memory = capMemory(mergeMemorySections(memory, changedMap))
           } else {
             throw new Error('响应缺少 changed/memory 字段')
           }

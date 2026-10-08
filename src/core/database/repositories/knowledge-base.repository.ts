@@ -4,7 +4,7 @@
  * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import type { DataSource } from 'typeorm'
+import type { DataSource, FindOptionsWhere } from 'typeorm'
 import { randomUUID } from 'crypto'
 import type {
   KnowledgeBase,
@@ -21,6 +21,12 @@ export class KnowledgeBaseRepository extends BaseRepository<
 > {
   constructor(dataSource: DataSource) {
     super(dataSource, KnowledgeBaseEntity)
+  }
+
+  /** 裸仓库查单库（豁免租户过滤）：后台/自动化上下文 ALS 为空时 scoped 会按 IS NULL 静默 no-op */
+  async findByIdAny(id: string): Promise<KnowledgeBase | null> {
+    const row = await this.repo.findOne({ where: { id } as FindOptionsWhere<KnowledgeBaseEntity> })
+    return row ? this.toDto(row) : null
   }
 
   protected toDto(e: KnowledgeBaseEntity): KnowledgeBase {
