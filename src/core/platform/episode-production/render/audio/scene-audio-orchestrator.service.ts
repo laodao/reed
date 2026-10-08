@@ -25,7 +25,6 @@ import type { DataSource } from 'typeorm'
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
 import type { Dialogue } from '@shared/types/episode-production'
 import { NarrationSynthesisService } from './narration-synthesis.service'
-import { DialogueSynthesisService } from './dialogue-synthesis.service'
 import { ReferenceResolver } from '@core/platform/episode-production/narrative/reference-resolver'
 import { VoiceService } from '@core/platform/services/voice.service'
 import { toRelativeAssetPath } from '@core/utils/asset-path'
@@ -36,6 +35,12 @@ export interface OrchestrateAudioInput {
   /** 项目级默认旁白音色（不传走 'Cherry'） */
   defaultNarratorVoiceId?: string
   onProgress?: (type: 'narration' | 'dialogue', index: number, total: number) => void
+  /**
+   * 只补缺失项（2026-10-08 review 修复）：已有音频的旁白/对白跳过不重烧。
+   * agent 批量"补配音"路径用（有缺即补，省 TTS 费）；UI 显式按钮与显式点名
+   * 场景的语义是"重新配音整场"，保持缺省 false 整场重配。
+   */
+  skipExisting?: boolean
 }
 
 export interface OrchestrateAudioResult {
@@ -57,14 +62,12 @@ export interface OrchestrateAudioResult {
 export class SceneAudioOrchestratorService {
   private readonly resolver: ReferenceResolver
   private readonly narrationSvc: NarrationSynthesisService
-  private readonly dialogueSvc: DialogueSynthesisService
   /** 运行时缓存：第一次需要 fallback voice 时去 VoiceService 取列表，缓存后复用 */
   private cachedFallbackVoiceId: string | null = null
 
   constructor(private readonly ds: DataSource) {
     this.resolver = new ReferenceResolver(ds)
     this.narrationSvc = NarrationSynthesisService.getInstance()
-    this.dialogueSvc = DialogueSynthesisService.getInstance()
   }
 
   /**
@@ -105,9 +108,9 @@ export class SceneAudioOrchestratorService {
       dialogueFailCount: 0,
     }
 
-    // 1. 旁白
+    // 1. 旁白（skipExisting：已有产物路径则跳过，不重烧）
     const narrationText = (scene.narration ?? '').trim()
-    if (narrationText) {
+    if (narrationText && !(input.skipExisting && scene.narrationAudioPath)) {
       input.onProgress?.('narration', 0, 1)
       // 旁白音色：用户传 → 项目级配置 → VoiceService 取系统第一个可用
       const narrationVoice =
@@ -121,10 +124,11 @@ export class SceneAudioOrchestratorService {
       if (!narrationPath) result.narrationFailed = true
     }
 
-    // 2. 对话（V3 binding-aware 路径）
+    // 2. 对话（V3 binding-aware 路径；skipExisting：已有 audioAsset 的条目跳过）
     const dialogues = (scene.dialogues as Dialogue[] | null) ?? []
     for (let i = 0; i < dialogues.length; i++) {
       const d = dialogues[i]
+      if (input.skipExisting && d?.audioAsset?.audioPath) continue
       input.onProgress?.('dialogue', i, dialogues.length)
 
       const { voiceId, fellBackToSystemDefault } = await this.resolveDialogueVoice(d)

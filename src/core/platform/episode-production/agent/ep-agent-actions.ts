@@ -1446,7 +1446,10 @@ async function executeGenerateSegmentVideo(
 /**
  * 场景配音（generate_scene_audio）：对白 + 旁白 TTS，产物落库（audioAsset/narration_audio_path），
  * 导出时自动混入音轨。
- * params: { sceneId? }；不传 → 为本集全部未配音场景生成。
+ * params: { sceneId? }；不传 → 为本集全部"有缺失"的场景补配音。
+ * 批量补缺口径（2026-10-08 review 修复）：旁白有文本但无音频、或任一对白缺音频附件
+ * 即入选（旧口径"完全未配音才补"会让部分配音的场景永远漏配）；已有产物经
+ * skipExisting 跳过不重烧。显式点名 sceneId 时保持整场重配（与 UI 按钮语义一致）。
  */
 async function executeGenerateSceneAudio(
   ctx: EpAgentExecutionContext,
@@ -1459,13 +1462,20 @@ async function executeGenerateSceneAudio(
 
   let scenes = (await m.sceneScripts?.getByEpisodeScriptId?.(scriptId)) || []
   const wantSceneId = action.params?.sceneId ? String(action.params.sceneId) : ''
+  // 批量补缺只合成缺失项；显式点名 sceneId = 整场重配（与 UI 按钮语义一致）
+  const skipExisting = !wantSceneId
   if (wantSceneId) {
     scenes = scenes.filter((s: any) => s.id === wantSceneId)
     if (scenes.length === 0) throw new Error('指定的场景不存在')
   } else {
+    // 有缺即补：旁白有文本但无音频，或任一对白缺 audioAsset（无旁白文本不算缺）
     scenes = scenes.filter((s: any) => {
-      if ((s as any).narrationAudioPath) return false
-      return !((s as any).dialogues ?? []).some((d: any) => !!d?.audioAsset?.audioPath)
+      const narrationText = String((s as any).narration ?? '').trim()
+      const narrationMissing = !!narrationText && !(s as any).narrationAudioPath
+      const dialogueMissing = ((s as any).dialogues ?? []).some(
+        (d: any) => !d?.audioAsset?.audioPath,
+      )
+      return narrationMissing || dialogueMissing
     })
   }
   if (scenes.length === 0) {
@@ -1495,6 +1505,7 @@ async function executeGenerateSceneAudio(
       const result = await svc.orchestrateScene({
         sceneScriptId: scene.id,
         outputDir: path.join(dataPath, 'episode-production', 'audio', scene.id),
+        skipExisting,
       })
       await svc.persistToScene(scene.id, result)
       fallbackCount += result.fallbackDialogueCount

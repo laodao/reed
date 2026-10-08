@@ -137,9 +137,9 @@ export function buildEpAgentToolDefs(): AgentToolDef[] {
         providerConfigId: z.string().optional().describe('视频提供商配置 id（缺省读项目设置，再自动挑第一个启用的视频模型）'),
         modelId: z.string().optional().describe('视频模型 id（缺省同上）'),
       })),
-    epActionTool('generate_scene_audio', '为场景生成配音（对白+旁白 TTS，按角色绑定音色），产物落库后导出时自动混入成片。缺省为本集全部未配音场景。',
+    epActionTool('generate_scene_audio', '为场景生成配音（对白+旁白 TTS，按角色绑定音色），产物落库后导出时自动混入成片。缺省为本集所有"有缺失"的场景（旁白或任一对白缺音频即补，已有配音的部分不重复生成）；显式指定 sceneId 时整场重新配音。',
       z.object({
-        sceneId: z.string().optional().describe('场景 id（缺省=本集所有未配音场景）'),
+        sceneId: z.string().optional().describe('场景 id（缺省=本集所有缺配音的场景，只补缺失项）'),
       })),
     epActionTool('export_mp4', '整集合成导出 MP4（分钟级后台任务：返回"已启动"即成功，合成需数分钟；末端硬锁：所有入选分镜须已有视频，未满足会立即报错）。成功后剧集标记为已完成。',
       z.object({

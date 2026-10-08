@@ -181,7 +181,9 @@ async function handleExportMp4(
       outputPath: resolvedOutputPath,
       width: opts?.width,
       height: opts?.height,
-      burnSubtitles: opts?.burnSubtitles,
+      // 缺省烧字幕（!== false）：与 agent 动作层（ep-agent-actions executeExportMp4）
+      // 和 UI ExportDialog 表单默认对齐——此前漏传时静默不烧，同一功能两条入口默认相反
+      burnSubtitles: opts?.burnSubtitles !== false,
     })
 
     // 附带 dataPath 相对路径：渲染端 toVideoUrl(local-video://) 只认 dataPath 相对路径，
