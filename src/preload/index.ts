@@ -1566,6 +1566,35 @@ const electronAPI = {
     }
   },
 
+  // 信息搜集（ic:* 全部由 info-collection 包 handler 提供，返回 { success, data?, error? }；
+  // 设计 docs/design/2026-10-07-info-collection-design.md）
+  infoCollection: {
+    // 创建项目（AI 起草蓝图；mode=quick 且自检通过自动确认）
+    createProject: (p: { name: string; goal: string; mode?: 'quick' | 'review' }) =>
+      ipcRenderer.invoke('ic:create-project', p),
+    // 仅起草蓝图（不入库；返回 { blueprint, check }）
+    draftBlueprint: (p: { goal: string }) => ipcRenderer.invoke('ic:draft-blueprint', p),
+    // 蓝图预检（前端确认页用）
+    checkBlueprint: (p: { blueprint: Record<string, unknown> }) => ipcRenderer.invoke('ic:check-blueprint', p),
+    // 确认蓝图（精调模式人审；快速模式自检通过已自动确认，无需调用）
+    confirmBlueprint: (p: { projectId: string }) => ipcRenderer.invoke('ic:confirm-blueprint', p),
+    listProjects: (p?: { status?: 'active' | 'archived' }) => ipcRenderer.invoke('ic:list-projects', p),
+    getProject: (p: { id: string }) => ipcRenderer.invoke('ic:get-project', p),
+    // 绑定/改绑项目知识库（内容唯一存储在 kb）
+    setProjectKb: (p: { id: string; kbId: string | null }) => ipcRenderer.invoke('ic:set-project-kb', p),
+    // 发起搜集任务（后台执行；返回 { taskId }，进度轮询 listTasks）
+    runTask: (p: { projectId: string }) => ipcRenderer.invoke('ic:run-task', p),
+    listTasks: (p: { projectId: string }) => ipcRenderer.invoke('ic:list-tasks', p),
+    listSources: (p: { projectId: string; reviewStatus?: 'staged' | 'confirmed' | 'rejected' | 'merged' }) =>
+      ipcRenderer.invoke('ic:list-sources', p),
+    listRows: (p: { projectId: string; schemaId?: string; status?: 'draft' | 'confirmed' | 'superseded' | 'stale' }) =>
+      ipcRenderer.invoke('ic:list-rows', p),
+    // 人审批量确认（返回 { confirmed, skipped }；无分级依据的源会被闸门拦下）
+    confirmBatch: (p: { projectId: string; sourceIds: string[] }) => ipcRenderer.invoke('ic:confirm-batch', p),
+    rejectBatch: (p: { projectId: string; sourceIds: string[]; reason?: string }) =>
+      ipcRenderer.invoke('ic:reject-batch', p)
+  },
+
   // 人像设计相关
   portrait: {
     // 项目管理

@@ -37,6 +37,7 @@ import { appPack } from './app'
 import { knowledgeBasePack } from './knowledge-base'
 import { assetCenterPack } from './asset-center'
 import { domainLearningPack } from './domain-learning'
+import { infoCollectionPack } from './info-collection'
 
 export const builtinPacks: PackDefinition[] = [
   skillsPack,
@@ -54,4 +55,6 @@ export const builtinPacks: PackDefinition[] = [
   assetCenterPack,
   // 领域共学空间（依赖 workflow/knowledge-base/skills）
   domainLearningPack,
+  // 信息搜集（依赖 workflow/knowledge-base；docs/design/2026-10-07-info-collection-design.md）
+  infoCollectionPack,
 ]
