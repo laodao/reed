@@ -6,7 +6,7 @@
  *              其余模块的 api 访问暂未迁移（后续按需逐步收敛到本文件）。
  */
 
-import type { AppRecord, AppSessionRecord } from '@shared/types/app.types'
+import type { AppRecord, AppSessionRecord, AppDataTableDto } from '@shared/types/app.types'
 import type { Message } from '@shared/types/message.types'
 import type { AssetCategoryDef, AssetGroupRecord, AssetPreviewResult, AssetPreviewTemplateOption, AssetRecord, AssetSourceLink } from '@shared/types/asset.types'
 
@@ -48,6 +48,13 @@ export interface AppApi {
     start(p: { sessionId: string; inputs?: Record<string, unknown> }): Promise<IpcResp<{ runId: string; status: string }>>
     review(p: { sessionId: string; nodeId: string; decision: string; editedValues?: Record<string, unknown>; choice?: string }): Promise<IpcResp<boolean>>
     delete(sessionId: string): Promise<IpcResp<{ deleted: boolean }>>
+  }
+  appData: {
+    listTables(appId: string): Promise<IpcResp<{ tables: AppDataTableDto[] }>>
+    queryRows(p: { appId: string; tableId: string; filterField?: string; filterContains?: string; page?: number; pageSize?: number }): Promise<IpcResp<{ rows: Array<Record<string, unknown>>; total: number }>>
+    deleteRow(p: { appId: string; tableId: string; rowId: string }): Promise<IpcResp<{ deleted: boolean }>>
+    deleteTable(p: { appId: string; tableId: string }): Promise<IpcResp<{ deleted: boolean }>>
+    exportCsv(p: { appId: string; tableId: string }): Promise<IpcResp<{ filename: string; csv: string }>>
   }
   workflow: {
     listDefinitions(p: { page: number; pageSize: number }): Promise<IpcResp<{ items: WorkflowSummary[]; total: number }>>

@@ -36,6 +36,17 @@ export const WORKFLOW_SESSION_CARDS = {
   report: 'report',
 } as const
 
+/** 应用数据表 DTO（app-data:list-tables 返回；2026-10-08 应用数据层） */
+export interface AppDataTableDto {
+  id: string
+  name: string
+  columns: Array<{ key: string; label?: string; type?: string }>
+  dedupKeys: string[]
+  rowCount: number
+  createdAt: string | null
+  updatedAt: string | null
+}
+
 /** 会话消息 metadata 判别联合（写库与渲染共用） */
 export type SessionCardMeta =
   | { card: typeof WORKFLOW_SESSION_CARDS.startForm; appId: string; form: unknown[]; runId?: string }

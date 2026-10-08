@@ -220,6 +220,12 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'appSession.start': { channel: 'app-session:start' },
   'appSession.review': { channel: 'app-session:review' },
   'appSession.delete': { channel: 'app-session:delete' },
+  // 应用数据（与 preload appData 严格同步）
+  'appData.listTables': { channel: 'app-data:list-tables' },
+  'appData.queryRows': { channel: 'app-data:query-rows' },
+  'appData.deleteRow': { channel: 'app-data:delete-row' },
+  'appData.deleteTable': { channel: 'app-data:delete-table' },
+  'appData.exportCsv': { channel: 'app-data:export-csv' },
   // ==================== P0 工具（与 preload tools 严格同步） ====================
   'tools.listCredentials': { channel: 'tool:list-credentials' },
   'tools.saveCredential': { channel: 'tool:save-credential' },

@@ -723,7 +723,7 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
   {
     type: 'data-table',
     label: '数据表',
-    description: '结构化数据持久化（insert 自动建表 / query 全查 / update、delete 按行操作）',
+    description: '结构化数据持久化（createTable 声明建表 / insert / upsert 按去重键增量 / query 过滤分页 / update、delete / count；app 作用域按应用隔离）',
     category: 'general',
     icon: 'Grid',
     controlKind: 'task',
@@ -733,12 +733,15 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
       { kind: 'fail', label: '失败' },
     ],
     requiredConfigKeys: ['op'],
-    defaultConfig: { op: 'insert', tableName: '', tableId: '', row: '', rowId: '' },
+    defaultConfig: { op: 'insert', scope: 'workflow', tableName: '', tableId: '', row: '', rowId: '', columns: '', dedupKeys: '' },
     outputSchema: [
       { key: 'rows', type: 'json', desc: 'query：行数组 [{id, ...}]' },
-      { key: 'rowId', type: 'string', desc: 'insert：新行 id' },
-      { key: 'tableId', type: 'string', desc: 'insert：表 id' },
+      { key: 'rowId', type: 'string', desc: 'insert/upsert：行 id' },
+      { key: 'tableId', type: 'string', desc: 'insert/createTable：表 id' },
       { key: 'ok', type: 'boolean', desc: 'update/delete 是否成功' },
+      { key: 'created', type: 'boolean', desc: 'createTable：是否新建（幂等重入 false）' },
+      { key: 'action', type: 'string', desc: 'upsert：inserted | updated' },
+      { key: 'total', type: 'number', desc: 'count 行数 / query 分页过滤后总数' },
     ],
   },
   {

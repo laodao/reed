@@ -861,6 +861,13 @@ const electronAPI = {
     review: (p: { sessionId: string; nodeId: string; decision: string; editedValues?: Record<string, unknown>; choice?: string }) => ipcRenderer.invoke('app-session:review', p),
     delete: (sessionId: string) => ipcRenderer.invoke('app-session:delete', { sessionId }),
   },
+  appData: {
+    listTables: (appId: string) => ipcRenderer.invoke('app-data:list-tables', { appId }),
+    queryRows: (p: { appId: string; tableId: string; filterField?: string; filterContains?: string; page?: number; pageSize?: number }) => ipcRenderer.invoke('app-data:query-rows', p),
+    deleteRow: (p: { appId: string; tableId: string; rowId: string }) => ipcRenderer.invoke('app-data:delete-row', p),
+    deleteTable: (p: { appId: string; tableId: string }) => ipcRenderer.invoke('app-data:delete-table', p),
+    exportCsv: (p: { appId: string; tableId: string }) => ipcRenderer.invoke('app-data:export-csv', p),
+  },
 
   // ==================== 通用资产库（保存资产/读取资产/资产中心） ====================
   assets: {

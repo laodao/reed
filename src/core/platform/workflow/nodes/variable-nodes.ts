@@ -1,9 +1,10 @@
 /**
- * 变量与数据表节点（P0 片4）
+ * 变量与数据表节点（P0 片4；2026-10-08 应用数据层扩展）
  * @module core/platform/workflow/nodes/variable-nodes
  * @description
  *  - variable：op=get 读持久化变量（无则 defaultValue 兜底）；op=set 写入（scope+key upsert）
- *  - data-table：op=insert/query/update/delete 操作数据表（insert 支持按名自动建表）
+ *  - data-table：op=insert/query/update/delete（历史）+ createTable/upsert/count（应用数据层）
+ *    scope=workflow（全局命名空间）| app（按 definitionId 隔离——一 definition 一 app，等价按应用隔离）
  */
 
 import type { WorkflowNodeContext, WorkflowNodeExecutionResult } from '../engine/node-handler'
@@ -55,28 +56,45 @@ const dataTableNode: WorkflowNodeHandler = {
   cancellable: false,
   outputSchema: [
     { key: 'rows', type: 'json', desc: 'query：行数组 [{id, ...}]' },
-    { key: 'rowId', type: 'string', desc: 'insert：新行 id' },
-    { key: 'tableId', type: 'string', desc: 'insert：表 id（自动建表时为新建）' },
+    { key: 'rowId', type: 'string', desc: 'insert/upsert：行 id' },
+    { key: 'tableId', type: 'string', desc: 'insert/createTable：表 id（自动建表时为新建）' },
     { key: 'ok', type: 'boolean', desc: 'update/delete 是否成功' },
+    { key: 'created', type: 'boolean', desc: 'createTable：是否新建（幂等重入为 false）' },
+    { key: 'action', type: 'string', desc: 'upsert：inserted | updated' },
+    { key: 'total', type: 'number', desc: 'count：行数；query 分页时为过滤后总数' },
   ],
   validateConfig(config) {
-    const cfg = config as { op?: string }
+    const cfg = config as { op?: string; scope?: string }
     const errors: string[] = []
-    if (!cfg.op || !['insert', 'query', 'update', 'delete', 'execute'].includes(cfg.op)) {
-      errors.push('op 必须是 insert/query/update/delete/execute')
+    const OPS = ['insert', 'query', 'update', 'delete', 'execute', 'createTable', 'upsert', 'count']
+    if (!cfg.op || !OPS.includes(cfg.op)) {
+      errors.push(`op 必须是 ${OPS.join('/')}`)
+    }
+    if (cfg.scope && !['workflow', 'app'].includes(cfg.scope)) {
+      errors.push('scope 必须是 workflow 或 app')
     }
     return errors
   },
   async execute(ctx: WorkflowNodeContext) {
     const cfg = ctx.config as {
-      op: 'insert' | 'query' | 'update' | 'delete' | 'execute'
+      op: 'insert' | 'query' | 'update' | 'delete' | 'execute' | 'createTable' | 'upsert' | 'count'
       dataSourceId?: string
       tableId?: string
       tableName?: string
+      /** app=按 definitionId 隔离（应用数据）；缺省 workflow=全局命名空间（历史语义） */
+      scope?: 'workflow' | 'app'
       row?: string
       rowId?: string
       sql?: string
       params?: string
+      /** createTable：列声明 JSON 数组 [{key,label?,type?}] */
+      columns?: string
+      /** createTable：去重键，逗号分隔（upsert 判重；建表时锁定） */
+      dedupKeys?: string
+      filterField?: string
+      filterContains?: string
+      page?: number
+      pageSize?: number
     }
 
     // 外部数据源模式：读写第三方数据库（路由到数据源驱动）
@@ -84,30 +102,75 @@ const dataTableNode: WorkflowNodeHandler = {
       return executeExternalDataTable(ctx, cfg)
     }
 
-    // 内置数据表模式（本应用 wf_data_table_*）
+    // 内置数据表模式（wf_data_table_*）：app 作用域自动以本运行的工作流定义为属主
     const svc = getVariableDataService()
+    const owner = cfg.scope === 'app' ? { scope: 'app' as const, ownerId: ctx.definitionId } : {}
+    const parseRowJson = (): Record<string, unknown> | null => {
+      try {
+        return cfg.row ? JSON.parse(cfg.row) : {}
+      } catch {
+        return null
+      }
+    }
     switch (cfg.op) {
-      case 'insert': {
-        let row: Record<string, unknown> = {}
+      case 'createTable': {
+        let columns: Array<{ key: string; label?: string; type?: 'string' | 'number' | 'boolean' | 'json' }> = []
         try {
-          row = cfg.row ? JSON.parse(cfg.row) : {}
+          const parsed = cfg.columns ? JSON.parse(cfg.columns) : []
+          if (Array.isArray(parsed)) columns = parsed
         } catch {
-          return { status: 'failed', error: 'data-table: row 必须是合法 JSON 字符串', retryable: false }
+          return { status: 'failed', error: 'data-table: columns 必须是合法 JSON 数组（如 [{"key":"url","type":"string"}]）', retryable: false }
         }
-        const r = await svc.insertRow({ tableId: cfg.tableId, tableName: cfg.tableName, row })
-        return { status: 'succeeded', output: { tableId: r.tableId, rowId: r.rowId } }
+        if (!columns.length || columns.some(c => !c?.key)) {
+          return { status: 'failed', error: 'data-table: columns 至少一列且每列必须有 key', retryable: false }
+        }
+        const dedupKeys = (cfg.dedupKeys ?? '').split(',').map(s => s.trim()).filter(Boolean)
+        try {
+          const r = await svc.createTable({ name: stringifyValue(cfg.tableName), columns, dedupKeys, ...owner })
+          return { status: 'succeeded', output: { tableId: r.tableId, created: r.created } }
+        } catch (e) {
+          return { status: 'failed', error: e instanceof Error ? e.message : String(e), retryable: false }
+        }
+      }
+      case 'insert': {
+        const row = parseRowJson()
+        if (!row) return { status: 'failed', error: 'data-table: row 必须是合法 JSON 字符串', retryable: false }
+        try {
+          const r = await svc.insertRow({ tableId: cfg.tableId, tableName: cfg.tableName, row, ...owner })
+          return { status: 'succeeded', output: { tableId: r.tableId, rowId: r.rowId } }
+        } catch (e) {
+          return { status: 'failed', error: e instanceof Error ? e.message : String(e), retryable: false }
+        }
+      }
+      case 'upsert': {
+        const row = parseRowJson()
+        if (!row) return { status: 'failed', error: 'data-table: row 必须是合法 JSON 字符串', retryable: false }
+        try {
+          const r = await svc.upsertRow({ tableId: cfg.tableId, tableName: cfg.tableName, row, ...owner })
+          return { status: 'succeeded', output: { tableId: r.tableId, rowId: r.rowId, action: r.action } }
+        } catch (e) {
+          return { status: 'failed', error: e instanceof Error ? e.message : String(e), retryable: false }
+        }
       }
       case 'query': {
-        const rows = await svc.queryRows({ tableId: cfg.tableId, tableName: cfg.tableName })
+        if (cfg.filterField || cfg.filterContains || cfg.page || cfg.pageSize) {
+          const r = await svc.queryRowsPaged({
+            tableId: cfg.tableId, tableName: cfg.tableName,
+            filter: { field: cfg.filterField || undefined, contains: cfg.filterContains || undefined },
+            page: cfg.page, pageSize: cfg.pageSize, ...owner,
+          })
+          return { status: 'succeeded', output: { rows: r.rows, total: r.total } }
+        }
+        const rows = await svc.queryRows({ tableId: cfg.tableId, tableName: cfg.tableName, ...owner })
         return { status: 'succeeded', output: { rows } }
       }
+      case 'count': {
+        const total = await svc.countRows({ tableId: cfg.tableId, tableName: cfg.tableName, ...owner })
+        return { status: 'succeeded', output: { total } }
+      }
       case 'update': {
-        let row: Record<string, unknown> = {}
-        try {
-          row = cfg.row ? JSON.parse(cfg.row) : {}
-        } catch {
-          return { status: 'failed', error: 'data-table: row 必须是合法 JSON 字符串', retryable: false }
-        }
+        const row = parseRowJson()
+        if (!row) return { status: 'failed', error: 'data-table: row 必须是合法 JSON 字符串', retryable: false }
         if (!cfg.rowId) return { status: 'failed', error: 'data-table: update 需要 rowId', retryable: false }
         await svc.updateRow(cfg.rowId, row)
         return { status: 'succeeded', output: { ok: true } }

@@ -122,6 +122,85 @@
           />
         </div>
       </el-tab-pane>
+
+      <el-tab-pane label="数据" name="data">
+        <!-- 表清单 → 行浏览 两级视图：未选表时列表，选中后进入行浏览 -->
+        <template v-if="!selectedTable">
+          <el-table :data="dataTables" v-loading="dataLoading" empty-text="暂无应用数据表——在工作流里用「数据表」节点（作用域=应用数据）声明建表后，这里会出现数据">
+            <el-table-column prop="name" label="表名" min-width="140" />
+            <el-table-column label="列" min-width="220">
+              <template #default="{ row }">
+                <el-tag v-for="c in row.columns" :key="c.key" size="small" effect="plain" style="margin-right: 4px">{{ c.key }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="去重键" min-width="120">
+              <template #default="{ row }">
+                <span v-if="row.dedupKeys.length">{{ row.dedupKeys.join(', ') }}</span>
+                <span v-else style="color: var(--el-text-color-secondary)">—</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="rowCount" label="行数" width="80" align="right" />
+            <el-table-column label="操作" width="200">
+              <template #default="{ row }">
+                <el-button text type="primary" size="small" @click="openTable(row)">浏览数据</el-button>
+                <el-button text size="small" @click="exportCsv(row)">导出 CSV</el-button>
+                <el-button text type="danger" size="small" @click="deleteTable(row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </template>
+
+        <template v-else>
+          <div class="data-toolbar">
+            <el-button size="small" @click="closeTable"><el-icon><ArrowLeft /></el-icon> 返回表清单</el-button>
+            <span class="data-table-name">{{ selectedTable.name }}<el-tag size="small" effect="plain" style="margin-left: 8px">{{ rowsTotal }} 行</el-tag></span>
+            <el-input
+              v-model="dataKeyword"
+              size="small"
+              placeholder="关键字过滤（全行匹配）"
+              style="width: 220px"
+              clearable
+              @keyup.enter="reloadRows"
+              @clear="reloadRows"
+            />
+            <el-button size="small" type="primary" plain @click="reloadRows">过滤</el-button>
+            <el-button size="small" @click="exportCsv(selectedTable)">导出 CSV</el-button>
+          </div>
+          <el-table :data="dataRows" v-loading="rowsLoading" empty-text="暂无数据">
+            <el-table-column type="expand">
+              <template #default="{ row }">
+                <pre class="data-row-json">{{ JSON.stringify(row, null, 2) }}</pre>
+              </template>
+            </el-table-column>
+            <el-table-column
+              v-for="col in rowColumns"
+              :key="col.key"
+              :label="col.label || col.key"
+              min-width="140"
+              show-overflow-tooltip
+            >
+              <template #default="{ row }">{{ formatCell(row[col.key]) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="80">
+              <template #default="{ row }">
+                <el-button text type="danger" size="small" @click="deleteDataRow(row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="session-pager" v-if="rowsTotal > 0">
+            <el-pagination
+              v-model:current-page="dataPage"
+              v-model:page-size="dataPageSize"
+              :total="rowsTotal"
+              :page-sizes="[20, 50, 100]"
+              layout="total, sizes, prev, pager, next"
+              background
+              @current-change="loadRows"
+              @size-change="reloadRows"
+            />
+          </div>
+        </template>
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -134,7 +213,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
-import type { AppRecord, AppSessionRecord } from '@shared/types/app.types'
+import type { AppRecord, AppSessionRecord, AppDataTableDto } from '@shared/types/app.types'
 import { electronApi } from '@/types/electron-api'
 import { resolveAppIcon } from '../../utils/app-icons'
 
@@ -169,6 +248,7 @@ async function load(): Promise<void> {
   }
   else ElMessage.error(resp.error ?? '加载失败')
   await loadSessions()
+  await loadTables()
 }
 
 async function loadSessions(): Promise<void> {
@@ -411,6 +491,129 @@ async function saveMeta(): Promise<void> {
   } else ElMessage.error(resp.error ?? '保存失败')
 }
 
+// ---- 数据页签（应用数据层）：表清单 → 行浏览（服务端过滤/分页）----
+const dataTables = ref<AppDataTableDto[]>([])
+const dataLoading = ref(false)
+const selectedTable = ref<AppDataTableDto | null>(null)
+const dataRows = ref<Array<Record<string, unknown>>>([])
+const rowsTotal = ref(0)
+const rowsLoading = ref(false)
+const dataPage = ref(1)
+const dataPageSize = ref(50)
+const dataKeyword = ref('')
+
+/** 行浏览列：取表列声明；声明列之外出现过的键兜底展示（数据完整性优先） */
+const rowColumns = computed(() => {
+  if (!selectedTable.value) return []
+  const cols = [...selectedTable.value.columns]
+  const known = new Set(cols.map(c => c.key))
+  for (const r of dataRows.value) {
+    for (const k of Object.keys(r)) {
+      if (k !== 'id' && !known.has(k)) { known.add(k); cols.push({ key: k }) }
+    }
+  }
+  return cols.slice(0, 12) // 列过多时截断，完整数据走行展开 JSON
+})
+
+function formatCell(v: unknown): string {
+  if (v === null || v === undefined) return ''
+  if (typeof v === 'object') return JSON.stringify(v)
+  return String(v)
+}
+
+async function loadTables(): Promise<void> {
+  dataLoading.value = true
+  try {
+    const resp = await api.appData.listTables(appId.value)
+    if (resp.success) dataTables.value = resp.data?.tables ?? []
+    else ElMessage.error(resp.error ?? '加载应用数据失败')
+  } finally {
+    dataLoading.value = false
+  }
+}
+
+function openTable(row: AppDataTableDto): void {
+  selectedTable.value = row
+  dataPage.value = 1
+  dataKeyword.value = ''
+  loadRows()
+}
+
+function closeTable(): void {
+  selectedTable.value = null
+  loadTables()
+}
+
+async function loadRows(): Promise<void> {
+  if (!selectedTable.value) return
+  rowsLoading.value = true
+  try {
+    const resp = await api.appData.queryRows({
+      appId: appId.value,
+      tableId: selectedTable.value.id,
+      filterContains: dataKeyword.value.trim() || undefined,
+      page: dataPage.value,
+      pageSize: dataPageSize.value,
+    })
+    if (resp.success) {
+      dataRows.value = resp.data?.rows ?? []
+      rowsTotal.value = resp.data?.total ?? 0
+    } else ElMessage.error(resp.error ?? '加载数据失败')
+  } finally {
+    rowsLoading.value = false
+  }
+}
+
+async function reloadRows(): Promise<void> {
+  dataPage.value = 1
+  await loadRows()
+}
+
+async function deleteDataRow(row: Record<string, unknown>): Promise<void> {
+  if (!selectedTable.value || !row.id) return
+  try {
+    await ElMessageBox.confirm('删除该行数据？不可恢复。', '删除行', { type: 'warning' })
+  } catch {
+    return
+  }
+  const resp = await api.appData.deleteRow({ appId: appId.value, tableId: selectedTable.value.id, rowId: String(row.id) })
+  if (resp.success) {
+    ElMessage.success('已删除')
+    await loadRows()
+    await loadTables()
+  } else ElMessage.error(resp.error ?? '删除失败')
+}
+
+async function deleteTable(row: AppDataTableDto): Promise<void> {
+  try {
+    await ElMessageBox.confirm(`删除数据表「${row.name}」及其全部 ${row.rowCount} 行数据？不可恢复。`, '删除数据表', { type: 'warning' })
+  } catch {
+    return
+  }
+  const resp = await api.appData.deleteTable({ appId: appId.value, tableId: row.id })
+  if (resp.success) {
+    ElMessage.success('已删除')
+    await loadTables()
+  } else ElMessage.error(resp.error ?? '删除失败')
+}
+
+/** 导出 CSV：后端拼装（含 BOM），前端落文件 */
+async function exportCsv(row: AppDataTableDto): Promise<void> {
+  const resp = await api.appData.exportCsv({ appId: appId.value, tableId: row.id })
+  if (!resp.success || !resp.data) {
+    ElMessage.error(resp.error ?? '导出失败')
+    return
+  }
+  const blob = new Blob([resp.data.csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = resp.data.filename
+  a.click()
+  URL.revokeObjectURL(url)
+  ElMessage.success('已导出')
+}
+
 onMounted(load)
 </script>
 
@@ -435,4 +638,7 @@ onMounted(load)
 .api-endpoint { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
 .api-endpoint code { font-size: 12px; background: var(--el-fill-color); padding: 3px 6px; border-radius: 4px; }
 .session-pager { display: flex; justify-content: flex-end; padding-top: 14px; }
+.data-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.data-table-name { font-weight: 600; }
+.data-row-json { margin: 0; padding: 10px 14px; background: var(--el-fill-color-light); border-radius: 6px; font-size: 12px; max-width: 900px; overflow: auto; }
 </style>
