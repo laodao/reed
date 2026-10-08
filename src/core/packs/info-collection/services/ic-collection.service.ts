@@ -24,6 +24,7 @@ import { contentHash } from '@shared/utils/info-collection-content-hash'
 import { parseJsonObject } from '@shared/utils/info-collection-json'
 import { clusterSources } from '@shared/utils/info-collection-cluster'
 import { detectValueConflicts, type IcValueConflictGroup } from '@shared/utils/info-collection-conflicts'
+import { isCandidateRelevant } from '@shared/utils/info-collection-relevance'
 import type {
   IcBlueprint,
   IcReviewStatus,
@@ -56,6 +57,8 @@ export interface IcTaskStats {
   budgetMax: number
   sourcesNew: number
   sourcesFailed: number
+  /** 候选相关性软闸拦下的跑题源数（2026-10-08 验收：引擎可能返回门户噪音） */
+  candidatesFiltered: number
   rowsDraft: number
   rowsRejectedQuote: number
   rowsMerged: number
@@ -289,6 +292,7 @@ export class IcCollectionService {
       budgetMax: bp.stopRules.budget.maxToolCalls,
       sourcesNew: 0,
       sourcesFailed: 0,
+      candidatesFiltered: 0,
       rowsDraft: 0,
       rowsRejectedQuote: 0,
       rowsMerged: 0,
@@ -327,6 +331,11 @@ export class IcCollectionService {
           const norm = normalizeUrl(item.url)
           if (!norm || seenUrls.has(norm)) continue
           seenUrls.add(norm)
+          // 候选相关性软闸：标题/摘要需含查询片段，跑题源（如引擎只搜了首词返回的门户首页）不烧抓取预算
+          if (!isCandidateRelevant(item.title, item.snippet, query)) {
+            stats.candidatesFiltered += 1
+            continue
+          }
 
           // 抓取（先保命：有 snapshotStore 时抓到即落快照）
           stats.toolCalls += 1

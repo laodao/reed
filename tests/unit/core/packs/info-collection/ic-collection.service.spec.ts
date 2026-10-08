@@ -138,7 +138,7 @@ describe('IcCollectionService 管线编排', () => {
       llm: async () => extractionOutput(),
       // 第二模型复核缺省全一致（复核不一致的场景在专门用例注入）
       reviewLlm: async () => '{"rows":[]}',
-      search: async () => ({ items: [{ title: '官方发布', url: 'https://stats.example.com/2024?a=1&utm_source=x', snippet: '' }] }),
+      search: async () => ({ items: [{ title: '测试主题 官方发布', url: 'https://stats.example.com/2024?a=1&utm_source=x', snippet: '测试主题 逐年数据官方口径' }] }),
       fetch: async () => ({ ok: true, status: 200, body: htmlOf(PAGE_TEXT) }),
       extract: (html: string) => html.replace(/<[^>]+>/g, ''),
       kb: {
@@ -285,7 +285,7 @@ describe('IcCollectionService 管线编排', () => {
         // 第一条（有效行）被判不一致：模拟第二模型不同意
         return JSON.stringify({ rows: [{ index: 0, verdict: 'inconsistent', reason: '数值与正文段落上下文不符' }] })
       },
-      search: async () => ({ items: [{ title: '官方发布', url: 'https://stats.example.com/2024', snippet: '' }] }),
+      search: async () => ({ items: [{ title: '测试主题 官方发布', url: 'https://stats.example.com/2024', snippet: '' }] }),
       fetch: async () => ({ ok: true, status: 200, body: htmlOf(PAGE_TEXT) }),
       extract: (html: string) => html.replace(/<[^>]+>/g, ''),
       kb: { addDocument: async () => ({ documentId: null }) },
