@@ -13,6 +13,7 @@ import type { IcBlueprint } from '@shared/types/info-collection.types'
 import { checkBlueprint } from '@shared/utils/info-collection-blueprint'
 import { draftBlueprint } from '../services/ic-blueprint.service'
 import { IcCollectionService } from '../services/ic-collection.service'
+import { defaultIcRepos } from '../services/ic-defaults'
 import { IcSnapshotFileStore } from '../services/ic-snapshot-store'
 
 const logger = createLogger('IcHandlers')
@@ -42,7 +43,7 @@ let collection: IcCollectionService | null = null
 function services(): IcCollectionService {
   if (!collection) {
     collection = new IcCollectionService({
-      // 生产快照落盘（<dataPath>/info-collection/snapshots/；web 端无 dataPath 时自动降级跳过）
+      repos: defaultIcRepos, // 仓储缺省必须显式接上（2026-10-08 实测：漏传导致界面全通道报"数据库尚未就绪"）
       snapshotStore: new IcSnapshotFileStore(),
     })
   }
