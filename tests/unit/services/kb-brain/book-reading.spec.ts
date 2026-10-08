@@ -8,6 +8,8 @@ import { createHash } from 'node:crypto'
 import {
   planReadingBatches,
   capMemory,
+  mergeMemorySections,
+  splitMemorySections,
   KbBookReadingService,
   MAX_MEMORY_CHARS,
 } from '@core/platform/services/kb-brain/book-reading.service'
@@ -405,3 +407,111 @@ describe('KbBookReadingService.run（滚动运行循环）', () => {
     expect(note.body).not.toContain('第一批正常')
   })
 })
+
+describe('mergeMemorySections（增量合并）', () => {
+  const base = '## 卷册结构\n第一卷\n\n## 人物档案\n张小凡：少年\n\n## 情节进展\n开篇事件'
+
+  it('changed 段原位替换，未提及段保留', () => {
+    const out = mergeMemorySections(base, { '## 人物档案': '张小凡：青年，化名鬼厉' })
+    expect(out).toContain('张小凡：青年，化名鬼厉')
+    expect(out).toContain('## 卷册结构\n第一卷')
+    expect(out).toContain('开篇事件')
+  })
+
+  it('新增段按 canonical 序插入', () => {
+    const out = mergeMemorySections(base, { '## 世界设定': '太极玄清道' })
+    const idx = out.indexOf('## 世界设定')
+    expect(idx).toBeGreaterThan(-1)
+    expect(out.indexOf('## 人物档案')).toBeGreaterThan(idx)
+    expect(out).toContain('太极玄清道')
+  })
+
+  it('未知新段追加末尾', () => {
+    const out = mergeMemorySections(base, { '## 独立注记': 'xyz' })
+    expect(out.trimEnd().endsWith('xyz')).toBe(true)
+  })
+
+  it('splitMemorySections 往返一致', () => {
+    const sections = splitMemorySections(base)
+    expect(sections.map(x => x.title)).toEqual(['卷册结构', '人物档案', '情节进展'])
+  })
+})
+
+describe('capMemory 方向（压缩情节中段，保住人物/设定/近期尾部）', () => {
+  it('超限时情节中段被压缩但近期尾部保留', () => {
+    const lines = ['## 卷册结构', '全书六卷', '## 人物档案', '张小凡：鬼厉', '## 情节进展']
+    for (let i = 1; i <= 200; i++) lines.push(`第${i}章：事件事件事件事件事件事件`)
+    lines.push('第375章：结局之战，张小凡与陆雪琪相守')
+    lines.push('## 伏笔与悬念', '合欢铃下落')
+    const big = lines.join('\n')
+    const capped = capMemory(big, 3000)
+    expect(capped).toContain('张小凡：鬼厉')
+    expect(capped).toContain('结局之战')
+    expect(capped).toContain('合欢铃下落')
+    expect(capped.length).toBeLessThanOrEqual(3400)
+  })
+})
+
+describe('patch 模式运行循环', () => {
+  it('changed 增量合并进既有记忆', async () => {
+    process.env.KB_READING_BATCH_CHARS = '12000'
+    const chapters = [mkChapter(1, 5000), mkChapter(2, 5000), mkChapter(3, 5000), mkChapter(4, 5000)]
+    const base = '## 情节进展\n第一批：草庙村'
+    const existing = { ...baseNote(), body: base }
+    const { svc, note } = makeSvcWithNote(existing, [
+      JSON.stringify({ changed: { '## 人物档案': '张小凡：入门' } }),
+      JSON.stringify({ changed: { '## 情节进展': '第一批：草庙村\n第二批：会武' } }),
+    ], chapters)
+    const res = await svc.run('kb1', 'doc1')
+    expect(res.batches).toBe(2)
+    expect(note.body).toContain('张小凡：入门')
+    expect(note.body).toContain('第二批：会武')
+    expect(note.body).toContain('第一批：草庙村')
+    delete process.env.KB_READING_BATCH_CHARS
+  })
+})
+
+function baseNote(): KbNoteRecord {
+  return {
+    id: 'note-mem', userId: null, knowledgeBaseId: 'kb1', title: 'mem', description: '', body: '',
+    type: 'reading-memory', status: 'published', evidence: '[]', origin: 'ai-distill', version: 1,
+    patternSkeleton: null, patternInstances: null, lensAttention: null, classicScore: 0,
+    supersededNoteId: null, tags: '["doc:doc1"]', fsrsStability: null, fsrsDifficulty: null,
+    lastReviewAt: null, reviewCount: 0, lapseCount: 0, citedCount: 0, lastCitedAt: null,
+    dueAt: null, fsrsState: null, createdAt: new Date(), updatedAt: null,
+  }
+}
+
+function makeSvcWithNote(note: KbNoteRecord, responses: string[], chapters: KbChapterRecord[]) {
+  let call = 0
+  const svc = new KbBookReadingService({
+    llm: async () => {
+      const r = responses[Math.min(call, responses.length - 1)]!
+      call++
+      return r
+    },
+    repos: () => ({
+      chapters: { findByDocument: async () => chapters } as never,
+      docs: { findById: async () => ({ id: 'doc1', name: '诛仙.epub', knowledgeBaseId: 'kb1' }) } as never,
+      notes: {
+        findReadingMemory: async () => note,
+        evolveCard: async (_id: string, patch: { body?: string }) => {
+          note.body = patch.body ?? note.body
+          note.version += 1
+          return note
+        },
+        propose: async () => note,
+        publish: async () => note,
+      } as never,
+      passes: {
+        ensurePass: async () => ({ action: 'run', pass: { id: `pass-${call}` } }),
+        setRunning: async () => undefined,
+        setDone: async () => undefined,
+        setFailed: async () => undefined,
+        resetToPending: async () => undefined,
+        listByDocument: async () => [],
+      } as never,
+    }),
+  })
+  return { svc, note }
+}

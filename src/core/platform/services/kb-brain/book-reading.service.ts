@@ -103,6 +103,60 @@ function tailTruncate(lines: string[], cap: number): string {
  * 其后段落（伏笔/存疑）预算内照装）。模型不守结构（无「情节进展」标题）或
  * 头部即装不下时退化为整体尾部截断兜底——任何形态下输出都 ≤ cap。
  */
+export interface MemorySection {
+  title: string
+  body: string
+}
+
+/** 按 "## 标题" 切分工作记忆段落 */
+export function splitMemorySections(memory: string): MemorySection[] {
+  const out: MemorySection[] = []
+  const lines = memory.split('\n')
+  let cur: MemorySection | null = null
+  for (const line of lines) {
+    const m = line.match(/^##\s+(.+)$/)
+    if (m) {
+      if (cur) out.push(cur)
+      cur = { title: m[1]!.trim(), body: '' }
+    } else if (cur) {
+      cur.body += (cur.body ? '\n' : '') + line
+    }
+  }
+  if (cur) out.push(cur)
+  return out
+}
+
+/**
+ * 增量合并（patch 模式核心，纯函数）：changed 的段整体替换/追加，未提及的段原样保留。
+ * 段顺序：既有段保持原顺序（原位更新），新段按 canonicalOrder 插入到对应位置/末尾。
+ */
+export function mergeMemorySections(
+  base: string,
+  changed: Record<string, string>,
+  canonicalOrder: string[] = ['卷册结构', '世界设定', '人物档案', '情节进展', '关键要素', '伏笔与悬念', '存疑与待澄清'],
+): string {
+  const sections = splitMemorySections(base)
+  const order: string[] = sections.map(x => x.title)
+  for (const [rawTitle, body] of Object.entries(changed)) {
+    const title = rawTitle.replace(/^##\s*/, '').trim()
+    if (!title || typeof body !== 'string' || !body.trim()) continue
+    const idx = order.indexOf(title)
+    if (idx === -1) {
+      let insertAt = order.length
+      const ci = canonicalOrder.indexOf(title)
+      if (ci !== -1) {
+        insertAt = order.findIndex(t => canonicalOrder.indexOf(t) > ci)
+        if (insertAt === -1) insertAt = order.length
+      }
+      order.splice(insertAt, 0, title)
+      sections.splice(insertAt, 0, { title, body: body.trim() })
+    } else {
+      sections[idx] = { title, body: body.trim() }
+    }
+  }
+  return sections.map(x => `## ${x.title}\n${x.body}`).join('\n\n')
+}
+
 export function capMemory(memory: string, cap = MAX_MEMORY_CHARS): string {
   if (memory.length <= cap) return memory
   const lines = memory.split('\n')
@@ -299,6 +353,15 @@ export class KbBookReadingService {
       if (plans.length === 0) throw new Error('没有可读的章节（正文为空或全部为前置页）')
       progress.batchesTotal = plans.length
 
+      // 重试语义：上一轮失败的批复位 pending（ensurePass 对 pending 放行），每次运行自动补失败批
+      // （listByDocument 可选——测试 fake 未提供时跳过复位）
+      if (typeof repos.passes.listByDocument === 'function') {
+        const passRows = await repos.passes.listByDocument(documentId)
+        for (const r of passRows) {
+          if (r.passType === 'reading' && r.status === 'failed') await repos.passes.resetToPending(r.id)
+        }
+      }
+
       // 工作记忆卡：定位或初始化
       let note = await this.findMemoryNote(repos.notes, kbId, documentId)
       if (!note) {
@@ -337,10 +400,18 @@ export class KbBookReadingService {
             user: buildRollingReadingUser({ bookMeta, memory, chapters: plan.texts }),
             maxTokens: BRAIN_LLM_MAX_TOKENS
           })
-          const parsed = extractJsonFromResponse(raw) as Partial<{ memory: unknown }> | null
-          const nextMemory = typeof parsed?.memory === 'string' ? parsed.memory.trim() : ''
-          if (!nextMemory) throw new Error('响应缺少 memory 字段')
-          memory = capMemory(nextMemory)
+          const parsed = extractJsonFromResponse(raw) as
+            | Partial<{ memory: unknown; changed: Record<string, string> }>
+            | null
+          if (parsed?.changed && typeof parsed.changed === 'object') {
+            // 增量模式（patch）：只合并有变化的段，输出体量小、不撞输出上限
+            memory = capMemory(mergeMemorySections(memory, parsed.changed))
+          } else if (typeof parsed?.memory === 'string' && parsed.memory.trim()) {
+            // 兼容旧全量模式
+            memory = capMemory(parsed.memory.trim())
+          } else {
+            throw new Error('响应缺少 changed/memory 字段')
+          }
 
           const updated = await repos.notes.evolveCard(note.id, {
             body: memory,
