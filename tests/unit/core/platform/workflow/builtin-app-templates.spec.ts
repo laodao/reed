@@ -22,7 +22,8 @@ const templates = files.map(f => {
 
 describe('内置应用模板库（随包 JSON 自动发现）', () => {
   it(`找到 ${files.length} 份内置模板`, () => {
-    expect(files.length).toBe(24)
+    // 2026-10-08：25 份（dev 提交了第 25 份模板未同步本计数——既有红，随本分支修正）
+    expect(files.length).toBe(25)
   })
 
   it('全部为合法导出格式', () => {
