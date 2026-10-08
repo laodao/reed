@@ -401,4 +401,85 @@ describe('IcCollectionService 管线编排', () => {
       expect(ry?.status).toBe('draft')
     })
   })
+
+  it('整理报告：要点卡反查剔幻觉数值 + 确定性区块齐全 + 第二模型审备注 + 入 kb', async () => {
+    const repos = await buildRepos()
+    const kbCalls: KbCall[] = []
+    const service = new IcCollectionService({
+      repos: () => repos,
+      llm: async req => {
+        if (req.system.includes('整理撰稿人')) {
+          return JSON.stringify({
+            cards: [
+              {
+                irId: 'R1',
+                title: '出生人口要点',
+                statements: [
+                  { text: '2024 年出生人口 954 万人', evidenceRowIds: ['r-c1'] },
+                  { text: '2024 年出生人口 999 万人（幻觉数字）', evidenceRowIds: ['r-c1'] },
+                ],
+              },
+            ],
+          })
+        }
+        if (req.system.includes('审稿人')) return JSON.stringify({ issues: ['R2 无对应内容且未说明缺失'] })
+        return extractionOutput()
+      },
+      reviewLlm: async req =>
+        req.system.includes('审稿人') ? JSON.stringify({ issues: ['R2 无对应内容且未说明缺失'] }) : '{"rows":[]}',
+      fetch: async () => ({ ok: true, status: 200, body: htmlOf(PAGE_TEXT) }),
+      extract: (html: string) => html.replace(/<[^>]+>/g, ''),
+      kb: {
+        addDocument: async (kbId: string, doc: { name: string; content: string; sourceId: string }) => {
+          kbCalls.push({ kbId, ...doc })
+          return { documentId: 'kbdoc-report' }
+        },
+      },
+      newId: id,
+    })
+    await runWithUserAsync('user-a', async () => {
+      await repos.projects.create({ id: 'p-rep', name: '报告项目', goal: 'g', blueprint: blueprintFixture(), kbId: 'kb-1' })
+
+      // 无已确认条目 → 响亮拒绝（不生成空报告）
+      await expect(service.generateReport('p-rep')).rejects.toThrow('还没有已确认的条目')
+
+      // 造已确认源 + 行
+      await repos.sources.create({ id: 'src-r', projectId: 'p-rep', taskId: 't', url: 'https://r.example/1', urlNormalized: 'https://r.example/1', fetchStatus: 'ok' })
+      await repos.sources.patch('src-r', { tier: 1, tierRationale: '官方统计机构', reviewStatus: 'confirmed' })
+      const row = await repos.rows.create({
+        id: 'r-c1',
+        projectId: 'p-rep',
+        taskId: 't',
+        schemaId: 's1',
+        row: { v: 954, u: '万人', p: '2024', m: '出生人口', region: '全国' },
+        measure: { value: 954, unit: '万人', period: '2024', metric: '出生人口', dims: { region: '全国' } },
+        sourceId: 'src-r',
+        requirementId: 'R1',
+        quote: '全年出生人口954万人',
+        contentHash: 'h-rep',
+      })
+      await repos.rows.confirmRows([row.id])
+
+      const result = await service.generateReport('p-rep')
+      // 反查：幻觉数字 999 被剔（条目里只有 954）
+      expect(result.strippedStatements).toBe(1)
+      expect(result.markdown).toContain('2024 年出生人口 954 万人')
+      expect(result.markdown).not.toContain('999')
+      // 确定性区块齐全
+      expect(result.markdown).toContain('## 一、要点卡')
+      expect(result.markdown).toContain('## 二、数据表')
+      expect(result.markdown).toContain('## 三、时间线')
+      expect(result.markdown).toContain('## 四、引用清单')
+      expect(result.markdown).toContain('## 五、质量报告')
+      expect(result.markdown).toContain('T1')
+      // 第二模型审：标注制随稿交付
+      expect(result.reviewIssues).toEqual(['R2 无对应内容且未说明缺失'])
+      expect(result.markdown).toContain('## 审核备注')
+      // 入 kb
+      expect(result.imported).toBe(true)
+      expect(result.documentId).toBe('kbdoc-report')
+      expect(kbCalls[0].kbId).toBe('kb-1')
+      expect(kbCalls[0].content).toContain('【信息搜集】报告项目')
+    })
+  })
 })

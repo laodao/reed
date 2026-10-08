@@ -42,6 +42,7 @@ import type { IcTaskRow } from '@core/database/repositories/ic-task.repository'
 import type { IcSourceRow } from '@core/database/repositories/ic-source.repository'
 import type { IcRowItem } from '@core/database/repositories/ic-row.repository'
 import { draftBlueprint } from './ic-blueprint.service'
+import { generateProjectReport } from './ic-report.service'
 
 export { checkBlueprint }
 
@@ -229,6 +230,22 @@ export class IcCollectionService {
 
   async listRows(projectId: string, filter?: { schemaId?: string; status?: IcRowStatus }): Promise<IcRowItem[]> {
     return this.repos().rows.listByProject(projectId, filter)
+  }
+
+  /** 生成整理报告（要点卡反查校验 + 确定性数据表/时间线/引用清单 + 质量报告 + 第二模型审；入项目 kb） */
+  async generateReport(projectId: string) {
+    const repos = this.repos()
+    await this.requireProject(repos, projectId)
+    return generateProjectReport(
+      {
+        repos,
+        llm: this.llmFn,
+        reviewLlm: req => this.reviewLlm(req),
+        kbAdd: (id, d) => this.kbAdd(id, d),
+        newId: p => this.newId(p),
+      },
+      projectId,
+    )
   }
 
   /**

@@ -86,6 +86,8 @@ export function registerInfoCollectionHandlers(): void {
   ipcBridge.handle('ic:list-tasks', (_e: unknown, p: { projectId: string }) => wrap(() => s().listTasks(p.projectId)))
   // 手动触发裁决（转载簇/冲突归因/孤证；任务结束会自动跑一次，失败可在此重跑）
   ipcBridge.handle('ic:adjudicate', (_e: unknown, p: { projectId: string }) => wrap(() => s().adjudicateProject(p.projectId)))
+  // 生成整理报告（要点卡反查校验/数据表/时间线/引用清单/质量报告 + 第二模型审；入项目 kb）
+  ipcBridge.handle('ic:generate-report', (_e: unknown, p: { projectId: string }) => wrap(() => s().generateReport(p.projectId)))
 
   // ---- 源与行（审阅工作台数据源） ----
   ipcBridge.handle('ic:list-sources', (_e: unknown, p: { projectId: string; reviewStatus?: 'staged' | 'confirmed' | 'rejected' | 'merged' }) =>

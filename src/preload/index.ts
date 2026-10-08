@@ -1589,6 +1589,8 @@ const electronAPI = {
     listTasks: (p: { projectId: string }) => ipcRenderer.invoke('ic:list-tasks', p),
     // 手动触发裁决（转载簇/冲突归因/孤证标记；返回计数）
     adjudicate: (p: { projectId: string }) => ipcRenderer.invoke('ic:adjudicate', p),
+    // 生成整理报告（要点卡反查校验/数据表/时间线/引用清单/质量报告 + 第二模型审；入项目 kb）
+    generateReport: (p: { projectId: string }) => ipcRenderer.invoke('ic:generate-report', p),
     listSources: (p: { projectId: string; reviewStatus?: 'staged' | 'confirmed' | 'rejected' | 'merged' }) =>
       ipcRenderer.invoke('ic:list-sources', p),
     listRows: (p: { projectId: string; schemaId?: string; status?: 'draft' | 'confirmed' | 'superseded' | 'stale' }) =>
