@@ -25,28 +25,35 @@
 
 ## 3. 资产模型
 
-```
-ic_source(升级为"资料资产"登记表)
-  kind            webpage | document | image | audio | video   ← 新列
-  content_type    mime 或扩展名(pdf/docx/png/mp4/…)            ← 新列
-  origin_url      资产直链(媒体)或网页 URL(网页)                ← 复用 url
-  container_url   所在网页 URL(网页内嵌媒体时有值)              ← 新列
-  asset_path      原件相对路径 <yyyyMM>/<sourceId>.<ext>        ← 新列(复用快照目录约定)
-  asset_hash      原件 sha256(去重 + 完整性)                    ← 新列
-  media_json      时长/分辨率/页数/字幕语言等媒体元数据           ← 新列
-  snapshot_path   内容化文本快照(现有列,语义扩为"canonical text 快照")
-  kb_document_id  内容化文本入 KB 后的文档 id(现有列)
-```
+> **2026-10-08 深度 review 修订**:以下与实现核对后的修正——
+> ① 存储 kind 用资产表现有值域 `file/url/text/json`(ASSET_STORAGE_KINDS),资料类型(webpage/document/image/audio/video)放 `metadata.mediaKind`,不发明新枚举;
+> ② ic_source **只加 `asset_id` 一列**(原 6 列计划作废)——类型/路径/哈希/MIME 全在 assets 表,ic_source 只存治理字段与外链,杜绝双写;
+> ③ 资产卡生命周期:**抓取成功即建卡**(staged),确认时补写 metadata,驳回时删卡删原件——不是"确认时才建"(原件在抓取时就落盘了);
+> ④ webpage 类型 M1 不建登记卡(快照 markdown 已入 KB;登记与既有"网页收藏"WebCollectService 职责重叠,后续收敛),M1 只登记下载了原件的文档类。
 
-- 原件目录:`<dataPath>/info-collection/assets/<yyyyMM>/<sourceId>.<ext>`;webpage 类型不落原件(正文即快照),其余四类落原件。
-- 内容化文本快照沿用现有 `snapshots/` 目录与双段标记,不再只是网页 markdown。
+```
+assets 表(统一登记,现有表不加列)
+  kind             file(文档/图片/音视频原件)| text | url | json
+  category         'document'(现有 AssetCategory 枚举;资产中心显示"文档")
+  storage_path     原件相对路径(dataPath/assets/document/<yyyyMM>/<文件>)
+  url              来源 URL(幂等查重键)
+  text_content     内容化文本("一资产一文件一正文",SaveAssetInput.textContent 现成)
+  mime_type/size   原件 MIME 与字节数
+  metadata         { mediaKind: 'document', projectId, sourceId, tier, irHits, … }
+  source_type/ref  'info-collection' / projectId
+
+ic_source(治理记录,只加一列)
+  asset_id         → assets.id(可空;webpage 类型为空)
+  snapshot_path    内容化文本快照(现有列,与 assets.textContent 同源)
+  kb_document_id   内容化文本入 KB 后的文档 id(现有列;互链经 ic_source,不回写 asset)
+```
 
 ## 4. 内容化矩阵(各类型怎么变成可检索文本)
 
 | kind | 获取 | 内容化(→文本) | 复用现状 | 成本档 |
 |---|---|---|---|---|
 | webpage | HTTP GET + htmlToMarkdown | 现状直出 | 已实现 | 低 |
-| document | 下载原件(PDF/DOCX/XLSX/EPUB…) | **复用知识库文档解析器**提取文本 | KB upload 已支持 docx/xlsx/pdf/epub/mobi/azw3 | 低-中 |
+| document | 下载原件(HEAD/响应头嗅探 + 大小上限) | **`core/utils/extract-text.ts` 纯函数**(已从 KB 抽出供复用;pdf/epub/docx/xlsx 全支持,asMarkdown 出结构化 markdown) | extractTextFromFile + executeHttpFetch responseType='file'(落盘+MIME,自带 SSRF 防护) | 低-中 |
 | image | 下载原件 | VLM 图片描述/OCR(描述文本即 canonical text)。复用**平台层** `FileService.buildMultimodalContent`(core/platform/services/file.service.ts)组装多模态消息;vision 模型探测 `detectVisionSupport` 现居 chat 包,实施时提升到平台层 | 平台层多模态管道(全项目唯一使用方目前是聊天页,非依赖) | 中(按张计费) |
 | audio | 下载原件 | ASR 转写(项目当前**无** ASR 能力,需接入) | 无 | 高(按时长) |
 | video | 默认只取元数据+字幕;显式授权才下载原件 | 字幕→文本直用;无字幕走 ASR/关键帧 VLM(成本高,默认关闭) | 无 | 高 |
@@ -76,7 +83,9 @@ ic_source(升级为"资料资产"登记表)
 
 | 能力 | 位置 | 用途 |
 |---|---|---|
-| KB 文档解析(pdf/docx/xlsx/epub/mobi/azw3) | knowledge-base 上传管线 | document → 文本,零新解析代码 |
+| KB 文档解析(pdf/docx/xlsx/epub/mobi/azw3) | `core/utils/extract-text.ts` 纯函数(剧本批量导入已在复用) | document → 内容化文本,零新解析代码 |
+| "一资产一文件一正文"登记 | SaveAssetInput:content.kind='file' + textContent + url(幂等查重)+ metadata/sourceType/sourceRef | 文档资产建卡,零新登记机制 |
+| 二进制下载(落盘+MIME,SSRF 防护/重定向校验/超时) | executeHttpFetch responseType='file' → {filePath, mimeType, bytes} | 文档直链下载,ic 不自写下载器 |
 | 视觉多模态消息构建 | 平台层 `FileService.buildMultimodalContent`(file.service.ts);`detectVisionSupport` 提升至平台层 | image → 描述文本(信息搜集与 chat 并列共用平台层,互不依赖) |
 | HTTP 抓取(含 403/429 拦截判定) | ic-defaults `defaultIcFetch` | 所有直链下载的底座 |
 | 快照存储(双段标记/逃逸防护/fail-soft) | ic-snapshot-store | canonical text 快照,扩为资产清单 |
@@ -87,7 +96,7 @@ ic_source(升级为"资料资产"登记表)
 
 ## 9. 分期与成本红线
 
-- **M1(document)**:直链与网页内文档抓取(HEAD 探测 content-type / `filetype:` 算子)→ 下载原件 → KB 解析器提文本 → 入库。全部复用现有解析,新代码集中在 fetch 分档与资产登记。DB 用 ensureColumn 加 6 列(两处 migration 同步:electron/database/index.ts + web/server/index.ts)。
+- **M1(document)**:搜索结果直链文档探测(扩展名/响应头嗅探,`filetype:` 算子来自蓝图提示词)→ executeHttpFetch file 模式下载原件 → extractTextFromFile(asMarkdown) 提内容化文本 → 抓取成功即建资产卡(kind=file + textContent,category='搜集资料',subCategory=项目名,sourceType='info-collection')→ ic_source.assetId 外链。**范围修订**:webpage 登记卡不做(与网页收藏收敛,后续);"快照正文清洗"从 M1 移出(通用网页去噪手段未定义,单独立项);ic_source 只加 asset_id 一列(双端 ensureColumn)。
 - **M2(image)**:图片搜索渠道 + 网页内主图抓取 → VLM 描述(模型须过 vision 探测,未配 vision 模型时资产只存原件、内容化标记"待补")→ 缩略图审阅。
 - **M3(video 字幕档)**:视频站字幕获取 → 文本管线;默认不下载视频原件。
 - **M4(ASR)**:音频转写服务接入(选型另议:云 API vs 本地 whisper;数据出境与成本需用户拍板)。

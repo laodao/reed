@@ -483,3 +483,142 @@ describe('IcCollectionService 管线编排', () => {
     })
   })
 })
+
+// ==================== 多模态 M1：文档直链分支 ====================
+
+describe('IcCollectionService 文档直链分支（下载原件 → 提文本 → 统一资产建卡）', () => {
+  afterEach(async () => {
+    if (ds) {
+      await ds.destroy()
+      ds = null
+    }
+  })
+
+  it('端到端：直链命中 → 下载落盘 → extract-text 提文本 → 建资产卡(assetId 回写) → 抽取照常；驳回删卡', async () => {
+    const repos = await buildRepos()
+    const createdAssets: Array<Record<string, unknown>> = []
+    const removedAssets: string[] = []
+    const { mkdtemp, writeFile, rm } = await import('node:fs/promises')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const dir = await mkdtemp(join(tmpdir(), 'ic-doc-test-'))
+    const docPath = join(dir, '2024-report.txt')
+    // >300 字（文档正文过短会标 failed）；引句句嵌在其中供抽取回验
+    const docText = PAGE_TEXT + '全年出生人口954万人，出生率为6.77‰。'
+    await writeFile(docPath, docText, 'utf-8')
+    const snapshotsDoc = new Map<string, string>()
+
+    const service = new IcCollectionService({
+      repos: () => repos,
+      llm: async () => extractionOutput(),
+      reviewLlm: async () => '{"rows":[]}',
+      search: async () => ({
+        items: [{ title: '2024 年统计公报（PDF 原件）', url: 'https://stats.example.com/files/2024-report.txt', snippet: '测试主题 filetype:pdf 官方文件' }],
+      }),
+      documentFetch: async () => ({ ok: true, status: 200, filePath: docPath, mimeType: 'text/plain', bytes: Buffer.byteLength(docText) }),
+      extract: (html: string) => html.replace(/<[^>]+>/g, ''),
+      snapshotStore: {
+        write: async (_p, sourceId, html, _md) => {
+          snapshotsDoc.set(sourceId, html)
+          return `info-collection/snapshots/${sourceId}.mht`
+        },
+        read: async () => null,
+      },
+      assets: {
+        create: async input => {
+          createdAssets.push({ ...input })
+          return { id: `asset-${createdAssets.length}` }
+        },
+        remove: async id => {
+          removedAssets.push(id)
+        },
+      },
+      newId: id,
+    })
+
+    await runWithUserAsync('user-a', async () => {
+      await repos.projects.create({
+        id: 'p-doc',
+        name: '文档项目',
+        goal: 'g',
+        blueprint: blueprintFixture(),
+        kbId: null,
+      })
+      const { done } = await service.runTask('p-doc')
+      await done
+
+      // 源：ok + assetId 回写；快照 html 段为空串（文档无 HTML）
+      const sources = await repos.sources.listByProject('p-doc')
+      expect(sources).toHaveLength(1)
+      const src = sources[0]
+      expect(src.fetchStatus).toBe('ok')
+      expect(src.assetId).toBe('asset-1')
+      expect(snapshotsDoc.get(src.id)).toBe('')
+
+      // 资产卡：一资产一文件一正文 + 溯源元数据
+      expect(createdAssets).toHaveLength(1)
+      const card = createdAssets[0] as Record<string, unknown>
+      expect(card['category']).toBe('document')
+      expect(card['subCategory']).toBe('文档项目')
+      expect(card['sourceType']).toBe('info-collection')
+      expect(card['sourceRef']).toBe('p-doc')
+      expect(card['url']).toBe('https://stats.example.com/files/2024-report.txt')
+      expect(String(card['textContent'])).toContain('全年出生人口954万人')
+      expect((card['metadata'] as Record<string, unknown>)['mediaKind']).toBe('document')
+
+      // 抽取照常跑在文档文本上
+      const rows = await repos.rows.listByProject('p-doc')
+      expect(rows.length).toBeGreaterThanOrEqual(1)
+      expect(rows[0].quote).toContain('954')
+
+      // 驳回 → 删卡删件
+      await service.rejectBatch('p-doc', [src.id], '测试驳回')
+      expect(removedAssets).toEqual(['asset-1'])
+      const after = await repos.sources.getById(src.id)
+      expect(after?.reviewStatus).toBe('rejected')
+    })
+    await rm(dir, { recursive: true, force: true }).catch(() => undefined)
+  })
+
+  it('扫描版文档（提不出文本）→ 如实标 failed，不建卡', async () => {
+    const repos = await buildRepos()
+    const createdAssets: Array<unknown> = []
+    const { mkdtemp, writeFile } = await import('node:fs/promises')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const dir = await mkdtemp(join(tmpdir(), 'ic-doc-scan-'))
+    const docPath = join(dir, 'scan.txt')
+    await writeFile(docPath, '短文本', 'utf-8')
+
+    const service = new IcCollectionService({
+      repos: () => repos,
+      llm: async () => extractionOutput(),
+      reviewLlm: async () => '{"rows":[]}',
+      search: async () => ({
+        items: [{ title: '扫描版文件', url: 'https://example.com/files/scan.txt', snippet: '测试主题 文件' }],
+      }),
+      documentFetch: async () => ({ ok: true, status: 200, filePath: docPath, mimeType: 'text/plain', bytes: 9 }),
+      snapshotStore: { write: async () => null, read: async () => null },
+      assets: {
+        create: async input => {
+          createdAssets.push(input)
+          return { id: 'asset-x' }
+        },
+        remove: async () => undefined,
+      },
+      newId: id,
+    })
+
+    await runWithUserAsync('user-a', async () => {
+      await repos.projects.create({ id: 'p-scan', name: '扫描项目', goal: 'g', blueprint: blueprintFixture(), kbId: null })
+      const { done } = await service.runTask('p-scan')
+      await done
+      const sources = await repos.sources.listByProject('p-scan')
+      expect(sources).toHaveLength(1)
+      expect(sources[0].fetchStatus).toBe('failed')
+      expect(sources[0].assetId).toBeNull()
+      expect(sources[0].tierRationale).toContain('扫描版')
+      expect(createdAssets).toHaveLength(0)
+    })
+  })
+})

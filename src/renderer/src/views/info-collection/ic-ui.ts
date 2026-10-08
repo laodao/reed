@@ -117,6 +117,22 @@ export function percentText(ratio: number | null | undefined): string {
   return `${Math.round(ratio * 100)}%`
 }
 
+/** 统一资产概要 → 徽标文案（'PDF · 1.2MB'；无资产返回空串） */
+export function assetBadge(
+  asset: { name: string; kind: string; mimeType: string | null; sizeBytes: number | null } | null | undefined,
+): string {
+  if (!asset) return ''
+  const m = asset.name.match(/\.([a-z0-9]{1,5})$/i)
+  const ext = m ? m[1].toUpperCase() : (asset.mimeType?.split('/')[1] ?? 'FILE').toUpperCase()
+  const b = asset.sizeBytes
+  const size = b
+    ? b >= 1024 * 1024
+      ? `${(b / 1024 / 1024).toFixed(1)}MB`
+      : `${Math.max(1, Math.round(b / 1024))}KB`
+    : ''
+  return size ? `${ext} · ${size}` : ext
+}
+
 function normalizeIso(iso: string | Date | null | undefined): string | null {
   if (!iso) return null
   if (iso instanceof Date) return Number.isNaN(iso.getTime()) ? null : iso.toISOString()

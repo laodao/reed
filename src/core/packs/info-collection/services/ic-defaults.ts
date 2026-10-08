@@ -12,7 +12,7 @@
  */
 
 import type { SearchEngineType } from '@shared/types/search-engine.types'
-import type { IcFetchFn, IcKbPort, IcReposFn, IcSearchFn, IcLlmFn } from './ic-deps'
+import type { IcFetchFn, IcKbPort, IcReposFn, IcSearchFn, IcLlmFn, IcDocumentFetchFn, IcAssetPort } from './ic-deps'
 import { executeHttpFetch } from '@core/platform/workflow/nodes/http-fetch'
 import { htmlToMarkdown } from '@core/utils/html-to-markdown'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
@@ -76,6 +76,52 @@ export const defaultIcFetch: IcFetchFn = async url => {
 }
 
 export const defaultIcExtract = (html: string, baseUrl: string): string => htmlToMarkdown(html, baseUrl)
+
+/**
+ * 文档直链下载（多模态 M1）：executeHttpFetch file 模式——原件落盘临时目录 +
+ * MIME/字节数回带，SSRF 闸门/重定向过闸/超时全部复用。资产服务建卡时会复制进
+ * 统一资产目录（dataPath/assets/搜集资料/），临时文件由调用方清理。
+ */
+export const defaultIcDocumentFetch: IcDocumentFetchFn = async url => {
+  try {
+    const r = await executeHttpFetch(
+      { method: 'GET', url, responseType: 'file', timeoutMs: 120_000 },
+      AbortSignal.timeout(120_000),
+    )
+    if (!r.ok) return { ok: false, status: 0, error: r.error }
+    const out = r.output
+    const status = out.status
+    if (status !== 200) return { ok: false, status, error: `HTTP ${status}` }
+    if (!out.filePath) return { ok: false, status, error: '下载未产生文件' }
+    return { ok: true, status, filePath: out.filePath, mimeType: out.mimeType, bytes: out.sizeBytes }
+  } catch (e) {
+    return { ok: false, status: 0, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/** 统一资产登记（getAssetService 平台单例；未装配时如实报错——服务层 fail-soft 降级为不建卡） */
+export const defaultIcAssets: IcAssetPort = {
+  create: async input => {
+    const { getAssetService } = await import('@core/platform/assets/asset-registry')
+    const rec = await getAssetService().createAsset({
+      category: input.category as never,
+      subCategory: input.subCategory,
+      name: input.name,
+      tags: input.tags,
+      content: { kind: 'file', path: input.filePath },
+      url: input.url,
+      textContent: input.textContent,
+      metadata: input.metadata,
+      sourceType: input.sourceType,
+      sourceRef: input.sourceRef,
+    })
+    return { id: rec.id }
+  },
+  remove: async id => {
+    const { getAssetService } = await import('@core/platform/assets/asset-registry')
+    await getAssetService().deleteAsset(id)
+  },
+}
 
 let kbPort: IcKbPort | null = null
 export const defaultIcKb: IcKbPort = {

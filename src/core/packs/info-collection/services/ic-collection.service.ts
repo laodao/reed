@@ -25,6 +25,7 @@ import { parseJsonObject } from '@shared/utils/info-collection-json'
 import { clusterSources } from '@shared/utils/info-collection-cluster'
 import { detectValueConflicts, type IcValueConflictGroup } from '@shared/utils/info-collection-conflicts'
 import { isCandidateRelevant } from '@shared/utils/info-collection-relevance'
+import { detectDirectDocumentUrl, IC_DOCUMENT_MAX_BYTES } from '@shared/utils/info-collection-document'
 import type {
   IcBlueprint,
   IcReviewStatus,
@@ -34,9 +35,11 @@ import type {
 } from '@shared/types/info-collection.types'
 import type {
   IcCollectionDeps,
+  IcFetchedDoc,
   IcLlmFn,
   IcRepos,
   IcSearchFn,
+  IcAssetPort,
 } from './ic-deps'
 import type { IcProjectRow } from '@core/database/repositories/ic-project.repository'
 import type { IcTaskRow } from '@core/database/repositories/ic-task.repository'
@@ -49,6 +52,26 @@ export { checkBlueprint }
 
 /** 抽取 prompt 每源正文的字符预算（超长截断——成本护栏，截断在 stats 如实标记） */
 const EXTRACT_TEXT_MAX_CHARS = 12000
+
+/** URL → 文件名（资产卡命名兜底；标题缺失时用） */
+function documentFileName(url: string): string {
+  try {
+    const last = decodeURIComponent(new URL(url).pathname).split('/').pop() ?? ''
+    return last || 'document'
+  } catch {
+    return 'document'
+  }
+}
+
+/** 临时下载文件清理（资产服务已复制进统一资产目录；文件已被移动/清理时静默） */
+async function cleanupTempFile(path: string): Promise<void> {
+  try {
+    const fs = await import('fs/promises')
+    await fs.unlink(path)
+  } catch {
+    /* ENOENT 等静默 */
+  }
+}
 
 /** 任务执行统计（stats_json 的形状；质量仪表的数据源） */
 export interface IcTaskStats {
@@ -148,6 +171,25 @@ export class IcCollectionService {
 
   private async fetchDoc(url: string) {
     return this.deps.fetch ? this.deps.fetch(url) : (await import('./ic-defaults')).defaultIcFetch(url)
+  }
+
+  /** 文档直链下载（多模态 M1；缺省 executeHttpFetch file 模式，落盘临时目录） */
+  private async fetchDocument(url: string) {
+    return this.deps.documentFetch
+      ? this.deps.documentFetch(url)
+      : (await import('./ic-defaults')).defaultIcDocumentFetch(url)
+  }
+
+  /** 统一资产建卡（缺省接平台 getAssetService；未装配时抛错由调用方 fail-soft 吞掉） */
+  private async assetsCreate(input: Parameters<IcAssetPort['create']>[0]): Promise<{ id: string }> {
+    const port = this.deps.assets ?? (await import('./ic-defaults')).defaultIcAssets
+    return port.create(input)
+  }
+
+  /** 资产删卡删原件（驳回时；资产不存在静默成功） */
+  private async assetsRemove(id: string): Promise<void> {
+    const port = this.deps.assets ?? (await import('./ic-defaults')).defaultIcAssets
+    return port.remove(id)
   }
 
   private extractText(html: string, baseUrl: string): string {
@@ -267,7 +309,7 @@ export class IcCollectionService {
     const task = await repos.tasks.create({ id: this.newId('task'), projectId, blueprintVersion: project.blueprintVersion })
     await repos.tasks.patch(task.id, { status: 'running' })
     // 后台执行：fail-soft 兜底（崩溃/未捕获错误落到任务终态，不悬 running）
-    const done: Promise<void> = this.executeTask(task.id, project.id, bp).catch(async () => {
+    const done: Promise<void> = this.executeTask(task.id, project.id, bp, project.name).catch(async () => {
       try {
         const pass = (await repos.passes.listByTask(task.id)).at(-1)
         if (pass && pass.status === 'running') await repos.passes.fail(pass.id)
@@ -283,7 +325,7 @@ export class IcCollectionService {
   }
 
   /** 管线主体（后台执行；所有失败路径都以任务终态收口） */
-  private async executeTask(taskId: string, projectId: string, bp: IcBlueprint): Promise<void> {
+  private async executeTask(taskId: string, projectId: string, bp: IcBlueprint, projectName: string): Promise<void> {
     const repos = this.repos()
     const pass = await repos.passes.startAttempt({ id: this.newId('pass'), projectId, taskId, passKey: 'collect' })
     const stats: IcTaskStats = {
@@ -339,7 +381,27 @@ export class IcCollectionService {
 
           // 抓取（先保命：有 snapshotStore 时抓到即落快照）
           stats.toolCalls += 1
-          const doc = await this.fetchDoc(item.url)
+          // 文档直链分支（多模态 M1）：.pdf/.docx/... 下载原件提文本，不走网页抓取
+          const docProbe = detectDirectDocumentUrl(item.url)
+          let docFile: { filePath: string; mimeType?: string; bytes?: number } | null = null
+          let doc: IcFetchedDoc
+          if (docProbe) {
+            const df = await this.fetchDocument(item.url)
+            if (df.ok && df.filePath) {
+              docFile = { filePath: df.filePath, mimeType: df.mimeType, bytes: df.bytes }
+              doc = { ok: true, status: df.status, body: '' }
+            } else {
+              doc = {
+                ok: false,
+                status: df.status,
+                body: '',
+                blocked: df.status === 403 || df.status === 429,
+                error: df.error,
+              }
+            }
+          } else {
+            doc = await this.fetchDoc(item.url)
+          }
           const blocked = doc.blocked || doc.status === 403 || doc.status === 429
           const source = await repos.sources.create({
             id: this.newId('src'),
@@ -347,19 +409,49 @@ export class IcCollectionService {
             taskId,
             url: item.url,
             urlNormalized: norm,
-            fetchStatus: doc.ok && doc.body ? 'ok' : blocked ? 'blocked' : 'failed',
+            fetchStatus: (doc.ok && (doc.body || docFile)) ? 'ok' : blocked ? 'blocked' : 'failed',
           })
-          if (!doc.ok || !doc.body) {
+          if (!doc.ok || (!doc.body && !docFile)) {
             stats.sourcesFailed += 1
             continue
           }
 
           // 先提取正文（本地纯 CPU，不耗预算），让快照带上 markdown（提取失败快照仍存 HTML）
           let markdown = ''
-          try {
-            markdown = this.extractText(doc.body, item.url).trim()
-          } catch {
-            markdown = ''
+          if (docFile) {
+            // 文档原件 → extract-text 纯函数提结构化 markdown（惰性 import：@firecrawl 原生模块很重，不进模块加载链）
+            try {
+              const { extractTextFromFile, inferFileType } = await import('@core/utils/extract-text')
+              const fileType = inferFileType(`doc.${docProbe!.ext}`) ?? 'txt'
+              if (docFile.bytes && docFile.bytes > IC_DOCUMENT_MAX_BYTES) {
+                await repos.sources.patch(source.id, {
+                  fetchStatus: 'failed',
+                  tierRationale: `文档超过单件下载上限（${Math.round(docFile.bytes / 1024 / 1024)}MB > 50MB）`,
+                })
+                stats.sourcesFailed += 1
+                void cleanupTempFile(docFile.filePath)
+                continue
+              }
+              markdown = (await extractTextFromFile(docFile.filePath, fileType, { asMarkdown: true })).trim()
+            } catch {
+              markdown = ''
+            }
+          } else {
+            try {
+              markdown = this.extractText(doc.body, item.url).trim()
+            } catch {
+              markdown = ''
+            }
+          }
+          // 文档提不出文本（扫描版 PDF 等）：如实标失败，原件不建卡
+          if (docFile && markdown.length < 100) {
+            await repos.sources.patch(source.id, {
+              fetchStatus: 'failed',
+              tierRationale: '文档文本提取失败或为空（疑似扫描版/加密文档），建议手动处理',
+            })
+            stats.sourcesFailed += 1
+            void cleanupTempFile(docFile.filePath)
+            continue
           }
           // 先保命：有 snapshotStore 时抓到即落快照（html + markdown 双段）
           if (this.snapshots) {
@@ -380,6 +472,29 @@ export class IcCollectionService {
             contentHash: contentHash(sourceText),
             tierRationale: null,
           })
+
+          // 统一资产登记（多模态 M1：抓取成功即建卡，"一资产一文件一正文"；fail-soft，登记失败不影响采集）
+          if (docFile) {
+            try {
+              const card = await this.assetsCreate({
+                name: (item.title?.trim() || documentFileName(item.url)).slice(0, 80),
+                category: 'document',
+                subCategory: projectName,
+                tags: ['信息搜集', projectName],
+                filePath: docFile.filePath,
+                textContent: markdown,
+                url: item.url,
+                metadata: { mediaKind: 'document', ext: docProbe!.ext, sourceId: source.id, projectId },
+                sourceType: 'info-collection',
+                sourceRef: projectId,
+              })
+              await repos.sources.patch(source.id, { assetId: card.id })
+            } catch {
+              /* 资产服务未装配/登记失败：不建卡，ic_source.assetId 留空（内容仍在快照与 ic_source 可溯源） */
+            }
+            // 建卡后清理临时下载文件（资产服务已复制进统一资产目录；未建卡也不留垃圾）
+            void cleanupTempFile(docFile.filePath)
+          }
 
           // 抽取（引句锚定 + 来源评估）
           stats.toolCalls += 1
@@ -576,6 +691,14 @@ export class IcCollectionService {
         reviewStatus: 'rejected',
         tierRationale: reason ? `${source.tierRationale ?? ''}（驳回原因：${reason}）`.trim() : source.tierRationale,
       })
+      // 多模态 M1：带原件的来源驳回 → 删登记卡与原件（不要的资料不占盘；fail-soft 不阻断批量）
+      if (source.assetId) {
+        try {
+          await this.assetsRemove(source.assetId)
+        } catch {
+          /* 卡已删/资产服务未装配时静默 */
+        }
+      }
       n += 1
     }
     return n

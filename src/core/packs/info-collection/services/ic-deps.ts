@@ -47,7 +47,42 @@ export interface IcFetchedDoc {
 
 export type IcFetchFn = (url: string) => Promise<IcFetchedDoc>
 
+/** 文档直链下载（多模态 M1）：原件落盘 + MIME + 字节数（executeHttpFetch responseType='file' 同形） */
+export interface IcDocumentFetched {
+  ok: boolean
+  status: number
+  /** 下载落盘的临时文件绝对路径（资产服务会复制进统一资产目录） */
+  filePath?: string
+  mimeType?: string
+  bytes?: number
+  error?: string
+}
+
+export type IcDocumentFetchFn = (url: string) => Promise<IcDocumentFetched>
+
 export type IcExtractFn = (html: string, baseUrl: string) => string
+
+/**
+ * 统一资产登记口（多模态 M1）：文档原件 + 内容化文本在 assets 表建卡，
+ * "一资产一文件一正文"（SaveAssetInput 同形收窄）。测试注入内存假件。
+ */
+export interface IcAssetPort {
+  create(input: {
+    name: string
+    category: string
+    subCategory?: string
+    tags?: string[]
+    filePath: string
+    textContent?: string
+    url?: string
+    mimeType?: string
+    metadata?: Record<string, unknown>
+    sourceType?: string
+    sourceRef?: string
+  }): Promise<{ id: string }>
+  /** 删卡删原件（驳回时调用；资产不存在时静默成功） */
+  remove(id: string): Promise<void>
+}
 
 /** 知识库导入口（内容唯一存储在 kb；每源一文档） */
 export interface IcKbPort {
@@ -81,8 +116,12 @@ export interface IcCollectionDeps {
   reviewLlm?: IcLlmFn
   search?: IcSearchFn
   fetch?: IcFetchFn
+  /** 文档直链下载（缺省 executeHttpFetch responseType='file'；未注入 = 不启用文档分支） */
+  documentFetch?: IcDocumentFetchFn
   extract?: IcExtractFn
   kb?: IcKbPort
+  /** 统一资产登记（缺省接 getAssetService；未注入 = 不建卡，ic_source.assetId 留空） */
+  assets?: IcAssetPort
   snapshotStore?: IcSnapshotStore | null
   /** id 生成（缺省 crypto.randomUUID）；测试注入确定性序列 */
   newId?: (prefix: string) => string

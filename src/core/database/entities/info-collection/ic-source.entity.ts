@@ -82,6 +82,15 @@ export class IcSourceEntity {
   @Column({ name: 'kb_document_id', type: 'varchar', nullable: true })
   kbDocumentId!: string | null
 
+  /**
+   * 统一资产登记外链（assets.id，2026-10-08 多模态 M1）。
+   * 文档/图片等带原件的资料，抓取成功即在 assets 表建卡（原件+内容化文本），此处只存外链；
+   * webpage 类型为 NULL（快照已入 KB，登记与网页收藏职责重叠，暂不建卡）。
+   * 类型/路径/哈希/MIME 全在 assets 表——本表不双写，杜绝两处元数据漂移。
+   */
+  @Column({ name: 'asset_id', type: 'varchar', nullable: true })
+  assetId!: string | null
+
   /** 该源满足了哪些 IR（["R1","R3"]） */
   @Column({ name: 'ir_hits_json', type: 'text', nullable: true })
   irHitsJson!: string | null

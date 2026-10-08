@@ -22,8 +22,9 @@ const BLUEPRINT_SYSTEM = `你是信息搜集规划师。把用户的主题变成
 2. 需求形态 form 取：data（数值/表格）| fact（事实要点）| document（文件/政策/报告）| opinion（观点）| case（案例）。data 类需求配 schema（jsonSchema + convention 映射）。
 3. convention.map 的字段名必须真实出现在 jsonSchema.properties 里（网页上抽不到的字段不许出现）。
 4. 种子查询（seedQueries）覆盖全部 must 级需求：同义扩展 + 中英双语 + 不同切入角度（机构视角/数据视角/事件视角）；primaryHint 列出该主题应优先直取的权威域名或出版物。
-5. 用户没有明说的口径（时间范围/地域/语言/单位）不要替用户决定——写进 assumptions。
-6. 只输出一个 JSON 对象，不要输出任何其他文字。`
+5. 文件型资料：法规原文、统计年鉴、办事指南、白皮书、财报常以文档直链发布——主题涉及这类资料时，seedQueries 必须附加 filetype:pdf / filetype:docx 算子的查询（如「主题词 filetype:pdf」），系统会优先抓取文档原件并提取全文（比网页转述更权威）。
+6. 用户没有明说的口径（时间范围/地域/语言/单位）不要替用户决定——写进 assumptions。
+7. 只输出一个 JSON 对象，不要输出任何其他文字。`
 
 function asString(v: unknown): string | null {
   return typeof v === 'string' && v.trim() ? v.trim() : null

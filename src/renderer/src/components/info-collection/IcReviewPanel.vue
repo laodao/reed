@@ -32,7 +32,10 @@
       <el-table-column label="来源" min-width="300">
         <template #default="{ row }">
           <a class="src-url" :href="row.url" target="_blank" rel="noopener">{{ row.url }}</a>
-          <div v-if="row.tierRationale" class="src-rationale">{{ row.tierRationale }}</div>
+          <div class="src-sub">
+            <el-tag v-if="row.asset" size="small" effect="plain" class="src-file">{{ assetBadge(row.asset) }}</el-tag>
+            <span v-if="row.tierRationale" class="src-rationale">{{ row.tierRationale }}</span>
+          </div>
         </template>
       </el-table-column>
       <el-table-column label="分级" width="72" align="center">
@@ -94,7 +97,7 @@
 import { computed, ref } from 'vue'
 import { ElMessage, ElMessageBox, ElTable } from 'element-plus'
 import { useInfoCollectionStore, type IcSourceDto } from '@/stores/info-collection'
-import { fetchTagType, relativeTime, shortTime, tierTagType } from '@/views/info-collection/ic-ui'
+import { fetchTagType, relativeTime, shortTime, tierTagType, assetBadge } from '@/views/info-collection/ic-ui'
 
 const store = useInfoCollectionStore()
 /** 智能落点：待审为空而已入选有数据时直接看已入选，不展示一张空表 */
@@ -192,7 +195,9 @@ async function doReject(sources: IcSourceDto[]): Promise<void> {
 .rv-batch { display: flex; gap: 8px; }
 .src-url { font-size: 13px; color: var(--el-color-primary); word-break: break-all; text-decoration: none; }
 .src-url:hover { text-decoration: underline; }
-.src-rationale { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 2px; }
+.src-sub { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+.src-file { flex-shrink: 0; }
+.src-rationale { font-size: 12px; color: var(--el-text-color-secondary); }
 .ir-hits { font-size: 12px; font-family: monospace; cursor: default; }
 .dim { color: var(--el-text-color-placeholder); font-size: 12px; }
 </style>

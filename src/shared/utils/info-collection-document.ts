@@ -1,0 +1,42 @@
+/**
+ * 信息搜集 · 文档直链探测（多模态 M1，2026-10-08）
+ * @module shared/utils/info-collection-document
+ * @description 判定一个 URL 是否为"文档直链"（.pdf/.docx/.xlsx/... 结尾的路径）。
+ *              命中 → 走下载原件分支（executeHttpFetch file 模式 + extractTextFromFile），
+ *              不走网页抓取。纯函数，可直测。
+ *
+ * 值域对齐 core/utils/extract-text.ts 的 inferFileType（doc 未实现不收、csv 不在提取器清单不收）。
+ */
+
+/** 可探测的文档扩展名（与 extract-text 提取器清单对齐） */
+export const IC_DOCUMENT_EXTENSIONS = ['pdf', 'docx', 'xls', 'xlsx', 'epub', 'mobi', 'azw3', 'txt', 'md'] as const
+
+export type IcDocumentExt = (typeof IC_DOCUMENT_EXTENSIONS)[number]
+
+export interface IcDocumentProbe {
+  /** 小写扩展名（不含点） */
+  ext: IcDocumentExt
+}
+
+/**
+ * 探测 URL 是否文档直链。
+ * 只看 pathname 的结尾扩展名，忽略查询串与 hash；`filetype:pdf` 检索算子带来的
+ * 结果多为直链，网页重定向到文档的由响应头嗅探兜底（服务层职责，此处不判）。
+ */
+export function detectDirectDocumentUrl(url: string): IcDocumentProbe | null {
+  if (!url) return null
+  let pathname: string
+  try {
+    pathname = new URL(url).pathname
+  } catch {
+    return null
+  }
+  const last = pathname.split('/').pop() ?? ''
+  const dot = last.lastIndexOf('.')
+  if (dot <= 0) return null
+  const ext = last.slice(dot + 1).toLowerCase()
+  return (IC_DOCUMENT_EXTENSIONS as readonly string[]).includes(ext) ? { ext: ext as IcDocumentExt } : null
+}
+
+/** 文档单件下载上限（字节；缺省 50MB，多模态设计 §9 红线） */
+export const IC_DOCUMENT_MAX_BYTES = 50 * 1024 * 1024

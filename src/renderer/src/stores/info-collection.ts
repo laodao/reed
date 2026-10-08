@@ -74,6 +74,10 @@ export interface IcSourceDto {
   fetchStatus: 'ok' | 'partial' | 'failed' | 'blocked'
   reviewStatus: 'staged' | 'confirmed' | 'rejected' | 'merged'
   kbDocumentId: string | null
+  /** 统一资产登记外链（带原件的资料非空；webpage 为 null） */
+  assetId: string | null
+  /** 资产概要（handler 从 assets 表补；服务未装配时 null） */
+  asset: { name: string; kind: string; mimeType: string | null; sizeBytes: number | null } | null
   irHits: string[]
 }
 
