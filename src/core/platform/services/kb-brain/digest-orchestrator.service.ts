@@ -38,6 +38,7 @@ import { AtomizeService, AdjudicateService, type LocatedScene } from './atomize.
 import { buildAtomizeSystem } from './prompts'
 import { KbBrainProfileService } from './profile.service'
 import { KbBookPassesService } from './book-passes.service'
+import { markDigestLive, markDigestDone } from './liveness'
 import {
   parseBrainConfig,
   parseBrainState,
@@ -369,6 +370,10 @@ export class KbBrainDigestService {
     await docs.updateBrainStatus(documentId, { status: 'digesting', progress: 0 })
     this.emitStatus(documentId, 'digesting')
 
+    // 进程内存活登记（review H5）：run 存续期内看护绝不因台账静默误复位——
+    // 单章 LLM 调用（64K 预算下可达 15-35min）超过看护时间窗是常态而非僵死
+    markDigestLive(documentId)
+
     try {
       // 基础遍消费章节正文（digestChapter 的 content 入参）→ 显式 opt-in
       const chapterRows = await chapters.findByDocument(documentId, { includeContent: true })
@@ -394,7 +399,9 @@ export class KbBrainDigestService {
           workingCfg
         )
         insertedThisRun.push(...inserted)
-        if (outcome === 'exhausted') exhaustedChapters.push(chapter.id)
+        // 审核拦截章（moderation=true）不计入失败——它 outcome 同为 exhausted，
+        // 但重试无意义，整书按跳过继续走完（review H3：先判 moderation 再入失败数组）
+        if (outcome === 'exhausted' && !moderation) exhaustedChapters.push(chapter.id)
         if (moderation) moderationSkipped.push(chapter.id)
         else if (outcome === 'skipped-same')
           skippedSameChapters.push({ id: chapter.id, hash: chapter.contentHash })
@@ -491,6 +498,8 @@ export class KbBrainDigestService {
       logger.warn(`[kb-brain] 消化失败 doc=${documentId}: ${msg}`)
       await docs.updateBrainStatus(documentId, { status: 'failed', error: msg.slice(0, 300) })
       this.emitStatus(documentId, 'failed', msg)
+    } finally {
+      markDigestDone(documentId)
     }
   }
 
@@ -813,12 +822,14 @@ export class KbBrainDigestService {
       return { outcome: 'digested', inserted: keptInputs }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
-      await passes.setFailed(pass.id, msg)
       // 云端内容审核拦截（阿里 data_inspection_failed 等）：重试无意义——本章放弃，
-      // 不上抛拖死整书（主流云模型都有审核，按模型无关纪律优雅降级）
+      // 不上抛拖死整书（主流云模型都有审核，按模型无关纪律优雅降级）；
+      // 台账耗尽封账（attempts 顶格），续跑不再重撞本批（review M5）
       if (isModerationRejection(msg)) {
+        await passes.markExhausted(pass.id, msg)
         return { outcome: 'exhausted', inserted: [], moderation: true }
       }
+      await passes.setFailed(pass.id, msg)
       throw e
     }
   }
@@ -1446,9 +1457,13 @@ export async function backfillScenesForKb(
 
 /* ==================== 内部工具 ==================== */
 
-/** 云内容审核拦截（阿里 data_inspection_failed 等；各云厂商措辞归一）——重试无意义 */
+/** 云内容审核拦截（阿里 data_inspection_failed 等；各云厂商措辞归一）——重试无意义。
+ *  覆盖：阿里 data_inspection_failed、OpenAI content_filter、Azure content_management_policy、
+ *  Gemini SAFETY 终止原因（review M5） */
 export function isModerationRejection(message: string): boolean {
-  return /data_inspection_failed|inappropriate content|content[_ ]?filter|内容审核|涉黄涉政/i.test(message)
+  return /data_inspection_failed|inappropriate content|content[_ ]?filter|content_management_policy|内容审核|涉黄涉政|\bsafety\b/i.test(
+    message
+  )
 }
 
 function safeParseConfig(raw: string | null | undefined): KbBrainConfig | null {

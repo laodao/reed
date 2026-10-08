@@ -34,6 +34,21 @@ export class ProviderConfigRepository extends BaseRepository<
     return new Date(iso)
   }
 
+  /** 读侧兼容（review M7）：历史存量可能被双重 JSON 编码（列里存的是「JSON 字符串
+   *  的 JSON 字符串」），读出 string 时逐层 parse 回对象——否则下游读字段全部静默
+   *  undefined。parse 失败或结果不是对象时按原样返回 null（与损坏存量现状一致）。 */
+  private parseMaybeEncodedJson(v: unknown): Record<string, unknown> | null {
+    let cur: unknown = v
+    for (let i = 0; i < 3 && typeof cur === 'string'; i++) {
+      try {
+        cur = JSON.parse(cur)
+      } catch {
+        return null
+      }
+    }
+    return cur && typeof cur === 'object' && !Array.isArray(cur) ? (cur as Record<string, unknown>) : null
+  }
+
   protected toDto(e: ProviderConfigEntity): UserProviderConfig {
     return {
       id: e.id,
@@ -48,7 +63,7 @@ export class ProviderConfigRepository extends BaseRepository<
       videoBaseUrl: e.videoBaseUrl || undefined,
       audioBaseUrl: e.audioBaseUrl || undefined,
       customHeaders: (e.customHeaders as Record<string, string> | null) ?? undefined,
-      customParams: (e.customParams as Record<string, unknown> | null) ?? undefined,
+      customParams: this.parseMaybeEncodedJson(e.customParams) ?? undefined,
       models: (e.models as ModelDefinition[] | null) ?? undefined,
       defaultModelId: e.defaultModel || undefined,
       isEnabled: e.isEnabled === 1,

@@ -39,6 +39,7 @@ import { getKbConsolidateService } from './consolidate.service'
 import { getKbCleanupService } from './cleanup.service'
 import { getKbForeshadowScanService } from './foreshadow-scan.service'
 import { getKbSmeltPipelineService } from './smelt-pipeline.service'
+import { isDigestLive } from './liveness'
 import { MIN_EVENTS_FOR_SMELT } from './pattern-induct.service'
 import { KbCorpusMergeService } from './corpus-merge.service'
 import { KbCorpusPassesService } from './corpus-passes.service'
@@ -296,13 +297,15 @@ export class KbBrainAutomationService {
     //    （管线让位：消化完成的下一轮再跑下游提炼）
     if (auto.digest) {
       const docs = await repos.docs.findByKnowledgeBaseId(kbId)
-      // 僵死看护：'digesting' 但台账 15min 内无任何更新 → 上一进程死亡残留（崩溃/被杀时
+      // 僵死看护：'digesting' 但台账 15min 内无任何更新 → 残留（崩溃/被杀时
       // status 停在 digesting、章级 pass 停在 running/pending，续消化会永久让位）。
-      // 存活的消化循环必然持续触碰台账（每章 done/running 都写 updated_at，章间空窗亚秒级）；
-      // 把陈旧 running 复位回 pending，文档复位 pending 交本轮入队。
+      // 进程内存活的 run（liveness 注册表）先豁免——单章 LLM 调用（64K 预算下
+      // 15-35min）超过时间窗是常态而非僵死，不能按台账静默误复位（review H5）；
+      // 注册表只在本进程有效，进程死亡后 DB 侧陈旧判定照常兜底跨进程残留。
       const STALE_MS = 15 * 60_000
       for (const d of docs) {
         if (d.brainStatus !== 'digesting') continue
+        if (isDigestLive(d.id)) continue
         const rows = await repos.passes.listByDocument(d.id)
         const now = this.nowFn()
         const freshActivity = rows.some(r => now - (r.updatedAt?.getTime() ?? 0) <= STALE_MS)

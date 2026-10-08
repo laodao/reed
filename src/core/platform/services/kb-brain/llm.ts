@@ -12,7 +12,10 @@
  * 缺省回落宿主模型。
  */
 import { generateCompletionText } from '@core/platform/services/simple-llm'
-import { isJsonTruncated } from '@core/platform/services/ai-call'
+import { isJsonTruncated, stripThinkBlocks } from '@core/platform/services/ai-call'
+
+/** 思考剥离的实现在 ai-call（extractJsonFromResponse 入口同用）；此处重导出保持既有引用 */
+export { stripThinkBlocks }
 
 export interface BrainLlmRequest {
   system: string
@@ -25,20 +28,12 @@ export interface BrainLlmRequest {
  * 推理型模型的思考（reasoning）计入输出 token 预算：2000 都会被思考耗尽成空文本。
  * 基线 16000，思考型模型输出为空时 defaultBrainLlm 自动翻倍重试（封顶 64000）——
  * 所有主流模型都要能跑：基线只是常态值，预算按模型行为自适应，不按模型挑提示。
+ * 已知局限（review M1）：翻倍预算不按 provider/模型的输出上限 clamp——
+ * provider 侧拿不到模型元数据，输出上限 < 预算的模型可能 400（取决于 provider 容错）；
+ * 且翻倍仅对「空输出」触发，provider 直接报错不重试。接入模型元数据后在此 clamp。
  */
 export const BRAIN_LLM_MAX_TOKENS = 16000
 export const BRAIN_LLM_MAX_TOKENS_CEILING = 64000
-
-/**
- * 剥离思考标签：部分网关/模型把思考内联在正文里（<think>…</think> 或未闭合的
- * <think>…），混进 JSON 会污染解析与续写判断。
- */
-export function stripThinkBlocks(text: string): string {
-  return text
-    .replace(/<think>[\s\S]*?<\/think>/gi, '')
-    .replace(/<think>[\s\S]*$/i, '')
-    .trim()
-}
 
 export type BrainLlmFn = (req: BrainLlmRequest) => Promise<string>
 
@@ -109,26 +104,30 @@ export function defaultBrainLlm(
   }
   return async req => {
     let budget = req.maxTokens ?? BRAIN_LLM_MAX_TOKENS
-    let full = await once(req, budget)
+    // 思考先剥再进链（review H2）：空输出判定、截断判定、续写拼接、最终返回值
+    // 全部基于剥后文本——思考里的 JSON 草稿不得混进任何一环
+    let full = stripThinkBlocks((await once(req, budget)) ?? '')
     // 思考型模型自适应（所有主流模型都要能跑，不按模型挑提示）：输出为空多半是
     // 思考耗尽了预算 → 预算翻倍重试（≤2 次，封顶 ceiling）。按响应行为适配而非
     // 按模型名分支——换任何模型都不需要改这里。
-    for (let i = 0; i < 2 && !stripThinkBlocks(full ?? '').trim() && budget < BRAIN_LLM_MAX_TOKENS_CEILING; i++) {
+    for (let i = 0; i < 2 && !full.trim() && budget < BRAIN_LLM_MAX_TOKENS_CEILING; i++) {
       budget = Math.min(budget * 2, BRAIN_LLM_MAX_TOKENS_CEILING)
-      full = await once(req, budget)
+      full = stripThinkBlocks((await once(req, budget)) ?? '')
     }
     // 截断续写（≤2 次，续写沿用升级后的预算）
     let continues = 0
-    while (continues < 2 && full && isJsonTruncated(stripThinkBlocks(full))) {
+    while (continues < 2 && full && isJsonTruncated(full)) {
       full = stitchContinuation(
         full,
-        await once(
-          {
-            system: req.system,
-            user: buildContinuePrompt(full),
-            maxTokens: budget
-          },
-          budget
+        stripThinkBlocks(
+          await once(
+            {
+              system: req.system,
+              user: buildContinuePrompt(full),
+              maxTokens: budget
+            },
+            budget
+          )
         )
       )
       continues++

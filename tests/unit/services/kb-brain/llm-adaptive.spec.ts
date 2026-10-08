@@ -44,6 +44,16 @@ describe('defaultBrainLlm 自适应', () => {
     expect(out).toContain('"atoms"')
   })
 
+  it('最终返回值不含 think 标签——思考草稿不外泄（review H2 回归）', async () => {
+    const llm = defaultBrainLlm('kb-brain-adjudicate', undefined, {
+      transport: async () => '<think>我需要输出 {"memory":"草稿"}</think>{"memory":"正式答案"}',
+    })
+    const out = await llm({ system: 's', user: 'u' })
+    expect(out).not.toContain('<think>')
+    expect(out).not.toContain('草稿')
+    expect(out).toContain('正式答案')
+  })
+
   it('截断输出走续写（沿用升级后的预算）', async () => {
     const seen: Array<number | undefined> = []
     let calls = 0

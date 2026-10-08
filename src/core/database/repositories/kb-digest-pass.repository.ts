@@ -190,6 +190,21 @@ export class KbDigestPassRepository extends BaseRepository<KbDigestPassEntity, K
   }
 
   /**
+   * 耗尽封账（review M5）：云内容审核拦截等重试无意义的失败，attempts 直接顶格——
+   * ensurePass 对 failed+耗尽行一律 skip，续跑不再重撞；reviveExhaustedForDocument
+   * 仍可人工复活（换模型/供应商后重试）。
+   */
+  async markExhausted(id: string, error: string): Promise<void> {
+    const row = await this.scoped.findOne({ id } as FindOptionsWhere<KbDigestPassEntity>)
+    if (!row) return
+    row.status = 'failed'
+    row.attempts = MAX_ATTEMPTS
+    row.error = error.slice(0, 500)
+    row.updatedAt = new Date()
+    await this.scoped.save(row)
+  }
+
+  /**
    * 跨租户恢复扫描（后台任务专用）：裸 repo 查询不带 user_id 过滤——
    * 显式安全性确认：仅返回 id/documentId/userId/status 最小字段供按用户重放，
    * 不外泄内容；ALS 无用户（boot）时 scoped 生成 IS NULL 查不到任何行，

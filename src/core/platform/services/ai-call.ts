@@ -637,6 +637,18 @@ ${jsonSoFar}
 }
 
 /**
+ * 剥离思考标签：部分网关/模型把思考内联在正文里（<think>…</think> 或未闭合的
+ * <think>…），思考里的 JSON「草稿」绝不能被当成正式答案解析。入口统一剥离，
+ * 惠及所有走 extractJsonFromResponse 的调用方。
+ */
+export function stripThinkBlocks(text: string): string {
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<think>[\s\S]*$/i, '')
+    .trim()
+}
+
+/**
  * 从 AI 响应中提取 JSON
  * 支持 ```json```、``` 代码块及裸 JSON 三种格式
  */
@@ -644,8 +656,8 @@ export function extractJsonFromResponse(response: string): any {
   console.log('[EpisodeProductionAI] AI 响应长度:', response.length)
   console.log('[EpisodeProductionAI] AI 响应前500字符:', response.substring(0, 500))
 
-  // 清理响应内容
-  const cleanedResponse = response.trim()
+  // 清理响应内容（含 think 剥离——推理模型在思考里起草 JSON 是常态）
+  const cleanedResponse = stripThinkBlocks(response ?? '')
 
   // 尝试提取 ```json ... ``` 中的内容
   const jsonMatch = cleanedResponse.match(/```json\s*([\s\S]*?)\s*```/)

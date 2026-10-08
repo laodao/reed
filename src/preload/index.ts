@@ -1278,8 +1278,10 @@ const electronAPI = {
       autoLogUndo: (logId: string) => ipcRenderer.invoke('kb:brain:auto-log-undo', { logId }),
       bookPassesRun: (kbId: string) => ipcRenderer.invoke('kb:brain:book-passes-run', { kbId }),
       bookPassesStatus: (kbId: string) => ipcRenderer.invoke('kb:brain:book-passes-status', { kbId }),
-      readingRun: (p: { kbId: string; documentId?: string }) => ipcRenderer.invoke('kb:brain:reading-run', p),
-      readingStatus: (p: { kbId: string }) => ipcRenderer.invoke('kb:brain:reading-status', p),
+      // 位置参数签名（review H4）：与本命名空间其余方法及 web 桥 wrap 的位置参数约定一致，
+      // 对象在此组装——renderer 直传对象会被 web 桥整体塞进 kbId 字段导致静默失效
+      readingRun: (kbId: string, documentId?: string) => ipcRenderer.invoke('kb:brain:reading-run', { kbId, documentId }),
+      readingStatus: (kbId: string) => ipcRenderer.invoke('kb:brain:reading-status', { kbId }),
       graphBuildRun: (p: { kbId: string; documentId: string }) => ipcRenderer.invoke('kb:brain:graph-build-run', p),
       graphData: (p: { kbId: string }) => ipcRenderer.invoke('kb:brain:graph-data', p),
       reviewRun: (p: { kbId: string; documentId: string; docName: string }) => ipcRenderer.invoke('kb:brain:review-run', p),

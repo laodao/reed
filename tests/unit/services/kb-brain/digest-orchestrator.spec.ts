@@ -380,9 +380,67 @@ describe('KbBrainDigestService 全链路', () => {
     const good = new KbBrainDigestService(makeDeps())
     await good.digestDocument('doc-t')
     const docRow = (await ds.query(
-      "SELECT brain_status FROM kb_documents WHERE id='doc-t'"
+      `SELECT brain_status FROM kb_documents WHERE id='doc-t'`
     )) as Array<{ brain_status: string }>
     expect(docRow[0].brain_status).toBe('digested')
+  })
+
+  it('审核拦截章：文档仍 digested、台账耗尽封账不再重撞（review H3/M5 回归）', async () => {
+    const chapters = new KbChapterRepository(ds)
+    await chapters.replaceByDocument('doc-t', [
+      {
+        id: 'ch-m1',
+        documentId: 'doc-t',
+        knowledgeBaseId: 'kb-t',
+        title: '第1章',
+        level: 1,
+        ordering: 0,
+        content: CH1_CONTENT,
+        contentHash: 'hash-mod-1'
+      },
+      {
+        id: 'ch-m2',
+        documentId: 'doc-t',
+        knowledgeBaseId: 'kb-t',
+        title: '第2章',
+        level: 1,
+        ordering: 1,
+        content: CH2_CONTENT,
+        contentHash: 'hash-mod-2'
+      }
+    ])
+    // ch-m1 永久审核拦截；ch-m2 正常消化
+    const deps = makeDeps()
+    deps.llm = (async req => {
+      if (req.user.includes('程野推开舱门')) {
+        throw new Error('data_inspection_failed: input may contain inappropriate content')
+      }
+      if (req.system.includes('裁决员')) {
+        return JSON.stringify({
+          duplicates: [],
+          contradictions: [],
+          novel: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+        })
+      }
+      return ATOMIZE_RESPONSE
+    }) as BrainLlmFn
+    const mod = new KbBrainDigestService(deps)
+    await mod.digestDocument('doc-t')
+
+    // 整书不拖死：拦截章不进失败终态，文档 digested 而非 failed
+    const docRow = (await ds.query(
+      `SELECT brain_status FROM kb_documents WHERE id='doc-t'`
+    )) as Array<{ brain_status: string }>
+    expect(docRow[0].brain_status).toBe('digested')
+
+    // 拦截章：耗尽封账（attempts 顶格——ensurePass skip，续跑不重撞；可人工复活）
+    const passRows = await new KbDigestPassRepository(ds).listByDocument('doc-t')
+    const blocked = passRows.find(p => p.chapterId === 'ch-m1' && p.passType === 'base')!
+    expect(blocked.status).toBe('failed')
+    expect(blocked.attempts).toBeGreaterThanOrEqual(3)
+    // 未拦截章：正常 done
+    const normal = passRows.find(p => p.chapterId === 'ch-m2' && p.passType === 'base')!
+    expect(normal.status).toBe('done')
   })
 })
 

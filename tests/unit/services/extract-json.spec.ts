@@ -45,4 +45,16 @@ describe('extractJsonFromResponse（模型重答容错）', () => {
     const result = extractJsonFromResponse('{"s":"a { b }"}')
     expect(result.s).toBe('a { b }')
   })
+
+  it('think 混入：思考里的 JSON 草稿不当答案（review H2 回归）', () => {
+    const parsed = extractJsonFromResponse(
+      '<think>我需要输出 {"memory":"草稿"}</think>{"memory":"正式答案"}'
+    )
+    expect(parsed.memory).toBe('正式答案')
+  })
+
+  it('think 混入 + 未闭合标签：剥后仍能解析正式 JSON', () => {
+    const parsed = extractJsonFromResponse('<think>先想一下</think>答案：\n```json\n{"memory":"代码块答案"}\n```')
+    expect(parsed.memory).toBe('代码块答案')
+  })
 })

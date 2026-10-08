@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { KbBrainAutomationService, type KbBrainAutomationDeps } from '@core/platform/services/kb-brain/automation.service'
+import { markDigestLive, markDigestDone } from '@core/platform/services/kb-brain/liveness'
 
 interface KbRow {
   id: string
@@ -315,6 +316,30 @@ describe('KbBrainAutomationService', () => {
     expect(deps.calls).toContain('docs-update-status:doc1:pending')
     expect(deps.calls).toContain('digest-enqueue:doc1')
     expect(result.ran).toEqual(['digest'])
+  })
+
+  it('进程内存活 run（liveness 注册表）→ 台账再陈旧也不误复位（review H5）', async () => {
+    const { svc, deps } = makeDeps()
+    deps.docs[0]!.brainStatus = 'digesting'
+    // 台账 30min 无更新——单章 LLM 调用超看护窗的常态形态
+    deps.passesByDocument['doc1'] = [
+      { status: 'running', updatedAt: new Date(Date.now() - 30 * 60_000) },
+    ]
+    markDigestLive('doc1')
+    try {
+      const result = await svc.runCycle('kb1')
+      expect(deps.calls).not.toContain('passes-reset-to-pending')
+      expect(deps.calls).not.toContain('docs-update-status:doc1:pending')
+      expect(result.skipped).toBe('digesting') // 存活 run 在跑，整轮让位
+    } finally {
+      markDigestDone('doc1')
+    }
+    // 注册表注销（run 结束/进程死亡）后，DB 陈旧判定照常兜底
+    deps.calls.length = 0
+    const r2 = await svc.runCycle('kb1')
+    expect(deps.calls).toContain('docs-update-status:doc1:pending')
+    expect(deps.calls).toContain('digest-enqueue:doc1')
+    expect(r2.ran).toEqual(['digest'])
   })
 
   it('冷却记账：紧接的第二轮什么都不重复跑', async () => {

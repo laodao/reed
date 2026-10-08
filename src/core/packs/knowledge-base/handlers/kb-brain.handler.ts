@@ -389,10 +389,12 @@ export function registerKbBrainHandlers(): void {
   const bookReading = getKbBookReadingService()
   ipcBridge.handle('kb:brain:reading-run', async (_e, p: { kbId: string; documentId?: string }) => {
     if (bookReading.isRunningKb(p.kbId)) return { success: false, error: '全书精读进行中' }
+    // kbRow 判空（review M4）：与 book-passes-run 同防——无效 kbId 不应照常 fire-and-forget
     const kbRow = await svc()
       .getKnowledgeBase(p.kbId)
       .then(r => r.data)
-    const cfg = kbRow?.brainConfig ? parseBrainConfig(kbRow.brainConfig) : null
+    if (!kbRow) return { success: false, error: '知识库不存在' }
+    const cfg = kbRow.brainConfig ? parseBrainConfig(kbRow.brainConfig) : null
     bookReading.setModelOverride(p.kbId, () =>
       cfg?.models.adjudicate ? parseModelRef(cfg.models.adjudicate) : {}
     )

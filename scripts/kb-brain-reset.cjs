@@ -77,9 +77,20 @@ async function main() {
   assert(kb, `知识库不存在: ${KB_ID}`)
   console.log(`[reset] 目标库: ${kb.name} (${kb.id})`)
 
+  // 目标文档查找前置（review M8）：第 2 步事务会把全库文档置 pending——若此时才
+  // 发现目标文档不存在就退出，automation 会把全部文档重新消化，违背脚本设计
+  const docs = db.prepare('SELECT id, name FROM kb_documents WHERE knowledge_base_id = ?').all(KB_ID)
+  const target = docs.find(d => d.name.includes(DIGEST_DOC_NAME))
+  assert(target, `找不到名称含「${DIGEST_DOC_NAME}」的文档`)
+
   const before = {}
   for (const t of ['kb_atoms', 'kb_entities', 'kb_knowledge_edges', 'kb_events', 'kb_digest_passes', 'kb_notes', 'kb_note_reviews']) {
     before[t] = db.prepare(`SELECT COUNT(*) n FROM ${t} WHERE ${t === 'kb_note_reviews' ? 'kb_id' : 'knowledge_base_id'} = ?`).get(KB_ID).n
+  }
+  // 自动化动作日志（P4 起）：detail 记产物 noteIds——卡片删除后残留悬空引用，一并清
+  const hasAutoLog = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='kb_automation_log'").get()
+  if (hasAutoLog) {
+    before['kb_automation_log'] = db.prepare('SELECT COUNT(*) n FROM kb_automation_log WHERE kb_id = ?').get(KB_ID).n
   }
   before['inv_brain_ns'] = db
     .prepare(
@@ -99,6 +110,9 @@ async function main() {
     db.prepare('DELETE FROM kb_atoms WHERE knowledge_base_id = ?').run(KB_ID)
     db.prepare('DELETE FROM kb_entities WHERE knowledge_base_id = ?').run(KB_ID)
     db.prepare('DELETE FROM kb_digest_passes WHERE knowledge_base_id = ?').run(KB_ID)
+    if (hasAutoLog) {
+      db.prepare('DELETE FROM kb_automation_log WHERE kb_id = ?').run(KB_ID)
+    }
     db.prepare(
       "DELETE FROM kb_inverted_index WHERE knowledge_base_id = ? AND (chunk_id LIKE 'atom:%' OR chunk_id LIKE 'note:%' OR chunk_id LIKE 'ent:%' OR chunk_id LIKE 'event:%')"
     ).run(KB_ID)
@@ -112,10 +126,7 @@ async function main() {
   tx()
   console.log('[reset] sqlite brain artifacts cleared')
 
-  // ---------- 3. 文档状态分流 + brain_state 清零 ----------
-  const docs = db.prepare('SELECT id, name FROM kb_documents WHERE knowledge_base_id = ?').all(KB_ID)
-  const target = docs.find(d => d.name.includes(DIGEST_DOC_NAME))
-  assert(target, `找不到名称含「${DIGEST_DOC_NAME}」的文档`)
+  // ---------- 3. 文档状态分流 + brain_state 清零（目标文档已在上方前置校验） ----------
   const setPending = db.prepare("UPDATE kb_documents SET brain_status = 'pending' WHERE id = ?")
   const setSkipped = db.prepare("UPDATE kb_documents SET brain_status = 'skipped' WHERE id = ?")
   setPending.run(target.id)

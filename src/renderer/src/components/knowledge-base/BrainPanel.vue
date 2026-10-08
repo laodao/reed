@@ -1475,7 +1475,7 @@ const readingSummary = ref<string>('')
 let readingPollTimer: ReturnType<typeof setInterval> | null = null
 
 async function pollReading(): Promise<void> {
-  const resp = await window.electronAPI.knowledgeBase.brain.readingStatus({ kbId: props.kbId })
+  const resp = await window.electronAPI.knowledgeBase.brain.readingStatus(props.kbId)
   const d = (resp?.data ?? resp) as ReadingProgress | undefined
   readingProgress.value = d ?? null
   readingRunning.value = !!d?.running
@@ -1496,7 +1496,7 @@ function startReadingPoll(): void {
 }
 
 async function startReading(): Promise<void> {
-  const resp = await window.electronAPI.knowledgeBase.brain.readingRun({ kbId: props.kbId })
+  const resp = await window.electronAPI.knowledgeBase.brain.readingRun(props.kbId)
   const payload = (resp?.data ?? resp) as { success?: boolean; error?: string; queued?: boolean } | undefined
   if (payload && payload.success === false) {
     ElMessage.warning(payload.error ?? '无法启动全书精读')
