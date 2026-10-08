@@ -84,6 +84,8 @@ export function registerInfoCollectionHandlers(): void {
   // ---- 任务 ----
   ipcBridge.handle('ic:run-task', (_e: unknown, p: { projectId: string }) => wrap(() => s().runTask(p.projectId)))
   ipcBridge.handle('ic:list-tasks', (_e: unknown, p: { projectId: string }) => wrap(() => s().listTasks(p.projectId)))
+  // 手动触发裁决（转载簇/冲突归因/孤证；任务结束会自动跑一次，失败可在此重跑）
+  ipcBridge.handle('ic:adjudicate', (_e: unknown, p: { projectId: string }) => wrap(() => s().adjudicateProject(p.projectId)))
 
   // ---- 源与行（审阅工作台数据源） ----
   ipcBridge.handle('ic:list-sources', (_e: unknown, p: { projectId: string; reviewStatus?: 'staged' | 'confirmed' | 'rejected' | 'merged' }) =>

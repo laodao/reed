@@ -9,7 +9,7 @@
  * electron runMultiTenantMigrations / web initDatabase（两处同构登记，缺一即崩）。
  */
 import type { DataSource } from 'typeorm'
-import { ensureTable, ensureIndex } from './migration-utils'
+import { ensureTable, ensureIndex, ensureColumn } from './migration-utils'
 
 /** 创建全部 5 张 ic_* 表（若不存在）。 */
 export async function createInfoCollectionTables(ds: DataSource): Promise<void> {
@@ -19,6 +19,21 @@ export async function createInfoCollectionTables(ds: DataSource): Promise<void> 
   await ensureTable(ds, isPg, 'ic_task_passes', ddlPasses(isPg), () => passesIndexes(ds, isPg))
   await ensureTable(ds, isPg, 'ic_sources', ddlSources(isPg), () => sourcesIndexes(ds, isPg))
   await ensureTable(ds, isPg, 'ic_rows', ddlRows(isPg), () => rowsIndexes(ds, isPg))
+  // M2 质量层：孤证标记 + 裁决备注（老库升级路径——ensureTable 只补索引，新增列显式 ALTER，幂等）
+  await ensureColumn(
+    ds,
+    isPg,
+    'ic_rows',
+    'single_source',
+    isPg ? 'single_source integer NOT NULL DEFAULT 0' : 'single_source INTEGER NOT NULL DEFAULT 0',
+  )
+  await ensureColumn(
+    ds,
+    isPg,
+    'ic_rows',
+    'review_note',
+    isPg ? 'review_note text' : 'review_note TEXT',
+  )
 }
 
 // ==================== ic_projects ====================

@@ -33,6 +33,10 @@ export interface IcRowItem {
   derivedFrom: string[] | null
   contentHash: string | null
   needsReview: boolean
+  /** 孤证标记：must 级 IR 仅一个独立源支撑 */
+  singleSource: boolean
+  /** 裁决备注（复核不一致原因 / 冲突归因结论） */
+  reviewNote: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -147,6 +151,8 @@ export class IcRowRepository extends BaseRepository<IcRowEntity, IcRowItem> {
       confidence: IcConfidence
       status: IcRowStatus
       needsReview: boolean
+      singleSource: boolean
+      reviewNote: string | null
       contentHash: string | null
     }>,
   ): Promise<void> {
@@ -164,6 +170,8 @@ export class IcRowRepository extends BaseRepository<IcRowEntity, IcRowItem> {
     if (partial.confidence !== undefined) p.confidence = partial.confidence
     if (partial.status !== undefined) p.status = partial.status
     if (partial.needsReview !== undefined) p.needsReview = partial.needsReview ? 1 : 0
+    if (partial.singleSource !== undefined) p.singleSource = partial.singleSource ? 1 : 0
+    if (partial.reviewNote !== undefined) p.reviewNote = partial.reviewNote
     if (partial.contentHash !== undefined) p.contentHash = partial.contentHash
     await this.scoped.update({ id }, p)
   }
@@ -192,6 +200,8 @@ export class IcRowRepository extends BaseRepository<IcRowEntity, IcRowItem> {
       derivedFrom: safeParse<string[]>(e.derivedFromJson),
       contentHash: e.contentHash,
       needsReview: e.needsReview === 1,
+      singleSource: e.singleSource === 1,
+      reviewNote: e.reviewNote,
       createdAt: e.createdAt,
       updatedAt: e.updatedAt,
     }

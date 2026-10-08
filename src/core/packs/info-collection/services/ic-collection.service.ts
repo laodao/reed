@@ -22,6 +22,8 @@ import { verifyQuote } from '@shared/utils/info-collection-quote'
 import { normalizeUrl } from '@shared/utils/info-collection-url'
 import { contentHash } from '@shared/utils/info-collection-content-hash'
 import { parseJsonObject } from '@shared/utils/info-collection-json'
+import { clusterSources } from '@shared/utils/info-collection-cluster'
+import { detectValueConflicts, type IcValueConflictGroup } from '@shared/utils/info-collection-conflicts'
 import type {
   IcBlueprint,
   IcReviewStatus,
@@ -57,6 +59,14 @@ export interface IcTaskStats {
   rowsRejectedQuote: number
   rowsMerged: number
   rowsSchemaRejected: number
+  /** 双模型复核：复核总数 / 判不一致数（M2 质量层） */
+  reviewTotal: number
+  reviewInconsistent: number
+  /** 阶段 5 裁决：转载簇数 / 冲突组数 / 完成归因数 / 孤证行数 */
+  clusters: number
+  conflictsFound: number
+  conflictsAttributed: number
+  singleSourceRows: number
   textTruncated: boolean
   negativeResults: Array<{ irId: string; question: string; note: string }>
   irCoverage: Record<string, boolean>
@@ -266,6 +276,12 @@ export class IcCollectionService {
       rowsRejectedQuote: 0,
       rowsMerged: 0,
       rowsSchemaRejected: 0,
+      reviewTotal: 0,
+      reviewInconsistent: 0,
+      clusters: 0,
+      conflictsFound: 0,
+      conflictsAttributed: 0,
+      singleSourceRows: 0,
       textTruncated: false,
       negativeResults: [],
       irCoverage: {},
@@ -359,6 +375,7 @@ export class IcCollectionService {
 
           // 裁决入库：引句回验 → schema 校验 → 分域查重 → 落 draft
           const irHits = new Set<string>()
+          const createdRows: Array<{ id: string; row: Record<string, unknown>; quote: string | null }> = []
           for (const r of extraction.rows) {
             const quote = r.quote?.trim() ?? ''
             if (!quote || verifyQuote(quote, sourceText).verdict === 'miss') {
@@ -374,7 +391,7 @@ export class IcCollectionService {
               stats.rowsMerged += 1
               continue
             }
-            await repos.rows.create({
+            const created = await repos.rows.create({
               id: this.newId('row'),
               projectId,
               taskId,
@@ -387,10 +404,39 @@ export class IcCollectionService {
               confidence: r.confidence === 'low' ? 'low' : 'high',
               contentHash: rowHash,
             })
+            createdRows.push({ id: created.id, row: r.row, quote })
             stats.rowsDraft += 1
             if (r.requirementId) {
               irHits.add(r.requirementId)
               irSatisfiedRound.set(r.requirementId, round)
+            }
+          }
+
+          // 双模型复核（第二意见；照搬飞轮"自己蒸馏自己不可靠"教训）：
+          // 数值条目对原文核数、表述条目核引句忠实性——不一致 → low confidence + needs_review
+          if (createdRows.length > 0) {
+            try {
+              const verdicts = await this.reviewRows(sourceText, createdRows)
+              let inconsistent = 0
+              for (const v of verdicts) {
+                const target = createdRows[v.index]
+                if (!target || v.verdict !== 'inconsistent') continue
+                inconsistent += 1
+                await repos.rows.patch(target.id, {
+                  confidence: 'low',
+                  needsReview: true,
+                  reviewNote: v.reason ?? '第二模型复核不支持该条目',
+                })
+              }
+              stats.reviewTotal += createdRows.length
+              stats.reviewInconsistent += inconsistent
+              if (inconsistent / createdRows.length > 0.2) {
+                await repos.sources.patch(source.id, {
+                  tierRationale: `${extraction.source.rationale ?? '来源评估'}（第二模型复核不一致率超 20%，整源降级待审）`,
+                })
+              }
+            } catch {
+              // 复核通道不可用 → fail-soft：条目照常入库，复核缺失在 stats.reviewTotal 可见
             }
           }
           stats.sourcesNew += 1
@@ -401,6 +447,17 @@ export class IcCollectionService {
         }
         // 判停：连续 marginalRounds 轮无新 IR 满足
         if (round - lastNewIrRound >= bp.stopRules.marginalRounds) break
+      }
+
+      // 阶段 5 裁决（转载簇/冲突归因/孤证）——fail-soft：裁决失败不掩盖已交付统计
+      try {
+        const adj = await this.adjudicateProject(projectId)
+        stats.clusters = adj.clusters
+        stats.conflictsFound = adj.conflictsFound
+        stats.conflictsAttributed = adj.conflictsAttributed
+        stats.singleSourceRows = adj.singleSourceRows
+      } catch {
+        /* 裁决失败留空：人审工作台仍可处理，或手动触发 ic:adjudicate */
       }
 
       // 负结果 + 覆盖率（如实统计，不掩盖）
@@ -508,6 +565,184 @@ export class IcCollectionService {
     return idx >= 0 ? raw.slice(idx + marker.length) : raw
   }
 
+  // ==================== M2 质量层：双模型复核 / 裁决（转载簇 · 冲突归因 · 孤证） ====================
+
+  private async reviewLlm(req: { system: string; user: string; maxTokens?: number }): Promise<string> {
+    return this.deps.reviewLlm
+      ? this.deps.reviewLlm(req)
+      : (await import('./ic-defaults')).defaultIcLlm('ic-review')(req)
+  }
+
+  /**
+   * 第二模型逐条复核：row 的数值/表述是否被正文真实支持。
+   * 失败抛错（调用方 fail-soft）——复核是增益闸门不是阻断闸门。
+   */
+  private async reviewRows(
+    sourceText: string,
+    rows: Array<{ id: string; row: Record<string, unknown>; quote: string | null }>,
+  ): Promise<Array<{ index: number; verdict: 'consistent' | 'inconsistent'; reason?: string }>> {
+    const payload = rows.map((r, i) => ({ index: i, row: r.row, quote: r.quote }))
+    const user =
+      `正文：\n${sourceText}\n\n待复核条目（index/row/quote）：\n${JSON.stringify(payload, null, 2)}\n\n` +
+      `逐条核验：row 的内容是否被正文真实支持（数值是否与正文一致、表述是否忠实于引句与上下文）。` +
+      `只输出 JSON：{"rows":[{"index":0,"verdict":"consistent|inconsistent","reason":"不一致时说明，一致可省略"}]}`
+    const text = await this.reviewLlm({ system: REVIEW_SYSTEM, user, maxTokens: 3000 })
+    const parsed = parseJsonObject(text)
+    const list = Array.isArray(parsed?.rows) ? parsed.rows : []
+    const out: Array<{ index: number; verdict: 'consistent' | 'inconsistent'; reason?: string }> = []
+    for (const v of list) {
+      if (!v || typeof v !== 'object') continue
+      const rec = v as Record<string, unknown>
+      if (typeof rec.index !== 'number') continue
+      out.push({
+        index: rec.index,
+        verdict: rec.verdict === 'inconsistent' ? 'inconsistent' : 'consistent',
+        reason: typeof rec.reason === 'string' ? rec.reason : undefined,
+      })
+    }
+    return out
+  }
+
+  /**
+   * 阶段 5 裁决（对全项目，可重复运行）：
+   * ① 转载簇识别 + 主源选择（派生结论——重跑即随更优一手源升级）；
+   * ② 数值冲突 → LLM 归因四分类 → revision 关旧开新 / 其余 needs_review 并排；
+   * ③ 孤证标记（must 级 IR 独立来源单位 = 转载簇/单例，仅 1 个单位 → single_source）。
+   * 分域纪律：只在 (user, project) 内比较，跨项目永不互裁。
+   */
+  async adjudicateProject(
+    projectId: string,
+  ): Promise<{ clusters: number; conflictsFound: number; conflictsAttributed: number; singleSourceRows: number }> {
+    const repos = this.repos()
+    const project = await this.requireProject(repos, projectId)
+    const bp = project.blueprint
+    if (!bp) throw new Error('蓝图缺失或已损坏，无法裁决')
+    const sources = await repos.sources.listByProject(projectId)
+    const rows = await repos.rows.listByProject(projectId)
+
+    // ① 转载簇
+    const clusterResult = clusterSources(
+      sources.map(s => ({ sourceId: s.id, fingerprint: s.textFingerprint, tier: s.tier, publishedAt: s.publishedAt })),
+    )
+    for (const s of sources) {
+      const cid = clusterResult.clusterOf.get(s.id) ?? s.id
+      const pid = clusterResult.primaryOf.get(s.id) ?? s.id
+      const shouldBePrimary = pid === s.id
+      if (s.clusterId !== cid || s.isPrimary !== shouldBePrimary) {
+        await repos.sources.patch(s.id, { clusterId: cid, isPrimary: shouldBePrimary })
+      }
+    }
+
+    // ② 数值冲突 → 归因四分类（排除已废弃行：它们已退位，不参与"现行数据"的冲突）
+    const conflictGroups = detectValueConflicts(
+      rows
+        .filter(r => r.status !== 'superseded')
+        .map(r => ({
+          rowId: r.id,
+          sourceId: r.sourceId ?? '',
+          schemaId: r.schemaId,
+          metric: r.measure.metric,
+          period: r.measure.period,
+          dims: r.measure.dims,
+          value: r.measure.value,
+        })),
+    )
+    let attributed = 0
+    for (const g of conflictGroups) {
+      try {
+        const attribution = await this.attributeConflict(g, rows, sources)
+        attributed += 1
+        if (attribution.type === 'revision' && attribution.keepRowId && g.members.some(m => m.rowId === attribution.keepRowId)) {
+          // 修订关系：关旧开新（历史可回溯）
+          for (const m of g.members) {
+            if (m.rowId === attribution.keepRowId) {
+              await repos.rows.patch(m.rowId, { reviewNote: `冲突归因：修订关系——${attribution.note ?? ''}`.trim() })
+            } else {
+              await repos.rows.supersede(m.rowId, attribution.keepRowId)
+            }
+          }
+        } else {
+          const label =
+            attribution.type === 'time' ? '时点不同' : attribution.type === 'caliber' ? '口径不同' : '真矛盾（归因不了，按此处理）'
+          for (const m of g.members) {
+            await repos.rows.patch(m.rowId, {
+              needsReview: true,
+              reviewNote: `冲突归因：${label}${attribution.note ? `——${attribution.note}` : ''}`,
+            })
+          }
+        }
+      } catch {
+        // 归因失败 → 全组按真矛盾进人审（宁降级不误杀，A1 教训）
+        for (const m of g.members) {
+          await repos.rows.patch(m.rowId, { needsReview: true, reviewNote: '冲突归因失败，按真矛盾进人审' })
+        }
+      }
+    }
+
+    // ③ 孤证标记（must 级 IR）
+    let singleSourceRows = 0
+    for (const req of bp.requirements) {
+      if (req.priority !== 'must') continue
+      const reqRows = rows.filter(r => r.requirementId === req.id && (r.status === 'draft' || r.status === 'confirmed'))
+      const units = new Set(reqRows.map(r => clusterResult.clusterOf.get(r.sourceId ?? '') ?? r.sourceId ?? 'unknown'))
+      if (units.size <= 1) {
+        for (const r of reqRows) {
+          // 重读新鲜行：冲突归因阶段可能刚写入 reviewNote，不得用过期快照覆盖
+          const fresh = await repos.rows.getById(r.id)
+          if (!fresh || fresh.singleSource) continue
+          await repos.rows.patch(r.id, {
+            singleSource: true,
+            reviewNote: fresh.reviewNote ?? '孤证：must 级需求仅一个独立来源支撑',
+          })
+          singleSourceRows += 1
+        }
+      }
+    }
+
+    return { clusters: clusterResult.clusters.length, conflictsFound: conflictGroups.length, conflictsAttributed: attributed, singleSourceRows }
+  }
+
+  /** 冲突归因四分类（time/caliber/revision/conflict）；解析失败抛错 → 调用方按真矛盾处理 */
+  private async attributeConflict(
+    g: IcValueConflictGroup,
+    rows: IcRowItem[],
+    sources: IcSourceRow[],
+  ): Promise<{ type: 'time' | 'caliber' | 'revision' | 'conflict'; keepRowId?: string; note?: string }> {
+    const memberBrief = g.members.map(m => {
+      const row = rows.find(r => r.id === m.rowId)
+      const src = sources.find(s => s.id === m.sourceId)
+      return {
+        rowId: m.rowId,
+        value: m.value,
+        quote: row?.quote ?? '',
+        sourceTier: src?.tier ?? null,
+        sourceUrl: src?.urlNormalized ?? '',
+        publishedAt: src?.publishedAt?.toISOString().slice(0, 10) ?? null,
+      }
+    })
+    const user =
+      `同一数据点出现不同数值，请归因四选一：\n` +
+      `- time：时点不同（数值实际来自不同年份/期次，period 标注可能有误）\n` +
+      `- caliber：口径不同（如统计口径差异、初步数 vs 快报）\n` +
+      `- revision：修订关系（后期核实数替代前期初步数）——给出 keepRowId=最权威应保留的行\n` +
+      `- conflict：真矛盾（无法归因）\n\n` +
+      `归因失败宁可 conflict（高风险裁决降级人审），不要猜测。\n\n` +
+      `数据点：metric=${g.metric}｜period=${g.period}｜dims=${g.dimsKey || '（无）'}\n` +
+      `成员：\n${JSON.stringify(memberBrief, null, 2)}\n\n` +
+      `只输出 JSON：{"type":"time|caliber|revision|conflict","keepRowId":"仅 revision 时给","note":"一句依据"}`
+    const text = await this.llmFn({ system: ATTRIBUTION_SYSTEM, user, maxTokens: 1500 })
+    const parsed = parseJsonObject(text)
+    const type = parsed?.type
+    if (type !== 'time' && type !== 'caliber' && type !== 'revision' && type !== 'conflict') {
+      throw new Error('attribution: bad type')
+    }
+    return {
+      type,
+      keepRowId: typeof parsed?.keepRowId === 'string' ? parsed.keepRowId : undefined,
+      note: typeof parsed?.note === 'string' ? parsed.note : undefined,
+    }
+  }
+
   private async extractRows(
     bp: IcBlueprint,
     source: { url: string; title: string; text: string },
@@ -553,6 +788,14 @@ export class IcCollectionService {
     return project
   }
 }
+
+const REVIEW_SYSTEM = `你是独立的第二模型复核员（第一意见来自另一位抽取员，你不信任它）。
+逐条核验待复核条目：row 的数值/表述是否被正文真实支持——数值逐位对（注意单位与千位分隔），表述不得超出正文所说。
+拿不准就判 inconsistent（宁误报不漏报：不一致只会让条目进人审，漏报会放行错数）。只输出一个 JSON 对象。`
+
+const ATTRIBUTION_SYSTEM = `你是数据仲裁员。两个来源对同一数据点给出不同数值时，做四选一归因并给出依据。
+关键纪律：归因失败宁可判 conflict（进人审），绝不允许猜测——错误地把"真矛盾"归因为"时点不同"会放行错数。
+只输出一个 JSON 对象。`
 
 function parseDate(v: string | undefined): Date | null {
   if (!v) return null

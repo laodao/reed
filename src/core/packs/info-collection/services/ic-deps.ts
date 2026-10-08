@@ -77,6 +77,8 @@ export interface IcCollectionDeps {
   /** 缺省 getCoreDatabaseManager() 的 ic 五仓储；测试传内存库仓储集 */
   repos?: IcReposFn
   llm?: IcLlmFn
+  /** 第二模型复核（独立意见；缺省 simple-llm purpose='ic-review' 走不同模型档） */
+  reviewLlm?: IcLlmFn
   search?: IcSearchFn
   fetch?: IcFetchFn
   extract?: IcExtractFn

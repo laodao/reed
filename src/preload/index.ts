@@ -1368,6 +1368,8 @@ const electronAPI = {
     deleteDocument: (documentId: string) => ipcRenderer.invoke('knowledge-base:delete-document', documentId),
     // 重新处理文档
     reprocessDocument: (documentId: string) => ipcRenderer.invoke('knowledge-base:reprocess-document', documentId),
+    // 继续处理（断点续跑：保留已有向量，只补未完成部分）
+    resumeDocument: (documentId: string) => ipcRenderer.invoke('knowledge-base:resume-document', documentId),
     // 获取文档分片
     getDocumentChunks: (documentId: string) => ipcRenderer.invoke('knowledge-base:get-document-chunks', documentId),
     // 分页获取文档分片（可选按章节过滤，M5 章节树定位）
@@ -1585,6 +1587,8 @@ const electronAPI = {
     // 发起搜集任务（后台执行；返回 { taskId }，进度轮询 listTasks）
     runTask: (p: { projectId: string }) => ipcRenderer.invoke('ic:run-task', p),
     listTasks: (p: { projectId: string }) => ipcRenderer.invoke('ic:list-tasks', p),
+    // 手动触发裁决（转载簇/冲突归因/孤证标记；返回计数）
+    adjudicate: (p: { projectId: string }) => ipcRenderer.invoke('ic:adjudicate', p),
     listSources: (p: { projectId: string; reviewStatus?: 'staged' | 'confirmed' | 'rejected' | 'merged' }) =>
       ipcRenderer.invoke('ic:list-sources', p),
     listRows: (p: { projectId: string; schemaId?: string; status?: 'draft' | 'confirmed' | 'superseded' | 'stale' }) =>

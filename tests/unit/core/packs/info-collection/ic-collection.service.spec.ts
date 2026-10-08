@@ -20,6 +20,7 @@ import { IcRowRepository } from '@core/database/repositories/ic-row.repository'
 import { IcCollectionService } from '@core/packs/info-collection/services/ic-collection.service'
 import type { IcRepos } from '@core/packs/info-collection/services/ic-deps'
 import type { IcBlueprint } from '@shared/types/info-collection.types'
+import { fingerprintText } from '@shared/utils/info-collection-fingerprint'
 
 let ds: DataSource | null = null
 
@@ -135,6 +136,8 @@ describe('IcCollectionService 管线编排', () => {
     const service = new IcCollectionService({
       repos: () => repos,
       llm: async () => extractionOutput(),
+      // 第二模型复核缺省全一致（复核不一致的场景在专门用例注入）
+      reviewLlm: async () => '{"rows":[]}',
       search: async () => ({ items: [{ title: '官方发布', url: 'https://stats.example.com/2024?a=1&utm_source=x', snippet: '' }] }),
       fetch: async () => ({ ok: true, status: 200, body: htmlOf(PAGE_TEXT) }),
       extract: (html: string) => html.replace(/<[^>]+>/g, ''),
@@ -267,6 +270,135 @@ describe('IcCollectionService 管线编排', () => {
     const { service } = await setup({ blueprint: bp, kbId: null })
     await runWithUserAsync('user-a', async () => {
       await expect(service.runTask('p-1')).rejects.toThrow('蓝图自检未通过')
+    })
+  })
+
+  it('双模型复核：第二模型判不一致 → 行降 low confidence + needs_review + 备注；整源超 20% 降级', async () => {
+    const repos = await buildRepos()
+    const snapshots = new Map<string, string>()
+    let reviewCalls = 0
+    const service = new IcCollectionService({
+      repos: () => repos,
+      llm: async () => extractionOutput(),
+      reviewLlm: async () => {
+        reviewCalls += 1
+        // 第一条（有效行）被判不一致：模拟第二模型不同意
+        return JSON.stringify({ rows: [{ index: 0, verdict: 'inconsistent', reason: '数值与正文段落上下文不符' }] })
+      },
+      search: async () => ({ items: [{ title: '官方发布', url: 'https://stats.example.com/2024', snippet: '' }] }),
+      fetch: async () => ({ ok: true, status: 200, body: htmlOf(PAGE_TEXT) }),
+      extract: (html: string) => html.replace(/<[^>]+>/g, ''),
+      kb: { addDocument: async () => ({ documentId: null }) },
+      snapshotStore: {
+        write: async (_p, sourceId, html) => {
+          snapshots.set(sourceId, html)
+          return `snap/${sourceId}`
+        },
+        read: async () => null,
+      },
+      newId: id,
+    })
+    await runWithUserAsync('user-a', async () => {
+      await repos.projects.create({ id: 'p-rev', name: 'n', goal: 'g', blueprint: blueprintFixture() })
+      const { done } = await service.runTask('p-rev')
+      await done
+      const rows = await repos.rows.listByProject('p-rev')
+      expect(rows).toHaveLength(1)
+      expect(rows[0].confidence).toBe('low')
+      expect(rows[0].needsReview).toBe(true)
+      expect(rows[0].reviewNote).toBe('数值与正文段落上下文不符')
+      const task = (await repos.tasks.listByProject('p-rev'))[0]
+      const stats = task.stats as Record<string, number>
+      expect(stats['reviewTotal']).toBe(1)
+      expect(stats['reviewInconsistent']).toBe(1)
+      expect(reviewCalls).toBe(1)
+    })
+  })
+
+  it('裁决：转载簇 + 主源选择 + 冲突归因 revision 关旧开新 + 孤证标记', async () => {
+    const repos = await buildRepos()
+    const fp = JSON.stringify(fingerprintText(PAGE_TEXT))
+    const bp = blueprintFixture()
+    bp.requirements.push({ id: 'R3', question: '必须项（单源）', form: 'fact', priority: 'must' })
+    const service = new IcCollectionService({
+      repos: () => repos,
+      llm: async req =>
+        req.system.includes('仲裁员')
+          ? JSON.stringify({ type: 'revision', keepRowId: 'r-1', note: '后期核实数替代初步数' })
+          : extractionOutput(),
+      reviewLlm: async () => '{"rows":[]}',
+      fetch: async () => ({ ok: true, status: 200, body: htmlOf(PAGE_TEXT) }),
+      extract: (html: string) => html.replace(/<[^>]+>/g, ''),
+      kb: { addDocument: async () => ({ documentId: null }) },
+      newId: id,
+    })
+    await runWithUserAsync('user-a', async () => {
+      await repos.projects.create({ id: 'p-adj', name: 'n', goal: 'g', blueprint: bp })
+      // 两个同文源（转载簇）+ 一个无指纹单例
+      await repos.sources.create({ id: 's-a', projectId: 'p-adj', taskId: 't', url: 'https://a.example/1', urlNormalized: 'https://a.example/1', fetchStatus: 'ok', textFingerprint: fp, publishedAt: new Date('2025-01-01') })
+      await repos.sources.create({ id: 's-b', projectId: 'p-adj', taskId: 't', url: 'https://b.example/1', urlNormalized: 'https://b.example/1', fetchStatus: 'ok', textFingerprint: fp, publishedAt: new Date('2025-02-01') })
+      await repos.sources.create({ id: 's-c', projectId: 'p-adj', taskId: 't', url: 'https://c.example/1', urlNormalized: 'https://c.example/1', fetchStatus: 'ok' })
+      // 同数据点冲突：s-a=900（初步数）、s-b=954（核实数）
+      await repos.rows.create({ id: 'r-1', projectId: 'p-adj', taskId: 't', schemaId: 's1', row: { v: 900, u: '万人', p: '2024', m: '出生人口', region: '全国' }, measure: { value: 900, unit: '万人', period: '2024', metric: '出生人口', dims: { region: '全国' } }, sourceId: 's-a', requirementId: 'R1', quote: 'q1', contentHash: 'h1' })
+      await repos.rows.create({ id: 'r-2', projectId: 'p-adj', taskId: 't', schemaId: 's1', row: { v: 954, u: '万人', p: '2024', m: '出生人口', region: '全国' }, measure: { value: 954, unit: '万人', period: '2024', metric: '出生人口', dims: { region: '全国' } }, sourceId: 's-b', requirementId: 'R1', quote: 'q2', contentHash: 'h2' })
+      await repos.rows.create({ id: 'r-3', projectId: 'p-adj', taskId: 't', schemaId: 's1', row: { m: '事实' }, measure: null, sourceId: 's-a', requirementId: 'R3', quote: 'q3', contentHash: 'h3' })
+
+      const result = await service.adjudicateProject('p-adj')
+      expect(result.clusters).toBe(1)
+      expect(result.conflictsFound).toBe(1)
+      expect(result.conflictsAttributed).toBe(1)
+
+      // 簇主源：发布最早者当主源
+      const sa = await repos.sources.getById('s-a')
+      const sb = await repos.sources.getById('s-b')
+      expect(sa?.isPrimary).toBe(true)
+      expect(sb?.isPrimary).toBe(false)
+      expect(sa?.clusterId).toBe(sb?.clusterId)
+
+      // revision 归因：keepRowId 保留，另一行 superseded（关旧开新，历史可回溯）
+      const r1 = await repos.rows.getById('r-1')
+      const r2 = await repos.rows.getById('r-2')
+      expect(r2?.status).toBe('superseded')
+      expect(r2?.supersededBy).toBe('r-1')
+      expect(r1?.reviewNote).toContain('修订关系')
+
+      // 孤证：R3 仅 s-a 支撑，s-a/s-b 同簇 → 独立来源单位只有 1 个 → 标记孤证
+      const r3 = await repos.rows.getById('r-3')
+      expect(r3?.singleSource).toBe(true)
+    })
+  })
+
+  it('裁决：归因失败 → 全组按真矛盾进人审（fail-soft，不猜测）', async () => {
+    const repos = await buildRepos()
+    const service = new IcCollectionService({
+      repos: () => repos,
+      // 归因调用返回无 type 字段的 JSON → attributeConflict 抛错 → 兜底真矛盾
+      llm: async () => extractionOutput(),
+      reviewLlm: async () => '{"rows":[]}',
+      fetch: async () => ({ ok: true, status: 200, body: htmlOf(PAGE_TEXT) }),
+      extract: (html: string) => html.replace(/<[^>]+>/g, ''),
+      kb: { addDocument: async () => ({ documentId: null }) },
+      newId: id,
+    })
+    await runWithUserAsync('user-a', async () => {
+      await repos.projects.create({ id: 'p-conf', name: 'n', goal: 'g', blueprint: blueprintFixture() })
+      await repos.sources.create({ id: 's-x', projectId: 'p-conf', taskId: 't', url: 'https://x.example/1', urlNormalized: 'https://x.example/1', fetchStatus: 'ok' })
+      await repos.sources.create({ id: 's-y', projectId: 'p-conf', taskId: 't', url: 'https://y.example/1', urlNormalized: 'https://y.example/1', fetchStatus: 'ok' })
+      await repos.rows.create({ id: 'r-x', projectId: 'p-conf', taskId: 't', schemaId: 's1', row: { v: 954, m: '出生人口' }, measure: { value: 954, unit: '万人', period: '2024', metric: '出生人口', dims: null }, sourceId: 's-x', requirementId: 'R1', quote: 'qx', contentHash: 'hx' })
+      await repos.rows.create({ id: 'r-y', projectId: 'p-conf', taskId: 't', schemaId: 's1', row: { v: 900, m: '出生人口' }, measure: { value: 900, unit: '万人', period: '2024', metric: '出生人口', dims: null }, sourceId: 's-y', requirementId: 'R1', quote: 'qy', contentHash: 'hy' })
+
+      const result = await service.adjudicateProject('p-conf')
+      expect(result.conflictsFound).toBe(1)
+      expect(result.conflictsAttributed).toBe(0)
+
+      // 两行都进人审，备注指向归因失败
+      const rx = await repos.rows.getById('r-x')
+      const ry = await repos.rows.getById('r-y')
+      expect(rx?.needsReview).toBe(true)
+      expect(ry?.needsReview).toBe(true)
+      expect(rx?.reviewNote).toContain('归因失败')
+      // 不做静默 supersede——历史保留，交人审裁决
+      expect(ry?.status).toBe('draft')
     })
   })
 })

@@ -100,6 +100,14 @@ export class IcRowEntity {
   @Column({ name: 'needs_review', type: 'integer', default: 0 })
   needsReview!: number
 
+  /** 孤证标记：must 级 IR 仅一个独立源支撑（裁决阶段计算；展示徽标用） */
+  @Column({ name: 'single_source', type: 'integer', default: 0 })
+  singleSource!: number
+
+  /** 裁决备注（复核不一致原因 / 冲突归因结论；人审并列展示用） */
+  @Column({ name: 'review_note', type: 'text', nullable: true })
+  reviewNote!: string | null
+
   @Column({ name: 'created_at', type: 'datetime', nullable: true })
   createdAt!: Date | null
 
