@@ -4,10 +4,10 @@
  * @description 封装对话相关的状态和逻辑
  */
 
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useDialogStore } from '../stores/dialog'
 import { useRoleStore } from '../stores/role'
-import type { Dialog, Role, Message, ContextConfig, WebSearchEngine } from '../../../shared/types'
+import type { Dialog, Role, Message, ContextConfig } from '../../../shared/types'
 
 /**
  * 侧边栏选项卡类型
@@ -193,7 +193,7 @@ export function useChat() {
         // 获取提供商配置列表
         const response = await window.electronAPI.providerConfig.list()
         if (response.success && response.data) {
-          const enabledConfigs = response.data.filter((c: any) => c.isEnabled)
+          const enabledConfigs = response.data.filter((c: any) => c.runtimeUsable ?? c.isEnabled)
           if (enabledConfigs.length > 0) {
             // 优先使用默认提供商
             const defaultConfig = enabledConfigs.find((c: any) => c.isDefault) || enabledConfigs[0]
@@ -339,9 +339,7 @@ export function useChat() {
   /**
    * 删除角色
    */
-  async function deleteRole(roleId: string): Promise<{ success: boolean; dialogCount: number }> {
-    // 先获取关联的对话数量
-    const dialogCount = await roleStore.getDialogCount(roleId)
+  async function deleteRole(roleId: string): Promise<{ success: boolean }> {
     // 执行删除
     const result = await roleStore.deleteRole(roleId)
 

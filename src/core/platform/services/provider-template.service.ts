@@ -637,6 +637,47 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
       '思考类模型建议加 --jinja --reasoning-format deepseek 启动，思维链会进入 reasoning_content，不混入正文',
       '/v1/models 不返回上下文长度，模型默认按 8K/4K 显示；可在「模型管理」编辑为实际上下文大小'
     ]
+  },
+  // AI Hub 统一网关（account session 直连，手册 §7.6）：登录即用，免配 API Key——
+  // JWT 由登录流程自动物化进 api_key_encrypted（见 platform/aihub/aihub-auth.service.ts），
+  // 用户不手动填 Key；未登录时 config 自动禁用（模型从全部选择器消失），登出可随时恢复
+  {
+    id: 'ai-hub',
+    siteUrl: '',
+    name: 'AI Hub（统一网关）',
+    description: 'AI Hub 统一模型网关：登录账号即用全部已注册模型（chat/image/video），免配 API Key，按个人 workspace 余额计费',
+    category: 'openai-compatible',
+    capabilities: ['chat', 'image', 'video'],
+    icon: '🌐',
+    isOfficial: true,
+    apiConfig: {
+      // 默认网关地址（本地开发部署）；可在 AI Hub 设置面板修改，登录时同步更新此处
+      baseUrl: 'http://127.0.0.1:8081/v1',
+      authType: 'bearer',
+      authHeader: 'Authorization',
+      authPrefix: 'Bearer ',
+      requestFormat: 'openai',
+      chatEndpoint: '/chat/completions',
+      modelsEndpoint: '/models'
+    },
+    supportedParams: {
+      stream: true,
+      temperature: true,
+      maxTokens: true,
+      topP: true,
+      custom: []
+    },
+    // 模型清单由登录/「刷新模型」流程从网关 /v1/models 直写库（读 x-ai-hub.model_type 分类）
+    models: [],
+    allowCustomModels: true,
+    // 密钥由登录物化，手填无意义——必填校验与空密钥挡板统一放行
+    apiKeyOptional: true,
+    usageNotes: [
+      '在「设置 → AI Hub 账号」登录后自动创建/启用本配置，模型清单自动从网关刷新；无需手动填写 API 密钥',
+      '登出或登录过期后本配置自动停用（模型从各选择器消失），重新登录自动恢复',
+      '按 AI Hub 个人 workspace 余额计费（1 元 = 10 积分）；余额不足时调用返回 402，可在设置面板兑换码充值',
+      '网关地址默认 http://127.0.0.1:8081，自建/远程部署时在「AI Hub 账号」面板修改后重新登录'
+    ]
   }
 ]
 

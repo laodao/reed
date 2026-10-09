@@ -526,7 +526,7 @@ async function loadModels(): Promise<void> {
       window.electronAPI.providerConfig.list(),
     ])
     if (listRes.success && listRes.data) {
-      providerConfigs.value = (listRes.data as Array<Record<string, any>>).filter((c) => c.isEnabled)
+      providerConfigs.value = (listRes.data as Array<Record<string, any>>).filter((c) => c.runtimeUsable ?? c.isEnabled)
     }
     // 兜底链：story-room 专属配置 → 复用既有写作阶段配置（overview/chapter——用户配过的
     // 一定是可用对话模型）→ 第一个过滤后的模型

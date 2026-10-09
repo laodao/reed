@@ -605,7 +605,7 @@ async function loadSessions(): Promise<void> {
 
 async function createSession(): Promise<void> {
   const resp = await window.electronAPI.providerConfig.list()
-  const cfg = resp.success && resp.data ? resp.data.find((c) => c.isEnabled) : undefined
+  const cfg = resp.success && resp.data ? resp.data.find((c) => c.runtimeUsable ?? c.isEnabled) : undefined
   const modelId = cfg?.models?.[0]?.id
   if (!cfg || !modelId) {
     ElMessage.error('未配置可用的 AI 提供商——请先到设置中添加')

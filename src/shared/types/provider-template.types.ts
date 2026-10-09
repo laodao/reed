@@ -22,7 +22,7 @@ export type TemplateCategory = 'openai-compatible' | 'anthropic' | 'google' | 'o
 /**
  * 提供商能力
  */
-export type ProviderCapability = 'chat' | 'image' | 'embedding'
+export type ProviderCapability = 'chat' | 'image' | 'video' | 'embedding'
 
 /**
  * 自定义参数定义
@@ -219,6 +219,12 @@ export interface UserProviderConfig {
   lastTested?: string
   /** 测试结果 */
   testResult?: 'success' | 'failed' | 'unknown'
+  /**
+   * 运行时可用性（provider-config:list/get 主进程计算，不落库）：
+   * isEnabled &&（非 ai-hub || 已有有效网关会话）。渲染端模型选择器应优先按此字段过滤；
+   * undefined（旧响应）时回落 isEnabled。
+   */
+  runtimeUsable?: boolean
   /** 创建时间 */
   createdAt: string
   /** 更新时间 */

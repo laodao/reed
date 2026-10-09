@@ -80,6 +80,11 @@
           </div>
         </el-tab-pane>
 
+        <!-- AI Hub 账号（统一网关：登录即用，免配 Key） -->
+        <el-tab-pane label="AI Hub 账号" name="aihub">
+          <AihubSettings />
+        </el-tab-pane>
+
         <!-- AI 模型配置 -->
         <el-tab-pane label="AI 模型配置" name="aiModels">
           <div class="settings-section">
@@ -803,14 +808,15 @@
 import { ref, reactive, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, FolderOpened, Download, Upload, Delete, Plus, Folder, InfoFilled, MoreFilled, ArrowRight } from '@element-plus/icons-vue'
-import { useTheme, availableThemes, type ThemeConfig } from '@/composables/useTheme'
+import { useTheme, availableThemes } from '@/composables/useTheme'
 import { useSkin, SKIN_OPTIONS } from '@/composables/useSkin'
-import { useAppSettings, fontSizeConfig, languageConfig, type FontSize, type Language } from '@/composables/useAppSettings'
+import { useAppSettings, type FontSize, type Language } from '@/composables/useAppSettings'
 import AddProviderDialog from '@/components/settings/AddProviderDialog.vue'
 import AddSearchEngineDialog from '@/components/settings/AddSearchEngineDialog.vue'
 import FaviconIcon from '@/components/common/FaviconIcon.vue'
 import ToolSettings from '@/components/settings/ToolSettings.vue'
 import EmailSettings from '@/components/settings/EmailSettings.vue'
+import AihubSettings from '@/components/settings/AihubSettings.vue'
 import ModuleParamsSettings from '@/components/settings/ModuleParamsSettings.vue'
 import DataSourceManager from '@/components/settings/DataSourceManager.vue'
 import type {
@@ -829,11 +835,6 @@ defineOptions({
   name: 'Settings'
 })
 
-// 扩展搜索引擎配置类型（添加测试状态）
-interface SearchEngineConfigWithState extends UserSearchEngineConfig {
-  testing?: boolean
-}
-
 // 主题名称直接用 useTheme.availableThemes 里的 name 字段（中文）
 
 // 主题
@@ -843,8 +844,8 @@ const { currentSkin, setSkin } = useSkin()
 // 应用设置
 const { settings: appSettings, loadSettings: loadAppSettings, setFontSize, setLanguage } = useAppSettings()
 
-// 当前标签
-const activeTab = ref('appearance')
+// 当前标签（支持 ?tab= 定位，如 AI Hub 错误引导跳转 #/settings?tab=aihub）
+const activeTab = ref((new URLSearchParams(window.location.hash.split('?')[1] || '').get('tab')) || 'appearance')
 
 // 本地设置状态（用于双向绑定）
 const settings = reactive({

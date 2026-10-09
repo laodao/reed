@@ -157,7 +157,10 @@ async function handleSendMessage(
 
   const success = await sendMessage(content, options)
   if (!success) {
-    ElMessage.error('发送消息失败')
+    // 展示真实错误文本（此前固定文案「发送消息失败」，真实原因只在 console）；
+    // streamState.error 已由 MessageList 渲染为可操作的错误卡片，这里 toast 兜底提示
+    const errText = dialogStore.streamState?.error
+    ElMessage.error(errText ? `发送失败：${errText.replace(/^\[AIHUB_[A-Z_]+\]\s*/, '')}` : '发送消息失败')
   } else if (shouldUpdateTitle && currentDialog.value) {
     // 发送成功后自动更新标题（使用消息内容的前20个字符作为标题）
     const newTitle = content.slice(0, 20) + (content.length > 20 ? '...' : '')

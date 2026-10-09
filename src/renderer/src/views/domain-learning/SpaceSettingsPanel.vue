@@ -153,7 +153,6 @@ import {
 } from '@shared/types/domain-learning.types'
 
 const props = defineProps<{ spaceId: string }>()
-const emit = defineEmits<{ (e: 'applied'): void }>()
 
 const store = useDomainLearningStore()
 
@@ -303,7 +302,7 @@ async function loadModelOptions(): Promise<void> {
       .electronAPI.providerConfig.list()
     if (!res.success || !res.data) return
     modelGroups.value = res.data
-      .filter((c) => c.isEnabled !== false && Array.isArray(c.models))
+      .filter((c) => (c.runtimeUsable ?? c.isEnabled) !== false && Array.isArray(c.models))
       .map((c) => ({
         label: c.name,
         options: (c.models as Array<{ id: string; name: string; type: string }>)

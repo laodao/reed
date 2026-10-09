@@ -183,7 +183,7 @@ const providerModels = computed(() => {
   console.log('[ChatHeader.providerModels] providerConfigs 数量:', providerConfigs.value.length)
 
   for (const config of providerConfigs.value) {
-    if (!config.isEnabled) continue
+    if (!(config.runtimeUsable ?? config.isEnabled)) continue
 
     console.log(`[ChatHeader.providerModels] 处理提供商: ${config.name}, id: ${config.id}`)
 
@@ -293,7 +293,7 @@ async function loadProviderConfigs(): Promise<void> {
     // 然后加载提供商配置
     const response = await window.electronAPI.providerConfig.list()
     if (response.success && response.data) {
-      providerConfigs.value = response.data.filter((c: UserProviderConfig) => c.isEnabled)
+      providerConfigs.value = response.data.filter((c: UserProviderConfig) => c.runtimeUsable ?? c.isEnabled)
 
       // 如果没有加载过选中状态，设置默认值
       // 此时 providerTemplates 已加载，providerModels 可以正确过滤模型类型

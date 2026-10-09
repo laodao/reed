@@ -516,6 +516,19 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
     registerLocalCapabilityTools(agentToolRegistry)
     providerAdapter = new ProviderAdapter()
     t.mark('providerAdapter')
+    // ProviderAdapter 缓存失效接线（N5）：LanguageModel 缓存键含烘焙进 SDK client 的凭证，
+    // ai-hub JWT 轮换（登录/登出/401）或任何 config 增删改后必须清缓存，
+    // 否则旧 token 模型对象还能"工作"到 10 分钟 TTL 结束、期间全部 401。
+    try {
+      const { getEventEmitter } = await import('@core/interfaces/event.interface')
+      getEventEmitter().tapEvents?.((channel) => {
+        if (channel === 'provider-config:changed' || channel === 'aihub:session-changed') {
+          providerAdapter?.invalidateCache()
+        }
+      })
+    } catch (e) {
+      logger.warn('[workflow-boot] provider-config 缓存失效订阅装配失败（Agent 模式 JWT 轮换后可能有最长 10 分钟旧凭证窗口）', e)
+    }
     // 核心 harness 先注册（review C8：可选扩展桥的失败不得降级核心功能——
     // 此前 registerCustomAgentTools 抛错会跳过 registerAgentLoopHarness，
     // agent-loop 节点整体不可用）
