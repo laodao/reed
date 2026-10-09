@@ -66,10 +66,10 @@ export class WorkflowRunEntity {
   @Column({ name: 'error', type: 'text', nullable: true })
   error!: string | null
 
-  @Column({ name: 'started_at', type: 'datetime', nullable: true })
+  @Column({ name: 'started_at', type: Date, nullable: true })
   startedAt!: Date | null
 
-  @Column({ name: 'finished_at', type: 'datetime', nullable: true })
+  @Column({ name: 'finished_at', type: Date, nullable: true })
   finishedAt!: Date | null
 
   /** 运行耗时毫秒（时长类字段用 integer，非日期） */
@@ -77,7 +77,7 @@ export class WorkflowRunEntity {
   durationMs!: number | null
 
   /** 运行最长时长死线（防失控；到点由引擎标记 timed_out） */
-  @Column({ name: 'timeout_at', type: 'datetime', nullable: true })
+  @Column({ name: 'timeout_at', type: Date, nullable: true })
   timeoutAt!: Date | null
 
   /** 运行统计 JSON：{ totalNodes, doneNodes, failedNodes, recoveredNodes } */
@@ -85,7 +85,7 @@ export class WorkflowRunEntity {
   stats!: string | null
 
   /** 用户请求取消的时间（取消留痕） */
-  @Column({ name: 'cancel_requested_at', type: 'datetime', nullable: true })
+  @Column({ name: 'cancel_requested_at', type: Date, nullable: true })
   cancelRequestedAt!: Date | null
 
   /** 断点续跑来源运行 ID（本运行是 resume 产生的新运行） */
@@ -100,9 +100,9 @@ export class WorkflowRunEntity {
   @Column({ name: 'parent_run_id', type: 'varchar', nullable: true })
   parentRunId!: string | null
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 
-  @Column({ name: 'updated_at', type: 'datetime', nullable: true })
+  @Column({ name: 'updated_at', type: Date, nullable: true })
   updatedAt!: Date | null
 }

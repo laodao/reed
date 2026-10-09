@@ -45,6 +45,8 @@ interface AihubTaskData {
     download_url?: string
     video_url?: string
     url?: string
+    // 透传渠道兜底（未归一化结构）
+    data?: Array<{ url?: string }>
   }
   error_message?: string
 }
@@ -275,13 +277,17 @@ export class AihubVideoProvider extends BaseVideoProvider {
   }
 }
 
-/** 从任务结果提取视频 URL（download_url 归一化优先，video_url/url 透传兜底） */
+/** 从任务结果提取视频 URL（download_url 归一化优先，video_url/url 透传兜底，data[0].url 再兜底） */
 function extractVideoUrl(task: AihubTaskData): string {
   const r = task.result
   if (!r) return ''
   if (Array.isArray(r.results)) {
     const u = r.results.find((x) => x.download_url || x.url)
     if (u) return (u.download_url ?? u.url)!
+  }
+  if (Array.isArray(r.data)) {
+    const u = r.data.find((x) => x?.url)
+    if (u) return u.url!
   }
   return r.download_url ?? r.video_url ?? r.url ?? ''
 }

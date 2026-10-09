@@ -23,6 +23,6 @@ export class KbQaLogEntity {
   @Column({ name: 'reason', type: 'varchar', nullable: true })
   reason!: string | null
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 }

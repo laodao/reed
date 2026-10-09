@@ -39,6 +39,6 @@ export class DlConceptLogEntity {
   @Column({ name: 'trigger', type: 'varchar' })
   trigger!: string
 
-  @Column({ name: 'at', type: 'datetime', nullable: true })
+  @Column({ name: 'at', type: Date, nullable: true })
   at!: Date | null
 }

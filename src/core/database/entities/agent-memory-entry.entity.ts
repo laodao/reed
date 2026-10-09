@@ -59,10 +59,10 @@ export class AgentMemoryEntryEntity {
   @Column({ name: 'supersedes_id', type: 'varchar', nullable: true })
   supersedesId!: string | null
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 
-  @Column({ name: 'updated_at', type: 'datetime', nullable: true })
+  @Column({ name: 'updated_at', type: Date, nullable: true })
   updatedAt!: Date | null
 
   // ==================== KE-1 分层知识（34 号 v2） ====================

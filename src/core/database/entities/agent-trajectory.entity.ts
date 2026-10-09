@@ -57,6 +57,6 @@ export class AgentTrajectoryEntity {
   @Column({ name: 'duration_ms', type: 'integer', nullable: true })
   durationMs!: number | null
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 }

@@ -37,6 +37,6 @@ export class KbNoteReviewEntity {
   @Column({ name: 'elapsed_days', type: 'float', nullable: true })
   elapsedDays!: number | null
 
-  @Column({ name: 'reviewed_at', type: 'datetime' })
+  @Column({ name: 'reviewed_at', type: Date })
   reviewedAt!: Date
 }

@@ -95,6 +95,6 @@ export class KbEventEntity {
   @Column({ name: 'end_offset', type: 'integer', nullable: true })
   endOffset!: number | null
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 }

@@ -63,6 +63,6 @@ export class AgentToolCallEntity {
   @Column({ name: 'context_json', type: 'text', nullable: true })
   contextJson!: string | null
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 }

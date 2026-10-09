@@ -50,6 +50,6 @@ export class WorkflowDefinitionVersionEntity {
   @Column({ name: 'created_by', type: 'varchar', nullable: true })
   createdBy!: string | null
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 }

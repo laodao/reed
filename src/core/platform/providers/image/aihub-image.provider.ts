@@ -44,11 +44,15 @@ interface AihubTaskData {
   status: 'pending' | 'processing' | 'completed' | 'failed' | 'timeout' | 'cancelled'
   progress?: number
   result?: {
-    // 图像已归一化为 results[]（每项含 download_url）；openai/stability 等渠道暂透传
+    // 归一化渠道（aliyun/volcengine/google）：results[]（每项含 download_url）
     results?: Array<{ download_url?: string; url?: string }>
     download_url?: string
     image_url?: string
     video_url?: string
+    // 透传渠道（openai/stability 等，手册 §4.8.2：未归一化、字段位置不保证）：
+    // dalle 原始响应形如 {created, data:[{url}|{b64_json}]}
+    url?: string
+    data?: Array<{ url?: string; b64_json?: string }>
   }
   error_message?: string
 }
@@ -315,7 +319,7 @@ export class AihubImageProvider extends BaseImageProvider {
   }
 }
 
-/** 从任务结果提取图像 URL（多格式兼容，见 AihubTaskData.result 注释） */
+/** 从任务结果提取图像 URL（多格式兼容：归一化 results[] / 顶层字段 / openai 透传 data[].url） */
 function extractImageUrls(task: AihubTaskData): string[] {
   const r = task.result
   if (!r) return []
@@ -326,8 +330,15 @@ function extractImageUrls(task: AihubTaskData): string[] {
       if (u) urls.push(u)
     }
   }
+  if (urls.length === 0 && Array.isArray(r.data)) {
+    for (const item of r.data) {
+      const u = item?.url ?? (item?.b64_json ? `data:image/png;base64,${item.b64_json}` : undefined)
+      if (u) urls.push(u)
+    }
+  }
   if (urls.length === 0 && r.download_url) urls.push(r.download_url)
   if (urls.length === 0 && r.image_url) urls.push(r.image_url)
+  if (urls.length === 0 && r.url) urls.push(r.url)
   return urls
 }
 

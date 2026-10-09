@@ -29,6 +29,6 @@ export class KbAutomationLogEntity {
   @Column({ name: 'undone', type: 'integer', default: 0 })
   undone!: number
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 }

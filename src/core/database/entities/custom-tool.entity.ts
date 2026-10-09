@@ -54,9 +54,9 @@ export class CustomToolEntity {
   @Column({ name: 'stdout_type', type: 'varchar', nullable: true })
   stdoutType!: string | null
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 
-  @Column({ name: 'updated_at', type: 'datetime', nullable: true })
+  @Column({ name: 'updated_at', type: Date, nullable: true })
   updatedAt!: Date | null
 }

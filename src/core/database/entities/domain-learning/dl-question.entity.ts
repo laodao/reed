@@ -41,9 +41,9 @@ export class DlQuestionEntity {
   @Column({ name: 'status', type: 'varchar', default: 'open' })
   status!: string
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 
-  @Column({ name: 'answered_at', type: 'datetime', nullable: true })
+  @Column({ name: 'answered_at', type: Date, nullable: true })
   answeredAt!: Date | null
 }

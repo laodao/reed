@@ -70,7 +70,7 @@ export class WorkflowDefinitionEntity {
   @Column({ name: 'published_version', type: 'integer', default: 0 })
   publishedVersion!: number
 
-  @Column({ name: 'published_at', type: 'datetime', nullable: true })
+  @Column({ name: 'published_at', type: Date, nullable: true })
   publishedAt!: Date | null
 
   /** WorkflowTrigger[] JSON（对发布版生效） */
@@ -82,15 +82,15 @@ export class WorkflowDefinitionEntity {
   settings!: string | null
 
   /** cron 下次触发时间（调度器扫描列：next_fire_at <= now 且已发布的行） */
-  @Column({ name: 'next_fire_at', type: 'datetime', nullable: true })
+  @Column({ name: 'next_fire_at', type: Date, nullable: true })
   nextFireAt!: Date | null
 
   /** cron 上次实际触发时间（错过判定与推进的基准） */
-  @Column({ name: 'last_fire_at', type: 'datetime', nullable: true })
+  @Column({ name: 'last_fire_at', type: Date, nullable: true })
   lastFireAt!: Date | null
 
   /** 最近一次运行时间（列表页展示冗余列） */
-  @Column({ name: 'last_run_at', type: 'datetime', nullable: true })
+  @Column({ name: 'last_run_at', type: Date, nullable: true })
   lastRunAt!: Date | null
 
   /**
@@ -106,9 +106,9 @@ export class WorkflowDefinitionEntity {
   @Column({ name: 'share_token_hash', type: 'varchar', nullable: true })
   shareTokenHash!: string | null
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 
-  @Column({ name: 'updated_at', type: 'datetime', nullable: true })
+  @Column({ name: 'updated_at', type: Date, nullable: true })
   updatedAt!: Date | null
 }

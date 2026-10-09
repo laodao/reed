@@ -81,12 +81,12 @@ export class AppEntity {
   @Column({ name: 'is_builtin', type: 'integer', default: 0, nullable: true })
   isBuiltin!: number | null
 
-  @Column({ name: 'last_run_at', type: 'datetime', nullable: true })
+  @Column({ name: 'last_run_at', type: Date, nullable: true })
   lastRunAt!: Date | null
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 
-  @Column({ name: 'updated_at', type: 'datetime', nullable: true })
+  @Column({ name: 'updated_at', type: Date, nullable: true })
   updatedAt!: Date | null
 }

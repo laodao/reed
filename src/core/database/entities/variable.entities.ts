@@ -19,10 +19,10 @@ export class WorkflowVariableEntity {
   @Column({ name: 'value_json', type: 'varchar' })
   valueJson!: string
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 
-  @Column({ name: 'updated_at', type: 'datetime', nullable: true })
+  @Column({ name: 'updated_at', type: Date, nullable: true })
   updatedAt!: Date | null
 }
 
@@ -42,10 +42,10 @@ export class DataTableDefEntity {
   @Column({ name: 'columns_json', type: 'varchar' })
   columnsJson!: string
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 
-  @Column({ name: 'updated_at', type: 'datetime', nullable: true })
+  @Column({ name: 'updated_at', type: Date, nullable: true })
   updatedAt!: Date | null
 }
 
@@ -65,9 +65,9 @@ export class DataTableRowEntity {
   @Column({ name: 'row_json', type: 'varchar' })
   rowJson!: string
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 
-  @Column({ name: 'updated_at', type: 'datetime', nullable: true })
+  @Column({ name: 'updated_at', type: Date, nullable: true })
   updatedAt!: Date | null
 }

@@ -36,6 +36,6 @@ export class DlMasteryLogEntity {
   trigger!: string
 
   /** 变更发生时间 */
-  @Column({ name: 'at', type: 'datetime', nullable: true })
+  @Column({ name: 'at', type: Date, nullable: true })
   at!: Date | null
 }

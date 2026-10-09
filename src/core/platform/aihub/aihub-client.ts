@@ -88,6 +88,20 @@ async function rawRequest<T = unknown>(opts: AihubRequestOptions): Promise<T> {
 
   const text = await res.text()
   if (!res.ok) {
+    // 401 保持 AihubHttpError（会话失效判定依赖 status）；其余 4xx 若返回统一信封体
+    // （{code,message}），优先按业务错误抛出——调用方的 errcode 映射（如兑换码
+    // 70011 已使用）才能生效，而非生硬的 "HTTP 409"
+    if (res.status !== 401) {
+      try {
+        const body = JSON.parse(text) as AihubEnvelope
+        if (body && typeof body === 'object' && 'code' in body && body.code !== 0) {
+          throw new AihubError(body.code, body.message || `AI Hub 请求失败: HTTP ${res.status}`, body.trace_id)
+        }
+      } catch (e) {
+        if (e instanceof AihubError) throw e
+        // 非 JSON / 非信封体 → 落到下面的 AihubHttpError
+      }
+    }
     throw new AihubHttpError(res.status, text)
   }
   try {
