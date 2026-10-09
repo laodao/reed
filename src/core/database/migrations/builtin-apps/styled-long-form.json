@@ -55,6 +55,10 @@
                   "value": "luke-war"
                 },
                 {
+                  "label": "科技解读·科普特稿（诺奖/新技术/科研突破，类比通俗化）",
+                  "value": "science-explainer"
+                },
+                {
                   "label": "财经产业史诗（远川式行业深挖）",
                   "value": "finance-story"
                 },
