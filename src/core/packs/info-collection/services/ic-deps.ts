@@ -58,7 +58,24 @@ export interface IcDocumentFetched {
   error?: string
 }
 
-export type IcDocumentFetchFn = (url: string) => Promise<IcDocumentFetched>
+export type IcDocumentFetchFn = (
+  url: string,
+  opts?: { headers?: Record<string, string>; maxBytes?: number },
+) => Promise<IcDocumentFetched>
+
+/**
+ * 音频转写（多模态 M4）：本地 whisper 或云 API（用户设置选择）。
+ * text 为转写全文；provider=off / 未配置时返回 ok:false + error='未启用'。
+ */
+export interface IcTranscribeFn {
+  (req: { audioPath: string; mimeType?: string; language?: string }): Promise<{
+    ok: boolean
+    text?: string
+    durationSec?: number
+    provider?: 'local' | 'cloud'
+    error?: string
+  }>
+}
 
 /** 视频页元数据+字幕（多模态 M3 元数据档）：不下载视频原件 */
 export interface IcVideoMeta {
@@ -74,6 +91,16 @@ export interface IcVideoMeta {
 }
 
 export type IcVideoMetaFn = (url: string) => Promise<IcVideoMeta>
+
+/** 视频音频直链解析（M4 转写用；缺省平台 video-url-resolver 的 B站 DASH 音频解析） */
+export interface IcResolvedVideoAudio {
+  ok: boolean
+  audioUrl?: string
+  headers?: Record<string, string>
+  error?: string
+}
+
+export type IcResolveVideoAudioFn = (url: string) => Promise<IcResolvedVideoAudio>
 
 /**
  * 视觉描述（多模态 M2）：图片原件 → 结构化描述文本（即图片的内容化文本）。
@@ -157,6 +184,10 @@ export interface IcCollectionDeps {
   vision?: IcVisionFn
   /** 视频页元数据+字幕（缺省 B站公开 API；未注入 = 不启用视频分支） */
   videoMeta?: IcVideoMetaFn
+  /** 音频转写（缺省按用户设置走本地 whisper / 云 API；未启用时 fail-soft 标待转写） */
+  transcribe?: IcTranscribeFn
+  /** 视频音频直链解析（缺省平台 video-url-resolver；视频无 CC 字幕转写用） */
+  resolveVideoAudio?: IcResolveVideoAudioFn
   extract?: IcExtractFn
   kb?: IcKbPort
   /** 统一资产登记（缺省接 getAssetService；未注入 = 不建卡，ic_source.assetId 留空） */

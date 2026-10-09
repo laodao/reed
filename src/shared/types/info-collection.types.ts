@@ -79,6 +79,22 @@ export interface IcRefreshPolicy {
   cron?: string
 }
 
+// ==================== 音频转写设置（多模态 M4） ====================
+
+/**
+ * 音频转写设置（settings 表键 `ic.transcription`，设置弹窗读写）。
+ */
+export interface IcTranscribeSettings {
+  /** off：不转写（管线如实标"待转写"）；local：本地 whisper；cloud：OpenAI 兼容 /audio/transcriptions */
+  provider: 'off' | 'local' | 'cloud'
+  /** 转写语言（缺省 chinese） */
+  language?: string
+  /** 云端：OpenAI 兼容端点（OpenAI / SiliconFlow / Groq 等同形） */
+  cloud?: { baseUrl: string; apiKey: string; model?: string }
+  /** 本地：whisper 模型档 + 模型镜像（缺省 hf-mirror.com，国内可达；缓存 dataPath/info-collection/models） */
+  local?: { modelSize?: 'tiny' | 'base' | 'small'; mirror?: string }
+}
+
 // ==================== 采集蓝图（通用性的承载物，主设计 §2.2） ====================
 
 /** 单条信息需求：原子化、可独立判定"满足/不满足"；一条 IR 只问一件事 */

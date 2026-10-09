@@ -27,8 +27,11 @@ import { detectValueConflicts, type IcValueConflictGroup } from '@shared/utils/i
 import { isCandidateRelevant } from '@shared/utils/info-collection-relevance'
 import {
   detectDirectDocumentUrl,
+  detectAudioUrl,
   detectImageUrl,
   detectVideoPageUrl,
+  IC_AUDIO_MAX_BYTES,
+  IC_MAX_TRANSCRIBE_SEC,
   IC_DOCUMENT_MAX_BYTES,
   IC_IMAGE_MAX_BYTES,
   IC_MAX_IMAGE_DESCRIPTIONS,
@@ -183,11 +186,17 @@ export class IcCollectionService {
     return this.deps.fetch ? this.deps.fetch(url) : (await import('./ic-defaults')).defaultIcFetch(url)
   }
 
-  /** 文档直链下载（多模态 M1；缺省 executeHttpFetch file 模式，落盘临时目录） */
-  private async fetchDocument(url: string) {
+  /** 文档/图片/音频直链下载（多模态；缺省 executeHttpFetch file 模式，落盘临时目录） */
+  private async fetchDocument(url: string, opts?: { headers?: Record<string, string>; maxBytes?: number }) {
     return this.deps.documentFetch
-      ? this.deps.documentFetch(url)
-      : (await import('./ic-defaults')).defaultIcDocumentFetch(url)
+      ? this.deps.documentFetch(url, opts)
+      : (await import('./ic-defaults')).defaultIcDocumentFetch(url, opts)
+  }
+
+  /** 音频转写（多模态 M4；缺省按用户设置走本地 whisper / 云 API） */
+  private async transcribe(audioPath: string, mimeType?: string) {
+    const fn = this.deps.transcribe ?? (await import('./ic-defaults')).defaultIcTranscribe
+    return fn({ audioPath, mimeType })
   }
 
   /** 统一资产建卡（缺省接平台 getAssetService；未装配时抛错由调用方 fail-soft 吞掉） */
@@ -303,6 +312,98 @@ export class IcCollectionService {
   }
 
   /**
+   * 音频直链分支（多模态 M4）：下载原件 → 按用户设置转写（本地 whisper / 云 API）。
+   * 未启用/失败：原件照存（category=audio），源如实标注"待转写"，绝不编造文本。
+   */
+  private async collectAudioSource(ctx: {
+    projectId: string
+    taskId: string
+    projectName: string
+    url: string
+    title: string
+    stats: IcTaskStats
+  }): Promise<void> {
+    const repos = this.repos()
+    ctx.stats.toolCalls += 1
+    const df = await this.fetchDocument(ctx.url, { maxBytes: IC_AUDIO_MAX_BYTES })
+    const norm = normalizeUrl(ctx.url) ?? ctx.url
+    const failed = async (blocked: boolean, note: string, tempPath?: string): Promise<void> => {
+      const source = await repos.sources.create({
+        id: this.newId('src'),
+        projectId: ctx.projectId,
+        taskId: ctx.taskId,
+        url: ctx.url,
+        urlNormalized: norm,
+        fetchStatus: blocked ? 'blocked' : 'failed',
+      })
+      if (note) await repos.sources.patch(source.id, { tierRationale: note })
+      ctx.stats.sourcesFailed += 1
+      if (tempPath) void cleanupTempFile(tempPath)
+    }
+    if (!df.ok || !df.filePath) {
+      await failed(df.status === 403 || df.status === 429, '音频下载失败')
+      return
+    }
+    if (df.bytes && df.bytes > IC_AUDIO_MAX_BYTES) {
+      await failed(false, `音频超过单件上限（${Math.round(df.bytes / 1024 / 1024)}MB > 100MB）`, df.filePath)
+      return
+    }
+
+    // 转写（off → 如实未启用；长音频由云端/本地自限）
+    ctx.stats.toolCalls += 1
+    const tr = await this.transcribe(df.filePath, df.mimeType)
+    const transcript = tr.ok && tr.text ? tr.text.trim() : ''
+    const transcribeNote = tr.ok
+      ? `已转写（${tr.provider === 'local' ? '本地 whisper' : '云端 API'}）`
+      : `转写未完成：${tr.error ?? '未知原因'}——原件已存，待转写`
+
+    const source = await repos.sources.create({
+      id: this.newId('src'),
+      projectId: ctx.projectId,
+      taskId: ctx.taskId,
+      url: ctx.url,
+      urlNormalized: norm,
+      fetchStatus: 'ok',
+    })
+    if (this.snapshots && transcript) {
+      const p = await this.snapshots.write(ctx.projectId, source.id, '', transcript)
+      if (p) await repos.sources.patch(source.id, { snapshotPath: p })
+    }
+    // 分级：直链音频无法程序化认证来源 → 保守 T3 + 依据写明（确认闸门要求 tier+rationale）
+    await repos.sources.patch(source.id, {
+      tier: 3,
+      tierRationale: `音频直链，未经官方认证按互联网媒体处理；${transcribeNote}`,
+      contentHash: contentHash(transcript || ctx.url),
+    })
+    try {
+      const card = await this.assetsCreate({
+        name: (ctx.title?.trim() || documentFileName(ctx.url)).slice(0, 80),
+        category: 'audio',
+        subCategory: ctx.projectName,
+        tags: ['信息搜集', ctx.projectName],
+        filePath: df.filePath,
+        textContent: transcript || undefined,
+        url: ctx.url,
+        metadata: {
+          mediaKind: 'audio',
+          sourceId: source.id,
+          projectId: ctx.projectId,
+          transcribed: tr.ok,
+          transcribeProvider: tr.provider,
+          durationSec: tr.durationSec,
+        },
+        sourceType: 'info-collection',
+        sourceRef: ctx.projectId,
+      })
+      await repos.sources.patch(source.id, { assetId: card.id })
+    } catch {
+      /* 登记失败不影响采集（fail-soft） */
+    }
+    void cleanupTempFile(df.filePath)
+    ctx.stats.sourcesNew += 1
+  }
+
+  /**
    * 视频页分支（多模态 M3 元数据档）：标题/简介/UP主/时长 + CC 字幕全文（可得时）为内容化文本，
    * 建纯文本资产卡。不下载视频原件（设计红线）。youtube/抖音等未支持站点如实 failed。
    */
@@ -340,13 +441,39 @@ export class IcCollectionService {
       await failed(`视频元数据获取失败：${meta.error ?? '未知原因'}`)
       return
     }
-    // 内容化文本：标题/UP主/时长/简介 + 字幕全文（如有）
+    // 语音转写（M4）：无 CC 字幕且用户启用转写时，解析 B站音频直链 → 下载 → 转写。
+    // 时长上限 2 小时熔断；失败如实标注，不阻断元数据交付。
+    let transcriptText = ''
+    if (!meta.subtitleText && (meta.durationSec ?? 0) <= IC_MAX_TRANSCRIBE_SEC) {
+      try {
+        ctx.stats.toolCalls += 1
+        const resolve = this.deps.resolveVideoAudio ?? (await import('./ic-defaults')).defaultIcResolveVideoAudio
+        const resolved = await resolve(ctx.url)
+        if (resolved.ok && resolved.audioUrl) {
+          const audio = await this.fetchDocument(resolved.audioUrl, { headers: resolved.headers, maxBytes: IC_AUDIO_MAX_BYTES })
+          if (audio.ok && audio.filePath) {
+            const tr = await this.transcribe(audio.filePath, audio.mimeType)
+            if (tr.ok && tr.text) transcriptText = tr.text.trim()
+            void cleanupTempFile(audio.filePath)
+          }
+        }
+      } catch {
+        /* 解析/下载/转写任一失败 → 走"待转写"标注 */
+      }
+    }
+
+    // 内容化文本：标题/UP主/时长/简介 + 字幕全文或语音转写（如有）
     const dur = meta.durationSec ? `${Math.floor(meta.durationSec / 60)}分${meta.durationSec % 60}秒` : '未知'
+    const speechPart = meta.subtitleText
+      ? `【字幕全文】\n${meta.subtitleText}`
+      : transcriptText
+        ? `【语音转写】\n${transcriptText}`
+        : '【语音内容】本视频无可匿名获取的CC字幕，且转写未启用或失败——语音内容待转写'
     const parts = [
       `《${meta.title ?? ctx.title}》`,
       `UP主：${meta.owner ?? '未知'}｜时长：${dur}｜平台：bilibili`,
       meta.desc ? `简介：${meta.desc}` : null,
-      meta.subtitleText ? `【字幕全文】\n${meta.subtitleText}` : '【字幕】本视频无可匿名获取的CC字幕——语音内容待转写（M4）',
+      speechPart,
     ].filter(Boolean) as string[]
     const canonical = parts.join('\n\n')
 
@@ -366,7 +493,9 @@ export class IcCollectionService {
       tier: 3,
       tierRationale: meta.subtitleText
         ? 'B站视频页（含CC字幕全文），按互联网媒体处理'
-        : 'B站视频页（仅元数据，字幕不可得），按互联网媒体处理',
+        : transcriptText
+          ? 'B站视频页（语音已转写），按互联网媒体处理'
+          : 'B站视频页（仅元数据，字幕/转写不可得），按互联网媒体处理',
       contentHash: contentHash(canonical),
     })
     try {
@@ -384,6 +513,7 @@ export class IcCollectionService {
           sourceId: source.id,
           projectId: ctx.projectId,
           hasSubtitle: !!meta.subtitleText,
+          hasTranscript: !!meta.subtitleText || !!transcriptText,
         },
         sourceType: 'info-collection',
         sourceRef: ctx.projectId,
@@ -608,6 +738,19 @@ export class IcCollectionService {
 
           // 抓取（先保命：有 snapshotStore 时抓到即落快照）
           stats.toolCalls += 1
+          // 音频直链分支（多模态 M4）：下载原件 → 按用户设置转写为内容化文本
+          if (detectAudioUrl(item.url)) {
+            await this.collectAudioSource({
+              projectId,
+              taskId,
+              projectName,
+              url: item.url,
+              title: item.title,
+              stats,
+            })
+            continue
+          }
+
           // 视频页分支（多模态 M3 元数据档）：不下载视频，取标题/简介/CC字幕为内容化文本
           if (detectVideoPageUrl(item.url)) {
             await this.collectVideoSource({

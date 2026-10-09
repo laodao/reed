@@ -99,7 +99,10 @@ ic_source(治理记录,只加一列)
 - **M1(document)✅ 2026-10-08 落地并真机验收**:搜索结果直链文档探测(扩展名/响应头嗅探,`filetype:` 算子来自蓝图提示词)→ executeHttpFetch file 模式下载原件 → extractTextFromFile(asMarkdown) 提内容化文本 → 抓取成功即建资产卡(kind=file + textContent,category='搜集资料',subCategory=项目名,sourceType='info-collection')→ ic_source.assetId 外链。**范围修订**:webpage 登记卡不做(与网页收藏收敛,后续);"快照正文清洗"从 M1 移出(通用网页去噪手段未定义,单独立项);ic_source 只加 asset_id 一列(双端 ensureColumn)。
 - **M2(image)✅ 2026-10-09 落地**:图片直链(.jpg/.png/webp/gif/bmp)下载(8MB 上限)→ VLM 描述(宿主模型经 ai SDK image part,无 vision 时 fail-soft 存原件标"待补")→ 统一资产建卡(category=image)。单任务描述熔断 20 张(IC_MAX_IMAGE_DESCRIPTIONS)。图片搜索渠道暂无引擎能力,当前获取路径为结果中的图片直链;审阅台缩略图预览延后(徽标已显示类型)。
 - **M3(video 字幕档)✅ 2026-10-09 落地**:B站视频页(bilibili.com/video/BV、b23.tv)经公开 view API 取标题/简介/UP主/时长 + CC 字幕全文(可得时),组合为内容化文本,建纯文本资产卡(category=video,metadata.hasSubtitle);不下载视频原件。youtube/抖音如实 failed(站点不支持/风控)。语音内容转写留 M4。
-- **M4(ASR)**:**未实施**——音频转写服务接入(选型另议:云 API vs 本地 whisper;数据出境与成本需用户拍板),当前视频/音频的语音内容如实标注"待转写"。
+- **M4(ASR)✅ 2026-10-09 落地(用户拍板:本地+云双通道都要)**:转写服务双通道——
+  **local**:ffmpeg 解码 16k 单声道 PCM → transformers.js(onnxruntime-node)跑 whisper(Xenova/whisper-tiny|base|small),模型首用自动下载,缺省镜像 hf-mirror.com,缓存 dataPath/info-collection/models;**cloud**:OpenAI 兼容 /audio/transcriptions(baseUrl/apiKey/model 三项可配,OpenAI/SiliconFlow/Groq 同形)。设置存 settings 表键 `ic.transcription`,信息搜集首页「转写设置」弹窗读写。
+  管线接入:音频直链(.mp3/.wav/.m4a/aac/flac/ogg/opus/wma,100MB 上限)→ 下载 → 转写为内容化文本(未启用/失败如实标"待转写",绝不编造);B站无 CC 字幕视频经平台 DASH 音频解析 → 下载音频 → 转写(2 小时时长熔断)。
+  真机验证:Windows TTS 合成中文语音 → tiny 模型 2 秒转写成功,数字全对(4.8万公里)。
 
 红线:M1-M3 全程不下载视频原件;VLM 描述受 `maxImageDescriptions` 熔断;单资产下载上限 `maxAssetBytes`(缺省 50MB)。
 

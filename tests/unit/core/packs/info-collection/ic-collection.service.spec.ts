@@ -814,3 +814,121 @@ describe('IcCollectionService 视频页分支（多模态 M3 元数据档）', (
     })
   })
 })
+
+
+describe('IcCollectionService 音频直链分支（多模态 M4）', () => {
+  afterEach(async () => {
+    if (ds) {
+      await ds.destroy()
+      ds = null
+    }
+  })
+
+  it('转写启用 → 下载→转写→卡带全文(category=audio)；未启用 → 原件照存标待转写', async () => {
+    const repos = await buildRepos()
+    const createdAssets: Array<Record<string, unknown>> = []
+    const transcribeCalls: string[] = []
+    const { mkdtemp, writeFile } = await import('node:fs/promises')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const dir = await mkdtemp(join(tmpdir(), 'ic-audio-'))
+    let seq2 = 0
+    const makeService = (transcribeOk: boolean) =>
+      new IcCollectionService({
+        repos: () => repos,
+        llm: async () => extractionOutput(),
+        reviewLlm: async () => '{"rows":[]}',
+        search: async () => ({
+          items: [{ title: '政策解读音频', url: `https://example.com/media/briefing-${seq2}.mp3`, snippet: '测试主题 音频' }],
+        }),
+        documentFetch: async () => {
+          seq2 += 1
+          const p = join(dir, `audio-${seq2}.mp3`)
+          await writeFile(p, 'fake-mp3-bytes')
+          return { ok: true, status: 200, filePath: p, mimeType: 'audio/mpeg', bytes: 15 }
+        },
+        transcribe: async req => {
+          transcribeCalls.push(req.audioPath)
+          return transcribeOk
+            ? { ok: true, text: '各位好，今天通报出生人口 954 万人。', provider: 'local', durationSec: 30 }
+            : { ok: false, error: '未启用音频转写' }
+        },
+        snapshotStore: { write: async () => null, read: async () => null },
+        assets: {
+          create: async input => {
+            createdAssets.push({ ...input })
+            return { id: `asset-audio-${createdAssets.length}` }
+          },
+          remove: async () => undefined,
+        },
+        newId: id,
+      })
+
+    await runWithUserAsync('user-a', async () => {
+      await repos.projects.create({ id: 'p-audio', name: '音频项目', goal: 'g', blueprint: blueprintFixture(), kbId: null })
+      await (await makeService(true).runTask('p-audio')).done
+      let sources = await repos.sources.listByProject('p-audio')
+      expect(sources[0].fetchStatus).toBe('ok')
+      expect(sources[0].tierRationale).toContain('已转写（本地 whisper）')
+      expect(createdAssets[0]['category']).toBe('audio')
+      expect(String(createdAssets[0]['textContent'])).toContain('954')
+      expect((createdAssets[0]['metadata'] as Record<string, unknown>)['transcribed']).toBe(true)
+
+      // 未启用：原件照存，如实待转写
+      await repos.projects.create({ id: 'p-audio2', name: '音频项目二', goal: 'g', blueprint: blueprintFixture(), kbId: null })
+      await (await makeService(false).runTask('p-audio2')).done
+      sources = await repos.sources.listByProject('p-audio2')
+      expect(sources[0].fetchStatus).toBe('ok')
+      expect(sources[0].tierRationale).toContain('待转写')
+      const card2 = createdAssets[1]
+      expect(card2['textContent']).toBeUndefined()
+      expect((card2['metadata'] as Record<string, unknown>)['transcribed']).toBe(false)
+    })
+  })
+
+  it('视频无 CC 字幕且转写可用 → 语音转写并入内容化文本（M3×M4 会合）', async () => {
+    const repos = await buildRepos()
+    const createdTexts: Array<Record<string, unknown>> = []
+    const { mkdtemp, writeFile } = await import('node:fs/promises')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const dir = await mkdtemp(join(tmpdir(), 'ic-video-tr-'))
+    const audioPath = join(dir, 'bili-audio.m4s')
+    await writeFile(audioPath, 'fake-audio')
+
+    const service = new IcCollectionService({
+      repos: () => repos,
+      llm: async () => extractionOutput(),
+      reviewLlm: async () => '{"rows":[]}',
+      search: async () => ({
+        items: [{ title: '无字幕视频', url: 'https://www.bilibili.com/video/BV1yy411c7mZ', snippet: '测试主题' }],
+      }),
+      videoMeta: async () => ({ ok: true, platform: 'bilibili', title: '解读视频', desc: '简介', owner: 'UP', durationSec: 300 }),
+      resolveVideoAudio: async () => ({ ok: true, audioUrl: 'https://upos.example.com/audio.m4s', headers: { Referer: 'https://www.bilibili.com' } }),
+      documentFetch: async (_url, opts) => {
+        expect(opts?.headers?.Referer).toContain('bilibili') // 音频直链要带防盗链头
+        return { ok: true, status: 200, filePath: audioPath, mimeType: 'audio/mp4', bytes: 10 }
+      },
+      transcribe: async () => ({ ok: true, text: '转写出的语音内容。', provider: 'local', durationSec: 300 }),
+      snapshotStore: { write: async () => null, read: async () => null },
+      assets: {
+        create: async () => ({ id: 'unused' }),
+        createText: async input => {
+          createdTexts.push({ ...input })
+          return { id: 'asset-video-tr' }
+        },
+        remove: async () => undefined,
+      },
+      newId: id,
+    })
+    await runWithUserAsync('user-a', async () => {
+      await repos.projects.create({ id: 'p-video3', name: '视频项目三', goal: 'g', blueprint: blueprintFixture(), kbId: null })
+      const { done } = await service.runTask('p-video3')
+      await done
+      const card = createdTexts[0]
+      expect(String(card['text'])).toContain('【语音转写】')
+      expect(String(card['text'])).toContain('转写出的语音内容')
+      expect((card['metadata'] as Record<string, unknown>)['hasTranscript']).toBe(true)
+    })
+  })
+})

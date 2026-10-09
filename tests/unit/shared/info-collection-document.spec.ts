@@ -1,6 +1,6 @@
 /** 文档直链探测纯函数测试（info-collection-document） */
 import { describe, it, expect } from 'vitest'
-import { detectDirectDocumentUrl, detectImageUrl, detectVideoPageUrl, IC_DOCUMENT_MAX_BYTES } from '@shared/utils/info-collection-document'
+import { detectAudioUrl, detectDirectDocumentUrl, detectImageUrl, detectVideoPageUrl, IC_DOCUMENT_MAX_BYTES } from '@shared/utils/info-collection-document'
 
 describe('detectDirectDocumentUrl', () => {
   it('常见文档扩展名命中', () => {
@@ -62,5 +62,18 @@ describe('detectVideoPageUrl（多模态 M3）', () => {
   it('B站非视频页/其它站点不命中', () => {
     expect(detectVideoPageUrl('https://www.bilibili.com/read/cv123')).toBeNull()
     expect(detectVideoPageUrl('https://www.youtube.com/watch?v=x')).toBeNull()
+  })
+})
+
+describe('detectAudioUrl（多模态 M4）', () => {
+  it('常见音频扩展名命中', () => {
+    expect(detectAudioUrl('https://example.com/media/news.mp3')?.ext).toBe('mp3')
+    expect(detectAudioUrl('https://example.com/a/broadcast.WAV')?.ext).toBe('wav')
+    expect(detectAudioUrl('https://example.com/pod/ep1.m4a?token=x')?.ext).toBe('m4a')
+  })
+  it('视频/文档/网页不命中', () => {
+    expect(detectAudioUrl('https://example.com/v.mp4')).toBeNull()
+    expect(detectAudioUrl('https://example.com/d.pdf')).toBeNull()
+    expect(detectAudioUrl('https://example.com/live')).toBeNull()
   })
 })

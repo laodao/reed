@@ -91,3 +91,29 @@ export function detectVideoPageUrl(url: string): { platform: IcVideoPlatform } |
   if (host.endsWith('bilibili.com') && /\/video\/(BV|av)/i.test(path)) return { platform: 'bilibili' }
   return null
 }
+
+/** 可探测的音频扩展名（M4 转写） */
+export const IC_AUDIO_EXTENSIONS = ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'wma'] as const
+
+export type IcAudioExt = (typeof IC_AUDIO_EXTENSIONS)[number]
+
+/** 探测 URL 是否音频直链（M4）。 */
+export function detectAudioUrl(url: string): { ext: IcAudioExt } | null {
+  if (!url) return null
+  let pathname: string
+  try {
+    pathname = new URL(url).pathname
+  } catch {
+    return null
+  }
+  const last = pathname.split('/').pop() ?? ''
+  const dot = last.lastIndexOf('.')
+  if (dot <= 0) return null
+  const ext = last.slice(dot + 1).toLowerCase()
+  return (IC_AUDIO_EXTENSIONS as readonly string[]).includes(ext) ? { ext: ext as IcAudioExt } : null
+}
+
+/** 音频单件下载上限（字节；100MB——1 小时级别播客量级） */
+export const IC_AUDIO_MAX_BYTES = 100 * 1024 * 1024
+/** 单条音频转写时长上限（秒；2 小时——超长播客不自动转写，防止烧穿预算） */
+export const IC_MAX_TRANSCRIBE_SEC = 2 * 60 * 60

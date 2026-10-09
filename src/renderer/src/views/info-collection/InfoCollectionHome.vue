@@ -8,6 +8,7 @@
       <div class="home-actions">
         <el-button type="primary" :icon="Plus" @click="openCreate">新建搜集主题</el-button>
         <el-button :icon="Refresh" :loading="store.loadingProjects" @click="store.loadProjects()">刷新</el-button>
+        <el-button :icon="Mic" @click="openTranscribe">转写设置</el-button>
       </div>
     </div>
 
@@ -42,6 +43,58 @@
         </div>
       </div>
     </div>
+
+    <!-- 转写设置（M4：本地 whisper / 云 API） -->
+    <el-dialog v-model="tsVisible" title="音频转写设置" width="520px" :close-on-click-modal="false">
+      <el-form label-position="top">
+        <el-form-item label="转写方式">
+          <el-radio-group v-model="ts.provider">
+            <el-radio-button value="off">不转写</el-radio-button>
+            <el-radio-button value="local">本地 Whisper</el-radio-button>
+            <el-radio-button value="cloud">云 API</el-radio-button>
+          </el-radio-group>
+          <div class="ts-hint">
+            {{ ts.provider === 'off' ? '音频/视频只存原件，条目里如实标注"待转写"' : '' }}
+            {{ ts.provider === 'local' ? '首次使用自动下载模型（几十 MB，走镜像），之后离线可用；CPU 推理较慢' : '' }}
+            {{ ts.provider === 'cloud' ? '任何 OpenAI 兼容转写端点（OpenAI / SiliconFlow / Groq 等）' : '' }}
+          </div>
+        </el-form-item>
+        <template v-if="ts.provider === 'local'">
+          <el-form-item label="模型档">
+            <el-select v-model="ts.local.modelSize" style="width: 200px">
+              <el-option label="tiny（最快，准确率低）" value="tiny" />
+              <el-option label="base（推荐）" value="base" />
+              <el-option label="small（较准，较慢）" value="small" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="模型镜像">
+            <el-input v-model="ts.local.mirror" placeholder="https://hf-mirror.com（国内缺省）" />
+          </el-form-item>
+        </template>
+        <template v-if="ts.provider === 'cloud'">
+          <el-form-item label="API 地址">
+            <el-input v-model="ts.cloud.baseUrl" placeholder="https://api.siliconflow.cn/v1" />
+          </el-form-item>
+          <el-form-item label="API Key">
+            <el-input v-model="ts.cloud.apiKey" type="password" show-password placeholder="sk-…" />
+          </el-form-item>
+          <el-form-item label="模型名">
+            <el-input v-model="ts.cloud.model" placeholder="SenseVoiceSmall / whisper-1 …" />
+          </el-form-item>
+        </template>
+        <el-form-item label="转写语言">
+          <el-select v-model="ts.language" style="width: 200px">
+            <el-option label="中文" value="chinese" />
+            <el-option label="英文" value="english" />
+            <el-option label="自动" value="" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="tsVisible = false">取消</el-button>
+        <el-button type="primary" :loading="tsSaving" @click="saveTranscribe">保存</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 创建：主题 → 快速/精调（radio 卡片）→ 起草 → 预检结论 -->
     <el-dialog v-model="createVisible" title="新建搜集主题" width="560px" :close-on-click-modal="false">
@@ -107,7 +160,7 @@
  */
 import { reactive, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Collection, Lightning, Plus, Refresh, View } from '@element-plus/icons-vue'
+import { Collection, Lightning, Mic, Plus, Refresh, View } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useInfoCollectionStore } from '@/stores/info-collection'
 import { relativeTime } from '@/views/info-collection/ic-ui'
@@ -177,6 +230,50 @@ function enterPending(): void {
 function enter(id: string): void {
   void router.push(`/info-collection/${id}`)
 }
+
+// ---- 音频转写设置（M4；settings 表键 ic.transcription） ----
+const TRANSCRIBE_KEY = 'ic.transcription'
+/** 表单形状（cloud/local 必填，与 IcTranscribeSettings 结构兼容） */
+interface TranscribeForm {
+  provider: 'off' | 'local' | 'cloud'
+  language: string
+  cloud: { baseUrl: string; apiKey: string; model: string }
+  local: { modelSize: 'tiny' | 'base' | 'small'; mirror: string }
+}
+const tsVisible = ref(false)
+const tsSaving = ref(false)
+const ts = reactive<TranscribeForm>({
+  provider: 'off',
+  language: 'chinese',
+  cloud: { baseUrl: '', apiKey: '', model: '' },
+  local: { modelSize: 'base', mirror: 'https://hf-mirror.com' },
+})
+
+async function openTranscribe(): Promise<void> {
+  try {
+    const raw = (await window.electronAPI?.settings?.get?.(TRANSCRIBE_KEY)) as Partial<TranscribeForm> | null
+    if (raw && typeof raw === 'object') {
+      ts.provider = raw.provider ?? 'off'
+      ts.language = raw.language ?? 'chinese'
+      Object.assign(ts.cloud, raw.cloud ?? {})
+      Object.assign(ts.local, raw.local ?? {})
+    }
+  } catch {
+    /* 读不到就用缺省（off） */
+  }
+  tsVisible.value = true
+}
+
+async function saveTranscribe(): Promise<void> {
+  tsSaving.value = true
+  try {
+    await window.electronAPI?.settings?.set?.(TRANSCRIBE_KEY, JSON.parse(JSON.stringify(ts)))
+    ElMessage.success('转写设置已保存')
+    tsVisible.value = false
+  } finally {
+    tsSaving.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -185,6 +282,7 @@ function enter(id: string): void {
 .home-header h2 { margin: 0 0 6px; }
 .home-sub { margin: 0; color: var(--el-text-color-secondary); font-size: 13px; max-width: 640px; }
 .home-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.ts-hint { font-size: 12px; color: var(--el-text-color-secondary); line-height: 1.6; margin-top: 6px; }
 .state-wrap { margin-top: 60px; }
 
 .topic-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; margin-top: 20px; min-height: 120px; }

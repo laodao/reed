@@ -12,7 +12,7 @@
  */
 
 import type { SearchEngineType } from '@shared/types/search-engine.types'
-import type { IcFetchFn, IcKbPort, IcReposFn, IcSearchFn, IcLlmFn, IcDocumentFetchFn, IcAssetPort, IcVisionFn, IcVideoMetaFn } from './ic-deps'
+import type { IcFetchFn, IcKbPort, IcReposFn, IcSearchFn, IcLlmFn, IcDocumentFetchFn, IcAssetPort, IcVisionFn, IcVideoMetaFn, IcTranscribeFn, IcResolveVideoAudioFn } from './ic-deps'
 import { executeHttpFetch } from '@core/platform/workflow/nodes/http-fetch'
 import { htmlToMarkdown } from '@core/utils/html-to-markdown'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
@@ -104,10 +104,10 @@ export const defaultIcExtract = (html: string, baseUrl: string): string => htmlT
  * MIME/字节数回带，SSRF 闸门/重定向过闸/超时全部复用。资产服务建卡时会复制进
  * 统一资产目录（dataPath/assets/搜集资料/），临时文件由调用方清理。
  */
-export const defaultIcDocumentFetch: IcDocumentFetchFn = async url => {
+export const defaultIcDocumentFetch: IcDocumentFetchFn = async (url, opts) => {
   try {
     const r = await executeHttpFetch(
-      { method: 'GET', url, responseType: 'file', timeoutMs: 120_000 },
+      { method: 'GET', url, responseType: 'file', timeoutMs: 120_000, headers: opts?.headers },
       AbortSignal.timeout(120_000),
     )
     if (!r.ok) return { ok: false, status: 0, error: r.error }
@@ -285,4 +285,23 @@ export const defaultIcVideoMeta: IcVideoMetaFn = async url => {
   } catch (e) {
     return { ok: false, platform: 'bilibili', error: e instanceof Error ? e.message : String(e) }
   }
+}
+
+
+/** 音频转写（多模态 M4）：按用户设置走本地 whisper / 云 API；off 时如实未启用 */
+export const defaultIcTranscribe: IcTranscribeFn = async req => {
+  const { readTranscribeConfig, transcribeAudioFile } = await import('./ic-transcribe.service')
+  const cfg = await readTranscribeConfig()
+  return transcribeAudioFile(cfg, req.audioPath, { language: req.language })
+}
+
+
+/** 视频音频直链解析（M4）：平台 video-url-resolver 的 B站 DASH 音频解析（带 Referer 防盗链头） */
+export const defaultIcResolveVideoAudio: IcResolveVideoAudioFn = async url => {
+  const { resolveVideoSource } = await import('@core/platform/workflow/tools/video-url-resolver')
+  const resolved = await resolveVideoSource(url)
+  if (resolved.kind !== 'bilibili' || !resolved.url) {
+    return { ok: false, error: '未能解析出音频直链' }
+  }
+  return { ok: true, audioUrl: resolved.url, headers: resolved.headers }
 }
