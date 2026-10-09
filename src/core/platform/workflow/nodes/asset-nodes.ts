@@ -94,6 +94,12 @@ const saveAssetNode: WorkflowNodeHandler = {
       passthrough?: Record<string, unknown>
       /** 替换语义：保存新资产成功后删除被替换的旧资产（重生成场景用；旧资产文件一并删除） */
       replaceAssetId?: string
+      /** 版本链（仅 text）：填目标资产 id 时，不为新资产，而是把内容追加为该资产的下一版本并就地更新其内容（修订模式） */
+      versionOfAssetId?: string
+      /** 新建资产时即记录 v1（后续修订运行以 versionOfAssetId 续链；不开则永不入链） */
+      versioned?: boolean
+      /** 版本说明（修订意见/阶段说明；入库 asset_versions.feedback） */
+      feedback?: string
     }
     // 保存开关：false = 不落库（流程继续），输出空资产标记
     if (cfg.enabled === false) {
@@ -107,6 +113,38 @@ const saveAssetNode: WorkflowNodeHandler = {
     const kind = explicitKind === 'auto' ? detectContentKind(content) : explicitKind
 
     const service = getAssetService()
+
+    // 版本链分支：versionOfAssetId 非空 → 追加为该 text 资产的下一版本并就地更新内容（不建新资产）
+    const versionOf = stringifyValue(cfg.versionOfAssetId ?? '').trim()
+    if (versionOf) {
+      const { version } = await service.saveAssetVersion(versionOf, {
+        content,
+        feedback: stringifyValue(cfg.feedback ?? '') || undefined,
+        createdBy: `workflow:${ctx.nodeId}`,
+      })
+      // 就地更新资产当前内容（版本链已留快照；失败不阻断——内容以版本链为准可再回滚）
+      try {
+        await service.updateAsset(versionOf, { textContent: content })
+      } catch (e) {
+        console.warn('[save-asset] 版本就地更新失败（版本快照已落）:', e)
+      }
+      const updated = await service.getAsset(versionOf)
+      return {
+        status: 'succeeded',
+        output: {
+          assetId: versionOf,
+          name: updated?.name ?? '',
+          category: updated?.category ?? '',
+          subCategory: updated?.subCategory ?? '',
+          kind: updated?.kind ?? 'text',
+          url: updated ? service.assetPreviewUrl(updated) : '',
+          version,
+          versioned: true,
+          ...(cfg.passthrough ?? {}),
+        },
+      }
+    }
+
     const record = await service.createAsset({
       category: resolveCategory(cfg.category),
       subCategory: cfg.subCategory?.trim() || undefined,
@@ -139,6 +177,20 @@ const saveAssetNode: WorkflowNodeHandler = {
       }
     }
 
+    // 首次入链：versioned=true 且文本型 → 记录 v1，供后续修订运行以 versionOfAssetId 续链
+    let firstVersion: number | undefined
+    if (record.kind === 'text' && cfg.versioned === true) {
+      try {
+        firstVersion = (await service.saveAssetVersion(record.id, {
+          content,
+          feedback: stringifyValue(cfg.feedback ?? ''),
+          createdBy: `workflow:${ctx.nodeId}`,
+        })).version
+      } catch (e) {
+        console.warn('[save-asset] v1 版本落链失败（不阻断保存）:', e)
+      }
+    }
+
     return {
       status: 'succeeded',
       output: {
@@ -149,6 +201,7 @@ const saveAssetNode: WorkflowNodeHandler = {
         kind: record.kind,
         url: service.assetPreviewUrl(record),
         groupId: record.groupId ?? '',
+        ...(firstVersion !== undefined ? { version: firstVersion, versioned: true } : {}),
         ...(replacedId ? { replacedAssetId: replacedId } : {}),
         ...(cfg.passthrough ?? {}),
       },

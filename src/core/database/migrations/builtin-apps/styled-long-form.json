@@ -1,0 +1,375 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 深度长文写作（风格库）",
+  "description": "技能库驱动的长文管线：writing-styles 风格库技能（按主题判定文体→选风格卡→按卡片结构/钩子/语域/深度阶梯写作，拒绝平铺直叙；素材非空=纪实写作事实锁定素材；填入已有成稿+修改意见=修订模式）→ libai-skill 去AI味技能（七维诊断取证→分层改写→质检，独立模型执行）→ 终稿拼装（附写作自检/配图清单与去AI味诊断）→ 存资产。版本管理：首运行 versioned 记 v1；修订运行填「基底资产 ID」（上次产出的资产）+「已有成稿」+「修改意见」→ 内容追加为新版本并就地更新，资产中心「版本」可查看/回滚（append-only）。",
+  "category": "内容创作",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": {
+          "x": 40,
+          "y": 300
+        },
+        "config": {
+          "inputs": [
+            {
+              "key": "topic",
+              "label": "主题",
+              "type": "string",
+              "required": true
+            },
+            {
+              "key": "material",
+              "label": "研究素材（「主题深度研究」报告/资料全文；非空=纪实写作，事实锁定素材）",
+              "type": "textarea"
+            },
+            {
+              "key": "style",
+              "label": "写作风格",
+              "type": "select",
+              "defaultValue": "auto",
+              "options": [
+                {
+                  "label": "自动判断（按主题选最合适的风格）",
+                  "value": "auto"
+                },
+                {
+                  "label": "时政深度·书面分析体（局势分析/推演/研判）",
+                  "value": "affairs-formal"
+                },
+                {
+                  "label": "深度叙事·说书杂谈（卢克文式，枭雄沉浮/戏剧性事件）",
+                  "value": "luke-narrative"
+                },
+                {
+                  "label": "深度叙事·人物特稿（历史人物命运）",
+                  "value": "luke-feature"
+                },
+                {
+                  "label": "深度叙事·战局复盘（军事/比赛/突发事件）",
+                  "value": "luke-war"
+                },
+                {
+                  "label": "财经产业史诗（远川式行业深挖）",
+                  "value": "finance-story"
+                },
+                {
+                  "label": "调查特稿（系统批判+个体故事）",
+                  "value": "feature-report"
+                },
+                {
+                  "label": "情感共鸣文（深度好文体）",
+                  "value": "emotional"
+                },
+                {
+                  "label": "干货教程（方法论/知识分享）",
+                  "value": "knowledge"
+                },
+                {
+                  "label": "知乎高赞回答体",
+                  "value": "zhihu-answer"
+                },
+                {
+                  "label": "小红书清单体/种草体",
+                  "value": "listicle"
+                },
+                {
+                  "label": "短视频口播脚本",
+                  "value": "script-spoken"
+                }
+              ]
+            },
+            {
+              "key": "platform",
+              "label": "发布平台",
+              "type": "select",
+              "defaultValue": "公众号",
+              "options": [
+                {
+                  "label": "公众号",
+                  "value": "公众号"
+                },
+                {
+                  "label": "知乎",
+                  "value": "知乎"
+                },
+                {
+                  "label": "小红书",
+                  "value": "小红书"
+                },
+                {
+                  "label": "抖音/视频号口播",
+                  "value": "抖音口播"
+                },
+                {
+                  "label": "头条/百家号",
+                  "value": "头条"
+                },
+                {
+                  "label": "B站专栏",
+                  "value": "B站专栏"
+                }
+              ]
+            },
+            {
+              "key": "word_count",
+              "label": "目标字数",
+              "type": "string",
+              "defaultValue": "3000字左右"
+            },
+            {
+              "key": "intensity",
+              "label": "去AI味强度",
+              "type": "select",
+              "defaultValue": "标准",
+              "options": [
+                {
+                  "label": "保守（学术/公文，只删连接词与套话）",
+                  "value": "保守"
+                },
+                {
+                  "label": "标准（自媒体/公关，完整去AI清单+适度口语化）",
+                  "value": "标准"
+                },
+                {
+                  "label": "激进（创意写作/社交帖，可大改句式注入口语）",
+                  "value": "激进"
+                }
+              ]
+            },
+            {
+              "key": "keep",
+              "label": "去AI味时必须保留（默认保护引语与口径）",
+              "type": "textarea",
+              "defaultValue": "直接引语一字不动；数字、日期与口径标注不得改；术语译法保持一致"
+            },
+            {
+              "key": "extra",
+              "label": "其他要求",
+              "type": "textarea"
+            },
+            {
+              "key": "base_asset_id",
+              "label": "基底资产 ID（修订模式：填上一次运行产出的资产 ID，本次内容将追加为该资产的新版本）",
+              "type": "string"
+            },
+            {
+              "key": "current_content",
+              "label": "已有成稿（修订模式）",
+              "type": "textarea"
+            },
+            {
+              "key": "feedback",
+              "label": "修改意见（修订模式）",
+              "type": "textarea"
+            },
+            {
+              "key": "model",
+              "label": "写作模型",
+              "type": "model",
+              "required": true
+            },
+            {
+              "key": "libaiModel",
+              "label": "去AI味模型（建议与写作模型不同族，保证独立视角）",
+              "type": "model",
+              "required": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "ws",
+        "type": "skill-call",
+        "name": "风格库写作（writing-styles）",
+        "position": {
+          "x": 300,
+          "y": 300
+        },
+        "config": {
+          "skillId": "writing-styles",
+          "inputs": [
+            {
+              "key": "topic",
+              "value": "{{start.topic}}"
+            },
+            {
+              "key": "material",
+              "value": "{{start.material}}"
+            },
+            {
+              "key": "style",
+              "value": "{{start.style}}"
+            },
+            {
+              "key": "platform",
+              "value": "{{start.platform}}"
+            },
+            {
+              "key": "word_count",
+              "value": "{{start.word_count}}"
+            },
+            {
+              "key": "extra",
+              "value": "{{start.extra}}"
+            },
+            {
+              "key": "current_content",
+              "value": "{{start.current_content}}"
+            },
+            {
+              "key": "feedback",
+              "value": "{{start.feedback}}"
+            }
+          ],
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}",
+          "maxTokens": 16384
+        }
+      },
+      {
+        "id": "libai",
+        "type": "skill-call",
+        "name": "去AI味（libai-skill）",
+        "position": {
+          "x": 560,
+          "y": 300
+        },
+        "config": {
+          "skillId": "libai-skill",
+          "inputs": [
+            {
+              "key": "source_text",
+              "value": "{{ws.content}}"
+            },
+            {
+              "key": "intensity",
+              "value": "{{start.intensity}}"
+            },
+            {
+              "key": "keep",
+              "value": "{{start.keep}}"
+            }
+          ],
+          "providerConfigId": "{{start.libaiModel.providerConfigId}}",
+          "modelId": "{{start.libaiModel.modelId}}",
+          "maxTokens": 32768
+        }
+      },
+      {
+        "id": "pack",
+        "type": "code",
+        "name": "终稿切分",
+        "position": {
+          "x": 820,
+          "y": 300
+        },
+        "config": {
+          "language": "js",
+          "inputs": [
+            {
+              "key": "ws",
+              "value": "{{ws.content}}"
+            },
+            {
+              "key": "libai",
+              "value": "{{libai.content}}"
+            }
+          ],
+          "code": "const ws = String(inputs.ws || '')\nconst libai = String(inputs.libai || '')\nconst SPLIT = '=====FINAL====='\nlet final = ''\nlet diagnosis = ''\nconst i = libai.indexOf(SPLIT)\nif (i >= 0) {\n  diagnosis = libai.slice(0, i).trim()\n  final = libai.slice(i + SPLIT.length).trim()\n} else {\n  final = libai.trim()\n}\nconst fallbackUsed = !final\nif (!final) final = ws\nlet wsArticle = ws\nlet wsAppendix = ''\nconst m = ws.search(/\\n#{1,4}\\s*深度自检/)\nif (m > 0) {\n  wsArticle = ws.slice(0, m).trim()\n  wsAppendix = ws.slice(m).trim()\n}\nif (!wsAppendix) wsAppendix = wsArticle.length < ws.length ? '' : '（写作阶段未输出自检附文）'\nreturn { final, diagnosis: diagnosis || '（未产出诊断段）', appendix: wsAppendix || '（无）', fallbackUsed, wsArticle }"
+        }
+      },
+      {
+        "id": "report1",
+        "type": "report",
+        "name": "报告拼装",
+        "position": {
+          "x": 1080,
+          "y": 300
+        },
+        "config": {
+          "title": "{{start.topic}}（风格库长文）",
+          "format": "markdown",
+          "template": "# {{start.topic}}\n\n{{pack.result.final}}\n\n---\n\n## 附一：写作阶段自检与配图清单\n\n{{pack.result.appendix}}\n\n## 附二：去 AI 味诊断\n\n{{pack.result.diagnosis}}\n\n---\n\n*由 The Bot「深度长文写作（风格库）」工作流生成*"
+        }
+      },
+      {
+        "id": "save1",
+        "type": "save-asset",
+        "name": "终稿存资产",
+        "position": {
+          "x": 1340,
+          "y": 300
+        },
+        "config": {
+          "content": "{{pack.result.final}}",
+          "kind": "text",
+          "category": "text",
+          "subCategory": "长文",
+          "name": "{{start.topic}}",
+          "tags": "长文,风格库,{{start.platform}}",
+          "versioned": true,
+          "versionOfAssetId": "{{start.base_asset_id}}",
+          "feedback": "{{start.feedback}}"
+        }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": {
+          "x": 1600,
+          "y": 300
+        },
+        "config": {}
+      }
+    ],
+    "edges": [
+      {
+        "id": "e1",
+        "sourceNodeId": "start",
+        "targetNodeId": "ws",
+        "kind": "normal"
+      },
+      {
+        "id": "e2",
+        "sourceNodeId": "ws",
+        "targetNodeId": "libai",
+        "kind": "normal"
+      },
+      {
+        "id": "e3",
+        "sourceNodeId": "libai",
+        "targetNodeId": "pack",
+        "kind": "normal"
+      },
+      {
+        "id": "e4",
+        "sourceNodeId": "pack",
+        "targetNodeId": "report1",
+        "kind": "normal"
+      },
+      {
+        "id": "e5",
+        "sourceNodeId": "report1",
+        "targetNodeId": "save1",
+        "kind": "normal"
+      },
+      {
+        "id": "e6",
+        "sourceNodeId": "save1",
+        "targetNodeId": "end",
+        "kind": "normal"
+      }
+    ]
+  },
+  "triggers": [],
+  "settings": {
+    "maxDurationMs": 3600000
+  }
+}

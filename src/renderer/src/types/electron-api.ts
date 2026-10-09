@@ -84,6 +84,12 @@ export interface AppApi {
       metadata?: Record<string, unknown>
     }): Promise<IpcResp<AssetRecord | null>>
     update(p: { id: string; name?: string; description?: string | null; tags?: string[]; category?: string; subCategory?: string | null }): Promise<IpcResp<AssetRecord | null>>
+    /** 版本历史（新→旧，不含内容大字段） */
+    listVersions(assetId: string): Promise<IpcResp<Array<{ id: string; assetId: string; version: number; feedback: string | null; createdBy: string | null; createdAt: string }>>>
+    /** 取指定版本内容 */
+    getVersion(assetId: string, version: number): Promise<IpcResp<{ id: string; assetId: string; version: number; content: string; feedback: string | null; createdAt: string } | null>>
+    /** 回滚到指定版本（取历史版内容另存为新版本，append-only） */
+    rollbackVersion(assetId: string, version: number): Promise<IpcResp<{ version: number }>>
     delete(id: string): Promise<IpcResp<{ deleted: boolean }>>
     stats(): Promise<IpcResp<{ total: number; byCategory: Record<string, number> }>>
     subCategoryStats(category: string): Promise<IpcResp<Array<{ subCategory: string | null; count: number }>>>

@@ -35,6 +35,8 @@ import ecommercePoster from './builtin-apps/ecommerce-poster.json'
 import gossipEventReport from './builtin-apps/gossip-event-report.json'
 // 长文写作（2026-08-29 用户确认开工：分阶段写长文，多轮对话承接前文）
 import longFormWriting from './builtin-apps/long-form-writing.json'
+// 深度长文写作·风格库（2026-10-09：writing-styles + libai-skill 技能节点串成管线，质量栈接入工作流引擎）
+import styledLongForm from './builtin-apps/styled-long-form.json'
 import ecommerceDetailLongImage from './builtin-apps/ecommerce-detail-long-image.json'
 // 短视频脚本生成视频（2026-09-04 用户确认开工）
 import scriptToVideo from './builtin-apps/script-to-video.json'
@@ -89,6 +91,8 @@ const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; icon: str
   { file: 'script-to-video-v3.json', raw: scriptToVideoV3, appId: `${BUILTIN_APP_PREFIX}script_to_video_v3`, icon: '🎬', name: '脚本生成视频V3（通用视觉策略）', description: '脚本/主题+多知识库 → 视频类型预设与视觉策略（imagery 意象化空镜 / asset 素材驱动，缺素材即拦截）→ 大纲审核 → 分镜拆解(concept/意象 或 素材引用) → 素材板(生成意象或素材直用)整体审核 → 逐片段视频(逐镜确认) → 配音+烧字幕+合成 → 存档', category: '视频制作', tags: ['视频', '脚本', '创作', '视觉策略', '素材驱动'] },
   // 长文写作（2026-08-29 用户确认开工：分阶段写长文，多轮对话承接前文）
   { file: 'long-form-writing.json', raw: longFormWriting, appId: `${BUILTIN_APP_PREFIX}long_form_writing`, icon: '✍️', name: '长文写作', description: '通用长文引擎（虚构/非虚构双模式）：素材消化选材 → 开篇钩子比选 → 主线 → 章节大纲 → 逐章写作（多轮承接前文）→ 事实校验（纪实模式逐条对照素材）→ 编辑评审循环（独立模型五维评分带差距修订）→ 备选标题方案 → 入库；有素材=纪实长文（事实锁定素材），无素材=小说模式', category: '内容创作', tags: ['长文', '写作', '小说'] },
+  // 深度长文写作·风格库（2026-10-09 用户确认：写作质量栈接入工作流引擎——技能库驱动的写作→去AI味管线，与长文写作并存）
+  { file: 'styled-long-form.json', raw: styledLongForm, appId: `${BUILTIN_APP_PREFIX}styled_long_form`, icon: '🖋️', name: '深度长文写作（风格库）', description: '技能库驱动长文管线：writing-styles 风格库技能（主题判定文体→风格卡→结构/钩子/语域/深度阶梯写作，拒绝平铺直叙；素材非空=纪实写作锁定素材口径；已有成稿+修改意见=修订模式多轮迭代）→ libai-skill 去AI味技能（七维诊断取证→分层改写→质检，独立模型）→ 终稿+写作自检+配图清单+去AI味诊断 → 存资产。修订：同会话再次运行填成稿与意见', category: '内容创作', tags: ['长文', '风格库', '去AI味'] },
   // 电商详情长图（2026-08-29 用户确认开工：先按卖点/规格规划张数，再逐张生成并配图文，排版成竖版详情长图）
   { file: 'ecommerce-detail-long-image.json', raw: ecommerceDetailLongImage, appId: `${BUILTIN_APP_PREFIX}ecommerce_detail_long_image`, icon: '🛍️', name: '电商详情长图', description: '商品图+卖点+规格 → 按卖点/规格规划 N 张介绍图 → 逐张生成（锁商品、图文对应）→ 排版成竖版详情长图', category: '电商', tags: ['电商', '详情', '长图'] },
   // 主题深度研究（2026-10-06 v5：用途自适应 + 信源四级分级（官方机构/官方媒体/互联网媒体/互联网搜索，跨渠道取材不偏官方）+ 素材密度优先）

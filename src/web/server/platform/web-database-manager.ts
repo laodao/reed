@@ -141,6 +141,7 @@ import { DataSourceRepository } from '@core/database/repositories/datasource.rep
 import { AssetImageRepository } from '@core/database/repositories/asset-image.repository'
 import { AssetRepository } from '@core/database/repositories/asset.repository'
 import { AssetGroupRepository } from '@core/database/repositories/asset-group.repository'
+import { AssetVersionRepository } from '@core/database/repositories/asset-version.repository'
 import { AssetCategoryRepository } from '@core/database/repositories/asset-category.repository'
 import { InfoSourceRepository } from '@core/database/repositories/info-source.repository'
 import { InfoSourceTopicRepository } from '@core/database/repositories/info-source-topic.repository'
@@ -195,6 +196,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   appSessionMessages: AppSessionMessageRepository | null
   assets: AssetRepository | null
   assetGroups: AssetGroupRepository | null
+  assetVersions: AssetVersionRepository | null = null
   assetCategories: AssetCategoryRepository | null
   infoSourceCategories: InfoSourceCategoryRepository | null
   infoSources: InfoSourceRepository | null
@@ -353,6 +355,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.appSessionMessages = new AppSessionMessageRepository(ds)
     this.assets = new AssetRepository(ds)
     this.assetGroups = new AssetGroupRepository(ds)
+    this.assetVersions = new AssetVersionRepository(ds)
     this.assetCategories = new AssetCategoryRepository(ds)
     this.infoSourceCategories = new InfoSourceCategoryRepository(ds)
     this.infoSources = new InfoSourceRepository(ds)

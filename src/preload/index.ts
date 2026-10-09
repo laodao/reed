@@ -922,6 +922,10 @@ const electronAPI = {
       content: { kind: 'file'; path: string } | { kind: 'url'; url: string } | { kind: 'text'; text: string } | { kind: 'json'; json: string }
     }) => ipcRenderer.invoke('asset:create', p),
     update: (p: { id: string; name?: string; description?: string | null; tags?: string[]; category?: string; subCategory?: string | null }) => ipcRenderer.invoke('asset:update', p),
+    // 版本管理（append-only 版本链，仅文本型资产）
+    listVersions: (assetId: string) => ipcRenderer.invoke('asset:list-versions', { assetId }),
+    getVersion: (assetId: string, version: number) => ipcRenderer.invoke('asset:get-version', { assetId, version }),
+    rollbackVersion: (assetId: string, version: number) => ipcRenderer.invoke('asset:rollback-version', { assetId, version }),
     delete: (id: string) => ipcRenderer.invoke('asset:delete', { id }),
     stats: () => ipcRenderer.invoke('asset:stats'),
     subCategoryStats: (category: string) => ipcRenderer.invoke('asset:sub-category-stats', { category }),

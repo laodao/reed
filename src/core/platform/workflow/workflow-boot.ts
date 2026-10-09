@@ -670,6 +670,7 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
       db.assetCategories,
       db.assetGroups ?? undefined,
       createAssetSourceLinkResolver({ runs: db.workflowRuns!, apps: db.appDefinitions! }),
+      db.assetVersions ?? undefined,
     )
     t.mark('construct')
     registerAssetService(assetService)

@@ -15,6 +15,7 @@ import { ASSET_CATEGORIES, ASSET_PREVIEW_MODES, ASSET_STORAGE_KINDS, type AssetC
 import { AssetRepository, type ListAssetParams, type UpdateAssetInput } from '@core/database/repositories/asset.repository'
 import { AssetGroupRepository } from '@core/database/repositories/asset-group.repository'
 import { AssetCategoryRepository } from '@core/database/repositories/asset-category.repository'
+import { AssetVersionRepository, type AssetVersionRecord } from '@core/database/repositories/asset-version.repository'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { AssetStorageService } from './asset-storage.service'
 import { buildUrlShortcut, ensureExtension, sanitizeFileName, type AssetDownloadPayload, type AssetDownloadView } from './asset-download'
@@ -50,7 +51,59 @@ export class AssetService {
     private readonly categoryRepo: AssetCategoryRepository,
     private readonly groupRepo?: AssetGroupRepository,
     private readonly sourceLinkResolver?: AssetSourceLinkResolver,
+    private readonly versionRepo?: AssetVersionRepository,
   ) {}
+
+  // ==================== 版本管理（append-only 版本链；文本型资产） ====================
+
+  /** 追加一个版本：版本号自动取号；feedback 记录修订意见/阶段说明 */
+  async saveAssetVersion(
+    assetId: string,
+    input: { content: string; feedback?: string; createdBy?: string },
+  ): Promise<{ version: number }> {
+    if (!this.versionRepo) throw new Error('版本仓储未装配（versionRepo 缺失）')
+    const asset = await this.repo.findById(assetId)
+    if (!asset) throw new Error(`资产不存在: ${assetId}`)
+    if (asset.kind !== 'text') throw new Error('仅文本型资产支持版本管理（当前 kind=' + asset.kind + '）')
+    const version = await this.versionRepo.nextVersion(assetId)
+    await this.versionRepo.appendVersion({
+      assetId,
+      version,
+      content: input.content,
+      feedback: input.feedback ?? null,
+      createdBy: input.createdBy ?? null,
+    })
+    return { version }
+  }
+
+  /** 列版本（新→旧，不含内容大字段） */
+  async listAssetVersions(assetId: string): Promise<Array<Omit<AssetVersionRecord, 'content'>>> {
+    if (!this.versionRepo) throw new Error('版本仓储未装配（versionRepo 缺失）')
+    return this.versionRepo.listByAsset(assetId)
+  }
+
+  /** 取指定版本内容 */
+  async getAssetVersion(assetId: string, version: number): Promise<AssetVersionRecord | null> {
+    if (!this.versionRepo) throw new Error('版本仓储未装配（versionRepo 缺失）')
+    return this.versionRepo.findByVersion(assetId, version)
+  }
+
+  /**
+   * 回滚到指定版本：取历史版内容**另存为新版本**（append-only，不删不改任何历史行），
+   * 并就地更新资产当前内容。
+   */
+  async rollbackAssetVersion(assetId: string, version: number, userId?: string): Promise<{ version: number }> {
+    if (!this.versionRepo) throw new Error('版本仓储未装配（versionRepo 缺失）')
+    const target = await this.versionRepo.findByVersion(assetId, version)
+    if (!target) throw new Error(`版本不存在: v${version}`)
+    const newVersion = await this.saveAssetVersion(assetId, {
+      content: target.content,
+      feedback: `回滚到 v${version}`,
+      createdBy: userId ? `user:${userId}` : 'rollback',
+    })
+    await this.repo.update(assetId, { textContent: target.content } as never)
+    return { version: newVersion.version }
+  }
 
   /** 资产来源跳转（需求 3：资产 → 产出它的功能/执行历史） */
   async resolveSourceLink(record: AssetRecord): Promise<AssetSourceLink | null> {

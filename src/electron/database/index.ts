@@ -42,6 +42,7 @@ import { AppSessionRepository } from '@core/database/repositories/app-session.re
 import { AppSessionMessageRepository } from '@core/database/repositories/app-session-message.repository'
 import { AssetRepository } from '@core/database/repositories/asset.repository'
 import { AssetGroupRepository } from '@core/database/repositories/asset-group.repository'
+import { AssetVersionRepository } from '@core/database/repositories/asset-version.repository'
 import { AssetCategoryRepository } from '@core/database/repositories/asset-category.repository'
 import { InfoSourceRepository } from '@core/database/repositories/info-source.repository'
 import { InfoSourceTopicRepository } from '@core/database/repositories/info-source-topic.repository'
@@ -192,6 +193,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public appSessionMessages: AppSessionMessageRepository | null = null
   public assets: AssetRepository | null = null
   public assetGroups: AssetGroupRepository | null = null
+  public assetVersions: AssetVersionRepository | null = null
   public assetCategories: AssetCategoryRepository | null = null
   public infoSources: InfoSourceRepository | null = null
   public infoSourceTopics: InfoSourceTopicRepository | null = null
@@ -821,6 +823,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
     // 设定集动态分组两表 + 人物别名列（P0-2026-09-09）
     const { createBibleTables } = await import('@core/database/migrations/create-bible-tables')
     await createBibleTables(this.dataSource)
+
+    // 资产版本管理：asset_versions 表（append-only 版本链，2026-10-09）
+    const { createAssetVersions } = await import(
+      '@core/database/migrations/create-asset-versions'
+    )
+    await createAssetVersions(this.dataSource)
 
     // 设定资产库：世界观库 + 角色 IP 库 8 表 + 既有实体血缘列（2026-09-24 P0）
     const { createLwLibraryTables } = await import(
@@ -4652,6 +4660,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.appSessionMessages = new AppSessionMessageRepository(this.dataSource)
     this.assets = new AssetRepository(this.dataSource)
     this.assetGroups = new AssetGroupRepository(this.dataSource)
+    this.assetVersions = new AssetVersionRepository(this.dataSource)
     this.assetCategories = new AssetCategoryRepository(this.dataSource)
     this.infoSources = new InfoSourceRepository(this.dataSource)
     this.infoSourceTopics = new InfoSourceTopicRepository(this.dataSource)

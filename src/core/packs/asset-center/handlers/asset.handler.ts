@@ -43,6 +43,16 @@ export function registerAssetHandlers(): void {
   ipcBridge.handle('asset:create', (_e, p: SaveAssetInput) =>
     wrap(() => getAssetService().createAsset(p))
   )
+  // 版本管理（append-only 版本链，仅文本型资产；2026-10-09）
+  ipcBridge.handle('asset:list-versions', (_e, p: { assetId: string }) =>
+    wrap(() => getAssetService().listAssetVersions(p.assetId))
+  )
+  ipcBridge.handle('asset:get-version', (_e, p: { assetId: string; version: number }) =>
+    wrap(() => getAssetService().getAssetVersion(p.assetId, p.version))
+  )
+  ipcBridge.handle('asset:rollback-version', (_e, p: { assetId: string; version: number }) =>
+    wrap(() => getAssetService().rollbackAssetVersion(p.assetId, p.version))
+  )
   ipcBridge.handle('asset:update', (_e, p: { id: string; name?: string; description?: string | null; tags?: string[]; category?: string; subCategory?: string | null }) =>
     wrap(() => getAssetService().updateAsset(p.id, {
       name: p.name,

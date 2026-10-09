@@ -266,6 +266,9 @@
           >
             入知识库
           </el-button>
+          <el-button v-if="previewAsset?.kind === 'text'" size="small" @click="openVersions(previewAsset!)">
+            版本
+          </el-button>
           <el-button size="small" :disabled="!previewAsset" @click="handleDownload(previewAsset!, hasSourceView(previewAsset) ? previewMode : undefined)">
             <el-icon><Download /></el-icon> 下载
           </el-button>
@@ -304,6 +307,43 @@
         <div class="meta-row" v-if="previewAsset.subCategory"><span class="k">分类</span><span class="v">{{ previewAsset.subCategory }}</span></div>
         <div class="meta-row" v-if="originalUrlOf(previewAsset)"><span class="k">原文</span><span class="v">{{ originalUrlOf(previewAsset) }}</span></div>
       </div>
+    </el-dialog>
+
+    <!-- 版本历史（文本型资产；append-only 版本链，回滚 = 取历史版另存为新版本） -->
+    <el-dialog v-model="versionsVisible" :title="`版本历史 · ${versionsAsset?.name ?? ''}`" width="760px" append-to-body>
+      <div v-loading="versionsLoading">
+        <el-table :data="versions" size="small" max-height="380">
+          <el-table-column label="版本" width="86">
+            <template #default="{ row }">
+              <el-tag v-if="row.version === versions[0]?.version" type="info" size="small">当前</el-tag>
+              <span v-else>v{{ row.version }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="feedback" label="说明" min-width="240" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.feedback || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="时间" width="160">
+            <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="170">
+            <template #default="{ row }">
+              <el-button size="small" text @click="viewVersion(row)">查看</el-button>
+              <el-button size="small" text type="warning" :disabled="row.version === versions[0]?.version" @click="rollbackTo(row)">回滚到此版</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <div v-if="versionViewRow" class="version-view">
+          <div class="vv-head">
+            <span>v{{ versionViewRow.version }} 内容</span>
+            <el-button size="small" text @click="versionViewRow = null; versionViewContent = ''">收起</el-button>
+          </div>
+          <pre class="vv-body">{{ versionViewContent }}</pre>
+        </div>
+        <div v-if="!versionsLoading && versions.length === 0" class="big-hint">该资产还没有版本记录（工作流 save-asset 节点开启 versioned/versionOf 后自动成链）</div>
+      </div>
+      <template #footer>
+        <el-button @click="versionsVisible = false">关闭</el-button>
+      </template>
     </el-dialog>
 
     <!-- 网页收藏 → 知识库：选目标 KB，用已存 markdown 正文直入（免二次抓取；重复导入按资产 id 覆盖） -->
@@ -1198,6 +1238,49 @@ async function saveTemplate(): Promise<void> {
 const previewVisible = ref(false)
 const previewAsset = ref<AssetRecord | null>(null)
 
+// ==================== 版本历史（文本资产 append-only 版本链） ====================
+const versionsVisible = ref(false)
+const versionsLoading = ref(false)
+const versionsAsset = ref<AssetRecord | null>(null)
+const versions = ref<Array<{ id: string; version: number; feedback: string | null; createdBy: string | null; createdAt: string }>>([])
+const versionViewRow = ref<{ version: number } | null>(null)
+const versionViewContent = ref('')
+
+async function openVersions(a: AssetRecord): Promise<void> {
+  versionsAsset.value = a
+  versionsVisible.value = true
+  versionViewRow.value = null
+  versionViewContent.value = ''
+  versionsLoading.value = true
+  try {
+    const resp = await api.assets.listVersions(a.id)
+    versions.value = (resp.success ? resp.data ?? [] : []) as typeof versions.value
+    if (!resp.success) ElMessage.error(resp.error ?? '加载版本失败')
+  } finally {
+    versionsLoading.value = false
+  }
+}
+
+async function viewVersion(row: { version: number }): Promise<void> {
+  if (!versionsAsset.value) return
+  const resp = await api.assets.getVersion(versionsAsset.value.id, row.version)
+  if (!resp.success || !resp.data) { ElMessage.error(resp.error ?? '读取版本失败'); return }
+  versionViewRow.value = row
+  versionViewContent.value = resp.data.content
+}
+
+async function rollbackTo(row: { version: number }): Promise<void> {
+  if (!versionsAsset.value) return
+  try {
+    await ElMessageBox.confirm(`回滚到 v${row.version}？当前内容会先另存为一个新版本（历史版本不删除）。`, '回滚确认', { type: 'warning' })
+  } catch { return }
+  const resp = await api.assets.rollbackVersion(versionsAsset.value.id, row.version)
+  if (!resp.success) { ElMessage.error(resp.error ?? '回滚失败'); return }
+  ElMessage.success(`已回滚，当前为 v${resp.data?.version}`)
+  await openVersions(versionsAsset.value)
+  await load()
+}
+
 /** 预览弹窗中的图片 URL 列表（原生 image / report 渲染长图；供 el-image 查看器放大缩小） */
 const previewImgList = computed<string[]>(() => {
   const a = previewAsset.value
@@ -1569,4 +1652,31 @@ onMounted(load)
 .kind-tag { margin-right: 4px; }
 .cat-mgr-footer { display: flex; justify-content: flex-end; }
 .cat-form { padding: 4px 0; }
+
+/* 版本历史（文本资产 append-only 版本链） */
+.version-view {
+  margin-top: 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.version-view .vv-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background: var(--el-fill-color-light);
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+.version-view .vv-body {
+  margin: 0;
+  padding: 12px;
+  max-height: 260px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 </style>

@@ -13,6 +13,7 @@ import type { LwCustomEntityRepository } from './repositories/lw-custom-entity.r
 import type { LwForeshadowRepository } from './repositories/lw-foreshadow.repository'
 import type { ApiKeyRepository } from './repositories/api-key.repository'
 import type { AssetGroupRepository } from './repositories/asset-group.repository'
+import type { AssetVersionRepository } from './repositories/asset-version.repository'
 import type { AssetImageRepository } from './repositories/asset-image.repository'
 import type { UserRepository } from './repositories/user.repository'
 import type { CharacterBindingRepository } from './repositories/character-binding.repository'
@@ -196,6 +197,7 @@ export interface ICoreDatabaseManager {
   assets: AssetRepository | null
   /** 资产组（套图/组图：一次流程多图归为一组） */
   assetGroups: AssetGroupRepository | null
+  assetVersions: AssetVersionRepository | null
   /** 资产分类定义（业务分类实体：驱动资产中心分组与预览） */
   assetCategories: AssetCategoryRepository | null
   /** 信息来源类别（设置界面「信息来源」的 tab：内置新闻来源 + 用户自建类别） */
