@@ -80,6 +80,35 @@
       "sourceRef": "卢克文工作室公众号 14 篇",
       "createdAt": "2026-10-09T04:22:47.787Z",
       "updatedAt": "2026-10-09T04:22:47.788Z"
+    },
+    {
+      "id": "mat-3289b185",
+      "category": "image",
+      "subCategory": null,
+      "name": "唐·文官俑（大都会博物馆 11.83.2）",
+      "description": "",
+      "tags": [
+        "唐代",
+        "文物",
+        "人物",
+        "配图示例"
+      ],
+      "kind": "file",
+      "storagePath": "C:\\Users\\daoge\\code\\project\\the-bot\\materials\\image\\mat-3289b185.jpg",
+      "url": "https://www.metmuseum.org/art/collection/search/49198",
+      "mimeType": "image/jpeg",
+      "sizeBytes": 149540,
+      "metadata": {
+        "checksum": "sha256:3289b185d1afe577635ba955e2d18e0e36a2ab58d9240c45c5250b46109d14e6",
+        "via": "writing-styles 配图（检索路径）",
+        "originalName": "met-49198-civil-official.jpg",
+        "license": "CC0（公有领域，Met Open Access）",
+        "author": "The Metropolitan Museum of Art"
+      },
+      "sourceType": "writing-styles 配图（检索路径）",
+      "sourceRef": "https://www.metmuseum.org/art/collection/search/49198",
+      "createdAt": "2026-10-09T04:42:03.928Z",
+      "updatedAt": "2026-10-09T04:42:03.929Z"
     }
   ]
 }
