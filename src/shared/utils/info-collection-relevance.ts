@@ -14,7 +14,7 @@
 /** 把查询拆成片段（空白/标点分隔）；≥3 字才有效——"最新/官方"这类 2 字泛词命中门槛过低（2026-10-09 真机：门户首页带"最新"即混入待审区） */
 export function querySegments(query: string): string[] {
   return (query ?? '')
-    .split(/[\s,，。；;、|/（）()【】[]+/)
+    .split(/[\s,，。；;、|/（）()【】\][[]+/)
     .map(s => s.trim())
     .filter(s => s.length >= 3)
 }
