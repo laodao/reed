@@ -1,0 +1,45 @@
+[accept] 主窗口： 首页 - The Bot
+[accept] 找到定义： [内置] 大V博主蒸馏
+[accept] 模型： pc_mmyd3u5b_hkf5odex3 deepseek-v4-flash
+[accept] runId = wfrun_1791554633418_h2pzikhvg
+[accept] 10s status=running 
+[accept] 20s status=running 
+[accept] 30s status=running 
+[accept] 40s status=running 
+[accept] 50s status=running 
+[accept] 60s status=succeeded 
+[accept] 终态： succeeded
+[accept] ✅ 技能包已落盘：SKILL.md 5392 字节；references = anti-patterns.md, decision-rules.md, frameworks.md, terms.md
+--- SKILL.md 前 900 字 ---
+---
+name: ruanyifeng-weekly
+description: 当需要撰写或编辑《科技爱好者周刊》式科技评论，处理技术趋势判断、术语翻译与选材叙事时使用；提供“分久必合”生态循环模型、行业习惯与原文隐喻的译名取舍判据，以及反模式自检清单。
+title: 阮一峰科技周刊：技术趋势叙事与术语取舍
+when_to_use: 当你要写科技周报、技术趋势短评，或纠结 stack 等术语该按行业习惯还是按原文隐喻翻译时，打开本技能。
+category: 内容创作
+---
+
+# 阮一峰科技周刊：技术趋势叙事与术语取舍
+
+> 本技能仅基于一篇约 360 字的阅读笔记构建，材料极薄。以下可操作内容集中在两块：技术栈生态演化的定性模型，以及中英术语翻译时“行业习惯 vs 原文隐喻”的取舍。科技选题结构、一手信息源筛选等用户关注点，笔记未提供可操作细节，见「诚实边界」。
+
+## ① 适用场景 / 何时不用
+
+**适用：**
+- 撰写或编辑《科技爱好者周刊》式短评，需要在零散技术动态中插入趋势判断。
+- 遇到 stack 等技术术语的中译争议，需要决定按行业习惯还是保留原文隐喻。
+- 需要向读者解释“为什么多个技术栈竞争后总会收敛到少数主流”。
+
+**何时不用：**
+- 需要数据、阈值、时间尺度的趋势预测——本材料没有。
+- 需要系统性的科技选题框架、采访方法、信源核验流程——本材料未覆盖。
+- 需要裁定翻译争议的最终结论——原文只给倾向，未裁定。
+
+## ② 使用流程
+
+1. 先判材料性质：是技术动态、术语讨论，还是趋势评论？本笔记对应的是“术语讨论中夹带趋势模型”。
+2. 若涉及术语翻译，先问：原文是否在用隐喻支撑论证？是则优先保留隐喻；否则用行业习惯译法。争议点可打开[决策规则](references/decision-rules.md)。
+3. 若涉及技术栈生态，套用“分久必合，合久必分”循环描述：并行竞争 → 停滞与迭代分化 → 用户跟随相对主流 → 潮流汇大 → 新生态高地 → 再分流。详见[框架全集](references/frameworks.md)。
+4. 
+[accept] ✅ 资产中心「博主蒸馏」本博主资产数 = 2 阮一峰-科技爱好者周刊（第 411 期）：OpenClaw 2.0 是一个缩影 - 阮一峰的网络日志 | 阮一峰-科技爱好者周刊（第 411 期）：OpenClaw 2.0 是一个缩影 - 阮一峰的网络日志
+[accept] 🎉 大V博主蒸馏工作流真机验收通过：runId=wfrun_1791554633418_h2pzikhvg
