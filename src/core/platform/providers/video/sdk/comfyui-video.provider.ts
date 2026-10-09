@@ -250,9 +250,12 @@ export class ComfyUIVideoProvider extends BaseVideoProvider {
       }
       return { taskId, status: data.status === 'running' ? 'processing' : 'pending' }
     } catch (error: unknown) {
+      // 评审 2026-10-10：轮询阶段的网络瞬时故障（超时AbortError/连接重置/隧道断流）只说明
+      // 「本次查询失败」，不代表网关侧任务失败——返回 failed 会让上层把 GPU 上仍在渲染的
+      // 任务直接判死。降级为 pending 继续轮询，节点级长超时（默认 70 分钟）兜底。
       return {
         taskId,
-        status: 'failed',
+        status: 'pending',
         error: error instanceof Error ? error.message : String(error),
       }
     }
