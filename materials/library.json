@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "id": "mat-776d07db",
+      "category": "report",
+      "subCategory": null,
+      "name": "缅北电诈覆灭深度研究报告（The Bot 主题深度研究工作流）",
+      "description": "",
+      "tags": [
+        "缅北",
+        "电诈",
+        "四大家族",
+        "研究报告"
+      ],
+      "kind": "file",
+      "storagePath": "C:\\Users\\daoge\\code\\project\\the-bot\\materials\\report\\mat-776d07db.md",
+      "url": "The Bot 主题深度研究工作流 6 轮检索整合",
+      "mimeType": "text/markdown",
+      "sizeBytes": 17929,
+      "metadata": {
+        "checksum": "sha256:776d07dbaf57911086500aee6551c09596cecce7e491e3fe8ea0334d1372cc65",
+        "via": "主题深度研究",
+        "originalName": "缅北电诈覆灭深度研究报告-2026-10-07.md"
+      },
+      "sourceType": "主题深度研究",
+      "sourceRef": "The Bot 主题深度研究工作流 6 轮检索整合",
+      "createdAt": "2026-10-09T04:22:47.637Z",
+      "updatedAt": "2026-10-09T04:22:47.637Z"
+    },
+    {
+      "id": "mat-bb5fc25a",
+      "category": "note",
+      "subCategory": null,
+      "name": "时政深度文语域蒸馏笔记（4 篇书面向样本对照）",
+      "description": "",
+      "tags": [
+        "写作风格",
+        "语域",
+        "时政",
+        "蒸馏笔记"
+      ],
+      "kind": "file",
+      "storagePath": "C:\\Users\\daoge\\code\\project\\the-bot\\materials\\note\\mat-bb5fc25a.md",
+      "url": "卢克文工作室/凤凰网/一棵青木/温骏轩",
+      "mimeType": "text/markdown",
+      "sizeBytes": 4181,
+      "metadata": {
+        "checksum": "sha256:bb5fc25a2cc4f2c5660d325749c96781baf128174749b73a6e5f34a7e85999db",
+        "via": "writing-styles 蒸馏",
+        "originalName": "notes-affairs-formal.md"
+      },
+      "sourceType": "writing-styles 蒸馏",
+      "sourceRef": "卢克文工作室/凤凰网/一棵青木/温骏轩",
+      "createdAt": "2026-10-09T04:22:47.710Z",
+      "updatedAt": "2026-10-09T04:22:47.711Z"
+    },
+    {
+      "id": "mat-2b2f0bb3",
+      "category": "note",
+      "subCategory": null,
+      "name": "卢克文工作室风格画像汇总（14 篇精读）",
+      "description": "",
+      "tags": [
+        "写作风格",
+        "卢克文",
+        "深度叙事"
+      ],
+      "kind": "file",
+      "storagePath": "C:\\Users\\daoge\\code\\project\\the-bot\\materials\\note\\mat-2b2f0bb3.md",
+      "url": "卢克文工作室公众号 14 篇",
+      "mimeType": "text/markdown",
+      "sizeBytes": 4353,
+      "metadata": {
+        "checksum": "sha256:2b2f0bb3e891f1e780193da69949bc0cd587ae5c672078ff828fc8a6d4902548",
+        "via": "writing-styles 蒸馏",
+        "originalName": "aggregate-lukewen.md"
+      },
+      "sourceType": "writing-styles 蒸馏",
+      "sourceRef": "卢克文工作室公众号 14 篇",
+      "createdAt": "2026-10-09T04:22:47.787Z",
+      "updatedAt": "2026-10-09T04:22:47.788Z"
+    }
+  ]
+}
