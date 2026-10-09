@@ -36,6 +36,36 @@
           </div>
         </div>
       </div>
+
+      <!-- 发送失败错误（此前存量缺口：streamState.error 从未被渲染）。
+           按 [AIHUB_*] 前缀映射为登录/充值引导，其余错误展示真实文案。 -->
+      <div v-if="!isGenerating && streamState.error" class="message-item assistant">
+        <div class="message-avatar">⚠️</div>
+        <div class="message-content">
+          <el-alert :type="aihubErrorCode ? 'warning' : 'error'" :closable="false" show-icon>
+            <template #title>{{ aihubErrorTitle }}</template>
+            {{ displayErrorText }}
+            <el-button
+              v-if="aihubErrorCode === 'AIHUB_NOT_LOGGED_IN' || aihubErrorCode === 'AIHUB_SESSION_EXPIRED'"
+              size="small"
+              type="primary"
+              text
+              @click="goAihubLogin"
+            >
+              去登录
+            </el-button>
+            <el-button
+              v-if="aihubErrorCode === 'AIHUB_INSUFFICIENT_BALANCE'"
+              size="small"
+              type="primary"
+              text
+              @click="goAihubLogin"
+            >
+              去充值/登录
+            </el-button>
+          </el-alert>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -80,6 +110,26 @@ const emit = defineEmits<{
 }>()
 
 const listRef = ref<HTMLElement | null>(null)
+
+// ===== 发送失败错误展示（N7 存量缺口补位）=====
+// 错误码约定：主进程在 [AIHUB_*] 前缀中携带错误类别，此处解析映射为引导文案
+const aihubErrorCode = computed(() => {
+  const m = props.streamState?.error?.match(/^\[(AIHUB_[A-Z_]+)\]/)
+  return m ? m[1] : null
+})
+const aihubErrorTitle = computed(() => {
+  switch (aihubErrorCode.value) {
+    case 'AIHUB_NOT_LOGGED_IN': return 'AI Hub 未登录'
+    case 'AIHUB_SESSION_EXPIRED': return 'AI Hub 登录已过期'
+    case 'AIHUB_INSUFFICIENT_BALANCE': return 'AI Hub 余额不足'
+    default: return '发送失败'
+  }
+})
+const displayErrorText = computed(() => props.streamState?.error?.replace(/^\[AIHUB_[A-Z_]+\]\s*/, '') || '')
+function goAihubLogin(): void {
+  // 跳设置页 AI Hub 账号 Tab（Settings 路由支持 ?tab= 定位）
+  window.location.hash = '#/settings?tab=aihub'
+}
 
 // 用户是否正在手动滚动（保留语义占位：滚动检测接线在 MessageList 滚动容器上）
 // eslint-disable-next-line @typescript-eslint/no-unused-vars

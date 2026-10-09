@@ -44,9 +44,9 @@ export class InfoSourceEntity {
   @Column({ name: 'sort_order', type: 'integer', default: 0, nullable: true })
   sortOrder!: number | null
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 
-  @Column({ name: 'updated_at', type: 'datetime', nullable: true })
+  @Column({ name: 'updated_at', type: Date, nullable: true })
   updatedAt!: Date | null
 }

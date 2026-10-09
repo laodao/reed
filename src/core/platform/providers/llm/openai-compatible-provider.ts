@@ -44,6 +44,30 @@ export class OpenAICompatibleProvider extends BaseProvider {
   }
 
   /**
+   * AI Hub 网关的认证/计费错误特判（严格限定 providerId === 'ai-hub'，其他 provider 零行为变化）：
+   * - 401 → 会话失效（JWT 过期/被吊销）：清会话 + 禁用 ai-hub config + 广播，错误加
+   *   [AIHUB_SESSION_EXPIRED] 前缀供渲染端映射为登录引导；
+   * - 402 → 余额不足：错误加 [AIHUB_INSUFFICIENT_BALANCE] 前缀供渲染端映射为充值引导。
+   * 动态 import 避免与 aihub 模块形成静态循环依赖。
+   */
+  private async handleAihubAuthError(status: number): Promise<string> {
+    if (this.providerId !== 'ai-hub') return ''
+    if (status === 401) {
+      try {
+        const { onAihubTokenExpired } = await import('@core/platform/aihub/aihub-auth.service')
+        void onAihubTokenExpired().catch(() => {})
+      } catch {
+        // aihub 模块加载失败时仅跳过会话清理
+      }
+      return '[AIHUB_SESSION_EXPIRED] '
+    }
+    if (status === 402) {
+      return '[AIHUB_INSUFFICIENT_BALANCE] '
+    }
+    return ''
+  }
+
+  /**
    * 获取模型列表
    */
   async getModels(): Promise<Array<{ id: string; name: string; maxTokens: number; contextWindow: number }>> {
@@ -57,7 +81,8 @@ export class OpenAICompatibleProvider extends BaseProvider {
     })
 
     if (!response.ok) {
-      throw new Error(`获取模型列表失败: HTTP ${response.status}`)
+      const aihubPrefix = await this.handleAihubAuthError(response.status)
+      throw new Error(`${aihubPrefix}获取模型列表失败: HTTP ${response.status}`)
     }
 
     const data = await response.json()
@@ -369,7 +394,8 @@ export class OpenAICompatibleProvider extends BaseProvider {
 
       if (!response.ok) {
         const errorText = await response.text()
-        throw new Error(`API 请求失败: ${response.status} - ${errorText}`)
+        const aihubPrefix = await this.handleAihubAuthError(response.status)
+        throw new Error(`${aihubPrefix}API 请求失败: ${response.status} - ${errorText}`)
       }
 
       const reader = response.body?.getReader()
@@ -492,9 +518,10 @@ export class OpenAICompatibleProvider extends BaseProvider {
 
       if (!response.ok) {
         const errorText = await response.text()
+        const aihubPrefix = await this.handleAihubAuthError(response.status)
         return {
           success: false,
-          error: `API 请求失败: ${response.status} - ${errorText}`
+          error: `${aihubPrefix}API 请求失败: ${response.status} - ${errorText}`
         }
       }
 

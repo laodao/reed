@@ -35,9 +35,9 @@ export class DlDocEntity {
   @Column({ name: 'content_md', type: 'text', nullable: true })
   contentMd!: string | null
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 
-  @Column({ name: 'published_at', type: 'datetime', nullable: true })
+  @Column({ name: 'published_at', type: Date, nullable: true })
   publishedAt!: Date | null
 }

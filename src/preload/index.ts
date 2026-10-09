@@ -35,6 +35,19 @@ const IPC_CHANNELS = {
   PROVIDER_CONFIG_SET_DEFAULT: 'provider-config:set-default',
   PROVIDER_CONFIG_CHANGED: 'provider-config:changed',
 
+  // AI Hub 统一网关（账号会话/模型刷新/计费）
+  AIHUB_LOGIN: 'aihub:login',
+  AIHUB_REGISTER: 'aihub:register',
+  AIHUB_LOGOUT: 'aihub:logout',
+  AIHUB_SESSION: 'aihub:session',
+  AIHUB_REFRESH_MODELS: 'aihub:refresh-models',
+  AIHUB_TOKEN_EXPIRED: 'aihub:token-expired',
+  AIHUB_SAVE_GATEWAY_CONFIG: 'aihub:save-gateway-config',
+  AIHUB_BALANCE: 'aihub:balance',
+  AIHUB_REDEEM: 'aihub:redeem',
+  AIHUB_RECHARGE_URL: 'aihub:recharge-url',
+  AIHUB_SESSION_CHANGED: 'aihub:session-changed',
+
   // 对话相关
   DIALOG_LIST: 'dialog:list',
   DIALOG_LIST_BY_ROLE: 'dialog:list-by-role',
@@ -546,6 +559,28 @@ const electronAPI = {
       const handler = () => callback()
       ipcRenderer.on(IPC_CHANNELS.PROVIDER_CONFIG_CHANGED, handler)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.PROVIDER_CONFIG_CHANGED, handler)
+    }
+  },
+
+  // AI Hub 统一网关（账号会话/模型刷新/计费）——登录、登出、会话查询、余额、兑换码
+  aihub: {
+    login: (params: { gatewayUrl?: string; identity: string; password: string }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.AIHUB_LOGIN, params),
+    register: (params: { gatewayUrl?: string; email: string; password: string }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.AIHUB_REGISTER, params),
+    logout: () => ipcRenderer.invoke(IPC_CHANNELS.AIHUB_LOGOUT),
+    session: () => ipcRenderer.invoke(IPC_CHANNELS.AIHUB_SESSION),
+    refreshModels: () => ipcRenderer.invoke(IPC_CHANNELS.AIHUB_REFRESH_MODELS),
+    saveGatewayConfig: (config: { gatewayUrl: string; rechargeUrl?: string }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.AIHUB_SAVE_GATEWAY_CONFIG, config),
+    balance: () => ipcRenderer.invoke(IPC_CHANNELS.AIHUB_BALANCE),
+    redeem: (code: string) => ipcRenderer.invoke(IPC_CHANNELS.AIHUB_REDEEM, { code }),
+    rechargeUrl: () => ipcRenderer.invoke(IPC_CHANNELS.AIHUB_RECHARGE_URL),
+    // 监听会话变化（登录/登出/401 广播）
+    onSessionChanged: (callback: (data: { loggedIn: boolean }) => void) => {
+      const handler = (_event: unknown, data: { loggedIn: boolean }) => callback(data)
+      ipcRenderer.on(IPC_CHANNELS.AIHUB_SESSION_CHANGED, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.AIHUB_SESSION_CHANGED, handler)
     }
   },
 

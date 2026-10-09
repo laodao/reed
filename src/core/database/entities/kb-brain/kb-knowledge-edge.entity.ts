@@ -79,6 +79,6 @@ export class KbKnowledgeEdgeEntity {
   @Column({ name: 'verified', type: 'integer', default: 0 })
   verified!: number
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 }

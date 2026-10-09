@@ -45,6 +45,6 @@ export class WorkflowRunEventEntity {
   @Column({ name: 'payload_json', type: 'text', nullable: true })
   payloadJson!: string | null
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 }

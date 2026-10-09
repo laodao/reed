@@ -14,6 +14,7 @@ import { registerSettingsHandlers } from '@electron/ipc/handlers/settings.handle
 import { registerApiKeyHandlers } from '@electron/ipc/handlers/api-key.handler'
 import { registerOSSHandlers } from '@electron/ipc/handlers/oss.handler'
 import { registerProviderConfigHandlers } from '@electron/ipc/handlers/provider-config.handler'
+import { registerAihubHandlers } from '@core/platform/aihub/aihub.handler'
 import { registerSearchEngineHandlers } from '@electron/ipc/handlers/search-engine.handler'
 import { registerTranslationHandlers } from '@electron/ipc/handlers/translation.handler'
 import { registerImageHandlers } from '@electron/ipc/handlers/image.handler'
@@ -36,6 +37,8 @@ export async function registerAllWebChannels(): Promise<void> {
   registerApiKeyHandlers()
   registerOSSHandlers()
   registerProviderConfigHandlers()
+  // AI Hub 统一网关（账号会话/模型刷新/计费）：平台基础设施，Electron 端同函数注册
+  registerAihubHandlers()
   registerSearchEngineHandlers()
   registerTranslationHandlers()
   registerImageHandlers()

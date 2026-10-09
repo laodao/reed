@@ -264,7 +264,7 @@ async function loadProviderConfigs(): Promise<void> {
     }
     const response = await window.electronAPI.providerConfig.list()
     if (response.success && response.data) {
-      providerConfigs.value = response.data.filter((c: UserProviderConfig) => c.isEnabled)
+      providerConfigs.value = response.data.filter((c: UserProviderConfig) => c.runtimeUsable ?? c.isEnabled)
     }
   } catch (error) {
     console.error('加载提供商配置失败:', error)

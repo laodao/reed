@@ -111,7 +111,7 @@ async function loadDynamicOptions() {
         const nodeType: string = wfNode.value.type
         const allowed = NODE_MODEL_TYPES[nodeType] ?? ['text', 'chat', 'multimodal', 'audio', 'image', 'embedding', 'rerank']
         dynamicOptions.value.providers = list
-          .filter(c => c.isEnabled !== false && c.isEnabled !== 0)
+          .filter(c => (c.runtimeUsable ?? c.isEnabled) !== false && (c.runtimeUsable ?? c.isEnabled) !== 0)
           .map(c => ({
             id: c.id,
             name: c.name || c.shortId || c.id,

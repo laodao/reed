@@ -17,15 +17,15 @@ import { toAssetUrl } from '@core/utils/asset-path'
 import {
   createVideoProvider,
   getProviderDefinition,
-  isProviderImplemented
+  isProviderImplemented,
+  resolveVideoProviderType
 } from '@core/platform/providers/video'
 import type { BaseVideoProvider } from '@core/platform/providers/video'
 import type {
   VideoProvider,
   VideoGenerationRequest,
   VideoGenerationResponse,
-  VideoTaskStatus,
-  VideoProviderType
+  VideoTaskStatus
 } from '@shared/types/video-provider.types'
 
 // 跨平台 logger：包装 console，简单实现 electron-log 风格的 .scope/.info/.error API
@@ -108,7 +108,7 @@ export class VideoGenerationService {
         // 查找视频类型的 Provider
         providerConfig = enabledConfigs.find(c =>
           c.templateId.startsWith('video-') ||
-          ['volcengine', 'runway', 'pika', 'kling'].includes(c.templateId)
+          ['volcengine', 'runway', 'pika', 'kling', 'ai-hub'].includes(c.templateId)
         )
         logger.info('[VideoService.generateVideo] 使用默认 Provider:', providerConfig?.name)
       }
@@ -119,7 +119,7 @@ export class VideoGenerationService {
       }
 
       // 按模板定义判定是否需要 API Key（ComfyUI 等本地网关免密钥）
-      const authProviderType = providerConfig.templateId.replace('video-', '') as VideoProviderType
+      const authProviderType = resolveVideoProviderType(providerConfig.templateId)
       const authDefinition = getProviderDefinition(authProviderType)
       const needsApiKey = authDefinition ? authDefinition.requiresApiKey : true
 
@@ -148,7 +148,7 @@ export class VideoGenerationService {
       }
 
       // 确定 Provider 类型
-      let providerType = providerConfig.templateId.replace('video-', '') as VideoProviderType
+      let providerType = resolveVideoProviderType(providerConfig.templateId)
 
       // 特殊处理：bailian 和 dashscope 使用相同的 Provider（阿里云百炼）
       if (providerType === 'bailian' || providerType === 'dashscope' || providerType === 'qwen') {
@@ -507,7 +507,7 @@ export class VideoGenerationService {
       const providers: VideoProvider[] = []
 
       for (const config of enabledConfigs) {
-        const providerType = config.templateId.replace('video-', '') as VideoProviderType
+        const providerType = resolveVideoProviderType(config.templateId)
 
         if (!isProviderImplemented(providerType)) {
           continue
@@ -561,7 +561,7 @@ export class VideoGenerationService {
       const decryptedApiKey = secureStorage.decrypt(config.apiKey)
 
       // 创建 Provider 实例
-      const providerType = config.templateId.replace('video-', '') as VideoProviderType
+      const providerType = resolveVideoProviderType(config.templateId)
 
       if (!isProviderImplemented(providerType)) {
         return { success: false, message: `视频生成服务 ${providerType} 暂未实现` }

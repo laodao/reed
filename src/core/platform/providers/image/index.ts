@@ -18,6 +18,9 @@ import { ComfyUIImageProvider } from './sdk/comfyui-image.provider'
 // DashScope Provider（使用 Bearer Token 认证）
 import { DashScopeImageProvider } from './dashscope-image.provider'
 
+// AI Hub 统一网关（account session JWT，任务 API 适配器内同步化）
+import { AihubImageProvider } from './aihub-image.provider'
+
 // 保留旧的实现（使用阿里云签名认证）
 import { BailianImageProvider } from './bailian-image.provider'
 
@@ -28,7 +31,7 @@ export { BaseImageProvider }
 export * from './sdk'
 
 // 导出 Provider 实现
-export { DashScopeImageProvider, BailianImageProvider, VolcengineImageProvider }
+export { DashScopeImageProvider, BailianImageProvider, VolcengineImageProvider, AihubImageProvider }
 
 /**
  * Provider 类映射表
@@ -48,7 +51,9 @@ const PROVIDER_CLASSES: Record<string, new (config: ImageProviderConfig) => Base
   // OpenAI DALL-E 使用官方 SDK
   openai: OpenAIImageProvider,
   // ComfyUI 本地生成网关（局域网自建，免密钥）
-  comfyui: ComfyUIImageProvider
+  comfyui: ComfyUIImageProvider,
+  // AI Hub 统一网关（登录物化 JWT 鉴权）
+  aihub: AihubImageProvider
 }
 
 /**
@@ -95,6 +100,12 @@ export const IMAGE_PROVIDER_DEFINITIONS: Record<ImageProviderType, {
     name: 'ComfyUI 生成网关',
     description: '局域网自建 ComfyUI 生成网关（Krea2/Flux Kontext），无需 API Key',
     requiresApiKey: false
+  },
+  aihub: {
+    type: 'aihub',
+    name: 'AI Hub（统一网关）',
+    description: 'AI Hub 统一模型网关（登录即用，按余额计费）',
+    requiresApiKey: true
   },
   custom: {
     type: 'custom',

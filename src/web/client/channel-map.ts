@@ -47,6 +47,18 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'providerConfig.delete': { channel: 'provider-config:delete' },
   'providerConfig.test': { channel: 'provider-config:test' },
   'providerConfig.setDefault': { channel: 'provider-config:set-default' },
+  // AI Hub 统一网关（账号会话/模型刷新/计费）
+  'aihub.login': { channel: 'aihub:login' },
+  'aihub.register': { channel: 'aihub:register' },
+  'aihub.logout': { channel: 'aihub:logout' },
+  'aihub.session': { channel: 'aihub:session' },
+  'aihub.refreshModels': { channel: 'aihub:refresh-models' },
+  'aihub.saveGatewayConfig': { channel: 'aihub:save-gateway-config' },
+  'aihub.balance': { channel: 'aihub:balance' },
+  'aihub.redeem': { channel: 'aihub:redeem', wrap: (code: unknown) => [{ code }] },
+  'aihub.rechargeUrl': { channel: 'aihub:recharge-url' },
+  // aihub.onSessionChanged(cb) — 后端 emit('aihub:session-changed', data)；preload 已 strip event
+  'aihub.onSessionChanged': { channel: 'aihub:session-changed' },
   'dialog.list': { channel: 'dialog:list' },
   'dialog.listByRole': { channel: 'dialog:list-by-role' },
   'dialog.get': { channel: 'dialog:get' },

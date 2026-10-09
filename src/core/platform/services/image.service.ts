@@ -111,7 +111,7 @@ export class ImageService {
         // 查找图像类型的 Provider（template_id 以 'image-' 开头或者是已知的图像 provider）
         providerConfig = enabledConfigs.find(c =>
           c.templateId.startsWith('image-') ||
-          ['bailian', 'volcengine', 'minimax', 'zhipu', 'openai'].includes(c.templateId)
+          ['bailian', 'volcengine', 'minimax', 'zhipu', 'openai', 'ai-hub'].includes(c.templateId)
         )
         logger.info('[ImageService.generateImage] 使用默认 Provider:', providerConfig?.name)
       }
@@ -172,6 +172,12 @@ export class ImageService {
       if (providerType === 'zhipu' || providerType === 'minimax') {
         logger.info(`[ImageService.generateImage] ${providerType} 使用 OpenAI 兼容格式`)
         providerType = 'openai'
+      }
+
+      // AI Hub 统一网关 → aihub 适配器（任务 API 适配器内同步化）
+      if (providerType === 'ai-hub') {
+        logger.info('[ImageService.generateImage] ai-hub 使用统一任务 API')
+        providerType = 'aihub'
       }
 
       // design §8 不隐瞒原则：未登记模型在生成边界显式报错（不静默、不假成功）
@@ -998,7 +1004,7 @@ export class ImageService {
       if (providers.length === 0) {
         const imageConfigs = enabledConfigs.filter(c =>
           c.templateId.startsWith('image-') ||
-          ['bailian', 'volcengine', 'minimax', 'zhipu'].includes(c.templateId)
+          ['bailian', 'volcengine', 'minimax', 'zhipu', 'ai-hub'].includes(c.templateId)
         )
 
         for (const config of imageConfigs) {
@@ -1049,7 +1055,8 @@ export class ImageService {
       'volcengine',    // 火山引擎
       'bailian',       // 百炼平台
       'siliconflow',   // SiliconFlow
-      'dashscope'      // 阿里云 DashScope
+      'dashscope',     // 阿里云 DashScope
+      'ai-hub'         // AI Hub 统一网关
     ]
 
     // 移除 'image-' 前缀后再检查

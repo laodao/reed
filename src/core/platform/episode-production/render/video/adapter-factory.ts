@@ -11,6 +11,7 @@
 import {
   isProviderImplemented,
   createVideoProvider,
+  resolveVideoProviderType,
 } from '@core/platform/providers/video'
 import type { VideoProviderType } from '@shared/types/video-provider.types'
 import { adaptBaseVideoProvider } from './base-video-provider-bridge'
@@ -45,7 +46,10 @@ export async function createAdapterForProviderWithReason(
   }
   const { config: cfg, apiKey } = providerInfo
 
-  const providerType = cfg.templateId as VideoProviderType | undefined
+  // templateId → providerType 统一推导（ai-hub → aihub 等，防 replace 漏改 N2）
+  const providerType = cfg.templateId
+    ? resolveVideoProviderType(cfg.templateId)
+    : (undefined as VideoProviderType | undefined)
   if (!providerType) return { adapter: null, reason: `provider config 缺 templateId` }
   if (!isProviderImplemented(providerType)) {
     return { adapter: null, reason: `provider type=${providerType} 未实现 BaseVideoProvider` }

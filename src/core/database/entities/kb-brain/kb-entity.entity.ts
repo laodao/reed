@@ -65,9 +65,9 @@ export class KbEntityEntity {
   @Column({ name: 'scope', type: 'varchar', default: 'book' })
   scope!: KbEntityScope
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 
-  @Column({ name: 'updated_at', type: 'datetime', nullable: true })
+  @Column({ name: 'updated_at', type: Date, nullable: true })
   updatedAt!: Date | null
 }

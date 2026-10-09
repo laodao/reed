@@ -16,6 +16,9 @@ vi.mock('@core/platform/episode-production/narrative/ai/_helpers', () => ({
 vi.mock('@core/platform/providers/video', () => ({
   isProviderImplemented: () => true,
   createVideoProvider: () => ({}),
+  // adapter-factory 现经 resolveVideoProviderType 推导 provider 类型（ai-hub → aihub 等）
+  resolveVideoProviderType: (templateId: string) =>
+    templateId === 'ai-hub' ? 'aihub' : templateId.replace('video-', ''),
 }))
 vi.mock(
   '@core/platform/episode-production/render/video/base-video-provider-bridge',

@@ -36,6 +36,6 @@ export class AgentToolArtifactEntity {
   @Column({ name: 'payload_json', type: 'text' })
   payloadJson!: string
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 }

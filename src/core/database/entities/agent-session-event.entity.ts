@@ -39,6 +39,6 @@ export class AgentSessionEventEntity {
   @Column({ name: 'content', type: 'text' })
   content!: string
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 }

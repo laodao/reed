@@ -73,7 +73,7 @@ export class WorkflowNodeRunEntity {
   routeTaken!: string | null
 
   /** 审核超时死线（status=waiting_review 时由 ticker 扫描） */
-  @Column({ name: 'wait_expires_at', type: 'datetime', nullable: true })
+  @Column({ name: 'wait_expires_at', type: Date, nullable: true })
   waitExpiresAt!: Date | null
 
   /** 审核操作留痕 JSON：{ decision, comment, editedValues, decidedAt } */
@@ -84,18 +84,18 @@ export class WorkflowNodeRunEntity {
   @Column({ name: 'state_json', type: 'text', nullable: true })
   stateJson!: string | null
 
-  @Column({ name: 'started_at', type: 'datetime', nullable: true })
+  @Column({ name: 'started_at', type: Date, nullable: true })
   startedAt!: Date | null
 
-  @Column({ name: 'finished_at', type: 'datetime', nullable: true })
+  @Column({ name: 'finished_at', type: Date, nullable: true })
   finishedAt!: Date | null
 
   @Column({ name: 'duration_ms', type: 'integer', nullable: true })
   durationMs!: number | null
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 
-  @Column({ name: 'updated_at', type: 'datetime', nullable: true })
+  @Column({ name: 'updated_at', type: Date, nullable: true })
   updatedAt!: Date | null
 }

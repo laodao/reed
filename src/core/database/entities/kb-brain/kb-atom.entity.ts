@@ -125,16 +125,16 @@ export class KbAtomEntity {
   @Column({ name: 'use_count', type: 'integer', default: 0 })
   useCount!: number
 
-  @Column({ name: 'last_used_at', type: 'datetime', nullable: true })
+  @Column({ name: 'last_used_at', type: Date, nullable: true })
   lastUsedAt!: Date | null
 
   /** superseded 时指向新论断（关旧开新，不物理删） */
   @Column({ name: 'superseded_by_atom_id', type: 'varchar', nullable: true })
   supersededByAtomId!: string | null
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 
-  @Column({ name: 'updated_at', type: 'datetime', nullable: true })
+  @Column({ name: 'updated_at', type: Date, nullable: true })
   updatedAt!: Date | null
 }

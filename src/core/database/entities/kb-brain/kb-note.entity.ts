@@ -114,7 +114,7 @@ export class KbNoteEntity {
   @Column({ name: 'fsrs_difficulty', type: 'float', nullable: true })
   fsrsDifficulty!: number | null
 
-  @Column({ name: 'last_review_at', type: 'datetime', nullable: true })
+  @Column({ name: 'last_review_at', type: Date, nullable: true })
   lastReviewAt!: Date | null
 
   @Column({ name: 'review_count', type: 'integer', default: 0 })
@@ -128,20 +128,20 @@ export class KbNoteEntity {
   @Column({ name: 'cited_count', type: 'integer', default: 0 })
   citedCount!: number
 
-  @Column({ name: 'last_cited_at', type: 'datetime', nullable: true })
+  @Column({ name: 'last_cited_at', type: Date, nullable: true })
   lastCitedAt!: Date | null
 
   /** FSRS 到期时间（复习排期；null=未排期/未启用学习模式） */
-  @Column({ name: 'due_at', type: 'datetime', nullable: true })
+  @Column({ name: 'due_at', type: Date, nullable: true })
   dueAt!: Date | null
 
   /** FSRS 状态机（New=0 Learning=1 Review=2 Relearning=3；学习步骤卡的时间间隔依赖此态） */
   @Column({ name: 'fsrs_state', type: 'integer', nullable: true })
   fsrsState!: number | null
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 
-  @Column({ name: 'updated_at', type: 'datetime', nullable: true })
+  @Column({ name: 'updated_at', type: Date, nullable: true })
   updatedAt!: Date | null
 }

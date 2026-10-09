@@ -65,14 +65,14 @@ export class PlatformEventEntity {
   @Column({ name: 'correlation_id', type: 'varchar', nullable: true })
   correlationId!: string | null
 
-  @Column({ name: 'occurred_at', type: 'datetime' })
+  @Column({ name: 'occurred_at', type: Date })
   occurredAt!: Date
 
   @Column({ name: 'schema_version', type: 'integer', default: 1 })
   schemaVersion!: number
 
   /** 落库时间（恢复/排查用） */
-  @Column({ name: 'created_at', type: 'datetime' })
+  @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 }
 
@@ -109,13 +109,13 @@ export class PlatformEventCursorEntity {
   retryCount!: number
 
   /** 退避后的下次重试时刻 */
-  @Column({ name: 'next_retry_at', type: 'datetime', nullable: true })
+  @Column({ name: 'next_retry_at', type: Date, nullable: true })
   nextRetryAt!: Date | null
 
   @Column({ name: 'last_error', type: 'text', nullable: true })
   lastError!: string | null
 
-  @Column({ name: 'updated_at', type: 'datetime' })
+  @Column({ name: 'updated_at', type: Date })
   updatedAt!: Date
 }
 
@@ -149,16 +149,16 @@ export class PlatformEventDeadLetterEntity {
   @Column({ name: 'attempts', type: 'integer' })
   attempts!: number
 
-  @Column({ name: 'first_failed_at', type: 'datetime' })
+  @Column({ name: 'first_failed_at', type: Date })
   firstFailedAt!: Date
 
-  @Column({ name: 'last_failed_at', type: 'datetime' })
+  @Column({ name: 'last_failed_at', type: Date })
   lastFailedAt!: Date
 
   /** pending / requeued / discarded */
   @Column({ name: 'status', type: 'varchar', default: 'pending' })
   status!: string
 
-  @Column({ name: 'created_at', type: 'datetime' })
+  @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 }

@@ -115,6 +115,7 @@ import { SecureStorageService } from './services/secure-storage.service'
 import { registerSettingsHandlers } from './ipc/handlers/settings.handler'
 import { registerApiKeyHandlers } from './ipc/handlers/api-key.handler'
 import { registerProviderConfigHandlers } from './ipc/handlers/provider-config.handler'
+import { registerAihubHandlers } from '@core/platform/aihub/aihub.handler'
 import { registerImageHandlers } from './ipc/handlers/image.handler'
 import { registerFileHandlers } from './ipc/handlers/file.handler'
 import { registerTranslationHandlers } from './ipc/handlers/translation.handler'
@@ -406,6 +407,8 @@ function initIpcHandlers(): void {
   step('settings', registerSettingsHandlers)
   step('apiKey', registerApiKeyHandlers)
   step('providerConfig', registerProviderConfigHandlers)
+  // AI Hub 统一网关（账号会话/模型刷新/计费）：平台基础设施，非业务包
+  step('aihub', registerAihubHandlers)
   step('image', registerImageHandlers)
   step('file', registerFileHandlers)
   step('translation', registerTranslationHandlers)

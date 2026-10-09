@@ -34,9 +34,9 @@ export class KbQaPairEntity {
   @Column({ name: 'similar_questions', type: 'text', nullable: true })
   similarQuestions!: string | null
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 
-  @Column({ name: 'updated_at', type: 'datetime', nullable: true })
+  @Column({ name: 'updated_at', type: Date, nullable: true })
   updatedAt!: Date | null
 }

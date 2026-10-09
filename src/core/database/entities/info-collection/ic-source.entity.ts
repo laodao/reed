@@ -52,10 +52,10 @@ export class IcSourceEntity {
   clusterId!: string | null
 
   /** 页面发布时间（提取不到为 NULL：time-unknown 不得作时效窗 IR 的唯一依据） */
-  @Column({ name: 'published_at', type: 'datetime', nullable: true })
+  @Column({ name: 'published_at', type: Date, nullable: true })
   publishedAt!: Date | null
 
-  @Column({ name: 'collected_at', type: 'datetime', nullable: true })
+  @Column({ name: 'collected_at', type: Date, nullable: true })
   collectedAt!: Date | null
 
   /** 快照相对 dataPath 路径（单文件 HTML + markdown） */
@@ -86,9 +86,9 @@ export class IcSourceEntity {
   @Column({ name: 'ir_hits_json', type: 'text', nullable: true })
   irHitsJson!: string | null
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 
-  @Column({ name: 'updated_at', type: 'datetime', nullable: true })
+  @Column({ name: 'updated_at', type: Date, nullable: true })
   updatedAt!: Date | null
 }

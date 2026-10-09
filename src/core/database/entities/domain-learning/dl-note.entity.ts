@@ -43,6 +43,6 @@ export class DlNoteEntity {
   @Column({ name: 'content_md', type: 'text' })
   contentMd!: string
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 }

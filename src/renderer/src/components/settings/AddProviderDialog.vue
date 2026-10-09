@@ -114,9 +114,9 @@
               <div class="form-hint">提供商 ID 用于模型显示，格式为：提供商ID/模型ID</div>
             </el-form-item>
 
-            <!-- API 密钥 -->
+            <!-- API 密钥（ai-hub 网关的密钥由登录物化，手填无意义——隐藏输入框并引导到 AI Hub 登录面板） -->
             <el-form-item
-              v-if="templateAuthType !== 'none'"
+              v-if="templateAuthType !== 'none' && !isAihubTemplate"
               label="API 密钥"
               :prop="isEdit ? undefined : 'apiKey'"
             >
@@ -128,6 +128,15 @@
                 @blur="handleApiKeyBlur"
               />
             </el-form-item>
+            <el-alert
+              v-if="isAihubTemplate"
+              type="info"
+              :closable="false"
+              show-icon
+              title="AI Hub 无需配置 API 密钥"
+              description="请到「设置 → AI Hub 账号」登录；登录后密钥自动注入，模型清单自动刷新。"
+              class="aihub-hint"
+            />
 
             <!-- Access Key（火山引擎等需要签名认证的平台） -->
             <template v-if="selectedTemplate?.apiConfig?.requiresAccessKeyForModels">
@@ -634,6 +643,9 @@ const templateAuthType = computed(() => selectedTemplate.value?.apiConfig.authTy
 
 // 免密钥模板（如 llama.cpp 本地推理）：密钥可留空
 const apiKeyOptional = computed(() => selectedTemplate.value?.apiKeyOptional === true)
+
+// ai-hub 网关模板：密钥由登录物化，对话框内隐藏密钥输入并引导到 AI Hub 登录面板
+const isAihubTemplate = computed(() => selectedTemplate.value?.id === 'ai-hub')
 
 // 使用须知（模板声明，如阿里百炼 Token Plan 的地域/限额/密钥隔离/使用范围限制）
 const usageNotes = computed(() => selectedTemplate.value?.usageNotes ?? [])

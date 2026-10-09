@@ -12,6 +12,8 @@ import {
   providerTemplateService,
   PROVIDER_TEMPLATES
 } from '@core/platform/services/provider-template.service'
+import { hasValidAihubSession } from '@core/platform/aihub/aihub-auth.service'
+import { AIHUB_AUTO_DISABLED_FLAG, AIHUB_TEMPLATE_ID } from '@core/platform/aihub/aihub.types'
 import type {
   ProviderTemplateListResponse,
   ProviderConfigListResponse,
@@ -29,6 +31,25 @@ function broadcastConfigChanged(): void {
     getEventEmitter().emit('provider-config:changed', {})
   } catch {
     // 启动早期 EventEmitter 还没注册时静默忽略
+  }
+}
+
+/**
+ * 隐藏 API 密钥并附加运行时可用性标记：
+ * runtimeUsable = isEnabled &&（非 ai-hub || 已有有效网关会话）。
+ * 渲染端模型选择器按 runtimeUsable 过滤，覆盖「会话已过期但 config 仍 enabled」的窗口
+ * （ai-hub 的 Key 是登录物化的 JWT，掩码后渲染端无法自行区分有 Key 和空 Key）。
+ */
+async function maskConfigSecrets<T extends UserProviderConfig>(
+  config: T
+): Promise<T & { runtimeUsable: boolean }> {
+  const aihubUsable =
+    config.templateId !== AIHUB_TEMPLATE_ID || (await hasValidAihubSession())
+  return {
+    ...config,
+    apiKey: config.apiKey ? '******' : undefined,
+    accessKeySecret: config.accessKeySecret ? '******' : undefined,
+    runtimeUsable: Boolean(config.isEnabled) && aihubUsable
   }
 }
 
@@ -76,12 +97,8 @@ async function handleListConfigs(_event: any): Promise<ProviderConfigListRespons
 
     const configs = await dbManager.providerConfigs.getAll()
 
-    // 隐藏 API 密钥
-    const safeConfigs = configs.map((config) => ({
-      ...config,
-      apiKey: config.apiKey ? '******' : undefined,
-      accessKeySecret: config.accessKeySecret ? '******' : undefined
-    }))
+    // 隐藏 API 密钥 + 附加 runtimeUsable
+    const safeConfigs = await Promise.all(configs.map((config) => maskConfigSecrets(config)))
 
     return { success: true, data: safeConfigs }
   } catch (error) {
@@ -111,12 +128,8 @@ async function handleGetConfig(
       return { success: false, error: '配置不存在' }
     }
 
-    // 隐藏 API 密钥
-    const safeConfig = {
-      ...config,
-      apiKey: config.apiKey ? '******' : undefined,
-      accessKeySecret: config.accessKeySecret ? '******' : undefined
-    }
+    // 隐藏 API 密钥 + 附加 runtimeUsable
+    const safeConfig = await maskConfigSecrets(config)
 
     return { success: true, config: safeConfig }
   } catch (error) {
@@ -219,12 +232,8 @@ async function handleCreateConfig(
     // 广播配置变化事件
     broadcastConfigChanged()
 
-    // 返回时隐藏 API 密钥
-    const safeConfig = {
-      ...config,
-      apiKey: config.apiKey ? '******' : undefined,
-      accessKeySecret: config.accessKeySecret ? '******' : undefined
-    }
+    // 返回时隐藏 API 密钥 + 附加 runtimeUsable
+    const safeConfig = await maskConfigSecrets(config)
 
     return { success: true, config: safeConfig }
   } catch (error) {
@@ -289,6 +298,15 @@ async function handleUpdateConfig(
       }
     }
 
+    // ai-hub 手动启停：清 autoDisabled 标记——此后 is_enabled 状态视为用户显式选择，
+    // 重新登录不再自动恢复（避免冲掉用户偏好，见 aihub-auth 状态机）
+    if (existing.templateId === AIHUB_TEMPLATE_ID && data.isEnabled !== undefined) {
+      updates.customParams = {
+        ...(existing.customParams ?? {}),
+        [AIHUB_AUTO_DISABLED_FLAG]: false
+      }
+    }
+
     // 处理 Access Key ID 更新
     if (data.accessKeyId !== undefined) {
       updates.accessKeyId = data.accessKeyId || undefined
@@ -325,12 +343,8 @@ async function handleUpdateConfig(
     // 广播配置变化事件
     broadcastConfigChanged()
 
-    // 返回时隐藏 API 密钥
-    const safeConfig = {
-      ...config,
-      apiKey: config.apiKey ? '******' : undefined,
-      accessKeySecret: config.accessKeySecret ? '******' : undefined
-    }
+    // 返回时隐藏 API 密钥 + 附加 runtimeUsable
+    const safeConfig = await maskConfigSecrets(config)
 
     return { success: true, config: safeConfig }
   } catch (error) {

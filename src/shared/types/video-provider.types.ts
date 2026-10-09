@@ -126,7 +126,7 @@ export interface VideoGenerationResponse {
 /**
  * 视频 Provider 类型标识
  */
-export type VideoProviderType = 'bailian' | 'dashscope' | 'volcengine' | 'runway' | 'pika' | 'kling' | 'luma' | 'minimax' | 'zhipu' | 'comfyui' | 'custom'
+export type VideoProviderType = 'bailian' | 'dashscope' | 'volcengine' | 'runway' | 'pika' | 'kling' | 'luma' | 'minimax' | 'zhipu' | 'comfyui' | 'aihub' | 'custom'
 
 /**
  * 视频 Provider 定义（用于工厂创建）

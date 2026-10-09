@@ -372,7 +372,7 @@ async function loadImageModelOptions(): Promise<void> {
     const response = await window.electronAPI.providerConfig.list()
     if (!response?.success || !response.data) return
     const opts: Array<{ providerConfigId: string; modelId: string; label: string }> = []
-    for (const cfg of response.data.filter((c: any) => c.isEnabled)) {
+    for (const cfg of response.data.filter((c: any) => c.runtimeUsable ?? c.isEnabled)) {
       for (const m of (cfg.models ?? []) as Array<{ id?: string; type?: string }>) {
         if (m.id && (m.type === 'image' || m.type === 'multimodal')) {
           opts.push({ providerConfigId: cfg.id, modelId: m.id, label: `${cfg.name} / ${m.id}` })

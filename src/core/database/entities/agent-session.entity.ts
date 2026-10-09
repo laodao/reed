@@ -46,6 +46,6 @@ export class AgentSessionEntity {
   @Column({ name: 'metadata', type: 'text', nullable: true })
   metadata!: string | null
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 }

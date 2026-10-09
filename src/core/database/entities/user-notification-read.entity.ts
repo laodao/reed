@@ -24,6 +24,6 @@ export class UserNotificationReadEntity {
   seq!: number
 
   /** 标记已读时间 */
-  @Column({ name: 'read_at', type: 'datetime' })
+  @Column({ name: 'read_at', type: Date })
   readAt!: Date
 }

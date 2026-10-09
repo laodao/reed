@@ -71,9 +71,9 @@ export class KbDigestPassEntity {
   @Column({ name: 'attempts', type: 'integer', default: 0 })
   attempts!: number
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 
-  @Column({ name: 'updated_at', type: 'datetime', nullable: true })
+  @Column({ name: 'updated_at', type: Date, nullable: true })
   updatedAt!: Date | null
 }

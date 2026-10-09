@@ -45,9 +45,9 @@ export class IcTaskPassEntity {
   @Column({ name: 'cost_json', type: 'text', nullable: true })
   costJson!: string | null
 
-  @Column({ name: 'started_at', type: 'datetime', nullable: true })
+  @Column({ name: 'started_at', type: Date, nullable: true })
   startedAt!: Date | null
 
-  @Column({ name: 'finished_at', type: 'datetime', nullable: true })
+  @Column({ name: 'finished_at', type: Date, nullable: true })
   finishedAt!: Date | null
 }
