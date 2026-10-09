@@ -140,23 +140,30 @@ export class ComfyUIVideoProvider extends BaseVideoProvider {
    * 否则按协议骨架组装一次——把镜头描述放入 summary，Picture 声明与 refs 对应。
    * 组装不写死任何业务内容，仅补协议必需结构（模型不吃单段 prompt）。
    *
+   * 音频段（2026-10-09 台词乱码修复）：summary 以 [reference generation + audio reference]
+   * 声明要出声，却不对「出什么声」给指令时，H3 会自行编人声（幻觉配音，产出乱糟糟的台词）。
+   * 故 summary 必须携带显式音频指令——上游 audioPrompt 有值则原样使用（台词协议
+   * {说话人：原文} 或定向环境音），缺省落入「仅环境音、无人声」安全默认。
+   *
    * refCount=1：Picture 1 = 首帧语义（image2video）；
    * refCount=2：Picture 1 = 首帧、Picture 2 = 尾帧（O1 keyframes2video 首尾帧锚定）。
    */
-  private toH3Prompt(rawPrompt: string, refCount: number): string {
+  private toH3Prompt(rawPrompt: string, refCount: number, audioPrompt?: string): string {
     const p = (rawPrompt || '').trim()
     const looksStructured =
       p.includes('subject_definitions:') &&
       p.includes('summary:') &&
       p.includes('retention_analysis:')
     if (looksStructured || !p) return p
+    const audio = (audioPrompt || '').trim() ||
+      '仅与画面匹配的低沉自然环境音，无对白、无旁白、无歌唱，不得出现任何可辨识的人声词语'
     if (refCount >= 2) {
       return [
         'subject_definitions:',
         'Picture 1 作为视频首帧、Picture 2 作为视频尾帧，两者共同作为 Subject 1（画面主体）外观来源，需保持其画面主体、构图与整体视觉风格一致；视频画面从 Picture 1 首帧自然过渡到 Picture 2 尾帧，Subject 1 在视频中按画面描述自然运动，不做剧烈形变，画面不含任何文字。',
         '',
         'summary:',
-        `[reference generation + audio reference] ${p}。镜头语言简洁，动作单一自然，画面由 Picture 1 首帧自然过渡到 Picture 2 尾帧、无文字。`,
+        `[reference generation + audio reference] 画面：${p}。镜头语言简洁，动作单一自然，画面由 Picture 1 首帧自然过渡到 Picture 2 尾帧、无文字。音频：${audio}。`,
         '',
         'retention_analysis:',
         'Subject 1（Picture 1 首帧 / Picture 2 尾帧）：fully_preserved - 保持画面主体外观、构图与整体风格，首尾帧锚定，中间仅产生自然过渡运动。',
@@ -167,7 +174,7 @@ export class ComfyUIVideoProvider extends BaseVideoProvider {
       'Picture 1 作为 Subject 1（画面主体）外观来源（若 Picture 1 为多个编号分块的资产参考板，仅取各分块主体的外观，不保留其拼贴构图），需保持其画面主体外观与整体视觉风格；Subject 1 在视频中按画面描述自然运动，不做剧烈形变，画面不含任何文字。',
       '',
       'summary:',
-      `[reference generation + audio reference] ${p}。镜头语言简洁，动作单一自然，画面保持与 Picture 1 一致、无文字。`,
+      `[reference generation + audio reference] 画面：${p}。镜头语言简洁，动作单一自然，画面保持与 Picture 1 一致、无文字。音频：${audio}。`,
       '',
       'retention_analysis:',
       'Subject 1（Picture 1）：fully_preserved - 保持画面主体外观、构图与整体风格，仅产生自然运动。',
@@ -183,7 +190,7 @@ export class ComfyUIVideoProvider extends BaseVideoProvider {
       }
       const portrait = !request.width || !request.height || request.height >= request.width
       const body: Record<string, unknown> = {
-        prompt: this.toH3Prompt(request.prompt || '', refs.length),
+        prompt: this.toH3Prompt(request.prompt || '', refs.length, request.audioPrompt),
         refs,
         // 评审 #105：画质/步数可由上层（工作流 start 输入）透传；默认 high / steps20 全质量
         quality: request.quality ?? 'high',

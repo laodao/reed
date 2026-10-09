@@ -68,3 +68,71 @@ describe('ComfyUI H3 提交参数（quality/steps 透传）', () => {
     expect(calls[0].body.frames).toBe(10 * 24 + 1)
   })
 })
+
+describe('ComfyUI H3 音频指令（2026-10-09 台词乱码修复）', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('缺省 audioPrompt → summary 落「仅环境音、无人声」防幻觉配音默认', async () => {
+    const calls: Array<{ body: Record<string, unknown> }> = []
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: { body?: string }) => {
+      calls.push({ body: JSON.parse(String(init?.body ?? '{}')) })
+      return { ok: true, text: async () => JSON.stringify({ ok: true, task_id: 't1' }) }
+    }))
+    const p = makeProvider()
+    await p.generateVideo({
+      model: 'h3',
+      prompt: '废弃园区爆破烟尘缓慢升腾',
+      image: 'data:image/png;base64,aGk=',
+    } as never)
+    const prompt = String(calls[0].body.prompt)
+    expect(prompt).toContain('音频：')
+    expect(prompt).toContain('自然环境音')
+    expect(prompt).toContain('无对白')
+    expect(prompt).toContain('人声词语')
+  })
+
+  it('传入 audioPrompt（台词协议段）→ 原样进入 summary 音频段', async () => {
+    const calls: Array<{ body: Record<string, unknown> }> = []
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: { body?: string }) => {
+      calls.push({ body: JSON.parse(String(init?.body ?? '{}')) })
+      return { ok: true, text: async () => JSON.stringify({ ok: true, task_id: 't1' }) }
+    }))
+    const p = makeProvider()
+    await p.generateVideo({
+      model: 'h3',
+      prompt: '演员正面镜头',
+      image: 'data:image/png;base64,aGk=',
+      audioPrompt: '男声，中气十足地说：「开始行动」',
+    } as never)
+    const prompt = String(calls[0].body.prompt)
+    expect(prompt).toContain('音频：男声，中气十足地说：「开始行动」')
+    expect(prompt).not.toContain('自然环境音')
+  })
+
+  it('已三段式结构化的 prompt 原样透传，不重复包音频段', async () => {
+    const calls: Array<{ body: Record<string, unknown> }> = []
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: { body?: string }) => {
+      calls.push({ body: JSON.parse(String(init?.body ?? '{}')) })
+      return { ok: true, text: async () => JSON.stringify({ ok: true, task_id: 't1' }) }
+    }))
+    const p = makeProvider()
+    const structured = [
+      'subject_definitions:',
+      'Picture 1 为 Subject 1 外观来源。',
+      '',
+      'summary:',
+      '[reference generation + audio reference] 画面：角色说话。音频：女声说：「你好」。',
+      '',
+      'retention_analysis:',
+      'Subject 1（Picture 1）：fully_preserved。',
+    ].join('\n')
+    await p.generateVideo({
+      model: 'h3',
+      prompt: structured,
+      image: 'data:image/png;base64,aGk=',
+    } as never)
+    expect(calls[0].body.prompt).toBe(structured)
+  })
+})

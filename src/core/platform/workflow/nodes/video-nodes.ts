@@ -153,6 +153,9 @@ const videoGenNode: WorkflowNodeHandler = {
       model: string
       prompt?: string
       negativePrompt?: string
+      /** 音频指令（音视频联合模型如 H3）：台词协议段或环境音方向；缺省由 provider 落
+       *  「仅环境音、无人声」安全默认（防幻觉配音，评审 2026-10-09） */
+      audioPrompt?: string
       image?: string
       duration?: number
       width?: number
@@ -183,6 +186,7 @@ const videoGenNode: WorkflowNodeHandler = {
         model: cfg.model,
         prompt: stringifyValue(cfg.prompt),
         negativePrompt: cfg.negativePrompt ? stringifyValue(cfg.negativePrompt) : undefined,
+        audioPrompt: cfg.audioPrompt ? stringifyValue(cfg.audioPrompt) : undefined,
         image: imageInput,
         duration: cfg.duration,
         width: cfg.width,

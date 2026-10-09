@@ -91,6 +91,10 @@ export interface VideoGenerationRequest {
   // 文生视频参数
   prompt?: string            // 视频描述提示词
   negativePrompt?: string    // 负面提示词
+  /** 音频指令（音视频联合模型如 ComfyUI H3 使用）：台词协议段（{说话人：原文}）或环境音方向。
+   *  缺省时 H3 包装按「仅自然环境音、无人声」防幻觉配音（评审 2026-10-09：台词乱码根因——
+   *  声明了 audio reference 却不给音频指令，模型自行编人声）。 */
+  audioPrompt?: string
 
   // 视频参数
   duration?: number          // 视频时长（秒）
