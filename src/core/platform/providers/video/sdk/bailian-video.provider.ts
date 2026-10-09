@@ -438,8 +438,17 @@ export class BailianVideoProvider extends BaseVideoProvider {
 
       // 添加参数
       if (request.duration) {
-        body.parameters.duration = request.duration
+        // happyhorse 系（评审 2026-10-09）：时长合法域 3~15 秒整数，超界直接被网关拒单
+        if (/^happyhorse/i.test(request.model ?? '')) {
+          body.parameters.duration = Math.min(15, Math.max(3, Math.round(request.duration)))
+        } else {
+          body.parameters.duration = request.duration
+        }
       }
+
+      // 水印显式关闭：happyhorse 默认右下角 "Happy Horse" 水印，成片由本系统合成字幕，
+      // 任何 provider 水印都视为画面污染（wan 系该参数默认即 false，显式声明无害）
+      body.parameters.watermark = false
 
       // 添加分辨率
       if (request.resolution) {
