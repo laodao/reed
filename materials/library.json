@@ -283,6 +283,64 @@
       "sourceRef": "数据口径：UNODC 2023、美国财政部 2024、泰国警官估计（均为二手转述，图副标题已声明）",
       "createdAt": "2026-10-09T09:22:02.833Z",
       "updatedAt": "2026-10-09T09:22:02.835Z"
+    },
+    {
+      "id": "mat-b6c6b99b",
+      "category": "report",
+      "subCategory": null,
+      "name": "2026诺贝尔生理学或医学奖（光遗传学）深度研究",
+      "description": "内置应用 builtin_app_topic_research 实机产出：获奖人与分工、发现链、原理、临床转化（FDA/PMDA）、争议（潘卓华/Bamberg/Miesenböck/三人上限）、中国视角；四级信源分层",
+      "tags": [
+        "诺贝尔奖",
+        "光遗传学",
+        "2026",
+        "主题深度研究"
+      ],
+      "kind": "file",
+      "storagePath": "C:\\Users\\daoge\\code\\project\\the-bot\\materials\\report\\mat-b6c6b99b.md",
+      "url": "the-bot 主题深度研究工作流（工作流实机运行，6轮研究+独立评估，2026-10-09）",
+      "mimeType": "text/markdown",
+      "sizeBytes": 56824,
+      "metadata": {
+        "checksum": "sha256:b6c6b99bab3d5e23811876202468444bc95fe9fb4f53f29de74525ac02468605",
+        "via": "unknown-workflow",
+        "originalName": "诺贝尔生理学或医学奖研究报告-2026-10-09.md",
+        "license": null,
+        "author": null
+      },
+      "sourceType": "unknown-workflow",
+      "sourceRef": "the-bot 主题深度研究工作流（工作流实机运行，6轮研究+独立评估，2026-10-09）",
+      "createdAt": "2026-10-09T12:07:38.625Z",
+      "updatedAt": "2026-10-09T12:07:38.626Z"
+    },
+    {
+      "id": "mat-380b8cc3",
+      "category": "article",
+      "subCategory": null,
+      "name": "用光操控大脑的人，等了二十年（2026诺奖光遗传学长文）",
+      "description": "素材锁定研究报告的纪实特稿：五层深度、口径纪律、潘卓华争议与中国视角；AI概率39.9→35.6",
+      "tags": [
+        "诺贝尔奖",
+        "光遗传学",
+        "长文",
+        "风格库"
+      ],
+      "kind": "file",
+      "storagePath": "C:\\Users\\daoge\\code\\project\\the-bot\\materials\\article\\mat-380b8cc3.md",
+      "url": "the-bot「深度长文写作（风格库）」工作流（writing-styles→libai-skill 双技能管线，2026-10-09）",
+      "mimeType": "text/markdown",
+      "sizeBytes": 19889,
+      "metadata": {
+        "checksum": "sha256:380b8cc3659497b110746c892137c03935f16d9359c9c9343564f25976b14421",
+        "via": "unknown-workflow",
+        "originalName": "长文-用光操控大脑的人等了二十年.md",
+        "license": null,
+        "author": null
+      },
+      "sourceType": "unknown-workflow",
+      "sourceRef": "the-bot「深度长文写作（风格库）」工作流（writing-styles→libai-skill 双技能管线，2026-10-09）",
+      "createdAt": "2026-10-09T12:43:44.388Z",
+      "updatedAt": "2026-10-09T12:43:44.389Z"
     }
   ]
 }
