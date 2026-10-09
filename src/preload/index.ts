@@ -40,6 +40,8 @@ const IPC_CHANNELS = {
   AIHUB_REGISTER: 'aihub:register',
   AIHUB_LOGOUT: 'aihub:logout',
   AIHUB_SESSION: 'aihub:session',
+  AIHUB_SET_ENABLED: 'aihub:set-enabled',
+  AIHUB_ENABLED: 'aihub:enabled',
   AIHUB_REFRESH_MODELS: 'aihub:refresh-models',
   AIHUB_TOKEN_EXPIRED: 'aihub:token-expired',
   AIHUB_SAVE_GATEWAY_CONFIG: 'aihub:save-gateway-config',
@@ -570,6 +572,9 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.AIHUB_REGISTER, params),
     logout: () => ipcRenderer.invoke(IPC_CHANNELS.AIHUB_LOGOUT),
     session: () => ipcRenderer.invoke(IPC_CHANNELS.AIHUB_SESSION),
+    // 功能总开关（默认关闭；Web 端仅 admin 可写）
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke(IPC_CHANNELS.AIHUB_SET_ENABLED, { enabled }),
+    enabled: () => ipcRenderer.invoke(IPC_CHANNELS.AIHUB_ENABLED),
     refreshModels: () => ipcRenderer.invoke(IPC_CHANNELS.AIHUB_REFRESH_MODELS),
     saveGatewayConfig: (config: { gatewayUrl: string; rechargeUrl?: string }) =>
       ipcRenderer.invoke(IPC_CHANNELS.AIHUB_SAVE_GATEWAY_CONFIG, config),

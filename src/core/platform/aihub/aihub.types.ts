@@ -21,12 +21,17 @@ export const AIHUB_GATEWAY_CONFIG_KEY_PREFIX = 'aihub_gateway'
 /** ai-hub config 的 customParams 中「系统因登出/401 自动禁用」标记键 */
 export const AIHUB_AUTO_DISABLED_FLAG = 'aihubAutoDisabled'
 
+/** ai-hub 功能总开关在 settings KV 的存储键（默认关闭——默认本地认证与自有 Key） */
+export const AIHUB_ENABLED_KEY = 'aihub_enabled'
+
 /**
  * 错误码约定（渲染端按前缀映射为登录引导 / 充值引导，见 dialog store 与 Chat.vue）：
+ * - [AIHUB_DISABLED]           功能总开关未开启（默认态）
  * - [AIHUB_NOT_LOGGED_IN]      未登录就调用网关模型
  * - [AIHUB_SESSION_EXPIRED]    JWT 过期/被吊销（401）
  * - [AIHUB_INSUFFICIENT_BALANCE] 余额不足（402）
  */
+export const AIHUB_ERR_DISABLED = '[AIHUB_DISABLED]'
 export const AIHUB_ERR_NOT_LOGGED_IN = '[AIHUB_NOT_LOGGED_IN]'
 export const AIHUB_ERR_SESSION_EXPIRED = '[AIHUB_SESSION_EXPIRED]'
 export const AIHUB_ERR_INSUFFICIENT_BALANCE = '[AIHUB_INSUFFICIENT_BALANCE]'
@@ -103,6 +108,8 @@ export interface AihubRedeemResult {
 
 /** aihub:session IPC 响应（渲染端设置面板 / 选择器刷新用） */
 export interface AihubSessionInfo {
+  /** 功能总开关是否开启（默认 false——未开启时登录入口与网关模型全部隐藏） */
+  enabled: boolean
   loggedIn: boolean
   /** 会话存在且未过期 */
   valid: boolean

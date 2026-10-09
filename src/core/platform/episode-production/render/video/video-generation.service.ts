@@ -147,13 +147,8 @@ export class VideoGenerationService {
         }
       }
 
-      // 确定 Provider 类型
-      let providerType = resolveVideoProviderType(providerConfig.templateId)
-
-      // 特殊处理：bailian 和 dashscope 使用相同的 Provider（阿里云百炼）
-      if (providerType === 'bailian' || providerType === 'dashscope' || providerType === 'qwen') {
-        providerType = 'bailian'
-      }
+      // 确定 Provider 类型；bailian/dashscope 同走百炼 Provider 由 createVideoProvider 内部映射
+      const providerType = resolveVideoProviderType(providerConfig.templateId)
 
       // 检查 Provider 是否已实现
       if (!isProviderImplemented(providerType)) {

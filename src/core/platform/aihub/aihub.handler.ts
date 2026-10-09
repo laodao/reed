@@ -14,8 +14,10 @@ import {
   aihubRegister,
   getAihubSession,
   getAihubSessionInfo,
+  isAihubEnabled,
   onAihubTokenExpired,
-  saveAihubGatewayConfig
+  saveAihubGatewayConfig,
+  setAihubEnabled
 } from './aihub-auth.service'
 import { refreshAihubModels } from './aihub-models.service'
 import {
@@ -74,6 +76,26 @@ export function registerAihubHandlers(): void {
     try {
       const session = await getAihubSessionInfo()
       return { success: true, session }
+    } catch (e) {
+      return { success: false, error: toErrorMessage(e) }
+    }
+  })
+
+  // 功能总开关（默认关闭）。Web 端由 ipc-router admin 门禁收口（全局开关）；
+  // 关闭即强制登出（见 setAihubEnabled）
+  ipcBridge.handle('aihub:set-enabled', async (_event, params: { enabled: boolean }) => {
+    try {
+      await setAihubEnabled(params?.enabled === true)
+      const session = await getAihubSessionInfo()
+      return { success: true, enabled: params?.enabled === true, session }
+    } catch (e) {
+      return { success: false, error: toErrorMessage(e) }
+    }
+  })
+
+  ipcBridge.handle('aihub:enabled', async () => {
+    try {
+      return { success: true, enabled: await isAihubEnabled() }
     } catch (e) {
       return { success: false, error: toErrorMessage(e) }
     }
@@ -146,6 +168,8 @@ export function unregisterAihubHandlers(): void {
     'aihub:register',
     'aihub:logout',
     'aihub:session',
+    'aihub:set-enabled',
+    'aihub:enabled',
     'aihub:refresh-models',
     'aihub:token-expired',
     'aihub:save-gateway-config',

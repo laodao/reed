@@ -288,11 +288,9 @@ async function handleSynthesizeStoryboardVideo(
     }
     const decryptedApiKey = secureStorage.decrypt(providerConfig.apiKey)
 
-    // 确定 Provider 类型（统一映射：ai-hub → aihub，防 replace 漏改 N2）
+    // 确定 Provider 类型（统一映射：ai-hub → aihub，防 replace 漏改 N2）；
+    // bailian/dashscope 同走百炼 Provider 由 createVideoProvider 内部映射
     const providerType = resolveVideoProviderType(providerConfig.templateId)
-    if (providerType === 'bailian' || providerType === 'dashscope' || providerType === 'qwen') {
-      // bailian/dashscope/qwen 同走百炼 Provider（createVideoProvider 内部映射），保持原值即可
-    }
 
     // 创建 Provider 实例（baseUrl 优先 videoBaseUrl——视频专用端点，与 video-generation.service 对齐）
     const provider = createVideoProvider(providerType as any, {

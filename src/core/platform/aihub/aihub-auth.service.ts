@@ -22,6 +22,8 @@ import { refreshAihubModels, findAihubConfig } from './aihub-models.service'
 import {
   AIHUB_AUTO_DISABLED_FLAG,
   AIHUB_DEFAULT_GATEWAY_URL,
+  AIHUB_ENABLED_KEY,
+  AIHUB_ERR_DISABLED,
   AIHUB_GATEWAY_CONFIG_KEY_PREFIX,
   AIHUB_SESSION_KEY_PREFIX,
   AIHUB_TEMPLATE_ID,
@@ -65,6 +67,43 @@ function broadcastConfigChanged(): void {
   }
 }
 
+// ==================== 功能总开关（默认关闭：默认本地认证与自有 Key） ====================
+
+/**
+ * AI Hub 功能是否开启。默认 false——未开启时登录入口隐藏、网关模型不出现在任何
+ * 选择器、模板卡片不出现，系统行为与未集成 ai-hub 时完全一致。
+ */
+export async function isAihubEnabled(): Promise<boolean> {
+  try {
+    const settings = await getSettingsRepo()
+    return (await settings.get(AIHUB_ENABLED_KEY)) === true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 设置总开关。关闭即强制登出（清会话 + 禁用 config + 广播）——重新开启后需重新登录，
+ * 不静默保留任何网关凭证状态。
+ */
+export async function setAihubEnabled(enabled: boolean): Promise<void> {
+  const settings = await getSettingsRepo()
+  await settings.set(AIHUB_ENABLED_KEY, enabled === true)
+  if (enabled !== true) {
+    await clearSession()
+    await disableAihubConfig()
+    broadcastConfigChanged()
+    broadcastSessionChanged(false)
+  }
+}
+
+/** 总开关守卫：未开启时抛带 [AIHUB_DISABLED] 前缀的可读错误 */
+async function requireAihubEnabled(): Promise<void> {
+  if (!(await isAihubEnabled())) {
+    throw new Error(`${AIHUB_ERR_DISABLED} AI Hub 功能未开启，请先在「设置 → AI Hub 账号」打开开关`)
+  }
+}
+
 // ==================== 会话存取 ====================
 
 /** 读取会话记录（不做过期校验；供会话信息展示「已过期」状态用） */
@@ -82,8 +121,9 @@ async function readRawSession(): Promise<AihubSession | null> {
   }
 }
 
-/** 读取当前用户会话；过期视为未登录（但不主动清除——401/登出时才清） */
+/** 读取当前用户会话；过期或总开关关闭均视为未登录（但不主动清除——登出/关开关时才清） */
 export async function getAihubSession(): Promise<AihubSession | null> {
+  if (!(await isAihubEnabled())) return null
   const session = await readRawSession()
   if (!session) return null
   if (session.expiresAt && new Date(session.expiresAt).getTime() <= Date.now()) return null
@@ -174,8 +214,10 @@ async function disableAihubConfig(): Promise<void> {
     AIHUB_AUTO_DISABLED_FLAG
   ]
   const autoDisabled = config.isEnabled === true ? true : existingFlag === true
+  // apiKey 显式传 null 清空列（repo.update 对 undefined 是「跳过」语义）；
+  // UserProviderConfig.apiKey 声明为 string|undefined，此处按仓储层契约放宽
   await dbManager.providerConfigs.update(config.id, {
-    apiKey: null,
+    apiKey: null as unknown as undefined,
     isEnabled: false,
     customParams: { ...(config.customParams ?? {}), [AIHUB_AUTO_DISABLED_FLAG]: autoDisabled }
   })
@@ -196,6 +238,7 @@ export interface AihubLoginParams {
  * autoDisabled 状态机：仅当上次是系统禁用（标记为 true）才恢复启用。
  */
 export async function aihubLogin(params: AihubLoginParams): Promise<AihubSessionInfo> {
+  await requireAihubEnabled()
   const gatewayCfg = await getAihubGatewayConfig()
   const gatewayUrl = normalizeGatewayUrl(params.gatewayUrl?.trim() || gatewayCfg.gatewayUrl)
   if (!params.identity?.trim() || !params.password) {
@@ -232,6 +275,7 @@ export interface AihubRegisterParams {
  * 响应直接携带 token，等价于登录成功——复用登录的物化流程。
  */
 export async function aihubRegister(params: AihubRegisterParams): Promise<AihubSessionInfo> {
+  await requireAihubEnabled()
   const gatewayCfg = await getAihubGatewayConfig()
   const gatewayUrl = normalizeGatewayUrl(params.gatewayUrl?.trim() || gatewayCfg.gatewayUrl)
   if (!params.email?.trim() || !params.password) {
@@ -287,11 +331,12 @@ export async function saveAihubGatewayConfig(config: AihubGatewayConfig): Promis
   })
 }
 
-/** 查询当前登录态（渲染端启动与各选择器用；含过期态区分：loggedIn=true + valid=false） */
+/** 查询当前登录态（渲染端启动与各选择器用；含总开关与过期态区分） */
 export async function getAihubSessionInfo(): Promise<AihubSessionInfo> {
+  const enabled = await isAihubEnabled()
   const gatewayCfg = await getAihubGatewayConfig()
-  const session = await readRawSession()
-  return buildSessionInfo(session, gatewayCfg.rechargeUrl)
+  const session = enabled ? await readRawSession() : null
+  return buildSessionInfo(session, gatewayCfg.rechargeUrl, enabled)
 }
 
 /**
@@ -328,15 +373,19 @@ async function persistAihubSession(
 
   broadcastConfigChanged()
   broadcastSessionChanged(true)
-  return buildSessionInfo(session, gatewayCfg.rechargeUrl)
+  return buildSessionInfo(session, gatewayCfg.rechargeUrl, true)
 }
 
 function buildSessionInfo(
   session: AihubSession | null,
-  rechargeUrl?: string
+  rechargeUrl?: string,
+  enabled = true
 ): AihubSessionInfo {
-  if (!session) return { loggedIn: false, valid: false, gatewayUrl: AIHUB_DEFAULT_GATEWAY_URL, rechargeUrl }
+  if (!session) {
+    return { enabled, loggedIn: false, valid: false, gatewayUrl: AIHUB_DEFAULT_GATEWAY_URL, rechargeUrl }
+  }
   return {
+    enabled,
     loggedIn: true,
     valid: new Date(session.expiresAt).getTime() > Date.now(),
     email: session.email,

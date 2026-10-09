@@ -174,8 +174,9 @@ export class ImageService {
         providerType = 'openai'
       }
 
-      // AI Hub 统一网关 → aihub 适配器（任务 API 适配器内同步化）
-      if (providerType === 'ai-hub') {
+      // AI Hub 统一网关 → aihub 适配器（任务 API 适配器内同步化）。
+      // 按 templateId 判断（providerType 已收窄为 ImageProviderType，不含 'ai-hub' 字面量）
+      if (providerConfig.templateId === 'ai-hub') {
         logger.info('[ImageService.generateImage] ai-hub 使用统一任务 API')
         providerType = 'aihub'
       }

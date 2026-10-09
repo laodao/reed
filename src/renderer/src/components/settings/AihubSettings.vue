@@ -6,14 +6,33 @@
         <div>
           <h3>AI Hub 账号</h3>
           <p class="section-desc">
-            登录后可使用官方网关的全部已注册模型（chat / image / video），免配 API Key，
-            按个人 workspace 余额计费；也可以不登录，在「AI 模型配置」使用自己的 API Key，两者互不影响
+            开启后可登录官方网关，使用全部已注册模型（chat / image / video），免配 API Key，
+            按个人 workspace 余额计费；<strong>默认关闭</strong>——默认使用本地账号与自有 API Key，两者互不影响
           </p>
+        </div>
+        <div class="master-switch">
+          <span class="switch-label">{{ session.enabled ? '已开启' : '未开启' }}</span>
+          <el-switch
+            v-model="session.enabled"
+            :loading="switching"
+            @change="toggleEnabled"
+          />
         </div>
       </div>
 
-      <!-- 未登录：登录/注册表单 -->
-      <template v-if="!session.loggedIn">
+      <!-- 总开关关闭（默认态）：仅展示说明，隐藏一切登录/模型入口 -->
+      <template v-if="!session.enabled">
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          title="AI Hub 功能未开启（默认）"
+          description="当前使用本地认证与自有 API Key，全部功能不受影响。打开右上角开关后才会出现 AI Hub 登录入口，网关模型才会出现在各模型选择器中。"
+        />
+      </template>
+
+      <!-- 总开关已开启：登录/注册表单 -->
+      <template v-else-if="!session.loggedIn">
         <el-alert
           type="info"
           :closable="false"
@@ -138,7 +157,8 @@ import type { AihubBalanceInfo } from '@core/platform/aihub/aihub-billing.servic
 
 const api = () => (window as never as { electronAPI: { aihub: any } }).electronAPI.aihub
 
-const session = reactive<AihubSessionInfo>({ loggedIn: false, valid: false })
+const session = reactive<AihubSessionInfo>({ enabled: false, loggedIn: false, valid: false })
+const switching = ref(false)
 const authMode = ref<'login' | 'register'>('login')
 const busy = ref(false)
 const balance = ref<AihubBalanceInfo | null>(null)
@@ -161,6 +181,41 @@ async function loadSession(): Promise<void> {
     })
   } catch (e) {
     console.warn('[AihubSettings] 会话查询失败:', e)
+  }
+}
+
+/** 总开关切换：关闭即强制登出（后端语义），开启后出现登录入口 */
+async function toggleEnabled(): Promise<void> {
+  const next = session.enabled
+  if (!next) {
+    try {
+      await ElMessageBox.confirm(
+        '关闭后将登出 AI Hub 并停用网关配置，网关模型从所有选择器消失（自有 Key 的提供商不受影响）。确定关闭？',
+        '关闭 AI Hub',
+        { type: 'warning', confirmButtonText: '关闭', cancelButtonText: '取消' }
+      )
+    } catch {
+      session.enabled = true // 用户取消
+      return
+    }
+  }
+  switching.value = true
+  try {
+    const res = await api().setEnabled(next)
+    if (res?.success) {
+      Object.assign(session, res.session)
+      if (!next) {
+        balance.value = null
+        ElMessage.success('AI Hub 已关闭（已登出并停用网关模型）')
+      } else {
+        ElMessage.success('AI Hub 已开启，请登录账号')
+      }
+    } else {
+      session.enabled = !next
+      ElMessage.error(res?.error || '操作失败')
+    }
+  } finally {
+    switching.value = false
   }
 }
 
@@ -295,6 +350,15 @@ onMounted(loadSession)
 <style scoped>
 .aihub-settings .login-hint {
   margin-bottom: 16px;
+}
+.aihub-settings .master-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.aihub-settings .switch-label {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
 }
 .aihub-settings .auth-tabs {
   max-width: 560px;

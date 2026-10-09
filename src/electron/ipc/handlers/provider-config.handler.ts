@@ -12,7 +12,7 @@ import {
   providerTemplateService,
   PROVIDER_TEMPLATES
 } from '@core/platform/services/provider-template.service'
-import { hasValidAihubSession } from '@core/platform/aihub/aihub-auth.service'
+import { hasValidAihubSession, isAihubEnabled } from '@core/platform/aihub/aihub-auth.service'
 import { AIHUB_AUTO_DISABLED_FLAG, AIHUB_TEMPLATE_ID } from '@core/platform/aihub/aihub.types'
 import type {
   ProviderTemplateListResponse,
@@ -69,12 +69,16 @@ export function registerProviderConfigHandlers(): void {
 
 /**
  * 处理获取模板列表请求
+ * AI Hub 功能总开关关闭（默认）时，ai-hub 模板不出现在「添加提供商」卡片中
  */
 async function handleListTemplates(_event: any): Promise<ProviderTemplateListResponse> {
   try {
+    const templates = (await isAihubEnabled())
+      ? PROVIDER_TEMPLATES
+      : PROVIDER_TEMPLATES.filter((t) => t.id !== AIHUB_TEMPLATE_ID)
     return {
       success: true,
-      templates: PROVIDER_TEMPLATES
+      templates
     }
   } catch (error) {
     console.error('获取模板列表失败:', error)
@@ -97,8 +101,14 @@ async function handleListConfigs(_event: any): Promise<ProviderConfigListRespons
 
     const configs = await dbManager.providerConfigs.getAll()
 
+    // 总开关关闭（默认）时 ai-hub 配置整行隐藏——模型选择器、提供商列表全部不可见；
     // 隐藏 API 密钥 + 附加 runtimeUsable
-    const safeConfigs = await Promise.all(configs.map((config) => maskConfigSecrets(config)))
+    const aihubOn = await isAihubEnabled()
+    const safeConfigs = await Promise.all(
+      configs
+        .filter((config) => aihubOn || config.templateId !== AIHUB_TEMPLATE_ID)
+        .map((config) => maskConfigSecrets(config))
+    )
 
     return { success: true, data: safeConfigs }
   } catch (error) {
@@ -125,6 +135,10 @@ async function handleGetConfig(
 
     const config = await dbManager.providerConfigs.getById(configId)
     if (!config) {
+      return { success: false, error: '配置不存在' }
+    }
+    // 总开关关闭（默认）时 ai-hub 配置不可见
+    if (config.templateId === AIHUB_TEMPLATE_ID && !(await isAihubEnabled())) {
       return { success: false, error: '配置不存在' }
     }
 

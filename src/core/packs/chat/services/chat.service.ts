@@ -104,7 +104,13 @@ export class ChatService {
       // ai-hub 网关挡板：config 启用但无有效会话（登出/会话过期/物化 Key 被清）时，
       // 给出可操作的登录引导错误码（渲染端按前缀映射为「去登录」卡片）
       if (providerConfig.templateId === 'ai-hub') {
-        const { hasValidAihubSession } = await import('@core/platform/aihub/aihub-auth.service')
+        const { hasValidAihubSession, isAihubEnabled } = await import('@core/platform/aihub/aihub-auth.service')
+        if (!(await isAihubEnabled())) {
+          return {
+            success: false,
+            error: '[AIHUB_DISABLED] AI Hub 功能未开启，请到「设置 → AI Hub 账号」打开开关并登录'
+          }
+        }
         if (!(await hasValidAihubSession())) {
           return {
             success: false,
