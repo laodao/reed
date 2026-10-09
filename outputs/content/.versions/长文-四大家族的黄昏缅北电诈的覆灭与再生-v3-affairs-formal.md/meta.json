@@ -1,0 +1,44 @@
+[
+  {
+    "version": 1,
+    "time": "2026-10-09T04:17:05.754Z",
+    "type": "init",
+    "note": "导入历史：第一轮 深度叙事·说书杂谈体初稿",
+    "feedback": "",
+    "changes": "内容取自 outputs/content/长文-四大家族全灭了缅北电诈为什么还打不死-writing-styles产出.md"
+  },
+  {
+    "version": 2,
+    "time": "2026-10-09T04:17:05.825Z",
+    "type": "import",
+    "note": "第二轮 去 AI 味重写（luke-narrative，语域误判口语化）",
+    "feedback": "AI味太浓、内容深度不够",
+    "changes": "去梗降密度、破折号63→0；但语域被矫枉过正"
+  },
+  {
+    "version": 3,
+    "time": "2026-10-09T04:17:05.900Z",
+    "type": "revision",
+    "note": "",
+    "feedback": "小标题口语化像AI、来路节写太薄",
+    "changes": "整体重写为 affairs-formal 书面体：历史经纬节六维写厚占33%、限定词+让步条款、破折号0"
+  },
+  {
+    "version": 4,
+    "time": "2026-10-09T04:17:37.400Z",
+    "type": "rollback",
+    "rolledBackTo": 2,
+    "note": "回滚至 v2",
+    "feedback": "",
+    "changes": ""
+  },
+  {
+    "version": 5,
+    "time": "2026-10-09T04:17:37.559Z",
+    "type": "rollback",
+    "rolledBackTo": 3,
+    "note": "回滚至 v3",
+    "feedback": "",
+    "changes": ""
+  }
+]
