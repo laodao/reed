@@ -52,6 +52,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'aihub.register': { channel: 'aihub:register' },
   'aihub.logout': { channel: 'aihub:logout' },
   'aihub.session': { channel: 'aihub:session' },
+  'aihub.setEnabled': { channel: 'aihub:set-enabled', wrap: (enabled: unknown) => [{ enabled }] },
+  'aihub.enabled': { channel: 'aihub:enabled' },
   'aihub.refreshModels': { channel: 'aihub:refresh-models' },
   'aihub.saveGatewayConfig': { channel: 'aihub:save-gateway-config' },
   'aihub.balance': { channel: 'aihub:balance' },

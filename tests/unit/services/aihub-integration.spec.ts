@@ -39,12 +39,15 @@ import * as eventModule from '@core/interfaces/event.interface'
 import {
   aihubLogin,
   aihubLogout,
+  aihubRegister,
   onAihubTokenExpired,
   getAihubSession,
   hasValidAihubSession,
   getAihubSessionInfo,
   getAihubGatewayConfig,
+  isAihubEnabled,
   saveAihubGatewayConfig,
+  setAihubEnabled,
 } from '@core/platform/aihub/aihub-auth.service'
 import { fetchAihubModels } from '@core/platform/aihub/aihub-models.service'
 import { getAihubBalance, redeemAihubCode, redeemErrcodeMessage } from '@core/platform/aihub/aihub-billing.service'
@@ -122,8 +125,60 @@ describe.each(getTestDialects())('aihub 集成 [%s]', (dialect) => {
 
   beforeEach(async () => {
     vi.unstubAllGlobals()
-    // 用例隔离：清 settings（会话/网关配置 KV）与 provider_configs
+    // 用例隔离：清 settings（会话/网关配置/总开关 KV）与 provider_configs；
+    // 除「总开关」用例外，默认打开开关模拟已启用的部署
     await tds.truncateAll()
+    await setAihubEnabled(true)
+  })
+
+  // ==================== 功能总开关（默认关闭） ====================
+
+  describe('功能总开关（默认关闭）', () => {
+    it('默认关闭：登录被拦截（[AIHUB_DISABLED]）、会话不可见、查询返回 enabled=false', async () => {
+      await setAihubEnabled(false)
+      expect(await isAihubEnabled()).toBe(false)
+
+      await expect(
+        aihubLogin({ gatewayUrl: GATEWAY, identity: 'u@test.com', password: 'pw' })
+      ).rejects.toThrow(/\[AIHUB_DISABLED\]/)
+      await expect(
+        aihubRegister({ gatewayUrl: GATEWAY, email: 'n@test.com', password: 'pw' })
+      ).rejects.toThrow(/\[AIHUB_DISABLED\]/)
+      expect(await hasValidAihubSession()).toBe(false)
+
+      const info = await getAihubSessionInfo()
+      expect(info.enabled).toBe(false)
+      expect(info.loggedIn).toBe(false)
+    })
+
+    it('关闭即强制登出：会话清除 + config 禁用；重新开启后需重新登录', async () => {
+      installGatewayMock(new Map(gatewayRoutes()))
+      await aihubLogin({ gatewayUrl: GATEWAY, identity: 'u@test.com', password: 'pw' })
+      expect(await hasValidAihubSession()).toBe(true)
+
+      await setAihubEnabled(false)
+      expect(await hasValidAihubSession()).toBe(false)
+      const db = dbModule.getCoreDatabaseManager()
+      const cfg = (await db.providerConfigs!.getByTemplateId(AIHUB_TEMPLATE_ID))[0]
+      expect(cfg.isEnabled).toBe(false)
+      // repo DTO 把空密钥归一为 undefined（api_key_encrypted 为 NULL）
+      expect(cfg.apiKey).toBeUndefined()
+
+      // 重新开启：入口恢复但会话为空——必须重新登录
+      await setAihubEnabled(true)
+      expect(await hasValidAihubSession()).toBe(false)
+      const info = await getAihubSessionInfo()
+      expect(info.enabled).toBe(true)
+      expect(info.loggedIn).toBe(false)
+    })
+
+    it('开启后登录流程与关闭前行为一致（回归守卫）', async () => {
+      await setAihubEnabled(true)
+      installGatewayMock(new Map(gatewayRoutes()))
+      const info = await aihubLogin({ gatewayUrl: GATEWAY, identity: 'u@test.com', password: 'pw' })
+      expect(info.loggedIn).toBe(true)
+      expect(info.enabled).toBe(true)
+    })
   })
 
   // ==================== aihub-client ====================

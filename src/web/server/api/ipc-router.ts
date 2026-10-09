@@ -53,6 +53,8 @@ const ADMIN_CHANNELS = new Set([
   // 全局设置 / 平台包启停
   'settings:set',
   'pack:setEnabled',
+  // AI Hub 功能总开关：全局开关（开启后所有用户可见登录入口与网关模型），仅 admin
+  'aihub:set-enabled',
   // 长文写作共享字典（表设计无租户列，属全局引用数据）：写操作收敛为 admin
   'longwriting:createDictionaryCategory',
   'longwriting:updateDictionaryCategory',

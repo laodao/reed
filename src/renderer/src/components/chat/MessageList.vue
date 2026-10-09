@@ -46,13 +46,13 @@
             <template #title>{{ aihubErrorTitle }}</template>
             {{ displayErrorText }}
             <el-button
-              v-if="aihubErrorCode === 'AIHUB_NOT_LOGGED_IN' || aihubErrorCode === 'AIHUB_SESSION_EXPIRED'"
+              v-if="aihubErrorCode === 'AIHUB_NOT_LOGGED_IN' || aihubErrorCode === 'AIHUB_SESSION_EXPIRED' || aihubErrorCode === 'AIHUB_DISABLED'"
               size="small"
               type="primary"
               text
               @click="goAihubLogin"
             >
-              去登录
+              {{ aihubErrorCode === 'AIHUB_DISABLED' ? '去开启' : '去登录' }}
             </el-button>
             <el-button
               v-if="aihubErrorCode === 'AIHUB_INSUFFICIENT_BALANCE'"
@@ -119,6 +119,7 @@ const aihubErrorCode = computed(() => {
 })
 const aihubErrorTitle = computed(() => {
   switch (aihubErrorCode.value) {
+    case 'AIHUB_DISABLED': return 'AI Hub 功能未开启'
     case 'AIHUB_NOT_LOGGED_IN': return 'AI Hub 未登录'
     case 'AIHUB_SESSION_EXPIRED': return 'AI Hub 登录已过期'
     case 'AIHUB_INSUFFICIENT_BALANCE': return 'AI Hub 余额不足'
