@@ -263,11 +263,15 @@ export class IcCollectionService {
 
     // VLM 描述：按张计费——单任务 IC_MAX_IMAGE_DESCRIPTIONS 张封顶；模型无 vision 时 fail-soft
     let description = ''
+    let visionError = ''
     if (ctx.stats.imageDescriptions < IC_MAX_IMAGE_DESCRIPTIONS) {
       ctx.stats.toolCalls += 1
       ctx.stats.imageDescriptions += 1
       const v = await this.describeImage(df.filePath, df.mimeType)
       if (v.ok && v.text) description = v.text.trim()
+      else visionError = v.error ?? '未知原因'
+    } else {
+      visionError = '已达单任务描述上限'
     }
 
     const source = await repos.sources.create({
@@ -287,7 +291,7 @@ export class IcCollectionService {
       tier: 3,
       tierRationale: description
         ? '图片直链，未经官方认证按互联网媒体处理；已生成视觉描述'
-        : '图片直链，未经官方认证按互联网媒体处理；视觉描述生成失败（未配置视觉模型或模型不支持）——原件已存，内容化待补',
+        : `图片直链，未经官方认证按互联网媒体处理；视觉描述未生成（${visionError}）——原件已存，内容化待补。当前默认模型不支持视觉时，请在模型设置配置并切换到支持视觉的模型（如 glm-4.5v / qwen-vl）`,
       contentHash: contentHash(description || ctx.url),
     })
     try {
