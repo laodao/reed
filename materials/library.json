@@ -109,6 +109,122 @@
       "sourceRef": "https://www.metmuseum.org/art/collection/search/49198",
       "createdAt": "2026-10-09T04:42:03.928Z",
       "updatedAt": "2026-10-09T04:42:03.929Z"
+    },
+    {
+      "id": "mat-72f11fb5",
+      "category": "image",
+      "subCategory": null,
+      "name": "缅甸 8-9 世纪坐佛造像（大都会博物馆 DP309921）",
+      "description": "",
+      "tags": [
+        "缅甸",
+        "佛教造像",
+        "题图",
+        "氛围图"
+      ],
+      "kind": "file",
+      "storagePath": "C:\\Users\\daoge\\code\\project\\the-bot\\materials\\image\\mat-72f11fb5.jpg",
+      "url": "https://www.metmuseum.org/art/collection/search/73150",
+      "mimeType": "image/jpeg",
+      "sizeBytes": 1245233,
+      "metadata": {
+        "checksum": "sha256:72f11fb5c315b9caf2dce47172bc919435c3315c21ae1af00badc17d2b2cc965",
+        "via": "writing-styles 配图（检索路径）",
+        "originalName": "met-73150-burma-buddha.jpg",
+        "license": "CC0（Met Open Access）",
+        "author": "The Metropolitan Museum of Art"
+      },
+      "sourceType": "writing-styles 配图（检索路径）",
+      "sourceRef": "https://www.metmuseum.org/art/collection/search/73150",
+      "createdAt": "2026-10-09T05:45:19.333Z",
+      "updatedAt": "2026-10-09T05:45:19.334Z"
+    },
+    {
+      "id": "mat-bb868c60",
+      "category": "image",
+      "subCategory": null,
+      "name": "明中期青花鲤藻纹罐（大都会博物馆 DP342697）",
+      "description": "",
+      "tags": [
+        "明代",
+        "青花",
+        "历史经纬",
+        "配图"
+      ],
+      "kind": "file",
+      "storagePath": "C:\\Users\\daoge\\code\\project\\the-bot\\materials\\image\\mat-bb868c60.jpg",
+      "url": "https://www.metmuseum.org/art/collection/search/42549",
+      "mimeType": "image/jpeg",
+      "sizeBytes": 1058163,
+      "metadata": {
+        "checksum": "sha256:bb868c60495d4f9fd74177c3d0e12cfc5113c84b6fa80b072fe2264595fc36e9",
+        "via": "writing-styles 配图（检索路径）",
+        "originalName": "met-42549-ming-jar.jpg",
+        "license": "CC0（Met Open Access）",
+        "author": "The Metropolitan Museum of Art"
+      },
+      "sourceType": "writing-styles 配图（检索路径）",
+      "sourceRef": "https://www.metmuseum.org/art/collection/search/42549",
+      "createdAt": "2026-10-09T05:45:19.398Z",
+      "updatedAt": "2026-10-09T05:45:19.399Z"
+    },
+    {
+      "id": "mat-da60fdce",
+      "category": "image",
+      "subCategory": null,
+      "name": "果敢与妙瓦底两条边境带位置示意（自绘，非比例）",
+      "description": "",
+      "tags": [
+        "缅甸",
+        "示意图",
+        "地图替代",
+        "配图"
+      ],
+      "kind": "file",
+      "storagePath": "C:\\Users\\daoge\\code\\project\\the-bot\\materials\\image\\mat-da60fdce.png",
+      "url": "自绘（PIL），依据研究报告地理信息；非比例不含国界",
+      "mimeType": "image/png",
+      "sizeBytes": 130187,
+      "metadata": {
+        "checksum": "sha256:da60fdce5050ed15dee501e378e46f80ff6d7a1301a1f1c85324ef01f7318eeb",
+        "via": "writing-styles 配图（自绘路径）",
+        "originalName": "draw-location-schematic.png",
+        "license": "自制（本工作流产出）",
+        "author": "the-bot writing-styles 工作流"
+      },
+      "sourceType": "writing-styles 配图（自绘路径）",
+      "sourceRef": "自绘（PIL），依据研究报告地理信息；非比例不含国界",
+      "createdAt": "2026-10-09T05:45:19.462Z",
+      "updatedAt": "2026-10-09T05:45:19.463Z"
+    },
+    {
+      "id": "mat-927d27ea",
+      "category": "image",
+      "subCategory": null,
+      "name": "电诈产业规模关键数据图（自绘：UNODC/美财政部/警官估计）",
+      "description": "",
+      "tags": [
+        "数据图表",
+        "电诈",
+        "产业规模",
+        "配图"
+      ],
+      "kind": "file",
+      "storagePath": "C:\\Users\\daoge\\code\\project\\the-bot\\materials\\image\\mat-927d27ea.png",
+      "url": "数据口径：UNODC 2023、美国财政部 2024、泰国警官估计",
+      "mimeType": "image/png",
+      "sizeBytes": 109883,
+      "metadata": {
+        "checksum": "sha256:927d27ea7cbad959ac2d9c1244b355878336251a639aad6d0d9f32ba4a8df4e4",
+        "via": "writing-styles 配图（自绘路径）",
+        "originalName": "draw-scale-data.png",
+        "license": "自制（本工作流产出）",
+        "author": "the-bot writing-styles 工作流"
+      },
+      "sourceType": "writing-styles 配图（自绘路径）",
+      "sourceRef": "数据口径：UNODC 2023、美国财政部 2024、泰国警官估计",
+      "createdAt": "2026-10-09T05:45:19.532Z",
+      "updatedAt": "2026-10-09T05:45:19.532Z"
     }
   ]
 }
