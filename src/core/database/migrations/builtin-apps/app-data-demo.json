@@ -1,0 +1,100 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 数据表演示·增量记录",
+  "description": "应用数据层最小闭环示范（零网络零 AI，纯确定性）：表单录入 → createTable 声明应用数据表（幂等，去重键=url）→ upsert 按去重键增量写入（同 url 再跑=更新不重复）→ query 过滤 → 消息回显。数据在应用详情「数据」页签可筛选浏览/导出 CSV。演示'配置化非一次性应用'骨架：createTable → loop → upsert。",
+  "category": "办公效率",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 60, "y": 200 },
+        "config": {
+          "inputs": [
+            { "key": "url", "label": "商品链接（去重键）", "type": "string", "required": true },
+            { "key": "name", "label": "商品名称", "type": "string", "required": true },
+            { "key": "price", "label": "价格（数字）", "type": "string", "required": false }
+          ]
+        }
+      },
+      {
+        "id": "t1_create",
+        "type": "data-table",
+        "name": "建表（幂等）",
+        "position": { "x": 300, "y": 200 },
+        "config": {
+          "op": "createTable",
+          "scope": "app",
+          "tableName": "商品价格",
+          "columns": "[{\"key\":\"url\",\"type\":\"string\"},{\"key\":\"name\",\"type\":\"string\"},{\"key\":\"price\",\"type\":\"number\"},{\"key\":\"date\",\"type\":\"string\"}]",
+          "dedupKeys": "url"
+        }
+      },
+      {
+        "id": "t2_upsert",
+        "type": "data-table",
+        "name": "增量写入（同链接=更新）",
+        "position": { "x": 540, "y": 200 },
+        "config": {
+          "op": "upsert",
+          "scope": "app",
+          "tableName": "商品价格",
+          "row": "{\"url\":\"{{start.url}}\",\"name\":\"{{start.name}}\",\"price\":\"{{start.price}}\",\"date\":\"{{sys.today}}\"}"
+        }
+      },
+      {
+        "id": "t3_upsert_fixed",
+        "type": "data-table",
+        "name": "固定演示行（每次刷新日期）",
+        "position": { "x": 780, "y": 200 },
+        "config": {
+          "op": "upsert",
+          "scope": "app",
+          "tableName": "商品价格",
+          "row": "{\"url\":\"https://demo/fixed-row\",\"name\":\"固定演示行\",\"price\":1,\"date\":\"{{sys.today}}\"}"
+        }
+      },
+      {
+        "id": "t4_query",
+        "type": "data-table",
+        "name": "查询（按商品名过滤）",
+        "position": { "x": 1020, "y": 200 },
+        "config": {
+          "op": "query",
+          "scope": "app",
+          "tableName": "商品价格",
+          "filterContains": "{{start.name}}"
+        }
+      },
+      {
+        "id": "t5_msg",
+        "type": "message",
+        "name": "回显",
+        "position": { "x": 1260, "y": 200 },
+        "config": {
+          "content": "已增量写入应用数据表「商品价格」。\n\n命中 {{start.name}} 的行数：{{t4_query.total}}\n\n最新一条：{{t4_query.rows.0.name}}（价格 {{t4_query.rows.0.price}}，记录日期 {{t4_query.rows.0.date}}）\n\n同一链接再次运行=更新而非新增；全部历史数据在 本应用详情 →「数据」页签 可筛选浏览/导出 CSV。"
+        }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 1500, "y": 200 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "t1_create", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "t1_create", "targetNodeId": "t2_upsert", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "t2_upsert", "targetNodeId": "t3_upsert_fixed", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "t3_upsert_fixed", "targetNodeId": "t4_query", "kind": "normal" },
+      { "id": "e5", "sourceNodeId": "t4_query", "targetNodeId": "t5_msg", "kind": "normal" },
+      { "id": "e6", "sourceNodeId": "t5_msg", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": {}
+}

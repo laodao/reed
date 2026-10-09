@@ -89,8 +89,20 @@ export interface WorkflowRetrievalParams {
 
 /** 代码节点沙箱 */
 export interface WorkflowCodeSandboxParams {
-  /** 单次执行超时（毫秒） */
+  /** 单次执行超时（毫秒）——同步段（vm timeout 拦死循环） */
   timeoutMs: number
+  /** 宿主调用整体墙钟超时（毫秒；含所有 await host.* 的等待） */
+  asyncTimeoutMs: number
+  /** 单次节点执行内宿主函数调用次数上限（防代码内循环绕开引擎循环上限） */
+  maxHostCalls: number
+}
+
+/** 应用数据表（内置 wf_data_table_*）的容量护栏 */
+export interface WorkflowDataTablesParams {
+  /** 单表行数上限（超限拒写并提示归档） */
+  maxRowsPerTable: number
+  /** 单个 definition（app 作用域）的表数上限 */
+  maxTablesPerDefinition: number
 }
 
 /** 工作流的「系统工具面」（Agent 通过 run_workflow / 能力目录等工具观察与控制工作流） */
@@ -160,6 +172,7 @@ export interface WorkflowRuntimeParams {
   crawl: WorkflowCrawlParams
   polling: WorkflowPollingParams
   codeSandbox: WorkflowCodeSandboxParams
+  dataTables: WorkflowDataTablesParams
   systemTools: WorkflowSystemToolsParams
   draft: WorkflowDraftParams
   trigger: WorkflowTriggerParams
@@ -200,6 +213,13 @@ export const WORKFLOW_PARAMS_DEFAULTS: WorkflowRuntimeParams = {
     // 改造前 code-nodes 直接拿 WORKFLOW_LIMITS.codeTimeoutMs（5s）当超时用，
     // 于是"上限"同时是"默认值"，节点想配更长也会被夹回 5s；现在默认与上限分开。
     timeoutMs: D.codeTimeoutMs,
+    // 宿主调用墙钟（设计 §2.3）：真实 IO 等待期间事件循环空闲、可被墙钟打断
+    asyncTimeoutMs: 60_000,
+    maxHostCalls: 50,
+  },
+  dataTables: {
+    maxRowsPerTable: 10_000,
+    maxTablesPerDefinition: 20,
   },
   systemTools: {
     // 以下 7 项改造前是 system-agent-tools.ts 里的导出常量
@@ -278,6 +298,12 @@ export const WORKFLOW_PARAMS_LIMITS: WorkflowRuntimeParams = {
   },
   codeSandbox: {
     timeoutMs: L.codeTimeoutMs,
+    asyncTimeoutMs: 600_000,
+    maxHostCalls: 500,
+  },
+  dataTables: {
+    maxRowsPerTable: 100_000,
+    maxTablesPerDefinition: 100,
   },
   systemTools: {
     catalogMaxItems: 100,

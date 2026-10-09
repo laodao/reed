@@ -1,298 +1,254 @@
 <template>
-  <div class="ic-project" v-loading="store.loadingDetail">
-    <template v-if="project">
-      <div class="proj-header">
-        <el-button :icon="ArrowLeft" text @click="back">返回</el-button>
-        <div class="proj-title">
-          <h2>{{ project.name }}</h2>
-          <el-tag size="small" effect="plain">蓝图 v{{ project.blueprintVersion }}</el-tag>
-          <el-tag :type="project.blueprint?.autoConfirm ? 'success' : 'warning'" size="small" effect="plain">
+  <div class="ic-project">
+    <!-- 三态：失败 / 不存在 / 正常（旧版失败被吞成整页白屏） -->
+    <div v-if="store.errorDetail && !store.loadingDetail" class="state-wrap">
+      <el-empty :description="`项目加载失败：${store.errorDetail}`">
+        <el-button type="primary" :icon="Refresh" @click="reload">重试</el-button>
+      </el-empty>
+    </div>
+    <div v-else-if="!store.loadingDetail && !project" class="state-wrap">
+      <el-empty description="项目不存在或已被删除">
+        <el-button @click="back">返回列表</el-button>
+      </el-empty>
+    </div>
+    <div v-else-if="!project" v-loading="true" class="state-wrap" />
+
+    <template v-else>
+      <!-- 固定 Header：标题行 + 统计行 -->
+      <header class="proj-header">
+        <div class="proj-title-row">
+          <el-button :icon="ArrowLeft" text @click="back">返回</el-button>
+          <h2 class="proj-name">{{ project.name }}</h2>
+          <el-tag size="small" :type="project.blueprint?.autoConfirm ? 'success' : 'warning'" effect="plain">
             {{ project.blueprint?.autoConfirm ? '蓝图已确认' : '蓝图待确认' }}
           </el-tag>
-        </div>
-        <div class="proj-actions">
-          <el-tooltip :disabled="!!project.kbId" content="未绑定知识库——确认入库需要先绑定">
-            <el-button type="primary" :loading="store.running" :disabled="!project.blueprint?.autoConfirm" @click="doRun">
-              {{ store.running ? '搜集中…' : '开始搜集' }}
-            </el-button>
-          </el-tooltip>
-          <el-button :icon="Refresh" @click="reload" />
-        </div>
-      </div>
-      <p class="proj-goal">{{ project.goal }}</p>
+          <el-tag size="small" effect="plain">蓝图 v{{ project.blueprintVersion }}</el-tag>
 
-      <!-- 知识库绑定（内容唯一存储在 kb；确认入库的前提） -->
-      <div class="kb-row">
-        <span class="kb-label">知识库：</span>
-        <el-input v-model="kbInput" size="small" style="width: 320px" placeholder="粘贴知识库 ID（设置→知识库 中复制）" />
-        <el-button size="small" @click="doBindKb">绑定</el-button>
-        <span v-if="project.kbId" class="kb-ok">当前：{{ project.kbId }}</span>
-      </div>
-
-      <!-- 蓝图概览：需求清单 + 覆盖标记 -->
-      <el-card shadow="never" class="block">
-        <template #header>采集蓝图（信息需求清单）</template>
-        <div v-for="req in project.blueprint?.requirements ?? []" :key="req.id" class="req-line">
-          <el-tag size="small" :type="reqTagType(req.priority)" effect="plain">{{ req.priority }}</el-tag>
-          <span class="req-id">{{ req.id }}</span>
-          <span class="req-q">{{ req.question }}</span>
-          <el-tag v-if="coverage[req.id] === true" size="small" type="success" effect="light">已满足</el-tag>
-          <el-tag v-else-if="coverage[req.id] === false && req.priority !== 'nice'" size="small" type="info" effect="light">未满足</el-tag>
-        </div>
-        <div v-if="project.blueprint?.assumptions?.length" class="assumptions">
-          <span class="assume-label">口径假设：</span>{{ project.blueprint.assumptions.join('；') }}
-        </div>
-        <div v-if="!project.blueprint?.autoConfirm" class="confirm-row">
-          <el-button size="small" type="success" @click="doConfirmBlueprint">确认蓝图（解锁搜集）</el-button>
-        </div>
-      </el-card>
-
-      <!-- 任务流水 -->
-      <el-card shadow="never" class="block">
-        <template #header>搜集任务</template>
-        <el-empty v-if="store.tasks.length === 0" description="还没有任务——点「开始搜集」" :image-size="60" />
-        <div v-for="t in store.tasks" :key="t.id" class="task-line">
-          <el-tag size="small" :type="taskTagType(t.status)">{{ t.status }}</el-tag>
-          <span class="task-time">{{ shortTime(t.createdAt) }}</span>
-          <template v-if="t.stats">
-            <span>源 {{ t.stats.sourcesNew }}（失败 {{ t.stats.sourcesFailed }}）</span>
-            <span>条目 {{ t.stats.rowsDraft }}（拒收 {{ t.stats.rowsRejectedQuote }} · 重复 {{ t.stats.rowsMerged }}）</span>
-            <span>工具调用 {{ t.stats.toolCalls }}/{{ t.stats.budgetMax }}</span>
-            <span>覆盖率 {{ Math.round((t.stats.coverage ?? 0) * 100) }}%</span>
-          </template>
-        </div>
-        <!-- 质量报告：负结果明示 -->
-        <div v-if="lastNegative.length" class="negative-block">
-          <div class="neg-title">未满足的需求（如实明示）：</div>
-          <div v-for="n in lastNegative" :key="n.irId" class="neg-line">· {{ n.irId }} {{ n.question }}——{{ n.note }}</div>
-        </div>
-      </el-card>
-
-      <!-- 待审工作台 -->
-      <el-card shadow="never" class="block">
-        <template #header>
-          <div class="card-header-row">
-            <span>待审来源（{{ store.stagedSources.length }}）</span>
-            <div>
-              <el-button size="small" type="success" :disabled="!selectedStaged.length" @click="doConfirm">确认入选（{{ selectedStaged.length }}）</el-button>
-              <el-button size="small" type="danger" plain :disabled="!selectedStaged.length" @click="doReject">驳回</el-button>
-            </div>
+          <div class="proj-actions">
+            <el-tooltip :disabled="canRun" content="先到「采集蓝图」页签确认蓝图，才能开始搜集">
+              <el-button type="primary" :loading="isRunning" :disabled="!canRun" @click="doRun">
+                {{ isRunning ? '搜集中…' : '开始搜集' }}
+              </el-button>
+            </el-tooltip>
+            <el-button @click="activeTab = 'report'">整理报告</el-button>
+            <el-tooltip content="跨来源聚类去重、冲突归因、孤证标记——数据变化后可重跑" placement="top">
+              <el-button :loading="adjudicating" @click="doAdjudicate">重新裁决</el-button>
+            </el-tooltip>
+            <el-button :icon="Refresh" :loading="store.loadingDetail" @click="reload" />
           </div>
-        </template>
-        <el-table
-          :data="store.stagedSources"
-          @selection-change="(rows: IcSourceDto[]) => (selectedStaged = rows)"
-        >
-          <el-table-column type="selection" width="42" />
-          <el-table-column label="来源" min-width="260">
-            <template #default="{ row }">
-              <div class="src-url">{{ row.url }}</div>
-              <div v-if="row.tierRationale" class="src-rationale">{{ row.tierRationale }}</div>
-            </template>
-          </el-table-column>
-          <el-table-column label="分级" width="80">
-            <template #default="{ row }">
-              <el-tag v-if="row.tier" size="small" :type="tierTagType(row.tier)">T{{ row.tier }}</el-tag>
-              <el-tag v-else size="small" type="info">未定级</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="抓取" width="80">
-            <template #default="{ row }">
-              <el-tag size="small" :type="fetchTagType(row.fetchStatus)" effect="plain">{{ row.fetchStatus }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="满足需求" width="110">
-            <template #default="{ row }">{{ row.irHits.join('、') || '—' }}</template>
-          </el-table-column>
-          <el-table-column label="采集时间" width="150">
-            <template #default="{ row }">{{ shortTime(row.collectedAt) }}</template>
-          </el-table-column>
-        </el-table>
-      </el-card>
+        </div>
 
-      <!-- 资料浏览：结构化行 -->
-      <el-card shadow="never" class="block">
-        <template #header>结构化条目（{{ store.rows.length }}）</template>
-        <el-table :data="store.rows" size="small">
-          <el-table-column label="状态" width="90">
-            <template #default="{ row }">
-              <el-tag size="small" :type="rowTagType(row.status)" effect="plain">{{ row.status }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="measure.metric" label="指标" min-width="120" />
-          <el-table-column prop="measure.value" label="数值" width="110" />
-          <el-table-column prop="measure.unit" label="单位" width="80" />
-          <el-table-column prop="measure.period" label="期间" width="90" />
-          <el-table-column label="维度" min-width="120">
-            <template #default="{ row }">{{ dimsText(row) }}</template>
-          </el-table-column>
-          <el-table-column label="引句" min-width="220">
-            <template #default="{ row }">
-              <span class="quote">{{ row.quote || '—' }}</span>
-            </template>
-          </el-table-column>
-        </el-table>
-      </el-card>
+        <div class="proj-stats">
+          <span class="stat">来源 <b>{{ sourceTotal }}</b><i v-if="store.stagedSources.length" class="hl">（待审 {{ store.stagedSources.length }}）</i></span>
+          <el-divider direction="vertical" />
+          <span class="stat">条目 <b>{{ store.rows.length }}</b><i v-if="store.pendingRows" class="hl">（待审 {{ store.pendingRows }}）</i></span>
+          <el-divider direction="vertical" />
+          <span class="stat">覆盖率 <b>{{ percentText(store.coverageRatio) }}</b></span>
+          <el-divider direction="vertical" />
+          <span class="stat kb-stat">
+            知识库
+            <el-select
+              v-model="kbValue"
+              size="small"
+              filterable
+              clearable
+              allow-create
+              placeholder="选择知识库（可粘贴 ID）"
+              class="kb-select"
+              :loading="kbLoading"
+              @change="doBindKb"
+            >
+              <el-option v-for="kb in kbOptions" :key="kb.id" :label="kb.name" :value="kb.id" />
+            </el-select>
+          </span>
+        </div>
+      </header>
+
+      <!-- 五页签：蓝图 / 任务 / 审阅 / 资料库 / 报告 -->
+      <el-tabs v-model="activeTab" class="proj-tabs">
+        <el-tab-pane label="采集蓝图" name="blueprint">
+          <IcBlueprintPanel />
+        </el-tab-pane>
+        <el-tab-pane name="tasks">
+          <template #label>搜集任务{{ isRunning ? '（进行中）' : '' }}</template>
+          <IcTasksPanel />
+        </el-tab-pane>
+        <el-tab-pane name="review">
+          <template #label>
+            <span class="tab-label">
+              审阅工作台
+              <el-tag v-if="store.stagedSources.length" size="small" type="danger" effect="light" round>
+                {{ store.stagedSources.length }}
+              </el-tag>
+            </span>
+          </template>
+          <IcReviewPanel />
+        </el-tab-pane>
+        <el-tab-pane label="资料库" name="rows">
+          <IcRowsPanel />
+        </el-tab-pane>
+        <el-tab-pane name="report">
+          <template #label>
+            <span class="tab-label">
+              整理报告
+              <el-tag v-if="store.lastReport" size="small" type="success" effect="light">新</el-tag>
+            </span>
+          </template>
+          <IcReportPanel />
+        </el-tab-pane>
+      </el-tabs>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+/**
+ * 信息搜集 · 项目详情页（shell）
+ * @module views/info-collection/InfoCollectionProject
+ * @description 固定 Header（标题 + 统计条 + KB 选择器 + 全局操作）+ 五页签内容区。
+ *              轮询唯一入口是 store.startPolling（轻量 listTasks），本视图只负责生命周期挂载。
+ */
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Refresh } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { useInfoCollectionStore, type IcSourceDto } from '@/stores/info-collection'
+import { ElMessage } from 'element-plus'
+import { useInfoCollectionStore } from '@/stores/info-collection'
+import { percentText } from '@/views/info-collection/ic-ui'
+import IcBlueprintPanel from '@/components/info-collection/IcBlueprintPanel.vue'
+import IcTasksPanel from '@/components/info-collection/IcTasksPanel.vue'
+import IcReviewPanel from '@/components/info-collection/IcReviewPanel.vue'
+import IcRowsPanel from '@/components/info-collection/IcRowsPanel.vue'
+import IcReportPanel from '@/components/info-collection/IcReportPanel.vue'
+
+interface KbOption {
+  id: string
+  name: string
+}
 
 const route = useRoute()
 const router = useRouter()
 const store = useInfoCollectionStore()
 
-const kbInput = ref('')
-const selectedStaged = ref<IcSourceDto[]>([])
-let pollTimer: ReturnType<typeof setInterval> | null = null
-
 const projectId = computed(() => String(route.params.id ?? ''))
 const project = computed(() => store.current)
-const coverage = computed<Record<string, boolean>>(() => {
-  const t = store.tasks.find(x => x.stats)
-  return t?.stats?.irCoverage ?? {}
-})
-const lastNegative = computed(() => {
-  const t = store.tasks.find(x => x.stats?.negativeResults?.length)
-  return t?.stats?.negativeResults ?? []
-})
+
+const activeTab = ref('blueprint')
+const adjudicating = ref(false)
+
+const isRunning = computed(() => store.running || store.hasRunning)
+const canRun = computed(() => !!project.value?.blueprint?.autoConfirm && !isRunning.value)
+const sourceTotal = computed(
+  () => store.stagedSources.length + store.confirmedSources.length + store.rejectedSources.length,
+)
+
+// ---- 知识库选择器（旧版为手贴 UUID 输入框） ----
+const kbOptions = ref<KbOption[]>([])
+const kbLoading = ref(false)
+const kbValue = ref<string>('')
+watch(
+  () => project.value?.kbId,
+  v => (kbValue.value = v ?? ''),
+)
+
+async function loadKbOptions(): Promise<void> {
+  kbLoading.value = true
+  try {
+    const api = (window as never as { electronAPI?: { knowledgeBase?: { list?: () => Promise<{ success: boolean; data?: KbOption[] }> } } })
+      .electronAPI?.knowledgeBase
+    const resp = await api?.list?.()
+    if (resp?.success && resp.data) kbOptions.value = resp.data
+  } finally {
+    kbLoading.value = false
+  }
+}
+
+async function doBindKb(kbId: string | null): Promise<void> {
+  if (!project.value) return
+  const normalized = kbId?.trim() || null
+  const ok = await store.setProjectKb(project.value.id, normalized)
+  ElMessage[ok ? 'success' : 'error'](ok ? (normalized ? '已绑定知识库' : '已解绑知识库') : '绑定失败')
+}
 
 onMounted(async () => {
   await store.loadProject(projectId.value)
-  maybePoll()
+  // 智能落点：跑着 → 任务页；有待审 → 审阅页；否则蓝图页
+  if (store.hasRunning) {
+    activeTab.value = 'tasks'
+    store.startPolling(projectId.value)
+  } else if (store.stagedSources.length > 0) {
+    activeTab.value = 'review'
+  }
+  void loadKbOptions()
 })
-onBeforeUnmount(() => stopPoll())
-
-function maybePoll(): void {
-  stopPoll()
-  const busy = store.tasks.some(t => t.status === 'running' || t.status === 'pending')
-  if (busy) {
-    store.running = true
-    pollTimer = setInterval(async () => {
-      await store.loadProject(projectId.value)
-      if (!store.tasks.some(t => t.status === 'running' || t.status === 'pending')) {
-        stopPoll()
-        store.running = false
-        ElMessage.success('搜集完成，待审条目已就绪')
-      }
-    }, 3000)
-  }
-}
-function stopPoll(): void {
-  if (pollTimer) {
-    clearInterval(pollTimer)
-    pollTimer = null
-  }
-}
+onBeforeUnmount(() => store.stopPolling())
 
 async function reload(): Promise<void> {
   await store.loadProject(projectId.value)
-  maybePoll()
+  if (store.hasRunning) store.startPolling(projectId.value)
 }
 
 async function doRun(): Promise<void> {
-  const ok = await store.runTask(projectId.value)
+  if (!project.value) return
+  const ok = await store.runTask(project.value.id)
   if (!ok) {
     ElMessage.error('发起搜集失败')
     return
   }
-  maybePoll()
+  activeTab.value = 'tasks'
 }
 
-async function doConfirmBlueprint(): Promise<void> {
-  const ok = await store.confirmBlueprint(projectId.value)
-  ElMessage[ok ? 'success' : 'error'](ok ? '蓝图已确认' : '确认失败')
-}
-
-async function doBindKb(): Promise<void> {
-  const kbId = kbInput.value.trim() || null
-  const ok = await store.setProjectKb(projectId.value, kbId)
-  ElMessage[ok ? 'success' : 'error'](ok ? '已绑定' : '绑定失败')
-}
-
-async function doConfirm(): Promise<void> {
-  const ids = selectedStaged.value.map(s => s.id)
-  const { confirmed, skipped } = await store.confirmBatch(projectId.value, ids)
-  const blockedNote = skipped.map(s => s.reason).join('；')
-  ElMessage.success(`已确认 ${confirmed.length} 条${skipped.length ? `；拦下 ${skipped.length} 条（${blockedNote}）` : ''}`)
-  selectedStaged.value = []
-}
-
-async function doReject(): Promise<void> {
-  const ids = selectedStaged.value.map(s => s.id)
-  const result = await ElMessageBox.prompt('驳回原因（进质量统计）', '驳回所选来源', {
-    inputValue: '来源不可信',
-    inputPattern: /.+/,
-    inputErrorMessage: '原因不能为空',
-  })
-  const reason = typeof result === 'string' ? result : result.value
-  await store.rejectBatch(projectId.value, ids, reason)
-  ElMessage.success('已驳回')
-  selectedStaged.value = []
+async function doAdjudicate(): Promise<void> {
+  if (!project.value) return
+  adjudicating.value = true
+  try {
+    const r = await store.adjudicate(project.value.id)
+    if (!r) {
+      ElMessage.error('裁决失败')
+      return
+    }
+    ElMessage.success(
+      `裁决完成：${r.clusters} 个转载簇，发现 ${r.conflictsFound} 处数值冲突（归因 ${r.conflictsAttributed} 处），${r.singleSourceRows} 条孤证已标记`,
+    )
+  } finally {
+    adjudicating.value = false
+  }
 }
 
 function back(): void {
   void router.push('/info-collection')
 }
-
-function reqTagType(priority: string): 'danger' | 'primary' | 'info' {
-  return priority === 'must' ? 'danger' : priority === 'should' ? 'primary' : 'info'
-}
-function taskTagType(status: string): 'success' | 'warning' | 'danger' | 'info' {
-  return status === 'done' || status === 'reviewing'
-    ? 'success'
-    : status === 'running' || status === 'pending'
-      ? 'warning'
-      : status === 'failed'
-        ? 'danger'
-        : 'info'
-}
-function tierTagType(tier: number): 'success' | 'primary' | 'warning' | 'info' {
-  return tier === 1 ? 'success' : tier === 2 ? 'primary' : tier === 3 ? 'warning' : 'info'
-}
-function fetchTagType(status: string): 'success' | 'warning' | 'danger' | 'info' {
-  return status === 'ok' ? 'success' : status === 'partial' ? 'warning' : status === 'blocked' ? 'danger' : 'info'
-}
-function rowTagType(status: string): 'success' | 'warning' | 'info' {
-  return status === 'confirmed' ? 'success' : status === 'draft' ? 'warning' : 'info'
-}
-function dimsText(row: { measure: { dims: Record<string, unknown> | null } }): string {
-  const dims = row.measure.dims
-  return dims && Object.keys(dims).length ? Object.entries(dims).map(([k, v]) => `${k}=${String(v)}`).join('，') : '—'
-}
-function shortTime(iso: string | null): string {
-  if (!iso) return '—'
-  return iso.slice(0, 16).replace('T', ' ')
-}
 </script>
 
 <style scoped>
-.ic-project { padding: 20px 32px; }
-.proj-header { display: flex; align-items: center; gap: 12px; }
-.proj-title { display: flex; align-items: center; gap: 8px; flex: 1; }
-.proj-title h2 { margin: 0; font-size: 18px; }
-.proj-goal { color: var(--el-text-color-secondary); font-size: 13px; margin: 8px 0 14px; }
-.kb-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; font-size: 13px; }
-.kb-ok { color: var(--el-color-success); font-size: 12px; }
-.block { margin-bottom: 16px; }
-.card-header-row { display: flex; align-items: center; justify-content: space-between; }
-.req-line { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; }
-.req-id { color: var(--el-text-color-secondary); font-family: monospace; }
-.assumptions { margin-top: 8px; font-size: 12px; color: var(--el-text-color-secondary); }
-.assume-label { color: var(--el-color-warning); }
-.confirm-row { margin-top: 10px; }
-.task-line { display: flex; align-items: center; gap: 12px; padding: 5px 0; font-size: 13px; }
-.task-time { color: var(--el-text-color-secondary); }
-.negative-block { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--el-border-color-lighter); }
-.neg-title { font-size: 12px; color: var(--el-color-warning); margin-bottom: 4px; }
-.neg-line { font-size: 12px; color: var(--el-text-color-secondary); padding: 2px 0; }
-.src-url { font-size: 13px; word-break: break-all; }
-.src-rationale { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 2px; }
-.quote { font-size: 12px; color: var(--el-text-color-secondary); }
+.ic-project {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 16px 28px 0;
+}
+.state-wrap { flex: 1; display: flex; align-items: center; justify-content: center; }
+
+.proj-header { border-bottom: 1px solid var(--el-border-color-lighter); padding-bottom: 12px; }
+.proj-title-row { display: flex; align-items: center; gap: 10px; }
+.proj-name { margin: 0; font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-actions { margin-left: auto; display: flex; gap: 10px; flex-shrink: 0; }
+
+.proj-stats {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  flex-wrap: wrap;
+}
+.stat b { color: var(--el-text-color-primary); font-weight: 600; }
+.stat .hl { color: var(--el-color-danger); font-style: normal; }
+.kb-stat { display: flex; align-items: center; gap: 8px; }
+.kb-select { width: 220px; }
+
+.proj-tabs { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.proj-tabs :deep(.el-tabs__content) { flex: 1; min-height: 0; overflow: auto; padding-bottom: 20px; }
+.tab-label { display: inline-flex; align-items: center; gap: 6px; }
 </style>

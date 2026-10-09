@@ -16,6 +16,7 @@
  */
 
 import { registerAppHandlers } from './handlers/app.handler'
+import { registerAppDataHandlers } from './handlers/app-data.handler'
 import type { PackDefinition } from '../registry'
 
 export const appPack: PackDefinition = {
@@ -26,11 +27,12 @@ export const appPack: PackDefinition = {
     description: '已发布的工作流应用——会话/分享/API 分发',
     dependencies: ['workflow'],
     contributions: {
-      // app:* 与 app-session:* 是两段独立前缀（'app-session:' 不以 'app:' 开头）
-      ipcChannelPrefixes: ['app:', 'app-session:'],
+      // app: / app-session: / app-data: 是三段独立前缀（'app-session:'、'app-data:' 不以 'app:' 开头）
+      ipcChannelPrefixes: ['app:', 'app-session:', 'app-data:'],
     },
   },
   activate() {
     registerAppHandlers()
+    registerAppDataHandlers()
   },
 }

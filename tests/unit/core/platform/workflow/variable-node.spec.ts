@@ -50,17 +50,46 @@ class MemVars {
 class MemDefs {
   rows: any[] = []
   async findById(id: string) { return this.rows.find(r => r.id === id) ?? null }
-  async findByName(name: string) { return this.rows.find(r => r.name === name) ?? null }
-  async create(name: string, columnsJson: string) { const d = { id: `tbl_${this.rows.length + 1}`, name, columnsJson }; this.rows.push(d); return d }
+  async findByName(name: string) {
+    // 历史语义：全局命名空间（scope 为空或 workflow）
+    return this.rows.find(r => r.name === name && (r.scope ?? 'workflow') === 'workflow') ?? null
+  }
+  async findByScopeAndName(scope: string, ownerId: string | null, name: string) {
+    if (scope === 'app') return this.rows.find(r => r.name === name && r.scope === 'app' && r.ownerId === ownerId) ?? null
+    return this.rows.find(r => r.name === name && (r.scope ?? 'workflow') === 'workflow') ?? null
+  }
+  async create(name: string, columnsJson: string, extra?: { scope?: string; ownerId?: string | null; dedupKeysJson?: string | null }) {
+    const d = { id: `tbl_${this.rows.length + 1}`, name, columnsJson, scope: extra?.scope ?? 'workflow', ownerId: extra?.ownerId ?? null, dedupKeysJson: extra?.dedupKeysJson ?? null, createdAt: null, updatedAt: null }
+    this.rows.push(d)
+    return d
+  }
+  async listByScopeOwner(scope: string, ownerId: string | null) {
+    if (scope === 'app') return this.rows.filter(r => r.scope === 'app' && r.ownerId === ownerId)
+    return this.rows.filter(r => (r.scope ?? 'workflow') === 'workflow')
+  }
+  async countByOwner(ownerId: string) { return this.rows.filter(r => r.scope === 'app' && r.ownerId === ownerId).length }
+  async delete(id: string) { const i = this.rows.findIndex(r => r.id === id); if (i >= 0) this.rows.splice(i, 1); return 1 }
 }
 class MemRows {
   rows: any[] = []
   seq = 0
-  async insertRow(tableId: string, rowJson: string) { const r = { id: `row_${++this.seq}`, tableId, rowJson }; this.rows.push(r); return r }
-  async listByTable(tableId: string) { return this.rows.filter(r => r.tableId === tableId) }
+  /** 模拟 (table_id, dedup_hash) 唯一索引 */
+  strictUnique = true
+  async insertRow(tableId: string, rowJson: string, dedupHash?: string | null) {
+    if (dedupHash && this.strictUnique && this.rows.some(r => r.tableId === tableId && r.dedupHash === dedupHash)) {
+      throw new Error('UNIQUE constraint failed: wf_data_table_rows.table_id, wf_data_table_rows.dedup_hash')
+    }
+    const r = { id: `row_${++this.seq}`, tableId, rowJson, dedupHash: dedupHash ?? null, createdAt: null, updatedAt: null }
+    this.rows.push(r)
+    return r
+  }
+  async listByTable(tableId: string) { return this.rows.filter(r => r.tableId === tableId).reverse() }
+  async findByTableAndHash(tableId: string, dedupHash: string) { return this.rows.find(r => r.tableId === tableId && r.dedupHash === dedupHash) ?? null }
+  async countByTable(tableId: string) { return this.rows.filter(r => r.tableId === tableId).length }
   async updateRow(id: string, rowJson: string) { const r = this.rows.find(x => x.id === id); if (r) r.rowJson = rowJson; return r ?? null }
   async findById(id: string) { return this.rows.find(r => r.id === id) ?? null }
   async deleteRow(id: string) { const i = this.rows.findIndex(r => r.id === id); if (i >= 0) this.rows.splice(i, 1); return i >= 0 ? 1 : 0 }
+  async deleteByTable(tableId: string) { const n = this.rows.filter(r => r.tableId === tableId).length; this.rows = this.rows.filter(r => r.tableId !== tableId); return n }
 }
 
 function setupSvc() {
@@ -179,6 +208,123 @@ describe('data-table 节点', () => {
     const throwing = await dataTableNode.execute(baseCtx({ op: 'query', dataSourceId: 'ds_1', sql: 'SELECT 1' }))
     expect(throwing.status).toBe('failed')
     if (throwing.status === 'failed') expect(throwing.retryable).toBe(true)
+  })
+})
+
+describe('data-table 节点（应用数据层：createTable/upsert/count/app 作用域）', () => {
+  beforeEach(() => { svcMock.mockReset(); dsMock.mockReset() })
+
+  const appCtx = (config: Record<string, unknown>) =>
+    ({ ...baseCtx(config), definitionId: 'def_app1' })
+
+  it('createTable 声明建表（幂等：重复执行 created=false）；去重键必须是已声明列', async () => {
+    const { defs } = setupSvc()
+    const cols = JSON.stringify([{ key: 'url', type: 'string' }, { key: 'price', type: 'number' }])
+    const c1 = await dataTableNode.execute(appCtx({ op: 'createTable', scope: 'app', tableName: '监控', columns: cols, dedupKeys: 'url' }))
+    expect(c1.status).toBe('succeeded')
+    if (c1.status !== 'succeeded') return
+    expect(c1.output.created).toBe(true)
+    expect(defs.rows[0]).toMatchObject({ scope: 'app', ownerId: 'def_app1', name: '监控' })
+    // 幂等重入
+    const c2 = await dataTableNode.execute(appCtx({ op: 'createTable', scope: 'app', tableName: '监控', columns: cols, dedupKeys: 'url' }))
+    if (c2.status === 'succeeded') expect(c2.output.created).toBe(false)
+    // 去重键不在列里 → failed
+    const bad = await dataTableNode.execute(appCtx({ op: 'createTable', scope: 'app', tableName: 'X', columns: cols, dedupKeys: 'nope' }))
+    expect(bad.status).toBe('failed')
+  })
+
+  it('createTable：schema 只增不改——删列报错；去重键变更报错', async () => {
+    setupSvc()
+    const cols = JSON.stringify([{ key: 'url', type: 'string' }, { key: 'price', type: 'number' }])
+    await dataTableNode.execute(appCtx({ op: 'createTable', scope: 'app', tableName: 'T', columns: cols, dedupKeys: 'url' }))
+    const removed = await dataTableNode.execute(appCtx({ op: 'createTable', scope: 'app', tableName: 'T', columns: JSON.stringify([{ key: 'url', type: 'string' }]), dedupKeys: 'url' }))
+    expect(removed.status === 'failed' && /删掉了列/.test(removed.error)).toBe(true)
+    const changedDedup = await dataTableNode.execute(appCtx({ op: 'createTable', scope: 'app', tableName: 'T', columns: cols, dedupKeys: 'price' }))
+    expect(changedDedup.status === 'failed' && /去重键已锁定/.test(changedDedup.error)).toBe(true)
+  })
+
+  it('upsert：同去重键第二次 → updated 覆盖；类型按列声明校正（number）', async () => {
+    setupSvc()
+    const cols = JSON.stringify([{ key: 'url', type: 'string' }, { key: 'price', type: 'number' }])
+    await dataTableNode.execute(appCtx({ op: 'createTable', scope: 'app', tableName: 'T', columns: cols, dedupKeys: 'url' }))
+    const u1 = await dataTableNode.execute(appCtx({ op: 'upsert', scope: 'app', tableName: 'T', row: '{"url":"https://a","price":"12.5"}' }))
+    expect(u1.status === 'succeeded' && u1.output.action).toBe('inserted')
+    // 第一次写入即做类型校正："12.5" → 12.5（number 列强转，upsert 哈希稳定的依据）
+    const q1 = await dataTableNode.execute(appCtx({ op: 'query', scope: 'app', tableName: 'T' }))
+    if (q1.status === 'succeeded') {
+      expect((q1.output.rows as any[])[0].price).toBe(12.5)
+    }
+    const u2 = await dataTableNode.execute(appCtx({ op: 'upsert', scope: 'app', tableName: 'T', row: '{"url":"https://a","price":99}' }))
+    expect(u2.status === 'succeeded' && u2.output.action).toBe('updated')
+    expect(u1.status === 'succeeded' && u2.status === 'succeeded' && u1.output.rowId).toBe(u2.output.rowId)
+    const q2 = await dataTableNode.execute(appCtx({ op: 'query', scope: 'app', tableName: 'T' }))
+    if (q2.status === 'succeeded') {
+      expect((q2.output.rows as any[])).toHaveLength(1)
+      expect((q2.output.rows as any[])[0].price).toBe(99)
+    }
+  })
+
+  it('app 作用域隔离：不同 definition 同名表互不可见；app 表缺失不回退全局、也不自动建表', async () => {
+    setupSvc()
+    const cols = JSON.stringify([{ key: 'k', type: 'string' }])
+    await dataTableNode.execute(appCtx({ op: 'createTable', scope: 'app', tableName: 'T', columns: cols }))
+    // 另一个 definition（def_app2）看不到 def_app1 的表
+    const otherCtx = { ...appCtx({ op: 'count', scope: 'app', tableName: 'T' }), definitionId: 'def_app2' }
+    const c = await dataTableNode.execute(otherCtx as never)
+    if (c.status === 'succeeded') expect(c.output.total).toBe(0)
+    // workflow 全局作用域另建同名表互不干扰
+    await dataTableNode.execute(baseCtx({ op: 'insert', tableName: 'T', row: '{"k":"global"}' }))
+    const c2 = await dataTableNode.execute(appCtx({ op: 'count', scope: 'app', tableName: 'T' }))
+    if (c2.status === 'succeeded') expect(c2.output.total).toBe(0)
+    // app 表不存在时 insert → failed（不自动建表）
+    const ins = await dataTableNode.execute(appCtx({ op: 'insert', scope: 'app', tableName: '不存在', row: '{"k":1}' }))
+    expect(ins.status).toBe('failed')
+  })
+
+  it('query 过滤分页：filterContains + page/pageSize → {rows,total}', async () => {
+    setupSvc()
+    const cols = JSON.stringify([{ key: 'url', type: 'string' }])
+    await dataTableNode.execute(appCtx({ op: 'createTable', scope: 'app', tableName: 'T', columns: cols, dedupKeys: 'url' }))
+    for (let i = 1; i <= 5; i++) {
+      await dataTableNode.execute(appCtx({ op: 'upsert', scope: 'app', tableName: 'T', row: JSON.stringify({ url: `https://a/${i}`, n: i }) }))
+    }
+    const q1 = await dataTableNode.execute(appCtx({ op: 'query', scope: 'app', tableName: 'T', filterContains: '/3' }))
+    if (q1.status === 'succeeded') {
+      expect(q1.output.total).toBe(1)
+      expect((q1.output.rows as any[])[0].url).toBe('https://a/3')
+    }
+    const q2 = await dataTableNode.execute(appCtx({ op: 'query', scope: 'app', tableName: 'T', page: 2, pageSize: 2 }))
+    if (q2.status === 'succeeded') {
+      expect(q2.output.total).toBe(5)
+      expect((q2.output.rows as any[])).toHaveLength(2)
+    }
+  })
+
+  it('并发竞插兜底：唯一索引冲突 → 改走更新（action=updated）', async () => {
+    const { rows } = setupSvc()
+    rows.strictUnique = false // 关闭前置 find（模拟查完到插入之间被并发抢先）
+    // 让 findByTableAndHash 先返回 null 再返回已有行：直接禁用唯一索引会真插入——改为模拟竞态
+    rows.strictUnique = true
+    const cols = JSON.stringify([{ key: 'url', type: 'string' }])
+    await dataTableNode.execute(appCtx({ op: 'createTable', scope: 'app', tableName: 'T', columns: cols, dedupKeys: 'url' }))
+    const u1 = await dataTableNode.execute(appCtx({ op: 'upsert', scope: 'app', tableName: 'T', row: '{"url":"x"}' }))
+    expect(u1.status === 'succeeded' && u1.output.action).toBe('inserted')
+    // 手工制造竞态：删掉 hash 再查（findByTableAndHash 返回 null）但唯一索引仍在 → insert 撞索引 → retry 更新
+    const orig = rows.findByTableAndHash.bind(rows)
+    ;(rows as any).findByTableAndHash = async () => {
+      ;(rows as any).findByTableAndHash = orig
+      return null // 第一次查 miss，撞索引后再走真实查询
+    }
+    const u2 = await dataTableNode.execute(appCtx({ op: 'upsert', scope: 'app', tableName: 'T', row: '{"url":"x","v":2}' }))
+    expect(u2.status === 'succeeded' && u2.output.action).toBe('updated')
+    expect(rows.rows.filter(r => r.tableId === rows.rows[0].tableId)).toHaveLength(1)
+  })
+
+  it('validateConfig：新 op 与 scope 校验', () => {
+    expect(dataTableNode.validateConfig({ op: 'createTable' } as never)).toEqual([])
+    expect(dataTableNode.validateConfig({ op: 'upsert', scope: 'app' } as never)).toEqual([])
+    expect(dataTableNode.validateConfig({ op: 'x' } as never)).toEqual(expect.arrayContaining([expect.stringContaining('op')]))
+    expect(dataTableNode.validateConfig({ op: 'insert', scope: 'bad' } as never)).toEqual(expect.arrayContaining([expect.stringContaining('scope')]))
   })
 })
 

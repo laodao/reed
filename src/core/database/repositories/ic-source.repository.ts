@@ -32,6 +32,8 @@ export interface IcSourceRow {
   fetchStatus: IcFetchStatus
   reviewStatus: IcReviewStatus
   kbDocumentId: string | null
+  /** 统一资产登记外链（assets.id；webpage 类型为 null） */
+  assetId: string | null
   irHits: string[]
   createdAt: Date | null
   updatedAt: Date | null
@@ -67,6 +69,7 @@ export class IcSourceRepository extends BaseRepository<IcSourceEntity, IcSourceR
     publishedAt?: Date | null
     collectedAt?: Date | null
     irHits?: string[]
+    assetId?: string | null
   }): Promise<IcSourceRow> {
     const now = new Date()
     const e = new IcSourceEntity()
@@ -88,6 +91,7 @@ export class IcSourceRepository extends BaseRepository<IcSourceEntity, IcSourceR
     e.fetchStatus = input.fetchStatus ?? 'ok'
     e.reviewStatus = 'staged'
     e.kbDocumentId = null
+    e.assetId = input.assetId ?? null
     e.irHitsJson = input.irHits?.length ? JSON.stringify(input.irHits) : null
     e.createdAt = now
     e.updatedAt = now
@@ -132,6 +136,7 @@ export class IcSourceRepository extends BaseRepository<IcSourceEntity, IcSourceR
       fetchStatus: IcFetchStatus
       reviewStatus: IcReviewStatus
       kbDocumentId: string | null
+      assetId: string | null
       irHits: string[]
       snapshotPath: string | null
       contentHash: string | null
@@ -147,6 +152,7 @@ export class IcSourceRepository extends BaseRepository<IcSourceEntity, IcSourceR
     if (partial.fetchStatus !== undefined) p.fetchStatus = partial.fetchStatus
     if (partial.reviewStatus !== undefined) p.reviewStatus = partial.reviewStatus
     if (partial.kbDocumentId !== undefined) p.kbDocumentId = partial.kbDocumentId
+    if (partial.assetId !== undefined) p.assetId = partial.assetId
     if (partial.irHits !== undefined) {
       p.irHitsJson = partial.irHits.length ? JSON.stringify(partial.irHits) : null
     }
@@ -177,6 +183,7 @@ export class IcSourceRepository extends BaseRepository<IcSourceEntity, IcSourceR
       fetchStatus: e.fetchStatus as IcFetchStatus,
       reviewStatus: e.reviewStatus as IcReviewStatus,
       kbDocumentId: e.kbDocumentId,
+      assetId: e.assetId,
       irHits: safeParseStringArray(e.irHitsJson),
       createdAt: e.createdAt,
       updatedAt: e.updatedAt,

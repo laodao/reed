@@ -13,6 +13,7 @@ import type { IcBlueprint } from '@shared/types/info-collection.types'
 import { checkBlueprint } from '@shared/utils/info-collection-blueprint'
 import { draftBlueprint } from '../services/ic-blueprint.service'
 import { IcCollectionService } from '../services/ic-collection.service'
+import { defaultIcRepos } from '../services/ic-defaults'
 import { IcSnapshotFileStore } from '../services/ic-snapshot-store'
 
 const logger = createLogger('IcHandlers')
@@ -36,13 +37,49 @@ async function wrap<T>(fn: () => Promise<T>): Promise<IpcResponse<T>> {
   }
 }
 
+/** 来源行附带的统一资产概要（审阅台展示文件类型/大小；多模态 M1） */
+export interface IcAssetSummary {
+  name: string
+  kind: string
+  mimeType: string | null
+  sizeBytes: number | null
+}
+
+/**
+ * 给来源行补 asset 概要（assets 表里查；服务未装配/单卡失败时降级为 null，不阻断列表）。
+ * IcSourceRow.assetId 由多模态 M1 建卡回写；webpage 来源恒为 null。
+ */
+async function attachAssetSummaries<T extends { assetId?: string | null }>(
+  rows: T[],
+): Promise<Array<T & { asset: IcAssetSummary | null }>> {
+  const withNull = (r: T): T & { asset: IcAssetSummary | null } => ({ ...r, asset: null })
+  const ids = [...new Set(rows.map(r => r.assetId).filter((v): v is string => !!v))]
+  if (ids.length === 0) return rows.map(withNull)
+  let svc: { getAsset(id: string): Promise<{ name: string; kind: string; mimeType?: string | null; sizeBytes?: number | null } | null> }
+  try {
+    svc = (await import('@core/platform/assets/asset-registry')).getAssetService()
+  } catch {
+    return rows.map(withNull) // 资产服务未装配（Web 端/测试环境）
+  }
+  const map = new Map<string, IcAssetSummary>()
+  for (const id of ids) {
+    try {
+      const rec = await svc.getAsset(id)
+      if (rec) map.set(id, { name: rec.name, kind: rec.kind, mimeType: rec.mimeType ?? null, sizeBytes: rec.sizeBytes ?? null })
+    } catch {
+      /* 单卡失败跳过 */
+    }
+  }
+  return rows.map(r => ({ ...r, asset: (r.assetId && map.get(r.assetId)) || null }))
+}
+
 let collection: IcCollectionService | null = null
 
 /** 服务惰性构造（首次调用时装配生产缺省；activate 早于 db boot） */
 function services(): IcCollectionService {
   if (!collection) {
     collection = new IcCollectionService({
-      // 生产快照落盘（<dataPath>/info-collection/snapshots/；web 端无 dataPath 时自动降级跳过）
+      repos: defaultIcRepos, // 仓储缺省必须显式接上（2026-10-08 实测：漏传导致界面全通道报"数据库尚未就绪"）
       snapshotStore: new IcSnapshotFileStore(),
     })
   }
@@ -82,7 +119,15 @@ export function registerInfoCollectionHandlers(): void {
   )
 
   // ---- 任务 ----
-  ipcBridge.handle('ic:run-task', (_e: unknown, p: { projectId: string }) => wrap(() => s().runTask(p.projectId)))
+  // runTask 返回的 done 是 Promise（供测试/服务调用方等待）——**不能过 IPC**（结构化克隆不支持），
+  // 通道只回 taskId；界面进度走 listTasks 轮询。2026-10-08 真机验收发现：原样透传导致
+  // 「开始搜集」按钮必然报 "An object could not be cloned"。
+  ipcBridge.handle('ic:run-task', (_e: unknown, p: { projectId: string }) =>
+    wrap(async () => {
+      const { taskId } = await s().runTask(p.projectId)
+      return { taskId }
+    }),
+  )
   ipcBridge.handle('ic:list-tasks', (_e: unknown, p: { projectId: string }) => wrap(() => s().listTasks(p.projectId)))
   // 手动触发裁决（转载簇/冲突归因/孤证；任务结束会自动跑一次，失败可在此重跑）
   ipcBridge.handle('ic:adjudicate', (_e: unknown, p: { projectId: string }) => wrap(() => s().adjudicateProject(p.projectId)))
@@ -91,7 +136,7 @@ export function registerInfoCollectionHandlers(): void {
 
   // ---- 源与行（审阅工作台数据源） ----
   ipcBridge.handle('ic:list-sources', (_e: unknown, p: { projectId: string; reviewStatus?: 'staged' | 'confirmed' | 'rejected' | 'merged' }) =>
-    wrap(() => s().listSources(p.projectId, p.reviewStatus)),
+    wrap(async () => attachAssetSummaries(await s().listSources(p.projectId, p.reviewStatus))),
   )
   ipcBridge.handle('ic:list-rows', (_e: unknown, p: { projectId: string; schemaId?: string; status?: 'draft' | 'confirmed' | 'superseded' | 'stale' }) =>
     wrap(() => s().listRows(p.projectId, p)),

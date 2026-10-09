@@ -10,7 +10,12 @@
 
 /** 从 LLM 输出中提取第一个平衡的 JSON 对象文本；失败返回 null。 */
 export function extractJsonBlock(text: string): string | null {
-  const raw = (text ?? '').trim()
+  // 0) 推理模型常把思考过程内联在正文（<think>…</think> / <thinking>…</thinking>），
+  //    思考里可能出现示例 JSON 干扰括号配对——先剥掉再走围栏/配对。
+  const raw = (text ?? '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+    .trim()
   if (!raw) return null
 
   // 1) ```json ... ``` 围栏优先

@@ -123,6 +123,7 @@ const BUILTIN_TOPICS: Array<{ id: string; categoryId: string; name: string }> = 
   { id: 'auth-gov', categoryId: INFO_SOURCE_AUTHORITY_CATEGORY_ID, name: '政府统计' },
   { id: 'auth-med', categoryId: INFO_SOURCE_AUTHORITY_CATEGORY_ID, name: '医学健康' },
   { id: 'auth-standard', categoryId: INFO_SOURCE_AUTHORITY_CATEGORY_ID, name: '标准规范' },
+  { id: 'auth-image', categoryId: INFO_SOURCE_AUTHORITY_CATEGORY_ID, name: '图片图源' },
 ]
 
 /**
@@ -176,9 +177,25 @@ const AUTHORITY_SOURCES: Array<{ id: string; topicId: string; name: string; url:
   { id: 'ak_st_03', topicId: 'auth-standard', name: 'ISO', url: 'https://www.iso.org/' },
   { id: 'ak_st_04', topicId: 'auth-standard', name: 'ECMA International', url: 'https://ecma-international.org/' },
   { id: 'ak_st_05', topicId: 'auth-standard', name: 'NIST', url: 'https://www.nist.gov/' },
+
+  // ===== 图片图源（配图素材；免费可用优先，引用须标注来源） =====
+  { id: 'ak_img_01', topicId: 'auth-image', name: 'Wikimedia Commons（自由图库/公有领域）', url: 'https://commons.wikimedia.org/' },
+  { id: 'ak_img_02', topicId: 'auth-image', name: 'Openverse（CC 授权聚合搜索）', url: 'https://openverse.org/' },
+  { id: 'ak_img_03', topicId: 'auth-image', name: 'Flickr Commons（机构公有领域）', url: 'https://www.flickr.com/commons' },
+  { id: 'ak_img_04', topicId: 'auth-image', name: 'Unsplash（免费商用实拍图）', url: 'https://unsplash.com/' },
+  { id: 'ak_img_05', topicId: 'auth-image', name: 'Pexels（免费商用实拍图）', url: 'https://www.pexels.com/' },
+  { id: 'ak_img_06', topicId: 'auth-image', name: 'Pixabay（免费商用图库）', url: 'https://pixabay.com/' },
+  { id: 'ak_img_07', topicId: 'auth-image', name: 'Met Open Access（大都会博物馆 CC0 藏品）', url: 'https://www.metmuseum.org/art/collection' },
+  { id: 'ak_img_08', topicId: 'auth-image', name: '美国国会图书馆（历史照片/公有领域）', url: 'https://www.loc.gov/pictures/' },
+  { id: 'ak_img_09', topicId: 'auth-image', name: 'NASA Image Library（航天/地球科学）', url: 'https://images.nasa.gov/' },
+  { id: 'ak_img_10', topicId: 'auth-image', name: '故宫博物院数字文物库（文物影像）', url: 'https://digicol.dpm.org.cn/' },
+  { id: 'ak_img_11', topicId: 'auth-image', name: '台北故宫 Open Data（开放资料）', url: 'https://theme.npm.edu.tw/opendata/' },
+  { id: 'ak_img_12', topicId: 'auth-image', name: '中国标准地图服务（地图合规必用）', url: 'http://bzdt.ch.mnr.gov.cn/' },
+  { id: 'ak_img_13', topicId: 'auth-image', name: 'Natural Earth（公版地理数据/底图）', url: 'https://www.naturalearthdata.com/' },
+  { id: 'ak_img_14', topicId: 'auth-image', name: '新华社图片（权威新闻图，引用需标注）', url: 'https://www.news.cn/photo/' },
 ]
 
-/** 全部预置来源（新闻 75 + 权威知识源 34；预置循环统一遍历） */
+/** 全部预置来源（新闻 75 + 权威知识源 48；预置循环统一遍历） */
 const ALL_BUILTIN_SOURCES = [...BUILTIN_SOURCES, ...AUTHORITY_SOURCES]
 
 export async function createInfoSources(ds: DataSource): Promise<void> {

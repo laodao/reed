@@ -45,6 +45,8 @@ import scriptToVideoV3 from './builtin-apps/script-to-video-v3.json'
 import topicResearch from './builtin-apps/topic-research.json'
 // 日记周报复盘（2026-09-24 日记增强 P1：聚合日记→AI 三段式复盘→人工确认→存回日记）
 import diaryWeeklyReview from './builtin-apps/diary-weekly-review.json'
+// 数据表演范（2026-10-08 应用数据层 P1 验收：createTable→upsert→query 全链路零网络零 AI 确定性示范）
+import appDataDemo from './builtin-apps/app-data-demo.json'
 
 /** 内置工作流 id 前缀（固定，幂等查重依据） */
 const BUILTIN_DEF_PREFIX = 'builtin_def_'
@@ -93,6 +95,8 @@ const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; icon: str
   { file: 'topic-research.json', raw: topicResearch, appId: `${BUILTIN_APP_PREFIX}topic_research`, icon: '🧭', name: '主题深度研究', description: '澄清研究契约 → 规划(已知地图/主题类型/步骤/验收标准) → 多轮「研究(联网+正文深读+私有知识库,素材密度优先) + 另一模型独立评估」 → 不达标带差距再研究 → 按用途成稿(写作用途=高密度写作素材；信源四级分级，官方与媒体/网络渠道跨级取材) → 人工确认存档', category: '调研', tags: ['主题研究', '深度研究'] },
   // 日记周报复盘（2026-09-24 日记增强 P1）
   { file: 'diary-weekly-review.json', raw: diaryWeeklyReview, appId: `${BUILTIN_APP_PREFIX}diary_weekly_review`, icon: '🗓️', name: '日记周报复盘', description: '按时间范围聚合日记（可跨目录）→ AI 三段式复盘（发生了什么/学到了什么/下周关注什么）→ 人工确认 → 存回日记', category: '学习', tags: ['日记', '复盘', '周报'] },
+  // 数据表演范（2026-10-08 应用数据层）
+  { file: 'app-data-demo.json', raw: appDataDemo, appId: `${BUILTIN_APP_PREFIX}app_data_demo`, icon: '🗄️', name: '数据表演示·增量记录', description: '表单录入→应用数据表 upsert 增量（同链接=更新）→数据页签浏览/导出——非一次性应用的最小闭环示范', category: '办公效率', tags: ['数据表', '示范'] },
 ]
 
 /** 默认模板资产（user_id=NULL，可复制修改） */

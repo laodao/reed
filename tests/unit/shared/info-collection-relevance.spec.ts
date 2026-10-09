@@ -9,9 +9,11 @@ import { describe, it, expect } from 'vitest'
 import { isCandidateRelevant, querySegments } from '@shared/utils/info-collection-relevance'
 
 describe('querySegments', () => {
-  it('按空白/标点拆分，保留 ≥2 字片段', () => {
+  it('按空白/标点拆分，保留 ≥3 字片段', () => {
     expect(querySegments('中国高铁 营业里程 4.8万公里')).toEqual(['中国高铁', '营业里程', '4.8万公里'])
-    expect(querySegments('a b 高铁')).toEqual(['高铁'])
+    expect(querySegments('a b 营业里程')).toEqual(['营业里程'])
+    // 2026-10-09 真机：2 字泛词（最新/官方）命中门槛过低，门户首页带"最新"即混入 → 提到 ≥3 字
+    expect(querySegments('中国高铁营业里程 最新 官方数据')).toEqual(['中国高铁营业里程', '官方数据'])
     expect(querySegments('')).toEqual([])
   })
 })

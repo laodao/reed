@@ -47,7 +47,104 @@ export interface IcFetchedDoc {
 
 export type IcFetchFn = (url: string) => Promise<IcFetchedDoc>
 
+/** 文档直链下载（多模态 M1）：原件落盘 + MIME + 字节数（executeHttpFetch responseType='file' 同形） */
+export interface IcDocumentFetched {
+  ok: boolean
+  status: number
+  /** 下载落盘的临时文件绝对路径（资产服务会复制进统一资产目录） */
+  filePath?: string
+  mimeType?: string
+  bytes?: number
+  error?: string
+}
+
+export type IcDocumentFetchFn = (
+  url: string,
+  opts?: { headers?: Record<string, string>; maxBytes?: number },
+) => Promise<IcDocumentFetched>
+
+/**
+ * 音频转写（多模态 M4）：本地 whisper 或云 API（用户设置选择）。
+ * text 为转写全文；provider=off / 未配置时返回 ok:false + error='未启用'。
+ */
+export interface IcTranscribeFn {
+  (req: { audioPath: string; mimeType?: string; language?: string }): Promise<{
+    ok: boolean
+    text?: string
+    durationSec?: number
+    provider?: 'local' | 'cloud'
+    error?: string
+  }>
+}
+
+/** 视频页元数据+字幕（多模态 M3 元数据档）：不下载视频原件 */
+export interface IcVideoMeta {
+  ok: boolean
+  platform: string
+  title?: string
+  desc?: string
+  owner?: string
+  durationSec?: number
+  /** CC 字幕全文（视频带字幕且可匿名获取时；否则缺省） */
+  subtitleText?: string
+  error?: string
+}
+
+export type IcVideoMetaFn = (url: string) => Promise<IcVideoMeta>
+
+/** 视频音频直链解析（M4 转写用；缺省平台 video-url-resolver 的 B站 DASH 音频解析） */
+export interface IcResolvedVideoAudio {
+  ok: boolean
+  audioUrl?: string
+  headers?: Record<string, string>
+  error?: string
+}
+
+export type IcResolveVideoAudioFn = (url: string) => Promise<IcResolvedVideoAudio>
+
+/**
+ * 视觉描述（多模态 M2）：图片原件 → 结构化描述文本（即图片的内容化文本）。
+ * 模型须支持 vision；失败走 fail-soft（资产只存原件，描述标记待补）。
+ */
+export interface IcVisionFn {
+  (req: { imagePath: string; mimeType?: string; prompt: string }): Promise<{ ok: boolean; text?: string; error?: string }>
+}
+
 export type IcExtractFn = (html: string, baseUrl: string) => string
+
+/**
+ * 统一资产登记口（多模态 M1）：文档原件 + 内容化文本在 assets 表建卡，
+ * "一资产一文件一正文"（SaveAssetInput 同形收窄）。测试注入内存假件。
+ */
+export interface IcAssetPort {
+  create(input: {
+    name: string
+    category: string
+    subCategory?: string
+    tags?: string[]
+    filePath: string
+    textContent?: string
+    url?: string
+    mimeType?: string
+    metadata?: Record<string, unknown>
+    sourceType?: string
+    sourceRef?: string
+  }): Promise<{ id: string }>
+  /** 删卡删原件（驳回时调用；资产不存在时静默成功） */
+  remove(id: string): Promise<void>
+  /** 纯文本卡（视频元数据/字幕等无原件资料；多模态 M3） */
+  createText(input: {
+    name: string
+    category: string
+    subCategory?: string
+    tags?: string[]
+    text: string
+    url?: string
+    metadata?: Record<string, unknown>
+    sourceType?: string
+    sourceRef?: string
+  }): Promise<{ id: string }>
+}
 
 /** 知识库导入口（内容唯一存储在 kb；每源一文档） */
 export interface IcKbPort {
@@ -81,8 +178,20 @@ export interface IcCollectionDeps {
   reviewLlm?: IcLlmFn
   search?: IcSearchFn
   fetch?: IcFetchFn
+  /** 文档直链下载（缺省 executeHttpFetch responseType='file'；未注入 = 不启用文档分支） */
+  documentFetch?: IcDocumentFetchFn
+  /** 视觉描述（缺省宿主模型经平台多模态链路；未配置 vision 模型时 fail-soft 跳过描述） */
+  vision?: IcVisionFn
+  /** 视频页元数据+字幕（缺省 B站公开 API；未注入 = 不启用视频分支） */
+  videoMeta?: IcVideoMetaFn
+  /** 音频转写（缺省按用户设置走本地 whisper / 云 API；未启用时 fail-soft 标待转写） */
+  transcribe?: IcTranscribeFn
+  /** 视频音频直链解析（缺省平台 video-url-resolver；视频无 CC 字幕转写用） */
+  resolveVideoAudio?: IcResolveVideoAudioFn
   extract?: IcExtractFn
   kb?: IcKbPort
+  /** 统一资产登记（缺省接 getAssetService；未注入 = 不建卡，ic_source.assetId 留空） */
+  assets?: IcAssetPort
   snapshotStore?: IcSnapshotStore | null
   /** id 生成（缺省 crypto.randomUUID）；测试注入确定性序列 */
   newId?: (prefix: string) => string

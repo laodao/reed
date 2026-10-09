@@ -34,6 +34,14 @@ export async function createInfoCollectionTables(ds: DataSource): Promise<void> 
     'review_note',
     isPg ? 'review_note text' : 'review_note TEXT',
   )
+  // M3 多模态：来源 → 统一资产登记外链（老库升级路径；新表 DDL 已含此列）
+  await ensureColumn(
+    ds,
+    isPg,
+    'ic_sources',
+    'asset_id',
+    isPg ? 'asset_id varchar' : 'asset_id TEXT',
+  )
 }
 
 // ==================== ic_projects ====================
@@ -183,6 +191,7 @@ function ddlSources(pg: boolean): string {
         fetch_status     varchar NOT NULL DEFAULT 'ok',
         review_status    varchar NOT NULL DEFAULT 'staged',
         kb_document_id   varchar,
+        asset_id         varchar,
         ir_hits_json     text,
         created_at       timestamp,
         updated_at       timestamp
@@ -209,6 +218,7 @@ function ddlSources(pg: boolean): string {
       fetch_status     TEXT NOT NULL DEFAULT 'ok',
       review_status    TEXT NOT NULL DEFAULT 'staged',
       kb_document_id   TEXT,
+      asset_id         TEXT,
       ir_hits_json     TEXT,
       created_at       DATETIME,
       updated_at       DATETIME

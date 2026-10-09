@@ -901,6 +901,13 @@ const electronAPI = {
     review: (p: { sessionId: string; nodeId: string; decision: string; editedValues?: Record<string, unknown>; choice?: string }) => ipcRenderer.invoke('app-session:review', p),
     delete: (sessionId: string) => ipcRenderer.invoke('app-session:delete', { sessionId }),
   },
+  appData: {
+    listTables: (appId: string) => ipcRenderer.invoke('app-data:list-tables', { appId }),
+    queryRows: (p: { appId: string; tableId: string; filterField?: string; filterContains?: string; page?: number; pageSize?: number }) => ipcRenderer.invoke('app-data:query-rows', p),
+    deleteRow: (p: { appId: string; tableId: string; rowId: string }) => ipcRenderer.invoke('app-data:delete-row', p),
+    deleteTable: (p: { appId: string; tableId: string }) => ipcRenderer.invoke('app-data:delete-table', p),
+    exportCsv: (p: { appId: string; tableId: string }) => ipcRenderer.invoke('app-data:export-csv', p),
+  },
 
   // ==================== 通用资产库（保存资产/读取资产/资产中心） ====================
   assets: {
@@ -1016,6 +1023,11 @@ const electronAPI = {
     importFromPath: (path: string) => ipcRenderer.invoke('skill:import', { path }),
     exportToPath: (id: string, destDir: string) => ipcRenderer.invoke('skill:export', { id, destDir }),
     forkBuiltin: (id: string) => ipcRenderer.invoke('skill:fork', { id }),
+    // 技能蒸馏（内容 → Skill）：run 立即返回 taskId，进度轮询 status
+    distillRun: (request: Record<string, unknown>) => ipcRenderer.invoke('skill:distill-run', { request }),
+    distillStatus: (taskId: string) => ipcRenderer.invoke('skill:distill-status', { taskId }),
+    distillList: () => ipcRenderer.invoke('skill:distill-list'),
+    distillCancel: (taskId: string) => ipcRenderer.invoke('skill:distill-cancel', { taskId }),
   },
 
   // ==================== P0 邮箱模块（邮件收发工具：邮箱账号配置） ====================

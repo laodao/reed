@@ -483,3 +483,452 @@ describe('IcCollectionService 管线编排', () => {
     })
   })
 })
+
+// ==================== 多模态 M1：文档直链分支 ====================
+
+describe('IcCollectionService 文档直链分支（下载原件 → 提文本 → 统一资产建卡）', () => {
+  afterEach(async () => {
+    if (ds) {
+      await ds.destroy()
+      ds = null
+    }
+  })
+
+  it('端到端：直链命中 → 下载落盘 → extract-text 提文本 → 建资产卡(assetId 回写) → 抽取照常；驳回删卡', async () => {
+    const repos = await buildRepos()
+    const createdAssets: Array<Record<string, unknown>> = []
+    const removedAssets: string[] = []
+    const { mkdtemp, writeFile, rm } = await import('node:fs/promises')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const dir = await mkdtemp(join(tmpdir(), 'ic-doc-test-'))
+    const docPath = join(dir, '2024-report.txt')
+    // >300 字（文档正文过短会标 failed）；引句句嵌在其中供抽取回验
+    const docText = PAGE_TEXT + '全年出生人口954万人，出生率为6.77‰。'
+    await writeFile(docPath, docText, 'utf-8')
+    const snapshotsDoc = new Map<string, string>()
+
+    const service = new IcCollectionService({
+      repos: () => repos,
+      llm: async () => extractionOutput(),
+      reviewLlm: async () => '{"rows":[]}',
+      search: async () => ({
+        items: [{ title: '2024 年统计公报（PDF 原件）', url: 'https://stats.example.com/files/2024-report.txt', snippet: '测试主题 filetype:pdf 官方文件' }],
+      }),
+      documentFetch: async () => ({ ok: true, status: 200, filePath: docPath, mimeType: 'text/plain', bytes: Buffer.byteLength(docText) }),
+      extract: (html: string) => html.replace(/<[^>]+>/g, ''),
+      snapshotStore: {
+        write: async (_p, sourceId, html, _md) => {
+          snapshotsDoc.set(sourceId, html)
+          return `info-collection/snapshots/${sourceId}.mht`
+        },
+        read: async () => null,
+      },
+      assets: {
+        create: async input => {
+          createdAssets.push({ ...input })
+          return { id: `asset-${createdAssets.length}` }
+        },
+        remove: async id => {
+          removedAssets.push(id)
+        },
+      },
+      newId: id,
+    })
+
+    await runWithUserAsync('user-a', async () => {
+      await repos.projects.create({
+        id: 'p-doc',
+        name: '文档项目',
+        goal: 'g',
+        blueprint: blueprintFixture(),
+        kbId: null,
+      })
+      const { done } = await service.runTask('p-doc')
+      await done
+
+      // 源：ok + assetId 回写；快照 html 段为空串（文档无 HTML）
+      const sources = await repos.sources.listByProject('p-doc')
+      expect(sources).toHaveLength(1)
+      const src = sources[0]
+      expect(src.fetchStatus).toBe('ok')
+      expect(src.assetId).toBe('asset-1')
+      expect(snapshotsDoc.get(src.id)).toBe('')
+
+      // 资产卡：一资产一文件一正文 + 溯源元数据
+      expect(createdAssets).toHaveLength(1)
+      const card = createdAssets[0] as Record<string, unknown>
+      expect(card['category']).toBe('document')
+      expect(card['subCategory']).toBe('文档项目')
+      expect(card['sourceType']).toBe('info-collection')
+      expect(card['sourceRef']).toBe('p-doc')
+      expect(card['url']).toBe('https://stats.example.com/files/2024-report.txt')
+      expect(String(card['textContent'])).toContain('全年出生人口954万人')
+      expect((card['metadata'] as Record<string, unknown>)['mediaKind']).toBe('document')
+
+      // 抽取照常跑在文档文本上
+      const rows = await repos.rows.listByProject('p-doc')
+      expect(rows.length).toBeGreaterThanOrEqual(1)
+      expect(rows[0].quote).toContain('954')
+
+      // 驳回 → 删卡删件
+      await service.rejectBatch('p-doc', [src.id], '测试驳回')
+      expect(removedAssets).toEqual(['asset-1'])
+      const after = await repos.sources.getById(src.id)
+      expect(after?.reviewStatus).toBe('rejected')
+    })
+    await rm(dir, { recursive: true, force: true }).catch(() => undefined)
+  })
+
+  it('扫描版文档（提不出文本）→ 如实标 failed，不建卡', async () => {
+    const repos = await buildRepos()
+    const createdAssets: Array<unknown> = []
+    const { mkdtemp, writeFile } = await import('node:fs/promises')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const dir = await mkdtemp(join(tmpdir(), 'ic-doc-scan-'))
+    const docPath = join(dir, 'scan.txt')
+    await writeFile(docPath, '短文本', 'utf-8')
+
+    const service = new IcCollectionService({
+      repos: () => repos,
+      llm: async () => extractionOutput(),
+      reviewLlm: async () => '{"rows":[]}',
+      search: async () => ({
+        items: [{ title: '扫描版文件', url: 'https://example.com/files/scan.txt', snippet: '测试主题 文件' }],
+      }),
+      documentFetch: async () => ({ ok: true, status: 200, filePath: docPath, mimeType: 'text/plain', bytes: 9 }),
+      snapshotStore: { write: async () => null, read: async () => null },
+      assets: {
+        create: async input => {
+          createdAssets.push(input)
+          return { id: 'asset-x' }
+        },
+        remove: async () => undefined,
+      },
+      newId: id,
+    })
+
+    await runWithUserAsync('user-a', async () => {
+      await repos.projects.create({ id: 'p-scan', name: '扫描项目', goal: 'g', blueprint: blueprintFixture(), kbId: null })
+      const { done } = await service.runTask('p-scan')
+      await done
+      const sources = await repos.sources.listByProject('p-scan')
+      expect(sources).toHaveLength(1)
+      expect(sources[0].fetchStatus).toBe('failed')
+      expect(sources[0].assetId).toBeNull()
+      expect(sources[0].tierRationale).toContain('扫描版')
+      expect(createdAssets).toHaveLength(0)
+    })
+  })
+})
+
+describe('IcCollectionService 图片直链分支（多模态 M2）', () => {
+  afterEach(async () => {
+    if (ds) {
+      await ds.destroy()
+      ds = null
+    }
+  })
+
+  it('直链命中 → 下载 → VLM 描述 → 建卡(category=image, 描述即内容化文本) → 预算外图片不再描述', async () => {
+    const repos = await buildRepos()
+    const createdAssets: Array<Record<string, unknown>> = []
+    const visionCalls: string[] = []
+    const { mkdtemp, writeFile } = await import('node:fs/promises')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const dir = await mkdtemp(join(tmpdir(), 'ic-img-test-'))
+    const desc = '图片显示一张柱状图：2024 年出生人口 954 万人（读自图表，可能有读数误差）。'
+    let imgSeq = 0
+    const service = new IcCollectionService({
+      repos: () => repos,
+      llm: async () => extractionOutput(),
+      reviewLlm: async () => '{"rows":[]}',
+      search: async () => ({
+        items: [
+          { title: '出生人口统计图', url: 'https://example.com/charts/birth-2024.png', snippet: '测试主题 图表' },
+          { title: '出生人口统计图二', url: 'https://example.com/charts/birth-2024-b.png', snippet: '测试主题 图表' },
+          { title: '出生人口统计图三', url: 'https://example.com/charts/birth-2024-c.png', snippet: '测试主题 图表' },
+        ],
+      }),
+      documentFetch: async _url => {
+        imgSeq += 1
+        const p = join(dir, `img-${imgSeq}.png`)
+        await writeFile(p, 'fake-png-bytes')
+        return { ok: true, status: 200, filePath: p, mimeType: 'image/png', bytes: 13 }
+      },
+      vision: async req => {
+        visionCalls.push(req.imagePath)
+        return { ok: true, text: desc }
+      },
+      snapshotStore: { write: async () => null, read: async () => null },
+      assets: {
+        create: async input => {
+          createdAssets.push({ ...input })
+          return { id: `asset-img-${createdAssets.length}` }
+        },
+        remove: async () => undefined,
+      },
+      newId: id,
+    })
+
+    await runWithUserAsync('user-a', async () => {
+      await repos.projects.create({ id: 'p-img', name: '图片项目', goal: 'g', blueprint: blueprintFixture(), kbId: null })
+      const { done } = await service.runTask('p-img')
+      await done
+      const sources = await repos.sources.listByProject('p-img')
+      expect(sources).toHaveLength(3)
+      expect(sources.every(s => s.fetchStatus === 'ok' && s.assetId)).toBe(true)
+      expect(sources[0].tier).toBe(3)
+      // 熔断：IC_MAX_IMAGE_DESCRIPTIONS=20 > 3 → 全部描述；描述即卡片正文
+      expect(visionCalls).toHaveLength(3)
+      const card = createdAssets[0] as Record<string, unknown>
+      expect(card['category']).toBe('image')
+      expect(card['textContent']).toContain('954')
+      expect((card['metadata'] as Record<string, unknown>)['mediaKind']).toBe('image')
+      const task = (await repos.tasks.listByProject('p-img'))[0]
+      expect((task.stats as Record<string, unknown>)['imageDescriptions']).toBe(3)
+    })
+  })
+
+  it('视觉描述失败（模型无 vision）→ 源仍 ok、卡只存原件、标注内容化待补', async () => {
+    const repos = await buildRepos()
+    const createdAssets: Array<Record<string, unknown>> = []
+    const { mkdtemp, writeFile } = await import('node:fs/promises')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const dir = await mkdtemp(join(tmpdir(), 'ic-img-nv-'))
+    const p0 = join(dir, 'img.png')
+    await writeFile(p0, 'fake-png-bytes')
+    const service = new IcCollectionService({
+      repos: () => repos,
+      llm: async () => extractionOutput(),
+      reviewLlm: async () => '{"rows":[]}',
+      search: async () => ({
+        items: [{ title: '未描述图', url: 'https://example.com/plain.png', snippet: '测试主题 图片' }],
+      }),
+      documentFetch: async () => ({ ok: true, status: 200, filePath: p0, mimeType: 'image/png', bytes: 13 }),
+      vision: async () => ({ ok: false, error: '模型不支持 vision' }),
+      snapshotStore: { write: async () => null, read: async () => null },
+      assets: {
+        create: async input => {
+          createdAssets.push({ ...input })
+          return { id: 'asset-nodesc' }
+        },
+        remove: async () => undefined,
+      },
+      newId: id,
+    })
+    await runWithUserAsync('user-a', async () => {
+      await repos.projects.create({ id: 'p-img2', name: '图片项目二', goal: 'g', blueprint: blueprintFixture(), kbId: null })
+      const { done } = await service.runTask('p-img2')
+      await done
+      const sources = await repos.sources.listByProject('p-img2')
+      expect(sources[0].fetchStatus).toBe('ok')
+      expect(sources[0].assetId).toBe('asset-nodesc')
+      expect(sources[0].tierRationale).toContain('待补')
+      const card = createdAssets[0] as Record<string, unknown>
+      expect(card['textContent']).toBeUndefined()
+      expect((card['metadata'] as Record<string, unknown>)['described']).toBe(false)
+    })
+  })
+})
+
+
+describe('IcCollectionService 视频页分支（多模态 M3 元数据档）', () => {
+  afterEach(async () => {
+    if (ds) {
+      await ds.destroy()
+      ds = null
+    }
+  })
+
+  it('B站视频 → 元数据+CC字幕为内容化文本 → 纯文本资产卡(category=video)', async () => {
+    const repos = await buildRepos()
+    const createdTexts: Array<Record<string, unknown>> = []
+    const service = new IcCollectionService({
+      repos: () => repos,
+      llm: async () => extractionOutput(),
+      reviewLlm: async () => '{"rows":[]}',
+      search: async () => ({
+        items: [{ title: '公司法解读视频', url: 'https://www.bilibili.com/video/BV1xx411c7mD', snippet: '测试主题 视频' }],
+      }),
+      videoMeta: async () => ({
+        ok: true,
+        platform: 'bilibili',
+        title: '新公司法十大变化',
+        desc: '逐条解读 2023 修订要点。',
+        owner: '法律Up主',
+        durationSec: 754,
+        subtitleText: '大家好，今天讲公司法。2024 年 7 月 1 日起新公司法施行。',
+      }),
+      snapshotStore: { write: async () => null, read: async () => null },
+      assets: {
+        create: async () => ({ id: 'unused' }),
+        createText: async input => {
+          createdTexts.push({ ...input })
+          return { id: 'asset-video-1' }
+        },
+        remove: async () => undefined,
+      },
+      newId: id,
+    })
+    await runWithUserAsync('user-a', async () => {
+      await repos.projects.create({ id: 'p-video', name: '视频项目', goal: 'g', blueprint: blueprintFixture(), kbId: null })
+      const { done } = await service.runTask('p-video')
+      await done
+      const sources = await repos.sources.listByProject('p-video')
+      expect(sources[0].fetchStatus).toBe('ok')
+      expect(sources[0].assetId).toBe('asset-video-1')
+      expect(sources[0].tier).toBe(3)
+      const card = createdTexts[0]
+      expect(card['category']).toBe('video')
+      expect(String(card['text'])).toContain('字幕全文')
+      expect(String(card['text'])).toContain('2024 年 7 月 1 日')
+      expect((card['metadata'] as Record<string, unknown>)['hasSubtitle']).toBe(true)
+    })
+  })
+
+  it('视频元数据获取失败(API 限流等) → 如实 failed 不建卡', async () => {
+    const repos = await buildRepos()
+    const service = new IcCollectionService({
+      repos: () => repos,
+      llm: async () => extractionOutput(),
+      reviewLlm: async () => '{"rows":[]}',
+      search: async () => ({
+        items: [{ title: 'bv 视频', url: 'https://www.bilibili.com/video/BV1zz411c7mX', snippet: '测试主题' }],
+      }),
+      videoMeta: async () => ({ ok: false, platform: 'bilibili', error: 'B站 API code=-412 风控' }),
+      snapshotStore: { write: async () => null, read: async () => null },
+      assets: { create: async () => ({ id: 'x' }), createText: async () => ({ id: 'y' }), remove: async () => undefined },
+      newId: id,
+    })
+    await runWithUserAsync('user-a', async () => {
+      await repos.projects.create({ id: 'p-video2', name: '视频项目二', goal: 'g', blueprint: blueprintFixture(), kbId: null })
+      const { done } = await service.runTask('p-video2')
+      await done
+      const sources = await repos.sources.listByProject('p-video2')
+      expect(sources[0].fetchStatus).toBe('failed')
+      expect(sources[0].tierRationale).toContain('风控')
+    })
+  })
+})
+
+
+describe('IcCollectionService 音频直链分支（多模态 M4）', () => {
+  afterEach(async () => {
+    if (ds) {
+      await ds.destroy()
+      ds = null
+    }
+  })
+
+  it('转写启用 → 下载→转写→卡带全文(category=audio)；未启用 → 原件照存标待转写', async () => {
+    const repos = await buildRepos()
+    const createdAssets: Array<Record<string, unknown>> = []
+    const transcribeCalls: string[] = []
+    const { mkdtemp, writeFile } = await import('node:fs/promises')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const dir = await mkdtemp(join(tmpdir(), 'ic-audio-'))
+    let seq2 = 0
+    const makeService = (transcribeOk: boolean) =>
+      new IcCollectionService({
+        repos: () => repos,
+        llm: async () => extractionOutput(),
+        reviewLlm: async () => '{"rows":[]}',
+        search: async () => ({
+          items: [{ title: '政策解读音频', url: `https://example.com/media/briefing-${seq2}.mp3`, snippet: '测试主题 音频' }],
+        }),
+        documentFetch: async () => {
+          seq2 += 1
+          const p = join(dir, `audio-${seq2}.mp3`)
+          await writeFile(p, 'fake-mp3-bytes')
+          return { ok: true, status: 200, filePath: p, mimeType: 'audio/mpeg', bytes: 15 }
+        },
+        transcribe: async req => {
+          transcribeCalls.push(req.audioPath)
+          return transcribeOk
+            ? { ok: true, text: '各位好，今天通报出生人口 954 万人。', provider: 'local', durationSec: 30 }
+            : { ok: false, error: '未启用音频转写' }
+        },
+        snapshotStore: { write: async () => null, read: async () => null },
+        assets: {
+          create: async input => {
+            createdAssets.push({ ...input })
+            return { id: `asset-audio-${createdAssets.length}` }
+          },
+          remove: async () => undefined,
+        },
+        newId: id,
+      })
+
+    await runWithUserAsync('user-a', async () => {
+      await repos.projects.create({ id: 'p-audio', name: '音频项目', goal: 'g', blueprint: blueprintFixture(), kbId: null })
+      await (await makeService(true).runTask('p-audio')).done
+      let sources = await repos.sources.listByProject('p-audio')
+      expect(sources[0].fetchStatus).toBe('ok')
+      expect(sources[0].tierRationale).toContain('已转写（本地 whisper）')
+      expect(createdAssets[0]['category']).toBe('audio')
+      expect(String(createdAssets[0]['textContent'])).toContain('954')
+      expect((createdAssets[0]['metadata'] as Record<string, unknown>)['transcribed']).toBe(true)
+
+      // 未启用：原件照存，如实待转写
+      await repos.projects.create({ id: 'p-audio2', name: '音频项目二', goal: 'g', blueprint: blueprintFixture(), kbId: null })
+      await (await makeService(false).runTask('p-audio2')).done
+      sources = await repos.sources.listByProject('p-audio2')
+      expect(sources[0].fetchStatus).toBe('ok')
+      expect(sources[0].tierRationale).toContain('待转写')
+      const card2 = createdAssets[1]
+      expect(card2['textContent']).toBeUndefined()
+      expect((card2['metadata'] as Record<string, unknown>)['transcribed']).toBe(false)
+    })
+  })
+
+  it('视频无 CC 字幕且转写可用 → 语音转写并入内容化文本（M3×M4 会合）', async () => {
+    const repos = await buildRepos()
+    const createdTexts: Array<Record<string, unknown>> = []
+    const { mkdtemp, writeFile } = await import('node:fs/promises')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const dir = await mkdtemp(join(tmpdir(), 'ic-video-tr-'))
+    const audioPath = join(dir, 'bili-audio.m4s')
+    await writeFile(audioPath, 'fake-audio')
+
+    const service = new IcCollectionService({
+      repos: () => repos,
+      llm: async () => extractionOutput(),
+      reviewLlm: async () => '{"rows":[]}',
+      search: async () => ({
+        items: [{ title: '无字幕视频', url: 'https://www.bilibili.com/video/BV1yy411c7mZ', snippet: '测试主题' }],
+      }),
+      videoMeta: async () => ({ ok: true, platform: 'bilibili', title: '解读视频', desc: '简介', owner: 'UP', durationSec: 300 }),
+      resolveVideoAudio: async () => ({ ok: true, audioUrl: 'https://upos.example.com/audio.m4s', headers: { Referer: 'https://www.bilibili.com' } }),
+      documentFetch: async (_url, opts) => {
+        expect(opts?.headers?.Referer).toContain('bilibili') // 音频直链要带防盗链头
+        return { ok: true, status: 200, filePath: audioPath, mimeType: 'audio/mp4', bytes: 10 }
+      },
+      transcribe: async () => ({ ok: true, text: '转写出的语音内容。', provider: 'local', durationSec: 300 }),
+      snapshotStore: { write: async () => null, read: async () => null },
+      assets: {
+        create: async () => ({ id: 'unused' }),
+        createText: async input => {
+          createdTexts.push({ ...input })
+          return { id: 'asset-video-tr' }
+        },
+        remove: async () => undefined,
+      },
+      newId: id,
+    })
+    await runWithUserAsync('user-a', async () => {
+      await repos.projects.create({ id: 'p-video3', name: '视频项目三', goal: 'g', blueprint: blueprintFixture(), kbId: null })
+      const { done } = await service.runTask('p-video3')
+      await done
+      const card = createdTexts[0]
+      expect(String(card['text'])).toContain('【语音转写】')
+      expect(String(card['text'])).toContain('转写出的语音内容')
+      expect((card['metadata'] as Record<string, unknown>)['hasTranscript']).toBe(true)
+    })
+  })
+})

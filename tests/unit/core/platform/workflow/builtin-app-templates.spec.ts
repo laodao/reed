@@ -22,7 +22,8 @@ const templates = files.map(f => {
 
 describe('内置应用模板库（随包 JSON 自动发现）', () => {
   it(`找到 ${files.length} 份内置模板`, () => {
-    expect(files.length).toBe(24)
+    // 2026-10-08：26 份（+app-data-demo 数据表演范，应用数据层 P1 验收）
+    expect(files.length).toBe(26)
   })
 
   it('全部为合法导出格式', () => {
