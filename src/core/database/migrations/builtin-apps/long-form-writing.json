@@ -2,7 +2,7 @@
   "kind": "the-bot-workflow",
   "formatVersion": 1,
   "name": "[内置] 长文写作",
-  "description": "通用长文引擎（虚构/非虚构双模式）：素材消化与选材 → 模式决策 → 开篇钩子比选 → 主线 → 章节大纲 → 逐章写作（多轮承接前文）→ 合并 → 事实校验（纪实模式逐条对照素材）→ 编辑评审循环（独立模型五维评分，不达标带差距修订）→ 备选标题方案 → 存档。有素材=纪实长文（事实锁定素材并保留口径标注），无素材=小说模式（向后兼容）。SOP：与「主题深度研究」串联——研究报告经本工作流转成深度主稿，再交「多平台文案生成」分发、「短视频脚本生成视频」出片。",
+  "description": "长文引擎 v2（全新创作/修订双模式）：素材消化选材 → 模式分流（修订模式=按意见整篇修订续版本链）→ 开篇钩子比选 → 主线 → 章节大纲（每章末尾卡点）→ 大纲人工确认（可直接改大纲 JSON）→ 逐章写作（writing-styles 风格卡技能逐章承接前文）→ 合并 → 事实校验（纪实逐条对照素材）→ 编辑评审循环（独立模型五维评分）→ 合流 → libai 去AI味（独立模型）→ 终稿人工确认（可直接改稿，驳回=带意见重跑续版本链）→ 备选标题 → 入资产（versioned 版本链，资产中心可查历史/回滚）",
   "category": "内容创作",
   "graph": {
     "version": 1,
@@ -49,6 +49,21 @@
               ]
             },
             {
+              "key": "feedback",
+              "label": "修改意见（修订模式）/版本说明",
+              "type": "textarea"
+            },
+            {
+              "key": "base_asset_id",
+              "label": "基底资产 ID（修订续链：填上次运行产出的资产 ID，终稿将追加为该资产新版本）",
+              "type": "string"
+            },
+            {
+              "key": "current_content",
+              "label": "已有成稿（修订模式；非空=跳过创作管线，直接按意见修订）",
+              "type": "textarea"
+            },
+            {
               "key": "premise",
               "label": "设定/背景（小说模式）；纪实模式=写作侧重（可空）",
               "type": "textarea"
@@ -73,6 +88,66 @@
               "label": "每章目标字数",
               "type": "number",
               "defaultValue": 1200
+            },
+            {
+              "key": "style_card",
+              "label": "风格卡（writing-styles 风格库；auto=按主题自动判定）",
+              "type": "select",
+              "defaultValue": "auto",
+              "options": [
+                {
+                  "label": "自动判定（按主题选最合适的风格卡）",
+                  "value": "auto"
+                },
+                {
+                  "label": "时政深度·书面分析体",
+                  "value": "affairs-formal"
+                },
+                {
+                  "label": "深度叙事·说书杂谈",
+                  "value": "luke-narrative"
+                },
+                {
+                  "label": "深度叙事·人物特稿",
+                  "value": "luke-feature"
+                },
+                {
+                  "label": "深度叙事·战局复盘",
+                  "value": "luke-war"
+                },
+                {
+                  "label": "科技解读·科普特稿（诺奖/新技术，类比通俗化）",
+                  "value": "science-explainer"
+                },
+                {
+                  "label": "财经产业史诗",
+                  "value": "finance-story"
+                },
+                {
+                  "label": "调查特稿",
+                  "value": "feature-report"
+                },
+                {
+                  "label": "情感共鸣文",
+                  "value": "emotional"
+                },
+                {
+                  "label": "干货教程",
+                  "value": "knowledge"
+                },
+                {
+                  "label": "知乎高赞回答体",
+                  "value": "zhihu-answer"
+                },
+                {
+                  "label": "小红书清单体",
+                  "value": "listicle"
+                },
+                {
+                  "label": "短视频口播脚本",
+                  "value": "script-spoken"
+                }
+              ]
             },
             {
               "key": "style",
@@ -117,6 +192,38 @@
               "label": "知识库（可选，保存长文）",
               "type": "select-dynamic",
               "source": "knowledgeBases"
+            },
+            {
+              "key": "libaiModel",
+              "label": "去AI味模型（建议与写作模型不同族，保证独立视角）",
+              "type": "model",
+              "required": true
+            },
+            {
+              "key": "keep",
+              "label": "去AI味时必须保留（默认保护引语与口径）",
+              "type": "textarea",
+              "defaultValue": "直接引语一字不动；数字、日期与口径标注不得改"
+            },
+            {
+              "key": "intensity",
+              "label": "去AI味强度",
+              "type": "select",
+              "defaultValue": "标准",
+              "options": [
+                {
+                  "label": "保守（学术/公文，只删连接词与套话）",
+                  "value": "保守"
+                },
+                {
+                  "label": "标准（自媒体/公关，完整去AI清单+适度口语化）",
+                  "value": "标准"
+                },
+                {
+                  "label": "激进（创意写作/社交帖，可大改句式注入口语）",
+                  "value": "激进"
+                }
+              ]
             },
             {
               "key": "model",
@@ -223,11 +330,12 @@
           "y": 320
         },
         "config": {
-          "systemPrompt": "你是内容编辑，基于主线输出章节大纲。只输出 JSON 数组，不要任何解释或代码块包裹：\n[{\"title\":\"章节标题\",\"summary\":\"本章要点（一句话）\",\"facts\":\"本章可用素材要点（纪实模式必填：本章要用到的具体事实/数据/案例，摘自选材方案；小说模式留空）\"}, ...]\n章节数不超过目标；纪实模式必须让选材方案的最强事实/引语/口径冲突分配到具体章节（开篇章执行既定钩子，末章负责收束）；小说模式保持剧情推进逻辑。繁简按开关（{{start.traditional}}，true 才繁体）。",
+          "systemPrompt": "你是内容编辑，基于主线输出章节大纲。只输出 JSON 数组，不要任何解释或代码块包裹：\n[{\"title\":\"章节标题\",\"summary\":\"本章要点（一句话）\",\"facts\":\"本章可用素材要点（纪实模式必填：本章要用到的具体事实/数据/案例，摘自选材方案；小说模式留空）\"}, ...]\n章节数不超过目标；纪实模式必须让选材方案的最强事实/引语/口径冲突分配到具体章节（开篇章执行既定钩子，末章负责收束）；小说模式保持剧情推进逻辑。繁简按开关（{{start.traditional}}，true 才繁体）。\n每个章节的输出字段增加 \"hook\"（本章末尾的钩子/卡点：悬念、反差或未解问题，负责把读者推向下一章；至少两章设置卡点，末章负责收束或留开放问题）。开篇章必须执行既定钩子方案。",
           "prompt": "主线：\n{{storyline.content}}\n\n写作模式：{{modePick.result.mode}}\n目标章节数：{{start.chapterCount}}\n文风：{{start.style}}\n选材方案：\n{{digest.parsed}}\n\n请输出章节大纲 JSON 数组。",
           "jsonMode": true,
           "providerConfigId": "{{start.model.providerConfigId}}",
-          "modelId": "{{start.model.modelId}}"
+          "modelId": "{{start.model.modelId}}",
+          "maxTokens": 8192
         }
       },
       {
@@ -239,24 +347,62 @@
           "y": 320
         },
         "config": {
-          "listExpression": "{{outline.parsed}}",
+          "listExpression": "{{parseOutline.result.sections}}",
           "emptyPolicy": "skip",
           "errorPolicy": "skip"
         }
       },
       {
         "id": "chapter",
-        "type": "llm-chat",
+        "type": "skill-call",
         "name": "写作本章",
         "position": {
           "x": 1480,
           "y": 400
         },
         "config": {
-          "systemPrompt": "你是长文作者，按大纲逐章写作。通用要求：\n1. 只依据给出的主线与大纲写作，内容连贯、有细节与画面感；\n2. 输出本章 markdown，开篇用 ## 章节标题；正文充分展开，达到目标字数；\n3. 承接前文（多轮对话已把前面章节带入上下文）：保持人物与事件状态前后一致，不冲突、不重复；\n4. 繁简按开关（{{start.traditional}} 为 true 才繁体）；\n5. 只输出本章正文，不要解释或其它内容。\n【模式=nonfiction 纪实模式附加纪律（优先级最高）】：\n- 事实全部来自素材：日期/数字/人名/机构/引语必须与素材一致，禁止任何虚构或「合理想象」；\n- 引语原样引用并带口径标注（如「据××报道」），标注每节 1~2 处即可，不要密集到破坏阅读；\n- 素材未覆盖的过渡叙述用一般性表述带过，不得编造具体事实填充；\n- 本章 facts 字段列出的素材要点必须全部覆盖；冲突口径按选材方案并列呈现，不择一当定论。\n写作手艺：本章开篇一句接住上一章的尾（或执行总钩子）；段落长短交替控制节奏；具体事实/数据与叙述穿插，避免连续抽象概括；章末留一个把读者推向下一章的小钩子。",
-          "prompt": "主题：{{start.topic}}\n写作模式：{{modePick.result.mode}}\n文风：{{start.style}}\n读者：{{start.reader}}\n主线：\n{{storyline.content}}\n\n完整大纲：\n{{outline.parsed}}\n\n选材方案（纪实模式的事实唯一来源）：\n{{digest.parsed}}\n\n当前章节：第 {{loop1.index}} 章「{{loop1.item.title}}」\n本章要点：{{loop1.item.summary}}\n本章素材要点：{{loop1.item.facts}}\n目标字数：{{start.wordCountPerChapter}} 字\n\n请写这一章。",
+          "skillId": "writing-styles",
+          "inputs": [
+            {
+              "key": "topic",
+              "value": "{{start.topic}}"
+            },
+            {
+              "key": "material",
+              "value": "{{start.material}}"
+            },
+            {
+              "key": "style",
+              "value": "{{start.style_card}}"
+            },
+            {
+              "key": "platform",
+              "value": "{{start.reader}}"
+            },
+            {
+              "key": "word_count",
+              "value": "{{start.wordCountPerChapter}}"
+            },
+            {
+              "key": "extra",
+              "value": "{{start.premise}}"
+            },
+            {
+              "key": "current_content",
+              "value": ""
+            },
+            {
+              "key": "feedback",
+              "value": ""
+            },
+            {
+              "key": "section_brief",
+              "value": "第 {{loop1.index}} 章「{{loop1.item.title}}」\n本章要点：{{loop1.item.summary}}\n本章素材要点：{{loop1.item.facts}}\n本章末尾钩子/卡点：{{loop1.item.hook}}\n开篇钩子（首章执行）：{{angle.parsed.chosen}}\n全文主线：{{storyline.content}}\n写作模式：{{modePick.result.mode}}（nonfiction=纪实锁定素材口径；fiction=小说模式自由写作）"
+            }
+          ],
           "providerConfigId": "{{start.model.providerConfigId}}",
-          "modelId": "{{start.model.modelId}}"
+          "modelId": "{{start.model.modelId}}",
+          "maxTokens": 16384
         }
       },
       {
@@ -269,7 +415,7 @@
         },
         "config": {
           "language": "js",
-          "code": "const chapters = Array.isArray(inputs.chapters) ? inputs.chapters : [];\nconst title = (inputs.title || '').trim();\nconst body = chapters.map(function (c, i) {\n  const text = c && c.content ? c.content : (typeof c === 'string' ? c : '');\n  const head = (c && c.title) ? '## ' + c.title + '\\n\\n' : '';\n  return (i > 0 ? '\\n\\n' : '') + head + text;\n}).join('');\nreturn (title ? title + '\\n\\n' : '') + body;",
+          "code": "const chapters = Array.isArray(inputs.chapters) ? inputs.chapters : [];\nconst title = (inputs.title || '').trim();\nconst body = chapters.map(function (c, i) {\n  const text = c && c.content ? c.content : (typeof c === 'string' ? c : '');\n  const clean = text.replace(/\\n*【本章梗概】[^\\n]*/g, '').trim();\n  const head = (c && c.title) ? '## ' + c.title + '\\n\\n' : '';\n  return (i > 0 ? '\\n\\n' : '') + head + clean;\n}).join('');\nreturn (title ? '# ' + title + '\\n\\n' : '') + body;",
           "inputs": [
             {
               "key": "chapters",
@@ -478,7 +624,7 @@
         "config": {
           "knowledgeBaseId": "{{start.kbId}}",
           "title": "「长文」{{start.topic}}-{{sys.today}}",
-          "content": "{{finalPack.result.md}}",
+          "content": "{{finalPick.result.content}}",
           "sourceKey": "longform-{{start.topic}}-{{sys.today}}",
           "waitForCompletion": false
         }
@@ -492,12 +638,15 @@
           "y": 420
         },
         "config": {
-          "content": "{{finalPack.result.md}}",
+          "content": "{{finalPick.result.content}}",
           "kind": "text",
           "category": "text",
           "subCategory": "长文写作",
           "name": "{{start.topic}}长文-{{sys.today}}",
-          "tags": "长文,{{start.topic}}"
+          "tags": "长文,{{start.topic}}",
+          "versioned": true,
+          "versionOfAssetId": "{{start.base_asset_id}}",
+          "feedback": "{{start.feedback}}"
         }
       },
       {
@@ -505,149 +654,510 @@
         "type": "end",
         "name": "结束",
         "position": {
-          "x": 3940,
+          "x": 3942,
           "y": 320
         },
         "config": {}
+      },
+      {
+        "id": "outlineReview",
+        "type": "human-review",
+        "name": "大纲确认",
+        "position": {
+          "x": 1420,
+          "y": 300
+        },
+        "config": {
+          "payload": "## 章节大纲（确认后执行；可直接修改「大纲」字段——每章 title/summary/facts/hook 均可改）\n\n{{outline.parsed}}",
+          "editableFields": [
+            {
+              "key": "outline",
+              "label": "章节大纲 JSON（可直接修改）",
+              "type": "string"
+            }
+          ],
+          "timeoutMs": null,
+          "timeoutPolicy": "fail"
+        }
+      },
+      {
+        "id": "parseOutline",
+        "type": "code",
+        "name": "解析确认后大纲",
+        "position": {
+          "x": 1660,
+          "y": 300
+        },
+        "config": {
+          "language": "js",
+          "inputs": [
+            {
+              "key": "edited",
+              "value": "{{outlineReview.values.outline}}"
+            },
+            {
+              "key": "fallback",
+              "value": "{{outline.parsed}}"
+            }
+          ],
+          "code": "function tryParse(t) {\n  if (!t) return null;\n  const clean = String(t).replace(/^```(json)?/gm, '').replace(/```/gm, '').trim();\n  try { return JSON.parse(clean); } catch (e) { return null; }\n}\nlet obj = tryParse(inputs.edited);\nif (!obj) obj = tryParse(inputs.fallback);\nif (Array.isArray(obj)) obj = { sections: obj };\nif (!obj || !Array.isArray(obj.sections)) obj = { sections: [] };\nreturn { sections: obj.sections };"
+        }
+      },
+      {
+        "id": "planHint",
+        "type": "message",
+        "name": "驳回提示（大纲）",
+        "position": {
+          "x": 1660,
+          "y": 520
+        },
+        "config": {
+          "content": "结构大纲已驳回。请调整「设定/侧重」或「修改意见」后重新运行本应用，大纲将按新要求重新生成。"
+        }
+      },
+      {
+        "id": "cond_mode",
+        "type": "condition",
+        "name": "修订还是新写",
+        "position": {
+          "x": 300,
+          "y": 300
+        },
+        "config": {
+          "branches": [
+            {
+              "branchId": "revision",
+              "label": "修订模式（已有成稿）",
+              "conditions": [
+                {
+                  "left": "{{start.current_content}}",
+                  "operator": "not_empty"
+                }
+              ]
+            },
+            {
+              "branchId": "normal",
+              "label": "全新创作",
+              "conditions": [
+                {
+                  "left": "{{start.current_content}}",
+                  "operator": "is_empty"
+                }
+              ]
+            }
+          ],
+          "noMatchPolicy": "fallback",
+          "fallbackBranchId": "normal"
+        }
+      },
+      {
+        "id": "revise1",
+        "type": "skill-call",
+        "name": "按意见修订（writing-styles 修订模式）",
+        "position": {
+          "x": 540,
+          "y": 560
+        },
+        "config": {
+          "skillId": "writing-styles",
+          "inputs": [
+            {
+              "key": "topic",
+              "value": "{{start.topic}}"
+            },
+            {
+              "key": "material",
+              "value": "{{start.material}}"
+            },
+            {
+              "key": "style",
+              "value": "{{start.style_card}}"
+            },
+            {
+              "key": "platform",
+              "value": "{{start.reader}}"
+            },
+            {
+              "key": "word_count",
+              "value": "{{start.wordCountPerChapter}}"
+            },
+            {
+              "key": "extra",
+              "value": "{{start.premise}}"
+            },
+            {
+              "key": "current_content",
+              "value": "{{start.current_content}}"
+            },
+            {
+              "key": "feedback",
+              "value": "{{start.feedback}}"
+            },
+            {
+              "key": "section_brief",
+              "value": ""
+            }
+          ],
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}",
+          "maxTokens": 32768
+        }
+      },
+      {
+        "id": "mergePick",
+        "type": "code",
+        "name": "合流（修订稿/创作稿）",
+        "position": {
+          "x": 3060,
+          "y": 300
+        },
+        "config": {
+          "language": "js",
+          "inputs": [
+            {
+              "key": "revised",
+              "value": "{{revise1.content}}"
+            },
+            {
+              "key": "draft",
+              "value": "{{finalPack.result.md}}"
+            }
+          ],
+          "code": "const revised = String(inputs.revised || '').trim();\nconst draft = String(inputs.draft || '');\nreturn { content: revised || draft, revised: Boolean(revised) };"
+        }
+      },
+      {
+        "id": "libai",
+        "type": "skill-call",
+        "name": "去AI味（libai-skill）",
+        "position": {
+          "x": 3300,
+          "y": 300
+        },
+        "config": {
+          "skillId": "libai-skill",
+          "inputs": [
+            {
+              "key": "source_text",
+              "value": "{{mergePick.result.content}}"
+            },
+            {
+              "key": "intensity",
+              "value": "{{start.intensity}}"
+            },
+            {
+              "key": "keep",
+              "value": "{{start.keep}}"
+            }
+          ],
+          "providerConfigId": "{{start.libaiModel.providerConfigId}}",
+          "modelId": "{{start.libaiModel.modelId}}",
+          "maxTokens": 32768
+        }
+      },
+      {
+        "id": "pack",
+        "type": "code",
+        "name": "终稿切分",
+        "position": {
+          "x": 3540,
+          "y": 300
+        },
+        "config": {
+          "language": "js",
+          "inputs": [
+            {
+              "key": "libai",
+              "value": "{{libai.content}}"
+            },
+            {
+              "key": "draft",
+              "value": "{{mergePick.result.content}}"
+            }
+          ],
+          "code": "const SPLIT = '=====FINAL=====';\nconst src = String(inputs.libai || '');\nconst draft = String(inputs.draft || '');\nconst i = src.indexOf(SPLIT);\nlet final = '';\nlet diagnosis = '';\nif (i >= 0) {\n  diagnosis = src.slice(0, i).trim();\n  final = src.slice(i + SPLIT.length).trim();\n}\nif (!final) final = draft;\nreturn { final, diagnosis: diagnosis || '（未产出诊断段）', fallbackUsed: i < 0 };"
+        }
+      },
+      {
+        "id": "finalReview",
+        "type": "human-review",
+        "name": "终稿确认",
+        "position": {
+          "x": 3780,
+          "y": 300
+        },
+        "config": {
+          "payload": "{{pack.result.final}}",
+          "editableFields": [
+            {
+              "key": "content",
+              "label": "终稿全文（可直接修改，修改后保存修改版）",
+              "type": "string"
+            }
+          ],
+          "timeoutMs": null,
+          "timeoutPolicy": "fail"
+        }
+      },
+      {
+        "id": "finalPick",
+        "type": "code",
+        "name": "终稿取值",
+        "position": {
+          "x": 4020,
+          "y": 300
+        },
+        "config": {
+          "language": "js",
+          "inputs": [
+            {
+              "key": "edited",
+              "value": "{{finalReview.values.content}}"
+            },
+            {
+              "key": "final",
+              "value": "{{pack.result.final}}"
+            }
+          ],
+          "code": "const edited = String(inputs.edited || '').trim();\nconst final = String(inputs.final || '');\nreturn { content: edited || final };"
+        }
+      },
+      {
+        "id": "reviseHint",
+        "type": "message",
+        "name": "驳回提示（终稿）",
+        "position": {
+          "x": 4020,
+          "y": 540
+        },
+        "config": {
+          "content": "终稿已驳回。请在同一会话再次运行本应用：填「基底资产 ID」（上次运行产出的资产 ID）+「已有成稿」+「修改意见」，修订内容将作为该资产的新版本保存（历史版本可回滚）。"
+        }
       }
     ],
     "edges": [
       {
-        "id": "g1",
+        "id": "e_start_digest_normal",
         "sourceNodeId": "start",
         "targetNodeId": "digest",
         "kind": "normal"
       },
       {
-        "id": "g2",
+        "id": "e_digest_modePick_normal",
         "sourceNodeId": "digest",
         "targetNodeId": "modePick",
         "kind": "normal"
       },
       {
-        "id": "g3",
+        "id": "e_modePick_cond_mode_normal",
         "sourceNodeId": "modePick",
-        "targetNodeId": "angle",
+        "targetNodeId": "cond_mode",
         "kind": "normal"
       },
       {
-        "id": "g4",
+        "id": "e_cond_mode_revise1_branch",
+        "sourceNodeId": "cond_mode",
+        "targetNodeId": "revise1",
+        "kind": "branch",
+        "branchId": "revision"
+      },
+      {
+        "id": "e_cond_mode_angle_branch",
+        "sourceNodeId": "cond_mode",
+        "targetNodeId": "angle",
+        "kind": "branch",
+        "branchId": "normal"
+      },
+      {
+        "id": "e_angle_storyline_normal",
         "sourceNodeId": "angle",
         "targetNodeId": "storyline",
         "kind": "normal"
       },
       {
-        "id": "g5",
+        "id": "e_storyline_outline_normal",
         "sourceNodeId": "storyline",
         "targetNodeId": "outline",
         "kind": "normal"
       },
       {
-        "id": "g6",
+        "id": "e_outline_outlineReview_normal",
         "sourceNodeId": "outline",
+        "targetNodeId": "outlineReview",
+        "kind": "normal"
+      },
+      {
+        "id": "e_outlineReview_parseOutline_approve",
+        "sourceNodeId": "outlineReview",
+        "targetNodeId": "parseOutline",
+        "kind": "approve"
+      },
+      {
+        "id": "e_outlineReview_planHint_reject",
+        "sourceNodeId": "outlineReview",
+        "targetNodeId": "planHint",
+        "kind": "reject"
+      },
+      {
+        "id": "e_planHint_end_normal",
+        "sourceNodeId": "planHint",
+        "targetNodeId": "end",
+        "kind": "normal"
+      },
+      {
+        "id": "e_parseOutline_loop1_normal",
+        "sourceNodeId": "parseOutline",
         "targetNodeId": "loop1",
         "kind": "normal"
       },
       {
-        "id": "g7",
+        "id": "e_loop1_chapter_loop-body",
         "sourceNodeId": "loop1",
         "targetNodeId": "chapter",
         "kind": "loop-body"
       },
       {
-        "id": "g8",
+        "id": "e_chapter_loop1_loop-back",
         "sourceNodeId": "chapter",
         "targetNodeId": "loop1",
         "kind": "loop-back"
       },
       {
-        "id": "g9",
+        "id": "e_loop1_concat1_loop-done",
         "sourceNodeId": "loop1",
         "targetNodeId": "concat1",
         "kind": "loop-done"
       },
       {
-        "id": "g10",
+        "id": "e_concat1_factCheck_normal",
         "sourceNodeId": "concat1",
         "targetNodeId": "factCheck",
         "kind": "normal"
       },
       {
-        "id": "g11",
+        "id": "e_factCheck_applyFix_normal",
         "sourceNodeId": "factCheck",
         "targetNodeId": "applyFix",
         "kind": "normal"
       },
       {
-        "id": "g12",
+        "id": "e_applyFix_editLoop_normal",
         "sourceNodeId": "applyFix",
         "targetNodeId": "editLoop",
         "kind": "normal"
       },
       {
-        "id": "g13",
+        "id": "e_editLoop_editEval_loop-body",
         "sourceNodeId": "editLoop",
         "targetNodeId": "editEval",
         "kind": "loop-body"
       },
       {
-        "id": "g14",
+        "id": "e_editEval_editFix_normal",
         "sourceNodeId": "editEval",
         "targetNodeId": "editFix",
         "kind": "normal"
       },
       {
-        "id": "g15",
+        "id": "e_editFix_editPack_normal",
         "sourceNodeId": "editFix",
         "targetNodeId": "editPack",
         "kind": "normal"
       },
       {
-        "id": "g16",
+        "id": "e_editPack_editLoop_loop-back",
         "sourceNodeId": "editPack",
         "targetNodeId": "editLoop",
         "kind": "loop-back"
       },
       {
-        "id": "g17",
+        "id": "e_editLoop_titles_loop-done",
         "sourceNodeId": "editLoop",
         "targetNodeId": "titles",
         "kind": "loop-done"
       },
       {
-        "id": "g18",
+        "id": "e_titles_finalPack_normal",
         "sourceNodeId": "titles",
         "targetNodeId": "finalPack",
         "kind": "normal"
       },
       {
-        "id": "g19",
+        "id": "e_finalPack_mergePick_normal",
         "sourceNodeId": "finalPack",
+        "targetNodeId": "mergePick",
+        "kind": "normal"
+      },
+      {
+        "id": "e_revise1_mergePick_normal",
+        "sourceNodeId": "revise1",
+        "targetNodeId": "mergePick",
+        "kind": "normal"
+      },
+      {
+        "id": "e_mergePick_libai_normal",
+        "sourceNodeId": "mergePick",
+        "targetNodeId": "libai",
+        "kind": "normal"
+      },
+      {
+        "id": "e_libai_pack_normal",
+        "sourceNodeId": "libai",
+        "targetNodeId": "pack",
+        "kind": "normal"
+      },
+      {
+        "id": "e_pack_finalReview_normal",
+        "sourceNodeId": "pack",
+        "targetNodeId": "finalReview",
+        "kind": "normal"
+      },
+      {
+        "id": "e_finalReview_finalPick_approve",
+        "sourceNodeId": "finalReview",
+        "targetNodeId": "finalPick",
+        "kind": "approve"
+      },
+      {
+        "id": "e_finalReview_reviseHint_reject",
+        "sourceNodeId": "finalReview",
+        "targetNodeId": "reviseHint",
+        "kind": "reject"
+      },
+      {
+        "id": "e_reviseHint_end_normal",
+        "sourceNodeId": "reviseHint",
+        "targetNodeId": "end",
+        "kind": "normal"
+      },
+      {
+        "id": "e_finalPick_cond1_normal",
+        "sourceNodeId": "finalPick",
         "targetNodeId": "cond1",
         "kind": "normal"
       },
       {
-        "id": "g20",
+        "id": "e_cond1_saveKb1_branch",
         "sourceNodeId": "cond1",
         "targetNodeId": "saveKb1",
         "kind": "branch",
         "branchId": "hasKb"
       },
       {
-        "id": "g21",
+        "id": "e_cond1_save1_branch",
         "sourceNodeId": "cond1",
         "targetNodeId": "save1",
         "kind": "branch",
         "branchId": "noKb"
       },
       {
-        "id": "g22",
+        "id": "e_saveKb1_save1_normal",
         "sourceNodeId": "saveKb1",
         "targetNodeId": "save1",
         "kind": "normal"
       },
       {
-        "id": "g23",
+        "id": "e_save1_end_normal",
         "sourceNodeId": "save1",
         "targetNodeId": "end",
         "kind": "normal"
