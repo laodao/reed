@@ -50,3 +50,14 @@ const missing = bodyRefs.filter(k => !inputKeys.has(k))
 console.log('body 占位符:', bodyRefs.join(', '), '| 未定义占位:', missing.length === 0 ? '无' : missing.join(','))
 if (missing.length > 0) throw new Error('存在未定义的参数占位符')
 console.log('=== 验证通过：writing-styles 可被技能库 list/resolve 正常识别 ===')
+
+// ---- libai-skill 验证（追加）----
+import { readFileSync as rf2, readdirSync as rd2, existsSync as ex2 } from 'fs'
+const md2 = join(root, 'libai-skill', 'SKILL.md')
+const s2 = parseSkillMarkdown(rf2(md2, 'utf-8'), { dirPath: join(root, 'libai-skill'), source: 'user' })
+if (s2.id !== 'libai-skill') throw new Error('libai-skill name 不一致')
+const refDir2 = join(root, 'libai-skill', 'references')
+const refs2 = ex2(refDir2) ? rd2(refDir2).filter(f => /\.(md|txt)$/i.test(f)).map(f => ({ name: f, content: rf2(join(refDir2, f), 'utf-8') })) : []
+console.log('libai-skill:', s2.name, '| category:', s2.category, '| inputs:', s2.inputs.map(i => `${i.key}:${i.type}${i.required ? '*' : ''}`).join(', '))
+console.log('libai-skill references:', refs2.map(r => r.name).join(', '), '| 总字数:', refs2.reduce((a, r) => a + r.content.length, 0))
+console.log('=== libai-skill 验证通过：技能库 list/resolve 正常识别 ===')
