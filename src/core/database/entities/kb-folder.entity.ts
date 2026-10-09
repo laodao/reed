@@ -27,9 +27,11 @@ export class KbFolderEntity {
   @Column({ name: 'sort_order', type: 'integer', default: 0 })
   sortOrder!: number
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  // type 传 Date 构造器（方言自适应：sqlite→datetime，pg→timestamp），
+  // 写死 'datetime' 会让 PG 端实体元数据校验失败（DataTypeNotSupportedError）
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 
-  @Column({ name: 'updated_at', type: 'datetime', nullable: true })
+  @Column({ name: 'updated_at', type: Date, nullable: true })
   updatedAt!: Date | null
 }

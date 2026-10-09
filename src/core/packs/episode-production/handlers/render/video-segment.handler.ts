@@ -17,6 +17,7 @@
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { resolveVideoProviderType } from '@core/platform/providers/video'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import {
   VIDEO_PROVIDER_DEFINITIONS,
@@ -78,8 +79,11 @@ async function handleListVideoProviders(): Promise<IpcResponse> {
     for (const cfg of enabled) {
       const templateId = cfg.templateId as string | undefined
       if (!templateId) continue
-      // 跳过非视频 provider（templateId 不是已知 video provider 类型时）
-      const def = VIDEO_PROVIDER_DEFINITIONS[templateId as VideoProviderType]
+      // 跳过非视频 provider（templateId 经统一映射后不是已知 video provider 类型时）
+      // N2 修复：ai-hub 等 templateId 先映射（resolveVideoProviderType）再查定义，
+      // 否则 ai-hub 在项目设置视频模型列表里静默消失
+      const providerTypeOfCfg = resolveVideoProviderType(templateId)
+      const def = VIDEO_PROVIDER_DEFINITIONS[providerTypeOfCfg]
       if (!def) continue
 
       // 取该 cfg 下 type='video' 的模型 + 模型自带 features（真实数据，非硬编码）

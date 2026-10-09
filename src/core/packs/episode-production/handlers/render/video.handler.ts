@@ -5,6 +5,7 @@
  * 包含：视频预设（get-video-presets）、场景/分镜视频合成、视频导出
  */
 
+import { resolveVideoProviderType } from '@core/platform/providers/video'
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import * as path from 'path'
 import * as fs from 'fs'
@@ -287,17 +288,17 @@ async function handleSynthesizeStoryboardVideo(
     }
     const decryptedApiKey = secureStorage.decrypt(providerConfig.apiKey)
 
-    // 确定 Provider 类型
-    let providerType = providerConfig.templateId.replace('video-', '') as string
+    // 确定 Provider 类型（统一映射：ai-hub → aihub，防 replace 漏改 N2）
+    const providerType = resolveVideoProviderType(providerConfig.templateId)
     if (providerType === 'bailian' || providerType === 'dashscope' || providerType === 'qwen') {
-      providerType = 'bailian'
+      // bailian/dashscope/qwen 同走百炼 Provider（createVideoProvider 内部映射），保持原值即可
     }
 
-    // 创建 Provider 实例
+    // 创建 Provider 实例（baseUrl 优先 videoBaseUrl——视频专用端点，与 video-generation.service 对齐）
     const provider = createVideoProvider(providerType as any, {
       id: providerConfig.id,
       apiKey: decryptedApiKey,
-      baseUrl: providerConfig.baseUrl,
+      baseUrl: providerConfig.videoBaseUrl || providerConfig.baseUrl,
       customHeaders: providerConfig.customHeaders,
       customParams: providerConfig.customParams
     })

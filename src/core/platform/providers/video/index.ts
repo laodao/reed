@@ -15,6 +15,9 @@ import { VolcengineVideoProvider } from './sdk/volcengine-video.provider'
 import { BailianVideoProvider } from './sdk/bailian-video.provider'
 import { ComfyUIVideoProvider } from './sdk/comfyui-video.provider'
 
+// AI Hub 统一网关（account session JWT，统一任务 API）
+import { AihubVideoProvider } from './aihub-video.provider'
+
 // 导出基类
 export { BaseVideoProvider }
 
@@ -29,6 +32,17 @@ const PROVIDER_CLASSES: Record<string, new (config: VideoProviderConfig) => Base
   bailian: BailianVideoProvider,
   dashscope: BailianVideoProvider,  // dashscope 使用相同的 Provider（百炼平台的 Bearer Token 认证）
   comfyui: ComfyUIVideoProvider,    // ComfyUI 本地生成网关（MiniMax-H3）
+  aihub: AihubVideoProvider,        // AI Hub 统一网关（登录物化 JWT 鉴权）
+}
+
+/**
+ * templateId → 视频 provider 类型统一推导（详细设计 §2.5.2 N2）。
+ * 历史教训：`templateId.replace('video-','')` 与白名单散落 5 处，ai-hub 原样残留后
+ * 工厂查不到、在项目设置视频模型列表里静默消失——所有推导点必须走本函数。
+ */
+export function resolveVideoProviderType(templateId: string): VideoProviderType {
+  if (templateId === 'ai-hub') return 'aihub'
+  return templateId.replace('video-', '') as VideoProviderType
 }
 
 /**
@@ -99,6 +113,12 @@ export const VIDEO_PROVIDER_DEFINITIONS: Record<VideoProviderType, {
     name: 'ComfyUI 生成网关',
     description: '局域网自建 ComfyUI 生成网关（MiniMax-H3 图生视频），无需 API Key',
     requiresApiKey: false
+  },
+  aihub: {
+    type: 'aihub',
+    name: 'AI Hub（统一网关）',
+    description: 'AI Hub 统一模型网关（登录即用，按余额计费）',
+    requiresApiKey: true
   },
   custom: {
     type: 'custom',

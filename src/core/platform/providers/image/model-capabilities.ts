@@ -140,6 +140,16 @@ const MODEL_CAPABILITIES: CapabilityEntry[] = [
     sizeMode: 'pixels', maxReferenceImages: 1,
     watermark: 'optional', promptRewrite: 'none', sequentialGeneration: false,
   }},
+
+  // ==================== aihub（AI Hub 统一网关，模型清单来自 /v1/models 授权声明） ====================
+  // 网关按 §4.8.3 规范参数翻译各厂商：negative_prompt/seed/watermark/prompt_enhance 通用，
+  // i2i 单参考图 + strength（edit 模式）。缺省放行任意模型 id（生成边界仍走能力门槛，防瞎猜）
+  { provider: 'aihub', match: /.*/, caps: {
+    negativePrompt: true, seed: true, quality: false, style: false,
+    guidanceScale: false, strength: true,
+    sizeMode: 'pixels', maxReferenceImages: 1,
+    watermark: 'optional', promptRewrite: 'optional', sequentialGeneration: false,
+  }},
 ]
 
 /**

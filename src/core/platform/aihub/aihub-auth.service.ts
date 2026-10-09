@@ -67,22 +67,27 @@ function broadcastConfigChanged(): void {
 
 // ==================== 会话存取 ====================
 
-/** 读取当前用户会话；过期视为未登录（但不主动清除——401/登出时才清） */
-export async function getAihubSession(): Promise<AihubSession | null> {
+/** 读取会话记录（不做过期校验；供会话信息展示「已过期」状态用） */
+async function readRawSession(): Promise<AihubSession | null> {
   try {
     const settings = await getSettingsRepo()
     const encrypted = await settings.get(sessionKey())
     if (typeof encrypted !== 'string' || !encrypted) return null
     const secureStorage = getSecureStorage()
     if (!secureStorage.isInitialized()) await secureStorage.initialize()
-    const raw = secureStorage.decrypt(encrypted)
-    const session = JSON.parse(raw) as AihubSession
-    if (!session?.jwt) return null
-    if (session.expiresAt && new Date(session.expiresAt).getTime() <= Date.now()) return null
-    return session
+    const session = JSON.parse(secureStorage.decrypt(encrypted)) as AihubSession
+    return session?.jwt ? session : null
   } catch {
     return null
   }
+}
+
+/** 读取当前用户会话；过期视为未登录（但不主动清除——401/登出时才清） */
+export async function getAihubSession(): Promise<AihubSession | null> {
+  const session = await readRawSession()
+  if (!session) return null
+  if (session.expiresAt && new Date(session.expiresAt).getTime() <= Date.now()) return null
+  return session
 }
 
 /** 会话是否存在且未过期（runtimeUsable / UI 引导判定用） */
@@ -156,16 +161,23 @@ async function materializeJwt(configId: string, jwt: string): Promise<void> {
 /**
  * 登出/401 共用：清物化 Key + 置 disabled + 记 autoDisabled 标记。
  * 保留用户的其他 customParams 字段。
+ * 注意：repo.update 对 apiKey 传 undefined 是「跳过」，清空必须显式传 null。
+ * 用户已手动禁用（enabled=false 且标记非 true）时保持标记为 false——
+ * 重新登录不得替用户打开开关（autoDisabled 状态机的「用户显式选择优先」）。
  */
 async function disableAihubConfig(): Promise<void> {
   const config = await findAihubConfig()
   if (!config) return
   const dbManager = getCoreDatabaseManager()
   if (!dbManager.providerConfigs) return
+  const existingFlag = (config.customParams as Record<string, unknown> | undefined)?.[
+    AIHUB_AUTO_DISABLED_FLAG
+  ]
+  const autoDisabled = config.isEnabled === true ? true : existingFlag === true
   await dbManager.providerConfigs.update(config.id, {
-    apiKey: undefined,
+    apiKey: null,
     isEnabled: false,
-    customParams: { ...(config.customParams ?? {}), [AIHUB_AUTO_DISABLED_FLAG]: true }
+    customParams: { ...(config.customParams ?? {}), [AIHUB_AUTO_DISABLED_FLAG]: autoDisabled }
   })
 }
 
@@ -275,10 +287,10 @@ export async function saveAihubGatewayConfig(config: AihubGatewayConfig): Promis
   })
 }
 
-/** 查询当前登录态（渲染端启动与各选择器用） */
+/** 查询当前登录态（渲染端启动与各选择器用；含过期态区分：loggedIn=true + valid=false） */
 export async function getAihubSessionInfo(): Promise<AihubSessionInfo> {
   const gatewayCfg = await getAihubGatewayConfig()
-  const session = await getAihubSession()
+  const session = await readRawSession()
   return buildSessionInfo(session, gatewayCfg.rechargeUrl)
 }
 

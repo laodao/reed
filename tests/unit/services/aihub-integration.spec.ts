@@ -120,8 +120,10 @@ describe.each(getTestDialects())('aihub 集成 [%s]', (dialect) => {
     await tds.close()
   })
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.unstubAllGlobals()
+    // 用例隔离：清 settings（会话/网关配置 KV）与 provider_configs
+    await tds.truncateAll()
   })
 
   // ==================== aihub-client ====================
@@ -221,6 +223,7 @@ describe.each(getTestDialects())('aihub 集成 [%s]', (dialect) => {
 
   it('模型映射：vision chat → multimodal，能力字段对齐', async () => {
     installGatewayMock(new Map(gatewayRoutes()))
+    await aihubLogin({ gatewayUrl: GATEWAY, identity: 'u@test.com', password: 'pw' })
     const session = (await getAihubSession())!
     const models = await fetchAihubModels(session)
     const chat = models.find((m) => m.id === 'gpt-x')!
