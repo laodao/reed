@@ -225,6 +225,64 @@
       "sourceRef": "数据口径：UNODC 2023、美国财政部 2024、泰国警官估计",
       "createdAt": "2026-10-09T05:45:19.532Z",
       "updatedAt": "2026-10-09T05:45:19.532Z"
+    },
+    {
+      "id": "mat-86e70550",
+      "category": "image",
+      "subCategory": null,
+      "name": "果敢与妙瓦底两条边境带位置示意 v2（自绘，图审修正版：删未审计标注滚弄、1027 表述改为发起并进攻老街）",
+      "description": "",
+      "tags": [
+        "缅甸",
+        "示意图",
+        "图审通过",
+        "配图"
+      ],
+      "kind": "file",
+      "storagePath": "C:\\Users\\daoge\\code\\project\\the-bot\\materials\\image\\mat-86e70550.png",
+      "url": "自绘（draw_kit 设计系统），事实依据：素材 mat-776d07db",
+      "mimeType": "image/png",
+      "sizeBytes": 304902,
+      "metadata": {
+        "checksum": "sha256:86e70550d39ea915a1de043505ab1275f7690dcf1cdf231daf105ebe7dbb577b",
+        "via": "writing-styles 配图（自绘·图审版）",
+        "originalName": "draw-location-schematic-v2.png",
+        "license": "自制（本工作流产出）",
+        "author": "the-bot writing-styles 工作流"
+      },
+      "sourceType": "writing-styles 配图（自绘·图审版）",
+      "sourceRef": "自绘（draw_kit 设计系统），事实依据：素材 mat-776d07db",
+      "createdAt": "2026-10-09T09:22:02.737Z",
+      "updatedAt": "2026-10-09T09:22:02.738Z"
+    },
+    {
+      "id": "mat-0dab32f1",
+      "category": "image",
+      "subCategory": null,
+      "name": "电诈产业规模关键数据图 v2（自绘，标注二手转述口径）",
+      "description": "",
+      "tags": [
+        "数据图表",
+        "电诈",
+        "图审通过",
+        "配图"
+      ],
+      "kind": "file",
+      "storagePath": "C:\\Users\\daoge\\code\\project\\the-bot\\materials\\image\\mat-0dab32f1.png",
+      "url": "数据口径：UNODC 2023、美国财政部 2024、泰国警官估计（均为二手转述，图副标题已声明）",
+      "mimeType": "image/png",
+      "sizeBytes": 195053,
+      "metadata": {
+        "checksum": "sha256:0dab32f1c56f2b361a2b40ab85e2f7a0a9cdc63ae3127f80a2ce00f0d5807d63",
+        "via": "writing-styles 配图（自绘·图审版）",
+        "originalName": "draw-scale-data-v2.png",
+        "license": "自制（本工作流产出）",
+        "author": "the-bot writing-styles 工作流"
+      },
+      "sourceType": "writing-styles 配图（自绘·图审版）",
+      "sourceRef": "数据口径：UNODC 2023、美国财政部 2024、泰国警官估计（均为二手转述，图副标题已声明）",
+      "createdAt": "2026-10-09T09:22:02.833Z",
+      "updatedAt": "2026-10-09T09:22:02.835Z"
     }
   ]
 }
