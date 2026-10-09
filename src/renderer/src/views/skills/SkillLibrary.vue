@@ -19,6 +19,7 @@
           </template>
         </el-dropdown>
         <el-button type="primary" @click="openCreate">＋ 新建技能</el-button>
+        <el-button type="warning" @click="distillVisible = true">✦ AI 蒸馏</el-button>
         <el-button :loading="loading" @click="load">刷新</el-button>
       </div>
     </div>
@@ -172,6 +173,9 @@
         <el-button type="primary" :disabled="!canSave" :loading="saving" @click="saveEdit">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- AI 蒸馏：从他人内容生成技能 -->
+    <SkillDistillDialog v-model="distillVisible" @created="onDistillCreated" />
   </div>
 </template>
 
@@ -184,6 +188,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
+import SkillDistillDialog from './SkillDistillDialog.vue'
 
 interface SkillInput { key: string; label?: string; type?: string; required?: boolean; defaultValue?: unknown; options?: Array<{ label: string; value: string | number }>; help?: string }
 interface SkillMeta {
@@ -379,6 +384,15 @@ async function saveEdit() {
 
 function typeLabel(t?: string): string {
   return { string: '单行文本', textarea: '多行文本', number: '数字', boolean: '布尔', select: '下拉' }[t ?? 'string'] ?? t ?? '文本'
+}
+
+// ── AI 蒸馏 ──
+const distillVisible = ref(false)
+
+/** 蒸馏完成：刷新列表并直接打开新技能详情（成功体验闭环：蒸完即见） */
+async function onDistillCreated(skillId: string) {
+  await load()
+  await openDetail(skillId)
 }
 
 onMounted(load)

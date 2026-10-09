@@ -983,6 +983,11 @@ const electronAPI = {
     importFromPath: (path: string) => ipcRenderer.invoke('skill:import', { path }),
     exportToPath: (id: string, destDir: string) => ipcRenderer.invoke('skill:export', { id, destDir }),
     forkBuiltin: (id: string) => ipcRenderer.invoke('skill:fork', { id }),
+    // 技能蒸馏（内容 → Skill）：run 立即返回 taskId，进度轮询 status
+    distillRun: (request: Record<string, unknown>) => ipcRenderer.invoke('skill:distill-run', { request }),
+    distillStatus: (taskId: string) => ipcRenderer.invoke('skill:distill-status', { taskId }),
+    distillList: () => ipcRenderer.invoke('skill:distill-list'),
+    distillCancel: (taskId: string) => ipcRenderer.invoke('skill:distill-cancel', { taskId }),
   },
 
   // ==================== P0 邮箱模块（邮件收发工具：邮箱账号配置） ====================
