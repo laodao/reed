@@ -528,6 +528,8 @@ export interface WorkflowNodeConfigMap {
     url: string
     /** 正文最大长度（默认 100_000） */
     maxLength?: number
+    /** JS 渲染兜底：off=仅 HTTP；auto=HTTP 正文过短时浏览器渲染重试（默认）；always=直接浏览器渲染（头条/微信等 JS 站点） */
+    render?: 'auto' | 'off' | 'always'
     /** 页面内链接提取上限（默认 30，0=不提取） */
     maxLinks?: number
     /** 爬取礼貌：请求前随机间隔下限（毫秒；缺省 800） */

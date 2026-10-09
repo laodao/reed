@@ -51,6 +51,8 @@ export interface SkillDistillStats {
   chunksTotal: number
   /** 已完成笔记的块数 */
   chunksDone: number
+  /** 笔记解析失败被容错跳过的块数（全部块失败才会整体失败） */
+  chunksFailed?: number
   llmCalls: number
   sourceChars: number
   notesChars: number

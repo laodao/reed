@@ -829,20 +829,21 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
   {
     type: 'web-extract',
     label: '网页正文',
-    description: '抓取 URL 并提取正文文本 + 页面内链接列表（去标签）',
+    description: '抓取 URL 并提取正文文本 + 页面内链接列表（去标签）；HTTP 拿不到正文（反爬/JS 渲染站点）时自动用隐藏浏览器窗口渲染重试',
     category: 'general',
     icon: 'Reading',
     controlKind: 'task',
     cancellable: true,
     ports: [{ kind: 'normal', label: '出', max: 1 }, { kind: 'fail', label: '失败' }],
     requiredConfigKeys: ['url'],
-    defaultConfig: { url: '', maxLength: 100_000, maxLinks: 30 },
+    defaultConfig: { url: '', render: 'auto', maxLength: 100_000, maxLinks: 30 },
     outputSchema: [
       { key: 'title', type: 'string', desc: '页面标题' },
       { key: 'text', type: 'string', desc: '正文文本' },
       { key: 'length', type: 'number', desc: '文本长度' },
       { key: 'links', type: 'json', desc: '页面内链接 [{ title, url }]（去重/过滤，最多 maxLinks 条）' },
       { key: 'skipped', type: 'boolean', desc: '抓取失败被跳过（onError=skip 时输出空结果并置 true）' },
+      { key: 'rendered', type: 'boolean', desc: '正文来自浏览器渲染兜底（HTTP 抓不到 JS 站点正文时）' },
     ],
   },
   {

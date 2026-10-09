@@ -59,3 +59,51 @@
   语料薄时产物自动声明"本技能仅基于一篇约 360 字的阅读笔记构建，材料极薄"——诚实边界纪律在工作流场景自动生效。
 - 排障记录：electron-vite 增量构建出过陈旧 chunk（主包含 handler、workflow-boot chunk 不含，boot 一致性检查
   只查 handler→目录方向故未拦截）导致运行时报"未注册的节点类型"——删 `out/` 干净重建解决。
+
+## 五、反爬根修：web-extract 浏览器渲染兜底（2026-10-09 第二轮，卢克文驱动）
+
+真机跑卢克文（头条）时发现主路径缺陷：头条对纯 HTTP 请求返回 200 的 JS 虚拟机
+混淆挑战页（`_$jsvmprt`，body 为空），web-extract 全部抓空 → guard 全过滤 →
+蒸馏必败。阮一峰能过是因为其博客是静态 HTML——头条/微信/知乎等中文博主主战场
+全是 JS 反爬站，不做根修则博主蒸馏工作流对主流平台不可用。
+
+**方案**（用户拍板"直接做根修，工作流全跑"）：
+
+| 层 | 文件 | 要点 |
+|---|---|---|
+| 渲染器 | `nodes/browser-render.ts`（新） | 主进程隐藏 BrowserWindow：持久 partition `persist:web-extract-render`（挑战 cookie 复用）、UA 伪装正常 Chrome、拦截 image/media/font 加速、load 后 2.5s 稳定等待、取 `outerHTML` 回调走同一套 `extractArticleContent` 启发式；SSRF 入口+重定向终态双闸门；弹窗/权限一律拒绝；总超时 30s（上限 120s）；全局并发 2；electron 动态 import（纯 node 单测可加载） |
+| 节点 | `nodes/extra-nodes.ts` web-extract | 新配置 `render: off/auto/always`（默认 auto）：HTTP 提取正文 <300 字（与博客模板 guard 同阈值）自动渲染重试，取更优结果；渲染失败优雅降级保留 HTTP 结果；`always` 跳过 HTTP 直接渲染；输出新增 `rendered: boolean` |
+| 礼貌 | `nodes/http-politeness.ts` | 抽出 `politePause`（随机间隔）供渲染路径复用，避免同站"HTTP+渲染"双倍压力 |
+| 配置面 | workflow.types / node-forms / node-catalog | render 三态 select + defaultConfig + outputSchema rendered 字段 |
+| 模板 | blogger-distill.json | extract1 显式 `render: auto` |
+| 命名 | skill-distill.service.ts | nameHint 支持中文：id 只能 kebab（SKILL_NAME_PATTERN 限制），非 kebab 提示时显示名（title）强约束为提示原文（如「卢克文」），id 走 `distilled-<ts36>` 兜底 |
+| 测试 | `web-extract-browser-render.spec.ts`（9）+ `browser-render.spec.ts`（3）+ service spec 中文命名断言 | 基线对照：stash 本改动后失败集与带改动完全一致（42 份存量失败 = better-sqlite3 Electron ABI 与系统 Node 不匹配 + 并行会话模板漂移），零新增失败 |
+
+**真机单点验证**（`outputs/_render-probe.cjs`，临时 start→web-extract(always)→notify 定义）：
+头条文章页 `rendered=true`、正文 11,938 字、标题「大明灭亡史 第五章：孙承宗与魏忠贤」——
+反爬打穿。全流程验收见 `outputs/_luke-distill-acceptance.cjs`。
+
+### 第一轮工作流失败的排障（推理模型空文本）
+
+首跑（deepseek-v4-flash，推理型）在蒸馏阶段 106s 失败：4 次笔记调用 2 次返回空文本——
+思维链计入 `maxTokens`（NOTES_MAX_TOKENS=4000 太紧），模型"只思考不输出"，
+`noteChunk` 二次重试同样空 → 按"响亮失败"设计炸掉整个任务。两处修复：
+
+1. `NOTES_MAX_TOKENS` 4000 → 6000（给思维链留余量）；
+2. **块级容错**：单块笔记连续失败只跳过并计入 `stats.chunksFailed`（新可选字段），
+   全部块失败才报错——批量场景一块烂肉不坏一锅汤；语料薄由审计诚实边界兜底
+   （产物自动声明材料薄厚）。单测 +2（单块失败跳过 done / 全部失败 failed）。
+
+### 第二轮真机验收：卢克文（今日头条）全流程通过（2026-10-09）
+
+`outputs/_luke-distill-acceptance.cjs`：头条 8 篇（胡塞武装/北溪爆炸/无人机产业/日本巨舰/
+大明灭亡史第五章/英语主科/敦煌出行记等，649s ≈ 11 分钟）→ 渲染抓正文 8/8 全过 guard →
+存资产中心 8 篇 → 判类 → 蒸出技能 **id `distilled-mv14ggk0`、显示名「卢克文」**
+（nameHint 中文强约束生效）。
+
+产物质量：SKILL.md 8.6KB + 4 卡（frameworks/decision-rules/anti-patterns/terms）；
+description 带触发条款；8 篇文章的方法被抽象成可迁移框架（多势力因果链、代理人独立性
+三判据、油价-选举压力链、产业链三级拆解、任务反推装备形态），标志性类比（"AI 翻译＝
+揣在口袋里"）与明史具体方案（三方布置策/八里铺）分层落位——抽象层在正文卡，具体例证
+在 references，符合"body 是地图不是领土"契约。首跑失败的 8 篇资产与二跑重复
+（博主蒸馏 16 条），属验收残留，非管线缺陷。

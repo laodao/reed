@@ -70,6 +70,7 @@
         "position": { "x": 1000, "y": 140 },
         "config": {
           "url": "{{loop1.item}}",
+          "render": "auto",
           "maxLength": 150000,
           "maxLinks": 0,
           "onError": "skip"

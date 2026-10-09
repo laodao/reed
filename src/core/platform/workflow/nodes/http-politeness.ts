@@ -61,6 +61,22 @@ function hostOf(url: string): string {
 
 const sleep = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms))
 
+/**
+ * 随机间隔等待（不含 host 排队）：浏览器渲染兜底等非 fetch 的重请求
+ * 也复用同一礼貌节奏，避免对同站"HTTP 一轮 + 渲染一轮"变成双倍压力。
+ */
+export async function politePause(opts: PolitenessOptions = {}): Promise<void> {
+  const params = workflowRuntimeParams().crawl
+  const min = opts.delayMsMin ?? params.delayMsMin
+  const max = Math.min(
+    opts.delayMsMax ?? params.delayMsMax,
+    WORKFLOW_LIMITS.crawlDelayMsMax,
+  )
+  if (max > 0 && min >= 0 && max >= min) {
+    await sleep(min + Math.floor(Math.random() * (max - min + 1)))
+  }
+}
+
 /** 爬取礼貌参数（节点 config 可覆盖；缺省走 WORKFLOW_DEFAULTS） */
 export interface PolitenessOptions {
   /** 随机间隔下限（毫秒；0 = 不等待） */
@@ -101,15 +117,7 @@ export async function politeFetch(
   await throttle.acquire()
   try {
     // 随机间隔（每次请求前）
-    const min = opts.delayMsMin ?? params.delayMsMin
-    const max = Math.min(
-      opts.delayMsMax ?? params.delayMsMax,
-      WORKFLOW_LIMITS.crawlDelayMsMax,
-    )
-    if (max > 0 && min >= 0 && max >= min) {
-      const ms = min + Math.floor(Math.random() * (max - min + 1))
-      await sleep(ms)
-    }
+    await politePause(opts)
     try {
       let current = url
       for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {

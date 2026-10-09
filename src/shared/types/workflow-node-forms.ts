@@ -605,6 +605,15 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
   ],
   'web-extract': [
     T('url', '网页地址', { templateHint: true, placeholder: 'https://...' }),
+    {
+      key: 'render', label: 'JS 渲染兜底', type: 'select', group: '参数',
+      options: [
+        { label: '自动（HTTP 拿不到正文时渲染重试）', value: 'auto' },
+        { label: '始终浏览器渲染（头条/微信等 JS 站点）', value: 'always' },
+        { label: '关闭（仅 HTTP 抓取）', value: 'off' },
+      ],
+      help: '头条/微信等站点对纯 HTTP 返回反爬挑战页；auto 检测到正文过短时用隐藏浏览器窗口渲染重试（约多花 5-30 秒）',
+    },
     { key: 'maxLength', label: '正文最大长度', type: 'number', group: '参数', help: '超长截断（默认 100000）' },
     { key: 'maxLinks', label: '链接提取数量上限', type: 'number', group: '参数', help: '页面内链接提取上限（默认 30，0=不提取）' },
     { key: 'delayMsMin', label: '随机间隔下限（毫秒）', type: 'number', group: '爬取礼貌', help: '请求前随机等待（默认 800）' },

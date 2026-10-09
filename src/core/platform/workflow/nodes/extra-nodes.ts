@@ -15,8 +15,9 @@ import { WORKFLOW_LIMITS } from '@shared/types/workflow.types'
 import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 import { parse } from 'node-html-parser'
 import { validateOutboundUrl } from '@core/utils/outbound-url'
-import { politeFetch } from './http-politeness'
+import { politeFetch, politePause } from './http-politeness'
 import { readTextWithLimit } from './response-body'
+import { renderPageHtml, BROWSER_RENDER_FALLBACK_MIN_CHARS } from './browser-render'
 
 // ==================== 模板转换 ====================
 
@@ -316,6 +317,7 @@ const webExtractNode: WorkflowNodeHandler = {
     { key: 'length', type: 'number', desc: '文本长度' },
     { key: 'links', type: 'json', desc: '页面内链接 [{ title, url }]（去重/过滤，最多 maxLinks 条）' },
     { key: 'skipped', type: 'boolean', desc: '抓取失败被跳过（onError=skip 时输出空结果并置 true）' },
+    { key: 'rendered', type: 'boolean', desc: '正文来自浏览器渲染兜底（HTTP 抓不到 JS 站点正文时）' },
   ],
   validateConfig(config) {
     const cfg = config as { url?: string }
@@ -332,6 +334,13 @@ const webExtractNode: WorkflowNodeHandler = {
       delayMsMax?: number
       hostConcurrency?: number
       /**
+       * JS 渲染兜底（可选，默认 auto）：
+       * - off：仅 HTTP 抓取（旧行为）
+       * - auto：HTTP 提取正文过短（反爬挑战页/纯脚本页）时，浏览器渲染重试一次
+       * - always：跳过 HTTP 直接浏览器渲染（已知 JS 重站点，如头条/微信文章页）
+       */
+      render?: 'auto' | 'off' | 'always'
+      /**
        * 抓取失败处理策略（可选，默认 fail）：
        * - fail：节点失败（默认，报错并可能触发重试/fail 边）
        * - skip：返回空结果（title/text 为空、skipped=true），适合批量采集场景
@@ -339,24 +348,45 @@ const webExtractNode: WorkflowNodeHandler = {
        */
       onError?: 'fail' | 'skip'
     }
+    const renderMode: 'auto' | 'off' | 'always' = cfg.render ?? 'auto'
+    // onError=skip：抓取失败时返回空结果而非报错
+    const skipResult = () => ({
+      status: 'succeeded' as const,
+      output: { title: '', text: '', length: 0, links: [], skipped: true, rendered: false },
+    })
+    // SSRF 防护：url 可经 {{模板}} 注入（两条抓取路径共用；校验失败属配置问题，不静默吞掉）
+    const guard = validateOutboundUrl(String(cfg.url))
+    if (!guard.ok) {
+      return { status: 'failed', error: `URL 校验失败：${guard.reason}`, retryable: false }
+    }
+    const max = cfg.maxLength && cfg.maxLength > 0 ? cfg.maxLength : workflowRuntimeParams().crawl.extractMaxChars
+    const finishFromHtml = (html: string, rendered: boolean, pre?: { title: string; text: string }) => {
+      const { title, text } = pre ?? extractArticleContent(html)
+      // 智能截断：按句子/段落边界，不切半（内容完整性优先）
+      const trimmed = text.length > max ? truncateTextSmart(text, max) : text
+      const links = extractPageLinks(html, String(cfg.url), cfg.maxLinks ?? workflowRuntimeParams().crawl.maxLinksPerSource)
+      return { status: 'succeeded' as const, output: { title, text: trimmed, length: trimmed.length, links, rendered } }
+    }
+
+    // always：跳过 HTTP 直接浏览器渲染（已知 JS 重站点）
+    if (renderMode === 'always') {
+      // 渲染也是一次对同站的重请求，复用同一礼貌节奏
+      await politePause({ delayMsMin: cfg.delayMsMin, delayMsMax: cfg.delayMsMax })
+      const rendered = await renderPageHtml(String(cfg.url), { signal: ctx.signal })
+      if (!rendered.ok) {
+        if (cfg.onError === 'skip') return skipResult()
+        return { status: 'failed', error: `网页获取失败: ${rendered.error}`, retryable: true }
+      }
+      return finishFromHtml(rendered.html, true)
+    }
+
     const timeout = Math.min(
       workflowRuntimeParams().crawl.httpRequestTimeoutMs,
       WORKFLOW_LIMITS.httpTimeoutMs,
     )
     const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(timeout)])
-    // onError=skip：抓取失败时返回空结果而非报错
-    const skipResult = () => ({
-      status: 'succeeded' as const,
-      output: { title: '', text: '', length: 0, links: [], skipped: true },
-    })
     let html: string
     try {
-      // SSRF 防护：url 可经 {{模板}} 注入（内置应用"网页摘要入库"即 {{start.url}}）
-      const guard = validateOutboundUrl(String(cfg.url))
-      if (!guard.ok) {
-        // SSRF/校验失败属配置问题，不因 onError=skip 静默吞掉
-        return { status: 'failed', error: `URL 校验失败：${guard.reason}`, retryable: false }
-      }
       // 礼貌抓取：同站单线程 + 随机间隔（跨节点共享限速）
       const res = await politeFetch(String(cfg.url), { signal, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; the-bot-workflow)' } }, {
         delayMsMin: cfg.delayMsMin,
@@ -373,12 +403,17 @@ const webExtractNode: WorkflowNodeHandler = {
       return { status: 'failed', error: `网页获取失败: ${e instanceof Error ? e.message : String(e)}` }
     }
     // 正文提取（启发式：文本密度选主内容容器，剔除导航/按钮/评论等噪声）
-    const { title, text } = extractArticleContent(html)
-    const max = cfg.maxLength && cfg.maxLength > 0 ? cfg.maxLength : workflowRuntimeParams().crawl.extractMaxChars
-    // 智能截断：按句子/段落边界，不切半（内容完整性优先）
-    const trimmed = text.length > max ? truncateTextSmart(text, max) : text
-    const links = extractPageLinks(html, String(cfg.url), cfg.maxLinks ?? workflowRuntimeParams().crawl.maxLinksPerSource)
-    return { status: 'succeeded', output: { title, text: trimmed, length: trimmed.length, links } }
+    const first = extractArticleContent(html)
+    // auto 兜底：HTTP 提取正文过短（反爬挑战页/纯脚本壳）→ 浏览器渲染重试，取更优结果
+    if (renderMode === 'auto' && first.text.length < BROWSER_RENDER_FALLBACK_MIN_CHARS) {
+      const rendered = await renderPageHtml(String(cfg.url), { signal: ctx.signal })
+      if (rendered.ok) {
+        const second = extractArticleContent(rendered.html)
+        if (second.text.length > first.text.length) return finishFromHtml(rendered.html, true, second)
+      }
+      // 渲染失败或没拿到更好正文 → 保留 HTTP 结果诚实降级（下游 guard/流程自行处置）
+    }
+    return finishFromHtml(html, false, first)
   },
 }
 

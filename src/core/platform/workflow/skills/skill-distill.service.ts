@@ -69,7 +69,9 @@ interface InternalTask {
 }
 
 const MAX_REPAIR_PASSES = 2
-const NOTES_MAX_TOKENS = 4_000
+// 6000 而非 4000：推理型模型（deepseek-reasoner 类）的思维链计入 maxTokens，
+// 预算太紧会"只思考不输出"（空文本），批量笔记场景会连续失败
+const NOTES_MAX_TOKENS = 6_000
 const ASSEMBLE_MAX_TOKENS = 16_000
 const DETECT_MAX_TOKENS = 500
 
@@ -241,24 +243,35 @@ export class SkillDistillService {
         contentType = req.contentType
       }
 
-      // ── 第一遍：逐块笔记 ──
+      // ── 第一遍：逐块笔记（块级容错：推理型模型可能思维链耗尽 token 预算输出空文本，
+      //    单块连续失败只跳过并计数，全部块都失败才响亮报错——不让一块烂肉坏一锅汤）──
       this.update(task, { stage: 'noting', progress: 18, message: '开始阅读笔记（第一遍）…' })
       const notes: Array<Record<string, unknown>> = []
+      let chunksFailed = 0
       for (const chunk of chunks) {
         this.throwIfCancelled(task)
         this.update(task, { message: `正在阅读第 ${chunk.index + 1}/${chunks.length} 块${chunk.title ? `（${chunk.title}）` : ''}…` })
-        const note = await this.noteChunk(contentType, chunk)
-        // chunk 序号由服务盖章（不信任模型自报），组装端可按块溯源
-        notes.push({ ...note, chunk: chunk.index })
+        let note: Record<string, unknown> | null = null
+        try {
+          note = await this.noteChunk(contentType, chunk)
+        } catch {
+          chunksFailed++
+          this.update(task, { message: `第 ${chunk.index + 1} 块笔记解析失败，已跳过（容错）` })
+        }
+        if (note) notes.push({ ...note, chunk: chunk.index })
         this.update(task, {
           progress: 18 + Math.round(((chunk.index + 1) / chunks.length) * 50),
           stats: {
             ...task.snapshot.stats,
-            chunksDone: chunk.index + 1,
+            chunksDone: notes.length,
+            chunksFailed,
             llmCalls: task.snapshot.stats.llmCalls + 1,
-            notesChars: task.snapshot.stats.notesChars + JSON.stringify(note).length,
+            notesChars: task.snapshot.stats.notesChars + (note ? JSON.stringify(note).length : 0),
           },
         })
+      }
+      if (notes.length === 0) {
+        throw new Error(`全部 ${chunks.length} 块阅读笔记均失败（模型连续输出空/非法 JSON，常见于推理模型 token 预算不足）——请换模型或稍后重试`)
       }
 
       // ── 第二遍：组装 ──
@@ -389,7 +402,12 @@ export class SkillDistillService {
     const draft = normalizeSkillPackageDraft(parsed, { fallbackName: fallbackNameFor(req.nameHint), contentType })
     if (!draft.body.trim()) throw new Error('技能组装失败：模型未产出正文')
     // nameHint 是强约束（工作流要可预测命名）：模型起的 name 仅在未提供 hint 时生效；撞库由落盘层加后缀
-    if (req.nameHint?.trim()) draft.name = fallbackNameFor(req.nameHint)
+    if (req.nameHint?.trim()) {
+      const hint = req.nameHint.trim()
+      draft.name = fallbackNameFor(req.nameHint)
+      // 中文等非 kebab 提示（如「卢克文」）：技能 id 只能取 kebab slug，显示名强约束为提示原文
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(hint.toLowerCase())) draft.title = hint
+    }
     return draft
   }
 

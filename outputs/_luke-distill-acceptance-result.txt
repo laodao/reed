@@ -1,0 +1,73 @@
+[accept] 主窗口： 首页 - The Bot
+[accept] 找到定义： [内置] 大V博主蒸馏
+[accept] 模型： pc_mmyd3u5b_hkf5odex3 deepseek-v4-flash
+[accept] runId = wfrun_1791559173596_09kws7clp
+[accept] 15s status=running 
+[accept] 30s status=running 
+[accept] 45s status=running 
+[accept] 60s status=running 
+[accept] 75s status=running 
+[accept] 90s status=running 
+[accept] 106s status=running 
+[accept] 121s status=running 
+[accept] 136s status=running 
+[accept] 151s status=running 
+[accept] 166s status=running 
+[accept] 181s status=running 
+[accept] 196s status=running 
+[accept] 211s status=running 
+[accept] 226s status=running 
+[accept] 241s status=running 
+[accept] 257s status=running 
+[accept] 272s status=running 
+[accept] 287s status=running 
+[accept] 302s status=running 
+[accept] 317s status=running 
+[accept] 332s status=running 
+[accept] 347s status=running 
+[accept] 362s status=running 
+[accept] 377s status=running 
+[accept] 392s status=running 
+[accept] 407s status=running 
+[accept] 423s status=running 
+[accept] 438s status=running 
+[accept] 453s status=running 
+[accept] 468s status=running 
+[accept] 483s status=running 
+[accept] 498s status=running 
+[accept] 513s status=running 
+[accept] 528s status=running 
+[accept] 543s status=running 
+[accept] 559s status=running 
+[accept] 574s status=running 
+[accept] 589s status=running 
+[accept] 604s status=running 
+[accept] 619s status=running 
+[accept] 634s status=running 
+[accept] 649s status=succeeded 
+[accept] 终态： succeeded
+[accept] ✅ 技能已创建：id = distilled-mv14ggk0 ，显示名 = 卢克文 ；SKILL.md 8628 字节；references = anti-patterns.md, decision-rules.md, frameworks.md, terms.md
+--- SKILL.md 前 600 字 ---
+---
+name: distilled-mv14ggk0
+description: 把复杂的地缘冲突、军备竞赛或产业格局拆成多势力因果链，再用类比与节奏写成通俗深度长文的分析方法。当需要分析国际冲突、代理人关系、军备指标或产业链能力，或要把这类题材写得既讲透又好看时使用。
+title: 卢克文
+when_to_use: 当你要动笔分析一场国际冲突、一个军备项目或一条产业链时，先套这套流程；只做事实核查或需要精确量化数据时不要用。
+category: 知识提炼
+---
+
+# 卢克文式时政深度分析：多势力因果链与通俗化叙事
+
+把一次复杂的地缘冲突、军备竞赛或产业格局，拆成「谁想要什么—链条怎么走—对方怎么破—结局谁得利」的可讲清结构，再用类比和节奏把它写成读得下去的长文。
+
+## 一、适用场景 / 何时不用
+
+**适用**：分析国际冲突与大国博弈（红海封锁、北溪爆炸）；拆解一国军备或产业能力（大型防空舰、无人机供应链）；把已发生的历史事件写成有因果的连载；判断代理人或盟友会不会按主导方的剧本走。
+
+**何时不用**：材料只有单一推演、没有可核实事实时，不要输出确定性结论（见「诚实边界」）；需要精确数据支撑的量化结论，本方法只给结构不给数字；纯档案考证与史料比对也不适用。
+
+## 二、使用流程
+
+1. **先定各方的「活儿」，再谈立场。** 把每个行为体的原始目标写出来——一方要撬动对手
+[accept] ✅ 资产中心「博主蒸馏」本博主资产数 = 16 卢克文-美国无人机技术曾经领先全球，是怎样走向落后的 - 今日头条 | 卢克文-北溪管道爆炸案嫌疑犯落网，是真凶还是背锅侠？ - 今日头条 | 卢克文-英语当然要成为主科，但需要加强实用性 - 今日头条 | 卢克文-两个令人费解的问题 - 今日头条 | 卢克文-日本手搓万吨巨舰，超越055成为世界第一？ - 今日头条 | 卢克文-大明灭亡史 第五章：孙承宗与魏忠贤 - 今日头条 | 卢克文-胡塞武装杀疯了 - 今日头条 | 卢克文-我们都只是被时代推着走而已 - 今日头条
+[accept] 🎉 卢克文（头条）大V蒸馏工作流真机验收通过：runId=wfrun_1791559173596_09kws7clp

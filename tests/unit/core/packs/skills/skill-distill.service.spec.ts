@@ -138,8 +138,30 @@ describe('SkillDistillService 流水线', () => {
     for (let i = 0; i < snap.stats.chunksTotal; i++) expect(assembleUser).toContain(`"chunk": ${i}`)
   })
 
-  it('审计不过触发修复环：一轮修复后 done，repairPasses=1', async () => {
-    const broken = { ...validDraftJson('distilled-fix'), references: [{ filename: 'orphan.md', content: '没人链接我' }] }
+  it('块级容错：单块笔记连续解析失败跳过不拖死任务，chunksFailed 计数', async () => {
+    // 两块语料：块0 两次空文本（推理模型 token 耗尽形态）→ 跳过；块1 正常
+    const twoChunks = `# 第1章\n\n${'章节内容'.repeat(800)}\n\n# 第2章\n\n${'章节内容'.repeat(800)}`
+    const svc = makeService(scriptedLlm(['', '', NOTE_JSON, JSON.stringify(validDraftJson())]))
+    const t0 = svc.createTask({ inputType: 'text', text: twoChunks, contentType: 'methodology' })
+    await waitFor(() => svc.getTask(t0.id)!.status !== 'running')
+    const snap = svc.getTask(t0.id)!
+    expect(snap.status).toBe('done')
+    expect(snap.stats.chunksTotal).toBe(2)
+    expect(snap.stats.chunksDone).toBe(1)
+    expect(snap.stats.chunksFailed).toBe(1)
+  })
+
+  it('全部块笔记失败 → 响亮失败（不给组装喂空笔记）', async () => {
+    const twoChunks = `# 第1章\n\n${'章节内容'.repeat(800)}\n\n# 第2章\n\n${'章节内容'.repeat(800)}`
+    const svc = makeService(scriptedLlm(['', '', '', '', '也不是JSON']))
+    const t0 = svc.createTask({ inputType: 'text', text: twoChunks, contentType: 'methodology' })
+    await waitFor(() => svc.getTask(t0.id)!.status !== 'running')
+    const snap = svc.getTask(t0.id)!
+    expect(snap.status).toBe('failed')
+    expect(snap.error).toContain('全部 2 块阅读笔记均失败')
+  })
+
+  it('审计不过触发修复环：一轮修复后 done，repairPasses=1', async () => {    const broken = { ...validDraftJson('distilled-fix'), references: [{ filename: 'orphan.md', content: '没人链接我' }] }
     const svc = makeService(markerLlm({ assemble: JSON.stringify(broken), repairs: [JSON.stringify(validDraftJson('distilled-fix'))] }))
     const t0 = svc.createTask(TEXT_REQ)
     await waitFor(() => svc.getTask(t0.id)!.status !== 'running')
@@ -268,7 +290,7 @@ describe('SkillDistillService.execute 同步执行（工作流节点/agent 工�
     expect(svc.listTasks()).toEqual([])
   })
 
-  it('nameHint 非法 slug 回落时间戳兜底名', async () => {
+  it('nameHint 非法 slug 回落时间戳兜底名；中文提示同时强约束显示名', async () => {
     const written: SkillPackageDraft[] = []
     const svc = makeService(scriptedLlm([NOTE_JSON, JSON.stringify(validDraftJson())]), {
       writePackage: async d => (written.push(d), `fake-${d.name}`),
@@ -276,6 +298,8 @@ describe('SkillDistillService.execute 同步执行（工作流节点/agent 工�
     const snap = await svc.execute({ inputType: 'text', text: '中文名建议忽略。'.repeat(30), contentType: 'persona', nameHint: '中文提示无效' })
     expect(snap.status).toBe('done')
     expect(written[0].name).toMatch(/^distilled-/)
+    // 中文等非 kebab 提示：id 只能 slug 兜底，显示名（title）强约束为提示原文
+    expect(written[0].title).toBe('中文提示无效')
   })
 })
 
