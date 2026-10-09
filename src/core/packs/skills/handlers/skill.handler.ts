@@ -9,10 +9,9 @@
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getSkillService } from '@core/platform/workflow/skills/skill-registry'
 import type { UpsertSkillInput } from '@core/platform/workflow/skills/skill.service'
+import { getSkillDistillService } from '@core/platform/workflow/skills/skill-distill-registry'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type { SkillDistillRequest } from '@shared/types/skill-distill.types'
-import { SkillDistillService } from '../services/skill-distill.service'
-import { defaultSkillDistillDeps } from '../services/skill-distill-defaults'
 
 /** 统一 { success, data, error } 包装（同步返回也接受——list/get 等为同步服务方法） */
 async function wrap<T>(fn: () => T | Promise<T>): Promise<IpcResponse<T>> {
@@ -21,18 +20,6 @@ async function wrap<T>(fn: () => T | Promise<T>): Promise<IpcResponse<T>> {
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : String(e) }
   }
-}
-
-// 蒸馏服务惰性构造（activate 早于 db/模型装配，首次调用才拉起依赖）
-let distillService: SkillDistillService | null = null
-
-function getDistillService(): SkillDistillService {
-  if (!distillService) distillService = new SkillDistillService(defaultSkillDistillDeps)
-  return distillService
-}
-/** 测试注入点（照搬 setIcCollectionServiceForTests 惯例） */
-export function setSkillDistillServiceForTests(s: SkillDistillService | null): void {
-  distillService = s
 }
 
 export function registerSkillHandlers(): void {
@@ -68,18 +55,18 @@ export function registerSkillHandlers(): void {
 
   /** 发起蒸馏：立即返回 taskId，进度经 distill-status 轮询（Promise 不能过 IPC 结构化克隆） */
   ipcBridge.handle('skill:distill-run', (_e, p: { request: SkillDistillRequest }) =>
-    wrap(() => getDistillService().createTask(p.request))
+    wrap(() => getSkillDistillService().createTask(p.request))
   )
   /** 蒸馏任务快照（stage/progress/stats/issues） */
   ipcBridge.handle('skill:distill-status', (_e, p: { taskId: string }) =>
-    wrap(() => getDistillService().getTask(p.taskId))
+    wrap(() => getSkillDistillService().getTask(p.taskId))
   )
   /** 最近蒸馏任务列表（内存注册表，进程级） */
-  ipcBridge.handle('skill:distill-list', () => wrap(() => getDistillService().listTasks()))
+  ipcBridge.handle('skill:distill-list', () => wrap(() => getSkillDistillService().listTasks()))
   /** 取消蒸馏（当前 LLM 调用返回后生效） */
   ipcBridge.handle('skill:distill-cancel', (_e, p: { taskId: string }) =>
     wrap(() => {
-      getDistillService().cancelTask(p.taskId)
+      getSkillDistillService().cancelTask(p.taskId)
       return { cancelled: true }
     })
   )

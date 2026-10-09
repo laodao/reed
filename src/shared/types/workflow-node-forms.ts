@@ -239,6 +239,31 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     { key: 'temperature', label: '温度', type: 'slider', min: 0, max: 2, step: 0.1, group: '参数' },
     { key: 'maxTokens', label: '最大 Token', type: 'number', group: '参数' },
   ],
+  'skill-distill': [
+    T('sourceText', '待蒸馏内容', {
+      type: 'textarea', templateHint: true, group: '内容',
+      placeholder: '{{digest1.result.fullText}} / {{start.text}}——多篇用分隔符拼接；服务内部清洗、分块、逐块笔记后组装',
+    }),
+    {
+      key: 'contentType', label: '蒸馏目标', type: 'select', group: '目标',
+      options: [
+        { label: '自动判断', value: 'auto' },
+        { label: '方法论 / 知识', value: 'methodology' },
+        { label: '写作风格', value: 'style' },
+        { label: '人物人设', value: 'persona' },
+      ],
+      help: '方法论=框架·决策规则·反模式；写作风格=结构·句式·语气套路；人设=表达·决策·心智模型',
+    },
+    T('hints', '蒸馏重点', {
+      type: 'textarea', templateHint: true, group: '目标',
+      placeholder: '如：博主「XX」文章主类别【时政】，侧重其时政分析框架与文风',
+    }),
+    T('nameHint', '技能 id 建议', {
+      type: 'text', templateHint: true, group: '目标',
+      placeholder: 'kebab-case，如 luke-style；提供后强约束命名（撞库自动加 -2 后缀）',
+    }),
+    { key: 'providerConfigId', label: '模型', type: 'model-pair', group: '模型', help: '留空 = 按默认 Provider 自动回退选择' },
+  ],
   'agent-loop': [
     T('task', '任务目标', {
       type: 'textarea', templateHint: true, group: '任务',

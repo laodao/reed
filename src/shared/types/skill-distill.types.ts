@@ -41,6 +41,8 @@ export interface SkillDistillRequest {
   contentType: SkillDistillContentType | 'auto'
   /** 可选：用户补充的蒸馏重点（技能用途、侧重维度） */
   hints?: string
+  /** 可选：技能 id 建议（kebab-case；模型起名时优先采纳，落盘撞库仍自动加后缀） */
+  nameHint?: string
 }
 
 /** 蒸馏进度统计（轮询展示用） */
@@ -96,9 +98,10 @@ export interface SkillDistillTaskSnapshot {
   stats: SkillDistillStats
   issues: SkillDistillIssue[]
   error?: string
-  /** 成功后：落盘技能 id（=name）与展示名 */
+  /** 成功后：落盘技能 id（=name）、展示名与描述 */
   resultSkillId?: string
   resultSkillName?: string
+  resultSkillDescription?: string
   createdAt: string
   finishedAt?: string
 }

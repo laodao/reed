@@ -15,12 +15,12 @@ vi.mock('@core/interfaces/path.interface', () => ({
   getPathProvider: () => ({ getDataPath: () => tmpRoot }),
 }))
 
-import { SkillDistillService } from '@core/packs/skills/services/skill-distill.service'
-import type { DistillLlmFn, SkillDistillDeps } from '@core/packs/skills/services/skill-distill.service'
-import { defaultWritePackage } from '@core/packs/skills/services/skill-distill-defaults'
+import { SkillDistillService } from '@core/platform/workflow/skills/skill-distill.service'
+import type { DistillLlmFn, SkillDistillDeps } from '@core/platform/workflow/skills/skill-distill.service'
+import { defaultWritePackage } from '@core/platform/workflow/skills/skill-distill-defaults'
 import { SkillService } from '@core/platform/workflow/skills/skill.service'
 import { registerSkillService, resetSkillService } from '@core/platform/workflow/skills/skill-registry'
-import type { SkillDistillRequest, SkillPackageDraft } from '@shared/types/skill-distill.types'
+import type { SkillDistillRequest, SkillDistillTaskSnapshot, SkillPackageDraft } from '@shared/types/skill-distill.types'
 
 /** 轮询等待终态（run 是 fire-and-forget，快照驱动断言） */
 async function waitFor(pred: () => boolean, timeoutMs = 3_000): Promise<void> {
@@ -226,6 +226,56 @@ describe('SkillDistillService 流水线', () => {
     const list = svc.listTasks()
     expect(list[0].id).toBe(b.id)
     expect(svc.getTask('nope')).toBeNull()
+  })
+})
+
+describe('SkillDistillService.execute 同步执行（工作流节点/agent 工具用）', () => {
+  it('await 到终态返回快照；onProgress 收到阶段推进；nameHint 强约束命名；ephemeral 不进任务列表', async () => {
+    const written: SkillPackageDraft[] = []
+    const svc = makeService(scriptedLlm([NOTE_JSON, JSON.stringify(validDraftJson('model-picked-name'))]), {
+      writePackage: async d => (written.push(d), `fake-${d.name}`),
+    })
+    const progresses: SkillDistillTaskSnapshot[] = []
+    const snap = await svc.execute(
+      { inputType: 'text', text: '同步执行源内容。'.repeat(30), contentType: 'methodology', nameHint: 'my-sync-skill' },
+      { onProgress: s => progresses.push({ ...s }) },
+    )
+    expect(snap.status).toBe('done')
+    expect(snap.resultSkillId).toBe('fake-my-sync-skill')
+    expect(snap.resultSkillDescription).toBeTruthy()
+    expect(snap.progress).toBe(100)
+    expect(progresses.length).toBeGreaterThan(2)
+    expect(progresses[progresses.length - 1].status).toBe('done')
+    // nameHint 强约束：模型起的 name 被覆盖为 hint 的 slug
+    expect(written[0].name).toBe('my-sync-skill')
+    // ephemeral：终态后不在注册表（不留轮询残骸）
+    expect(svc.getTask(snap.id)).toBeNull()
+    expect(svc.listTasks()).toEqual([])
+  })
+
+  it('signal 取消：execute 返回 cancelled 终态且清理注册表', async () => {
+    let resolveFirst!: (v: string) => void
+    const gate = new Promise<string>(r => (resolveFirst = r))
+    const svc = makeService(async () => gate)
+    const ac = new AbortController()
+    const p = svc.execute({ inputType: 'text', text: '取消测试内容。'.repeat(30), contentType: 'style' }, { signal: ac.signal })
+    // 等第一个 LLM 调用在飞 → 取消 → 放行（取消在调用间隙生效）
+    await waitFor(() => svc.listTasks().length > 0 && svc.listTasks()[0]!.stage === 'noting')
+    ac.abort()
+    resolveFirst(NOTE_JSON)
+    const snap = await p
+    expect(snap.status).toBe('cancelled')
+    expect(svc.listTasks()).toEqual([])
+  })
+
+  it('nameHint 非法 slug 回落时间戳兜底名', async () => {
+    const written: SkillPackageDraft[] = []
+    const svc = makeService(scriptedLlm([NOTE_JSON, JSON.stringify(validDraftJson())]), {
+      writePackage: async d => (written.push(d), `fake-${d.name}`),
+    })
+    const snap = await svc.execute({ inputType: 'text', text: '中文名建议忽略。'.repeat(30), contentType: 'persona', nameHint: '中文提示无效' })
+    expect(snap.status).toBe('done')
+    expect(written[0].name).toMatch(/^distilled-/)
   })
 })
 

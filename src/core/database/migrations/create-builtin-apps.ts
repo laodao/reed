@@ -49,6 +49,8 @@ import topicResearch from './builtin-apps/topic-research.json'
 import diaryWeeklyReview from './builtin-apps/diary-weekly-review.json'
 // 数据表演范（2026-10-08 应用数据层 P1 验收：createTable→upsert→query 全链路零网络零 AI 确定性示范）
 import appDataDemo from './builtin-apps/app-data-demo.json'
+// 大V博主蒸馏（2026-10-09：逐篇抓文存资产→LLM判类→skill-distill 节点蒸馏成技能包，技能生产管线）
+import bloggerDistill from './builtin-apps/blogger-distill.json'
 
 /** 内置工作流 id 前缀（固定，幂等查重依据） */
 const BUILTIN_DEF_PREFIX = 'builtin_def_'
@@ -101,6 +103,8 @@ const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; icon: str
   { file: 'diary-weekly-review.json', raw: diaryWeeklyReview, appId: `${BUILTIN_APP_PREFIX}diary_weekly_review`, icon: '🗓️', name: '日记周报复盘', description: '按时间范围聚合日记（可跨目录）→ AI 三段式复盘（发生了什么/学到了什么/下周关注什么）→ 人工确认 → 存回日记', category: '学习', tags: ['日记', '复盘', '周报'] },
   // 数据表演范（2026-10-08 应用数据层）
   { file: 'app-data-demo.json', raw: appDataDemo, appId: `${BUILTIN_APP_PREFIX}app_data_demo`, icon: '🗄️', name: '数据表演示·增量记录', description: '表单录入→应用数据表 upsert 增量（同链接=更新）→数据页签浏览/导出——非一次性应用的最小闭环示范', category: '办公效率', tags: ['数据表', '示范'] },
+  // 大V博主蒸馏（2026-10-09 技能蒸馏工作流：逐篇抓文→存资产→判类→蒸馏成技能包）
+  { file: 'blogger-distill.json', raw: bloggerDistill, appId: `${BUILTIN_APP_PREFIX}blogger_distill`, icon: '⚗️', name: '大V博主蒸馏', description: '博主名+文章链接列表 → 逐篇抓取正文并存资产中心 → LLM 判定文章类别（时政/财经/科普/历史/文学/哲学…）→ 技能蒸馏节点把全部文章蒸馏成一个技能包（两遍流水线+审计修复）落盘技能库', category: '学习', tags: ['蒸馏', '技能库', '博主'] },
 ]
 
 /** 默认模板资产（user_id=NULL，可复制修改） */

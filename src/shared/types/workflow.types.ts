@@ -80,6 +80,8 @@ export type WorkflowNodeType =
   | 'podcast-compose'
   // 技能（Skill 技能包调用）
   | 'skill-call'
+  // 技能蒸馏（内容 → 生成技能包落盘技能库；两遍流水线 + 审计修复）
+  | 'skill-distill'
   // Agent 循环（LLM 自主多轮工具调用；22 号 §8 工作流↔harness 焊点）
   | 'agent-loop'
   // 通用
@@ -577,6 +579,19 @@ export interface WorkflowNodeConfigMap {
     modelId?: string
     temperature?: number
     maxTokens?: number
+  }
+
+  'skill-distill': {
+    /** 待蒸馏全文（模板化；多篇文章用分隔符拼接，服务内部清洗/分块/两遍流水线） */
+    sourceText: string
+    /** 蒸馏目标：auto=让模型先判型（methodology 方法论 / style 写作风格 / persona 人物人设） */
+    contentType?: 'auto' | 'methodology' | 'style' | 'persona'
+    /** 蒸馏重点补充（模板化；如判类结论、技能用途、侧重维度） */
+    hints?: string
+    /** 技能 id 建议（模板化；kebab-case，强约束命名，落盘撞库自动加后缀） */
+    nameHint?: string
+    providerConfigId?: string
+    modelId?: string
   }
 
   'agent-loop': {
@@ -1185,6 +1200,7 @@ export const WORKFLOW_NODE_TYPES = {
   'slide-render': 'slide-render',
   'podcast-compose': 'podcast-compose',
   'skill-call': 'skill-call',
+  'skill-distill': 'skill-distill',
   'agent-loop': 'agent-loop',
 } as const satisfies Record<WorkflowNodeType, WorkflowNodeType>
 

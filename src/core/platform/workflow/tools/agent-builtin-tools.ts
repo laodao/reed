@@ -18,6 +18,7 @@ import { executeHttpFetch } from '../nodes/http-fetch'
 import { runCodeInSandbox, isElectronRuntime } from '../nodes/code-nodes'
 import { getVariableDataService } from '../variables/variable-data.service'
 import { getSearchEngineService } from '@core/platform/services/search-engine.service'
+import { getSkillDistillService } from '../skills/skill-distill-registry'
 import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 import type { AgentToolDef } from '@core/platform/agent-runtime/types'
 import type { AgentToolRegistry } from '@core/platform/agent-runtime/tools/registry'
@@ -179,6 +180,47 @@ const dataTableWriteTool: AgentToolDef<z.infer<typeof DataTableWriteInput>> = {
   },
 }
 
+const DistillSkillInput = z.object({
+  sourceText: z.string().min(200).describe('待蒸馏全文（≥200 字）：文章/书摘/聊天记录/写作样本'),
+  contentType: z.enum(['auto', 'methodology', 'style', 'persona']).optional().describe('蒸馏目标：auto=模型判型（缺省）；methodology=方法论/style=写作风格/persona=人物人设'),
+  hints: z.string().optional().describe('蒸馏重点补充：技能用途、侧重维度'),
+  nameHint: z.string().optional().describe('技能 id 建议（kebab-case，如 luke-style）；提供后强约束命名'),
+})
+
+/**
+ * 技能蒸馏（write 级 + 显式 requiresApproval：向技能库落盘新技能包）。
+ * 两遍流水线（逐块笔记→组装）+ 确定性审计 + 修复环；失败时错误信息带审计问题清单。
+ */
+const distillSkillTool: AgentToolDef<z.infer<typeof DistillSkillInput>> = {
+  name: 'distill_skill',
+  description: '把一段他人内容蒸馏成技能包并保存到技能库（两遍流水线：逐块笔记→组装→审计→落盘）。会产生副作用（新建技能目录），需人工批准后执行。',
+  inputSchema: DistillSkillInput,
+  dangerLevel: 'write',
+  requiresApproval: true,
+  execute: async (input, ctx) => {
+    const snap = await getSkillDistillService().execute(
+      {
+        inputType: 'text',
+        text: input.sourceText,
+        contentType: input.contentType ?? 'auto',
+        hints: input.hints,
+        nameHint: input.nameHint,
+      },
+      { signal: ctx.signal ?? undefined },
+    )
+    if (snap.status !== 'done' || !snap.resultSkillId) {
+      throw new Error(snap.error ?? '技能蒸馏未产出技能')
+    }
+    return {
+      skillId: snap.resultSkillId,
+      skillName: snap.resultSkillName ?? snap.resultSkillId,
+      detectedType: snap.detectedType ?? '',
+      repairPasses: snap.stats.repairPasses,
+      warnIssues: snap.issues.filter((i) => i.level === 'warn').map((i) => i.message),
+    }
+  },
+}
+
 /** 注册首批内置工具（workflow-boot 装配调用；重复注册由 registry 冲突检测拦截） */
 export function registerBuiltinAgentTools(registry: AgentToolRegistry): void {
   registry.register(httpGetTool)
@@ -187,6 +229,7 @@ export function registerBuiltinAgentTools(registry: AgentToolRegistry): void {
   registry.register(codeRunTool)
   registry.register(dataTableQueryTool)
   registry.register(dataTableWriteTool)
+  registry.register(distillSkillTool)
 }
 
 /** 首批工具名清单（测试/文档参考；编辑器数据源走 IPC→registry.listSpecs 动态取） */
@@ -197,4 +240,5 @@ export const BUILTIN_AGENT_TOOL_NAMES = [
   codeRunTool.name,
   dataTableQueryTool.name,
   dataTableWriteTool.name,
+  distillSkillTool.name,
 ] as const

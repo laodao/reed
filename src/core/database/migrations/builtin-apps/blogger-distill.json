@@ -1,0 +1,177 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 大V博主蒸馏",
+  "description": "输入博主名与文章链接列表 → 逐篇抓取正文并存资产中心 → LLM 判定文章主类别（时政/财经/科普/历史/文学/哲学等）→ 调用技能蒸馏节点把全部文章蒸馏成一个技能包（两遍流水线+审计修复）落盘技能库",
+  "category": "学习",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 40, "y": 240 },
+        "config": {
+          "inputs": [
+            { "key": "bloggerName", "label": "博主名称", "type": "string", "required": true, "placeholder": "如：卢克文工作室" },
+            { "key": "platform", "label": "平台（可选）", "type": "string", "required": false, "placeholder": "公众号 / 知乎 / B站 / 微博…" },
+            {
+              "key": "urls", "label": "文章链接列表", "type": "textarea", "required": true,
+              "help": "一行一个 http(s) 链接，按价值排序；建议 3-8 篇同主题代表作（长文信息量足，蒸馏质量高）",
+              "placeholder": "https://mp.weixin.qq.com/s/xxx\nhttps://zhuanlan.zhihu.com/p/xxx\n…"
+            },
+            { "key": "maxArticles", "label": "最多蒸馏篇数", "type": "number", "required": false, "defaultValue": 8, "help": "超出部分丢弃（取链接列表前 N 篇）" },
+            {
+              "key": "contentType", "label": "蒸馏目标", "type": "select", "required": false, "defaultValue": "auto",
+              "options": [
+                { "label": "自动判断", "value": "auto" },
+                { "label": "方法论 / 知识（框架·决策规则）", "value": "methodology" },
+                { "label": "写作风格（结构·句式·语气套路）", "value": "style" },
+                { "label": "人物人设（表达·决策·心智模型）", "value": "persona" }
+              ],
+              "help": "auto=蒸馏器按语料自行判型；判类节点的结论会作为蒸馏重点注入"
+            },
+            { "key": "nameHint", "label": "技能 id 建议（可选）", "type": "string", "required": false, "placeholder": "kebab-case，如 luke-style；留空由模型起名", "help": "提供后强约束命名（撞库自动加 -2 后缀）" },
+            { "key": "model", "label": "模型", "type": "model", "modelTypes": ["text"], "required": true }
+          ]
+        }
+      },
+      {
+        "id": "split1",
+        "type": "code",
+        "name": "解析链接列表",
+        "position": { "x": 360, "y": 240 },
+        "config": {
+          "language": "js",
+          "inputs": [
+            { "key": "urls", "value": "{{start.urls}}" },
+            { "key": "max", "value": "{{start.maxArticles}}" }
+          ],
+          "code": "const list = String(inputs.urls || '')\n  .split(/\\r?\\n/)\n  .map((s) => s.trim())\n  .filter((s) => /^https?:\\/\\//i.test(s))\nconst n = typeof inputs.max === 'number' ? inputs.max : parseInt(inputs.max, 10)\nconst limit = Number.isFinite(n) && n > 0 ? n : 8\nreturn { list: list.slice(0, limit), found: list.length }"
+        }
+      },
+      {
+        "id": "loop1",
+        "type": "loop",
+        "name": "逐篇抓取",
+        "position": { "x": 680, "y": 240 },
+        "config": {
+          "mode": "foreach",
+          "listExpression": "{{split1.result.list}}",
+          "emptyPolicy": "fail",
+          "errorPolicy": "skip"
+        }
+      },
+      {
+        "id": "extract1",
+        "type": "web-extract",
+        "name": "抓正文",
+        "position": { "x": 1000, "y": 140 },
+        "config": {
+          "url": "{{loop1.item}}",
+          "maxLength": 150000,
+          "maxLinks": 0,
+          "onError": "skip"
+        }
+      },
+      {
+        "id": "guard1",
+        "type": "code",
+        "name": "有效性检查",
+        "position": { "x": 1320, "y": 140 },
+        "config": {
+          "language": "js",
+          "inputs": [
+            { "key": "text", "value": "{{extract1.text}}" },
+            { "key": "title", "value": "{{extract1.title}}" },
+            { "key": "index", "value": "{{loop1.index}}" }
+          ],
+          "code": "const text = String(inputs.text || '')\n// 少于 300 字视为抓取失败/非正文页，不入资产也不进蒸馏\nif (text.length < 300) return { ok: false, title: '', text: '' }\nconst title = String(inputs.title || '').trim() || '文章' + (Number(inputs.index) + 1)\nreturn { ok: true, title, text }"
+        }
+      },
+      {
+        "id": "save1",
+        "type": "save-asset",
+        "name": "正文存资产",
+        "position": { "x": 1640, "y": 140 },
+        "config": {
+          "content": "{{guard1.result.text}}",
+          "kind": "text",
+          "category": "text",
+          "subCategory": "博主蒸馏",
+          "name": "{{start.bloggerName}}-{{guard1.result.title}}",
+          "tags": "博主蒸馏,{{start.bloggerName}}",
+          "description": "来源：{{loop1.item}}（平台：{{start.platform}}）",
+          "enabled": "{{guard1.result.ok}}"
+        }
+      },
+      {
+        "id": "digest1",
+        "type": "code",
+        "name": "汇总语料",
+        "position": { "x": 680, "y": 480 },
+        "config": {
+          "language": "js",
+          "inputs": [
+            { "key": "items", "value": "{{loop1.results}}" },
+            { "key": "blogger", "value": "{{start.bloggerName}}" }
+          ],
+          "code": "const items = Array.isArray(inputs.items) ? inputs.items : []\n// loop 回边收集的是各迭代 loop-back 源节点的完整输出——code 节点形状为 { result: ... }，先解包\nconst unwrap = (x) => (x && x.result && typeof x.result === 'object') ? x.result : x\nconst okItems = items.map(unwrap).filter((x) => x && x.ok && x.text)\nconst digest = okItems.map((x, i) => '【文章' + (i + 1) + '】' + (x.title || '') + '\\n' + String(x.text).slice(0, 1200)).join('\\n\\n')\nconst fullText = okItems.map((x) => '<<<文章：' + (x.title || '') + '>>>\\n' + x.text).join('\\n\\n')\nreturn { digest, fullText, count: okItems.length, total: items.length }"
+        }
+      },
+      {
+        "id": "classify1",
+        "type": "llm-chat",
+        "name": "判定文章类别",
+        "position": { "x": 1000, "y": 480 },
+        "config": {
+          "systemPrompt": "你是内容分类师。判断一位博主/作者的文章主类别，只输出一个 JSON 对象：\n{\"category\": \"时政|财经|科普|历史|文学|哲学|军事|科技|心理|社会|其他 之一\", \"confidence\": 0到1的小数, \"evidence\": \"一句话依据（这些文章在讲什么）\", \"distillFocus\": \"给技能蒸馏器的建议侧重——该类别下最值得蒸馏什么（如：时政类侧重地缘分析框架、因果链构造与叙事节奏；财经类侧重数据论证方式与判断依据；科普类侧重类比解释手法）\"}\n判类看文章主题与思维方式的领域归属，不看写作质量。拿不准选「其他」。",
+          "prompt": "博主：{{start.bloggerName}}（平台：{{start.platform}}）\n\n以下是其 {{digest1.result.count}} 篇文章的开头摘要（每篇截取前 1200 字）：\n\n{{digest1.result.digest}}\n\n请判定该博主的主类别。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "distill1",
+        "type": "skill-distill",
+        "name": "蒸馏成技能",
+        "position": { "x": 1320, "y": 480 },
+        "config": {
+          "sourceText": "{{digest1.result.fullText}}",
+          "contentType": "{{start.contentType}}",
+          "hints": "博主「{{start.bloggerName}}」（{{start.platform}}）共 {{digest1.result.count}} 篇有效文章。文章主类别判定【{{classify1.parsed.category}}】（依据：{{classify1.parsed.evidence}}）。蒸馏侧重：{{classify1.parsed.distillFocus}}",
+          "nameHint": "{{start.nameHint}}",
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "notify1",
+        "type": "app-notify",
+        "name": "完成通知",
+        "position": { "x": 1640, "y": 480 },
+        "config": {
+          "title": "大V博主蒸馏完成",
+          "level": "success",
+          "message": "已为「{{start.bloggerName}}」蒸馏出技能「{{distill1.skillName}}」（{{distill1.skillId}}）；判类【{{classify1.parsed.category}}】；有效文章 {{digest1.result.count}}/{{digest1.result.total}} 篇。打开技能库查看与编辑。"
+        }
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "split1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "split1", "targetNodeId": "loop1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "loop1", "targetNodeId": "extract1", "kind": "loop-body" },
+      { "id": "e4", "sourceNodeId": "extract1", "targetNodeId": "guard1", "kind": "normal" },
+      { "id": "e5", "sourceNodeId": "guard1", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e6", "sourceNodeId": "guard1", "targetNodeId": "loop1", "kind": "loop-back" },
+      { "id": "e7", "sourceNodeId": "loop1", "targetNodeId": "digest1", "kind": "loop-done" },
+      { "id": "e8", "sourceNodeId": "digest1", "targetNodeId": "classify1", "kind": "normal" },
+      { "id": "e9", "sourceNodeId": "classify1", "targetNodeId": "distill1", "kind": "normal" },
+      { "id": "e10", "sourceNodeId": "distill1", "targetNodeId": "notify1", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": { "maxOutputChars": 800000 }
+}

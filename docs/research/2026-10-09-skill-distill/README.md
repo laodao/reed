@@ -39,20 +39,23 @@
 
 | 层 | 文件 |
 |---|---|
-| 类型 | `src/shared/types/skill-distill.types.ts`（3 类蒸馏目标：methodology/style/persona + auto 判型） |
+| 类型 | `src/shared/types/skill-distill.types.ts`（3 类蒸馏目标：methodology/style/persona + auto 判型 + nameHint） |
 | 纯函数 | `src/shared/utils/skill-distill.ts`（清洗/分块/归一/审计；分块按标题→段落→句子硬切三级降级） |
-| 编排 | `src/core/packs/skills/services/skill-distill.service.ts`（内存任务注册表 + 轮询快照，进度阶段 preparing→detecting→noting→assembling→auditing→repairing→writing） |
-| 提示词 | `.../skill-distill.prompts.ts`（判型/逐块笔记/组装/修复四组，按蒸馏类型出维度提纲） |
-| 生产装配 | `.../skill-distill-defaults.ts`（llm→simple-llm；fetchUrl→executeHttpFetch+htmlToMarkdown；writePackage→SkillService.create + references/ 落盘） |
+| 服务（平台层） | `src/core/platform/workflow/skills/skill-distill.{service,prompts,defaults}.ts` + `skill-distill-registry.ts`——createTask（IPC 轮询）与 execute（工作流节点/agent 工具同步用，onProgress + signal 取消）双 API |
+| 工作流节点 | `skill-distill` 节点：类型/目录/表单三处登记（workflow.types / workflow-node-catalog / workflow-node-forms）+ handler `nodes/skill-distill-nodes.ts`（快照进度映射 ctx.emitProgress） |
+| Agent 工具 | `distill_skill`（agent-builtin-tools.ts；write 级 + 人工批准） |
 | IPC | `skill:distill-run/status/list/cancel`（`src/core/packs/skills/handlers/skill.handler.ts`；run 只回 taskId，Promise 不能过 IPC 结构化克隆） |
 | 前端 | `SkillLibrary.vue`「✦ AI 蒸馏」入口 + `SkillDistillDialog.vue`（输入→进度→结果三段，1.5s 自轮询） |
-| 测试 | `tests/unit/shared/utils/skill-distill.spec.ts`（16）+ `tests/unit/core/packs/skills/skill-distill.service.spec.ts`（11） |
+| 工作流模板 | `migrations/builtin-apps/blogger-distill.json`（大V博主蒸馏：code 解析链接 → loop 逐篇 web-extract → guard 有效性检查 → save-asset 存资产 → digest 汇总 → llm-chat jsonMode 判类 → skill-distill 蒸馏 → app-notify 通知） |
+| 测试 | `tests/unit/shared/utils/skill-distill.spec.ts`（16）+ `tests/unit/core/packs/skills/skill-distill.service.spec.ts`（14，含 execute）+ `tests/unit/core/platform/workflow/skill-distill-node.spec.ts`（4） |
 
 ## 四、真机验收记录（2026-10-09）
 
-- 验收脚本 `outputs/_distill-acceptance.cjs`：经 9222 调试口驱动真实 app（真实 LLM 全链路）。
-- 输入：「深度工作四层方法论」约 1100 字（含 4 节方法论 + 反模式段），`contentType: auto`。
-- 结果：52s 完成，detect→notes→assemble 共 3 次 LLM 调用，判型 methodology 正确，审计 0 error 0 warn；
-  产物 `deep-work-four-layer`：SKILL.md 6.1KB（负向触发/使用流程 6 步/决策规则 TOP5/诚实边界）+ 3 张卡
-  （frameworks.md / decision-rules.md / anti-patterns.md）；两次运行重名自动避让（第二次生成 deep-work-rhythm-system）。
-- 技能库可见性（skills.get）+ UI 截图（知识提炼分类过滤）均通过。
+- 技能直蒸（`outputs/_distill-acceptance.cjs`）：经 9222 驱动真实 app，输入"深度工作四层方法论"约 1100 字
+  （contentType=auto）→ 52s 出 `deep-work-four-layer`（判型正确、审计 0 问题、3 卡）；二次运行重名自动避让。
+- **大V博主蒸馏工作流**（`outputs/_blogger-distill-acceptance.cjs`）：阮一峰博客 3 篇周刊 URL → 60s 全流程
+  succeeded：逐篇抓取（1 篇因站点波动被 guard 过滤）→ 2 篇正文存资产中心（subCategory=博主蒸馏）→ 判类 →
+  蒸出 `ruanyifeng-weekly`（nameHint 强约束命名生效；SKILL.md 5.4KB + 4 卡 frameworks/decision-rules/anti-patterns/terms）。
+  语料薄时产物自动声明"本技能仅基于一篇约 360 字的阅读笔记构建，材料极薄"——诚实边界纪律在工作流场景自动生效。
+- 排障记录：electron-vite 增量构建出过陈旧 chunk（主包含 handler、workflow-boot chunk 不含，boot 一致性检查
+  只查 handler→目录方向故未拦截）导致运行时报"未注册的节点类型"——删 `out/` 干净重建解决。
