@@ -2,7 +2,7 @@
   "kind": "the-bot-workflow",
   "formatVersion": 1,
   "name": "[内置] 长文写作",
-  "description": "长文引擎 v2（全新创作/修订双模式）：素材消化选材 → 模式分流（修订模式=按意见整篇修订续版本链）→ 开篇钩子比选 → 主线 → 章节大纲（每章末尾卡点）→ 大纲人工确认（可直接改大纲 JSON）→ 逐章写作（writing-styles 风格卡技能逐章承接前文）→ 合并 → 事实校验（纪实逐条对照素材）→ 编辑评审循环（独立模型五维评分）→ 合流 → libai 去AI味（独立模型）→ 终稿人工确认（可直接改稿，驳回=带意见重跑续版本链）→ 备选标题 → 入资产（versioned 版本链，资产中心可查历史/回滚）",
+  "description": "长文引擎 v2（全新创作/修订双模式）：素材消化选材 → 模式分流（修订模式=按意见整篇修订续版本链）→ 开篇钩子比选 → 主线 → 章节大纲（每章末尾卡点）→ 大纲人工确认（可直接改大纲 JSON）→ 逐章写作（writing-styles 风格卡技能逐章承接前文）→ 合并 → 事实校验（纪实逐条对照素材）→ 编辑评审循环（独立模型五维评分）→ 合流 → libai 去AI味（独立模型）→ 终稿事实审计（穷举时间/数字/人物/机构/事件，逐条对照素材判 一致/有出入/素材未载，报告呈给用户）→ 终稿人工确认（可直接改稿，驳回=带意见重跑续版本链）→ 备选标题 → 入资产（versioned 版本链，资产中心可查历史/回滚）",
   "category": "内容创作",
   "graph": {
     "version": 1,
@@ -437,7 +437,7 @@
           "y": 320
         },
         "config": {
-          "systemPrompt": "你是事实校验员。\n【模式=nonfiction】把正文中的可核查断言（日期/数字/金额/人名/机构/地名/引语/排序）逐条抽取，与素材逐条对照：\n- 每条给 verdict：一致 / 偏差（写明素材原文与正确值）/ 素材未载（正文有而素材没有的具体断言）；\n- corrected 给出修正后的全文（markdown）：只改错误处——偏差改成与素材一致；「素材未载」的具体断言改为一般性表述或删除；其余一字不动；\n- 引语必须逐字与素材一致。\n【模式=fiction】无需校验：输出 {\"mode\":\"fiction\",\"checked\":null,\"issues\":[],\"corrected\":\"\"}。\n只输出 JSON：{\"mode\":\"\",\"checked\":{\"total\":0,\"matched\":0,\"deviated\":0,\"missing\":0},\"issues\":[{\"claim\":\"\",\"inDraft\":\"\",\"inMaterial\":\"\",\"verdict\":\"\",\"fix\":\"\"}],\"corrected\":\"\"}",
+          "systemPrompt": "你是事实校验员。\n【模式=nonfiction】把正文中的可核查断言（日期/数字/金额/人名/机构/地名/引语/排序）逐条抽取，与素材逐条对照：\n- 每条给 verdict：一致 / 偏差（写明素材原文与正确值）/ 素材未载（正文有而素材没有的具体断言）；\n- corrected 给出修正后的全文（markdown）：只改错误处——偏差改成与素材一致；「素材未载」的具体断言改为一般性表述或删除；其余一字不动；\n- 引语必须逐字与素材一致。\n【模式=fiction】无需校验：输出 {\"mode\":\"fiction\",\"checked\":null,\"issues\":[],\"corrected\":\"\"}。\n只输出 JSON：{\"mode\":\"\",\"checked\":{\"total\":0,\"matched\":0,\"deviated\":0,\"missing\":0},\"issues\":[{\"claim\":\"\",\"inDraft\":\"\",\"inMaterial\":\"\",\"verdict\":\"\",\"fix\":\"\"}],\"corrected\":\"\"}\n穷举纪律：先通读全文把所有可核查断言列成完整清单（时间/日期、数字、人名、机构、期刊、地名、事件断言），再逐条判定——漏一条即失职；拿不准的一律判「素材未载」而不是放过。",
           "prompt": "写作模式：{{modePick.result.mode}}\n素材全文：\n{{start.material}}\n\n正文全文：\n{{concat1.result}}\n\n请执行校验并输出 JSON。",
           "jsonMode": true,
           "maxTokens": 32768,
@@ -887,11 +887,11 @@
           "y": 300
         },
         "config": {
-          "payload": "{{pack.result.final}}",
+          "payload": "{{auditMd.result.payload}}",
           "editableFields": [
             {
               "key": "content",
-              "label": "终稿全文（可直接修改，修改后保存修改版）",
+              "label": "终稿全文（可直接修改，修改后保存修改版；审核报告见上方卡片内容）",
               "type": "string"
             }
           ],
@@ -932,6 +932,46 @@
         },
         "config": {
           "content": "终稿已驳回。请在同一会话再次运行本应用：填「基底资产 ID」（上次运行产出的资产 ID）+「已有成稿」+「修改意见」，修订内容将作为该资产的新版本保存（历史版本可回滚）。"
+        }
+      },
+      {
+        "id": "finalAudit",
+        "type": "llm-chat",
+        "name": "终稿事实审计（逐条穷举）",
+        "position": {
+          "x": 3660,
+          "y": 140
+        },
+        "config": {
+          "systemPrompt": "你是事实审计员，对终稿做穷举式事实清点。分两步：\n第一步 通读全文，把所有可核查断言逐条列成清单：时间/日期、数字（引用量/百分比/金额/人数/期数）、人名（含外文原名）、机构/公司/期刊、地名、事件断言（谁在何时做了什么）——一条不许漏；\n第二步 逐条对照素材判定：\n- verified：与素材一致（evidence 写素材依据要点）；\n- deviated：与素材有出入（evidence 写素材原文与正确表述）；\n- unverified：素材未载（无法从素材核验；evidence 给出建议：补口径「据××报道」或删除）。\n只输出 JSON：{\"items\":[{\"type\":\"时间|数字|人物|机构|事件\",\"claim\":\"\",\"verdict\":\"verified|deviated|unverified\",\"evidence\":\"\"}],\"stats\":{\"total\":0,\"verified\":0,\"deviated\":0,\"unverified\":0}}",
+          "prompt": "终稿全文：\n{{pack.result.final}}\n\n素材全文：\n{{start.material}}\n\n请执行穷举审计并输出 JSON。",
+          "jsonMode": true,
+          "maxTokens": 16384,
+          "providerConfigId": "{{start.libaiModel.providerConfigId}}",
+          "modelId": "{{start.libaiModel.modelId}}"
+        }
+      },
+      {
+        "id": "auditMd",
+        "type": "code",
+        "name": "审计报告拼装",
+        "position": {
+          "x": 3660,
+          "y": 320
+        },
+        "config": {
+          "language": "js",
+          "inputs": [
+            {
+              "key": "audit",
+              "value": "{{finalAudit.parsed}}"
+            },
+            {
+              "key": "final",
+              "value": "{{pack.result.final}}"
+            }
+          ],
+          "code": "const audit = inputs.audit && typeof inputs.audit === 'object' ? inputs.audit : { items: [], stats: { total: 0, verified: 0, deviated: 0, unverified: 0 } };\nconst items = Array.isArray(audit.items) ? audit.items : [];\nconst st = audit.stats || {};\nconst esc = function (s) { return String(s == null ? '' : s).replace(/\\|/g, '\\|').replace(/\n/g, ' '); };\nconst row = function (v, mark) { return items.filter(function (x) { return x.verdict === v; }).map(function (x, i) { return '| ' + mark + (i + 1) + ' | ' + esc(x.type) + ' | ' + esc(x.claim) + ' | ' + esc(x.evidence) + ' |'; }).join('\n'); };\nlet md = '**核对 ' + (st.total ?? items.length) + ' 条：一致 ' + (st.verified ?? 0) + ' / 有出入 ' + (st.deviated ?? 0) + ' / 素材未载 ' + (st.unverified ?? 0) + '。**\n\n';\nif (items.some(function (x) { return x.verdict === 'deviated'; })) {\n  md += '### ⚠️ 有出入（需修正）\n\n| # | 类型 | 断言 | 素材依据/正确表述 |\n|---|---|---|---|\n' + row('deviated', 'D') + '\n\n';\n}\nif (items.some(function (x) { return x.verdict === 'unverified'; })) {\n  md += '### ❓ 素材未载（请重点过目，可改稿或补口径）\n\n| # | 类型 | 断言 | 建议 |\n|---|---|---|---|\n' + row('unverified', 'U') + '\n\n';\n}\nmd += '### ✅ 与素材一致\n\n| # | 类型 | 断言 | 依据 |\n|---|---|---|---|\n' + (row('verified', 'V') || '| — | — |（无）| — |');\nconst finalText = String(inputs.final || '');\nconst payload = finalText + '\n\n---\n\n## 📋 事实审核报告（模型逐条核对素材；有出入/未载条目请重点过目，可直接改稿后保存）\n\n' + md;\nreturn { payload, report: md, stats: st };"
         }
       }
     ],
@@ -1107,12 +1147,6 @@
         "kind": "normal"
       },
       {
-        "id": "e_pack_finalReview_normal",
-        "sourceNodeId": "pack",
-        "targetNodeId": "finalReview",
-        "kind": "normal"
-      },
-      {
         "id": "e_finalReview_finalPick_approve",
         "sourceNodeId": "finalReview",
         "targetNodeId": "finalPick",
@@ -1160,6 +1194,24 @@
         "id": "e_save1_end_normal",
         "sourceNodeId": "save1",
         "targetNodeId": "end",
+        "kind": "normal"
+      },
+      {
+        "id": "e_pack_finalAudit_normal",
+        "sourceNodeId": "pack",
+        "targetNodeId": "finalAudit",
+        "kind": "normal"
+      },
+      {
+        "id": "e_finalAudit_auditMd_normal",
+        "sourceNodeId": "finalAudit",
+        "targetNodeId": "auditMd",
+        "kind": "normal"
+      },
+      {
+        "id": "e_auditMd_finalReview_normal",
+        "sourceNodeId": "auditMd",
+        "targetNodeId": "finalReview",
         "kind": "normal"
       }
     ]
