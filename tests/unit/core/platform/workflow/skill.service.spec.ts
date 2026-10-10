@@ -91,6 +91,20 @@ describe('技能服务', () => {
       expect(() => svc.create({ name: 'dup-skill', description: 'x', body: 'b' })).toThrow(/已存在/)
     })
 
+    it('list 按创建时间倒序：最新用户技能在前，内置（无 createdAt）排其后', async () => {
+      svc.create({ name: 'old-skill', description: 'x', body: 'b' })
+      await new Promise(r => setTimeout(r, 60))
+      svc.create({ name: 'new-skill', description: 'x', body: 'b' })
+      const list = svc.list()
+      const ids = list.map(s => s.id)
+      expect(ids.indexOf('new-skill')).toBeLessThan(ids.indexOf('old-skill'))
+      expect(ids.indexOf('old-skill')).toBeLessThan(ids.indexOf('short-video-script'))
+      // 用户技能带 createdAt（ISO），内置不带
+      const newer = list.find(s => s.id === 'new-skill')!
+      expect(newer.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+      expect(list.find(s => s.id === 'short-video-script')!.createdAt).toBeUndefined()
+    })
+
     it('update：修改内容写回；内置技能不可更新', () => {
       svc.create({ name: 'upd-skill', description: '旧描述', body: '旧正文' })
       const updated = svc.update('upd-skill', { description: '新描述', body: '新正文' })
