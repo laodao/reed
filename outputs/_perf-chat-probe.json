@@ -1,0 +1,59 @@
+{
+  "runs": [
+    {
+      "marks": {
+        "routeReady": 407,
+        "navToRoute": 407,
+        "navStartToAfterEach": 20,
+        "navStartToPainted": 73,
+        "toMessagesPainted": 1152
+      },
+      "messageCount": 22,
+      "bubbleCount": 22,
+      "mermaidWaiting": 3,
+      "longTasks": [
+        56,
+        174,
+        146,
+        627
+      ],
+      "longTaskTotal": 1003
+    },
+    {
+      "marks": {
+        "routeReady": 145,
+        "navToRoute": 145,
+        "navStartToAfterEach": 0,
+        "navStartToPainted": 122,
+        "toMessagesPainted": 197
+      },
+      "messageCount": 22,
+      "bubbleCount": 22,
+      "mermaidWaiting": 0,
+      "longTasks": [
+        111
+      ],
+      "longTaskTotal": 111
+    },
+    {
+      "marks": {
+        "routeReady": 133,
+        "navToRoute": 133,
+        "navStartToAfterEach": 0,
+        "navStartToPainted": 106,
+        "toMessagesPainted": 172
+      },
+      "messageCount": 22,
+      "bubbleCount": 22,
+      "mermaidWaiting": 0,
+      "longTasks": [
+        93
+      ],
+      "longTaskTotal": 93
+    }
+  ],
+  "memory": {
+    "usedJSHeapMB": 58,
+    "totalJSHeapMB": 73
+  }
+}

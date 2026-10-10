@@ -1,0 +1,38 @@
+{
+  "events": [
+    {
+      "kind": "messages",
+      "at": 15,
+      "n": 0
+    },
+    {
+      "kind": "list",
+      "at": 330
+    },
+    {
+      "kind": "messages",
+      "at": 699,
+      "n": 22
+    },
+    {
+      "kind": "mermaid",
+      "at": 699,
+      "status": "pending,pending,pending",
+      "svg": 0
+    }
+  ],
+  "longTasks": [
+    {
+      "start": 61,
+      "dur": 134
+    },
+    {
+      "start": 199,
+      "dur": 127
+    },
+    {
+      "start": 330,
+      "dur": 334
+    }
+  ]
+}

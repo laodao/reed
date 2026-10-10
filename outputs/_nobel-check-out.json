@@ -1,0 +1,106 @@
+{
+ "session": {
+  "id": "apps_1791542599274_mgtpvomro",
+  "userId": "local-default-user",
+  "appId": "builtin_app_topic_research",
+  "title": "会话 2026/10/9",
+  "status": "running",
+  "lastRunId": "wfrun_1791542599310_dgwlsitoj",
+  "lastStartInputs": {
+   "topic": "2026年诺贝尔生理学或医学奖（光遗传学）：获奖成果、发现历程、原理、应用与争议",
+   "purpose": "article-writing",
+   "focus": [
+    "背景与来龙去脉",
+    "关键人物与组织",
+    "运作机制与手法",
+    "关键数据与规模",
+    "时间线与关键事件",
+    "各方说法与争议",
+    "影响与后续"
+   ],
+   "depth": "deep",
+   "maxRounds": 6,
+   "outputSpecs": [
+    "timeline",
+    "key-data",
+    "actors",
+    "cases",
+    "quotes",
+    "matrix",
+    "counterpoint",
+    "cited-links"
+   ],
+   "outputRequirements": "- 用途=写深度长文的素材库：优先可入文的具体事实、案例经过、直接引语（中英文报道都要）\n- 必须覆盖：三位获奖人（Karl Deisseroth / Peter Hegemann / Georg Nagel）各自贡献与分工；光遗传学原理（微生物视蛋白→ChR1/ChR2→神经元光控）；2005 年前后的关键技术突破与关键论文；应用版图（神经环路研究、视网膜疾病临床试验、帕金森、精神医学）与产业转化；争议线（专利与优先权纠纷、华人科学家潘卓华的落选争议、Ernst Bamberg 未获奖的讨论、此前多年诺贝尔奖预测榜）；技术从发现到获奖的时间跨度与诺贝尔奖「延迟认可」现象\n- 中国视角：中国媒体报道角度、国内光遗传学研究团队与进展要有\n- 数据带口径：临床试验期数与人数、论文引用量级、产业金额、获奖时间线等\n- 时效：今天 2026-10-09，公告 2026-10-05，收集获奖后反应（获奖人访谈、学界评论、颁奖仪式安排）",
+   "referenceSample": "〔仅对标结构与密度，不作事实来源、不照抄结论〕目标报告形态：\n1 执行摘要（核心发现编号+总体可信度）；2 来龙去脉（背景叙述）；3 完整时间线表格（日期|事件|数据|来源层级）；\n4 人物与组织名录表（角色|贡献|现状|来源层级）；5 运作机制拆解（条目式带来源标注）；6 关键数据表（指标|数据|口径|来源层级）；\n7 各方说法与争议对照；8 案例与细节素材库（编号案例+直接引语+出处层级）；9 局限与待核验（缺口逐项）；\n10 参考来源（官方机构/官方媒体/互联网媒体/互联网搜索分层，带链接与采集时间）。\n密度标准：每节都有具体时间/人名/数字/引语，无空泛概括；来源四级标注逐条落实。",
+   "researcherModel": {
+    "providerConfigId": "pc_muuwsf3q_kzesid6qr",
+    "modelId": "qwen3.8-max"
+   },
+   "evaluatorModel": {
+    "providerConfigId": "pc_mmyd3u5b_hkf5odex3",
+    "modelId": "deepseek-v4-pro"
+   }
+  },
+  "createdAt": "2026-10-09T10:43:19.274Z",
+  "updatedAt": "2026-10-09T10:43:19.321Z"
+ },
+ "nCards": 35,
+ "last": [
+  {
+   "card": "node-status",
+   "node": "r1",
+   "status": "succeeded",
+   "at": "2026-10-09T11:24:10.551Z",
+   "snippet": ""
+  },
+  {
+   "card": "node-status",
+   "node": "e1",
+   "status": "running",
+   "at": "2026-10-09T11:24:10.561Z",
+   "snippet": ""
+  },
+  {
+   "card": "node-status",
+   "node": "e1",
+   "status": "succeeded",
+   "at": "2026-10-09T11:26:05.586Z",
+   "snippet": ""
+  },
+  {
+   "card": "node-status",
+   "node": "pack1",
+   "status": "running",
+   "at": "2026-10-09T11:26:05.594Z",
+   "snippet": ""
+  },
+  {
+   "card": "node-status",
+   "node": "pack1",
+   "status": "succeeded",
+   "at": "2026-10-09T11:26:05.595Z",
+   "snippet": ""
+  },
+  {
+   "card": "node-status",
+   "node": "r1",
+   "status": "running",
+   "at": "2026-10-09T11:26:05.625Z",
+   "snippet": ""
+  },
+  {
+   "card": "node-status",
+   "node": "r1",
+   "status": "succeeded",
+   "at": "2026-10-09T11:32:22.046Z",
+   "snippet": ""
+  },
+  {
+   "card": "node-status",
+   "node": "e1",
+   "status": "running",
+   "at": "2026-10-09T11:32:22.053Z",
+   "snippet": ""
+  }
+ ]
+}

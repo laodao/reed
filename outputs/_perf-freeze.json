@@ -1,0 +1,15 @@
+{
+  "frames": [
+    {
+      "at": 6244,
+      "gap": 6244
+    }
+  ],
+  "events": [
+    {
+      "kind": "navItemVisible",
+      "at": 6254
+    }
+  ],
+  "now": 6254
+}

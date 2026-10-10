@@ -1,0 +1,65 @@
+{
+  "route": "/chat",
+  "rectCallers": [
+    {
+      "caller": "(anonymous) @ index-DkApR2fy.js:24161  <  callWithErrorHandling @ index-DkApR2fy.js:2144  <  callWithAsyncErrorHandling @ index-DkApR2fy.js:2151",
+      "ms": 353
+    },
+    {
+      "caller": "addHtmlSpan @ mermaid.core-9uaLbWUz.js:10353  <  (anonymous) @ mermaid.core-9uaLbWUz.js:10489  <  (root) @ :0",
+      "ms": 44
+    },
+    {
+      "caller": "(anonymous) @ mermaid.core-9uaLbWUz.js:17148  <  (root) @ :0",
+      "ms": 16
+    },
+    {
+      "caller": "(anonymous) @ mermaid.core-9uaLbWUz.js:17565  <  (anonymous) @ dagre-KV5264BT-DNFHcvhm.js:582  <  (anonymous) @ dagre-KV5264BT-DNFHcvhm.js:397",
+      "ms": 12
+    },
+    {
+      "caller": "(anonymous) @ mermaid.core-9uaLbWUz.js:11552  <  (root) @ :0",
+      "ms": 4
+    },
+    {
+      "caller": "(anonymous) @ chunk-EDXVE4YY-DMS2g7F-.js:10  <  (anonymous) @ chunk-EDXVE4YY-DMS2g7F-.js:2  <  (anonymous) @ flowDiagram-DWJPFMVM-PwVLZlZa.js:980",
+      "ms": 3
+    },
+    {
+      "caller": "ne @ index-DkApR2fy.js:20223  <  oe @ index-DkApR2fy.js:20463  <  en @ index-DkApR2fy.js:20495",
+      "ms": 2
+    },
+    {
+      "caller": "ne @ index-DkApR2fy.js:20223  <  Gt @ index-DkApR2fy.js:20411  <  vt @ index-DkApR2fy.js:20415",
+      "ms": 2
+    },
+    {
+      "caller": "(anonymous) @ mermaid.core-9uaLbWUz.js:11633  <  drawRect @ mermaid.core-9uaLbWUz.js:13822  <  (root) @ :0",
+      "ms": 2
+    },
+    {
+      "caller": "ne @ index-DkApR2fy.js:20223  <  Pe @ index-DkApR2fy.js:20230  <  forceUpdate @ index-DkApR2fy.js:20655",
+      "ms": 1
+    },
+    {
+      "caller": "ne @ index-DkApR2fy.js:20223  <  pn @ index-DkApR2fy.js:20585  <  forceUpdate @ index-DkApR2fy.js:20655",
+      "ms": 1
+    },
+    {
+      "caller": "ne @ index-DkApR2fy.js:20223  <  oe @ index-DkApR2fy.js:20463  <  tn @ index-DkApR2fy.js:20536",
+      "ms": 1
+    },
+    {
+      "caller": "ne @ index-DkApR2fy.js:20223  <  Re @ index-DkApR2fy.js:20379  <  Xt @ index-DkApR2fy.js:20382",
+      "ms": 1
+    },
+    {
+      "caller": "ne @ index-DkApR2fy.js:20223  <  oe @ index-DkApR2fy.js:20463  <  sn @ index-DkApR2fy.js:20560",
+      "ms": 1
+    },
+    {
+      "caller": "(anonymous) @ mermaid.core-9uaLbWUz.js:11819  <  (root) @ :0",
+      "ms": 1
+    }
+  ]
+}

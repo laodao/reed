@@ -1,0 +1,73 @@
+{
+  "launchToWindowMs": 2944,
+  "domToReadyMs": 6422,
+  "launchToReadyMs": 9493,
+  "bootTrace": [
+    "[boot-trace] DatabaseManager.runMultiTenantMigrations 总耗时 228ms（0 段 >= 100ms） {\"scope\":\"DatabaseManager.runMultiTenantMigrations\",\"totalMs\":228,\"slow\":[],\"all\":[\"ensureUsersTable=2ms\",\"ensureUserIdColumns=94ms\",\"ensureAssetBindingSourceType=2ms\"]}",
+    "[DatabaseManager] TypeORM DataSource 初始化完成",
+    "[boot-trace] DatabaseManager.initTypeOrmDataSource 总耗时 297ms（2 段 >= 50ms） {\"scope\":\"DatabaseManager.initTypeOrmDataSource\",\"totalMs\":297,\"slow\":[\"createDataSource=54ms@54\",\"runMultiTenantMigrations=228ms@282\"],\"all\":[\"createDataSource=54ms\",\"runMultiTenantMigrations=228ms\",\"checkSchemaDrift=15ms\"]}",
+    "[DatabaseManager] 数据库初始化完成: C:\\Users\\daoge\\the-bot\\the_bot.db",
+    "[boot-trace] DatabaseManager.initialize 总耗时 384ms（1 段 >= 50ms） {\"scope\":\"DatabaseManager.initialize\",\"totalMs\":384,\"slow\":[\"initTypeOrmDataSource=297ms@318\"],\"all\":[\"dataPathService=1ms\",\"openDatabase=12ms\",\"initTables=8ms\",\"initTypeOrmDataSource=297ms\",\"initRepositories=26ms\",\"portraitTemplateSeed=3ms\",\"initializeLanceDB=26ms\",\"initBuiltinRoles=4ms\",\"initGlobalSettings=0ms\",\"initDictionary=3ms\",\"migrateAssetPathsToRelative=4ms\"]}",
+    "数据库初始化成功",
+    "[DataSourceHandlers] 数据源 IPC 处理器已注册",
+    "[boot-trace] main.boot 总耗时 1770ms（3 段 >= 100ms） {\"scope\":\"main.boot\",\"totalMs\":1770,\"slow\":[\"initIpcHandlers=385ms@394\",\"packSubsystem=566ms@960\",\"workflowSubsystem=756ms@1716\"],\"all\":[\"platformServices=9ms\",\"initIpcHandlers=385ms\",\"packSubsystem=566ms\",\"workflowSubsystem=756ms\",\"createWindow=54ms\"]}"
+  ],
+  "perfNow": {
+    "bootTrace": [
+      {
+        "label": "createApp",
+        "ms": 1,
+        "atMs": 2
+      },
+      {
+        "label": "installBuiltinPackages",
+        "ms": 8,
+        "atMs": 10
+      },
+      {
+        "label": "installElementPlus",
+        "ms": 4,
+        "atMs": 14
+      },
+      {
+        "label": "registerIcons",
+        "ms": 0,
+        "atMs": 14
+      },
+      {
+        "label": "loadSettings",
+        "ms": 24,
+        "atMs": 38
+      },
+      {
+        "label": "initThemeMode",
+        "ms": 14,
+        "atMs": 52
+      },
+      {
+        "label": "mount",
+        "ms": 53,
+        "atMs": 105
+      }
+    ],
+    "now": 6690,
+    "domContentLoaded": 244,
+    "loadEvent": 244,
+    "firstPaint": 295,
+    "firstContentfulPaint": 0
+  },
+  "logs": [
+    {
+      "dt": 32,
+      "text": "%cElectron Security Warning (Disabled webSecurity) font-weight: bold; This renderer process has \"webSecurity\" disabled. This\n  exposes users of this app to severe security risks.\n\nFor more information"
+    },
+    {
+      "dt": 33,
+      "text": "%cElectron Security Warning (allowRunningInsecureContent) font-weight: bold; This renderer process has \"allowRunningInsecureContent\"\n  enabled. This exposes users of this app to severe security risks."
+    },
+    {
+      "dt": 261,
+      "text": "[boot-trace] renderer.mountApp 总耗时 105ms（1 段 >= 50ms） {\"scope\":\"renderer.mountApp\",\"totalMs\":105,\"slow\":[\"mount=53ms@105\"],\"all\":[\"createApp=1ms\",\"installBuiltinPackages=8ms\",\"installElementPlus=4ms\","
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+=== 信息搜集真实联网验收：中国高铁营业里程历年数据 ===
+
+免 Key 引擎清单：baidu、bing-web、google-web
+[bing-web] "中国高铁 营业里程 4.8万公里" → 8 条结果
+[bing-web] "全国铁路 营业里程 高铁 4.8万公里" → 8 条结果
+[baidu] "中国高铁 营业里程 4.8万公里" → 0 条结果
+[baidu] "全国铁路 营业里程 高铁 4.8万公里" → 0 条结果
+[GoogleWebSearchEngine] 搜索失败: TypeError: fetch failed
+    at node:internal/deps/undici/undici:13510:13
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async GoogleWebSearchEngine.search (C:\Users\daoge\code\project\the-bot\src\core\platform\providers\search\google-web-search-engine.ts:32:24)
+    at async searchAll (C:\Users\daoge\code\project\the-bot\scripts\ic-acceptance.ts:51:22)
+    at async main (C:\Users\daoge\code\project\the-bot\scripts\ic-acceptance.ts:73:15) {
+  [cause]: ConnectTimeoutError: Connect Timeout Error (attempted address: www.google.com:443, timeout: 10000ms)
+      at onConnectTimeout (node:internal/deps/undici/undici:2602:28)
+      at Immediate._onImmediate (node:internal/deps/undici/undici:2568:35)
+      at process.processImmediate (node:internal/timers:485:21) {
+    code: 'UND_ERR_CONNECT_TIMEOUT'
+  }
+}
+[google-web] "中国高铁 营业里程 4.8万公里" 失败：搜索失败: fetch failed
+[GoogleWebSearchEngine] 搜索失败: TypeError: fetch failed
+    at node:internal/deps/undici/undici:13510:13
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async GoogleWebSearchEngine.search (C:\Users\daoge\code\project\the-bot\src\core\platform\providers\search\google-web-search-engine.ts:32:24)
+    at async searchAll (C:\Users\daoge\code\project\the-bot\scripts\ic-acceptance.ts:51:22)
+    at async main (C:\Users\daoge\code\project\the-bot\scripts\ic-acceptance.ts:73:15) {
+  [cause]: ConnectTimeoutError: Connect Timeout Error (attempted address: www.google.com:443, timeout: 10000ms)
+      at onConnectTimeout (node:internal/deps/undici/undici:2602:28)
+      at Immediate._onImmediate (node:internal/deps/undici/undici:2568:35)
+      at process.processImmediate (node:internal/timers:485:21) {
+    code: 'UND_ERR_CONNECT_TIMEOUT'
+  }
+}
+[google-web] "全国铁路 营业里程 高铁 4.8万公里" 失败：搜索失败: fetch failed
+
+搜索去重后候选：0（原始 16；剔除首页形态 8、标题跑题 8）
+
+有效正文：0/0（跑题剔除 0）
+
+=== 验收结论 ===
+✕ 没有任何有效正文——搜索或抓取链路不可用，需要排查引擎配置/网络环境

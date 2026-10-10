@@ -1,0 +1,60 @@
+{
+  "generatedAt": "2026-09-17T00:39:05.884Z",
+  "launchToFirstFrameMs": 3730,
+  "firstFrameBytes": 331751,
+  "launchToInteractiveMs": 3749,
+  "pageInfo": {
+    "performanceNowMs": 1107,
+    "domContentLoadedMs": 216,
+    "firstPaintMs": 265,
+    "mountTrace": [
+      {
+        "label": "createApp",
+        "ms": 2,
+        "atMs": 2
+      },
+      {
+        "label": "installBuiltinPackages",
+        "ms": 18,
+        "atMs": 20
+      },
+      {
+        "label": "installElementPlus",
+        "ms": 2,
+        "atMs": 22
+      },
+      {
+        "label": "registerIcons",
+        "ms": 0,
+        "atMs": 22
+      },
+      {
+        "label": "loadSettings",
+        "ms": 17,
+        "atMs": 39
+      },
+      {
+        "label": "initThemeMode",
+        "ms": 27,
+        "atMs": 66
+      },
+      {
+        "label": "mount",
+        "ms": 52,
+        "atMs": 118
+      }
+    ]
+  },
+  "bootTrace": [
+    "[boot-trace] DatabaseManager.runMultiTenantMigrations 总耗时 273ms（1 段 >= 100ms） {\"scope\":\"DatabaseManager.runMultiTenantMigrations\",\"totalMs\":273,\"slow\":[\"ensureUserIdColumns=120ms@122\"],\"all\":[\"ensureUsersTable=2ms\",\"ensureUserIdColumns=120ms\",\"ensureAssetBindingSourceType=3ms\"]}",
+    "[boot-trace] DatabaseManager.initTypeOrmDataSource 总耗时 353ms（2 段 >= 50ms） {\"scope\":\"DatabaseManager.initTypeOrmDataSource\",\"totalMs\":353,\"slow\":[\"createDataSource=64ms@64\",\"runMultiTenantMigrations=274ms@338\"],\"all\":[\"createDataSource=64ms\",\"runMultiTenantMigrations=274ms\",\"checkSchemaDrift=15ms\"]}",
+    "[boot-trace] DatabaseManager.initialize 总耗时 469ms（1 段 >= 50ms） {\"scope\":\"DatabaseManager.initialize\",\"totalMs\":469,\"slow\":[\"initTypeOrmDataSource=354ms@384\"],\"all\":[\"dataPathService=3ms\",\"openDatabase=18ms\",\"initTables=9ms\",\"initTypeOrmDataSource=354ms\",\"initRepositories=23ms\",\"portraitTemplateSeed=6ms\",\"initializeLanceDB=39ms\",\"initBuiltinRoles=5ms\",\"initGlobalSettings=1ms\",\"initDictionary=4ms\",\"migrateAssetPathsToRelative=6ms\"]}",
+    "[boot-trace] main.initIpcHandlers 总耗时 2ms（0 段 >= 20ms） {\"scope\":\"main.initIpcHandlers\",\"totalMs\":2,\"slow\":[],\"all\":[\"settings=0ms\",\"apiKey=0ms\",\"providerConfig=0ms\",\"image=0ms\",\"file=0ms\",\"translation=1ms\",\"dataPath=0ms\",\"export=0ms\",\"searchEngine=0ms\",\"tool=0ms\",\"email=0ms\",\"infoSource=0ms\",\"favicon=0ms\",\"oss=0ms\",\"dataSource=1ms\",\"pack=0ms\",\"eventAdmin=0ms\",\"notification=0ms\"]}",
+    "[boot-trace] PackKernel.init 总耗时 18ms（0 段 >= 30ms） {\"scope\":\"PackKernel.init\",\"totalMs\":18,\"slow\":[],\"all\":[\"register:skills=0ms\",\"register:diary=1ms\",\"register:portrait=0ms\",\"register:chat=0ms\",\"register:voice-design=0ms\",\"register:longwriting=3ms\",\"register:episode-production=4ms\",\"register:workflow=1ms\",\"register:app=0ms\",\"register:knowledge-base=1ms\",\"register:asset-center=0ms\",\"register:domain-learning=1ms\",\"materializeSnapshot=4ms\",\"resolveEnabled:skills=1ms\",\"resolveEnabled:diary=0ms\",\"resolveEnabled:portrait=0ms\",\"resolveEnabled:chat=0ms\",\"resolveEnabled:voice-design=0ms\",\"resolveEnabled:longwriting=0ms\",\"resolveEnabled:episode-production=1ms\",\"resolveEnabled:workflow=0ms\",\"resolveEnabled:app=0ms\",\"resolveEnabled:knowledge-base=0ms\",\"resolveEnabled:asset-center=0ms\",\"resolveEnabled:domain-learning=0ms\",\"bindGuard=0ms\"]}",
+    "[boot-trace] WorkflowBoot.agentHarness 总耗时 27ms（0 段 >= 20ms） {\"scope\":\"WorkflowBoot.agentHarness\",\"totalMs\":27,\"slow\":[],\"all\":[\"import:toolRegistry=2ms\",\"import:providerAdapter=2ms\",\"import:agentBuiltinTools=2ms\",\"import:agentLoopNode=0ms\",\"registerBuiltinAgentTools=6ms\",\"import:localCapabilityTools=3ms\",\"providerAdapter=2ms\",\"nodeAndCustomToolBridges=10ms\"]}",
+    "[boot-trace] WorkflowBoot.dataSourceAssembly 总耗时 8ms（0 段 >= 20ms） {\"scope\":\"WorkflowBoot.dataSourceAssembly\",\"totalMs\":8,\"slow\":[],\"all\":[\"import:variableData=0ms\",\"import:datasourceService=0ms\",\"import:datasourceExecutor=0ms\",\"import:pgDriver=3ms\",\"import:mysqlDriver=2ms\",\"import:mssqlDriver=2ms\",\"import:clickhouseDriver=1ms\",\"registerDrivers=0ms\"]}",
+    "[boot-trace] WorkflowBoot.assetAssembly 总耗时 4ms（0 段 >= 20ms） {\"scope\":\"WorkflowBoot.assetAssembly\",\"totalMs\":4,\"slow\":[],\"all\":[\"import:assets=3ms\",\"import:webCollect=0ms\",\"import:sourceLink=1ms\",\"construct=0ms\",\"register=0ms\"]}",
+    "[boot-trace] WorkflowBoot.init 总耗时 243ms（1 段 >= 30ms） {\"scope\":\"WorkflowBoot.init\",\"totalMs\":243,\"slow\":[\"m3AgentRuntime=148ms@224\"],\"all\":[\"eventBus=3ms\",\"nodeRegistry=4ms\",\"engine=4ms\",\"recoverOnBoot=7ms\",\"schedulerStart=10ms\",\"appServicesStart=0ms\",\"appServices=3ms\",\"toolAndSkillServices=6ms\",\"agentHarness=27ms\",\"assetService=12ms\",\"m3AgentRuntime=148ms\",\"systemAgentTools=19ms\"]}",
+    "[boot-trace] main.boot 总耗时 1421ms（3 段 >= 100ms） {\"scope\":\"main.boot\",\"totalMs\":1421,\"slow\":[\"database=470ms@482\",\"import:builtinPacks=613ms@1103\",\"workflowSubsystem=247ms@1370\"],\"all\":[\"platformServices=12ms\",\"database=470ms\",\"beforeIpcHandlers=0ms\",\"afterIpcHandlers=2ms\",\"initIpcHandlers=0ms\",\"import:voiceCloneScheduler=4ms\",\"voiceCloneScheduler=2ms\",\"import:packKernel=0ms\",\"import:builtinPacks=613ms\",\"packSubsystem=19ms\",\"documentTools=1ms\",\"import:workflowBoot=0ms\",\"workflowSubsystem=247ms\",\"createWindow=51ms\"]}"
+  ]
+}

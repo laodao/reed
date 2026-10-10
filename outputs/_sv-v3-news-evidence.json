@@ -1,0 +1,226 @@
+{
+  "runId": "wfrun_1789603802212_n13tbu6tf",
+  "outline": "## 《8月工业增速回暖，这些矛盾数据藏着什么信号？》\n**定位**：财经调查向内容，拆解8月规上工业增加值核心数据的分化矛盾，解读工业复苏的真实信号\n**结构**：整体增速超预期的钩子→核心增长数据事实→三重数据矛盾质疑→分化重于增速的核心观点→观众行业体感互动\n**总时长目标**：约70秒\n\n## 口播全文\n8月全国规模以上工业增加值同比增长5.2%，比上月加快0.7个百分点，整体复苏势头明确 | 其中制造业增加值增长6.1%，出口交货值同比大涨11.1%，新能源汽车产量更是同比增长21.9% | 但更值得注意的是，同期钢材产量下降5.5%，水泥产量大降11.7%，发电量、原油加工量也同步下滑 | 需要回答的是：为什么制造业整体高增，传统基建相关产业却大幅收缩 | 出口交货值涨超10%，为什么规上工业产销率反而同比下降0.1个百分点 | 41个大类行业里还有12个下滑，626种产品里近半数产量下降，分化背后的结构性压力到底有多大 | 从公开数据看，当前工业复苏的结构分化信号，比单一的增速数字更值得警惕 | 你所在的行业今年增长情况怎么样？评论区聊聊\n\n## 分段\n- **段落1** 作用：钩子开场｜要点：8月规上工业增加值增速超预期｜口径：国家统计局公开数据｜口播：8月全国规模以上工业增加值同比增长5.2%，比上月加快0.7个百分点，整体复苏势头明确｜画面：国家统计局官网数据公示页\n- **段落2** 作用：事实呈现｜要点：核心高增领域数据｜口径：国家统计局公开数据｜口播：其中制造业增加值增长6.1%，出口交货值同比大涨11.1%，新能源汽车产量更是同比增长21.9%｜画面：汽车制造车间流水线\n- **段落3** 作用：反差铺垫｜要点：传统产业下滑数据｜口径：国家统计局公开数据｜口播：但更值得注意的是，同期钢材产量下降5.5%，水泥产量大降11.7%，发电量、原油加工量也同步下滑｜画面：露天建材堆场\n- **段落4** 作用：第一重质疑｜要点：制造业与传统建材数据矛盾｜口径：无｜口播：需要回答的是：为什么制造业整体高增，传统基建相关产业却大幅收缩｜画面：工业分行业数据表格\n- **段落5** 作用：第二重质疑｜要点：出口与产销率数据矛盾｜口径：无｜口播：出口交货值涨超10%，为什么规上工业产销率反而同比下降0.1个百分点｜画面：外贸集装箱港口\n- **段落6** 作用：第三重质疑｜要点：行业分化矛盾｜口径：无｜口播：41个大类行业里还有12个下滑，626种产品里近半数产量下降，分化背后的结构性压力到底有多大｜画面：工业产品品类统计列表\n- **段落7** 作用：观点输出｜要点：分化信号重于增速数字｜口径：无｜口播：从公开数据看，当前工业复苏的结构分化信号，比单一的增速数字更值得警惕｜画面：财经分析师查看行业报告\n- **段落8** 作用：互动引导｜要点：引导观众分享行业体感｜口径：无｜口播：你所在的行业今年增长情况怎么样？评论区聊聊｜画面：短视频评论区弹窗\n\n## 质疑与观点依据（给审核人看的内部清单，不进入口播）\n- 质疑1：为什么制造业整体高增，传统基建相关产业却大幅收缩？（依据：素材中制造业增6.1%，但钢材产量降5.5%、水泥产量降11.7%的事实矛盾）\n- 质疑2：出口交货值涨超10%，为什么规上工业产销率反而同比下降0.1个百分点？（依据：素材中出口交货值增11.1%，但产销率同比降0.1个百分点的事实矛盾）\n- 质疑3：分化背后的结构性压力到底有多大？（依据：素材中41个大类行业仅29个增长、626种产品仅286种增长，近半品类下滑的事实）\n- 观点/金句：当前工业复苏的结构分化信号，比单一的增速数字更值得警惕（依据：前述三组数据矛盾均指向复苏结构不均衡，仅用整体增速无法反映工业运行全貌）",
+  "board": {},
+  "segPlan": {
+    "h3List": [],
+    "segments": [
+      {
+        "cardIndex": 0,
+        "kind": "video",
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_35213929.mp4",
+        "duration": 8,
+        "caption": "8月规上工业增速超预期",
+        "origin": "stock-video"
+      },
+      {
+        "cardIndex": 1,
+        "kind": "video",
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_34948758.mp4",
+        "duration": 9,
+        "caption": "制造业新能源车增速亮眼",
+        "origin": "stock-video"
+      },
+      {
+        "cardIndex": 2,
+        "kind": "video",
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_17365284.mp4",
+        "duration": 8,
+        "caption": "传统建材能源产量下滑",
+        "origin": "stock-video"
+      },
+      {
+        "cardIndex": 3,
+        "kind": "video",
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_11496453.mp4",
+        "duration": 7,
+        "caption": "制造业与基建产业走势分化",
+        "origin": "stock-video"
+      },
+      {
+        "cardIndex": 4,
+        "kind": "video",
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_11801939.mp4",
+        "duration": 7,
+        "caption": "出口高增但产销率同比下降",
+        "origin": "stock-video"
+      },
+      {
+        "cardIndex": 5,
+        "kind": "video",
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_33680608.mp4",
+        "duration": 8,
+        "caption": "近半数工业品类产量下滑",
+        "origin": "stock-video"
+      },
+      {
+        "cardIndex": 6,
+        "kind": "video",
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_36824993.mp4",
+        "duration": 9,
+        "caption": "结构分化信号重于整体增速",
+        "origin": "stock-video"
+      },
+      {
+        "cardIndex": 7,
+        "kind": "video",
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_7815127.mp4",
+        "duration": 14,
+        "caption": "聊聊你所在行业的增长情况",
+        "origin": "stock-video"
+      }
+    ],
+    "count": 8,
+    "h3Count": 0
+  },
+  "segments": {
+    "segments": [
+      {
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_35213929.mp4",
+        "kind": "video",
+        "duration": 8,
+        "caption": "8月规上工业增速超预期",
+        "motion": "none"
+      },
+      {
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_34948758.mp4",
+        "kind": "video",
+        "duration": 9,
+        "caption": "制造业新能源车增速亮眼",
+        "motion": "none"
+      },
+      {
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_17365284.mp4",
+        "kind": "video",
+        "duration": 8,
+        "caption": "传统建材能源产量下滑",
+        "motion": "none"
+      },
+      {
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_11496453.mp4",
+        "kind": "video",
+        "duration": 7,
+        "caption": "制造业与基建产业走势分化",
+        "motion": "none"
+      },
+      {
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_11801939.mp4",
+        "kind": "video",
+        "duration": 7,
+        "caption": "出口高增但产销率同比下降",
+        "motion": "none"
+      },
+      {
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_33680608.mp4",
+        "kind": "video",
+        "duration": 8,
+        "caption": "近半数工业品类产量下滑",
+        "motion": "none"
+      },
+      {
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_36824993.mp4",
+        "kind": "video",
+        "duration": 9,
+        "caption": "结构分化信号重于整体增速",
+        "motion": "none"
+      },
+      {
+        "source": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\stock-media\\pexels\\video\\pexels_video_7815127.mp4",
+        "kind": "video",
+        "duration": 14,
+        "caption": "聊聊你所在行业的增长情况",
+        "motion": "none"
+      }
+    ],
+    "count": 8
+  },
+  "videoPath": "C:\\Users\\daoge\\code\\project\\the-bot\\.local\\sv-v3\\userData\\videos\\脚本成片_mu4s2eze.mp4",
+  "nodeStatus": {
+    "start": "succeeded",
+    "readScript": "succeeded",
+    "readRef": "succeeded",
+    "readBase": "succeeded",
+    "refPick": "succeeded",
+    "kbQuery": "succeeded",
+    "kbText": "succeeded",
+    "scriptSrc": "succeeded",
+    "preset": "succeeded",
+    "strategy": "succeeded",
+    "writerPick": "succeeded",
+    "writerCall": "succeeded",
+    "writerMd": "succeeded",
+    "outlineReview": "succeeded",
+    "baseList": "succeeded",
+    "shotsGen": "succeeded",
+    "splitShots": "succeeded",
+    "loopMat": "succeeded",
+    "visualShot": "succeeded",
+    "matItem": "succeeded",
+    "loopBase": "succeeded",
+    "boardMerge": "succeeded",
+    "boardReview": "succeeded",
+    "segPlan": "succeeded",
+    "loopVideo": "succeeded",
+    "tts1": "succeeded",
+    "segments": "succeeded",
+    "comp1": "succeeded",
+    "saveVideo": "succeeded",
+    "saveOutline": "succeeded",
+    "saveBoard": "succeeded",
+    "notify1": "succeeded",
+    "end": "succeeded"
+  },
+  "notes": [
+    "终态 succeeded"
+  ],
+  "visualShotNotes": [
+    {
+      "status": "succeeded",
+      "note": "真实视频素材采用：pexels#35213929（2160×3840，16s）｜检索词「container yard aerial」｜授权：pexels｜未质检",
+      "source": "stock-video",
+      "relevance": -1
+    },
+    {
+      "status": "succeeded",
+      "note": "真实视频素材采用：pexels#34948758（1080×1920，9s）｜检索词「car assembly line」｜授权：pexels｜未质检",
+      "source": "stock-video",
+      "relevance": -1
+    },
+    {
+      "status": "succeeded",
+      "note": "真实视频素材采用：pexels#17365284（1080×1920，10s）｜检索词「construction material yard」｜授权：pexels｜未质检",
+      "source": "stock-video",
+      "relevance": -1
+    },
+    {
+      "status": "succeeded",
+      "note": "真实视频素材采用：pexels#11496453（1080×1920，31s）｜检索词「industrial park aerial」｜授权：pexels｜未质检",
+      "source": "stock-video",
+      "relevance": -1
+    },
+    {
+      "status": "succeeded",
+      "note": "真实视频素材采用：pexels#11801939（1080×1920，4s）｜检索词「container port terminal」｜授权：pexels｜未质检",
+      "source": "stock-video",
+      "relevance": -1
+    },
+    {
+      "status": "succeeded",
+      "note": "真实视频素材采用：pexels#33680608（2160×3840，7s）｜检索词「factory district night aerial」｜授权：pexels｜未质检",
+      "source": "stock-video",
+      "relevance": -1
+    },
+    {
+      "status": "succeeded",
+      "note": "真实视频素材采用：pexels#36824993（1080×1920，14s）｜检索词「financial analyst monitors」｜授权：pexels｜未质检",
+      "source": "stock-video",
+      "relevance": -1
+    },
+    {
+      "status": "succeeded",
+      "note": "真实视频素材采用：pexels#7815127（2160×3840，11s）｜检索词「crowd using smartphones night」｜授权：pexels｜未质检",
+      "source": "stock-video",
+      "relevance": -1
+    }
+  ]
+}

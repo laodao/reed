@@ -1,0 +1,52 @@
+信息搜集 M1/M2 真实联网验收——成功轮次完整输出（2026-10-08，主题：中国高铁营业里程）
+运行方式：npx tsx scripts/ic-acceptance.ts（联网实测，每次结果会因实时网络/引擎状态而异；
+本轮 baidu 刮削正常。注意：免 Key 刮削引擎不稳定，baidu 连续抓取会被限流返回 0 条，
+生产建议在应用「设置 → 搜索引擎」配置 API 型引擎如 tavily/bocha/zhipu）
+
+=== 信息搜集真实联网验收：中国高铁营业里程历年数据 ===
+
+免 Key 引擎清单：baidu、bing-web、google-web
+[bing-web] "中国高铁 营业里程 4.8万公里" → 8 条结果
+[bing-web] "全国铁路 营业里程 高铁 4.8万公里" → 8 条结果
+[baidu] "中国高铁 营业里程 4.8万公里" → 8 条结果
+[baidu] "全国铁路 营业里程 高铁 4.8万公里" → 8 条结果
+[google-web] 被网络环境阻断（Connect Timeout，预期内）
+
+搜索去重后候选：12（原始 32；剔除首页形态 8、标题跑题 9）
+✓ [200] http://www.baidu.com/link?url=lvZVal1...（正文 4113 字）
+✓ [200] http://www.baidu.com/link?url=EjfrKy36MHWW...（正文 4220 字）
+✓ [200] http://www.baidu.com/link?url=iBkEt9GFE7R_...（正文 2993 字）
+✓ [200] http://www.baidu.com/link?url=JLlBCeO96VUx...（正文 2108 字）
+✓ [200] http://www.baidu.com/link?url=RFPFbaf9aOon...（正文 2217 字）
+✓ [200] http://www.baidu.com/link?url=74iw9C2HZdtf...（正文 6599 字）
+✓ [200] http://www.baidu.com/link?url=EjfrKy36MHWW...（正文 3232 字）
+✕ [403] http://www.baidu.com/link?url=iBkEt9GFE7R_...（反爬，如实记录）
+
+有效正文：7/7（跑题剔除 0）
+
+转载簇：0 个
+  相似度抽样 [0]~[1]：0.024
+  （正确行为：这些是同一事实的不同报道文章，全文本不同，不构成逐字转载）
+
+跨源引句回验（引句出自主源）：
+  引句："会议发布的最新统计数据显示，截至2024年底，全国铁路营业里程达到16.2万公里，其中高铁4.8万公里，我国高铁运营里程再创新纪录"
+  → [miss] http://www.baidu.com/link?url=EjfrKy36MHWWIyMyT37cda6...（相似度 0.646，措辞不同，0.9 阈值如实拒）
+  → [exact] http://www.baidu.com/link?url=iBkEt9GFE7R_5NAX6Y7KG4Wxz...（相似度 1.000）
+  → [exact] http://www.baidu.com/link?url=JLlBCeO96VUxBBKql-NKvif5t...（相似度 1.000）
+  → [exact] http://www.baidu.com/link?url=RFPFbaf9aOoniOgRBb0Gm5i9...（相似度 1.000）
+  → [exact] http://www.baidu.com/link?url=74iw9C2HZdtf7CYY7zq3RM4Q...（相似度 1.000）
+  → [miss] http://www.baidu.com/link?url=EjfrKy36MHWWIyMyT37cdiZ...（相似度 0.431）
+
+=== 验收结论 ===
+✓ 确定性管线在真实网页上跑通：搜索 32 → 候选 12 → 有效正文 7；
+  目标事实（2024 年底全国铁路 16.2 万公里、其中高铁 4.8 万公里）跨 5 个独立源 exact 互证。
+
+=== 验收发现的问题与处置 ===
+1. 🔴 bing-web 引擎缺陷：对整查询只搜首个词（"中国高铁营业里程…"→ 返回"中国"的
+   百科/门户首页）——引擎层缺陷待修，修复前建议使用时降权该引擎。
+2. 🟡 候选级标题相关性过滤原缺——已按验收结论实现进管线
+   （src/shared/utils/info-collection-relevance.ts + ic-collection.service 阶段 2，
+   标题/摘要须含查询片段；过滤数计入 stats.candidatesFiltered）。
+3. 🟡 免 Key 刮削引擎不稳定（baidu 连续抓取后被限流）——生产建议配置 API 型引擎。
+4. LLM 环节（蓝图起草/抽取/复核/归因/整理报告）需在应用内配置模型后走 ic: 通道验收，
+   本脚本不覆盖。

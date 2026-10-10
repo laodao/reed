@@ -1,0 +1,135 @@
+{
+  "route": "/chat",
+  "profileMs": 5154,
+  "samples": 8758,
+  "top": [
+    {
+      "fn": "(idle) @ :0",
+      "ms": 3498
+    },
+    {
+      "fn": "(program) @ :0",
+      "ms": 628
+    },
+    {
+      "fn": "(anonymous) @ Chat-yNP4Lzoa.js:4187",
+      "ms": 337
+    },
+    {
+      "fn": "getBoundingClientRect @ :0",
+      "ms": 68
+    },
+    {
+      "fn": "(garbage collector) @ :0",
+      "ms": 35
+    },
+    {
+      "fn": "callWithErrorHandling @ index-BcBc-6zM.js:2144",
+      "ms": 17
+    },
+    {
+      "fn": "setFullProps @ index-BcBc-6zM.js:5836",
+      "ms": 13
+    },
+    {
+      "fn": "He @ index-BcBc-6zM.js:20395",
+      "ms": 12
+    },
+    {
+      "fn": "get userAgentData @ :0",
+      "ms": 12
+    },
+    {
+      "fn": "setAttribute @ :0",
+      "ms": 11
+    },
+    {
+      "fn": "renderFnWithContext @ index-BcBc-6zM.js:2395",
+      "ms": 10
+    },
+    {
+      "fn": "normalizePropsOptions @ index-BcBc-6zM.js:5920",
+      "ms": 9
+    },
+    {
+      "fn": "emStrong @ marked.esm-BVSV9WvH.js:324",
+      "ms": 9
+    },
+    {
+      "fn": "renderComponentRoot @ index-BcBc-6zM.js:5507",
+      "ms": 8
+    },
+    {
+      "fn": "Ht @ index-BcBc-6zM.js:20261",
+      "ms": 8
+    },
+    {
+      "fn": "ne @ index-BcBc-6zM.js:20223",
+      "ms": 8
+    },
+    {
+      "fn": "track @ index-BcBc-6zM.js:795",
+      "ms": 8
+    },
+    {
+      "fn": "get @ index-BcBc-6zM.js:1095",
+      "ms": 7
+    },
+    {
+      "fn": "insertBefore @ :0",
+      "ms": 7
+    },
+    {
+      "fn": "mountElement @ index-BcBc-6zM.js:6305",
+      "ms": 7
+    },
+    {
+      "fn": "set @ index-BcBc-6zM.js:1153",
+      "ms": 6
+    },
+    {
+      "fn": "createReactiveObject @ index-BcBc-6zM.js:1490",
+      "ms": 6
+    },
+    {
+      "fn": "at @ index-BcBc-6zM.js:20220",
+      "ms": 6
+    },
+    {
+      "fn": "inlineTokens @ marked.esm-BVSV9WvH.js:536",
+      "ms": 6
+    },
+    {
+      "fn": "patchDOMProp @ index-BcBc-6zM.js:9386",
+      "ms": 6
+    },
+    {
+      "fn": "getRegex @ marked.esm-BVSV9WvH.js:13",
+      "ms": 5
+    },
+    {
+      "fn": "mergeProps @ index-BcBc-6zM.js:8364",
+      "ms": 5
+    },
+    {
+      "fn": "refreshComputed @ index-BcBc-6zM.js:578",
+      "ms": 5
+    },
+    {
+      "fn": "applyOptions @ index-BcBc-6zM.js:4882",
+      "ms": 5
+    },
+    {
+      "fn": "setStyle$1 @ index-BcBc-6zM.js:9326",
+      "ms": 5
+    },
+    {
+      "fn": "Le @ index-BcBc-6zM.js:20214",
+      "ms": 5
+    },
+    {
+      "fn": "(anonymous) @ Chat-yNP4Lzoa.js:1539",
+      "ms": 5
+    }
+  ]
+}
