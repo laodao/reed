@@ -31,6 +31,7 @@ import { KbQaPairRepository } from '@core/database/repositories/kb-qa-pair.repos
 import { KbAtomRepository } from '@core/database/repositories/kb-atom.repository'
 import { KbEntityRepository } from '@core/database/repositories/kb-entity.repository'
 import { KbKnowledgeEdgeRepository } from '@core/database/repositories/kb-knowledge-edge.repository'
+import { GraphEdgeRepository } from '@core/database/repositories/graph-edge.repository'
 import { KbNoteRepository } from '@core/database/repositories/kb-note.repository'
 import { KbDigestPassRepository } from '@core/database/repositories/kb-digest-pass.repository'
 import { KbNoteReviewRepository } from '@core/database/repositories/kb-note-review.repository'
@@ -182,6 +183,8 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public kbAtoms: KbAtomRepository | null = null
   public kbBrainEntities: KbEntityRepository | null = null
   public kbKnowledgeEdges: KbKnowledgeEdgeRepository | null = null
+  /** 统一图存储（docs/design/2026-10-10-unified-graph-store-design.md） */
+  public graphEdges: GraphEdgeRepository | null = null
   public kbNotes: KbNoteRepository | null = null
   public kbDigestPasses: KbDigestPassRepository | null = null
   public kbNoteReviews: KbNoteReviewRepository | null = null
@@ -1000,6 +1003,9 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-kb-entity-scope'
     )
     await addKbEntityScope(this.dataSource)
+    // 知识大脑 v3：论断知识/证据角色列（书内事实降证据，不进知识供给）
+    const { addKbAtomRole } = await import('@core/database/migrations/add-kb-atom-role')
+    await addKbAtomRole(this.dataSource)
     // 知识大脑 v2 P4：质检日志 + 自动化动作日志
     const { createKbBrainP4Tables } = await import(
       '@core/database/migrations/create-kb-brain-p4-tables'
@@ -1117,6 +1123,14 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-lw-project-cover-path'
     )
     await addLwProjectCoverPath(this.dataSource)
+
+    // 统一图存储（docs/design/2026-10-10-unified-graph-store-design.md）：graph_edges 单表
+    // + 五套存量图边回填（lw_graph_edges/lw_ip_edges/lw_world_edges/kb_knowledge_edges/dl_relation），
+    // 幂等双语种；必须挂在全部源表迁移之后（Web 端 initDatabase 有同构调用，两处必须同步）
+    const { createUnifiedGraphTables } = await import(
+      '@core/database/migrations/create-unified-graph-tables'
+    )
+    await createUnifiedGraphTables(this.dataSource)
 
     trace.report(undefined, 100)
   }
@@ -4649,6 +4663,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.kbAtoms = new KbAtomRepository(this.dataSource)
     this.kbBrainEntities = new KbEntityRepository(this.dataSource)
     this.kbKnowledgeEdges = new KbKnowledgeEdgeRepository(this.dataSource)
+    this.graphEdges = new GraphEdgeRepository(this.dataSource)
     this.kbNotes = new KbNoteRepository(this.dataSource)
     this.kbDigestPasses = new KbDigestPassRepository(this.dataSource)
     this.kbNoteReviews = new KbNoteReviewRepository(this.dataSource)

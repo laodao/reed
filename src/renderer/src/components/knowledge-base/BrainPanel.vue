@@ -68,8 +68,8 @@
               style="width: 110px"
               @change="onDocFilterChange"
             >
-              <el-option label="概要层" value="outline" />
               <el-option label="设定层" value="setting" />
+              <el-option label="技法层" value="craft" />
               <el-option label="描写层" value="describe" />
               <el-option label="细节层" value="detail" />
             </el-select>
@@ -623,7 +623,7 @@
           <div class="hz-section">
             <h5>知识构成（工作集 {{ healthReport.knowledge.atomsWorking }} 条）</h5>
             <div class="hz-grid">
-              <span>分层：概要 {{ healthReport.knowledge.byLayer.outline ?? 0 }} · 设定 {{ healthReport.knowledge.byLayer.setting ?? 0 }} · 描写 {{ healthReport.knowledge.byLayer.describe ?? 0 }} · 细节 {{ healthReport.knowledge.byLayer.detail ?? 0 }}</span>
+              <span>分层：设定 {{ healthReport.knowledge.byLayer.setting ?? 0 }} · 技法 {{ healthReport.knowledge.byLayer.craft ?? 0 }} · 描写 {{ healthReport.knowledge.byLayer.describe ?? 0 }} · 细节 {{ healthReport.knowledge.byLayer.detail ?? 0 }}</span>
               <span>悬置问题 {{ healthReport.knowledge.openQuestions }} · 存疑 {{ healthReport.knowledge.byStatus.suspected ?? 0 }} · 已过期 {{ healthReport.knowledge.byStatus.stale ?? 0 }}</span>
               <span>实体 {{ healthReport.knowledge.entitiesActive }}（缺摘要 {{ healthReport.knowledge.entitiesPendingSummary }}） · 经验卡已入库 {{ healthReport.knowledge.notesPublished }}（待审 {{ healthReport.knowledge.notesProposed }}）</span>
             </div>

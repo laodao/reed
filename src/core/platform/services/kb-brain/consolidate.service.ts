@@ -152,10 +152,10 @@ export class KbConsolidateService {
 
 let singleton: KbConsolidateService | null = null
 
-/** 成员最高层继承（outline>setting>describe>detail；空/未知成员按 detail 兜底） */
-function highestLayer(layers: string[]): 'outline' | 'setting' | 'describe' | 'detail' {
-  const rank: Record<string, number> = { outline: 3, setting: 2, describe: 1, detail: 0 }
-  return [...layers].sort((a, b) => (rank[b] ?? 0) - (rank[a] ?? 0))[0] as 'outline' | 'setting' | 'describe' | 'detail'
+/** 成员最高层继承（setting>describe>craft>detail；空/未知/存量 outline 成员按 detail 兜底） */
+function highestLayer(layers: string[]): 'setting' | 'describe' | 'craft' | 'detail' {
+  const rank: Record<string, number> = { setting: 3, describe: 2, craft: 1, detail: 0 }
+  return [...layers].sort((a, b) => (rank[b] ?? 0) - (rank[a] ?? 0))[0] as 'setting' | 'describe' | 'craft' | 'detail'
 }
 
 export function getKbConsolidateService(): KbConsolidateService {

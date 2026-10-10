@@ -46,6 +46,11 @@ describe('kb-brain repositories', () => {
       created_at datetime, updated_at datetime
     )`)
     await createKbBrainTables(ds)
+    // 与生产迁移链对齐（此前缺 scope/role 列导致实体/论断仓储用例失败）
+    const { addKbEntityScope } = await import('@core/database/migrations/add-kb-entity-scope')
+    await addKbEntityScope(ds)
+    const { addKbAtomRole } = await import('@core/database/migrations/add-kb-atom-role')
+    await addKbAtomRole(ds)
     atoms = new KbAtomRepository(ds)
     ents = new KbEntityRepository(ds)
     edges = new KbKnowledgeEdgeRepository(ds)

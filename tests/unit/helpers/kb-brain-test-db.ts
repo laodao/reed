@@ -10,6 +10,7 @@ import { createKbBrainTables } from '@core/database/migrations/create-kb-brain-t
 import { createKbChapters } from '@core/database/migrations/create-kb-chapters'
 import { createKbBrainEvents } from '@core/database/migrations/create-kb-brain-events'
 import { addKbEntityScope } from '@core/database/migrations/add-kb-entity-scope'
+import { addKbAtomRole } from '@core/database/migrations/add-kb-atom-role'
 import { createKbBrainP4Tables } from '@core/database/migrations/create-kb-brain-p4-tables'
 
 export async function createKbBrainTestTables(ds: DataSource): Promise<void> {
@@ -35,6 +36,7 @@ export async function createKbBrainTestTables(ds: DataSource): Promise<void> {
   await createKbBrainTables(ds)
   await createKbBrainEvents(ds)
   await addKbEntityScope(ds)
+  await addKbAtomRole(ds)
   await createKbBrainP4Tables(ds)
   await createKbChapters(ds)
   // 存量表：切片（大脑检索的 docLen/结果解析需要）

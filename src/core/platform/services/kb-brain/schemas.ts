@@ -11,7 +11,7 @@ import Ajv from 'ajv'
 export interface RawAtom {
   statement: string
   type: string
-  /** 知识分层（outline/setting/describe/detail；可选，缺省 detail） */
+  /** 知识分层（setting/describe/craft/detail；可选，缺省 detail） */
   layer?: string
   certainty?: number
   quote: string
@@ -60,7 +60,7 @@ const ATOMIZE_SCHEMA = {
         properties: {
           statement: { type: 'string', minLength: 1 },
           type: { enum: ['fact', 'claim', 'concept', 'method', 'insight', 'open-question'] },
-          layer: { enum: ['outline', 'setting', 'describe', 'detail'] },
+          layer: { enum: ['setting', 'describe', 'craft', 'detail'] },
           certainty: { type: 'number', minimum: 0, maximum: 1 },
           quote: { type: 'string', minLength: 1 },
           validFrom: { type: 'string' },
@@ -124,6 +124,8 @@ export interface AdjudicateOutput {
   duplicates: Array<{ newIdx: number; oldIdx: number }>
   contradictions: Array<{ newIdx: number; oldIdx: number; severity: 'update' | 'conflict' }>
   novel: number[]
+  /** v3 四值：书内事实/剧情复述——落库为 role='evidence'（只作证据不进知识供给） */
+  readerNotes: number[]
 }
 
 const ADJUDICATE_SCHEMA = {
@@ -152,8 +154,9 @@ const ADJUDICATE_SCHEMA = {
       },
     },
     novel: { type: 'array', items: { type: 'integer' } },
+    readerNotes: { type: 'array', items: { type: 'integer' } },
   },
-  required: ['duplicates', 'contradictions', 'novel'],
+  required: ['duplicates', 'contradictions', 'novel', 'readerNotes'],
   additionalProperties: false,
 } as const
 
@@ -198,8 +201,13 @@ export function normalizeAtomizeRaw(data: unknown): unknown {
       }
       if (item.certainty === undefined && typeof item.confidence !== 'undefined') item.certainty = item.confidence
       // layer 非法值/null 剥离（分层是辅助维度——坏值不毁论断，落库缺省 detail；
-      // null 也是模型常见输出，穿透到 ajv enum 会炸整章重试）
-      if (item.layer !== undefined && !['outline', 'setting', 'describe', 'detail'].includes(item.layer as string)) {
+      // null 也是模型常见输出，穿透到 ajv enum 会炸整章重试）。
+      // 旧版 'outline' 收编：method/insight → craft（技法观察），其余剥离落 detail
+      if (item.layer === 'outline') {
+        if (item.type === 'method' || item.type === 'insight') item.layer = 'craft'
+        else delete item.layer
+      }
+      if (item.layer !== undefined && !['setting', 'describe', 'craft', 'detail'].includes(item.layer as string)) {
         delete item.layer
       }
       // type 非法值归 'fact'（真机实证：本地模型产出枚举外类型炸整章重试耗尽——
@@ -292,10 +300,14 @@ export function normalizeAdjudicateRaw(data: unknown): unknown {
   if (!Array.isArray(out.novel)) {
     out.novel = Array.isArray(out.new) ? out.new : []
   }
+  if (!Array.isArray(out.readerNotes)) {
+    out.readerNotes = Array.isArray(out.reader_notes) ? out.reader_notes : []
+  }
   // 条目级清洗（真机实证：novel 混入非整数、contradictions 出负数索引/坏条目）——
   // 坏条目剔除不毁整章，与 atoms 坏条目剔除同一策略；severity 非枚举保守归 'conflict'
   //（标 suspected 走人审，绝不误毁旧论断）
   out.novel = (out.novel as unknown[]).map(toIdx).filter((n) => Number.isInteger(n))
+  out.readerNotes = (out.readerNotes as unknown[]).map(toIdx).filter((n) => Number.isInteger(n))
   const cleanEntry = (e: Record<string, unknown>): Record<string, unknown> | null => {
     const newIdx = toIdx(e.newIdx)
     const oldIdx = toIdx(e.oldIdx)
@@ -334,6 +346,7 @@ export function validateAdjudicateOutput(
     duplicates: out.duplicates.filter((d) => inNew(d.newIdx) && inOld(d.oldIdx)),
     contradictions: out.contradictions.filter((c) => inNew(c.newIdx) && inOld(c.oldIdx)),
     novel: out.novel.filter((i) => inNew(i)),
+    readerNotes: out.readerNotes.filter((i) => inNew(i)),
   }
 }
 

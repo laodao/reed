@@ -33,6 +33,7 @@ import {
   backfillScenesForKb
 } from './digest-orchestrator.service'
 import { getKbLayerRelabelService, KbLayerRelabelService } from './layer-relabel.service'
+import { getKbRejudgeService } from './rejudge.service'
 import { getKbBookPassesService, KbBookPassesService } from './book-passes.service'
 import { getKbGoalDistillService, KbGoalDistillService } from './goal-distill.service'
 import { getKbConsolidateService } from './consolidate.service'
@@ -52,6 +53,7 @@ const logger = createLogger('KbBrainAutomation')
 /** 各动作冷却（ms）：补标/书级/目标/归纳/冶炼 24h，清理/伏笔 7d，耗尽章复活 24h，场面补采 6h（一轮 200 章） */
 const COOLDOWN = {
   relabel: 24 * 3600_000,
+  rejudge: 24 * 3600_000,
   bookPasses: 24 * 3600_000,
   goal: 24 * 3600_000,
   consolidate: 24 * 3600_000,
@@ -85,6 +87,8 @@ export interface KbBrainAutomationDeps {
     isRunning(kbId: string): boolean
     run(kbId: string, modelRef?: string): Promise<{ merged: number; corpusMarked: number; matrixNoteIds: string[] }>
   }
+  /** 存量论断重判（v3 M1；缺省 rejudge 单例） */
+  rejudge?: { isRunning(kbId: string): boolean; setModelOverride?(kbId: string, fn: () => { providerConfigId?: string; modelId?: string }): void; run(kbId: string): Promise<{ knowledgeCount: number; evidenceCount: number; junkCount: number; failedBatches: number }> }
   /** 动作日志（v2 P4 undo 依据；缺省 automation-log 单例） */
   autoLog?: { record(kbId: string, action: string, detail: Record<string, unknown>): Promise<unknown> }
   relabel?: Pick<KbLayerRelabelService, 'isRunning' | 'run' | 'setModelOverride'>
@@ -164,7 +168,11 @@ export class KbBrainAutomationService {
         isRunning: (kbId: string) => new KbCorpusMergeService().isRunning(kbId),
         run: async (kbId: string, modelRef?: string) => {
           const override = () => (modelRef ? parseModelRef(modelRef) : {})
-          const merged = await new KbCorpusMergeService({ modelOverride: override }).run(kbId, null)
+          // 修复（10-07 审查 H1 死链）：曾硬传 null → 嵌入走降级 → 归并恒 merged:0；
+          // 按库取 embeddingConfig 才能让跨书概念比对真正跑起来
+          const kbRow = await getCoreDatabaseManager().knowledgeBases?.findById(kbId)
+          const embeddingConfig = kbRow?.embeddingConfig ?? null
+          const merged = await new KbCorpusMergeService({ modelOverride: override }).run(kbId, embeddingConfig)
           // 矩阵吃 merge 的 scope 标注；质量门与冶炼同源（低分期矩阵也走待审）
           const gate = await getKbQaSamplerService().gateOf(kbId).catch(() => 'publish' as const)
           const matrix = await new KbCorpusPassesService({ modelOverride: override }).runSettingMatrix(kbId, { review: gate === 'review' })
@@ -183,6 +191,9 @@ export class KbBrainAutomationService {
   }
   private get relabel(): NonNullable<KbBrainAutomationDeps['relabel']> {
     return this.depsDeps.relabel ?? getKbLayerRelabelService()
+  }
+  private get rejudge(): NonNullable<KbBrainAutomationDeps['rejudge']> {
+    return this.depsDeps.rejudge ?? getKbRejudgeService()
   }
   private get bookPasses(): NonNullable<KbBrainAutomationDeps['bookPasses']> {
     return this.depsDeps.bookPasses ?? getKbBookPassesService()
@@ -319,9 +330,12 @@ export class KbBrainAutomationService {
         )
       }
       const digesting = docs.some(d => d.brainStatus === 'digesting')
+      // v3 修复（M1 #8）：skipped 不再永久排除——文档完成时大脑未启用/未开消化被标
+      // skipped，之后库启用了大脑却永远不补消化（加书不自动消化的病根）。
+      // 本循环已按 cfg.enabled 门控，走到这里的库都是启用态，skipped 视同待消化。
       const pending = docs.filter(d => {
         const s = d.brainStatus ?? ''
-        return s !== 'digested' && s !== 'digesting' && s !== 'skipped'
+        return s !== 'digested' && s !== 'digesting'
       })
       if (digesting) return { kbId, ran, skipped: 'digesting' }
       if (pending.length > 0) {
@@ -400,8 +414,8 @@ export class KbBrainAutomationService {
     if (auto.layerRelabel && !this.relabel.isRunning(kbId)) {
       const allDetail =
         workingTotal > 0 &&
-        (stats.byLayer.outline ?? 0) === 0 &&
         (stats.byLayer.setting ?? 0) === 0 &&
+        (stats.byLayer.craft ?? 0) === 0 &&
         (stats.byLayer.describe ?? 0) === 0
       const grew =
         !state.automation?.relabelAtoms ||
@@ -412,6 +426,26 @@ export class KbBrainAutomationService {
           await this.relabel.run(kbId)
           this.mark(state, 'lastLayerRelabelAt')
           state.automation = { ...state.automation, relabelAtoms: workingTotal }
+          await this.saveState(kbId, repos.kbs, state)
+        })
+      }
+    }
+
+    // 2.5 存量论断重判（v3 M1）：换书测试三档处置（knowledge/evidence/junk）——
+    //     判据换血后对存量读书笔记的批量纠偏；按增长门槛门控防重确认空转
+    if (auto.rejudge && !this.rejudge.isRunning(kbId)) {
+      const grew =
+        !state.automation?.rejudgeAtoms ||
+        workingTotal >= Math.ceil(state.automation.rejudgeAtoms * GOAL_RERUN_GROWTH) + 1
+      if (grew && this.cool(state, 'lastRejudgeAt', COOLDOWN.rejudge)) {
+        await step('rejudge', async () => {
+          this.rejudge.setModelOverride?.(kbId, this.modelOverride(cfg))
+          const p = await this.rejudge.run(kbId)
+          logger.info(
+            `[kb-brain-auto] kb=${kbId} 重判完成: 知识 ${p.knowledgeCount} / 降证据 ${p.evidenceCount} / 归档 ${p.junkCount}（失败批 ${p.failedBatches}）`
+          )
+          this.mark(state, 'lastRejudgeAt')
+          state.automation = { ...state.automation, rejudgeAtoms: workingTotal }
           await this.saveState(kbId, repos.kbs, state)
         })
       }

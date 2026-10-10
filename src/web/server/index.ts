@@ -564,6 +564,9 @@ async function initDatabase(): Promise<void> {
     '@core/database/migrations/add-kb-entity-scope'
   )
   await addKbEntityScope(ds)
+  // 知识大脑 v3：论断知识/证据角色列（与 Electron 端同构）
+  const { addKbAtomRole } = await import('@core/database/migrations/add-kb-atom-role')
+  await addKbAtomRole(ds)
   // 知识大脑 v2 P4：质检日志 + 自动化动作日志（与 Electron 端同构）
   const { createKbBrainP4Tables } = await import(
     '@core/database/migrations/create-kb-brain-p4-tables'
@@ -693,6 +696,14 @@ async function initDatabase(): Promise<void> {
     '@core/database/migrations/add-lw-project-cover-path'
   )
   await addLwProjectCoverPath(ds)
+
+  // 统一图存储（docs/design/2026-10-10-unified-graph-store-design.md）：graph_edges 单表
+  // + 五套存量图边回填，幂等双语种；与 Electron 端 runMultiTenantMigrations 同构登记，
+  // 必须挂在全部源表迁移之后
+  const { createUnifiedGraphTables } = await import(
+    '@core/database/migrations/create-unified-graph-tables'
+  )
+  await createUnifiedGraphTables(ds)
 
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)

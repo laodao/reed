@@ -8,7 +8,7 @@
  */
 import { In, IsNull, MoreThanOrEqual, Not, type DataSource, type FindOptionsWhere } from 'typeorm'
 import { randomUUID } from 'crypto'
-import { KbAtomEntity, KB_ATOM_LAYERS, type KbAtomLayer, type KbAtomStatus, type KbAtomType } from '../entities/kb-brain/kb-atom.entity'
+import { KbAtomEntity, KB_ATOM_LAYERS, type KbAtomLayer, type KbAtomRole, type KbAtomStatus, type KbAtomType } from '../entities/kb-brain/kb-atom.entity'
 import { BaseRepository } from '../base-repository'
 import { getCurrentUserId } from '@core/context/user-context'
 
@@ -20,6 +20,7 @@ export interface KbAtomRecord {
   statement: string
   type: KbAtomType
   layer: KbAtomLayer
+  role: KbAtomRole
   status: KbAtomStatus
   certainty: number
   validFrom: string | null
@@ -44,7 +45,7 @@ export interface KbAtomRecord {
 }
 
 /** 批量插入入参（id 可选，缺省生成） */
-export type KbAtomInput = Partial<Pick<KbAtomRecord, 'id' | 'validFrom' | 'validUntil' | 'sourceChapterId' | 'sourceChapterHash' | 'sourceChunkId' | 'startOffset' | 'endOffset' | 'subjectEntityId' | 'objectEntityId' | 'lensNoteId' | 'supersededByAtomId' | 'layer'>> & {
+export type KbAtomInput = Partial<Pick<KbAtomRecord, 'id' | 'validFrom' | 'validUntil' | 'sourceChapterId' | 'sourceChapterHash' | 'sourceChunkId' | 'startOffset' | 'endOffset' | 'subjectEntityId' | 'objectEntityId' | 'lensNoteId' | 'supersededByAtomId' | 'layer' | 'role'>> & {
   knowledgeBaseId: string
   statement: string
   sourceDocumentId: string
@@ -68,6 +69,7 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
       statement: e.statement,
       type: e.type,
       layer: KB_ATOM_LAYERS.includes(e.layer as KbAtomLayer) ? (e.layer as KbAtomLayer) : 'detail',
+      role: e.role === 'evidence' ? 'evidence' : 'knowledge',
       status: e.status,
       certainty: e.certainty,
       validFrom: e.validFrom ?? null,
@@ -104,6 +106,7 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
       e.statement = r.statement
       e.type = r.type
       e.layer = KB_ATOM_LAYERS.includes(r.layer as KbAtomLayer) ? (r.layer as KbAtomLayer) : 'detail'
+      e.role = r.role === 'evidence' ? 'evidence' : 'knowledge'
       e.status = 'supported'
       e.certainty = r.certainty ?? 0.8
       e.validFrom = r.validFrom ?? null
@@ -152,7 +155,7 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
   /** 按库查（面板论断列表；可选 status/type/types/origin/layers 过滤，创建时间倒序） */
   async findByKb(
     kbId: string,
-    opts?: { status?: KbAtomStatus[]; type?: string; types?: string[]; origin?: string; documentId?: string; layers?: KbAtomLayer[]; limit?: number },
+    opts?: { status?: KbAtomStatus[]; type?: string; types?: string[]; origin?: string; documentId?: string; layers?: KbAtomLayer[]; role?: KbAtomRole; limit?: number },
   ): Promise<KbAtomRecord[]> {
     const where: Record<string, unknown> = { knowledgeBaseId: kbId }
     if (opts?.documentId) where.sourceDocumentId = opts.documentId
@@ -161,6 +164,7 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
     if (opts?.type) where.type = opts.type // SQL 层过滤：type 独立于 take 截断（悬而未决视图不受 5000 上限漏数据）
     if (opts?.types?.length) where.type = In(opts.types)
     if (opts?.layers?.length) where.layer = In(opts.layers)
+    if (opts?.role) where.role = opts.role
     const rows = await this.scoped.find({
       where: where as FindOptionsWhere<KbAtomEntity>,
       order: { createdAt: 'DESC' } as never,
@@ -173,6 +177,7 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
         (!opts?.type || r.type === opts.type) &&
         (!typeSet || typeSet.has(r.type)) &&
         (!layerSet || layerSet.has(r.layer)) &&
+        (!opts?.role || r.role === opts.role) &&
         (!opts?.origin || r.origin === opts.origin),
     )
   }
@@ -241,6 +246,24 @@ export class KbAtomRepository extends BaseRepository<KbAtomEntity, KbAtomRecord>
   }
 
   /** 分层补标：按目标层分组批量改写（补标是幂等维护动作，只动 layer 不碰状态机） */
+  /** 批量改角色（v3 重判降档：knowledge→evidence）。返回改写行数。 */
+  async updateRoles(groups: Array<{ role: KbAtomRole; ids: string[] }>): Promise<number> {
+    let n = 0
+    for (const g of groups) {
+      if (g.ids.length === 0) continue
+      const rows = await this.scoped.find({ where: { id: In(g.ids) } as FindOptionsWhere<KbAtomEntity> })
+      for (const row of rows) {
+        row.role = g.role
+        row.updatedAt = new Date()
+      }
+      await this.dataSource.transaction(async (manager) => {
+        await manager.save(rows)
+      })
+      n += rows.length
+    }
+    return n
+  }
+
   async updateLayers(groups: Array<{ layer: KbAtomLayer; ids: string[] }>): Promise<number> {
     let n = 0
     for (const g of groups) {

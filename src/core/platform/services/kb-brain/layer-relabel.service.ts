@@ -1,7 +1,7 @@
 /**
  * 存量论断分层补标（layer relabel）：分层标注上线前入库的老论断 layer 恒为
  * detail——分层筛选、体检分层统计、书级设定索引/知识体系图取材全部落空。
- * 本服务对工作集 detail 论断分批 LLM 重标四层（outline/setting/describe/detail）。
+ * 本服务对工作集 detail 论断分批 LLM 重标（setting/describe/craft/detail）。
  *
  * - 输入：工作集（supported/suspected/stale）、ai 来源、公共层、当前 layer=detail
  *   （human 观感/视角论断不动；已正确标 detail 的论断会被重标确认——无历史标记
@@ -25,7 +25,7 @@ import { LAYER_RELABEL_SYSTEM, buildLayerRelabelUser } from './prompts'
 /** 单批论断数：与 cleanup/consolidate 同量级 */
 const BATCH_SIZE = 60
 
-const VALID_LAYERS: ReadonlySet<string> = new Set(['outline', 'setting', 'describe', 'detail'])
+const VALID_LAYERS: ReadonlySet<string> = new Set(['setting', 'describe', 'craft', 'detail'])
 
 export interface LayerRelabelProgress {
   running: boolean

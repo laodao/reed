@@ -114,8 +114,8 @@ export class KbBrainHealthService {
     if (chaptersExhausted > 0) suggestions.push({ code: 'chapters-exhausted', message: `${chaptersExhausted} 章重试耗尽——在「待提取文档」对该文档点「提取」复活重跑。` })
     if (atomStats.byStatus.suspected > 0) suggestions.push({ code: 'conflicts-pending', message: `${atomStats.byStatus.suspected} 条论断存疑（矛盾冲突/低置信）——建议人工复核后再入库。` })
     if (entitiesPending > 0) suggestions.push({ code: 'entities-pending-summary', message: `${entitiesPending} 个实体缺演化摘要——下次消化时自动补齐，无需手动处理。` })
-    if ((atomStats.byLayer.setting ?? 0) === 0 && (atomStats.byLayer.outline ?? 0) === 0 && (atomStats.byLayer.describe ?? 0) === 0 && workingTotal > 0) {
-      suggestions.push({ code: 'no-setting-layer', message: '分层统计全为「细节」——存量论断是旧版未分层提取的。点「论断整理 → 分层补标」用 AI 批量重标四层（比重跑提取便宜得多）。' })
+    if ((atomStats.byLayer.setting ?? 0) === 0 && (atomStats.byLayer.craft ?? 0) === 0 && (atomStats.byLayer.describe ?? 0) === 0 && workingTotal > 0) {
+      suggestions.push({ code: 'no-setting-layer', message: '分层统计全为「细节」——存量论断是旧版未分层提取的。点「论断整理 → 分层补标」用 AI 批量重标（比重跑提取便宜得多）。' })
     }
     if ((atomStats.openQuestions ?? 0) > 0 && contentType === 'novel' && !bookPasses.some((p) => p.passKey === 'book:foreshadow-ledger' && p.status === 'done')) {
       suggestions.push({ code: 'foreshadow-open', message: `${atomStats.openQuestions} 个悬置点（伏笔/暗线）未登记台账——点「论断整理 → 书级汇总」可补跑生成「伏笔台账」卡。` })

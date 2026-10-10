@@ -10,10 +10,10 @@ import { buildAtomizeSystem, ATOMIZE_SYSTEM, ATOMIZE_SYSTEM_KNOWLEDGE, ATOMIZE_S
 import { validateAtomizeOutput } from '@core/platform/services/kb-brain/schemas'
 
 describe('detectLayerBoost 查询意图选层', () => {
-  it('写作思路类问题命中概要层', () => {
+  it('写作思路类问题命中技法层（v3：概要层废除）', () => {
     const b = detectLayerBoost('这本书的写作思路是什么')
     expect(b).not.toBeNull()
-    expect(b!.matched).toContain('outline')
+    expect(b!.matched).toContain('craft')
     expect(b!.matched).not.toContain('detail')
   })
 
@@ -36,7 +36,7 @@ describe('detectLayerBoost 查询意图选层', () => {
   it('层权重：命中 ×1.4 / 非命中 ×0.85 / 无信号恒 1', () => {
     const b = detectLayerBoost('世界观设定')
     expect(layerWeightOf(b, 'setting')).toBe(LAYER_BOOST_MATCHED)
-    expect(layerWeightOf(b, 'outline')).toBe(LAYER_BOOST_UNMATCHED)
+    expect(layerWeightOf(b, 'craft')).toBe(LAYER_BOOST_UNMATCHED)
     expect(layerWeightOf(null, 'detail')).toBe(1)
   })
 })
@@ -53,7 +53,7 @@ describe('buildAtomizeSystem 类型化提示词', () => {
   it('三变体都带分层标注段与 layer 字段约定', () => {
     for (const s of [ATOMIZE_SYSTEM, ATOMIZE_SYSTEM_KNOWLEDGE, ATOMIZE_SYSTEM_HISTORY]) {
       expect(s).toContain('【知识分层')
-      expect(s).toContain('outline')
+      expect(s).toContain('craft')
       expect(s).toContain('"layer"')
     }
   })

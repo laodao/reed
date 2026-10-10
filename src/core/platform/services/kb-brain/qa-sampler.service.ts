@@ -130,12 +130,18 @@ export class KbQaSamplerService {
     try {
       // 抽样对象：已发布 + 待审的冶炼卡（smelt 标签）。待审卡必须进样本——
       // review 模式下新卡全是 proposed，只抽 published 会让滚动窗永远收不到新分，
-      // 质量门降级后无法恢复（恢复路径依赖对待审卡的评分回升）
+      // 质量门降级后无法恢复（恢复路径依赖对待审卡的评分回升）。
+      // 轮换（10-07 H2 饥饿修复）：排除近期已抽过的卡——published 排前 + 恒取前 N
+      // 会让同一批卡反复占坑、白烧 judge，其余卡永远进不了窗口。
       const [pub, prop] = await Promise.all([
         repos.notes.listByStatus(kbId, 'published', 1, 30),
         repos.notes.listByStatus(kbId, 'proposed', 1, 30),
       ])
-      const smeltCards = [...pub.rows, ...prop.rows].filter((r) => isSmeltCard(r)).slice(0, SAMPLE_N)
+      const recentIds = new Set(await repos.qaLogs.recentNoteIds(kbId, SAMPLE_N * 4))
+      const allSmelt = [...pub.rows, ...prop.rows].filter((r) => isSmeltCard(r))
+      const rotated = allSmelt.filter((r) => !recentIds.has(r.id))
+      const smeltCards = (rotated.length >= SAMPLE_N ? rotated : [...rotated, ...allSmelt.filter((r) => recentIds.has(r.id))])
+        .slice(0, SAMPLE_N)
       const llm = await this.llmFor(kbId)
       let llmCalls = 0
       if (smeltCards.length > 0) {

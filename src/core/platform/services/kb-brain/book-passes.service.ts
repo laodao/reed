@@ -58,6 +58,7 @@ export interface BookPassRepos {
         status?: string[]
         type?: string
         layers?: string[]
+        role?: string
         documentId?: string
         limit?: number
       }
@@ -479,7 +480,7 @@ export class KbBookPassesService {
     )
   }
 
-  /** 知识体系图（knowledge）：outline/setting 层论断 + 有摘要实体 → 框架卡 */
+  /** 知识体系图（knowledge）：setting/craft 层论断 + 有摘要实体 → 框架卡（v3：outline 层废除） */
   private async passKnowledgeMap(
     ctx: { kbId: string; documentId: string; repos: BookPassRepos },
     docName: string,
@@ -487,7 +488,8 @@ export class KbBookPassesService {
   ): Promise<void> {
     const atoms = await ctx.repos.atoms.findByKb(ctx.kbId, {
       status: ['supported', 'suspected'],
-      layers: ['outline', 'setting'],
+      layers: ['setting', 'craft'],
+      role: 'knowledge',
       documentId: ctx.documentId,
       limit: MATERIAL_ATOM_CAP
     })

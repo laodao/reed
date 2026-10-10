@@ -25,7 +25,9 @@ export const SMELT_CLUSTER_MAX = 30
 
 /** 套路成卡门槛（v2 设计 §9：max(8, 该类事件数 × 2%)——绝对下限 + 大库相对门槛） */
 export function cardThreshold(bucketSize: number): number {
-  return Math.max(8, Math.ceil(bucketSize * 0.02))
+  // 物理封顶：clusterSimilar 每簇最多 SMELT_CLUSTER_MAX 条（满即分裂新簇）——
+  // 门槛超过它则大桶永远零产出（10-07 审查 H 级：>1500 事件/桶必然停产）
+  return Math.min(Math.max(8, Math.ceil(bucketSize * 0.02)), SMELT_CLUSTER_MAX)
 }
 
 export function cosine(a: number[], b: number[]): number {

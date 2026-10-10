@@ -69,17 +69,17 @@ describe('KbLayerRelabelService', () => {
     const repo = makeAtomsRepo([
       makeAtom({ id: 'a1', statement: '修炼体系分九境，每一境有明确突破条件' }),
       makeAtom({ id: 'a2', statement: '程野相貌平平，眼神却极亮' }),
-      makeAtom({ id: 'a3', statement: '主线从灭门开始到复仇结束' }),
+      makeAtom({ id: 'a3', statement: '以物证而非口供驱动调查线是本章的推进手法', type: 'method' }),
     ])
     const llm: BrainLlmFn = async () =>
-      JSON.stringify({ layers: [{ idx: 0, layer: 'setting' }, { idx: 1, layer: 'describe' }, { idx: 2, layer: 'outline' }] })
+      JSON.stringify({ layers: [{ idx: 0, layer: 'setting' }, { idx: 1, layer: 'describe' }, { idx: 2, layer: 'craft' }] })
     const svc = new KbLayerRelabelService({ llm, atoms: repo as never })
     const progress = await svc.run('kb1')
     expect(progress.relabeledCount).toBe(3)
     expect(progress.failedBatches).toBe(0)
     expect(repo.rows.find((r) => r.id === 'a1')?.layer).toBe('setting')
     expect(repo.rows.find((r) => r.id === 'a2')?.layer).toBe('describe')
-    expect(repo.rows.find((r) => r.id === 'a3')?.layer).toBe('outline')
+    expect(repo.rows.find((r) => r.id === 'a3')?.layer).toBe('craft')
     expect(svc.status('kb1').running).toBe(false)
   })
 

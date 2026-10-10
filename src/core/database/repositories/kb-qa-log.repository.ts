@@ -64,6 +64,17 @@ export class KbQaLogRepository extends BaseRepository<KbQaLogEntity, KbQaLogReco
     return rows.map((r) => r.score)
   }
 
+  /** 近期已抽过的卡 id（按时间倒序去重）——抽样轮换依据：避免同一批卡反复白烧 judge（10-07 H2 饥饿） */
+  async recentNoteIds(kbId: string, limit: number): Promise<string[]> {
+    const rows = await this.scoped
+      .qb('q')
+      .where('q.kb_id = :kbId', { kbId })
+      .orderBy('q.created_at', 'DESC')
+      .take(limit)
+      .getMany()
+    return [...new Set(rows.map((r) => r.noteId))]
+  }
+
   /** 按时间裁剪（日志体积护栏：只留近 N 天） */
   async pruneOlderThan(cutoff: Date): Promise<void> {
     await this.scoped.delete({ createdAt: LessThan(cutoff) } as FindOptionsWhere<KbQaLogEntity>)

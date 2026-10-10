@@ -328,6 +328,7 @@ export function renderPack(header: string, sections: Array<{ title: string; line
   const out: string[] = [header]
   let used = header.length
   let dropped = 0
+  let landed = 0
   for (const s of sections) {
     if (s.lines.length === 0) continue
     const block = `\n\n## ${s.title}\n${s.lines.join('\n')}`
@@ -337,7 +338,11 @@ export function renderPack(header: string, sections: Array<{ title: string; line
     }
     out.push(block)
     used += block.length
+    landed++
   }
+  // 修复（10-07 审查 H4 死链）：一个分段都没装下时必须返回空串——
+  // 恒带 header 会让调用方的「空包→平铺检索回退」判定永远不触发
+  if (landed === 0) return ''
   if (dropped > 0) out.push(`\n（另有 ${dropped} 个分段因篇幅未收录——可收窄任务描述再查。）`)
   return out.join('')
 }

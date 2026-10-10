@@ -16,10 +16,11 @@ export const KB_ATOM_TYPE_LABELS: Record<string, string> = {
 }
 
 export const KB_ATOM_LAYER_LABELS: Record<string, string> = {
-  outline: '概要层',
   setting: '设定层',
+  craft: '技法层',
   describe: '描写层',
   detail: '细节层',
+  outline: '概要层（旧）',
 }
 
 export const KB_ATOM_STATUS_LABELS: Record<string, string> = {

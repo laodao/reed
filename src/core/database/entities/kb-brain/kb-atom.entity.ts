@@ -19,10 +19,18 @@ export type KbAtomType =
   | 'insight'
   | 'open-question'
 
-/** 知识分层：这条论断处于哪一层抽象（查询按意图选层加权；书级汇总按层取材） */
-export type KbAtomLayer = 'outline' | 'setting' | 'describe' | 'detail'
+/**
+ * 知识分层：这条论断处于哪一层抽象（查询按意图选层加权；书级汇总按层取材）。
+ * v3（2026-10）：outline 概要层废除——概要是全书属性，章节窗口产不出（只会产出
+ * 单章事件冒充的赝品），结构知识改由通读派生；新增 craft 技法层承接手法观察。
+ * 存量 outline 行由 rejudge 重判（toDto 对未知层兜底 detail）。
+ */
+export type KbAtomLayer = 'setting' | 'describe' | 'craft' | 'detail'
 
-export const KB_ATOM_LAYERS: KbAtomLayer[] = ['outline', 'setting', 'describe', 'detail']
+export const KB_ATOM_LAYERS: KbAtomLayer[] = ['setting', 'describe', 'craft', 'detail']
+
+/** 知识角色（v3）：knowledge=通过换书测试的写作知识（进知识供给）；evidence=书内事实（仅作证据/溯源，不进知识供给） */
+export type KbAtomRole = 'knowledge' | 'evidence'
 
 /** 命题状态：五态（supported/suspected/contradicted/superseded + stale=失去出处）+ archived=垃圾清理归档 */
 export type KbAtomStatus =
@@ -64,6 +72,10 @@ export class KbAtomEntity {
   /** 知识分层（缺省 detail=细节层；提取时由模型标注，非法值落库前归 detail） */
   @Column({ name: 'layer', type: 'varchar', default: 'detail' })
   layer!: KbAtomLayer
+
+  /** 知识角色（缺省 knowledge；裁决 reader-note 档/存量重判降档写 evidence——书内事实只作证据不进知识供给） */
+  @Column({ name: 'role', type: 'varchar', default: 'knowledge' })
+  role!: KbAtomRole
 
   @Column({ name: 'status', type: 'varchar', default: 'supported' })
   status!: KbAtomStatus

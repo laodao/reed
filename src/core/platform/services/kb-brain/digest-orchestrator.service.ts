@@ -669,10 +669,16 @@ export class KbBrainDigestService {
       } else {
         atomInputs.forEach((_, i) => keptIdx.push(i))
       }
-      const keptInputs = keptIdx.map(i => atomInputs[i])
+      // v3 四值裁决：reader-note 档落 role='evidence'——书内事实只作证据/溯源，不进知识供给
+      const readerSet = verdict ? new Set(verdict.readerNotes) : new Set<number>()
+      const keptInputs = keptIdx.map(i => ({
+        ...atomInputs[i],
+        role: readerSet.has(i) ? ('evidence' as const) : ('knowledge' as const)
+      }))
 
       const inserted = keptInputs.length > 0 ? await atoms.createBatch(keptInputs) : []
       stats.atoms = inserted.length
+      stats.evidence = inserted.filter(a => a.role === 'evidence').length
       // 顺序对位：keptInputs[j] ↔ inserted[j]（createBatch 保序）——不依赖 statement 文本
       const newIdByOrigIdx = new Map<number, string>()
       keptIdx.forEach((origIdx, j) => {
@@ -1508,5 +1514,5 @@ function sceneTrackEnabled(cfg: KbBrainConfig): boolean {
 }
 
 function isValidLayer(t: string | undefined): t is KbAtomInput['layer'] {
-  return !!t && ['outline', 'setting', 'describe', 'detail'].includes(t)
+  return !!t && ['setting', 'describe', 'craft', 'detail'].includes(t)
 }

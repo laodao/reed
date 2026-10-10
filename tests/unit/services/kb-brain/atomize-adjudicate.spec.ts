@@ -263,9 +263,17 @@ describe('normalizeAdjudicateRaw（裁决缺键/别名归一——真机修）',
     expect(out.duplicates).toEqual([])
   })
 
-  it('全缺三键（模型只回 {}）→ 全空通过', () => {
+  it('全缺四键（模型只回 {}）→ 全空通过', () => {
     const out = validateAdjudicateOutput({}, bounds)
-    expect(out).toEqual({ duplicates: [], contradictions: [], novel: [] })
+    expect(out).toEqual({ duplicates: [], contradictions: [], novel: [], readerNotes: [] })
+  })
+
+  it('readerNotes（v3 四值）：收编 + 越界丢弃 + reader_notes 别名', () => {
+    const out = validateAdjudicateOutput(
+      { duplicates: [], contradictions: [], novel: [], readerNotes: [0, 9, '1'] },
+      bounds,
+    )
+    expect(out.readerNotes).toEqual([0, 1])
   })
 
   it('近义命名 conflicts/same/new → 归一', () => {
