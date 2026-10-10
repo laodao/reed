@@ -143,6 +143,17 @@ function makeDeps(overrides: Partial<KbBrainAutomationDeps> = {}) {
       isRunning: () => false,
       run: async () => ({ knowledgeCount: 10, evidenceCount: 5, junkCount: 2, failedBatches: 0 }),
     },
+    quartet: {
+      isRunning: () => false,
+      reading: async () => ({}),
+      graph: async () => ({}),
+      review: async () => ({}),
+      summary: async () => ({}),
+    },
+    dimensionInduct: {
+      isRunning: () => false,
+      propose: async () => ({ seeded: 0, proposed: 2, skipped: false }),
+    },
     bookPasses: {
       isRunningKb: () => false,
       setModelOverride: () => calls.push('bookpass:model'),
@@ -211,7 +222,7 @@ describe('KbBrainAutomationService', () => {
       'cleanup',
       'foreshadow',
     ])
-    expect(result.ran).toEqual(['scene-backfill', 'smelt', 'corpus-merge', 'layer-relabel', 'rejudge', 'book-passes', 'goal:世界观设定集', 'consolidate', 'cleanup', 'foreshadow'])
+    expect(result.ran).toEqual(['scene-backfill', 'smelt', 'corpus-merge', 'layer-relabel', 'rejudge', 'dimension-induct', 'book-passes', 'quartet', 'goal:世界观设定集', 'consolidate', 'cleanup', 'foreshadow'])
     // 记账：目标运行时间 + 论断基线、补标基线、场面补采冷却、冶炼基线
     const auto = deps.savedStates.at(-1)?.automation as Record<string, unknown>
     const goalRuns = auto.goalRuns as Record<string, { at: string; atoms: number }>
@@ -219,6 +230,7 @@ describe('KbBrainAutomationService', () => {
     expect(goalRuns.g2).toBeUndefined() // 未启用的目标不跑不记
     expect(auto.relabelAtoms).toBe(100)
     expect(auto.lastLayerRelabelAt).toBeTruthy()
+    expect(auto.quartetRuns?.doc1).toBeTruthy()
     expect(auto.lastSceneBackfillAt).toBeTruthy()
     expect(auto.lastSmeltAt).toBeTruthy()
     expect(auto.smeltEvents).toBe(100)

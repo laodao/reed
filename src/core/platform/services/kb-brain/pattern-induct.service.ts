@@ -51,6 +51,8 @@ export interface PatternInductDeps {
   embed?: (texts: string[], kb: { id: string; embeddingConfig: string | null }) => Promise<number[][] | null>
   modelOverride?: () => { providerConfigId?: string; modelId?: string }
   repos?: () => SmeltRepos | null
+  /** 维度库提示（v3 M1：启用维度 → 归纳提示注入；缺省读 kb_dimensions） */
+  dimensionHints?: (kbId: string) => Promise<string[]>
 }
 
 const EMPTY: PatternInductOutcome = { cardsCreated: 0, cardsEvolved: 0, clustersExamined: 0, llmCalls: 0, skipped: true, createdNoteIds: [] }
@@ -59,11 +61,18 @@ export class KbPatternInductService {
   private readonly llm: BrainLlmFn
   private readonly embedFn: NonNullable<PatternInductDeps['embed']>
   private readonly reposFn: () => SmeltRepos | null
+  private readonly dimensionHintsFn: NonNullable<PatternInductDeps['dimensionHints']>
   private readonly running = new Set<string>()
 
   constructor(deps: PatternInductDeps = {}) {
     this.llm = deps.llm ?? defaultBrainLlm('kb-brain-adjudicate', deps.modelOverride)
     this.embedFn = deps.embed ?? defaultBrainEmbed
+    this.dimensionHintsFn =
+      deps.dimensionHints ??
+      (async (kbId: string) => {
+        const db = getCoreDatabaseManager()
+        return (await db.kbDimensions?.listEnabled(kbId))?.map((d) => `${d.name}：${d.hint || d.definition}`) ?? []
+      })
     this.reposFn =
       deps.repos ??
       ((): SmeltRepos | null => {
@@ -197,6 +206,7 @@ export class KbPatternInductService {
 
   /** 单簇归纳（两次尝试；模型可主动 skip） */
   private async reflect(kbId: string, sceneType: string, sample: KbEventRecord[]) {
+    const dimensionHints = await this.dimensionHintsFn(kbId).catch(() => [] as string[])
     let lastError = ''
     const scenes = sample.map((e) => {
       let participants: string[] = []
@@ -216,8 +226,8 @@ export class KbPatternInductService {
     for (let attempt = 0; attempt < 2; attempt++) {
       const user =
         attempt === 0
-          ? buildInducePatternUser({ sceneType, scenes })
-          : `${buildInducePatternUser({ sceneType, scenes })}\n\n【上次输出不合法】\n${lastError}\n请重新输出完整合法的 JSON。`
+          ? buildInducePatternUser({ sceneType, scenes, dimensionHints })
+          : `${buildInducePatternUser({ sceneType, scenes, dimensionHints })}\n\n【上次输出不合法】\n${lastError}\n请重新输出完整合法的 JSON。`
       try {
         const raw = await this.llm({ system: INDUCE_PATTERN_SYSTEM, user, maxTokens: 3000 })
         const parsed = parseInducePatternOutput(extractJsonFromResponse(raw))

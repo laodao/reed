@@ -33,6 +33,8 @@ export interface SmeltPipelineOutcome {
   noteIds: string[]
   /** 本轮质量门（review=产物进待审而非直发） */
   gate: 'publish' | 'review'
+  /** 场面类型漂移告警（v3 #10：经 automation 记入动作日志，用户可见） */
+  drift?: string
 }
 
 export interface SmeltPipelineDeps {
@@ -94,6 +96,7 @@ export class KbSmeltPipelineService {
     const stages: SmeltStageResult[] = []
     const noteIds: string[] = []
     let llmCalls = 0
+    let drift: string | undefined
     const stage = async (name: string, fn: () => Promise<string>): Promise<void> => {
       try {
         const summary = await fn()
@@ -132,11 +135,12 @@ export class KbSmeltPipelineService {
     await stage('qa-sample', async () => {
       const out = await qa.sample(kbId)
       const o = out as { sampled?: number; avg?: number | null; gate?: string; drift?: string }
+      if (o.drift) drift = o.drift
       return `抽检=${o.sampled ?? 0} 均分=${o.avg?.toFixed(2) ?? '—'}${o.drift ? `；漂移告警：${o.drift}` : ''}`
     })
 
     logger.info(`[kb-smelt] kb=${kbId} 冶炼完成(${gate}): ${stages.map((s) => `${s.stage}(${s.ran ? s.summary || 'ok' : '失败'})`).join(' → ')}`)
-    return { stages, llmCalls, noteIds, gate }
+    return { stages, llmCalls, noteIds, gate, drift }
   }
 }
 

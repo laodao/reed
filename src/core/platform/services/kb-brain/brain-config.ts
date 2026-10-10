@@ -51,6 +51,8 @@ export interface KbBrainAutomationConfig {
   layerRelabel: boolean
   /** 存量论断重判（v3：换书测试三档处置 knowledge/evidence/junk） */
   rejudge: boolean
+  /** 维度归纳（v3：从语料归纳建议提炼维度，停用待启用） */
+  dimensionInduct: boolean
   bookPasses: boolean
   goalDistill: boolean
   consolidate: boolean
@@ -113,6 +115,10 @@ export interface KbBrainState {
     /** 存量论断重判（v3）：冷却时间 + 当时工作集论断数（增长才再触发，防重确认空转） */
     lastRejudgeAt?: string
     rejudgeAtoms?: number
+    /** 滚动阅读四件套（v3）：每文档上次运行时间（7 天一轮） */
+    quartetRuns?: Record<string, string>
+    /** 维度归纳（v3）：上次运行时间（7 天一轮） */
+    lastDimensionInductAt?: string
     lastBookPassesAt?: string
     /** 每目标上次自动运行：时间 + 当时工作集论断数（论断增长才重跑，防日日重复出近似卡） */
     goalRuns?: Record<string, { at: string; atoms: number }>
@@ -141,6 +147,7 @@ export function defaultAutomationConfig(): KbBrainAutomationConfig {
     corpusMerge: true,
     layerRelabel: true,
     rejudge: true,
+    dimensionInduct: true,
     bookPasses: true,
     goalDistill: true,
     consolidate: true,
@@ -251,6 +258,7 @@ const BRAIN_CONFIG_SCHEMA = {
         corpusMerge: { type: 'boolean' },
         layerRelabel: { type: 'boolean' },
         rejudge: { type: 'boolean' },
+        dimensionInduct: { type: 'boolean' },
         bookPasses: { type: 'boolean' },
         goalDistill: { type: 'boolean' },
         consolidate: { type: 'boolean' },

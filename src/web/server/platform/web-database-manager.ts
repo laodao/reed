@@ -30,11 +30,13 @@ import { KbQaPairRepository } from '@core/database/repositories/kb-qa-pair.repos
 import { KbAtomRepository } from '@core/database/repositories/kb-atom.repository'
 import { KbEntityRepository } from '@core/database/repositories/kb-entity.repository'
 import { KbKnowledgeEdgeRepository } from '@core/database/repositories/kb-knowledge-edge.repository'
+import { GraphEdgeRepository } from '@core/database/repositories/graph-edge.repository'
 import { KbNoteRepository } from '@core/database/repositories/kb-note.repository'
 import { KbDigestPassRepository } from '@core/database/repositories/kb-digest-pass.repository'
 import { KbNoteReviewRepository } from '@core/database/repositories/kb-note-review.repository'
 import { KbEventRepository } from '@core/database/repositories/kb-event.repository'
 import { KbQaLogRepository } from '@core/database/repositories/kb-qa-log.repository'
+import { KbDimensionRepository } from '@core/database/repositories/kb-dimension.repository'
 import { KbAutomationLogRepository } from '@core/database/repositories/kb-automation-log.repository'
 import { KbFolderRepository } from '@core/database/repositories/kb-folder.repository'
 import { AppRepository } from '@core/database/repositories/app.repository'
@@ -183,6 +185,8 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   kbAtoms: KbAtomRepository | null
   kbBrainEntities: KbEntityRepository | null
   kbKnowledgeEdges: KbKnowledgeEdgeRepository | null
+  /** 统一图存储（docs/design/2026-10-10-unified-graph-store-design.md） */
+  graphEdges: GraphEdgeRepository | null
   kbNotes: KbNoteRepository | null
   kbDigestPasses: KbDigestPassRepository | null
   kbNoteReviews: KbNoteReviewRepository | null
@@ -190,6 +194,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   kbEvents: KbEventRepository | null
   /** 知识大脑 v2 P4：质检与自动化日志 */
   kbQaLogs: KbQaLogRepository | null
+  kbDimensions: KbDimensionRepository | null
   kbAutomationLogs: KbAutomationLogRepository | null
   appDefinitions: AppRepository | null
   appSessions: AppSessionRepository | null
@@ -344,11 +349,13 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.kbAtoms = new KbAtomRepository(ds)
     this.kbBrainEntities = new KbEntityRepository(ds)
     this.kbKnowledgeEdges = new KbKnowledgeEdgeRepository(ds)
+    this.graphEdges = new GraphEdgeRepository(ds)
     this.kbNotes = new KbNoteRepository(ds)
     this.kbDigestPasses = new KbDigestPassRepository(ds)
     this.kbNoteReviews = new KbNoteReviewRepository(ds)
     this.kbEvents = new KbEventRepository(ds)
     this.kbQaLogs = new KbQaLogRepository(ds)
+    this.kbDimensions = new KbDimensionRepository(ds)
     this.kbAutomationLogs = new KbAutomationLogRepository(ds)
     this.appDefinitions = new AppRepository(ds)
     this.appSessions = new AppSessionRepository(ds)

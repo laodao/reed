@@ -34,6 +34,10 @@ import {
 } from './digest-orchestrator.service'
 import { getKbLayerRelabelService, KbLayerRelabelService } from './layer-relabel.service'
 import { getKbRejudgeService } from './rejudge.service'
+import { getKbDimensionInductService } from './dimension-induct.service'
+import { getKbBookReadingService } from './book-reading.service'
+import { getKbGraphBuildService } from './graph-build.service'
+import { getKbBookReviewService } from './book-review.service'
 import { getKbBookPassesService, KbBookPassesService } from './book-passes.service'
 import { getKbGoalDistillService, KbGoalDistillService } from './goal-distill.service'
 import { getKbConsolidateService } from './consolidate.service'
@@ -54,6 +58,9 @@ const logger = createLogger('KbBrainAutomation')
 const COOLDOWN = {
   relabel: 24 * 3600_000,
   rejudge: 24 * 3600_000,
+  dimensionInduct: 7 * 24 * 3600_000,
+  /** 四件套（精读/图谱/复核/综述）按文档 7 天一轮——重活在自动化里的最低频档 */
+  quartet: 7 * 24 * 3600_000,
   bookPasses: 24 * 3600_000,
   goal: 24 * 3600_000,
   consolidate: 24 * 3600_000,
@@ -64,6 +71,23 @@ const COOLDOWN = {
   smelt: 24 * 3600_000,
   corpusMerge: 7 * 24 * 3600_000
 } as const
+
+/** 四件套目标挑选：已消化、7 天未跑过的文档，取最旧一个（null=本轮没有可跑目标） */
+async function docsQuartetTargets(
+  repos: { docs: { findByKnowledgeBaseId(kbId: string): Promise<Array<{ id: string; name: string; brainStatus?: string | null }>> } },
+  kbId: string,
+  runs: Record<string, string>
+): Promise<{ id: string; name: string } | null> {
+  const docs = (await repos.docs.findByKnowledgeBaseId(kbId)).filter(d => d.brainStatus === 'digested')
+  const now = Date.now()
+  const due = docs
+    .filter(d => {
+      const last = runs[d.id]
+      return !last || now - new Date(last).getTime() >= 7 * 24 * 3600_000
+    })
+    .sort((a, b) => (runs[a.id] ?? '').localeCompare(runs[b.id] ?? ''))
+  return due[0] ?? null
+}
 
 /** 目标重跑的论断增长门槛：工作集论断较上次自动运行增长 ≥10% 且至少 +1 条 */
 const GOAL_RERUN_GROWTH = 1.1
@@ -89,6 +113,16 @@ export interface KbBrainAutomationDeps {
   }
   /** 存量论断重判（v3 M1；缺省 rejudge 单例） */
   rejudge?: { isRunning(kbId: string): boolean; setModelOverride?(kbId: string, fn: () => { providerConfigId?: string; modelId?: string }): void; run(kbId: string): Promise<{ knowledgeCount: number; evidenceCount: number; junkCount: number; failedBatches: number }> }
+  /** 维度归纳（v3 M1；缺省 dimension-induct 单例） */
+  dimensionInduct?: { isRunning(kbId: string): boolean; setModelOverride?(kbId: string, fn: () => { providerConfigId?: string; modelId?: string }): void; propose(kbId: string): Promise<{ seeded: number; proposed: number; skipped: boolean; reason?: string }> }
+  /** 滚动阅读四件套（v3 M1 #9：精读/图谱/复核/综述；缺省动态 import 各单例） */
+  quartet?: {
+    isRunning(kbId: string): boolean
+    reading(kbId: string, documentId: string): Promise<unknown>
+    graph(kbId: string, documentId: string): Promise<unknown>
+    review(kbId: string, documentId: string, docName: string): Promise<unknown>
+    summary(kbId: string, documentId: string, docName: string): Promise<unknown>
+  }
   /** 动作日志（v2 P4 undo 依据；缺省 automation-log 单例） */
   autoLog?: { record(kbId: string, action: string, detail: Record<string, unknown>): Promise<unknown> }
   relabel?: Pick<KbLayerRelabelService, 'isRunning' | 'run' | 'setModelOverride'>
@@ -194,6 +228,41 @@ export class KbBrainAutomationService {
   }
   private get rejudge(): NonNullable<KbBrainAutomationDeps['rejudge']> {
     return this.depsDeps.rejudge ?? getKbRejudgeService()
+  }
+  private get dimensionInduct(): NonNullable<KbBrainAutomationDeps['dimensionInduct']> {
+    return this.depsDeps.dimensionInduct ?? getKbDimensionInductService()
+  }
+  private get quartet(): NonNullable<KbBrainAutomationDeps['quartet']> {
+    return (
+      this.depsDeps.quartet ?? {
+        isRunning: (kbId: string) => getKbBookReadingService().isRunningKb(kbId) || getKbGraphBuildService().isRunning(kbId),
+        reading: async (kbId, documentId) => {
+          const svc = getKbBookReadingService()
+          const kbRow = await getCoreDatabaseManager().knowledgeBases?.findById(kbId)
+          const cfg = kbRow?.brainConfig ? parseBrainConfig(kbRow.brainConfig) : null
+          svc.setModelOverride(kbId, () => (cfg?.models.adjudicate ? parseModelRef(cfg.models.adjudicate) : {}))
+          return svc.run(kbId, documentId)
+        },
+        graph: async (kbId, documentId) => {
+          const svc = getKbGraphBuildService()
+          const kbRow = await getCoreDatabaseManager().knowledgeBases?.findById(kbId)
+          const cfg = kbRow?.brainConfig ? parseBrainConfig(kbRow.brainConfig) : null
+          svc.setModelOverride(kbId, () => (cfg?.models.adjudicate ? parseModelRef(cfg.models.adjudicate) : {}))
+          return svc.run(kbId, documentId)
+        },
+        review: async (kbId, documentId, docName) => {
+          const svc = getKbBookReviewService()
+          const kbRow = await getCoreDatabaseManager().knowledgeBases?.findById(kbId)
+          const cfg = kbRow?.brainConfig ? parseBrainConfig(kbRow.brainConfig) : null
+          svc.setModelOverride(kbId, () => (cfg?.models.adjudicate ? parseModelRef(cfg.models.adjudicate) : {}))
+          return svc.runReview(kbId, documentId, docName)
+        },
+        summary: async (kbId, documentId, docName) => {
+          const svc = getKbBookReviewService()
+          return svc.runSummary(kbId, documentId, docName)
+        },
+      }
+    )
   }
   private get bookPasses(): NonNullable<KbBrainAutomationDeps['bookPasses']> {
     return this.depsDeps.bookPasses ?? getKbBookPassesService()
@@ -380,10 +449,16 @@ export class KbBrainAutomationService {
           const out = (await this.smelt.runAll(kbId, cfg.models.adjudicate || undefined)) as {
             noteIds?: string[]
             gate?: string
+            drift?: string
           }
-          // v2 P4 动作日志：产物 noteIds 落台账（面板时间线 + 撤销依据）；无产物不记
-          if (out?.noteIds?.length) {
-            await this.autoLog.record(kbId, 'smelt', { noteIds: out.noteIds, gate: out.gate ?? 'publish' })
+          // v2 P4 动作日志：产物 noteIds 落台账（面板时间线 + 撤销依据）；无产物不记。
+          // v3 #10：场面类型漂移告警随日志可见（此前只进文件日志，用户无从感知）
+          if (out?.noteIds?.length || out?.drift) {
+            await this.autoLog.record(kbId, 'smelt', {
+              noteIds: out.noteIds ?? [],
+              gate: out.gate ?? 'publish',
+              ...(out.drift ? { drift: out.drift } : {}),
+            })
           }
           this.mark(state, 'lastSmeltAt')
           state.automation = { ...state.automation, smeltEvents: eventsNow }
@@ -451,6 +526,19 @@ export class KbBrainAutomationService {
       }
     }
 
+    // 2.6 维度归纳（v3 M1）：种子补齐 + 从语料归纳建议维度（停用待启用）——
+    //     7d 冷却；素材不足（synthesis 卡 <3）服务内部自跳过
+    if (auto.dimensionInduct && !this.dimensionInduct.isRunning(kbId) && this.cool(state, 'lastDimensionInductAt', COOLDOWN.dimensionInduct)) {
+      await step('dimension-induct', async () => {
+        this.dimensionInduct.setModelOverride?.(kbId, this.modelOverride(cfg))
+        const out = await this.dimensionInduct.propose(kbId)
+        this.mark(state, 'lastDimensionInductAt')
+        await this.saveState(kbId, repos.kbs, state)
+        if (out.skipped) logger.info(`[kb-brain-auto] kb=${kbId} 维度归纳跳过: ${out.reason ?? ''}`)
+        else logger.info(`[kb-brain-auto] kb=${kbId} 维度归纳: 种子 ${out.seeded} / 建议 ${out.proposed}`)
+      })
+    }
+
     // 3. 书级汇总：台账幂等（指纹未变的关自动跳过），冷却防空转
     if (
       auto.bookPasses &&
@@ -468,6 +556,33 @@ export class KbBrainAutomationService {
         this.mark(state, 'lastBookPassesAt')
         await this.saveState(kbId, repos.kbs, state)
       })
+    }
+
+    // 3.5 滚动阅读四件套（v3 M1 #9）：精读→图谱→复核→综述，每轮至多一本已消化书，
+    //     按文档 7 天冷却 + 成本熔断同口径——此前四件套只能人在面板手点，「合上电脑」状态下永不运行
+    if (auto.smelt && !this.quartet.isRunning(kbId)) {
+      // 成本熔断同口径（与补采一致）：当日调用超限则四件套让位
+      const today = await repos.passes.costByKb(kbId, (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d })())
+      const costLimit = Number(process.env.KB_BRAIN_DAILY_COST_LIMIT ?? '')
+      const overLimit = Number.isFinite(costLimit) && costLimit > 0 && today.calls > costLimit
+      if (!overLimit) {
+        const runs = state.automation?.quartetRuns ?? {}
+        const target = await docsQuartetTargets(repos, kbId, runs)
+        if (target) {
+          await step('quartet', async () => {
+            logger.info(`[kb-brain-auto] kb=${kbId} 四件套开始: doc=${target.id}（${target.name}）`)
+            await this.quartet.reading(kbId, target.id)
+            await this.quartet.graph(kbId, target.id)
+            await this.quartet.review(kbId, target.id, target.name)
+            await this.quartet.summary(kbId, target.id, target.name)
+            state.automation = {
+              ...(state.automation ?? {}),
+              quartetRuns: { ...(state.automation?.quartetRuns ?? {}), [target.id]: new Date().toISOString() },
+            }
+            await this.saveState(kbId, repos.kbs, state)
+          })
+        }
+      }
     }
 
     // 4. 目标提炼：首跑必跑；重跑需「冷却 + 论断池较上次增长」——素材没变不出近似卡

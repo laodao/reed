@@ -38,10 +38,12 @@ import type { KbFolderRepository } from './repositories/kb-folder.repository'
 import type { KbAtomRepository } from './repositories/kb-atom.repository'
 import type { KbEntityRepository } from './repositories/kb-entity.repository'
 import type { KbKnowledgeEdgeRepository } from './repositories/kb-knowledge-edge.repository'
+import type { GraphEdgeRepository } from './repositories/graph-edge.repository'
 import type { KbNoteRepository } from './repositories/kb-note.repository'
 import type { KbDigestPassRepository } from './repositories/kb-digest-pass.repository'
 import type { KbNoteReviewRepository } from './repositories/kb-note-review.repository'
 import type { KbEventRepository } from './repositories/kb-event.repository'
+import type { KbDimensionRepository } from './repositories/kb-dimension.repository'
 import type { KbQaLogRepository } from './repositories/kb-qa-log.repository'
 import type { KbAutomationLogRepository } from './repositories/kb-automation-log.repository'
 import type { AppRepository } from './repositories/app.repository'
@@ -181,11 +183,14 @@ export interface ICoreDatabaseManager {
   kbAtoms?: KbAtomRepository | null
   kbBrainEntities?: KbEntityRepository | null
   kbKnowledgeEdges?: KbKnowledgeEdgeRepository | null
+  /** 统一图存储（docs/design/2026-10-10-unified-graph-store-design.md）：graph_edges 单表 + graph_name 区分各业务图 */
+  graphEdges?: GraphEdgeRepository | null
   kbNotes?: KbNoteRepository | null
   kbDigestPasses?: KbDigestPassRepository | null
   kbNoteReviews?: KbNoteReviewRepository | null
   /** 知识大脑 v2：场面事件原料（故事轨；旧库未装配时为 null） */
   kbEvents?: KbEventRepository | null
+  kbDimensions?: KbDimensionRepository | null
   /** 知识大脑 v2 P4：质检日志与自动化动作日志（撤销依据） */
   kbQaLogs?: KbQaLogRepository | null
   kbAutomationLogs?: KbAutomationLogRepository | null

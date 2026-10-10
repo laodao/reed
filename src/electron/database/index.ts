@@ -36,6 +36,7 @@ import { KbNoteRepository } from '@core/database/repositories/kb-note.repository
 import { KbDigestPassRepository } from '@core/database/repositories/kb-digest-pass.repository'
 import { KbNoteReviewRepository } from '@core/database/repositories/kb-note-review.repository'
 import { KbEventRepository } from '@core/database/repositories/kb-event.repository'
+import { KbDimensionRepository } from '@core/database/repositories/kb-dimension.repository'
 import { KbQaLogRepository } from '@core/database/repositories/kb-qa-log.repository'
 import { KbAutomationLogRepository } from '@core/database/repositories/kb-automation-log.repository'
 import { AppRepository } from '@core/database/repositories/app.repository'
@@ -189,6 +190,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public kbDigestPasses: KbDigestPassRepository | null = null
   public kbNoteReviews: KbNoteReviewRepository | null = null
   public kbEvents: KbEventRepository | null = null
+  public kbDimensions: KbDimensionRepository | null = null
   public kbQaLogs: KbQaLogRepository | null = null
   public kbAutomationLogs: KbAutomationLogRepository | null = null
   public appDefinitions: AppRepository | null = null
@@ -1006,6 +1008,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
     // 知识大脑 v3：论断知识/证据角色列（书内事实降证据，不进知识供给）
     const { addKbAtomRole } = await import('@core/database/migrations/add-kb-atom-role')
     await addKbAtomRole(this.dataSource)
+    // 知识大脑 v3：提炼维度库
+    const { createKbBrainDimensions } = await import(
+      '@core/database/migrations/create-kb-brain-dimensions'
+    )
+    await createKbBrainDimensions(this.dataSource)
     // 知识大脑 v2 P4：质检日志 + 自动化动作日志
     const { createKbBrainP4Tables } = await import(
       '@core/database/migrations/create-kb-brain-p4-tables'
@@ -4668,6 +4675,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.kbDigestPasses = new KbDigestPassRepository(this.dataSource)
     this.kbNoteReviews = new KbNoteReviewRepository(this.dataSource)
     this.kbEvents = new KbEventRepository(this.dataSource)
+    this.kbDimensions = new KbDimensionRepository(this.dataSource)
     this.kbQaLogs = new KbQaLogRepository(this.dataSource)
     this.kbAutomationLogs = new KbAutomationLogRepository(this.dataSource)
     this.appDefinitions = new AppRepository(this.dataSource)

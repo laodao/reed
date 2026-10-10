@@ -403,15 +403,45 @@ export const INDUCE_PATTERN_SYSTEM = `你是写作套路研究员。给定一组
 
 只输出 JSON，不要任何解释。`
 
+export const DIMENSION_INDUCT_SYSTEM = `你是写作知识维度研究员。给定一个修真/小说知识库的既有归纳素材（synthesis 卡标题列表 + 场面类型分布）与已启用的维度名，提出素材里**确实存在、但已有维度没覆盖**的提炼维度。
+
+要求：
+- 每个维度：name（≤8 字，如「群像调度」「空间规则」）、definition（一句话：这个维度看什么）、
+  hint（按此维度归纳时看什么、问什么，一句指令式描述，供冶炼提示词注入）；
+- 只提素材里能看出端倪的维度（从标题主题与场面分布推断），不凭空编理论框架；
+- 已有维度覆盖的不要重复提；最多 8 个，没有就给空数组。
+
+输出 JSON：{"dimensions":[{"name":"…","definition":"…","hint":"…"}]}
+只输出 JSON，不要任何解释。`
+
+export function buildDimensionInductUser(input: {
+  titles: string[]
+  sceneStats: Record<string, number>
+  existingDimensions: string[]
+}): string {
+  return [
+    `已有维度：${input.existingDimensions.join('、') || '（无）'}`,
+    `synthesis 卡标题（既有归纳）：\n${input.titles.map((t) => `- ${t}`).join('\n')}`,
+    `场面类型分布：${Object.entries(input.sceneStats).map(([k, v]) => `${k}×${v}`).join('、') || '（无）'}`,
+    '',
+    '请提出未覆盖的提炼维度。',
+  ].join('\n')
+}
+
 export function buildInducePatternUser(input: {
   sceneType: string
   scenes: Array<{ summary: string; participants?: string[]; cause?: string | null; outcome?: string | null; doc: string }>
+  /** 维度库提示（v3 M1：启用维度注入——归纳时多看一眼这些镜头） */
+  dimensionHints?: string[]
 }): string {
   const lines = input.scenes.map(
     (s, i) =>
       `[${i}] ${s.summary}${s.participants?.length ? `（${s.participants.join('、')}）` : ''}${s.cause ? `｜前因：${s.cause}` : ''}${s.outcome ? `｜结果：${s.outcome}` : ''}｜出自:${s.doc}`,
   )
-  return `场面类型：${input.sceneType}\n同类场面实例（${input.scenes.length} 个，跨书聚类）：\n${lines.join('\n')}\n\n请归纳套路。`
+  const dims = input.dimensionHints?.length
+    ? `\n\n归纳视角提示（维度库，可在 why/variants 里兼顾这些镜头）：\n${input.dimensionHints.map((h) => `- ${h}`).join('\n')}`
+    : ''
+  return `场面类型：${input.sceneType}\n同类场面实例（${input.scenes.length} 个，跨书聚类）：\n${lines.join('\n')}${dims}\n\n请归纳套路。`
 }
 
 /** 案例拆解：单个经典场面 → 拆解卡（好在哪/学什么/原文） */

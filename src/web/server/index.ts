@@ -567,6 +567,11 @@ async function initDatabase(): Promise<void> {
   // 知识大脑 v3：论断知识/证据角色列（与 Electron 端同构）
   const { addKbAtomRole } = await import('@core/database/migrations/add-kb-atom-role')
   await addKbAtomRole(ds)
+  // 知识大脑 v3：提炼维度库（与 Electron 端同构）
+  const { createKbBrainDimensions } = await import(
+    '@core/database/migrations/create-kb-brain-dimensions'
+  )
+  await createKbBrainDimensions(ds)
   // 知识大脑 v2 P4：质检日志 + 自动化动作日志（与 Electron 端同构）
   const { createKbBrainP4Tables } = await import(
     '@core/database/migrations/create-kb-brain-p4-tables'
