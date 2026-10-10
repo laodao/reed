@@ -1,0 +1,42 @@
+[
+  {
+    "edge": "src/core/platform/episode-production/agent/ep-agent-actions.ts -> src/core/packs/episode-production/handlers/compose/episode-mp4-exporter.runner.ts",
+    "n": 1,
+    "typeOnly": false
+  },
+  {
+    "edge": "src/core/platform/episode-production/assets/services/temp-asset.service.ts -> src/core/packs/episode-production/services/temporary-entity-template.service.ts",
+    "n": 2,
+    "typeOnly": false
+  },
+  {
+    "edge": "src/core/platform/episode-production/auto-binding/lw-entity-detection.service.ts -> src/core/packs/episode-production/services/temporary-entity-template.service.ts",
+    "n": 1,
+    "typeOnly": false
+  },
+  {
+    "edge": "src/core/platform/services/longwriting/design/volume-design-flow.ts -> src/core/packs/longwriting/story-room/room-state.ts",
+    "n": 1,
+    "typeOnly": false
+  },
+  {
+    "edge": "src/core/platform/services/longwriting/design/volume-design-flow.ts -> src/core/packs/longwriting/story-room/room-ledger.ts",
+    "n": 1,
+    "typeOnly": false
+  },
+  {
+    "edge": "src/core/platform/services/longwriting-ai.service.ts -> src/core/packs/longwriting/skills/chapter-writing.ts",
+    "n": 1,
+    "typeOnly": false
+  },
+  {
+    "edge": "src/core/platform/workflow/workflow-boot.ts -> src/core/packs/app/services/app-definition.service.ts",
+    "n": 1,
+    "typeOnly": false
+  },
+  {
+    "edge": "src/core/platform/workflow/workflow-boot.ts -> src/core/packs/app/services/app-session.service.ts",
+    "n": 1,
+    "typeOnly": false
+  }
+]
