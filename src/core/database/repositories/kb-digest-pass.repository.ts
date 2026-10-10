@@ -9,7 +9,7 @@
  * - chapterId=null 的文档级任务（distill/metabolize）不受 DB 唯一键保护
  *   （SQLite/PG 唯一索引对 NULL 互不相斥）——ensurePass 内按应用层查询判重。
  */
-import { type DataSource, type FindOptionsWhere } from 'typeorm'
+import { type DataSource, type FindOptionsWhere, In } from 'typeorm'
 import { randomUUID } from 'crypto'
 import {
   KbDigestPassEntity,
@@ -294,6 +294,39 @@ export class KbDigestPassRepository extends BaseRepository<KbDigestPassEntity, K
 
   async deleteByDocument(documentId: string): Promise<void> {
     await this.scoped.delete({ documentId } as FindOptionsWhere<KbDigestPassEntity>)
+  }
+
+  /**
+   * 复活「空正文误标零产出」的场面补采台账（2026-10 H5 修复配套）。
+   *
+   * 背景：场面补采曾按缺省取列拉章（includeContent 缺省 false），永远拿到空正文，
+   * 被记为 done{scenes:0, calls:0} 且幂等封死——存量书的事件轨静默断流。
+   * 识别特征：done + scenes=0 + calls=0 且 stats 无 empty 标记。修复后的空内容章
+   * 会带 empty 标记、真实跑过的行 calls>0，均不再命中——每行至多复活一次，本方法幂等。
+   * 双轨遍的零产出行（成本记 base 不双计）也会被复活重采一次：代价一次独立
+   * events-only 调用，可能补出双轨提示词漏采的场面，可接受。
+   */
+  async reviveScenelessEventPasses(kbId: string, passKey: string): Promise<number> {
+    const rows = await this.scoped.find({
+      where: {
+        knowledgeBaseId: kbId,
+        passType: 'events',
+        passKey,
+        status: 'done',
+      } as FindOptionsWhere<KbDigestPassEntity>,
+    })
+    const stale = rows.filter((r) => {
+      try {
+        const stats = JSON.parse(r.statsJson ?? '{}') as { scenes?: number; empty?: number }
+        const cost = JSON.parse(r.costJson ?? '{}') as { calls?: number }
+        return (stats.scenes ?? 0) === 0 && (cost.calls ?? 0) === 0 && stats.empty === undefined
+      } catch {
+        return false
+      }
+    })
+    if (stale.length === 0) return 0
+    await this.scoped.delete({ id: In(stale.map((r) => r.id)) } as unknown as FindOptionsWhere<KbDigestPassEntity>)
+    return stale.length
   }
 
   /**

@@ -10,6 +10,7 @@ import { KbAtomRepository, type KbAtomInput } from '@core/database/repositories/
 import { KbKnowledgeEdgeRepository } from '@core/database/repositories/kb-knowledge-edge.repository'
 import { KbDigestPassRepository } from '@core/database/repositories/kb-digest-pass.repository'
 import { KbNoteRepository } from '@core/database/repositories/kb-note.repository'
+import type { KnowledgeBaseRepository } from '@core/database/repositories/knowledge-base.repository'
 import { KbEventRepository, type KbEventInput } from '@core/database/repositories/kb-event.repository'
 import { KbQaLogRepository } from '@core/database/repositories/kb-qa-log.repository'
 import { KbAutomationLogRepository } from '@core/database/repositories/kb-automation-log.repository'
@@ -337,6 +338,44 @@ describe('品类矩阵与质量闭环（v2 P3/P4）', () => {
     const out = await mkSampler(2).sample(kbId)
     expect(out.sampled).toBeGreaterThan(0)
     expect(await mkSampler(2).gateOf(kbId)).toBe('publish')
+  })
+
+  it('judge 每库模型与输出预算（M0-#5）：models.adjudicate 生效、maxTokens=2000', async () => {
+    const kbId = 'kb-qjudge'
+    await insertTestKb(ds, { id: kbId })
+    await notes.propose(kbId, {
+      title: '待检卡',
+      description: 'd',
+      body: 'b'.repeat(80),
+      type: 'plot-pattern',
+      tags: '["smelt"]',
+    })
+    const refs: Array<{ providerConfigId?: string; modelId?: string }> = []
+    const budgets: number[] = []
+    const sampler = new KbQaSamplerService({
+      llmFactory: (ref) => async (req) => {
+        refs.push(ref)
+        budgets.push(req.maxTokens ?? 0)
+        return JSON.stringify({ score: 2, reason: '' })
+      },
+      repos: () => ({
+        notes,
+        qaLogs,
+        events,
+        passes: passRepo,
+        kbs: {
+          findById: async (id: string) =>
+            id === kbId
+              ? ({ brainConfig: JSON.stringify({ enabled: true, models: { atomize: '', adjudicate: 'prov-x:model-y' } }) } as never)
+              : null,
+        } as unknown as Pick<KnowledgeBaseRepository, 'findById'>,
+      }),
+    })
+    const out = await sampler.sample(kbId)
+    expect(out.sampled).toBe(1)
+    expect(out.gate).toBe('publish')
+    expect(refs[0]).toEqual({ providerConfigId: 'prov-x', modelId: 'model-y' })
+    expect(budgets).toEqual([2000])
   })
 
   it('撤销：动作日志 → undo 归档产物卡 → 重复撤销被拒', async () => {

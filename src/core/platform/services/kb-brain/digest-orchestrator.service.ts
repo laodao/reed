@@ -65,6 +65,8 @@ export const SCENE_PASS_KEY = 'events#1'
 
 /** 存量场面补采单轮上限（试点门量级：每轮 ≤200 章，熔断/冷却另行约束） */
 const SCENE_BACKFILL_BATCH = 200
+/** 补采正文分页大小：整本一次拉取会触发 SQLITE_CANTOPEN（commit bcd52371 教训） */
+const SCENE_BACKFILL_PAGE = 100
 
 /** 实体负面清单（服务端硬过滤一道；prompt 内已有软约束） */
 const MENTION_BLOCKLIST = new Set([
@@ -893,7 +895,12 @@ export class KbBrainDigestService {
   /**
    * 存量场面补采（v2 P0）：对已消化（digested）文档的章节跑 events-only 提取。
    * 台账幂等（passKey=events#1）——已随 base 双轨产出的章自动跳过；每轮 ≤batch 章
-   * （试点门量级），成本熔断与消化同口径。空内容章记零产出 done（防每轮重扫）。
+   * （试点门量级），成本熔断与消化同口径。
+   *
+   * H5 修复（2026-10）：章节正文必须显式分页拉取（includeContent 缺省 false 曾导致
+   * 补采永远拿空正文→零产出 done、幂等封死，存量书事件轨静默断流）；分页防整本
+   * 正文一次进内存（SQLITE_CANTOPEN 成因）。历史误标行由 reviveScenelessEventPasses
+   * 复活（每行至多重跑一次）；修复后真空内容章带 empty 标记记账，不再重复进补采。
    */
   async backfillScenes(
     kbId: string,
@@ -909,6 +916,7 @@ export class KbBrainDigestService {
     if (await this.costBreakerTripped(kbId, repos.passes)) return { processed: 0, scenes: 0 }
 
     const batch = opts?.batch ?? SCENE_BACKFILL_BATCH
+    await repos.passes.reviveScenelessEventPasses(kbId, SCENE_PASS_KEY)
     const docs = (await repos.docs.findByKnowledgeBaseId(kbId)).filter(
       d => d.brainStatus === 'digested'
     )
@@ -917,74 +925,83 @@ export class KbBrainDigestService {
     let processed = 0
     let sceneCount = 0
     outer: for (const doc of docs) {
-      const chapterRows = await repos.chapters.findByDocument(doc.id)
-      for (const chapter of chapterRows) {
-        if (processed >= batch) break outer
-        // 非叙事章节（前置页）不采场面
-        if (isNonNarrativeChapter(chapter.title, chapter.parentTitle)) continue
-        const decision = await repos.passes.ensurePass({
-          knowledgeBaseId: kbId,
-          documentId: doc.id,
-          chapterId: chapter.id,
-          passType: 'events',
-          passKey: SCENE_PASS_KEY,
-          chapterHash: chapter.contentHash
+      // 正文按页拉取（100 章/页≈几百 KB），整本一次拉取会触发 SQLITE_CANTOPEN
+      for (let offset = 0; ; offset += SCENE_BACKFILL_PAGE) {
+        const chapterRows = await repos.chapters.findByDocumentPaged(doc.id, {
+          includeContent: true,
+          limit: SCENE_BACKFILL_PAGE,
+          offset
         })
-        if (decision.action === 'skip') continue
-        const pass = decision.pass
-        await repos.passes.setRunning(pass.id)
-        processed += 1
-        try {
-          const content = chapter.content ?? ''
-          if (!content.trim()) {
+        if (chapterRows.length === 0) break
+        for (const chapter of chapterRows) {
+          if (processed >= batch) break outer
+          // 非叙事章节（前置页）不采场面
+          if (isNonNarrativeChapter(chapter.title, chapter.parentTitle)) continue
+          const decision = await repos.passes.ensurePass({
+            knowledgeBaseId: kbId,
+            documentId: doc.id,
+            chapterId: chapter.id,
+            passType: 'events',
+            passKey: SCENE_PASS_KEY,
+            chapterHash: chapter.contentHash
+          })
+          if (decision.action === 'skip') continue
+          const pass = decision.pass
+          await repos.passes.setRunning(pass.id)
+          processed += 1
+          try {
+            const content = chapter.content ?? ''
+            if (!content.trim()) {
+              await repos.passes.setDone(
+                pass.id,
+                { scenes: 0, empty: 1 },
+                { calls: 0, tokensIn: 0, tokensOut: 0 }
+              )
+              continue
+            }
+            const atomizer = new AtomizeService({
+              llm: this.injectedLlm,
+              modelOverride: () => (cfg.models.atomize ? parseModelRef(cfg.models.atomize) : {})
+            })
+            const known = knownNames.length > 0 ? knownNames : undefined
+            const r = await atomizer.captureScenes({
+              chapterTitle: chapter.title,
+              chapterContent: content,
+              knownEntityNames: known
+            })
+            // 参与者实体解析（负面清单/缓存与 base 遍同款；类型缺省 character——场面参与者以人物为主）
+            const resolveEntity = async (mention: string | undefined): Promise<string | null> => {
+              if (!mention) return null
+              const name = mention.trim()
+              if (!name || name.length < 2 || MENTION_BLOCKLIST.has(name)) return null
+              if (mentionCache.has(name)) return mentionCache.get(name)!
+              const ent = await repos.entities.upsertMention(kbId, { name, type: 'character' })
+              mentionCache.set(name, ent.id)
+              return ent.id
+            }
+            const scenesInserted = await this.persistScenes(
+              repos,
+              kbId,
+              doc.id,
+              chapter.id,
+              chapter.contentHash,
+              r.scenes,
+              resolveEntity
+            )
+            sceneCount += scenesInserted
             await repos.passes.setDone(
               pass.id,
-              { scenes: 0 },
-              { calls: 0, tokensIn: 0, tokensOut: 0 }
+              { scenes: scenesInserted },
+              { calls: r.windowCalls, tokensIn: 0, tokensOut: 0 }
             )
-            continue
+          } catch (e) {
+            await repos.passes.setFailed(pass.id, e instanceof Error ? e.message : String(e))
+            logger.warn(
+              `[kb-brain] 场面补采失败 ch=${chapter.id}（跳过续跑）: ${e instanceof Error ? e.message : String(e)}`
+            )
           }
-          const atomizer = new AtomizeService({
-            llm: this.injectedLlm,
-            modelOverride: () => (cfg.models.atomize ? parseModelRef(cfg.models.atomize) : {})
-          })
-          const known = knownNames.length > 0 ? knownNames : undefined
-          const r = await atomizer.captureScenes({
-            chapterTitle: chapter.title,
-            chapterContent: content,
-            knownEntityNames: known
-          })
-          // 参与者实体解析（负面清单/缓存与 base 遍同款；类型缺省 character——场面参与者以人物为主）
-          const resolveEntity = async (mention: string | undefined): Promise<string | null> => {
-            if (!mention) return null
-            const name = mention.trim()
-            if (!name || name.length < 2 || MENTION_BLOCKLIST.has(name)) return null
-            if (mentionCache.has(name)) return mentionCache.get(name)!
-            const ent = await repos.entities.upsertMention(kbId, { name, type: 'character' })
-            mentionCache.set(name, ent.id)
-            return ent.id
-          }
-          const scenesInserted = await this.persistScenes(
-            repos,
-            kbId,
-            doc.id,
-            chapter.id,
-            chapter.contentHash,
-            r.scenes,
-            resolveEntity
-          )
-          sceneCount += scenesInserted
-          await repos.passes.setDone(
-            pass.id,
-            { scenes: scenesInserted },
-            { calls: r.windowCalls, tokensIn: 0, tokensOut: 0 }
-          )
-        } catch (e) {
-          await repos.passes.setFailed(pass.id, e instanceof Error ? e.message : String(e))
-          logger.warn(
-            `[kb-brain] 场面补采失败 ch=${chapter.id}（跳过续跑）: ${e instanceof Error ? e.message : String(e)}`
-          )
         }
+        if (chapterRows.length < SCENE_BACKFILL_PAGE) break
       }
     }
     if (processed > 0)
@@ -1405,6 +1422,12 @@ export function installKbBrainDigest(
       .then(({ getKbBrainAutomationService }) => getKbBrainAutomationService().start())
       .catch(e =>
         logger.warn(`[kb-brain] 后台自动化启动失败: ${e instanceof Error ? e.message : String(e)}`)
+      )
+    // 卡片检索索引（M0-#7）：publish 钩子 + 存量 published 卡回填（note 通道此前空转）
+    import('./note-index')
+      .then(({ installKbNoteIndex }) => installKbNoteIndex())
+      .catch(e =>
+        logger.warn(`[kb-brain] 卡片索引装配失败: ${e instanceof Error ? e.message : String(e)}`)
       )
   }
   logger.info('[kb-brain] 消化流水线已装配（kb:document-completed 订阅 + 台账恢复）')

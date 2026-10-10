@@ -273,6 +273,47 @@ describe('场面轨全链（双轨落库 + 回填 + 级联）', () => {
     expect(llmCalls.length).toBe(llmBefore + 1)
   }, 30000)
 
+  it('H5 回归：误标零产出台账复活重采；真空章带 empty 标记且不再复活', async () => {
+    // 独立库 kb-e（不污染 kb-s 的级联断言）：一章有内容（历史误标零产出）、一章真无内容
+    await insertTestKb(ds, { id: 'kb-e', brainConfig: '{"enabled":true,"digestion":{"enabled":true}}' })
+    await insertTestDoc(ds, { id: 'doc-e', kbId: 'kb-e' })
+    await ds.query(`UPDATE kb_documents SET brain_status='digested' WHERE id='doc-e'`)
+    const chapters = new KbChapterRepository(ds)
+    await chapters.replaceByDocument('doc-e', [
+      { id: 'ech-1', documentId: 'doc-e', knowledgeBaseId: 'kb-e', title: '第1章', level: 1, ordering: 0, content: CH1_CONTENT, contentHash: 'hash-ech-1' },
+      { id: 'ech-empty', documentId: 'doc-e', knowledgeBaseId: 'kb-e', title: '第2章', level: 1, ordering: 1, content: '', contentHash: 'hash-ech-empty' },
+    ])
+    // 造历史误标行：done{scenes:0, calls:0}——当年 includeContent 缺省 false 的产物
+    for (const chId of ['ech-1', 'ech-empty'] as const) {
+      const d = await passRepo.ensurePass({
+        knowledgeBaseId: 'kb-e',
+        documentId: 'doc-e',
+        chapterId: chId,
+        passType: 'events',
+        passKey: 'events#1',
+        chapterHash: `hash-${chId}`,
+      })
+      await passRepo.setRunning(d.pass.id)
+      await passRepo.setDone(d.pass.id, { scenes: 0 }, { calls: 0, tokensIn: 0, tokensOut: 0 })
+    }
+
+    const llmBefore = llmCalls.length
+    const out = await svc.backfillScenes('kb-e')
+    // 两章都被复活重跑：有内容章补出场面，真空章不烧调用
+    expect(out.processed).toBe(2)
+    expect(out.scenes).toBe(1)
+    const rows = await passRepo.listByDocument('doc-e')
+    const emptyRow = rows.find((p) => p.passType === 'events' && p.chapterId === 'ech-empty')!
+    expect((JSON.parse(emptyRow.statsJson ?? '{}') as { empty?: number }).empty).toBe(1)
+    const realRow = rows.find((p) => p.passType === 'events' && p.chapterId === 'ech-1')!
+    expect((JSON.parse(realRow.costJson ?? '{}') as { calls: number }).calls).toBe(1)
+
+    // 再跑：误标行已重写（calls>0 / 带 empty 标记），heal 不再命中——幂等零调用
+    const again = await svc.backfillScenes('kb-s')
+    expect(again.processed).toBe(0)
+    expect(llmCalls.length).toBe(llmBefore + 1)
+  }, 30000)
+
   it('删文档级联：atoms/events/passes 清理 + 边按端点删除 + 卡片剔引用 + 命名空间向量', async () => {
     // 造卡片引用（evidence + pattern_instances 指向 doc-s 与另一个文档）
     const notes = new KbNoteRepository(ds)

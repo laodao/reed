@@ -13,10 +13,12 @@ import type { KbNoteRepository, KbNoteRecord } from '@core/database/repositories
 import type { KbQaLogRepository } from '@core/database/repositories/kb-qa-log.repository'
 import type { KbEventRepository } from '@core/database/repositories/kb-event.repository'
 import type { KbDigestPassRepository } from '@core/database/repositories/kb-digest-pass.repository'
+import type { KnowledgeBaseRepository } from '@core/database/repositories/knowledge-base.repository'
 import { extractJsonFromResponse } from '@core/platform/services/ai-call'
 import { QA_JUDGE_SYSTEM, buildQaJudgeUser } from './prompts'
 import { parseQaJudgeOutput } from './schemas'
-import { defaultBrainLlm, type BrainLlmFn } from './llm'
+import { parseBrainConfig } from './brain-config'
+import { defaultBrainLlm, parseModelRef, type BrainLlmFn, type BrainModelRef } from './llm'
 
 const logger = createLogger('KbQaSampler')
 
@@ -28,12 +30,20 @@ export const QA_REVIEW_THRESHOLD = 1.0
 /** 漂移判定：单一类型占比与总量下限 */
 const DRIFT_RATIO = 0.8
 const DRIFT_MIN_TOTAL = 50
+/**
+ * judge 输出预算（2026-10 M0-#5）：500 曾是推理型模型的死穴——思考就把它耗尽，
+ * 输出恒空 → 解析恒败 → 滚动均恒空 → 质量门失明。defaultBrainLlm 的空输出翻倍
+ * 只对「完全空」触发，这里直接给足常态预算。
+ */
+export const QA_JUDGE_MAX_TOKENS = 2000
 
 interface QaRepos {
   notes: KbNoteRepository
   qaLogs: KbQaLogRepository
   events: KbEventRepository
   passes: KbDigestPassRepository
+  /** 每库模型解析用（可缺省——旧测试桩/极端装配下回落 env/宿主模型链） */
+  kbs?: Pick<KnowledgeBaseRepository, 'findById'> | null
 }
 
 export interface QaSampleOutcome {
@@ -46,24 +56,55 @@ export interface QaSampleOutcome {
 
 export interface QaSamplerDeps {
   llm?: BrainLlmFn
+  /** 每库模型工厂（生产缺省 defaultBrainLlm；测试注入捕获解析结果） */
+  llmFactory?: (ref: BrainModelRef) => BrainLlmFn
   modelOverride?: () => { providerConfigId?: string; modelId?: string }
   repos?: () => QaRepos | null
 }
 
 export class KbQaSamplerService {
   private readonly llm: BrainLlmFn
+  private readonly depsLlm: BrainLlmFn | null
+  private readonly llmFactory: (ref: BrainModelRef) => BrainLlmFn
   private readonly reposFn: () => QaRepos | null
   private readonly running = new Set<string>()
 
   constructor(deps: QaSamplerDeps = {}) {
+    this.depsLlm = deps.llm ?? null
     this.llm = deps.llm ?? defaultBrainLlm('kb-brain-adjudicate', deps.modelOverride)
+    this.llmFactory = deps.llmFactory ?? ((ref) => defaultBrainLlm('kb-brain-adjudicate', () => ref))
     this.reposFn =
       deps.repos ??
       ((): QaRepos | null => {
         const db = getCoreDatabaseManager()
         if (!db.kbNotes || !db.kbQaLogs || !db.kbEvents || !db.kbDigestPasses) return null
-        return { notes: db.kbNotes, qaLogs: db.kbQaLogs, events: db.kbEvents, passes: db.kbDigestPasses }
+        return {
+          notes: db.kbNotes,
+          qaLogs: db.kbQaLogs,
+          events: db.kbEvents,
+          passes: db.kbDigestPasses,
+          kbs: db.knowledgeBases ?? null,
+        }
       })
+  }
+
+  /**
+   * 本轮 judge 用的 LLM（M0-#5 每库模型）：库配置了 models.adjudicate 就按它跑，
+   * 缺省回落构造链（env KB_ADJUDICATE_MODEL → 宿主模型）。显式注入的 llm（测试/
+   * 定制装配）优先级最高，行为不变。
+   */
+  private async llmFor(kbId: string): Promise<BrainLlmFn> {
+    if (this.depsLlm) return this.depsLlm
+    try {
+      const repos = this.reposFn()
+      const kb = repos?.kbs ? await repos.kbs.findById(kbId) : null
+      const cfg = kb ? parseBrainConfig(kb.brainConfig ?? null) : null
+      const ref = cfg?.models.adjudicate ? parseModelRef(cfg.models.adjudicate) : {}
+      if (ref.modelId || ref.providerConfigId) return this.llmFactory(ref)
+    } catch {
+      /* 每库解析失败回落默认链路 */
+    }
+    return this.llm
   }
 
   isRunning(kbId: string): boolean {
@@ -95,15 +136,16 @@ export class KbQaSamplerService {
         repos.notes.listByStatus(kbId, 'proposed', 1, 30),
       ])
       const smeltCards = [...pub.rows, ...prop.rows].filter((r) => isSmeltCard(r)).slice(0, SAMPLE_N)
+      const llm = await this.llmFor(kbId)
       let llmCalls = 0
       if (smeltCards.length > 0) {
         const rowsToInsert: Array<{ kbId: string; noteId: string; score: number; reason: string }> = []
         for (const card of smeltCards) {
           try {
-            const raw = await this.llm({
+            const raw = await llm({
               system: QA_JUDGE_SYSTEM,
               user: buildQaJudgeUser({ title: card.title, description: card.description, bodyExcerpt: card.body.slice(0, 600) }),
-              maxTokens: 500,
+              maxTokens: QA_JUDGE_MAX_TOKENS,
             })
             const verdict = parseQaJudgeOutput(extractJsonFromResponse(raw))
             rowsToInsert.push({ kbId, noteId: card.id, score: verdict.score, reason: verdict.reason })

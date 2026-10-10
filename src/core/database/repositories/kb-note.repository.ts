@@ -12,6 +12,30 @@ import {
 } from '../entities/kb-brain/kb-note.entity'
 import { BaseRepository } from '../base-repository'
 import { getCurrentUserId } from '@core/context/user-context'
+import { createLogger } from '@core/utils/logger'
+
+const logger = createLogger('KbNoteRepository')
+
+/**
+ * 卡片发布钩子（2026-10 M0-#7 检索索引）：status→published 的唯一漏斗是
+ * `publish()`，由服务层的 note-index 模块在装配时注册——发布即建 note: 向量+
+ * 倒排。仓库层不做嵌入；钩子失败只记日志，绝不影响发布主流程。
+ */
+type KbNotePublishHook = (note: KbNoteRecord) => Promise<void>
+let kbNotePublishHook: KbNotePublishHook | null = null
+
+export function setKbNotePublishHook(hook: KbNotePublishHook | null): void {
+  kbNotePublishHook = hook
+}
+
+function firePublishHook(note: KbNoteRecord): void {
+  if (!kbNotePublishHook) return
+  void Promise.resolve()
+    .then(() => kbNotePublishHook!(note))
+    .catch((e: unknown) =>
+      logger.warn(`卡片发布钩子失败（不影响发布）: ${e instanceof Error ? e.message : String(e)}`)
+    )
+}
 
 export interface KbNoteRecord {
   id: string
@@ -141,7 +165,9 @@ export class KbNoteRepository extends BaseRepository<KbNoteEntity, KbNoteRecord>
     row.status = 'published'
     row.updatedAt = new Date()
     await this.scoped.save(row)
-    return this.toDto(row)
+    const dto = this.toDto(row)
+    firePublishHook(dto)
+    return dto
   }
 
   /**
@@ -162,7 +188,10 @@ export class KbNoteRepository extends BaseRepository<KbNoteEntity, KbNoteRecord>
     row.version += 1
     row.updatedAt = new Date()
     await this.scoped.save(row)
-    return this.toDto(row)
+    const dto = this.toDto(row)
+    // 已发布卡随实例增长演进——内容变了，索引同步刷新（钩子内 delete+reinsert 幂等）
+    if (dto.status === 'published') firePublishHook(dto)
+    return dto
   }
 
   /** 拒绝：archived 留档（不物理删） */
