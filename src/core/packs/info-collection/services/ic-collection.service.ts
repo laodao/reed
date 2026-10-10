@@ -592,11 +592,30 @@ export class IcCollectionService {
     return { project, check: draft.check }
   }
 
-  /** 绑定/改绑项目知识库（内容唯一存储在 kb；M1 由用户指定，自动建库下一步接 embedding 配置） */
-  async setProjectKb(projectId: string, kbId: string | null): Promise<void> {
+  /**
+   * 绑定/改绑项目知识库（内容唯一存储在 kb；M1 由用户指定，自动建库下一步接 embedding 配置）。
+   * 2026-10-10 补录通道：绑定后把**已确认但未入库**的来源（历史确认时未绑 KB 的）逐条补入——
+   * 否则先确认后绑库的数据永远进不了知识库（真机实测：11 条已入选 0 条入库）。
+   */
+  async setProjectKb(projectId: string, kbId: string | null): Promise<{ backfilled: number }> {
     const repos = this.repos()
     await this.requireProject(repos, projectId)
     await repos.projects.patch(projectId, { kbId })
+    let backfilled = 0
+    if (kbId) {
+      const pending = (await repos.sources.listByProject(projectId)).filter(
+        s => s.reviewStatus === 'confirmed' && !s.kbDocumentId && s.fetchStatus === 'ok',
+      )
+      for (const source of pending) {
+        try {
+          await this.importSourceToKb(kbId, source)
+          backfilled += 1
+        } catch {
+          /* 单源失败不阻断补录（下次绑定/重试可再补） */
+        }
+      }
+    }
+    return { backfilled }
   }
 
   async listProjects(status?: 'active' | 'archived'): Promise<IcProjectRow[]> {
@@ -1059,18 +1078,7 @@ export class IcCollectionService {
       }
       // kb 导入（内容唯一存储在 kb；每源一文档，文档头带溯源元数据）
       if (project.kbId) {
-        const markdown = this.snapshots ? await this.readSnapshotMarkdown(source) : null
-        if (markdown) {
-          const header =
-            `> 来源：${source.url}\n> 分级：T${source.tier}（${source.tierRationale}）\n` +
-            `> 采集时间：${source.collectedAt?.toISOString() ?? '未知'}${source.publishedAt ? `｜发布：${source.publishedAt.toISOString().slice(0, 10)}` : ''}\n\n`
-          const kbResp = await this.kbAdd(project.kbId, {
-            name: `【搜集】${source.urlNormalized.slice(0, 80)}`,
-            content: header + markdown,
-            sourceId: `ic:${source.id}`,
-          })
-          if (kbResp.documentId) await repos.sources.patch(source.id, { kbDocumentId: kbResp.documentId })
-        }
+        await this.importSourceToKb(project.kbId, source)
         // 无快照存档时：源仍可确认（正文在原站），但溯源完整度在质量报告体现
       }
       await repos.sources.patch(source.id, { reviewStatus: 'confirmed' })
@@ -1079,6 +1087,22 @@ export class IcCollectionService {
       confirmed.push(id)
     }
     return { confirmed, skipped }
+  }
+
+  /** 单源入知识库：快照 markdown + 溯源头，每源一文档；成功回写 kbDocumentId（confirm 与绑库补录共用） */
+  private async importSourceToKb(kbId: string, source: IcSourceRow): Promise<void> {
+    const repos = this.repos()
+    const markdown = this.snapshots ? await this.readSnapshotMarkdown(source) : null
+    if (!markdown) return // 无快照存档：正文在原站，溯源完整度在质量报告体现
+    const header =
+      `> 来源：${source.url}\n> 分级：T${source.tier}（${source.tierRationale}）\n` +
+      `> 采集时间：${source.collectedAt?.toISOString() ?? '未知'}${source.publishedAt ? `｜发布：${source.publishedAt.toISOString().slice(0, 10)}` : ''}\n\n`
+    const kbResp = await this.kbAdd(kbId, {
+      name: `【搜集】${source.urlNormalized.slice(0, 80)}`,
+      content: header + markdown,
+      sourceId: `ic:${source.id}`,
+    })
+    if (kbResp.documentId) await repos.sources.patch(source.id, { kbDocumentId: kbResp.documentId })
   }
 
   async rejectBatch(projectId: string, sourceIds: string[], reason?: string): Promise<number> {

@@ -303,10 +303,11 @@ export const useInfoCollectionStore = defineStore('info-collection', () => {
     return n
   }
 
-  async function setProjectKb(projectId: string, kbId: string | null): Promise<boolean> {
+  /** 绑定知识库；绑定时自动补录"已确认未入库"的历史来源，返回补录条数 */
+  async function setProjectKb(projectId: string, kbId: string | null): Promise<{ ok: boolean; backfilled: number }> {
     const resp = await icApi()?.setProjectKb({ id: projectId, kbId })
     if (resp?.success && current.value?.id === projectId) current.value.kbId = kbId
-    return resp?.success === true
+    return { ok: resp?.success === true, backfilled: (resp?.data as { backfilled?: number } | undefined)?.backfilled ?? 0 }
   }
 
   /** 跨源裁决：转载簇/冲突归因/孤证标记；完成后全量刷新（行状态/supersede 链会变） */

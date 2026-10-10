@@ -153,10 +153,11 @@ async function doConfirm(sources: IcSourceDto[]): Promise<void> {
   acting.value = true
   try {
     const { confirmed, skipped } = await store.confirmBatch(store.current.id, sources.map(s => s.id))
+    const kbNote = store.current?.kbId ? '' : '；注意：未绑定知识库，内容未入库——页头绑定后自动补录'
     if (skipped.length) {
-      ElMessage.warning(`已确认 ${confirmed.length} 条；拦下 ${skipped.length} 条——${skipped.map(s => s.reason).join('；')}`)
+      ElMessage.warning(`已确认 ${confirmed.length} 条；拦下 ${skipped.length} 条——${skipped.map(s => s.reason).join('；')}${kbNote}`)
     } else {
-      ElMessage.success(`已确认 ${confirmed.length} 条来源，条目随源入库`)
+      ElMessage.success(`已确认 ${confirmed.length} 条来源${kbNote}`)
     }
     selected.value = []
     tableRef.value?.clearSelection()

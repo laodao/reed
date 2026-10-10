@@ -165,8 +165,18 @@ async function loadKbOptions(): Promise<void> {
 async function doBindKb(kbId: string | null): Promise<void> {
   if (!project.value) return
   const normalized = kbId?.trim() || null
-  const ok = await store.setProjectKb(project.value.id, normalized)
-  ElMessage[ok ? 'success' : 'error'](ok ? (normalized ? '已绑定知识库' : '已解绑知识库') : '绑定失败')
+  const { ok, backfilled } = await store.setProjectKb(project.value.id, normalized)
+  if (ok) {
+    ElMessage.success(
+      normalized
+        ? backfilled > 0
+          ? `已绑定知识库，历史确认来源补录入库 ${backfilled} 条`
+          : '已绑定知识库'
+        : '已解绑知识库',
+    )
+  } else {
+    ElMessage.error('绑定失败')
+  }
 }
 
 onMounted(async () => {
