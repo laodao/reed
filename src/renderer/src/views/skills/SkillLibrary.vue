@@ -65,7 +65,19 @@
           </div>
         </div>
       </div>
-      <div v-if="shown.length === 0" class="grid-empty">没有匹配的技能——新建、导入或从内置复制一个</div>
+      <div v-if="filtered.length === 0" class="grid-empty">没有匹配的技能——新建、导入或从内置复制一个</div>
+    </div>
+
+    <!-- 分页 -->
+    <div v-if="filtered.length > 0" class="page-bar">
+      <el-pagination
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :total="filtered.length"
+        :page-sizes="[12, 24, 48, 96]"
+        layout="total, sizes, prev, pager, next"
+        background
+      />
     </div>
 
     <!-- 详情对话框 -->
@@ -185,7 +197,7 @@
  * 内置技能只读 + 复制为自定义；用户技能可新建/编辑/删除/导入/导出。
  * 技能包形态：SKILL.md（YAML frontmatter + markdown 正文）+ 可选 prompts/references/assets。
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import SkillDistillDialog from './SkillDistillDialog.vue'
@@ -194,7 +206,7 @@ interface SkillInput { key: string; label?: string; type?: string; required?: bo
 interface SkillMeta {
   id: string; name: string; description: string; whenToUse?: string; category: string
   source: 'builtin' | 'user'; dirPath?: string | null
-  inputs: SkillInput[]; outputDesc?: string; updatedAt?: string
+  inputs: SkillInput[]; outputDesc?: string; createdAt?: string; updatedAt?: string
 }
 interface SkillFull extends SkillMeta { systemPrompt: string; body: string; modelInvocable: boolean }
 
@@ -210,7 +222,11 @@ const detailVisible = ref(false)
 
 const categories = computed(() => [...new Set(all.value.map(s => s.category).filter(Boolean))].sort())
 
-const shown = computed(() => {
+// ── 分页（筛选条件变化时回到第一页） ──
+const page = ref(1)
+const pageSize = ref(24)
+
+const filtered = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
   return all.value.filter(s => {
     if (tab.value !== 'all' && s.source !== tab.value) return false
@@ -219,6 +235,15 @@ const shown = computed(() => {
     return s.name.toLowerCase().includes(kw) || s.id.includes(kw) || s.description.toLowerCase().includes(kw)
   })
 })
+
+/** 当前页卡片（页码越界自动收敛到最后一页——删除/切换筛选后列表变短的场景） */
+const shown = computed(() => {
+  const pages = Math.max(1, Math.ceil(filtered.value.length / pageSize.value))
+  const p = Math.min(page.value, pages)
+  return filtered.value.slice((p - 1) * pageSize.value, p * pageSize.value)
+})
+
+watch([keyword, category, tab], () => { page.value = 1 })
 
 function categoryIcon(cat: string): string {
   const map: Record<string, string> = { '内容创作': '🎬', '文案写作': '✍️', '分析': '🔎', '办公': '⚙️', '知识提炼': '📚', '营销': '📣', '技术': '🛠️' }
@@ -229,7 +254,7 @@ async function load() {
   loading.value = true
   try {
     const r = await api().skills.list()
-    all.value = (r?.data ?? []).sort((a: SkillMeta, b: SkillMeta) => (a.source === b.source ? a.id.localeCompare(b.id) : a.source === 'builtin' ? -1 : 1))
+    all.value = r?.data ?? [] // 后端已按创建时间倒序（最新在前；内置无时间排后）
   } catch (e: any) {
     ElMessage.error(`技能列表加载失败：${e?.message ?? e}`)
   } finally {
@@ -426,6 +451,7 @@ onMounted(load)
 .card-cat { font-size: 12px; color: var(--el-text-color-secondary); }
 .card-actions { display: flex; gap: 6px; }
 .grid-empty { grid-column: 1 / -1; color: var(--el-text-color-secondary); text-align: center; padding: 40px 0; }
+.page-bar { display: flex; justify-content: center; margin-top: 18px; }
 .detail-title { display: flex; align-items: center; gap: 8px; }
 .detail-icon { font-size: 20px; }
 .detail-name { font-size: 18px; font-weight: 600; }

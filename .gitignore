@@ -73,3 +73,8 @@ docs/other/
 .tmp-build/
 outputs/.tmp/
 outputs/.tmp-*/
+
+# vitest 临时目录（沙箱 TMP 重定向）
+.tmp-vitest/
+# 真机运行时浏览器配置备份（GB 级，纯调试残留）
+outputs/_tr-run/

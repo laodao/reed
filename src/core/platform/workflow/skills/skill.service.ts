@@ -64,18 +64,23 @@ export class SkillService {
     const out: WorkflowSkill[] = []
     for (const entry of readdirSync(root, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue
-      const md = join(root, entry.name, SKILL_MD_FILENAME)
+      const dir = join(root, entry.name)
+      const md = join(dir, SKILL_MD_FILENAME)
       if (!existsSync(md)) continue
       try {
         const skill = parseSkillMarkdown(readFileSync(md, 'utf-8'), {
-          dirPath: join(root, entry.name),
+          dirPath: dir,
           source: 'user',
         })
         if (skill.id !== entry.name) {
           logger.warn(`[skills] 技能目录名 ${entry.name} 与 frontmatter name ${skill.id} 不一致，跳过`)
           continue
         }
-        out.push(skill)
+        // createdAt = 技能目录 birthtime（新建/导入/fork 时生成；编辑只重写 SKILL.md 不变），
+        // 部分文件系统不提供 birthtime 时回退 mtime
+        const st = statSync(dir)
+        const createdMs = st.birthtimeMs > 0 ? st.birthtimeMs : st.mtimeMs
+        out.push({ ...skill, createdAt: new Date(createdMs).toISOString() })
       } catch (e) {
         logger.warn(`[skills] 跳过无效技能 ${entry.name}: ${e instanceof Error ? e.message : String(e)}`)
       }
@@ -107,12 +112,20 @@ export class SkillService {
 
   // ==================== 对外 API ====================
 
-  /** 全部技能（用户优先覆盖内置同名；按 id 排序） */
+  /**
+   * 全部技能（用户优先覆盖内置同名）。
+   * 排序：创建时间倒序（最新创建在前），无 createdAt 的内置技能排其后按 id 序。
+   */
   list(): WorkflowSkill[] {
     const map = new Map<string, WorkflowSkill>()
     for (const s of this.builtinAll()) map.set(s.id, s)
     for (const s of this.userAll()) map.set(s.id, s) // 用户覆盖内置（宽容：手工放置同名目录）
-    return [...map.values()].sort((a, b) => a.id.localeCompare(b.id))
+    return [...map.values()].sort((a, b) => {
+      if (a.createdAt && b.createdAt) return b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id)
+      if (a.createdAt) return -1
+      if (b.createdAt) return 1
+      return a.id.localeCompare(b.id)
+    })
   }
 
   /** 技能详情（不含 references；列表页/编辑用） */

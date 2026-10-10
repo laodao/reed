@@ -41,6 +41,8 @@ export interface WorkflowSkillMeta {
   inputs: WorkflowSkillInput[]
   /** 输出说明（引导模型输出格式） */
   outputDesc?: string
+  /** 创建时间（ISO；用户技能取技能包目录创建时间，内置技能无此字段） */
+  createdAt?: string
   updatedAt?: string
 }
 
