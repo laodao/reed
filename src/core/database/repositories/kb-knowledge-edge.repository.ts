@@ -181,12 +181,19 @@ export class KbKnowledgeEdgeRepository extends BaseRepository<KbKnowledgeEdgeEnt
   }
 
   /** 实体↔实体边删除（P2 图谱重建：重建前清掉上一轮抽取的关系边） */
+  /**
+   * 图谱重建清边（graph-build 专用）：只删「世界关系白名单」内的实体边——
+   * v3 真机实证：全删会连带清掉体系汇聚产线的 sublevel-of 体系树边（两条产线
+   * 互不相认，四件套一跑体系树就被清空）。体系树/知识类边（sublevel-of 等）
+   * 由各自产线自行演进。
+   */
   async deleteEntityEntityEdges(kbId: string): Promise<void> {
     await this.scoped.delete({
       knowledgeBaseId: kbId,
       sourceKind: 'entity',
       targetKind: 'entity',
-    } as FindOptionsWhere<KbKnowledgeEdgeEntity>)
+      relation: In(['member-of', 'located-in', 'owns', 'wields', 'allied-with', 'enemy-of', 'kin-of', 'mentor-of', 'relates']),
+    } as unknown as FindOptionsWhere<KbKnowledgeEdgeEntity>)
   }
 
   /** 实体↔实体边清单（P2 图谱视图数据源，带关系/证据/置信度） */
