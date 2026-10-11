@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>领域学习空间 · 原型 v2（交互逻辑升级）</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0c10; --shell:#101319; --panel:#151922; --panel2:#1a1f29; --panel3:#212734;
+  --line:#232936; --line2:#2f3644; --line3:#3a4354;
+  --tx:#eef1f6; --tx2:#aab3c2; --tx3:#78828f; --tx4:#525b6b;
+  --acc:#5b8dff; --acc2:#7ba5ff; --accD:#3f72e8; --accS:rgba(91,141,255,.14);
+  --ok:#3ecf7f; --okS:rgba(62,207,127,.14);
+  --warn:#f0a93b; --warnS:rgba(240,169,59,.14);
+  --bad:#f4576a; --badS:rgba(244,87,106,.14);
+  --pur:#a67cf5; --purS:rgba(166,124,245,.14);
+  --r:10px; --r2:14px;
+  --sh1:0 1px 2px rgba(0,0,0,.4);
+  --sh2:0 4px 16px rgba(0,0,0,.35);
+  --sh3:0 12px 40px rgba(0,0,0,.5);
+  --grad:linear-gradient(135deg,#5b8dff,#8a6cf5);
+}
+html,body{height:100%}
+body{
+  background:var(--bg);color:var(--tx);overflow:hidden;display:flex;flex-direction:column;
+  font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+input,textarea{font:inherit}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:#2a313e;border-radius:6px;border:3px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:#3a4354;background-clip:content-box}
+
+/* ================= 顶栏 ================= */
+.topbar{
+  height:56px;flex:none;display:flex;align-items:center;gap:14px;padding:0 18px;
+  background:linear-gradient(180deg,#12161e,#0f1219);
+  border-bottom:1px solid var(--line);position:relative;z-index:30;
+}
+.topbar::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(91,141,255,.35),transparent)}
+.tb-back{display:flex;align-items:center;gap:7px;padding:7px 12px 7px 9px;border-radius:9px;
+  color:var(--tx3);font-size:13px;transition:.18s}
+.tb-back:hover{background:var(--panel2);color:var(--tx)}
+.tb-div{width:1px;height:22px;background:var(--line2)}
+.tb-title{display:flex;align-items:center;gap:10px;min-width:0}
+.tb-title h1{font-size:15.5px;font-weight:640;letter-spacing:-.015em;white-space:nowrap;
+  background:linear-gradient(90deg,#fff,#c3d0e8);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.pill{font-size:11.5px;padding:3px 10px;border-radius:100px;border:1px solid var(--line2);
+  color:var(--tx3);white-space:nowrap;font-weight:520}
+.pill.ok{color:var(--ok);border-color:rgba(62,207,127,.32);background:var(--okS)}
+.pill.acc{color:var(--acc);border-color:rgba(91,141,255,.32);background:var(--accS)}
+.tb-sp{flex:1}
+.seg{display:flex;gap:2px;background:var(--panel2);padding:3px;border-radius:10px;border:1px solid var(--line)}
+.seg button{padding:6px 14px;border-radius:7px;font-size:12.5px;color:var(--tx3);transition:.18s;font-weight:520}
+.seg button:hover{color:var(--tx2)}
+.seg button.on{background:var(--panel3);color:var(--tx);box-shadow:var(--sh1)}
+.ring-wrap{display:flex;align-items:center;gap:10px;padding:5px 12px 5px 8px;border-radius:11px;
+  background:var(--panel2);border:1px solid var(--line);transition:.18s;cursor:pointer}
+.ring-wrap:hover{border-color:var(--line3);background:var(--panel3)}
+.ring-t{font-size:11px;color:var(--tx4);line-height:1.3}
+.ring-t b{display:block;color:var(--tx);font-size:14.5px;font-weight:660;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.icon-btn{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;color:var(--tx3);
+  border:1px solid var(--line);background:var(--panel2);transition:.18s;flex:none;font-size:14px}
+.icon-btn:hover{color:var(--tx);border-color:var(--line3);background:var(--panel3);transform:translateY(-1px)}
+
+/* ================= 主体 ================= */
+.main{flex:1;display:grid;grid-template-columns:280px 1fr 344px;min-height:0;overflow:hidden}
+.col{display:flex;flex-direction:column;min-height:0;background:var(--panel);position:relative}
+.col.mid{background:var(--bg);border-left:1px solid var(--line);border-right:1px solid var(--line)}
+.col-head{height:46px;flex:none;display:flex;align-items:center;gap:9px;padding:0 14px;
+  border-bottom:1px solid var(--line);background:linear-gradient(180deg,#171b24,#151922)}
+.col-head h2{font-size:11.5px;font-weight:680;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3)}
+.col-head .sp{flex:1}
+.col-body{flex:1;overflow-y:auto;overflow-x:hidden;scroll-behavior:smooth}
+
+/* ================= 左栏 ================= */
+.map-tools{display:flex;gap:7px;padding:12px 14px 9px;flex:none}
+.search{flex:1;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:9px;
+  background:var(--panel2);border:1px solid var(--line);transition:.18s}
+.search:focus-within{border-color:var(--acc);background:var(--panel3);box-shadow:0 0 0 3px var(--accS)}
+.search input{flex:1;background:none;border:none;outline:none;color:var(--tx);font-size:13px;min-width:0}
+.search input::placeholder{color:var(--tx4)}
+
+.cov{margin:0 14px 12px;padding:11px 13px;border-radius:11px;background:var(--panel2);
+  border:1px solid var(--line);cursor:pointer;transition:.18s}
+.cov:hover{border-color:var(--line3);background:var(--panel3)}
+.cov-t{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--tx3);margin-bottom:8px}
+.cov-t b{color:var(--warn);font-variant-numeric:tabular-nums;font-size:13px}
+.cov-bar{height:5px;background:var(--panel3);border-radius:3px;overflow:hidden;display:flex}
+.cov-bar i{display:block;height:100%;background:linear-gradient(90deg,var(--ok),#5ad998)}
+.cov-bar u{display:block;height:100%;background:var(--warn);opacity:.7}
+
+.tree{padding:0 10px 22px}
+.branch{margin-bottom:3px}
+.branch-h{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:9px;cursor:pointer;
+  transition:.16s;font-size:13px;font-weight:560;color:var(--tx2)}
+.branch-h:hover{background:var(--panel2);color:var(--tx)}
+.caret{width:11px;color:var(--tx4);transition:transform .2s;flex:none;font-size:9px}
+.branch.open .caret{transform:rotate(90deg);color:var(--acc)}
+.branch-h .cnt{margin-left:auto;font-size:11px;color:var(--tx4);font-variant-numeric:tabular-nums;
+  padding:1px 7px;border-radius:100px;background:var(--panel2)}
+.branch-h .cnt.full{color:var(--ok);background:var(--okS)}
+.nodes{overflow:hidden;max-height:0;transition:max-height .28s cubic-bezier(.4,0,.2,1)}
+.branch.open .nodes{max-height:1000px}
+.node{display:flex;align-items:center;gap:10px;padding:7px 10px 7px 30px;border-radius:8px;
+  cursor:pointer;transition:.15s;position:relative;margin-bottom:1px}
+.node:hover{background:var(--panel2)}
+.node.active{background:var(--accS)}
+.node.active::before{content:'';position:absolute;left:15px;top:50%;transform:translateY(-50%);
+  width:3px;height:16px;border-radius:2px;background:var(--acc);box-shadow:0 0 8px var(--acc)}
+.mdot{width:10px;height:10px;border-radius:50%;flex:none;border:1.5px solid var(--tx4);transition:.18s}
+.mdot.learning{border-color:var(--warn);background:var(--warnS);box-shadow:0 0 6px rgba(240,169,59,.35)}
+.mdot.mastered{border-color:var(--ok);background:var(--ok);box-shadow:0 0 6px rgba(62,207,127,.4)}
+.mdot.review{border-color:var(--pur);background:var(--purS);box-shadow:0 0 6px rgba(166,124,245,.35)}
+.node.active .mdot{transform:scale(1.15)}
+.node-name{font-size:13px;color:var(--tx3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.node.active .node-name{color:var(--tx);font-weight:560}
+.node .lk{font-size:10px;color:var(--tx4);flex:none;opacity:.7}
+
+.legend{flex:none;display:flex;flex-wrap:wrap;gap:12px;padding:11px 16px;border-top:1px solid var(--line);
+  background:var(--panel2)}
+.lg{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--tx4)}
+
+/* ================= 中栏讲义 ================= */
+.lesson{max-width:780px;margin:0 auto;padding:30px 40px 100px}
+.l-head h2{font-size:27px;font-weight:680;letter-spacing:-.025em;margin-bottom:12px;line-height:1.25}
+.l-meta{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:20px}
+.tag{font-size:11.5px;padding:4px 10px;border-radius:7px;background:var(--panel2);color:var(--tx3);
+  border:1px solid var(--line);font-weight:520}
+.tag.ok{color:var(--ok);border-color:rgba(62,207,127,.3);background:var(--okS)}
+.tag.warn{color:var(--warn);border-color:rgba(240,169,59,.3);background:var(--warnS)}
+.tag.acc{color:var(--acc);border-color:rgba(91,141,255,.32);background:var(--accS)}
+
+/* 进度：时间语义 */
+.lprog{display:flex;align-items:center;gap:12px;margin-bottom:22px;padding:11px 14px;
+  border-radius:11px;background:var(--panel);border:1px solid var(--line)}
+.lprog-bar{flex:1;height:4px;background:var(--panel3);border-radius:3px;overflow:hidden}
+.lprog-bar i{display:block;height:100%;width:38%;border-radius:3px;
+  background:linear-gradient(90deg,var(--acc),var(--acc2));box-shadow:0 0 10px rgba(91,141,255,.5);
+  transition:width .4s cubic-bezier(.4,0,.2,1)}
+.lprog-t{font-size:12px;color:var(--tx4);white-space:nowrap;font-variant-numeric:tabular-nums}
+
+.prereq{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:22px;font-size:12px}
+.prereq .lb{color:var(--tx4)}
+.chip{padding:4px 10px;border-radius:8px;background:var(--panel2);border:1px solid var(--line);
+  color:var(--tx2);font-size:12px;cursor:pointer;transition:.16s;font-weight:520}
+.chip:hover{border-color:var(--acc);color:var(--acc);background:var(--accS)}
+.chip.done{color:var(--ok);border-color:rgba(62,207,127,.3);background:var(--okS)}
+.chip.done:hover{border-color:var(--ok);color:var(--ok)}
+
+.sec{margin-bottom:26px}
+.sec-h{display:flex;align-items:center;gap:10px;margin-bottom:13px;font-size:11.5px;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--tx4);font-weight:660}
+.sec-h::before{content:'';width:3px;height:13px;border-radius:2px;background:var(--grad);flex:none}
+.sec p{color:#c8d0de;margin-bottom:12px}
+.sec p:last-child{margin-bottom:0}
+.sec b{color:#fff;font-weight:620}
+.hl{color:var(--warn);font-weight:620}
+.hl2{color:var(--acc2);font-weight:620}
+
+.takeaway{margin:16px 0 0;padding:14px 17px;border-radius:0 11px 11px 0;border-left:3px solid var(--warn);
+  background:linear-gradient(90deg,var(--warnS),transparent);font-size:13.5px;color:#eddfc4;line-height:1.7}
+.takeaway::before{content:'→ ';color:var(--warn);font-weight:700}
+
+/* ================= 交互块 ================= */
+.ix{border:1px solid var(--line2);border-radius:var(--r2);background:var(--panel);
+  overflow:hidden;margin:20px 0;box-shadow:var(--sh2);position:relative}
+.ix::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--grad);opacity:.65}
+.ix-h{display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--panel2);
+  border-bottom:1px solid var(--line)}
+.ix-kind{font-size:10.5px;font-weight:720;letter-spacing:.08em;text-transform:uppercase;
+  padding:4px 9px;border-radius:6px}
+.k-predict{background:var(--warnS);color:var(--warn);border:1px solid rgba(240,169,59,.28)}
+.k-explore{background:var(--accS);color:var(--acc);border:1px solid rgba(91,141,255,.3)}
+.k-structure{background:var(--okS);color:var(--ok);border:1px solid rgba(62,207,127,.28)}
+.ix-h .t{font-size:13px;color:var(--tx2);font-weight:520}
+.ix-h .hint{margin-left:auto;font-size:11.5px;color:var(--tx4)}
+.ix-b{padding:20px 18px}
+.ix-q{font-size:15.5px;font-weight:580;margin-bottom:17px;line-height:1.55}
+
+.opts{display:grid;gap:13px}
+.opts.two{grid-template-columns:1fr 1fr}
+@media(max-width:980px){.opts.two{grid-template-columns:1fr}}
+.opt{border:1.5px solid var(--line2);border-radius:12px;background:var(--panel2);padding:13px;
+  cursor:pointer;transition:.2s;text-align:left;color:inherit;width:100%;position:relative;overflow:hidden}
+.opt::after{content:'';position:absolute;inset:0;background:var(--grad);opacity:0;transition:.2s;pointer-events:none}
+.opt:hover:not(.locked){border-color:var(--acc);background:var(--panel3);transform:translateY(-2px);
+  box-shadow:0 8px 22px rgba(0,0,0,.4)}
+.opt.correct{border-color:var(--ok);background:var(--okS);box-shadow:0 0 0 1px var(--ok) inset}
+.opt.wrong{border-color:var(--bad);background:var(--badS)}
+.opt.locked{cursor:default}
+.opt-cap{display:flex;align-items:center;gap:9px;font-size:13.5px;font-weight:580;margin-bottom:10px}
+.dot{width:16px;height:16px;border-radius:50%;border:1.5px solid var(--tx4);flex:none;transition:.22s}
+.opt.correct .dot{border-color:var(--ok);box-shadow:inset 0 0 0 4.5px var(--ok)}
+.opt.wrong .dot{border-color:var(--bad);box-shadow:inset 0 0 0 4.5px var(--bad)}
+.opt svg{display:block;width:100%;height:auto}
+
+.reveal{margin-top:17px;padding:15px 17px;border-radius:0 11px 11px 0;border-left:3px solid var(--acc);
+  background:linear-gradient(90deg,var(--accS),transparent);font-size:13.5px;animation:pop .34s cubic-bezier(.4,0,.2,1)}
+.reveal.good{border-left-color:var(--ok);background:linear-gradient(90deg,var(--okS),transparent)}
+.reveal.bad{border-left-color:var(--bad);background:linear-gradient(90deg,var(--badS),transparent)}
+.reveal .v{font-weight:680;display:block;margin-bottom:7px;font-size:14.5px}
+.reveal .num{margin-top:12px;font-size:13px;color:var(--tx2);line-height:2}
+.reveal .num b{color:var(--tx);font-variant-numeric:tabular-nums}
+@keyframes pop{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+
+/* 滑块 */
+.sliders{display:grid;gap:15px;margin-bottom:17px}
+.sl{display:grid;grid-template-columns:92px 1fr 74px;gap:13px;align-items:center}
+.sl label{font-size:13px;color:var(--tx2)}
+.sl output{font-size:13px;font-weight:660;color:var(--acc);text-align:right;
+  font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:5px;border-radius:3px;
+  background:var(--panel3);outline:none;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;
+  background:#fff;border:none;box-shadow:0 0 0 3px var(--acc),0 2px 8px rgba(0,0,0,.5);cursor:grab;transition:.15s}
+input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.12)}
+input[type=range]::-webkit-slider-thumb:active{cursor:grabbing;transform:scale(1.05)}
+input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#fff;
+  border:none;box-shadow:0 0 0 3px var(--acc);cursor:grab}
+
+.readout{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:15px}
+@media(max-width:700px){.readout{grid-template-columns:repeat(2,1fr)}}
+.rchip{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:9px 12px;transition:.18s}
+.rchip:hover{border-color:var(--line3)}
+.rchip .k{font-size:11px;color:var(--tx4);margin-bottom:3px}
+.rchip .v{font-size:15px;font-weight:660;color:var(--tx);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.rchip.hi .v{color:var(--ok)}
+
+/* 排序 */
+.steps{display:grid;gap:9px}
+.step{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid var(--line2);
+  border-radius:10px;background:var(--panel2);cursor:grab;font-size:13.5px;user-select:none;
+  transition:border-color .16s,background .16s,transform .16s}
+.step:hover:not(.locked){border-color:var(--line3);background:var(--panel3)}
+.step:active{cursor:grabbing}
+.step.dragging{opacity:.3;transform:scale(.98)}
+.step.over{border-color:var(--acc);background:var(--accS);transform:scale(1.01)}
+.step.correct{border-color:var(--ok);background:var(--okS)}
+.step.wrong{border-color:var(--bad);background:var(--badS)}
+.step .grip{color:var(--tx4);flex:none;letter-spacing:-1px;font-size:15px}
+.step .idx{width:23px;height:23px;border-radius:50%;background:var(--panel3);color:var(--tx3);
+  font-size:11.5px;font-weight:680;display:grid;place-items:center;flex:none;font-variant-numeric:tabular-nums}
+.step.correct .idx{background:var(--ok);color:#08150d}
+.step.wrong .idx{background:var(--bad);color:#1a0508}
+.btn-main{margin-top:15px;padding:10px 22px;border-radius:9px;background:var(--grad);color:#fff;
+  font-size:13.5px;font-weight:580;transition:.2s;box-shadow:0 4px 14px rgba(91,141,255,.3)}
+.btn-main:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(91,141,255,.42)}
+.btn-main:disabled{opacity:1;background:var(--panel3);color:var(--tx4);box-shadow:none;transform:none;cursor:default}
+
+/* 概念操作条 */
+.l-ops{display:flex;align-items:center;gap:9px;padding:18px 0 0;margin-top:26px;
+  border-top:1px solid var(--line);flex-wrap:wrap}
+.op{display:inline-flex;align-items:center;gap:7px;padding:9px 16px;border-radius:9px;
+  border:1px solid var(--line2);color:var(--tx2);font-size:13px;font-weight:520;transition:.18s;background:var(--panel2)}
+.op:hover{color:var(--tx);border-color:var(--line3);background:var(--panel3);transform:translateY(-1px)}
+.op.yes:hover{border-color:var(--ok);color:var(--ok);background:var(--okS)}
+.op.no:hover{border-color:var(--warn);color:var(--warn);background:var(--warnS)}
+.op.acc:hover{border-color:var(--acc);color:var(--acc);background:var(--accS)}
+.op.mute{border-color:transparent;background:none;color:var(--tx4)}
+.op.mute:hover{background:var(--panel2);color:var(--tx3);transform:none}
+.op.sp{margin-left:auto}
+
+/* ================= 右栏 ================= */
+.qa{padding:15px 14px 8px;display:flex;flex-direction:column;gap:14px}
+.qa-card{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:13px;transition:.18s}
+.qa-card:hover{border-color:var(--line2)}
+.qa-card.dashed{border-style:dashed;border-color:rgba(240,169,59,.35);background:rgba(240,169,59,.04)}
+.qa-card .who{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--tx4);margin-bottom:9px}
+.av{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:10px;
+  font-weight:720;flex:none}
+.av.ai{background:var(--grad);color:#fff}
+.av.u{background:var(--panel3);color:var(--tx3)}
+.qa-card .txt{font-size:13px;color:#c8d0de;line-height:1.72}
+.qa-card .txt b{color:#fff}
+.cite{margin-top:11px;padding-top:10px;border-top:1px dashed var(--line2);font-size:11.5px;
+  color:var(--tx4);display:flex;align-items:center;gap:7px}
+.cite span{color:var(--acc);cursor:pointer;font-weight:520}
+.cite span:hover{text-decoration:underline}
+.qa-acts{display:flex;gap:7px;margin-top:11px;flex-wrap:wrap}
+.qa-acts button{font-size:11.5px;color:var(--tx3);padding:5px 10px;border-radius:7px;
+  border:1px solid var(--line);transition:.16s;font-weight:520}
+.qa-acts button:hover{color:var(--tx);border-color:var(--line3);background:var(--panel3)}
+.qa-acts button.go:hover{color:var(--acc);border-color:var(--acc);background:var(--accS)}
+.qa-acts button.fill:hover{color:var(--warn);border-color:var(--warn);background:var(--warnS)}
+
+.sugg{padding:0 14px 12px}
+.sugg .lb{font-size:11px;color:var(--tx4);margin-bottom:8px;letter-spacing:.05em}
+.sugg-btn{display:block;width:100%;text-align:left;padding:9px 12px;border-radius:9px;
+  border:1px solid var(--line);background:var(--panel2);color:var(--tx3);font-size:12.5px;
+  margin-bottom:7px;transition:.18s}
+.sugg-btn:hover{border-color:var(--acc);color:var(--acc);background:var(--accS);transform:translateX(2px)}
+
+.qa-input{flex:none;background:var(--panel);border-top:1px solid var(--line);padding:12px 14px 14px}
+.qa-mode{display:flex;gap:6px;margin-bottom:9px}
+.qa-mode .m{padding:3px 10px;border-radius:7px;border:1px solid var(--line);font-size:11px;
+  color:var(--tx4);cursor:pointer;transition:.16s;font-weight:520}
+.qa-mode .m:hover{color:var(--tx2)}
+.qa-mode .m.on{border-color:var(--acc);color:var(--acc);background:var(--accS)}
+.qa-box{display:flex;align-items:flex-end;gap:9px;background:var(--panel2);border:1px solid var(--line2);
+  border-radius:12px;padding:9px 11px;transition:.18s}
+.qa-box:focus-within{border-color:var(--acc);box-shadow:0 0 0 3px var(--accS);background:var(--panel3)}
+.qa-box textarea{flex:1;background:none;border:none;outline:none;color:var(--tx);font-size:13px;
+  resize:none;max-height:110px;min-height:22px;line-height:1.55}
+.qa-box textarea::placeholder{color:var(--tx4)}
+.qa-send{width:32px;height:32px;border-radius:9px;background:var(--grad);color:#fff;display:grid;
+  place-items:center;flex:none;transition:.18s;font-size:15px;font-weight:700}
+.qa-send:hover{transform:scale(1.06);box-shadow:0 4px 14px rgba(91,141,255,.4)}
+
+/* ================= 底部复习条 ================= */
+.review-bar{height:50px;flex:none;display:flex;align-items:center;gap:14px;padding:0 18px;
+  background:linear-gradient(90deg,rgba(166,124,245,.16),rgba(166,124,245,.03) 60%,transparent);
+  border-top:1px solid rgba(166,124,245,.3);position:relative;z-index:20}
+.rb-ic{width:30px;height:30px;border-radius:9px;background:var(--purS);display:grid;place-items:center;
+  flex:none;border:1px solid rgba(166,124,245,.3)}
+.rb-t{font-size:13px;color:#d9cdfa}
+.rb-t b{color:#fff;font-variant-numeric:tabular-nums;font-weight:660}
+.rb-sp{flex:1}
+.rb-streak{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--tx3)}
+.rb-dots{display:flex;gap:4px}
+.rb-dots i{width:16px;height:6px;border-radius:3px;background:var(--panel3);transition:.2s}
+.rb-dots i.on{background:linear-gradient(90deg,var(--warn),#ffc46b);box-shadow:0 0 7px rgba(240,169,59,.5)}
+.btn{display:inline-flex;align-items:center;gap:7px;padding:8px 15px;border-radius:9px;
+  font-size:13px;font-weight:560;transition:.18s;white-space:nowrap}
+.btn.primary{background:var(--grad);color:#fff;box-shadow:0 3px 12px rgba(91,141,255,.3)}
+.btn.primary:hover{transform:translateY(-1px);box-shadow:0 5px 18px rgba(91,141,255,.42)}
+.btn.ghost{border:1px solid var(--line2);color:var(--tx3);background:var(--panel2)}
+.btn.ghost:hover{color:var(--tx);border-color:var(--line3);background:var(--panel3)}
+.btn.sm{padding:6px 12px;font-size:12.5px}
+
+/* ================= 弹层 ================= */
+.modal{position:fixed;inset:0;background:rgba(5,7,10,.75);backdrop-filter:blur(4px);
+  display:none;place-items:center;z-index:100;padding:24px}
+.modal.show{display:grid;animation:fade .2s}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.modal-box{background:var(--panel);border:1px solid var(--line2);border-radius:16px;
+  width:min(640px,100%);max-height:86vh;display:flex;flex-direction:column;box-shadow:var(--sh3);
+  animation:rise .28s cubic-bezier(.4,0,.2,1)}
+@keyframes rise{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
+.modal-h{display:flex;align-items:center;gap:11px;padding:18px 20px;border-bottom:1px solid var(--line)}
+.modal-h h3{font-size:15.5px;font-weight:640;flex:1}
+.modal-b{padding:20px;overflow-y:auto}
+.modal-f{display:flex;gap:10px;justify-content:flex-end;padding:15px 20px;border-top:1px solid var(--line)}
+
+.set-row{display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}
+.set-row:last-child{border-bottom:none;padding-bottom:0}
+.set-row .info{flex:1;min-width:0}
+.set-row .info .t{font-size:13.5px;margin-bottom:4px;font-weight:520}
+.set-row .info .d{font-size:12px;color:var(--tx4);line-height:1.55}
+.sw{width:40px;height:22px;border-radius:12px;background:var(--panel3);position:relative;
+  flex:none;transition:.24s;cursor:pointer;border:1px solid var(--line2)}
+.sw::after{content:'';position:absolute;top:2.5px;left:2.5px;width:15px;height:15px;border-radius:50%;
+  background:var(--tx4);transition:.24s cubic-bezier(.4,0,.2,1)}
+.sw.on{background:var(--grad);border-color:transparent}
+.sw.on::after{left:21px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+
+/* toast */
+.toast{position:fixed;bottom:78px;left:50%;transform:translateX(-50%) translateY(14px) scale(.96);
+  background:var(--panel3);border:1px solid var(--line3);border-radius:12px;padding:12px 20px;
+  font-size:13px;color:var(--tx);box-shadow:var(--sh3);opacity:0;pointer-events:none;
+  transition:.26s cubic-bezier(.4,0,.2,1);z-index:300;max-width:78vw;text-align:center;line-height:1.5}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}
+
+/* ============ 新增：掌握度详情浮层 ============ */
+.pop{position:absolute;top:56px;right:16px;width:290px;background:var(--panel2);
+  border:1px solid var(--line3);border-radius:13px;box-shadow:var(--sh3);padding:15px;
+  display:none;z-index:60;animation:rise .22s}
+.pop.show{display:block}
+.pop h4{font-size:12.5px;color:var(--tx3);margin-bottom:12px;font-weight:620;letter-spacing:.04em}
+.pbar{display:flex;height:9px;border-radius:5px;overflow:hidden;background:var(--panel3);margin-bottom:11px}
+.pbar i{display:block;height:100%}
+.pbar .a{background:var(--ok)} .pbar .b{background:var(--warn)}
+.pbar .c{background:var(--pur)} .pbar .d{background:var(--panel3)}
+.prow{display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:7px;color:var(--tx3)}
+.prow .k{width:9px;height:9px;border-radius:3px;flex:none}
+.prow .n{margin-left:auto;color:var(--tx);font-variant-numeric:tabular-nums;font-weight:600}
+</style>
+</head>
+<body>
+
+<!-- ============ 顶栏 ============ -->
+<div class="topbar">
+  <button class="tb-back" onclick="goHome()">← 主题列表</button>
+  <div class="tb-div"></div>
+  <div class="tb-title">
+    <h1>复利效应与长期主义</h1>
+    <span class="pill">金融入门</span>
+    <span class="pill ok">✓ 可向别人讲清复利</span>
+  </div>
+  <div class="tb-sp"></div>
+  <div class="seg">
+    <button class="on" onclick="switchTab(this,0)">学习</button>
+    <button onclick="switchTab(this,1)">知识全景</button>
+  </div>
+  <div class="ring-wrap" onclick="togglePop(event)">
+    <svg width="36" height="36" viewBox="0 0 36 36" style="transform:rotate(-90deg)">
+      <circle cx="18" cy="18" r="14.5" fill="none" stroke="#212734" stroke-width="3.5"/>
+      <circle cx="18" cy="18" r="14.5" fill="none" stroke="url(#rg)" stroke-width="3.5"
+              stroke-linecap="round" stroke-dasharray="91" stroke-dashoffset="68"/>
+      <defs><linearGradient id="rg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#5b8dff"/><stop offset="100%" stop-color="#3ecf7f"/>
+      </linearGradient></defs>
+    </svg>
+    <div class="ring-t"><b>3/12</b>已理解</div>
+  </div>
+  <button class="icon-btn" title="空间设置" onclick="openModal('setModal')">⚙</button>
+</div>
+
+<!-- 掌握度详情 -->
+<div class="pop" id="pop">
+  <h4>掌握度分布</h4>
+  <div class="pbar">
+    <i class="a" style="width:25%"></i><i class="b" style="width:8.3%"></i>
+    <i class="c" style="width:8.3%"></i><i class="d" style="width:58.4%"></i>
+  </div>
+  <div class="prow"><i class="k" style="background:var(--ok)"></i>已理解<span class="n">3</span></div>
+  <div class="prow"><i class="k" style="background:var(--warn)"></i>学习中<span class="n">1</span></div>
+  <div class="prow"><i class="k" style="background:var(--pur)"></i>待复习<span class="n">1</span></div>
+  <div class="prow"><i class="k" style="background:var(--panel3)"></i>未开始<span class="n">7</span></div>
+  <div style="margin-top:13px;padding-top:12px;border-top:1px solid var(--line);
+       font-size:12px;color:var(--tx4);line-height:1.6">
+    完成 <b style="color:var(--tx3)">复利效应</b> 可解锁「计算与应用」分支 3 个知识点
+  </div>
+</div>
+
+<!-- ============ 三栏 ============ -->
+<div class="main">
+
+  <!-- 左栏 -->
+  <div class="col">
+    <div class="col-head">
+      <h2>知识地图</h2><div class="sp"></div>
+      <span class="pill" style="font-size:11px">12 个</span>
+    </div>
+    <div class="map-tools">
+      <div class="search">
+        <span style="color:var(--tx4);font-size:12px">🔍</span>
+        <input id="q" placeholder="搜索知识点…" oninput="renderTree(this.value)">
+      </div>
+      <button class="icon-btn" title="AI 补全知识地图" onclick="aiFill()">✨</button>
+      <button class="icon-btn" title="追加知识点" onclick="toast('新增知识点：输入名称与定义，AI 会补全内容')">＋</button>
+    </div>
+    <div class="cov" onclick="showGaps()">
+      <div class="cov-t"><span>体系完整度</span><b>68%</b></div>
+      <div class="cov-bar"><i style="width:68%"></i><u style="width:12%"></u></div>
+      <div style="font-size:11.5px;color:var(--tx4);margin-top:8px">3 处缺口待补 →</div>
+    </div>
+    <div class="col-body"><div class="tree" id="tree"></div></div>
+    <div class="legend">
+      <span class="lg"><i class="mdot"></i>未开始</span>
+      <span class="lg"><i class="mdot learning"></i>学习中</span>
+      <span class="lg"><i class="mdot mastered"></i>已理解</span>
+      <span class="lg"><i class="mdot review"></i>待复习</span>
+    </div>
+  </div>
+
+  <!-- 中栏 -->
+  <div class="col mid">
+    <div class="col-head">
+      <h2>讲义</h2><div class="sp"></div>
+      <span class="pill ok" id="vp">✓ 已核验</span>
+      <button class="icon-btn" title="版本历史 v3" onclick="toast('版本历史：v3（当前）· v2 · v1 —— 可对比与回滚')">⟲</button>
+      <button class="icon-btn" title="导出" onclick="toast('导出：Markdown / PDF / 长图')">⤓</button>
+    </div>
+    <div class="col-body" id="midBody">
+      <div class="lesson">
+        <div class="l-head"><h2>复利效应</h2></div>
+        <div class="l-meta">
+          <span class="tag acc">K-concept</span>
+          <span class="tag">约 4 分钟</span>
+          <span class="tag warn" id="mTag">学习中</span>
+        </div>
+
+        <div class="lprog">
+          <span class="lprog-t">进度</span>
+          <span class="lprog-bar"><i id="lpBar"></i></span>
+          <span class="lprog-t" id="lpTxt">还剩约 2 分钟</span>
+        </div>
+
+        <div class="prereq">
+          <span class="lb">前置：</span>
+          <span class="chip done" onclick="toast('跳转「利息与利率」')">✓ 利息与利率</span>
+          <span class="chip done" onclick="toast('跳转「百分比」')">✓ 百分比</span>
+        </div>
+
+        <div class="sec" id="sec0">
+          <p>假设有两个人：<b>小明</b> 从 20 岁开始，每年存 1 万元，存到 30 岁就停手，之后一分不再存；<b>小红</b> 从 30 岁才开始，每年存 1 万元，一直存到 60 岁。</p>
+          <p>两人都按年化 <b>7%</b> 计算。到 60 岁时，谁的钱更多？</p>
+        </div>
+
+        <!-- 交互1 -->
+        <div class="ix" id="ix1">
+          <div class="ix-h"><span class="ix-kind k-predict">预测</span>
+            <span class="t">先猜，再揭晓</span><span class="hint">判断先落地，落差才成立</span></div>
+          <div class="ix-b">
+            <div class="ix-q">你的直觉是哪一种？</div>
+            <div class="opts two" id="opts">
+              <button class="opt" data-pick="a">
+                <span class="opt-cap"><span class="dot"></span>小红更多</span>
+                <svg viewBox="0 0 220 118">
+                  <line x1="30" y1="100" x2="200" y2="100" stroke="#232936"/>
+                  <line x1="30" y1="100" x2="30" y2="14" stroke="#232936"/>
+                  <path d="M30 98 L85 96 L130 88 L175 72" stroke="#525b6b" stroke-width="2" fill="none"/>
+                  <path d="M85 96 L120 88 L160 62 L198 26" stroke="#3ecf7f" stroke-width="2.5" fill="none"/>
+                  <text x="196" y="113" fill="#525b6b" font-size="10" text-anchor="end">年龄 20→60</text>
+                  <text x="138" y="52" fill="#3ecf7f" font-size="10">小红</text>
+                  <text x="130" y="84" fill="#525b6b" font-size="10">小明</text>
+                </svg>
+              </button>
+              <button class="opt" data-pick="b">
+                <span class="opt-cap"><span class="dot"></span>小明更多</span>
+                <svg viewBox="0 0 220 118">
+                  <line x1="30" y1="100" x2="200" y2="100" stroke="#232936"/>
+                  <line x1="30" y1="100" x2="30" y2="14" stroke="#232936"/>
+                  <path d="M30 98 L60 96 L100 90 L140 78 L175 58" stroke="#5b8dff" stroke-width="2.5" fill="none"/>
+                  <path d="M85 96 L120 92 L160 82 L198 66" stroke="#525b6b" stroke-width="2" fill="none"/>
+                  <text x="196" y="113" fill="#525b6b" font-size="10" text-anchor="end">年龄 20→60</text>
+                  <text x="138" y="52" fill="#5b8dff" font-size="10">小明</text>
+                  <text x="148" y="92" fill="#525b6b" font-size="10">小红</text>
+                </svg>
+              </button>
+            </div>
+            <div id="rev1"></div>
+          </div>
+        </div>
+
+        <div class="sec" id="sec1">
+          <div class="sec-h">原理</div>
+          <p>单利的本金永远不变，利息是<span class="hl">线性</span>的；复利则把每一期的利息滚进本金，于是增长不是"加法"而是"<span class="hl">乘法</span>"。</p>
+          <p>两者的差距随期数呈指数级拉开——这就是下面那条曲线后段陡峭的原因。</p>
+        </div>
+
+        <!-- 交互2 -->
+        <div class="ix" id="ix2">
+          <div class="ix-h"><span class="ix-kind k-explore">探索</span>
+            <span class="t">拖动看变化</span><span class="hint">这张图是算出来的，不是画好的</span></div>
+          <div class="ix-b">
+            <div class="sliders">
+              <div class="sl"><label for="rate">年化收益</label>
+                <input type="range" id="rate" min="0" max="15" step="0.5" value="7">
+                <output id="rateV">7.0%</output></div>
+              <div class="sl"><label for="years">投资年限</label>
+                <input type="range" id="years" min="5" max="60" step="1" value="40">
+                <output id="yearsV">40 年</output></div>
+            </div>
+            <svg id="chart" viewBox="0 0 660 250" style="width:100%;height:auto"></svg>
+            <div class="readout">
+              <div class="rchip"><div class="k">本金合计</div><div class="v" id="principal">—</div></div>
+              <div class="rchip"><div class="k">最终金额</div><div class="v" id="final">—</div></div>
+              <div class="rchip"><div class="k">其中利息</div><div class="v" id="interest">—</div></div>
+              <div class="rchip hi"><div class="k">利息占比</div><div class="v" id="ratio">—</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="takeaway" id="sec2">复利的"爆炸"不是因为它涨得快，而是因为<b>利息也在生利息</b>。时间越长、利率越高，"利息生的利息"占比就越夸张——所以 20 岁存的那 10 年，比 30 岁后的 30 年更值钱。</div>
+
+        <!-- 交互3 -->
+        <div class="ix" id="ix3" style="margin-top:26px">
+          <div class="ix-h"><span class="ix-kind k-structure">排序</span>
+            <span class="t">拖拽排好顺序</span><span class="hint">检查你是否真的理解流程</span></div>
+          <div class="ix-b">
+            <div class="ix-q">把"复利计算"的四个步骤排成正确顺序：</div>
+            <div class="steps" id="steps"></div>
+            <button class="btn-main" id="checkSteps">检查顺序</button>
+            <div id="rev3"></div>
+          </div>
+        </div>
+
+        <div class="l-ops">
+          <button class="op yes" onclick="markMastered()">✓ 懂了</button>
+          <button class="op no" onclick="markConfused()">◐ 没懂</button>
+          <button class="op acc" onclick="toast('拆细：AI 会先给出拆分提案，你确认后才落库')">✂ 拆细</button>
+          <button class="op" onclick="openModal('slideModal')">▤ 演示</button>
+          <button class="op mute sp" onclick="toast('已复制本概念要点为笔记')">做笔记</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右栏 -->
+  <div class="col">
+    <div class="col-head">
+      <h2>追问 · 答疑</h2><div class="sp"></div>
+      <span class="pill" style="font-size:11px">2 条</span>
+    </div>
+    <div class="col-body">
+      <div class="qa">
+        <div class="qa-card">
+          <div class="who"><span class="av u">我</span>你 · 3 分钟前</div>
+          <div class="txt">为什么 20 岁存的那 10 年，比 30 岁后存 30 年还值钱？</div>
+        </div>
+        <div class="qa-card">
+          <div class="who"><span class="av ai">AI</span>学习伴侣 · 刚刚</div>
+          <div class="txt">关键在于<b>时间</b>，而不是<b>金额</b>。<br><br>
+            20 岁那 10 万，到 60 岁前要经历 30 次"利息滚进本金"；而 30 岁存的钱，最早的一笔也只有 30 次，最晚的一笔只有 1 次。<br><br>
+            复利是按<span class="hl">期数</span>放大，不是按投入放大。</div>
+          <div class="cite">📎 引证：本讲义「原理」区 · <span onclick="jumpTo('sec1')">回看原文</span></div>
+          <div class="qa-acts">
+            <button onclick="toast('已收藏为笔记')">收藏</button>
+            <button onclick="toast('已标记「已理解」——掌握度 +1')">已理解</button>
+            <button class="fill" onclick="markConfused()">这里没讲清</button>
+          </div>
+        </div>
+        <div class="qa-card dashed">
+          <div class="who"><span class="av ai">AI</span>学习伴侣 · 待补充</div>
+          <div class="txt" style="color:var(--tx3)">有个问题我暂时答不上——<b style="color:var(--warn)">「72 法则」在当前讲义里没有对应内容</b>。已记为待补充。</div>
+          <div class="qa-acts">
+            <button class="go" onclick="toast('已触发研究轮 —— 将为「72 法则」生成一份讲义')">就此补研究</button>
+            <button class="fill" onclick="toast('已记录你的补充说明')">我来补充</button>
+          </div>
+        </div>
+      </div>
+      <div class="sugg">
+        <div class="lb">试试这样问</div>
+        <button class="sugg-btn" onclick="ask('用一句话解释复利')">用一句话解释复利</button>
+        <button class="sugg-btn" onclick="ask('举个真实例子')">举个真实例子</button>
+        <button class="sugg-btn" onclick="ask('复利有什么风险')">复利有什么风险</button>
+      </div>
+    </div>
+    <div class="qa-input">
+      <div class="qa-mode">
+        <span class="m on" onclick="setMode(this,'答疑：基于本讲义回答，带引证')">答疑</span>
+        <span class="m" onclick="setMode(this,'任务：可下指令改讲义 / 补地图')">任务</span>
+      </div>
+      <div class="qa-box">
+        <textarea id="qaText" rows="1" placeholder="追问这个概念…（Enter 发送，Shift+Enter 换行）"
+          oninput="grow(this)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendQa()}"></textarea>
+        <button class="qa-send" onclick="sendQa()">↑</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 底部复习条 ============ -->
+<div class="review-bar">
+  <div class="rb-ic">🔁</div>
+  <div class="rb-t"><b>3 个</b>知识点到了复习时间 · 约 5 分钟 · 答对才算完成</div>
+  <button class="btn primary sm" onclick="startReview()">开始复习</button>
+  <button class="btn ghost sm" onclick="toast('已推迟到明天（不会中断连续学习）')">稍后</button>
+  <div class="rb-sp"></div>
+  <div class="rb-streak">
+    <span>连续学习</span>
+    <div class="rb-dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div>
+    <span><b style="color:var(--warn)">5</b> 天</span>
+  </div>
+</div>
+
+<!-- ============ 设置 ============ -->
+<div class="modal" id="setModal">
+  <div class="modal-box">
+    <div class="modal-h"><h3>空间设置</h3><button class="icon-btn" onclick="closeModal('setModal')">✕</button></div>
+    <div class="modal-b">
+      <div class="set-row"><div class="info"><div class="t">间隔复习</div>
+        <div class="d">按遗忘曲线安排复习，到期在主界面提醒</div></div>
+        <div class="sw on" onclick="this.classList.toggle('on')"></div></div>
+      <div class="set-row"><div class="info"><div class="t">自动推进</div>
+        <div class="d">后台持续研究未完成的知识点，生成讲义草稿等你确认</div></div>
+        <div class="sw" onclick="this.classList.toggle('on')"></div></div>
+      <div class="set-row"><div class="info"><div class="t">每日目标</div>
+        <div class="d">最小有效学习量：2 个知识点 + 1 次小测</div></div>
+        <div class="sw on" onclick="this.classList.toggle('on')"></div></div>
+      <div class="set-row"><div class="info"><div class="t">领域画像</div>
+        <div class="d">金融 · 应用导向 · 零基础起步（影响讲义写法与选题）</div></div>
+        <button class="btn ghost sm" onclick="toast('编辑领域画像')">编辑</button></div>
+      <div class="set-row"><div class="info"><div class="t">绑定知识库</div>
+        <div class="d">已绑定：个人金融笔记（12 篇）</div></div>
+        <button class="btn ghost sm" onclick="toast('更换绑定的知识库')">更换</button></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" onclick="closeModal('setModal')">取消</button>
+      <button class="btn primary" onclick="closeModal('setModal');toast('设置已保存')">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 幻灯 ============ -->
+<div class="modal" id="slideModal">
+  <div class="modal-box" style="width:min(740px,100%)">
+    <div class="modal-h"><h3>演示 · 复利效应</h3><button class="icon-btn" onclick="closeModal('slideModal')">✕</button></div>
+    <div class="modal-b" style="text-align:center;padding:44px 28px">
+      <div style="font-size:12.5px;color:var(--tx4);margin-bottom:16px;letter-spacing:.08em">第 1 / 6 页</div>
+      <div style="font-size:23px;font-weight:660;margin-bottom:14px;letter-spacing:-.02em">复利：让利息替你工作</div>
+      <div style="color:var(--tx2);max-width:460px;margin:0 auto;line-height:1.8">
+        本金产生的利息，在下一期变成新的本金——<br>这个循环重复的<b style="color:var(--acc2)">次数</b>，决定了最终差距。
+      </div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" onclick="toast('上一页')">← 上一页</button>
+      <button class="btn primary" onclick="toast('下一页')">下一页 →</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============ 数据 ============ */
+const TREE=[
+ {id:'b1',name:'基础概念',open:true,nodes:[
+   {id:'n1',name:'百分比',m:'mastered'},{id:'n2',name:'利息与利率',m:'mastered'},
+   {id:'n3',name:'复利效应',m:'learning',cur:true},{id:'n4',name:'单利 vs 复利',m:'untouched'}]},
+ {id:'b2',name:'计算与应用',open:false,nodes:[
+   {id:'n5',name:'复利公式',m:'untouched',lock:true},{id:'n6',name:'72 法则',m:'untouched',lock:true},
+   {id:'n7',name:'定投策略',m:'untouched',lock:true}]},
+ {id:'b3',name:'现实与风险',open:false,nodes:[
+   {id:'n8',name:'通货膨胀',m:'untouched'},{id:'n9',name:'实际收益率',m:'untouched'},
+   {id:'n10',name:'杠杆风险',m:'untouched'}]},
+ {id:'b4',name:'进阶',open:false,nodes:[
+   {id:'n11',name:'连续复利',m:'review'},{id:'n12',name:'现值与终值',m:'untouched'}]}
+];
+
+/* ============ 地图 ============ */
+function renderTree(f){
+  f=(f||'').trim().toLowerCase();
+  document.getElementById('tree').innerHTML=TREE.map(b=>{
+    const ns=b.nodes.filter(n=>!f||n.name.toLowerCase().includes(f));
+    if(!ns.length)return '';
+    const open=f?true:b.open, done=b.nodes.filter(n=>n.m==='mastered').length;
+    return '<div class="branch'+(open?' open':'')+'">'+
+      '<div class="branch-h" onclick="toggleB(this)"><span class="caret">▶</span><span>'+b.name+'</span>'+
+      '<span class="cnt'+(done===b.nodes.length?' full':'')+'">'+done+'/'+b.nodes.length+'</span></div>'+
+      '<div class="nodes">'+ns.map(n=>
+        '<div class="node'+(n.cur?' active':'')+'" data-id="'+n.id+'" onclick="pick(this,\''+n.name+'\')">'+
+        '<i class="mdot '+n.m+'"></i><span class="node-name">'+n.name+'</span>'+
+        (n.lock?'<span class="lk">🔒</span>':'')+'</div>').join('')+
+      '</div></div>';
+  }).join('');
+}
+function toggleB(el){el.parentElement.classList.toggle('open')}
+function pick(el,name){
+  document.querySelectorAll('.node').forEach(n=>n.classList.remove('active'));
+  el.classList.add('active');
+  toast('切换到知识点：'+name);
+  document.getElementById('midBody').scrollTop=0;
+}
+
+/* ============ 交互1：预测 ============ */
+const SP={answer:'b',
+  ok:'对，是<b>小明</b>。只存了 10 年，却比存 30 年的人多——这正是复利最反直觉的地方。',
+  no:'很多人会选小红，但答案是<b>小明</b>。他只存了 10 年，小红存了 30 年，小明的钱反而更多。'};
+(function(){
+  const box=document.getElementById('opts'),rev=document.getElementById('rev1');let done=false;
+  box.addEventListener('click',e=>{
+    const b=e.target.closest('.opt');if(!b||done)return;done=true;
+    const right=b.dataset.pick===SP.answer;
+    box.querySelectorAll('.opt').forEach(el=>{
+      el.classList.add('locked');
+      if(el.dataset.pick===SP.answer)el.classList.add('correct');
+      else if(el===b)el.classList.add('wrong');});
+    rev.innerHTML='<div class="reveal '+(right?'good':'bad')+'">'+
+      '<span class="v">'+(right?'✓ 直觉很准':'✗ 这里有个反直觉的地方')+'</span>'+
+      (right?SP.ok:SP.no)+
+      '<div class="num">小明：20–30 岁每年 1 万，共投入 <b>10 万</b> → 60 岁约 <b>112.5 万</b><br>'+
+      '小红：30–60 岁每年 1 万，共投入 <b>30 万</b> → 60 岁约 <b>101.1 万</b></div></div>';
+    toast(right?'✓ 预测正确 —— 已记入掌握度':'已记录预测错误 —— 这个落差就是学习发生的地方');
+  });
+})();
+
+/* ============ 交互2：探索 ============ */
+(function(){
+  const rEl=document.getElementById('rate'),yEl=document.getElementById('years');
+  const rV=document.getElementById('rateV'),yV=document.getElementById('yearsV');
+  const svg=document.getElementById('chart');
+  const W=660,H=250,P={l:56,r:16,t:16,b:28};
+  const fmt=n=>n>=10000?(n/10000).toFixed(1)+' 万':Math.round(n).toLocaleString('zh-CN');
+  function calc(rate,years){
+    const r=rate/100,pts=[];let prin=0,comp=0;
+    for(let i=1;i<=years;i++){prin+=1;comp=(comp+1)*(1+r);pts.push({i,prin,comp})}
+    let sp=0,si=0;for(let i=1;i<=years;i++){sp+=1;si+=1*r*(years-i+1)}
+    return {pts,prinT:sp,simpleT:sp+si,compT:comp};
+  }
+  function draw(){
+    const rate=parseFloat(rEl.value),years=parseInt(yEl.value,10);
+    rV.textContent=rate.toFixed(1)+'%';yV.textContent=years+' 年';
+    const d=calc(rate,years),mx=Math.max(d.compT,1);
+    const X=i=>P.l+(i/years)*(W-P.l-P.r),Y=v=>H-P.b-(v/mx)*(H-P.t-P.b);
+    let g='';
+    for(let k=0;k<=4;k++){const v=mx/4*k,yy=Y(v);
+      g+='<line x1="'+P.l+'" y1="'+yy+'" x2="'+(W-P.r)+'" y2="'+yy+'" stroke="#1a1f29"/>'+
+         '<text x="'+(P.l-8)+'" y="'+(yy+4)+'" fill="#525b6b" font-size="10.5" text-anchor="end">'+fmt(v)+'</text>';}
+    let xt='';
+    [1,Math.round(years/2),years].filter((v,i,a)=>a.indexOf(v)===i).forEach(t=>{
+      xt+='<text x="'+X(t)+'" y="'+(H-8)+'" fill="#525b6b" font-size="10.5" text-anchor="middle">'+t+'年</text>';});
+    const top=d.pts.map((p,i)=>(i?'L':'M')+X(p.i)+' '+Y(p.comp)).join(' ');
+    const bot=[];
+    for(let i=d.pts.length-1;i>=0;i--){const p=d.pts[i],ra=p.i/years;
+      bot.push('L'+X(p.i)+' '+Y(Math.min(ra+(d.simpleT-d.prinT)*ra,p.comp)));}
+    const lc=d.pts.map((p,i)=>(i?'L':'M')+X(p.i)+' '+Y(p.comp)).join(' ');
+    const lp=d.pts.map((p,i)=>(i?'L':'M')+X(p.i)+' '+Y(p.prin)).join(' ');
+    const ls='M'+X(1)+' '+Y(1)+' L'+X(years)+' '+Y(d.simpleT);
+    svg.innerHTML='<defs><linearGradient id="gg" x1="0" y1="0" x2="0" y2="1">'+
+      '<stop offset="0%" stop-color="#3ecf7f" stop-opacity=".32"/>'+
+      '<stop offset="100%" stop-color="#3ecf7f" stop-opacity=".02"/></linearGradient></defs>'+
+      g+xt+'<path d="'+top+bot.join(' ')+' Z" fill="url(#gg)"/>'+
+      '<path d="'+lp+'" stroke="#525b6b" stroke-width="2" fill="none" stroke-dasharray="4 3"/>'+
+      '<path d="'+ls+'" stroke="#f0a93b" stroke-width="2" fill="none"/>'+
+      '<path d="'+lc+'" stroke="#5b8dff" stroke-width="2.8" fill="none"/>'+
+      '<text x="'+(X(years)-4)+'" y="'+(Y(d.compT)-9)+'" fill="#5b8dff" font-size="11.5" text-anchor="end" font-weight="600">复利</text>'+
+      '<text x="'+(X(years)-4)+'" y="'+(Y(d.simpleT)+15)+'" fill="#f0a93b" font-size="11.5" text-anchor="end" font-weight="600">单利</text>'+
+      '<text x="'+(X(years)-4)+'" y="'+(Y(d.prinT)+15)+'" fill="#525b6b" font-size="11.5" text-anchor="end">本金</text>';
+    const intr=d.compT-d.prinT;
+    document.getElementById('principal').textContent=fmt(d.prinT);
+    document.getElementById('final').textContent=fmt(d.compT);
+    document.getElementById('interest').textContent=fmt(intr);
+    document.getElementById('ratio').textContent=Math.round(intr/d.compT*100)+'%';
+  }
+  rEl.addEventListener('input',draw);yEl.addEventListener('input',draw);draw();
+})();
+
+/* ============ 交互3：排序 ============ */
+const SS={items:[{id:'s2',text:'把这一期的利息加回本金'},{id:'s4',text:'用新的本金重复下一期'},
+  {id:'s1',text:'用当前本金乘以利率，算出本期利息'},{id:'s3',text:'记录这一期结束后的总额'}],
+  answer:['s1','s2','s3','s4']};
+(function(){
+  const box=document.getElementById('steps'),btn=document.getElementById('checkSteps'),rev=document.getElementById('rev3');
+  let order=SS.items.map(i=>i.id),dg=null,ck=false;
+  function render(){box.innerHTML=order.map((id,i)=>{const it=SS.items.find(x=>x.id===id);
+    return '<div class="step'+(ck?' locked':'')+'" draggable="'+(!ck)+'" data-id="'+id+'">'+
+      '<span class="grip">⠿</span><span class="idx">'+(i+1)+'</span><span>'+it.text+'</span></div>';}).join('')}
+  box.addEventListener('dragstart',e=>{const el=e.target.closest('.step');if(!el||ck)return;dg=el.dataset.id;el.classList.add('dragging')});
+  box.addEventListener('dragend',e=>{const el=e.target.closest('.step');if(el)el.classList.remove('dragging')});
+  box.addEventListener('dragover',e=>{e.preventDefault();const el=e.target.closest('.step');
+    if(!el||el.dataset.id===dg)return;box.querySelectorAll('.step').forEach(s=>s.classList.remove('over'));el.classList.add('over')});
+  box.addEventListener('drop',e=>{e.preventDefault();const el=e.target.closest('.step');if(!el||!dg)return;
+    el.classList.remove('over');const f=order.indexOf(dg),t=order.indexOf(el.dataset.id);
+    order.splice(f,1);order.splice(t,0,dg);dg=null;render()});
+  box.addEventListener('click',e=>{if(ck)return;const el=e.target.closest('.step');if(!el)return;
+    const id=el.dataset.id;
+    if(!dg){dg=id;el.classList.add('over');return}
+    if(dg===id){dg=null;box.querySelectorAll('.step').forEach(s=>s.classList.remove('over'));return}
+    const f=order.indexOf(dg),t=order.indexOf(id);order.splice(f,1);order.splice(t,0,dg);dg=null;render()});
+  btn.addEventListener('click',()=>{
+    ck=true;let all=true;
+    box.querySelectorAll('.step').forEach((el,i)=>{const ok=order[i]===SS.answer[i];if(!ok)all=false;
+      el.classList.add(ok?'correct':'wrong');el.setAttribute('draggable','false')});
+    const co=SS.answer.map((id,i)=>(i+1)+'. '+SS.items.find(x=>x.id===id).text).join('<br>');
+    rev.innerHTML='<div class="reveal '+(all?'good':'bad')+'"><span class="v">'+
+      (all?'✓ 顺序完全正确':'✗ 有几处顺序不对')+'</span>正确顺序是：'+
+      '<div style="margin-top:8px;font-size:13px;line-height:2">'+co+'</div></div>';
+    btn.disabled=true;btn.textContent='已检查';
+    toast(all?'✓ 排序正确 —— 本区已完成':'排序有误，正确顺序已给出');
+  });
+  render();
+})();
+
+/* ============ 概念操作 ============ */
+function markMastered(){
+  document.getElementById('vp').textContent='✓ 已理解';
+  document.getElementById('mTag').textContent='已理解';
+  document.getElementById('mTag').className='tag ok';
+  document.getElementById('lpBar').style.width='100%';
+  document.getElementById('lpTxt').textContent='已完成';
+  const svg=document.querySelector('.ring-wrap svg');
+  svg.querySelectorAll('circle')[1].setAttribute('stroke-dashoffset','68');
+  document.querySelector('.ring-t b').textContent='4/12';
+  toast('✓ 已标记「复利效应」为已理解 —— 掌握度已更新，解锁「计算与应用」3 个知识点');
+}
+function markConfused(){toast('◐ 已记录困惑 —— 连续两次「没懂」会自动生成拆解提案')}
+
+/* ============ 其他 ============ */
+function jumpTo(id){const el=document.getElementById(id);el.scrollIntoView({behavior:'smooth',block:'center'});
+  el.style.transition='background .3s';el.style.background='rgba(91,141,255,.1)';
+  setTimeout(()=>el.style.background='',1200);toast('已定位到讲义原文')}
+function showGaps(){toast('缺口清单：① 通货膨胀 ② 72 法则 ③ 定投策略 —— 可一键让 AI 研究补全')}
+function aiFill(){toast('AI 正在补全知识地图：检测到 3 处缺口，预计 2 分钟')}
+function startReview(){toast('开始复习会话：3 个到期知识点 · 约 5 分钟 · 答对才算完成')}
+function setMode(el,msg){el.parentElement.querySelectorAll('.m').forEach(m=>m.classList.remove('on'));
+  el.classList.add('on');toast(msg)}
+function togglePop(e){e.stopPropagation();document.getElementById('pop').classList.toggle('show')}
+document.addEventListener('click',()=>document.getElementById('pop').classList.remove('show'));
+function switchTab(el,i){
+  el.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('on'));el.classList.add('on');
+  toast(i===1?'打开「知识全景」：力导向图 + 时间线/流程/矩阵视图（原型从略）':'回到学习视图');
+}
+function ask(t){document.getElementById('qaText').value=t;sendQa()}
+function grow(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,110)+'px'}
+function sendQa(){const el=document.getElementById('qaText');const v=el.value.trim();if(!v)return;
+  el.value='';el.style.height='22px';toast('已发送：「'+v.slice(0,18)+(v.length>18?'…':'')+'」')}
+function openModal(id){document.getElementById(id).classList.add('show')}
+function closeModal(id){document.getElementById(id).classList.remove('show')}
+document.querySelectorAll('.modal').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('show')}));
+function goHome(){toast('返回主题列表（原型从略）')}
+let tt;function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');
+  clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),2700)}
+renderTree('');
+</script>
+</body>
+</html>

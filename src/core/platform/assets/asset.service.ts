@@ -138,6 +138,15 @@ export class AssetService {
   }
 
   /**
+   * 按 url 列跨分类查最新一条资产（幂等查重键：url 列）。
+   * save-asset 节点 dedupeUrl 用：同一原文链接无论存成什么业务分类都算已存在，
+   * 支撑采集类工作流重跑/增量不产生重复资产。
+   */
+  async findAssetByUrl(url: string): Promise<AssetRecord | null> {
+    return this.repo.findByUrl(url)
+  }
+
+  /**
    * 就地重写 file 型资产内容（网页收藏「更新快照」）：
    * 新内容（data: URL）落盘 → 删除旧文件 → 行内更新 storagePath/textContent/metadata 等。
    * 资产 ID 保持不变（关联引用不失效）；任何一步失败前不破坏旧档。

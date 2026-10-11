@@ -21,6 +21,7 @@ import { WORKFLOW_LIMITS } from '@shared/types/workflow.types'
 import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 import { validateOutboundUrl } from '@core/utils/outbound-url'
 import { readBodyWithLimit } from './response-body'
+import { outboundFetch } from '@core/utils/net-fetch'
 
 export type HttpResponseType = 'auto' | 'text' | 'json' | 'base64' | 'file'
 
@@ -111,7 +112,7 @@ export async function executeHttpFetch(
   let res: Response
   try {
     for (let hop = 0; ; hop++) {
-      res = await fetch(currentUrl, {
+      res = await outboundFetch()(currentUrl, {
         method: input.method,
         headers: input.headers ?? {},
         body: currentBody,

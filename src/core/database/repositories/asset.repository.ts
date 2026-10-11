@@ -310,6 +310,30 @@ export class AssetRepository extends BaseRepository<AssetEntity, AssetRecord> {
     return items[0] ?? null
   }
 
+  /**
+   * 按 url 列跨分类查最新一条（save-asset 节点 dedupeUrl 幂等键）。
+   * 不限 category/subCategory——同一原文链接无论以何种业务分类入库都算已存在。
+   * 用户隔离口径与 findById 一致（自己的 + 内置）。
+   */
+  async findByUrl(url: string): Promise<AssetRecord | null> {
+    const u = url.trim()
+    if (!u) return null
+    const userId = getCurrentUserId()
+    const qb = this.repo
+      .createQueryBuilder('a')
+      .where('a.url = :url', { url: u })
+      .orderBy('a.created_at', 'DESC')
+      .addOrderBy('a.id', 'DESC')
+      .limit(1)
+    if (userId) {
+      qb.andWhere('(a.user_id = :userId OR a.is_builtin = 1)', { userId })
+    } else {
+      qb.andWhere('(a.user_id IS NULL OR a.is_builtin = 1)')
+    }
+    const e = await qb.getOne()
+    return e ? this.toDto(e) : null
+  }
+
   async delete(id: string): Promise<number> {
     // 内置资产禁删（复制为自有后可删副本）
     const existing = await this.findById(id)

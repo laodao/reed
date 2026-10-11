@@ -9,6 +9,7 @@
 
 import { BaseSearchEngine } from './base-search-engine'
 import type { WebSearchResultItem, WebSearchResponse, SearchEngineType } from '@shared/types/search-engine.types'
+import { outboundFetch } from '@core/utils/net-fetch'
 
 export class BingApiSearchEngine extends BaseSearchEngine {
   readonly type: SearchEngineType = 'bing-api'
@@ -26,7 +27,7 @@ export class BingApiSearchEngine extends BaseSearchEngine {
 
     try {
       const url = `${this.apiUrl}?q=${encodeURIComponent(query)}&count=${maxResults}&mkt=zh-CN`
-      const response = await fetch(url, {
+      const response = await outboundFetch()(url, {
         headers: {
           'Ocp-Apim-Subscription-Key': this.config.apiKey,
           'Accept': 'application/json',

@@ -43,6 +43,8 @@ import scriptToVideo from './builtin-apps/script-to-video.json'
 // V2 素材前置（2026-09-06 用户确认开工：保留 V1 为独立定义，V2 另立新 id）
 import scriptToVideoV2 from './builtin-apps/script-to-video-v2.json'
 import scriptToVideoV3 from './builtin-apps/script-to-video-v3.json'
+// 播客视频（2026-10-06：短视频工作流简化版——画面=PPT 幻灯片承载核心要点，详细内容走逐页口播配音，音画天然对齐）
+import podcastVideo from './builtin-apps/podcast-video.json'
 // 主题深度研究（2026-09-09 v2 升级替换：澄清契约→规划(已知地图/验收)→≤3轮[研究执行体+另一模型独立评估]→差距迭代→溯源成稿→人工确认）
 import topicResearch from './builtin-apps/topic-research.json'
 // 日记周报复盘（2026-09-24 日记增强 P1：聚合日记→AI 三段式复盘→人工确认→存回日记）
@@ -51,6 +53,8 @@ import diaryWeeklyReview from './builtin-apps/diary-weekly-review.json'
 import appDataDemo from './builtin-apps/app-data-demo.json'
 // 大V博主蒸馏（2026-10-09：逐篇抓文存资产→LLM判类→skill-distill 节点蒸馏成技能包，技能生产管线）
 import bloggerDistill from './builtin-apps/blogger-distill.json'
+// 头条博主文章采集（2026-10-11：browser-read 拟人阅读——滚动加载博主主页列表→逐篇串行滚动到底取正文→存资产集合）
+import toutiaoBloggerCollect from './builtin-apps/toutiao-blogger-collect.json'
 
 /** 内置工作流 id 前缀（固定，幂等查重依据） */
 const BUILTIN_DEF_PREFIX = 'builtin_def_'
@@ -63,7 +67,7 @@ const BUILTIN_APP_PREFIX = 'builtin_app_'
 const BUILTIN_TEMPLATE_VERSION = 1
 
 /** 内置工作流模板清单：文件 → { 定义 id, 应用 id, 应用名, 图标, 描述, 原始 JSON } */
-const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; icon: string; name: string; description: string; category: string; tags: string[] }> = [
+export const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; icon: string; name: string; description: string; category: string; tags: string[] }> = [
   { file: 'daily-news-brief.json', raw: dailyNewsBrief, appId: `${BUILTIN_APP_PREFIX}daily_news`, icon: '📰', name: '每日热点早报', description: '首页→AI 定位栏目→AI 筛选新闻→抓正文→早报长图，正文与报告可存知识库', category: '新闻资讯', tags: ['早报', '新闻'] },
   { file: 'industry-weekly.json', raw: industryWeekly, appId: `${BUILTIN_APP_PREFIX}industry_weekly`, icon: '📈', name: '行业动态周报', description: '行业趋势分析周报长图（模板可自定义）', category: '新闻资讯', tags: ['周报', '行业'] },
   { file: 'multi-platform-copy.json', raw: multiPlatformCopy, appId: `${BUILTIN_APP_PREFIX}multi_platform`, icon: '✍️', name: '多平台文案生成', description: '素材驱动多平台分发器：公众号/今日头条/知乎/微博/小红书/抖音 文案（素材非空时事实锁定素材并保留出处口径，逐平台自检）', category: '文案写作', tags: ['文案', '自媒体'] },
@@ -90,11 +94,13 @@ const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; icon: str
   // 短视频脚本生成视频 V2 素材前置（2026-09-06 用户确认开工；与 V1 并存，V1 定义不变）
   { file: 'script-to-video-v2.json', raw: scriptToVideoV2, appId: `${BUILTIN_APP_PREFIX}script_to_video_v2`, icon: '🎬', name: '脚本生成视频V2（素材前置）', description: '脚本/主题+多知识库 → 视频类型预设 → 大纲生成与审核 → 分镜拆解(底图资产自动匹配) → 逐镜素材生产(提示词包+文生图+参考图资产) → 图文素材板整体审核 → 逐片段视频(逐镜确认) → 配音+烧字幕+合成 → 大纲/素材板/成片存档', category: '视频制作', tags: ['视频', '脚本', '创作', '素材前置'] },
   // 短视频脚本生成视频 V3 通用视觉策略（2026-09-06；与 V1/V2 并存）：imagery 意象空镜 / asset 素材驱动，按视频类型自动
+  // 播客视频（2026-10-06）：文案 → 幻灯片核心要点 + 逐页口播配音 → 按配音时长对齐合成（podcast-video pack 节点）
+  { file: 'podcast-video.json', raw: podcastVideo, appId: `${BUILTIN_APP_PREFIX}podcast_video`, icon: '🎙️', name: '播客视频生成', description: '文案 → LLM 总结归纳成幻灯片结构（屏幕放核心要点）→ PPT 风格渲染（四主题/横竖屏）→ 结构审核 → 逐页口播配音（详细讲解走语音）→ 按配音时长对齐时间轴合成视频（可选 BGM）→ 成片/讲稿存档', category: '视频制作', tags: ['视频', '播客', '幻灯片', '口播'] },
   { file: 'script-to-video-v3.json', raw: scriptToVideoV3, appId: `${BUILTIN_APP_PREFIX}script_to_video_v3`, icon: '🎬', name: '脚本生成视频V3（通用视觉策略）', description: '脚本/主题+多知识库 → 视频类型预设与视觉策略（imagery 意象化空镜 / asset 素材驱动，缺素材即拦截）→ 大纲审核 → 分镜拆解(concept/意象 或 素材引用) → 素材板(生成意象或素材直用)整体审核 → 逐片段视频(逐镜确认) → 配音+烧字幕+合成 → 存档', category: '视频制作', tags: ['视频', '脚本', '创作', '视觉策略', '素材驱动'] },
   // 长文写作（2026-08-29 用户确认开工：分阶段写长文，多轮对话承接前文）
   { file: 'long-form-writing.json', raw: longFormWriting, appId: `${BUILTIN_APP_PREFIX}long_form_writing`, icon: '✍️', name: '长文写作', description: '长文引擎 v2（创作/修订双模式）：素材消化选材 → 分流（修订=按意见整篇修订续版本链）→ 开篇钩子比选 → 主线 → 章节大纲（每章卡点）→ 大纲人工确认（可改）→ 逐章写作（writing-styles 风格卡技能承接前文）→ 事实校验 → 编辑评审循环（独立模型五维）→ libai 去AI味（独立模型）→ 终稿人工确认（可改稿，驳回=重跑续链）→ 备选标题 → 入资产（版本链）', category: '内容创作', tags: ['长文', '写作', '小说'] },
   // 深度长文写作·风格库（2026-10-09 用户确认：写作质量栈接入工作流引擎——技能库驱动的写作→去AI味管线，与长文写作并存）
-  { file: 'styled-long-form.json', raw: styledLongForm, appId: `${BUILTIN_APP_PREFIX}styled_long_form`, icon: '🖋️', name: '深度长文写作（风格库）', description: '技能库驱动长文管线：writing-styles 风格库技能（主题判定文体→风格卡→结构/钩子/语域/深度阶梯写作，拒绝平铺直叙；素材非空=纪实写作锁定素材口径；已有成稿+修改意见=修订模式多轮迭代）→ libai-skill 去AI味技能（七维诊断取证→分层改写→质检，独立模型）→ 终稿+写作自检+配图清单+去AI味诊断 → 存资产。修订：同会话再次运行填成稿与意见', category: '内容创作', tags: ['长文', '风格库', '去AI味'] },
+  { file: 'styled-long-form.json', raw: styledLongForm, appId: `${BUILTIN_APP_PREFIX}styled_long_form`, icon: '🖋️', name: '深度长文写作（风格库）', description: '技能库驱动长文管线：writing-styles 风格库技能（主题判定文体→风格卡→结构/钩子/语域/深度阶梯写作，拒绝平铺直叙；素材非空=纪实写作锁定素材口径；已有成稿+修改意见=修订模式多轮迭代）→ libai-skill 去AI味技能（七维诊断取证→分层改写→质检，独立模型）→ 配图管线（图片编辑节点规划清单→联网代理检索官方/权威图源直链→下载校验→逐图登记资产中心→配图审核单人工审核闸口，驳回=无图定稿）→ 终稿拼装（图按小节锚点嵌入正文）+写作自检+配图审核单+去AI味诊断 → 存资产。修订：同会话再次运行填成稿与意见', category: '内容创作', tags: ['长文', '风格库', '去AI味'] },
   // 电商详情长图（2026-08-29 用户确认开工：先按卖点/规格规划张数，再逐张生成并配图文，排版成竖版详情长图）
   { file: 'ecommerce-detail-long-image.json', raw: ecommerceDetailLongImage, appId: `${BUILTIN_APP_PREFIX}ecommerce_detail_long_image`, icon: '🛍️', name: '电商详情长图', description: '商品图+卖点+规格 → 按卖点/规格规划 N 张介绍图 → 逐张生成（锁商品、图文对应）→ 排版成竖版详情长图', category: '电商', tags: ['电商', '详情', '长图'] },
   // 主题深度研究（2026-10-06 v5：用途自适应 + 信源四级分级（官方机构/官方媒体/互联网媒体/互联网搜索，跨渠道取材不偏官方）+ 素材密度优先）
@@ -105,6 +111,8 @@ const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; icon: str
   { file: 'app-data-demo.json', raw: appDataDemo, appId: `${BUILTIN_APP_PREFIX}app_data_demo`, icon: '🗄️', name: '数据表演示·增量记录', description: '表单录入→应用数据表 upsert 增量（同链接=更新）→数据页签浏览/导出——非一次性应用的最小闭环示范', category: '办公效率', tags: ['数据表', '示范'] },
   // 大V博主蒸馏（2026-10-09 技能蒸馏工作流：逐篇抓文→存资产→判类→蒸馏成技能包）
   { file: 'blogger-distill.json', raw: bloggerDistill, appId: `${BUILTIN_APP_PREFIX}blogger_distill`, icon: '⚗️', name: '大V博主蒸馏', description: '博主名+文章链接列表 → 逐篇抓取正文并存资产中心 → LLM 判定文章类别（时政/财经/科普/历史/文学/哲学…）→ 技能蒸馏节点把全部文章蒸馏成一个技能包（两遍流水线+审计修复）落盘技能库', category: '学习', tags: ['蒸馏', '技能库', '博主'] },
+  // 头条博主文章采集（2026-10-11 用户确认开工：browser-read 拟人阅读采集管线——滚动加载列表→逐篇串行滚动到底→存资产集合，幂等去重）
+  { file: 'toutiao-blogger-collect.json', raw: toutiaoBloggerCollect, appId: `${BUILTIN_APP_PREFIX}toutiao_blogger_collect`, icon: '📥', name: '头条博主文章采集', description: '头条博主主页链接 → 浏览器拟人阅读：随机步长滚动加载文章列表（加载够了即收）→ 逐篇串行打开文章、模拟真人缓慢滚动到底部 → 正文 markdown 存资产中心，同一博主归入同一资产集合（跨运行合并、按原文链接幂等去重，重跑只补新文章）', category: '新闻资讯', tags: ['头条', '博主', '采集'] },
 ]
 
 /** 默认模板资产（user_id=NULL，可复制修改） */

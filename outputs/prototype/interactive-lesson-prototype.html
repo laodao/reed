@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>交互式讲义原型 · Interactive Lesson Prototype</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel2: #1e222b; --line: #2a2f3a;
+    --text: #e6e9ef; --dim: #9aa3b2; --dim2: #6b7482;
+    --accent: #4c8dff; --ok: #35c07a; --bad: #ef5f6b; --warn: #e8a33d;
+    --radius: 10px;
+  }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    line-height: 1.75; padding: 0 0 80px;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 20px; }
+
+  /* ---------- 顶部 ---------- */
+  header { padding: 40px 0 24px; border-bottom: 1px solid var(--line); margin-bottom: 28px; }
+  .bridge {
+    display: inline-block; font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--accent); border: 1px solid rgba(76,141,255,.35); border-radius: 100px;
+    padding: 4px 12px; margin-bottom: 14px;
+  }
+  h1 { font-size: 26px; font-weight: 650; letter-spacing: -.01em; }
+  .sub { color: var(--dim); font-size: 14px; margin-top: 10px; }
+
+  /* ---------- 概念头 ---------- */
+  .concept { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+  .concept h2 { font-size: 20px; font-weight: 620; }
+  .tag { font-size: 12px; padding: 2px 10px; border-radius: 100px; border: 1px solid var(--line); color: var(--dim); }
+
+  /* ---------- 正则区 ---------- */
+  .section { margin: 26px 0; }
+  .section > p { color: #cfd5e0; }
+  .sec-title {
+    font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim2);
+    margin-bottom: 10px; display: flex; align-items: center; gap: 8px;
+  }
+  .sec-title::before { content: ''; width: 3px; height: 13px; background: var(--accent); border-radius: 2px; }
+
+  /* ---------- 交互块通用 ---------- */
+  .ix {
+    border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--panel); overflow: hidden; margin: 18px 0;
+  }
+  .ix-head {
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 10px; background: var(--panel2);
+  }
+  .ix-kind {
+    font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+    padding: 3px 9px; border-radius: 5px;
+  }
+  .k-predict { background: rgba(232,163,61,.15); color: var(--warn); }
+  .k-explore { background: rgba(76,141,255,.15); color: var(--accent); }
+  .k-structure { background: rgba(53,192,122,.15); color: var(--ok); }
+  .ix-head .hint { font-size: 12px; color: var(--dim2); margin-left: auto; }
+  .ix-body { padding: 18px 16px; }
+  .ix-q { font-size: 15.5px; font-weight: 560; margin-bottom: 16px; }
+
+  /* ---------- 选项 ---------- */
+  .opts { display: grid; gap: 12px; }
+  .opts.two { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 620px) { .opts.two { grid-template-columns: 1fr; } }
+  .opt {
+    border: 1.5px solid var(--line); border-radius: 8px; background: var(--panel2);
+    padding: 12px; cursor: pointer; transition: border-color .16s, background .16s;
+    text-align: left; color: inherit; font: inherit;
+  }
+  .opt:hover:not(.locked) { border-color: #3d4757; background: #232833; }
+  .opt.picked { border-color: var(--accent); background: rgba(76,141,255,.08); }
+  .opt.correct { border-color: var(--ok); background: rgba(53,192,122,.1); }
+  .opt.wrong { border-color: var(--bad); background: rgba(239,95,107,.1); }
+  .opt.locked { cursor: default; }
+  .opt-cap { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 560; margin-bottom: 8px; }
+  .dot { width: 15px; height: 15px; border-radius: 50%; border: 1.5px solid var(--dim2); flex: none; }
+  .opt.picked .dot { border-color: var(--accent); box-shadow: inset 0 0 0 4px var(--accent); }
+  .opt.correct .dot { border-color: var(--ok); box-shadow: inset 0 0 0 4px var(--ok); }
+  .opt.wrong .dot { border-color: var(--bad); box-shadow: inset 0 0 0 4px var(--bad); }
+  .opt svg { display: block; width: 100%; height: auto; }
+
+  /* ---------- 揭示 ---------- */
+  .reveal {
+    margin-top: 16px; border-left: 3px solid var(--accent);
+    background: rgba(76,141,255,.06); border-radius: 0 8px 8px 0;
+    padding: 14px 16px; font-size: 14.5px;
+    animation: slide .28s ease;
+  }
+  .reveal.good { border-left-color: var(--ok); background: rgba(53,192,122,.07); }
+  .reveal.bad { border-left-color: var(--bad); background: rgba(239,95,107,.07); }
+  .reveal b { color: #fff; }
+  .reveal .verdict { font-weight: 650; display: block; margin-bottom: 6px; }
+  @keyframes slide { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+  /* ---------- 参数探索 ---------- */
+  .sliders { display: grid; gap: 14px; margin-bottom: 16px; }
+  .sl { display: grid; grid-template-columns: 92px 1fr 68px; gap: 12px; align-items: center; }
+  .sl label { font-size: 13.5px; color: var(--dim); }
+  .sl output {
+    font-variant-numeric: tabular-nums; font-size: 13.5px; font-weight: 600;
+    text-align: right; color: var(--accent);
+  }
+  input[type=range] {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 4px;
+    background: var(--line); border-radius: 3px; outline: none; cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
+    background: var(--accent); cursor: grab; border: 2px solid var(--bg);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 16px; height: 16px; border-radius: 50%; background: var(--accent);
+    cursor: grab; border: 2px solid var(--bg);
+  }
+  .readout {
+    display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px;
+  }
+  .chip {
+    background: var(--panel2); border: 1px solid var(--line); border-radius: 7px;
+    padding: 7px 12px; font-size: 13px; color: var(--dim);
+  }
+  .chip b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+  /* ---------- 结构化操作 ---------- */
+  .steps { display: grid; gap: 8px; }
+  .step {
+    display: flex; align-items: center; gap: 11px; padding: 11px 13px;
+    border: 1.5px solid var(--line); border-radius: 8px; background: var(--panel2);
+    cursor: grab; font-size: 14px; user-select: none;
+    transition: border-color .14s, transform .14s, background .14s;
+  }
+  .step:active { cursor: grabbing; }
+  .step.dragging { opacity: .35; }
+  .step.over { border-color: var(--accent); background: rgba(76,141,255,.08); }
+  .step .grip { color: var(--dim2); font-size: 15px; letter-spacing: -2px; flex: none; }
+  .step .idx {
+    width: 21px; height: 21px; border-radius: 50%; background: var(--line); color: var(--dim);
+    font-size: 11.5px; font-weight: 650; display: grid; place-items: center; flex: none;
+    font-variant-numeric: tabular-nums;
+  }
+  .step.correct { border-color: var(--ok); background: rgba(53,192,122,.08); }
+  .step.wrong { border-color: var(--bad); background: rgba(239,95,107,.08); }
+  .btn {
+    margin-top: 14px; padding: 9px 18px; border-radius: 7px; border: 1px solid var(--accent);
+    background: var(--accent); color: #fff; font: inherit; font-size: 14px; font-weight: 560;
+    cursor: pointer; transition: filter .15s;
+  }
+  .btn:hover { filter: brightness(1.1); }
+  .btn:disabled { opacity: .4; cursor: default; }
+  .btn.ghost { background: none; border-color: var(--line); color: var(--dim); }
+
+  /* ---------- 结论条 ---------- */
+  .takeaway {
+    border-left: 3px solid var(--warn); background: rgba(232,163,61,.07);
+    padding: 12px 16px; border-radius: 0 8px 8px 0; font-size: 14.5px; color: #e8d9bd;
+    margin-top: 16px;
+  }
+  .takeaway::before { content: '→ '; color: var(--warn); font-weight: 700; }
+
+  /* ---------- 侧栏标注 ---------- */
+  .annot {
+    font-size: 12.5px; color: var(--dim2); margin-top: 9px;
+    padding-left: 11px; border-left: 2px solid var(--line);
+  }
+  .annot b { color: var(--dim); }
+
+  /* ---------- 底部对照表 ---------- */
+  footer { margin-top: 56px; padding-top: 26px; border-top: 1px solid var(--line); }
+  footer h3 { font-size: 15px; margin-bottom: 14px; color: var(--dim); }
+  .cmp { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .cmp th, .cmp td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .cmp th { color: var(--dim2); font-weight: 560; font-size: 12px; letter-spacing: .05em; text-transform: uppercase; }
+  .cmp td:first-child { color: var(--dim); white-space: nowrap; }
+  .cmp .yes { color: var(--ok); }
+  .cmp .no { color: var(--dim2); }
+
+  /* ---------- 顶部进度 ---------- */
+  .progress {
+    position: fixed; top: 0; left: 0; height: 2px; background: var(--accent);
+    width: 0; transition: width .1s linear; z-index: 50;
+  }
+  .hintbar {
+    position: fixed; bottom: 0; left: 0; right: 0; background: rgba(23,26,33,.94);
+    backdrop-filter: blur(8px); border-top: 1px solid var(--line);
+    padding: 9px 20px; font-size: 12.5px; color: var(--dim2); text-align: center; z-index: 40;
+  }
+  .hintbar b { color: var(--dim); }
+</style>
+</head>
+<body>
+<div class="progress" id="prog"></div>
+
+<div class="wrap">
+  <header>
+    <span class="bridge">原型 · 交互式讲义</span>
+    <h1>什么是复利？</h1>
+    <div class="sub">领域学习 · 金融入门 &nbsp;|&nbsp; 目标：能向别人解释复利为什么"后期爆炸"</div>
+  </header>
+
+  <div class="concept">
+    <h2>复利效应</h2>
+    <span class="tag">未掌握</span>
+    <span class="tag">约 4 分钟</span>
+  </div>
+
+  <!-- ============ 叙事：钩子 ============ -->
+  <div class="section">
+    <p>假设有两个人：<b>小明</b> 从 20 岁开始，每年存 1 万元，存到 30 岁就停手，之后一分不再存；<b>小红</b> 从 30 岁才开始，每年存 1 万元，一直存到 60 岁。</p>
+    <p style="margin-top:12px">两人都按年化 <b>7%</b> 计算。到 60 岁时，谁的钱更多？</p>
+  </div>
+
+  <!-- ============ 交互 1：预测-验证 ============ -->
+  <div class="ix" data-ix="predict">
+    <div class="ix-head">
+      <span class="ix-kind k-predict">预测</span>
+      <span style="font-size:13.5px">先猜，再揭晓</span>
+      <span class="hint">自己的判断先落地，落差才成立</span>
+    </div>
+    <div class="ix-body">
+      <div class="ix-q">你的直觉是哪一种？</div>
+      <div class="opts two" id="opts">
+        <button class="opt" data-pick="a">
+          <span class="opt-cap"><span class="dot"></span>小红更多</span>
+          <svg viewBox="0 0 220 120" aria-hidden="true">
+            <line x1="30" y1="100" x2="205" y2="100" stroke="#2a2f3a" stroke-width="1"/>
+            <line x1="30" y1="100" x2="30" y2="14" stroke="#2a2f3a" stroke-width="1"/>
+            <path d="M30 98 L85 96 L130 88 L175 72" stroke="#6b7482" stroke-width="2" fill="none"/>
+            <path d="M85 96 L120 88 L160 62 L200 26" stroke="#35c07a" stroke-width="2.5" fill="none"/>
+            <text x="176" y="112" fill="#6b7482" font-size="10" text-anchor="end">年龄 20→60</text>
+            <text x="140" y="52" fill="#35c07a" font-size="10">小红</text>
+            <text x="132" y="84" fill="#6b7482" font-size="10">小明</text>
+          </svg>
+        </button>
+        <button class="opt" data-pick="b">
+          <span class="opt-cap"><span class="dot"></span>小明更多</span>
+          <svg viewBox="0 0 220 120" aria-hidden="true">
+            <line x1="30" y1="100" x2="205" y2="100" stroke="#2a2f3a" stroke-width="1"/>
+            <line x1="30" y1="100" x2="30" y2="14" stroke="#2a2f3a" stroke-width="1"/>
+            <path d="M30 98 L60 96 L100 90 L140 78 L175 58" stroke="#4c8dff" stroke-width="2.5" fill="none"/>
+            <path d="M85 96 L120 92 L160 82 L200 66" stroke="#6b7482" stroke-width="2" fill="none"/>
+            <text x="176" y="112" fill="#6b7482" font-size="10" text-anchor="end">年龄 20→60</text>
+            <text x="140" y="52" fill="#4c8dff" font-size="10">小明</text>
+            <text x="150" y="92" fill="#6b7482" font-size="10">小红</text>
+          </svg>
+        </button>
+      </div>
+      <div id="rev1"></div>
+      <div class="annot"><b>交互逻辑：</b>用户点击任一选项 → 该选项进入选中态 → 立即判分（对比规格里的 <code>answer</code> 字段）→ 展开揭示文案。全程无"提交"按钮，一次点击即完成一次作答。</div>
+    </div>
+  </div>
+
+  <!-- ============ 交互 2：参数探索 ============ -->
+  <div class="section">
+    <div class="sec-title">亲手验证一下</div>
+    <p>下面这张图不是画好的，是<b>算出来的</b>。拖动滑块改变参数，曲线会实时重画。</p>
+  </div>
+
+  <div class="ix" data-ix="explore">
+    <div class="ix-head">
+      <span class="ix-kind k-explore">探索</span>
+      <span style="font-size:13.5px">拖动看变化</span>
+      <span class="hint">参数 → 结果 的因果，只能自己动手才懂</span>
+    </div>
+    <div class="ix-body">
+      <div class="sliders">
+        <div class="sl">
+          <label for="rate">年化收益</label>
+          <input type="range" id="rate" min="0" max="15" step="0.5" value="7">
+          <output id="rateV">7.0%</output>
+        </div>
+        <div class="sl">
+          <label for="years">投资年限</label>
+          <input type="range" id="years" min="5" max="60" step="1" value="40">
+          <output id="yearsV">40 年</output>
+        </div>
+      </div>
+      <svg id="chart" viewBox="0 0 660 260" style="width:100%;height:auto"></svg>
+      <div class="readout">
+        <div class="chip">本金合计 <b id="principal">—</b></div>
+        <div class="chip">最终金额 <b id="final">—</b></div>
+        <div class="chip">其中利息 <b id="interest">—</b></div>
+        <div class="chip">利息占比 <b id="ratio">—</b></div>
+      </div>
+      <div class="annot"><b>交互逻辑：</b>滑块 <code>input</code> 事件 → 用当前参数重算数列 → 重绘 SVG → 更新读数。图中三块面积（本金 / 单利利息 / 复利增益）分别是独立结果，拖动时能直观看到"复利增益"这块如何被利率和年限放大。</div>
+    </div>
+  </div>
+
+  <div class="takeaway">复利的"爆炸"不是因为它涨得快，而是因为<b>利息也在生利息</b>。时间越长、利率越高，这部分"利息生的利息"占比就越夸张——所以 20 岁存的那 10 年，比 30 岁后的 30 年更值钱。</div>
+
+  <!-- ============ 正则区：原理 ============ -->
+  <div class="section">
+    <div class="sec-title">原理</div>
+    <p>单利的本金永远不变，利息是线性的；复利则把每一期的利息滚进本金，于是增长不是"加法"而是"乘法"。两者的差距随期数呈指数级拉开——这就是上面那条曲线后段陡峭的原因。</p>
+  </div>
+
+  <!-- ============ 交互 3：结构化操作 ============ -->
+  <div class="ix" data-ix="structure">
+    <div class="ix-head">
+      <span class="ix-kind k-structure">排序</span>
+      <span style="font-size:13.5px">拖拽排好顺序</span>
+      <span class="hint">拖动卡片，把它们排成正确顺序</span>
+    </div>
+    <div class="ix-body">
+      <div class="ix-q">把"复利计算"的四个步骤排成正确顺序：</div>
+      <div class="steps" id="steps"></div>
+      <button class="btn" id="checkSteps">检查顺序</button>
+      <div id="rev3"></div>
+      <div class="annot"><b>交互逻辑：</b>HTML5 拖拽排序 → 点"检查"→ 逐张标对错（正确位置绿、错误位置红）→ 全部正确才算这一区通过。这类交互的作答结果<b>完全可判定</b>，最适合写回掌握度。</div>
+    </div>
+  </div>
+
+  <!-- ============ 收尾 ============ -->
+  <div class="section">
+    <div class="sec-title">检查一下</div>
+    <p>如果你现在能不看上面、说出"为什么 20 岁存 10 年比 30 岁后存 30 年更值钱"，这个概念就算拿下了。</p>
+  </div>
+
+  <footer>
+    <h3>三种交互的分工</h3>
+    <table class="cmp">
+      <thead>
+        <tr><th>类型</th><th>用户动作</th><th>产生什么认知结果</th><th>可否判分</th><th>生成成本</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>预测-验证</td><td>点一个选项</td>
+          <td class="yes">预测与真相的落差——猜错的那一刻最有效</td>
+          <td class="yes">可（对比 answer）</td><td class="yes">最低</td>
+        </tr>
+        <tr>
+          <td>参数探索</td><td>拖动滑块</td>
+          <td class="yes">参数与结果的因果关系，只能动手获得</td>
+          <td class="no">弱（无对错，但可记录操作轨迹）</td><td>中</td>
+        </tr>
+        <tr>
+          <td>结构化操作</td><td>拖拽排序 / 配对</td>
+          <td class="yes">结构关系的理解被外化出来</td>
+          <td class="yes">可（逐项判定）</td><td>中</td>
+        </tr>
+      </tbody>
+    </table>
+    <p style="font-size:12.5px;color:var(--dim2);margin-top:16px">
+      三者在一份讲义里的顺序：<b style="color:var(--dim)">先预测（钩子）→ 再探索（验证）→ 后排序（检查）</b>。
+      不是每区都塞一个，而是<b style="color:var(--dim)">服务同一条叙事线</b>。
+    </p>
+  </footer>
+</div>
+
+<div class="hintbar">
+  <b>这是个可点击的原型</b> — 上面三个灰色框都是真的能操作的，试试点选项、拖滑块、拖卡片。
+</div>
+
+<script>
+/* ============================================================
+   交互规格 —— 对应 09 号方案的「模型只输出规格 JSON」纪律
+   下面这些 JSON 就是模型该产出的东西，交互行为全部由渲染层实现
+   ============================================================ */
+
+// 【规格 1】预测-验证
+const SPEC_PREDICT = {
+  type: 'predict',
+  prompt: '你的直觉是哪一种？',
+  options: [
+    { id: 'a', label: '小红更多', figure: { type: 'plot', /* 曲线 A */ } },
+    { id: 'b', label: '小明更多', figure: { type: 'plot', /* 曲线 B */ } }
+  ],
+  answer: 'b',
+  revealCorrect: '对，是小明。只存了 10 年，却比存 30 年的人多——这正是复利最反直觉的地方。',
+  revealWrong: '很多人会选小红，但答案是<b>小明</b>。他只存了 10 年，小红存了 30 年，小明的钱反而更多。'
+};
+
+// 【规格 2】参数探索
+const SPEC_EXPLORE = {
+  type: 'explore',
+  params: [
+    { name: 'rate',  label: '年化收益', min: 0, max: 15, step: 0.5, unit: '%', default: 7 },
+    { name: 'years', label: '投资年限', min: 5, max: 60, step: 1,   unit: ' 年', default: 40 }
+  ],
+  compute: 'compound',          // 从预置公式库选，不让模型写函数
+  series: ['principal', 'simple', 'compound']
+};
+
+// 【规格 3】结构化操作
+const SPEC_STRUCTURE = {
+  type: 'structure',
+  mode: 'order',
+  prompt: '把"复利计算"的四个步骤排成正确顺序：',
+  items: [
+    { id: 's2', text: '把这一期的利息加回本金' },
+    { id: 's4', text: '用新的本金重复下一期' },
+    { id: 's1', text: '用当前本金乘以利率，算出本期利息' },
+    { id: 's3', text: '记录这一期结束后的总额' }
+  ],
+  answer: ['s1', 's2', 's3', 's4']
+};
+
+/* ============================================================
+   渲染层实现（交互行为在这里，不在规格里）
+   ============================================================ */
+
+/* ---------- 交互 1：预测-验证 ---------- */
+(function () {
+  const box = document.getElementById('opts');
+  const rev = document.getElementById('rev1');
+  let done = false;
+
+  box.addEventListener('click', (e) => {
+    const btn = e.target.closest('.opt');
+    if (!btn || done) return;
+    done = true;
+    const pick = btn.dataset.pick;
+    const right = pick === SPEC_PREDICT.answer;
+
+    box.querySelectorAll('.opt').forEach((el) => {
+      el.classList.add('locked');
+      if (el.dataset.pick === SPEC_PREDICT.answer) el.classList.add('correct');
+      else if (el === btn) el.classList.add('wrong');
+    });
+
+    rev.innerHTML =
+      '<div class="reveal ' + (right ? 'good' : 'bad') + '">' +
+        '<span class="verdict">' + (right ? '✓ 直觉很准' : '✗ 这里有个反直觉的地方') + '</span>' +
+        (right ? SPEC_PREDICT.revealCorrect : SPEC_PREDICT.revealWrong) +
+        '<div style="margin-top:10px;font-size:13.5px;color:#9aa3b2">' +
+          '小明：20–30 岁每年 1 万，共投入 10 万 → 60 岁约 <b style="color:#e6e9ef">112.5 万</b><br>' +
+          '小红：30–60 岁每年 1 万，共投入 30 万 → 60 岁约 <b style="color:#e6e9ef">101.1 万</b>' +
+        '</div>' +
+      '</div>';
+  });
+})();
+
+/* ---------- 交互 2：参数探索 ---------- */
+(function () {
+  const rateEl = document.getElementById('rate');
+  const yearsEl = document.getElementById('years');
+  const rateV = document.getElementById('rateV');
+  const yearsV = document.getElementById('yearsV');
+  const svg = document.getElementById('chart');
+  const W = 660, H = 260, PAD = { l: 58, r: 16, t: 18, b: 30 };
+
+  const fmt = (n) => {
+    if (n >= 10000) return (n / 10000).toFixed(1) + ' 万';
+    return Math.round(n).toLocaleString('zh-CN');
+  };
+
+  // 预置公式（对应规格里的 compute: 'compound'）
+  function series(rate, years) {
+    const r = rate / 100;
+    const yearly = 1;              // 每年投入 1 万（单位：万）
+    const out = [];
+    let principal = 0, compound = 0, simple = 0;
+    for (let y = 1; y <= years; y++) {
+      principal += yearly;
+      simple += yearly + yearly * r * (years - y + 1) * 0; // 单利口径下面统一算
+      compound = (compound + yearly) * (1 + r);
+      out.push({ y, principal, compound });
+    }
+    // 单利：本金按最初投入累计利息（简化口径，用于视觉对比）
+    let sp = 0, sInterest = 0;
+    for (let y = 1; y <= years; y++) {
+      sp += yearly;
+      sInterest += yearly * r * (years - y + 1);
+    }
+    return { points: out, simpleTotal: sp + sInterest, principalTotal: sp, compoundTotal: compound };
+  }
+
+  function draw() {
+    const rate = parseFloat(rateEl.value);
+    const years = parseInt(yearsEl.value, 10);
+    rateV.textContent = rate.toFixed(1) + '%';
+    yearsV.textContent = years + ' 年';
+
+    const d = series(rate, years);
+    const maxV = Math.max(d.compoundTotal, 1);
+    const x = (y) => PAD.l + (y / years) * (W - PAD.l - PAD.r);
+    const yv = (v) => H - PAD.b - (v / maxV) * (H - PAD.t - PAD.b);
+
+    const line = d.points.map((p, i) => (i ? 'L' : 'M') + x(p.y) + ' ' + yv(p.compound)).join(' ');
+    const lineP = d.points.map((p, i) => (i ? 'L' : 'M') + x(p.y) + ' ' + yv(p.principal)).join(' ');
+    const lineS = 'M' + x(1) + ' ' + yv(1) + ' L' + x(years) + ' ' + yv(d.simpleTotal);
+
+    // 网格与刻度
+    let grid = '';
+    for (let g = 0; g <= 4; g++) {
+      const v = (maxV / 4) * g;
+      const yy = yv(v);
+      grid += '<line x1="' + PAD.l + '" y1="' + yy + '" x2="' + (W - PAD.r) + '" y2="' + yy +
+              '" stroke="#222732" stroke-width="1"/>' +
+              '<text x="' + (PAD.l - 8) + '" y="' + (yy + 4) + '" fill="#5b6472" font-size="10.5" text-anchor="end">' +
+              fmt(v) + '</text>';
+    }
+    const yTicks = [1, Math.round(years / 2), years].filter((v, i, a) => a.indexOf(v) === i);
+    let xt = '';
+    yTicks.forEach((t) => {
+      xt += '<text x="' + x(t) + '" y="' + (H - 9) + '" fill="#5b6472" font-size="10.5" text-anchor="middle">' +
+            t + '年</text>';
+    });
+
+    // 复利增益 = 复利 - 单利（面积高亮）
+    const gainTop = d.points.map((p, i) => (i ? 'L' : 'M') + x(p.y) + ' ' + yv(p.compound)).join(' ');
+    const gainBottom = [];
+    for (let i = d.points.length - 1; i >= 0; i--) {
+      const p = d.points[i];
+      const ratio = p.y / years;
+      const simpleAt = 1 * ratio + (d.simpleTotal - d.principalTotal) * ratio;
+      gainBottom.push('L' + x(p.y) + ' ' + yv(Math.min(simpleAt, p.compound)));
+    }
+
+    svg.innerHTML =
+      '<defs><linearGradient id="gGain" x1="0" y1="0" x2="0" y2="1">' +
+        '<stop offset="0%" stop-color="#35c07a" stop-opacity=".28"/>' +
+        '<stop offset="100%" stop-color="#35c07a" stop-opacity=".04"/>' +
+      '</linearGradient></defs>' +
+      grid + xt +
+      '<path d="' + gainTop + gainBottom.join(' ') + ' Z" fill="url(#gGain)"/>' +
+      '<path d="' + lineP + '" stroke="#5b6472" stroke-width="2" fill="none" stroke-dasharray="4 3"/>' +
+      '<path d="' + lineS + '" stroke="#e8a33d" stroke-width="2" fill="none"/>' +
+      '<path d="' + line + '" stroke="#4c8dff" stroke-width="2.6" fill="none"/>' +
+      '<text x="' + (x(years) - 4) + '" y="' + (yv(d.compoundTotal) - 8) + '" fill="#4c8dff" font-size="11.5" text-anchor="end">复利</text>' +
+      '<text x="' + (x(years) - 4) + '" y="' + (yv(d.simpleTotal) + 14) + '" fill="#e8a33d" font-size="11.5" text-anchor="end">单利</text>' +
+      '<text x="' + (x(years) - 4) + '" y="' + (yv(d.principalTotal) + 14) + '" fill="#5b6472" font-size="11.5" text-anchor="end">本金</text>';
+
+    const interest = d.compoundTotal - d.principalTotal;
+    document.getElementById('principal').textContent = fmt(d.principalTotal);
+    document.getElementById('final').textContent = fmt(d.compoundTotal);
+    document.getElementById('interest').textContent = fmt(interest);
+    document.getElementById('ratio').textContent = Math.round((interest / d.compoundTotal) * 100) + '%';
+  }
+
+  rateEl.addEventListener('input', draw);
+  yearsEl.addEventListener('input', draw);
+  draw();
+})();
+
+/* ---------- 交互 3：结构化操作 ---------- */
+(function () {
+  const box = document.getElementById('steps');
+  const btn = document.getElementById('checkSteps');
+  const rev = document.getElementById('rev3');
+  let order = SPEC_STRUCTURE.items.map((i) => i.id);
+  let dragId = null;
+  let checked = false;
+
+  function render() {
+    box.innerHTML = order.map((id, i) => {
+      const item = SPEC_STRUCTURE.items.find((x) => x.id === id);
+      return '<div class="step" draggable="' + (!checked) + '" data-id="' + id + '">' +
+        '<span class="grip">⠿</span><span class="idx">' + (i + 1) + '</span>' +
+        '<span>' + item.text + '</span></div>';
+    }).join('');
+  }
+
+  box.addEventListener('dragstart', (e) => {
+    const el = e.target.closest('.step');
+    if (!el || checked) return;
+    dragId = el.dataset.id;
+    el.classList.add('dragging');
+  });
+  box.addEventListener('dragend', (e) => {
+    const el = e.target.closest('.step');
+    if (el) el.classList.remove('dragging');
+  });
+  box.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    const el = e.target.closest('.step');
+    if (!el || el.dataset.id === dragId) return;
+    box.querySelectorAll('.step').forEach((s) => s.classList.remove('over'));
+    el.classList.add('over');
+  });
+  box.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const el = e.target.closest('.step');
+    if (!el || !dragId) return;
+    el.classList.remove('over');
+    const from = order.indexOf(dragId);
+    const to = order.indexOf(el.dataset.id);
+    order.splice(from, 1);
+    order.splice(to, 0, dragId);
+    dragId = null;
+    render();
+  });
+  // 触屏兜底：点击互换
+  box.addEventListener('click', (e) => {
+    if (checked) return;
+    const el = e.target.closest('.step');
+    if (!el) return;
+    const id = el.dataset.id;
+    if (!dragId) { dragId = id; el.classList.add('over'); return; }
+    if (dragId === id) { dragId = null; box.querySelectorAll('.step').forEach((s) => s.classList.remove('over')); return; }
+    const from = order.indexOf(dragId), to = order.indexOf(id);
+    order.splice(from, 1); order.splice(to, 0, dragId);
+    dragId = null; render();
+  });
+
+  btn.addEventListener('click', () => {
+    checked = true;
+    let allRight = true;
+    box.querySelectorAll('.step').forEach((el, i) => {
+      const ok = order[i] === SPEC_STRUCTURE.answer[i];
+      if (!ok) allRight = false;
+      el.classList.add(ok ? 'correct' : 'wrong');
+      el.setAttribute('draggable', 'false');
+    });
+    const correctOrder = SPEC_STRUCTURE.answer
+      .map((id, i) => (i + 1) + '. ' + SPEC_STRUCTURE.items.find((x) => x.id === id).text)
+      .join('<br>');
+    rev.innerHTML = '<div class="reveal ' + (allRight ? 'good' : 'bad') + '">' +
+      '<span class="verdict">' + (allRight ? '✓ 顺序完全正确' : '✗ 有几处顺序不对') + '</span>' +
+      '正确顺序是：<div style="margin-top:8px;font-size:13.5px;line-height:2">' + correctOrder + '</div>' +
+      '</div>';
+    btn.disabled = true;
+    btn.textContent = '已检查';
+  });
+
+  render();
+})();
+
+/* ---------- 顶部进度条 ---------- */
+(function () {
+  const prog = document.getElementById('prog');
+  const onScroll = () => {
+    const h = document.documentElement.scrollHeight - window.innerHeight;
+    prog.style.width = (h > 0 ? (window.scrollY / h) * 100 : 0) + '%';
+  };
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+})();
+</script>
+</body>
+</html>

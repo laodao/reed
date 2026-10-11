@@ -9,6 +9,7 @@
 
 import { BaseSearchEngine } from './base-search-engine'
 import type { WebSearchResultItem, WebSearchResponse, SearchEngineType } from '@shared/types/search-engine.types'
+import { outboundFetch } from '@core/utils/net-fetch'
 
 export class GoogleCseSearchEngine extends BaseSearchEngine {
   readonly type: SearchEngineType = 'google-cse'
@@ -33,7 +34,7 @@ export class GoogleCseSearchEngine extends BaseSearchEngine {
 
     try {
       const url = `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(this.config.apiKey)}&cx=${encodeURIComponent(this.cx)}&q=${encodeURIComponent(query)}&num=${maxResults}`
-      const response = await fetch(url, {
+      const response = await outboundFetch()(url, {
         headers: { 'Accept': 'application/json' },
         signal: AbortSignal.timeout(this.timeout),
       })

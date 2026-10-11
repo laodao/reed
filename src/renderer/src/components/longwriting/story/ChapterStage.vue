@@ -492,10 +492,11 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, inject, nextTick } from 'vue'
-import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { MagicStick, Clock, DocumentChecked, View, RefreshLeft, Close, Fold, Download, Loading, InfoFilled, Collection, Warning, ArrowDown } from '@element-plus/icons-vue'
 import MarkdownEditor from '@/components/common/MarkdownEditor.vue'
 import ChapterContextPanel from './ChapterContextPanel.vue'
+import { notifyWarning } from '@/utils/notify'
 import ChapterConflictPanel from './ChapterConflictPanel.vue'
 import { ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import { marked } from 'marked'
@@ -1473,7 +1474,7 @@ async function runChapterWorkflow(outlineId: string, opts?: { overwrite?: boolea
     if (data.chapterId) chapterIdMap.value[outlineId] = data.chapterId
     ElMessage.success(`章节已按章法生成并保存（${data.wordCount || content.length} 字）`)
     if (data.postCheck && data.postCheck.passed === false) {
-      ElNotification({ title: '写后一致性检查发现疑点', message: String(data.postCheck.report || '').slice(0, 800), type: 'warning', duration: 0 })
+      notifyWarning({ title: '写后一致性检查发现疑点', message: String(data.postCheck.report || '').slice(0, 800) })
     }
     const outline = outlineNodes.value.find(n => n.id === outlineId)
     if (outline && outline.status === 'pending') {

@@ -18,6 +18,7 @@ import { resolveAssetPath } from '@core/utils/asset-path'
 import { validateOutboundUrl } from '@core/utils/outbound-url'
 import { assetParams } from '@shared/utils/asset-params'
 import { ASSET_CATEGORIES, type AssetCategory } from '@shared/types/asset.types'
+import { outboundFetch } from '@core/utils/net-fetch'
 
 /** 常见扩展名 → MIME（探测不到时兜底 application/octet-stream） */
 const EXT_MIME: Record<string, string> = {
@@ -97,7 +98,7 @@ export class AssetStorageService {
     }
     // 超时与体积上限走「参数设置 → 素材与图片 → 素材下载与网页收藏」
     const { downloadTimeoutMs, maxDownloadBytes } = assetParams().asset
-    const resp = await fetch(url, { signal: AbortSignal.timeout(downloadTimeoutMs) })
+    const resp = await outboundFetch()(url, { signal: AbortSignal.timeout(downloadTimeoutMs) })
     if (!resp.ok) {
       throw new Error(`下载失败: HTTP ${resp.status}`)
     }

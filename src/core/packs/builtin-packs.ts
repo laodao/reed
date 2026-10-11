@@ -37,6 +37,7 @@ import { appPack } from './app'
 import { knowledgeBasePack } from './knowledge-base'
 import { assetCenterPack } from './asset-center'
 import { domainLearningPack } from './domain-learning'
+import { podcastVideoPack } from './podcast-video'
 import { infoCollectionPack } from './info-collection'
 
 export const builtinPacks: PackDefinition[] = [
@@ -57,4 +58,6 @@ export const builtinPacks: PackDefinition[] = [
   domainLearningPack,
   // 信息搜集（依赖 workflow/knowledge-base；docs/design/2026-10-07-info-collection-design.md）
   infoCollectionPack,
+  // 播客视频（slide-render/podcast-compose 业务节点；无 IPC 前缀，无依赖）
+  podcastVideoPack,
 ]

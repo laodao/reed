@@ -17,6 +17,7 @@
 import { WORKFLOW_LIMITS } from '@shared/types/workflow.types'
 import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 import { validateOutboundUrl } from '@core/utils/outbound-url'
+import { outboundFetch } from '@core/utils/net-fetch'
 
 /** 重定向逐跳上限（与 http-fetch executeHttpFetch 同款收口——review B1：
  *  redirect:'follow' 会对 302 目标自动重连，攻击页可跳内网/云元数据） */
@@ -121,7 +122,7 @@ export async function politeFetch(
     try {
       let current = url
       for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-        const res = await fetch(current, { ...init, redirect: 'manual' })
+        const res = await outboundFetch()(current, { ...init, redirect: 'manual' })
         if (res.status < 300 || res.status >= 400) return res
         const location = res.headers.get('location')
         if (!location) return res

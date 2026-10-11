@@ -6,6 +6,7 @@
 
 import { BaseSearchEngine } from './base-search-engine'
 import type { WebSearchResultItem, WebSearchResponse, SearchEngineType } from '@shared/types/search-engine.types'
+import { outboundFetch } from '@core/utils/net-fetch'
 
 /**
  * 百度搜索引擎实现
@@ -29,7 +30,7 @@ export class BaiduSearchEngine extends BaseSearchEngine {
     try {
       const url = `${this.searchUrl}?wd=${encodeURIComponent(query)}&rn=${Math.min(maxResults * 2, 20)}`
 
-      const response = await fetch(url, {
+      const response = await outboundFetch()(url, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',

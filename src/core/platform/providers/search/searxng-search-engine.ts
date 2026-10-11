@@ -8,6 +8,7 @@
 
 import { BaseSearchEngine } from './base-search-engine'
 import type { WebSearchResultItem, WebSearchResponse, SearchEngineType } from '@shared/types/search-engine.types'
+import { outboundFetch } from '@core/utils/net-fetch'
 
 export class SearxngSearchEngine extends BaseSearchEngine {
   readonly type: SearchEngineType = 'searxng'
@@ -29,7 +30,7 @@ export class SearxngSearchEngine extends BaseSearchEngine {
 
     try {
       const url = `${this.baseUrl}/search?q=${encodeURIComponent(query)}&format=json`
-      const response = await fetch(url, {
+      const response = await outboundFetch()(url, {
         signal: AbortSignal.timeout(this.timeout),
         headers: { 'Accept': 'application/json' },
       })

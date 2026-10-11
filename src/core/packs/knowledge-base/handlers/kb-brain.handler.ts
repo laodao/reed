@@ -25,6 +25,7 @@ import { parseModelRef } from '@core/platform/services/kb-brain/llm'
 import { parseBrainConfig } from '@core/platform/services/kb-brain/brain-config'
 import { getKbForeshadowScanService } from '@core/platform/services/kb-brain/foreshadow-scan.service'
 import { getKbAutomationLogService } from '@core/platform/services/kb-brain/automation-log.service'
+import { kbPublishNotice } from '@core/platform/services/kb-brain/kb-notice'
 import type { SearchResult } from '@shared/types/knowledge-base.types'
 
 let kbService: KnowledgeBaseService | null = null
@@ -247,6 +248,18 @@ export function registerKbBrainHandlers(): void {
       .runGoal(p.kbId, goal)
       .then(out => {
         goalLastResult.set(`${p.kbId}:${goal.id}`, { ok: true, ...out })
+        // 落通知中心存档：弹窗超时自动关闭后，用户仍可回看/点击直达（不再"找不到产物"）
+        const noticeType = out.proposed
+          ? 'kb:brain:goal-proposed'
+          : out.skippedDuplicate
+            ? 'kb:brain:goal-duplicate'
+            : 'kb:brain:goal-empty'
+        void kbPublishNotice(noticeType, {
+          kbId: p.kbId,
+          goalName: goal.name,
+          cards: out.cards,
+          fragments: out.fragments,
+        })
         console.info(
           `[kb-brain] 目标提炼完成 kb=${p.kbId} goal=${goal.name} fragments=${out.fragments} proposed=${out.proposed}`
         )

@@ -23,6 +23,7 @@ import * as fs from 'fs'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { isPrivateHostname, validateOutboundUrl } from '@core/utils/outbound-url'
 import { assetParams } from '@shared/utils/asset-params'
+import { outboundFetch } from '@core/utils/net-fetch'
 
 export interface FaviconResult {
   /** 规范化域名（hostname） */
@@ -167,7 +168,7 @@ export class FaviconService {
   /** 抓取一个图片 URL → data: URL；失败返回 null */
   private async fetchImage(url: string): Promise<string | null> {
     try {
-      const res = await fetch(url, {
+      const res = await outboundFetch()(url, {
         signal: AbortSignal.timeout(assetParams().favicon.timeoutMs),
         redirect: 'follow',
         headers: { 'User-Agent': BROWSER_UA },
@@ -211,7 +212,7 @@ export class FaviconService {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), assetParams().favicon.timeoutMs)
     try {
-      const res = await fetch(url, {
+      const res = await outboundFetch()(url, {
         signal: controller.signal,
         redirect: 'follow',
         headers: { 'User-Agent': BROWSER_UA },

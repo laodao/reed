@@ -48,6 +48,10 @@ export const NOTICE_EVENT_TYPES: readonly string[] = [
   'dl:card-ready',
   'dl:research-failed',
   'dl:review-due',
+  // 知识大脑提取目标（弹窗超时关闭后的可回看保障：待审提议/同题重复/无产出）
+  'kb:brain:goal-proposed',
+  'kb:brain:goal-duplicate',
+  'kb:brain:goal-empty',
 ]
 
 /** run-status 中真正作为通知的终态（running/pending/waiting_review/interrupted/skipped 不产生通知） */
@@ -265,8 +269,60 @@ export class NotificationService {
         }
       }
 
+      case 'kb:brain:goal-proposed':
+        return this.kbBrainNotice(payload, seq, occurredAt, {
+          title: '知识提炼完成（待审提议）',
+          type: 'kb:brain:goal-proposed',
+        })
+      case 'kb:brain:goal-duplicate':
+        return this.kbBrainNotice(payload, seq, occurredAt, {
+          title: '知识提炼：已有同题经验卡',
+          type: 'kb:brain:goal-duplicate',
+        })
+      case 'kb:brain:goal-empty':
+        return this.kbBrainNotice(payload, seq, occurredAt, {
+          title: '知识提炼完成但没有产出',
+          type: 'kb:brain:goal-empty',
+        })
+
       default:
         return null
+    }
+  }
+
+  /**
+   * 知识大脑提取目标事件 → 通知条目。
+   * 弹窗超时自动关闭后，用户仍可在通知中心回看、点击直达知识库大脑面板，
+   * 避免出现"关了弹窗就找不到产物"的情况。
+   */
+  private kbBrainNotice(
+    payload: Record<string, unknown>,
+    seq: number,
+    occurredAt: number,
+    meta: { title: string; type: string }
+  ): NoticeItem {
+    const goalName = str(payload.goalName) || '提取目标'
+    const fragments = num(payload.fragments)
+    const cards = num(payload.cards)
+
+    const detail =
+      meta.type === 'kb:brain:goal-proposed'
+        ? `「${goalName}」生成 ${cards ?? 0} 张经验卡（素材 ${fragments ?? 0} 条），已放入「待审提议」——点击查看并批准入库`
+        : meta.type === 'kb:brain:goal-duplicate'
+          ? `「${goalName}」已有同题经验卡，未重复生成——点击查看已有卡`
+          : `「${goalName}」收集素材 ${fragments ?? 0} 条，未达到成卡条件——点击进入知识大脑处理`
+
+    return {
+      seq,
+      type: meta.type,
+      category: 'domain',
+      title: meta.title,
+      message: detail,
+      // 知识库页当前只注册 /knowledge-base 且不消费路由参数，故不拼接 kbId query
+      // （避免看似定位实际无效的假功能）；kbId 已存在事件载荷中，后续接入库级定位时再启用
+      route: '/knowledge-base',
+      occurredAt,
+      read: false,
     }
   }
 
@@ -342,6 +398,13 @@ function toMs(d: Date | string | number | null | undefined): number {
 
 function str(v: unknown): string {
   return v == null ? '' : String(v)
+}
+
+/** 数值安全转换：非有限数返回 null（用于可选计数，避免 0 与"未提供"混淆） */
+function num(v: unknown): number | null {
+  if (v == null || v === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
 }
 
 /** 把模板串中的 {runId} 替换为实际值 */
