@@ -89,9 +89,10 @@
  * 写前校验/提取更新图谱留待阶段 2；本步实现：章节列表 → 生成（generateChapter 流式）→ 编辑 → 保存
  */
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { MagicStick, Check } from '@element-plus/icons-vue'
 import { useAiGeneration } from '@/composables/useAiGeneration'
+import { notifyWarning } from '@/utils/notify'
 
 const props = defineProps<{
   projectId: string
@@ -235,7 +236,7 @@ async function generateCurrent(): Promise<void> {
     if (data.chapterId) chapterIdMap.value[outlineId] = data.chapterId
     ElMessage.success(`章节已按章法生成并保存（${data.wordCount || content.value.length} 字）`)
     if (data.postCheck && data.postCheck.passed === false) {
-      ElNotification({ title: '写后一致性检查发现疑点', message: String(data.postCheck.report || '').slice(0, 800), type: 'warning', duration: 0 })
+      notifyWarning({ title: '写后一致性检查发现疑点', message: String(data.postCheck.report || '').slice(0, 800) })
     }
     savedAt.value = new Date().toLocaleTimeString()
   } catch (e: any) {

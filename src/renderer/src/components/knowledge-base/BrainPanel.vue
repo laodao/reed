@@ -733,7 +733,8 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
-import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { notify, notifyInfo, notifyWarning } from '@/utils/notify'
 import { KB_BRAIN_GOAL_PRESETS } from '@shared/constants/kb-brain-goal-presets'
 import ForceGraph from '@/components/common/ForceGraph.vue'
 import type { ForceGraphNode, ForceGraphEdge } from '@/components/common/force-graph.model'
@@ -1832,23 +1833,21 @@ function reportGoalDone(goalId: string): void {
   if (!rec.ok) {
     ElMessage.error(`「${name}」提炼失败: ${rec.error || '未知错误'}`)
   } else if (rec.skippedDuplicate) {
-    ElNotification({ title: `「${name}」已有同题经验卡`, message: '未重复生成，可在「经验卡」视图查看已有卡', type: 'info', duration: 0 })
+    notifyInfo({ title: `「${name}」已有同题经验卡`, message: '未重复生成，可在「经验卡」视图查看已有卡' })
   } else if (rec.proposed) {
-    // 常驻通知（自动关闭会被忽略导致"找不到产物"——真机反馈），点击直达待审提议
-    ElNotification({
+    // 弹窗超时自动关闭（不再永久占屏）；产物去向由后端 kb:brain:goal-proposed 事件
+    // 落通知中心保证——用户漏看弹窗仍可回看并点击直达，不会"找不到产物"
+    notify({
       title: `「${name}」提炼完成`,
       message: `生成 ${rec.cards ?? 1} 张经验卡（素材 ${rec.fragments ?? 0} 条），已放入「待审提议」——点击查看并批准入库`,
       type: 'success',
-      duration: 0,
       onClick: openProposals,
     })
     openProposals()
   } else {
-    ElNotification({
+    notifyWarning({
       title: `「${name}」提炼完成但没有产出`,
       message: `收集到素材 ${rec.fragments ?? 0} 条，未达到成卡条件（素材不足或质量不够）——可先「提取知识」积累论断后再试`,
-      type: 'warning',
-      duration: 0,
     })
   }
   void refresh()

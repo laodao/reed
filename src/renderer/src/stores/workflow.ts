@@ -4,8 +4,8 @@
  */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { ElNotification } from 'element-plus'
 import router from '@/router'
+import { notify, notifyTodo } from '@/utils/notify'
 
 /** wf:run-event 载荷（判别联合的宽松形态） */
 export interface WfRunEvent {
@@ -47,14 +47,12 @@ export const useWorkflowStore = defineStore('workflow', () => {
     } else if (e.type === 'run-status' && e.runId) {
       runStatusMap.value.set(e.runId, e.status ?? '')
     } else if (e.type === 'notify') {
-      const ins = ElNotification({
-        offset: 52, // 下移避开右上角 TabBar 铃铛（height 40px）
+      notify({
         title: e.title ?? '工作流通知',
         message: e.message ?? '',
         type: (e.level as 'success' | 'warning' | 'error' | 'info') ?? 'info',
-        // 点击即自动消失（用户需求：通知点击后自动消失）；有 runId 时顺带直达运行详情
+        // 点击即关闭（用户需求：通知点击后自动消失）；有 runId 时顺带直达运行详情
         onClick: () => {
-          ins.close()
           if (e.runId) void router.push(`/workflow/run/${e.runId}`)
         },
       })
@@ -63,20 +61,17 @@ export const useWorkflowStore = defineStore('workflow', () => {
       pendingReviewRunId.value = e.runId ?? ''
       const runId = e.runId ?? ''
       const nodeName = (e as { nodeName?: string }).nodeName
-      const ins = ElNotification({
-        offset: 52, // 下移避开右上角 TabBar 铃铛（height 40px）
-        title: '待审核',
-        message: nodeName
-          ? `运行 ${runId} 在「${nodeName}」等待您的审核，点击查看`
-          : `运行 ${runId} 等待您的审核，点击查看`,
-        type: 'warning',
-        duration: 0,
-        // 点击：关闭弹窗（自动消失）+ 直达运行详情页审核
-        onClick: () => {
-          ins.close()
-          if (runId) void router.push(`/workflow/run/${runId}`)
+      // 待办类：弹窗超时自动关闭（不再永久占屏）；运行详情仍可经通知中心回看
+      notifyTodo(
+        {
+          title: '待审核',
+          message: nodeName
+            ? `运行 ${runId} 在「${nodeName}」等待您的审核，点击查看`
+            : `运行 ${runId} 等待您的审核，点击查看`,
+          route: runId ? `/workflow/run/${runId}` : undefined,
         },
-      })
+        route => void router.push(route)
+      )
     }
   }
 
