@@ -205,7 +205,7 @@ const GENRE_LABELS: Record<string, string> = {
 const genreLabel = (g: string) => GENRE_LABELS[g] ?? g
 
 const store = useLwLibraryStore()
-const lib = () => window.electronAPI.longwriting.library
+const lib = () => window.electronAPI.library
 
 const showCreate = ref(false)
 const createForm = ref({ name: '', genre: 'xiuzhen', tagline: '', fromTemplate: '' as string })

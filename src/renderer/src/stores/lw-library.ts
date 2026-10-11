@@ -19,7 +19,7 @@ export const useLwLibraryStore = defineStore('lw-library', {
       if (this.worldsLoaded && !force) return
       this.worldsLoading = true
       try {
-        this.worlds = await window.electronAPI.longwriting.library.worldList()
+        this.worlds = await window.electronAPI.library.worldList()
         this.worldsLoaded = true
       } finally {
         this.worldsLoading = false
@@ -29,7 +29,7 @@ export const useLwLibraryStore = defineStore('lw-library', {
       if (this.ipsLoaded && !force) return
       this.ipsLoading = true
       try {
-        this.ipCharacters = await window.electronAPI.longwriting.library.ipList()
+        this.ipCharacters = await window.electronAPI.library.ipList()
         this.ipsLoaded = true
       } finally {
         this.ipsLoading = false

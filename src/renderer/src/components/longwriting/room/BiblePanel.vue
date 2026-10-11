@@ -464,7 +464,7 @@ const activeLibWorld = computed(() => worldGroups.value.find(w => w.worldId === 
 
 async function loadWorldLibrary(): Promise<void> {
   try {
-    const lib = window.electronAPI.longwriting.library
+    const lib = window.electronAPI.library
     const bindings = await lib.listWorldBindings(props.projectId)
     const result: LibWorldGroup[] = []
     for (const b of bindings) {

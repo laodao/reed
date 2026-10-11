@@ -189,7 +189,7 @@ const GENDER_LABELS: Record<string, string> = { male: '男', female: '女', othe
 const genderLabel = (g: string) => GENDER_LABELS[g] ?? ''
 
 const store = useLwLibraryStore()
-const lib = () => window.electronAPI.longwriting.library
+const lib = () => window.electronAPI.library
 
 const showEditor = ref(false)
 const emptyForm = () => ({
@@ -248,10 +248,12 @@ const saveIp = async () => {
     characterArc: form.characterArc || null,
     worldId: form.worldId || null,
   }
+  // reactive 代理过不了 IPC structured clone（aliases/catchphrases 等嵌套数组）
+  const plain = JSON.parse(JSON.stringify(payload))
   if (form.id) {
-    await lib().ipUpdate(form.id, payload)
+    await lib().ipUpdate(form.id, plain)
   } else {
-    await lib().ipCreate(payload)
+    await lib().ipCreate(plain)
   }
   ElMessage.success('已保存')
   showEditor.value = false

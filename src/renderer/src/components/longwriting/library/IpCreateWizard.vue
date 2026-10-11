@@ -141,7 +141,7 @@ const oneShotUsed = ref(false)
 /** M1 修复：一次成卡在后端已建库行——记下 id，最终步走 update 而非重复 create */
 const oneShotCreatedId = ref<string | null>(null)
 
-const lib = () => window.electronAPI.longwriting.library
+const lib = () => window.electronAPI.library
 
 const stepDef = computed(() => IP_WIZARD_STEPS.find(s => s.step === currentStep.value)!)
 

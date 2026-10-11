@@ -1435,7 +1435,7 @@ const openIpImportDialog = async () => {
   showIpImport.value = true
   ipImportLoading.value = true
   try {
-    importableIps.value = await window.electronAPI.longwriting.library.ipList()
+    importableIps.value = await window.electronAPI.library.ipList()
     ipImportSelection.value = []
   } finally {
     ipImportLoading.value = false
@@ -1446,7 +1446,7 @@ const confirmIpImport = async () => {
   ipImporting.value = true
   try {
     for (const ipId of ipImportSelection.value) {
-      await window.electronAPI.longwriting.library.importIpCharacter({
+      await window.electronAPI.library.importIpCharacter({
         projectId: props.projectId,
         ipCharacterId: ipId,
         rolePosition: ipImportRole.value,
@@ -1477,7 +1477,7 @@ const promoteToIpLibrary = async (character: StoryCharacter) => {
     return
   }
   try {
-    const result = await window.electronAPI.longwriting.library.promoteToIp(props.projectId, character.id)
+    const result = await window.electronAPI.library.promoteToIp(props.projectId, character.id)
     if (result.ok) {
       ElMessage.success(result.message)
     } else {

@@ -129,7 +129,7 @@ const props = defineProps<{ projectId: string }>()
 
 const router = useRouter()
 const store = useLwLibraryStore()
-const lib = () => window.electronAPI.longwriting.library
+const lib = () => window.electronAPI.library
 
 const loading = ref(false)
 const bindings = ref<BindingRow[]>([])
