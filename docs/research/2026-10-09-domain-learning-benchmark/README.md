@@ -157,3 +157,7 @@
 | [04-content-to-course.md](04-content-to-course.md) | Turbo/StudyFetch/Knowt/StudyRaid/Nolej/Anki-FSRS/RemNote/Quantum Country/Recall/音频与脑图 + 共性 5 条 |
 | [05-knowledge-map-adaptive.md](05-knowledge-map-adaptive.md) | roadmap.sh/Khan/Exercism/Heptabase + CAT/BKT/Elo/chess.com + Duolingo 动力系统 + 共性总结 |
 | [06-frontier-china.md](06-frontier-china.md) | Co-STORM/Deep Research/记忆框架/Matuschak/teach-back + 讯飞/学而思/有道/粉笔/秘塔/豆包爱学/松鼠AI + Top 8 |
+| [07-gauth.md](07-gauth.md) | **Gauth 补充路数**（2026-10-10 增补）：Live Tutor 兜底/Study Converter 喂料倒转/对话嵌入/Atlas 反面教训 + 6 条可落地借鉴（G1-G6）+ 3 条不要学 |
+| [08-engagement-diagnosis.md](08-engagement-diagnosis.md) | **趣味性/动力病根诊断**（2026-10-10 增补）：回答"内容质量高为何仍没人看"——三病根（文档范式/平难度/无期待）+ 6 条改造思路 + "别把趣味做成娱乐"红线。**含一条 01 号档未收录的关键代码事实**：默认版式恒为 prose（`lesson-layout.ts:264`） |
+| [09-interactive-lesson-design.md](09-interactive-lesson-design.md) | **交互式图文讲义设计方案**（2026-10-10 增补）：三层交互设备（预测-验证/参数探索/结构化操作）+ 形状门禁扩展 + 四步落地。**关键发现**：做交互顺手可接线悬空的 `self_test`，一份工作量治两个病根 |
+| [10-prototype-attribution.md](10-prototype-attribution.md) | **原型元素出处标注**（2026-10-10 增补）：逐项追溯 v2 原型每个设计的来源（Gauth / NotebookLM / Duolingo / 自研），并标明**借鉴了但没照搬什么** |
