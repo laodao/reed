@@ -577,6 +577,11 @@ async function initDatabase(): Promise<void> {
     '@core/database/migrations/add-kb-brain-v3-structures'
   )
   await addKbBrainV3Structures(ds)
+  // 知识大脑 v3 M3：消费记账表（与 Electron 端同构）
+  const { createKbConsumptionLog } = await import(
+    '@core/database/migrations/create-kb-consumption-log'
+  )
+  await createKbConsumptionLog(ds)
   // 知识大脑 v2 P4：质检日志 + 自动化动作日志（与 Electron 端同构）
   const { createKbBrainP4Tables } = await import(
     '@core/database/migrations/create-kb-brain-p4-tables'

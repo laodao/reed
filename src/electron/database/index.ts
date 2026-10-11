@@ -37,6 +37,7 @@ import { KbDigestPassRepository } from '@core/database/repositories/kb-digest-pa
 import { KbNoteReviewRepository } from '@core/database/repositories/kb-note-review.repository'
 import { KbEventRepository } from '@core/database/repositories/kb-event.repository'
 import { KbDimensionRepository } from '@core/database/repositories/kb-dimension.repository'
+import { KbConsumptionLogRepository } from '@core/database/repositories/kb-consumption-log.repository'
 import { KbQaLogRepository } from '@core/database/repositories/kb-qa-log.repository'
 import { KbAutomationLogRepository } from '@core/database/repositories/kb-automation-log.repository'
 import { AppRepository } from '@core/database/repositories/app.repository'
@@ -191,6 +192,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public kbNoteReviews: KbNoteReviewRepository | null = null
   public kbEvents: KbEventRepository | null = null
   public kbDimensions: KbDimensionRepository | null = null
+  public kbConsumptionLogs: KbConsumptionLogRepository | null = null
   public kbQaLogs: KbQaLogRepository | null = null
   public kbAutomationLogs: KbAutomationLogRepository | null = null
   public appDefinitions: AppRepository | null = null
@@ -1018,6 +1020,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-kb-brain-v3-structures'
     )
     await addKbBrainV3Structures(this.dataSource)
+    // 知识大脑 v3 M3：消费记账表
+    const { createKbConsumptionLog } = await import(
+      '@core/database/migrations/create-kb-consumption-log'
+    )
+    await createKbConsumptionLog(this.dataSource)
     // 知识大脑 v2 P4：质检日志 + 自动化动作日志
     const { createKbBrainP4Tables } = await import(
       '@core/database/migrations/create-kb-brain-p4-tables'
@@ -4681,6 +4688,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.kbNoteReviews = new KbNoteReviewRepository(this.dataSource)
     this.kbEvents = new KbEventRepository(this.dataSource)
     this.kbDimensions = new KbDimensionRepository(this.dataSource)
+    this.kbConsumptionLogs = new KbConsumptionLogRepository(this.dataSource)
     this.kbQaLogs = new KbQaLogRepository(this.dataSource)
     this.kbAutomationLogs = new KbAutomationLogRepository(this.dataSource)
     this.appDefinitions = new AppRepository(this.dataSource)

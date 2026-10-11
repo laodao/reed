@@ -13,6 +13,7 @@ import type { AgentToolRegistry } from '@core/platform/agent-runtime/tools/regis
 import type { AgentToolDef } from '@core/platform/agent-runtime/types'
 import { KnowledgeBaseService } from '@core/platform/services/knowledge-base.service'
 import { getKbBrainPackService, type BrainPackResult } from './brain-pack.service'
+import { recordConsumption } from './consumption-log.service'
 
 const querySchema = z.object({
   task: z
@@ -57,6 +58,8 @@ export function buildKbBrainQueryToolDef(deps?: KbBrainQueryToolDeps): AgentTool
       try {
         const packed = await packFn({ task, knowledgeBaseId: raw.knowledgeBaseId, topK: raw.topK })
         if (packed.ok && packed.pack) {
+          // v3 M3 消费记账：agent 真实取到知识包（可观测性；fail-soft）
+          if (packed.kbId) void recordConsumption({ knowledgeBaseId: packed.kbId, tool: 'tool', mode: packed.mode, sceneType: packed.sceneType, task, packChars: packed.pack.length })
           return { ok: true, data: { mode: packed.mode, sceneType: packed.sceneType, kbId: packed.kbId, pack: packed.pack } }
         }
         if (packed.ok && !packed.pack) {

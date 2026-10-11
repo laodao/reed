@@ -37,6 +37,7 @@ import { KbNoteReviewRepository } from '@core/database/repositories/kb-note-revi
 import { KbEventRepository } from '@core/database/repositories/kb-event.repository'
 import { KbQaLogRepository } from '@core/database/repositories/kb-qa-log.repository'
 import { KbDimensionRepository } from '@core/database/repositories/kb-dimension.repository'
+import { KbConsumptionLogRepository } from '@core/database/repositories/kb-consumption-log.repository'
 import { KbAutomationLogRepository } from '@core/database/repositories/kb-automation-log.repository'
 import { KbFolderRepository } from '@core/database/repositories/kb-folder.repository'
 import { AppRepository } from '@core/database/repositories/app.repository'
@@ -195,6 +196,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   /** 知识大脑 v2 P4：质检与自动化日志 */
   kbQaLogs: KbQaLogRepository | null
   kbDimensions: KbDimensionRepository | null
+  kbConsumptionLogs: KbConsumptionLogRepository | null
   kbAutomationLogs: KbAutomationLogRepository | null
   appDefinitions: AppRepository | null
   appSessions: AppSessionRepository | null
@@ -356,6 +358,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.kbEvents = new KbEventRepository(ds)
     this.kbQaLogs = new KbQaLogRepository(ds)
     this.kbDimensions = new KbDimensionRepository(ds)
+    this.kbConsumptionLogs = new KbConsumptionLogRepository(ds)
     this.kbAutomationLogs = new KbAutomationLogRepository(ds)
     this.appDefinitions = new AppRepository(ds)
     this.appSessions = new AppSessionRepository(ds)

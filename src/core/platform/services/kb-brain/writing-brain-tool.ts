@@ -11,6 +11,7 @@
 import { z } from 'zod'
 import { tool } from 'ai'
 import { createLogger } from '@core/utils/logger'
+import { recordConsumption } from './consumption-log.service'
 
 const logger = createLogger('KbBrainWritingTool')
 
@@ -47,7 +48,7 @@ export interface WritingBrainToolDeps {
   }>
   listEnabledKbs?: () => Promise<Array<{ id: string }>>
   /** v2 P2 知识包装配主路（缺省 brain-pack 单例：意图路由+类型化取材+预算打包） */
-  pack?: (req: { task: string; topK?: number }) => Promise<{ ok: boolean; pack: string; mode?: string; sceneType?: string; error?: string }>
+  pack?: (req: { task: string; topK?: number }) => Promise<{ ok: boolean; pack: string; mode?: string; sceneType?: string; error?: string; kbId?: string }>
 }
 
 /** 生产检索（与 kb_brain_query agent 工具同通道：brain 池 synthesize 查询） */
@@ -131,7 +132,11 @@ export function buildWritingBrainTool(deps?: WritingBrainToolDeps) {
           })
         try {
           const packed = await packFn({ task: query, topK })
-          if (packed.ok && packed.pack.trim()) return packed.pack.slice(0, RESULT_CHARS + 600)
+          if (packed.ok && packed.pack.trim()) {
+            // v3 M3 消费记账（fail-soft）
+            if (packed.kbId) void recordConsumption({ knowledgeBaseId: packed.kbId, tool: 'writing', mode: packed.mode ?? 'scene', sceneType: packed.sceneType, task: query, packChars: packed.pack.length })
+            return packed.pack.slice(0, RESULT_CHARS + 600)
+          }
         } catch {
           /* 主路失败走平铺回退 */
         }
