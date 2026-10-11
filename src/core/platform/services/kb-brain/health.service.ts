@@ -12,6 +12,7 @@ import { parseBrainConfig } from './brain-config'
 import { passesForProfile } from './book-passes.service'
 
 import { MAX_ATTEMPTS } from '@core/database/repositories/kb-digest-pass.repository'
+import { createLogger } from '@core/utils/logger'
 
 export interface KbHealthSuggestion {
   code: string
@@ -49,6 +50,8 @@ export interface KbBrainHealthReport {
   bookPasses: Array<{ documentName: string; passKey: string; status: string; error: string | null }>
   suggestions: KbHealthSuggestion[]
 }
+
+const logger = createLogger('KbBrainHealth')
 
 export class KbBrainHealthService {
   async check(kbId: string): Promise<{ success: boolean; data?: KbBrainHealthReport; error?: string }> {
@@ -101,6 +104,12 @@ export class KbBrainHealthService {
 
     /* ---------- 知识构成 ---------- */
     const atomStats = await db.kbAtoms.statsByKb(kbId)
+    let consumedByTool: Record<string, number> = {}
+    try {
+      consumedByTool = (await db.kbConsumptionLogs?.countByTool(kbId)) ?? {}
+    } catch (e) {
+      logger.error(`[health-bisect] countByTool 失败: ${(e as Error).stack}`)
+    }
     const workingTotal = (atomStats.byStatus.supported ?? 0) + (atomStats.byStatus.suspected ?? 0) + (atomStats.byStatus.stale ?? 0)
     const [proposed, published, entitiesActive, entitiesPending] = await Promise.all([
       db.kbNotes.listByStatus(kbId, 'proposed', 1, 1),
@@ -162,8 +171,7 @@ export class KbBrainHealthService {
           notesPublished: published.total,
           entitiesActive,
           entitiesPendingSummary: entitiesPending,
-          // v3 M3 消费记账：agent 取知识次数（「第一用户是 AI」仪表）
-          consumedByTool: await db.kbConsumptionLogs?.countByTool(kbId).catch(() => ({})) ?? {},
+          consumedByTool,
         },
         bookPasses,
         suggestions,

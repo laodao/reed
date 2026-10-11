@@ -139,9 +139,14 @@ export function registerKbBrainHandlers(): void {
   ipcBridge.handle('kb:brain:stats', (_e, p: { kbId: string }) => panel.stats(p.kbId))
 
   // 大脑体检（§检查机制）：只读覆盖率/构成/建议报告，面板手动触发
-  ipcBridge.handle('kb:brain:health-check', (_e, p: { kbId: string }) =>
-    new KbBrainHealthService().check(p.kbId)
-  )
+  ipcBridge.handle('kb:brain:health-check', async (_e, p: { kbId: string }) => {
+    try {
+      return await new KbBrainHealthService().check(p.kbId)
+    } catch (e) {
+      console.error('[kb-brain] health-check 堆栈:', (e as Error).stack)
+      throw e
+    }
+  })
 
   // T14 手动提炼（任务边界闸门）
   let distillBusy = false

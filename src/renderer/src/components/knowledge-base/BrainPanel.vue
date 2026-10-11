@@ -234,7 +234,7 @@
                 class="n-body preview"
                 :class="{ expanded: expandedProposals.has(p.id) }"
                 @click="toggleProposalExpand(p.id)"
-              >{{ p.body }}</pre>
+              >{{ stripMarkdownSyntax(p.body) }}</pre>
               <div v-if="p.body" class="p-expand-hint" @click="toggleProposalExpand(p.id)">
                 {{ expandedProposals.has(p.id) ? '收起正文' : `展开全文（${p.body.length} 字）` }}
               </div>
@@ -1761,6 +1761,14 @@ function shortDocName(name: string): string {
 }
 
 const knowledgeBrowser = ref<InstanceType<typeof KnowledgeBrowser> | null>(null)
+/** 提议预览剥离 markdown 语法符号（加粗星号、行首列表符、井号标题）——预览走纯文本，符号只剩噪音 */
+function stripMarkdownSyntax(text: string): string {
+  return text
+    .replace(/\*\*/g, '')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^\s*[-*]\s+/gm, '· ')
+}
+
 function showKnowledge(): void {
   activeView.value = 'knowledge'
   void knowledgeBrowser.value?.reload()
