@@ -307,6 +307,8 @@ export function parseSystemTrees(raw: string): ParsedSystemTree[] {
           if (typeof v === 'string' && v.trim()) attrs[k.trim().slice(0, 20)] = v.slice(0, 200)
         }
       }
+      // v3 M4 质量门槛：空属性且无证据的节点丢弃（「第一层/第二层」式空壳糊面板）
+      if (Object.keys(attrs).length === 0 && !((n as { evidenceQuote?: unknown }).evidenceQuote)) continue
       nodes.push({
         name: name.trim(),
         order: Number.isFinite(order) ? order : nodes.length,
@@ -316,7 +318,7 @@ export function parseSystemTrees(raw: string): ParsedSystemTree[] {
           : null
       })
     }
-    if (nodes.length >= 2) {
+    if (nodes.length >= 3) {
       out.push({
         systemName: systemName.trim().slice(0, 40),
         nodes,

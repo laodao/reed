@@ -364,22 +364,56 @@ defineExpose({ reload: load })
 </script>
 
 <style scoped>
+.kb-browser {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
 .kb-browser-tabs {
-  min-height: 480px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.kb-browser-tabs :deep(.el-tabs__content) {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+.kb-browser-tabs :deep(.el-tabs__header) {
+  margin-bottom: 0;
+  background: var(--el-fill-color-light);
 }
 .kb-sys-title {
   font-weight: 600;
+  font-size: 14px;
 }
 .kb-sys-sub {
   color: var(--el-text-color-secondary);
   font-size: 12px;
   margin-left: 6px;
+  font-weight: 400;
+}
+.kb-browser :deep(.el-tree) {
+  background: transparent;
+  --el-tree-node-content-height: unset;
+}
+.kb-browser :deep(.el-tree-node__content) {
+  height: unset;
+  min-height: 32px;
+  padding: 4px 0;
+  align-items: flex-start;
 }
 .kb-sys-node {
-  line-height: 1.5;
+  line-height: 1.6;
+  padding: 2px 8px 6px;
+  flex: 1;
 }
 .kb-sys-name {
   font-weight: 600;
+  font-size: 14px;
 }
 .kb-sys-order {
   margin-left: 8px;
@@ -387,13 +421,18 @@ defineExpose({ reload: load })
   font-size: 12px;
 }
 .kb-sys-attrs {
-  margin: 2px 0 4px;
+  margin: 4px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .kb-sys-attr {
-  display: inline-block;
-  margin: 2px 12px 2px 0;
   font-size: 12px;
   color: var(--el-text-color-regular);
+  background: var(--el-fill-color-light);
+  border-radius: 4px;
+  padding: 2px 8px;
+  width: fit-content;
 }
 .kb-sys-attr i {
   color: var(--el-text-color-secondary);
@@ -403,43 +442,68 @@ defineExpose({ reload: load })
   font-size: 12px;
   color: var(--el-text-color-secondary);
   max-width: 720px;
+  margin-top: 2px;
 }
 .kb-doc-title {
   font-weight: 600;
+  font-size: 14px;
 }
 .kb-doc-title .el-tag {
   margin-right: 8px;
 }
 .kb-doc-body {
   max-width: 860px;
-  line-height: 1.7;
-  font-size: 13px;
+  line-height: 1.75;
+  font-size: 13.5px;
+}
+.kb-doc-body :deep(h1),
+.kb-doc-body :deep(h2),
+.kb-doc-body :deep(h3) {
+  font-size: 14px;
+  margin: 10px 0 6px;
+}
+.kb-doc-body :deep(blockquote) {
+  margin: 6px 0;
+  padding: 6px 12px;
+  border-left: 3px solid var(--el-color-primary-light-5);
+  background: var(--el-fill-color-light);
+  border-radius: 0 6px 6px 0;
+  color: var(--el-text-color-secondary);
+}
+.kb-doc-body :deep(code) {
+  background: var(--el-fill-color);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 12px;
 }
 .kb-method-filter {
   margin-bottom: 10px;
 }
 .kb-stages {
-  margin-bottom: 12px;
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .kb-stage {
   display: flex;
-  gap: 12px;
-  padding: 8px 12px;
+  gap: 14px;
+  padding: 10px 14px;
   border-left: 3px solid var(--el-color-primary-light-5);
-  margin-bottom: 6px;
   background: var(--el-fill-color-lighter);
-  border-radius: 0 6px 6px 0;
+  border-radius: 0 8px 8px 0;
 }
 .kb-stage-pos {
-  min-width: 88px;
+  min-width: 92px;
   color: var(--el-color-primary);
   font-size: 12px;
   font-weight: 600;
+  padding-top: 2px;
 }
 .kb-stage-main {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   font-size: 13px;
 }
 .kb-stage-line {
@@ -447,5 +511,8 @@ defineExpose({ reload: load })
 }
 .kb-stage-cost {
   color: var(--el-color-danger);
+}
+.kb-browser :deep(.el-collapse-item__header) {
+  padding: 4px 0;
 }
 </style>

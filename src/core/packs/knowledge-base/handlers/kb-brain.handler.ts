@@ -459,7 +459,12 @@ export function registerKbBrainHandlers(): void {
       used.add(e.sourceId)
       used.add(e.targetId)
     }
-    const nodes = [...used]
+    // v3 M4：体系树节点可能暂无关系边（层级边被重建/尚未产出）——带 attrs 的体系节点一并返回
+    const systemNodeIds = new Set(
+      (await mgr.kbBrainEntities.listWithAttrs(p.kbId, 500)).map((e) => e.id)
+    )
+    const allIds = [...new Set([...used, ...systemNodeIds])]
+    const nodes = allIds
       .map(id => byId.get(id))
       .filter((e): e is NonNullable<typeof e> => !!e)
       .map(e => ({ id: e.id, name: e.name, entityType: e.entityType, attrs: e.attrs ?? null, summary: e.summary ?? null }))

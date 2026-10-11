@@ -178,7 +178,7 @@ export class KbEntityRepository extends BaseRepository<KbEntityEntity, KbEntityR
     kbId: string,
     limit: number,
     opts?: { excludeTypes?: string[]; orderByUpdated?: boolean },
-  ): Promise<Array<{ id: string; name: string; aliases: string[]; entityType: string; summary: string | null }>> {
+  ): Promise<Array<{ id: string; name: string; aliases: string[]; entityType: string; summary: string | null; attrs: string | null }>> {
     const where: Record<string, unknown> = { knowledgeBaseId: kbId, status: 'active' }
     if (opts?.excludeTypes?.length) where.entityType = Not(In(opts.excludeTypes))
     const rows = await this.scoped.find({
@@ -187,7 +187,17 @@ export class KbEntityRepository extends BaseRepository<KbEntityEntity, KbEntityR
       order: (opts?.orderByUpdated ? { updatedAt: 'DESC' } : { createdAt: 'ASC' }) as never,
       take: limit,
     })
-    return rows.map((r) => ({ id: r.id, name: r.name, aliases: safeParseArray(r.aliases), entityType: r.entityType, summary: r.summary ?? null }))
+    return rows.map((r) => ({ id: r.id, name: r.name, aliases: safeParseArray(r.aliases), entityType: r.entityType, summary: r.summary ?? null, attrs: r.attrs ?? null }))
+  }
+
+  /** 体系树节点（v3 M4：attrs 非空的体系节点——含暂无关系边的） */
+  async listWithAttrs(kbId: string, limit: number): Promise<Array<{ id: string; name: string }>> {
+    const rows = await this.scoped.find({
+      where: { knowledgeBaseId: kbId, status: 'active' } as FindOptionsWhere<KbEntityEntity>,
+      order: { createdAt: 'ASC' } as never,
+      take: limit,
+    })
+    return rows.filter((r) => (r.attrs ?? '').trim()).map((r) => ({ id: r.id, name: r.name }))
   }
 
   /** 全部 active 实体规范名（原子化的挂点提示词表；按创建时间稳定排序） */

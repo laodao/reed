@@ -126,18 +126,30 @@ describe('体系汇聚（v3 M2）', () => {
     expect(out.reason).toContain('材料不足')
   })
 
-  it('parseSystemTrees：坏节点剔除、缺体系名跳过、order 缺省补序', () => {
+  it('parseSystemTrees：空壳节点剔除（v3 质量门槛）、缺体系名跳过、order 缺省补序', () => {
     const out = parseSystemTrees(
       JSON.stringify({
         systems: [
-          { systemName: '体系A', nodes: [{ name: '下位', order: 0, attrs: { 能力: 'x' } }, { name: '中位' }, { name: '', order: 2 }, 'junk', { name: '上位', order: 2 }], confidence: 0.7 },
-          { nodes: [{ name: '无名单节点' }] },
+          {
+            systemName: '体系A',
+            nodes: [
+              { name: '下位', order: 0, attrs: { 能力: 'x' } },
+              { name: '中位', order: 1, attrs: {}, evidenceQuote: '中位有证据' },
+              { name: '空壳', order: 2 },
+              { name: '', order: 3 },
+              'junk',
+              { name: '上位', order: 2, attrs: { 能力: 'y' } },
+            ],
+            confidence: 0.7,
+          },
+          { nodes: [{ name: '无名单节点', attrs: { a: 'b' } }] },
           'junk',
         ],
       }),
     )
     expect(out.length).toBe(1)
     expect(out[0]!.nodes.length).toBe(3)
+    expect(out[0]!.nodes.map((n) => n.name)).toEqual(['下位', '中位', '上位'])
     expect(out[0]!.nodes[1]!.order).toBe(1)
   })
 })
