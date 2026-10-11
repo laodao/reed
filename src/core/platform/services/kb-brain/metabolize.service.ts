@@ -95,7 +95,8 @@ export class KbBrainMetabolizeService {
     if (missing.length === 0) return 0
     const embeddingConfig = await vf.embeddingConfig(kbId)
     let n = 0
-    const BATCH = 64
+    // 百炼嵌入接口限制单批 ≤20（真机实证 400：batch size is invalid）——16 留余量
+    const BATCH = 16
     for (let i = 0; i < missing.length; i += BATCH) {
       const chunk = missing.slice(i, i + BATCH)
       const vectors = await vf.embed(chunk.map((a) => a.statement), { id: kbId, embeddingConfig })
