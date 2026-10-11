@@ -462,7 +462,7 @@ export function registerKbBrainHandlers(): void {
     const nodes = [...used]
       .map(id => byId.get(id))
       .filter((e): e is NonNullable<typeof e> => !!e)
-      .map(e => ({ id: e.id, name: e.name, entityType: e.entityType }))
+      .map(e => ({ id: e.id, name: e.name, entityType: e.entityType, attrs: e.attrs ?? null, summary: e.summary ?? null }))
     const relEdges = edges
       .filter(e => byId.has(e.sourceId) && byId.has(e.targetId))
       .map(e => ({

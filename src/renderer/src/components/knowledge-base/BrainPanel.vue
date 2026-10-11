@@ -10,6 +10,10 @@
         </el-tag>
       </div>
       <div class="bp-stats">
+        <button type="button" class="bp-stat" :class="{ active: activeView === 'knowledge' }" @click="showKnowledge()">
+          <b>{{ stats?.notes?.published ?? '—' }}</b>
+          <span>知识</span>
+        </button>
         <button type="button" class="bp-stat" :class="{ active: statActive === 'total' }" @click="showAtoms('all')">
           <b>{{ stats?.atoms?.total ?? '—' }}</b>
           <span>论断</span>
@@ -40,8 +44,13 @@
     <!-- 主体双栏：左=主内容区（视图切换），右=提炼目标/待审提议/待提取文档 -->
     <div class="bp-body">
       <div class="bp-main">
-        <!-- 论断视图 -->
-        <template v-if="activeView === 'atoms'">
+        <!-- 知识浏览器（v3：按形态展示——体系树/结构弧线/方法文档/书级档案） -->
+        <template v-if="activeView === 'knowledge'">
+          <KnowledgeBrowser ref="knowledgeBrowser" :kb-id="props.kbId" />
+        </template>
+
+        <!-- 论断视图（证据层） -->
+        <template v-else-if="activeView === 'atoms'">
           <div class="bp-main-toolbar">
             <el-radio-group v-model="atomFilter" size="small" @change="onAtomFilterChange">
               <el-radio-button value="all">全部论断</el-radio-button>
@@ -749,6 +758,7 @@ import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { KB_BRAIN_GOAL_PRESETS } from '@shared/constants/kb-brain-goal-presets'
 import ForceGraph from '@/components/common/ForceGraph.vue'
 import type { ForceGraphNode, ForceGraphEdge } from '@/components/common/force-graph.model'
+import KnowledgeBrowser from './KnowledgeBrowser.vue'
 import { kbAtomLayerLabel, kbAtomOriginLabel, kbAtomStatusLabel, kbAtomTypeLabel, kbNoteStatusLabel, kbNoteTypeLabel } from '@shared/constants/kb-brain-labels'
 
 const props = defineProps<{ kbId: string }>()
@@ -803,9 +813,9 @@ const modelOptions = ref<Array<{ label: string; value: string }>>([])
 const stats = ref<Record<string, any> | null>(null)
 
 // ===== 主区视图：论断 / 经验卡 / 待审提议 =====
-type MainView = 'atoms' | 'cards' | 'proposals'
+type MainView = 'knowledge' | 'atoms' | 'cards' | 'proposals'
 type AtomFilter = 'all' | 'human' | 'opinions' | 'open-question' | 'foreshadow'
-const activeView = ref<MainView>('atoms')
+const activeView = ref<MainView>('knowledge')
 const atomFilter = ref<AtomFilter>('all')
 
 const atoms = ref<BrainAtom[]>([])
@@ -1748,6 +1758,12 @@ const atomsEmptyText = computed(() => {
 function shortDocName(name: string): string {
   const s = name.replace(/\.[a-z0-9]+$/i, '').replace(/[（(【[][^）)】\]]*[）)】\]]/g, '').trim()
   return s || name
+}
+
+const knowledgeBrowser = ref<InstanceType<typeof KnowledgeBrowser> | null>(null)
+function showKnowledge(): void {
+  activeView.value = 'knowledge'
+  void knowledgeBrowser.value?.reload()
 }
 
 function showAtoms(filter: AtomFilter): void {
