@@ -12,6 +12,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { DataSource } from 'typeorm'
 import { runWithUserAsync } from '@core/context/user-context'
 import { createDomainLearningTables } from '@core/database/migrations/create-domain-learning-tables'
+import { createUnifiedGraphTables } from '@core/database/migrations/create-unified-graph-tables'
 import { DlProjectRepository } from '@core/database/repositories/dl-project.repository'
 import { DlConceptRepository } from '@core/database/repositories/dl-concept.repository'
 import { DlRelationRepository, PREREQUISITE_TYPE } from '@core/database/repositories/dl-relation.repository'
@@ -25,6 +26,8 @@ import type { ICoreDatabaseManager } from '@core/database/database-manager.inter
 let ds: DataSource | null = null
 
 const ENTITY_IMPORTS = [
+  // 关系仓储已是统一图存储 facade——graph_edges 实体必须注册
+  () => import('@core/database/entities/graph/graph-edge.entity'),
   () => import('@core/database/entities/domain-learning/dl-project.entity'),
   () => import('@core/database/entities/domain-learning/dl-concept.entity'),
   () => import('@core/database/entities/domain-learning/dl-relation.entity'),
@@ -44,6 +47,7 @@ async function buildDs(): Promise<DataSource> {
   const d = new DataSource({ type: 'better-sqlite3', database: ':memory:', entities, synchronize: false })
   await d.initialize()
   await createDomainLearningTables(d)
+  await createUnifiedGraphTables(d)
   return d
 }
 

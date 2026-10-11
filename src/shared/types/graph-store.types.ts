@@ -48,6 +48,8 @@ export interface GraphEdgeSpec {
 export interface GraphEdge extends GraphEdgeSpec {
   id: string
   graphName: string
+  /** 所属用户（facade 层 DTO 兼容用；业务逻辑经 BaseRepository 租户隔离，无需自行判断） */
+  userId: string | null
   source: GraphEndpoint
   target: GraphEndpoint
   relation: string
@@ -68,6 +70,9 @@ export interface EdgeFilter {
   relation?: string | string[]
   source?: GraphEndpoint
   target?: GraphEndpoint
+  /** 精确端点 kind 过滤（与 source/target 的 kind+id 组合互补） */
+  sourceKind?: string
+  targetKind?: string
   /** 任一端 kind 命中 */
   kind?: string
   /** 时间线生效过滤：valid_from <= x 且 (valid_until 为 NULL 或 >= x) */

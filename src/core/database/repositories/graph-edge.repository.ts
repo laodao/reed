@@ -51,6 +51,7 @@ export class GraphEdgeRepository extends BaseRepository<GraphEdgeEntity, GraphEd
     return {
       id: e.id,
       graphName: e.graphName,
+      userId: e.userId,
       source: { kind: e.sourceKind, id: e.sourceId },
       target: { kind: e.targetKind, id: e.targetId },
       relation: e.relation,
@@ -92,6 +93,12 @@ export class GraphEdgeRepository extends BaseRepository<GraphEdgeEntity, GraphEd
     }
     if (filter.target) {
       qb.andWhere('e.target_kind = :tk AND e.target_id = :tid', { tk: filter.target.kind, tid: filter.target.id })
+    }
+    if (filter.sourceKind) {
+      qb.andWhere('e.source_kind = :skk', { skk: filter.sourceKind })
+    }
+    if (filter.targetKind) {
+      qb.andWhere('e.target_kind = :tkk', { tkk: filter.targetKind })
     }
     if (filter.kind) {
       qb.andWhere('(e.source_kind = :k OR e.target_kind = :k)', { k: filter.kind })
@@ -154,6 +161,12 @@ export class GraphEdgeRepository extends BaseRepository<GraphEdgeEntity, GraphEd
 
   async getById(graphName: string, id: string): Promise<GraphEdge | null> {
     const e = await this.scoped.findOne({ id, graphName } as never)
+    return e ? this.toDto(e) : null
+  }
+
+  /** 按边 id 查（不限库名；边 id 全局唯一。facade 更新/删除前定位所属库用） */
+  async findById(id: string): Promise<GraphEdge | null> {
+    const e = await this.scoped.findOne({ id } as never)
     return e ? this.toDto(e) : null
   }
 

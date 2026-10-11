@@ -12,8 +12,9 @@
  * - 多租户：底层 GraphEdgeRepository 继承 BaseRepository，按 ALS user 自动隔离。
  */
 
+import type { DataSource } from 'typeorm'
 import { getCoreDatabaseManager, type ICoreDatabaseManager } from '@core/database/database-manager.interface'
-import type { GraphEdgeRepository, GraphEdgePatch } from '@core/database/repositories/graph-edge.repository'
+import { GraphEdgeRepository, type GraphEdgePatch } from '@core/database/repositories/graph-edge.repository'
 import { newGraphEdgeId } from '@core/database/repositories/graph-edge.repository'
 import { personalizedPageRank } from '../ppr'
 import type {
@@ -41,6 +42,13 @@ export class GraphStoreService {
   /** 测试/依赖注入用：传入 dbManager；默认取全局 */
   constructor(opts?: GraphStoreOptions) {
     this.dbOverride = opts?.db ?? null
+  }
+
+  /** 旧仓储 facade 过渡期工厂：同一 DataSource 上包出独立 store 实例（切换完成后拆除） */
+  static forDataSource(ds: DataSource): GraphStoreService {
+    return new GraphStoreService({
+      db: { graphEdges: new GraphEdgeRepository(ds) } as unknown as ICoreDatabaseManager,
+    })
   }
 
   private repo(): GraphEdgeRepository {
