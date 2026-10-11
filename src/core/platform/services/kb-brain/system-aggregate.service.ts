@@ -28,7 +28,6 @@ import {
 } from './llm'
 import { SYSTEM_AGGREGATE_SYSTEM, buildSystemAggregateUser } from './prompts'
 import { renderSystemByKind } from './knowledge-render.service'
-import { renderSystemByKind } from './knowledge-render.service'
 
 const logger = createLogger('KbSystemAggregate')
 
