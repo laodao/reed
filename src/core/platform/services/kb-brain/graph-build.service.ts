@@ -35,6 +35,9 @@ export const GRAPH_RELATIONS = [
 export const GRAPH_RELATION_LABELS: Record<string, string> = {
   'member-of': '隶属',
   'located-in': '位于',
+  'sublevel-of': '低于（体系层级）',
+  'requires': '突破前置',
+  'enables': '解锁',
   owns: '持有',
   wields: '持用',
   'allied-with': '同盟',
