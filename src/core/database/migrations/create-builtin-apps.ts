@@ -63,7 +63,7 @@ const BUILTIN_APP_PREFIX = 'builtin_app_'
 const BUILTIN_TEMPLATE_VERSION = 1
 
 /** 内置工作流模板清单：文件 → { 定义 id, 应用 id, 应用名, 图标, 描述, 原始 JSON } */
-const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; icon: string; name: string; description: string; category: string; tags: string[] }> = [
+export const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; icon: string; name: string; description: string; category: string; tags: string[] }> = [
   { file: 'daily-news-brief.json', raw: dailyNewsBrief, appId: `${BUILTIN_APP_PREFIX}daily_news`, icon: '📰', name: '每日热点早报', description: '首页→AI 定位栏目→AI 筛选新闻→抓正文→早报长图，正文与报告可存知识库', category: '新闻资讯', tags: ['早报', '新闻'] },
   { file: 'industry-weekly.json', raw: industryWeekly, appId: `${BUILTIN_APP_PREFIX}industry_weekly`, icon: '📈', name: '行业动态周报', description: '行业趋势分析周报长图（模板可自定义）', category: '新闻资讯', tags: ['周报', '行业'] },
   { file: 'multi-platform-copy.json', raw: multiPlatformCopy, appId: `${BUILTIN_APP_PREFIX}multi_platform`, icon: '✍️', name: '多平台文案生成', description: '素材驱动多平台分发器：公众号/今日头条/知乎/微博/小红书/抖音 文案（素材非空时事实锁定素材并保留出处口径，逐平台自检）', category: '文案写作', tags: ['文案', '自媒体'] },
@@ -94,7 +94,7 @@ const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; icon: str
   // 长文写作（2026-08-29 用户确认开工：分阶段写长文，多轮对话承接前文）
   { file: 'long-form-writing.json', raw: longFormWriting, appId: `${BUILTIN_APP_PREFIX}long_form_writing`, icon: '✍️', name: '长文写作', description: '长文引擎 v2（创作/修订双模式）：素材消化选材 → 分流（修订=按意见整篇修订续版本链）→ 开篇钩子比选 → 主线 → 章节大纲（每章卡点）→ 大纲人工确认（可改）→ 逐章写作（writing-styles 风格卡技能承接前文）→ 事实校验 → 编辑评审循环（独立模型五维）→ libai 去AI味（独立模型）→ 终稿人工确认（可改稿，驳回=重跑续链）→ 备选标题 → 入资产（版本链）', category: '内容创作', tags: ['长文', '写作', '小说'] },
   // 深度长文写作·风格库（2026-10-09 用户确认：写作质量栈接入工作流引擎——技能库驱动的写作→去AI味管线，与长文写作并存）
-  { file: 'styled-long-form.json', raw: styledLongForm, appId: `${BUILTIN_APP_PREFIX}styled_long_form`, icon: '🖋️', name: '深度长文写作（风格库）', description: '技能库驱动长文管线：writing-styles 风格库技能（主题判定文体→风格卡→结构/钩子/语域/深度阶梯写作，拒绝平铺直叙；素材非空=纪实写作锁定素材口径；已有成稿+修改意见=修订模式多轮迭代）→ libai-skill 去AI味技能（七维诊断取证→分层改写→质检，独立模型）→ 终稿+写作自检+配图清单+去AI味诊断 → 存资产。修订：同会话再次运行填成稿与意见', category: '内容创作', tags: ['长文', '风格库', '去AI味'] },
+  { file: 'styled-long-form.json', raw: styledLongForm, appId: `${BUILTIN_APP_PREFIX}styled_long_form`, icon: '🖋️', name: '深度长文写作（风格库）', description: '技能库驱动长文管线：writing-styles 风格库技能（主题判定文体→风格卡→结构/钩子/语域/深度阶梯写作，拒绝平铺直叙；素材非空=纪实写作锁定素材口径；已有成稿+修改意见=修订模式多轮迭代）→ libai-skill 去AI味技能（七维诊断取证→分层改写→质检，独立模型）→ 配图管线（图片编辑节点规划清单→联网代理检索官方/权威图源直链→下载校验→逐图登记资产中心→配图审核单人工审核闸口，驳回=无图定稿）→ 终稿拼装（图按小节锚点嵌入正文）+写作自检+配图审核单+去AI味诊断 → 存资产。修订：同会话再次运行填成稿与意见', category: '内容创作', tags: ['长文', '风格库', '去AI味'] },
   // 电商详情长图（2026-08-29 用户确认开工：先按卖点/规格规划张数，再逐张生成并配图文，排版成竖版详情长图）
   { file: 'ecommerce-detail-long-image.json', raw: ecommerceDetailLongImage, appId: `${BUILTIN_APP_PREFIX}ecommerce_detail_long_image`, icon: '🛍️', name: '电商详情长图', description: '商品图+卖点+规格 → 按卖点/规格规划 N 张介绍图 → 逐张生成（锁商品、图文对应）→ 排版成竖版详情长图', category: '电商', tags: ['电商', '详情', '长图'] },
   // 主题深度研究（2026-10-06 v5：用途自适应 + 信源四级分级（官方机构/官方媒体/互联网媒体/互联网搜索，跨渠道取材不偏官方）+ 素材密度优先）

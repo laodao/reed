@@ -2,7 +2,7 @@
   "kind": "the-bot-workflow",
   "formatVersion": 1,
   "name": "[内置] 深度长文写作（风格库）",
-  "description": "技能库驱动的长文管线：writing-styles 风格库技能（按主题判定文体→选风格卡→按卡片结构/钩子/语域/深度阶梯写作，拒绝平铺直叙；素材非空=纪实写作事实锁定素材；填入已有成稿+修改意见=修订模式）→ libai-skill 去AI味技能（七维诊断取证→分层改写→质检，独立模型执行）→ 终稿拼装（附写作自检/配图清单与去AI味诊断）→ 存资产。版本管理：首运行 versioned 记 v1；修订运行填「基底资产 ID」（上次产出的资产）+「已有成稿」+「修改意见」→ 内容追加为新版本并就地更新，资产中心「版本」可查看/回滚（append-only）。",
+  "description": "技能库驱动的长文管线：writing-styles 风格库技能（按主题判定文体→选风格卡→按卡片结构/钩子/语域/深度阶梯写作，拒绝平铺直叙；素材非空=纪实写作事实锁定素材；填入已有成稿+修改意见=修订模式）→ libai-skill 去AI味技能（七维诊断取证→分层改写→质检，独立模型执行）→ 配图管线（图片编辑节点按规范规划清单→联网代理检索官方/权威图源直链→下载校验→逐图登记资产中心→《配图审核单》人工审核发布闸口，驳回=无图定稿）→ 终稿拼装（图按锚点嵌入正文+附写作自检/配图审核单/去AI味诊断）→ 存资产。版本管理：首运行 versioned 记 v1；修订运行填「基底资产 ID」+「已有成稿」+「修改意见」→ 内容追加为新版本并就地更新，资产中心「版本」可查看/回滚（append-only）。",
   "category": "内容创作",
   "graph": {
     "version": 1,
@@ -266,11 +266,185 @@
         }
       },
       {
+        "id": "illu-plan",
+        "type": "llm-chat",
+        "name": "配图规划（图片编辑）",
+        "position": {
+          "x": 560,
+          "y": 620
+        },
+        "config": {
+          "systemPrompt": "你是科技媒体的图片编辑，为一篇已成稿的文章规划配图。原则：需要才配、宁缺毋滥——每图独立过三问（读者在这里想看见什么/这张图给了文字给不了的什么/来源是否合法），任何一问不过就不配；总量 2-3 张，宁少勿多：文首题图 1 张（稿件有明确视觉主体时）+ 正文最关键的 1-2 张（只选读者最想「看见」的小节，其余一律不配）。图源优先级：官方新闻稿/官网产品页图 > 权威媒体实拍 > 无（找不到合格官方图宁可不配）。检索词必须写具体：产品全称+限定官方源（如 site:apple.com newsroom、苹果 newsroom 发布会），并给一个备用检索词。每张图给出：anchor_heading=正文中真实存在的小节标题行（逐字复制，含 # 号；题图固定填空串）；position（题图 top，其余 after_heading）；caption=中文图注（主体+场合）；query=图片检索词；fallback_query=备用检索词。若稿件类型确实不适合配图（口播稿/纯观点短评），输出 []。只输出 JSON 数组，不要围栏、不要任何解释文字。",
+          "prompt": "文章主题：{{start.topic}}\n\n稿件全文：\n{{libai.content}}\n\n（若上文含 =====FINAL===== 分隔符，只针对分隔符之后的终稿规划；忽略任何自检/诊断/附录段。anchor_heading 必须从终稿里逐字复制真实存在的小节标题行。）只输出 JSON 数组。",
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}",
+          "temperature": 0.3,
+          "maxTokens": 4096
+        }
+      },
+      {
+        "id": "illu-find",
+        "type": "agent-loop",
+        "name": "官方图检索（联网代理）",
+        "position": {
+          "x": 820,
+          "y": 620
+        },
+        "config": {
+          "task": "你是图片检索代理。下面是一份配图需求清单（JSON 数组，anchor_heading 为空串的项是文首题图）：\n{{illu-plan.content}}\n\n逐项检索并交付图片直链。**效率纪律（硬约束）**：每项最多 2 次 web_search + 最多 1 次 wf_web_extract 或 http_get 打开页面提取直链；不需要用 http_get 校验直链（下游下载节点会校验）；找到即停，不得反复比较。\n\n图片来源按以下优先级逐级回退（命中级别写进 level 字段）：\n1. official 官方图：apple.com/newsroom 或苹果官网中与清单主体直接对应的官方产品图/发布会图；\n2. official-archive 官方资料图：若该具体产品尚无官方页面，取苹果官方页面（Newsroom 稿件、官网首页、iPhone/Mac 概览页、活动页）中真实存在的品牌与产品线图片，作为「资料图」使用；\n3. media-archive 权威资料图：与小节主题真实相关的权威来源公开图片（芯片产业/门店/发布会现场等）。\n**红线：禁止把 A 机型的图冒充 B 机型；禁止无主图站、水印图、svg/logo、传闻渲染图。直链必须 https 且为图片资源（.jpg/.jpeg/.png/.webp 结尾或明显图片资源链接），相对路径补全为绝对 URL。**\n\n每项输出：{\"idx\":<原始序号>,\"url\":\"直链\",\"sourcePage\":\"来源页面URL\",\"credit\":\"署名（如 Apple Newsroom）\",\"level\":\"official|official-archive|media-archive\",\"captionOverride\":\"按图片实际内容写的诚实图注（标注官方图/资料图+真实内容，不得沿用清单里的想象描述）\",\"note\":\"说明\"}；确实一无所获时 url 填空串并在 note 说明。\n最后只输出一个 JSON 数组（按 idx 升序），不要围栏、不要任何其他文字。\n\n补充提示：苹果发布会新闻稿 URL 形如 https://www.apple.com/newsroom/2026/09/apple-debuts-iphone-18-pro-and-iphone-18-pro-max/（2026 年 9 月秋季发布会稿件）；若关键词检索无果，可直接 http_get 该形态的 newsroom 稿件页或 newsroom 栏目页，从页面内容提取配图直链。",
+          "toolWhitelist": [
+            "web_search",
+            "http_get",
+            "wf_web_extract"
+          ],
+          "maxIterations": 24,
+          "maxToolCalls": 24,
+          "maxDurationMs": 1200000,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "illu-parse",
+        "type": "code",
+        "name": "清单合并（小元数据）",
+        "position": {
+          "x": 1080,
+          "y": 620
+        },
+        "config": {
+          "language": "js",
+          "inputs": [
+            {
+              "key": "planRaw",
+              "label": "配图清单原文",
+              "type": "string",
+              "value": "{{illu-plan.content}}"
+            },
+            {
+              "key": "foundRaw",
+              "label": "检索结果原文",
+              "type": "string",
+              "value": "{{illu-find.answer}}"
+            },
+            {
+              "key": "topic",
+              "label": "主题",
+              "type": "string",
+              "value": "{{start.topic}}"
+            }
+          ],
+          "code": "const planRaw = String(inputs.planRaw || '')\nconst foundRaw = String(inputs.foundRaw || '')\nfunction extractJsonArray(s) {\n  if (!s) return []\n  let t = s\n  const fence = s.match(/```(?:json)?\\s*([\\s\\S]*?)```/)\n  if (fence) t = fence[1]\n  const a = t.indexOf('[')\n  const b = t.lastIndexOf(']')\n  if (a < 0 || b <= a) return []\n  try {\n    const v = JSON.parse(t.slice(a, b + 1))\n    return Array.isArray(v) ? v : []\n  } catch (e) { return [] }\n}\nconst plan = extractJsonArray(planRaw)\nconst found = extractJsonArray(foundRaw)\nconst byIdx = {}\nfor (const f of found) { if (f && typeof f.idx === 'number') byIdx[f.idx] = f }\nconst slug = String(inputs.topic || 'illu').replace(/\\s+/g, '-').replace(/[:：*?\"<>|\\\\/]/g, '').slice(0, 24) || 'illu'\nconst saveList = []\nconst notFound = []\nfor (let i = 0; i < plan.length; i++) {\n  const p = plan[i] || {}\n  const f = byIdx[i] || {}\n  const caption = String(p.caption || ('配图' + (i + 1)))\n  const url = String(f.url || '')\n  if (!url) { notFound.push({ idx: i, caption: caption, reason: String(f.note || '未找到合格官方图源') }); continue }\n  let u = url\n  if (u.indexOf('//') === 0) u = 'https:' + u\n  saveList.push({ idx: i, url: u, safeName: slug + '-illu-' + i, caption: caption, co: String(f.captionOverride || ''), anchor: String(p.anchor_heading || ''), position: String(p.position || 'after_heading'), sourceUrl: String(f.sourcePage || u), credit: String(f.credit || '官方') })\n}\nreturn { saveList: saveList, notFound: notFound }"
+        }
+      },
+      {
+        "id": "illu-save",
+        "type": "loop",
+        "name": "逐图登记资产",
+        "position": {
+          "x": 1340,
+          "y": 620
+        },
+        "config": {
+          "mode": "foreach",
+          "listExpression": "{{illu-parse.result.saveList}}",
+          "emptyPolicy": "skip",
+          "errorPolicy": "skip"
+        }
+      },
+      {
+        "id": "illuHttp",
+        "type": "http-request",
+        "name": "下载图片到磁盘",
+        "position": {
+          "x": 1470,
+          "y": 620
+        },
+        "config": {
+          "method": "GET",
+          "url": "{{illu-save.item.url}}",
+          "timeoutMs": 30000,
+          "responseType": "file"
+        }
+      },
+      {
+        "id": "saveImg",
+        "type": "save-asset",
+        "name": "登记配图入资产库",
+        "position": {
+          "x": 1600,
+          "y": 620
+        },
+        "config": {
+          "content": "{{illuHttp.filePath}}",
+          "kind": "auto",
+          "category": "image",
+          "subCategory": "长文配图",
+          "name": "{{illu-save.item.safeName}}",
+          "tags": "长文配图,{{start.platform}}",
+          "description": "来源:{{illu-save.item.sourceUrl}} 署名:{{illu-save.item.credit}} 图注:{{illu-save.item.caption}}",
+          "passthrough": {
+            "idx": "{{illu-save.item.idx}}",
+            "caption": "{{illu-save.item.caption}}",
+            "anchor": "{{illu-save.item.anchor}}",
+            "position": "{{illu-save.item.position}}",
+            "sourceUrl": "{{illu-save.item.sourceUrl}}",
+            "credit": "{{illu-save.item.credit}}",
+            "co": "{{illu-save.item.co}}"
+          },
+          "position": {
+            "x": 1600,
+            "y": 620
+          }
+        }
+      },
+      {
+        "id": "illu-audit",
+        "type": "code",
+        "name": "配图审核单汇总",
+        "position": {
+          "x": 1860,
+          "y": 620
+        },
+        "config": {
+          "language": "js",
+          "inputs": [
+            {
+              "key": "saved",
+              "label": "登记结果",
+              "type": "string",
+              "value": "{{illu-save.results}}"
+            },
+            {
+              "key": "notFound",
+              "label": "未找到项",
+              "type": "string",
+              "value": "{{illu-parse.result.notFound}}"
+            }
+          ],
+          "code": "const saved0 = inputs.saved\nconst failed0 = inputs.notFound\nfunction parseArr(v) {\n  if (Array.isArray(v)) return v\n  const s = String(v == null ? '' : v).trim()\n  if (!s || s === '[]' || s === 'undefined' || s === 'null') return []\n  const a = s.indexOf('[')\n  const b = s.lastIndexOf(']')\n  if (a < 0 || b <= a) return []\n  try { const x = JSON.parse(s.slice(a, b + 1)); return Array.isArray(x) ? x : [] } catch (e) { return [] }\n}\nconst saved = parseArr(saved0)\nconst failed = parseArr(failed0)\nconst embeds = []\nfor (let i = 0; i < saved.length; i++) {\n  const r = saved[i]\n  if (!r || !r.assetId || !r.url) continue\n  embeds.push({ idx: (typeof r.idx === 'number' ? r.idx : i), caption: String(r.co || r.caption || ('配图' + (i + 1))), anchor: String(r.anchor || ''), position: String(r.position || 'after_heading'), assetId: String(r.assetId), assetUrl: String(r.url), sourceUrl: String(r.sourceUrl || ''), credit: String(r.credit || '官方') })\n}\nconst lines = []\nfor (let i = 0; i < embeds.length; i++) {\n  const e = embeds[i]\n  lines.push('**图' + (i + 1) + '**：' + e.caption + '\\n- 插入位置：' + (e.anchor ? e.anchor + ' 节首' : '文首题图') + '\\n- 来源：' + (e.credit || '官方') + '（' + e.sourceUrl + '）\\n- 许可定位：官方/权威来源图片，报道性引用+显著来源标注\\n- 逐元素核对：图注与图片实际内容一致；图内无素材外新事实\\n- 结论：通过（待用户确认）')\n}\nfor (let i = 0; i < failed.length; i++) {\n  const f = failed[i]\n  lines.push('未入选：' + String(f.caption || '') + '（' + String(f.reason || '') + '）——按「宁缺毋滥」不配')\n}\nconst auditMd = embeds.length ? lines.join('\\n\\n') : ('本次未配图。' + (lines.length ? '\\n\\n' + lines.join('\\n\\n') : ''))\nreturn { embeds: embeds, embedsJson: JSON.stringify(embeds), auditMd: auditMd, okCount: embeds.length, failCount: failed.length }"
+        }
+      },
+      {
+        "id": "review1",
+        "type": "human-review",
+        "name": "配图人工审核（发布闸口）",
+        "position": {
+          "x": 2120,
+          "y": 620
+        },
+        "config": {
+          "payload": "## 配图审核单\n\n{{illu-audit.result.auditMd}}\n\n——批准后以上图片按位置嵌入终稿；驳回则以无图版定稿。",
+          "interaction": "review",
+          "timeoutPolicy": "fail"
+        }
+      },
+      {
         "id": "pack",
         "type": "code",
         "name": "终稿切分",
         "position": {
-          "x": 820,
+          "x": 2380,
           "y": 300
         },
         "config": {
@@ -283,9 +457,29 @@
             {
               "key": "libai",
               "value": "{{libai.content}}"
+            },
+            {
+              "key": "embeds",
+              "label": "过审配图",
+              "type": "json",
+              "valueType": "json",
+              "value": "{{illu-audit.result.embedsJson}}"
+            },
+            {
+              "key": "decision",
+              "label": "审核决策",
+              "type": "string",
+              "value": "{{review1.decision}}"
+            },
+            {
+              "key": "auditMd",
+              "label": "审核单",
+              "type": "string",
+              "value": "{{illu-audit.result.auditMd}}"
             }
           ],
-          "code": "const ws = String(inputs.ws || '')\nconst libai = String(inputs.libai || '')\nconst SPLIT = '=====FINAL====='\nlet final = ''\nlet diagnosis = ''\nconst i = libai.indexOf(SPLIT)\nif (i >= 0) {\n  diagnosis = libai.slice(0, i).trim()\n  final = libai.slice(i + SPLIT.length).trim()\n} else {\n  final = libai.trim()\n}\nconst fallbackUsed = !final\nif (!final) final = ws\nlet wsArticle = ws\nlet wsAppendix = ''\nconst m = ws.search(/\\n#{1,4}\\s*深度自检/)\nif (m > 0) {\n  wsArticle = ws.slice(0, m).trim()\n  wsAppendix = ws.slice(m).trim()\n}\nif (!wsAppendix) wsAppendix = wsArticle.length < ws.length ? '' : '（写作阶段未输出自检附文）'\nreturn { final, diagnosis: diagnosis || '（未产出诊断段）', appendix: wsAppendix || '（无）', fallbackUsed, wsArticle }"
+          "code": "const ws = String(inputs.ws || '')\nconst libai = String(inputs.libai || '')\nconst SPLIT = '=====FINAL====='\nlet final = ''\nlet diagnosis = ''\nconst i = libai.indexOf(SPLIT)\nif (i >= 0) {\n  diagnosis = libai.slice(0, i).trim()\n  final = libai.slice(i + SPLIT.length).trim()\n} else {\n  final = libai.trim()\n}\nconst fallbackUsed = !final\nif (!final) final = ws\nlet wsArticle = ws\nlet wsAppendix = ''\nconst m = ws.search(/\\n#{1,4}\\s*深度自检/)\nif (m > 0) {\n  wsArticle = ws.slice(0, m).trim()\n  wsAppendix = ws.slice(m).trim()\n}\nif (!wsAppendix) wsAppendix = wsArticle.length < ws.length ? '' : '（写作阶段未输出自检附文）'\nconst approved = typeof inputs.decision === 'string' && inputs.decision !== 'reject'\nconst embeds = (approved && Array.isArray(inputs.embeds)) ? inputs.embeds : []\nlet imgCount = 0\nconst dropped = []\nfor (let k = 0; k < embeds.length; k++) {\n  const e = embeds[k]\n  if (!e || !e.assetUrl) continue\n  const tag = '\\n\\n![' + String(e.caption || '配图').replace(/[\\[\\]]/g, '」') + '](' + e.assetUrl + ')\\n'\n  let placed = false\n  const lines = final.split('\\n')\n  if (!e.anchor) {\n    let p = 0\n    while (p < lines.length && (lines[p].trim().indexOf('#') === 0 || lines[p].trim() === '')) p++\n    lines.splice(p, 0, tag)\n    final = lines.join('\\n')\n    placed = true\n  } else {\n    const target = String(e.anchor).trim()\n    for (let li = 0; li < lines.length; li++) {\n      if (lines[li].trim() === target) {\n        lines.splice(li + 1, 0, tag)\n        final = lines.join('\\n')\n        placed = true\n        break\n      }\n    }\n  }\n  if (placed) imgCount++\n  else dropped.push(String(e.caption || ''))\n}\nlet auditSection = inputs.auditMd ? String(inputs.auditMd) : '（无）'\nif (dropped.length) auditSection += '\\n\\n未嵌入（锚点未命中，宁缺毋滥不硬插）：' + dropped.join('；')\nreturn { final: final, diagnosis: diagnosis || '（未产出诊断段）', appendix: wsAppendix || '（无）', fallbackUsed: fallbackUsed, wsArticle: wsArticle, auditSection: auditSection, imageCount: imgCount }",
+          "waitPolicy": "any"
         }
       },
       {
@@ -299,7 +493,7 @@
         "config": {
           "title": "{{start.topic}}（风格库长文）",
           "format": "markdown",
-          "template": "# {{start.topic}}\n\n{{pack.result.final}}\n\n---\n\n## 附一：写作阶段自检与配图清单\n\n{{pack.result.appendix}}\n\n## 附二：去 AI 味诊断\n\n{{pack.result.diagnosis}}\n\n---\n\n*由 The Bot「深度长文写作（风格库）」工作流生成*"
+          "template": "# {{start.topic}}\n\n{{pack.result.final}}\n\n---\n\n## 附一：写作阶段自检与配图清单\n\n{{pack.result.appendix}}\n\n## 附二：去 AI 味诊断\n\n{{pack.result.diagnosis}}\n\n## 附三：配图审核单\n\n{{pack.result.auditSection}}\n\n---\n\n*由 The Bot「深度长文写作（风格库）」工作流生成*"
         }
       },
       {
@@ -349,23 +543,89 @@
       {
         "id": "e3",
         "sourceNodeId": "libai",
-        "targetNodeId": "pack",
+        "targetNodeId": "illu-plan",
         "kind": "normal"
       },
       {
         "id": "e4",
+        "sourceNodeId": "illu-plan",
+        "targetNodeId": "illu-find",
+        "kind": "normal"
+      },
+      {
+        "id": "e5",
+        "sourceNodeId": "illu-find",
+        "targetNodeId": "illu-parse",
+        "kind": "normal"
+      },
+      {
+        "id": "e5f",
+        "sourceNodeId": "illu-find",
+        "targetNodeId": "illu-parse",
+        "kind": "fail"
+      },
+      {
+        "id": "e6",
+        "sourceNodeId": "illu-parse",
+        "targetNodeId": "illu-save",
+        "kind": "normal"
+      },
+      {
+        "id": "e7",
+        "sourceNodeId": "illu-save",
+        "targetNodeId": "illuHttp",
+        "kind": "loop-body"
+      },
+      {
+        "id": "e7b",
+        "sourceNodeId": "illuHttp",
+        "targetNodeId": "saveImg",
+        "kind": "normal"
+      },
+      {
+        "id": "e8",
+        "sourceNodeId": "saveImg",
+        "targetNodeId": "illu-save",
+        "kind": "loop-back"
+      },
+      {
+        "id": "e9",
+        "sourceNodeId": "illu-save",
+        "targetNodeId": "illu-audit",
+        "kind": "loop-done"
+      },
+      {
+        "id": "e10",
+        "sourceNodeId": "illu-audit",
+        "targetNodeId": "review1",
+        "kind": "normal"
+      },
+      {
+        "id": "e11",
+        "sourceNodeId": "review1",
+        "targetNodeId": "pack",
+        "kind": "approve"
+      },
+      {
+        "id": "e12",
+        "sourceNodeId": "review1",
+        "targetNodeId": "pack",
+        "kind": "reject"
+      },
+      {
+        "id": "e13",
         "sourceNodeId": "pack",
         "targetNodeId": "report1",
         "kind": "normal"
       },
       {
-        "id": "e5",
+        "id": "e14",
         "sourceNodeId": "report1",
         "targetNodeId": "save1",
         "kind": "normal"
       },
       {
-        "id": "e6",
+        "id": "e15",
         "sourceNodeId": "save1",
         "targetNodeId": "end",
         "kind": "normal"
