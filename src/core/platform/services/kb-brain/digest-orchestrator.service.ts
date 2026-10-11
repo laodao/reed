@@ -46,6 +46,7 @@ import {
   type KbBrainConfig
 } from './brain-config'
 import { tokenizeForIndex } from '@core/platform/services/kb-tokenize'
+import { defaultBrainEmbed } from './smelt-common'
 import { buildLensPassSystem } from './prompts'
 import { parseModelRef, type BrainLlmFn } from './llm'
 
@@ -1425,7 +1426,24 @@ export function installKbBrainDigest(
   // M4 代谢整固：Electron 挂机 interval（Web 多租户不启用——dl-pace 同款限制）
   if ((process.versions as Record<string, string | undefined>).electron) {
     import('./metabolize.service')
-      .then(({ KbBrainMetabolizeService }) => new KbBrainMetabolizeService().start())
+      .then(({ KbBrainMetabolizeService }) => {
+        const db = getCoreDatabaseManager()
+        return new KbBrainMetabolizeService({
+          // 论断向量回填（v3 M4）：嵌入渠道修复前产出的论断无 atom: 向量，代谢启动即补建
+          vectorBackfill: {
+            listWorking: (kbId, limit) =>
+              db.kbAtoms!.findByKb(kbId, { status: ['supported', 'suspected'], role: 'knowledge', limit }).then(
+                (rows) => rows.map((r) => ({ id: r.id, statement: r.statement }))
+              ),
+            findExisting: async (ids) => new Set((await db.kbVectors!.findByChunkIds(ids)).keys()),
+            save: async (kbId, items) => {
+              await db.kbVectors!.createBatch(items.map((i) => ({ chunkId: `atom:${i.id}`, knowledgeBaseId: kbId, vector: i.vector })))
+            },
+            embeddingConfig: async (kbId) => (await db.knowledgeBases?.findById(kbId))?.embeddingConfig ?? null,
+            embed: (texts, kb) => defaultBrainEmbed(texts, kb),
+          },
+        }).start()
+      })
       .catch(e =>
         logger.warn(`[kb-brain] 代谢服务启动失败: ${e instanceof Error ? e.message : String(e)}`)
       )

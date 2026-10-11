@@ -1166,7 +1166,10 @@ export class KnowledgeBaseService {
     switch (provider.templateId) {
       case 'bailian':
       case 'dashscope':
-        url = 'https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings'
+        // 渠道自带 baseUrl（专属 MaaS 端点）优先——真机实证：token-plan/VPC 专属端点
+        // 渠道打公网 dashscope 恒 fetch failed，嵌入 100% 丢失；专属端点才是该渠道
+        // 实际可用的 OpenAI 兼容入口。公网地址只作未配置 baseUrl 时的兜底。
+        url = `${provider.baseUrl || 'https://dashscope.aliyuncs.com/compatible-mode/v1'}/embeddings`
         headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
         break
       case 'zhipu':

@@ -23,10 +23,21 @@ export interface MetabolizeDeps {
     allKbIds: () => Promise<string[]>
   } | null
   intervalMs?: number
+  /** 论断向量回填（v3 M4：嵌入修复前产出的论断无向量——BM25 可用但向量召回缺失） */
+  vectorBackfill?: {
+    listWorking(kbId: string, limit: number): Promise<Array<{ id: string; statement: string }>>
+    findExisting(ids: string[]): Promise<Set<string>>
+    save(kbId: string, items: Array<{ id: string; vector: number[] }>): Promise<void>
+    embeddingConfig(kbId: string): Promise<string | null>
+    embed(texts: string[], kb: { id: string; embeddingConfig: string | null }): Promise<number[][] | null>
+  } | null
+  backfillCap?: number
 }
 
 export class KbBrainMetabolizeService {
   private readonly reposFn: NonNullable<MetabolizeDeps['repos']>
+  private readonly depsDeps: MetabolizeDeps
+  private readonly backfillCap: number
   private readonly intervalMs: number
   private timer: ReturnType<typeof setInterval> | null = null
   private running = false
@@ -45,12 +56,16 @@ export class KbBrainMetabolizeService {
           allKbIds: async () => (await kbs.findAll()).map((k) => k.id),
         }
       })
+    this.depsDeps = deps
+    this.backfillCap = deps.backfillCap ?? 2000
     this.intervalMs = deps.intervalMs ?? 24 * 60 * 60 * 1000
   }
 
   /** Electron 挂机整固（Web 多租户不启用——dl-pace 同款限制）；幂等，可重复调用 */
   start(): void {
     if (this.timer) return
+    // 启动即跑一轮（含论断向量回填——嵌入渠道修复后存量无向量论断的补建入口）
+    void this.runAll().catch((e) => logger.warn(`[kb-metabolize] 启动整固失败: ${e instanceof Error ? e.message : String(e)}`))
     this.timer = setInterval(() => {
       void this.runAll().catch((e) => logger.warn(`[kb-metabolize] 周期整固失败: ${e instanceof Error ? e.message : String(e)}`))
     }, this.intervalMs)
@@ -62,6 +77,37 @@ export class KbBrainMetabolizeService {
       clearInterval(this.timer)
       this.timer = null
     }
+  }
+
+  /**
+   * 论断向量回填：嵌入渠道故障/修复前后产出的论断可能无 atom: 向量
+   * （digest 端 fail-soft 入池不阻塞，回填在此补齐）。每轮每库上限 backfillCap。
+   */
+  private async backfillVectors(kbId: string): Promise<number> {
+    const vf = this.depsDeps.vectorBackfill
+    if (!vf) return 0
+    const cap = this.backfillCap
+    const working = await vf.listWorking(kbId, cap)
+    if (working.length === 0) return 0
+    const ids = working.map((a) => `atom:${a.id}`)
+    const existing = await vf.findExisting(ids)
+    const missing = working.filter((a) => !existing.has(`atom:${a.id}`))
+    if (missing.length === 0) return 0
+    const embeddingConfig = await vf.embeddingConfig(kbId)
+    let n = 0
+    const BATCH = 64
+    for (let i = 0; i < missing.length; i += BATCH) {
+      const chunk = missing.slice(i, i + BATCH)
+      const vectors = await vf.embed(chunk.map((a) => a.statement), { id: kbId, embeddingConfig })
+      if (!vectors || vectors.length !== chunk.length) {
+        logger.warn(`[kb-metabolize] kb=${kbId} 向量回填嵌入失败（下轮重试）`)
+        break
+      }
+      await vf.save(kbId, chunk.map((a, j) => ({ id: a.id, vector: vectors[j]! })))
+      n += chunk.length
+    }
+    if (n > 0) logger.info(`[kb-metabolize] kb=${kbId} 论断向量回填 ${n} 条`)
+    return n
   }
 
   /** 全库整固（逐 kb；单 kb 失败不阻断） */
@@ -76,6 +122,7 @@ export class KbBrainMetabolizeService {
       let orphanEdges = 0
       for (const kbId of kbIds) {
         try {
+          await this.backfillVectors(kbId)
           classic += await repos.notes.recomputeClassic(kbId)
           // 端点状态映射由服务层查询（仓储不做跨仓储调用）
           const allEdges = await repos.edges.graphSnapshot(kbId)
