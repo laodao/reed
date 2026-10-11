@@ -30,6 +30,8 @@ const LIMITS = {
   outlineSetting: 3,
   outlinePatternMenu: 5,
   outlineArchives: 2,
+  outlineStructures: 2,
+  outlineArcs: 2,
 } as const
 
 export type BrainPackMode = 'outline' | 'scene'
@@ -260,6 +262,31 @@ export class KbBrainPackService {
         .slice(0, LIMITS.outlinePatternMenu)
         .map((p) => `- 「${p.title}」（${instanceCountOf(p)} 实例）——${p.description}`)
       sections.push({ title: '套路菜单（按实例数排序）', lines: menu })
+    }
+
+    // v3 M2 阶段表：品类结构惯例与角色弧线（structure_stages 载荷 → 阶段清单文本）
+    const stageLines = (rows: KbNoteRecord[]): string[] =>
+      rows.map((r) => {
+        let stages: Array<{ name: string; position: number; function?: string }> = []
+        try {
+          stages = JSON.parse(r.structureStages ?? '[]') as typeof stages
+        } catch {
+          stages = []
+        }
+        if (stages.length === 0) return `- ${r.title}——${r.description}`
+        const chain = [...stages]
+          .sort((a, b) => a.position - b.position)
+          .map((st) => `${st.name}（${(st.position * 100).toFixed(0)}%）`)
+          .join('→')
+        return `- ${r.title}——阶段：${chain}`
+      })
+    const structures = await this.published(kbId, 'structure-map', LIMITS.outlineStructures)
+    if (structures.length > 0) {
+      sections.push({ title: '结构惯例（故事卷/体系树的阶段参照）', lines: stageLines(structures) })
+    }
+    const arcs = await this.published(kbId, 'character-arc', LIMITS.outlineArcs)
+    if (arcs.length > 0) {
+      sections.push({ title: '角色弧线惯例（起点→转变→终点）', lines: stageLines(arcs) })
     }
 
     const archives = await this.published(kbId, 'book-outline', LIMITS.outlineArchives)

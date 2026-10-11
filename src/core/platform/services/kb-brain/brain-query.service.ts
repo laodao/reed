@@ -345,6 +345,9 @@ export class BrainQueryService {
       if (!atom) return null
       // archived 也跳过（清理服务只改状态不清池——归档论断不得再从检索池召回）
       if (atom.status === 'superseded' || atom.status === 'stale' || atom.status === 'archived') return null
+      // v3：role=evidence（书内事实/剧情）是证据不是知识——不进检索供给
+      //（与 provider/取材一致；检索池残留行在重判降档时由本过滤兜住）
+      if (atom.role === 'evidence') return null
       if (req.lensNoteId && atom.lensNoteId !== req.lensNoteId) return null
       return {
         kind: 'atom',
