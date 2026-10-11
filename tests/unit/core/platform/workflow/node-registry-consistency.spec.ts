@@ -19,6 +19,7 @@ import {
 import { checkRegistryConsistency } from '@core/platform/workflow/engine/node-registry'
 import { NODE_TYPE_CATALOG } from '@shared/types/workflow-node-catalog'
 import { LONGWRITING_WORKFLOW_NODE_HANDLERS } from '@core/packs/longwriting/workflow-nodes'
+import { PODCAST_WORKFLOW_NODE_HANDLERS } from '@core/packs/podcast-video/workflow-nodes'
 
 /** 目录中的业务内部节点（internal: true） */
 const INTERNAL_TYPES = NODE_TYPE_CATALOG.filter(e => e.internal).map(e => e.type)
@@ -36,6 +37,7 @@ describe('全节点目录一致性', () => {
 
   it('pack 注册后全量注册表对齐目录（boot 序等价：pack 先于工作流装配）', () => {
     registerPackNodeHandlers(LONGWRITING_WORKFLOW_NODE_HANDLERS)
+    registerPackNodeHandlers(PODCAST_WORKFLOW_NODE_HANDLERS)
     const registry = createFullNodeRegistry()
     for (const type of INTERNAL_TYPES) {
       expect(registry.get(type as never), `${type} 应由 pack 贡献注册`).toBeDefined()

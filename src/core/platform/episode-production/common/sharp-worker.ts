@@ -23,6 +23,7 @@
  *   makeBoard({members, outPath})  → {width, height, members}           （编号参考板）
  *   compositeGrid({paths, layout, outPath}) → {width, height}           （人像宫格导出）
  *   extractRegions({imagePath, regions, format, quality}) → {written}   （分镜缩略图切片）
+ *   renderSvg({svg, outPath})   → {written}                             （播客幻灯片 SVG→PNG）
  */
 
 import * as fs from 'fs'
@@ -311,7 +312,13 @@ const RUNNER_SOURCE = [
   '  return { path: args.outPath, width: W, height: H, members: outMembers }',
   '}',
   '',
-  'async function handle(msg) {',
+  '// 播客幻灯片：SVG 文本 → PNG（中文字体走系统 fontconfig，字体栈在 SVG 内声明）',
+'async function renderSvg(args) {',
+'  await sharp(Buffer.from(String(args.svg || ""), "utf8")).png().toFile(args.outPath)',
+'  return { written: args.outPath }',
+'}',
+'',
+'async function handle(msg) {',
   '  const op = msg.op, args = msg.args || {}',
   '  try {',
   '    let result',
@@ -344,6 +351,8 @@ const RUNNER_SOURCE = [
   '      result = await boardCopyCheck(args)',
   '    } else if (op === "compositeOntoScene") {',
   '      result = await compositeOntoScene(args)',
+  '    } else if (op === "renderSvg") {',
+  '      result = await renderSvg(args)',
   '    } else {',
   '      throw new Error("unknown op: " + op)',
   '    }',
@@ -668,4 +677,9 @@ export async function workerCompositeOntoScene(args: {
   bottomMarginRatio?: number
 }): Promise<WorkerCompositeResult> {
   return getSharpWorker().call<WorkerCompositeResult>('compositeOntoScene', { ...args })
+}
+
+/** SVG 文本 → PNG 落盘（播客幻灯片渲染；SVG 内自声明字体栈）；写出失败 → reject */
+export async function workerRenderSvg(args: { svg: string; outPath: string }): Promise<{ written: string }> {
+  return getSharpWorker().call<{ written: string }>('renderSvg', { ...args })
 }

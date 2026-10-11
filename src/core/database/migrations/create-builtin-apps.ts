@@ -43,6 +43,8 @@ import scriptToVideo from './builtin-apps/script-to-video.json'
 // V2 素材前置（2026-09-06 用户确认开工：保留 V1 为独立定义，V2 另立新 id）
 import scriptToVideoV2 from './builtin-apps/script-to-video-v2.json'
 import scriptToVideoV3 from './builtin-apps/script-to-video-v3.json'
+// 播客视频（2026-10-06：短视频工作流简化版——画面=PPT 幻灯片承载核心要点，详细内容走逐页口播配音，音画天然对齐）
+import podcastVideo from './builtin-apps/podcast-video.json'
 // 主题深度研究（2026-09-09 v2 升级替换：澄清契约→规划(已知地图/验收)→≤3轮[研究执行体+另一模型独立评估]→差距迭代→溯源成稿→人工确认）
 import topicResearch from './builtin-apps/topic-research.json'
 // 日记周报复盘（2026-09-24 日记增强 P1：聚合日记→AI 三段式复盘→人工确认→存回日记）
@@ -92,6 +94,8 @@ export const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; ic
   // 短视频脚本生成视频 V2 素材前置（2026-09-06 用户确认开工；与 V1 并存，V1 定义不变）
   { file: 'script-to-video-v2.json', raw: scriptToVideoV2, appId: `${BUILTIN_APP_PREFIX}script_to_video_v2`, icon: '🎬', name: '脚本生成视频V2（素材前置）', description: '脚本/主题+多知识库 → 视频类型预设 → 大纲生成与审核 → 分镜拆解(底图资产自动匹配) → 逐镜素材生产(提示词包+文生图+参考图资产) → 图文素材板整体审核 → 逐片段视频(逐镜确认) → 配音+烧字幕+合成 → 大纲/素材板/成片存档', category: '视频制作', tags: ['视频', '脚本', '创作', '素材前置'] },
   // 短视频脚本生成视频 V3 通用视觉策略（2026-09-06；与 V1/V2 并存）：imagery 意象空镜 / asset 素材驱动，按视频类型自动
+  // 播客视频（2026-10-06）：文案 → 幻灯片核心要点 + 逐页口播配音 → 按配音时长对齐合成（podcast-video pack 节点）
+  { file: 'podcast-video.json', raw: podcastVideo, appId: `${BUILTIN_APP_PREFIX}podcast_video`, icon: '🎙️', name: '播客视频生成', description: '文案 → LLM 总结归纳成幻灯片结构（屏幕放核心要点）→ PPT 风格渲染（四主题/横竖屏）→ 结构审核 → 逐页口播配音（详细讲解走语音）→ 按配音时长对齐时间轴合成视频（可选 BGM）→ 成片/讲稿存档', category: '视频制作', tags: ['视频', '播客', '幻灯片', '口播'] },
   { file: 'script-to-video-v3.json', raw: scriptToVideoV3, appId: `${BUILTIN_APP_PREFIX}script_to_video_v3`, icon: '🎬', name: '脚本生成视频V3（通用视觉策略）', description: '脚本/主题+多知识库 → 视频类型预设与视觉策略（imagery 意象化空镜 / asset 素材驱动，缺素材即拦截）→ 大纲审核 → 分镜拆解(concept/意象 或 素材引用) → 素材板(生成意象或素材直用)整体审核 → 逐片段视频(逐镜确认) → 配音+烧字幕+合成 → 存档', category: '视频制作', tags: ['视频', '脚本', '创作', '视觉策略', '素材驱动'] },
   // 长文写作（2026-08-29 用户确认开工：分阶段写长文，多轮对话承接前文）
   { file: 'long-form-writing.json', raw: longFormWriting, appId: `${BUILTIN_APP_PREFIX}long_form_writing`, icon: '✍️', name: '长文写作', description: '长文引擎 v2（创作/修订双模式）：素材消化选材 → 分流（修订=按意见整篇修订续版本链）→ 开篇钩子比选 → 主线 → 章节大纲（每章卡点）→ 大纲人工确认（可改）→ 逐章写作（writing-styles 风格卡技能承接前文）→ 事实校验 → 编辑评审循环（独立模型五维）→ libai 去AI味（独立模型）→ 终稿人工确认（可改稿，驳回=重跑续链）→ 备选标题 → 入资产（版本链）', category: '内容创作', tags: ['长文', '写作', '小说'] },
