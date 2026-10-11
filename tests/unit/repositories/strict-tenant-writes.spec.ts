@@ -66,8 +66,8 @@ describe('严格租户写入模式（sqlite）', () => {
     // 核心断言：不能静默落 NULL，必须抛错
     await expect(repo.create(baseDialog('严格模式应被拒'))).rejects.toThrow()
 
-    // 且必须真的没落库（不能先写了再抛）
-    const rows = await repo.getAll()
+    // 且必须真的没落库（不能先写了再抛）——直接走裸 SQL 查，不经 scope
+    const rows = await testDs.ds.query('SELECT id FROM dialogs')
     expect(rows).toHaveLength(0)
   })
 
