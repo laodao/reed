@@ -183,7 +183,11 @@ export class KbSystemAggregateService {
     sys: ParsedSystemTree,
     outcome: SystemAggreggateOutcome
   ): Promise<boolean> {
-    if (sys.nodes.length < 3) return false // 两个节点谈不 上体系
+    if (sys.nodes.length < 3) return false // 两个节点谈不上体系
+    // 质量门槛（v3 真机实证：deepseek-flash 会产出「第三层/第二层/第一层」这类
+    // 无属性无证据的空壳树糊面板）——节点必须带属性槽或证据，且覆盖率过半
+    const informative = sys.nodes.filter((n) => Object.keys(n.attrs).length > 0 || (n.evidenceQuote ?? '').trim().length > 0)
+    if (informative.length < Math.ceil(sys.nodes.length / 2) || informative.length < 3) return false
     // 节点实体（同名 upsert 复用；attrs 演进重写）
     const idByName = new Map<string, string>()
     for (const node of sys.nodes) {

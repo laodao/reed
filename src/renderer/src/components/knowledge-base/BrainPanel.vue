@@ -258,7 +258,7 @@
         </template>
       </div>
 
-      <aside class="bp-side">
+      <aside v-if="activeView !== 'knowledge'" class="bp-side">
         <!-- 提炼目标 -->
         <section class="side-card">
           <header class="side-head">

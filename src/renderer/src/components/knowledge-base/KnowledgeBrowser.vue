@@ -215,20 +215,34 @@ const systems = computed<SystemGroup[]>(() => {
     attrsOf.set(n.id, { order, system, kv })
   }
   const nameOf = new Map(graphNodes.value.map((n) => [n.id, n]))
+  // 只收体系层级边——人物/物品关系（师徒/敌对/隶属等）不属于世界体系页签
   const treeEdges = graphEdges.value.filter((e) => e.relation === 'sublevel-of')
   const childrenOf = new Map<string, string[]>()
+  const parentOf = new Map<string, string>()
   for (const e of treeEdges) {
     const arr = childrenOf.get(e.target) ?? []
     arr.push(e.source)
     childrenOf.set(e.target, arr)
+    if (!parentOf.has(e.source)) parentOf.set(e.source, e.target)
   }
-  const childIds = new Set(treeEdges.map((e) => e.source))
+  // system 继承：自身没有就沿父链找（子节点常不带 system 属性）
+  const systemOf = (id: string): string => {
+    let cur: string | undefined = id
+    for (let i = 0; i < 8 && cur; i++) {
+      const m = attrsOf.get(cur)
+      if (m?.system) return m.system
+      cur = parentOf.get(cur)
+    }
+    return ''
+  }
+  // 参与体系边的节点 + 有 system 属性的孤立节点（单层体系）
+  const inTree = new Set<string>([...treeEdges.flatMap((e) => [e.source, e.target]), ...graphNodes.value.filter((n) => attrsOf.get(n.id)?.system).map((n) => n.id)])
   const build = (id: string): SysTreeNode => {
     const n = nameOf.get(id)
     const meta = attrsOf.get(id)
     const kids = (childrenOf.get(id) ?? [])
       .map(build)
-      .sort((a, b) => (a.orderLabel || '').localeCompare(b.orderLabel || ''))
+      .sort((a, b) => a.orderLabel.localeCompare(b.orderLabel, 'zh', { numeric: true }))
     return {
       id,
       name: n?.name ?? id.slice(0, 8),
@@ -238,28 +252,23 @@ const systems = computed<SystemGroup[]>(() => {
       children: kids,
     }
   }
-  // 根节点（不出现在任何边的 child 侧）按体系名分组；无体系名的根单独成组
-  const groups = new Map<string, { nodeCount: number; edgeCount: number; roots: SysTreeNode[] }>()
-  for (const id of graphNodes.value.map((n) => n.id)) {
-    if (childIds.has(id) || !attrsOf.has(id)) continue
-    const meta = attrsOf.get(id)!
-    const key = meta.system || '（未归体系）'
-    const g = groups.get(key) ?? { nodeCount: 0, edgeCount: 0, roots: [] }
-    g.roots.push(build(id))
+  const count = (n: SysTreeNode): number => 1 + n.children.reduce((acc, c) => acc + count(c), 0)
+  // 分组：按继承后的 system；无父节点（体系内顶层）作为树根
+  const groups = new Map<string, { nodeCount: number; roots: SysTreeNode[]; edges: number }>()
+  for (const id of inTree) {
+    if (parentOf.has(id)) continue
+    const key = systemOf(id) || '（待归体系）'
+    const g = groups.get(key) ?? { nodeCount: 0, roots: [], edges: 0 }
+    const root = build(id)
+    g.roots.push(root)
+    g.nodeCount += count(root)
+    g.edges += root.children.length + countTreeEdges(root.children)
     groups.set(key, g)
   }
-  const out: SystemGroup[] = []
-  for (const [name, g] of groups) {
-    if (g.roots.length === 0) continue
-    const count = (n: SysTreeNode): number => 1 + n.children.reduce((acc, c) => acc + count(c), 0)
-    out.push({
-      name,
-      nodeCount: g.roots.reduce((acc, r) => acc + count(r), 0),
-      edgeCount: countTreeEdges(g.roots),
-      tree: [...g.roots].sort((a, b) => a.name.localeCompare(b.name)),
-    })
-  }
-  return out.sort((a, b) => b.nodeCount - a.nodeCount)
+  return [...groups]
+    .map(([name, g]) => ({ name, nodeCount: g.nodeCount, edgeCount: g.edges, tree: g.roots.sort((a, b) => a.name.localeCompare(b.name, 'zh')) }))
+    .filter((g) => g.nodeCount >= 2)
+    .sort((a, b) => b.nodeCount - a.nodeCount)
 })
 
 function countTreeEdges(roots: SysTreeNode[]): number {
