@@ -832,28 +832,40 @@ export function buildRejudgeUser(input: { items: Array<{ idx: number; type: stri
 
 /* ==================== 体系汇聚（v3 M2：体系树归纳——层级+属性槽） ==================== */
 
-export const SYSTEM_AGGREGATE_SYSTEM = `你是设定体系架构师。给定一批设定层论断（带原文引句），归纳其中蕴含的**体系树**——境界阶梯、功法传承、组织层级这类「有序层级系统」。
+export const SYSTEM_AGGREGATE_SYSTEM = `你是世界观设定分析师，任务是为小说建立「世界观设定档案」。像人类编辑一样分两步工作：
 
-纪律（最高原则：宁缺勿造）：
-- 只归纳论断里**确实有层级关系**的系统；材料里没有体系就输出空数组，禁止编造；
-- 每个节点必须能落到至少一条论断/引句上（evidenceQuote 抄论断原文片段）；
-- 每个节点的 attrs 至少 1 项实质内容（能力/代价/数量/突破条件…），空 attrs 的节点不许输出；
-- 节点名必须是材料里的**专名**（如「结丹期」「掌门」），禁止「第一层/第二层」这类无信息序号——
-  序号信息放 order 字段；
-- 证据不足的节点丢弃，猜不出中间层就留缺口——不补全、不臆测；
-- 体系名取材料里的原词（如「青云门修真道法」「魔教功法体系」）。
+第一步【盘点】：通读全部设定材料，找出其中**一切成体系的设定**。判定标准很宽——只要满足下列任一特征就算一个体系：
+- 有一组并列的同类成员（门派、国家、部族、功法、秘境、法宝类别……凡是"有一伙同类事物"都算）
+- 有强弱/高低/先后的等级顺序（境界、段位、品阶、妖兽分级、军衔……）
+- 有上下包含或隶属关系（组织架构、行政层级、殿宇布局……）
+- 成员之间靠对抗/联盟/依附等关系定义彼此（势力格局……）
 
-每个节点：name（体系内规范名，≤10 字）、order（层级序号，0=最底层，向上递增）、
-attrs（该层属性槽，只填论断里有的键：能力/寿命/突破条件/代价/数量限制…）、
-evidenceQuote（支撑本节点的原文片段）。
+第二步【结构化】：给每个体系判断**结构形态**，并穷举其成员：
+- kind=catalog（清单）：成员并列、无强弱顺序——如"本书共有哪些门派/国家"
+- kind=ladder（阶梯）：成员有严格顺序——order 按材料中的强弱方向编号
+- kind=tree（层级）：成员有上下隶属——用 attrs.parent 标注直接上级的名称
+- kind=network（网络）：成员靠两两关系定义——额外输出 relations
+
+纪律（最高原则：先穷尽、宁缺勿造）：
+- **盘点必须穷尽**：材料中出现的每一个同类成员都要出现在对应体系的 elements 里，
+  一个都不能漏。"只写了一个门派就开始写它的细节"是严重错误——先把清单列全；
+- 每个成员必须落到至少一条论断/引句上（evidenceQuote 抄论断原文片段）；
+- 成员名必须是材料原词的专名；每个成员的 attrs 至少 1 项实质内容
+  （等级体系填：能力/寿元/突破条件；清单体系填：立场/特征/实力定位……按材料实际有的填）；
+- 材料没讲的成员属性留空，禁止编造；材料不足的体系宁可少写成员。
 
 输出 JSON：
-{"systems":[{"systemName":"…","confidence":0.8,"nodes":[{"name":"玉清境","order":0,"attrs":{"能力":"…","突破条件":"…"},"evidenceQuote":"…"}]}]}
+{"systems":[{
+  "systemName":"境界体系","kind":"ladder","summary":"一句话说明",
+  "elements":[{"name":"炼气期","order":0,"attrs":{"寿元":"…","突破条件":"…"},"evidenceQuote":"原文片段"}],
+  "relations":[{"from":"成员A","to":"成员B","type":"敌对","evidence":"…"}]
+}]}
+kind 只能是 catalog/ladder/tree/network 之一；relations 仅 network 需要。
 只输出 JSON，不要任何解释。`
 
 export function buildSystemAggregateUser(input: { atoms: Array<{ statement: string; quote: string }> }): string {
   const lines = input.atoms.map((a, i) => `[${i}] ${a.statement}（引：${a.quote}）`)
-  return `设定层论断（${input.atoms.length} 条）：\n${lines.join('\n')}\n\n请归纳体系树（没有就给空数组）。`
+  return `设定层论断（${input.atoms.length} 条）：\n${lines.join('\n')}\n\n请先盘点有哪些体系，再逐个结构化（材料没有体系的就给空数组）。`
 }
 
 /* ==================== 书级汇总遍（book passes；输出 markdown 卡正文，非 JSON） ==================== */

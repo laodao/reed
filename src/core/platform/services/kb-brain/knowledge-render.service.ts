@@ -4,18 +4,40 @@
  *
  * 原则：agent 永远消费文本渲染，不消费图本身；每层带属性槽与证据。
  */
-import type { ParsedSystemTree } from './system-aggregate.service'
+import type { ParsedSystemElement, ParsedRelation, SystemKind } from './system-aggregate.service'
 
 /** 体系树 → 缩进清单文本（structure-map 卡正文；层级按 order 排序） */
-export function renderSystemTree(sys: ParsedSystemTree): string {
-  const lines: string[] = [`> 体系「${sys.systemName}」· ${sys.nodes.length} 层 · 归纳置信 ${sys.confidence.toFixed(2)}（宁缺勿造：证据不足的层留空缺，不臆测）`, '']
-  const ordered = [...sys.nodes].sort((a, b) => a.order - b.order)
-  for (const n of ordered) {
-    // 缩进归零：≥4 空格缩进会被 markdown 当代码块（真机实证：星号原样显示）
-    lines.push(`**${n.name}**（第 ${n.order} 层）`)
-    for (const [k, v] of Object.entries(n.attrs)) lines.push(`- ${k}：${v}`)
-    if (n.evidenceQuote) lines.push(`- 证据：「${n.evidenceQuote}」`)
+export function renderSystemByKind(sys: {
+  systemName: string
+  kind: SystemKind
+  confidence: number
+  elements: ParsedSystemElement[]
+  relations?: ParsedRelation[]
+}): string {
+  const kindLabel = KIND_LABEL_RENDER[sys.kind] ?? sys.kind
+  const ordered = [...sys.elements].sort((a, b) => a.order - b.order)
+  const lines: string[] = [`> 体系「${sys.systemName}」（${kindLabel}）· ${sys.elements.length} 个元素 · 归纳置信 ${sys.confidence.toFixed(2)}`, '']
+  if (sys.kind === 'ladder') {
+    lines.push(`**顺序链**：${ordered.map((el) => el.name).join(' → ')}`, '')
+  }
+  if (sys.kind === 'network' && sys.relations && sys.relations.length > 0) {
+    lines.push('**成员关系**：', ...sys.relations.map((r) => `- ${r.from} —${r.type}— ${r.to}（${r.evidence}）`), '')
+  }
+  lines.push('**成员与属性**：', '')
+  for (const el of ordered) {
+    const pos = sys.kind === 'ladder' ? `（第 ${el.order} 层）` : ''
+    lines.push(`- **${el.name}**${pos}`)
+    for (const [k, v] of Object.entries(el.attrs)) lines.push(`  - ${k}：${v}`)
+    if (el.evidenceQuote) lines.push(`  - 证据：「${el.evidenceQuote}」`)
   }
   return lines.join('\n')
 }
+
+const KIND_LABEL_RENDER: Record<string, string> = {
+  ladder: '等级阶梯',
+  tree: '层级结构',
+  catalog: '成员清单',
+  network: '关系网络',
+}
+
 

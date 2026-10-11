@@ -27,14 +27,15 @@ import {
   type KbScopedLlm
 } from './llm'
 import { SYSTEM_AGGREGATE_SYSTEM, buildSystemAggregateUser } from './prompts'
-import { renderSystemTree } from './knowledge-render.service'
+import { renderSystemByKind } from './knowledge-render.service'
+import { renderSystemByKind } from './knowledge-render.service'
 
 const logger = createLogger('KbSystemAggregate')
 
 export interface SystemAggregators {
   atoms: KbAtomRepository
   entities: KbEntityRepository
-  edges: KbKnowledgeEdgeRepository
+  edges: KbKnowledgeEdgeRepository & { deleteAggregateElementEdges(kbId: string): Promise<void> }
   notes: KbNoteRepository
   passes: KbDigestPassRepository
 }
@@ -151,8 +152,10 @@ export class KbSystemAggregateService {
         maxTokens: BRAIN_LLM_MAX_TOKENS
       })
       llmCalls += 1
-      const systems = parseSystemTrees(raw)
+      const systems = parseSystemInventories(raw)
       const outcome: SystemAggreggateOutcome = { ...EMPTY, skipped: false, llmCalls }
+      // 清上一轮体系边（两端都是体系节点=aggregate 自产；graph-build 的人物边不动）
+      await repos.edges.deleteAggregateElementEdges(kbId)
       for (const sys of systems) {
         const built = await this.persistSystem(repos, kbId, sys, outcome)
         if (built) outcome.systemsBuilt += 1
@@ -176,71 +179,87 @@ export class KbSystemAggregateService {
     }
   }
 
-  /** 单棵体系树落库：节点实体 upsert + sublevel-of 边 + structure-map 卡 */
+  /** 单体系落库：元素实体 upsert + kind 对应边 + structure-map 卡（按形态渲染） */
   private async persistSystem(
     repos: SystemAggregators,
     kbId: string,
-    sys: ParsedSystemTree,
+    sys: ParsedSystemInventory,
     outcome: SystemAggreggateOutcome
   ): Promise<boolean> {
-    if (sys.nodes.length < 3) return false // 两个节点谈不上体系
-    // 质量门槛（v3 真机实证：deepseek-flash 会产出「第三层/第二层/第一层」这类
-    // 无属性无证据的空壳树糊面板）——节点必须带属性槽或证据，且覆盖率过半
-    const informative = sys.nodes.filter((n) => Object.keys(n.attrs).length > 0 || (n.evidenceQuote ?? '').trim().length > 0)
-    if (informative.length < Math.ceil(sys.nodes.length / 2) || informative.length < 3) return false
-    // 节点实体（同名 upsert 复用；attrs 演进重写）
+    if (sys.elements.length < 2) return false
+    // 元素实体（同名 upsert 复用；attrs 演进重写，含 kind 标记）
     const idByName = new Map<string, string>()
-    for (const node of sys.nodes) {
-      const existing = await repos.entities.upsertMention(kbId, {
-        name: node.name,
-        type: 'setting-system'
-      })
-      idByName.set(node.name, existing.id)
+    for (const el of sys.elements) {
+      const existing = await repos.entities.upsertMention(kbId, { name: el.name, type: 'setting-system' })
+      idByName.set(el.name, existing.id)
       if (isEntityRecord(existing)) {
         await repos.entities.updateAttrs(existing.id, JSON.stringify({
-          order: node.order,
           system: sys.systemName,
-          ...node.attrs
+          kind: sys.kind,
+          order: el.order,
+          ...el.attrs
         }))
       }
       outcome.nodesReused += 1
     }
-    // 层级边：按 order 相邻连边（列表顺序即层级：i 是 i+1 的下层）
-    const ordered = [...sys.nodes].sort((a, b) => a.order - b.order)
+    const resolve = (name: string): string | null => idByName.get(name) ?? null
+
+    // 按 kind 落边：ladder=相邻顺序；tree=parent 隶属；catalog=无边；network=relates
     const edgeRows: KbEdgeInputLite[] = []
-    for (let i = 0; i < ordered.length - 1; i++) {
-      const lower = idByName.get(ordered[i]!.name)
-      const upper = idByName.get(ordered[i + 1]!.name)
-      if (!lower || !upper) continue
-      edgeRows.push({
-        sourceKind: 'entity',
-        sourceId: lower,
-        relation: 'sublevel-of',
-        targetKind: 'entity',
-        targetId: upper,
-        evidence: `${sys.systemName}：${ordered[i]!.name} 低于 ${ordered[i + 1]!.name}（${ordered[i]!.evidenceQuote ?? '体系归纳'}）`,
-        confidence: sys.confidence,
-        origin: 'ai'
-      })
+    if (sys.kind === 'ladder') {
+      const ordered = [...sys.elements].sort((a, b) => a.order - b.order)
+      for (let i = 0; i < ordered.length - 1; i++) {
+        const lower = resolve(ordered[i]!.name)
+        const upper = resolve(ordered[i + 1]!.name)
+        if (!lower || !upper) continue
+        edgeRows.push({
+          sourceKind: 'entity', sourceId: lower, relation: 'sublevel-of', targetKind: 'entity', targetId: upper,
+          evidence: `${sys.systemName}：${ordered[i]!.name} 低于 ${ordered[i + 1]!.name}（${ordered[i]!.evidenceQuote ?? '体系归纳'}）`,
+          confidence: sys.confidence, origin: 'ai'
+        })
+      }
+    } else if (sys.kind === 'tree') {
+      for (const el of sys.elements) {
+        if (!el.parent) continue
+        const child = resolve(el.name)
+        const parent = resolve(el.parent)
+        if (!child || !parent) continue
+        edgeRows.push({
+          sourceKind: 'entity', sourceId: child, relation: 'sublevel-of', targetKind: 'entity', targetId: parent,
+          evidence: `${sys.systemName}：${el.name} 隶属 ${el.parent}（${el.evidenceQuote ?? '体系归纳'}）`,
+          confidence: sys.confidence, origin: 'ai'
+        })
+      }
+    } else if (sys.kind === 'network') {
+      for (const rel of sys.relations) {
+        const from = resolve(rel.from)
+        const to = resolve(rel.to)
+        if (!from || !to) continue
+        edgeRows.push({
+          sourceKind: 'entity', sourceId: from, relation: 'relates', targetKind: 'entity', targetId: to,
+          evidence: `${sys.systemName}：${rel.from} —${rel.type}— ${rel.to}（${rel.evidence}）`,
+          confidence: sys.confidence, origin: 'ai'
+        })
+      }
     }
     if (edgeRows.length > 0) {
       const r = await repos.edges.createBatch(kbId, edgeRows)
       outcome.edgesCreated += r.created
     }
-    // structure-map 卡（人审）——渲染树文本，同题演进
-    const body = renderSystemTree(sys)
-    const title = `设定体系：${sys.systemName}—层级结构与各层属性`
+    // structure-map 卡（人审）——按形态渲染
+    const body = renderSystemByKind(sys)
+    const title = `设定体系：${sys.systemName}—${KIND_LABEL[sys.kind]}与各元素`
     const similar = await repos.notes.findSimilarTitle(kbId, title)
     const existing = similar.find(s => s.title === title && s.status !== 'archived')
     const evidence = JSON.stringify(
-      sys.nodes.slice(0, 8).map(n => ({ quote: n.evidenceQuote ?? '', entity: n.name }))
+      sys.elements.slice(0, 8).map(el => ({ quote: el.evidenceQuote ?? '', entity: el.name }))
     )
     if (existing) {
       await repos.notes.evolveCard(existing.id, { body, evidence })
     } else {
       await repos.notes.propose(kbId, {
         title,
-        description: `「${sys.systemName}」的层级结构与各层属性槽——设计自己的体系时作骨架参照（各层能做什么/前置是什么）。`,
+        description: `「${sys.systemName}」的${KIND_LABEL[sys.kind]}——设计自己的世界时作结构参照（成员穷举+各自属性）。`,
         type: 'structure-map',
         body,
         evidence,
@@ -252,16 +271,23 @@ export class KbSystemAggregateService {
   }
 }
 
-/** 层级边入参（relation 固定 sublevel-of） */
+/** 体系边入参（relation 按形态：sublevel-of/relates） */
 interface KbEdgeInputLite {
   sourceKind: 'entity'
   sourceId: string
-  relation: 'sublevel-of'
+  relation: 'sublevel-of' | 'relates'
   targetKind: 'entity'
   targetId: string
   evidence: string
   confidence: number
   origin: 'ai'
+}
+
+export const KIND_LABEL: Record<SystemKind, string> = {
+  ladder: '等级阶梯',
+  tree: '层级结构',
+  catalog: '成员清单',
+  network: '关系网络'
 }
 
 /** upsertMention 返回 Record；此处守卫带 id 的形态（测试桩容错） */
@@ -271,62 +297,101 @@ function isEntityRecord(e: unknown): e is KbEntityRecord & { id: string } {
 
 /* ---------- 解析 ---------- */
 
-export interface ParsedSystemNode {
+export type SystemKind = 'catalog' | 'ladder' | 'tree' | 'network'
+
+export interface ParsedSystemElement {
   name: string
   order: number
   attrs: Record<string, string>
   evidenceQuote: string | null
+  /** tree 形态：直接上级的名称 */
+  parent?: string
 }
 
-export interface ParsedSystemTree {
+export interface ParsedRelation {
+  from: string
+  to: string
+  type: string
+  evidence: string
+}
+
+export interface ParsedSystemInventory {
   systemName: string
-  nodes: ParsedSystemNode[]
+  kind: SystemKind
+  summary: string
   confidence: number
+  elements: ParsedSystemElement[]
+  relations: ParsedRelation[]
 }
 
-/** 解析体系树输出：{systems:[{systemName,nodes:[{name,order,attrs,evidenceQuote}],confidence}]}——坏节点剔除 */
-export function parseSystemTrees(raw: string): ParsedSystemTree[] {
+/** 解析盘点输出：{systems:[{systemName,kind,summary,elements,relations}]}——坏节点剔除、强门槛 */
+export function parseSystemInventories(
+  raw: string
+): Array<{ systemName: string; kind: SystemKind; summary: string; confidence: number; elements: ParsedSystemElement[]; relations: ParsedRelation[] }> {
   const parsed = extractJsonFromResponse(raw) as Partial<{ systems: unknown }> | null
   const arr = Array.isArray(parsed?.systems) ? (parsed!.systems as unknown[]) : []
-  const out: ParsedSystemTree[] = []
+  const out: Array<{ systemName: string; kind: SystemKind; summary: string; confidence: number; elements: ParsedSystemElement[]; relations: ParsedRelation[] }> = []
   for (const item of arr) {
     if (typeof item !== 'object' || item === null) continue
     const systemName = (item as { systemName?: unknown }).systemName
-    const rawNodes = (item as { nodes?: unknown }).nodes
-    if (typeof systemName !== 'string' || !systemName.trim() || !Array.isArray(rawNodes)) continue
-    const nodes: ParsedSystemNode[] = []
-    for (const n of rawNodes) {
-      if (typeof n !== 'object' || n === null) continue
-      const name = (n as { name?: unknown }).name
-      if (typeof name !== 'string' || !name.trim() || name.length > 30) continue
-      const order = Number((n as { order?: unknown }).order)
-      const rawAttrs = (n as { attrs?: unknown }).attrs
-      const attrs: Record<string, string> = {}
-      if (typeof rawAttrs === 'object' && rawAttrs !== null) {
-        for (const [k, v] of Object.entries(rawAttrs as Record<string, unknown>)) {
-          if (typeof v === 'string' && v.trim()) attrs[k.trim().slice(0, 20)] = v.slice(0, 200)
+    const kindRaw = (item as { kind?: unknown }).kind
+    if (typeof systemName !== 'string' || !systemName.trim()) continue
+    const kind: SystemKind = kindRaw === 'catalog' || kindRaw === 'ladder' || kindRaw === 'tree' || kindRaw === 'network' ? kindRaw : 'catalog'
+    const summary = typeof (item as { summary?: unknown }).summary === 'string' ? (item as { summary: string }).summary.slice(0, 200) : ''
+    const confidence = typeof (item as { confidence?: unknown }).confidence === 'number' ? (item as { confidence: number }).confidence : 0.6
+
+    // 元素：名字必须是专名；必须有 attrs 或证据；catalog/ladder 元素名 ≤20 字
+    const elements: ParsedSystemElement[] = []
+    const rawElements = (item as { elements?: unknown }).elements
+    if (Array.isArray(rawElements)) {
+      for (const el of rawElements) {
+        if (typeof el !== 'object' || el === null) continue
+        const name = (el as { name?: unknown }).name
+        if (typeof name !== 'string' || !name.trim() || name.trim().length > 30) continue
+        const rawAttrs = (el as { attrs?: unknown }).attrs
+        const attrs: Record<string, string> = {}
+        if (typeof rawAttrs === 'object' && rawAttrs !== null) {
+          for (const [k, v] of Object.entries(rawAttrs as Record<string, unknown>)) {
+            if (typeof v === 'string' && v.trim()) attrs[k.trim().slice(0, 20)] = v.slice(0, 200)
+          }
         }
-      }
-      // v3 M4 质量门槛：空属性且无证据的节点丢弃（「第一层/第二层」式空壳糊面板）
-      if (Object.keys(attrs).length === 0 && !((n as { evidenceQuote?: unknown }).evidenceQuote)) continue
-      nodes.push({
-        name: name.trim(),
-        order: Number.isFinite(order) ? order : nodes.length,
-        attrs,
-        evidenceQuote: typeof (n as { evidenceQuote?: unknown }).evidenceQuote === 'string'
-          ? (n as { evidenceQuote: string }).evidenceQuote.slice(0, 200)
+        const evidenceQuote = typeof (el as { evidenceQuote?: unknown }).evidenceQuote === 'string'
+          ? (el as { evidenceQuote: string }).evidenceQuote.slice(0, 200)
           : null
-      })
+        // 质量门槛：空属性且无证据的元素丢弃（防「第一层/第二层」式空壳）
+        if (Object.keys(attrs).length === 0 && !evidenceQuote) continue
+        const order = Number((el as { order?: unknown }).order)
+        const parent = (el as { parent?: unknown }).parent
+        elements.push({
+          name: name.trim(),
+          order: Number.isFinite(order) ? order : elements.length,
+          attrs,
+          evidenceQuote,
+          parent: typeof parent === 'string' && parent.trim() ? parent.trim() : undefined
+        })
+      }
     }
-    if (nodes.length >= 3) {
-      out.push({
-        systemName: systemName.trim().slice(0, 40),
-        nodes,
-        confidence: typeof (item as { confidence?: unknown }).confidence === 'number'
-          ? (item as { confidence: number }).confidence
-          : 0.6
-      })
+    // relations（network）：from/to/evidence 校验
+    const relations: ParsedRelation[] = []
+    const rawRels = (item as { relations?: unknown }).relations
+    if (Array.isArray(rawRels)) {
+      for (const rel of rawRels) {
+        if (typeof rel !== 'object' || rel === null) continue
+        const from = (rel as { from?: unknown }).from
+        const to = (rel as { to?: unknown }).to
+        const type = (rel as { type?: unknown }).type
+        const evidence = (rel as { evidence?: unknown }).evidence
+        if (typeof from !== 'string' || typeof to !== 'string') continue
+        relations.push({
+          from: from.trim(),
+          to: to.trim(),
+          type: typeof type === 'string' ? type.slice(0, 20) : '相关',
+          evidence: typeof evidence === 'string' ? evidence.slice(0, 200) : ''
+        })
+      }
     }
+    if (elements.length < 2) continue // 单元素不成体系
+    out.push({ systemName: systemName.trim().slice(0, 40), kind, summary, confidence, elements, relations })
   }
   return out
 }

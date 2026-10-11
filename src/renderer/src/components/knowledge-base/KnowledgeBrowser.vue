@@ -23,6 +23,17 @@
             </el-tree>
           </el-collapse-item>
         </el-collapse>
+        <template v-if="sysTreeCards.length > 0">
+          <div class="kb-sys-docs-title">体系树文档（每棵树的完整层级文本）</div>
+          <el-collapse v-model="openSysDocs">
+            <el-collapse-item v-for="c in sysTreeCards" :key="c.id" :name="c.id">
+              <template #title>
+                <span class="kb-doc-title">{{ c.title }}</span>
+              </template>
+              <div class="kb-doc-body" v-html="c.bodyHtml" />
+            </el-collapse-item>
+          </el-collapse>
+        </template>
       </el-tab-pane>
 
       <!-- 故事结构与弧线：阶段时间线 -->
@@ -196,16 +207,18 @@ interface SystemGroup {
 }
 
 const systems = computed<SystemGroup[]>(() => {
-  const attrsOf = new Map<string, { order: number; system: string; kv: Array<{ k: string; v: string }> }>()
+  const attrsOf = new Map<string, { order: number; system: string; kind: string; kv: Array<{ k: string; v: string }> }>()
   for (const n of graphNodes.value) {
     let order = Number.MAX_SAFE_INTEGER
     let system = ''
+    let systemKind = ''
     const kv: Array<{ k: string; v: string }> = []
     if (n.attrs) {
       try {
         const parsed = JSON.parse(n.attrs) as Record<string, unknown>
         if (typeof parsed.order === 'number') order = parsed.order
         if (typeof parsed.system === 'string') system = parsed.system
+        if (typeof parsed.kind === 'string') systemKind = parsed.kind
         for (const [k, v] of Object.entries(parsed)) {
           if (k === 'order' || k === 'system') continue
           if (typeof v === 'string' && v.trim()) kv.push({ k, v })
@@ -214,7 +227,7 @@ const systems = computed<SystemGroup[]>(() => {
         /* attrs 损坏按无属性处理 */
       }
     }
-    attrsOf.set(n.id, { order, system, kv })
+    attrsOf.set(n.id, { order, system, kind: systemKind, kv })
   }
   const nameOf = new Map(graphNodes.value.map((n) => [n.id, n]))
   // 只收体系层级边——人物/物品关系（师徒/敌对/隶属等）不属于世界体系页签
@@ -226,6 +239,39 @@ const systems = computed<SystemGroup[]>(() => {
     arr.push(e.source)
     childrenOf.set(e.target, arr)
     if (!parentOf.has(e.source)) parentOf.set(e.source, e.target)
+  }
+  // ladder 形态：按 order 顺序链补父子（边缺失时渲染仍完整）
+  const kindOf = new Map<string, string>()
+  for (const n of graphNodes.value) {
+    const meta = attrsOf.get(n.id)
+    if (meta?.kind) kindOf.set(n.id, meta.kind)
+  }
+  const bySystem = new Map<string, GraphNode[]>()
+  for (const n of graphNodes.value) {
+    const meta = attrsOf.get(n.id)
+    if (!meta?.system) continue
+    const arr = bySystem.get(meta.system) ?? []
+    arr.push(n)
+    bySystem.set(meta.system, arr)
+  }
+  for (const members of bySystem.values()) {
+    const kind = kindOf.get(members[0]!.id)
+    if (kind !== 'ladder' || members.length < 2) continue
+    const sorted = [...members].sort((a, b) => {
+      const oa = attrsOf.get(a.id)?.order ?? Number.MAX_SAFE_INTEGER
+      const ob = attrsOf.get(b.id)?.order ?? Number.MAX_SAFE_INTEGER
+      return oa - ob
+    })
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const child = sorted[i]!.id
+      const parent = sorted[i + 1]!.id
+      if (!parentOf.has(child)) {
+        const arr = childrenOf.get(parent) ?? []
+        arr.push(child)
+        childrenOf.set(parent, arr)
+        parentOf.set(child, parent)
+      }
+    }
   }
   // system 继承：自身没有就沿父链找（子节点常不带 system 属性）
   const systemOf = (id: string): string => {
@@ -321,11 +367,20 @@ function parseStages(raw: string | null): Stage[] {
   }
 }
 
+const isSysTreeCard = (n: NoteRow): boolean =>
+  n.type === 'structure-map' && (n.title.startsWith('设定体系：') || (() => {
+    try {
+      return (JSON.parse(n.tags ?? '[]') as string[]).includes('system-aggregate')
+    } catch {
+      return false
+    }
+  })())
 const structureCards = computed<DocCard[]>(() =>
   notes.value
-    .filter((n) => n.type === 'structure-map' || n.type === 'character-arc')
+    .filter((n) => (n.type === 'structure-map' || n.type === 'character-arc') && !isSysTreeCard(n))
     .map(toCard)
 )
+const sysTreeCards = computed<DocCard[]>(() => notes.value.filter(isSysTreeCard).map(toCard))
 const methodCards = computed<DocCard[]>(() =>
   notes.value.filter((n) => METHOD_TYPES.some((t) => t.type === n.type)).map(toCard)
 )
@@ -338,6 +393,7 @@ const archiveCards = computed<DocCard[]>(() =>
   notes.value.filter((n) => ARCHIVE_TYPES.includes(n.type)).map(toCard)
 )
 
+const openSysDocs = ref<string[]>([])
 const openSystems = ref<string[]>([])
 const openStructure = ref<string[]>([])
 const openMethods = ref<string[]>([])
@@ -369,6 +425,7 @@ async function load(): Promise<void> {
       graphEdges.value = d.edges ?? []
     }
     openSystems.value = systems.value.slice(0, 3).map((s) => s.name)
+    openSysDocs.value = sysTreeCards.value.slice(0, 2).map((c) => c.id)
     openStructure.value = structureCards.value.slice(0, 2).map((c) => c.id)
     openMethods.value = methodCards.value.slice(0, 2).map((c) => c.id)
     openArchives.value = archiveCards.value.slice(0, 2).map((c) => c.id)
@@ -518,6 +575,14 @@ defineExpose({ reload: load })
   background: var(--el-fill-color-light);
   font-weight: 600;
   white-space: nowrap;
+}
+.kb-sys-docs-title {
+  margin: 18px 0 8px;
+  font-weight: 600;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  border-top: 1px solid var(--el-border-color-lighter);
+  padding-top: 12px;
 }
 .kb-method-filter {
   margin-bottom: 10px;

@@ -187,6 +187,19 @@ export class KbKnowledgeEdgeRepository extends BaseRepository<KbKnowledgeEdgeEnt
    * 互不相认，四件套一跑体系树就被清空）。体系树/知识类边（sublevel-of 等）
    * 由各自产线自行演进。
    */
+  /**
+   * 清上一轮体系汇聚边（v3 M2：两端均为带 attrs 体系节点的 sublevel-of/relates 边）。
+   * 只动 aggregate 自产边，graph-build 的人物世界关系边不受影响。
+   */
+  async deleteAggregateElementEdges(kbId: string): Promise<void> {
+    await this.dataSource.query(
+      `DELETE FROM kb_knowledge_edges WHERE knowledge_base_id = ? AND relation IN ('sublevel-of','relates')
+       AND source_id IN (SELECT id FROM kb_entities WHERE attrs IS NOT NULL AND knowledge_base_id = ?)
+       AND target_id IN (SELECT id FROM kb_entities WHERE attrs IS NOT NULL AND knowledge_base_id = ?)`,
+      [kbId, kbId, kbId]
+    )
+  }
+
   async deleteEntityEntityEdges(kbId: string): Promise<void> {
     await this.scoped.delete({
       knowledgeBaseId: kbId,
