@@ -63,6 +63,8 @@ const saveAssetNode: WorkflowNodeHandler = {
     { key: 'subCategory', type: 'string', desc: '资产子分类（资产中心二级分组）' },
     { key: 'kind', type: 'string', desc: '存储形态（file/url/text/json）' },
     { key: 'url', type: 'string', desc: '可访问链接（文件型/链接型）' },
+    { key: 'groupId', type: 'string', desc: '资产组 ID（配置组名时）' },
+    { key: 'deduped', type: 'boolean', desc: 'URL 幂等命中：已存在同链接资产，本次未重复保存' },
   ],
   validateConfig(config) {
     const cfg = config as { content?: string; kind?: string; category?: string; passthrough?: unknown }
@@ -90,6 +92,17 @@ const saveAssetNode: WorkflowNodeHandler = {
       description?: string
       enabled?: boolean
       groupName?: string
+      /**
+       * 归组来源引用（可选；缺省 = 当前运行 id）：组唯一键是 (sourceType, sourceRef, name)，
+       * 缺省按"运行"隔离——每次运行各建同名组。采集类场景填稳定值（如含博主主页链接的
+       * 模板串），多次运行的同名组即并入同一集合（增量采集不碎组）。
+       */
+      sourceRef?: string
+      /**
+       * 幂等去重链接（可选，支持 {{模板}}）：资产库已存在同 url 资产时跳过保存，
+       * 输出被存在资产的 assetId + deduped=true——采集类循环重跑不产生重复资产。
+       */
+      dedupeUrl?: string
       /** 透传字段：{字段: 值}（引擎已解析模板），合并进输出——下游确认/重生成环节引用上游参数 */
       passthrough?: Record<string, unknown>
       /** 替换语义：保存新资产成功后删除被替换的旧资产（重生成场景用；旧资产文件一并删除） */
@@ -113,6 +126,28 @@ const saveAssetNode: WorkflowNodeHandler = {
     const kind = explicitKind === 'auto' ? detectContentKind(content) : explicitKind
 
     const service = getAssetService()
+
+    // URL 幂等：已存在同链接资产 → 不重复保存，输出已有资产（增量采集/重跑场景）
+    const dedupeUrl = stringifyValue(cfg.dedupeUrl ?? '').trim()
+    if (dedupeUrl) {
+      const existing = await service.findAssetByUrl(dedupeUrl)
+      if (existing) {
+        return {
+          status: 'succeeded',
+          output: {
+            assetId: existing.id,
+            name: existing.name,
+            category: existing.category,
+            subCategory: existing.subCategory ?? '',
+            kind: existing.kind,
+            url: service.assetPreviewUrl(existing),
+            groupId: existing.groupId ?? '',
+            deduped: true,
+            ...(cfg.passthrough ?? {}),
+          },
+        }
+      }
+    }
 
     // 版本链分支：versionOfAssetId 非空 → 追加为该 text 资产的下一版本并就地更新内容（不建新资产）
     const versionOf = stringifyValue(cfg.versionOfAssetId ?? '').trim()
@@ -159,8 +194,11 @@ const saveAssetNode: WorkflowNodeHandler = {
             : kind === 'text'
               ? { kind: 'text', text: content }
               : { kind: 'file', path: content },
+      // 幂等链接随资产落 url 列（溯源 + 后续运行的 dedupeUrl 查重键）
+      url: dedupeUrl || undefined,
       sourceType: 'workflow',
-      sourceRef: ctx.runId,
+      // 归组来源引用：可配稳定值让跨运行同名组并集（缺省仍按运行隔离）
+      sourceRef: stringifyValue(cfg.sourceRef ?? '').trim() || ctx.runId,
       groupName: cfg.groupName?.trim() || undefined,
     })
 

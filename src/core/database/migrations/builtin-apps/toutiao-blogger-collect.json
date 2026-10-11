@@ -1,0 +1,172 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 头条博主文章采集",
+  "description": "输入头条博主主页链接 → 浏览器拟人阅读：随机步长滚动加载文章列表（加载够了即收）→ 逐篇串行打开文章、模拟真人缓慢滚动到底部 → 提取正文 markdown 存入资产中心，同一博主的文章归入同一个资产集合（跨运行合并、按原文链接幂等去重，重跑只补新文章）",
+  "category": "新闻资讯",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 40, "y": 300 },
+        "config": {
+          "inputs": [
+            {
+              "key": "bloggerUrl",
+              "label": "今日头条博主主页链接",
+              "type": "string",
+              "required": true,
+              "placeholder": "https://www.toutiao.com/c/user/token/MS4wLjABAAAA…/",
+              "help": "浏览器进入博主主页（文章列表页）后复制地址栏链接；工作流用隐藏浏览器打开并模拟真人滚动加载列表"
+            },
+            {
+              "key": "bloggerName",
+              "label": "博主名称（=资产集合名）",
+              "type": "string",
+              "required": true,
+              "placeholder": "如：卢克文工作室",
+              "help": "该博主的文章在资产中心归入同一集合（业务分类「博主文章」下按博主建组）；多次采集自动并入同组，已采集过的文章按原文链接去重跳过"
+            },
+            {
+              "key": "maxArticles",
+              "label": "最多采集篇数",
+              "type": "number",
+              "defaultValue": 20,
+              "help": "从列表页按展示顺序（新→旧）采集前 N 篇；逐篇串行阅读，篇数越多耗时越长（每篇约 0.5-2 分钟）"
+            }
+          ]
+        }
+      },
+      {
+        "id": "listBr",
+        "type": "browser-read",
+        "name": "打开博主主页·滚动加载文章列表",
+        "position": { "x": 320, "y": 300 },
+        "config": {
+          "url": "{{start.bloggerUrl}}",
+          "mode": "links",
+          "linkPattern": "^https?://www\\.toutiao\\.com/article/\\d+",
+          "maxLinks": "{{start.maxArticles}}",
+          "onError": "fail",
+          "timeoutMs": 180000,
+          "scrollMaxMs": 150000,
+          "delayMsMin": 1200,
+          "delayMsMax": 3200
+        }
+      },
+      {
+        "id": "loop1",
+        "type": "loop",
+        "name": "逐篇采集（严格串行，不并发）",
+        "position": { "x": 580, "y": 300 },
+        "config": {
+          "mode": "foreach",
+          "listExpression": "{{listBr.links}}",
+          "emptyPolicy": "fail",
+          "errorPolicy": "skip"
+        }
+      },
+      {
+        "id": "readBr",
+        "type": "browser-read",
+        "name": "拟人阅读正文（缓慢滚动到底）",
+        "position": { "x": 840, "y": 180 },
+        "config": {
+          "url": "{{loop1.item.url}}",
+          "mode": "article",
+          "maxLength": 150000,
+          "onError": "skip",
+          "timeoutMs": 150000,
+          "scrollMaxMs": 90000,
+          "delayMsMin": 1500,
+          "delayMsMax": 4500
+        }
+      },
+      {
+        "id": "guard1",
+        "type": "code",
+        "name": "有效性检查",
+        "position": { "x": 1100, "y": 180 },
+        "config": {
+          "language": "js",
+          "inputs": [
+            { "key": "markdown", "value": "{{readBr.markdown}}" },
+            { "key": "text", "value": "{{readBr.text}}" },
+            { "key": "title", "value": "{{readBr.title}}" },
+            { "key": "index", "value": "{{loop1.index}}" }
+          ],
+          "code": "const md = String(inputs.markdown || '')\nconst plain = String(inputs.text || '')\nconst body = md.length >= plain.length ? md : plain\nif (body.replace(/\\s+/g, '').length < 200) return { ok: false, title: '', body: '' }\nconst raw = String(inputs.title || '').trim()\nconst title = (raw || '文章' + (Number(inputs.index) + 1)).replace(/[\\\\/:*?\"<>|]/g, ' ').slice(0, 80)\nreturn { ok: true, title, body }"
+        }
+      },
+      {
+        "id": "save1",
+        "type": "save-asset",
+        "name": "存入博主集合（幂等去重）",
+        "position": { "x": 1360, "y": 180 },
+        "config": {
+          "content": "{{guard1.result.body}}",
+          "kind": "text",
+          "category": "document",
+          "subCategory": "博主文章",
+          "name": "{{start.bloggerName}}：{{guard1.result.title}}",
+          "tags": "今日头条,{{start.bloggerName}}",
+          "description": "来源：{{loop1.item.url}}\n采集时间：{{sys.now}}",
+          "enabled": "{{guard1.result.ok}}",
+          "groupName": "{{start.bloggerName}}",
+          "sourceRef": "toutiao-blogger:{{start.bloggerUrl}}",
+          "dedupeUrl": "{{loop1.item.url}}"
+        }
+      },
+      {
+        "id": "summary1",
+        "type": "code",
+        "name": "汇总采集结果",
+        "position": { "x": 1620, "y": 300 },
+        "config": {
+          "language": "js",
+          "inputs": [
+            { "key": "items", "value": "{{loop1.results}}" }
+          ],
+          "code": "const items = Array.isArray(inputs.items) ? inputs.items : []\nconst unwrap = (x) => (x && x.result && typeof x.result === 'object') ? x.result : x\nconst rows = items.map(unwrap).filter(Boolean)\nconst saved = rows.filter((r) => r.assetId && !r.deduped).length\nconst dup = rows.filter((r) => r.deduped).length\nconst failed = rows.filter((r) => !r.assetId).length\nreturn { total: rows.length, saved, dup, failed }"
+        }
+      },
+      {
+        "id": "notify1",
+        "type": "app-notify",
+        "name": "完成通知",
+        "position": { "x": 1880, "y": 300 },
+        "config": {
+          "title": "头条博主文章采集完成",
+          "level": "success",
+          "message": "已为「{{start.bloggerName}}」采集入库 {{summary1.result.saved}} 篇文章（重复跳过 {{summary1.result.dup}} 篇 / 无正文跳过 {{summary1.result.failed}} 篇）。打开「资产中心」→ 业务分类「博主文章」查看集合。"
+        }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 2140, "y": 300 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "listBr", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "listBr", "targetNodeId": "loop1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "loop1", "targetNodeId": "readBr", "kind": "loop-body" },
+      { "id": "e4", "sourceNodeId": "readBr", "targetNodeId": "guard1", "kind": "normal" },
+      { "id": "e5", "sourceNodeId": "guard1", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e6", "sourceNodeId": "save1", "targetNodeId": "loop1", "kind": "loop-back" },
+      { "id": "e7", "sourceNodeId": "loop1", "targetNodeId": "summary1", "kind": "loop-done" },
+      { "id": "e8", "sourceNodeId": "summary1", "targetNodeId": "notify1", "kind": "normal" },
+      { "id": "e9", "sourceNodeId": "notify1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": {
+    "maxDurationMs": 7200000,
+    "maxLoopIterations": 200
+  }
+}

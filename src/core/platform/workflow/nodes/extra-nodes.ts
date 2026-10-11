@@ -15,6 +15,7 @@ import { WORKFLOW_LIMITS } from '@shared/types/workflow.types'
 import { workflowRuntimeParams } from '@shared/utils/workflow-runtime-params'
 import { parse } from 'node-html-parser'
 import { validateOutboundUrl } from '@core/utils/outbound-url'
+import { htmlToMarkdown } from '@core/utils/html-to-markdown'
 import { politeFetch, politePause } from './http-politeness'
 import { readTextWithLimit } from './response-body'
 import { renderPageHtml, BROWSER_RENDER_FALLBACK_MIN_CHARS } from './browser-render'
@@ -262,22 +263,49 @@ function containerText(el: HTMLElement): string {
  */
 export function extractArticleContent(html: string): { title: string; text: string } {
   const fallback = htmlToText(html)
+  const { docTitle, main } = extractArticleMain(html)
+  if (!main) return { title: docTitle, text: fallback.text }
+  const text = containerText(main)
+  if (text.length < 60) return { title: docTitle, text: fallback.text } // 正文太短视为噪声残留
+  const h1 = main.querySelector('h1')
+  const h1Text = (h1?.textContent ?? '').trim()
+  return { title: h1Text || docTitle, text }
+}
+
+/**
+ * 去噪 + 文本密度选正文容器（extractArticleContent / extractArticleMarkdown 共用）：
+ * 一次解析一遍遍历，两个口径（纯文本 / markdown）共享同一主内容判定。
+ */
+function extractArticleMain(html: string): { docTitle: string; main: HTMLElement | null } {
   const docTitle = extractDocumentTitle(html) // og:title > <title>
   try {
     const root = parse(html)
     for (const tag of ARTICLE_NOISE_TAGS) {
       for (const el of root.querySelectorAll(tag)) el.remove()
     }
-    const main = pickMainContent(root)
-    if (!main) return { title: docTitle, text: fallback.text }
-    const text = containerText(main)
-    if (text.length < 60) return { title: docTitle, text: fallback.text } // 正文太短视为噪声残留
-    const h1 = main.querySelector('h1')
-    const h1Text = (h1?.textContent ?? '').trim()
-    return { title: h1Text || docTitle, text }
+    return { docTitle, main: pickMainContent(root) }
   } catch {
-    return { title: docTitle, text: fallback.text }
+    return { docTitle, main: null }
   }
+}
+
+/**
+ * 正文容器 → Markdown（browser-read 拟人阅读产物）：
+ * 与 extractArticleContent 同一套去噪 + 文本密度选容器，但保留结构
+ * （标题/段落/列表/图片/引用）转 markdown，供资产中心存可读正文。
+ * 无正文容器或容器过短 → 整页 markdown 兜底。
+ */
+export function extractArticleMarkdown(html: string, baseUrl?: string): { title: string; markdown: string } {
+  const { docTitle, main } = extractArticleMain(html)
+  if (main) {
+    const md = htmlToMarkdown((main as unknown as { outerHTML: string }).outerHTML ?? main.toString(), baseUrl)
+    if (md.replace(/\s+/g, '').length >= 60) {
+      const h1 = main.querySelector('h1')
+      const h1Text = (h1?.textContent ?? '').trim()
+      return { title: h1Text || docTitle, markdown: md }
+    }
+  }
+  return { title: docTitle, markdown: htmlToMarkdown(html, baseUrl) }
 }
 
 /**

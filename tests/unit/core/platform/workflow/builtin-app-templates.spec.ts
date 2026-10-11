@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { validateGraph } from '@core/platform/workflow/engine/graph-validator'
+import { BUILTIN_APPS } from '@core/database/migrations/create-builtin-apps'
 import { NODE_TYPE_CATALOG_MAP } from '@shared/types/workflow-node-catalog'
 import { previewCronExpression } from '@core/platform/workflow/trigger/workflow-trigger-scheduler.service'
 import type { WorkflowGraph, WorkflowTrigger } from '@shared/types/workflow.types'
@@ -21,9 +22,14 @@ const templates = files.map(f => {
 })
 
 describe('内置应用模板库（随包 JSON 自动发现）', () => {
-  it(`找到 ${files.length} 份内置模板`, () => {
-    // 2026-10-08：26 份（+app-data-demo 数据表演范，应用数据层 P1 验收）
-    expect(files.length).toBe(26)
+  it(`找到 ${files.length} 份内置模板（清单逐一对得上目录）`, () => {
+    // 不变式（2026-10-11 起）：BUILTIN_APPS 清单的每份模板都必须在目录中且文件名唯一——
+    // 期望数量从清单派生，新增模板只改 JSON + 清单各一处，本测试自动跟随，不再手改计数。
+    // 目录允许存在「停放模板」（在目录但未登记清单，如 podcast-video / daily-hot-topic-video
+    // 两个未激活功能的半成品）——它们不播种、不进应用列表，由结构校验用例单独把关。
+    expect(files.length).toBeGreaterThanOrEqual(BUILTIN_APPS.length)
+    for (const e of BUILTIN_APPS) expect(files, e.file).toContain(e.file)
+    expect(new Set(files).size).toBe(files.length)
   })
 
   it('全部为合法导出格式', () => {

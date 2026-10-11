@@ -51,6 +51,8 @@ import diaryWeeklyReview from './builtin-apps/diary-weekly-review.json'
 import appDataDemo from './builtin-apps/app-data-demo.json'
 // 大V博主蒸馏（2026-10-09：逐篇抓文存资产→LLM判类→skill-distill 节点蒸馏成技能包，技能生产管线）
 import bloggerDistill from './builtin-apps/blogger-distill.json'
+// 头条博主文章采集（2026-10-11：browser-read 拟人阅读——滚动加载博主主页列表→逐篇串行滚动到底取正文→存资产集合）
+import toutiaoBloggerCollect from './builtin-apps/toutiao-blogger-collect.json'
 
 /** 内置工作流 id 前缀（固定，幂等查重依据） */
 const BUILTIN_DEF_PREFIX = 'builtin_def_'
@@ -105,6 +107,8 @@ export const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; ic
   { file: 'app-data-demo.json', raw: appDataDemo, appId: `${BUILTIN_APP_PREFIX}app_data_demo`, icon: '🗄️', name: '数据表演示·增量记录', description: '表单录入→应用数据表 upsert 增量（同链接=更新）→数据页签浏览/导出——非一次性应用的最小闭环示范', category: '办公效率', tags: ['数据表', '示范'] },
   // 大V博主蒸馏（2026-10-09 技能蒸馏工作流：逐篇抓文→存资产→判类→蒸馏成技能包）
   { file: 'blogger-distill.json', raw: bloggerDistill, appId: `${BUILTIN_APP_PREFIX}blogger_distill`, icon: '⚗️', name: '大V博主蒸馏', description: '博主名+文章链接列表 → 逐篇抓取正文并存资产中心 → LLM 判定文章类别（时政/财经/科普/历史/文学/哲学…）→ 技能蒸馏节点把全部文章蒸馏成一个技能包（两遍流水线+审计修复）落盘技能库', category: '学习', tags: ['蒸馏', '技能库', '博主'] },
+  // 头条博主文章采集（2026-10-11 用户确认开工：browser-read 拟人阅读采集管线——滚动加载列表→逐篇串行滚动到底→存资产集合，幂等去重）
+  { file: 'toutiao-blogger-collect.json', raw: toutiaoBloggerCollect, appId: `${BUILTIN_APP_PREFIX}toutiao_blogger_collect`, icon: '📥', name: '头条博主文章采集', description: '头条博主主页链接 → 浏览器拟人阅读：随机步长滚动加载文章列表（加载够了即收）→ 逐篇串行打开文章、模拟真人缓慢滚动到底部 → 正文 markdown 存资产中心，同一博主归入同一资产集合（跨运行合并、按原文链接幂等去重，重跑只补新文章）', category: '新闻资讯', tags: ['头条', '博主', '采集'] },
 ]
 
 /** 默认模板资产（user_id=NULL，可复制修改） */

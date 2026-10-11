@@ -258,7 +258,10 @@ export interface SaveAssetInput {
   /** 内容来源（四种形态按 kind 判别） */
   content: { kind: 'file'; path: string } | { kind: 'url'; url: string } | { kind: 'text'; text: string } | { kind: 'json'; json: string }
   /**
-   * 仅 kind=file 时使用：把源链接写入 url 列（如网页收藏存 sourceUrl，供精确幂等查重）；
+   * 把源链接写入 url 列（精确幂等查重 / 来源溯源）：
+   * - file 型：网页收藏存 sourceUrl 等场景
+   * - text/json 型：采集类工作流携带原文链接（save-asset 节点 dedupeUrl 透传，
+   *   配合 AssetService.findAssetByUrl 做跨分类幂等）
    * url 型资产自动使用 content.url，无需本字段。
    */
   url?: string

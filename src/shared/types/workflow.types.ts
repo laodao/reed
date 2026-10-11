@@ -91,6 +91,8 @@ export type WorkflowNodeType =
   | 'template-transform'
   | 'parameter-extractor'
   | 'web-extract'
+  // 浏览器拟人阅读（隐藏窗口模拟真人滚动到底再取正文/链接：头条等 JS 重站点与懒加载列表）
+  | 'browser-read'
   | 'kb-qa'
   | 'report'
   | 'report-image'
@@ -1174,6 +1176,7 @@ export const WORKFLOW_NODE_TYPES = {
   'template-transform': 'template-transform',
   'parameter-extractor': 'parameter-extractor',
   'web-extract': 'web-extract',
+  'browser-read': 'browser-read',
   'kb-qa': 'kb-qa',
   'oas-tool': 'oas-tool',
   'report': 'report',

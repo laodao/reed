@@ -621,6 +621,38 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     { key: 'hostConcurrency', label: '同站并发', type: 'number', group: '爬取礼貌', min: 1, max: 10, help: '同一网站最大并发（默认 1=单线程）' },
   ],
 
+  'browser-read': [
+    T('url', '页面地址', { templateHint: true, placeholder: 'https://www.toutiao.com/… 或 {{loop.item.url}}' }),
+    {
+      key: 'mode', label: '阅读目标', type: 'select',
+      options: [
+        { label: '文章阅读（滚动到底，提取正文 markdown）', value: 'article' },
+        { label: '链接采集（滚动加载列表，提取页面链接）', value: 'links' },
+      ],
+      help: '文章 = 提取正文 markdown；链接 = 采集页面链接（博主主页/专栏列表页，配合循环节点逐篇阅读）',
+    },
+    { key: 'maxLength', label: '正文最大长度', type: 'number', group: '参数', help: '文章模式截断（默认 150000）' },
+    T('linkPattern', '链接过滤正则', {
+      group: '参数',
+      placeholder: '^https://www\\.toutiao\\.com/article/\\d+',
+      help: 'links 模式：只保留 URL 匹配该正则的链接（同时充当"加载够了"判定）；留空 = 保留全部 http(s) 链接',
+    }),
+    { key: 'maxLinks', label: '链接数量上限', type: 'number', group: '参数', help: 'links 模式最多采集的链接数；滚动中正则命中数达到该值即提前收工（默认 50）' },
+    {
+      key: 'onError', label: '失败策略', type: 'select', group: '参数',
+      options: [
+        { label: '失败（节点报错，可走 fail 边）', value: 'fail' },
+        { label: '跳过（输出空结果，适合批量采集）', value: 'skip' },
+      ],
+    },
+    { key: 'timeoutMs', label: '总超时（毫秒）', type: 'number', group: '滚动节奏', help: '覆盖 加载+滚动 全程（默认 120000，上限 300000）' },
+    { key: 'scrollMaxMs', label: '滚动预算（毫秒）', type: 'number', group: '滚动节奏', help: '持续滚动最长时间（默认 90000；到底/加载够了会提前收工）' },
+    { key: 'pauseMsMin', label: '步间停顿下限（毫秒）', type: 'number', group: '滚动节奏', help: '滚动步之间的最小等待（默认 800）' },
+    { key: 'pauseMsMax', label: '步间停顿上限（毫秒）', type: 'number', group: '滚动节奏', help: '滚动步之间的最大等待（默认 2600）' },
+    { key: 'delayMsMin', label: '随机间隔下限（毫秒）', type: 'number', group: '爬取礼貌', help: '打开页面前随机等待（默认 800）' },
+    { key: 'delayMsMax', label: '随机间隔上限（毫秒）', type: 'number', group: '爬取礼貌', help: '打开页面前随机等待（默认 2500）' },
+  ],
+
   'crawl-news': [
     { key: 'sourceIds', label: '信息来源（多选）', type: 'select-dynamic', source: 'infoSources', multi: true, help: '从「设置 → 信息来源」管理的来源库中多选（含各来源类别）；与分组/自定义 URL 合并去重' },
     { key: 'topicId', label: '来源分组', type: 'select-dynamic', source: 'infoSourceTopics', help: '选择信息来源分组即整组采集（如内置新闻来源的「人工智能」分组）' },
@@ -799,6 +831,16 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
       defaultValue: true,
     }),
     T('description', '描述', { group: '其他' }),
+    T('sourceRef', '归组来源引用（跨运行合并集合）', {
+      group: '其他',
+      placeholder: 'toutiao-blogger:{{start.bloggerUrl}}',
+      help: '组默认按「运行」隔离（每次运行各建同名组）；填一个稳定值（如含博主主页链接）后，多次运行的同名组自动并入同一集合；留空 = 当前运行 ID',
+    }),
+    T('dedupeUrl', '幂等去重链接', {
+      group: '其他',
+      placeholder: '{{loop.item.url}}',
+      help: '填原文网页链接：资产库已存在同链接资产时跳过保存（输出 deduped=true），支撑重跑/增量采集不产生重复资产',
+    }),
   ],
   'collect-webpage': [
     T('url', '网页 URL', {
