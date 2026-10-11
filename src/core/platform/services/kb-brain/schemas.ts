@@ -218,6 +218,20 @@ export function normalizeAtomizeRaw(data: unknown): unknown {
       return item
     })
   }
+  // events 坏条目剔除（真机凡人修仙传实证：模型输出漂移——events 缺
+  // fromQuote/toQuote/evidence 必填键。events 是可选原料轨，坏条目剔除不毁整章，
+  // 与 atoms/scenes 同一策略；全缺时输出空数组照常消化）
+  if (Array.isArray(out.events)) {
+    out.events = (out.events as Array<unknown>).filter((ev) => {
+      if (typeof ev !== 'object' || ev === null) return false
+      const e = ev as Record<string, unknown>
+      return (
+        typeof e.fromQuote === 'string' && (e.fromQuote as string).trim().length > 0 &&
+        typeof e.toQuote === 'string' && (e.toQuote as string).trim().length > 0 &&
+        typeof e.evidence === 'string' && (e.evidence as string).trim().length > 0
+      )
+    })
+  }
   // mentions 字符串数组 → 对象数组（模型常把类型省略成纯名字列表）
   if (Array.isArray(out.mentions)) {
     out.mentions = (out.mentions as Array<unknown>)

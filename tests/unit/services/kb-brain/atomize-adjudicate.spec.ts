@@ -252,6 +252,29 @@ describe('normalizeAtomizeRaw（模型字段别名归一）', () => {
   })
 })
 
+describe('events 坏条目剔除（真机凡人修仙传回归）', () => {
+  it('events 缺必填键 → 剔除坏条目，好条目保留，不炸整章', () => {
+    const out = validateAtomizeOutput({
+      atoms: [{ statement: 's', type: 'fact', quote: 'q' }],
+      events: [
+        { from: 'a', to: 'b' },
+        { fromQuote: 'a', toQuote: 'b', evidence: 'e' },
+        { fromQuote: '', toQuote: 'b', evidence: 'e' },
+        'junk',
+      ],
+    })
+    expect(out.events).toEqual([{ fromQuote: 'a', toQuote: 'b', evidence: 'e' }])
+  })
+
+  it('events 全坏 → 空数组照常消化', () => {
+    const out = validateAtomizeOutput({
+      atoms: [{ statement: 's', type: 'fact', quote: 'q' }],
+      events: [{ from: 'a', to: 'b' }],
+    })
+    expect(out.events).toEqual([])
+  })
+})
+
 describe('normalizeAdjudicateRaw（裁决缺键/别名归一——真机修）', () => {
   const bounds = { newCount: 3, oldCount: 2 }
 
