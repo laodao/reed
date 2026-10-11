@@ -114,6 +114,7 @@ interface NoteRow {
   description: string
   body: string
   structureStages: string | null
+  tags?: string | null
 }
 interface GraphNode {
   id: string
@@ -131,6 +132,7 @@ interface GraphEdge {
 interface BrainClient {
   listNotes(p: { kbId: string; status: string; page: number; pageSize: number }): Promise<{ success: boolean; data?: { rows: NoteRow[] }; error?: string }>
   graphData(p: { kbId: string }): Promise<{ success: boolean; data?: { nodes: GraphNode[]; edges: GraphEdge[] }; error?: string }>
+  healthCheck(p: { kbId: string }): Promise<{ success: boolean; data?: { coverage?: { docsList?: Array<{ id: string; name: string }> } }; error?: string }>
 }
 
 const tab = ref<'systems' | 'structure' | 'methods' | 'archives'>('systems')
@@ -287,15 +289,27 @@ interface DocCard {
   stages: Stage[]
 }
 
-const toCard = (n: NoteRow): DocCard => ({
-  id: n.id,
-  type: n.type,
-  kindLabel: KIND_LABELS[n.type] ?? n.type,
-  tagType: TAG_TYPES[n.type] ?? 'info',
-  title: n.title,
-  bodyHtml: renderMarkdown(n.body ?? ''),
-  stages: parseStages(n.structureStages),
-})
+/** 展示标题清洗：去下载站后缀噪音与扩展名（卡片标题可读性） */
+function cleanTitle(title: string): string {
+  return title.replace(/\s*\((z-library|1lib|z-lib)[^)]*\)/gi, '').replace(/\.(epub|txt|pdf|mobi|azw3)\b/gi, '')
+}
+const docNames = new Map<string, string>()
+/** 正文里的 8 位文档 id 前缀 → 书名（变体登记等场景） */
+function humanizeDocRefs(html: string): string {
+  return html.replace(/([0-9a-f]{8})(?=[:：])/g, (hex) => docNames.get(hex) ?? hex)
+}
+const toCard = (n: NoteRow): DocCard => {
+  const isSysTree = n.type === 'structure-map' && (n.title.startsWith('设定体系：') || JSON.parse(n.tags || '[]').includes('system-aggregate') === true)
+  return {
+    id: n.id,
+    type: n.type,
+    kindLabel: isSysTree ? '设定体系树' : KIND_LABELS[n.type] ?? n.type,
+    tagType: TAG_TYPES[n.type] ?? 'info',
+    title: cleanTitle(n.title),
+    bodyHtml: humanizeDocRefs(renderMarkdown(n.body ?? '')),
+    stages: parseStages(n.structureStages),
+  }
+}
 
 function parseStages(raw: string | null): Stage[] {
   if (!raw) return []
@@ -335,10 +349,17 @@ async function load(): Promise<void> {
   loading.value = true
   try {
     const api = (window as unknown as { electronAPI: { knowledgeBase: { brain: BrainClient } } }).electronAPI.knowledgeBase.brain
-    const [notesRes, graphRes] = await Promise.all([
+    const [notesRes, graphRes, healthRes] = await Promise.all([
       api.listNotes({ kbId: props.kbId, status: 'published', page: 1, pageSize: 100 }),
       api.graphData({ kbId: props.kbId }),
+      api.healthCheck({ kbId: props.kbId }).catch(() => null),
     ])
+    const healthData = (healthRes && 'data' in healthRes ? healthRes.data : null) ?? null
+    if (healthData?.coverage?.docsList) {
+      for (const d of healthData.coverage.docsList) {
+        docNames.set(d.id.slice(0, 8), cleanTitle(d.name).slice(0, 24))
+      }
+    }
     if (notesRes.success && notesRes.data) {
       notes.value = notesRes.data.rows
     }
@@ -475,6 +496,28 @@ defineExpose({ reload: load })
   padding: 1px 5px;
   border-radius: 4px;
   font-size: 12px;
+}
+.kb-doc-body :deep(table) {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12.5px;
+  margin: 8px 0;
+  display: block;
+  overflow-x: auto;
+}
+.kb-doc-body :deep(th),
+.kb-doc-body :deep(td) {
+  border: 1px solid var(--el-border-color-lighter);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+  min-width: 120px;
+  white-space: normal;
+}
+.kb-doc-body :deep(th) {
+  background: var(--el-fill-color-light);
+  font-weight: 600;
+  white-space: nowrap;
 }
 .kb-method-filter {
   margin-bottom: 10px;

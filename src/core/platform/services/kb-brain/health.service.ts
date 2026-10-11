@@ -23,6 +23,8 @@ export interface KbBrainHealthReport {
   profile: { contentType: string; detected: boolean }
   coverage: {
     documents: number
+    /** v3 M4：文档 id→名映射 */
+    docsList: Array<{ id: string; name: string }>
     documentsPending: number
     documentsFailed: number
     chaptersTotal: number
@@ -140,6 +142,8 @@ export class KbBrainHealthService {
         profile: { contentType, detected: !!contentType },
         coverage: {
           documents: docs.length,
+          /** v3 M4：id→名映射（知识浏览器把变体登记里的文档 id 前缀人化为书名） */
+          docsList: docs.map((d) => ({ id: d.id, name: d.name })),
           documentsPending,
           documentsFailed,
           chaptersTotal,

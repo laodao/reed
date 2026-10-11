@@ -10,15 +10,12 @@ import type { ParsedSystemTree } from './system-aggregate.service'
 export function renderSystemTree(sys: ParsedSystemTree): string {
   const lines: string[] = [`> 体系「${sys.systemName}」· ${sys.nodes.length} 层 · 归纳置信 ${sys.confidence.toFixed(2)}（宁缺勿造：证据不足的层留空缺，不臆测）`, '']
   const ordered = [...sys.nodes].sort((a, b) => a.order - b.order)
-  for (let i = ordered.length - 1; i >= 0; i--) {
-    const n = ordered[i]!
-    const indent = '  '.repeat(Math.min(i, 6))
-    lines.push(`${indent}- **${n.name}**（第 ${n.order} 层）`)
-    const attrs = Object.entries(n.attrs)
-    if (attrs.length > 0) {
-      lines.push(`${indent}  - ${attrs.map(([k, v]) => `${k}：${v}`).join('；')}`)
-    }
-    if (n.evidenceQuote) lines.push(`${indent}  - 证据：「${n.evidenceQuote}」`)
+  for (const n of ordered) {
+    // 缩进归零：≥4 空格缩进会被 markdown 当代码块（真机实证：星号原样显示）
+    lines.push(`**${n.name}**（第 ${n.order} 层）`)
+    for (const [k, v] of Object.entries(n.attrs)) lines.push(`- ${k}：${v}`)
+    if (n.evidenceQuote) lines.push(`- 证据：「${n.evidenceQuote}」`)
   }
   return lines.join('\n')
 }
+
