@@ -1,9 +1,19 @@
 <template>
   <div class="kb-browser">
     <el-tabs v-model="tab" type="border-card" class="kb-browser-tabs">
-      <!-- 世界体系：层级树（attrs 属性槽） -->
+      <!-- 世界体系：先概况后细节（v3 用户核心反馈：先盘点全局，再细化） -->
       <el-tab-pane :label="`世界体系（${systems.length}）`" name="systems">
         <el-empty v-if="systems.length === 0 && !loading" description="还没有体系树——等体系汇聚产线跑完（设定层论断 ≥12 条后自动归纳）" />
+        <!-- 全局概况条：这个世界有哪些体系，一眼看全 -->
+        <div v-if="systems.length > 0" class="kb-systems-overview">
+          <div class="kb-overview-title">🌍 世界观体系盘点（{{ systems.length }} 个体系 · {{ totalElements }} 个元素）</div>
+          <div class="kb-overview-grid">
+            <button v-for="sys in systems" :key="sys.name" type="button" class="kb-overview-item" @click="focusSystem(sys.name)">
+              <b>{{ sys.name }}</b>
+              <span class="kb-overview-meta">{{ sys.kindLabel }} · {{ sys.nodeCount }} 成员</span>
+            </button>
+          </div>
+        </div>
         <el-collapse v-model="openSystems">
           <el-collapse-item v-for="sys in systems" :key="sys.name" :name="sys.name">
             <template #title>
@@ -201,6 +211,8 @@ interface SysTreeNode {
 }
 interface SystemGroup {
   name: string
+  kind: string
+  kindLabel: string
   nodeCount: number
   edgeCount: number
   tree: SysTreeNode[]
@@ -314,10 +326,30 @@ const systems = computed<SystemGroup[]>(() => {
     groups.set(key, g)
   }
   return [...groups]
-    .map(([name, g]) => ({ name, nodeCount: g.nodeCount, edgeCount: g.edges, tree: g.roots.sort((a, b) => a.name.localeCompare(b.name, 'zh')) }))
+    .map(([name, g]) => {
+      const kind = kindOf.get(g.roots[0]!.id) ?? ''
+      return {
+        name, kind, kindLabel: KIND_LABEL_UI[kind] ?? kind,
+        nodeCount: g.nodeCount, edgeCount: g.edges,
+        tree: [...g.roots].sort((a, b) => a.name.localeCompare(b.name, 'zh')),
+      }
+    })
     .filter((g) => g.nodeCount >= 2)
     .sort((a, b) => b.nodeCount - a.nodeCount)
 })
+
+const KIND_LABEL_UI: Record<string, string> = {
+  ladder: '等级阶梯',
+  tree: '层级结构',
+  catalog: '成员清单',
+  network: '关系网络',
+}
+
+const totalElements = computed(() => systems.value.reduce((acc, s) => acc + s.nodeCount, 0))
+
+function focusSystem(name: string): void {
+  if (!openSystems.value.includes(name)) openSystems.value.push(name)
+}
 
 function countTreeEdges(roots: SysTreeNode[]): number {
   return roots.reduce((acc, r) => acc + r.children.length + countTreeEdges(r.children), 0)
@@ -463,6 +495,44 @@ defineExpose({ reload: load })
 .kb-browser-tabs :deep(.el-tabs__header) {
   margin-bottom: 0;
   background: var(--el-fill-color-light);
+}
+.kb-systems-overview {
+  margin-bottom: 14px;
+  padding: 12px 16px;
+  background: var(--el-fill-color-light);
+  border-radius: 8px;
+}
+.kb-overview-title {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+.kb-overview-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.kb-overview-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 14px;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+}
+.kb-overview-item:hover {
+  border-color: var(--el-color-primary-light-5);
+}
+.kb-overview-item b {
+  font-size: 13px;
+}
+.kb-overview-meta {
+  color: var(--el-text-color-secondary);
+  font-size: 11px;
 }
 .kb-sys-title {
   font-weight: 600;
