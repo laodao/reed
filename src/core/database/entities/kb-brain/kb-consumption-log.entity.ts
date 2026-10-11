@@ -41,6 +41,6 @@ export class KbConsumptionLogEntity {
   @Column({ name: 'pack_chars', type: 'integer', default: 0 })
   packChars!: number
 
-  @Column({ name: 'created_at', type: 'datetime', nullable: true })
+  @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 }

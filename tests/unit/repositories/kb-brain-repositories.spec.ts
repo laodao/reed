@@ -10,6 +10,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { DataSource } from 'typeorm'
 import * as entities from '@core/database/entities'
 import { createKbBrainTables } from '@core/database/migrations/create-kb-brain-tables'
+import { createUnifiedGraphTables } from '@core/database/migrations/create-unified-graph-tables'
 import { KbAtomRepository } from '@core/database/repositories/kb-atom.repository'
 import { KbEntityRepository } from '@core/database/repositories/kb-entity.repository'
 import { KbKnowledgeEdgeRepository } from '@core/database/repositories/kb-knowledge-edge.repository'
@@ -46,6 +47,8 @@ describe('kb-brain repositories', () => {
       created_at datetime, updated_at datetime
     )`)
     await createKbBrainTables(ds)
+    // 语义边仓储已是统一图存储 facade——graph_edges 必须就绪
+    await createUnifiedGraphTables(ds)
     // 与生产迁移链对齐（此前缺 scope/role 列导致实体/论断仓储用例失败）
     const { addKbEntityScope } = await import('@core/database/migrations/add-kb-entity-scope')
     await addKbEntityScope(ds)

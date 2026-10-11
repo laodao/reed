@@ -5,8 +5,10 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { DataSource } from 'typeorm'
 import { createLwGraphTables } from '@core/database/migrations/create-lw-graph-tables'
+import { createUnifiedGraphTables } from '@core/database/migrations/create-unified-graph-tables'
 import { LwEventEntity } from '@core/database/entities/lw-event.entity'
 import { LwGraphEdgeEntity } from '@core/database/entities/lw-graph-edge.entity'
+import { GraphEdgeEntity } from '@core/database/entities/graph/graph-edge.entity'
 import { LwEventRepository } from '@core/database/repositories/lw-event.repository'
 import { LwGraphEdgeRepository } from '@core/database/repositories/lw-graph-edge.repository'
 import { runWithUserAsync } from '@core/context/user-context'
@@ -15,11 +17,13 @@ async function buildDs(): Promise<DataSource> {
   const ds = new DataSource({
     type: 'better-sqlite3',
     database: ':memory:',
-    entities: [LwEventEntity, LwGraphEdgeEntity],
+    entities: [LwEventEntity, LwGraphEdgeEntity, GraphEdgeEntity],
     synchronize: false,
   })
   await ds.initialize()
   await createLwGraphTables(ds)
+  // 图谱仓储已是统一图存储 facade——graph_edges 必须就绪
+  await createUnifiedGraphTables(ds)
   return ds
 }
 

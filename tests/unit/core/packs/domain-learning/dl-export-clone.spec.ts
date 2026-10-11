@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest'
 import { DataSource } from 'typeorm'
 import { createDomainLearningTables } from '@core/database/migrations/create-domain-learning-tables'
+import { createUnifiedGraphTables } from '@core/database/migrations/create-unified-graph-tables'
 import { DlCardRepository } from '@core/database/repositories/dl-card.repository'
 import { DlConceptRepository } from '@core/database/repositories/dl-concept.repository'
 import { DlProjectRepository } from '@core/database/repositories/dl-project.repository'
@@ -26,6 +27,8 @@ async function setup() {
     () => import('@core/database/entities/domain-learning/dl-doc.entity'),
     () => import('@core/database/entities/domain-learning/dl-question.entity'),
     () => import('@core/database/entities/domain-learning/dl-concept-log.entity'),
+    // 关系仓储已是统一图存储 facade——graph_edges 实体必须注册
+    () => import('@core/database/entities/graph/graph-edge.entity'),
   ]) {
     const mod = await imp()
     entities.push(Object.values(mod)[0] as new () => object)
@@ -33,6 +36,7 @@ async function setup() {
   ds = new DataSource({ type: 'better-sqlite3', database: ':memory:', entities, synchronize: false })
   await ds.initialize()
   await createDomainLearningTables(ds)
+  await createUnifiedGraphTables(ds)
 
   const projects = new DlProjectRepository(ds)
   const concepts = new DlConceptRepository(ds)

@@ -13,6 +13,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { DataSource } from 'typeorm'
 import * as entities from '@core/database/entities'
 import { createLwLibraryTables } from '@core/database/migrations/create-lw-library-tables'
+import { createUnifiedGraphTables } from '@core/database/migrations/create-unified-graph-tables'
 import { registerCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { LwWorldRepository } from '@core/database/repositories/lw-world.repository'
 import { LwWorldKindRepository } from '@core/database/repositories/lw-world-kind.repository'
@@ -43,6 +44,8 @@ beforeAll(async () => {
   })
   await ds.initialize()
   await createLwLibraryTables(ds)
+  // IP/世界观边仓储已是统一图存储 facade——graph_edges 必须就绪
+  await createUnifiedGraphTables(ds)
   // 项目/角色/地点等既有表（测试只需要最小列集——用 synchronize=false 手工建）
   await ds.query(`CREATE TABLE lw_projects (
     id TEXT PRIMARY KEY, user_id TEXT, name TEXT NOT NULL, type TEXT DEFAULT 'story',

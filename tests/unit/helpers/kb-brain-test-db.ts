@@ -15,6 +15,7 @@ import { createKbBrainDimensions } from '@core/database/migrations/create-kb-bra
 import { addKbBrainV3Structures } from '@core/database/migrations/add-kb-brain-v3-structures'
 import { createKbConsumptionLog } from '@core/database/migrations/create-kb-consumption-log'
 import { createKbBrainP4Tables } from '@core/database/migrations/create-kb-brain-p4-tables'
+import { createUnifiedGraphTables } from '@core/database/migrations/create-unified-graph-tables'
 
 export async function createKbBrainTestTables(ds: DataSource): Promise<void> {
   // 生产语义：ALS 默认用户（Electron 启动即注入）——scoped 写入/查询都按此用户
@@ -44,6 +45,8 @@ export async function createKbBrainTestTables(ds: DataSource): Promise<void> {
   await addKbBrainV3Structures(ds)
   await createKbConsumptionLog(ds)
   await createKbBrainP4Tables(ds)
+  // 语义边仓储已是统一图存储 facade——graph_edges 必须就绪
+  await createUnifiedGraphTables(ds)
   await createKbChapters(ds)
   // 存量表：切片（大脑检索的 docLen/结果解析需要）
   await ds.query(`CREATE TABLE IF NOT EXISTS kb_chunks (
