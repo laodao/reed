@@ -65,6 +65,10 @@ export class KbEntityEntity {
   @Column({ name: 'scope', type: 'varchar', default: 'book' })
   scope!: KbEntityScope
 
+  /** 体系树属性槽（v3 M2，JSON：境界节点的 {order,能力,寿命,突破条件} 等；普通实体为空） */
+  @Column({ name: 'attrs', type: 'varchar', nullable: true })
+  attrs!: string | null
+
   @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null
 

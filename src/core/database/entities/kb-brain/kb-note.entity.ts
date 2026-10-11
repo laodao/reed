@@ -28,6 +28,9 @@ export type KbNoteType =
   | 'principle'
   | 'craft-case'
   | 'genre-insight'
+  // v3 M2 阶段表（结构知识：有序阶段+功能标注，渲染为文档/存储为结构）
+  | 'structure-map'
+  | 'character-arc'
   // 滚动阅读产线（P1：全书工作记忆，按文档一份，随批次演进）
   | 'reading-memory'
   // P3：终审复核报告 / 全书综述文章（按文档一份）

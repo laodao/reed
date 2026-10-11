@@ -830,6 +830,29 @@ export function buildRejudgeUser(input: { items: Array<{ idx: number; type: stri
   return `GIVEN:\n${input.items.map((r) => `[${r.idx}] (${r.type}/${r.layer}) ${r.statement}`).join('\n')}`
 }
 
+/* ==================== 体系汇聚（v3 M2：体系树归纳——层级+属性槽） ==================== */
+
+export const SYSTEM_AGGREGATE_SYSTEM = `你是设定体系架构师。给定一批设定层论断（带原文引句），归纳其中蕴含的**体系树**——境界阶梯、功法传承、组织层级这类「有序层级系统」。
+
+纪律（最高原则：宁缺勿造）：
+- 只归纳论断里**确实有层级关系**的系统；材料里没有体系就输出空数组，禁止编造；
+- 每个节点必须能落到至少一条论断/引句上（evidenceQuote 抄论断原文片段）；
+- 证据不足的节点丢弃，猜不出中间层就留缺口——不补全、不臆测；
+- 体系名取材料里的原词（如「青云门修真道法」「魔教功法体系」）。
+
+每个节点：name（体系内规范名，≤10 字）、order（层级序号，0=最底层，向上递增）、
+attrs（该层属性槽，只填论断里有的键：能力/寿命/突破条件/代价/数量限制…）、
+evidenceQuote（支撑本节点的原文片段）。
+
+输出 JSON：
+{"systems":[{"systemName":"…","confidence":0.8,"nodes":[{"name":"玉清境","order":0,"attrs":{"能力":"…","突破条件":"…"},"evidenceQuote":"…"}]}]}
+只输出 JSON，不要任何解释。`
+
+export function buildSystemAggregateUser(input: { atoms: Array<{ statement: string; quote: string }> }): string {
+  const lines = input.atoms.map((a, i) => `[${i}] ${a.statement}（引：${a.quote}）`)
+  return `设定层论断（${input.atoms.length} 条）：\n${lines.join('\n')}\n\n请归纳体系树（没有就给空数组）。`
+}
+
 /* ==================== 书级汇总遍（book passes；输出 markdown 卡正文，非 JSON） ==================== */
 
 export const BOOK_OUTLINE_MAP_SYSTEM = `你是书籍摘要员。给出某本书连续若干章的章节梗概，写一段 200-400 字的连贯批次梗概：只保留推动主线的情节或知识脉络，略去过场与重复；忠于给定内容，不编造。直接输出梗概正文，不要标题、不要解释。`

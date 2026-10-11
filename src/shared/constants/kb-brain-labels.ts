@@ -56,6 +56,8 @@ export const KB_NOTE_TYPE_LABELS: Record<string, string> = {
   'craft-case': '案例拆解',
   'genre-insight': '品类认知',
   'anti-pattern': '反面模式',
+  'structure-map': '结构图谱',
+  'character-arc': '角色弧线',
   // 滚动阅读产线（P1）
   'reading-memory': '阅读记忆',
   'reading-review': '终审复核',

@@ -154,6 +154,10 @@ function makeDeps(overrides: Partial<KbBrainAutomationDeps> = {}) {
       isRunning: () => false,
       propose: async () => ({ seeded: 0, proposed: 2, skipped: false }),
     },
+    systemAggregate: {
+      isRunning: () => true,
+      run: async () => ({ systemsBuilt: 0, nodesCreated: 0, edgesCreated: 0, notesCreated: 0 }),
+    },
     bookPasses: {
       isRunningKb: () => false,
       setModelOverride: () => calls.push('bookpass:model'),

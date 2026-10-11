@@ -29,7 +29,7 @@ describe('parseBrainConfig', () => {
     expect(cfg!.digestion.enabled).toBe(true)
     expect(cfg!.patterns.plotEnabled).toBe(false) // 情节卡缺省关（高风险）
     expect(cfg!.patterns.settingEnabled).toBe(true)
-    expect(cfg!.patterns.characterEnabled).toBe(false) // 人物原型卡缺省关（G4）
+    expect(cfg!.patterns.characterEnabled).toBe(true) // v3 起人物产线缺省开（存量库显式 false 仍尊重）
     expect(cfg!.lenses.enabledLensNoteIds).toEqual([]) // 视角遍缺省无启用视角
     expect(cfg!.autoApproveThreshold).toBe(0.8)
     expect(cfg!.learning.enabled).toBe(false)

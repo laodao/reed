@@ -1013,6 +1013,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-kb-brain-dimensions'
     )
     await createKbBrainDimensions(this.dataSource)
+    // 知识大脑 v3 M2：体系树/阶段表载荷（实体 attrs、边章节区间、卡 structure_stages）
+    const { addKbBrainV3Structures } = await import(
+      '@core/database/migrations/add-kb-brain-v3-structures'
+    )
+    await addKbBrainV3Structures(this.dataSource)
     // 知识大脑 v2 P4：质检日志 + 自动化动作日志
     const { createKbBrainP4Tables } = await import(
       '@core/database/migrations/create-kb-brain-p4-tables'

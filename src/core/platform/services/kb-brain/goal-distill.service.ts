@@ -69,7 +69,21 @@ const MAP_SYSTEM =
 const REDUCE_SYSTEM =
   '你是资深图书编辑，擅长把作品素材提炼成可迁移的创作方法论。' +
   '卡必须是方法论而非作品分析：跨书可用、写清何时用/怎么用/何时会失效，禁止复述情节。' +
+  '若素材呈现清晰的**阶段推进结构**（故事线的卷/阶段划分、人物弧线的起点-转变-终点、节奏的循环节拍），' +
+  '额外输出 stages 数组：{"name":"阶段名","position":0-1全书相对位置,"function":"该阶段的功能",' +
+  '"coreConflict":"核心冲突/阻力","turnPoint":"转折/触发","cost":"代价（无则省略）"}——' +
+  '2-6 个阶段、position 单调递增；无法给出阶段结构则省略 stages。' +
   '只输出 JSON，不输出任何其他文字。'
+
+/** 阶段表条目（v3 M2：structure_stages 载荷） */
+interface ReduceStage {
+  name: string
+  position: number
+  function: string
+  coreConflict?: string
+  turnPoint?: string
+  cost?: string
+}
 
 interface MapFragment {
   chapter: string
@@ -328,6 +342,7 @@ export class KbGoalDistillService {
       title: string
       description: string
       body: string
+      stages?: ReduceStage[]
     }
     interface ThemeGroup {
       name: string
@@ -415,6 +430,21 @@ export class KbGoalDistillService {
           if (!parsed?.body || typeof parsed.body !== 'string' || !parsed.body.trim()) {
             throw new Error('缺少 body')
           }
+          // v3 M2 阶段表：合法阶段收编（名称+位置必需，position 单调化交给渲染排序）
+          const stages = Array.isArray(parsed.stages)
+            ? (parsed.stages as unknown[])
+                .map((r) => r as Partial<ReduceStage>)
+                .filter((r) => typeof r.name === 'string' && r.name.trim() && typeof r.position === 'number' && Number.isFinite(r.position))
+                .map((r) => ({
+                  name: r.name!.trim().slice(0, 30),
+                  position: Math.max(0, Math.min(1, r.position!)),
+                  function: typeof r.function === 'string' ? r.function.slice(0, 200) : '',
+                  coreConflict: typeof r.coreConflict === 'string' ? r.coreConflict.slice(0, 200) : undefined,
+                  turnPoint: typeof r.turnPoint === 'string' ? r.turnPoint.slice(0, 200) : undefined,
+                  cost: typeof r.cost === 'string' ? r.cost.slice(0, 200) : undefined
+                }))
+                .slice(0, 8)
+            : []
           card = {
             title:
               (typeof parsed.title === 'string' && parsed.title.trim()) ||
@@ -422,7 +452,8 @@ export class KbGoalDistillService {
             description:
               (typeof parsed.description === 'string' && parsed.description.trim()) ||
               `从本书提炼的「${goal.name}」经验`,
-            body: parsed.body
+            body: parsed.body,
+            stages: stages.length >= 2 ? stages : undefined
           }
           break
         } catch (e) {
@@ -447,16 +478,28 @@ export class KbGoalDistillService {
         skippedDup = true
         continue
       }
+      // v3 M2 阶段表卡：带 ≥2 阶段且目标属结构/人物域 → 专用类型 + structure_stages 载荷，
+      // 其余仍为 synthesis（散文方法论）
+      const gname = goal.name
+      const isStructure = /结构|故事线|主线|情节|节奏|大纲|架构/.test(gname)
+      const isCharacter = /人物|角色|弧线|成长/.test(gname)
+      const typed = card.stages && (isStructure || isCharacter)
+      const noteType = typed ? (isCharacter ? 'character-arc' : 'structure-map') : 'synthesis'
+      const stageBody =
+        typed && card.stages
+          ? renderStagesMarkdown(card.stages) + '\n\n' + card.body
+          : card.body
       await repos.notes.propose(kbId, {
         title: card.title,
         description: card.description,
-        body: card.body,
-        type: 'synthesis',
+        body: stageBody,
+        type: noteType,
         evidence: evidences[proposedCount] ?? '[]',
         origin: 'ai-distill',
         // 目标标记：卡是哪个提炼目标产的——待审箱/经验卡按此显示「来源目标」，
         // 用户不再面对一堆不知类型的 synthesis 碎片卡
-        tags: JSON.stringify([`goal:${goal.id}`, `goal-name:${goal.name}`])
+        tags: JSON.stringify([`goal:${goal.id}`, `goal-name:${goal.name}`]),
+        ...(typed ? { structureStages: JSON.stringify(card.stages) } : {})
       })
       proposedCount++
     }
@@ -474,6 +517,17 @@ export class KbGoalDistillService {
 let singleton: KbGoalDistillService | null = null
 
 /** 共享单例：面板手动提炼与后台自动化共用（running 单飞锁全局一致，互斥不重跑） */
+/** 阶段表 → markdown（position 排序；每阶段功能/冲突/转折/代价一行） */
+export function renderStagesMarkdown(stages: ReduceStage[]): string {
+  const ordered = [...stages].sort((a, b) => a.position - b.position)
+  const lines = ['## 阶段表', '']
+  for (const st of ordered) {
+    const parts = [st.function, st.coreConflict ? `冲突：${st.coreConflict}` : '', st.turnPoint ? `转折：${st.turnPoint}` : '', st.cost ? `代价：${st.cost}` : ''].filter(Boolean)
+    lines.push(`- **${st.name}**（约全书 ${(st.position * 100).toFixed(0)}% 处）——${parts.join('；')}`)
+  }
+  return lines.join('\n')
+}
+
 export function getKbGoalDistillService(): KbGoalDistillService {
   if (!singleton) singleton = new KbGoalDistillService()
   return singleton

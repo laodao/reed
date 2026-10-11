@@ -35,6 +35,7 @@ import {
 import { getKbLayerRelabelService, KbLayerRelabelService } from './layer-relabel.service'
 import { getKbRejudgeService } from './rejudge.service'
 import { getKbDimensionInductService } from './dimension-induct.service'
+import { getKbSystemAggregateService } from './system-aggregate.service'
 import { getKbBookReadingService } from './book-reading.service'
 import { getKbGraphBuildService } from './graph-build.service'
 import { getKbBookReviewService } from './book-review.service'
@@ -59,6 +60,7 @@ const COOLDOWN = {
   relabel: 24 * 3600_000,
   rejudge: 24 * 3600_000,
   dimensionInduct: 7 * 24 * 3600_000,
+  systemAggregate: 7 * 24 * 3600_000,
   /** 四件套（精读/图谱/复核/综述）按文档 7 天一轮——重活在自动化里的最低频档 */
   quartet: 7 * 24 * 3600_000,
   bookPasses: 24 * 3600_000,
@@ -115,6 +117,8 @@ export interface KbBrainAutomationDeps {
   rejudge?: { isRunning(kbId: string): boolean; setModelOverride?(kbId: string, fn: () => { providerConfigId?: string; modelId?: string }): void; run(kbId: string): Promise<{ knowledgeCount: number; evidenceCount: number; junkCount: number; failedBatches: number }> }
   /** 维度归纳（v3 M1；缺省 dimension-induct 单例） */
   dimensionInduct?: { isRunning(kbId: string): boolean; setModelOverride?(kbId: string, fn: () => { providerConfigId?: string; modelId?: string }): void; propose(kbId: string): Promise<{ seeded: number; proposed: number; skipped: boolean; reason?: string }> }
+  /** 体系汇聚（v3 M2；缺省 system-aggregate 单例） */
+  systemAggregate?: { isRunning(kbId: string): boolean; setModelOverride?(kbId: string, fn: () => { providerConfigId?: string; modelId?: string }): void; run(kbId: string): Promise<{ systemsBuilt: number; nodesCreated: number; edgesCreated: number; notesCreated: number }> }
   /** 滚动阅读四件套（v3 M1 #9：精读/图谱/复核/综述；缺省动态 import 各单例） */
   quartet?: {
     isRunning(kbId: string): boolean
@@ -231,6 +235,9 @@ export class KbBrainAutomationService {
   }
   private get dimensionInduct(): NonNullable<KbBrainAutomationDeps['dimensionInduct']> {
     return this.depsDeps.dimensionInduct ?? getKbDimensionInductService()
+  }
+  private get systemAggregate(): NonNullable<KbBrainAutomationDeps['systemAggregate']> {
+    return this.depsDeps.systemAggregate ?? getKbSystemAggregateService()
   }
   private get quartet(): NonNullable<KbBrainAutomationDeps['quartet']> {
     return (
@@ -536,6 +543,20 @@ export class KbBrainAutomationService {
         await this.saveState(kbId, repos.kbs, state)
         if (out.skipped) logger.info(`[kb-brain-auto] kb=${kbId} 维度归纳跳过: ${out.reason ?? ''}`)
         else logger.info(`[kb-brain-auto] kb=${kbId} 维度归纳: 种子 ${out.seeded} / 建议 ${out.proposed}`)
+      })
+    }
+
+    // 2.7 体系汇聚（v3 M2）：设定层论断 → 体系树 + structure-map 卡——7d 冷却；
+    //     材料不足/素材未变服务内部自跳过（台账幂等）
+    if (auto.systemAggregate && !this.systemAggregate.isRunning(kbId) && this.cool(state, 'lastSystemAggregateAt', COOLDOWN.systemAggregate)) {
+      await step('system-aggregate', async () => {
+        this.systemAggregate.setModelOverride?.(kbId, this.modelOverride(cfg))
+        const out = await this.systemAggregate.run(kbId)
+        this.mark(state, 'lastSystemAggregateAt')
+        await this.saveState(kbId, repos.kbs, state)
+        if (out.systemsBuilt > 0 || out.nodesCreated > 0) {
+          logger.info(`[kb-brain-auto] kb=${kbId} 体系汇聚: 树 ${out.systemsBuilt} / 节点 +${out.nodesCreated} / 边 ${out.edgesCreated}`)
+        }
       })
     }
 

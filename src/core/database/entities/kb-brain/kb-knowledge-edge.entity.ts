@@ -24,6 +24,12 @@ export type KbEdgeRelation =
   | 'instance-of'
   /** 伏笔线：source=埋设（承诺），target=回收（兑现）——跨距的作者技法层呼应，与 leads-to 的情节内因果区分 */
   | 'sets-up'
+  /** 体系层级（v3 M2 体系树）：source 是 target 的下层/下位（炼气→筑基方向的 requires 区分依赖） */
+  | 'sublevel-of'
+  /** 体系前置依赖（v3 M2）：突破/解锁 target 需要 source（筑基 requires 炼气圆满） */
+  | 'requires'
+  /** 体系解锁（v3 M2）：达成 source 解锁 target 的能力/权限 */
+  | 'enables'
   /** 实体世界关系（P2 图谱：滚动记忆抽取，source/target 均为 entity） */
   | 'member-of'
   | 'located-in'
@@ -78,6 +84,14 @@ export class KbKnowledgeEdgeEntity {
   /** 0/1，人审后置 1（Tana proposal 模型） */
   @Column({ name: 'verified', type: 'integer', default: 0 })
   verified!: number
+
+  /** 关系生效起始章（v3 M2 章节区间有效性；NULL=未观察起点/始终有效） */
+  @Column({ name: 'valid_from_chapter', type: 'integer', nullable: true })
+  validFromChapter!: number | null
+
+  /** 关系失效章（v3 M2：结盟→反目；NULL=未观察终点/仍然有效） */
+  @Column({ name: 'valid_until_chapter', type: 'integer', nullable: true })
+  validUntilChapter!: number | null
 
   @Column({ name: 'created_at', type: Date, nullable: true })
   createdAt!: Date | null

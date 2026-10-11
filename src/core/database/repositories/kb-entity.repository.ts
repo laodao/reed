@@ -21,6 +21,8 @@ export interface KbEntityRecord {
   targetEntityId: string | null
   /** 作用域（v2 P3；旧行缺省 book） */
   scope: 'book' | 'corpus'
+  /** 体系树属性槽 JSON（v3 M2；普通实体 null） */
+  attrs: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -49,6 +51,7 @@ export class KbEntityRepository extends BaseRepository<KbEntityEntity, KbEntityR
       status: e.status,
       targetEntityId: e.targetEntityId ?? null,
       scope: e.scope === 'corpus' ? 'corpus' : 'book',
+      attrs: e.attrs ?? null,
       createdAt: e.createdAt ?? null,
       updatedAt: e.updatedAt ?? null,
     }
@@ -60,6 +63,16 @@ export class KbEntityRepository extends BaseRepository<KbEntityEntity, KbEntityR
   }
 
   /** 规范名/别名双路查找（仅 active 实体） */
+  /** 体系树属性槽更新（v3 M2：attrs JSON 演进重写） */
+  async updateAttrs(id: string, attrs: string): Promise<boolean> {
+    const row = await this.scoped.findOne({ id } as FindOptionsWhere<KbEntityEntity>)
+    if (!row) return false
+    row.attrs = attrs
+    row.updatedAt = new Date()
+    await this.scoped.save(row)
+    return true
+  }
+
   async findByName(kbId: string, names: string[]): Promise<KbEntityRecord[]> {
     if (names.length === 0) return []
     const rows = await this.scoped.find({

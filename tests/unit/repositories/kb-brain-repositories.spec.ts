@@ -51,6 +51,8 @@ describe('kb-brain repositories', () => {
     await addKbEntityScope(ds)
     const { addKbAtomRole } = await import('@core/database/migrations/add-kb-atom-role')
     await addKbAtomRole(ds)
+    const { addKbBrainV3Structures } = await import('@core/database/migrations/add-kb-brain-v3-structures')
+    await addKbBrainV3Structures(ds)
     atoms = new KbAtomRepository(ds)
     ents = new KbEntityRepository(ds)
     edges = new KbKnowledgeEdgeRepository(ds)

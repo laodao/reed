@@ -52,6 +52,7 @@ export interface KbNoteRecord {
   patternSkeleton: string | null
   patternInstances: string | null
   lensAttention: string | null
+  structureStages: string | null
   classicScore: number
   supersededNoteId: string | null
   tags: string
@@ -78,6 +79,8 @@ export interface KbNoteInput {
   patternSkeleton?: string | null
   patternInstances?: string | null
   lensAttention?: string | null
+  /** 阶段表载荷（v3 M2，structure-map/character-arc） */
+  structureStages?: string | null
   tags?: string
 }
 
@@ -102,6 +105,7 @@ export class KbNoteRepository extends BaseRepository<KbNoteEntity, KbNoteRecord>
       patternSkeleton: e.patternSkeleton ?? null,
       patternInstances: e.patternInstances ?? null,
       lensAttention: e.lensAttention ?? null,
+      structureStages: e.structureStages ?? null,
       classicScore: e.classicScore,
       supersededNoteId: e.supersededNoteId ?? null,
       tags: e.tags ?? '[]',
@@ -142,6 +146,7 @@ export class KbNoteRepository extends BaseRepository<KbNoteEntity, KbNoteRecord>
     e.patternSkeleton = input.patternSkeleton ?? null
     e.patternInstances = input.patternInstances ?? null
     e.lensAttention = input.lensAttention ?? null
+    e.structureStages = input.structureStages ?? null
     e.classicScore = 0
     e.tags = input.tags ?? '[]'
     e.createdAt = now
@@ -331,7 +336,7 @@ export class KbNoteRepository extends BaseRepository<KbNoteEntity, KbNoteRecord>
     const rows = await this.scoped.find({
       where: {
         knowledgeBaseId: kbId,
-        type: In(['setting-pattern', 'plot-pattern', 'insight', 'methodology', 'synthesis', 'principle', 'craft-case', 'genre-insight', 'anti-pattern']),
+        type: In(['setting-pattern', 'plot-pattern', 'insight', 'methodology', 'synthesis', 'principle', 'craft-case', 'genre-insight', 'anti-pattern', 'structure-map', 'character-arc']),
       } as FindOptionsWhere<KbNoteEntity>,
     })
     let n = 0

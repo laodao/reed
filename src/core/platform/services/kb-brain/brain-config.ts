@@ -53,6 +53,8 @@ export interface KbBrainAutomationConfig {
   rejudge: boolean
   /** 维度归纳（v3：从语料归纳建议提炼维度，停用待启用） */
   dimensionInduct: boolean
+  /** 体系汇聚（v3 M2：设定层论断 → 体系树 + structure-map 卡） */
+  systemAggregate: boolean
   bookPasses: boolean
   goalDistill: boolean
   consolidate: boolean
@@ -119,6 +121,8 @@ export interface KbBrainState {
     quartetRuns?: Record<string, string>
     /** 维度归纳（v3）：上次运行时间（7 天一轮） */
     lastDimensionInductAt?: string
+    /** 体系汇聚（v3 M2）：上次运行时间（7 天一轮） */
+    lastSystemAggregateAt?: string
     lastBookPassesAt?: string
     /** 每目标上次自动运行：时间 + 当时工作集论断数（论断增长才重跑，防日日重复出近似卡） */
     goalRuns?: Record<string, { at: string; atoms: number }>
@@ -148,6 +152,7 @@ export function defaultAutomationConfig(): KbBrainAutomationConfig {
     layerRelabel: true,
     rejudge: true,
     dimensionInduct: true,
+    systemAggregate: true,
     bookPasses: true,
     goalDistill: true,
     consolidate: true,
@@ -259,6 +264,7 @@ const BRAIN_CONFIG_SCHEMA = {
         layerRelabel: { type: 'boolean' },
         rejudge: { type: 'boolean' },
         dimensionInduct: { type: 'boolean' },
+        systemAggregate: { type: 'boolean' },
         bookPasses: { type: 'boolean' },
         goalDistill: { type: 'boolean' },
         consolidate: { type: 'boolean' },
@@ -283,7 +289,9 @@ export function defaultBrainConfig(enabled = true): KbBrainConfig {
     digestion: { enabled: true, bookPasses: true },
     profile: { contentType: '' },
     lenses: { enabledLensNoteIds: [], readingCapture: true },
-    patterns: { settingEnabled: true, plotEnabled: false, characterEnabled: false },
+    // 人物原型产线 v3 起默认开（character-arc/character-pattern 是用户点名诉求；
+    // 存量库的显式 false 尊重用户配置，可在面板「人物模式」开关打开）
+    patterns: { settingEnabled: true, plotEnabled: false, characterEnabled: true },
     autoApproveThreshold: 0.8,
     distillation: { enabled: true, importanceThreshold: 50 },
     learning: { enabled: false, desiredRetention: 0.9 },
