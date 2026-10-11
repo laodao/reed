@@ -203,6 +203,10 @@ export function normalizeAtomizeRaw(data: unknown): unknown {
       // layer 非法值/null 剥离（分层是辅助维度——坏值不毁论断，落库缺省 detail；
       // null 也是模型常见输出，穿透到 ajv enum 会炸整章重试）。
       // 旧版 'outline' 收编：method/insight → craft（技法观察），其余剥离落 detail
+      // subject/object 非字符串剥离（真机完美世界实证：模型对无主论断输出
+      // subject:null → ajv required string 炸整章。mention 挂点是可选字段，剥离即可）
+      if ('subject' in item && typeof item.subject !== 'string') delete item.subject
+      if ('object' in item && typeof item.object !== 'string') delete item.object
       if (item.layer === 'outline') {
         if (item.type === 'method' || item.type === 'insight') item.layer = 'craft'
         else delete item.layer

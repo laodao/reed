@@ -252,6 +252,19 @@ describe('normalizeAtomizeRaw（模型字段别名归一）', () => {
   })
 })
 
+describe('subject/object 非字符串剥离（真机完美世界回归）', () => {
+  it('subject:null 剥离而非炸整章；字符串保留', () => {
+    const out = validateAtomizeOutput({
+      atoms: [
+        { statement: 's1', type: 'fact', quote: 'q', subject: null, object: undefined },
+        { statement: 's2', type: 'fact', quote: 'q', subject: '张三' },
+      ],
+    })
+    expect(out.atoms[0]!.subject).toBeUndefined()
+    expect(out.atoms[1]!.subject).toBe('张三')
+  })
+})
+
 describe('events 坏条目剔除（真机凡人修仙传回归）', () => {
   it('events 缺必填键 → 剔除坏条目，好条目保留，不炸整章', () => {
     const out = validateAtomizeOutput({

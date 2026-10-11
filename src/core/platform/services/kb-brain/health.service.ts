@@ -41,6 +41,8 @@ export interface KbBrainHealthReport {
     notesPublished: number
     entitiesActive: number
     entitiesPendingSummary: number
+    /** v3 M3：agent 取知识次数（按通路；「第一用户是 AI」仪表） */
+    consumedByTool: Record<string, number>
   }
   bookPasses: Array<{ documentName: string; passKey: string; status: string; error: string | null }>
   suggestions: KbHealthSuggestion[]
@@ -156,6 +158,8 @@ export class KbBrainHealthService {
           notesPublished: published.total,
           entitiesActive,
           entitiesPendingSummary: entitiesPending,
+          // v3 M3 消费记账：agent 取知识次数（「第一用户是 AI」仪表）
+          consumedByTool: await db.kbConsumptionLogs?.countByTool(kbId).catch(() => ({})) ?? {},
         },
         bookPasses,
         suggestions,

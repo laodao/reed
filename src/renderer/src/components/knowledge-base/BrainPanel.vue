@@ -637,6 +637,7 @@
               <span>分层：设定 {{ healthReport.knowledge.byLayer.setting ?? 0 }} · 技法 {{ healthReport.knowledge.byLayer.craft ?? 0 }} · 描写 {{ healthReport.knowledge.byLayer.describe ?? 0 }} · 细节 {{ healthReport.knowledge.byLayer.detail ?? 0 }}</span>
               <span>悬置问题 {{ healthReport.knowledge.openQuestions }} · 存疑 {{ healthReport.knowledge.byStatus.suspected ?? 0 }} · 已过期 {{ healthReport.knowledge.byStatus.stale ?? 0 }}</span>
               <span>实体 {{ healthReport.knowledge.entitiesActive }}（缺摘要 {{ healthReport.knowledge.entitiesPendingSummary }}） · 经验卡已入库 {{ healthReport.knowledge.notesPublished }}（待审 {{ healthReport.knowledge.notesProposed }}）</span>
+              <span>被 agent 取用 {{ Object.values(healthReport.knowledge.consumedByTool ?? {}).reduce((a, b) => a + b, 0) }} 次<span v-if="Object.keys(healthReport.knowledge.consumedByTool ?? {}).length">（{{ Object.entries(healthReport.knowledge.consumedByTool!).map(([k, v]) => `${k} ${v}`).join(' · ') }}）</span></span>
             </div>
           </div>
           <div v-if="healthReport.bookPasses.length" class="hz-section">
@@ -882,6 +883,7 @@ interface HealthReport {
     atomsWorking: number
     byStatus: Record<string, number>
     byLayer: Record<string, number>
+    consumedByTool?: Record<string, number>
     byType: Record<string, number>
     openQuestions: number
     notesProposed: number
