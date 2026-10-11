@@ -305,7 +305,10 @@ const onImportFile = async (evt: Event) => {
     const payload = JSON.parse(text)
     const result = await lib().worldImport(payload)
     if (result.success) {
-      ElMessage.success(`已导入世界「${result.world.name}」`)
+      // 复核修复 P2-2：else 分支已用 result.error || ... 兜底，成功分支却直接取
+      // result.world.name——world 缺失时抛错会被下方 catch 显示成误导性的
+      //「无法解析世界包」。这里做同等防御。
+      ElMessage.success(`已导入世界「${result.world?.name ?? '未命名'}」`)
       await store.fetchWorlds(true)
     } else {
       ElMessage.error(result.error || '导入失败')

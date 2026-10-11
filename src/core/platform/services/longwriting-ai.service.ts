@@ -509,8 +509,11 @@ ${input}
       )
 
       // 打印AI返回的原始内容
+      // 复核修复 P2-4：此前 console.log 逐字打印 AI 返回全文与解析后的数据
+      //（含用户私有创作正文），且 logger 会落盘 —— 违反 CLAUDE.md「敏感信息不能
+      // 出现在日志中」，并造成日志体积膨胀。只保留长度与极小片头部用于排障。
       console.log('[LongWritingAIService] AI返回原始内容长度:', result.length)
-      console.log('[LongWritingAIService] AI返回原始内容:', result)
+      console.log('[LongWritingAIService] AI返回头部片段:', result.slice(0, 80))
 
       // 尝试解析 JSON
       try {
@@ -530,11 +533,13 @@ ${input}
 
         if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
           const jsonContent = jsonStr.substring(firstBrace, lastBrace + 1)
-          console.log('[LongWritingAIService] 提取的JSON内容:', jsonContent)
+          // 同上：不打印正文，只留长度与字段概览
+          console.log('[LongWritingAIService] 提取的JSON内容长度:', jsonContent.length)
           const data = JSON.parse(jsonContent)
-          console.log('[LongWritingAIService] 解析后的数据:', JSON.stringify(data, null, 2))
-          console.log('[LongWritingAIService] keyCharacters:', data.keyCharacters)
-          console.log('[LongWritingAIService] keyLocations:', data.keyLocations)
+          console.log(
+            '[LongWritingAIService] 解析成功, 顶层字段:',
+            data && typeof data === 'object' ? Object.keys(data).join(',') : typeof data,
+          )
           return { success: true, data }
         }
 

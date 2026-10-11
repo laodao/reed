@@ -45,6 +45,7 @@ import { WebDatabaseManager } from './platform/web-database-manager'
 // 解析 '@core/...' 可能产生**两份**模块实例，导致 dynamic 端 register 的
 // _accessor 在 static 端（auth/routes 等）看不到。统一走 static 即可。
 import { createDataSource } from '@core/database/data-source'
+import { setStrictTenantWrites } from '@core/database/base-repository'
 import { ensureUsersTable } from '@core/database/migrations/ensure-users-table'
 import { ensureUserIdColumns } from '@core/database/migrations/ensure-user-id-columns'
 import { ensureAssetBindingSourceType } from '@core/database/migrations/ensure-asset-binding-source-type'
@@ -172,6 +173,12 @@ async function bootstrap(): Promise<void> {
   configureJwtSecret(cfg.jwtSecret)
 
   // 2. 单 PG DataSource（多租户行级隔离：user_id 列 + BaseRepository ALS 注入）
+  //
+  // 复核修复：Web 是多租户部署，写入路径必须 fail-closed——此前无 ALS userId 时
+  // 只 console.warn 并静默把 user_id 落 NULL（孤儿行，读路径又按 scope 过滤，
+  // 数据会静默"隐身"）。这里开启严格模式：漏包 runWithUser 直接抛错暴露调用链。
+  // （Electron 单用户不开启，行为不变，见 base-repository 的 strictTenantWrites。）
+  setStrictTenantWrites(true)
   await initDatabase()
 
   // 3. 向量库（VECTOR_STORE=pgvector → PgVectorStore，否则 LanceDB 兜底）

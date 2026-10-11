@@ -4,7 +4,7 @@
  * @description 封装图像生成相关的状态和逻辑
  */
 
-import { ref, computed } from 'vue'
+import { ref, computed, onUnmounted } from 'vue'
 import type {
   ImageProvider,
   ImageModel,
@@ -447,6 +447,11 @@ function useImageImpl() {
       pollTimer = null
     }
   }
+
+  // 复核修复 P1-7：此前只依赖任务终态（completed/failed/超时）停止轮询，
+  // 组件卸载时定时器仍在跑——用户生成中切走路由/关页面会持续发 IPC 并持有闭包。
+  // useImage 在组件 setup 上下文调用，直接挂生命周期钩子即可。
+  onUnmounted(stopPolling)
 
   /**
    * 停止生成

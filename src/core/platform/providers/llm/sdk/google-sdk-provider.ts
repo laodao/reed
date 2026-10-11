@@ -209,8 +209,12 @@ export class GoogleSdkProvider extends BaseProvider {
         }
       })
 
-      // 获取最后一条用户消息
-      const lastMessage = context.messages[context.messages.length - 1]
+      // 获取最后一条用户消息（messages 为空时 .at(-1) 返回 undefined，必须显式拦截，
+      // 否则下一行取 .content 直接抛 TypeError——空历史是可达状态，见上方 history 的兜底分支）
+      const lastMessage = context.messages.at(-1)
+      if (!lastMessage) {
+        throw new Error('chatStream: messages 为空，无可发送内容')
+      }
 
       // 发送流式请求
       const result = await chat.sendMessageStream(lastMessage.content)
@@ -252,8 +256,11 @@ export class GoogleSdkProvider extends BaseProvider {
         }
       })
 
-      // 获取最后一条用户消息
-      const lastMessage = context.messages[context.messages.length - 1]
+      // 获取最后一条用户消息（空数组保护同 chatStream）
+      const lastMessage = context.messages.at(-1)
+      if (!lastMessage) {
+        return { success: false, error: 'chatSync: messages 为空，无可发送内容' }
+      }
 
       // 发送请求
       const result = await chat.sendMessage(lastMessage.content)

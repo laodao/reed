@@ -98,7 +98,13 @@ export async function addDesignItem(
     return { ...cur, designPackages: packages }
   })
   const pkg = next.designPackages.find((p) => p.status === 'draft')
-  return pkg!.items[pkg!.items.length - 1]
+  // 复核修复 P1-4：原为 `pkg!.items[pkg!.items.length - 1]`——双重非空断言 + 空数组越界
+  // 共 3 个未校验点，items 为空时返回 undefined 而签名承诺 DesignItem，调用方取 .id 会崩。
+  // 同文件 ensureDraftPackage 对相同 find() 已做判空，此处属漏改。
+  if (!pkg) throw new Error('设计包草稿不存在（mutateRoomState 后状态异常）')
+  const last = pkg.items.at(-1)
+  if (!last) throw new Error('设计包无条目（addDesignItem 未生效）')
+  return last
 }
 
 export interface DesignConfirmResult {
