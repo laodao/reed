@@ -40,7 +40,8 @@ export function buildKbBrainQueryToolDef(deps?: KbBrainQueryToolDeps): AgentTool
     name: 'kb_brain_query',
     description:
       '查询知识库大脑，取「写作知识包」：按写作任务自动路由——写具体场面时返回场面套路（可复用骨架）、经典案例原文与相关设定；' +
-      '开书搭骨架时返回品类认知（读者期待/爽点/雷点）、设定体系参考与套路菜单。每条知识带出处。' +
+      '开书搭骨架时返回品类认知（读者期待/爽点/雷点）、设定体系参考（层级树）、结构惯例（阶段链）、角色弧线惯例与套路菜单。每条知识带出处。' +
+      '触发时机：动笔前（开新书/写大纲/设计世界观/构思人物，先调一次搭骨架包）与写具体场面时（按场面类型取材包）。' +
       '写小说/写文章需要参考同类作品的方法、套路、设定时调用；闲聊不要调用。',
     inputSchema: querySchema,
     dangerLevel: 'read',
