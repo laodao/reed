@@ -413,18 +413,23 @@ export class KbBrainAutomationService {
         const s = d.brainStatus ?? ''
         return s !== 'digested' && s !== 'digesting'
       })
-      if (digesting) return { kbId, ran, skipped: 'digesting' }
-      if (pending.length > 0) {
+      // v3 放宽「消化让位」门控：消化进行中只聚焦消化（不排队更多文档），但下游
+      // 提炼不再被阻塞——冶炼/体系树/四件套各有冷却+素材增长门槛+成本熔断，
+      // 已消化书的素材现在就能出写作方法卡（用户核心诉求：方法知识尽早可见；
+      // 素材继续增长时冶炼按同题演进重跑，不产生重复卡）。
+      if (digesting) {
+        logger.info(`[kb-brain-auto] kb=${kbId} 消化进行中——聚焦消化，下游提炼并行推进（各按冷却/门槛执行）`)
+      } else if (pending.length > 0) {
         if (this.cool(state, 'lastExhaustedReviveAt', COOLDOWN.reviveExhausted)) {
           for (const d of pending) await this.digest.reviveExhausted(d.id)
           this.mark(state, 'lastExhaustedReviveAt')
           await this.saveState(kbId, repos.kbs, state)
         }
         for (const d of pending) await this.digest.enqueue(d.id)
+        ran.push('digest')
         logger.info(
-          `[kb-brain-auto] kb=${kbId} 续消化 ${pending.length} 篇（耗尽章按冷却复活），下游提炼等消化完成`
+          `[kb-brain-auto] kb=${kbId} 续消化 ${pending.length} 篇（耗尽章按冷却复活）`
         )
-        return { kbId, ran: ['digest'] }
       }
     }
 

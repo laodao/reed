@@ -293,23 +293,28 @@ describe('KbBrainAutomationService', () => {
     expect(deps.calls).not.toContain('scene-backfill:kb1:default')
   })
 
-  it('有 failed/pending 文档 → 只做续消化（冷却复活 + 入队），下游提炼让位', async () => {
+  it('有 failed/pending 文档 → 续消化排队（不排队更多书），下游提炼并行推进（v3 放宽让位）', async () => {
     const { svc, deps } = makeDeps()
     deps.docs.push({ id: 'doc2', brainStatus: 'failed' })
     const result = await svc.runCycle('kb1')
     // 只有非 digested/digesting/skipped 的 doc2 进续消化
-    expect(deps.calls).toEqual(['digest-revive:doc2', 'digest-enqueue:doc2'])
-    expect(result.ran).toEqual(['digest'])
-    expect(result.ran).not.toContain('book-passes')
+    expect(deps.calls).toContain('digest-revive:doc2')
+    expect(deps.calls).toContain('digest-enqueue:doc2')
+    // v3：消化排队不再阻塞下游——book-passes 等提炼照常执行
+    expect(result.ran).toContain('digest')
+    expect(result.ran).toContain('book-passes')
   })
 
-  it('消化中（台账有新鲜 running 章）→ 本轮整轮让位（不跑任何 LLM 动作）', async () => {
+  it('消化中（台账有新鲜 running 章）→ 聚焦消化不排队新书，但下游提炼并行（v3 放宽让位）', async () => {
     const { svc, deps } = makeDeps()
     deps.docs[0]!.brainStatus = 'digesting'
     deps.passesByDocument['doc1'] = [{ status: 'running', updatedAt: new Date() }]
     const result = await svc.runCycle('kb1')
-    expect(result.skipped).toBe('digesting')
-    expect(deps.calls).toEqual([])
+    expect(result.skipped).toBeUndefined()
+    // 不排队更多书（预算聚焦），但下游步骤照常执行
+    expect(deps.calls).not.toContain('digest-enqueue:doc1')
+    expect(result.ran).toContain('book-passes')
+    expect(result.ran).not.toContain('digest')
   })
 
   it('僵死消化（digesting 但只有陈旧 running 台账）→ 复位台账与文档并入队', async () => {
@@ -321,7 +326,7 @@ describe('KbBrainAutomationService', () => {
     const result = await svc.runCycle('kb1')
     expect(deps.calls).toContain('docs-update-status:doc1:pending')
     expect(deps.calls).toContain('digest-enqueue:doc1')
-    expect(result.ran).toEqual(['digest'])
+    expect(result.ran).toContain('digest')
   })
 
   it('digesting 但台账全部陈旧（running+pending 混合）→ 复位并入队（pending 不算存活证据）', async () => {
@@ -335,7 +340,7 @@ describe('KbBrainAutomationService', () => {
     expect(deps.calls).toContain('passes-reset-to-pending')
     expect(deps.calls).toContain('docs-update-status:doc1:pending')
     expect(deps.calls).toContain('digest-enqueue:doc1')
-    expect(result.ran).toEqual(['digest'])
+    expect(result.ran).toContain('digest')
   })
 
   it('进程内存活 run（liveness 注册表）→ 台账再陈旧也不误复位（review H5）', async () => {
@@ -350,7 +355,9 @@ describe('KbBrainAutomationService', () => {
       const result = await svc.runCycle('kb1')
       expect(deps.calls).not.toContain('passes-reset-to-pending')
       expect(deps.calls).not.toContain('docs-update-status:doc1:pending')
-      expect(result.skipped).toBe('digesting') // 存活 run 在跑，整轮让位
+      // 存活 run 在跑：不误复位、不排队新书（v3：下游提炼并行，不再整轮让位）
+      expect(deps.calls).not.toContain('digest-enqueue:doc1')
+      expect(result.skipped).toBeUndefined()
     } finally {
       markDigestDone('doc1')
     }
@@ -359,7 +366,7 @@ describe('KbBrainAutomationService', () => {
     const r2 = await svc.runCycle('kb1')
     expect(deps.calls).toContain('docs-update-status:doc1:pending')
     expect(deps.calls).toContain('digest-enqueue:doc1')
-    expect(r2.ran).toEqual(['digest'])
+    expect(r2.ran).toContain('digest')
   })
 
   it('冷却记账：紧接的第二轮什么都不重复跑', async () => {
