@@ -348,10 +348,15 @@ export class KbBrainDigestService {
 
     // 成本熔断（§12）：KB_BRAIN_DAILY_COST_LIMIT=单库当日 LLM 调用次数上限（calls 口径近似成本；
     // token/金额口径待 provider usage 回填后升级）。缺省/非法 = 不限。
-    const rawLimit = process.env.KB_BRAIN_DAILY_COST_LIMIT
+    // 每库配置优先（v3 M4 预算旋钮），env 作未配置时的兜底
+    const kbCfg = safeParseConfig(kb?.brainConfig ?? null)
+    const rawLimit =
+      kbCfg?.dailyCostLimit && kbCfg.dailyCostLimit > 0
+        ? String(kbCfg.dailyCostLimit)
+        : process.env.KB_BRAIN_DAILY_COST_LIMIT
     const costLimit = Number(rawLimit ?? '')
     if (rawLimit && !Number.isFinite(costLimit)) {
-      logger.warn(`[kb-brain] KB_BRAIN_DAILY_COST_LIMIT 非法值 '${rawLimit}'，熔断禁用`)
+      logger.warn(`[kb-brain] 每日调用上限非法值 '${rawLimit}'，熔断禁用`)
     }
     if (Number.isFinite(costLimit) && costLimit > 0) {
       const since = new Date()
@@ -919,7 +924,7 @@ export class KbBrainDigestService {
     const cfg = safeParseConfig(kb.brainConfig)
     if (!cfg?.enabled || !cfg.digestion.enabled || !sceneTrackEnabled(cfg))
       return { processed: 0, scenes: 0 }
-    if (await this.costBreakerTripped(kbId, repos.passes)) return { processed: 0, scenes: 0 }
+    if (await this.costBreakerTripped(kbId, repos.passes, cfg.dailyCostLimit)) return { processed: 0, scenes: 0 }
 
     const batch = opts?.batch ?? SCENE_BACKFILL_BATCH
     await repos.passes.reviveScenelessEventPasses(kbId, SCENE_PASS_KEY)
@@ -1016,8 +1021,9 @@ export class KbBrainDigestService {
   }
 
   /** KB_BRAIN_DAILY_COST_LIMIT 熔断判定（digestDocument 与场面补采共用口径） */
-  private async costBreakerTripped(kbId: string, passes: KbDigestPassRepository): Promise<boolean> {
-    const rawLimit = process.env.KB_BRAIN_DAILY_COST_LIMIT
+  private async costBreakerTripped(kbId: string, passes: KbDigestPassRepository, perKbLimit?: number): Promise<boolean> {
+    // 每库配置优先（v3 M4 预算旋钮），env 作未配置时的兜底
+    const rawLimit = perKbLimit && perKbLimit > 0 ? String(perKbLimit) : process.env.KB_BRAIN_DAILY_COST_LIMIT
     const costLimit = Number(rawLimit ?? '')
     if (!rawLimit || !Number.isFinite(costLimit) || costLimit <= 0) return false
     const since = new Date()

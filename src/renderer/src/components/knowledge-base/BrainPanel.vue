@@ -460,6 +460,17 @@
                   :step="0.05"
                   size="small"
                 />
+                <label class="cfg-label">
+                  每日调用上限
+                  <span class="cfg-desc">消化/冶炼等每日 LLM 调用超过该值自动熔断到明天；0 或留空 = 不限</span>
+                </label>
+                <el-input-number
+                  v-model="configDraft.dailyCostLimit"
+                  :min="0"
+                  :step="100"
+                  size="small"
+                  placeholder="不限"
+                />
               </div>
             </el-collapse-item>
           </el-collapse>
@@ -780,6 +791,7 @@ interface BrainConfig {
   patterns: { plotEnabled: boolean; characterEnabled: boolean }
   lenses: { enabledLensNoteIds: string[] }
   autoApproveThreshold: number
+  dailyCostLimit?: number
   models: { atomize: string; adjudicate: string }
   goals: BrainGoal[]
   /** 后台自动化（免手点流水线；产物进待审提议人审） */
@@ -2221,6 +2233,9 @@ async function saveConfig(): Promise<void> {
     // 数字输入被清空时 el-input-number 会置 null——回退到已有值，避免校验失败打断保存
     if (draft.autoApproveThreshold == null) {
       draft.autoApproveThreshold = config.value?.autoApproveThreshold ?? 0.8
+    }
+    if (draft.dailyCostLimit == null) {
+      draft.dailyCostLimit = 0
     }
     const res = await (window as any).electronAPI.knowledgeBase.brain.updateConfig({
       kbId: props.kbId,

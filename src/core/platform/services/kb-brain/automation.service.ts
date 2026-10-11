@@ -584,7 +584,7 @@ export class KbBrainAutomationService {
     if (auto.smelt && !this.quartet.isRunning(kbId)) {
       // 成本熔断同口径（与补采一致）：当日调用超限则四件套让位
       const today = await repos.passes.costByKb(kbId, (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d })())
-      const costLimit = Number(process.env.KB_BRAIN_DAILY_COST_LIMIT ?? '')
+      const costLimit = Number(String(cfg.dailyCostLimit ?? process.env.KB_BRAIN_DAILY_COST_LIMIT ?? ''))
       const overLimit = Number.isFinite(costLimit) && costLimit > 0 && today.calls > costLimit
       if (!overLimit) {
         const runs = state.automation?.quartetRuns ?? {}

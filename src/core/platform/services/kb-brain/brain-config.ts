@@ -74,6 +74,8 @@ export interface KbBrainConfig {
   patterns: { settingEnabled: boolean; plotEnabled: boolean; characterEnabled: boolean }
   /** 高于阈值自动入池，低于进提议队列 */
   autoApproveThreshold: number
+  /** 每日 LLM 调用上限（成本熔断；缺省/0=不限。env KB_BRAIN_DAILY_COST_LIMIT 作为未配置时的兜底） */
+  dailyCostLimit?: number
   /** 跨文档提炼（重要性账户阈值） */
   distillation: { enabled: boolean; importanceThreshold: number }
   /** 学习模式（FSRS 复习队列） */
@@ -206,6 +208,7 @@ const BRAIN_CONFIG_SCHEMA = {
       additionalProperties: false,
     },
     autoApproveThreshold: { type: 'number', minimum: 0, maximum: 1 },
+        dailyCostLimit: { type: 'integer', minimum: 0 },
     distillation: {
       type: 'object',
       properties: {
@@ -330,6 +333,7 @@ export function normalizeBrainConfig(partial: Partial<KbBrainConfig>): KbBrainCo
     lenses: { ...def.lenses, ...partial.lenses },
     patterns: { ...def.patterns, ...partial.patterns },
     autoApproveThreshold: partial.autoApproveThreshold ?? def.autoApproveThreshold,
+    dailyCostLimit: typeof partial.dailyCostLimit === 'number' && partial.dailyCostLimit > 0 ? partial.dailyCostLimit : undefined,
     distillation: { ...def.distillation, ...partial.distillation },
     learning: { ...def.learning, ...partial.learning },
     crag: { ...def.crag, ...partial.crag },
