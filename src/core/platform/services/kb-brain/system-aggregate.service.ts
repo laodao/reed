@@ -114,12 +114,19 @@ export class KbSystemAggregateService {
     let currentPassId: string | null = null
     try {
       // 取材：setting 层知识论断（体系原料）。已跑过（同素材量）则跳过（幂等）。
-      const atoms = await repos.atoms.findByKb(kbId, {
+      const allSetting = await repos.atoms.findByKb(kbId, {
         status: ['supported'],
         layers: ['setting'],
         role: 'knowledge',
-        limit: MATERIAL_CAP
+        limit: 5000
       })
+      // 均衡抽样：findByKb 按创建时间倒序会偏向最新消化的书（真机实证：三书库只
+      // 归纳出最新一本书的体系，旧书体系被挤出采样窗）；洗牌后截断保证跨书覆盖
+      for (let i = allSetting.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1))
+        ;[allSetting[i], allSetting[j]] = [allSetting[j]!, allSetting[i]!]
+      }
+      const atoms = allSetting.slice(0, MATERIAL_CAP)
       const decision = await repos.passes.ensurePass({
         knowledgeBaseId: kbId,
         documentId: kbId,

@@ -2433,7 +2433,7 @@ watch(
     atomFilter.value = 'all'
     atomDocFilter.value = ''
     selectedProposalIds.value = [] // 跨库选中是幽灵操作：decideProposal 只按 noteId，不清会误审别库的卡
-    activeView.value = 'atoms'
+    activeView.value = 'knowledge'
     inboxPage.value = 1
     notesPage.value = 1
     // 清掉上一库的行，避免切库瞬间闪现旧数据
