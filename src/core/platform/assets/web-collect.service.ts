@@ -15,6 +15,7 @@ import { htmlToMarkdown } from '@core/utils/html-to-markdown'
 import { inlineHtmlResources, defaultWebResourceFetcher, type WebResourceFetcher } from './single-file-html'
 import type { AssetRecord, AssetSourceType, SaveAssetInput } from '@shared/types/asset.types'
 import type { AssetService } from './asset.service'
+import { outboundFetch } from '@core/utils/net-fetch'
 
 /** 「网页收藏」资产固定归属 */
 export const WEBPAGE_COLLECT_SUB_CATEGORY = '网页收藏'
@@ -35,7 +36,7 @@ export async function defaultPageFetcher(url: string): Promise<FetchedPage> {
   const guard = validateOutboundUrl(url)
   if (!guard.ok) throw new Error(`页面 URL 校验失败：${guard.reason}`)
   const { collectTimeoutMs, maxCollectBytes } = assetParams().asset
-  const resp = await fetch(url, { signal: AbortSignal.timeout(collectTimeoutMs) })
+  const resp = await outboundFetch()(url, { signal: AbortSignal.timeout(collectTimeoutMs) })
   if (!resp.ok) throw new Error(`抓取失败: HTTP ${resp.status}`)
   const buf = Buffer.from(await resp.arrayBuffer())
   if (buf.byteLength > maxCollectBytes) {

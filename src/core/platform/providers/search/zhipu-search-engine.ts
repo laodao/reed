@@ -6,6 +6,7 @@
 
 import { BaseSearchEngine } from './base-search-engine'
 import type { WebSearchResultItem, WebSearchResponse, SearchEngineType } from '@shared/types/search-engine.types'
+import { outboundFetch } from '@core/utils/net-fetch'
 
 /**
  * 智谱 AI 搜索引擎实现
@@ -42,7 +43,7 @@ export class ZhipuSearchEngine extends BaseSearchEngine {
     try {
       // 智谱 AI web-search-pro API
       // 文档: https://docs.bigmodel.cn/cn/best-practice/case/ai-search-engine
-      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      const response = await outboundFetch()(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.config.apiKey}`,

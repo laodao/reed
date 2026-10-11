@@ -28,6 +28,7 @@ import { BrainQueryService, type BrainQueryDeps } from './kb-brain/brain-query.s
 import { defaultBrainLlm } from './kb-brain/llm'
 import { extractTextFromFile, inferFileType } from '@core/utils/extract-text'
 import { resolveAssetPath, toRelativeAssetPath } from '@core/utils/asset-path'
+import { outboundFetch } from '@core/utils/net-fetch'
 import { publishDomainEvent } from '@core/platform/workflow/trigger/domain-event-bus'
 import { WORKFLOW_EVENT_NAMES } from '@shared/types/workflow.types'
 import type {
@@ -1809,7 +1810,7 @@ export class KnowledgeBaseService {
 
       // 抓取网页内容
       console.log(`[KB] 开始抓取网页: ${url}`)
-      const response = await fetch(url, {
+      const response = await outboundFetch()(url, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',

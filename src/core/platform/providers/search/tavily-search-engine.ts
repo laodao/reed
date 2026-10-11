@@ -6,6 +6,7 @@
 
 import { BaseSearchEngine } from './base-search-engine'
 import type { WebSearchResultItem, WebSearchResponse, SearchEngineType } from '@shared/types/search-engine.types'
+import { outboundFetch } from '@core/utils/net-fetch'
 
 /**
  * Tavily 搜索引擎实现
@@ -40,7 +41,7 @@ export class TavilySearchEngine extends BaseSearchEngine {
     }
 
     try {
-      const response = await fetch(`${this.baseUrl}/search`, {
+      const response = await outboundFetch()(`${this.baseUrl}/search`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.config.apiKey}`,

@@ -14,6 +14,7 @@
 import { parse } from 'node-html-parser'
 import { validateOutboundUrl } from '@core/utils/outbound-url'
 import { assetParams } from '@shared/utils/asset-params'
+import { outboundFetch } from '@core/utils/net-fetch'
 
 /** 单次资源抓取结果 */
 export type WebResourceFetchResult =
@@ -52,7 +53,7 @@ export async function defaultWebResourceFetcher(url: string): Promise<WebResourc
   if (!guard.ok) return { ok: false, reason: `URL 校验失败：${guard.reason}` }
   const { maxResourceBytes, resourceTimeoutMs } = assetParams().asset
   try {
-    const resp = await fetch(url, { signal: AbortSignal.timeout(resourceTimeoutMs) })
+    const resp = await outboundFetch()(url, { signal: AbortSignal.timeout(resourceTimeoutMs) })
     if (!resp.ok) return { ok: false, reason: `HTTP ${resp.status}` }
     const contentType = (resp.headers.get('content-type') ?? 'application/octet-stream').split(';')[0].trim()
     const buf = Buffer.from(await resp.arrayBuffer())

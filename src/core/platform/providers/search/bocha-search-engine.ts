@@ -10,6 +10,7 @@
 
 import { BaseSearchEngine } from './base-search-engine'
 import type { WebSearchResultItem, WebSearchResponse, SearchEngineType } from '@shared/types/search-engine.types'
+import { outboundFetch } from '@core/utils/net-fetch'
 
 export class BochaSearchEngine extends BaseSearchEngine {
   readonly type: SearchEngineType = 'bocha'
@@ -26,7 +27,7 @@ export class BochaSearchEngine extends BaseSearchEngine {
     }
 
     try {
-      const response = await fetch(this.apiUrl, {
+      const response = await outboundFetch()(this.apiUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.config.apiKey}`,

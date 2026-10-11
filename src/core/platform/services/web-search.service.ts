@@ -5,6 +5,7 @@
  */
 
 import type { WebSearchResult, WebSearchResponse } from '@shared/types/message.types'
+import { outboundFetch } from '@core/utils/net-fetch'
 
 /**
  * 搜索引擎配置接口
@@ -103,7 +104,7 @@ export class WebSearchService {
     try {
       const endpoint = `https://api.bing.microsoft.com/v7.0/search?q=${encodeURIComponent(query)}&count=${maxResults}&responseFilter=Webpages`
 
-      const response = await fetch(endpoint, {
+      const response = await outboundFetch()(endpoint, {
         method: 'GET',
         headers: {
           'Ocp-Apim-Subscription-Key': apiKey
@@ -174,7 +175,7 @@ export class WebSearchService {
 
       const endpoint = `https://www.googleapis.com/customsearch/v1?key=${googleApiKey}&cx=${searchEngineId}&q=${encodeURIComponent(query)}&num=${maxResults}`
 
-      const response = await fetch(endpoint, {
+      const response = await outboundFetch()(endpoint, {
         method: 'GET'
       })
 

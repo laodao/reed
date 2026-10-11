@@ -11,6 +11,7 @@
 
 import { BaseSearchEngine } from './base-search-engine'
 import type { WebSearchResultItem, WebSearchResponse, SearchEngineType } from '@shared/types/search-engine.types'
+import { outboundFetch } from '@core/utils/net-fetch'
 
 export class CustomApiSearchEngine extends BaseSearchEngine {
   readonly type: SearchEngineType = 'custom-api'
@@ -43,7 +44,7 @@ export class CustomApiSearchEngine extends BaseSearchEngine {
       return this.createErrorResponse('请配置 API 地址（apiUrl）', query)
     }
     try {
-      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      const response = await outboundFetch()(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.config.apiKey}`,
