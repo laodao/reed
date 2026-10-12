@@ -203,16 +203,26 @@ export class KbChunkRepository extends BaseRepository<KbChunkEntity, KbChunk> {
     const userId = getCurrentUserId()
     return this.dataSource.transaction(async manager => {
       const repo = manager.getRepository(KbChunkEntity)
-      const result: KbChunk[] = []
-      for (const request of requests) {
+      // 复核修复 P1-n+1：原实现循环内逐行 repo.save()，一个文档数百~数千 chunk 就是
+      // 数百~数千次 INSERT 往返（SQLite/PG 均如此），是知识库导入的主要瓶颈。
+      // 改为批量 insert：先建好实体数组，再分批落库。
+      const entities = requests.map(request => {
         const built = this.buildEntityForCreate(request, now)
         // 必须手动注入 user_id，否则后续 scoped 查询（findByDocumentId 等）
         // 因 user_id NULL 而看不到这批 chunk，UI 上"切片不可见"
         built.userId = userId
-        const saved = await repo.save(repo.create(built))
-        result.push(this.toDto(saved))
+        return repo.create(built)
+      })
+
+      // 分批：SQLite 默认变量上限 999，单行参数约 6~8 个，按 200 行一批留足余量
+      const BATCH_SIZE = 200
+      const saved: KbChunkEntity[] = []
+      for (let i = 0; i < entities.length; i += BATCH_SIZE) {
+        const slice = entities.slice(i, i + BATCH_SIZE)
+        const inserted = await repo.save(slice)
+        saved.push(...inserted)
       }
-      return result
+      return saved.map(entity => this.toDto(entity))
     })
   }
 

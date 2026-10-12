@@ -282,9 +282,11 @@ async function handleUpdateStoryboard(
     if (!db.storyboards) {
       return { success: false, error: '数据库未初始化' }
     }
+    // 捕获为局部 const：异步闭包内 TS 无法保留上面的 null 收窄
+    const storyboards = db.storyboards
 
     // 先取旧值：C2 links 同步（dialogueIds 比对）与 X3 画面内容变更判定共用
-    const before = await db.storyboards.getById(storyboardId)
+    const before = await storyboards.getById(storyboardId)
     if (!before) {
       return { success: false, error: '分镜不存在' }
     }
@@ -296,16 +298,25 @@ async function handleUpdateStoryboard(
      * videoPath+status、所属未 superseded 片段），再落新内容。顺序保证失败
      * 方向安全：作废失败则整体不动可直接重试；落库失败也不会有「新内容+
      * 旧画面」的脱钩状态。磁盘文件走收集器，事务提交成功后统一删。
+     *
+     * 复核修复 P1-8：作废与 update 此前是**两次独立提交**（作废在 transaction 内、
+     * update 走 repository 的 scoped 在事务外），一旦 update 失败或提前 return，
+     * 就留下「旧画面产物已删 + 新内容未落库」的脱钩态——正是上面注释声称要避免的。
+     * 现把两者并入同一事务：update 显式传入事务 manager。
      */
+    let storyboard: Awaited<ReturnType<typeof storyboards.update>>
     if (visualsChanged && db.dataSource) {
-      await withPendingKeyframeFileDeletions(() =>
-        db.dataSource!.transaction((manager) =>
-          invalidateStoryboardVisuals(manager, storyboardId),
-        ),
+      const ds = db.dataSource
+      storyboard = await withPendingKeyframeFileDeletions(() =>
+        ds.transaction(async (manager) => {
+          await invalidateStoryboardVisuals(manager, storyboardId)
+          return storyboards.update(storyboardId, data, manager)
+        }),
       )
+    } else {
+      storyboard = await storyboards.update(storyboardId, data)
     }
 
-    const storyboard = await db.storyboards.update(storyboardId, data)
     if (!storyboard) {
       return { success: false, error: '分镜不存在' }
     }
@@ -323,7 +334,12 @@ async function handleUpdateStoryboard(
 
     return { success: true, data: storyboard }
   } catch (error: any) {
-    return { success: false, error: error.message || '更新分镜失败' }
+    // 复核修复 P2：原实现只把 message 回给前端，既不落日志也丢 stack，线上无从定位
+    console.error('[handleUpdateStoryboard] 更新分镜失败:', error)
+    return {
+      success: false,
+      error: error?.message || String(error) || '更新分镜失败',
+    }
   }
 }
 

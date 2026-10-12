@@ -14,6 +14,7 @@
  */
 
 import type { DataSource, Repository } from 'typeorm'
+import { In } from 'typeorm'
 import { CharacterBindingEntity } from '@core/database/entities/episode-production/character-binding.entity'
 import { LocationBindingEntity } from '@core/database/entities/episode-production/location-binding.entity'
 import { ItemBindingEntity } from '@core/database/entities/episode-production/item-binding.entity'
@@ -166,10 +167,23 @@ export class AssetSettingEnrichmentService {
     const scripts = await scriptRepo.find({ where: { projectId } as any })
     if (scripts.length === 0) return ''
 
+    // 复核修复 P1-5：原实现外层遍历 script、内层再 await sceneRepo.find，构成 N+1
+    // （m 集就是 m 次查询）。改为一次 IN 查询取回全部场景，再按 episodeScriptId 在
+    // 内存分组回填——保持「script 顺序 → 该 script 下 scene 顺序」的原输出顺序。
+    const scenes = await sceneRepo.find({
+      where: { episodeScriptId: In(scripts.map(s => s.id)) } as any,
+    })
+    const scenesByScript = new Map<string, SceneScriptEntity[]>()
+    for (const scene of scenes) {
+      const key = String((scene as any).episodeScriptId ?? '')
+      const bucket = scenesByScript.get(key)
+      if (bucket) bucket.push(scene)
+      else scenesByScript.set(key, [scene])
+    }
+
     const texts: string[] = []
     for (const script of scripts) {
-      const scenes = await sceneRepo.find({ where: { episodeScriptId: script.id } as any })
-      for (const scene of scenes) {
+      for (const scene of scenesByScript.get(String(script.id)) ?? []) {
         if (scene.originalText) {
           texts.push(scene.originalText)
         }

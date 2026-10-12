@@ -5,7 +5,7 @@
  *              支持 transition_* 规范化字段优先 + 旧 transition JSON 字段兼容。
  */
 
-import type { DataSource } from 'typeorm'
+import type { DataSource, EntityManager } from 'typeorm'
 import {
   Storyboard,
   StoryboardCharacter,
@@ -299,8 +299,20 @@ export class StoryboardRepository extends BaseRepository<
   async update(
     id: string,
     data: UpdateStoryboardRequest,
+    /**
+     * 可选的事务 EntityManager（复核修复 P1-8）。
+     *
+     * 背景：handleUpdateStoryboard 在「画面内容变更」时先作废旧画面产物（关键帧行/图/
+     * 磁盘文件、videoPath、片段 superseded），再落新内容。原实现作废走事务、update 走
+     * scoped（事务外），是两次独立提交——若 update 失败或提前 return，就留下「旧画面已
+     * 删 + 新内容未落库」的脱钩态，恰是该分支注释声称要避免的。
+     *
+     * 传入 manager 时读写都走事务范围内的 repo，使作废与更新同属一个原子事务。
+     */
+    manager?: EntityManager,
   ): Promise<Storyboard | null> {
-    const existing = await this.scoped.findOne({ id } as any)
+    const repo = manager ? manager.getRepository(StoryboardEntity) : this.scoped
+    const existing = await repo.findOne({ id } as any)
     if (!existing) return null
 
     let changed = false
@@ -360,7 +372,7 @@ export class StoryboardRepository extends BaseRepository<
     if (!changed) return this.toDto(existing)
 
     existing.updatedAt = new Date()
-    const saved = await this.scoped.save(existing)
+    const saved = await repo.save(existing)
     return this.toDto(saved)
   }
 

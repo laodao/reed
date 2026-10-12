@@ -23,7 +23,39 @@ import type {
   Repository,
   SelectQueryBuilder,
 } from 'typeorm'
-import { getCurrentUserId } from '@core/context/user-context'
+import {
+  getCurrentUserId,
+  getCurrentUserIdForWrite,
+  setStrictTenantMode,
+  isStrictTenantMode,
+} from '@core/context/user-context'
+
+/**
+ * 严格租户模式（复核修复 2026-10-12）。
+ *
+ * 背景：user-context 早已提供「无 userId 则抛错」的严格版函数并注释写明
+ * 「Repository 在严格模式下应使用此函数（防止数据越权）」，但**全项目零调用**——
+ * 机制被设计出来却没接线。Web 多租户下，漏包 runWithUser 的写入会把 user_id 落
+ * NULL（孤儿行），而读路径又按 scope 过滤，导致数据静默「隐身」，此前只有
+ * console.warn，线上极易忽略。
+ *
+ * 实现要点（复核轮修正）：开关的**真实载体在 user-context**，不是本文件。
+ * 原因：本文件只覆盖 `scoped.save/saveMany/insert` 三条路径；而仓库里存在
+ * 8+ 处「裸 `this.repo` 写入 + 手工 `entity.userId = getCurrentUserId()`」的写法
+ * （agent-tool-call / asset-version / role / workflow-definition 等），scoped 层
+ * 拦不到它们。把校验下沉到 `getCurrentUserId()` 这个唯一入口，才能让**所有**取
+ * userId 的路径（含手工注入、含 scoped）统一 fail-closed。
+ *
+ * 这两个导出保留为本文件的稳定 API（Web 启动流程与测试经此调用），内部转发。
+ */
+export function setStrictTenantWrites(enabled: boolean): void {
+  setStrictTenantMode(enabled)
+}
+
+/** 当前是否处于严格租户写入模式（测试/诊断用）。 */
+export function isStrictTenantWrites(): boolean {
+  return isStrictTenantMode()
+}
 
 /**
  * 创建针对某个 typeorm Repository 的 scoped API。
@@ -55,7 +87,9 @@ function makeScopedApiForRepo<E extends object>(
   }
   function scopeEntity<T extends Partial<E>>(entity: T): T {
     if (!shouldScope()) return entity
-    const uid = getCurrentUserId()
+    // 写路径专用取值：严格租户模式下无上下文即抛错（fail-closed）；
+    // 非严格模式返回 null，下面补告警暴露调用链。
+    const uid = getCurrentUserIdForWrite()
     // 多租户复核加固：无用户上下文的写入会静默落 user_id=NULL 孤儿行（所有租户
     // 都不可见），历史上极难发现。这里打告警暴露调用链（Electron 有进程默认值
     // 不会触发；Web 端任何触发都是漏包 runWithUser 的信号）。

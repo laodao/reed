@@ -632,6 +632,11 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
       help: '文章 = 提取正文 markdown；链接 = 采集页面链接（博主主页/专栏列表页，配合循环节点逐篇阅读）',
     },
     { key: 'maxLength', label: '正文最大长度', type: 'number', group: '参数', help: '文章模式截断（默认 150000）' },
+    T('skipIfUrlSaved', '跳过已收藏（填原文链接）', {
+      group: '参数',
+      placeholder: '{{loop.item.url}}',
+      help: '资产库已存在同链接资产时直接跳过（deduped=true，不开浏览器）——采集工作流续跑秒级快进已采文章',
+    }),
     T('linkPattern', '链接过滤正则', {
       group: '参数',
       placeholder: '^https://www\\.toutiao\\.com/article/\\d+',

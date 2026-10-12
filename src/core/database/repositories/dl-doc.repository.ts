@@ -8,6 +8,7 @@
 import { type DataSource, type FindOptionsWhere } from 'typeorm'
 import { DlDocEntity } from '../entities/domain-learning/dl-doc.entity'
 import { BaseRepository } from '../base-repository'
+import { safeParseJsonArray } from '../json-column'
 
 /** dl_doc 行 DTO（concept_ids JSON 已解析） */
 export interface DlDocRow {
@@ -105,7 +106,9 @@ export class DlDocRepository extends BaseRepository<DlDocEntity, DlDocRow> {
       projectId: e.projectId,
       docType: e.docType,
       title: e.title,
-      conceptIds: e.conceptIds ? (JSON.parse(e.conceptIds) as string[]) : [],
+      // 复核修复 P2-1：原为裸 JSON.parse——concept_ids 脏数据会让 toDto 抛错、
+      // 整条列表查询失败。改走统一安全解析（失败降级空数组并记日志）。
+      conceptIds: safeParseJsonArray<string>(e.conceptIds, 'DlDocEntity#conceptIds'),
       contentMd: e.contentMd,
       createdAt: e.createdAt,
       publishedAt: e.publishedAt,

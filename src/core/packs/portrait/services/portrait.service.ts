@@ -1627,12 +1627,39 @@ export class PortraitService {
           const output = fs.createWriteStream(outputPath)
           const archive = archiver('zip', { zlib: { level: 9 } })
 
+          // 复核修复 P1-3：原实现只监听 output 'close' 与 archive 'error'，有三处缺陷：
+          // (1) 未监听 output 'error'——磁盘满/权限失败时 'close' 不触发，Promise 永不
+          //     settle，导出 IPC 永久挂起；(2) archive 出错只 resolve，未销毁写流，泄漏
+          //     句柄并残留半截 zip；(3) finalize() 未接 catch，rejection 成为 unhandled。
+          // 现收敛到统一 settle：只成功一次，失败必清理半成品。
+          let settled = false
+          const finish = (result: { success: boolean; filePath?: string; error?: string }) => {
+            if (settled) return
+            settled = true
+            if (!result.success) {
+              // 失败路径：中止归档并销毁写流，避免句柄泄漏与半截文件
+              try {
+                archive.abort()
+              } catch {
+                /* 已结束，忽略 */
+              }
+              output.destroy()
+            }
+            resolve(result)
+          }
+
           output.on('close', () => {
-            resolve({ success: true, filePath: outputPath })
+            finish({ success: true, filePath: outputPath })
+          })
+
+          output.on('error', (err: Error) => {
+            console.error('[PortraitService.exportPortraits] 写流失败:', err.message)
+            finish({ success: false, error: `写入导出文件失败: ${err.message}` })
           })
 
           archive.on('error', (err: Error) => {
-            resolve({ success: false, error: err.message })
+            console.error('[PortraitService.exportPortraits] 归档失败:', err.message)
+            finish({ success: false, error: err.message })
           })
 
           archive.pipe(output)
@@ -1688,7 +1715,11 @@ export class PortraitService {
             })
           })
 
-          archive.finalize()
+          // finalize 的 rejection 必须显式接住，否则成为 unhandled rejection
+          archive.finalize().catch((err: Error) => {
+            console.error('[PortraitService.exportPortraits] 归档结束失败:', err.message)
+            finish({ success: false, error: err.message })
+          })
         })
       }
     } catch (error: any) {

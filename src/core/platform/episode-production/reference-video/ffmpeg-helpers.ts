@@ -31,8 +31,22 @@ function resolveFfmpegBin(): string {
 const FFMPEG_BIN: string = resolveFfmpegBin()
 
 /**
+ * ffmpeg 单次调用超时（秒）。默认 30 分钟，可用 EP_FFMPEG_TIMEOUT_SEC 覆盖
+ * （与 compose/ffmpeg-assembler.service.ts 的 runFFmpegCommand 保持同一约定与默认值）。
+ *
+ * 复核修复 P1-1：此前本文件无任何超时/kill 保护——ffmpeg 挂死（损坏视频、卡住的
+ * 网络流）会让 Promise 永不 settle、子进程永不退出（僵尸进程累积）。同仓库
+ * ffmpeg-assembler 早已加了 timeout，这里属漏改。
+ */
+function ffmpegTimeoutMs(): number {
+  const sec = Number(process.env.EP_FFMPEG_TIMEOUT_SEC) || 30 * 60
+  return sec * 1000
+}
+
+/**
  * 跑 ffmpeg 命令（args 数组形式，不走 shell；无命令注入风险）。
- * stderr 收集（ffmpeg 大部分输出走 stderr）；reject on non-zero exit。
+ * stderr 收集（ffmpeg 大部分输出走 stderr）；reject on non-zero exit / 超时 / spawn 失败。
+ * 超时到点强制 SIGKILL，并保证 resolve/reject 只触发一次、定时器必被清理。
  */
 function runFfmpeg(args: string[]): Promise<{ stderr: string }> {
   return new Promise((resolve, reject) => {
@@ -41,13 +55,37 @@ function runFfmpeg(args: string[]): Promise<{ stderr: string }> {
       shell: false,  // 显式禁用 shell（args 数组不会被 shell 解析）
     })
     let stderr = ''
+    let settled = false
+    const timeoutMs = ffmpegTimeoutMs()
+
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      // SIGKILL：ffmpeg 对 SIGTERM 在部分平台/状态下不响应，必须强杀
+      try {
+        proc.kill('SIGKILL')
+      } catch {
+        /* 进程可能已退出，忽略 */
+      }
+      reject(new Error(`ffmpeg 超时（${timeoutMs / 1000}s）已终止: ${args.slice(-3).join(' ')}`))
+    }, timeoutMs)
+
+    const done = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      fn()
+    }
+
     proc.stderr.on('data', (chunk) => {
       stderr += chunk.toString()
     })
-    proc.on('error', reject)
+    proc.on('error', (err) => done(() => reject(err)))
     proc.on('close', (code) => {
-      if (code === 0) resolve({ stderr })
-      else reject(new Error(`ffmpeg exit ${code}: ${stderr.slice(-500)}`))
+      done(() => {
+        if (code === 0) resolve({ stderr })
+        else reject(new Error(`ffmpeg exit ${code}: ${stderr.slice(-500)}`))
+      })
     })
   })
 }
@@ -69,13 +107,42 @@ export async function getVideoMetadata(
     args.push('-headers', headerText)
   }
   args.push('-i', videoPath)
-  const proc = nodeSpawn(FFMPEG_BIN, args, {
-    stdio: ['ignore', 'ignore', 'pipe'],
-    shell: false,
+
+  // 复核修复 P1-1：ffmpeg -i 探测属「exit code 1 但 stderr 有信息」的正常路径，故不能
+  // 复用 runFfmpeg（它会 reject）；但同样必须有超时 + error 兜底——此前只 await 'close'，
+  // spawn 失败（二进制缺失/权限）时既不 reject 也不 resolve，会静默永久挂起。
+  const stderr = await new Promise<string>((resolve, reject) => {
+    const proc = nodeSpawn(FFMPEG_BIN, args, {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      shell: false,
+    })
+    let out = ''
+    let settled = false
+    const timeoutMs = ffmpegTimeoutMs()
+
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      try {
+        proc.kill('SIGKILL')
+      } catch {
+        /* 已退出 */
+      }
+      reject(new Error(`ffmpeg 探测元数据超时（${timeoutMs / 1000}s）: ${videoPath}`))
+    }, timeoutMs)
+
+    const done = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      fn()
+    }
+
+    proc.stderr.on('data', (chunk) => { out += chunk.toString() })
+    proc.on('error', (err) => done(() => reject(err)))
+    // exit code 非 0 是预期（-i 无输出文件），照常拿 stderr
+    proc.on('close', () => done(() => resolve(out)))
   })
-  let stderr = ''
-  proc.stderr.on('data', (chunk) => { stderr += chunk.toString() })
-  await new Promise<void>((resolve) => proc.on('close', () => resolve()))
 
   const durMatch = stderr.match(/Duration:\s*(\d+):(\d+):(\d+\.\d+)/)
   let durationSec = 0

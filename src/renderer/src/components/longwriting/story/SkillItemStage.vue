@@ -809,19 +809,27 @@ function editSkill(skill: StorySkill) {
 }
 
 async function deleteSkill(id: string) {
+  // 复核修复 P1-5：原实现把「用户点取消」和「IPC 真失败」都吞进空 catch {}，
+  // 删除失败时界面毫无反应、无日志，用户只会反复点击。现区分二者。
+  const confirmed = await ElMessageBox.confirm('确定要删除该技能吗？', '删除技能', {
+    confirmButtonText: '删除',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => true).catch(() => false)
+  if (!confirmed) return
   try {
-    await ElMessageBox.confirm('确定要删除该技能吗？', '删除技能', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
     const result = await window.electronAPI.longwriting.deleteSkill(id)
     if (result.success) {
       await loadSkills()
       ElMessage.success('技能已删除')
       updateProgress()
+    } else {
+      ElMessage.error(result.error || '删除技能失败')
     }
-  } catch {}
+  } catch (e) {
+    console.error('[SkillItemStage] 删除技能失败:', e)
+    ElMessage.error('删除技能失败')
+  }
 }
 
 async function saveSkill() {
@@ -865,19 +873,26 @@ function editItem(item: StoryItem) {
 }
 
 async function deleteItem(id: string) {
+  // 同 deleteSkill：区分「用户取消」与「删除真失败」
+  const confirmed = await ElMessageBox.confirm('确定要删除该物品吗？', '删除物品', {
+    confirmButtonText: '删除',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => true).catch(() => false)
+  if (!confirmed) return
   try {
-    await ElMessageBox.confirm('确定要删除该物品吗？', '删除物品', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
     const result = await window.electronAPI.longwriting.deleteItem(id)
     if (result.success) {
       await loadItems()
       ElMessage.success('物品已删除')
       updateProgress()
+    } else {
+      ElMessage.error(result.error || '删除物品失败')
     }
-  } catch {}
+  } catch (e) {
+    console.error('[SkillItemStage] 删除物品失败:', e)
+    ElMessage.error('删除物品失败')
+  }
 }
 
 async function saveItem() {

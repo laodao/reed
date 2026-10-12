@@ -81,7 +81,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import { toImageUrl } from '@/utils/asset-url'
 
@@ -119,17 +119,32 @@ const loading = ref(false)
 const selectedId = ref<string>('')
 const creating = ref(false)
 
-let searchTimer: any = null
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+
+/**
+ * 请求代号（复核修复 P1-6）：防抖只能减少请求数，不解决乱序——快速输入
+ * 「a」→「ab」时若「a」的响应后到，会把旧结果盖回列表，与输入框内容不一致。
+ * 每次请求自增代号，回来时代号不匹配就丢弃。
+ */
+let loadSeq = 0
 
 function onSearchInput(): void {
-  clearTimeout(searchTimer)
-  searchTimer = setTimeout(loadLibrary, 300)
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => void loadLibrary(), 300)
 }
+
+// 卸载时清掉待触发的防抖定时器，避免对已销毁组件赋值
+onBeforeUnmount(() => {
+  if (searchTimer) {
+    clearTimeout(searchTimer)
+    searchTimer = null
+  }
+})
 
 watch(visible, (v) => {
   if (v) {
     selectedId.value = ''
-    loadLibrary()
+    void loadLibrary()
   }
 })
 
@@ -139,12 +154,15 @@ async function loadLibrary(): Promise<void> {
     ElMessage.error('userAsset IPC 未暴露（请重启）')
     return
   }
+  const mySeq = ++loadSeq
   loading.value = true
   try {
     const resp = await api.userAsset.list({
       assetType: filterType.value,
       keyword: keyword.value || undefined,
     })
+    // 过期响应直接丢弃（期间用户又输入/切换了筛选）
+    if (mySeq !== loadSeq) return
     if (resp?.success && Array.isArray(resp.data)) {
       library.value = resp.data
     } else {
@@ -152,7 +170,8 @@ async function loadLibrary(): Promise<void> {
       if (!resp?.success) ElMessage.error(resp?.error || '加载库失败')
     }
   } finally {
-    loading.value = false
+    // 仅当仍是当前请求时才复位 loading，避免旧请求提前关掉新请求的加载态
+    if (mySeq === loadSeq) loading.value = false
   }
 }
 

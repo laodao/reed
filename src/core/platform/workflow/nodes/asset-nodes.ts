@@ -118,7 +118,7 @@ const saveAssetNode: WorkflowNodeHandler = {
     if (cfg.enabled === false) {
       return {
         status: 'succeeded',
-        output: { assetId: '', name: '', category: '', subCategory: '', kind: '', url: '', skipped: true },
+        output: { assetId: '', name: '', category: '', subCategory: '', kind: '', url: '', skipped: true, ...(cfg.passthrough ?? {}) },
       }
     }
     const content = stringifyValue(cfg.content)

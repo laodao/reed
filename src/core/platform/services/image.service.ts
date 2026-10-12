@@ -58,9 +58,16 @@ function withCapabilities(providerType: string, models: ImageModel[]): ImageMode
 }
 
 /**
- * 正在进行的轮询任务
+ * 正在进行的轮询任务（taskId → 定时器句柄）
  */
 const activePollingTasks = new Map<string, NodeJS.Timeout>()
+
+/**
+ * 轮询代号表（taskId → generation）。复核修复 P1-2：同一 taskId 重新开始轮询或
+ * 被停止时代号递增/删除，在途的旧回调据此自我终止，避免过期响应写状态、发重复事件。
+ */
+const pollingGenerationByTask = new Map<string, number>()
+let pollingGeneration = 0
 
 /**
  * 将本地文件路径（相对或绝对）转换为渲染端可加载的 URL。
@@ -389,21 +396,35 @@ export class ImageService {
     taskId: string,
     imageIds: string[],
   ): void {
-    // 如果已有相同任务的轮询，先停止
-    if (activePollingTasks.has(taskId)) {
-      clearInterval(activePollingTasks.get(taskId)!)
-    }
+    // 如果已有相同任务的轮询，先停止（先 delete 再 clear——此前只 clear 不 delete，
+    // 且 has+get()! 是 check-then-act，Map 会残留已失效句柄）
+    this.stopPollingTask(taskId)
+
+    // 复核修复 P1-2：用「代号 + 自调用串行循环」替代 setInterval + 立即 pollTask()。
+    // 原实现有两处竞态：(1) setInterval 与紧接着的 pollTask() 并发，两次 getTaskStatus
+    // 同时在途，先返回的旧响应会触发 clearInterval 并发 generation-completed，后到的
+    // 响应再写一次状态/事件；(2) stopGeneration 与轮询回调并发改同一 Map。
+    // 现在同一 taskId 的轮询严格串行，且代号不匹配的旧循环立即自我终止。
+    const generation = ++pollingGeneration
+    pollingGenerationByTask.set(taskId, generation)
 
     let pollCount = 0
     // 轮询次数上限走「参数设置 → 素材与图片 → 图片生成任务」（默认 60 次）
     const maxPolls = assetParams().image.maxPolls
+    const intervalMs = assetParams().image.pollIntervalMs
 
-    const pollTask = async () => {
+    const isActive = (): boolean =>
+      pollingGenerationByTask.get(taskId) === generation && activePollingTasks.has(taskId)
+
+    const pollTask = async (): Promise<void> => {
       pollCount++
       logger.info(`[ImageService] 轮询任务状态, taskId: ${taskId}, 第 ${pollCount} 次`)
 
       try {
         const status = await provider.getTaskStatus(taskId)
+
+        // 请求在途期间可能被 stopGeneration/新任务取代，丢弃过期响应
+        if (!isActive()) return
 
         // 发送进度事件
         this.sendImageEvent({
@@ -415,11 +436,7 @@ export class ImageService {
 
         if (status.status === 'completed') {
           // 停止轮询
-          const interval = activePollingTasks.get(taskId)
-          if (interval) {
-            clearInterval(interval)
-            activePollingTasks.delete(taskId)
-          }
+          this.stopPollingTask(taskId)
 
           // 下载并保存图像
           const savedImages = await this.saveGeneratedImages(taskId, status.images || [], imageIds)
@@ -432,11 +449,7 @@ export class ImageService {
           })
         } else if (status.status === 'failed') {
           // 停止轮询
-          const interval = activePollingTasks.get(taskId)
-          if (interval) {
-            clearInterval(interval)
-            activePollingTasks.delete(taskId)
-          }
+          this.stopPollingTask(taskId)
 
           // 更新数据库状态
           const dbManager = getCoreDatabaseManager()
@@ -452,11 +465,7 @@ export class ImageService {
           })
         } else if (pollCount >= maxPolls) {
           // 超时
-          const interval = activePollingTasks.get(taskId)
-          if (interval) {
-            clearInterval(interval)
-            activePollingTasks.delete(taskId)
-          }
+          this.stopPollingTask(taskId)
 
           const dbManager = getCoreDatabaseManager()
           if (dbManager.images) {
@@ -472,14 +481,28 @@ export class ImageService {
       } catch (error: any) {
         logger.error('[ImageService] 轮询任务状态失败:', error)
       }
+
+      // 仍在进行则排下一次；已终止（completed/failed/超时/被取代）则不再排
+      if (isActive()) {
+        activePollingTasks.set(taskId, setTimeout(() => void pollTask(), intervalMs))
+      }
     }
 
-    // 轮询间隔走「参数设置 → 素材与图片 → 图片生成任务」（默认每 5 秒一次）
-    const interval = setInterval(pollTask, assetParams().image.pollIntervalMs)
-    activePollingTasks.set(taskId, interval)
+    // 立即执行一次（占位句柄先登记，pollTask 每轮替换为新的 setTimeout 句柄）
+    activePollingTasks.set(taskId, setTimeout(() => void pollTask(), 0))
+  }
 
-    // 立即执行一次
-    pollTask()
+  /**
+   * 停止某任务的轮询：先作废代号（阻断在途回调继续排期），再清理句柄。
+   * 幂等——未在轮询时调用无副作用。
+   */
+  private static stopPollingTask(taskId: string): void {
+    pollingGenerationByTask.delete(taskId)
+    const handle = activePollingTasks.get(taskId)
+    if (handle) {
+      clearTimeout(handle)
+      activePollingTasks.delete(taskId)
+    }
   }
 
   /**
@@ -766,8 +789,8 @@ export class ImageService {
   static stopGeneration(taskId: string): boolean {
     const interval = activePollingTasks.get(taskId)
     if (interval) {
-      clearInterval(interval)
-      activePollingTasks.delete(taskId)
+      // 走统一停止路径：作废代号 + 清句柄，在途回调不会再写状态或排下一轮
+      this.stopPollingTask(taskId)
 
       // 更新数据库状态
       const dbManager = getCoreDatabaseManager()

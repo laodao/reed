@@ -11,7 +11,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { WorkflowNodeContext } from '@core/platform/workflow/engine/node-handler'
 
-const { readMock } = vi.hoisted(() => ({ readMock: vi.fn() }))
+const { readMock, findAssetByUrlMock } = vi.hoisted(() => ({ readMock: vi.fn(), findAssetByUrlMock: vi.fn() }))
+
+vi.mock('@core/platform/assets/asset-registry', () => ({
+  getAssetService: () => ({ findAssetByUrl: (...a: unknown[]) => findAssetByUrlMock(...a) }),
+}))
 
 vi.mock('@core/platform/workflow/nodes/browser-render', () => ({
   BROWSER_RENDER_FALLBACK_MIN_CHARS: 300,
@@ -73,6 +77,8 @@ interface ReadOutput {
 
 beforeEach(() => {
   readMock.mockReset()
+  findAssetByUrlMock.mockReset()
+  findAssetByUrlMock.mockResolvedValue(null)
 })
 
 describe('browser-read 节点：article 模式', () => {
@@ -196,6 +202,36 @@ describe('browser-read 节点：validateConfig 护栏', () => {
   })
   it('合法配置零错误', () => {
     expect(browserReadNode.validateConfig({ url: 'https://x/', mode: 'links', linkPattern: '^https://a\\.com/\\d+' })).toEqual([])
+  })
+})
+
+describe('browser-read 节点：skipIfUrlSaved（已收藏快进）', () => {
+  it('资产库已存在同链接 → 不开浏览器，输出 deduped=true + existingAssetId', async () => {
+    findAssetByUrlMock.mockResolvedValue({ id: 'asset_have', name: '旧文章' })
+    const result = await browserReadNode.execute(makeCtx({
+      url: 'https://www.toutiao.com/article/1/', mode: 'article',
+      skipIfUrlSaved: 'https://www.toutiao.com/article/1/',
+    }))
+    expect(result.status).toBe('succeeded')
+    expect(readMock.mock.calls.length).toBe(0)
+    const out = (result as { output: Record<string, unknown> }).output
+    expect(out.skipped).toBe(true)
+    expect(out.deduped).toBe(true)
+    expect(out.existingAssetId).toBe('asset_have')
+    expect(out.title).toBe('旧文章')
+  })
+
+  it('未收藏 → 正常打开阅读（查重不拦截）', async () => {
+    readMock.mockResolvedValue({ ok: true, html: ARTICLE_HTML, finalUrl: 'https://www.toutiao.com/article/2/', title: 't', links: [], scroll: SCROLL_STATS })
+    const result = await browserReadNode.execute(makeCtx({
+      url: 'https://www.toutiao.com/article/2/', mode: 'article',
+      skipIfUrlSaved: 'https://www.toutiao.com/article/2/',
+    }))
+    expect(readMock.mock.calls.length).toBe(1)
+    const out = (result as { output: Record<string, unknown> }).output
+    expect(out.skipped).toBeUndefined()
+    expect(out.deduped).toBeUndefined()
+    expect(String(out.markdown).length).toBeGreaterThan(0)
   })
 })
 
