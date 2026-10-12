@@ -100,6 +100,15 @@ export class GraphEdgeRepository extends BaseRepository<GraphEdgeEntity, GraphEd
     if (filter.targetKind) {
       qb.andWhere('e.target_kind = :tkk', { tkk: filter.targetKind })
     }
+    if (filter.sourceIdIn && filter.sourceIdIn.length > 0) {
+      qb.andWhere('e.source_id IN (:...sidIn)', { sidIn: filter.sourceIdIn })
+    }
+    if (filter.targetIdIn && filter.targetIdIn.length > 0) {
+      qb.andWhere('e.target_id IN (:...tidIn)', { tidIn: filter.targetIdIn })
+    }
+    if (filter.endpointIdIn && filter.endpointIdIn.length > 0) {
+      qb.andWhere('(e.source_id IN (:...ein) OR e.target_id IN (:...ein))', { ein: filter.endpointIdIn })
+    }
     if (filter.kind) {
       qb.andWhere('(e.source_kind = :k OR e.target_kind = :k)', { k: filter.kind })
     }

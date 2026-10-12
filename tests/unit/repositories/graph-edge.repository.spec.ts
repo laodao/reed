@@ -134,6 +134,27 @@ describe.each(getTestDialects())('GraphEdgeRepository [%s]', (dialect) => {
     expect(await runWithUserAsync('u1', () => repo.countAll())).toBe(1)
   })
 
+  it('批量 id 过滤：sourceIdIn/targetIdIn/endpointIdIn（邻域与级联删除口径）', async () => {
+    await runWithUserAsync('u1', () =>
+      repo.insertRows([
+        row({ id: 'e1', sourceId: 'x1', targetId: 'y1' }),
+        row({ id: 'e2', sourceId: 'x2', targetId: 'y2' }),
+        row({ id: 'e3', sourceId: 'y1', targetId: 'x1' }), // x1 作为 target
+      ]),
+    )
+    const q = (f?: Parameters<GraphEdgeRepository['findByGraph']>[1]) =>
+      runWithUserAsync('u1', () => repo.findByGraph('g1', f))
+    expect((await q({ sourceIdIn: ['x1'] })).map((e) => e.id)).toEqual(['e1'])
+    expect((await q({ sourceIdIn: ['x1', 'x2'] })).map((e) => e.id).sort()).toEqual(['e1', 'e2'])
+    expect((await q({ targetIdIn: ['y1'] })).map((e) => e.id)).toEqual(['e1'])
+    expect((await q({ endpointIdIn: ['x2'] })).map((e) => e.id)).toEqual(['e2'])
+    expect((await q({ endpointIdIn: ['x1', 'x2'] })).map((e) => e.id).sort()).toEqual(['e1', 'e2', 'e3'])
+    // 组合 kind 过滤：级联删除口径
+    expect((await q({ sourceKind: 'character', sourceIdIn: ['x1', 'x2'] })).map((e) => e.id).sort()).toEqual(['e1', 'e2'])
+    // 空数组不过滤（与 undefined 同义）
+    expect((await q({ endpointIdIn: [] })).length).toBe(3)
+  })
+
   it('label/description/evidence 空值往返（NULL 不变空串）', async () => {
     await runWithUserAsync('u1', () => repo.insertRows([row({ id: 'e1', label: null, description: null, evidence: null })]))
     const e = (await runWithUserAsync('u1', () => repo.findByGraph('g1')))[0]

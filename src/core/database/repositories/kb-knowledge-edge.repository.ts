@@ -131,11 +131,8 @@ export class KbKnowledgeEdgeRepository extends BaseRepository<KbKnowledgeEdgeEnt
   /** 邻域查询（PPR 展开与卡片 related 区共用）：给定节点集合的一跳边 */
   async neighborsOf(kbId: string, ids: string[]): Promise<KbEdgeRecord[]> {
     if (ids.length === 0) return []
-    const idSet = new Set(ids)
-    const edges = await this.store.listEdges(GraphNames.kb(kbId))
-    return edges
-      .filter((e) => idSet.has(e.source.id) || idSet.has(e.target.id))
-      .map((e) => KbKnowledgeEdgeRepository.toRecord(e))
+    const edges = await this.store.listEdges(GraphNames.kb(kbId), { endpointIdIn: ids })
+    return edges.map((e) => KbKnowledgeEdgeRepository.toRecord(e))
   }
 
   /** 图快照（PPR 输入；缓存与失效在 BrainQueryService，仓储只出数据） */
@@ -233,12 +230,10 @@ export class KbKnowledgeEdgeRepository extends BaseRepository<KbKnowledgeEdgeEnt
 
   async deleteBySourceIds(sourceKind: KbEdgeNodeKind, ids: string[]): Promise<void> {
     if (ids.length === 0) return
-    // 老签名无 kbId（按用户全域删）——遍历该用户的 kb 库逐一删，语义等价
+    // 老签名无 kbId（按用户全域删）——遍历该用户的 kb 库各一条批量 DELETE
     const graphs = await this.store.listGraphs(KB_PREFIX)
     for (const { graphName } of graphs) {
-      for (const id of ids) {
-        await this.store.removeEdges(graphName, { source: { kind: sourceKind, id } })
-      }
+      await this.store.removeEdges(graphName, { sourceKind, sourceIdIn: ids })
     }
   }
 
@@ -247,9 +242,7 @@ export class KbKnowledgeEdgeRepository extends BaseRepository<KbKnowledgeEdgeEnt
     if (ids.length === 0) return
     const graphs = await this.store.listGraphs(KB_PREFIX)
     for (const { graphName } of graphs) {
-      for (const id of ids) {
-        await this.store.removeEdges(graphName, { target: { kind: targetKind, id } })
-      }
+      await this.store.removeEdges(graphName, { targetKind, targetIdIn: ids })
     }
   }
 }

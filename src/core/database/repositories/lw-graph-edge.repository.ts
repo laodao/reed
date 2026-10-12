@@ -160,9 +160,19 @@ export class LwGraphEdgeRepository extends BaseRepository<LwGraphEdgeEntity, Gra
 
   async batchCreate(dataList: CreateGraphEdgeRequest[]): Promise<GraphEdge[]> {
     if (dataList.length === 0) return []
-    const graph = GraphNames.lwProject(dataList[0].projectId)
-    const r = await this.store.addEdges(graph, dataList.map((d) => LwGraphEdgeRepository.toSpec(d)))
-    return r.created.map((e) => LwGraphEdgeRepository.toLwEdge(e))
+    // 按项目分组建边：边归属跟随各自 projectId（混项目调用不会错库；现调用方单项目，防御性保留）
+    const byProject = new Map<string, CreateGraphEdgeRequest[]>()
+    for (const d of dataList) {
+      const list = byProject.get(d.projectId)
+      if (list) list.push(d)
+      else byProject.set(d.projectId, [d])
+    }
+    const out: GraphEdge[] = []
+    for (const [projectId, list] of byProject) {
+      const r = await this.store.addEdges(GraphNames.lwProject(projectId), list.map((d) => LwGraphEdgeRepository.toSpec(d)))
+      out.push(...r.created.map((e) => LwGraphEdgeRepository.toLwEdge(e)))
+    }
+    return out
   }
 
   async update(id: string, data: UpdateGraphEdgeRequest): Promise<GraphEdge | null> {

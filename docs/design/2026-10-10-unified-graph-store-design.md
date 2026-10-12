@@ -321,3 +321,34 @@ node scripts/vitest-electron.cjs run tests/unit/services/graph-store.real-data.i
 ### 12.3 M1 后状态
 
 基础设施可交付使用（新模块直接 `GraphStoreService` 建图），**五套存量业务尚未切换**（§8 四步切换待后续批次执行，facade 模式保证 handler/前端零改动）。
+
+## 13. 切换完成与代码评审记录（2026-10-12）
+
+### 13.1 §8 四步切换实际执行方式
+
+与 §8 原计划（分四批、每批 facade 过渡）不同，实际**一次完成全部五个仓储的 facade 化**（commit 08dae974）：旧仓储原地改写为 GraphStore 视图，方法签名/DTO 不变，调用方/IPC/前端零改动。理由：facade 模式天然保证每批可独立发布，而五批的 harness 改造成本相同，一次切换减少中间态。
+
+**与计划的偏差（有意）**：
+- §8 步骤 2 写的「dl 内联拓扑判环改调 store.reachable()」未做——facade 保留原 `wouldCreatePrereqCycle` 规则函数（与讲义门禁共用同一实现，本就是"全模块唯一前置可达性实现"）；`store.reachable` 作为 API 面保留（测试覆盖）。
+- §12.3 所述「四步切换待后续批次」已被本节取代：切换已完成。
+
+### 13.2 切换后代码评审（2026-10-12，自审）发现并修复
+
+| # | 问题 | 处置 |
+|---|---|---|
+| 1 | `IpCreateWizard` AI 引导入库路径：`confirmed` ref 深 reactive 化的 aliases/catchphrases/tags 数组过不了 IPC structured clone（与 IpLibrary 同款崩溃，AI 引导主入口必挂） | payload JSON 深拷贝后过 IPC（917673c5 后补） |
+| 2 | `LwGraphEdgeRepository.batchCreate` 以 `dataList[0].projectId` 定库——混项目调用会归错库（现调用方单项目，属防御性缺陷） | 按 projectId 分组建边，边归属跟随各自项目 |
+| 3 | kb `deleteBySourceIds/deleteByTargetIds` 逐 id 循环删（原文档删除级联 1 条批量 DELETE → N 条） | EdgeFilter 新增 `sourceIdIn/targetIdIn/endpointIdIn`，每库一条批量 DELETE |
+| 4 | kb `neighborsOf` / ip `listByCharacterIds` 全图拉边内存过滤（大图性能退化） | 改 `endpointIdIn` 单查询 |
+
+### 13.3 评审确认可接受的语义差异（不改）
+
+- **lw `create` 撞活跃键返回现存边**：旧表无约束时用户手工重复加同键关系会产生平行边（一致性规则随后报疑点）；统一后静默返回已有边。语义更收敛，UI 显示同一条件。
+- **kb `createBatch` 查重带 knowledge_base_id**：旧实现跨库查重（同五元组跨库误跳过）；atom/note id 为 UUID 实际无碰撞，统一后语义更严谨（§10 #9）。
+- **并发 TOCTOU**：addEdges 查重与插入之间存在竞窗，并发同键写入会撞部分唯一索引抛错（而非静默重复）。旧实现（lw 无约束/kb 事务内查重）同样存在竞窗。唯一索引兜底，错误面暴露优于脏数据。
+- **`deleteByOriginChapter`/`redirectNode` 逐行操作**：与旧实现同等形态（旧行级联也是循环删），调用频度低（章节重跑/实体合并），暂不优化。
+- **老实体类保留**：facade 基类契约与 Phase 3 回滚需要，`entities/index.ts` 仍导出五套旧 entity；Phase 3（隔版本 drop 老表）时一并移除。
+
+### 13.4 真机 UI 功能验收（2026-10-12）
+
+真实应用（真机库 1.3GB）驱动 UI 走完全链路：迁移幂等/增量/自愈三重验证；领域学习建空间→概念→前置边（直进 graph_edges、verified=1）→门控文案→Atlas 渲染→删概念级联清边×3；知识大脑实体关系图（344 真实边）；长文 3D 图谱（事件 239/物品 12/势力 5/技能 5）；IP 角色 CRUD。测试数据已全部清理。过程中顺修前端桥接 8 处失效命名空间 + 2 处 IPC clone 崩溃（917673c5 + §13.2 #1）。

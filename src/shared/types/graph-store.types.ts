@@ -73,6 +73,12 @@ export interface EdgeFilter {
   /** 精确端点 kind 过滤（与 source/target 的 kind+id 组合互补） */
   sourceKind?: string
   targetKind?: string
+  /** source_id ∈ 集合（批量级联删除用，避免逐 id 查询） */
+  sourceIdIn?: string[]
+  /** target_id ∈ 集合 */
+  targetIdIn?: string[]
+  /** 任一端 id ∈ 集合（邻域查询批量口径） */
+  endpointIdIn?: string[]
   /** 任一端 kind 命中 */
   kind?: string
   /** 时间线生效过滤：valid_from <= x 且 (valid_until 为 NULL 或 >= x) */

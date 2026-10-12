@@ -289,9 +289,11 @@ const saveToLibrary = async () => {
     tags: (c.tags as string[]) || [],
   }
   // M1：oneShot 路径后端已建行，此处更新；分层路径才新建
+  // reactive 代理（confirmed ref 深层转换的 aliases/catchphrases/tags 数组）过不了 IPC structured clone
+  const plain = JSON.parse(JSON.stringify(payload))
   const ip = oneShotCreatedId.value
-    ? await lib().ipUpdate(oneShotCreatedId.value, payload)
-    : await lib().ipCreate(payload)
+    ? await lib().ipUpdate(oneShotCreatedId.value, plain)
+    : await lib().ipCreate(plain)
   if (!ip) {
     ElMessage.error('入库失败：角色已不存在')
     return

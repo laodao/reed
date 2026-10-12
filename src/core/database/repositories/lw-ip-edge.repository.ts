@@ -60,10 +60,8 @@ export class LwIpEdgeRepository extends BaseRepository<LwIpEdgeEntity, IpEdge> {
 
   async listByCharacterIds(ids: string[]): Promise<IpEdge[]> {
     if (ids.length === 0) return []
-    const edges = await this.store.listEdges(GRAPH)
-    return edges
-      .filter((e) => ids.includes(e.source.id) || ids.includes(e.target.id))
-      .map((e) => LwIpEdgeRepository.toIpEdge(e))
+    const edges = await this.store.listEdges(GRAPH, { endpointIdIn: ids })
+    return edges.map((e) => LwIpEdgeRepository.toIpEdge(e))
   }
 
   async create(data: CreateIpEdgeRequest): Promise<IpEdge> {
