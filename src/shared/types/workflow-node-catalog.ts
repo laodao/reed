@@ -908,6 +908,8 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
       { key: 'finalUrl', type: 'string', desc: '最终 URL（重定向后）' },
       { key: 'scroll', type: 'json', desc: '滚动统计 { steps, totalPx, reachedBottom, durationMs, matchedLinks }' },
       { key: 'skipped', type: 'boolean', desc: '阅读失败被跳过（onError=skip 时输出空结果并置 true）' },
+      { key: 'deduped', type: 'boolean', desc: '已收藏命中（skipIfUrlSaved 命中资产库同链接，未打开页面）' },
+      { key: 'existingAssetId', type: 'string', desc: '命中时已存在资产的 ID' },
     ],
   },
   {

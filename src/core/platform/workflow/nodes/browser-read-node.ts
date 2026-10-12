@@ -20,6 +20,7 @@ import type { WorkflowNodeContext, WorkflowNodeHandler } from '../engine/node-ha
 import { stringifyValue } from '../engine/variable-resolver'
 import { validateOutboundUrl } from '@core/utils/outbound-url'
 import { politePause } from './http-politeness'
+import { getAssetService } from '../../assets/asset-registry'
 import {
   BROWSER_READ_TIMEOUT_MAX_MS,
   readPageLikeHuman,
@@ -102,6 +103,12 @@ type BrowserReadConfig = {
   bottomSettleMs?: number
   delayMsMin?: number
   delayMsMax?: number
+  /**
+   * 跳过已收藏（可选，支持 {{模板}}）：填原文链接，资产库已存在同 url 资产时
+   * 直接输出 skipped=true + deduped=true（不开浏览器不滚动）——采集类工作流
+   * 续跑秒级快进已采条目，不必重新"阅读"一遍才发现重复。
+   */
+  skipIfUrlSaved?: string
 }
 
 const browserReadNode: WorkflowNodeHandler = {
@@ -118,6 +125,8 @@ const browserReadNode: WorkflowNodeHandler = {
     { key: 'finalUrl', type: 'string', desc: '最终 URL（重定向后）' },
     { key: 'scroll', type: 'json', desc: '滚动统计 { steps, totalPx, reachedBottom, durationMs, matchedLinks }' },
     { key: 'skipped', type: 'boolean', desc: '阅读失败被跳过（onError=skip 时输出空结果并置 true）' },
+    { key: 'deduped', type: 'boolean', desc: '已收藏命中（skipIfUrlSaved 命中资产库同链接，未打开页面）' },
+    { key: 'existingAssetId', type: 'string', desc: '命中时已存在资产的 ID' },
   ],
   validateConfig(config) {
     const cfg = config as BrowserReadConfig
@@ -173,6 +182,22 @@ const browserReadNode: WorkflowNodeHandler = {
     const guard = validateOutboundUrl(url)
     if (!guard.ok) {
       return { status: 'failed', error: `URL 校验失败：${guard.reason}`, retryable: false }
+    }
+
+    // 已收藏快进：资产库存在同链接 → 不开浏览器（采集续跑秒级跳过已采条目）
+    const skipIfUrlSaved = stringifyValue(cfg.skipIfUrlSaved ?? '').trim()
+    if (skipIfUrlSaved) {
+      const existing = await getAssetService().findAssetByUrl(skipIfUrlSaved)
+      if (existing) {
+        ctx.logger.info(`[browser-read] 已收藏跳过：${skipIfUrlSaved}（asset ${existing.id}）`)
+        return {
+          status: 'succeeded',
+          output: {
+            title: existing.name, text: '', markdown: '', length: 0, links: [], count: 0,
+            finalUrl: skipIfUrlSaved, scroll: null, skipped: true, deduped: true, existingAssetId: existing.id,
+          },
+        }
+      }
     }
 
     // 礼貌节奏：与 web-extract 共享同站限速（跨节点共享队列）

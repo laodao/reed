@@ -82,6 +82,16 @@ describe('save-asset dedupeUrl（URL 幂等去重）', () => {
     expect(mockFindAssetByUrl).not.toHaveBeenCalled()
     expect((result as { output: Record<string, unknown> }).output.skipped).toBe(true)
   })
+
+  it('enabled=false 时 passthrough 仍透传（deduped 计数贯通到汇总）', async () => {
+    const result = await saveAssetNode.execute(makeCtx({
+      content: '正文', kind: 'text', enabled: false,
+      passthrough: { deduped: true },
+    }))
+    const out = (result as { output: Record<string, unknown> }).output
+    expect(out.skipped).toBe(true)
+    expect(out.deduped).toBe(true)
+  })
 })
 
 describe('save-asset sourceRef（跨运行归组）', () => {

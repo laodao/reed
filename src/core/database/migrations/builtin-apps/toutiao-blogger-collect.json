@@ -11,7 +11,10 @@
         "id": "start",
         "type": "start",
         "name": "开始",
-        "position": { "x": 40, "y": 300 },
+        "position": {
+          "x": 40,
+          "y": 300
+        },
         "config": {
           "inputs": [
             {
@@ -44,15 +47,18 @@
         "id": "listBr",
         "type": "browser-read",
         "name": "打开博主主页·滚动加载文章列表",
-        "position": { "x": 320, "y": 300 },
+        "position": {
+          "x": 320,
+          "y": 300
+        },
         "config": {
           "url": "{{start.bloggerUrl}}",
           "mode": "links",
           "linkPattern": "^https?://www\\.toutiao\\.com/article/\\d+",
           "maxLinks": "{{start.maxArticles}}",
           "onError": "fail",
-          "timeoutMs": 180000,
-          "scrollMaxMs": 150000,
+          "timeoutMs": 300000,
+          "scrollMaxMs": 280000,
           "delayMsMin": 1200,
           "delayMsMax": 3200
         }
@@ -61,7 +67,10 @@
         "id": "loop1",
         "type": "loop",
         "name": "逐篇采集（严格串行，不并发）",
-        "position": { "x": 580, "y": 300 },
+        "position": {
+          "x": 580,
+          "y": 300
+        },
         "config": {
           "mode": "foreach",
           "listExpression": "{{listBr.links}}",
@@ -73,7 +82,10 @@
         "id": "readBr",
         "type": "browser-read",
         "name": "拟人阅读正文（缓慢滚动到底）",
-        "position": { "x": 840, "y": 180 },
+        "position": {
+          "x": 840,
+          "y": 180
+        },
         "config": {
           "url": "{{loop1.item.url}}",
           "mode": "article",
@@ -82,30 +94,53 @@
           "timeoutMs": 150000,
           "scrollMaxMs": 90000,
           "delayMsMin": 1500,
-          "delayMsMax": 4500
+          "delayMsMax": 4500,
+          "skipIfUrlSaved": "{{loop1.item.url}}"
         }
       },
       {
         "id": "guard1",
         "type": "code",
         "name": "有效性检查",
-        "position": { "x": 1100, "y": 180 },
+        "position": {
+          "x": 1100,
+          "y": 180
+        },
         "config": {
           "language": "js",
           "inputs": [
-            { "key": "markdown", "value": "{{readBr.markdown}}" },
-            { "key": "text", "value": "{{readBr.text}}" },
-            { "key": "title", "value": "{{readBr.title}}" },
-            { "key": "index", "value": "{{loop1.index}}" }
+            {
+              "key": "markdown",
+              "value": "{{readBr.markdown}}"
+            },
+            {
+              "key": "text",
+              "value": "{{readBr.text}}"
+            },
+            {
+              "key": "title",
+              "value": "{{readBr.title}}"
+            },
+            {
+              "key": "index",
+              "value": "{{loop1.index}}"
+            },
+            {
+              "key": "deduped",
+              "value": "{{readBr.deduped}}"
+            }
           ],
-          "code": "const md = String(inputs.markdown || '')\nconst plain = String(inputs.text || '')\nconst body = md.length >= plain.length ? md : plain\nif (body.replace(/\\s+/g, '').length < 200) return { ok: false, title: '', body: '' }\nconst raw = String(inputs.title || '').trim()\nconst title = (raw || '文章' + (Number(inputs.index) + 1)).replace(/[\\\\/:*?\"<>|]/g, ' ').slice(0, 80)\nreturn { ok: true, title, body }"
+          "code": "const md = String(inputs.markdown || '')\nconst plain = String(inputs.text || '')\nconst body = md.length >= plain.length ? md : plain\nif (inputs.deduped === true || String(inputs.deduped) === 'true') return { ok: false, deduped: true, title: '', body: '' }\nif (body.replace(/\\s+/g, '').length < 200) return { ok: false, title: '', body: '' }\nconst raw = String(inputs.title || '').trim()\nconst title = (raw || '文章' + (Number(inputs.index) + 1)).replace(/[\\/:*?\"<>|]/g, ' ').slice(0, 80)\nreturn { ok: true, title, body }"
         }
       },
       {
         "id": "save1",
         "type": "save-asset",
         "name": "存入博主集合（幂等去重）",
-        "position": { "x": 1360, "y": 180 },
+        "position": {
+          "x": 1360,
+          "y": 180
+        },
         "config": {
           "content": "{{guard1.result.body}}",
           "kind": "text",
@@ -117,27 +152,39 @@
           "enabled": "{{guard1.result.ok}}",
           "groupName": "{{start.bloggerName}}",
           "sourceRef": "toutiao-blogger:{{start.bloggerUrl}}",
-          "dedupeUrl": "{{loop1.item.url}}"
+          "dedupeUrl": "{{loop1.item.url}}",
+          "passthrough": {
+            "deduped": "{{guard1.result.deduped}}"
+          }
         }
       },
       {
         "id": "summary1",
         "type": "code",
         "name": "汇总采集结果",
-        "position": { "x": 1620, "y": 300 },
+        "position": {
+          "x": 1620,
+          "y": 300
+        },
         "config": {
           "language": "js",
           "inputs": [
-            { "key": "items", "value": "{{loop1.results}}" }
+            {
+              "key": "items",
+              "value": "{{loop1.results}}"
+            }
           ],
-          "code": "const items = Array.isArray(inputs.items) ? inputs.items : []\nconst unwrap = (x) => (x && x.result && typeof x.result === 'object') ? x.result : x\nconst rows = items.map(unwrap).filter(Boolean)\nconst saved = rows.filter((r) => r.assetId && !r.deduped).length\nconst dup = rows.filter((r) => r.deduped).length\nconst failed = rows.filter((r) => !r.assetId).length\nreturn { total: rows.length, saved, dup, failed }"
+          "code": "const items = Array.isArray(inputs.items) ? inputs.items : []\nconst unwrap = (x) => (x && x.result && typeof x.result === 'object') ? x.result : x\nconst rows = items.map(unwrap).filter(Boolean)\nconst saved = rows.filter((r) => r.assetId && !r.deduped).length\nconst dup = rows.filter((r) => r.deduped).length\nconst failed = rows.filter((r) => !r.assetId && !r.deduped).length\nreturn { total: rows.length, saved, dup, failed }"
         }
       },
       {
         "id": "notify1",
         "type": "app-notify",
         "name": "完成通知",
-        "position": { "x": 1880, "y": 300 },
+        "position": {
+          "x": 1880,
+          "y": 300
+        },
         "config": {
           "title": "头条博主文章采集完成",
           "level": "success",
@@ -148,25 +195,73 @@
         "id": "end",
         "type": "end",
         "name": "结束",
-        "position": { "x": 2140, "y": 300 },
+        "position": {
+          "x": 2140,
+          "y": 300
+        },
         "config": {}
       }
     ],
     "edges": [
-      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "listBr", "kind": "normal" },
-      { "id": "e2", "sourceNodeId": "listBr", "targetNodeId": "loop1", "kind": "normal" },
-      { "id": "e3", "sourceNodeId": "loop1", "targetNodeId": "readBr", "kind": "loop-body" },
-      { "id": "e4", "sourceNodeId": "readBr", "targetNodeId": "guard1", "kind": "normal" },
-      { "id": "e5", "sourceNodeId": "guard1", "targetNodeId": "save1", "kind": "normal" },
-      { "id": "e6", "sourceNodeId": "save1", "targetNodeId": "loop1", "kind": "loop-back" },
-      { "id": "e7", "sourceNodeId": "loop1", "targetNodeId": "summary1", "kind": "loop-done" },
-      { "id": "e8", "sourceNodeId": "summary1", "targetNodeId": "notify1", "kind": "normal" },
-      { "id": "e9", "sourceNodeId": "notify1", "targetNodeId": "end", "kind": "normal" }
+      {
+        "id": "e1",
+        "sourceNodeId": "start",
+        "targetNodeId": "listBr",
+        "kind": "normal"
+      },
+      {
+        "id": "e2",
+        "sourceNodeId": "listBr",
+        "targetNodeId": "loop1",
+        "kind": "normal"
+      },
+      {
+        "id": "e3",
+        "sourceNodeId": "loop1",
+        "targetNodeId": "readBr",
+        "kind": "loop-body"
+      },
+      {
+        "id": "e4",
+        "sourceNodeId": "readBr",
+        "targetNodeId": "guard1",
+        "kind": "normal"
+      },
+      {
+        "id": "e5",
+        "sourceNodeId": "guard1",
+        "targetNodeId": "save1",
+        "kind": "normal"
+      },
+      {
+        "id": "e6",
+        "sourceNodeId": "save1",
+        "targetNodeId": "loop1",
+        "kind": "loop-back"
+      },
+      {
+        "id": "e7",
+        "sourceNodeId": "loop1",
+        "targetNodeId": "summary1",
+        "kind": "loop-done"
+      },
+      {
+        "id": "e8",
+        "sourceNodeId": "summary1",
+        "targetNodeId": "notify1",
+        "kind": "normal"
+      },
+      {
+        "id": "e9",
+        "sourceNodeId": "notify1",
+        "targetNodeId": "end",
+        "kind": "normal"
+      }
     ]
   },
   "triggers": [],
   "settings": {
-    "maxDurationMs": 7200000,
-    "maxLoopIterations": 200
+    "maxDurationMs": 21600000,
+    "maxLoopIterations": 500
   }
 }

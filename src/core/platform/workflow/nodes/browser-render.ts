@@ -369,9 +369,11 @@ const HUMAN_SCROLL_DEFAULTS = {
  * 滚动语义：
  * - 每步随机距离 scrollBy + 随机停顿；小概率触发"驻留"（人读到有意思处多停几秒）
  * - 触底后再等 bottomSettleMs 复核：高度增长（懒加载插入内容）→ 继续滚；仍触底 → 收工
- * - linkPattern 命中数达标（minLinks）→ 提前收工（列表页不必滚到全量底部）
+ * - **边滚边累积链接**（信息流分批加载/虚拟列表：滚过即收，不赌最终 DOM 还留着旧条目），
+ *   收工带回的是全程累积的去重链接序列（首现顺序 = 阅读顺序）
+ * - linkPattern 命中数达标（minLinks，按累积数计）→ 提前收工（列表页不必滚到全量底部）
  * - 连续 5 步纹丝不动（滚动容器不在 window 的非常规页面）→ 防空转收工
- * 收工时一次性带回 HTML / 标题 / 页内链接（绝对地址）/ 滚动统计。
+ * 收工时一次性带回 HTML / 标题 / 累积链接 / 滚动统计。
  */
 export function buildHumanScrollScript(opts: HumanScrollOptions): string {
   const p = {
@@ -394,29 +396,36 @@ export function buildHumanScrollScript(opts: HumanScrollOptions): string {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   let re = null
   if (P.linkPattern) { try { re = new RegExp(P.linkPattern) } catch (e) { re = null } }
-  const countMatched = () => {
-    if (!re) return 0
-    let n = 0
-    for (const a of document.querySelectorAll('a[href]')) { try { if (re.test(a.href || '')) n++ } catch (e) {} }
-    return n
-  }
   const doc = document.documentElement
-  const collect = (steps, reachedBottom, stalls, t0) => ({
-    html: doc.outerHTML,
-    title: document.title || '',
-    links: Array.from(document.querySelectorAll('a[href]'))
-      .map((a) => ({ url: a.href || '', title: (a.textContent || '').trim().slice(0, 200) }))
-      .filter((l) => /^https?:/i.test(l.url))
-      .slice(0, 1000),
-    scroll: {
-      steps,
-      totalPx: Math.round(window.scrollY),
-      reachedBottom,
-      durationMs: Date.now() - t0,
-      matchedLinks: countMatched(),
-      stalls,
-    },
-  })
+  const seen = new Set()
+  const acc = []
+  const sweep = () => {
+    for (const a of document.querySelectorAll('a[href]')) {
+      const href = a.href || ''
+      if (!/^https?:/i.test(href)) continue
+      if (re && !re.test(href)) continue
+      if (seen.has(href)) continue
+      seen.add(href)
+      if (acc.length < 2000) acc.push({ url: href, title: (a.textContent || '').trim().slice(0, 200) })
+    }
+    return acc.length
+  }
+  const collect = (steps, reachedBottom, stalls, t0) => {
+    sweep()
+    return {
+      html: doc.outerHTML,
+      title: document.title || '',
+      links: acc.slice(0, 2000),
+      scroll: {
+        steps,
+        totalPx: Math.round(window.scrollY),
+        reachedBottom,
+        durationMs: Date.now() - t0,
+        matchedLinks: acc.length,
+        stalls,
+      },
+    }
+  }
   const t0 = Date.now()
   let steps = 0
   let stalls = 0
@@ -430,7 +439,7 @@ export function buildHumanScrollScript(opts: HumanScrollOptions): string {
     await sleep(rest)
     const moved = window.scrollY > before
     const bottom = window.scrollY + window.innerHeight >= doc.scrollHeight - 2
-    if (re && P.minLinks > 0 && countMatched() >= P.minLinks) return collect(steps, bottom, stalls, t0)
+    if (re && P.minLinks > 0 && sweep() >= P.minLinks) return collect(steps, bottom, stalls, t0)
     if (bottom) {
       await sleep(P.bottomSettleMs)
       if (window.scrollY + window.innerHeight >= doc.scrollHeight - 2) return collect(steps, true, stalls, t0)
