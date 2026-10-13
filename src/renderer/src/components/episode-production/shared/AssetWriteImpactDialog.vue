@@ -25,7 +25,7 @@
         </p>
       </div>
 
-      <!-- 口径说明（估算口径声明 / 未迁移老数据标注） -->
+      <!-- 口径说明（估算口径声明） -->
       <div v-if="impact?.notes?.length" class="impact-notes">
         <div class="notes-title">统计口径说明</div>
         <ul>

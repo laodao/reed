@@ -73,6 +73,7 @@ import { toAbsImagePath } from '@core/platform/episode-production/common/image-h
 import { getModelCapabilities } from '@core/platform/providers/image/model-capabilities'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getPathProvider } from '@core/interfaces/path.interface'
+import { getCurrentUserId } from '@core/context/user-context'
 import * as fs from 'fs'
 import * as path from 'path'
 import type { ImageGenerator } from '@core/platform/episode-production/assets/services/gallery-derivation.service'
@@ -527,6 +528,15 @@ export class KeyframeGenerationService {
    *   ——character 查 characters（[].characterId）；location 查 location_binding_ids；
    *   item 查 item_binding_ids。bindingId 带 cb_/lb_/ib_ 前缀，天然区分 kind。
    *
+   * 租户可见性（2026-10-13 review P1-1 收敛）：两段查询均补
+   * "user_id = me OR user_id IS NULL" 过滤（与 asset-image.service 读规则一致）——
+   * 原实现无租户条件，Web 端 A 用户可统计/级联重生 B 用户的行（越权读写）。
+   * PC 端单用户 user_id 为 NULL，行为不变。
+   *
+   * 与 T01 写回影响通道（ep:asset:get-write-impact / AssetReferenceService）的分工：
+   * 本口径面向"关键帧挑图 overrides 命中 + 级联重生 keyframeIds"，
+   * 分镜/剧集粒度的爆炸半径以 T01 通道为准（含 characters JSON 应用层精确解析）。
+   *
    * 返回 keyframeIds 供级联重生逐个调 regenerateKeyframe。
    */
   async countAssetReferences(
@@ -534,10 +544,13 @@ export class KeyframeGenerationService {
     bindingId: string,
   ): Promise<{ keyframes: number; storyboards: number; keyframeIds: string[] }> {
     const pat = `%${bindingId}%`
+    const uid = getCurrentUserId()
+    const visSql = uid ? '(kf.user_id = :__uid OR kf.user_id IS NULL)' : 'kf.user_id IS NULL'
     const kfRows = await this.ds
       .getRepository(StoryboardKeyframeEntity)
       .createQueryBuilder('kf')
       .where('kf.reference_overrides LIKE :pat', { pat })
+      .andWhere(visSql, uid ? { __uid: uid } : {})
       .getMany()
 
     const sbColumn =
@@ -546,10 +559,14 @@ export class KeyframeGenerationService {
         : kind === 'location'
           ? 'location_binding_ids'
           : 'item_binding_ids'
+    const sbVisSql = uid
+      ? '(sb.user_id = :__uid OR sb.user_id IS NULL)'
+      : 'sb.user_id IS NULL'
     const storyboards = await this.ds
       .getRepository(StoryboardEntity)
       .createQueryBuilder('sb')
       .where(`sb.${sbColumn} LIKE :pat`, { pat })
+      .andWhere(sbVisSql, uid ? { __uid: uid } : {})
       .getCount()
 
     return {

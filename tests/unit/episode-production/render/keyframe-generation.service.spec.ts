@@ -35,6 +35,7 @@ import { StoryboardCharacterEntity } from '@core/database/entities/episode-produ
 import { ImageAssetEntity } from '@core/database/entities/image-asset.entity'
 import { KeyframeGenerationService } from '@core/platform/episode-production/render/keyframe/keyframe-generation.service'
 import { KeyframeReviewService } from '@core/platform/episode-production/render/keyframe/keyframe-review.service'
+import { runWithUser } from '@core/context/user-context'
 import { ImageAssetRepository } from '@core/database/repositories/image-asset.repository'
 import { StoryboardKeyframeRepository } from '@core/database/repositories/storyboard-keyframe.repository'
 import * as dbModule from '@core/database/database-manager.interface'
@@ -762,6 +763,45 @@ describe('KeyframeGenerationService', () => {
     expect(locImpact.keyframes).toBe(1)
     // storyboards.location_binding_ids 未含 lb1 → 0
     expect(locImpact.storyboards).toBe(0)
+  })
+
+  /**
+   * review P1-1 收敛：countAssetReferences 补 me-OR-NULL 租户过滤——
+   * 原实现无租户条件，Web 端 A 用户可统计/级联重生 B 用户的行（越权读写）。
+   */
+  it('S-05 countAssetReferences：租户过滤（他人行不可见，user_id IS NULL 共享行可见）', async () => {
+    const { sbId } = await seedScene(ds)
+    const all = await svc.generateKeyframesForStoryboard({ storyboardId: sbId })
+    await svc.setReferenceOverrides(all[0].id, [
+      { kind: 'character', bindingId: 'cb1', imageId: 'ai_char' },
+    ])
+    await ds.getRepository(StoryboardEntity).update(
+      { id: sbId },
+      { characters: [{ characterId: 'cb1' }] } as any,
+    )
+
+    // 关键帧行归属 user-a；分镜行归属 user-b
+    const kfRepo = ds.getRepository(StoryboardKeyframeEntity)
+    await kfRepo.update({ id: all[0].id }, { userId: 'user-a' } as any)
+    await ds.getRepository(StoryboardEntity).update({ id: sbId }, { userId: 'user-b' } as any)
+
+    // A：自己的关键帧可见，B 的分镜不可见
+    const aView = await runWithUser('user-a', () => svc.countAssetReferences('character', 'cb1'))
+    expect(aView.keyframes).toBe(1)
+    expect(aView.keyframeIds).toEqual([all[0].id])
+    expect(aView.storyboards).toBe(0)
+
+    // B：别人的关键帧不可见，自己的分镜可见
+    const bView = await runWithUser('user-b', () => svc.countAssetReferences('character', 'cb1'))
+    expect(bView.keyframes).toBe(0)
+    expect(bView.storyboards).toBe(1)
+
+    // 共享行（user_id NULL）双方可见：把分镜改回 NULL
+    await ds.getRepository(StoryboardEntity).update({ id: sbId }, { userId: null } as any)
+    const bView2 = await runWithUser('user-b', () => svc.countAssetReferences('character', 'cb1'))
+    expect(bView2.storyboards).toBe(1)
+    const cView = await runWithUser('user-c', () => svc.countAssetReferences('character', 'cb1'))
+    expect(cView.storyboards).toBe(1)
   })
 
   /**

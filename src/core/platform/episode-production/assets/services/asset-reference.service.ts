@@ -12,13 +12,16 @@
  *        （该列语义为 character binding id —— 与分镜 characters JSON 的
  *        characterId / 关键帧参考解析 resolver.resolveCharacter 的首选用法一致）；
  *   路径B `scene_characters` 表按 `character_binding_id` 列计数——该列可 null
- *        （实体注释："null 表示老剧本未迁移"），null 行不计入，检测到时在
- *        detail 标注"含未迁移老数据"；
- *   两路去重到 storyboard 粒度。
+ *        （实体注释："null 表示老剧本未迁移"），null 行不计入；
+ *   路径C `storyboards.characters` JSON 列（2026-10-13 对抗性审查 P1-1 补挂）——
+ *        AI 分镜生成主生产路径（storyboard-cogen replaceSceneStoryboards）只写该
+ *        JSON 列、不写 storyboard_characters 表，是最常见数据形状；老数据
+ *        characterId 也可能不是 binding id，精确等值匹配不中即不计入（不猜）；
+ *   三路去重到 storyboard 粒度。
  * - location / item：`storyboards.location_binding_ids` / `item_binding_ids`
  *   （simple-json 数组，可多值）——**不做 SQL JSON 包含查询**（SQLite json1 /
  *   PG jsonb 方言差异），改为"按 assetId 取候选分镜行后应用层过滤数组包含"，
- *   双方言安全。
+ *   双方言安全（character 路径C 与此同型：LIKE 收窄候选 + 应用层精确判断）。
  *
  * 估算口径声明：本统计不含 `reference_overrides`（图片级引用）与 scene_scripts
  * 场景级引用，结果为估算值；UI 文案一律用"约 N 个分镜（M 集）引用"，
@@ -46,16 +49,9 @@ export interface AssetWriteImpactResult {
   /** 上述分镜跨越的剧集数（episode_scripts 去重） */
   episodeCount: number
   /**
-   * 估算口径说明列表（弹窗 detail 展示）。
-   * 固定含"估算值"声明；character 检测到未迁移老数据时追加专门标注。
+   * 估算口径说明列表（弹窗 detail 展示）。固定含"估算值"声明。
    */
   notes: string[]
-  /**
-   * scene_characters 中归属该角色但 character_binding_id 为 null 的
-   * 未迁移老数据行数（仅 character 口径返回；location/item 为 undefined）。
-   * 这些行不计入 storyboardCount。
-   */
-  legacyUnmigratedSceneCount?: number
 }
 
 /** 估算口径固定声明（notes 首条；UI 弹窗 detail 展示） */
@@ -88,7 +84,8 @@ export class AssetReferenceService {
 
   /**
    * character 口径：storyboard_characters（character_id）∪ scene_characters
-   * （character_binding_id，null 行不计入）→ 去重到 storyboard 粒度 → 折算剧集数。
+   * （character_binding_id，null 行不计入）∪ storyboards.characters JSON
+   * （entry.characterId 精确等值）→ 三路去重到 storyboard 粒度 → 折算剧集数。
    */
   private async characterImpact(assetId: string): Promise<AssetWriteImpactResult> {
     const notes: string[] = [ESTIMATE_NOTE]
@@ -103,7 +100,7 @@ export class AssetReferenceService {
     )
 
     // 路径B：场景级角色表（scene_characters.character_binding_id = binding id）→ 场景 id 集
-    // 可 null 列（"null 表示老剧本未迁移"）：null 行不参与计数，但单独检测数量供 detail 标注
+    // 可 null 列（"null 表示老剧本未迁移"）：null 行不参与计数（无 binding 无法等值命中）
     const sceneCharRepo = this.ds.getRepository(SceneCharacterEntity)
     const sceneIds = await this.selectDistinctValues(
       sceneCharRepo.createQueryBuilder('scc').select('scc.sceneScriptId', 'value'),
@@ -112,20 +109,8 @@ export class AssetReferenceService {
         { sql: 'scc.character_binding_id IS NOT NULL', params: {} },
       ],
     )
-    const legacyUnmigratedSceneCount = await this.countVisible(
-      sceneCharRepo.createQueryBuilder('scc'),
-      [
-        { sql: 'scc.character_id = :assetId', params: { assetId } },
-        { sql: 'scc.character_binding_id IS NULL', params: {} },
-      ],
-    )
-    if (legacyUnmigratedSceneCount > 0) {
-      notes.push(
-        `含未迁移老数据：${legacyUnmigratedSceneCount} 条场景角色记录未迁移绑定（character_binding_id 为空），未计入统计`,
-      )
-    }
 
-    // 路径B 的场景 → 展开到其名下全部分镜；与路径A 去重到 storyboard 粒度
+    // 路径B 的场景 → 展开到其名下全部分镜
     if (sceneIds.length > 0) {
       const sbRepo = this.ds.getRepository(StoryboardEntity)
       for (const chunk of chunkList(sceneIds, IN_CHUNK)) {
@@ -137,12 +122,30 @@ export class AssetReferenceService {
       }
     }
 
+    // 路径C（review P1-1）：storyboards.characters JSON——AI 分镜生成主生产路径
+    // （storyboard-cogen）只写该列不写 storyboard_characters 表，是主引用路径。
+    // 与 location/item 同型：LIKE 只做候选集收窄，命中与否由应用层对
+    // entry.characterId 精确等值判断（子串误命中 / 非 binding id 的老数据在这里被过滤）。
+    const sbRepo = this.ds.getRepository(StoryboardEntity)
+    const jsonCandidates = await this.selectVisible(
+      sbRepo
+        .createQueryBuilder('sb')
+        .select(['sb.id', 'sb.sceneScriptId', 'sb.characters'])
+        .where('sb.characters LIKE :pat', { pat: `%${assetId}%` }),
+    ).getMany()
+    for (const sb of jsonCandidates) {
+      const entries = Array.isArray(sb.characters) ? sb.characters : []
+      const hit = entries.some(
+        (e) => e !== null && typeof e === 'object' && (e as Record<string, unknown>).characterId === assetId,
+      )
+      if (hit) storyboardIds.add(sb.id)
+    }
+
     const episodeIds = await this.episodesOfStoryboards([...storyboardIds])
     return {
       storyboardCount: storyboardIds.size,
       episodeCount: episodeIds.size,
       notes,
-      legacyUnmigratedSceneCount,
     }
   }
 
@@ -255,17 +258,6 @@ export class AssetReferenceService {
       if (r?.value) out.add(String(r.value))
     }
     return [...out]
-  }
-
-  /** 带可见性 + 附加条件的计数 */
-  private async countVisible(
-    qb: SelectQueryBuilder<SceneCharacterEntity>,
-    conds: Array<{ sql: string; params: Record<string, unknown> }>,
-  ): Promise<number> {
-    for (const c of conds) qb = qb.andWhere(c.sql, c.params)
-    const [visSql, visParams] = this.visWhere(qb.alias)
-    qb = qb.andWhere(visSql, visParams)
-    return await qb.getCount()
   }
 }
 

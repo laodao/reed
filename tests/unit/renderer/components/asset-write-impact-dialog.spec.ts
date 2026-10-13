@@ -21,7 +21,6 @@ type ImpactPayload = {
     storyboardCount: number
     episodeCount: number
     notes: string[]
-    legacyUnmigratedSceneCount?: number
   }
 }
 
@@ -67,7 +66,9 @@ describe('AssetWriteImpactDialog（T01）', () => {
       data: {
         storyboardCount: 3,
         episodeCount: 2,
-        notes: ['统计为估算值：不含分镜级挑图', '含未迁移老数据：1 条场景角色记录未迁移绑定'],
+        notes: [
+          '统计为估算值：不含分镜级挑图（reference_overrides）与场景级（scene_scripts）引用，实际以生成时选图为准',
+        ],
       },
     }
     installFakeApi()
@@ -85,8 +86,8 @@ describe('AssetWriteImpactDialog（T01）', () => {
     const body = document.body
     expect(body.textContent).toContain('约 3 个分镜')
     expect(body.textContent).toContain('约 2 集')
-    // 口径说明（含未迁移老数据标注）随 notes 展示
-    expect(body.textContent).toContain('含未迁移老数据')
+    // 口径说明（估算口径声明）随 notes 展示
+    expect(body.textContent).toContain('估算值')
     // 文案不绝对化（"被约"，无"正好/精确"表述）
     expect(body.textContent).toContain('被约 3 个分镜')
     w.unmount()

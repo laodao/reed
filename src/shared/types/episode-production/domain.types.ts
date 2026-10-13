@@ -333,8 +333,10 @@ export interface EffectiveItemData {
  * 主图写回影响范围统计（ep:asset:get-write-impact 返回）。
  *
  * 估算口径：character 走 storyboard_characters(character_id) ∪
- * scene_characters(character_binding_id)；location/item 走 storyboards 的
- * locationBindingIds/itemBindingIds（simple-json 数组应用层过滤）。
+ * scene_characters(character_binding_id) ∪ storyboards.characters JSON
+ * （entry.characterId 精确等值，2026-10-13 review P1-1 补挂主引用路径）；
+ * location/item 走 storyboards 的 locationBindingIds/itemBindingIds
+ * （simple-json 数组应用层过滤）。
  * 不含 reference_overrides 与场景级引用 → UI 文案一律用"约 N 个"。
  */
 export interface AssetWriteImpact {
@@ -344,6 +346,4 @@ export interface AssetWriteImpact {
   episodeCount: number
   /** 估算口径说明（弹窗 detail 展示） */
   notes: string[]
-  /** scene_characters 中 character_binding_id 为 null 的未迁移老数据行数（仅 character） */
-  legacyUnmigratedSceneCount?: number
 }

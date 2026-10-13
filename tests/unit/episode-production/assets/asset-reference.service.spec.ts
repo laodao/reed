@@ -2,12 +2,14 @@
  * AssetReferenceService 单测（T01 · 资产历史分组 + 写回影响范围提示）
  * @module tests/unit/episode-production/assets/asset-reference.service
  *
- * 覆盖 task-01 §5 单测要求的五个口径：
+ * 覆盖 task-01 §5 单测要求的口径（2026-10-13 review 修正版）：
  * 1. character：N 个分镜引用的角色计数正确（storyboard_characters 路径A
- *    + scene_characters 路径B，两路去重到 storyboard 粒度 + 剧集折算）
+ *    + scene_characters 路径B + storyboards.characters JSON 路径C（review P1-1
+ *    补挂的主引用路径），三路去重到 storyboard 粒度 + 剧集折算）
  * 2. 无引用返回 0
  * 3. location/item 的 simple-json 数组包含判断（应用层过滤）正确——含子串 id 不误判
- * 4. scene_characters.character_binding_id 为 null 的老数据不计入且 notes 标注
+ * 4. scene_characters.character_binding_id 为 null 的老数据不计入（P2-4：不再
+ *    输出"未迁移老数据"标注——binding id 永不等于老数据 character_id，该检测恒 0）
  * 5. user 隔离：A 的分镜对 B 不可见；user_id IS NULL 共享行双方可见
  */
 
@@ -113,7 +115,6 @@ describe('AssetReferenceService · getWriteImpact（T01 写回影响口径）', 
     expect(impact.episodeCount).toBe(2)
     // 估算口径声明固定在 notes 首条
     expect(impact.notes[0]).toContain('估算值')
-    expect(impact.legacyUnmigratedSceneCount).toBe(0)
   })
 
   it('character：路径B（scene_characters.character_binding_id）展开到场景名下分镜，与路径A去重', async () => {
@@ -199,16 +200,57 @@ describe('AssetReferenceService · getWriteImpact（T01 写回影响口径）', 
     expect(impact.episodeCount).toBe(1)
   })
 
-  it('character_binding_id 为 null 的未迁移老数据不计入，notes 标注"含未迁移老数据"', async () => {
+  it('character：JSON 路径（storyboards.characters，主生产路径）引用计数 > 0，子串 id 不误判', async () => {
+    // review P1-1 触发路径：AI 分镜生成（storyboard-cogen）只写 storyboards.characters
+    // JSON、不写 storyboard_characters 表——旧口径此形状下恒 0，影响弹窗静默跳过。
+    await insertScene(ds, { id: 'scene_1', episodeId: 'ep_1' })
+    await insertScene(ds, { id: 'scene_2', episodeId: 'ep_2' })
+    await insertStoryboard(ds, { id: 'sb_1', sceneId: 'scene_1' })
+    await insertStoryboard(ds, { id: 'sb_2', sceneId: 'scene_2' })
+    await insertStoryboard(ds, { id: 'sb_3', sceneId: 'scene_2' })
+    const repo = ds.getRepository(StoryboardEntity)
+    // sb_1 命中（主生产路径形状：binding.id 进 entry.characterId）
+    await repo.update({ id: 'sb_1' }, { characters: [{ characterId: 'cb_a', expression: '凝重' }] })
+    // sb_2 子串相近的别的 id（cb_a1 vs cb_a 类误命中防御）→ 不计入
+    await repo.update({ id: 'sb_2' }, { characters: [{ characterId: 'cb_a1' }] })
+    // sb_3 数组里混入空 characterId / 非对象元素 → 安全跳过
+    await repo.update({ id: 'sb_3' }, { characters: [{ characterId: '' }, 'junk', null] })
+
+    const impact = await svc.getWriteImpact('character', 'cb_a')
+    expect(impact.storyboardCount).toBe(1)
+    expect(impact.episodeCount).toBe(1)
+  })
+
+  it('character：JSON 路径与表路径同时命中同一分镜只计 1（三路去重到 storyboard 粒度）', async () => {
+    await insertScene(ds, { id: 'scene_1', episodeId: 'ep_1' })
+    await insertStoryboard(ds, { id: 'sb_1', sceneId: 'scene_1' })
+    await ds.getRepository(StoryboardCharacterEntity).save(
+      ds.getRepository(StoryboardCharacterEntity).create({
+        id: nextId('sbc'),
+        storyboardId: 'sb_1',
+        characterId: 'cb_a',
+      }),
+    )
+    await ds.getRepository(StoryboardEntity).update(
+      { id: 'sb_1' },
+      { characters: [{ characterId: 'cb_a' }] } as any,
+    )
+
+    const impact = await svc.getWriteImpact('character', 'cb_a')
+    expect(impact.storyboardCount).toBe(1)
+    expect(impact.episodeCount).toBe(1)
+  })
+
+  it('character_binding_id 为 null 的老数据行不计入（P2-4：不再输出恒 0 的"未迁移老数据"标注）', async () => {
     await insertScene(ds, { id: 'scene_1', episodeId: 'ep_1' })
     await insertStoryboard(ds, { id: 'sb_1', sceneId: 'scene_1' })
     const scRepo = ds.getRepository(SceneCharacterEntity)
-    // 老剧本未迁移：character_id 指向该角色但 binding 为空 → 不计入
+    // 老剧本未迁移行：characterId 为老数据 id（lw_character.id，永不等于 binding id）
     await scRepo.save(
       scRepo.create({
         id: nextId('sc'),
         sceneScriptId: 'scene_1',
-        characterId: 'cb_a',
+        characterId: 'lwc_legacy_1',
         characterName: '李白',
         characterBindingId: null,
       }),
@@ -217,8 +259,8 @@ describe('AssetReferenceService · getWriteImpact（T01 写回影响口径）', 
     const impact = await svc.getWriteImpact('character', 'cb_a')
     expect(impact.storyboardCount).toBe(0)
     expect(impact.episodeCount).toBe(0)
-    expect(impact.legacyUnmigratedSceneCount).toBe(1)
-    expect(impact.notes.join('\n')).toContain('含未迁移老数据')
+    // P2-4：口径已删——不再输出"含未迁移老数据"标注（诚实优于永不触发的声明）
+    expect(impact.notes.join('\n')).not.toContain('未迁移老数据')
   })
 
   it('user 隔离：A 的分镜对 B 不可见；user_id IS NULL 共享行双方可见', async () => {
