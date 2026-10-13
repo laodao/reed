@@ -12,6 +12,7 @@ import type {
   LocationBinding,
   ItemBinding,
 } from '../../../../shared/types/story-to-video.types'
+import type { AssetWriteImpact } from '../../../../shared/types/episode-production/domain.types'
 import { useEpWorkbenchStore } from './workbench.store'
 
 export const useEpAssetStore = defineStore('ep-asset', () => {
@@ -447,6 +448,37 @@ export const useEpAssetStore = defineStore('ep-asset', () => {
     epAssetVoices.value = vs && vs.success && Array.isArray(vs.data) ? vs.data : []
   }
 
+  /**
+   * T01 · 查询主图写回影响范围（ep:asset:get-write-impact）。
+   *
+   * 三处画廊编辑器在"设为主图" / 主图"重新生成"前调用：
+   * storyboardCount === 0 → 直接执行；> 0 → 弹 AssetWriteImpactDialog 确认。
+   * 统计为估算口径，UI 文案一律用"约 N 个分镜（M 集）"。
+   *
+   * @returns 影响面数据；IPC 未暴露 / 通道失败时返回 null（调用方自行降级为直接执行）
+   */
+  async function getWriteImpact(
+    assetType: 'character' | 'location' | 'item',
+    assetId: string,
+  ): Promise<AssetWriteImpact | null> {
+    const api = (window as any).electronAPI?.episodeProduction?.asset
+    if (!api?.getWriteImpact) {
+      console.warn('[ep-asset.store] getWriteImpact IPC 未暴露')
+      return null
+    }
+    try {
+      const resp = await api.getWriteImpact(assetType, assetId)
+      if (resp && resp.success && resp.data) {
+        return resp.data as AssetWriteImpact
+      }
+      console.warn('[ep-asset.store] getWriteImpact 失败:', resp?.error)
+      return null
+    } catch (e: any) {
+      console.warn('[ep-asset.store] getWriteImpact 异常:', e?.message ?? e)
+      return null
+    }
+  }
+
   return {
     characterBindings,
     locationBindings,
@@ -475,5 +507,7 @@ export const useEpAssetStore = defineStore('ep-asset', () => {
     epAssetItems,
     epAssetVoices,
     loadAssetsByProject,
+    // T01 · 写回影响范围查询
+    getWriteImpact,
   }
 })

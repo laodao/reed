@@ -24,6 +24,10 @@
             <div class="section-header">
               <span class="section-title">主图 (main)</span>
               <span class="header-actions">
+                <!-- T01 · 主图历史折叠区：本分类全部行（createdAt desc），当前主图加徽标 -->
+                <el-button size="small" text :disabled="busy" @click="toggleHistory('main')">
+                  历史 ({{ getCategoryHistory('main').length }})
+                </el-button>
                 <template v-if="mainImage">
                   <el-button
                     size="small"
@@ -105,6 +109,39 @@
             </div>
             <el-empty v-else description="尚未生成主图" :image-size="60" />
           </div>
+
+          <!-- T01 · 主图历史区：本分类全部行（createdAt desc），当前主图加徽标；历史图可一键恢复为主图 -->
+          <div v-if="openHistory['main']" class="history-strip">
+            <div
+              v-for="img in getCategoryHistory('main')"
+              :key="img.id"
+              class="thumb-cell"
+            >
+              <div class="thumb-frame history-frame" :class="{ 'is-history-main': img.isMain === 1 }">
+                <img
+                  v-if="img.imagePath"
+                  :src="toImageUrl(img.thumbnailPath || img.imagePath)"
+                  :alt="historyLabel(img)"
+                  @dblclick="openPreview('main', getCategoryHistory('main'), getCategoryHistory('main').indexOf(img))"
+                />
+                <span v-if="img.isMain === 1" class="history-main-badge">主图</span>
+                <div class="thumb-tools" @click.stop>
+                  <el-tooltip v-if="img.isMain !== 1" content="设为主图" placement="top">
+                    <el-icon class="thumb-tool-icon" :size="14" @click="onHistorySetMain(img)"><Star /></el-icon>
+                  </el-tooltip>
+                  <el-tooltip content="预览" placement="top">
+                    <el-icon
+                      class="thumb-tool-icon"
+                      :size="14"
+                      @click="openPreview('main', getCategoryHistory('main'), getCategoryHistory('main').indexOf(img))"
+                    ><ZoomIn /></el-icon>
+                  </el-tooltip>
+                </div>
+              </div>
+              <div class="thumb-label">{{ historyLabel(img) }}</div>
+            </div>
+            <div v-if="getCategoryHistory('main').length === 0" class="history-empty">暂无历史</div>
+          </div>
         </el-card>
 
         <!-- 右侧栈：服装卡（高度受限）+ 视角卡（占剩余空间）。仅角色资产渲染。 -->
@@ -117,16 +154,22 @@
                   服装
                   <span class="progress-meta">{{ outfitImages.length }}</span>
                 </span>
-                <el-button
-                  size="small"
-                  type="primary"
-                  plain
-                  :loading="busyKey === 'outfit-generate'"
-                  :disabled="busy && busyKey !== 'outfit-generate'"
-                  @click="openOutfitDialog"
-                >
-                  ✨ 生成服饰图
-                </el-button>
+                <span class="header-actions">
+                  <!-- T01 · 服装历史折叠区 -->
+                  <el-button size="small" text :disabled="busy" @click="toggleHistory('outfit')">
+                    历史 ({{ getCategoryHistory('outfit').length }})
+                  </el-button>
+                  <el-button
+                    size="small"
+                    type="primary"
+                    plain
+                    :loading="busyKey === 'outfit-generate'"
+                    :disabled="busy && busyKey !== 'outfit-generate'"
+                    @click="openOutfitDialog"
+                  >
+                    ✨ 生成服饰图
+                  </el-button>
+                </span>
               </div>
             </template>
 
@@ -170,6 +213,39 @@
                 <el-empty description="暂无服饰图" :image-size="40" />
               </div>
             </div>
+
+            <!-- T01 · 服装历史区（同 label 重新生成的旧行在这里找回） -->
+            <div v-if="openHistory['outfit']" class="history-strip">
+              <div
+                v-for="img in getCategoryHistory('outfit')"
+                :key="img.id"
+                class="thumb-cell"
+              >
+                <div class="thumb-frame history-frame" :class="{ 'is-history-main': img.isMain === 1 }">
+                  <img
+                    v-if="img.imagePath"
+                    :src="toImageUrl(img.thumbnailPath || img.imagePath)"
+                    :alt="historyLabel(img)"
+                    @dblclick="openPreview('outfit', getCategoryHistory('outfit'), getCategoryHistory('outfit').indexOf(img))"
+                  />
+                  <span v-if="img.isMain === 1" class="history-main-badge">主图</span>
+                  <div class="thumb-tools" @click.stop>
+                    <el-tooltip v-if="img.isMain !== 1" content="设为主图" placement="top">
+                      <el-icon class="thumb-tool-icon" :size="14" @click="onHistorySetMain(img)"><Star /></el-icon>
+                    </el-tooltip>
+                    <el-tooltip content="预览" placement="top">
+                      <el-icon
+                        class="thumb-tool-icon"
+                        :size="14"
+                        @click="openPreview('outfit', getCategoryHistory('outfit'), getCategoryHistory('outfit').indexOf(img))"
+                      ><ZoomIn /></el-icon>
+                    </el-tooltip>
+                  </div>
+                </div>
+                <div class="thumb-label">{{ historyLabel(img) }}</div>
+              </div>
+              <div v-if="getCategoryHistory('outfit').length === 0" class="history-empty">暂无历史</div>
+            </div>
           </el-card>
 
           <!--
@@ -189,17 +265,23 @@
                     {{ getCategoryDoneCount(viewCategory) }}/{{ viewCategory.labels.length || '∞' }}
                   </span>
                 </span>
-                <el-button
-                  v-if="viewCategory.labels.length > 0"
-                  size="small"
-                  type="primary"
-                  plain
-                  :loading="busyKey === `derive:${viewCategory.key}`"
-                  :disabled="(busy && busyKey !== `derive:${viewCategory.key}`) || getMissingLabels(viewCategory).length === 0"
-                  @click="onBatchDerive(viewCategory)"
-                >
-                  ✨ 派生剩余
-                </el-button>
+                <span class="header-actions">
+                  <!-- T01 · 视角历史折叠区 -->
+                  <el-button size="small" text :disabled="busy" @click="toggleHistory(viewCategory.key)">
+                    历史 ({{ getCategoryHistory(viewCategory.key).length }})
+                  </el-button>
+                  <el-button
+                    v-if="viewCategory.labels.length > 0"
+                    size="small"
+                    type="primary"
+                    plain
+                    :loading="busyKey === `derive:${viewCategory.key}`"
+                    :disabled="(busy && busyKey !== `derive:${viewCategory.key}`) || getMissingLabels(viewCategory).length === 0"
+                    @click="onBatchDerive(viewCategory)"
+                  >
+                    ✨ 派生剩余
+                  </el-button>
+                </span>
               </div>
             </template>
             <div class="thumb-grid">
@@ -249,6 +331,39 @@
                 <div class="thumb-label">{{ labelText(viewCategory.key, label) }}</div>
               </div>
             </div>
+
+            <!-- T01 · 视角历史区（历史主图被降级到 view 分类后也在这里找回） -->
+            <div v-if="openHistory[viewCategory.key]" class="history-strip">
+              <div
+                v-for="img in getCategoryHistory(viewCategory.key)"
+                :key="img.id"
+                class="thumb-cell"
+              >
+                <div class="thumb-frame history-frame" :class="{ 'is-history-main': img.isMain === 1 }">
+                  <img
+                    v-if="img.imagePath"
+                    :src="toImageUrl(img.thumbnailPath || img.imagePath)"
+                    :alt="historyLabel(img)"
+                    @dblclick="openPreview(viewCategory.key, getCategoryHistory(viewCategory.key), getCategoryHistory(viewCategory.key).indexOf(img))"
+                  />
+                  <span v-if="img.isMain === 1" class="history-main-badge">主图</span>
+                  <div class="thumb-tools" @click.stop>
+                    <el-tooltip v-if="img.isMain !== 1" content="设为主图" placement="top">
+                      <el-icon class="thumb-tool-icon" :size="14" @click="onHistorySetMain(img)"><Star /></el-icon>
+                    </el-tooltip>
+                    <el-tooltip content="预览" placement="top">
+                      <el-icon
+                        class="thumb-tool-icon"
+                        :size="14"
+                        @click="openPreview(viewCategory.key, getCategoryHistory(viewCategory.key), getCategoryHistory(viewCategory.key).indexOf(img))"
+                      ><ZoomIn /></el-icon>
+                    </el-tooltip>
+                  </div>
+                </div>
+                <div class="thumb-label">{{ historyLabel(img) }}</div>
+              </div>
+              <div v-if="getCategoryHistory(viewCategory.key).length === 0" class="history-empty">暂无历史</div>
+            </div>
           </el-card>
         </div>
       </div>
@@ -268,17 +383,23 @@
                 {{ getCategoryDoneCount(cat) }}/{{ cat.labels.length || '∞' }}
               </span>
             </span>
-            <el-button
-              v-if="cat.labels.length > 0"
-              size="small"
-              type="primary"
-              plain
-              :loading="busyKey === `derive:${cat.key}`"
-              :disabled="(busy && busyKey !== `derive:${cat.key}`) || getMissingLabels(cat).length === 0"
-              @click="onBatchDerive(cat)"
-            >
-              ✨ 派生剩余
-            </el-button>
+            <span class="header-actions">
+              <!-- T01 · 分类历史折叠区（表情/姿势） -->
+              <el-button size="small" text :disabled="busy" @click="toggleHistory(cat.key)">
+                历史 ({{ getCategoryHistory(cat.key).length }})
+              </el-button>
+              <el-button
+                v-if="cat.labels.length > 0"
+                size="small"
+                type="primary"
+                plain
+                :loading="busyKey === `derive:${cat.key}`"
+                :disabled="(busy && busyKey !== `derive:${cat.key}`) || getMissingLabels(cat).length === 0"
+                @click="onBatchDerive(cat)"
+              >
+                ✨ 派生剩余
+              </el-button>
+            </span>
           </div>
         </template>
 
@@ -361,6 +482,39 @@
           <div v-if="getImagesByCategory(cat.key).length === 0" class="empty-cell">
             <el-empty :description="`暂无 ${cat.label}`" :image-size="40" />
           </div>
+        </div>
+
+        <!-- T01 · 分类历史区（同 label 多行累积的历史行，createdAt desc） -->
+        <div v-if="openHistory[cat.key]" class="history-strip">
+          <div
+            v-for="img in getCategoryHistory(cat.key)"
+            :key="img.id"
+            class="thumb-cell"
+          >
+            <div class="thumb-frame history-frame" :class="{ 'is-history-main': img.isMain === 1 }">
+              <img
+                v-if="img.imagePath"
+                :src="toImageUrl(img.thumbnailPath || img.imagePath)"
+                :alt="historyLabel(img)"
+                @dblclick="openPreview(cat.key, getCategoryHistory(cat.key), getCategoryHistory(cat.key).indexOf(img))"
+              />
+              <span v-if="img.isMain === 1" class="history-main-badge">主图</span>
+              <div class="thumb-tools" @click.stop>
+                <el-tooltip v-if="img.isMain !== 1" content="设为主图" placement="top">
+                  <el-icon class="thumb-tool-icon" :size="14" @click="onHistorySetMain(img)"><Star /></el-icon>
+                </el-tooltip>
+                <el-tooltip content="预览" placement="top">
+                  <el-icon
+                    class="thumb-tool-icon"
+                    :size="14"
+                    @click="openPreview(cat.key, getCategoryHistory(cat.key), getCategoryHistory(cat.key).indexOf(img))"
+                  ><ZoomIn /></el-icon>
+                </el-tooltip>
+              </div>
+            </div>
+            <div class="thumb-label">{{ historyLabel(img) }}</div>
+          </div>
+          <div v-if="getCategoryHistory(cat.key).length === 0" class="history-empty">暂无历史</div>
         </div>
       </el-card>
     </div>
@@ -463,6 +617,16 @@
       :new-image="mainNewImg"
       @choose="chooseMainCompare"
     />
+
+    <!-- T01：覆盖被引用主图前的写回影响确认（storyboardCount>0 才弹） -->
+    <AssetWriteImpactDialog
+      v-model="impactDialogOpen"
+      :asset-type="props.assetType"
+      :asset-id="props.bindingId"
+      :action="impactAction"
+      @confirm="onImpactConfirm"
+      @cancel="onImpactCancel"
+    />
   </el-card>
 </template>
 
@@ -489,13 +653,17 @@ import {
   Loading,
   Plus,
   Refresh,
+  Star,
+  ZoomIn,
 } from '@element-plus/icons-vue'
 import { uploadMainImageFile } from '@/api/main-image-upload'
 import { toImageUrl } from '@/utils/asset-url'
 import { useAssetImageActions } from '@/composables/use-asset-image-actions'
 import { useMainRegenerateCompare } from '@/composables/use-main-regenerate-compare'
+import { useEpAssetStore } from '@/stores/episode-production/asset.store'
 import GenerationDetailDialog from '../shared/GenerationDetailDialog.vue'
 import MainRegenerateCompareDialog from '../shared/MainRegenerateCompareDialog.vue'
+import AssetWriteImpactDialog from '../../shared/AssetWriteImpactDialog.vue'
 
 const props = defineProps<{
   bindingId: string
@@ -687,6 +855,90 @@ function getImagesByCategory(category: string): AssetImageRow[] {
   return allImages.value.filter((i) => i.category === category)
 }
 
+// ===== T01 · 分类历史折叠区（createdAt desc 列出该分类全部行） =====
+
+/** 各分类历史区展开状态（key = category） */
+const openHistory = ref<Record<string, boolean>>({})
+
+function toggleHistory(category: string): void {
+  openHistory.value[category] = !openHistory.value[category]
+}
+
+function toTimestamp(v: AssetImageRow['createdAt']): number {
+  if (v == null) return 0
+  if (v instanceof Date) return v.getTime()
+  const t = typeof v === 'number' ? v : Date.parse(String(v))
+  return Number.isFinite(t) ? t : 0
+}
+
+/** 该分类全部行，按 createdAt 降序（最新在前） */
+function getCategoryHistory(category: string): AssetImageRow[] {
+  return allImages.value
+    .filter((i) => i.category === category)
+    .sort((a, b) => toTimestamp(b.createdAt) - toTimestamp(a.createdAt))
+}
+
+/** 历史行显示名：label 有中文映射走映射；main 无 label 显示"主图" */
+function historyLabel(img: AssetImageRow): string {
+  if (img.label) return LABEL_LABELS[img.category]?.[img.label] ?? img.label
+  return img.category === 'main' ? '主图' : '(未标注)'
+}
+
+// ===== T01 · 写回影响确认（设为主图 / 重新生成 主图前） =====
+
+const assetStore = useEpAssetStore()
+const impactDialogOpen = ref(false)
+const impactAction = ref<'set-main' | 'regenerate'>('set-main')
+/** 弹窗确认后要执行的原操作（闭包持有，取消即丢弃） */
+let pendingWrite: (() => Promise<void> | void) | null = null
+
+/**
+ * T01 交互流（task-01 §3）：先查影响面 → storyboardCount === 0（或查询失败）
+ * 直接执行；> 0 弹 AssetWriteImpactDialog，确认后才执行原操作。
+ */
+async function guardWriteImpact(
+  action: 'set-main' | 'regenerate',
+  exec: () => Promise<void> | void,
+): Promise<void> {
+  const impact = await assetStore.getWriteImpact(props.assetType, props.bindingId)
+  if (impact && impact.storyboardCount > 0) {
+    impactAction.value = action
+    pendingWrite = exec
+    impactDialogOpen.value = true
+    return
+  }
+  await exec()
+}
+
+function onImpactConfirm(): void {
+  const exec = pendingWrite
+  pendingWrite = null
+  void exec?.()
+}
+
+function onImpactCancel(): void {
+  pendingWrite = null
+}
+
+/** 历史行"设为主图"：恢复旧版本（character/item 走 setAsMain，会自动降级旧主图） */
+async function onHistorySetMain(img: AssetImageRow): Promise<void> {
+  if (busy.value || img.isMain === 1) return
+  const api = getApi()
+  if (!api?.image?.setAsMain) {
+    ElMessage.error('image.setAsMain IPC 未暴露')
+    return
+  }
+  await guardWriteImpact('set-main', async () => {
+    const resp = await api.image.setAsMain(img.id)
+    if (!resp?.success) {
+      ElMessage.error(resp?.error || '设为主图失败')
+      return
+    }
+    ElMessage.success(`已设为主图：${historyLabel(img)}`)
+    await reload()
+  })
+}
+
 function getCategoryDoneCount(cat: CategoryConfig): number {
   if (cat.labels.length === 0) {
     return getImagesByCategory(cat.key).length
@@ -713,11 +965,13 @@ async function doGenerateMain() {
 }
 
 function onGenerateMain() {
+  // 首张生成（无主图可覆盖）：不弹影响确认
   void doGenerateMain()
 }
 
+/** T01：重生成主图属高危覆盖，被引用时先弹影响确认 */
 function onRegenerateMain() {
-  void doGenerateMain()
+  void guardWriteImpact('regenerate', doGenerateMain)
 }
 
 async function onPickMainFile(uploadFile: UploadFile) {
@@ -1275,6 +1529,62 @@ defineExpose({ reload })
   align-items: center;
   justify-content: center;
 }
+
+/* ===== T01 · 分类历史折叠区 ===== */
+
+/* 历史条：横向滚动小格（位于分类网格下方） */
+.history-strip {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: var(--el-fill-color-lighter);
+  border: 1px dashed var(--el-border-color);
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+/* 主图卡内的历史条限高，避免挤压主图预览（main-thumb flex:1 会自动让位） */
+.main-card .history-strip {
+  max-height: 196px;
+  overflow-y: auto;
+}
+
+.history-frame {
+  width: 96px;
+  height: 96px;
+}
+
+/* 当前主图行徽标（isMain=1） */
+.history-main-badge {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  padding: 1px 6px;
+  background: var(--el-color-warning);
+  color: #fff;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  z-index: 1;
+}
+
+.history-frame.is-history-main {
+  border-color: var(--el-color-warning);
+  box-shadow: 0 0 0 1px var(--el-color-warning-light-7);
+}
+
+.history-empty {
+  align-self: center;
+  min-width: 120px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+}
+
 </style>
 
 <style lang="scss">

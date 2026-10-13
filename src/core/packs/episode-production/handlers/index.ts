@@ -19,6 +19,7 @@ import {
   registerAssetReferenceImageHandlers,
   registerAssetSummaryHandlers,
   registerAssetSettingEnrichmentHandlers,
+  registerAssetReferenceHandlers,
 } from './asset'
 import { registerScriptHandlers } from './narrative/script.handler'
 import { registerStoryboardHandlers } from './narrative/storyboard.handler'
@@ -67,6 +68,8 @@ export function registerEpisodeProductionHandlers(): void {
   registerAssetSummaryHandlers()
   // spec 2026-05-07 · AI 设定反推
   registerAssetSettingEnrichmentHandlers()
+  // T01 · 资产写回影响范围统计（ep:asset:get-write-impact）
+  registerAssetReferenceHandlers()
   registerScriptHandlers()
   registerStoryboardHandlers()
   // P5-T32 分镜内角色独立配置（spec §4.5.3）

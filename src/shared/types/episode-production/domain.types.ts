@@ -326,3 +326,24 @@ export interface EffectiveItemData {
   /** 用户上传的参考图相对路径（spec 2026-05-09） */
   referenceImagePath?: string | null
 }
+
+// ==================== T01 · 资产写回影响范围统计 ====================
+
+/**
+ * 主图写回影响范围统计（ep:asset:get-write-impact 返回）。
+ *
+ * 估算口径：character 走 storyboard_characters(character_id) ∪
+ * scene_characters(character_binding_id)；location/item 走 storyboards 的
+ * locationBindingIds/itemBindingIds（simple-json 数组应用层过滤）。
+ * 不含 reference_overrides 与场景级引用 → UI 文案一律用"约 N 个"。
+ */
+export interface AssetWriteImpact {
+  /** 引用该资产的分镜数（去重到 storyboard 粒度） */
+  storyboardCount: number
+  /** 上述分镜跨越的剧集数 */
+  episodeCount: number
+  /** 估算口径说明（弹窗 detail 展示） */
+  notes: string[]
+  /** scene_characters 中 character_binding_id 为 null 的未迁移老数据行数（仅 character） */
+  legacyUnmigratedSceneCount?: number
+}

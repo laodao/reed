@@ -18,3 +18,5 @@ export { registerAssetReferenceImageHandlers } from './reference-image.handler'
 export { registerAssetSummaryHandlers } from './asset-summary.handler'
 // spec 2026-05-07 · AI 设定反推
 export { registerAssetSettingEnrichmentHandlers } from './asset-setting-enrichment.handler'
+// T01 · 资产写回影响范围统计（ep:asset:get-write-impact）
+export { registerAssetReferenceHandlers } from './asset-reference.handler'

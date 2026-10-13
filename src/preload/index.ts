@@ -417,6 +417,8 @@ const IPC_CHANNELS = {
   EP_ASSET_IMAGE_SET_CONFIRMED: 'ep:asset-image-set-confirmed',
   EP_ASSET_REFERENCE_IMPACT: 'ep:asset:reference-impact',
   EP_ASSET_REGEN_REFERENCING_KEYFRAMES: 'ep:asset:regenerate-referencing-keyframes',
+  // T01 · 资产写回影响范围统计（设为主图/重新生成前的确认弹窗数据源）
+  EP_ASSET_GET_WRITE_IMPACT: 'ep:asset:get-write-impact',
 
   // 360 全景 + 视角截图（7 个 · P3c Task 4）
   EP_ASSET_PANORAMA_LIST: 'ep:asset:panorama:list',
@@ -3371,6 +3373,14 @@ const electronAPI = {
       // AI 设定反推（spec 2026-05-07）
       enrichSettings: (input: { projectId: string }) =>
         ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_ENRICH_SETTINGS, input),
+
+      /**
+       * T01 · 资产写回影响范围统计（ep:asset:get-write-impact）
+       * 三处画廊在"设为主图" / 主图"重新生成"前查询：约多少分镜、多少集引用该资产。
+       * 返回 IpcResponse<AssetWriteImpact>（估算口径，UI 文案用"约 N 个"）。
+       */
+      getWriteImpact: (assetType: 'character' | 'location' | 'item', assetId: string) =>
+        ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_GET_WRITE_IMPACT, assetType, assetId),
 
       /**
        * AI 正向字段提取（spec 2026-05-09 ep-redesign §3.2 B2）

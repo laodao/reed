@@ -1011,6 +1011,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.asset.image.setConfirmed': { channel: 'ep:asset-image-set-confirmed' },
   // AI 设定反推（spec 2026-05-07）
   'episodeProduction.asset.enrichSettings': { channel: 'ep:asset:enrich-settings' },
+  // T01 · 资产写回影响范围统计（参数 (assetType, assetId) 与 preload 透传形态一致，无需 wrap）
+  'episodeProduction.asset.getWriteImpact': { channel: 'ep:asset:get-write-impact' },
   // AI 正向字段提取（spec 2026-05-09 ep-redesign §3.2 B2）
   'episodeProduction.asset.extractFields': { channel: 'ep:asset:extract-fields' },
   // 派生（2 个）

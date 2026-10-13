@@ -239,6 +239,62 @@
         </div>
       </el-card>
 
+      <!-- T01 · 全量历史折叠区：按 createdAt desc 列出该资产全部行，当前默认主图加徽标；
+           主图行可"设为默认主图"恢复旧版本（地点是多主图模型，走 switchMain） -->
+      <el-card class="category-card history-card" shadow="never">
+        <template #header>
+          <div class="section-header">
+            <span class="section-title">
+              历史
+              <span class="progress-meta">{{ historyImages.length }} 行 · 最新在前</span>
+            </span>
+            <el-button size="small" text :disabled="busy" @click="historyOpen = !historyOpen">
+              {{ historyOpen ? '收起' : '展开' }}
+            </el-button>
+          </div>
+        </template>
+        <div v-if="historyOpen" class="thumb-grid history-grid">
+          <div
+            v-for="img in historyImages"
+            :key="img.id"
+            class="thumb-cell"
+          >
+            <div class="thumb-frame" :class="{ 'is-history-main': img.isMain === 1 }">
+              <img
+                v-if="img.imagePath"
+                :src="toImageUrl(img.thumbnailPath || img.imagePath)"
+                :alt="historyRowLabel(img)"
+                @dblclick="openPreview(historyImages, historyImages.indexOf(img))"
+              />
+              <span v-if="img.isMain === 1" class="default-tag">★ 默认</span>
+              <div class="thumb-tools" @click.stop>
+                <el-tooltip
+                  v-if="img.category === 'main' && img.isMain !== 1"
+                  content="设为默认主图"
+                  placement="top"
+                >
+                  <el-icon class="thumb-tool-icon" :size="14" @click="onHistorySwitchMain(img)">
+                    <Star />
+                  </el-icon>
+                </el-tooltip>
+                <el-tooltip content="预览" placement="top">
+                  <el-icon
+                    class="thumb-tool-icon"
+                    :size="14"
+                    @click="openPreview(historyImages, historyImages.indexOf(img))"
+                  ><ZoomIn /></el-icon>
+                </el-tooltip>
+              </div>
+            </div>
+            <div class="thumb-label">
+              {{ historyRowLabel(img) }}
+              <span class="history-cat">· {{ categoryName(img.category) }}</span>
+            </div>
+          </div>
+          <div v-if="historyImages.length === 0" class="empty-hint">暂无历史</div>
+        </div>
+      </el-card>
+
       <!-- 360 全景区（保持不动） -->
       <el-card class="category-card panorama-section" shadow="never">
         <template #header>
@@ -405,6 +461,16 @@
       :image="detailDialog.image"
       :all-images="allImages"
     />
+
+    <!-- T01：覆盖被引用主图前的写回影响确认（storyboardCount>0 才弹） -->
+    <AssetWriteImpactDialog
+      v-model="impactDialogOpen"
+      :asset-type="props.assetType"
+      :asset-id="props.bindingId"
+      :action="impactAction"
+      @confirm="onImpactConfirm"
+      @cancel="onImpactCancel"
+    />
   </el-card>
 </template>
 
@@ -436,15 +502,18 @@ import {
   QuestionFilled,
   Refresh,
   Star,
+  ZoomIn,
 } from '@element-plus/icons-vue'
 import { useAssetImageActions } from '@/composables/use-asset-image-actions'
 import PanoramaSnapshotEditor from './PanoramaSnapshotEditor.vue'
 import AddMainImageDialog from './AddMainImageDialog.vue'
 import DeriveVariantDialog from './DeriveVariantDialog.vue'
 import GenerationDetailDialog from '../shared/GenerationDetailDialog.vue'
+import AssetWriteImpactDialog from '../../shared/AssetWriteImpactDialog.vue'
 import { uploadPanoramaFile } from '@/api/panorama-upload'
 import { toImageUrl } from '@/utils/asset-url'
 import { generateMainFor } from '@/api/main-image-generator'
+import { useEpAssetStore } from '@/stores/episode-production/asset.store'
 
 const props = defineProps<{
   bindingId: string
@@ -494,6 +563,95 @@ const variantImages = computed<AssetImageRow[]>(() =>
   allImages.value.filter((i) => i.category === 'variant'),
 )
 
+// ===== T01 · 全量历史折叠区（createdAt desc 列出该资产全部行） =====
+
+/** 历史区展开状态（默认折叠，避免与上方主图/变体网格重复占地） */
+const historyOpen = ref(false)
+
+/** 全部行按 createdAt 降序（最新在前，当前默认主图加徽标） */
+const historyImages = computed<AssetImageRow[]>(() =>
+  [...allImages.value].sort((a, b) => toTimestamp(b.createdAt) - toTimestamp(a.createdAt)),
+)
+
+function toTimestamp(v: AssetImageRow['createdAt']): number {
+  if (v == null) return 0
+  if (v instanceof Date) return v.getTime()
+  const t = typeof v === 'number' ? v : Date.parse(String(v))
+  return Number.isFinite(t) ? t : 0
+}
+
+const CATEGORY_NAMES: Record<string, string> = {
+  main: '主图',
+  variant: '变体',
+  floor_plan: '平面布局图',
+  panorama_snapshot: '全景截图',
+}
+
+function categoryName(category: string): string {
+  return CATEGORY_NAMES[category] ?? category
+}
+
+function historyRowLabel(img: AssetImageRow): string {
+  if (img.label) return img.label
+  return categoryName(img.category)
+}
+
+// ===== T01 · 写回影响确认（设为默认主图前；地点走 switchMain 多主图模型） =====
+
+const assetStore = useEpAssetStore()
+const impactDialogOpen = ref(false)
+const impactAction = ref<'set-main' | 'regenerate'>('set-main')
+/** 弹窗确认后要执行的原操作（闭包持有，取消即丢弃） */
+let pendingWrite: (() => Promise<void> | void) | null = null
+
+/**
+ * T01 交互流（task-01 §3）：先查影响面 → storyboardCount === 0（或查询失败）
+ * 直接执行；> 0 弹 AssetWriteImpactDialog，确认后才执行原操作。
+ */
+async function guardWriteImpact(
+  action: 'set-main' | 'regenerate',
+  exec: () => Promise<void> | void,
+): Promise<void> {
+  const impact = await assetStore.getWriteImpact(props.assetType, props.bindingId)
+  if (impact && impact.storyboardCount > 0) {
+    impactAction.value = action
+    pendingWrite = exec
+    impactDialogOpen.value = true
+    return
+  }
+  await exec()
+}
+
+function onImpactConfirm(): void {
+  const exec = pendingWrite
+  pendingWrite = null
+  void exec?.()
+}
+
+function onImpactCancel(): void {
+  pendingWrite = null
+}
+
+/** 历史区"设为默认主图"：恢复旧版本为默认（不动 category，多主图模型兼容） */
+async function onHistorySwitchMain(img: AssetImageRow): Promise<void> {
+  if (busy.value || img.isMain === 1) return
+  if (img.category !== 'main') return
+  const api = getApi()
+  if (!api?.image?.switchMain) {
+    ElMessage.error('image.switchMain IPC 未暴露')
+    return
+  }
+  await guardWriteImpact('set-main', async () => {
+    const resp = await api.image.switchMain(img.id)
+    if (!resp?.success) {
+      ElMessage.error(resp?.error || '切换默认主图失败')
+      return
+    }
+    ElMessage.success(`已切换默认主图：${historyRowLabel(img)}`)
+    await reload()
+  })
+}
+
 /** 平面布局图（category='floor_plan'，2026-09-21 平面图先行） */
 const floorPlanImages = computed<AssetImageRow[]>(() =>
   allImages.value.filter((i) => i.category === 'floor_plan'),
@@ -534,23 +692,26 @@ function onOpenAddMainDialog(): void {
 
 async function onSwitchMain(img: AssetImageRow): Promise<void> {
   if (busy.value) return
-  busyKey.value = `switch-main:${img.id}`
-  try {
-    const api = getApi()
-    if (!api?.image?.switchMain) {
-      ElMessage.error('image.switchMain IPC 未暴露')
-      return
-    }
-    const resp = await api.image.switchMain(img.id)
-    if (!resp?.success) {
-      ElMessage.error(resp?.error || '切换默认主图失败')
-      return
-    }
-    ElMessage.success(`已切换默认主图：${img.label || '默认主图'}`)
-    await reload()
-  } finally {
-    busyKey.value = null
+  const api = getApi()
+  if (!api?.image?.switchMain) {
+    ElMessage.error('image.switchMain IPC 未暴露')
+    return
   }
+  // T01：切换默认主图属高危覆盖，被引用时先弹影响确认
+  await guardWriteImpact('set-main', async () => {
+    busyKey.value = `switch-main:${img.id}`
+    try {
+      const resp = await api.image.switchMain(img.id)
+      if (!resp?.success) {
+        ElMessage.error(resp?.error || '切换默认主图失败')
+        return
+      }
+      ElMessage.success(`已切换默认主图：${img.label || '默认主图'}`)
+      await reload()
+    } finally {
+      busyKey.value = null
+    }
+  })
 }
 
 // ===== 变体：派生 dialog =====
@@ -1119,6 +1280,28 @@ defineExpose({ reload })
   font-size: 11px;
   color: var(--el-text-color-placeholder);
   margin-top: 4px;
+}
+
+/* ===== T01 · 全量历史折叠区 ===== */
+
+/* 历史网格：小格（96px）横向换行，与上方网格视觉区分 */
+.history-grid {
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+}
+
+.history-grid .thumb-frame {
+  aspect-ratio: 1 / 1;
+}
+
+/* 当前默认主图行金边（与主图卡 is-default 一致） */
+.history-grid .thumb-frame.is-history-main {
+  border-color: var(--el-color-warning);
+  box-shadow: 0 0 0 1px var(--el-color-warning-light-7);
+}
+
+.history-cat {
+  font-size: 10px;
+  color: var(--el-text-color-placeholder);
 }
 
 /* 大图预览 */
