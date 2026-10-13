@@ -50,7 +50,7 @@ import {
   annotateRefsWithSlots,
   type SegmentAssetRef,
 } from './asset-ref-resolver'
-import { ReferenceBoardService } from '../keyframe/reference-board.service'
+import { ReferenceBoardService, type ReferenceBoardMember } from '../keyframe/reference-board.service'
 
 const DEFAULT_WIDTH = 1920
 const DEFAULT_HEIGHT = 1080
@@ -283,6 +283,9 @@ export class SegmentVideoService {
     // 兑现：≥2 资产 → 编号参考板；1 资产 → 原图直传
     let refPath: string
     let useBoard = false
+    // 编号必须来自重排后 members（单一事实源）：ReferenceBoardService.build 跳过缺图
+    // 成员后 sharp-worker 对幸存成员重排 slot，原始 refs 下标会与板上色块错位
+    let boardMembers: ReferenceBoardMember[] | undefined
     if (refs.length >= 2) {
       const board = await new ReferenceBoardService().build(
         refs.map((r) => ({
@@ -294,6 +297,7 @@ export class SegmentVideoService {
       )
       refPath = board.path
       useBoard = true
+      boardMembers = board.members
       console.log(
         `[segment-video] assetRef: 片段 #${seg.seq} 使用 ${refs.length} 资产参考板 ${board.path}` +
           `（${refs.map((r) => r.name).join('/')}）`,
@@ -304,8 +308,9 @@ export class SegmentVideoService {
     }
 
     // 提示词引用资产（可见化）：镜头正文中每个资产名标注参考板编号，如「沈云萝（参考板第2号）」
-    const annotatedPrompt = annotateRefsWithSlots(basePrompt, refs)
-    const prompt = buildAssetRefPrompt(annotatedPrompt, refs, useBoard)
+    // 编号一律以重排后 board.members 为准（无板时为 undefined，走 refs 下标兼容路径）
+    const annotatedPrompt = annotateRefsWithSlots(basePrompt, refs, boardMembers)
+    const prompt = buildAssetRefPrompt(annotatedPrompt, refs, useBoard, boardMembers)
 
     // generating + prompt 快照先落库（崩溃可追）
     await this.segmentRepo.update(seg.id, {

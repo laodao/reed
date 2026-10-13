@@ -21,6 +21,7 @@ import { AssetImageService } from '../../assets/services/asset-image.service'
 import { CharacterAssetService } from '../../assets/services/character-asset.service'
 import { LocationAssetService } from '../../assets/services/location-asset.service'
 import { ItemAssetService } from '../../assets/services/item-asset.service'
+import type { ReferenceBoardMember } from '../keyframe/reference-board.service'
 
 /** 单条资产引用（解析结果，落 metadata + prompt 声明段） */
 export interface SegmentAssetRef {
@@ -189,20 +190,52 @@ export async function collectSegmentAssetRefs(
 }
 
 /**
+ * 编号事实源构建：编号必须来自重排后的 board.members（单一事实源）。
+ *
+ * ReferenceBoardService.build 会跳过缺图成员，sharp-worker 对幸存成员重排 slot
+ * （1..N 按幸存顺序），因此原始 refs 下标在成员缺图时与板上编号色块错位，
+ * 会把「N号=名字」张冠李戴。members 入参（拼板产物 board.members）存在时，
+ * 编号一律以 members 的幸存顺序为准；缺图被剔除的名字不参与编号。
+ * members 未传（undefined）时退回 refs 原始下标——仅兼容单资产直传与旧调用方。
+ */
+function buildSlotMap(
+  refs: SegmentAssetRef[],
+  boardMembers?: ReferenceBoardMember[],
+): Map<string, number> {
+  const slotByName = new Map<string, number>()
+  if (boardMembers) {
+    boardMembers.forEach((m, i) => {
+      if (!slotByName.has(m.name)) slotByName.set(m.name, m.slot ?? i + 1)
+    })
+    return slotByName
+  }
+  for (let i = 0; i < refs.length; i++) {
+    if (!slotByName.has(refs[i].name)) slotByName.set(refs[i].name, i + 1)
+  }
+  return slotByName
+}
+
+/**
  * 在镜头正文里把每个资产名的首次出现标注为可见的参考板编号引用，
  * 如「沈云萝（参考板第2号）」——让"提示词引用资产"在 prompt 文本层面可见、可审计。
  * 已有 `@[...]` 标记会被 buildSegmentPrompt 先剥成纯名，此处再统一加编号。
+ *
+ * 编号必须来自重排后 members：传入拼板产物 board.members（缺图成员已被剔除、
+ * 幸存成员 slot 重排）时，编号跟随 members 幸存顺序，与板上色块一一对应；
+ * 被剔除成员的名字不加编号（prompt 正文文字描述兜底）。
  *
  * 实现要点：全部名字做一次正则交替匹配（长名排在前面，保证同一位置最长名优先），
  * 避免嵌套名误标——refs 同时含「雪麓山庄书房」与「雪麓山庄」时，短名不得标进长名前缀。
  * 每个名字只标首次出现；同名资产（去重迁移的漏网）共享第一个名字的编号。
  */
-export function annotateRefsWithSlots(basePrompt: string, refs: SegmentAssetRef[]): string {
+export function annotateRefsWithSlots(
+  basePrompt: string,
+  refs: SegmentAssetRef[],
+  boardMembers?: ReferenceBoardMember[],
+): string {
   if (refs.length === 0) return basePrompt
-  const slotByName = new Map<string, number>()
-  for (let i = 0; i < refs.length; i++) {
-    if (!slotByName.has(refs[i].name)) slotByName.set(refs[i].name, i + 1)
-  }
+  const slotByName = buildSlotMap(refs, boardMembers)
+  if (slotByName.size === 0) return basePrompt // 空成员/全员缺图：不生成编号标注
   const names = [...slotByName.keys()].sort((a, b) => b.length - a.length)
   const pattern = new RegExp(names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g')
   const seen = new Set<string>()
@@ -217,26 +250,46 @@ export function annotateRefsWithSlots(basePrompt: string, refs: SegmentAssetRef[
  * 组装"提示词引用资产"的三段式 prompt（H3 网关检测到
  * subject_definitions/summary/retention_analysis 三段时原样透传）。
  *
- * @param basePrompt segment-planner.buildSegmentPrompt 的产出（镜头正文+约束尾）
- * @param refs       解析出的资产引用（≥1）
- * @param useBoard   true = refs 已拼成编号参考板（Picture 1 为板）；false = 单资产原图
+ * @param basePrompt   segment-planner.buildSegmentPrompt 的产出（镜头正文+约束尾）
+ * @param refs         解析出的资产引用（≥1），appearance 描述按 assetImageId 关联
+ * @param useBoard     true = refs 已拼成编号参考板（Picture 1 为板）；false = 单资产原图
+ * @param boardMembers 拼板产物 board.members——编号必须来自重排后的 members
+ *                     （缺图成员被剔除、幸存成员 slot 重排），与板上色块一一对应；
+ *                     不传时退回 refs 原始下标（兼容单资产直传/旧调用方），
+ *                     传空数组（全员缺图）则不生成编号清单、不抛错
  */
 export function buildAssetRefPrompt(
   basePrompt: string,
   refs: SegmentAssetRef[],
   useBoard: boolean,
+  boardMembers?: ReferenceBoardMember[],
 ): string {
   const kindLabel: Record<SegmentAssetRef['kind'], string> = {
     character: '角色',
     location: '场景',
     item: '物品',
   }
-  const list = refs
-    .map((r, i) => {
-      const extra = r.appearance ? `：${r.appearance}` : ''
-      return `${i + 1}号=${r.name}（${kindLabel[r.kind]}${extra}）`
-    })
-    .join('；')
+  const appearanceByImageId = new Map(refs.map((r) => [r.assetImageId, r]))
+  let list: string
+  if (boardMembers) {
+    // 编号一律以 members 为准（单一事实源）；名字/外观描述仍从 refs 取
+    list = boardMembers
+      .map((m, i) => {
+        const r = appearanceByImageId.get(m.assetImageId)
+        const name = m.name || r?.name || ''
+        const kind: SegmentAssetRef['kind'] = r?.kind ?? m.kind
+        const extra = r?.appearance ? `：${r.appearance}` : ''
+        return `${m.slot ?? i + 1}号=${name}（${kindLabel[kind]}${extra}）`
+      })
+      .join('；')
+  } else {
+    list = refs
+      .map((r, i) => {
+        const extra = r.appearance ? `：${r.appearance}` : ''
+        return `${i + 1}号=${r.name}（${kindLabel[r.kind]}${extra}）`
+      })
+      .join('；')
+  }
   const picDesc = useBoard
     ? 'Picture 1 为资产参考板（多个编号分块，各分块是一张独立的资产图）'
     : `Picture 1 为资产「${refs[0].name}」的参考图`
