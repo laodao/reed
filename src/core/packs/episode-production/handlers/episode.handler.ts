@@ -301,6 +301,9 @@ async function handleAnalyzeScriptFile(event: any): Promise<IpcResponse> {
 /**
  * 批量创建剧集：把预览确认后的剧集候选循环落库（uploaded 模式）。
  * episodeNumber 从项目当前最大值 +1 续号；uploaded 模式不触发 AI，与 createEpisode 一致。
+ *
+ * 字数校验（与单建 handleCreateEpisode 同口径）：单集内容 ≤15000 字，先整体校验再落库。
+ * 此前批建通道无字数校验，超长无结构文（如 5 万字）可经批建落库单集，绕过单建上限。
  */
 async function handleBatchCreateEpisodes(
   _event: any,
@@ -310,6 +313,19 @@ async function handleBatchCreateEpisodes(
     if (!req?.projectId) return { success: false, error: 'projectId 不能为空' }
     if (!Array.isArray(req.episodes) || req.episodes.length === 0) {
       return { success: false, error: '没有可创建的剧集' }
+    }
+
+    // 字数校验（与单建同口径）：单集内容 ≤15000 字；先整体校验再落库（任何一条超限即整体拒绝）
+    for (let i = 0; i < req.episodes.length; i++) {
+      const ep = req.episodes[i]
+      const wc = typeof ep.content === 'string' ? ep.content.length : 0
+      if (wc > 15000) {
+        const title = ep.title?.trim() || `第 ${i + 1} 个候选`
+        return {
+          success: false,
+          error: `「${title}」字数超出限制，当前 ${wc} 字，最多允许 15000 字；请拆分后重试`,
+        }
+      }
     }
 
     const db = getCoreDatabaseManager()
