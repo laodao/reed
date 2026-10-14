@@ -225,9 +225,10 @@ function resolveOutputPath(outputPath: string, episodeScriptId: string): string 
   }
 
   const resolved = path.join(defaultDir, fileName)
-  // 双保险：最终路径必须仍在导出目录内
+  // 双保险：最终路径必须仍在导出目录内（resolvedDir === defaultDir 是合法的：
+  // 文件名不含子目录时 dirname 恰为 defaultDir，原 startsWith 守卫会误判越界）
   const resolvedDir = path.dirname(resolved)
-  if (!resolvedDir.startsWith(defaultDir + path.sep)) {
+  if (resolvedDir !== defaultDir && !resolvedDir.startsWith(defaultDir + path.sep)) {
     throw new Error('outputPath 越界（导出固定写入应用导出目录）')
   }
   if (!fs.existsSync(resolvedDir)) fs.mkdirSync(resolvedDir, { recursive: true })
