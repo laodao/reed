@@ -143,6 +143,8 @@ import SettingsDialog from '@/components/episode-production/dialogs/SettingsDial
 import NewEpisodeDialog from '@/components/episode-production/dialogs/NewEpisodeDialog.vue'
 import { useEpStudioContext, type EpStudioTab } from '@/composables/useEpStudioContext'
 import { useEpProjectStore } from '@/stores/episode-production'
+import { useTabsStore } from '@/stores/tabs'
+import { epTabTitleOf } from './episode-production-ui'
 import StageScriptView from '@/components/episode-production/script/StageScriptView.vue'
 import StageAssetView from '@/components/episode-production/asset/StageAssetView.vue'
 import StageStoryboardTab from '@/components/episode-production/storyboard/StageStoryboardTab.vue'
@@ -226,6 +228,7 @@ async function loadReadiness(): Promise<void> {
 
 // ===== 项目设置对话框（D3） =====
 const projectStore = useEpProjectStore()
+const tabsStore = useTabsStore()
 const settingsVisible = ref(false)
 const allLwProjects = ref<Array<{ id: string; name: string }>>([])
 const providerConfigs = ref<UserProviderConfig[]>([])
@@ -236,6 +239,16 @@ const newEpisodeVisible = ref(false)
 /** 项目关联的长文项目 ID（video_projects.longWritingProjectId 列） */
 const projectLongWritingId = computed(
   () => (projectStore.currentProject as any)?.longWritingProjectId ?? null,
+)
+
+// tab 标题跟项目名走（超 6 字截断，口径见 epTabTitleOf）：覆盖深链/会话恢复等未经
+// preloadTab 的入口，项目设置里改名后当前 tab 也即时同步。
+watch(
+  () => projectStore.currentProject?.name,
+  (n) => {
+    if (n) tabsStore.updateTabTitle(route.path, epTabTitleOf(n))
+  },
+  { immediate: true }
 )
 
 /** 创建成功：刷新列表并切到新集 */

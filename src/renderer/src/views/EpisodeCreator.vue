@@ -100,19 +100,28 @@
  * 左右两栏：上传剧本 / AI 生成剧本。两者都会创建第一集并进工作台。
  * 复用后端：createEpisode(uploaded) → identifyEntities（若配模型）→ generateScript → generateScenes。
  */
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Upload, MagicStick, ArrowRight, Loading } from '@element-plus/icons-vue'
+import { useTabsStore } from '@/stores/tabs'
+import { epTabTitleOf } from './episode-production-ui'
 
 const route = useRoute()
 const router = useRouter()
+const tabsStore = useTabsStore()
 const projectId = (route.params.projectId as string) || ''
 
 const projectName = ref('')
 const generating = ref(false)
 const genStep = ref('')
 const error = ref('')
+
+// tab 标题跟项目名走（超 6 字截断，口径见 epTabTitleOf）：覆盖新建项目直跳创建页等
+// 未经 preloadTab 的入口
+watch(projectName, (n) => {
+  if (n) tabsStore.updateTabTitle(route.path, epTabTitleOf(n))
+})
 
 const form = ref({
   summary: '',

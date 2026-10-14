@@ -60,7 +60,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   (e: 'update:modelValue', v: boolean): void
-  (e: 'created', project: { id: string }): void
+  (e: 'created', project: { id: string; name?: string }): void
 }>()
 
 const creating = ref(false)
@@ -122,7 +122,7 @@ async function onCreate(): Promise<void> {
       return
     }
     ElMessage.success('项目已创建')
-    emit('created', { id: resp.data.id })
+    emit('created', { id: resp.data.id, name: form.value.name.trim() })
     visible.value = false
   } catch (e: any) {
     ElMessage.error(e?.message || '创建失败')

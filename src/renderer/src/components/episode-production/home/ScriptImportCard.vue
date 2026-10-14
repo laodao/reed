@@ -99,6 +99,8 @@ import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Document, MagicStick, Upload, Refresh, Check, CircleCheckFilled } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
+import { useTabsStore } from '@/stores/tabs'
+import { epTabTitleOf } from '@/views/episode-production-ui'
 
 const emit = defineEmits<{
   /** 导入成功（刷新最近项目流） */
@@ -106,6 +108,7 @@ const emit = defineEmits<{
 }>()
 
 const router = useRouter()
+const tabsStore = useTabsStore()
 
 type Phase = 'input' | 'preview' | 'creating' | 'done'
 const phase = ref<Phase>('input')
@@ -252,8 +255,12 @@ function openFirstEpisode(): void {
   const pid = lastProject.value?.id
   const eid = createdEpisodeIds.value[0]
   if (pid && eid) {
-    router.push(`/episode-production/${pid}/studio/${eid}`)
+    const path = `/episode-production/${pid}/studio/${eid}`
+    // 预置 tab 标题为项目名（≤6 字截断），避免 tab 先闪现统一的入口名
+    tabsStore.preloadTab(path, epTabTitleOf(projectName.value))
+    router.push(path)
   } else if (pid) {
+    // 快捷路由带 beforeEnter 重定向，落点不定，标题由落点视图自身同步
     router.push(`/episode-production/${pid}`)
   }
 }

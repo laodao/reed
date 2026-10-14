@@ -39,11 +39,14 @@ import { ElMessage } from 'element-plus'
 import ScriptImportCard from '@/components/episode-production/home/ScriptImportCard.vue'
 import RecentProjectsGrid from '@/components/episode-production/home/RecentProjectsGrid.vue'
 import NewProjectDialog from '@/components/episode-production/home/NewProjectDialog.vue'
+import { useTabsStore } from '@/stores/tabs'
+import { epTabTitleOf } from './episode-production-ui'
 import type { VideoProjectSummary } from '@shared/types/episode-production/workflow.types'
 
 defineOptions({ name: 'EpisodeHome' })
 
 const router = useRouter()
+const tabsStore = useTabsStore()
 const projects = ref<VideoProjectSummary[]>([])
 const showCreate = ref(false)
 const importCardKey = ref(0)
@@ -78,10 +81,15 @@ async function onOpenProject(p: VideoProjectSummary): Promise<void> {
     const resp = await window.electronAPI.episodeProduction.listEpisodes(p.id)
     if (resp.success && resp.data.length > 0) {
       const latest = resp.data[0]
-      router.push(`/episode-production/${p.id}/studio/${latest.id}`)
+      const path = `/episode-production/${p.id}/studio/${latest.id}`
+      // 预置 tab 标题为项目名（≤6 字截断），避免 tab 先闪现统一的入口名
+      tabsStore.preloadTab(path, epTabTitleOf(p.name))
+      router.push(path)
     } else {
       // 无剧集 → 剧本创建页
-      router.push(`/episode-production/${p.id}/creator`)
+      const path = `/episode-production/${p.id}/creator`
+      tabsStore.preloadTab(path, epTabTitleOf(p.name))
+      router.push(path)
     }
   } catch (e: any) {
     ElMessage.error(e?.message || '打开项目失败')
