@@ -4,7 +4,7 @@
  * @description 支持所有 OpenAI API 格式的提供商
  */
 
-import { BaseProvider, ProviderConfig, StreamCallback, ChatOptions } from './base-provider'
+import { BaseProvider, ProviderConfig, StreamCallback, ChatOptions, buildResponseFormatParam } from './base-provider'
 import { resolveCapabilities } from './model-capability'
 import type { ChatContext, ChatCompletionResponse, ProviderTemplate, UserProviderConfig, ModelDefinition } from '@shared/types'
 
@@ -298,6 +298,12 @@ export class OpenAICompatibleProvider extends BaseProvider {
       }
     }
 
+    // 结构化输出约束（解码层 JSON 模式）：端点不支持时由调用侧降级重试（chatStream/chatSync）
+    const responseFormat = buildResponseFormatParam(options)
+    if (responseFormat) {
+      body.response_format = responseFormat
+    }
+
     // 添加支持的参数
     if (this.template?.supportedParams) {
       if (this.template.supportedParams.maxTokens) {
@@ -385,12 +391,25 @@ export class OpenAICompatibleProvider extends BaseProvider {
     try {
       onEvent({ type: 'start' })
 
-      const response = await fetch(url, {
+      let response = await fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
         signal
       })
+
+      // 降级重试：网关/旧模型不认识 response_format 参数（400/422）→ 去参重发一次
+      if (!response.ok && body.response_format && (response.status === 400 || response.status === 422)) {
+        const retryBody = { ...body }
+        delete retryBody.response_format
+        console.warn('[OpenAICompatibleProvider.chatStream] 端点疑似不支持 response_format，去参重试')
+        response = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(retryBody),
+          signal
+        })
+      }
 
       if (!response.ok) {
         const errorText = await response.text()
@@ -510,11 +529,23 @@ export class OpenAICompatibleProvider extends BaseProvider {
     console.log('[OpenAICompatibleProvider.chatSync] max_tokens:', body.max_tokens)
 
     try {
-      const response = await fetch(url, {
+      let response = await fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(body)
       })
+
+      // 降级重试：端点不认识 response_format 参数 → 去参重发一次
+      if (!response.ok && body.response_format && (response.status === 400 || response.status === 422)) {
+        const retryBody = { ...body }
+        delete retryBody.response_format
+        console.warn('[OpenAICompatibleProvider.chatSync] 端点疑似不支持 response_format，去参重试')
+        response = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(retryBody)
+        })
+      }
 
       if (!response.ok) {
         const errorText = await response.text()

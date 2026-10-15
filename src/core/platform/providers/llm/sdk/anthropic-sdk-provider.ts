@@ -183,6 +183,9 @@ export class AnthropicSdkProvider extends BaseProvider {
 
       // 创建流式请求
       // max_tokens 优先级：options > 模板模型定义 > 8192（Claude 默认应 8192，原 4096 偏低）
+      // 注：options.responseFormat 有意忽略——Anthropic 无 response_format 等价参数，
+      // 等价能力（tool use 强制 schema）需要重构响应解析，超出该参数的降级语义；
+      // 调用方靠 prompt 约定 + 容错解析兜底（见 longwriting-ai.service parseJsonPayload）。
       const stream = this.client.messages.stream(
         {
           model,

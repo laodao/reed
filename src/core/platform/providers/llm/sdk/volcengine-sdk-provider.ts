@@ -6,7 +6,7 @@
 
 import * as crypto from 'crypto'
 import OpenAI from 'openai'
-import { BaseProvider, ProviderConfig, StreamCallback, ChatOptions } from '../base-provider'
+import { BaseProvider, ProviderConfig, StreamCallback, ChatOptions, buildResponseFormatParam, isResponseFormatUnsupportedError } from '../base-provider'
 import type {
   ChatContext,
   ChatCompletionResponse,
@@ -411,18 +411,28 @@ export class VolcEngineSdkProvider extends BaseProvider {
     try {
       onEvent({ type: 'start' })
 
-      const stream = await this.client.chat.completions.create(
-        {
-          model,
-          messages,
-          stream: true,
-          max_tokens: maxTokens,
-          temperature
-        },
-        {
-          signal
+      const createParams: Record<string, unknown> = {
+        model,
+        messages,
+        stream: true,
+        max_tokens: maxTokens,
+        temperature
+      }
+      const responseFormat = buildResponseFormatParam(options)
+      if (responseFormat) createParams.response_format = responseFormat
+      // any：createParams 的字面量类型被 as any 展开后，SDK 重载无法推断出流式返回类型
+      let stream: any
+      try {
+        stream = await this.client.chat.completions.create(createParams as any, { signal })
+      } catch (rfError: any) {
+        if (responseFormat && isResponseFormatUnsupportedError(rfError)) {
+          delete createParams.response_format
+          console.warn('[VolcEngineSdkProvider.chatStream] 端点疑似不支持 response_format，去参重试')
+          stream = await this.client.chat.completions.create(createParams as any, { signal })
+        } else {
+          throw rfError
         }
-      )
+      }
 
       for await (const chunk of stream) {
         if (chunk.id && !messageId) {
@@ -470,13 +480,27 @@ export class VolcEngineSdkProvider extends BaseProvider {
     const messages = this.buildMessages(context, options)
 
     try {
-      const response = await this.client.chat.completions.create({
+      const syncParams: Record<string, unknown> = {
         model,
         messages,
         stream: false,
         max_tokens: this.resolveMaxTokens(model, options),
         temperature: this.resolveTemperature(options)
-      })
+      }
+      const syncResponseFormat = buildResponseFormatParam(options)
+      if (syncResponseFormat) syncParams.response_format = syncResponseFormat
+      let response
+      try {
+        response = await this.client.chat.completions.create(syncParams as any)
+      } catch (rfError: any) {
+        if (syncResponseFormat && isResponseFormatUnsupportedError(rfError)) {
+          delete syncParams.response_format
+          console.warn('[VolcEngineSdkProvider.chatSync] 端点疑似不支持 response_format，去参重试')
+          response = await this.client.chat.completions.create(syncParams as any)
+        } else {
+          throw rfError
+        }
+      }
 
       const choice = response.choices[0]
 

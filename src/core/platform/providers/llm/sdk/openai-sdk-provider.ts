@@ -5,7 +5,7 @@
  */
 
 import OpenAI from 'openai'
-import { BaseProvider, ProviderConfig, StreamCallback, ChatOptions } from '../base-provider'
+import { BaseProvider, ProviderConfig, StreamCallback, ChatOptions, buildResponseFormatParam, isResponseFormatUnsupportedError } from '../base-provider'
 import { resolveCapabilities, resolveMaxTokens } from '../model-capability'
 import type {
   ChatContext,
@@ -437,18 +437,27 @@ export class OpenAISdkProvider extends BaseProvider {
 
       let stream: any
       try {
-        stream = await this.client.chat.completions.create(
-          {
-            model,
-            messages,
-            stream: true,
-            max_tokens: maxTokens,
-            temperature
-          },
-          {
-            signal
+        const requestParams: Record<string, unknown> = {
+          model,
+          messages,
+          stream: true,
+          max_tokens: maxTokens,
+          temperature
+        }
+        // 结构化输出约束（解码层 JSON 模式）：端点不支持时去参重试一次
+        const responseFormat = buildResponseFormatParam(options)
+        if (responseFormat) requestParams.response_format = responseFormat
+        try {
+          stream = await this.client.chat.completions.create(requestParams as any, { signal })
+        } catch (rfError: any) {
+          if (responseFormat && isResponseFormatUnsupportedError(rfError)) {
+            delete requestParams.response_format
+            console.warn('[OpenAISdkProvider.chatStream] 端点疑似不支持 response_format，去参重试')
+            stream = await this.client.chat.completions.create(requestParams as any, { signal })
+          } else {
+            throw rfError
           }
-        )
+        }
         console.log('[OpenAISdkProvider.chatStream] 请求已建立, 耗时(ms):', Date.now() - requestStartAt, ', 流类型:', stream?.constructor?.name)
       } catch (createError: any) {
         // create() 阶段失败（鉴权、超时、网络、模型不存在等）—— 打印完整错误对象，避免被 formatError 吞掉细节
@@ -573,7 +582,7 @@ export class OpenAISdkProvider extends BaseProvider {
       const maxTokens = this.template?.supportedParams?.maxTokens
         ? (options?.maxTokens || this.findModelDefinition(model)?.maxOutputTokens || 8192)
         : undefined
-      const response = await this.client.chat.completions.create({
+      const syncParams: Record<string, unknown> = {
         model,
         messages,
         stream: false,
@@ -581,7 +590,21 @@ export class OpenAISdkProvider extends BaseProvider {
         temperature: this.template?.supportedParams?.temperature
           ? (options?.temperature ?? 0.7)
           : undefined
-      })
+      }
+      const responseFormat = buildResponseFormatParam(options)
+      if (responseFormat) syncParams.response_format = responseFormat
+      let response
+      try {
+        response = await this.client.chat.completions.create(syncParams as any)
+      } catch (rfError: any) {
+        if (responseFormat && isResponseFormatUnsupportedError(rfError)) {
+          delete syncParams.response_format
+          console.warn('[OpenAISdkProvider.chatSync] 端点疑似不支持 response_format，去参重试')
+          response = await this.client.chat.completions.create(syncParams as any)
+        } else {
+          throw rfError
+        }
+      }
 
       const choice = response.choices[0]
 

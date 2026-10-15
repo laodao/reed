@@ -45,6 +45,40 @@ export interface ChatOptions {
   topP?: number
   /** Top-K 采样 */
   topK?: number
+  /**
+   * 结构化输出约束（解码层强制合法 JSON，优于 prompt 约定）。
+   * - json_object：保证输出为合法 JSON 对象（顶层必须是 object，数组需自行包装）；
+   * - json_schema：按 schema 严格约束字段（strict 模式，仅部分网关/新模型支持）。
+   * Provider 不支持该参数时必须降级（去参重试或忽略），禁止让请求直接失败——
+   * 调用方始终保留容错解析兜底（见 longwriting-ai.service parseJsonPayload）。
+   */
+  responseFormat?:
+    | { type: 'json_object' }
+    | { type: 'json_schema'; name: string; schema: Record<string, unknown> }
+}
+
+/**
+ * 构建 OpenAI 风格 response_format 请求参数。
+ * OpenAI SDK / 兼容网关 / volcengine 共用；Anthropic 无对应参数（由其 provider 忽略）。
+ * json_schema 仅透传 name+schema——strict 由 schema 内 additionalSettings 表达，
+ * 网关不识别 strict 字段时会忽略，不影响其余字段。
+ */
+export function buildResponseFormatParam(options?: ChatOptions): Record<string, unknown> | undefined {
+  if (!options?.responseFormat) return undefined
+  if (options.responseFormat.type === 'json_object') return { type: 'json_object' }
+  return { type: 'json_schema', json_schema: { name: options.responseFormat.name, schema: options.responseFormat.schema } }
+}
+
+/**
+ * 判定是否为"端点不认识 response_format 参数"类错误（400/422 或报文含相关关键字），
+ * 命中则去掉该参数重试一次。鉴权/网络/超时类错误不重试（重试也会同样失败）。
+ */
+export function isResponseFormatUnsupportedError(error: unknown): boolean {
+  const e = error as { status?: number; message?: string } | null
+  if (!e) return false
+  if (e.status === 400 || e.status === 422) return true
+  const msg = String(e.message || '')
+  return /response_format|json_schema|json mode|unsupported (parameter|param)|invalid (parameter|param)/i.test(msg)
 }
 
 /**
