@@ -368,7 +368,11 @@ export class StoryRoomDistillerService {
         // 单章卡判定必须先于分集 index 早退：单章修正卡常带 index/volumeIndex 字段，
         // 旧顺序会把它当"分集种子"直接 ok 不落库——确认后卡被消费而大纲未更新
         // （忘川渡实跑：第4/6章修正卡首轮全被吞，"确认了但没生效"）
-        const chapterCard = matchOutlineChapterCard(data, card.title)
+        // 例外：研讨室自产的分集种子卡（标题恒为「分集大纲卡 · 第 N 集」）必须走 index 早退——
+        // 5ea8da35 把 [章] 正则扩到 [章集] 后这类卡会误入章卡分支撞就绪门而 failed。
+        // 前缀是提炼器自己的生成格式，与作者手写的修正章卡可区分。
+        const isEpisodeSeedCard = /^分集大纲卡/.test(String(card.title || '').trim())
+        const chapterCard = isEpisodeSeedCard ? null : matchOutlineChapterCard(data, card.title)
         if (chapterCard) {
           const gateErr = await bibleGateForPersist(m, projectId, '大纲')
           if (gateErr) return { ok: false, message: gateErr, changed: [] }
