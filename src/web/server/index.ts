@@ -32,6 +32,7 @@ import assetsRouter from './api/assets-router'
 import uploadRouter from './api/upload-router'
 // spec 2026-05-09 ep-redesign §3.2 D4 · Agent / Skill HTTP API
 import agentsRouter from '../../agents/api/router'
+import { isModuleEnabled } from '@shared/constants/features'
 // C3 工作流 REST API（invoke/stop/SSE）
 import workflowApiRouter, { createWebhookTriggerRouter } from './api/workflow-api-router'
 import { attachWebSocketServer } from './ws/ws-server'
@@ -203,8 +204,10 @@ async function bootstrap(): Promise<void> {
   app.use('/api/auth', authRouter)
   app.use('/api/ipc', ipcRouter)
   app.use('/api/upload', uploadRouter)
-  // spec 2026-05-09 ep-redesign §3.2 D4 · Agent Skill HTTP API
-  app.use('/api/agents', agentsRouter)
+  // spec 2026-05-09 ep-redesign §3.2 D4 · Agent Skill HTTP API（EP 技能门面；EP 裁剪时不挂载）
+  if (isModuleEnabled('episode-production')) {
+    app.use('/api/agents', agentsRouter)
+  }
   // C3 spec v2 §6 · 工作流 REST API
   app.use('/api/workflow', workflowApiRouter())
   // P0 片5 · Webhook 免签触发（POST /api/workflow/webhook/:token，token 即鉴权）
@@ -265,8 +268,8 @@ async function bootstrap(): Promise<void> {
   // 不依赖 workflow，放在工作流子系统初始化之前（P4 起业务包的 activate 会复用 workflow 等设施）。
   try {
     const { initPackSubsystem } = await import('@core/packs/kernel')
-    const { builtinPacks } = await import('@core/packs/builtin-packs')
-    await initPackSubsystem(builtinPacks)
+    const { loadBuiltinPacks } = await import('@core/packs/builtin-packs')
+    await initPackSubsystem(await loadBuiltinPacks())
   } catch (e: any) {
     console.warn('[web-server] 业务包子系统启动失败（不致命）', e)
   }

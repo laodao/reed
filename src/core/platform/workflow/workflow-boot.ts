@@ -92,10 +92,30 @@ export interface WorkflowBootOptions {
 }
 
 /**
+ * 启动失败原因（诊断用）：宿主对 initWorkflowSubsystem 的失败采取"不致命"策略
+ * （只 warn 后继续启动），此后所有 wf:/at:/am: 通道会以「工作流子系统未初始化」
+ * 报错——把真实原因带给调用方，避免误导排查方向（2026-10-15）。
+ */
+let bootFailure: Error | null = null
+
+/**
  * 初始化工作流子系统（幂等；重复调用返回既有实例）。
  * 必须在数据库管理器注册之后调用。
  */
 export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Promise<WorkflowSubsystem> {
+  try {
+    return await initWorkflowSubsystemInner(opts)
+  } catch (e) {
+    bootFailure = e instanceof Error ? e : new Error(String(e))
+    throw e
+  }
+}
+
+/**
+ * 初始化工作流子系统内部实现（失败原因记录在 bootFailure）。
+ * 必须在数据库管理器注册之后调用。
+ */
+async function initWorkflowSubsystemInner(opts: WorkflowBootOptions = {}): Promise<WorkflowSubsystem> {
   if (subsystem) return subsystem
 
   // 分段计时：工作流子系统是启动关键路径上最重的一段（引擎/节点/服务/恢复）
@@ -1132,7 +1152,10 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
 /** 取子系统（未初始化抛错——IPC 层据此返回明确错误） */
 export function getWorkflowSubsystem(): WorkflowSubsystem {
   if (!subsystem) {
-    throw new Error('工作流子系统未初始化（initWorkflowSubsystem 未调用）')
+    if (bootFailure) {
+      throw new Error(`工作流子系统启动失败：${bootFailure.message}`)
+    }
+    throw new Error('工作流子系统正在初始化（尚未完成），请稍后重试')
   }
   return subsystem
 }

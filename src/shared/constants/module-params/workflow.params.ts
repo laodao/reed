@@ -22,6 +22,7 @@ const L = WORKFLOW_LIMITS
 
 export const WORKFLOW_PARAMS: ModuleParamDefinition = {
   key: 'workflow',
+  feature: 'workflow',
   name: '工作流',
   description:
     '所有工作流运行共享的护栏：单次运行能跑多久、循环多少次、并行几个节点、节点输出截断多长、重试几次。工作流自己配了的以工作流为准，这里是不配时的默认值。',

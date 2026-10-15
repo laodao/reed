@@ -27,6 +27,7 @@ const IMMEDIATE = 'immediate' as const
 
 export const AGENT_RUNTIME_PARAMS: ModuleParamDefinition = {
   key: 'agentRuntime',
+  feature: 'workflow',
   name: 'AI 运行时',
   description:
     '跨业务模块的运行时护栏：工作流 Agent 节点与子代理的步数、工具返回值的截断与体积上限。保存后立即生效。',

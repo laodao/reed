@@ -18,6 +18,7 @@ import { registerAihubHandlers } from '@core/platform/aihub/aihub.handler'
 import { registerSearchEngineHandlers } from '@electron/ipc/handlers/search-engine.handler'
 import { registerTranslationHandlers } from '@electron/ipc/handlers/translation.handler'
 import { registerImageHandlers } from '@electron/ipc/handlers/image.handler'
+import { registerVoiceHandlers } from '@electron/ipc/handlers/voice.handler'
 import { registerToolHandlers } from '@electron/ipc/handlers/tool.handler'
 import { registerEmailHandlers } from '@electron/ipc/handlers/email.handler'
 import { registerInfoSourceHandlers } from '@electron/ipc/handlers/info-source.handler'
@@ -42,6 +43,7 @@ export async function registerAllWebChannels(): Promise<void> {
   registerSearchEngineHandlers()
   registerTranslationHandlers()
   registerImageHandlers()
+  registerVoiceHandlers()
   registerToolHandlers()
   registerEmailHandlers()
   registerInfoSourceHandlers()

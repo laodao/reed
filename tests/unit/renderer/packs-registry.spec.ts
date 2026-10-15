@@ -18,6 +18,7 @@ import {
   type RendererPackDefinition,
 } from '@/packs/registry'
 import { mainMenuItems, visibleMenuItems, getMenuSubmenu, __resetMainMenuForTests } from '@/config/menu'
+import { FEATURE_MODULES } from '@shared/constants/features'
 
 /** 造一个最小可用包定义（组件用空 stub，不触发视图加载） */
 function makePack(id: string, overrides: {
@@ -164,6 +165,10 @@ describe('applyPacks（路由动态注册 + 菜单锚点合入）', () => {
   })
 })
 
+// 全量装配断言只对「全模块启用」形态有效（dev）；裁剪形态（the-chat-bot）
+// 按功能开关只注册白名单包 → 整条用例跳过
+const allModulesEnabled = Object.values(FEATURE_MODULES).every((v) => v !== false)
+
 describe('installBuiltinPackages（内置包装配）', () => {
   afterEach(() => {
     delete (window as any).electronAPI
@@ -171,7 +176,7 @@ describe('installBuiltinPackages（内置包装配）', () => {
     __resetMainMenuForTests()
   })
 
-  it('IPC 不可用（无 electronAPI）→ 降级全启用：11 个包路由全部挂上', async () => {
+  it.skipIf(!allModulesEnabled)('IPC 不可用（无 electronAPI）→ 降级全启用：11 个包路由全部挂上', async () => {
     const { installBuiltinPackages } = await import('@/packs/index')
     const router = makeRouter()
     await installBuiltinPackages(router)

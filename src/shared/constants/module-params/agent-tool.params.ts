@@ -25,6 +25,7 @@ const APPROVAL = SETTINGS_KEYS.agentApproval
 
 export const AGENT_TOOL_PARAMS: ModuleParamDefinition = {
   key: 'agentTools',
+  feature: 'workflow',
   name: '工具与审批',
   description:
     '工具执行多久算超时、工具结果太长怎么截断、人工审批卡等多久算超时。保存后立即生效。',

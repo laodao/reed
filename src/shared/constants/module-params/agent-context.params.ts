@@ -26,6 +26,7 @@ const MEMORY = SETTINGS_KEYS.agentMemory
 
 export const AGENT_CONTEXT_PARAMS: ModuleParamDefinition = {
   key: 'agentContext',
+  feature: 'workflow',
   name: '上下文与记忆',
   description:
     'Agent 每轮带多少上文、什么时候压缩、压缩时保留什么；以及记忆飞轮蒸馏/查重/召回的尺度。保存后立即生效。',

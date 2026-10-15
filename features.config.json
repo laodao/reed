@@ -1,0 +1,20 @@
+{
+  "$comment": "功能开关（模块级）单一事实源。各模块（业务包/能力入口/设置区块）按此裁决是否注册与显示：true=启用，false=禁用（不注册路由/菜单/IPC，设置页隐藏对应区块）。dev 保持全量 true；产品裁剪分支（如 the-chat-bot）按需置 false，从 dev 同步代码后无需改任何代码，只维护本文件。",
+  "modules": {
+    "chat": true,
+    "knowledge-base": true,
+    "workflow": true,
+    "diary": true,
+    "capability": true,
+    "app": true,
+    "asset-center": true,
+    "portrait": true,
+    "longwriting": true,
+    "episode-production": true,
+    "voice-design": true,
+    "skills": true,
+    "domain-learning": true,
+    "info-collection": true,
+    "podcast-video": true
+  }
+}

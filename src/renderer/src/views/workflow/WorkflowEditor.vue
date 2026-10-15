@@ -30,7 +30,7 @@
         </el-button>
       </el-tooltip>
       <el-button size="small" type="primary" @click="doPublish">发布</el-button>
-      <el-button size="small" type="success" plain @click="openAppPublish">发布为应用</el-button>
+      <el-button v-if="appModuleEnabled" size="small" type="success" plain @click="openAppPublish">发布为应用</el-button>
       <el-button size="small" type="info" plain @click="openShare">分享</el-button>
     </div>
 
@@ -178,6 +178,7 @@
 <script setup lang="ts">
 defineOptions({ name: 'WorkflowEditor' })
 import { ref, reactive, computed, onMounted, onUnmounted, provide, watch, nextTick } from 'vue'
+import { isModuleEnabled } from '@shared/constants/features'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Close } from '@element-plus/icons-vue'
@@ -203,6 +204,8 @@ import { iconForWorkflowCategory } from '../../utils/app-icons'
 
 const route = useRoute()
 const router = useRouter()
+// 应用模块裁剪（features.config.json app=false）时隐藏「发布为应用」入口
+const appModuleEnabled = isModuleEnabled('app')
 const definition = ref<any>(null)
 const nodes = ref<Node[]>([])
 const edges = ref<Edge[]>([])

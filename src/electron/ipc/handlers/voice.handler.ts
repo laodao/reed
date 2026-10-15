@@ -1,6 +1,6 @@
 /**
  * 语音 IPC 处理器
- * @module core/packs/voice-design/handlers/voice
+ * @module electron/ipc/handlers/voice
  * @description 处理语音相关的 IPC 请求
  */
 
@@ -9,7 +9,7 @@ import * as path from 'path'
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { VoiceService } from '@core/platform/services/voice.service'
 import { VoiceCloneService } from '@core/platform/services/voice-clone.service'
-import { VoiceDesignService } from '../services/voice-design.service'
+import { VoiceDesignService } from '@core/platform/services/voice-design.service'
 import { VoiceCloneJobScheduler } from '@core/platform/services/voice-clone-job-scheduler'
 import type {
   TTSRequest,

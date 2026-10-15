@@ -18,6 +18,7 @@ const L = AGENT_BUDGET_LIMITS
 
 export const SYSTEM_AGENT_PARAMS: ModuleParamDefinition = {
   key: 'systemAgent',
+  feature: 'chat',
   name: '系统助手',
   description: '对话框里系统助手的单轮步数（一轮里能思考并调用工具几次）。',
   settingsKey: SETTINGS_KEYS.agentBudget,

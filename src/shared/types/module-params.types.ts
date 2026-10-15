@@ -168,6 +168,11 @@ export interface ModuleParamDefinition {
   key: string
   /** Tab 名（中文） */
   name: string
+  /**
+   * 功能开关模块 id（features.config.json 的 modules 键；2026-10-15）。
+   * 设置页据此隐藏未启用模块的 Tab；缺省 = 不随功能开关（平台级/永远显示）。
+   */
+  feature?: string
   /** 这个模块的参数是干什么的（Tab 顶部说明） */
   description: string
   /** 参数缺省存放的 settings 键（必须来自 `SETTINGS_KEYS`；逐参数可覆盖） */

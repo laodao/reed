@@ -22,42 +22,43 @@
  *                data-path/image/file/translation/export/search-engine/tool/email/
  *                news-source/favicon/oss/datasource/event-admin 等平台级 handler
  *                按裁决留壳（无独立业务界面或禁用即自残）。
+ *
+ *              功能开关（2026-10-15）：登记清单按 features.config.json 过滤——禁用的
+ *              包不注册（handler/IPC 不进运行时）。从 dev 同步代码到裁剪分支（如
+ *              the-chat-bot）无需改本文件，只维护 features.config.json。动态 import
+ *              使禁用包的代码不进入启动加载路径。
  */
 
 import type { PackDefinition } from './registry'
-import { skillsPack } from './skills'
-import { diaryPack } from './diary'
-import { portraitPack } from './portrait'
-import { chatPack } from './chat'
-import { voiceDesignPack } from './voice-design'
-import { longwritingPack } from './longwriting'
-import { episodeProductionPack } from './episode-production'
-import { workflowPack } from './workflow'
-import { appPack } from './app'
-import { knowledgeBasePack } from './knowledge-base'
-import { assetCenterPack } from './asset-center'
-import { domainLearningPack } from './domain-learning'
-import { podcastVideoPack } from './podcast-video'
-import { infoCollectionPack } from './info-collection'
+import { isModuleEnabled } from '@shared/constants/features'
 
-export const builtinPacks: PackDefinition[] = [
-  skillsPack,
-  diaryPack,
-  portraitPack,
-  chatPack,
-  voiceDesignPack,
-  longwritingPack,
-  episodeProductionPack,
-  workflowPack,
-  // app 依赖 workflow，登记在其后（registry 对未就绪依赖按 pending 处理，与顺序无关，
-  // 此排序只为可读性）
-  appPack,
-  knowledgeBasePack,
-  assetCenterPack,
-  // 领域共学空间（依赖 workflow/knowledge-base/skills）
-  domainLearningPack,
-  // 信息搜集（依赖 workflow/knowledge-base；docs/design/2026-10-07-info-collection-design.md）
-  infoCollectionPack,
+/**
+ * 按功能开关加载内置包清单。
+ * 顺序 = 注册顺序（app 依赖 workflow，登记在其后只为可读性；registry 对未就绪
+ * 依赖按 pending 处理，与顺序无关）。
+ */
+export async function loadBuiltinPacks(): Promise<PackDefinition[]> {
+  const defs: PackDefinition[] = []
+  const add = async (id: string, load: () => Promise<PackDefinition>): Promise<void> => {
+    if (!isModuleEnabled(id)) return
+    defs.push(await load())
+  }
+
+  await add('diary', () => import('./diary').then((m) => m.diaryPack))
+  await add('chat', () => import('./chat').then((m) => m.chatPack))
+  await add('workflow', () => import('./workflow').then((m) => m.workflowPack))
+  await add('knowledge-base', () => import('./knowledge-base').then((m) => m.knowledgeBasePack))
+  await add('skills', () => import('./skills').then((m) => m.skillsPack))
+  await add('portrait', () => import('./portrait').then((m) => m.portraitPack))
+  await add('voice-design', () => import('./voice-design').then((m) => m.voiceDesignPack))
+  await add('longwriting', () => import('./longwriting').then((m) => m.longwritingPack))
+  await add('episode-production', () => import('./episode-production').then((m) => m.episodeProductionPack))
+  await add('app', () => import('./app').then((m) => m.appPack))
+  await add('asset-center', () => import('./asset-center').then((m) => m.assetCenterPack))
+  await add('domain-learning', () => import('./domain-learning').then((m) => m.domainLearningPack))
+  await add('info-collection', () => import('./info-collection').then((m) => m.infoCollectionPack))
   // 播客视频（slide-render/podcast-compose 业务节点；无 IPC 前缀，无依赖）
-  podcastVideoPack,
-]
+  await add('podcast-video', () => import('./podcast-video').then((m) => m.podcastVideoPack))
+
+  return defs
+}

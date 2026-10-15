@@ -7,7 +7,7 @@
         <span class="brand-name">The Bot</span>
         <span class="brand-sub">{{ greeting }}，今天想做点什么？</span>
       </div>
-      <div class="header-actions">
+      <div v-if="isModuleEnabled('app')" class="header-actions">
         <el-button text size="small" @click="navigateTo('/apps')">
           <el-icon :size="14" style="margin-right: 4px"><Box /></el-icon> 管理应用
         </el-button>
@@ -15,8 +15,8 @@
     </div>
 
     <div class="home-body">
-      <!-- 我的应用：固定到首页的应用快捷入口（主导区域，可容纳较多应用） -->
-      <section class="section">
+      <!-- 我的应用：固定到首页的应用快捷入口（主导区域，可容纳较多应用）；应用模块裁剪时整块隐藏 -->
+      <section v-if="isModuleEnabled('app')" class="section">
         <div class="section-head">
           <h2 class="section-title">📌 我的应用</h2>
           <span v-if="pinnedApps.length" class="section-count">{{ pinnedApps.length }} 个固定应用</span>
@@ -84,6 +84,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowRight, Box } from '@element-plus/icons-vue'
 import { mainMenuItems, footerMenuItems, visibleMenuItems } from '@/config/menu'
+import { isModuleEnabled } from '@shared/constants/features'
 import { electronApi } from '@/types/electron-api'
 import type { AppRecord } from '@shared/types/app.types'
 
