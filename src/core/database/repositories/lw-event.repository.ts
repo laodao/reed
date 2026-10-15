@@ -127,6 +127,33 @@ export class LwEventRepository extends BaseRepository<LwEventEntity, StoryEvent>
     return this.scoped.count({ projectId } as any)
   }
 
+  /**
+   * 从项目全部事件的 involved_entities JSON 中剔除指定实体（悬空引用治理）。
+   * 实体删除路径调用（purge 级联）：引用残留在事件 JSON 里会让 getGraph 推导出
+   * 指向不存在节点的 involves 边。返回被改写的事件行数。
+   */
+  async removeEntityFromInvolved(projectId: string, entityType: string, entityId: string): Promise<number> {
+    const rows = await this.scoped.find({ projectId } as any)
+    let changed = 0
+    for (const row of rows) {
+      if (!row.involvedEntities) continue
+      let ents: Array<{ type?: string; id?: string }>
+      try {
+        ents = JSON.parse(row.involvedEntities)
+      } catch {
+        continue
+      }
+      if (!Array.isArray(ents)) continue
+      const filtered = ents.filter(e => !(e?.type === entityType && e?.id === entityId))
+      if (filtered.length === ents.length) continue
+      row.involvedEntities = filtered.length > 0 ? JSON.stringify(filtered) : null
+      row.updatedAt = Date.now()
+      await this.scoped.save(row)
+      changed++
+    }
+    return changed
+  }
+
   private parseJson<T>(jsonStr: string | null): T | undefined {
     if (!jsonStr) return undefined
     try {

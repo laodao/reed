@@ -11,6 +11,8 @@ import { getCoreDatabaseManager, type ICoreDatabaseManager } from '@core/databas
 import { LongWritingAIService } from '@core/platform/services/longwriting-ai.service'
 import { GraphService } from './graph.service'
 import { scanNameCandidates } from './consistency.service'
+import { checkNameCandidateInContent, describeRejectReason } from './name-gate.service'
+import { checkEventAnchors, checkEmptyEvents, checkInputTruncation, checkUnlinkedRosterMentions, type GraphQaWarning } from './graph-qa.service'
 import type {
   StoryEvent,
   EntityStateSnapshot,
@@ -45,6 +47,11 @@ export interface ChapterGraphProcessResult {
   newEntitiesNote?: string
   /** 步骤级结果聚合：非空 = 本轮有失败步骤（hash 不记录，下次保存重跑） */
   failedSteps?: string[]
+  /**
+   * P0 质检告警（warn 级，不阻断重跑）：evidence 锚定缺失 / 出场未挂载 /
+   * 零挂载事件 / 输入截断。正式问题台账（lw_graph_issues）P1 落库。
+   */
+  warnings?: GraphQaWarning[]
 }
 
 export class ChapterGraphProcessor {
@@ -98,6 +105,8 @@ export class ChapterGraphProcessor {
     // （修复"失败一次永久短路"：旧实现每步都吞错，process() 结构上不可能抛错，
     //  hash 被无条件记录，与"全程成功才记 hash"的注释语义相反）
     const failedSteps: string[] = []
+    // P0 质检告警（warn 级，不阻断；随结果返回 + 日志，P1 落 lw_graph_issues）
+    const qaWarnings: GraphQaWarning[] = []
 
     // ============ 0b. 新实体检测→入册（写作台「提取状态」链路的管道化下沉） ============
     // 用户拍板（2026-09-16）：正文自由发挥的新人物/地点/物品每章自动入册——否则状态切片/
@@ -139,7 +148,7 @@ export class ChapterGraphProcessor {
           modelId,
         )
       }
-      const extracted: Array<{ name?: string; storyTime?: string; description?: string; involvedEntities?: MemoryEntity[]; stateBefore?: string; stateAfter?: string }> =
+      const extracted: Array<{ name?: string; storyTime?: string; description?: string; evidence?: string; involvedEntities?: MemoryEntity[]; stateBefore?: string; stateAfter?: string }> =
         Array.isArray(resp.data) ? resp.data : []
       if (!resp.success || extracted.length === 0) {
         failedSteps.push('事件提取')
@@ -169,20 +178,20 @@ export class ChapterGraphProcessor {
           const roster = ((await m.lwCharacters?.getByProjectId(projectId)) || []).map((c: any) => c.name)
           const graphSvc = new GraphService(m)
           for (const cand of scanNameCandidates([{ name: `第${chapterNumber}章`, content: chapterContent }], roster, 2)) {
-            await this.registerUnresolvedName(projectId, chapterNumber, cand.name)
+            await this.registerUnresolvedName(projectId, chapterNumber, cand.name, chapterContent)
             void graphSvc
           }
         } catch (e) {
           console.warn('[ChapterGraphProcessor] 全文人名扫描入队失败（不阻断）:', e)
         }
         // 名称 → ID 解析（事件涉及实体必须 ID）
-        const resolvedEvents: Array<{ name: string; storyTime?: string; description?: string; involvedEntities?: MemoryEntity[]; stateBefore?: string; stateAfter?: string }> = []
+        const resolvedEvents: Array<{ name: string; storyTime?: string; description?: string; evidence?: string; involvedEntities?: MemoryEntity[]; stateBefore?: string; stateAfter?: string }> = []
         for (const ev of extracted) {
           if (!ev.name?.trim()) continue
           // 52 号：解析失败的实体不再静默跳过——收集进「未登记人物」队列（R9 数据源）
           const { resolved: resolvedIn, unresolved: evUnresolved } = await this.resolveEventEntities(projectId, ev.involvedEntities || [])
           for (const u of evUnresolved) {
-            if (u.type === 'character') await this.registerUnresolvedName(projectId, chapterNumber, u.name)
+            if (u.type === 'character') await this.registerUnresolvedName(projectId, chapterNumber, u.name, chapterContent)
           }
           // 复测补链：模型漏挂实体的事件，按句子共现补挂（正文同句出现的人名）
           let involved = resolvedIn
@@ -193,11 +202,14 @@ export class ChapterGraphProcessor {
             name: ev.name.trim(),
             storyTime: ev.storyTime?.trim() || undefined,
             description: ev.description,
+            evidence: ev.evidence,
             involvedEntities: involved,
             stateBefore: ev.stateBefore,
             stateAfter: ev.stateAfter,
           })
         }
+        // ANCHOR：事件正文锚定复核（prompt 硬约束的服务端复核；warn 不拒绝，P1 审计裁决）
+        qaWarnings.push(...checkEventAnchors(resolvedEvents, chapterContent))
         events.push(...await m.lwEvents.batchCreate(
           resolvedEvents.map(e => ({
             projectId,
@@ -352,7 +364,9 @@ export class ChapterGraphProcessor {
         )
         const items: Array<{
           changeType?: string
+          sourceType?: string
           sourceName?: string
+          targetType?: string
           targetName?: string
           relationType?: string
           newRelationType?: string
@@ -363,7 +377,9 @@ export class ChapterGraphProcessor {
           .filter(c => c.changeType === 'ended' || c.relationType?.trim() || c.newRelationType?.trim())
           .map(c => ({
             changeType: (c.changeType === 'ended' || c.changeType === 'changed' ? c.changeType : 'new') as 'new' | 'ended' | 'changed',
+            sourceType: (c.sourceType === 'faction' ? 'faction' : 'character') as 'character' | 'faction',
             sourceName: c.sourceName!.trim(),
+            targetType: (c.targetType === 'faction' ? 'faction' : 'character') as 'character' | 'faction',
             targetName: c.targetName!.trim(),
             relationType: (c.relationType || c.newRelationType || 'related').trim(),
             newRelationType: c.newRelationType?.trim(),
@@ -424,6 +440,22 @@ export class ChapterGraphProcessor {
       console.error('[ChapterGraphProcessor] 章节状态摘要提取失败:', e)
     }
 
+    // ============ 5. P0 质检告警（warn 级聚合：V4 出场未挂载 / V6 零挂载事件 / TRUNC 输入截断） ============
+    try {
+      qaWarnings.push(...checkEmptyEvents(events))
+      qaWarnings.push(...checkInputTruncation(chapterContent))
+      const rosterChars = ((await m.lwCharacters?.getByProjectId(projectId)) || []) as Array<{ id: string; name: string; importance?: string }>
+      qaWarnings.push(...checkUnlinkedRosterMentions(rosterChars, events, chapterContent))
+      if (qaWarnings.length > 0) {
+        console.warn(
+          `[ChapterGraphProcessor] 图谱质检告警 ${qaWarnings.length} 条 project=${projectId} chapter=${chapterNumber}: ` +
+          qaWarnings.map(w => `[${w.rule}]${w.target || ''} ${w.message}`).join('；'),
+        )
+      }
+    } catch (e) {
+      console.warn('[ChapterGraphProcessor] 质检告警聚合失败（不阻断）:', e)
+    }
+
     // 评审 #61 + 复核修复：全部步骤成功才记 hash——任一步骤失败都记入
     // failedSteps，下次保存自动重跑（旧实现无条件记录，失败一次即永久短路，
     // 该章图谱数据直到进程重启都不再生成）
@@ -443,6 +475,7 @@ export class ChapterGraphProcessor {
       relationChangeCount,
       newEntitiesNote,
       failedSteps,
+      warnings: qaWarnings,
     }
   }
 
@@ -457,7 +490,18 @@ export class ChapterGraphProcessor {
       '@core/platform/episode-production/auto-binding/lw-entity-detection.service'
     )
     const detect = await LwEntityDetectionService.detectNewEntities(projectId, chapterContent)
-    const chars = detect.newCharacters || []
+    // NameGate G0 规则层：LLM 检测路产出的候选先过人名资格门（时间词/量词残片/
+    // 家族指称/泛称/器物词拦截），拦截不阻断且留日志供审计
+    const chars = (detect.newCharacters || []).filter((c: any) => {
+      const verdict = checkNameCandidateInContent(String(c?.name || ''), chapterContent)
+      if (!verdict.pass) {
+        console.warn(
+          `[ChapterGraphProcessor] NameGate 拦截自动入册候选「${c?.name}」：${describeRejectReason(verdict.reason!)}（0b）`,
+        )
+        return false
+      }
+      return true
+    })
     const locs = detect.newLocations || []
     const items = detect.newItems || []
     if (chars.length === 0 && locs.length === 0 && items.length === 0) return ''
@@ -548,7 +592,7 @@ export class ChapterGraphProcessor {
         seen.add(w)
         const [r] = await graph.resolveEntities(projectId, [{ type: 'character', name: w }] as any)
         if (r?.resolved && r.id) entities.push({ type: 'character', id: r.id, name: r.name })
-        else await this.registerUnresolvedName(projectId, chapterNumber, w.slice(0, 2))
+        else await this.registerUnresolvedName(projectId, chapterNumber, w.slice(0, 2), chapterContent)
       }
       return entities.slice(0, 6)
     } catch (e) {
@@ -560,15 +604,26 @@ export class ChapterGraphProcessor {
   /**
    * 52 号：未登记人名入「待确认」队列（lw_custom_entities，kindKey=未登记人物）。
    * 按名字去重；首见记录章节。这是 R9 一致性规则的数据源，也让新角色在设定集可见、可一键转正。
+   * P0：入队前过 NameGate G0 规则层——正则路候选（何时/白天/张纸）在源头拦截。
    */
-  private async registerUnresolvedName(projectId: string, chapterNumber: number, name: string): Promise<void> {
+  private async registerUnresolvedName(
+    projectId: string,
+    chapterNumber: number,
+    name: string,
+    content?: string,
+  ): Promise<void> {
     try {
       const m = this.manager()
       const trimmed = name.trim()
       if (!m?.lwCustomEntities || !trimmed) return
-      // 家庭指称（万家/林家）不是人名——入队只会制造 R9 误报阻断（E2E 实测）
-      const { isFamilyReferenceName } = await import('./consistency.service')
-      if (isFamilyReferenceName(trimmed)) return
+      // NameGate G0：家庭指称/时间疑问词/量词残片/泛称/器物词不入队（E2E 与天下女捕实测误报类）
+      const verdict = checkNameCandidateInContent(trimmed, content)
+      if (!verdict.pass) {
+        console.warn(
+          `[ChapterGraphProcessor] NameGate 拦截未登记候选「${trimmed}」：${describeRejectReason(verdict.reason!)}（第${chapterNumber}章）`,
+        )
+        return
+      }
       const existing = await m.lwCustomEntities.getByProjectAndKind(projectId, UNREGISTERED_CHARACTER_KIND)
       const dup = existing.find(e => e.name === trimmed)
       if (dup) return

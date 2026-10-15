@@ -101,6 +101,9 @@ export class LwPurgeService {
 
     await run('图谱边', () => m.lwGraphEdges?.deleteByEntity(projectId, entityType, entityId))
     await run('状态切片', () => m.lwEntityStates?.deleteByEntity(projectId, entityType, entityId))
+    // 事件 involved_entities JSON 引用清理：残留引用会让 getGraph 推导出指向
+    // 已删实体的悬空 involves 边（天下女捕实测 22 处）
+    await run('事件挂载引用', () => m.lwEvents?.removeEntityFromInvolved(projectId, entityType, entityId))
     await run('向量索引', async () => {
       const { LwVectorIndexService } = await import('./lw-vector-index.service')
       await LwVectorIndexService.getInstance().deleteByEntity(projectId, entityType, entityId)

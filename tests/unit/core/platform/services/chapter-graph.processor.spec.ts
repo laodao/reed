@@ -12,7 +12,7 @@ function makeFakeDb() {
   const foreshadowRows: any[] = []
   return {
     eventsStore, statesStore, edgesStore, foreshadowRows,
-    lwCharacters: { getByProjectId: vi.fn(async () => [{ id: 'c1', name: '林晓' }, { id: 'c2', name: '顾言' }]) },
+    lwCharacters: { getByProjectId: vi.fn(async () => [{ id: 'c1', name: '林晓', importance: 'primary' }, { id: 'c2', name: '顾言', importance: 'secondary' }]) },
     lwCustomEntities: {
       getByProjectAndKind: vi.fn(async () => []),
       createRow: vi.fn(async (_pid: string, kind: string, name: string) => ({ id: `bce-${name}`, kindKey: kind, name })),
@@ -113,6 +113,31 @@ describe('ChapterGraphProcessor', () => {
     expect(db.lwChapterStateSummaries.upsert).toHaveBeenCalledTimes(1)
     expect(db.lwChapterStateSummaries.upsert).toHaveBeenCalledWith(expect.objectContaining({ chapterNumber: 3, storyTime: '第三年春' }))
     expect(result.stateCount).toBe(2)
+  })
+
+  it('P0 质检告警：V4 出场未挂载 / ANCHOR 锚定未命中 / warnings 随结果返回（warn 不阻断）', async () => {
+    const db = makeFakeDb()
+    const ai = makeFakeAi({
+      extractChapterEvents: vi.fn(async () => ({
+        success: true,
+        data: [
+          // 顾言（c2，secondary）在正文出现但不挂事件 → V4；evidence 正文没有 → ANCHOR
+          { name: '比武大会夺魁', evidence: '正文里没有这句话', involvedEntities: [{ type: 'character', name: '林晓' }] },
+        ],
+      })),
+    })
+    const proc = new ChapterGraphProcessor(db as any, ai as any)
+    const result = await proc.process({
+      projectId: 'p1', outlineId: 'o1', chapterContent: '正文...顾言赶到了现场', chapterNumber: 3,
+    })
+
+    expect(result.warnings).toBeDefined()
+    const rules = result.warnings!.map(w => `${w.rule}:${w.target ?? ''}`)
+    expect(rules).toContain('V4:顾言')
+    expect(rules.some(r => r.startsWith('ANCHOR:比武大会夺魁'))).toBe(true)
+    // warn 级不阻断：事件照常落库、hash 照常记录
+    expect(result.events).toHaveLength(1)
+    expect(result.failedSteps ?? []).toHaveLength(0)
   })
 
   it('事件提取失败不影响状态/摘要步骤（分步容错）', async () => {

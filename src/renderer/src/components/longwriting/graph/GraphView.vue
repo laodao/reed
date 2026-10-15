@@ -28,6 +28,17 @@
             {{ typeLabel(t) }}
             <span class="chip-count">{{ typeCounts[t] || 0 }}</span>
           </span>
+          <!-- 孤立节点开关：无任何边（事件挂载/语义关系）的节点默认淹没图面——
+              P0 治理入口，配合「AI 分析实体关系」补链 -->
+          <span
+            class="type-chip isolated-toggle"
+            :class="{ off: !hideIsolated }"
+            :title="hideIsolated ? '点击显示孤立节点' : '点击隐藏无任何关联的节点'"
+            @click="hideIsolated = !hideIsolated"
+          >
+            隐藏孤立节点
+            <span class="chip-count">{{ isolatedCount }}</span>
+          </span>
         </div>
       </div>
       <div class="toolbar-actions">
@@ -235,6 +246,11 @@ watch(renderMode, (mode) => localStorage.setItem(RENDER_MODE_KEY, mode))
 const FILTER_TYPES = ['character', 'location', 'item', 'faction', 'skill', 'event']
 const typeFilter = ref<Set<string>>(new Set(FILTER_TYPES))
 
+// 孤立节点开关（持久化）：孤立 = 图上无任何边（事件挂载边/语义关系边均无）
+const HIDE_ISOLATED_KEY = 'lw.graph.hideIsolated'
+const hideIsolated = ref(localStorage.getItem(HIDE_ISOLATED_KEY) === '1')
+watch(hideIsolated, (v) => localStorage.setItem(HIDE_ISOLATED_KEY, v ? '1' : '0'))
+
 function toggleType(type: string): void {
   const next = new Set(typeFilter.value)
   if (next.has(type)) next.delete(type)
@@ -245,6 +261,7 @@ function toggleType(type: string): void {
 function resetFilters(): void {
   typeFilter.value = new Set(FILTER_TYPES)
   chapterFilter.value = 0
+  hideIsolated.value = false
 }
 
 const typeCounts = computed<Record<string, number>>(() => {
@@ -253,15 +270,30 @@ const typeCounts = computed<Record<string, number>>(() => {
   return counts
 })
 
+/** 有边节点 id 集（事件挂载边 + 语义边；孤立 = 不在此集合） */
+const connectedIds = computed(() => {
+  const ids = new Set<string>()
+  for (const e of edges.value) {
+    ids.add(e.sourceId)
+    ids.add(e.targetId)
+  }
+  return ids
+})
+
+const isolatedCount = computed(() =>
+  nodes.value.filter(n => !connectedIds.value.has(n.id)).length,
+)
+
 const hasEntities = computed(() => nodes.value.length > 0)
 
 /** 可见性过滤：类型 chips + 章节时间轴（事件节点只在"发生章节 ≤ 当前章节"时显示；
- *  实体节点无章节概念常显）。过滤只动可见集不重排（layoutKey 语义） */
+ *  实体节点无章节概念常显）+ 孤立开关。过滤只动可见集不重排（layoutKey 语义） */
 const visibleNodes = computed(() => {
   const cn = chapterFilter.value
   return nodes.value.filter(n =>
     typeFilter.value.has(n.type) &&
-    (cn === 0 || n.type !== 'event' || (n.chapterNumber !== undefined && n.chapterNumber <= cn)),
+    (cn === 0 || n.type !== 'event' || (n.chapterNumber !== undefined && n.chapterNumber <= cn)) &&
+    (!hideIsolated.value || connectedIds.value.has(n.id)),
   )
 })
 
@@ -541,6 +573,11 @@ onMounted(() => {
           font-size: 11px;
           color: var(--text-color-secondary);
           font-variant-numeric: tabular-nums;
+        }
+
+        // 孤立节点开关：虚线边框与类型 chips 区分（它不滤类型，滤的是连通性）
+        &.isolated-toggle {
+          border-style: dashed;
         }
 
         &.off {

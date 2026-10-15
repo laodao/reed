@@ -26,7 +26,9 @@ import {
 } from './writing-methodology'
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import { createProvider } from '@core/platform/providers/llm'
+import type { ChatOptions } from '@core/platform/providers/llm/base-provider'
 import { callAIStreamWithBrain, type BrainGenerationDeps } from './longwriting/brain-generation'
+import { parseJsonPayload, extractArrayField } from './longwriting/json-payload'
 import type { ProviderAdapter } from '@core/platform/agent-runtime/provider/provider-adapter'
 import { PROVIDER_TEMPLATES, isApiKeyOptional } from '@core/platform/services/provider-template.service'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
@@ -231,7 +233,8 @@ export class LongWritingAIService {
     maxTokens?: number,
     providerConfigId?: string,
     modelId?: string,
-    eventId?: string
+    eventId?: string,
+    opts?: { responseFormat?: ChatOptions['responseFormat'] }
   ): Promise<string> {
     const providerInfo = await this.getProviderConfig(providerConfigId)
     if (!providerInfo) {
@@ -268,7 +271,7 @@ export class LongWritingAIService {
     const controller = eventId ? new AbortController() : null
     if (eventId && controller) this.abortControllers.set(eventId, controller)
     try {
-      const syncPromise = provider.chatSync(context)
+      const syncPromise = provider.chatSync(context, opts?.responseFormat ? { responseFormat: opts.responseFormat } : undefined)
       if (!controller) {
         const result = await syncPromise
         return result.content || ''
@@ -292,7 +295,8 @@ export class LongWritingAIService {
     systemPrompt?: string,
     maxTokens?: number,
     providerConfigId?: string,
-    modelId?: string
+    modelId?: string,
+    opts?: { responseFormat?: ChatOptions['responseFormat'] }
   ): Promise<string> {
     const providerInfo = await this.getProviderConfig(providerConfigId)
     if (!providerInfo) {
@@ -351,7 +355,11 @@ export class LongWritingAIService {
         controller.signal,
         // max_tokens 兜底：优先调用方传入，其次读模型定义的 maxOutputTokens，最后 8192。
         // 原写死 4096 会在长 JSON 生成时被截断。
-        { maxTokens: maxTokens || config.models?.find(m => m.id === effectiveModelId)?.maxOutputTokens || 8192 }
+        {
+          maxTokens: maxTokens || config.models?.find(m => m.id === effectiveModelId)?.maxOutputTokens || 8192,
+          // 结构化输出约束（解码层 JSON 模式）：Anthropic 等不支持的端点由 provider 侧降级忽略
+          ...(opts?.responseFormat ? { responseFormat: opts.responseFormat } : {})
+        }
       )
 
       // 发送完成事件
@@ -3359,19 +3367,20 @@ ${involvedEntities.map(e => `- ${e.name}（类型：${e.type}，ID：${e.id}）`
 【实体上一章节状态】
 ${previousStatesInfo || '无历史状态'}
 
-请分析以上章节内容，为涉及的实体生成状态快照。涉及实体中只要在本章正文有戏份的都必须输出；完全未出场的实体可以不输出。直接返回 JSON 数组格式的结果。`
+请分析以上章节内容，为涉及的实体生成状态快照。涉及实体中只要在本章正文有戏份的都必须输出；完全未出场的实体可以不输出。返回 JSON 对象 {"items": [...]}，items 为状态快照数组。`
 
     try {
-      const result = await this.callAIStream(eventId, prompt, systemPrompt, 4000, providerConfigId, modelId)
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, 4000, providerConfigId, modelId, {
+        responseFormat: { type: 'json_object' },
+      })
 
-      // 尝试解析 JSON 数组
-      const jsonMatch = result.match(/\[[\s\S]*\]/)
-      if (jsonMatch) {
-        const data = JSON.parse(jsonMatch[0])
-        return { success: true, data }
+      const parsed = parseJsonPayload(result)
+      const arr = parsed.ok ? extractArrayField(parsed.data, 'items') : null
+      if (arr) {
+        return { success: true, data: arr }
       }
 
-      // 如果没有匹配到数组，可能没有提取到状态变化
+      // 如果没有提取到状态变化，返回空数组（上层按"无切片"处理）
       return { success: true, data: [] }
     } catch (error: any) {
       return { success: false, error: error.message }
@@ -3665,25 +3674,26 @@ ${previousInfo}
 请分析以上章节内容，提取章节结束时的故事状态摘要。直接返回 JSON 格式的结果。`
 
     try {
-      const result = await this.callAIStream(eventId, prompt, systemPrompt, 1500, providerConfigId, modelId)
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, 1500, providerConfigId, modelId, {
+        responseFormat: { type: 'json_object' },
+      })
 
-      // 尝试解析 JSON
-      const jsonMatch = result.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        const data = JSON.parse(jsonMatch[0])
+      const parsed = parseJsonPayload(result)
+      if (parsed.ok && parsed.data && typeof parsed.data === 'object' && !Array.isArray(parsed.data)) {
+        const data = parsed.data as Record<string, unknown>
         return {
           success: true,
           data: {
-            storyTime: data.storyTime || '',
-            currentLocation: data.currentLocation || '',
-            characterStates: data.characterStates || '',
-            pendingEvents: data.pendingEvents || '',
-            keyChanges: data.keyChanges || ''
+            storyTime: String(data.storyTime || ''),
+            currentLocation: String(data.currentLocation || ''),
+            characterStates: String(data.characterStates || ''),
+            pendingEvents: String(data.pendingEvents || ''),
+            keyChanges: String(data.keyChanges || '')
           }
         }
       }
 
-      return { success: false, error: 'AI 返回格式错误' }
+      return { success: false, error: `AI 返回格式错误（${parsed.error || '状态摘要不是 JSON 对象'}）` }
     } catch (error: any) {
       return { success: false, error: error.message }
     }
@@ -3755,29 +3765,30 @@ ${previousInfo}
 只识别新埋设（本章首次出现的悬念装置），不把普通情节当伏笔。
 
 ## 输出格式
-返回 JSON 数组，每条：
-{"content":"伏笔内容一句话（含关键物证/台词）","plantedChapter":${chapterNumber}}
+返回 JSON 对象（不要返回裸数组）：{"items": [{"content":"伏笔内容一句话（含关键物证/台词）","plantedChapter":${chapterNumber}}]}
 
 要求：
-1. 0-3 条；没有就返回 []
+1. 0-3 条；没有就返回 {"items": []}
 2. 宁缺毋滥：只登记有明确回收意图的
 3. 正文锚定（硬约束）：每条伏笔必须能在本章正文里指出对应原句；正文没明写的推测、脑补、依据大纲"应该有"的设定一律禁止登记
 4. content 末尾用《》附上正文原句关键片段（≤15字）；给不出原句依据的条目必须丢弃
-5. 直接输出 JSON 数组，不要任何额外文字`
+5. 直接输出 JSON，不要任何额外文字`
 
     const prompt = `【本章正文（第 ${chapterNumber} 章）】
 ${chapterContent.substring(0, 12000)}${chapterContent.length > 12000 ? '...(内容已截断)' : ''}
 
-请识别本章新埋下的伏笔，直接返回 JSON 数组。`
+请识别本章新埋下的伏笔，直接返回 JSON 对象（{"items": [...]}）。`
 
     try {
-      const result = await this.callAIStream(eventId, prompt, systemPrompt, 1024, providerConfigId, modelId)
-      const jsonMatch = result.match(/\[[\s\S]*\]/)
-      if (!jsonMatch) {
-        return { success: false, error: '未返回有效 JSON' }
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, 1024, providerConfigId, modelId, {
+        responseFormat: { type: 'json_object' },
+      })
+      const parsed = parseJsonPayload(result)
+      const arr = parsed.ok ? extractArrayField(parsed.data, 'items') : null
+      if (arr) {
+        return { success: true, data: arr }
       }
-      const parsed = JSON.parse(jsonMatch[0])
-      return { success: true, data: Array.isArray(parsed) ? parsed : [] }
+      return { success: false, error: `未返回有效 JSON（${parsed.error}）` }
     } catch (e: any) {
       return { success: false, error: e?.message || '伏笔提取失败' }
     }
@@ -3799,6 +3810,8 @@ ${chapterContent.substring(0, 12000)}${chapterContent.length > 12000 ? '...(内�
     const locations = (await dbManager.lwLocations?.getByProjectId(projectId)) || []
     const items = (await dbManager.lwItems?.getByProjectId(projectId)) || []
     const factions = (await dbManager.lwFactions?.getByProjectId(projectId)) || []
+    // P0：技能纳入名册参考——此前技能在自动管线中没有任何建边路径（5/5 永久孤立）
+    const skills = (await dbManager.lwSkills?.getByProjectId(projectId)) || []
 
     const entityRef = (list: Array<{ id: string; name: string }>, _type: string): string =>
       list.length > 0
@@ -3809,30 +3822,32 @@ ${chapterContent.substring(0, 12000)}${chapterContent.length > 12000 ? '...(内�
 每个事件是故事内已经发生的事实（谁、在哪里、发生了什么事、结果如何）。
 事件示例："林家在比武大会夺魁"、"顾言向林晓提出和离"、"无名剑在拍卖会被神秘人拍走"。
 
-**重要**：请控制回复长度，总字数不超过 2000 字。
-
 ## 输出格式
-返回 JSON 数组，每个事件一条记录（按正文发生顺序排列）：
-{
-  "name": "事件名（不超过 15 字）",
-  "storyTime": "事件发生的故事内时间（用正文原词，如：二更天/上元夜/三个月前；正文未明示则填空串）",
-  "description": "事件经过描述（50-100 字）",
-  "involvedEntities": [
-    {"type": "character/location/item/faction/skill", "id": "实体ID（必须使用提供的ID）", "name": "实体名"}
-  ],
-  "stateBefore": "事件发生前相关实体的关键状态（如：林晓重伤未愈）",
-  "stateAfter": "事件发生后相关实体的关键状态（如：林晓夺魁扬名）"
-}
+返回 JSON 对象（不要返回裸数组），结构：
+{"items": [
+  {
+    "name": "事件名（不超过 15 字）",
+    "storyTime": "事件发生的故事内时间（用正文原词，如：二更天/上元夜/三个月前；正文未明示则填空串）",
+    "description": "事件经过描述（50-100 字）",
+    "evidence": "正文原句关键片段（不超过 20 字，必须能在正文逐字找到）",
+    "involvedEntities": [
+      {"type": "character/location/item/faction/skill", "id": "实体ID（必须使用提供的ID）", "name": "实体名"}
+    ],
+    "stateBefore": "事件发生前相关实体的关键状态（如：林晓重伤未愈）",
+    "stateAfter": "事件发生后相关实体的关键状态（如：林晓夺魁扬名）"
+  }
+]}
 
 要求：
-1. 只提取本章实际发生的事件（2-6 个），不要提取计划/回忆中的内容
+1. 只提取本章实际发生的事件（2-8 个，优先保证主角与主线事件的完整性），不要提取计划/回忆中的内容
 1.5. 幅度忠实（硬约束）：事件名/描述的幅度不得超出正文实际揭示范围——本章只发现线索的不许写成"揭露真相/查明实情"；正文没给出答案的悬念不得在 stateAfter 里给出结论
-2. involvedEntities 必须包含事件中出现的**全部具名人物/地点/物品**，一个都不能漏：
+2. involvedEntities 必须包含事件中出现的**全部具名人物/地点/物品/势力/技能**，一个都不能漏：
    - 名册内的实体：必须使用下方提供的 ID；
    - 名册外的实体（新配角/受害人/证人等）：照写名字，id 留空——系统会自动登记为「未登记人物」待作者确认，禁止因此省略；
    - 只统计"事件里真实出现"的实体，不要把没出场的主角硬塞进去
 3. 状态变化是"结果"而非"过程"
-4. 请直接输出 JSON 数组，不要有任何额外文字`
+4. evidence 锚定（硬约束）：每个事件必须给出能在正文逐字找到的原句片段；给不出原句依据的事件（正文没演、只在大纲/回忆/对话里提到）必须丢弃
+5. 直接输出 JSON，不要有任何额外文字`
 
     const prompt = `【本章正文】
 ${chapterContent.substring(0, 12000)}${chapterContent.length > 12000 ? '...(内容已截断)' : ''}
@@ -3849,26 +3864,26 @@ ${entityRef(items, 'item') || '暂无'}
 【项目势力】
 ${entityRef(factions, 'faction') || '暂无'}
 
-请提取本章发生的 2-6 个故事事件，直接返回 JSON 数组。`
+【项目技能】
+${entityRef(skills, 'skill') || '暂无'}
+
+请提取本章发生的 2-8 个故事事件，直接返回 JSON 对象（{"items": [...]}）。`
 
     try {
-      const result = await this.callAIStream(eventId, prompt, systemPrompt, 2048, providerConfigId, modelId)
+      // JSON 模式（解码层约束）+ 容错解析兜底：Anthropic 等不支持 response_format 的
+      // 端点由 provider 降级忽略，此处 parseJsonPayload 负责围栏/废话抢救
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, 4096, providerConfigId, modelId, {
+        responseFormat: { type: 'json_object' },
+      })
 
-      // 容错解析 JSON 数组
-      const jsonMatch = result.match(/\[[\s\S]*\]/)
-      if (jsonMatch) {
-        try {
-          const data = JSON.parse(jsonMatch[0])
-          if (Array.isArray(data)) {
-            return { success: true, data }
-          }
-        } catch (parseError: any) {
-          console.error('[LongWritingAI] extractChapterEvents JSON 解析失败:', parseError.message)
-        }
+      const parsed = parseJsonPayload(result)
+      const arr = parsed.ok ? extractArrayField(parsed.data, 'items') : null
+      if (arr && arr.length > 0) {
+        return { success: true, data: arr }
       }
       // 解析失败必须报失败（空转防线）：旧实现这里返回 success:true + 原始字符串，
       // 调用方 Array.isArray 过滤后成空数组且不算失败步骤——整章事件静默丢失（ep11 事故根因）
-      return { success: false, error: 'AI 返回格式错误：事件提取结果不是合法 JSON 数组' }
+      return { success: false, error: `AI 返回格式错误：事件提取结果不是合法 JSON（${parsed.error || 'items 字段缺失或为空'}）` }
     } catch (error: any) {
       return { success: false, error: error.message }
     }
@@ -3888,6 +3903,8 @@ ${entityRef(factions, 'faction') || '暂无'}
   ): Promise<GenerateResponse> {
     const dbManager = getCoreDatabaseManager()
     const characters = (await dbManager.lwCharacters?.getByProjectId(projectId)) || []
+    // P0：势力纳入关系提取范围（人物↔势力 隶属/敌对是图上常见边，此前只做人物↔人物）
+    const factions = (await dbManager.lwFactions?.getByProjectId(projectId)) || []
 
     // 当前仍生效的人物间关系（演变前事实）
     let activeRelationsText = '暂无'
@@ -3910,26 +3927,31 @@ ${entityRef(factions, 'faction') || '暂无'}
 
     const systemPrompt = `你是一位小说连续性分析师。请分析章节正文，提取本章内**实际发生**的人物关系变化（不是设定层静态关系，是剧情推动的演变）。
 变化类型：
-- new：本章结成新关系（结拜、结盟、收徒、相爱…）
-- ended：本章终结原有关系（决裂、离婚、恩断义绝…）
+- new：本章结成新关系（结拜、结盟、收徒、相爱、投效门派/势力…）
+- ended：本章终结原有关系（决裂、离婚、恩断义绝、脱离势力…）
 - changed：关系性质转变（仇人→挚友、师徒→敌对…，需给 newRelationType）
 
 ## 输出格式
-返回 JSON 数组，每条变化：
-{
-  "changeType": "new|ended|changed",
-  "sourceName": "人物名（必须用项目角色原名）",
-  "targetName": "对方人物名",
-  "relationType": "ended=被终结的原关系名；new=新关系名",
-  "newRelationType": "仅 changed 需要：转变后的关系名",
-  "description": "一句话依据（本章哪个情节导致）"
-}
+返回 JSON 对象（不要返回裸数组），结构：
+{"items": [
+  {
+    "changeType": "new|ended|changed",
+    "sourceType": "character（默认，可省略）|faction",
+    "sourceName": "实体名（必须用项目名册原名）",
+    "targetType": "character（默认，可省略）|faction",
+    "targetName": "对方实体名",
+    "relationType": "ended=被终结的原关系名；new=新关系名",
+    "newRelationType": "仅 changed 需要：转变后的关系名",
+    "description": "一句话依据（本章哪个情节导致）"
+  }
+]}
 
 要求：
-1. 只提本章情节实际推动的变化（0-3 条），没有变化返回 []
+1. 只提本章情节实际推动的变化（0-3 条），没有变化返回 {"items": []}
 2. 不要把"当前关系清单"里已有的关系再报一遍
-3. relationType 用短词（夫妻/师徒/结义/盟友/敌对/主仆…）
-4. 请直接输出 JSON 数组，不要有任何额外文字`
+3. relationType 用短词（夫妻/师徒/结义/盟友/敌对/主仆/隶属…）
+4. sourceName/targetName 必须能在下方名册或正文里找到；人物↔势力关系用 faction 类型
+5. 直接输出 JSON，不要有任何额外文字`
 
     const prompt = `【本章正文】
 ${chapterContent.substring(0, 12000)}${chapterContent.length > 12000 ? '...(内容已截断)' : ''}
@@ -3937,26 +3959,27 @@ ${chapterContent.substring(0, 12000)}${chapterContent.length > 12000 ? '...(内�
 【项目角色】
 ${characters.map(c => `- ${c.name}`).join('\n') || '暂无'}
 
+【项目势力】
+${factions.map(f => `- ${f.name}`).join('\n') || '暂无'}
+
 【当前仍有效的人物关系（演变前事实）】
 ${activeRelationsText}
 
-请提取本章的人物关系变化，直接返回 JSON 数组。`
+请提取本章的人物关系变化，直接返回 JSON 对象（{"items": [...]}）。`
 
     try {
-      const result = await this.callAIStream(eventId, prompt, systemPrompt, 1024, providerConfigId, modelId)
-      const jsonMatch = result.match(/\[[\s\S]*\]/)
-      if (jsonMatch) {
-        try {
-          const data = JSON.parse(jsonMatch[0])
-          if (Array.isArray(data)) {
-            return { success: true, data }
-          }
-        } catch (parseError: any) {
-          console.error('[LongWritingAI] extractChapterRelationChanges JSON 解析失败:', parseError.message)
-          return { success: true, data: result }
-        }
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, 1024, providerConfigId, modelId, {
+        responseFormat: { type: 'json_object' },
+      })
+      const parsed = parseJsonPayload(result)
+      const arr = parsed.ok ? extractArrayField(parsed.data, 'items') : null
+      if (arr) {
+        return { success: true, data: arr }
       }
-      return { success: false, error: 'AI 返回格式错误' }
+      // 空数组是合法结果（本章无变化）；解析失败必须报失败——
+      // 旧实现在 parse 失败时返回 success:true + 原始字符串，调用方过滤成空数组后
+      // 不再重跑，关系演变静默丢失
+      return { success: false, error: `AI 返回格式错误：关系演变结果不是合法 JSON（${parsed.error}）` }
     } catch (error: any) {
       return { success: false, error: error.message }
     }
