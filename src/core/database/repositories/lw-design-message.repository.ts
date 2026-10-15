@@ -187,8 +187,10 @@ export class LwDesignMessageRepository extends BaseRepository<
       throw e
     }
     if (exists) return
-    // project_id 无外键：从会话 id 尾段推导占位（ep-agent:<episodeId> 场景由调用方传真值），
-    // 推导不出用 'agent'——仅作容器字段，不参与 LW 项目过滤
+    // project_id 无外键（设计意图曾被存量 DDL 的 FK→lw_projects 违背，已由
+    // fix-lw-design-conversations-project-fk 重建去除）：从会话 id 尾段推导占位
+    // （ep-agent:<episodeId> 场景由调用方传真值），推导不出用 'agent'——
+    // 仅作容器字段，不参与 LW 项目过滤
     const derived = conversationId.includes(':') ? conversationId.split(':').pop()! : 'agent'
     const now = new Date()
     try {

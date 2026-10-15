@@ -1035,6 +1035,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/fix-kb-inverted-index-fk'
     )
     await fixKbInvertedIndexFk(this.dataSource)
+    // 设计会话容器表去 project_id 过期 FK（standalone EP 项目 Agent 首条消息建会话被旧外键拒绝——真机根因）
+    const { fixLwDesignConversationsProjectFk } = await import(
+      '@core/database/migrations/fix-lw-design-conversations-project-fk'
+    )
+    await fixLwDesignConversationsProjectFk(this.dataSource)
     // 应用模块：apps / app_sessions 表（幂等，双语种；消息复用 messages 无需建表）
     const { createAppsTables } = await import(
       '@core/database/migrations/create-apps-tables'
