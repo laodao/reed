@@ -119,6 +119,7 @@ import { registerAihubHandlers } from '@core/platform/aihub/aihub.handler'
 import { registerImageHandlers } from './ipc/handlers/image.handler'
 import { registerFileHandlers } from './ipc/handlers/file.handler'
 import { registerTranslationHandlers } from './ipc/handlers/translation.handler'
+import { registerVoiceHandlers } from './ipc/handlers/voice.handler'
 import { registerDataPathHandlers } from './ipc/handlers/data-path.handler'
 import { registerExportHandlers } from './ipc/handlers/export.handler'
 import { registerSearchEngineHandlers } from './ipc/handlers/search-engine.handler'
@@ -412,6 +413,7 @@ function initIpcHandlers(): void {
   step('image', registerImageHandlers)
   step('file', registerFileHandlers)
   step('translation', registerTranslationHandlers)
+  step('voice', registerVoiceHandlers)
   step('dataPath', registerDataPathHandlers)
   step('export', registerExportHandlers)
   // skills/diary/portrait/chat/voice-design/longwriting/episode-production/
