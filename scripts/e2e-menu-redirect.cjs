@@ -1,4 +1,5 @@
-// 阶段三验证：菜单精简 + 路由重定向
+// 能力入口恢复验证（2026-10-15）：图像生成/文档翻译/语音助手独立菜单与页面
+// 前身为「阶段三」菜单精简 + 路由重定向验证脚本（重定向已被真实页面取代）
 const { chromium } = require('playwright')
 const assert = (c, m) => { if (!c) throw new Error(m) }
 ;(async () => {
@@ -6,45 +7,35 @@ const assert = (c, m) => { if (!c) throw new Error(m) }
   const page = browser.contexts()[0].pages().find(p => p.url().startsWith('http'))
   assert(page, '未找到应用窗口')
 
-  // 1. 侧边栏菜单（图标模式，hover tooltip 在 DOM 里）
-  await page.evaluate(() => { window.location.hash = '#/apps' })
-  await page.waitForTimeout(600)
-  const menu = await page.evaluate(() => {
-    const tooltips = [...document.querySelectorAll('.el-popper, [role="tooltip"]')].map(t => t.textContent?.trim()).filter(Boolean)
-    return tooltips
-  })
-  console.log('tooltips 样例:', JSON.stringify(menu.slice(0, 12)))
-  // 图标模式 tooltip 不一定都在 DOM；改验证 Home 卡片（首页功能卡片来自同一菜单数据源）
+  // 1. 首页功能卡片（菜单数据源同侧边栏）应包含恢复的三个能力入口
   await page.evaluate(() => { window.location.hash = '#/' })
   await page.waitForTimeout(800)
   const home = await page.evaluate(() => (document.body.innerText || ''))
-  const removedNames = ['图像生成', '文档翻译', '文本转语音', '语音转文本', '声音复刻', '语音识别与语音合成']
-  for (const n of removedNames) {
-    if (home.includes(n)) console.log(`⚠️ 首页仍含「${n}」`)
+  for (const n of ['图像生成', '文档翻译', '语音助手']) {
+    assert(home.includes(n), `首页缺少恢复的能力入口「${n}」`)
   }
-  console.log('首页含「资产管理」:', home.includes('资产管理'), '| 含「应用」:', home.includes('应用'))
+  console.log('首页含 图像生成/文档翻译/语音助手 ✅')
 
-  // 2. 旧路由重定向
-  for (const [path, expectName] of [['/image', '图像生成'], ['/translate', '文档翻译'], ['/voice/tts', '文本转语音'], ['/voice/clone', '语音复刻']]) {
+  // 2. 独立能力页真实可达（不再重定向到 /apps）
+  for (const [path, keyword] of [['/image', '图像'], ['/translate', '翻译'], ['/voice/tts', '语音'], ['/voice/clone', '复刻']]) {
     await page.evaluate(p => { window.location.hash = p }, path)
     await page.waitForTimeout(900)
     const r = await page.evaluate(() => ({
       hash: window.location.hash,
-      title: document.querySelector('.page-title')?.textContent ?? '',
       body: (document.body.innerText || '').slice(0, 150),
     }))
-    const ok = r.hash.startsWith(`#/apps/`) && r.title.startsWith(expectName)
-    console.log(`  ${path} → ${r.hash}（${r.title}）${ok ? '✅' : '❌'}`)
-    assert(ok, `${path} 重定向异常: ${JSON.stringify(r)}`)
+    const ok = r.hash.startsWith(`#${path}`) && !r.hash.startsWith('#/apps')
+    console.log(`  ${path} → ${r.hash}${ok ? ' ✅' : ' ❌'}`)
+    assert(ok, `${path} 应停留在独立能力页: ${JSON.stringify(r)}`)
   }
 
-  // 3. /voice 兜底 → 应用列表
+  // 3. /voice 父入口落在文本转语音
   await page.evaluate(() => { window.location.hash = '#/voice' })
   await page.waitForTimeout(900)
-  const v = await page.evaluate(() => ({ hash: window.location.hash, title: document.querySelector('.page-title')?.textContent ?? '' }))
-  console.log(`  /voice → ${v.hash}（${v.title}）${v.hash.startsWith('#/apps') && v.title === '应用' ? '✅' : '❌'}`)
-  assert(v.hash.startsWith('#/apps') && v.title === '应用', `/voice 兜底异常 ${JSON.stringify(v)}`)
+  const v = await page.evaluate(() => window.location.hash)
+  console.log(`  /voice → ${v}${v.startsWith('#/voice/tts') ? ' ✅' : ' ❌'}`)
+  assert(v.startsWith('#/voice/tts'), `/voice 应重定向到 /voice/tts，实际 ${v}`)
 
-  console.log('\n===== 阶段三（菜单精简 + 路由重定向）验证通过 ✅ =====')
+  console.log('\n===== 能力入口恢复（图像生成/文档翻译/语音助手）验证通过 ✅ =====')
   process.exit(0)
 })().catch(e => { console.error('FAIL:', e.message); process.exit(1) })

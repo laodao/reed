@@ -22,6 +22,7 @@ import { diaryPack } from './diary'
 import { skillsPack } from './skills'
 import { domainLearningPack } from './domain-learning'
 import { infoCollectionPack } from './info-collection'
+import { capabilityPack } from './capability'
 
 /** pack IPC namespace 的最小契约（preload 暴露的 electronAPI.pack） */
 interface PackApi {
@@ -71,6 +72,8 @@ export async function installBuiltinPackages(router: Router): Promise<void> {
   registerPack(skillsPack)
   registerPack(domainLearningPack)
   registerPack(infoCollectionPack)
+  // 能力工具（图像生成/文档翻译/语音助手）最后注册：锚点 '/portrait' 需在人像包合入后存在
+  registerPack(capabilityPack)
 
   setPackInfos(await fetchPackInfos())
   applyPacks(router)

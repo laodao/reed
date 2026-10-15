@@ -188,17 +188,20 @@ describe('installBuiltinPackages（内置包装配）', () => {
       '/assets',
       // 领域共学空间原型（2026-09-08）
       '/domain-learning', '/domain-learning/rag', '/domain-learning/rag/atlas',
+      // 能力工具包（2026-10-15 恢复独立能力入口）
+      '/image', '/translate', '/voice/tts', '/voice/stt', '/voice/clone',
     ]) {
       expect(router.resolve(path).matched.length, `路由 ${path} 应已注册`).toBeGreaterThan(0)
     }
     // 菜单顺序与原静态菜单一致（二期 4 个原壳位包先注册，锚点语义不变；
     // 领域学习包插在知识库前（agent-harness 合并后：Agent 对话 = /agent-console）；
-    // 知识飞轮菜单已随功能停用移除（2026-09-16）
+    // 知识飞轮菜单已随功能停用移除（2026-09-16）；
+    // 能力工具包（图像生成/文档翻译/语音助手）以 '/portrait' 为锚插在 AI对话之后（2026-10-15）
     const paths = visibleMenuItems(mainMenuItems).map(i => i.path)
     expect(paths).toEqual([
-      '/', '/chat', '/portrait', '/longwriting', '/episode-production',
-      '/domain-learning', '/knowledge-base', '/agent-todos', '/agent-console', '/workflow',
-      '/apps', '/diary', '/assets', '/skills',
+      '/', '/chat', '/image', '/translate', '/voice', '/portrait', '/longwriting',
+      '/episode-production', '/domain-learning', '/info-collection', '/knowledge-base',
+      '/agent-todos', '/agent-console', '/workflow', '/apps', '/diary', '/assets', '/skills',
     ])
     // 知识飞轮路由与菜单入口一并移除（停用功能不留死入口）
     expect(router.resolve('/agent-memory').matched).toHaveLength(0)
