@@ -64,6 +64,8 @@ export async function installBuiltinPackages(router: Router): Promise<void> {
   registerPack(appPack)
   registerPack(assetCenterPack)
   registerPack(chatPack)
+  // 能力工具（图像生成/文档翻译/语音助手）：与 chat 同锚 '/knowledge-base'，紧跟其后注册
+  registerPack(capabilityPack)
   registerPack(portraitPack)
   registerPack(longwritingPack)
   registerPack(episodeProductionPack)
@@ -72,8 +74,6 @@ export async function installBuiltinPackages(router: Router): Promise<void> {
   registerPack(skillsPack)
   registerPack(domainLearningPack)
   registerPack(infoCollectionPack)
-  // 能力工具（图像生成/文档翻译/语音助手）最后注册：锚点 '/portrait' 需在人像包合入后存在
-  registerPack(capabilityPack)
 
   setPackInfos(await fetchPackInfos())
   applyPacks(router)
