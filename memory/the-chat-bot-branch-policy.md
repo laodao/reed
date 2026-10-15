@@ -1,26 +1,23 @@
 ---
 name: the-chat-bot-branch-policy
-description: the-chat-bot 分支定位与 dev→the-chat-bot 模块白名单同步纪律（2026-10-15 建立）
+description: the-chat-bot 分支定位与 dev→the-chat-bot 同步纪律（features.config.json 功能开关门控）
 metadata:
   type: project
 ---
 
-用户决策（2026-10-15）：**the-chat-bot 分支是独立的「对话机器人」产品发布分支，不是开发分支**。日常开发继续在 dev；只把指定模块的代码从 dev **定期同步**到 the-chat-bot。
+用户决策（2026-10-15，同日两次迭代）：**the-chat-bot 分支是独立的「对话机器人」产品发布分支，不是开发分支**。日常开发继续在 dev；同步方式 = `git merge dev` + 核对 features 配置。
 
-**模块白名单**（同步时只带这些）：
-- 基础设施：src/core/platform（providers/agent-runtime/workflow 引擎/services/settings/aihub）、src/core/database、src/core/packs 内核（kernel/registry/pack.service/ipc-guard）、src/electron、src/preload、src/web、src/shared、构建配置
-- chat、知识库（knowledge-base）、工作流（workflow，含 Agent 任务树/控制台 at:/am:/ac:）
-- 能力工具（renderer/core 的 capability 相关 + 平台级 image:/translation:/voice: handler）
-- 日记（diary）、设置（壳 Settings）
+**核心机制（2026-10-15 晚第二次迭代确立）：功能开关取代删代码。**
+`features.config.json`（仓库根，单一事实源）按模块裁决启停：禁用模块不注册包（无 handler/路由/菜单）、参数设置隐藏对应 Tab、界面入口（Home 应用区/发布为应用/节点目录条目）自动消失。**本分支相对 dev 的唯一维护点就是这个配置文件**（preload 与 web channel-map 在本分支保持白名单精简版，见其 $comment）。
 
-**同步时不要带**：
-- 其他功能模块：人像设计/长文写作/剧集制作/应用(app 包)/资产中心/领域学习/信息搜集/声音设计/技能库/播客视频（含各包的 core handlers、renderer 视图组件 store、preload 命名空间、web channel-map 条目、shared 工作流节点类型 chapter-writing/volume-design/video-gen/video-compose/video-preset/slide-render/podcast-compose）
-- docs/ 目录
-- 各类输出目录：outputs/ progress/ _bmad-output/ playwright-report-web/ test-results/ 等
+**the-chat-bot 当前启用的模块**：chat、knowledge-base、workflow（含 Agent 任务树/控制台）、diary、capability（图像生成/文档翻译/语音助手）。
+**禁用**：app、asset-center、portrait、longwriting、episode-production、voice-design、skills、domain-learning、info-collection、podcast-video。
 
-**Why:** the-chat-bot 是精简的对话机器人产品形态（裁剪基线 commit 4af70a0b）；同步进未列明模块会破坏其产品边界，且双端装配（builtinPacks/packs/index.ts、preload、channel-map）必须与模块集一致才能编译运行。
+**Why:** 此前按「删代码」裁剪，每次从 dev 同步都要重新删一遍，难以维护；改用开关后同步 = merge，产品形态零代码改动。
 
 **How to apply:**
-- 每次同步后必须验证：`npm run build`、`npm run web:client:build` 通过；`vue-tsc` 无新增错误；`npm run test:unit` 无新增失败（对照当次同步前的失败清单）
-- 同步按模块白名单逐个合入，不做整分支 merge；合入后若 dev 侧改动了已删模块的公共装配点（builtin-packs.ts、renderer packs/index.ts、workflow-boot、channel-map），需按 the-chat-bot 的裁剪口径重做对应删减
-- 工作流表单的资产/技能选择器依赖已删包的 IPC 通道，运行时降级为空列表——这是裁剪后的预期行为，不要当作 bug 修复而把包加回来
+- 同步流程：在 the-chat-bot worktree `git merge dev`；冲突一律取 dev 侧（保留完整代码，开关负责裁剪）；合并后核对 features.config.json 仍是本分支形态
+- 新增「模块」时：在 features.config.json 登记 id；新包在 core builtin-packs 的 loadBuiltinPacks / renderer PACK_LOADERS 各加一行（带模块 id）；其参数登记表标注 feature 字段
+- **不要**再从本分支删除禁用模块的代码；dev 侧新代码引用禁用模块时，用 isModuleEnabled 门控（参照 web /api/agents、Home 应用区的写法）
+- 每次同步后验证：`npm run build` ✓ → 启动 → 首页无禁用模块残留、参数设置 Tab 正常、`providerConfig.list`/`voice.getProviders`/`workflow.listDefinitions` 响应正常（CDP 冒烟脚本 /tmp/chatbot-*.cjs 可复用）
+- 知识：模型下拉为空通常是 profile 没配 provider（isolated userData 是全新库），不是代码问题
