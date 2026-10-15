@@ -1046,9 +1046,11 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.agentState': { channel: 'ep:agent:state' },
   'episodeProduction.agentDecide': { channel: 'ep:agent:decide' },
   'episodeProduction.agentListPending': { channel: 'ep:agent:list-pending' },
-  // episodeProduction.onAgentEvent(projectId, episodeId, cb) — 后端 emit(`ep-agent:${projectId}:${episodeId}`, event)
+  // episodeProduction.onAgentEvent(projectId, episodeId, scope, cb) — 后端 emit(`ep-agent:${projectId}:${episodeId}[:${scope}]`, event)
+  // scope=界面域（script/asset-character/storyboard/compose…）：各界面独立订阅；缺省=无域全局通道
   'episodeProduction.onAgentEvent': {
-    eventChannel: (projectId: string, episodeId: string) => `ep-agent:${projectId}:${episodeId}`,
+    eventChannel: (projectId: string, episodeId: string, scope?: string | null) =>
+      scope ? `ep-agent:${projectId}:${episodeId}:${scope}` : `ep-agent:${projectId}:${episodeId}`,
   },
   'oss.listConfigs': { channel: 'oss:list-configs' },
   'oss.getConfig': { channel: 'oss:get-config' },

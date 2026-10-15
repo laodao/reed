@@ -75,6 +75,16 @@ const props = defineProps<{
 const summary = reactive<{ characters: any[]; locations: any[]; items: any[] }>({ characters: [], locations: [], items: [] })
 const selected = ref<{ kind: 'character' | 'location' | 'item'; id: string; name: string; thumb?: string }>({ kind: 'character', id: '', name: '' })
 
+const emit = defineEmits<{
+  /** 选中变化/初载回传宿主（EpisodeStudio 同步上下文 + agent 会话域跟随类别） */
+  (e: 'asset-selected', asset: { kind: 'character' | 'location' | 'item'; id: string; name: string } | null): void
+}>()
+
+function reportSelected(): void {
+  const s = selected.value
+  if (s?.id) emit('asset-selected', { kind: s.kind, id: s.id, name: s.name })
+}
+
 async function load(): Promise<void> {
   if (!props.projectId) return
   try {
@@ -97,6 +107,8 @@ async function load(): Promise<void> {
         }
       }
     }
+    // 重载后选中未变（watch 不触发）也要回传一次：宿主换集清了上下文，这里恢复域一致
+    reportSelected()
   } catch (e: any) {
     console.error('[StageAsset] 加载项目资产失败', e)
   }
@@ -173,6 +185,8 @@ watch(() => props.externalAsset, (asset) => {
     thumb: item?.mainImagePath,
   }
 })
+// 选中变化即回传宿主（含初载默认选中/换集重载后的恢复）
+watch(selected, () => reportSelected())
 onMounted(() => void load())
 </script>
 

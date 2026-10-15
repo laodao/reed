@@ -9,7 +9,8 @@
  * 事件通道：ep-agent:${projectId}:${episodeId}（stage/action/reply:start/reply:done/error）
  * 总结流式正文：ep-agent:generate:${summaryEventId}（由 AI 底层 push，前端订阅）。
  *
- * 对话历史存储：复用 lw_design_messages 表，conversationId 约定 `ep-agent:${episodeId}`。
+ * 对话历史存储：复用 lw_design_messages 表，conversationId 约定 `ep-agent:${episodeId}`；
+ * 传界面域 scope 时为 `ep-agent:${episodeId}:${scope}`（各界面独立会话，2026-10-15）。
  * 用户/剧集 scope：Repository 的 scoped 自动按 ALS getCurrentUserId() 过滤。
  *
  * AI 底层：复用 LongWritingAIService.agentDecide / agentSummarize（通用系统+用户提示词调用）。
@@ -46,9 +47,14 @@ const VALID_ACTION_TYPES = new Set<EpAgentActionType>([
   'query_database',
 ])
 
-/** 对话消息的 conversationId 约定：ep-agent:${episodeId} */
-export function epAgentConversationId(episodeId: string): string {
-  return `ep-agent:${episodeId}`
+/**
+ * 对话消息的 conversationId 约定：`ep-agent:${episodeId}`；
+ * 传 scope（界面域）时为 `ep-agent:${episodeId}:${scope}`——各界面（剧本/资产各类别/
+ * 分镜/合成）独立会话与历史（2026-10-15）。scope 用连字符命名（如 asset-character），
+ * 不含冒号，保证 id 尾段推导（repository projectId 占位）不被破坏。
+ */
+export function epAgentConversationId(episodeId: string, scope?: string): string {
+  return scope ? `ep-agent:${episodeId}:${scope}` : `ep-agent:${episodeId}`
 }
 
 /** 归一化决策输出：容错解析 + 过滤未知动作 + 限数 */
@@ -125,15 +131,15 @@ export class EpisodeProductionAgentService {
     return this.ai ?? LongWritingAIService.getInstance()
   }
 
-  private emit(projectId: string, episodeId: string, event: EpAgentEvent): void {
-    emitEpAgentEvent(projectId, episodeId, event)
+  private emit(projectId: string, episodeId: string, event: EpAgentEvent, scope?: string): void {
+    emitEpAgentEvent(projectId, episodeId, event, scope)
   }
 
-  /** 获取对话历史（最近 N 条） */
-  async getHistory(episodeId: string, limit: number = EP_AGENT_HISTORY_LIMIT): Promise<any[]> {
+  /** 获取对话历史（最近 N 条；scope 缺省取无域的全局会话——兼容存量数据） */
+  async getHistory(episodeId: string, limit: number = EP_AGENT_HISTORY_LIMIT, scope?: string): Promise<any[]> {
     const m = this.manager()
     if (!m?.lwDesignMessages) return []
-    const all = await m.lwDesignMessages.getByConversationId(epAgentConversationId(episodeId))
+    const all = await m.lwDesignMessages.getByConversationId(epAgentConversationId(episodeId, scope))
     return all.slice(-limit)
   }
 
@@ -142,17 +148,17 @@ export class EpisodeProductionAgentService {
     return computeEpProductionState(this.manager(), projectId, episodeId)
   }
 
-  /** 中断当前轮的总结生成 */
-  cancel(projectId: string, episodeId: string): void {
-    const key = this.activeKey(episodeId)
+  /** 中断当前轮的总结生成（scope 标识是哪个界面域的会话） */
+  cancel(projectId: string, episodeId: string, scope?: string): void {
+    const key = this.activeKey(episodeId, scope)
     const eventId = this.activeSummaryEventIds.get(key)
     if (eventId) {
       this.aiService().cancelGeneration(eventId)
     }
   }
 
-  private activeKey(episodeId: string): string {
-    return episodeId
+  private activeKey(episodeId: string, scope?: string): string {
+    return scope ? `${episodeId}:${scope}` : episodeId
   }
 
   /**
@@ -163,7 +169,7 @@ export class EpisodeProductionAgentService {
     projectId: string,
     episodeId: string,
     message: string,
-    opts?: { providerConfigId?: string; modelId?: string },
+    opts?: { providerConfigId?: string; modelId?: string; scope?: string },
   ): Promise<EpAgentSendResult> {
     // M6.5-a 开关分叉（35 号）：默认 harness 直驱；EP_AGENT_HARNESS='0' 回退本文件旧三段式
     if (isEpAgentHarnessEnabled()) {
@@ -175,7 +181,8 @@ export class EpisodeProductionAgentService {
       throw new Error('数据库未初始化')
     }
     const ai = this.aiService()
-    const conversationId = epAgentConversationId(episodeId)
+    const scope = opts?.scope || undefined
+    const conversationId = epAgentConversationId(episodeId, scope)
     const { providerConfigId, modelId } = opts || {}
 
     // 0. 持久化用户消息
@@ -201,7 +208,7 @@ export class EpisodeProductionAgentService {
       detectChoiceForAssetImage(userMsg, state) ??
       detectChoiceForDatabase(userMsg, dataSources.map((d) => d.name))
     if (ruleChoice) {
-      this.emit(projectId, episodeId, { type: 'choice:request', choice: ruleChoice })
+      this.emit(projectId, episodeId, { type: 'choice:request', choice: ruleChoice }, scope)
       const prompt = ruleChoice.prompt || `请选择要生成${assetLabelFor(ruleChoice.actionType)}：`
       const assistantMsg = await m.lwDesignMessages.add(conversationId, {
         role: 'assistant',
@@ -213,7 +220,7 @@ export class EpisodeProductionAgentService {
     }
 
     // 2. AI 决策
-    this.emit(projectId, episodeId, { type: 'stage', stage: 'deciding' })
+    this.emit(projectId, episodeId, { type: 'stage', stage: 'deciding' }, scope)
     const history = await m.lwDesignMessages.getByConversationId(conversationId)
     const decCtx = buildEpDecisionContext(userMsg, state, history, { dataSources })
     let decision: EpAgentDecision = { actions: [] }
@@ -229,7 +236,7 @@ export class EpisodeProductionAgentService {
     // 2.5 多轮确认：AI 需要用户先选一个候选（如"为哪个角色生成定妆图"）
     if (decision.choice) {
       const choice = decision.choice
-      this.emit(projectId, episodeId, { type: 'choice:request', choice })
+      this.emit(projectId, episodeId, { type: 'choice:request', choice }, scope)
       const prompt = choice.prompt || `请选择${choice.param === 'name' ? '一个名称' : choice.param}：`
       const assistantMsg = await m.lwDesignMessages.add(conversationId, {
         role: 'assistant',
@@ -243,7 +250,7 @@ export class EpisodeProductionAgentService {
     // 3. 执行动作
     const actionSummaries: EpAgentActionSummary[] = []
     if (decision.actions && decision.actions.length > 0) {
-      this.emit(projectId, episodeId, { type: 'stage', stage: 'acting' })
+      this.emit(projectId, episodeId, { type: 'stage', stage: 'acting' }, scope)
       const summaries = await executeEpActions(
         {
           projectId,
@@ -252,7 +259,7 @@ export class EpisodeProductionAgentService {
           modelId,
           db: m,
           ai,
-          emit: (e) => this.emit(projectId, episodeId, e),
+          emit: (e) => this.emit(projectId, episodeId, e, scope),
         },
         decision.actions,
         state,
@@ -262,10 +269,10 @@ export class EpisodeProductionAgentService {
     }
 
     // 4. AI 总结（流式：正文走 ep-agent:generate:${summaryEventId}）
-    this.emit(projectId, episodeId, { type: 'stage', stage: 'summarizing' })
+    this.emit(projectId, episodeId, { type: 'stage', stage: 'summarizing' }, scope)
     const summaryEventId = `ep-agent-summary-${episodeId}-${Date.now()}`
-    this.activeSummaryEventIds.set(this.activeKey(episodeId), summaryEventId)
-    this.emit(projectId, episodeId, { type: 'reply:start', summaryEventId })
+    this.activeSummaryEventIds.set(this.activeKey(episodeId, scope), summaryEventId)
+    this.emit(projectId, episodeId, { type: 'reply:start', summaryEventId }, scope)
 
     let reply = ''
     try {
@@ -274,9 +281,9 @@ export class EpisodeProductionAgentService {
     } catch (e: any) {
       console.error('[EpAgent] 总结调用失败:', e?.message || e)
       reply = `抱歉，我在组织回复时遇到问题（${e?.message || '未知错误'}）。你可以再说一次，或让我换个方式帮你。`
-      this.emit(projectId, episodeId, { type: 'error', error: e?.message || '总结失败' })
+      this.emit(projectId, episodeId, { type: 'error', error: e?.message || '总结失败' }, scope)
     } finally {
-      this.activeSummaryEventIds.delete(this.activeKey(episodeId))
+      this.activeSummaryEventIds.delete(this.activeKey(episodeId, scope))
     }
 
     // 5. 持久化 assistant 消息（含动作摘要/建议元数据）
@@ -289,7 +296,7 @@ export class EpisodeProductionAgentService {
     })
 
     // 6. 完成事件（chips）
-    this.emit(projectId, episodeId, { type: 'reply:done', suggestions })
+    this.emit(projectId, episodeId, { type: 'reply:done', suggestions }, scope)
 
     return { conversationId, assistantMessage, actionSummaries, suggestions }
   }

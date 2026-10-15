@@ -96,7 +96,7 @@ export interface EpAgentNavTarget {
   asset?: { kind: 'character' | 'location' | 'item'; id: string; name: string } | null
 }
 
-/** 推给前端的事件（channel: ep-agent:${projectId}:${episodeId}） */
+/** 推给前端的事件（channel: ep-agent:${projectId}:${episodeId}[:${scope}]，scope=界面域） */
 export type EpAgentEvent =
   | { type: 'stage'; stage: 'deciding' | 'acting' | 'summarizing' }
   | { type: 'action:start'; actionType: EpAgentActionType; label: string }

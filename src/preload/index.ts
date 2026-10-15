@@ -3488,20 +3488,24 @@ const electronAPI = {
     },
 
     // ===== P6 对话式制作 Agent（剧本/资产/分镜右侧助手） =====
-    agentSend: (projectId: string, episodeId: string, message: string, providerConfigId?: string, modelId?: string, contextHint?: string) =>
-      ipcRenderer.invoke('ep:agent:send', projectId, episodeId, message, providerConfigId, modelId, contextHint),
-    agentHistory: (episodeId: string) =>
-      ipcRenderer.invoke('ep:agent:history', episodeId),
-    agentCancel: (projectId: string, episodeId: string) =>
-      ipcRenderer.invoke('ep:agent:cancel', projectId, episodeId),
+    // scope=界面域（script/asset-character/storyboard/compose…）：各界面独立会话与历史；
+    // 缺省=无域全局会话（存量兼容）
+    agentSend: (projectId: string, episodeId: string, message: string, providerConfigId?: string, modelId?: string, contextHint?: string, scope?: string) =>
+      ipcRenderer.invoke('ep:agent:send', projectId, episodeId, message, providerConfigId, modelId, contextHint, scope),
+    agentHistory: (episodeId: string, scope?: string) =>
+      ipcRenderer.invoke('ep:agent:history', episodeId, scope),
+    agentCancel: (projectId: string, episodeId: string, scope?: string) =>
+      ipcRenderer.invoke('ep:agent:cancel', projectId, episodeId, scope),
     agentState: (projectId: string, episodeId: string) =>
       ipcRenderer.invoke('ep:agent:state', projectId, episodeId),
-    agentDecide: (projectId: string, episodeId: string, approvalId: string, action: 'select' | 'reject', selected?: string) =>
-      ipcRenderer.invoke('ep:agent:decide', projectId, episodeId, approvalId, action, selected),
-    agentListPending: (projectId: string, episodeId: string) =>
-      ipcRenderer.invoke('ep:agent:list-pending', projectId, episodeId),
-    onAgentEvent: (projectId: string, episodeId: string, callback: (event: any, data: any) => void) => {
-      const channel = `ep-agent:${projectId}:${episodeId}`
+    agentDecide: (projectId: string, episodeId: string, approvalId: string, action: 'select' | 'reject', selected?: string, scope?: string) =>
+      ipcRenderer.invoke('ep:agent:decide', projectId, episodeId, approvalId, action, selected, scope),
+    agentListPending: (projectId: string, episodeId: string, scope?: string) =>
+      ipcRenderer.invoke('ep:agent:list-pending', projectId, episodeId, scope),
+    onAgentEvent: (projectId: string, episodeId: string, scope: string | null | undefined, callback: (event: any, data: any) => void) => {
+      const channel = scope
+        ? `ep-agent:${projectId}:${episodeId}:${scope}`
+        : `ep-agent:${projectId}:${episodeId}`
       const listener = (_event: any, data: any) => callback(data)
       ipcRenderer.on(channel, listener)
       return () => ipcRenderer.removeListener(channel, listener)

@@ -4,7 +4,9 @@
  *
  * 旧「JSON 决策 + 批量动作 + 总结」三段式（ep-agent-workflow.service）→ LoopRunner 多轮循环。
  * 与长文宿主（lw-agent-harness.service）同构，EP 特有：
- * - scopeKey/会话按 project+episode 二维（ep-agent:<projectId>:<episodeId>）
+ * - scopeKey/会话按 project+episode(+界面域 scope) 三维（ep-agent:<projectId>:<episodeId>[:<scope>]）：
+ *   scope 由前端随消息携带（script / asset-character / storyboard / compose…），
+ *   各界面独立会话与历史；缺省退化二维（存量无域会话兼容）
  * - 工具来自共享 registry 的 ep-agent pack（懒注册，见 ep-agent-tools.ts）
  * - **四大能力接线**（35 号 §4 硬性；①②④由 HostKit 内置——36 号）：
  *   ①上下文管理：kit 内置 ContextManager（剧本/分镜大文本必须窗口化）
@@ -196,6 +198,16 @@ function safeFlywheel() {
   }
 }
 
+/** busy/协调器 Map 的键：scope 缺省退化为 project+episode 二维（兼容存量无域会话） */
+function sessionKey(projectId: string, episodeId: string, scope?: string): string {
+  return scope ? `${projectId}:${episodeId}:${scope}` : `${projectId}:${episodeId}`
+}
+
+/** 记忆/审批/会话存储的 scopeId（ep-agent: 前缀形态，与 sessionKey 同构） */
+function scopeIdOf(projectId: string, episodeId: string, scope?: string): string {
+  return scope ? `ep-agent:${projectId}:${episodeId}:${scope}` : `ep-agent:${projectId}:${episodeId}`
+}
+
 export class EpAgentHarnessService {
   private static instance: EpAgentHarnessService | null = null
 
@@ -216,10 +228,10 @@ export class EpAgentHarnessService {
     return this.db ?? getCoreDatabaseManager()
   }
 
-  cancel(projectId: string, episodeId: string): void {
-    const key = `${projectId}:${episodeId}`
+  cancel(projectId: string, episodeId: string, scope?: string): void {
+    const key = sessionKey(projectId, episodeId, scope)
     this.busy.get(key)?.abort(new Error('用户取消'))
-    this.coordinators.get(key)?.cancelScope(`ep-agent:${projectId}:${episodeId}`)
+    this.coordinators.get(key)?.cancelScope(scopeIdOf(projectId, episodeId, scope))
   }
 
   /** 审批决定（EP-2）：action='select' 时回传完整 input+selected（approve_with_edit 整体替换语义） */
@@ -229,11 +241,12 @@ export class EpAgentHarnessService {
     approvalId: string,
     action: 'select' | 'reject',
     selected?: string,
+    scope?: string,
   ): boolean {
-    const coordinator = this.coordinators.get(`${projectId}:${episodeId}`)
+    const coordinator = this.coordinators.get(sessionKey(projectId, episodeId, scope))
     if (!coordinator) return false
     if (action === 'reject') return coordinator.decide(approvalId, { action: 'reject', reason: '用户未选择' })
-    const pending = coordinator.listPending(`ep-agent:${projectId}:${episodeId}`).find((p) => p.approvalId === approvalId)
+    const pending = coordinator.listPending(scopeIdOf(projectId, episodeId, scope)).find((p) => p.approvalId === approvalId)
     if (!pending) return false
     const baseInput = (pending.input ?? {}) as Record<string, unknown>
     const input = { ...baseInput, selected }
@@ -241,26 +254,27 @@ export class EpAgentHarnessService {
   }
 
   /** 挂起中的选择卡（前端恢复用） */
-  listPendingChoices(projectId: string, episodeId: string): PendingApproval[] {
-    const coordinator = this.coordinators.get(`${projectId}:${episodeId}`)
+  listPendingChoices(projectId: string, episodeId: string, scope?: string): PendingApproval[] {
+    const coordinator = this.coordinators.get(sessionKey(projectId, episodeId, scope))
     if (!coordinator) return []
-    return coordinator.listPending(`ep-agent:${projectId}:${episodeId}`).filter((p) => p.toolName === EP_CONFIRM_CHOICE_TOOL)
+    return coordinator.listPending(scopeIdOf(projectId, episodeId, scope)).filter((p) => p.toolName === EP_CONFIRM_CHOICE_TOOL)
   }
 
   async sendMessage(
     projectId: string,
     episodeId: string,
     message: string,
-    opts: { providerConfigId?: string; modelId?: string; contextHint?: string } = {},
+    opts: { providerConfigId?: string; modelId?: string; contextHint?: string; scope?: string } = {},
   ): Promise<EpAgentSendResult> {
-    const key = `${projectId}:${episodeId}`
+    const scope = opts.scope || undefined
+    const key = sessionKey(projectId, episodeId, scope)
     if (this.busy.has(key)) {
       throw new Error('上一轮对话仍在处理中，请等待完成或先取消')
     }
     const controller = new AbortController()
     this.busy.set(key, controller)
     try {
-      return await this.doSend(projectId, episodeId, message, opts, controller)
+      return await this.doSend(projectId, episodeId, message, opts, controller, scope)
     } finally {
       this.busy.delete(key)
     }
@@ -270,15 +284,16 @@ export class EpAgentHarnessService {
     projectId: string,
     episodeId: string,
     message: string,
-    opts: { providerConfigId?: string; modelId?: string; contextHint?: string },
+    opts: { providerConfigId?: string; modelId?: string; contextHint?: string; scope?: string },
     controller: AbortController,
+    scope?: string,
   ): Promise<EpAgentSendResult> {
     const m = this.manager()
-    const conversationId = epAgentConversationId(episodeId)
-    const scopeId = `ep-agent:${projectId}:${episodeId}`
+    const conversationId = epAgentConversationId(episodeId, scope)
+    const scopeId = scopeIdOf(projectId, episodeId, scope)
 
     // 动作摘要收集：工具内 ctx.emit 的富 action:done 事件（经事件总线）回流为本轮结果
-    const channel = epAgentEventChannel(projectId, episodeId)
+    const channel = epAgentEventChannel(projectId, episodeId, scope)
     const actionSummaries: EpAgentActionSummary[] = []
     // 生产 emitter 只实现 tapEvents（评审 P0-1：IEventEmitter 无 on/off）；
     // 惰性 tap：try 内首个副作用前调用（getAgentLoopHarness 抛错时订阅不泄漏）
@@ -373,7 +388,7 @@ export class EpAgentHarnessService {
             choice: { actionType: input.actionType as EpAgentActionType, param: input.param, choices: input.choices, prompt: input.prompt },
             approvalId: e.approvalId,
             pendingInput: e.input as Record<string, unknown>,
-          })
+          }, scope)
           return
         }
         if (e.type === 'approval:resolved') {
@@ -381,7 +396,7 @@ export class EpAgentHarnessService {
         }
       },
     })
-    this.coordinators.set(`${projectId}:${episodeId}`, approvalCoordinator)
+    this.coordinators.set(sessionKey(projectId, episodeId, scope), approvalCoordinator)
     const toolMap: Record<string, AgentToolDef> = harness.registry.buildToolDefs(bindings)
 
     // 4. 观测面 + 会话持久化（sink/会话存储由 HostKit 承接——36 号）
@@ -392,9 +407,9 @@ export class EpAgentHarnessService {
     let allText = ''
     const newSummaryEvent = () => {
       summaryEventId = `ep-agent-summary-${episodeId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-      emitEpAgentEvent(projectId, episodeId, { type: 'reply:start', summaryEventId })
+      emitEpAgentEvent(projectId, episodeId, { type: 'reply:start', summaryEventId }, scope)
     }
-    const emitStage = (stage: 'deciding' | 'acting') => emitEpAgentEvent(projectId, episodeId, { type: 'stage', stage })
+    const emitStage = (stage: 'deciding' | 'acting') => emitEpAgentEvent(projectId, episodeId, { type: 'stage', stage }, scope)
 
     emitStage('deciding')
     newSummaryEvent()
@@ -459,6 +474,8 @@ export class EpAgentHarnessService {
         runtimeContext: () => ({
           projectId,
           episodeId,
+          // 界面域（2026-10-15）：工具内 emit 据此发到对应 scope 的事件通道
+          agentScope: scope,
           // KE 分层打标（37 号）：create_task_plan 据此把 scopeTag 盖进任务树 spec
           memoryScope: { bizModule: 'episode-production', projectId },
           providerConfigId: opts.providerConfigId,
@@ -491,11 +508,11 @@ export class EpAgentHarnessService {
         metadata: JSON.stringify({ actions: actionSummaries, suggestions }),
       }, { projectId: conversationProjectId })
       if (result.stopReason === 'error' || result.stopReason === 'aborted') {
-        emitEpAgentEvent(projectId, episodeId, { type: 'error', error: result.error ?? (result.stopReason === 'aborted' ? '本轮已中断' : '执行失败') })
+        emitEpAgentEvent(projectId, episodeId, { type: 'error', error: result.error ?? (result.stopReason === 'aborted' ? '本轮已中断' : '执行失败') }, scope)
       }
-      emitEpAgentEvent(projectId, episodeId, { type: 'reply:done', suggestions })
+      emitEpAgentEvent(projectId, episodeId, { type: 'reply:done', suggestions }, scope)
 
-      logger.info(`[ep-agent] 轮次完成 project=${projectId} episode=${episodeId} stop=${result.stopReason} steps=${result.iterations} actions=${actionSummaries.length}`)
+      logger.info(`[ep-agent] 轮次完成 project=${projectId} episode=${episodeId} scope=${scope ?? '-'} stop=${result.stopReason} steps=${result.iterations} actions=${actionSummaries.length}`)
       return {
         conversationId,
         assistantMessage: { role: 'assistant', content: assistantMessage.content, metadata: assistantMessage.metadata },
@@ -512,16 +529,16 @@ export class EpAgentHarnessService {
           timestamp: Date.now(),
         }, { projectId: conversationProjectId })
       } catch { /* 兜底失败仅留日志 */ }
-      emitEpAgentEvent(projectId, episodeId, { type: 'error', error: msg })
+      emitEpAgentEvent(projectId, episodeId, { type: 'error', error: msg }, scope)
       throw e
     } finally {
       tap.untap?.()
-      this.coordinators.delete(`${projectId}:${episodeId}`)
+      this.coordinators.delete(sessionKey(projectId, episodeId, scope))
     }
   }
 
-  async getHistory(episodeId: string) {
-    return this.manager().lwDesignMessages.getByConversationId(epAgentConversationId(episodeId))
+  async getHistory(episodeId: string, scope?: string) {
+    return this.manager().lwDesignMessages.getByConversationId(epAgentConversationId(episodeId, scope))
   }
 
   async getState(projectId: string, episodeId: string): Promise<EpAgentProductionState> {

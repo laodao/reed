@@ -133,6 +133,8 @@ import { useEpAgentChat } from '@/composables/useEpAgentChat'
 const props = defineProps<{
   projectId: string
   episodeId: string
+  /** 界面域（script/asset-character/storyboard/compose…）：各界面独立会话与历史；宿主用 :key 随域重挂载 */
+  scope?: string | null
   /** 当前上下文提示（如"当前选中场景""当前选中角色"），用于欢迎语/引导 chips */
   contextHint?: string | null
 }>()
@@ -151,6 +153,8 @@ function onJump(nav: any): void {
 const chat = useEpAgentChat({
   projectId: props.projectId,
   episodeId: props.episodeId,
+  // 界面域：本面板实例绑定一个 scope（宿主 EpisodeStudio 用 :key 保证换域即重挂载+重拉历史）
+  scope: props.scope || undefined,
   // 随消息注入主进程 agent 快照（当前 tab/选中场景/资产——2026-09-16 S-04 上下文注入）
   contextHint: computed(() => props.contextHint ?? null),
 })
@@ -206,7 +210,7 @@ async function onSend(): Promise<void> {
   const text = draft.value.trim()
   if (!text || chat.sending.value) return
   draft.value = ''
-  const unsub = window.electronAPI.episodeProduction.onAgentEvent(props.projectId, props.episodeId, handleAgentEvent)
+  const unsub = subscribeAgentEvents()
   await chat.send(text)
   unsub()
   scrollToBottom()
@@ -214,7 +218,7 @@ async function onSend(): Promise<void> {
 
 function onSuggestion(text: string): void {
   if (chat.sending.value) return
-  const unsub = window.electronAPI.episodeProduction.onAgentEvent(props.projectId, props.episodeId, handleAgentEvent)
+  const unsub = subscribeAgentEvents()
   void chat.sendSuggestion(text).then(() => {
     unsub()
     scrollToBottom()
@@ -225,11 +229,21 @@ function onSuggestion(text: string): void {
 function onChoice(selected: string): void {
   const choice = chat.pendingChoice.value
   if (!choice || chat.sending.value) return
-  const unsub = window.electronAPI.episodeProduction.onAgentEvent(props.projectId, props.episodeId, handleAgentEvent)
+  const unsub = subscribeAgentEvents()
   void chat.sendChoice(choice, selected).then(() => {
     unsub()
     scrollToBottom()
   })
+}
+
+/** 本界面域的事件订阅（onAgentEvent 第 3 参为 scope；与后端 emit 通道同构） */
+function subscribeAgentEvents(): () => void {
+  return window.electronAPI.episodeProduction.onAgentEvent(
+    props.projectId,
+    props.episodeId,
+    props.scope ?? null,
+    handleAgentEvent,
+  )
 }
 
 function scrollToBottom(): void {

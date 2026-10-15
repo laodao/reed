@@ -42,7 +42,7 @@
         </div>
       </template>
 
-      <!-- 主体：左+中由业务 tab 组件整体承载（其内部自管左导航+中央工作区），右侧 agent 全局 -->
+      <!-- 主体：左+中由业务 tab 组件整体承载（其内部自管左导航+中央工作区），右侧 agent 按界面域独立会话 -->
       <div class="studio-body">
         <div class="studio-body-inner">
           <!-- S-01：当前 tab 未就绪时的提示条（缺什么 + 去哪一步补） -->
@@ -70,16 +70,19 @@
               :refresh-tick="agentTick"
               @data-changed="onTabDataChanged"
               @switch-tab="setTab"
+              @asset-selected="onAssetSelected"
             />
           </div>
         </div>
       </div>
 
       <template #agent>
+        <!-- scope=界面域：剧本/资产(各类别)/分镜/合成各自独立会话；:key 换域重挂载并重拉历史 -->
         <EpAgentPanel
+          :key="agentScope"
           :project-id="projectId"
           :episode-id="episodeId"
-          :active-tab="activeTab"
+          :scope="agentScope"
           :context-hint="ctx.contextHint.value"
           @data-changed="onAgentDataChanged"
           @navigate="onAgentNavigate"
@@ -132,6 +135,8 @@
 /**
  * M0 · 新版工作台三段式容器 + 四 tab 宿主。
  * Route-level：持有 projectId/episodeId/activeTab 上下文，负责剧集切换 + tab 导航 + 右侧 agent。
+ * 右侧 agent 按界面域（agentScope）独立会话：剧本/资产(角色/地点/物品各类别)/分镜/合成各一份历史，
+ * 面板以 :key=agentScope 换域重挂载（2026-10-15）。
  * 左侧树 + 中央工作区按 activeTab 切换业务组件（M2 剧本 / M3 资产 / M4 分镜 / M6 合成）。
  */
 import { ref, computed, watch, onMounted } from 'vue'
@@ -326,6 +331,35 @@ const centerPanel = computed(() => {
     default: return PlaceholderTab
   }
 })
+
+/**
+ * agent 会话域（2026-10-15）：每个界面独立会话与历史。
+ * 资产页按选中类别（角色/地点/物品）再分域——用户视角里它们是不同界面；
+ * 未选中任何资产时退化为整页域 asset。
+ */
+const agentScope = computed<string>(() => {
+  switch (activeTab.value) {
+    case 'asset': {
+      const kind = ctx.selectedAsset.value?.kind
+      return kind ? `asset-${kind}` : 'asset'
+    }
+    case 'script':
+    case 'storyboard':
+    case 'compose':
+      return activeTab.value
+    default:
+      return activeTab.value
+  }
+})
+
+/** 资产页选中回传：同步进 studio 上下文（contextHint 显示真实选中 + agent 域跟随类别）。
+ *  同 kind+id 去重——防止 StageAssetView 回传 → external-asset prop 变化 → 再回传的回环。 */
+function onAssetSelected(asset: { kind: 'character' | 'location' | 'item'; id: string; name: string } | null): void {
+  if (!asset?.id) return
+  const cur = ctx.selectedAsset.value
+  if (cur?.kind === asset.kind && cur.id === asset.id) return
+  ctx.setAsset({ kind: asset.kind, id: asset.id, name: asset.name })
+}
 
 function statusLabel(s: string | null | undefined): string {
   const map: Record<string, string> = { pending: '内容', asset_prep: '资产', scripting: '剧本', storyboarding: '分镜', producing: '制作', composing: '合成', completed: '完成' }

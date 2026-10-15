@@ -19,7 +19,8 @@
  *              已知跨业务耦合（本期只记录，不拆分）：
  *              1. Agent 工作流服务（core/platform/episode-production/agent/
  *                 ep-agent-workflow.service）复用长文写作的 lw_design_messages 表存储对话
- *                 历史（conversationId 约定 ep-agent:${episodeId}），表结构归长文写作所有。
+ *                 历史（conversationId 约定 ep-agent:${episodeId}[:${scope}]，scope=界面域），
+ *                 表结构归长文写作所有。
  *              2. 前端引用 voice-design 包的 VoiceCloneDialog 组件
  *                 （AssetStageView.vue:157 / AssetStageViewV2.vue:235），故 manifest
  *                 显式声明 dependencies: ['voice-design']——声音设计包被禁用/未就绪时，

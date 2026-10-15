@@ -57,6 +57,8 @@ function epCtxFrom(ctx: AgentToolContext): EpAgentExecutionContext {
   if (!projectId || !episodeId) {
     throw new Error('缺少剧集上下文（runtimeContext.projectId/episodeId 未注入）——EP 工具只能在剧集制作宿主内调用')
   }
+  // 界面域（2026-10-15）：随 runtimeContext 注入，工具事件只发回发起会话的 scope 通道
+  const agentScope = typeof log.agentScope === 'string' && log.agentScope ? log.agentScope : undefined
   return {
     projectId,
     episodeId,
@@ -64,7 +66,7 @@ function epCtxFrom(ctx: AgentToolContext): EpAgentExecutionContext {
     modelId: typeof log.modelId === 'string' ? log.modelId : undefined,
     db: getCoreDatabaseManager(),
     ai: LongWritingAIService.getInstance(),
-    emit: (event) => emitEpAgentEvent(projectId, episodeId, event),
+    emit: (event) => emitEpAgentEvent(projectId, episodeId, event, agentScope),
     signal: ctx.signal,
   }
 }

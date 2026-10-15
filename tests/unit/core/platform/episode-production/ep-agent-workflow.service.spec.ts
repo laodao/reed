@@ -223,6 +223,11 @@ describe('epAgentConversationId', () => {
   it('约定 ep-agent:${episodeId}', () => {
     expect(epAgentConversationId('ep-123')).toBe('ep-agent:ep-123')
   })
+
+  it('带界面域 scope 时尾接 scope（各界面独立会话）', () => {
+    expect(epAgentConversationId('ep-123', 'script')).toBe('ep-agent:ep-123:script')
+    expect(epAgentConversationId('ep-123', 'asset-character')).toBe('ep-agent:ep-123:asset-character')
+  })
 })
 
 // ==================== sendMessage 多轮确认 choice 分支 ====================
@@ -266,6 +271,27 @@ describe('sendMessage choice 分支（多轮确认）', () => {
     const assistant = messages.filter((m) => m.role === 'assistant')
     expect(assistant.length).toBeGreaterThan(0)
     expect(assistant[0].content).toContain('杜十娘')
+  })
+
+  it('带 scope 时会话落到 ep-agent:<episodeId>:<scope>，事件通道同域', async () => {
+    EpisodeProductionAgentService.resetInstance()
+    const conversations: string[] = []
+    const db = {
+      lwDesignMessages: {
+        add: async (conv: string, m: any) => m,
+        getByConversationId: async (conv: string) => { conversations.push(conv); return [] },
+      },
+    } as any
+    const ai = { agentDecide: async () => '{"reply":"ok","actions":[]}', agentSummarize: async () => '完成' } as any
+
+    const svc = EpisodeProductionAgentService.getInstance(db, ai)
+    const res = await svc.sendMessage('p1', 'ep1', '生成分镜', { scope: 'storyboard' })
+
+    expect(res.conversationId).toBe('ep-agent:ep1:storyboard')
+    // 决策读历史 + 总结事件都走 scope 通道
+    expect(conversations.every((c) => c === 'ep-agent:ep1:storyboard')).toBe(true)
+    const stage = emitted.find((e) => e.data?.type === 'stage')
+    expect(stage!.channel).toBe('ep-agent:p1:ep1:storyboard')
   })
 })
 

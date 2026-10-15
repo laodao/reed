@@ -3,9 +3,10 @@
  * @module composables/useEpAgentChat
  *
  * 复用长文写作 useAgentChat 的事件演进协议，但调用 episodeProduction.agent* API：
- * - onAgentEvent(projectId, episodeId)：stage / action:start / action:done / reply:start / reply:done / error
+ * - onAgentEvent(projectId, episodeId, scope)：stage / action:start / action:done / reply:start / reply:done / error
  * - onGenerateEvent(summaryEventId)：总结流式正文（reply:start 给出 eventId）
- * 历史恢复：episodeProduction.agentHistory(episodeId)。
+ * 历史恢复：episodeProduction.agentHistory(episodeId, scope)。
+ * scope=界面域（script/asset-character/storyboard/compose…）：各界面独立会话与历史。
  */
 
 import { ref } from 'vue'
@@ -46,6 +47,8 @@ export interface EpAgentPendingChoice {
 interface EpAgentChatOptions {
   projectId: string | Ref<string>
   episodeId: string | Ref<string>
+  /** 界面域：各 tab（资产页含类别）独立会话——随 API 发后端，事件也按域订阅 */
+  scope?: string | Ref<string | null | undefined>
   /** 当前界面上下文（当前 tab/选中场景/资产），随消息注入 agent 系统快照（2026-09-16 S-04） */
   contextHint?: Ref<string | null> | string | null
 }
@@ -72,6 +75,11 @@ function parseAssistantMetadata(metadata?: string): { actions?: EpAgentActionSum
 export function useEpAgentChat(options: EpAgentChatOptions) {
   const projectIdRef = typeof options.projectId === 'string' ? ref(options.projectId) : options.projectId
   const episodeIdRef = typeof options.episodeId === 'string' ? ref(options.episodeId) : options.episodeId
+  const scopeRef = options.scope
+    ? typeof options.scope === 'object'
+      ? (options.scope as Ref<string | null | undefined>)
+      : ref(options.scope)
+    : ref<string | null | undefined>(null)
   const contextHintRef =
     options.contextHint && typeof options.contextHint === 'object' ? options.contextHint : ref(options.contextHint ?? null)
 
@@ -88,10 +96,10 @@ export function useEpAgentChat(options: EpAgentChatOptions) {
   let unsubAgent: (() => void) | null = null
   let unsubSummary: (() => void) | null = null
 
-  /** 恢复历史（重进剧集） */
+  /** 恢复历史（重进剧集/切换界面域） */
   async function loadHistory(): Promise<void> {
     try {
-      const r = await window.electronAPI.episodeProduction.agentHistory(episodeIdRef.value)
+      const r = await window.electronAPI.episodeProduction.agentHistory(episodeIdRef.value, scopeRef.value ?? undefined)
       if (r.success && Array.isArray(r.data)) {
         messages.value = r.data.map((m: any, i: number) => {
           const meta = parseAssistantMetadata(m.metadata)
@@ -121,7 +129,7 @@ export function useEpAgentChat(options: EpAgentChatOptions) {
   }
 
   function cancel(): void {
-    window.electronAPI.episodeProduction.agentCancel(projectIdRef.value, episodeIdRef.value)
+    window.electronAPI.episodeProduction.agentCancel(projectIdRef.value, episodeIdRef.value, scopeRef.value ?? undefined)
   }
 
   async function send(text: string): Promise<void> {
@@ -139,6 +147,7 @@ export function useEpAgentChat(options: EpAgentChatOptions) {
     unsubAgent = window.electronAPI.episodeProduction.onAgentEvent(
       projectIdRef.value,
       episodeIdRef.value,
+      scopeRef.value ?? null,
       handleAgentEvent,
     )
 
@@ -150,6 +159,7 @@ export function useEpAgentChat(options: EpAgentChatOptions) {
         undefined,
         undefined,
         contextHintRef.value ?? undefined,
+        scopeRef.value ?? undefined,
       )
       if (!r.success) {
         appendError(r.error || '发送失败')
@@ -248,8 +258,8 @@ export function useEpAgentChat(options: EpAgentChatOptions) {
     if (sending.value) return
     if (choice.approvalId) {
       pendingChoice.value = null
-      const api = (window.electronAPI as { episodeProduction: { agentDecide: (p: string, e: string, a: string, act: 'select' | 'reject', s?: string) => Promise<unknown> } }).episodeProduction
-      await api.agentDecide(projectIdRef.value, episodeIdRef.value, choice.approvalId, 'select', selected)
+      const api = (window.electronAPI as { episodeProduction: { agentDecide: (p: string, e: string, a: string, act: 'select' | 'reject', s?: string, scope?: string) => Promise<unknown> } }).episodeProduction
+      await api.agentDecide(projectIdRef.value, episodeIdRef.value, choice.approvalId, 'select', selected, scopeRef.value ?? undefined)
       return
     }
     pendingChoice.value = null
