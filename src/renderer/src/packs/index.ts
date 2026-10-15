@@ -11,17 +11,8 @@ import type { PackInfo } from '@shared/types/pack.types'
 import { applyPacks, registerPack, setPackInfos } from './registry'
 import { knowledgeBasePack } from './knowledge-base'
 import { workflowPack } from './workflow'
-import { appPack } from './app'
-import { assetCenterPack } from './asset-center'
 import { chatPack } from './chat'
-import { portraitPack } from './portrait'
-import { longwritingPack } from './longwriting'
-import { episodeProductionPack } from './episode-production'
-import { voiceDesignPack } from './voice-design'
 import { diaryPack } from './diary'
-import { skillsPack } from './skills'
-import { domainLearningPack } from './domain-learning'
-import { infoCollectionPack } from './info-collection'
 import { capabilityPack } from './capability'
 
 /** pack IPC namespace 的最小契约（preload 暴露的 electronAPI.pack） */
@@ -61,19 +52,10 @@ export async function installBuiltinPackages(router: Router): Promise<void> {
   //   → 日记 → 资产管理 → 声音设计 → 技能库
   registerPack(knowledgeBasePack)
   registerPack(workflowPack)
-  registerPack(appPack)
-  registerPack(assetCenterPack)
   registerPack(chatPack)
-  registerPack(portraitPack)
-  registerPack(longwritingPack)
-  registerPack(episodeProductionPack)
-  registerPack(voiceDesignPack)
-  registerPack(diaryPack)
-  registerPack(skillsPack)
-  registerPack(domainLearningPack)
-  registerPack(infoCollectionPack)
-  // 能力工具（图像生成/文档翻译/语音助手）最后注册：锚点 '/portrait' 需在人像包合入后存在
+  // 能力工具（图像生成/文档翻译/语音助手）：无锚点追加到末尾
   registerPack(capabilityPack)
+  registerPack(diaryPack)
 
   setPackInfos(await fetchPackInfos())
   applyPacks(router)

@@ -22,42 +22,22 @@
  *                data-path/image/file/translation/export/search-engine/tool/email/
  *                news-source/favicon/oss/datasource/event-admin 等平台级 handler
  *                按裁决留壳（无独立业务界面或禁用即自残）。
+ *
+ *              the-chat-bot 分支裁剪（2026-10-15）：本分支为「对话机器人」产品形态，
+ *              只保留 chat/知识库/工作流(含 Agent)/日记四业务包；图像生成/文档翻译/
+ *              语音助手为平台级 handler（image:/translation:/voice: 前缀留壳），
+ *              不经包注册。其余业务包已随分支裁剪移除，从 dev 同步时按模块白名单合入。
  */
 
 import type { PackDefinition } from './registry'
-import { skillsPack } from './skills'
 import { diaryPack } from './diary'
-import { portraitPack } from './portrait'
 import { chatPack } from './chat'
-import { voiceDesignPack } from './voice-design'
-import { longwritingPack } from './longwriting'
-import { episodeProductionPack } from './episode-production'
 import { workflowPack } from './workflow'
-import { appPack } from './app'
 import { knowledgeBasePack } from './knowledge-base'
-import { assetCenterPack } from './asset-center'
-import { domainLearningPack } from './domain-learning'
-import { podcastVideoPack } from './podcast-video'
-import { infoCollectionPack } from './info-collection'
 
 export const builtinPacks: PackDefinition[] = [
-  skillsPack,
   diaryPack,
-  portraitPack,
   chatPack,
-  voiceDesignPack,
-  longwritingPack,
-  episodeProductionPack,
   workflowPack,
-  // app 依赖 workflow，登记在其后（registry 对未就绪依赖按 pending 处理，与顺序无关，
-  // 此排序只为可读性）
-  appPack,
   knowledgeBasePack,
-  assetCenterPack,
-  // 领域共学空间（依赖 workflow/knowledge-base/skills）
-  domainLearningPack,
-  // 信息搜集（依赖 workflow/knowledge-base；docs/design/2026-10-07-info-collection-design.md）
-  infoCollectionPack,
-  // 播客视频（slide-render/podcast-compose 业务节点；无 IPC 前缀，无依赖）
-  podcastVideoPack,
 ]

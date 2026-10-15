@@ -7,42 +7,9 @@
         <span class="brand-name">The Bot</span>
         <span class="brand-sub">{{ greeting }}，今天想做点什么？</span>
       </div>
-      <div class="header-actions">
-        <el-button text size="small" @click="navigateTo('/apps')">
-          <el-icon :size="14" style="margin-right: 4px"><Box /></el-icon> 管理应用
-        </el-button>
-      </div>
     </div>
 
     <div class="home-body">
-      <!-- 我的应用：固定到首页的应用快捷入口（主导区域，可容纳较多应用） -->
-      <section class="section">
-        <div class="section-head">
-          <h2 class="section-title">📌 我的应用</h2>
-          <span v-if="pinnedApps.length" class="section-count">{{ pinnedApps.length }} 个固定应用</span>
-        </div>
-        <div v-if="pinnedApps.length" class="pinned-grid">
-          <div
-            v-for="app in pinnedApps"
-            :key="app.id"
-            class="pinned-card"
-            :title="app.description ?? app.name"
-            @click="launchApp(app)"
-          >
-            <span class="pinned-emoji">{{ app.icon || '📦' }}</span>
-            <div class="pinned-info">
-              <div class="pinned-name">{{ app.name }}</div>
-              <div class="pinned-cat">{{ app.category || '点击启动' }}</div>
-            </div>
-          </div>
-        </div>
-        <div v-else class="pinned-empty" @click="navigateTo('/apps')">
-          <span class="empty-icon">📌</span>
-          <span>还没有固定应用——去「应用」列表把常用的固定到首页，一键启动</span>
-          <el-icon :size="14"><ArrowRight /></el-icon>
-        </div>
-      </section>
-
       <!-- 全部功能：大卡片入口 -->
       <section class="section">
         <div class="section-head">
@@ -79,20 +46,14 @@
 
 // 组件名与路由 name 对齐，供 <keep-alive :include> 匹配（缺失会导致缓存失效、切换重新挂载）
 defineOptions({ name: 'Home' })
-import { ref, computed, onActivated } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { ArrowRight, Box } from '@element-plus/icons-vue'
+import { ArrowRight } from '@element-plus/icons-vue'
 import { mainMenuItems, footerMenuItems, visibleMenuItems } from '@/config/menu'
-import { electronApi } from '@/types/electron-api'
-import type { AppRecord } from '@shared/types/app.types'
 
 const router = useRouter()
-const api = electronApi()
 const hoveredCard = ref<string | null>(null)
 
-/** 固定到首页的应用（快捷入口；每次进入首页刷新） */
-const pinnedApps = ref<Array<AppRecord & { sessionCount: number }>>([])
 
 /**
  * 功能卡片列表：与侧边栏共用同一份菜单数据源（@/config/menu），
@@ -119,25 +80,6 @@ const navigateTo = (path: string) => {
   router.push(path)
 }
 
-/** 首页固定应用：点击启动会话（不可启动时进详情） */
-async function launchApp(app: AppRecord): Promise<void> {
-  if (app.enabled === 1 && app.channelSession === 1) {
-    const resp = await api.appSession.create({ appId: app.id })
-    if (resp.success) {
-      router.push(`/apps/${app.id}/session/${resp.data?.id}?from=home`)
-      return
-    }
-    ElMessage.error(resp.error ?? '启动失败')
-    return
-  }
-  router.push(`/apps/${app.id}`)
-}
-
-// keep-alive 下每次进入首页都刷新固定应用（用户在应用列表固定/取消后回首页即时生效）
-onActivated(async () => {
-  const resp = await api.app.list({ pinned: true, page: 1, pageSize: 50 })
-  if (resp.success) pinnedApps.value = resp.data?.items ?? []
-})
 </script>
 
 <style lang="scss" scoped>

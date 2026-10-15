@@ -29,9 +29,7 @@ import { attachUser } from './auth/middleware'
 import authRouter from './auth/routes'
 import ipcRouter from './api/ipc-router'
 import assetsRouter from './api/assets-router'
-import uploadRouter from './api/upload-router'
 // spec 2026-05-09 ep-redesign §3.2 D4 · Agent / Skill HTTP API
-import agentsRouter from '../../agents/api/router'
 // C3 工作流 REST API（invoke/stop/SSE）
 import workflowApiRouter, { createWebhookTriggerRouter } from './api/workflow-api-router'
 import { attachWebSocketServer } from './ws/ws-server'
@@ -64,7 +62,6 @@ import { addCharacterBindingExtraFields } from '@core/database/migrations/add-ch
 import { addCharacterBindingRace } from '@core/database/migrations/add-character-binding-race'
 import { addPortraitVariantFraming } from '@core/database/migrations/add-portrait-variant-framing'
 import { createPortraitPromptTemplates } from '@core/database/migrations/create-portrait-prompt-templates'
-import { PortraitTemplateSeederService } from '@core/platform/services/portrait-template-seeder.service'
 import { addStoryboardKeyframeCount } from '@core/database/migrations/add-storyboard-keyframe-count'
 import { addKbDocumentSource } from '@core/database/migrations/add-kb-document-source'
 import { addDiaryDeletedAt } from '@core/database/migrations/add-diary-deleted-at'
@@ -202,9 +199,6 @@ async function bootstrap(): Promise<void> {
   app.get('/api/health', (_req, res) => res.json({ ok: true, ts: Date.now() }))
   app.use('/api/auth', authRouter)
   app.use('/api/ipc', ipcRouter)
-  app.use('/api/upload', uploadRouter)
-  // spec 2026-05-09 ep-redesign §3.2 D4 · Agent Skill HTTP API
-  app.use('/api/agents', agentsRouter)
   // C3 spec v2 §6 · 工作流 REST API
   app.use('/api/workflow', workflowApiRouter())
   // P0 片5 · Webhook 免签触发（POST /api/workflow/webhook/:token，token 即鉴权）
@@ -736,9 +730,6 @@ async function initDatabase(): Promise<void> {
   registerCoreDatabaseManager(() => dm)
   console.log('[web-server] PostgreSQL 数据库初始化完成')
 
-  // 人像内置提示词模板 seeder（幂等）：新版人像设计（spec 2026-07-24）。
-  // 依赖 portraitPromptTemplates 仓库与 core dbManager 注册，必须在此之后。
-  await PortraitTemplateSeederService.seed()
 }
 
 /**

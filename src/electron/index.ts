@@ -562,16 +562,6 @@ app.on('window-all-closed', () => {
 // 应用退出前清理
 app.on('before-quit', () => {
   isQuitting = true
-  // 复核修复：disposeSharpWorker 此前定义了却从不调用（全项目零引用），
-  // sharp 子进程不会随应用退出回收。这里显式关停（幂等，失败不阻断退出）。
-  try {
-    // 动态 import：避免在非 episode-production 场景把 sharp-worker 提前拉进启动路径
-    void import('@core/platform/episode-production/common/sharp-worker')
-      .then((m) => m.disposeSharpWorker())
-      .catch(() => undefined)
-  } catch {
-    /* 不阻断退出 */
-  }
 })
 
 let dbClosed = false
