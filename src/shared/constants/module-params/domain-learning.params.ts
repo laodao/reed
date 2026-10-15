@@ -22,6 +22,7 @@ const L = AGENT_BUDGET_LIMITS
 
 export const DOMAIN_LEARNING_PARAMS: ModuleParamDefinition = {
   key: 'domainLearning',
+  feature: 'domain-learning',
   name: '领域共学',
   description:
     '生成/补全知识地图、研究单个知识点时的步数预算、每一次工具的调用次数、一轮能落库多少知识点与关系边，以及自动推进的并发与上下文窗口。',

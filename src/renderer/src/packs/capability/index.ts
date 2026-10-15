@@ -88,6 +88,7 @@ export const capabilityPack: RendererPackDefinition = {
       { path: '/voice/clone', label: '语音复刻', icon: markRaw(MagicStick) },
     ],
   },
-  // 保持菜单位置：AI对话之后、知识库之前
+  // 保持菜单位置：AI对话之后（锚 '/knowledge-base'；与 the-chat-bot 分支口径一致，
+  // 注册位置须在 chat 包之后、portrait 包之前）
   menuInsertBefore: '/knowledge-base',
 }

@@ -2,23 +2,47 @@
  * 内置业务包装配入口（前端）
  * @module renderer/packs
  * @description mountApp() 在 app.use(router) 之前调用 installBuiltinPackages(router)：
- *              注册 11 个内置包 → 经 pack:list IPC 拉启用态 → applyPacks 一次性
+ *              注册内置包 → 经 pack:list IPC 拉启用态 → applyPacks 一次性
  *              挂路由/合菜单。注册顺序即主菜单合入顺序（锚点相同的包按此序排列，
  *              与原静态菜单顺序保持一致）。
+ *
+ *              功能开关（2026-10-15）：装配清单按 features.config.json 过滤——禁用的
+ *              包不注册（路由/菜单不挂，视图 chunk 永不加载）。动态 import 使禁用包
+ *              的代码不进入启动加载路径。从 dev 同步代码到裁剪分支无需改本文件，
+ *              只维护 features.config.json。
  */
 import type { Router } from 'vue-router'
 import type { PackInfo } from '@shared/types/pack.types'
+import type { RendererPackDefinition } from './registry'
 import { applyPacks, registerPack, setPackInfos } from './registry'
-import { knowledgeBasePack } from './knowledge-base'
-import { workflowPack } from './workflow'
-import { chatPack } from './chat'
-import { diaryPack } from './diary'
-import { capabilityPack } from './capability'
+import { isModuleEnabled } from '@shared/constants/features'
 
 /** pack IPC namespace 的最小契约（preload 暴露的 electronAPI.pack） */
 interface PackApi {
   list(): Promise<{ success: boolean; data?: PackInfo[]; error?: string }>
 }
+
+/**
+ * 包装配清单：顺序 = 注册顺序 = 菜单合入顺序（2026-09-08 起 domain-learning
+ * 以 knowledge-base 为锚点插入其前；capability 与 chat 同锚、紧跟 chat 注册）。
+ * 禁用的包跳过 load()，其定义与视图 chunk 完全不进运行时。
+ */
+const PACK_LOADERS: Array<{ id: string; load: () => Promise<RendererPackDefinition> }> = [
+  { id: 'knowledge-base', load: () => import('./knowledge-base').then((m) => m.knowledgeBasePack) },
+  { id: 'workflow', load: () => import('./workflow').then((m) => m.workflowPack) },
+  { id: 'app', load: () => import('./app').then((m) => m.appPack) },
+  { id: 'asset-center', load: () => import('./asset-center').then((m) => m.assetCenterPack) },
+  { id: 'chat', load: () => import('./chat').then((m) => m.chatPack) },
+  { id: 'capability', load: () => import('./capability').then((m) => m.capabilityPack) },
+  { id: 'portrait', load: () => import('./portrait').then((m) => m.portraitPack) },
+  { id: 'longwriting', load: () => import('./longwriting').then((m) => m.longwritingPack) },
+  { id: 'episode-production', load: () => import('./episode-production').then((m) => m.episodeProductionPack) },
+  { id: 'voice-design', load: () => import('./voice-design').then((m) => m.voiceDesignPack) },
+  { id: 'diary', load: () => import('./diary').then((m) => m.diaryPack) },
+  { id: 'skills', load: () => import('./skills').then((m) => m.skillsPack) },
+  { id: 'domain-learning', load: () => import('./domain-learning').then((m) => m.domainLearningPack) },
+  { id: 'info-collection', load: () => import('./info-collection').then((m) => m.infoCollectionPack) },
+]
 
 /**
  * 拉取后端启用态；IPC 失败/无响应 → 返回 null（降级全启用）。
@@ -42,20 +66,10 @@ async function fetchPackInfos(): Promise<PackInfo[] | null> {
  * 幂等由 applyPacks 保证（重复调用只生效一次）。
  */
 export async function installBuiltinPackages(router: Router): Promise<void> {
-  // 注册顺序即菜单合入顺序。二期（2026-09-05）知识库/工作流/应用/资产中心也成包后，
-  // 锚点 '/knowledge-base' 与 '/assets' 由壳菜单条目变成了包菜单条目——
-  // 必须先注册这 4 个包（无锚点追加，复刻原壳条目位置），再注册以它们为锚点的包：
-  //   chat/portrait/longwriting/episode-production 依次插到 '/knowledge-base' 之前；
-  //   diary 插到 '/assets' 之前；voice-design/skills 无锚点追加到末尾。
-  // 最终菜单顺序（2026-09-08 起 domain-learning 以 knowledge-base 为锚点插入其前）：
-  //   首页 → AI对话 → 人像设计 → 长文写作 → 剧集制作 → 领域学习 → 知识库 → 工作流 → 应用
-  //   → 日记 → 资产管理 → 声音设计 → 技能库
-  registerPack(knowledgeBasePack)
-  registerPack(workflowPack)
-  registerPack(chatPack)
-  // 能力工具（图像生成/文档翻译/语音助手）：无锚点追加到末尾
-  registerPack(capabilityPack)
-  registerPack(diaryPack)
+  for (const { id, load } of PACK_LOADERS) {
+    if (!isModuleEnabled(id)) continue
+    registerPack(await load())
+  }
 
   setPackInfos(await fetchPackInfos())
   applyPacks(router)

@@ -1,0 +1,397 @@
+/**
+ * AssetReferenceService 单测（T01 · 资产历史分组 + 写回影响范围提示）
+ * @module tests/unit/episode-production/assets/asset-reference.service
+ *
+ * 覆盖 task-01 §5 单测要求的口径（2026-10-13 review 修正版）：
+ * 1. character：N 个分镜引用的角色计数正确（storyboard_characters 路径A
+ *    + scene_characters 路径B + storyboards.characters JSON 路径C（review P1-1
+ *    补挂的主引用路径），三路去重到 storyboard 粒度 + 剧集折算）
+ * 2. 无引用返回 0
+ * 3. location/item 的 simple-json 数组包含判断（应用层过滤）正确——含子串 id 不误判
+ * 4. scene_characters.character_binding_id 为 null 的老数据不计入（P2-4：不再
+ *    输出"未迁移老数据"标注——binding id 永不等于老数据 character_id，该检测恒 0）
+ * 5. user 隔离：A 的分镜对 B 不可见；user_id IS NULL 共享行双方可见
+ */
+
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { DataSource } from 'typeorm'
+import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
+import { StoryboardCharacterEntity } from '@core/database/entities/episode-production/storyboard-character.entity'
+import { SceneCharacterEntity } from '@core/database/entities/episode-production/scene-character.entity'
+import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
+import {
+  AssetReferenceService,
+} from '@core/platform/episode-production/assets/services/asset-reference.service'
+import { runWithUser } from '@core/context/user-context'
+
+async function buildDb(): Promise<DataSource> {
+  const ds = new DataSource({
+    type: 'better-sqlite3',
+    database: ':memory:',
+    entities: [StoryboardEntity, StoryboardCharacterEntity, SceneCharacterEntity, SceneScriptEntity],
+    synchronize: true,
+  })
+  await ds.initialize()
+  return ds
+}
+
+let seq = 0
+function nextId(prefix: string): string {
+  return `${prefix}_${(++seq).toString(36).padStart(4, '0')}`
+}
+
+async function insertScene(
+  ds: DataSource,
+  input: { id: string; episodeId: string; userId?: string | null },
+): Promise<void> {
+  const repo = ds.getRepository(SceneScriptEntity)
+  await repo.save(
+    repo.create({
+      userId: input.userId ?? null,
+      id: input.id,
+      episodeScriptId: input.episodeId,
+      sceneNumber: 1,
+      location: '茶楼',
+      sceneDescription: 'desc',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Partial<SceneScriptEntity>),
+  )
+}
+
+async function insertStoryboard(
+  ds: DataSource,
+  input: { id: string; sceneId: string; userId?: string | null },
+): Promise<StoryboardEntity> {
+  const repo = ds.getRepository(StoryboardEntity)
+  const sb = await repo.save(
+    repo.create({
+      userId: input.userId ?? null,
+      id: input.id,
+      sceneScriptId: input.sceneId,
+      shotNumber: 1,
+      frameDescription: '分镜',
+      transition: 'cut',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Partial<StoryboardEntity>),
+  )
+  return sb
+}
+
+describe('AssetReferenceService · getWriteImpact（T01 写回影响口径）', () => {
+  let ds: DataSource
+  let svc: AssetReferenceService
+
+  beforeEach(async () => {
+    ds = await buildDb()
+    svc = new AssetReferenceService(ds)
+  })
+
+  afterEach(async () => {
+    if (ds.isInitialized) await ds.destroy()
+  })
+
+  it('character：路径A（storyboard_characters）N 个分镜计数正确，剧集数按 episode 去重', async () => {
+    // 集 E1：2 个分镜引用 cb_a；集 E2：1 个分镜引用 cb_a → 3 分镜 / 2 集
+    await insertScene(ds, { id: 'scene_1', episodeId: 'ep_1' })
+    await insertScene(ds, { id: 'scene_2', episodeId: 'ep_2' })
+    await insertStoryboard(ds, { id: 'sb_1', sceneId: 'scene_1' })
+    await insertStoryboard(ds, { id: 'sb_2', sceneId: 'scene_1' })
+    await insertStoryboard(ds, { id: 'sb_3', sceneId: 'scene_2' })
+    const sbcRepo = ds.getRepository(StoryboardCharacterEntity)
+    for (const sbId of ['sb_1', 'sb_2', 'sb_3']) {
+      await sbcRepo.save(
+        sbcRepo.create({ id: nextId('sbc'), storyboardId: sbId, characterId: 'cb_a' }),
+      )
+    }
+    // 干扰项：别的角色
+    await sbcRepo.save(
+      sbcRepo.create({ id: nextId('sbc'), storyboardId: 'sb_1', characterId: 'cb_b' }),
+    )
+
+    const impact = await svc.getWriteImpact('character', 'cb_a')
+    expect(impact.storyboardCount).toBe(3)
+    expect(impact.episodeCount).toBe(2)
+    // 估算口径声明固定在 notes 首条
+    expect(impact.notes[0]).toContain('估算值')
+  })
+
+  it('character：路径B（scene_characters.character_binding_id）展开到场景名下分镜，与路径A去重', async () => {
+    await insertScene(ds, { id: 'scene_1', episodeId: 'ep_1' })
+    await insertStoryboard(ds, { id: 'sb_1', sceneId: 'scene_1' })
+    await insertStoryboard(ds, { id: 'sb_2', sceneId: 'scene_1' })
+
+    const scRepo = ds.getRepository(SceneCharacterEntity)
+    // 场景级声明 cb_a（binding 迁移过的行）→ 该场景下 sb_1 / sb_2 都计入
+    await scRepo.save(
+      scRepo.create({
+        id: nextId('sc'),
+        sceneScriptId: 'scene_1',
+        characterId: 'char_1',
+        characterName: '李白',
+        characterBindingId: 'cb_a',
+      }),
+    )
+
+    const impact = await svc.getWriteImpact('character', 'cb_a')
+    expect(impact.storyboardCount).toBe(2)
+    expect(impact.episodeCount).toBe(1)
+  })
+
+  it('character：同一分镜两条路径同时命中只计 1（去重到 storyboard 粒度）', async () => {
+    await insertScene(ds, { id: 'scene_1', episodeId: 'ep_1' })
+    await insertStoryboard(ds, { id: 'sb_1', sceneId: 'scene_1' })
+    const sbcRepo = ds.getRepository(StoryboardCharacterEntity)
+    const scRepo = ds.getRepository(SceneCharacterEntity)
+    await sbcRepo.save(
+      sbcRepo.create({ id: nextId('sbc'), storyboardId: 'sb_1', characterId: 'cb_a' }),
+    )
+    await scRepo.save(
+      scRepo.create({
+        id: nextId('sc'),
+        sceneScriptId: 'scene_1',
+        characterId: 'char_1',
+        characterName: '李白',
+        characterBindingId: 'cb_a',
+      }),
+    )
+
+    const impact = await svc.getWriteImpact('character', 'cb_a')
+    expect(impact.storyboardCount).toBe(1)
+    expect(impact.episodeCount).toBe(1)
+  })
+
+  it('无引用时返回 0 分镜 0 集（三类资产同验）', async () => {
+    for (const t of ['character', 'location', 'item'] as const) {
+      const impact = await svc.getWriteImpact(t, 'cb_nobody')
+      expect(impact.storyboardCount).toBe(0)
+      expect(impact.episodeCount).toBe(0)
+    }
+  })
+
+  it('location：locationBindingIds simple-json 数组包含判断（应用层过滤），子串 id 不误判', async () => {
+    await insertScene(ds, { id: 'scene_1', episodeId: 'ep_1' })
+    await insertStoryboard(ds, { id: 'sb_1', sceneId: 'scene_1' })
+    await insertStoryboard(ds, { id: 'sb_2', sceneId: 'scene_1' })
+    await insertStoryboard(ds, { id: 'sb_3', sceneId: 'scene_1' })
+    const repo = ds.getRepository(StoryboardEntity)
+    // sb_1 命中；sb_2 数组里有子串相近的别的 id（cb_xxx1 vs cb_xxx12 类误命中防御）；sb_3 不引用
+    await repo.update({ id: 'sb_1' }, { locationBindingIds: ['lb_other', 'lb_target'] })
+    await repo.update({ id: 'sb_2' }, { locationBindingIds: ['lb_target_ext'] })
+    await repo.update({ id: 'sb_3' }, { locationBindingIds: [] })
+
+    const impact = await svc.getWriteImpact('location', 'lb_target')
+    expect(impact.storyboardCount).toBe(1)
+    expect(impact.episodeCount).toBe(1)
+  })
+
+  it('item：itemBindingIds 数组包含判断 + 多值数组 + NULL 数组行安全跳过', async () => {
+    await insertScene(ds, { id: 'scene_1', episodeId: 'ep_1' })
+    await insertScene(ds, { id: 'scene_2', episodeId: 'ep_2' })
+    await insertStoryboard(ds, { id: 'sb_1', sceneId: 'scene_1' })
+    await insertStoryboard(ds, { id: 'sb_2', sceneId: 'scene_2' })
+    const repo = ds.getRepository(StoryboardEntity)
+    await repo.update({ id: 'sb_1' }, { itemBindingIds: ['ib_a', 'ib_b'] })
+    await repo.update({ id: 'sb_2' }, { itemBindingIds: null })
+
+    const impact = await svc.getWriteImpact('item', 'ib_b')
+    expect(impact.storyboardCount).toBe(1)
+    expect(impact.episodeCount).toBe(1)
+  })
+
+  // ── 终审 D-F1：场景级主推导路径（scene_scripts）补挂 ────────────────────────
+
+  it('location：场景级 location_binding_id（分镜覆盖 NULL）→ 展开到场景名下全部分镜（D-F1 触发路径，修复前恒 0）', async () => {
+    // 常见生产形状：地点绑在场景级（validator 强制非空），分镜级覆盖数组为 NULL
+    await insertScene(ds, { id: 'scene_1', episodeId: 'ep_1' })
+    await insertScene(ds, { id: 'scene_2', episodeId: 'ep_2' })
+    await insertStoryboard(ds, { id: 'sb_1', sceneId: 'scene_1' })
+    await insertStoryboard(ds, { id: 'sb_2', sceneId: 'scene_1' })
+    await insertStoryboard(ds, { id: 'sb_3', sceneId: 'scene_2' })
+    await ds.getRepository(SceneScriptEntity).update({ id: 'scene_1' }, { locationBindingId: 'lb_target' })
+    // 干扰项：别的地点 + 老数据 null（null 行不可等值命中）
+    await ds.getRepository(SceneScriptEntity).update({ id: 'scene_2' }, { locationBindingId: 'lb_other' })
+
+    const impact = await svc.getWriteImpact('location', 'lb_target')
+    expect(impact.storyboardCount).toBe(2) // sb_1 / sb_2（scene_1 名下全部）
+    expect(impact.episodeCount).toBe(1)
+  })
+
+  it('location：场景级与分镜级同时命中同一分镜只计 1（两路去重到 storyboard 粒度）', async () => {
+    await insertScene(ds, { id: 'scene_1', episodeId: 'ep_1' })
+    await insertStoryboard(ds, { id: 'sb_1', sceneId: 'scene_1' })
+    await ds.getRepository(SceneScriptEntity).update({ id: 'scene_1' }, { locationBindingId: 'lb_x' })
+    await ds.getRepository(StoryboardEntity).update({ id: 'sb_1' }, { locationBindingIds: ['lb_x'] })
+
+    const impact = await svc.getWriteImpact('location', 'lb_x')
+    expect(impact.storyboardCount).toBe(1)
+    expect(impact.episodeCount).toBe(1)
+  })
+
+  it('item：场景 characters JSON 的 props[*].itemBindingId（分镜覆盖 NULL）→ 展开到名下分镜；老数据纯字符串 props 安全跳过', async () => {
+    // 真实消费路径形状（keyframe-generation resolveSceneAssets 的 items 回退分支）：
+    // scene.characters[*].props 为 {itemBindingId, name} 对象数组
+    await insertScene(ds, { id: 'scene_1', episodeId: 'ep_1' })
+    await insertScene(ds, { id: 'scene_2', episodeId: 'ep_2' })
+    await insertStoryboard(ds, { id: 'sb_1', sceneId: 'scene_1' })
+    await insertStoryboard(ds, { id: 'sb_2', sceneId: 'scene_1' })
+    await insertStoryboard(ds, { id: 'sb_3', sceneId: 'scene_2' })
+    const sceneRepo = ds.getRepository(SceneScriptEntity)
+    // scene_1：命中项 + 老数据字符串 props + 非对象元素（安全跳过）
+    await sceneRepo.update(
+      { id: 'scene_1' },
+      {
+        characters: [
+          { characterBindingId: 'cb_a', props: [{ itemBindingId: 'ib_target', name: '酒壶' }, '老数据字符串道具'] },
+          { characterBindingId: 'cb_b', props: [{ itemBindingId: 'ib_target_ext', name: '近似子串' }] },
+          { characterBindingId: 'cb_c', props: null },
+          'junk',
+        ] as any,
+      },
+    )
+
+    const impact = await svc.getWriteImpact('item', 'ib_target')
+    expect(impact.storyboardCount).toBe(2) // sb_1 / sb_2
+    expect(impact.episodeCount).toBe(1)
+    // 子串近似 id（ib_target_ext）不误计 scene_2 名下的 sb_3
+    expect(impact.notes[0]).toContain('估算值')
+  })
+
+  it('item：场景级与分镜级同时命中同一分镜只计 1（去重）', async () => {
+    await insertScene(ds, { id: 'scene_1', episodeId: 'ep_1' })
+    await insertStoryboard(ds, { id: 'sb_1', sceneId: 'scene_1' })
+    await ds.getRepository(SceneScriptEntity).update(
+      { id: 'scene_1' },
+      { characters: [{ characterBindingId: 'cb_a', props: [{ itemBindingId: 'ib_x', name: '剑' }] }] as any },
+    )
+    await ds.getRepository(StoryboardEntity).update({ id: 'sb_1' }, { itemBindingIds: ['ib_x'] })
+
+    const impact = await svc.getWriteImpact('item', 'ib_x')
+    expect(impact.storyboardCount).toBe(1)
+    expect(impact.episodeCount).toBe(1)
+  })
+
+  it('user 隔离（场景级路径）：他人场景行不参与 location 场景级计数', async () => {
+    await insertScene(ds, { id: 'scene_a', episodeId: 'ep_a', userId: 'user-a' })
+    await insertScene(ds, { id: 'scene_shared', episodeId: 'ep_shared', userId: null })
+    await insertStoryboard(ds, { id: 'sb_a', sceneId: 'scene_a', userId: 'user-a' })
+    await insertStoryboard(ds, { id: 'sb_shared', sceneId: 'scene_shared', userId: null })
+    const sceneRepo = ds.getRepository(SceneScriptEntity)
+    await sceneRepo.update({ id: 'scene_a' }, { locationBindingId: 'lb_s' })
+    await sceneRepo.update({ id: 'scene_shared' }, { locationBindingId: 'lb_s' })
+
+    // A 看到：自己的 scene_a 名下 sb_a + 共享 scene_shared 名下 sb_shared
+    const aView = await runWithUser('user-a', () => svc.getWriteImpact('location', 'lb_s'))
+    expect(aView.storyboardCount).toBe(2)
+  })
+
+  it('character：JSON 路径（storyboards.characters，主生产路径）引用计数 > 0，子串 id 不误判', async () => {
+    // review P1-1 触发路径：AI 分镜生成（storyboard-cogen）只写 storyboards.characters
+    // JSON、不写 storyboard_characters 表——旧口径此形状下恒 0，影响弹窗静默跳过。
+    await insertScene(ds, { id: 'scene_1', episodeId: 'ep_1' })
+    await insertScene(ds, { id: 'scene_2', episodeId: 'ep_2' })
+    await insertStoryboard(ds, { id: 'sb_1', sceneId: 'scene_1' })
+    await insertStoryboard(ds, { id: 'sb_2', sceneId: 'scene_2' })
+    await insertStoryboard(ds, { id: 'sb_3', sceneId: 'scene_2' })
+    const repo = ds.getRepository(StoryboardEntity)
+    // sb_1 命中（主生产路径形状：binding.id 进 entry.characterId）
+    await repo.update({ id: 'sb_1' }, { characters: [{ characterId: 'cb_a', expression: '凝重' }] })
+    // sb_2 子串相近的别的 id（cb_a1 vs cb_a 类误命中防御）→ 不计入
+    await repo.update({ id: 'sb_2' }, { characters: [{ characterId: 'cb_a1' }] })
+    // sb_3 数组里混入空 characterId / 非对象元素 → 安全跳过
+    await repo.update({ id: 'sb_3' }, { characters: [{ characterId: '' }, 'junk', null] })
+
+    const impact = await svc.getWriteImpact('character', 'cb_a')
+    expect(impact.storyboardCount).toBe(1)
+    expect(impact.episodeCount).toBe(1)
+  })
+
+  it('character：JSON 路径与表路径同时命中同一分镜只计 1（三路去重到 storyboard 粒度）', async () => {
+    await insertScene(ds, { id: 'scene_1', episodeId: 'ep_1' })
+    await insertStoryboard(ds, { id: 'sb_1', sceneId: 'scene_1' })
+    await ds.getRepository(StoryboardCharacterEntity).save(
+      ds.getRepository(StoryboardCharacterEntity).create({
+        id: nextId('sbc'),
+        storyboardId: 'sb_1',
+        characterId: 'cb_a',
+      }),
+    )
+    await ds.getRepository(StoryboardEntity).update(
+      { id: 'sb_1' },
+      { characters: [{ characterId: 'cb_a' }] } as any,
+    )
+
+    const impact = await svc.getWriteImpact('character', 'cb_a')
+    expect(impact.storyboardCount).toBe(1)
+    expect(impact.episodeCount).toBe(1)
+  })
+
+  it('character_binding_id 为 null 的老数据行不计入（P2-4：不再输出恒 0 的"未迁移老数据"标注）', async () => {
+    await insertScene(ds, { id: 'scene_1', episodeId: 'ep_1' })
+    await insertStoryboard(ds, { id: 'sb_1', sceneId: 'scene_1' })
+    const scRepo = ds.getRepository(SceneCharacterEntity)
+    // 老剧本未迁移行：characterId 为老数据 id（lw_character.id，永不等于 binding id）
+    await scRepo.save(
+      scRepo.create({
+        id: nextId('sc'),
+        sceneScriptId: 'scene_1',
+        characterId: 'lwc_legacy_1',
+        characterName: '李白',
+        characterBindingId: null,
+      }),
+    )
+
+    const impact = await svc.getWriteImpact('character', 'cb_a')
+    expect(impact.storyboardCount).toBe(0)
+    expect(impact.episodeCount).toBe(0)
+    // P2-4：口径已删——不再输出"含未迁移老数据"标注（诚实优于永不触发的声明）
+    expect(impact.notes.join('\n')).not.toContain('未迁移老数据')
+  })
+
+  it('user 隔离：A 的分镜对 B 不可见；user_id IS NULL 共享行双方可见', async () => {
+    await insertScene(ds, { id: 'scene_a', episodeId: 'ep_a', userId: 'user-a' })
+    await insertScene(ds, { id: 'scene_b', episodeId: 'ep_b', userId: 'user-b' })
+    await insertScene(ds, { id: 'scene_shared', episodeId: 'ep_shared', userId: null })
+    await insertStoryboard(ds, { id: 'sb_a', sceneId: 'scene_a', userId: 'user-a' })
+    await insertStoryboard(ds, { id: 'sb_b', sceneId: 'scene_b', userId: 'user-b' })
+    await insertStoryboard(ds, { id: 'sb_shared', sceneId: 'scene_shared', userId: null })
+
+    const repo = ds.getRepository(StoryboardEntity)
+    await repo.update({ id: 'sb_a' }, { locationBindingIds: ['lb_x'] })
+    await repo.update({ id: 'sb_b' }, { locationBindingIds: ['lb_x'] })
+    await repo.update({ id: 'sb_shared' }, { locationBindingIds: ['lb_x'] })
+
+    // A 看到：自己的 sb_a + 共享 sb_shared
+    const aView = await runWithUser('user-a', () => svc.getWriteImpact('location', 'lb_x'))
+    expect(aView.storyboardCount).toBe(2)
+    expect(aView.episodeCount).toBe(2)
+
+    // B 看到：自己的 sb_b + 共享 sb_shared
+    const bView = await runWithUser('user-b', () => svc.getWriteImpact('location', 'lb_x'))
+    expect(bView.storyboardCount).toBe(2)
+    expect(bView.episodeCount).toBe(2)
+  })
+
+  it('user 隔离（character 路径）：storyboard_characters 他人行不可见', async () => {
+    await insertScene(ds, { id: 'scene_a', episodeId: 'ep_a', userId: 'user-a' })
+    await insertStoryboard(ds, { id: 'sb_a', sceneId: 'scene_a', userId: 'user-a' })
+    await insertStoryboard(ds, { id: 'sb_shared', sceneId: 'scene_a', userId: null })
+    const sbcRepo = ds.getRepository(StoryboardCharacterEntity)
+    await sbcRepo.save(
+      sbcRepo.create({ id: nextId('sbc'), userId: 'user-a', storyboardId: 'sb_a', characterId: 'cb_a' }),
+    )
+    await sbcRepo.save(
+      sbcRepo.create({ id: nextId('sbc'), userId: null, storyboardId: 'sb_shared', characterId: 'cb_a' }),
+    )
+
+    const aView = await runWithUser('user-a', () => svc.getWriteImpact('character', 'cb_a'))
+    expect(aView.storyboardCount).toBe(2)
+  })
+
+  it('非法 assetType 抛错、空 assetId 抛错', async () => {
+    const badType = 'voice' as unknown as Parameters<AssetReferenceService['getWriteImpact']>[0]
+    await expect(svc.getWriteImpact(badType, 'cb_x')).rejects.toThrow(/不支持的资产类型/)
+    await expect(svc.getWriteImpact('character', '  ')).rejects.toThrow(/assetId/)
+  })
+})

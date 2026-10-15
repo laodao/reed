@@ -18,6 +18,7 @@ import {
   type RendererPackDefinition,
 } from '@/packs/registry'
 import { mainMenuItems, visibleMenuItems, getMenuSubmenu, __resetMainMenuForTests } from '@/config/menu'
+import { FEATURE_MODULES } from '@shared/constants/features'
 
 /** 造一个最小可用包定义（组件用空 stub，不触发视图加载） */
 function makePack(id: string, overrides: {
@@ -164,6 +165,10 @@ describe('applyPacks（路由动态注册 + 菜单锚点合入）', () => {
   })
 })
 
+// 全量装配断言只对「全模块启用」形态有效（dev）；裁剪形态（the-chat-bot）
+// 按功能开关只注册白名单包 → 整条用例跳过
+const allModulesEnabled = Object.values(FEATURE_MODULES).every((v) => v !== false)
+
 describe('installBuiltinPackages（内置包装配）', () => {
   afterEach(() => {
     delete (window as any).electronAPI
@@ -171,54 +176,57 @@ describe('installBuiltinPackages（内置包装配）', () => {
     __resetMainMenuForTests()
   })
 
-  it('IPC 不可用（无 electronAPI）→ 降级全启用：11 个包路由全部挂上', async () => {
+  it.skipIf(!allModulesEnabled)('IPC 不可用（无 electronAPI）→ 降级全启用：11 个包路由全部挂上', async () => {
     const { installBuiltinPackages } = await import('@/packs/index')
     const router = makeRouter()
     await installBuiltinPackages(router)
     for (const path of [
       '/chat', '/assistant',
-      '/diary',
-      // 二期包化（2026-09-05）：知识库/工作流
+      '/portrait', '/portrait/geometry', '/portrait-templates',
+      '/longwriting', '/story-editor/s1', '/comment-editor/c1',
+      '/diary', '/skills', '/voice/design',
+      '/episode-production', '/episode-production/all', '/episode-production/p1/creator',
+      // 二期包化（2026-09-05）：知识库/工作流/应用/资产中心
       '/knowledge-base',
       '/workflow', '/workflow/editor/w1', '/workflow-run/tok', '/workflow/runs/d1', '/workflow/run/r1',
+      '/apps', '/apps/a1', '/apps/a1/session/s1', '/app-share/tok',
+      '/assets',
+      // 领域共学空间原型（2026-09-08）
+      '/domain-learning', '/domain-learning/rag', '/domain-learning/rag/atlas',
       // 能力工具包（2026-10-15 恢复独立能力入口）
       '/image', '/translate', '/voice/tts', '/voice/stt', '/voice/clone',
     ]) {
       expect(router.resolve(path).matched.length, `路由 ${path} 应已注册`).toBeGreaterThan(0)
     }
-    // the-chat-bot 分支裁剪（2026-10-15）：人像/长文/剧集/应用/资产/领域学习/信息搜集/
-    // 声音设计/技能库九包不注册
-    for (const path of [
-      '/portrait', '/longwriting', '/episode-production', '/apps', '/assets',
-      '/domain-learning', '/info-collection', '/skills', '/voice/design',
-    ]) {
-      expect(router.resolve(path).matched.length, `路由 ${path} 不应注册`).toBe(0)
-    }
-    // 菜单顺序（the-chat-bot 裁剪版，2026-10-15）：chat/capability 以 '/knowledge-base'
-    // 为锚插在知识库前；diary 的原锚 '/assets' 随资产包裁剪消失 → 追加到末尾
+    // 菜单顺序与原静态菜单一致（二期 4 个原壳位包先注册，锚点语义不变；
+    // 领域学习包插在知识库前（agent-harness 合并后：Agent 对话 = /agent-console）；
+    // 知识飞轮菜单已随功能停用移除（2026-09-16）；
+    // 能力工具包（图像生成/文档翻译/语音助手）以 '/portrait' 为锚插在 AI对话之后（2026-10-15）
     const paths = visibleMenuItems(mainMenuItems).map(i => i.path)
     expect(paths).toEqual([
-      '/', '/chat', '/image', '/translate', '/voice', '/knowledge-base',
-      '/agent-todos', '/agent-console', '/workflow', '/diary',
+      '/', '/chat', '/image', '/translate', '/voice', '/portrait', '/longwriting',
+      '/episode-production', '/domain-learning', '/info-collection', '/knowledge-base',
+      '/agent-todos', '/agent-console', '/workflow', '/apps', '/diary', '/assets', '/skills',
     ])
     // 知识飞轮路由与菜单入口一并移除（停用功能不留死入口）
     expect(router.resolve('/agent-memory').matched).toHaveLength(0)
     expect(paths).not.toContain('/agent-memory')
   })
 
-  it('后端启用态生效：knowledge-base 禁用 → 其路由不注册、其余包不受影响', async () => {
+  it('后端启用态生效：voice-design 禁用 → episode-production 级联不注册', async () => {
     const infos: PackInfo[] = [
-      makeInfo('knowledge-base', { enabled: false, state: 'disabled' }),
+      makeInfo('voice-design', { enabled: false, state: 'disabled' }),
     ]
     ;(window as any).electronAPI = { pack: { list: async () => ({ success: true, data: infos }) } }
     const { installBuiltinPackages } = await import('@/packs/index')
     const router = makeRouter()
     await installBuiltinPackages(router)
-    expect(router.resolve('/knowledge-base').matched).toHaveLength(0)
-    expect(visibleMenuItems(mainMenuItems).map(i => i.path)).not.toContain('/knowledge-base')
+    // 依赖被禁用 → voice-design 自身与 episode-production 均不注册
+    expect(router.resolve('/voice/design').matched).toHaveLength(0)
+    expect(router.resolve('/episode-production').matched).toHaveLength(0)
     // 其余包不受影响
     expect(router.resolve('/diary').name).toBe('Diary')
-    expect(router.resolve('/image').name).toBe('ImagePage')
+    expect(visibleMenuItems(mainMenuItems).map(i => i.path)).not.toContain('/episode-production')
   })
 
   it('二级菜单隔离：menuSubmenus 注册的子项绝不进主菜单列表（两次回归的根锁）', () => {

@@ -26,6 +26,8 @@ import { registerSettingsReloadHook, setSettingsReloadLogger } from '@shared/uti
 import { WorkflowEngineService } from './engine/workflow-engine.service'
 import { makeEngineDeps, WorkflowRunService } from './workflow-run.service'
 import { WorkflowDefinitionService } from './workflow-definition.service'
+import { AppDefinitionService } from '@core/packs/app/services/app-definition.service'
+import { AppSessionService } from '@core/packs/app/services/app-session.service'
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import type { EventChannel } from '@shared/types/event.types'
 import { assertNodeRegistryConsistent, createFullNodeRegistry } from './nodes'
@@ -57,6 +59,8 @@ interface WorkflowSubsystem {
   runService: WorkflowRunService
   definitionService: WorkflowDefinitionService
   scheduler: WorkflowTriggerScheduler
+  appDefinitionService: AppDefinitionService
+  appSessionService: AppSessionService
   /** M3 任务树子系统（26 号；数据源缺失时不装配——null 降级） */
   agentTasks: import('@core/platform/agent-runtime/tasks/task-service').AgentTaskService | null
   /** M3 知识飞轮（26 号批4；null 同上） */
@@ -88,10 +92,30 @@ export interface WorkflowBootOptions {
 }
 
 /**
+ * 启动失败原因（诊断用）：宿主对 initWorkflowSubsystem 的失败采取"不致命"策略
+ * （只 warn 后继续启动），此后所有 wf:/at:/am: 通道会以「工作流子系统未初始化」
+ * 报错——把真实原因带给调用方，避免误导排查方向（2026-10-15）。
+ */
+let bootFailure: Error | null = null
+
+/**
  * 初始化工作流子系统（幂等；重复调用返回既有实例）。
  * 必须在数据库管理器注册之后调用。
  */
 export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Promise<WorkflowSubsystem> {
+  try {
+    return await initWorkflowSubsystemInner(opts)
+  } catch (e) {
+    bootFailure = e instanceof Error ? e : new Error(String(e))
+    throw e
+  }
+}
+
+/**
+ * 初始化工作流子系统内部实现（失败原因记录在 bootFailure）。
+ * 必须在数据库管理器注册之后调用。
+ */
+async function initWorkflowSubsystemInner(opts: WorkflowBootOptions = {}): Promise<WorkflowSubsystem> {
   if (subsystem) return subsystem
 
   // 分段计时：工作流子系统是启动关键路径上最重的一段（引擎/节点/服务/恢复）
@@ -100,6 +124,10 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
   const db = getCoreDatabaseManager()
   if (!db.workflowDefinitions || !db.workflowRuns || !db.workflowNodeRuns) {
     throw new Error('工作流数据仓库未初始化（数据库管理器缺少 workflow_* 仓库）')
+  }
+  // 应用模块仓库（片1）：未接线则 fail-fast——避免 as any 掩盖 null 至首个调用才崩
+  if (!db.appDefinitions || !db.appSessions || !db.messages) {
+    throw new Error('应用模块仓库未初始化（数据库管理器缺少 apps/app_sessions/messages 仓库）')
   }
 
   // 0. 平台事件总线（10-event-system M1）：平台级公共底座，非工作流私有——
@@ -393,7 +421,36 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
   }, WORKFLOW_DEFAULTS.reviewTimeoutTickMs)
   reviewTickerHandle.unref?.()
 
-  // 6. 应用模块（AppDefinitionService/AppSessionService）已随 the-chat-bot 分支裁剪移除
+  // 6. 应用模块：应用定义/会话服务（片1/片2），事件桥挂到全局事件发射器
+  const appDefinitionService = new AppDefinitionService(
+    db.appDefinitions,
+    db.appSessions,
+    db.workflowDefinitions,
+    db.messages
+  )
+  const appSessionService = new AppSessionService(
+    { appSessions: db.appSessions, messages: db.messages, appSessionMessages: db.appSessionMessages, runService, engine },
+    db.appDefinitions,
+    db.workflowDefinitions,
+  )
+  // 事件桥（M2，10-event-system §9 末行）：总线就绪 → 命名持久消费者
+  // 'app-session-bridge'（at-least-once，崩溃补投由游标保证；startFrom='latest' 不补历史）；
+  // 总线不可用 → 回退存量 tapEvents 桥（至多一次，与 M1 前行为一致）
+  if (eventBus) {
+    appSessionService.attachEventConsumer(eventBus)
+  } else {
+    // 闭包捕获 getEventEmitter() 的 tapEvents（直接传方法引用会丢 this）
+    appSessionService.attach((cb: (c: string, d: unknown, u: string | null) => void) =>
+      getEventEmitter().tapEvents?.(cb)
+    )
+  }
+  // boot 恢复：重建 runId→session 映射 + running 会话终态收口（引擎 recoverOnBoot 已执行，失败不阻断启动）
+  try {
+    await appSessionService.recoverOnBoot()
+  } catch (e) {
+    logger.error('[workflow-boot] 应用会话 boot 恢复失败（继续启动）', e)
+  }
+  trace.mark('appServices')
 
   // 7. P0 工具：第三方 API 工具服务（凭据加密 + 自定义工具 + 预设工具 + 执行），注册全局取用
   try {
@@ -1086,7 +1143,7 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
   }
   trace.mark('systemAgentTools')
 
-  subsystem = { engine, runService, definitionService, scheduler, runLogger, agentTasks, memoryFlywheel, agentSessions: agentSessionRepo, agentTrajectories: trajectoryRepo, draftService }
+  subsystem = { engine, runService, definitionService, scheduler, appDefinitionService, appSessionService, runLogger, agentTasks, memoryFlywheel, agentSessions: agentSessionRepo, agentTrajectories: trajectoryRepo, draftService }
   logger.info('[workflow-boot] 工作流子系统已启动')
   trace.report(undefined, 30)
   return subsystem
@@ -1095,7 +1152,10 @@ export async function initWorkflowSubsystem(opts: WorkflowBootOptions = {}): Pro
 /** 取子系统（未初始化抛错——IPC 层据此返回明确错误） */
 export function getWorkflowSubsystem(): WorkflowSubsystem {
   if (!subsystem) {
-    throw new Error('工作流子系统未初始化（initWorkflowSubsystem 未调用）')
+    if (bootFailure) {
+      throw new Error(`工作流子系统启动失败：${bootFailure.message}`)
+    }
+    throw new Error('工作流子系统正在初始化（尚未完成），请稍后重试')
   }
   return subsystem
 }

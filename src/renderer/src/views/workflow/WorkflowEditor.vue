@@ -30,6 +30,7 @@
         </el-button>
       </el-tooltip>
       <el-button size="small" type="primary" @click="doPublish">发布</el-button>
+      <el-button v-if="appModuleEnabled" size="small" type="success" plain @click="openAppPublish">发布为应用</el-button>
       <el-button size="small" type="info" plain @click="openShare">分享</el-button>
     </div>
 
@@ -126,6 +127,32 @@
       </div>
     </div>
 
+    <!-- 发布为应用配置对话框（发布即配置渠道，无需事后进详情改） -->
+    <el-dialog v-model="showAppPublish" :title="appPublishMode === 'edit' ? '更新应用配置' : '发布为应用'" width="480px" :close-on-click-modal="false">
+      <el-form label-width="90px" label-position="left">
+        <el-form-item label="应用名称">
+          <el-input v-model="appForm.name" placeholder="默认取工作流名称" />
+        </el-form-item>
+        <el-form-item label="图标">
+          <el-input v-model="appForm.icon" placeholder="emoji，如 📦" maxlength="4" />
+        </el-form-item>
+        <el-form-item label="渠道">
+          <div class="channel-options">
+            <el-checkbox v-model="appForm.channelSession">💬 会话（应用内对话）</el-checkbox>
+            <el-checkbox v-model="appForm.channelShare">🔗 分享（免登录链接）</el-checkbox>
+            <el-checkbox v-model="appForm.channelApi">🔌 API（外部调用）</el-checkbox>
+          </div>
+          <p class="app-hint">一个工作流对应一个应用；发布后可在应用列表直接启动，或到详情页调整渠道</p>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showAppPublish = false">取消</el-button>
+        <el-button type="primary" :loading="appPublishing" @click="doAppPublish">
+          {{ appPublishMode === 'edit' ? '保存配置' : '发布应用' }}
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 版本历史（发布快照；恢复到草稿） -->
     <el-dialog v-model="showVersions" title="版本历史" width="620px">
       <el-empty v-if="!versions.length" description="暂无历史版本（每次发布生成一条快照）" />
@@ -150,7 +177,8 @@
 
 <script setup lang="ts">
 defineOptions({ name: 'WorkflowEditor' })
-import { ref, computed, onMounted, onUnmounted, provide, watch, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, provide, watch, nextTick } from 'vue'
+import { isModuleEnabled } from '@shared/constants/features'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Close } from '@element-plus/icons-vue'
@@ -172,9 +200,12 @@ import RunInputForm from '@/components/workflow/RunInputForm.vue'
 import { useWorkflowStore } from '@/stores/workflow'
 import { computeHighlight, EDGE_HIGHLIGHT_STYLE } from '@/utils/workflow-editor-highlight'
 import type { HighlightSelection } from '@/utils/workflow-editor-highlight'
+import { iconForWorkflowCategory } from '../../utils/app-icons'
 
 const route = useRoute()
 const router = useRouter()
+// 应用模块裁剪（features.config.json app=false）时隐藏「发布为应用」入口
+const appModuleEnabled = isModuleEnabled('app')
 const definition = ref<any>(null)
 const nodes = ref<Node[]>([])
 const edges = ref<Edge[]>([])
@@ -705,6 +736,63 @@ async function openShare() {
     }
   } finally {
     shareLoading.value = false
+  }
+}
+
+// ── 发布为应用（P0：发布入口迁移到工作流编辑器，发布即配置渠道） ──
+const showAppPublish = ref(false)
+const appPublishing = ref(false)
+const appPublishMode = ref<'create' | 'edit'>('create')
+const appForm = reactive({ name: '', icon: '', channelSession: true, channelShare: false, channelApi: true })
+
+async function openAppPublish() {
+  if (!definition.value) return
+  if ((definition.value.publishedVersion ?? 0) <= 0) {
+    ElMessage.warning('请先「发布」工作流，再发布为应用')
+    return
+  }
+  const appApi = (window as never as { electronAPI: { app: any } }).electronAPI.app
+  const existing = await appApi.getByDefinition(definition.value.id)
+  if (existing.success && existing.data) {
+    // 已发布过 → 编辑模式（预填现有配置；保存=幂等更新渠道/名称）
+    appPublishMode.value = 'edit'
+    appForm.name = existing.data.name ?? ''
+    appForm.icon = existing.data.icon ?? ''
+    appForm.channelSession = existing.data.channelSession === 1
+    appForm.channelShare = existing.data.channelShare === 1
+    appForm.channelApi = existing.data.channelApi === 1
+  } else {
+    appPublishMode.value = 'create'
+    appForm.name = definition.value.name ?? ''
+    // 未填图标时按工作流分类自动带出合适图标（用户可改）
+    appForm.icon = iconForWorkflowCategory(definition.value.category)
+    appForm.channelSession = true
+    appForm.channelShare = false
+    appForm.channelApi = true
+  }
+  showAppPublish.value = true
+}
+
+async function doAppPublish() {
+  if (!definition.value) return
+  appPublishing.value = true
+  try {
+    const appApi = (window as never as { electronAPI: { app: any } }).electronAPI.app
+    const resp = await appApi.createFromWorkflow({
+      definitionId: definition.value.id,
+      name: appForm.name.trim() || undefined,
+      icon: appForm.icon.trim() || undefined,
+      channelSession: appForm.channelSession,
+      channelShare: appForm.channelShare,
+      channelApi: appForm.channelApi,
+    })
+    if (resp.success) {
+      ElMessage.success(appPublishMode.value === 'edit' ? '应用配置已更新' : '应用已发布')
+      showAppPublish.value = false
+      router.push(`/apps/${resp.data?.id}`)
+    } else ElMessage.error(resp.error ?? '发布失败')
+  } finally {
+    appPublishing.value = false
   }
 }
 

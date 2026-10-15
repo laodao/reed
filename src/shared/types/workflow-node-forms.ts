@@ -12,6 +12,8 @@
 
 import type { WorkflowNodeType } from './workflow.types'
 import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from './workflow.types'
+import { VIDEO_TYPE_PRESETS } from './video-presets'
+import { SLIDE_THEME_OPTIONS } from './slide-themes'
 
 /** 表单字段声明 */
 export interface CatalogFormField {
@@ -389,6 +391,79 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     { key: 'count', label: '生成数量', type: 'number', min: 1, max: 4, group: '参数' },
     T('modelId', '图像模型 ID', { group: '模型', help: '必填' }),
   ],
+  'video-gen': [
+    T('providerConfigId', '视频 Provider 配置 ID', { help: '设置→AI 服务中已配置的视频 Provider（如 ComfyUI 生成网关配置 id）' }),
+    T('model', '视频模型 ID', { help: '如 ComfyUI/h3、火山 Seedance（ep-xxxx）' }),
+    T('image', '首帧/参考图', { type: 'textarea', templateHint: true, placeholder: '{{img1.images.0.localUrl}} 或本地路径', help: '图生视频时必填' }),
+    T('prompt', '提示词', { type: 'textarea', templateHint: true }),
+    T('negativePrompt', '负面提示词', { group: '参数' }),
+    { key: 'duration', label: '时长（秒）', type: 'number', min: 1, max: 15, group: '参数' },
+    { key: 'width', label: '宽度', type: 'number', group: '参数' },
+    { key: 'height', label: '高度', type: 'number', group: '参数' },
+  ],
+  'video-compose': [
+    T('segments', '片段列表', {
+      type: 'textarea', templateHint: true,
+      placeholder: '{{code1.result.segments}}', help: '[{ source, kind, duration, caption, motion }]；motion 仅图片段生效：none/zoom-in/zoom-out/pan-left/pan-right',
+    }),
+    T('audioPath', '配音音频（可选）', { templateHint: true, placeholder: '{{tts1.audioPath}}' }),
+    T('bgmPath', '背景音乐（可选）', { templateHint: true, placeholder: '本地 mp3 路径' }),
+    { key: 'width', label: '宽度', type: 'number', group: '参数' },
+    { key: 'height', label: '高度', type: 'number', group: '参数' },
+    T('outputName', '输出文件名', { group: '参数', help: '成片文件名（不含扩展名）' }),
+  ],
+  'video-preset': [
+    {
+      key: 'videoType',
+      label: '视频类型预设',
+      type: 'select',
+      options: [
+        { label: '（不选预设，仅用自由风格）', value: '' },
+        ...VIDEO_TYPE_PRESETS.map(p => ({ label: p.label, value: p.id })),
+      ],
+      help: '类型决定大纲结构与素材提示词规范；可再叠加自由风格',
+    },
+    T('freeStyle', '自由风格（叠加）', {
+      type: 'textarea',
+      placeholder: '可选：对预设的补充（色调/氛围/镜头语言/参考说明）',
+      help: '并入画面风格与提示词，可完全自定义',
+    }),
+  ],
+  'slide-render': [
+    T('slides', '幻灯片结构', {
+      type: 'textarea', templateHint: true,
+      placeholder: '{{deckGen.parsed.slides}}',
+      help: '[{ kind: cover|content|ending, title, bullets[], narration }]；bullets 是屏幕要点，narration 是口播词（不渲染）',
+    }),
+    T('deckTitle', '整期标题', { placeholder: '封面辅助行 + 页脚（可留空）' }),
+    {
+      key: 'theme',
+      label: '主题',
+      type: 'select',
+      options: SLIDE_THEME_OPTIONS,
+      help: '画面配色主题',
+    },
+    { key: 'width', label: '宽度', type: 'number', group: '画面' },
+    { key: 'height', label: '高度', type: 'number', group: '画面' },
+  ],
+  'podcast-compose': [
+    T('slideImages', '幻灯片图组', {
+      type: 'textarea', templateHint: true,
+      placeholder: '{{renderSlides.slidePaths}}',
+      help: '幻灯片 PNG 路径数组（按页序）',
+    }),
+    T('audioFiles', '逐页配音组', {
+      type: 'textarea', templateHint: true,
+      placeholder: '{{loopTts.results}}',
+      help: '与图组同序：字符串路径数组或 tts 节点输出数组（[{ audioPath }]）',
+    }),
+    { key: 'gapMs', label: '页间停顿（毫秒）', type: 'number', min: 0, max: 5000, group: '参数', help: '每页配音后的静默时长（末页也追加，成片结尾留白）' },
+    T('bgmPath', '背景音乐（可选）', { templateHint: true, group: '参数', placeholder: '本地音频路径' }),
+    { key: 'width', label: '宽度', type: 'number', group: '画面' },
+    { key: 'height', label: '高度', type: 'number', group: '画面' },
+    { key: 'fps', label: '帧率', type: 'number', group: '画面' },
+    T('outputName', '输出文件名', { group: '参数', help: '成片文件名（不含扩展名）' }),
+  ],
   tts: [
     T('text', '合成文本', { type: 'textarea', templateHint: true, placeholder: '{{llm1.content}}' }),
     T('voiceId', '音色 ID', { help: '语音页可查看音色列表' }),
@@ -602,6 +677,22 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     { key: 'sourceIds', label: '信息来源（多选）', type: 'select-dynamic', source: 'infoSources', multi: true, help: '从「设置 → 信息来源」多选；不选 = 目录内全部启用来源作为候选' },
   ],
 
+  'chapter-writing': [
+    T('projectId', '长文项目 ID', { type: 'text', help: '长文写作项目（lw_ 前缀），必填' }),
+    T('outlineId', '章节大纲节点 ID', { type: 'text', help: '要写的章节大纲节点 id（outline_ 前缀），必填' }),
+    { key: 'overwrite', label: '覆盖已有正文', type: 'switch', group: '参数', help: '该章已有正文时是否覆盖重写（默认否）' },
+    { key: 'targetWords', label: '目标字数', type: 'number', group: '参数', min: 500, max: 20000, help: '留空 = 大纲预估字数' },
+  ],
+  'volume-design': [
+    T('projectId', '长文项目 ID', { type: 'text', help: '长文写作项目（lw_ 前缀），必填' }),
+    T('volumeId', '卷标识', { type: 'text', help: '要设计的卷（如 v1），必填' }),
+    T('title', '卷标题', { type: 'text', help: '留空 = 卷设计 {volumeId}' }),
+    T('focus', '卷焦点', { type: 'text', help: '本卷要重点展开的主题/冲突（可选）' }),
+    { key: 'chapterFrom', label: '起始章', type: 'number', group: '参数', min: 1, help: '限定章节范围（可选）' },
+    { key: 'chapterTo', label: '结束章', type: 'number', group: '参数', min: 1, help: '限定章节范围（可选）' },
+    { key: 'gridBatchSize', label: '网格分批大小', type: 'number', group: '参数', min: 1, max: 50, help: '每批生成的章节数（默认 10）' },
+    { key: 'maxTokens', label: '单 pass 最大 token', type: 'number', group: '参数', min: 1024, help: '默认 8192' },
+  ],
   'crawl-links': [
     T('urls', '待抓取页面列表', {
       type: 'textarea',

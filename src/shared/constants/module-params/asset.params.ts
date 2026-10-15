@@ -24,6 +24,7 @@ const IMAGE = SETTINGS_KEYS.imagePolling
 
 export const ASSET_PARAMS: ModuleParamDefinition = {
   key: 'asset',
+  feature: 'asset-center',
   name: '素材与图片',
   description:
     '素材下载与网页收藏的超时和体积上限、整页归档的单资源上限、站点图标抓取、图片生成任务的轮询节奏。保存后立即生效。',

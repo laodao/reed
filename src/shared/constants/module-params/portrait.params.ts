@@ -20,6 +20,7 @@ import { SETTINGS_KEYS } from '../settings-keys'
 
 export const PORTRAIT_PARAMS: ModuleParamDefinition = {
   key: 'portrait',
+  feature: 'portrait',
   name: '画像',
   description:
     '生成人物形象的默认尺寸与生成强度。保存后下一次生成生效（页面/角色上已单独填写的尺寸与强度不受影响）。',

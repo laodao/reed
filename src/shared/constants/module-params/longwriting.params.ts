@@ -27,6 +27,7 @@ const STORY_ROOM = SETTINGS_KEYS.longwritingStoryRoom
 
 export const LONGWRITING_PARAMS: ModuleParamDefinition = {
   key: 'longwriting',
+  feature: 'longwriting',
   name: '长文写作',
   description:
     '章节生成用多大上下文窗口、最多一次写多少字、写作时带上多少前文与记忆；故事研讨室每轮记住多少历史、什么时候压缩前情提要、账本能存多少条。保存后下一次生成/下一轮研讨生效。',

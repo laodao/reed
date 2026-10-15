@@ -31,7 +31,7 @@
 
       <el-tabs v-else v-model="activeModule" tab-position="top" class="mp-tabs">
         <el-tab-pane
-          v-for="m in MODULE_PARAMS"
+          v-for="m in visibleModules"
           :key="m.key"
           :label="m.name"
           :name="m.key"
@@ -60,13 +60,20 @@
  * 兼容：第一轮的开关在 `agent:budget.ui.enabled`，这里读取时兜底
  * （老用户若已关掉，仍然保持关闭），保存一律写新键 `ui:params`。
  */
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { MODULE_PARAMS } from '@shared/constants/module-params'
 import { SETTINGS_KEYS } from '@shared/constants/settings-keys'
+import { isModuleEnabled } from '@shared/constants/features'
 import ModuleParamPanel from './ModuleParamPanel.vue'
 
 const activeModule = ref(MODULE_PARAMS[0]?.key ?? '')
+
+/** 功能开关过滤：模块登记了 feature 且该模块被裁剪（features.config.json=false）→ Tab 隐藏 */
+const visibleModules = computed(() => MODULE_PARAMS.filter((m) => !m.feature || isModuleEnabled(m.feature)))
+if (activeModule.value && !visibleModules.value.some((m) => m.key === activeModule.value)) {
+  activeModule.value = visibleModules.value[0]?.key ?? ''
+}
 const uiEnabled = ref(true)
 const loading = ref(false)
 

@@ -18,6 +18,7 @@ const L = AGENT_BUDGET_LIMITS
 
 export const EPISODE_PRODUCTION_PARAMS: ModuleParamDefinition = {
   key: 'episodeProduction',
+  feature: 'episode-production',
   name: '剧集制作',
   description: '剧本/分镜等剧集制作任务的单轮步数。',
   settingsKey: SETTINGS_KEYS.agentBudget,

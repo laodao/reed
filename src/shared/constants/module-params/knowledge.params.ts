@@ -23,6 +23,7 @@ const SUMMARY = SETTINGS_KEYS.knowledgeSummary
 
 export const KNOWLEDGE_PARAMS: ModuleParamDefinition = {
   key: 'knowledge',
+  feature: 'knowledge-base',
   name: '知识库',
   description:
     '知识库检索返回多少条、相似度门槛多高、上传与导入的体积上限、章节摘要一次跑多少。保存后立即生效。',

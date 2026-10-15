@@ -27,20 +27,7 @@
  */
 
 import type { DataSource } from 'typeorm'
-
-/**
- * 名字归一化（原 binding-name-utils 内联至此——该工具模块已随 the-chat-bot 分支
- * 裁剪移除，迁移保留以维持存量库升级路径）：trim、全角空格转半角、去书名号/引号、
- * 去全部空白、ASCII 小写化。
- */
-function normalizeBindingName(name: string | null | undefined): string {
-  if (!name) return ''
-  return name
-    .replace(/\u3000/g, ' ')
-    .replace(/[《》〈〉"'“”‘’「」『』]/g, '')
-    .replace(/\s+/g, '')
-    .toLowerCase()
-}
+import { normalizeBindingName } from '@core/platform/episode-production/assets/services/binding-name-utils'
 
 export interface MergeDuplicateBindingsStat {
   characterGroups: number
