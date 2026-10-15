@@ -20,11 +20,16 @@ import { checkRegistryConsistency } from '@core/platform/workflow/engine/node-re
 import { NODE_TYPE_CATALOG } from '@shared/types/workflow-node-catalog'
 import { LONGWRITING_WORKFLOW_NODE_HANDLERS } from '@core/packs/longwriting/workflow-nodes'
 import { PODCAST_WORKFLOW_NODE_HANDLERS } from '@core/packs/podcast-video/workflow-nodes'
+import { FEATURE_MODULES } from '@shared/constants/features'
+
+// 本文件手动注册业务包节点（longwriting/podcast）对齐全量目录——只对「全模块启用」
+// 形态有效（dev）；裁剪形态目录按开关过滤且业务包不注册，整套断言不适用 → 跳过
+const allModulesEnabled = Object.values(FEATURE_MODULES).every((v) => v !== false)
 
 /** 目录中的业务内部节点（internal: true） */
 const INTERNAL_TYPES = NODE_TYPE_CATALOG.filter(e => e.internal).map(e => e.type)
 
-describe('全节点目录一致性', () => {
+describe.skipIf(!allModulesEnabled)('全节点目录一致性', () => {
   it('平台注册表不含业务节点（分层纪律：业务 handler 不进 platform）', () => {
     expect(INTERNAL_TYPES.length).toBeGreaterThan(0)
     const platform = createPlatformNodeRegistry()

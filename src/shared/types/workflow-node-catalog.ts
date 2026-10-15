@@ -23,6 +23,7 @@
  */
 
 import type { WorkflowEdgeKind, WorkflowNodeType } from './workflow.types'
+import { isModuleEnabled } from '../constants/features'
 
 /** 输出字段描述（编辑器变量提示用） */
 export interface WorkflowOutputField {
@@ -44,6 +45,12 @@ export interface WorkflowPortDescriptor {
 
 /** 节点目录项 */
 export interface WorkflowCatalogEntry {
+  /**
+   * 功能开关模块 id（features.config.json 的 modules 键；2026-10-15）。
+   * 业务包贡献的节点（handler 由包 activate 注册）必须标注——包被裁剪时目录条目
+   * 随之隐藏（boot 的目录↔注册表一致性断言、编辑器节点面板共用本目录）。
+   */
+  feature?: string
   type: WorkflowNodeType
   /** 编辑器显示名 */
   label: string
@@ -75,7 +82,7 @@ export interface WorkflowCatalogEntry {
 }
 
 /** 目录常量：所有内置节点类型 */
-export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
+const ALL_NODE_TYPE_ENTRIES: readonly WorkflowCatalogEntry[] = [
   // ==================== 流程控制 ====================
   {
     type: 'start',
@@ -539,6 +546,7 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
   },
   {
     type: 'slide-render',
+    feature: 'podcast-video',
     label: '幻灯片渲染',
     description: '把幻灯片结构（标题/要点）渲染成 PPT 风格 PNG 组（四主题/横竖屏自适应），供播客合成做画面',
     category: 'ai',
@@ -559,6 +567,7 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
   },
   {
     type: 'podcast-compose',
+    feature: 'podcast-video',
     label: '播客合成',
     description: '幻灯片图组 + 逐页配音：按配音时长对齐时间轴（页间停顿）→ 逐页拼接 + 配音/BGM 混流成片（ffmpeg）',
     category: 'ai',
@@ -948,6 +957,7 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
   // ==================== 长文写作（业务包贡献：handler 由 longwriting pack 注册，internal 不进面板） ====================
   {
     type: 'chapter-writing',
+    feature: 'longwriting',
     label: '章节写作章法',
     description: '长文写作：按章法确定性写完一章——生成设计卡(情节概要/爽点/钩子)→自检→依卡定出场实体→一致性检查→通过后生成正文并做写后一致性检查',
     category: 'general',
@@ -969,6 +979,7 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
   },
   {
     type: 'volume-design',
+    feature: 'longwriting',
     label: '卷设计章法',
     description: '长文写作：确定性生成一卷的结构化设计——骨架→人物层→网格分批→整合，每 pass 过 JSON 契约校验+修复回路；产物自动入设计包，用户确认后分解落库',
     category: 'general',
@@ -1209,6 +1220,16 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
 ]
 
 /** 目录查找表：type → 条目（O(1)，校验器/编辑器用） */
+/**
+ * 节点目录（按功能开关过滤后的对外视图）：
+ * 业务包贡献节点（feature 标注）在包被裁剪（features.config.json=false）时随之隐藏——
+ * boot 的目录↔注册表一致性断言与编辑器节点面板共用本视图，保证「目录里出现的类型
+ * 一定有 handler」这一 boot 不变量在任何产品形态下都成立。
+ */
+export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = ALL_NODE_TYPE_ENTRIES.filter(
+  (e) => !e.feature || isModuleEnabled(e.feature)
+)
+
 export const NODE_TYPE_CATALOG_MAP: Readonly<
   Record<WorkflowNodeType, WorkflowCatalogEntry>
 > = Object.fromEntries(NODE_TYPE_CATALOG.map(entry => [entry.type, entry])) as Record<
