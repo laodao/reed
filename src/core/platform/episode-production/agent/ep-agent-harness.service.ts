@@ -402,7 +402,9 @@ export class EpAgentHarnessService {
 
     // 5b. §3.1：装配统一提示词上下文（风格/画幅/体裁/目标集长/语速）供快照注入——
     //     纪律 6 要求"沿用项目风格锚点"，但优化前快照不提供风格文本，该纪律空转。
-    const promptCtx: PromptContext = await buildPromptContextForEpisode(db, episodeId)
+    //     （实修 2026-10-14：此处原引用了作用域外的裸 `db`——ReferenceError: db is not defined，
+    //     此前被 standalone 项目更早的外键失败掩盖，外键修复后流程推进至此才暴露）
+    const promptCtx: PromptContext = await buildPromptContextForEpisode(m.dataSource, episodeId)
 
     // 6. HostKit 装配（36 号）：脊柱（sink/turn_start/记忆装配/ContextManager/RunRegistry/
     //    abort 桥/AgentHost 骨架）内置；EP 只声明差异面。记忆 stub 在此补齐——
