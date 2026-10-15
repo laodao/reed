@@ -3,6 +3,7 @@
   "modules": {
     "chat": true,
     "knowledge-base": true,
+    "kb-brain": true,
     "workflow": true,
     "diary": true,
     "capability": true,
