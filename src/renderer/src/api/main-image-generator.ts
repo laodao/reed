@@ -138,8 +138,9 @@ export async function buildMainImagePrompt(
  *
  * @param opts.promptOverride 用户在图集提示词框编辑的文本；非空时优先于系统拼接的
  *   effective prompt 作为生图 prompt（角色仍会叠加定妆硬约束）。
- * @param opts.providerConfigId / opts.modelId P-B：图集生成器旁的模型下拉选择；
- *   不传（默认「自动」）→ 后端 pickImageModel 自动挑启用 provider 的第一个 image 模型。
+ * @param opts.providerConfigId / opts.modelId 显式模型覆盖；一般调用不传——
+ *   后端解析序为 项目设置「画面生成」模型 > pickImageModel 自动挑
+ *   （图集旁的 P-B 模型下拉已移除，模型统一在项目设置里配置）。
  * @throws 拉 effective 失败 / prompt 为空 / IPC 调用失败 / provider 出错
  */
 export async function generateMainFor(

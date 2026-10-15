@@ -153,21 +153,6 @@
         </div>
         <div class="preview-bottom">
           <el-input v-model="localPrompt" type="textarea" :rows="5" resize="vertical" placeholder="镜头提示词…" class="prompt-input" :disabled="!isMainSlot" :title="isMainSlot ? '' : '派生图提示词由系统固定，以主图为参考'" @blur="onSavePrompt" />
-          <el-select
-            v-model="selectedImageModel"
-            size="small"
-            class="model-select"
-            :disabled="!isMainSlot"
-            title="生成模型（P-B）：默认自动挑启用 provider 的第一个图像模型；物品图汉字渲染可选手动指定在线模型"
-          >
-            <el-option label="自动" value="" />
-            <el-option
-              v-for="opt in imageModelOptions"
-              :key="`${opt.providerConfigId}/${opt.modelId}`"
-              :label="opt.label"
-              :value="`${opt.providerConfigId}/${opt.modelId}`"
-            />
-          </el-select>
           <el-button
             v-if="selectedImage?.imagePath"
             :icon="Download"
@@ -362,38 +347,6 @@ const showBatchDerive = ref(false)
 /** 关联人像对话框显隐 */
 const showLinkPortrait = ref(false)
 
-/** P-B：生成模型下拉。'' = 自动（后端 pickImageModel 挑启用 provider 的第一个 image 模型） */
-const selectedImageModel = ref('')
-const imageModelOptions = ref<Array<{ providerConfigId: string; modelId: string; label: string }>>([])
-
-/** 启用 provider 的 image/multimodal 类型模型（数据加载同设置页 / EpisodeStudio） */
-async function loadImageModelOptions(): Promise<void> {
-  try {
-    const response = await window.electronAPI.providerConfig.list()
-    if (!response?.success || !response.data) return
-    const opts: Array<{ providerConfigId: string; modelId: string; label: string }> = []
-    for (const cfg of response.data.filter((c: any) => c.runtimeUsable ?? c.isEnabled)) {
-      for (const m of (cfg.models ?? []) as Array<{ id?: string; type?: string }>) {
-        if (m.id && (m.type === 'image' || m.type === 'multimodal')) {
-          opts.push({ providerConfigId: cfg.id, modelId: m.id, label: `${cfg.name} / ${m.id}` })
-        }
-      }
-    }
-    imageModelOptions.value = opts
-  } catch (e) {
-    console.error('[AssetGallery] 加载图像模型列表失败:', e)
-  }
-}
-
-/** 当前下拉选择解析为 { providerConfigId, modelId }；'' → undefined（自动） */
-function currentModelSelection(): { providerConfigId?: string; modelId?: string } {
-  const v = selectedImageModel.value
-  if (!v) return {}
-  const sep = v.indexOf('/')
-  if (sep <= 0) return {}
-  return { providerConfigId: v.slice(0, sep), modelId: v.slice(sep + 1) }
-}
-
 /** 待生成的衍生 slot（无图），供一键生成对话框勾选；平面图槽位不走派生，排除 */
 const pendingDeriveItems = computed(() =>
   navItems.value
@@ -489,10 +442,11 @@ async function onGenerate(item: { label: string; category: string }): Promise<vo
         }
       }
       const override = localPrompt.value.trim() ? localPrompt.value : undefined
+      // 模型不在此选择：后端解析序=项目设置「画面生成」模型 > pickImageModel 自动（P-B 下拉已移除）
       const img = await generateMainFor(
         props.kind,
         props.assetId,
-        { ...(override ? { promptOverride: override } : {}), ...currentModelSelection() },
+        override ? { promptOverride: override } : undefined,
       )
       void img
       ElMessage.success(
@@ -519,7 +473,7 @@ async function onGenerate(item: { label: string; category: string }): Promise<vo
       for (const p of oldPlans) {
         await root.image.delete(p.id).catch(() => null)
       }
-      await generateMainFor('location', props.assetId, { ...currentModelSelection() })
+      await generateMainFor('location', props.assetId)
       ElMessage.success('平面图与主图已生成')
       await load()
       generating.value = false
@@ -876,7 +830,7 @@ async function saveAsPlaceholder(text: string): Promise<void> {
 }
 
 watch(() => [props.assetId, props.kind], () => void load())
-onMounted(() => { void load(); void loadImageModelOptions() })
+onMounted(() => { void load() })
 // keep-alive 缓存组件被重新激活时（从其它 tab/路由切回）重新拉取，保证显示最新提示词；
 // 但输入框有未保存编辑时跳过刷新，避免用 DB 旧值覆盖用户正在写的内容
 onActivated(() => {
@@ -1058,7 +1012,6 @@ onActivated(() => {
     flex: 1;
     :deep(.el-textarea__inner) { font-size: 13px; line-height: 1.6; }
   }
-  .model-select { width: 200px; flex-shrink: 0; }
 }
 
 .empty {
