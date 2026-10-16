@@ -135,7 +135,8 @@ export const useDialogStore = defineStore('dialog', () => {
     try {
       const response = await window.electronAPI.dialog.list()
       if (response.success && response.dialogs) {
-        dialogs.value = response.dialogs
+        // Agent 会话是独立功能（Agent 对话页），不进 chat 对话列表
+        dialogs.value = response.dialogs.filter((d: Dialog) => !d.agentEnabled)
       }
     } catch (error) {
       console.error('加载对话列表失败:', error)
@@ -152,7 +153,8 @@ export const useDialogStore = defineStore('dialog', () => {
     try {
       const response = await window.electronAPI.dialog.listByRole(roleId)
       if (response.success && response.dialogs) {
-        dialogs.value = response.dialogs
+        // Agent 会话是独立功能（Agent 对话页），不进 chat 对话列表
+        dialogs.value = response.dialogs.filter((d: Dialog) => !d.agentEnabled)
       }
     } catch (error) {
       console.error('加载对话列表失败:', error)
@@ -168,7 +170,11 @@ export const useDialogStore = defineStore('dialog', () => {
     try {
       const response = await window.electronAPI.dialog.create(request)
       if (response.success && response.dialog) {
-        dialogs.value.unshift(response.dialog)
+        // Agent 会话（Agent 对话页创建）不进 chat 对话列表；当前对话与消息/流式缓存照常初始化，
+        // 供 Agent 对话页复用同一数据面
+        if (!response.dialog.agentEnabled) {
+          dialogs.value.unshift(response.dialog)
+        }
         currentDialog.value = response.dialog
         // 初始化新对话的消息缓存
         messagesCache.value.set(response.dialog.id, [])

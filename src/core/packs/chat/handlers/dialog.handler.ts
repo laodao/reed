@@ -116,7 +116,8 @@ async function handleCreateDialog(
       providerConfigId: request.providerConfigId,
       roleId,
       systemPrompt,
-      contextConfig: request.contextConfig
+      contextConfig: request.contextConfig,
+      agentEnabled: request.agentEnabled === true
     })
 
     return { success: true, dialog }

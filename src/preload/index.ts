@@ -603,6 +603,7 @@ const electronAPI = {
       roleId?: string
       systemPrompt?: string
       contextConfig?: { maxMessages: number; maxTokens: number }
+      agentEnabled?: boolean
     }) => ipcRenderer.invoke(IPC_CHANNELS.DIALOG_CREATE, data),
     update: (
       id: string,

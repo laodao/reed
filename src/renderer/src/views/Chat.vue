@@ -229,7 +229,6 @@ async function handleUpdateConfig(
     contextConfig?: ContextConfig
     knowledgeBaseIds?: string[]
     webSearchConfig?: DialogWebSearchConfig
-    agentEnabled?: boolean
   }
 ): Promise<void> {
   console.log('[Chat.handleUpdateConfig] ========== 收到更新请求 ==========')
@@ -249,9 +248,8 @@ async function handleUpdateConfig(
   console.log('[Chat.handleUpdateConfig] 更新后 currentDialog.modelId:', currentDialog.value?.modelId)
   console.log('[Chat.handleUpdateConfig] 更新后 currentDialog.providerConfigId:', currentDialog.value?.providerConfigId)
 
-  // 只有非模型选择、非知识库、非联网搜索、非 Agent 开关的配置更新才显示提示
-  // （Agent 开启有专属成功提示，避免双 toast）
-  if (!config.modelId && !config.providerConfigId && !config.knowledgeBaseIds && !config.webSearchConfig && config.agentEnabled === undefined) {
+  // 只有非模型选择、非知识库、非联网搜索的配置更新才显示提示
+  if (!config.modelId && !config.providerConfigId && !config.knowledgeBaseIds && !config.webSearchConfig) {
     if (success) {
       ElMessage.success('配置已更新')
     } else {

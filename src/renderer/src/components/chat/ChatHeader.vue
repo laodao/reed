@@ -48,17 +48,6 @@
       </el-select>
     </div>
     <div class="header-right">
-      <!-- Agent 模式开关（28 号 M5）：开启后该对话可调用系统工具/工作流/技能/任务树 -->
-      <el-tooltip content="Agent 模式：助手可直接调用系统工具、运行工作流、执行技能、创建任务树" placement="bottom">
-        <div class="agent-switch">
-          <span class="agent-label">Agent</span>
-          <el-switch
-            :model-value="dialog.agentEnabled === true"
-            size="small"
-            @change="toggleAgent"
-          />
-        </div>
-      </el-tooltip>
       <el-dropdown trigger="click" @command="handleExportCommand">
         <el-button text size="small">
           <el-icon><Download /></el-icon>
@@ -142,19 +131,9 @@ const emit = defineEmits<{
     providerConfigId?: string
     systemPrompt?: string
     contextConfig?: ContextConfig
-    agentEnabled?: boolean
   }): void
   (e: 'clearMessages'): void
 }>()
-
-// Agent 模式开关（28 号 M5）
-function toggleAgent(value: string | number | boolean): void {
-  const enabled = value === true
-  emit('updateConfig', props.dialog.id, { agentEnabled: enabled })
-  if (enabled) {
-    ElMessage.success('已开启 Agent 模式：助手可调用系统能力执行任务')
-  }
-}
 
 // 提供商配置列表
 const providerConfigs = ref<UserProviderConfig[]>([])
@@ -847,20 +826,6 @@ onMounted(() => {
   display: flex;
   gap: 4px;
   align-items: center;
-}
-
-.agent-switch {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-right: 6px;
-  cursor: default;
-
-  .agent-label {
-    font-size: 12px;
-    color: #64748b;
-    user-select: none;
-  }
 }
 
 .setting-row {

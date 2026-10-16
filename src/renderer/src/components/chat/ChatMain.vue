@@ -71,7 +71,6 @@ const emit = defineEmits<{
     contextConfig?: ContextConfig
     knowledgeBaseIds?: string[]
     webSearchConfig?: DialogWebSearchConfig
-    agentEnabled?: boolean
   }): void
   (e: 'editMessage', messageId: string, newContent: string): void
   (e: 'deleteMessage', messageId: string): void
