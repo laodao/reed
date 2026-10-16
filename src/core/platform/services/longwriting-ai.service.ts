@@ -34,6 +34,22 @@ import { PROVIDER_TEMPLATES, isApiKeyOptional } from '@core/platform/services/pr
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import type { ProviderTemplate, UserProviderConfig, ChatContext } from '@shared/types'
 import { longwritingParams } from '@shared/utils/longwriting-params'
+import { createLogger } from '@core/utils/logger'
+
+const logger = createLogger('longwriting-ai')
+
+/** W1.3：生成失败自动重试次数（指数退避 1s/2s）。取消与 4xx 客户端错误不重试。 */
+const AI_RETRY_COUNT = 2
+
+/** W1.3：可重试错误判定——「已取消」与 4xx（鉴权/参数类，重试必败）直接排除（导出供单测） */
+export function isRetryableAiError(e: unknown): boolean {
+  const msg = String((e as any)?.message || e || '')
+  if (msg.includes('已取消')) return false
+  const status = (e as any)?.status ?? (e as any)?.statusCode
+  if (typeof status === 'number' && status >= 400 && status < 500) return false
+  if (/\b(400|401|403|404)\b/.test(msg) || /api key|unauthorized|forbidden|invalid request|invalid argument|bad request/i.test(msg)) return false
+  return true
+}
 
 /**
  * 生成任务类型
@@ -271,16 +287,24 @@ export class LongWritingAIService {
     const controller = eventId ? new AbortController() : null
     if (eventId && controller) this.abortControllers.set(eventId, controller)
     try {
-      const syncPromise = provider.chatSync(context, opts?.responseFormat ? { responseFormat: opts.responseFormat } : undefined)
-      if (!controller) {
-        const result = await syncPromise
-        return result.content || ''
-      }
-      const aborted = new Promise<never>((_, reject) => {
+      const aborted = controller ? new Promise<never>((_, reject) => {
         controller.signal.addEventListener('abort', () => reject(new Error('已取消')), { once: true })
-      })
-      const result = await Promise.race([syncPromise, aborted])
-      return result.content || ''
+      }) : null
+      // W1.3：网络抖动/限流指数退避重试（取消与 4xx 不重试）
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const syncPromise = provider.chatSync(context, opts?.responseFormat ? { responseFormat: opts.responseFormat } : undefined)
+          const result = aborted
+            ? await Promise.race([syncPromise, aborted])
+            : await syncPromise
+          return result.content || ''
+        } catch (e) {
+          if (attempt >= AI_RETRY_COUNT || !isRetryableAiError(e) || controller?.signal.aborted) throw e
+          const delayMs = 1000 * 2 ** attempt
+          logger.warn(`[longwriting] AI 调用失败（第 ${attempt + 1} 次），${delayMs}ms 后重试：${(e as any)?.message || e}`)
+          await new Promise((r) => setTimeout(r, delayMs))
+        }
+      }
     } finally {
       if (eventId) this.abortControllers.delete(eventId)
     }
@@ -339,28 +363,52 @@ export class LongWritingAIService {
 
     // 流式调用 AI
     let fullContent = ''
+    // W1.3 重试防重：一旦向事件流产出过 delta 就不再重试——重试会让前端重复拼接
+    let emittedAnyDelta = false
     try {
-      fullContent = await provider.chatStream(
-        context,
-        (event) => {
-          // Provider 发送 delta 事件，转换为 content 事件发送给前端
-          if (event.type === 'delta' && event.content) {
-            fullContent += event.content
-            getEventEmitter().emit(`longwriting:generate:${eventId}`, {
-              type: 'content',
-              content: event.content
-            } as GenerationStreamEvent)
-          }
-        },
-        controller.signal,
-        // max_tokens 兜底：优先调用方传入，其次读模型定义的 maxOutputTokens，最后 8192。
-        // 原写死 4096 会在长 JSON 生成时被截断。
-        {
-          maxTokens: maxTokens || config.models?.find(m => m.id === effectiveModelId)?.maxOutputTokens || 8192,
-          // 结构化输出约束（解码层 JSON 模式）：Anthropic 等不支持的端点由 provider 侧降级忽略
-          ...(opts?.responseFormat ? { responseFormat: opts.responseFormat } : {})
+      for (let attempt = 0; ; attempt++) {
+        if (controller.signal.aborted) throw new Error('已取消')
+        fullContent = ''
+        try {
+          fullContent = await provider.chatStream(
+            context,
+            (event) => {
+              // Provider 发送 delta 事件，转换为 content 事件发送给前端
+              if (event.type === 'delta' && event.content) {
+                emittedAnyDelta = true
+                fullContent += event.content
+                getEventEmitter().emit(`longwriting:generate:${eventId}`, {
+                  type: 'content',
+                  content: event.content
+                } as GenerationStreamEvent)
+              }
+            },
+            controller.signal,
+            // max_tokens 兜底：优先调用方传入，其次读模型定义的 maxOutputTokens，最后 8192。
+            // 原写死 4096 会在长 JSON 生成时被截断。
+            {
+              maxTokens: maxTokens || config.models?.find(m => m.id === effectiveModelId)?.maxOutputTokens || 8192,
+              // 结构化输出约束（解码层 JSON 模式）：Anthropic 等不支持的端点由 provider 侧降级忽略
+              ...(opts?.responseFormat ? { responseFormat: opts.responseFormat } : {})
+            }
+          )
+          break
+        } catch (e) {
+          if (
+            attempt >= AI_RETRY_COUNT ||
+            !isRetryableAiError(e) ||
+            emittedAnyDelta ||
+            controller.signal.aborted
+          ) throw e
+          const delayMs = 1000 * 2 ** attempt
+          logger.warn(`[longwriting] 流式生成失败（第 ${attempt + 1} 次，未产出内容），${delayMs}ms 后重试：${(e as any)?.message || e}`)
+          getEventEmitter().emit(`longwriting:generate:${eventId}`, {
+            type: 'progress',
+            content: `连接中断，正在重试（第 ${attempt + 1} 次）…`
+          } as GenerationStreamEvent)
+          await new Promise((r) => setTimeout(r, delayMs))
         }
-      )
+      }
 
       // 发送完成事件
       getEventEmitter().emit(`longwriting:generate:${eventId}`, {
