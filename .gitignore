@@ -78,3 +78,6 @@ outputs/.tmp-*/
 .tmp-vitest/
 # 真机运行时浏览器配置备份（GB 级，纯调试残留）
 outputs/_tr-run/
+
+# 应用运行时 profile（分支本地数据，禁止入库）
+.userdata/
