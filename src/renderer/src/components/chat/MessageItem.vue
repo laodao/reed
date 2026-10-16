@@ -78,23 +78,6 @@
 
         <!-- 正常显示模式 -->
         <div v-else class="message-text" ref="messageContentRef" @click="handleContentClick">
-          <!-- Agent 工具调用 chips（28 号 M5；内容上方，呼应执行顺序） -->
-          <div v-if="message.metadata?.agent?.toolCalls?.length" class="agent-tool-calls">
-            <el-tag
-              v-for="call in collapsedToolCalls"
-              :key="call.key"
-              size="small"
-              effect="plain"
-              :type="call.ok === false ? 'danger' : call.ok === true ? 'success' : 'info'"
-              class="tool-chip"
-              :title="call.argsDigest || call.name"
-            >
-              <el-icon v-if="call.ok === false"><CircleCloseFilled /></el-icon>
-              <el-icon v-else-if="call.ok === true"><CircleCheckFilled /></el-icon>
-              <el-icon v-else class="is-loading"><Loading /></el-icon>
-              <span class="tool-chip-name">{{ agentToolLabel(call.name) }}<template v-if="call.count > 1"> ×{{ call.count }}</template></span>
-            </el-tag>
-          </div>
           <!-- AI 回答：根据模式切换显示 -->
           <template v-if="message.role === 'assistant'">
             <!-- 阅读模式：渲染 markdown -->
@@ -106,6 +89,24 @@
           <template v-else>
             <div v-html="formatSourceContent(message.content)"></div>
           </template>
+        </div>
+
+        <!-- Agent 工具调用 chips（28 号 M5；回答底部左侧） -->
+        <div v-if="message.metadata?.agent?.toolCalls?.length" class="agent-tool-calls">
+          <el-tag
+            v-for="call in collapsedToolCalls"
+            :key="call.key"
+            size="small"
+            effect="plain"
+            :type="call.ok === false ? 'danger' : call.ok === true ? 'success' : 'info'"
+            class="tool-chip"
+            :title="call.argsDigest || call.name"
+          >
+            <el-icon v-if="call.ok === false"><CircleCloseFilled /></el-icon>
+            <el-icon v-else-if="call.ok === true"><CircleCheckFilled /></el-icon>
+            <el-icon v-else class="is-loading"><Loading /></el-icon>
+            <span class="tool-chip-name">{{ agentToolLabel(call.name) }}<template v-if="call.count > 1"> ×{{ call.count }}</template></span>
+          </el-tag>
         </div>
 
         <!-- Agent 引用卡片（工作流运行/任务树/技能，可跳转；28 号 M5） -->
@@ -2252,7 +2253,8 @@ function showKnowledgeBaseSnippet(ref: { documentId: string; documentName: strin
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-bottom: 8px;
+  margin-top: 8px;
+  justify-content: flex-start;
 
   .tool-chip {
     display: inline-flex;
